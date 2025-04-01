@@ -1,0 +1,16 @@
+{
+  "private": true,
+  "name": "@pluxel/core",
+  "version": "0.1.0",
+  "description": "Demo example that imports a local package",
+  "main": "./src/index.ts",
+  "scripts": {
+    "clean": "rimraf build .turbo",
+    "test:unit": "vitest --workspace ../../vitest.workspace.ts --project unit run",
+    "dev": "tsx --tsconfig ./tsconfig.json --watch src/index.ts"
+  },
+  "dependencies": {
+    "diod": "^3.0.0",
+    "reflect-metadata": "^0.2.2"
+  }
+}
