@@ -6,6 +6,8 @@ export const PLUGIN_META_KEY = Symbol("plugin:meta");
 // 新增：Optional 装饰器 key
 export const OPTIONAL_PARAMS_KEY = Symbol("optional:params");
 
+export const PARAM_TYPES = "design:paramtypes";
+
 export interface PluginMetadata {
   name: string;
   type: "event" | "hook" | string;

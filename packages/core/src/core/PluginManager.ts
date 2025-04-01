@@ -6,6 +6,7 @@ import {
   PLUGIN_META_KEY,
   PluginMetadata,
   OPTIONAL_PARAMS_KEY,
+  PARAM_TYPES,
 } from "./PluginDecorator";
 import { ContainerBuilder, Newable, Container } from "diod";
 import { ExtendedDIContainer, DIContainer } from "./ExtendedDIContainer";
@@ -44,7 +45,7 @@ export class PluginManager {
       .register(PluginClass)
       .useFactory((c) => {
         const paramTypes: any[] =
-          Reflect.getMetadata("design:paramtypes", PluginClass) || [];
+          Reflect.getMetadata(PARAM_TYPES, PluginClass) || [];
         this.globalCtx.logger.info(
           `Param types for ${PluginClass.name}: ${paramTypes
             .map((t) => t.name)
