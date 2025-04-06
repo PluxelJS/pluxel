@@ -1,63 +1,20 @@
 {
-  "$schema": "https://biomejs.dev/schemas/1.8.3/schema.json",
+  "$schema": "https://biomejs.dev/schemas/1.9.3/schema.json",
+  "vcs": { "enabled": true, "clientKind": "git", "useIgnoreFile": true },
+  "files": { "ignoreUnknown": false, "ignore": [] },
   "formatter": {
     "enabled": true,
+    "useEditorconfig": true,
+    "formatWithErrors": false,
+    "indentStyle": "tab",
     "indentWidth": 2,
-    "indentStyle": "space",
-    "lineWidth": 120
+    "lineEnding": "lf",
+    "lineWidth": 80,
+    "attributePosition": "auto",
+    "bracketSpacing": true,
+    "ignore": ["**/lib", "**/.tap", "**/*.md"]
   },
-  // Note: UNIX-like glob patterns {a,b,c} aren't supported yet.
-  "files": {
-    "ignore": ["./**/node_modules/**", "./public/**", "./build/**", "**/.turbo/**"],
-    "include": ["./app/**/", "./*.ts", "./*.js", "./*.json", "./*.jsonc"]
-  },
-  "overrides": [
-    {
-      "include": ["./**/tsconfig.*.json"],
-      "json": {
-        "parser": {
-          "allowComments": true,
-          "allowTrailingCommas": true
-        },
-        "formatter": {
-          "trailingCommas": "all"
-        }
-      }
-    },
-    {
-      "include": ["./turbo.json"],
-      "json": {
-        "parser": {
-          "allowComments": true,
-          "allowTrailingCommas": false
-        },
-        "formatter": {
-          "trailingCommas": "none"
-        }
-      }
-    }
-  ],
   "organizeImports": { "enabled": true },
-  "javascript": {
-    "globals": [
-      "React",
-
-      // We need to manually list every test global variable.
-      // See: https://github.com/biomejs/biome/discussions/283.
-      "describe",
-      "test",
-      "testIf",
-      "it",
-      "expect"
-    ],
-    "linter": {
-      "enabled": true
-    },
-    "formatter": {
-      "quoteStyle": "single",
-      "semicolons": "asNeeded"
-    }
-  },
   "linter": {
     "enabled": true,
     "rules": {
@@ -66,16 +23,7 @@
         "noExtraBooleanCast": "error",
         "noMultipleSpacesInRegularExpressionLiterals": "error",
         "noUselessCatch": "error",
-        "noWith": "error",
-        "noStaticOnlyClass": "off",
-        "noBannedTypes": "off"
-      },
-      "nursery": {
-        "useSortedClasses": "error"
-      },
-      "style": {
-        "noParameterAssign": "off",
-        "noNonNullAssertion": "off"
+        "noWith": "error"
       },
       "correctness": {
         "noConstAssign": "error",
@@ -97,13 +45,14 @@
         "noUnsafeFinally": "error",
         "noUnsafeOptionalChaining": "error",
         "noUnusedLabels": "error",
-        "noUnusedVariables": "warn",
+        "noUnusedVariables": "error",
         "useIsNan": "error",
         "useValidForDirection": "error",
         "useYield": "error"
       },
+      "style": { "useBlockStatements": "off", "useTemplate": "error" },
       "suspicious": {
-        "noApproximativeNumericConstant": "off",
+        "noAssignInExpressions": "error",
         "noAsyncPromiseExecutor": "error",
         "noCatchAssign": "error",
         "noClassAssign": "error",
@@ -115,7 +64,6 @@
         "noDuplicateObjectKeys": "error",
         "noDuplicateParameters": "error",
         "noEmptyBlockStatements": "error",
-        "noExplicitAny": "off",
         "noFallthroughSwitchClause": "error",
         "noFunctionAssign": "error",
         "noGlobalAssign": "error",
@@ -124,10 +72,53 @@
         "noPrototypeBuiltins": "error",
         "noRedeclare": "error",
         "noShadowRestrictedNames": "error",
+        "noSparseArray": "error",
         "noUnsafeNegation": "error",
         "useGetterReturn": "error",
         "useValidTypeof": "error"
       }
+    },
+    "ignore": ["**/build/", "**/coverage/", "**/lib/"]
+  },
+  "javascript": {
+    "formatter": {
+      "jsxQuoteStyle": "double",
+      "quoteProperties": "asNeeded",
+      "trailingCommas": "all",
+      "semicolons": "asNeeded",
+      "arrowParentheses": "always",
+      "bracketSameLine": false,
+      "quoteStyle": "single",
+      "attributePosition": "auto",
+      "bracketSpacing": true
     }
-  }
+  },
+  "overrides": [
+    { "include": ["*.mjs"] },
+    {
+      "include": ["*.ts", "*.tsx"],
+      "linter": {
+        "rules": {
+          "correctness": { "noUnusedVariables": "error" },
+          "style": {
+            "noDefaultExport": "error",
+            "useConsistentArrayType": {
+              "level": "error",
+              "options": { "syntax": "shorthand" }
+            }
+          }
+        }
+      }
+    },
+    {
+      "include": ["test/**/*.ts"],
+      "linter": {
+        "rules": {
+          "style": {
+            "useImportType": "off"
+          }
+        }
+      }
+    }
+  ]
 }

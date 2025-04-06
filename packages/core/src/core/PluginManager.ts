@@ -1,151 +1,168 @@
 // PluginManager.ts
-import { GlobalPluginContext } from "./GlobalContext";
-import { BasePlugin } from "./PluginBase";
-import { createScopedContext } from "./ScopedContext";
 import {
-  PLUGIN_META_KEY,
-  PluginMetadata,
-  OPTIONAL_PARAMS_KEY,
-  PARAM_TYPES,
-} from "./PluginDecorator";
-import { ContainerBuilder, Newable, Container } from "diod";
-import { ExtendedDIContainer, DIContainer } from "./ExtendedDIContainer";
+	ExtendedContainerBuilder,
+	type ExtendedDIContainer,
+	type Identifier,
+	type Newable,
+} from '@/container'
+import type { GlobalPluginContext } from './GlobalContext'
+import type { BasePlugin } from './PluginBase'
+import { createScopedContext, ScopedPluginContext } from './ScopedContext';
+import {
+	OPTIONAL_PARAMS_KEY,
+	PARAM_TYPES,
+	PLUGIN_META_KEY,
+	type PluginMetadata,
+} from './PluginDecorator'
 
 export class PluginManager {
-  private pluginClasses: Newable<BasePlugin>[] = [];
-  private containerBuilder: ContainerBuilder;
-  private diContainer!: DIContainer;
-  private loadedPlugins: BasePlugin[] = [];
+	private pluginClasses: Newable<BasePlugin>[] = []
+	private containerBuilder: ExtendedContainerBuilder = new ExtendedContainerBuilder()
+	private diContainer!: ExtendedDIContainer
 
-  constructor(private globalCtx: GlobalPluginContext) {
-    this.containerBuilder = new ContainerBuilder();
-  }
+	constructor(private globalCtx: GlobalPluginContext) {
+		// 让容器内部能访问插件管理器单例
+		this.containerBuilder.register(PluginManager).useInstance(this)
+	}
 
-  /**
-   * 注册插件时，将插件类通过 diod 的 builder 注册，
-   * factory 中利用构造函数参数类型和 Optional 装饰器解析依赖，
-   * 若必需依赖缺失则捕获异常并返回 null，从而在后续 commit 时跳过该插件。
-   */
-  public registerPlugin(PluginClass: Newable<BasePlugin>): void {
-    const meta = Reflect.getMetadata(
-      PLUGIN_META_KEY,
-      PluginClass
-    ) as PluginMetadata;
-    if (!meta) {
-      throw new Error(
-        "Plugin metadata is missing. Ensure @Plugin decorator is applied."
-      );
-    }
-    this.globalCtx.logger.info(
-      `Registering plugin: ${meta.name} [${meta.type}]`
-    );
+	/**
+	 * 注册插件时，通过 DI 容器 builder 注册插件类，
+	 * 使用构造函数参数类型与 Optional 装饰器解析依赖。
+	 */
+	public registerPlugin(PluginClass: Newable<BasePlugin>): void {
+		const meta = Reflect.getMetadata(
+			PLUGIN_META_KEY,
+			PluginClass,
+		) as PluginMetadata
+		if (!meta) {
+			throw new Error(
+				'Plugin metadata is missing. Ensure @Plugin decorator is applied.',
+			)
+		}
+		this.globalCtx.logger.info(
+			`Registering plugin: ${meta.name} [${meta.type}]`,
+		)
 
-    // 利用 diod 的注册接口
-    this.containerBuilder
-      .register(PluginClass)
-      .useFactory((c) => {
-        const paramTypes: any[] =
-          Reflect.getMetadata(PARAM_TYPES, PluginClass) || [];
-        this.globalCtx.logger.info(
-          `Param types for ${PluginClass.name}: ${paramTypes
-            .map((t) => t.name)
-            .join(", ")}`
-        );
-        const optionalParams: number[] =
-          Reflect.getOwnMetadata(OPTIONAL_PARAMS_KEY, PluginClass) || [];
-        try {
-          const dependencies = paramTypes.map((depType, index) => {
-            if (optionalParams.includes(index)) {
-              try {
-                // 对可选依赖，若解析失败则返回 undefined
-                return c.get(depType);
-              } catch (e) {
-                return undefined;
-              }
-            } else {
-              // 对必需依赖，若解析结果为 undefined，则主动抛出错误
-              const dep = c.get(depType);
-              if (dep === undefined) {
-                throw new Error(
-                  `Missing required dependency for parameter index ${index}`
-                );
-              }
-              return dep;
-            }
-          });
-          return new PluginClass(...dependencies);
-        } catch (error) {
-          // 必需依赖缺失时，记录错误并返回 null（表示该插件加载失败）
-          this.globalCtx.logger.error(
-            `Failed to instantiate plugin ${meta.name}: ${error.message}`
-          );
-          return null;
-        }
-      })
-      .asSingleton();
+		this.containerBuilder
+			.register(PluginClass)
+			.useFactory((c) => {
+				const paramTypes: any[] =
+					Reflect.getMetadata(PARAM_TYPES, PluginClass) || []
+				this.globalCtx.logger.info(
+					`Param types for ${PluginClass.name}: ${paramTypes
+						.map((t) => t.name)
+						.join(', ')}`,
+				)
+				const optionalParams: number[] =
+					Reflect.getOwnMetadata(OPTIONAL_PARAMS_KEY, PluginClass) || []
 
-    // 记录插件类以便后续从容器中解析
-    this.pluginClasses.push(PluginClass);
-  }
+				const dependencies = paramTypes.map((depType, index) => {
+					if (optionalParams.includes(index)) {
+						try {
+							return c.get(depType)
+						} catch (e) {
+							return undefined
+						}
+					} else {
+						return c.get(depType)
+					}
+				})
+				return new PluginClass(...dependencies)
+			})
+			.asBuilderSingleton()
 
-  /**
-   * 提交当前周期的插件注册，构建 diod 容器，并依次解析各插件实例，
-   * 对于实例不为 null 的插件注入 ScopedContext 并调用 init。
-   */
-  public commit(): Container {
-    let container: Container;
-    try {
-      container = this.containerBuilder.build(); // 采用 autowire（自动注入）
-    } catch (error) {
-      this.globalCtx.logger.error("Container build failed:", error);
-      throw error;
-    }
-    this.diContainer = new ExtendedDIContainer(container);
+		this.pluginClasses.push(PluginClass)
+	}
 
-    for (const PluginClass of this.pluginClasses) {
-      try {
-        const instance = this.diContainer.get(PluginClass);
-        if (instance) {
-          const scopedCtx = createScopedContext(this.globalCtx);
-          instance.setContext(scopedCtx);
-          instance.init();
-          this.loadedPlugins.push(instance);
-        }
-      } catch (error) {
-        const meta = Reflect.getMetadata(
-          PLUGIN_META_KEY,
-          PluginClass
-        ) as PluginMetadata;
-        this.globalCtx.logger.error(
-          `Plugin ${meta.name} failed to load at commit: ${error.message}`
-        );
-      }
-    }
+	public setContext() {}
+	
+	/**
+	 * 构建 DI 容器，解析各插件实例，但不调用 init()。
+	 * 返回构建结果，包括：
+	 * - container：DI 容器
+	 * - goodPlugins：能够实例化的插件标识列表
+	 * - badPlugins：实例化失败的插件标识列表
+	 */
+	public commitWithStatus(): {
+		container: ExtendedDIContainer;
+		goodPlugins: Identifier<BasePlugin>[];
+		badPlugins: { id: Identifier<BasePlugin>; error: PluginError }[];
+	} {
+		let container: ExtendedDIContainer;
+		try {
+			container = this.containerBuilder.build({});
+		} catch (error) {
+			this.globalCtx.logger.error('Container build failed:', error);
+			throw error;
+		}
+		const plugins = container.getServices();
+	
+		const goodPlugins: Identifier<BasePlugin>[] = [];
+		// 使用 Map 来存储坏插件，key 为插件标识符，value 为错误信息
+		const badPlugins: Map<Identifier<BasePlugin>, PluginError> = new Map();
+	
+		// 使用 Map 的 has 方法快速检查是否已经记录该插件
+		const markAsBad = (pluginId: Identifier<BasePlugin>, err: PluginError) => {
+			if (badPlugins.has(pluginId)) return;
+			badPlugins.set(pluginId, err);
+			// 获取所有依赖该插件的插件，递归标记
+			const dependents = this.containerBuilder.dependentsMap.get(pluginId) as Set<Identifier<BasePlugin>>;
+			if (dependents) {
+				dependents.forEach((dependentId) => {
+					markAsBad(dependentId, {
+						type: PluginErrorType.DEPENDENCY,
+						message: `Dependency ${String(pluginId)} failed: ${err.message}`,
+						cause: err,
+					});
+				});
+			}
+		};
+	
+		// 尝试构建各个插件实例
+		for (const [identifier, _data] of plugins.entries()) {
+			const pluginId = identifier as Identifier<BasePlugin>;
+			try {
+				// get 会触发 factory 函数。
+				const plugin = container.get(pluginId);
+				plugin.setContext(createScopedContext(this.globalCtx))
 
-    return container;
-  }
+				goodPlugins.push(pluginId);
+			} catch (error) {
+				this.globalCtx.logger.error(
+					`Error constructing plugin ${String(pluginId)}:`,
+					error
+				);
+				const pluginErr: PluginError = {
+					type: PluginErrorType.CONSTRUCTOR,
+					message: error instanceof Error ? error.message : String(error),
+					cause: error,
+				};
+				markAsBad(pluginId, pluginErr);
+			}
+		}
+	
+		// 如果存在错误插件，注销它们后重新构建容器
+		if (badPlugins.size > 0) {
+			this.containerBuilder.unregisterMultipleServices(Array.from(badPlugins.keys()));
+			return this.commitWithStatus();
+		}
+		this.diContainer = container;
+		// 将 Map 转换为数组形式返回
+		return {
+			container,
+			goodPlugins,
+			badPlugins: Array.from(badPlugins.entries()).map(([id, error]) => ({ id, error })),
+		};
+	}	
+}
 
-  // 卸载指定插件
-  public unloadPlugin(PluginClass: Function): void {
-    const index = this.loadedPlugins.findIndex(
-      (plugin) => plugin.constructor === PluginClass
-    );
-    if (index >= 0) {
-      const plugin = this.loadedPlugins[index];
-      plugin.dispose();
-      const meta = Reflect.getMetadata(
-        PLUGIN_META_KEY,
-        PluginClass
-      ) as PluginMetadata;
-      this.globalCtx.logger.info(`Unloaded plugin: ${meta?.name}`);
-      this.loadedPlugins.splice(index, 1);
-    }
-  }
+enum PluginErrorType {
+	CONSTRUCTOR = 'CONSTRUCTOR_ERROR',
+	DEPENDENCY = 'DEPENDENCY_ERROR'
+}
 
-  public unloadAll(): void {
-    for (const plugin of this.loadedPlugins) {
-      plugin.dispose();
-    }
-    this.loadedPlugins = [];
-  }
+interface PluginError {
+	type: PluginErrorType;
+	message: string;
+	cause?: any;
 }

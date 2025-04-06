@@ -11,8 +11,12 @@
     "moduleResolution": "node", // 适配 node 模块方式
     "esModuleInterop": true, // 兼容 commonjs 引入
     "skipLibCheck": true, // 忽略库类型检查，提升编译速度
-    "forceConsistentCasingInFileNames": true
+    "forceConsistentCasingInFileNames": true,
+    "paths": {
+      "diod": ["../diod/src/diod.ts"], // 指向源码目录
+      "@/*": ["./src/*"]
+    }
   },
-  "include": ["src"],
+  "include": ["src", "../diod/src"],
   "exclude": ["node_modules"]
 }

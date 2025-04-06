@@ -10,7 +10,9 @@
     "dev": "bun --watch run src/index.ts"
   },
   "dependencies": {
-    "diod": "^3.0.0",
-    "reflect-metadata": "^0.2.2"
+    "diod": "workspace:*",
+    "reflect-metadata": "^0.2.2",
+    "valtio": "2.1.4",
+    "xstate": "5.19.2"
   }
 }
