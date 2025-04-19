@@ -1,10 +1,10 @@
+import { BasePlugin } from '../core/BasePlugin'
 // PluginC.ts
-import { Plugin } from "../core/PluginDecorator";
-import { BasePlugin } from "../core/PluginBase";
+import { Plugin } from '../core/PluginDecorator'
 
-@Plugin({ name: "PluginC", type: "hook" })
+@Plugin({ name: 'PluginC', type: 'hook' })
 export class PluginC extends BasePlugin {
-  init(): void {
-    this.ctx.logger.info("PluginC initialized");
-  }
+	init(): void {
+		this.ctx.logger.info('PluginC initialized')
+	}
 }

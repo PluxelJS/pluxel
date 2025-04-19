@@ -1,4 +1,4 @@
-import { BasePlugin } from '../core/PluginBase'
+import { BasePlugin } from '../core/BasePlugin'
 // PluginA.ts
 // PluginA 依赖 PluginB 为必选依赖，依赖 PluginC 为可选依赖
 import { Optional, Plugin } from '../core/PluginDecorator'

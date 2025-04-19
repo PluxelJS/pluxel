@@ -2,7 +2,7 @@
 import 'reflect-metadata'
 import { PluginManager } from './core/PluginManager'
 
-import type { GlobalPluginContext, Logger } from './core/GlobalContext'
+import type { GlobalContext, Logger } from './core/GlobalContext'
 import { PluginA } from './plugins/PluginA'
 import { PluginB } from './plugins/PluginB'
 import { PluginC } from './plugins/PluginC'
@@ -13,7 +13,7 @@ const logger: Logger = {
 	error: console.error,
 }
 
-const globalContext: GlobalPluginContext = {
+const globalContext: GlobalContext = {
 	logger,
 }
 

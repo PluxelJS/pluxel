@@ -1,4 +1,4 @@
-import { BasePlugin } from '../core/PluginBase'
+import { BasePlugin } from '../core/BasePlugin'
 // PluginB.ts
 import { Plugin } from '../core/PluginDecorator'
 import { PluginC } from './PluginC'

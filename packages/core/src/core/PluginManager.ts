@@ -6,16 +6,18 @@ import {
 	type Newable,
 	type ServiceMap,
 } from '@/container'
-import type { GlobalPluginContext } from './GlobalContext'
-import type { BasePlugin } from './PluginBase'
+import type { BasePlugin } from './BasePlugin'
+import type { GlobalContext } from './GlobalContext'
 import { PluginContainer } from './PluginContainer'
 import type { PluginClass, PluginIdentifier } from './types'
 
 export class PluginManager {
+	private pluginStates = new Map<PluginId, ReturnType<typeof interpret>>()
+
 	public pluginRegistry: PluginContainer
 	private diContainer!: ExtendedDIContainer
 
-	constructor(private globalCtx: GlobalPluginContext) {
+	constructor(private globalCtx: GlobalContext) {
 		// 让容器内部能访问插件管理器单例
 		this.pluginRegistry = new PluginContainer(globalCtx)
 	}

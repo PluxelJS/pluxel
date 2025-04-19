@@ -8,6 +8,6 @@ export interface Logger {
 	error(message: string, ...optionalParams: any[]): void
 }
 
-export interface GlobalPluginContext {
+export interface GlobalContext {
 	logger: Logger
 }
