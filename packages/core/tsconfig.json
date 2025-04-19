@@ -8,7 +8,7 @@
     "experimentalDecorators": true, // ✅ 开启装饰器
     "emitDecoratorMetadata": true, // ✅ 开启元数据发射
     "strict": true, // 推荐开启严格模式
-    "moduleResolution": "node", // 适配 node 模块方式
+    "moduleResolution": "bundler",
     "esModuleInterop": true, // 兼容 commonjs 引入
     "skipLibCheck": true, // 忽略库类型检查，提升编译速度
     "forceConsistentCasingInFileNames": true,

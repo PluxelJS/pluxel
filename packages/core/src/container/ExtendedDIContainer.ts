@@ -1,7 +1,7 @@
-import { DiodContainer } from 'diod'
+import { DiodContainer, type ServiceMap } from 'diod'
 
 export class ExtendedDIContainer extends DiodContainer {
-	public getServices() {
+	public getServices(): ServiceMap {
 		return this.services
 	}
 }

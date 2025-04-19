@@ -1,168 +1,144 @@
 // PluginManager.ts
 import {
+	type Abstract,
 	ExtendedContainerBuilder,
 	type ExtendedDIContainer,
-	type Identifier,
 	type Newable,
+	type ServiceMap,
 } from '@/container'
 import type { GlobalPluginContext } from './GlobalContext'
 import type { BasePlugin } from './PluginBase'
-import { createScopedContext, ScopedPluginContext } from './ScopedContext';
-import {
-	OPTIONAL_PARAMS_KEY,
-	PARAM_TYPES,
-	PLUGIN_META_KEY,
-	type PluginMetadata,
-} from './PluginDecorator'
+import { PluginContainer } from './PluginContainer'
+import type { PluginClass, PluginIdentifier } from './types'
 
 export class PluginManager {
-	private pluginClasses: Newable<BasePlugin>[] = []
-	private containerBuilder: ExtendedContainerBuilder = new ExtendedContainerBuilder()
+	public pluginRegistry: PluginContainer
 	private diContainer!: ExtendedDIContainer
 
 	constructor(private globalCtx: GlobalPluginContext) {
 		// 让容器内部能访问插件管理器单例
-		this.containerBuilder.register(PluginManager).useInstance(this)
+		this.pluginRegistry = new PluginContainer(globalCtx)
 	}
 
-	/**
-	 * 注册插件时，通过 DI 容器 builder 注册插件类，
-	 * 使用构造函数参数类型与 Optional 装饰器解析依赖。
-	 */
-	public registerPlugin(PluginClass: Newable<BasePlugin>): void {
-		const meta = Reflect.getMetadata(
-			PLUGIN_META_KEY,
-			PluginClass,
-		) as PluginMetadata
-		if (!meta) {
-			throw new Error(
-				'Plugin metadata is missing. Ensure @Plugin decorator is applied.',
-			)
+	// 无论如何都确保返回容器，此处出错只和声明依赖未注册有关，和实例化无关。
+	private commitContainer(): ExtendedDIContainer {
+		const result = this.pluginRegistry.commit()
+
+		if (!result.ok) {
+			for (const err of result.err) {
+				for (const p of err.chain) {
+					this.pluginRegistry.unregisterPlugin(p as PluginClass)
+					this.globalCtx.logger.error(err.message)
+				}
+			}
+			return this.commitContainer()
 		}
-		this.globalCtx.logger.info(
-			`Registering plugin: ${meta.name} [${meta.type}]`,
-		)
 
-		this.containerBuilder
-			.register(PluginClass)
-			.useFactory((c) => {
-				const paramTypes: any[] =
-					Reflect.getMetadata(PARAM_TYPES, PluginClass) || []
-				this.globalCtx.logger.info(
-					`Param types for ${PluginClass.name}: ${paramTypes
-						.map((t) => t.name)
-						.join(', ')}`,
-				)
-				const optionalParams: number[] =
-					Reflect.getOwnMetadata(OPTIONAL_PARAMS_KEY, PluginClass) || []
-
-				const dependencies = paramTypes.map((depType, index) => {
-					if (optionalParams.includes(index)) {
-						try {
-							return c.get(depType)
-						} catch (e) {
-							return undefined
-						}
-					} else {
-						return c.get(depType)
-					}
-				})
-				return new PluginClass(...dependencies)
-			})
-			.asBuilderSingleton()
-
-		this.pluginClasses.push(PluginClass)
+		return result.val
 	}
 
-	public setContext() {}
-	
+	public computeInitBatches(
+		plugins: ServiceMap<BasePlugin>,
+	): PluginIdentifier[][] {
+		const inDegree = new Map<PluginIdentifier, number>()
+		const dependents = new Map<PluginIdentifier, Set<PluginIdentifier>>()
+
+		for (const id of plugins.keys()) {
+			inDegree.set(id, 0)
+			dependents.set(id, new Set())
+		}
+
+		for (const [id, data] of plugins) {
+			for (const dep of data.dependencies) {
+				if (!plugins.has(dep as Abstract<BasePlugin>)) {
+					throw new Error(`Missing dependency “${dep}” for plugin “${id}”`)
+				}
+				// biome-ignore lint/style/noNonNullAssertion: <explanation>
+				inDegree.set(id, inDegree.get(id)! + 1)
+				// biome-ignore lint/style/noNonNullAssertion: <explanation>
+				dependents.get(dep as Abstract<BasePlugin>)!.add(id)
+			}
+		}
+
+		const batches: PluginIdentifier[][] = []
+		let zeroQueue = Array.from(inDegree.entries())
+			.filter(([, d]) => d === 0)
+			.map(([id]) => id)
+
+		while (zeroQueue.length) {
+			batches.push(zeroQueue)
+			const next: PluginIdentifier[] = []
+			for (const id of zeroQueue) {
+				// biome-ignore lint/style/noNonNullAssertion: <explanation>
+				for (const dep of dependents.get(id)!) {
+					// biome-ignore lint/style/noNonNullAssertion: <explanation>
+					const nd = inDegree.get(dep)! - 1
+					inDegree.set(dep, nd)
+					if (nd === 0) next.push(dep)
+				}
+			}
+			zeroQueue = next
+		}
+
+		if (Array.from(inDegree.values()).some((d) => d > 0)) {
+			throw new Error('Circular dependency detected')
+		}
+		return batches
+	}
+
 	/**
 	 * 构建 DI 容器，解析各插件实例，但不调用 init()。
 	 * 返回构建结果，包括：
 	 * - container：DI 容器
-	 * - goodPlugins：能够实例化的插件标识列表
-	 * - badPlugins：实例化失败的插件标识列表
+	 * - succeeded：能够实例化的插件标识列表
+	 * - failed：实例化失败的插件标识列表
 	 */
-	public commitWithStatus(): {
-		container: ExtendedDIContainer;
-		goodPlugins: Identifier<BasePlugin>[];
-		badPlugins: { id: Identifier<BasePlugin>; error: PluginError }[];
-	} {
-		let container: ExtendedDIContainer;
-		try {
-			container = this.containerBuilder.build({});
-		} catch (error) {
-			this.globalCtx.logger.error('Container build failed:', error);
-			throw error;
-		}
-		const plugins = container.getServices();
-	
-		const goodPlugins: Identifier<BasePlugin>[] = [];
-		// 使用 Map 来存储坏插件，key 为插件标识符，value 为错误信息
-		const badPlugins: Map<Identifier<BasePlugin>, PluginError> = new Map();
-	
-		// 使用 Map 的 has 方法快速检查是否已经记录该插件
-		const markAsBad = (pluginId: Identifier<BasePlugin>, err: PluginError) => {
-			if (badPlugins.has(pluginId)) return;
-			badPlugins.set(pluginId, err);
-			// 获取所有依赖该插件的插件，递归标记
-			const dependents = this.containerBuilder.dependentsMap.get(pluginId) as Set<Identifier<BasePlugin>>;
-			if (dependents) {
-				dependents.forEach((dependentId) => {
-					markAsBad(dependentId, {
-						type: PluginErrorType.DEPENDENCY,
-						message: `Dependency ${String(pluginId)} failed: ${err.message}`,
-						cause: err,
-					});
-				});
-			}
-		};
-	
-		// 尝试构建各个插件实例
-		for (const [identifier, _data] of plugins.entries()) {
-			const pluginId = identifier as Identifier<BasePlugin>;
-			try {
-				// get 会触发 factory 函数。
-				const plugin = container.get(pluginId);
-				plugin.setContext(createScopedContext(this.globalCtx))
+	public async commitWithStatus(): Promise<{
+		container: ExtendedDIContainer
+		succeeded: Set<PluginIdentifier>
+		failed: Set<PluginIdentifier>
+	}> {
+		const container = this.commitContainer()
+		const plugins = container.getServices() as ServiceMap<BasePlugin>
 
-				goodPlugins.push(pluginId);
-			} catch (error) {
-				this.globalCtx.logger.error(
-					`Error constructing plugin ${String(pluginId)}:`,
-					error
-				);
-				const pluginErr: PluginError = {
-					type: PluginErrorType.CONSTRUCTOR,
-					message: error instanceof Error ? error.message : String(error),
-					cause: error,
-				};
-				markAsBad(pluginId, pluginErr);
-			}
+		const batches = this.computeInitBatches(plugins)
+		const succeeded = new Set<PluginIdentifier>()
+		const failed = new Set<PluginIdentifier>()
+
+		for (const batch of batches) {
+			// 并行尝试初始化本批次
+			await Promise.all(
+				batch.map(async (id) => {
+					// 如果有任何依赖失败，直接跳过
+					if (plugins.get(id)?.dependencies.some((dep) => failed.has(dep))) {
+						failed.add(id)
+						return
+					}
+
+					try {
+						// 此处实例化
+						const p: BasePlugin = container.get(id)
+						await p?.init()
+						succeeded.add(id)
+					} catch (err) {
+						console.error(`Init failed for ${id}:`, err)
+						failed.add(id)
+					}
+				}),
+			)
 		}
-	
-		// 如果存在错误插件，注销它们后重新构建容器
-		if (badPlugins.size > 0) {
-			this.containerBuilder.unregisterMultipleServices(Array.from(badPlugins.keys()));
-			return this.commitWithStatus();
-		}
-		this.diContainer = container;
-		// 将 Map 转换为数组形式返回
-		return {
-			container,
-			goodPlugins,
-			badPlugins: Array.from(badPlugins.entries()).map(([id, error]) => ({ id, error })),
-		};
-	}	
+
+		return { container, succeeded, failed }
+	}
 }
 
 enum PluginErrorType {
 	CONSTRUCTOR = 'CONSTRUCTOR_ERROR',
-	DEPENDENCY = 'DEPENDENCY_ERROR'
+	DEPENDENCY = 'DEPENDENCY_ERROR',
 }
 
 interface PluginError {
-	type: PluginErrorType;
-	message: string;
-	cause?: any;
+	type: PluginErrorType
+	message: string
+	cause?: any
 }
