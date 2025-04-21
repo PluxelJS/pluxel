@@ -31,3 +31,9 @@ const { container } = await pluginManager.commitWithStatus()
 
 container.get(PluginB).doSomething()
 container.get(PluginA).doSomething()
+
+pluginRegistry.pluginSingletons.delete(PluginC)
+pluginRegistry.pluginSingletons.delete(PluginA)
+pluginRegistry.unregisterPlugin(PluginC)
+
+await pluginManager.commitWithStatus()

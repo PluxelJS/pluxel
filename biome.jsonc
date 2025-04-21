@@ -50,8 +50,13 @@
         "useValidForDirection": "error",
         "useYield": "error"
       },
-      "style": { "useBlockStatements": "off", "useTemplate": "error" },
+      "style": {
+        "useBlockStatements": "off",
+        "useTemplate": "error",
+        "noNonNullAssertion": "warn"
+      },
       "suspicious": {
+        "noExplicitAny": "warn",
         "noAssignInExpressions": "error",
         "noAsyncPromiseExecutor": "error",
         "noCatchAssign": "error",

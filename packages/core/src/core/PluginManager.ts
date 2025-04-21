@@ -12,8 +12,6 @@ import { PluginContainer } from './PluginContainer'
 import type { PluginClass, PluginIdentifier } from './types'
 
 export class PluginManager {
-	private pluginStates = new Map<PluginId, ReturnType<typeof interpret>>()
-
 	public pluginRegistry: PluginContainer
 	private diContainer!: ExtendedDIContainer
 

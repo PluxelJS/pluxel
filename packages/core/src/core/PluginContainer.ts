@@ -1,8 +1,7 @@
 import {
+	type Container,
 	ExtendedContainerBuilder,
 	type ExtendedDIContainer,
-	type Identifier,
-	type Newable,
 	ServiceVerificationAggregateError,
 	type SingletonMap,
 } from '@/container'
@@ -21,7 +20,13 @@ import {
 	PLUGIN_META_KEY,
 	type PluginMetadata,
 } from './PluginDecorator'
-import { type PluginClass, type Result, createErr, createOk } from './types'
+import {
+	type PluginClass,
+	type PluginIdentifier,
+	type Result,
+	createErr,
+	createOk,
+} from './types'
 
 // 辅助函数：用于在 mutative 中正确克隆 ExtendedContainerBuilder 实例
 const markBuilder = (target: unknown) =>
@@ -29,8 +34,8 @@ const markBuilder = (target: unknown) =>
 		? () => {
 				const clone = new ExtendedContainerBuilder()
 				// 复制 buildables 和 builderSingletons 两个核心属性
-				clone.buildables = target.buildables
-				clone.builderSingletons = target.builderSingletons
+				clone.buildables = new Map(target.buildables)
+				clone.builderSingletons = new Map(target.builderSingletons)
 				return clone
 			}
 		: undefined
@@ -42,9 +47,9 @@ export class PluginContainer {
 	private draftBuilder!: ExtendedContainerBuilder
 	private finalize!: () => ExtendedContainerBuilder
 	// 插件单例缓存，用于跨次调用保持实例不被重复创建
-	private pluginSingletons: SingletonMap = new Map()
+	public pluginSingletons: SingletonMap = new Map()
 	// 上次成功构建的容器，用于无变更时快速返回
-	private lastContainer: ExtendedDIContainer | null = null
+	private lastContainer!: ExtendedDIContainer
 	// 标记是否有未提交的变更
 	private hasChanges = false
 
@@ -76,23 +81,13 @@ export class PluginContainer {
 		instance: T,
 		ctx: PluginContext,
 	): T {
-		return new Proxy(instance, {
-			get(target, prop, receiver) {
-				const value = Reflect.get(target, prop, receiver)
-				if (typeof value !== 'function') return value
-				return (...args: unknown[]) => {
-					// 调用前注入 callerContext
-					target[CALLER_CTX] = ctx
-					try {
-						// biome-ignore lint/complexity/noBannedTypes: <explanation>
-						return (value as Function).apply(target, args)
-					} finally {
-						// 调用后清理 callerContext
-						delete target[CALLER_CTX]
-					}
-				}
-			},
-		}) as T
+		const clone = Object.assign(
+			Object.create(Object.getPrototypeOf(instance)),
+			instance,
+		)
+		// biome-ignore lint/suspicious/noExplicitAny: <explanation>
+		;(clone as any)[CALLER_CTX] = ctx
+		return clone
 	}
 
 	/**
@@ -100,59 +95,67 @@ export class PluginContainer {
 	 * @param Plugin 插件类
 	 */
 	public registerPlugin(Plugin: PluginClass): void {
-		const meta = Reflect.getMetadata(PLUGIN_META_KEY, Plugin) as
-			| PluginMetadata
-			| undefined
-
-		if (!meta) {
-			throw new Error('缺少 @Plugin 装饰器元数据')
-		}
-
-		// 标记有变更
+		const meta: PluginMetadata | undefined = Reflect.getMetadata(
+			PLUGIN_META_KEY,
+			Plugin,
+		)
+		if (!meta) throw new Error('缺少 @Plugin 装饰器元数据')
 		this.hasChanges = true
 
-		// 在草稿 builder 中注册插件
+		const types: PluginIdentifier[] =
+			Reflect.getMetadata(PARAM_TYPES, Plugin) || []
+		const optionalSet = new Set<number>(
+			Reflect.getOwnMetadata(OPTIONAL_PARAMS_KEY, Plugin) || [],
+		)
+		const ctx = createPluginContext(meta, this.globalCtx)
+
+		// 一次遍历同时构建 mustDeps 和 resolvers
+		const mustDeps: PluginIdentifier[] = []
+		const resolvers: ((container: Container) => BasePlugin | undefined)[] = []
+
+		for (let i = 0; i < types.length; i++) {
+			const type = types[i]
+			const isOptional = optionalSet.has(i)
+			if (!isOptional) {
+				mustDeps.push(type)
+			}
+
+			resolvers.push((container) => {
+				if (isOptional) {
+					try {
+						return container.get(type)
+					} catch {
+						return undefined
+					}
+				}
+				const inst = container.get(type)
+				return this.injectCallerContext(inst, ctx)
+			})
+		}
+
 		this.draftBuilder
 			.register(Plugin)
 			.useFactory((container) => {
-				// 获取构造函数依赖类型列表
-				const types: unknown[] = Reflect.getMetadata(PARAM_TYPES, Plugin) || []
-				// 获取可选参数索引列表
-				const optional: number[] =
-					Reflect.getOwnMetadata(OPTIONAL_PARAMS_KEY, Plugin) || []
-
-				// 创建插件专属上下文
-				const ctx = createPluginContext(meta, this.globalCtx)
-				// 解析并注入依赖
-				const deps = types.map((depType, index) => {
-					const isOptional = optional.includes(index)
-					try {
-						const depInstance = container.get(depType as Newable<BasePlugin>)
-						return this.injectCallerContext(depInstance, ctx)
-					} catch (e) {
-						if (isOptional) {
-							// 可选依赖失败时返回 undefined
-							return undefined
-						}
-						throw e
-					}
-				})
-
-				// 实例化插件并设置上下文
-				const instance = new Plugin(...(deps as BasePlugin[]))
+				const deps = resolvers.map((fn) => fn(container))
+				const instance = new Plugin(...deps)
 				instance.setContext(ctx)
 				return instance
 			})
+			.withDependencies(mustDeps)
 			.asBuilderSingleton()
 	}
-
 	/**
 	 * 注销一个插件类
 	 * @param Plugin 插件类
 	 */
 	public unregisterPlugin(Plugin: PluginClass): void {
 		this.hasChanges = true
-		this.draftBuilder.unregister(Plugin)
+		const draft = this.draftBuilder
+		const dependents = this.lastContainer.dependents.get(Plugin) || []
+		for (const dep of dependents) {
+			this.pluginSingletons.delete(dep)
+		}
+		draft.unregister(Plugin)
 	}
 
 	/**
@@ -165,7 +168,7 @@ export class PluginContainer {
 		this.pluginSingletons.delete(Plugin)
 
 		// 移除所有依赖自身的插件单例缓存
-		const dependents = this.currentBuilder.dependents.get(Plugin) || []
+		const dependents = this.lastContainer.dependents.get(Plugin) || []
 		for (const dep of dependents) {
 			this.pluginSingletons.delete(dep)
 		}

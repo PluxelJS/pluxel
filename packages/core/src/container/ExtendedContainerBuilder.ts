@@ -16,10 +16,9 @@ export type DependentsMap = ReadonlyMap<
 export class ExtendedContainerBuilder extends ContainerBuilder {
 	public override buildables: IBuildable = new Map()
 
-	// NOTE - 只在 build 后存在。
-	public dependentsMap: DependentsMap = new Map()
-	get dependents(): DependentsMap {
-		return this.dependentsMap
+	override unregister<T>(identifier: Identifier<T>): void {
+		super.unregister(identifier)
+		this.builderSingletons.delete(identifier)
 	}
 
 	// NOTE - build 保证所有依赖都已经有所属，但不代表已经实例化。
@@ -33,9 +32,9 @@ export class ExtendedContainerBuilder extends ContainerBuilder {
 			autowire,
 			verify: true,
 		})
-		this.dependentsMap = dependents
 		return new ExtendedDIContainer(
 			services,
+			dependents,
 			outsideSingletons || this.builderSingletons,
 		)
 	}
