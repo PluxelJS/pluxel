@@ -4,7 +4,6 @@ import {
 	type IBuildable,
 	type Identifier,
 } from 'diod'
-import { proxyMap } from 'valtio/utils'
 import { ExtendedDIContainer } from './ExtendedDIContainer'
 
 export type SingletonMap = Map<Identifier<unknown>, unknown>
@@ -33,9 +32,9 @@ export class ExtendedContainerBuilder extends ContainerBuilder {
 			verify: true,
 		})
 		return new ExtendedDIContainer(
-			services,
-			dependents,
-			outsideSingletons || this.builderSingletons,
+			services as any,
+			dependents as any,
+			(outsideSingletons || this.builderSingletons) as any,
 		)
 	}
 

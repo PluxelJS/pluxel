@@ -99,7 +99,7 @@ export class PluginManager {
 		failed: Set<PluginIdentifier>
 	}> {
 		const container = this.commitContainer()
-		const plugins = container.getServices() as ServiceMap<BasePlugin>
+		const plugins = container.services
 
 		const batches = this.computeInitBatches(plugins)
 		const succeeded = new Set<PluginIdentifier>()
@@ -130,15 +130,4 @@ export class PluginManager {
 
 		return { container, succeeded, failed }
 	}
-}
-
-enum PluginErrorType {
-	CONSTRUCTOR = 'CONSTRUCTOR_ERROR',
-	DEPENDENCY = 'DEPENDENCY_ERROR',
-}
-
-interface PluginError {
-	type: PluginErrorType
-	message: string
-	cause?: any
 }

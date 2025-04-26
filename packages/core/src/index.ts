@@ -2,6 +2,7 @@
 import 'reflect-metadata'
 import { PluginManager } from './core/PluginManager'
 
+import { SingletonMap } from './container/ExtendedContainerBuilder'
 import type { GlobalContext, Logger } from './core/GlobalContext'
 import { PluginA } from './plugins/PluginA'
 import { PluginB } from './plugins/PluginB'
@@ -32,8 +33,8 @@ const { container } = await pluginManager.commitWithStatus()
 container.get(PluginB).doSomething()
 container.get(PluginA).doSomething()
 
-pluginRegistry.pluginSingletons.delete(PluginC)
-pluginRegistry.pluginSingletons.delete(PluginA)
+pluginRegistry.singletons.delete(PluginC)
+pluginRegistry.singletons.delete(PluginA)
 pluginRegistry.unregisterPlugin(PluginC)
 
 await pluginManager.commitWithStatus()
