@@ -12,6 +12,16 @@ export interface PluginError {
 export interface PluginCtx {
 	id: string
 	error?: PluginError
+
+	// 记录各阶段开始时间
+	instantiateStart?: number
+	initStart?: number
+	uninstallStart?: number
+
+	// 存放各阶段耗时
+	instantiateDuration?: number
+	initDuration?: number
+	uninstallDuration?: number
 }
 
 /** Actor 支持的所有事件 **/
@@ -28,7 +38,7 @@ export type PluginEvent =
 	| { type: 'RESET' }
 
 /**
- * 1) setup 链接类型 & 导入 assign
+ * 1) 用 setup 显式定义所有 actions
  */
 const setupFunction = setup({
 	types: {
@@ -36,54 +46,92 @@ const setupFunction = setup({
 		context: {} as PluginCtx,
 		events: {} as PluginEvent,
 	},
+	actions: {
+		// 清除错误
+		clearError: assign({
+			error: () => undefined,
+		}),
+
+		// instantiation 阶段
+		recordInstantiateStart: assign({
+			instantiateStart: () => Date.now(),
+		}),
+		recordInstantiateDuration: assign(({ context: ctx }) => ({
+			instantiateDuration:
+				ctx.instantiateStart != null
+					? Date.now() - ctx.instantiateStart
+					: undefined,
+		})),
+
+		// initialization 阶段
+		recordInitStart: assign({
+			initStart: () => Date.now(),
+		}),
+		recordInitDuration: assign(({ context: ctx }) => ({
+			initDuration:
+				ctx.initStart != null ? Date.now() - ctx.initStart : undefined,
+		})),
+
+		// uninstall 阶段
+		recordUninstallStart: assign({
+			uninstallStart: () => Date.now(),
+		}),
+		recordUninstallDuration: assign(({ context: ctx }) => ({
+			uninstallDuration:
+				ctx.uninstallStart != null
+					? Date.now() - ctx.uninstallStart
+					: undefined,
+		})),
+	},
 })
 
+/**
+ * 2) 在 machine 定义里，只用字符串引用这些显式 action
+ */
 const machine = setupFunction.createMachine({
 	id: 'plugin',
 	initial: 'idle',
-	context: ({ input }) => ({ id: input.id, error: undefined }),
+	context: ({ input }) => ({
+		id: input.id,
+		error: undefined,
+	}),
 
 	states: {
 		idle: {
 			on: {
 				START_INSTANTIATE: 'instantiating',
-				RESET: {
-					target: 'idle',
-					actions: assign({ error: () => undefined }),
-				},
 			},
 		},
 
 		instantiating: {
-			// 进来就清除上一轮错误
-			entry: assign({ error: () => undefined }),
+			entry: ['clearError', 'recordInstantiateStart'],
 			on: {
-				INSTANTIATE_SUCCESS: 'instantiated',
+				INSTANTIATE_SUCCESS: {
+					target: 'instantiated',
+					actions: 'recordInstantiateDuration',
+				},
 				INSTANTIATE_FAILURE: {
 					target: 'instantiateFailed',
-					actions: assign({
-						error: ({ context, event }) => {
-							const { error: cause } = event as {
-								type: 'INSTANTIATE_FAILURE'
-								error: unknown
-							}
-							return { type: 'instantiation', pluginId: context.id, cause }
-						},
-					}),
-				},
-				RESET: {
-					target: 'idle',
-					actions: assign({ error: () => undefined }),
+					actions: [
+						'recordInstantiateDuration',
+						assign({
+							error: ({ context, event }) => ({
+								type: 'instantiation',
+								pluginId: context.id,
+								cause: event.error,
+							}),
+						}),
+					],
 				},
 			},
 		},
 
 		instantiateFailed: {
-			entry: assign({ error: () => undefined }),
+			entry: 'clearError',
 			on: {
 				RESET: {
 					target: 'idle',
-					actions: assign({ error: () => undefined }),
+					actions: 'clearError',
 				},
 			},
 		},
@@ -91,42 +139,38 @@ const machine = setupFunction.createMachine({
 		instantiated: {
 			on: {
 				START_INIT: 'initializing',
-				RESET: {
-					target: 'idle',
-					actions: assign({ error: () => undefined }),
-				},
 			},
 		},
 
 		initializing: {
-			entry: assign({ error: () => undefined }),
+			entry: ['clearError', 'recordInitStart'],
 			on: {
-				INIT_SUCCESS: 'initialized',
+				INIT_SUCCESS: {
+					target: 'initialized',
+					actions: 'recordInitDuration',
+				},
 				INIT_FAILURE: {
 					target: 'initFailed',
-					actions: assign({
-						error: ({ context, event }) => {
-							const { error: cause } = event as {
-								type: 'INIT_FAILURE'
-								error: unknown
-							}
-							return { type: 'initialization', pluginId: context.id, cause }
-						},
-					}),
-				},
-				RESET: {
-					target: 'instantiated',
-					actions: assign({ error: () => undefined }),
+					actions: [
+						'recordInitDuration',
+						assign({
+							error: ({ context, event }) => ({
+								type: 'initialization',
+								pluginId: context.id,
+								cause: event.error,
+							}),
+						}),
+					],
 				},
 			},
 		},
 
 		initFailed: {
-			entry: assign({ error: () => undefined }),
+			entry: 'clearError',
 			on: {
 				RESET: {
 					target: 'instantiated',
-					actions: assign({ error: () => undefined }),
+					actions: 'clearError',
 				},
 			},
 		},
@@ -134,62 +178,63 @@ const machine = setupFunction.createMachine({
 		initialized: {
 			on: {
 				START_UNINSTALL: 'uninstalling',
-				RESET: {
-					target: 'idle',
-					actions: assign({ error: () => undefined }),
-				},
 			},
 		},
 
 		uninstalling: {
-			entry: assign({ error: () => undefined }),
+			entry: ['clearError', 'recordUninstallStart'],
 			on: {
-				UNINSTALL_SUCCESS: 'uninstalled',
+				UNINSTALL_SUCCESS: {
+					target: 'uninstalled',
+					actions: 'recordUninstallDuration',
+				},
 				UNINSTALL_FAILURE: {
 					target: 'uninstallFailed',
-					actions: assign({
-						error: ({ context, event }) => {
-							const { error: cause } = event as {
-								type: 'UNINSTALL_FAILURE'
-								error: unknown
-							}
-							return { type: 'uninstall', pluginId: context.id, cause }
-						},
-					}),
-				},
-				RESET: {
-					target: 'initialized',
-					actions: assign({ error: () => undefined }),
+					actions: [
+						'recordUninstallDuration',
+						assign({
+							error: ({ context, event }) => ({
+								type: 'uninstall',
+								pluginId: context.id,
+								cause: event.error,
+							}),
+						}),
+					],
 				},
 			},
 		},
 
 		uninstallFailed: {
-			entry: assign({ error: () => undefined }),
+			entry: 'clearError',
 			on: {
 				RESET: {
 					target: 'initialized',
-					actions: assign({ error: () => undefined }),
+					actions: 'clearError',
 				},
 			},
 		},
 
-		// 卸载完成后立即清除错误并回到 idle
 		uninstalled: {
-			entry: assign({ error: () => undefined }),
+			entry: 'clearError',
 			always: 'idle',
 		},
 	},
 })
 
 /**
- * 2) spawn actor 并启动
+ * 3) spawn actor 并启动
  */
 export function spawnPluginActor(id: string) {
 	const actor = createActor(machine, { input: { id } })
 	actor.subscribe((snapshot) => {
 		console.log(
 			`Plugin[${id}] 状态=${snapshot.value}`,
+			'instantiateDuration=',
+			snapshot.context.instantiateDuration,
+			'initDuration=',
+			snapshot.context.initDuration,
+			'uninstallDuration=',
+			snapshot.context.uninstallDuration,
 			'error=',
 			snapshot.context.error,
 		)
@@ -197,15 +242,6 @@ export function spawnPluginActor(id: string) {
 	actor.start()
 	return actor
 }
-
-// —— 用法示例 ——
-// const plugin = spawnPluginActor('my-plugin')
-// plugin.send('START_INSTANTIATE')
-// plugin.send('INSTANTIATE_SUCCESS')
-// plugin.send('START_INIT')
-// plugin.send('INIT_SUCCESS')
-// plugin.send('START_UNINSTALL')
-// plugin.send('UNINSTALL_SUCCESS') // 自动回到 idle
 
 import { PluginA } from '@/plugins/PluginA'
 // — 使用示例 —
