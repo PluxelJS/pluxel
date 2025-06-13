@@ -1,5 +1,5 @@
 {
-  "$schema": "https://biomejs.dev/schemas/1.9.3/schema.json",
+  "$schema": "https://biomejs.dev/schemas/1.9.4/schema.json",
   "vcs": { "enabled": true, "clientKind": "git", "useIgnoreFile": true },
   "files": { "ignoreUnknown": false, "ignore": [] },
   "formatter": {
@@ -56,7 +56,8 @@
         "noNonNullAssertion": "warn"
       },
       "suspicious": {
-        "noExplicitAny": "warn",
+        "noExplicitAny": "error",
+        "noUnsafeDeclarationMerging": "error",
         "noAssignInExpressions": "error",
         "noAsyncPromiseExecutor": "error",
         "noCatchAssign": "error",
@@ -82,8 +83,7 @@
         "useGetterReturn": "error",
         "useValidTypeof": "error"
       }
-    },
-    "ignore": ["**/build/", "**/coverage/", "**/lib/"]
+    }
   },
   "javascript": {
     "formatter": {
@@ -104,7 +104,13 @@
       "include": ["*.ts", "*.tsx"],
       "linter": {
         "rules": {
-          "correctness": { "noUnusedVariables": "error" },
+          "complexity": { "noBannedTypes": "info" },
+          "correctness": { "noUnusedVariables": "info" },
+          "suspicious": {
+            "noExplicitAny": "info",
+            "noUnsafeDeclarationMerging": "info",
+            "noEmptyBlockStatements": "info"
+          },
           "style": {
             "noDefaultExport": "error",
             "useConsistentArrayType": {

@@ -1,6 +1,5 @@
-import { BasePlugin } from '../core/BasePlugin'
+import { BasePlugin, Plugin } from '..'
 // PluginC.ts
-import { Plugin } from '../core/PluginDecorator'
 
 @Plugin({ name: 'PluginC', type: 'hook' })
 export class PluginC extends BasePlugin {

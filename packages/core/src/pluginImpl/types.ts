@@ -1,6 +1,7 @@
 import type { Identifier, Newable } from '@/container'
 import type { BasePlugin } from './BasePlugin'
 
+export type * from '@/container'
 export type PluginClass = Newable<BasePlugin>
 
 export type PluginIdentifier = Identifier<BasePlugin>

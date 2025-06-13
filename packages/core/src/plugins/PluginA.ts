@@ -1,7 +1,6 @@
-import { BasePlugin } from '../core/BasePlugin'
+import { BasePlugin, Optional, Plugin } from '..'
 // PluginA.ts
 // PluginA 依赖 PluginB 为必选依赖，依赖 PluginC 为可选依赖
-import { Optional, Plugin } from '../core/PluginDecorator'
 // biome-ignore lint/style/useImportType: <PluginSystem>
 import { PluginB } from './PluginB'
 // biome-ignore lint/style/useImportType: <explanation>

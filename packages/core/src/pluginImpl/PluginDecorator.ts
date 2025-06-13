@@ -1,10 +1,11 @@
 // PluginDecorator.ts
 import 'reflect-metadata'
+import type { Newable, PluginClass } from './types'
 
-export const PLUGIN_META_KEY = Symbol('plugin:meta')
-
+export const PLUGIN_META_KEY = Symbol.for('pluxel:meta')
+export const PLUGIN_CONFIG_MAP = Symbol.for('pluxel:config')
 // 新增：Optional 装饰器 key
-export const OPTIONAL_PARAMS_KEY = Symbol('optional:params')
+export const OPTIONAL_PARAMS_KEY = Symbol.for('pluxel:params')
 
 export const PARAM_TYPES = 'design:paramtypes'
 
@@ -14,10 +15,24 @@ export interface PluginMetadata {
 	// 其他元数据可按需扩展
 }
 
+type TargetClass = PluginClass
+export function getPluginMeta(target: TargetClass): PluginMetadata | undefined {
+	return Reflect.getMetadata(PLUGIN_META_KEY, target)
+}
+
 export function Plugin(meta: PluginMetadata) {
-	// biome-ignore lint/complexity/noBannedTypes: <explanation>
-	return (constructorFunction: Function) => {
+	return (constructorFunction: TargetClass) => {
 		Reflect.defineMetadata(PLUGIN_META_KEY, meta, constructorFunction)
+	}
+}
+
+export function Config(configSchema: Object) {
+	return (constructorFunction: TargetClass, propertyKey: string) => {
+		const config =
+			Reflect.getMetadata(PLUGIN_CONFIG_MAP, constructorFunction) ||
+			Object.create(null)
+		config[propertyKey] = configSchema
+		Reflect.defineMetadata(PLUGIN_CONFIG_MAP, config, constructorFunction)
 	}
 }
 

@@ -1,0 +1,65 @@
+{
+  "folders": [
+    {
+      "name": "🌱  monorepo",
+      "path": "."
+    },
+    {
+      "name": "🍀  diod",
+      "path": "packages/diod"
+    },
+    {
+      "name": "🍀  @pluxel/core",
+      "path": "packages/core"
+    },
+    {
+      "name": "context",
+      "path": "packages/context"
+    }
+  ],
+  "settings": {
+    "ColorfulMonorepo.workspaces.collection": [
+      {
+        "path": "c:\\Users\\User\\Documents\\GitHub\\plugin-style-ts",
+        "packageName": "monorepo",
+        "label": "🌱  monorepo",
+        "foreground": "#ffffff",
+        "background": "#0ca7d1"
+      },
+      {
+        "path": "c:\\Users\\User\\Documents\\GitHub\\plugin-style-ts\\packages\\diod",
+        "packageName": "diod",
+        "label": "🍀  diod",
+        "foreground": "#000000",
+        "background": "#ced772"
+      },
+      {
+        "path": "c:\\Users\\User\\Documents\\GitHub\\plugin-style-ts\\packages\\core",
+        "packageName": "@pluxel/core",
+        "label": "🍀  @pluxel/core",
+        "foreground": "#000000",
+        "background": "#46b79b"
+      },
+      {
+        "path": "c:\\Users\\User\\Documents\\GitHub\\plugin-style-ts\\packages\\context",
+        "packageName": "@pluxel/context",
+        "label": "🍀  @pluxel/context",
+        "foreground": "#ffffff",
+        "background": "#367e37"
+      }
+    ],
+    "files.exclude": {},
+    "workbench.colorCustomizations": {
+      "[Catppuccin Macchiato]": {
+        "editor.selectionBackground": "#babbf166",
+        "editor.selectionHighlightBackground": "#6e738d44"
+      },
+      "statusBar.background": "#46b79b",
+      "statusBar.foreground": "#000000",
+      "tab.activeBorder": "#46b79b",
+      "sideBarTitle.foreground": "#46b79b"
+    },
+    "custom-ui-style.preferRestart": true,
+    "exportall.config.folderListener": ["/packages/core/src/service"]
+  }
+}

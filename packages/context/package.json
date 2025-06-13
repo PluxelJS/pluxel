@@ -1,6 +1,6 @@
 {
   "private": true,
-  "name": "@pluxel/core",
+  "name": "@pluxel/context",
   "version": "0.1.0",
   "description": "Demo example that imports a local package",
   "main": "./src/index.ts",
@@ -19,21 +19,6 @@
   },
   "scripts": {
     "clean": "rimraf build .turbo",
-    "test:unit": "vitest --workspace ../../vitest.workspace.ts --project unit run",
     "dev": "bun --watch run src/index.ts"
-  },
-  "dependencies": {
-    "pino": "^9.7.0",
-    "eventure": "file:../../../event-hook",
-    "option-t": "53.0.0",
-    "reflect-metadata": "^0.2.2",
-    "valtio": "2.1.4",
-    "xstate": "5.19.2"
-  },
-  "peerDependencies": {
-    "typescript": "*"
-  },
-  "devDependencies": {
-    "tsdown": "^0.11.2"
   }
 }

@@ -1,10 +1,13 @@
 import {
 	type BuildOptions,
+	type BuildableKV,
 	ContainerBuilder,
-	type IBuildable,
+	DiodRegistration,
 	type Identifier,
+	type Registration,
 } from 'diod'
 import { ExtendedDIContainer } from './ExtendedDIContainer'
+import { LeanMapTracker } from './LeanMapTracker'
 
 export type SingletonMap = Map<Identifier<unknown>, unknown>
 export type DependentsMap = ReadonlyMap<
@@ -13,12 +16,10 @@ export type DependentsMap = ReadonlyMap<
 >
 
 export class ExtendedContainerBuilder extends ContainerBuilder {
-	public override buildables: IBuildable = new Map()
-
-	override unregister<T>(identifier: Identifier<T>): void {
-		super.unregister(identifier)
-		this.builderSingletons.delete(identifier)
-	}
+	public override buildables = new LeanMapTracker<
+		BuildableKV[0],
+		BuildableKV[1]
+	>()
 
 	// NOTE - build 保证所有依赖都已经有所属，但不代表已经实例化。
 	override build({
@@ -38,9 +39,9 @@ export class ExtendedContainerBuilder extends ContainerBuilder {
 		)
 	}
 
-	public unregisterMultipleServices<T>(identifier: Identifier<T>[]): void {
-		for (const key of identifier) {
-			this.unregister(key)
-		}
+	public override register<T>(identifier: Identifier<T>): Registration<T> {
+		const buildable = DiodRegistration.createBuildable(identifier)
+		this.buildables.set(identifier, buildable)
+		return buildable.instance
 	}
 }

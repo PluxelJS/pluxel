@@ -13,11 +13,9 @@
     "skipLibCheck": true, // 忽略库类型检查，提升编译速度
     "forceConsistentCasingInFileNames": true,
     "paths": {
-      "@pluxel/context": ["../context/src/index.ts"],
-      "diod": ["../diod/src/diod.ts"], // 指向源码目录
       "@/*": ["./src/*"]
     }
   },
-  "include": ["src", "../diod/src", "../context/src"],
+  "include": ["src", "../core/src/service/LoggerService.ts"],
   "exclude": ["node_modules"]
 }
