@@ -5,16 +5,20 @@
       "path": "."
     },
     {
-      "name": "🍀  diod",
-      "path": "packages/diod"
+      "name": "🍀  @pluxel/context",
+      "path": "packages/context"
     },
     {
       "name": "🍀  @pluxel/core",
       "path": "packages/core"
     },
     {
-      "name": "context",
-      "path": "packages/context"
+      "name": "🍀  @pluxel/hmr",
+      "path": "packages/hmr"
+    },
+    {
+      "name": "🍀  diod",
+      "path": "packages/diod"
     }
   ],
   "settings": {
@@ -27,11 +31,11 @@
         "background": "#0ca7d1"
       },
       {
-        "path": "c:\\Users\\User\\Documents\\GitHub\\plugin-style-ts\\packages\\diod",
-        "packageName": "diod",
-        "label": "🍀  diod",
+        "path": "c:\\Users\\User\\Documents\\GitHub\\plugin-style-ts\\packages\\context",
+        "packageName": "@pluxel/context",
+        "label": "🍀  @pluxel/context",
         "foreground": "#000000",
-        "background": "#ced772"
+        "background": "#d0cf5b"
       },
       {
         "path": "c:\\Users\\User\\Documents\\GitHub\\plugin-style-ts\\packages\\core",
@@ -41,11 +45,18 @@
         "background": "#46b79b"
       },
       {
-        "path": "c:\\Users\\User\\Documents\\GitHub\\plugin-style-ts\\packages\\context",
-        "packageName": "@pluxel/context",
-        "label": "🍀  @pluxel/context",
+        "path": "c:\\Users\\User\\Documents\\GitHub\\plugin-style-ts\\packages\\diod",
+        "packageName": "diod",
+        "label": "🍀  diod",
+        "foreground": "#000000",
+        "background": "#ced772"
+      },
+      {
+        "path": "c:\\Users\\User\\Documents\\GitHub\\plugin-style-ts\\packages\\hmr",
+        "packageName": "@pluxel/hmr",
+        "label": "🍀  @pluxel/hmr",
         "foreground": "#ffffff",
-        "background": "#367e37"
+        "background": "#f24cc9"
       }
     ],
     "files.exclude": {},
@@ -54,10 +65,10 @@
         "editor.selectionBackground": "#babbf166",
         "editor.selectionHighlightBackground": "#6e738d44"
       },
-      "statusBar.background": "#46b79b",
-      "statusBar.foreground": "#000000",
-      "tab.activeBorder": "#46b79b",
-      "sideBarTitle.foreground": "#46b79b"
+      "statusBar.background": "#f24cc9",
+      "statusBar.foreground": "#ffffff",
+      "tab.activeBorder": "#f24cc9",
+      "sideBarTitle.foreground": "#f24cc9"
     },
     "custom-ui-style.preferRestart": true,
     "exportall.config.folderListener": ["/packages/core/src/service"]

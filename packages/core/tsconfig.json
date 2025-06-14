@@ -18,6 +18,11 @@
       "@/*": ["./src/*"]
     }
   },
-  "include": ["src", "../diod/src", "../context/src"],
+  "include": [
+    "src",
+    "../diod/src",
+    "../context/src",
+    "../hmr/src/ConfigService.ts"
+  ],
   "exclude": ["node_modules"]
 }

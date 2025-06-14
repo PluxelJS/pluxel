@@ -46,13 +46,12 @@ export class PluginService {
 
 		for (const ch of changes) {
 			const id = ch.key as PluginIdentifier
-			if (ch.type === 'remove') {
-				removeIds.add(id)
+			if (ch.type === 'add') {
+				addIds.add(id)
 			} else if (ch.type === 'replace') {
 				replaceIds.add(id)
-				addIds.add(id)
 			} else {
-				addIds.add(id)
+				removeIds.add(id)
 			}
 		}
 
@@ -73,13 +72,14 @@ export class PluginService {
 		// 先从 container.services 里挑出需要 init 的那一部分
 		const toInitMap = new Map()
 		for (const [key, val] of container.services) {
-			if (!(addIds.has(key) || replaceIds.has(key))) {
+			const shouldInit = addIds.has(key) || replaceIds.has(key)
+			if (!shouldInit) {
 				continue
 			}
 			toInitMap.set(key, val)
 		}
 
-		const batches = this.computeInitBatches(toInitMap, container)
+		const batches = this.computeInitBatches(toInitMap)
 		const failed = new Set<PluginIdentifier>()
 		const succeeded = new Set<PluginIdentifier>()
 
@@ -113,40 +113,45 @@ export class PluginService {
 
 	public computeInitBatches(
 		plugins: ServiceMap<BasePlugin>,
-		container: ExtendedDIContainer,
 	): PluginIdentifier[][] {
-		// —— 拓扑排序逻辑与上同 ——
+		// 1. 构建子图：初始化 inDegree 和 依赖反向表 graph
 		const inDegree = new Map<PluginIdentifier, number>()
-		const dependentsMap = container.dependents
-		console.log(dependentsMap)
+		const graph = new Map<PluginIdentifier, PluginIdentifier[]>()
 
+		// 先把所有待初始化插件的节点放进去
 		for (const id of plugins.keys()) {
 			inDegree.set(id, 0)
+			graph.set(id, [])
 		}
-		for (const [id, { dependencies }] of plugins) {
-			for (const dep of dependencies as PluginIdentifier[]) {
+
+		// 遍历每个插件的 dependencies，只统计那些也在 plugins 里的依赖
+		for (const [id, plugin] of plugins) {
+			for (const dep of plugin.dependencies as PluginIdentifier[]) {
+				if (!inDegree.has(dep)) continue // 忽略非本次子集依赖
 				inDegree.set(id, inDegree.get(id)! + 1)
+				graph.get(dep)!.push(id) // dep → id
 			}
 		}
 
+		// 2. 逐轮出队：一次把当前所有入度为 0 的节点组成一个 batch
 		const batches: PluginIdentifier[][] = []
-		let zeroQueue = Array.from(inDegree)
-			.filter(([, d]) => d === 0)
+		let zeroBatch = Array.from(inDegree.entries())
+			.filter(([, deg]) => deg === 0)
 			.map(([id]) => id)
 
-		while (zeroQueue.length) {
-			batches.push(zeroQueue)
-			const next: PluginIdentifier[] = []
-			for (const id of zeroQueue) {
-				const dependents = dependentsMap.get(id)
-				if (dependents === undefined) continue
-				for (const dep of dependents) {
+		while (zeroBatch.length) {
+			batches.push(zeroBatch)
+			const nextBatch: PluginIdentifier[] = []
+
+			for (const id of zeroBatch) {
+				for (const dep of graph.get(id)!) {
 					const cnt = inDegree.get(dep)! - 1
 					inDegree.set(dep, cnt)
-					if (cnt === 0) next.push(dep)
+					if (cnt === 0) nextBatch.push(dep)
 				}
 			}
-			zeroQueue = next
+
+			zeroBatch = nextBatch
 		}
 
 		return batches

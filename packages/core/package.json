@@ -23,9 +23,9 @@
     "dev": "bun --watch run src/index.ts"
   },
   "dependencies": {
-    "pino": "^9.7.0",
     "eventure": "file:../../../event-hook",
     "option-t": "53.0.0",
+    "pino": "^9.7.0",
     "reflect-metadata": "^0.2.2",
     "valtio": "2.1.4",
     "xstate": "5.19.2"

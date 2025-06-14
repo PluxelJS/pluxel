@@ -77,7 +77,11 @@ export class PluginContainer {
 				const instance = new Plugin(...deps)
 				instance[PLUGIN_CTX] = pluginCtx
 				// dispose 时删除插件实例化本身
-				pluginCtx.collect(() => this.singletons.delete(Plugin))
+				pluginCtx.collect(() => {
+					console.log(this.singletons.keys())
+					this.singletons.delete(Plugin)
+					console.log(this.singletons.keys())
+				})
 				return instance
 			})
 			.withDependencies(mustDeps)
