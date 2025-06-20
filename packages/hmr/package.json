@@ -1,6 +1,6 @@
 {
   "private": true,
-  "name": "@pluxel/core",
+  "name": "@pluxel/hmr",
   "version": "0.1.0",
   "description": "Demo example that imports a local package",
   "main": "./src/index.ts",
@@ -26,23 +26,22 @@
   },
   "scripts": {
     "clean": "rimraf build .turbo",
-    "test:unit": "vitest --workspace ../../vitest.workspace.ts --project unit run",
-    "dev": "bun --watch run src/start.ts"
+    "dev": "bun run src/index.ts"
   },
   "dependencies": {
-    "@pluxel/context": "workspace:*",
-    "diod": "workspace:*",
-    "eventure": "file:..\\..\\..\\event-hook",
-    "option-t": "53.0.0",
-    "pino": "^9.7.0",
-    "reflect-metadata": "^0.2.2",
-    "valtio": "2.1.4",
-    "xstate": "5.19.2"
+    "@hono/vite-dev-server": "^0.19.1",
+    "@pluxel/core": "workspace:*",
+    "@swc/core": "^1.12.3",
+    "@tanstack/pacer": "^0.8.0",
+    "chokidar": "^4.0.3",
+    "hono": "^4.8.0",
+    "pkg-types": "^2.1.0",
+    "superjson": "^2.2.2",
+    "unplugin-swc": "^1.5.5",
+    "vite": "^6.3.5",
+    "vite-tsconfig-paths": "^5.1.4"
   },
   "peerDependencies": {
     "typescript": "*"
-  },
-  "devDependencies": {
-    "tsdown": "^0.11.13"
   }
 }

@@ -13,15 +13,6 @@ export class EffectScopeService {
 	static key = 'scope'
 	static methods = ['collect', 'disposeAll'] as const
 
-	private pluginName = 'global'
-
-	public get name() {
-		return this.pluginName
-	}
-	public set name(v: string) {
-		this.pluginName = v
-	}
-
 	private disposables: Array<() => void> = []
 
 	constructor(private ctx: Context) {}

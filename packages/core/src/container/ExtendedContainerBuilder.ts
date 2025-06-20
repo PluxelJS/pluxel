@@ -21,6 +21,12 @@ export class ExtendedContainerBuilder extends ContainerBuilder {
 		BuildableKV[1]
 	>()
 
+	dispatchReload(key: any) {
+		const value = this.buildables.get(key)
+		if (value === undefined) throw new Error('不能 reload 不存在的 key。')
+		this.buildables.set(key, value)
+	}
+
 	// NOTE - build 保证所有依赖都已经有所属，但不代表已经实例化。
 	override build({
 		autowire = false,

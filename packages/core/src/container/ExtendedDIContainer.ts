@@ -1,4 +1,4 @@
-import type { PluginIdentifier, PluginInstance } from '@/pluginImpl/types'
+import type { PluginIdentifier, PluginInstance } from '../pluginImpl'
 import { DiodContainer, type Identifier, type ServiceMap } from 'diod'
 
 export class ExtendedDIContainer extends DiodContainer {

@@ -9,6 +9,7 @@
   },
   "scripts": {
     "dev": "pnpm --filter core dev",
+    "hmr": "pnpm --filter hmr dev",
     "build": "turbo run build",
     "build:watch": "turbo run build:watch",
     "check:exports": "turbo run check:exports",

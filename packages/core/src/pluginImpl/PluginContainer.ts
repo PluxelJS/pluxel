@@ -1,17 +1,12 @@
+import { type Context, EffectScopeService } from '..'
 import {
 	type Container,
 	ExtendedContainerBuilder,
 	type ExtendedDIContainer,
 	ServiceVerificationAggregateError,
-} from '@/container'
-import { type Context, EffectScopeService } from '@/index'
+} from '../container'
 import { type BasePlugin, PLUGIN_CTX } from './BasePlugin'
-import {
-	OPTIONAL_PARAMS_KEY,
-	PARAM_TYPES,
-	PLUGIN_META_KEY,
-	type PluginMetadata,
-} from './PluginDecorator'
+import { getClassParam, getPluginMeta } from './PluginDecorator'
 import {
 	type PluginClass,
 	type PluginIdentifier,
@@ -35,15 +30,11 @@ export class PluginContainer {
 	}
 
 	public registerPlugin(Plugin: PluginClass): void {
-		const meta = Reflect.getMetadata(PLUGIN_META_KEY, Plugin) as
-			| PluginMetadata
-			| undefined
+		const meta = getPluginMeta('META_KEY', Plugin)
 		if (!meta) throw new Error('缺少 @Plugin 装饰器元数据')
-
-		const types: PluginIdentifier[] =
-			Reflect.getMetadata(PARAM_TYPES, Plugin) || []
+		const types: PluginIdentifier[] = getClassParam(Plugin)
 		const optionalSet = new Set<number>(
-			Reflect.getOwnMetadata(OPTIONAL_PARAMS_KEY, Plugin) || [],
+			getPluginMeta('OPTIONAL_PARAMS_KEY', Plugin) || [],
 		)
 
 		const pluginCtx = this.ctx.isolate([EffectScopeService])
@@ -64,7 +55,7 @@ export class PluginContainer {
 						return undefined
 					}
 				}
-				const inst = container.get(type)
+				const inst: BasePlugin = container.get(type)
 				inst.ctx.caller = pluginCtx
 				pluginCtx.parent = inst.ctx
 				return inst
@@ -78,9 +69,7 @@ export class PluginContainer {
 				instance[PLUGIN_CTX] = pluginCtx
 				// dispose 时删除插件实例化本身
 				pluginCtx.collect(() => {
-					console.log(this.singletons.keys())
 					this.singletons.delete(Plugin)
-					console.log(this.singletons.keys())
 				})
 				return instance
 			})
@@ -88,45 +77,62 @@ export class PluginContainer {
 			.asBuilderSingleton()
 	}
 
-	public unregisterPlugin(Plugin: PluginIdentifier): void {
-		// Process all dependents recursively
-		const processDependents = (plugin: PluginIdentifier) => {
-			const dependents = this.lastContainer?.dependents.get(plugin) || []
-
-			for (const dep of dependents) {
-				// Only unregister if the dependent has no other dependents
-				if (!this.lastContainer?.dependents.get(dep)?.size) {
-					processDependents(dep)
-					this.builder.unregister(dep)
-				}
-			}
+	public unregisterPlugin(plugin: PluginIdentifier): void {
+		// 深度优先：先卸载所有依赖于它的插件
+		const children =
+			this.lastContainer?.dependents.get(plugin) ?? new Set<PluginIdentifier>()
+		for (const dep of children) {
+			this.unregisterPlugin(dep)
 		}
-
-		processDependents(Plugin)
-
-		this.builder.unregister(Plugin)
+		// 最后才卸载自身
+		this.builder.unregister(plugin)
 	}
 
-	public reloadPlugin(Plugin: PluginClass) {
-		const buildables = this.builder.buildables
-		if (buildables.has(Plugin) === false) {
+	public reloadPlugin(root: PluginIdentifier, newClass?: PluginClass): void {
+		// 1. 校验：必须已加载
+		if (!this.builder.buildables.has(root)) {
 			throw new Error('You can not reload an unloaded Plugin.')
 		}
-		// Process all dependents recursively
-		const processDependents = (plugin: PluginIdentifier) => {
-			const dependents = this.lastContainer?.dependents.get(plugin) || []
 
-			for (const dep of dependents) {
-				// Only unregister if the dependent has no other dependents
-				if (!this.lastContainer?.dependents.get(dep)?.size) {
-					processDependents(dep)
-					buildables.set(dep, buildables.get(dep)!)
-				}
+		// 2. 快照 dependents 关系
+		const depsMap = new Map<PluginIdentifier, Set<PluginIdentifier>>(
+			this.lastContainer?.dependents,
+		)
+
+		// 3. 收集 root 及所有子孙 dependents
+		const affected = new Set<PluginIdentifier>()
+		const collect = (id: PluginIdentifier) => {
+			if (affected.has(id)) return
+			affected.add(id)
+			for (const child of depsMap.get(id) ?? []) {
+				collect(child)
 			}
 		}
+		collect(root)
 
-		processDependents(Plugin)
-		this.registerPlugin(Plugin)
+		// 5. 拓扑排序：父先子后
+		const order: PluginIdentifier[] = []
+		const dfs = (id: PluginIdentifier) => {
+			if (!affected.has(id)) return
+			order.push(id)
+			for (const child of depsMap.get(id) ?? []) {
+				dfs(child)
+			}
+		}
+		dfs(root)
+
+		// 6. 一次性刷写 buildables，触发 Builder 的内部 reload
+		for (const id of order) {
+			if (id === root) {
+				if (newClass) {
+					// 会覆盖原来的触发重载而不触发卸载下边的依赖项
+					this.registerPlugin(newClass)
+					continue
+				}
+				this.builder.dispatchReload(root)
+			}
+			this.builder.dispatchReload(id)
+		}
 	}
 
 	public build() {

@@ -1,15 +1,9 @@
-import type { ExtendedDIContainer } from '@/container'
 import type { Context } from '@pluxel/context'
 import { Injectable } from '@pluxel/context'
+import type { ServiceMap } from '../container'
 import type { BasePlugin } from '../pluginImpl/BasePlugin'
 import { PluginContainer } from '../pluginImpl/PluginContainer'
-import {
-	type Abstract,
-	type PluginIdentifier,
-	type ServiceMap,
-	createErr,
-	createOk,
-} from '../pluginImpl/types'
+import { type PluginIdentifier, createErr, createOk } from '../pluginImpl/types'
 
 declare module '@pluxel/context' {
 	export interface Context {
@@ -55,7 +49,7 @@ export class PluginService {
 			}
 		}
 
-		this.ctx.logger.info(removeIds, replaceIds, addIds)
+		this.ctx.logger.info('移除', removeIds, '替换', replaceIds, '添加', addIds)
 		// —— 阶段一：卸载 remove + replace ——
 		// 卸载插件必然用的是老容器
 		const oldContainer = this.pluginRegistry.lastContainer

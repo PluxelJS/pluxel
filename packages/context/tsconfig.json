@@ -1,21 +1,10 @@
 {
+  "extends": "../../tsconfig.src.json",
+  "include": ["src"],
   "compilerOptions": {
-    "target": "ES2022", // 支持最新语法（也可用 ES6+）
-    "moduleDetection": "force",
-    "module": "Preserve",
-    "resolveJsonModule": true,
-    "isolatedModules": true,
-    "experimentalDecorators": true, // ✅ 开启装饰器
-    "emitDecoratorMetadata": true, // ✅ 开启元数据发射
-    "strict": true, // 推荐开启严格模式
-    "moduleResolution": "bundler",
-    "esModuleInterop": true, // 兼容 commonjs 引入
-    "skipLibCheck": true, // 忽略库类型检查，提升编译速度
-    "forceConsistentCasingInFileNames": true,
-    "paths": {
-      "@/*": ["./src/*"]
-    }
-  },
-  "include": ["src", "../core/src/service/LoggerService.ts"],
-  "exclude": ["node_modules"]
+    // Specify an output folder for all emitted files.
+    "outDir": "dist",
+    // Only output d.ts files and not JavaScript files.
+    "emitDeclarationOnly": true
+  }
 }

@@ -1,10 +1,10 @@
 {
   "extends": "../../tsconfig.src.json",
-  "include": ["src"],
+  "include": ["src", "src/plugins"],
   "compilerOptions": {
     "outDir": "dist",
     // Only output d.ts files and not JavaScript files.
     "emitDeclarationOnly": true
   },
-  "references": [{ "path": "../context" }, { "path": "../diod" }]
+  "references": [{ "path": "../core" }]
 }

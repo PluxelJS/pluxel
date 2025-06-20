@@ -1,54 +1,103 @@
-// PluginDecorator.ts
 import 'reflect-metadata'
-import type { Newable, PluginClass } from './types'
+import type { PluginClass, PluginIdentifier } from './types'
 
-export const PLUGIN_META_KEY = Symbol.for('pluxel:meta')
-export const PLUGIN_CONFIG_MAP = Symbol.for('pluxel:config')
-// 新增：Optional 装饰器 key
-export const OPTIONAL_PARAMS_KEY = Symbol.for('pluxel:params')
+/**
+ * 聚合所有元数据 Symbol
+ */
+export const PLUGIN_SYMBOL = {
+  META_KEY: Symbol.for('pluxel:meta'),
+  CONFIG_MAP: Symbol.for('pluxel:config'),
+  OPTIONAL_PARAMS_KEY: Symbol.for('pluxel:params'),
+} as const
 
-export const PARAM_TYPES = 'design:paramtypes'
+type PluginConstructor = PluginClass
 
+/**
+ * 插件元数据接口
+ */
 export interface PluginMetadata {
-	name: string
-	type: 'event' | 'hook' | string
-	// 其他元数据可按需扩展
+  name: string
+  type: 'event' | 'hook' | string
+  [key: string]: any
 }
 
-type TargetClass = PluginClass
-export function getPluginMeta(target: TargetClass): PluginMetadata | undefined {
-	return Reflect.getMetadata(PLUGIN_META_KEY, target)
-}
+export type ConfigSchema = Record<string, unknown>
+export type ConfigList = Record<string, ConfigSchema>
 
-export function Plugin(meta: PluginMetadata) {
-	return (constructorFunction: TargetClass) => {
-		Reflect.defineMetadata(PLUGIN_META_KEY, meta, constructorFunction)
-	}
-}
-
-export function Config(configSchema: Object) {
-	return (constructorFunction: TargetClass, propertyKey: string) => {
-		const config =
-			Reflect.getMetadata(PLUGIN_CONFIG_MAP, constructorFunction) ||
-			Object.create(null)
-		config[propertyKey] = configSchema
-		Reflect.defineMetadata(PLUGIN_CONFIG_MAP, config, constructorFunction)
-	}
+/**
+ * ClassDecorator: 注册插件元数据
+ */
+export function Plugin<T extends PluginConstructor>(meta: PluginMetadata) {
+  return function <U extends T>(constructorFunction: U) {
+    Reflect.defineMetadata(PLUGIN_SYMBOL.META_KEY, meta, constructorFunction)
+  }
 }
 
 /**
- * Optional 装饰器用于标记构造函数参数为可选依赖
+ * PropertyDecorator: 定义配置 Schema（保持原始实现）
  */
-export function Optional(
-	// biome-ignore lint/complexity/noBannedTypes: <explanation>
-	target: Object,
-	// biome-ignore lint/correctness/noUnusedVariables: <explanation>
-	propertyKey: string | symbol | undefined,
-	parameterIndex: number,
-) {
-	// 对于构造函数参数，target 为构造函数
-	const existingOptionalParams: number[] =
-		Reflect.getOwnMetadata(OPTIONAL_PARAMS_KEY, target) || []
-	existingOptionalParams.push(parameterIndex)
-	Reflect.defineMetadata(OPTIONAL_PARAMS_KEY, existingOptionalParams, target)
+export function Config(configSchema: ConfigSchema) {
+  return (constructorFunction: PluginConstructor, propertyKey: string) => {
+    const config: ConfigList =
+      Reflect.getOwnMetadata(PLUGIN_SYMBOL.CONFIG_MAP, constructorFunction) ||
+      Object.create(null)
+    config[propertyKey] = configSchema
+    Reflect.defineMetadata(PLUGIN_SYMBOL.CONFIG_MAP, config, constructorFunction)
+  }
+}
+
+/**
+ * ParameterDecorator: 标记构造函数参数为可选
+ */
+export function Optional(): ParameterDecorator {
+  return (
+    target: Object,
+    propertyKey: string | symbol | undefined,
+    parameterIndex: number
+  ) => {
+    if (propertyKey !== undefined) {
+      throw new Error('@Optional 只能用于构造函数参数')
+    }
+    const ctor = target as Function
+    const existing: number[] =
+      Reflect.getOwnMetadata(
+        PLUGIN_SYMBOL.OPTIONAL_PARAMS_KEY,
+        ctor
+      ) || []
+    const updated = existing.includes(parameterIndex)
+      ? existing
+      : [...existing, parameterIndex]
+    Reflect.defineMetadata(
+      PLUGIN_SYMBOL.OPTIONAL_PARAMS_KEY,
+      updated,
+      ctor
+    )
+  }
+}
+
+/**
+ * 通用元数据读取函数：通过 Symbol 获取对应类型的数据
+ */
+/**
+ * 元数据类型映射：根据键名映射到具体类型
+ */
+export interface MetadataMap {
+  META_KEY: PluginMetadata
+  CONFIG_MAP: ConfigList
+  OPTIONAL_PARAMS_KEY: number[]
+}
+/**
+ * 通用元数据读取：通过键名（字符串）获取对应类型数据，无需导入 Symbol
+ */
+export function getPluginMeta<K extends keyof typeof PLUGIN_SYMBOL>(
+  key: K,
+  target: Function
+): MetadataMap[K] | undefined {
+  const sym = PLUGIN_SYMBOL[key]
+  return Reflect.getMetadata(sym, target)
+}
+
+export const PARAM_TYPES = 'design:paramtypes'
+export function getClassParam(target: Function): PluginIdentifier[] {
+	return Reflect.getMetadata(PARAM_TYPES, target) || []
 }

@@ -1,5 +1,5 @@
 type OpType = 'add' | 'remove' | 'replace'
-interface Op<K, V> {
+export interface Op<K, V> {
 	type: OpType
 	key: K
 	oldValue?: V

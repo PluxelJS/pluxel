@@ -27,50 +27,39 @@
         "path": "c:\\Users\\User\\Documents\\GitHub\\plugin-style-ts",
         "packageName": "monorepo",
         "label": "🌱  monorepo",
-        "foreground": "#ffffff",
-        "background": "#0ca7d1"
+        "foreground": "#000000",
+        "background": "#e0cc2f"
       },
       {
         "path": "c:\\Users\\User\\Documents\\GitHub\\plugin-style-ts\\packages\\context",
         "packageName": "@pluxel/context",
         "label": "🍀  @pluxel/context",
         "foreground": "#000000",
-        "background": "#d0cf5b"
+        "background": "#26ba5b"
       },
       {
         "path": "c:\\Users\\User\\Documents\\GitHub\\plugin-style-ts\\packages\\core",
         "packageName": "@pluxel/core",
         "label": "🍀  @pluxel/core",
-        "foreground": "#000000",
-        "background": "#46b79b"
-      },
-      {
-        "path": "c:\\Users\\User\\Documents\\GitHub\\plugin-style-ts\\packages\\diod",
-        "packageName": "diod",
-        "label": "🍀  diod",
-        "foreground": "#000000",
-        "background": "#ced772"
+        "foreground": "#ffffff",
+        "background": "#e81b65"
       },
       {
         "path": "c:\\Users\\User\\Documents\\GitHub\\plugin-style-ts\\packages\\hmr",
         "packageName": "@pluxel/hmr",
         "label": "🍀  @pluxel/hmr",
+        "foreground": "#000000",
+        "background": "#52b522"
+      },
+      {
+        "path": "c:\\Users\\User\\Documents\\GitHub\\plugin-style-ts\\packages\\diod",
+        "packageName": "diod",
+        "label": "🍀  diod",
         "foreground": "#ffffff",
-        "background": "#f24cc9"
+        "background": "#e85fa1"
       }
     ],
     "files.exclude": {},
-    "workbench.colorCustomizations": {
-      "[Catppuccin Macchiato]": {
-        "editor.selectionBackground": "#babbf166",
-        "editor.selectionHighlightBackground": "#6e738d44"
-      },
-      "statusBar.background": "#f24cc9",
-      "statusBar.foreground": "#ffffff",
-      "tab.activeBorder": "#f24cc9",
-      "sideBarTitle.foreground": "#f24cc9"
-    },
-    "custom-ui-style.preferRestart": true,
-    "exportall.config.folderListener": ["/packages/core/src/service"]
+    "typescript.tsdk": "🌱  monorepo\\node_modules\\typescript\\lib"
   }
 }
