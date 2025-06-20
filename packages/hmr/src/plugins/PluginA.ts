@@ -13,7 +13,7 @@ export class PluginA extends BasePlugin {
   }
 
 	init(): void {
-		this.ctx.logger.info('PluginA initialized')
+		this.ctx.logger.info('PluginAdd initialized')
 		// 使用必需依赖 PluginB
 		this.pluginB.doSomething()
 		// 可选依赖 PluginC 进行判断
@@ -22,6 +22,7 @@ export class PluginA extends BasePlugin {
 		} else {
 			this.ctx.logger.info('PluginA: PluginC dependency not injected')
 		}
+		this.ctx.test.collect()
 	}
 
 	doSomething(): void {

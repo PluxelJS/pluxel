@@ -53,7 +53,7 @@ export class HMRService {
 			},
 
 			handleHotUpdate: async (ctx) => {
-				if (!this.filter(ctx.file)) return []
+				if (!this.filter(ctx.file)) return
 				this.ctx.logger.info(`[HMR-CLI] Reload due to ${ctx.file}`)
 				await this.runAndLoadAll([ctx.file])
 				return []
@@ -79,7 +79,7 @@ export class HMRService {
 	public async start() {
 		const server = await createServer({
 			root: process.cwd(),
-			server: { middlewareMode: false },
+			server: { port: 3000, middlewareMode: false },
 			plugins: [
 				tsconfigPaths(),
 				swc.vite({
@@ -99,6 +99,7 @@ export class HMRService {
 			],
 		})
 		await server.listen()
+		server.printUrls()
 		this.ctx.logger.info(
 			`HMR 服务已启动，只监听：${this.config.dir.join(', ')}`,
 		)

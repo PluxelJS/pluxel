@@ -55,11 +55,12 @@ export class PluginService {
 		const oldContainer = this.pluginRegistry.lastContainer
 		for (const id of removeIds) {
 			const p = oldContainer.get(id)
-			p?.ctx.disposeAll()
+			console.log(p.ctx.scope.disposables)
+			p.ctx.disposeAll()
 		}
 		for (const id of replaceIds) {
 			const p = oldContainer.get(id)
-			p?.ctx.disposeAll()
+			p.ctx.disposeAll()
 		}
 
 		// —— 阶段二：按依赖拓扑分批初始化 replace + add ——

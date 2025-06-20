@@ -17,6 +17,14 @@ await ctx.registry.commit()
 // 提交本周期，构建 diod 容器后依次初始化插件
 
 pluginRegistry.reloadPlugin(PluginA)
-pluginRegistry.unregisterPlugin(PluginC)
+pluginRegistry.unregisterPlugin(PluginA)
+
+await ctx.registry.commit()
+
+pluginRegistry.registerPlugin(PluginA)
+
+await ctx.registry.commit()
+
+pluginRegistry.unregisterPlugin(PluginA)
 
 await ctx.registry.commit()

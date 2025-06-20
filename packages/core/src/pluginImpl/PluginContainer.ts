@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto'
 import { type Context, EffectScopeService } from '..'
 import {
 	type Container,
@@ -34,10 +35,11 @@ export class PluginContainer {
 		if (!meta) throw new Error('缺少 @Plugin 装饰器元数据')
 		const types: PluginIdentifier[] = getClassParam(Plugin)
 		const optionalSet = new Set<number>(
-			getPluginMeta('OPTIONAL_PARAMS_KEY', Plugin) || [],
+			getPluginMeta('OPTIONAL_PARAMS_KEY', Plugin),
 		)
-
-		const pluginCtx = this.ctx.isolate([EffectScopeService])
+		const pluginCtx = this.ctx.root.isolate([EffectScopeService], {
+			name: `meta.name_${randomUUID()}`,
+		})
 
 		const mustDeps: PluginIdentifier[] = []
 		const resolvers: ((c: Container) => BasePlugin | undefined)[] = []
@@ -57,7 +59,6 @@ export class PluginContainer {
 				}
 				const inst: BasePlugin = container.get(type)
 				inst.ctx.caller = pluginCtx
-				pluginCtx.parent = inst.ctx
 				return inst
 			})
 		}

@@ -104,7 +104,11 @@ export class Context {
 			const cfg = configKey ? (this.config as any)[configKey] : undefined
 			inst = new ctor(this as any, cfg)
 			store[ik] = inst
+		} else {
+			// —— **核心：每次访问都把 ctx 更新为当前 Context**
+			;(inst as any).ctx = this
 		}
+
 		return inst
 	}
 
