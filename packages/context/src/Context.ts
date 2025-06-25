@@ -99,6 +99,8 @@ export class Context {
 		// 1) 拿到同一个 sk
 		const sk = Context.serviceKeyMap.get(original)
 		if (sk === undefined) throw new Error('该服务从未被注册')
+		// —— 新增：把 overrideCtor 也注册到同一个 sk ——
+		Context.serviceKeyMap.set(overrideCtor, sk)
 		// 2) 确保新 ctor 有同样的 key（属性名）
 		const key =
 			(original.key as string) ?? original.name.replace(/Service$/, '')
@@ -155,17 +157,21 @@ export class Context {
 
 	/**
 	 * 隔离指定服务：克隆 instances 池，并为这些 ctor 单独生成 instKey
+	 * @param ctors 可迭代的 ServiceClass 集合，重复项会被自动忽略
 	 */
 	isolate(
-		ctors: ServiceClass<any>[],
+		ctors: Iterable<ServiceClass<any>>,
 		opts: { name?: string; config?: Partial<Context.Config> } = {},
 	): this {
 		const child = this.extend(opts)
 		child.instances = Object.create(this.instances)
-		for (const ctor of ctors) {
+
+		// 用 Set 去重，虽然重复也无害，但这样更直观
+		for (const ctor of new Set(ctors)) {
 			const sk = Context.serviceKeyMap.get(ctor)!
 			child.mapping[sk] = Symbol(ctor.name)
 		}
+
 		return child
 	}
 }

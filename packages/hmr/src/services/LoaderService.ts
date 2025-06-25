@@ -1,4 +1,3 @@
-import path from 'node:path'
 // services/LoaderService.ts
 import {
 	type Context,
@@ -6,7 +5,6 @@ import {
 	type PluginClass,
 	getPluginMeta,
 } from '@pluxel/core'
-import chokidar from 'chokidar'
 import { getAllTsFiles } from './utils'
 declare module '@pluxel/core' {
 	interface Context {

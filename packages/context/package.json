@@ -18,6 +18,7 @@
   },
   "scripts": {
     "clean": "rimraf build .turbo",
-    "dev": "bun --watch run src/test.ts"
+    "dev": "bun --watch run src/test.ts",
+    "test": "bun test"
   }
 }

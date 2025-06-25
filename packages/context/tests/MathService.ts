@@ -1,14 +1,14 @@
-import type { Context } from './Context'
+import type { Context } from '@pluxel/context'
 // MathService.ts
-import { Injectable } from './Service'
+import { Injectable } from '@pluxel/context'
 
 /**
  * 模块声明合并：补全 Context 上的类型提示
  */
-declare module './Context' {
+declare module '@pluxel/context' {
 	namespace Context {
 		interface Config {
-			mathService?: { test: string }
+			mathService?: { foo: string }
 		}
 	}
 	interface Context {

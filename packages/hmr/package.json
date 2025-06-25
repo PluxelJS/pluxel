@@ -44,5 +44,9 @@
   },
   "peerDependencies": {
     "typescript": "*"
+  },
+  "devDependencies": {
+    "pino-caller": "^4.0.0",
+    "pino-pretty": "^13.0.0"
   }
 }

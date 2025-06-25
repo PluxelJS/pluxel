@@ -1,4 +1,4 @@
 export * from './Context'
-export * from './MathService'
+export * from './service-types'
 export * from './Service'
 export * from './symbols'

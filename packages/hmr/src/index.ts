@@ -1,6 +1,11 @@
-import { Context } from './context'
+import { Context, PinoLoggerService } from './context'
 
-const ctx = new Context({ hmrService: { dir: ['./src/plugins'] } })
+const ctx = new Context({
+	hmrService: { dir: ['./src/plugins'] },
+	registry: {
+		plugigCTXIsolate: [PinoLoggerService],
+	},
+})
 /* console.log(
 	'%c🤪 ~ file: index.ts:6 []',
 	'color: #608d96',

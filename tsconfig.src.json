@@ -6,5 +6,7 @@
     "module": "ESNext",
     "target": "ES2022",
     "moduleResolution": "Bundler",
-  },
+    // **关键**：告诉 TS 要加载 Bun 的类型
+    "types": ["@types/bun"]
+  }
 }

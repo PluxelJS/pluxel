@@ -1,4 +1,4 @@
-import type { Context } from '@pluxel/context'
+import type { Context, ServiceClass } from '@pluxel/context'
 import { Injectable } from '@pluxel/context'
 import type { ServiceMap } from '../container'
 import type { BasePlugin } from '../pluginImpl/BasePlugin'
@@ -6,7 +6,7 @@ import { PluginContainer } from '../pluginImpl/PluginContainer'
 import { type PluginIdentifier, createErr, createOk } from '../pluginImpl/types'
 
 interface PluginServiceConfig {
-	plugigCTXIsolate: Object[]
+	plugigCTXIsolate?: ServiceClass<any>[]
 }
 declare module '@pluxel/context' {
 	namespace Context {
@@ -34,8 +34,10 @@ export class PluginService {
 		private ctx: Context,
 		private config: PluginServiceConfig,
 	) {
+		const isolated = config?.plugigCTXIsolate ?? [EffectScopeService]
+		isolated?.push(EffectScopeService)
 		this.pluginRegistry = new PluginContainer(() => {
-			return this.ctx.root.isolate([EffectScopeService], {
+			return this.ctx.root.isolate(isolated, {
 				name: `meta.name_${randomUUID()}`,
 			})
 		})
