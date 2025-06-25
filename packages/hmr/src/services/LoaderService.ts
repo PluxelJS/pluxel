@@ -18,6 +18,7 @@ declare module '@pluxel/core' {
 export class LoaderService {
 	static key = 'loader'
 	public ctorMap = new Map<string, PluginClass>()
+	public nameMap = new Map<string, PluginClass>()
 
 	constructor(private ctx: Context) {}
 
@@ -33,6 +34,7 @@ export class LoaderService {
 			if (!meta) continue
 			const ctor = exp as PluginClass
 			this.ctorMap.set(id, ctor)
+			this.nameMap.set(meta.name, ctor)
 			if (true || this.ctx.configService.isEnable(meta.name)) {
 				this.ctx.registry.pluginRegistry.registerPlugin(ctor)
 				// this.ctx.registry.commit()

@@ -1,4 +1,4 @@
-import { BasePlugin, Optional, Plugin } from '../services'
+import { BasePlugin, Optional, Plugin } from '../context'
 // PluginA.ts
 // PluginA 依赖 PluginB 为必选依赖，依赖 PluginC 为可选依赖
 // biome-ignore lint/style/useImportType: <PluginSystem>
@@ -23,6 +23,9 @@ export class PluginA extends BasePlugin {
 			this.ctx.logger.info('PluginA: PluginC dependency not injected')
 		}
 		this.ctx.test.collect()
+		this.ctx.honoService.modifyApp((app) => {
+			app.get("/a", (c) => { return c.html("text")})
+		})
 	}
 
 	doSomething(): void {

@@ -1,4 +1,4 @@
-import { BasePlugin, Plugin } from '../services'
+import { BasePlugin, Plugin } from '../context'
 // PluginC.ts
 
 @Plugin({ name: 'PluginC', type: 'hook' })

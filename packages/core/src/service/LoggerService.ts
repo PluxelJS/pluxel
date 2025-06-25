@@ -1,9 +1,5 @@
 import { type Context, Injectable } from '@pluxel/context'
-import { EffectScopeService } from './EffectScopeService'
 
-/**
- * 模块声明合并：补全 Context 上的类型提示
- */
 declare module '@pluxel/context' {
 	export interface Context {
 		logger: LoggerService
@@ -13,9 +9,39 @@ declare module '@pluxel/context' {
 @Injectable
 export class LoggerService {
 	static key = 'logger'
+	static methods = [] as const
 
 	constructor(private ctx: Context) {}
 
-	info = console.log
-	error = console.error
+	private write(
+		level: 'trace' | 'debug' | 'info' | 'warn' | 'error',
+		...args: unknown[]
+	) {
+		// 选一个 console 方法；如果不存在，就用 log
+		const fn =
+			((console as any)[level] as (...msgs: unknown[]) => void) ??
+			console.log.bind(console)
+		// 在最前面插入 [contextName]
+		fn(`[${this.ctx.name}]`, ...args)
+	}
+
+	trace(...args: unknown[]) {
+		this.write('trace', ...args)
+	}
+	debug(...args: unknown[]) {
+		this.write('debug', ...args)
+	}
+	info(...args: unknown[]) {
+		this.write('info', ...args)
+	}
+	warn(...args: unknown[]) {
+		this.write('warn', ...args)
+	}
+	error(...args: unknown[]) {
+		this.write('error', ...args)
+	}
+	// console 没有 fatal，映射到 error
+	fatal(...args: unknown[]) {
+		this.write('error', ...args)
+	}
 }

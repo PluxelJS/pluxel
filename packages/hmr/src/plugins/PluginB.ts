@@ -1,4 +1,4 @@
-import { BasePlugin, Plugin } from '../services'
+import { BasePlugin, Plugin } from '../context'
 // PluginB.ts
 import { PluginC } from './PluginC'
 

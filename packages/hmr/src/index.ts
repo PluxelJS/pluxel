@@ -1,5 +1,4 @@
-import { PluginB } from './plugins/PluginB'
-import { Context } from './services'
+import { Context } from './context'
 
 const ctx = new Context({ hmrService: { dir: ['./src/plugins'] } })
 /* console.log(

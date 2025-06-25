@@ -1,5 +1,4 @@
-import { randomUUID } from 'node:crypto'
-import { type Context, EffectScopeService } from '..'
+import type { Context } from '..'
 import {
 	type Container,
 	ExtendedContainerBuilder,
@@ -24,7 +23,7 @@ export class PluginContainer {
 	public singletons = new Map<PluginClass, PluginInstance>()
 	public lastContainer!: ExtendedDIContainer
 
-	constructor(private ctx: Context) {}
+	constructor(private createPluginCTX: () => Context) {}
 
 	private resetDraft() {
 		this.builder.buildables.reset()
@@ -37,9 +36,7 @@ export class PluginContainer {
 		const optionalSet = new Set<number>(
 			getPluginMeta('OPTIONAL_PARAMS_KEY', Plugin),
 		)
-		const pluginCtx = this.ctx.root.isolate([EffectScopeService], {
-			name: `meta.name_${randomUUID()}`,
-		})
+		const pluginCtx = this.createPluginCTX()
 
 		const mustDeps: PluginIdentifier[] = []
 		const resolvers: ((c: Container) => BasePlugin | undefined)[] = []

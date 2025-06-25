@@ -35,6 +35,7 @@
     "@tanstack/pacer": "^0.8.0",
     "chokidar": "^4.0.3",
     "hono": "^4.8.0",
+    "pino": "^9.7.0",
     "pkg-types": "^2.1.0",
     "superjson": "^2.2.2",
     "unplugin-swc": "^1.5.5",

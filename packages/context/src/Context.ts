@@ -1,6 +1,11 @@
 // Context.ts
 
-import type { ServiceCfg, ServiceClass, ServiceInst } from './service-types'
+import type {
+	ServiceCfg,
+	ServiceClass,
+	ServiceContext,
+	ServiceInst,
+} from './service-types'
 
 type SymMap = { [k in symbol]?: symbol }
 
@@ -9,6 +14,7 @@ export class Context {
 	private static defaultMapping: SymMap = Object.create(null)
 	/** ServiceClass → serviceKey 缓存 */
 	private static serviceKeyMap = new WeakMap<ServiceClass<any>, symbol>()
+	private static registeredKeys = new Set<string>()
 
 	/** 本实例的映射（继承自 defaultMapping 或父 Context） */
 	public mapping: SymMap
@@ -30,78 +36,109 @@ export class Context {
 		if (parent) this.instances = parent.instances
 	}
 
-	/**
-	 * 注册 ServiceClass：生成 serviceKey，定义访问属性和方法代理
-	 */
 	static registerService<S extends new (ctx: any, cfg: any) => object>(
 		ctor: ServiceClass<S>,
 	) {
-		// 1. 分配并缓存 serviceKey
 		const sk = Symbol(ctor.name)
-		Context.defaultMapping[sk] = sk
-		Context.serviceKeyMap.set(ctor, sk)
-
-		// 2. 访问属性名
-		const configKey = (ctor.key as string) ?? ctor.name.replace(/Service$/, '')
-		const propName = configKey
-
-		// 3. 定义 getter
-		if (!(propName in Context.prototype)) {
-			Object.defineProperty(Context.prototype, propName, {
-				configurable: true,
-				get(this: Context) {
-					return this._getService(ctor, sk)
-				},
-			})
+		const key = (ctor.key as string) ?? ctor.name.replace(/Service$/, '')
+		if (Context.registeredKeys.has(key)) {
+			throw new Error('如果你要覆盖已有服务，先 override。')
 		}
+		Context.registeredKeys.add(key)
+		Context.serviceKeyMap.set(ctor, sk)
+		Context.defaultMapping[sk] = sk
 
-		// 4. 方法代理
-		const methods = ctor.methods ?? []
-		for (const m of methods) {
+		// 在原型上定义最简 getter，只 capture sk/ctor/key
+		Object.defineProperty(Context.prototype, key, {
+			configurable: true,
+			get(this: Context) {
+				let ik = this.mapping[sk]
+				if (ik === undefined) {
+					this.mapping[sk] = ik = sk
+				}
+
+				const store = Object.prototype.hasOwnProperty.call(this.mapping, sk)
+					? this.instances
+					: this.root.instances
+
+				let inst = store[ik] as ServiceInst<S>
+				if (inst) {
+					;(inst as any).ctx = this
+					return inst
+				}
+				const cfg = (this.config as any)[key] as ServiceCfg<S>
+				inst = new ctor(this as any, cfg) as ServiceInst<S>
+				store[ik] = inst
+				return inst
+			},
+		})
+
+		// 方法代理（同样最轻）
+		for (const m of ctor.methods ?? []) {
 			if (m in Context.prototype) continue
 			Object.defineProperty(Context.prototype, m, {
 				configurable: true,
 				value(this: Context, ...args: any[]) {
-					const inst = this._getService(ctor, sk) as any
-					return inst[m](...args)
+					return (this as any)[key][m](...args)
 				},
 			})
 		}
 	}
 
-	/**
-	 * 私有：根据 serviceKey 获取或创建实例
-	 */
-	private _getService<S extends new (ctx: any, cfg: any) => object>(
-		ctor: ServiceClass<S>,
-		sk: symbol,
-	): ServiceInst<S> {
-		// instKey 从 mapping 读取或初始化
-		let ik = this.mapping[sk]
-		if (!ik) {
-			ik = sk
-			this.mapping[sk] = ik
-		}
+	/** 提供 override —— 同步把原来的 getter 整块替换掉 */
+	static overrideService<
+		S extends new (
+			ctx: any,
+			cfg: any,
+		) => any,
+		T extends new (
+			ctx: ServiceContext<S>,
+			cfg: ServiceCfg<S>,
+		) => ServiceInst<S>,
+	>(original: ServiceClass<S>, overrideCtor: ServiceClass<T>) {
+		// 1) 拿到同一个 sk
+		const sk = Context.serviceKeyMap.get(original)
+		if (sk === undefined) throw new Error('该服务从未被注册')
+		// 2) 确保新 ctor 有同样的 key（属性名）
+		const key =
+			(original.key as string) ?? original.name.replace(/Service$/, '')
+		;(overrideCtor as any).key = (original as any).key // 保险起见
 
-		// 决定缓存放 own or root
-		const isolated = Object.prototype.hasOwnProperty.call(this.mapping, sk)
-		const store = isolated ? this.instances : this.root.instances
+		// 3) 重新在原型上 define，一次性把 overrideCtor capture 进闭包
+		Object.defineProperty(Context.prototype, key, {
+			configurable: true,
+			get(this: Context) {
+				let ik = this.mapping[sk]
+				if (ik === undefined) {
+					this.mapping[sk] = ik = sk
+				}
 
-		// 取或创建实例
-		let inst = store[ik] as ServiceInst<S>
-		if (!inst) {
-			const cfg = (this.config as any)[
-				((ctor as any).key as string) ?? ctor.name.replace(/Service$/, '')
-			] as ServiceCfg<S>
-			inst = new ctor(this as any, cfg) as ServiceInst<S>
-			store[ik] = inst
-		} else {
-			// 每次访问都更新 ctx
-			;(inst as any).ctx = this
+				const store = Object.prototype.hasOwnProperty.call(this.mapping, sk)
+					? this.instances
+					: this.root.instances
+
+				let inst = store[ik] as ServiceInst<S>
+				if (inst) {
+					;(inst as any).ctx = this
+					return inst
+				}
+				const cfg = (this.config as any)[key] as ServiceCfg<S>
+				inst = new overrideCtor(this as any, cfg) as ServiceInst<S>
+				store[ik] = inst
+				return inst
+			},
+		})
+
+		// 4) 同步更新方法代理
+		for (const m of overrideCtor.methods ?? []) {
+			Object.defineProperty(Context.prototype, m, {
+				configurable: true,
+				value(this: Context, ...args: any[]) {
+					return (this as any)[key][m](...args)
+				},
+			})
 		}
-		return inst
 	}
-
 	/**
 	 * 扩展 Context，继承 mapping & 共享 instances
 	 */

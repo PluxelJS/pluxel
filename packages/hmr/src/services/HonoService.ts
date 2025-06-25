@@ -1,7 +1,6 @@
 import devServer from '@hono/vite-dev-server'
 import { type Context, Injectable } from '@pluxel/core'
 import { Hono } from 'hono'
-import { LinearRouter } from 'hono/router/linear-router'
 
 declare module '@pluxel/core' {
 	interface Context {
@@ -24,8 +23,12 @@ export class HonoService {
 		const a = new Hono()
 		// 2) 先注册核心路由
 		a.get('/', (c) => c.text('Hello Honoaa!'))
+
 		// 3) 再把所有外部补丁打上去
-		this.mods.forEach((m) => m(a))
+		for (const m of this.mods) {
+			m(a)
+		}
+
 		return a
 	}
 
@@ -50,11 +53,17 @@ export class HonoService {
 
 	get vitePlugin() {
 		return devServer({
-			loadModule: async (server) => ({ fetch: this.fetch }) as any,
+			loadModule: async (server) =>
+				({
+					fetch: this.fetch,
+				}) as any,
 			handleHotUpdate: ({ server }) => {
+				console.log('触发honohmr')
 				if (this.shouldReload) {
+					console.log('应该重载')
 					this.shouldReload = false
 					server.hot.send({ type: 'full-reload' })
+					server.ws.send({ type: 'full-reload' })
 				}
 				return []
 			},

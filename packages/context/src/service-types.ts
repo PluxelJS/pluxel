@@ -37,11 +37,3 @@ export type ServiceClass<S extends new (ctx: any, cfg: any) => any> =
 		/** 要在 Context 原型上代理的方法名列表 */
 		readonly methods?: readonly Extract<keyof ServiceInst<S>, string>[]
 	}
-
-/**
- * 装饰器可选项
- */
-export type ServiceOptions<S extends new (ctx: any, cfg: any) => any> = {
-	key?: string
-	methods?: readonly Extract<keyof ServiceInst<S>, string>[]
-}

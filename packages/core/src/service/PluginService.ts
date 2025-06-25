@@ -5,7 +5,15 @@ import type { BasePlugin } from '../pluginImpl/BasePlugin'
 import { PluginContainer } from '../pluginImpl/PluginContainer'
 import { type PluginIdentifier, createErr, createOk } from '../pluginImpl/types'
 
+interface PluginServiceConfig {
+	plugigCTXIsolate: Object[]
+}
 declare module '@pluxel/context' {
+	namespace Context {
+		interface Config {
+			registry?: PluginServiceConfig
+		}
+	}
 	export interface Context {
 		registry: PluginService
 		parent?: Context
@@ -13,14 +21,24 @@ declare module '@pluxel/context' {
 	}
 }
 
+import { randomUUID } from 'node:crypto'
+import { EffectScopeService } from './EffectScopeService'
+
 @Injectable
 export class PluginService {
 	static key = 'registry'
 
 	public pluginRegistry: PluginContainer
 
-	constructor(private ctx: Context) {
-		this.pluginRegistry = new PluginContainer(ctx)
+	constructor(
+		private ctx: Context,
+		private config: PluginServiceConfig,
+	) {
+		this.pluginRegistry = new PluginContainer(() => {
+			return this.ctx.root.isolate([EffectScopeService], {
+				name: `meta.name_${randomUUID()}`,
+			})
+		})
 	}
 	async commit() {
 		const action = this.pluginRegistry.build()
