@@ -1,6 +1,6 @@
 export * from './ConfigService'
 export * from './HMRService'
-export * from './HonoService'
+export * from './hono/HonoService'
 export * from './LoaderService'
 export * from './logger/PinoService'
 export * from './utils'

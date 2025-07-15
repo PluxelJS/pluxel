@@ -112,7 +112,7 @@
             "noEmptyBlockStatements": "info"
           },
           "style": {
-            "noDefaultExport": "error",
+            "noDefaultExport": "info",
             "useConsistentArrayType": {
               "level": "error",
               "options": { "syntax": "shorthand" }

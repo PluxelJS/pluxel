@@ -5,6 +5,7 @@ import {
 	type PluginClass,
 	getPluginMeta,
 } from '@pluxel/core'
+import { readPackageJSON } from 'pkg-types'
 import { getAllTsFiles } from './utils'
 declare module '@pluxel/core' {
 	interface Context {
@@ -57,5 +58,22 @@ export class LoaderService {
 	 */
 	getAllTsFiles(dirs: string[]): Promise<string[]> {
 		return getAllTsFiles(dirs)
+	}
+
+	scanDirs(dirs: string[]): Promise<(string | undefined)[]> {
+		return Promise.all(
+			dirs.map(async (d) => {
+				const { exports: exportDefine } = await readPackageJSON(d)
+				if (typeof exportDefine !== 'object' || Array.isArray(exportDefine)) {
+					return
+				}
+				for (const [key, path] of Object.entries(exportDefine)) {
+					if (key === '@pluxel/source' && typeof path === 'string') {
+						return path // 只在真正匹配时才返回
+					}
+				}
+				return
+			}),
+		)
 	}
 }

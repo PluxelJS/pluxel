@@ -13,12 +13,16 @@
       "path": "packages/core"
     },
     {
+      "name": "🍀  diod",
+      "path": "packages/diod"
+    },
+    {
       "name": "🍀  @pluxel/hmr",
       "path": "packages/hmr"
     },
     {
-      "name": "🍀  diod",
-      "path": "packages/diod"
+      "name": "🍀  @pluxel/components",
+      "path": "packages/components"
     }
   ],
   "settings": {
@@ -45,6 +49,13 @@
         "background": "#e81b65"
       },
       {
+        "path": "c:\\Users\\User\\Documents\\GitHub\\plugin-style-ts\\packages\\diod",
+        "packageName": "diod",
+        "label": "🍀  diod",
+        "foreground": "#ffffff",
+        "background": "#e85fa1"
+      },
+      {
         "path": "c:\\Users\\User\\Documents\\GitHub\\plugin-style-ts\\packages\\hmr",
         "packageName": "@pluxel/hmr",
         "label": "🍀  @pluxel/hmr",
@@ -52,11 +63,11 @@
         "background": "#52b522"
       },
       {
-        "path": "c:\\Users\\User\\Documents\\GitHub\\plugin-style-ts\\packages\\diod",
-        "packageName": "diod",
-        "label": "🍀  diod",
+        "path": "c:\\Users\\User\\Documents\\GitHub\\plugin-style-ts\\packages\\components",
+        "packageName": "@pluxel/components",
+        "label": "🍀  @pluxel/components",
         "foreground": "#ffffff",
-        "background": "#e85fa1"
+        "background": "#d13139"
       }
     ],
     "files.exclude": {},

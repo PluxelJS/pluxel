@@ -4,6 +4,6 @@ import { BasePlugin, Plugin } from '../context'
 @Plugin({ name: 'PluginC', type: 'hook' })
 export class PluginC extends BasePlugin {
 	init(): void {
-		this.ctx.logger.info('PluginC initialized')
+		this.ctx.logger.info('PluginCaaa initialized')
 	}
 }

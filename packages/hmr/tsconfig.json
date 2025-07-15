@@ -1,8 +1,9 @@
 {
   "extends": "../../tsconfig.src.json",
-  "include": ["src", "src/plugins"],
+  "include": ["src", "app"],
   "compilerOptions": {
     "outDir": "dist",
+    "jsx": "react-jsx",
     // Only output d.ts files and not JavaScript files.
     "emitDeclarationOnly": true
   },

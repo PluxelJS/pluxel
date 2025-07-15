@@ -1,5 +1,5 @@
-import path from 'node:path'
 import { type Context, Injectable } from '@pluxel/core'
+import { resolve } from 'pathe'
 import swc from 'unplugin-swc'
 import {
 	type Plugin,
@@ -8,9 +8,7 @@ import {
 	createServer,
 } from 'vite'
 import tsconfigPaths from 'vite-tsconfig-paths'
-function normalize(p: string) {
-	return path.resolve(p).split(path.sep).join(path.posix.sep)
-}
+
 interface HMRConfig {
 	dir: string[]
 }
@@ -36,7 +34,7 @@ export class HMRService {
 		private config: HMRConfig,
 	) {
 		// 1. 生成过滤器
-		const includeGlobs = config.dir.map((d) => path.posix.join(d, '**/*.ts'))
+		const includeGlobs = config.dir.map((d) => resolve(d, '**/*.ts'))
 		this.filter = createFilter(includeGlobs)
 
 		// 3. 定义插件
@@ -48,7 +46,7 @@ export class HMRService {
 			configureServer: async (server) => {
 				this.viteServer = server
 				await this.runAndLoadAll(
-					(await this.ctx.loader.getAllTsFiles(config.dir)).map(normalize),
+					await this.ctx.loader.getAllTsFiles(config.dir),
 				)
 			},
 
@@ -87,16 +85,30 @@ export class HMRService {
 						parser: {
 							syntax: 'typescript',
 							decorators: true,
+							tsx: true,
 						},
 						transform: {
 							legacyDecorator: true,
 							decoratorMetadata: true,
+							react: {
+								runtime: 'automatic',
+								refresh: true,
+							},
 						},
 					},
 				}),
 				this.plugin,
-				this.ctx.honoService.vitePlugin,
+				this.ctx.honoService.viteHonoDevServer,
 			],
+			// 加上这段，确保 SSR 阶段不把 Mantine 当外部模块给揽进来处理
+			ssr: {
+				external: ['react', 'react-dom'],
+			},
+
+			optimizeDeps: {
+				// 跳过预构建 Mantine 的 styles.css
+				exclude: ['@mantine/core/styles.css'],
+			},
 		})
 		await server.listen()
 		server.printUrls()
