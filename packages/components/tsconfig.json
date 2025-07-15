@@ -17,9 +17,10 @@
     "forceConsistentCasingInFileNames": true,
     "baseUrl": ".",
     "paths": {
-      "~/*": ["./src/*"]
+      "~/*": ["./src/*"],
+      "valibot-form": ["../valibot-form/src/*"]
     },
     "customConditions": ["@pluxel/source"]
   },
-  "references": [{ "path": "../hmr" }]
+  "references": [{ "path": "../hmr" }, { "path": "../valibot-form" }]
 }

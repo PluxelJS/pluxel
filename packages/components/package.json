@@ -23,7 +23,7 @@
     "@preact/signals-react": "3",
     "hono": "^4.8.3",
     "valibot": "^1.1.0",
-    "valibot-form": "file:..\\..\\..\\valibot_webui\\packages\\valibot-form"
+    "valibot-form": "workspace:*"
   },
   "devDependencies": {
     "@mantine/core": "^8.1.2",

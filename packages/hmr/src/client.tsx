@@ -13,7 +13,7 @@ if (root.hasChildNodes()) {
 	hydrateRoot(
 		root,
 		<Router>
-			<MantineProvider withGlobalClasses={false} withCssVariables={false}>
+			<MantineProvider withGlobalClasses={false}>
 				<App />
 			</MantineProvider>
 		</Router>,
@@ -21,7 +21,7 @@ if (root.hasChildNodes()) {
 } else {
 	createRoot(root).render(
 		<Router>
-			<MantineProvider withGlobalClasses={false} withCssVariables={false}>
+			<MantineProvider withGlobalClasses={false}>
 				<App />
 			</MantineProvider>
 		</Router>,

@@ -5,6 +5,10 @@
       "path": "."
     },
     {
+      "name": "🍀  @pluxel/components",
+      "path": "packages/components"
+    },
+    {
       "name": "🍀  @pluxel/context",
       "path": "packages/context"
     },
@@ -21,8 +25,8 @@
       "path": "packages/hmr"
     },
     {
-      "name": "🍀  @pluxel/components",
-      "path": "packages/components"
+      "name": "🍀  valibot-form",
+      "path": "packages/valibot-form"
     }
   ],
   "settings": {
@@ -33,6 +37,13 @@
         "label": "🌱  monorepo",
         "foreground": "#000000",
         "background": "#e0cc2f"
+      },
+      {
+        "path": "c:\\Users\\User\\Documents\\GitHub\\plugin-style-ts\\packages\\components",
+        "packageName": "@pluxel/components",
+        "label": "🍀  @pluxel/components",
+        "foreground": "#ffffff",
+        "background": "#d13139"
       },
       {
         "path": "c:\\Users\\User\\Documents\\GitHub\\plugin-style-ts\\packages\\context",
@@ -63,11 +74,11 @@
         "background": "#52b522"
       },
       {
-        "path": "c:\\Users\\User\\Documents\\GitHub\\plugin-style-ts\\packages\\components",
-        "packageName": "@pluxel/components",
-        "label": "🍀  @pluxel/components",
+        "path": "c:\\Users\\User\\Documents\\GitHub\\plugin-style-ts\\packages\\valibot-form",
+        "packageName": "valibot-form",
+        "label": "🍀  valibot-form",
         "foreground": "#ffffff",
-        "background": "#d13139"
+        "background": "#ae679d"
       }
     ],
     "files.exclude": {},

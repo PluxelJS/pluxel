@@ -109,6 +109,13 @@ export class HMRService {
 				// 跳过预构建 Mantine 的 styles.css
 				exclude: ['@mantine/core/styles.css'],
 			},
+			build: {
+				outDir: 'public/assets', // 把 client.js/css 都打到 public/assets 下
+				manifest: true, // 生产环境下启用 manifest.json
+				rollupOptions: {
+					input: 'src/client.tsx',
+				},
+			},
 		})
 		await server.listen()
 		server.printUrls()

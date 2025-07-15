@@ -33,10 +33,11 @@ export class HonoService {
 
 	private applyApp() {
 		const a = this.createFactory().createApp()
-		a.route('/', app)
 		for (const m of this.mods) {
 			m(a)
 		}
+		// 把 ssr 路由放最后避免覆盖
+		a.route('/', app)
 		return a
 	}
 
