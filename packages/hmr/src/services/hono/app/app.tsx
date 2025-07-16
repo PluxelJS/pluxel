@@ -1,5 +1,7 @@
 import { Link, Redirect, Route, Switch } from 'wouter'
+import { TestPath } from './TestPath'
 import { Home } from './form'
+import { Plugin } from './plugin'
 
 export default function App() {
 	return (
@@ -15,8 +17,10 @@ export default function App() {
 				{/* 如果未登录就重定向到 /login */}
 				<Route path="/profile">
 					{() => (isLoggedIn() ? <Profile /> : <Redirect to="/login" />)}
-				</Route>
+				</Route>{' '}
 				<Route path="/form">{() => <Home />}</Route>
+				<Route path="/test/:name" component={TestPath} />
+				<Route path="/plugin/:name">{() => <Plugin />}</Route>
 				{/* 兜底 404 */}
 				<Route>404 – 页面未找到</Route>
 			</Switch>

@@ -36,6 +36,7 @@
     "@pluxel/core": "workspace:*",
     "@swc/core": "^1.12.9",
     "@tanstack/pacer": "^0.8.0",
+    "@tanstack/react-query": "4",
     "chokidar": "^4.0.3",
     "hono": "^4.8.3",
     "pathe": "^2.0.3",

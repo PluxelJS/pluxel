@@ -1,42 +1,40 @@
-import { reactRenderer } from '@hono/react-renderer'
-import { ColorSchemeScript, MantineProvider } from '@mantine/core'
+import { dehydrate } from '@tanstack/react-query'
 // server.ts
 import { Hono } from 'hono'
-import type React from 'react'
-import { Router } from 'wouter'
 import App from './app/app'
+import { Plugin } from './app/plugin'
+import { type Env, createQueryClient } from './env'
+import { renderMiddleware } from './render'
 
-const app = new Hono()
-const Layout = ({ children }) => (
-	<html lang="en">
-		<head>
-			<meta charSet="utf-8" />
-			<meta name="viewport" content="width=device-width, initial-scale=1" />
-			<title>My App</title>
-		</head>
-		<body>
-			<div id="root">{children}</div>
-			<script type="module" src="/src/client.tsx" />
-		</body>
-	</html>
-)
+// 模拟后端数据
+async function fetchPluginData(name: string) {
+	return { name, desc: `这是插件 ${name} 的服务端描述` }
+}
 
-app.use(
-	'*',
-	reactRenderer(({ c, children }) => (
-		<Router ssrPath={c.req.path} ssrSearch={c.req.url.split('?')[1] || ''}>
-			<MantineProvider withGlobalClasses={false}>
-				<ColorSchemeScript /> {/* 只涉及 <head>，不会进入 root */}
-				<Layout>{children}</Layout>
-			</MantineProvider>
-		</Router>
-	)),
-)
+const app = new Hono<Env>()
 
-app.get('*', (c) => {
-	// 注意：reactRenderer 版本 <redirect> 目前还不会自动转 HTTP 重定向
-	// 如果需要，你可以在这里检查 context 并主动 c.redirect()
+// 1) 每次请求都先 new QueryClient，存到 c.env
+app.use('*', (c, next) => {
+	c.set('qc', createQueryClient())
+	return renderMiddleware(c, next)
+})
+
+// 2) /plugin/:name 只做 prefetch + dehydrate + 渲染 App
+app.get('/plugin/:name', async (c) => {
+	const name = c.req.param('name')!
+	const qc = c.var.qc
+
+	// 在服务器端预取
+	await qc.prefetchQuery(['plugin', name], () => fetchPluginData(name))
+
+	// 序列化 cache
+	c.set('dehydratedState', dehydrate(qc))
+
+	// 用你的 SPA 根组件去渲染，里面包含了 plugin 路由
 	return c.render(<App />)
 })
+
+// 3) 其他路由交给 SPA
+app.get('*', (c) => c.render(<App />))
 
 export { app }

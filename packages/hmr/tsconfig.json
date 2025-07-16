@@ -5,7 +5,8 @@
     "outDir": "dist",
     "jsx": "react-jsx",
     // Only output d.ts files and not JavaScript files.
-    "emitDeclarationOnly": true
+    "emitDeclarationOnly": true,
+    "lib": ["DOM", "ES2022"]
   },
   "references": [{ "path": "../core" }]
 }
