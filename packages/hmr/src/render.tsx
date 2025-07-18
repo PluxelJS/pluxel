@@ -21,6 +21,10 @@ export const renderMiddleware = reactRenderer(({ c, children }) => {
 								content="width=device-width,initial-scale=1"
 							/>
 							<title>My App</title>
+							<link
+								rel="stylesheet"
+								href={'node_modules/@mantine/core/styles.css'}
+							/>
 						</head>
 						<body>
 							{/* ① React 只管理这里的 children */}

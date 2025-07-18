@@ -78,6 +78,12 @@ export class HMRService {
 		const server = await createServer({
 			root: process.cwd(),
 			server: { port: 3000, middlewareMode: false },
+			resolve: {
+				alias: {
+					// /esm/icons/index.mjs only exports the icons statically, so no separate chunks are created
+					'@tabler/icons-react': '@tabler/icons-react/dist/esm/icons/index.mjs',
+				},
+			},
 			plugins: [
 				tsconfigPaths(),
 				swc.vite({
@@ -101,9 +107,7 @@ export class HMRService {
 				this.ctx.honoService.viteHonoDevServer,
 			],
 			// 加上这段，确保 SSR 阶段不把 Mantine 当外部模块给揽进来处理
-			optimizeDeps: {
-				exclude: ['@tabler/icons-react'],
-			},
+			optimizeDeps: {},
 			ssr: {
 				external: ['react', 'react-dom'],
 			},
