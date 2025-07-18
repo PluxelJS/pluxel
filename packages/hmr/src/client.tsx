@@ -5,11 +5,11 @@ import {
 	QueryClientProvider,
 } from '@tanstack/react-query'
 // src/client.tsx
-import React from 'react'
 import { createRoot, hydrateRoot } from 'react-dom/client'
 import { Router } from 'wouter'
 import '@mantine/core/styles.css'
-import App from './services/hono/app/app'
+
+import { App } from './app'
 
 const root = document.getElementById('root')!
 const queryClient = new QueryClient()

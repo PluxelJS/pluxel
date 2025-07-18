@@ -1,19 +1,19 @@
-import { Text } from '@mantine/core'
+import { Card, Text } from '@mantine/core'
 import { useQuery } from '@tanstack/react-query'
 // app/plugin.tsx
 import React from 'react'
 import { useParams } from 'wouter'
-
-// 与 server.ts 中的 fetchPluginData 保持一致
-async function fetchPluginData(name: string) {
-	return { name, desc: `这是插件 ${name} 的服务端描述` }
-}
+import { client } from '../rpc'
 
 export const Plugin = () => {
 	const { name } = useParams<{ name: string }>()
 	const { data, isLoading, isError } = useQuery(
-		['plugin', name],
-		() => fetchPluginData(name!),
+		['plugins', name],
+		async () => {
+			const res = await client.plugins[':name'].$get({ param: { name } })
+			if (res.ok) return await res.json()
+			throw new Error('not found')
+		},
 		{
 			// Hydration 后不再自动 refetch
 			staleTime: 1000 * 60,
@@ -28,6 +28,7 @@ export const Plugin = () => {
 		<>
 			<Text size="xl">插件：{data.name}</Text>
 			<Text mt="md">{data.desc}</Text>
+			<Card></Card>
 		</>
 	)
 }

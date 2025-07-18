@@ -5,6 +5,10 @@
       "path": "."
     },
     {
+      "name": "🍀  @pluxel/hmr",
+      "path": "packages/hmr"
+    },
+    {
       "name": "🍀  @pluxel/components",
       "path": "packages/components"
     },
@@ -21,10 +25,6 @@
       "path": "packages/diod"
     },
     {
-      "name": "🍀  @pluxel/hmr",
-      "path": "packages/hmr"
-    },
-    {
       "name": "🍀  valibot-form",
       "path": "packages/valibot-form"
     }
@@ -37,6 +37,13 @@
         "label": "🌱  monorepo",
         "foreground": "#000000",
         "background": "#e0cc2f"
+      },
+      {
+        "path": "c:\\Users\\User\\Documents\\GitHub\\plugin-style-ts\\packages\\hmr",
+        "packageName": "@pluxel/hmr",
+        "label": "🍀  @pluxel/hmr",
+        "foreground": "#000000",
+        "background": "#52b522"
       },
       {
         "path": "c:\\Users\\User\\Documents\\GitHub\\plugin-style-ts\\packages\\components",
@@ -67,13 +74,6 @@
         "background": "#e85fa1"
       },
       {
-        "path": "c:\\Users\\User\\Documents\\GitHub\\plugin-style-ts\\packages\\hmr",
-        "packageName": "@pluxel/hmr",
-        "label": "🍀  @pluxel/hmr",
-        "foreground": "#000000",
-        "background": "#52b522"
-      },
-      {
         "path": "c:\\Users\\User\\Documents\\GitHub\\plugin-style-ts\\packages\\valibot-form",
         "packageName": "valibot-form",
         "label": "🍀  valibot-form",
@@ -82,6 +82,7 @@
       }
     ],
     "files.exclude": {},
-    "typescript.tsdk": "🌱  monorepo\\node_modules\\typescript\\lib"
+    "typescript.tsdk": "🌱  monorepo\\node_modules\\typescript\\lib",
+    "exportall.config.folderListener": ["/packages/components/src"]
   }
 }

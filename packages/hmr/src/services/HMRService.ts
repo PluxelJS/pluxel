@@ -101,13 +101,11 @@ export class HMRService {
 				this.ctx.honoService.viteHonoDevServer,
 			],
 			// 加上这段，确保 SSR 阶段不把 Mantine 当外部模块给揽进来处理
+			optimizeDeps: {
+				exclude: ['@tabler/icons-react'],
+			},
 			ssr: {
 				external: ['react', 'react-dom'],
-			},
-
-			optimizeDeps: {
-				// 跳过预构建 Mantine 的 styles.css
-				exclude: ['@mantine/core/styles.css'],
 			},
 			build: {
 				outDir: 'public/assets', // 把 client.js/css 都打到 public/assets 下

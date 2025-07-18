@@ -16,6 +16,7 @@ import { DebugValues } from './DebugValues'
 interface AutoFormProps<S extends ObjectSchema<any, any>> {
 	schema: S
 	onSubmit: SubmitHandler<InferOutput<S>>
+	validateFunction: () => ValidateForm<any>
 }
 
 export function AutoForm<S extends ObjectSchema<any, any>>({

@@ -1,4 +1,4 @@
-import { BasePlugin, Optional, Plugin } from '../context'
+import { BasePlugin, Config, Optional, Plugin, v } from '../context'
 // PluginA.ts
 // PluginA 依赖 PluginB 为必选依赖，依赖 PluginC 为可选依赖
 // biome-ignore lint/style/useImportType: <PluginSystem>
@@ -6,8 +6,19 @@ import { PluginB } from './PluginB'
 // biome-ignore lint/style/useImportType: <explanation>
 import { PluginC } from './PluginC'
 
+const test = v.object({
+		id: v.pipe(
+			v.number(),
+			v.maxValue(10),
+		),
+		name: v.optional(v.pipe(v.string(), v.hexColor()), '#000000'),
+		check: v.optional(v.boolean(), true),
+	})
 @Plugin({ name: 'PluginA', type: 'event' })
 export class PluginA extends BasePlugin {
+	@Config(test)
+	private config!: v.InferOutput<typeof test>;
+
 	constructor(public pluginB: PluginB, @Optional() public pluginC?: PluginC) {
     super();
   }

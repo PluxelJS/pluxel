@@ -1,8 +1,9 @@
 import devServer from '@hono/vite-dev-server'
 import { type Context, Injectable } from '@pluxel/core'
 import { createFactory } from 'hono/factory'
+import api from './api'
+import { ssrApp } from '../../server'
 import type { Env, HonoType } from './env'
-import { app } from './server'
 
 declare module '@pluxel/core' {
 	interface Context {
@@ -33,11 +34,12 @@ export class HonoService {
 
 	private applyApp() {
 		const a = this.createFactory().createApp()
+		a.route('/api', api)
 		for (const m of this.mods) {
 			m(a)
 		}
 		// 把 ssr 路由放最后避免覆盖
-		a.route('/', app)
+		a.route('/', ssrApp)
 		return a
 	}
 
@@ -67,9 +69,11 @@ export class HonoService {
 					fetch: this.fetch,
 				}) as any,
 			handleHotUpdate: ({ server }) => {
-				console.log('触发honohmr')
+				this.ctx.logger.debug('触发 hmr')
+				server.hot.send({ type: 'full-reload' })
+				server.ws.send({ type: 'full-reload' })
 				if (this.shouldReload) {
-					console.log('应该重载')
+					this.ctx.logger.debug('触发全量重载')
 					this.shouldReload = false
 					server.hot.send({ type: 'full-reload' })
 					server.ws.send({ type: 'full-reload' })

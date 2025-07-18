@@ -1,6 +1,12 @@
 {
   "extends": "../../tsconfig.src.json",
-  "include": ["src", "app"],
+  "include": [
+    "src",
+    "app",
+    "../components/src/render.tsx",
+    "../components/src/rpc.ts",
+    "../components/src/server.tsx"
+  ],
   "compilerOptions": {
     "outDir": "dist",
     "jsx": "react-jsx",

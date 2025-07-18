@@ -1,4 +1,4 @@
-import { AppProvider, AutoForm, f, v } from '@pluxel/components'
+import { AutoForm, f, v } from '../form'
 
 const UserSchema = v.object({
 	id: v.pipe(

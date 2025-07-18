@@ -11,6 +11,7 @@
 
     // 严格模式 —— 强烈推荐
     "strict": true, // 等同于开启所有严格检查
+    "composite": true,
     "noImplicitAny": true, // 禁止隐式 any
     "strictNullChecks": true, // 强制严格的 null/undefined 检查
     "strictFunctionTypes": true, // 函数参数双向协变检测

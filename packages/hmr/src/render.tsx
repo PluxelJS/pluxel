@@ -3,7 +3,6 @@ import { reactRenderer } from '@hono/react-renderer'
 import { ColorSchemeScript, MantineProvider } from '@mantine/core'
 import { Hydrate, QueryClientProvider } from '@tanstack/react-query'
 import { Router } from 'wouter'
-import type { Env } from './env'
 
 export const renderMiddleware = reactRenderer(({ c, children }) => {
 	const { qc, dehydratedState } = c.var

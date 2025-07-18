@@ -76,4 +76,12 @@ export class LoaderService {
 			}),
 		)
 	}
+
+	getLoadedPluginsName(): string[] {
+		return [...this.nameMap.keys()]
+	}
+
+	getPluginConfig(target: PluginClass) {
+		return getPluginMeta('CONFIG_MAP', target)
+	}
 }
