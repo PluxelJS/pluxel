@@ -1,5 +1,5 @@
 import type { BaseMetadata } from 'valibot'
-import { MetaType } from '~/utils'
+import type { CheckMetaType } from '~/utils'
 import type { NumberMetaOptions } from './type'
 
 /** Unified metadata action for number inputs */
@@ -7,7 +7,7 @@ export interface numberMetaAction<
 	TInput extends number,
 	TMetadata extends NumberMetaOptions,
 > extends BaseMetadata<TInput> {
-	readonly type: MetaType.NUMBER
+	readonly type: CheckMetaType<'number'>
 	readonly reference: typeof numberMeta
 	readonly metadata: TMetadata
 }
@@ -21,7 +21,7 @@ export function numberMeta<
 >(metadata: TMetadata): numberMetaAction<TInput, TMetadata> {
 	return {
 		kind: 'metadata',
-		type: MetaType.NUMBER,
+		type: 'number',
 		reference: numberMeta,
 		metadata,
 	}

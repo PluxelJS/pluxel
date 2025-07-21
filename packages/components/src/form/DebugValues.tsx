@@ -1,16 +1,7 @@
-import { getValues } from '@modular-forms/react'
 // DebugValues.tsx
-import { useSignalEffect } from '@preact/signals-react'
 import { useState } from 'react'
 
-export function DebugValues({ form }: { form: any }) {
-	const [, forceUpdate] = useState({})
-	useSignalEffect(() => {
-		// 每次读取 getValues 就会订阅内部信号
-		getValues(form)
-		forceUpdate({})
-	})
-
+export function DebugValues({ formValues }: { formValues: any }) {
 	return (
 		<pre
 			style={{
@@ -20,7 +11,7 @@ export function DebugValues({ form }: { form: any }) {
 				borderRadius: 4,
 			}}
 		>
-			<code>{JSON.stringify(getValues(form), null, 2)}</code>
+			<code>{JSON.stringify(formValues, null, 2)}</code>
 		</pre>
 	)
 }

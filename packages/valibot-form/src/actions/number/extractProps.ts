@@ -1,5 +1,5 @@
 import type * as v from 'valibot'
-import { MetaType } from '~/utils'
+import { META_MAP } from '~/utils'
 import type { NumberMetaOptions } from './type'
 
 type PipedNumberSchema =
@@ -22,7 +22,7 @@ export function extractNumberProps(
 
 	while (i--) {
 		const item = arr[i]
-		if (item.kind === 'metadata' && item.type === MetaType.NUMBER) {
+		if (item.kind === 'metadata' && item.type === META_MAP.NUMBER) {
 			Object.assign(check, item.metadata)
 		}
 		if (item.kind !== 'validation') continue

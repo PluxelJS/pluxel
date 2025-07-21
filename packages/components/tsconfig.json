@@ -1,26 +1,24 @@
 {
-  "include": ["src", "../hmr/src/app/index.tsx"],
   "compilerOptions": {
-    "strict": true,
-    "composite": true,
-    "esModuleInterop": true,
-    "noEmit": false,
-    "jsx": "react-jsx",
+    "target": "ESNext",
+    "lib": ["DOM", "DOM.Iterable", "ESNext"],
     "module": "ESNext",
-    "moduleResolution": "Bundler",
-    "lib": ["DOM", "DOM.Iterable", "ES2022"],
-    "isolatedModules": true,
-    "resolveJsonModule": true,
     "skipLibCheck": true,
-    "target": "ES2022",
-    "allowJs": true,
-    "forceConsistentCasingInFileNames": true,
-    "baseUrl": ".",
-    "paths": {
-      "~/*": ["./src/*"],
-      "valibot-form": ["../valibot-form/src/*"]
-    },
-    "customConditions": ["@pluxel/source"]
+
+    /* Bundler mode */
+    "moduleResolution": "bundler",
+    "allowImportingTsExtensions": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "noEmit": true,
+    "jsx": "react-jsx",
+
+    /* Linting */
+    "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noFallthroughCasesInSwitch": true
   },
-  "references": [{ "path": "../hmr" }, { "path": "../valibot-form" }]
+  "include": ["src"],
+  "references": [{ "path": "./tsconfig.node.json" }]
 }

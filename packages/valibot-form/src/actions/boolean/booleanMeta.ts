@@ -1,12 +1,12 @@
 import type { BaseMetadata } from 'valibot'
-import { MetaType } from '~/utils'
+import type { CheckMetaType } from '~/utils'
 import type { BooleanMetaOptions } from './type'
 
 export interface booleanMetaAction<
 	TInput extends boolean,
 	TMetadata extends BooleanMetaOptions,
 > extends BaseMetadata<TInput> {
-	readonly type: MetaType.BOOLEAN
+	readonly type: CheckMetaType<'boolean'>
 	readonly reference: typeof booleanMeta
 	readonly metadata: TMetadata
 }
@@ -17,7 +17,7 @@ export function booleanMeta<
 >(metadata_: TMetadata): booleanMetaAction<TInput, TMetadata> {
 	return {
 		kind: 'metadata',
-		type: MetaType.BOOLEAN,
+		type: 'boolean',
 		reference: booleanMeta,
 		metadata: metadata_,
 	}

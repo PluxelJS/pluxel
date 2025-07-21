@@ -1,5 +1,5 @@
 import type { BaseMetadata } from 'valibot'
-import { MetaType } from '~/utils'
+import type { CheckMetaType } from '~/utils'
 
 export interface FormMeta {
 	title: string
@@ -11,7 +11,7 @@ export interface formMetaAction<TInput, TMetadata extends FormMeta>
 	/**
 	 * The action type.
 	 */
-	readonly type: MetaType.FORM
+	readonly type: CheckMetaType<'form'>
 	/**
 	 * The action reference.
 	 */
@@ -35,7 +35,7 @@ export function formMeta<TInput, const TMetadata extends FormMeta>(
 ): formMetaAction<TInput, TMetadata> {
 	return {
 		kind: 'metadata',
-		type: MetaType.FORM,
+		type: 'form',
 		reference: formMeta,
 		metadata: metadata_,
 	}

@@ -1,5 +1,5 @@
 import type * as v from 'valibot'
-import { MetaType } from '~/utils'
+import { META_MAP } from '~/utils'
 import type { PicklistMetaOptions } from './type'
 
 type PicklistSchema =
@@ -19,7 +19,7 @@ export function extractPicklistProps(
 
 	while (i--) {
 		const item = arr[i]
-		if (item.kind === 'metadata' && item.type === MetaType.PICKLIST) {
+		if (item.kind === 'metadata' && item.type === META_MAP.PICKLIST) {
 			Object.assign(check, item.metadata)
 		}
 		// if (item.kind !== 'validation') continue

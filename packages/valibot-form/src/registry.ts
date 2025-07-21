@@ -1,23 +1,28 @@
 // registry.core.ts
-import type { PicklistOptions } from 'valibot'
-import type { FormInfo } from './extract'
-import type { MetaType } from './utils/MetaType'
 
+import type { PicklistOptions } from 'valibot'
+import type { ExtractedProps, FormBaseInfo } from './extract'
+import type { ExtractMap } from './utils'
+
+// 只有实现 extract 的才会被 MetaRender 需要。
+type PartialMetaType = keyof ExtractMap
+/** 根据 MetaType 选择额外 props 的映射 */
 interface ExtraPropsMap {
 	string: { value: string }
 	number: { value: number }
 	boolean: { value: boolean }
 	picklist: { value: PicklistOptions }
-	form: {}
-	object: {}
 }
 
+/** 表单输入的基础事件 props */
 export interface InputProps {
 	name: string
 	ref?: any
 	onBlur?: any
-	onChange: any
+	onChange?: (e: any) => void
 }
+
+/** 触发 change/blur 的工具函数 */
 export function triggerFormEvents<T>(props: InputProps, value: T) {
 	const { name, onChange, onBlur } = props
 	const event = {
@@ -25,35 +30,44 @@ export function triggerFormEvents<T>(props: InputProps, value: T) {
 		currentTarget: { name, value },
 	} as const
 
-	onChange?.(event)
+	onChange?.(value)
 	onBlur?.({ target: { name } })
 }
 
-type ExtraProps<T extends MetaType.Name> = ExtraPropsMap[T]
+/** 根据 MetaType 决定额外 props */
+type ExtraProps<T extends PartialMetaType> = ExtraPropsMap[T]
 
-export type CommonProps<T extends MetaType.Name> = {
+/**
+ * 通用渲染器 props：
+ * - 一定要包含 type 字段，方便运行时取 renderer
+ */
+export type CommonProps<T extends PartialMetaType> = {
 	type: T
-	options: MetaType.Return<T>
+	formBaseInfo: FormBaseInfo
+	extractedPropsInfo: ExtractedProps<T>
+
 	error?: string
-	formInfo: FormInfo
 	inputProps: InputProps
 } & ExtraProps<T>
 
-// 渲染器签名：只负责把 props 映射成一个“框架无关”的节点描述
-export type Renderer<T extends MetaType.Name> = (props: CommonProps<T>) => any
+/** 渲染器签名：把 props 映射成「框架无关」的节点描述 */
+export type Renderer<T extends PartialMetaType> = (props: CommonProps<T>) => any
 
-const renderers = new Map<MetaType.Name, Renderer<MetaType.Name>>()
+/** 存储所有渲染器 */
+const renderers = new Map<PartialMetaType, Renderer<PartialMetaType>>()
 
-export function registerRenderer<T extends MetaType.Name>(
+/** 注册渲染器 */
+export function registerRenderer<T extends PartialMetaType>(
 	type: T,
 	renderer: Renderer<T>,
 ) {
-	renderers.set(type, renderer as Renderer<MetaType.Name>)
+	renderers.set(type, renderer as Renderer<PartialMetaType>)
 }
 
-// 暴露给平台层去调用
-export function MetaRenderer<T extends MetaType.Name>(props: CommonProps<T>) {
+/** 最终调用：根据 props.type 找到对应的 renderer */
+export function MetaRenderer<T extends PartialMetaType>(props: CommonProps<T>) {
 	const fn = renderers.get(props.type)
 	if (!fn) throw new Error(`未注册渲染器: ${props.type}`)
-	return fn(props as any) // any 上抹平泛型
+	// 这里用 any 抹平泛型，运行时已有类型保护
+	return fn(props as any)
 }

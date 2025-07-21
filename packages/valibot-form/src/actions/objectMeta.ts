@@ -1,5 +1,5 @@
 import type { BaseMetadata } from 'valibot'
-import { MetaType } from '~/utils'
+import type { CheckMetaType } from '~/utils'
 
 export interface ObjectMetaOptions {
 	collapse?: true
@@ -9,7 +9,7 @@ export interface objectMetaAction<
 	TInput extends object,
 	TMetadata extends ObjectMetaOptions,
 > extends BaseMetadata<TInput> {
-	readonly type: MetaType.OBJECT
+	readonly type: CheckMetaType<'object'>
 	readonly reference: typeof objectMeta
 	readonly metadata: TMetadata
 }
@@ -29,7 +29,7 @@ export function objectMeta<
 >(metadata_: TMetadata): objectMetaAction<TInput, TMetadata> {
 	return {
 		kind: 'metadata',
-		type: MetaType.OBJECT,
+		type: 'object',
 		reference: objectMeta,
 		metadata: metadata_,
 	}

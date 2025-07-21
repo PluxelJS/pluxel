@@ -1,6 +1,6 @@
 import type * as v from 'valibot'
-import { MetaType } from '~/utils'
 import type { BooleanMetaOptions } from './type'
+import { META_MAP } from '~/utils'
 
 type BooleanSchema =
 	| v.SchemaWithPipe<readonly [v.BooleanSchema<any>, ...any]>
@@ -14,7 +14,7 @@ export function extractBooleanProps(schema: BooleanSchema): BooleanMetaOptions {
 
 	while (i--) {
 		const item = arr[i]
-		if (item.kind === 'metadata' && item.type === MetaType.BOOLEAN) {
+		if (item.kind === 'metadata' && item.type === META_MAP.BOOLEAN) {
 			Object.assign(check, item.metadata)
 		}
 		if (item.kind !== 'validation') continue

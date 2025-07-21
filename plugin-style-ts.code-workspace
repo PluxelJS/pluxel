@@ -83,6 +83,7 @@
     ],
     "files.exclude": {},
     "typescript.tsdk": "🌱  monorepo\\node_modules\\typescript\\lib",
-    "exportall.config.folderListener": ["/packages/components/src"]
+    "exportall.config.folderListener": [],
+    "exportall.config.relExclusion": []
   }
 }

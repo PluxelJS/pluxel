@@ -1,6 +1,6 @@
 import type * as v from 'valibot'
-import { MetaType } from '~/utils'
 import type { StringMetaOptions } from './type'
+import { META_MAP } from '~/utils'
 
 type PipedStringSchema =
 	| v.SchemaWithPipe<readonly [v.StringSchema<any>, ...any]>
@@ -35,7 +35,7 @@ export function extractStringProps(
 
 	while (i--) {
 		const item = arr[i]
-		if (item.kind === 'metadata' && item.type === MetaType.STRING) {
+		if (item.kind === 'metadata' && item.type === META_MAP.STRING) {
 			Object.assign(check, item.metadata)
 		}
 		if (item.kind !== 'validation') continue

@@ -1,12 +1,12 @@
 import type { BaseMetadata } from 'valibot'
-import { MetaType } from '~/utils'
+import type { CheckMetaType } from '~/utils'
 import type { StringMetaOptions } from './type'
 
 export interface stringMetaAction<
 	TInput extends string,
 	TMetadata extends StringMetaOptions,
 > extends BaseMetadata<TInput> {
-	readonly type: MetaType.STRING
+	readonly type: CheckMetaType<'string'>
 	readonly reference: typeof stringMeta
 	readonly metadata: TMetadata
 }
@@ -26,7 +26,7 @@ export function stringMeta<
 >(metadata_: TMetadata): stringMetaAction<TInput, TMetadata> {
 	return {
 		kind: 'metadata',
-		type: MetaType.STRING,
+		type: 'string',
 		reference: stringMeta,
 		metadata: metadata_,
 	}

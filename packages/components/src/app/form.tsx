@@ -19,7 +19,8 @@ const UserSchema = v.object({
 		}),
 		v.maxValue(10),
 	),
-	name: v.optional(v.pipe(v.string(), v.hexColor()), '#000000'),
+	color: v.optional(v.pipe(v.string(), v.hexColor()), '#000000'),
+	name: v.optional(v.pipe(v.string(), v.minLength(2)), 'a'),
 	check: v.optional(v.boolean(), true),
 	// aaa: v.optional(v.picklist(['aa', 'bb']), 'aa'),
 })

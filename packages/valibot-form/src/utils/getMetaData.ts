@@ -7,7 +7,7 @@ import type {
 	PipeItem,
 	PipeItemAsync,
 } from 'valibot'
-import type { MetaType } from './MetaType'
+import type { MetaType, MetaTypeReturn } from './MetaType'
 
 /**
  * Metadata action type.
@@ -55,10 +55,10 @@ export type Schema =
  * @internal
  */
 // @__NO_SIDE_EFFECTS__
-export function getFormMeta<T extends MetaType.Name>(
+export function getFormMeta<T extends MetaType>(
 	schema: Schema,
 	type: T,
-): MetaType.Return<T> | undefined {
+): MetaTypeReturn<T> | undefined {
 	if ('pipe' in schema === false) return
 	const nestedSchemas: Schema[] = []
 	for (let index = schema.pipe.length - 1; index >= 0; index--) {

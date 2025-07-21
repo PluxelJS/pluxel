@@ -1,16 +1,16 @@
 // src/forms/renderers/string.tsx
 import { ColorInput, TextInput } from '@mantine/core'
-import { MetaType, registerRenderer, triggerFormEvents } from 'valibot-form'
+import { META_MAP, registerRenderer, triggerFormEvents } from 'valibot-form'
 
-registerRenderer(MetaType.STRING, (props) => {
-	const { options, value, formInfo, error, inputProps } = props
+registerRenderer(META_MAP.STRING, (props) => {
+	const { formBaseInfo, error, extractedPropsInfo, inputProps, value } = props
 
 	// hex_color 格式，直接交给 HexColorField 处理
-	if (options.format === 'hex_color') {
+	if (extractedPropsInfo.format === 'hex_color') {
 		return (
 			<ColorInput
-				label={formInfo.title}
-				required={formInfo.required}
+				label={formBaseInfo.title}
+				required={formBaseInfo.required}
 				error={error}
 				defaultValue={value}
 				onChangeEnd={(value) => {
@@ -24,18 +24,18 @@ registerRenderer(MetaType.STRING, (props) => {
 	return (
 		<TextInput
 			{...inputProps}
-			label={formInfo.title}
-			required={formInfo.required}
+			label={formBaseInfo.title}
+			required={formBaseInfo.required}
 			error={error}
 			defaultValue={value}
 			onChange={(event) => {
 				triggerFormEvents(inputProps, event.currentTarget.value)
 			}}
-			placeholder={options.placeholder}
+			placeholder={extractedPropsInfo.placeholder}
 			type={
-				options.secret
+				extractedPropsInfo.secret
 					? 'password'
-					: options.format === 'email'
+					: extractedPropsInfo.format === 'email'
 						? 'email'
 						: 'text'
 			}

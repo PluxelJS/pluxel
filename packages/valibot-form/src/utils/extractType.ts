@@ -6,29 +6,23 @@ import {
 } from '../actions'
 import type { MetaType } from './MetaType'
 
-// ❶ 定义一个帮助函数：
-//   - 限制 T 的 key 必须是 MetaType 的子集
-//   - 结果 result[k].type 自动推断为字面量 k
-//   - extract 字段类型自动对应 T[k]
-function buildRendererMap<
-	T extends Partial<Record<MetaType, (schema: any) => any>>,
->(extractors: T) {
-	const result = {} as {
-		[K in keyof T]: {
-			type: K // 这里的 K 本身就被约束为 MetaType
-			extract: T[K]
-		}
-	}
+export function buildRendererMap<
+	T extends Partial<{ [K in MetaType]: (schema: any) => any }>,
+>(extractors: T & Record<Exclude<keyof T, MetaType>, never>) {
+	const result: { [K in keyof T]: { type: K; extract: T[K] } } = {} as any
 	for (const key of Object.keys(extractors) as Array<keyof T>) {
 		result[key] = {
-			type: key,
+			type: key, // K 本身就已经被约束为 MetaType
 			extract: extractors[key]!,
 		}
 	}
 	return result
 }
 
-// ❷ 只在这里维护一份映射，新增时只要加一行：
+// 用法：
+// TypeScript 会检查：
+// - 只能传 MetaType 里的键（string/number/...）
+// - 对应的 extract 函数签名，其参数类型必须正好是 MetaReturnMap[该键]
 export const extractMap = buildRendererMap({
 	string: extractStringProps,
 	number: extractNumberProps,

@@ -1,89 +1,93 @@
-import './renders'
-import { Button, Card, Group, Stack } from '@mantine/core'
-import {
-	type SubmitHandler,
-	getValues,
-	reset,
-	useForm,
-	valiForm,
-} from '@modular-forms/react'
-import { useSignalEffect } from '@preact/signals-react'
-import { useMemo, useState } from 'react'
+import { useMemo } from 'react'
+import { Group, Stack, Button, Card } from '@mantine/core'
 import { type InferOutput, type ObjectSchema, getDefaults } from 'valibot'
-import { MetaRenderer, type Schema, extractInfo } from 'valibot-form'
+import { MetaRenderer, extractInfo } from 'valibot-form'
+import { useAppForm } from './formContext'
 import { DebugValues } from './DebugValues'
 
 interface AutoFormProps<S extends ObjectSchema<any, any>> {
 	schema: S
-	onSubmit: SubmitHandler<InferOutput<S>>
-	validateFunction: () => ValidateForm<any>
+	onSubmit: (values: InferOutput<S>) => void
 }
 
 export function AutoForm<S extends ObjectSchema<any, any>>({
 	schema,
 	onSubmit,
 }: AutoFormProps<S>) {
-	// 1. 初始化 modular-forms
-	const [form, { Form, Field }] = useForm<any>({
-		initialValues: getDefaults(schema),
-		validate: valiForm(schema),
-		validateOn: 'change',
-		revalidateOn: 'change',
+	// 1. 初始化表单，默认值来自 schema
+	const form = useAppForm({
+		defaultValues: getDefaults(schema),
+		// 2. 把同一个 schema 用于 onChange 和 onSubmit 验证
+		validators: {
+			onChange: schema as any,
+		},
+		onSubmit: ({ value }) => {
+			onSubmit(value)
+		},
 	})
 
-	const [, forceUpdate] = useState({})
-	useSignalEffect(() => {
-		// 每次读取 getValues 就会订阅内部信号
-		getValues(form)
-		forceUpdate({})
-	})
-
-	// 2. 缓存 schema.entries
+	// 缓存 schema.fields
 	const entries = useMemo(
 		() => Object.entries(schema.entries) as [keyof InferOutput<S>, any][],
 		[schema],
 	)
 
 	return (
-		<Card shadow="sm" p="lg" radius="md" maw={600} mx="auto">
-			{/* 3. 表单主体 */}
-			<Form onSubmit={onSubmit}>
+		<form
+			onSubmit={(e) => {
+				e.preventDefault()
+				form.handleSubmit()
+			}}
+		>
+			<Card shadow="sm" p="lg" radius="md" maw={600} mx="auto">
 				<Stack>
 					{entries.map(([key, subSchema]) => {
 						if (subSchema.kind !== 'schema') return null
 						const name = String(key)
 						const info = extractInfo(subSchema, { title: name })
 						if (!info) return null
-						const { props: options, formInfo, type } = info
+						// const { props: options, formInfo, type } = info
 
 						return (
-							<Field key={name} name={name}>
-								{(field, inputProps) => (
+							<form.Field key={name} name={name}>
+								{(field) => (
 									<MetaRenderer
-										inputProps={inputProps}
-										type={type}
-										options={options}
-										error={field.error.value}
-										formInfo={formInfo}
-										value={field.value as any}
+										type={info.type}
+										formBaseInfo={info.formInfo}
+										extractedPropsInfo={info.props}
+										error={field.state.meta.errors
+											.map(({ message }) => message)
+											.join(', ')}
+										value={field.state.value as any}
+										inputProps={{
+											name,
+											onChange: field.handleChange,
+											onBlur: field.handleBlur,
+										}}
 									/>
 								)}
-							</Field>
+							</form.Field>
 						)
 					})}
 				</Stack>
 
-				{/* 4. 操作按钮区 */}
-				<Group>
-					<Button variant="outline" onClick={() => reset(form)}>
+				<Group gap="right" mt="md">
+					<Button variant="outline" onClick={() => form.reset()}>
 						取消
 					</Button>
-					<Button type="submit" disabled={form.invalid.value}>
-						提交
-					</Button>
+					<form.Subscribe selector={(s) => s.isValid}>
+						{(isValid) => (
+							<Button type="submit" disabled={!isValid}>
+								提交
+							</Button>
+						)}
+					</form.Subscribe>
 				</Group>
-			</Form>
-			<DebugValues form={form} />
-		</Card>
+
+				<form.Subscribe selector={(s) => s.values}>
+					{(values) => <DebugValues formValues={values} />}
+				</form.Subscribe>
+			</Card>
+		</form>
 	)
 }
