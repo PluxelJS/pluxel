@@ -23,7 +23,9 @@ export const renderMiddleware = reactRenderer(({ c, children }) => {
 							<title>My App</title>
 							<link
 								rel="stylesheet"
-								href={'node_modules/@mantine/core/styles.css'}
+								href={
+									'http://localhost:3000/node_modules/@mantine/core/styles.css'
+								}
 							/>
 							z
 						</head>

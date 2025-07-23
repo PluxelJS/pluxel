@@ -103,11 +103,14 @@ export class HMRService {
 						},
 					},
 				}),
-				this.plugin,
+				// 会影响 dev 启动速度，待优化
+				// this.plugin,
 				this.ctx.honoService.viteHonoDevServer,
 			],
 			// 加上这段，确保 SSR 阶段不把 Mantine 当外部模块给揽进来处理
-			optimizeDeps: {},
+			optimizeDeps: {
+				entries: ['src/client.tsx'],
+			},
 			ssr: {
 				external: ['react', 'react-dom'],
 			},

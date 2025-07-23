@@ -2,8 +2,10 @@ export * from './services'
 export * from '@pluxel/core'
 
 import { Config as OrigConfig } from '@pluxel/core'
-import { v, f } from '@pluxel/components'
+import { f } from '@pluxel/components'
+import * as v from 'valibot'
 export { v, f }
+
 export function Config(
 	configSchema: v.ObjectSchema<any, any>,
 ): ReturnType<typeof OrigConfig> {

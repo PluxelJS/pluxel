@@ -1,32 +1,25 @@
+// src/components/AutoForm.tsx
 import { useMemo } from 'react'
 import { Group, Stack, Button, Card } from '@mantine/core'
-import { type InferOutput, type ObjectSchema, getDefaults } from 'valibot'
+import type { InferOutput, ObjectSchema } from 'valibot'
 import { MetaRenderer, extractInfo } from 'valibot-form'
 import { useAppForm } from './formContext'
 import { DebugValues } from './DebugValues'
+import type { formOptions } from '@tanstack/react-form'
 
-interface AutoFormProps<S extends ObjectSchema<any, any>> {
+export interface AutoFormProps<S extends ObjectSchema<any, any>> {
 	schema: S
-	onSubmit: (values: InferOutput<S>) => void
+	formOpts?: ReturnType<typeof formOptions>
 }
 
 export function AutoForm<S extends ObjectSchema<any, any>>({
 	schema,
-	onSubmit,
+	formOpts,
 }: AutoFormProps<S>) {
-	// 1. 初始化表单，默认值来自 schema
-	const form = useAppForm({
-		defaultValues: getDefaults(schema),
-		// 2. 把同一个 schema 用于 onChange 和 onSubmit 验证
-		validators: {
-			onChange: schema as any,
-		},
-		onSubmit: ({ value }) => {
-			onSubmit(value)
-		},
-	})
+	// 1. 初始化表单，内部已处理 SSR 合并和默认值
+	const form = useAppForm(schema, formOpts)
 
-	// 缓存 schema.fields
+	// 2. 缓存 schema.entries 遍历
 	const entries = useMemo(
 		() => Object.entries(schema.entries) as [keyof InferOutput<S>, any][],
 		[schema],
@@ -46,7 +39,6 @@ export function AutoForm<S extends ObjectSchema<any, any>>({
 						const name = String(key)
 						const info = extractInfo(subSchema, { title: name })
 						if (!info) return null
-						// const { props: options, formInfo, type } = info
 
 						return (
 							<form.Field key={name} name={name}>
@@ -75,17 +67,24 @@ export function AutoForm<S extends ObjectSchema<any, any>>({
 					<Button variant="outline" onClick={() => form.reset()}>
 						取消
 					</Button>
-					<form.Subscribe selector={(s) => s.isValid}>
-						{(isValid) => (
-							<Button type="submit" disabled={!isValid}>
-								提交
+					<form.Subscribe
+						selector={(formState) => [
+							formState.canSubmit,
+							formState.isSubmitting,
+						]}
+					>
+						{([canSubmit, isSubmitting]) => (
+							<Button type="submit" disabled={!canSubmit}>
+								{isSubmitting ? '...' : 'Submit'}
 							</Button>
 						)}
 					</form.Subscribe>
 				</Group>
 
-				<form.Subscribe selector={(s) => s.values}>
-					{(values) => <DebugValues formValues={values} />}
+				<form.Subscribe selector={(s) => [s.values, s.errorMap, s.errors]}>
+					{([values, errorMap, errors]) => (
+						<DebugValues formValues={{ values, errorMap, errors }} />
+					)}
 				</form.Subscribe>
 			</Card>
 		</form>

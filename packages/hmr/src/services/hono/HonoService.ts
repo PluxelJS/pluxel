@@ -3,7 +3,7 @@ import { type Context, Injectable } from '@pluxel/core'
 import { createFactory } from 'hono/factory'
 import api from './api'
 import { ssrApp } from '../../server'
-import type { Env, HonoType } from './env'
+import type { AppEnv, HonoType } from './env'
 
 declare module '@pluxel/core' {
 	interface Context {
@@ -22,7 +22,7 @@ export class HonoService {
 
 	constructor(private ctx: Context) {}
 	public createFactory() {
-		return createFactory<Env>({
+		return createFactory<AppEnv>({
 			initApp: (app) => {
 				app.use(async (c, next) => {
 					c.set('plugin_ctx', this.ctx)

@@ -15,6 +15,7 @@
     "@mantine/core": "^8.1.2",
     "@mantine/hooks": "^8.1.2",
     "@tabler/icons-react": "^3.34.0",
+    "valibot": "^1.1.0",
     "react": "^19"
   },
   "dependencies": {
@@ -29,11 +30,11 @@
     "@tanstack/react-form": "^1.14.1",
     "@tanstack/react-query": "^4.40.1",
     "hono": "^4.8.5",
-    "valibot": "^1.1.0",
     "valibot-form": "workspace:*",
     "wouter": "^3.7.1"
   },
   "devDependencies": {
+    "valibot": "^1.1.0",
     "@mantine/core": "^8.1.3",
     "@mantine/hooks": "^8.1.3",
     "@tabler/icons-react": "^3.34.0",

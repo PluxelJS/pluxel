@@ -1,13 +1,45 @@
-// formContext.ts
-import { createFormHook, createFormHookContexts } from '@tanstack/react-form'
+// src/formContext.ts
+import { useMemo } from 'react'
+import { useForm, type formOptions } from '@tanstack/react-form'
+import { type InferOutput, type ObjectSchema, getDefaults } from 'valibot'
 
-// 拿到 fieldContext 和 formContext，用于后续绑定
-export const { fieldContext, formContext } = createFormHookContexts() // :contentReference[oaicite:1]{index=1}
+// —— 辅助：读取服务端注入的表单状态 —— //
+function getServerFormState<FormState>() {
+	if (typeof window === 'undefined') return undefined
+	const el = document.getElementById('__TANSTACK_FORM_STATE__')
+	if (!el) return undefined
+	try {
+		return JSON.parse(el.textContent!) as FormState
+	} catch {
+		return undefined
+	}
+}
 
-export const { useAppForm } = createFormHook({
-	fieldContext,
-	formContext,
-	// 这里可以预绑定你自己的 UI 组件库，比如 Mantine 的 TextInput/NumberInput/SubmitButton……
-	fieldComponents: {},
-	formComponents: {},
-})
+export function useAppForm<
+	S extends ObjectSchema<any, any>,
+	TValues = InferOutput<S>,
+>(schema: S, formOpts?: ReturnType<typeof formOptions<InferOutput<S>>>) {
+	// 1. 先拿到默认值
+	const defaultValues = useMemo(
+		() => (formOpts?.defaultValues ?? getDefaults(schema)) as TValues,
+		[schema, formOpts?.defaultValues],
+	)
+
+	// const serverState = useMemo(() => getServerFormState(), [])
+
+	// 2. 合并默认值 + 调用者传来的那个整包配置
+	const opts = useMemo(
+		() => ({
+			defaultValues,
+			...(formOpts ?? {}),
+			/* transform: useTransform(
+				(base) => mergeForm(base, serverState as any),
+				[serverState],
+			), */
+		}),
+		[defaultValues, formOpts],
+	)
+
+	// 3. 传给 useForm
+	return useForm(opts)
+}

@@ -1,11 +1,11 @@
 import { App } from './app'
 import { client } from './rpc'
 import { renderMiddleware } from './render'
-import type { Env } from '../../hmr/src/services/hono/env'
+import type { AppEnv } from '../../hmr/src/services/hono/env'
 import { Hono } from 'hono'
 import { dehydrate, QueryClient } from '@tanstack/react-query'
 
-const ssrApp = new Hono<Env>()
+const ssrApp = new Hono<AppEnv>()
 
 // 1) 每次请求都先 new QueryClient，存到 c.env
 ssrApp.use('*', (c, next) => {
