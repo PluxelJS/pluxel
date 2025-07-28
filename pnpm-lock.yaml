@@ -312,9 +312,6 @@ importers:
       superjson:
         specifier: ^2.2.2
         version: 2.2.2
-      tsdown:
-        specifier: '*'
-        version: 0.13.0(typescript@5.8.3)
       typescript:
         specifier: '*'
         version: 5.8.3
@@ -334,18 +331,15 @@ importers:
       '@pluxel/core':
         specifier: workspace:*
         version: link:../core
-      '@types/react':
-        specifier: ^19.1.8
-        version: 19.1.8
-      '@types/react-dom':
-        specifier: ^19.1.6
-        version: 19.1.6(@types/react@19.1.8)
       pino-caller:
         specifier: ^4.0.0
         version: 4.0.0
       pino-pretty:
         specifier: ^13.0.0
         version: 13.0.0
+      tsdown:
+        specifier: ^0.11.13
+        version: 0.11.13(@oxc-project/runtime@0.78.0)(typescript@5.8.3)
       valibot-form:
         specifier: workspace:*
         version: link:../valibot-form

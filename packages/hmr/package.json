@@ -55,13 +55,13 @@
     "vite-tsconfig-paths": "^5.1.4"
   },
   "peerDependencies": {
-    "typescript": "*",
-    "tsdown": "*"
+    "typescript": "*"
   },
   "devDependencies": {
     "@pluxel/core": "workspace:*",
     "pino-caller": "^4.0.0",
     "pino-pretty": "^13.0.0",
+    "tsdown": "^0.11.13",
     "valibot-form": "workspace:*"
   },
   "publishConfig": {
