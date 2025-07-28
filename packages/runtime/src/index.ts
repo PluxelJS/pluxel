@@ -1,5 +1,5 @@
-import { Context } from './context'
-import { PinoLoggerService } from './services'
+import { Context } from '@pluxel/hmr'
+import { PinoLoggerService } from '@pluxel/hmr/services'
 
 const ctx = new Context({
 	hmrService: { dir: ['./src/plugins'] },

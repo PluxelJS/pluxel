@@ -3,46 +3,43 @@
   "name": "@pluxel/hmr",
   "version": "0.1.0",
   "description": "Demo example that imports a local package",
-  "main": "./src/index.ts",
+  "main": "./dist/index.cjs",
   "type": "module",
-  "module": "./dist/index.mjs",
+  "module": "./dist/index.js",
   "types": "./dist/index.d.cts",
   "exports": {
     ".": {
-      "import": {
-        "@pluxel/source": "./src/index.ts",
-        "types": "./dist/index.d.mts",
-        "import": "./dist/index.mjs",
-        "default": "./dist/index.mjs"
-      },
-      "require": {
-        "@pluxel/source": "./src/index.ts",
-        "types": "./dist/index.d.ts",
-        "import": "./dist/index.cjs",
-        "default": "./dist/index.cjs"
-      }
+      "@pluxel/source": "./src/context.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    },
+    "./services": {
+      "@pluxel/source": "./src/services/index.ts",
+      "import": "./dist/services.js",
+      "require": "./dist/services.cjs"
     },
     "./package.json": "./package.json"
   },
   "scripts": {
     "clean": "rimraf build .turbo",
     "dev": "bun src/index.ts",
-    "hot": "bun --hot src/index.ts"
+    "hot": "bun --hot src/index.ts",
+    "build": "node --max_old_space_size=16384 ./node_modules/.bin/tsdown.cmd"
   },
   "dependencies": {
     "@hono/react-renderer": "^1.0.1",
     "@hono/standard-validator": "^0.1.4",
     "@hono/valibot-validator": "^0.5.3",
-    "@hono/vite-dev-server": "^0.19.1",
-    "@mantine/core": "^8.1.3",
-    "@mantine/hooks": "^8.1.3",
+    "@hono/vite-dev-server": "^0.20.0",
+    "@mantine/core": "^8.2.1",
+    "@mantine/hooks": "^8.2.1",
     "@pluxel/components": "workspace:*",
-    "@pluxel/core": "workspace:*",
-    "@swc/core": "^1.12.9",
-    "@tanstack/pacer": "^0.8.0",
-    "@tanstack/react-form": "^1.14.1",
+    "@swc/core": "^1.13.2",
+    "@tanstack/pacer": "^0.11.0",
+    "@tanstack/react-form": "^1.15.0",
     "chokidar": "^4.0.3",
-    "hono": "^4.8.5",
+    "hono": "^4.8.9",
+    "mlly": "^1.7.4",
     "pathe": "^2.0.3",
     "pino": "^9.7.0",
     "pkg-types": "^2.2.0",
@@ -54,16 +51,30 @@
     "superjson": "^2.2.2",
     "unplugin-swc": "^1.5.5",
     "valibot": "^1.1.0",
-    "vite": "^6.3.5",
+    "vite": "6.3.5",
     "vite-tsconfig-paths": "^5.1.4"
   },
   "peerDependencies": {
-    "typescript": "*"
+    "typescript": "*",
+    "tsdown": "*"
   },
   "devDependencies": {
-    "@types/react": "^19.1.8",
-    "@types/react-dom": "^19.1.6",
+    "@pluxel/core": "workspace:*",
     "pino-caller": "^4.0.0",
-    "pino-pretty": "^13.0.0"
+    "pino-pretty": "^13.0.0",
+    "valibot-form": "workspace:*"
+  },
+  "publishConfig": {
+    "exports": {
+      ".": {
+        "import": "./dist/index.js",
+        "require": "./dist/index.cjs"
+      },
+      "./services": {
+        "import": "./dist/services.js",
+        "require": "./dist/services.cjs"
+      },
+      "./package.json": "./package.json"
+    }
   }
 }

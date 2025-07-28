@@ -5,44 +5,42 @@
   "description": "Demo example that imports a local package",
   "main": "./src/index.ts",
   "type": "module",
-  "module": "./dist/index.mjs",
-  "types": "./dist/index.d.cts",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
   "exports": {
     ".": {
       "import": {
         "@pluxel/source": "./src/index.ts",
-        "types": "./dist/index.d.mts",
-        "import": "./dist/index.mjs",
-        "default": "./dist/index.mjs"
+        "default": "./dist/index.js",
+        "types": "./dist/index.d.ts"
       },
       "require": {
         "@pluxel/source": "./src/index.ts",
-        "types": "./dist/index.d.ts",
-        "import": "./dist/index.cjs",
-        "default": "./dist/index.cjs"
+        "default": "./dist/index.cjs",
+        "types": "./dist/index.d.cts"
       }
     },
     "./package.json": "./package.json"
   },
   "scripts": {
     "clean": "rimraf build .turbo",
-    "test:unit": "vitest --workspace ../../vitest.workspace.ts --project unit run",
+    "build": "tsdown",
     "dev": "bun --watch run src/start.ts"
   },
   "dependencies": {
-    "@pluxel/context": "workspace:*",
-    "diod": "workspace:*",
-    "eventure": "file:..\\..\\..\\event-hook",
     "option-t": "53.0.0",
     "pino": "^9.7.0",
     "reflect-metadata": "^0.2.2",
-    "valtio": "2.1.4",
-    "xstate": "5.19.2"
+    "valtio": "2.1.5",
+    "xstate": "5.20.1"
   },
   "peerDependencies": {
+    "tsdown": "*",
     "typescript": "*"
   },
   "devDependencies": {
-    "tsdown": "^0.11.13"
+    "@pluxel/context": "workspace:*",
+    "diod": "workspace:*",
+    "eventure": "file:..\\..\\..\\event-hook"
   }
 }

@@ -4,21 +4,32 @@
   "version": "0.1.0",
   "description": "Demo example that imports a local package",
   "main": "./src/index.ts",
-  "module": "./dist/index.mjs",
-  "types": "./dist/index.d.cts",
+  "type": "module",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
   "exports": {
     ".": {
-      "@pluxel/source": "./src/index.ts",
-      "import": "./dist/index.mjs",
-      "require": "./dist/index.cjs",
-      "types": "./dist/index.d.ts",
-      "default": "./dist/index.mjs"
+      "import": {
+        "@pluxel/source": "./src/index.ts",
+        "default": "./dist/index.js",
+        "types": "./dist/index.d.ts"
+      },
+      "require": {
+        "@pluxel/source": "./src/index.ts",
+        "default": "./dist/index.cjs",
+        "types": "./dist/index.d.cts"
+      }
     },
     "./package.json": "./package.json"
   },
   "scripts": {
     "clean": "rimraf build .turbo",
     "dev": "bun --watch run src/test.ts",
-    "test": "bun test"
+    "test": "bun test",
+    "build": "tsdown"
+  },
+  "peerDependencies": {
+    "typescript": "*",
+    "tsdown": "*"
   }
 }

@@ -45,9 +45,13 @@ export class HMRService {
 			// 用 service 而不是 this
 			configureServer: async (server) => {
 				this.viteServer = server
-				await this.runAndLoadAll(
-					await this.ctx.loader.getAllTsFiles(config.dir),
-				)
+				console.time('[HMR] 扫描文件') // 开始计时
+				const files = await this.ctx.loader.getAllTsFiles(config.dir)
+				console.timeEnd('[HMR] 扫描文件') // 打印耗时
+
+				console.time('[HMR] 预热加载模块')
+				await this.runAndLoadAll(files)
+				console.timeEnd('[HMR] 预热加载模块')
 			},
 
 			handleHotUpdate: async (ctx) => {
@@ -60,21 +64,50 @@ export class HMRService {
 	}
 
 	private async runAndLoadAll(filesPath: string[]) {
+		// 存储每个文件的各阶段耗时
+		const fileTimings: Record<string, { loadMs: number; injectMs: number }> = {}
+
+		// 1. 针对每个文件，分别测 ssrLoadModule 和 loadFileModule
 		for (const p of filesPath) {
+			const t0 = process.hrtime.bigint()
+			// SWC 编译 + 模块加载
 			const mod = await this.viteServer.ssrLoadModule(p)
+			const t1 = process.hrtime.bigint()
+			// 注入到你的 loader
 			this.ctx.loader.loadFileModule(p, mod)
-		}
-		const res = await this.ctx.registry.commit()
-		if (res.ok) {
-			console.log(
-				'%c🤪 ~ file: HMRService.ts:69 [] -> res.val.container.services : ',
-				'color: #267272',
-				res.val.container.services.keys(),
+			const t2 = process.hrtime.bigint()
+
+			const loadMs = Number((t1 - t0) / BigInt(1e6))
+			const injectMs = Number((t2 - t1) / BigInt(1e6))
+			fileTimings[p] = { loadMs, injectMs }
+
+			this.ctx.logger.info(
+				`[HMR] 文件: ${p}\n` +
+					`  • ssrLoadModule: ${loadMs.toFixed(2)}ms\n` +
+					`  • loadFileModule: ${injectMs.toFixed(2)}ms`,
 			)
 		}
+
+		// 2. 测 registry.commit()
+		const tc0 = process.hrtime.bigint()
+		const res = await this.ctx.registry.commit()
+		const tc1 = process.hrtime.bigint()
+		const commitMs = Number((tc1 - tc0) / BigInt(1e6))
+		this.ctx.logger.info(`[HMR] registry.commit(): ${commitMs.toFixed(2)}ms`)
+
+		// 3. 汇总最慢的几个文件
+		const sorted = Object.entries(fileTimings)
+			.sort(([, a], [, b]) => b.loadMs - a.loadMs)
+			.slice(0, 5)
+		this.ctx.logger.info(`【Top 5 慢加载文件】`)
+		sorted.forEach(([p, t]) => {
+			this.ctx.logger.info(`  ${t.loadMs.toFixed(1)}ms → ${p}`)
+		})
+
+		return res
 	}
 
-	public async start() {
+	public async start(): Promise<void> {
 		const server = await createServer({
 			root: process.cwd(),
 			server: { port: 3000, middlewareMode: false },
@@ -103,13 +136,14 @@ export class HMRService {
 						},
 					},
 				}),
-				// 会影响 dev 启动速度，待优化
-				// this.plugin,
+				// 如果插件引用了大依赖(比如误引入HMR包/前端包)会导致长加载时间。
+				this.plugin,
 				this.ctx.honoService.viteHonoDevServer,
 			],
 			// 加上这段，确保 SSR 阶段不把 Mantine 当外部模块给揽进来处理
 			optimizeDeps: {
 				entries: ['src/client.tsx'],
+				include: ['valibot', '@pluxel/core', 'diod'],
 			},
 			ssr: {
 				external: ['react', 'react-dom'],

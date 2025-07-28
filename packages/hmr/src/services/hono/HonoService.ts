@@ -1,9 +1,10 @@
 import devServer from '@hono/vite-dev-server'
 import { type Context, Injectable } from '@pluxel/core'
-import { createFactory } from 'hono/factory'
+import { createFactory, type Factory } from 'hono/factory'
 import api from './api'
 import { ssrApp } from '../../server'
 import type { AppEnv, HonoType } from './env'
+import type { Plugin } from 'vite'
 
 declare module '@pluxel/core' {
 	interface Context {
@@ -21,7 +22,7 @@ export class HonoService {
 	shouldReload = false
 
 	constructor(private ctx: Context) {}
-	public createFactory() {
+	public createFactory(): Factory<AppEnv, string> {
 		return createFactory<AppEnv>({
 			initApp: (app) => {
 				app.use(async (c, next) => {
@@ -48,6 +49,7 @@ export class HonoService {
 	}
 
 	modifyApp(mod: (app: HonoType) => void) {
+		this.ctx.logger.info('添加路由')
 		this.mods.push(mod) // 保存“补丁”
 		this.app = this.applyApp()
 		this.shouldReload = true
@@ -62,7 +64,7 @@ export class HonoService {
 		})
 	}
 
-	get viteHonoDevServer() {
+	get viteHonoDevServer(): Plugin {
 		return devServer({
 			loadModule: async (server) =>
 				({

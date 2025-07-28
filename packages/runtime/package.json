@@ -1,7 +1,8 @@
 {
-  "name": "valibot-form",
+  "private": true,
+  "name": "@pluxel/runtime",
   "version": "0.1.0",
-  "description": "Demo example that imports a local package",
+  "description": "使用 HMR 管理插件的运行时，让 HMR Build 后以提升加载速度。",
   "main": "./src/index.ts",
   "module": "./dist/index.mjs",
   "types": "./dist/index.d.cts",
@@ -16,12 +17,14 @@
     "./package.json": "./package.json"
   },
   "scripts": {
-    "build": "tsdown"
+    "clean": "rimraf build .turbo",
+    "dev": "bun --watch run src/index.ts",
+    "test": "bun test"
   },
-  "dependencies": {},
+  "dependencies": {
+    "@pluxel/hmr": "workspace:*"
+  },
   "peerDependencies": {
-    "typescript": "*",
-    "tsdown": "*",
-    "valibot": "^1.1.0"
+    "typescript": "*"
   }
 }

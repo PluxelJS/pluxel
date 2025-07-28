@@ -1,4 +1,4 @@
-import { BasePlugin, Plugin } from '@pluxel/core'
+import { BasePlugin, Plugin } from '@pluxel/hmr'
 // PluginC.ts
 
 @Plugin({ name: 'PluginC', type: 'hook' })

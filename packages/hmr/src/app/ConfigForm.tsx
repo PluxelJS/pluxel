@@ -43,9 +43,6 @@ export function ConfigForm({ pluginName, configs }: ConfigFormProps) {
 
 			const data = await res.json()
 			return data
-			if (data.code === 'validation_error') {
-				return data
-			}
 		},
 		onSuccess: () => {
 			// 提交成功后刷新插件详情
@@ -68,6 +65,8 @@ export function ConfigForm({ pluginName, configs }: ConfigFormProps) {
 					type Values = InferOutput<typeof schema>
 					const opts = formOptions<Values>({
 						defaultValues: getDefaults(schema) as Values,
+						asyncAlways: true, // 即便同步校验失败，也跑 onChangeAsync
+						asyncDebounceMs: 200, // 每次输入后 200ms 防抖
 						validators: {
 							onChangeAsync: async ({
 								value,
@@ -81,9 +80,9 @@ export function ConfigForm({ pluginName, configs }: ConfigFormProps) {
 								}
 								const result = await mutation.mutateAsync(payload)
 								if (result.code === 'validation_error') {
-									return result.errors[key]
+									return { fields: result.errors[key] }
 								}
-								formApi.setErrorMap(null)
+								return
 							},
 						},
 						onSubmit: () => {
