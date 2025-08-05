@@ -1,6 +1,23 @@
 import fs from 'node:fs/promises'
 import { extname, isAbsolute, join } from 'node:path'
 import { normalize, resolve } from 'pathe'
+import { resolvePath } from 'mlly'
+
+const entryCache = new Map<string, Promise<string>>()
+
+export function scanPackageEntryByPath(
+	path: string,
+	isDev: boolean,
+): Promise<string> {
+	const key = `${path}::${isDev}`
+	if (!entryCache.has(key)) {
+		entryCache.set(
+			key,
+			resolvePath(path, { conditions: isDev ? ['@pluxel/source'] : undefined }),
+		)
+	}
+	return entryCache.get(key)!
+}
 
 export async function getAllTsFiles(dirs: string[]): Promise<string[]> {
 	const results: string[] = []

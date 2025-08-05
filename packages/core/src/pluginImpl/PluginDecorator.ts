@@ -21,8 +21,7 @@ export interface PluginMetadata {
 	[key: string]: any
 }
 
-export type ConfigSchema = Record<string, unknown>
-export type ConfigList = Record<string, any>
+export type ConfigSchemaList<T = any> = Record<string, T>
 
 /**
  * ClassDecorator: 注册插件元数据
@@ -33,13 +32,13 @@ export function Plugin<T extends PluginConstructor>(meta: PluginMetadata) {
 	}
 }
 
-export function Config<S extends ConfigSchema>(schema: S) {
+export function Config<S extends ConfigSchemaList>(schema: S) {
 	return <T extends PluginConstructor>(
 		target: T['prototype'],
 		propertyKey: string | symbol,
 	): void => {
 		const ctor = (target as any).constructor as T
-		const cfg: ConfigList =
+		const cfg: ConfigSchemaList =
 			Reflect.getOwnMetadata(PLUGIN_SYMBOL.CONFIG_MAP, ctor) ||
 			Object.create(null)
 
@@ -79,7 +78,7 @@ export function Optional(): ParameterDecorator {
  */
 export interface MetadataMap {
 	META_KEY: PluginMetadata
-	CONFIG_MAP: ConfigList
+	CONFIG_MAP: ConfigSchemaList
 	OPTIONAL_PARAMS_KEY: number[]
 }
 /**

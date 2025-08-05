@@ -7,7 +7,7 @@ export const a = v.object({ name: v.string() })
 @Plugin({ name: 'PluginB', type: 'hook' })
 export class PluginB extends BasePlugin {
 	init(): void {
-		this.ctx.logger.info('PluginB initialized', a.type)
+		this.ctx.logger.info('PluginBaa initialized', a.type)
 		this.ctx.honoService.modifyApp((app) => {
 			this.ctx.logger.info('添加了路由，爱来自 plugin')
 			app.get('/api/b', (c) => {

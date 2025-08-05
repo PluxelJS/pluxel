@@ -65,10 +65,18 @@ export class PluginContainer {
 				const deps = resolvers.map((fn) => fn(container))
 				const instance = new Plugin(...deps)
 				instance[PLUGIN_CTX] = pluginCtx
+				pluginCtx.pluginMeta = meta
 				// dispose 时删除插件实例化本身
 				pluginCtx.collect(() => {
 					this.singletons.delete(Plugin)
 				})
+				pluginCtx.emitWithContext(
+					instance,
+					'beforeStart',
+					pluginCtx,
+					Plugin,
+					instance,
+				)
 				return instance
 			})
 			.withDependencies(mustDeps)

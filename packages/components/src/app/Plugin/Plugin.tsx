@@ -34,7 +34,7 @@ export function Plugin({
 	return (
 		<Container size="lg" py="md">
 			{/* 顶部操作栏 */}
-			<ActionBar />
+			{/* <ActionBar /> */}
 
 			{/* 两栏布局：左侧粘性，右侧滚动 */}
 			<Grid mt="md">
@@ -74,10 +74,7 @@ export function Plugin({
 
 				{/* 右侧主内容 */}
 				<Grid.Col span={8}>
-					<ScrollArea.Autosize
-						h={`calc(100vh - ${Number(theme.spacing.md) * 2}px)`}
-						offsetScrollbars
-					>
+					<ScrollArea.Autosize h={`calc(100vh - ${24 * 2}px)`} offsetScrollbars>
 						<Card shadow="sm" radius="md" p="lg" withBorder>
 							<Box px="sm" py="xs" style={{ lineHeight: 1.6 }}>
 								{children}

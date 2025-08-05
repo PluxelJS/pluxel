@@ -8,7 +8,6 @@ declare module '@pluxel/context' {
 	}
 }
 
-const a = 1
 @Injectable
 export class EffectScopeService {
 	static key = 'scope'

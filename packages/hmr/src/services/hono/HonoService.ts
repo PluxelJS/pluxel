@@ -1,7 +1,7 @@
 import devServer from '@hono/vite-dev-server'
 import { type Context, Injectable } from '@pluxel/core'
 import { createFactory, type Factory } from 'hono/factory'
-import api from './api'
+import api from '../../app/api'
 import { ssrApp } from '../../server'
 import type { AppEnv, HonoType } from './env'
 import type { Plugin } from 'vite'
@@ -49,12 +49,10 @@ export class HonoService {
 	}
 
 	modifyApp(mod: (app: HonoType) => void) {
-		this.ctx.logger.info('添加路由')
 		this.mods.push(mod) // 保存“补丁”
 		this.app = this.applyApp()
 		this.shouldReload = true
 		return this.ctx.collect(() => {
-			this.ctx.logger.info('移除路由')
 			// 从 this.mods 中移除当前 mod
 			const idx = this.mods.indexOf(mod)
 			if (idx !== -1) this.mods.splice(idx, 1)
@@ -72,8 +70,6 @@ export class HonoService {
 				}) as any,
 			handleHotUpdate: ({ server }) => {
 				this.ctx.logger.debug('触发 hmr')
-				server.hot.send({ type: 'full-reload' })
-				server.ws.send({ type: 'full-reload' })
 				if (this.shouldReload) {
 					this.ctx.logger.debug('触发全量重载')
 					this.shouldReload = false

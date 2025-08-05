@@ -94,7 +94,11 @@
     ],
     "files.exclude": {},
     "typescript.tsdk": "🌱  monorepo\\node_modules\\typescript\\lib",
-    "exportall.config.folderListener": [],
-    "exportall.config.relExclusion": []
+    "exportall.config.folderListener": [
+      "/packages/components/src/components/Plugin"
+    ],
+    "exportall.config.relExclusion": [
+      "/packages/components/src/app/Dashboard/Example.tsx"
+    ]
   }
 }

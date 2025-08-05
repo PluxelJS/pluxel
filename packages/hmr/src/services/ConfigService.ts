@@ -1,4 +1,5 @@
 import fs from 'node:fs/promises'
+import { readFileSync } from 'node:fs'
 import { type Context, Injectable } from '@pluxel/core'
 import { debounce } from '@tanstack/pacer'
 import chokidar, { type FSWatcher } from 'chokidar'
@@ -15,24 +16,20 @@ export interface PluginMeta {
 // —— 2. 插件条目，T 是业务 config 的类型 ——
 export interface PluginEntry<T extends object = {}> {
 	meta: PluginMeta
-	config: T
+	configRecord: T
 }
 
 // —— 3. 全局配置结构 ——
 export interface ConfigShape {
-	enabled: string[] // 启用列表
+	enabled: Set<string> // 启用列表
 	plugins: Record<string, PluginEntry> // 插件名 → 条目
-}
-
-const DEFAULT_CONFIG: ConfigShape = {
-	enabled: [],
-	plugins: {},
+	extra: Record<string, any>
 }
 
 @Injectable
 export class ConfigService {
 	static key = 'configService'
-	private data: ConfigShape = DEFAULT_CONFIG
+	private data!: ConfigShape
 	private watcher!: FSWatcher
 	private isWriting = false
 	private saveDebounced: () => void
@@ -48,10 +45,33 @@ export class ConfigService {
 
 	private async loadFromDisk(file: string) {
 		try {
-			const txt = await fs.readFile(file, 'utf-8')
-			this.data = SuperJSON.parse(txt)
+			let txt: string
+			if (import.meta.hot) {
+				txt = await fs.readFile(file, 'utf-8')
+			} else {
+				txt = readFileSync(file, 'utf-8')
+			}
+			// parse may give us a raw object if there's no metadata
+			const parsed = SuperJSON.parse(txt) as ConfigShape & { enabled?: unknown }
+			this.data = {
+				// ensure enabled is always a Set<string>
+				enabled: new Set(
+					Array.isArray(parsed.enabled)
+						? (parsed.enabled as string[])
+						: parsed.enabled instanceof Set
+							? Array.from(parsed.enabled as Set<string>)
+							: [],
+				),
+				plugins: parsed.plugins ?? {},
+				extra: parsed.extra ?? {},
+			}
 		} catch {
-			this.data = DEFAULT_CONFIG
+			// create a fresh default, never re-use the same DEFAULT_CONFIG object
+			this.data = {
+				enabled: new Set(),
+				plugins: {},
+				extra: {},
+			}
 			await this.saveToDisk(file)
 		}
 	}
@@ -74,11 +94,12 @@ export class ConfigService {
 	 * 一次拉取 meta + config
 	 * @typeParam T 插件业务配置类型
 	 */
-	getConfig<T extends object = {}>(
-		name: string = this.ctx.name,
+	getConfig<T extends object = Record<string, any>>(
+		name: string = this.ctx.pluginMeta.name,
 	): PluginEntry<T> {
 		const entry =
-			this.data.plugins[name] || ({ meta: {}, config: {} } as PluginEntry<T>)
+			this.data.plugins[name] ||
+			({ meta: {}, configRecord: {} } as PluginEntry<T>)
 		return entry as PluginEntry<T>
 	}
 
@@ -94,13 +115,48 @@ export class ConfigService {
 		partial: Partial<PluginEntry<T>>,
 	) {
 		// biome-ignore lint/suspicious/noAssignInExpressions: <explanation>
-		const entry = (this.data.plugins[name] ||= { meta: {}, config: {} })
+		const entry = (this.data.plugins[name] ||= { meta: {}, configRecord: {} })
 		if (partial.meta) Object.assign(entry.meta, partial.meta)
-		if (partial.config) Object.assign(entry.config, partial.config)
+		if (partial.configRecord)
+			Object.assign(entry.configRecord, partial.configRecord)
+		this.saveDebounced()
+	}
+
+	getExtra(key: string) {
+		return this.data.extra[key]
+	}
+	setExtra(key: string, data: any) {
+		this.data.extra[key] = data
 		this.saveDebounced()
 	}
 
 	isEnable(name: string): boolean {
-		return this.data.enabled.includes(name)
+		return this.data.enabled.has(name)
+	}
+	enablePlugin(name: string[] | string): void {
+		if (Array.isArray(name)) {
+			for (const n of name) {
+				this.data.enabled.add(n)
+			}
+		} else {
+			this.data.enabled.add(name)
+		}
+		this.saveDebounced()
+	}
+	disablePlugin(name: string[] | string): void {
+		if (Array.isArray(name)) {
+			for (const n of name) {
+				this.data.enabled.delete(n)
+			}
+		} else {
+			this.data.enabled.delete(name)
+		}
+		this.saveDebounced()
+	}
+}
+
+declare module '@pluxel/core' {
+	interface Context {
+		configService: ConfigService
 	}
 }

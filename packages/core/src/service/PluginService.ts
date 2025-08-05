@@ -16,6 +16,7 @@ declare module '@pluxel/context' {
 	}
 	export interface Context {
 		registry: PluginService
+		pluginMeta: PluginMetadata
 		parent?: Context
 		caller?: Context
 	}
@@ -23,6 +24,7 @@ declare module '@pluxel/context' {
 
 import { randomUUID } from 'node:crypto'
 import { EffectScopeService } from './EffectScopeService'
+import type { PluginMetadata } from '../pluginImpl'
 
 @Injectable
 export class PluginService {
@@ -42,6 +44,14 @@ export class PluginService {
 			})
 		})
 	}
+
+	getPluginRunning(pluginId: PluginIdentifier) {
+		const container = this.pluginRegistry.lastContainer
+		if (container === undefined) return false
+		const plugin = container.services.get(pluginId)
+		return plugin !== undefined
+	}
+
 	async commit() {
 		const action = this.pluginRegistry.build()
 		if (!action.ok) {

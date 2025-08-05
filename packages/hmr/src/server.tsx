@@ -1,5 +1,5 @@
 import { App } from './app'
-import { client } from './rpc'
+import { client } from './app/rpc'
 import { renderMiddleware } from './render'
 import type { AppEnv } from '../../hmr/src/services/hono/env'
 import { Hono } from 'hono'
@@ -19,9 +19,12 @@ ssrApp.get('/plugin/:name', async (c) => {
 	const qc = c.var.qc
 
 	// 在服务器端预取
-	await qc.prefetchQuery(['plugins', name], async () => {
-		const res = await client.plugins[':name'].$get({ param: { name } })
-		return await res.json()
+	await qc.prefetchQuery({
+		queryKey: ['plugins', name],
+		queryFn: async () => {
+			const res = await client.plugins[':name'].$get({ param: { name } })
+			return await res.json()
+		},
 	})
 
 	// 序列化 cache

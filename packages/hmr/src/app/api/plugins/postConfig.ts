@@ -1,6 +1,6 @@
 // src/plugins.ts
 import { Hono } from 'hono'
-import type { AppEnv } from '../env'
+import type { AppEnv } from '../../../services/hono/env'
 import * as v from 'valibot'
 import { vValidator } from '@hono/valibot-validator'
 
@@ -20,11 +20,13 @@ type PluginPostResponse =
 	| { code: 'validation_error'; errors: Record<string, Record<string, string>> }
 	| { code: 'success'; message: string }
 
-export const pluginsApp = new Hono<AppEnv>()
-	.post('/plugins/:name', vValidator('json', pluginConfigSchema), async (c) => {
+export const pluginsPostConfig = new Hono<AppEnv>().post(
+	'/:name',
+	vValidator('json', pluginConfigSchema),
+	async (c) => {
 		const pluginName = c.req.param('name')
 		const ctx = c.var.plugin_ctx
-		const ctor = ctx.loader.nameMap.get(pluginName)
+		const ctor = ctx.loader.getPluginClassByName(pluginName)
 
 		if (!ctor) {
 			return c.json<PluginPostResponse>(
@@ -33,7 +35,7 @@ export const pluginsApp = new Hono<AppEnv>()
 			)
 		}
 
-		const configChecker = ctx.loader.getPluginConfig(ctor)
+		const configChecker = ctx.loader.getPluginSchema(ctor)
 		if (!configChecker) {
 			return c.json<PluginPostResponse>(
 				{ code: 'config_not_found', error: '该插件没有定义配置检查' },
@@ -41,21 +43,24 @@ export const pluginsApp = new Hono<AppEnv>()
 			)
 		}
 
-		const { formData } = c.req.valid('json') as PluginConfigPayload
+		const inputData = c.req.valid('json') as PluginConfigPayload
 
 		// → 嵌套结构：每个 configKey 对应一个子对象，里面按属性名汇总错误
 		const errors: Record<string, any> = {}
 
-		for (const [configKey, data] of Object.entries(formData)) {
+		for (const [configKey, data] of Object.entries(inputData.formData)) {
 			const schema = configChecker[configKey]
 			if (!schema) {
+				2
 				// 整个配置项都不存在
 				errors[configKey] = { _error: `未知配置项 ${configKey}` }
 				continue
 			}
 
 			const result = v.safeParse(schema, data)
-			if (result.success) continue
+			if (result.success) {
+				continue
+			}
 			// Issue 的类型定义，方便后面复用
 			type Issue = (typeof result.issues)[number]
 
@@ -87,31 +92,24 @@ export const pluginsApp = new Hono<AppEnv>()
 			)
 		}
 
-		// ………后续 isSubmitAction 逻辑………
+		if (inputData.isSubmitAction) {
+			// 1. 直接把 formData 作为 config 对象整体提交
+			// 2. 如果有字段需要过滤 undefined，可用 Object.fromEntries 先清洗一遍
+			const entries = Object.entries(inputData.formData).filter(
+				([, v]) => v !== undefined && v !== null,
+			)
+
+			const cleanConfig = Object.fromEntries(entries)
+
+			// 一次性更新所有字段
+			ctx.configService.setConfig(pluginName, {
+				configRecord: cleanConfig,
+			})
+		}
 
 		return c.json<PluginPostResponse>(
 			{ code: 'success', message: '验证通过。' },
 			200,
 		)
-	})
-	.get('/plugins/:name', (c) => {
-		const pluginName = c.req.param('name')
-		const ctx = c.var.plugin_ctx
-		const ctor = ctx.loader.nameMap.get(pluginName)
-
-		if (!ctor) {
-			return c.json(
-				{ code: 'plugin_not_found', error: 'Plugin not found' },
-				404,
-			)
-		}
-
-		return c.json(
-			{
-				name: pluginName,
-				desc: '插件示例描述',
-				config: ctx.loader.getPluginConfig(ctor),
-			},
-			200,
-		)
-	})
+	},
+)

@@ -22,7 +22,9 @@ await ctx.registry.commit()
 	// 如果你有其他服务，比如 Hono，也在这里启动
 }
 bootstrap()
-setTimeout(() => console.log(ctx.loader.ctorMap), 1000)
+setTimeout(() => {
+	console.log(ctx.loader.getLoadedPluginsName())
+}, 1000)
 ctx.honoService.modifyApp((app) => {
 	app.get('/pluginadd', (c) => {
 		return c.text('lastone')

@@ -18,6 +18,7 @@ import { getDefaults } from 'valibot'
 import { AutoForm } from '@pluxel/components'
 import type { InferRequestType, InferResponseType } from 'hono/client'
 import { formOptions } from '@tanstack/react-form'
+import { notifications } from '@mantine/notifications'
 
 export interface ConfigFormProps {
 	pluginName: string
@@ -46,7 +47,7 @@ export function ConfigForm({ pluginName, configs }: ConfigFormProps) {
 		},
 		onSuccess: () => {
 			// 提交成功后刷新插件详情
-			queryClient.invalidateQueries(['plugins', pluginName])
+			// queryClient.invalidateQueries(['plugins', pluginName])
 		},
 	})
 
@@ -74,7 +75,7 @@ export function ConfigForm({ pluginName, configs }: ConfigFormProps) {
 								formApi,
 							}: { value: any; signal: AbortSignal; formApi: any }) => {
 								const payload: Payload = {
-									isSubmitAction: true,
+									isSubmitAction: false,
 									formData: { [key]: value },
 									signal,
 								}
@@ -85,8 +86,22 @@ export function ConfigForm({ pluginName, configs }: ConfigFormProps) {
 								return
 							},
 						},
-						onSubmit: () => {
-							mutation.reset()
+						onSubmit: async ({
+							value,
+							signal,
+							formApi,
+						}: { value: any; signal: AbortSignal; formApi: any }) => {
+							const payload: Payload = {
+								isSubmitAction: true,
+								formData: { [key]: value },
+								signal,
+							}
+							const result = await mutation.mutateAsync(payload)
+							if (result.code === 'success') {
+								mutation.reset()
+								return
+							}
+							notifications.show({ title: '提交失败。', message: result.code })
 						},
 					})
 

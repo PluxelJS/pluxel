@@ -1,0 +1,28 @@
+import { Hono } from 'hono'
+import type { AppEnv } from '../../../services/hono/env'
+import * as v from 'valibot'
+import { vValidator } from '@hono/valibot-validator'
+
+const updateGroupsSchema = v.array(
+	v.object({
+		groupId: v.string(),
+		name: v.string(),
+		pluginIds: v.array(v.string()),
+	}),
+)
+
+type UpdateGroupsPayload = v.InferOutput<typeof updateGroupsSchema>
+
+export const groupsList = new Hono<AppEnv>()
+	.get('/groups', (c) => {
+		const ctx = c.var.plugin_ctx
+		const data = ctx.configService.getExtra('groups') ?? []
+		return c.json<UpdateGroupsPayload>(data, 200)
+	})
+	.post('/groups', vValidator('json', updateGroupsSchema), (c) => {
+		const inputData: UpdateGroupsPayload = c.req.valid('json')
+		const ctx = c.var.plugin_ctx
+		ctx.configService.setExtra('groups', inputData)
+
+		return c.json<UpdateGroupsPayload>(inputData, 200)
+	})

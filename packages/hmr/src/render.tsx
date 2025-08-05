@@ -1,7 +1,7 @@
 // render.tsx
 import { reactRenderer } from '@hono/react-renderer'
 import { ColorSchemeScript, MantineProvider } from '@mantine/core'
-import { Hydrate, QueryClientProvider } from '@tanstack/react-query'
+import { HydrationBoundary, QueryClientProvider } from '@tanstack/react-query'
 import { Router } from 'wouter'
 
 export const renderMiddleware = reactRenderer(({ c, children }) => {
@@ -33,7 +33,9 @@ export const renderMiddleware = reactRenderer(({ c, children }) => {
 							{/* ① React 只管理这里的 children */}
 							<div id="root">
 								{dehydratedState ? (
-									<Hydrate state={dehydratedState}>{children}</Hydrate>
+									<HydrationBoundary state={dehydratedState}>
+										{children}
+									</HydrationBoundary>
 								) : (
 									children
 								)}
@@ -44,6 +46,7 @@ export const renderMiddleware = reactRenderer(({ c, children }) => {
 								<script
 									id="__REACT_QUERY_STATE__"
 									type="application/json"
+									// biome-ignore lint/security/noDangerouslySetInnerHtml: <explanation>
 									dangerouslySetInnerHTML={{
 										__html: JSON.stringify(dehydratedState),
 									}}
@@ -51,7 +54,7 @@ export const renderMiddleware = reactRenderer(({ c, children }) => {
 							)}
 
 							{/* ③ 客户端入口 */}
-							<script type="module" src="/src/client.tsx"></script>
+							<script type="module" src="/src/client.tsx" />
 						</body>
 					</html>
 				</MantineProvider>

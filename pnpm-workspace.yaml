@@ -1,2 +1,17 @@
 packages:
-  - 'packages/*'
+  - packages/*
+
+onlyBuiltDependencies:
+  - '@biomejs/biome'
+  - '@swc/core'
+  - esbuild
+
+public-hoist-pattern:
+  - react
+  - react-dom
+  - '@tabler/icons-react'
+  - '@mantine/core'
+  - '@mantine/hooks'
+  - '@mantine/dates'
+  - '@mantine/modals'
+  - '@mantine/notifications'

@@ -46,7 +46,7 @@ export class HMRService {
 			configureServer: async (server) => {
 				this.viteServer = server
 				console.time('[HMR] 扫描文件') // 开始计时
-				const files = await this.ctx.loader.getAllTsFiles(config.dir)
+				const files = await this.ctx.loader.scanPossiblePaths(config.dir)
 				console.timeEnd('[HMR] 扫描文件') // 打印耗时
 
 				console.time('[HMR] 预热加载模块')
@@ -99,10 +99,10 @@ export class HMRService {
 		const sorted = Object.entries(fileTimings)
 			.sort(([, a], [, b]) => b.loadMs - a.loadMs)
 			.slice(0, 5)
-		this.ctx.logger.info(`【Top 5 慢加载文件】`)
-		sorted.forEach(([p, t]) => {
+		this.ctx.logger.info('【Top 5 慢加载文件】')
+		for (const [p, t] of sorted) {
 			this.ctx.logger.info(`  ${t.loadMs.toFixed(1)}ms → ${p}`)
-		})
+		}
 
 		return res
 	}
@@ -142,8 +142,8 @@ export class HMRService {
 			],
 			// 加上这段，确保 SSR 阶段不把 Mantine 当外部模块给揽进来处理
 			optimizeDeps: {
-				entries: ['src/client.tsx'],
 				include: ['valibot', '@pluxel/core', 'diod'],
+				// 这里千万不能加 mantine 和 tanstack 的东西, exclude 会导致部分渲染出问题。
 			},
 			ssr: {
 				external: ['react', 'react-dom'],
