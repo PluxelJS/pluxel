@@ -7,6 +7,7 @@ import {
 import { client } from '../rpc'
 import type { InferRequestType, InferResponseType } from 'hono/client'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { notifications } from '@mantine/notifications'
 
 export interface ActionBarProps {
 	pluginName: string
@@ -21,18 +22,20 @@ export function ActionBar({ pluginName, isRunning }: ActionBarProps) {
 	type Payload = InferRequestType<typeof $patch>['json']
 	type Response = InferResponseType<typeof $patch>
 
-	const queryClient = useQueryClient()
-
 	const mutation = useMutation<Response, Error, Payload>({
 		mutationFn: async (body) => {
 			const res = await $patch({ json: body })
+			if (!res.ok) {
+				const err = await res.json()
 
+				throw new Error(`${err.code}: ${err.error}`)
+			}
 			const data = await res.json()
+			notifications.show({
+				title: '更改插件状态成功。',
+				message: data.changes.join('\n'),
+			})
 			return data
-		},
-		onSuccess: () => {
-			// 提交成功后刷新插件详情
-			// queryClient.invalidateQueries(['plugins', pluginName])
 		},
 	})
 

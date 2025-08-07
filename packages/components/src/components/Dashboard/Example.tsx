@@ -33,7 +33,6 @@ export default function App() {
 			<Flex
 				direction={isMobile ? 'column' : 'row'}
 				style={{
-					height: 'calc(100vh - 60px)', // 根据你的 Layout header 高度调整
 					width: '100%',
 				}}
 			>

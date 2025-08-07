@@ -11,9 +11,9 @@ import '@mantine/core/styles.css'
 import '@mantine/notifications/styles.css'
 
 import { App } from './app'
+import { queryClient } from './queryClient'
 
 const root = document.getElementById('root')!
-const queryClient = new QueryClient()
 
 // 取出服务端注入的 cache
 const dehydratedState = document.getElementById(

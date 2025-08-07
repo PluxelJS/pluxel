@@ -2,6 +2,7 @@ import devServer from '@hono/vite-dev-server'
 import { type Context, Injectable } from '@pluxel/core'
 import { createFactory, type Factory } from 'hono/factory'
 import api from '../../app/api'
+import loggerApi from '../logger/api'
 import { ssrApp } from '../../server'
 import type { AppEnv, HonoType } from './env'
 import type { Plugin } from 'vite'
@@ -36,6 +37,7 @@ export class HonoService {
 	private applyApp() {
 		const a = this.createFactory().createApp()
 		a.route('/api', api)
+		a.route('/', loggerApi)
 		for (const m of this.mods) {
 			m(a)
 		}
@@ -70,6 +72,8 @@ export class HonoService {
 				}) as any,
 			handleHotUpdate: ({ server }) => {
 				this.ctx.logger.debug('触发 hmr')
+				/* server.hot.send({ type: 'full-reload' })
+				server.ws.send({ type: 'full-reload' }) */
 				if (this.shouldReload) {
 					this.ctx.logger.debug('触发全量重载')
 					this.shouldReload = false

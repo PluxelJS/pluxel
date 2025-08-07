@@ -1,38 +1,84 @@
 // src/logger.ts
 import pino, { type Logger, type LoggerOptions } from 'pino'
+import { multistream } from 'pino'
 import pinoCaller from 'pino-caller'
-export * from 'pino'
+import fs from 'node:fs'
+import path from 'node:path'
+import { Writable } from 'node:stream'
+import EventEmitter from 'node:events'
 
-// 判断是否 dev，注意你的项目里 NODE_ENV 需要在启动脚本里设为 "development"
-const isDev =
-	process.env.NODE_ENV === undefined
-		? true
-		: process.env.NODE_ENV === 'development'
-
-/**
- * 开发环境下，我们：
- *  1) 用 pino-caller 给每次调用打上 file/line 信息
- *  2) 用 pino-pretty 的 transport/messageFormat 格式化输出，
-//     并把 file:line 拼到末尾
- */
-export function createLogger(opts: LoggerOptions): Logger {
-	// 1. 基础 Logger
-	const base = pino({
-		...opts,
-		// 生产环境直接走 JSON 输出
-		transport: isDev
-			? {
-					target: 'pino-pretty',
-					options: {
-						colorize: true,
-						// 忽略 pid, hostname，大家常用设置
-						ignore: 'pid,hostname',
-					},
-				}
-			: undefined,
-	})
-
-	// 2. 把基础 logger 包裹一下，让它在每次调用时捕获堆栈
-	//    wrap=false 表示直接用 bind，不替换方法签名
-	return isDev ? pinoCaller(base) : base
+/** 单条日志记录类型 */
+export interface LogRecord {
+	time: string
+	level: number | string
+	name?: string
+	msg: string
+	[key: string]: any
 }
+
+// 环形缓冲与事件发射
+const ringSize = 500
+const ring: LogRecord[] = new Array(ringSize)
+let ptr = 0
+const events = new EventEmitter()
+
+function pushRecord(rec: LogRecord) {
+	ring[ptr] = rec
+	ptr = (ptr + 1) % ringSize
+	events.emit('new_log', rec)
+}
+
+/** 获取从最旧到最新的完整日志快照 */
+export function getOrderedLogs(): LogRecord[] {
+	return [...ring.slice(ptr), ...ring.slice(0, ptr)].filter(Boolean)
+}
+
+// 日志持久化目录 & 写流
+const logDir = path.resolve(process.cwd(), 'logs')
+if (!fs.existsSync(logDir)) fs.mkdirSync(logDir)
+const fileStream = fs.createWriteStream(path.join(logDir, 'all.log'), {
+	flags: 'a',
+})
+
+// 自定义 Writable，用于解析 JSON 并推送到环缓，同时写入文件
+const jsonStream = new Writable({
+	write(chunk, encoding, callback) {
+		const str = chunk.toString()
+		try {
+			const obj = JSON.parse(str)
+			pushRecord({
+				time: obj.time || new Date().toISOString(),
+				level: obj.level,
+				name: obj.name,
+				msg: obj.msg,
+				...obj,
+			})
+		} catch {
+			// 非 JSON 跳过
+		}
+		fileStream.write(str)
+		callback()
+	},
+})
+
+/** 创建 Pino Logger，多目标：文件(JSON)、stdout(Pretty)、环缓+事件 */
+export function createLogger(opts: LoggerOptions): Logger {
+	const isDev =
+		process.env.NODE_ENV === 'development' || process.env.NODE_ENV === undefined
+
+	const streams: Parameters<typeof multistream>[0] = [
+		{ level: opts.level ?? 'info', stream: jsonStream },
+		isDev && {
+			level: opts.level ?? 'info',
+			stream: pino.transport({
+				target: 'pino-pretty',
+				options: { colorize: true, ignore: 'pid,hostname' },
+			}),
+		},
+	].filter(Boolean) as any
+
+	const logger = pino(opts, multistream(streams))
+	return isDev ? pinoCaller(logger) : logger
+}
+
+export { events }

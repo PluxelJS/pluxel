@@ -27,7 +27,12 @@ export const renderMiddleware = reactRenderer(({ c, children }) => {
 									'http://localhost:3000/node_modules/@mantine/core/styles.css'
 								}
 							/>
-							z
+							<link
+								rel="stylesheet"
+								href={
+									'http://localhost:3000/node_modules/@mantine/notifications/styles.css'
+								}
+							/>
 						</head>
 						<body>
 							{/* ① React 只管理这里的 children */}

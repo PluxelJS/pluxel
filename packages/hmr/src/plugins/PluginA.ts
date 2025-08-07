@@ -1,5 +1,6 @@
-import { BasePlugin,  Optional, Plugin } from '@pluxel/core'
-import { Config, v, f} from './config'
+import { BasePlugin, Optional, Plugin } from '@pluxel/core'
+import { Config, type v } from './config'
+import { test, test2 } from './testconfig'
 
 // PluginA.ts
 // PluginA 依赖 PluginB 为必选依赖，依赖 PluginC 为可选依赖
@@ -8,32 +9,13 @@ import { PluginB } from './PluginB'
 // biome-ignore lint/style/useImportType: <explanation>
 import { PluginC } from './PluginC'
 
-const test = v.object({
-		id: v.pipe(
-			v.number(),
-			
-					f.numberMeta({
-						type: 'slider',
-						options: {
-							min: 0,
-							max: 100,
-							step: 5,
-							marks: [
-								{ value: 0, label: '0' },
-								{ value: 5, label: '5' },
-								{ value: 10, label: '10' },
-							],
-						},
-					}),
-					v.maxValue(10),
-		),
-		name: v.optional(v.pipe(v.string(), v.hexColor()), '#000000'),
-		check: v.optional(v.boolean(), true),
-	})
 @Plugin({ name: 'PluginA', type: 'event' })
 export class PluginA extends BasePlugin {
 	@Config(test)
 	private config!: v.InferOutput<typeof test>;
+
+		@Config(test2)
+	private config2!: v.InferOutput<typeof test2>;
 
 	constructor(public pluginB: PluginB, @Optional() public pluginC?: PluginC) {
     super();
@@ -51,7 +33,9 @@ export class PluginA extends BasePlugin {
 		}
 		this.ctx.test.collect()
 		this.ctx.honoService.modifyApp((app) => {
-			app.get("/a", (c) => { return c.html("text")})
+			app.get('/a', (c) => {
+				return c.html('text')
+			})
 		})
 	}
 

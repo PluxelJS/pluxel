@@ -20,10 +20,22 @@ type PluginPostResponse =
 	| { code: 'validation_error'; errors: Record<string, Record<string, string>> }
 	| { code: 'success'; message: string }
 
-export const pluginsPostConfig = new Hono<AppEnv>().post(
-	'/:name',
-	vValidator('json', pluginConfigSchema),
-	async (c) => {
+export const pluginsPostConfig = new Hono<AppEnv>()
+	.get('/config/:name', (c) => {
+		const pluginName = c.req.param('name')
+		const ctx = c.var.plugin_ctx
+		const ctor = ctx.loader.getPluginClassByName(pluginName)
+
+		if (!ctor) {
+			return c.json<PluginPostResponse>(
+				{ code: 'plugin_not_found', error: '插件未找到' },
+				404,
+			)
+		}
+
+		return c.json(ctx.configService.getConfig(pluginName))
+	})
+	.post('/:name', vValidator('json', pluginConfigSchema), async (c) => {
 		const pluginName = c.req.param('name')
 		const ctx = c.var.plugin_ctx
 		const ctor = ctx.loader.getPluginClassByName(pluginName)
@@ -111,5 +123,4 @@ export const pluginsPostConfig = new Hono<AppEnv>().post(
 			{ code: 'success', message: '验证通过。' },
 			200,
 		)
-	},
-)
+	})

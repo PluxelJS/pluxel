@@ -25,10 +25,7 @@ export const PluginsLayout: React.FC = () => {
 	}, [pluginName])
 
 	return (
-		<Flex
-			direction="row"
-			style={{ height: 'calc(100vh - 60px)', width: '100%' }}
-		>
+		<Flex h="100%" gap="md" direction="row">
 			<PluginList />
 			{pluginPane}
 		</Flex>
