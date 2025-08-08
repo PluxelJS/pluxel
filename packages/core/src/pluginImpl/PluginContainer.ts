@@ -7,6 +7,7 @@ import {
 } from '../container'
 import { type BasePlugin, PLUGIN_CTX } from './BasePlugin'
 import { getClassParam, getPluginMeta } from './PluginDecorator'
+import { getDependencies } from '../../../diod/src/reflection'
 import {
 	type PluginClass,
 	type PluginIdentifier,
@@ -37,6 +38,7 @@ export class PluginContainer {
 			getPluginMeta('OPTIONAL_PARAMS_KEY', Plugin),
 		)
 		const pluginCtx = this.createPluginCTX()
+		pluginCtx.pluginMeta = meta
 
 		const mustDeps: PluginIdentifier[] = []
 		const resolvers: ((c: Container) => BasePlugin | undefined)[] = []
@@ -65,7 +67,6 @@ export class PluginContainer {
 				const deps = resolvers.map((fn) => fn(container))
 				const instance = new Plugin(...deps)
 				instance[PLUGIN_CTX] = pluginCtx
-				pluginCtx.pluginMeta = meta
 				// dispose 时删除插件实例化本身
 				pluginCtx.collect(() => {
 					this.singletons.delete(Plugin)

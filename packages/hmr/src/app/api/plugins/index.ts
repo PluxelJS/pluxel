@@ -32,6 +32,7 @@ export default new Hono<AppEnv>()
 				isRunning: ctx.registry.getPluginRunning(ctor),
 				config: ctx.loader.getPluginSchema(ctor),
 				existConfig: ctx.configService.getConfig(pluginName).configRecord,
+				dependencies: ctx.loader.getPluginDependenciesInfo(ctor),
 			},
 			200,
 		)

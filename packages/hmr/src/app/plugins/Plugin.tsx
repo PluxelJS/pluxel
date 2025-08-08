@@ -6,24 +6,28 @@ import {
 	CardSection,
 	Text,
 	Center,
-	LoadingOverlay,
+	LoadingOverlay
 } from '@mantine/core'
 import { useQuery } from '@tanstack/react-query'
-import { client } from '../rpc'
+import { client, type InferResponseType } from '../rpc'
 import { ConfigForm } from './ConfigForm'
 import { ActionBar } from './ActionBar'
-import { showNotification } from '@mantine/notifications'
-import { LiveLog } from '../LogViewer'
+import { LiveLog } from '../log_viewer/LiveLog'
+import { DependencyList } from './DependencyList'
+import { Link } from 'wouter'
 
 interface PluginProps {
 	pluginName: string
 }
 
+const $get = client.plugins[':name'].$get
+export type PluginResponse = InferResponseType<typeof $get>
+
 const PluginDetailComponent: React.FC<PluginProps> = ({ pluginName }) => {
 	const { data, isLoading, isError, error } = useQuery({
 		queryKey: ['plugin', pluginName] as const,
 		queryFn: async () => {
-			const res = await client.plugins[':name'].$get({
+			const res = await $get({
 				param: { name: pluginName },
 			})
 			if (!res.ok) {
@@ -58,17 +62,25 @@ const PluginDetailComponent: React.FC<PluginProps> = ({ pluginName }) => {
 	return (
 		<Flex h="100vh" gap="md">
 			{/* 左侧：固定 600px，竖直排列 */}
-			<Flex direction="column" style={{ width: 600 }} h="100%">
+			<Flex direction="column" miw={600} h="100%">
 				<Card
 					shadow="sm"
 					withBorder
 					style={{ flex: 1, display: 'flex', flexDirection: 'column' }}
 				>
 					<CardSection withBorder px="md" py="sm">
-						<ActionBar pluginName={data?.name!} isRunning={data?.isRunning!} />
+						<ActionBar
+							pluginName={data?.name!}
+							isRunning={data?.isRunning!}
+							dependencies={data?.dependencies}
+						/>
 						<Text size="xl" mt="sm">
 							插件：{data?.name}
 						</Text>
+						<DependencyList
+							dependencies={data?.dependencies}
+							LinkComponent={Link}
+						/>
 						{data?.desc && (
 							<Text color="dimmed" mt="xs">
 								{data.desc}
@@ -77,7 +89,7 @@ const PluginDetailComponent: React.FC<PluginProps> = ({ pluginName }) => {
 					</CardSection>
 
 					<CardSection style={{ flex: 1, overflow: 'auto' }} px="md" py="sm">
-						<LiveLog />
+						<LiveLog module={pluginName} />
 					</CardSection>
 				</Card>
 			</Flex>

@@ -27,7 +27,9 @@ export class PinoLoggerService {
 
 	constructor(private readonly ctx: Context) {
 		if (PinoLoggerService.baseLogger) {
-			this.logger = PinoLoggerService.baseLogger.child({ name: ctx.name })
+			this.logger = PinoLoggerService.baseLogger.child({
+				name: ctx?.pluginMeta?.name ?? ctx.name,
+			})
 		} else {
 			this.logger = PinoLoggerService.baseLogger = createLogger({
 				name: ctx.name,

@@ -3,6 +3,7 @@ import {
 	type Context,
 	Injectable,
 	type PluginClass,
+	getClassParam,
 	getPluginMeta,
 } from '@pluxel/core'
 import { PluginScanner } from './PluginScanner'
@@ -83,6 +84,18 @@ export class LoaderService {
 		return data
 	}
 
+	getPluginDependenciesInfo(ctor: PluginClass) {
+		const optionalSet = new Set<number>(
+			getPluginMeta('OPTIONAL_PARAMS_KEY', ctor),
+		)
+		const container = this.ctx.registry.pluginRegistry.lastContainer
+		return getClassParam(ctor).map((pluginClass, i) => {
+			const meta = getPluginMeta('META_KEY', pluginClass)
+			if (meta === undefined) return
+			const isRunning = container?.services.get(pluginClass) !== undefined
+			return { name: meta.name, optional: optionalSet.has(i), isRunning }
+		})
+	}
 	getPluginClassByName(name: string): PluginClass | undefined {
 		return this.registry.getPluginByName(name)
 	}
