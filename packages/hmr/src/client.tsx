@@ -27,7 +27,10 @@ if (root.hasChildNodes()) {
 			<HydrationBoundary
 				state={dehydratedState ? JSON.parse(dehydratedState) : undefined}
 			>
-				<MantineProvider withGlobalClasses={false}>
+				<MantineProvider
+					withGlobalClasses={false}
+					deduplicateCssVariables={false}
+				>
 					<Router>
 						<App />
 					</Router>
@@ -39,7 +42,10 @@ if (root.hasChildNodes()) {
 	createRoot(root).render(
 		<QueryClientProvider client={queryClient}>
 			<HydrationBoundary state={undefined}>
-				<MantineProvider withGlobalClasses={false}>
+				<MantineProvider
+					withGlobalClasses={false}
+					deduplicateCssVariables={false}
+				>
 					<Router>
 						<App />
 					</Router>

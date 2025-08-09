@@ -9,7 +9,7 @@ export default defineConfig({
 		services: 'src/services/index.ts',
 	},
 	dts: {
-		sourcemap: false,
+		emitJs: false,
 	},
 	format: ['esm', 'cjs'],
 	sourcemap: true,

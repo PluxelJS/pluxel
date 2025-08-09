@@ -72,6 +72,7 @@ export class HonoService {
 				}) as any,
 			handleHotUpdate: ({ server }) => {
 				this.ctx.logger.debug('触发 hmr')
+				// 开启才能客户端动态刷新，但每次请求都会触发导致刷新。
 				/* server.hot.send({ type: 'full-reload' })
 				server.ws.send({ type: 'full-reload' }) */
 				if (this.shouldReload) {
