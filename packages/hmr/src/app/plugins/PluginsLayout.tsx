@@ -20,6 +20,7 @@ import { useDisclosure, useMediaQuery } from '@mantine/hooks'
 import { useRoute } from 'wouter'
 import { PluginList } from './PluginList'
 import { Plugin } from './Plugin'
+import { ClientOnly } from '../ClientOnly'
 
 export const PluginsLayout: React.FC = () => {
 	const [match, params] = useRoute<{ name?: string }>('/plugins/:name')
@@ -88,7 +89,7 @@ export const PluginsLayout: React.FC = () => {
 						>
 							{/* 唯一滚动层 */}
 							<ScrollArea type="auto" style={{ flex: 1, minHeight: 0 }}>
-								<PluginList />
+								<PluginList pluginName={pluginName} />
 							</ScrollArea>
 						</CardSection>
 					</Card>
@@ -105,7 +106,9 @@ export const PluginsLayout: React.FC = () => {
 					}}
 				>
 					{pluginName ? (
-						<Plugin key={pluginName} pluginName={pluginName} />
+						<ClientOnly>
+							<Plugin key={pluginName} pluginName={pluginName} />
+						</ClientOnly>
 					) : (
 						<Center style={{ flex: 1 }}>
 							<Text c="dimmed" size="lg">

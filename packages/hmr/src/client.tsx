@@ -16,17 +16,16 @@ import { queryClient } from './queryClient'
 const root = document.getElementById('root')!
 
 // 取出服务端注入的 cache
-const dehydratedState = document.getElementById(
-	'__REACT_QUERY_STATE__',
-)?.textContent
+const dehydratedStateEl = document.getElementById('__REACT_QUERY_STATE__')
+const dehydratedState = dehydratedStateEl
+	? JSON.parse(dehydratedStateEl.textContent || 'null')
+	: undefined
 
 if (root.hasChildNodes()) {
 	hydrateRoot(
 		root,
 		<QueryClientProvider client={queryClient}>
-			<HydrationBoundary
-				state={dehydratedState ? JSON.parse(dehydratedState) : undefined}
-			>
+			<HydrationBoundary state={dehydratedState}>
 				<MantineProvider
 					withGlobalClasses={false}
 					deduplicateCssVariables={false}

@@ -1,8 +1,15 @@
+// src/components/PluginOrganizer.tsx
 import type React from 'react'
-import { memo, useState, useCallback, useMemo, useEffect, useRef } from 'react'
-import { nanoid } from 'nanoid'
 import {
-	Menu,
+	memo,
+	useState,
+	useCallback,
+	useMemo,
+	useEffect,
+	useRef,
+	startTransition,
+} from 'react'
+import {
 	Card,
 	Text,
 	Group,
@@ -12,26 +19,45 @@ import {
 	ActionIcon,
 	Paper,
 	useMantineTheme,
-	Portal,
-	Box,
 	Anchor,
 	Divider,
+	Menu,
+	Box,
 } from '@mantine/core'
-import {
-	DragDropContext,
-	Droppable,
-	Draggable,
-	type DropResult,
-	type DragStart,
-} from '@hello-pangea/dnd'
 import {
 	IconFolderPlus,
 	IconPencil,
 	IconTrash,
 	IconChevronDown,
 	IconChevronRight,
+	IconGripVertical,
 } from '@tabler/icons-react'
 import { showNotification } from '@mantine/notifications'
+
+import {
+	DndContext,
+	DragOverlay,
+	PointerSensor,
+	KeyboardSensor,
+	useSensor,
+	useSensors,
+	closestCenter,
+	useDroppable,
+	type UniqueIdentifier,
+} from '@dnd-kit/core'
+import {
+	SortableContext,
+	useSortable,
+	sortableKeyboardCoordinates,
+	verticalListSortingStrategy,
+	arrayMove,
+} from '@dnd-kit/sortable'
+import { restrictToVerticalAxis } from '@dnd-kit/modifiers'
+
+// ---------- types & utils ----------
+const genGroupId = () =>
+	globalThis.crypto?.randomUUID?.() ??
+	`g_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`
 
 export interface PluginStatus {
 	id: string
@@ -49,9 +75,30 @@ type Props = {
 	initialGroups: GroupConfig[]
 	onGroupsChange: (groups: GroupConfig[]) => void
 	filterQuery?: string
-	/** 例如 React Router 的 Link；如果不给，则使用 <Anchor> */
 	LinkComponent?: React.ComponentType<{ to: string; children: React.ReactNode }>
+	/** 当前导航所在插件（高亮“当前位置”）；建议仅使用此单值 */
+	activeId?: string | null
+	/** 兼容历史：若未传 activeId，则使用该集合 */
+	activeIds?: string[]
 }
+
+// ---- id helpers（前缀化，避免冲突）----
+const cid = (c: 'ROOT_UNGROUPED' | string) =>
+	c === 'ROOT_UNGROUPED' ? 'c:ROOT' : (`c:${c}` as const)
+const isCid = (id: UniqueIdentifier) =>
+	typeof id === 'string' && id.startsWith('c:')
+const fromCid = (id: string): 'ROOT_UNGROUPED' | string =>
+	id === 'c:ROOT' ? 'ROOT_UNGROUPED' : id.slice(2)
+
+const iid = (p: string) => `i:${p}`
+const isIid = (id: UniqueIdentifier) =>
+	typeof id === 'string' && id.startsWith('i:')
+const fromIid = (id: string) => id.slice(2)
+
+const gid = (g: string) => `g:${g}`
+const isGid = (id: UniqueIdentifier) =>
+	typeof id === 'string' && id.startsWith('g:')
+const fromGid = (id: string) => id.slice(2)
 
 function sanitize(allIds: string[], groups: GroupConfig[]) {
 	const seen = new Set<string>()
@@ -70,66 +117,403 @@ function sanitize(allIds: string[], groups: GroupConfig[]) {
 	const ungrouped = allIds.filter((id) => !seen.has(id))
 	return { groups: nextGroups, ungrouped }
 }
+const unique = (arr: string[]) => Array.from(new Set(arr))
+const assertNoDup = (groups: GroupConfig[], ungrouped: string[]) => {
+	if (process.env.NODE_ENV !== 'production') {
+		const seen = new Map<string, number>()
+		for (const id of ungrouped) seen.set(id, (seen.get(id) ?? 0) + 1)
+		for (const g of groups)
+			for (const id of g.pluginIds) seen.set(id, (seen.get(id) ?? 0) + 1)
+		const dup = [...seen].filter(([, n]) => n > 1).map(([id]) => id)
+		if (dup.length)
+			console.warn('[PluginOrganizer] Duplicate ids detected:', dup)
+	}
+}
 
+// ---------- Droppable（空容器也能投放） ----------
+function DroppableContainer({
+	id,
+	children,
+	disabled,
+	minDropHeight = 0,
+}: {
+	id: UniqueIdentifier
+	children: React.ReactNode
+	disabled?: boolean
+	minDropHeight?: number
+}) {
+	const { setNodeRef, isOver } = useDroppable({ id, disabled })
+	return (
+		<Box
+			ref={setNodeRef}
+			data-droppable-id={String(id)}
+			style={{
+				outline: isOver ? '2px dashed var(--mantine-color-blue-6)' : undefined,
+				minHeight: minDropHeight, // 折叠时也有一条可投放“细线”
+			}}
+		>
+			{children}
+		</Box>
+	)
+}
+
+// ---------- 行（插件） ----------
+const SortableRow = memo(function SortableRow({
+	pid,
+	name,
+	running,
+	selected,
+	active,
+	onRightSelect,
+	LinkComp,
+	disabled,
+}: {
+	pid: string
+	name: string
+	running?: boolean
+	selected: boolean
+	active: boolean
+	onRightSelect: (e: React.MouseEvent, pid: string) => void
+	LinkComp?: React.ComponentType<{ to: string; children: React.ReactNode }>
+	disabled: boolean
+}) {
+	const theme = useMantineTheme()
+	const rowRef = useRef<HTMLDivElement | null>(null)
+
+	const {
+		attributes,
+		listeners,
+		setNodeRef,
+		transform,
+		transition,
+		isDragging,
+	} = useSortable({
+		id: iid(pid),
+		disabled,
+		animateLayoutChanges: () => false,
+	})
+
+	const href = `/plugins/${pid}`
+
+	return (
+		<div
+			ref={(el) => {
+				setNodeRef(el)
+				rowRef.current = el
+			}}
+			style={{
+				width: '100%',
+				transform: transform
+					? `translate3d(${transform.x}px, ${transform.y}px, 0)`
+					: undefined,
+				transition,
+				opacity: isDragging ? 0.9 : 1,
+			}}
+			onDoubleClick={(e) => {
+				const inHandle = (e.target as HTMLElement).closest('[data-drag-handle]')
+				if (inHandle) return
+				const a = rowRef.current?.querySelector('a')
+				if (a) (a as HTMLAnchorElement).click()
+			}}
+			onContextMenu={(e) => {
+				e.preventDefault()
+				e.stopPropagation()
+				onRightSelect(e, pid)
+			}}
+		>
+			<Paper
+				withBorder
+				radius="md"
+				p="xs"
+				data-po-row="1"
+				data-selected={selected || undefined}
+				data-active={active || undefined}
+				style={{
+					width: '100%',
+					outline: selected ? `2px solid ${theme.colors.indigo[6]}` : undefined,
+					outlineOffset: selected ? -2 : undefined,
+					position: 'relative',
+					background: active ? theme.colors.indigo[1] : undefined,
+					cursor: disabled ? 'default' : 'pointer',
+					userSelect: 'none',
+				}}
+			>
+				{active && (
+					<Box
+						aria-hidden
+						style={{
+							position: 'absolute',
+							left: 0,
+							top: 0,
+							bottom: 0,
+							width: 3,
+							background: theme.colors.indigo[6],
+							borderTopLeftRadius: 6,
+							borderBottomLeftRadius: 6,
+						}}
+					/>
+				)}
+
+				<Group justify="space-between" align="center" gap="sm" wrap="nowrap">
+					<Box style={{ flex: 1, minWidth: 0 }}>
+						{LinkComp ? (
+							<LinkComp to={href}>
+								<Text
+									size="sm"
+									style={{ display: 'block' }}
+									aria-current={active ? 'page' : undefined}
+								>
+									{name}
+								</Text>
+							</LinkComp>
+						) : (
+							<Anchor
+								size="sm"
+								href={href}
+								underline="never"
+								style={{ display: 'block' }}
+								aria-current={active ? 'page' : undefined}
+							>
+								{name}
+							</Anchor>
+						)}
+					</Box>
+
+					<Group gap="xs">
+						{typeof running === 'boolean' && (
+							<Badge variant="dot" color={running ? 'green' : 'gray'}>
+								{running ? '运行中' : '已停止'}
+							</Badge>
+						)}
+
+						<ActionIcon
+							variant="light"
+							title="拖拽排序"
+							aria-label="拖拽排序"
+							data-drag-handle
+							style={{
+								width: 30,
+								height: 30,
+								touchAction: 'none',
+								cursor: isDragging ? 'grabbing' : 'grab',
+							}}
+							{...listeners}
+							{...attributes}
+						>
+							<IconGripVertical size={18} />
+						</ActionIcon>
+					</Group>
+				</Group>
+			</Paper>
+		</div>
+	)
+})
+
+// ---------- 组卡片 ----------
+const GroupCard = memo(function GroupCard(props: {
+	g: GroupConfig
+	visibleIds: string[]
+	runningSet: Set<string>
+	selectedSet: Set<string>
+	activeSet: Set<string>
+	onRightSelect: (e: React.MouseEvent, id: string) => void
+	LinkComp?: React.ComponentType<{ to: string; children: React.ReactNode }>
+	sortableId: UniqueIdentifier
+	onContextMenu: (e: React.MouseEvent) => void
+	isFiltering: boolean
+	isCollapsed: boolean
+	toggleCollapse: () => void
+	getName: (id: string) => string
+}) {
+	const {
+		g,
+		visibleIds,
+		runningSet,
+		selectedSet,
+		activeSet,
+		onRightSelect,
+		LinkComp,
+		sortableId,
+		onContextMenu,
+		isFiltering,
+		isCollapsed,
+		toggleCollapse,
+		getName,
+	} = props
+
+	const { attributes, listeners, setNodeRef, transform, transition } =
+		useSortable({
+			id: sortableId,
+			disabled: isFiltering,
+			animateLayoutChanges: () => false,
+		})
+
+	const stat = {
+		total: visibleIds.length,
+		running: visibleIds.filter((id) => runningSet.has(id)).length,
+	}
+
+	return (
+		<Card
+			ref={setNodeRef}
+			withBorder
+			radius="md"
+			p="md"
+			style={{
+				transform: transform
+					? `translate3d(${transform.x}px, ${transform.y}px, 0)`
+					: undefined,
+				transition,
+			}}
+			onContextMenu={(e) => {
+				e.preventDefault()
+				e.stopPropagation()
+				onContextMenu(e)
+			}}
+		>
+			<Group justify="space-between" align="center" wrap="nowrap">
+				<Group gap="xs" align="center">
+					<ActionIcon
+						size="md"
+						variant="subtle"
+						title="拖拽分组"
+						aria-label="拖拽分组"
+						data-drag-handle
+						style={{
+							width: 32,
+							height: 32,
+							touchAction: 'none',
+							cursor: 'grab',
+						}}
+						{...listeners}
+						{...attributes}
+					>
+						<IconGripVertical size={18} />
+					</ActionIcon>
+
+					<ActionIcon
+						size="sm"
+						variant="subtle"
+						onClick={toggleCollapse}
+						aria-label="切换折叠"
+					>
+						{isCollapsed ? (
+							<IconChevronRight size={16} />
+						) : (
+							<IconChevronDown size={16} />
+						)}
+					</ActionIcon>
+
+					<Text fw={600}>{g.name}</Text>
+					<Badge variant="light" size="sm">
+						{stat.total}
+					</Badge>
+					<Badge variant="light" size="sm" color="green">
+						{stat.running}
+					</Badge>
+				</Group>
+			</Group>
+
+			<DroppableContainer
+				id={cid(g.groupId)}
+				disabled={isFiltering}
+				minDropHeight={isCollapsed ? 10 : 0}
+			>
+				<Collapse in={!isCollapsed}>
+					<SortableContext
+						items={visibleIds.map((id) => iid(id))}
+						strategy={verticalListSortingStrategy}
+					>
+						<Stack gap="xs" mt="sm" align="stretch">
+							{visibleIds.map((id) => (
+								<SortableRow
+									key={id}
+									pid={id}
+									name={getName(id)}
+									running={runningSet.has(id)}
+									selected={selectedSet.has(id)}
+									active={activeSet.has(id)}
+									onRightSelect={onRightSelect}
+									LinkComp={LinkComp}
+									disabled={isFiltering}
+								/>
+							))}
+							{visibleIds.length === 0 && (
+								<Text c="dimmed" size="xs">
+									（空）
+								</Text>
+							)}
+						</Stack>
+					</SortableContext>
+				</Collapse>
+			</DroppableContainer>
+		</Card>
+	)
+})
+
+// ---------- 主组件 ----------
 export function PluginOrganizer({
 	statuses,
 	initialGroups,
 	onGroupsChange,
 	filterQuery = '',
 	LinkComponent,
+	activeId: propActiveId = null,
+	activeIds,
 }: Props) {
 	const theme = useMantineTheme()
 
-	// —— 基础派生 —— //
+	// 基础映射
 	const statusMap = useMemo(
 		() => new Map(statuses.map((s) => [s.id, s] as const)),
 		[statuses],
 	)
+	const runningSet = useMemo(() => {
+		const s = new Set<string>()
+		for (const st of statuses) if (st.isRunning) s.add(st.id)
+		return s
+	}, [statuses])
+	const getName = useCallback(
+		(id: string) => statusMap.get(id)?.name ?? id,
+		[statusMap],
+	)
+
 	const allIds = useMemo(() => statuses.map((s) => s.id), [statuses])
 	const { groups: saneGroups, ungrouped: saneUngrouped } = useMemo(
 		() => sanitize(allIds, initialGroups),
 		[allIds, initialGroups],
 	)
 
-	// —— 状态 —— //
+	// 状态
 	const [groups, setGroups] = useState<GroupConfig[]>(saneGroups)
 	const [ungroupedOrder, setUngroupedOrder] = useState<string[]>(saneUngrouped)
 	const [selectedIds, setSelectedIds] = useState<string[]>([])
-	const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set())
+	const selectedSet = useMemo(() => new Set(selectedIds), [selectedIds])
+	const lastSelectedRef = useRef<string | null>(null)
+	const [collapsed, setCollapsed] = useState<Record<string, boolean>>({}) // 组折叠状态
 
-	// 拖拽浮层
-	const [dragCount, setDragCount] = useState(0)
-	const overlayRef = useRef<HTMLDivElement | null>(null)
-	const rafRef = useRef<number | null>(null)
-	const dragCleanupRef = useRef<(() => void) | null>(null)
+	// —— 导航态集合（单值优先，未给单值时兼容多值）——
+	const activeSet = useMemo(() => {
+		if (propActiveId) return new Set([propActiveId])
+		if (activeIds?.length) return new Set(activeIds)
+		return new Set<string>()
+	}, [propActiveId, activeIds])
 
-	// 便于回调拿最新选中
-	const selectedRef = useRef<string[]>([])
+	// 回调 refs
+	const onGroupsChangeRef = useRef(onGroupsChange)
 	useEffect(() => {
-		selectedRef.current = selectedIds
-	}, [selectedIds])
-
-	// 右键菜单（用 groupId 精确定位）
-	const [contextMenu, setContextMenu] = useState<{
-		open: boolean
-		x: number
-		y: number
-		type: 'ROOT' | 'GROUP'
-		targetGroupId?: string
-	}>({ open: false, x: 0, y: 0, type: 'ROOT' })
-
-	// 外部数据变化：温和同步
+		onGroupsChangeRef.current = onGroupsChange
+	}, [onGroupsChange])
+	const groupsRef = useRef(groups)
 	useEffect(() => {
-		setGroups(saneGroups)
-		setUngroupedOrder((prev) => {
-			const set = new Set(saneUngrouped)
-			const kept = prev.filter((id) => set.has(id))
-			const added = saneUngrouped.filter((id) => !kept.includes(id))
-			return [...kept, ...added]
-		})
-	}, [saneGroups, saneUngrouped])
+		groupsRef.current = groups
+	}, [groups])
+	const ungroupedRef = useRef(ungroupedOrder)
+	useEffect(() => {
+		ungroupedRef.current = ungroupedOrder
+	}, [ungroupedOrder])
 
-	// —— 搜索 —— //
+	// 过滤
 	const q = filterQuery.trim().toLowerCase()
 	const isFiltering = q.length > 0
 	const match = useCallback(
@@ -142,20 +526,13 @@ export function PluginOrganizer({
 		[isFiltering, q, statusMap],
 	)
 
-	// —— 快速集合/索引 —— //
+	// 可见数据
 	const assignedSet = useMemo(() => {
 		const s = new Set<string>()
 		for (const g of groups) for (const id of g.pluginIds) s.add(id)
 		return s
 	}, [groups])
 
-	const groupNameById = useMemo(() => {
-		const m = new Map<string, string>()
-		for (const g of groups) m.set(g.groupId, g.name)
-		return m
-	}, [groups])
-
-	// —— 可视数据 —— //
 	const visibleUngrouped = useMemo(
 		() => ungroupedOrder.filter((id) => !assignedSet.has(id)).filter(match),
 		[ungroupedOrder, assignedSet, match],
@@ -165,76 +542,135 @@ export function PluginOrganizer({
 		[groups, match],
 	)
 
-	// —— 右键菜单 —— //
+	// —— 选择（右键触发；Ctrl/Cmd 多选，Shift 区间）——
+	const buildContainers = useCallback((gs: GroupConfig[], un: string[]) => {
+		const containerToItems = new Map<string, string[]>()
+		containerToItems.set(
+			'ROOT_UNGROUPED',
+			un.filter((id) => !gs.some((g) => g.pluginIds.includes(id))),
+		)
+		for (const g of gs) containerToItems.set(g.groupId, [...g.pluginIds])
+		const itemToContainer = new Map<string, string>()
+		for (const [k, v] of containerToItems)
+			for (const id of v) itemToContainer.set(id, k)
+		return { containerToItems, itemToContainer }
+	}, [])
+
+	const handleRightSelect = useCallback(
+		(e: React.MouseEvent, id: string) => {
+			startTransition(() => {
+				if (e.shiftKey && lastSelectedRef.current) {
+					const containers = buildContainers(
+						groupsRef.current,
+						ungroupedRef.current,
+					)
+					const cidA = containers.itemToContainer.get(id)
+					const cidB = containers.itemToContainer.get(lastSelectedRef.current)
+					if (cidA && cidB && cidA === cidB) {
+						const list = containers.containerToItems.get(cidA) ?? []
+						const a = list.indexOf(id)
+						const b = list.indexOf(lastSelectedRef.current)
+						if (a >= 0 && b >= 0) {
+							const [lo, hi] = a < b ? [a, b] : [b, a]
+							setSelectedIds((sel) =>
+								unique([...sel, ...list.slice(lo, hi + 1)]),
+							)
+							return
+						}
+					}
+				}
+				lastSelectedRef.current = id
+				if (e.ctrlKey || e.metaKey) {
+					setSelectedIds((sel) =>
+						sel.includes(id) ? sel.filter((x) => x !== id) : [...sel, id],
+					)
+				} else {
+					setSelectedIds([id])
+				}
+			})
+		},
+		[buildContainers],
+	)
+
+	// —— 外部数据变化：温和同步 ——
+	useEffect(() => {
+		setGroups(saneGroups)
+		setUngroupedOrder((prev) => {
+			const set = new Set(saneUngrouped)
+			const kept = prev.filter((id) => set.has(id))
+			const added = saneUngrouped.filter((id) => !kept.includes(id))
+			return [...kept, ...added]
+		})
+	}, [saneGroups, saneUngrouped])
+
+	// —— 外部数据变化：剪裁幽灵选择 ——
+	useEffect(() => {
+		setSelectedIds((sel) => sel.filter((id) => allIds.includes(id)))
+	}, [allIds])
+
+	// —— 右键菜单（根 / 组）——
+	const [menu, setMenu] = useState<{
+		open: boolean
+		x: number
+		y: number
+		type: 'ROOT' | 'GROUP'
+		gid?: string
+	}>({ open: false, x: 0, y: 0, type: 'ROOT' })
 	const closeMenu = useCallback(
-		() => setContextMenu((m) => ({ ...m, open: false })),
+		() => setMenu((m) => ({ ...m, open: false })),
 		[],
 	)
 	useEffect(() => {
-		if (!contextMenu.open) return
+		if (!menu.open) return
 		const handle = () => closeMenu()
-		document.addEventListener('mousedown', handle)
-		return () => document.removeEventListener('mousedown', handle)
-	}, [contextMenu.open, closeMenu])
-
-	const handleContextMenu = useCallback(
-		(e: React.MouseEvent, type: 'ROOT' | 'GROUP', targetGroupId?: string) => {
+		document.addEventListener('mousedown', handle, { capture: true })
+		return () =>
+			document.removeEventListener('mousedown', handle, {
+				capture: true,
+			} as any)
+	}, [menu.open, closeMenu])
+	const openMenu = useCallback(
+		(e: React.MouseEvent, type: 'ROOT' | 'GROUP', gid?: string) => {
 			e.preventDefault()
-			e.stopPropagation() // 防止冒泡到外层 ROOT
-			setContextMenu({
-				open: true,
-				x: e.clientX,
-				y: e.clientY,
-				type,
-				targetGroupId,
-			})
+			e.stopPropagation()
+			setMenu({ open: true, x: e.clientX, y: e.clientY, type, gid })
 		},
 		[],
 	)
 
-	// —— 折叠 —— //
-	const toggleCollapse = useCallback((groupId: string) => {
-		setCollapsedGroups((prev) => {
-			const next = new Set(prev)
-			next.has(groupId) ? next.delete(groupId) : next.add(groupId)
-			return next
-		})
-	}, [])
-
-	// —— 组操作（按 id 定位） —— //
 	const createGroup = useCallback(() => {
 		const name = prompt('请输入新文件夹名称：')?.trim()
 		if (!name) return
-		const newG: GroupConfig = { groupId: nanoid(), name, pluginIds: [] }
-		setGroups((prev) => {
-			const next = [...prev, newG]
-			onGroupsChange(next)
-			return next
-		})
+		const next: GroupConfig[] = [
+			...groupsRef.current,
+			{ groupId: genGroupId(), name, pluginIds: [] },
+		]
+		setGroups(next)
+		onGroupsChangeRef.current?.(next)
 		closeMenu()
-	}, [onGroupsChange, closeMenu])
+	}, [closeMenu])
 
 	const renameGroup = useCallback(() => {
-		const gid = contextMenu.targetGroupId
-		if (!gid) return
-		const idx = groups.findIndex((g) => g.groupId === gid)
+		const gid0 = menu.gid
+		if (!gid0) return
+		const idx = groupsRef.current.findIndex((g) => g.groupId === gid0)
 		if (idx < 0) return
-		const name = prompt('重命名文件夹：', groups[idx].name)?.trim()
+		const name = prompt('重命名文件夹：', groupsRef.current[idx].name)?.trim()
 		if (!name) return
-		setGroups((prev) => {
-			const next = prev.map((g, i) => (i === idx ? { ...g, name } : g))
-			onGroupsChange(next)
-			return next
-		})
+		const next = groupsRef.current.map((g, i) =>
+			i === idx ? { ...g, name } : g,
+		)
+		setGroups(next)
+		onGroupsChangeRef.current?.(next)
 		closeMenu()
-	}, [contextMenu.targetGroupId, groups, onGroupsChange, closeMenu])
+	}, [menu.gid, closeMenu])
 
 	const deleteGroup = useCallback(() => {
-		const gid = contextMenu.targetGroupId
-		if (!gid) return
-		const idx = groups.findIndex((g) => g.groupId === gid)
+		const gid0 = menu.gid
+		if (!gid0) return
+		const idx = groupsRef.current.findIndex((g) => g.groupId === gid0)
 		if (idx < 0) return
-		const victim = groups[idx]
+		const victim = groupsRef.current[idx]
 		const count = victim?.pluginIds.length ?? 0
 		if (
 			!confirm(
@@ -242,93 +678,153 @@ export function PluginOrganizer({
 			)
 		)
 			return
-		setGroups((prev) => {
-			const removed = prev[idx]!
-			const next = prev.filter((_, i) => i !== idx)
-			setUngroupedOrder((uo) => [...uo, ...removed.pluginIds])
-			onGroupsChange(next)
-			return next
+		const nextUngrouped = unique([...ungroupedRef.current, ...victim.pluginIds])
+		const nextGroups = groupsRef.current.filter((_, i) => i !== idx)
+		setGroups(nextGroups)
+		setUngroupedOrder(nextUngrouped)
+		// 清理折叠状态中的残留键
+		setCollapsed((m) => {
+			const copy = { ...m }
+			delete copy[gid0]
+			return copy
 		})
+		onGroupsChangeRef.current?.(nextGroups)
 		closeMenu()
-	}, [contextMenu.targetGroupId, groups, onGroupsChange, closeMenu])
+	}, [menu.gid, closeMenu])
 
-	// —— 选择 —— //
-	const handlePluginClick = useCallback((e: React.MouseEvent, id: string) => {
-		setSelectedIds((sel) =>
-			e.ctrlKey || e.metaKey
-				? sel.includes(id)
-					? sel.filter((x) => x !== id)
-					: [...sel, id]
-				: [id],
-		)
-	}, [])
+	// —— 传感器：提高阈值，避免误触 ——
+	const sensors = useSensors(
+		useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
+		useSensor(KeyboardSensor, {
+			coordinateGetter: sortableKeyboardCoordinates,
+		}),
+	)
 
-	// —— 工具 —— //
-	const reorder = useCallback(<T,>(arr: T[], from: number, to: number): T[] => {
-		const copy = [...arr]
-		const [m] = copy.splice(from, 1)
-		copy.splice(to, 0, m)
-		return copy
-	}, [])
+	// 注意：这里是拖拽时的“活动项”，避免与 props.activeId 混淆
+	const [dragActiveId, setDragActiveId] = useState<UniqueIdentifier | null>(
+		null,
+	)
 
-	// —— 拖拽 —— //
-	const onBeforeDragStart = useCallback(({ draggableId }: DragStart) => {
-		const current = selectedRef.current.includes(draggableId)
-			? selectedRef.current
-			: [draggableId]
-		setSelectedIds(current)
-		setDragCount(current.length)
+	const groupIdsSortable = useMemo(
+		() => groups.map((g) => gid(g.groupId)),
+		[groups],
+	)
+	const LinkComp = LinkComponent
 
-		const move = (e: MouseEvent) => {
-			if (!overlayRef.current) return
-			if (rafRef.current != null) cancelAnimationFrame(rafRef.current)
-			rafRef.current = requestAnimationFrame(() => {
-				overlayRef.current!.style.transform = `translate3d(${e.clientX + 12}px, ${e.clientY + 12}px, 0)`
-			})
-		}
-		document.addEventListener('mousemove', move)
-		dragCleanupRef.current = () => {
-			document.removeEventListener('mousemove', move)
-			if (rafRef.current != null) cancelAnimationFrame(rafRef.current)
-		}
-	}, [])
+	// —— Drag handlers ——
+	const handleDragStart = useCallback(
+		({ active }: { active: { id: UniqueIdentifier } }) => {
+			setDragActiveId(active.id)
+			if (isIid(active.id)) {
+				const pid = fromIid(String(active.id))
+				if (!selectedSet.has(pid)) startTransition(() => setSelectedIds([pid]))
+			}
+			document.body.style.userSelect = 'none'
+		},
+		[selectedSet],
+	)
 
 	const handleDragEnd = useCallback(
-		({ source, destination, draggableId, type }: DropResult) => {
-			// 清理监听 & 复位浮层
-			dragCleanupRef.current?.()
-			dragCleanupRef.current = null
-			if (overlayRef.current) {
-				overlayRef.current.style.transform = 'translate3d(-9999px, -9999px, 0)'
-			}
-			setDragCount(0)
+		({ active, over }: { active: any; over: any }) => {
+			document.body.style.userSelect = ''
+			const aId = active?.id as UniqueIdentifier
+			const oId = over?.id as UniqueIdentifier | undefined
+			setDragActiveId(null)
+			if (!oId) return
 
-			if (!destination) return
+			const containers = buildContainers(
+				groupsRef.current,
+				ungroupedRef.current,
+			)
 
 			// 组排序
-			if (type === 'GROUP') {
-				setGroups((prev) => {
-					const next = reorder(prev, source.index, destination.index)
-					onGroupsChange(next)
-					return next
-				})
+			if (isGid(aId) && isGid(oId)) {
+				const a = fromGid(String(aId))
+				const b = fromGid(String(oId))
+				const list = groupsRef.current.map((g) => g.groupId)
+				const oldIndex = list.indexOf(a)
+				const newIndex = list.indexOf(b)
+				if (oldIndex < 0 || newIndex < 0 || oldIndex === newIndex) return
+				const next = arrayMove(groupsRef.current, oldIndex, newIndex)
+				setGroups(next)
+				onGroupsChangeRef.current?.(next)
+				showNotification({ message: '已重新排序分组', color: 'gray' })
 				return
 			}
 
-			const moving =
-				selectedRef.current.length > 1 &&
-				selectedRef.current.includes(draggableId)
-					? selectedRef.current
-					: [draggableId]
+			// 条目移动/排序（支持多选）
+			if (!isIid(aId)) return
 
-			// 未分组内 reorder
-			if (
-				source.droppableId === 'ROOT_UNGROUPED' &&
-				destination.droppableId === 'ROOT_UNGROUPED'
-			) {
-				setUngroupedOrder((prev) =>
-					reorder(prev, source.index, destination.index),
-				)
+			const moving =
+				selectedIds.length > 1 && selectedIds.includes(fromIid(String(aId)))
+					? selectedIds
+					: [fromIid(String(aId))]
+			const movingSet = new Set(moving)
+
+			const fromC = containers.itemToContainer.get(fromIid(String(aId)))
+			const toC = isCid(oId)
+				? fromCid(String(oId))
+				: isIid(oId)
+					? (containers.itemToContainer.get(fromIid(String(oId))) ??
+						'ROOT_UNGROUPED')
+					: undefined
+			if (!fromC || !toC) return
+
+			// —— 同容器：一次性重排（修复“向下拖动回弹”）——
+			if (fromC === toC) {
+				const full = containers.containerToItems.get(fromC) ?? []
+				const filtered = full.filter((x) => !movingSet.has(x))
+
+				// 计算移动块在原列表中的首/末索引，用于判断方向
+				const movingIdxs = moving
+					.map((x) => full.indexOf(x))
+					.sort((a, b) => a - b)
+				const firstIdx = movingIdxs[0]
+				const lastIdx = movingIdxs[movingIdxs.length - 1]
+
+				let targetIndex: number
+				if (isIid(oId)) {
+					const overId = fromIid(String(oId))
+
+					if (movingSet.has(overId)) {
+						// 指针落在移动块上：取其后一位（原逻辑保留）
+						const overPos = full.indexOf(overId)
+						const after = full[overPos + 1]
+						targetIndex = after ? filtered.indexOf(after) : filtered.length
+					} else {
+						// 指针落在非移动项上：根据方向决定插前/插后
+						const overPosFull = full.indexOf(overId)
+						const base = Math.max(0, filtered.indexOf(overId)) // “插前”的索引
+						const movingDown = overPosFull > lastIdx // over 在移动块之后 => 向下
+						targetIndex = movingDown ? base + 1 : base
+					}
+				} else {
+					targetIndex = filtered.length
+				}
+
+				// 保持 moving 的相对顺序（按原列表顺序）
+				const orderedMoving = full.filter((x) => movingSet.has(x))
+				const nextList = [
+					...filtered.slice(0, targetIndex),
+					...orderedMoving,
+					...filtered.slice(targetIndex),
+				]
+
+				if (fromC === 'ROOT_UNGROUPED') {
+					setUngroupedOrder(nextList)
+				} else {
+					setGroups((prev) =>
+						prev.map((g) =>
+							g.groupId === fromC ? { ...g, pluginIds: nextList } : g,
+						),
+					)
+				}
+
+				queueMicrotask(() => {
+					const next = groupsRef.current
+					assertNoDup(next, ungroupedRef.current)
+					onGroupsChangeRef.current?.(next)
+				})
 				showNotification({
 					message: `已重新排序 ${moving.length} 项`,
 					color: 'gray',
@@ -336,208 +832,99 @@ export function PluginOrganizer({
 				return
 			}
 
-			// 组 → 未分组
-			if (
-				source.droppableId !== 'ROOT_UNGROUPED' &&
-				destination.droppableId === 'ROOT_UNGROUPED'
-			) {
-				setGroups((prev) => {
-					const next = prev.map((g) => ({
-						...g,
-						pluginIds: g.pluginIds.filter((id) => !moving.includes(id)),
-					}))
-					onGroupsChange(next)
-					return next
-				})
-				setUngroupedOrder((uo) => {
-					const next = [...uo]
-					next.splice(destination.index, 0, ...moving)
-					return next
-				})
-				showNotification({
-					message: `已移动 ${moving.length} 项 → 未分组`,
-					color: 'blue',
-				})
-				return
+			// —— 跨容器：一次性移出 + 插入 ——
+			const fromFull = containers.containerToItems.get(fromC) ?? []
+			const toFull = containers.containerToItems.get(toC) ?? []
+
+			const fromNext = fromFull.filter((x) => !movingSet.has(x))
+
+			let toTargetIndex: number
+			if (isIid(oId)) {
+				const overId = fromIid(String(oId))
+				if (movingSet.has(overId)) {
+					const overPos = toFull.indexOf(overId)
+					const after = toFull[overPos + 1]
+					const filteredTo = toFull.filter((x) => !movingSet.has(x))
+					toTargetIndex = after ? filteredTo.indexOf(after) : filteredTo.length
+				} else {
+					const filteredTo = toFull.filter((x) => !movingSet.has(x))
+					toTargetIndex = Math.max(0, filteredTo.indexOf(overId))
+				}
+			} else {
+				toTargetIndex = toFull.filter((x) => !movingSet.has(x)).length
 			}
 
-			// 未分组 → 组
-			if (
-				source.droppableId === 'ROOT_UNGROUPED' &&
-				destination.droppableId !== 'ROOT_UNGROUPED'
-			) {
-				setUngroupedOrder((uo) => uo.filter((id) => !moving.includes(id)))
-				setGroups((prev) => {
-					const next = prev.map((g) => ({ ...g, pluginIds: [...g.pluginIds] }))
-					const tgt = next.find((g) => g.groupId === destination.droppableId)!
-					tgt.pluginIds.splice(destination.index, 0, ...moving)
-					onGroupsChange(next)
-					return next
-				})
-				showNotification({
-					message: `已移动 ${moving.length} 项 → ${groupNameById.get(destination.droppableId)}`,
-					color: 'blue',
-				})
-				return
+			const insertInto = (list: string[], items: string[], index: number) => {
+				const base = list.filter((x) => !movingSet.has(x))
+				const orderedMoving = items
+				const next = [
+					...base.slice(0, index),
+					...orderedMoving,
+					...base.slice(index),
+				]
+				return unique(next)
 			}
 
-			// 组 ↔ 组（或同组内重排）
-			setGroups((prev) => {
-				const next = prev.map((g) => ({ ...g, pluginIds: [...g.pluginIds] }))
-				next.forEach((g) => {
-					for (const id of moving) {
-						const i = g.pluginIds.indexOf(id)
-						if (i > -1) g.pluginIds.splice(i, 1)
-					}
-				})
-				const tgt = next.find((g) => g.groupId === destination.droppableId)!
-				tgt.pluginIds.splice(destination.index, 0, ...moving)
-				onGroupsChange(next)
-				return next
+			if (fromC === 'ROOT_UNGROUPED' && toC === 'ROOT_UNGROUPED') {
+				const filtered = fromFull.filter((x) => !movingSet.has(x))
+				const nextUngrouped = insertInto(filtered, moving, toTargetIndex)
+				setUngroupedOrder(nextUngrouped)
+			} else if (fromC === 'ROOT_UNGROUPED') {
+				setUngroupedOrder(fromNext)
+				setGroups((prev) =>
+					prev.map((g) => {
+						if (g.groupId !== toC) return g
+						const nextList = insertInto(g.pluginIds, moving, toTargetIndex)
+						return { ...g, pluginIds: nextList }
+					}),
+				)
+			} else if (toC === 'ROOT_UNGROUPED') {
+				setGroups((prev) =>
+					prev.map((g) =>
+						g.groupId === fromC ? { ...g, pluginIds: fromNext } : g,
+					),
+				)
+				setUngroupedOrder((prev) => insertInto(prev, moving, toTargetIndex))
+			} else {
+				setGroups((prev) =>
+					prev.map((g) => {
+						if (g.groupId === fromC) {
+							return { ...g, pluginIds: fromNext }
+						}
+						if (g.groupId === toC) {
+							const nextList = insertInto(g.pluginIds, moving, toTargetIndex)
+							return { ...g, pluginIds: nextList }
+						}
+						return g
+					}),
+				)
+			}
+
+			queueMicrotask(() => {
+				const next = groupsRef.current
+				assertNoDup(next, ungroupedRef.current)
+				onGroupsChangeRef.current?.(next)
 			})
-			showNotification({
-				message: `已移动 ${moving.length} 项 → ${groupNameById.get(destination.droppableId)}`,
-				color: 'blue',
-			})
+			showNotification({ message: `已移动 ${moving.length} 项`, color: 'blue' })
 		},
-		[onGroupsChange, reorder, groupNameById],
+		[selectedIds, buildContainers],
 	)
-
-	// —— 计数 —— //
-	const countGroup = useCallback(
-		(ids: string[]) => {
-			const total = ids.length
-			let running = 0
-			for (const id of ids) if (statusMap.get(id)?.isRunning) running++
-			return { total, running }
-		},
-		[statusMap],
-	)
-
-	// —— 条目 —— //
-	const PluginRow = memo(function PluginRow({
-		id,
-		idx,
-		link,
-		isSelected,
-		onClick,
-	}: {
-		id: string
-		idx: number
-		link?: React.ComponentType<{ to: string; children: React.ReactNode }>
-		isSelected: boolean
-		onClick: (e: React.MouseEvent, id: string) => void
-	}) {
-		const st = statusMap.get(id)
-		const name = st?.name ?? id
-		const Link = link
-
-		return (
-			<Draggable draggableId={id} index={idx} isDragDisabled={isFiltering}>
-				{(prov) => (
-					<Box
-						ref={prov.innerRef}
-						{...prov.draggableProps}
-						{...prov.dragHandleProps}
-						onClick={(e) => onClick(e, id)}
-						style={{
-							...(prov.draggableProps.style as React.CSSProperties),
-							cursor: isFiltering ? 'default' : 'move',
-						}}
-					>
-						<Paper
-							withBorder
-							radius="md"
-							p="xs"
-							data-selected={isSelected || undefined}
-							style={{
-								outline: isSelected
-									? `2px solid ${theme.colors.blue[6]}`
-									: undefined,
-								outlineOffset: isSelected ? -2 : undefined,
-							}}
-						>
-							<Group
-								justify="space-between"
-								align="center"
-								gap="sm"
-								wrap="nowrap"
-							>
-								{LinkComponent ? (
-									<LinkComponent to={`/plugins/${id}`}>
-										<Text size="sm">{name}</Text>
-									</LinkComponent>
-								) : (
-									<Anchor size="sm" href={`/plugins/${id}`} underline="never">
-										{name}
-									</Anchor>
-								)}
-								{st && (
-									<Badge variant="dot" color={st.isRunning ? 'green' : 'gray'}>
-										{st.isRunning ? '运行中' : '已停止'}
-									</Badge>
-								)}
-							</Group>
-						</Paper>
-					</Box>
-				)}
-			</Draggable>
-		)
-	})
-
-	// —— 悬浮提示（仅拖拽时渲染） —— //
-	const DragOverlay = (
-		<Portal>
-			<Box
-				ref={overlayRef}
-				pos="fixed"
-				left={0}
-				top={0}
-				style={{
-					transform: 'translate3d(-9999px, -9999px, 0)',
-					pointerEvents: 'none',
-					zIndex: 1000,
-				}}
-			>
-				<Paper withBorder radius="sm" p="xs" shadow="md">
-					<Group gap="xs">
-						<Badge variant="filled" size="sm">
-							{dragCount}
-						</Badge>
-						<Text size="sm">拖动中</Text>
-					</Group>
-				</Paper>
-			</Box>
-		</Portal>
-	)
-
-	// —— 统计 —— //
-	const ungroupedIds = useMemo(
-		() => ungroupedOrder.filter((id) => !assignedSet.has(id)),
-		[ungroupedOrder, assignedSet],
-	)
-	const { total: ungroupedTotal, running: ungroupedRunning } = countGroup(
-		ungroupedIds.filter(match),
-	)
-	const visGroupStats = visibleGroups.map((g) => ({
-		id: g.groupId,
-		...countGroup(g.pluginIds),
-	}))
 
 	return (
-		<Stack gap="sm" onContextMenu={(e) => handleContextMenu(e, 'ROOT')}>
+		<Stack gap="sm" align="stretch" onContextMenu={(e) => openMenu(e, 'ROOT')}>
 			{/* 右键菜单：根 */}
 			<Menu
-				opened={contextMenu.open && contextMenu.type === 'ROOT'}
+				opened={menu.open && menu.type === 'ROOT'}
 				onClose={closeMenu}
 				withinPortal
+				keepMounted
 				zIndex={10000}
 			>
 				<Menu.Dropdown
 					style={{
 						position: 'fixed',
-						top: contextMenu.y,
-						left: contextMenu.x,
+						top: menu.y,
+						left: menu.x,
 						minWidth: 160,
 					}}
 				>
@@ -550,18 +937,19 @@ export function PluginOrganizer({
 				</Menu.Dropdown>
 			</Menu>
 
-			{/* 右键菜单：组（确保始终能看到“删除文件夹”） */}
+			{/* 右键菜单：组 */}
 			<Menu
-				opened={contextMenu.open && contextMenu.type === 'GROUP'}
+				opened={menu.open && menu.type === 'GROUP'}
 				onClose={closeMenu}
 				withinPortal
+				keepMounted
 				zIndex={10000}
 			>
 				<Menu.Dropdown
 					style={{
 						position: 'fixed',
-						top: contextMenu.y,
-						left: contextMenu.x,
+						top: menu.y,
+						left: menu.x,
 						minWidth: 200,
 					}}
 				>
@@ -569,7 +957,7 @@ export function PluginOrganizer({
 					<Menu.Item
 						leftSection={<IconPencil size={16} />}
 						onClick={renameGroup}
-						disabled={!contextMenu.targetGroupId}
+						disabled={!menu.gid}
 					>
 						重命名
 					</Menu.Item>
@@ -577,186 +965,120 @@ export function PluginOrganizer({
 						leftSection={<IconTrash size={16} />}
 						onClick={deleteGroup}
 						color="red"
-						disabled={!contextMenu.targetGroupId}
+						disabled={!menu.gid}
 					>
 						删除文件夹
 					</Menu.Item>
 				</Menu.Dropdown>
 			</Menu>
 
-			{dragCount > 0 && DragOverlay}
-
-			<DragDropContext
-				onBeforeDragStart={onBeforeDragStart}
+			<DndContext
+				sensors={sensors}
+				collisionDetection={closestCenter}
+				modifiers={[restrictToVerticalAxis]}
+				onDragStart={handleDragStart}
 				onDragEnd={handleDragEnd}
 			>
 				{/* 未分组 */}
-				<Droppable
-					droppableId="ROOT_UNGROUPED"
-					type="ITEM"
-					isDropDisabled={isFiltering}
-				>
-					{(prov, snapshot) => (
-						<Card
-							withBorder
-							radius="md"
-							ref={prov.innerRef}
-							{...prov.droppableProps}
-							p="md"
-						>
-							<Group
-								justify="space-between"
-								align="center"
-								mb="xs"
-								wrap="nowrap"
-							>
-								<Group gap="xs" align="center">
-									<Text fw={600}>未分组</Text>
-									<Badge variant="light" size="sm">
-										{ungroupedTotal}
-									</Badge>
-									<Badge variant="light" size="sm" color="green">
-										{ungroupedRunning}
-									</Badge>
-									{snapshot.isDraggingOver && dragCount > 0 && (
-										<Badge variant="filled" size="sm" color="blue">
-											+{dragCount}
-										</Badge>
-									)}
-								</Group>
-							</Group>
+				<Card withBorder radius="md" p="md">
+					<Group justify="space-between" align="center" mb="xs" wrap="nowrap">
+						<Group gap="xs" align="center">
+							<Text fw={600}>未分组</Text>
+							<Badge variant="light" size="sm">
+								{visibleUngrouped.length}
+							</Badge>
+							<Badge variant="light" size="sm" color="green">
+								{visibleUngrouped.filter((id) => runningSet.has(id)).length}
+							</Badge>
+						</Group>
+					</Group>
 
-							<Stack gap="xs">
-								{visibleUngrouped.map((id, idx) => (
-									<PluginRow
+					<DroppableContainer
+						id={cid('ROOT_UNGROUPED')}
+						disabled={isFiltering}
+						minDropHeight={visibleUngrouped.length ? 0 : 12}
+					>
+						<SortableContext
+							items={visibleUngrouped.map((id) => iid(id))}
+							strategy={verticalListSortingStrategy}
+						>
+							<Stack gap="xs" align="stretch">
+								{visibleUngrouped.map((id) => (
+									<SortableRow
 										key={id}
-										id={id}
-										idx={idx}
-										link={LinkComponent}
-										isSelected={selectedIds.includes(id)}
-										onClick={handlePluginClick}
+										pid={id}
+										name={getName(id)}
+										running={runningSet.has(id)}
+										selected={selectedSet.has(id)}
+										active={activeSet.has(id)}
+										onRightSelect={handleRightSelect}
+										LinkComp={LinkComp}
+										disabled={isFiltering}
 									/>
 								))}
-								{prov.placeholder}
 								{visibleUngrouped.length === 0 && (
 									<Text c="dimmed" size="xs">
 										（空）
 									</Text>
 								)}
 							</Stack>
-						</Card>
-					)}
-				</Droppable>
+						</SortableContext>
+					</DroppableContainer>
+				</Card>
 
 				<Divider variant="dashed" />
 
-				{/* 分组容器（可重排组本身） */}
-				<Droppable droppableId="ROOT" type="GROUP" isDropDisabled={isFiltering}>
-					{(provG) => (
-						<Stack ref={provG.innerRef} {...provG.droppableProps} gap="md">
-							{visibleGroups.map((g, idx) => {
-								const collapsed = collapsedGroups.has(g.groupId)
-								const stat = visGroupStats[idx]
-								return (
-									<Draggable
-										key={g.groupId}
-										draggableId={g.groupId}
-										index={idx}
-										isDragDisabled={isFiltering}
-									>
-										{(grpProv) => (
-											<Card
-												withBorder
-												radius="md"
-												ref={grpProv.innerRef}
-												{...grpProv.draggableProps}
-												p="md"
-												onContextMenu={(e) =>
-													handleContextMenu(e, 'GROUP', g.groupId)
-												}
-											>
-												<Group
-													justify="space-between"
-													align="center"
-													wrap="nowrap"
-													{...grpProv.dragHandleProps}
-												>
-													<Group gap="xs" align="center">
-														<ActionIcon
-															size="sm"
-															variant="subtle"
-															onClick={() => toggleCollapse(g.groupId)}
-															aria-label="切换折叠"
-														>
-															{collapsed ? (
-																<IconChevronRight size={16} />
-															) : (
-																<IconChevronDown size={16} />
-															)}
-														</ActionIcon>
-														<Text fw={600}>{g.name}</Text>
-														<Badge variant="light" size="sm">
-															{stat.total}
-														</Badge>
-														<Badge variant="light" size="sm" color="green">
-															{stat.running}
-														</Badge>
-													</Group>
-												</Group>
+				{/* 组列表（组可拖拽重排） */}
+				<SortableContext
+					items={groupIdsSortable}
+					strategy={verticalListSortingStrategy}
+				>
+					<Stack gap="md" align="stretch">
+						{visibleGroups.map((g) => {
+							const vis = g.pluginIds
+							const isCollapsed = !!collapsed[g.groupId]
+							return (
+								<GroupCard
+									key={g.groupId}
+									g={g}
+									visibleIds={vis}
+									runningSet={runningSet}
+									selectedSet={selectedSet}
+									activeSet={activeSet}
+									onRightSelect={handleRightSelect}
+									LinkComp={LinkComp}
+									sortableId={gid(g.groupId)}
+									onContextMenu={(e) => openMenu(e, 'GROUP', g.groupId)}
+									isFiltering={isFiltering}
+									isCollapsed={isCollapsed}
+									toggleCollapse={() =>
+										setCollapsed((m) => ({ ...m, [g.groupId]: !m[g.groupId] }))
+									}
+									getName={getName}
+								/>
+							)
+						})}
+					</Stack>
+				</SortableContext>
 
-												<Collapse in={!collapsed}>
-													<Droppable
-														droppableId={g.groupId}
-														type="ITEM"
-														isDropDisabled={isFiltering}
-													>
-														{(prov2, snapshot) => (
-															<Stack
-																ref={prov2.innerRef}
-																{...prov2.droppableProps}
-																gap="xs"
-																mt="sm"
-															>
-																{snapshot.isDraggingOver && dragCount > 0 && (
-																	<Badge
-																		align="self-start"
-																		variant="filled"
-																		size="sm"
-																		color="blue"
-																	>
-																		+{dragCount}
-																	</Badge>
-																)}
-																{g.pluginIds.map((id, i) => (
-																	<PluginRow
-																		key={id}
-																		id={id}
-																		idx={i}
-																		link={LinkComponent}
-																		isSelected={selectedIds.includes(id)}
-																		onClick={handlePluginClick}
-																	/>
-																))}
-																{prov2.placeholder}
-																{g.pluginIds.length === 0 && (
-																	<Text c="dimmed" size="xs">
-																		（空）
-																	</Text>
-																)}
-															</Stack>
-														)}
-													</Droppable>
-												</Collapse>
-											</Card>
-										)}
-									</Draggable>
-								)
-							})}
-							{provG.placeholder}
-						</Stack>
-					)}
-				</Droppable>
-			</DragDropContext>
+				{/* 小芯片 Overlay：不挡视线 */}
+				<DragOverlay dropAnimation={null}>
+					{dragActiveId ? (
+						<div
+							style={{
+								pointerEvents: 'none',
+								marginTop: 8,
+								marginLeft: 8,
+								opacity: 0.9,
+							}}
+						>
+							<Badge variant="filled" size="sm">
+								+{Math.max(1, selectedIds.length)}
+							</Badge>
+						</div>
+					) : null}
+				</DragOverlay>
+			</DndContext>
 		</Stack>
 	)
 }

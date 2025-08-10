@@ -21,12 +21,14 @@ import {
 	type GroupConfig,
 	type PluginStatus,
 } from '@pluxel/components'
+import { WouterLinkAdapter } from '../WouterLinkAdapter'
 
 interface PluginListProps {
+	pluginName?: string
 	onItemSelect?: () => void
 }
 
-export const PluginList: React.FC<PluginListProps> = ({ onItemSelect }) => {
+export const PluginList: React.FC<PluginListProps> = ({ pluginName, onItemSelect }) => {
 	const [q, setQ] = useState('')
 
 	const statusesQ = useQuery<PluginStatus[], Error>({
@@ -95,10 +97,15 @@ export const PluginList: React.FC<PluginListProps> = ({ onItemSelect }) => {
 				</Title>
 				{!loading && !errored && (
 					<Group gap="xs">
-						<Badge variant="light" size="sm">
+						<Badge variant="light" size="sm" suppressHydrationWarning>
 							共 {total}
 						</Badge>
-						<Badge variant="light" size="sm" color="green">
+						<Badge
+							variant="light"
+							size="sm"
+							color="green"
+							suppressHydrationWarning
+						>
 							运行中 {running}
 						</Badge>
 					</Group>
@@ -106,6 +113,7 @@ export const PluginList: React.FC<PluginListProps> = ({ onItemSelect }) => {
 			</Group>
 
 			<TextInput
+				id="plugin-search-input"
 				placeholder="搜索插件（名称 / ID）"
 				value={q}
 				onChange={(e) => setQ(e.currentTarget.value)}
@@ -129,9 +137,10 @@ export const PluginList: React.FC<PluginListProps> = ({ onItemSelect }) => {
 				<PluginOrganizer
 					statuses={statusesQ.data}
 					initialGroups={groupsQ.data}
+					activeId={pluginName}
 					onGroupsChange={handleChange}
 					filterQuery={q}
-					LinkComponent={(props) => <Link {...props} onClick={onItemSelect} />}
+					LinkComponent={WouterLinkAdapter}
 				/>
 			) : null}
 		</Stack>
