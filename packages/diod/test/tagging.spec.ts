@@ -19,23 +19,25 @@ describe('service identifiers can be get based on tag', () => {
 		const builder = new ContainerBuilder()
 
 		// Act (registrations + tags)
-		expectOk(builder.registerAndUse(Calendar)).addTag('tag1').addTag('calendar')
+		expectOk(builder.tryRegisterAndUse(Calendar))
+			.addTag('tag1')
+			.addTag('calendar')
 
-		expectOk(builder.register(Clock))
+		expectOk(builder.tryRegister(Clock))
 			.useFactory(() => new Clock())
 			.addTag('tag1')
 			.addTag('tag2')
 			.addTag('clock')
 
-		expectOk(builder.register(Sayer))
+		expectOk(builder.tryRegister(Sayer))
 			.useInstance(new Person(new ConsoleLogger()))
 			.addTag('tag2')
 			.addTag('sayer')
 
-		expectOk(builder.register(Logger)).use(ConsoleLogger).addTag('logger')
-		expectOk(builder.registerAndUse(OtherSayer)).addTag('sayer')
+		expectOk(builder.tryRegister(Logger)).use(ConsoleLogger).addTag('logger')
+		expectOk(builder.tryRegisterAndUse(OtherSayer)).addTag('sayer')
 
-		expectOk(builder.register(Agenda))
+		expectOk(builder.tryRegister(Agenda))
 			.useFactory((c) => {
 				// 在 FactoryContext 中用 tag 反查 identifiers，然后用 getResult/get 取实例
 				const clockIds = c.findTaggedServiceIdentifiers<Clock>('clock')
@@ -53,7 +55,7 @@ describe('service identifiers can be get based on tag', () => {
 			})
 			.addTag('tag1')
 
-		expectOk(builder.registerAndUse(MultiAgenda)).addTag('tag3')
+		expectOk(builder.tryRegisterAndUse(MultiAgenda)).addTag('tag3')
 
 		const container = expectOk(builder.build())
 

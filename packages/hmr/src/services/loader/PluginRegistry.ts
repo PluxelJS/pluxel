@@ -3,20 +3,20 @@ import {
 	type Context,
 	getPluginMeta,
 	type ConfigSchemaMap,
-	type PluginClass,
+	type PluginConstructor,
 } from '../../context'
 
 export class PluginRegistry {
-	public moduleMap = new Map<string, PluginClass[]>()
-	public nameMap = new Map<string, PluginClass>()
-	public schemaCache = new WeakMap<PluginClass, ConfigSchemaMap>()
+	public moduleMap = new Map<string, PluginConstructor[]>()
+	public nameMap = new Map<string, PluginConstructor>()
+	public schemaCache = new WeakMap<PluginConstructor, ConfigSchemaMap>()
 
 	constructor(private ctx: Context) {}
 
 	/**
 	 * Register a plugin class under a module ID, validate its config and enable it.
 	 */
-	register(moduleId: string, ctor: PluginClass) {
+	register(moduleId: string, ctor: PluginConstructor) {
 		const meta = getPluginMeta('META_KEY', ctor)!
 		const pluginName = meta.name
 		const list = this.moduleMap.get(moduleId) ?? []
@@ -50,7 +50,7 @@ export class PluginRegistry {
 	/**
 	 * Validate plugin config and register it with the core registry.
 	 */
-	enablePlugin(name: string, ctor: PluginClass) {
+	enablePlugin(name: string, ctor: PluginConstructor) {
 		const schemaObjMap = this.getSchema(ctor)
 		if (schemaObjMap) {
 			const { configRecord } = this.ctx.configService.getConfig(name)
@@ -65,7 +65,7 @@ export class PluginRegistry {
 		this.ctx.registry.pluginRegistry.registerPlugin(ctor)
 	}
 
-	disablePlugin(pluginName: string, ctor: PluginClass) {
+	disablePlugin(pluginName: string, ctor: PluginConstructor) {
 		this.ctx.registry.pluginRegistry.unregisterPlugin(ctor)
 		this.ctx.configService.disablePlugin(pluginName)
 	}
@@ -80,14 +80,14 @@ export class PluginRegistry {
 	/**
 	 * Get plugin constructor by its registered name.
 	 */
-	getPluginByName(name: string): PluginClass | undefined {
+	getPluginByName(name: string): PluginConstructor | undefined {
 		return this.nameMap.get(name)
 	}
 
 	/**
 	 * Lazy-load and cache the config schema for a plugin.
 	 */
-	public getSchema(ctor: PluginClass): ConfigSchemaMap | undefined {
+	public getSchema(ctor: PluginConstructor): ConfigSchemaMap | undefined {
 		if (!this.schemaCache.has(ctor)) {
 			const schemaObjMap = getPluginMeta('CONFIG_MAP', ctor) as
 				| ConfigSchemaMap

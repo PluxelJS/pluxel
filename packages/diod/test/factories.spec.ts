@@ -11,11 +11,11 @@ describe('returns instances created with factories', () => {
 	it('resolves factory-produced instances', () => {
 		// Arrange
 		const builder = new ContainerBuilder()
-		expectOk(builder.registerAndUse(Calendar))
+		expectOk(builder.tryRegisterAndUse(Calendar))
 
 		// Act: 注册工厂
-		expectOk(builder.register(Clock)).useFactory(() => new Clock())
-		expectOk(builder.register(Agenda)).useFactory(
+		expectOk(builder.tryRegister(Clock)).useFactory(() => new Clock())
+		expectOk(builder.tryRegister(Agenda)).useFactory(
 			(c) =>
 				new Agenda(expectExist(c.get(Clock)), expectExist(c.get(Calendar))),
 		)

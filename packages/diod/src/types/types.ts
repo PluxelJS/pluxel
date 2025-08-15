@@ -1,7 +1,7 @@
 // types.ts
 import type { Maybe } from 'option-t/maybe'
 import type { Result } from 'option-t/plain_result'
-import type { ResolveError } from '../container'
+import type { ContainerAccessors } from '../container'
 /** 可 new 的类 */
 export type Newable<T> = new (...args: any[]) => T
 /** 抽象类 */
@@ -24,12 +24,7 @@ export type BuildOptions = {
 }
 
 /** Factory 调用上下文（Result/Maybe 风格，无异常流控） */
-export type FactoryContext = {
-	getResult<T>(id: Identifier<T>): Result<T, ResolveError>
-	getMaybe<T>(id: Identifier<T>): Maybe<T>
-	get<T>(identifier: Identifier<T>): Maybe<T>
-	getByAliasResult<T = unknown>(alias: AliasKey): Result<T, ResolveError>
-	getByAlias<T = unknown>(alias: AliasKey): Maybe<T>
+export type FactoryContext = ContainerAccessors & {
 	findTaggedServiceIdentifiers<T = unknown>(tag: string): Identifier<T>[]
 }
 
@@ -43,26 +38,12 @@ export type Instance<T> = T & Object
  * Container interfaces（纯 Result/Maybe 风格）
  * ------------------------------------------------------------------------- */
 
-export interface Container {
-	getResult<T>(identifier: Identifier<T>): Result<T, ResolveError>
-	getMaybe<T>(identifier: Identifier<T>): Maybe<T>
-	get<T>(identifier: Identifier<T>): Maybe<T>
-	/** 别名解析（受 private 限制） */
-	getByAliasResult<T = unknown>(alias: AliasKey): Result<T, ResolveError>
-	getByAlias<T = unknown>(alias: AliasKey): Maybe<T>
-
+export type Container = ContainerAccessors & {
 	findTaggedServiceIdentifiers<T = unknown>(tag: string): Identifier<T>[]
 	beginScope(): ScopedContainer
 }
 
-export interface ScopedContainer {
-	getResult<T>(identifier: Identifier<T>): Result<T, ResolveError>
-	getMaybe<T>(identifier: Identifier<T>): Maybe<T>
-	get<T>(identifier: Identifier<T>): Maybe<T>
-
-	getByAliasResult<T = unknown>(alias: AliasKey): Result<T, ResolveError>
-	getByAlias<T = unknown>(alias: AliasKey): Maybe<T>
-
+export type ScopedContainer = ContainerAccessors & {
 	dispose(): void | Promise<void>
 }
 

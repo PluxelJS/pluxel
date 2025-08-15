@@ -11,8 +11,8 @@ describe('user defined decorators can be used', () => {
 	it('registers via custom decorator and resolves dependency', () => {
 		// Arrange
 		const builder = new ContainerBuilder()
-		expectOk(builder.registerAndUse(ServiceWithCustomDecorator))
-		expectOk(builder.register(Truer)).use(OtherServiceWithCustomDecorator)
+		expectOk(builder.tryRegisterAndUse(ServiceWithCustomDecorator))
+		expectOk(builder.tryRegister(Truer)).use(OtherServiceWithCustomDecorator)
 		const container = expectOk(builder.build())
 
 		// Act

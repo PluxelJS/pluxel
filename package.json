@@ -18,15 +18,15 @@
     "@types/bun": "latest",
     "husky": "^9.1.7",
     "is-ci": "^4.1.0",
-    "lint-staged": "^15.5.0",
+    "lint-staged": "^15.5.2",
     "rimraf": "^6.0.1",
-    "taze": "^19.0.4",
+    "taze": "^19.1.0",
     "tsdown": "latest",
-    "tsup": "^8.4.0",
-    "tsx": "^4.19.3",
-    "turbo": "^2.4.4",
-    "typescript": "^5.8.3",
-    "vitest": "^3.1.1"
+    "tsup": "^8.5.0",
+    "tsx": "^4.20.4",
+    "turbo": "^2.5.5",
+    "typescript": "^5.9.2",
+    "vitest": "^3.2.4"
   },
   "pre-commit": "lint-staged",
   "lint-staged": {
@@ -37,13 +37,13 @@
   },
   "packageManager": "pnpm@10.14.0+sha512.ad27a79641b49c3e481a16a805baa71817a04bbe06a38d17e60e2eaee83f6a146c6a688125f5792e48dd5ba30e7da52a5cda4c3992b9ccf333f9ce223af84748",
   "dependencies": {
-    "@mantine/core": "^8.2.2",
-    "@mantine/dates": "^8.2.2",
-    "@mantine/hooks": "^8.2.2",
-    "@mantine/modals": "^8.2.2",
-    "@mantine/notifications": "^8.2.2",
-    "@tabler/icons-react": "^3.34.0",
-    "react": "19",
-    "react-dom": "19"
+    "@mantine/core": "^8.2.4",
+    "@mantine/dates": "^8.2.4",
+    "@mantine/hooks": "^8.2.4",
+    "@mantine/modals": "^8.2.4",
+    "@mantine/notifications": "^8.2.4",
+    "@tabler/icons-react": "^3.34.1",
+    "react": "^19.1.1",
+    "react-dom": "^19.1.1"
   }
 }

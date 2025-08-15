@@ -10,7 +10,7 @@ describe('alias index & resolution', () => {
 	it('resolves by string alias', () => {
 		class Foo {}
 		const builder = new ContainerBuilder()
-		expectOk(builder.registerAndUse(Foo)).addAlias('foo')
+		expectOk(builder.tryRegisterAndUse(Foo)).addAlias('foo')
 
 		const container = expectOk(builder.build())
 		const foo = expectExist(container.getByAlias<Foo>('foo'))
@@ -21,7 +21,7 @@ describe('alias index & resolution', () => {
 		class Bar {}
 		const KEY = Symbol('bar')
 		const builder = new ContainerBuilder()
-		expectOk(builder.registerAndUse(Bar)).addAlias(KEY)
+		expectOk(builder.tryRegisterAndUse(Bar)).addAlias(KEY)
 
 		const container = expectOk(builder.build())
 		const bar = expectExist(container.getByAlias<Bar>(KEY))
@@ -37,7 +37,7 @@ describe('alias index & resolution', () => {
 		}
 
 		const builder = new ContainerBuilder()
-		expectOk(builder.registerAndUse(Logger)).addAlias(
+		expectOk(builder.tryRegisterAndUse(Logger)).addAlias(
 			ILogger as unknown as abstract new (
 				...a: any[]
 			) => any,
@@ -51,7 +51,7 @@ describe('alias index & resolution', () => {
 	it('getByAliasResult returns NotRegistered for unknown alias', () => {
 		class Baz {}
 		const builder = new ContainerBuilder()
-		expectOk(builder.registerAndUse(Baz)).addAlias('baz')
+		expectOk(builder.tryRegisterAndUse(Baz)).addAlias('baz')
 
 		const container = expectOk(builder.build())
 		const r = container.getByAliasResult('nope')
@@ -64,7 +64,7 @@ describe('alias index & resolution', () => {
 	it('respects private visibility when resolving by alias', () => {
 		class Secret {}
 		const builder = new ContainerBuilder()
-		expectOk(builder.registerAndUse(Secret)).private().addAlias('secret')
+		expectOk(builder.tryRegisterAndUse(Secret)).private().addAlias('secret')
 
 		const container = expectOk(builder.build())
 		const r = container.getByAliasResult('secret')
@@ -78,8 +78,8 @@ describe('alias index & resolution', () => {
 		class A {}
 		class B {}
 		const builder = new ContainerBuilder()
-		expectOk(builder.registerAndUse(A)).addAlias('dup')
-		expectOk(builder.registerAndUse(B)).addAlias('dup')
+		expectOk(builder.tryRegisterAndUse(A)).addAlias('dup')
+		expectOk(builder.tryRegisterAndUse(B)).addAlias('dup')
 
 		const err = expectErr(builder.build())
 		expect(err).toBeInstanceOf(ServiceVerificationAggregateError)
@@ -98,8 +98,8 @@ describe('alias index & resolution', () => {
 		class A {}
 		class B {}
 		const builder = new ContainerBuilder()
-		expectOk(builder.registerAndUse(A)).addAlias('dup')
-		expectOk(builder.registerAndUse(B)).addAlias('dup')
+		expectOk(builder.tryRegisterAndUse(A)).addAlias('dup')
+		expectOk(builder.tryRegisterAndUse(B)).addAlias('dup')
 
 		const container = expectOk(builder.build({ aliasPolicy: 'lastWins' }))
 		const resolved = expectExist(container.getByAlias<B>('dup'))
@@ -110,8 +110,8 @@ describe('alias index & resolution', () => {
 		class A {}
 		class B {}
 		const builder = new ContainerBuilder()
-		expectOk(builder.registerAndUse(A)).addAlias('dup')
-		expectOk(builder.registerAndUse(B)).addAlias('dup')
+		expectOk(builder.tryRegisterAndUse(A)).addAlias('dup')
+		expectOk(builder.tryRegisterAndUse(B)).addAlias('dup')
 
 		const container = expectOk(builder.build({ aliasPolicy: 'firstWins' }))
 		const resolved = expectExist(container.getByAlias<A>('dup'))
@@ -122,7 +122,7 @@ describe('alias index & resolution', () => {
 		class Multi {}
 		const ALPHA = Symbol('alpha')
 		const builder = new ContainerBuilder()
-		expectOk(builder.registerAndUse(Multi))
+		expectOk(builder.tryRegisterAndUse(Multi))
 			.addAlias('m1')
 			.addAlias(ALPHA)
 			.asSingleton()

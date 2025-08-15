@@ -13,8 +13,8 @@ describe('the constructor of the extended class is injected if target has not co
 	it('injects deps and resolves concrete instance', () => {
 		// Arrange
 		const builder = new ContainerBuilder()
-		expectOk(builder.registerAndUse(Person))
-		expectOk(builder.register(Logger)).use(ConsoleLogger)
+		expectOk(builder.tryRegisterAndUse(Person))
+		expectOk(builder.tryRegister(Logger)).use(ConsoleLogger)
 		const container = expectOk(builder.build())
 
 		// Act
@@ -30,9 +30,9 @@ describe('abstractions can be used as identifiers but concrete class instances a
 	it('resolves Person via Sayer identifier', () => {
 		// Arrange
 		const builder = new ContainerBuilder()
-		expectOk(builder.register(Sayer)).use(Person)
-		expectOk(builder.register(Logger)).use(ConsoleLogger)
-		expectOk(builder.registerAndUse(Conversation))
+		expectOk(builder.tryRegister(Sayer)).use(Person)
+		expectOk(builder.tryRegister(Logger)).use(ConsoleLogger)
+		expectOk(builder.tryRegisterAndUse(Conversation))
 		const container = expectOk(builder.build())
 
 		// Act

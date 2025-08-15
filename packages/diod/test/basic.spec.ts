@@ -10,7 +10,7 @@ describe('returns registered parameter-less constructor class instance', () => {
 	it('resolves a class with no constructor parameters', () => {
 		// Arrange
 		const builder = new ContainerBuilder()
-		expectOk(builder.registerAndUse(Clock))
+		expectOk(builder.tryRegisterAndUse(Clock))
 		const container = expectOk(builder.build())
 
 		// Act
@@ -26,7 +26,7 @@ describe('throws error when asked for an unregistered service', () => {
 	it('returns Err(NotRegistered) for unknown service via getResult', () => {
 		// Arrange
 		const builder = new ContainerBuilder()
-		expectOk(builder.registerAndUse(Clock))
+		expectOk(builder.tryRegisterAndUse(Clock))
 		const container = expectOk(builder.build())
 
 		// Act

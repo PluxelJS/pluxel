@@ -84,12 +84,11 @@ export class PluginService {
 		// 卸载插件必然用的是老容器
 		const oldContainer = this.pluginRegistry.lastContainer
 		for (const id of removeIds) {
-			const p = oldContainer.get(id)
-			console.log(p.ctx.scope.disposables)
+			const p = oldContainer.get(id)!
 			p.ctx.disposeAll()
 		}
 		for (const id of replaceIds) {
-			const p = oldContainer.get(id)
+			const p = oldContainer.get(id)!
 			p.ctx.disposeAll()
 		}
 

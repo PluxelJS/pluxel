@@ -15,15 +15,15 @@ describe('the constructor of the extended class is injected if target has not co
 		// Arrange
 		const builder = new ContainerBuilder()
 
-		expectOk(builder.registerAndUse(BankUser)).withDependencies([
+		expectOk(builder.tryRegisterAndUse(BankUser)).withDependencies([
 			SessionManager,
 		])
-		expectOk(builder.registerAndUse(ShopUser)).withDependencies([
+		expectOk(builder.tryRegisterAndUse(ShopUser)).withDependencies([
 			SessionManager,
 			ShoppingCart,
 		])
-		expectOk(builder.registerAndUse(SessionManager)).withDependencies([])
-		expectOk(builder.registerAndUse(ShoppingCart))
+		expectOk(builder.tryRegisterAndUse(SessionManager)).withDependencies([])
+		expectOk(builder.tryRegisterAndUse(ShoppingCart))
 
 		const container = expectOk(builder.build())
 

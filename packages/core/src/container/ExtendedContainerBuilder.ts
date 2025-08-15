@@ -6,7 +6,6 @@ import {
 	type Identifier,
 	type Registration,
 } from 'diod'
-import { ExtendedDIContainer } from './ExtendedDIContainer'
 import { LeanMapTracker } from './LeanMapTracker'
 
 export type SingletonMap = Map<Identifier<unknown>, unknown>
@@ -21,33 +20,14 @@ export class ExtendedContainerBuilder extends ContainerBuilder {
 		BuildableKV[1]
 	>()
 
+	constructor(builderSingleton: Map<Identifier<unknown>, unknown>) {
+		super()
+		this.builderSingletons = builderSingleton
+	}
+
 	dispatchReload(key: any) {
 		const value = this.buildables.get(key)
 		if (value === undefined) throw new Error('不能 reload 不存在的 key。')
 		this.buildables.set(key, value)
-	}
-
-	// NOTE - build 保证所有依赖都已经有所属，但不代表已经实例化。
-	override build({
-		autowire = false,
-		outsideSingletons,
-	}: BuildOptions & {
-		outsideSingletons?: SingletonMap
-	} = {}): ExtendedDIContainer {
-		const { services, dependents } = this.buildServices({
-			autowire,
-			verify: true,
-		})
-		return new ExtendedDIContainer(
-			services as any,
-			dependents as any,
-			(outsideSingletons || this.builderSingletons) as any,
-		)
-	}
-
-	public override register<T>(identifier: Identifier<T>): Registration<T> {
-		const buildable = DiodRegistration.createBuildable(identifier)
-		this.buildables.set(identifier, buildable)
-		return buildable.instance
 	}
 }

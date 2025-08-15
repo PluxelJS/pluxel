@@ -11,9 +11,9 @@ describe('returns registered instance with basic dependencies', () => {
 	it('resolves Agenda with its basic deps', () => {
 		// Arrange
 		const builder = new ContainerBuilder()
-		expectOk(builder.register(Clock)).use(Clock)
-		expectOk(builder.registerAndUse(Calendar))
-		expectOk(builder.register(Agenda)).useClass(Agenda)
+		expectOk(builder.tryRegister(Clock)).use(Clock)
+		expectOk(builder.tryRegisterAndUse(Calendar))
+		expectOk(builder.tryRegister(Agenda)).useClass(Agenda)
 		const container = expectOk(builder.build())
 
 		// Act

@@ -14,17 +14,17 @@ describe('scopes', () => {
 		const builder = new ContainerBuilder()
 
 		// Act
-		expectOk(builder.registerAndUse(Calendar)).asTransient()
-		expectOk(builder.register(Clock))
+		expectOk(builder.tryRegisterAndUse(Calendar)).asTransient()
+		expectOk(builder.tryRegister(Clock))
 			.useFactory(() => new Clock())
 			.asTransient()
-		expectOk(builder.register(Agenda))
+		expectOk(builder.tryRegister(Agenda))
 			.useFactory(
 				(c) =>
 					new Agenda(expectExist(c.get(Clock)), expectExist(c.get(Calendar))),
 			)
 			.asTransient()
-		expectOk(builder.registerAndUse(MultiAgenda)).asTransient()
+		expectOk(builder.tryRegisterAndUse(MultiAgenda)).asTransient()
 
 		const container = expectOk(builder.build())
 
@@ -50,17 +50,17 @@ describe('scopes', () => {
 		const builder = new ContainerBuilder()
 
 		// Act
-		expectOk(builder.registerAndUse(Calendar)).asSingleton()
-		expectOk(builder.register(Clock))
+		expectOk(builder.tryRegisterAndUse(Calendar)).asSingleton()
+		expectOk(builder.tryRegister(Clock))
 			.useFactory(() => new Clock())
 			.asSingleton()
-		expectOk(builder.register(Agenda))
+		expectOk(builder.tryRegister(Agenda))
 			.useFactory(
 				(c) =>
 					new Agenda(expectExist(c.get(Clock)), expectExist(c.get(Calendar))),
 			)
 			.asSingleton()
-		expectOk(builder.registerAndUse(MultiAgenda)).asSingleton()
+		expectOk(builder.tryRegisterAndUse(MultiAgenda)).asSingleton()
 
 		const container = expectOk(builder.build())
 
@@ -85,17 +85,17 @@ describe('scopes', () => {
 		const builder = new ContainerBuilder()
 
 		// Act
-		expectOk(builder.registerAndUse(Calendar)).asSingleton()
-		expectOk(builder.register(Clock))
+		expectOk(builder.tryRegisterAndUse(Calendar)).asSingleton()
+		expectOk(builder.tryRegister(Clock))
 			.useFactory(() => new Clock())
 			.asInstancePerRequest()
-		expectOk(builder.register(Agenda))
+		expectOk(builder.tryRegister(Agenda))
 			.useFactory(
 				(c) =>
 					new Agenda(expectExist(c.get(Clock)), expectExist(c.get(Calendar))),
 			)
 			.asInstancePerRequest()
-		expectOk(builder.registerAndUse(MultiAgenda)).asInstancePerRequest()
+		expectOk(builder.tryRegisterAndUse(MultiAgenda)).asInstancePerRequest()
 
 		const container = expectOk(builder.build())
 
@@ -127,7 +127,7 @@ describe('scopes', () => {
 
 	it('builder-singleton shares the same instance across containers built from the same builder', () => {
 		const builder = new ContainerBuilder()
-		expectOk(builder.registerAndUse(Calendar)).asBuilderSingleton()
+		expectOk(builder.tryRegisterAndUse(Calendar)).asBuilderSingleton()
 
 		const c1 = expectOk(builder.build())
 		const a1 = expectExist(c1.get(Calendar))
@@ -145,11 +145,11 @@ describe('scopes', () => {
 
 	it('builder-singleton does NOT share across different builders', () => {
 		const b1 = new ContainerBuilder()
-		expectOk(b1.registerAndUse(Calendar)).asBuilderSingleton()
+		expectOk(b1.tryRegisterAndUse(Calendar)).asBuilderSingleton()
 		const a1 = expectExist(expectOk(b1.build()).get(Calendar))
 
 		const b2 = new ContainerBuilder()
-		expectOk(b2.registerAndUse(Calendar)).asBuilderSingleton()
+		expectOk(b2.tryRegisterAndUse(Calendar)).asBuilderSingleton()
 		const a2 = expectExist(expectOk(b2.build()).get(Calendar))
 
 		expect(a1).not.toBe(a2)
@@ -157,7 +157,7 @@ describe('scopes', () => {
 
 	it('normal singleton differs across containers (contrast with builder-singleton)', () => {
 		const builder = new ContainerBuilder()
-		expectOk(builder.registerAndUse(Clock)).asSingleton()
+		expectOk(builder.tryRegisterAndUse(Clock)).asSingleton()
 
 		const c1 = expectOk(builder.build())
 		const s1 = expectExist(c1.get(Clock))
@@ -171,15 +171,15 @@ describe('scopes', () => {
 
 	it('unregister clears builder-singleton instance so a new one is created next time', () => {
 		const builder = new ContainerBuilder()
-		expectOk(builder.registerAndUse(Calendar)).asBuilderSingleton()
+		expectOk(builder.tryRegisterAndUse(Calendar)).asBuilderSingleton()
 
 		const first = expectExist(expectOk(builder.build()).get(Calendar))
 
 		// Unregister removes both registration and builder-singleton cached instance
-		expectOk(builder.unregister(Calendar))
+		expectOk(builder.tryUnregister(Calendar))
 
 		// Re-register the same service; a new instance should be created
-		expectOk(builder.registerAndUse(Calendar)).asBuilderSingleton()
+		expectOk(builder.tryRegisterAndUse(Calendar)).asBuilderSingleton()
 		const second = expectExist(expectOk(builder.build()).get(Calendar))
 
 		expect(second).not.toBe(first)

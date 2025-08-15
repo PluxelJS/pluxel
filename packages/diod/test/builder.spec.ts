@@ -34,7 +34,7 @@ describe('build-time validations and registry ops', () => {
 	it('throws error when there is not completed registration', () => {
 		// Arrange
 		const builder = new ContainerBuilder()
-		expectOk(builder.register(NotDecorated)) // 只 register，没有 use
+		expectOk(builder.tryRegister(NotDecorated)) // 只 register，没有 use
 
 		// Assert
 		const e = expectBuildErr(builder.build())
@@ -46,7 +46,7 @@ describe('build-time validations and registry ops', () => {
 	it('throws error when asked for a not decorated service with constructor dependencies', () => {
 		const builder = new ContainerBuilder()
 		// 直接 use 未装饰但带依赖的服务
-		expectOk(builder.registerAndUse(NotDecorated))
+		expectOk(builder.tryRegisterAndUse(NotDecorated))
 
 		const e = expectBuildErr(builder.build())
 		// 信息包含 "Service not decorated"
@@ -56,7 +56,7 @@ describe('build-time validations and registry ops', () => {
 
 	it('throws error building a container with a registered service which has unregistered dependencies', () => {
 		const builder = new ContainerBuilder()
-		expectOk(builder.registerAndUse(Agenda))
+		expectOk(builder.tryRegisterAndUse(Agenda))
 
 		const e = expectBuildErr(builder.build())
 		// 缺失依赖属于 MissingDependency
@@ -68,8 +68,8 @@ describe('build-time validations and registry ops', () => {
 
 	it('throws error when a dependency has unregistered dependencies', () => {
 		const builder = new ContainerBuilder()
-		expectOk(builder.register(Schedule)).use(Schedule)
-		expectOk(builder.register(Agenda)).use(Agenda)
+		expectOk(builder.tryRegister(Schedule)).use(Schedule)
+		expectOk(builder.tryRegister(Agenda)).use(Agenda)
 
 		const e = expectBuildErr(builder.build())
 		const hasMissing = e.errors.some((x) => x.kind === 'MissingDependency')
@@ -79,7 +79,7 @@ describe('build-time validations and registry ops', () => {
 
 	it('throws error when service without constructor extends not decorated service with constructor dependencies', () => {
 		const builder = new ContainerBuilder()
-		expectOk(builder.registerAndUse(NotPerson))
+		expectOk(builder.tryRegisterAndUse(NotPerson))
 
 		const e = expectBuildErr(builder.build())
 		// 你的实现通常会输出 NotPerson -> NotDecorated 的链
@@ -90,7 +90,7 @@ describe('build-time validations and registry ops', () => {
 
 	it('does not throw when service with parameter-less constructor extends not decorated service with ctor deps', () => {
 		const builder = new ContainerBuilder()
-		expectOk(builder.registerAndUse(Routes))
+		expectOk(builder.tryRegisterAndUse(Routes))
 		const container = expectOk(builder.build())
 
 		const routes = expectExist(container.get(Routes))
@@ -100,7 +100,7 @@ describe('build-time validations and registry ops', () => {
 
 	it('throws error when needed dependencies are not provided for non autowired service', () => {
 		const builder = new ContainerBuilder()
-		expectOk(builder.registerAndUse(BankUser))
+		expectOk(builder.tryRegisterAndUse(BankUser))
 
 		const e = expectBuildErr(builder.build({ autowire: false }))
 		// 至少应包含 MissingDependency
@@ -123,9 +123,9 @@ describe('build-time validations and registry ops', () => {
 
 	it('throws error if circular dependencies are detected', () => {
 		const builder = new ContainerBuilder()
-		expectOk(builder.registerAndUse(Circular1)).withDependencies([Circular2])
-		expectOk(builder.registerAndUse(Circular2)).withDependencies([Circular3])
-		expectOk(builder.registerAndUse(Circular3)).withDependencies([Circular1])
+		expectOk(builder.tryRegisterAndUse(Circular1)).withDependencies([Circular2])
+		expectOk(builder.tryRegisterAndUse(Circular2)).withDependencies([Circular3])
+		expectOk(builder.tryRegisterAndUse(Circular3)).withDependencies([Circular1])
 
 		const e = expectBuildErr(builder.build({ autowire: false }))
 		// 类型安全：检查 CircularDependency
@@ -145,11 +145,11 @@ describe('build-time validations and registry ops', () => {
 
 	it('does not throw circular dependency error when different classes with the same name are used', () => {
 		const builder = new ContainerBuilder()
-		expectOk(builder.registerAndUse(circular1.Circular1))
-		expectOk(builder.registerAndUse(circular2.Circular1)).withDependencies([
+		expectOk(builder.tryRegisterAndUse(circular1.Circular1))
+		expectOk(builder.tryRegisterAndUse(circular2.Circular1)).withDependencies([
 			circular2.Circular2,
 		])
-		expectOk(builder.registerAndUse(circular2.Circular2)).withDependencies([
+		expectOk(builder.tryRegisterAndUse(circular2.Circular2)).withDependencies([
 			circular1.Circular1,
 		])
 
@@ -159,10 +159,10 @@ describe('build-time validations and registry ops', () => {
 
 	it('throws error if service is registered twice', () => {
 		const builder = new ContainerBuilder()
-		expectOk(builder.registerAndUse(Clock))
+		expectOk(builder.tryRegisterAndUse(Clock))
 
 		// 再注册同一个：返回 Err(AlreadyRegistered)
-		const r = builder.registerAndUse(Clock)
+		const r = builder.tryRegisterAndUse(Clock)
 		const regErr = expectErr(r, 'should be AlreadyRegistered')
 		expect(regErr.kind).toBe('AlreadyRegistered')
 		// 可选：校验 id
@@ -171,28 +171,28 @@ describe('build-time validations and registry ops', () => {
 
 	it('throws unregistering not registered service', () => {
 		const builder = new ContainerBuilder()
-		expectOk(builder.registerAndUse(Clock))
+		expectOk(builder.tryRegisterAndUse(Clock))
 
-		const r = builder.unregister(Circular1)
-		const unregErr = expectErr(
+		const r = builder.tryUnregister(Circular1)
+		const success = expectOk(
 			r,
-			'should be NotRegistered when unregistering unknown id',
+			'no NotRegistered any more when unregistering unknown id',
 		)
-		expect(unregErr.kind).toBe('NotRegistered')
+		expect(success).toBe(false)
 		// expect(unregErr.id).toBe(Circular1)
 	})
 
 	it('services can be unregistered', () => {
 		const builder = new ContainerBuilder()
-		expectOk(builder.registerAndUse(Clock))
+		expectOk(builder.tryRegisterAndUse(Clock))
 
-		expectOk(builder.unregister(Clock))
+		expectOk(builder.tryUnregister(Clock))
 		expect(builder.isRegistered(Clock)).toBeFalse()
 	})
 
-	it('can query if a service is registered', () => {
+	it('can query if a service is registe red', () => {
 		const builder = new ContainerBuilder()
-		expectOk(builder.registerAndUse(Clock))
+		expectOk(builder.tryRegisterAndUse(Clock))
 
 		const isClockRegistered = builder.isRegistered(Clock)
 		const isCircular1Registered = builder.isRegistered(Circular1)

@@ -1,15 +1,13 @@
 import type { Context } from '..'
 import {
-	type Container,
 	ExtendedContainerBuilder,
-	type ExtendedDIContainer,
-	ServiceVerificationAggregateError,
+	type DiodContainer,
+	type FactoryContext,
 } from '../container'
 import { type BasePlugin, PLUGIN_CTX } from './BasePlugin'
-import { getClassParam, getPluginMeta } from './PluginDecorator'
-import { getDependencies } from '../../../diod/src/reflection'
+import { getBaseClass, getClassParam, getPluginMeta } from './PluginDecorator'
 import {
-	type PluginClass,
+	type PluginConstructor,
 	type PluginIdentifier,
 	type PluginInstance,
 	type Result,
@@ -17,12 +15,13 @@ import {
 	createOk,
 } from './types'
 
+export type PluginDiContainer = DiodContainer<BasePlugin>
 export class PluginContainer {
-	private builder = new ExtendedContainerBuilder()
-
 	// 用 Registry 管理单例
-	public singletons = new Map<PluginClass, PluginInstance>()
-	public lastContainer!: ExtendedDIContainer
+	public singletons = new Map<PluginConstructor, PluginInstance>()
+	private builder = new ExtendedContainerBuilder(this.singletons)
+
+	public lastContainer!: PluginDiContainer
 
 	constructor(private createPluginCTX: () => Context) {}
 
@@ -30,10 +29,10 @@ export class PluginContainer {
 		this.builder.buildables.reset()
 	}
 
-	public registerPlugin(Plugin: PluginClass): void {
+	public registerPlugin(Plugin: PluginConstructor): void {
 		const meta = getPluginMeta('META_KEY', Plugin)
 		if (!meta) throw new Error('缺少 @Plugin 装饰器元数据')
-		const types: PluginIdentifier[] = getClassParam(Plugin)
+		const types = getClassParam(Plugin) as PluginIdentifier[]
 		const optionalSet = new Set<number>(
 			getPluginMeta('OPTIONAL_PARAMS_KEY', Plugin),
 		)
@@ -41,7 +40,8 @@ export class PluginContainer {
 		pluginCtx.pluginMeta = meta
 
 		const mustDeps: PluginIdentifier[] = []
-		const resolvers: ((c: Container) => BasePlugin | undefined)[] = []
+		const resolvers: ((c: FactoryContext) => BasePlugin | undefined | null)[] =
+			[]
 
 		for (let i = 0; i < types.length; i++) {
 			const type = types[i]
@@ -50,19 +50,21 @@ export class PluginContainer {
 
 			resolvers.push((container) => {
 				if (isOpt) {
-					try {
-						return container.get(type)
-					} catch {
-						return undefined
-					}
+					return container.getMaybe(type)
 				}
-				const inst: BasePlugin = container.get(type)
+				const res = container.getResult(type)
+				if (res.err) {
+					throw new Error('不应该在运行时才发现缺依赖')
+				}
+				const inst = res.val
 				inst.ctx.caller = pluginCtx
 				return inst
 			})
 		}
+
+		const baseAbstractClass = getBaseClass(Plugin)
 		this.builder
-			.register(Plugin)
+			.register(baseAbstractClass ?? Plugin)
 			.useFactory((container) => {
 				const deps = resolvers.map((fn) => fn(container))
 				const instance = new Plugin(...deps)
@@ -92,10 +94,13 @@ export class PluginContainer {
 			this.unregisterPlugin(dep)
 		}
 		// 最后才卸载自身
-		this.builder.unregister(plugin)
+		this.builder.tryUnregister(plugin)
 	}
 
-	public reloadPlugin(root: PluginIdentifier, newClass?: PluginClass): void {
+	public reloadPlugin(
+		root: PluginIdentifier,
+		newClass?: PluginConstructor,
+	): void {
 		// 1. 校验：必须已加载
 		if (!this.builder.buildables.has(root)) {
 			throw new Error('You can not reload an unloaded Plugin.')
@@ -146,7 +151,7 @@ export class PluginContainer {
 		const builder = this.builder
 
 		const ret: {
-			container: ExtendedDIContainer
+			container: PluginDiContainer
 			confirm: () => void
 			undo: () => ReturnType<typeof builder.buildables.reset>
 			changes: ReturnType<typeof builder.buildables.commit>
@@ -160,20 +165,18 @@ export class PluginContainer {
 			return createOk(ret)
 		}
 
-		try {
-			ret.changes = builder.buildables.commit()
-			ret.container = builder.build({
-				outsideSingletons: this.singletons,
-			})
-		} catch (e) {
-			if (e instanceof ServiceVerificationAggregateError) {
-				return createErr({ err: e.errors, ret })
-			}
-			throw e
+		ret.changes = builder.buildables.commit()
+		const result = builder.build()
+
+		if (result.err) {
+			return createErr({ err: result.err, ret })
 		}
+
+		ret.container = result.val as DiodContainer<BasePlugin>
 		ret.confirm = () => {
-			this.lastContainer = ret.container
+			this.lastContainer = result.val as DiodContainer<BasePlugin>
 		}
+
 		return createOk(ret)
 	}
 }

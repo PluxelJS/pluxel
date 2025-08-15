@@ -13,9 +13,9 @@ describe('only public services can be directly queried from the container', () =
 		const builder = new ContainerBuilder()
 
 		// Act
-		expectOk(builder.registerAndUse(Agenda)).public()
-		expectOk(builder.registerAndUse(Clock)).public()
-		expectOk(builder.registerAndUse(Calendar)).private()
+		expectOk(builder.tryRegisterAndUse(Agenda)).public()
+		expectOk(builder.tryRegisterAndUse(Clock)).public()
+		expectOk(builder.tryRegisterAndUse(Calendar)).private()
 
 		const container = expectOk(builder.build())
 

@@ -7,7 +7,7 @@ import {
 	Eventure,
 	type Unsubscribe,
 } from 'eventure'
-import type { PluginClass, PluginInstance } from '../pluginImpl'
+import type { PluginConstructor, PluginInstance } from '../pluginImpl'
 
 declare module '@pluxel/context' {
 	namespace Context {
@@ -94,7 +94,7 @@ export class EventsService extends Eventure<Events> {
 
 export interface Events {
 	onLoad: [string]
-	beforeStart: [Context, PluginClass, PluginInstance] // 启动前
+	beforeStart: [Context, PluginConstructor, PluginInstance] // 启动前
 	afterStart: [Context] // 启动成功
 	startError: [Context, Error] // 启动失败
 }

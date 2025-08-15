@@ -34,7 +34,6 @@ export class MathService extends a {
 		private config: Context.Config['mathService'],
 	) {
 		super()
-		console.log(config)
 	}
 
 	add(a: number, b: number): number {

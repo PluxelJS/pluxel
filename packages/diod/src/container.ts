@@ -21,7 +21,7 @@ export type ResolveError =
 	| { kind: 'CircularDependency'; chain: Identifier<unknown>[] }
 	| { kind: 'FactoryError'; id: Identifier<unknown>; cause: unknown }
 
-type Accessors = {
+export type ContainerAccessors = {
 	getResult<T>(id: Identifier<T>): Result<T, ResolveError>
 	get<T>(id: Identifier<T>): Maybe<T>
 	getMaybe<T>(id: Identifier<T>): Maybe<T>
@@ -29,23 +29,17 @@ type Accessors = {
 	getByAlias<T = unknown>(alias: AliasKey): Maybe<T>
 }
 
-export class DiodContainer implements Container {
+export class DiodContainer<U = unknown> implements Container {
 	private readonly singletons = new Map<Identifier<unknown>, unknown>()
 	private readonly builderSingletons: Map<Identifier<unknown>, unknown>
 	private readonly tagIndex = new Map<string, Identifier<unknown>[]>()
 	private readonly aliasIndex: ReadonlyMap<AliasKey, Identifier<unknown>>
 
 	public constructor(
-		public readonly services: ReadonlyMap<
-			Identifier<unknown>,
-			ServiceData<unknown>
-		>,
-		public readonly dependents: ReadonlyMap<
-			Identifier<unknown>,
-			Set<Identifier<unknown>>
-		>,
-		builderSingletons: Map<Identifier<unknown>, unknown>,
-		aliasIndex: ReadonlyMap<AliasKey, Identifier<unknown>>,
+		public readonly services: ReadonlyMap<Identifier<U>, ServiceData<U>>,
+		public readonly dependents: ReadonlyMap<Identifier<U>, Set<Identifier<U>>>,
+		builderSingletons: Map<Identifier<U>, U>,
+		aliasIndex: ReadonlyMap<AliasKey, Identifier<U>>,
 	) {
 		this.builderSingletons = builderSingletons
 		this.aliasIndex = aliasIndex
@@ -110,7 +104,7 @@ export class DiodContainer implements Container {
 
 	/* ------------------------------- Internals -------------------------------- */
 
-	private newRootAccessors(): Accessors {
+	private newRootAccessors(): ContainerAccessors {
 		const perRequest = new Map<Identifier<unknown>, unknown>()
 		const visiting = new Set<Identifier<unknown>>()
 		const path: Identifier<unknown>[] = []
@@ -122,7 +116,7 @@ export class DiodContainer implements Container {
 		visiting: Set<Identifier<unknown>>,
 		path: Identifier<unknown>[],
 		isDependency: boolean,
-	): Accessors {
+	): ContainerAccessors {
 		const getResult = <T>(id: Identifier<T>) =>
 			this.resolveServiceResult(id, perRequest, isDependency, visiting, path)
 

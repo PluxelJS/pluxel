@@ -2,7 +2,7 @@
 import {
 	type Context,
 	Injectable,
-	type PluginClass,
+	type PluginConstructor,
 	getClassParam,
 	getPluginMeta,
 } from '@pluxel/core'
@@ -84,7 +84,7 @@ export class LoaderService {
 		return data
 	}
 
-	getPluginDependenciesInfo(ctor: PluginClass) {
+	getPluginDependenciesInfo(ctor: PluginConstructor) {
 		const optionalSet = new Set<number>(
 			getPluginMeta('OPTIONAL_PARAMS_KEY', ctor),
 		)
@@ -96,11 +96,11 @@ export class LoaderService {
 			return { name: meta.name, optional: optionalSet.has(i), isRunning }
 		})
 	}
-	getPluginClassByName(name: string): PluginClass | undefined {
+	getPluginClassByName(name: string): PluginConstructor | undefined {
 		return this.registry.getPluginByName(name)
 	}
 
-	getPluginSchema(ctor: PluginClass) {
+	getPluginSchema(ctor: PluginConstructor) {
 		return this.registry.getSchema(ctor)
 	}
 }

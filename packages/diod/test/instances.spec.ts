@@ -17,12 +17,12 @@ describe('returns manually created class instance', () => {
 		const person = new Person(new ConsoleLogger())
 		const builder = new ContainerBuilder()
 
-		expectOk(builder.registerAndUse(Agenda))
-		expectOk(builder.registerAndUse(Calendar))
+		expectOk(builder.tryRegisterAndUse(Agenda))
+		expectOk(builder.tryRegisterAndUse(Calendar))
 
 		// Act: 注入实例
-		expectOk(builder.register(Clock)).useInstance(clock)
-		expectOk(builder.register(Sayer)).useInstance(person)
+		expectOk(builder.tryRegister(Clock)).useInstance(clock)
+		expectOk(builder.tryRegister(Sayer)).useInstance(person)
 
 		const container = expectOk(builder.build())
 
