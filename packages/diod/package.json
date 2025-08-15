@@ -1,0 +1,69 @@
+{
+	"name": "diod",
+	"version": "3.0.0",
+	"description": "A very opinionated and different inversion of control container and dependency injector for Typescript, Node.js or browser apps",
+	"keywords": [
+		"dependency injection",
+		"inversion of control",
+		"service locator",
+		"dependency",
+		"injection",
+		"service",
+		"container",
+		"typescript"
+	],
+	"main": "./dist/index.cjs",
+	"type": "module",
+	"files": [
+		"lib",
+		"CHANGELOG.md"
+	],
+	"browserslist": [
+		"> 1%, not dead, not ie 11, not op_mini all"
+	],
+	"scripts": {
+		"build": "tsdown",
+		"test": "bun test",
+		"docs": "rimraf docs/api && typedoc --plugin typedoc-plugin-markdown",
+		"lint": "biome check",
+		"qa": "pnpm run lint && pnpm run type-check && pnpm run test",
+		"prepack": "pnpm run qa && pnpm run build",
+		"size": "size-limit"
+	},
+	"peerDependencies": {
+		"tsdown": "*",
+		"typescript": "*"
+	},
+	"size-limit": [
+		{
+			"limit": "2 kB",
+			"path": "lib/diod.es.js"
+		}
+	],
+	"packageManager": "pnpm@9.12.0",
+	"engines": {
+		"node": ">=18"
+	},
+	"module": "./dist/index.js",
+	"types": "./dist/index.d.cts",
+	"exports": {
+		".": {
+			"@pluxel/source": "./src/index.ts",
+			"import": "./dist/index.js",
+			"require": "./dist/index.cjs"
+		},
+		"./package.json": "./package.json"
+	},
+	"publishConfig": {
+		"exports": {
+			".": {
+				"import": "./dist/index.js",
+				"require": "./dist/index.cjs"
+			},
+			"./package.json": "./package.json"
+		}
+	},
+	"devDependencies": {
+		"option-t": "^54.2.2"
+	}
+}
