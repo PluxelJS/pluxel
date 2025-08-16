@@ -8,13 +8,19 @@ export default defineConfig({
 		index: 'src/context.ts',
 		services: 'src/services/index.ts',
 	},
-	dts: {
-		emitJs: false,
+	env: {
+		NODE_ENV: 'production',
 	},
-	format: ['esm', 'cjs'],
+	define: {
+		'import.meta.env.PROD': 'true',
+	},
+	dts: {
+		sourcemap: true,
+	},
+	format: ['esm'],
 	sourcemap: true,
 	clean: true,
-	minify: true,
+	minify: false,
 	treeshake: true,
 	inputOptions: {
 		transform: {

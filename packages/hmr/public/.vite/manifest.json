@@ -1,0 +1,11 @@
+{
+  "src/client.tsx": {
+    "file": "assets/client-DW_30sPn.js",
+    "name": "client",
+    "src": "src/client.tsx",
+    "isEntry": true,
+    "css": [
+      "assets/client-DV2BVbqJ.css"
+    ]
+  }
+}

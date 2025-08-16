@@ -24,7 +24,8 @@
     "clean": "rimraf build .turbo",
     "dev": "bun src/index.ts",
     "hot": "bun --hot src/index.ts",
-    "build": "tsdown"
+    "build": "tsdown",
+    "web": "vite build"
   },
   "dependencies": {
     "@hono/react-renderer": "^1.0.1",
@@ -52,7 +53,7 @@
     "superjson": "^2.2.2",
     "unplugin-swc": "^1.5.5",
     "valibot": "^1.1.0",
-    "vite": "7.0.6",
+    "vite": "^6.3.5",
     "vite-tsconfig-paths": "^5.1.4",
     "wouter": "^3.7.1"
   },

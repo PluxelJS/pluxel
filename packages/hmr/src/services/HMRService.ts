@@ -147,14 +147,7 @@ export class HMRService {
 			},
 			ssr: {
 				external: ['react', 'react-dom'],
-			},
-			build: {
-				outDir: 'public/assets', // 把 client.js/css 都打到 public/assets 下
-				manifest: true, // 生产环境下启用 manifest.json
-				rollupOptions: {
-					input: 'src/client.tsx',
-				},
-			},
+			}
 		})
 		await server.listen()
 		server.printUrls()
