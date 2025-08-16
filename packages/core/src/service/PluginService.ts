@@ -1,13 +1,16 @@
+// PluginService.ts
 import type { Context, ServiceClass } from '@pluxel/context'
 import { Injectable } from '@pluxel/context'
 import type { ServiceMap } from '../container'
 import type { BasePlugin } from '../pluginImpl/BasePlugin'
 import { PluginContainer } from '../pluginImpl/PluginContainer'
-import { type PluginIdentifier, createErr, createOk } from '../pluginImpl/types'
+import type { PluginIdentifier } from '../pluginImpl/types'
+import { type Result, createErr, createOk } from 'option-t/plain_result'
 
 interface PluginServiceConfig {
 	plugigCTXIsolate?: ServiceClass<any>[]
 }
+
 declare module '@pluxel/context' {
 	namespace Context {
 		interface Config {
@@ -26,158 +29,267 @@ import { randomUUID } from 'node:crypto'
 import { EffectScopeService } from './EffectScopeService'
 import type { PluginMetadata } from '../pluginImpl'
 
+/** 轻量运行态 */
+enum PluginState {
+	Registered = 'registered',
+	Running = 'running',
+	Stopped = 'stopped',
+}
+
 @Injectable
 export class PluginService {
 	static key = 'registry'
 
 	public pluginRegistry: PluginContainer
+	private readonly state = new Map<PluginIdentifier, PluginState>()
+	private _commitLock: Promise<unknown> = Promise.resolve()
 
 	constructor(
 		private ctx: Context,
 		private config: PluginServiceConfig,
 	) {
-		const isolated = config?.plugigCTXIsolate ?? [EffectScopeService]
-		isolated?.push(EffectScopeService)
+		// 去重隔离 + 附加 EffectScopeService
+		const isolated = Array.from(
+			new Set([...(config?.plugigCTXIsolate ?? []), EffectScopeService]),
+		)
 		this.pluginRegistry = new PluginContainer(() => {
 			return this.ctx.root.isolate(isolated, {
-				name: `meta.name_${randomUUID()}`,
+				name: `plugin:${randomUUID()}`,
 			})
 		})
 	}
 
 	getPluginRunning(pluginId: PluginIdentifier) {
-		const container = this.pluginRegistry.lastContainer
-		if (container === undefined) return false
-		const plugin = container.services.get(pluginId)
-		return plugin !== undefined
+		return this.state.get(pluginId) === PluginState.Running
 	}
 
-	async commit() {
-		const action = this.pluginRegistry.build()
-		if (!action.ok) {
-			action.err.ret.undo()
-			this.ctx.logger.error('插件在依赖项解析时失败', action.err.err)
-			return createErr(action.err.err)
-		}
+	/* ------------------------------ Topo Helpers ------------------------------ */
 
-		const { changes, container } = action.val
-		if (changes.length === 0) return createOk({ container, changes })
-
-		// —— 一次遍历完成分类 ——
-		const removeIds = new Set<PluginIdentifier>()
-		const replaceIds = new Set<PluginIdentifier>()
-		const addIds = new Set<PluginIdentifier>()
-
-		for (const ch of changes) {
-			const id = ch.key as PluginIdentifier
-			if (ch.type === 'add') {
-				addIds.add(id)
-			} else if (ch.type === 'replace') {
-				replaceIds.add(id)
-			} else {
-				removeIds.add(id)
-			}
-		}
-
-		this.ctx.logger.info('移除', removeIds, '替换', replaceIds, '添加', addIds)
-		// —— 阶段一：卸载 remove + replace ——
-		// 卸载插件必然用的是老容器
-		const oldContainer = this.pluginRegistry.lastContainer
-		for (const id of removeIds) {
-			const p = oldContainer.get(id)!
-			p.ctx.disposeAll()
-		}
-		for (const id of replaceIds) {
-			const p = oldContainer.get(id)!
-			p.ctx.disposeAll()
-		}
-
-		// —— 阶段二：按依赖拓扑分批初始化 replace + add ——
-		// 先从 container.services 里挑出需要 init 的那一部分
-		const toInitMap = new Map()
-		for (const [key, val] of container.services) {
-			const shouldInit = addIds.has(key) || replaceIds.has(key)
-			if (!shouldInit) {
-				continue
-			}
-			toInitMap.set(key, val)
-		}
-
-		const batches = this.computeInitBatches(toInitMap)
-		const failed = new Set<PluginIdentifier>()
-		const succeeded = new Set<PluginIdentifier>()
-
-		for (const batch of batches) {
-			await Promise.all(
-				batch.map(async (id) => {
-					// 跳过有失败依赖的插件
-					const deps = toInitMap.get(id)!.dependencies as PluginIdentifier[]
-					if (deps.some((d) => failed.has(d))) {
-						failed.add(id)
-						return
-					}
-
-					const p = container.get(id)!
-					try {
-						await p.init()
-						succeeded.add(id)
-					} catch (err) {
-						this.ctx.logger.error(`初始化 ${id} 失败：`, err)
-						p.ctx.disposeAll()
-						failed.add(id)
-					}
-				}),
-			)
-		}
-
-		// 确认操作以用现 container 覆盖 oldContainer
-		action.val.confirm()
-		return createOk({ container, changes })
-	}
-
-	public computeInitBatches(
-		plugins: ServiceMap<BasePlugin>,
-	): PluginIdentifier[][] {
-		// 1. 构建子图：初始化 inDegree 和 依赖反向表 graph
+	private computeInitBatchesStrict(plugins: ServiceMap<BasePlugin>): {
+		batches: PluginIdentifier[][]
+		leftovers: Set<PluginIdentifier>
+	} {
 		const inDegree = new Map<PluginIdentifier, number>()
 		const graph = new Map<PluginIdentifier, PluginIdentifier[]>()
 
-		// 先把所有待初始化插件的节点放进去
 		for (const id of plugins.keys()) {
 			inDegree.set(id, 0)
 			graph.set(id, [])
 		}
-
-		// 遍历每个插件的 dependencies，只统计那些也在 plugins 里的依赖
 		for (const [id, plugin] of plugins) {
-			for (const dep of plugin.dependencies as PluginIdentifier[]) {
-				if (!inDegree.has(dep)) continue // 忽略非本次子集依赖
+			const deps = plugin.dependencies as PluginIdentifier[]
+			for (let i = 0; i < deps.length; i++) {
+				const d = deps[i]!
+				if (!inDegree.has(d)) continue
 				inDegree.set(id, inDegree.get(id)! + 1)
-				graph.get(dep)!.push(id) // dep → id
+				graph.get(d)!.push(id)
 			}
 		}
 
-		// 2. 逐轮出队：一次把当前所有入度为 0 的节点组成一个 batch
 		const batches: PluginIdentifier[][] = []
-		let zeroBatch = Array.from(inDegree.entries())
+		let zero = Array.from(inDegree.entries())
 			.filter(([, deg]) => deg === 0)
 			.map(([id]) => id)
 
-		while (zeroBatch.length) {
-			batches.push(zeroBatch)
-			const nextBatch: PluginIdentifier[] = []
-
-			for (const id of zeroBatch) {
-				for (const dep of graph.get(id)!) {
-					const cnt = inDegree.get(dep)! - 1
-					inDegree.set(dep, cnt)
-					if (cnt === 0) nextBatch.push(dep)
+		while (zero.length) {
+			batches.push(zero)
+			const next: PluginIdentifier[] = []
+			for (const u of zero) {
+				for (const v of graph.get(u)!) {
+					const k = inDegree.get(v)! - 1
+					inDegree.set(v, k)
+					if (k === 0) next.push(v)
 				}
 			}
-
-			zeroBatch = nextBatch
+			zero = next
 		}
 
-		return batches
+		const leftovers = new Set<PluginIdentifier>()
+		for (const [id, k] of inDegree) if (k > 0) leftovers.add(id)
+		return { batches, leftovers }
+	}
+
+	private computeTeardownOrder(
+		dependents:
+			| ReadonlyMap<PluginIdentifier, Set<PluginIdentifier>>
+			| undefined,
+		affected: Set<PluginIdentifier>,
+	): PluginIdentifier[] {
+		if (!dependents || affected.size === 0) return []
+
+		// node -> parents（被其依赖者）
+		const indeg = new Map<PluginIdentifier, number>()
+		const parents = new Map<PluginIdentifier, Set<PluginIdentifier>>()
+		for (const id of affected) {
+			indeg.set(id, 0)
+			parents.set(id, new Set())
+		}
+		for (const id of affected) {
+			const ch = dependents.get(id) ?? new Set()
+			for (const c of ch) {
+				if (!affected.has(c)) continue
+				indeg.set(id, (indeg.get(id) ?? 0) + 1)
+				parents.get(c)!.add(id)
+			}
+		}
+
+		const order: PluginIdentifier[] = []
+		const q: PluginIdentifier[] = []
+		for (const [id, d] of indeg) if (d === 0) q.push(id)
+		while (q.length) {
+			const x = q.pop()!
+			order.push(x)
+			for (const p of parents.get(x)!) {
+				const d = (indeg.get(p) ?? 0) - 1
+				indeg.set(p, d)
+				if (d === 0) q.push(p)
+			}
+		}
+		for (const [id, d] of indeg) if (d > 0) order.push(id)
+		return order
+	}
+
+	/* --------------------------------- Commit -------------------------------- */
+
+	/**
+	 * 非事务化提交：
+	 * - 停机：对 remove/replace 逆拓扑停机（先子后父）
+	 * - 启动：对 add/replace 拓扑分批启动；失败只影响其依赖链，其它继续
+	 * - 失败插件将被**从最终容器裁剪掉**（不可检索）
+	 */
+	async commit() {
+		this._commitLock = this._commitLock
+			.then(async () => {
+				const action = this.pluginRegistry.build()
+				if (!action.ok) {
+					action.err.ret.undo()
+					this.ctx.logger.error('插件在依赖项解析时失败', action.err.err)
+					return createErr(action.err.err)
+				}
+
+				const { changes, container } = action.val
+				if (changes.length === 0) return createOk({ container, changes })
+
+				// —— 变更分类 —— //
+				const removeIds = new Set<PluginIdentifier>()
+				const replaceIds = new Set<PluginIdentifier>()
+				const addIds = new Set<PluginIdentifier>()
+				for (const ch of changes) {
+					const id = ch.key as PluginIdentifier
+					if (ch.type === 'add') addIds.add(id)
+					else if (ch.type === 'replace') replaceIds.add(id)
+					else removeIds.add(id)
+				}
+				this.ctx.logger.info(
+					'移除',
+					removeIds,
+					'替换',
+					replaceIds,
+					'添加',
+					addIds,
+				)
+
+				const old = this.pluginRegistry.lastContainer
+				const toStop = new Set<PluginIdentifier>([...removeIds, ...replaceIds])
+				const toStart = new Set<PluginIdentifier>([...addIds, ...replaceIds])
+
+				// —— 停机：逆拓扑 —— //
+				if (old && toStop.size) {
+					const order = this.computeTeardownOrder(old.dependents as any, toStop)
+					for (const id of order) {
+						const inst = old.get(id) as BasePlugin | undefined
+						if (!inst) continue
+						try {
+							await inst.stop?.()
+						} catch (e) {
+							this.ctx.logger.warn(`stop ${String(id)} 异常`, e)
+						}
+						try {
+							inst.ctx.disposeAll()
+						} catch (e) {
+							this.ctx.logger.warn(`dispose ${String(id)} 异常`, e)
+						}
+						this.state.set(id, PluginState.Stopped)
+					}
+				}
+
+				// —— 启动：拓扑批次；失败仅影响下游 —— //
+				const toInitMap = new Map<PluginIdentifier, any>()
+				for (const [k, v] of container.services) {
+					const id = k as PluginIdentifier
+					if (toStart.has(id)) toInitMap.set(id, v)
+				}
+				const { batches, leftovers } = this.computeInitBatchesStrict(
+					toInitMap as unknown as ServiceMap<BasePlugin>,
+				)
+
+				const failed = new Set<PluginIdentifier>()
+				// leftovers（通常构建期已拦截），这里保守处理为失败
+				for (const id of leftovers) failed.add(id)
+
+				for (const batch of batches) {
+					await Promise.all(
+						batch.map(async (id) => {
+							// 依赖失败 → 跳过并标记失败
+							const deps = (toInitMap.get(id)?.dependencies ??
+								[]) as PluginIdentifier[]
+							if (deps.some((d) => failed.has(d))) {
+								failed.add(id)
+								return
+							}
+
+							const r = container.getResult(id as any)
+							if (r.err) {
+								failed.add(id)
+								this.ctx.logger.error(`解析 ${String(id)} 失败`, r.err)
+								return
+							}
+
+							const inst = r.val as BasePlugin
+							try {
+								if (typeof inst.init === 'function') {
+									await inst.init()
+								}
+								this.state.set(id, PluginState.Running)
+							} catch (e) {
+								this.ctx.logger.error(`启动 ${String(id)} 失败`, e)
+								try {
+									inst.ctx.disposeAll()
+								} catch {}
+								this.state.set(id, PluginState.Stopped)
+								failed.add(id)
+							}
+						}),
+					)
+				}
+
+				// —— 切换容器，并把失败插件**从容器中裁剪掉** —— //
+				action.val.confirm()
+
+				if (failed.size) {
+					// 从 builder_singletons 中清理失败插件（避免泄漏/后续误复用）
+					for (const id of failed) {
+						this.pluginRegistry.singletons.delete(id as any)
+					}
+					// 使用裁剪版容器覆盖
+					const pruned = this.pluginRegistry.finalizeWithFilter(
+						this.pluginRegistry.lastContainer,
+						failed,
+					)
+					this.pluginRegistry.lastContainer = pruned
+					this.ctx.logger.warn('以下插件启动失败（已从容器移除）:', [...failed])
+				}
+
+				return createOk({
+					container: this.pluginRegistry.lastContainer,
+					changes,
+				})
+			})
+			.catch((e) => {
+				this.ctx.logger.error('commit 内部异常', e)
+				return createErr(e)
+			})
+
+		return this._commitLock
 	}
 }

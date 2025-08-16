@@ -72,11 +72,16 @@ export function Plugin(
 }
 
 /** —— 配置字段装饰器（key 受实例类型约束） —— */
-export function Config<S extends ConfigSchemaList>(schema: S) {
-	return <This extends object, K extends Extract<keyof This, string>>(
-		target: This,
-		propertyKey: K,
-	): void => {
+export function Config<S extends ConfigSchemaList>(
+	schema: S,
+): PropertyDecorator {
+	return (target: object, propertyKey: string | symbol): void => {
+		// —— 只允许实例字段（非 static）——
+		if (typeof target === 'function') {
+			// static 字段时 target 是构造函数
+			throw new Error('@Config 只能用于实例字段(非 static)')
+		}
+
 		const ctor = (target as any).constructor as Function
 		const prev: ConfigSchemaList =
 			Reflect.getOwnMetadata(PLUGIN_SYMBOL.CONFIG_MAP, ctor) ??
