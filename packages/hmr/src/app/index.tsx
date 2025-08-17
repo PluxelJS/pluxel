@@ -7,7 +7,7 @@ import { PluginsLayout } from './plugins/PluginsLayout'
 import { Notifications } from '@mantine/notifications'
 import { ModalsProvider } from '@mantine/modals'
 import { Button } from '@mantine/core'
-import { LogSnapshot } from './log_viewer/LogSnapshot'
+import { LiveLog } from './log_viewer/LiveLog'
 import { Demo } from './notification'
 import { WouterLinkAdapter } from './WouterLinkAdapter'
 
@@ -42,20 +42,20 @@ function MyHeader({ onMenu }: { onMenu: () => void }) {
 }
 
 export function App() {
-	const [location] = useLocation() // ✅ 拿到当前路径
+	const [location] = useLocation()
 
 	return (
 		<Layout
 			header={({ toggle }) => <MyHeader onMenu={toggle} />}
 			navItems={navItems}
-			LinkComponent={WouterLinkAdapter} // ✅ 用适配器，彻底消除 TS 报错
-			currentPath={location} // ✅ 把当前路径交给 Layout，激活态总是正确
+			LinkComponent={WouterLinkAdapter}
+			currentPath={location}
 			footerHeight={0}
 		>
 			<ModalsProvider>
 				<Notifications position="top-center" />
 				<Switch>
-					<Route path="/" component={() => <Demo />} />
+					<Route path="/" component={() => <Redirect to="/plugins" />} />
 					<Route path="/about" component={() => <ExamplePage />} />
 					<Route path="/test/:name" component={TestPath} />
 					<Route path="/profile">
@@ -64,7 +64,7 @@ export function App() {
 						}
 					</Route>
 
-					<Route path="/logs">{() => <LogSnapshot />}</Route>
+					<Route path="/logs">{() => <LiveLog />}</Route>
 					<Route path="/plugins/:name">{() => <PluginsLayout />}</Route>
 					<Route path="/plugins">{() => <PluginsLayout />}</Route>
 

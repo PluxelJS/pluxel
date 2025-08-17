@@ -1,4 +1,4 @@
-// src/components/LogSnapshot.tsx
+/* // src/components/LogSnapshot.tsx
 import React, { useEffect, useState } from 'react'
 import { LazyLog, ScrollFollow } from '@melloware/react-logviewer'
 import { prettyLine } from './pretty'
@@ -57,3 +57,4 @@ export function LogSnapshot({ module, limit = 100 }: Props) {
     />
   )
 }
+ */
