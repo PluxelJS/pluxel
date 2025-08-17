@@ -19,7 +19,7 @@ export const PLUGIN_SYMBOL = {
 /** —— 元数据 —— */
 export interface PluginMetadata {
 	name: string
-	type: 'event' | 'hook' | string
+	type?: 'event' | 'hook' | string
 	[key: string]: any
 }
 export type ConfigSchemaList<T = any> = Record<string, T>

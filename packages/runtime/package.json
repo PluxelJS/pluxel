@@ -18,11 +18,13 @@
   },
   "scripts": {
     "clean": "rimraf build .turbo",
-    "dev": "bun --watch run src/index.ts",
+    "dev": "bun src/index.ts",
+    "hot": "bun --watch run src/index.ts",
     "test": "bun test"
   },
   "dependencies": {
-    "@pluxel/hmr": "workspace:*"
+    "@pluxel/hmr": "workspace:*",
+    "redis": "^5.8.1"
   },
   "peerDependencies": {
     "typescript": "*"

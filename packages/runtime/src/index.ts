@@ -2,7 +2,7 @@ import { Context } from '@pluxel/hmr'
 import { PinoLoggerService } from '@pluxel/hmr/services'
 
 const ctx = new Context({
-	hmrService: { dir: ['./src/plugins'] },
+	hmrService: { dir: ['./src/plugins', './src/services'] },
 	registry: {
 		plugigCTXIsolate: [PinoLoggerService],
 	},

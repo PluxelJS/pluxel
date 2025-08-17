@@ -163,7 +163,7 @@ export class PluginService {
 				const action = this.pluginRegistry.build()
 				if (!action.ok) {
 					action.err.ret.undo()
-					this.ctx.logger.error('插件在依赖项解析时失败', action.err.err)
+					this.ctx.logger.error(action.err.err, '插件在依赖项解析时失败')
 					return createErr(action.err.err)
 				}
 
@@ -241,7 +241,7 @@ export class PluginService {
 							const r = container.getResult(id as any)
 							if (r.err) {
 								failed.add(id)
-								this.ctx.logger.error(`解析 ${String(id)} 失败`, r.err)
+								this.ctx.logger.error(r.err, `解析 ${String(id)} 失败`)
 								return
 							}
 
@@ -252,7 +252,7 @@ export class PluginService {
 								}
 								this.state.set(id, PluginState.Running)
 							} catch (e) {
-								this.ctx.logger.error(`启动 ${String(id)} 失败`, e)
+								this.ctx.logger.error(e, `启动 ${String(id)} 失败`)
 								try {
 									inst.ctx.disposeAll()
 								} catch {}
@@ -277,7 +277,7 @@ export class PluginService {
 						failed,
 					)
 					this.pluginRegistry.lastContainer = pruned
-					this.ctx.logger.warn('以下插件启动失败（已从容器移除）:', [...failed])
+					this.ctx.logger.warn(failed, '以下插件启动失败（已从容器移除）:')
 				}
 
 				return createOk({
@@ -286,7 +286,7 @@ export class PluginService {
 				})
 			})
 			.catch((e) => {
-				this.ctx.logger.error('commit 内部异常', e)
+				this.ctx.logger.error(e, 'commit 内部异常')
 				return createErr(e)
 			})
 

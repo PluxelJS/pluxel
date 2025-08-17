@@ -3,22 +3,15 @@
   "name": "@pluxel/context",
   "version": "0.1.0",
   "description": "Demo example that imports a local package",
-  "main": "./src/index.ts",
+  "main": "./dist/index.cjs",
   "type": "module",
   "module": "./dist/index.js",
-  "types": "./dist/index.d.ts",
+  "types": "./dist/index.d.cts",
   "exports": {
     ".": {
-      "import": {
-        "@pluxel/source": "./src/index.ts",
-        "default": "./dist/index.js",
-        "types": "./dist/index.d.ts"
-      },
-      "require": {
-        "@pluxel/source": "./src/index.ts",
-        "default": "./dist/index.cjs",
-        "types": "./dist/index.d.cts"
-      }
+      "@pluxel/source": "./src/index.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
     },
     "./package.json": "./package.json"
   },
@@ -31,5 +24,14 @@
   "peerDependencies": {
     "typescript": "*",
     "tsdown": "*"
+  },
+  "publishConfig": {
+    "exports": {
+      ".": {
+        "import": "./dist/index.js",
+        "require": "./dist/index.cjs"
+      },
+      "./package.json": "./package.json"
+    }
   }
 }
