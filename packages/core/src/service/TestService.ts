@@ -20,7 +20,7 @@ export class TestService {
 		const test = () => {
 			this.ctx.logger.info('test-collect')
 		}
-		this.ctx.collect(test)
+		this.ctx.collectEffect(test)
 		this.ctx.logger.info(
 			`在 ${this.ctx.name} 添加了 test-collect`,
 			this.ctx.scope.disposables.has(test),

@@ -17,21 +17,13 @@ export abstract class BasePlugin<C extends Context = Context> {
 	}
 
 	public get caller() {
-		return this.ctx.caller
+		return this.ctx
 	}
 
 	/** —— Optional lifecycles ——
 	 * Plugins may implement either, both, or none.
 	 * Use `override` when implementing to get compiler checks.
 	 */
-	init?(): Awaitable<void>
-	stop?(): Awaitable<void>
-}
-
-/** —— Framework-side helpers (示例) —— */
-export async function callInit(p: BasePlugin) {
-	await p.init?.()
-}
-export async function callStop(p: BasePlugin) {
-	await p.stop?.()
+	init?(abort: AbortSignal): Awaitable<void>
+	stop?(abort: AbortSignal): Awaitable<void>
 }

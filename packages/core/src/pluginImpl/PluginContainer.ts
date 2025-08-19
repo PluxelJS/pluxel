@@ -23,7 +23,7 @@ export type PluginDiContainer = DiodContainer<BasePlugin>
 
 export class PluginContainer {
 	/** Builder_Singleton 实例缓存（ExtendedContainerBuilder 共享） */
-	public singletons = new Map<PluginConstructor, PluginInstance>()
+	public singletons = new Map<PluginIdentifier, PluginInstance>()
 	private builder = new ExtendedContainerBuilder(this.singletons)
 
 	public lastContainer!: PluginDiContainer
@@ -70,21 +70,7 @@ export class PluginContainer {
 			.register(baseAbstractClass ?? Plugin)
 			.useFactory((container) => {
 				const args = resolvers.map((fn) => fn(container))
-				// biome-ignore lint/suspicious/noExplicitAny:
-				const instance = new (Plugin as any)(...args)
-				instance[PLUGIN_CTX] = pluginCtx
-				// 失败/停机时 disposeAll 会触发删除缓存，便于下次重试
-				pluginCtx.collect(() => {
-					this.singletons.delete((baseAbstractClass ?? Plugin) as any)
-				})
-				pluginCtx.emitWithContext(
-					instance,
-					'beforeStart',
-					pluginCtx,
-					Plugin,
-					instance,
-				)
-				return instance
+				return new (Plugin as any)(...args)
 			})
 			.withDependencies(mustDeps)
 			.asBuilderSingleton()

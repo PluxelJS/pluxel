@@ -25,11 +25,11 @@ declare module '@pluxel/context' {
 	}
 }
 
-@Injectable
+@Injectable({
+	key: 'events',
+	methods: ['on', 'prependOn', 'emitWithContext'] as const,
+})
 export class EventsService extends Eventure<Events> {
-	static key = 'events'
-	static methods = ['on', 'prependOn', 'emitWithContext'] as const
-
 	constructor(
 		private ctx: Context,
 		private config: EventEmitterOptions,

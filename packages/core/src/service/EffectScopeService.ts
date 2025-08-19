@@ -3,16 +3,16 @@ import { type Context, Injectable } from '@pluxel/context'
 declare module '@pluxel/context' {
 	interface Context {
 		scope: EffectScopeService
-		collect: EffectScopeService['collect']
+		collectEffect: EffectScopeService['collectEffect']
 		disposeAll: EffectScopeService['disposeAll']
 	}
 }
 
-@Injectable
+@Injectable({
+	key: 'scope',
+	methods: ['collectEffect', 'disposeAll'] as const,
+})
 export class EffectScopeService {
-	static key = 'scope'
-	static methods = ['collect', 'disposeAll'] as const
-
 	/** 私有存放所有注册的清理回调 */
 	public disposables = new Set<() => void>()
 
@@ -22,7 +22,7 @@ export class EffectScopeService {
 	 * 注册一个清理函数到当前作用域，
 	 * 返回一个可用于撤销注册的取消函数。
 	 */
-	collect(fn: () => void): () => void {
+	collectEffect(fn: () => void): () => void {
 		this.disposables.add(fn)
 		return () => {
 			this.disposables.delete(fn)

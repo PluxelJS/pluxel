@@ -6,11 +6,10 @@ declare module '@pluxel/context' {
 	}
 }
 
-@Injectable
+@Injectable({
+	key: 'logger',
+})
 export class LoggerService {
-	static key = 'logger'
-	static methods = [] as const
-
 	constructor(private ctx: Context) {}
 
 	private write(

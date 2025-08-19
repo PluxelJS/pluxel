@@ -35,7 +35,7 @@ import { type Result, createOk, createErr, isOk } from 'option-t/plain_result'
 
 type BuildableKV<T = unknown> = [Identifier<T>, Buildable<Registration<T>, T>]
 type IBuildable = Map<BuildableKV[0], BuildableKV[1]>
-type ServiceMap<T = unknown> = ReadonlyMap<Identifier<T>, ServiceData<T>>
+type ServiceMap<T = unknown> = Map<Identifier<T>, ServiceData<T>>
 
 export { DiodRegistration }
 export type { BuildableKV, IBuildable, ServiceData, ServiceMap }
