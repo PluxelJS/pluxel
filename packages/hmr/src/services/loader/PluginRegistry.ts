@@ -1,7 +1,7 @@
 import { parse } from 'valibot'
 import {
 	type Context,
-	getPluginMeta,
+	getPluginInfo,
 	type ConfigSchemaMap,
 	type PluginConstructor,
 } from '../../context'
@@ -9,16 +9,14 @@ import {
 export class PluginRegistry {
 	public moduleMap = new Map<string, PluginConstructor[]>()
 	public nameMap = new Map<string, PluginConstructor>()
-	public schemaCache = new WeakMap<PluginConstructor, ConfigSchemaMap>()
-
 	constructor(private ctx: Context) {}
 
 	/**
 	 * Register a plugin class under a module ID, validate its config and enable it.
 	 */
 	register(moduleId: string, ctor: PluginConstructor) {
-		const meta = getPluginMeta('META_KEY', ctor)!
-		const pluginName = meta.name
+		const info = getPluginInfo(ctor)!
+		const pluginName = info.meta.name
 		const list = this.moduleMap.get(moduleId) ?? []
 		list.push(ctor)
 		this.moduleMap.set(moduleId, list)
@@ -39,10 +37,11 @@ export class PluginRegistry {
 	unregister(moduleId: string) {
 		const ctors = this.moduleMap.get(moduleId) ?? []
 		for (const ctor of ctors) {
-			const meta = getPluginMeta('META_KEY', ctor)!
+			const info = getPluginInfo(ctor)!
+			const pluginName = info.meta.name
 			// 注意这里取消注册不需要 disablePlugin 里在 configService 里 disable 的逻辑，单独写就好。
 			this.ctx.registry.pluginRegistry.unregisterPlugin(ctor)
-			this.nameMap.delete(meta.name)
+			this.nameMap.delete(pluginName)
 		}
 		this.moduleMap.delete(moduleId)
 	}
@@ -88,12 +87,7 @@ export class PluginRegistry {
 	 * Lazy-load and cache the config schema for a plugin.
 	 */
 	public getSchema(ctor: PluginConstructor): ConfigSchemaMap | undefined {
-		if (!this.schemaCache.has(ctor)) {
-			const schemaObjMap = getPluginMeta('CONFIG_MAP', ctor) as
-				| ConfigSchemaMap
-				| undefined
-			if (schemaObjMap) this.schemaCache.set(ctor, schemaObjMap)
-		}
-		return this.schemaCache.get(ctor)
+		const info = getPluginInfo(ctor)!
+		return info.configMap
 	}
 }

@@ -29,7 +29,7 @@ export default new Hono<AppEnv>()
 			{
 				name: pluginName,
 				desc: '插件示例描述',
-				isRunning: ctx.registry.getPluginRunning(ctor),
+				isRunning: ctx.registry.isRunning(ctor),
 				config: ctx.loader.getPluginSchema(ctor),
 				existConfig: ctx.configService.getConfig(pluginName).configRecord,
 				dependencies: ctx.loader.getPluginDependenciesInfo(ctor),

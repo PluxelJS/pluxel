@@ -45,7 +45,7 @@ export class EventsService extends Eventure<Events> {
 	) => {
 		;(listener as any)[symbols.ATTACH] = this.ctx
 		const unsub = super.addListener(event, listener, true)
-		this.ctx.collect(unsub)
+		this.ctx.scope.collectEffect(unsub)
 		return returnUnsub ? unsub : this
 	}
 	// @ts-ignore
@@ -56,7 +56,7 @@ export class EventsService extends Eventure<Events> {
 	) => {
 		;(listener as any)[symbols.ATTACH] = this.ctx
 		const unsub = super.prependListener(event, listener, true)
-		this.ctx.collect(unsub)
+		this.ctx.scope.collectEffect(unsub)
 		return returnUnsub ? unsub : this
 	}
 
@@ -94,7 +94,7 @@ export class EventsService extends Eventure<Events> {
 
 export interface Events {
 	onLoad: [string]
-	beforeStart: [Context, PluginConstructor, PluginInstance] // 启动前
+	beforeStart: [PluginInstance] // 启动前
 	afterStart: [Context] // 启动成功
 	startError: [Context, Error] // 启动失败
 }

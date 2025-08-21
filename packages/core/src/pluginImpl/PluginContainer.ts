@@ -9,7 +9,7 @@ import {
 	type AliasKey,
 } from '../container'
 import { type BasePlugin, PLUGIN_CTX } from './BasePlugin'
-import { getBaseClass, getClassParam, getPluginMeta } from './PluginDecorator'
+import { getBaseClass, getClassParam, getPluginInfo } from './PluginDecorator'
 import {
 	type PluginConstructor,
 	type PluginIdentifier,
@@ -28,8 +28,6 @@ export class PluginContainer {
 
 	public lastContainer!: PluginDiContainer
 
-	constructor(private createPluginCTX: () => Context) {}
-
 	private resetDraft() {
 		this.builder.buildables.reset()
 	}
@@ -40,36 +38,59 @@ export class PluginContainer {
 	 * - 必选依赖进 withDependencies；可选依赖走 getMaybe
 	 */
 	public registerPlugin(Plugin: PluginConstructor): void {
-		const meta = getPluginMeta('META_KEY', Plugin)
-		if (!meta) throw new Error('缺少 @Plugin 装饰器元数据')
+		const info = getPluginInfo(Plugin)
+		if (!info) throw new Error('缺少 @Plugin 装饰器元数据')
 
 		const paramTypes = getClassParam(Plugin) as PluginIdentifier[]
-		const optionalSet = new Set<number>(
-			getPluginMeta('OPTIONAL_PARAMS_KEY', Plugin),
-		)
+		const n = paramTypes.length
+		const baseOrSelf = info.base ?? Plugin
 
-		const pluginCtx = this.createPluginCTX()
-		pluginCtx.pluginMeta = meta
+		// —— 局部掩码：只保留前 n 位，防止 n 之外的位干扰 —— //
+		const maskN = n === 0 ? 0n : (1n << BigInt(n)) - 1n
+		const maskedBits = info.optionals.bits & maskN
+		const allRequired = maskedBits === 0n
 
-		const mustDeps: PluginIdentifier[] = []
-		const resolvers: ((c: FactoryContext) => BasePlugin | undefined | null)[] =
-			[]
-
-		for (let i = 0; i < paramTypes.length; i++) {
-			const t = paramTypes[i]!
-			const isOpt = optionalSet.has(i)
-			if (!isOpt) mustDeps.push(t)
-			resolvers.push((c) =>
-				isOpt ? c.getMaybe(t) : (c.getResult(t).val as BasePlugin),
-			)
+		// —— 构建 mustDeps（两种快路径 + 精准容量，无 push）—— //
+		let mustDeps: PluginIdentifier[]
+		if (allRequired) {
+			mustDeps = paramTypes
+		} else {
+			let requiredCount = 0
+			for (let i = 0, m = 1n; i < n; i++, m <<= 1n) {
+				if ((maskedBits & m) === 0n) requiredCount++
+			}
+			if (requiredCount === 0) {
+				mustDeps = []
+			} else {
+				const arr = new Array<PluginIdentifier>(requiredCount)
+				let k = 0
+				for (let i = 0, m = 1n; i < n; i++, m <<= 1n) {
+					if ((maskedBits & m) === 0n) arr[k++] = paramTypes[i]!
+				}
+				mustDeps = arr
+			}
 		}
 
-		const baseAbstractClass = getBaseClass(Plugin)
-
 		this.builder
-			.register(baseAbstractClass ?? Plugin)
-			.useFactory((container) => {
-				const args = resolvers.map((fn) => fn(container))
+			.register(baseOrSelf as any)
+			.useFactory((c) => {
+				const args = new Array(n)
+				if (allRequired) {
+					// —— 轻路径：全必需，无位运算 —— //
+					for (let i = 0; i < n; i++) {
+						const t = paramTypes[i]!
+						args[i] = c.getResult(t).val as BasePlugin
+					}
+				} else {
+					// —— 常规路径：按位选择 Maybe/Result —— //
+					for (let i = 0, m = 1n; i < n; i++, m <<= 1n) {
+						const t = paramTypes[i]!
+						args[i] =
+							(maskedBits & m) !== 0n
+								? c.getMaybe(t)
+								: (c.getResult(t).val as BasePlugin)
+					}
+				}
 				return new (Plugin as any)(...args)
 			})
 			.withDependencies(mustDeps)
@@ -150,66 +171,5 @@ export class PluginContainer {
 			this.lastContainer = result.val as DiodContainer<BasePlugin>
 		}
 		return createOk(ret)
-	}
-
-	/**
-	 * 使用“排除集”裁剪一个新的容器：
-	 * - 从 base.services/dependents 里删除 exclude 的条目
-	 * - 重建 aliasIndex（firstWins，删除不会引入冲突）
-	 * - 复用 builder_singletons（本类持有的 this.singletons）
-	 */
-	public finalizeWithFilter(
-		base: PluginDiContainer,
-		exclude: Set<PluginIdentifier>,
-	): PluginDiContainer {
-		// 1) 过滤 services
-		const services = new Map<Identifier<BasePlugin>, any>()
-		for (const [id, meta] of base.services as ReadonlyMap<
-			Identifier<BasePlugin>,
-			any
-		>) {
-			if (!exclude.has(id as PluginIdentifier)) services.set(id, meta)
-		}
-
-		// 2) 过滤 dependents，仅保留仍存在于 services 的 id
-		const dependents = new Map<
-			Identifier<BasePlugin>,
-			Set<Identifier<BasePlugin>>
-		>()
-		for (const [id, set] of base.dependents as ReadonlyMap<
-			Identifier<BasePlugin>,
-			Set<Identifier<BasePlugin>>
-		>) {
-			if (exclude.has(id as PluginIdentifier)) continue
-			if (!services.has(id)) continue
-			const kept = new Set<Identifier<BasePlugin>>()
-			for (const d of set) {
-				if (!exclude.has(d as PluginIdentifier) && services.has(d)) {
-					kept.add(d)
-				}
-			}
-			dependents.set(id, kept)
-		}
-
-		// 3) 重建 aliasIndex（firstWins）
-		const aliasIndex = new Map<AliasKey, Identifier<BasePlugin>>()
-		for (const [id, meta] of services) {
-			const aliases = meta.aliases as readonly AliasKey[] | undefined
-			if (!aliases) continue
-			for (let i = 0; i < aliases.length; i++) {
-				const a = aliases[i]!
-				if (!aliasIndex.has(a)) aliasIndex.set(a, id)
-			}
-		}
-
-		// 4) 构造新的 DiodContainer（会重建 tagIndex）
-		//    复用 this.singletons（Builder_Singleton 实例缓存）
-		// biome-ignore lint/suspicious/noExplicitAny:
-		return new (base.constructor as any)(
-			services,
-			dependents,
-			this.builder.builderSingletons as any,
-			aliasIndex as any,
-		) as PluginDiContainer
 	}
 }

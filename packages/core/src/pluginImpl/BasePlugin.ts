@@ -1,4 +1,5 @@
 import type { Context } from '@pluxel/context'
+import { getPluginInfo } from './PluginDecorator'
 
 // HMR 注意：必须使用 Symbol.for
 export const PLUGIN_CTX = Symbol.for('pluxel:plugin:ctx')
@@ -17,7 +18,16 @@ export abstract class BasePlugin<C extends Context = Context> {
 	}
 
 	public get caller() {
-		return this.ctx
+		return this.ctx.caller
+	}
+	static [Symbol.toPrimitive](_hint: string) {
+		return `${
+			// biome-ignore lint/complexity/noThisInStatic: <explanation>
+			getPluginInfo(this)?.meta.name
+		}(${
+			// biome-ignore lint/complexity/noThisInStatic: <explanation>
+			this.name
+		})`
 	}
 
 	/** —— Optional lifecycles ——

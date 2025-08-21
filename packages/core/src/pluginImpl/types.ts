@@ -12,6 +12,6 @@ export type SubclassOf<B extends Identifier<any>> = abstract new (
 // ✅ 插件特有别名
 export type PluginConstructor = Newable<BasePlugin>
 export type PluginIdentifier = Identifier<BasePlugin>
-export type PluginInstance = BasePlugin
+export type PluginInstance = BasePlugin & { [config: string | symbol]: any }
 
 export * from 'option-t/plain_result'

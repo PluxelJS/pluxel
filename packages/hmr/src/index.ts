@@ -30,3 +30,5 @@ ctx.honoService.modifyApp((app) => {
 		return c.text('lastone')
 	})
 })
+
+ctx.logger.info({ mySet: new Set([1, 2, 3]), myMap: new Map([["a", 1]]) });

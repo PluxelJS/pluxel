@@ -9,18 +9,36 @@ import { type Result, createErr, createOk } from 'option-t/plain_result'
 
 import { randomUUID } from 'node:crypto'
 import { EffectScopeService } from './EffectScopeService'
-import type { PluginMetadata } from '../pluginImpl'
+import { getPluginInfo, type StableInfo } from '../pluginImpl'
 
 // XState v5
 import { createActor, waitFor } from 'xstate'
 import {
 	createPluginLifecycle,
 	type PluginLifecycleRef,
+	lifecycleSelectors,
 } from '../pluginImpl/pluginActor'
+
+declare module '@pluxel/context' {
+	namespace Context {
+		interface Config {
+			registry?: {
+				plugigCTXIsolate?: ServiceClass<any>[]
+			}
+		}
+	}
+	export interface Context {
+		registry: PluginService
+		pluginInfo: StableInfo
+		parent?: Context
+		caller?: Context
+	}
+}
 
 @Injectable({ key: 'registry' })
 export class PluginService {
-	public pluginRegistry: PluginContainer
+	// 容器：负责“构造实例 + 注入 ctx”；生命周期全由 XState 负责
+	public pluginRegistry: PluginContainer = new PluginContainer()
 
 	/** 每个插件一个生命周期 actor（唯一真相来源） */
 	private readonly actors = new WeakMap<
@@ -47,18 +65,13 @@ export class PluginService {
 		)
 		this.createPluginCTX = () =>
 			this.ctx.root.isolate(isolated, { name: `plugin:${randomUUID()}` })
-
-		// 容器：负责“构造实例 + 注入 ctx”；生命周期全由 XState 负责
-		this.pluginRegistry = new PluginContainer(this.createPluginCTX)
 	}
 
 	/* ------------------------------ 状态查询 ------------------------------ */
 
 	isRunning(id: PluginIdentifier): boolean {
 		const ref = this.actors.get(id)
-		return ref
-			? ((ref.getSnapshot() as any).matches?.('running') ?? false)
-			: false
+		return ref ? lifecycleSelectors.isRunning(ref.getSnapshot()) : false
 	}
 
 	/* ------------------------------ Topo Utils ------------------------------ */
@@ -125,7 +138,8 @@ export class PluginService {
 			for (const c of ch) {
 				if (!affected.has(c)) continue
 				indeg.set(id, (indeg.get(id) ?? 0) + 1)
-				parents.get(c)!.add(id)
+				const set = parents.get(c)!
+				set.add(id)
 			}
 		}
 
@@ -147,72 +161,168 @@ export class PluginService {
 
 	/* ------------------------------ Actor 管理 ------------------------------ */
 
+	private newLifecycle() {
+		return createPluginLifecycle<any, BasePlugin>({
+			autoStart: false,
+			useErrorChannel: true,
+		})
+	}
+
 	private ensureActor(
 		id: PluginIdentifier,
 		plugin: BasePlugin,
-		pluginCtx: Context,
 	): PluginLifecycleRef<any, BasePlugin> {
 		let ref = this.actors.get(id)
+
+		// 若已有 actor 但已停止，丢弃并重建
+		const stopped = ref?.getSnapshot?.().status === 'stopped'
+		if (ref && stopped) {
+			try {
+				;(ref as any).stop?.()
+			} catch {}
+			this.actors.delete(id)
+			ref = undefined as any
+		}
+
 		if (ref) return ref
 
-		const machine = createPluginLifecycle<any, BasePlugin>({ autoStart: false })
+		const machine = this.newLifecycle()
 		ref = createActor(machine, {
-			input: { id, plugin, pluginCtx, config: undefined },
+			input: { id, plugin, config: undefined },
 		})
+		// 观察 actor 的错误事件，辅助诊断（不改变状态机逻辑）
+		ref.subscribe({
+			error: (err) =>
+				this.ctx.logger?.error?.(
+					err,
+					`[actor:${String((id as any)?.name ?? id)}] unhandled error`,
+				),
+		})
+
 		ref.start()
 		this.actors.set(id, ref)
 		return ref
 	}
 
+	/** 启动：成功返回；失败抛出真实 init/reload 错误（保留 cause）并保证清理 */
 	private async startByActor(
 		id: PluginIdentifier,
 		plugin: BasePlugin,
 	): Promise<void> {
-		const ref = this.ensureActor(id, plugin, plugin.ctx)
+		const ref = this.ensureActor(id, plugin)
 		ref.send({ type: 'START' })
 
-		const snap = await waitFor(
-			ref,
-			(s) =>
-				s.matches?.('running') ||
-				s.matches?.('failing') ||
-				s.matches?.('stopped'),
-			{ timeout: this.startTimeoutMs },
-		)
+		let snap: any
+		try {
+			// 等待首个“稳定”状态
+			snap = await waitFor(
+				ref,
+				(s) =>
+					s.matches?.('failing') ||
+					s.matches?.('running') ||
+					s.matches?.('stopped'),
+				{ timeout: this.startTimeoutMs },
+			)
+		} catch (e) {
+			// 超时：主动 STOP 并清理，然后抛出超时错误
+			try {
+				ref.send({ type: 'STOP' })
+			} catch {}
+			try {
+				await waitFor(
+					ref,
+					(s) => s.matches?.('stopped') || s.status === 'stopped',
+					{
+						timeout: this.stopTimeoutMs,
+					},
+				)
+			} catch {
+				/* 忽略 */
+			}
+			this.actors.delete(id)
+			throw new Error(
+				`Plugin ${id} start timeout after ${this.startTimeoutMs}ms`,
+				{ cause: e },
+			)
+		}
 
 		if (snap.matches?.('running')) return
 
-		// 启动失败：触发 STOP 让状态机负责清理，然后抛错以便裁剪
-		ref.send({ type: 'STOP' })
-		await waitFor(
-			ref,
-			(s) => s.matches?.('stopped') || s.status === 'stopped',
-			{
-				timeout: this.stopTimeoutMs,
-			},
-		)
+		// 捕获失败原因（若有）
+		let capturedErr: unknown = snap?.context?.err
+		if (capturedErr == null && snap.matches?.('stopped')) {
+			const last = ref.getSnapshot?.()
+			capturedErr = (last as any)?.context?.err ?? capturedErr
+		}
+
+		// 启动失败 → 主动 STOP（确保清理）
+		try {
+			ref.send({ type: 'STOP' })
+		} catch {}
+		try {
+			await waitFor(
+				ref,
+				(s) => s.matches?.('stopped') || s.status === 'stopped',
+				{
+					timeout: this.stopTimeoutMs,
+				},
+			)
+		} catch {
+			/* 忽略 */
+		}
 		this.actors.delete(id)
-		const err = (snap as any).context?.err
-		throw err ?? new Error(`Plugin ${String(id)} failed to start`)
+
+		// 原样抛出真实错误；若非 Error 也包装为 Error；最后才 fallback
+		if (capturedErr instanceof Error) throw capturedErr
+		if (capturedErr != null)
+			throw new Error(String(capturedErr), { cause: capturedErr })
+
+		throw new Error(`Plugin ${id} failed to start`)
 	}
 
+	/** 停止：若 actor 存在，用它；否则冷启动一个只为 STOP 的 actor（也会 cleanup） */
 	private async stopByActor(
 		id: PluginIdentifier,
 		pluginOrUndefined?: BasePlugin,
-	) {
-		// 统一用 XState；若没有 actor，也创建一个“冷 actor”，直接 STOP -> stopped（会 cleanupCtx）
+	): Promise<void> {
+		const existing = this.actors.get(id)
+		if (existing) {
+			try {
+				existing.send({ type: 'STOP' })
+			} catch {}
+			try {
+				await waitFor(
+					existing,
+					(s) => s.matches?.('stopped') || s.status === 'stopped',
+					{ timeout: this.stopTimeoutMs },
+				)
+			} catch {
+				/* 忽略 */
+			}
+			this.actors.delete(id)
+			return
+		}
+
+		// 没有 actor：从容器或入参取实例，创建“冷 actor”仅用于清理
 		const plugin =
-			pluginOrUndefined ?? this.pluginRegistry.lastContainer?.get(id)
+			pluginOrUndefined ?? this.pluginRegistry?.lastContainer?.get(id)
 		if (!plugin) return
-		const ref = this.ensureActor(id, plugin, plugin[PLUGIN_CTX])
-		ref.send({ type: 'STOP' })
-		await waitFor(
-			ref,
-			(s) => s.matches?.('stopped') || s.status === 'stopped',
-			{
-				timeout: this.stopTimeoutMs,
-			},
-		)
+
+		const ref = this.ensureActor(id, plugin)
+		try {
+			ref.send({ type: 'STOP' })
+		} catch {}
+		try {
+			await waitFor(
+				ref,
+				(s) => s.matches?.('stopped') || s.status === 'stopped',
+				{
+					timeout: this.stopTimeoutMs,
+				},
+			)
+		} catch {
+			/* 忽略 */
+		}
 		this.actors.delete(id)
 	}
 
@@ -237,7 +347,7 @@ export class PluginService {
 				const { changes, container } = action.val
 				if (changes.length === 0) return createOk({ container, changes })
 
-				// —— changes 指 oldContainer 到 container 的变更，即注册表上插件的变更。  —— //
+				// —— changes 指 oldContainer 到 container 的变更，即注册表上插件的变更 —— //
 				const removeIds = new Set<PluginIdentifier>()
 				const replaceIds = new Set<PluginIdentifier>()
 				const addIds = new Set<PluginIdentifier>()
@@ -248,15 +358,15 @@ export class PluginService {
 					else removeIds.add(id)
 				}
 				this.ctx.logger.info(
-					removeIds,
-					'移除',
-					replaceIds,
-					'替换',
-					addIds,
-					'添加',
+					{
+						remove: [...removeIds].map(String),
+						replace: [...replaceIds].map(String),
+						add: [...addIds].map(String),
+					},
+					'插件变更',
 				)
 
-				// 如果是 remove 的插件明确它必然不会在新容器上，操作对旧容器进行。
+				// remove 的插件：明确它不在新容器上，对旧容器进行停机
 				const oldContainer = this.pluginRegistry.lastContainer
 				const toStop = new Set<PluginIdentifier>([...removeIds, ...replaceIds])
 				const toStart = new Set<PluginIdentifier>([...addIds, ...replaceIds])
@@ -275,7 +385,7 @@ export class PluginService {
 
 				// —— 启动：拓扑批次；失败仅影响下游 —— //
 				const toInitMap: ServiceMap<BasePlugin> = new Map()
-				// container.services 存有所有注册中插件的信息，其中不乏已经正在运行，从中筛选出需要启动的
+				// container.services 存有所有注册中插件的信息，筛出需要启动的
 				for (const [k, v] of container.services) {
 					const id: PluginIdentifier = k
 					if (toStart.has(id)) toInitMap.set(id, v)
@@ -288,7 +398,7 @@ export class PluginService {
 				for (const batch of batches) {
 					await Promise.all(
 						batch.map(async (id) => {
-							// 如果该插件的上级依赖在本次启动有错误的，插件本身也为 failed
+							// 若该插件的依赖在本轮失败，则该插件跳过并标记失败
 							const deps = (toInitMap.get(id)?.dependencies ??
 								[]) as PluginIdentifier[]
 							if (deps.some((d) => failed.has(d))) {
@@ -296,28 +406,32 @@ export class PluginService {
 								return
 							}
 
-							// 本阶段从插件注册表获取实例，get 本质是通过插件构造函数创建新实例的手段，实际上还没注入生命周期。
-							// 本阶段完成插件的实例获取和 CTX 注入(包括CTX回收实例本身)
+							// 从容器获取实例（此刻尚未注入生命周期）；注入隔离的 plugin ctx
 							const r = container.getResult(id)
 							if (r.err) {
 								failed.add(id)
 								this.ctx.logger.error(r.err, `解析 ${String(id)} 失败`)
 								return
 							}
+
 							const instance: PluginInstance = r.val
 							const pluginCtx = this.createPluginCTX()
+							pluginCtx.pluginInfo = getPluginInfo(instance.constructor)
 							instance[PLUGIN_CTX] = pluginCtx
-							// 当我们成功 getResult 的时候，singletons 已经存在实例，失败/停机时 disposeAll 会触发删除缓存，便于下次重试
+
+							// getResult 期间若新建了单例，失败/停机时 disposeAll 会触发删除缓存，便于下次重试
 							pluginCtx.scope.collectEffect(() => {
 								this.pluginRegistry.singletons.delete(id)
 							})
 
-							// 本阶段开始生命周期
 							try {
 								await this.startByActor(id, instance)
 							} catch (e) {
-								pluginCtx.scope.disposeAll()
-								this.ctx.logger.error(e, `启动 ${String(id)} 失败`)
+								pluginCtx.logger.error(e, `启动 ${String(id)} 失败`)
+								// 保证清理
+								try {
+									await pluginCtx.scope.disposeAll()
+								} catch {}
 								failed.add(id)
 							}
 						}),
@@ -327,11 +441,14 @@ export class PluginService {
 				// —— 切换容器 & 清理 builder 单例（避免泄漏） —— //
 				action.val.confirm()
 				if (failed.size) {
-					// 这里删除的是 container.get 产生的实例，实际没启动成功的删掉下次 get 还是会新建，相当于刷新状态。
+					// 删除未成功启动的实例，避免复用脏状态
 					for (const id of failed) {
 						this.pluginRegistry.singletons.delete(id)
 					}
-					this.ctx.logger.warn(failed, '以下插件启动失败:')
+					this.ctx.logger.warn(
+						{ failed: [...failed].map(String) },
+						'以下插件启动失败',
+					)
 				}
 
 				return createOk({
@@ -344,6 +461,6 @@ export class PluginService {
 				return createErr(e)
 			})
 
-		return this._commitLock
+		return this._commitLock as Promise<Result<unknown, unknown>>
 	}
 }

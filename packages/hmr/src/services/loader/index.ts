@@ -4,7 +4,8 @@ import {
 	Injectable,
 	type PluginConstructor,
 	getClassParam,
-	getPluginMeta,
+	getOptionalPredicate,
+	getPluginInfo,
 } from '@pluxel/core'
 import { PluginScanner } from './PluginScanner'
 import { PluginRegistry } from './PluginRegistry'
@@ -22,16 +23,18 @@ export class LoaderService {
 	public registry: PluginRegistry
 
 	constructor(private ctx: Context) {
-		this.ctx.on('beforeStart', (ctx: Context, plugin, instance) => {
-			const schemaMap = this.registry.getSchema(plugin)
+		this.ctx.on('beforeStart', (plugin) => {
+			const ctor = plugin.constructor as PluginConstructor
+			const schemaMap = this.registry.getSchema(ctor)
 			if (!schemaMap) return
-			const pluginName = ctx.pluginMeta.name
+			const ctx = plugin.ctx
+			const pluginName = ctx.pluginInfo.meta.name
 			const { configRecord: config } = ctx.configService.getConfig(pluginName)
 			for (const [key] of Object.entries(schemaMap)) {
 				if (!(key in config)) {
 					throw new Error(`Missing config key "${key}" for plugin ${ctx.name}`)
 				}
-				instance[key] = config[key]
+				plugin[key] = config[key]
 			}
 		})
 		this.registry = new PluginRegistry(this.ctx)
@@ -44,8 +47,8 @@ export class LoaderService {
 		this.registry.unregister(id)
 		for (const exp of Object.values(mod)) {
 			if (typeof exp !== 'function') continue
-			const meta = getPluginMeta('META_KEY', exp)
-			if (!meta) continue
+			const info = getPluginInfo(exp)
+			if (!info) continue
 			this.registry.register(id, exp as any)
 		}
 
@@ -85,15 +88,17 @@ export class LoaderService {
 	}
 
 	getPluginDependenciesInfo(ctor: PluginConstructor) {
-		const optionalSet = new Set<number>(
-			getPluginMeta('OPTIONAL_PARAMS_KEY', ctor),
-		)
+		const predicate = getOptionalPredicate(ctor)
 		const container = this.ctx.registry.pluginRegistry.lastContainer
-		return getClassParam(ctor).map((pluginClass, i) => {
-			const meta = getPluginMeta('META_KEY', pluginClass)
-			if (meta === undefined) return
-			const isRunning = container?.services.get(pluginClass) !== undefined
-			return { name: meta.name, optional: optionalSet.has(i), isRunning }
+		return getClassParam<PluginConstructor>(ctor).map((pluginClass, i) => {
+			const info = getPluginInfo(pluginClass)
+			if (info === undefined) return
+			const isRunning = this.ctx.registry.isRunning(ctor)
+			return {
+				name: info.meta.name,
+				optional: predicate.isOptional(i),
+				isRunning,
+			}
 		})
 	}
 	getPluginClassByName(name: string): PluginConstructor | undefined {

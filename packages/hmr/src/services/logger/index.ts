@@ -5,6 +5,21 @@ import {
 	OverrideOf,
 } from '@pluxel/core'
 import { type Logger, createLogger } from './createLogger'
+import superjson from 'superjson'
+import type { LoggerOptions } from 'pino'
+
+const superjsonLog: NonNullable<LoggerOptions['formatters']>['log'] = (obj) => {
+	const { json, meta } = superjson.serialize(obj)
+
+	// json 必须是对象才能直接返回；否则包到 { value: ... }
+	if (json && typeof json === 'object' && !Array.isArray(json)) {
+		return Object.keys(meta ?? {}).length
+			? { ...json }
+			: (json as Record<string, unknown>)
+	}
+	// 保底：顶层不是对象时也满足 pino 的返回类型要求
+	return Object.keys(meta ?? {}).length ? { value: json } : { value: json }
+}
 
 // 1. 列出要转发的 log 级别
 const LEVELS = ['trace', 'debug', 'info', 'warn', 'error', 'fatal'] as const
@@ -28,11 +43,12 @@ export class PinoLoggerService {
 	constructor(private readonly ctx: Context) {
 		if (PinoLoggerService.baseLogger) {
 			this.logger = PinoLoggerService.baseLogger.child({
-				name: ctx?.pluginMeta?.name ?? ctx.name,
+				name: ctx.pluginInfo.meta.name ?? ctx.name,
 			})
 		} else {
 			this.logger = PinoLoggerService.baseLogger = createLogger({
 				name: ctx.name,
+				formatters: { log: superjsonLog },
 			})
 		}
 

@@ -54,7 +54,7 @@ export class HonoService {
 		this.mods.push(mod) // 保存“补丁”
 		this.app = this.applyApp()
 		this.shouldReload = true
-		return this.ctx.collect(() => {
+		return this.ctx.scope.collectEffect(() => {
 			// 从 this.mods 中移除当前 mod
 			const idx = this.mods.indexOf(mod)
 			if (idx !== -1) this.mods.splice(idx, 1)
