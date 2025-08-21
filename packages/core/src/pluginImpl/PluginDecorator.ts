@@ -136,7 +136,7 @@ export function Optional(): ParameterDecorator {
 export interface StableInfo {
 	readonly meta: PluginMetadata
 	readonly base?: PluginIdentifier
-	readonly configMap: ConfigSchemaList
+	readonly configMap?: ConfigSchemaList
 	readonly optionals: {
 		readonly bits: bigint
 		readonly indices: readonly number[]
@@ -157,8 +157,9 @@ export function getPluginInfo(
 	const base = Reflect.getOwnMetadata(PLUGIN_SYMBOL.BASE_CLASS, ctor) as
 		| PluginIdentifier
 		| undefined
-	const configMap = (Reflect.getOwnMetadata(PLUGIN_SYMBOL.CONFIG_MAP, ctor) ??
-		Object.freeze(Object.create(null))) as ConfigSchemaList
+	const configMap = Reflect.getOwnMetadata(PLUGIN_SYMBOL.CONFIG_MAP, ctor) as
+		| ConfigSchemaList
+		| undefined
 
 	const bits: bigint =
 		Reflect.getOwnMetadata(PLUGIN_SYMBOL.OPTIONAL_PARAMS_BITS, ctor) ?? 0n

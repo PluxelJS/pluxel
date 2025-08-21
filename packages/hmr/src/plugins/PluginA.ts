@@ -1,5 +1,5 @@
 import { BasePlugin, Optional, Plugin } from '@pluxel/core'
-import { Config, type v } from './config'
+import { Config } from './config'
 import { test, test2 } from './testconfig'
 
 // PluginA.ts
@@ -12,16 +12,17 @@ import { PluginC } from './PluginC'
 @Plugin({ name: 'PluginA', type: 'event' })
 export class PluginA extends BasePlugin {
 	@Config(test)
-	private config!: v.InferOutput<typeof test>;
+	private config!: Config<typeof test>;
 
-		@Config(test2)
-	private config2!: v.InferOutput<typeof test2>;
+	@Config(test2)
+	private config2!: Config<typeof test2>;
 
 	constructor(public pluginB: PluginB, @Optional() public pluginC?: PluginC) {
     super();
   }
 
-	init(): void {
+
+  init(): void {
 		this.ctx.logger.info('PluginA initialized')
 		// 使用必需依赖 PluginB
 		this.pluginB.doSomething()

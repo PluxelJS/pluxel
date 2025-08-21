@@ -59,6 +59,7 @@ const genGroupId = () =>
 	globalThis.crypto?.randomUUID?.() ??
 	`g_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`
 
+export type PluginStatuses = { [name: string]: PluginStatus }
 export interface PluginStatus {
 	id: string
 	name?: string
@@ -71,7 +72,7 @@ export interface GroupConfig {
 }
 
 type Props = {
-	statuses: PluginStatus[]
+	statuses: PluginStatuses
 	initialGroups: GroupConfig[]
 	onGroupsChange: (groups: GroupConfig[]) => void
 	filterQuery?: string
@@ -464,21 +465,19 @@ export function PluginOrganizer({
 	const theme = useMantineTheme()
 
 	// 基础映射
-	const statusMap = useMemo(
-		() => new Map(statuses.map((s) => [s.id, s] as const)),
-		[statuses],
-	)
 	const runningSet = useMemo(() => {
 		const s = new Set<string>()
-		for (const st of statuses) if (st.isRunning) s.add(st.id)
+		for (const [id, status] of Object.entries(statuses)) {
+			if (status.isRunning) s.add(id)
+		}
 		return s
 	}, [statuses])
 	const getName = useCallback(
-		(id: string) => statusMap.get(id)?.name ?? id,
-		[statusMap],
+		(id: string) => statuses[id]?.name ?? id,
+		[statuses],
 	)
 
-	const allIds = useMemo(() => statuses.map((s) => s.id), [statuses])
+	const allIds = useMemo(() => Object.keys(statuses), [statuses])
 	const { groups: saneGroups, ungrouped: saneUngrouped } = useMemo(
 		() => sanitize(allIds, initialGroups),
 		[allIds, initialGroups],
@@ -519,11 +518,11 @@ export function PluginOrganizer({
 	const match = useCallback(
 		(id: string) => {
 			if (!isFiltering) return true
-			const st = statusMap.get(id)
+			const st = statuses[id]
 			const name = (st?.name || '').toLowerCase()
 			return name.includes(q) || id.toLowerCase().includes(q)
 		},
-		[isFiltering, q, statusMap],
+		[isFiltering, q, statuses],
 	)
 
 	// 可见数据

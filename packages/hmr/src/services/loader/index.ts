@@ -73,31 +73,43 @@ export class LoaderService {
 	}
 
 	getFullPluginStatus() {
-		const loaded = this.registry.nameMap
-		const container = this.ctx.registry.pluginRegistry.lastContainer
-		const data: { id: string; isRunning: boolean }[] = []
-		if (container === undefined) {
-			const names = this.getLoadedPluginsName()
-			return names.map((name) => ({ id: name, isRunning: false }))
-		}
+		const loaded = this.registry.nameMap // Map<string, Constructor>
+		const byId: Record<string, { id: string; isRunning: boolean }> =
+			Object.create(null)
+
+		let runningCount = 0
+		let stoppedCount = 0
+		// 单次遍历，边统计边填充
 		for (const [name, ctor] of loaded.entries()) {
-			const isRunning = container.services.get(ctor) !== undefined
-			data.push({ id: name, isRunning })
+			const isRunning = this.ctx.registry.isRunning(ctor)
+			byId[name] = { id: name, isRunning }
+
+			if (isRunning) {
+				runningCount++
+			} else {
+				stoppedCount++
+			}
 		}
-		return data
+
+		return {
+			statuses: byId,
+			summary: {
+				total: runningCount + stoppedCount,
+				running: runningCount,
+				stopped: stoppedCount,
+			},
+		}
 	}
 
 	getPluginDependenciesInfo(ctor: PluginConstructor) {
 		const predicate = getOptionalPredicate(ctor)
-		const container = this.ctx.registry.pluginRegistry.lastContainer
 		return getClassParam<PluginConstructor>(ctor).map((pluginClass, i) => {
 			const info = getPluginInfo(pluginClass)
 			if (info === undefined) return
-			const isRunning = this.ctx.registry.isRunning(ctor)
 			return {
 				name: info.meta.name,
 				optional: predicate.isOptional(i),
-				isRunning,
+				isRunning: this.ctx.registry.isRunning(pluginClass),
 			}
 		})
 	}

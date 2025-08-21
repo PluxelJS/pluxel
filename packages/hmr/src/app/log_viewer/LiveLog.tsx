@@ -1,4 +1,5 @@
-import React, { useEffect, useRef, useState } from 'react'
+// src/components/LiveLog.tsx
+import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { LazyLog, ScrollFollow } from '@melloware/react-logviewer'
 import { useElementSize } from '@mantine/hooks'
 import { createPrettyPrinter } from './pretty'
@@ -18,42 +19,41 @@ interface Props {
 	module?: string
 }
 
-const SNAPSHOT_MAX = 1000
-const RING_CAP = 2000
-const FLUSH_MS = 80
+const SNAPSHOT_MAX = 1000 // 首屏最多加载多少行历史
+const RAW_RING_CAP = 4000 // 原始环容量（原始行）
+const VIEW_RING_CAP = 4000 // 展示环容量（wrap 后的行）
+const FLUSH_MS = 80 // 合批最迟刷新间隔
+const SEEN_TTL_MS = 3000 // 去重时间窗：快照与首段 SSE 重叠
+const RECONNECT_MIN = 800 // SSE 最小重连间隔
+const RECONNECT_MAX = 10_000 // SSE 最大重连间隔
 
-/* ========= 关键①：等宽字符宽度测量 + 列数推导 ========= */
+/* ================= 等宽字符宽度测量（更稳的平均法） ================= */
 const MONO_FONT =
 	'13px ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace'
 
 function measureMonoCharWidth(): number {
+	if (typeof document === 'undefined') return 7
 	const canvas = document.createElement('canvas')
 	const ctx = canvas.getContext('2d')!
 	ctx.font = MONO_FONT
-	// 用一段长串取平均更稳
-	const sample = '0'.repeat(100)
+	const sample = '00000000000000000000000000000000000000000000000000' // 50
 	return ctx.measureText(sample).width / sample.length
 }
 
-/* ========= 关键②：ANSI 安全硬换行（不依赖组件换行） ========= */
-/** 检测 CJK 全角字符（宽度≈2 列） */
+/* ================= ANSI 安全硬换行（CJK 宽字符适配） ================= */
 function isFullwidthCP(cp: number): boolean {
-	// 简化版（覆盖主流 CJK 和全角块）
 	return (
-		(cp >= 0x1100 && cp <= 0x115f) || // Hangul Jamo
-		(cp >= 0x2e80 && cp <= 0xa4cf) || // CJK Radicals..Yi
-		(cp >= 0xac00 && cp <= 0xd7a3) || // Hangul Syllables
-		(cp >= 0xf900 && cp <= 0xfaff) || // CJK Compatibility Ideographs
-		(cp >= 0xfe10 && cp <= 0xfe6f) || // Vertical forms, Small form variants
-		(cp >= 0xff00 && cp <= 0xff60) || // 全角 ASCII 等
+		(cp >= 0x1100 && cp <= 0x115f) ||
+		(cp >= 0x2e80 && cp <= 0xa4cf) ||
+		(cp >= 0xac00 && cp <= 0xd7a3) ||
+		(cp >= 0xf900 && cp <= 0xfaff) ||
+		(cp >= 0xfe10 && cp <= 0xfe6f) ||
+		(cp >= 0xff00 && cp <= 0xff60) ||
 		(cp >= 0xffe0 && cp <= 0xffe6)
 	)
 }
-
-/** 把一行带 ANSI 的文本按列数硬换行，返回多行 */
 function hardWrapAnsi(line: string, cols: number): string[] {
 	if (cols <= 0 || line.length === 0) return [line]
-
 	const out: string[] = []
 	let buf = ''
 	let col = 0
@@ -62,27 +62,23 @@ function hardWrapAnsi(line: string, cols: number): string[] {
 	for (let i = 0; i < len; ) {
 		const ch = line.charCodeAt(i)
 
-		// 处理 ANSI CSI 序列：\x1b[ ... <final>
-		if (ch === 0x1b /* ESC */ && i + 1 < len) {
-			const next = line.charCodeAt(i + 1)
-			if (next === 0x5b /* '[' */) {
-				// 吞掉直到 @-~ 结束符
-				let j = i + 2
-				while (j < len) {
-					const c = line.charCodeAt(j)
-					if (c >= 0x40 && c <= 0x7e) {
-						j++
-						break
-					}
+		// ANSI CSI: \x1b[ ... <final>
+		if (ch === 0x1b && i + 1 < len && line.charCodeAt(i + 1) === 0x5b) {
+			let j = i + 2
+			while (j < len) {
+				const c = line.charCodeAt(j)
+				if (c >= 0x40 && c <= 0x7e) {
 					j++
+					break
 				}
-				buf += line.slice(i, j)
-				i = j
-				continue
+				j++
 			}
+			buf += line.slice(i, j)
+			i = j
+			continue
 		}
 
-		// 普通字符（考虑代理对）
+		// 普通字符（含代理对）
 		let cp = ch
 		let step = 1
 		if (ch >= 0xd800 && ch <= 0xdbff && i + 1 < len) {
@@ -92,17 +88,13 @@ function hardWrapAnsi(line: string, cols: number): string[] {
 				step = 2
 			}
 		}
-
 		const char = line.substr(i, step)
 		const w = isFullwidthCP(cp) ? 2 : 1
-
-		// 如果放不下了，换行（不打断 ANSI，因为上面已处理）
 		if (col + w > cols) {
 			out.push(buf)
 			buf = ''
 			col = 0
 		}
-
 		buf += char
 		col += w
 		i += step
@@ -111,8 +103,8 @@ function hardWrapAnsi(line: string, cols: number): string[] {
 	return out
 }
 
-/* ========= 一个很小的环形缓冲（O(1) push） ========= */
-function createRing(cap = RING_CAP) {
+/* ================= 轻量环形缓冲（O(1) push + 有序遍历） ================= */
+function createRing(cap = 2000) {
 	const buf = new Array<string>(cap)
 	let start = 0
 	let len = 0
@@ -130,55 +122,67 @@ function createRing(cap = RING_CAP) {
 				start = (start + 1) % cap
 			}
 		},
-		toString() {
+		toArray(): string[] {
+			if (len === 0) return []
+			if (start + len <= cap) return buf.slice(start, start + len)
+			return buf.slice(start).concat(buf.slice(0, (start + len) % cap))
+		},
+		join(sep = '\n'): string {
 			if (len === 0) return ''
-			if (start + len <= cap) return buf.slice(start, start + len).join('\n')
+			if (start + len <= cap) return buf.slice(start, start + len).join(sep)
 			return buf
 				.slice(start)
 				.concat(buf.slice(0, (start + len) % cap))
-				.join('\n')
+				.join(sep)
 		},
 	}
 }
 
+/* ================== LiveLog ================== */
 export function LiveLog({ module }: Props) {
-	const [text, setText] = useState('')
 	const { ref, height, width } = useElementSize()
-	const ringRef = useRef(createRing())
+	const [text, setText] = useState('')
+
+	// —— 列数估算（与组件换行解耦） —— //
+	const [cols, setCols] = useState<number>(0)
+	const charWRef = useRef<number>(0)
+	useEffect(() => {
+		if (!charWRef.current) charWRef.current = measureMonoCharWidth()
+		const gutter = 16
+		const cw = charWRef.current || 7
+		const nextCols = Math.max(20, Math.floor(Math.max(0, width - gutter) / cw))
+		setCols((prev) => (prev === nextCols ? prev : nextCols))
+	}, [width])
+
+	// —— 两层环：原始行（raw）与展示行（view） —— //
+	const rawRingRef = useRef(createRing(RAW_RING_CAP))
+	const viewRingRef = useRef(createRing(VIEW_RING_CAP))
+
+	// —— 去重 TTL（快照+首段 SSE 重叠；严格模式重复副作用） —— //
+	const seenRef = useRef(new Map<string, number>())
+	const sweepSeen = (now: number) => {
+		for (const [k, exp] of seenRef.current)
+			if (exp <= now) seenRef.current.delete(k)
+	}
+
+	// —— 合批刷入（把“展示行”批量落入 viewRing，再 setText） —— //
+	const pendingViewRef = useRef<string[]>([])
 	const rafRef = useRef<number | null>(null)
 	const flushTimerRef = useRef<number | ReturnType<typeof setTimeout> | null>(
 		null,
 	)
-	const esRef = useRef<EventSource | null>(null)
-	const abortRef = useRef<AbortController | null>(null)
-
-	// —— 列数：由容器可用宽度 / 等宽字符宽度 估算 —— //
-	const [cols, setCols] = useState<number>(0)
-	const charWRef = useRef<number>(0)
-
-	useEffect(() => {
-		if (!charWRef.current) charWRef.current = measureMonoCharWidth()
-		const gutter = 16 /* 预留滚动条/内边距像素 */
-		const cw = charWRef.current || 7
-		const nextCols = Math.max(20, Math.floor(Math.max(0, width - gutter) / cw))
-		setCols(nextCols)
-	}, [width])
-
-	// —— 批量刷新 —— //
-	const pendingRef = useRef<string[]>([])
 	const flush = () => {
 		rafRef.current = null
 		if (flushTimerRef.current) {
 			clearTimeout(flushTimerRef.current as any)
 			flushTimerRef.current = null
 		}
-		if (pendingRef.current.length === 0) return
-		const ring = ringRef.current
-		// 逐条入环
-		for (let i = 0; i < pendingRef.current.length; i++)
-			ring.push(pendingRef.current[i])
-		pendingRef.current.length = 0
-		setText(ring.toString())
+		if (pendingViewRef.current.length === 0) return
+		const v = viewRingRef.current
+		for (let i = 0; i < pendingViewRef.current.length; i++)
+			v.push(pendingViewRef.current[i])
+		pendingViewRef.current.length = 0
+		setText(v.join())
 	}
 	const scheduleFlush = () => {
 		if (rafRef.current == null) {
@@ -192,18 +196,77 @@ export function LiveLog({ module }: Props) {
 		}
 	}
 
-	// —— 统一的“加入一条 pretty 后的行（带硬换行）” —— //
-	const pushPretty = (rawLine: string) => {
+	// —— 入口：接入一条“原始行” —— //
+	const pushRaw = (rawLine: string) => {
+		const now = Date.now()
+		sweepSeen(now)
+		if (seenRef.current.has(rawLine)) return
+		seenRef.current.set(rawLine, now + SEEN_TTL_MS)
+
+		rawRingRef.current.push(rawLine)
+
 		const prettyLine = pretty.formatLine(rawLine)
 		const lines = cols > 0 ? hardWrapAnsi(prettyLine, cols) : [prettyLine]
-		// 批量放入待刷队列
-		for (let i = 0; i < lines.length; i++) pendingRef.current.push(lines[i])
+		for (let i = 0; i < lines.length; i++) pendingViewRef.current.push(lines[i])
 		scheduleFlush()
 	}
 
-	// —— 拉取快照 + SSE —— //
+	// —— 列数变化时，仅“本地重排展示环”，不触发网络/重连 —— //
+	const rebuildIdleRef = useRef<number | null>(null)
 	useEffect(() => {
-		// reset
+		// 取消上一个重排
+		if (rebuildIdleRef.current != null) {
+			const cancelIdle = (window as any).cancelIdleCallback
+			cancelIdle
+				? cancelIdle(rebuildIdleRef.current)
+				: clearTimeout(rebuildIdleRef.current as any)
+			rebuildIdleRef.current = null
+		}
+		// 重新 wrap raw → view
+		const run = () => {
+			const raw = rawRingRef.current.toArray()
+			const view = viewRingRef.current
+			view.clear()
+			for (let i = 0; i < raw.length; i++) {
+				const prettyLine = pretty.formatLine(raw[i])
+				const lines = cols > 0 ? hardWrapAnsi(prettyLine, cols) : [prettyLine]
+				for (let j = 0; j < lines.length; j++) view.push(lines[j])
+			}
+			setText(view.join())
+		}
+		const ric = (window as any).requestIdleCallback as
+			| ((cb: (dl: any) => void, opts?: { timeout?: number }) => number)
+			| undefined
+		if (ric) {
+			rebuildIdleRef.current = ric(() => run(), { timeout: 200 })
+		} else {
+			rebuildIdleRef.current = window.setTimeout(run, 0)
+		}
+		return () => {
+			if (rebuildIdleRef.current != null) {
+				const cancelIdle = (window as any).cancelIdleCallback
+				cancelIdle
+					? cancelIdle(rebuildIdleRef.current)
+					: clearTimeout(rebuildIdleRef.current as any)
+				rebuildIdleRef.current = null
+			}
+		}
+	}, [cols])
+
+	// —— 快照 + SSE（仅跟随 module 变化；不受 cols 影响） —— //
+	const esRef = useRef<EventSource | null>(null)
+	const abortRef = useRef<AbortController | null>(null)
+	const reconnectTimerRef = useRef<number | null>(null)
+	const backoffRef = useRef<number>(RECONNECT_MIN)
+	const didInitRef = useRef(false) // dev 下规避严格模式二次执行
+
+	useEffect(() => {
+		if (process.env.NODE_ENV !== 'production') {
+			if (didInitRef.current) return
+			didInitRef.current = true
+		}
+
+		// reset state
 		if (abortRef.current) {
 			abortRef.current.abort()
 			abortRef.current = null
@@ -212,46 +275,53 @@ export function LiveLog({ module }: Props) {
 			esRef.current.close()
 			esRef.current = null
 		}
-		if (rafRef.current != null) {
-			cancelAnimationFrame(rafRef.current)
-			rafRef.current = null
+		if (reconnectTimerRef.current != null) {
+			clearTimeout(reconnectTimerRef.current)
+			reconnectTimerRef.current = null
 		}
-		if (flushTimerRef.current) {
-			clearTimeout(flushTimerRef.current as any)
-			flushTimerRef.current = null
-		}
-		ringRef.current.clear()
-		pendingRef.current.length = 0
+		rawRingRef.current.clear()
+		viewRingRef.current.clear()
+		pendingViewRef.current.length = 0
+		seenRef.current.clear()
 		setText('')
 
+		// —— 拉快照 —— //
 		const params = new URLSearchParams()
 		if (module) params.set('name', module)
-
-		// 1) 快照
 		const ac = new AbortController()
 		abortRef.current = ac
+
 		fetch(`/api/logs/latest?${params.toString()}`, { signal: ac.signal })
 			.then((r) =>
 				r.ok ? r.text() : Promise.reject(new Error(`HTTP ${r.status}`)),
 			)
-			.then((text) => {
-				const lines = text.split('\n').filter(Boolean)
+			.then((t) => {
+				const lines = t.split('\n').filter(Boolean)
 				const start = Math.max(0, lines.length - SNAPSHOT_MAX)
-				for (let i = start; i < lines.length; i++) pushPretty(lines[i])
+				for (let i = start; i < lines.length; i++) pushRaw(lines[i])
 			})
 			.catch(() => {})
 			.finally(() => {
 				abortRef.current = null
 			})
 
-		// 2) SSE
-		const es = new EventSource(`/api/logs/stream?${params.toString()}`)
-		esRef.current = es
-		es.onmessage = (e) => pushPretty(e.data)
-		es.onerror = () => {
-			es.close()
-			esRef.current = null
+		// —— 连接 SSE —— //
+		const connect = () => {
+			const es = new EventSource(`/api/logs/stream?${params.toString()}`)
+			esRef.current = es
+			es.onmessage = (e) => pushRaw(e.data)
+			es.onerror = () => {
+				es.close()
+				esRef.current = null
+				// 退避重连（有去重，重复也会被 TTL 吃掉）
+				const delay = backoffRef.current
+				backoffRef.current = Math.min(backoffRef.current * 2, RECONNECT_MAX)
+				reconnectTimerRef.current = window.setTimeout(connect, delay)
+			}
+			// 成功时重置退避
+			backoffRef.current = RECONNECT_MIN
 		}
+		connect()
 
 		return () => {
 			if (abortRef.current) {
@@ -262,17 +332,18 @@ export function LiveLog({ module }: Props) {
 				esRef.current.close()
 				esRef.current = null
 			}
-			if (rafRef.current != null) {
-				cancelAnimationFrame(rafRef.current)
-				rafRef.current = null
+			if (reconnectTimerRef.current != null) {
+				clearTimeout(reconnectTimerRef.current)
+				reconnectTimerRef.current = null
 			}
-			if (flushTimerRef.current) {
-				clearTimeout(flushTimerRef.current as any)
-				flushTimerRef.current = null
+			if (process.env.NODE_ENV !== 'production') {
+				didInitRef.current = false
 			}
 		}
-	}, [module, cols]) // 列数变化时，重新拼接更合适的换行
-	// ↑ 如果不想因列数变化重放流，可只在快照后重排：把 [cols] 从依赖里拿掉，改成在 cols 变化时对 ring 重新 wrap 一次。
+	}, [module])
+
+	// —— 渲染 —— //
+	const logHeight = useMemo(() => Math.max(120, height || 0), [height])
 
 	return (
 		<div
@@ -292,15 +363,15 @@ export function LiveLog({ module }: Props) {
 					render={({ follow, onScroll }) => (
 						<LazyLog
 							key={module ?? 'all'}
-							height={Math.max(120, height || 0)}
+							height={logHeight}
 							text={text}
 							external
 							follow={follow}
 							onScroll={onScroll}
 							selectableLines
-							/* 关闭组件内部换行，使用我们“硬换行”后的文本 */
-							wrapLines={false}
+							wrapLines={false} // 自己做了硬换行
 							rowHeight={20}
+							style={{ fontFamily: MONO_FONT }}
 						/>
 					)}
 				/>

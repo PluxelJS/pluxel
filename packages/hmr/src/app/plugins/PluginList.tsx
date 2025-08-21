@@ -11,16 +11,11 @@ import {
 	ActionIcon,
 } from '@mantine/core'
 import { IconSearch, IconX } from '@tabler/icons-react'
-import { Link } from 'wouter'
 import { useQuery } from '@tanstack/react-query'
 import { showNotification } from '@mantine/notifications'
 import { useState, useMemo } from 'react'
 import { client } from '../rpc'
-import {
-	PluginOrganizer,
-	type GroupConfig,
-	type PluginStatus,
-} from '@pluxel/components'
+import { PluginOrganizer, type GroupConfig } from '@pluxel/components'
 import { WouterLinkAdapter } from '../WouterLinkAdapter'
 
 interface PluginListProps {
@@ -28,10 +23,13 @@ interface PluginListProps {
 	onItemSelect?: () => void
 }
 
-export const PluginList: React.FC<PluginListProps> = ({ pluginName, onItemSelect }) => {
+export const PluginList: React.FC<PluginListProps> = ({
+	pluginName,
+	onItemSelect,
+}) => {
 	const [q, setQ] = useState('')
 
-	const statusesQ = useQuery<PluginStatus[], Error>({
+	const statusesQ = useQuery({
 		queryKey: ['plugins'] as const,
 		queryFn: async () => {
 			const res = await client.plugins.$get()
@@ -74,9 +72,8 @@ export const PluginList: React.FC<PluginListProps> = ({ pluginName, onItemSelect
 		}
 	}
 
-	const total = statusesQ.data?.length ?? 0
-	const running =
-		statusesQ.data?.reduce((n, s) => n + (s.isRunning ? 1 : 0), 0) ?? 0
+	const total = statusesQ.data?.summary.total
+	const totalRunnings = statusesQ.data?.summary.running
 
 	// 清除按钮
 	const clearBtn = useMemo(
@@ -106,7 +103,7 @@ export const PluginList: React.FC<PluginListProps> = ({ pluginName, onItemSelect
 							color="green"
 							suppressHydrationWarning
 						>
-							运行中 {running}
+							运行中 {totalRunnings}
 						</Badge>
 					</Group>
 				)}
@@ -135,7 +132,7 @@ export const PluginList: React.FC<PluginListProps> = ({ pluginName, onItemSelect
 				<Text c="red">加载失败，请稍后重试</Text>
 			) : statusesQ.isSuccess && groupsQ.isSuccess ? (
 				<PluginOrganizer
-					statuses={statusesQ.data}
+					statuses={statusesQ.data.statuses}
 					initialGroups={groupsQ.data}
 					activeId={pluginName}
 					onGroupsChange={handleChange}

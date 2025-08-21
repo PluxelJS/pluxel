@@ -2,17 +2,17 @@ import React, { useState } from 'react'
 import { Layout } from './Layout'
 import {
 	PluginOrganizer,
-	type PluginStatus,
+	type PluginStatuses,
 	type GroupConfig,
 } from '../Plugin/PluginOrganizer'
 import { Flex, Box, ScrollArea } from '@mantine/core'
 import { useMediaQuery } from '@mantine/hooks'
 
-const statuses: PluginStatus[] = [
-	{ id: 'PluginA', isRunning: true },
-	{ id: 'PluginB', isRunning: false },
-	{ id: 'PluginC', isRunning: false },
-]
+const statuses: PluginStatuses = {
+	PluginA: { id: 'PluginA', isRunning: true },
+	PluginB: { id: 'PluginB', isRunning: false },
+	PluginC: { id: 'PluginC', isRunning: false },
+}
 
 const initialGroups: GroupConfig[] = [
 	{ groupId: 'group1', name: '常用插件', pluginIds: ['PluginA', 'PluginB'] },

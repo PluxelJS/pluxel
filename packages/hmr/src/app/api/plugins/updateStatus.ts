@@ -64,7 +64,7 @@ export const updateStatus = new Hono<AppEnv>().patch(
 				return c.json({ code: '依赖解析出错。', error: result.err }, 500)
 			}
 
-			return c.json({ code: 'success', changes: result.val.changes }, 200)
+			return c.json({ code: 'success' }, 200)
 		} catch (e: any) {
 			const isStart = status === 'start' || status === 'restart'
 			const errorCode = isStart

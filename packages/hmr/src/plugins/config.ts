@@ -6,6 +6,7 @@ export { v, f }
 
 type ConfigSchema = ObjectSchema<any, any>
 export type ConfigSchemaMap = ConfigSchemaList<ConfigSchema>
+export type Config<T extends ConfigSchema> = v.InferOutput<T>
 export function Config(
 	configSchema: ConfigSchema,
 ): ReturnType<typeof OrigConfig> {

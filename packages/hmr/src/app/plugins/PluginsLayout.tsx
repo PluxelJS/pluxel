@@ -31,7 +31,6 @@ export const PluginsLayout: React.FC = () => {
 		`(max-width: ${theme.breakpoints.md})`,
 		undefined,
 		{
-			// SSR 安全，避免首帧水位不一致
 			getInitialValueInEffect: true,
 		},
 	)
@@ -41,11 +40,11 @@ export const PluginsLayout: React.FC = () => {
 		if (isSmall && pluginName) close()
 	}, [isSmall, pluginName, close])
 
-	const sidebarWidth = 'clamp(240px, 22vw, 320px)'
+	const sidebarWidth = 'clamp(180px, 22vw, 240px)'
 
 	return (
-		// 根：吃满 Main 的已分配高度
-		<Stack gap="md" style={{ flex: 1, minHeight: 0 }}>
+		// 关键：根层必须“封顶”并禁止向外溢出，这样页面不滚，只在内部滚
+		<Stack gap="md" h="100%" style={{ minHeight: 0, overflow: 'hidden' }}>
 			{/* 顶部工具条（仅小屏） */}
 			{isSmall && (
 				<Group justify="space-between">
@@ -63,7 +62,8 @@ export const PluginsLayout: React.FC = () => {
 				gap="md"
 				wrap="nowrap"
 				align="stretch"
-				style={{ flex: 1, minHeight: 0 }}
+				// 关键：中间主容器同样封顶且不外溢
+				style={{ flex: 1, minWidth: 0, minHeight: 0, overflow: 'hidden' }}
 			>
 				{/* 左栏：桌面常驻 + 独立滚动 */}
 				{!isSmall && (
@@ -87,7 +87,7 @@ export const PluginsLayout: React.FC = () => {
 							py="sm"
 							style={{ flex: 1, minHeight: 0, display: 'flex' }}
 						>
-							{/* 唯一滚动层 */}
+							{/* 唯一滚动层：左栏自己的滚动，不受右栏影响 */}
 							<ScrollArea type="auto" style={{ flex: 1, minHeight: 0 }}>
 								<PluginList pluginName={pluginName} />
 							</ScrollArea>
@@ -95,14 +95,16 @@ export const PluginsLayout: React.FC = () => {
 					</Card>
 				)}
 
-				{/* 右栏：主内容（内部决定是否滚动） */}
+				{/* 右栏：主内容（包一层 ScrollArea，独立滚动） */}
 				<Box
+					// 关键：右栏外层先截断溢出，防止把父容器“顶高”
 					style={{
 						flex: 1,
 						minWidth: 0,
 						minHeight: 0,
 						display: 'flex',
 						flexDirection: 'column',
+						overflow: 'hidden',
 					}}
 				>
 					{pluginName ? (

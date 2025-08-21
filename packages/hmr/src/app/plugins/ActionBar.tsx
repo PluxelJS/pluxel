@@ -7,22 +7,20 @@ import {
 } from '@tabler/icons-react'
 import { client } from '../rpc'
 import type { InferRequestType, InferResponseType } from 'hono/client'
-import { useMutation, useQuery } from '@tanstack/react-query'
+import { useMutation } from '@tanstack/react-query'
 import { notifications } from '@mantine/notifications'
 import { openConfirmModal } from '@mantine/modals'
-import type { PluginResponse } from './Plugin'
-import type { Dependency } from './DependencyList'
-
+import type { Dependencies } from './Plugin'
 export interface ActionBarProps {
 	pluginName: string
-	isRunning: boolean
+	isSelfRunning: boolean
 	/** 前置依赖列表及其运行状态与可选标记 */
-	dependencies?: Dependency[]
+	dependencies?: Dependencies
 }
 
 export function ActionBar({
 	pluginName,
-	isRunning,
+	isSelfRunning,
 	dependencies = [],
 }: ActionBarProps) {
 	// RPC 更新方法
@@ -43,7 +41,7 @@ export function ActionBar({
 			const data = await res.json()
 			notifications.show({
 				title: '插件状态已更新',
-				message: data.changes.join('\n'),
+				message: '更新成功',
 			})
 			return data
 		},
@@ -86,7 +84,7 @@ export function ActionBar({
 					variant="light"
 					size="lg"
 					onClick={() => handleAction('start')}
-					disabled={!canToggle || isRunning}
+					disabled={!canToggle || isSelfRunning}
 				>
 					<IconPlayerPlay size={18} />
 				</ActionIcon>
@@ -98,7 +96,7 @@ export function ActionBar({
 					size="lg"
 					color="red"
 					onClick={() => handleAction('stop')}
-					disabled={!canToggle || !isRunning}
+					disabled={!canToggle || !isSelfRunning}
 				>
 					<IconSquareX size={18} />
 				</ActionIcon>
@@ -110,7 +108,7 @@ export function ActionBar({
 					size="lg"
 					color="green"
 					onClick={() => handleAction('restart')}
-					disabled={!canToggle || !isRunning}
+					disabled={!canToggle || !isSelfRunning}
 				>
 					<IconRotateClockwise size={18} />
 				</ActionIcon>

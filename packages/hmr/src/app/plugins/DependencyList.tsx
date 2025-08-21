@@ -1,18 +1,11 @@
 import type React from 'react'
 import { Card, Group, Anchor, Text, Tooltip } from '@mantine/core'
 import { IconArrowRight } from '@tabler/icons-react'
-
-// 扩展 optional 标识
-export type Dependency = {
-	[x: string]: any
-	name: string
-	optional?: boolean
-	isRunning?: boolean
-} | null
+import type { Dependencies } from './Plugin'
 
 interface DependencyListProps {
 	/** 依赖项数组 */
-	dependencies?: Dependency[]
+	dependencies?: Dependencies
 	/** 路由组件适配器，需支持 to & children */
 	LinkComponent: React.ElementType<{ to: string; children: React.ReactNode }>
 	/** 容器标题，可选 */
