@@ -12,6 +12,9 @@ interface ExtraPropsMap {
 	number: { value: number }
 	boolean: { value: boolean }
 	picklist: { value: PicklistOptions }
+	array: { value: unknown[] }
+	/** 补齐 record 的值类型 */
+	record: { value: Record<string, unknown> }
 }
 
 /** 表单输入的基础事件 props */
@@ -45,8 +48,7 @@ export type CommonProps<T extends PartialMetaType> = {
 	type: T
 	formBaseInfo: FormBaseInfo
 	extractedPropsInfo: ExtractedProps<T>
-
-	error?: string
+	errors?: { message: string; dotPath: string[] }[]
 	inputProps: InputProps
 } & ExtraProps<T>
 

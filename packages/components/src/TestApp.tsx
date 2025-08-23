@@ -1,8 +1,11 @@
-import '@mantine/core/styles.css'
-import { MantineProvider } from '@mantine/core'
-
-import { Home } from './app/form'
+import { Home } from './form/form'
+import Example from './components/Dashboard/Example.tsx'
+import { Container } from '@mantine/core'
 
 export default function TestApp() {
-	return <Home />
+	return (
+		<Container size={'lg'}>
+			<Home />
+		</Container>
+	)
 }

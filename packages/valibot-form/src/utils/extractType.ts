@@ -1,7 +1,9 @@
 import {
+	extractArrayProps,
 	extractBooleanProps,
 	extractNumberProps,
 	extractPicklistProps,
+	extractRecordProps,
 	extractStringProps,
 } from '../actions'
 import type { MetaType } from './MetaType'
@@ -28,6 +30,8 @@ export const extractMap = buildRendererMap({
 	number: extractNumberProps,
 	boolean: extractBooleanProps,
 	picklist: extractPicklistProps,
+	array: extractArrayProps,
+	record: extractRecordProps,
 })
 
 export type ExtractMap = typeof extractMap

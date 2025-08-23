@@ -1,7 +1,9 @@
 import type {
+	ArrayMetaOptions,
 	BooleanMetaOptions,
 	NumberMetaOptions,
 	PicklistMetaOptions,
+	RecordMetaOptions,
 	StringMetaOptions,
 } from '../actions'
 import type { FormMeta } from '../actions/formMeta'
@@ -13,6 +15,8 @@ export const META_MAP = {
 	NUMBER: 'number',
 	BOOLEAN: 'boolean',
 	PICKLIST: 'picklist',
+	ARRAY: 'array',
+	RECORD: 'record',
 	object: 'object',
 } as const
 
@@ -26,6 +30,8 @@ export interface MetaReturnMap {
 	number: NumberMetaOptions
 	boolean: BooleanMetaOptions
 	picklist: PicklistMetaOptions
+	array: ArrayMetaOptions
+	record: RecordMetaOptions
 	object: ObjectMetaOptions
 }
 

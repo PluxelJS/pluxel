@@ -7,7 +7,7 @@ import {
 	memo,
 	Suspense,
 } from 'react'
-import { Stack, CardSection } from '@mantine/core'
+import { Stack, Card } from '@mantine/core'
 import type { InferOutput, ObjectSchema } from 'valibot'
 import { MetaRenderer, extractInfo } from 'valibot-form'
 import { useAppForm } from './formContext'
@@ -105,22 +105,22 @@ function FieldsImpl() {
 		<Stack gap="md" style={{ padding: 24 }}>
 			{items.map(({ name, info }) => (
 				<form.Field key={name} name={name}>
-					{(field) => (
-						<MetaRenderer
-							type={info.type}
-							formBaseInfo={info.formInfo}
-							extractedPropsInfo={info.props}
-							error={field.state.meta.errors
-								?.map((e: any) => e.message)
-								.join(', ')}
-							value={field.state.value as any}
-							inputProps={{
-								name,
-								onChange: field.handleChange,
-								onBlur: field.handleBlur,
-							}}
-						/>
-					)}
+					{(field) => {
+						return (
+							<MetaRenderer
+								type={info.type}
+								formBaseInfo={info.formInfo}
+								extractedPropsInfo={info.props}
+								errors={field.state.meta.errors as any}
+								value={field.state.value as any}
+								inputProps={{
+									name,
+									onChange: field.handleChange,
+									onBlur: field.handleBlur,
+								}}
+							/>
+						)
+					}}
 				</form.Field>
 			))}
 		</Stack>
@@ -166,7 +166,7 @@ function DebugPanelImpl() {
 	const isDev = import.meta.env?.DEV || process.env.NODE_ENV === 'development'
 	if (!isDev) return null
 	return (
-		<CardSection withBorder style={{ padding: 24 }}>
+		<Card withBorder style={{ padding: 24 }}>
 			<form.Subscribe
 				selector={(s) => ({
 					values: s.values,
@@ -180,7 +180,7 @@ function DebugPanelImpl() {
 					</Suspense>
 				)}
 			</form.Subscribe>
-		</CardSection>
+		</Card>
 	)
 }
 AutoForm.DebugPanel = DebugPanelImpl

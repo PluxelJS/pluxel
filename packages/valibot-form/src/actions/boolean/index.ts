@@ -1,3 +1,3 @@
-export * from './extractProps'
+export * from './booleanExtractor'
 export * from './booleanMeta'
 export * from './type'

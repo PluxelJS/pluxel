@@ -3,7 +3,8 @@ import { ColorInput, TextInput } from '@mantine/core'
 import { META_MAP, registerRenderer, triggerFormEvents } from 'valibot-form'
 
 registerRenderer(META_MAP.STRING, (props) => {
-	const { formBaseInfo, error, extractedPropsInfo, inputProps, value } = props
+	const { formBaseInfo, errors, extractedPropsInfo, inputProps, value } = props
+	const error = errors?.map((e) => e.message).join(', ')
 
 	// hex_color 格式，直接交给 HexColorField 处理
 	if (extractedPropsInfo.format === 'hex_color') {

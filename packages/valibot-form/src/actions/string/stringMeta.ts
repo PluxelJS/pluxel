@@ -1,3 +1,4 @@
+// string/stringMeta.ts
 import type { BaseMetadata } from 'valibot'
 import type { CheckMetaType } from '~/utils'
 import type { StringMetaOptions } from './type'

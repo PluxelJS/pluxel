@@ -7,7 +7,7 @@ const RedisConfig = v.object({
   lazy: v.optional(v.boolean(), false), // init() 时连接；true 则首次 use() 再连
   pingOnStart: v.optional(v.boolean(), true),
 })
-export type RedisPluginConfig = v.InferOutput<typeof RedisConfig>
+export type RedisPluginConfig = Config<typeof RedisConfig>
 type RedisClientType = ReturnType<typeof createClient>
 
 @Plugin({ name: 'Redis' })

@@ -1,9 +1,21 @@
 {
+  "../components/src/form/DebugValues.tsx": {
+    "file": "assets/DebugValues-B81qp0fC.js",
+    "name": "DebugValues",
+    "src": "../components/src/form/DebugValues.tsx",
+    "isDynamicEntry": true,
+    "imports": [
+      "src/client.tsx"
+    ]
+  },
   "src/client.tsx": {
-    "file": "assets/client-BMbKSkun.js",
+    "file": "assets/client-BQ9rvSVn.js",
     "name": "client",
     "src": "src/client.tsx",
     "isEntry": true,
+    "dynamicImports": [
+      "../components/src/form/DebugValues.tsx"
+    ],
     "css": [
       "assets/client-DV2BVbqJ.css"
     ]

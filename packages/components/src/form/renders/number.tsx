@@ -2,7 +2,8 @@ import { Box, InputWrapper, NumberInput, Slider } from '@mantine/core'
 import { META_MAP, registerRenderer, triggerFormEvents } from 'valibot-form'
 
 registerRenderer(META_MAP.NUMBER, (props) => {
-	const { formBaseInfo, error, extractedPropsInfo, inputProps, value } = props
+	const { formBaseInfo, errors, extractedPropsInfo, inputProps, value } = props
+	const error = errors?.map((e) => e.message).join(', ')
 	// slider 模式
 	if (extractedPropsInfo.type === 'slider') {
 		const { min = 0, max = 100, step = 1, marks } = extractedPropsInfo.options

@@ -1,9 +1,10 @@
-import type { BaseMetadata, PicklistOptions } from 'valibot'
+// picklist/picklistMeta.ts
+import type { BaseMetadata } from 'valibot'
 import type { CheckMetaType } from '~/utils'
 import type { PicklistMetaOptions } from './type'
 
 export interface picklistMetaAction<
-	TInput extends PicklistOptions,
+	TInput extends string | number,
 	TMetadata extends PicklistMetaOptions,
 > extends BaseMetadata<TInput> {
 	readonly type: CheckMetaType<'picklist'>
@@ -12,7 +13,7 @@ export interface picklistMetaAction<
 }
 
 export function picklistMeta<
-	TInput extends PicklistOptions,
+	TInput extends string | number,
 	const TMetadata extends PicklistMetaOptions,
 >(metadata_: TMetadata): picklistMetaAction<TInput, TMetadata> {
 	return {

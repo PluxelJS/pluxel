@@ -1,4 +1,5 @@
-import type { fmtKey } from './extractProps'
+// string/type.ts
+import type { fmtKey } from './stringExtractor'
 
 export interface StringCheck {
 	minLength?: number
