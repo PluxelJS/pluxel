@@ -369,6 +369,9 @@ importers:
       '@pluxel/hmr':
         specifier: workspace:*
         version: link:../hmr
+      '@swc/helpers':
+        specifier: ^0.5.17
+        version: 0.5.17
       ky:
         specifier: ^1.9.0
         version: 1.9.0

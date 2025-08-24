@@ -5,7 +5,7 @@ export default defineConfig({
 		devExports: '@pluxel/source',
 	},
 	entry: {
-		index: 'src/context.ts',
+		index: 'src/index.ts',
 		services: 'src/services/index.ts',
 	},
 	env: {

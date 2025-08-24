@@ -1,5 +1,7 @@
-// index.ts
+// start.ts
 import 'reflect-metadata'
+
+import './service'
 import { Context } from './index'
 import { PluginA, PluginB, PluginC } from './plugins'
 

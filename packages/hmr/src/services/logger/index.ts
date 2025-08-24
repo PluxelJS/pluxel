@@ -1,5 +1,5 @@
 import { type Context, Injectable, OverrideOf } from '@pluxel/core'
-import { LoggerService } from '@pluxel/core/services'
+import { LoggerService } from '@pluxel/core/service'
 import { type Logger, createLogger } from './createLogger'
 
 // 1. 列出要转发的 log 级别

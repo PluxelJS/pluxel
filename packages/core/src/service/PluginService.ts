@@ -63,8 +63,8 @@ export class PluginService {
 		private ctx: Context,
 		private config: PluginServiceConfig,
 	) {
-		this.startTimeoutMs = config.startTimeoutMs ?? 1_500
-		this.stopTimeoutMs = config.stopTimeoutMs ?? 3_000
+		this.startTimeoutMs = config?.startTimeoutMs ?? 1_500
+		this.stopTimeoutMs = config?.stopTimeoutMs ?? 3_000
 
 		const isolated = Array.from(
 			new Set([...(config?.plugigCTXIsolate ?? []), EffectScopeService]),

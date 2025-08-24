@@ -23,7 +23,6 @@ export class PluginA extends BasePlugin {
 			this.ctx.logger.info('PluginA: PluginC dependency not injected')
 		}
 
-		this.ctx.test.collect()
 		console.log(`当前情境 ${this.ctx.name}`)
 	}
 

@@ -2,9 +2,9 @@ import { getDefault, parse } from 'valibot'
 import {
 	type Context,
 	getPluginInfo,
-	type ConfigSchemaMap,
 	type PluginConstructor,
-} from '../../context'
+} from '@pluxel/core'
+import type { ConfigSchemaMap } from '../..'
 
 export class PluginRegistry {
 	public moduleMap = new Map<string, PluginConstructor[]>()

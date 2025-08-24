@@ -9,12 +9,12 @@
       "path": "packages/runtime"
     },
     {
-      "name": "🍀  @pluxel/hmr",
-      "path": "packages/hmr"
-    },
-    {
       "name": "🍀  @pluxel/components",
       "path": "packages/components"
+    },
+    {
+      "name": "🍀  @pluxel/hmr",
+      "path": "packages/hmr"
     },
     {
       "name": "🍀  @pluxel/context",

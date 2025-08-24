@@ -1,4 +1,4 @@
-export * from '@pluxel/core/services'
+export * from "@pluxel/core/service"
 
 export * from './ConfigService'
 export * from './HMRService'

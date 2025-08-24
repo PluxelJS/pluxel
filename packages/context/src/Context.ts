@@ -13,7 +13,7 @@ export class Context {
 	/** 全局 serviceKey → instKey 映射 */
 	private static defaultMapping: SymMap = Object.create(null)
 	/** ServiceClass → serviceKey 缓存 */
-	private static serviceKeyMap = new WeakMap<ServiceClass<any>, symbol>()
+	public static serviceKeyMap = new WeakMap<ServiceClass<any>, symbol>()
 	private static registeredKeys = new Set<string>()
 
 	/** 本实例的映射（继承自 defaultMapping 或父 Context） */

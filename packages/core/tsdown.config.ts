@@ -6,7 +6,7 @@ export default defineConfig({
 	},
 	entry: {
 		index: 'src/index.ts',
-		services: 'src/services/index.ts',
+		service: 'src/service/index.ts',
 	},
 	dts: {
 		sourcemap: true,

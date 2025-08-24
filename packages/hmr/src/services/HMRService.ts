@@ -120,10 +120,7 @@ export class HMRService {
 			plugins: [
 				tsconfigPaths(),
 				swc.vite({
-					sourceMaps: true,
-					inlineSourcesContent: true,
 					jsc: {
-						externalHelpers: true, // 避免把 helper 内联到文件头导致行偏移，需要 @swc/helpers
 						parser: { syntax: 'typescript', decorators: true, tsx: true },
 						transform: {
 							legacyDecorator: true,
