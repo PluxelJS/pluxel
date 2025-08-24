@@ -63,7 +63,6 @@ export const pluginsPostConfig = new Hono<AppEnv>()
 		for (const [configKey, data] of Object.entries(inputData.formData)) {
 			const schema = configChecker[configKey]
 			if (!schema) {
-				2
 				// 整个配置项都不存在
 				errors[configKey] = { _error: `未知配置项 ${configKey}` }
 				continue
@@ -77,22 +76,17 @@ export const pluginsPostConfig = new Hono<AppEnv>()
 			type Issue = (typeof result.issues)[number]
 
 			// 最终要返回的字段错误对象：key 是字段名，value 是对应的 issue
-			const fieldErrors: Record<string, Issue[]> = {}
-
+			const fieldErrors: Record<
+				string,
+				{ message: string; dotPath: string }[]
+			> = {}
 			for (const issue of result.issues) {
-				// issue.path 是一个数组，每一项都可能有 key 属性
-				const path = issue.path ?? []
-
-				// 取最后一段，如果没有则归为 '_error'
-				const last = path[path.length - 1] as { key?: string } | undefined
-				const propName = last?.key ?? '_error'
-
-				// 如果还没有数组，则先初始化
-				if (!fieldErrors[propName]) {
-					fieldErrors[propName] = []
-				}
-				// 然后把当前 issue push 进去
-				fieldErrors[propName].push(issue)
+				const path = (v.getDotPath(issue) ?? 'unknown').split('.')
+				const name = path[0]
+				fieldErrors[name] = (fieldErrors[name] ?? []).concat({
+					message: issue.message,
+					dotPath: path,
+				})
 			}
 			errors[configKey] = fieldErrors
 		}

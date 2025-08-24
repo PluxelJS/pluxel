@@ -9,6 +9,7 @@ import {
 } from '@pluxel/core'
 import { PluginScanner } from './PluginScanner'
 import { PluginRegistry } from './PluginRegistry'
+import { getDefault } from 'valibot'
 
 declare module '@pluxel/core' {
 	interface Context {
@@ -35,6 +36,12 @@ export class LoaderService {
 					throw new Error(`Missing config key "${key}" for plugin ${ctx.name}`)
 				}
 				plugin[key] = config[key]
+			}
+		})
+		this.ctx.on('commitFailed', (failed) => {
+			for (const pCtor of failed) {
+				const pluginName = getPluginInfo(pCtor)?.meta.name!
+				this.registry.disablePlugin(pluginName, pCtor as PluginConstructor)
 			}
 		})
 		this.registry = new PluginRegistry(this.ctx)

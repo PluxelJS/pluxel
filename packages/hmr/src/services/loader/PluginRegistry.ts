@@ -1,4 +1,4 @@
-import { parse } from 'valibot'
+import { getDefault, parse } from 'valibot'
 import {
 	type Context,
 	getPluginInfo,
@@ -55,7 +55,11 @@ export class PluginRegistry {
 			const { configRecord } = this.ctx.configService.getConfig(name)
 			for (const [configKey, schema] of Object.entries(schemaObjMap)) {
 				const config = configRecord[configKey]
-				if (config === undefined) throw new Error(`缺少配置 ${configKey}`)
+				if (config === undefined) {
+					this.ctx.configService.setConfig(name, {
+						[configKey]: getDefault(schema),
+					})
+				}
 				parse(schema, config)
 			}
 		}

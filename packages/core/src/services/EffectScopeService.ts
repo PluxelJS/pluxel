@@ -1,4 +1,5 @@
 import { type Context, Injectable } from '@pluxel/context'
+import type { PluginIdentifier } from '../pluginImpl'
 
 declare module '@pluxel/context' {
 	interface Context {
@@ -46,5 +47,10 @@ export class EffectScopeService {
 				console.error('[EffectScopeService] dispose error:', error)
 			}
 		}
+	}
+
+	dispose(plugin: PluginIdentifier) {
+		this.ctx.registry.pluginRegistry.unregisterPlugin(plugin)
+		this.ctx.registry.commit()
 	}
 }

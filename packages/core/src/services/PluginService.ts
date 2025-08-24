@@ -19,12 +19,15 @@ import {
 	lifecycleSelectors,
 } from '../pluginImpl/pluginActor'
 
+type PluginServiceConfig = {
+	plugigCTXIsolate?: ServiceClass<any>[]
+	startTimeoutMs?: number
+	stopTimeoutMs?: number
+}
 declare module '@pluxel/context' {
 	namespace Context {
 		interface Config {
-			registry?: {
-				plugigCTXIsolate?: ServiceClass<any>[]
-			}
+			registry?: PluginServiceConfig
 		}
 	}
 	export interface Context {
@@ -53,13 +56,16 @@ export class PluginService {
 	private createPluginCTX: () => Context
 
 	/** 可调等待超时（毫秒） */
-	private readonly startTimeoutMs = 30_000
-	private readonly stopTimeoutMs = 15_000
+	private readonly startTimeoutMs
+	private readonly stopTimeoutMs
 
 	constructor(
 		private ctx: Context,
-		private config: { plugigCTXIsolate?: ServiceClass<any>[] },
+		private config: PluginServiceConfig,
 	) {
+		this.startTimeoutMs = config.startTimeoutMs ?? 1_500
+		this.stopTimeoutMs = config.stopTimeoutMs ?? 3_000
+
 		const isolated = Array.from(
 			new Set([...(config?.plugigCTXIsolate ?? []), EffectScopeService]),
 		)
@@ -449,6 +455,7 @@ export class PluginService {
 						{ failed: [...failed].map(String) },
 						'以下插件启动失败',
 					)
+					this.ctx.emit('commitFailed', failed)
 				}
 
 				return createOk({

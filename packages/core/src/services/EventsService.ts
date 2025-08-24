@@ -7,7 +7,11 @@ import {
 	Eventure,
 	type Unsubscribe,
 } from 'eventure'
-import type { PluginConstructor, PluginInstance } from '../pluginImpl'
+import type {
+	PluginConstructor,
+	PluginIdentifier,
+	PluginInstance,
+} from '../pluginImpl'
 
 declare module '@pluxel/context' {
 	namespace Context {
@@ -27,7 +31,7 @@ declare module '@pluxel/context' {
 
 @Injectable({
 	key: 'events',
-	methods: ['on', 'prependOn', 'emitWithContext'] as const,
+	methods: ['on', 'prependOn', 'emit', 'emitWithContext'] as const,
 })
 export class EventsService extends Eventure<Events> {
 	constructor(
@@ -95,6 +99,7 @@ export class EventsService extends Eventure<Events> {
 export interface Events {
 	onLoad: [string]
 	beforeStart: [PluginInstance] // 启动前
+	commitFailed: (failed: Set<PluginIdentifier>) => void
 	afterStart: [Context] // 启动成功
 	startError: [Context, Error] // 启动失败
 }

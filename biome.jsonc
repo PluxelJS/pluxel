@@ -107,6 +107,7 @@
           "complexity": { "noBannedTypes": "info" },
           "correctness": { "noUnusedVariables": "info" },
           "suspicious": {
+            "noConfusingVoidType": "info",
             "noExplicitAny": "info",
             "noUnsafeDeclarationMerging": "info",
             "noEmptyBlockStatements": "info"

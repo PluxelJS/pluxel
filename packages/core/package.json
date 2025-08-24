@@ -13,6 +13,11 @@
       "import": "./dist/index.js",
       "require": "./dist/index.cjs"
     },
+    "./services": {
+      "@pluxel/source": "./src/services/index.ts",
+      "import": "./dist/services.js",
+      "require": "./dist/services.cjs"
+    },
     "./package.json": "./package.json"
   },
   "scripts": {
@@ -21,6 +26,7 @@
     "dev": "bun --watch run src/start.ts"
   },
   "dependencies": {
+    "@swc/helpers": "^0.5.17",
     "option-t": "54.2.2",
     "reflect-metadata": "^0.2.2",
     "valtio": "2.1.5",
@@ -40,6 +46,10 @@
       ".": {
         "import": "./dist/index.js",
         "require": "./dist/index.cjs"
+      },
+      "./services": {
+        "import": "./dist/services.js",
+        "require": "./dist/services.cjs"
       },
       "./package.json": "./package.json"
     }

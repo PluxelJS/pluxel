@@ -6,7 +6,7 @@ import chokidar, { type FSWatcher } from 'chokidar'
 import { SuperJSON } from 'superjson'
 
 // —— 1. 定义通用的 metadata 结构 ——
-export interface PluginMeta {
+export interface pluginInfo {
 	dir?: string
 	version?: string
 	// …以后还可以加 author、license、enabledAt……
@@ -15,7 +15,7 @@ export interface PluginMeta {
 
 // —— 2. 插件条目，T 是业务 config 的类型 ——
 export interface PluginEntry<T extends object = {}> {
-	meta: PluginMeta
+	meta: pluginInfo
 	configRecord: T
 }
 
@@ -95,7 +95,7 @@ export class ConfigService {
 	 * @typeParam T 插件业务配置类型
 	 */
 	getConfig<T extends object = Record<string, any>>(
-		name: string = this.ctx.pluginMeta.name,
+		name: string = this.ctx.pluginInfo.meta.name,
 	): PluginEntry<T> {
 		const entry =
 			this.data.plugins[name] ||
@@ -110,7 +110,7 @@ export class ConfigService {
 	 * @param partial.meta 要更新的元信息
 	 * @param partial.config 要更新的业务配置
 	 */
-	setConfig<T extends object = {}>(
+	setConfig<T extends object = { [key: string]: any }>(
 		name: string,
 		partial: Partial<PluginEntry<T>>,
 	) {

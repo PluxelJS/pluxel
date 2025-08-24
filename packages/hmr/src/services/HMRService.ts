@@ -120,19 +120,15 @@ export class HMRService {
 			plugins: [
 				tsconfigPaths(),
 				swc.vite({
+					sourceMaps: true,
+					inlineSourcesContent: true,
 					jsc: {
-						parser: {
-							syntax: 'typescript',
-							decorators: true,
-							tsx: true,
-						},
+						externalHelpers: true, // 避免把 helper 内联到文件头导致行偏移，需要 @swc/helpers
+						parser: { syntax: 'typescript', decorators: true, tsx: true },
 						transform: {
 							legacyDecorator: true,
 							decoratorMetadata: true,
-							react: {
-								runtime: 'automatic',
-								refresh: true,
-							},
+							react: { runtime: 'automatic', refresh: true },
 						},
 					},
 				}),
@@ -147,7 +143,7 @@ export class HMRService {
 			},
 			ssr: {
 				external: ['react', 'react-dom'],
-			}
+			},
 		})
 		await server.listen()
 		server.printUrls()

@@ -1,1 +1,0 @@
-import{j as r}from"./client-BQ9rvSVn.js";function i({formValues:e}){return r.jsx("pre",{style:{marginTop:16,background:"#f5f5f5",padding:12,borderRadius:4},children:r.jsx("code",{children:JSON.stringify(e,null,2)})})}export{i as DebugValues};
