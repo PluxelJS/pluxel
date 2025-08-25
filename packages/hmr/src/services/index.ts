@@ -1,7 +1,7 @@
-export * from "@pluxel/core/service"
+export * from '@pluxel/core/service'
 
 export * from './ConfigService'
-export * from './HMRService'
+export * from './hmr/HMRService'
 export * from './hono/HonoService'
 export * from './loader/index'
 export * from './logger'

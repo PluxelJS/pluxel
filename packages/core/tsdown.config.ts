@@ -1,9 +1,7 @@
 import { defineConfig } from 'tsdown'
 
 export default defineConfig({
-	exports: {
-		devExports: '@pluxel/source',
-	},
+	exports: false,
 	entry: {
 		index: 'src/index.ts',
 		service: 'src/service/index.ts',

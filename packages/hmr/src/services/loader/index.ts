@@ -17,9 +17,8 @@ declare module '@pluxel/core' {
 	}
 }
 
-@Injectable
+@Injectable({ key: 'loader' })
 export class LoaderService {
-	static key = 'loader'
 	private scanner = new PluginScanner()
 	public registry: PluginRegistry
 

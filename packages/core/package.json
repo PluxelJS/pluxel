@@ -25,7 +25,6 @@
     "dev": "bun --watch run src/start.ts"
   },
   "dependencies": {
-    "@swc/helpers": "^0.5.17",
     "option-t": "54.2.2",
     "reflect-metadata": "^0.2.2",
     "valtio": "2.1.5",

@@ -13,9 +13,8 @@ declare module '@pluxel/core' {
 	}
 }
 
-@Injectable
+@Injectable({ key: 'honoService' })
 export class HonoService {
-	static key = 'honoService'
 	// 1. 先初始化 mods
 	private mods: Array<(app: HonoType) => void> = []
 	// 2. 再调用 createApp（此时 mods 已经是 [] 了）
