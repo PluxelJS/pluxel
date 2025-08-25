@@ -25,9 +25,14 @@
   "dependencies": {
     "@pluxel/hmr": "workspace:*",
     "ky": "^1.9.0",
-    "redis": "^5.8.1"
+    "redis": "^5.8.1",
+    "type-flag": "^3.0.0",
+    "ws": "^8.18.3"
   },
   "peerDependencies": {
     "typescript": "*"
+  },
+  "devDependencies": {
+    "@types/ws": "^8.18.1"
   }
 }
