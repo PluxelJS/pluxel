@@ -1,50 +1,66 @@
 name: 'Setup (Node.js)'
-description: 'Setup Node.js and pnpm'
+description: 'Setup Node.js, pnpm, and optional Bun'
 
 inputs:
   node-version:
-    description: 'The Node.js version to use'
+    description: 'Node.js version'
     required: true
     default: 'lts'
   pnpm-version:
-    description: 'The pnpm version to use'
+    description: 'pnpm version'
     required: true
     default: 'latest'
+  bun-version:
+    description: 'Bun version (optional). Set to "latest" or a semver to enable.'
+    required: false
+    default: '' # empty = skip bun
 
 runs:
-  # Read about composite actions in:
-  # https://docs.github.com/en/actions/sharing-automations/avoiding-duplication.
-  #
-  # Composite actions cannot use secrets, and are logged as a single step.
   using: 'composite'
   steps:
-  - name: '🔧 Install: pnpm'
-    uses: pnpm/action-setup@v4
-    with:
-      version: ${{ inputs.pnpm-version }}
-      run_install: false
-      standalone: true
-      dest: ~/setup-pnpm
+    - name: '🔧 Install: pnpm'
+      uses: pnpm/action-setup@v4
+      with:
+        version: ${{ inputs.pnpm-version }}
+        run_install: false
+        standalone: true
+        dest: ~/setup-pnpm
 
-  - name: 🔺️ Cache (turbo)
-    uses: actions/cache@v4
-    with:
-      path: .turbo
-      key: ${{ runner.os }}-turbo-${{ github.job }}-${{ github.ref_name }}-${{ github.sha }}
-      restore-keys: |
-        ${{ runner.os }}-turbo-${{ github.job }}-${{ github.ref_name }}-${{ github.sha }}
-        ${{ runner.os }}-turbo-${{ github.job }}-${{ github.ref_name }}
-        ${{ runner.os }}-turbo-${{ github.job }}
-        ${{ runner.os }}-turbo
+    # 🔺 Turbo 缓存（用锁文件哈希提升命中率）
+    - name: '🔺️ Cache (turbo)'
+      uses: actions/cache@v4
+      with:
+        path: .turbo
+        key: ${{ runner.os }}-turbo-${{ github.job }}-${{ hashFiles('**/pnpm-lock.yaml') }}
+        restore-keys: |
+          ${{ runner.os }}-turbo-${{ github.job }}-
+          ${{ runner.os }}-turbo-
 
-  - name: '💽️ Setup Node.js'
-    uses: actions/setup-node@v4
-    with:
-      cache-dependency-path: pnpm-lock.yaml
-      cache: 'pnpm'
-      node-version: ${{ inputs.node-version }}
-      registry-url: "https://registry.npmjs.org"
+    - name: '💽️ Setup Node.js'
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ inputs.node-version }}
+        cache: pnpm
+        cache-dependency-path: pnpm-lock.yaml
+        registry-url: 'https://registry.npmjs.org'
 
-  - name: '📦️ Install Dependencies'
-    shell: bash
-    run: pnpm install --frozen-lockfile
+    # 🍞 Bun（可选启用）
+    - name: '🍞 Setup Bun'
+      if: ${{ inputs.bun-version != '' }}
+      uses: oven-sh/setup-bun@v2
+      with:
+        bun-version: ${{ inputs.bun-version }}
+
+    - name: '🍞 Cache (bun)'
+      if: ${{ inputs.bun-version != '' }}
+      uses: actions/cache@v4
+      with:
+        path: ~/.cache/bun
+        key: bun-${{ runner.os }}-${{ inputs.bun-version }}-${{ hashFiles('**/bun.lockb') }}
+        restore-keys: |
+          bun-${{ runner.os }}-${{ inputs.bun-version }}-
+          bun-${{ runner.os }}-
+
+    - name: '📦️ Install Dependencies'
+      shell: bash
+      run: pnpm install --frozen-lockfile

@@ -20,7 +20,6 @@
     "./package.json": "./package.json"
   },
   "scripts": {
-    "clean": "rimraf build .turbo",
     "build": "tsdown",
     "dev": "bun --watch run src/start.ts"
   },

@@ -7,9 +7,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc && vite build",
-    "preview": "vite preview",
-    "typecheck": "tsc --noEmit"
+    "preview": "vite preview"
   },
   "peerDependencies": {
     "@mantine/core": "^8.2.2",

@@ -21,11 +21,9 @@
     "./package.json": "./package.json"
   },
   "scripts": {
-    "clean": "rimraf build .turbo",
     "dev": "bun src/start.ts",
     "hot": "bun --hot src/start.ts",
     "build": "tsdown",
-    "full-build": "pnpm --filter context build && pnpm --filter core build && pnpm build",
     "web": "vite build"
   },
   "dependencies": {

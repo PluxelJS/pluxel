@@ -8,25 +8,20 @@
     "pnpm": ">=9"
   },
   "scripts": {
+    "test": "turbo run test",
+    "build": "turbo run build",
     "dev": "pnpm --filter core dev",
     "hmr": "pnpm --filter hmr dev"
   },
   "devDependencies": {
-    "@arethetypeswrong/cli": "^0.17.4",
     "@biomejs/biome": "^1.9.4",
     "@oxc-project/runtime": "^0.78.0",
     "@types/bun": "latest",
     "husky": "^9.1.7",
     "is-ci": "^4.1.0",
-    "lint-staged": "^15.5.2",
-    "rimraf": "^6.0.1",
-    "taze": "^19.3.0",
     "tsdown": "latest",
-    "tsup": "^8.5.0",
-    "tsx": "^4.20.5",
     "turbo": "^2.5.6",
-    "typescript": "^5.9.2",
-    "vitest": "^3.2.4"
+    "typescript": "^5.9.2"
   },
   "pre-commit": "lint-staged",
   "lint-staged": {

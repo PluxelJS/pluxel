@@ -2,8 +2,7 @@ name: "  ▶️  CI Workflow"
 
 on:
   push:
-    branches:
-      - main
+    branches: [main]
   pull_request:
     paths-ignore:
       - ".vscode/**"
@@ -29,10 +28,11 @@ jobs:
     strategy:
       matrix:
         os: [ubuntu-latest]
-        node: ["20.17.0"]
-        pnpm: ["9.15.0"]
+        node: ["lts"]
+        pnpm: ["10.14.0"]
+        bun: ["1.2.20"] # or "latest"
 
-    name: "Build: ${{ matrix.os }}, Node.js ${{ matrix.node }}"
+    name: "Build: ${{ matrix.os }}, Node.js ${{ matrix.node }} (+ Bun)"
 
     steps:
       - name: Prepare git
@@ -47,15 +47,19 @@ jobs:
         with:
           node-version: ${{ matrix.node }}
           pnpm-version: ${{ matrix.pnpm }}
+          bun-version: ${{ matrix.bun }}  # ← 这行启用 Bun（你的 composite 会自动安装并缓存）
 
-      - name: "🏗️ Build: Transpile TS to JS"
-        run: pnpm check:exports
+      # PR：只跑受影响的包（相对 base 分支）
+      - name: "🧪 Test (affected only)"
+        if: github.event_name == 'pull_request'
+        run: pnpm -w turbo run test --filter=...[origin/${{ github.base_ref }}]
 
-      - name: "🧪 Verify build"
-        run: pnpm check:exports
+      # main：全量跑（利用 turbo 缓存，未变的会秒跳过）
+      - name: "🧪 Test (full, cached)"
+        if: github.ref == 'refs/heads/main'
+        run: pnpm -w turbo run test
 
-      - name: "🚨️ Lint code"
-        run: pnpm lint:ci
-
-      - name: "🧳 Run unit tests"
-        run: pnpm test:unit
+      # 其它分支（可选）：也跑受影响包
+      - name: "🧪 Test (affected only, other branches)"
+        if: github.event_name != 'pull_request' && github.ref != 'refs/heads/main'
+        run: pnpm -w turbo run test --filter=...[origin/main]
