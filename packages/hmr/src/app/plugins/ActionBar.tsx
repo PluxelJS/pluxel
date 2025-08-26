@@ -6,8 +6,8 @@ import {
 	IconRotateClockwise,
 } from '@tabler/icons-react'
 import { client } from '../rpc'
-import type { InferRequestType, InferResponseType } from 'hono/client'
-import { useMutation } from '@tanstack/react-query'
+import type { InferRequestType, InferSuccessResponse } from '../rpc'
+import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { notifications } from '@mantine/notifications'
 import { openConfirmModal } from '@mantine/modals'
 import type { Dependencies } from './Plugin'
@@ -24,16 +24,17 @@ export function ActionBar({
 	dependencies = [],
 }: ActionBarProps) {
 	// RPC 更新方法
-	const $patch = client.plugins.$patch
+	const $post = client.plugins[':name'].status.$post
 
 	// 请求体 & 响应类型
-	type Payload = InferRequestType<typeof $patch>['json']
-	type Response = InferResponseType<typeof $patch>
+	type Payload = InferRequestType<typeof $post>['json']
+	type Response = InferSuccessResponse<typeof $post>
 
 	// Mutation
+	const qc = useQueryClient()
 	const mutation = useMutation<Response, Error, Payload>({
 		mutationFn: async (body) => {
-			const res = await $patch({ json: body })
+			const res = await $post({ param: { name: pluginName }, json: body })
 			if (!res.ok) {
 				const err = await res.json()
 				throw new Error(`${err.code}: ${err.error}`)
@@ -45,6 +46,13 @@ export function ActionBar({
 			})
 			return data
 		},
+
+		onSuccess: (r) => {
+			qc.setQueryData(['plugin', pluginName, 'status'], (old: any) => ({
+				...old,
+				isRunning: r.isRunning,
+			}))
+		},
 	})
 
 	// 处理动作，带依赖确认
@@ -52,7 +60,7 @@ export function ActionBar({
 		const missing = dependencies
 			.filter((dep) => !dep?.isRunning && !dep?.optional)
 			.map((i) => i?.name)
-		const proceed = () => mutation.mutate({ pluginName, status })
+		const proceed = () => mutation.mutate({ status })
 
 		if (missing.length > 0) {
 			openConfirmModal({

@@ -1,11 +1,10 @@
 import { Hono } from 'hono'
-import type { AppEnv } from '../../../services/hono/env'
+import type { PluginsEnv } from '.'
 import * as v from 'valibot'
 import { vValidator } from '@hono/valibot-validator'
 
 // 校验 Schema
 const updateStatusSchema = v.object({
-	pluginName: v.string(),
 	status: v.picklist(['start', 'stop', 'restart']),
 })
 type UpdateStatusPayload = v.InferOutput<typeof updateStatusSchema>
@@ -18,19 +17,14 @@ const statusOps: Record<Status, Array<'enable' | 'disable'>> = {
 	restart: ['disable', 'enable'],
 }
 
-export const updateStatus = new Hono<AppEnv>().patch(
-	'/',
-	vValidator('json', updateStatusSchema),
-	async (c) => {
-		const { pluginName, status } = c.req.valid('json') as UpdateStatusPayload
-		const ctx = c.var.plugin_ctx
-		const ctor = ctx.loader.getPluginClassByName(pluginName)
-		if (!ctor) {
-			return c.json(
-				{ code: 'plugin_not_found', error: `插件 ${pluginName} 未找到` },
-				404,
-			)
-		}
+export const pluginStatus = new Hono<PluginsEnv>()
+	.get('/', (c) => {
+		const { plugin_ctx: ctx, pluginCtor: ctor } = c.var
+		return c.json({ code: 'success', isRunning: ctx.registry.isRunning(ctor) })
+	})
+	.post('/', vValidator('json', updateStatusSchema), async (c) => {
+		const { status } = c.req.valid('json') as UpdateStatusPayload
+		const { plugin_ctx: ctx, pluginCtor: ctor, pluginName } = c.var
 
 		const registry = ctx.loader.registry
 		// 可选：避免无效操作，跳过并快速返回
@@ -40,7 +34,6 @@ export const updateStatus = new Hono<AppEnv>().patch(
 		// if (status === 'stop' && !registry.isPluginEnabled(pluginName)) {
 		//   return c.json({ code: 'no_change', status }, 200)
 		// }
-
 		const ops = statusOps[status]
 		if (!ops) {
 			return c.json(
@@ -64,7 +57,10 @@ export const updateStatus = new Hono<AppEnv>().patch(
 				return c.json({ code: '依赖解析出错。', error: result.err }, 500)
 			}
 
-			return c.json({ code: 'success' }, 200)
+			return c.json(
+				{ code: 'success', isRunning: ctx.registry.isRunning(ctor) },
+				200,
+			)
 		} catch (e: any) {
 			const isStart = status === 'start' || status === 'restart'
 			const errorCode = isStart
@@ -72,5 +68,4 @@ export const updateStatus = new Hono<AppEnv>().patch(
 				: 'plugin_operation_failed'
 			return c.json({ code: errorCode, error: e?.message ?? '未知错误' }, 500)
 		}
-	},
-)
+	})

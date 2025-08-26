@@ -4,7 +4,7 @@ import type { Hono } from 'hono'
 import type { DehydratedState, QueryClient } from '@tanstack/react-query'
 import type { Env as HonoEnv } from 'hono'
 
-export interface AppEnv extends HonoEnv {
+export type AppEnv = HonoEnv & {
 	Variables: {
 		plugin_ctx: Context
 		qc: QueryClient

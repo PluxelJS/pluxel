@@ -150,7 +150,7 @@ function ConfigTabPanel({
 	onSaved: (k: string) => void
 	savedAt?: number
 }) {
-	const $post = client.plugins[':name'].$post
+	const $post = client.plugins[':name'].config.$post
 	type Payload = InferRequestType<typeof $post>['json'] & {
 		signal?: AbortSignal
 	}
@@ -189,6 +189,7 @@ function ConfigTabPanel({
 						if (result.code === 'validation_error') {
 							return { fields: result.errors[tabKey] }
 						}
+						return {}
 					},
 				},
 				onSubmit: async ({ value }) => {

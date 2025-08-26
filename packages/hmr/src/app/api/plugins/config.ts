@@ -1,8 +1,9 @@
 // src/plugins.ts
 import { Hono } from 'hono'
-import type { AppEnv } from '../../../services/hono/env'
+
 import * as v from 'valibot'
 import { vValidator } from '@hono/valibot-validator'
+import type { PluginsEnv } from '.'
 
 const pluginConfigSchema = v.object({
 	isSubmitAction: v.boolean(),
@@ -20,25 +21,16 @@ type PluginPostResponse =
 	| { code: 'validation_error'; errors: Record<string, Record<string, string>> }
 	| { code: 'success'; message: string }
 
-export const pluginsPostConfig = new Hono<AppEnv>()
-	.get('/config/:name', (c) => {
-		const pluginName = c.req.param('name')
-		const ctx = c.var.plugin_ctx
-		const ctor = ctx.loader.getPluginClassByName(pluginName)
-
-		if (!ctor) {
-			return c.json<PluginPostResponse>(
-				{ code: 'plugin_not_found', error: '插件未找到' },
-				404,
-			)
-		}
-
-		return c.json(ctx.configService.getConfig(pluginName))
+export const pluginConfig = new Hono<PluginsEnv>()
+	.get('/', (c) => {
+		const { plugin_ctx: ctx, pluginCtor: ctor, pluginName } = c.var
+		return c.json({
+			config: ctx.loader.getPluginSchema(ctor),
+			existConfig: ctx.configService.getConfig(pluginName).configRecord,
+		})
 	})
-	.post('/:name', vValidator('json', pluginConfigSchema), async (c) => {
-		const pluginName = c.req.param('name')
-		const ctx = c.var.plugin_ctx
-		const ctor = ctx.loader.getPluginClassByName(pluginName)
+	.post('/', vValidator('json', pluginConfigSchema), async (c) => {
+		const { plugin_ctx: ctx, pluginCtor: ctor, pluginName } = c.var
 
 		if (!ctor) {
 			return c.json<PluginPostResponse>(

@@ -14,12 +14,12 @@ const updateGroupsSchema = v.array(
 type UpdateGroupsPayload = v.InferOutput<typeof updateGroupsSchema>
 
 export const groupsList = new Hono<AppEnv>()
-	.get('/groups', (c) => {
+	.get('/', (c) => {
 		const ctx = c.var.plugin_ctx
 		const data = ctx.configService.getExtra('groups') ?? []
 		return c.json<UpdateGroupsPayload>(data, 200)
 	})
-	.post('/groups', vValidator('json', updateGroupsSchema), (c) => {
+	.post('/', vValidator('json', updateGroupsSchema), (c) => {
 		const inputData: UpdateGroupsPayload = c.req.valid('json')
 		const ctx = c.var.plugin_ctx
 		ctx.configService.setExtra('groups', inputData)

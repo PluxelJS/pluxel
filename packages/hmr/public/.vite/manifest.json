@@ -1,6 +1,6 @@
 {
   "../components/src/form/DebugValues.tsx": {
-    "file": "assets/DebugValues-DJ7pCl1n.js",
+    "file": "assets/DebugValues-bnZzNwCh.js",
     "name": "DebugValues",
     "src": "../components/src/form/DebugValues.tsx",
     "isDynamicEntry": true,
@@ -9,7 +9,7 @@
     ]
   },
   "src/client.tsx": {
-    "file": "assets/client-DOesENLd.js",
+    "file": "assets/client-Dl3BGdYP.js",
     "name": "client",
     "src": "src/client.tsx",
     "isEntry": true,
@@ -17,7 +17,7 @@
       "../components/src/form/DebugValues.tsx"
     ],
     "css": [
-      "assets/client-DV2BVbqJ.css"
+      "assets/client-DrK858-Q.css"
     ]
   }
 }

@@ -162,10 +162,10 @@ export class HMRService {
 			root: process.cwd(),
 			server: { port: 3000, middlewareMode: false },
 			resolve: {
+				// 3.34.1 解决了这个问题：https://github.com/tabler/tabler-icons/issues/1233#issuecomment-3094880359
 				alias: {
 					'@tabler/icons-react': '@tabler/icons-react/dist/esm/icons/index.mjs',
 				},
-				dedupe: ['@swc/helpers'],
 			},
 			plugins: [
 				tsconfigPaths(),
@@ -174,8 +174,8 @@ export class HMRService {
 				this.ctx.honoService.viteHonoDevServer,
 			],
 			// **服务端执行链**建议禁用依赖预优化
-			optimizeDeps: { disabled: true },
-			ssr: { external: ['react', 'react-dom', '@swc/helpers'] },
+			optimizeDeps: {},
+			ssr: { external: ['react', 'react-dom'] },
 		})
 		await server.listen()
 		server.printUrls()

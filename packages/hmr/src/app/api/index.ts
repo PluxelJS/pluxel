@@ -1,5 +1,5 @@
 import { Hono } from 'hono'
-import type { AppEnv } from '../../services/hono/env'
+import type { AppEnv } from './env'
 import pluginsApp from './plugins'
 
 const app = new Hono<AppEnv>()

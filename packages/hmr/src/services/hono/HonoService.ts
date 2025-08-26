@@ -82,6 +82,6 @@ export class HonoService {
 				}
 				return []
 			},
-		})
+		}) as any
 	}
 }
