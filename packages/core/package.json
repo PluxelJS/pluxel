@@ -36,7 +36,7 @@
   "devDependencies": {
     "@pluxel/context": "workspace:*",
     "diod": "workspace:*",
-    "eventure": "file:..\\..\\..\\event-hook"
+    "eventure": "eventure"
   },
   "publishConfig": {
     "exports": {

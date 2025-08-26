@@ -10,8 +10,9 @@
   "scripts": {
     "test": "turbo run test",
     "build": "turbo run build",
-    "dev": "pnpm --filter core dev",
-    "hmr": "pnpm --filter hmr dev"
+    "dev": "pnpm --filter runtime dev",
+    "dev:core": "pnpm --filter core dev",
+    "dev:hmr": "pnpm --filter hmr dev"
   },
   "devDependencies": {
     "@biomejs/biome": "^1.9.4",
