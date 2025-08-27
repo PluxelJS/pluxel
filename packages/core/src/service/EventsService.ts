@@ -1,10 +1,15 @@
 import { type Context, Injectable, symbols } from '@pluxel/context'
 // EventsService.ts
-import { type EventArgs, type EventEmitterOptions, Eventure } from 'eventure'
+import {
+	type EventArgs,
+	type EventEmitterOptions,
+	type EventListener,
+	Eventure,
+} from 'eventure'
 import type { PluginIdentifier, PluginInstance } from '../pluginImpl'
 
 const serviceName = 'events' as const
-declare module '@pluxel/context' {
+declare module '.' {
 	namespace Context {
 		interface Config {
 			[serviceName]?: EventEmitterOptions
@@ -28,32 +33,29 @@ export class EventsService extends Eventure<Events> {
 		private ctx: Context,
 		config?: EventEmitterOptions,
 	) {
-		const cfg: EventEmitterOptions = config ?? {}
+		const cfg: any = config ?? {}
 		cfg.logger = ctx.logger
-		super(config as any)
+		super(cfg)
 	}
 
-	// @ts-expect-error
-	override on: typeof this.addListener = (
-		event,
-		listener,
-		returnUnsub = false,
-	) => {
+	override on<K extends keyof Events>(
+		event: K,
+		listener: EventListener<Events[K]>,
+	): this {
 		;(listener as any)[symbols.ATTACH] = this.ctx
 		const unsub = super.addListener(event, listener, true)
 		this.ctx.scope.collectEffect(unsub)
-		return returnUnsub ? unsub : this
+		return this
 	}
-	// @ts-expect-error
-	override prependOn: typeof this.prependListener = (
-		event,
-		listener,
-		returnUnsub = false,
-	) => {
+
+	prependOn<K extends keyof Events>(
+		event: K,
+		listener: EventListener<Events[K]>,
+	): this {
 		;(listener as any)[symbols.ATTACH] = this.ctx
 		const unsub = super.prependListener(event, listener, true)
 		this.ctx.scope.collectEffect(unsub)
-		return returnUnsub ? unsub : this
+		return this
 	}
 
 	emitWithContext<K extends keyof Events>(

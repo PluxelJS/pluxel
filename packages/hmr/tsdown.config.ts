@@ -15,6 +15,8 @@ export default defineConfig({
 	dts: {
 		build: true,
 	},
+	// 不要内联 core，未来可能要用来 build。
+	external: ['@pluxel/core'],
 	format: ['esm'],
 	sourcemap: true,
 	clean: true,

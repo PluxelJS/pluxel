@@ -30,7 +30,7 @@
     "xstate": "5.20.1"
   },
   "peerDependencies": {
-    "tsdown": "*",
+    "tsdown": "workspace:*",
     "typescript": "*"
   },
   "devDependencies": {

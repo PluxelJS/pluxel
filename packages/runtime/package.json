@@ -22,6 +22,7 @@
     "hot": "bun --watch run src/index.ts"
   },
   "dependencies": {
+    "@pluxel/core": "workspace:*",
     "@pluxel/hmr": "workspace:*",
     "@pluxel/cli": "workspace:*",
     "ky": "^1.9.0",
