@@ -211,6 +211,9 @@ importers:
       option-t:
         specifier: ^54.2.2
         version: 54.2.2
+      reflect-metadata:
+        specifier: ^0.2.2
+        version: 0.2.2
 
   packages/hmr:
     dependencies:
