@@ -18,6 +18,7 @@
   },
   "scripts": {
     "dev": "bun src/index.ts",
+    "new": "bunx pluxel new plugin",
     "hot": "bun --watch run src/index.ts",
     "test": "bun test"
   },

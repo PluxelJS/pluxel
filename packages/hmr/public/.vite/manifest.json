@@ -1,6 +1,6 @@
 {
   "../components/src/form/DebugValues.tsx": {
-    "file": "assets/DebugValues-bnZzNwCh.js",
+    "file": "assets/DebugValues-DlUSZgbH.js",
     "name": "DebugValues",
     "src": "../components/src/form/DebugValues.tsx",
     "isDynamicEntry": true,
@@ -9,7 +9,7 @@
     ]
   },
   "src/client.tsx": {
-    "file": "assets/client-Dl3BGdYP.js",
+    "file": "assets/client-C5i2lrFC.js",
     "name": "client",
     "src": "src/client.tsx",
     "isEntry": true,

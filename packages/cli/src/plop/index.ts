@@ -115,7 +115,7 @@ export function newCommand() {
 				actions: [
 					{
 						type: 'addMany',
-						destination: join('plugins', '{{kebabCase name}}'),
+						destination: join('src', 'plugins', '{{kebabCase name}}'),
 						base,
 						templateFiles: join(base, '**/*'),
 						data: { ...answers, name: pkgName },
