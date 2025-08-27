@@ -15,8 +15,8 @@
     "dev:hmr": "pnpm --filter hmr dev"
   },
   "devDependencies": {
-    "@biomejs/biome": "^1.9.4",
-    "@oxc-project/runtime": "^0.78.0",
+    "@biomejs/biome": "^2.2.2",
+    "@oxc-project/runtime": "^0.82.3",
     "@types/bun": "latest",
     "husky": "^9.1.7",
     "is-ci": "^4.1.0",

@@ -1,27 +1,17 @@
 import { type Context, Injectable, symbols } from '@pluxel/context'
 // EventsService.ts
-import {
-	type EventArgs,
-	type EventEmitterOptions,
-	type EventListener,
-	Eventure,
-	type Unsubscribe,
-} from 'eventure'
-import type {
-	PluginConstructor,
-	PluginIdentifier,
-	PluginInstance,
-} from '../pluginImpl'
+import { type EventArgs, type EventEmitterOptions, Eventure } from 'eventure'
+import type { PluginIdentifier, PluginInstance } from '../pluginImpl'
 
+const serviceName = 'events' as const
 declare module '@pluxel/context' {
 	namespace Context {
 		interface Config {
-			events?: EventEmitterOptions
+			[serviceName]?: EventEmitterOptions
 		}
 	}
 	interface Context {
-		/** Service 实例 */
-		events: EventsService
+		[serviceName]: EventsService
 		on: EventsService['on']
 		prependOn: EventsService['prependOn']
 		emit: EventsService['emit']
@@ -30,18 +20,20 @@ declare module '@pluxel/context' {
 }
 
 @Injectable({
-	key: 'events',
+	key: serviceName,
 	methods: ['on', 'prependOn', 'emit', 'emitWithContext'] as const,
 })
 export class EventsService extends Eventure<Events> {
 	constructor(
 		private ctx: Context,
-		private config: EventEmitterOptions,
+		config?: EventEmitterOptions,
 	) {
+		const cfg: EventEmitterOptions = config ?? {}
+		cfg.logger = ctx.logger
 		super(config as any)
 	}
 
-	// @ts-ignore
+	// @ts-expect-error
 	override on: typeof this.addListener = (
 		event,
 		listener,
@@ -52,7 +44,7 @@ export class EventsService extends Eventure<Events> {
 		this.ctx.scope.collectEffect(unsub)
 		return returnUnsub ? unsub : this
 	}
-	// @ts-ignore
+	// @ts-expect-error
 	override prependOn: typeof this.prependListener = (
 		event,
 		listener,

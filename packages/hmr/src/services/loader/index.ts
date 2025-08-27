@@ -11,13 +11,13 @@ import { PluginScanner } from './PluginScanner'
 import { PluginRegistry } from './PluginRegistry'
 import { getDefault } from 'valibot'
 
+const serviceName = 'loader' as const
 declare module '@pluxel/core' {
 	interface Context {
-		loader: LoaderService
+		[serviceName]: LoaderService
 	}
 }
-
-@Injectable({ key: 'loader' })
+@Injectable({ key: serviceName })
 export class LoaderService {
 	private scanner = new PluginScanner()
 	public registry: PluginRegistry

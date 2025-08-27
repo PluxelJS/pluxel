@@ -1,13 +1,14 @@
 import { type Context, Injectable } from '@pluxel/context'
 
+const serviceName = 'logger' as const
 declare module '@pluxel/context' {
 	export interface Context {
-		logger: LoggerService
+		[serviceName]: LoggerService
 	}
 }
 
 @Injectable({
-	key: 'logger',
+	key: serviceName,
 })
 export class LoggerService {
 	constructor(private ctx: Context) {}

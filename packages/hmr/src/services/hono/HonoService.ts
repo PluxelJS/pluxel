@@ -7,13 +7,13 @@ import { ssrApp } from '../../server'
 import type { AppEnv, HonoType } from './env'
 import type { Plugin } from 'vite'
 
+const serviceName = 'honoService' as const
 declare module '@pluxel/core' {
 	interface Context {
-		honoService: HonoService
+		[serviceName]: HonoService
 	}
 }
-
-@Injectable({ key: 'honoService' })
+@Injectable({ key: serviceName })
 export class HonoService {
 	// 1. 先初始化 mods
 	private mods: Array<(app: HonoType) => void> = []

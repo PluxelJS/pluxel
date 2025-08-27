@@ -24,21 +24,23 @@ type PluginServiceConfig = {
 	startTimeoutMs?: number
 	stopTimeoutMs?: number
 }
+
+const serviceName = 'registry' as const
 declare module '@pluxel/context' {
 	namespace Context {
 		interface Config {
-			registry?: PluginServiceConfig
+			[serviceName]?: PluginServiceConfig
 		}
 	}
 	export interface Context {
-		registry: PluginService
+		[serviceName]: PluginService
 		pluginInfo: StableInfo
 		parent?: Context
 		caller?: Context
 	}
 }
 
-@Injectable({ key: 'registry' })
+@Injectable({ key: serviceName })
 export class PluginService {
 	// 容器：负责“构造实例 + 注入 ctx”；生命周期全由 XState 负责
 	public pluginRegistry: PluginContainer = new PluginContainer()

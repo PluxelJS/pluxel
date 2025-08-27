@@ -18,13 +18,13 @@ interface HMRConfig {
 	dir: string[]
 }
 
+const serviceName = 'hmrService' as const
 declare module '@pluxel/core' {
 	interface Context {
-		hmrService: HMRService
+		[serviceName]: HMRService
 	}
 }
-
-@Injectable({ key: 'hmrService' })
+@Injectable({ key: serviceName })
 export class HMRService {
 	private vite!: ViteDevServer
 	private vns!: ViteNodeServer

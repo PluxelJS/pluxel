@@ -1,7 +1,8 @@
 {
-	"$schema": "https://biomejs.dev/schemas/1.9.4/schema.json",
+	"root": false,
+	"$schema": "https://biomejs.dev/schemas/2.2.2/schema.json",
 	"vcs": { "enabled": true, "clientKind": "git", "useIgnoreFile": true },
-	"files": { "ignoreUnknown": false, "ignore": [] },
+	"files": { "ignoreUnknown": false, "includes": ["**"] },
 	"formatter": {
 		"enabled": true,
 		"useEditorconfig": true,
@@ -12,19 +13,18 @@
 		"lineWidth": 80,
 		"attributePosition": "auto",
 		"bracketSpacing": true,
-		"ignore": ["**/lib", "**/.tap", "**/*.md"]
+		"includes": ["**", "!**/lib", "!**/.tap", "!**/*.md"]
 	},
-	"organizeImports": { "enabled": true },
+	"assist": { "actions": { "source": { "organizeImports": "on" } } },
 	"linter": {
 		"enabled": true,
-		"ignore": ["**/*.test.ts", "tinybench/*"],
+		"includes": ["**", "!**/*.test.ts", "!**/tinybench/**/*"],
 		"rules": {
 			"recommended": true,
 			"complexity": {
 				"noExtraBooleanCast": "error",
-				"noMultipleSpacesInRegularExpressionLiterals": "error",
 				"noUselessCatch": "error",
-				"noWith": "error"
+				"noAdjacentSpacesInRegex": "error"
 			},
 			"correctness": {
 				"noConstAssign": "error",
@@ -34,7 +34,6 @@
 				"noGlobalObjectCalls": "error",
 				"noInnerDeclarations": "error",
 				"noInvalidConstructorSuper": "error",
-				"noNewSymbol": "error",
 				"noNonoctalDecimalEscape": "error",
 				"noPrecisionLoss": "error",
 				"noSelfAssign": "error",
@@ -49,7 +48,9 @@
 				"noUnusedVariables": "error",
 				"useIsNan": "error",
 				"useValidForDirection": "error",
-				"useYield": "error"
+				"useYield": "error",
+				"noInvalidBuiltinInstantiation": "error",
+				"useValidTypeof": "error"
 			},
 			"style": {
 				"useBlockStatements": "off",
@@ -82,7 +83,7 @@
 				"noSparseArray": "error",
 				"noUnsafeNegation": "error",
 				"useGetterReturn": "error",
-				"useValidTypeof": "error"
+				"noWith": "error"
 			}
 		}
 	},
@@ -100,9 +101,9 @@
 		}
 	},
 	"overrides": [
-		{ "include": ["*.mjs"] },
+		{ "includes": ["**/*.mjs"] },
 		{
-			"include": ["*.ts", "*.tsx"],
+			"includes": ["**/*.ts", "**/*.tsx"],
 			"linter": {
 				"rules": {
 					"complexity": { "noBannedTypes": "info" },
@@ -123,7 +124,7 @@
 			}
 		},
 		{
-			"include": ["test/**/*.ts"],
+			"includes": ["**/test/**/*.ts"],
 			"linter": {
 				"rules": {
 					"style": {

@@ -1,16 +1,17 @@
 import { type Context, Injectable } from '@pluxel/context'
 import type { PluginIdentifier } from '../pluginImpl'
 
+const serviceName = 'scope' as const
 declare module '@pluxel/context' {
 	interface Context {
-		scope: EffectScopeService
+		[serviceName]: EffectScopeService
 		collectEffect: EffectScopeService['collectEffect']
 		disposeAll: EffectScopeService['disposeAll']
 	}
 }
 
 @Injectable({
-	key: 'scope',
+	key: serviceName,
 	methods: ['collectEffect', 'disposeAll'] as const,
 })
 export class EffectScopeService {

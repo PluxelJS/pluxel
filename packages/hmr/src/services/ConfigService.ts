@@ -26,9 +26,8 @@ export interface ConfigShape {
 	extra: Record<string, any>
 }
 
-@Injectable
+@Injectable({ key: 'configService' })
 export class ConfigService {
-	static key = 'configService'
 	private data!: ConfigShape
 	private watcher!: FSWatcher
 	private isWriting = false
