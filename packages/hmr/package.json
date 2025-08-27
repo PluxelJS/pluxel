@@ -20,6 +20,9 @@
     },
     "./package.json": "./package.json"
   },
+  "files": [
+    "./dist"
+  ],
   "scripts": {
     "dev": "bun src/start.ts",
     "hot": "bun --hot src/start.ts",

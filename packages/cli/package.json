@@ -1,0 +1,45 @@
+{
+  "private": true,
+  "name": "@pluxel/cli",
+  "bin": {
+    "pluxel": "dist/cli.js"
+  },
+  "version": "0.1.0",
+  "description": "Demo example that imports a local package",
+  "main": "./dist/index.cjs",
+  "type": "module",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.cts",
+  "exports": {
+    ".": {
+      "@pluxel/source": "./src/index.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    },
+    "./package.json": "./package.json"
+  },
+  "scripts": {
+    "dev": "bun src/cli.ts new",
+    "test": "bun test",
+    "build": "tsdown"
+  },
+  "peerDependencies": {
+    "tsdown": "*",
+    "typescript": "*"
+  },
+  "publishConfig": {
+    "exports": {
+      ".": {
+        "import": "./dist/index.js",
+        "require": "./dist/index.cjs"
+      },
+      "./package.json": "./package.json"
+    }
+  },
+  "devDependencies": {
+    "commander": "^14.0.0",
+    "inquirer": "^12.9.4",
+    "node-plop": "^0.32.0",
+    "pathe": "^2.0.3"
+  }
+}

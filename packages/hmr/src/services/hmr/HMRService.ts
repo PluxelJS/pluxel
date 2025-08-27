@@ -2,17 +2,16 @@ import { type Context, Injectable } from '@pluxel/core'
 import { resolve } from 'pathe'
 import swc from 'unplugin-swc'
 import {
-	type Plugin,
-	type ViteDevServer,
 	createFilter,
 	createServer,
 	normalizePath, // ← 统一为 POSIX 分隔符
-	version as viteVersion,
+	type Plugin,
+	type ViteDevServer,
 } from 'vite'
-import tsconfigPaths from 'vite-tsconfig-paths'
-import { ViteNodeServer } from 'vite-node/server'
 import { ViteNodeRunner } from 'vite-node/client'
+import { ViteNodeServer } from 'vite-node/server'
 import { installSourcemapsSupport } from 'vite-node/source-map'
+import tsconfigPaths from 'vite-tsconfig-paths'
 
 interface HMRConfig {
 	dir: string[]
@@ -83,7 +82,7 @@ export class HMRService {
 				})
 
 				console.time('[HMR] 扫描文件')
-				const files = await this.ctx.loader.scanPossiblePaths(this.config.dir)
+				const files = await this.ctx.scanService.scan(this.config.dir)
 				console.timeEnd('[HMR] 扫描文件')
 
 				console.time('[HMR] 预热/执行模块')

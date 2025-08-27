@@ -1,15 +1,13 @@
 // services/LoaderService.ts
 import {
 	type Context,
-	Injectable,
-	type PluginConstructor,
 	getClassParam,
 	getOptionalPredicate,
 	getPluginInfo,
+	Injectable,
+	type PluginConstructor,
 } from '@pluxel/core'
-import { PluginScanner } from './PluginScanner'
 import { PluginRegistry } from './PluginRegistry'
-import { getDefault } from 'valibot'
 
 const serviceName = 'loader' as const
 declare module '@pluxel/core' {
@@ -19,7 +17,6 @@ declare module '@pluxel/core' {
 }
 @Injectable({ key: serviceName })
 export class LoaderService {
-	private scanner = new PluginScanner()
 	public registry: PluginRegistry
 
 	constructor(private ctx: Context) {
@@ -62,13 +59,6 @@ export class LoaderService {
 			import.meta.hot.accept((newMod) => this.loadFileModule(id, newMod))
 			import.meta.hot.dispose(() => this.registry.unregister(id))
 		}
-	}
-
-	/**
-	 * Scan directories for plugin entry paths.
-	 */
-	async scanPossiblePaths(dirs: string[]): Promise<string[]> {
-		return this.scanner.findEntries(dirs)
 	}
 
 	/**

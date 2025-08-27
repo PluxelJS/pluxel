@@ -10,12 +10,10 @@ export default defineConfig({
 	},
 	env: {
 		NODE_ENV: 'production',
-	},
-	define: {
-		'import.meta.env.PROD': 'true',
+		PROD: true,
 	},
 	dts: {
-		sourcemap: true,
+		build: true,
 	},
 	format: ['esm'],
 	sourcemap: true,
