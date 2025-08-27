@@ -20,7 +20,6 @@
   },
   "scripts": {
     "dev": "bun src/cli.ts new",
-    "test": "bun test",
     "build": "tsdown"
   },
   "peerDependencies": {
