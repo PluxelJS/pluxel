@@ -23,7 +23,7 @@
 		"./public"
 	],
 	"scripts": {
-		"dev": "bun src/start.ts",
+		"dev": "bun --conditions=\"@pluxel/source\" src/start.ts",
 		"hot": "bun --hot src/start.ts",
 		"build": "tsdown",
 		"web": "vite build"

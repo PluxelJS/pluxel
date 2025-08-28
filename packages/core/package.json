@@ -9,14 +9,12 @@
 	"type": "module",
 	"exports": {
 		".": {
-			"@pluxel/source": "./src/index.ts",
-			"bun": "./src/bun.ts",
+			"@pluxel/source": "./src/bun.ts",
 			"import": "./dist/index.js",
 			"require": "./dist/index.cjs"
 		},
 		"./service": {
-			"@pluxel/source": "./src/service/index.ts",
-			"bun": "./src/bun.ts",
+			"@pluxel/source": "./src/bun.ts",
 			"import": "./dist/service.js",
 			"require": "./dist/service.cjs"
 		},

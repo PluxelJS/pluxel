@@ -31,6 +31,7 @@ export class HMRService {
 	private filter!: (id: string) => boolean
 
 	private swc = swc.vite({
+		sourceMaps: true,
 		jsc: {
 			parser: { syntax: 'typescript', decorators: true, tsx: true },
 			transform: {
