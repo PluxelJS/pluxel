@@ -1,11 +1,11 @@
 // tests/basic-with-dependencies.spec.ts
 import 'reflect-metadata'
-import { describe, it, expect } from 'bun:test'
+import { describe, expect, it } from 'bun:test'
 import { ContainerBuilder } from '../src'
+import { expectExist, expectOk } from './_helpers'
 import { Agenda } from './fixtures/agenda'
 import { Calendar } from './fixtures/calendar'
 import { Clock } from './fixtures/clock'
-import { expectOk, expectExist } from './_helpers'
 
 describe('returns registered instance with basic dependencies', () => {
 	it('resolves Agenda with its basic deps', () => {

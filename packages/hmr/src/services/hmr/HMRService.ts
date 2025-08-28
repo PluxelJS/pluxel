@@ -150,8 +150,7 @@ export class HMRService {
 			.sort(([, a], [, b]) => b.loadMs - a.loadMs)
 			.slice(0, 5)
 		this.ctx.logger.info('【Top 5 慢加载文件】')
-		for (const [p, t] of top)
-			this.ctx.logger.info(`  ${t.loadMs.toFixed(1)}ms → ${p}`)
+		for (const [p, t] of top) this.ctx.logger.info(`  ${t.loadMs.toFixed(1)}ms → ${p}`)
 
 		return res
 	}
@@ -178,9 +177,7 @@ export class HMRService {
 		})
 		await server.listen()
 		server.printUrls()
-		this.ctx.logger.info(
-			`HMR 服务已启动，只监听：${this.config.dir.join(', ')}`,
-		)
+		this.ctx.logger.info(`HMR 服务已启动，只监听：${this.config.dir.join(', ')}`)
 	}
 
 	// —— 小工具：去掉 ?v= / ?import 等查询 ——

@@ -19,8 +19,7 @@ export class Test extends BasePlugin {
 			parts: ['api', 'comments', 'create', 123],
 			ttlMs: 2000,
 		})
-		if (!cd.ok)
-			console.log(`冷却中，请 ${Math.ceil(cd.retryAfterMs / 1000)} 秒后再试`)
+		if (!cd.ok) console.log(`冷却中，请 ${Math.ceil(cd.retryAfterMs / 1000)} 秒后再试`)
 
 		// 滑动窗口：60s 内最多 20 次（更公平）
 		const sw = await rates.guard({
@@ -29,8 +28,7 @@ export class Test extends BasePlugin {
 			windowMs: 60_000,
 			limit: 20,
 		})
-		if (!sw.ok)
-			console.log(`太快啦，约 ${Math.ceil(sw.retryAfterMs / 1000)} 秒后再试`)
+		if (!sw.ok) console.log(`太快啦，约 ${Math.ceil(sw.retryAfterMs / 1000)} 秒后再试`)
 
 		// 令牌桶：容量 40，匀速 10/s，每次耗 1 token（弹性更好）
 		const tb = await rates.guard({
@@ -39,8 +37,7 @@ export class Test extends BasePlugin {
 			cap: 40,
 			refillPerSec: 10,
 		})
-		if (!tb.ok)
-			console.log(`拥挤中，${Math.ceil(tb.retryAfterMs / 1000)} 秒后重试`)
+		if (!tb.ok) console.log(`拥挤中，${Math.ceil(tb.retryAfterMs / 1000)} 秒后重试`)
 		console.log(cd, sw, tb)
 	}
 

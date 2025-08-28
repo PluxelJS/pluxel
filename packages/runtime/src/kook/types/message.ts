@@ -106,14 +106,7 @@ export interface Card {
 
 export namespace Card {
 	export type Theme = 'primary' | 'secondary' | 'warning' | 'danger' | 'info'
-	export type Module =
-		| Section
-		| ImageGroup
-		| Header
-		| Divider
-		| File
-		| Countdown
-		| Context
+	export type Module = Section | ImageGroup | Header | Divider | File | Countdown | Context
 
 	export interface Text {
 		type: 'plain-text' | 'kmarkdown'

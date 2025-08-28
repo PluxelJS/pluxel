@@ -1,3 +1,4 @@
+import type { Bot } from './bot'
 import type {
 	EventSession,
 	IAddedBlockListBody,
@@ -39,7 +40,7 @@ import type {
 	NoticeType,
 	PayLoad,
 } from './types'
-import type { Bot } from './bot'
+
 declare module '@pluxel/hmr/services' {
 	interface Events extends KookEvent {}
 }
@@ -99,53 +100,26 @@ export interface KookEvent {
 	'message-deleted'(bot: Bot, session: EventSession<IDeletedMessageBody>): void
 	'message-updated'(bot: Bot, session: EventSession<IUpdatedMessageBody>): void
 	'message-pinned'(bot: Bot, session: EventSession<IPinnedMessageBody>): void
-	'message-unpinned'(
-		bot: Bot,
-		session: EventSession<IUnPinnedMessageBody>,
-	): void
+	'message-unpinned'(bot: Bot, session: EventSession<IUnPinnedMessageBody>): void
 	'reaction-added'(bot: Bot, session: EventSession<IAddedReactionBody>): void
-	'reaction-removed'(
-		bot: Bot,
-		session: EventSession<IDeletedReactionBody>,
-	): void
+	'reaction-removed'(bot: Bot, session: EventSession<IDeletedReactionBody>): void
 	'channel-added'(bot: Bot, session: EventSession<IAddedChannelBody>): void
 	'channel-updated'(bot: Bot, session: EventSession<IUpdatedChannelBody>): void
 	'channel-deleted'(bot: Bot, session: EventSession<IDeletedChannelBody>): void
 
 	// 私聊
-	'private-message-created'(
-		bot: Bot,
-		session: MessageSession<MessageExtra>,
-	): void
-	'private-message-deleted'(
-		bot: Bot,
-		session: EventSession<IDeletedPrivateMessageBody>,
-	): void
-	'private-message-updated'(
-		bot: Bot,
-		session: EventSession<IUpdatedPrivateMessageBody>,
-	): void
-	'private-reaction-added'(
-		bot: Bot,
-		session: EventSession<IPrivateAddedReactionBody>,
-	): void
-	'private-reaction-removed'(
-		bot: Bot,
-		session: EventSession<IPrivateDeletedReactionBody>,
-	): void
+	'private-message-created'(bot: Bot, session: MessageSession<MessageExtra>): void
+	'private-message-deleted'(bot: Bot, session: EventSession<IDeletedPrivateMessageBody>): void
+	'private-message-updated'(bot: Bot, session: EventSession<IUpdatedPrivateMessageBody>): void
+	'private-reaction-added'(bot: Bot, session: EventSession<IPrivateAddedReactionBody>): void
+	'private-reaction-removed'(bot: Bot, session: EventSession<IPrivateDeletedReactionBody>): void
 
 	// 服务器成员
 	'member-joined'(bot: Bot, session: EventSession<IJoinedGuildBody>): void
 	'member-exited'(bot: Bot, session: EventSession<IExitedGuildBody>): void
-	'member-updated'(
-		bot: Bot,
-		session: EventSession<IUpdatedGuildMemberBody>,
-	): void
+	'member-updated'(bot: Bot, session: EventSession<IUpdatedGuildMemberBody>): void
 	'member-online'(bot: Bot, session: EventSession<IGuildMemberOnlineBody>): void
-	'member-offline'(
-		bot: Bot,
-		session: EventSession<IGuildMemberOfflineBody>,
-	): void
+	'member-offline'(bot: Bot, session: EventSession<IGuildMemberOfflineBody>): void
 
 	// 服务器角色
 	'roles-added'(bot: Bot, session: EventSession<IAddedRoleBody>): void
@@ -165,12 +139,6 @@ export interface KookEvent {
 	'voice-joined'(bot: Bot, session: EventSession<IJoinedChannelBody>): void
 	'voice-exited'(bot: Bot, session: EventSession<IExitedChannelBody>): void
 	'user-updated'(bot: Bot, session: EventSession<IUserUpdatedBody>): void
-	'self-guild-joined'(
-		bot: Bot,
-		session: EventSession<ISelfJoinedGuildBody>,
-	): void
-	'self-guild-leave'(
-		bot: Bot,
-		session: EventSession<ISelfExitedGuildBody>,
-	): void
+	'self-guild-joined'(bot: Bot, session: EventSession<ISelfJoinedGuildBody>): void
+	'self-guild-leave'(bot: Bot, session: EventSession<ISelfExitedGuildBody>): void
 }

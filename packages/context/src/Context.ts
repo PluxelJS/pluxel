@@ -1,11 +1,6 @@
 // Context.ts
 
-import type {
-	ServiceCfg,
-	ServiceClass,
-	ServiceContext,
-	ServiceInst,
-} from './service-types'
+import type { ServiceCfg, ServiceClass, ServiceContext, ServiceInst } from './service-types'
 
 type SymMap = { [k in symbol]?: symbol }
 
@@ -36,9 +31,7 @@ export class Context {
 		if (parent) this.instances = parent.instances
 	}
 
-	static registerService<S extends new (ctx: any, cfg: any) => object>(
-		ctor: ServiceClass<S>,
-	) {
+	static registerService<S extends new (ctx: any, cfg: any) => object>(ctor: ServiceClass<S>) {
 		const sk = Symbol(ctor.name)
 		const key = (ctor.key as string) ?? ctor.name.replace(/Service$/, '')
 		if (Context.registeredKeys.has(key)) {
@@ -57,9 +50,7 @@ export class Context {
 					this.mapping[sk] = ik = sk
 				}
 
-				const store = Object.prototype.hasOwnProperty.call(this.mapping, sk)
-					? this.instances
-					: this.root.instances
+				const store = Object.hasOwn(this.mapping, sk) ? this.instances : this.root.instances
 
 				let inst = store[ik] as ServiceInst<S>
 				if (inst) {
@@ -102,8 +93,7 @@ export class Context {
 		// —— 新增：把 overrideCtor 也注册到同一个 sk ——
 		Context.serviceKeyMap.set(overrideCtor, sk)
 		// 2) 确保新 ctor 有同样的 key（属性名）
-		const key =
-			(original.key as string) ?? original.name.replace(/Service$/, '')
+		const key = (original.key as string) ?? original.name.replace(/Service$/, '')
 		;(overrideCtor as any).key = (original as any).key // 保险起见
 
 		// 3) 重新在原型上 define，一次性把 overrideCtor capture 进闭包
@@ -115,9 +105,7 @@ export class Context {
 					this.mapping[sk] = ik = sk
 				}
 
-				const store = Object.prototype.hasOwnProperty.call(this.mapping, sk)
-					? this.instances
-					: this.root.instances
+				const store = Object.hasOwn(this.mapping, sk) ? this.instances : this.root.instances
 
 				let inst = store[ik] as ServiceInst<S>
 				if (inst) {

@@ -1,20 +1,20 @@
-import type { DescriptionAction, TitleAction } from 'valibot'
-import type { SchemaWithPipe, SchemaWithPipeAsync } from 'valibot'
 import type {
 	BaseIssue,
 	BaseSchema,
 	BaseSchemaAsync,
+	DescriptionAction,
 	PipeItem,
 	PipeItemAsync,
+	SchemaWithPipe,
+	SchemaWithPipeAsync,
+	TitleAction,
 } from 'valibot'
 import type { MetaType, MetaTypeReturn } from './MetaType'
 
 /**
  * Metadata action type.
  */
-type MetadataAction =
-	| TitleAction<unknown, string>
-	| DescriptionAction<unknown, string>
+type MetadataAction = TitleAction<unknown, string> | DescriptionAction<unknown, string>
 
 /**
  * Schema type.

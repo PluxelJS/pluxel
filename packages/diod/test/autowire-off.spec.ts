@@ -1,14 +1,14 @@
 // tests/autowire-off.ts
 import 'reflect-metadata'
-import { describe, it, expect } from 'bun:test'
+import { describe, expect, it } from 'bun:test'
 import { ContainerBuilder } from '../src'
+import { expectOk } from './_helpers'
 import {
 	BankUser,
 	SessionManager,
-	ShopUser,
 	ShoppingCart,
+	ShopUser,
 } from './fixtures/user'
-import { expectOk } from './_helpers'
 
 describe('the constructor of the extended class is injected if target has not constructor', () => {
 	it('injects deps into subclass without an explicit constructor', () => {

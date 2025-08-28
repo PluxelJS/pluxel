@@ -14,7 +14,6 @@ export function resolveTemplatesDir(...segments: string[]) {
 	if (import.meta.env.PROD) {
 		// 与 dist 同级
 		return resolve(__dirname, './plop-templates', ...segments)
-	} else {
-		return join(__dirname, '../../plop-templates', ...segments)
 	}
+	return join(__dirname, '../../plop-templates', ...segments)
 }

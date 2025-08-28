@@ -1,6 +1,5 @@
 // internal-types.ts
-import type { CheckRegistrationType, CheckScopeType } from './types'
-import type { ScopeType } from './types'
+import type { CheckRegistrationType, CheckScopeType, ScopeType } from './types'
 import type {
 	Abstract,
 	AliasKey,

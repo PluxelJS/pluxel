@@ -1,14 +1,14 @@
 // tests/instances.spec.ts
 import 'reflect-metadata'
-import { describe, it, expect } from 'bun:test'
+import { describe, expect, it } from 'bun:test'
 import { ContainerBuilder } from '../src'
+import { expectExist, expectOk } from './_helpers'
 import { Agenda } from './fixtures/agenda'
 import { Calendar } from './fixtures/calendar'
 import { Clock } from './fixtures/clock'
 import { ConsoleLogger } from './fixtures/console-logger'
 import { Person } from './fixtures/person'
 import { Sayer } from './fixtures/sayer'
-import { expectOk, expectExist } from './_helpers'
 
 describe('returns manually created class instance', () => {
 	it('resolves user-provided instances (useInstance)', () => {

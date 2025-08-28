@@ -1,57 +1,54 @@
 {
-  "private": true,
-  "name": "@pluxel/core",
-  "version": "0.1.0",
-  "description": "Demo example that imports a local package",
-  "type": "module",
-  "exports": {
-    ".": {
-      "@pluxel/source": "./src/index.ts",
-      "bun": "./src/bun.ts",
-      "import": "./dist/index.js",
-      "require": "./dist/index.cjs"
-    },
-    "./service": {
-      "@pluxel/source": "./src/service/index.ts",
-      "bun": "./src/bun.ts",
-      "import": "./dist/service.js",
-      "require": "./dist/service.cjs"
-    },
-    "./package.json": "./package.json"
-  },
-  "scripts": {
-    "build": "tsdown",
-    "dev": "bun --watch run src/start.ts"
-  },
-  "dependencies": {
-    "option-t": "54.2.2",
-    "reflect-metadata": "^0.2.2",
-    "valtio": "2.1.5",
-    "xstate": "5.20.1"
-  },
-  "peerDependencies": {
-    "tsdown": "workspace:*",
-    "typescript": "*"
-  },
-  "devDependencies": {
-    "@pluxel/context": "workspace:*",
-    "diod": "workspace:*",
-    "eventure": "latest"
-  },
-  "publishConfig": {
-    "exports": {
-      ".": {
-        "import": "./dist/index.js",
-        "require": "./dist/index.cjs"
-      },
-      "./service": {
-        "import": "./dist/service.js",
-        "require": "./dist/service.cjs"
-      },
-      "./package.json": "./package.json"
-    }
-  },
-  "main": "./dist/index.cjs",
-  "module": "./dist/index.js",
-  "types": "./dist/index.d.cts"
+	"private": true,
+	"name": "@pluxel/core",
+	"version": "0.1.0",
+	"description": "Demo example that imports a local package",
+	"type": "module",
+	"exports": {
+		".": {
+			"@pluxel/source": "./src/index.ts",
+			"bun": "./src/bun.ts",
+			"import": "./dist/index.js",
+			"require": "./dist/index.cjs"
+		},
+		"./service": {
+			"@pluxel/source": "./src/service/index.ts",
+			"bun": "./src/bun.ts",
+			"import": "./dist/service.js",
+			"require": "./dist/service.cjs"
+		},
+		"./package.json": "./package.json"
+	},
+	"scripts": {
+		"build": "tsdown",
+		"dev": "bun --watch run src/start.ts"
+	},
+	"dependencies": {
+		"option-t": "54.2.2",
+		"reflect-metadata": "^0.2.2",
+		"valtio": "2.1.5",
+		"xstate": "5.20.1"
+	},
+	"peerDependencies": {},
+	"devDependencies": {
+		"@pluxel/context": "workspace:*",
+		"diod": "workspace:*",
+		"eventure": "latest"
+	},
+	"publishConfig": {
+		"exports": {
+			".": {
+				"import": "./dist/index.js",
+				"require": "./dist/index.cjs"
+			},
+			"./service": {
+				"import": "./dist/service.js",
+				"require": "./dist/service.cjs"
+			},
+			"./package.json": "./package.json"
+		}
+	},
+	"main": "./dist/index.cjs",
+	"module": "./dist/index.js",
+	"types": "./dist/index.d.cts"
 }

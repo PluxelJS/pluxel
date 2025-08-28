@@ -1,7 +1,12 @@
 // tests/builder.spec.ts
 import 'reflect-metadata'
-import { describe, it, expect } from 'bun:test'
+import { describe, expect, it } from 'bun:test'
 import { ContainerBuilder } from '../src'
+import {
+	ServiceVerificationAggregateError,
+	type VerificationError,
+} from '../src/verifier'
+import { expectErr, expectExist, expectOk } from './_helpers'
 import { Agenda, Schedule } from './fixtures/agenda'
 import {
 	Circular1,
@@ -15,11 +20,6 @@ import { Routes } from './fixtures/extended-classes'
 import { NotDecorated } from './fixtures/not-decorated'
 import { NotPerson } from './fixtures/not-person'
 import { BankUser } from './fixtures/user'
-import { expectOk, expectErr, expectExist } from './_helpers'
-import {
-	ServiceVerificationAggregateError,
-	type VerificationError,
-} from '../src/verifier'
 
 /**
  * 小工具：断言 build 的 Err 是聚合错误，并返回该错误对象（强类型）

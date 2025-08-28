@@ -1,10 +1,10 @@
+import { dehydrate } from '@tanstack/react-query'
+import { Hono } from 'hono'
+import type { AppEnv } from '../../hmr/src/services/hono/env'
 import { App } from './app'
 import { client } from './app/rpc'
-import { renderMiddleware } from './render'
-import type { AppEnv } from '../../hmr/src/services/hono/env'
-import { Hono } from 'hono'
-import { dehydrate } from '@tanstack/react-query'
 import { queryClient } from './queryClient'
+import { renderMiddleware } from './render'
 
 const ssrApp = new Hono<AppEnv>()
 
@@ -26,8 +26,7 @@ ssrApp.get('/plugins', async (c) => {
 		}),
 		qc.prefetchQuery({
 			queryKey: ['plugins', 'groups'],
-			queryFn: async () =>
-				(await client.plugins.groups.$get({ json: [] })).json(),
+			queryFn: async () => (await client.plugins.groups.$get({ json: [] })).json(),
 		}),
 	])
 

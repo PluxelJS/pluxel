@@ -2,9 +2,7 @@ import type * as v from 'valibot'
 import { META_MAP } from '~/utils'
 import type { NumberMetaOptions } from './type'
 
-type PipedNumberSchema = v.SchemaWithPipe<
-	readonly [v.NumberSchema<any>, ...any]
->
+type PipedNumberSchema = v.SchemaWithPipe<readonly [v.NumberSchema<any>, ...any]>
 
 /** —— 映射 valibot 官方自带 validation 的特殊 key —— **/
 const validationKey = {
@@ -12,9 +10,7 @@ const validationKey = {
 	max_value: 'max',
 } as const
 
-export function extractNumberProps(
-	schema: PipedNumberSchema,
-): NumberMetaOptions {
+export function extractNumberProps(schema: PipedNumberSchema): NumberMetaOptions {
 	const meta: NumberMetaOptions = { type: 'input', options: {} }
 
 	const pipe = schema.pipe
@@ -36,8 +32,7 @@ export function extractNumberProps(
 		}
 
 		if (item.type in validationKey) {
-			meta.options[validationKey[item.type as keyof typeof validationKey]] =
-				item.requirement
+			meta.options[validationKey[item.type as keyof typeof validationKey]] = item.requirement
 		}
 	}
 

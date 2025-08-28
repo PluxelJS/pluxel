@@ -1,20 +1,6 @@
 // PluginInfo.tsx
-import {
-	Title,
-	Text,
-	Group,
-	Badge,
-	SimpleGrid,
-	Box,
-	Anchor,
-	Divider,
-} from '@mantine/core'
-import {
-	IconUser,
-	IconInfoCircle,
-	IconLink,
-	IconCertificate,
-} from '@tabler/icons-react'
+import { Anchor, Badge, Box, Divider, Group, SimpleGrid, Text, Title } from '@mantine/core'
+import { IconCertificate, IconInfoCircle, IconLink, IconUser } from '@tabler/icons-react'
 
 export interface PluginInfoProps {
 	name: string
@@ -96,13 +82,7 @@ export function PluginInfo({
 						</Text>
 						<SimpleGrid cols={1} spacing="xs">
 							{links.map((link, idx) => (
-								<Anchor
-									key={idx}
-									href={link.url}
-									size="sm"
-									lineClamp={1}
-									target="_blank"
-								>
+								<Anchor key={idx} href={link.url} size="sm" lineClamp={1} target="_blank">
 									<Group gap={4} align="center">
 										<IconLink size={12} />
 										<Text size="xs">{link.label}</Text>

@@ -2,7 +2,7 @@
 import { Hono } from 'hono'
 import { streamSSE } from 'hono/streaming'
 import type { LogRecord } from './createLogger'
-import { getOrderedLogs, events } from './createLogger'
+import { events, getOrderedLogs } from './createLogger'
 
 const app = new Hono()
 

@@ -1,7 +1,7 @@
-import { Hono } from 'hono'
-import type { AppEnv } from '../../../services/hono/env'
-import * as v from 'valibot'
 import { vValidator } from '@hono/valibot-validator'
+import { Hono } from 'hono'
+import * as v from 'valibot'
+import type { AppEnv } from '../../../services/hono/env'
 
 const updateGroupsSchema = v.array(
 	v.object({

@@ -1,15 +1,11 @@
-import React from 'react'
-import { ActionIcon, Tooltip, Group } from '@mantine/core'
-import {
-	IconPlayerPlay,
-	IconSquareX,
-	IconRotateClockwise,
-} from '@tabler/icons-react'
-import { client } from '../rpc'
-import type { InferRequestType, InferSuccessResponse } from '../rpc'
-import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { notifications } from '@mantine/notifications'
+import { ActionIcon, Group, Tooltip } from '@mantine/core'
 import { openConfirmModal } from '@mantine/modals'
+import { notifications } from '@mantine/notifications'
+import { IconPlayerPlay, IconRotateClockwise, IconSquareX } from '@tabler/icons-react'
+import { useMutation, useQueryClient } from '@tanstack/react-query'
+import React from 'react'
+import type { InferRequestType, InferSuccessResponse } from '../rpc'
+import { client } from '../rpc'
 import type { Dependencies } from './Plugin'
 export interface ActionBarProps {
 	pluginName: string
@@ -18,11 +14,7 @@ export interface ActionBarProps {
 	dependencies?: Dependencies
 }
 
-export function ActionBar({
-	pluginName,
-	isSelfRunning,
-	dependencies = [],
-}: ActionBarProps) {
+export function ActionBar({ pluginName, isSelfRunning, dependencies = [] }: ActionBarProps) {
 	// RPC 更新方法
 	const $post = client.plugins[':name'].status.$post
 
@@ -68,11 +60,8 @@ export function ActionBar({
 				children: (
 					<div>
 						请确认是否强制
-						{status === 'start' ? '启动' : status === 'stop' ? '终止' : '重启'}
-						。
-						<div style={{ marginTop: 10 }}>
-							以下依赖尚未运行：{missing.join('，')}
-						</div>
+						{status === 'start' ? '启动' : status === 'stop' ? '终止' : '重启'}。
+						<div style={{ marginTop: 10 }}>以下依赖尚未运行：{missing.join('，')}</div>
 					</div>
 				),
 				labels: { confirm: '继续', cancel: '取消' },

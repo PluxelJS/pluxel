@@ -1,12 +1,12 @@
 // tests/_helpers.ts
-import type { Result } from 'option-t/plain_result'
-import {
-	expectOk as expectOkForResult,
-	expectErr as expectErrForResult,
-} from 'option-t/plain_result/result'
 
 import type { Maybe } from 'option-t/maybe'
 import { expectNotNullOrUndefined } from 'option-t/maybe'
+import type { Result } from 'option-t/plain_result'
+import {
+	expectErr as expectErrForResult,
+	expectOk as expectOkForResult,
+} from 'option-t/plain_result/result'
 
 /** 断言 Result 是 Ok 并返回值；若不是 Ok 会抛 TypeError（来自 option-t） */
 export const expectOk = <T, E>(r: Result<T, E>, msg = 'expected Ok'): T =>

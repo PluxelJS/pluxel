@@ -11,10 +11,7 @@ export interface ArgvParseOptions {
 	preserveEmptyQuotes?: boolean
 }
 
-export function parseArgsStringToArgv(
-	value: string,
-	opts: ArgvParseOptions = {},
-): string[] {
+export function parseArgsStringToArgv(value: string, opts: ArgvParseOptions = {}): string[] {
 	const preserveEmptyQuotes = opts.preserveEmptyQuotes ?? true
 
 	const out: string[] = []
@@ -49,8 +46,7 @@ export function parseArgsStringToArgv(
 	let inQuote = 0 // 0/34(")/39(')
 	let sawQuote = false // 当前 token 是否出现过引号
 
-	const isWS = (code: number) =>
-		code === 32 || code === 9 || code === 10 || code === 13 // space \t \n \r
+	const isWS = (code: number) => code === 32 || code === 9 || code === 10 || code === 13 // space \t \n \r
 
 	while (i < n) {
 		const code = value.charCodeAt(i)
@@ -91,11 +87,7 @@ export function parseArgsStringToArgv(
 		if (inQuote === 0 && isWS(code)) {
 			if (i > segStart) pieces.push(value.slice(segStart, i))
 			const token =
-				pieces.length > 0
-					? pieces.join('')
-					: sawQuote && preserveEmptyQuotes
-						? ''
-						: null
+				pieces.length > 0 ? pieces.join('') : sawQuote && preserveEmptyQuotes ? '' : null
 			if (token !== null) out.push(token as string)
 
 			// 重置 token 状态
@@ -115,12 +107,7 @@ export function parseArgsStringToArgv(
 
 	// 收尾
 	if (i > segStart) pieces.push(value.slice(segStart, i))
-	const last =
-		pieces.length > 0
-			? pieces.join('')
-			: sawQuote && preserveEmptyQuotes
-				? ''
-				: null
+	const last = pieces.length > 0 ? pieces.join('') : sawQuote && preserveEmptyQuotes ? '' : null
 	if (last !== null) out.push(last as string)
 
 	return out

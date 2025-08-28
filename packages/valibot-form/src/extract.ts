@@ -1,16 +1,8 @@
 import type { OptionalSchema } from 'valibot'
 import type { FormMeta } from './actions'
-import {
-	type ExtractMap,
-	META_MAP,
-	type Schema,
-	extractMap,
-	getFormMeta,
-} from './utils'
+import { type ExtractMap, extractMap, getFormMeta, META_MAP, type Schema } from './utils'
 export type FormBaseInfo = FormMeta & { required: boolean }
-export type ExtractedProps<T extends keyof ExtractMap> = ReturnType<
-	ExtractMap[T]['extract']
->
+export type ExtractedProps<T extends keyof ExtractMap> = ReturnType<ExtractMap[T]['extract']>
 export function extractInfo(schema: Schema, defaults: FormMeta) {
 	const formMeta = getFormMeta(schema, META_MAP.FORM) ?? defaults
 

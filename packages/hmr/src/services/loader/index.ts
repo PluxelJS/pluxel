@@ -70,8 +70,7 @@ export class LoaderService {
 
 	getFullPluginStatus() {
 		const loaded = this.registry.nameMap // Map<string, Constructor>
-		const byId: Record<string, { id: string; isRunning: boolean }> =
-			Object.create(null)
+		const byId: Record<string, { id: string; isRunning: boolean }> = Object.create(null)
 
 		let runningCount = 0
 		let stoppedCount = 0

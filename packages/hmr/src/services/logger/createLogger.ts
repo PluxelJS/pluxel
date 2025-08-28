@@ -1,12 +1,13 @@
 // src/createLogger.ts
+
+import EventEmitter from 'node:events'
 import fs from 'node:fs'
 import path from 'node:path'
 import { Writable } from 'node:stream'
-import EventEmitter from 'node:events'
-import * as rfs from 'rotating-file-stream'
-import pino, { multistream, type Logger, type LoggerOptions } from 'pino'
+import pino, { type Logger, type LoggerOptions, multistream } from 'pino'
 import pinoCaller from 'pino-caller'
 import pinoPretty from 'pino-pretty'
+import * as rfs from 'rotating-file-stream'
 import superjson from 'superjson'
 
 /** ---------- Structured record ---------- */
@@ -51,7 +52,11 @@ if (!fs.existsSync(LOG_DIR)) fs.mkdirSync(LOG_DIR, { recursive: true })
 // 每次启动新文件 + 按天轮转，保留 7 天
 const rotatingStream = rfs.createStream(
 	() => `app-${new Date().toISOString().replace(/[:.]/g, '-')}.log`,
-	{ interval: '1d', path: LOG_DIR, maxFiles: 7 },
+	{
+		interval: '1d',
+		path: LOG_DIR,
+		maxFiles: 7,
+	},
 )
 
 /** ---------- JSON stream: feed ring + file ---------- */

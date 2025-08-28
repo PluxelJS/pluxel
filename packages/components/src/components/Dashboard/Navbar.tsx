@@ -1,7 +1,8 @@
 // src/components/Layout/Navbar.tsx
+
+import { NavLink, ScrollArea, Stack } from '@mantine/core'
 import type React from 'react'
 import { forwardRef, memo, useEffect, useMemo, useState } from 'react'
-import { ScrollArea, Stack, NavLink } from '@mantine/core'
 
 export interface NavItem {
 	label: string
@@ -82,9 +83,7 @@ const Navbar = memo(function Navbar({
 					<LinkComponent
 						to={to}
 						ref={ref as any}
-						{...(others as unknown as React.ComponentPropsWithoutRef<
-							typeof LinkComponent
-						>)}
+						{...(others as unknown as React.ComponentPropsWithoutRef<typeof LinkComponent>)}
 					>
 						{children}
 					</LinkComponent>
@@ -103,30 +102,28 @@ const Navbar = memo(function Navbar({
 			style={{ minHeight: 0 }}
 		>
 			<Stack gap="xs" p="sm">
-				{navItems.map(
-					({ label, href, icon, rightSection, exact, disabled }) => {
-						const active = getIsActive(pathname, href, exact)
-						return (
-							<NavLink
-								key={href}
-								component={LinkWrapper}
-								to={href}
-								label={label}
-								leftSection={icon}
-								rightSection={rightSection}
-								active={active}
-								aria-current={active ? 'page' : undefined}
-								disabled={disabled}
-								variant="light"
-								// 提升可点击面积 & 保持紧凑
-								styles={{
-									root: { borderRadius: 8 },
-									body: { fontWeight: active ? 600 : 500 },
-								}}
-							/>
-						)
-					},
-				)}
+				{navItems.map(({ label, href, icon, rightSection, exact, disabled }) => {
+					const active = getIsActive(pathname, href, exact)
+					return (
+						<NavLink
+							key={href}
+							component={LinkWrapper}
+							to={href}
+							label={label}
+							leftSection={icon}
+							rightSection={rightSection}
+							active={active}
+							aria-current={active ? 'page' : undefined}
+							disabled={disabled}
+							variant="light"
+							// 提升可点击面积 & 保持紧凑
+							styles={{
+								root: { borderRadius: 8 },
+								body: { fontWeight: active ? 600 : 500 },
+							}}
+						/>
+					)
+				})}
 			</Stack>
 		</ScrollArea>
 	)

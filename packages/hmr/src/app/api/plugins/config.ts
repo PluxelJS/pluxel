@@ -1,8 +1,8 @@
 // src/plugins.ts
-import { Hono } from 'hono'
 
-import * as v from 'valibot'
 import { vValidator } from '@hono/valibot-validator'
+import { Hono } from 'hono'
+import * as v from 'valibot'
 import type { PluginsEnv } from '.'
 
 const pluginConfigSchema = v.object({
@@ -33,10 +33,7 @@ export const pluginConfig = new Hono<PluginsEnv>()
 		const { plugin_ctx: ctx, pluginCtor: ctor, pluginName } = c.var
 
 		if (!ctor) {
-			return c.json<PluginPostResponse>(
-				{ code: 'plugin_not_found', error: '插件未找到' },
-				404,
-			)
+			return c.json<PluginPostResponse>({ code: 'plugin_not_found', error: '插件未找到' }, 404)
 		}
 
 		const configChecker = ctx.loader.getPluginSchema(ctor)
@@ -68,10 +65,7 @@ export const pluginConfig = new Hono<PluginsEnv>()
 			type Issue = (typeof result.issues)[number]
 
 			// 最终要返回的字段错误对象：key 是字段名，value 是对应的 issue
-			const fieldErrors: Record<
-				string,
-				{ message: string; dotPath: string }[]
-			> = {}
+			const fieldErrors: Record<string, { message: string; dotPath: string }[]> = {}
 			for (const issue of result.issues) {
 				const path = (v.getDotPath(issue) ?? 'unknown').split('.')
 				const name = path[0]
@@ -84,10 +78,7 @@ export const pluginConfig = new Hono<PluginsEnv>()
 		}
 
 		if (Object.keys(errors).length > 0) {
-			return c.json<PluginPostResponse>(
-				{ code: 'validation_error', errors },
-				422,
-			)
+			return c.json<PluginPostResponse>({ code: 'validation_error', errors }, 422)
 		}
 
 		if (inputData.isSubmitAction) {
@@ -105,8 +96,5 @@ export const pluginConfig = new Hono<PluginsEnv>()
 			})
 		}
 
-		return c.json<PluginPostResponse>(
-			{ code: 'success', message: '验证通过。' },
-			200,
-		)
+		return c.json<PluginPostResponse>({ code: 'success', message: '验证通过。' }, 200)
 	})

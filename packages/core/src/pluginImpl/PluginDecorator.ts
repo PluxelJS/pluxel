@@ -1,6 +1,6 @@
 import 'reflect-metadata'
-import type { PluginIdentifier, SubclassOf, Identifier } from './types'
 import { BasePlugin } from './BasePlugin'
+import type { Identifier, PluginIdentifier, SubclassOf } from './types'
 
 /** —— Public symbols —— */
 export const PLUGIN_SYMBOL = {
@@ -46,10 +46,7 @@ export function Plugin<B extends PluginIdentifier>(
 	base: B,
 	meta: PluginMetadata,
 ): <C extends SubclassOf<B>>(ctor: C) => void
-export function Plugin(
-	a: PluginMetadata | PluginIdentifier,
-	b?: PluginMetadata,
-) {
+export function Plugin(a: PluginMetadata | PluginIdentifier, b?: PluginMetadata) {
 	const hasBase = typeof a === 'function'
 	const meta: PluginMetadata = (hasBase ? b : a) as PluginMetadata
 	const base: PluginIdentifier | undefined = (hasBase ? a : undefined) as
@@ -59,29 +56,18 @@ export function Plugin(
 	return (ctor: Function) => {
 		if (base) {
 			if (!isSubclassOf(base as Function, BasePlugin)) {
-				throw new Error(
-					`@Plugin(${getName(base)}) 失败：抽象基类未继承 BasePlugin`,
-				)
+				throw new Error(`@Plugin(${getName(base)}) 失败：抽象基类未继承 BasePlugin`)
 			}
 			if (!isSubclassOf(ctor, base as Function)) {
-				throw new Error(
-					`@Plugin(${getName(base)}) 失败：${getName(ctor)} 未继承 ${getName(base)}`,
-				)
+				throw new Error(`@Plugin(${getName(base)}) 失败：${getName(ctor)} 未继承 ${getName(base)}`)
 			}
 			Reflect.defineMetadata(PLUGIN_SYMBOL.BASE_CLASS, base, ctor)
 		}
 
-		Reflect.defineMetadata(
-			PLUGIN_SYMBOL.META_KEY,
-			Object.freeze({ ...meta }),
-			ctor,
-		)
+		Reflect.defineMetadata(PLUGIN_SYMBOL.META_KEY, Object.freeze({ ...meta }), ctor)
 
 		// Flush pending @Config
-		const pending: Map<string, unknown> | undefined = Reflect.getOwnMetadata(
-			CONFIG_PENDING,
-			ctor,
-		)
+		const pending: Map<string, unknown> | undefined = Reflect.getOwnMetadata(CONFIG_PENDING, ctor)
 		// biome-ignore lint/complexity/useOptionalChain: <explanation>
 		if (pending && pending.size) {
 			const obj: Record<string, unknown> = Object.create(null)
@@ -98,9 +84,7 @@ export function Plugin(
 /* =========================================================
  *                     @Config（定义期聚合）
  * =======================================================*/
-export function Config<S extends ConfigSchemaList>(
-	schema: S,
-): PropertyDecorator {
+export function Config<S extends ConfigSchemaList>(schema: S): PropertyDecorator {
 	return (target: object, propertyKey: string | symbol): void => {
 		if (typeof target === 'function') {
 			throw new Error('@Config 只能用于实例字段(非 static)')
@@ -118,11 +102,9 @@ export function Config<S extends ConfigSchemaList>(
  * =======================================================*/
 export function Optional(): ParameterDecorator {
 	return (target, propertyKey, parameterIndex) => {
-		if (propertyKey !== undefined)
-			throw new Error('@Optional 只能用于构造函数参数')
+		if (propertyKey !== undefined) throw new Error('@Optional 只能用于构造函数参数')
 		const ctor = target as Function
-		const oldBits: bigint =
-			Reflect.getOwnMetadata(PLUGIN_SYMBOL.OPTIONAL_PARAMS_BITS, ctor) ?? 0n
+		const oldBits: bigint = Reflect.getOwnMetadata(PLUGIN_SYMBOL.OPTIONAL_PARAMS_BITS, ctor) ?? 0n
 		const bits = setBit(oldBits, parameterIndex)
 		Reflect.defineMetadata(PLUGIN_SYMBOL.OPTIONAL_PARAMS_BITS, bits, ctor)
 		STABLE_CACHE.delete(ctor) // stable depends on bits
@@ -144,9 +126,7 @@ export interface StableInfo {
 }
 const STABLE_CACHE = new WeakMap<Function, Readonly<StableInfo>>()
 
-export function getPluginInfo(
-	ctor: Function,
-): Readonly<StableInfo> | undefined {
+export function getPluginInfo(ctor: Function): Readonly<StableInfo> | undefined {
 	const c = STABLE_CACHE.get(ctor)
 	if (c) return c
 
@@ -161,8 +141,7 @@ export function getPluginInfo(
 		| ConfigSchemaList
 		| undefined
 
-	const bits: bigint =
-		Reflect.getOwnMetadata(PLUGIN_SYMBOL.OPTIONAL_PARAMS_BITS, ctor) ?? 0n
+	const bits: bigint = Reflect.getOwnMetadata(PLUGIN_SYMBOL.OPTIONAL_PARAMS_BITS, ctor) ?? 0n
 	const len = getParamLength(ctor)
 	const indices = Object.freeze(bitsToIndices(bits, len))
 
@@ -206,10 +185,7 @@ export function getClassParam<T = unknown>(
 
 	const frozen = Object.freeze(tokens)
 	if (!override) {
-		PARAM_VIEW_CACHE.set(
-			target,
-			Object.freeze({ epoch: currentEpoch(target), params: frozen }),
-		)
+		PARAM_VIEW_CACHE.set(target, Object.freeze({ epoch: currentEpoch(target), params: frozen }))
 	}
 	return frozen as any
 }
@@ -225,16 +201,13 @@ export interface OptionalPredicate {
 
 const OPTIONAL_PRED_CACHE = new WeakMap<Function, Readonly<OptionalPredicate>>()
 
-export function getOptionalPredicate(
-	target: Function,
-): Readonly<OptionalPredicate> {
+export function getOptionalPredicate(target: Function): Readonly<OptionalPredicate> {
 	const cached = OPTIONAL_PRED_CACHE.get(target)
 	if (cached) return cached
 
 	// 计算当前长度与 n 位掩码，屏蔽掉 n 之外的脏位
 	const n = getParamLength(target)
-	const rawBits: bigint =
-		Reflect.getOwnMetadata(PLUGIN_SYMBOL.OPTIONAL_PARAMS_BITS, target) ?? 0n
+	const rawBits: bigint = Reflect.getOwnMetadata(PLUGIN_SYMBOL.OPTIONAL_PARAMS_BITS, target) ?? 0n
 	const maskN = n === 0 ? 0n : (1n << BigInt(n)) - 1n
 	const bits = rawBits & maskN
 	const anyOptional = bits !== 0n
@@ -260,8 +233,7 @@ export function getOptionalPredicate(
  *                Optional & Base helpers
  * =======================================================*/
 export function hasOptionalParam(ctor: Function, index: number): boolean {
-	const bits: bigint =
-		Reflect.getOwnMetadata(PLUGIN_SYMBOL.OPTIONAL_PARAMS_BITS, ctor) ?? 0n
+	const bits: bigint = Reflect.getOwnMetadata(PLUGIN_SYMBOL.OPTIONAL_PARAMS_BITS, ctor) ?? 0n
 	return hasBit(bits, index)
 }
 export function getBaseClass(target: Function): PluginIdentifier | undefined {
@@ -274,9 +246,7 @@ export function isPluginOf<B extends PluginIdentifier>(
 ): boolean {
 	const tagged = getBaseClass(ctor)
 	if (!tagged) return false
-	return deep
-		? isSubclassOf(tagged as Function, base as Function)
-		: tagged === base
+	return deep ? isSubclassOf(tagged as Function, base as Function) : tagged === base
 }
 export function filterPluginsOf<B extends PluginIdentifier>(
 	list: Function[],
@@ -289,11 +259,7 @@ export function filterPluginsOf<B extends PluginIdentifier>(
 /* =========================================================
  *         Persistent overrides（写入即 bump epoch）
  * =======================================================*/
-export function setParamToken(
-	ctor: Function,
-	index: number,
-	token: Identifier<any>,
-): void {
+export function setParamToken(ctor: Function, index: number, token: Identifier<any>): void {
 	const arr: Array<Identifier<any> | undefined> =
 		Reflect.getOwnMetadata(PLUGIN_SYMBOL.PARAM_TOKENS, ctor) ?? []
 	if (index >= arr.length) arr.length = index + 1
@@ -368,10 +334,7 @@ function bitsToIndices(bits: bigint, length: number): number[] {
 /** max(reflected length, persistent override length) */
 function getParamLength(ctor: Function): number {
 	const reflected: unknown[] = Reflect.getMetadata(PARAM_TYPES, ctor) ?? []
-	const stored: ParamOverride | undefined = Reflect.getOwnMetadata(
-		PLUGIN_SYMBOL.PARAM_TOKENS,
-		ctor,
-	)
+	const stored: ParamOverride | undefined = Reflect.getOwnMetadata(PLUGIN_SYMBOL.PARAM_TOKENS, ctor)
 	let toks = 0
 	if (Array.isArray(stored)) {
 		toks = stored.length

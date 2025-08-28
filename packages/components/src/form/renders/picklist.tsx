@@ -1,6 +1,6 @@
+import { Select, Stack, Text } from '@mantine/core'
 import type React from 'react'
 import { useMemo, useRef } from 'react'
-import { Stack, Text, Select } from '@mantine/core'
 import { META_MAP, registerRenderer, triggerFormEvents } from 'valibot-form'
 
 /* --------------------------- Types (精简+) --------------------------- */
@@ -46,9 +46,7 @@ function useData(
 				disabled: disabledSet.has(id),
 			}
 		})
-		const allNums =
-			(opts ?? []).length > 0 &&
-			(opts ?? []).every((x) => typeof x === 'number')
+		const allNums = (opts ?? []).length > 0 && (opts ?? []).every((x) => typeof x === 'number')
 		return { data: arr, isAllNumbers: allNums }
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [opts, labels, disabled])
@@ -80,10 +78,7 @@ function PicklistRenderer(props: RendererProps) {
 	}, [errors, inputProps?.name])
 
 	// 归一化选项 + 映射
-	const { data, idToRawRef, isAllNumbers } = useData(
-		ep.options ?? [],
-		ep.labels,
-	)
+	const { data, idToRawRef, isAllNumbers } = useData(ep.options ?? [], ep.labels)
 
 	// 当前值 -> id（非受控：仅 defaultValue）
 	const currentIds = useMemo(() => {
@@ -99,10 +94,7 @@ function PicklistRenderer(props: RendererProps) {
 	const commitSingle = (id: string | null) => {
 		if (id === null) return triggerFormEvents(inputProps as any, null)
 		const raw = idToRawRef.current.get(id)
-		triggerFormEvents(
-			inputProps as any,
-			raw ?? (isAllNumbers ? Number(id) : id),
-		)
+		triggerFormEvents(inputProps as any, raw ?? (isAllNumbers ? Number(id) : id))
 	}
 
 	// 包裹
@@ -132,6 +124,4 @@ function PicklistRenderer(props: RendererProps) {
 }
 
 /* ---------------------------- Register ---------------------------- */
-registerRenderer(META_MAP.PICKLIST, (props: RendererProps) => (
-	<PicklistRenderer {...props} />
-))
+registerRenderer(META_MAP.PICKLIST, (props: RendererProps) => <PicklistRenderer {...props} />)

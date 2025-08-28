@@ -1,4 +1,4 @@
-import { ActionIcon, Tooltip, Group } from '@mantine/core'
+import { ActionIcon, Group, Tooltip } from '@mantine/core'
 import { IconEdit, IconSettings, IconTrash } from '@tabler/icons-react'
 
 export function ActionBar() {

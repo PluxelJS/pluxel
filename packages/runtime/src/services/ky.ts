@@ -1,6 +1,7 @@
 // KyPlugin.ts
+
+import { type Awaitable, BasePlugin, Config, Plugin, v } from '@pluxel/hmr'
 import ky, { HTTPError, type KyInstance, type Options as KyOptions } from 'ky'
-import { BasePlugin, Config, Plugin, v, type Awaitable } from '@pluxel/hmr'
 
 /** —— 1) 核心 —— */
 const CoreCfg = v.object({
@@ -44,15 +45,13 @@ export class KyPlugin extends BasePlugin {
 	private _appliedGlobal = false
 
 	async init(_abort: AbortSignal): Promise<void> {
-		const isNode =
-			typeof process !== 'undefined' && !!(process as any).versions?.node
+		const isNode = typeof process !== 'undefined' && !!(process as any).versions?.node
 
 		// —— 代理（Node 下可选）——
 		if (isNode && this.proxy.enabled) {
 			try {
 				const undici = (await import('undici')) as any
-				const { ProxyAgent, Agent, getGlobalDispatcher, setGlobalDispatcher } =
-					undici
+				const { ProxyAgent, Agent, getGlobalDispatcher, setGlobalDispatcher } = undici
 
 				const dispatcher = this.proxy.url
 					? new ProxyAgent({ uri: this.proxy.url })
@@ -108,9 +107,7 @@ export class KyPlugin extends BasePlugin {
 		if (this._appliedGlobal) {
 			try {
 				const undici = (await import('undici')) as any
-				undici.setGlobalDispatcher?.(
-					this._prevDispatcher ?? undici.getGlobalDispatcher?.(),
-				)
+				undici.setGlobalDispatcher?.(this._prevDispatcher ?? undici.getGlobalDispatcher?.())
 				this.ctx.logger.info('Ky: global dispatcher restored')
 			} catch {}
 		}

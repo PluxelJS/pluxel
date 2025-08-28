@@ -1,18 +1,18 @@
 // PluginComponents.tsx
 import {
-	Container,
-	Grid,
-	Card,
-	ScrollArea,
 	Box,
-	Text,
+	Card,
+	Container,
 	Divider,
-	useMantineTheme,
+	Grid,
+	ScrollArea,
 	TableOfContents,
+	Text,
+	useMantineTheme,
 } from '@mantine/core'
+import type { ReactNode } from 'react'
 import { ActionBar } from './ActionBar'
 import { PluginInfo, type PluginInfoProps } from './PluginInfo'
-import type { ReactNode } from 'react'
 
 export interface PluginProps {
 	info: PluginInfoProps
@@ -22,13 +22,7 @@ export interface PluginProps {
 	children: ReactNode
 }
 
-export function Plugin({
-	info,
-	links = [],
-	license,
-	tocRecords = [],
-	children,
-}: PluginProps) {
+export function Plugin({ info, links = [], license, tocRecords = [], children }: PluginProps) {
 	const theme = useMantineTheme()
 
 	return (

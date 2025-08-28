@@ -1,39 +1,36 @@
 // src/plugins/PluginsLayout.tsx
-import type React from 'react'
-import { useEffect } from 'react'
+
 import {
-	Stack,
-	Group,
+	Box,
+	Button,
 	Card,
 	CardSection,
-	Title,
-	Text,
-	Divider,
-	ScrollArea,
-	Button,
-	Drawer,
 	Center,
+	Divider,
+	Drawer,
+	Group,
+	ScrollArea,
+	Stack,
+	Text,
+	Title,
 	useMantineTheme,
-	Box,
 } from '@mantine/core'
 import { useDisclosure, useMediaQuery } from '@mantine/hooks'
+import type React from 'react'
+import { useEffect } from 'react'
 import { useRoute } from 'wouter'
-import { PluginList } from './PluginList'
-import { Plugin } from './Plugin'
 import { ClientOnly } from '../ClientOnly'
+import { Plugin } from './Plugin'
+import { PluginList } from './PluginList'
 
 export const PluginsLayout: React.FC = () => {
 	const [match, params] = useRoute<{ name?: string }>('/plugins/:name')
 	const pluginName = match ? params.name : undefined
 
 	const theme = useMantineTheme()
-	const isSmall = useMediaQuery(
-		`(max-width: ${theme.breakpoints.md})`,
-		undefined,
-		{
-			getInitialValueInEffect: true,
-		},
-	)
+	const isSmall = useMediaQuery(`(max-width: ${theme.breakpoints.md})`, undefined, {
+		getInitialValueInEffect: true,
+	})
 	const [opened, { open, close, toggle }] = useDisclosure(false)
 
 	useEffect(() => {
@@ -82,11 +79,7 @@ export const PluginsLayout: React.FC = () => {
 							</Group>
 						</CardSection>
 
-						<CardSection
-							px="md"
-							py="sm"
-							style={{ flex: 1, minHeight: 0, display: 'flex' }}
-						>
+						<CardSection px="md" py="sm" style={{ flex: 1, minHeight: 0, display: 'flex' }}>
 							{/* 唯一滚动层：左栏自己的滚动，不受右栏影响 */}
 							<ScrollArea type="auto" style={{ flex: 1, minHeight: 0 }}>
 								<PluginList pluginName={pluginName} />

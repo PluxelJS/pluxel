@@ -1,5 +1,5 @@
+import { Button, Flex, Text } from '@mantine/core'
 import React from 'react'
-import { Flex, Text, Button } from '@mantine/core'
 
 export interface SubNavBarProps {
 	title?: string

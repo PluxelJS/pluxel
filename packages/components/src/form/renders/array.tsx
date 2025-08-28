@@ -1,47 +1,44 @@
-import React, { memo, useCallback, useMemo, useRef, useState } from 'react'
 import {
-	ActionIcon,
-	Button,
-	Group,
-	Stack,
-	Text,
-	TextInput,
-	NumberInput,
-	Switch,
-	SimpleGrid,
-	Table,
-	Tooltip,
-	Paper,
-	Badge,
-	Select,
-	MultiSelect,
-	rem,
-} from '@mantine/core'
-import { IconMinus, IconPlus, IconGripVertical } from '@tabler/icons-react'
-import {
+	closestCenter,
 	DndContext,
-	PointerSensor,
+	type DragEndEvent,
 	DragOverlay,
+	type DragStartEvent,
 	KeyboardSensor,
+	PointerSensor,
 	useSensor,
 	useSensors,
-	closestCenter,
-	type DragStartEvent,
-	type DragEndEvent,
 } from '@dnd-kit/core'
+import { restrictToParentElement, restrictToVerticalAxis } from '@dnd-kit/modifiers'
 import {
-	SortableContext,
 	arrayMove,
+	rectSortingStrategy,
+	SortableContext,
+	sortableKeyboardCoordinates,
 	useSortable,
 	verticalListSortingStrategy,
-	rectSortingStrategy,
-	sortableKeyboardCoordinates,
 } from '@dnd-kit/sortable'
-import {
-	restrictToVerticalAxis,
-	restrictToParentElement,
-} from '@dnd-kit/modifiers'
 import { CSS } from '@dnd-kit/utilities'
+import {
+	ActionIcon,
+	Badge,
+	Button,
+	Group,
+	MultiSelect,
+	NumberInput,
+	Paper,
+	rem,
+	Select,
+	SimpleGrid,
+	Stack,
+	Switch,
+	Table,
+	Text,
+	TextInput,
+	Tooltip,
+} from '@mantine/core'
+import { IconGripVertical, IconMinus, IconPlus } from '@tabler/icons-react'
+import React, { memo, useCallback, useMemo, useRef, useState } from 'react'
 import { META_MAP, registerRenderer, triggerFormEvents } from 'valibot-form'
 
 /* ------------------------------- Types ------------------------------- */
@@ -87,8 +84,7 @@ type RowData = { id: string; v: unknown }
 let __rid = 0
 const rid = () => `row_${++__rid}`
 
-const isShortText = (v: unknown) =>
-	typeof v === 'string' && v.length <= 60 && !/\n/.test(v)
+const isShortText = (v: unknown) => typeof v === 'string' && v.length <= 60 && !/\n/.test(v)
 
 const coerceAuto = (raw: string): unknown => {
 	const t = raw.trim()
@@ -97,10 +93,7 @@ const coerceAuto = (raw: string): unknown => {
 	if (t === 'null') return null
 	if (/^[-+]?\d+(?:\.\d+)?$/.test(t)) return Number(t)
 	try {
-		if (
-			(t.startsWith('{') && t.endsWith('}')) ||
-			(t.startsWith('[') && t.endsWith(']'))
-		) {
+		if ((t.startsWith('{') && t.endsWith('}')) || (t.startsWith('[') && t.endsWith(']'))) {
 			return JSON.parse(t)
 		}
 	} catch {}
@@ -144,8 +137,7 @@ function buildPickData(
 			disabled: dis.has(id),
 		}
 	})
-	const isAllNumbers =
-		opts.length > 0 && opts.every((x) => typeof x === 'number')
+	const isAllNumbers = opts.length > 0 && opts.every((x) => typeof x === 'number')
 	return { data, idToRaw, isAllNumbers }
 }
 
@@ -162,34 +154,23 @@ interface ItemProps {
 	onRemove: (id: string) => void
 }
 
-const Handle = React.forwardRef<
-	HTMLButtonElement,
-	React.ComponentProps<typeof ActionIcon>
->((props, ref) => (
-	<ActionIcon
-		ref={ref}
-		variant="subtle"
-		{...props}
-		aria-label="拖拽排序"
-		style={{ cursor: 'grab' }}
-	>
-		<IconGripVertical size={16} />
-	</ActionIcon>
-))
+const Handle = React.forwardRef<HTMLButtonElement, React.ComponentProps<typeof ActionIcon>>(
+	(props, ref) => (
+		<ActionIcon
+			ref={ref}
+			variant="subtle"
+			{...props}
+			aria-label="拖拽排序"
+			style={{ cursor: 'grab' }}
+		>
+			<IconGripVertical size={16} />
+		</ActionIcon>
+	),
+)
 Handle.displayName = 'Handle'
 
 const SortableItem = memo(function SortableItem(props: ItemProps) {
-	const {
-		row,
-		idx,
-		disabled,
-		mode,
-		label,
-		styleKind,
-		onCommit,
-		onRemove,
-		itemError,
-	} = props
+	const { row, idx, disabled, mode, label, styleKind, onCommit, onRemove, itemError } = props
 	const {
 		attributes,
 		listeners,
@@ -198,7 +179,9 @@ const SortableItem = memo(function SortableItem(props: ItemProps) {
 		transform,
 		transition,
 		isDragging,
-	} = useSortable({ id: row.id })
+	} = useSortable({
+		id: row.id,
+	})
 
 	const style = {
 		transform: CSS.Transform.toString(transform),
@@ -207,12 +190,8 @@ const SortableItem = memo(function SortableItem(props: ItemProps) {
 	} as React.CSSProperties
 
 	const tRef = useRef<HTMLInputElement | HTMLTextAreaElement | null>(null)
-	const nRef = useRef<number | null>(
-		typeof row.v === 'number' ? (row.v as number) : null,
-	)
-	const [bVis, setBVis] = useState<boolean>(
-		typeof row.v === 'boolean' ? (row.v as boolean) : false,
-	)
+	const nRef = useRef<number | null>(typeof row.v === 'number' ? (row.v as number) : null)
+	const [bVis, setBVis] = useState<boolean>(typeof row.v === 'boolean' ? (row.v as boolean) : false)
 
 	const commit = useCallback(() => {
 		const next: Partial<RowData> = {}
@@ -250,12 +229,7 @@ const SortableItem = memo(function SortableItem(props: ItemProps) {
 
 	const removeBtn = (
 		<Tooltip label={`删除第 ${idx + 1} 项`}>
-			<ActionIcon
-				variant="subtle"
-				color="red"
-				onClick={() => onRemove(row.id)}
-				disabled={disabled}
-			>
+			<ActionIcon variant="subtle" color="red" onClick={() => onRemove(row.id)} disabled={disabled}>
 				<IconMinus size={16} />
 			</ActionIcon>
 		</Tooltip>
@@ -265,9 +239,7 @@ const SortableItem = memo(function SortableItem(props: ItemProps) {
 		if (mode === 'number' || typeof row.v === 'number') {
 			return (
 				<NumberInput
-					defaultValue={
-						typeof row.v === 'number' ? (row.v as number) : undefined
-					}
+					defaultValue={typeof row.v === 'number' ? (row.v as number) : undefined}
 					hideControls
 					allowDecimal
 					onChange={(n) => (nRef.current = typeof n === 'number' ? n : null)}
@@ -303,10 +275,7 @@ const SortableItem = memo(function SortableItem(props: ItemProps) {
 				</Stack>
 			)
 		}
-		if (
-			mode === 'json' ||
-			(typeof row.v === 'string' && /^\s*[\[{]/.test(row.v))
-		) {
+		if (mode === 'json' || (typeof row.v === 'string' && /^\s*[[{]/.test(row.v))) {
 			const def = typeof row.v === 'string' ? row.v : JSON.stringify(row.v)
 			return (
 				<TextInput
@@ -400,13 +369,7 @@ function ArrayRendererImpl(props: RendererProps) {
 	const ep: Required<
 		Pick<
 			ArrayUI,
-			| 'addable'
-			| 'removable'
-			| 'reorderable'
-			| 'style'
-			| 'columns'
-			| 'itemLabel'
-			| 'valueMode'
+			'addable' | 'removable' | 'reorderable' | 'style' | 'columns' | 'itemLabel' | 'valueMode'
 		>
 	> &
 		Pick<ArrayUI, 'defaultItem' | 'picklist'> = {
@@ -433,10 +396,8 @@ function ArrayRendererImpl(props: RendererProps) {
 		return { topLevelErrorText: top.join(', '), perItemErrors: per }
 	}, [errors])
 
-	const strategy =
-		ep.style === 'grid' ? rectSortingStrategy : verticalListSortingStrategy
-	const modifiers =
-		ep.style === 'grid' ? [restrictToParentElement] : [restrictToVerticalAxis]
+	const strategy = ep.style === 'grid' ? rectSortingStrategy : verticalListSortingStrategy
+	const modifiers = ep.style === 'grid' ? [restrictToParentElement] : [restrictToVerticalAxis]
 
 	/* ------ 初始化（非受控） ------ */
 	const initialRows = useMemo<RowData[]>(
@@ -488,22 +449,16 @@ function ArrayRendererImpl(props: RendererProps) {
 	)
 
 	const onAdd = useCallback(() => {
-		const pickOpts = ep.picklist?.options as
-			| readonly (string | number)[]
-			| undefined
+		const pickOpts = ep.picklist?.options as readonly (string | number)[] | undefined
 		setRows((prev) => {
-			const nextItem =
-				ep.defaultItem ?? pickDefaultByMode(ep.valueMode!, pickOpts)
+			const nextItem = ep.defaultItem ?? pickDefaultByMode(ep.valueMode!, pickOpts)
 			const next = [...prev, { id: rid(), v: nextItem }]
 			emitChange(next)
 			return next
 		})
 	}, [emitChange, ep.defaultItem, ep.valueMode, ep.picklist?.options])
 
-	const onDragStart = useCallback(
-		(evt: DragStartEvent) => setActiveId(String(evt.active.id)),
-		[],
-	)
+	const onDragStart = useCallback((evt: DragStartEvent) => setActiveId(String(evt.active.id)), [])
 	const onDragEnd = useCallback(
 		(evt: DragEndEvent) => {
 			if (!ep.reorderable) {
@@ -542,9 +497,7 @@ function ArrayRendererImpl(props: RendererProps) {
 		const limit = ep.picklist.limit
 
 		const onMultiChange = (selIds: string[]) => {
-			const nextVals = selIds.map(
-				(id) => pb.idToRaw.get(id) ?? (pb.isAllNumbers ? Number(id) : id),
-			)
+			const nextVals = selIds.map((id) => pb.idToRaw.get(id) ?? (pb.isAllNumbers ? Number(id) : id))
 			const next = nextVals.map((v) => ({ id: rid(), v }))
 			setRows(next)
 			emitChange(next)
@@ -659,11 +612,7 @@ function ArrayRendererImpl(props: RendererProps) {
 	return (
 		<Stack gap="xs">
 			{rows.length === 0 && (
-				<Tooltip
-					label="暂无数据，点击下方“添加一项”"
-					position="top-start"
-					openDelay={300}
-				>
+				<Tooltip label="暂无数据，点击下方“添加一项”" position="top-start" openDelay={300}>
 					<Text c="dimmed" size="sm">
 						暂无数据，点击下方“添加一项”
 					</Text>
@@ -692,9 +641,7 @@ function ArrayRendererImpl(props: RendererProps) {
 							<Group gap="sm">
 								<IconGripVertical size={16} />
 								<Text size="sm" fw={500} lineClamp={1}>
-									{typeof overlayRow.v === 'string'
-										? overlayRow.v
-										: JSON.stringify(overlayRow.v)}
+									{typeof overlayRow.v === 'string' ? overlayRow.v : JSON.stringify(overlayRow.v)}
 								</Text>
 							</Group>
 						</Paper>

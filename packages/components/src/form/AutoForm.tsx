@@ -1,15 +1,7 @@
-import React from 'react'
-import {
-	createContext,
-	useContext,
-	useMemo,
-	useCallback,
-	memo,
-	Suspense,
-} from 'react'
-import { Stack, Card } from '@mantine/core'
+import { Card, Stack } from '@mantine/core'
+import React, { createContext, memo, Suspense, useCallback, useContext, useMemo } from 'react'
 import type { InferOutput, ObjectSchema } from 'valibot'
-import { MetaRenderer, extractInfo } from 'valibot-form'
+import { extractInfo, MetaRenderer } from 'valibot-form'
 import { useAppForm } from './formContext'
 
 // -------- schema 解析缓存，避免重复 extractInfo ----------
@@ -56,10 +48,7 @@ export function AutoForm<S extends ObjectSchema<any, any>>({
 	const form = useAppForm(schema, formOpts)
 
 	const items = useMemo(() => {
-		const entries = Object.entries(schema.entries) as [
-			keyof InferOutput<S>,
-			any,
-		][]
+		const entries = Object.entries(schema.entries) as [keyof InferOutput<S>, any][]
 		const out: Array<{
 			name: string
 			info: NonNullable<ReturnType<typeof extractInfo>>

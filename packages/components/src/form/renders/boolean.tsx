@@ -5,7 +5,7 @@ import { META_MAP, registerRenderer, triggerFormEvents } from 'valibot-form'
 registerRenderer(META_MAP.BOOLEAN, (props) => {
 	const { formBaseInfo, errors, extractedPropsInfo, inputProps, value } = props
 	const error = errors?.map((e) => e.message).join(', ')
-	
+
 	return (
 		<InputWrapper
 			id={inputProps.name}

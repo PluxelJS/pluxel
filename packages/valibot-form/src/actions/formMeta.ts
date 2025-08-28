@@ -6,8 +6,7 @@ export interface FormMeta {
 	description?: string
 }
 
-export interface formMetaAction<TInput, TMetadata extends FormMeta>
-	extends BaseMetadata<TInput> {
+export interface formMetaAction<TInput, TMetadata extends FormMeta> extends BaseMetadata<TInput> {
 	/**
 	 * The action type.
 	 */

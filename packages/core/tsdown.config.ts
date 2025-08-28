@@ -26,8 +26,7 @@ export function rewriteDtsModuleAugmentations(map: Record<string, string>) {
 			for (const file of Object.keys(bundle)) {
 				if (!exts.test(file)) continue
 				const chunk: any = bundle[file]
-				const get = () =>
-					chunk.type === 'asset' ? String(chunk.source) : String(chunk.code)
+				const get = () => (chunk.type === 'asset' ? String(chunk.source) : String(chunk.code))
 				const set = (code: string) => {
 					if (chunk.type === 'asset') chunk.source = code
 					else chunk.code = code

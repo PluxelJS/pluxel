@@ -1,23 +1,22 @@
 // PluginService.ts
-import type { Context, ServiceClass } from '@pluxel/context'
-import { Injectable } from '@pluxel/context'
-import type { ServiceMap } from '../container'
-import { PLUGIN_CTX, type BasePlugin } from '../pluginImpl/BasePlugin'
-import { PluginContainer } from '../pluginImpl/PluginContainer'
-import type { PluginIdentifier, PluginInstance } from '../pluginImpl/types'
-import { type Result, createErr, createOk } from 'option-t/plain_result'
 
 import { randomUUID } from 'node:crypto'
-import { EffectScopeService } from './EffectScopeService'
-import { getPluginInfo, type StableInfo } from '../pluginImpl'
-
+import type { Context, ServiceClass } from '@pluxel/context'
+import { Injectable } from '@pluxel/context'
+import { createErr, createOk, type Result } from 'option-t/plain_result'
 // XState v5
 import { createActor, waitFor } from 'xstate'
+import type { ServiceMap } from '../container'
+import { getPluginInfo, type StableInfo } from '../pluginImpl'
+import { type BasePlugin, PLUGIN_CTX } from '../pluginImpl/BasePlugin'
+import { PluginContainer } from '../pluginImpl/PluginContainer'
 import {
 	createPluginLifecycle,
-	type PluginLifecycleRef,
 	lifecycleSelectors,
+	type PluginLifecycleRef,
 } from '../pluginImpl/pluginActor'
+import type { PluginIdentifier, PluginInstance } from '../pluginImpl/types'
+import { EffectScopeService } from './EffectScopeService'
 
 type PluginServiceConfig = {
 	plugigCTXIsolate?: ServiceClass<any>[]
@@ -46,10 +45,7 @@ export class PluginService {
 	public pluginRegistry: PluginContainer = new PluginContainer()
 
 	/** 每个插件一个生命周期 actor（唯一真相来源） */
-	private readonly actors = new WeakMap<
-		PluginIdentifier,
-		PluginLifecycleRef<any, BasePlugin>
-	>()
+	private readonly actors = new WeakMap<PluginIdentifier, PluginLifecycleRef<any, BasePlugin>>()
 
 	/** 串行化 commit */
 	private _commitLock: Promise<unknown> = Promise.resolve()
@@ -68,11 +64,8 @@ export class PluginService {
 		this.startTimeoutMs = config?.startTimeoutMs ?? 1_500
 		this.stopTimeoutMs = config?.stopTimeoutMs ?? 3_000
 
-		const isolated = Array.from(
-			new Set([...(config?.plugigCTXIsolate ?? []), EffectScopeService]),
-		)
-		this.createPluginCTX = () =>
-			this.ctx.root.isolate(isolated, { name: `plugin:${randomUUID()}` })
+		const isolated = Array.from(new Set([...(config?.plugigCTXIsolate ?? []), EffectScopeService]))
+		this.createPluginCTX = () => this.ctx.root.isolate(isolated, { name: `plugin:${randomUUID()}` })
 	}
 
 	/* ------------------------------ 状态查询 ------------------------------ */
@@ -128,9 +121,7 @@ export class PluginService {
 	}
 
 	private computeTeardownOrder(
-		dependents:
-			| ReadonlyMap<PluginIdentifier, Set<PluginIdentifier>>
-			| undefined,
+		dependents: ReadonlyMap<PluginIdentifier, Set<PluginIdentifier>> | undefined,
 		affected: Set<PluginIdentifier>,
 	): PluginIdentifier[] {
 		if (!dependents || affected.size === 0) return []
@@ -201,10 +192,7 @@ export class PluginService {
 		// 观察 actor 的错误事件，辅助诊断（不改变状态机逻辑）
 		ref.subscribe({
 			error: (err) =>
-				this.ctx.logger?.error?.(
-					err,
-					`[actor:${String((id as any)?.name ?? id)}] unhandled error`,
-				),
+				this.ctx.logger?.error?.(err, `[actor:${String((id as any)?.name ?? id)}] unhandled error`),
 		})
 
 		ref.start()
@@ -213,10 +201,7 @@ export class PluginService {
 	}
 
 	/** 启动：成功返回；失败抛出真实 init/reload 错误（保留 cause）并保证清理 */
-	private async startByActor(
-		id: PluginIdentifier,
-		plugin: BasePlugin,
-	): Promise<void> {
+	private async startByActor(id: PluginIdentifier, plugin: BasePlugin): Promise<void> {
 		const ref = this.ensureActor(id, plugin)
 		ref.send({ type: 'START' })
 
@@ -225,11 +210,10 @@ export class PluginService {
 			// 等待首个“稳定”状态
 			snap = await waitFor(
 				ref,
-				(s) =>
-					s.matches?.('failing') ||
-					s.matches?.('running') ||
-					s.matches?.('stopped'),
-				{ timeout: this.startTimeoutMs },
+				(s) => s.matches?.('failing') || s.matches?.('running') || s.matches?.('stopped'),
+				{
+					timeout: this.startTimeoutMs,
+				},
 			)
 		} catch (e) {
 			// 超时：主动 STOP 并清理，然后抛出超时错误
@@ -237,21 +221,14 @@ export class PluginService {
 				ref.send({ type: 'STOP' })
 			} catch {}
 			try {
-				await waitFor(
-					ref,
-					(s) => s.matches?.('stopped') || s.status === 'stopped',
-					{
-						timeout: this.stopTimeoutMs,
-					},
-				)
+				await waitFor(ref, (s) => s.matches?.('stopped') || s.status === 'stopped', {
+					timeout: this.stopTimeoutMs,
+				})
 			} catch {
 				/* 忽略 */
 			}
 			this.actors.delete(id)
-			throw new Error(
-				`Plugin ${id} start timeout after ${this.startTimeoutMs}ms`,
-				{ cause: e },
-			)
+			throw new Error(`Plugin ${id} start timeout after ${this.startTimeoutMs}ms`, { cause: e })
 		}
 
 		if (snap.matches?.('running')) return
@@ -268,13 +245,9 @@ export class PluginService {
 			ref.send({ type: 'STOP' })
 		} catch {}
 		try {
-			await waitFor(
-				ref,
-				(s) => s.matches?.('stopped') || s.status === 'stopped',
-				{
-					timeout: this.stopTimeoutMs,
-				},
-			)
+			await waitFor(ref, (s) => s.matches?.('stopped') || s.status === 'stopped', {
+				timeout: this.stopTimeoutMs,
+			})
 		} catch {
 			/* 忽略 */
 		}
@@ -282,28 +255,22 @@ export class PluginService {
 
 		// 原样抛出真实错误；若非 Error 也包装为 Error；最后才 fallback
 		if (capturedErr instanceof Error) throw capturedErr
-		if (capturedErr != null)
-			throw new Error(String(capturedErr), { cause: capturedErr })
+		if (capturedErr != null) throw new Error(String(capturedErr), { cause: capturedErr })
 
 		throw new Error(`Plugin ${id} failed to start`)
 	}
 
 	/** 停止：若 actor 存在，用它；否则冷启动一个只为 STOP 的 actor（也会 cleanup） */
-	private async stopByActor(
-		id: PluginIdentifier,
-		pluginOrUndefined?: BasePlugin,
-	): Promise<void> {
+	private async stopByActor(id: PluginIdentifier, pluginOrUndefined?: BasePlugin): Promise<void> {
 		const existing = this.actors.get(id)
 		if (existing) {
 			try {
 				existing.send({ type: 'STOP' })
 			} catch {}
 			try {
-				await waitFor(
-					existing,
-					(s) => s.matches?.('stopped') || s.status === 'stopped',
-					{ timeout: this.stopTimeoutMs },
-				)
+				await waitFor(existing, (s) => s.matches?.('stopped') || s.status === 'stopped', {
+					timeout: this.stopTimeoutMs,
+				})
 			} catch {
 				/* 忽略 */
 			}
@@ -312,8 +279,7 @@ export class PluginService {
 		}
 
 		// 没有 actor：从容器或入参取实例，创建“冷 actor”仅用于清理
-		const plugin =
-			pluginOrUndefined ?? this.pluginRegistry?.lastContainer?.get(id)
+		const plugin = pluginOrUndefined ?? this.pluginRegistry?.lastContainer?.get(id)
 		if (!plugin) return
 
 		const ref = this.ensureActor(id, plugin)
@@ -321,13 +287,9 @@ export class PluginService {
 			ref.send({ type: 'STOP' })
 		} catch {}
 		try {
-			await waitFor(
-				ref,
-				(s) => s.matches?.('stopped') || s.status === 'stopped',
-				{
-					timeout: this.stopTimeoutMs,
-				},
-			)
+			await waitFor(ref, (s) => s.matches?.('stopped') || s.status === 'stopped', {
+				timeout: this.stopTimeoutMs,
+			})
 		} catch {
 			/* 忽略 */
 		}
@@ -381,10 +343,7 @@ export class PluginService {
 
 				// —— 停机：逆拓扑（严格父后子前） —— //
 				if (oldContainer && toStop.size) {
-					const order = this.computeTeardownOrder(
-						oldContainer.dependents,
-						toStop,
-					)
+					const order = this.computeTeardownOrder(oldContainer.dependents, toStop)
 					for (const id of order) {
 						const inst = oldContainer.get(id)
 						if (inst) await this.stopByActor(id, inst)
@@ -407,8 +366,7 @@ export class PluginService {
 					await Promise.all(
 						batch.map(async (id) => {
 							// 若该插件的依赖在本轮失败，则该插件跳过并标记失败
-							const deps = (toInitMap.get(id)?.dependencies ??
-								[]) as PluginIdentifier[]
+							const deps = (toInitMap.get(id)?.dependencies ?? []) as PluginIdentifier[]
 							if (deps.some((d) => failed.has(d))) {
 								failed.add(id)
 								return
@@ -453,10 +411,7 @@ export class PluginService {
 					for (const id of failed) {
 						this.pluginRegistry.singletons.delete(id)
 					}
-					this.ctx.logger.warn(
-						{ failed: [...failed].map(String) },
-						'以下插件启动失败',
-					)
+					this.ctx.logger.warn({ failed: [...failed].map(String) }, '以下插件启动失败')
 					this.ctx.emit('commitFailed', failed)
 				}
 

@@ -1,10 +1,10 @@
-import type { KyInstance } from 'ky'
-import { AbstactBot } from './api'
 import type { Context } from '@pluxel/hmr'
-import type { User } from '../types'
-import { KookGatewayClient } from './websocket'
+import type { KyInstance } from 'ky'
 import { internalWebhook } from '../event-trigger'
 import type { Bots } from '../kook'
+import type { User } from '../types'
+import { AbstactBot } from './api'
+import { KookGatewayClient } from './websocket'
 
 export class Bot extends AbstactBot {
 	public selfInfo!: User

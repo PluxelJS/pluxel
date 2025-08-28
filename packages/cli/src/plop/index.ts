@@ -14,9 +14,7 @@ async function run(pm: 'pnpm' | 'npm' | 'yarn', args: string[], cwd: string) {
 			shell: process.platform === 'win32',
 		})
 		child.on('exit', (code) =>
-			code === 0
-				? resolvePromise()
-				: reject(new Error(`${pm} ${args.join(' ')} failed`)),
+			code === 0 ? resolvePromise() : reject(new Error(`${pm} ${args.join(' ')} failed`)),
 		)
 	})
 }
@@ -89,14 +87,8 @@ export function newCommand() {
 			const targetDir = resolve(workspaceRoot, 'plugins', pkgName)
 
 			// 幂等：默认不覆盖
-			if (
-				!opts.force &&
-				fs.existsSync(targetDir) &&
-				fs.readdirSync(targetDir).length > 0
-			) {
-				throw new Error(
-					`Target exists and not empty: ${targetDir}\nUse --force to overwrite.`,
-				)
+			if (!opts.force && fs.existsSync(targetDir) && fs.readdirSync(targetDir).length > 0) {
+				throw new Error(`Target exists and not empty: ${targetDir}\nUse --force to overwrite.`)
 			}
 			fs.mkdirSync(targetDir, { recursive: true })
 
@@ -130,8 +122,7 @@ export function newCommand() {
 			const res = await gen.runActions({ ...answers, name: pkgName })
 
 			for (const ch of res.changes) console.log('created:', ch.path)
-			for (const fl of res.failures)
-				console.error('failure:', fl.error || fl.message)
+			for (const fl of res.failures) console.error('failure:', fl.error || fl.message)
 
 			if (opts.install === false) {
 				console.log('\n(skipped install)')
@@ -139,11 +130,7 @@ export function newCommand() {
 			}
 
 			console.log('\n→ Installing deps...')
-			await run(
-				answers.pm as any,
-				answers.pm === 'yarn' ? [] : ['i'],
-				targetDir,
-			)
+			await run(answers.pm as any, answers.pm === 'yarn' ? [] : ['i'], targetDir)
 
 			console.log(`\n✔ Done.\ncd ${targetDir}\n${answers.pm} dev\n`)
 		})

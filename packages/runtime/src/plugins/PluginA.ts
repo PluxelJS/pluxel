@@ -1,4 +1,4 @@
-import { BasePlugin, Config, f, Optional, Plugin, v, type Awaitable } from '@pluxel/hmr'
+import { type Awaitable, BasePlugin, Config, f, Optional, Plugin, v } from '@pluxel/hmr'
 // PluginA.ts
 // PluginA 依赖 PluginB 为必选依赖，依赖 PluginC 为可选依赖
 // biome-ignore lint/style/useImportType: <PluginSystem>

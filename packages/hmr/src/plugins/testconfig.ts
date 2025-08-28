@@ -1,4 +1,4 @@
-import { Config, v, f } from './config'
+import { Config, f, v } from './config'
 export const test = v.object({
 	id: v.pipe(
 		v.number(),

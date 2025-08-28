@@ -1,7 +1,7 @@
-import { Hono } from 'hono'
-import type { PluginsEnv } from '.'
-import * as v from 'valibot'
 import { vValidator } from '@hono/valibot-validator'
+import { Hono } from 'hono'
+import * as v from 'valibot'
+import type { PluginsEnv } from '.'
 
 // 校验 Schema
 const updateStatusSchema = v.object({
@@ -36,10 +36,7 @@ export const pluginStatus = new Hono<PluginsEnv>()
 		// }
 		const ops = statusOps[status]
 		if (!ops) {
-			return c.json(
-				{ code: 'invalid_status', error: `不支持的状态：${status}` },
-				400,
-			)
+			return c.json({ code: 'invalid_status', error: `不支持的状态：${status}` }, 400)
 		}
 
 		try {
@@ -57,15 +54,10 @@ export const pluginStatus = new Hono<PluginsEnv>()
 				return c.json({ code: '依赖解析出错。', error: result.err }, 500)
 			}
 
-			return c.json(
-				{ code: 'success', isRunning: ctx.registry.isRunning(ctor) },
-				200,
-			)
+			return c.json({ code: 'success', isRunning: ctx.registry.isRunning(ctor) }, 200)
 		} catch (e: any) {
 			const isStart = status === 'start' || status === 'restart'
-			const errorCode = isStart
-				? 'plugin_start_failed'
-				: 'plugin_operation_failed'
+			const errorCode = isStart ? 'plugin_start_failed' : 'plugin_operation_failed'
 			return c.json({ code: errorCode, error: e?.message ?? '未知错误' }, 500)
 		}
 	})

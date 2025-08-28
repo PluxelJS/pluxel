@@ -1,5 +1,5 @@
+import { inflateRawSync, inflateSync } from 'node:zlib'
 import WebSocket, { type RawData } from 'ws'
-import { inflateSync, inflateRawSync } from 'node:zlib'
 
 /** —— 信令 —— */
 enum Sig {
@@ -18,14 +18,7 @@ type EventFrame = { s: Sig.EVENT; d: any; sn: number }
 type PongFrame = { s: Sig.PONG }
 type Reconnect = { s: Sig.RECONNECT; d?: { code?: number; err?: string } }
 type ResumeAck = { s: Sig.RESUME_ACK; d: { session_id: string } }
-type Frame =
-	| HelloOk
-	| HelloFail
-	| EventFrame
-	| PongFrame
-	| Reconnect
-	| ResumeAck
-	| any
+type Frame = HelloOk | HelloFail | EventFrame | PongFrame | Reconnect | ResumeAck | any
 
 export type GatewayState =
 	| 'idle'
@@ -65,16 +58,8 @@ export interface KookGatewayClientOptions {
 	onEvent: (sn: number, data: any) => void
 	onError?: (err: unknown) => void
 	onFrame?: (f: Frame) => void
-	onStateChange?: (
-		prev: GatewayState,
-		next: GatewayState,
-		meta?: Record<string, any>,
-	) => void
-	onDebug?: (e: {
-		tag: string
-		data?: Record<string, any>
-		msg?: string
-	}) => void
+	onStateChange?: (prev: GatewayState, next: GatewayState, meta?: Record<string, any>) => void
+	onDebug?: (e: { tag: string; data?: Record<string, any>; msg?: string }) => void
 
 	/** 性能 & 调试 */
 	compress?: 0 | 1 // 默认 1（省带宽）；调试可设 0
@@ -90,10 +75,7 @@ export interface KookGatewayClientOptions {
 
 	persistence?: {
 		load: () => Promise<{ lastSn: number; sessionId?: string } | undefined>
-		save: (d: {
-			lastSn: number
-			sessionId: string | undefined
-		}) => Promise<void>
+		save: (d: { lastSn: number; sessionId: string | undefined }) => Promise<void>
 		clear?: () => Promise<void>
 	}
 }
@@ -259,8 +241,7 @@ export class KookGatewayClient {
 
 	send(data: any) {
 		const s = this.ws
-		if (!s || s.readyState !== WebSocket.OPEN)
-			throw new Error('WebSocket is not open')
+		if (!s || s.readyState !== WebSocket.OPEN) throw new Error('WebSocket is not open')
 		s.send(typeof data === 'string' ? data : JSON.stringify(data))
 	}
 
@@ -417,10 +398,7 @@ export class KookGatewayClient {
 				const ackPromise = new Promise<void>((resolve, reject) => {
 					this.resumeAckResolve = resolve
 					this.resumeAckReject = reject
-					const t = setTimeout(
-						() => reject(new Error('RESUME ack timeout')),
-						6000,
-					)
+					const t = setTimeout(() => reject(new Error('RESUME ack timeout')), 6000)
 					;(t as any).unref?.()
 					this.resumeAckTimer = t
 				})
@@ -472,14 +450,9 @@ export class KookGatewayClient {
 					this.helloResolve?.()
 				} else {
 					const entry = HELLO_CODE[code as keyof typeof HELLO_CODE]
-					if (
-						entry &&
-						(entry.hint === 'token_refresh' || entry.hint === 'fatal_token')
-					)
+					if (entry && (entry.hint === 'token_refresh' || entry.hint === 'fatal_token'))
 						this.sessionId = undefined
-					this.helloReject?.(
-						new Error(`HELLO failed: ${entry?.name ?? `code=${code}`}`),
-					)
+					this.helloReject?.(new Error(`HELLO failed: ${entry?.name ?? `code=${code}`}`))
 				}
 			} else {
 				this.earlyFrames.push(f)
@@ -685,10 +658,7 @@ export class KookGatewayClient {
 			// zlib 头判定：0x78 01/5E/9C/DA
 			const z =
 				buf[0] === 0x78 &&
-				(buf[1] === 0x01 ||
-					buf[1] === 0x5e ||
-					buf[1] === 0x9c ||
-					buf[1] === 0xda)
+				(buf[1] === 0x01 || buf[1] === 0x5e || buf[1] === 0x9c || buf[1] === 0xda)
 			if (z) {
 				const out = inflateSync(buf)
 				const s = out.toString('utf8').trim()

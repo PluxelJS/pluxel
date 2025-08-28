@@ -1,12 +1,12 @@
 // tests/scope.spec.ts
 import 'reflect-metadata'
-import { describe, it, expect } from 'bun:test'
+import { describe, expect, it } from 'bun:test'
 import { ContainerBuilder } from '../src'
+import { expectExist, expectOk } from './_helpers'
 import { Agenda } from './fixtures/agenda'
 import { Calendar } from './fixtures/calendar'
 import { Clock } from './fixtures/clock'
 import { MultiAgenda } from './fixtures/multi-agenda'
-import { expectOk, expectExist } from './_helpers'
 
 describe('scopes', () => {
 	it('transient services are always created as new instances', () => {

@@ -1,8 +1,6 @@
 import type { Context } from '@pluxel/core'
-import type { Hono } from 'hono'
-
 import type { DehydratedState, QueryClient } from '@tanstack/react-query'
-import type { Env as HonoEnv } from 'hono'
+import type { Hono, Env as HonoEnv } from 'hono'
 
 export type AppEnv = HonoEnv & {
 	Variables: {

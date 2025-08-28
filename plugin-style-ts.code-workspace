@@ -1,116 +1,114 @@
 {
-  "folders": [
-    {
-      "name": "🌱  monorepo",
-      "path": "."
-    },
-    {
-      "name": "🍀  @pluxel/cli",
-      "path": "packages/cli"
-    },
-    {
-      "name": "🍀  @pluxel/components",
-      "path": "packages/components"
-    },
-    {
-      "name": "🍀  @pluxel/context",
-      "path": "packages/context"
-    },
-    {
-      "name": "🍀  @pluxel/core",
-      "path": "packages/core"
-    },
-    {
-      "name": "🍀  diod",
-      "path": "packages/diod"
-    },
-    {
-      "name": "🍀  @pluxel/hmr",
-      "path": "packages/hmr"
-    },
-    {
-      "name": "🍀  @pluxel/runtime",
-      "path": "packages/runtime"
-    },
-    {
-      "name": "🍀  valibot-form",
-      "path": "packages/valibot-form"
-    }
-  ],
-  "settings": {
-    "ColorfulMonorepo.workspaces.collection": [
-      {
-        "path": "c:\\Users\\User\\Documents\\GitHub\\plugin-style-ts",
-        "packageName": "monorepo",
-        "label": "🌱  monorepo",
-        "foreground": "#000000",
-        "background": "#e0cc2f"
-      },
-      {
-        "path": "c:\\Users\\User\\Documents\\GitHub\\plugin-style-ts\\packages\\cli",
-        "packageName": "@pluxel/cli",
-        "label": "🍀  @pluxel/cli",
-        "foreground": "#ffffff",
-        "background": "#9c8a49"
-      },
-      {
-        "path": "c:\\Users\\User\\Documents\\GitHub\\plugin-style-ts\\packages\\components",
-        "packageName": "@pluxel/components",
-        "label": "🍀  @pluxel/components",
-        "foreground": "#ffffff",
-        "background": "#d13139"
-      },
-      {
-        "path": "c:\\Users\\User\\Documents\\GitHub\\plugin-style-ts\\packages\\context",
-        "packageName": "@pluxel/context",
-        "label": "🍀  @pluxel/context",
-        "foreground": "#000000",
-        "background": "#26ba5b"
-      },
-      {
-        "path": "c:\\Users\\User\\Documents\\GitHub\\plugin-style-ts\\packages\\core",
-        "packageName": "@pluxel/core",
-        "label": "🍀  @pluxel/core",
-        "foreground": "#ffffff",
-        "background": "#e81b65"
-      },
-      {
-        "path": "c:\\Users\\User\\Documents\\GitHub\\plugin-style-ts\\packages\\diod",
-        "packageName": "diod",
-        "label": "🍀  diod",
-        "foreground": "#ffffff",
-        "background": "#e85fa1"
-      },
-      {
-        "path": "c:\\Users\\User\\Documents\\GitHub\\plugin-style-ts\\packages\\hmr",
-        "packageName": "@pluxel/hmr",
-        "label": "🍀  @pluxel/hmr",
-        "foreground": "#000000",
-        "background": "#52b522"
-      },
-      {
-        "path": "c:\\Users\\User\\Documents\\GitHub\\plugin-style-ts\\packages\\runtime",
-        "packageName": "@pluxel/runtime",
-        "label": "🍀  @pluxel/runtime",
-        "foreground": "#000000",
-        "background": "#5cfea3"
-      },
-      {
-        "path": "c:\\Users\\User\\Documents\\GitHub\\plugin-style-ts\\packages\\valibot-form",
-        "packageName": "valibot-form",
-        "label": "🍀  valibot-form",
-        "foreground": "#ffffff",
-        "background": "#ae679d"
-      }
-    ],
-    "files.exclude": {},
-    "typescript.tsdk": "🌱  monorepo\\node_modules\\typescript\\lib",
-    "exportall.config.folderListener": [
-      "/packages/components/src/components/Plugin",
-      "/packages/components/src/form/schema"
-    ],
-    "exportall.config.relExclusion": [
-      "/packages/components/src/app/Dashboard/Example.tsx"
-    ]
-  }
+	"folders": [
+		{
+			"name": "🌱  monorepo",
+			"path": "."
+		},
+		{
+			"name": "🍀  @pluxel/cli",
+			"path": "packages/cli"
+		},
+		{
+			"name": "🍀  @pluxel/components",
+			"path": "packages/components"
+		},
+		{
+			"name": "🍀  @pluxel/context",
+			"path": "packages/context"
+		},
+		{
+			"name": "🍀  @pluxel/core",
+			"path": "packages/core"
+		},
+		{
+			"name": "🍀  diod",
+			"path": "packages/diod"
+		},
+		{
+			"name": "🍀  @pluxel/hmr",
+			"path": "packages/hmr"
+		},
+		{
+			"name": "🍀  @pluxel/runtime",
+			"path": "packages/runtime"
+		},
+		{
+			"name": "🍀  valibot-form",
+			"path": "packages/valibot-form"
+		}
+	],
+	"settings": {
+		"ColorfulMonorepo.workspaces.collection": [
+			{
+				"path": "c:\\Users\\User\\Documents\\GitHub\\plugin-style-ts",
+				"packageName": "monorepo",
+				"label": "🌱  monorepo",
+				"foreground": "#000000",
+				"background": "#e0cc2f"
+			},
+			{
+				"path": "c:\\Users\\User\\Documents\\GitHub\\plugin-style-ts\\packages\\cli",
+				"packageName": "@pluxel/cli",
+				"label": "🍀  @pluxel/cli",
+				"foreground": "#ffffff",
+				"background": "#9c8a49"
+			},
+			{
+				"path": "c:\\Users\\User\\Documents\\GitHub\\plugin-style-ts\\packages\\components",
+				"packageName": "@pluxel/components",
+				"label": "🍀  @pluxel/components",
+				"foreground": "#ffffff",
+				"background": "#d13139"
+			},
+			{
+				"path": "c:\\Users\\User\\Documents\\GitHub\\plugin-style-ts\\packages\\context",
+				"packageName": "@pluxel/context",
+				"label": "🍀  @pluxel/context",
+				"foreground": "#000000",
+				"background": "#26ba5b"
+			},
+			{
+				"path": "c:\\Users\\User\\Documents\\GitHub\\plugin-style-ts\\packages\\core",
+				"packageName": "@pluxel/core",
+				"label": "🍀  @pluxel/core",
+				"foreground": "#ffffff",
+				"background": "#e81b65"
+			},
+			{
+				"path": "c:\\Users\\User\\Documents\\GitHub\\plugin-style-ts\\packages\\diod",
+				"packageName": "diod",
+				"label": "🍀  diod",
+				"foreground": "#ffffff",
+				"background": "#e85fa1"
+			},
+			{
+				"path": "c:\\Users\\User\\Documents\\GitHub\\plugin-style-ts\\packages\\hmr",
+				"packageName": "@pluxel/hmr",
+				"label": "🍀  @pluxel/hmr",
+				"foreground": "#000000",
+				"background": "#52b522"
+			},
+			{
+				"path": "c:\\Users\\User\\Documents\\GitHub\\plugin-style-ts\\packages\\runtime",
+				"packageName": "@pluxel/runtime",
+				"label": "🍀  @pluxel/runtime",
+				"foreground": "#000000",
+				"background": "#5cfea3"
+			},
+			{
+				"path": "c:\\Users\\User\\Documents\\GitHub\\plugin-style-ts\\packages\\valibot-form",
+				"packageName": "valibot-form",
+				"label": "🍀  valibot-form",
+				"foreground": "#ffffff",
+				"background": "#ae679d"
+			}
+		],
+		"files.exclude": {},
+		"typescript.tsdk": "🌱  monorepo\\node_modules\\typescript\\lib",
+		"exportall.config.folderListener": [
+			"/packages/components/src/components/Plugin",
+			"/packages/components/src/form/schema"
+		],
+		"exportall.config.relExclusion": ["/packages/components/src/app/Dashboard/Example.tsx"]
+	}
 }

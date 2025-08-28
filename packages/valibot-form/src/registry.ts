@@ -59,10 +59,7 @@ export type Renderer<T extends PartialMetaType> = (props: CommonProps<T>) => any
 const renderers = new Map<PartialMetaType, Renderer<PartialMetaType>>()
 
 /** 注册渲染器 */
-export function registerRenderer<T extends PartialMetaType>(
-	type: T,
-	renderer: Renderer<T>,
-) {
+export function registerRenderer<T extends PartialMetaType>(type: T, renderer: Renderer<T>) {
 	renderers.set(type, renderer as Renderer<PartialMetaType>)
 }
 

@@ -1,11 +1,11 @@
 // tests/factories.spec.ts
 import 'reflect-metadata'
-import { describe, it, expect } from 'bun:test'
+import { describe, expect, it } from 'bun:test'
 import { ContainerBuilder } from '../src'
+import { expectExist, expectOk } from './_helpers'
 import { Agenda } from './fixtures/agenda'
 import { Calendar } from './fixtures/calendar'
 import { Clock } from './fixtures/clock'
-import { expectOk, expectExist } from './_helpers'
 
 describe('returns instances created with factories', () => {
 	it('resolves factory-produced instances', () => {

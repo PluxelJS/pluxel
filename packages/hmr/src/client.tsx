@@ -1,9 +1,5 @@
 import { MantineProvider } from '@mantine/core'
-import {
-	HydrationBoundary,
-	QueryClient,
-	QueryClientProvider,
-} from '@tanstack/react-query'
+import { HydrationBoundary, QueryClient, QueryClientProvider } from '@tanstack/react-query'
 // src/client.tsx
 import { createRoot, hydrateRoot } from 'react-dom/client'
 import { Router } from 'wouter'
@@ -26,10 +22,7 @@ if (root.hasChildNodes()) {
 		root,
 		<QueryClientProvider client={queryClient}>
 			<HydrationBoundary state={dehydratedState}>
-				<MantineProvider
-					withGlobalClasses={false}
-					deduplicateCssVariables={false}
-				>
+				<MantineProvider withGlobalClasses={false} deduplicateCssVariables={false}>
 					<Router>
 						<App />
 					</Router>
@@ -41,10 +34,7 @@ if (root.hasChildNodes()) {
 	createRoot(root).render(
 		<QueryClientProvider client={queryClient}>
 			<HydrationBoundary state={undefined}>
-				<MantineProvider
-					withGlobalClasses={false}
-					deduplicateCssVariables={false}
-				>
+				<MantineProvider withGlobalClasses={false} deduplicateCssVariables={false}>
 					<Router>
 						<App />
 					</Router>

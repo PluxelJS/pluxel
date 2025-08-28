@@ -1,10 +1,10 @@
 // tests/alias.spec.ts
 import 'reflect-metadata'
-import { describe, it, expect } from 'bun:test'
+import { describe, expect, it } from 'bun:test'
 import { ContainerBuilder } from '../src'
-import { expectOk, expectErr, expectExist } from './_helpers'
 import type { VerificationError } from '../src/verifier'
 import { ServiceVerificationAggregateError } from '../src/verifier'
+import { expectErr, expectExist, expectOk } from './_helpers'
 
 describe('alias index & resolution', () => {
 	it('resolves by string alias', () => {

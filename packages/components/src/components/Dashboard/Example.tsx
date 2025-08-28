@@ -1,12 +1,8 @@
-import React, { useState } from 'react'
-import { Layout } from './Layout'
-import {
-	PluginOrganizer,
-	type PluginStatuses,
-	type GroupConfig,
-} from '../Plugin/PluginOrganizer'
-import { Flex, Box, ScrollArea } from '@mantine/core'
+import { Box, Flex, ScrollArea } from '@mantine/core'
 import { useMediaQuery } from '@mantine/hooks'
+import React, { useState } from 'react'
+import { type GroupConfig, PluginOrganizer, type PluginStatuses } from '../Plugin/PluginOrganizer'
+import { Layout } from './Layout'
 
 const statuses: PluginStatuses = {
 	PluginA: { id: 'PluginA', isRunning: true },
@@ -21,8 +17,7 @@ const initialGroups: GroupConfig[] = [
 
 export default function App() {
 	const [opened, setOpened] = useState(false)
-	const handleChange = (groups: GroupConfig[]) =>
-		console.log('New groups:', groups)
+	const handleChange = (groups: GroupConfig[]) => console.log('New groups:', groups)
 
 	// 监听屏幕宽度：小于 768px 就视作移动端
 	const isMobile = useMediaQuery('(max-width: 768px)')
@@ -61,9 +56,7 @@ export default function App() {
 					}}
 				>
 					<h2>主内容区域</h2>
-					<button onClick={() => setOpened((o) => !o)}>
-						{opened ? '关闭遮罩' : '打开遮罩'}
-					</button>
+					<button onClick={() => setOpened((o) => !o)}>{opened ? '关闭遮罩' : '打开遮罩'}</button>
 					{/* 这里渲染其他内容 */}
 				</Box>
 			</Flex>

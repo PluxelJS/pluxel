@@ -1,11 +1,11 @@
 import devServer from '@hono/vite-dev-server'
 import { type Context, Injectable } from '@pluxel/core'
 import { createFactory, type Factory } from 'hono/factory'
-import api from '../../app/api'
-import loggerApi from '../logger/api'
-import { ssrApp } from '../../server'
-import type { AppEnv, HonoType } from './env'
 import type { Plugin } from 'vite'
+import api from '../../app/api'
+import { ssrApp } from '../../server'
+import loggerApi from '../logger/api'
+import type { AppEnv, HonoType } from './env'
 
 const serviceName = 'honoService' as const
 declare module '@pluxel/core' {

@@ -6,30 +6,30 @@
 // - Rebuild alias index on each build from fresh services metadata
 // - Idempotent unregister()
 
+import { createErr, createOk, isOk, type Result } from 'option-t/plain_result'
 import { DiodContainer } from './container'
-import { DiodRegistration } from './registration'
-import type {
-	BuildOptions,
-	Identifier,
-	Newable,
-	Registration,
-	ConfigurableRegistration,
-	WithDependencies,
-	WithScopeChange,
-	AliasKey,
-	AliasConflictPolicy,
-} from './types'
 import type {
 	Buildable,
 	ServiceData,
 	ServiceListMetadata,
 } from './internal-types'
+import { DiodRegistration } from './registration'
+import type {
+	AliasConflictPolicy,
+	AliasKey,
+	BuildOptions,
+	ConfigurableRegistration,
+	Identifier,
+	Newable,
+	Registration,
+	WithDependencies,
+	WithScopeChange,
+} from './types'
 import {
-	verifyAndComputeDependents,
 	ServiceVerificationAggregateError,
 	type VerificationError,
+	verifyAndComputeDependents,
 } from './verifier'
-import { type Result, createOk, createErr, isOk } from 'option-t/plain_result'
 
 /* --------------------------------- Types ---------------------------------- */
 
@@ -165,7 +165,9 @@ export class ContainerBuilder {
 
 	public buildServices({
 		autowire = true,
-	}: { autowire?: boolean } = {}): Result<
+	}: {
+		autowire?: boolean
+	} = {}): Result<
 		{
 			services: ServiceMap
 			dependents: Map<Identifier<unknown>, Set<Identifier<unknown>>>

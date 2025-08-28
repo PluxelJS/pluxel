@@ -1,7 +1,8 @@
 // tests/tagging.spec.ts
 import 'reflect-metadata'
-import { describe, it, expect } from 'bun:test'
+import { describe, expect, it } from 'bun:test'
 import { ContainerBuilder, type Identifier } from '../src'
+import { expectExist, expectOk } from './_helpers'
 import { Agenda } from './fixtures/agenda'
 import { Calendar } from './fixtures/calendar'
 import { Clock } from './fixtures/clock'
@@ -11,7 +12,6 @@ import { Logger } from './fixtures/logger'
 import { MultiAgenda } from './fixtures/multi-agenda'
 import { Person } from './fixtures/person'
 import { Sayer } from './fixtures/sayer'
-import { expectOk, expectExist } from './_helpers'
 
 describe('service identifiers can be get based on tag', () => {
 	it('findTaggedServiceIdentifiers works in factory context and container', () => {

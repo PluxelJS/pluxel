@@ -4,20 +4,17 @@ import { parseArgsStringToArgv } from './helper'
 type Awaitable<T> = T | Promise<T>
 
 /** —— 类型层：从 "cmd <a> [b]" 提取位置参数 —— */
-type ParseRequired<T extends string> =
-	T extends `${infer B} <${infer P}> ${infer A}`
-		? { [K in P]: string } & ParseRequired<`${B} ${A}`>
-		: T extends `${infer B} <${infer P}>`
-			? { [K in P]: string }
-			: {}
-type ParseOptional<T extends string> =
-	T extends `${infer B} [${infer P}] ${infer A}`
-		? { [K in P]?: string } & ParseOptional<`${B} ${A}`>
-		: T extends `${infer B} [${infer P}]`
-			? { [K in P]?: string }
-			: {}
-export type ExtractCommandParams<T extends string> = ParseRequired<T> &
-	ParseOptional<T>
+type ParseRequired<T extends string> = T extends `${infer B} <${infer P}> ${infer A}`
+	? { [K in P]: string } & ParseRequired<`${B} ${A}`>
+	: T extends `${infer B} <${infer P}>`
+		? { [K in P]: string }
+		: {}
+type ParseOptional<T extends string> = T extends `${infer B} [${infer P}] ${infer A}`
+	? { [K in P]?: string } & ParseOptional<`${B} ${A}`>
+	: T extends `${infer B} [${infer P}]`
+		? { [K in P]?: string }
+		: {}
+export type ExtractCommandParams<T extends string> = ParseRequired<T> & ParseOptional<T>
 
 /** —— 命令定义 —— */
 export interface CommandSpec<P extends string, F extends Flags, C = unknown> {
@@ -29,10 +26,7 @@ export interface CommandSpec<P extends string, F extends Flags, C = unknown> {
 	/** 仅命名 token（不能含 <...>/[...]），支持多词 */
 	aliases?: string[]
 	/** argv = flags + 位置参数；ctx 单独传入 */
-	action: (
-		argv: TypeFlag<F> & ExtractCommandParams<P>,
-		ctx: C,
-	) => Awaitable<string | void>
+	action: (argv: TypeFlag<F> & ExtractCommandParams<P>, ctx: C) => Awaitable<string | void>
 }
 
 /** —— 编译后的命令 —— */
@@ -73,8 +67,7 @@ export function defineCommand<P extends string, F extends Flags, C = unknown>(
 	const rawAliases = spec.aliases ?? []
 	// 校验别名仅含命名 token；同时做 normalize
 	for (const a of rawAliases) {
-		if (/[<\[]/.test(a))
-			throw new Error(`Alias should not contain parameters: "${a}"`)
+		if (/[<[]/.test(a)) throw new Error(`Alias should not contain parameters: "${a}"`)
 	}
 	const aliases = Object.freeze(
 		Array.from(new Set(rawAliases.map((s) => s.trim()).filter(Boolean))),
@@ -93,9 +86,7 @@ export function defineCommand<P extends string, F extends Flags, C = unknown>(
 		// 位置参数：来自 argv._
 		const pos = argv._ as string[]
 		if (pos.length < required.length) {
-			throw new CommandError(
-				`Expected ${required.length} args, got ${pos.length}. Usage: ${usage}`,
-			)
+			throw new CommandError(`Expected ${required.length} args, got ${pos.length}. Usage: ${usage}`)
 		}
 
 		// 写入位置参数
@@ -106,17 +97,13 @@ export function defineCommand<P extends string, F extends Flags, C = unknown>(
 			if (v !== undefined) params[optional[i2]] = v
 		}
 
-		const merged = Object.assign(
-			Object.create(null),
-			argv,
-			params,
-		) as TypeFlag<F> & ExtractCommandParams<P>
+		const merged = Object.assign(Object.create(null), argv, params) as TypeFlag<F> &
+			ExtractCommandParams<P>
 		return spec.action(merged, ctx)
 	}
 
 	const runTokens = (tokens: string[], ctx: C) => runCore(tokens, ctx)
-	const run = (input: string, ctx: C) =>
-		runCore(parseArgsStringToArgv(input), ctx)
+	const run = (input: string, ctx: C) => runCore(parseArgsStringToArgv(input), ctx)
 
 	return {
 		name,
@@ -231,9 +218,7 @@ export class CommandError extends Error {
 
 /** —— 新增：为特定 C 生成 define —— */
 export function defineFor<C>() {
-	return function define<P extends string, F extends Flags>(
-		spec: CommandSpec<P, F, C>,
-	) {
+	return function define<P extends string, F extends Flags>(spec: CommandSpec<P, F, C>) {
 		return defineCommand<P, F, C>(spec)
 	}
 }

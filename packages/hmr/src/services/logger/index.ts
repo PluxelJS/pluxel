@@ -1,6 +1,6 @@
 import { type Context, Injectable, OverrideOf } from '@pluxel/core'
 import { LoggerService } from '@pluxel/core/service'
-import { type Logger, createLogger } from './createLogger'
+import { createLogger, type Logger } from './createLogger'
 
 // 1. 列出要转发的 log 级别
 const LEVELS = ['trace', 'debug', 'info', 'warn', 'error', 'fatal'] as const

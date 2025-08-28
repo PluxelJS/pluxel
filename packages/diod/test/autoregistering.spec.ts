@@ -1,10 +1,10 @@
 // tests/autoregistering.spec.ts
 import 'reflect-metadata'
-import { describe, it, expect } from 'bun:test'
+import { describe, expect, it } from 'bun:test'
 import { ContainerBuilder } from '../src'
+import { expectExist, expectOk } from './_helpers'
 import { AutoRegisteredServiceSample } from './fixtures/autoregistered-services'
 import { autoregister } from './fixtures/register-service-decorator'
-import { expectOk, expectExist } from './_helpers'
 
 describe('autoregisters classes with custom decorator', () => {
 	it('registers and resolves the decorated class', () => {

@@ -1,6 +1,6 @@
-import type React from 'react'
-import { Card, Group, Anchor, Text, Tooltip } from '@mantine/core'
+import { Anchor, Card, Group, Text, Tooltip } from '@mantine/core'
 import { IconArrowRight } from '@tabler/icons-react'
+import type React from 'react'
 import type { Dependencies } from './Plugin'
 
 interface DependencyListProps {
@@ -55,20 +55,14 @@ export const DependencyList: React.FC<DependencyListProps> = ({
 									display: 'flex',
 									alignItems: 'center',
 									padding: '4px 8px',
-									backgroundColor: dep.optional
-										? theme.colors.yellow[1]
-										: theme.colors.gray[1],
+									backgroundColor: dep.optional ? theme.colors.yellow[1] : theme.colors.gray[1],
 									borderRadius: theme.radius.sm,
 									textDecoration: 'none',
 									fontSize: theme.fontSizes.xs,
 									fontWeight: dep.optional ? 600 : 500,
-									color: dep.optional
-										? theme.colors.yellow[9]
-										: theme.colors.blue[7],
+									color: dep.optional ? theme.colors.yellow[9] : theme.colors.blue[7],
 									'&:hover': {
-										backgroundColor: dep.optional
-											? theme.colors.yellow[2]
-											: theme.colors.gray[2],
+										backgroundColor: dep.optional ? theme.colors.yellow[2] : theme.colors.gray[2],
 									},
 								})}
 							>

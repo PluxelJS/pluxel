@@ -1,15 +1,16 @@
 // container.ts
+
+import type { Maybe } from 'option-t/maybe'
+import { createErr, createOk, isOk, type Result } from 'option-t/plain_result'
 import type { ServiceData } from './internal-types'
 import {
-	ScopeType,
-	RegistrationType,
-	type Identifier,
-	type ScopedContainer,
-	type Container,
 	type AliasKey,
+	type Container,
+	type Identifier,
+	RegistrationType,
+	type ScopedContainer,
+	ScopeType,
 } from './types'
-import { type Result, createOk, createErr, isOk } from 'option-t/plain_result'
-import type { Maybe } from 'option-t/maybe'
 
 /* ----------------------------------------------------------------------------
  * 运行期解析错误（Container 返回 Result/Maybe 用）

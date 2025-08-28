@@ -1,9 +1,8 @@
+import { ColorSchemeScript, MantineProvider } from '@mantine/core'
 import React from 'react'
 import ReactDOM from 'react-dom/client'
 import App from './TestApp.tsx'
-
 import { theme } from './theme'
-import { ColorSchemeScript, MantineProvider } from '@mantine/core'
 import '@mantine/core/styles.css'
 
 ReactDOM.createRoot(document.getElementById('root') as HTMLElement).render(

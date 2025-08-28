@@ -1,27 +1,27 @@
-import React, { useEffect, useMemo, useState } from 'react'
 import {
-	Title,
-	Group,
-	Box,
-	Anchor,
-	Tabs,
-	ScrollArea,
-	Button,
-	Tooltip,
-	Badge,
 	Affix,
+	Anchor,
+	Badge,
+	Box,
+	Button,
+	Group,
 	Paper,
+	ScrollArea,
+	Tabs,
 	Text,
+	Title,
+	Tooltip,
 } from '@mantine/core'
-import { useMutation } from '@tanstack/react-query'
 import { useHotkeys } from '@mantine/hooks'
-import { client } from '../rpc'
-import type { ObjectSchema, InferOutput } from 'valibot'
-import { getDefaults } from 'valibot'
-import type { InferRequestType, InferResponseType } from 'hono/client'
-import { formOptions } from '@tanstack/react-form'
 import { notifications } from '@mantine/notifications'
 import { AutoForm } from '@pluxel/components'
+import { formOptions } from '@tanstack/react-form'
+import { useMutation } from '@tanstack/react-query'
+import type { InferRequestType, InferResponseType } from 'hono/client'
+import React, { useEffect, useMemo, useState } from 'react'
+import type { InferOutput, ObjectSchema } from 'valibot'
+import { getDefaults } from 'valibot'
+import { client } from '../rpc'
 
 export interface ConfigFormProps {
 	pluginName: string
@@ -71,8 +71,7 @@ function FloatingBar(props: {
 	onReset(): void
 	savedAt?: number
 }) {
-	const { title, dirty, canSubmit, submitting, onSubmit, onReset, savedAt } =
-		props
+	const { title, dirty, canSubmit, submitting, onSubmit, onReset, savedAt } = props
 
 	// 干净时半透明，脏/提交中满不透明；鼠标移上去也满不透明
 	const [hovered, setHovered] = useState(false)
@@ -221,17 +220,12 @@ function ConfigTabPanel({
 			'mod+S',
 			(e) => {
 				e.preventDefault()
-				;(
-					document.getElementById(`submit-fab-${tabKey}`) as HTMLButtonElement
-				)?.click()
+				;(document.getElementById(`submit-fab-${tabKey}`) as HTMLButtonElement)?.click()
 			},
 		],
 		[
 			'Escape',
-			() =>
-				(
-					document.getElementById(`reset-fab-${tabKey}`) as HTMLButtonElement
-				)?.click(),
+			() => (document.getElementById(`reset-fab-${tabKey}`) as HTMLButtonElement)?.click(),
 		],
 	])
 
@@ -249,11 +243,7 @@ function ConfigTabPanel({
 		>
 			<AutoForm schema={schema as any} formOpts={opts}>
 				{/* 唯一滚动容器：字段区（底部多垫点，避免被悬浮条遮挡） */}
-				<ScrollArea
-					style={{ flex: 1, minHeight: 0 }}
-					offsetScrollbars
-					type="hover"
-				>
+				<ScrollArea style={{ flex: 1, minHeight: 0 }} offsetScrollbars type="hover">
 					<Box px="sm" pb={96 /* = 悬浮条高度余量 */}>
 						<AutoForm.Fields />
 					</Box>
@@ -278,11 +268,7 @@ function ConfigTabPanel({
 	)
 }
 
-export function ConfigForm({
-	pluginName,
-	configs,
-	existConfigs,
-}: ConfigFormProps) {
+export function ConfigForm({ pluginName, configs, existConfigs }: ConfigFormProps) {
 	const keys = useMemo(() => Object.keys(configs), [configs])
 	const [tab, setTab] = useState(keys[0] || '')
 
@@ -291,20 +277,16 @@ export function ConfigForm({
 		return keys.map((key) => {
 			const schema = configs[key]!
 			const exist = (existConfigs?.[key] ?? {}) as Record<string, any>
-			const defaults = Object.assign(
-				getDefaults(schema) as any,
-				exist,
-			) as InferOutput<typeof schema>
+			const defaults = Object.assign(getDefaults(schema) as any, exist) as InferOutput<
+				typeof schema
+			>
 			return { key, schema, defaults }
 		})
 	}, [configs, existConfigs, keys])
 
 	// 保存时间（给状态用）
-	const [savedAtMap, setSavedAtMap] = useState<
-		Record<string, number | undefined>
-	>({})
-	const onSaved = (k: string) =>
-		setSavedAtMap((m) => ({ ...m, [k]: Date.now() }))
+	const [savedAtMap, setSavedAtMap] = useState<Record<string, number | undefined>>({})
+	const onSaved = (k: string) => setSavedAtMap((m) => ({ ...m, [k]: Date.now() }))
 
 	return (
 		<Box
@@ -329,11 +311,7 @@ export function ConfigForm({
 				>
 					{pluginName} 配置
 				</Title>
-				<Anchor
-					href={`/plugins/${pluginName}/docs`}
-					target="_blank"
-					rel="noreferrer"
-				>
+				<Anchor href={`/plugins/${pluginName}/docs`} target="_blank" rel="noreferrer">
 					查看文档
 				</Anchor>
 			</Group>

@@ -1,21 +1,21 @@
-import type React from 'react'
 import {
-	Stack,
-	Text,
-	Skeleton,
-	Title,
+	ActionIcon,
+	Badge,
 	Divider,
 	Group,
-	Badge,
+	Skeleton,
+	Stack,
+	Text,
 	TextInput,
-	ActionIcon,
+	Title,
 } from '@mantine/core'
+import { showNotification } from '@mantine/notifications'
+import { type GroupConfig, PluginOrganizer } from '@pluxel/components'
 import { IconSearch, IconX } from '@tabler/icons-react'
 import { useQuery } from '@tanstack/react-query'
-import { showNotification } from '@mantine/notifications'
-import { useState, useMemo } from 'react'
+import type React from 'react'
+import { useMemo, useState } from 'react'
 import { client } from '../rpc'
-import { PluginOrganizer, type GroupConfig } from '@pluxel/components'
 import { WouterLinkAdapter } from '../WouterLinkAdapter'
 
 interface PluginListProps {
@@ -23,10 +23,7 @@ interface PluginListProps {
 	onItemSelect?: () => void
 }
 
-export const PluginList: React.FC<PluginListProps> = ({
-	pluginName,
-	onItemSelect,
-}) => {
+export const PluginList: React.FC<PluginListProps> = ({ pluginName, onItemSelect }) => {
 	const [q, setQ] = useState('')
 
 	const statusesQ = useQuery({
@@ -97,12 +94,7 @@ export const PluginList: React.FC<PluginListProps> = ({
 						<Badge variant="light" size="sm" suppressHydrationWarning>
 							共 {total}
 						</Badge>
-						<Badge
-							variant="light"
-							size="sm"
-							color="green"
-							suppressHydrationWarning
-						>
+						<Badge variant="light" size="sm" color="green" suppressHydrationWarning>
 							运行中 {totalRunnings}
 						</Badge>
 					</Group>

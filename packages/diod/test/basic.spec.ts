@@ -1,8 +1,8 @@
 // tests/basic.spec.ts
 import 'reflect-metadata'
-import { describe, it, expect } from 'bun:test'
-import { expectOk, expectExist, expectErr } from './_helpers'
+import { describe, expect, it } from 'bun:test'
 import { ContainerBuilder } from '../src'
+import { expectErr, expectExist, expectOk } from './_helpers'
 import { Clock } from './fixtures/clock'
 import { ConsoleLogger } from './fixtures/console-logger'
 

@@ -1,7 +1,8 @@
 // src/components/LiveLog.tsx
-import React, { useEffect, useMemo, useRef, useState } from 'react'
-import { LazyLog, ScrollFollow } from '@melloware/react-logviewer'
+
 import { useElementSize } from '@mantine/hooks'
+import { LazyLog, ScrollFollow } from '@melloware/react-logviewer'
+import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { createPrettyPrinter } from './pretty'
 
 const pretty = createPrettyPrinter({
@@ -28,8 +29,7 @@ const RECONNECT_MIN = 800 // SSE 最小重连间隔
 const RECONNECT_MAX = 10_000 // SSE 最大重连间隔
 
 /* ================= 等宽字符宽度测量（更稳的平均法） ================= */
-const MONO_FONT =
-	'13px ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace'
+const MONO_FONT = '13px ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace'
 
 function measureMonoCharWidth(): number {
 	if (typeof document === 'undefined') return 7
@@ -161,16 +161,13 @@ export function LiveLog({ module }: Props) {
 	// —— 去重 TTL（快照+首段 SSE 重叠；严格模式重复副作用） —— //
 	const seenRef = useRef(new Map<string, number>())
 	const sweepSeen = (now: number) => {
-		for (const [k, exp] of seenRef.current)
-			if (exp <= now) seenRef.current.delete(k)
+		for (const [k, exp] of seenRef.current) if (exp <= now) seenRef.current.delete(k)
 	}
 
 	// —— 合批刷入（把“展示行”批量落入 viewRing，再 setText） —— //
 	const pendingViewRef = useRef<string[]>([])
 	const rafRef = useRef<number | null>(null)
-	const flushTimerRef = useRef<number | ReturnType<typeof setTimeout> | null>(
-		null,
-	)
+	const flushTimerRef = useRef<number | ReturnType<typeof setTimeout> | null>(null)
 	const flush = () => {
 		rafRef.current = null
 		if (flushTimerRef.current) {
@@ -179,8 +176,7 @@ export function LiveLog({ module }: Props) {
 		}
 		if (pendingViewRef.current.length === 0) return
 		const v = viewRingRef.current
-		for (let i = 0; i < pendingViewRef.current.length; i++)
-			v.push(pendingViewRef.current[i])
+		for (let i = 0; i < pendingViewRef.current.length; i++) v.push(pendingViewRef.current[i])
 		pendingViewRef.current.length = 0
 		setText(v.join())
 	}
@@ -217,9 +213,7 @@ export function LiveLog({ module }: Props) {
 		// 取消上一个重排
 		if (rebuildIdleRef.current != null) {
 			const cancelIdle = (window as any).cancelIdleCallback
-			cancelIdle
-				? cancelIdle(rebuildIdleRef.current)
-				: clearTimeout(rebuildIdleRef.current as any)
+			cancelIdle ? cancelIdle(rebuildIdleRef.current) : clearTimeout(rebuildIdleRef.current as any)
 			rebuildIdleRef.current = null
 		}
 		// 重新 wrap raw → view
@@ -292,9 +286,7 @@ export function LiveLog({ module }: Props) {
 		abortRef.current = ac
 
 		fetch(`/api/logs/latest?${params.toString()}`, { signal: ac.signal })
-			.then((r) =>
-				r.ok ? r.text() : Promise.reject(new Error(`HTTP ${r.status}`)),
-			)
+			.then((r) => (r.ok ? r.text() : Promise.reject(new Error(`HTTP ${r.status}`))))
 			.then((t) => {
 				const lines = t.split('\n').filter(Boolean)
 				const start = Math.max(0, lines.length - SNAPSHOT_MAX)

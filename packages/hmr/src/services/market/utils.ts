@@ -1,8 +1,8 @@
 import fs from 'node:fs/promises'
 import os from 'node:os'
 import { extname, isAbsolute, join } from 'node:path'
-import { normalize, resolve } from 'pathe'
 import { resolvePath } from 'mlly'
+import { normalize, resolve } from 'pathe'
 
 /* --------------------- package entry (with cache & fallback) --------------------- */
 
@@ -17,10 +17,7 @@ export function clearEntryCache() {
  * dev 时优先用条件导出 '@pluxel/source'，失败则回退到默认分辨；
  * 结果 Promise 缓存，避免重复 I/O。
  */
-export function scanPackageEntryByPath(
-	spec: string,
-	isDev: boolean,
-): Promise<string> {
+export function scanPackageEntryByPath(spec: string, isDev: boolean): Promise<string> {
 	const key = `${spec}::${isDev}`
 	let p = entryCache.get(key)
 	if (!p) {
@@ -86,24 +83,17 @@ function pLimit(concurrency: number) {
 	}
 }
 
-export async function getAllTsFiles(
-	inputs: string[],
-	opts: TsScanOptions = {},
-): Promise<string[]> {
+export async function getAllTsFiles(inputs: string[], opts: TsScanOptions = {}): Promise<string[]> {
 	const exts = new Set((opts.exts ?? ['.ts']).map((e) => e.toLowerCase()))
 	const includeDts = opts.includeDts ?? false
 	const followSymlinks = opts.followSymlinks ?? true
-	const concurrency = Math.max(
-		1,
-		Math.min(opts.concurrency ?? (os.cpus()?.length ?? 4) * 2, 64),
-	)
+	const concurrency = Math.max(1, Math.min(opts.concurrency ?? (os.cpus()?.length ?? 4) * 2, 64))
 	const ignoreDirs = new Set([...(opts.ignoreDirs ?? []), ...DEFAULT_IGNORES])
 
 	const want = (filePathOrName: string) => {
 		const ext = extname(filePathOrName).toLowerCase()
 		if (!exts.has(ext)) return false
-		if (!includeDts && filePathOrName.toLowerCase().endsWith('.d.ts'))
-			return false
+		if (!includeDts && filePathOrName.toLowerCase().endsWith('.d.ts')) return false
 		return true
 	}
 

@@ -84,9 +84,7 @@ export type DirResult =
 			kind: 'single'
 			dir: string
 			/** 单目录：要么解析到入口，要么 .ts 兜底，要么报错（NO_TS_FILES/NO_ENTRY） */
-			result:
-				| EntryResult
-				| { ok: false; code: 'NO_TS_FILES'; dir: string; message: string }
+			result: EntryResult | { ok: false; code: 'NO_TS_FILES'; dir: string; message: string }
 			/** 如果入口未找到而兜底扫描，列出此次扫描到的 .ts 文件 */
 			files?: string[]
 	  }
@@ -197,9 +195,7 @@ export class ScanService {
 		)
 
 		const limit = pLimit(cfg.batchSize)
-		const results = await Promise.all(
-			inputs.map((d) => limit(() => this.scanOne(d, cfg))),
-		)
+		const results = await Promise.all(inputs.map((d) => limit(() => this.scanOne(d, cfg))))
 
 		const entries: string[] = []
 		const files: string[] = []
@@ -258,10 +254,7 @@ export class ScanService {
 	}
 
 	/* ── per-dir 扫描（带缓存） ── */
-	private async scanOne(
-		dir: string,
-		cfg: Required<ScanServiceConfig>,
-	): Promise<DirResult> {
+	private async scanOne(dir: string, cfg: Required<ScanServiceConfig>): Promise<DirResult> {
 		const key = JSON.stringify([
 			'dir',
 			dir,
@@ -277,9 +270,8 @@ export class ScanService {
 		const p = (async () => {
 			if (await this.isMonorepoRoot(dir)) {
 				return this.scanMonorepo(dir, cfg)
-			} else {
-				return this.scanSingle(dir, cfg)
 			}
+			return this.scanSingle(dir, cfg)
 		})().catch((e) => {
 			this.dirCache.delete(key)
 			throw e
@@ -293,8 +285,7 @@ export class ScanService {
 	private async isMonorepoRoot(dir: string): Promise<boolean> {
 		const pkg = await this.safeReadPkg(dir)
 		const hasWs =
-			Array.isArray((pkg as any)?.workspaces) ||
-			Array.isArray((pkg as any)?.workspaces?.packages)
+			Array.isArray((pkg as any)?.workspaces) || Array.isArray((pkg as any)?.workspaces?.packages)
 		const hasPnpm = existsSync(r(dir, 'pnpm-workspace.yaml'))
 		if (hasWs || hasPnpm) return true
 		// 惯例目录也算（尽量少误报）
@@ -308,10 +299,7 @@ export class ScanService {
 	}
 
 	/* ── monorepo：枚举子包 → 解析入口（含 includeRoot） ── */
-	private async scanMonorepo(
-		root: string,
-		cfg: Required<ScanServiceConfig>,
-	): Promise<DirResult> {
+	private async scanMonorepo(root: string, cfg: Required<ScanServiceConfig>): Promise<DirResult> {
 		const dirs = await this.enumerateWorkspaceDirs(root)
 		if (cfg.includeRoot) dirs.unshift(root)
 
@@ -348,10 +336,7 @@ export class ScanService {
 	}
 
 	/* ── 单目录：入口 → 兜底 TS → 错误 ── */
-	private async scanSingle(
-		dir: string,
-		cfg: Required<ScanServiceConfig>,
-	): Promise<DirResult> {
+	private async scanSingle(dir: string, cfg: Required<ScanServiceConfig>): Promise<DirResult> {
 		const er = await this.resolveEntryDetailed(dir, cfg)
 		if (er.ok) return { kind: 'single', dir, result: er }
 
@@ -373,8 +358,7 @@ export class ScanService {
 					ok: false,
 					code: 'NO_TS_FILES',
 					dir,
-					message:
-						'No .ts files found in directory after entry resolution failed.',
+					message: 'No .ts files found in directory after entry resolution failed.',
 				},
 			}
 		}
@@ -387,12 +371,7 @@ export class ScanService {
 		dir: string,
 		cfg: Required<ScanServiceConfig>,
 	): Promise<EntryResult> {
-		const key = JSON.stringify([
-			'entry',
-			dir,
-			cfg.conditions,
-			cfg.conservativeCandidates,
-		])
+		const key = JSON.stringify(['entry', dir, cfg.conditions, cfg.conservativeCandidates])
 		const cached = this.entryCache.get(key)
 		if (cached) return cached
 
@@ -454,11 +433,7 @@ export class ScanService {
 				const abs = r(dir, rel)
 				if (existsSync(abs)) {
 					const src: ResolutionSource =
-						rel === pkg.main
-							? 'main'
-							: rel === pkg.module
-								? 'module'
-								: 'fallback'
+						rel === pkg.main ? 'main' : rel === pkg.module ? 'module' : 'fallback'
 					return { ok: true, dir, entry: normalize(abs), source: src, tried }
 				}
 			}

@@ -13,6 +13,5 @@ export function Demo() {
 		>
 			Show notification
 		</Button>
-		
 	)
 }

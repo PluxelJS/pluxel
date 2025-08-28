@@ -1,45 +1,69 @@
 {
-  "private": true,
-  "type": "module",
-  "name": "monorepo",
-  "repository": "https://github.com/jkomyno/pnpm-monorepo-example.git",
-  "license": "MIT",
-  "engines": {
-    "pnpm": ">=9"
-  },
-  "scripts": {
-    "test": "turbo run test",
-    "build": "turbo run build",
-    "dev": "pnpm --filter runtime dev",
-    "dev:core": "pnpm --filter core dev",
-    "dev:hmr": "pnpm --filter hmr dev"
-  },
-  "devDependencies": {
-    "@biomejs/biome": "^2.2.2",
-    "@oxc-project/runtime": "^0.82.3",
-    "@types/bun": "latest",
-    "husky": "^9.1.7",
-    "is-ci": "^4.1.0",
-    "tsdown": "latest",
-    "turbo": "^2.5.6",
-    "typescript": "^5.9.2"
-  },
-  "pre-commit": "lint-staged",
-  "lint-staged": {
-    "*.{js,ts,cjs,mjs,md,json,jsonc}": "biome ci --no-errors-on-unmatched"
-  },
-  "publishConfig": {
-    "registry": "https://registry.npmjs.org/"
-  },
-  "packageManager": "pnpm@10.14.0+sha512.ad27a79641b49c3e481a16a805baa71817a04bbe06a38d17e60e2eaee83f6a146c6a688125f5792e48dd5ba30e7da52a5cda4c3992b9ccf333f9ce223af84748",
-  "dependencies": {
-    "@mantine/core": "^8.2.7",
-    "@mantine/dates": "^8.2.7",
-    "@mantine/hooks": "^8.2.7",
-    "@mantine/modals": "^8.2.7",
-    "@mantine/notifications": "^8.2.7",
-    "@tabler/icons-react": "^3.34.1",
-    "react": "^19.1.1",
-    "react-dom": "^19.1.1"
-  }
+	"private": true,
+	"type": "module",
+	"name": "monorepo",
+	"repository": "https://github.com/jkomyno/pnpm-monorepo-example.git",
+	"license": "MIT",
+	"engines": {
+		"pnpm": ">=9"
+	},
+	"scripts": {
+		"test": "turbo run test",
+		"build": "turbo run build",
+		"dev": "pnpm --filter runtime dev",
+		"dev:core": "pnpm --filter core dev",
+		"dev:hmr": "pnpm --filter hmr dev"
+	},
+	"devDependencies": {
+		"@biomejs/biome": "^2.2.2",
+		"@oxc-project/runtime": "^0.82.3",
+		"@repobuddy/biome": "^2.0.1",
+		"@types/bun": "latest",
+		"husky": "^9.1.7",
+		"is-ci": "^4.1.0",
+		"tsdown": "latest",
+		"turbo": "^2.5.6",
+		"typescript": "^5.9.2"
+	},
+	"pre-commit": "lint-staged",
+	"lint-staged": {
+		"*.{js,ts,cjs,mjs,md,json,jsonc}": "biome ci --no-errors-on-unmatched"
+	},
+	"publishConfig": {
+		"registry": "https://registry.npmjs.org/"
+	},
+	"packageManager": "pnpm@10.14.0+sha512.ad27a79641b49c3e481a16a805baa71817a04bbe06a38d17e60e2eaee83f6a146c6a688125f5792e48dd5ba30e7da52a5cda4c3992b9ccf333f9ce223af84748",
+	"dependencies": {
+		"@mantine/core": "^8.2.7",
+		"@mantine/dates": "^8.2.7",
+		"@mantine/hooks": "^8.2.7",
+		"@mantine/modals": "^8.2.7",
+		"@mantine/notifications": "^8.2.7",
+		"@tabler/icons-react": "^3.34.1",
+		"react": "^19.1.1",
+		"react-dom": "^19.1.1"
+	},
+	"pnpm": {
+		"overrides": {
+			"react": "^19.1.1",
+			"react-dom": "^19.1.1",
+			"@mantine/core": "^8.2.7",
+			"@mantine/dates": "^8.2.7",
+			"@mantine/hooks": "^8.2.7",
+			"@mantine/modals": "^8.2.7",
+			"@mantine/notifications": "^8.2.7",
+			"@tabler/icons-react": "^3.34.1"
+		},
+		"peerDependencyRules": {
+			"allowedVersions": {
+				"react": "^19.1.1",
+				"react-dom": "^19.1.1",
+				"@mantine/core": "^8.2.7",
+				"@mantine/dates": "^8.2.7",
+				"@mantine/hooks": "^8.2.7",
+				"@mantine/modals": "^8.2.7",
+				"@mantine/notifications": "^8.2.7"
+			}
+		}
+	}
 }

@@ -57,8 +57,7 @@ const ANSI = {
 
 /* ─── 快速工具 ─── */
 const hasProcess = typeof process !== 'undefined' && !!(process as any)
-const stdoutTTY =
-	hasProcess && (process as any).stdout && (process as any).stdout.isTTY
+const stdoutTTY = hasProcess && (process as any).stdout && (process as any).stdout.isTTY
 const env = hasProcess ? ((process as any).env ?? {}) : {}
 const NO_COLOR = 'NO_COLOR' in env
 const FORCE = 'FORCE_COLOR' in env ?? true
@@ -88,8 +87,7 @@ function toDate(t: unknown): Date {
 	if (tp === 'string') {
 		const s = t as string
 		// 纯数字（epoch ms）
-		if (s.length && s.charCodeAt(0) >= 48 && /^\d+$/.test(s))
-			return new Date(Number(s))
+		if (s.length && s.charCodeAt(0) >= 48 && /^\d+$/.test(s)) return new Date(Number(s))
 		const d = new Date(s)
 		if (!isNaN(d.getTime())) return d
 	}
@@ -104,9 +102,7 @@ function padEnd5(s: string): string {
 	return need > 0 ? s + ' '.repeat(need) : s
 }
 function clamp(str: string, max: number): string {
-	return max <= 0 || str.length <= max
-		? str
-		: str.slice(0, Math.max(1, max - 1)) + '…'
+	return max <= 0 || str.length <= max ? str : str.slice(0, Math.max(1, max - 1)) + '…'
 }
 function colorize(s: string, code: string, on: boolean) {
 	return on ? code + s + ANSI.reset : s
@@ -152,26 +148,20 @@ const KEY_WEIGHT: Record<string, number> = {
 /* 智能摘要：不要求 req/res，见到 method+url/path、status/duration 就组合 */
 function summarizeAction(o: AnyRec): string | undefined {
 	// 直接字段
-	const m = (o.method ?? (o as any).httpMethod ?? (o as any).verb) as unknown as
+	const m = (o.method ?? (o as any).httpMethod ?? (o as any).verb) as unknown as string | undefined
+	const u = (o.url ?? (o as any).originalUrl ?? (o as any).path ?? (o as any).route) as unknown as
 		| string
 		| undefined
-	const u = (o.url ??
-		(o as any).originalUrl ??
-		(o as any).path ??
-		(o as any).route) as unknown as string | undefined
-	const sc = (o.statusCode ?? o.status ?? o.code) as unknown as
-		| number
-		| string
-		| undefined
+	const sc = (o.statusCode ?? o.status ?? o.code) as unknown as number | string | undefined
 	const dur = (o.responseTime ??
 		o.duration ??
 		(o as any).latency ??
 		(o as any).ms ??
 		(o as any).rt ??
 		(o as any).took) as unknown as number | string | undefined
-	const ip = (o.ip ??
-		(o as any).remoteAddress ??
-		(o as any).clientIp) as unknown as string | undefined
+	const ip = (o.ip ?? (o as any).remoteAddress ?? (o as any).clientIp) as unknown as
+		| string
+		| undefined
 
 	let ok = false
 	const parts: string[] = []
@@ -214,17 +204,8 @@ function foldValue(v: unknown, maxLen: number): string {
 
 /* 日期格式器缓存（按选项 key） */
 const dtfCache = new Map<string, Intl.DateTimeFormat>()
-function getDtf(
-	tz?: string,
-	withMillis = true,
-	withDate = true,
-): Intl.DateTimeFormat {
-	const key =
-		(tz ?? 'local') +
-		'|' +
-		(withMillis ? 'ms' : 's') +
-		'|' +
-		(withDate ? 'd' : 't')
+function getDtf(tz?: string, withMillis = true, withDate = true): Intl.DateTimeFormat {
+	const key = (tz ?? 'local') + '|' + (withMillis ? 'ms' : 's') + '|' + (withDate ? 'd' : 't')
 	let f = dtfCache.get(key)
 	if (!f) {
 		f = new Intl.DateTimeFormat(undefined, {
@@ -267,9 +248,7 @@ export function createPrettyPrinter(opts: PrettyOptions = {}): PrettyPrinter {
 
 	// 颜色开关一次判定
 	const useColor =
-		typeof forceColor === 'boolean'
-			? forceColor
-			: FORCE || (!NO_COLOR && !!stdoutTTY)
+		typeof forceColor === 'boolean' ? forceColor : FORCE || (!NO_COLOR && !!stdoutTTY)
 
 	// 预生成时间格式函数
 	const fmtTime = timeFormatter
@@ -337,8 +316,7 @@ export function createPrettyPrinter(opts: PrettyOptions = {}): PrettyPrinter {
 			// 为稳定 & 高可读性：按权重 + 字典序
 			const keys: string[] = []
 			for (const k in obj)
-				if (!ignore.has(k) && k !== 'err' && k !== 'error' && k !== 'stack')
-					keys.push(k)
+				if (!ignore.has(k) && k !== 'err' && k !== 'error' && k !== 'stack') keys.push(k)
 			if (keys.length) {
 				keys.sort((a, b) => {
 					const wa = weight(a),

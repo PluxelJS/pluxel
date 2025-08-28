@@ -1,15 +1,9 @@
 // src/components/Layout/Layout.tsx
-import type React from 'react'
-import {
-	type ReactNode,
-	useCallback,
-	useEffect,
-	useMemo,
-	useState,
-} from 'react'
-import { AppShell, Box, Overlay } from '@mantine/core'
-import { useMantineTheme } from '@mantine/core'
+
+import { AppShell, Box, Overlay, useMantineTheme } from '@mantine/core'
 import { useMediaQuery } from '@mantine/hooks'
+import type React from 'react'
+import { type ReactNode, useCallback, useEffect, useMemo, useState } from 'react'
 import AppHeader, { type AppHeaderProps } from './AppHeader'
 import Navbar, { type NavItem } from './Navbar'
 
@@ -20,11 +14,7 @@ export type LinkLikeProps = {
 } & Omit<React.ComponentPropsWithoutRef<'a'>, 'children' | 'href'>
 
 /** 受控/非受控辅助 Hook（和 Mantine 行为一致） */
-function useControllable<T>(opts: {
-	value?: T
-	defaultValue: T
-	onChange?: (v: T) => void
-}) {
+function useControllable<T>(opts: { value?: T; defaultValue: T; onChange?: (v: T) => void }) {
 	const { value, defaultValue, onChange } = opts
 	const [inner, setInner] = useState<T>(defaultValue)
 	const isControlled = value !== undefined
@@ -44,22 +34,14 @@ export interface LayoutProps {
 	/** —— Header 可插拔 —— */
 	header?:
 		| React.ReactNode
-		| ((ctx: {
-				opened: boolean
-				toggle: () => void
-				isMobile: boolean
-		  }) => React.ReactNode)
+		| ((ctx: { opened: boolean; toggle: () => void; isMobile: boolean }) => React.ReactNode)
 	headerProps?: Partial<AppHeaderProps>
 	headerHeight?: number
 
 	/** —— Navbar 可插拔 —— */
 	navbar?:
 		| React.ReactNode
-		| ((ctx: {
-				opened: boolean
-				toggle: () => void
-				isMobile: boolean
-		  }) => React.ReactNode)
+		| ((ctx: { opened: boolean; toggle: () => void; isMobile: boolean }) => React.ReactNode)
 	navItems?: NavItem[]
 	LinkComponent?: React.ComponentType<LinkLikeProps>
 
@@ -112,14 +94,10 @@ export function Layout({
 	children,
 }: LayoutProps) {
 	const theme = useMantineTheme()
-	const isMobile = useMediaQuery(
-		`(max-width: ${theme.breakpoints.sm})`,
-		undefined,
-		{
-			// SSR 安全：首帧不读 window
-			getInitialValueInEffect: true,
-		},
-	)
+	const isMobile = useMediaQuery(`(max-width: ${theme.breakpoints.sm})`, undefined, {
+		// SSR 安全：首帧不读 window
+		getInitialValueInEffect: true,
+	})
 
 	// —— 受控/非受控 —— //
 	const [opened, setOpened] = useControllable<boolean>({
@@ -152,10 +130,7 @@ export function Layout({
 	}, [isMobile, opened, lockScrollOnMobile])
 
 	// —— 用于 render props 的上下文对象 —— //
-	const ctx = useMemo(
-		() => ({ opened, toggle, isMobile }),
-		[opened, toggle, isMobile],
-	)
+	const ctx = useMemo(() => ({ opened, toggle, isMobile }), [opened, toggle, isMobile])
 
 	// —— 组装 Header —— //
 	const headerNode = useMemo(() => {
@@ -177,13 +152,7 @@ export function Layout({
 		if (typeof navbar === 'function') return navbar(ctx)
 		if (navbar) return navbar
 		if (!navItems?.length || !LinkComponent) return null
-		return (
-			<Navbar
-				navItems={navItems}
-				LinkComponent={LinkComponent}
-				currentPath={currentPath}
-			/>
-		)
+		return <Navbar navItems={navItems} LinkComponent={LinkComponent} currentPath={currentPath} />
 	}, [navbar, navItems, LinkComponent, currentPath, ctx])
 
 	// —— Main 高度：一次算清 —— //

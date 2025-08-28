@@ -1,11 +1,6 @@
 import { type Context, Injectable, symbols } from '@pluxel/context'
 // EventsService.ts
-import {
-	type EventArgs,
-	type EventEmitterOptions,
-	type EventListener,
-	Eventure,
-} from 'eventure'
+import { type EventArgs, type EventEmitterOptions, type EventListener, Eventure } from 'eventure'
 import type { PluginIdentifier, PluginInstance } from '../pluginImpl'
 
 const serviceName = 'events' as const
@@ -38,20 +33,14 @@ export class EventsService extends Eventure<Events> {
 		super(cfg)
 	}
 
-	override on<K extends keyof Events>(
-		event: K,
-		listener: EventListener<Events[K]>,
-	): this {
+	override on<K extends keyof Events>(event: K, listener: EventListener<Events[K]>): this {
 		;(listener as any)[symbols.ATTACH] = this.ctx
 		const unsub = super.addListener(event, listener, true)
 		this.ctx.scope.collectEffect(unsub)
 		return this
 	}
 
-	prependOn<K extends keyof Events>(
-		event: K,
-		listener: EventListener<Events[K]>,
-	): this {
+	prependOn<K extends keyof Events>(event: K, listener: EventListener<Events[K]>): this {
 		;(listener as any)[symbols.ATTACH] = this.ctx
 		const unsub = super.prependListener(event, listener, true)
 		this.ctx.scope.collectEffect(unsub)

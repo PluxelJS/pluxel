@@ -1,23 +1,17 @@
 import { type Context, symbols } from '@pluxel/hmr'
-import type { NoticeType, Session } from './types'
-import { eventMap, type KookEvent } from './events'
-import type { Bot } from './bot'
 import type { Events } from '@pluxel/hmr/services'
+import type { Bot } from './bot'
+import { eventMap, type KookEvent } from './events'
+import type { NoticeType, Session } from './types'
 
-function processEvent(
-	ctx: Context,
-	eventType: keyof Events,
-	bot: Bot,
-	session: Session<any>,
-) {
+function processEvent(ctx: Context, eventType: keyof Events, bot: Bot, session: Session<any>) {
 	ctx.emit(eventType, bot, session)
 }
 
 export function internalWebhook(ctx: Context, bot: Bot, data: any) {
 	// 大多数情况下都为信息
 	const session: Session<any> = {
-		userId:
-			data.author_id === '1' ? data?.extra?.body?.user_id : data?.author_id,
+		userId: data.author_id === '1' ? data?.extra?.body?.user_id : data?.author_id,
 		channelId: '',
 		guildId: '',
 		selfId: bot?.selfInfo?.id,
@@ -52,12 +46,7 @@ export function internalWebhook(ctx: Context, bot: Bot, data: any) {
 	handleSpecialTypes(ctx, data, bot, session)
 }
 
-async function handleSpecialTypes(
-	ctx: Context,
-	data: any,
-	bot: Bot,
-	session: Session<any>,
-) {
+async function handleSpecialTypes(ctx: Context, data: any, bot: Bot, session: Session<any>) {
 	session.guildId = data?.extra?.body?.guild_id || data?.target_id
 	session.channelId = data?.extra?.body?.channel_id || data?.target_id
 
@@ -69,8 +58,7 @@ async function handleSpecialTypes(
 			break
 		}
 		default: {
-			const eventType =
-				(eventMap as any)[data?.extra?.type] || data?.extra?.type || 'webhook'
+			const eventType = (eventMap as any)[data?.extra?.type] || data?.extra?.type || 'webhook'
 			processEvent(ctx, eventType, bot, session)
 		}
 	}

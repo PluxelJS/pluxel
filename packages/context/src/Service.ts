@@ -1,12 +1,7 @@
 // Service.ts
 
 import { Context } from './Context'
-import type {
-	ServiceCfg,
-	ServiceClass,
-	ServiceContext,
-	ServiceInst,
-} from './service-types'
+import type { ServiceCfg, ServiceClass, ServiceContext, ServiceInst } from './service-types'
 
 /**
  * 装饰器可选项
@@ -20,16 +15,12 @@ export const OVERRIDE_FLAG = Symbol('isOverride')
 /**
  * 可注入装饰器 @Injectable 和 @Injectable({...})
  */
-export function Injectable<S extends new (ctx: any, cfg: any) => any>(
-	ctor: ServiceClass<S>,
-): void
+export function Injectable<S extends new (ctx: any, cfg: any) => any>(ctor: ServiceClass<S>): void
 export function Injectable<S extends new (ctx: any, cfg: any) => any>(
 	options: ServiceOptions<S>,
 ): (ctor: ServiceClass<S>) => void
 
-export function Injectable<S extends new (...args: any) => any>(
-	ctorOrOpts: any,
-): any {
+export function Injectable<S extends new (...args: any) => any>(ctorOrOpts: any): any {
 	// 直接用 @Injectable
 	if (typeof ctorOrOpts === 'function') {
 		const ctor = ctorOrOpts as ServiceClass<S>
@@ -54,12 +45,8 @@ export function Injectable<S extends new (...args: any) => any>(
 	}
 }
 
-export function OverrideOf<S extends new (...args: any) => any>(
-	original: ServiceClass<S>,
-) {
-	return <T extends new (...args: any) => any>(
-		overrideCtor: ServiceClass<T>,
-	) => {
+export function OverrideOf<S extends new (...args: any) => any>(original: ServiceClass<S>) {
+	return <T extends new (...args: any) => any>(overrideCtor: ServiceClass<T>) => {
 		// 打个标记，让 Injectable 跳过 registerService
 		;(overrideCtor as any)[OVERRIDE_FLAG] = true
 		;(overrideCtor as any).key = (original as any).key

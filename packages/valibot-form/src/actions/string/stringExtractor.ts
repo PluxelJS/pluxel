@@ -1,11 +1,9 @@
 // string/extractProps.ts
 import type * as v from 'valibot'
-import type { StringMetaOptions } from './type'
 import { META_MAP } from '~/utils'
+import type { StringMetaOptions } from './type'
 
-type PipedStringSchema = v.SchemaWithPipe<
-	readonly [v.StringSchema<any>, ...any]
->
+type PipedStringSchema = v.SchemaWithPipe<readonly [v.StringSchema<any>, ...any]>
 
 /** —— valibot 官方自带 validation 的内部辨识 key 映射到 meta —— **/
 const validationMap = {
@@ -26,9 +24,7 @@ const fmtMap = {
 
 export type fmtKey = keyof typeof fmtMap
 
-export function extractStringProps(
-	schema: PipedStringSchema,
-): StringMetaOptions {
+export function extractStringProps(schema: PipedStringSchema): StringMetaOptions {
 	const meta: StringMetaOptions = {}
 
 	const pipe = schema.pipe
@@ -48,8 +44,7 @@ export function extractStringProps(
 		// 利用 in 操作符，自动收窄到 PropKey 或 FmtKey
 		if (item.type in validationMap) {
 			// 这里 TS 知道 propMap[item.type] 一定是 'minLength' | 'maxLength'
-			meta[validationMap[item.type as keyof typeof validationMap]] =
-				item.requirement
+			meta[validationMap[item.type as keyof typeof validationMap]] = item.requirement
 		} else if (item.type in fmtMap) {
 			// 同理，fmtMap[...] 的值已受限于 StringCheck['format']
 			meta.format = fmtMap[item.type as keyof typeof fmtMap]

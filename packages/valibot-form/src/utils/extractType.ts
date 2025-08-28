@@ -8,9 +8,9 @@ import {
 } from '../actions'
 import type { MetaType } from './MetaType'
 
-export function buildRendererMap<
-	T extends Partial<{ [K in MetaType]: (schema: any) => any }>,
->(extractors: T & Record<Exclude<keyof T, MetaType>, never>) {
+export function buildRendererMap<T extends Partial<{ [K in MetaType]: (schema: any) => any }>>(
+	extractors: T & Record<Exclude<keyof T, MetaType>, never>,
+) {
 	const result: { [K in keyof T]: { type: K; extract: T[K] } } = {} as any
 	for (const key of Object.keys(extractors) as Array<keyof T>) {
 		result[key] = {

@@ -1,33 +1,34 @@
 // tsconfig.json (仓库根)
 {
-  "extends": "./tsconfig.options.json",
+	"extends": "./tsconfig.options.json",
 
-  "files": [],
+	"files": [],
 
-  // ➤ 最核心：references 只能放在最顶层
-  "references": [
-    { "path": "packages/context" },
-    { "path": "packages/core" },
-    { "path": "packages/hmr" }
-  ],
+	// ➤ 最核心：references 只能放在最顶层
+	"references": [
+		{ "path": "packages/context" },
+		{ "path": "packages/core" },
+		{ "path": "packages/hmr" },
+		{ "path": "packages/diod" },
+	],
 
-  // ➤ 下面才能放 compilerOptions
-  "compilerOptions": {
-    "baseUrl": ".",
-    // —————— 路径别名 ——————
-    "paths": {
-      "diod": ["packages/diod/src"],
-      "@pluxel/core": ["packages/core/src"],
-      "@pluxel/context": ["packages/context/src"]
-    },
-    // —————— 源码优先跳转 ——————
-    "customConditions": ["@pluxel/source"],
-    "module": "es2022",
-    "moduleResolution": "Bundler"
-    // （如果你想精细化控制，也可以配一个 imports 数组）
-    // "imports": [
-    //   { "module":"@pluxel/context", "conditions":["@pluxel/source","import"] },
-    //   …
-    // ]
-  }
+	// ➤ 下面才能放 compilerOptions
+	"compilerOptions": {
+		"baseUrl": ".",
+		// —————— 路径别名 ——————
+		"paths": {
+			"diod": ["packages/diod/src"],
+			"@pluxel/core": ["packages/core/src"],
+			"@pluxel/context": ["packages/context/src"]
+		},
+		// —————— 源码优先跳转 ——————
+		"customConditions": ["@pluxel/source"],
+		"module": "es2022",
+		"moduleResolution": "Bundler"
+		// （如果你想精细化控制，也可以配一个 imports 数组）
+		// "imports": [
+		//   { "module":"@pluxel/context", "conditions":["@pluxel/source","import"] },
+		//   …
+		// ]
+	}
 }

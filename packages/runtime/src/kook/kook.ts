@@ -1,6 +1,7 @@
 // KyPlugin.ts
+
+import { type Awaitable, BasePlugin, Config, f, Plugin, v } from '@pluxel/hmr'
 import ky, { HTTPError, type KyInstance, type Options as KyOptions } from 'ky'
-import { BasePlugin, Config, Plugin, v, f, type Awaitable } from '@pluxel/hmr'
 // biome-ignore lint/style/useImportType: <explanation>
 import { KyPlugin } from '../services/ky'
 import { Bot } from './bot'
@@ -8,11 +9,7 @@ import { createCommandBus, defineCommand, defineFor } from './cmd'
 import type { MessageSession } from './types'
 
 const BotConfig = v.object({
-	cmdPrefix: v.pipe(
-		v.optional(v.string(), '/'),
-		v.minLength(1),
-		v.maxLength(1),
-	),
+	cmdPrefix: v.pipe(v.optional(v.string(), '/'), v.minLength(1), v.maxLength(1)),
 	bots: v.pipe(
 		v.record(v.string(), v.boolean()),
 		f.recordMeta({

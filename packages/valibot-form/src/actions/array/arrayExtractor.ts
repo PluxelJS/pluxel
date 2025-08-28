@@ -1,13 +1,11 @@
 // array/arrayExtractor.ts
 import type * as v from 'valibot'
-import type { ArrayMetaOptions, ArrayMetaResult } from './type'
 import { META_MAP } from '~/utils'
 import { extractPicklistProps } from '../picklist'
+import type { ArrayMetaOptions, ArrayMetaResult } from './type'
 
 type Schema = v.ArraySchema<any, any>
-type PipedSchema<T extends v.BaseSchema<any, any, any>> = v.SchemaWithPipe<
-	readonly [T, ...any]
->
+type PipedSchema<T extends v.BaseSchema<any, any, any>> = v.SchemaWithPipe<readonly [T, ...any]>
 type InputSchema = PipedSchema<Schema> | Schema
 
 export function extractArrayProps<TItemMeta = unknown>(

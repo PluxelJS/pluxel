@@ -1,4 +1,4 @@
-import { setup, fromPromise, fromCallback, type ActorRefFrom } from 'xstate'
+import { type ActorRefFrom, fromCallback, fromPromise, setup } from 'xstate'
 import type { BasePlugin } from './BasePlugin'
 
 /* ────────────────────────── 外部事件 ────────────────────────── */
@@ -19,10 +19,7 @@ type StopInput<P extends BasePlugin> = { plugin: P }
 type ReloadInput<P extends BasePlugin> = { plugin: P; patch?: unknown }
 
 /* ────────────────────────── 机器输入 & 上下文 ────────────────────────── */
-export interface LifecycleInput<
-	Cfg = unknown,
-	P extends BasePlugin = BasePlugin,
-> {
+export interface LifecycleInput<Cfg = unknown, P extends BasePlugin = BasePlugin> {
 	id: unknown
 	plugin: P
 	config?: Cfg
@@ -85,17 +82,13 @@ const toError = (e: unknown): Error => {
  * - STOP 统一走 `stopping`，永远执行 stop + disposeAll（即使没启动过）
  * - 可选运行期错误通道（ctx.onError）：上报 `ASYNC_ERROR` → failing
  */
-export function createPluginLifecycle<
-	Cfg = unknown,
-	P extends BasePlugin = BasePlugin,
->(opts: LifecycleOptions = {}) {
+export function createPluginLifecycle<Cfg = unknown, P extends BasePlugin = BasePlugin>(
+	opts: LifecycleOptions = {},
+) {
 	return setup({
 		types: {
 			context: {} as LifecycleCtx<Cfg, P>,
-			events: {} as
-				| LifecycleEvent
-				| SystemEvents
-				| { type: 'ASYNC_ERROR'; error: unknown },
+			events: {} as LifecycleEvent | SystemEvents | { type: 'ASYNC_ERROR'; error: unknown },
 			input: {} as LifecycleInput<Cfg, P>,
 		},
 
@@ -122,24 +115,22 @@ export function createPluginLifecycle<
 				}
 			}),
 
-			stopOrCleanup: fromPromise<void, StopInput<P>>(
-				async ({ input, signal }) => {
-					assertInput(input)
+			stopOrCleanup: fromPromise<void, StopInput<P>>(async ({ input, signal }) => {
+				assertInput(input)
+				try {
+					// 即使“没启动过”，stop 也应当是幂等且容错的
+					await Promise.resolve(input.plugin.stop?.(signal))
+				} catch (e) {
+					throw toError(e)
+				} finally {
+					// 无条件清理作用域，确保回收
 					try {
-						// 即使“没启动过”，stop 也应当是幂等且容错的
-						await Promise.resolve(input.plugin.stop?.(signal))
-					} catch (e) {
-						throw toError(e)
-					} finally {
-						// 无条件清理作用域，确保回收
-						try {
-							await Promise.resolve(input.plugin.ctx.scope?.disposeAll())
-						} catch {
-							/* 忽略清理异常 */
-						}
+						await Promise.resolve(input.plugin.ctx.scope?.disposeAll())
+					} catch {
+						/* 忽略清理异常 */
 					}
-				},
-			),
+				}
+			}),
 
 			reload: fromPromise<void, ReloadInput<P>>(async ({ input, signal }) => {
 				assertInput(input)
@@ -153,27 +144,26 @@ export function createPluginLifecycle<
 			}),
 
 			// 运行期错误通道：插件侧可通过 ctx.onError(cb) 上报
-			errorChannel: fromCallback<
-				{ type: 'ASYNC_ERROR'; error: unknown },
-				{ plugin: P }
-			>(({ input, sendBack }) => {
-				const onError = (input?.plugin as any)?.ctx?.onError as
-					| ((cb: (e: unknown) => void) => (() => void) | void)
-					| undefined
+			errorChannel: fromCallback<{ type: 'ASYNC_ERROR'; error: unknown }, { plugin: P }>(
+				({ input, sendBack }) => {
+					const onError = (input?.plugin as any)?.ctx?.onError as
+						| ((cb: (e: unknown) => void) => (() => void) | void)
+						| undefined
 
-				if (typeof onError !== 'function') return () => {}
+					if (typeof onError !== 'function') return () => {}
 
-				const unsub = onError((err) => {
-					sendBack({ type: 'ASYNC_ERROR', error: err })
-				})
-				return () => {
-					try {
-						;(unsub as any)?.()
-					} catch {
-						/* 忽略 */
+					const unsub = onError((err) => {
+						sendBack({ type: 'ASYNC_ERROR', error: err })
+					})
+					return () => {
+						try {
+							;(unsub as any)?.()
+						} catch {
+							/* 忽略 */
+						}
 					}
-				}
-			}),
+				},
+			),
 		},
 
 		actions: {
@@ -331,18 +321,15 @@ export function createPluginLifecycle<
 }
 
 /* ────────────────────────── ActorRef 类型 ────────────────────────── */
-export type PluginLifecycleRef<
-	Cfg = unknown,
-	P extends BasePlugin = BasePlugin,
-> = ActorRefFrom<ReturnType<typeof createPluginLifecycle<Cfg, P>>>
+export type PluginLifecycleRef<Cfg = unknown, P extends BasePlugin = BasePlugin> = ActorRefFrom<
+	ReturnType<typeof createPluginLifecycle<Cfg, P>>
+>
 
 /* ────────────────────────── 便捷 selector ────────────────────────── */
 export const lifecycleSelectors = {
-	isRunning: (s: { value: unknown }) =>
-		(s as any).matches?.('running') ?? false,
+	isRunning: (s: { value: unknown }) => (s as any).matches?.('running') ?? false,
 	lastError: <C extends LifecycleCtx>(s: { context: C }) => s.context.err,
 	uptime: <C extends LifecycleCtx>(s: { context: C }) =>
 		s.context.startedAt ? Date.now() - s.context.startedAt : undefined,
-	failedStep: <C extends LifecycleCtx>(s: { context: C }) =>
-		s.context.failedStep,
+	failedStep: <C extends LifecycleCtx>(s: { context: C }) => s.context.failedStep,
 }

@@ -1,22 +1,22 @@
 // PluginContainer.ts
 import type { Context } from '..'
 import {
-	ExtendedContainerBuilder,
+	type AliasKey,
 	type DiodContainer,
+	ExtendedContainerBuilder,
 	type FactoryContext,
 	// 下面两个类型用于重建别名索引
 	type Identifier,
-	type AliasKey,
 } from '../container'
 import { type BasePlugin, PLUGIN_CTX } from './BasePlugin'
 import { getBaseClass, getClassParam, getPluginInfo } from './PluginDecorator'
 import {
+	createErr,
+	createOk,
 	type PluginConstructor,
 	type PluginIdentifier,
 	type PluginInstance,
 	type Result,
-	createErr,
-	createOk,
 } from './types'
 
 export type PluginDiContainer = DiodContainer<BasePlugin>
@@ -85,10 +85,7 @@ export class PluginContainer {
 					// —— 常规路径：按位选择 Maybe/Result —— //
 					for (let i = 0, m = 1n; i < n; i++, m <<= 1n) {
 						const t = paramTypes[i]!
-						args[i] =
-							(maskedBits & m) !== 0n
-								? c.getMaybe(t)
-								: (c.getResult(t).val as BasePlugin)
+						args[i] = (maskedBits & m) !== 0n ? c.getMaybe(t) : (c.getResult(t).val as BasePlugin)
 					}
 				}
 				return new (Plugin as any)(...args)
@@ -101,8 +98,7 @@ export class PluginContainer {
 	 * 卸载：深度优先仅修改草稿；实际停机在 PluginService.commit() 中统一执行
 	 */
 	public unregisterPlugin(plugin: PluginIdentifier): void {
-		const children =
-			this.lastContainer?.dependents.get(plugin) ?? new Set<PluginIdentifier>()
+		const children = this.lastContainer?.dependents.get(plugin) ?? new Set<PluginIdentifier>()
 		for (const dep of children) this.unregisterPlugin(dep)
 		this.builder.tryUnregister(plugin)
 	}
@@ -111,17 +107,12 @@ export class PluginContainer {
 	 * 热重载：清理受影响 id 的 Builder_Singleton 缓存；root 可替换新类
 	 * 实际启停仍在 PluginService.commit()
 	 */
-	public reloadPlugin(
-		root: PluginIdentifier,
-		newClass?: PluginConstructor,
-	): void {
+	public reloadPlugin(root: PluginIdentifier, newClass?: PluginConstructor): void {
 		if (!this.builder.buildables.has(root)) {
 			throw new Error('You can not reload an unloaded Plugin.')
 		}
 
-		const depsMap = new Map<PluginIdentifier, Set<PluginIdentifier>>(
-			this.lastContainer?.dependents,
-		)
+		const depsMap = new Map<PluginIdentifier, Set<PluginIdentifier>>(this.lastContainer?.dependents)
 
 		const affected = new Set<PluginIdentifier>()
 		const collect = (id: PluginIdentifier) => {

@@ -1,12 +1,10 @@
 // record/extractProps.ts
 import type * as v from 'valibot'
-import type { RecordMetaOptions, RecordMetaResult } from './type'
 import { META_MAP } from '~/utils'
+import type { RecordMetaOptions, RecordMetaResult } from './type'
 
 type Schema = v.RecordSchema<any, any, any>
-type PipedSchema<T extends v.BaseSchema<any, any, any>> = v.SchemaWithPipe<
-	readonly [T, ...any]
->
+type PipedSchema<T extends v.BaseSchema<any, any, any>> = v.SchemaWithPipe<readonly [T, ...any]>
 type InputSchema = PipedSchema<Schema> | Schema
 
 export function extractRecordProps<TKeyMeta = unknown, TValueMeta = unknown>(
@@ -14,8 +12,7 @@ export function extractRecordProps<TKeyMeta = unknown, TValueMeta = unknown>(
 ): RecordMetaResult<TKeyMeta, TValueMeta> {
 	const meta: RecordMetaResult<TKeyMeta, TValueMeta> = {}
 
-	const itemSchema =
-		schema.value ?? (schema as PipedSchema<Schema>).pipe[0].value
+	const itemSchema = schema.value ?? (schema as PipedSchema<Schema>).pipe[0].value
 	if (itemSchema) {
 		const type = itemSchema.type // string, number, boolean
 		meta.valueMode = type

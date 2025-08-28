@@ -1,5 +1,4 @@
 import type { Buildable, ServiceData } from '../internal-types'
-import { getDependencies } from '../utils/reflection'
 import { RegistrationType, ScopeType } from '../types'
 import type {
 	BuildOptions,
@@ -8,6 +7,7 @@ import type {
 	WithDependencies,
 	WithScopeChange,
 } from '../types/types'
+import { getDependencies } from '../utils/reflection'
 import { ServiceConfiguration } from './service-configuration'
 
 export class ClassConfiguration<T>

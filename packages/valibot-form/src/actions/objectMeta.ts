@@ -5,10 +5,8 @@ export interface ObjectMetaOptions {
 	collapse?: true
 }
 
-export interface objectMetaAction<
-	TInput extends object,
-	TMetadata extends ObjectMetaOptions,
-> extends BaseMetadata<TInput> {
+export interface objectMetaAction<TInput extends object, TMetadata extends ObjectMetaOptions>
+	extends BaseMetadata<TInput> {
 	readonly type: CheckMetaType<'object'>
 	readonly reference: typeof objectMeta
 	readonly metadata: TMetadata
@@ -23,10 +21,9 @@ export interface objectMetaAction<
  *     objectMeta({ secret: true, copyable: true, placeholder: '请输入...' })
  *   )
  */
-export function objectMeta<
-	TInput extends object,
-	const TMetadata extends ObjectMetaOptions,
->(metadata_: TMetadata): objectMetaAction<TInput, TMetadata> {
+export function objectMeta<TInput extends object, const TMetadata extends ObjectMetaOptions>(
+	metadata_: TMetadata,
+): objectMetaAction<TInput, TMetadata> {
 	return {
 		kind: 'metadata',
 		type: 'object',

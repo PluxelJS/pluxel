@@ -1,39 +1,36 @@
 {
-  "private": true,
-  "name": "@pluxel/runtime",
-  "version": "0.1.0",
-  "description": "使用 HMR 管理插件的运行时，让 HMR Build 后以提升加载速度。",
-  "main": "./src/index.ts",
-  "module": "./dist/index.mjs",
-  "types": "./dist/index.d.cts",
-  "exports": {
-    ".": {
-      "@pluxel/source": "./src/index.ts",
-      "import": "./dist/index.mjs",
-      "require": "./dist/index.cjs",
-      "types": "./dist/index.d.ts",
-      "default": "./dist/index.mjs"
-    },
-    "./package.json": "./package.json"
-  },
-  "scripts": {
-    "dev": "bun src/index.ts",
-    "new": "bunx pluxel new plugin",
-    "hot": "bun --watch run src/index.ts"
-  },
-  "dependencies": {
-    "@pluxel/core": "workspace:*",
-    "@pluxel/hmr": "workspace:*",
-    "@pluxel/cli": "workspace:*",
-    "ky": "^1.9.0",
-    "redis": "^5.8.1",
-    "type-flag": "^3.0.0",
-    "ws": "^8.18.3"
-  },
-  "peerDependencies": {
-    "typescript": "*"
-  },
-  "devDependencies": {
-    "@types/ws": "^8.18.1"
-  }
+	"private": true,
+	"name": "@pluxel/runtime",
+	"version": "0.1.0",
+	"description": "使用 HMR 管理插件的运行时，让 HMR Build 后以提升加载速度。",
+	"main": "./src/index.ts",
+	"module": "./dist/index.mjs",
+	"types": "./dist/index.d.cts",
+	"exports": {
+		".": {
+			"@pluxel/source": "./src/index.ts",
+			"import": "./dist/index.mjs",
+			"require": "./dist/index.cjs",
+			"types": "./dist/index.d.ts",
+			"default": "./dist/index.mjs"
+		},
+		"./package.json": "./package.json"
+	},
+	"scripts": {
+		"dev": "bun src/index.ts",
+		"new": "bunx pluxel new plugin",
+		"hot": "bun --watch run src/index.ts"
+	},
+	"dependencies": {
+		"@pluxel/core": "workspace:*",
+		"@pluxel/hmr": "workspace:*",
+		"@pluxel/cli": "workspace:*",
+		"ky": "^1.9.0",
+		"redis": "^5.8.1",
+		"type-flag": "^3.0.0",
+		"ws": "^8.18.3"
+	},
+	"devDependencies": {
+		"@types/ws": "^8.18.1"
+	}
 }

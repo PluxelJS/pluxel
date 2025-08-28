@@ -1,8 +1,8 @@
+import { Box, Button, Group, ScrollArea } from '@mantine/core'
 import { formOptions } from '@tanstack/react-form'
-import { AutoForm } from '.'
 import * as v from 'valibot'
 import * as f from 'valibot-form'
-import { Box, ScrollArea, Button, Group } from '@mantine/core'
+import { AutoForm } from '.'
 import * as schema from './schema'
 
 const UserSchema = v.object({
@@ -39,10 +39,7 @@ export function Home() {
 					onChange: ({ value, formApi }) => {
 						const r = v.safeParse(UsingSchema, value)
 						if (r.success) return
-						const fields: Record<
-							string,
-							{ message: string; dotPath: string }[]
-						> = {}
+						const fields: Record<string, { message: string; dotPath: string }[]> = {}
 						for (const issue of r.issues) {
 							const path = (v.getDotPath(issue) ?? 'unknown').split('.')
 							const name = path[0]
@@ -79,11 +76,7 @@ export function Home() {
 				)}
 			</AutoForm.Actions>
 
-			<ScrollArea
-				style={{ flex: 1, minHeight: 0 }}
-				offsetScrollbars
-				type="hover"
-			>
+			<ScrollArea style={{ flex: 1, minHeight: 0 }} offsetScrollbars type="hover">
 				<Box px="sm" pb={96 /* 留出悬浮操作区的高度余量 */}>
 					<AutoForm.Fields />
 				</Box>

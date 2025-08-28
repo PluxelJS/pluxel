@@ -1,13 +1,12 @@
 import { BasePlugin, Optional, Plugin } from '@pluxel/core'
 import { Config } from './config'
-import { test, test2 } from './testconfig'
-
 // PluginA.ts
 // PluginA 依赖 PluginB 为必选依赖，依赖 PluginC 为可选依赖
 // biome-ignore lint/style/useImportType: <PluginSystem>
 import { PluginB } from './PluginB'
 // biome-ignore lint/style/useImportType: <explanation>
 import { PluginC } from './PluginC'
+import { test, test2 } from './testconfig'
 
 @Plugin({ name: 'PluginA', type: 'event' })
 export class PluginA extends BasePlugin {

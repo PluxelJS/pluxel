@@ -1,12 +1,7 @@
+import type { BodyInit } from 'bun'
 import type { KyInstance, Options } from 'ky'
 import type * as Kook from '../types'
-import type {
-	BotOnlineStatus,
-	DirectMessageGetType,
-	IBaseAPIResponse,
-	IVoiceInfo,
-} from '../types'
-import type { BodyInit } from 'bun'
+import type { BotOnlineStatus, DirectMessageGetType, IBaseAPIResponse, IVoiceInfo } from '../types'
 
 /**
  * Unified API envelope error.
@@ -21,14 +16,7 @@ export class ResponseError extends Error {
 }
 
 /** Supported HTTP methods */
-export type HttpMethod =
-	| 'GET'
-	| 'POST'
-	| 'PUT'
-	| 'PATCH'
-	| 'DELETE'
-	| 'HEAD'
-	| 'OPTIONS'
+export type HttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE' | 'HEAD' | 'OPTIONS'
 
 type JsonLike = Record<string, any> | undefined
 
@@ -70,11 +58,8 @@ export abstract class AbstactBot {
 			opts.body = payload.body
 		}
 
-		const res = await this.http(`api/v3${path}`, opts).json<
-			IBaseAPIResponse<T>
-		>()
-		if (res.code !== 0)
-			throw new ResponseError(res.message || 'Unexpected Error', res.code)
+		const res = await this.http(`api/v3${path}`, opts).json<IBaseAPIResponse<T>>()
+		if (res.code !== 0) throw new ResponseError(res.message || 'Unexpected Error', res.code)
 		return res.data
 	}
 
@@ -83,10 +68,7 @@ export abstract class AbstactBot {
 	 */
 	static define(name: string, method: HttpMethod, path: string) {
 		// eslint-disable-next-line @typescript-eslint/no-explicit-any
-		;(AbstactBot.prototype as any)[name] = async function (
-			this: AbstactBot,
-			...args: any[]
-		) {
+		;(AbstactBot.prototype as any)[name] = async function (this: AbstactBot, ...args: any[]) {
 			const isQuery = method === 'GET' || method === 'DELETE'
 			return await this.request<any>(
 				method,
@@ -123,10 +105,7 @@ export abstract class AbstactBot {
 			template_id?: string
 		},
 	) {
-		return async (
-			content: string,
-			options?: { type?: Kook.MessageType; quote?: string },
-		) =>
+		return async (content: string, options?: { type?: Kook.MessageType; quote?: string }) =>
 			await this.sendMessage(target_id, content, {
 				...builderOptions,
 				...options,
@@ -142,10 +121,7 @@ export abstract class AbstactBot {
 			template_id?: string
 		},
 	) {
-		return async (
-			content: string,
-			options?: { type?: Kook.MessageType; quote?: string },
-		) =>
+		return async (content: string, options?: { type?: Kook.MessageType; quote?: string }) =>
 			await this.sendMessage(target_id, content, {
 				...builderOptions,
 				...options,
@@ -176,10 +152,7 @@ export abstract class AbstactBot {
 	/**
 	 * Asset upload helper. Accepts Buffer | Blob | base64 string | FormData
 	 */
-	async createAsset(
-		file: Buffer | Blob | string | FormData,
-		name = 'asset',
-	): Promise<string> {
+	async createAsset(file: Buffer | Blob | string | FormData, name = 'asset'): Promise<string> {
 		const form = await toFormData(file, name)
 		const data = await this.request<{ url: string }>('POST', '/asset/create', {
 			body: form,
@@ -230,11 +203,7 @@ AbstactBot.define('addMessageReaction', 'POST', '/message/add-reaction')
 AbstactBot.define('deleteMessageReaction', 'POST', '/message/delete-reaction')
 AbstactBot.define('sendPipeMessage', 'POST', '/message/send-pipemsg')
 
-AbstactBot.define(
-	'getUserJoinedChannelList',
-	'GET',
-	'/channel-user/get-joined-channel',
-)
+AbstactBot.define('getUserJoinedChannelList', 'GET', '/channel-user/get-joined-channel')
 
 AbstactBot.define('getPrivateChatList', 'GET', '/user-chat/list')
 AbstactBot.define('getPrivateChatView', 'GET', '/user-chat/view')
@@ -246,21 +215,9 @@ AbstactBot.define('createDirectMessage', 'POST', '/direct-message/create')
 AbstactBot.define('getDirectMessageView', 'GET', '/direct-message/view')
 AbstactBot.define('updateDirectMessage', 'POST', '/direct-message/update')
 AbstactBot.define('deleteDirectMessage', 'POST', '/direct-message/delete')
-AbstactBot.define(
-	'getDirectMessageReactionList',
-	'GET',
-	'/direct-message/reaction-list',
-)
-AbstactBot.define(
-	'addDirectMessageReaction',
-	'POST',
-	'/direct-message/add-reaction',
-)
-AbstactBot.define(
-	'deleteDirectMessageReaction',
-	'POST',
-	'/direct-message/delete-reaction',
-)
+AbstactBot.define('getDirectMessageReactionList', 'GET', '/direct-message/reaction-list')
+AbstactBot.define('addDirectMessageReaction', 'POST', '/direct-message/add-reaction')
+AbstactBot.define('deleteDirectMessageReaction', 'POST', '/direct-message/delete-reaction')
 
 AbstactBot.define('getGateway', 'GET', '/gateway/index')
 AbstactBot.define('getToken', 'POST', '/oauth2/token')
@@ -336,10 +293,7 @@ export interface AbstactBot {
 		nickname: string
 	}): Promise<void>
 	leaveGuild(param: { guild_id: string }): Promise<void>
-	kickoutGuildUser(param: {
-		guild_id: string
-		target_id: string
-	}): Promise<void>
+	kickoutGuildUser(param: { guild_id: string; target_id: string }): Promise<void>
 	getGuildMuteList(param: { guild_id: string }): Promise<Kook.GuildMuteList>
 	createGuildMute(param: {
 		guild_id: string
@@ -406,9 +360,7 @@ export interface AbstactBot {
 		user_ids: string[]
 	}>
 	kickChannelUser(param: { channel_id: string; user_id: string }): Promise<void>
-	getChannelRoleIndex(param: {
-		channel_id: string
-	}): Promise<Kook.ChannelRoleIndex>
+	getChannelRoleIndex(param: { channel_id: string }): Promise<Kook.ChannelRoleIndex>
 	createChannelRole(param: {
 		channel_id: string
 		type?: 'user_id'
@@ -450,15 +402,9 @@ export interface AbstactBot {
 		} & Kook.Pagination,
 	): Promise<Kook.List<Kook.Message>>
 	getMessageView(param: { msg_id: string }): Promise<Kook.Message>
-	getMessageReactionList(param: { msg_id: string; emoji: string }): Promise<
-		Kook.User[]
-	>
+	getMessageReactionList(param: { msg_id: string; emoji: string }): Promise<Kook.User[]>
 	addMessageReaction(param: { msg_id: string; emoji: string }): Promise<void>
-	deleteMessageReaction(param: {
-		msg_id: string
-		emoji: string
-		user_id?: string
-	}): Promise<void>
+	deleteMessageReaction(param: { msg_id: string; emoji: string; user_id?: string }): Promise<void>
 	sendPipeMessage(
 		param: {
 			access_token: string
@@ -475,11 +421,7 @@ export interface AbstactBot {
 	// private chat
 	getPrivateChatList(
 		param?: Kook.Pagination,
-	): Promise<
-		Kook.List<
-			Omit<Kook.PrivateChat, 'is_friend' | 'is_blocked' | 'is_target_blocked'>
-		>
-	>
+	): Promise<Kook.List<Omit<Kook.PrivateChat, 'is_friend' | 'is_blocked' | 'is_target_blocked'>>>
 	getPrivateChatView(param: { chat_code: string }): Promise<Kook.PrivateChat>
 	createPrivateChat(param: { target_id: string }): Promise<Kook.PrivateChat>
 	deletePrivateChat(param: { chat_code: string }): Promise<void>
@@ -511,14 +453,8 @@ export interface AbstactBot {
 		template_id?: string
 	}): Promise<void>
 	deleteDirectMessage(param: { msg_id: string }): Promise<void>
-	getDirectMessageReactionList(param: {
-		msg_id: string
-		emoji?: string
-	}): Promise<Kook.User[]>
-	addDirectMessageReaction(param: {
-		msg_id: string
-		emoji: string
-	}): Promise<void>
+	getDirectMessageReactionList(param: { msg_id: string; emoji?: string }): Promise<Kook.User[]>
+	addDirectMessageReaction(param: { msg_id: string; emoji: string }): Promise<void>
 	deleteDirectMessageReaction(param: {
 		msg_id: string
 		emoji: string
@@ -543,9 +479,7 @@ export interface AbstactBot {
 	}): Promise<IVoiceInfo>
 	listJoinedVoice(
 		param?: Kook.Pagination,
-	): Promise<
-		Kook.List<{ id: string; guild_id: string; parent_id: string; name: string }>
-	>
+	): Promise<Kook.List<{ id: string; guild_id: string; parent_id: string; name: string }>>
 	leaveVoice(param: { channel_id: string }): Promise<void>
 	keepVoiceAlive(param: { channel_id: string }): Promise<void>
 
@@ -553,14 +487,9 @@ export interface AbstactBot {
 	getGuildRoleList(
 		param: { guild_id: string } & Kook.Pagination,
 	): Promise<Kook.List<Kook.GuildRole>>
-	createGuildRole(param: {
-		name?: string
-		guild_id: string
-	}): Promise<Kook.GuildRole>
+	createGuildRole(param: { name?: string; guild_id: string }): Promise<Kook.GuildRole>
 	updateGuildRole(
-		param: { guild_id: string; role_id: number } & Partial<
-			Omit<Kook.GuildRole, 'role_id'>
-		>,
+		param: { guild_id: string; role_id: number } & Partial<Omit<Kook.GuildRole, 'role_id'>>,
 	): Promise<Kook.GuildRole>
 	deleteGuildRole(param: { guild_id: string; role_id: number }): Promise<void>
 	grantGuildRole(param: {
@@ -598,16 +527,10 @@ export interface AbstactBot {
 		duration?: number
 		setting_times?: number
 	}): Promise<{ url: string }>
-	deleteInvite(param: {
-		url_code: string
-		guild_id?: string
-		channel_id?: string
-	}): Promise<void>
+	deleteInvite(param: { url_code: string; guild_id?: string; channel_id?: string }): Promise<void>
 
 	// blacklist
-	getBlacklist(
-		param: { guild_id: string } & Kook.Pagination,
-	): Promise<Kook.List<Kook.BlackList>>
+	getBlacklist(param: { guild_id: string } & Kook.Pagination): Promise<Kook.List<Kook.BlackList>>
 	createBlacklist(param: {
 		guild_id: string
 		target_id: string
@@ -621,12 +544,8 @@ export interface AbstactBot {
 
 	// game
 	getGameList(param?: { type?: 0 | 1 | 2 }): Promise<Kook.List<Kook.Game>>
-	createGame(param: { name: string; icon?: string }): Promise<
-		Kook.List<Kook.Game>
-	>
-	updateGame(param: { id: number; name?: string; icon?: string }): Promise<
-		Kook.List<Kook.Game>
-	>
+	createGame(param: { name: string; icon?: string }): Promise<Kook.List<Kook.Game>>
+	updateGame(param: { id: number; name?: string; icon?: string }): Promise<Kook.List<Kook.Game>>
 	deleteGame(param: { id: number }): Promise<void>
 	createGameActivity(param: { data_type: 1; id: number }): Promise<void>
 	createGameActivity(param: {
@@ -642,21 +561,14 @@ export interface AbstactBot {
 	getTemplateList(param?: Kook.Pagination): Promise<Kook.List<Kook.ITemplate>>
 	createTemplate(
 		param: Pick<Kook.ITemplate, 'title' | 'content'> &
-			Partial<
-				Pick<Kook.ITemplate, 'type' | 'msgtype' | 'test_data' | 'test_channel'>
-			>,
+			Partial<Pick<Kook.ITemplate, 'type' | 'msgtype' | 'test_data' | 'test_channel'>>,
 	): Promise<Kook.ITemplateReturn>
 	updateTemplate(
 		param: Pick<Kook.ITemplate, 'id'> &
 			Partial<
 				Pick<
 					Kook.ITemplate,
-					| 'title'
-					| 'content'
-					| 'type'
-					| 'msgtype'
-					| 'test_data'
-					| 'test_channel'
+					'title' | 'content' | 'type' | 'msgtype' | 'test_data' | 'test_channel'
 				>
 			>,
 	): Promise<Kook.ITemplateReturn>
@@ -676,10 +588,7 @@ function cleanParams(obj: Record<string, any> | undefined) {
 	return out
 }
 
-async function toFormData(
-	file: Buffer | Blob | string | FormData,
-	name: string,
-) {
+async function toFormData(file: Buffer | Blob | string | FormData, name: string) {
 	if (typeof file === 'string') {
 		// treat as base64
 		const b = Buffer.from(file, 'base64')

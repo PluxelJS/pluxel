@@ -1,14 +1,15 @@
 // App.tsx（关键改动标注了 ✅）
-import React from 'react'
-import { Route, Switch, Redirect, Link, useLocation } from 'wouter'
-import type { NavItem } from '@pluxel/components'
-import { Layout, TestPath, ExamplePage } from '@pluxel/components'
-import { PluginsLayout } from './plugins/PluginsLayout'
-import { Notifications } from '@mantine/notifications'
-import { ModalsProvider } from '@mantine/modals'
+
 import { Button } from '@mantine/core'
+import { ModalsProvider } from '@mantine/modals'
+import { Notifications } from '@mantine/notifications'
+import type { NavItem } from '@pluxel/components'
+import { ExamplePage, Layout, TestPath } from '@pluxel/components'
+import React from 'react'
+import { Link, Redirect, Route, Switch, useLocation } from 'wouter'
 import { LiveLog } from './log_viewer/LiveLog'
 import { Demo } from './notification'
+import { PluginsLayout } from './plugins/PluginsLayout'
 import { WouterLinkAdapter } from './WouterLinkAdapter'
 
 const navItems: NavItem[] = [
@@ -59,9 +60,7 @@ export function App() {
 					<Route path="/about" component={() => <ExamplePage />} />
 					<Route path="/test/:name" component={TestPath} />
 					<Route path="/profile">
-						{() =>
-							isLoggedIn() ? <h1>用户中心</h1> : <Redirect to="/login" />
-						}
+						{() => (isLoggedIn() ? <h1>用户中心</h1> : <Redirect to="/login" />)}
 					</Route>
 
 					<Route path="/logs">{() => <LiveLog />}</Route>

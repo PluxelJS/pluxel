@@ -1,42 +1,42 @@
-import React, { memo, useCallback, useMemo, useRef, useState } from 'react'
+import {
+	closestCenter,
+	DndContext,
+	type DragEndEvent,
+	DragOverlay,
+	type DragStartEvent,
+	KeyboardSensor,
+	MeasuringStrategy,
+	PointerSensor,
+	useSensor,
+	useSensors,
+} from '@dnd-kit/core'
+import { restrictToVerticalAxis } from '@dnd-kit/modifiers'
+import {
+	arrayMove,
+	SortableContext,
+	sortableKeyboardCoordinates,
+	useSortable,
+	verticalListSortingStrategy,
+} from '@dnd-kit/sortable'
+import { CSS } from '@dnd-kit/utilities'
 import {
 	ActionIcon,
 	Badge,
 	Button,
 	Group,
+	NumberInput,
 	Paper,
+	rem,
 	Stack,
+	Switch,
 	Table,
 	Text,
-	TextInput,
 	Textarea,
-	NumberInput,
-	Switch,
+	TextInput,
 	Tooltip,
-	rem,
 } from '@mantine/core'
 import { IconGripVertical, IconPlus, IconTrash } from '@tabler/icons-react'
-import {
-	DndContext,
-	PointerSensor,
-	DragOverlay,
-	KeyboardSensor,
-	useSensor,
-	useSensors,
-	closestCenter,
-	MeasuringStrategy,
-	type DragStartEvent,
-	type DragEndEvent,
-} from '@dnd-kit/core'
-import {
-	SortableContext,
-	arrayMove,
-	useSortable,
-	verticalListSortingStrategy,
-	sortableKeyboardCoordinates,
-} from '@dnd-kit/sortable'
-import { restrictToVerticalAxis } from '@dnd-kit/modifiers'
-import { CSS } from '@dnd-kit/utilities'
+import React, { memo, useCallback, useMemo, useRef, useState } from 'react'
 import { META_MAP, registerRenderer, triggerFormEvents } from 'valibot-form'
 
 /* -------------------------------- Types -------------------------------- */
@@ -73,14 +73,11 @@ type RowData = { id: string; k: string; v: unknown }
 let __rid = 0
 const rid = () => `row_${++__rid}`
 
-const isShortText = (v: unknown) =>
-	typeof v === 'string' && v.length <= 60 && !/\n/.test(v)
+const isShortText = (v: unknown) => typeof v === 'string' && v.length <= 60 && !/\n/.test(v)
 const looksLikeJson = (s: string) => {
 	const t = s.trim()
 	if (!t) return false
-	const like =
-		(t.startsWith('{') && t.endsWith('}')) ||
-		(t.startsWith('[') && t.endsWith(']'))
+	const like = (t.startsWith('{') && t.endsWith('}')) || (t.startsWith('[') && t.endsWith(']'))
 	if (!like) return false
 	try {
 		JSON.parse(t)
@@ -89,9 +86,7 @@ const looksLikeJson = (s: string) => {
 		return false
 	}
 }
-const pickDefaultByMode = (
-	mode: NonNullable<RecordUI['valueMode']>,
-): unknown => {
+const pickDefaultByMode = (mode: NonNullable<RecordUI['valueMode']>): unknown => {
 	switch (mode) {
 		case 'number':
 			return 0
@@ -133,21 +128,20 @@ interface RowProps {
 	reorderable: boolean
 }
 
-const Handle = React.forwardRef<
-	HTMLButtonElement,
-	React.ComponentProps<typeof ActionIcon>
->((props, ref) => (
-	<ActionIcon
-		ref={ref}
-		variant="subtle"
-		{...props}
-		aria-label="拖拽排序"
-		tabIndex={0}
-		style={{ touchAction: 'none', cursor: 'grab' }}
-	>
-		<IconGripVertical size={16} />
-	</ActionIcon>
-))
+const Handle = React.forwardRef<HTMLButtonElement, React.ComponentProps<typeof ActionIcon>>(
+	(props, ref) => (
+		<ActionIcon
+			ref={ref}
+			variant="subtle"
+			{...props}
+			aria-label="拖拽排序"
+			tabIndex={0}
+			style={{ touchAction: 'none', cursor: 'grab' }}
+		>
+			<IconGripVertical size={16} />
+		</ActionIcon>
+	),
+)
 Handle.displayName = 'Handle'
 
 const SortableRow = memo(function SortableRow(props: RowProps) {
@@ -177,7 +171,10 @@ const SortableRow = memo(function SortableRow(props: RowProps) {
 		transform,
 		transition,
 		isDragging,
-	} = useSortable({ id: row.id, disabled: !reorderable })
+	} = useSortable({
+		id: row.id,
+		disabled: !reorderable,
+	})
 
 	const style = {
 		transform: CSS.Transform.toString(transform),
@@ -187,9 +184,7 @@ const SortableRow = memo(function SortableRow(props: RowProps) {
 
 	const keyRef = useRef<HTMLInputElement | null>(null)
 	const textRef = useRef<HTMLInputElement | HTMLTextAreaElement | null>(null)
-	const numRef = useRef<number | null>(
-		typeof row.v === 'number' ? (row.v as number) : null,
-	)
+	const numRef = useRef<number | null>(typeof row.v === 'number' ? (row.v as number) : null)
 	const [boolVis, setBoolVis] = useState<boolean>(
 		typeof row.v === 'boolean' ? (row.v as boolean) : false,
 	)
@@ -209,9 +204,7 @@ const SortableRow = memo(function SortableRow(props: RowProps) {
 				next.v = boolVis
 				break
 			case 'json': {
-				const s =
-					(textRef.current as HTMLTextAreaElement | HTMLInputElement)?.value ??
-					''
+				const s = (textRef.current as HTMLTextAreaElement | HTMLInputElement)?.value ?? ''
 				try {
 					next.v = JSON.parse(s)
 				} catch {
@@ -220,9 +213,7 @@ const SortableRow = memo(function SortableRow(props: RowProps) {
 				break
 			}
 			default:
-				next.v =
-					(textRef.current as HTMLTextAreaElement | HTMLInputElement)?.value ??
-					''
+				next.v = (textRef.current as HTMLTextAreaElement | HTMLInputElement)?.value ?? ''
 		}
 		onCommit(row.id, next)
 	}, [editableKey, onCommit, row.id, row.k, boolVis, kind])
@@ -288,8 +279,7 @@ const SortableRow = memo(function SortableRow(props: RowProps) {
 			)
 		}
 		if (kind === 'json') {
-			const dv =
-				typeof row.v === 'string' ? row.v : JSON.stringify(row.v ?? {}, null, 0)
+			const dv = typeof row.v === 'string' ? row.v : JSON.stringify(row.v ?? {}, null, 0)
 			return (
 				<Textarea
 					ref={(el) => (textRef.current = el)}
@@ -387,18 +377,10 @@ function RecordRendererImpl(props: RendererProps) {
 	const ep: Required<
 		Pick<
 			RecordUI,
-			| 'addable'
-			| 'removable'
-			| 'reorderable'
-			| 'editableKey'
-			| 'asTable'
-			| 'valueMode'
+			'addable' | 'removable' | 'reorderable' | 'editableKey' | 'asTable' | 'valueMode'
 		>
 	> &
-		Pick<
-			RecordUI,
-			'columns' | 'keyPlaceholder' | 'valuePlaceholder' | 'emptyHint'
-		> = {
+		Pick<RecordUI, 'columns' | 'keyPlaceholder' | 'valuePlaceholder' | 'emptyHint'> = {
 		addable: true,
 		removable: true,
 		reorderable: true,
@@ -413,17 +395,12 @@ function RecordRendererImpl(props: RendererProps) {
 	}
 
 	const keyWidth = useMemo(
-		() =>
-			typeof ep.columns?.key === 'number'
-				? rem(ep.columns!.key as number)
-				: ep.columns?.key,
+		() => (typeof ep.columns?.key === 'number' ? rem(ep.columns!.key as number) : ep.columns?.key),
 		[ep.columns?.key],
 	)
 	const valueWidth = useMemo(
 		() =>
-			typeof ep.columns?.value === 'number'
-				? rem(ep.columns!.value as number)
-				: ep.columns?.value,
+			typeof ep.columns?.value === 'number' ? rem(ep.columns!.value as number) : ep.columns?.value,
 		[ep.columns?.value],
 	)
 
@@ -468,21 +445,18 @@ function RecordRendererImpl(props: RendererProps) {
 		[inputProps],
 	)
 
-	const ensureUniqueKey = useCallback(
-		(nextKey: string, selfId: string, pool: RowData[]) => {
-			if (!nextKey) return nextKey
-			const taken = new Set(pool.filter((r) => r.id !== selfId).map((r) => r.k))
-			if (!taken.has(nextKey)) return nextKey
-			let i = 2
-			let k = `${nextKey} (${i})`
-			while (taken.has(k)) {
-				i += 1
-				k = `${nextKey} (${i})`
-			}
-			return k
-		},
-		[],
-	)
+	const ensureUniqueKey = useCallback((nextKey: string, selfId: string, pool: RowData[]) => {
+		if (!nextKey) return nextKey
+		const taken = new Set(pool.filter((r) => r.id !== selfId).map((r) => r.k))
+		if (!taken.has(nextKey)) return nextKey
+		let i = 2
+		let k = `${nextKey} (${i})`
+		while (taken.has(k)) {
+			i += 1
+			k = `${nextKey} (${i})`
+		}
+		return k
+	}, [])
 
 	const onCommit = useCallback(
 		(id: string, next: Partial<RowData>) => {
@@ -532,10 +506,7 @@ function RecordRendererImpl(props: RendererProps) {
 		})
 	}, [emitChange, ep.valueMode])
 
-	const onDragStart = useCallback(
-		(evt: DragStartEvent) => setActiveId(String(evt.active.id)),
-		[],
-	)
+	const onDragStart = useCallback((evt: DragStartEvent) => setActiveId(String(evt.active.id)), [])
 	const onDragEnd = useCallback(
 		(evt: DragEndEvent) => {
 			setActiveId(null)
@@ -588,10 +559,7 @@ function RecordRendererImpl(props: RendererProps) {
 					<Table striped withTableBorder withColumnBorders highlightOnHover>
 						{header}
 						<Table.Tbody>
-							<SortableContext
-								items={rows.map((r) => r.id)}
-								strategy={verticalListSortingStrategy}
-							>
+							<SortableContext items={rows.map((r) => r.id)} strategy={verticalListSortingStrategy}>
 								{rows.map((r, i) => (
 									<SortableRow
 										key={r.id}
@@ -616,10 +584,7 @@ function RecordRendererImpl(props: RendererProps) {
 						</Table.Tbody>
 					</Table>
 				) : (
-					<SortableContext
-						items={rows.map((r) => r.id)}
-						strategy={verticalListSortingStrategy}
-					>
+					<SortableContext items={rows.map((r) => r.id)} strategy={verticalListSortingStrategy}>
 						<Stack gap="sm">
 							{rows.map((r, i) => (
 								<SortableRow
@@ -688,6 +653,4 @@ function RecordRendererImpl(props: RendererProps) {
 }
 
 /* ------------------------------ Register ------------------------------- */
-registerRenderer(META_MAP.RECORD, (props: RendererProps) => (
-	<RecordRendererImpl {...props} />
-))
+registerRenderer(META_MAP.RECORD, (props: RendererProps) => <RecordRendererImpl {...props} />)

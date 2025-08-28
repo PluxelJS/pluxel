@@ -1,6 +1,7 @@
 // src/components/Layout/AppHeader.tsx
+
+import { Box, Burger, Divider, Group, Title } from '@mantine/core'
 import type React from 'react'
-import { Box, Group, Title, Divider, Burger } from '@mantine/core'
 
 export interface AppHeaderProps {
 	/** 左侧主标题（string 或自定义节点） */
@@ -31,13 +32,7 @@ export default function AppHeader({
 				gap="sm"
 				style={{ minWidth: 0 }} // 允许内部文本截断
 			>
-				{showBurger && (
-					<Burger
-						size="sm"
-						onClick={onBurgerClick}
-						aria-label="Toggle navigation"
-					/>
-				)}
+				{showBurger && <Burger size="sm" onClick={onBurgerClick} aria-label="Toggle navigation" />}
 
 				<Title
 					order={3}

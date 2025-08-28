@@ -13,14 +13,10 @@ declare module '@pluxel/context' {
 export class LoggerService {
 	constructor(private ctx: Context) {}
 
-	private write(
-		level: 'trace' | 'debug' | 'info' | 'warn' | 'error',
-		...args: unknown[]
-	) {
+	private write(level: 'trace' | 'debug' | 'info' | 'warn' | 'error', ...args: unknown[]) {
 		// 选一个 console 方法；如果不存在，就用 log
 		const fn =
-			((console as any)[level] as (...msgs: unknown[]) => void) ??
-			console.log.bind(console)
+			((console as any)[level] as (...msgs: unknown[]) => void) ?? console.log.bind(console)
 		// 在最前面插入 [contextName]
 		fn(`[${this.ctx.name}]`, ...args)
 	}

@@ -1,8 +1,9 @@
 // verifier.ts
+
+import { createErr, createOk, type Result } from 'option-t/plain_result'
 import type { ServiceData, ServiceListMetadata } from './internal-types'
 import type { AliasKey, Identifier } from './types'
 import { RegistrationType } from './types'
-import { type Result, createOk, createErr } from 'option-t/plain_result'
 import { getDependencyCount } from './utils/reflection'
 
 /* ----------------------------------------------------------------------------

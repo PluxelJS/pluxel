@@ -1,4 +1,4 @@
-import { BasePlugin, Config, Plugin, v, type Awaitable } from '@pluxel/hmr'
+import { type Awaitable, BasePlugin, Config, Plugin, v } from '@pluxel/hmr'
 import { createClient } from 'redis'
 
 /** —— 配置：只保留核心项 —— */

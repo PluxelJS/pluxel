@@ -125,8 +125,7 @@ export class Rates extends BasePlugin {
 	async guardCooldown(parts: (string | number)[], ttlMs: number) {
 		const k = this.key('cool', ...parts)
 		const r = await this.evalWithReload<number>(
-			(c) =>
-				c.evalSha(this.sha.cooldown, { keys: [k], arguments: [String(ttlMs)] }),
+			(c) => c.evalSha(this.sha.cooldown, { keys: [k], arguments: [String(ttlMs)] }),
 			'cooldown',
 		)
 		if (r === 1) return { ok: true as const }
@@ -134,11 +133,7 @@ export class Rates extends BasePlugin {
 	}
 
 	/** 固定窗口：periodSec 内 limit 次。返回剩余；<0 表示已超限 */
-	async consumeFixed(
-		parts: (string | number)[],
-		periodSec: number,
-		limit: number,
-	) {
+	async consumeFixed(parts: (string | number)[], periodSec: number, limit: number) {
 		const k = this.key('fixed', ...parts)
 		const left = await this.evalWithReload<number>(
 			(c) =>
@@ -152,11 +147,7 @@ export class Rates extends BasePlugin {
 	}
 
 	/** 滑动窗口：windowMs 内 limit 次。>=0 剩余；<0 需等待毫秒 */
-	async consumeSliding(
-		parts: (string | number)[],
-		windowMs: number,
-		limit: number,
-	) {
+	async consumeSliding(parts: (string | number)[], windowMs: number, limit: number) {
 		const k = this.key('slide', ...parts)
 		const ret = await this.evalWithReload<number>(
 			(c) =>
@@ -170,12 +161,7 @@ export class Rates extends BasePlugin {
 	}
 
 	/** 令牌桶：cap 容量，refill 每秒补充，cost 每次消耗。>=0 剩余；<0 需等待毫秒 */
-	async consumeToken(
-		parts: (string | number)[],
-		cap: number,
-		refillPerSec: number,
-		cost = 1,
-	) {
+	async consumeToken(parts: (string | number)[], cap: number, refillPerSec: number, cost = 1) {
 		const k = this.key('token', ...parts)
 		const ret = await this.evalWithReload<number>(
 			(c) =>
@@ -212,8 +198,7 @@ export class Rates extends BasePlugin {
 					cost?: number
 			  },
 	): Promise<
-		| { ok: true; remaining?: number }
-		| { ok: false; retryAfterMs: number; remaining?: number }
+		{ ok: true; remaining?: number } | { ok: false; retryAfterMs: number; remaining?: number }
 	> {
 		switch (opts.type) {
 			case 'cooldown': {
@@ -221,11 +206,7 @@ export class Rates extends BasePlugin {
 				return r.ok ? r : { ok: false, retryAfterMs: r.retryAfterMs }
 			}
 			case 'fixed': {
-				const left = await this.consumeFixed(
-					opts.parts,
-					opts.periodSec,
-					opts.limit,
-				)
+				const left = await this.consumeFixed(opts.parts, opts.periodSec, opts.limit)
 				if (left < 0) {
 					// 固窗只能粗略估计回退时间，用 TTL 不是原子；如需准确请改用滑窗/令牌桶
 					return { ok: false, retryAfterMs: 0, remaining: left }
@@ -233,25 +214,12 @@ export class Rates extends BasePlugin {
 				return { ok: true, remaining: left }
 			}
 			case 'sliding': {
-				const r = await this.consumeSliding(
-					opts.parts,
-					opts.windowMs,
-					opts.limit,
-				)
-				return r >= 0
-					? { ok: true, remaining: r }
-					: { ok: false, retryAfterMs: -r }
+				const r = await this.consumeSliding(opts.parts, opts.windowMs, opts.limit)
+				return r >= 0 ? { ok: true, remaining: r } : { ok: false, retryAfterMs: -r }
 			}
 			case 'token': {
-				const r = await this.consumeToken(
-					opts.parts,
-					opts.cap,
-					opts.refillPerSec,
-					opts.cost ?? 1,
-				)
-				return r >= 0
-					? { ok: true, remaining: r }
-					: { ok: false, retryAfterMs: -r }
+				const r = await this.consumeToken(opts.parts, opts.cap, opts.refillPerSec, opts.cost ?? 1)
+				return r >= 0 ? { ok: true, remaining: r } : { ok: false, retryAfterMs: -r }
 			}
 		}
 	}
@@ -274,10 +242,7 @@ export class Rates extends BasePlugin {
 	}
 
 	/** —— 便捷 key 生成（调用方按需组合） —— */
-	makeKey(
-		kind: 'cool' | 'fixed' | 'slide' | 'token',
-		...parts: (string | number)[]
-	) {
+	makeKey(kind: 'cool' | 'fixed' | 'slide' | 'token', ...parts: (string | number)[]) {
 		return this.key(kind, ...parts)
 	}
 }

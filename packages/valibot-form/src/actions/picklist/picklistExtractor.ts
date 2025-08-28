@@ -1,12 +1,10 @@
 // picklist/extractProps.ts
 import type * as v from 'valibot'
-import type { PicklistMetaOptions } from './type'
 import { META_MAP } from '~/utils'
+import type { PicklistMetaOptions } from './type'
 
 type Schema = v.PicklistSchema<any, any>
-type PipedSchema<T extends v.BaseSchema<any, any, any>> = v.SchemaWithPipe<
-	readonly [T, ...any]
->
+type PipedSchema<T extends v.BaseSchema<any, any, any>> = v.SchemaWithPipe<readonly [T, ...any]>
 type InputSchema = PipedSchema<Schema> | Schema
 
 export function extractPicklistProps<T extends string | number = string>(
@@ -14,8 +12,7 @@ export function extractPicklistProps<T extends string | number = string>(
 ): PicklistMetaOptions<T> {
 	const meta: PicklistMetaOptions<T> = {}
 
-	meta.options =
-		schema.options ?? (schema as PipedSchema<Schema>).pipe[0].options
+	meta.options = schema.options ?? (schema as PipedSchema<Schema>).pipe[0].options
 
 	const pipe = (schema as PipedSchema<Schema>).pipe
 	if (!pipe) return meta

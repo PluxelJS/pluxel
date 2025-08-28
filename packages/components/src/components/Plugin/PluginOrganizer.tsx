@@ -1,58 +1,50 @@
 // src/components/PluginOrganizer.tsx
-import type React from 'react'
-import {
-	memo,
-	useState,
-	useCallback,
-	useMemo,
-	useEffect,
-	useRef,
-	startTransition,
-} from 'react'
-import {
-	Card,
-	Text,
-	Group,
-	Badge,
-	Stack,
-	Collapse,
-	ActionIcon,
-	Paper,
-	useMantineTheme,
-	Anchor,
-	Divider,
-	Menu,
-	Box,
-} from '@mantine/core'
-import {
-	IconFolderPlus,
-	IconPencil,
-	IconTrash,
-	IconChevronDown,
-	IconChevronRight,
-	IconGripVertical,
-} from '@tabler/icons-react'
-import { showNotification } from '@mantine/notifications'
 
 import {
+	closestCenter,
 	DndContext,
 	DragOverlay,
-	PointerSensor,
 	KeyboardSensor,
+	PointerSensor,
+	type UniqueIdentifier,
+	useDroppable,
 	useSensor,
 	useSensors,
-	closestCenter,
-	useDroppable,
-	type UniqueIdentifier,
 } from '@dnd-kit/core'
-import {
-	SortableContext,
-	useSortable,
-	sortableKeyboardCoordinates,
-	verticalListSortingStrategy,
-	arrayMove,
-} from '@dnd-kit/sortable'
 import { restrictToVerticalAxis } from '@dnd-kit/modifiers'
+import {
+	arrayMove,
+	SortableContext,
+	sortableKeyboardCoordinates,
+	useSortable,
+	verticalListSortingStrategy,
+} from '@dnd-kit/sortable'
+import {
+	ActionIcon,
+	Anchor,
+	Badge,
+	Box,
+	Card,
+	Collapse,
+	Divider,
+	Group,
+	Menu,
+	Paper,
+	Stack,
+	Text,
+	useMantineTheme,
+} from '@mantine/core'
+import { showNotification } from '@mantine/notifications'
+import {
+	IconChevronDown,
+	IconChevronRight,
+	IconFolderPlus,
+	IconGripVertical,
+	IconPencil,
+	IconTrash,
+} from '@tabler/icons-react'
+import type React from 'react'
+import { memo, startTransition, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 // ---------- types & utils ----------
 const genGroupId = () =>
@@ -86,19 +78,16 @@ type Props = {
 // ---- id helpers（前缀化，避免冲突）----
 const cid = (c: 'ROOT_UNGROUPED' | string) =>
 	c === 'ROOT_UNGROUPED' ? 'c:ROOT' : (`c:${c}` as const)
-const isCid = (id: UniqueIdentifier) =>
-	typeof id === 'string' && id.startsWith('c:')
+const isCid = (id: UniqueIdentifier) => typeof id === 'string' && id.startsWith('c:')
 const fromCid = (id: string): 'ROOT_UNGROUPED' | string =>
 	id === 'c:ROOT' ? 'ROOT_UNGROUPED' : id.slice(2)
 
 const iid = (p: string) => `i:${p}`
-const isIid = (id: UniqueIdentifier) =>
-	typeof id === 'string' && id.startsWith('i:')
+const isIid = (id: UniqueIdentifier) => typeof id === 'string' && id.startsWith('i:')
 const fromIid = (id: string) => id.slice(2)
 
 const gid = (g: string) => `g:${g}`
-const isGid = (id: UniqueIdentifier) =>
-	typeof id === 'string' && id.startsWith('g:')
+const isGid = (id: UniqueIdentifier) => typeof id === 'string' && id.startsWith('g:')
 const fromGid = (id: string) => id.slice(2)
 
 function sanitize(allIds: string[], groups: GroupConfig[]) {
@@ -123,11 +112,9 @@ const assertNoDup = (groups: GroupConfig[], ungrouped: string[]) => {
 	if (process.env.NODE_ENV !== 'production') {
 		const seen = new Map<string, number>()
 		for (const id of ungrouped) seen.set(id, (seen.get(id) ?? 0) + 1)
-		for (const g of groups)
-			for (const id of g.pluginIds) seen.set(id, (seen.get(id) ?? 0) + 1)
+		for (const g of groups) for (const id of g.pluginIds) seen.set(id, (seen.get(id) ?? 0) + 1)
 		const dup = [...seen].filter(([, n]) => n > 1).map(([id]) => id)
-		if (dup.length)
-			console.warn('[PluginOrganizer] Duplicate ids detected:', dup)
+		if (dup.length) console.warn('[PluginOrganizer] Duplicate ids detected:', dup)
 	}
 }
 
@@ -181,14 +168,7 @@ const SortableRow = memo(function SortableRow({
 	const theme = useMantineTheme()
 	const rowRef = useRef<HTMLDivElement | null>(null)
 
-	const {
-		attributes,
-		listeners,
-		setNodeRef,
-		transform,
-		transition,
-		isDragging,
-	} = useSortable({
+	const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
 		id: iid(pid),
 		disabled,
 		animateLayoutChanges: () => false,
@@ -204,9 +184,7 @@ const SortableRow = memo(function SortableRow({
 			}}
 			style={{
 				width: '100%',
-				transform: transform
-					? `translate3d(${transform.x}px, ${transform.y}px, 0)`
-					: undefined,
+				transform: transform ? `translate3d(${transform.x}px, ${transform.y}px, 0)` : undefined,
 				transition,
 				opacity: isDragging ? 0.9 : 1,
 			}}
@@ -342,12 +320,11 @@ const GroupCard = memo(function GroupCard(props: {
 		getName,
 	} = props
 
-	const { attributes, listeners, setNodeRef, transform, transition } =
-		useSortable({
-			id: sortableId,
-			disabled: isFiltering,
-			animateLayoutChanges: () => false,
-		})
+	const { attributes, listeners, setNodeRef, transform, transition } = useSortable({
+		id: sortableId,
+		disabled: isFiltering,
+		animateLayoutChanges: () => false,
+	})
 
 	const stat = {
 		total: visibleIds.length,
@@ -361,9 +338,7 @@ const GroupCard = memo(function GroupCard(props: {
 			radius="md"
 			p="md"
 			style={{
-				transform: transform
-					? `translate3d(${transform.x}px, ${transform.y}px, 0)`
-					: undefined,
+				transform: transform ? `translate3d(${transform.x}px, ${transform.y}px, 0)` : undefined,
 				transition,
 			}}
 			onContextMenu={(e) => {
@@ -392,17 +367,8 @@ const GroupCard = memo(function GroupCard(props: {
 						<IconGripVertical size={18} />
 					</ActionIcon>
 
-					<ActionIcon
-						size="sm"
-						variant="subtle"
-						onClick={toggleCollapse}
-						aria-label="切换折叠"
-					>
-						{isCollapsed ? (
-							<IconChevronRight size={16} />
-						) : (
-							<IconChevronDown size={16} />
-						)}
+					<ActionIcon size="sm" variant="subtle" onClick={toggleCollapse} aria-label="切换折叠">
+						{isCollapsed ? <IconChevronRight size={16} /> : <IconChevronDown size={16} />}
 					</ActionIcon>
 
 					<Text fw={600}>{g.name}</Text>
@@ -472,10 +438,7 @@ export function PluginOrganizer({
 		}
 		return s
 	}, [statuses])
-	const getName = useCallback(
-		(id: string) => statuses[id]?.name ?? id,
-		[statuses],
-	)
+	const getName = useCallback((id: string) => statuses[id]?.name ?? id, [statuses])
 
 	const allIds = useMemo(() => Object.keys(statuses), [statuses])
 	const { groups: saneGroups, ungrouped: saneUngrouped } = useMemo(
@@ -550,8 +513,7 @@ export function PluginOrganizer({
 		)
 		for (const g of gs) containerToItems.set(g.groupId, [...g.pluginIds])
 		const itemToContainer = new Map<string, string>()
-		for (const [k, v] of containerToItems)
-			for (const id of v) itemToContainer.set(id, k)
+		for (const [k, v] of containerToItems) for (const id of v) itemToContainer.set(id, k)
 		return { containerToItems, itemToContainer }
 	}, [])
 
@@ -559,10 +521,7 @@ export function PluginOrganizer({
 		(e: React.MouseEvent, id: string) => {
 			startTransition(() => {
 				if (e.shiftKey && lastSelectedRef.current) {
-					const containers = buildContainers(
-						groupsRef.current,
-						ungroupedRef.current,
-					)
+					const containers = buildContainers(groupsRef.current, ungroupedRef.current)
 					const cidA = containers.itemToContainer.get(id)
 					const cidB = containers.itemToContainer.get(lastSelectedRef.current)
 					if (cidA && cidB && cidA === cidB) {
@@ -571,18 +530,14 @@ export function PluginOrganizer({
 						const b = list.indexOf(lastSelectedRef.current)
 						if (a >= 0 && b >= 0) {
 							const [lo, hi] = a < b ? [a, b] : [b, a]
-							setSelectedIds((sel) =>
-								unique([...sel, ...list.slice(lo, hi + 1)]),
-							)
+							setSelectedIds((sel) => unique([...sel, ...list.slice(lo, hi + 1)]))
 							return
 						}
 					}
 				}
 				lastSelectedRef.current = id
 				if (e.ctrlKey || e.metaKey) {
-					setSelectedIds((sel) =>
-						sel.includes(id) ? sel.filter((x) => x !== id) : [...sel, id],
-					)
+					setSelectedIds((sel) => (sel.includes(id) ? sel.filter((x) => x !== id) : [...sel, id]))
 				} else {
 					setSelectedIds([id])
 				}
@@ -615,10 +570,7 @@ export function PluginOrganizer({
 		type: 'ROOT' | 'GROUP'
 		gid?: string
 	}>({ open: false, x: 0, y: 0, type: 'ROOT' })
-	const closeMenu = useCallback(
-		() => setMenu((m) => ({ ...m, open: false })),
-		[],
-	)
+	const closeMenu = useCallback(() => setMenu((m) => ({ ...m, open: false })), [])
 	useEffect(() => {
 		if (!menu.open) return
 		const handle = () => closeMenu()
@@ -628,14 +580,11 @@ export function PluginOrganizer({
 				capture: true,
 			} as any)
 	}, [menu.open, closeMenu])
-	const openMenu = useCallback(
-		(e: React.MouseEvent, type: 'ROOT' | 'GROUP', gid?: string) => {
-			e.preventDefault()
-			e.stopPropagation()
-			setMenu({ open: true, x: e.clientX, y: e.clientY, type, gid })
-		},
-		[],
-	)
+	const openMenu = useCallback((e: React.MouseEvent, type: 'ROOT' | 'GROUP', gid?: string) => {
+		e.preventDefault()
+		e.stopPropagation()
+		setMenu({ open: true, x: e.clientX, y: e.clientY, type, gid })
+	}, [])
 
 	const createGroup = useCallback(() => {
 		const name = prompt('请输入新文件夹名称：')?.trim()
@@ -656,9 +605,7 @@ export function PluginOrganizer({
 		if (idx < 0) return
 		const name = prompt('重命名文件夹：', groupsRef.current[idx].name)?.trim()
 		if (!name) return
-		const next = groupsRef.current.map((g, i) =>
-			i === idx ? { ...g, name } : g,
-		)
+		const next = groupsRef.current.map((g, i) => (i === idx ? { ...g, name } : g))
 		setGroups(next)
 		onGroupsChangeRef.current?.(next)
 		closeMenu()
@@ -671,12 +618,7 @@ export function PluginOrganizer({
 		if (idx < 0) return
 		const victim = groupsRef.current[idx]
 		const count = victim?.pluginIds.length ?? 0
-		if (
-			!confirm(
-				`删除文件夹「${victim?.name}」？\n将把其中 ${count} 个插件移入“未分组”。`,
-			)
-		)
-			return
+		if (!confirm(`删除文件夹「${victim?.name}」？\n将把其中 ${count} 个插件移入“未分组”。`)) return
 		const nextUngrouped = unique([...ungroupedRef.current, ...victim.pluginIds])
 		const nextGroups = groupsRef.current.filter((_, i) => i !== idx)
 		setGroups(nextGroups)
@@ -700,14 +642,9 @@ export function PluginOrganizer({
 	)
 
 	// 注意：这里是拖拽时的“活动项”，避免与 props.activeId 混淆
-	const [dragActiveId, setDragActiveId] = useState<UniqueIdentifier | null>(
-		null,
-	)
+	const [dragActiveId, setDragActiveId] = useState<UniqueIdentifier | null>(null)
 
-	const groupIdsSortable = useMemo(
-		() => groups.map((g) => gid(g.groupId)),
-		[groups],
-	)
+	const groupIdsSortable = useMemo(() => groups.map((g) => gid(g.groupId)), [groups])
 	const LinkComp = LinkComponent
 
 	// —— Drag handlers ——
@@ -731,10 +668,7 @@ export function PluginOrganizer({
 			setDragActiveId(null)
 			if (!oId) return
 
-			const containers = buildContainers(
-				groupsRef.current,
-				ungroupedRef.current,
-			)
+			const containers = buildContainers(groupsRef.current, ungroupedRef.current)
 
 			// 组排序
 			if (isGid(aId) && isGid(oId)) {
@@ -764,8 +698,7 @@ export function PluginOrganizer({
 			const toC = isCid(oId)
 				? fromCid(String(oId))
 				: isIid(oId)
-					? (containers.itemToContainer.get(fromIid(String(oId))) ??
-						'ROOT_UNGROUPED')
+					? (containers.itemToContainer.get(fromIid(String(oId))) ?? 'ROOT_UNGROUPED')
 					: undefined
 			if (!fromC || !toC) return
 
@@ -775,9 +708,7 @@ export function PluginOrganizer({
 				const filtered = full.filter((x) => !movingSet.has(x))
 
 				// 计算移动块在原列表中的首/末索引，用于判断方向
-				const movingIdxs = moving
-					.map((x) => full.indexOf(x))
-					.sort((a, b) => a - b)
+				const movingIdxs = moving.map((x) => full.indexOf(x)).sort((a, b) => a - b)
 				const firstIdx = movingIdxs[0]
 				const lastIdx = movingIdxs[movingIdxs.length - 1]
 
@@ -813,9 +744,7 @@ export function PluginOrganizer({
 					setUngroupedOrder(nextList)
 				} else {
 					setGroups((prev) =>
-						prev.map((g) =>
-							g.groupId === fromC ? { ...g, pluginIds: nextList } : g,
-						),
+						prev.map((g) => (g.groupId === fromC ? { ...g, pluginIds: nextList } : g)),
 					)
 				}
 
@@ -856,11 +785,7 @@ export function PluginOrganizer({
 			const insertInto = (list: string[], items: string[], index: number) => {
 				const base = list.filter((x) => !movingSet.has(x))
 				const orderedMoving = items
-				const next = [
-					...base.slice(0, index),
-					...orderedMoving,
-					...base.slice(index),
-				]
+				const next = [...base.slice(0, index), ...orderedMoving, ...base.slice(index)]
 				return unique(next)
 			}
 
@@ -879,9 +804,7 @@ export function PluginOrganizer({
 				)
 			} else if (toC === 'ROOT_UNGROUPED') {
 				setGroups((prev) =>
-					prev.map((g) =>
-						g.groupId === fromC ? { ...g, pluginIds: fromNext } : g,
-					),
+					prev.map((g) => (g.groupId === fromC ? { ...g, pluginIds: fromNext } : g)),
 				)
 				setUngroupedOrder((prev) => insertInto(prev, moving, toTargetIndex))
 			} else {
@@ -927,10 +850,7 @@ export function PluginOrganizer({
 						minWidth: 160,
 					}}
 				>
-					<Menu.Item
-						leftSection={<IconFolderPlus size={16} />}
-						onClick={createGroup}
-					>
+					<Menu.Item leftSection={<IconFolderPlus size={16} />} onClick={createGroup}>
 						创建文件夹
 					</Menu.Item>
 				</Menu.Dropdown>
@@ -1028,10 +948,7 @@ export function PluginOrganizer({
 				<Divider variant="dashed" />
 
 				{/* 组列表（组可拖拽重排） */}
-				<SortableContext
-					items={groupIdsSortable}
-					strategy={verticalListSortingStrategy}
-				>
+				<SortableContext items={groupIdsSortable} strategy={verticalListSortingStrategy}>
 					<Stack gap="md" align="stretch">
 						{visibleGroups.map((g) => {
 							const vis = g.pluginIds
@@ -1050,9 +967,7 @@ export function PluginOrganizer({
 									onContextMenu={(e) => openMenu(e, 'GROUP', g.groupId)}
 									isFiltering={isFiltering}
 									isCollapsed={isCollapsed}
-									toggleCollapse={() =>
-										setCollapsed((m) => ({ ...m, [g.groupId]: !m[g.groupId] }))
-									}
+									toggleCollapse={() => setCollapsed((m) => ({ ...m, [g.groupId]: !m[g.groupId] }))}
 									getName={getName}
 								/>
 							)

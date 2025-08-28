@@ -13,10 +13,7 @@ export type RecordMetaOptions = {
 	valueMode?: 'auto' | 'string' | 'number' | 'boolean' | 'json'
 }
 
-export type RecordMetaResult<
-	TKeyMeta = unknown,
-	TValueMeta = unknown,
-> = RecordMetaOptions & {
+export type RecordMetaResult<TKeyMeta = unknown, TValueMeta = unknown> = RecordMetaOptions & {
 	key?: TKeyMeta
 	value?: TValueMeta
 }

@@ -1,23 +1,17 @@
 {
-  "../components/src/form/DebugValues.tsx": {
-    "file": "assets/DebugValues-DlUSZgbH.js",
-    "name": "DebugValues",
-    "src": "../components/src/form/DebugValues.tsx",
-    "isDynamicEntry": true,
-    "imports": [
-      "src/client.tsx"
-    ]
-  },
-  "src/client.tsx": {
-    "file": "assets/client-C5i2lrFC.js",
-    "name": "client",
-    "src": "src/client.tsx",
-    "isEntry": true,
-    "dynamicImports": [
-      "../components/src/form/DebugValues.tsx"
-    ],
-    "css": [
-      "assets/client-DrK858-Q.css"
-    ]
-  }
+	"../components/src/form/DebugValues.tsx": {
+		"file": "assets/DebugValues-DlUSZgbH.js",
+		"name": "DebugValues",
+		"src": "../components/src/form/DebugValues.tsx",
+		"isDynamicEntry": true,
+		"imports": ["src/client.tsx"]
+	},
+	"src/client.tsx": {
+		"file": "assets/client-C5i2lrFC.js",
+		"name": "client",
+		"src": "src/client.tsx",
+		"isEntry": true,
+		"dynamicImports": ["../components/src/form/DebugValues.tsx"],
+		"css": ["assets/client-DrK858-Q.css"]
+	}
 }

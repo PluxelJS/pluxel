@@ -1,21 +1,21 @@
 // packages/hmr/tsconfig.json
 {
-  "extends": "../../tsconfig.src.json",
-  "include": [
-    "src",
-    // 显式收编 manifest；或改成 "public/**/*.json"
-    "public/.vite/manifest.json"
-  ],
-  "compilerOptions": {
-    "outDir": "dist",
-    "jsx": "react-jsx",
-    // 允许带 import assertion 的非 TS 资源，给 manifest 用
-    "resolveJsonModule": true,
-    "allowArbitraryExtensions": true,
-    "module": "ESNext",
-    "moduleResolution": "Bundler",
-    "emitDeclarationOnly": true,
-    "lib": ["DOM", "ES2022"]
-  },
-  "references": [{ "path": "../core" }]
+	"extends": "../../tsconfig.src.json",
+	"include": [
+		"src",
+		// 显式收编 manifest；或改成 "public/**/*.json"
+		"public/.vite/manifest.json"
+	],
+	"compilerOptions": {
+		"outDir": "dist",
+		"jsx": "react-jsx",
+		// 允许带 import assertion 的非 TS 资源，给 manifest 用
+		"resolveJsonModule": true,
+		"allowArbitraryExtensions": true,
+		"module": "ESNext",
+		"moduleResolution": "Bundler",
+		"emitDeclarationOnly": true,
+		"lib": ["DOM", "ES2022"]
+	},
+	"references": []
 }

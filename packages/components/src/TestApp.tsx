@@ -1,6 +1,6 @@
-import { Home } from './form/form'
-import Example from './components/Dashboard/Example.tsx'
 import { Container } from '@mantine/core'
+import Example from './components/Dashboard/Example.tsx'
+import { Home } from './form/form'
 
 export default function TestApp() {
 	return (

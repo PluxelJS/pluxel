@@ -1,24 +1,24 @@
-import React, { memo, useMemo, useEffect, useRef, useState } from 'react'
 import {
+	Badge,
 	Box,
+	Button,
 	Card,
 	CardSection,
-	Text,
 	Center,
-	Group,
-	Title,
-	Badge,
 	Divider,
+	Group,
 	ScrollArea,
-	Button,
+	Text,
+	Title,
 } from '@mantine/core'
-import { useQuery, keepPreviousData } from '@tanstack/react-query'
-import { client, type InferSuccessResponse } from '../rpc'
-import { ConfigForm } from './ConfigForm'
-import { ActionBar } from './ActionBar'
-import { LiveLog as LiveLogRaw } from '../log_viewer/LiveLog'
-import { DependencyList } from './DependencyList'
+import { keepPreviousData, useQuery } from '@tanstack/react-query'
+import React, { memo, useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'wouter'
+import { LiveLog as LiveLogRaw } from '../log_viewer/LiveLog'
+import { client, type InferSuccessResponse } from '../rpc'
+import { ActionBar } from './ActionBar'
+import { ConfigForm } from './ConfigForm'
+import { DependencyList } from './DependencyList'
 
 const $get = client.plugins[':name'].$get
 type Response = InferSuccessResponse<typeof $get>
@@ -97,18 +97,8 @@ const LeftPane = memo(function LeftPane(props: {
 	return (
 		<Card withBorder shadow="sm" style={CARD_FLEX_COL}>
 			<CardSection withBorder px="md" py="sm">
-				<Group
-					justify="space-between"
-					align="center"
-					wrap="nowrap"
-					style={{ minWidth: 0 }}
-				>
-					<Group
-						gap="sm"
-						align="center"
-						wrap="nowrap"
-						style={{ minWidth: 0, flex: 1 }}
-					>
+				<Group justify="space-between" align="center" wrap="nowrap" style={{ minWidth: 0 }}>
+					<Group gap="sm" align="center" wrap="nowrap" style={{ minWidth: 0, flex: 1 }}>
 						<Title order={3} fw={600} lh={1.2} style={{ minWidth: 0 }}>
 							<Box
 								style={{
@@ -121,11 +111,7 @@ const LeftPane = memo(function LeftPane(props: {
 								插件：{pluginName}
 							</Box>
 						</Title>
-						<Badge
-							variant="light"
-							color={isRunning ? 'green' : 'gray'}
-							radius="sm"
-						>
+						<Badge variant="light" color={isRunning ? 'green' : 'gray'} radius="sm">
 							{isRunning ? '运行中' : '已停止'}
 						</Badge>
 						<Badge
@@ -137,11 +123,7 @@ const LeftPane = memo(function LeftPane(props: {
 							同步中…
 						</Badge>
 					</Group>
-					<ActionBar
-						pluginName={pluginName}
-						isSelfRunning={isRunning}
-						dependencies={deps}
-					/>
+					<ActionBar pluginName={pluginName} isSelfRunning={isRunning} dependencies={deps} />
 				</Group>
 			</CardSection>
 
@@ -199,10 +181,7 @@ const LeftPane = memo(function LeftPane(props: {
 })
 
 /* ========== 右卡 ========== */
-const RightPane = memo(function RightPane(props: {
-	pluginName: string
-	syncing: boolean
-}) {
+const RightPane = memo(function RightPane(props: { pluginName: string; syncing: boolean }) {
 	const { pluginName, syncing } = props
 	const $getConfig = client.plugins[':name'].config.$get
 
@@ -232,12 +211,7 @@ const RightPane = memo(function RightPane(props: {
 	return (
 		<Card withBorder shadow="sm" style={CARD_FLEX_COL}>
 			<CardSection withBorder px="md" py="sm">
-				<Group
-					justify="space-between"
-					align="center"
-					wrap="nowrap"
-					style={{ minWidth: 0 }}
-				>
+				<Group justify="space-between" align="center" wrap="nowrap" style={{ minWidth: 0 }}>
 					<Title order={4} fw={600}>
 						配置
 					</Title>
@@ -283,24 +257,14 @@ function PluginSkeleton() {
 				minWidth: 0,
 			}}
 		>
-			<Card
-				withBorder
-				shadow="sm"
-				style={{ width: LEFT_WIDTH, minWidth: 0, height: '100%' }}
-			/>
-			<Card
-				withBorder
-				shadow="sm"
-				style={{ flex: 1, minWidth: 0, height: '100%' }}
-			/>
+			<Card withBorder shadow="sm" style={{ width: LEFT_WIDTH, minWidth: 0, height: '100%' }} />
+			<Card withBorder shadow="sm" style={{ flex: 1, minWidth: 0, height: '100%' }} />
 		</Box>
 	)
 }
 
 /* ========== 主组件 ========== */
-export const Plugin = memo(function Plugin({
-	pluginName,
-}: { pluginName: string }) {
+export const Plugin = memo(function Plugin({ pluginName }: { pluginName: string }) {
 	// 主信息查询：用 select 归一化字段与引用
 	const q = useQuery({
 		queryKey: ['plugin', pluginName] as const,
@@ -330,7 +294,7 @@ export const Plugin = memo(function Plugin({
 		} => ({
 			name: r?.name ?? pluginName,
 			deps: r?.dependencies?.length ? (r.dependencies as SafeDeps) : EMPTY_DEPS,
-			desc: r?.desc ?? "",
+			desc: r?.desc ?? '',
 		}),
 	})
 

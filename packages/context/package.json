@@ -1,36 +1,33 @@
 {
-  "private": true,
-  "name": "@pluxel/context",
-  "version": "0.1.0",
-  "description": "Demo example that imports a local package",
-  "main": "./dist/index.cjs",
-  "type": "module",
-  "module": "./dist/index.js",
-  "types": "./dist/index.d.cts",
-  "exports": {
-    ".": {
-      "@pluxel/source": "./src/index.ts",
-      "import": "./dist/index.js",
-      "require": "./dist/index.cjs"
-    },
-    "./package.json": "./package.json"
-  },
-  "scripts": {
-    "dev": "bun --watch run src/test.ts",
-    "test": "bun test",
-    "build": "tsdown"
-  },
-  "peerDependencies": {
-    "typescript": "*",
-    "tsdown": "*"
-  },
-  "publishConfig": {
-    "exports": {
-      ".": {
-        "import": "./dist/index.js",
-        "require": "./dist/index.cjs"
-      },
-      "./package.json": "./package.json"
-    }
-  }
+	"private": true,
+	"name": "@pluxel/context",
+	"version": "0.1.0",
+	"description": "Demo example that imports a local package",
+	"main": "./dist/index.cjs",
+	"type": "module",
+	"module": "./dist/index.js",
+	"types": "./dist/index.d.cts",
+	"exports": {
+		".": {
+			"@pluxel/source": "./src/index.ts",
+			"import": "./dist/index.js",
+			"require": "./dist/index.cjs"
+		},
+		"./package.json": "./package.json"
+	},
+	"scripts": {
+		"dev": "bun --watch run src/test.ts",
+		"test": "bun test",
+		"build": "tsdown"
+	},
+	"devDependencies": {},
+	"publishConfig": {
+		"exports": {
+			".": {
+				"import": "./dist/index.js",
+				"require": "./dist/index.cjs"
+			},
+			"./package.json": "./package.json"
+		}
+	}
 }

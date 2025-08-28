@@ -1,5 +1,5 @@
-import fs from 'node:fs/promises'
 import { readFileSync } from 'node:fs'
+import fs from 'node:fs/promises'
 import { type Context, Injectable } from '@pluxel/core'
 import { debounce } from '@tanstack/pacer'
 import chokidar, { type FSWatcher } from 'chokidar'
@@ -96,9 +96,7 @@ export class ConfigService {
 	getConfig<T extends object = Record<string, any>>(
 		name: string = this.ctx.pluginInfo.meta.name,
 	): PluginEntry<T> {
-		const entry =
-			this.data.plugins[name] ||
-			({ meta: {}, configRecord: {} } as PluginEntry<T>)
+		const entry = this.data.plugins[name] || ({ meta: {}, configRecord: {} } as PluginEntry<T>)
 		return entry as PluginEntry<T>
 	}
 
@@ -116,8 +114,7 @@ export class ConfigService {
 		// biome-ignore lint/suspicious/noAssignInExpressions: <explanation>
 		const entry = (this.data.plugins[name] ||= { meta: {}, configRecord: {} })
 		if (partial.meta) Object.assign(entry.meta, partial.meta)
-		if (partial.configRecord)
-			Object.assign(entry.configRecord, partial.configRecord)
+		if (partial.configRecord) Object.assign(entry.configRecord, partial.configRecord)
 		this.saveDebounced()
 	}
 

@@ -1,7 +1,7 @@
+import { Box, Text, Title } from '@mantine/core'
 import React from 'react'
-import { Box, Title, Text } from '@mantine/core'
-import Plugin from './Plugin'
 import type { PluginProps } from './Plugin'
+import Plugin from './Plugin'
 
 export function ExamplePage() {
 	const pluginInfo: PluginProps['info'] = {
@@ -36,19 +36,12 @@ export function ExamplePage() {
 	]
 
 	return (
-		<Plugin
-			info={pluginInfo}
-			links={links}
-			license={license}
-			tocRecords={tocRecords}
-		>
+		<Plugin info={pluginInfo} links={links} license={license} tocRecords={tocRecords}>
 			<Box>
 				<Title id="introduction" order={4} mb="xs">
 					Introduction
 				</Title>
-				<Text mb="md">
-					AwesomePlugin makes your life easier by providing X, Y, and Z.
-				</Text>
+				<Text mb="md">AwesomePlugin makes your life easier by providing X, Y, and Z.</Text>
 
 				<Title id="features" order={5} mb="xs">
 					Features

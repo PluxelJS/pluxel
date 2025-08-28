@@ -1,11 +1,11 @@
 // tests/visibility.spec.ts
 import 'reflect-metadata'
-import { describe, it, expect } from 'bun:test'
+import { describe, expect, it } from 'bun:test'
 import { ContainerBuilder } from '../src'
+import { expectErr, expectExist, expectOk } from './_helpers'
 import { Agenda } from './fixtures/agenda'
 import { Calendar } from './fixtures/calendar'
 import { Clock } from './fixtures/clock'
-import { expectOk, expectExist, expectErr } from './_helpers'
 
 describe('only public services can be directly queried from the container', () => {
 	it('public services are directly get-able; private only resolvable as deps', () => {

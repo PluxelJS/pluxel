@@ -1,6 +1,6 @@
 import type * as v from 'valibot'
-import type { BooleanMetaOptions } from './type'
 import { META_MAP } from '~/utils'
+import type { BooleanMetaOptions } from './type'
 
 type BooleanSchema = v.SchemaWithPipe<readonly [v.BooleanSchema<any>, ...any]>
 
