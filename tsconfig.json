@@ -18,7 +18,7 @@
 		// —————— 路径别名 ——————
 		"paths": {
 			"diod": ["packages/diod/src"],
-			"@pluxel/core": ["packages/core/src"],
+			"@pluxel/core": ["packages/core/src/bun.ts"],
 			"@pluxel/context": ["packages/context/src"]
 		},
 		// —————— 源码优先跳转 ——————

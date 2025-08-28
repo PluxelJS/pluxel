@@ -19,7 +19,8 @@
 		"./package.json": "./package.json"
 	},
 	"files": [
-		"./dist"
+		"./dist",
+		"./public"
 	],
 	"scripts": {
 		"dev": "bun src/start.ts",
@@ -33,11 +34,14 @@
 		"@hono/valibot-validator": "^0.5.3",
 		"@hono/vite-dev-server": "^0.20.1",
 		"@melloware/react-logviewer": "^6.3.2",
-		"@pluxel/components": "workspace:*",
 		"@swc/core": "^1.13.3",
 		"@tanstack/pacer": "^0.12.0",
 		"@tanstack/react-form": "^1.19.2",
 		"@tanstack/react-query": "^5.85.3",
+		"@dnd-kit/core": "^6.3.1",
+		"@dnd-kit/modifiers": "^9.0.0",
+		"@dnd-kit/sortable": "^10.0.0",
+		"@dnd-kit/utilities": "^3.2.2",
 		"chokidar": "^4.0.3",
 		"hono": "^4.9.2",
 		"mlly": "^1.7.4",
@@ -71,6 +75,7 @@
 	},
 	"devDependencies": {
 		"@pluxel/core": "workspace:*",
+		"@pluxel/components": "workspace:*",
 		"@types/react": "^19.1.10",
 		"@types/react-dom": "^19.1.7",
 		"valibot-form": "workspace:*"

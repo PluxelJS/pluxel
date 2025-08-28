@@ -1,0 +1,7 @@
+packages:
+  - packages/*
+
+public-hoist-pattern:
+  - '@pluxel/core'
+  - '@pluxel/hmr'
+  - 'tsdown'

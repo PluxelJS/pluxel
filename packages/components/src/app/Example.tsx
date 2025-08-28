@@ -1,7 +1,6 @@
-import { Box, Text, Title } from '@mantine/core'
 import React from 'react'
-import type { PluginProps } from './Plugin'
-import Plugin from './Plugin'
+import type { PluginProps } from './Plugin/Plugin'
+import Plugin from './Plugin/Plugin'
 
 export function ExamplePage() {
 	const pluginInfo: PluginProps['info'] = {

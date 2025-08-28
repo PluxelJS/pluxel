@@ -3,6 +3,9 @@
 	"name": "@pluxel/core",
 	"version": "0.1.0",
 	"description": "Demo example that imports a local package",
+	"main": "./dist/index.cjs",
+	"module": "./dist/index.js",
+	"types": "./dist/index.d.cts",
 	"type": "module",
 	"exports": {
 		".": {
@@ -19,6 +22,9 @@
 		},
 		"./package.json": "./package.json"
 	},
+	"files": [
+		"dist"
+	],
 	"scripts": {
 		"build": "tsdown",
 		"dev": "bun --watch run src/start.ts"
@@ -47,8 +53,5 @@
 			},
 			"./package.json": "./package.json"
 		}
-	},
-	"main": "./dist/index.cjs",
-	"module": "./dist/index.js",
-	"types": "./dist/index.d.cts"
+	}
 }

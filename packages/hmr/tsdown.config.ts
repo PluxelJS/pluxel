@@ -9,7 +9,6 @@ export default defineConfig({
 		services: 'src/services/index.ts',
 	},
 	env: {
-		NODE_ENV: 'production',
 		PROD: true,
 	},
 	dts: {
