@@ -6,12 +6,12 @@ import { Config } from './config'
 import { PluginB } from './PluginB'
 // biome-ignore lint/style/useImportType: <explanation>
 import { PluginC } from './PluginC'
-import { test, test2 } from './testconfig'
+import { test1, test2 } from './testconfig'
 
 @Plugin({ name: 'PluginA', type: 'event' })
 export class PluginA extends BasePlugin {
-	@Config(test)
-	private config!: Config<typeof test>;
+	@Config(test1)
+	private config1!: Config<typeof test1>;
 
 	@Config(test2)
 	private config2!: Config<typeof test2>;

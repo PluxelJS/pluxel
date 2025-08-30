@@ -29,12 +29,22 @@ export const pluginConfig = new Hono<PluginsEnv>()
 			existConfig: ctx.configService.getConfig(pluginName).configRecord,
 		})
 	})
+	.post('/reset', (c) => {
+		const { plugin_ctx: ctx, pluginCtor: ctor, pluginName } = c.var
+		const configChecker = ctx.loader.getPluginSchema(ctor)
+		if (configChecker === undefined)
+			return c.json({ code: 'config_not_found', error: '该插件没有定义配置检查' })
+		for (const [configKey, schema] of Object.entries(configChecker)) {
+			ctx.configService.setConfig(pluginName, {
+				configRecord: {
+					[configKey]: v.getDefault(schema),
+				},
+			})
+		}
+		return c.json({ code: 'success' })
+	})
 	.post('/', vValidator('json', pluginConfigSchema), async (c) => {
 		const { plugin_ctx: ctx, pluginCtor: ctor, pluginName } = c.var
-
-		if (!ctor) {
-			return c.json<PluginPostResponse>({ code: 'plugin_not_found', error: '插件未找到' }, 404)
-		}
 
 		const configChecker = ctx.loader.getPluginSchema(ctor)
 		if (!configChecker) {

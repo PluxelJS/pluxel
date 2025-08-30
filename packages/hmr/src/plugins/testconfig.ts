@@ -1,5 +1,5 @@
 import { Config, f, v } from './config'
-export const test = v.object({
+export const test1 = v.object({
 	id: v.pipe(
 		v.number(),
 

@@ -18,7 +18,7 @@ import type { Processor } from 'bullmq/dist/esm/types/processor'
 
 // ============= 多段配置（每段都是 v.object）=============
 const RedisConfig = v.object({
-  url: v.string(),                                   // redis://user:pass@host:port/db
+  url: v.optional(v.string(), "redis://127.0.0.1:6379"),                                   // redis://user:pass@host:port/db
   lazy: v.optional(v.boolean(), false),
   pingOnStart: v.optional(v.boolean(), true),
   startupTimeoutMs: v.optional(v.number(), 10_000),
@@ -31,15 +31,7 @@ const DashboardConfig = v.object({
   enable: v.optional(v.boolean(), false),
   basePath: v.optional(v.string(), '/admin/queues'),
   readOnly: v.optional(v.boolean(), false),
-  allowRetries: v.optional(v.boolean(), true),
-  // 是否尝试使用 @hono/node-server/serve-static；部分运行时（Edge）可禁用
-  useNodeServeStatic: v.optional(v.boolean(), true),
-  ui: v.optional(
-    v.object({
-      title: v.optional(v.string()),
-      logoPath: v.optional(v.string()),
-    }),
-  ),
+  allowRetries: v.optional(v.boolean(), true)
 })
 
 const DefaultsConfig = v.object({
@@ -100,8 +92,8 @@ export class BullMQPlugin extends BasePlugin {
         serverAdapter: adapter,
         options: {
           uiConfig: {
-            boardTitle: this.board.ui?.title ?? 'Bull Dashboard',
-            boardLogo: this.board.ui?.logoPath ? { path: this.board.ui.logoPath } : undefined,
+            boardTitle: 'Bull Dashboard',
+            boardLogo: undefined,
           },
         },
       })

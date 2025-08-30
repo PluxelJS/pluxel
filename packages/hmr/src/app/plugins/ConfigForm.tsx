@@ -14,6 +14,7 @@ import {
 } from '@mantine/core'
 import { useHotkeys } from '@mantine/hooks'
 import { notifications } from '@mantine/notifications'
+import { AutoForm } from '@pluxel/components'
 import { formOptions } from '@tanstack/react-form'
 import { useMutation } from '@tanstack/react-query'
 import type { InferRequestType, InferResponseType } from 'hono/client'
@@ -21,7 +22,6 @@ import React, { useEffect, useMemo, useState } from 'react'
 import type { InferOutput, ObjectSchema } from 'valibot'
 import { getDefaults } from 'valibot'
 import { client } from '../rpc'
-import { AutoForm } from '@pluxel/components'
 export interface ConfigFormProps {
 	pluginName: string
 	configs: Record<string, ObjectSchema<any, any>>
@@ -187,7 +187,6 @@ function ConfigTabPanel({
 						if (result.code === 'validation_error') {
 							return { fields: result.errors[tabKey] }
 						}
-						return {}
 					},
 				},
 				onSubmit: async ({ value }) => {
