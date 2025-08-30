@@ -1,8 +1,8 @@
-import { type Context, symbols } from '@pluxel/hmr'
+import { type Context } from '@pluxel/hmr'
 import type { Events } from '@pluxel/hmr/services'
 import type { Bot } from './bot'
-import { eventMap, type KookEvent } from './events'
-import type { NoticeType, Session } from './types'
+import { eventMap } from './events'
+import type { Session } from './types'
 
 function processEvent(ctx: Context, eventType: keyof Events, bot: Bot, session: Session<any>) {
 	ctx.emit(eventType, bot, session)
@@ -27,7 +27,7 @@ export function internalWebhook(ctx: Context, bot: Bot, data: any) {
 		session.guildId = data?.extra?.guild_id
 		session.channelId = data?.target_id
 
-		const { value } = ctx.events.waterfall('message', bot, session)
+		const { value } = ctx.events.waterfall("message", bot, session)
 		if (value) {
 			bot
 				.sendMessage(session.channelId, value)

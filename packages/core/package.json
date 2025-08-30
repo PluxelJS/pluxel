@@ -37,7 +37,7 @@
 	"devDependencies": {
 		"@pluxel/context": "workspace:*",
 		"diod": "workspace:*",
-		"eventure": "latest"
+		"eventure": "^0.3.0"
 	},
 	"publishConfig": {
 		"exports": {

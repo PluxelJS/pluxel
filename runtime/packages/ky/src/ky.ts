@@ -1,7 +1,8 @@
 // KyPlugin.ts
 
-import { type Awaitable, BasePlugin, Config, Plugin, v } from '@pluxel/hmr'
+import { BasePlugin, Config, Plugin, v } from '@pluxel/hmr'
 import ky, { HTTPError, type KyInstance, type Options as KyOptions } from 'ky'
+export type * from 'ky'
 
 /** —— 1) 核心 —— */
 const CoreCfg = v.object({

@@ -1,9 +1,9 @@
 // KyPlugin.ts
 
 import { type Awaitable, BasePlugin, Config, f, Plugin, v } from '@pluxel/hmr'
-import ky, { HTTPError, type KyInstance, type Options as KyOptions } from 'ky'
+import type { HTTPError,  KyInstance,  Options as KyOptions } from 'pluxel-plugin-ky'
 // biome-ignore lint/style/useImportType: <explanation>
-import { KyPlugin } from '../services/ky'
+import { KyPlugin } from 'pluxel-plugin-ky'
 import { Bot } from './bot'
 import { createCommandBus, defineCommand, defineFor } from './cmd'
 import type { MessageSession } from './types'

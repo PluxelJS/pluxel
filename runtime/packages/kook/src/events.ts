@@ -42,7 +42,9 @@ import type {
 } from './types'
 
 declare module '@pluxel/hmr/services' {
-	interface Events extends KookEvent {}
+	interface Events extends KookEvent {
+		"test": [string]
+	}
 }
 
 export const eventMap: { [K in NoticeType]: keyof KookEvent } = {

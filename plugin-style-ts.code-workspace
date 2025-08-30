@@ -29,12 +29,12 @@
 			"path": "packages/hmr"
 		},
 		{
-			"name": "🍀  @pluxel/runtime",
-			"path": "packages/runtime"
-		},
-		{
 			"name": "🍀  valibot-form",
 			"path": "packages/valibot-form"
+		},
+		{
+			"name": "runtime",
+			"path": "runtime"
 		}
 	],
 	"settings": {
@@ -89,18 +89,18 @@
 				"background": "#52b522"
 			},
 			{
-				"path": "c:\\Users\\User\\Documents\\GitHub\\plugin-style-ts\\packages\\runtime",
-				"packageName": "@pluxel/runtime",
-				"label": "🍀  @pluxel/runtime",
-				"foreground": "#000000",
-				"background": "#5cfea3"
-			},
-			{
 				"path": "c:\\Users\\User\\Documents\\GitHub\\plugin-style-ts\\packages\\valibot-form",
 				"packageName": "valibot-form",
 				"label": "🍀  valibot-form",
 				"foreground": "#ffffff",
 				"background": "#ae679d"
+			},
+			{
+				"path": "c:\\Users\\User\\Documents\\GitHub\\plugin-style-ts\\runtime",
+				"packageName": "runtime",
+				"label": "runtime",
+				"foreground": "#ffffff",
+				"background": "#0d1c13"
 			}
 		],
 		"files.exclude": {},
