@@ -1,6 +1,11 @@
 packages:
-  - 'packages/**'
+  - 'packages/*'
+onlyBuiltDependencies:
+  - '@swc/core'
+  - esbuild
 
 public-hoist-pattern:
   - '@pluxel/core'
   - '@pluxel/hmr'
+
+nodeLinker: hoisted

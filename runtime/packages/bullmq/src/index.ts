@@ -8,13 +8,13 @@ import {
   FlowProducer,
   type JobsOptions,
   type QueueOptions,
-  type WorkerOptions,
-  type Processor,
+  type WorkerOptions
 } from 'bullmq'
 
 import { createBullBoard } from '@bull-board/api'
 import { BullMQAdapter } from '@bull-board/api/bullMQAdapter'
 import { HonoAdapter } from '@bull-board/hono'
+import type { Processor } from 'bullmq/dist/esm/types/processor'
 
 // ============= 多段配置（每段都是 v.object）=============
 const RedisConfig = v.object({

@@ -28,7 +28,7 @@ const test = v.object({
 		name: v.optional(v.pipe(v.string(), v.hexColor()), '#000000'),
 		check: v.optional(v.boolean(), true),
 	})
-@Plugin({ name: 'PluginA', type: 'event' })
+@Plugin({ name: 'PluginA' })
 export class PluginA extends BasePlugin {
 	@Config(test)
 	private config!: Config<typeof test>;

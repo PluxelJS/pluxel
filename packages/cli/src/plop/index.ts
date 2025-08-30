@@ -22,20 +22,19 @@ async function run(pm: 'pnpm' | 'npm' | 'yarn', args: string[], cwd: string) {
 export function newCommand() {
 	const cmd = new Command('new').description('Scaffold from templates')
 
-	// 子命令：plugin → 生成到 plugins/<name>
+	// Default command: Generate a plugin into packages/<name>
 	cmd
 		.command('plugin')
-		.description('Generate a plugin into plugins/<name>')
+		.description('Generate a plugin into packages/<name>')
 		.option('-n, --name <string>', 'package name (required if no prompt)')
 		.option('--pm <pnpm|npm|yarn>', 'package manager', 'pnpm')
 		.option('--desc <string>', 'description', 'A TypeScript plugin')
 		.option('--author <string>', 'author', 'you')
-		.option('--cwd <path>', 'workspace root where "plugins" lives', '.')
+		.option('--cwd <path>', 'workspace root where "packages" lives', '.')
 		.option('--force', 'overwrite existing files', false)
 		.option('--yes', 'skip all prompts, use flags/defaults', false)
 		.option('--no-install', 'do not run package manager install', false)
 		.action(async (opts) => {
-			// 收集参数（可交互）
 			let answers = {
 				name: opts.name as string | undefined,
 				pm: (opts.pm as 'pnpm' | 'npm' | 'yarn') ?? 'pnpm',
@@ -43,6 +42,7 @@ export function newCommand() {
 				author: opts.author as string,
 			}
 
+			// If "yes" flag isn't used, ask for input
 			if (!opts.yes) {
 				answers = Object.assign(
 					answers,
@@ -54,6 +54,7 @@ export function newCommand() {
 							when: !opts.name,
 							validate: (v: string) => !!v || 'required',
 						},
+						// Removed extra prompts for simplicity, focus only on name and package manager
 						{
 							type: 'list',
 							name: 'pm',
@@ -61,20 +62,6 @@ export function newCommand() {
 							choices: ['pnpm', 'npm', 'yarn'],
 							when: !opts.pm,
 							default: 'pnpm',
-						},
-						{
-							type: 'input',
-							name: 'desc',
-							message: 'Description',
-							when: !opts.desc,
-							default: 'A TypeScript plugin',
-						},
-						{
-							type: 'input',
-							name: 'author',
-							message: 'Author',
-							when: !opts.author,
-							default: 'you',
 						},
 					]),
 				)
@@ -84,30 +71,39 @@ export function newCommand() {
 			if (!pkgName) throw new Error('Missing --name')
 
 			const workspaceRoot = resolve(process.cwd(), opts.cwd ?? '.')
-			const targetDir = resolve(workspaceRoot, 'plugins', pkgName)
+			const targetDir = resolve(workspaceRoot, 'packages', pkgName)
 
-			// 幂等：默认不覆盖
+			// Check if the directory already exists and has files
 			if (!opts.force && fs.existsSync(targetDir) && fs.readdirSync(targetDir).length > 0) {
 				throw new Error(`Target exists and not empty: ${targetDir}\nUse --force to overwrite.`)
 			}
 			fs.mkdirSync(targetDir, { recursive: true })
 
-			// 准备 Plop (Node API)
+			// Setup Plop
 			const plop: NodePlopAPI = await nodePlop(undefined, {
 				destBasePath: workspaceRoot,
 				force: false,
 			})
+
+			// Custom helper to capitalize
+			plop.setHelper('capitalize', (str) => {
+				if (typeof str !== 'string' || str.trim() === '') {
+					return '' // return empty string if input is undefined or empty
+				}
+				return str.charAt(0).toUpperCase() + str.slice(1)
+			})
+
 			plop.setHelper('kebabCase', kebabCase)
 
-			// 注册 "plugin" 模板：来源 plop-templates/plugin/*
+			// Register the generator for the plugin
 			const base = resolveTemplatesDir('plugin')
 			plop.setGenerator('plugin', {
 				description: 'Generate a plugin package',
-				prompts: [], // 已由 commander + inquirer 收集
+				prompts: [], // Prompts handled by commander + inquirer
 				actions: [
 					{
 						type: 'addMany',
-						destination: join('src', 'plugins', '{{kebabCase name}}'),
+						destination: join('packages', '{{kebabCase name}}'), // Save directly to plugin name
 						base,
 						templateFiles: join(base, '**/*'),
 						data: { ...answers, name: pkgName },

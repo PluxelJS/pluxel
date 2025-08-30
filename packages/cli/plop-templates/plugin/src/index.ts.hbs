@@ -1,0 +1,21 @@
+import { type Awaitable, BasePlugin, Config, Plugin, v } from '@pluxel/hmr'
+
+const CfgSchema = v.object({ test: v.optional(v.boolean(), true) })
+
+@Plugin({ name: '{{pluginName}}' })
+export class {{capitalize pluginName}} extends BasePlugin {
+  @Config(CfgSchema)
+  private config!: Config<typeof CfgSchema>
+
+  constructor() {
+    super()
+  }
+
+  async init(_abort: AbortSignal): Promise<void> {
+    this.ctx.logger.info('{{capitalize pluginName}} initialized')
+  }
+
+  async stop(_abort: AbortSignal): Promise<void> {
+    this.ctx.logger.info('{{capitalize pluginName}} stopped')
+  }
+}

@@ -1,10 +1,8 @@
-// KyPlugin.ts
-
 import { type Awaitable, BasePlugin, Config, Plugin, v } from '@pluxel/hmr'
 
 const CfgSchema = v.object({ test: v.optional(v.boolean(), true)})
 
-@Plugin({ name: 'example', type: 'service' })
+@Plugin({ name: 'example' })
 export class Example extends BasePlugin {
 	@Config(CfgSchema) 
 	private config!: Config<typeof CfgSchema>

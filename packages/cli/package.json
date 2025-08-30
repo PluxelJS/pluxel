@@ -19,7 +19,7 @@
 		"./package.json": "./package.json"
 	},
 	"scripts": {
-		"dev": "bun src/cli.ts new",
+		"dev": "bun src/cli.ts new plugin",
 		"build": "tsdown"
 	},
 	"publishConfig": {

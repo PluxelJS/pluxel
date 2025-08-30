@@ -1,7 +1,7 @@
 // KyPlugin.ts
 
 import { BasePlugin, Config, Plugin, v } from '@pluxel/hmr'
-import ky, { HTTPError, type KyInstance, type Options as KyOptions } from 'ky'
+import ky, { HTTPError, type KyInstance, type Options } from 'ky';
 export type * from 'ky'
 
 /** —— 1) 核心 —— */
@@ -115,12 +115,12 @@ export class KyPlugin extends BasePlugin {
 	}
 
 	/** 小工具：需要临时不同前缀/头时派生一个客户端 */
-	createClient(overrides: KyOptions): KyInstance {
+	createClient(overrides: Options): KyInstance {
 		return this.client.extend(overrides)
 	}
 
 	/** 小工具：直接取 JSON（带类型） */
-	getJSON<T>(url: string, opts?: KyOptions) {
+	getJSON<T>(url: string, opts?: Options) {
 		return this.client.get(url, opts).json<T>()
 	}
 }

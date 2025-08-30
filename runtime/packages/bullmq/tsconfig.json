@@ -2,7 +2,7 @@
 	"compilerOptions": {
 		// 基础选项
 		"target": "ES2022", // 编译后代码目标版本
-		"module": "es2022", // 模块系统：支持原生 ESM
+		"module": "ES2022", // 模块系统：支持原生 ESM
 		"moduleResolution": "bundler",
 		// 输出配置
 		"outDir": "dist", // 输出目录
