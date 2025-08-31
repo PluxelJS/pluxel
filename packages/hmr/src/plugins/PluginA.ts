@@ -31,7 +31,7 @@ export class PluginA extends BasePlugin {
 		} else {
 			this.ctx.logger.info('PluginA: PluginC dependency not injected')
 		}
-		this.ctx.test.collect()
+
 		this.ctx.honoService.modifyApp((app) => {
 			app.get('/a', (c) => {
 				return c.html('text')
@@ -40,6 +40,6 @@ export class PluginA extends BasePlugin {
 	}
 
 	doSomething(): void {
-		this.ctx.logger.info('PluginA doing something...')
+		this.ctx.logger.info('PluginA doing somethinga...')
 	}
 }

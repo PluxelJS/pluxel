@@ -4,7 +4,7 @@ import { type EventArgs, type EventEmitterOptions, type EventListener, Eventure 
 import type { PluginIdentifier, PluginInstance } from '../pluginImpl'
 
 const serviceName = 'events' as const
-declare module '.' {
+declare module '@pluxel/context' {
 	namespace Context {
 		interface Config {
 			[serviceName]?: EventEmitterOptions

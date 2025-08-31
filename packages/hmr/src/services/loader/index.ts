@@ -18,6 +18,7 @@ declare module '@pluxel/core' {
 @Injectable({ key: serviceName })
 export class LoaderService {
 	public registry: PluginRegistry
+	public pathAnchors: Set<string> = new Set()
 
 	constructor(private ctx: Context) {
 		this.ctx.on('beforeStart', (plugin) => {
@@ -46,19 +47,29 @@ export class LoaderService {
 	/**
 	 * Load a module file, register its plugins, and set up HMR hooks.
 	 */
-	loadFileModule(id: string, mod: any) {
+	loadFileModule(id: string, mod: any): boolean {
 		this.registry.unregister(id)
+		let isPlugin = false
 		for (const exp of Object.values(mod)) {
 			if (typeof exp !== 'function') continue
 			const info = getPluginInfo(exp)
 			if (!info) continue
 			this.registry.register(id, exp as any)
+			isPlugin = true
+		}
+
+		if (isPlugin) {
+			this.pathAnchors.add(id)
+		} else {
+			this.pathAnchors.delete(id)
 		}
 
 		if (import.meta.hot) {
 			import.meta.hot.accept((newMod) => this.loadFileModule(id, newMod))
 			import.meta.hot.dispose(() => this.registry.unregister(id))
 		}
+
+		return isPlugin
 	}
 
 	/**

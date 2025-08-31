@@ -4,6 +4,6 @@ import { BasePlugin, Plugin } from '@pluxel/core'
 @Plugin({ name: 'PluginC', type: 'hook' })
 export class PluginC extends BasePlugin {
 	init(): void {
-		this.ctx.logger.info('PluginCaaa initialized')
+		this.ctx.logger.info('PluginC initialized')
 	}
 }
