@@ -1,10 +1,12 @@
 {
-	"name": "pluxel-plugin-example",
+	"name": "pluxel-plugin-session",
 	"version": "0.1.0",
 	"description": "Pluxel 示例插件。",
 	"main": "./src/index.ts",
 	"scripts": {},
-	"dependencies": {},
+	"dependencies": {
+		"alien-signals": "latest"
+	},
 	"peerDependencies": {},
 	"devDependencies": {}
 }

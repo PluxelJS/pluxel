@@ -36,8 +36,6 @@ importers:
         specifier: ^5.7.0
         version: 5.7.0
 
-  packages/example: {}
-
   packages/kook:
     dependencies:
       pluxel-plugin-ky:
@@ -65,6 +63,12 @@ importers:
       redis:
         specifier: ^5.8.1
         version: 5.8.2
+
+  packages/session:
+    dependencies:
+      alien-signals:
+        specifier: latest
+        version: 2.0.7
 
 packages:
 
@@ -715,6 +719,9 @@ packages:
     resolution: {integrity: sha512-NZyJarBfL7nWwIq+FDL6Zp/yHEhePMNnnJ0y3qfieCrmNvYct8uvtiV41UvlSe6apAfk0fY1FbWx+NwfmpvtTg==}
     engines: {node: '>=0.4.0'}
     hasBin: true
+
+  alien-signals@2.0.7:
+    resolution: {integrity: sha512-wE7y3jmYeb0+h6mr5BOovuqhFv22O/MV9j5p0ndJsa7z1zJNPGQ4ph5pQk/kTTCWRC3xsA4SmtwmkzQO+7NCNg==}
 
   async@3.2.6:
     resolution: {integrity: sha512-htCUDlxyyCLMgaM3xXg0C0LW2xqfuQ6p05pCEIsXuyQ+a1koYKTuBMzRNwmybfLgvJDMd0r1LTn4+E0Ti6C2AA==}
@@ -1995,6 +2002,8 @@ snapshots:
       '@types/node': 24.3.0
 
   acorn@8.15.0: {}
+
+  alien-signals@2.0.7: {}
 
   async@3.2.6: {}
 
