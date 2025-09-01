@@ -17,9 +17,6 @@ importers:
       '@pluxel/hmr':
         specifier: file:../packages/hmr
         version: file:../packages/hmr(c433da2cb4a690e7ddc372a6544b8acc)
-      '@swc/core':
-        specifier: ^1.13.5
-        version: 1.13.5
 
   packages/bullmq:
     dependencies:
@@ -679,8 +676,8 @@ packages:
     resolution: {integrity: sha512-gp4jhi644XZgULtj2RHTEgHCOiUNwqoziPLrYeilv/vPkS2sRhqW9IkzhitenllQJb3ctbPYptAzHgcUjNp80A==}
     engines: {node: '>=18'}
 
-  '@tanstack/query-core@5.85.5':
-    resolution: {integrity: sha512-KO0WTob4JEApv69iYp1eGvfMSUkgw//IpMnq+//cORBzXf0smyRwPLrUvEe5qtAEGjwZTXrjxg+oJNP/C00t6w==}
+  '@tanstack/query-core@5.85.6':
+    resolution: {integrity: sha512-hCj0TktzdCv2bCepIdfwqVwUVWb+GSHm1Jnn8w+40lfhQ3m7lCO7ADRUJy+2unxQ/nzjh2ipC6ye69NDW3l73g==}
 
   '@tanstack/react-form@1.19.3':
     resolution: {integrity: sha512-e9m/aAemSIfM9Qesk6xeXiBdXLRhZPnQp4QVp/epcaaA6peBCYS0rBL9fuLKGrL4LRyDIA4jA68XR0Mxq0yO4A==}
@@ -691,8 +688,8 @@ packages:
       '@tanstack/react-start':
         optional: true
 
-  '@tanstack/react-query@5.85.5':
-    resolution: {integrity: sha512-/X4EFNcnPiSs8wM2v+b6DqS5mmGeuJQvxBglmDxl6ZQb5V26ouD2SJYAcC3VjbNwqhY2zjxVD15rDA5nGbMn3A==}
+  '@tanstack/react-query@5.85.6':
+    resolution: {integrity: sha512-VUAag4ERjh+qlmg0wNivQIVCZUrYndqYu3/wPCVZd4r0E+1IqotbeyGTc+ICroL/PqbpSaGZg02zSWYfcvxbdA==}
     peerDependencies:
       react: ^18 || ^19
 
@@ -981,10 +978,6 @@ packages:
 
   once@1.4.0:
     resolution: {integrity: sha512-lNaJgI+2Q5URQBkccEKHTQOPaXdUxnZZElQTZY0MFUAuaEqe1E+Nyvgdz/aIyNi6Z9MzO5dv1H8n58/GELp3+w==}
-
-  option-t@54.2.2:
-    resolution: {integrity: sha512-6xcRpVax5leZ3anwU8grFulEaPXvuzuqJmZp6NQd859xcNpPXp59W8UtqZVZDOv6SHolUBFcEltMpcVfYUlHJA==}
-    engines: {node: '>=24.5.0'}
 
   pathe@2.0.3:
     resolution: {integrity: sha512-WUjGcAqP1gQacoQe+OBJsFA7Ld4DyXuUIjZ5cc75cLHvJ7dtNsTugphxIADwspS+AraAUePCKrSVtPLFj/F88w==}
@@ -1733,7 +1726,6 @@ snapshots:
 
   '@pluxel/core@file:../packages/core(react@19.1.1)':
     dependencies:
-      option-t: 54.2.2
       reflect-metadata: 0.2.2
       valtio: 2.1.5(react@19.1.1)
       xstate: 5.20.1
@@ -1747,6 +1739,7 @@ snapshots:
       '@dnd-kit/modifiers': 9.0.0(@dnd-kit/core@6.3.1(react-dom@19.1.1(react@19.1.1))(react@19.1.1))(react@19.1.1)
       '@dnd-kit/sortable': 10.0.0(@dnd-kit/core@6.3.1(react-dom@19.1.1(react@19.1.1))(react@19.1.1))(react@19.1.1)
       '@dnd-kit/utilities': 3.2.2(react@19.1.1)
+      '@hono/node-server': 1.19.1(hono@4.9.5)
       '@hono/react-renderer': 1.0.1(hono@4.9.5)(react-dom@19.1.1(react@19.1.1))(react@19.1.1)
       '@hono/standard-validator': 0.1.5(@standard-schema/spec@1.0.0)(hono@4.9.5)
       '@hono/valibot-validator': 0.5.3(hono@4.9.5)(valibot@1.1.0)
@@ -1762,7 +1755,7 @@ snapshots:
       '@tabler/icons-react': 3.34.1(react@19.1.1)
       '@tanstack/pacer': 0.12.0
       '@tanstack/react-form': 1.19.3(react-dom@19.1.1(react@19.1.1))(react@19.1.1)
-      '@tanstack/react-query': 5.85.5(react@19.1.1)
+      '@tanstack/react-query': 5.85.6(react@19.1.1)
       chokidar: 4.0.3
       hono: 4.9.5
       mlly: 1.8.0
@@ -1965,7 +1958,7 @@ snapshots:
     dependencies:
       '@tanstack/store': 0.7.4
 
-  '@tanstack/query-core@5.85.5': {}
+  '@tanstack/query-core@5.85.6': {}
 
   '@tanstack/react-form@1.19.3(react-dom@19.1.1(react@19.1.1))(react@19.1.1)':
     dependencies:
@@ -1977,9 +1970,9 @@ snapshots:
     transitivePeerDependencies:
       - react-dom
 
-  '@tanstack/react-query@5.85.5(react@19.1.1)':
+  '@tanstack/react-query@5.85.6(react@19.1.1)':
     dependencies:
-      '@tanstack/query-core': 5.85.5
+      '@tanstack/query-core': 5.85.6
       react: 19.1.1
 
   '@tanstack/react-store@0.7.4(react-dom@19.1.1(react@19.1.1))(react@19.1.1)':
@@ -2248,8 +2241,6 @@ snapshots:
   once@1.4.0:
     dependencies:
       wrappy: 1.0.2
-
-  option-t@54.2.2: {}
 
   pathe@2.0.3: {}
 

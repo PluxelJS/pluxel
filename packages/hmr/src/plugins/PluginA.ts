@@ -32,6 +32,7 @@ export class PluginA extends BasePlugin {
 			this.ctx.logger.info('PluginA: PluginC dependency not injected')
 		}
 
+		this.ctx.honoService.mountStatic('/bbb', { root: 'public/assets', index: 'test.txt' })
 		this.ctx.honoService.modifyApp((app) => {
 			app.get('/a', (c) => {
 				return c.html('text')

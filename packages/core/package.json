@@ -28,7 +28,6 @@
 		"dev": "bun --watch run src/start.ts"
 	},
 	"dependencies": {
-		"option-t": "54.2.2",
 		"reflect-metadata": "^0.2.2",
 		"valtio": "2.1.5",
 		"xstate": "5.20.1"
@@ -37,7 +36,8 @@
 	"devDependencies": {
 		"@pluxel/context": "workspace:*",
 		"diod": "workspace:*",
-		"eventure": "^0.3.0"
+		"eventure": "^0.3.0",
+		"option-t": "54.2.2"
 	},
 	"publishConfig": {
 		"exports": {

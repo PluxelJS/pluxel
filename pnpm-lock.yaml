@@ -169,9 +169,6 @@ importers:
 
   packages/core:
     dependencies:
-      option-t:
-        specifier: 54.2.2
-        version: 54.2.2
       reflect-metadata:
         specifier: ^0.2.2
         version: 0.2.2
@@ -191,6 +188,9 @@ importers:
       eventure:
         specifier: ^0.3.0
         version: 0.3.0
+      option-t:
+        specifier: 54.2.2
+        version: 54.2.2
 
   packages/diod:
     devDependencies:
@@ -221,6 +221,9 @@ importers:
       '@dnd-kit/utilities':
         specifier: ^3.2.2
         version: 3.2.2(react@19.1.1)
+      '@hono/node-server':
+        specifier: ^1.19.1
+        version: 1.19.1(hono@4.9.2)
       '@hono/react-renderer':
         specifier: ^1.0.1
         version: 1.0.1(hono@4.9.2)(react-dom@19.1.1(react@19.1.1))(react@19.1.1)
@@ -719,8 +722,8 @@ packages:
   '@floating-ui/utils@0.2.10':
     resolution: {integrity: sha512-aGTxbpbg8/b5JfU1HXSrbH3wXZuLPJcNEcZQFMxLs3oSzgtVu6nFPkbbGGUvBcUjKV2YyB9Wxxabo+HEH9tcRQ==}
 
-  '@hono/node-server@1.18.2':
-    resolution: {integrity: sha512-icgNvC0vRYivzyuSSaUv9ttcwtN8fDyd1k3AOIBDJgYd84tXRZSS6na8X54CY/oYoFTNhEmZraW/Rb9XYwX4KA==}
+  '@hono/node-server@1.19.1':
+    resolution: {integrity: sha512-h44e5s+ByUriaRIbeS/C74O8v90m0A95luyYQGMF7KEn96KkYMXO7bZAwombzTpjQTU4e0TkU8U1WBIXlwuwtA==}
     engines: {node: '>=18.14.1'}
     peerDependencies:
       hono: ^4
@@ -3158,7 +3161,7 @@ snapshots:
 
   '@floating-ui/utils@0.2.10': {}
 
-  '@hono/node-server@1.18.2(hono@4.9.2)':
+  '@hono/node-server@1.19.1(hono@4.9.2)':
     dependencies:
       hono: 4.9.2
 
@@ -3180,7 +3183,7 @@ snapshots:
 
   '@hono/vite-dev-server@0.20.1(hono@4.9.2)':
     dependencies:
-      '@hono/node-server': 1.18.2(hono@4.9.2)
+      '@hono/node-server': 1.19.1(hono@4.9.2)
       hono: 4.9.2
       minimatch: 9.0.5
 
