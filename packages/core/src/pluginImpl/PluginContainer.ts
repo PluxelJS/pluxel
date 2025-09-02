@@ -1,4 +1,6 @@
 // PluginContainer.ts
+import type { Maybe } from 'option-t/maybe'
+import { unwrapOk } from 'option-t/plain_result'
 import type { Context } from '..'
 import {
 	type AliasKey,
@@ -9,15 +11,8 @@ import {
 	type Identifier,
 } from '../container'
 import { type BasePlugin, PLUGIN_CTX } from './BasePlugin'
-import { getBaseClass, getClassParam, getPluginInfo } from './PluginDecorator'
-import {
-	createErr,
-	createOk,
-	type PluginConstructor,
-	type PluginIdentifier,
-	type PluginInstance,
-	type Result,
-} from './types'
+import { getClassParam, getPluginInfo } from './PluginDecorator'
+import type { PluginConstructor, PluginIdentifier, PluginInstance } from './types'
 
 export type PluginDiContainer = DiodContainer<BasePlugin>
 
@@ -74,18 +69,18 @@ export class PluginContainer {
 		this.builder
 			.register(baseOrSelf as any)
 			.useFactory((c) => {
-				const args = new Array(n)
+				const args: Maybe<BasePlugin>[] = new Array(n)
 				if (allRequired) {
 					// —— 轻路径：全必需，无位运算 —— //
 					for (let i = 0; i < n; i++) {
 						const t = paramTypes[i]!
-						args[i] = c.getResult(t).val as BasePlugin
+						args[i] = unwrapOk(c.getResult(t))
 					}
 				} else {
 					// —— 常规路径：按位选择 Maybe/Result —— //
 					for (let i = 0, m = 1n; i < n; i++, m <<= 1n) {
 						const t = paramTypes[i]!
-						args[i] = (maskedBits & m) !== 0n ? c.getMaybe(t) : (c.getResult(t).val as BasePlugin)
+						args[i] = (maskedBits & m) !== 0n ? c.getMaybe(t) : unwrapOk(c.getResult(t))
 					}
 				}
 				return new (Plugin as any)(...args)

@@ -4,8 +4,6 @@ import { getPluginInfo } from './PluginDecorator'
 // HMR 注意：必须使用 Symbol.for
 export const PLUGIN_CTX = Symbol.for('pluxel:plugin:ctx')
 
-export type Awaitable<T> = T | Promise<T>
-
 export abstract class BasePlugin<C extends Context = Context> {
 	public [PLUGIN_CTX]!: C
 
@@ -20,6 +18,7 @@ export abstract class BasePlugin<C extends Context = Context> {
 	public get caller() {
 		return this.ctx.caller
 	}
+
 	static [Symbol.toPrimitive](_hint: string) {
 		return `${
 			// biome-ignore lint/complexity/noThisInStatic: <explanation>
@@ -34,6 +33,6 @@ export abstract class BasePlugin<C extends Context = Context> {
 	 * Plugins may implement either, both, or none.
 	 * Use `override` when implementing to get compiler checks.
 	 */
-	init?(abort: AbortSignal): Awaitable<void>
-	stop?(abort: AbortSignal): Awaitable<void>
+	init?(abort: AbortSignal): void | Promise<void>
+	stop?(abort: AbortSignal): void | Promise<void>
 }

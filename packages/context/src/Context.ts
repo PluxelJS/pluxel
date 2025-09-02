@@ -132,14 +132,22 @@ export class Context {
 	/**
 	 * 扩展 Context，继承 mapping & 共享 instances
 	 */
-	extend(opts: { name?: string; config?: Partial<Context.Config> } = {}): this {
+	extend(opts: Context.ExtendOpts = {}): this {
+		// 1) 先基于当前实例做原型继承，保证外部挂在 prototype 上的扩展天然可见
 		const child = Object.create(this) as this
+
+		// 2) 规范化 name/config（config 合并、name 默认）
+		opts.name = (opts as any).name ?? `${this.name}.child`
+		opts.config = { ...this.config, ...((opts as any).config || {}) }
+
+		// 3) 先把外部可覆写/新增的字段灌进去（相信外部用户，不做运行时判断）
+		Object.assign(child, opts)
+
 		child.parent = this
 		child.root = this.root
-		child.name = opts.name ?? `${this.name}.child`
-		child.config = { ...this.config, ...(opts.config || {}) }
-		child.mapping = Object.create(this.mapping)
-		child.instances = this.instances
+		child.mapping = Object.create(this.mapping) // 影子映射
+		child.instances = this.instances // 共享实例池
+
 		return child
 	}
 
@@ -147,10 +155,7 @@ export class Context {
 	 * 隔离指定服务：克隆 instances 池，并为这些 ctor 单独生成 instKey
 	 * @param ctors 可迭代的 ServiceClass 集合，重复项会被自动忽略
 	 */
-	isolate(
-		ctors: Iterable<ServiceClass<any>>,
-		opts: { name?: string; config?: Partial<Context.Config> } = {},
-	): this {
+	isolate(ctors: Iterable<ServiceClass<any>>, opts: Context.ExtendOpts = {}): this {
 		const child = this.extend(opts)
 		child.instances = Object.create(this.instances)
 
@@ -165,6 +170,19 @@ export class Context {
 }
 
 export namespace Context {
+	type Fn = (...args: any[]) => any
+	type MethodKeys<T> = {
+		[K in keyof T]-?: T[K] extends Fn ? K : never
+	}[keyof T]
+
+	// 这些键不允许通过 extend 覆写（内部或结构键）
+	type InternalKeys = 'parent' | 'root' | 'mapping' | 'instances' | 'constructor'
+
+	// 允许覆写/新增的一切（包含外部 declare 的扩展字段）
+	export type ExtendOpts = Partial<Omit<Context, InternalKeys | MethodKeys<Context>>> &
+		// 允许用户自定义新键（不在 Context 类型里也可）
+		Record<string | number | symbol, unknown>
+
 	export interface Config {
 		name?: string
 		[key: string]: any

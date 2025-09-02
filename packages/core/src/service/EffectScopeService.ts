@@ -50,6 +50,10 @@ export class EffectScopeService {
 		}
 	}
 
+	get(plugin: PluginIdentifier) {
+		return this.ctx.registry.pluginRegistry.lastContainer.getMaybe(plugin)
+	}
+
 	dispose(plugin: PluginIdentifier) {
 		this.ctx.registry.pluginRegistry.unregisterPlugin(plugin)
 		this.ctx.registry.commit()

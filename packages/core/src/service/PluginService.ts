@@ -35,7 +35,7 @@ declare module '@pluxel/context' {
 		[serviceName]: PluginService
 		pluginInfo: StableInfo
 		parent?: Context
-		caller?: Context
+		caller?: () => Context
 	}
 }
 
@@ -382,7 +382,7 @@ export class PluginService {
 
 							const instance: PluginInstance = r.val
 							const pluginCtx = this.createPluginCTX()
-							pluginCtx.pluginInfo = getPluginInfo(instance.constructor)
+							pluginCtx.pluginInfo = getPluginInfo(instance.constructor)!
 							instance[PLUGIN_CTX] = pluginCtx
 
 							// getResult 期间若新建了单例，失败/停机时 disposeAll 会触发删除缓存，便于下次重试
