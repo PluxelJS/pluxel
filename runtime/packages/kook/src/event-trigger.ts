@@ -3,6 +3,7 @@ import type { Events } from '@pluxel/hmr/services'
 import type { Bot } from './bot'
 import { eventMap } from './events'
 import type { Session } from './types'
+import { BUTTON, KK } from './events/events.symbols';
 
 function processEvent(ctx: Context, eventType: keyof Events, bot: Bot, session: Session<any>) {
 	ctx.emit(eventType, bot, session)
@@ -27,18 +28,18 @@ export function internalWebhook(ctx: Context, bot: Bot, data: any) {
 		session.guildId = data?.extra?.guild_id
 		session.channelId = data?.target_id
 
-		const { value } = ctx.events.waterfall("message", bot, session)
+		const { value } = ctx.events.waterfall(KK.MESSAGE, bot, session)
 		if (value) {
 			bot
 				.sendMessage(session.channelId, value)
 				.catch((e) => ctx.logger.error(e, 'message 监听器返回的信息发送失败。'))
 		}
 		if (data.channel_type === 'GROUP') {
-			processEvent(ctx, 'message-created', bot, session)
+			processEvent(ctx, KK.MESSAGE_CREATED, bot, session)
 		}
 		if (data.channel_type === 'PERSON') {
 			session.guildId = data?.target_id
-			processEvent(ctx, 'private-message-created', bot, session)
+			processEvent(ctx, KK.PRIVATE_MESSAGE_CREATED, bot, session)
 		}
 		return
 	}
@@ -53,8 +54,8 @@ async function handleSpecialTypes(ctx: Context, data: any, bot: Bot, session: Se
 	switch (data.extra.type) {
 		case 'message_btn_click': {
 			session.channelId = data.extra.body.target_id
-			ctx.events.waterfall('button', bot, session)
-			processEvent(ctx, 'button-click', bot, session)
+			ctx.events.waterfall(KK.BUTTON, bot, session)
+			processEvent(ctx, KK.BUTTON_CLICK, bot, session)
 			break
 		}
 		default: {

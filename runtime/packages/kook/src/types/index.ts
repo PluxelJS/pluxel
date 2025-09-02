@@ -15,6 +15,5 @@ export interface Session<T> {
 	selfId: string
 	guildId: string
 	channelId: string
-	internalData?: any
 	data: T
 }

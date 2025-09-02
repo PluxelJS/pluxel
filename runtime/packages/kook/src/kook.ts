@@ -7,6 +7,7 @@ import { KyPlugin } from 'pluxel-plugin-ky'
 import { Bot } from './bot'
 import { createCommandBus, defineCommand, defineFor } from './cmd'
 import type { MessageSession } from './types'
+import { KK } from './events'
 
 const BotConfig = v.object({
 	cmdPrefix: v.pipe(v.optional(v.string(), '/'), v.minLength(1), v.maxLength(1)),
@@ -53,7 +54,7 @@ export class KOOKBOT extends BasePlugin {
 
 	async init(_abort: AbortSignal): Promise<void> {
 		// 指令处理器
-		this.ctx.on('message', (bot, session, next) => {
+		this.ctx.on(KK.MESSAGE, (bot, session, next) => {
 			const msg = session.data.content
 			if (msg[0] !== this.config.cmdPrefix) return next(bot, session)
 
