@@ -8,7 +8,7 @@ import { createErr, createOk, type Result } from 'option-t/plain_result'
 import { createActor, waitFor } from 'xstate'
 import type { ServiceMap } from '../container'
 import { getPluginInfo, type StableInfo } from '../pluginImpl'
-import { type BasePlugin, PLUGIN_CTX } from '../pluginImpl/BasePlugin'
+import type { BasePlugin } from '../pluginImpl/BasePlugin'
 import { PluginContainer } from '../pluginImpl/PluginContainer'
 import {
 	createPluginLifecycle,
@@ -35,23 +35,20 @@ declare module '@pluxel/context' {
 		[serviceName]: PluginService
 		pluginInfo: StableInfo
 		parent?: Context
-		caller?: () => Context
+		caller?: Context
 	}
 }
 
 @Injectable({ key: serviceName })
 export class PluginService {
 	// 容器：负责“构造实例 + 注入 ctx”；生命周期全由 XState 负责
-	public pluginRegistry: PluginContainer = new PluginContainer()
+	public pluginRegistry: PluginContainer
 
 	/** 每个插件一个生命周期 actor（唯一真相来源） */
 	private readonly actors = new WeakMap<PluginIdentifier, PluginLifecycleRef<any, BasePlugin>>()
 
 	/** 串行化 commit */
 	private _commitLock: Promise<unknown> = Promise.resolve()
-
-	/** 由容器在实例化时注入 ctx（每个插件隔离） */
-	private createPluginCTX: () => Context
 
 	/** 可调等待超时（毫秒） */
 	private readonly startTimeoutMs
@@ -65,7 +62,9 @@ export class PluginService {
 		this.stopTimeoutMs = config?.stopTimeoutMs ?? 3_000
 
 		const isolated = Array.from(new Set([...(config?.plugigCTXIsolate ?? []), EffectScopeService]))
-		this.createPluginCTX = () => this.ctx.root.isolate(isolated, { name: `plugin:${randomUUID()}` })
+		this.pluginRegistry = new PluginContainer(() =>
+			this.ctx.root.isolate(isolated, { name: `plugin:${randomUUID()}` }),
+		)
 	}
 
 	/* ------------------------------ 状态查询 ------------------------------ */
@@ -381,15 +380,18 @@ export class PluginService {
 							}
 
 							const instance: PluginInstance = r.val
-							const pluginCtx = this.createPluginCTX()
+							/* const pluginCtx = this.createPluginCTX()
 							pluginCtx.pluginInfo = getPluginInfo(instance.constructor)!
 							instance[PLUGIN_CTX] = pluginCtx
 
 							// getResult 期间若新建了单例，失败/停机时 disposeAll 会触发删除缓存，便于下次重试
 							pluginCtx.scope.collectEffect(() => {
 								this.pluginRegistry.singletons.delete(id)
-							})
+							}) */
 
+							// 在 DI 里注入过了
+							const pluginCtx = instance.ctx
+							pluginCtx.pluginInfo = getPluginInfo(instance.constructor)!
 							try {
 								await this.startByActor(id, instance)
 							} catch (e) {

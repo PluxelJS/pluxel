@@ -40,67 +40,67 @@
 	"settings": {
 		"ColorfulMonorepo.workspaces.collection": [
 			{
-				"path": "c:\\Users\\User\\Documents\\GitHub\\plugin-style-ts",
+				"path": "/home/ahdg/code/plugin-style-ts",
 				"packageName": "monorepo",
 				"label": "🌱  monorepo",
 				"foreground": "#000000",
-				"background": "#e0cc2f"
+				"background": "#84de4a"
 			},
 			{
-				"path": "c:\\Users\\User\\Documents\\GitHub\\plugin-style-ts\\packages\\cli",
+				"path": "/home/ahdg/code/plugin-style-ts/packages/cli",
 				"packageName": "@pluxel/cli",
 				"label": "🍀  @pluxel/cli",
 				"foreground": "#ffffff",
-				"background": "#9c8a49"
+				"background": "#8a7e4e"
 			},
 			{
-				"path": "c:\\Users\\User\\Documents\\GitHub\\plugin-style-ts\\packages\\components",
+				"path": "/home/ahdg/code/plugin-style-ts/packages/components",
 				"packageName": "@pluxel/components",
 				"label": "🍀  @pluxel/components",
 				"foreground": "#ffffff",
-				"background": "#d13139"
+				"background": "#0e9105"
 			},
 			{
-				"path": "c:\\Users\\User\\Documents\\GitHub\\plugin-style-ts\\packages\\context",
+				"path": "/home/ahdg/code/plugin-style-ts/packages/context",
 				"packageName": "@pluxel/context",
 				"label": "🍀  @pluxel/context",
 				"foreground": "#000000",
-				"background": "#26ba5b"
+				"background": "#3bafbf"
 			},
 			{
-				"path": "c:\\Users\\User\\Documents\\GitHub\\plugin-style-ts\\packages\\core",
+				"path": "/home/ahdg/code/plugin-style-ts/packages/core",
 				"packageName": "@pluxel/core",
 				"label": "🍀  @pluxel/core",
 				"foreground": "#ffffff",
-				"background": "#e81b65"
+				"background": "#45985e"
 			},
 			{
-				"path": "c:\\Users\\User\\Documents\\GitHub\\plugin-style-ts\\packages\\diod",
+				"path": "/home/ahdg/code/plugin-style-ts/packages/diod",
 				"packageName": "diod",
 				"label": "🍀  diod",
 				"foreground": "#ffffff",
-				"background": "#e85fa1"
+				"background": "#16af78"
 			},
 			{
-				"path": "c:\\Users\\User\\Documents\\GitHub\\plugin-style-ts\\packages\\hmr",
+				"path": "/home/ahdg/code/plugin-style-ts/packages/hmr",
 				"packageName": "@pluxel/hmr",
 				"label": "🍀  @pluxel/hmr",
-				"foreground": "#000000",
-				"background": "#52b522"
+				"foreground": "#ffffff",
+				"background": "#662b90"
 			},
 			{
-				"path": "c:\\Users\\User\\Documents\\GitHub\\plugin-style-ts\\packages\\valibot-form",
+				"path": "/home/ahdg/code/plugin-style-ts/packages/valibot-form",
 				"packageName": "valibot-form",
 				"label": "🍀  valibot-form",
 				"foreground": "#ffffff",
-				"background": "#ae679d"
+				"background": "#db0062"
 			},
 			{
-				"path": "c:\\Users\\User\\Documents\\GitHub\\plugin-style-ts\\runtime",
+				"path": "/home/ahdg/code/plugin-style-ts/runtime",
 				"packageName": "runtime",
 				"label": "runtime",
 				"foreground": "#ffffff",
-				"background": "#0d1c13"
+				"background": "#ba5ca9"
 			}
 		],
 		"files.exclude": {},

@@ -1,27 +1,24 @@
 // PluginContainer.ts
+
+import type { Context } from '@pluxel/context'
 import type { Maybe } from 'option-t/maybe'
-import { unwrapOk } from 'option-t/plain_result'
-import type { Context } from '..'
-import {
-	type AliasKey,
-	type DiodContainer,
-	ExtendedContainerBuilder,
-	type FactoryContext,
-	// 下面两个类型用于重建别名索引
-	type Identifier,
-} from '../container'
-import { type BasePlugin, PLUGIN_CTX } from './BasePlugin'
+import { createErr, createOk, unwrapOk } from 'option-t/plain_result'
+import { type DiodContainer, ExtendedContainerBuilder } from '../container'
+import type { BasePlugin } from './BasePlugin'
+import { PLUGIN_CTX } from './BasePlugin'
 import { getClassParam, getPluginInfo } from './PluginDecorator'
 import type { PluginConstructor, PluginIdentifier, PluginInstance } from './types'
 
 export type PluginDiContainer = DiodContainer<BasePlugin>
-
+export type createCTX = () => Context
 export class PluginContainer {
 	/** Builder_Singleton 实例缓存（ExtendedContainerBuilder 共享） */
 	public singletons = new Map<PluginIdentifier, PluginInstance>()
 	private builder = new ExtendedContainerBuilder(this.singletons)
 
 	public lastContainer!: PluginDiContainer
+
+	constructor(private createPluginContext: createCTX) {}
 
 	private resetDraft() {
 		this.builder.buildables.reset()
@@ -40,50 +37,84 @@ export class PluginContainer {
 		const n = paramTypes.length
 		const baseOrSelf = info.base ?? Plugin
 
-		// —— 局部掩码：只保留前 n 位，防止 n 之外的位干扰 —— //
+		// ---------- 预处理：BigInt 位掩码 -> 布尔表（热路径不再做 BigInt 运算） ----------
 		const maskN = n === 0 ? 0n : (1n << BigInt(n)) - 1n
 		const maskedBits = info.optionals.bits & maskN
-		const allRequired = maskedBits === 0n
 
-		// —— 构建 mustDeps（两种快路径 + 精准容量，无 push）—— //
+		const isOptional: boolean[] = new Array(n)
+		let allRequired = true
+		for (let i = 0, m = 1n; i < n; i++, m <<= 1n) {
+			const opt = (maskedBits & m) !== 0n
+			isOptional[i] = opt
+			if (opt) allRequired = false
+		}
+
+		// ---------- mustDeps：精准容量，无 push ----------
 		let mustDeps: PluginIdentifier[]
 		if (allRequired) {
 			mustDeps = paramTypes
 		} else {
 			let requiredCount = 0
-			for (let i = 0, m = 1n; i < n; i++, m <<= 1n) {
-				if ((maskedBits & m) === 0n) requiredCount++
-			}
+			for (let i = 0; i < n; i++) if (!isOptional[i]) requiredCount++
 			if (requiredCount === 0) {
 				mustDeps = []
 			} else {
 				const arr = new Array<PluginIdentifier>(requiredCount)
-				let k = 0
-				for (let i = 0, m = 1n; i < n; i++, m <<= 1n) {
-					if ((maskedBits & m) === 0n) arr[k++] = paramTypes[i]!
-				}
+				for (let i = 0, k = 0; i < n; i++) if (!isOptional[i]) arr[k++] = paramTypes[i]!
 				mustDeps = arr
 			}
+		}
+
+		// ---------- 影子包装：仅遮蔽 ctx，不改 parent 本体 ----------
+		const wrapWithCaller = (parent: BasePlugin, pluginCTX: any): BasePlugin => {
+			// 1) ctx 影子层（只添加 caller，不破坏 parent.ctx）
+			const ctxView = Object.create(parent.ctx)
+			ctxView.caller = pluginCTX
+
+			// 2) plugin 影子层：复用 parent 的所有行为，仅用“自有属性”覆盖 ctx
+			const injected = Object.create(parent, {
+				ctx: { value: ctxView }, // writable/configurable/enumerable 默认为 false
+			})
+			return injected
 		}
 
 		this.builder
 			.register(baseOrSelf as any)
 			.useFactory((c) => {
-				const args: Maybe<BasePlugin>[] = new Array(n)
+				// —— 无参快路径 —— //
+				if (n === 0) {
+					const pluginCTX = this.createPluginContext()
+					const instance = new (Plugin as any)()
+					;(instance as any)[PLUGIN_CTX] = pluginCTX // 性能优先：直接赋值
+					return instance
+				}
+
+				const pluginCTX = this.createPluginContext()
+
+				// 避免稀疏数组（JIT 友好）
+				const args: (BasePlugin | undefined)[] = new Array(n).fill(undefined)
+
 				if (allRequired) {
-					// —— 轻路径：全必需，无位运算 —— //
+					// —— 纯必需：无分支、无 Maybe —— //
 					for (let i = 0; i < n; i++) {
 						const t = paramTypes[i]!
-						args[i] = unwrapOk(c.getResult(t))
+						const parent = unwrapOk(c.getResult(t))
+						args[i] = wrapWithCaller(parent, pluginCTX)
 					}
 				} else {
-					// —— 常规路径：按位选择 Maybe/Result —— //
-					for (let i = 0, m = 1n; i < n; i++, m <<= 1n) {
+					// —— 可选 + 必需混合 —— //
+					for (let i = 0; i < n; i++) {
 						const t = paramTypes[i]!
-						args[i] = (maskedBits & m) !== 0n ? c.getMaybe(t) : unwrapOk(c.getResult(t))
+						const parent = isOptional[i] ? c.getMaybe(t) : unwrapOk(c.getResult(t))
+						if (parent) args[i] = wrapWithCaller(parent, pluginCTX)
+						// 缺失可选依赖：保持 undefined；构造器自己处理
 					}
 				}
-				return new (Plugin as any)(...args)
+
+				// 注意：这里用可变参调用，若极端热可对 n∈{1,2,3} 做手写分支
+				const instance = new (Plugin as any)(...args)
+				;(instance as any)[PLUGIN_CTX] = pluginCTX // 性能优先：直接赋值
+				return instance
 			})
 			.withDependencies(mustDeps)
 			.asBuilderSingleton()
