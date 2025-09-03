@@ -24,8 +24,9 @@
 		"dist"
 	],
 	"scripts": {
+		"test": "bun test",
 		"build": "tsdown",
-		"dev": "bun --watch run src/start.ts"
+		"dev": "bun --watch run tests/start.ts"
 	},
 	"dependencies": {
 		"reflect-metadata": "^0.2.2",

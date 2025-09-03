@@ -1,14 +1,12 @@
 // start.ts
 import 'reflect-metadata'
 
-import './service'
-import { Context } from './index'
+import { Context } from './context'
 import { PluginA, PluginB, PluginC } from './plugins'
 
 const ctx = new Context()
 
 const pluginRegistry = ctx.registry.pluginRegistry
-
 // 注册插件，假设 PluginA 必需依赖 PluginB
 // 如果缺少必需依赖（例如未注册 PluginB），PluginA 将因解析失败而不加载
 pluginRegistry.registerPlugin(PluginB)
