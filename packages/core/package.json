@@ -31,14 +31,14 @@
 	"dependencies": {
 		"reflect-metadata": "^0.2.2",
 		"valtio": "2.1.5",
-		"xstate": "5.20.1"
+		"xstate": "5.20.1",
+		"eventure": "^0.3.0",
+		"option-t": "54.2.4"
 	},
 	"peerDependencies": {},
 	"devDependencies": {
 		"@pluxel/context": "workspace:*",
-		"diod": "workspace:*",
-		"eventure": "^0.3.0",
-		"option-t": "54.2.2"
+		"diod": "workspace:*"
 	},
 	"publishConfig": {
 		"exports": {

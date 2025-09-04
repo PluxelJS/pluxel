@@ -58,7 +58,6 @@ export default defineConfig({
 			'@pluxel/context': '.',
 		}),
 	],
-	noExternal: ['eventure'],
 	sourcemap: true,
 	clean: true,
 	minify: true,
