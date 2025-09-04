@@ -1,9 +1,9 @@
-import { type Awaitable, BasePlugin, Config, f, Optional, Plugin, v } from '@pluxel/hmr'
+import { BasePlugin, Config, f, Optional, Plugin, v } from '@pluxel/hmr'
 // PluginA.ts
 // PluginA 依赖 PluginB 为必选依赖，依赖 PluginC 为可选依赖
 // biome-ignore lint/style/useImportType: <PluginSystem>
 import { PluginB } from './PluginB'
-// biome-ignore lint/style/useImportType: <explanation>
+// biome-ignore lint/style/useImportType: <PluginSystem>
 import { PluginC } from './PluginC'
 
 const test = v.object({
@@ -37,7 +37,7 @@ export class PluginA extends BasePlugin {
     super();
   }
 
-	init(_abort: AbortSignal): Awaitable<void> {
+	init(_abort: AbortSignal) {
 		this.ctx.logger.info('PluginA initialized')
 		// 使用必需依赖 PluginB
 		this.pluginB.doSomething()
@@ -53,7 +53,7 @@ export class PluginA extends BasePlugin {
 		})
 	}
 
-	stop(abort: AbortSignal): Awaitable<void> {
+	stop(abort: AbortSignal) {
 		
 	}
 	doSomething(): void {

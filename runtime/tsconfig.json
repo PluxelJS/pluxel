@@ -47,5 +47,5 @@
 			"~/*": ["src/*"]
 		}
 	},
-	"include": ["src/**/*.ts"]
+	"include": ["src/**/*.ts", "packages/antibot/src/index.ts"]
 }

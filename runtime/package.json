@@ -25,5 +25,9 @@
 		"@pluxel/cli": "file:../packages/cli",
 		"@pluxel/core": "file:../packages/core",
 		"@pluxel/hmr": "file:../packages/hmr"
+	},
+	"devDependencies": {
+		"@biomejs/biome": "^2.2.2",
+		"@repobuddy/biome": "^2.0.1"
 	}
 }
