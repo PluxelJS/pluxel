@@ -1,12 +1,5 @@
 import { fileURLToPath } from 'node:url'
 import { dirname, join, resolve } from 'pathe'
-export function kebabCase(s: string) {
-	return s
-		.trim()
-		.toLowerCase()
-		.replace(/[^a-z0-9]+/g, '-')
-		.replace(/^-+|-+$/g, '')
-}
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 
