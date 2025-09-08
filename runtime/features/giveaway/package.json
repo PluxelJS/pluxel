@@ -1,0 +1,12 @@
+{
+	"name": "pluxel-plugin-giveaway",
+	"version": "0.1.0",
+	"type": "module",
+  "main": "./src/index.ts",
+	"scripts": {
+		"build": "tsdown"
+	},
+	"peerDependencies": {
+    "pluxel-plugin-sqlite": "workspace:*"
+  }
+}

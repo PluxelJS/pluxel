@@ -19,15 +19,16 @@
 	},
 	"scripts": {
 		"dev": "bun src/index.js",
-		"new": "bunx pluxel new plugin"
+		"new": "bunx pluxel new plugin",
+		"feat": "bunx pluxel new plugin features"
 	},
 	"dependencies": {
-		"@pluxel/cli": "file:../packages/cli",
+		"@pluxel/cli": "link:../packages/cli",
 		"@pluxel/core": "file:../packages/core",
 		"@pluxel/hmr": "file:../packages/hmr"
 	},
 	"devDependencies": {
-		"@biomejs/biome": "^2.2.2",
+		"@biomejs/biome": "^2.2.3",
 		"@repobuddy/biome": "^2.0.1"
 	}
 }
