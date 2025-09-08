@@ -1,0 +1,17 @@
+import { defineConfig } from 'tsdown'
+
+export default defineConfig({
+	entry: './src/index.ts',
+	dts: {
+		build: true,
+		sourcemap: true,
+	},
+	// 这里写要复制的静态文件
+	copy: [],
+	env: {},
+	format: ['esm'],
+	clean: true,
+	// minify 一般不推荐开
+	minify: false,
+	treeshake: true,
+})
