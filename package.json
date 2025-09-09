@@ -14,13 +14,13 @@
 		"dev:hmr": "pnpm --filter hmr dev"
 	},
 	"devDependencies": {
-		"@biomejs/biome": "^2.2.2",
+		"@biomejs/biome": "^2.2.3",
 		"@oxc-project/runtime": "^0.82.3",
 		"@repobuddy/biome": "^2.0.1",
 		"@types/bun": "latest",
 		"husky": "^9.1.7",
 		"is-ci": "^4.1.0",
-		"tsdown": "latest",
+		"tsdown": "^0.14.2",
 		"turbo": "^2.5.6",
 		"typescript": "^5.9.2"
 	},
@@ -33,11 +33,11 @@
 	},
 	"packageManager": "pnpm@10.14.0+sha512.ad27a79641b49c3e481a16a805baa71817a04bbe06a38d17e60e2eaee83f6a146c6a688125f5792e48dd5ba30e7da52a5cda4c3992b9ccf333f9ce223af84748",
 	"dependencies": {
-		"@mantine/core": "^8.2.8",
-		"@mantine/dates": "^8.2.8",
-		"@mantine/hooks": "^8.2.8",
-		"@mantine/modals": "^8.2.8",
-		"@mantine/notifications": "^8.2.8",
+		"@mantine/core": "^8.3.0",
+		"@mantine/dates": "^8.3.0",
+		"@mantine/hooks": "^8.3.0",
+		"@mantine/modals": "^8.3.0",
+		"@mantine/notifications": "^8.3.0",
 		"@tabler/icons-react": "^3.34.1",
 		"react": "^19.1.1",
 		"react-dom": "^19.1.1"
