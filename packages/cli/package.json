@@ -20,7 +20,7 @@
 			"./package.json": "./package.json"
 		}
 	},
-	"devDependencies": {
+	"dependencies": {
 		"commander": "^14.0.0",
 		"inquirer": "^12.9.4",
 		"node-plop": "^0.32.0",
