@@ -90,13 +90,6 @@
 				"label": "🍀  valibot-form",
 				"foreground": "#ffffff",
 				"background": "#db0062"
-			},
-			{
-				"path": "/home/ahdg/code/plugin-style-ts/runtime",
-				"packageName": "runtime",
-				"label": "runtime",
-				"foreground": "#ffffff",
-				"background": "#ba5ca9"
 			}
 		],
 		"files.exclude": {},
