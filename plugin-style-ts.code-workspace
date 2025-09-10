@@ -31,10 +31,6 @@
 		{
 			"name": "🍀  valibot-form",
 			"path": "packages/valibot-form"
-		},
-		{
-			"name": "runtime",
-			"path": "runtime"
 		}
 	],
 	"settings": {
