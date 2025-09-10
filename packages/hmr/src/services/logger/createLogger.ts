@@ -88,64 +88,92 @@ const prettyStream = pinoPretty({
 	translateTime: 'SYS:standard',
 })
 
-/** ---------- superjson-driven hook (Error 直通 + 只读参数安全) ---------- */
+/** ---------- superjson helpers ---------- */
 type IncludeMeta = 'none' | 'root'
 interface SuperjsonHookOptions {
 	includeMeta?: IncludeMeta
-	transformAllObjects?: boolean // 当首参是字符串时，是否转换后续对象实参
+	transformAllObjects?: boolean
 }
 
-/**
- * 将 Map/Set/BigInt/Date 等交给 superjson 做 JSON 化，
- * 同时保留 pino 的 Error 专用通道（.info(err, msg) 带完整 stack）。
- * 重要：不修改只读的 args，改用克隆后的新数组。
- */
+// 保持你现有“无 meta”默认；需要 meta 时可以把 includeMeta 改 'root'
+const toPlain = (val: unknown, includeMeta: IncludeMeta = 'none'): unknown => {
+	if (val === null || typeof val !== 'object') return val
+	const { json, meta } = superjson.serialize(val)
+	if (includeMeta === 'none') return json
+	if (json && typeof json === 'object' && !Array.isArray(json)) {
+		const root = json as Record<string, unknown>
+		if (meta && Object.keys(meta).length) (root as any).__meta = meta
+		return root
+	}
+	return { value: json, __meta: meta }
+}
+
+/** ---------- Error 专用序列化（保 stack/cause + 兼容复杂字段） ---------- */
+function makeErrSerializer(includeMeta: IncludeMeta = 'none') {
+	const visit = (e: unknown): any => {
+		if (!(e instanceof Error)) return toPlain(e, includeMeta)
+		// 1) 标准错误字段（message/name/stack/cause/type……）
+		const out: any = pino.stdSerializers.err(e as any)
+
+		// 2) 合并 Error 上“自定义可枚举字段”（比如 data/context 等）
+		for (const k of Object.keys(e as any)) {
+			if (k in out) continue
+			try {
+				;(out as any)[k] = toPlain((e as any)[k], includeMeta)
+			} catch {
+				/* 忽略不可序列化字段 */
+			}
+		}
+
+		// 3) 深处理 cause
+		const c = (e as any).cause
+		if (c instanceof Error) out.cause = visit(c)
+		else if (c !== undefined) out.cause = toPlain(c, includeMeta)
+
+		return out
+	}
+	return visit
+}
+
+/** ---------- superjson-driven hook（升级：抬升 Error） ---------- */
 function superjsonLogHook(
 	opts: SuperjsonHookOptions = {},
 ): NonNullable<LoggerOptions['hooks']>['logMethod'] {
 	const { includeMeta = 'none', transformAllObjects = false } = opts
-
-	const transform = (val: unknown) => {
-		if (val instanceof Error) return val // 关键：让 pino 自己处理 Error（保住 stack/type/cause）
-
-		if (val === null || typeof val !== 'object') return val
-
-		const { json, meta } = superjson.serialize(val)
-
-		if (includeMeta === 'none') {
-			if (json && typeof json === 'object' && !Array.isArray(json)) {
-				return json as Record<string, unknown>
-			}
-			return { value: json }
-		}
-
-		// includeMeta === 'root'：把 meta 附在根部 __meta，便于可观测端识别原类型
-		const root =
-			json && typeof json === 'object' && !Array.isArray(json)
-				? (json as Record<string, unknown>)
-				: ({ value: json } as Record<string, unknown>)
-		if (meta && Object.keys(meta).length) root.__meta = meta
-		return root
+	const transform = (v: unknown) => {
+		if (v instanceof Error) return v // 让 err serializer 处理
+		if (v === null || typeof v !== 'object') return v
+		return toPlain(v, includeMeta)
 	}
 
 	return function (args, method) {
 		if (!args || args.length === 0) return method.apply(this, args)
 
-		// —— 不直接写只读的 args；克隆一份 —— //
+		// 克隆，避免写只读参数
 		const newArgs = Array.prototype.slice.call(args) as unknown[]
 
 		if (typeof newArgs[0] === 'string') {
-			if (transformAllObjects) {
-				for (let i = 1; i < newArgs.length; i++) {
-					newArgs[i] = transform(newArgs[i])
+			// A) 'msg', ...rest
+			//   —— 仅在必要时抬升第一个 Error 到对象位，确保走 serializers.err
+			let errIdx = -1
+			for (let i = 1; i < newArgs.length; i++) {
+				if (newArgs[i] instanceof Error) {
+					errIdx = i
+					break
 				}
 			}
+			if (errIdx !== -1) {
+				const err = newArgs.splice(errIdx, 1)[0]
+				newArgs.unshift({ err }) // 变为 (obj, msg, ...)
+			}
+			if (transformAllObjects) {
+				for (let i = 1; i < newArgs.length; i++) newArgs[i] = transform(newArgs[i])
+			}
 		} else {
+			// B) obj, msg?
 			newArgs[0] = transform(newArgs[0])
 			if (transformAllObjects) {
-				for (let i = 1; i < newArgs.length; i++) {
-					newArgs[i] = transform(newArgs[i])
-				}
+				for (let i = 1; i < newArgs.length; i++) newArgs[i] = transform(newArgs[i])
 			}
 		}
 
@@ -162,6 +190,7 @@ function superjsonLogHook(
  * - Error → 保持 pino 原生序列化（stack 不丢）
  * - ✅ 不再写只读的 args（修复 TS “readonly 参数” 报错）
  */
+const isBun = !!(process?.versions as any)?.bun
 export function createLogger(opts: LoggerOptions): Logger {
 	const level = opts.level ?? 'info'
 	const streams = [
@@ -186,7 +215,10 @@ export function createLogger(opts: LoggerOptions): Logger {
 	)
 
 	// 可选：保留 caller 信息（文件/行号）
-	return pinoCaller(base)
+	return pinoCaller(base, {
+		relativeTo: process.cwd(), // 控制台更好读
+		stackAdjustment: isBun ? 0 : 1, // 若仍指到 createLogger.ts，改成 2 试试
+	})
 }
 
 export type { Logger }
