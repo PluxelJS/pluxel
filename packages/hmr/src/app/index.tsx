@@ -1,10 +1,9 @@
 // App.tsx（关键改动标注了 ✅）
-
-import { Button } from '@mantine/core'
 import { ModalsProvider } from '@mantine/modals'
 import { Notifications } from '@mantine/notifications'
+import { Layout, type NavItem } from '@pluxel/components'
 import { Redirect, Route, Switch, useLocation } from 'wouter'
-import { Layout, type NavItems } from '@pluxel/components'
+import { Header } from './Header'
 import { LiveLog } from './log_viewer/LiveLog'
 import { PluginsLayout } from './plugins/PluginsLayout'
 import { WouterLinkAdapter } from './WouterLinkAdapter'
@@ -15,29 +14,12 @@ const navItems: NavItem[] = [
 	{ label: '插件', href: '/plugins' }, // 会对 /plugins/:name 前缀激活
 ]
 
-function MyHeader({ onMenu }: { onMenu: () => void }) {
-	return (
-		<div
-			style={{
-				height: '100%',
-				display: 'flex',
-				alignItems: 'center',
-				padding: 16,
-			}}
-		>
-			<Button onClick={onMenu}>☰</Button>
-			<b style={{ marginLeft: 8 }}>自定义头部</b>
-			<span style={{ marginLeft: 'auto' }}>右侧操作</span>
-		</div>
-	)
-}
-
 export function App() {
 	const [location] = useLocation()
 
 	return (
 		<Layout
-			header={({ toggle }) => <MyHeader onMenu={toggle} />}
+			header={({ toggle }) => <Header onMenu={toggle} />}
 			navItems={navItems}
 			LinkComponent={WouterLinkAdapter}
 			currentPath={location}

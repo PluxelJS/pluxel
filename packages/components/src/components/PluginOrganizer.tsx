@@ -1,10 +1,13 @@
 // src/components/PluginOrganizer.tsx
-
 import {
 	closestCenter,
+	closestCorners,
 	DndContext,
+	type DragEndEvent,
 	DragOverlay,
+	type DragStartEvent,
 	KeyboardSensor,
+	MeasuringStrategy,
 	PointerSensor,
 	type UniqueIdentifier,
 	useDroppable,
@@ -29,12 +32,10 @@ import {
 	Divider,
 	Group,
 	Menu,
-	Paper,
 	Stack,
 	Text,
 	useMantineTheme,
 } from '@mantine/core'
-import { showNotification } from '@mantine/notifications'
 import {
 	IconChevronDown,
 	IconChevronRight,
@@ -63,16 +64,23 @@ export interface GroupConfig {
 	pluginIds: string[]
 }
 
+type Density = 'comfortable' | 'compact' | 'ultra'
+const DENSITY: Record<Density, { rowH: number; px: number; py: number; font: 'xs' | 'sm' }> = {
+	comfortable: { rowH: 38, px: 10, py: 8, font: 'sm' },
+	compact: { rowH: 30, px: 8, py: 4, font: 'xs' },
+	ultra: { rowH: 26, px: 6, py: 2, font: 'xs' },
+}
+
 type Props = {
 	statuses: PluginStatuses
 	initialGroups: GroupConfig[]
 	onGroupsChange: (groups: GroupConfig[]) => void
 	filterQuery?: string
 	LinkComponent?: React.ComponentType<{ to: string; children: React.ReactNode }>
-	/** 当前导航所在插件（高亮“当前位置”）；建议仅使用此单值 */
 	activeId?: string | null
-	/** 兼容历史：若未传 activeId，则使用该集合 */
 	activeIds?: string[]
+	/** 紧凑度：默认 'compact' */
+	density?: Density
 }
 
 // ---- id helpers（前缀化，避免冲突）----
@@ -98,11 +106,7 @@ function sanitize(allIds: string[], groups: GroupConfig[]) {
 		name: g.name,
 		pluginIds: g.pluginIds
 			.filter((id) => allow.has(id))
-			.filter((id) => {
-				if (seen.has(id)) return false
-				seen.add(id)
-				return true
-			}),
+			.filter((id) => !seen.has(id) && (seen.add(id), true)),
 	}))
 	const ungrouped = allIds.filter((id) => !seen.has(id))
 	return { groups: nextGroups, ungrouped }
@@ -136,8 +140,8 @@ function DroppableContainer({
 			ref={setNodeRef}
 			data-droppable-id={String(id)}
 			style={{
-				outline: isOver ? '2px dashed var(--mantine-color-blue-6)' : undefined,
-				minHeight: minDropHeight, // 折叠时也有一条可投放“细线”
+				outline: isOver ? '1px dashed var(--mantine-color-blue-6)' : undefined,
+				minHeight: minDropHeight,
 			}}
 		>
 			{children}
@@ -145,7 +149,7 @@ function DroppableContainer({
 	)
 }
 
-// ---------- 行（插件） ----------
+// ---------- 行（插件）：一行式，极简 ----------
 const SortableRow = memo(function SortableRow({
 	pid,
 	name,
@@ -155,6 +159,7 @@ const SortableRow = memo(function SortableRow({
 	onRightSelect,
 	LinkComp,
 	disabled,
+	dh,
 }: {
 	pid: string
 	name: string
@@ -164,9 +169,10 @@ const SortableRow = memo(function SortableRow({
 	onRightSelect: (e: React.MouseEvent, pid: string) => void
 	LinkComp?: React.ComponentType<{ to: string; children: React.ReactNode }>
 	disabled: boolean
+	dh: { rowH: number; px: number; py: number; font: 'xs' | 'sm' }
 }) {
 	const theme = useMantineTheme()
-	const rowRef = useRef<HTMLDivElement | null>(null)
+	const rowRef = useRef<HTMLAnchorElement | HTMLSpanElement | null>(null)
 
 	const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
 		id: iid(pid),
@@ -177,118 +183,118 @@ const SortableRow = memo(function SortableRow({
 	const href = `/plugins/${pid}`
 
 	return (
-		<div
-			ref={(el) => {
-				setNodeRef(el)
-				rowRef.current = el
-			}}
-			style={{
-				width: '100%',
-				transform: transform ? `translate3d(${transform.x}px, ${transform.y}px, 0)` : undefined,
-				transition,
-				opacity: isDragging ? 0.9 : 1,
-			}}
-			onDoubleClick={(e) => {
-				const inHandle = (e.target as HTMLElement).closest('[data-drag-handle]')
-				if (inHandle) return
-				const a = rowRef.current?.querySelector('a')
-				if (a) (a as HTMLAnchorElement).click()
-			}}
+		<Box
+			ref={setNodeRef}
+			onDoubleClick={() => (rowRef.current as HTMLAnchorElement | null)?.click?.()}
 			onContextMenu={(e) => {
 				e.preventDefault()
 				e.stopPropagation()
 				onRightSelect(e, pid)
 			}}
+			// 只有这一层参与 dnd 度量与 transform，确保“对得准”
+			style={{
+				transform: transform ? `translate3d(${transform.x}px, ${transform.y}px, 0)` : undefined,
+				transition,
+				opacity: isDragging ? 0.9 : 1,
+				height: dh.rowH,
+				padding: `${dh.py}px ${dh.px}px`,
+				display: 'flex',
+				alignItems: 'center', // 垂直居中关键
+				gap: 8,
+				borderRadius: 6,
+				cursor: disabled ? 'default' : 'pointer',
+				userSelect: 'none',
+				background: active ? theme.colors.indigo[0] : selected ? theme.colors.blue[0] : undefined,
+				borderBottom: `1px solid ${theme.colors.gray[2]}`, // 用边框，不再额外插“分隔线元素”
+				boxSizing: 'border-box',
+			}}
+			data-po-row="1"
+			data-selected={selected || undefined}
+			data-active={active || undefined}
 		>
-			<Paper
-				withBorder
-				radius="md"
-				p="xs"
-				data-po-row="1"
-				data-selected={selected || undefined}
-				data-active={active || undefined}
+			{/* 活动态左边细条 */}
+			{active && (
+				<Box
+					aria-hidden
+					style={{
+						width: 2,
+						alignSelf: 'stretch',
+						background: theme.colors.indigo[6],
+						borderTopLeftRadius: 6,
+						borderBottomLeftRadius: 6,
+					}}
+				/>
+			)}
+
+			{/* drag handle */}
+			<ActionIcon
+				variant="subtle"
+				title="拖拽排序"
+				aria-label="拖拽排序"
+				data-drag-handle
 				style={{
-					width: '100%',
-					outline: selected ? `2px solid ${theme.colors.indigo[6]}` : undefined,
-					outlineOffset: selected ? -2 : undefined,
-					position: 'relative',
-					background: active ? theme.colors.indigo[1] : undefined,
-					cursor: disabled ? 'default' : 'pointer',
-					userSelect: 'none',
+					width: 20,
+					height: 20,
+					flex: '0 0 20px',
+					touchAction: 'none',
+					cursor: isDragging ? 'grabbing' : 'grab',
 				}}
+				{...listeners}
+				{...attributes}
 			>
-				{active && (
+				<IconGripVertical size={16} />
+			</ActionIcon>
+
+			{/* 名称（自适应截断） */}
+			<Box style={{ flex: 1, minWidth: 0 }}>
+				{LinkComp ? (
+					<LinkComp to={href}>
+						<Text
+							ref={rowRef as any}
+							size={dh.font}
+							style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
+							aria-current={active ? 'page' : undefined}
+						>
+							{name}
+						</Text>
+					</LinkComp>
+				) : (
+					<Anchor
+						ref={rowRef as any}
+						size={dh.font}
+						href={href}
+						underline="never"
+						style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
+						aria-current={active ? 'page' : undefined}
+					>
+						{name}
+					</Anchor>
+				)}
+			</Box>
+
+			{/* 状态：点 + 文案，天然垂直居中 */}
+			{typeof running === 'boolean' && (
+				<Group gap={6} wrap="nowrap">
 					<Box
+						component="span"
 						aria-hidden
 						style={{
-							position: 'absolute',
-							left: 0,
-							top: 0,
-							bottom: 0,
-							width: 3,
-							background: theme.colors.indigo[6],
-							borderTopLeftRadius: 6,
-							borderBottomLeftRadius: 6,
+							width: 6,
+							height: 6,
+							borderRadius: 6,
+							background: running ? theme.colors.green[6] : theme.colors.gray[5],
 						}}
 					/>
-				)}
-
-				<Group justify="space-between" align="center" gap="sm" wrap="nowrap">
-					<Box style={{ flex: 1, minWidth: 0 }}>
-						{LinkComp ? (
-							<LinkComp to={href}>
-								<Text
-									size="sm"
-									style={{ display: 'block' }}
-									aria-current={active ? 'page' : undefined}
-								>
-									{name}
-								</Text>
-							</LinkComp>
-						) : (
-							<Anchor
-								size="sm"
-								href={href}
-								underline="never"
-								style={{ display: 'block' }}
-								aria-current={active ? 'page' : undefined}
-							>
-								{name}
-							</Anchor>
-						)}
-					</Box>
-
-					<Group gap="xs">
-						{typeof running === 'boolean' && (
-							<Badge variant="dot" color={running ? 'green' : 'gray'}>
-								{running ? '运行中' : '已停止'}
-							</Badge>
-						)}
-
-						<ActionIcon
-							variant="light"
-							title="拖拽排序"
-							aria-label="拖拽排序"
-							data-drag-handle
-							style={{
-								width: 30,
-								height: 30,
-								touchAction: 'none',
-								cursor: isDragging ? 'grabbing' : 'grab',
-							}}
-							{...listeners}
-							{...attributes}
-						>
-							<IconGripVertical size={18} />
-						</ActionIcon>
-					</Group>
+					<Text size="xs" c="dimmed">
+						{running ? '运行' : '停止'}
+					</Text>
 				</Group>
-			</Paper>
-		</div>
+			)}
+		</Box>
 	)
 })
 
-// ---------- 组卡片 ----------
+// ---------- 组卡片：单行组头 + 极简列表 ----------
 const GroupCard = memo(function GroupCard(props: {
 	g: GroupConfig
 	visibleIds: string[]
@@ -303,6 +309,7 @@ const GroupCard = memo(function GroupCard(props: {
 	isCollapsed: boolean
 	toggleCollapse: () => void
 	getName: (id: string) => string
+	dh: { rowH: number; px: number; py: number; font: 'xs' | 'sm' }
 }) {
 	const {
 		g,
@@ -318,6 +325,7 @@ const GroupCard = memo(function GroupCard(props: {
 		isCollapsed,
 		toggleCollapse,
 		getName,
+		dh,
 	} = props
 
 	const { attributes, listeners, setNodeRef, transform, transition } = useSortable({
@@ -336,7 +344,7 @@ const GroupCard = memo(function GroupCard(props: {
 			ref={setNodeRef}
 			withBorder
 			radius="md"
-			p="md"
+			p="sm"
 			style={{
 				transform: transform ? `translate3d(${transform.x}px, ${transform.y}px, 0)` : undefined,
 				transition,
@@ -348,36 +356,30 @@ const GroupCard = memo(function GroupCard(props: {
 			}}
 		>
 			<Group justify="space-between" align="center" wrap="nowrap">
-				<Group gap="xs" align="center">
+				<Group gap="xs" align="center" wrap="nowrap">
 					<ActionIcon
-						size="md"
+						size="sm"
 						variant="subtle"
 						title="拖拽分组"
 						aria-label="拖拽分组"
 						data-drag-handle
-						style={{
-							width: 32,
-							height: 32,
-							touchAction: 'none',
-							cursor: 'grab',
-						}}
+						style={{ width: 26, height: 26, touchAction: 'none', cursor: 'grab' }}
 						{...listeners}
 						{...attributes}
 					>
-						<IconGripVertical size={18} />
+						<IconGripVertical size={16} />
 					</ActionIcon>
 
-					<ActionIcon size="sm" variant="subtle" onClick={toggleCollapse} aria-label="切换折叠">
-						{isCollapsed ? <IconChevronRight size={16} /> : <IconChevronDown size={16} />}
+					<ActionIcon size="xs" variant="subtle" onClick={toggleCollapse} aria-label="切换折叠">
+						{isCollapsed ? <IconChevronRight size={14} /> : <IconChevronDown size={14} />}
 					</ActionIcon>
 
-					<Text fw={600}>{g.name}</Text>
-					<Badge variant="light" size="sm">
-						{stat.total}
-					</Badge>
-					<Badge variant="light" size="sm" color="green">
-						{stat.running}
-					</Badge>
+					<Text fw={600} size="sm" style={{ whiteSpace: 'nowrap' }}>
+						{g.name}
+					</Text>
+					<Text size="xs" c="dimmed" style={{ whiteSpace: 'nowrap' }}>
+						{stat.total} / {stat.running}
+					</Text>
 				</Group>
 			</Group>
 
@@ -391,7 +393,7 @@ const GroupCard = memo(function GroupCard(props: {
 						items={visibleIds.map((id) => iid(id))}
 						strategy={verticalListSortingStrategy}
 					>
-						<Stack gap="xs" mt="sm" align="stretch">
+						<Stack gap={0} mt="xs" align="stretch">
 							{visibleIds.map((id) => (
 								<SortableRow
 									key={id}
@@ -403,10 +405,11 @@ const GroupCard = memo(function GroupCard(props: {
 									onRightSelect={onRightSelect}
 									LinkComp={LinkComp}
 									disabled={isFiltering}
+									dh={dh}
 								/>
 							))}
 							{visibleIds.length === 0 && (
-								<Text c="dimmed" size="xs">
+								<Text c="dimmed" size="xs" pl="xs" py={4}>
 									（空）
 								</Text>
 							)}
@@ -427,15 +430,15 @@ export function PluginOrganizer({
 	LinkComponent,
 	activeId: propActiveId = null,
 	activeIds,
+	density = 'compact',
 }: Props) {
 	const theme = useMantineTheme()
+	const dh = DENSITY[density]
 
 	// 基础映射
 	const runningSet = useMemo(() => {
 		const s = new Set<string>()
-		for (const [id, status] of Object.entries(statuses)) {
-			if (status.isRunning) s.add(id)
-		}
+		for (const [id, status] of Object.entries(statuses)) if (status.isRunning) s.add(id)
 		return s
 	}, [statuses])
 	const getName = useCallback((id: string) => statuses[id]?.name ?? id, [statuses])
@@ -454,7 +457,7 @@ export function PluginOrganizer({
 	const lastSelectedRef = useRef<string | null>(null)
 	const [collapsed, setCollapsed] = useState<Record<string, boolean>>({}) // 组折叠状态
 
-	// —— 导航态集合（单值优先，未给单值时兼容多值）——
+	// 导航态集合
 	const activeSet = useMemo(() => {
 		if (propActiveId) return new Set([propActiveId])
 		if (activeIds?.length) return new Set(activeIds)
@@ -504,7 +507,7 @@ export function PluginOrganizer({
 		[groups, match],
 	)
 
-	// —— 选择（右键触发；Ctrl/Cmd 多选，Shift 区间）——
+	// —— 选择：右键触发；Ctrl/Cmd 多选，Shift 区间 —— //
 	const buildContainers = useCallback((gs: GroupConfig[], un: string[]) => {
 		const containerToItems = new Map<string, string[]>()
 		containerToItems.set(
@@ -546,7 +549,7 @@ export function PluginOrganizer({
 		[buildContainers],
 	)
 
-	// —— 外部数据变化：温和同步 ——
+	// 外部数据变化同步
 	useEffect(() => {
 		setGroups(saneGroups)
 		setUngroupedOrder((prev) => {
@@ -557,7 +560,7 @@ export function PluginOrganizer({
 		})
 	}, [saneGroups, saneUngrouped])
 
-	// —— 外部数据变化：剪裁幽灵选择 ——
+	// 剪裁幽灵选择
 	useEffect(() => {
 		setSelectedIds((sel) => sel.filter((id) => allIds.includes(id)))
 	}, [allIds])
@@ -575,10 +578,7 @@ export function PluginOrganizer({
 		if (!menu.open) return
 		const handle = () => closeMenu()
 		document.addEventListener('mousedown', handle, { capture: true })
-		return () =>
-			document.removeEventListener('mousedown', handle, {
-				capture: true,
-			} as any)
+		return () => document.removeEventListener('mousedown', handle, { capture: true } as any)
 	}, [menu.open, closeMenu])
 	const openMenu = useCallback((e: React.MouseEvent, type: 'ROOT' | 'GROUP', gid?: string) => {
 		e.preventDefault()
@@ -623,7 +623,6 @@ export function PluginOrganizer({
 		const nextGroups = groupsRef.current.filter((_, i) => i !== idx)
 		setGroups(nextGroups)
 		setUngroupedOrder(nextUngrouped)
-		// 清理折叠状态中的残留键
 		setCollapsed((m) => {
 			const copy = { ...m }
 			delete copy[gid0]
@@ -633,23 +632,65 @@ export function PluginOrganizer({
 		closeMenu()
 	}, [menu.gid, closeMenu])
 
-	// —— 传感器：提高阈值，避免误触 ——
+	// —— 传感器 —— //
 	const sensors = useSensors(
 		useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
-		useSensor(KeyboardSensor, {
-			coordinateGetter: sortableKeyboardCoordinates,
-		}),
+		useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
 	)
 
-	// 注意：这里是拖拽时的“活动项”，避免与 props.activeId 混淆
 	const [dragActiveId, setDragActiveId] = useState<UniqueIdentifier | null>(null)
-
 	const groupIdsSortable = useMemo(() => groups.map((g) => gid(g.groupId)), [groups])
 	const LinkComp = LinkComponent
 
-	// —— Drag handlers ——
+	// —— 小工具：插入/重排 —— //
+	const insertKeepOrder = (
+		base: string[],
+		moving: Set<string>,
+		orderedMoving: string[],
+		at: number,
+	) => {
+		const filtered = base.filter((x) => !moving.has(x))
+		const idx = Math.max(0, Math.min(at, filtered.length))
+		return [...filtered.slice(0, idx), ...orderedMoving, ...filtered.slice(idx)]
+	}
+	const computeTargetIndex = (
+		full: string[],
+		movingSet: Set<string>,
+		overId?: string,
+		opts?: { selfBehavior?: 'before' | 'after' },
+	): number => {
+		const filtered = full.filter((x) => !movingSet.has(x))
+		if (!overId) return filtered.length
+
+		// 当悬停在“自身（或选择块）”上时，基于期望行为决定插入点
+		if (movingSet.has(overId)) {
+			const behavior = opts?.selfBehavior ?? 'after'
+			// 计算移动块的边界
+			let first = Number.POSITIVE_INFINITY
+			let last = -1
+			for (let i = 0; i < full.length; i++) {
+				if (movingSet.has(full[i])) {
+					if (i < first) first = i
+					if (i > last) last = i
+				}
+			}
+			if (behavior === 'after') {
+				// 找到移动块之后的第一个非移动项，插入到它之后（index + 1）
+				const next = full.slice(last + 1).find((x) => !movingSet.has(x))
+				return next ? Math.max(0, filtered.indexOf(next) + 1) : filtered.length
+			}
+			// 找到移动块之前的最后一个非移动项，插入到它之前
+			const prev = [...full.slice(0, Math.max(0, first))].reverse().find((x) => !movingSet.has(x))
+			return prev ? Math.max(0, filtered.indexOf(prev)) : 0
+		}
+
+		// 正常情况：插入到目标项之前
+		return Math.max(0, filtered.indexOf(overId))
+	}
+
+	// —— Drag handlers —— //
 	const handleDragStart = useCallback(
-		({ active }: { active: { id: UniqueIdentifier } }) => {
+		({ active }: DragStartEvent) => {
 			setDragActiveId(active.id)
 			if (isIid(active.id)) {
 				const pid = fromIid(String(active.id))
@@ -661,14 +702,29 @@ export function PluginOrganizer({
 	)
 
 	const handleDragEnd = useCallback(
-		({ active, over }: { active: any; over: any }) => {
+		({ active, over, delta }: DragEndEvent) => {
 			document.body.style.userSelect = ''
 			const aId = active?.id as UniqueIdentifier
 			const oId = over?.id as UniqueIdentifier | undefined
 			setDragActiveId(null)
 			if (!oId) return
 
-			const containers = buildContainers(groupsRef.current, ungroupedRef.current)
+			const containers = ((): {
+				containerToItems: Map<string, string[]>
+				itemToContainer: Map<string, string>
+			} => {
+				const containerToItems = new Map<string, string[]>()
+				containerToItems.set(
+					'ROOT_UNGROUPED',
+					ungroupedRef.current.filter(
+						(id) => !groupsRef.current.some((g) => g.pluginIds.includes(id)),
+					),
+				)
+				for (const g of groupsRef.current) containerToItems.set(g.groupId, [...g.pluginIds])
+				const itemToContainer = new Map<string, string>()
+				for (const [k, v] of containerToItems) for (const id of v) itemToContainer.set(id, k)
+				return { containerToItems, itemToContainer }
+			})()
 
 			// 组排序
 			if (isGid(aId) && isGid(oId)) {
@@ -681,11 +737,10 @@ export function PluginOrganizer({
 				const next = arrayMove(groupsRef.current, oldIndex, newIndex)
 				setGroups(next)
 				onGroupsChangeRef.current?.(next)
-				showNotification({ message: '已重新排序分组', color: 'gray' })
 				return
 			}
 
-			// 条目移动/排序（支持多选）
+			// 条目移动/排序
 			if (!isIid(aId)) return
 
 			const moving =
@@ -693,6 +748,11 @@ export function PluginOrganizer({
 					? selectedIds
 					: [fromIid(String(aId))]
 			const movingSet = new Set(moving)
+			const orderedMoving = (
+				containers.containerToItems.get(
+					containers.itemToContainer.get(fromIid(String(aId))) || '',
+				) || []
+			).filter((x) => movingSet.has(x))
 
 			const fromC = containers.itemToContainer.get(fromIid(String(aId)))
 			const toC = isCid(oId)
@@ -702,44 +762,18 @@ export function PluginOrganizer({
 					: undefined
 			if (!fromC || !toC) return
 
-			// —— 同容器：一次性重排（修复“向下拖动回弹”）——
+			// 同容器：一次性重排
 			if (fromC === toC) {
 				const full = containers.containerToItems.get(fromC) ?? []
-				const filtered = full.filter((x) => !movingSet.has(x))
-
-				// 计算移动块在原列表中的首/末索引，用于判断方向
-				const movingIdxs = moving.map((x) => full.indexOf(x)).sort((a, b) => a - b)
-				const firstIdx = movingIdxs[0]
-				const lastIdx = movingIdxs[movingIdxs.length - 1]
-
-				let targetIndex: number
-				if (isIid(oId)) {
-					const overId = fromIid(String(oId))
-
-					if (movingSet.has(overId)) {
-						// 指针落在移动块上：取其后一位（原逻辑保留）
-						const overPos = full.indexOf(overId)
-						const after = full[overPos + 1]
-						targetIndex = after ? filtered.indexOf(after) : filtered.length
-					} else {
-						// 指针落在非移动项上：根据方向决定插前/插后
-						const overPosFull = full.indexOf(overId)
-						const base = Math.max(0, filtered.indexOf(overId)) // “插前”的索引
-						const movingDown = overPosFull > lastIdx // over 在移动块之后 => 向下
-						targetIndex = movingDown ? base + 1 : base
-					}
-				} else {
-					targetIndex = filtered.length
-				}
-
-				// 保持 moving 的相对顺序（按原列表顺序）
-				const orderedMoving = full.filter((x) => movingSet.has(x))
-				const nextList = [
-					...filtered.slice(0, targetIndex),
-					...orderedMoving,
-					...filtered.slice(targetIndex),
-				]
-
+				const targetId = isIid(oId) ? fromIid(String(oId)) : undefined
+				const selfBehavior: 'before' | 'after' | undefined =
+					targetId && movingSet.has(targetId)
+						? (delta?.y ?? 0) < 0
+							? 'before'
+							: 'after'
+						: undefined
+				const targetIndex = computeTargetIndex(full, movingSet, targetId, { selfBehavior })
+				const nextList = insertKeepOrder(full, movingSet, orderedMoving, targetIndex)
 				if (fromC === 'ROOT_UNGROUPED') {
 					setUngroupedOrder(nextList)
 				} else {
@@ -747,78 +781,41 @@ export function PluginOrganizer({
 						prev.map((g) => (g.groupId === fromC ? { ...g, pluginIds: nextList } : g)),
 					)
 				}
-
 				queueMicrotask(() => {
 					const next = groupsRef.current
 					assertNoDup(next, ungroupedRef.current)
 					onGroupsChangeRef.current?.(next)
 				})
-				showNotification({
-					message: `已重新排序 ${moving.length} 项`,
-					color: 'gray',
-				})
 				return
 			}
 
-			// —— 跨容器：一次性移出 + 插入 ——
+			// 跨容器：移出 + 插入
 			const fromFull = containers.containerToItems.get(fromC) ?? []
 			const toFull = containers.containerToItems.get(toC) ?? []
+			const targetId = isIid(oId) ? fromIid(String(oId)) : undefined
+			const toIndex = computeTargetIndex(toFull, movingSet, targetId)
 
-			const fromNext = fromFull.filter((x) => !movingSet.has(x))
-
-			let toTargetIndex: number
-			if (isIid(oId)) {
-				const overId = fromIid(String(oId))
-				if (movingSet.has(overId)) {
-					const overPos = toFull.indexOf(overId)
-					const after = toFull[overPos + 1]
-					const filteredTo = toFull.filter((x) => !movingSet.has(x))
-					toTargetIndex = after ? filteredTo.indexOf(after) : filteredTo.length
-				} else {
-					const filteredTo = toFull.filter((x) => !movingSet.has(x))
-					toTargetIndex = Math.max(0, filteredTo.indexOf(overId))
-				}
-			} else {
-				toTargetIndex = toFull.filter((x) => !movingSet.has(x)).length
-			}
-
-			const insertInto = (list: string[], items: string[], index: number) => {
-				const base = list.filter((x) => !movingSet.has(x))
-				const orderedMoving = items
-				const next = [...base.slice(0, index), ...orderedMoving, ...base.slice(index)]
-				return unique(next)
-			}
-
-			if (fromC === 'ROOT_UNGROUPED' && toC === 'ROOT_UNGROUPED') {
-				const filtered = fromFull.filter((x) => !movingSet.has(x))
-				const nextUngrouped = insertInto(filtered, moving, toTargetIndex)
-				setUngroupedOrder(nextUngrouped)
-			} else if (fromC === 'ROOT_UNGROUPED') {
-				setUngroupedOrder(fromNext)
-				setGroups((prev) =>
-					prev.map((g) => {
-						if (g.groupId !== toC) return g
-						const nextList = insertInto(g.pluginIds, moving, toTargetIndex)
-						return { ...g, pluginIds: nextList }
-					}),
-				)
-			} else if (toC === 'ROOT_UNGROUPED') {
-				setGroups((prev) =>
-					prev.map((g) => (g.groupId === fromC ? { ...g, pluginIds: fromNext } : g)),
-				)
-				setUngroupedOrder((prev) => insertInto(prev, moving, toTargetIndex))
+			if (fromC === 'ROOT_UNGROUPED') {
+				setUngroupedOrder(fromFull.filter((x) => !movingSet.has(x)))
 			} else {
 				setGroups((prev) =>
-					prev.map((g) => {
-						if (g.groupId === fromC) {
-							return { ...g, pluginIds: fromNext }
-						}
-						if (g.groupId === toC) {
-							const nextList = insertInto(g.pluginIds, moving, toTargetIndex)
-							return { ...g, pluginIds: nextList }
-						}
-						return g
-					}),
+					prev.map((g) =>
+						g.groupId === fromC
+							? { ...g, pluginIds: g.pluginIds.filter((x) => !movingSet.has(x)) }
+							: g,
+					),
+				)
+			}
+
+			if (toC === 'ROOT_UNGROUPED') {
+				setUngroupedOrder((prev) => insertKeepOrder(prev, movingSet, moving, toIndex))
+			} else {
+				setGroups((prev) =>
+					prev.map((g) =>
+						g.groupId === toC
+							? { ...g, pluginIds: insertKeepOrder(g.pluginIds, movingSet, moving, toIndex) }
+							: g,
+					),
 				)
 			}
 
@@ -827,13 +824,12 @@ export function PluginOrganizer({
 				assertNoDup(next, ungroupedRef.current)
 				onGroupsChangeRef.current?.(next)
 			})
-			showNotification({ message: `已移动 ${moving.length} 项`, color: 'blue' })
 		},
-		[selectedIds, buildContainers],
+		[selectedIds],
 	)
 
 	return (
-		<Stack gap="sm" align="stretch" onContextMenu={(e) => openMenu(e, 'ROOT')}>
+		<Stack gap={0} align="stretch" onContextMenu={(e) => openMenu(e, 'ROOT')}>
 			{/* 右键菜单：根 */}
 			<Menu
 				opened={menu.open && menu.type === 'ROOT'}
@@ -842,14 +838,7 @@ export function PluginOrganizer({
 				keepMounted
 				zIndex={10000}
 			>
-				<Menu.Dropdown
-					style={{
-						position: 'fixed',
-						top: menu.y,
-						left: menu.x,
-						minWidth: 160,
-					}}
-				>
+				<Menu.Dropdown style={{ position: 'fixed', top: menu.y, left: menu.x, minWidth: 160 }}>
 					<Menu.Item leftSection={<IconFolderPlus size={16} />} onClick={createGroup}>
 						创建文件夹
 					</Menu.Item>
@@ -864,14 +853,7 @@ export function PluginOrganizer({
 				keepMounted
 				zIndex={10000}
 			>
-				<Menu.Dropdown
-					style={{
-						position: 'fixed',
-						top: menu.y,
-						left: menu.x,
-						minWidth: 200,
-					}}
-				>
+				<Menu.Dropdown style={{ position: 'fixed', top: menu.y, left: menu.x, minWidth: 200 }}>
 					<Menu.Label>文件夹</Menu.Label>
 					<Menu.Item
 						leftSection={<IconPencil size={16} />}
@@ -893,22 +875,23 @@ export function PluginOrganizer({
 
 			<DndContext
 				sensors={sensors}
-				collisionDetection={closestCenter}
+				collisionDetection={closestCorners} // 更贴合“有内边距/边框”的纵向列表
 				modifiers={[restrictToVerticalAxis]}
+				measuring={{ droppable: { strategy: MeasuringStrategy.Always } }} // 容器变化（折叠/过滤）时，持续重测
 				onDragStart={handleDragStart}
 				onDragEnd={handleDragEnd}
 			>
 				{/* 未分组 */}
-				<Card withBorder radius="md" p="md">
-					<Group justify="space-between" align="center" mb="xs" wrap="nowrap">
+				<Card withBorder radius="md" p="sm">
+					<Group justify="space-between" align="center" mb={4} wrap="nowrap">
 						<Group gap="xs" align="center">
-							<Text fw={600}>未分组</Text>
-							<Badge variant="light" size="sm">
-								{visibleUngrouped.length}
-							</Badge>
-							<Badge variant="light" size="sm" color="green">
+							<Text fw={600} size="sm">
+								未分组
+							</Text>
+							<Text size="xs" c="dimmed">
+								{visibleUngrouped.length} /{' '}
 								{visibleUngrouped.filter((id) => runningSet.has(id)).length}
-							</Badge>
+							</Text>
 						</Group>
 					</Group>
 
@@ -921,7 +904,7 @@ export function PluginOrganizer({
 							items={visibleUngrouped.map((id) => iid(id))}
 							strategy={verticalListSortingStrategy}
 						>
-							<Stack gap="xs" align="stretch">
+							<Stack gap={0} align="stretch">
 								{visibleUngrouped.map((id) => (
 									<SortableRow
 										key={id}
@@ -933,10 +916,11 @@ export function PluginOrganizer({
 										onRightSelect={handleRightSelect}
 										LinkComp={LinkComp}
 										disabled={isFiltering}
+										dh={dh}
 									/>
 								))}
 								{visibleUngrouped.length === 0 && (
-									<Text c="dimmed" size="xs">
+									<Text c="dimmed" size="xs" pl="xs" py={4}>
 										（空）
 									</Text>
 								)}
@@ -949,7 +933,7 @@ export function PluginOrganizer({
 
 				{/* 组列表（组可拖拽重排） */}
 				<SortableContext items={groupIdsSortable} strategy={verticalListSortingStrategy}>
-					<Stack gap="md" align="stretch">
+					<Stack gap={0} align="stretch">
 						{visibleGroups.map((g) => {
 							const vis = g.pluginIds
 							const isCollapsed = !!collapsed[g.groupId]
@@ -969,6 +953,7 @@ export function PluginOrganizer({
 									isCollapsed={isCollapsed}
 									toggleCollapse={() => setCollapsed((m) => ({ ...m, [g.groupId]: !m[g.groupId] }))}
 									getName={getName}
+									dh={dh}
 								/>
 							)
 						})}
@@ -978,14 +963,7 @@ export function PluginOrganizer({
 				{/* 小芯片 Overlay：不挡视线 */}
 				<DragOverlay dropAnimation={null}>
 					{dragActiveId ? (
-						<div
-							style={{
-								pointerEvents: 'none',
-								marginTop: 8,
-								marginLeft: 8,
-								opacity: 0.9,
-							}}
-						>
+						<div style={{ pointerEvents: 'none', marginTop: 6, marginLeft: 6, opacity: 0.9 }}>
 							<Badge variant="filled" size="sm">
 								+{Math.max(1, selectedIds.length)}
 							</Badge>

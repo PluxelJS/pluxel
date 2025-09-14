@@ -102,7 +102,6 @@ export const PluginList: React.FC<PluginListProps> = ({ pluginName, onItemSelect
 			</Group>
 
 			<TextInput
-				id="plugin-search-input"
 				placeholder="搜索插件（名称 / ID）"
 				value={q}
 				onChange={(e) => setQ(e.currentTarget.value)}
