@@ -1,7 +1,7 @@
-import { describe } from 'bun:test'
 import { Button } from '@mantine/core'
 import { showNotification } from '@mantine/notifications'
 import { client } from './rpc'
+
 export function Header({ onMenu }: { onMenu: () => void }) {
 	return (
 		<div
