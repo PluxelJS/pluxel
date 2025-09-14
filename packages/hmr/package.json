@@ -45,6 +45,7 @@
 		"@tanstack/react-query": "^5.85.3",
 		"chokidar": "^4.0.3",
 		"hono": "^4.9.2",
+		"knitwork": "^1.2.0",
 		"mlly": "^1.7.4",
 		"pathe": "^2.0.3",
 		"pino": "^9.9.0",

@@ -1,129 +1,203 @@
-// services/LoaderService.ts
+// loader/index.ts
 import {
-	type Context,
-	getClassParam,
-	getOptionalPredicate,
-	getPluginInfo,
-	Injectable,
-	type PluginConstructor,
+  type Context,
+  getClassParam,
+  getOptionalPredicate,
+  getPluginInfo,
+  Injectable,
+  type PluginConstructor,
 } from '@pluxel/core'
 import { PluginRegistry } from './PluginRegistry'
+import { genObjectFromRawEntries, genObjectFromValues } from 'knitwork'
 
 const serviceName = 'loader' as const
 declare module '@pluxel/core' {
-	interface Context {
-		[serviceName]: LoaderService
-	}
+  interface Context {
+    [serviceName]: LoaderService
+  }
 }
+
 @Injectable({ key: serviceName })
 export class LoaderService {
-	public registry: PluginRegistry
-	public pathAnchors: Set<string> = new Set()
+  public registry: PluginRegistry
+  public pathAnchors = new Set<string>()
+  private hmrBound = new Set<string>()
 
-	constructor(private ctx: Context) {
-		this.ctx.on('beforeStart', (plugin) => {
-			const ctor = plugin.constructor as PluginConstructor
-			const schemaMap = this.registry.getSchema(ctor)
-			if (!schemaMap) return
-			const ctx = plugin.ctx
-			const pluginName = ctx.pluginInfo.meta.name
-			const { configRecord: config } = ctx.configService.getConfig(pluginName)
-			for (const [key] of Object.entries(schemaMap)) {
-				if (!(key in config)) {
-					throw new Error(`Missing config key "${key}" for plugin ${ctx.name}`)
-				}
-				plugin[key] = config[key]
-			}
-		})
-		this.ctx.on('commitFailed', (failed) => {
-			for (const pCtor of failed) {
-				const pluginName = getPluginInfo(pCtor)?.meta.name!
-				this.registry.disablePlugin(pluginName, pCtor as PluginConstructor)
-			}
-		})
-		this.registry = new PluginRegistry(this.ctx)
-	}
+  constructor(private ctx: Context) {
+    // 启动前把有效配置注入实例（valibot 已校验 & 默认值补齐）
+    this.ctx.on('beforeStart', (plugin) => {
+      const ctor = plugin.constructor as PluginConstructor
+      const schemaMap = this.registry.getSchema(ctor)
+      if (!schemaMap) return
+      const name = plugin.ctx.pluginInfo.meta.name
+      const { configRecord } = plugin.ctx.configService.getConfig(name)
+      for (const key of Object.keys(schemaMap)) {
+        ;(plugin as any)[key] = (configRecord as any)[key]
+      }
+    })
 
-	/**
-	 * Load a module file, register its plugins, and set up HMR hooks.
-	 */
-	loadFileModule(id: string, mod: any): boolean {
-		this.registry.unregister(id)
-		let isPlugin = false
-		for (const exp of Object.values(mod)) {
-			if (typeof exp !== 'function') continue
-			const info = getPluginInfo(exp)
-			if (!info) continue
-			this.registry.register(id, exp as any)
-			isPlugin = true
-		}
+    // 原子提交失败，回滚运行态（不改配置）
+    this.ctx.on('commitFailed', (failed) => {
+      for (const pCtor of failed) {
+        const name = getPluginInfo(pCtor as PluginConstructor)!.meta.name
+        this.registry.deactivate(name, pCtor as PluginConstructor, { runtimeOnly: true })
+      }
+    })
 
-		if (isPlugin) {
-			this.pathAnchors.add(id)
-		} else {
-			this.pathAnchors.delete(id)
-		}
+    this.registry = new PluginRegistry(this.ctx)
+  }
 
-		if (import.meta.hot) {
-			import.meta.hot.accept((newMod) => this.loadFileModule(id, newMod))
-			import.meta.hot.dispose(() => this.registry.unregister(id))
-		}
+  /** 装载某个文件模块（首载/HMR 更新共用） */
+  loadFileModule(moduleId: string, mod: Record<string, unknown>): boolean {
+    // 先卸载旧的（仅运行态）
+    this.registry.unregister(moduleId, { runtimeOnly: true })
 
-		return isPlugin
-	}
+    let isPlugin = false
+    for (const [exportKey, exp] of Object.entries(mod)) {
+      if (typeof exp !== 'function') continue
+      if (!getPluginInfo(exp)) continue
+      this.registry.register(moduleId, exp as PluginConstructor, exportKey) // 记录导出键
+      isPlugin = true
+    }
 
-	/**
-	 * Get names of currently loaded plugins.
-	 */
-	getLoadedPluginsName(): string[] {
-		return this.registry.getLoadedNames()
-	}
+    if (isPlugin) this.pathAnchors.add(moduleId)
+    else this.pathAnchors.delete(moduleId)
 
-	getFullPluginStatus() {
-		const loaded = this.registry.nameMap // Map<string, Constructor>
-		const byId: Record<string, { id: string; isRunning: boolean }> = Object.create(null)
+    if (import.meta.hot && !this.hmrBound.has(moduleId)) {
+      this.hmrBound.add(moduleId)
+      import.meta.hot.accept((newMod) => this.loadFileModule(moduleId, newMod as any))
+      import.meta.hot.dispose(() => {
+        this.registry.unregister(moduleId, { runtimeOnly: true })
+        this.hmrBound.delete(moduleId)
+      })
+    }
 
-		let runningCount = 0
-		let stoppedCount = 0
-		// 单次遍历，边统计边填充
-		for (const [name, ctor] of loaded.entries()) {
-			const isRunning = this.ctx.registry.isRunning(ctor)
-			byId[name] = { id: name, isRunning }
+    return isPlugin
+  }
 
-			if (isRunning) {
-				runningCount++
-			} else {
-				stoppedCount++
-			}
-		}
+  getLoadedPluginsName(): string[] {
+    return this.registry.getLoadedNames()
+  }
 
-		return {
-			statuses: byId,
-			summary: {
-				total: runningCount + stoppedCount,
-				running: runningCount,
-				stopped: stoppedCount,
-			},
-		}
-	}
+  getFullPluginStatus() {
+    const loaded = this.registry.names
+    const statuses: Record<string, { id: string; isRunning: boolean }> = Object.create(null)
+    let running = 0
+    let stopped = 0
 
-	getPluginDependenciesInfo(ctor: PluginConstructor) {
-		const predicate = getOptionalPredicate(ctor)
-		return getClassParam<PluginConstructor>(ctor).map((pluginClass, i) => {
-			const info = getPluginInfo(pluginClass)
-			if (info === undefined) return
-			return {
-				name: info.meta.name,
-				optional: predicate.isOptional(i),
-				isRunning: this.ctx.registry.isRunning(pluginClass),
-			}
-		})
-	}
-	getPluginClassByName(name: string): PluginConstructor | undefined {
-		return this.registry.getPluginByName(name)
-	}
+    for (const [name, ctor] of loaded) {
+      const isRunning = this.ctx.registry.isRunning(ctor)
+      statuses[name] = { id: name, isRunning }
+      if (isRunning) running++
+      else stopped++
+    }
 
-	getPluginSchema(ctor: PluginConstructor) {
-		return this.registry.getSchema(ctor)
-	}
+    return { statuses, summary: { total: running + stopped, running, stopped } }
+  }
+
+  getPluginDependenciesInfo(ctor: PluginConstructor) {
+    const predicate = getOptionalPredicate(ctor)
+    return getClassParam<PluginConstructor>(ctor)
+      .map((dep, i) => {
+        const info = getPluginInfo(dep)
+        if (!info) return undefined
+        return {
+          name: info.meta.name,
+          optional: predicate.isOptional(i),
+          isRunning: this.ctx.registry.isRunning(dep),
+        }
+      })
+      .filter(Boolean) as Array<{ name: string; optional: boolean; isRunning: boolean }>
+  }
+
+  getPluginClassByName(name: string) {
+    return this.registry.getPluginByName(name)
+  }
+
+  getPluginSchema(ctor: PluginConstructor) {
+    return this.registry.getSchema(ctor)
+  }
+
+  /**
+   * 极简快照输出：
+   * - 只包含“当前正在运行”的插件
+   * - 导出：按文件 re-export（IDE 可跳转）
+   * - 主对象：registry = { [pluginName]: { ctor, config } }
+   * - 配置序列化：genObjectFromValues（数组/嵌套稳定）
+   *
+   * @returns TypeScript 源码字符串
+   */
+  buildSnapshot(): string {
+    type Row = {
+      name: string
+      moduleId: string
+      exportKey: string
+      alias: string
+    }
+
+    const rows: Row[] = []
+    for (const [name, ctor] of this.registry.names) {
+      if (!this.ctx.registry.isRunning(ctor)) continue
+      const moduleId = this.registry.name2PathMap.get(name)
+      const exportKey = this.registry.getExportKeyByName(name)
+      if (!moduleId || !exportKey) continue
+      rows.push({ name, moduleId, exportKey, alias: this.aliasFor(name) })
+    }
+
+    const header =
+      `// @generated by LoaderService.buildSnapshot\n` +
+      `// ${new Date().toISOString()}\n` +
+      `/* eslint-disable */\n`
+
+    // 1) re-export（一个模块一行，支持 default / 命名导出）
+    const grouped = new Map<string, Row[]>()
+    for (const r of rows) {
+      const list = grouped.get(r.moduleId) ?? []
+      list.push(r)
+      grouped.set(r.moduleId, list)
+    }
+
+    const exportLines: string[] = []
+    for (const [moduleId, list] of grouped) {
+      const items = list
+        .map((e) => (e.exportKey === 'default' ? `default as ${e.alias}` : `${e.exportKey} as ${e.alias}`))
+        .join(', ')
+      exportLines.push(`export { ${items} } from ${JSON.stringify(moduleId)};`)
+    }
+
+    // 2) registry = { name: { ctor: Alias, config: {...} } }
+    const entries: Array<[string, string]> = rows.map((r) => {
+      const { configRecord } = this.ctx.configService.getConfig(r.name)
+      const cfg = genObjectFromValues(stripUndef(configRecord)) // ✅ 数组/嵌套安全
+      // 值是“原样字符串”，包含标识符和已序列化的字面量
+      const valCode = `{ ctor: ${r.alias}, config: ${cfg} }`
+      return [r.name, valCode] // ⚠️ key 传原始 name，knitwork 会自动按需加引号
+    })
+    const registryCode = genObjectFromRawEntries(entries)
+
+    const body =
+      `export const registry = ${registryCode} as const;\n` +
+      `export type PluginName = keyof typeof registry;\n`
+
+    return [header, ...exportLines, '', body].join('\n')
+  }
+
+  // —— 辅助 —— //
+  private aliasFor(name: string): string {
+    let id = 'P_' + name.replace(/[^A-Za-z0-9_$]/g, '_')
+    if (/^[0-9]/.test(id)) id = '_' + id
+    return id
+  }
+}
+
+// 清除 undefined，保证 genObjectFromValues 输出稳定（数组/对象均保留）
+function stripUndef<T>(obj: T): T {
+  if (obj == null || typeof obj !== 'object') return obj
+  if (Array.isArray(obj)) return obj.map(stripUndef) as unknown as T
+  const out: Record<string, unknown> = {}
+  for (const [k, v] of Object.entries(obj as any)) {
+    if (v === undefined) continue
+    out[k] = stripUndef(v as any)
+  }
+  return out as T
 }

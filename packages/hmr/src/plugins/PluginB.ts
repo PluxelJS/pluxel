@@ -2,11 +2,11 @@ import { BasePlugin, Plugin } from '@pluxel/core'
 import * as v from 'valibot'
 // PluginB.ts
 import { PluginC } from './PluginC'
-export const a = v.object({ name: v.string() })
+
 @Plugin({ name: 'PluginB', type: 'hook' })
 export class PluginB extends BasePlugin {
 	init(): void {
-		this.ctx.logger.info('PluginB initialized', a.type)
+		this.ctx.logger.info('PluginB initialized')
 	}
 
 	doSomething(): void {

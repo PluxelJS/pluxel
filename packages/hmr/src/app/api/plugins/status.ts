@@ -43,9 +43,9 @@ export const pluginStatus = new Hono<PluginsEnv>()
 			// 执行操作，无需每次创建闭包
 			for (const action of ops) {
 				if (action === 'enable') {
-					registry.enablePlugin(pluginName, ctor)
+					registry.enable(pluginName, ctor)
 				} else {
-					registry.disablePlugin(pluginName, ctor)
+					registry.deactivate(pluginName, ctor, { runtimeOnly: false })
 				}
 			}
 			// 一次性提交所有变更

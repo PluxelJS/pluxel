@@ -203,7 +203,7 @@ export class HMRService {
 			const mod = await this.runner.executeFile(id) // Evaluate 入口
 			const t1 = process.hrtime.bigint()
 
-			const hasPlugin = !!this.ctx.loader.loadFileModule(id, mod)
+			const hasPlugin = this.ctx.loader.loadFileModule(id, mod)
 			const t2 = process.hrtime.bigint()
 
 			bump(this.trace.evalMs, id, nsToMs(t1 - t0))
