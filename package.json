@@ -3,7 +3,6 @@
 	"type": "module",
 	"name": "monorepo",
 	"repository": "https://github.com/jkomyno/pnpm-monorepo-example.git",
-	"license": "MIT",
 	"engines": {
 		"pnpm": ">=9"
 	},
