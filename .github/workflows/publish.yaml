@@ -39,11 +39,11 @@ jobs:
         run: pnpm build
 
       # 递归发布：只会发布非 private 且未发过该 version 的包
-      - name: Publish (recursive, with provenance)
+      - name: Publish
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}  # npm 的 token（Automation）
         run: |
           # 确保 provenance 生效（也可直接在命令行加 --provenance）
-          npm config set provenance true
+          npm config set provenance false
           # 避免 git 状态检查导致中断（CI 常用）
-          pnpm -r publish --access public --provenance --no-git-checks
+          pnpm -r publish --access public --no-git-checks
