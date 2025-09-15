@@ -21,6 +21,11 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          run_install: true  # 自动安装依赖（等价 pnpm i）
+
       # 用官方 setup-node，顺手配置 npm registry & auth
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -29,11 +34,6 @@ jobs:
           cache: 'pnpm'
           registry-url: 'https://registry.npmjs.org'
           check-latest: true
-
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          run_install: true  # 自动安装依赖（等价 pnpm i）
 
       - name: Build
         run: pnpm build
