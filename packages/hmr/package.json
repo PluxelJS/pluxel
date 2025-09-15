@@ -1,5 +1,4 @@
 {
-	"private": true,
 	"name": "@pluxel/hmr",
 	"version": "0.1.0",
 	"description": "Demo example that imports a local package",
@@ -19,8 +18,8 @@
 		"./package.json": "./package.json"
 	},
 	"files": [
-		"./dist",
-		"./public"
+		"dist",
+		"public"
 	],
 	"scripts": {
 		"dev": "bun --conditions=\"@pluxel/source\" src/start.ts",
