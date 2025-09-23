@@ -29,7 +29,6 @@
 	},
 	"dependencies": {
 		"reflect-metadata": "^0.2.2",
-		"valtio": "2.1.5",
 		"xstate": "5.20.1",
 		"eventure": "^0.3.0",
 		"option-t": "54.2.4"

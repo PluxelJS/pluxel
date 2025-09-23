@@ -14,12 +14,12 @@
 	},
 	"devDependencies": {
 		"@biomejs/biome": "^2.2.4",
-		"@oxc-project/runtime": "^0.82.3",
+		"@oxc-project/runtime": "^0.91.0",
 		"@repobuddy/biome": "^2.0.1",
 		"@types/bun": "latest",
 		"husky": "^9.1.7",
 		"is-ci": "^4.1.0",
-		"tsdown": "^0.14.2",
+		"tsdown": "0.14.2",
 		"turbo": "^2.5.6",
 		"typescript": "^5.9.2"
 	},
@@ -30,27 +30,33 @@
 	"publishConfig": {
 		"registry": "https://registry.npmjs.org/"
 	},
-	"packageManager": "pnpm@10.16.1+sha512.0e155aa2629db8672b49e8475da6226aa4bdea85fdcdfdc15350874946d4f3c91faaf64cbdc4a5d1ab8002f473d5c3fcedcd197989cf0390f9badd3c04678706",
+	"packageManager": "pnpm@10.17.1+sha512.17c560fca4867ae9473a3899ad84a88334914f379be46d455cbf92e5cf4b39d34985d452d2583baf19967fa76cb5c17bc9e245529d0b98745721aa7200ecaf7a",
 	"dependencies": {
 		"@mantine/core": "^8.3.1",
 		"@mantine/dates": "^8.3.1",
 		"@mantine/hooks": "^8.3.1",
 		"@mantine/modals": "^8.3.1",
 		"@mantine/notifications": "^8.3.1",
-		"@tabler/icons-react": "^3.34.1",
+		"@tanstack/react-form": "^1.23.0",
+		"@tanstack/react-query": "^5.90.2",
+		"@tabler/icons-react": "^3.35.0",
 		"react": "^19.1.1",
 		"react-dom": "^19.1.1"
 	},
 	"pnpm": {
 		"peerDependencyRules": {
 			"allowedVersions": {
+				"@mantine/core": "^8.3.1",
+				"@mantine/dates": "^8.3.1",
+				"@mantine/hooks": "^8.3.1",
+				"@mantine/modals": "^8.3.1",
+				"@mantine/notifications": "^8.3.1",
+				"@tanstack/react-form": "^1.23.0",
+				"@tanstack/react-query": "^5.90.2",
+				"@tabler/icons-react": "^3.35.0",
 				"react": "^19.1.1",
 				"react-dom": "^19.1.1",
-				"@mantine/core": "^8.2.7",
-				"@mantine/dates": "^8.2.7",
-				"@mantine/hooks": "^8.2.7",
-				"@mantine/modals": "^8.2.7",
-				"@mantine/notifications": "^8.2.7"
+				"tsdown": "0.14.2"
 			}
 		}
 	}
