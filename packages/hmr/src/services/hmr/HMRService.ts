@@ -36,6 +36,9 @@ declare module '@pluxel/core' {
 	interface Context {
 		[serviceName]: HMRService
 	}
+	namespace Context {
+		interface Config extends HMRConfig {}
+	}
 }
 
 /* --------------------------------- 工具 --------------------------------- */
@@ -442,7 +445,7 @@ export class HMRService {
 		return [...m.entries()].sort((a, b) => b[1] - a[1]).slice(0, n)
 	}
 
-	private printAttribution(changed: string, affected: Set<string>, targets: string[]) {
+	private printAttribution(changed: string, _affectedd: Set<string>, targets: string[]) {
 		const fmt = (ms: number) => `${ms.toFixed(1)}ms`
 
 		if (this.trace.transformMs.size) {

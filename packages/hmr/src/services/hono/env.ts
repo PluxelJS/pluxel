@@ -9,4 +9,4 @@ export type AppEnv = HonoEnv & {
 		dehydratedState: DehydratedState | undefined
 	}
 }
-export type HonoType = Hono<AppEnv>
+export type HonoWithAppEnvType = Hono<AppEnv>
