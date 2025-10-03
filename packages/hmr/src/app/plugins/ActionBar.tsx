@@ -2,65 +2,105 @@ import { ActionIcon, Group, Tooltip } from '@mantine/core'
 import { openConfirmModal } from '@mantine/modals'
 import { notifications } from '@mantine/notifications'
 import { IconPlayerPlay, IconRotateClockwise, IconSquareX } from '@tabler/icons-react'
-import { useMutation, useQueryClient } from '@tanstack/react-query'
-import React from 'react'
-import type { InferRequestType, InferSuccessResponse } from '../rpc'
-import { client } from '../rpc'
-import type { Dependencies } from './Plugin'
-export interface ActionBarProps {
-	pluginName: string
-	isSelfRunning: boolean
-	/** 前置依赖列表及其运行状态与可选标记 */
-	dependencies?: Dependencies
+import { useMemo } from 'react'
+import {
+	UpdatePluginStatusStatusInput,
+	useMutation as useGqtyMutation,
+} from '../gqty'
+import type { PluginDependency, PluginScope } from '../gqty'
+
+interface DependencySnapshot {
+	name: string
+	optional: boolean
+	isRunning: boolean
 }
 
-export function ActionBar({ pluginName, isSelfRunning, dependencies = [] }: ActionBarProps) {
-	// RPC 更新方法
-	const $post = client.plugins[':name'].status.$post
+const EMPTY_DEPS: DependencySnapshot[] = []
 
-	// 请求体 & 响应类型
-	type Payload = InferRequestType<typeof $post>['json']
-	type Response = InferSuccessResponse<typeof $post>
+export interface ActionBarProps {
+	scope?: PluginScope
+	fallbackName: string
+	onStatusUpdated?: () => Promise<void> | void
+}
 
-	// Mutation
-	const qc = useQueryClient()
-	const mutation = useMutation<Response, Error, Payload>({
-		mutationFn: async (body) => {
-			const res = await $post({ param: { name: pluginName }, json: body })
-			if (!res.ok) {
-				const err = await res.json()
-				throw new Error(`${err.code}: ${err.error}`)
-			}
-			const data = await res.json()
-			notifications.show({
-				title: '插件状态已更新',
-				message: '更新成功',
-			})
-			return data
-		},
+const ACTION_LABEL: Record<UpdatePluginStatusStatusInput, string> = {
+	start: '启动',
+	stop: '终止',
+	restart: '重启',
+}
 
-		onSuccess: (r) => {
-			qc.setQueryData(['plugin', pluginName, 'status'], (old: any) => ({
-				...old,
-				isRunning: r.isRunning,
+export function ActionBar({ scope, fallbackName, onStatusUpdated }: ActionBarProps) {
+	const pluginName = scope?.name ?? fallbackName
+	const dependencies = useMemo<DependencySnapshot[]>(() => {
+		const list = scope?.detail?.dependencies as PluginDependency[] | undefined
+		if (!list?.length) return EMPTY_DEPS
+		return list
+			.filter(Boolean)
+			.map((dep) => ({
+				name: dep?.name ?? '',
+				optional: Boolean(dep?.optional),
+				isRunning: Boolean(dep?.isRunning),
 			}))
+	}, [scope?.detail?.dependencies])
+	const isSelfRunning = Boolean(scope?.status?.isRunning)
+	const [mutateStatus, mutationState] = useGqtyMutation(
+		(mutation, args: { status: UpdatePluginStatusStatusInput; plugin: string }) => {
+			const result = mutation.updatePluginStatus({
+				name: args.plugin,
+				status: args.status,
+			})
+			// 选择关键字段以生成完整的 GraphQL 语句
+			result.code
+			result.error
+			result.isRunning
+			return result
 		},
-	})
+		{ suspense: false },
+	)
 
-	// 处理动作，带依赖确认
-	const handleAction = (status: Payload['status']) => {
+	const performAction = async (status: UpdatePluginStatusStatusInput) => {
+		if (!pluginName) return
+		try {
+			const result = await mutateStatus({ args: { status, plugin: pluginName } })
+			if (!result) return
+			if (result.code !== 'success') {
+				notifications.show({
+					title: '插件状态更新失败',
+					message: result.error || result.code,
+					color: 'red',
+				})
+				return
+			}
+
+				notifications.show({
+				title: '插件状态已更新',
+				message: `${pluginName} ${ACTION_LABEL[status]}成功`,
+				color: 'green',
+			})
+			await onStatusUpdated?.()
+		} catch (error: any) {
+			notifications.show({
+				title: '插件状态更新失败',
+				message: error?.message || '操作失败，请稍后重试',
+				color: 'red',
+			})
+		}
+	}
+
+	const handleAction = (status: UpdatePluginStatusStatusInput) => {
 		const missing = dependencies
 			.filter((dep) => !dep?.isRunning && !dep?.optional)
-			.map((i) => i?.name)
-		const proceed = () => mutation.mutate({ status })
+			.map((dep) => dep?.name)
+		const proceed = () => {
+			void performAction(status)
+		}
 
 		if (missing.length > 0) {
 			openConfirmModal({
 				title: '前置依赖未启动',
 				children: (
 					<div>
-						请确认是否强制
-						{status === 'start' ? '启动' : status === 'stop' ? '终止' : '重启'}。
+						请确认是否强制{ACTION_LABEL[status]}。
 						<div style={{ marginTop: 10 }}>以下依赖尚未运行：{missing.join('，')}</div>
 					</div>
 				),
@@ -72,7 +112,7 @@ export function ActionBar({ pluginName, isSelfRunning, dependencies = [] }: Acti
 		}
 	}
 
-	const canToggle = !mutation.isPending
+	const canToggle = !mutationState.isLoading
 
 	return (
 		<Group gap="xs" align="right">
@@ -80,7 +120,7 @@ export function ActionBar({ pluginName, isSelfRunning, dependencies = [] }: Acti
 				<ActionIcon
 					variant="light"
 					size="lg"
-					onClick={() => handleAction('start')}
+					onClick={() => handleAction(UpdatePluginStatusStatusInput.start)}
 					disabled={!canToggle || isSelfRunning}
 				>
 					<IconPlayerPlay size={18} />
@@ -92,7 +132,7 @@ export function ActionBar({ pluginName, isSelfRunning, dependencies = [] }: Acti
 					variant="light"
 					size="lg"
 					color="red"
-					onClick={() => handleAction('stop')}
+					onClick={() => handleAction(UpdatePluginStatusStatusInput.stop)}
 					disabled={!canToggle || !isSelfRunning}
 				>
 					<IconSquareX size={18} />
@@ -104,7 +144,7 @@ export function ActionBar({ pluginName, isSelfRunning, dependencies = [] }: Acti
 					variant="light"
 					size="lg"
 					color="green"
-					onClick={() => handleAction('restart')}
+					onClick={() => handleAction(UpdatePluginStatusStatusInput.restart)}
 					disabled={!canToggle || !isSelfRunning}
 				>
 					<IconRotateClockwise size={18} />

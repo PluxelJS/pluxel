@@ -1,3 +1,4 @@
+import { field, query, resolver } from '@gqloom/core'
 import * as v from 'valibot'
 
 const User = v.object({
@@ -6,8 +7,6 @@ const User = v.object({
 	name: v.string(),
 })
 
-interface IUser extends v.InferOutput<typeof User> {}
-
 const Book = v.object({
 	__typename: v.nullish(v.literal('Book')),
 	id: v.number(),
@@ -15,24 +14,24 @@ const Book = v.object({
 	authorID: v.number(),
 })
 
-interface IBook extends v.InferOutput<typeof Book> {}
+const _userMapp = new Map([
+	[1, { id: 1, name: 'Cao Xueqin' }],
+	[2, { id: 2, name: 'Wu Chengen' }],
+])
 
-import { query, resolver } from '@gqloom/core'
-
-const _userMapp: Map<number, IUser> = new Map(
-	[
-		{ id: 1, name: 'Cao Xueqin' },
-		{ id: 2, name: 'Wu Chengen' },
-	].map((user) => [user.id, user]),
-)
-
-const bookMap: Map<number, IBook> = new Map(
-	[
-		{ id: 1, title: 'Dream of Red Mansions', authorID: 1 },
-		{ id: 2, title: 'Journey to the West', authorID: 2 },
-	].map((book) => [book.id, book]),
-)
+const bookMap = new Map([
+	[1, { id: 1, title: 'Dream of Red Mansions', authorID: 1 }],
+	[2, { id: 2, title: 'Journey to the West', authorID: 2 }],
+])
 
 export const bookResolver = resolver.of(Book, {
 	books: query(v.array(Book)).resolve(() => Array.from(bookMap.values())),
 })
+
+export const bookRelations = resolver.of(Book, {
+	author: field(v.nullish(User)).resolve((book) => {
+		return _userMapp.get(book.authorID) ?? null
+	}),
+})
+
+export const demoBookModule = [bookResolver, bookRelations]

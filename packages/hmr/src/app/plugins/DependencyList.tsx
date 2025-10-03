@@ -1,14 +1,25 @@
 import { Anchor, Card, Group, Text, Tooltip } from '@mantine/core'
 import { IconArrowRight } from '@tabler/icons-react'
 import type React from 'react'
-import type { Dependencies } from './Plugin'
+import { useMemo } from 'react'
+import type { PluginDependency, PluginScope } from '../gqty'
+
+type DependencySnapshot = {
+	name: string
+	optional: boolean
+	isRunning: boolean
+}
+
+const EMPTY_DEPS: DependencySnapshot[] = []
 
 interface DependencyListProps {
-	/** 依赖项数组 */
-	dependencies?: Dependencies
-	/** 路由组件适配器，需支持 to & children */
+	scope?: PluginScope
+	dependencies?: Array<{
+		name?: string | null
+		optional?: boolean | null
+		isRunning?: boolean | null
+	}>
 	LinkComponent: React.ElementType<{ to: string; children: React.ReactNode }>
-	/** 容器标题，可选 */
 	title?: string
 }
 
@@ -19,11 +30,33 @@ interface DependencyListProps {
  * - 点击即跳转，仅负责链接
  */
 export const DependencyList: React.FC<DependencyListProps> = ({
+	scope,
 	dependencies,
 	LinkComponent,
 	title = 'Dependencies',
 }) => {
-	if (!dependencies || dependencies.length === 0) {
+	const list = useMemo<DependencySnapshot[]>(() => {
+		if (dependencies?.length) {
+			return dependencies
+				.filter(Boolean)
+				.map((dep) => ({
+					name: dep?.name ?? '',
+					optional: Boolean(dep?.optional),
+					isRunning: Boolean(dep?.isRunning),
+				}))
+		}
+		const scopeDeps = scope?.detail?.dependencies as PluginDependency[] | undefined
+		if (!scopeDeps?.length) return EMPTY_DEPS
+		return scopeDeps
+			.filter(Boolean)
+			.map((dep) => ({
+				name: dep?.name ?? '',
+				optional: Boolean(dep?.optional),
+				isRunning: Boolean(dep?.isRunning),
+			}))
+	}, [dependencies, scope?.detail?.dependencies])
+
+	if (!list.length) {
 		return (
 			<Text color="dimmed" size="sm">
 				暂无依赖项
@@ -39,7 +72,7 @@ export const DependencyList: React.FC<DependencyListProps> = ({
 				</Text>
 			)}
 			<Group gap={4}>
-				{dependencies.map((dep, idx) =>
+				{list.map((dep, idx) =>
 					dep ? (
 						<Tooltip
 							key={dep.name || idx}

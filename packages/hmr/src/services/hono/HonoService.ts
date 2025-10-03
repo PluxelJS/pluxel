@@ -67,6 +67,7 @@ export class HonoService {
 	/** GraphQLService 重织后调用：仅替换函数指针，零重建 Hono 应用 */
 	setGraphQLFetch(fn: GraphQLFetch) {
 		this.gqlFetch = fn
+		this.requestFullReload()
 	}
 
 	/** 稳定的 fetch 入口（供 Node 适配器 / Vite dev server 使用） */

@@ -7,7 +7,7 @@ import { Injectable, type Context as PlxContext } from '@pluxel/core'
 import type { GraphQLSchema } from 'graphql'
 import { createYoga, type YogaInitialContext } from 'graphql-yoga'
 import * as v from 'valibot'
-import type { AppEnv } from './env'
+import { getAPISchema } from '../../api'
 
 // -------------------- Config (Valibot) --------------------
 const SubscriptionsSchema = v.union([
@@ -42,8 +42,8 @@ type InternalGQtyCfg = v.InferFallbacks<typeof GQtyConfigSchema>
 type GraphQLCfgInput = v.InferInput<typeof GraphQLConfigSchema>
 
 // -------------------- Context Typings --------------------
-export type FullCtx = YogaInitialContext & { hono: import('hono').Context<AppEnv> }
-type ServerCtx = { hono: import('hono').Context<AppEnv> }
+export type FullCtx = YogaInitialContext & ServerCtx
+type ServerCtx = {}
 
 // -------------------- Module Types --------------------
 type GqlModule = { resolvers: readonly Resolver[]; middlewares?: readonly Middleware[] }
@@ -166,7 +166,7 @@ export class GraphQLService {
 		}
 
 		// gqloom 的 weave 可以混合放入 Resolver/Middleware；这里显式分组后再展开，便于阅读与调试
-		this.schema = weave(ValibotWeaver, ...middlewares, ...resolvers)
+		this.schema = weave(ValibotWeaver, ...middlewares, ...resolvers, ...getAPISchema(this.ctx))
 
 		// Yoga fetch 指针热替换（不重启 Hono）
 		this.pushFetch()

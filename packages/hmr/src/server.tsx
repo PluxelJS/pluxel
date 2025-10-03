@@ -1,8 +1,6 @@
-import { dehydrate } from '@tanstack/react-query'
 import { Hono } from 'hono'
 import type { AppEnv } from '../../hmr/src/services/hono/env'
 import { App } from './app'
-import { client } from './app/rpc'
 import { queryClient } from './queryClient'
 import { renderMiddleware } from './render'
 
@@ -14,7 +12,7 @@ ssrApp.use('*', (c, next) => {
 	return renderMiddleware(c, next)
 })
 
-// 2) /plugin/:name 只做 prefetch  dehydrate  渲染 App
+/* // 2) /plugin/:name 只做 prefetch  dehydrate  渲染 App
 ssrApp.get('/plugins', async (c) => {
 	const qc = c.var.qc
 
@@ -35,7 +33,7 @@ ssrApp.get('/plugins', async (c) => {
 
 	// 用你的 SPA 根组件去渲染，里面包含了 plugin 路由
 	return c.render(<App />)
-})
+}) */
 
 // 3) 其他路由交给 SPA
 ssrApp.get('*', (c) => c.render(<App />))

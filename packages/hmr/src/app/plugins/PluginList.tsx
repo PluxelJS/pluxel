@@ -10,12 +10,14 @@ import {
 	Title,
 } from '@mantine/core'
 import { showNotification } from '@mantine/notifications'
-import { type GroupConfig, PluginOrganizer } from '@pluxel/components'
+import { type GroupConfig, type PluginStatuses, PluginOrganizer } from '@pluxel/components'
 import { IconSearch, IconX } from '@tabler/icons-react'
-import { useQuery } from '@tanstack/react-query'
-import type React from 'react'
-import { useMemo, useState } from 'react'
-import { client } from '../rpc'
+import { useCallback, useMemo, useState } from 'react'
+import {
+	useMutation as useGqtyMutation,
+	useQuery as useGqtyQuery,
+} from '../gqty'
+import type { PluginGroup, PluginStatusEntry } from '../gqty'
 import { WouterLinkAdapter } from '../WouterLinkAdapter'
 
 interface PluginListProps {
@@ -23,56 +25,83 @@ interface PluginListProps {
 	onItemSelect?: () => void
 }
 
-export const PluginList: React.FC<PluginListProps> = ({ pluginName, onItemSelect }) => {
+const toStatusesMap = (entries: PluginStatusEntry[] | undefined): PluginStatuses => {
+	if (!entries?.length) return {}
+	return Object.fromEntries(
+		entries
+			.filter((item): item is PluginStatusEntry => Boolean(item?.name))
+			.map((item) => {
+				const id = item.name as string
+				return [id, { id, name: item.name ?? id, isRunning: Boolean(item.isRunning) }]
+			}),
+	)
+}
+
+const toGroupConfigs = (groups: PluginGroup[] | undefined): GroupConfig[] =>
+	(groups ?? [])
+		.filter((group): group is PluginGroup => Boolean(group?.groupId))
+		.map((group) => ({
+			groupId: group.groupId as string,
+			name: group.name ?? '',
+			pluginIds: [...(group.pluginIds ?? [])],
+		}))
+
+export const PluginList: React.FC<PluginListProps> = ({ pluginName }) => {
 	const [q, setQ] = useState('')
+	const query = useGqtyQuery({ suspense: false })
 
-	const statusesQ = useQuery({
-		queryKey: ['plugins'] as const,
-		queryFn: async () => {
-			const res = await client.plugins.$get()
-			if (!res.ok) throw new Error(`拉取插件列表失败: ${res.status}`)
-			return res.json()
-		},
-		staleTime: 60_000,
-		refetchOnMount: false,
-		refetchOnWindowFocus: false,
-	})
+	const pluginStatus = query.pluginStatus
+	const pluginGroups = query.pluginGroups
 
-	const groupsQ = useQuery<GroupConfig[], Error>({
-		queryKey: ['plugins', 'groups'] as const,
-		queryFn: async () => {
-			const res = await client.plugins.groups.$get({ json: [] })
-			if (!res.ok) throw new Error(`拉取分组配置失败: ${res.status}`)
-			return res.json()
-		},
-		staleTime: 60_000,
-		refetchOnMount: false,
-		refetchOnWindowFocus: false,
-	})
+	const statuses = useMemo(
+		() => toStatusesMap(pluginStatus?.statuses as PluginStatusEntry[] | undefined),
+		[pluginStatus?.statuses],
+	)
+	const groups = useMemo(
+		() => toGroupConfigs(pluginGroups as PluginGroup[] | undefined),
+		[pluginGroups],
+	)
 
-	const loading = statusesQ.isPending || groupsQ.isPending
-	const errored = statusesQ.isError || groupsQ.isError
+	const total = pluginStatus?.summary?.total ?? 0
+	const totalRunnings = pluginStatus?.summary?.running ?? 0
 
-	const handleChange = async (next: GroupConfig[]) => {
-		try {
-			const res = await client.plugins.groups.$post({ json: next })
-			if (!res.ok) {
-				const text = await res.text()
-				throw new Error(text || `同步分组失败: ${res.status}`)
-			}
-		} catch (error: any) {
-			showNotification({
-				title: '同步失败',
-				message: error?.message || '分组同步出错',
-				color: 'red',
+	const { isLoading, error } = query.$state
+	const isInitialLoading = isLoading && !Object.keys(statuses).length && groups.length === 0
+
+	const [mutateGroups] = useGqtyMutation(
+		(mutation, args: { groups: GroupConfig[] }) => {
+			const updated = mutation.updatePluginGroups({
+				groups: args.groups.map((group) => ({
+					groupId: group.groupId,
+					name: group.name,
+					pluginIds: [...group.pluginIds],
+				})),
 			})
-		}
-	}
+			updated?.forEach((group) => {
+				group?.groupId
+				group?.name
+				group?.pluginIds?.length
+			})
+			return updated
+		},
+		{ suspense: false },
+	)
 
-	const total = statusesQ.data?.summary.total
-	const totalRunnings = statusesQ.data?.summary.running
+	const handleChange = useCallback(
+		async (next: GroupConfig[]) => {
+			try {
+				await mutateGroups({ args: { groups: next } })
+			} catch (err: any) {
+				showNotification({
+					title: '同步失败',
+					message: err?.message || '分组同步出错',
+					color: 'red',
+				})
+			}
+		},
+		[mutateGroups],
+	)
 
-	// 清除按钮
 	const clearBtn = useMemo(
 		() =>
 			q ? (
@@ -89,7 +118,7 @@ export const PluginList: React.FC<PluginListProps> = ({ pluginName, onItemSelect
 				<Title order={6} fw={600} c="dimmed">
 					浏览与分组
 				</Title>
-				{!loading && !errored && (
+				{!isInitialLoading && !error && (
 					<Group gap="xs">
 						<Badge variant="light" size="sm" suppressHydrationWarning>
 							共 {total}
@@ -112,25 +141,25 @@ export const PluginList: React.FC<PluginListProps> = ({ pluginName, onItemSelect
 
 			<Divider />
 
-			{loading ? (
+			{isInitialLoading ? (
 				<>
 					<Skeleton height={16} />
 					<Skeleton height={16} width="85%" />
 					<Skeleton height={16} width="70%" />
 					<Skeleton height={120} />
 				</>
-			) : errored ? (
-				<Text c="red">加载失败，请稍后重试</Text>
-			) : statusesQ.isSuccess && groupsQ.isSuccess ? (
+			) : error ? (
+				<Text c="red">{error.message || '加载失败，请稍后重试'}</Text>
+			) : (
 				<PluginOrganizer
-					statuses={statusesQ.data.statuses}
-					initialGroups={groupsQ.data}
+					statuses={statuses}
+					initialGroups={groups}
 					activeId={pluginName}
 					onGroupsChange={handleChange}
 					filterQuery={q}
 					LinkComponent={WouterLinkAdapter}
 				/>
-			) : null}
+			)}
 		</Stack>
 	)
 }

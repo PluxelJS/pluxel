@@ -1,6 +1,7 @@
 import { BasePlugin, Plugin } from '@pluxel/core'
 import * as v from 'valibot'
-import { bookResolver } from './demo-parent'
+// biome-ignore lint/correctness/noUnusedImports: <explanation>
+import { demoBookModule } from './demo-parent'
 
 @Plugin({ name: 'PluginC', type: 'hook' })
 export class PluginC extends BasePlugin {
@@ -15,6 +16,6 @@ export class PluginC extends BasePlugin {
 				.resolve(({ name }) => `Hello, ${name}!`),
 		})
 		graphService.useModule(helloResolver)
-		graphService.useModule(bookResolver)
+		graphService.useModule(demoBookModule)
 	}
 }

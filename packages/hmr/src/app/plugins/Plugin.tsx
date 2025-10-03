@@ -12,19 +12,15 @@ import {
 	Title,
 } from '@mantine/core'
 import { keepPreviousData, useQuery } from '@tanstack/react-query'
-import React, { memo, useEffect, useMemo, useRef, useState } from 'react'
+import React, { memo, useCallback } from 'react'
 import { Link } from 'wouter'
 import { LiveLog as LiveLogRaw } from '../log_viewer/LiveLog'
-import { client, type InferSuccessResponse } from '../rpc'
+import { client } from '../rpc'
+import { useQuery as useGqtyQuery, useRefetch } from '../gqty'
+import type { PluginScope } from '../gqty'
 import { ActionBar } from './ActionBar'
 import { ConfigForm } from './ConfigForm'
 import { DependencyList } from './DependencyList'
-
-const $get = client.plugins[':name'].$get
-type Response = InferSuccessResponse<typeof $get>
-export type Dependencies = Response['dependencies']
-type SafeDeps = NonNullable<Dependencies>
-const EMPTY_DEPS = Object.freeze([]) as unknown as SafeDeps
 
 /* ---------- 常量 ---------- */
 
@@ -57,43 +53,19 @@ const FLEX_0_LEFT = {
 // 在使用点包一层，确保 memo
 const LiveLog = memo(LiveLogRaw)
 
-/* ---------- 小工具：去抖布尔 ---------- */
-function useDebouncedFlag(value: boolean, delay = 200) {
-	const [v, setV] = useState(value)
-	useEffect(() => {
-		if (value) {
-			const t = setTimeout(() => setV(true), delay)
-			return () => clearTimeout(t)
-		}
-		// 关闭时立即关（不积累延迟），减少“冒泡”时间
-		setV(false)
-	}, [value, delay])
-	return v
-}
-
 /* ========== 左卡 ========== */
 const LeftPane = memo(function LeftPane(props: {
-	pluginName: string
-	deps: SafeDeps
-	desc: string
-	syncing: boolean
+	scope: PluginScope | undefined
+	fallbackName: string
+	isSyncing: boolean
+	onStatusUpdated: () => Promise<void> | void
 }) {
-	const { pluginName, deps, desc, syncing } = props
+	const { scope, fallbackName, isSyncing, onStatusUpdated } = props
+	const displayName = scope?.name ?? fallbackName
+	const detail = scope?.detail
+	const desc = detail?.desc ?? ''
+	const isRunning = Boolean(scope?.status?.isRunning)
 
-	const $getStatus = client.plugins[':name'].status.$get
-	const q = useQuery({
-		queryKey: ['plugin', pluginName, 'status'] as const,
-		enabled: !!pluginName,
-		queryFn: async () => {
-			const res = await $getStatus({ param: { name: pluginName } })
-			if (!res.ok) throw new Error('获取插件状态出错')
-			return res.json()
-		},
-		placeholderData: keepPreviousData,
-		staleTime: 60_000,
-	})
-
-	const isRunning = q.data?.isRunning ?? false
 	return (
 		<Card withBorder shadow="sm" style={CARD_FLEX_COL}>
 			<CardSection withBorder px="md" py="sm">
@@ -106,24 +78,25 @@ const LeftPane = memo(function LeftPane(props: {
 									textOverflow: 'ellipsis',
 									whiteSpace: 'nowrap',
 								}}
-								title={pluginName}
+									title={displayName}
 							>
-								插件：{pluginName}
+									插件：{displayName}
 							</Box>
 						</Title>
 						<Badge variant="light" color={isRunning ? 'green' : 'gray'} radius="sm">
 							{isRunning ? '运行中' : '已停止'}
 						</Badge>
-						<Badge
-							variant="dot"
-							color="blue"
-							radius="sm"
-							style={{ visibility: syncing ? 'visible' : 'hidden' }}
-						>
-							同步中…
-						</Badge>
+						{isSyncing && (
+							<Badge variant="dot" color="blue" radius="sm">
+								同步中…
+							</Badge>
+						)}
 					</Group>
-					<ActionBar pluginName={pluginName} isSelfRunning={isRunning} dependencies={deps} />
+					<ActionBar
+						scope={scope}
+						fallbackName={displayName}
+						onStatusUpdated={onStatusUpdated}
+					/>
 				</Group>
 			</CardSection>
 
@@ -150,13 +123,7 @@ const LeftPane = memo(function LeftPane(props: {
 
 					<Divider label="依赖" />
 					<Box style={{ flexShrink: 0 }}>
-						{deps.length ? (
-							<DependencyList dependencies={deps} LinkComponent={Link} />
-						) : (
-							<Text c="dimmed" size="sm">
-								无依赖
-							</Text>
-						)}
+						<DependencyList scope={scope} LinkComponent={Link} />
 					</Box>
 
 					<Divider label="实时日志" />
@@ -172,7 +139,7 @@ const LeftPane = memo(function LeftPane(props: {
 						}}
 					>
 						{/* LiveLog 的 props 保持稳定：仅 module=name */}
-						<LiveLog module={pluginName} />
+							<LiveLog module={displayName} />
 					</Box>
 				</Box>
 			</CardSection>
@@ -215,14 +182,11 @@ const RightPane = memo(function RightPane(props: { pluginName: string; syncing: 
 					<Title order={4} fw={600}>
 						配置
 					</Title>
-					<Badge
-						variant="dot"
-						color="blue"
-						radius="sm"
-						style={{ visibility: syncing ? 'visible' : 'hidden' }}
-					>
-						同步中…
-					</Badge>
+					{syncing && (
+						<Badge variant="dot" color="blue" radius="sm">
+							同步中…
+						</Badge>
+					)}
 				</Group>
 			</CardSection>
 
@@ -265,41 +229,57 @@ function PluginSkeleton() {
 
 /* ========== 主组件 ========== */
 export const Plugin = memo(function Plugin({ pluginName }: { pluginName: string }) {
-	// 主信息查询：用 select 归一化字段与引用
-	const q = useQuery({
-		queryKey: ['plugin', pluginName] as const,
-		enabled: !!pluginName,
-		queryFn: async () => {
-			const res = await $get({ param: { name: pluginName } })
-			if (!res.ok) {
-				const { error } = await res.json()
-				// 将“未找到”类错误提升到 message
-				throw new Error(error || '加载失败')
-			}
-			return res.json() as Promise<Response>
-		},
-		placeholderData: keepPreviousData,
-		staleTime: 60_000,
-		gcTime: 5 * 60_000,
-		refetchOnMount: false,
-		refetchOnWindowFocus: false,
-		refetchOnReconnect: 'always',
-		// —— 关键：select 里稳定空集合，减少子树无谓重渲染 —— //
-		select: (
-			r,
-		): {
-			name: string
-			deps: SafeDeps
-			desc: string
-		} => ({
-			name: r?.name ?? pluginName,
-			deps: r?.dependencies?.length ? (r.dependencies as SafeDeps) : EMPTY_DEPS,
-			desc: r?.desc ?? '',
-		}),
-	})
+	const query = useGqtyQuery({ suspense: false })
+	const refetch = useRefetch()
 
-	// 去抖同步状态，避免闪烁引发的重渲染
-	const syncing = useDebouncedFlag(q.isFetching, 160)
+	const scope = pluginName ? query.plugin({ name: pluginName }) : undefined
+	const detail = scope?.detail
+	const status = scope?.status
+
+	const displayName = scope?.name ?? pluginName
+	const isSyncing = query.$state.isLoading
+
+	const refetchPlugin = useCallback(() => {
+		if (!pluginName) return Promise.resolve(undefined)
+		return refetch((root) => {
+			const next = root.plugin({ name: pluginName })
+			next.status.isRunning
+			next.detail.desc
+			next.detail.dependencies?.map((dep) => {
+				dep?.name
+				dep?.isRunning
+				dep?.optional
+				return null
+			})
+			return next.status.isRunning
+		})
+	}, [pluginName, refetch])
+
+	const refetchPluginStatus = useCallback(
+		() =>
+			refetch((root) => {
+				const overview = root.pluginStatus
+				overview.summary.total
+				overview.summary.running
+				overview.statuses?.map((item) => {
+					item?.name
+					item?.isRunning
+					return null
+				})
+				return overview.summary.total
+			}),
+		[refetch],
+	)
+
+	const handleStatusUpdated = useCallback(
+		async () => {
+			await Promise.all([refetchPlugin(), refetchPluginStatus()])
+		},
+		[refetchPlugin, refetchPluginStatus],
+	)
+
+	const hasData = Boolean(detail && status)
+	const error = query.$state.error
 
 	if (!pluginName) {
 		return (
@@ -311,31 +291,34 @@ export const Plugin = memo(function Plugin({ pluginName }: { pluginName: string 
 		)
 	}
 
-	if (q.isError && !q.data) {
+	if (error && !hasData) {
 		return (
 			<Center h="100%" style={{ gap: 12, flexDirection: 'column' }}>
-				<Text c="red">{(q.error as Error).message || '加载失败，请重试'}</Text>
-				<Button size="xs" onClick={() => q.refetch()}>
+				<Text c="red">{error.message || '加载失败，请重试'}</Text>
+				<Button size="xs" onClick={() => void refetchPlugin()}>
 					重试
 				</Button>
 			</Center>
 		)
 	}
 
-	if (q.isPending && !q.data) return <PluginSkeleton />
-
-	const { name, deps, desc } = q.data!
+	if (!hasData) return <PluginSkeleton />
 
 	return (
 		<Box h="100%" style={{ ...ROW_WRAP }}>
 			{/* 左列：固定宽度 */}
 			<Box style={{ ...FLEX_0_LEFT }}>
-				<LeftPane pluginName={name} deps={deps} desc={desc} syncing={syncing} />
+				<LeftPane
+					scope={scope as PluginScope | undefined}
+					fallbackName={displayName}
+					isSyncing={isSyncing}
+					onStatusUpdated={handleStatusUpdated}
+				/>
 			</Box>
 
 			{/* 右列：占满剩余，内部独立滚动 */}
 			<Box style={{ ...FLEX_1 }}>
-				<RightPane pluginName={name} syncing={syncing} />
+				<RightPane pluginName={displayName} syncing={isSyncing} />
 			</Box>
 		</Box>
 	)
