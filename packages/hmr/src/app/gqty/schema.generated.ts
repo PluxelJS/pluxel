@@ -52,6 +52,13 @@ export const scalarsEnumsHash: ScalarsEnumsHash = {
   UpdatePluginStatusStatusInput: true,
 };
 export const generatedSchema = {
+  Book: {
+    __typename: { __type: "String!" },
+    author: { __type: "User" },
+    authorID: { __type: "Float!" },
+    id: { __type: "Float!" },
+    title: { __type: "String!" },
+  },
   BuildSnapshotResult: {
     __typename: { __type: "String!" },
     error: { __type: "String" },
@@ -113,6 +120,11 @@ export const generatedSchema = {
     name: { __type: "String!" },
     pluginIds: { __type: "[String!]!" },
   },
+  User: {
+    __typename: { __type: "String!" },
+    id: { __type: "Float!" },
+    name: { __type: "String!" },
+  },
   mutation: {
     __typename: { __type: "String!" },
     buildSnapshot: { __type: "BuildSnapshotResult!" },
@@ -128,6 +140,8 @@ export const generatedSchema = {
   query: {
     __typename: { __type: "String!" },
     _empty: { __type: "String!" },
+    books: { __type: "[Book!]!" },
+    hello: { __type: "String!", __args: { name: "String" } },
     plugin: { __type: "PluginScope!", __args: { name: "String!" } },
     pluginGroups: { __type: "[PluginGroup!]!" },
     pluginId: { __type: "PluginIdScope!", __args: { name: "String!" } },
@@ -135,6 +149,14 @@ export const generatedSchema = {
   },
   subscription: {},
 } as const;
+
+export interface Book {
+  __typename?: "Book";
+  author?: Maybe<User>;
+  authorID: ScalarsEnums["Float"];
+  id: ScalarsEnums["Float"];
+  title: ScalarsEnums["String"];
+}
 
 export interface BuildSnapshotResult {
   __typename?: "BuildSnapshotResult";
@@ -202,6 +224,12 @@ export interface PluginStatusSummary {
   total: ScalarsEnums["Float"];
 }
 
+export interface User {
+  __typename?: "User";
+  id: ScalarsEnums["Float"];
+  name: ScalarsEnums["String"];
+}
+
 export interface Mutation {
   __typename?: "Mutation";
   buildSnapshot: BuildSnapshotResult;
@@ -217,6 +245,10 @@ export interface Mutation {
 export interface Query {
   __typename?: "Query";
   _empty: ScalarsEnums["String"];
+  books: Array<Book>;
+  hello: (args?: {
+    name?: Maybe<ScalarsEnums["String"]>;
+  }) => ScalarsEnums["String"];
   plugin: (args: { name: ScalarsEnums["String"] }) => PluginScope;
   pluginGroups: Array<PluginGroup>;
   pluginId: (args: { name: ScalarsEnums["String"] }) => PluginIdScope;

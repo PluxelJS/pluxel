@@ -6,8 +6,8 @@ export function Header({ onMenu }: { onMenu: () => void }) {
 	const [buildSnapshot, buildState] = useGqtyMutation((mutation) => {
 		const result = mutation.buildSnapshot
 		result.ok
-		result.path
 		result.error
+		result.path
 		return result
 	})
 

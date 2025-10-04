@@ -1,7 +1,6 @@
 // render.tsx
 import { reactRenderer } from '@hono/react-renderer'
 import { ColorSchemeScript, MantineProvider } from '@mantine/core'
-import { HydrationBoundary, QueryClientProvider } from '@tanstack/react-query'
 import { Router } from 'wouter'
 
 const PUBLIC_BASE =
@@ -9,6 +8,7 @@ const PUBLIC_BASE =
 const PROD = import.meta.env.PROD
 
 import rawManifest from '../public/.vite/manifest.json' assert { type: 'json' }
+import { prepareReactRender } from './app/gqty'
 
 type MfEntry = {
 	file: string
@@ -66,8 +66,19 @@ const ASSETS = (() => {
 	}
 })()
 
-export const renderMiddleware = reactRenderer(({ c, children }) => {
-	const { qc, dehydratedState } = c.var
+export const renderMiddleware = reactRenderer(async ({ c, children }) => {
+	const shell = (
+		<MantineProvider withGlobalClasses={false} deduplicateCssVariables={false}>
+			<Router
+				ssrPath={c.req.path}
+				ssrSearch={c.req.url.split('?')[1] || ''}
+			>
+				{children}
+			</Router>
+		</MantineProvider>
+	)
+
+	const { cacheSnapshot } = await prepareReactRender(shell)
 
 	return (
 		<html lang="zh">
@@ -85,31 +96,12 @@ export const renderMiddleware = reactRenderer(({ c, children }) => {
 				<script type="module" src={ASSETS.js} />
 			</head>
 			<body>
-				<div id="root">
-					<QueryClientProvider client={qc}>
-						<HydrationBoundary state={dehydratedState}>
-							<MantineProvider
-								withGlobalClasses={false}
-								deduplicateCssVariables={false}
-							>
-								<Router
-									ssrPath={c.req.path}
-									ssrSearch={c.req.url.split('?')[1] || ''}
-								>
-									{children}
-								</Router>
-							</MantineProvider>
-						</HydrationBoundary>
-					</QueryClientProvider>
-				</div>
-
-				{dehydratedState && (
+				<div id="root">{shell}</div>
+				{cacheSnapshot && (
 					<script
-						id="__REACT_QUERY_STATE__"
+						id="__GQTY_CACHE__"
 						type="application/json"
-						dangerouslySetInnerHTML={{
-							__html: JSON.stringify(dehydratedState),
-						}}
+						dangerouslySetInnerHTML={{ __html: cacheSnapshot }}
 					/>
 				)}
 			</body>

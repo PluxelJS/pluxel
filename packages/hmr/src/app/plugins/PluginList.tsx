@@ -10,14 +10,15 @@ import {
 	Title,
 } from '@mantine/core'
 import { showNotification } from '@mantine/notifications'
-import { type GroupConfig, type PluginStatuses, PluginOrganizer } from '@pluxel/components'
+import { type GroupConfig, PluginOrganizer, type PluginStatuses } from '@pluxel/components'
 import { IconSearch, IconX } from '@tabler/icons-react'
 import { useCallback, useMemo, useState } from 'react'
 import {
+	type PluginGroup,
+	type PluginStatusEntry,
 	useMutation as useGqtyMutation,
-	useQuery as useGqtyQuery,
+	useQuery,
 } from '../gqty'
-import type { PluginGroup, PluginStatusEntry } from '../gqty'
 import { WouterLinkAdapter } from '../WouterLinkAdapter'
 
 interface PluginListProps {
@@ -25,92 +26,142 @@ interface PluginListProps {
 	onItemSelect?: () => void
 }
 
-const toStatusesMap = (entries: PluginStatusEntry[] | undefined): PluginStatuses => {
-	if (!entries?.length) return {}
-	return Object.fromEntries(
-		entries
-			.filter((item): item is PluginStatusEntry => Boolean(item?.name))
-			.map((item) => {
-				const id = item.name as string
-				return [id, { id, name: item.name ?? id, isRunning: Boolean(item.isRunning) }]
-			}),
+type OverviewSnapshot = {
+	statuses: PluginStatuses
+	groups: GroupConfig[]
+	total: number
+	running: number
+}
+
+const EMPTY_OVERVIEW: OverviewSnapshot = Object.freeze({
+	statuses: Object.freeze({}) as PluginStatuses,
+	groups: Object.freeze([]) as GroupConfig[],
+	total: 0,
+	running: 0,
+})
+
+const toStatuses = (entries: Array<PluginStatusEntry | null | undefined> | undefined) => {
+	if (!entries?.length) return EMPTY_OVERVIEW.statuses
+
+	const snapshot: PluginStatuses = Object.create(null)
+	for (const entry of entries) {
+		const name = entry?.name
+		if (!name) continue
+		snapshot[name] = Object.freeze({
+			id: name,
+			name,
+			isRunning: Boolean(entry?.isRunning),
+		})
+	}
+	return Object.freeze(snapshot) as PluginStatuses
+}
+
+const toGroups = (groups: Array<PluginGroup | null | undefined> | undefined) => {
+	if (!groups?.length) return EMPTY_OVERVIEW.groups
+
+	return Object.freeze(
+		groups.map((group) => ({
+			groupId: group?.groupId ?? '',
+			name: group?.name ?? '',
+			pluginIds: Object.freeze([...(group?.pluginIds ?? [])]) as string[],
+		})),
 	)
 }
 
-const toGroupConfigs = (groups: PluginGroup[] | undefined): GroupConfig[] =>
-	(groups ?? [])
-		.filter((group): group is PluginGroup => Boolean(group?.groupId))
-		.map((group) => ({
-			groupId: group.groupId as string,
-			name: group.name ?? '',
-			pluginIds: [...(group.pluginIds ?? [])],
-		}))
+const buildOverview = (args: {
+	statuses: Array<PluginStatusEntry | null | undefined> | undefined
+	groups: Array<PluginGroup | null | undefined> | undefined
+	summary?: { total?: number | null; running?: number | null } | null
+}) => {
+	const { statuses, groups, summary } = args
+	const summaryStatuses = toStatuses(statuses)
+	let computedRunning = 0
+	for (const entry of Object.values(summaryStatuses)) if (entry?.isRunning) computedRunning += 1
+
+	const total =
+		typeof summary?.total === 'number' ? summary.total : Object.keys(summaryStatuses).length
+	const running = typeof summary?.running === 'number' ? summary.running : computedRunning
+
+	return Object.freeze({
+		statuses: summaryStatuses,
+		groups: toGroups(groups),
+		total,
+		running,
+	}) satisfies OverviewSnapshot
+}
 
 export const PluginList: React.FC<PluginListProps> = ({ pluginName }) => {
-	const [q, setQ] = useState('')
-	const query = useGqtyQuery({ suspense: false })
+	const [search, setSearch] = useState('')
 
-	const pluginStatus = query.pluginStatus
-	const pluginGroups = query.pluginGroups
+	const query = useQuery({
+		suspense: false,
+		operationName: 'PluginOverview',
+		notifyOnNetworkStatusChange: true,
+		refetchOnReconnect: false,
+		refetchOnWindowVisible: false,
+		fetchInBackground: true,
+	})
 
-	const statuses = useMemo(
-		() => toStatusesMap(pluginStatus?.statuses as PluginStatusEntry[] | undefined),
-		[pluginStatus?.statuses],
-	)
-	const groups = useMemo(
-		() => toGroupConfigs(pluginGroups as PluginGroup[] | undefined),
-		[pluginGroups],
-	)
-
-	const total = pluginStatus?.summary?.total ?? 0
-	const totalRunnings = pluginStatus?.summary?.running ?? 0
-
-	const { isLoading, error } = query.$state
-	const isInitialLoading = isLoading && !Object.keys(statuses).length && groups.length === 0
+	const overview = useMemo(() => {
+		try {
+			return buildOverview({
+				statuses: query.pluginStatus?.statuses,
+				groups: query.pluginGroups,
+				summary: query.pluginStatus?.summary,
+			})
+		} catch (error) {
+			console.error('[PluginList] Failed to build overview snapshot', error)
+			return EMPTY_OVERVIEW
+		}
+	}, [query.pluginGroups, query.pluginStatus?.statuses, query.pluginStatus?.summary])
 
 	const [mutateGroups] = useGqtyMutation(
-		(mutation, args: { groups: GroupConfig[] }) => {
-			const updated = mutation.updatePluginGroups({
-				groups: args.groups.map((group) => ({
+		(
+			mutation,
+			variables: { args: { groups: GroupConfig[] } },
+		) => {
+			const { groups } = variables.args
+			const result = mutation.updatePluginGroups({
+				groups: groups.map((group) => ({
 					groupId: group.groupId,
 					name: group.name,
 					pluginIds: [...group.pluginIds],
 				})),
 			})
-			updated?.forEach((group) => {
-				group?.groupId
-				group?.name
-				group?.pluginIds?.length
-			})
-			return updated
+			result?.length
+			return result
 		},
 		{ suspense: false },
 	)
 
-	const handleChange = useCallback(
+	const handleGroupsChange = useCallback(
 		async (next: GroupConfig[]) => {
 			try {
 				await mutateGroups({ args: { groups: next } })
-			} catch (err: any) {
+				await query.$refetch(true)
+			} catch (error: any) {
 				showNotification({
 					title: '同步失败',
-					message: err?.message || '分组同步出错',
+					message: error?.message || '分组同步出错',
 					color: 'red',
 				})
 			}
 		},
-		[mutateGroups],
+		[mutateGroups, query],
 	)
 
 	const clearBtn = useMemo(
 		() =>
-			q ? (
-				<ActionIcon size="sm" variant="subtle" onClick={() => setQ('')}>
+			search ? (
+				<ActionIcon size="sm" variant="subtle" onClick={() => setSearch('')}>
 					<IconX size={14} />
 				</ActionIcon>
 			) : undefined,
-		[q],
+		[search],
 	)
+
+	const loading = query.$state.isLoading
+	const errorMessage = query.$state.error?.message
 
 	return (
 		<Stack gap="sm">
@@ -118,13 +169,13 @@ export const PluginList: React.FC<PluginListProps> = ({ pluginName }) => {
 				<Title order={6} fw={600} c="dimmed">
 					浏览与分组
 				</Title>
-				{!isInitialLoading && !error && (
+				{!loading && !errorMessage && (
 					<Group gap="xs">
 						<Badge variant="light" size="sm" suppressHydrationWarning>
-							共 {total}
+							共 {overview.total}
 						</Badge>
 						<Badge variant="light" size="sm" color="green" suppressHydrationWarning>
-							运行中 {totalRunnings}
+							运行中 {overview.running}
 						</Badge>
 					</Group>
 				)}
@@ -132,8 +183,8 @@ export const PluginList: React.FC<PluginListProps> = ({ pluginName }) => {
 
 			<TextInput
 				placeholder="搜索插件（名称 / ID）"
-				value={q}
-				onChange={(e) => setQ(e.currentTarget.value)}
+				value={search}
+				onChange={(e) => setSearch(e.currentTarget.value)}
 				leftSection={<IconSearch size={14} />}
 				rightSection={clearBtn}
 				size="xs"
@@ -141,24 +192,26 @@ export const PluginList: React.FC<PluginListProps> = ({ pluginName }) => {
 
 			<Divider />
 
-			{isInitialLoading ? (
+			{loading ? (
 				<>
 					<Skeleton height={16} />
 					<Skeleton height={16} width="85%" />
 					<Skeleton height={16} width="70%" />
 					<Skeleton height={120} />
 				</>
-			) : error ? (
-				<Text c="red">{error.message || '加载失败，请稍后重试'}</Text>
-			) : (
+			) : errorMessage ? (
+				<Text c="red">{errorMessage}</Text>
+			) : overview.total > 0 ? (
 				<PluginOrganizer
-					statuses={statuses}
-					initialGroups={groups}
+					statuses={overview.statuses}
+					initialGroups={overview.groups as any}
 					activeId={pluginName}
-					onGroupsChange={handleChange}
-					filterQuery={q}
+					onGroupsChange={handleGroupsChange}
+					filterQuery={search}
 					LinkComponent={WouterLinkAdapter}
 				/>
+			) : (
+				<Text c="dimmed">暂无插件</Text>
 			)}
 		</Stack>
 	)

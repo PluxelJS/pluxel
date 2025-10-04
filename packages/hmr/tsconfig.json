@@ -2,7 +2,7 @@
 {
 	"extends": "../../tsconfig.src.json",
 	"include": [
-		"src",
+		"src/**",
 		// 显式收编 manifest；或改成 "public/**/*.json"
 		"public/.vite/manifest.json"
 	],
@@ -15,7 +15,10 @@
 		"module": "ESNext",
 		"moduleResolution": "Bundler",
 		"emitDeclarationOnly": true,
-		"lib": ["DOM", "ES2022"]
+		"lib": [
+			"DOM",
+			"ES2022"
+		]
 	},
 	"references": []
 }

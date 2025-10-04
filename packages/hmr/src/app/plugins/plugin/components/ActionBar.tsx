@@ -2,24 +2,11 @@ import { ActionIcon, Group, Tooltip } from '@mantine/core'
 import { openConfirmModal } from '@mantine/modals'
 import { notifications } from '@mantine/notifications'
 import { IconPlayerPlay, IconRotateClockwise, IconSquareX } from '@tabler/icons-react'
-import { useMemo } from 'react'
-import {
-	UpdatePluginStatusStatusInput,
-	useMutation as useGqtyMutation,
-} from '../gqty'
-import type { PluginDependency, PluginScope } from '../gqty'
-
-interface DependencySnapshot {
-	name: string
-	optional: boolean
-	isRunning: boolean
-}
-
-const EMPTY_DEPS: DependencySnapshot[] = []
+import { useCallback } from 'react'
+import { UpdatePluginStatusStatusInput, useMutation as useGqtyMutation } from '../../../gqty'
+import { usePluginScope } from '../context'
 
 export interface ActionBarProps {
-	scope?: PluginScope
-	fallbackName: string
 	onStatusUpdated?: () => Promise<void> | void
 }
 
@@ -29,27 +16,21 @@ const ACTION_LABEL: Record<UpdatePluginStatusStatusInput, string> = {
 	restart: '重启',
 }
 
-export function ActionBar({ scope, fallbackName, onStatusUpdated }: ActionBarProps) {
-	const pluginName = scope?.name ?? fallbackName
-	const dependencies = useMemo<DependencySnapshot[]>(() => {
-		const list = scope?.detail?.dependencies as PluginDependency[] | undefined
-		if (!list?.length) return EMPTY_DEPS
-		return list
-			.filter(Boolean)
-			.map((dep) => ({
-				name: dep?.name ?? '',
-				optional: Boolean(dep?.optional),
-				isRunning: Boolean(dep?.isRunning),
-			}))
-	}, [scope?.detail?.dependencies])
-	const isSelfRunning = Boolean(scope?.status?.isRunning)
+export function ActionBar({ onStatusUpdated }: ActionBarProps) {
+	const { pluginName, dependencies, isRunning, refetch } = usePluginScope()
+
+	const handleStatusUpdated = useCallback(async () => {
+		await refetch()
+		await onStatusUpdated?.()
+	}, [onStatusUpdated, refetch])
+
 	const [mutateStatus, mutationState] = useGqtyMutation(
-		(mutation, args: { status: UpdatePluginStatusStatusInput; plugin: string }) => {
+		(mutation, variables: { args: { plugin: string; status: UpdatePluginStatusStatusInput } }) => {
+			const { plugin, status } = variables.args
 			const result = mutation.updatePluginStatus({
-				name: args.plugin,
-				status: args.status,
+				name: plugin,
+				status,
 			})
-			// 选择关键字段以生成完整的 GraphQL 语句
 			result.code
 			result.error
 			result.isRunning
@@ -61,7 +42,7 @@ export function ActionBar({ scope, fallbackName, onStatusUpdated }: ActionBarPro
 	const performAction = async (status: UpdatePluginStatusStatusInput) => {
 		if (!pluginName) return
 		try {
-			const result = await mutateStatus({ args: { status, plugin: pluginName } })
+			const result = await mutateStatus({ args: { plugin: pluginName, status } })
 			if (!result) return
 			if (result.code !== 'success') {
 				notifications.show({
@@ -72,12 +53,12 @@ export function ActionBar({ scope, fallbackName, onStatusUpdated }: ActionBarPro
 				return
 			}
 
-				notifications.show({
+			notifications.show({
 				title: '插件状态已更新',
 				message: `${pluginName} ${ACTION_LABEL[status]}成功`,
 				color: 'green',
 			})
-			await onStatusUpdated?.()
+			await handleStatusUpdated()
 		} catch (error: any) {
 			notifications.show({
 				title: '插件状态更新失败',
@@ -121,7 +102,7 @@ export function ActionBar({ scope, fallbackName, onStatusUpdated }: ActionBarPro
 					variant="light"
 					size="lg"
 					onClick={() => handleAction(UpdatePluginStatusStatusInput.start)}
-					disabled={!canToggle || isSelfRunning}
+					disabled={!canToggle || isRunning}
 				>
 					<IconPlayerPlay size={18} />
 				</ActionIcon>
@@ -133,7 +114,7 @@ export function ActionBar({ scope, fallbackName, onStatusUpdated }: ActionBarPro
 					size="lg"
 					color="red"
 					onClick={() => handleAction(UpdatePluginStatusStatusInput.stop)}
-					disabled={!canToggle || !isSelfRunning}
+					disabled={!canToggle || !isRunning}
 				>
 					<IconSquareX size={18} />
 				</ActionIcon>
@@ -145,7 +126,7 @@ export function ActionBar({ scope, fallbackName, onStatusUpdated }: ActionBarPro
 					size="lg"
 					color="green"
 					onClick={() => handleAction(UpdatePluginStatusStatusInput.restart)}
-					disabled={!canToggle || !isSelfRunning}
+					disabled={!canToggle || !isRunning}
 				>
 					<IconRotateClockwise size={18} />
 				</ActionIcon>

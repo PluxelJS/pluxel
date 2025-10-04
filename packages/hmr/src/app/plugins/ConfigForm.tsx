@@ -16,9 +16,8 @@ import { useHotkeys } from '@mantine/hooks'
 import { notifications } from '@mantine/notifications'
 import { AutoForm } from '@pluxel/components'
 import { formOptions } from '@tanstack/react-form'
-import { useMutation } from '@tanstack/react-query'
 import type { InferRequestType, InferResponseType } from 'hono/client'
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { InferOutput, ObjectSchema } from 'valibot'
 import { getDefaults } from 'valibot'
 import { client } from '../rpc'
@@ -149,27 +148,31 @@ function ConfigTabPanel({
 	savedAt?: number
 }) {
 	const $post = client.plugins[':name'].config.$post
-	type Payload = InferRequestType<typeof $post>['json'] & {
-		signal?: AbortSignal
-	}
+	type BasePayload = InferRequestType<typeof $post>['json']
+	type Payload = BasePayload & { signal?: AbortSignal }
 	type Response = InferResponseType<typeof $post>
 
-	const mutation = useMutation<Response, Error, Payload>({
-		mutationFn: async (body) => {
-			const res = await $post(
-				{ param: { name: pluginName }, json: body },
-				{ init: { signal: body.signal } },
-			)
-			return res.json()
+	const mutate = useCallback(
+		async (body: Payload): Promise<Response> => {
+			const { signal, ...payload } = body
+			try {
+				const res = await $post(
+					{ param: { name: pluginName }, json: payload as BasePayload },
+					{ init: { signal } },
+				)
+				return (await res.json()) as Response
+			} catch (error: any) {
+				if (signal?.aborted) throw error
+				notifications.show({
+					title: '网络或服务器错误',
+					message: String(error?.message ?? error),
+					color: 'red',
+				})
+				throw (error instanceof Error ? error : new Error(String(error)))
+			}
 		},
-		onError: (err) => {
-			notifications.show({
-				title: '网络或服务器错误',
-				message: String(err?.message ?? err),
-				color: 'red',
-			})
-		},
-	})
+		[$post, pluginName],
+	)
 
 	const opts = useMemo(
 		() =>
@@ -179,7 +182,7 @@ function ConfigTabPanel({
 				asyncDebounceMs: 200,
 				validators: {
 					onChangeAsync: async ({ value, signal }) => {
-						const result = await mutation.mutateAsync({
+						const result = await mutate({
 							isSubmitAction: false,
 							formData: { [tabKey]: value },
 							signal,
@@ -190,7 +193,7 @@ function ConfigTabPanel({
 					},
 				},
 				onSubmit: async ({ value }) => {
-					const result = await mutation.mutateAsync({
+					const result = await mutate({
 						isSubmitAction: true,
 						formData: { [tabKey]: value },
 					})
@@ -209,10 +212,9 @@ function ConfigTabPanel({
 					}
 				},
 			}),
-		[mutation, tabKey, defaults, onSaved],
+		[mutate, tabKey, defaults, onSaved],
 	)
 
-	// 快捷键直连悬浮条按钮
 	useHotkeys([
 		[
 			'mod+S',
@@ -240,14 +242,12 @@ function ConfigTabPanel({
 			}}
 		>
 			<AutoForm schema={schema as any} formOpts={opts}>
-				{/* 唯一滚动容器：字段区（底部多垫点，避免被悬浮条遮挡） */}
 				<ScrollArea style={{ flex: 1, minHeight: 0 }} offsetScrollbars type="hover">
-					<Box px="sm" pb={96 /* = 悬浮条高度余量 */}>
+					<Box px="sm" pb={96}>
 						<AutoForm.Fields />
 					</Box>
 				</ScrollArea>
 
-				{/* 悬浮操作条：标题 + 状态 + 操作 */}
 				<AutoForm.Actions>
 					{({ submit, reset, dirty, canSubmit, submitting }) => (
 						<FloatingBar
