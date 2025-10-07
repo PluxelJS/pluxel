@@ -1,6 +1,6 @@
 import { writeFile } from 'node:fs/promises'
 import { mutation, resolver } from '@gqloom/core'
-import type { Context as PlxContext } from '@pluxel/core'
+import type { Context as PlxContext } from '@pluxel/hmr'
 import { resolve } from 'pathe'
 
 import { BuildSnapshotResult } from '../schema'

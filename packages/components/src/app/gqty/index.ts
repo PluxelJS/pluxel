@@ -7,8 +7,9 @@ import { Cache, createClient, defaultResponseHandler, type QueryFetcher } from '
 import { type GeneratedSchema, generatedSchema, scalarsEnumsHash } from './schema.generated'
 
 const queryFetcher: QueryFetcher = async ({ query, variables, operationName }, fetchOptions) => {
-	// Modify "http://localhost:3000/graphql" if needed
-	const response = await fetch('http://localhost:3000/graphql', {
+	// 浏览器走相对路径；SSR 端需要绝对 URL
+	const endpoint = typeof window === 'undefined' ? 'http://localhost:3000/graphql' : '/graphql'
+	const response = await fetch(endpoint, {
 		method: 'POST',
 		headers: {
 			'Content-Type': 'application/json',

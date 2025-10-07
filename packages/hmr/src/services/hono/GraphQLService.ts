@@ -18,7 +18,7 @@ const SubscriptionsSchema = v.union([
 
 const GQtyConfigSchema = v.object({
 	endpoint: v.fallback(v.optional(v.string()), 'http://localhost:3000/graphql'),
-	destination: v.fallback(v.optional(v.string()), './src/app/gqty/index.ts'),
+	destination: v.fallback(v.optional(v.string()), '../components/src/app/gqty/index.ts'),
 	react: v.fallback(v.optional(v.boolean()), true),
 	subscriptions: v.fallback(v.optional(SubscriptionsSchema), false),
 	// 标量映射给默认值，常用即可，随时可在外部覆写
@@ -31,7 +31,7 @@ const GQtyConfigSchema = v.object({
 const GraphQLConfigSchema = v.object({
 	gqty: v.fallback(v.optional(GQtyConfigSchema), {
 		endpoint: 'http://localhost:3000/graphql',
-		destination: './src/app/gqty/index.ts',
+		destination: '../components/src/app/gqty/index.ts',
 		react: true,
 		subscriptions: false,
 		scalarTypes: { Number: 'number', Object: 'Record<string, unknown>' },

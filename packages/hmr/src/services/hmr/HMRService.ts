@@ -37,7 +37,9 @@ declare module '@pluxel/core' {
 		[serviceName]: HMRService
 	}
 	namespace Context {
-		interface Config extends HMRConfig {}
+		interface Config {
+			[serviceName]: HMRConfig
+		}
 	}
 }
 
@@ -62,7 +64,7 @@ export class HMRService {
 	private filter!: (id: string) => boolean
 
 	/** SWC：装饰器/TSX/源映射，紧贴你的现有链路 */
-	private swc = swc.vite({
+	private swc: Plugin = swc.vite({
 		sourceMaps: true,
 		jsc: {
 			parser: { syntax: 'typescript', decorators: true, tsx: true },
@@ -72,7 +74,7 @@ export class HMRService {
 				react: { runtime: 'automatic', refresh: true },
 			},
 		},
-	}) as unknown as Plugin
+	})
 
 	private plugin!: Plugin
 

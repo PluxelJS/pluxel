@@ -1,4 +1,4 @@
-import { BasePlugin, Optional, Plugin } from '@pluxel/core'
+import { BasePlugin, Optional, Plugin } from '@pluxel/hmr'
 import { v } from './config'
 // PluginA.ts
 // PluginA 依赖 PluginB 为必选依赖，依赖 PluginC 为可选依赖
@@ -7,12 +7,17 @@ import { PluginB } from './PluginB'
 // biome-ignore lint/style/useImportType: <explanation>
 import { PluginC } from './PluginC'
 
-export const a = v.object({ name: v.array(v.picklist(["a", "b"])) })
+export const a = v.object({ name: v.array(v.picklist(['a', 'b'])) })
 @Plugin({ name: 'PluginA', type: 'event' })
 export class PluginA extends BasePlugin {
+	constructor(
+		public pluginB: PluginB,
+		@Optional() public _pluginC?: PluginC,
+	) {
+		super()
+	}
 
-	constructor(public pluginB: PluginB, @Optional() public _pluginC?: PluginC) {
-    super();
+	init(_abortt: AbortSignal): void | Promise<void> {
 		this.pluginB.doSomething()
 		// 可选依赖 PluginC 进行判断_pluginC
 		if (this._pluginC) {
@@ -28,7 +33,6 @@ export class PluginA extends BasePlugin {
 			})
 		})
 	}
-
 	doSomething(): void {
 		this.ctx.logger.info('PluginA doing somethinga...')
 	}

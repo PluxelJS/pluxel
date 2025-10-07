@@ -1,25 +1,29 @@
-import { MantineProvider } from '@mantine/core'
+import { App, useHydrateCache } from '@pluxel/components'
 import { createRoot, hydrateRoot } from 'react-dom/client'
 import { Router } from 'wouter'
 import '@mantine/core/styles.css'
 import '@mantine/notifications/styles.css'
 
-import { App } from './app'
-import { useHydrateCache } from './app/gqty'
-
 const root = document.getElementById('root')!
 
-const cacheSnapshot = undefined
+const rawCache =
+	/* (document.getElementById('__GQTY_CACHE__') as HTMLScriptElement | null)?.textContent ||  */ undefined
+let cacheSnapshot: unknown
+if (rawCache) {
+	try {
+		cacheSnapshot = JSON.parse(rawCache)
+	} catch {
+		cacheSnapshot = rawCache
+	}
+}
 
-function Root({ snapshot }: { snapshot?: string }) {
+function Root({ snapshot }: { snapshot?: any }) {
 	useHydrateCache({ cacheSnapshot: snapshot, shouldRefetch: false })
 
 	return (
-		<MantineProvider withGlobalClasses={false} deduplicateCssVariables={false}>
-			<Router>
-				<App />
-			</Router>
-		</MantineProvider>
+		<Router>
+			<App />
+		</Router>
 	)
 }
 

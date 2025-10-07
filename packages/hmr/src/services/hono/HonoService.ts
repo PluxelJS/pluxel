@@ -4,8 +4,9 @@ import devServer from '@hono/vite-dev-server'
 import { type Context, Injectable } from '@pluxel/core'
 import { Hono } from 'hono'
 import { createFactory, type Factory } from 'hono/factory'
+import type { Plugin } from 'vite'
 
-import api from '../../app/api'
+import api from '../../api/hono'
 import { ssrApp } from '../../server'
 import loggerApi from '../logger/api'
 import type { AppEnv, HonoWithAppEnvType } from './env'
@@ -88,7 +89,7 @@ export class HonoService {
 	}
 
 	// —— Vite Dev Server 插件（无 this.vite；仅在需要时标记 full-reload） ————
-	get viteHonoDevServer() {
+	get viteHonoDevServer(): Plugin {
 		return devServer({
 			exclude: [
 				// 交给 Vite 模块系统处理的请求

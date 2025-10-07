@@ -1,6 +1,6 @@
+import { App } from '@pluxel/components'
 import { Hono } from 'hono'
 import type { AppEnv } from '../../hmr/src/services/hono/env'
-import { App } from './app'
 import { renderMiddleware } from './render'
 
 const ssrApp = new Hono<AppEnv>()

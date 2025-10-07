@@ -1,15 +1,13 @@
 // render.tsx
 import { reactRenderer } from '@hono/react-renderer'
-import { ColorSchemeScript, MantineProvider } from '@mantine/core'
+import { ColorSchemeScript } from '@mantine/core'
 import { Router } from 'wouter'
+import rawManifest from '../public/.vite/manifest.json'
 
-const PUBLIC_BASE =
-	process.env.CLIENT_DIST ?? '/node_modules/@pluxel/hmr/public'
+const PUBLIC_BASE = process.env.CLIENT_DIST ?? '/node_modules/@pluxel/hmr/public'
 const PROD = import.meta.env.PROD
 
-import rawManifest from '../public/.vite/manifest.json' assert { type: 'json' }
-import { prepareReactRender } from './app/gqty'
-
+import { prepareReactRender } from '@pluxel/components'
 type MfEntry = {
 	file: string
 	css?: string[]
@@ -29,9 +27,7 @@ const ASSETS = (() => {
 
 	const mf = rawManifest as Manifest
 	const pickEntry = (entry = 'src/client.tsx') =>
-		entry in mf
-			? entry
-			: (Object.keys(mf).find((k) => mf[k]?.isEntry) ?? Object.keys(mf)[0])
+		entry in mf ? entry : (Object.keys(mf).find((k) => mf[k]?.isEntry) ?? Object.keys(mf)[0])
 
 	const key = pickEntry('src/client.tsx')
 	const root = mf[key]
@@ -67,44 +63,40 @@ const ASSETS = (() => {
 })()
 
 export const renderMiddleware = reactRenderer(async ({ c, children }) => {
-	const shell = (
-		<MantineProvider withGlobalClasses={false} deduplicateCssVariables={false}>
-			<Router
-				ssrPath={c.req.path}
-				ssrSearch={c.req.url.split('?')[1] || ''}
-			>
-				{children}
-			</Router>
-		</MantineProvider>
-	)
+    const shell = (
+        <Router ssrPath={c.req.path} ssrSearch={c.req.url.split('?')[1] || ''}>
+            {children}
+        </Router>
+    )
 
 	const { cacheSnapshot } = await prepareReactRender(shell)
 
-	return (
-		<html lang="zh">
-			<head>
-				<meta charSet="utf-8" />
-				<meta name="viewport" content="width=device-width,initial-scale=1" />
-				<title>My App</title>
-				<ColorSchemeScript />
-				{ASSETS.css.map((href) => (
-					<link key={href} rel="stylesheet" href={href} />
-				))}
-				{ASSETS.preload.map((href) => (
-					<link key={href} rel="modulepreload" href={href} />
-				))}
-				<script type="module" src={ASSETS.js} />
-			</head>
-			<body>
-				<div id="root">{shell}</div>
-				{cacheSnapshot && (
-					<script
-						id="__GQTY_CACHE__"
-						type="application/json"
-						dangerouslySetInnerHTML={{ __html: cacheSnapshot }}
-					/>
-				)}
-			</body>
-		</html>
-	)
+        return (
+            <html lang="zh">
+                <head>
+                    <meta charSet="utf-8" />
+                    <meta name="viewport" content="width=device-width,initial-scale=1" />
+                    <title>My App</title>
+                    <ColorSchemeScript />
+                    {ASSETS.css.map((href) => (
+                        <link key={href} rel="stylesheet" href={href} />
+                    ))}
+                    {ASSETS.preload.map((href) => (
+                        <link key={href} rel="modulepreload" href={href} />
+                    ))}
+                    <script type="module" src={ASSETS.js} />
+                </head>
+                <body>
+                    <div id={'root'}>{shell}</div>
+                    {cacheSnapshot && (
+                        <script
+                            id="__GQTY_CACHE__"
+                            type="application/json"
+                            suppressHydrationWarning
+                            dangerouslySetInnerHTML={{ __html: cacheSnapshot }}
+                        />
+                    )}
+                </body>
+            </html>
+        )
 })

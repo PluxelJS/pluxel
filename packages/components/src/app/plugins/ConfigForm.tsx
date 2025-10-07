@@ -14,12 +14,12 @@ import {
 } from '@mantine/core'
 import { useHotkeys } from '@mantine/hooks'
 import { notifications } from '@mantine/notifications'
-import { AutoForm } from '@pluxel/components'
 import { formOptions } from '@tanstack/react-form'
 import type { InferRequestType, InferResponseType } from 'hono/client'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { InferOutput, ObjectSchema } from 'valibot'
 import { getDefaults } from 'valibot'
+import { AutoForm } from '~/components'
 import { client } from '../rpc'
 export interface ConfigFormProps {
 	pluginName: string
@@ -168,7 +168,7 @@ function ConfigTabPanel({
 					message: String(error?.message ?? error),
 					color: 'red',
 				})
-				throw (error instanceof Error ? error : new Error(String(error)))
+				throw error instanceof Error ? error : new Error(String(error))
 			}
 		},
 		[$post, pluginName],

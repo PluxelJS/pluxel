@@ -1,4 +1,4 @@
-import { BasePlugin, Plugin } from '@pluxel/core'
+import { BasePlugin, Plugin } from '@pluxel/hmr'
 import * as v from 'valibot'
 // biome-ignore lint/correctness/noUnusedImports: <explanation>
 import { demoBookModule } from './demo-parent'

@@ -7,6 +7,7 @@
 	"type": "module",
 	"scripts": {
 		"dev": "vite",
+		"build": "vite build",
 		"preview": "vite preview"
 	},
 	"peerDependencies": {
@@ -15,8 +16,8 @@
 		"@mantine/hooks": "^8.2.2",
 		"@mantine/modals": "^8.2.2",
 		"@mantine/notifications": "^8.2.2",
-		"@tanstack/react-form": "^1.23.0",
 		"@tabler/icons-react": "^3.34.1",
+		"@tanstack/react-form": "^1.23.0",
 		"react": "^19.1.1",
 		"react-dom": "^19.1.1",
 		"valibot": "^1.1.0"
@@ -26,18 +27,23 @@
 		"@dnd-kit/modifiers": "^9.0.0",
 		"@dnd-kit/sortable": "^10.0.0",
 		"@dnd-kit/utilities": "^3.2.2",
+		"@gqty/react": "^3.1.1",
+		"@melloware/react-logviewer": "^6.3.4",
+		"gqty": "^3.5.0",
+		"graphql": "^16.11.0",
+		"hono": "latest",
 		"wouter": "^3.7.1"
 	},
 	"devDependencies": {
-		"@types/react": "^19.1.13",
-		"@types/react-dom": "^19.1.9",
-		"@vitejs/plugin-react": "^5.0.3",
+		"@types/react": "^19.2.2",
+		"@types/react-dom": "^19.2.1",
+		"@vitejs/plugin-react": "^5.0.4",
 		"postcss": "^8.5.6",
 		"postcss-preset-mantine": "1.18.0",
 		"postcss-simple-vars": "^7.0.1",
 		"valibot": "^1.1.0",
 		"valibot-form": "workspace:*",
-		"vite": "^7.1.7",
+		"vite": "^7.1.9",
 		"vite-tsconfig-paths": "^5.1.4"
 	}
 }

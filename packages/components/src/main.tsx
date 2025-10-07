@@ -1,7 +1,7 @@
 import { ColorSchemeScript, MantineProvider } from '@mantine/core'
 import React from 'react'
 import ReactDOM from 'react-dom/client'
-import App from './TestApp.tsx'
+import { App } from './app/index.tsx'
 import { theme } from './theme'
 import '@mantine/core/styles.css'
 

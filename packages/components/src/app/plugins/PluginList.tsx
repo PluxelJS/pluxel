@@ -10,9 +10,9 @@ import {
 	Title,
 } from '@mantine/core'
 import { showNotification } from '@mantine/notifications'
-import { type GroupConfig, PluginOrganizer, type PluginStatuses } from '@pluxel/components'
 import { IconSearch, IconX } from '@tabler/icons-react'
 import { useCallback, useMemo, useState } from 'react'
+import { type GroupConfig, PluginOrganizer, type PluginStatuses } from '~/components'
 import {
 	type PluginGroup,
 	type PluginStatusEntry,
@@ -116,10 +116,7 @@ export const PluginList: React.FC<PluginListProps> = ({ pluginName }) => {
 	}, [query.pluginGroups, query.pluginStatus?.statuses, query.pluginStatus?.summary])
 
 	const [mutateGroups] = useGqtyMutation(
-		(
-			mutation,
-			variables: { args: { groups: GroupConfig[] } },
-		) => {
+		(mutation, variables: { args: { groups: GroupConfig[] } }) => {
 			const { groups } = variables.args
 			const result = mutation.updatePluginGroups({
 				groups: groups.map((group) => ({
