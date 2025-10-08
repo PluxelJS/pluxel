@@ -12,7 +12,7 @@ import {
 import { showNotification } from '@mantine/notifications'
 import { IconSearch, IconX } from '@tabler/icons-react'
 import { useCallback, useMemo, useState } from 'react'
-import { type GroupConfig, PluginOrganizer, type PluginStatuses } from '~/components'
+import { type GroupConfig, PluginOrganizer, type PluginStatuses } from '../../components'
 import {
 	type PluginGroup,
 	type PluginStatusEntry,
