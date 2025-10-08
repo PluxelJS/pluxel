@@ -1,8 +1,19 @@
 {
 	"$schema": "https://biomejs.dev/schemas/2.2.2/schema.json",
-	"extends": ["@repobuddy/biome/performant"],
-	"vcs": { "enabled": true, "clientKind": "git", "useIgnoreFile": true },
-	"files": { "ignoreUnknown": true, "includes": ["packages/**"] },
+	"extends": [
+		"@repobuddy/biome/performant"
+	],
+	"vcs": {
+		"enabled": true,
+		"clientKind": "git",
+		"useIgnoreFile": true
+	},
+	"files": {
+		"ignoreUnknown": true,
+		"includes": [
+			"packages/**"
+		]
+	},
 	"formatter": {
 		"enabled": true,
 		"indentStyle": "tab",
@@ -16,15 +27,32 @@
 			"trailingCommas": "all"
 		}
 	},
-	"assist": { "actions": { "source": { "organizeImports": "on" } } },
+	"assist": {
+		"actions": {
+			"source": {
+				"organizeImports": "on"
+			}
+		}
+	},
 	"overrides": [
-		{ "includes": ["**/*.mjs"] },
 		{
-			"includes": ["**/*.ts", "**/*.tsx"],
+			"includes": [
+				"**/*.mjs"
+			]
+		},
+		{
+			"includes": [
+				"**/*.ts",
+				"**/*.tsx"
+			],
 			"linter": {
 				"rules": {
-					"complexity": { "noBannedTypes": "info" },
-					"correctness": { "noUnusedVariables": "info" },
+					"complexity": {
+						"noBannedTypes": "info"
+					},
+					"correctness": {
+						"noUnusedVariables": "info"
+					},
 					"suspicious": {
 						"noConfusingVoidType": "info",
 						"noExplicitAny": "info",
@@ -32,17 +60,15 @@
 						"noEmptyBlockStatements": "info"
 					},
 					"style": {
-						"noDefaultExport": "info",
-						"useConsistentArrayType": {
-							"level": "error",
-							"options": { "syntax": "shorthand" }
-						}
+						"noDefaultExport": "info"
 					}
 				}
 			}
 		},
 		{
-			"includes": ["**/test/**/*.ts"],
+			"includes": [
+				"**/test/**/*.ts"
+			],
 			"linter": {
 				"rules": {
 					"style": {

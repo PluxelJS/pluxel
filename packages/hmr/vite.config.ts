@@ -19,6 +19,8 @@ export default defineConfig({
       immutable: 'immutable/dist/immutable.js',
       // immutable: 'immutable/dist/immutable.es.js',
     },
+    // 避免多份实例导致上下文不一致（Mantine/React）
+    dedupe: ['react', 'react-dom', '@mantine/core', '@mantine/hooks', '@mantine/notifications', '@mantine/dates'],
   },
 
   optimizeDeps: {

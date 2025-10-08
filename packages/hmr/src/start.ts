@@ -15,8 +15,8 @@ async function bootstrap() {
 }
 bootstrap()
 setTimeout(() => {
-	console.log(ctx.loader.getLoadedPluginsName())
-	console.log(ctx.loader.buildSnapshot())
+	/* console.log(ctx.loader.getLoadedPluginsName())
+	console.log(ctx.loader.buildSnapshot()) */
 }, 5000)
 ctx.honoService.modifyApp((app) => {
 	app.get('/pluginadd', (c) => {

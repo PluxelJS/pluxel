@@ -36,6 +36,11 @@ declare module '@pluxel/core' {
 	interface Context {
 		[serviceName]: HMRService
 	}
+	namespace Context {
+		interface Config {
+			[serviceName]: HMRConfig
+		}
+	}
 }
 
 /* --------------------------------- 工具 --------------------------------- */
@@ -59,7 +64,7 @@ export class HMRService {
 	private filter!: (id: string) => boolean
 
 	/** SWC：装饰器/TSX/源映射，紧贴你的现有链路 */
-	private swc = swc.vite({
+	private swc: Plugin = swc.vite({
 		sourceMaps: true,
 		jsc: {
 			parser: { syntax: 'typescript', decorators: true, tsx: true },
@@ -69,7 +74,7 @@ export class HMRService {
 				react: { runtime: 'automatic', refresh: true },
 			},
 		},
-	}) as unknown as Plugin
+	})
 
 	private plugin!: Plugin
 
@@ -442,7 +447,7 @@ export class HMRService {
 		return [...m.entries()].sort((a, b) => b[1] - a[1]).slice(0, n)
 	}
 
-	private printAttribution(changed: string, affected: Set<string>, targets: string[]) {
+	private printAttribution(changed: string, _affectedd: Set<string>, targets: string[]) {
 		const fmt = (ms: number) => `${ms.toFixed(1)}ms`
 
 		if (this.trace.transformMs.size) {

@@ -1,7 +1,4 @@
-import { BasePlugin, Plugin } from '@pluxel/core'
-import * as v from 'valibot'
-// PluginB.ts
-import { PluginC } from './PluginC'
+import { BasePlugin, Plugin } from '@pluxel/hmr'
 
 @Plugin({ name: 'PluginB', type: 'hook' })
 export class PluginB extends BasePlugin {

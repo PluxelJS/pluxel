@@ -45,49 +45,49 @@
 			{
 				"path": "/home/ahdg/code/plugin-style-ts/packages/cli",
 				"packageName": "@pluxel/cli",
-				"label": "🍀  @pluxel/cli",
+				"label": "📁 @pluxel/cli",
 				"foreground": "#ffffff",
 				"background": "#8a7e4e"
 			},
 			{
 				"path": "/home/ahdg/code/plugin-style-ts/packages/components",
 				"packageName": "@pluxel/components",
-				"label": "🍀  @pluxel/components",
+				"label": "📁 @pluxel/components",
 				"foreground": "#ffffff",
 				"background": "#0e9105"
 			},
 			{
 				"path": "/home/ahdg/code/plugin-style-ts/packages/context",
 				"packageName": "@pluxel/context",
-				"label": "🍀  @pluxel/context",
+				"label": "📁 @pluxel/context",
 				"foreground": "#000000",
 				"background": "#3bafbf"
 			},
 			{
 				"path": "/home/ahdg/code/plugin-style-ts/packages/core",
 				"packageName": "@pluxel/core",
-				"label": "🍀  @pluxel/core",
+				"label": "📁 @pluxel/core",
 				"foreground": "#ffffff",
 				"background": "#45985e"
 			},
 			{
 				"path": "/home/ahdg/code/plugin-style-ts/packages/diod",
 				"packageName": "diod",
-				"label": "🍀  diod",
+				"label": "📁 diod",
 				"foreground": "#ffffff",
 				"background": "#16af78"
 			},
 			{
 				"path": "/home/ahdg/code/plugin-style-ts/packages/hmr",
 				"packageName": "@pluxel/hmr",
-				"label": "🍀  @pluxel/hmr",
+				"label": "📁 @pluxel/hmr",
 				"foreground": "#ffffff",
 				"background": "#662b90"
 			},
 			{
 				"path": "/home/ahdg/code/plugin-style-ts/packages/valibot-form",
 				"packageName": "valibot-form",
-				"label": "🍀  valibot-form",
+				"label": "📁 valibot-form",
 				"foreground": "#ffffff",
 				"background": "#db0062"
 			}
@@ -98,6 +98,13 @@
 			"/packages/components/src/components/Plugin",
 			"/packages/components/src/form/schema"
 		],
-		"exportall.config.relExclusion": ["/packages/components/src/app/Dashboard/Example.tsx"]
+		"exportall.config.relExclusion": [
+			"/packages/components/src/app/Dashboard/Example.tsx"
+		],
+		"cSpell.words": [
+			"gqloom",
+			"Gqty",
+			"tabler"
+		]
 	}
 }

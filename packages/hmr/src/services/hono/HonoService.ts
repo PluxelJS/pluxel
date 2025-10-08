@@ -1,42 +1,59 @@
-// HonoService.ts
+// src/services/hono/HonoService.ts
 
-import { serveStatic } from '@hono/node-server/serve-static'
 import devServer from '@hono/vite-dev-server'
 import { type Context, Injectable } from '@pluxel/core'
+import { Hono } from 'hono'
 import { createFactory, type Factory } from 'hono/factory'
 import type { Plugin } from 'vite'
-// 你项目内的具体实现（保持原顺序：API → 补丁 → logger → SSR）
-import api from '../../app/api'
+
+import api from '../../api/hono'
 import { ssrApp } from '../../server'
 import loggerApi from '../logger/api'
-import type { AppEnv, HonoType } from './env'
-
-type AppMod = (app: HonoType) => void // 同步补丁，确保挂载时序可靠
+import type { AppEnv, HonoWithAppEnvType } from './env'
+import type { GraphQLService } from './GraphQLService'
 
 const serviceName = 'honoService' as const
 
 declare module '@pluxel/core' {
 	interface Context {
 		[serviceName]: HonoService
+		graphqlService: GraphQLService
 	}
 }
 
-const escapeRE = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+type AppMod = (app: HonoWithAppEnvType) => void
+type GraphQLFetch = (
+	req: Request,
+	ctx: { hono: import('hono').Context<AppEnv> },
+) => Promise<Response>
 
+// —— Service ————————————————————————————————————————————————————————————
 @Injectable({ key: serviceName })
 export class HonoService {
-	/** 已注册补丁（引用稳定，可撤销） */
 	private mods = new Set<AppMod>()
-	/** 当前应用实例 */
-	private app: HonoType
-	/** dev：是否需要在下一次 HMR 钩子里触发 full-reload */
+
+	// 当前活跃的 Hono 应用实例
+	private app!: HonoWithAppEnvType
+
+	// fetch 代理指针：保持稳定的函数引用，只更新内部指向
+	private fetchPtr: (req: Request, env?: any, ctx?: any) => Response | Promise<Response> = (
+		req,
+		env,
+		ctx,
+	) => this.app.fetch(req, env, ctx)
+
+	// HMR / 重建 调度
+	private pendingRebuild = false
 	private shouldReload = false
 
+	// GraphQL 处理器：函数指针替换，零重建
+	private gqlFetch: GraphQLFetch = async () => new Response('GraphQL not ready', { status: 503 })
+
 	constructor(private ctx: Context) {
-		this.app = this.rebuildApp()
+		this.rebuildApp()
 	}
 
-	/** 将 plugin_ctx 注入到 c.env */
+	/** 将 plugin_ctx 注入到 c.env / 变量表（供外部需要时复用） */
 	public createFactory(): Factory<AppEnv, string> {
 		return createFactory<AppEnv>({
 			initApp: (app) => {
@@ -48,114 +65,106 @@ export class HonoService {
 		})
 	}
 
-	/** 重建：API → 补丁 → logger → SSR（顺序很重要） */
-	private rebuildApp(): HonoType {
-		const app = this.createFactory().createApp()
-
-		// 1) 业务 API
-		app.route('/api', api)
-
-		// 2) 同步补丁（静态、额外中间件等）
-		for (const m of this.mods) m(app)
-
-		// 3) logger
-		app.route('/', loggerApi)
-
-		// 4) SSR（兜底，严禁在它前面注册 catch-all）
-		app.route('/', ssrApp)
-
-		return app
+	/** GraphQLService 重织后调用：仅替换函数指针，零重建 Hono 应用 */
+	setGraphQLFetch(fn: GraphQLFetch) {
+		this.gqlFetch = fn
+		this.requestFullReload()
 	}
 
-	/** 只读 fetch 入口（供 Node 适配器或 Vite dev server 调用） */
+	/** 稳定的 fetch 入口（供 Node 适配器 / Vite dev server 使用） */
 	get fetch() {
-		return this.app.fetch
+		return this.fetchPtr
 	}
 
-	/** 动态注入/撤销补丁（HMR 友好） */
+	/** 动态注入/撤销补丁（HMR 友好，合批重建） */
 	modifyApp(mod: AppMod) {
 		this.mods.add(mod)
-		this.app = this.rebuildApp()
-		this.markReloadNeed()
+		this.scheduleRebuild()
 
 		return this.ctx.scope.collectEffect(() => {
 			if (this.mods.delete(mod)) {
-				this.app = this.rebuildApp()
-				this.markReloadNeed()
+				this.scheduleRebuild()
 			}
 		})
 	}
 
-	/**
-	 * 静态资源挂载（自动剥前缀 + 去前导斜杠，确保 join(root, rel)）
-	 * 例：mountStatic('/assets', { root: 'public', index: 'index.html' })
-	 */
-	mountStatic(
-		prefix: `/${string}`,
-		options: { root: string; index?: string; precompressed?: boolean },
-	) {
-		const normalized = normalizePrefix(prefix)
-		const re = new RegExp(`^${escapeRE(normalized)}`)
-
-		return this.modifyApp((app) => {
-			app.use(
-				`${normalized}/*`,
-				serveStatic({
-					root: options.root, // 相对 process.cwd()，或绝对路径
-					precompressed: options.precompressed ?? false,
-					// 关键：剥前缀后再去掉前导 '/'，否则 join(root, '/x') 会丢 root
-					rewriteRequestPath: (p) => p.replace(re, '').replace(/^\/+/u, ''),
-					onFound: (fsPath, c) =>
-						this.ctx.logger.debug?.(`static hit  -> fs:${fsPath} req:${c.req.path}`),
-					onNotFound: (fsPath, c) =>
-						this.ctx.logger.debug?.(`static miss -> fs:${fsPath} req:${c.req.path}`),
-				} as any),
-			)
-
-			if (options.index) {
-				// 访问 /prefix 时重定向到 /prefix/index
-				app.get(normalized, (c) => c.redirect(`${normalized}/${options.index}`))
-			}
-		})
-	}
-
-	/** 仅做标记：下一次 HMR 钩子里再 full-reload（不持有 vite 引用） */
-	private markReloadNeed() {
-		this.shouldReload = true
-	}
-
-	/** Vite dev server 插件：只在需要时 full-reload；缩小 exclude，避免静态后缀被短路 */
+	// —— Vite Dev Server 插件（无 this.vite；仅在需要时标记 full-reload） ————
 	get viteHonoDevServer(): Plugin {
 		return devServer({
-			// 关键：不要排除 .css/.js/.txt 等，让它们也进 Hono 的 serveStatic
 			exclude: [
-				// /.*\.css$/,
-				/.*\.ts$/,
-				/.*\.tsx$/,
-				/^\/@.+$/,
-				/\?t=\d+$/,
+				// 交给 Vite 模块系统处理的请求
+				/^\/@.+$/, // /@vite, /@id, /@fs, /@react-refresh...
+				/^\/node_modules\/.*/,
+				/(\.ts|\.tsx)(\?.*)?$/,
+				// 静态与杂项
 				/^\/favicon\.ico$/,
 				/^\/static\/.+/,
-				/^\/node_modules\/.*/,
+				/\?t=\d+$/,
 			],
-
-			// 将 Hono 的 fetch 暴露给插件
 			loadModule: async () => ({ fetch: this.fetch }) as any,
-
 			handleHotUpdate: ({ server }) => {
-				this.ctx.logger.debug('触发 HMR')
 				if (this.shouldReload) {
-					this.ctx.logger.debug('触发全量重载')
 					this.shouldReload = false
 					server.ws.send({ type: 'full-reload' })
 				}
 				return []
 			},
-		}) as Plugin
+		})
 	}
-}
 
-function normalizePrefix(prefix: `/${string}`): string {
-	if (!prefix || prefix[0] !== '/') throw new Error('prefix 必须以 / 起始')
-	return prefix.length > 1 && prefix.endsWith('/') ? prefix.slice(0, -1) : prefix
+	// —— 内部：重建 / 指针更新 / 调度 ————————————————————————————————
+	private rebuildApp(): HonoWithAppEnvType {
+		const app = new Hono<AppEnv>({})
+
+		// 注入 plugin_ctx（等价于 Factory.initApp 效果）
+		app.use(async (c, next) => {
+			c.set('plugin_ctx', this.ctx)
+			await next()
+		})
+
+		// 1) 业务 API
+		app.route('/api', api)
+
+		// 1.5) GraphQL —— 只挂一次路由，内部转发到函数指针
+		app.all('/graphql', (c) => this.gqlFetch(c.req.raw, { hono: c }))
+
+		// 2) 同步补丁（插件追加的路由/中间件）
+		for (const m of this.mods) m(app as HonoWithAppEnvType)
+
+		// 3) logger
+		app.route('/', loggerApi)
+
+		// 4) SSR（仅在 Accept: text/html 时兜底，避免误伤 API）
+		app.use('*', async (c, next) => {
+			if (c.req.method !== 'GET') return next()
+			const accept = c.req.header('accept') || ''
+			if (!accept.includes('text/html')) return next()
+			return ssrApp.fetch(c.req.raw, c.env, c.executionCtx)
+		})
+
+		// 切换活跃实例并更新 fetch 指针
+		this.app = app as HonoWithAppEnvType
+		this.updateFetchPtr()
+		return this.app
+	}
+
+	private updateFetchPtr() {
+		const f = this.app.fetch.bind(this.app)
+		this.fetchPtr = (req, env, ctx) => f(req, env, ctx)
+	}
+
+	private scheduleRebuild() {
+		if (this.pendingRebuild) return
+		this.pendingRebuild = true
+		queueMicrotask(() => {
+			this.pendingRebuild = false
+			this.rebuildApp()
+			this.requestFullReload()
+		})
+	}
+
+	private requestFullReload() {
+		// 不直接操作 Vite Server；仅做标记，交由其他服务/插件感知并触发
+		this.shouldReload = true
+	}
 }

@@ -15,7 +15,10 @@
 		"module": "ESNext",
 		"moduleResolution": "Bundler",
 		"emitDeclarationOnly": true,
-		"lib": ["DOM", "ES2022"]
+		"lib": [
+			"DOM",
+			"ES2022"
+		]
 	},
 	"references": []
 }
