@@ -10,14 +10,12 @@ import api from '../../api/hono'
 import { ssrApp } from '../../server'
 import loggerApi from '../logger/api'
 import type { AppEnv, HonoWithAppEnvType } from './env'
-import type { GraphQLService } from './GraphQLService'
 
 const serviceName = 'honoService' as const
 
 declare module '@pluxel/core' {
 	interface Context {
 		[serviceName]: HonoService
-		graphqlService: GraphQLService
 	}
 }
 
@@ -51,6 +49,8 @@ export class HonoService {
 
 	constructor(private ctx: Context) {
 		this.rebuildApp()
+		// 务必调用 scheduleRebuild 而不是 rebui_configno 构建，否则会导致使用默认 gqlFetch
+		ctx.graphql.scheduleRebuild()
 	}
 
 	/** 将 plugin_ctx 注入到 c.env / 变量表（供外部需要时复用） */
