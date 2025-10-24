@@ -13,15 +13,15 @@
 		"dev:hmr": "pnpm --filter hmr dev"
 	},
 	"devDependencies": {
-		"@biomejs/biome": "^2.2.4",
+		"@biomejs/biome": "^2.3.0",
 		"@oxc-project/runtime": "^0.91.0",
 		"@repobuddy/biome": "^2.0.1",
 		"@types/bun": "latest",
 		"husky": "^9.1.7",
 		"is-ci": "^4.1.0",
 		"tsdown": "0.14.2",
-		"turbo": "^2.5.6",
-		"typescript": "^5.9.2"
+		"turbo": "^2.5.8",
+		"typescript": "^5.9.3"
 	},
 	"pre-commit": "lint-staged",
 	"lint-staged": {
@@ -30,17 +30,17 @@
 	"publishConfig": {
 		"registry": "https://registry.npmjs.org/"
 	},
-	"packageManager": "pnpm@10.18.1+sha512.77a884a165cbba2d8d1c19e3b4880eee6d2fcabd0d879121e282196b80042351d5eb3ca0935fa599da1dc51265cc68816ad2bddd2a2de5ea9fdf92adbec7cd34",
+	"packageManager": "pnpm@10.19.1-oidc-test.3+sha512.e5961a4b56bb37620f97b65da4ca56216634bf39ed358eda925f0f036534d458fa249d93ed0021410523f8bb7ed8512b61fe5532ed3e81777793366c6be026b5",
 	"dependencies": {
-		"@mantine/core": "^8.3.1",
-		"@mantine/dates": "^8.3.1",
-		"@mantine/hooks": "^8.3.1",
-		"@mantine/modals": "^8.3.1",
-		"@mantine/notifications": "^8.3.1",
-		"@tanstack/react-form": "^1.23.0",
+		"@mantine/core": "^8.3.5",
+		"@mantine/dates": "^8.3.5",
+		"@mantine/hooks": "^8.3.5",
+		"@mantine/modals": "^8.3.5",
+		"@mantine/notifications": "^8.3.5",
 		"@tabler/icons-react": "^3.35.0",
-		"react": "^19.1.1",
-		"react-dom": "^19.1.1"
+		"@tanstack/react-form": "^1.23.8",
+		"react": "^19.2.0",
+		"react-dom": "^19.2.0"
 	},
 	"pnpm": {
 		"peerDependencyRules": {
