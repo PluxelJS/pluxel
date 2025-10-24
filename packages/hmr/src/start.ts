@@ -1,6 +1,10 @@
 import { Context } from '@pluxel/core'
 import { PinoLoggerService } from './services'
 
+if (process.env.PLUXEL_HMR_SSR === undefined) {
+	process.env.PLUXEL_HMR_SSR = 'true'
+}
+
 const ctx = new Context({
 	hmrService: { dir: ['./src/plugins'] },
 	registry: {
