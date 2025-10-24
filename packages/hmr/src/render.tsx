@@ -8,6 +8,7 @@ const PUBLIC_BASE = process.env.CLIENT_DIST ?? '/node_modules/@pluxel/hmr/public
 const PROD = import.meta.env.PROD
 
 import { prepareReactRender } from '@pluxel/components'
+
 type MfEntry = {
 	file: string
 	css?: string[]
@@ -63,40 +64,40 @@ const ASSETS = (() => {
 })()
 
 export const renderMiddleware = reactRenderer(async ({ c, children }) => {
-    const shell = (
-        <Router ssrPath={c.req.path} ssrSearch={c.req.url.split('?')[1] || ''}>
-            {children}
-        </Router>
-    )
+	const shell = (
+		<Router ssrPath={c.req.path} ssrSearch={c.req.url.split('?')[1] || ''}>
+			{children}
+		</Router>
+	)
 
 	const { cacheSnapshot } = await prepareReactRender(shell)
 
-        return (
-            <html lang="zh">
-                <head>
-                    <meta charSet="utf-8" />
-                    <meta name="viewport" content="width=device-width,initial-scale=1" />
-                    <title>My App</title>
-                    <ColorSchemeScript />
-                    {ASSETS.css.map((href) => (
-                        <link key={href} rel="stylesheet" href={href} />
-                    ))}
-                    {ASSETS.preload.map((href) => (
-                        <link key={href} rel="modulepreload" href={href} />
-                    ))}
-                    <script type="module" src={ASSETS.js} />
-                </head>
-                <body>
-                    <div id={'root'}>{shell}</div>
-                    {cacheSnapshot && (
-                        <script
-                            id="__GQTY_CACHE__"
-                            type="application/json"
-                            suppressHydrationWarning
-                            dangerouslySetInnerHTML={{ __html: cacheSnapshot }}
-                        />
-                    )}
-                </body>
-            </html>
-        )
+	return (
+		<html lang="zh">
+			<head>
+				<meta charSet="utf-8" />
+				<meta name="viewport" content="width=device-width,initial-scale=1" />
+				<title>My App</title>
+				<ColorSchemeScript />
+				{ASSETS.css.map((href) => (
+					<link key={href} rel="stylesheet" href={href} />
+				))}
+				{ASSETS.preload.map((href) => (
+					<link key={href} rel="modulepreload" href={href} />
+				))}
+				<script type="module" src={ASSETS.js} />
+			</head>
+			<body>
+				<div id={'root'}>{shell}</div>
+				{cacheSnapshot && (
+					<script
+						id="__GQTY_CACHE__"
+						type="application/json"
+						suppressHydrationWarning
+						dangerouslySetInnerHTML={{ __html: cacheSnapshot }}
+					/>
+				)}
+			</body>
+		</html>
+	)
 })

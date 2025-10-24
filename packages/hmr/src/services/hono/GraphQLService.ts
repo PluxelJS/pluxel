@@ -10,36 +10,31 @@ import * as v from 'valibot'
 import { getAPISchema } from '../../api'
 
 // -------------------- Config (Valibot) --------------------
-const SubscriptionsSchema = v.union([
-	v.literal(false),
-	v.literal('graphql-ws'),
-	v.literal('graphql-sse'),
-])
+const serviceName = 'graphql' as const
 
-const GQtyConfigSchema = v.object({
-	endpoint: v.fallback(v.optional(v.string()), 'http://localhost:3000/graphql'),
-	destination: v.fallback(v.optional(v.string()), '../components/src/app/gqty/index.ts'),
-	react: v.fallback(v.optional(v.boolean()), true),
-	subscriptions: v.fallback(v.optional(SubscriptionsSchema), false),
-	// 标量映射给默认值，常用即可，随时可在外部覆写
-	scalarTypes: v.fallback(v.optional(v.record(v.string(), v.string())), {
-		Number: 'number',
-		Object: 'Record<string, unknown>',
-	}),
-})
+declare module '@pluxel/core' {
+	interface Context {
+		[serviceName]: GraphQLService
+	}
+	namespace Context {
+		interface Config {
+			[serviceName]: GraphQLConfig
+		}
+	}
+}
 
-const GraphQLConfigSchema = v.object({
-	gqty: v.fallback(v.optional(GQtyConfigSchema), {
-		endpoint: 'http://localhost:3000/graphql',
-		destination: '../components/src/app/gqty/index.ts',
-		react: true,
-		subscriptions: false,
-		scalarTypes: { Number: 'number', Object: 'Record<string, unknown>' },
-	}),
-})
-
-type InternalGQtyCfg = v.InferFallbacks<typeof GQtyConfigSchema>
-type GraphQLCfgInput = v.InferInput<typeof GraphQLConfigSchema>
+interface GraphQLConfig {
+	endpoint: string
+	destination: string
+	react: boolean
+	scalarTypes: Record<string, string>
+}
+const _DEFAULT_CONFIG: GraphQLConfig = {
+	endpoint: 'http://localhost:3000/graphql',
+	destination: '../components/src/app/gqty/index.ts',
+	react: true,
+	scalarTypes: { Number: 'number', Object: 'Record<string, unknown>' },
+}
 
 // -------------------- Context Typings --------------------
 export type FullCtx = YogaInitialContext & ServerCtx
@@ -60,20 +55,15 @@ function normalizeModule(mod: GqlModuleInput): GqlModule {
 	return { resolvers: [mod as Resolver] }
 }
 
-// -------------------- Base Resolver (健康检查) --------------------
-const baseResolver: Resolver = resolver({
-	_empty: query(v.string()).resolve(() => 'ok'),
-})
-
 // -------------------- GraphQL Service --------------------
-@Injectable({ key: 'graphqlService' })
+@Injectable({ key: serviceName })
 export class GraphQLService {
 	// 注册表
 	private readonly modules = new Map<string | symbol, GqlModule>()
 	private readonly globals = new Set<Middleware>()
 
 	// 当前 GraphQLSchema（确保类型稳定）
-	private schema: GraphQLSchema = weave(ValibotWeaver, baseResolver)
+	private schema: GraphQLSchema = this.weaveSchema()
 
 	// 重建批处理
 	private rebuildPending = false
@@ -82,28 +72,16 @@ export class GraphQLService {
 	// codegen 并发闸
 	private codegenRunning = false
 
-	// 配置（带 fallback）
-	private readonly gqtyCfg: InternalGQtyCfg
-
 	constructor(
 		private readonly ctx: PlxContext,
-		config: GraphQLCfgInput = {},
+		private config: GraphQLConfig = _DEFAULT_CONFIG,
 	) {
-		const parsed = v.safeParse(GraphQLConfigSchema, config)
-		if (parsed.success) {
-			this.gqtyCfg = parsed.output.gqty as any
-		} else {
-			this.logger.error?.('[GraphQLService] Invalid GraphQLConfig', parsed.issues)
-			this.gqtyCfg = v.parse(GraphQLConfigSchema, {}).gqty as any
-		}
-
-		// 冷启动先推一次 fetch，避免 HonoService 未就绪/返回 503
-		this.pushFetch()
+		this.config = Object.assign(_DEFAULT_CONFIG, config)
 	}
 
 	// 统一 logger（优先 ctx.logger）
 	private get logger() {
-		return (this.ctx as any).logger ?? console
+		return this.ctx.logger ?? console
 	}
 
 	// -------- 对外 API --------
@@ -113,10 +91,6 @@ export class GraphQLService {
 	get factory() {
 		return { resolver, query, mutation }
 	}
-	getSchema() {
-		return this.schema
-	}
-
 	/** 挂全局中间件（自动去重 + 可撤销） */
 	useGlobal(mw: Middleware) {
 		this.globals.add(mw)
@@ -135,13 +109,8 @@ export class GraphQLService {
 		})
 	}
 
-	/** 立即重建（同步 flush） */
-	flush() {
-		if (this.rebuildDirty) this.rebuildNow()
-	}
-
 	// -------- 内部：重建与推送 --------
-	private scheduleRebuild() {
+	scheduleRebuild() {
 		this.rebuildDirty = true
 		if (this.rebuildPending) return
 		this.rebuildPending = true
@@ -152,11 +121,24 @@ export class GraphQLService {
 		})
 	}
 
-	private rebuildNow() {
+	rebuildNow() {
 		this.rebuildDirty = false
 
+		this.schema = this.weaveSchema()
+		// Yoga fetch 指针热替换（不重启 Hono）
+		this.pushFetch()
+
+		// 不阻塞主线
+		void this.codegenNow()
+	}
+
+	private weaveSchema() {
 		// 聚合 resolvers/middlewares，保持顺序：先基础，再全局，再模块
-		const resolvers: Resolver[] = [baseResolver]
+		const resolvers: Resolver[] = [
+			resolver({
+				_empty: query(v.string()).resolve(() => 'ok'),
+			}),
+		]
 		const middlewares: Middleware[] = []
 
 		if (this.globals.size) middlewares.push(...this.globals)
@@ -164,15 +146,8 @@ export class GraphQLService {
 			if (m.resolvers?.length) resolvers.push(...m.resolvers)
 			if (m.middlewares?.length) middlewares.push(...m.middlewares)
 		}
-
 		// gqloom 的 weave 可以混合放入 Resolver/Middleware；这里显式分组后再展开，便于阅读与调试
-		this.schema = weave(ValibotWeaver, ...middlewares, ...resolvers, ...getAPISchema(this.ctx))
-
-		// Yoga fetch 指针热替换（不重启 Hono）
-		this.pushFetch()
-
-		// 不阻塞主线
-		void this.codegenNow()
+		return weave(ValibotWeaver, ...middlewares, ...resolvers, ...getAPISchema(this.ctx))
 	}
 
 	/** 用当前 schema 创建 Yoga fetch，并注入 HonoService（仅替换函数指针） */
@@ -183,10 +158,16 @@ export class GraphQLService {
 			maskedErrors: process.env.NODE_ENV === 'production',
 			graphiql: process.env.NODE_ENV !== 'production',
 			schema: this.schema,
+			// 强制复用全局 fetch API，避免构建后出现多份 Response 构造器导致 instanceof 失效
+			fetchAPI: {
+				Response: globalThis.Response,
+				Request: globalThis.Request,
+				Headers: globalThis.Headers,
+			},
 		})
 		// HonoService 内部声明合并了 setGraphQLFetch，这里避免循环依赖，保留弱类型转发
 		const fetcher = (req: Request, ctx: ServerCtx) => yoga.fetch(req, ctx)
-		;(this.ctx as any).honoService?.setGraphQLFetch(fetcher)
+		this.ctx.honoService.setGraphQLFetch(fetcher as any)
 	}
 
 	// -------- GQty 代码生成：防并发、稳态日志 --------
@@ -194,7 +175,7 @@ export class GraphQLService {
 		if (this.codegenRunning) return
 		this.codegenRunning = true
 		try {
-			const cfg = this.gqtyCfg
+			const cfg = this.config
 			this.logger.info?.('[GQty] Generating client…', { destination: cfg.destination })
 
 			// generateClient 支持从 schema 直接产出客户端；如需走远端 introspection，可只传 endpoint
@@ -202,7 +183,6 @@ export class GraphQLService {
 				endpoint: cfg.endpoint,
 				destination: cfg.destination,
 				react: cfg.react,
-				subscriptions: cfg.subscriptions,
 				scalarTypes: cfg.scalarTypes,
 			})
 
