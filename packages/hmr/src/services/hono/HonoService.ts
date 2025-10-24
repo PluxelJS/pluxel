@@ -7,7 +7,7 @@ import { createFactory, type Factory } from 'hono/factory'
 import type { Plugin } from 'vite'
 
 import api from '../../api/hono'
-import { ssrApp } from '../../server'
+import type { RenderHandler } from '../../server/types'
 import loggerApi from '../logger/api'
 import type { AppEnv, HonoWithAppEnvType } from './env'
 
@@ -24,6 +24,24 @@ type GraphQLFetch = (
 	req: Request,
 	ctx: { hono: import('hono').Context<AppEnv> },
 ) => Promise<Response>
+
+const parseBooleanFlag = (value?: string | null): boolean | undefined => {
+	if (value == null) return undefined
+	switch (value.toLowerCase()) {
+		case '1':
+		case 'true':
+		case 'yes':
+		case 'on':
+			return true
+		case '0':
+		case 'false':
+		case 'no':
+		case 'off':
+			return false
+		default:
+			return undefined
+	}
+}
 
 // —— Service ————————————————————————————————————————————————————————————
 @Injectable({ key: serviceName })
@@ -46,8 +64,10 @@ export class HonoService {
 
 	// GraphQL 处理器：函数指针替换，零重建
 	private gqlFetch: GraphQLFetch = async () => new Response('GraphQL not ready', { status: 503 })
+	private readonly renderer: Promise<RenderHandler>
 
 	constructor(private ctx: Context) {
+		this.renderer = this.createRenderer()
 		this.rebuildApp()
 		// 务必调用 scheduleRebuild 而不是 rebui_configno 构建，否则会导致使用默认 gqlFetch
 		ctx.graphql.scheduleRebuild()
@@ -139,7 +159,7 @@ export class HonoService {
 			if (c.req.method !== 'GET') return next()
 			const accept = c.req.header('accept') || ''
 			if (!accept.includes('text/html')) return next()
-			return ssrApp.fetch(c.req.raw, c.env, c.executionCtx)
+			return this.render(c)
 		})
 
 		// 切换活跃实例并更新 fetch 指针
@@ -166,5 +186,22 @@ export class HonoService {
 	private requestFullReload() {
 		// 不直接操作 Vite Server；仅做标记，交由其他服务/插件感知并触发
 		this.shouldReload = true
+	}
+
+	private createRenderer(): Promise<RenderHandler> {
+		const flag = parseBooleanFlag(process.env.PLUXEL_HMR_SSR)
+		if (flag === true) {
+			return import('../../server/dev').then(({ createDevRenderer }) => createDevRenderer())
+		}
+		if (flag === false) {
+			return import('../../server/static').then(({ createStaticRenderer }) => createStaticRenderer())
+		}
+		// 默认使用静态渲染，避免构建产物引入 SSR 依赖
+		return import('../../server/static').then(({ createStaticRenderer }) => createStaticRenderer())
+	}
+
+	private async render(c: import('hono').Context<AppEnv>) {
+		const handler = await this.renderer
+		return handler(c)
 	}
 }
