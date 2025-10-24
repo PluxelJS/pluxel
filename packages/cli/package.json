@@ -1,10 +1,9 @@
 {
-	"private": true,
 	"name": "@pluxel/cli",
 	"bin": {
 		"pluxel": "dist/cli.js"
 	},
-	"version": "0.1.0",
+	"version": "0.1.2",
 	"description": "Demo example that imports a local package",
 	"type": "module",
 	"scripts": {
