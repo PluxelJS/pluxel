@@ -13,7 +13,6 @@ export const PluginScope = v.object({
 export const PluginDependency = v.object({
 	__typename: v.literal('PluginDependency'),
 	name: v.string(),
-	optional: v.boolean(),
 	isRunning: v.boolean(),
 })
 

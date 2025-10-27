@@ -1,12 +1,5 @@
 // loader/index.ts
-import {
-	type Context,
-	getClassParam,
-	getOptionalPredicate,
-	getPluginInfo,
-	Injectable,
-	type PluginConstructor,
-} from '@pluxel/core'
+import { type Context, getClassParam, getPluginInfo, Injectable, type PluginConstructor } from '@pluxel/core'
 import { genObjectFromRawEntries, genObjectFromValues } from 'knitwork'
 import { PluginRegistry } from './PluginRegistry'
 
@@ -96,18 +89,16 @@ export class LoaderService {
 	}
 
 	getPluginDependenciesInfo(ctor: PluginConstructor) {
-		const predicate = getOptionalPredicate(ctor)
 		return getClassParam<PluginConstructor>(ctor)
-			.map((dep, i) => {
+			.map((dep) => {
 				const info = getPluginInfo(dep)
 				if (!info) return undefined
 				return {
 					name: info.meta.name,
-					optional: predicate.isOptional(i),
 					isRunning: this.ctx.registry.isRunning(dep),
 				}
 			})
-			.filter(Boolean) as Array<{ name: string; optional: boolean; isRunning: boolean }>
+			.filter(Boolean) as Array<{ name: string; isRunning: boolean }>
 	}
 
 	getPluginClassByName(name: string) {

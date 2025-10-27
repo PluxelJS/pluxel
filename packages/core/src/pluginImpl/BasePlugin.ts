@@ -3,15 +3,21 @@ import { getPluginInfo } from './PluginDecorator'
 
 // HMR 注意：必须使用 Symbol.for
 export const PLUGIN_CTX = Symbol.for('pluxel:plugin:ctx')
+export const FORK_CTX = Symbol.for('pluxel:plugin:ctx:fork')
 
 export abstract class BasePlugin<C extends Context = Context> {
+	static [FORK_CTX]: () => Context
 	public [PLUGIN_CTX]!: C
+
+	constructor() {
+		if (BasePlugin[FORK_CTX] === undefined) {
+			throw new Error("Don't instantiate BasePlugin directly.")
+		}
+		this[PLUGIN_CTX] = BasePlugin[FORK_CTX]() as C
+	}
 
 	/** Access system deps and register disposables */
 	public get ctx(): C {
-		if (!this[PLUGIN_CTX]) {
-			throw new Error('Plugin context has not been set.')
-		}
 		return this[PLUGIN_CTX]
 	}
 

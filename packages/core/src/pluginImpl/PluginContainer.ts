@@ -1,11 +1,9 @@
 // PluginContainer.ts
 
 import type { Context } from '@pluxel/context'
-import type { Maybe } from 'option-t/maybe'
 import { createErr, createOk, unwrapOk } from 'option-t/plain_result'
 import { type DiodContainer, ExtendedContainerBuilder } from '../container'
-import type { BasePlugin } from './BasePlugin'
-import { PLUGIN_CTX } from './BasePlugin'
+import { BasePlugin, FORK_CTX } from './BasePlugin'
 import { getClassParam, getPluginInfo } from './PluginDecorator'
 import type { PluginConstructor, PluginIdentifier, PluginInstance } from './types'
 
@@ -16,54 +14,20 @@ export class PluginContainer {
 	public singletons = new Map<PluginIdentifier, PluginInstance>()
 	private builder = new ExtendedContainerBuilder(this.singletons)
 
-	public lastContainer!: PluginDiContainer
-
 	constructor(private createPluginContext: createCTX) {}
 
-	private resetDraft() {
-		this.builder.buildables.reset()
-	}
-
+	public lastContainer!: PluginDiContainer
 	/**
-	 * 注册插件：
-	 * - Factory 仅构造与挂 ctx，不触发生命周期
-	 * - 必选依赖进 withDependencies；可选依赖走 getMaybe
+	 * Factory 仅构造实例并挂载 ctx，不在此触发生命周期
+	 * 所有依赖在构造阶段视为必需，缺失将立即抛错
 	 */
 	public registerPlugin(Plugin: PluginConstructor): void {
 		const info = getPluginInfo(Plugin)
 		if (!info) throw new Error('缺少 @Plugin 装饰器元数据')
 
 		const paramTypes = getClassParam(Plugin) as PluginIdentifier[]
-		const n = paramTypes.length
+		const depsCount = paramTypes.length
 		const baseOrSelf = info.base ?? Plugin
-
-		// ---------- 预处理：BigInt 位掩码 -> 布尔表（热路径不再做 BigInt 运算） ----------
-		const maskN = n === 0 ? 0n : (1n << BigInt(n)) - 1n
-		const maskedBits = info.optionals.bits & maskN
-
-		const isOptional: boolean[] = new Array(n)
-		let allRequired = true
-		for (let i = 0, m = 1n; i < n; i++, m <<= 1n) {
-			const opt = (maskedBits & m) !== 0n
-			isOptional[i] = opt
-			if (opt) allRequired = false
-		}
-
-		// ---------- mustDeps：精准容量，无 push ----------
-		let mustDeps: PluginIdentifier[]
-		if (allRequired) {
-			mustDeps = paramTypes
-		} else {
-			let requiredCount = 0
-			for (let i = 0; i < n; i++) if (!isOptional[i]) requiredCount++
-			if (requiredCount === 0) {
-				mustDeps = []
-			} else {
-				const arr = new Array<PluginIdentifier>(requiredCount)
-				for (let i = 0, k = 0; i < n; i++) if (!isOptional[i]) arr[k++] = paramTypes[i]!
-				mustDeps = arr
-			}
-		}
 
 		// ---------- 影子包装：仅遮蔽 ctx，不改 parent 本体 ----------
 		const wrapWithCaller = (parent: BasePlugin, pluginCTX: any): BasePlugin => {
@@ -81,42 +45,61 @@ export class PluginContainer {
 		this.builder
 			.register(baseOrSelf as any)
 			.useFactory((c) => {
-				// —— 无参快路径 —— //
-				if (n === 0) {
-					const pluginCTX = this.createPluginContext()
-					const instance = new (Plugin as any)()
-					;(instance as any)[PLUGIN_CTX] = pluginCTX // 性能优先：直接赋值
-					return instance
-				}
-
 				const pluginCTX = this.createPluginContext()
 
-				// 避免稀疏数组（JIT 友好）
-				const args: (BasePlugin | undefined)[] = new Array(n).fill(undefined)
-
-				if (allRequired) {
-					// —— 纯必需：无分支、无 Maybe —— //
-					for (let i = 0; i < n; i++) {
-						const t = paramTypes[i]!
-						const parent = unwrapOk(c.getResult(t))
-						args[i] = wrapWithCaller(parent, pluginCTX)
-					}
-				} else {
-					// —— 可选 + 必需混合 —— //
-					for (let i = 0; i < n; i++) {
-						const t = paramTypes[i]!
-						const parent = isOptional[i] ? c.getMaybe(t) : unwrapOk(c.getResult(t))
-						if (parent) args[i] = wrapWithCaller(parent, pluginCTX)
-						// 缺失可选依赖：保持 undefined；构造器自己处理
+				const instantiate = <T>(factory: () => T): T => {
+					const prevFork = BasePlugin[FORK_CTX]
+					BasePlugin[FORK_CTX] = () => pluginCTX
+					try {
+						return factory()
+					} finally {
+						BasePlugin[FORK_CTX] = prevFork
 					}
 				}
 
-				// 注意：这里用可变参调用，若极端热可对 n∈{1,2,3} 做手写分支
-				const instance = new (Plugin as any)(...args)
-				;(instance as any)[PLUGIN_CTX] = pluginCTX // 性能优先：直接赋值
-				return instance
+				// —— 无参快路径 —— //
+				if (depsCount === 0) return instantiate(() => new Plugin())
+
+				switch (depsCount) {
+					case 1: {
+						const dep0 = unwrapOk(c.getResult(paramTypes[0]))!
+						return instantiate(() => new (Plugin as any)(wrapWithCaller(dep0, pluginCTX)))
+					}
+					case 2: {
+						const dep0 = unwrapOk(c.getResult(paramTypes[0]))!
+						const dep1 = unwrapOk(c.getResult(paramTypes[1]))!
+						return instantiate(
+							() =>
+								new (Plugin as any)(
+									wrapWithCaller(dep0, pluginCTX),
+									wrapWithCaller(dep1, pluginCTX),
+								),
+						)
+					}
+					case 3: {
+						const dep0 = unwrapOk(c.getResult(paramTypes[0]))!
+						const dep1 = unwrapOk(c.getResult(paramTypes[1]))!
+						const dep2 = unwrapOk(c.getResult(paramTypes[2]))!
+						return instantiate(
+							() =>
+								new (Plugin as any)(
+									wrapWithCaller(dep0, pluginCTX),
+									wrapWithCaller(dep1, pluginCTX),
+									wrapWithCaller(dep2, pluginCTX),
+								),
+						)
+					}
+					default: {
+						const args = new Array<BasePlugin>(depsCount)
+						for (let i = 0; i < depsCount; i++) {
+							const parent = unwrapOk(c.getResult(paramTypes[i]))!
+							args[i] = wrapWithCaller(parent, pluginCTX)
+						}
+						return instantiate(() => new (Plugin as any)(...args))
+					}
+				}
 			})
-			.withDependencies(mustDeps)
+			.withDependencies(depsCount === 0 ? [] : (paramTypes as PluginIdentifier[]))
 			.asBuilderSingleton()
 	}
 

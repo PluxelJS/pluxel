@@ -1,9 +1,7 @@
-import type { Context as PlxContext, PluginConstructor } from '@pluxel/core'
+import type { PluginConstructor, Context as PlxContext } from '@pluxel/core'
 import { GraphQLError } from 'graphql'
-import * as v from 'valibot'
-
-import { PluginDependency } from '../../schema'
-import type { PluginScopeOutput } from '../../schema'
+import type * as v from 'valibot'
+import type { PluginDependency, PluginScopeOutput } from '../../schema'
 
 const PLUGIN_CTOR = Symbol('pluginCtor')
 
@@ -32,12 +30,9 @@ export function getScopeCtor(pCtx: PlxContext, scope: PluginScopeOutput): Plugin
 }
 
 export function getPluginDependencies(pCtx: PlxContext, ctor: PluginConstructor) {
-	return pCtx.loader
-		.getPluginDependenciesInfo(ctor)
-		.map((dep) => ({
-			__typename: 'PluginDependency' as const,
-			name: dep.name,
-			optional: dep.optional,
-			isRunning: dep.isRunning,
-		})) satisfies Array<v.InferOutput<typeof PluginDependency>>
+	return pCtx.loader.getPluginDependenciesInfo(ctor).map((dep) => ({
+		__typename: 'PluginDependency' as const,
+		name: dep.name,
+		isRunning: dep.isRunning,
+	})) satisfies Array<v.InferOutput<typeof PluginDependency>>
 }

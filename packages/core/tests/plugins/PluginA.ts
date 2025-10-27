@@ -1,4 +1,4 @@
-import { BasePlugin, Optional, Plugin } from '../context'
+import { BasePlugin, Plugin } from '../context'
 // PluginA.ts
 // PluginA 依赖 PluginB 为必选依赖，依赖 PluginC 为可选依赖
 // biome-ignore lint/style/useImportType: <PluginSystem>
@@ -8,11 +8,16 @@ import { PluginC } from './PluginC'
 
 @Plugin({ name: 'PluginA', type: 'event' })
 export class PluginA extends BasePlugin {
-	constructor(public pluginB: PluginB, @Optional() public pluginC?: PluginC) {
-    super();
-  }
+	constructor(public pluginB: PluginB) {
+		super()
+	}
+
+	private pluginC?: PluginC
 
 	init(): void {
+		this.pluginC =
+			(this.ctx.registry.pluginRegistry.lastContainer.getMaybe(PluginC) as PluginC | undefined) ??
+			undefined
 		this.ctx.logger.info('PluginA initialized')
 		// 使用必需依赖 PluginB
 		this.pluginB.doSomething()
