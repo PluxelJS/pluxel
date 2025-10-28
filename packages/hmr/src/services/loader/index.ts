@@ -1,5 +1,11 @@
 // loader/index.ts
-import { type Context, getClassParam, getPluginInfo, Injectable, type PluginConstructor } from '@pluxel/core'
+import {
+	type Context,
+	getClassParam,
+	getPluginInfo,
+	Injectable,
+	type PluginConstructor,
+} from '@pluxel/core'
 import { genObjectFromRawEntries, genObjectFromValues } from 'knitwork'
 import { PluginRegistry } from './PluginRegistry'
 
@@ -72,6 +78,19 @@ export class LoaderService {
 		return this.registry.getLoadedNames()
 	}
 
+	resolveRuntimeCtor(target: PluginConstructor | string): PluginConstructor | undefined {
+		if (typeof target === 'string') return this.registry.getPluginByName(target)
+		const info = getPluginInfo(target)
+		if (!info) return target
+		return this.registry.getPluginByName(info.meta.name) ?? target
+	}
+
+	isRunning(target: PluginConstructor | string): boolean {
+		const ctor = this.resolveRuntimeCtor(target)
+		if (!ctor) return false
+		return this.ctx.registry.isRunning(ctor)
+	}
+
 	getFullPluginStatus() {
 		const loaded = this.registry.names
 		const statuses: Record<string, { id: string; isRunning: boolean }> = Object.create(null)
@@ -79,7 +98,7 @@ export class LoaderService {
 		let stopped = 0
 
 		for (const [name, ctor] of loaded) {
-			const isRunning = this.ctx.registry.isRunning(ctor)
+			const isRunning = this.isRunning(ctor)
 			statuses[name] = { id: name, isRunning }
 			if (isRunning) running++
 			else stopped++
@@ -95,7 +114,7 @@ export class LoaderService {
 				if (!info) return undefined
 				return {
 					name: info.meta.name,
-					isRunning: this.ctx.registry.isRunning(dep),
+					isRunning: this.isRunning(dep),
 				}
 			})
 			.filter(Boolean) as Array<{ name: string; isRunning: boolean }>
@@ -128,7 +147,7 @@ export class LoaderService {
 
 		const rows: Row[] = []
 		for (const [name, ctor] of this.registry.names) {
-			if (!this.ctx.registry.isRunning(ctor)) continue
+			if (!this.isRunning(ctor)) continue
 			const moduleId = this.registry.name2PathMap.get(name)
 			const exportKey = this.registry.getExportKeyByName(name)
 			if (!moduleId || !exportKey) continue
