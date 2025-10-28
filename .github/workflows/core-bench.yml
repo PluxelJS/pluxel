@@ -1,0 +1,130 @@
+name: Core Benchmarks
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'packages/core/**'
+      - 'pnpm-lock.yaml'
+      - '.github/workflows/core-bench.yml'
+  pull_request:
+    paths:
+      - 'packages/core/**'
+      - 'pnpm-lock.yaml'
+      - '.github/workflows/core-bench.yml'
+  workflow_dispatch:
+    inputs:
+      fail_on_regression:
+        description: 'Fail workflow when regression exceeds tolerance'
+        type: boolean
+        default: false
+
+env:
+  BENCH_TOLERANCE: "5"
+
+concurrency:
+  group: core-bench-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  bench:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest]
+        node: ["lts/*"]
+        bun: ["1.2.22"]
+    permissions:
+      contents: read
+      pull-requests: write
+      actions: read
+    env:
+      BASE_BRANCH: ${{ github.base_ref || github.ref_name || github.event.repository.default_branch }}
+    steps:
+      - name: Prepare git
+        run: git config --global core.autocrlf false
+
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup toolchain
+        uses: ./.github/actions/setup-toolchain
+        with:
+          node-version: ${{ matrix.node }}
+          bun-version: ${{ matrix.bun }}
+
+      - name: Download baseline artifact
+        continue-on-error: true
+        uses: dawidd6/action-download-artifact@v3
+        with:
+          workflow: core-bench.yml
+          name: core-bench-baseline-${{ matrix.os }}-${{ matrix.bun }}
+          branch: ${{ env.BASE_BRANCH }}
+          path: packages/core/benchmarks/baseline
+          if_no_artifact_found: ignore
+
+      - name: Prepare baseline report
+        run: |
+          mkdir -p packages/core/benchmarks
+          if [ -f packages/core/benchmarks/baseline/plugin-lifecycle.json ]; then
+            cp packages/core/benchmarks/baseline/plugin-lifecycle.json packages/core/benchmarks/baseline.json
+          else
+            echo '{}' > packages/core/benchmarks/baseline.json
+          fi
+
+      - name: Run core benchmark
+        env:
+          PLUXEL_BENCH_BASELINE: packages/core/benchmarks/baseline.json
+          PLUXEL_BENCH_TOLERANCE: ${{ env.BENCH_TOLERANCE }}
+          PLUXEL_BENCH_STRICT: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.fail_on_regression == 'true' && '1' || '0' }}
+        run: pnpm --filter @pluxel/core bench
+
+      - name: Upload benchmark artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: core-bench-run-${{ github.run_id }}
+          path: |
+            packages/core/benchmarks/plugin-lifecycle.json
+            packages/core/benchmarks/plugin-lifecycle.md
+            packages/core/benchmarks/plugin-lifecycle-diff.json
+          if-no-files-found: ignore
+
+      - name: Upload baseline artifact
+        if: github.ref_name == github.event.repository.default_branch
+        uses: actions/upload-artifact@v4
+        with:
+          name: core-bench-baseline-${{ matrix.os }}-${{ matrix.bun }}
+          path: packages/core/benchmarks/plugin-lifecycle.json
+          if-no-files-found: error
+
+      - name: Comment PR with results
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs')
+            const path = require('path')
+            const marker = '<!-- pluxel-core-bench -->'
+            let body = ''
+            const reportPath = path.join(process.cwd(), 'packages/core/benchmarks/plugin-lifecycle.md')
+            if (fs.existsSync(reportPath)) {
+              body = fs.readFileSync(reportPath, 'utf8')
+            } else {
+              body = 'Benchmark report not found.'
+            }
+            body = `${marker}\n${body}`
+            const { owner, repo } = context.repo
+            const issue_number = context.issue.number
+            const comments = await github.rest.issues.listComments({ owner, repo, issue_number, per_page: 100 })
+            const existing = comments.data.find((comment) => comment.user?.login === 'github-actions[bot]' && comment.body?.includes(marker))
+            if (existing) {
+              await github.rest.issues.updateComment({ owner, repo, comment_id: existing.id, body })
+            } else {
+              await github.rest.issues.createComment({ owner, repo, issue_number, body })
+            }

@@ -1,4 +1,4 @@
-import { BasePlugin, Optional, Plugin } from '@pluxel/hmr'
+import { BasePlugin, Plugin } from '@pluxel/hmr'
 import { v } from './config'
 // PluginA.ts
 // PluginA 依赖 PluginB 为必选依赖，依赖 PluginC 为可选依赖
@@ -10,17 +10,20 @@ import { PluginC } from './PluginC'
 export const a = v.object({ name: v.array(v.picklist(['a', 'b'])) })
 @Plugin({ name: 'PluginA', type: 'event' })
 export class PluginA extends BasePlugin {
-	constructor(
-		public pluginB: PluginB,
-		@Optional() public _pluginC?: PluginC,
-	) {
+	private pluginC?: PluginC
+
+	constructor(public pluginB: PluginB) {
 		super()
 	}
 
 	init(_abortt: AbortSignal): void | Promise<void> {
+		this.pluginC =
+			(this.ctx.registry.pluginRegistry.lastContainer.getMaybe(PluginC) as PluginC | undefined) ??
+			undefined
+
 		this.pluginB.doSomething()
 		// 可选依赖 PluginC 进行判断_pluginC
-		if (this._pluginC) {
+		if (this.pluginC) {
 			this.ctx.logger.info('PluginA using PluginC dependency')
 		} else {
 			this.ctx.logger.info('PluginA: PluginC dependency not injected')

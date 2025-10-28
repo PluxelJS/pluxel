@@ -21,11 +21,6 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          run_install: true  # 自动安装依赖（等价 pnpm i）
-
       # 用官方 setup-node，顺手配置 npm registry & auth
       - name: Setup pnpm
         uses: pnpm/action-setup@v4

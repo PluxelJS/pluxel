@@ -2,6 +2,7 @@ import { type Context, Injectable, symbols } from '@pluxel/context'
 // EventsService.ts
 import { type EventArgs, type EventEmitterOptions, type EventListener, Eventure } from 'eventure'
 import type { PluginIdentifier, PluginInstance } from '../pluginImpl'
+import type { CommitSummary } from './PluginService'
 
 const serviceName = 'events' as const
 declare module '@pluxel/context' {
@@ -83,6 +84,7 @@ export interface Events {
 	onLoad: [string]
 	beforeStart: [PluginInstance] // 启动前
 	commitFailed: (failed: Set<PluginIdentifier>) => void
+	afterCommit: (summary: CommitSummary) => void
 	afterStart: [Context] // 启动成功
 	startError: [Context, Error] // 启动失败
 }

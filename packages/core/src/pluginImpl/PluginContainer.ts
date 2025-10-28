@@ -1,11 +1,9 @@
 // PluginContainer.ts
 
 import type { Context } from '@pluxel/context'
-import type { Maybe } from 'option-t/maybe'
 import { createErr, createOk, unwrapOk } from 'option-t/plain_result'
 import { type DiodContainer, ExtendedContainerBuilder } from '../container'
-import type { BasePlugin } from './BasePlugin'
-import { PLUGIN_CTX } from './BasePlugin'
+import { BasePlugin, FORK_CTX, PLUGIN_CTX } from './BasePlugin'
 import { getClassParam, getPluginInfo } from './PluginDecorator'
 import type { PluginConstructor, PluginIdentifier, PluginInstance } from './types'
 
@@ -16,107 +14,78 @@ export class PluginContainer {
 	public singletons = new Map<PluginIdentifier, PluginInstance>()
 	private builder = new ExtendedContainerBuilder(this.singletons)
 
-	public lastContainer!: PluginDiContainer
-
 	constructor(private createPluginContext: createCTX) {}
 
-	private resetDraft() {
-		this.builder.buildables.reset()
-	}
-
+	public lastContainer!: PluginDiContainer
 	/**
-	 * 注册插件：
-	 * - Factory 仅构造与挂 ctx，不触发生命周期
-	 * - 必选依赖进 withDependencies；可选依赖走 getMaybe
+	 * Factory 仅构造实例并挂载 ctx，不在此触发生命周期
+	 * 所有依赖在构造阶段视为必需，缺失将立即抛错
 	 */
 	public registerPlugin(Plugin: PluginConstructor): void {
 		const info = getPluginInfo(Plugin)
 		if (!info) throw new Error('缺少 @Plugin 装饰器元数据')
 
 		const paramTypes = getClassParam(Plugin) as PluginIdentifier[]
-		const n = paramTypes.length
+		const depsCount = paramTypes.length
 		const baseOrSelf = info.base ?? Plugin
-
-		// ---------- 预处理：BigInt 位掩码 -> 布尔表（热路径不再做 BigInt 运算） ----------
-		const maskN = n === 0 ? 0n : (1n << BigInt(n)) - 1n
-		const maskedBits = info.optionals.bits & maskN
-
-		const isOptional: boolean[] = new Array(n)
-		let allRequired = true
-		for (let i = 0, m = 1n; i < n; i++, m <<= 1n) {
-			const opt = (maskedBits & m) !== 0n
-			isOptional[i] = opt
-			if (opt) allRequired = false
-		}
-
-		// ---------- mustDeps：精准容量，无 push ----------
-		let mustDeps: PluginIdentifier[]
-		if (allRequired) {
-			mustDeps = paramTypes
-		} else {
-			let requiredCount = 0
-			for (let i = 0; i < n; i++) if (!isOptional[i]) requiredCount++
-			if (requiredCount === 0) {
-				mustDeps = []
-			} else {
-				const arr = new Array<PluginIdentifier>(requiredCount)
-				for (let i = 0, k = 0; i < n; i++) if (!isOptional[i]) arr[k++] = paramTypes[i]!
-				mustDeps = arr
-			}
-		}
-
-		// ---------- 影子包装：仅遮蔽 ctx，不改 parent 本体 ----------
-		const wrapWithCaller = (parent: BasePlugin, pluginCTX: any): BasePlugin => {
-			// 1) ctx 影子层（只添加 caller，不破坏 parent.ctx）
-			const ctxView = Object.create(parent.ctx)
-			ctxView.caller = pluginCTX
-
-			// 2) plugin 影子层：复用 parent 的所有行为，仅用“自有属性”覆盖 ctx
-			const injected = Object.create(parent, {
-				ctx: { value: ctxView }, // writable/configurable/enumerable 默认为 false
-			})
-			return injected
-		}
 
 		this.builder
 			.register(baseOrSelf as any)
 			.useFactory((c) => {
-				// —— 无参快路径 —— //
-				if (n === 0) {
-					const pluginCTX = this.createPluginContext()
-					const instance = new (Plugin as any)()
-					;(instance as any)[PLUGIN_CTX] = pluginCTX // 性能优先：直接赋值
-					return instance
-				}
-
 				const pluginCTX = this.createPluginContext()
+				pluginCTX.pluginInfo = info
 
-				// 避免稀疏数组（JIT 友好）
-				const args: (BasePlugin | undefined)[] = new Array(n).fill(undefined)
+				// 按“实例”固化 ctx；闭包 + 复用一个描述符，避免每个依赖分配 {value:...}
+				const wrap = (() => {
+					const desc: PropertyDescriptor = {
+						value: null,
+						writable: false,
+						enumerable: false,
+						configurable: false,
+					}
+					return (parent: BasePlugin): BasePlugin => {
+						const view = Object.create(parent[PLUGIN_CTX])
+						view.caller = pluginCTX
+						desc.value = view
+						const injected = Object.create(parent, { ctx: desc })
+						desc.value = null // 保险起见，打断 descriptor 对 view 的引用
+						return injected
+					}
+				})()
 
-				if (allRequired) {
-					// —— 纯必需：无分支、无 Maybe —— //
-					for (let i = 0; i < n; i++) {
-						const t = paramTypes[i]!
-						const parent = unwrapOk(c.getResult(t))
-						args[i] = wrapWithCaller(parent, pluginCTX)
+				const prevFork = BasePlugin[FORK_CTX]
+				BasePlugin[FORK_CTX] = () => pluginCTX
+				try {
+					switch (depsCount) {
+						case 0:
+							return new (Plugin as any)()
+						case 1:
+							return new (Plugin as any)(wrap(unwrapOk(c.getResult(paramTypes[0]))!))
+						case 2:
+							return new (Plugin as any)(
+								wrap(unwrapOk(c.getResult(paramTypes[0]))!),
+								wrap(unwrapOk(c.getResult(paramTypes[1]))!),
+							)
+						case 3:
+							return new (Plugin as any)(
+								wrap(unwrapOk(c.getResult(paramTypes[0]))!),
+								wrap(unwrapOk(c.getResult(paramTypes[1]))!),
+								wrap(unwrapOk(c.getResult(paramTypes[2]))!),
+							)
+						default: {
+							// 只有 4+ 依赖时才分配数组
+							const args = new Array<BasePlugin>(depsCount)
+							for (let i = 0; i < depsCount; i++) {
+								args[i] = wrap(unwrapOk(c.getResult(paramTypes[i]))!)
+							}
+							return new (Plugin as any)(...args)
+						}
 					}
-				} else {
-					// —— 可选 + 必需混合 —— //
-					for (let i = 0; i < n; i++) {
-						const t = paramTypes[i]!
-						const parent = isOptional[i] ? c.getMaybe(t) : unwrapOk(c.getResult(t))
-						if (parent) args[i] = wrapWithCaller(parent, pluginCTX)
-						// 缺失可选依赖：保持 undefined；构造器自己处理
-					}
+				} finally {
+					BasePlugin[FORK_CTX] = prevFork
 				}
-
-				// 注意：这里用可变参调用，若极端热可对 n∈{1,2,3} 做手写分支
-				const instance = new (Plugin as any)(...args)
-				;(instance as any)[PLUGIN_CTX] = pluginCTX // 性能优先：直接赋值
-				return instance
 			})
-			.withDependencies(mustDeps)
+			.withDependencies(depsCount === 0 ? [] : (paramTypes as PluginIdentifier[]))
 			.asBuilderSingleton()
 	}
 

@@ -6,7 +6,6 @@ import type { Identifier, PluginIdentifier, SubclassOf } from './types'
 export const PLUGIN_SYMBOL = {
 	META_KEY: Symbol.for('pluxel:meta'),
 	CONFIG_MAP: Symbol.for('pluxel:config'),
-	OPTIONAL_PARAMS_BITS: Symbol.for('pluxel:params:bits'), // only bits
 	BASE_CLASS: Symbol.for('pluxel:base'),
 	PARAM_TOKENS: Symbol.for('pluxel:paramTokens'),
 } as const
@@ -18,7 +17,6 @@ const TOKEN_EPOCH = Symbol.for('pluxel:paramTokens:epoch') // epoch for param vi
 /** —— Metadata —— */
 export interface PluginMetadata {
 	name: string
-	type?: 'event' | 'hook' | string
 	[key: string]: any
 }
 export type ConfigSchemaList<T = any> = Record<string, T>
@@ -98,31 +96,13 @@ export function Config<S extends ConfigSchemaList>(schema: S): PropertyDecorator
 }
 
 /* =========================================================
- *              @Optional（仅位集；更快更省）
- * =======================================================*/
-export function Optional(): ParameterDecorator {
-	return (target, propertyKey, parameterIndex) => {
-		if (propertyKey !== undefined) throw new Error('@Optional 只能用于构造函数参数')
-		const ctor = target as Function
-		const oldBits: bigint = Reflect.getOwnMetadata(PLUGIN_SYMBOL.OPTIONAL_PARAMS_BITS, ctor) ?? 0n
-		const bits = setBit(oldBits, parameterIndex)
-		Reflect.defineMetadata(PLUGIN_SYMBOL.OPTIONAL_PARAMS_BITS, bits, ctor)
-		STABLE_CACHE.delete(ctor) // stable depends on bits
-	}
-}
-
-/* =========================================================
  *                  Stable info（独立缓存）
- *   meta / base / configMap / optionals {bits, indices}
+ *   meta / base / configMap
  * =======================================================*/
 export interface StableInfo {
 	readonly meta: PluginMetadata
 	readonly base?: PluginIdentifier
 	readonly configMap?: ConfigSchemaList
-	readonly optionals: {
-		readonly bits: bigint
-		readonly indices: readonly number[]
-	}
 }
 const STABLE_CACHE = new WeakMap<Function, Readonly<StableInfo>>()
 
@@ -141,15 +121,10 @@ export function getPluginInfo(ctor: Function): Readonly<StableInfo> | undefined 
 		| ConfigSchemaList
 		| undefined
 
-	const bits: bigint = Reflect.getOwnMetadata(PLUGIN_SYMBOL.OPTIONAL_PARAMS_BITS, ctor) ?? 0n
-	const len = getParamLength(ctor)
-	const indices = Object.freeze(bitsToIndices(bits, len))
-
 	const info: Readonly<StableInfo> = Object.freeze({
 		meta,
 		base,
 		configMap,
-		optionals: Object.freeze({ bits, indices }),
 	})
 	STABLE_CACHE.set(ctor, info)
 	return info
@@ -190,52 +165,6 @@ export function getClassParam<T = unknown>(
 	return frozen as any
 }
 
-// —— Optional 判定器 —— //
-export interface OptionalPredicate {
-	readonly length: number // 当前构造参数长度（受 design:paramtypes 和 PARAM_TOKENS 影响）
-	readonly bits: bigint // 已按 length 截过 n 位的可选位集
-	readonly anyOptional: boolean // 是否存在任一可选
-	readonly allRequired: boolean // 是否全部必需（等价 bits===0n）
-	isOptional(index: number): boolean
-}
-
-const OPTIONAL_PRED_CACHE = new WeakMap<Function, Readonly<OptionalPredicate>>()
-
-export function getOptionalPredicate(target: Function): Readonly<OptionalPredicate> {
-	const cached = OPTIONAL_PRED_CACHE.get(target)
-	if (cached) return cached
-
-	// 计算当前长度与 n 位掩码，屏蔽掉 n 之外的脏位
-	const n = getParamLength(target)
-	const rawBits: bigint = Reflect.getOwnMetadata(PLUGIN_SYMBOL.OPTIONAL_PARAMS_BITS, target) ?? 0n
-	const maskN = n === 0 ? 0n : (1n << BigInt(n)) - 1n
-	const bits = rawBits & maskN
-	const anyOptional = bits !== 0n
-	const allRequired = !anyOptional
-
-	// 生成常量判定函数（闭包捕获 bits），O(1) 位检测
-	const pred: OptionalPredicate = {
-		length: n,
-		bits,
-		anyOptional,
-		allRequired,
-		isOptional(index: number): boolean {
-			if (index < 0) return false
-			return ((bits >> BigInt(index)) & 1n) === 1n
-		},
-	}
-	const frozen = Object.freeze(pred)
-	OPTIONAL_PRED_CACHE.set(target, frozen)
-	return frozen
-}
-
-/* =========================================================
- *                Optional & Base helpers
- * =======================================================*/
-export function hasOptionalParam(ctor: Function, index: number): boolean {
-	const bits: bigint = Reflect.getOwnMetadata(PLUGIN_SYMBOL.OPTIONAL_PARAMS_BITS, ctor) ?? 0n
-	return hasBit(bits, index)
-}
 export function getBaseClass(target: Function): PluginIdentifier | undefined {
 	return Reflect.getOwnMetadata(PLUGIN_SYMBOL.BASE_CLASS, target)
 }
@@ -319,20 +248,8 @@ function applyOverride(base: unknown[], override?: ParamOverride): void {
 		}
 	}
 }
-function setBit(bits: bigint, idx: number): bigint {
-	return bits | (1n << BigInt(idx))
-}
-function hasBit(bits: bigint, idx: number): boolean {
-	return ((bits >> BigInt(idx)) & 1n) === 1n
-}
-function bitsToIndices(bits: bigint, length: number): number[] {
-	if (bits === 0n || length <= 0) return []
-	const out: number[] = []
-	for (let i = 0; i < length; i++) if (hasBit(bits, i)) out.push(i)
-	return out
-}
 /** max(reflected length, persistent override length) */
-function getParamLength(ctor: Function): number {
+function _getParamLengthh(ctor: Function): number {
 	const reflected: unknown[] = Reflect.getMetadata(PARAM_TYPES, ctor) ?? []
 	const stored: ParamOverride | undefined = Reflect.getOwnMetadata(PLUGIN_SYMBOL.PARAM_TOKENS, ctor)
 	let toks = 0

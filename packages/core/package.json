@@ -25,18 +25,19 @@
 	"scripts": {
 		"test": "bun test",
 		"build": "tsdown",
-		"dev": "bun --watch run tests/start.ts"
+		"dev": "bun --watch run tests/start.ts",
+		"bench": "bun run tests/bench/pluginLifecycle.bench.ts"
 	},
 	"dependencies": {
-		"reflect-metadata": "^0.2.2",
-		"xstate": "5.20.1",
 		"eventure": "^0.3.0",
-		"option-t": "54.2.4"
+		"option-t": "54.2.4",
+		"reflect-metadata": "^0.2.2",
+		"xstate": "5.20.1"
 	},
-	"peerDependencies": {},
 	"devDependencies": {
 		"@pluxel/context": "workspace:*",
-		"diod": "workspace:*"
+		"diod": "workspace:*",
+		"tinybench": "^5.1.0"
 	},
 	"publishConfig": {
 		"exports": {

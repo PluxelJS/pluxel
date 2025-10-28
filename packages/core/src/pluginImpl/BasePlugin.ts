@@ -3,19 +3,25 @@ import { getPluginInfo } from './PluginDecorator'
 
 // HMR 注意：必须使用 Symbol.for
 export const PLUGIN_CTX = Symbol.for('pluxel:plugin:ctx')
+export const FORK_CTX = Symbol.for('pluxel:plugin:ctx:fork')
 
 export abstract class BasePlugin<C extends Context = Context> {
-	public [PLUGIN_CTX]!: C
+	static [FORK_CTX]: () => Context
+	protected [PLUGIN_CTX]!: C
+
+	constructor() {
+		if (BasePlugin[FORK_CTX] === undefined) {
+			throw new Error("Don't instantiate BasePlugin directly.")
+		}
+		this[PLUGIN_CTX] = BasePlugin[FORK_CTX]() as C
+	}
 
 	/** Access system deps and register disposables */
-	public get ctx(): C {
-		if (!this[PLUGIN_CTX]) {
-			throw new Error('Plugin context has not been set.')
-		}
+	protected get ctx(): C {
 		return this[PLUGIN_CTX]
 	}
 
-	public get caller() {
+	protected get caller() {
 		return this.ctx.caller
 	}
 
@@ -33,6 +39,6 @@ export abstract class BasePlugin<C extends Context = Context> {
 	 * Plugins may implement either, both, or none.
 	 * Use `override` when implementing to get compiler checks.
 	 */
-	init?(abort: AbortSignal): void | Promise<void>
-	stop?(abort: AbortSignal): void | Promise<void>
+	protected init?(abort: AbortSignal): void | Promise<void>
+	protected stop?(abort: AbortSignal): void | Promise<void>
 }

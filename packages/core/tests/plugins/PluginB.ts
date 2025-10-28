@@ -1,10 +1,8 @@
 import { BasePlugin, Plugin } from '../context'
-// PluginB.ts
-import { PluginC } from './PluginC'
 
-@Plugin({ name: 'PluginB', type: 'hook' })
+@Plugin({ name: 'PluginB' })
 export class PluginB extends BasePlugin {
-	init(): void {
+	protected init(): void {
 		this.ctx.logger.info('PluginB initialized')
 	}
 
