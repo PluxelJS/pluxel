@@ -100,6 +100,25 @@ const toDisplay = (value: number | null | undefined) =>
 	value == null || Number.isNaN(value) ? '—' : value.toLocaleString()
 const pctDisplay = (value: number | null | undefined) =>
 	value == null || Number.isNaN(value) ? '—' : `${value > 0 ? '+' : ''}${value.toFixed(2)}%`
+const metricSummary = (
+	current: number | null | undefined,
+	delta: number | null | undefined,
+	baseline: number | null | undefined,
+) => {
+	if (current == null || Number.isNaN(current)) {
+		if (baseline == null || Number.isNaN(baseline)) return '—'
+		return `— · base ${baseline.toLocaleString()}`
+	}
+	const parts = [current.toLocaleString()]
+	const deltaText = delta == null || Number.isNaN(delta) ? null : pctDisplay(delta)
+	if (deltaText && deltaText !== '—') {
+		parts.push(`Δ ${deltaText}`)
+	}
+	if (baseline != null && !Number.isNaN(baseline)) {
+		parts.push(`base ${baseline.toLocaleString()}`)
+	}
+	return parts.join(' · ')
+}
 const ratioPct = (current: number, baseline: number) =>
 	baseline === 0 ? null : ((current - baseline) / baseline) * 100
 
@@ -174,11 +193,12 @@ type ComparisonRow = {
 	name: string
 	baselineOpsMean: number | null
 	baselineLatencyMeanMs: number | null
-	opsMean: number
-	latencyMeanMs: number
+	opsMean: number | null
+	latencyMeanMs: number | null
 	opsDeltaPct: number | null
 	latencyDeltaPct: number | null
-	status: 'measured' | 'new'
+	runs: number | null
+	status: 'measured' | 'new' | 'missing'
 }
 
 const baselineEnvPath = process.env.PLUXEL_BENCH_BASELINE
@@ -222,82 +242,90 @@ if (baselinePath && existsSync(baselinePath)) {
 	console.log('[bench] Baseline path not found:', baselineEnvPath)
 }
 
-const comparison: ComparisonRow[] = []
+const comparison: ComparisonRow[] = rows.map((row) => ({
+	name: row.name,
+	baselineOpsMean: null,
+	baselineLatencyMeanMs: null,
+	opsMean: row.opsMean,
+	latencyMeanMs: row.latencyMeanMs,
+	opsDeltaPct: null,
+	latencyDeltaPct: null,
+	runs: row.runs,
+	status: 'new',
+}))
+
 if (baselineReport?.tasks) {
 	const baselineIndex = new Map<string, BenchRow>()
 	for (const task of baselineReport.tasks) {
 		baselineIndex.set(task.name, task as BenchRow)
 	}
-	for (const row of rows) {
-		const baseline = baselineIndex.get(row.name)
-		if (!baseline) {
-			comparison.push({
-				name: row.name,
-				baselineOpsMean: null,
-				baselineLatencyMeanMs: null,
-				opsMean: row.opsMean,
-				latencyMeanMs: row.latencyMeanMs,
-				opsDeltaPct: null,
-				latencyDeltaPct: null,
-				status: 'new',
-			})
-			continue
-		}
+	for (const item of comparison) {
+		const baseline = baselineIndex.get(item.name)
+		if (!baseline) continue
+		item.baselineOpsMean = baseline.opsMean ?? null
+		item.baselineLatencyMeanMs = baseline.latencyMeanMs ?? null
+		item.opsDeltaPct =
+			item.opsMean != null && baseline.opsMean != null
+				? pct(ratioPct(item.opsMean, baseline.opsMean) ?? Number.NaN)
+				: null
+		item.latencyDeltaPct =
+			item.latencyMeanMs != null && baseline.latencyMeanMs != null
+				? pct(ratioPct(item.latencyMeanMs, baseline.latencyMeanMs) ?? Number.NaN)
+				: null
+		item.status = 'measured'
+		baselineIndex.delete(item.name)
+	}
+
+	for (const baseline of baselineIndex.values()) {
 		comparison.push({
-			name: row.name,
+			name: baseline.name,
 			baselineOpsMean: baseline.opsMean ?? null,
 			baselineLatencyMeanMs: baseline.latencyMeanMs ?? null,
-			opsMean: row.opsMean,
-			latencyMeanMs: row.latencyMeanMs,
-			opsDeltaPct:
-				baseline.opsMean != null
-					? pct(ratioPct(row.opsMean, baseline.opsMean) ?? Number.NaN)
-					: null,
-			latencyDeltaPct:
-				baseline.latencyMeanMs != null
-					? pct(ratioPct(row.latencyMeanMs, baseline.latencyMeanMs) ?? Number.NaN)
-					: null,
-			status: 'measured',
+			opsMean: null,
+			latencyMeanMs: null,
+			opsDeltaPct: null,
+			latencyDeltaPct: null,
+			runs: null,
+			status: 'missing',
 		})
 	}
+}
 
-	if (comparison.length) {
-		console.log('\nComparison vs baseline:')
-		console.table(
-			comparison.map((item) => ({
-				Task: item.name,
-				'Ops Δ%': pctDisplay(item.opsDeltaPct),
-				'Latency Δ%': pctDisplay(item.latencyDeltaPct),
-				'Baseline ops': item.baselineOpsMean ? item.baselineOpsMean.toLocaleString() : '—',
-				'Current ops': item.opsMean.toLocaleString(),
-				'Baseline latency (ms)': item.baselineLatencyMeanMs
-					? item.baselineLatencyMeanMs.toLocaleString()
-					: '—',
-				'Current latency (ms)': item.latencyMeanMs.toLocaleString(),
-			})),
+if (comparison.length) {
+	console.log('\nComparison vs baseline:')
+	console.table(
+		comparison.map((item) => ({
+			Task: item.name,
+			Status: item.status,
+			'Ops Δ%': pctDisplay(item.opsDeltaPct),
+			'Latency Δ%': pctDisplay(item.latencyDeltaPct),
+			'Baseline ops': toDisplay(item.baselineOpsMean),
+			'Current ops': toDisplay(item.opsMean),
+			'Baseline latency (ms)': toDisplay(item.baselineLatencyMeanMs),
+			'Current latency (ms)': toDisplay(item.latencyMeanMs),
+		})),
+	)
+}
+
+const regressions = comparison.filter((item) => {
+	if (item.status !== 'measured') return false
+	const opsDelta = item.opsDeltaPct ?? 0
+	const latencyDelta = item.latencyDeltaPct ?? 0
+	return opsDelta < -tolerancePct || latencyDelta > tolerancePct
+})
+
+if (regressions.length) {
+	console.warn('\nPotential regressions detected (threshold:', tolerancePct, '%):')
+	for (const item of regressions) {
+		console.warn(
+			`- ${item.name}: ops Δ ${pctDisplay(item.opsDeltaPct)}, latency Δ ${pctDisplay(item.latencyDeltaPct)}`,
 		)
 	}
-
-	const regressions = comparison.filter((item) => {
-		if (item.status === 'new') return false
-		const opsDelta = item.opsDeltaPct ?? 0
-		const latencyDelta = item.latencyDeltaPct ?? 0
-		return opsDelta < -tolerancePct || latencyDelta > tolerancePct
-	})
-
-	if (regressions.length) {
-		console.warn('\nPotential regressions detected (threshold:', tolerancePct, '%):')
-		for (const item of regressions) {
-			console.warn(
-				`- ${item.name}: ops Δ ${pctDisplay(item.opsDeltaPct)}, latency Δ ${pctDisplay(item.latencyDeltaPct)}`,
-			)
-		}
-		if (strictMode) {
-			console.error(
-				'[bench] Failing build due to regressions exceeding tolerance. Set PLUXEL_BENCH_STRICT=0 to disable.',
-			)
-			process.exitCode = 1
-		}
+	if (strictMode) {
+		console.error(
+			'[bench] Failing build due to regressions exceeding tolerance. Set PLUXEL_BENCH_STRICT=0 to disable.',
+		)
+		process.exitCode = 1
 	}
 }
 
@@ -311,6 +339,14 @@ const report = {
 		minIterations: bench.opts.iterations,
 	},
 	tasks: rows,
+	keyMetrics: rows.map((row) => ({
+		name: row.name,
+		throughputOpsPerSecond: row.opsMean,
+		throughputMarginOfErrorPct: row.opsRmePct,
+		latencyMeanMs: row.latencyMeanMs,
+		latencyP99Ms: row.latencyP99Ms,
+		runs: row.runs,
+	})),
 	comparison: comparison.length
 		? comparison.map((item) => ({
 				name: item.name,
@@ -320,6 +356,7 @@ const report = {
 				baselineLatencyMeanMs: item.baselineLatencyMeanMs,
 				latencyMeanMs: item.latencyMeanMs,
 				latencyDeltaPct: item.latencyDeltaPct,
+				runs: item.runs,
 				status: item.status,
 			}))
 		: undefined,
@@ -335,12 +372,58 @@ mkdirSync(fileURLToPath(benchmarksDir), { recursive: true })
 
 writeFileSync(new URL('plugin-lifecycle.json', benchmarksDir), JSON.stringify(report, null, 2))
 
+const baselineRecordedAt = baselineReport?.recordedAt ?? null
+
+const statusLabel = (item: ComparisonRow) => {
+	switch (item.status) {
+		case 'measured':
+			return '✅ tracked'
+		case 'new':
+			return '🆕 new'
+		case 'missing':
+			return '⚠️ missing'
+		default:
+			return item.status
+	}
+}
+
 const markdownLines = [
 	'# Plugin lifecycle benchmark',
 	'',
 	`- Recorded at: ${recordedAt}`,
 	`- Runtime: ${runtime.name} ${runtime.version}`,
 	`- Target benchmark time: ${bench.opts.time}ms (warmup ${bench.opts.warmupTime}ms)`,
+	`- Baseline: ${baselineRecordedAt ?? 'not available'}`,
+	`- Regression tolerance: ±${tolerancePct}%`,
+	'',
+	'## Summary',
+	'',
+	'| Task | Ops/sec | Latency mean (ms) | Status | Runs |',
+	'| --- | --- | --- | --- | ---: |',
+	...comparison.map((item) =>
+		[
+			item.name,
+			metricSummary(item.opsMean, item.opsDeltaPct, item.baselineOpsMean),
+			metricSummary(item.latencyMeanMs, item.latencyDeltaPct, item.baselineLatencyMeanMs),
+			statusLabel(item),
+			item.runs != null ? item.runs.toLocaleString() : '—',
+		]
+			.map((cell) => String(cell))
+			.join(' | '),
+	),
+	'',
+	...(regressions.length
+		? [
+				'> ⚠️ Potential regressions detected beyond tolerance:',
+				...regressions.map(
+					(item) =>
+						`> - ${item.name}: ops ${pctDisplay(item.opsDeltaPct)}, latency ${pctDisplay(item.latencyDeltaPct)}`,
+				),
+			]
+		: []),
+	'',
+	'<details>',
+	'<summary>Detailed metrics</summary>',
 	'',
 	'| Task | Ops/sec (mean) | Ops/sec (min) | Ops/sec (max) | ±RME % | Latency mean (ms) | p50 (ms) | p75 (ms) | p99 (ms) | Max (ms) | Runs |',
 	'| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |',
@@ -363,39 +446,22 @@ const markdownLines = [
 	),
 	'',
 	'> Ops/sec uses the geometric mean over the measured throughput samples. Latency statistics are in milliseconds.',
+	'',
+	'</details>',
 ]
-
-if (comparison.length) {
-	markdownLines.push('', '## Comparison vs baseline')
-	if (baselineReport?.recordedAt) {
-		markdownLines.push(`- Baseline recorded at: ${baselineReport.recordedAt}`)
-	}
-	markdownLines.push(
-		'| Task | Δ Ops/sec | Δ Latency mean | Baseline Ops/sec | Current Ops/sec | Baseline Latency (ms) | Current Latency (ms) |',
-		'| --- | ---: | ---: | ---: | ---: | ---: | ---: |',
-	)
-	for (const item of comparison) {
-		markdownLines.push(
-			[
-				item.name,
-				pctDisplay(item.opsDeltaPct),
-				pctDisplay(item.latencyDeltaPct),
-				item.baselineOpsMean != null ? item.baselineOpsMean.toLocaleString() : '—',
-				item.opsMean.toLocaleString(),
-				item.baselineLatencyMeanMs != null ? item.baselineLatencyMeanMs.toLocaleString() : '—',
-				item.latencyMeanMs.toLocaleString(),
-			]
-				.map((cell) => String(cell))
-				.join(' | '),
-		)
-	}
-}
 
 writeFileSync(
 	new URL('plugin-lifecycle.md', benchmarksDir),
 	markdownLines
 		.map((line) => {
-			if (!line || line.startsWith('#') || line.startsWith('- ') || line.startsWith('>')) {
+			if (
+				!line ||
+				line.startsWith('#') ||
+				line.startsWith('- ') ||
+				line.startsWith('>') ||
+				line.startsWith('<') ||
+				line.startsWith('```')
+			) {
 				return line
 			}
 			if (line.startsWith('|')) return line
@@ -405,18 +471,16 @@ writeFileSync(
 	'utf8',
 )
 
-if (comparison.length) {
-	writeFileSync(
-		new URL('plugin-lifecycle-diff.json', benchmarksDir),
-		JSON.stringify(
-			{
-				recordedAt,
-				baselineRecordedAt: baselineReport?.recordedAt ?? null,
-				tolerancePct,
-				comparison,
-			},
-			null,
-			2,
-		),
-	)
-}
+writeFileSync(
+	new URL('plugin-lifecycle-diff.json', benchmarksDir),
+	JSON.stringify(
+		{
+			recordedAt,
+			baselineRecordedAt,
+			tolerancePct,
+			comparison,
+		},
+		null,
+		2,
+	),
+)

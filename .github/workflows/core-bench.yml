@@ -1,6 +1,12 @@
 name: Core Benchmarks
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - 'packages/core/**'
+      - 'pnpm-lock.yaml'
+      - '.github/workflows/core-bench.yml'
   pull_request:
     paths:
       - 'packages/core/**'
@@ -35,6 +41,8 @@ jobs:
     permissions:
       contents: read
       pull-requests: write
+    env:
+      BASE_BRANCH: ${{ github.base_ref || github.ref_name || github.event.repository.default_branch }}
     steps:
       - name: Prepare git
         run: git config --global core.autocrlf false
@@ -50,18 +58,20 @@ jobs:
           node-version: ${{ matrix.node }}
           bun-version: ${{ matrix.bun }}
 
+      - name: Download baseline artifact
+        uses: dawidd6/action-download-artifact@v3
+        with:
+          workflow: core-bench.yml
+          name: core-bench-baseline-${{ matrix.os }}-${{ matrix.bun }}
+          branch: ${{ env.BASE_BRANCH }}
+          path: packages/core/benchmarks/baseline
+          if_no_artifact_found: ignore
+
       - name: Prepare baseline report
-        env:
-          BASE_BRANCH: ${{ github.event.pull_request.base.ref || github.event.repository.default_branch }}
         run: |
           mkdir -p packages/core/benchmarks
-          if [ -n "$BASE_BRANCH" ]; then
-            git fetch origin "$BASE_BRANCH" --depth=1 || true
-            if git cat-file -e "origin/$BASE_BRANCH:packages/core/benchmarks/plugin-lifecycle.json"; then
-              git show "origin/$BASE_BRANCH:packages/core/benchmarks/plugin-lifecycle.json" > packages/core/benchmarks/baseline.json
-            else
-              echo '{}' > packages/core/benchmarks/baseline.json
-            fi
+          if [ -f packages/core/benchmarks/baseline/plugin-lifecycle.json ]; then
+            cp packages/core/benchmarks/baseline/plugin-lifecycle.json packages/core/benchmarks/baseline.json
           else
             echo '{}' > packages/core/benchmarks/baseline.json
           fi
@@ -76,12 +86,20 @@ jobs:
       - name: Upload benchmark artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: core-bench-${{ github.run_id }}
+          name: core-bench-run-${{ github.run_id }}
           path: |
             packages/core/benchmarks/plugin-lifecycle.json
             packages/core/benchmarks/plugin-lifecycle.md
             packages/core/benchmarks/plugin-lifecycle-diff.json
           if-no-files-found: ignore
+
+      - name: Upload baseline artifact
+        if: github.ref_name == github.event.repository.default_branch
+        uses: actions/upload-artifact@v4
+        with:
+          name: core-bench-baseline-${{ matrix.os }}-${{ matrix.bun }}
+          path: packages/core/benchmarks/plugin-lifecycle.json
+          if-no-files-found: error
 
       - name: Comment PR with results
         if: github.event_name == 'pull_request'
