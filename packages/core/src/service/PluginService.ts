@@ -1,15 +1,14 @@
 // PluginService.ts
 
-import { randomUUID } from 'node:crypto'
 import type { Context, ServiceClass } from '@pluxel/context'
 import { Injectable } from '@pluxel/context'
 import { createErr, createOk, type Result } from 'option-t/plain_result'
 // XState v5
 import { createActor, waitFor } from 'xstate'
 import type { ServiceMap } from '../container'
-import { getPluginInfo, type StableInfo } from '../pluginImpl'
-import type { BasePlugin } from '../pluginImpl/BasePlugin'
-import { PluginContainer } from '../pluginImpl/PluginContainer'
+import type { StableInfo } from '../pluginImpl'
+import { type BasePlugin, PLUGIN_CTX } from '../pluginImpl/BasePlugin'
+import { PluginContainer, type PluginDiContainer } from '../pluginImpl/PluginContainer'
 import {
 	createPluginLifecycle,
 	lifecycleSelectors,
@@ -22,6 +21,14 @@ type PluginServiceConfig = {
 	plugigCTXIsolate?: ServiceClass<any>[]
 	startTimeoutMs?: number
 	stopTimeoutMs?: number
+}
+
+export interface CommitSummary {
+	container: PluginDiContainer
+	added: PluginIdentifier[]
+	replaced: PluginIdentifier[]
+	removed: PluginIdentifier[]
+	failed: PluginIdentifier[]
 }
 
 const serviceName = 'registry' as const
@@ -53,17 +60,18 @@ export class PluginService {
 	/** 可调等待超时（毫秒） */
 	private readonly startTimeoutMs
 	private readonly stopTimeoutMs
-
+	private _lastCommit?: CommitSummary
+	private order = 0
 	constructor(
 		private ctx: Context,
-		private config: PluginServiceConfig,
+		config: PluginServiceConfig,
 	) {
 		this.startTimeoutMs = config?.startTimeoutMs ?? 1_500
 		this.stopTimeoutMs = config?.stopTimeoutMs ?? 3_000
 
 		const isolated = Array.from(new Set([...(config?.plugigCTXIsolate ?? []), EffectScopeService]))
 		this.pluginRegistry = new PluginContainer(() =>
-			this.ctx.root.isolate(isolated, { name: `plugin:${randomUUID()}` }),
+			this.ctx.root.isolate(isolated, { name: `${this.order++}` }),
 		)
 	}
 
@@ -72,6 +80,19 @@ export class PluginService {
 	isRunning(id: PluginIdentifier): boolean {
 		const ref = this.actors.get(id)
 		return ref ? lifecycleSelectors.isRunning(ref.getSnapshot()) : false
+	}
+
+	public optional<T extends PluginIdentifier>(ctor: T) {
+		const optionalDep = this.pluginRegistry.lastContainer?.getMaybe(ctor)
+		return optionalDep
+	}
+
+	public afterCommit(listener: (summary: CommitSummary) => void | Promise<void>): void {
+		this.ctx.on('afterCommit', listener)
+	}
+
+	public get lastCommit(): CommitSummary | undefined {
+		return this._lastCommit
 	}
 
 	/* ------------------------------ Topo Utils ------------------------------ */
@@ -314,7 +335,18 @@ export class PluginService {
 				}
 
 				const { changes, container } = action.val
-				if (changes.length === 0) return createOk({ container, changes })
+				if (changes.length === 0) {
+					const summary: CommitSummary = {
+						container,
+						added: [],
+						replaced: [],
+						removed: [],
+						failed: [],
+					}
+					this._lastCommit = summary
+					this.ctx.emit('afterCommit', summary)
+					return createOk({ container, changes })
+				}
 
 				// —— changes 指 oldContainer 到 container 的变更，即注册表上插件的变更 —— //
 				const removeIds = new Set<PluginIdentifier>()
@@ -390,8 +422,7 @@ export class PluginService {
 							}) */
 
 							// 在 DI 里注入过了
-							const pluginCtx = instance.ctx
-							pluginCtx.pluginInfo = getPluginInfo(instance.constructor)!
+							const pluginCtx = instance[PLUGIN_CTX]
 							try {
 								await this.startByActor(id, instance)
 							} catch (e) {
@@ -408,6 +439,15 @@ export class PluginService {
 
 				// —— 切换容器 & 清理 builder 单例（避免泄漏） —— //
 				action.val.confirm()
+				const summary: CommitSummary = {
+					container: this.pluginRegistry.lastContainer,
+					added: [...addIds],
+					replaced: [...replaceIds],
+					removed: [...removeIds],
+					failed: [...failed],
+				}
+				this._lastCommit = summary
+				this.ctx.emit('afterCommit', summary)
 				if (failed.size) {
 					// 删除未成功启动的实例，避免复用脏状态
 					for (const id of failed) {

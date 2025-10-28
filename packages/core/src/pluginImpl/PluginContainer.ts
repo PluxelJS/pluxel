@@ -3,7 +3,7 @@
 import type { Context } from '@pluxel/context'
 import { createErr, createOk, unwrapOk } from 'option-t/plain_result'
 import { type DiodContainer, ExtendedContainerBuilder } from '../container'
-import { BasePlugin, FORK_CTX } from './BasePlugin'
+import { BasePlugin, FORK_CTX, PLUGIN_CTX } from './BasePlugin'
 import { getClassParam, getPluginInfo } from './PluginDecorator'
 import type { PluginConstructor, PluginIdentifier, PluginInstance } from './types'
 
@@ -29,74 +29,60 @@ export class PluginContainer {
 		const depsCount = paramTypes.length
 		const baseOrSelf = info.base ?? Plugin
 
-		// ---------- 影子包装：仅遮蔽 ctx，不改 parent 本体 ----------
-		const wrapWithCaller = (parent: BasePlugin, pluginCTX: any): BasePlugin => {
-			// 1) ctx 影子层（只添加 caller，不破坏 parent.ctx）
-			const ctxView = Object.create(parent.ctx)
-			ctxView.caller = pluginCTX
-
-			// 2) plugin 影子层：复用 parent 的所有行为，仅用“自有属性”覆盖 ctx
-			const injected = Object.create(parent, {
-				ctx: { value: ctxView }, // writable/configurable/enumerable 默认为 false
-			})
-			return injected
-		}
-
 		this.builder
 			.register(baseOrSelf as any)
 			.useFactory((c) => {
 				const pluginCTX = this.createPluginContext()
+				pluginCTX.pluginInfo = info
 
-				const instantiate = <T>(factory: () => T): T => {
-					const prevFork = BasePlugin[FORK_CTX]
-					BasePlugin[FORK_CTX] = () => pluginCTX
-					try {
-						return factory()
-					} finally {
-						BasePlugin[FORK_CTX] = prevFork
+				// 按“实例”固化 ctx；闭包 + 复用一个描述符，避免每个依赖分配 {value:...}
+				const wrap = (() => {
+					const desc: PropertyDescriptor = {
+						value: null,
+						writable: false,
+						enumerable: false,
+						configurable: false,
 					}
-				}
+					return (parent: BasePlugin): BasePlugin => {
+						const view = Object.create(parent[PLUGIN_CTX])
+						view.caller = pluginCTX
+						desc.value = view
+						const injected = Object.create(parent, { ctx: desc })
+						desc.value = null // 保险起见，打断 descriptor 对 view 的引用
+						return injected
+					}
+				})()
 
-				// —— 无参快路径 —— //
-				if (depsCount === 0) return instantiate(() => new Plugin())
-
-				switch (depsCount) {
-					case 1: {
-						const dep0 = unwrapOk(c.getResult(paramTypes[0]))!
-						return instantiate(() => new (Plugin as any)(wrapWithCaller(dep0, pluginCTX)))
-					}
-					case 2: {
-						const dep0 = unwrapOk(c.getResult(paramTypes[0]))!
-						const dep1 = unwrapOk(c.getResult(paramTypes[1]))!
-						return instantiate(
-							() =>
-								new (Plugin as any)(
-									wrapWithCaller(dep0, pluginCTX),
-									wrapWithCaller(dep1, pluginCTX),
-								),
-						)
-					}
-					case 3: {
-						const dep0 = unwrapOk(c.getResult(paramTypes[0]))!
-						const dep1 = unwrapOk(c.getResult(paramTypes[1]))!
-						const dep2 = unwrapOk(c.getResult(paramTypes[2]))!
-						return instantiate(
-							() =>
-								new (Plugin as any)(
-									wrapWithCaller(dep0, pluginCTX),
-									wrapWithCaller(dep1, pluginCTX),
-									wrapWithCaller(dep2, pluginCTX),
-								),
-						)
-					}
-					default: {
-						const args = new Array<BasePlugin>(depsCount)
-						for (let i = 0; i < depsCount; i++) {
-							const parent = unwrapOk(c.getResult(paramTypes[i]))!
-							args[i] = wrapWithCaller(parent, pluginCTX)
+				const prevFork = BasePlugin[FORK_CTX]
+				BasePlugin[FORK_CTX] = () => pluginCTX
+				try {
+					switch (depsCount) {
+						case 0:
+							return new (Plugin as any)()
+						case 1:
+							return new (Plugin as any)(wrap(unwrapOk(c.getResult(paramTypes[0]))!))
+						case 2:
+							return new (Plugin as any)(
+								wrap(unwrapOk(c.getResult(paramTypes[0]))!),
+								wrap(unwrapOk(c.getResult(paramTypes[1]))!),
+							)
+						case 3:
+							return new (Plugin as any)(
+								wrap(unwrapOk(c.getResult(paramTypes[0]))!),
+								wrap(unwrapOk(c.getResult(paramTypes[1]))!),
+								wrap(unwrapOk(c.getResult(paramTypes[2]))!),
+							)
+						default: {
+							// 只有 4+ 依赖时才分配数组
+							const args = new Array<BasePlugin>(depsCount)
+							for (let i = 0; i < depsCount; i++) {
+								args[i] = wrap(unwrapOk(c.getResult(paramTypes[i]))!)
+							}
+							return new (Plugin as any)(...args)
 						}
-						return instantiate(() => new (Plugin as any)(...args))
 					}
+				} finally {
+					BasePlugin[FORK_CTX] = prevFork
 				}
 			})
 			.withDependencies(depsCount === 0 ? [] : (paramTypes as PluginIdentifier[]))

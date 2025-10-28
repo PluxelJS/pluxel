@@ -3,7 +3,12 @@ import { BasePlugin, Plugin } from '../context'
 
 @Plugin({ name: 'PluginC', type: 'hook' })
 export class PluginC extends BasePlugin {
-	init(): void {
+	protected init(): void {
 		this.ctx.logger.info('PluginC initialized')
+	}
+
+	doExampleLog() {
+		this.ctx.logger.info('这是来自我的log')
+		this.ctx.caller?.logger.info('这是来自调用我的地方的log')
 	}
 }

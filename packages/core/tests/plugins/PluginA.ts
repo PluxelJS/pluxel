@@ -6,7 +6,7 @@ import { PluginB } from './PluginB'
 // biome-ignore lint/style/useImportType: <explanation>
 import { PluginC } from './PluginC'
 
-@Plugin({ name: 'PluginA', type: 'event' })
+@Plugin({ name: 'PluginA' })
 export class PluginA extends BasePlugin {
 	constructor(public pluginB: PluginB) {
 		super()
@@ -15,9 +15,10 @@ export class PluginA extends BasePlugin {
 	private pluginC?: PluginC
 
 	init(): void {
-		this.pluginC =
-			(this.ctx.registry.pluginRegistry.lastContainer.getMaybe(PluginC) as PluginC | undefined) ??
-			undefined
+		this.ctx.registry.afterCommit(() => {
+			this.pluginC = this.ctx.registry.optional(PluginC) as PluginC
+			this.pluginC.doExampleLog()
+		})
 		this.ctx.logger.info('PluginA initialized')
 		// 使用必需依赖 PluginB
 		this.pluginB.doSomething()

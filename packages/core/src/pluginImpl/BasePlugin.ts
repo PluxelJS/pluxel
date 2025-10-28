@@ -7,7 +7,7 @@ export const FORK_CTX = Symbol.for('pluxel:plugin:ctx:fork')
 
 export abstract class BasePlugin<C extends Context = Context> {
 	static [FORK_CTX]: () => Context
-	public [PLUGIN_CTX]!: C
+	protected [PLUGIN_CTX]!: C
 
 	constructor() {
 		if (BasePlugin[FORK_CTX] === undefined) {
@@ -17,11 +17,11 @@ export abstract class BasePlugin<C extends Context = Context> {
 	}
 
 	/** Access system deps and register disposables */
-	public get ctx(): C {
+	protected get ctx(): C {
 		return this[PLUGIN_CTX]
 	}
 
-	public get caller() {
+	protected get caller() {
 		return this.ctx.caller
 	}
 
@@ -39,6 +39,6 @@ export abstract class BasePlugin<C extends Context = Context> {
 	 * Plugins may implement either, both, or none.
 	 * Use `override` when implementing to get compiler checks.
 	 */
-	init?(abort: AbortSignal): void | Promise<void>
-	stop?(abort: AbortSignal): void | Promise<void>
+	protected init?(abort: AbortSignal): void | Promise<void>
+	protected stop?(abort: AbortSignal): void | Promise<void>
 }

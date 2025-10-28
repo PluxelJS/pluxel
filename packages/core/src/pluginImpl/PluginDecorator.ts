@@ -17,7 +17,6 @@ const TOKEN_EPOCH = Symbol.for('pluxel:paramTokens:epoch') // epoch for param vi
 /** —— Metadata —— */
 export interface PluginMetadata {
 	name: string
-	type?: 'event' | 'hook' | string
 	[key: string]: any
 }
 export type ConfigSchemaList<T = any> = Record<string, T>
@@ -250,7 +249,7 @@ function applyOverride(base: unknown[], override?: ParamOverride): void {
 	}
 }
 /** max(reflected length, persistent override length) */
-function getParamLength(ctor: Function): number {
+function _getParamLengthh(ctor: Function): number {
 	const reflected: unknown[] = Reflect.getMetadata(PARAM_TYPES, ctor) ?? []
 	const stored: ParamOverride | undefined = Reflect.getOwnMetadata(PLUGIN_SYMBOL.PARAM_TOKENS, ctor)
 	let toks = 0
