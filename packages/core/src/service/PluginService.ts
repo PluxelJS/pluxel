@@ -7,7 +7,7 @@ import { createErr, createOk, type Result } from 'option-t/plain_result'
 import { createActor, waitFor } from 'xstate'
 import type { ServiceMap } from '../container'
 import type { StableInfo } from '../pluginImpl'
-import { type BasePlugin, PLUGIN_CTX } from '../pluginImpl/BasePlugin'
+import { BasePlugin, PLUGIN_CTX } from '../pluginImpl/BasePlugin'
 import { PluginContainer, type PluginDiContainer } from '../pluginImpl/PluginContainer'
 import {
 	createPluginLifecycle,
@@ -31,6 +31,38 @@ export interface CommitSummary {
 	failed: PluginIdentifier[]
 }
 
+type LifecycleSnapshot = ReturnType<PluginLifecycleRef['getSnapshot']>
+
+type InitPlan = {
+	batches: PluginIdentifier[][]
+	leftovers: Set<PluginIdentifier>
+	dependencies: Map<PluginIdentifier, readonly PluginIdentifier[]>
+}
+
+const snapshotMatches = (snapshot: LifecycleSnapshot, state: string): boolean => {
+	if (!snapshot) return false
+	const matches = (snapshot as any)?.matches
+	if (typeof matches === 'function') {
+		try {
+			return matches.call(snapshot, state)
+		} catch {
+			return false
+		}
+	}
+	return false
+}
+
+const isStoppedSnapshot = (snapshot: LifecycleSnapshot): boolean =>
+	!!snapshot && (snapshot.status === 'stopped' || snapshotMatches(snapshot, 'stopped'))
+
+const isRunningSnapshot = (snapshot: LifecycleSnapshot): boolean =>
+	!!snapshot && snapshotMatches(snapshot, 'running')
+
+const isStableSnapshot = (snapshot: LifecycleSnapshot): boolean =>
+	isRunningSnapshot(snapshot) ||
+	snapshotMatches(snapshot, 'failing') ||
+	isStoppedSnapshot(snapshot)
+
 const serviceName = 'registry' as const
 declare module '@pluxel/context' {
 	namespace Context {
@@ -52,7 +84,12 @@ export class PluginService {
 	public pluginRegistry: PluginContainer
 
 	/** 每个插件一个生命周期 actor（唯一真相来源） */
-	private readonly actors = new WeakMap<PluginIdentifier, PluginLifecycleRef<any, BasePlugin>>()
+	private readonly actors = new WeakMap<PluginIdentifier, PluginLifecycleRef>()
+
+	private readonly lifecycleMachine = createPluginLifecycle({
+		autoStart: false,
+		useErrorChannel: true,
+	})
 
 	/** 串行化 commit */
 	private _commitLock: Promise<unknown> = Promise.resolve()
@@ -97,104 +134,106 @@ export class PluginService {
 
 	/* ------------------------------ Topo Utils ------------------------------ */
 
-	private computeInitBatchesStrict(plugins: ServiceMap<BasePlugin>): {
-		batches: PluginIdentifier[][]
-		leftovers: Set<PluginIdentifier>
-	} {
+	private computeInitPlan(plugins: ServiceMap<BasePlugin>): InitPlan {
 		const inDegree = new Map<PluginIdentifier, number>()
 		const graph = new Map<PluginIdentifier, PluginIdentifier[]>()
+		const dependencies = new Map<PluginIdentifier, readonly PluginIdentifier[]>()
 
 		for (const id of plugins.keys()) {
 			inDegree.set(id, 0)
 			graph.set(id, [])
 		}
+
 		for (const [id, plugin] of plugins) {
-			const deps = plugin.dependencies as PluginIdentifier[]
+			const deps = (plugin.dependencies ?? []) as PluginIdentifier[]
+			dependencies.set(id, deps)
 			for (let i = 0; i < deps.length; i++) {
-				const d = deps[i]!
-				if (!inDegree.has(d)) continue
+				const dep = deps[i]!
+				if (!inDegree.has(dep)) continue
 				inDegree.set(id, inDegree.get(id)! + 1)
-				graph.get(d)!.push(id)
+				graph.get(dep)!.push(id)
 			}
 		}
 
 		const batches: PluginIdentifier[][] = []
-		let zero = Array.from(inDegree.entries())
-			.filter(([, k]) => k === 0)
-			.map(([id]) => id)
+		const zeroDegree: PluginIdentifier[] = []
+		for (const [id, degree] of inDegree) if (degree === 0) zeroDegree.push(id)
 
-		while (zero.length) {
-			batches.push(zero)
+		let frontier = zeroDegree
+		while (frontier.length) {
+			batches.push(frontier)
 			const next: PluginIdentifier[] = []
-			for (const u of zero)
-				for (const v of graph.get(u)!) {
-					const k = inDegree.get(v)! - 1
-					inDegree.set(v, k)
-					if (k === 0) next.push(v)
+			for (const current of frontier) {
+				const dependents = graph.get(current)!
+				for (let i = 0; i < dependents.length; i++) {
+					const dependent = dependents[i]!
+					const remaining = inDegree.get(dependent)! - 1
+					inDegree.set(dependent, remaining)
+					if (remaining === 0) next.push(dependent)
 				}
-			zero = next
+			}
+			frontier = next
 		}
 
 		const leftovers = new Set<PluginIdentifier>()
-		for (const [id, k] of inDegree) if (k > 0) leftovers.add(id)
-		return { batches, leftovers }
+		for (const [id, degree] of inDegree) if (degree > 0) leftovers.add(id)
+
+		return { batches, leftovers, dependencies }
 	}
 
-	private computeTeardownOrder(
+	private planTeardown(
 		dependents: ReadonlyMap<PluginIdentifier, Set<PluginIdentifier>> | undefined,
 		affected: Set<PluginIdentifier>,
 	): PluginIdentifier[] {
 		if (!dependents || affected.size === 0) return []
-		// node -> parents（被其依赖者）
-		const indeg = new Map<PluginIdentifier, number>()
-		const parents = new Map<PluginIdentifier, Set<PluginIdentifier>>()
+
+		const remainingChildren = new Map<PluginIdentifier, number>()
+		const parents = new Map<PluginIdentifier, PluginIdentifier[]>()
+
 		for (const id of affected) {
-			indeg.set(id, 0)
-			parents.set(id, new Set())
+			remainingChildren.set(id, 0)
+			parents.set(id, [])
 		}
+
 		for (const id of affected) {
-			const ch = dependents.get(id) ?? new Set()
-			for (const c of ch) {
-				if (!affected.has(c)) continue
-				indeg.set(id, (indeg.get(id) ?? 0) + 1)
-				const set = parents.get(c)!
-				set.add(id)
+			const children = dependents.get(id)
+			if (!children) continue
+			for (const child of children) {
+				if (!affected.has(child)) continue
+				remainingChildren.set(id, (remainingChildren.get(id) ?? 0) + 1)
+				const list = parents.get(child)!
+				list.push(id)
 			}
 		}
 
 		const order: PluginIdentifier[] = []
-		const q: PluginIdentifier[] = []
-		for (const [id, d] of indeg) if (d === 0) q.push(id)
-		while (q.length) {
-			const x = q.pop()!
-			order.push(x)
-			for (const p of parents.get(x)!) {
-				const d = (indeg.get(p) ?? 0) - 1
-				indeg.set(p, d)
-				if (d === 0) q.push(p)
+		const stack: PluginIdentifier[] = []
+		for (const [id, count] of remainingChildren) if (count === 0) stack.push(id)
+
+		while (stack.length) {
+			const current = stack.pop()!
+			order.push(current)
+			const ancestors = parents.get(current)!
+			for (let i = 0; i < ancestors.length; i++) {
+				const parent = ancestors[i]!
+				const next = (remainingChildren.get(parent) ?? 0) - 1
+				remainingChildren.set(parent, next)
+				if (next === 0) stack.push(parent)
 			}
 		}
-		for (const [id, d] of indeg) if (d > 0) order.push(id)
+
+		for (const [id, count] of remainingChildren) if (count > 0) order.push(id)
 		return order
 	}
 
 	/* ------------------------------ Actor 管理 ------------------------------ */
 
-	private newLifecycle() {
-		return createPluginLifecycle<any, BasePlugin>({
-			autoStart: false,
-			useErrorChannel: true,
-		})
-	}
-
-	private ensureActor(
-		id: PluginIdentifier,
-		plugin: BasePlugin,
-	): PluginLifecycleRef<any, BasePlugin> {
+	private ensureActor(id: PluginIdentifier, plugin: BasePlugin): PluginLifecycleRef {
 		let ref = this.actors.get(id)
 
 		// 若已有 actor 但已停止，丢弃并重建
-		const stopped = ref?.getSnapshot?.().status === 'stopped'
+		const snapshot = ref?.getSnapshot?.()
+		const stopped = isStoppedSnapshot(snapshot)
 		if (ref && stopped) {
 			try {
 				;(ref as any).stop?.()
@@ -205,9 +244,8 @@ export class PluginService {
 
 		if (ref) return ref
 
-		const machine = this.newLifecycle()
-		ref = createActor(machine, {
-			input: { id, plugin, config: undefined },
+		ref = createActor(this.lifecycleMachine, {
+			input: { id, runtime: BasePlugin.getLifecycleRuntime(plugin) },
 		})
 		// 观察 actor 的错误事件，辅助诊断（不改变状态机逻辑）
 		ref.subscribe({
@@ -220,80 +258,76 @@ export class PluginService {
 		return ref
 	}
 
-	/** 启动：成功返回；失败抛出真实 init/reload 错误（保留 cause）并保证清理 */
+	/** 启动：成功返回；失败抛出真实 init 错误（保留 cause）并保证清理 */
 	private async startByActor(id: PluginIdentifier, plugin: BasePlugin): Promise<void> {
 		const ref = this.ensureActor(id, plugin)
+		const snapshotBeforeStart = ref.getSnapshot?.()
+		if (isRunningSnapshot(snapshotBeforeStart)) return
+
 		ref.send({ type: 'START' })
 
-		let snap: any
+		let snapshot: LifecycleSnapshot
 		try {
-			// 等待首个“稳定”状态
-			snap = await waitFor(
-				ref,
-				(s) => s.matches?.('failing') || s.matches?.('running') || s.matches?.('stopped'),
-				{
-					timeout: this.startTimeoutMs,
-				},
-			)
-		} catch (e) {
-			// 超时：主动 STOP 并清理，然后抛出超时错误
-			try {
-				ref.send({ type: 'STOP' })
-			} catch {}
-			try {
-				await waitFor(ref, (s) => s.matches?.('stopped') || s.status === 'stopped', {
-					timeout: this.stopTimeoutMs,
-				})
-			} catch {
-				/* 忽略 */
-			}
+			snapshot = await waitFor(ref, isStableSnapshot, {
+				timeout: this.startTimeoutMs,
+			})
+		} catch (error) {
+			await this.forceStop(ref)
 			this.actors.delete(id)
-			throw new Error(`Plugin ${id} start timeout after ${this.startTimeoutMs}ms`, { cause: e })
+			throw new Error(`Plugin ${id} start timeout after ${this.startTimeoutMs}ms`, {
+				cause: error,
+			})
 		}
 
-		if (snap.matches?.('running')) return
+		if (isRunningSnapshot(snapshot)) return
 
+		const latest = ref.getSnapshot?.()
 		// 捕获失败原因（若有）
-		let capturedErr: unknown = snap?.context?.err
-		if (capturedErr == null && snap.matches?.('stopped')) {
-			const last = ref.getSnapshot?.()
-			capturedErr = (last as any)?.context?.err ?? capturedErr
-		}
+		const capturedErr: unknown =
+			(latest as any)?.context?.err ??
+			(snapshot as any)?.context?.err ??
+			(snapshot as any)?.error ??
+			undefined
 
 		// 启动失败 → 主动 STOP（确保清理）
-		try {
-			ref.send({ type: 'STOP' })
-		} catch {}
-		try {
-			await waitFor(ref, (s) => s.matches?.('stopped') || s.status === 'stopped', {
-				timeout: this.stopTimeoutMs,
-			})
-		} catch {
-			/* 忽略 */
-		}
+		await this.forceStop(ref)
 		this.actors.delete(id)
 
-		// 原样抛出真实错误；若非 Error 也包装为 Error；最后才 fallback
 		if (capturedErr instanceof Error) throw capturedErr
 		if (capturedErr != null) throw new Error(String(capturedErr), { cause: capturedErr })
 
 		throw new Error(`Plugin ${id} failed to start`)
 	}
 
+	private async forceStop(ref: PluginLifecycleRef): Promise<void> {
+		try {
+			ref.send({ type: 'STOP' })
+		} catch {}
+		await this.waitUntilStopped(ref)
+	}
+
+	private async waitUntilStopped(ref: PluginLifecycleRef): Promise<void> {
+		const snapshot = ref.getSnapshot?.()
+		if (isStoppedSnapshot(snapshot)) return
+		try {
+			await waitFor(ref, isStoppedSnapshot, {
+				timeout: this.stopTimeoutMs,
+			})
+		} catch {
+			/* 忽略 */
+		}
+	}
+
 	/** 停止：若 actor 存在，用它；否则冷启动一个只为 STOP 的 actor（也会 cleanup） */
 	private async stopByActor(id: PluginIdentifier, pluginOrUndefined?: BasePlugin): Promise<void> {
 		const existing = this.actors.get(id)
 		if (existing) {
-			try {
-				existing.send({ type: 'STOP' })
-			} catch {}
-			try {
-				await waitFor(existing, (s) => s.matches?.('stopped') || s.status === 'stopped', {
-					timeout: this.stopTimeoutMs,
-				})
-			} catch {
-				/* 忽略 */
+			const current = existing.getSnapshot?.()
+			if (isStoppedSnapshot(current)) {
+				this.actors.delete(id)
+				return
 			}
+			await this.forceStop(existing)
 			this.actors.delete(id)
 			return
 		}
@@ -304,19 +338,117 @@ export class PluginService {
 
 		const ref = this.ensureActor(id, plugin)
 		try {
-			ref.send({ type: 'STOP' })
-		} catch {}
-		try {
-			await waitFor(ref, (s) => s.matches?.('stopped') || s.status === 'stopped', {
-				timeout: this.stopTimeoutMs,
-			})
-		} catch {
-			/* 忽略 */
+			await this.forceStop(ref)
+		} finally {
+			this.actors.delete(id)
 		}
-		this.actors.delete(id)
 	}
 
 	/* --------------------------------- Commit -------------------------------- */
+
+	private partitionChanges(
+		changes: Array<{ type: string; key: unknown }>,
+	): {
+		added: Set<PluginIdentifier>
+		replaced: Set<PluginIdentifier>
+		removed: Set<PluginIdentifier>
+	} {
+		const added = new Set<PluginIdentifier>()
+		const replaced = new Set<PluginIdentifier>()
+		const removed = new Set<PluginIdentifier>()
+
+		for (const change of changes) {
+			const id = change.key as PluginIdentifier
+			switch (change.type) {
+				case 'add':
+					added.add(id)
+					break
+				case 'replace':
+					replaced.add(id)
+					break
+				default:
+					removed.add(id)
+					break
+			}
+		}
+
+		return { added, replaced, removed }
+	}
+
+	private async applyTeardown(
+		container: PluginDiContainer | undefined,
+		toStop: Set<PluginIdentifier>,
+	): Promise<void> {
+		if (!container || toStop.size === 0) return
+		const order = this.planTeardown(container.dependents, toStop)
+		for (const id of order) {
+			const instance = container.get(id)
+			if (instance) await this.stopByActor(id, instance)
+		}
+	}
+
+	private async instantiateAndStart(
+		container: PluginDiContainer,
+		id: PluginIdentifier,
+		failed: Set<PluginIdentifier>,
+	): Promise<void> {
+		const resolution = container.getResult(id)
+		if (resolution.err) {
+			failed.add(id)
+			this.ctx.logger.error(resolution.err, `解析 ${String(id)} 失败`)
+			return
+		}
+
+		const instance: PluginInstance = resolution.val
+		const pluginCtx = instance[PLUGIN_CTX]
+
+		try {
+			await this.startByActor(id, instance)
+		} catch (error) {
+			const logger = pluginCtx?.logger ?? this.ctx.logger
+			logger?.error?.(error, `启动 ${String(id)} 失败`)
+			try {
+				await pluginCtx?.scope?.disposeAll?.()
+			} catch {
+				/* ignored */
+			}
+			failed.add(id)
+		}
+	}
+
+	private async startPlugins(
+		container: PluginDiContainer,
+		plan: InitPlan,
+	): Promise<Set<PluginIdentifier>> {
+		const failed = new Set<PluginIdentifier>(plan.leftovers)
+		const dependencies = plan.dependencies
+
+		for (const batch of plan.batches) {
+			const tasks: Promise<void>[] = []
+			for (const id of batch) {
+				if (failed.has(id)) continue
+
+				const deps = dependencies.get(id) ?? []
+				let blocked = false
+				for (let i = 0; i < deps.length; i++) {
+					if (failed.has(deps[i]!)) {
+						blocked = true
+						break
+					}
+				}
+				if (blocked) {
+					failed.add(id)
+					continue
+				}
+
+				tasks.push(this.instantiateAndStart(container, id, failed))
+			}
+
+			if (tasks.length) await Promise.all(tasks)
+		}
+
+		return failed
+	}
 
 	/**
 	 * 非事务化提交（纯 XState 托管）：
@@ -325,148 +457,91 @@ export class PluginService {
 	 * - 失败插件从 builder singletons 中清理（避免泄漏/误复用）
 	 */
 	async commit() {
-		this._commitLock = this._commitLock
-			.then(async () => {
-				const action = this.pluginRegistry.build()
-				if (!action.ok) {
-					action.err.ret.undo()
-					this.ctx.logger.error(action.err.err, '插件在依赖项解析时失败')
-					return createErr(action.err.err)
-				}
-
-				const { changes, container } = action.val
-				if (changes.length === 0) {
-					const summary: CommitSummary = {
-						container,
-						added: [],
-						replaced: [],
-						removed: [],
-						failed: [],
-					}
-					this._lastCommit = summary
-					this.ctx.emit('afterCommit', summary)
-					return createOk({ container, changes })
-				}
-
-				// —— changes 指 oldContainer 到 container 的变更，即注册表上插件的变更 —— //
-				const removeIds = new Set<PluginIdentifier>()
-				const replaceIds = new Set<PluginIdentifier>()
-				const addIds = new Set<PluginIdentifier>()
-				for (const ch of changes) {
-					const id = ch.key as PluginIdentifier
-					if (ch.type === 'add') addIds.add(id)
-					else if (ch.type === 'replace') replaceIds.add(id)
-					else removeIds.add(id)
-				}
-				this.ctx.logger.info(
-					{
-						remove: [...removeIds].map(String),
-						replace: [...replaceIds].map(String),
-						add: [...addIds].map(String),
-					},
-					'插件变更',
-				)
-
-				// remove 的插件：明确它不在新容器上，对旧容器进行停机
-				const oldContainer = this.pluginRegistry.lastContainer
-				const toStop = new Set<PluginIdentifier>([...removeIds, ...replaceIds])
-				const toStart = new Set<PluginIdentifier>([...addIds, ...replaceIds])
-
-				// —— 停机：逆拓扑（严格父后子前） —— //
-				if (oldContainer && toStop.size) {
-					const order = this.computeTeardownOrder(oldContainer.dependents, toStop)
-					for (const id of order) {
-						const inst = oldContainer.get(id)
-						if (inst) await this.stopByActor(id, inst)
-					}
-				}
-
-				// —— 启动：拓扑批次；失败仅影响下游 —— //
-				const toInitMap: ServiceMap<BasePlugin> = new Map()
-				// container.services 存有所有注册中插件的信息，筛出需要启动的
-				for (const [k, v] of container.services) {
-					const id: PluginIdentifier = k
-					if (toStart.has(id)) toInitMap.set(id, v)
-				}
-				const { batches, leftovers } = this.computeInitBatchesStrict(toInitMap)
-
-				// 启动失败的插件，不影响下游插件的启动
-				const failed = new Set<PluginIdentifier>(leftovers)
-
-				for (const batch of batches) {
-					await Promise.all(
-						batch.map(async (id) => {
-							// 若该插件的依赖在本轮失败，则该插件跳过并标记失败
-							const deps = (toInitMap.get(id)?.dependencies ?? []) as PluginIdentifier[]
-							if (deps.some((d) => failed.has(d))) {
-								failed.add(id)
-								return
-							}
-
-							// 从容器获取实例（此刻尚未注入生命周期）；注入隔离的 plugin ctx
-							const r = container.getResult(id)
-							if (r.err) {
-								failed.add(id)
-								this.ctx.logger.error(r.err, `解析 ${String(id)} 失败`)
-								return
-							}
-
-							const instance: PluginInstance = r.val
-							/* const pluginCtx = this.createPluginCTX()
-							pluginCtx.pluginInfo = getPluginInfo(instance.constructor)!
-							instance[PLUGIN_CTX] = pluginCtx
-
-							// getResult 期间若新建了单例，失败/停机时 disposeAll 会触发删除缓存，便于下次重试
-							pluginCtx.scope.collectEffect(() => {
-								this.pluginRegistry.singletons.delete(id)
-							}) */
-
-							// 在 DI 里注入过了
-							const pluginCtx = instance[PLUGIN_CTX]
-							try {
-								await this.startByActor(id, instance)
-							} catch (e) {
-								pluginCtx.logger.error(e, `启动 ${String(id)} 失败`)
-								// 保证清理
-								try {
-									await pluginCtx.scope.disposeAll()
-								} catch {}
-								failed.add(id)
-							}
-						}),
-					)
-				}
-
-				// —— 切换容器 & 清理 builder 单例（避免泄漏） —— //
-				action.val.confirm()
-				const summary: CommitSummary = {
-					container: this.pluginRegistry.lastContainer,
-					added: [...addIds],
-					replaced: [...replaceIds],
-					removed: [...removeIds],
-					failed: [...failed],
-				}
-				this._lastCommit = summary
-				this.ctx.emit('afterCommit', summary)
-				if (failed.size) {
-					// 删除未成功启动的实例，避免复用脏状态
-					for (const id of failed) {
-						this.pluginRegistry.singletons.delete(id)
-					}
-					this.ctx.logger.warn({ failed: [...failed].map(String) }, '以下插件启动失败')
-					this.ctx.emit('commitFailed', failed)
-				}
-
-				return createOk({
-					container: this.pluginRegistry.lastContainer,
-					changes,
-				})
-			})
-			.catch((e) => {
-				this.ctx.logger.error(e, 'commit 内部异常')
-				return createErr(e)
+		const next = this._commitLock
+			.then(() => this.executeCommit())
+			.catch((error) => {
+				this.ctx.logger.error(error, 'commit 内部异常')
+				return createErr(error)
 			})
 
-		return this._commitLock as Promise<Result<unknown, unknown>>
+		this._commitLock = next
+		return next as Promise<Result<unknown, unknown>>
+	}
+
+	private async executeCommit(): Promise<Result<unknown, unknown>> {
+		const action = this.pluginRegistry.build()
+		if (!action.ok) {
+			action.err.ret.undo()
+			this.ctx.logger.error(action.err.err, '插件在依赖项解析时失败')
+			return createErr(action.err.err)
+		}
+
+		const { changes, container, confirm } = action.val
+
+		if (changes.length === 0) {
+			const summary: CommitSummary = {
+				container,
+				added: [],
+				replaced: [],
+				removed: [],
+				failed: [],
+			}
+			this._lastCommit = summary
+			this.ctx.emit('afterCommit', summary)
+			return createOk({ container, changes })
+		}
+
+		const { added, replaced, removed } = this.partitionChanges(changes)
+		this.ctx.logger.info(
+			{
+				remove: [...removed].map(String),
+				replace: [...replaced].map(String),
+				add: [...added].map(String),
+			},
+			'插件变更',
+		)
+
+		const oldContainer = this.pluginRegistry.lastContainer
+		const toStop = new Set<PluginIdentifier>([...removed, ...replaced])
+		const toStart = new Set<PluginIdentifier>([...added, ...replaced])
+
+		await this.applyTeardown(oldContainer, toStop)
+
+		const toInitMap: ServiceMap<BasePlugin> = new Map()
+		if (toStart.size) {
+			for (const [serviceId, value] of container.services) {
+				const id = serviceId as PluginIdentifier
+				if (toStart.has(id)) toInitMap.set(id, value)
+			}
+		}
+
+		let failed = new Set<PluginIdentifier>()
+		if (toInitMap.size) {
+			const plan = this.computeInitPlan(toInitMap)
+			failed = await this.startPlugins(container, plan)
+		}
+
+		confirm()
+
+		const summary: CommitSummary = {
+			container: this.pluginRegistry.lastContainer,
+			added: [...added],
+			replaced: [...replaced],
+			removed: [...removed],
+			failed: [...failed],
+		}
+		this._lastCommit = summary
+		this.ctx.emit('afterCommit', summary)
+
+		if (failed.size) {
+			for (const id of failed) this.pluginRegistry.singletons.delete(id)
+			this.ctx.logger.warn({ failed: [...failed].map(String) }, '以下插件启动失败')
+			this.ctx.emit('commitFailed', failed)
+		}
+
+		return createOk({
+			container: this.pluginRegistry.lastContainer,
+			changes,
+		})
 	}
 }

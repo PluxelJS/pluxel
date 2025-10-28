@@ -5,6 +5,16 @@ import { getPluginInfo } from './PluginDecorator'
 export const PLUGIN_CTX = Symbol.for('pluxel:plugin:ctx')
 export const FORK_CTX = Symbol.for('pluxel:plugin:ctx:fork')
 
+export interface PluginLifecycleRuntime<C extends Context = Context> {
+	beforeStart?: () => void
+	init?: (signal: AbortSignal) => void | Promise<void>
+	stop?: (signal: AbortSignal) => void | Promise<void>
+	dispose?: () => void | Promise<void>
+	subscribeErrors?: (cb: (err: unknown) => void) => void | (() => void)
+}
+
+export type PluginContextOf<P extends BasePlugin> = P extends BasePlugin<infer C> ? C : Context
+
 export abstract class BasePlugin<C extends Context = Context> {
 	static [FORK_CTX]: () => Context
 	protected [PLUGIN_CTX]!: C
@@ -41,4 +51,28 @@ export abstract class BasePlugin<C extends Context = Context> {
 	 */
 	protected init?(abort: AbortSignal): void | Promise<void>
 	protected stop?(abort: AbortSignal): void | Promise<void>
+
+	static getLifecycleRuntime<P extends BasePlugin>(
+		plugin: P,
+	): PluginLifecycleRuntime<PluginContextOf<P>> {
+		const ctx = plugin[PLUGIN_CTX] as PluginContextOf<P>
+		const scope = (ctx as any)?.scope
+		const emitWithContext = (ctx as any)?.emitWithContext
+		const onError = (ctx as any)?.onError
+
+		return {
+			beforeStart:
+				typeof emitWithContext === 'function'
+					? () => emitWithContext.call(ctx, plugin, 'beforeStart', plugin)
+					: undefined,
+			init: typeof plugin.init === 'function' ? plugin.init.bind(plugin) : undefined,
+			stop: typeof plugin.stop === 'function' ? plugin.stop.bind(plugin) : undefined,
+			dispose:
+				typeof scope?.disposeAll === 'function' ? scope.disposeAll.bind(scope) : undefined,
+			subscribeErrors:
+				typeof onError === 'function'
+					? (cb: (err: unknown) => void) => onError.call(ctx, cb)
+					: undefined,
+		}
+	}
 }
