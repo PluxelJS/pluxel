@@ -62,7 +62,6 @@ export const generatedSchema = {
     __typename: { __type: "String!" },
     isRunning: { __type: "Boolean!" },
     name: { __type: "String!" },
-    optional: { __type: "Boolean!" },
   },
   PluginDetail: {
     __typename: { __type: "String!" },
@@ -147,7 +146,6 @@ export interface PluginDependency {
   __typename?: "PluginDependency";
   isRunning: ScalarsEnums["Boolean"];
   name: ScalarsEnums["String"];
-  optional: ScalarsEnums["Boolean"];
 }
 
 export interface PluginDetail {

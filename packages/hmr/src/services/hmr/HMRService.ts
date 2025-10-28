@@ -62,6 +62,9 @@ export class HMRService {
 	private vns!: ViteNodeServer
 	private runner!: ViteNodeRunner
 	private filter!: (id: string) => boolean
+	// Keep these workspace packages singleton between host runtime and vite-node; otherwise plugins
+	// would observe duplicated BasePlugin/HMRService classes during evaluation.
+	private readonly sharedWorkspaceModules = ['@pluxel/core', '@pluxel/hmr'] as const
 
 	/** SWC：装饰器/TSX/源映射，紧贴你的现有链路 */
 	private swc: Plugin = swc.vite({
@@ -110,7 +113,11 @@ export class HMRService {
 					transformMode: { ssr: [/\.([cm]?tsx?|jsx?)$/] },
 					deps: {
 						// 大型稳定三方 external，减少 transform 压力
-						external: [/^(react|react-dom|lodash|dayjs)(\/|$)/],
+						external: [
+							/^(react|react-dom|lodash|dayjs)(\/|$)/,
+							// pluxel 核心需与主 runtime 共用实例（避免 BasePlugin ctx 脱钩）
+							/^@pluxel\/core(?:\/.*)?$/,
+						],
 					},
 				})
 
@@ -131,6 +138,10 @@ export class HMRService {
 					},
 					resolveId: (id, importer) => this.vns.resolveId(id, importer),
 				})
+
+				// 抢先把工作区内需要保持单例的模块塞进 moduleCache，
+				// 避免 vite-node 重新执行出第二份 BasePlugin/HMRService 定义。
+				await this.bridgeWorkspaceModules(this.sharedWorkspaceModules)
 
 				// 4) 冷启动：扫描 + 预热执行（让 loader 完成 anchors 首次填充）
 				console.time('[HMR] 扫描文件')
@@ -211,23 +222,60 @@ export class HMRService {
 			const hasPlugin = this.ctx.loader.loadFileModule(id, mod)
 			const t2 = process.hrtime.bigint()
 
-			bump(this.trace.evalMs, id, nsToMs(t1 - t0))
-			bump(this.trace.injectMs, id, nsToMs(t2 - t1))
+			const evaluateMs = nsToMs(t1 - t0)
+			const injectMs = nsToMs(t2 - t1)
+
+			bump(this.trace.evalMs, id, evaluateMs)
+			bump(this.trace.injectMs, id, injectMs)
 
 			this.ctx.logger.info(
-				`[HMR] 执行: ${id}\n` +
-					`  • evaluate(entrance): ${nsToMs(t1 - t0).toFixed(2)}ms\n` +
-					`  • loadFileModule:     ${nsToMs(t2 - t1).toFixed(2)}ms` +
-					(hasPlugin ? '\n  • 插件入口: yes' : ''),
+				{
+					file: id,
+					timings: { evaluateMs, loadModuleMs: injectMs },
+					pluginEntry: hasPlugin,
+				},
+				'[HMR] execute module',
 			)
 		}
 
 		const tc0 = process.hrtime.bigint()
 		const res = await this.ctx.registry.commit()
 		const tc1 = process.hrtime.bigint()
-		this.ctx.logger.info(`[HMR] registry.commit(): ${nsToMs(tc1 - tc0).toFixed(2)}ms`)
+		const commitMs = nsToMs(tc1 - tc0)
+		this.ctx.logger.info({ durationMs: commitMs }, '[HMR] registry.commit()')
 
 		return res
+	}
+
+	/**
+	 * Ensure vite-node reuses host exports for selected workspace packages so plugins see the same
+	 * class singletons (BasePlugin, HMRService, etc.) during hot reload.
+	 */
+	private async bridgeWorkspaceModules(specifiers: readonly string[]) {
+		for (const specifier of specifiers) {
+			try {
+				// 1. 让 vite-node 告诉我们它会以哪个 id 访问该模块（裸模块 / 绝对路径）。
+				const resolved = await this.vns.resolveId(specifier)
+				if (!resolved) continue
+				// 2. 从宿主 runtime 获取已经加载好的实例（通过普通 import）。
+				const exports = await import(specifier)
+				// 3. 在 moduleCache 中写入“已执行”的结果，这样 vite-node 不会再次执行模块实现。
+				const cacheEntry = {
+					exports,
+					evaluated: true,
+					imports: new Set<string>(),
+					importers: new Set<string>(),
+					promise: Promise.resolve(exports),
+				}
+				// PS：同一模块可能被以多种 key 访问，逐一登记保证缓存命中。
+				const ids = new Set<string>([specifier, resolved.id, this.toCleanId(resolved.id)])
+				for (const id of ids) {
+					this.runner.moduleCache.set(id, { ...cacheEntry })
+				}
+			} catch (error) {
+				this.ctx.logger.warn({ specifier, error }, '[HMR] 无法桥接工作区模块')
+			}
+		}
 	}
 
 	/* ------------------------------ DevServer 启动 ------------------------------ */

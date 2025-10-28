@@ -17,10 +17,6 @@ export class PluginA extends BasePlugin {
 	}
 
 	init(_abortt: AbortSignal): void | Promise<void> {
-		this.pluginC =
-			(this.ctx.registry.pluginRegistry.lastContainer.getMaybe(PluginC) as PluginC | undefined) ??
-			undefined
-
 		this.pluginB.doSomething()
 		// 可选依赖 PluginC 进行判断_pluginC
 		if (this.pluginC) {
