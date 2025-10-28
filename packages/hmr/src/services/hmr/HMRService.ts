@@ -183,7 +183,8 @@ export class HMRService {
 
 				// 6) 观测与榜单
 				this.printAttribution(changed, affectedIds, targets)
-				this.ctx.logger.info(this.ctx.registry.pluginRegistry.lastContainer.services.size)
+				const activeServices = this.ctx.registry.pluginRegistry.lastContainer.services.size
+				this.ctx.logger.info({ activeServices }, '[HMR] active services')
 
 				return [] // 服务端 HMR 由我们全权处理
 			},
@@ -298,7 +299,7 @@ export class HMRService {
 			],
 			// SSR 链建议禁用依赖预优化，以免 graph 形变
 			optimizeDeps: {},
-			ssr: { external: ['react', 'react-dom'] },
+			ssr: { external: ['react', 'react-dom', '@pluxel/core'] },
 		})
 		await server.listen()
 		server.printUrls()
@@ -332,8 +333,9 @@ export class HMRService {
 		const queue: Array<{ m: ModuleNode; d: number }> = []
 		for (const m of startMods) queue.push({ m, d: 0 })
 
-		while (queue.length) {
-			const { m, d } = queue.shift()!
+		let cursor = 0
+		while (cursor < queue.length) {
+			const { m, d } = queue[cursor++]
 			if (!m?.id) continue
 			const id = this.cleanUrl(m.id)
 			if (!this.filter(id) || id.startsWith('\0')) continue
@@ -401,8 +403,9 @@ export class HMRService {
 		const queue: ModuleNode[] = []
 		for (const m of this.getModulesByFile(startCleanId)) queue.push(m)
 
-		while (queue.length) {
-			const m = queue.shift()!
+		let cursor = 0
+		while (cursor < queue.length) {
+			const m = queue[cursor++]
 			if (!m?.id) continue
 			const id = this.cleanUrl(m.id)
 			if (visited.has(id)) continue
@@ -445,8 +448,7 @@ export class HMRService {
 		}
 
 		// 2) 失效 vite-node 执行缓存（清理所有查询后缀的等价 key）
-		const keys = Array.from(this.runner.moduleCache.keys())
-		for (const key of keys) {
+		for (const key of this.runner.moduleCache.keys()) {
 			const base = this.cleanUrl(key)
 			if (affectedIds.has(base)) this.runner.moduleCache.delete(key)
 		}
@@ -476,8 +478,11 @@ export class HMRService {
 
 	/** 仅 transform，不 evaluate；把账记到每个受影响文件 */
 	private async prefetchTransforms(ids: Iterable<string>) {
-		const unique = Array.from(new Set([...ids].map((i) => this.toCleanId(i))))
-		for (const id of unique) {
+		const seen = new Set<string>()
+		for (const raw of ids) {
+			const id = this.toCleanId(raw)
+			if (seen.has(id)) continue
+			seen.add(id)
 			const t0 = process.hrtime.bigint()
 			try {
 				await this.vns.fetchModule(id)
@@ -496,28 +501,31 @@ export class HMRService {
 	}
 
 	private printAttribution(changed: string, _affectedd: Set<string>, targets: string[]) {
-		const fmt = (ms: number) => `${ms.toFixed(1)}ms`
+		const targetSet = new Set(targets)
+		const annotate = (id: string) => {
+			if (id === changed) return 'changed'
+			if (targetSet.has(id)) return 'target'
+			return undefined
+		}
 
+		const report: Record<string, unknown> = {
+			changed,
+			targets: [...targetSet],
+		}
 		if (this.trace.transformMs.size) {
-			this.ctx.logger.info('【Transform Top】(受影响文件)')
-			for (const [id, ms] of this.topN(this.trace.transformMs)) {
-				const mark = id === changed ? '  ← changed' : targets.includes(id) ? '  ← target' : ''
-				this.ctx.logger.info(`  ${fmt(ms)}  ${id}${mark}`)
-			}
+			report.transformTop = this.topN(this.trace.transformMs).map(([id, ms]) => ({
+				id,
+				durationMs: ms,
+				marker: annotate(id),
+			}))
 		}
-
 		if (this.trace.evalMs.size) {
-			this.ctx.logger.info('【Evaluate Top】(入口执行)')
-			for (const [id, ms] of this.topN(this.trace.evalMs, 3)) {
-				this.ctx.logger.info(`  ${fmt(ms)}  ${id}`)
-			}
+			report.evaluateTop = this.topN(this.trace.evalMs, 3).map(([id, ms]) => ({ id, durationMs: ms }))
+		}
+		if (this.trace.injectMs.size) {
+			report.injectTop = this.topN(this.trace.injectMs, 3).map(([id, ms]) => ({ id, durationMs: ms }))
 		}
 
-		if (this.trace.injectMs.size) {
-			this.ctx.logger.info('【Inject Top】(loadFileModule)')
-			for (const [id, ms] of this.topN(this.trace.injectMs, 3)) {
-				this.ctx.logger.info(`  ${fmt(ms)}  ${id}`)
-			}
-		}
+		this.ctx.logger.info(report, '[HMR] timing attribution')
 	}
 }
