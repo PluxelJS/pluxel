@@ -1,0 +1,47 @@
+{
+  "recordedAt": "2025-10-28T04:32:12.533Z",
+  "runtime": {
+    "name": "bun",
+    "version": "1.2.22"
+  },
+  "options": {
+    "timeMs": 350,
+    "warmupTimeMs": 150,
+    "warmupIterations": 24,
+    "minIterations": 64
+  },
+  "tasks": [
+    {
+      "name": "load/unload A+B+C",
+      "runs": 562,
+      "totalTimeMs": 350.346,
+      "opsMean": 1820.451,
+      "opsMin": 126.443,
+      "opsMax": 2591.835,
+      "opsRmePct": 1.82,
+      "latencyMeanMs": 0.623,
+      "latencyP50Ms": 0.525,
+      "latencyP75Ms": 0.588,
+      "latencyP99Ms": 2.499,
+      "latencyMaxMs": 7.909,
+      "latencyRmePct": 6.27,
+      "latencySdMs": 0.472
+    },
+    {
+      "name": "reload PluginA",
+      "runs": 809,
+      "totalTimeMs": 350.026,
+      "opsMean": 2574.502,
+      "opsMin": 220.613,
+      "opsMax": 3478.842,
+      "opsRmePct": 1.4,
+      "latencyMeanMs": 0.433,
+      "latencyP50Ms": 0.374,
+      "latencyP75Ms": 0.423,
+      "latencyP99Ms": 1.998,
+      "latencyMaxMs": 4.533,
+      "latencyRmePct": 4.71,
+      "latencySdMs": 0.296
+    }
+  ]
+}

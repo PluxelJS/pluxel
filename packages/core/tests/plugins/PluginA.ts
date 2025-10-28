@@ -16,18 +16,18 @@ export class PluginA extends BasePlugin {
 
 	init(): void {
 		this.ctx.registry.afterCommit(() => {
-			this.pluginC = this.ctx.registry.optional(PluginC) as PluginC
-			this.pluginC.doExampleLog()
+			const optionalC = this.ctx.registry.optional(PluginC) as PluginC | undefined
+			if (!optionalC) {
+				this.ctx.logger.info('PluginA: PluginC dependency not injected')
+				return
+			}
+			this.pluginC = optionalC
+			optionalC.doExampleLog()
+			this.ctx.logger.info('PluginA using PluginC dependency')
 		})
 		this.ctx.logger.info('PluginA initialized')
 		// 使用必需依赖 PluginB
 		this.pluginB.doSomething()
-		// 可选依赖 PluginC 进行判断
-		if (this.pluginC) {
-			this.ctx.logger.info('PluginA using PluginC dependency')
-		} else {
-			this.ctx.logger.info('PluginA: PluginC dependency not injected')
-		}
 
 		console.log(`当前情境 ${this.ctx.name}`)
 	}

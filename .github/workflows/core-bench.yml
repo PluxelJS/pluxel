@@ -1,0 +1,97 @@
+name: Core Benchmarks
+
+on:
+  pull_request:
+    paths:
+      - 'packages/core/**'
+      - 'pnpm-lock.yaml'
+      - '.github/workflows/core-bench.yml'
+  workflow_dispatch:
+    inputs:
+      fail_on_regression:
+        description: 'Fail workflow when regression exceeds tolerance'
+        type: boolean
+        default: false
+
+jobs:
+  bench:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'pnpm'
+
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Prepare baseline report
+        env:
+          BASE_BRANCH: ${{ github.event.pull_request.base.ref || github.event.repository.default_branch }}
+        run: |
+          mkdir -p packages/core/benchmarks
+          if [ -n "$BASE_BRANCH" ]; then
+            git fetch origin "$BASE_BRANCH" --depth=1 || true
+            if git cat-file -e "origin/$BASE_BRANCH:packages/core/benchmarks/plugin-lifecycle.json"; then
+              git show "origin/$BASE_BRANCH:packages/core/benchmarks/plugin-lifecycle.json" > packages/core/benchmarks/baseline.json
+            else
+              echo '{}' > packages/core/benchmarks/baseline.json
+            fi
+          else
+            echo '{}' > packages/core/benchmarks/baseline.json
+          fi
+
+      - name: Run core benchmark
+        env:
+          PLUXEL_BENCH_BASELINE: packages/core/benchmarks/baseline.json
+          PLUXEL_BENCH_TOLERANCE: '5'
+          PLUXEL_BENCH_STRICT: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.fail_on_regression == 'true' && '1' || '0' }}
+        run: pnpm --filter @pluxel/core bench
+
+      - name: Upload benchmark artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: core-bench-${{ github.run_id }}
+          path: |
+            packages/core/benchmarks/plugin-lifecycle.json
+            packages/core/benchmarks/plugin-lifecycle.md
+            packages/core/benchmarks/plugin-lifecycle-diff.json
+          if-no-files-found: ignore
+
+      - name: Comment PR with results
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs')
+            const path = require('path')
+            const marker = '<!-- pluxel-core-bench -->'
+            let body = ''
+            const reportPath = path.join(process.cwd(), 'packages/core/benchmarks/plugin-lifecycle.md')
+            if (fs.existsSync(reportPath)) {
+              body = fs.readFileSync(reportPath, 'utf8')
+            } else {
+              body = 'Benchmark report not found.'
+            }
+            body = `${marker}\n${body}`
+            const { owner, repo } = context.repo
+            const issue_number = context.issue.number
+            const comments = await github.rest.issues.listComments({ owner, repo, issue_number, per_page: 100 })
+            const existing = comments.data.find((comment) => comment.user?.login === 'github-actions[bot]' && comment.body?.includes(marker))
+            if (existing) {
+              await github.rest.issues.updateComment({ owner, repo, comment_id: existing.id, body })
+            } else {
+              await github.rest.issues.createComment({ owner, repo, issue_number, body })
+            }
