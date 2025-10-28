@@ -16,6 +16,12 @@ concurrency:
 
 env:
   CI: "true"
+  NODE_VERSION: "lts/*"
+  BUN_VERSION: "1.2.22"
+
+defaults:
+  run:
+    shell: bash
 
 permissions:
   contents: read
@@ -29,9 +35,9 @@ jobs:
       matrix:
         os: [ubuntu-latest]
         node: ["lts/*"]
-        bun: ["1.2.20"] # or "latest"
+        bun: ["1.2.22"]
 
-    name: "Build: ${{ matrix.os }}, Node.js ${{ matrix.node }} (+ Bun)"
+    name: "Build: ${{ matrix.os }}, Node.js ${{ matrix.node }}, Bun ${{ matrix.bun }}"
 
     steps:
       - name: Prepare git
@@ -41,11 +47,10 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: "💽️ Setup (Node.js)"
-        uses: ./.github/actions/setup-node
+      - name: "🛠️ Setup toolchain"
+        uses: ./.github/actions/setup-toolchain
         with:
           node-version: ${{ matrix.node }}
-          pnpm-version: ${{ matrix.pnpm }}
           bun-version: ${{ matrix.bun }}  # ← 这行启用 Bun（你的 composite 会自动安装并缓存）
 
       # PR：只跑受影响的包（相对 base 分支）

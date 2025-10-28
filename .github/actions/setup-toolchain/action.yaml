@@ -1,0 +1,101 @@
+name: 'Setup toolchain'
+description: 'Install pnpm (from packageManager), Node.js, optional Bun, and prime caches'
+
+inputs:
+  node-version:
+    description: 'Node.js version spec (falls back to workflow env NODE_VERSION or default runner tooling)'
+    required: false
+  bun-version:
+    description: 'Bun version (set empty string to skip)'
+    required: false
+    default: ''
+  install:
+    description: 'Whether to run pnpm install --frozen-lockfile'
+    required: false
+    default: 'true'
+
+runs:
+  using: 'composite'
+  steps:
+    - name: '🧾 Resolve versions'
+      id: detect
+      shell: bash
+      env:
+        INPUT_NODE: ${{ inputs['node-version'] }}
+        INPUT_BUN: ${{ inputs['bun-version'] }}
+      run: |
+        set -euo pipefail
+        # Node version: input -> env NODE_VERSION -> empty (actions/setup-node default)
+        node_version="${INPUT_NODE:-}"
+        if [ -z "$node_version" ] && [ -n "${NODE_VERSION:-}" ]; then
+          node_version="${NODE_VERSION}"
+        fi
+        if [ -z "$node_version" ]; then
+          node_version="lts/*"
+        fi
+        echo "node=$node_version" >> "$GITHUB_OUTPUT"
+
+        # Bun version: explicit input beats env, empty string disables
+        bun_version="${INPUT_BUN:-}"
+        if [ -z "$bun_version" ] && [ -n "${BUN_VERSION:-}" ]; then
+          bun_version="${BUN_VERSION}"
+        fi
+        echo "bun=$bun_version" >> "$GITHUB_OUTPUT"
+
+        # pnpm version sourced from packageManager field when possible
+        pnpm_version="$(node -p "(() => { try { const pkg = require('./package.json'); const mgr = pkg.packageManager || ''; if (typeof mgr === 'string' && mgr.startsWith('pnpm@')) { return mgr.slice(5); } } catch {} return ''; })()" 2>/dev/null || true)"
+        if [ -z "$pnpm_version" ]; then
+          # Fallback to engines.pnpm or latest
+          pnpm_version="$(node -p "(() => { try { const pkg = require('./package.json'); const eng = pkg.engines?.pnpm; if (typeof eng === 'string') { return eng.replace(/^[>=~^]+/, ''); } } catch {} return ''; })()" 2>/dev/null || true)"
+        fi
+        if [ -z "$pnpm_version" ]; then
+          pnpm_version="latest"
+        fi
+        echo "pnpm=$pnpm_version" >> "$GITHUB_OUTPUT"
+        echo "Resolved pnpm $pnpm_version, node ${node_version:-<system>}, bun ${bun_version:-<disabled>}"
+
+    - name: '🔧 Install pnpm'
+      uses: pnpm/action-setup@v4
+      with:
+        version: ${{ steps.detect.outputs.pnpm }}
+        run_install: false
+        standalone: true
+        dest: ~/setup-pnpm
+
+    - name: '🔺 Cache turbo outputs'
+      uses: actions/cache@v4
+      with:
+        path: .turbo
+        key: ${{ runner.os }}-turbo-${{ github.job }}-${{ hashFiles('**/pnpm-lock.yaml') }}
+        restore-keys: |
+          ${{ runner.os }}-turbo-${{ github.job }}-
+          ${{ runner.os }}-turbo-
+
+    - name: '💽 Setup Node.js'
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ steps.detect.outputs.node }}
+        cache: pnpm
+        cache-dependency-path: pnpm-lock.yaml
+        registry-url: 'https://registry.npmjs.org'
+
+    - name: '🍞 Setup Bun'
+      if: ${{ steps.detect.outputs.bun != '' }}
+      uses: oven-sh/setup-bun@v2
+      with:
+        bun-version: ${{ steps.detect.outputs.bun }}
+
+    - name: '🍞 Cache Bun'
+      if: ${{ steps.detect.outputs.bun != '' }}
+      uses: actions/cache@v4
+      with:
+        path: ~/.cache/bun
+        key: bun-${{ runner.os }}-${{ steps.detect.outputs.bun }}-${{ hashFiles('**/bun.lockb') }}
+        restore-keys: |
+          bun-${{ runner.os }}-${{ steps.detect.outputs.bun }}-
+          bun-${{ runner.os }}-
+
+    - name: '📦 Install dependencies'
+      if: ${{ inputs.install != 'false' }}
+      shell: bash
+      run: pnpm install --frozen-lockfile

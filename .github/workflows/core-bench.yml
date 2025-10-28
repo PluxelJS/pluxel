@@ -13,29 +13,42 @@ on:
         type: boolean
         default: false
 
+env:
+  BENCH_TOLERANCE: "5"
+
+concurrency:
+  group: core-bench-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    shell: bash
+
 jobs:
   bench:
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest]
+        node: ["lts/*"]
+        bun: ["1.2.22"]
     permissions:
       contents: read
       pull-requests: write
     steps:
+      - name: Prepare git
+        run: git config --global core.autocrlf false
+
       - name: Checkout
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: Setup Node
-        uses: actions/setup-node@v4
+      - name: Setup toolchain
+        uses: ./.github/actions/setup-toolchain
         with:
-          node-version: '20'
-          cache: 'pnpm'
-
-      - name: Enable Corepack
-        run: corepack enable
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
+          node-version: ${{ matrix.node }}
+          bun-version: ${{ matrix.bun }}
 
       - name: Prepare baseline report
         env:
@@ -56,7 +69,7 @@ jobs:
       - name: Run core benchmark
         env:
           PLUXEL_BENCH_BASELINE: packages/core/benchmarks/baseline.json
-          PLUXEL_BENCH_TOLERANCE: '5'
+          PLUXEL_BENCH_TOLERANCE: ${{ env.BENCH_TOLERANCE }}
           PLUXEL_BENCH_STRICT: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.fail_on_regression == 'true' && '1' || '0' }}
         run: pnpm --filter @pluxel/core bench
 
