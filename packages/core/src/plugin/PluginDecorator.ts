@@ -130,6 +130,24 @@ export function getPluginInfo(ctor: Function): Readonly<StableInfo> | undefined 
 	return info
 }
 
+export function resolvePluginIdentifier(id: PluginIdentifier): PluginIdentifier {
+	if (typeof id !== 'function') return id
+
+	let current: Function = id
+	const visited = new Set<Function>()
+
+	while (typeof current === 'function') {
+		if (visited.has(current)) break
+		visited.add(current)
+
+		const info = getPluginInfo(current)
+		if (!info?.base || info.base === current) break
+		current = info.base as Function
+	}
+
+	return current as PluginIdentifier
+}
+
 /* =========================================================
  *        getClassParam（与 stable 解耦 + 热缓存）
  *   顺序：design:paramtypes -> persistent tokens -> once override

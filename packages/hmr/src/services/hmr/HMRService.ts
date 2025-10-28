@@ -63,8 +63,9 @@ export class HMRService {
 	private runner!: ViteNodeRunner
 	private filter!: (id: string) => boolean
 	// Keep these workspace packages singleton between host runtime and vite-node; otherwise plugins
-	// would observe duplicated BasePlugin/HMRService classes during evaluation.
-	private readonly sharedWorkspaceModules = ['@pluxel/core', '@pluxel/hmr'] as const
+	// would observe duplicated BasePlugin/Service classes during evaluation. 省略 @pluxel/hmr 自身，
+	// 以免阻断它的源码热更（GraphQL/API 层仍需实时刷新）。
+	private readonly sharedWorkspaceModules = ['@pluxel/core', '@pluxel/core/service'] as const
 
 	/** SWC：装饰器/TSX/源映射，紧贴你的现有链路 */
 	private swc: Plugin = swc.vite({
@@ -140,7 +141,7 @@ export class HMRService {
 				})
 
 				// 抢先把工作区内需要保持单例的模块塞进 moduleCache，
-				// 避免 vite-node 重新执行出第二份 BasePlugin/HMRService 定义。
+				// 避免 vite-node 重新执行出第二份 BasePlugin/核心 Service 定义。
 				await this.bridgeWorkspaceModules(this.sharedWorkspaceModules)
 
 				// 4) 冷启动：扫描 + 预热执行（让 loader 完成 anchors 首次填充）
@@ -250,7 +251,7 @@ export class HMRService {
 
 	/**
 	 * Ensure vite-node reuses host exports for selected workspace packages so plugins see the same
-	 * class singletons (BasePlugin, HMRService, etc.) during hot reload.
+	 * class singletons (BasePlugin、核心 Service 等) during hot reload.
 	 */
 	private async bridgeWorkspaceModules(specifiers: readonly string[]) {
 		for (const specifier of specifiers) {
@@ -299,7 +300,7 @@ export class HMRService {
 			],
 			// SSR 链建议禁用依赖预优化，以免 graph 形变
 			optimizeDeps: {},
-			ssr: { external: ['react', 'react-dom', '@pluxel/core'] },
+			ssr: { external: ['react', 'react-dom', '@pluxel/core', '@pluxel/core/service'] },
 		})
 		await server.listen()
 		server.printUrls()

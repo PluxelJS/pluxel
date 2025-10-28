@@ -6,16 +6,12 @@ import { createErr, createOk, type Result } from 'option-t/plain_result'
 // XState v5
 import { createActor, waitFor } from 'xstate'
 import type { ServiceMap } from '../container'
-import type { StableInfo } from '../pluginImpl'
-import { BasePlugin, PLUGIN_CTX } from '../pluginImpl/BasePlugin'
-import { PluginContainer, type PluginDiContainer } from '../pluginImpl/PluginContainer'
-import {
-	createPluginLifecycle,
-	lifecycleSelectors,
-	type PluginLifecycleRef,
-} from '../pluginImpl/pluginActor'
-import type { PluginIdentifier, PluginInstance } from '../pluginImpl/types'
-import { EffectScopeService } from './EffectScopeService'
+import { EffectScopeService } from '../service/EffectScopeService'
+import { BasePlugin, PLUGIN_CTX } from './BasePlugin'
+import { PluginContainer, type PluginDiContainer } from './PluginContainer'
+import { createPluginLifecycle, type PluginLifecycleRef } from './pluginActor'
+import { resolvePluginIdentifier, type StableInfo } from './PluginDecorator'
+import type { PluginIdentifier, PluginInstance } from './types'
 
 type PluginServiceConfig = {
 	plugigCTXIsolate?: ServiceClass<any>[]
@@ -59,9 +55,7 @@ const isRunningSnapshot = (snapshot: LifecycleSnapshot): boolean =>
 	!!snapshot && snapshotMatches(snapshot, 'running')
 
 const isStableSnapshot = (snapshot: LifecycleSnapshot): boolean =>
-	isRunningSnapshot(snapshot) ||
-	snapshotMatches(snapshot, 'failing') ||
-	isStoppedSnapshot(snapshot)
+	isRunningSnapshot(snapshot) || snapshotMatches(snapshot, 'failing') || isStoppedSnapshot(snapshot)
 
 const serviceName = 'registry' as const
 declare module '@pluxel/context' {
@@ -115,12 +109,14 @@ export class PluginService {
 	/* ------------------------------ 状态查询 ------------------------------ */
 
 	isRunning(id: PluginIdentifier): boolean {
-		const ref = this.actors.get(id)
-		return ref ? lifecycleSelectors.isRunning(ref.getSnapshot()) : false
+		const ref = this.actors.get(resolvePluginIdentifier(id))
+		const snapshot = ref?.getSnapshot()
+		if (snapshot === undefined) return false
+		return isRunningSnapshot(snapshot)
 	}
 
 	public optional<T extends PluginIdentifier>(ctor: T) {
-		const optionalDep = this.pluginRegistry.lastContainer?.getMaybe(ctor)
+		const optionalDep = this.pluginRegistry.lastContainer?.getMaybe(resolvePluginIdentifier(ctor))
 		return optionalDep
 	}
 
@@ -229,7 +225,8 @@ export class PluginService {
 	/* ------------------------------ Actor 管理 ------------------------------ */
 
 	private ensureActor(id: PluginIdentifier, plugin: BasePlugin): PluginLifecycleRef {
-		let ref = this.actors.get(id)
+		const key = resolvePluginIdentifier(id)
+		let ref = this.actors.get(key)
 
 		// 若已有 actor 但已停止，丢弃并重建
 		const snapshot = ref?.getSnapshot?.()
@@ -238,7 +235,7 @@ export class PluginService {
 			try {
 				;(ref as any).stop?.()
 			} catch {}
-			this.actors.delete(id)
+			this.actors.delete(key)
 			ref = undefined as any
 		}
 
@@ -254,13 +251,14 @@ export class PluginService {
 		})
 
 		ref.start()
-		this.actors.set(id, ref)
+		this.actors.set(key, ref)
 		return ref
 	}
 
 	/** 启动：成功返回；失败抛出真实 init 错误（保留 cause）并保证清理 */
 	private async startByActor(id: PluginIdentifier, plugin: BasePlugin): Promise<void> {
 		const ref = this.ensureActor(id, plugin)
+		const key = resolvePluginIdentifier(id)
 		const snapshotBeforeStart = ref.getSnapshot?.()
 		if (isRunningSnapshot(snapshotBeforeStart)) return
 
@@ -273,7 +271,7 @@ export class PluginService {
 			})
 		} catch (error) {
 			await this.forceStop(ref)
-			this.actors.delete(id)
+			this.actors.delete(key)
 			throw new Error(`Plugin ${id} start timeout after ${this.startTimeoutMs}ms`, {
 				cause: error,
 			})
@@ -291,7 +289,7 @@ export class PluginService {
 
 		// 启动失败 → 主动 STOP（确保清理）
 		await this.forceStop(ref)
-		this.actors.delete(id)
+		this.actors.delete(key)
 
 		if (capturedErr instanceof Error) throw capturedErr
 		if (capturedErr != null) throw new Error(String(capturedErr), { cause: capturedErr })
@@ -320,35 +318,34 @@ export class PluginService {
 
 	/** 停止：若 actor 存在，用它；否则冷启动一个只为 STOP 的 actor（也会 cleanup） */
 	private async stopByActor(id: PluginIdentifier, pluginOrUndefined?: BasePlugin): Promise<void> {
-		const existing = this.actors.get(id)
+		const key = resolvePluginIdentifier(id)
+		const existing = this.actors.get(key)
 		if (existing) {
 			const current = existing.getSnapshot?.()
 			if (isStoppedSnapshot(current)) {
-				this.actors.delete(id)
+				this.actors.delete(key)
 				return
 			}
 			await this.forceStop(existing)
-			this.actors.delete(id)
+			this.actors.delete(key)
 			return
 		}
 
 		// 没有 actor：从容器或入参取实例，创建“冷 actor”仅用于清理
-		const plugin = pluginOrUndefined ?? this.pluginRegistry?.lastContainer?.get(id)
+		const plugin = pluginOrUndefined ?? this.pluginRegistry?.lastContainer?.get(key)
 		if (!plugin) return
 
 		const ref = this.ensureActor(id, plugin)
 		try {
 			await this.forceStop(ref)
 		} finally {
-			this.actors.delete(id)
+			this.actors.delete(key)
 		}
 	}
 
 	/* --------------------------------- Commit -------------------------------- */
 
-	private partitionChanges(
-		changes: Array<{ type: string; key: unknown }>,
-	): {
+	private partitionChanges(changes: Array<{ type: string; key: unknown }>): {
 		added: Set<PluginIdentifier>
 		replaced: Set<PluginIdentifier>
 		removed: Set<PluginIdentifier>
@@ -544,4 +541,5 @@ export class PluginService {
 			changes,
 		})
 	}
+
 }

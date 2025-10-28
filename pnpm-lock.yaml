@@ -95,7 +95,7 @@ importers:
         version: 3.2.2(react@19.2.0)
       '@gqty/react':
         specifier: ^3.1.1
-        version: 3.1.1(gqty@3.5.0(graphql@16.11.0))(graphql@16.11.0)(react-dom@19.2.0(react@19.2.0))(react@19.2.0)
+        version: 3.1.1(gqty@3.6.0(graphql@16.11.0))(graphql@16.11.0)(react-dom@19.2.0(react@19.2.0))(react@19.2.0)
       '@mantine/core':
         specifier: ^8.2.2
         version: 8.3.5(@mantine/hooks@8.3.5(react@19.2.0))(@types/react@19.2.2)(react-dom@19.2.0(react@19.2.0))(react@19.2.0)
@@ -121,8 +121,8 @@ importers:
         specifier: ^1.23.0
         version: 1.23.8(react-dom@19.2.0(react@19.2.0))(react@19.2.0)
       gqty:
-        specifier: ^3.5.0
-        version: 3.5.0(graphql@16.11.0)
+        specifier: ^3.6.0
+        version: 3.6.0(graphql@16.11.0)
       graphql:
         specifier: ^16.11.0
         version: 16.11.0
@@ -221,11 +221,11 @@ importers:
         specifier: ^0.12.0
         version: 0.12.0(@gqloom/core@0.12.1(graphql@16.11.0))(graphql@16.11.0)(valibot@1.1.0(typescript@5.9.3))
       '@gqty/cli':
-        specifier: ^4.3.0
-        version: 4.3.0(@types/node@24.9.1)(typescript@5.9.3)
+        specifier: ^5.0.0
+        version: 5.0.0(@types/node@24.9.1)(typescript@5.9.3)
       '@gqty/react':
         specifier: ^3.1.1
-        version: 3.1.1(gqty@3.5.0(graphql@16.11.0))(graphql@16.11.0)(react-dom@19.2.0(react@19.2.0))(react@19.2.0)
+        version: 3.1.1(gqty@3.6.0(graphql@16.11.0))(graphql@16.11.0)(react-dom@19.2.0(react@19.2.0))(react@19.2.0)
       '@hono/node-server':
         specifier: ^1.19.5
         version: 1.19.5(hono@4.10.2)
@@ -257,8 +257,8 @@ importers:
         specifier: ^4.0.3
         version: 4.0.3
       gqty:
-        specifier: ^3.5.0
-        version: 3.5.0(graphql@16.11.0)
+        specifier: ^3.6.0
+        version: 3.6.0(graphql@16.11.0)
       graphql:
         specifier: ^16.11.0
         version: 16.11.0
@@ -755,11 +755,11 @@ packages:
       graphql: '>= 16.8.0'
       valibot: '>= 1.0.0'
 
-  '@gqty/cli@4.3.0':
-    resolution: {integrity: sha512-r2cbvh0Y5SbTipGHRnlITYQuTGe9ToEH4UOPD6YJKPHTjrPbWXtA0UG82+Bmm5w6H7zLNz+Q8vHRcqDYA28eeA==}
+  '@gqty/cli@5.0.0':
+    resolution: {integrity: sha512-nPS4D5GTfesJt7Nz2ZLVc/4LOpOHOIZluAmFz3inHrmCuloZWsMORhHXDbNdeWuIkKv3mc1dvpXzQJ8JbOrkXw==}
     hasBin: true
     peerDependencies:
-      trading-signals: ^6.2.0
+      trading-signals: ^6.8.0
     peerDependenciesMeta:
       trading-signals:
         optional: true
@@ -2121,8 +2121,8 @@ packages:
   globrex@0.1.2:
     resolution: {integrity: sha512-uHJgbwAMwNFf5mLst7IWLNg14x1CkeqglJb/K3doi4dw6q2IvAAmM/Y81kevy83wP+Sst+nutFTYOGg3d1lsxg==}
 
-  gqty@3.5.0:
-    resolution: {integrity: sha512-Ep7erY2BtPK9sBIUSuIbBArZEJvjdFBnbQXYjkpf0P6RgUeCbJCCotr7z5aQiEigaaQE2B5JQw1GullpXSWNWA==}
+  gqty@3.6.0:
+    resolution: {integrity: sha512-Svy3BuGH2cGRSOvfsceuZ6YPvP6oS7FaTdeqdAqzjJa2hb1R8EZ7F0ofvowByK7siCpZELDHVDDP2m85lkiY2w==}
     engines: {node: ^12.20.0 || >=14.13.0}
     peerDependencies:
       graphql: '*'
@@ -3733,7 +3733,7 @@ snapshots:
       graphql: 16.11.0
       valibot: 1.1.0(typescript@5.9.3)
 
-  '@gqty/cli@4.3.0(@types/node@24.9.1)(typescript@5.9.3)':
+  '@gqty/cli@5.0.0(@types/node@24.9.1)(typescript@5.9.3)':
     dependencies:
       '@commander-js/extra-typings': 13.1.0(commander@13.1.0)
       '@graphql-codegen/core': 4.0.2(graphql@16.11.0)
@@ -3746,7 +3746,7 @@ snapshots:
       cosmiconfig: 9.0.0(typescript@5.9.3)
       cross-fetch: 4.1.0
       fast-glob: 3.3.3
-      gqty: 3.5.0(graphql@16.11.0)
+      gqty: 3.6.0(graphql@16.11.0)
       graphql: 16.11.0
       lodash-es: 4.17.21
       micromatch: 4.0.8
@@ -3758,10 +3758,10 @@ snapshots:
       - graphql-ws
       - typescript
 
-  '@gqty/react@3.1.1(gqty@3.5.0(graphql@16.11.0))(graphql@16.11.0)(react-dom@19.2.0(react@19.2.0))(react@19.2.0)':
+  '@gqty/react@3.1.1(gqty@3.6.0(graphql@16.11.0))(graphql@16.11.0)(react-dom@19.2.0(react@19.2.0))(react@19.2.0)':
     dependencies:
       '@react-hookz/web': 23.1.0(react-dom@19.2.0(react@19.2.0))(react@19.2.0)
-      gqty: 3.5.0(graphql@16.11.0)
+      gqty: 3.6.0(graphql@16.11.0)
       graphql: 16.11.0
       multidict: 1.0.9
       p-debounce: 4.0.0
@@ -5076,7 +5076,7 @@ snapshots:
 
   globrex@0.1.2: {}
 
-  gqty@3.5.0(graphql@16.11.0):
+  gqty@3.6.0(graphql@16.11.0):
     dependencies:
       debounce-microtasks: 0.1.8
       flatted: 3.3.3

@@ -1,4 +1,16 @@
-import { Box, Button, Card, Center, Text } from '@mantine/core'
+import {
+	Box,
+	Button,
+	Card,
+	CardSection,
+	Center,
+	Flex,
+	Skeleton,
+	Stack,
+	Text,
+	useMantineTheme,
+} from '@mantine/core'
+import { useMediaQuery } from '@mantine/hooks'
 import { memo, useCallback, useMemo } from 'react'
 import type { PluginScope } from '../../gqty'
 import { useQuery } from '../../gqty'
@@ -10,24 +22,68 @@ import { toDependencySnapshots } from './utils'
 
 const LEFT_SKELETON_WIDTH = 'clamp(320px, 34vw, 480px)'
 
-function PluginSkeleton() {
+function PluginSkeleton({ stacked }: { stacked: boolean }) {
 	return (
-		<Box
-			style={{
-				display: 'flex',
-				gap: 'var(--mantine-spacing-md)',
-				height: '100%',
-				minHeight: 0,
-				minWidth: 0,
-			}}
+		<Flex
+			direction={stacked ? 'column' : 'row'}
+			gap="md"
+			h={stacked ? 'auto' : '100%'}
+			style={{ minHeight: 0, minWidth: 0 }}
 		>
 			<Card
 				withBorder
 				shadow="sm"
-				style={{ width: LEFT_SKELETON_WIDTH, minWidth: 0, height: '100%' }}
-			/>
-			<Card withBorder shadow="sm" style={{ flex: 1, minWidth: 0, height: '100%' }} />
-		</Box>
+				style={{
+					flex: stacked ? 'initial' : '0 0 auto',
+					width: stacked ? '100%' : LEFT_SKELETON_WIDTH,
+					minWidth: 0,
+					minHeight: stacked ? 'auto' : '100%',
+					display: 'flex',
+					flexDirection: 'column',
+				}}
+			>
+				<CardSection withBorder px="md" py="sm">
+					<Stack gap={8}>
+						<Skeleton height={24} width="60%" radius="sm" />
+						<Flex gap={8}>
+							<Skeleton height={20} width={88} radius="xl" />
+							<Skeleton height={20} width={88} radius="xl" />
+						</Flex>
+					</Stack>
+				</CardSection>
+				<CardSection px="md" py="sm" style={{ flex: 1 }}>
+					<Stack gap="sm" h="100%">
+						<Skeleton height={14} width="90%" />
+						<Skeleton height={14} width="75%" />
+						<Skeleton height={14} width="82%" />
+						<Skeleton height="100%" radius="md" />
+					</Stack>
+				</CardSection>
+			</Card>
+
+			<Card
+				withBorder
+				shadow="sm"
+				style={{
+					flex: 1,
+					minWidth: 0,
+					minHeight: stacked ? 260 : '100%',
+					display: 'flex',
+					flexDirection: 'column',
+				}}
+			>
+				<CardSection withBorder px="md" py="sm">
+					<Skeleton height={22} width="30%" radius="sm" />
+				</CardSection>
+				<CardSection px="md" py="sm" style={{ flex: 1 }}>
+					<Stack gap="sm" h="100%">
+						<Skeleton height={14} width="92%" />
+						<Skeleton height={14} width="86%" />
+						<Skeleton height="100%" radius="md" />
+					</Stack>
+				</CardSection>
+			</Card>
+		</Flex>
 	)
 }
 
@@ -36,6 +92,15 @@ export interface PluginScreenProps {
 }
 
 export const PluginScreen = memo(function PluginScreen({ pluginName }: PluginScreenProps) {
+	const theme = useMantineTheme()
+	const breakpointLg = theme.breakpoints?.lg ?? '62em'
+	const mediaQuery =
+		typeof breakpointLg === 'number'
+			? `(max-width: ${breakpointLg}px)`
+			: `(max-width: ${breakpointLg})`
+	const isStacked = useMediaQuery(mediaQuery, false, {
+		getInitialValueInEffect: true,
+	})
 	const query = useQuery({
 		suspense: false,
 		operationName: 'PluginDetailView',
@@ -50,7 +115,6 @@ export const PluginScreen = memo(function PluginScreen({ pluginName }: PluginScr
 					detail.desc
 					detail.dependencies.map((dep) => {
 						dep.name
-						dep.optional
 						dep.isRunning
 					})
 					scope.status.isRunning
@@ -68,7 +132,10 @@ export const PluginScreen = memo(function PluginScreen({ pluginName }: PluginScr
 	const description = scope?.detail?.desc ?? ''
 	const isRunning = Boolean(scope?.status?.isRunning)
 	const configState = usePluginConfig(ready ? displayName : undefined)
-	const syncing = useDebouncedFlag(query.$state.isLoading || configState.loading, 160)
+	const syncing = useDebouncedFlag(
+		query.$state.isLoading || query.$state.isRefetching || configState.loading,
+		160,
+	)
 
 	const refetch = useCallback(async () => {
 		await query.$refetch(true)
@@ -107,13 +174,13 @@ export const PluginScreen = memo(function PluginScreen({ pluginName }: PluginScr
 		)
 	}
 
-	if (!ready) return <PluginSkeleton />
+	if (!ready) return <PluginSkeleton stacked={Boolean(isStacked)} />
 
 	if (!scope) return null
 
 	return (
 		<PluginScopeProvider value={contextValue}>
-			<PluginLayout config={configState} />
+			<PluginLayout config={configState} stacked={Boolean(isStacked)} />
 		</PluginScopeProvider>
 	)
 })

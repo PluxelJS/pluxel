@@ -1,4 +1,5 @@
 import { Context } from '@pluxel/core'
+import { PluginC } from './plugins/PluginC'
 import { PinoLoggerService } from './services'
 
 if (process.env.PLUXEL_HMR_SSR === undefined) {

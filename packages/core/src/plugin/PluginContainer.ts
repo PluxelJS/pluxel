@@ -4,7 +4,7 @@ import type { Context } from '@pluxel/context'
 import { createErr, createOk, unwrapOk } from 'option-t/plain_result'
 import { type DiodContainer, ExtendedContainerBuilder } from '../container'
 import { BasePlugin, FORK_CTX, PLUGIN_CTX } from './BasePlugin'
-import { getClassParam, getPluginInfo } from './PluginDecorator'
+import { getClassParam, getPluginInfo, resolvePluginIdentifier } from './PluginDecorator'
 import type { PluginConstructor, PluginIdentifier, PluginInstance } from './types'
 
 export type PluginDiContainer = DiodContainer<BasePlugin>
@@ -93,9 +93,10 @@ export class PluginContainer {
 	 * 卸载：深度优先仅修改草稿；实际停机在 PluginService.commit() 中统一执行
 	 */
 	public unregisterPlugin(plugin: PluginIdentifier): void {
-		const children = this.lastContainer?.dependents.get(plugin) ?? new Set<PluginIdentifier>()
+		const canonical = resolvePluginIdentifier(plugin)
+		const children = this.lastContainer?.dependents.get(canonical) ?? new Set<PluginIdentifier>()
 		for (const dep of children) this.unregisterPlugin(dep)
-		this.builder.tryUnregister(plugin)
+		this.builder.tryUnregister(canonical)
 	}
 
 	/**
@@ -103,7 +104,8 @@ export class PluginContainer {
 	 * 实际启停仍在 PluginService.commit()
 	 */
 	public reloadPlugin(root: PluginIdentifier, newClass?: PluginConstructor): void {
-		if (!this.builder.buildables.has(root)) {
+		const canonicalRoot = resolvePluginIdentifier(root)
+		if (!this.builder.buildables.has(canonicalRoot)) {
 			throw new Error('You can not reload an unloaded Plugin.')
 		}
 
@@ -115,12 +117,12 @@ export class PluginContainer {
 			affected.add(id)
 			for (const child of depsMap.get(id) ?? []) collect(child)
 		}
-		collect(root)
+		collect(canonicalRoot)
 
 		for (const id of affected) this.singletons.delete(id as any)
 
 		for (const id of affected) {
-			if (id === root && newClass) this.registerPlugin(newClass)
+			if (id === canonicalRoot && newClass) this.registerPlugin(newClass)
 			else this.builder.dispatchReload(id)
 		}
 	}
