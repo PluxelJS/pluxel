@@ -31,7 +31,7 @@
 		"@melloware/react-logviewer": "^6.3.4",
 		"gqty": "^3.6.0",
 		"graphql": "^16.11.0",
-		"hono": "latest",
+		"hono": "^4.10.3",
 		"wouter": "^3.7.1"
 	},
 	"devDependencies": {

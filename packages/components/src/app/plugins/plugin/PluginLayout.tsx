@@ -3,7 +3,7 @@ import { LeftPane } from './components/LeftPane'
 import { RightPane } from './components/RightPane'
 import type { PluginConfigState } from './hooks/usePluginConfig'
 
-const LEFT_WIDTH = 'clamp(320px, 34vw, 480px)'
+const LEFT_WIDTH = 'clamp(320px, 32vw, 440px)'
 
 interface PluginLayoutProps {
 	config: PluginConfigState
@@ -14,23 +14,23 @@ export function PluginLayout({ config, stacked = false }: PluginLayoutProps) {
 	return (
 		<Flex
 			direction={stacked ? 'column' : 'row'}
-			h={stacked ? 'auto' : '100%'}
 			gap="md"
-			style={{ minHeight: 0, minWidth: 0, overflow: 'hidden' }}
+			align="stretch"
+			style={{ flex: 1, minHeight: 0, minWidth: 0 }}
 		>
 			<Box
 				style={{
 					flex: stacked ? 'initial' : '0 0 auto',
 					width: stacked ? '100%' : LEFT_WIDTH,
 					minWidth: 0,
-					minHeight: stacked ? 'auto' : 0,
+					minHeight: stacked ? 'auto' : '100%',
 					display: 'flex',
 				}}
 			>
-				<LeftPane />
+				<LeftPane compact={stacked} />
 			</Box>
 
-			<Box style={{ flex: 1, minHeight: 0, minWidth: 0, display: 'flex' }}>
+			<Box style={{ flex: 1, minWidth: 0, minHeight: 0, display: 'flex' }}>
 				<RightPane config={config} />
 			</Box>
 		</Flex>

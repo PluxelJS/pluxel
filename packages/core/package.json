@@ -8,12 +8,12 @@
 	"type": "module",
 	"exports": {
 		".": {
-			"@pluxel/source": "./src/bun.ts",
+			"@pluxel/source": "./src/index.ts",
 			"import": "./dist/index.js",
 			"require": "./dist/index.cjs"
 		},
 		"./service": {
-			"@pluxel/source": "./src/bun.ts",
+			"@pluxel/source": "./src/service/index.ts",
 			"import": "./dist/service.js",
 			"require": "./dist/service.cjs"
 		},

@@ -30,6 +30,8 @@ const RECONNECT_MAX = 10_000 // SSE 最大重连间隔
 
 /* ================= 等宽字符宽度测量（更稳的平均法） ================= */
 const MONO_FONT = '13px ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace'
+const LOG_SIDE_PADDING = 32 // LazyLog 视图左右内边距（估算用于列数换算）
+const MIN_COLS = 8
 
 function measureMonoCharWidth(): number {
 	if (typeof document === 'undefined') return 7
@@ -148,9 +150,9 @@ export function LiveLog({ module }: Props) {
 	const charWRef = useRef<number>(0)
 	useEffect(() => {
 		if (!charWRef.current) charWRef.current = measureMonoCharWidth()
-		const gutter = 16
+		const gutter = LOG_SIDE_PADDING
 		const cw = charWRef.current || 7
-		const nextCols = Math.max(20, Math.floor(Math.max(0, width - gutter) / cw))
+		const nextCols = Math.max(MIN_COLS, Math.floor(Math.max(0, width - gutter) / cw))
 		setCols((prev) => (prev === nextCols ? prev : nextCols))
 	}, [width])
 
@@ -363,7 +365,18 @@ export function LiveLog({ module }: Props) {
 							selectableLines
 							wrapLines={false} // 自己做了硬换行
 							rowHeight={20}
-							style={{ fontFamily: MONO_FONT }}
+							enableLineNumbers={false}
+							enableGutters={false}
+							style={{
+								fontFamily: MONO_FONT,
+								width: '100%',
+								maxWidth: '100%',
+							}}
+							containerStyle={{
+								width: '100%',
+								maxWidth: '100%',
+								overflowX: 'hidden',
+							}}
 						/>
 					)}
 				/>

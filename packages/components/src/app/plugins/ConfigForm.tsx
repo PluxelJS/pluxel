@@ -6,7 +6,7 @@ import {
 	Button,
 	Group,
 	Paper,
-	ScrollArea,
+	ScrollAreaAutosize,
 	Tabs,
 	Text,
 	Title,
@@ -242,11 +242,9 @@ function ConfigTabPanel({
 			}}
 		>
 			<AutoForm schema={schema as any} formOpts={opts}>
-				<ScrollArea style={{ flex: 1, minHeight: 0 }} offsetScrollbars type="hover">
-					<Box px="sm" pb={96}>
-						<AutoForm.Fields />
-					</Box>
-				</ScrollArea>
+				<Box px="sm" pb={96}>
+					<AutoForm.Fields />
+				</Box>
 
 				<AutoForm.Actions>
 					{({ submit, reset, dirty, canSubmit, submitting }) => (
@@ -336,15 +334,17 @@ export function ConfigForm({ pluginName, configs, existConfigs }: ConfigFormProp
 				</Tabs.List>
 
 				{items.map(({ key, schema, defaults }) => (
-					<ConfigTabPanel
-						pluginName={pluginName}
-						key={key}
-						tabKey={key}
-						schema={schema}
-						defaults={defaults}
-						onSaved={onSaved}
-						savedAt={savedAtMap[key]}
-					/>
+					<ScrollAreaAutosize key={key}>
+						<ConfigTabPanel
+							pluginName={pluginName}
+							key={key}
+							tabKey={key}
+							schema={schema}
+							defaults={defaults}
+							onSaved={onSaved}
+							savedAt={savedAtMap[key]}
+						/>
+					</ScrollAreaAutosize>
 				))}
 			</Tabs>
 		</Box>

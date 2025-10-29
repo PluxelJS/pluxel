@@ -44,7 +44,9 @@ export function rewriteDtsModuleAugmentations(map: Record<string, string>) {
 }
 
 export default defineConfig({
-	exports: false,
+	exports: {
+		devExports: '@pluxel/source',
+	},
 	entry: {
 		index: 'src/index.ts',
 		service: 'src/service/index.ts',

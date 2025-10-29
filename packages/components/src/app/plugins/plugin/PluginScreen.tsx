@@ -1,15 +1,4 @@
-import {
-	Box,
-	Button,
-	Card,
-	CardSection,
-	Center,
-	Flex,
-	Skeleton,
-	Stack,
-	Text,
-	useMantineTheme,
-} from '@mantine/core'
+import { Button, Card, CardSection, Center, Flex, Skeleton, Stack, Text, useMantineTheme } from '@mantine/core'
 import { useMediaQuery } from '@mantine/hooks'
 import { memo, useCallback, useMemo } from 'react'
 import type { PluginScope } from '../../gqty'
@@ -91,39 +80,51 @@ export interface PluginScreenProps {
 	pluginName: string
 }
 
-export const PluginScreen = memo(function PluginScreen({ pluginName }: PluginScreenProps) {
-	const theme = useMantineTheme()
-	const breakpointLg = theme.breakpoints?.lg ?? '62em'
-	const mediaQuery =
-		typeof breakpointLg === 'number'
-			? `(max-width: ${breakpointLg}px)`
-			: `(max-width: ${breakpointLg})`
-	const isStacked = useMediaQuery(mediaQuery, false, {
-		getInitialValueInEffect: true,
-	})
+function usePluginDetail(pluginName?: string) {
 	const query = useQuery({
 		suspense: false,
 		operationName: 'PluginDetailView',
 		notifyOnNetworkStatusChange: true,
 		refetchOnWindowVisible: false,
 		refetchOnReconnect: false,
-		prepare: pluginName
-			? ({ query }) => {
-					const scope = query.plugin({ name: pluginName })
-					scope.name
-					const detail = scope.detail
-					detail.desc
-					detail.dependencies.map((dep) => {
-						dep.name
-						dep.isRunning
-					})
-					scope.status.isRunning
-				}
-			: undefined,
+		prepare:
+			pluginName !== undefined
+				? ({ query }) => {
+						const scope = query.plugin({ name: pluginName })
+						scope.name
+						const detail = scope.detail
+						detail.desc
+						detail.dependencies.map((dep) => {
+							dep.name
+							dep.isRunning
+						})
+						scope.status.isRunning
+					}
+				: undefined,
 	})
 
-	const scope: PluginScope | undefined = pluginName ? query.plugin({ name: pluginName }) : undefined
+	const scope: PluginScope | undefined =
+		pluginName !== undefined ? query.plugin({ name: pluginName }) : undefined
 	const ready = Boolean(scope?.name)
+
+	return {
+		scope,
+		ready,
+		error: query.$state.error,
+		loading: query.$state.isLoading,
+		refetch: query.$refetch,
+	}
+}
+
+export const PluginScreen = memo(function PluginScreen({ pluginName }: PluginScreenProps) {
+	const theme = useMantineTheme()
+	const breakpointLg = typeof theme.breakpoints?.lg === 'number' ? `${theme.breakpoints.lg}px` : theme.breakpoints?.lg ?? '62em'
+	const isStacked = useMediaQuery(`(max-width: ${breakpointLg})`, false, {
+		getInitialValueInEffect: true,
+	})
+
+	const { scope, ready, error, loading, refetch } = usePluginDetail(pluginName)
+
 	const displayName = scope?.name ?? pluginName
 	const dependencies = useMemo(
 		() => toDependencySnapshots(scope?.detail?.dependencies),
@@ -131,15 +132,14 @@ export const PluginScreen = memo(function PluginScreen({ pluginName }: PluginScr
 	)
 	const description = scope?.detail?.desc ?? ''
 	const isRunning = Boolean(scope?.status?.isRunning)
-	const configState = usePluginConfig(ready ? displayName : undefined)
-	const syncing = useDebouncedFlag(
-		query.$state.isLoading || query.$state.isRefetching || configState.loading,
-		160,
-	)
 
-	const refetch = useCallback(async () => {
-		await query.$refetch(true)
-	}, [query])
+	const configState = usePluginConfig(ready ? displayName : undefined)
+	const syncing = useDebouncedFlag(loading || configState.loading, 160)
+
+	const handleRefetch = useCallback(async () => {
+		await refetch(true)
+	}, [refetch])
+
 	const contextValue = useMemo(
 		() => ({
 			pluginName: displayName,
@@ -148,9 +148,9 @@ export const PluginScreen = memo(function PluginScreen({ pluginName }: PluginScr
 			dependencies,
 			isRunning,
 			isSyncing: syncing,
-			refetch,
+			refetch: handleRefetch,
 		}),
-		[dependencies, description, displayName, isRunning, refetch, scope, syncing],
+		[dependencies, description, displayName, handleRefetch, isRunning, scope, syncing],
 	)
 
 	if (!pluginName) {
@@ -163,11 +163,11 @@ export const PluginScreen = memo(function PluginScreen({ pluginName }: PluginScr
 		)
 	}
 
-	if (query.$state.error && !ready) {
+	if (error && !ready) {
 		return (
 			<Center h="100%" style={{ gap: 12, flexDirection: 'column' }}>
-				<Text c="red">{query.$state.error.message || '加载失败，请重试'}</Text>
-				<Button size="xs" onClick={() => void query.$refetch(true)}>
+				<Text c="red">{error.message || '加载失败，请重试'}</Text>
+				<Button size="xs" onClick={() => void refetch(true)}>
 					重试
 				</Button>
 			</Center>
@@ -175,7 +175,6 @@ export const PluginScreen = memo(function PluginScreen({ pluginName }: PluginScr
 	}
 
 	if (!ready) return <PluginSkeleton stacked={Boolean(isStacked)} />
-
 	if (!scope) return null
 
 	return (
