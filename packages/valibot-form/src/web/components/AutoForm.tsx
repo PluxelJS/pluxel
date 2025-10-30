@@ -1,17 +1,19 @@
 import { Card, Stack } from '@mantine/core'
 import React, { createContext, memo, Suspense, useCallback, useContext, useMemo } from 'react'
 import type { InferOutput, ObjectSchema } from 'valibot'
-import { extractInfo, MetaRenderer } from 'valibot-form'
+import { extractInfo } from '~/extract'
+import { MetaRenderer } from '~/registry'
 import { useAppForm } from './formContext'
+import './registerRenderers'
 
 // -------- schema 解析缓存，避免重复 extractInfo ----------
 const infoCache = new WeakMap<object, ReturnType<typeof extractInfo> | null>()
 function cachedExtractInfo(schema: object, title: string) {
-	const c = infoCache.get(schema)
-	if (c !== undefined) return c
-	const i = extractInfo(schema as any, { title })
-	infoCache.set(schema, i)
-	return i
+	const cached = infoCache.get(schema)
+	if (cached !== undefined) return cached
+	const info = extractInfo(schema as any, { title })
+	infoCache.set(schema, info)
+	return info
 }
 
 // -------- Context（暴露同一表单实例与渲染数据） ----------
@@ -49,16 +51,16 @@ export function AutoForm<S extends ObjectSchema<any, any>>({
 
 	const items = useMemo(() => {
 		const entries = Object.entries(schema.entries) as [keyof InferOutput<S>, any][]
-		const out: Array<{
+		const collected: Array<{
 			name: string
 			info: NonNullable<ReturnType<typeof extractInfo>>
 		}> = []
 		for (const [key, sub] of entries) {
 			if (sub?.kind !== 'schema') continue
 			const info = cachedExtractInfo(sub, String(key))
-			if (info) out.push({ name: String(key), info })
+			if (info) collected.push({ name: String(key), info })
 		}
-		return out
+		return collected
 	}, [schema])
 
 	const ctx = useMemo<Ctx<S>>(
@@ -116,6 +118,7 @@ function FieldsImpl() {
 	)
 }
 AutoForm.Fields = memo(FieldsImpl)
+AutoForm.displayName = 'AutoForm'
 
 /* ───────── 子组件：动作（render-props，完全自定义外观/位置） ───────── */
 export interface ActionsRenderProps {
@@ -145,6 +148,7 @@ function ActionsImpl({ children }: ActionsProps) {
 	)
 }
 AutoForm.Actions = ActionsImpl
+AutoForm.Actions.displayName = 'AutoForm.Actions'
 
 /* ───────── 子组件：调试（懒加载 + 类型稳） ───────── */
 const DebugValues = React.lazy(() =>
@@ -152,7 +156,15 @@ const DebugValues = React.lazy(() =>
 )
 function DebugPanelImpl() {
 	const { form } = useAutoFormCtx<any>()
-	const isDev = import.meta.env?.DEV || process.env.NODE_ENV === 'development'
+	const isDev = (() => {
+		if (typeof process !== 'undefined' && process.env?.NODE_ENV) {
+			return process.env.NODE_ENV !== 'production'
+		}
+		if (typeof globalThis !== 'undefined' && (globalThis as any).__DEV__ !== undefined) {
+			return Boolean((globalThis as any).__DEV__)
+		}
+		return true
+	})()
 	if (!isDev) return null
 	return (
 		<Card withBorder style={{ padding: 24 }}>

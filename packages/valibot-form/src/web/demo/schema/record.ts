@@ -1,6 +1,6 @@
 // src/forms/schemas/record-demo.ts
 import * as v from 'valibot'
-import * as f from 'valibot-form'
+import * as f from '~/index'
 
 /** 1) 表格模式：可增删、可改 key、列宽配置 */
 export const RecordTableSchema = v.object({

@@ -1,5 +1,6 @@
 import { Box, InputWrapper, NumberInput, Slider } from '@mantine/core'
-import { META_MAP, registerRenderer, triggerFormEvents } from 'valibot-form'
+import { registerRenderer, triggerFormEvents } from '~/registry'
+import { META_MAP } from '~/utils'
 
 registerRenderer(META_MAP.NUMBER, (props) => {
 	const { formBaseInfo, errors, extractedPropsInfo, inputProps, value } = props

@@ -1,5 +1,5 @@
 import * as v from 'valibot'
-import * as f from 'valibot-form'
+import * as f from '~/index'
 
 /** 大清单（触发智能默认：searchable 开、limit=6） */
 const MODULES = [

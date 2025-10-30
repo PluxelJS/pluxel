@@ -1,6 +1,7 @@
 // src/forms/renderers/boolean.tsx
 import { InputWrapper, Switch } from '@mantine/core'
-import { META_MAP, registerRenderer, triggerFormEvents } from 'valibot-form'
+import { registerRenderer, triggerFormEvents } from '~/registry'
+import { META_MAP } from '~/utils'
 
 registerRenderer(META_MAP.BOOLEAN, (props) => {
 	const { formBaseInfo, errors, extractedPropsInfo, inputProps, value } = props

@@ -160,7 +160,7 @@ export class LoaderService {
 		// 确保别名唯一：如发生碰撞，则追加“文件基名/导出键”，再退化数字后缀
 		const used = new Set<string>()
 		for (const r of rows) {
-			let alias = r.alias
+			const alias = r.alias
 			if (!used.has(alias)) {
 				used.add(alias)
 				r.alias = alias

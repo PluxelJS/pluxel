@@ -1,7 +1,8 @@
 import { Select, Stack, Text } from '@mantine/core'
 import type React from 'react'
 import { useMemo, useRef } from 'react'
-import { META_MAP, registerRenderer, triggerFormEvents } from 'valibot-form'
+import { registerRenderer, triggerFormEvents } from '~/registry'
+import { META_MAP } from '~/utils'
 
 /* --------------------------- Types (精简+) --------------------------- */
 export type PicklistUI<T extends string | number = string | number> = {

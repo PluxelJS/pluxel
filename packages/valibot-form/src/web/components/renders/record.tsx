@@ -37,7 +37,8 @@ import {
 } from '@mantine/core'
 import { IconGripVertical, IconPlus, IconTrash } from '@tabler/icons-react'
 import React, { memo, useCallback, useMemo, useRef, useState } from 'react'
-import { META_MAP, registerRenderer, triggerFormEvents } from 'valibot-form'
+import { registerRenderer, triggerFormEvents } from '~/registry'
+import { META_MAP } from '~/utils'
 
 /* -------------------------------- Types -------------------------------- */
 export type RecordUI = {

@@ -19,7 +19,7 @@ import type { InferRequestType, InferResponseType } from 'hono/client'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { InferOutput, ObjectSchema } from 'valibot'
 import { getDefaults } from 'valibot'
-import { AutoForm } from '../../components'
+import { AutoForm } from 'valibot-form/web'
 import { client } from '../rpc'
 export interface ConfigFormProps {
 	pluginName: string

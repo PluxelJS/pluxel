@@ -1,5 +1,5 @@
 import * as v from 'valibot'
-import * as f from 'valibot-form'
+import * as f from '~/index'
 
 export const ArrayShowcaseSchema = v.object({
 	tags: v.pipe(
