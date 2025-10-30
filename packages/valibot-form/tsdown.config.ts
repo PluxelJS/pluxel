@@ -5,6 +5,9 @@ export default defineConfig({
 		index: './src/index.ts',
 		web: './src/web/index.ts',
 	},
+	alias: {
+		
+	},
 	dts: {
 		sourcemap: true,
 	},

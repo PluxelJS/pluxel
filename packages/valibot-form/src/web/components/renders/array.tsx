@@ -28,7 +28,6 @@ import {
 	NumberInput,
 	Paper,
 	rem,
-	Select,
 	SimpleGrid,
 	Stack,
 	Switch,
@@ -39,8 +38,8 @@ import {
 } from '@mantine/core'
 import { IconGripVertical, IconMinus, IconPlus } from '@tabler/icons-react'
 import React, { memo, useCallback, useMemo, useRef, useState } from 'react'
-import { registerRenderer, triggerFormEvents } from '~/registry'
-import { META_MAP } from '~/utils'
+import { registerRenderer, triggerFormEvents } from '~/core/registry'
+import { META_MAP } from '~/core/utils'
 
 /* ------------------------------- Types ------------------------------- */
 export type ArrayUI<T extends string | number = string | number> = {
@@ -459,7 +458,7 @@ function ArrayRendererImpl(props: RendererProps) {
 		})
 	}, [emitChange, ep.defaultItem, ep.valueMode, ep.picklist?.options])
 
-	const onDragStart = useCallback((evt: DragStartEvent) => setActiveId(String(evt.active.id)), [])
+	const _onDragStartt = useCallback((evt: DragStartEvent) => setActiveId(String(evt.active.id)), [])
 	const onDragEnd = useCallback(
 		(evt: DragEndEvent) => {
 			if (!ep.reorderable) {

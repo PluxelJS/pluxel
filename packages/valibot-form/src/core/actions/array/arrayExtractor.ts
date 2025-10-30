@@ -1,8 +1,8 @@
 // array/arrayExtractor.ts
 import type * as v from 'valibot'
-import { META_MAP } from '~/utils'
+import { META_MAP } from '~/core/utils'
 import { extractPicklistProps } from '../picklist'
-import type { ArrayMetaOptions, ArrayMetaResult } from './type'
+import type { ArrayMetaResult } from './type'
 
 type Schema = v.ArraySchema<any, any>
 type PipedSchema<T extends v.BaseSchema<any, any, any>> = v.SchemaWithPipe<readonly [T, ...any]>

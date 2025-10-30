@@ -1,5 +1,5 @@
 import type * as v from 'valibot'
-import { META_MAP } from '~/utils'
+import { META_MAP } from '~/core/utils'
 import type { NumberMetaOptions } from './type'
 
 type PipedNumberSchema = v.SchemaWithPipe<readonly [v.NumberSchema<any>, ...any]>

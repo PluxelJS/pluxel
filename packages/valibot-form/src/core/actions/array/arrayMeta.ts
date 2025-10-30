@@ -1,6 +1,6 @@
 // array/arrayMeta.ts
 import type { BaseMetadata } from 'valibot'
-import type { CheckMetaType } from '~/utils'
+import type { CheckMetaType } from '~/core/utils'
 import type { ArrayMetaOptions } from './type'
 
 export interface arrayMetaAction<TInput extends unknown[], TMetadata extends ArrayMetaOptions>

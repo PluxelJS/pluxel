@@ -1,7 +1,7 @@
 // record/extractProps.ts
 import type * as v from 'valibot'
-import { META_MAP } from '~/utils'
-import type { RecordMetaOptions, RecordMetaResult } from './type'
+import { META_MAP } from '~/core/utils'
+import type { RecordMetaResult } from './type'
 
 type Schema = v.RecordSchema<any, any, any>
 type PipedSchema<T extends v.BaseSchema<any, any, any>> = v.SchemaWithPipe<readonly [T, ...any]>

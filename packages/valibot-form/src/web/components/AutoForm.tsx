@@ -1,8 +1,8 @@
 import { Card, Stack } from '@mantine/core'
 import React, { createContext, memo, Suspense, useCallback, useContext, useMemo } from 'react'
 import type { InferOutput, ObjectSchema } from 'valibot'
-import { extractInfo } from '~/extract'
-import { MetaRenderer } from '~/registry'
+import { extractInfo } from '~/core/extract'
+import { MetaRenderer } from '~/core/registry'
 import { useAppForm } from './formContext'
 import './registerRenderers'
 

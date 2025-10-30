@@ -1,6 +1,6 @@
 // picklist/extractProps.ts
 import type * as v from 'valibot'
-import { META_MAP } from '~/utils'
+import { META_MAP } from '~/core/utils'
 import type { PicklistMetaOptions } from './type'
 
 type Schema = v.PicklistSchema<any, any>

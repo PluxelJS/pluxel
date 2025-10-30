@@ -1,6 +1,6 @@
 import { Box, InputWrapper, NumberInput, Slider } from '@mantine/core'
-import { registerRenderer, triggerFormEvents } from '~/registry'
-import { META_MAP } from '~/utils'
+import { registerRenderer, triggerFormEvents } from '~/core/registry'
+import { META_MAP } from '~/core/utils'
 
 registerRenderer(META_MAP.NUMBER, (props) => {
 	const { formBaseInfo, errors, extractedPropsInfo, inputProps, value } = props
