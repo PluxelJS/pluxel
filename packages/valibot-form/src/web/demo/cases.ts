@@ -1,9 +1,8 @@
 import { formOptions } from '@tanstack/react-form'
-import * as v from 'valibot'
-import * as f from '~/index'
-import * as schema from './schema'
-
 import type { ObjectSchema } from 'valibot'
+import * as v from 'valibot'
+import * as f from '~/core/index'
+import * as schema from './schema'
 
 export interface AutoFormCase {
 	id: string

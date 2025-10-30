@@ -1,4 +1,2 @@
-export * from './actions'
-export * from './extract'
-export * from './registry'
-export * from './utils'
+export * as v from 'valibot'
+export * as f from './core'

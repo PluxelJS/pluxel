@@ -1,12 +1,12 @@
-import { describe, expect, it } from 'vitest'
 import * as v from 'valibot'
-import { extractInfo } from '~/extract'
-import { arrayMeta } from '~/actions/array'
-import { booleanMeta } from '~/actions/boolean'
-import { picklistMeta } from '~/actions/picklist'
-import { recordMeta } from '~/actions/record'
-import { stringMeta } from '~/actions/string'
-import { META_MAP } from '~/utils'
+import { describe, expect, it } from 'vitest'
+import { arrayMeta } from '~/core/actions/array'
+import { booleanMeta } from '~/core/actions/boolean'
+import { picklistMeta } from '~/core/actions/picklist'
+import { recordMeta } from '~/core/actions/record'
+import { stringMeta } from '~/core/actions/string'
+import { extractInfo } from '~/core/extract'
+import { META_MAP } from '~/core/utils'
 
 describe('extractInfo', () => {
 	it('extracts props for string meta and marks required', () => {

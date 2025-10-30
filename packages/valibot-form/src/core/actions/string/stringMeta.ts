@@ -1,6 +1,6 @@
 // string/stringMeta.ts
 import type { BaseMetadata } from 'valibot'
-import type { CheckMetaType } from '~/utils'
+import type { CheckMetaType } from '~/core'
 import type { StringMetaOptions } from './type'
 
 export interface stringMetaAction<TInput extends string, TMetadata extends StringMetaOptions>

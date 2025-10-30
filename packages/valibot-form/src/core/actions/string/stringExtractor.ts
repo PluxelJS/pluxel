@@ -1,6 +1,6 @@
 // string/extractProps.ts
 import type * as v from 'valibot'
-import { META_MAP } from '~/utils'
+import { META_MAP } from '~/core/utils'
 import type { StringMetaOptions } from './type'
 
 type PipedStringSchema = v.SchemaWithPipe<readonly [v.StringSchema<any>, ...any]>
