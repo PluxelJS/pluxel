@@ -8,7 +8,7 @@ const PLUGIN_CTOR = Symbol('pluginCtor')
 type InternalScope = PluginScopeOutput & { [PLUGIN_CTOR]?: PluginConstructor }
 
 export function ensurePlugin(pCtx: PlxContext, name: string): PluginConstructor {
-	const ctor = pCtx.loader.getPluginClassByName(name)
+	const ctor = pCtx.loader.resolveRuntimeCtor(name)
 	if (!ctor) {
 		throw new GraphQLError('Plugin not found', {
 			extensions: { code: 'NOT_FOUND', name },
@@ -25,7 +25,7 @@ export function createPluginScope(pCtx: PlxContext, name: string): PluginScopeOu
 
 export function getScopeCtor(pCtx: PlxContext, scope: PluginScopeOutput): PluginConstructor {
 	const internal = scope as InternalScope
-	if (internal[PLUGIN_CTOR]) return internal[PLUGIN_CTOR]!
+	if (internal[PLUGIN_CTOR]) return pCtx.loader.resolveRuntimeCtor(internal[PLUGIN_CTOR]) ?? internal[PLUGIN_CTOR]!
 	return ensurePlugin(pCtx, scope.name)
 }
 

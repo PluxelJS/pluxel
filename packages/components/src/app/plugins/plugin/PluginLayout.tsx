@@ -1,41 +1,38 @@
-import { Box } from '@mantine/core'
+import { Box, Flex } from '@mantine/core'
 import { LeftPane } from './components/LeftPane'
 import { RightPane } from './components/RightPane'
 import type { PluginConfigState } from './hooks/usePluginConfig'
 
-const LEFT_WIDTH = 'clamp(320px, 34vw, 480px)'
-
-const ROW_WRAP = {
-	display: 'flex',
-	gap: 'var(--mantine-spacing-md)',
-	minHeight: 0,
-	minWidth: 0,
-	overflow: 'hidden',
-}
-
-const FLEX_1 = { flex: 1, minHeight: 0, minWidth: 0, display: 'flex' }
-const FLEX_0_LEFT = {
-	flex: '0 0 auto',
-	width: LEFT_WIDTH,
-	minWidth: 0,
-	minHeight: 0,
-	display: 'flex',
-}
+const LEFT_WIDTH = 'clamp(320px, 32vw, 440px)'
 
 interface PluginLayoutProps {
 	config: PluginConfigState
+	stacked?: boolean
 }
 
-export function PluginLayout({ config }: PluginLayoutProps) {
+export function PluginLayout({ config, stacked = false }: PluginLayoutProps) {
 	return (
-		<Box h="100%" style={{ ...ROW_WRAP }}>
-			<Box style={{ ...FLEX_0_LEFT }}>
-				<LeftPane />
+		<Flex
+			direction={stacked ? 'column' : 'row'}
+			gap="md"
+			align="stretch"
+			style={{ flex: 1, minHeight: 0, minWidth: 0 }}
+		>
+			<Box
+				style={{
+					flex: stacked ? 'initial' : '0 0 auto',
+					width: stacked ? '100%' : LEFT_WIDTH,
+					minWidth: 0,
+					minHeight: stacked ? 'auto' : '100%',
+					display: 'flex',
+				}}
+			>
+				<LeftPane compact={stacked} />
 			</Box>
 
-			<Box style={{ ...FLEX_1 }}>
+			<Box style={{ flex: 1, minWidth: 0, minHeight: 0, display: 'flex' }}>
 				<RightPane config={config} />
 			</Box>
-		</Box>
+		</Flex>
 	)
 }

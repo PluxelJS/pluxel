@@ -24,6 +24,9 @@
 		"paths": {
 			"valibot-form": [
 				"../valibot-form/src"
+			],
+			"valibot-form/*": [
+				"../valibot-form/src/*"
 			]
 		}
 	},

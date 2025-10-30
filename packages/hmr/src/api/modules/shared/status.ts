@@ -1,7 +1,7 @@
 import type { Context as PlxContext } from '@pluxel/core'
-import * as v from 'valibot'
+import type * as v from 'valibot'
 
-import { PluginStatusOverview } from '../../schema'
+import type { PluginStatusOverview } from '../../schema'
 
 export function getStatusOverview(pCtx: PlxContext) {
 	const { statuses, summary } = pCtx.loader.getFullPluginStatus()

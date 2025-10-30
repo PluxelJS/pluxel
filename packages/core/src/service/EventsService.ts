@@ -1,8 +1,7 @@
 import { type Context, Injectable, symbols } from '@pluxel/context'
 // EventsService.ts
 import { type EventArgs, type EventEmitterOptions, type EventListener, Eventure } from 'eventure'
-import type { PluginIdentifier, PluginInstance } from '../pluginImpl'
-import type { CommitSummary } from './PluginService'
+import type { CommitSummary, PluginIdentifier, PluginInstance } from '../plugin'
 
 const serviceName = 'events' as const
 declare module '@pluxel/context' {

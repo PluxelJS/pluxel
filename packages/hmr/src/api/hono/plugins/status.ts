@@ -20,7 +20,7 @@ const statusOps: Record<Status, Array<'enable' | 'disable'>> = {
 export const pluginStatus = new Hono<PluginsEnv>()
 	.get('/', (c) => {
 		const { plugin_ctx: ctx, pluginCtor: ctor } = c.var
-		return c.json({ code: 'success', isRunning: ctx.registry.isRunning(ctor) })
+		return c.json({ code: 'success', isRunning: ctx.loader.isRunning(ctor) })
 	})
 	.post('/', vValidator('json', updateStatusSchema), async (c) => {
 		const { status } = c.req.valid('json') as UpdateStatusPayload
@@ -54,7 +54,7 @@ export const pluginStatus = new Hono<PluginsEnv>()
 				return c.json({ code: '依赖解析出错。', error: result.err }, 500)
 			}
 
-			return c.json({ code: 'success', isRunning: ctx.registry.isRunning(ctor) }, 200)
+			return c.json({ code: 'success', isRunning: ctx.loader.isRunning(ctor) }, 200)
 		} catch (e: any) {
 			const isStart = status === 'start' || status === 'restart'
 			const errorCode = isStart ? 'plugin_start_failed' : 'plugin_operation_failed'

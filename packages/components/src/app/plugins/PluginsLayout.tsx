@@ -9,7 +9,6 @@ import {
 	Divider,
 	Drawer,
 	Group,
-	ScrollArea,
 	Stack,
 	Text,
 	Title,
@@ -79,16 +78,17 @@ export const PluginsLayout: React.FC = () => {
 							</Group>
 						</CardSection>
 
-						<CardSection px="md" py="sm" style={{ flex: 1, minHeight: 0, display: 'flex' }}>
-							{/* 唯一滚动层：左栏自己的滚动，不受右栏影响 */}
-							<ScrollArea type="auto" style={{ flex: 1, minHeight: 0 }}>
-								<PluginList pluginName={pluginName} />
-							</ScrollArea>
+						<CardSection
+							px="md"
+							py="sm"
+							style={{ flex: 1, minHeight: 0, display: 'flex', overflow: 'hidden' }}
+						>
+							<PluginList pluginName={pluginName} />
 						</CardSection>
 					</Card>
 				)}
 
-				{/* 右栏：主内容（包一层 ScrollArea，独立滚动） */}
+				{/* 右栏：主内容（内部自行处理滚动） */}
 				<Box
 					// 关键：右栏外层先截断溢出，防止把父容器“顶高”
 					style={{
@@ -126,9 +126,9 @@ export const PluginsLayout: React.FC = () => {
 			>
 				<Stack gap="sm" style={{ height: '100%', minHeight: 0 }}>
 					<Divider label="浏览与分组" />
-					<ScrollArea type="auto" style={{ flex: 1, minHeight: 0 }}>
+					<Box style={{ flex: 1, minHeight: 0, display: 'flex', overflow: 'hidden' }}>
 						<PluginList />
-					</ScrollArea>
+					</Box>
 				</Stack>
 			</Drawer>
 		</Stack>

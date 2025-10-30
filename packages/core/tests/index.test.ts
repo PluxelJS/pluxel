@@ -36,10 +36,12 @@ describe('Plugin lifecycle with commit()', () => {
 		pluginRegistry.registerPlugin(PluginA)
 		await ctx.registry.commit()
 		expect(readPluginSet(ctx)).toEqual(new Set([PluginB, PluginC, PluginA]))
+		expect(ctx.registry.isRunning(PluginA)).toEqual(true)
 
 		// 最终再次注销 A
 		pluginRegistry.unregisterPlugin(PluginA)
 		await ctx.registry.commit()
 		expect(readPluginSet(ctx)).toEqual(new Set([PluginB, PluginC]))
+		expect(ctx.registry.isRunning(PluginA)).toEqual(false)
 	})
 })

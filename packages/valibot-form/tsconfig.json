@@ -3,6 +3,7 @@
 		// 基础选项
 		"target": "ES2022", // 编译后代码目标版本
 		"module": "ESNext", // 模块系统：支持原生 ESM
+		"jsx": "react-jsx",
 		// 输出配置
 		"outDir": "dist", // 输出目录
 		"rootDir": "src", // 源码根目录
@@ -38,5 +39,5 @@
 			"~/*": ["src/*"]
 		}
 	},
-	"include": ["src/**/*.ts"]
+	"include": ["src/**/*.ts", "src/**/*.tsx"]
 }

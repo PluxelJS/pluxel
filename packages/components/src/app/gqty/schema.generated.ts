@@ -62,7 +62,6 @@ export const generatedSchema = {
     __typename: { __type: "String!" },
     isRunning: { __type: "Boolean!" },
     name: { __type: "String!" },
-    optional: { __type: "Boolean!" },
   },
   PluginDetail: {
     __typename: { __type: "String!" },
@@ -138,55 +137,54 @@ export const generatedSchema = {
 
 export interface BuildSnapshotResult {
   __typename?: "BuildSnapshotResult";
-  error?: Maybe<ScalarsEnums["String"]>;
-  ok: ScalarsEnums["Boolean"];
-  path?: Maybe<ScalarsEnums["String"]>;
+  error?: Maybe<Scalars["String"]["output"]>;
+  ok?: Scalars["Boolean"]["output"];
+  path?: Maybe<Scalars["String"]["output"]>;
 }
 
 export interface PluginDependency {
   __typename?: "PluginDependency";
-  isRunning: ScalarsEnums["Boolean"];
-  name: ScalarsEnums["String"];
-  optional: ScalarsEnums["Boolean"];
+  isRunning?: Scalars["Boolean"]["output"];
+  name?: Scalars["String"]["output"];
 }
 
 export interface PluginDetail {
   __typename?: "PluginDetail";
   dependencies: Array<PluginDependency>;
-  desc: ScalarsEnums["String"];
-  name: ScalarsEnums["String"];
+  desc?: Scalars["String"]["output"];
+  name?: Scalars["String"]["output"];
 }
 
 export interface PluginGroup {
   __typename?: "PluginGroup";
-  groupId: ScalarsEnums["String"];
-  name: ScalarsEnums["String"];
-  pluginIds: Array<ScalarsEnums["String"]>;
+  groupId?: Scalars["String"]["output"];
+  name?: Scalars["String"]["output"];
+  pluginIds?: Array<Scalars["String"]["output"]>;
 }
 
 export interface PluginIdScope {
   __typename?: "PluginIdScope";
-  name: ScalarsEnums["String"];
+  name?: Scalars["String"]["output"];
 }
 
 export interface PluginScope {
   __typename?: "PluginScope";
   detail: PluginDetail;
-  name: ScalarsEnums["String"];
+  name?: Scalars["String"]["output"];
   status: PluginStatusEntry;
 }
 
 export interface PluginStatusEntry {
   __typename?: "PluginStatusEntry";
-  isRunning: ScalarsEnums["Boolean"];
-  name: ScalarsEnums["String"];
+  isRunning?: Scalars["Boolean"]["output"];
+  name?: Scalars["String"]["output"];
 }
 
 export interface PluginStatusMutationResult {
   __typename?: "PluginStatusMutationResult";
-  code: ScalarsEnums["String"];
-  error?: Maybe<ScalarsEnums["String"]>;
-  isRunning?: Maybe<ScalarsEnums["Boolean"]>;
+  code?: Scalars["String"]["output"];
+  error?: Maybe<Scalars["String"]["output"]>;
+  isRunning?: Maybe<Scalars["Boolean"]["output"]>;
 }
 
 export interface PluginStatusOverview {
@@ -197,9 +195,9 @@ export interface PluginStatusOverview {
 
 export interface PluginStatusSummary {
   __typename?: "PluginStatusSummary";
-  running: ScalarsEnums["Float"];
-  stopped: ScalarsEnums["Float"];
-  total: ScalarsEnums["Float"];
+  running?: Scalars["Float"]["output"];
+  stopped?: Scalars["Float"]["output"];
+  total?: Scalars["Float"]["output"];
 }
 
 export interface Mutation {
@@ -209,17 +207,17 @@ export interface Mutation {
     groups: Array<UpdatePluginGroupsGroupsInput>;
   }) => Array<PluginGroup>;
   updatePluginStatus: (args: {
-    name: ScalarsEnums["String"];
+    name: Scalars["String"]["input"];
     status: UpdatePluginStatusStatusInput;
   }) => PluginStatusMutationResult;
 }
 
 export interface Query {
   __typename?: "Query";
-  _empty: ScalarsEnums["String"];
-  plugin: (args: { name: ScalarsEnums["String"] }) => PluginScope;
+  _empty?: Scalars["String"]["output"];
+  plugin: (args: { name: Scalars["String"]["input"] }) => PluginScope;
   pluginGroups: Array<PluginGroup>;
-  pluginId: (args: { name: ScalarsEnums["String"] }) => PluginIdScope;
+  pluginId: (args: { name: Scalars["String"]["input"] }) => PluginIdScope;
   pluginStatus: PluginStatusOverview;
 }
 
@@ -232,11 +230,3 @@ export interface GeneratedSchema {
   mutation: Mutation;
   subscription: Subscription;
 }
-
-export type ScalarsEnums = {
-  [Key in keyof Scalars]: Scalars[Key] extends { output: unknown }
-    ? Scalars[Key]["output"]
-    : never;
-} & {
-  UpdatePluginStatusStatusInput: UpdatePluginStatusStatusInput;
-};

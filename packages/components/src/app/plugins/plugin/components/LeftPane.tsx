@@ -1,111 +1,75 @@
-import {
-	Badge,
-	Box,
-	Card,
-	CardSection,
-	Divider,
-	Group,
-	Text,
-	Title,
-} from '@mantine/core'
-import { Link } from 'wouter'
+import { Badge, Box, Divider, Group, Paper, Stack, Text } from '@mantine/core'
 import { memo } from 'react'
+import { Link } from 'wouter'
+import { LiveLog as LiveLogRaw } from '../../../log_viewer/LiveLog'
 import { usePluginMeta } from '../context'
 import { ActionBar } from './ActionBar'
 import { DependencyList } from './DependencyList'
-import { LiveLog as LiveLogRaw } from '../../../log_viewer/LiveLog'
-
-const CARD_FLEX_COL = {
-	height: '100%',
-	width: '100%',
-	display: 'flex',
-	flexDirection: 'column' as const,
-	minHeight: 0,
-	minWidth: 0,
-	overflow: 'hidden',
-}
-
-const FLEX_1 = { flex: 1, minHeight: 0, minWidth: 0, display: 'flex' }
+import { PluginPanel } from './PluginPanel'
 
 const LiveLog = memo(LiveLogRaw)
 
-export function LeftPane() {
+interface LeftPaneProps {
+	compact?: boolean
+}
+
+export function LeftPane({ compact = false }: LeftPaneProps) {
 	const { pluginName, description, isRunning, isSyncing } = usePluginMeta()
 
+	const statusBadges = (
+		<Group gap="xs" wrap="nowrap">
+			<Badge variant="light" color={isRunning ? 'green' : 'gray'} radius="sm">
+				{isRunning ? '运行中' : '已停止'}
+			</Badge>
+			{isSyncing ? (
+				<Badge variant="dot" color="blue" radius="sm">
+					同步中…
+				</Badge>
+			) : null}
+		</Group>
+	)
+
 	return (
-		<Card withBorder shadow="sm" style={CARD_FLEX_COL}>
-			<CardSection withBorder px="md" py="sm">
-				<Group justify="space-between" align="center" wrap="nowrap" style={{ minWidth: 0 }}>
-					<Group gap="sm" align="center" wrap="nowrap" style={{ minWidth: 0, flex: 1 }}>
-						<Title order={3} fw={600} lh={1.2} style={{ minWidth: 0 }}>
-							<Box
-								style={{
-									overflow: 'hidden',
-									textOverflow: 'ellipsis',
-									whiteSpace: 'nowrap',
-								}}
-								title={pluginName}
-							>
-								插件：{pluginName}
-							</Box>
-						</Title>
-						<Badge variant="light" color={isRunning ? 'green' : 'gray'} radius="sm">
-							{isRunning ? '运行中' : '已停止'}
-						</Badge>
-						<Badge
-							variant="dot"
-							color="blue"
-							radius="sm"
-							style={{ visibility: isSyncing ? 'visible' : 'hidden' }}
-						>
-							同步中…
-						</Badge>
-					</Group>
-					<ActionBar />
+		<PluginPanel
+			title={
+				<Group gap="sm" align="center" wrap="nowrap">
+					<Text fw={600} size="lg" lineClamp={1}>
+						{pluginName}
+					</Text>
+					{statusBadges}
 				</Group>
-			</CardSection>
+			}
+			rightSection={<ActionBar />}
+		>
+			<Stack gap="md" style={{ flex: 1, minHeight: 0 }}>
+				<Text size="sm" c="dimmed" lh={1.45}>
+					{description || '暂无插件简介'}
+				</Text>
 
-			<CardSection px="md" py="sm" style={{ ...FLEX_1 }}>
-				<Box
-					style={{
-						display: 'flex',
-						flexDirection: 'column',
-						gap: 'var(--mantine-spacing-sm)',
-						flex: 1,
-						minHeight: 0,
-						minWidth: 0,
-					}}
-				>
-					{description ? (
-						<Text c="dimmed" size="sm" lh={1.4}>
-							{description}
-						</Text>
-					) : (
-						<Text size="sm" style={{ opacity: 0 }}>
-							.
-						</Text>
-					)}
+				<Divider label="依赖" labelPosition="left" />
+				<DependencyList LinkComponent={Link} />
 
-					<Divider label="依赖" />
-					<Box style={{ flexShrink: 0 }}>
-						<DependencyList LinkComponent={Link} />
-					</Box>
-
-					<Divider label="实时日志" />
-
-					<Box
+				<Divider label="实时日志" labelPosition="left" />
+				<Box style={{ flex: 1, minHeight: 0, display: 'flex' }}>
+					<Paper
+						withBorder
+						p="sm"
+						radius="md"
+						shadow="xs"
 						style={{
 							flex: 1,
-							minHeight: 0,
+							minHeight: compact ? 220 : 320,
+							display: 'flex',
+							flexDirection: 'column',
 							minWidth: 0,
-							overflowX: 'auto',
-							overflowY: 'auto',
 						}}
 					>
-						<LiveLog module={pluginName} />
-					</Box>
+						<div style={{ flex: 1, minHeight: 0, minWidth: 0 }}>
+							<LiveLog module={pluginName} />
+						</div>
+					</Paper>
 				</Box>
-			</CardSection>
-		</Card>
+			</Stack>
+		</PluginPanel>
 	)
 }

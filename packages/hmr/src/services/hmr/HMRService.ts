@@ -62,6 +62,10 @@ export class HMRService {
 	private vns!: ViteNodeServer
 	private runner!: ViteNodeRunner
 	private filter!: (id: string) => boolean
+	// Keep these workspace packages singleton between host runtime and vite-node; otherwise plugins
+	// would observe duplicated BasePlugin/Service classes during evaluation. 省略 @pluxel/hmr 自身，
+	// 以免阻断它的源码热更（GraphQL/API 层仍需实时刷新）。
+	private readonly sharedWorkspaceModules = ['@pluxel/core', '@pluxel/core/service'] as const
 
 	/** SWC：装饰器/TSX/源映射，紧贴你的现有链路 */
 	private swc: Plugin = swc.vite({
@@ -110,7 +114,11 @@ export class HMRService {
 					transformMode: { ssr: [/\.([cm]?tsx?|jsx?)$/] },
 					deps: {
 						// 大型稳定三方 external，减少 transform 压力
-						external: [/^(react|react-dom|lodash|dayjs)(\/|$)/],
+						external: [
+							/^(react|react-dom|lodash|dayjs)(\/|$)/,
+							// pluxel 核心需与主 runtime 共用实例（避免 BasePlugin ctx 脱钩）
+							/^@pluxel\/core(?:\/.*)?$/,
+						],
 					},
 				})
 
@@ -131,6 +139,10 @@ export class HMRService {
 					},
 					resolveId: (id, importer) => this.vns.resolveId(id, importer),
 				})
+
+				// 抢先把工作区内需要保持单例的模块塞进 moduleCache，
+				// 避免 vite-node 重新执行出第二份 BasePlugin/核心 Service 定义。
+				await this.bridgeWorkspaceModules(this.sharedWorkspaceModules)
 
 				// 4) 冷启动：扫描 + 预热执行（让 loader 完成 anchors 首次填充）
 				console.time('[HMR] 扫描文件')
@@ -172,7 +184,8 @@ export class HMRService {
 
 				// 6) 观测与榜单
 				this.printAttribution(changed, affectedIds, targets)
-				this.ctx.logger.info(this.ctx.registry.pluginRegistry.lastContainer.services.size)
+				const activeServices = this.ctx.registry.pluginRegistry.lastContainer.services.size
+				this.ctx.logger.info({ activeServices }, '[HMR] active services')
 
 				return [] // 服务端 HMR 由我们全权处理
 			},
@@ -211,23 +224,60 @@ export class HMRService {
 			const hasPlugin = this.ctx.loader.loadFileModule(id, mod)
 			const t2 = process.hrtime.bigint()
 
-			bump(this.trace.evalMs, id, nsToMs(t1 - t0))
-			bump(this.trace.injectMs, id, nsToMs(t2 - t1))
+			const evaluateMs = nsToMs(t1 - t0)
+			const injectMs = nsToMs(t2 - t1)
+
+			bump(this.trace.evalMs, id, evaluateMs)
+			bump(this.trace.injectMs, id, injectMs)
 
 			this.ctx.logger.info(
-				`[HMR] 执行: ${id}\n` +
-					`  • evaluate(entrance): ${nsToMs(t1 - t0).toFixed(2)}ms\n` +
-					`  • loadFileModule:     ${nsToMs(t2 - t1).toFixed(2)}ms` +
-					(hasPlugin ? '\n  • 插件入口: yes' : ''),
+				{
+					file: id,
+					timings: { evaluateMs, loadModuleMs: injectMs },
+					pluginEntry: hasPlugin,
+				},
+				'[HMR] execute module',
 			)
 		}
 
 		const tc0 = process.hrtime.bigint()
 		const res = await this.ctx.registry.commit()
 		const tc1 = process.hrtime.bigint()
-		this.ctx.logger.info(`[HMR] registry.commit(): ${nsToMs(tc1 - tc0).toFixed(2)}ms`)
+		const commitMs = nsToMs(tc1 - tc0)
+		this.ctx.logger.info({ durationMs: commitMs }, '[HMR] registry.commit()')
 
 		return res
+	}
+
+	/**
+	 * Ensure vite-node reuses host exports for selected workspace packages so plugins see the same
+	 * class singletons (BasePlugin、核心 Service 等) during hot reload.
+	 */
+	private async bridgeWorkspaceModules(specifiers: readonly string[]) {
+		for (const specifier of specifiers) {
+			try {
+				// 1. 让 vite-node 告诉我们它会以哪个 id 访问该模块（裸模块 / 绝对路径）。
+				const resolved = await this.vns.resolveId(specifier)
+				if (!resolved) continue
+				// 2. 从宿主 runtime 获取已经加载好的实例（通过普通 import）。
+				const exports = await import(specifier)
+				// 3. 在 moduleCache 中写入“已执行”的结果，这样 vite-node 不会再次执行模块实现。
+				const cacheEntry = {
+					exports,
+					evaluated: true,
+					imports: new Set<string>(),
+					importers: new Set<string>(),
+					promise: Promise.resolve(exports),
+				}
+				// PS：同一模块可能被以多种 key 访问，逐一登记保证缓存命中。
+				const ids = new Set<string>([specifier, resolved.id, this.toCleanId(resolved.id)])
+				for (const id of ids) {
+					this.runner.moduleCache.set(id, { ...cacheEntry })
+				}
+			} catch (error) {
+				this.ctx.logger.warn({ specifier, error }, '[HMR] 无法桥接工作区模块')
+			}
+		}
 	}
 
 	/* ------------------------------ DevServer 启动 ------------------------------ */
@@ -250,7 +300,7 @@ export class HMRService {
 			],
 			// SSR 链建议禁用依赖预优化，以免 graph 形变
 			optimizeDeps: {},
-			ssr: { external: ['react', 'react-dom'] },
+			ssr: { external: ['react', 'react-dom', '@pluxel/core', '@pluxel/core/service'] },
 		})
 		await server.listen()
 		server.printUrls()
@@ -284,8 +334,9 @@ export class HMRService {
 		const queue: Array<{ m: ModuleNode; d: number }> = []
 		for (const m of startMods) queue.push({ m, d: 0 })
 
-		while (queue.length) {
-			const { m, d } = queue.shift()!
+		let cursor = 0
+		while (cursor < queue.length) {
+			const { m, d } = queue[cursor++]
 			if (!m?.id) continue
 			const id = this.cleanUrl(m.id)
 			if (!this.filter(id) || id.startsWith('\0')) continue
@@ -353,8 +404,9 @@ export class HMRService {
 		const queue: ModuleNode[] = []
 		for (const m of this.getModulesByFile(startCleanId)) queue.push(m)
 
-		while (queue.length) {
-			const m = queue.shift()!
+		let cursor = 0
+		while (cursor < queue.length) {
+			const m = queue[cursor++]
 			if (!m?.id) continue
 			const id = this.cleanUrl(m.id)
 			if (visited.has(id)) continue
@@ -397,8 +449,7 @@ export class HMRService {
 		}
 
 		// 2) 失效 vite-node 执行缓存（清理所有查询后缀的等价 key）
-		const keys = Array.from(this.runner.moduleCache.keys())
-		for (const key of keys) {
+		for (const key of this.runner.moduleCache.keys()) {
 			const base = this.cleanUrl(key)
 			if (affectedIds.has(base)) this.runner.moduleCache.delete(key)
 		}
@@ -428,8 +479,11 @@ export class HMRService {
 
 	/** 仅 transform，不 evaluate；把账记到每个受影响文件 */
 	private async prefetchTransforms(ids: Iterable<string>) {
-		const unique = Array.from(new Set([...ids].map((i) => this.toCleanId(i))))
-		for (const id of unique) {
+		const seen = new Set<string>()
+		for (const raw of ids) {
+			const id = this.toCleanId(raw)
+			if (seen.has(id)) continue
+			seen.add(id)
 			const t0 = process.hrtime.bigint()
 			try {
 				await this.vns.fetchModule(id)
@@ -448,28 +502,31 @@ export class HMRService {
 	}
 
 	private printAttribution(changed: string, _affectedd: Set<string>, targets: string[]) {
-		const fmt = (ms: number) => `${ms.toFixed(1)}ms`
+		const targetSet = new Set(targets)
+		const annotate = (id: string) => {
+			if (id === changed) return 'changed'
+			if (targetSet.has(id)) return 'target'
+			return undefined
+		}
 
+		const report: Record<string, unknown> = {
+			changed,
+			targets: [...targetSet],
+		}
 		if (this.trace.transformMs.size) {
-			this.ctx.logger.info('【Transform Top】(受影响文件)')
-			for (const [id, ms] of this.topN(this.trace.transformMs)) {
-				const mark = id === changed ? '  ← changed' : targets.includes(id) ? '  ← target' : ''
-				this.ctx.logger.info(`  ${fmt(ms)}  ${id}${mark}`)
-			}
+			report.transformTop = this.topN(this.trace.transformMs).map(([id, ms]) => ({
+				id,
+				durationMs: ms,
+				marker: annotate(id),
+			}))
 		}
-
 		if (this.trace.evalMs.size) {
-			this.ctx.logger.info('【Evaluate Top】(入口执行)')
-			for (const [id, ms] of this.topN(this.trace.evalMs, 3)) {
-				this.ctx.logger.info(`  ${fmt(ms)}  ${id}`)
-			}
+			report.evaluateTop = this.topN(this.trace.evalMs, 3).map(([id, ms]) => ({ id, durationMs: ms }))
+		}
+		if (this.trace.injectMs.size) {
+			report.injectTop = this.topN(this.trace.injectMs, 3).map(([id, ms]) => ({ id, durationMs: ms }))
 		}
 
-		if (this.trace.injectMs.size) {
-			this.ctx.logger.info('【Inject Top】(loadFileModule)')
-			for (const [id, ms] of this.topN(this.trace.injectMs, 3)) {
-				this.ctx.logger.info(`  ${fmt(ms)}  ${id}`)
-			}
-		}
+		this.ctx.logger.info(report, '[HMR] timing attribution')
 	}
 }

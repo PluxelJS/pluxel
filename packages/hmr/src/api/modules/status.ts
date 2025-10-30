@@ -23,7 +23,7 @@ export function createPluginStatusModule(pCtx: PlxContext) {
 		status: field(PluginStatusEntry).resolve((scope) => ({
 			__typename: 'PluginStatusEntry' as const,
 			name: scope.name,
-			isRunning: pCtx.registry.isRunning(getScopeCtor(pCtx, scope)),
+			isRunning: pCtx.loader.isRunning(getScopeCtor(pCtx, scope)),
 		})),
 	})
 
@@ -54,14 +54,14 @@ export function createPluginStatusModule(pCtx: PlxContext) {
 						return {
 							__typename: 'PluginStatusMutationResult' as const,
 							code: 'commit_failed',
-							isRunning: pCtx.registry.isRunning(ctor),
+							isRunning: pCtx.loader.isRunning(ctor),
 							error: String(result.err),
 						}
 					}
 					return {
 						__typename: 'PluginStatusMutationResult' as const,
 						code: 'success',
-						isRunning: pCtx.registry.isRunning(ctor),
+						isRunning: pCtx.loader.isRunning(ctor),
 						error: null,
 					}
 				} catch (error) {
@@ -69,7 +69,7 @@ export function createPluginStatusModule(pCtx: PlxContext) {
 					return {
 						__typename: 'PluginStatusMutationResult' as const,
 						code: isStart ? 'plugin_start_failed' : 'plugin_operation_failed',
-						isRunning: pCtx.registry.isRunning(ctor),
+						isRunning: pCtx.loader.isRunning(ctor),
 						error: (error as Error)?.message ?? 'Unknown error',
 					}
 				}
