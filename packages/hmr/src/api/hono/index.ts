@@ -2,6 +2,7 @@ import { writeFile } from 'node:fs/promises'
 import { Hono } from 'hono'
 import { resolve } from 'pathe'
 import type { AppEnv } from './env'
+import authApp from './auth'
 import pluginsApp from './plugins'
 
 const app = new Hono<AppEnv>()
@@ -14,6 +15,7 @@ const app = new Hono<AppEnv>()
 		await writeFile(path, content, 'utf8')
 		return c.json({})
 	})
+	.route('/auth', authApp)
 	.route('/plugins', pluginsApp)
 
 export default app

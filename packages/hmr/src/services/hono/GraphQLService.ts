@@ -5,7 +5,7 @@ import { ValibotWeaver } from '@gqloom/valibot'
 import { generateClient } from '@gqty/cli'
 import { Injectable, type Context as PlxContext } from '@pluxel/core'
 import type { GraphQLSchema } from 'graphql'
-import { createYoga, type YogaInitialContext } from 'graphql-yoga'
+import { createYoga, type Plugin, type YogaInitialContext } from 'graphql-yoga'
 import * as v from 'valibot'
 import { getAPISchema } from '../../api'
 
@@ -152,12 +152,15 @@ export class GraphQLService {
 
 	/** 用当前 schema 创建 Yoga fetch，并注入 HonoService（仅替换函数指针） */
 	private pushFetch() {
+		const guardPlugin = this.createAuthGuardPlugin()
+		const plugins = guardPlugin ? [guardPlugin] : undefined
 		const yoga = createYoga<ServerCtx>({
 			landingPage: false,
 			graphqlEndpoint: '/graphql',
 			maskedErrors: process.env.NODE_ENV === 'production',
 			graphiql: process.env.NODE_ENV !== 'production',
 			schema: this.schema,
+			plugins,
 			// 强制复用全局 fetch API，避免构建后出现多份 Response 构造器导致 instanceof 失效
 			fetchAPI: {
 				Response: globalThis.Response,
@@ -168,6 +171,47 @@ export class GraphQLService {
 		// HonoService 内部声明合并了 setGraphQLFetch，这里避免循环依赖，保留弱类型转发
 		const fetcher = (req: Request, ctx: ServerCtx) => yoga.fetch(req, ctx)
 		this.ctx.honoService.setGraphQLFetch(fetcher as any)
+	}
+
+	private createAuthGuardPlugin(): Plugin<ServerCtx> | undefined {
+		const honoService = this.ctx.honoService
+		if (!honoService.isAuthGuardEnabled()) return undefined
+		return {
+			onParams: async ({ request }) => {
+				const requestUrl = this.safeParseUrl(request.url)
+				const result = await honoService.evaluateAuthGuard({
+					path: requestUrl?.pathname ?? '/graphql',
+					method: request.method,
+					headers: request.headers,
+					request,
+					url: requestUrl,
+				})
+				if (!result) return
+				return new Response(
+					JSON.stringify({
+						allow: false,
+						code: 'access_denied',
+						pluginName: result.pluginName,
+						reason: result.reason,
+						redirectPath: result.redirectPath,
+					}),
+					{
+						status: 403,
+						headers: {
+							'content-type': 'application/json; charset=utf-8',
+						},
+					},
+				)
+			},
+		}
+	}
+
+	private safeParseUrl(input: string): URL | undefined {
+		try {
+			return new URL(input)
+		} catch {
+			return undefined
+		}
 	}
 
 	// -------- GQty 代码生成：防并发、稳态日志 --------

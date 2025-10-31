@@ -9,6 +9,11 @@ import type { Plugin } from 'vite'
 import api from '../../api/hono'
 import type { RenderHandler } from '../../server/types'
 import loggerApi from '../logger/api'
+import type {
+	AuthGuardCheckInput,
+	AuthGuardResult,
+	AuthGuardService,
+} from '../auth/AuthGuardService'
 import type { AppEnv, HonoWithAppEnvType } from './env'
 
 const serviceName = 'honoService' as const
@@ -66,6 +71,9 @@ export class HonoService {
 	private gqlFetch: GraphQLFetch = async () => new Response('GraphQL not ready', { status: 503 })
 	private readonly renderer: Promise<RenderHandler>
 
+	private guardEnabled = false
+	private authGuardRef?: AuthGuardService
+
 	constructor(private ctx: Context) {
 		this.renderer = this.createRenderer()
 		this.rebuildApp()
@@ -108,6 +116,23 @@ export class HonoService {
 		})
 	}
 
+	activateAuthGuard() {
+		if (this.guardEnabled) return
+		this.guardEnabled = true
+		this.scheduleRebuild()
+	}
+
+	isAuthGuardEnabled(): boolean {
+		return this.guardEnabled
+	}
+
+	async evaluateAuthGuard(input: AuthGuardCheckInput): Promise<AuthGuardResult | undefined> {
+		const service = this.resolveAuthGuard()
+		if (!service) return undefined
+		const result = await service.check(input)
+		return result.allow ? undefined : result
+	}
+
 	// —— Vite Dev Server 插件（无 this.vite；仅在需要时标记 full-reload） ————
 	get viteHonoDevServer(): Plugin {
 		return devServer({
@@ -142,10 +167,10 @@ export class HonoService {
 			await next()
 		})
 
-		// 1) 业务 API
-		app.route('/api', api)
+		// 1) 业务 API（必要时包裹内置路由）
+		app.route('/api', this.guardEnabled ? this.createGuardedApiRouter(api) : api)
 
-		// 1.5) GraphQL —— 只挂一次路由，内部转发到函数指针
+		// 1.2) GraphQL —— 只挂一次路由，内部转发到函数指针
 		app.all('/graphql', (c) => this.gqlFetch(c.req.raw, { hono: c }))
 
 		// 2) 同步补丁（插件追加的路由/中间件）
@@ -153,6 +178,28 @@ export class HonoService {
 
 		// 3) logger
 		app.route('/', loggerApi)
+
+		// 3.5) 内置路由守卫（仅对 HTML 请求生效）
+		if (this.guardEnabled) {
+			app.use('*', async (c, next) => {
+				if (c.req.method !== 'GET') return next()
+				const accept = c.req.header('accept') || ''
+				if (!accept.includes('text/html')) return next()
+
+				const denied = await this.guardRequest(c, (result, { path }) => {
+					const redirectTarget = result.redirectPath
+					if (redirectTarget) {
+						if (redirectTarget === path) {
+							return c.text('Access denied', 403)
+						}
+						return c.redirect(redirectTarget, 302)
+					}
+					return c.text('Access denied', 403)
+				})
+				if (denied) return denied
+				return next()
+			})
+		}
 
 		// 4) SSR（仅在 Accept: text/html 时兜底，避免误伤 API）
 		app.use('*', async (c, next) => {
@@ -166,6 +213,72 @@ export class HonoService {
 		this.app = app as HonoWithAppEnvType
 		this.updateFetchPtr()
 		return this.app
+	}
+
+	private async guardRequest(
+		c: import('hono').Context<AppEnv>,
+		onDenied: (result: AuthGuardResult, meta: { path: string }) => Response | Promise<Response>,
+	): Promise<Response | undefined> {
+		if (!this.guardEnabled) return undefined
+		const requestUrl = this.tryParseUrl(c.req.url)
+		const path = requestUrl?.pathname ?? c.req.path
+		const guardResult = await this.evaluateAuthGuard({
+			path,
+			method: c.req.method,
+			headers: c.req.raw.headers,
+			request: c.req.raw,
+			url: requestUrl,
+		})
+
+		if (!guardResult) return undefined
+		return onDenied(guardResult, { path })
+	}
+
+	private respondGuardJson(
+		c: import('hono').Context<AppEnv>,
+		result: AuthGuardResult,
+	): Response {
+		return c.json(
+			{
+				allow: false,
+				code: 'access_denied',
+				pluginName: result.pluginName,
+				reason: result.reason,
+				redirectPath: result.redirectPath,
+			},
+			403,
+		)
+	}
+
+	private createGuardedApiRouter(base: Hono<AppEnv>): Hono<AppEnv> {
+		const guarded = new Hono<AppEnv>()
+		guarded.use('*', async (c, next) => {
+			const denied = await this.guardRequest(c, (result) => this.respondGuardJson(c, result))
+			if (denied) return denied
+			await next()
+		})
+		guarded.route('/', base)
+		return guarded
+	}
+
+	private resolveAuthGuard(): AuthGuardService | undefined {
+		if (!this.guardEnabled) return undefined
+		if (this.authGuardRef) return this.authGuardRef
+		try {
+			const svc = this.ctx.authGuard
+			this.authGuardRef = svc
+			return svc
+		} catch {
+			return undefined
+		}
+	}
+
+	private tryParseUrl(input: string): URL | undefined {
+		try {
+			return new URL(input)
+		} catch {
+			return undefined
+		}
 	}
 
 	private updateFetchPtr() {
