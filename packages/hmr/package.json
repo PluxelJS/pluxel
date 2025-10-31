@@ -1,6 +1,6 @@
 {
 	"name": "@pluxel/hmr",
-	"version": "0.1.6",
+	"version": "0.2.0",
 	"description": "Demo example that imports a local package",
 	"main": "./dist/index.js",
 	"type": "module",
@@ -64,13 +64,7 @@
 		"vite-tsconfig-paths": "^5.1.4",
 		"wouter": "^3.7.1"
 	},
-	"peerDependencies": {
-		"@mantine/core": "^8.2.2",
-		"@mantine/notifications": "^8.2.2",
-		"@pluxel/core": "workspace:*",
-		"react": "^19",
-		"react-dom": "^19"
-	},
+	"peerDependencies": {},
 	"devDependencies": {
 		"@pluxel/components": "workspace:*",
 		"@pluxel/core": "workspace:*",
