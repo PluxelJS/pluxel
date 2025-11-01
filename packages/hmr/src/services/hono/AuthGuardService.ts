@@ -22,6 +22,7 @@ export interface AuthGuardContext {
 	headers: Headers
 	request?: Request
 	url?: URL
+	context?: Readonly<Record<string, unknown>>
 }
 
 export interface AuthGuardRegistration {
@@ -45,13 +46,16 @@ export type AuthGuardCheckInput = {
 	headers?: Headers | Record<string, string | readonly string[]>
 	request?: Request
 	url?: URL
+	context?: Readonly<Record<string, unknown>>
 }
 
 @Injectable({ key: serviceName })
 export class AuthGuardService {
 	private readonly guards = new Map<string, AuthGuardRegistration>()
+	private readonly logger: NonNullable<Context['logger']>
 
 	constructor(private readonly ctx: Context) {
+		this.logger = ctx.logger!
 		this.ctx.honoService.activateAuthGuard()
 	}
 
@@ -59,17 +63,30 @@ export class AuthGuardService {
 		if (!reg.pluginName) {
 			throw new Error('[AuthGuardService] pluginName is required when registering a guard.')
 		}
+		const replacing = this.guards.has(reg.pluginName)
 		this.guards.set(reg.pluginName, reg)
+
+		if (replacing) {
+			this.logger.warn('[AuthGuard] Replaced existing guard registration', {
+				pluginName: reg.pluginName,
+			})
+		} else {
+			this.logger.info('[AuthGuard] Guard registered', { pluginName: reg.pluginName })
+		}
+
 		return () => {
 			const current = this.guards.get(reg.pluginName)
 			if (current === reg) {
 				this.guards.delete(reg.pluginName)
+				this.logger.info('[AuthGuard] Guard unregistered', { pluginName: reg.pluginName })
 			}
 		}
 	}
 
 	unregisterGuard(pluginName: string): void {
-		this.guards.delete(pluginName)
+		if (this.guards.delete(pluginName)) {
+			this.logger.info('[AuthGuard] Guard unregistered', { pluginName })
+		}
 	}
 
 	async check(input: AuthGuardCheckInput): Promise<AuthGuardResult> {
@@ -88,6 +105,7 @@ export class AuthGuardService {
 			headers,
 			request: input.request,
 			url,
+			context: input.context,
 		}
 
 		for (const [pluginName, registration] of this.guards) {
@@ -101,6 +119,10 @@ export class AuthGuardService {
 
 	getRegisteredPlugins(): readonly string[] {
 		return Array.from(this.guards.keys())
+	}
+
+	hasGuards(): boolean {
+		return this.guards.size > 0
 	}
 
 	private normalizeDecision(

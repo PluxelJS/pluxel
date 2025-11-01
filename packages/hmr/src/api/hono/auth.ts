@@ -1,5 +1,5 @@
 import { Hono } from 'hono'
-import type { AuthGuardResult } from '../../services/auth/AuthGuardService'
+import type { AuthGuardResult } from '../../services/hono/AuthGuardService'
 import type { AppEnv } from './env'
 
 const authApp = new Hono<AppEnv>()

@@ -32,6 +32,7 @@ export default defineConfig({
 	},
 	env: {
 		PROD: true,
+		PLUXEL_HMR_SSR: false,
 	},
 	dts: {
 		build: true,

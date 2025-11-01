@@ -3,11 +3,11 @@ export * from '@pluxel/core'
 export * from './plugins/config'
 export { Config } from './plugins/config'
 export type {
-	AuthGuardContext,
 	AuthGuardCheckInput,
+	AuthGuardContext,
 	AuthGuardDecision,
 	AuthGuardRegistration,
 	AuthGuardResult,
-} from './services/auth/AuthGuardService'
+} from './services/hono/AuthGuardService'
 
 import type {} from './services'

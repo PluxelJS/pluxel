@@ -4,10 +4,11 @@ import { type Middleware, mutation, query, type Resolver, resolver, weave } from
 import { ValibotWeaver } from '@gqloom/valibot'
 import { generateClient } from '@gqty/cli'
 import { Injectable, type Context as PlxContext } from '@pluxel/core'
-import type { GraphQLSchema } from 'graphql'
+import { parse, type GraphQLSchema, type OperationDefinitionNode } from 'graphql'
 import { createYoga, type Plugin, type YogaInitialContext } from 'graphql-yoga'
 import * as v from 'valibot'
 import { getAPISchema } from '../../api'
+import type { AuthGuardResult } from './AuthGuardService'
 
 // -------------------- Config (Valibot) --------------------
 const serviceName = 'graphql' as const
@@ -43,6 +44,23 @@ type ServerCtx = {}
 // -------------------- Module Types --------------------
 type GqlModule = { resolvers: readonly Resolver[]; middlewares?: readonly Middleware[] }
 type GqlModuleInput = GqlModule | Resolver | readonly Resolver[]
+type YogaGraphQLParams = { query?: string | null; operationName?: string | null }
+
+interface GraphQLOperationDescriptor {
+	type: OperationDefinitionNode['operation']
+	name: string | null
+	rootFields: readonly string[]
+}
+
+interface GraphQLGuardContext {
+	operationName: string | null
+	operations: readonly GraphQLOperationDescriptor[]
+}
+
+interface GraphQLGuardResponseMeta extends GraphQLGuardContext {
+	path: string
+	method: string
+}
 
 function isGqlModule(x: unknown): x is GqlModule {
 	return !!x && typeof x === 'object' && 'resolvers' in (x as any)
@@ -61,6 +79,7 @@ export class GraphQLService {
 	// 注册表
 	private readonly modules = new Map<string | symbol, GqlModule>()
 	private readonly globals = new Set<Middleware>()
+	private readonly logger: NonNullable<PlxContext['logger']>
 
 	// 当前 GraphQLSchema（确保类型稳定）
 	private schema: GraphQLSchema = this.weaveSchema()
@@ -77,11 +96,7 @@ export class GraphQLService {
 		private config: GraphQLConfig = _DEFAULT_CONFIG,
 	) {
 		this.config = Object.assign(_DEFAULT_CONFIG, config)
-	}
-
-	// 统一 logger（优先 ctx.logger）
-	private get logger() {
-		return this.ctx.logger ?? console
+		this.logger = ctx.logger!
 	}
 
 	// -------- 对外 API --------
@@ -176,34 +191,133 @@ export class GraphQLService {
 	private createAuthGuardPlugin(): Plugin<ServerCtx> | undefined {
 		const honoService = this.ctx.honoService
 		if (!honoService.isAuthGuardEnabled()) return undefined
+
 		return {
-			onParams: async ({ request }) => {
+			onParams: async ({ request, params }) => {
 				const requestUrl = this.safeParseUrl(request.url)
-				const result = await honoService.evaluateAuthGuard({
-					path: requestUrl?.pathname ?? '/graphql',
+				const path = requestUrl?.pathname ?? '/graphql'
+				const guardContext = this.extractGraphQLGuardContext(
+					(params ?? {}) as YogaGraphQLParams,
+				)
+				const guardResult = await honoService.evaluateAuthGuard({
+					path,
 					method: request.method,
 					headers: request.headers,
 					request,
 					url: requestUrl,
-				})
-				if (!result) return
-				return new Response(
-					JSON.stringify({
-						allow: false,
-						code: 'access_denied',
-						pluginName: result.pluginName,
-						reason: result.reason,
-						redirectPath: result.redirectPath,
+					context: Object.freeze({
+						type: 'graphql',
+						operationName: guardContext.operationName,
+						operations: guardContext.operations,
 					}),
-					{
-						status: 403,
-						headers: {
-							'content-type': 'application/json; charset=utf-8',
-						},
-					},
-				)
+				})
+				if (!guardResult) return
+
+				this.logger.warn('[AuthGuard] Blocked GraphQL request', {
+					path,
+					method: request.method,
+					plugin: guardResult.pluginName,
+					reason: guardResult.reason,
+					redirect: guardResult.redirectPath,
+					operationName: guardContext.operationName,
+					operations: guardContext.operations,
+				})
+
+				return this.createGraphQLGuardResponse(guardResult, {
+					path,
+					method: request.method,
+					operationName: guardContext.operationName,
+					operations: guardContext.operations,
+				})
 			},
 		}
+	}
+
+	private extractGraphQLGuardContext(params: YogaGraphQLParams): GraphQLGuardContext {
+		const query = params.query ?? ''
+		if (!query) {
+			return {
+				operationName: params.operationName ?? null,
+				operations: Object.freeze([]) as readonly GraphQLOperationDescriptor[],
+			}
+		}
+
+		try {
+			const document = parse(query, { noLocation: true })
+			const definitions = document.definitions.filter(
+				(def): def is OperationDefinitionNode => def.kind === 'OperationDefinition',
+			)
+			const filtered = params.operationName
+				? definitions.filter((op) => op.name?.value === params.operationName)
+				: definitions
+
+			const operations = filtered.map<GraphQLOperationDescriptor>((op) => ({
+				type: op.operation,
+				name: op.name?.value ?? null,
+				rootFields: this.collectRootFields(op),
+			}))
+
+			const operationName =
+				params.operationName ?? operations[0]?.name ?? null
+
+			return {
+				operationName,
+				operations: Object.freeze(operations) as readonly GraphQLOperationDescriptor[],
+			}
+		} catch {
+			return {
+				operationName: params.operationName ?? null,
+				operations: Object.freeze([]) as readonly GraphQLOperationDescriptor[],
+			}
+		}
+	}
+
+	private collectRootFields(op: OperationDefinitionNode): readonly string[] {
+		const fields: string[] = []
+		for (const selection of op.selectionSet.selections) {
+			if (selection.kind === 'Field') {
+				fields.push(selection.name.value)
+			} else if (selection.kind === 'FragmentSpread') {
+				fields.push(`...${selection.name.value}`)
+			} else if (selection.kind === 'InlineFragment') {
+				const typeCondition = selection.typeCondition?.name?.value
+				fields.push(typeCondition ? `... on ${typeCondition}` : '... on <anonymous>')
+			}
+		}
+		return Object.freeze(fields)
+	}
+
+	private createGraphQLGuardResponse(
+		result: AuthGuardResult,
+		meta: GraphQLGuardResponseMeta,
+	): Response {
+		return new Response(
+			JSON.stringify({
+				data: null,
+				errors: [
+					{
+						message: 'Access denied',
+						extensions: {
+							code: 'ACCESS_DENIED',
+							pluginName: result.pluginName,
+							reason: result.reason ?? null,
+							redirectPath: result.redirectPath ?? null,
+							path: meta.path,
+							method: meta.method,
+							operationName: meta.operationName,
+							operations: meta.operations,
+						},
+					},
+				],
+			}),
+			{
+				status: 200,
+				headers: {
+					'cache-control': 'no-store',
+					'content-type': 'application/json; charset=utf-8',
+				},
+			},
+		)
 	}
 
 	private safeParseUrl(input: string): URL | undefined {
@@ -220,7 +334,7 @@ export class GraphQLService {
 		this.codegenRunning = true
 		try {
 			const cfg = this.config
-			this.logger.info?.('[GQty] Generating client…', { destination: cfg.destination })
+			this.logger.info('[GQty] Generating client…', { destination: cfg.destination })
 
 			// generateClient 支持从 schema 直接产出客户端；如需走远端 introspection，可只传 endpoint
 			await generateClient(this.schema, {
@@ -230,9 +344,9 @@ export class GraphQLService {
 				scalarTypes: cfg.scalarTypes,
 			})
 
-			this.logger.info?.('[GQty] Client generated ✔', { destination: cfg.destination })
+			this.logger.info('[GQty] Client generated ✔', { destination: cfg.destination })
 		} catch (e) {
-			this.logger.error?.('[GQty] generateClient failed', e)
+			this.logger.error('[GQty] generateClient failed', e)
 		} finally {
 			this.codegenRunning = false
 		}

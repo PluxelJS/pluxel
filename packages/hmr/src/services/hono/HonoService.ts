@@ -9,11 +9,7 @@ import type { Plugin } from 'vite'
 import api from '../../api/hono'
 import type { RenderHandler } from '../../server/types'
 import loggerApi from '../logger/api'
-import type {
-	AuthGuardCheckInput,
-	AuthGuardResult,
-	AuthGuardService,
-} from '../auth/AuthGuardService'
+import type { AuthGuardCheckInput, AuthGuardResult, AuthGuardService } from './AuthGuardService'
 import type { AppEnv, HonoWithAppEnvType } from './env'
 
 const serviceName = 'honoService' as const
@@ -29,23 +25,12 @@ type GraphQLFetch = (
 	req: Request,
 	ctx: { hono: import('hono').Context<AppEnv> },
 ) => Promise<Response>
-
-const parseBooleanFlag = (value?: string | null): boolean | undefined => {
-	if (value == null) return undefined
-	switch (value.toLowerCase()) {
-		case '1':
-		case 'true':
-		case 'yes':
-		case 'on':
-			return true
-		case '0':
-		case 'false':
-		case 'no':
-		case 'off':
-			return false
-		default:
-			return undefined
-	}
+type GuardSource = 'api' | 'graphql' | 'html'
+interface GuardEvaluationContext extends Omit<AuthGuardCheckInput, 'headers'> {
+	headers: Headers
+	method: string
+	source: GuardSource
+	context?: Readonly<Record<string, unknown>>
 }
 
 // —— Service ————————————————————————————————————————————————————————————
@@ -73,8 +58,10 @@ export class HonoService {
 
 	private guardEnabled = false
 	private authGuardRef?: AuthGuardService
+	private readonly logger: NonNullable<Context['logger']>
 
 	constructor(private ctx: Context) {
+		this.logger = ctx.logger!
 		this.renderer = this.createRenderer()
 		this.rebuildApp()
 		// 务必调用 scheduleRebuild 而不是 rebui_configno 构建，否则会导致使用默认 gqlFetch
@@ -120,6 +107,7 @@ export class HonoService {
 		if (this.guardEnabled) return
 		this.guardEnabled = true
 		this.scheduleRebuild()
+		this.ctx.graphql?.scheduleRebuild()
 	}
 
 	isAuthGuardEnabled(): boolean {
@@ -167,8 +155,21 @@ export class HonoService {
 			await next()
 		})
 
+		// 0.5) API / JSON 路由守卫
+		if (this.guardEnabled) {
+			app.use('/api/*', async (c, next) => {
+				const denied = await this.guardRequest(
+					c,
+					'api',
+					(result, meta) => this.respondGuardJson(c, result, meta),
+				)
+				if (denied) return denied
+				return next()
+			})
+		}
+
 		// 1) 业务 API（必要时包裹内置路由）
-		app.route('/api', this.guardEnabled ? this.createGuardedApiRouter(api) : api)
+		app.route('/api', api)
 
 		// 1.2) GraphQL —— 只挂一次路由，内部转发到函数指针
 		app.all('/graphql', (c) => this.gqlFetch(c.req.raw, { hono: c }))
@@ -182,20 +183,12 @@ export class HonoService {
 		// 3.5) 内置路由守卫（仅对 HTML 请求生效）
 		if (this.guardEnabled) {
 			app.use('*', async (c, next) => {
-				if (c.req.method !== 'GET') return next()
-				const accept = c.req.header('accept') || ''
-				if (!accept.includes('text/html')) return next()
-
-				const denied = await this.guardRequest(c, (result, { path }) => {
-					const redirectTarget = result.redirectPath
-					if (redirectTarget) {
-						if (redirectTarget === path) {
-							return c.text('Access denied', 403)
-						}
-						return c.redirect(redirectTarget, 302)
-					}
-					return c.text('Access denied', 403)
-				})
+				const denied = await this.guardRequest(
+					c,
+					'html',
+					(result, meta) => this.respondGuardHtml(c, result, meta),
+					(meta) => this.shouldGuardHtml(meta),
+				)
 				if (denied) return denied
 				return next()
 			})
@@ -203,9 +196,7 @@ export class HonoService {
 
 		// 4) SSR（仅在 Accept: text/html 时兜底，避免误伤 API）
 		app.use('*', async (c, next) => {
-			if (c.req.method !== 'GET') return next()
-			const accept = c.req.header('accept') || ''
-			if (!accept.includes('text/html')) return next()
+			if (!this.isHtmlNavigation(c)) return next()
 			return this.render(c)
 		})
 
@@ -217,48 +208,131 @@ export class HonoService {
 
 	private async guardRequest(
 		c: import('hono').Context<AppEnv>,
-		onDenied: (result: AuthGuardResult, meta: { path: string }) => Response | Promise<Response>,
+		source: GuardSource,
+		onDenied: (
+			result: AuthGuardResult,
+			meta: GuardEvaluationContext,
+		) => Response | Promise<Response>,
+		shouldEvaluate?: (meta: GuardEvaluationContext) => boolean,
 	): Promise<Response | undefined> {
 		if (!this.guardEnabled) return undefined
-		const requestUrl = this.tryParseUrl(c.req.url)
-		const path = requestUrl?.pathname ?? c.req.path
-		const guardResult = await this.evaluateAuthGuard({
-			path,
-			method: c.req.method,
-			headers: c.req.raw.headers,
-			request: c.req.raw,
-			url: requestUrl,
-		})
+		const meta = this.buildGuardContext(c, source)
+		if (shouldEvaluate && !shouldEvaluate(meta)) return undefined
 
+		const guardInput: AuthGuardCheckInput = {
+			path: meta.path,
+			method: meta.method,
+			headers: meta.headers,
+			request: meta.request,
+			url: meta.url,
+			context: meta.context,
+		}
+
+		const guardResult = await this.evaluateAuthGuard(guardInput)
 		if (!guardResult) return undefined
-		return onDenied(guardResult, { path })
+
+		this.logGuardDenial(guardResult, meta)
+		return onDenied(guardResult, meta)
 	}
 
 	private respondGuardJson(
 		c: import('hono').Context<AppEnv>,
 		result: AuthGuardResult,
+		meta: GuardEvaluationContext,
 	): Response {
 		return c.json(
 			{
 				allow: false,
 				code: 'access_denied',
+				source: meta.source,
+				path: meta.path,
+				method: meta.method,
 				pluginName: result.pluginName,
 				reason: result.reason,
 				redirectPath: result.redirectPath,
+				context: meta.context ?? null,
 			},
 			403,
+			{
+				'Cache-Control': 'no-store',
+			},
 		)
 	}
 
-	private createGuardedApiRouter(base: Hono<AppEnv>): Hono<AppEnv> {
-		const guarded = new Hono<AppEnv>()
-		guarded.use('*', async (c, next) => {
-			const denied = await this.guardRequest(c, (result) => this.respondGuardJson(c, result))
-			if (denied) return denied
-			await next()
+	private respondGuardHtml(
+		c: import('hono').Context<AppEnv>,
+		result: AuthGuardResult,
+		meta: GuardEvaluationContext,
+	): Response {
+		const redirectTarget = result.redirectPath
+		if (redirectTarget && redirectTarget !== meta.path) {
+			return c.redirect(redirectTarget, 302)
+		}
+		return c.text('Access denied', 403, {
+			'Cache-Control': 'no-store',
 		})
-		guarded.route('/', base)
-		return guarded
+	}
+
+	private shouldGuardHtml(meta: GuardEvaluationContext): boolean {
+		if (meta.method !== 'GET' && meta.method !== 'HEAD') return false
+		const accept = meta.headers.get('accept')?.toLowerCase() ?? ''
+		if (!accept.includes('text/html') && !accept.includes('*/*')) return false
+
+		const fetchMode = meta.headers.get('sec-fetch-mode')
+		if (fetchMode && fetchMode !== 'navigate') return false
+
+		const fetchDest = meta.headers.get('sec-fetch-dest')
+		if (fetchDest && fetchDest !== 'document' && fetchDest !== 'iframe') return false
+
+		return true
+	}
+
+	private buildGuardContext(
+		c: import('hono').Context<AppEnv>,
+		source: GuardSource,
+	): GuardEvaluationContext {
+		const request = c.req.raw
+		const headers =
+			request.headers instanceof Headers ? request.headers : new Headers(request.headers)
+		const url = this.tryParseUrl(request.url ?? c.req.url)
+		const path = url?.pathname ?? c.req.path
+		const method = (request.method ?? c.req.method).toUpperCase()
+		const context: Readonly<Record<string, unknown>> =
+			source === 'html'
+				? Object.freeze({
+						type: source,
+						accept: headers.get('accept') ?? null,
+						fetchMode: headers.get('sec-fetch-mode') ?? null,
+						fetchDest: headers.get('sec-fetch-dest') ?? null,
+				  })
+				: Object.freeze({ type: source })
+
+		return {
+			source,
+			path,
+			method,
+			headers,
+			request,
+			url,
+			context,
+		}
+	}
+
+	private logGuardDenial(result: AuthGuardResult, meta: GuardEvaluationContext) {
+		this.logger.warn('[AuthGuard] Blocked request', {
+			source: meta.source,
+			path: meta.path,
+			method: meta.method,
+			plugin: result.pluginName,
+			reason: result.reason,
+			redirect: result.redirectPath,
+			context: meta.context ?? null,
+		})
+	}
+
+	private isHtmlNavigation(c: import('hono').Context<AppEnv>): boolean {
+		const meta = this.buildGuardContext(c, 'html')
+		return this.shouldGuardHtml(meta)
 	}
 
 	private resolveAuthGuard(): AuthGuardService | undefined {
@@ -302,14 +376,9 @@ export class HonoService {
 	}
 
 	private createRenderer(): Promise<RenderHandler> {
-		const flag = parseBooleanFlag(process.env.PLUXEL_HMR_SSR)
-		if (flag === true) {
+		if (import.meta.env.PLUXEL_HMR_SSR) {
 			return import('../../server/dev').then(({ createDevRenderer }) => createDevRenderer())
-		}
-		if (flag === false) {
-			return import('../../server/static').then(({ createStaticRenderer }) => createStaticRenderer())
-		}
-		// 默认使用静态渲染，避免构建产物引入 SSR 依赖
+		} // 默认使用静态渲染，避免构建产物引入 SSR 依赖
 		return import('../../server/static').then(({ createStaticRenderer }) => createStaticRenderer())
 	}
 
