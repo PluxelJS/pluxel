@@ -7,7 +7,7 @@ import { events, getOrderedLogs } from './createLogger'
 const app = new Hono()
 
 // —— 静态快照：返回最近 N 条 JSON 日志 ——
-app.get('/api/logs/latest', (c) => {
+app.get('/latest', (c) => {
 	const name = c.req.query('name') ?? ''
 	const limit = Math.min(Number(c.req.query('limit') ?? 10), 100)
 	const lines = getOrderedLogs()
@@ -20,7 +20,7 @@ app.get('/api/logs/latest', (c) => {
 })
 
 // —— 实时流：Server-Sent Events 推送 JSON 日志 ——
-app.get('/api/logs/stream', (c) => {
+app.get('/stream', (c) => {
 	const name = c.req.query('name') ?? ''
 	return streamSSE(c, async (sse) => {
 		// 1) 推送历史日志

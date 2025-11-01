@@ -31,7 +31,7 @@ export default defineConfig({
 		services: 'src/services/index.ts',
 	},
 	env: {
-		PROD: true,
+		BUILD_OUTPUT: true,
 		PLUXEL_HMR_SSR: false,
 	},
 	dts: {

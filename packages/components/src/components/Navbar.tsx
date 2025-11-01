@@ -25,7 +25,7 @@ type LinkLikeProps = {
 export interface NavbarProps {
 	/** 导航项数组 */
 	navItems: NavItem[]
-	/** 用于渲染链接的组件，比如 wouter 的 Link 或 react-router 的 Link */
+	/** 用于渲染链接的组件，比如 TanStack Router 或 react-router 的 Link */
 	LinkComponent: React.ComponentType<LinkLikeProps>
 	/**
 	 * 可选：当前路径（更准确、更 SSR 友好）。
@@ -79,12 +79,9 @@ const Navbar = memo(function Navbar({
 				{ to, children, ...others },
 				ref,
 			) {
+				const rest = others as Omit<React.ComponentPropsWithoutRef<typeof LinkComponent>, 'to'>
 				return (
-					<LinkComponent
-						to={to}
-						ref={ref as any}
-						{...(others as unknown as React.ComponentPropsWithoutRef<typeof LinkComponent>)}
-					>
+					<LinkComponent to={to} {...rest}>
 						{children}
 					</LinkComponent>
 				)

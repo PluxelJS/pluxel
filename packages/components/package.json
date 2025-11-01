@@ -29,10 +29,10 @@
 		"@dnd-kit/utilities": "^3.2.2",
 		"@gqty/react": "^3.1.1",
 		"@melloware/react-logviewer": "^6.3.4",
+		"@tanstack/react-router": "^1.134.0",
 		"gqty": "^3.6.0",
 		"graphql": "^16.11.0",
-		"hono": "^4.10.3",
-		"wouter": "^3.7.1"
+		"hono": "^4.10.3"
 	},
 	"devDependencies": {
 		"@types/react": "^19.2.2",

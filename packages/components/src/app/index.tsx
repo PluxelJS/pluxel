@@ -1,24 +1,46 @@
 import { Center, MantineProvider, Text } from '@mantine/core'
 import { ModalsProvider } from '@mantine/modals'
 import { Notifications } from '@mantine/notifications'
-import { useEffect, useState } from 'react'
-import { Redirect, Route, Switch, useLocation } from 'wouter'
+import { useCallback, useEffect, useState } from 'react'
+import {
+	Outlet,
+	RouterProvider,
+	createBrowserHistory,
+	createMemoryHistory,
+	createRoute,
+	createRouter,
+	createRootRoute,
+	redirect,
+	useNavigate,
+	useRouterState,
+	type AnyHistory,
+} from '@tanstack/react-router'
 import { Layout, type NavItem } from '../components'
 import { Header } from './Header'
+import { ClientOnly } from './ClientOnly'
 import { LiveLog } from './log_viewer/LiveLog'
+import { Plugin } from './plugins/Plugin'
 import { PluginsLayout } from './plugins/PluginsLayout'
-import { WouterLinkAdapter } from './WouterLinkAdapter'
-import { client, type InferSuccessResponse } from './rpc'
+import { RouterLinkAdapter } from './RouterLinkAdapter'
+import { authClient, type InferSuccessResponse } from './rpc'
 
 const navItems: NavItem[] = [
 	{ label: '首页', href: '/', exact: true },
 	{ label: '日志', href: '/logs' },
-	{ label: '插件', href: '/plugins' }, // 会对 /plugins/:name 前缀激活
+	{ label: '插件', href: '/plugins' },
 ]
 
-export function App() {
-	const [location, navigate] = useLocation()
-	const guardState = useRouteGuard(location, navigate)
+function RootAppLayout() {
+	const pathname = useRouterState({ select: (state) => state.location.pathname })
+	const routerNavigate = useNavigate()
+
+	const navigate = useCallback(
+		(to: string, options?: { replace?: boolean }) =>
+			routerNavigate({ to, replace: options?.replace ?? false }),
+		[routerNavigate],
+	)
+
+	const guardState = useRouteGuard(pathname, navigate)
 
 	return (
 		<MantineProvider withGlobalClasses={false} deduplicateCssVariables={false}>
@@ -27,20 +49,12 @@ export function App() {
 				<Layout
 					header={({ toggle }) => <Header onMenu={toggle} />}
 					navItems={navItems}
-					LinkComponent={WouterLinkAdapter}
-					currentPath={location}
+					LinkComponent={RouterLinkAdapter}
+					currentPath={pathname}
 					footerHeight={0}
 				>
 					{guardState === 'allowed' ? (
-						<Switch>
-							<Route path="/" component={() => <Redirect to="/plugins" />} />
-
-							<Route path="/logs">{() => <LiveLog />}</Route>
-							<Route path="/plugins/:name">{() => <PluginsLayout />}</Route>
-							<Route path="/plugins">{() => <PluginsLayout />}</Route>
-
-							<Route>404 – 页面未找到</Route>
-						</Switch>
+						<Outlet />
 					) : (
 						<Center style={{ flex: 1, minHeight: 0 }}>
 							<Text c="dimmed">
@@ -54,7 +68,106 @@ export function App() {
 	)
 }
 
-type GuardResponse = InferSuccessResponse<(typeof client.auth.guard)['$get']>
+function PluginsRouteComponent() {
+	return <PluginsLayout />
+}
+
+function PluginsPlaceholder() {
+	return (
+		<Center style={{ flex: 1 }}>
+			<Text c="dimmed" size="lg">
+				请选择一个插件以查看详情
+			</Text>
+		</Center>
+	)
+}
+
+function PluginDetailRouteComponent() {
+	const { name: rawName } = pluginDetailRoute.useParams()
+	let name = rawName
+	try {
+		name = decodeURIComponent(rawName)
+	} catch {
+		// ignore decode failure, fallback to raw string
+	}
+	return (
+		<ClientOnly>
+			<Plugin pluginName={name} />
+		</ClientOnly>
+	)
+}
+
+const rootRoute = createRootRoute({
+	component: RootAppLayout,
+})
+
+const indexRoute = createRoute({
+	getParentRoute: () => rootRoute,
+	path: '/',
+	beforeLoad: () => {
+		throw redirect({ to: '/plugins', replace: true })
+	},
+})
+
+const logsRoute = createRoute({
+	getParentRoute: () => rootRoute,
+	path: 'logs',
+	component: () => <LiveLog />,
+})
+
+const pluginsRoute = createRoute({
+	getParentRoute: () => rootRoute,
+	path: 'plugins',
+	component: PluginsRouteComponent,
+})
+
+const pluginsIndexRoute = createRoute({
+	getParentRoute: () => pluginsRoute,
+	path: '/',
+	component: PluginsPlaceholder,
+})
+
+const pluginDetailRoute = createRoute({
+	getParentRoute: () => pluginsRoute,
+	path: '$name',
+	component: PluginDetailRouteComponent,
+})
+
+const routeTree = rootRoute.addChildren([
+	indexRoute,
+	logsRoute,
+	pluginsRoute.addChildren([pluginsIndexRoute, pluginDetailRoute]),
+])
+
+export interface AppProps {
+	history?: AnyHistory
+}
+
+export function createAppRouter(options: { history?: AnyHistory } = {}) {
+	const history =
+		options.history ??
+		(typeof window !== 'undefined' ? createBrowserHistory() : createMemoryHistory())
+	return createRouter({
+		routeTree,
+		history,
+		defaultPreload: 'intent',
+	})
+}
+
+const _routerForTypes = createAppRouter()
+
+declare module '@tanstack/react-router' {
+	interface Register {
+		router: typeof _routerForTypes
+	}
+}
+
+export function App({ history }: AppProps = {}) {
+	const [router] = useState(() => createAppRouter({ history }))
+	return <RouterProvider router={router} />
+}
+
+type GuardResponse = InferSuccessResponse<(typeof authClient.guard)['$get']>
 type GuardState = 'checking' | 'allowed' | 'blocked'
 
 function useRouteGuard(
@@ -66,11 +179,11 @@ function useRouteGuard(
 	useEffect(() => {
 		let cancelled = false
 		const controller = new AbortController()
-		setState('checking')
+		setState((prev) => (prev === 'allowed' ? 'allowed' : 'checking'))
 
 		const runGuard = async () => {
 			try {
-				const res = await client.auth.guard.$get(
+				const res = await authClient.guard.$get(
 					{ query: { path } },
 					{ init: { signal: controller.signal } },
 				)

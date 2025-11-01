@@ -17,14 +17,21 @@ import {
 import { useDisclosure, useMediaQuery } from '@mantine/hooks'
 import type React from 'react'
 import { useEffect } from 'react'
-import { useRoute } from 'wouter'
-import { ClientOnly } from '../ClientOnly'
-import { Plugin } from './Plugin'
+import { Outlet, useRouterState } from '@tanstack/react-router'
 import { PluginList } from './PluginList'
 
 export const PluginsLayout: React.FC = () => {
-	const [match, params] = useRoute<{ name?: string }>('/plugins/:name')
-	const pluginName = match ? params.name : undefined
+	const pluginName = useRouterState({
+		select: (state) => {
+			const match = state.location.pathname.match(/^\/plugins\/([^/]+)/)
+			if (!match?.[1]) return undefined
+			try {
+				return decodeURIComponent(match[1])
+			} catch {
+				return match[1]
+			}
+		},
+	})
 
 	const theme = useMantineTheme()
 	const isSmall = useMediaQuery(`(max-width: ${theme.breakpoints.md})`, undefined, {
@@ -101,9 +108,7 @@ export const PluginsLayout: React.FC = () => {
 					}}
 				>
 					{pluginName ? (
-						<ClientOnly>
-							<Plugin key={pluginName} pluginName={pluginName} />
-						</ClientOnly>
+						<Outlet />
 					) : (
 						<Center style={{ flex: 1 }}>
 							<Text c="dimmed" size="lg">
@@ -127,7 +132,7 @@ export const PluginsLayout: React.FC = () => {
 				<Stack gap="sm" style={{ height: '100%', minHeight: 0 }}>
 					<Divider label="浏览与分组" />
 					<Box style={{ flex: 1, minHeight: 0, display: 'flex', overflow: 'hidden' }}>
-						<PluginList />
+						<PluginList pluginName={pluginName} />
 					</Box>
 				</Stack>
 			</Drawer>

@@ -256,7 +256,7 @@ const SortableRow = memo(function SortableRow({
 		animateLayoutChanges: () => false,
 	})
 
-	const href = `/plugins/${pid}`
+	const href = `/plugins/${encodeURIComponent(pid)}`
 
 	return (
 		<Box

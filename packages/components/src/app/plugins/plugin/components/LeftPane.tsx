@@ -1,6 +1,6 @@
 import { Badge, Box, Divider, Group, Paper, Stack, Text } from '@mantine/core'
 import { memo } from 'react'
-import { Link } from 'wouter'
+import { RouterLinkAdapter } from '../../../RouterLinkAdapter'
 import { LiveLog as LiveLogRaw } from '../../../log_viewer/LiveLog'
 import { usePluginMeta } from '../context'
 import { ActionBar } from './ActionBar'
@@ -47,7 +47,7 @@ export function LeftPane({ compact = false }: LeftPaneProps) {
 				</Text>
 
 				<Divider label="依赖" labelPosition="left" />
-				<DependencyList LinkComponent={Link} />
+				<DependencyList LinkComponent={RouterLinkAdapter} />
 
 				<Divider label="实时日志" labelPosition="left" />
 				<Box style={{ flex: 1, minHeight: 0, display: 'flex' }}>

@@ -12,6 +12,7 @@
 		// 允许带 import assertion 的非 TS 资源，给 manifest 用
 		"resolveJsonModule": true,
 		"allowArbitraryExtensions": true,
+		"rootDir": "../..",
 		"module": "ESNext",
 		"moduleResolution": "Bundler",
 		"emitDeclarationOnly": true,

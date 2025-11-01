@@ -4,10 +4,9 @@ import { type Middleware, mutation, query, type Resolver, resolver, weave } from
 import { ValibotWeaver } from '@gqloom/valibot'
 import { generateClient } from '@gqty/cli'
 import { Injectable, type Context as PlxContext } from '@pluxel/core'
-import { parse, type GraphQLSchema, type OperationDefinitionNode } from 'graphql'
+import { type GraphQLSchema, type OperationDefinitionNode, parse } from 'graphql'
 import { createYoga, type Plugin, type YogaInitialContext } from 'graphql-yoga'
 import * as v from 'valibot'
-import { getAPISchema } from '../../api'
 import type { AuthGuardResult } from './AuthGuardService'
 
 // -------------------- Config (Valibot) --------------------
@@ -26,13 +25,13 @@ declare module '@pluxel/core' {
 
 interface GraphQLConfig {
 	endpoint: string
-	destination: string
+	destination?: string
 	react: boolean
 	scalarTypes: Record<string, string>
 }
 const _DEFAULT_CONFIG: GraphQLConfig = {
 	endpoint: 'http://localhost:3000/graphql',
-	destination: '../components/src/app/gqty/index.ts',
+	destination: undefined,
 	react: true,
 	scalarTypes: { Number: 'number', Object: 'Record<string, unknown>' },
 }
@@ -95,7 +94,7 @@ export class GraphQLService {
 		private readonly ctx: PlxContext,
 		private config: GraphQLConfig = _DEFAULT_CONFIG,
 	) {
-		this.config = Object.assign(_DEFAULT_CONFIG, config)
+		this.config = { ..._DEFAULT_CONFIG, ...config }
 		this.logger = ctx.logger!
 	}
 
@@ -162,7 +161,7 @@ export class GraphQLService {
 			if (m.middlewares?.length) middlewares.push(...m.middlewares)
 		}
 		// gqloom 的 weave 可以混合放入 Resolver/Middleware；这里显式分组后再展开，便于阅读与调试
-		return weave(ValibotWeaver, ...middlewares, ...resolvers, ...getAPISchema(this.ctx))
+		return weave(ValibotWeaver, ...middlewares, ...resolvers)
 	}
 
 	/** 用当前 schema 创建 Yoga fetch，并注入 HonoService（仅替换函数指针） */
@@ -194,11 +193,12 @@ export class GraphQLService {
 
 		return {
 			onParams: async ({ request, params }) => {
+				// Fast path: no guards registered yet, skip any parsing work
+				if (!honoService.hasAuthGuards()) return
+
 				const requestUrl = this.safeParseUrl(request.url)
 				const path = requestUrl?.pathname ?? '/graphql'
-				const guardContext = this.extractGraphQLGuardContext(
-					(params ?? {}) as YogaGraphQLParams,
-				)
+				const guardContext = this.extractGraphQLGuardContext((params ?? {}) as YogaGraphQLParams)
 				const guardResult = await honoService.evaluateAuthGuard({
 					path,
 					method: request.method,
@@ -257,8 +257,7 @@ export class GraphQLService {
 				rootFields: this.collectRootFields(op),
 			}))
 
-			const operationName =
-				params.operationName ?? operations[0]?.name ?? null
+			const operationName = params.operationName ?? operations[0]?.name ?? null
 
 			return {
 				operationName,
@@ -334,6 +333,7 @@ export class GraphQLService {
 		this.codegenRunning = true
 		try {
 			const cfg = this.config
+			if (!cfg.destination) return
 			this.logger.info('[GQty] Generating client…', { destination: cfg.destination })
 
 			// generateClient 支持从 schema 直接产出客户端；如需走远端 introspection，可只传 endpoint

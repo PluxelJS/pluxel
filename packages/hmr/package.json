@@ -62,7 +62,7 @@
 		"vite": "^7.1.12",
 		"vite-node": "^3.2.4",
 		"vite-tsconfig-paths": "^5.1.4",
-		"wouter": "^3.7.1"
+		"@tanstack/react-router": "^1.67.0"
 	},
 	"peerDependencies": {},
 	"devDependencies": {

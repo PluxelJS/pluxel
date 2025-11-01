@@ -8,7 +8,7 @@ import { type GeneratedSchema, generatedSchema, scalarsEnumsHash } from './schem
 
 const queryFetcher: QueryFetcher = async ({ query, variables, operationName }, fetchOptions) => {
 	// 浏览器走相对路径；SSR 端需要绝对 URL
-	const endpoint = typeof window === 'undefined' ? 'http://localhost:3000/graphql' : '/graphql'
+	const endpoint = '/api/graphql'
 	const response = await fetch(endpoint, {
 		method: 'POST',
 		headers: {
@@ -33,7 +33,7 @@ const cache = new Cache(
 	 * allowing soft refetches in background.
 	 */
 	{
-		maxAge: 0,
+		maxAge: 60 * 1000,
 		staleWhileRevalidate: 5 * 60 * 1000,
 		normalization: true,
 	},

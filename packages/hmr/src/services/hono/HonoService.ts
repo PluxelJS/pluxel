@@ -8,7 +8,6 @@ import type { Plugin } from 'vite'
 
 import api from '../../api/hono'
 import type { RenderHandler } from '../../server/types'
-import loggerApi from '../logger/api'
 import type { AuthGuardCheckInput, AuthGuardResult, AuthGuardService } from './AuthGuardService'
 import type { AppEnv, HonoWithAppEnvType } from './env'
 
@@ -155,30 +154,14 @@ export class HonoService {
 			await next()
 		})
 
-		// 0.5) API / JSON 路由守卫
-		if (this.guardEnabled) {
-			app.use('/api/*', async (c, next) => {
-				const denied = await this.guardRequest(
-					c,
-					'api',
-					(result, meta) => this.respondGuardJson(c, result, meta),
-				)
-				if (denied) return denied
-				return next()
-			})
-		}
 
-		// 1) 业务 API（必要时包裹内置路由）
-		app.route('/api', api)
-
+		// 1) 业务 API（仅对内置 /api 路由进行守卫包装，不影响 useModule/外部挂载的路由）
+		this.mountInternalAPI(app)
 		// 1.2) GraphQL —— 只挂一次路由，内部转发到函数指针
 		app.all('/graphql', (c) => this.gqlFetch(c.req.raw, { hono: c }))
 
 		// 2) 同步补丁（插件追加的路由/中间件）
 		for (const m of this.mods) m(app as HonoWithAppEnvType)
-
-		// 3) logger
-		app.route('/', loggerApi)
 
 		// 3.5) 内置路由守卫（仅对 HTML 请求生效）
 		if (this.guardEnabled) {
@@ -204,6 +187,26 @@ export class HonoService {
 		this.app = app as HonoWithAppEnvType
 		this.updateFetchPtr()
 		return this.app
+	}
+
+	/**
+	 * 仅对内置 API（packages/hmr/src/api/hono）应用守卫，避免影响外部通过 modifyApp/useModule 注入的路由。
+	 */
+	private mountInternalAPI(app: HonoWithAppEnvType) {
+		if (!this.guardEnabled) {
+			app.route('/api', api as any)
+			return
+		}
+		const guarded = new Hono<AppEnv>()
+		guarded.use('*', async (c, next) => {
+			const denied = await this.guardRequest(c, 'api', (result, meta) =>
+				this.respondGuardJson(c, result, meta),
+			)
+			if (denied) return denied
+			return next()
+		})
+		guarded.route('/', api as any)
+		app.route('/api', guarded as any)
 	}
 
 	private async guardRequest(
@@ -304,7 +307,7 @@ export class HonoService {
 						accept: headers.get('accept') ?? null,
 						fetchMode: headers.get('sec-fetch-mode') ?? null,
 						fetchDest: headers.get('sec-fetch-dest') ?? null,
-				  })
+					})
 				: Object.freeze({ type: source })
 
 		return {
@@ -345,6 +348,16 @@ export class HonoService {
 		} catch {
 			return undefined
 		}
+	}
+
+	/**
+	 * Whether any auth guards are currently registered.
+	 * Cheap check to allow upstream callers (e.g. GraphQL plugin) to skip
+	 * heavy work like parsing operations when there's nothing to enforce.
+	 */
+	hasAuthGuards(): boolean {
+		const svc = this.resolveAuthGuard()
+		return !!svc && svc.hasGuards()
 	}
 
 	private tryParseUrl(input: string): URL | undefined {
