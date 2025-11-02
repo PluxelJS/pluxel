@@ -1,191 +1,307 @@
+// PluginDecorator.ts
 import 'reflect-metadata'
 import { BasePlugin } from './BasePlugin'
 import type { Identifier, PluginIdentifier, SubclassOf } from './types'
 
-/** —— Public symbols —— */
-export const PLUGIN_SYMBOL = {
-	META_KEY: Symbol.for('pluxel:meta'),
-	CONFIG_MAP: Symbol.for('pluxel:config'),
-	BASE_CLASS: Symbol.for('pluxel:base'),
-	PARAM_TOKENS: Symbol.for('pluxel:paramTokens'),
-} as const
+/*───────────────────────────────────────────────────────────
+  Runtime Policy
+  - DEV: 冻结返回值/快照，尽早暴露“误改”。
+  - PROD: 不冻结，避免隐藏类固定/写屏障。
+  - 热路径 = 1× WeakMap.get → 固定 shape 的 State 属性访问。
+───────────────────────────────────────────────────────────*/
+const __DEV__ =
+	(globalThis as any).__PLUXEL_DEV__ ??
+	(typeof process !== 'undefined' ? process.env?.NODE_ENV === 'dev' : true)
+const $freeze = <T>(x: T): T => (__DEV__ ? Object.freeze(x) : x)
+const EMPTY_ARR: readonly unknown[] = $freeze([])
 
-/** —— Internal symbols —— */
-const CONFIG_PENDING = Symbol.for('pluxel:config:pending') // pending bucket for @Config
-const TOKEN_EPOCH = Symbol.for('pluxel:paramTokens:epoch') // epoch for param view cache
-
-/** —— Metadata —— */
+/*───────────────────────────────────────────────────────────
+  Public Types / Stable API
+───────────────────────────────────────────────────────────*/
 export interface PluginMetadata {
-	name: string
+	/** 声明期 name，可缺省；最终对外名由 Loader/外部 rename 决定 */
+	name?: string
 	[key: string]: any
 }
-export type ConfigSchemaList<T = any> = Record<string, T>
+/** “对外快照”里 meta 字段改名为 metadata，避免与对外 name 冲突 */
+export type DeclaredMetaView = Omit<PluginMetadata, 'name'>
 
-/** —— Reflection key for design-time types —— */
+export type ConfigSchemaList<T = any> = Record<string, T>
+/** TS emitDecoratorMetadata 的 key（构造参数类型） */
 export const PARAM_TYPES = 'design:paramtypes' as const
 
-/** —— Override type —— */
+/** 稀疏覆盖（数组/对象） */
 export type ParamOverride =
 	| ReadonlyArray<Identifier<any> | undefined>
-	| Partial<Record<number, Identifier<any>>>
+	| Readonly<Partial<Record<number, Identifier<any>>>>
 
-/* =========================================================
- *                    @Plugin（收尾批量落盘）
- *   - @Plugin(meta)
- *   - @Plugin(base, meta)
- *   - 合并 pending @Config，一次 define + 冻结
- * =======================================================*/
-function getName(fn: any): string {
-	// biome-ignore lint/complexity/useOptionalChain: <explanation>
-	return (fn && fn.name) || '<anonymous>'
+/** 对外快照：你要的 .name 在顶层 */
+export interface PluginInfo {
+	/** 对外名：State.name（别名） ?? declared name ?? ctor.name */
+	readonly name: string
+	/** 声明期元信息（去掉 name 后的剩余字段） */
+	readonly metadata?: DeclaredMetaView
+	/** 声明的抽象基类 */
+	readonly base?: PluginIdentifier
+	/** 由 @Config 聚合出的 schema map（null-proto 对象） */
+	readonly configMap?: ConfigSchemaList
 }
-export function Plugin(meta: PluginMetadata): ClassDecorator
+
+/*───────────────────────────────────────────────────────────
+  Internal State（单 WM，固定 shape，JIT 友好）
+───────────────────────────────────────────────────────────*/
+type Tokens = Array<Identifier<any> | undefined>
+type State = {
+	// 声明期冷数据（@Plugin 时一次性写入）
+	declaredMeta: PluginMetadata | null
+	base: PluginIdentifier | null
+	config: ConfigSchemaList | null
+
+	// 预取的设计期构造参数类型（热路径不再触碰 Reflect）
+	rtypes: readonly unknown[]
+
+	// 对外名（别名）；外部可 set，不改 epoch
+	name: string | null
+
+	// 热数据：参数 tokens + 缓存
+	tokens: Tokens | null
+	epoch: number
+	paramCacheEpoch: number
+	paramCache: readonly unknown[] | null
+
+	// 对外信息快照（含顶层 .name）
+	infoSnap: PluginInfo | null
+
+	// 定义期 @Config 暂存桶（null-proto），@Plugin 聚合落盘
+	pending: Record<string, unknown> | null
+}
+
+const STATE = new WeakMap<Function, State>()
+const S = (ctor: Function): State => {
+	let s = STATE.get(ctor)
+	if (s) return s
+	s = {
+		declaredMeta: null,
+		base: null,
+		config: null,
+		rtypes: EMPTY_ARR,
+		name: null,
+
+		tokens: null,
+		epoch: 0,
+		paramCacheEpoch: -1,
+		paramCache: null,
+
+		infoSnap: null,
+		pending: null,
+	}
+	STATE.set(ctor, s)
+	return s
+}
+
+/*───────────────────────────────────────────────────────────
+  Tiny Utils
+───────────────────────────────────────────────────────────*/
+const nameOf = (fn: any) => (fn && fn.name) || '<anonymous>'
+const fallbackCtorName = (ctor: Function) => nameOf(ctor)
+const isSubclassOf = (ctor: Function, base: Function) => {
+	if (ctor === base) return true
+	if (typeof ctor !== 'function' || typeof base !== 'function') return false
+	const cp = (ctor as any).prototype
+	const bp = (base as any).prototype
+	return !!(cp && bp && bp.isPrototypeOf(cp))
+}
+/** tokens 变更 → 仅失效构造参数缓存（与对外名无关） */
+const bump = (ctor: Function) => {
+	const s = S(ctor)
+	s.epoch++
+	s.paramCache = null
+	s.paramCacheEpoch = -1
+}
+function sparseObjectToArray(o: Readonly<Record<number, Identifier<any>>>): Tokens {
+	const ks = Object.keys(o)
+	if (!ks.length) return []
+	let max = -1
+	for (let i = 0; i < ks.length; i++) {
+		const idx = (ks[i] as unknown as number) | 0
+		if (idx > max) max = idx
+	}
+	const arr = new Array<Identifier<any> | undefined>(max + 1)
+	for (let i = 0; i < ks.length; i++) {
+		const idx = (ks[i] as unknown as number) | 0
+		arr[idx] = (o as any)[idx]
+	}
+	return arr
+}
+function applyOverride(dst: unknown[], override?: ParamOverride): void {
+	if (!override) return
+	if (Array.isArray(override)) {
+		for (let i = 0; i < override.length; i++) {
+			const v = override[i]
+			if (v !== undefined) dst[i] = v
+		}
+	} else {
+		const ks = Object.keys(override)
+		for (let i = 0; i < ks.length; i++) {
+			const idx = (ks[i] as unknown as number) | 0
+			const v = (override as any)[idx]
+			if (v !== undefined) dst[idx] = v
+		}
+	}
+}
+
+/** 依据“当前有效对外名”重建对外快照（不动 epoch） */
+function rebuildInfoSnapshot(ctor: Function, s: State): void {
+	const declaredName = s.declaredMeta?.name ?? fallbackCtorName(ctor)
+	const effectiveName = s.name ?? declaredName
+
+	// 去掉声明期 name 后的元信息（让 .name 只存在顶层）
+	const { name: _omit, ...restMeta } = (s.declaredMeta ?? {}) as PluginMetadata
+	const metadata: DeclaredMetaView | undefined = Object.keys(restMeta).length
+		? (restMeta as DeclaredMetaView)
+		: undefined
+
+	const snap: PluginInfo = __DEV__
+		? $freeze({
+				name: effectiveName,
+				metadata,
+				base: (s.base ?? undefined) as PluginIdentifier | undefined,
+				configMap: s.config ?? undefined,
+			})
+		: {
+				name: effectiveName,
+				metadata,
+				base: (s.base ?? undefined) as PluginIdentifier | undefined,
+				configMap: s.config ?? undefined,
+			}
+
+	s.infoSnap = snap
+}
+
+/*───────────────────────────────────────────────────────────
+  Decorators
+───────────────────────────────────────────────────────────*/
+/** 收集实例字段配置（@Plugin 统一聚合） */
+export function Config<S extends ConfigSchemaList>(schema: S): PropertyDecorator {
+	return (target: object, key: string | symbol) => {
+		if (typeof target === 'function') throw new Error('@Config 只能用于实例字段(非 static)')
+		const ctor = (target as any).constructor as Function
+		const s = S(ctor)
+		const bucket = s.pending ?? Object.create(null) // null-proto：干净字典
+		bucket[String(key)] = schema
+		s.pending = bucket
+	}
+}
+
+/**
+ * 声明插件（可选基类）：
+ * - 校验继承关系
+ * - 预取 design:paramtypes → rtypes（热路径不再触碰 Reflect）
+ * - 聚合 pending @Config → config
+ * - 构建对外快照（含顶层 .name）
+ */
+export function Plugin(meta?: PluginMetadata): ClassDecorator
 export function Plugin<B extends PluginIdentifier>(
 	base: B,
-	meta: PluginMetadata,
+	meta?: PluginMetadata,
 ): <C extends SubclassOf<B>>(ctor: C) => void
-export function Plugin(a: PluginMetadata | PluginIdentifier, b?: PluginMetadata) {
-	const hasBase = typeof a === 'function'
-	const meta: PluginMetadata = (hasBase ? b : a) as PluginMetadata
-	const base: PluginIdentifier | undefined = (hasBase ? a : undefined) as
-		| PluginIdentifier
-		| undefined
+export function Plugin(a?: PluginMetadata | PluginIdentifier, b?: PluginMetadata) {
+	const withBase = typeof a === 'function'
+	const base = (withBase ? (a as PluginIdentifier) : null) as PluginIdentifier | null
+	const meta = (
+		withBase ? ((b as PluginMetadata) ?? {}) : ((a as PluginMetadata) ?? {})
+	) as PluginMetadata
 
 	return (ctor: Function) => {
 		if (base) {
 			if (!isSubclassOf(base as Function, BasePlugin)) {
-				throw new Error(`@Plugin(${getName(base)}) 失败：抽象基类未继承 BasePlugin`)
+				throw new Error(`@Plugin(${nameOf(base)}) 失败：抽象基类未继承 BasePlugin`)
 			}
 			if (!isSubclassOf(ctor, base as Function)) {
-				throw new Error(`@Plugin(${getName(base)}) 失败：${getName(ctor)} 未继承 ${getName(base)}`)
+				throw new Error(`@Plugin(${nameOf(base)}) 失败：${nameOf(ctor)} 未继承 ${nameOf(base)}`)
 			}
-			Reflect.defineMetadata(PLUGIN_SYMBOL.BASE_CLASS, base, ctor)
 		}
 
-		Reflect.defineMetadata(PLUGIN_SYMBOL.META_KEY, Object.freeze({ ...meta }), ctor)
+		const s = S(ctor)
+		// 预取设计期类型
+		const rt = (Reflect.getMetadata(PARAM_TYPES, ctor) as unknown[]) ?? EMPTY_ARR
+		s.rtypes = Array.isArray(rt) ? rt : Array.from(rt)
 
-		// Flush pending @Config
-		const pending: Map<string, unknown> | undefined = Reflect.getOwnMetadata(CONFIG_PENDING, ctor)
-		// biome-ignore lint/complexity/useOptionalChain: <explanation>
-		if (pending && pending.size) {
-			const obj: Record<string, unknown> = Object.create(null)
-			for (const [k, v] of pending) obj[k] = v
-			Reflect.deleteMetadata(CONFIG_PENDING, ctor)
-			Reflect.defineMetadata(PLUGIN_SYMBOL.CONFIG_MAP, Object.freeze(obj), ctor)
+		// 冷数据写入（DEV 下浅拷贝 + 冻结，抓误改）
+		s.declaredMeta = __DEV__ ? $freeze({ ...meta }) : { ...meta }
+		s.base = base
+
+		// 聚合 pending @Config
+		if (s.pending && Object.keys(s.pending).length) {
+			s.config = __DEV__ ? $freeze(s.pending) : s.pending
+			s.pending = null
+		} else {
+			s.config = null
 		}
 
-		// Stable cache will be rebuilt on demand
-		STABLE_CACHE.delete(ctor)
+		// 构建对外快照
+		rebuildInfoSnapshot(ctor, s)
 	}
 }
 
-/* =========================================================
- *                     @Config（定义期聚合）
- * =======================================================*/
-export function Config<S extends ConfigSchemaList>(schema: S): PropertyDecorator {
-	return (target: object, propertyKey: string | symbol): void => {
-		if (typeof target === 'function') {
-			throw new Error('@Config 只能用于实例字段(非 static)')
-		}
-		const ctor = (target as any).constructor as Function
-		const bucket: Map<string, unknown> =
-			Reflect.getOwnMetadata(CONFIG_PENDING, ctor) ?? new Map<string, unknown>()
-		bucket.set(String(propertyKey), schema)
-		Reflect.defineMetadata(CONFIG_PENDING, bucket, ctor)
-	}
+/*───────────────────────────────────────────────────────────
+  Name：外部可重命名（不动 epoch）
+───────────────────────────────────────────────────────────*/
+/** 读取声明名（未考虑外部 rename）：meta.name ?? ctor.name */
+export function getDeclaredName(ctor: Function): string {
+	const s = STATE.get(ctor)
+	if (!s) return fallbackCtorName(ctor)
+	return s.declaredMeta?.name ?? fallbackCtorName(ctor)
 }
 
-/* =========================================================
- *                  Stable info（独立缓存）
- *   meta / base / configMap
- * =======================================================*/
-export interface StableInfo {
-	readonly meta: PluginMetadata
-	readonly base?: PluginIdentifier
-	readonly configMap?: ConfigSchemaList
-}
-const STABLE_CACHE = new WeakMap<Function, Readonly<StableInfo>>()
-
-export function getPluginInfo(ctor: Function): Readonly<StableInfo> | undefined {
-	const c = STABLE_CACHE.get(ctor)
-	if (c) return c
-
-	const meta = Reflect.getOwnMetadata(PLUGIN_SYMBOL.META_KEY, ctor)
-	if (meta === undefined) {
-		return
-	}
-	const base = Reflect.getOwnMetadata(PLUGIN_SYMBOL.BASE_CLASS, ctor) as
-		| PluginIdentifier
-		| undefined
-	const configMap = Reflect.getOwnMetadata(PLUGIN_SYMBOL.CONFIG_MAP, ctor) as
-		| ConfigSchemaList
-		| undefined
-
-	const info: Readonly<StableInfo> = Object.freeze({
-		meta,
-		base,
-		configMap,
-	})
-	STABLE_CACHE.set(ctor, info)
-	return info
+/** 读取对外名（已考虑 rename）：state.name ?? declaredName */
+export function getEffectiveName(ctor: Function): string {
+	const s = STATE.get(ctor)
+	if (!s) return fallbackCtorName(ctor)
+	return s.name ?? s.declaredMeta?.name ?? fallbackCtorName(ctor)
 }
 
-export function resolvePluginIdentifier(id: PluginIdentifier): PluginIdentifier {
-	if (typeof id !== 'function') return id
-
-	let current: Function = id
-	const visited = new Set<Function>()
-
-	while (typeof current === 'function') {
-		if (visited.has(current)) break
-		visited.add(current)
-
-		const info = getPluginInfo(current)
-		if (!info?.base || info.base === current) break
-		current = info.base as Function
-	}
-
-	return current as PluginIdentifier
+/** 设置/清除对外名（只重建 infoSnap，热路径缓存不失效） */
+export function setPluginName(ctor: Function, name?: string | null): void {
+	const s = S(ctor)
+	s.name = name ?? null
+	rebuildInfoSnapshot(ctor, s)
 }
 
-/* =========================================================
- *        getClassParam（与 stable 解耦 + 热缓存）
- *   顺序：design:paramtypes -> persistent tokens -> once override
- *   按 epoch 失效，仅在无 once override 时缓存
- * =======================================================*/
-type ParamView = Readonly<{ epoch: number; params: readonly unknown[] }>
-const PARAM_VIEW_CACHE = new WeakMap<Function, ParamView>()
-
-export function getClassParam<T = unknown>(
-	target: Function,
-	override?: ParamOverride,
-): readonly T[] {
-	if (!override) {
-		const epoch = currentEpoch(target)
-		const c = PARAM_VIEW_CACHE.get(target)
-		if (c && c.epoch === epoch) return c.params as any
+/*───────────────────────────────────────────────────────────
+  Read APIs（外界承诺先检查 @Plugin 装饰器）
+───────────────────────────────────────────────────────────*/
+export function checkPluginDecorator(ctor: Function): boolean {
+	const s = STATE.get(ctor)
+	if (s?.infoSnap) return true
+	return false
+}
+export function getPluginInfo(ctor: Function): PluginInfo {
+	const s = STATE.get(ctor)
+	if (!s || !s.infoSnap) {
+		throw new Error(`getPluginInfo(${nameOf(ctor)}) 在未装饰的类上被调用，请先使用 @Plugin`)
 	}
-
-	const reflected: unknown[] = Reflect.getMetadata(PARAM_TYPES, target) ?? []
-	const tokens = Array.from(reflected)
-
-	const stored: ParamOverride | undefined = Reflect.getOwnMetadata(
-		PLUGIN_SYMBOL.PARAM_TOKENS,
-		target,
-	)
-	applyOverride(tokens, stored)
-	applyOverride(tokens, override)
-
-	const frozen = Object.freeze(tokens)
-	if (!override) {
-		PARAM_VIEW_CACHE.set(target, Object.freeze({ epoch: currentEpoch(target), params: frozen }))
-	}
-	return frozen as any
+	return s.infoSnap
 }
 
 export function getBaseClass(target: Function): PluginIdentifier | undefined {
-	return Reflect.getOwnMetadata(PLUGIN_SYMBOL.BASE_CLASS, target)
+	return (STATE.get(target)?.base ?? undefined) as PluginIdentifier | undefined
 }
+
+export function resolvePluginRoot(id: PluginIdentifier): PluginIdentifier {
+	if (typeof id !== 'function') return id
+	let cur: Function = id
+	const seen = new Set<Function>()
+	while (typeof cur === 'function') {
+		if (seen.has(cur)) break
+		seen.add(cur)
+		const base = STATE.get(cur)?.base
+		if (!base || base === cur) break
+		cur = base as Function
+	}
+	return cur as PluginIdentifier
+}
+
 export function isPluginOf<B extends PluginIdentifier>(
 	ctor: Function,
 	base: B,
@@ -195,6 +311,7 @@ export function isPluginOf<B extends PluginIdentifier>(
 	if (!tagged) return false
 	return deep ? isSubclassOf(tagged as Function, base as Function) : tagged === base
 }
+
 export function filterPluginsOf<B extends PluginIdentifier>(
 	list: Function[],
 	base: B,
@@ -203,94 +320,87 @@ export function filterPluginsOf<B extends PluginIdentifier>(
 	return list.filter((c) => isPluginOf(c, base, deep)) as SubclassOf<B>[]
 }
 
-/* =========================================================
- *         Persistent overrides（写入即 bump epoch）
- * =======================================================*/
+/*───────────────────────────────────────────────────────────
+  Hot Path：构造参数解析
+  数据源：rtypes（预取） → tokens（持久） → override（一次性）
+  命中缓存：0 分配；失配：1× slice + 0~2× 稀疏覆盖。
+───────────────────────────────────────────────────────────*/
+export function getClassParams<T = unknown>(
+	target: Function,
+	override?: ParamOverride,
+): readonly T[] {
+	const s = S(target)
+
+	if (!override && s.paramCache && s.paramCacheEpoch === s.epoch) {
+		return s.paramCache as readonly T[]
+	}
+
+	// 1) 预取 rtypes 作为基数组
+	const out = s.rtypes.length ? (s.rtypes as unknown[]).slice() : []
+
+	// 2) 应用持久 tokens（数组形态，最快）
+	if (s.tokens) applyOverride(out, s.tokens)
+
+	// 3) 应用一次性 override
+	applyOverride(out, override)
+
+	const ro = __DEV__ ? $freeze(out) : (out as readonly unknown[])
+	if (!override) {
+		s.paramCache = ro
+		s.paramCacheEpoch = s.epoch
+	}
+	return ro as readonly T[]
+}
+
+/*───────────────────────────────────────────────────────────
+  Tokens：持久覆盖（写入即失效；不影响对外名）
+───────────────────────────────────────────────────────────*/
 export function setParamToken(ctor: Function, index: number, token: Identifier<any>): void {
-	const arr: Array<Identifier<any> | undefined> =
-		Reflect.getOwnMetadata(PLUGIN_SYMBOL.PARAM_TOKENS, ctor) ?? []
-	if (index >= arr.length) arr.length = index + 1
-	arr[index] = token
-	Reflect.defineMetadata(PLUGIN_SYMBOL.PARAM_TOKENS, arr, ctor)
-	bumpEpoch(ctor)
+	const s = S(ctor)
+	const next = s.tokens ? s.tokens.slice() : []
+	if (index >= next.length) next.length = index + 1
+	next[index] = token
+	s.tokens = next
+	bump(ctor)
 }
+
 export function setParamTokens(ctor: Function, override: ParamOverride): void {
-	const current: Array<Identifier<any> | undefined> =
-		Reflect.getOwnMetadata(PLUGIN_SYMBOL.PARAM_TOKENS, ctor) ?? []
-	const next = current.slice()
-	applyOverride(next, override)
-	Reflect.defineMetadata(PLUGIN_SYMBOL.PARAM_TOKENS, next, ctor)
-	bumpEpoch(ctor)
+	const s = S(ctor)
+	const base = s.tokens ? s.tokens.slice() : []
+	if (Array.isArray(override)) applyOverride(base, override)
+	else applyOverride(base, sparseObjectToArray(override as any))
+	s.tokens = base
+	bump(ctor)
 }
+
 export function clearParamToken(ctor: Function, index: number): void {
-	const arr: Array<Identifier<any> | undefined> =
-		Reflect.getOwnMetadata(PLUGIN_SYMBOL.PARAM_TOKENS, ctor) ?? []
-	if (index < arr.length) {
-		arr[index] = undefined
-		let end = arr.length
-		while (end > 0 && arr[end - 1] === undefined) end--
-		arr.length = end
+	const s = S(ctor)
+	if (!s.tokens) return
+	const next = s.tokens.slice()
+	if (index < next.length) {
+		next[index] = undefined
+		// 紧凑收尾，避免“越用越长”
+		let end = next.length
+		while (end > 0 && next[end - 1] === undefined) end--
+		next.length = end
 	}
-	Reflect.defineMetadata(PLUGIN_SYMBOL.PARAM_TOKENS, arr, ctor)
-	bumpEpoch(ctor)
+	s.tokens = next
+	bump(ctor)
 }
+
 export function clearParamTokens(ctor: Function): void {
-	Reflect.deleteMetadata(PLUGIN_SYMBOL.PARAM_TOKENS, ctor)
-	bumpEpoch(ctor)
+	const s = S(ctor)
+	if (!s.tokens) return
+	s.tokens = null
+	bump(ctor)
 }
 
-/* =========================================================
- *                      Internals
- * =======================================================*/
-function isSubclassOf(ctor: Function, base: Function): boolean {
-	if (ctor === base) return true
-	if (typeof ctor !== 'function' || typeof base !== 'function') return false
-	const cp = (ctor as any).prototype
-	const bp = (base as any).prototype
-	// biome-ignore lint/suspicious/noPrototypeBuiltins: <explanation>
-	return !!(cp && bp && bp.isPrototypeOf(cp))
-}
-
-function applyOverride(base: unknown[], override?: ParamOverride): void {
-	if (!override) return
-	if (Array.isArray(override)) {
-		for (let i = 0, n = override.length; i < n; i++) {
-			const v = override[i]
-			if (v !== undefined) base[i] = v
-		}
-	} else {
-		for (const k in override) {
-			const i = (k as unknown as number) | 0
-			const v = (override as any)[i]
-			if (v !== undefined) base[i] = v
-		}
-	}
-}
-/** max(reflected length, persistent override length) */
-function _getParamLengthh(ctor: Function): number {
-	const reflected: unknown[] = Reflect.getMetadata(PARAM_TYPES, ctor) ?? []
-	const stored: ParamOverride | undefined = Reflect.getOwnMetadata(PLUGIN_SYMBOL.PARAM_TOKENS, ctor)
-	let toks = 0
-	if (Array.isArray(stored)) {
-		toks = stored.length
-	} else if (stored && typeof stored === 'object') {
-		let max = -1
-		for (const k in stored) {
-			const i = (k as unknown as number) | 0
-			if (stored[i] !== undefined && i > max) max = i
-		}
-		toks = max + 1
-	}
-	return Math.max(reflected.length, toks)
-}
-/** epoch helpers */
-function currentEpoch(ctor: Function): number {
-	return Reflect.getOwnMetadata(TOKEN_EPOCH, ctor) ?? 0
-}
-function setEpoch(ctor: Function, n: number) {
-	Reflect.defineMetadata(TOKEN_EPOCH, n, ctor)
-}
-function bumpEpoch(ctor: Function) {
-	setEpoch(ctor, currentEpoch(ctor) + 1)
-	PARAM_VIEW_CACHE.delete(ctor)
+/** 只读观察当前 tokens 视图（拷贝；DEV 下冻结） */
+export function getStoredParamTokens(
+	ctor: Function,
+): ReadonlyArray<Identifier<any> | undefined> | undefined {
+	const t = STATE.get(ctor)?.tokens
+	if (!t) return
+	const copy = t.slice()
+	return __DEV__ ? $freeze(copy) : copy
 }

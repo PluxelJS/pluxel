@@ -1,5 +1,5 @@
 import { type Context, Injectable } from '@pluxel/context'
-import { resolvePluginIdentifier, type PluginIdentifier } from '../plugin'
+import { type PluginIdentifier, resolvePluginRoot } from '../plugin'
 
 const serviceName = 'scope' as const
 declare module '@pluxel/context' {
@@ -51,11 +51,11 @@ export class EffectScopeService {
 	}
 
 	get(plugin: PluginIdentifier) {
-		return this.ctx.registry.pluginRegistry.lastContainer.getMaybe(resolvePluginIdentifier(plugin))
+		return this.ctx.registry.pluginRegistry.lastContainer.getMaybe(resolvePluginRoot(plugin))
 	}
 
 	dispose(plugin: PluginIdentifier) {
-		const target = resolvePluginIdentifier(plugin)
+		const target = plugin
 		this.ctx.registry.pluginRegistry.unregisterPlugin(target)
 		this.ctx.registry.commit()
 	}

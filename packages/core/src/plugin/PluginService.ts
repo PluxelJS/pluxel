@@ -2,15 +2,15 @@
 
 import type { Context, ServiceClass } from '@pluxel/context'
 import { Injectable } from '@pluxel/context'
-import { createErr, createOk, type Result } from 'option-t/plain_result'
+import { createErr, createOk } from 'option-t/plain_result'
 // XState v5
 import { createActor, waitFor } from 'xstate'
 import type { ServiceMap } from '../container'
 import { EffectScopeService } from '../service/EffectScopeService'
 import { BasePlugin, PLUGIN_CTX } from './BasePlugin'
 import { PluginContainer, type PluginDiContainer } from './PluginContainer'
+import type { PluginInfo } from './PluginDecorator'
 import { createPluginLifecycle, type PluginLifecycleRef } from './pluginActor'
-import { resolvePluginIdentifier, type StableInfo } from './PluginDecorator'
 import type { PluginIdentifier, PluginInstance } from './types'
 
 type PluginServiceConfig = {
@@ -66,7 +66,7 @@ declare module '@pluxel/context' {
 	}
 	export interface Context {
 		[serviceName]: PluginService
-		pluginInfo: StableInfo
+		pluginInfo: PluginInfo
 		parent?: Context
 		caller?: Context
 	}
@@ -109,14 +109,14 @@ export class PluginService {
 	/* ------------------------------ 状态查询 ------------------------------ */
 
 	isRunning(id: PluginIdentifier): boolean {
-		const ref = this.actors.get(resolvePluginIdentifier(id))
+		const ref = this.actors.get(id)
 		const snapshot = ref?.getSnapshot()
 		if (snapshot === undefined) return false
 		return isRunningSnapshot(snapshot)
 	}
 
 	public optional<T extends PluginIdentifier>(ctor: T) {
-		const optionalDep = this.pluginRegistry.lastContainer?.getMaybe(resolvePluginIdentifier(ctor))
+		const optionalDep = this.pluginRegistry.lastContainer?.getMaybe(ctor)
 		return optionalDep
 	}
 
@@ -225,7 +225,7 @@ export class PluginService {
 	/* ------------------------------ Actor 管理 ------------------------------ */
 
 	private ensureActor(id: PluginIdentifier, plugin: BasePlugin): PluginLifecycleRef {
-		const key = resolvePluginIdentifier(id)
+		const key = id
 		let ref = this.actors.get(key)
 
 		// 若已有 actor 但已停止，丢弃并重建
@@ -258,7 +258,7 @@ export class PluginService {
 	/** 启动：成功返回；失败抛出真实 init 错误（保留 cause）并保证清理 */
 	private async startByActor(id: PluginIdentifier, plugin: BasePlugin): Promise<void> {
 		const ref = this.ensureActor(id, plugin)
-		const key = resolvePluginIdentifier(id)
+		const key = id
 		const snapshotBeforeStart = ref.getSnapshot?.()
 		if (isRunningSnapshot(snapshotBeforeStart)) return
 
@@ -318,7 +318,7 @@ export class PluginService {
 
 	/** 停止：若 actor 存在，用它；否则冷启动一个只为 STOP 的 actor（也会 cleanup） */
 	private async stopByActor(id: PluginIdentifier, pluginOrUndefined?: BasePlugin): Promise<void> {
-		const key = resolvePluginIdentifier(id)
+		const key = id
 		const existing = this.actors.get(key)
 		if (existing) {
 			const current = existing.getSnapshot?.()
@@ -462,10 +462,10 @@ export class PluginService {
 			})
 
 		this._commitLock = next
-		return next as Promise<Result<unknown, unknown>>
+		return next
 	}
 
-	private async executeCommit(): Promise<Result<unknown, unknown>> {
+	private async executeCommit() {
 		const action = this.pluginRegistry.build()
 		if (!action.ok) {
 			action.err.ret.undo()
@@ -541,5 +541,4 @@ export class PluginService {
 			changes,
 		})
 	}
-
 }

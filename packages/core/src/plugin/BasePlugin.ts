@@ -27,7 +27,7 @@ export abstract class BasePlugin<C extends Context = Context> {
 	}
 
 	/** Access system deps and register disposables */
-	protected get ctx(): C {
+	public get ctx(): C {
 		return this[PLUGIN_CTX]
 	}
 
@@ -38,7 +38,7 @@ export abstract class BasePlugin<C extends Context = Context> {
 	static [Symbol.toPrimitive](_hint: string) {
 		return `${
 			// biome-ignore lint/complexity/noThisInStatic: <explanation>
-			getPluginInfo(this)?.meta.name
+			getPluginInfo(this)?.name
 		}(${
 			// biome-ignore lint/complexity/noThisInStatic: <explanation>
 			this.name
@@ -67,8 +67,7 @@ export abstract class BasePlugin<C extends Context = Context> {
 					: undefined,
 			init: typeof plugin.init === 'function' ? plugin.init.bind(plugin) : undefined,
 			stop: typeof plugin.stop === 'function' ? plugin.stop.bind(plugin) : undefined,
-			dispose:
-				typeof scope?.disposeAll === 'function' ? scope.disposeAll.bind(scope) : undefined,
+			dispose: typeof scope?.disposeAll === 'function' ? scope.disposeAll.bind(scope) : undefined,
 			subscribeErrors:
 				typeof onError === 'function'
 					? (cb: (err: unknown) => void) => onError.call(ctx, cb)
