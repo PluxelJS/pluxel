@@ -4,10 +4,9 @@ import { type Middleware, mutation, query, type Resolver, resolver, weave } from
 import { ValibotWeaver } from '@gqloom/valibot'
 import { generateClient } from '@gqty/cli'
 import { Injectable, type Context as PlxContext } from '@pluxel/core'
-import { type GraphQLSchema, type OperationDefinitionNode, parse } from 'graphql'
-import { createYoga, type Plugin, type YogaInitialContext } from 'graphql-yoga'
+import type { GraphQLSchema } from 'graphql'
+import { createYoga, type YogaInitialContext } from 'graphql-yoga'
 import * as v from 'valibot'
-import type { AuthGuardResult } from './AuthGuardService'
 
 // -------------------- Config (Valibot) --------------------
 const serviceName = 'graphql' as const
@@ -43,23 +42,6 @@ type ServerCtx = {}
 // -------------------- Module Types --------------------
 type GqlModule = { resolvers: readonly Resolver[]; middlewares?: readonly Middleware[] }
 type GqlModuleInput = GqlModule | Resolver | readonly Resolver[]
-type YogaGraphQLParams = { query?: string | null; operationName?: string | null }
-
-interface GraphQLOperationDescriptor {
-	type: OperationDefinitionNode['operation']
-	name: string | null
-	rootFields: readonly string[]
-}
-
-interface GraphQLGuardContext {
-	operationName: string | null
-	operations: readonly GraphQLOperationDescriptor[]
-}
-
-interface GraphQLGuardResponseMeta extends GraphQLGuardContext {
-	path: string
-	method: string
-}
 
 function isGqlModule(x: unknown): x is GqlModule {
 	return !!x && typeof x === 'object' && 'resolvers' in (x as any)
@@ -166,15 +148,12 @@ export class GraphQLService {
 
 	/** 用当前 schema 创建 Yoga fetch，并注入 HonoService（仅替换函数指针） */
 	private pushFetch() {
-		const guardPlugin = this.createAuthGuardPlugin()
-		const plugins = guardPlugin ? [guardPlugin] : undefined
 		const yoga = createYoga<ServerCtx>({
 			landingPage: false,
 			graphqlEndpoint: '/graphql',
 			maskedErrors: process.env.NODE_ENV === 'production',
 			graphiql: process.env.NODE_ENV !== 'production',
 			schema: this.schema,
-			plugins,
 			// 强制复用全局 fetch API，避免构建后出现多份 Response 构造器导致 instanceof 失效
 			fetchAPI: {
 				Response: globalThis.Response,
@@ -185,146 +164,6 @@ export class GraphQLService {
 		// HonoService 内部声明合并了 setGraphQLFetch，这里避免循环依赖，保留弱类型转发
 		const fetcher = (req: Request, ctx: ServerCtx) => yoga.fetch(req, ctx)
 		this.ctx.honoService.setGraphQLFetch(fetcher as any)
-	}
-
-	private createAuthGuardPlugin(): Plugin<ServerCtx> | undefined {
-		const honoService = this.ctx.honoService
-		if (!honoService.isAuthGuardEnabled()) return undefined
-
-		return {
-			onParams: async ({ request, params }) => {
-				// Fast path: no guards registered yet, skip any parsing work
-				if (!honoService.hasAuthGuards()) return
-
-				const requestUrl = this.safeParseUrl(request.url)
-				const path = requestUrl?.pathname ?? '/graphql'
-				const guardContext = this.extractGraphQLGuardContext((params ?? {}) as YogaGraphQLParams)
-				const guardResult = await honoService.evaluateAuthGuard({
-					path,
-					method: request.method,
-					headers: request.headers,
-					request,
-					url: requestUrl,
-					context: Object.freeze({
-						type: 'graphql',
-						operationName: guardContext.operationName,
-						operations: guardContext.operations,
-					}),
-				})
-				if (!guardResult) return
-
-				this.logger.warn('[AuthGuard] Blocked GraphQL request', {
-					path,
-					method: request.method,
-					plugin: guardResult.pluginName,
-					reason: guardResult.reason,
-					redirect: guardResult.redirectPath,
-					operationName: guardContext.operationName,
-					operations: guardContext.operations,
-				})
-
-				return this.createGraphQLGuardResponse(guardResult, {
-					path,
-					method: request.method,
-					operationName: guardContext.operationName,
-					operations: guardContext.operations,
-				})
-			},
-		}
-	}
-
-	private extractGraphQLGuardContext(params: YogaGraphQLParams): GraphQLGuardContext {
-		const query = params.query ?? ''
-		if (!query) {
-			return {
-				operationName: params.operationName ?? null,
-				operations: Object.freeze([]) as readonly GraphQLOperationDescriptor[],
-			}
-		}
-
-		try {
-			const document = parse(query, { noLocation: true })
-			const definitions = document.definitions.filter(
-				(def): def is OperationDefinitionNode => def.kind === 'OperationDefinition',
-			)
-			const filtered = params.operationName
-				? definitions.filter((op) => op.name?.value === params.operationName)
-				: definitions
-
-			const operations = filtered.map<GraphQLOperationDescriptor>((op) => ({
-				type: op.operation,
-				name: op.name?.value ?? null,
-				rootFields: this.collectRootFields(op),
-			}))
-
-			const operationName = params.operationName ?? operations[0]?.name ?? null
-
-			return {
-				operationName,
-				operations: Object.freeze(operations) as readonly GraphQLOperationDescriptor[],
-			}
-		} catch {
-			return {
-				operationName: params.operationName ?? null,
-				operations: Object.freeze([]) as readonly GraphQLOperationDescriptor[],
-			}
-		}
-	}
-
-	private collectRootFields(op: OperationDefinitionNode): readonly string[] {
-		const fields: string[] = []
-		for (const selection of op.selectionSet.selections) {
-			if (selection.kind === 'Field') {
-				fields.push(selection.name.value)
-			} else if (selection.kind === 'FragmentSpread') {
-				fields.push(`...${selection.name.value}`)
-			} else if (selection.kind === 'InlineFragment') {
-				const typeCondition = selection.typeCondition?.name?.value
-				fields.push(typeCondition ? `... on ${typeCondition}` : '... on <anonymous>')
-			}
-		}
-		return Object.freeze(fields)
-	}
-
-	private createGraphQLGuardResponse(
-		result: AuthGuardResult,
-		meta: GraphQLGuardResponseMeta,
-	): Response {
-		return new Response(
-			JSON.stringify({
-				data: null,
-				errors: [
-					{
-						message: 'Access denied',
-						extensions: {
-							code: 'ACCESS_DENIED',
-							pluginName: result.pluginName,
-							reason: result.reason ?? null,
-							redirectPath: result.redirectPath ?? null,
-							path: meta.path,
-							method: meta.method,
-							operationName: meta.operationName,
-							operations: meta.operations,
-						},
-					},
-				],
-			}),
-			{
-				status: 200,
-				headers: {
-					'cache-control': 'no-store',
-					'content-type': 'application/json; charset=utf-8',
-				},
-			},
-		)
-	}
-
-	private safeParseUrl(input: string): URL | undefined {
-		try {
-			return new URL(input)
-		} catch {
-			return undefined
-		}
 	}
 
 	// -------- GQty 代码生成：防并发、稳态日志 --------

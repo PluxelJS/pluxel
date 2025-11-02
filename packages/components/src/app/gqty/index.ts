@@ -23,6 +23,20 @@ const queryFetcher: QueryFetcher = async ({ query, variables, operationName }, f
 		...fetchOptions,
 	})
 
+	if (response.status === 401 || response.status === 403) {
+		try {
+			const cloned = response.clone()
+			const payload = await cloned.json()
+			const redirectPath = payload?.redirectPath ?? payload?.extensions?.redirectPath
+			if (redirectPath && typeof window !== 'undefined') {
+				window.location.assign(redirectPath)
+			}
+			throw new Error('Access denied')
+		} catch (error) {
+			throw error instanceof Error ? error : new Error('Access denied')
+		}
+	}
+
 	return await defaultResponseHandler(response)
 }
 

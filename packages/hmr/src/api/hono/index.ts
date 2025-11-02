@@ -2,7 +2,6 @@ import { writeFile } from 'node:fs/promises'
 import { Hono } from 'hono'
 import { resolve } from 'pathe'
 import loggerApp from '../../services/logger/api'
-import authApp from './auth'
 import type { AppEnv } from './env'
 import pluginsApp from './plugins'
 
@@ -16,7 +15,6 @@ const app = new Hono<AppEnv>()
 		await writeFile(path, content, 'utf8')
 		return c.json({})
 	})
-	.route('/auth', authApp)
 	.route('/plugins', pluginsApp)
 	.route('/logs', loggerApp)
 	.all('/graphql', (c) => c.var.plugin_ctx.internalGraphql.fetch(c.req.raw, { hono: c } as any))
