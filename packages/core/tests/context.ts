@@ -1,3 +1,3 @@
 import 'reflect-metadata'
 
-export * from '../src/bun'
+export * from '../src/index'
