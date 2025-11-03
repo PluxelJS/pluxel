@@ -7,7 +7,6 @@ import { Injectable, type Context as PlxContext } from '@pluxel/core'
 import type { GraphQLSchema } from 'graphql'
 import { createYoga, type YogaInitialContext } from 'graphql-yoga'
 import * as v from 'valibot'
-import { getAPISchema } from '../../api'
 
 // -------------------- Config (Valibot) --------------------
 const serviceName = 'graphql' as const
@@ -25,13 +24,13 @@ declare module '@pluxel/core' {
 
 interface GraphQLConfig {
 	endpoint: string
-	destination: string
+	destination?: string
 	react: boolean
 	scalarTypes: Record<string, string>
 }
 const _DEFAULT_CONFIG: GraphQLConfig = {
 	endpoint: 'http://localhost:3000/graphql',
-	destination: '../components/src/app/gqty/index.ts',
+	destination: undefined,
 	react: true,
 	scalarTypes: { Number: 'number', Object: 'Record<string, unknown>' },
 }
@@ -61,6 +60,7 @@ export class GraphQLService {
 	// 注册表
 	private readonly modules = new Map<string | symbol, GqlModule>()
 	private readonly globals = new Set<Middleware>()
+	private readonly logger: NonNullable<PlxContext['logger']>
 
 	// 当前 GraphQLSchema（确保类型稳定）
 	private schema: GraphQLSchema = this.weaveSchema()
@@ -76,12 +76,8 @@ export class GraphQLService {
 		private readonly ctx: PlxContext,
 		private config: GraphQLConfig = _DEFAULT_CONFIG,
 	) {
-		this.config = Object.assign(_DEFAULT_CONFIG, config)
-	}
-
-	// 统一 logger（优先 ctx.logger）
-	private get logger() {
-		return this.ctx.logger ?? console
+		this.config = { ..._DEFAULT_CONFIG, ...config }
+		this.logger = ctx.logger!
 	}
 
 	// -------- 对外 API --------
@@ -147,7 +143,7 @@ export class GraphQLService {
 			if (m.middlewares?.length) middlewares.push(...m.middlewares)
 		}
 		// gqloom 的 weave 可以混合放入 Resolver/Middleware；这里显式分组后再展开，便于阅读与调试
-		return weave(ValibotWeaver, ...middlewares, ...resolvers, ...getAPISchema(this.ctx))
+		return weave(ValibotWeaver, ...middlewares, ...resolvers)
 	}
 
 	/** 用当前 schema 创建 Yoga fetch，并注入 HonoService（仅替换函数指针） */
@@ -176,7 +172,8 @@ export class GraphQLService {
 		this.codegenRunning = true
 		try {
 			const cfg = this.config
-			this.logger.info?.('[GQty] Generating client…', { destination: cfg.destination })
+			if (!cfg.destination) return
+			this.logger.info('[GQty] Generating client…', { destination: cfg.destination })
 
 			// generateClient 支持从 schema 直接产出客户端；如需走远端 introspection，可只传 endpoint
 			await generateClient(this.schema, {
@@ -186,9 +183,9 @@ export class GraphQLService {
 				scalarTypes: cfg.scalarTypes,
 			})
 
-			this.logger.info?.('[GQty] Client generated ✔', { destination: cfg.destination })
+			this.logger.info('[GQty] Client generated ✔', { destination: cfg.destination })
 		} catch (e) {
-			this.logger.error?.('[GQty] generateClient failed', e)
+			this.logger.error('[GQty] generateClient failed', e)
 		} finally {
 			this.codegenRunning = false
 		}

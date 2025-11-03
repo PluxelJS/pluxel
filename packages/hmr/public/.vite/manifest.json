@@ -1,6 +1,6 @@
 {
   "../../node_modules/.pnpm/react-ssr-prepass@1.6.0_react@19.2.0/node_modules/react-ssr-prepass/dist/react-ssr-prepass.es.js": {
-    "file": "assets/react-ssr-prepass.es-udEx5avR.js",
+    "file": "assets/react-ssr-prepass.es-Bg44h1vH.js",
     "name": "react-ssr-prepass.es",
     "src": "../../node_modules/.pnpm/react-ssr-prepass@1.6.0_react@19.2.0/node_modules/react-ssr-prepass/dist/react-ssr-prepass.es.js",
     "isDynamicEntry": true,
@@ -8,22 +8,22 @@
       "src/client.tsx"
     ]
   },
-  "../components/src/components/form/DebugValues.tsx": {
-    "file": "assets/DebugValues-DZ0MqVs7.js",
-    "name": "DebugValues",
-    "src": "../components/src/components/form/DebugValues.tsx",
+  "../valibot-form/dist/DebugValues-DgXuMN4k.mjs": {
+    "file": "assets/DebugValues-DgXuMN4k-cZpy9yeX.js",
+    "name": "DebugValues-DgXuMN4k",
+    "src": "../valibot-form/dist/DebugValues-DgXuMN4k.mjs",
     "isDynamicEntry": true,
     "imports": [
       "src/client.tsx"
     ]
   },
   "src/client.tsx": {
-    "file": "assets/client-zyg40GV9.js",
+    "file": "assets/client-CyZrtF7K.js",
     "name": "client",
     "src": "src/client.tsx",
     "isEntry": true,
     "dynamicImports": [
-      "../components/src/components/form/DebugValues.tsx",
+      "../valibot-form/dist/DebugValues-DgXuMN4k.mjs",
       "../../node_modules/.pnpm/react-ssr-prepass@1.6.0_react@19.2.0/node_modules/react-ssr-prepass/dist/react-ssr-prepass.es.js"
     ],
     "css": [

@@ -1,6 +1,5 @@
 import { App, useHydrateCache } from '@pluxel/components'
 import { createRoot, hydrateRoot } from 'react-dom/client'
-import { Router } from 'wouter'
 import '@mantine/core/styles.css'
 import '@mantine/notifications/styles.css'
 
@@ -20,11 +19,7 @@ if (rawCache) {
 function Root({ snapshot }: { snapshot?: any }) {
 	useHydrateCache({ cacheSnapshot: snapshot, shouldRefetch: false })
 
-	return (
-		<Router>
-			<App />
-		</Router>
-	)
+	return <App />
 }
 
 const element = <Root snapshot={cacheSnapshot} />

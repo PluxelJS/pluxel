@@ -18,7 +18,7 @@ export class LoggerService {
 		const fn =
 			((console as any)[level] as (...msgs: unknown[]) => void) ?? console.log.bind(console)
 		// 在最前面插入 [contextName]
-		fn(`[${this.ctx?.pluginInfo?.meta.name ?? 'root'}:${this.ctx.name}]`, ...args)
+		fn(`[${this.ctx?.pluginInfo?.name ?? 'root'}:${this.ctx.name}]`, ...args)
 	}
 
 	trace(...args: unknown[]) {

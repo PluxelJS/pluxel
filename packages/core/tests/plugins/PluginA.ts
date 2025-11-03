@@ -6,7 +6,7 @@ import { PluginB } from './PluginB'
 // biome-ignore lint/style/useImportType: <explanation>
 import { PluginC } from './PluginC'
 
-@Plugin({ name: 'PluginA' })
+@Plugin()
 export class PluginA extends BasePlugin {
 	constructor(public pluginB: PluginB) {
 		super()

@@ -1,6 +1,7 @@
 import { writeFile } from 'node:fs/promises'
 import { Hono } from 'hono'
 import { resolve } from 'pathe'
+import loggerApp from '../../services/logger/api'
 import type { AppEnv } from './env'
 import pluginsApp from './plugins'
 
@@ -15,6 +16,8 @@ const app = new Hono<AppEnv>()
 		return c.json({})
 	})
 	.route('/plugins', pluginsApp)
+	.route('/logs', loggerApp)
+	.all('/graphql', (c) => c.var.plugin_ctx.internalGraphql.fetch(c.req.raw, { hono: c } as any))
 
 export default app
 

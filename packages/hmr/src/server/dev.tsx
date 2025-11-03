@@ -2,7 +2,7 @@ import { ColorSchemeScript } from '@mantine/core'
 import { reactRenderer } from '@hono/react-renderer'
 import { App, prepareReactRender } from '@pluxel/components'
 import { Hono } from 'hono'
-import { Router } from 'wouter'
+import { createMemoryHistory } from '@tanstack/react-router'
 
 import type { AppEnv } from '../services/hono/env'
 import { resolveAssets } from './assets'
@@ -13,13 +13,12 @@ const assets = resolveAssets(false)
 export function createDevRenderer(): RenderHandler {
 	const ssrApp = new Hono<AppEnv>()
 
-	const renderMiddleware = reactRenderer(async ({ c, children }) => {
+	const renderMiddleware = reactRenderer(async ({ c }) => {
 		const url = new URL(c.req.url)
-		const shell = (
-			<Router ssrPath={url.pathname} ssrSearch={url.search.slice(1)}>
-				{children}
-			</Router>
-		)
+		const history = createMemoryHistory({
+			initialEntries: [`${url.pathname}${url.search}`],
+		})
+		const shell = <App history={history} />
 
 		const { cacheSnapshot } = await prepareReactRender(shell)
 

@@ -2,6 +2,7 @@
 export * from '@pluxel/core/service'
 export * from './ConfigService'
 export * from './hmr/HMRService'
+export * from './hono/AuthGuardService'
 export * from './hono/index'
 export * from './loader'
 export * from './logger'

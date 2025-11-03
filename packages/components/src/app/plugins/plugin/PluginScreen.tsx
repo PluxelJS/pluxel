@@ -1,4 +1,14 @@
-import { Button, Card, CardSection, Center, Flex, Skeleton, Stack, Text, useMantineTheme } from '@mantine/core'
+import {
+	Button,
+	Card,
+	CardSection,
+	Center,
+	Flex,
+	Skeleton,
+	Stack,
+	Text,
+	useMantineTheme,
+} from '@mantine/core'
 import { useMediaQuery } from '@mantine/hooks'
 import { memo, useCallback, useMemo } from 'react'
 import type { PluginScope } from '../../gqty'
@@ -7,7 +17,6 @@ import { PluginScopeProvider } from './context'
 import { useDebouncedFlag } from './hooks/useDebouncedFlag'
 import { usePluginConfig } from './hooks/usePluginConfig'
 import { PluginLayout } from './PluginLayout'
-import { toDependencySnapshots } from './utils'
 
 const LEFT_SKELETON_WIDTH = 'clamp(320px, 34vw, 480px)'
 
@@ -94,7 +103,7 @@ function usePluginDetail(pluginName?: string) {
 						scope.name
 						const detail = scope.detail
 						detail.desc
-						detail.dependencies.map((dep) => {
+						detail.dependencies.forEach((dep) => {
 							dep.name
 							dep.isRunning
 						})
@@ -118,7 +127,10 @@ function usePluginDetail(pluginName?: string) {
 
 export const PluginScreen = memo(function PluginScreen({ pluginName }: PluginScreenProps) {
 	const theme = useMantineTheme()
-	const breakpointLg = typeof theme.breakpoints?.lg === 'number' ? `${theme.breakpoints.lg}px` : theme.breakpoints?.lg ?? '62em'
+	const breakpointLg =
+		typeof theme.breakpoints?.lg === 'number'
+			? `${theme.breakpoints.lg}px`
+			: (theme.breakpoints?.lg ?? '62em')
 	const isStacked = useMediaQuery(`(max-width: ${breakpointLg})`, false, {
 		getInitialValueInEffect: true,
 	})
@@ -126,10 +138,7 @@ export const PluginScreen = memo(function PluginScreen({ pluginName }: PluginScr
 	const { scope, ready, error, loading, refetch } = usePluginDetail(pluginName)
 
 	const displayName = scope?.name ?? pluginName
-	const dependencies = useMemo(
-		() => toDependencySnapshots(scope?.detail?.dependencies),
-		[scope?.detail?.dependencies],
-	)
+	const dependencies = scope?.detail?.dependencies ?? []
 	const description = scope?.detail?.desc ?? ''
 	const isRunning = Boolean(scope?.status?.isRunning)
 
@@ -140,8 +149,9 @@ export const PluginScreen = memo(function PluginScreen({ pluginName }: PluginScr
 		await refetch(true)
 	}, [refetch])
 
-	const contextValue = useMemo(
-		() => ({
+	const contextValue = useMemo(() => {
+		if (!scope) return null
+		return {
 			pluginName: displayName,
 			description,
 			scope,
@@ -149,9 +159,8 @@ export const PluginScreen = memo(function PluginScreen({ pluginName }: PluginScr
 			isRunning,
 			isSyncing: syncing,
 			refetch: handleRefetch,
-		}),
-		[dependencies, description, displayName, handleRefetch, isRunning, scope, syncing],
-	)
+		}
+	}, [dependencies, description, displayName, handleRefetch, isRunning, scope, syncing])
 
 	if (!pluginName) {
 		return (
@@ -175,7 +184,7 @@ export const PluginScreen = memo(function PluginScreen({ pluginName }: PluginScr
 	}
 
 	if (!ready) return <PluginSkeleton stacked={Boolean(isStacked)} />
-	if (!scope) return null
+	if (!scope || !contextValue) return null
 
 	return (
 		<PluginScopeProvider value={contextValue}>

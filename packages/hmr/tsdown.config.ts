@@ -31,13 +31,14 @@ export default defineConfig({
 		services: 'src/services/index.ts',
 	},
 	env: {
-		PROD: true,
+		BUILD_OUTPUT: true,
+		PLUXEL_HMR_SSR: false,
 	},
 	dts: {
 		build: true,
 	},
 	// 不要内联 core，未来可能要用来 build。
-	external: ['@pluxel/core'],
+	external: ['@pluxel/core', '@pluxel/core/service'],
 	format: ['esm'],
 	sourcemap: true,
 	clean: true,

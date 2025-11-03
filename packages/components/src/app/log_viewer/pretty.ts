@@ -60,7 +60,7 @@ const hasProcess = typeof process !== 'undefined' && !!(process as any)
 const stdoutTTY = hasProcess && (process as any).stdout && (process as any).stdout.isTTY
 const env = hasProcess ? ((process as any).env ?? {}) : {}
 const NO_COLOR = 'NO_COLOR' in env
-const FORCE = 'FORCE_COLOR' in env ?? true
+const FORCE = 'FORCE_COLOR' in env
 
 const LEVEL_NUM: Record<number, Level> = {
 	10: 'TRACE',
@@ -208,7 +208,7 @@ function getDtf(tz?: string, withMillis = true, withDate = true): Intl.DateTimeF
 	const key = (tz ?? 'local') + '|' + (withMillis ? 'ms' : 's') + '|' + (withDate ? 'd' : 't')
 	let f = dtfCache.get(key)
 	if (!f) {
-		f = new Intl.DateTimeFormat(undefined, {
+		const options: Intl.DateTimeFormatOptions = {
 			timeZone: tz,
 			hour12: false,
 			year: withDate ? 'numeric' : undefined,
@@ -217,8 +217,9 @@ function getDtf(tz?: string, withMillis = true, withDate = true): Intl.DateTimeF
 			hour: '2-digit',
 			minute: '2-digit',
 			second: '2-digit',
-			fractionalSecondDigits: withMillis ? 3 : 0,
-		})
+		}
+		if (withMillis) options.fractionalSecondDigits = 3
+		f = new Intl.DateTimeFormat(undefined, options)
 		dtfCache.set(key, f)
 	}
 	return f

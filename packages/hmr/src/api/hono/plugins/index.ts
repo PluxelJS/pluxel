@@ -12,7 +12,7 @@ export const withPluginMiddleware = createMiddleware<PluginsEnv>(async (c, next)
 	if (!name) {
 		return c.json({ code: 'plugin_not_found', error: 'Name must be provided' }, 403)
 	}
-	const ctor = c.var.plugin_ctx.loader.getPluginClassByName(name)
+	const ctor = c.var.plugin_ctx.loader.resolveRuntimeCtor(name)
 	if (!ctor) {
 		return c.json({ code: 'plugin_not_found', error: 'Plugin not found' }, 404)
 	}

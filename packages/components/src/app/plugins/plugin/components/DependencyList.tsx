@@ -1,28 +1,26 @@
-import { Anchor, Box, Group, Stack, Text } from '@mantine/core'
+import { Badge, Box, Group, Text } from '@mantine/core'
 import type React from 'react'
 import { useMemo } from 'react'
 import { usePluginDependencies } from '../context'
-import type { PluginDependencySnapshot } from '../context'
 
 export interface DependencyListProps {
-	items?: readonly PluginDependencySnapshot[] | null
 	LinkComponent?: React.ElementType<{ to: string; children: React.ReactNode }>
 }
 
-const EMPTY_LIST: readonly PluginDependencySnapshot[] = Object.freeze([])
-
-export function DependencyList({
-	items,
-	LinkComponent,
-}: DependencyListProps) {
+export function DependencyList({ LinkComponent }: DependencyListProps) {
 	const contextDeps = usePluginDependencies()
 
 	const entries = useMemo(() => {
-		const source = items ?? contextDeps
-		return source?.length ? source : EMPTY_LIST
-	}, [contextDeps, items])
+		const map = new Map<string, { name: string; isRunning?: boolean }>()
+		for (const dep of contextDeps ?? []) {
+			const name = dep.name?.trim()
+			if (!name || map.has(name)) continue
+			map.set(name, { name, isRunning: dep.isRunning ?? undefined })
+		}
+		return [...map.values()]
+	}, [contextDeps])
 
-	if (!entries.length) {
+	if (entries.length === 0) {
 		return (
 			<Text size="sm" c="dimmed">
 				暂无依赖项
@@ -31,63 +29,51 @@ export function DependencyList({
 	}
 
 	return (
-		<Stack gap={2}>
-			{entries.map((dep, idx) => {
-				const key = dep.name || idx
-				const palette = dep.optional ? 'yellow' : 'blue'
+		<Group gap={8} wrap="wrap" align="center">
+			{entries.map((dep) => {
+				const color = dep.isRunning ? 'green' : 'yellow'
+				const dot = (
+					<Box
+						component="span"
+						style={{
+							width: 6,
+							height: 6,
+							borderRadius: '50%',
+							background: `var(--mantine-color-${color}-6)`,
+						}}
+					/>
+				)
+
 				if (!LinkComponent) {
 					return (
-						<Group key={key} gap={6} wrap="nowrap" align="center">
-							<Box
-								component="span"
-								style={{
-									width: 6,
-									height: 6,
-									borderRadius: '50%',
-									background: `var(--mantine-color-${palette}-6)`,
-								}}
-							/>
-							<Text span size="sm" fw={500} c={`${palette}.8`}>
-								{dep.name}
-							</Text>
-							{dep.optional && (
-								<Text span size="xs" c="yellow.8">
-									(可选)
-								</Text>
-							)}
-						</Group>
+						<Badge
+							key={dep.name}
+							variant="light"
+							color={color}
+							leftSection={dot}
+							radius="sm"
+							size="sm"
+						>
+							{dep.name}
+						</Badge>
 					)
 				}
 				return (
-					<Anchor
-						key={key}
+					<Badge
+						key={dep.name}
+						variant="light"
+						color={color}
 						component={LinkComponent as any}
-						to={dep.name}
+						to={`/plugins/${encodeURIComponent(dep.name)}`}
+						leftSection={dot}
+						radius="sm"
 						size="sm"
-						c={`${palette}.7`}
-						underline="never"
-						style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}
+						style={{ textDecoration: 'none' }}
 					>
-						<Box
-							component="span"
-							style={{
-								width: 6,
-								height: 6,
-								borderRadius: '50%',
-								background: `var(--mantine-color-${palette}-6)`,
-							}}
-						/>
-						<Text span size="sm" fw={500} c={`${palette}.8`}>
-							{dep.name}
-						</Text>
-						{dep.optional && (
-							<Text span size="xs" c="yellow.8">
-								(可选)
-							</Text>
-						)}
-					</Anchor>
+						{dep.name}
+					</Badge>
 				)
 			})}
-		</Stack>
+		</Group>
 	)
 }

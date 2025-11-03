@@ -32,7 +32,7 @@ describe('LoggerService', () => {
 
 	it('uses plugin metadata name when available', () => {
 		const ctx = new Context({ name: 'plugin-test' })
-		ctx.pluginInfo = { meta: { name: 'PluginX' } } as any
+		ctx.pluginInfo = { name: 'PluginX' } as any
 		const warnSpy = spyOn(console, 'warn')
 		remember(() => warnSpy.mockRestore())
 

@@ -1,20 +1,14 @@
 // context.tsx
 import type React from 'react'
 import { createContext, useContext } from 'react'
-import type { PluginScope, Query } from '../../gqty'
+import type { PluginDependency, PluginScope, Query } from '../../gqty'
 import { schema } from '../../gqty'
-
-export type PluginDependencySnapshot = {
-	name: string
-	optional: boolean
-	isRunning: boolean
-}
 
 export interface PluginScopeContextValue {
 	pluginName: string
 	description: string
 	scope: PluginScope
-	dependencies: readonly PluginDependencySnapshot[]
+	dependencies: readonly PluginDependency[]
 	isRunning: boolean
 	isSyncing: boolean
 	refetch: () => Promise<void>
@@ -36,7 +30,8 @@ export function PluginScopeProvider({
 	const withWrite: PluginScopeContextValue = {
 		...value,
 		write:
-			value.write ?? ((fn) => {
+			value.write ??
+			((fn) => {
 				// 默认透传根查询代理，便于外部原子写入缓存
 				fn(schema.query)
 			}),

@@ -1,4 +1,4 @@
-import { Config, f, v } from './config'
+import { f, v } from 'valibot-form'
 export const test1 = v.object({
 	id: v.pipe(
 		v.number(),

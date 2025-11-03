@@ -37,7 +37,7 @@ import type { JSX } from 'react/jsx-runtime'
 import { type GroupConfig, PluginOrganizer, type PluginStatuses } from '../../components'
 import { type PluginGroup, type PluginStatusEntry, useQuery } from '../gqty'
 import { client } from '../rpc'
-import { WouterLinkAdapter } from '../WouterLinkAdapter'
+import { RouterLinkAdapter } from '../RouterLinkAdapter'
 
 interface PluginListProps {
 	pluginName?: string
@@ -165,8 +165,8 @@ export const PluginList: React.FC<PluginListProps> = ({ pluginName }) => {
 
 	// —— 数据源 —— //
 	const [draftGroups, setDraftGroups] = useState<GroupConfig[] | null>(null)
-	const [syncing, _setSyncingg] = useState(false)
 	const lastSyncedRef = useRef<GroupConfig[]>([])
+	const [hasLoadedOnce, setHasLoadedOnce] = useState(false)
 
 	const query = useQuery({
 		suspense: false,
@@ -201,12 +201,19 @@ export const PluginList: React.FC<PluginListProps> = ({ pluginName }) => {
 		}
 	}, [draftGroups, overview.groups])
 
+	useEffect(() => {
+		if (!query.$state.isLoading && !query.$state.error) {
+			setHasLoadedOnce(true)
+		}
+	}, [query.$state.error, query.$state.isLoading])
+
 	const handleGroupsChange = useCallback((next: GroupConfig[]) => {
 		client.plugins.groups.$post({ json: next })
 	}, [])
 
 	// —— 视图渲染 —— //
-	const loading = query.$state.isLoading
+	const loading = !hasLoadedOnce && query.$state.isLoading
+	const syncing = hasLoadedOnce && query.$state.isLoading
 	const errorMessage = query.$state.error?.message
 	const filterQuery = deferredSearch
 	const groupsForView = draftGroups ?? overview.groups
@@ -237,15 +244,15 @@ export const PluginList: React.FC<PluginListProps> = ({ pluginName }) => {
 		content = <Text c="dimmed">暂无插件</Text>
 	} else {
 		content = (
-			<PluginOrganizer
-				statuses={overview.statuses}
-				initialGroups={groupsForView}
-				activeId={pluginName}
-				onGroupsChange={handleGroupsChange}
-				filterQuery={filterQuery}
-				LinkComponent={WouterLinkAdapter}
-				locked={syncing}
-			/>
+				<PluginOrganizer
+					statuses={overview.statuses}
+					initialGroups={groupsForView}
+					activeId={pluginName}
+					onGroupsChange={handleGroupsChange}
+					filterQuery={filterQuery}
+					LinkComponent={RouterLinkAdapter}
+					locked={syncing}
+				/>
 		)
 	}
 

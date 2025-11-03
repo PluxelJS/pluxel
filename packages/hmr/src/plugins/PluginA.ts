@@ -1,5 +1,5 @@
 import { BasePlugin, Plugin } from '@pluxel/hmr'
-import { Config, v } from './config'
+import { Config } from './config'
 // PluginA.ts
 // PluginA 依赖 PluginB 为必选依赖，依赖 PluginC 为可选依赖
 // biome-ignore lint/style/useImportType: <PluginSystem>
@@ -8,7 +8,6 @@ import { PluginB } from './PluginB'
 import { PluginC } from './PluginC'
 import { test1 } from './testconfig'
 
-export const a = v.object({ name: v.array(v.picklist(['a', 'b'])) })
 @Plugin({ name: 'PluginA', type: 'event' })
 export class PluginA extends BasePlugin {
 	private pluginC?: PluginC
