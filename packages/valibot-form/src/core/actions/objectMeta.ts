@@ -1,16 +1,14 @@
-import type { BaseMetadata } from 'valibot'
-import type { CheckMetaType } from '~/utils'
+import { createMetadataFactory, type MetadataAction } from '~/core/utils/metaFactories'
 
 export interface ObjectMetaOptions {
 	collapse?: true
 }
 
-export interface objectMetaAction<TInput extends object, TMetadata extends ObjectMetaOptions>
-	extends BaseMetadata<TInput> {
-	readonly type: CheckMetaType<'object'>
-	readonly reference: typeof objectMeta
-	readonly metadata: TMetadata
-}
+export type objectMetaAction<TInput extends object, TMetadata extends ObjectMetaOptions> = MetadataAction<
+	'object',
+	TInput,
+	TMetadata
+>
 
 /**
  * 一次性定义多种 string 状态
@@ -21,13 +19,4 @@ export interface objectMetaAction<TInput extends object, TMetadata extends Objec
  *     objectMeta({ secret: true, copyable: true, placeholder: '请输入...' })
  *   )
  */
-export function objectMeta<TInput extends object, const TMetadata extends ObjectMetaOptions>(
-	metadata_: TMetadata,
-): objectMetaAction<TInput, TMetadata> {
-	return {
-		kind: 'metadata',
-		type: 'object',
-		reference: objectMeta,
-		metadata: metadata_,
-	}
-}
+export const objectMeta = createMetadataFactory<'object', object>('object')

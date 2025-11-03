@@ -22,6 +22,7 @@ export const META_MAP = {
 
 export type MetaType = (typeof META_MAP)[keyof typeof META_MAP]
 export type CheckMetaType<T extends MetaType> = T
+export type ExtractableMetaType = Exclude<MetaType, 'form' | 'object'>
 
 // 3. 同样的「值→返回类型」映射接口
 export interface MetaReturnMap {

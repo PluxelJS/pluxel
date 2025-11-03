@@ -1,37 +1,30 @@
-import {
-	extractArrayProps,
-	extractBooleanProps,
-	extractNumberProps,
-	extractPicklistProps,
-	extractRecordProps,
-	extractStringProps,
-} from '../actions'
-import type { MetaType } from './MetaType'
-
-export function buildRendererMap<T extends Partial<{ [K in MetaType]: (schema: any) => any }>>(
-	extractors: T & Record<Exclude<keyof T, MetaType>, never>,
-) {
-	const result: { [K in keyof T]: { type: K; extract: T[K] } } = {} as any
-	for (const key of Object.keys(extractors) as Array<keyof T>) {
-		result[key] = {
-			type: key, // K 本身就已经被约束为 MetaType
-			extract: extractors[key]!,
-		}
-	}
-	return result
+import { extractArrayProps } from '../actions/array/arrayExtractor'
+import { extractBooleanProps } from '../actions/boolean/booleanExtractor'
+import { extractNumberProps } from '../actions/number/numberExtractor'
+import { extractPicklistProps } from '../actions/picklist/picklistExtractor'
+import { extractRecordProps } from '../actions/record/recordExtractor'
+import { extractStringProps } from '../actions/string/stringExtractor'
+import type { ExtractableMetaType } from './MetaType'
+const extractors = {
+	string: { type: 'string', extract: extractStringProps },
+	number: { type: 'number', extract: extractNumberProps },
+	boolean: { type: 'boolean', extract: extractBooleanProps },
+	picklist: { type: 'picklist', extract: extractPicklistProps },
+	array: { type: 'array', extract: extractArrayProps },
+	record: { type: 'record', extract: extractRecordProps },
+} as const satisfies {
+	string: { type: ExtractableMetaType; extract: typeof extractStringProps }
+	number: { type: ExtractableMetaType; extract: typeof extractNumberProps }
+	boolean: { type: ExtractableMetaType; extract: typeof extractBooleanProps }
+	picklist: { type: ExtractableMetaType; extract: typeof extractPicklistProps }
+	array: { type: ExtractableMetaType; extract: typeof extractArrayProps }
+	record: { type: ExtractableMetaType; extract: typeof extractRecordProps }
 }
 
-// 用法：
-// TypeScript 会检查：
-// - 只能传 MetaType 里的键（string/number/...）
-// - 对应的 extract 函数签名，其参数类型必须正好是 MetaReturnMap[该键]
-export const extractMap = buildRendererMap({
-	string: extractStringProps,
-	number: extractNumberProps,
-	boolean: extractBooleanProps,
-	picklist: extractPicklistProps,
-	array: extractArrayProps,
-	record: extractRecordProps,
-})
-
+export const extractMap = extractors
 export type ExtractMap = typeof extractMap
+export type ExtractableType = keyof ExtractMap
+
+export function isExtractableType(type: unknown): type is ExtractableType {
+	return typeof type === 'string' && type in extractMap
+}

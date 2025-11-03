@@ -1,8 +1,16 @@
 import type { OptionalSchema } from 'valibot'
 import type { FormMeta } from './actions'
-import { type ExtractMap, extractMap, getFormMeta, META_MAP, type Schema } from './utils'
+import {
+	type ExtractMap,
+	extractMap,
+	getFormMeta,
+	isExtractableType,
+	META_MAP,
+	type Schema,
+} from './utils'
 export type FormBaseInfo = FormMeta & { required: boolean }
 export type ExtractedProps<T extends keyof ExtractMap> = ReturnType<ExtractMap[T]['extract']>
+type ExtractSchemaArg<T extends keyof ExtractMap> = Parameters<ExtractMap[T]['extract']>[0]
 export function extractInfo(schema: Schema, defaults: FormMeta) {
 	const formMeta = getFormMeta(schema, META_MAP.FORM) ?? defaults
 
@@ -14,10 +22,10 @@ export function extractInfo(schema: Schema, defaults: FormMeta) {
 		schema = optionalSchema.wrapped
 	}
 
-	if (schema.type in extractMap === false) return undefined
-	const schemaType = schema.type as keyof ExtractMap
+	if (!isExtractableType(schema.type)) return undefined
+	const schemaType = schema.type
 	const { extract, type } = extractMap[schemaType]
 
-	const props = extract(schema as any) as ExtractedProps<any>
+	const props = extract(schema as ExtractSchemaArg<typeof schemaType>) as ExtractedProps<typeof schemaType>
 	return { props, formInfo, type }
 }
