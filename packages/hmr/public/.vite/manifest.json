@@ -1,6 +1,6 @@
 {
   "../../node_modules/.pnpm/react-ssr-prepass@1.6.0_react@19.2.0/node_modules/react-ssr-prepass/dist/react-ssr-prepass.es.js": {
-    "file": "assets/react-ssr-prepass.es-CT-8Utb8.js",
+    "file": "assets/react-ssr-prepass.es-Bg44h1vH.js",
     "name": "react-ssr-prepass.es",
     "src": "../../node_modules/.pnpm/react-ssr-prepass@1.6.0_react@19.2.0/node_modules/react-ssr-prepass/dist/react-ssr-prepass.es.js",
     "isDynamicEntry": true,
@@ -9,7 +9,7 @@
     ]
   },
   "../valibot-form/dist/DebugValues-DgXuMN4k.mjs": {
-    "file": "assets/DebugValues-DgXuMN4k-9V0YLFJr.js",
+    "file": "assets/DebugValues-DgXuMN4k-cZpy9yeX.js",
     "name": "DebugValues-DgXuMN4k",
     "src": "../valibot-form/dist/DebugValues-DgXuMN4k.mjs",
     "isDynamicEntry": true,
@@ -18,7 +18,7 @@
     ]
   },
   "src/client.tsx": {
-    "file": "assets/client-12LcJwsM.js",
+    "file": "assets/client-CyZrtF7K.js",
     "name": "client",
     "src": "src/client.tsx",
     "isEntry": true,

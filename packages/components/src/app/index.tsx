@@ -1,22 +1,22 @@
 import { Center, MantineProvider, Text } from '@mantine/core'
 import { ModalsProvider } from '@mantine/modals'
 import { Notifications } from '@mantine/notifications'
-import { useState } from 'react'
 import {
-	Outlet,
-	RouterProvider,
 	createBrowserHistory,
 	createMemoryHistory,
+	createRootRoute,
 	createRoute,
 	createRouter,
-	createRootRoute,
+	Outlet,
+	type RouterHistory,
+	RouterProvider,
 	redirect,
 	useRouterState,
-	type AnyHistory,
 } from '@tanstack/react-router'
+import { useState } from 'react'
 import { Layout, type NavItem } from '../components'
-import { Header } from './Header'
 import { ClientOnly } from './ClientOnly'
+import { Header } from './Header'
 import { LiveLog } from './log_viewer/LiveLog'
 import { Plugin } from './plugins/Plugin'
 import { PluginsLayout } from './plugins/PluginsLayout'
@@ -31,22 +31,22 @@ const navItems: NavItem[] = [
 function RootAppLayout() {
 	const pathname = useRouterState({ select: (state) => state.location.pathname })
 
-		return (
-			<MantineProvider withGlobalClasses={false} deduplicateCssVariables={false}>
-				<ModalsProvider>
-					<Notifications position="top-center" />
-					<Layout
-						header={({ toggle }) => <Header onMenu={toggle} />}
-						navItems={navItems}
-						LinkComponent={RouterLinkAdapter}
-						currentPath={pathname}
-						footerHeight={0}
-					>
-						<Outlet />
-					</Layout>
-				</ModalsProvider>
-			</MantineProvider>
-		)
+	return (
+		<MantineProvider withGlobalClasses={false} deduplicateCssVariables={false}>
+			<ModalsProvider>
+				<Notifications position="top-center" />
+				<Layout
+					header={({ toggle }) => <Header onMenu={toggle} />}
+					navItems={navItems}
+					LinkComponent={RouterLinkAdapter}
+					currentPath={pathname}
+					footerHeight={0}
+				>
+					<Outlet />
+				</Layout>
+			</ModalsProvider>
+		</MantineProvider>
+	)
 }
 
 function PluginsRouteComponent() {
@@ -121,10 +121,10 @@ const routeTree = rootRoute.addChildren([
 ])
 
 export interface AppProps {
-	history?: AnyHistory
+	history?: RouterHistory
 }
 
-export function createAppRouter(options: { history?: AnyHistory } = {}) {
+export function createAppRouter(options: { history?: RouterHistory } = {}) {
 	const history =
 		options.history ??
 		(typeof window !== 'undefined' ? createBrowserHistory() : createMemoryHistory())

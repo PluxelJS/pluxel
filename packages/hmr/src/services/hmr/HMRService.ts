@@ -132,7 +132,7 @@ export class HMRService {
 				react: { runtime: 'automatic', refresh: true },
 			},
 		},
-	})
+	}) as Plugin
 
 	private plugin!: Plugin
 
@@ -366,8 +366,17 @@ export class HMRService {
 				this.ctx.honoService.viteHonoDevServer,
 			],
 			// ✅ 真正禁用依赖预优化，以免 graph 形变
-			optimizeDeps: { disabled: true },
-			ssr: { external: ['react', 'react-dom', '@pluxel/core', '@pluxel/core/service'] },
+			optimizeDeps: {
+				force: true, // 避免某些场景下跳过预优化
+				include: ['react', 'react-dom', 'react/jsx-runtime', 'react-dom/client'],
+				// 某些 CJS 包需要命名导出映射时的兜底（视实际需要开启）
+				needsInterop: ['react', 'react-dom'],
+			},
+			ssr: {
+				// 避免把 react/react-dom external 掉，交给 Vite 处理更一致
+				noExternal: ['react', 'react-dom'],
+				external: ['@pluxel/core', '@pluxel/core/service'], // 只保留你必须 external 的
+			},
 		})
 		await server.listen()
 		server.printUrls()

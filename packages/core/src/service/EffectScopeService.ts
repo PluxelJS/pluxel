@@ -1,5 +1,5 @@
 import { type Context, Injectable } from '@pluxel/context'
-import { type PluginIdentifier, resolvePluginRoot } from '../plugin'
+import type { PluginIdentifier } from '../plugin'
 
 const serviceName = 'scope' as const
 declare module '@pluxel/context' {
@@ -48,10 +48,6 @@ export class EffectScopeService {
 				console.error('[EffectScopeService] dispose error:', error)
 			}
 		}
-	}
-
-	get(plugin: PluginIdentifier) {
-		return this.ctx.registry.pluginRegistry.lastContainer.getMaybe(resolvePluginRoot(plugin))
 	}
 
 	dispose(plugin: PluginIdentifier) {

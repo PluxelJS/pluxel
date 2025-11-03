@@ -96,6 +96,7 @@ export class LoaderService {
 		return this.registry.getLoadedNames()
 	}
 
+	// 由于 HMR 的存在，普通运行时可能会缓存另一个 ctor 而不用vite内部缓存，通过调用该函数可以返回 HMR 那个。
 	resolveRuntimeCtor(target: PluginConstructor | string): PluginConstructor | undefined {
 		if (typeof target === 'string') return this.registry.getPluginByName(target)
 		const { name } = getPluginInfo(target)
@@ -131,12 +132,12 @@ export class LoaderService {
 			.filter(Boolean) as Array<{ name: string; isRunning: boolean }>
 	}
 
-	getPluginClassByName(name: string) {
-		return this.registry.getPluginByName(name)
-	}
-	getPluginSchema(ctor: PluginConstructor) {
+	getPluginSchema(target: PluginConstructor | string) {
+		const ctor = this.resolveRuntimeCtor(target)
+		if (ctor === undefined) return
 		return this.registry.getSchema(ctor)
 	}
+
 	buildSnapshot(): string {
 		return buildSnapshotSource({
 			ctx: this.ctx,
