@@ -1,14 +1,12 @@
 // string/stringMeta.ts
-import type { BaseMetadata } from 'valibot'
-import type { CheckMetaType } from '~/core'
+import { createMetadataFactory, type MetadataAction } from '~/core/utils/metaFactories'
 import type { StringMetaOptions } from './type'
 
-export interface stringMetaAction<TInput extends string, TMetadata extends StringMetaOptions>
-	extends BaseMetadata<TInput> {
-	readonly type: CheckMetaType<'string'>
-	readonly reference: typeof stringMeta
-	readonly metadata: TMetadata
-}
+export type stringMetaAction<TInput extends string, TMetadata extends StringMetaOptions> = MetadataAction<
+	'string',
+	TInput,
+	TMetadata
+>
 
 /**
  * 一次性定义多种 string 状态
@@ -19,13 +17,4 @@ export interface stringMetaAction<TInput extends string, TMetadata extends Strin
  *     stringMeta({ secret: true, copyable: true, placeholder: '请输入...' })
  *   )
  */
-export function stringMeta<TInput extends string, const TMetadata extends StringMetaOptions>(
-	metadata_: TMetadata,
-): stringMetaAction<TInput, TMetadata> {
-	return {
-		kind: 'metadata',
-		type: 'string',
-		reference: stringMeta,
-		metadata: metadata_,
-	}
-}
+export const stringMeta = createMetadataFactory<'string', string>('string')

@@ -1,25 +1,8 @@
 // picklist/picklistMeta.ts
-import type { BaseMetadata } from 'valibot'
-import type { CheckMetaType } from '~/utils'
+import { createMetadataFactory, type MetadataAction } from '~/core/utils/metaFactories'
 import type { PicklistMetaOptions } from './type'
 
-export interface picklistMetaAction<
-	TInput extends string | number,
-	TMetadata extends PicklistMetaOptions,
-> extends BaseMetadata<TInput> {
-	readonly type: CheckMetaType<'picklist'>
-	readonly reference: typeof picklistMeta
-	readonly metadata: TMetadata
-}
+export type picklistMetaAction<TInput extends string | number, TMetadata extends PicklistMetaOptions> =
+	MetadataAction<'picklist', TInput, TMetadata>
 
-export function picklistMeta<
-	TInput extends string | number,
-	const TMetadata extends PicklistMetaOptions,
->(metadata_: TMetadata): picklistMetaAction<TInput, TMetadata> {
-	return {
-		kind: 'metadata',
-		type: 'picklist',
-		reference: picklistMeta,
-		metadata: metadata_,
-	}
-}
+export const picklistMeta = createMetadataFactory<'picklist', string | number>('picklist')

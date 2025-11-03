@@ -2,6 +2,7 @@ import * as v from 'valibot'
 import { describe, expect, it } from 'vitest'
 import { arrayMeta } from '~/core/actions/array'
 import { booleanMeta } from '~/core/actions/boolean'
+import { numberMeta } from '~/core/actions/number'
 import { picklistMeta } from '~/core/actions/picklist'
 import { recordMeta } from '~/core/actions/record'
 import { stringMeta } from '~/core/actions/string'
@@ -39,6 +40,41 @@ describe('extractInfo', () => {
 		const info = extractInfo(optionalSchema, { title: '是否接受条款' })
 		expect(info?.type).toBe(META_MAP.BOOLEAN)
 		expect(info?.formInfo.required).toBe(false)
+	})
+
+	it('falls back to provided defaults when no form metadata exists', () => {
+		const schema = v.pipe(v.string())
+
+		const info = extractInfo(schema, {
+			title: '用户名',
+			description: '用于登录的名称',
+		})
+
+		expect(info?.formInfo.title).toBe('用户名')
+		expect(info?.formInfo.description).toBe('用于登录的名称')
+		expect(info?.formInfo.required).toBe(true)
+	})
+
+	it('merges number validations into meta options', () => {
+		const schema = v.pipe(
+			v.number(),
+			v.integer(),
+			v.minValue(1),
+			v.maxValue(5),
+			numberMeta({
+				type: 'input',
+				options: { step: 2 },
+			}),
+		)
+
+		const info = extractInfo(schema, { title: '数量' })
+
+		expect(info?.type).toBe(META_MAP.NUMBER)
+		expect(info?.props.type).toBe('input')
+		expect(info?.props.options.integer).toBe(true)
+		expect(info?.props.options.min).toBe(1)
+		expect(info?.props.options.max).toBe(5)
+		expect(info?.props.options.step).toBe(2)
 	})
 
 	it('supports array meta defaults', () => {
@@ -90,5 +126,10 @@ describe('extractInfo', () => {
 		expect(info?.type).toBe(META_MAP.RECORD)
 		expect(info?.props.addable).toBe(true)
 		expect(info?.props.valueMode).toBe('number')
+	})
+
+	it('returns undefined for unsupported schema types', () => {
+		const info = extractInfo(v.literal('固定值'), { title: '常量' })
+		expect(info).toBeUndefined()
 	})
 })
