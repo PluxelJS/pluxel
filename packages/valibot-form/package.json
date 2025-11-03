@@ -3,22 +3,16 @@
 	"name": "valibot-form",
 	"version": "0.1.0",
 	"description": "Demo example that imports a local package",
-	"main": "./src/index.ts",
+	"main": "./dist/index.mjs",
 	"module": "./dist/index.mjs",
-	"types": "./dist/index.d.cts",
+	"types": "./dist/index.d.mts",
 	"exports": {
 		".": {
 			"@pluxel/source": "./src/index.ts",
-			"import": "./dist/index.mjs",
-			"require": "./dist/index.cjs",
-			"types": "./dist/index.d.ts",
 			"default": "./dist/index.mjs"
 		},
 		"./web": {
 			"@pluxel/source": "./src/web/index.ts",
-			"import": "./dist/web.mjs",
-			"require": "./dist/web.cjs",
-			"types": "./dist/web.d.ts",
 			"default": "./dist/web.mjs"
 		},
 		"./package.json": "./package.json"
@@ -60,5 +54,12 @@
 		"vite": "^7.1.12",
 		"vite-tsconfig-paths": "^5.1.4",
 		"vitest": "^3.2.4"
+	},
+	"publishConfig": {
+		"exports": {
+			".": "./dist/index.mjs",
+			"./web": "./dist/web.mjs",
+			"./package.json": "./package.json"
+		}
 	}
 }

@@ -1,13 +1,14 @@
 import { defineConfig } from 'tsdown'
 
 export default defineConfig({
+	exports: {
+		devExports: '@pluxel/source',
+	},
 	entry: {
 		index: './src/index.ts',
 		web: './src/web/index.ts',
 	},
-	alias: {
-		
-	},
+	alias: {},
 	dts: {
 		sourcemap: true,
 	},
