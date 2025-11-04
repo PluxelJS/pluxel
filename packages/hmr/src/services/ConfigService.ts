@@ -1,7 +1,6 @@
 import { readFileSync } from 'node:fs'
 import fs from 'node:fs/promises'
-import { tmpdir } from 'node:os'
-import { join as joinPath } from 'node:path'
+import { join as joinPath, dirname, basename, resolve } from 'node:path'
 import { type Context, Injectable } from '@pluxel/core'
 import { debounce } from '@tanstack/pacer'
 import chokidar, { type FSWatcher } from 'chokidar'
@@ -42,17 +41,18 @@ export class ConfigService {
 
 	constructor(private ctx: Context) {
 		const file = ctx.config.path ?? 'default.json'
-		this.filePath = file
-		this.loadFromDisk(file)
-		this.saveDebounced = debounce(() => this.saveToDisk(file), { wait: 200 })
+		const resolvedFile = resolve(file)
+		this.filePath = resolvedFile
+		this.loadFromDisk(resolvedFile)
+		this.saveDebounced = debounce(() => this.saveToDisk(resolvedFile), { wait: 200 })
 
 		this.watcher = chokidar
-			.watch(file, {
+			.watch(resolvedFile, {
 				ignoreInitial: true,
 				// 防止编辑器“分块写”引发多次触发
 				awaitWriteFinish: { stabilityThreshold: 100, pollInterval: 50 },
 			})
-			.on('change', () => this.onDiskChange(file))
+			.on('change', () => this.onDiskChange(resolvedFile))
 	}
 
 	// —— I/O 层 —— //
@@ -85,14 +85,26 @@ export class ConfigService {
 	private async saveToDisk(file: string) {
 		if (this.batching > 0) return // 事务中，先不写；提交时会统一触发
 		this.writingNow = true
+		const targetDir = dirname(file)
+		const base = basename(file)
+		const tmp = joinPath(
+			targetDir,
+			`.${base}.${Date.now()}.${Math.random().toString(36).slice(2)}.tmp`,
+		)
 		try {
+			await fs.mkdir(targetDir, { recursive: true })
 			const content = SuperJSON.stringify(this.data)
-			const tmp = joinPath(
-				tmpdir(),
-				`.cfg.${Date.now()}.${Math.random().toString(36).slice(2)}.json`,
-			)
 			await fs.writeFile(tmp, content, 'utf-8')
 			await fs.rename(tmp, file)
+		} catch (err) {
+			const code = (err as NodeJS.ErrnoException)?.code
+			if (code === 'EXDEV') {
+				await fs.copyFile(tmp, file)
+				await fs.rm(tmp, { force: true }).catch(() => {})
+			} else {
+				await fs.rm(tmp, { force: true }).catch(() => {})
+				throw err
+			}
 		} finally {
 			// 小幅延迟，给文件系统时间完成元数据刷新，避免极端条件下的回跳
 			setTimeout(() => {

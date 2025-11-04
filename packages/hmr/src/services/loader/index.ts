@@ -8,7 +8,7 @@ import {
 	type PluginConstructor,
 } from '@pluxel/core'
 import { buildSnapshot as buildSnapshotSource } from './buildSnapshot'
-import { PluginRegistry } from './PluginRegistry'
+import { PluginRegistry, type PluginLifecycleSnapshot, type PluginLifecycleStage } from './PluginRegistry'
 
 // moduleId：一般指路径，一个文件可以有多个插件 ctor。
 // config persisted 在 PluginRegistry 是在内核 this.ctx.registry 上的包装，让它和 moduleId 能联系起来。
@@ -111,16 +111,23 @@ export class LoaderService {
 
 	getFullPluginStatus() {
 		const loaded = this.registry.names
-		const statuses: Record<string, { id: string; isRunning: boolean }> = Object.create(null)
+		const statuses: Record<string, PluginLifecycleSnapshot> = Object.create(null)
 		let running = 0
 		let stopped = 0
+		let disabled = 0
 		for (const [name, ctor] of loaded) {
 			const isRunning = this.isRunning(ctor)
-			statuses[name] = { id: name, isRunning }
-			if (isRunning) running++
+			const isEnabled = this.ctx.configService.isEnable(name)
+			const lifecycleStage = this.deriveLifecycleStage(isRunning, isEnabled)
+			statuses[name] = { id: name, isRunning, isEnabled, lifecycleStage }
+			if (!isEnabled) disabled++
+			else if (isRunning) running++
 			else stopped++
 		}
-		return { statuses, summary: { total: running + stopped, running, stopped } }
+		return {
+			statuses,
+			summary: { total: running + stopped + disabled, running, stopped, disabled },
+		}
 	}
 
 	getPluginDependenciesInfo(ctor: PluginConstructor) {
@@ -144,5 +151,13 @@ export class LoaderService {
 			registry: this.registry,
 			isRunning: (target) => this.isRunning(target),
 		})
+	}
+
+	private deriveLifecycleStage(
+		isRunning: boolean,
+		isEnabled: boolean,
+	): PluginLifecycleStage {
+		if (!isEnabled) return 'disabled'
+		return isRunning ? 'running' : 'stopped'
 	}
 }

@@ -1,11 +1,15 @@
 // ActionBar.tsx
 
-import { ActionIcon, Group, Tooltip } from '@mantine/core'
+import { ActionIcon, Group, Switch, Tooltip } from '@mantine/core'
 import { openConfirmModal } from '@mantine/modals'
 import { notifications } from '@mantine/notifications'
 import { IconPlayerPlay, IconRotateClockwise, IconSquareX } from '@tabler/icons-react'
 import { useCallback, useRef } from 'react'
-import { UpdatePluginStatusStatusInput, useMutation as useGqtyMutation } from '../../../gqty'
+import {
+	PluginStatusEntryLifecycleStage,
+	UpdatePluginStatusStatusInput,
+	useMutation as useGqtyMutation,
+} from '../../../gqty'
 import { usePluginScope } from '../context'
 
 export interface ActionBarProps {
@@ -16,10 +20,20 @@ const ACTION_LABEL: Record<UpdatePluginStatusStatusInput, string> = {
 	start: '启动',
 	stop: '终止',
 	restart: '重启',
+	enable: '启用',
+	disable: '禁用',
 }
 
 export function ActionBar({ onStatusUpdated }: ActionBarProps) {
-	const { pluginName, dependencies, isRunning, isSyncing, refetch, write } = usePluginScope()
+	const {
+		pluginName,
+		dependencies,
+		isRunning,
+		isEnabled,
+		isSyncing,
+		refetch,
+		write,
+	} = usePluginScope()
 
 	// 乱序防护：只接受最后一次操作的结果
 	const seqRef = useRef(0)
@@ -32,6 +46,8 @@ export function ActionBar({ onStatusUpdated }: ActionBarProps) {
 			result.code
 			result.error
 			result.isRunning
+			result.isEnabled
+			result.lifecycleStage
 			return result
 		},
 		{ suspense: false },
@@ -43,14 +59,33 @@ export function ActionBar({ onStatusUpdated }: ActionBarProps) {
 			write((q) => {
 				const p = q.plugin({ name: pluginName })
 				if (!p) return
-				// 同步至缓存中的运行态（仅本地）
-				if (status === 'start') {
-					p.status.isRunning = true
-				} else if (status === 'stop') {
-					p.status.isRunning = false
-				} else {
-					// restart
-					p.status.isRunning = true
+				const currentEnabled = Boolean(p.status.isEnabled)
+				switch (status) {
+						case UpdatePluginStatusStatusInput.start:
+						case UpdatePluginStatusStatusInput.restart:
+							p.status.isRunning = true
+							p.status.isEnabled = true
+							p.status.lifecycleStage = PluginStatusEntryLifecycleStage.running
+							break
+						case UpdatePluginStatusStatusInput.stop:
+							p.status.isRunning = false
+							p.status.lifecycleStage = currentEnabled
+								? PluginStatusEntryLifecycleStage.stopped
+								: PluginStatusEntryLifecycleStage.disabled
+							break
+						case UpdatePluginStatusStatusInput.disable:
+							p.status.isRunning = false
+							p.status.isEnabled = false
+							p.status.lifecycleStage = PluginStatusEntryLifecycleStage.disabled
+							break
+						case UpdatePluginStatusStatusInput.enable:
+							p.status.isEnabled = true
+							p.status.lifecycleStage = p.status.isRunning
+								? PluginStatusEntryLifecycleStage.running
+								: PluginStatusEntryLifecycleStage.stopped
+						break
+					default:
+						break
 				}
 			})
 		},
@@ -106,7 +141,12 @@ export function ActionBar({ onStatusUpdated }: ActionBarProps) {
 	}
 
 	const handleAction = (status: UpdatePluginStatusStatusInput) => {
-		const missing = dependencies.filter((d) => !d.isRunning && !d.optional).map((d) => d.name)
+		const needsDependencyCheck =
+			status === UpdatePluginStatusStatusInput.start ||
+			status === UpdatePluginStatusStatusInput.restart
+		const missing = needsDependencyCheck
+			? dependencies.filter((d) => !d.isRunning && !d.optional).map((d) => d.name)
+			: []
 
 		const proceed = () => void performAction(status)
 
@@ -129,9 +169,31 @@ export function ActionBar({ onStatusUpdated }: ActionBarProps) {
 
 	const busy = mutationState.isLoading || isSyncing
 	const canToggle = !busy
+	const persistDisabled = busy
 
 	return (
 		<Group gap="xs" align="right">
+			<Tooltip
+				label={
+					busy ? '同步中…' : isEnabled ? '禁用后将停止运行并移除持久启用' : '启用后可持久保留该插件'
+				}
+			>
+				<Switch
+					size="md"
+					checked={isEnabled}
+					onLabel="启用"
+					offLabel="禁用"
+					disabled={persistDisabled}
+					onChange={(event) =>
+						void performAction(
+							event.currentTarget.checked
+								? UpdatePluginStatusStatusInput.enable
+								: UpdatePluginStatusStatusInput.disable,
+						)
+					}
+				/>
+			</Tooltip>
+
 			<Tooltip label={busy ? '同步中…' : '启动'}>
 				<ActionIcon
 					variant="light"
