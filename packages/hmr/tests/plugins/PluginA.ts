@@ -1,5 +1,5 @@
 import { BasePlugin, Plugin } from '@pluxel/hmr'
-import { Config } from './config'
+import { Config } from '../../src/config'
 // PluginA.ts
 // PluginA 依赖 PluginB 为必选依赖，依赖 PluginC 为可选依赖
 // biome-ignore lint/style/useImportType: <PluginSystem>

@@ -1,14 +1,13 @@
 import { Context } from '@pluxel/core'
-import { PluginA } from './plugins/PluginA'
-import { PluginC } from './plugins/PluginC'
-import { PinoLoggerService } from './services'
+import { PluginA, PluginC } from './plugins'
+import { PinoLoggerService } from '../src/services'
 
 if (process.env.PLUXEL_HMR_SSR === undefined) {
 	process.env.PLUXEL_HMR_SSR = 'true'
 }
 
 const ctx = new Context({
-	hmrService: { dir: ['./src/plugins'] },
+	hmrService: { dir: ['./tests/plugins'] },
 	registry: {
 		plugigCTXIsolate: [PinoLoggerService],
 	},

@@ -1,6 +1,9 @@
 import { type ConfigSchemaList, Config as OrigConfig } from '@pluxel/core'
 import { type InferOutput, isOfType, type ObjectSchema } from 'valibot'
 
+export * as v from 'valibot'
+export * as f from 'valibot-form'
+
 type ConfigSchema = ObjectSchema<any, any>
 export type ConfigSchemaMap = ConfigSchemaList<ConfigSchema>
 export type Config<T extends ConfigSchema> = InferOutput<T>
