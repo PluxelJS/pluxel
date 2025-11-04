@@ -15,9 +15,10 @@ export default defineConfig({
 	format: ['esm'],
 	sourcemap: true,
 	clean: true,
-	// 应该把该包内容交给外部引用然后 treeshake，不需要在我们的构建产物里 minify 和 treeshake。
+	// 应该把该包内容交给外部引用，不需要在我们的构建产物里 minify。
 	minify: false,
-	treeshake: false,
+	treeshake: true,
+	plugins: [],
 	external: [
 		'react',
 		'react-dom',

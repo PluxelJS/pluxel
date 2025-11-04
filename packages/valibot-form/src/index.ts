@@ -1,2 +1,2 @@
 export * as v from 'valibot'
-export * as f from './core'
+export * from './core'

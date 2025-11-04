@@ -13,23 +13,22 @@ export interface MetadataAction<
 }
 
 /** 所有 metadata 工厂函数的通用签名 */
-export interface MetadataFactory<TType extends MetaType, TInputConstraint = unknown> {
-	<TInput extends TInputConstraint, const TMetadata extends MetaTypeReturn<TType>>(
-		metadata: TMetadata,
-	): MetadataAction<TType, TInput, TMetadata>
-}
+export type MetadataFactory<TType extends MetaType, TInputConstraint = unknown> = <
+	TInput extends TInputConstraint,
+	const TMetadata extends MetaTypeReturn<TType>,
+>(
+	metadata: TMetadata,
+) => MetadataAction<TType, TInput, TMetadata>
 
 /**
  * 统一创建 metadata action 工厂，避免在每个 action 内重复定义类型。
  */
-export function createMetadataFactory<
-	TType extends MetaType,
-	TInputConstraint = unknown,
->(type: TType): MetadataFactory<TType, TInputConstraint> {
-	const factory = (<
-		TInput extends TInputConstraint,
-		const TMetadata extends MetaTypeReturn<TType>
-	>(metadata: TMetadata) => ({
+export function createMetadataFactory<TType extends MetaType, TInputConstraint = unknown>(
+	type: TType,
+): MetadataFactory<TType, TInputConstraint> {
+	const factory = (<TInput extends TInputConstraint, const TMetadata extends MetaTypeReturn<TType>>(
+		metadata: TMetadata,
+	) => ({
 		kind: 'metadata' as const,
 		type,
 		reference: factory,

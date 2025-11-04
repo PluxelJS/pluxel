@@ -1,19 +1,20 @@
 {
-	"private": "true",
+	"sideEffects": false,
+	"type": "module",
 	"name": "valibot-form",
 	"version": "0.1.0",
 	"description": "Demo example that imports a local package",
-	"main": "./dist/index.mjs",
-	"module": "./dist/index.mjs",
-	"types": "./dist/index.d.mts",
+	"main": "./dist/index.js",
+	"module": "./dist/index.js",
+	"types": "./dist/index.d.ts",
 	"exports": {
 		".": {
 			"@pluxel/source": "./src/index.ts",
-			"default": "./dist/index.mjs"
+			"default": "./dist/index.js"
 		},
 		"./web": {
 			"@pluxel/source": "./src/web/index.ts",
-			"default": "./dist/web.mjs"
+			"default": "./dist/web.js"
 		},
 		"./package.json": "./package.json"
 	},
@@ -22,6 +23,9 @@
 		"dev": "vite",
 		"preview": "vite preview",
 		"test": "vitest run"
+	},
+	"dependencies": {
+		"valibot": "^1.1.0"
 	},
 	"peerDependencies": {
 		"@dnd-kit/core": "^6.3.1",
@@ -50,15 +54,14 @@
 		"react-dom": "^19.2.0",
 		"tsdown": "^0.14.2",
 		"typescript": "^5.9.3",
-		"valibot": "^1.1.0",
 		"vite": "^7.1.12",
 		"vite-tsconfig-paths": "^5.1.4",
 		"vitest": "^3.2.4"
 	},
 	"publishConfig": {
 		"exports": {
-			".": "./dist/index.mjs",
-			"./web": "./dist/web.mjs",
+			".": "./dist/index.js",
+			"./web": "./dist/web.js",
 			"./package.json": "./package.json"
 		}
 	}
