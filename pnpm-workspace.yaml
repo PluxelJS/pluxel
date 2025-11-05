@@ -16,3 +16,108 @@ public-hoist-pattern:
   - '@mantine/modals'
   - '@mantine/notifications'
   - 'tsdown'
+catalogs:
+  build:
+    '@hono/vite-dev-server': ^0.22.0
+    '@vitejs/plugin-react': ^5.1.0
+    tsdown: 0.14.2
+    unplugin-swc: ^1.5.8
+    vite: ^7.1.12
+    vite-node: ^3.2.4
+    vite-tsconfig-paths: ^5.1.4
+  cli:
+    pncat: ^0.7.4
+  dev:
+    '@dnd-kit/core': ^6.3.1
+    '@dnd-kit/modifiers': ^9.0.0
+    '@dnd-kit/sortable': ^10.0.0
+    '@dnd-kit/utilities': ^3.2.2
+    '@mantine/core': ^8.3.6
+    '@oxc-project/runtime': ^0.91.0
+    is-ci: ^4.1.0
+    jsdom: ^25.0.1
+    option-t: ^54.2.2
+    reflect-metadata: ^0.2.2
+    tinybench: ^5.1.0
+    valibot: ^1.1.0
+  frontend:
+    '@gqty/react': ^3.1.1
+    '@hono/react-renderer': ^1.0.1
+    '@melloware/react-logviewer': ^6.3.4
+    '@tanstack/react-form': ^1.23.8
+    '@tanstack/react-router': ^1.134.9
+    react: ^19.2.0
+    react-dom: ^19.2.0
+  icons:
+    '@tabler/icons-react': ^3.35.0
+  lint:
+    '@biomejs/biome': ^2.3.0
+    '@repobuddy/biome': ^2.0.1
+    husky: ^9.1.7
+  monorepo:
+    turbo: ^2.5.8
+  node:
+    chokidar: ^4.0.3
+    pathe: ^2.0.3
+    pkg-types: ^2.3.0
+  peer:
+    '@dnd-kit/core': ^6.3.1
+    '@dnd-kit/modifiers': ^9.0.0
+    '@dnd-kit/sortable': ^10.0.0
+    '@dnd-kit/utilities': ^3.2.2
+    '@mantine/core': ^8.2.2
+    '@mantine/dates': ^8.2.2
+    '@mantine/hooks': ^8.2.2
+    '@mantine/modals': ^8.2.2
+    '@mantine/notifications': ^8.2.2
+    valibot: ^1.1.0
+  prod:
+    '@dnd-kit/core': ^6.3.1
+    '@dnd-kit/modifiers': ^9.0.0
+    '@dnd-kit/sortable': ^10.0.0
+    '@dnd-kit/utilities': ^3.2.2
+    '@gqloom/core': ^0.12.1
+    '@gqloom/valibot': ^0.12.0
+    '@gqty/cli': ^5.0.0
+    '@hono/node-server': ^1.19.6
+    '@hono/valibot-validator': ^0.5.3
+    '@mantine/core': ^8.3.5
+    '@mantine/dates': ^8.3.5
+    '@mantine/hooks': ^8.3.5
+    '@mantine/modals': ^8.3.5
+    '@mantine/notifications': ^8.3.5
+    '@swc/core': ^1.14.0
+    '@tanstack/pacer': ^0.15.4
+    commander: ^14.0.0
+    eventure: ^0.3.0
+    gqty: ^3.6.0
+    graphql: ^16.12.0
+    graphql-scalars: ^1.25.0
+    graphql-yoga: ^5.16.0
+    hono: ^4.10.4
+    inquirer: ^12.9.4
+    knitwork: ^1.2.0
+    mlly: ^1.8.0
+    node-plop: ^0.32.0
+    option-t: 54.2.4
+    pino: ^10.1.0
+    pino-caller: ^4.0.0
+    pino-pretty: ^13.1.2
+    pluxel-plugin-redis: ^0.1.0
+    reflect-metadata: ^0.2.2
+    rotating-file-stream: ^3.2.7
+    superjson: ^2.2.5
+    valibot: ^1.1.0
+    xstate: 5.20.1
+  style:
+    postcss: ^8.5.6
+    postcss-preset-mantine: ^1.18.0
+    postcss-simple-vars: ^7.0.1
+  test:
+    vitest: ^3.2.4
+  tsc:
+    typescript: ^5.9.3
+  types:
+    '@types/bun': latest
+    '@types/react': ^19.2.2
+    '@types/react-dom': ^19.2.2

@@ -13,15 +13,16 @@
 		"dev:hmr": "pnpm --filter hmr dev"
 	},
 	"devDependencies": {
-		"@biomejs/biome": "^2.3.0",
-		"@oxc-project/runtime": "^0.91.0",
-		"@repobuddy/biome": "^2.0.1",
-		"@types/bun": "latest",
-		"husky": "^9.1.7",
-		"is-ci": "^4.1.0",
-		"tsdown": "0.14.2",
-		"turbo": "^2.5.8",
-		"typescript": "^5.9.3"
+		"@biomejs/biome": "catalog:lint",
+		"@oxc-project/runtime": "catalog:dev",
+		"@repobuddy/biome": "catalog:lint",
+		"@types/bun": "catalog:types",
+		"husky": "catalog:lint",
+		"is-ci": "catalog:dev",
+		"pncat": "catalog:cli",
+		"tsdown": "catalog:build",
+		"turbo": "catalog:monorepo",
+		"typescript": "catalog:tsc"
 	},
 	"pre-commit": "lint-staged",
 	"lint-staged": {
@@ -32,15 +33,15 @@
 	},
 	"packageManager": "pnpm@10.20.0+sha512.cf9998222162dd85864d0a8102e7892e7ba4ceadebbf5a31f9c2fce48dfce317a9c53b9f6464d1ef9042cba2e02ae02a9f7c143a2b438cd93c91840f0192b9dd",
 	"dependencies": {
-		"@mantine/core": "^8.3.5",
-		"@mantine/dates": "^8.3.5",
-		"@mantine/hooks": "^8.3.5",
-		"@mantine/modals": "^8.3.5",
-		"@mantine/notifications": "^8.3.5",
-		"@tabler/icons-react": "^3.35.0",
-		"@tanstack/react-form": "^1.23.8",
-		"react": "^19.2.0",
-		"react-dom": "^19.2.0"
+		"@mantine/core": "catalog:prod",
+		"@mantine/dates": "catalog:prod",
+		"@mantine/hooks": "catalog:prod",
+		"@mantine/modals": "catalog:prod",
+		"@mantine/notifications": "catalog:prod",
+		"@tabler/icons-react": "catalog:icons",
+		"@tanstack/react-form": "catalog:frontend",
+		"react": "catalog:frontend",
+		"react-dom": "catalog:frontend"
 	},
 	"pnpm": {
 		"peerDependencyRules": {

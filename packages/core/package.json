@@ -29,15 +29,15 @@
 		"bench": "bun run tests/bench/pluginLifecycle.bench.ts"
 	},
 	"dependencies": {
-		"eventure": "^0.3.0",
-		"option-t": "54.2.4",
-		"reflect-metadata": "^0.2.2",
-		"xstate": "5.20.1"
+		"eventure": "catalog:prod",
+		"option-t": "catalog:prod",
+		"reflect-metadata": "catalog:prod",
+		"xstate": "catalog:prod"
 	},
 	"devDependencies": {
 		"@pluxel/context": "workspace:*",
 		"diod": "workspace:*",
-		"tinybench": "^5.1.0"
+		"tinybench": "catalog:dev"
 	},
 	"publishConfig": {
 		"exports": {
