@@ -1,0 +1,104 @@
+import { existsSync, readFileSync } from 'node:fs'
+import { readdir } from 'node:fs/promises'
+import { normalize, resolve as r } from 'pathe'
+import type { PackageJson } from 'pkg-types'
+import { manifestPathFor, safeReadManifest } from './package'
+
+export interface WorkspaceInfo {
+	root: string
+	manifest?: PackageJson
+	manifestPath?: string
+	patterns: string[]
+	packageDirs: string[]
+	isMonorepo: boolean
+}
+
+export async function loadWorkspaceInfo(root: string): Promise<WorkspaceInfo> {
+	const manifest = await safeReadManifest(root)
+	const manifestPath = manifestPathFor(root)
+
+	const patterns = new Set<string>()
+	for (const p of extractPackageWorkspaces(manifest)) {
+		patterns.add(p)
+	}
+
+	const pnpmWorkspacePath = r(root, 'pnpm-workspace.yaml')
+	if (existsSync(pnpmWorkspacePath)) {
+		for (const p of parsePnpmWorkspace(readFileSync(pnpmWorkspacePath, 'utf8'))) {
+			patterns.add(p)
+		}
+	}
+
+	const explicitPatterns = patterns.size > 0
+	if (!explicitPatterns) {
+		patterns.add('packages/*')
+		patterns.add('apps/*')
+	}
+
+	const packageDirs = await collectPackageDirs(root, [...patterns])
+	const isMonorepo = explicitPatterns || packageDirs.length > 0
+
+	return {
+		root: normalize(root),
+		manifest,
+		manifestPath,
+		patterns: [...patterns],
+		packageDirs,
+		isMonorepo,
+	}
+}
+
+function extractPackageWorkspaces(pkg: PackageJson | undefined): string[] {
+	if (!pkg) return []
+	const raw = (pkg as any).workspaces
+	if (!raw) return []
+	if (Array.isArray(raw)) return raw
+	if (Array.isArray(raw?.packages)) return raw.packages
+	return []
+}
+
+async function collectPackageDirs(root: string, patterns: string[]): Promise<string[]> {
+	const out = new Set<string>()
+	for (const pattern of patterns) {
+		const m = pattern.replace(/\/\*\*?$/, '/*').match(/^(.*)\/\*$/)
+		if (!m) continue
+		const base = r(root, m[1])
+		try {
+			const list = await readdir(base, { withFileTypes: true })
+			for (const entry of list) {
+				if (!entry.isDirectory()) continue
+				const pkgDir = r(base, entry.name)
+				if (existsSync(r(pkgDir, 'package.json'))) {
+					out.add(normalize(pkgDir))
+				}
+			}
+		} catch {
+			// ignore missing directories
+		}
+	}
+	return [...out]
+}
+
+function parsePnpmWorkspace(contents: string): string[] {
+	const lines = contents.split(/\r?\n/)
+	const res: string[] = []
+	let inPk = false
+	let indent = 0
+
+	for (const raw of lines) {
+		const line = raw.replace(/\t/g, '  ')
+		if (!inPk) {
+			const match = line.match(/^(\s*)packages\s*:\s*$/)
+			if (match) {
+				inPk = true
+				indent = match[1].length
+			}
+			continue
+		}
+		if (line.trim() && line.match(new RegExp(`^\\s{0,${indent}}\\S`))) break
+		const match = line.match(/^\s*-\s*['"]?([^'"]+)['"]?\s*$/)
+		if (match) res.push(match[1])
+	}
+
+	return res
+}

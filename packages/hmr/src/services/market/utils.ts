@@ -1,8 +1,7 @@
 import fs from 'node:fs/promises'
 import os from 'node:os'
-import { extname, isAbsolute, join } from 'node:path'
 import { resolvePath } from 'mlly'
-import { normalize, resolve } from 'pathe'
+import { extname, isAbsolute, join, normalize, resolve } from 'pathe'
 
 /* --------------------- package entry (with cache & fallback) --------------------- */
 

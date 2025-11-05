@@ -1,4 +1,4 @@
-import { BasePlugin, Plugin } from '@pluxel/hmr'
+import { BasePlugin, Plugin } from '@pluxel/core'
 
 @Plugin({ name: 'PluginB', type: 'hook' })
 export class PluginB extends BasePlugin {
