@@ -99,6 +99,7 @@ catalogs:
     knitwork: ^1.2.0
     mlly: ^1.8.0
     node-plop: ^0.32.0
+    nypm: ^0.6.2
     option-t: 54.2.4
     pino: ^10.1.0
     pino-caller: ^4.0.0

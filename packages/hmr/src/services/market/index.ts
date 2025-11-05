@@ -1,2 +1,2 @@
 export * from './ScanService'
-export * from './utils'
+export { getAllTsFiles, type TsScanOptions } from './scan/fs'

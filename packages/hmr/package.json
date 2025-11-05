@@ -68,7 +68,8 @@
 		"valibot": "catalog:prod",
 		"vite": "catalog:build",
 		"vite-node": "catalog:build",
-		"vite-tsconfig-paths": "catalog:build"
+		"vite-tsconfig-paths": "catalog:build",
+		"nypm": "catalog:prod"
 	},
 	"devDependencies": {
 		"@pluxel/components": "workspace:*",

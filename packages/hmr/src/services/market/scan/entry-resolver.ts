@@ -8,6 +8,10 @@ import type { EntryResolution, EntryResolutionOk, ResolvedScanOptions } from './
 export class EntryResolver {
 	private readonly cache = new Map<string, Promise<EntryResolution>>()
 
+	clear() {
+		this.cache.clear()
+	}
+
 	async resolve(
 		dir: string,
 		options: ResolvedScanOptions,

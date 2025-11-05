@@ -222,15 +222,15 @@ export class HMRService {
 					if (this.filter(file)) this.debouncer.push(this.toCleanId(file))
 				})
 
-				// 7) 冷启动：扫描 + 预热执行（让 loader 完成 anchors 首次填充）
-				console.time('[HMR] 扫描文件')
-				const files = await this.ctx.scanService.scan(this.config.dir)
-				console.timeEnd('[HMR] 扫描文件')
+			// 7) 冷启动：扫描 + 预热执行（让 loader 完成 anchors 首次填充）
+			console.time('[HMR] 扫描文件')
+			const files = await this.ctx.scanService.scanEntries({ roots: this.config.dir })
+			console.timeEnd('[HMR] 扫描文件')
 
-				console.time('[HMR] 预热/执行模块')
-				const coldFiles = unique(files.map((p) => this.toCleanId(p))).sort()
-				await this.runAndLoadAll(coldFiles, /*keepOrder*/ true)
-				console.timeEnd('[HMR] 预热/执行模块')
+			console.time('[HMR] 预热/执行模块')
+			const coldFiles = unique(files.map((p) => this.toCleanId(p))).sort()
+			await this.runAndLoadAll(coldFiles, /*keepOrder*/ true)
+			console.timeEnd('[HMR] 预热/执行模块')
 			},
 
 			/** 服务端 HMR：仅入队，由批处理串行执行 */

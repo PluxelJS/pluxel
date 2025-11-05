@@ -20,9 +20,9 @@ async function bootstrap() {
 }
 bootstrap()
 setTimeout(async () => {
-	const a = await ctx.scanService.resolveEntryByName('node_modules', 'pluxel-plugin-redis')
-	if (a.ok) {
-		ctx.loader.replaceModule(a.dir, await import(a.entry))
+	const resolution = await ctx.scanService.resolveEntryByName('pluxel-plugin-redis')
+	if (resolution.ok) {
+		ctx.loader.replaceModule(resolution.dir, await import(resolution.entry))
 	}
 }, 5000)
 ctx.honoService.modifyApp((app) => {

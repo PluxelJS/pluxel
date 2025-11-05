@@ -1,6 +1,6 @@
 import os from 'node:os'
 import { isAbsolute, normalize, resolve as r } from 'pathe'
-import { getAllTsFiles } from '../utils'
+import { getAllTsFiles } from './fs'
 import type { EntryResolver } from './entry-resolver'
 import { createLimiter } from './limit'
 import { manifestPathFor, safeReadManifest } from './package'

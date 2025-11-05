@@ -20,7 +20,7 @@ declare module '@pluxel/core' {
 		[serviceName]: ScanService
 	}
 	interface Config {
-		[serviceName]?: ScanOptionsInput
+		[serviceName]?: ScanServiceConfig
 	}
 }
 
@@ -36,6 +36,21 @@ export type {
 
 export type PackageSelector = string | { name?: string | null; dir?: string | null }
 
+export interface ScanServiceConfig {
+	/** 默认扫描根目录，可传单个路径或路径数组。 */
+	roots?: string | string[]
+	/** 默认扫描选项，将与内置默认合并。 */
+	options?: ScanOptionsInput
+}
+
+export interface ScanTaskOptions {
+	/** 临时覆盖扫描根目录。 */
+	roots?: string | string[]
+	/** 临时覆盖扫描参数。 */
+	scan?: ScanOptionsInput
+}
+
+/** 扫描结果快照，包含索引和原始数据。 */
 export interface ScanSnapshot {
 	graph: ScanGraph
 	packages: PackageNode[]
@@ -48,51 +63,82 @@ export interface ScanSnapshot {
 }
 
 /**
- * High-level facade that scans monorepo/workspace layouts and resolves package entry files.
+ * 扫描工作区并解析包入口的核心服务。
  *
- * Typical usage:
- * ```ts
- * const snapshot = await ctx.scanService.snapshot(['packages']);
- * const redis = await ctx.scanService.resolveEntry(['packages'], 'pluxel-plugin-redis');
- * ```
- *
- * The scanner understands pnpm (`pnpm-workspace.yaml`) as well as Yarn/NPM workspaces declared
- * via `package.json#workspaces`, and falls back to conventional `packages/*` / `apps/*` patterns.
+ * - 自动识别 pnpm / Yarn / npm workspaces 以及传统的 `packages/*` 结构。
+ * - 内置缓存，避免重复构建扫描图，提高 CLI 与服务常驻模式的性能。
+ * - 支持按需聚焦特定包、条件导出和 TS 回退文件收集。
  */
 @Injectable({ key: serviceName })
 export class ScanService {
 	private defaults: ResolvedScanOptions
+	private roots: string[]
 	private readonly entryResolver = new EntryResolver()
 	private readonly snapshotCache = new Map<string, Promise<ScanSnapshot>>()
 
-	constructor(_ctx: Context, overrides?: ScanOptionsInput) {
-		this.defaults = resolveScanOptions(DEFAULT_SCAN_OPTIONS, overrides)
-	}
-
-	/** Update default options at runtime (e.g. after config hot reload). */
-	updateDefaults(overrides: ScanOptionsInput) {
-		this.defaults = resolveScanOptions(this.defaults, overrides)
-		this.clearCaches()
-	}
-
-	/** Clear all memoized results (snapshots + entry data). */
-	clearCaches() {
-		this.snapshotCache.clear()
+	constructor(_ctx: Context, config: ScanServiceConfig = {}) {
+		this.defaults = resolveScanOptions(DEFAULT_SCAN_OPTIONS, config.options)
+		this.roots = normalizeInputs(config.roots ?? process.cwd())
 	}
 
 	/**
-	 * Build (or reuse) a memoized snapshot of the discovered packages and their entries.
-	 * Snapshots include lookup maps keyed by package name and absolute directory.
+	 * 返回当前默认扫描根目录（已归一化且去重）。
 	 */
-	async snapshot(input: string | string[], overrides: ScanOptionsInput = {}): Promise<ScanSnapshot> {
-		const normalizedInputs = normalizeInputs(input)
-		const options = resolveScanOptions(this.defaults, overrides)
-		const cacheKey = createCacheKey(normalizedInputs, options)
+	get defaultRoots(): string[] {
+		return [...this.roots]
+	}
+
+	/**
+	 * 以最小代价更新默认配置，支持同时替换根目录与扫描选项。
+	 */
+	updateConfig(config: ScanServiceConfig = {}) {
+		let mutated = false
+		if (config.options) {
+			this.defaults = resolveScanOptions(this.defaults, config.options)
+			mutated = true
+		}
+		if (config.roots) {
+			this.roots = normalizeInputs(config.roots)
+			mutated = true
+		}
+		if (mutated) this.clearCaches()
+	}
+
+	/**
+	 * 仅更新默认扫描参数，常用于热更新配置。
+	 */
+	setDefaultOptions(overrides: ScanOptionsInput) {
+		this.updateConfig({ options: overrides })
+	}
+
+	/**
+	 * 重新指定默认扫描根目录。
+	 */
+	setRoots(roots: string | string[]) {
+		this.roots = normalizeInputs(roots)
+		this.clearCaches()
+	}
+
+	/**
+	 * 手动清理缓存，下次调用会重新扫描磁盘。
+	 */
+	clearCaches() {
+		this.snapshotCache.clear()
+		this.entryResolver.clear()
+	}
+
+	/**
+	 * 构建（或复用缓存）扫描快照，包含包图、入口列表与索引。
+	 */
+	async snapshot(request: ScanTaskOptions = {}): Promise<ScanSnapshot> {
+		const roots = resolveRoots(this.roots, request.roots)
+		const options = resolveScanOptions(this.defaults, request.scan)
+		const cacheKey = createCacheKey(roots, options)
 
 		const cached = this.snapshotCache.get(cacheKey)
 		if (cached) return cached
 
-		const promise = this.buildSnapshot(normalizedInputs, options).catch((err) => {
+		const promise = this.buildSnapshot(roots, options).catch((err) => {
 			this.snapshotCache.delete(cacheKey)
 			throw err
 		})
@@ -100,70 +146,75 @@ export class ScanService {
 		return promise
 	}
 
-	/** Compatibility alias with previous API: flattened entries (including TS fallbacks). */
-	async scan(input: string | string[], overrides: ScanOptionsInput = {}): Promise<string[]> {
-		return this.scanEntries(input, overrides)
-	}
-
-	/** Quick helper: entries + fallback TS files as a flat set. */
-	async scanEntries(input: string | string[], overrides: ScanOptionsInput = {}): Promise<string[]> {
-		const snapshot = await this.snapshot(input, overrides)
+	/**
+	 * 返回所有已解析入口（含 TS 回退），适合做预热或生成白名单。
+	 */
+	async scanEntries(request: ScanTaskOptions = {}): Promise<string[]> {
+		const snapshot = await this.snapshot(request)
 		const all = new Set<string>()
 		for (const entry of snapshot.entries) all.add(entry)
 		for (const file of snapshot.fallbackEntries) all.add(file)
 		return Array.from(all)
 	}
 
-	/** Full graph with roots/packages/diagnostics. */
-	async scanGraph(input: string | string[], overrides: ScanOptionsInput = {}): Promise<ScanGraph> {
-		const snapshot = await this.snapshot(input, overrides)
+	/**
+	 * 获取完整扫描图（roots / packages / diagnostics / stats）。
+	 */
+	async scanGraph(request: ScanTaskOptions = {}): Promise<ScanGraph> {
+		const snapshot = await this.snapshot(request)
 		return snapshot.graph
 	}
 
 	/**
-	 * Resolve entry for a given package. Accepts names or absolute/relative directories.
-	 *
-	 * When a selector looks like a package name (e.g. `pluxel-plugin-redis`), it will match against
-	 * the manifest `name`. When it resembles a path, it matches normalized absolute directories.
+	 * 按包名或目录解析入口，必要时自动回退到已安装依赖。
 	 */
-	async resolveEntry(
-		input: string | string[],
-		selector: PackageSelector,
-		overrides: ScanOptionsInput = {},
-	): Promise<EntryResolution> {
+	async resolveEntry(selector: PackageSelector, request: ScanTaskOptions = {}): Promise<EntryResolution> {
 		const focusHints = selectorFocusHints(selector)
-		const mergedOverrides =
+		const overrides = request.scan ?? {}
+		const finalScan =
 			focusHints.length > 0
-				? {
-						...overrides,
-						focusPackages: mergeFocus(overrides.focusPackages, focusHints),
-				  }
+				? { ...overrides, focusPackages: mergeFocus(overrides.focusPackages, focusHints) }
 				: overrides
 
-		const snapshot = await this.snapshot(input, mergedOverrides)
+		const snapshot = await this.snapshot({ roots: request.roots, scan: finalScan })
 		const pkg = snapshot.findPackage(selector)
 		if (pkg) return pkg.entry
 
-		const fallback = await resolveInstalledPackage(selector, snapshot.graph.options)
+		const fallback = await resolveInstalledPackage(selector, snapshot.graph.options.conditions)
 		return fallback ?? missingPackageResolution(selector)
 	}
 
-	/** Convenience wrapper when callers only care about a package name. */
-	async resolveEntryByName(
-		input: string | string[],
-		packageName: string,
-		overrides: ScanOptionsInput = {},
-	): Promise<EntryResolution> {
+	/**
+	 * 便捷入口：仅提供包名时的解析逻辑，自动修剪输入。
+	 */
+	async resolveEntryByName(name: string, request: ScanTaskOptions = {}): Promise<EntryResolution> {
+		const trimmed = name.trim()
+		if (!trimmed) {
+			return {
+				ok: false,
+				dir: name,
+				code: 'MISSING_PACKAGE',
+				message: '包名为空，无法解析入口。',
+			}
+		}
+		return this.resolveEntry({ name: trimmed }, request)
+	}
+
+	/**
+	 * 直接解析 node_modules 中的已安装依赖入口，跳过工作区扫描。
+	 */
+	async resolveInstalledEntry(packageName: string, conditions?: string[]): Promise<EntryResolution> {
 		const trimmed = packageName.trim()
 		if (!trimmed) {
 			return {
 				ok: false,
 				dir: packageName,
 				code: 'MISSING_PACKAGE',
-				message: 'Package name is empty.',
+				message: '包名为空，无法解析入口。',
 			}
 		}
-		return this.resolveEntry(input, { name: trimmed }, overrides)
+		const resolved = await resolveInstalledPackage(trimmed, conditions ?? this.defaults.conditions)
+		return resolved ?? missingPackageResolution(trimmed)
 	}
 
 	private async buildSnapshot(
@@ -204,15 +255,26 @@ export const isPackageEntryOk = (pkg: PackageNode): pkg is PackageNode & { entry
 
 function normalizeInputs(input: string | string[]): string[] {
 	const list = Array.isArray(input) ? input : [input]
-	return list.map((raw) => {
-		const trimmed = raw.trim()
-		const abs = trimmed && isAbsolute(trimmed) ? trimmed : r(process.cwd(), trimmed || '.')
-		return normalize(abs)
-	})
+	const out = new Set<string>()
+	for (const raw of list) {
+		const trimmed = typeof raw === 'string' ? raw.trim() : ''
+		const candidate = trimmed || '.'
+		const abs = isAbsolute(candidate) ? candidate : r(process.cwd(), candidate)
+		out.add(normalize(abs))
+	}
+	if (out.size === 0) {
+		return [normalize(r(process.cwd(), '.'))]
+	}
+	return Array.from(out).sort()
 }
 
 function createCacheKey(inputs: string[], options: ResolvedScanOptions): string {
-	return JSON.stringify([inputs, options])
+	return JSON.stringify([[...inputs].sort(), options])
+}
+
+function resolveRoots(defaultRoots: string[], override?: string | string[]): string[] {
+	if (!override) return defaultRoots
+	return normalizeInputs(override)
 }
 
 function selectPackage(
@@ -295,9 +357,7 @@ function missingPackageResolution(selector: PackageSelector): EntryResolution {
 		ok: false,
 		dir: label ?? '',
 		code: 'MISSING_PACKAGE',
-		message: label
-			? `Package "${label}" not found in provided inputs.`
-			: 'Package not found in provided inputs.',
+		message: label ? `未在扫描范围内找到包 "${label}"。` : '未在扫描范围内找到目标包。',
 	}
 }
 
@@ -314,13 +374,24 @@ function selectorLabel(selector: PackageSelector): string | undefined {
 
 async function resolveInstalledPackage(
 	selector: PackageSelector,
-	options: ResolvedScanOptions,
+	conditions: string[] | undefined,
 ): Promise<EntryResolution | undefined> {
 	const bare = selectorBareName(selector)
 	if (!bare) return undefined
+
+	const resolveWithConditions = async (specifier: string, withConditions: boolean) => {
+		if (!withConditions) return mllyResolvePath(specifier)
+		return mllyResolvePath(specifier, { conditions })
+	}
+
 	try {
-		const entryPath = await mllyResolvePath(bare, { conditions: options.conditions })
-		const manifestPath = await mllyResolvePath(`${bare}/package.json`).catch(() => undefined)
+		const entryPath = await resolveWithConditions(bare, Boolean(conditions?.length)).catch((err) => {
+			if (conditions?.length) return mllyResolvePath(bare)
+			throw err
+		})
+		const manifestPath = await resolveWithConditions(`${bare}/package.json`, Boolean(conditions?.length)).catch(
+			() => undefined,
+		)
 		const pkgDir = manifestPath ? dirname(manifestPath) : dirname(entryPath)
 		return {
 			ok: true,
