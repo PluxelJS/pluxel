@@ -28,7 +28,7 @@
 	"scripts": {
 		"dev": "bun --conditions=\"@pluxel/source\" tests/start.ts",
 		"hot": "bun --hot tests/start.ts",
-		"test": "bun test",
+		"test": "bun test --conditions=@pluxel/source",
 		"build": "tsdown",
 		"web": "vite build"
 	},

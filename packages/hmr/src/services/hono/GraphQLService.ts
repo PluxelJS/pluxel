@@ -17,7 +17,7 @@ declare module '@pluxel/core' {
 	}
 	namespace Context {
 		interface Config {
-			[serviceName]: GraphQLConfig
+			[serviceName]?: GraphQLConfig
 		}
 	}
 }
