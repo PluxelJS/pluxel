@@ -25,25 +25,25 @@
 		"test": "vitest run"
 	},
 	"dependencies": {
-		"valibot": "catalog:prod"
+		"valibot": "catalog:validation"
 	},
 	"peerDependencies": {
-		"@dnd-kit/core": "catalog:peer",
-		"@dnd-kit/modifiers": "catalog:peer",
-		"@dnd-kit/sortable": "catalog:peer",
-		"@dnd-kit/utilities": "catalog:peer",
-		"@mantine/core": "catalog:peer",
+		"@dnd-kit/core": "catalog:frontend",
+		"@dnd-kit/modifiers": "catalog:frontend",
+		"@dnd-kit/sortable": "catalog:frontend",
+		"@dnd-kit/utilities": "catalog:frontend",
+		"@mantine/core": "catalog:frontend",
 		"@tabler/icons-react": "catalog:icons",
 		"@tanstack/react-form": "catalog:frontend",
 		"react": "catalog:frontend",
 		"react-dom": "catalog:frontend"
 	},
 	"devDependencies": {
-		"@dnd-kit/core": "catalog:dev",
-		"@dnd-kit/modifiers": "catalog:dev",
-		"@dnd-kit/sortable": "catalog:dev",
-		"@dnd-kit/utilities": "catalog:dev",
-		"@mantine/core": "catalog:dev",
+		"@dnd-kit/core": "catalog:frontend",
+		"@dnd-kit/modifiers": "catalog:frontend",
+		"@dnd-kit/sortable": "catalog:frontend",
+		"@dnd-kit/utilities": "catalog:frontend",
+		"@mantine/core": "catalog:frontend",
 		"@tabler/icons-react": "catalog:icons",
 		"@tanstack/react-form": "catalog:frontend",
 		"@types/react": "catalog:types",

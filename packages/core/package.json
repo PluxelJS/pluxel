@@ -29,10 +29,10 @@
 		"bench": "bun run tests/bench/pluginLifecycle.bench.ts"
 	},
 	"dependencies": {
-		"eventure": "catalog:prod",
-		"option-t": "catalog:prod",
-		"reflect-metadata": "catalog:prod",
-		"xstate": "catalog:prod"
+		"eventure": "catalog:workflow",
+		"option-t": "catalog:validation",
+		"reflect-metadata": "catalog:validation",
+		"xstate": "catalog:workflow"
 	},
 	"devDependencies": {
 		"@pluxel/context": "workspace:*",

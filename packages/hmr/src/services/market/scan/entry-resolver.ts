@@ -1,6 +1,7 @@
 import { existsSync } from 'node:fs'
-import { resolvePath as mllyResolvePath, pathToFileURL } from 'mlly'
+import { resolveModulePath } from 'exsolve'
 import { normalize, resolve as r } from 'pathe'
+import { pathToFileURL } from 'node:url'
 import type { PackageJson } from 'pkg-types'
 import { safeReadManifest } from './package'
 import type { EntryResolution, EntryResolutionOk, ResolvedScanOptions } from './types'
@@ -34,14 +35,9 @@ export class EntryResolver {
 		options: ResolvedScanOptions,
 		manifest?: PackageJson,
 	): Promise<EntryResolution> {
-		try {
-			const entry = await mllyResolvePath('.', {
-				url: pathToFileURL(dir),
-				conditions: options.conditions,
-			})
+		const entry = resolveModulePath('.', resolveOptionsFor(dir, options.conditions))
+		if (entry) {
 			return entryOk(dir, normalize(entry), 'exports', [])
-		} catch {
-			// fall through
 		}
 
 		const pkgJson = manifest ?? (await safeReadManifest(dir))
@@ -105,6 +101,23 @@ export class EntryResolver {
 			tried,
 		}
 	}
+}
+
+function resolveOptionsFor(dir: string, conditions: string[] | undefined) {
+	const options: { from: URL; try: true; conditions?: string[] } = {
+		from: packageBaseURL(dir),
+		try: true,
+	}
+	if (conditions && conditions.length > 0) {
+		options.conditions = [...conditions]
+	}
+	return options
+}
+
+function packageBaseURL(dir: string): URL {
+	const normalized = normalize(dir)
+	const asDir = normalized.endsWith('/') ? normalized : `${normalized}/`
+	return pathToFileURL(asDir)
 }
 
 function entryOk(

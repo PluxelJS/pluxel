@@ -63,7 +63,7 @@
 	"devDependencies": {
 		"tsdown": "catalog:build",
 		"typescript": "catalog:tsc",
-		"option-t": "catalog:dev",
-		"reflect-metadata": "catalog:dev"
+		"option-t": "catalog:validation",
+		"reflect-metadata": "catalog:validation"
 	}
 }

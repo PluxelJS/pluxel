@@ -4,7 +4,7 @@ import type { PackageJson } from 'pkg-types'
 
 /** Public options that callers can override per invocation. */
 export interface ScanOptions {
-	/** Resolution conditions passed to `mlly.resolvePath`. */
+	/** Resolution conditions passed to the module resolver (exsolve). */
 	conditions: string[]
 	/** Fallback relative paths tried when no explicit entry is found. */
 	conservativeCandidates: string[]
@@ -102,4 +102,3 @@ export interface ScanGraph {
 	diagnostics: ScanDiagnostic[]
 	stats: ScanStats
 }
-

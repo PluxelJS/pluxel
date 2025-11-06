@@ -5,10 +5,26 @@ settings:
   excludeLinksFromLockfile: false
 
 catalogs:
+  backend:
+    '@hono/node-server':
+      specifier: ^1.19.6
+      version: 1.19.6
+    '@hono/valibot-validator':
+      specifier: ^0.5.3
+      version: 0.5.3
+    hono:
+      specifier: ^4.10.4
+      version: 4.10.4
+    pluxel-plugin-redis:
+      specifier: ^0.1.0
+      version: 0.1.0
   build:
     '@hono/vite-dev-server':
       specifier: ^0.22.0
       version: 0.22.0
+    '@swc/core':
+      specifier: ^1.15.0
+      version: 1.15.0
     '@vitejs/plugin-react':
       specifier: ^5.1.0
       version: 5.1.0
@@ -19,7 +35,7 @@ catalogs:
       specifier: ^1.5.8
       version: 1.5.8
     vite:
-      specifier: ^7.1.12
+      specifier: ^7.2.1
       version: 7.1.12
     vite-node:
       specifier: ^3.2.4
@@ -28,10 +44,35 @@ catalogs:
       specifier: ^5.1.4
       version: 5.1.4
   cli:
+    commander:
+      specifier: ^14.0.0
+      version: 14.0.0
+    inquirer:
+      specifier: ^12.9.4
+      version: 12.9.4
+    node-plop:
+      specifier: ^0.32.0
+      version: 0.32.0
+    nypm:
+      specifier: ^0.6.2
+      version: 0.6.2
     pncat:
       specifier: ^0.7.4
       version: 0.7.4
   dev:
+    '@oxc-project/runtime':
+      specifier: ^0.91.0
+      version: 0.91.0
+    is-ci:
+      specifier: ^4.1.0
+      version: 4.1.0
+    jsdom:
+      specifier: ^25.0.1
+      version: 25.0.1
+    tinybench:
+      specifier: ^5.1.0
+      version: 5.1.0
+  frontend:
     '@dnd-kit/core':
       specifier: ^6.3.1
       version: 6.3.1
@@ -44,37 +85,27 @@ catalogs:
     '@dnd-kit/utilities':
       specifier: ^3.2.2
       version: 3.2.2
-    '@mantine/core':
-      specifier: ^8.3.6
-      version: 8.3.6
-    '@oxc-project/runtime':
-      specifier: ^0.91.0
-      version: 0.91.0
-    is-ci:
-      specifier: ^4.1.0
-      version: 4.1.0
-    jsdom:
-      specifier: ^25.0.1
-      version: 25.0.1
-    option-t:
-      specifier: ^54.2.2
-      version: 54.2.4
-    reflect-metadata:
-      specifier: ^0.2.2
-      version: 0.2.2
-    tinybench:
-      specifier: ^5.1.0
-      version: 5.1.0
-    valibot:
-      specifier: ^1.1.0
-      version: 1.1.0
-  frontend:
     '@gqty/react':
       specifier: ^3.1.1
       version: 3.1.1
     '@hono/react-renderer':
       specifier: ^1.0.1
       version: 1.0.1
+    '@mantine/core':
+      specifier: ^8.3.6
+      version: 8.3.6
+    '@mantine/dates':
+      specifier: ^8.2.2
+      version: 8.3.6
+    '@mantine/hooks':
+      specifier: ^8.2.2
+      version: 8.3.6
+    '@mantine/modals':
+      specifier: ^8.2.2
+      version: 8.3.6
+    '@mantine/notifications':
+      specifier: ^8.2.2
+      version: 8.3.6
     '@melloware/react-logviewer':
       specifier: ^6.3.4
       version: 6.3.4
@@ -82,14 +113,36 @@ catalogs:
       specifier: ^1.23.8
       version: 1.23.8
     '@tanstack/react-router':
-      specifier: ^1.134.9
-      version: 1.134.9
+      specifier: ^1.134.13
+      version: 1.134.13
     react:
       specifier: ^19.2.0
       version: 19.2.0
     react-dom:
       specifier: ^19.2.0
       version: 19.2.0
+  graphql:
+    '@gqloom/core':
+      specifier: ^0.12.1
+      version: 0.12.1
+    '@gqloom/valibot':
+      specifier: ^0.12.0
+      version: 0.12.0
+    '@gqty/cli':
+      specifier: ^5.0.0
+      version: 5.0.0
+    gqty:
+      specifier: ^3.6.0
+      version: 3.6.0
+    graphql:
+      specifier: ^16.12.0
+      version: 16.12.0
+    graphql-scalars:
+      specifier: ^1.25.0
+      version: 1.25.0
+    graphql-yoga:
+      specifier: ^5.16.1
+      version: 5.16.1
   icons:
     '@tabler/icons-react':
       specifier: ^3.35.0
@@ -104,6 +157,19 @@ catalogs:
     husky:
       specifier: ^9.1.7
       version: 9.1.7
+  logging:
+    pino:
+      specifier: ^10.1.0
+      version: 10.1.0
+    pino-caller:
+      specifier: ^4.0.0
+      version: 4.0.0
+    pino-pretty:
+      specifier: ^13.1.2
+      version: 13.1.2
+    rotating-file-stream:
+      specifier: ^3.2.7
+      version: 3.2.7
   monorepo:
     turbo:
       specifier: ^2.5.8
@@ -118,137 +184,6 @@ catalogs:
     pkg-types:
       specifier: ^2.3.0
       version: 2.3.0
-  peer:
-    '@mantine/core':
-      specifier: ^8.2.2
-      version: 8.3.6
-    '@mantine/dates':
-      specifier: ^8.2.2
-      version: 8.3.6
-    '@mantine/hooks':
-      specifier: ^8.2.2
-      version: 8.3.6
-    '@mantine/modals':
-      specifier: ^8.2.2
-      version: 8.3.6
-    '@mantine/notifications':
-      specifier: ^8.2.2
-      version: 8.3.6
-  prod:
-    '@dnd-kit/core':
-      specifier: ^6.3.1
-      version: 6.3.1
-    '@dnd-kit/modifiers':
-      specifier: ^9.0.0
-      version: 9.0.0
-    '@dnd-kit/sortable':
-      specifier: ^10.0.0
-      version: 10.0.0
-    '@dnd-kit/utilities':
-      specifier: ^3.2.2
-      version: 3.2.2
-    '@gqloom/core':
-      specifier: ^0.12.1
-      version: 0.12.1
-    '@gqloom/valibot':
-      specifier: ^0.12.0
-      version: 0.12.0
-    '@gqty/cli':
-      specifier: ^5.0.0
-      version: 5.0.0
-    '@hono/node-server':
-      specifier: ^1.19.6
-      version: 1.19.6
-    '@hono/valibot-validator':
-      specifier: ^0.5.3
-      version: 0.5.3
-    '@mantine/core':
-      specifier: ^8.3.5
-      version: 8.3.6
-    '@mantine/dates':
-      specifier: ^8.3.5
-      version: 8.3.6
-    '@mantine/hooks':
-      specifier: ^8.3.5
-      version: 8.3.6
-    '@mantine/modals':
-      specifier: ^8.3.5
-      version: 8.3.6
-    '@mantine/notifications':
-      specifier: ^8.3.5
-      version: 8.3.6
-    '@swc/core':
-      specifier: ^1.14.0
-      version: 1.14.0
-    '@tanstack/pacer':
-      specifier: ^0.15.4
-      version: 0.15.4
-    commander:
-      specifier: ^14.0.0
-      version: 14.0.0
-    eventure:
-      specifier: ^0.3.0
-      version: 0.3.0
-    gqty:
-      specifier: ^3.6.0
-      version: 3.6.0
-    graphql:
-      specifier: ^16.12.0
-      version: 16.12.0
-    graphql-scalars:
-      specifier: ^1.25.0
-      version: 1.25.0
-    graphql-yoga:
-      specifier: ^5.16.0
-      version: 5.16.0
-    hono:
-      specifier: ^4.10.4
-      version: 4.10.4
-    inquirer:
-      specifier: ^12.9.4
-      version: 12.9.4
-    knitwork:
-      specifier: ^1.2.0
-      version: 1.2.0
-    mlly:
-      specifier: ^1.8.0
-      version: 1.8.0
-    node-plop:
-      specifier: ^0.32.0
-      version: 0.32.0
-    nypm:
-      specifier: ^0.6.2
-      version: 0.6.2
-    option-t:
-      specifier: 54.2.4
-      version: 54.2.4
-    pino:
-      specifier: ^10.1.0
-      version: 10.1.0
-    pino-caller:
-      specifier: ^4.0.0
-      version: 4.0.0
-    pino-pretty:
-      specifier: ^13.1.2
-      version: 13.1.2
-    pluxel-plugin-redis:
-      specifier: ^0.1.0
-      version: 0.1.0
-    reflect-metadata:
-      specifier: ^0.2.2
-      version: 0.2.2
-    rotating-file-stream:
-      specifier: ^3.2.7
-      version: 3.2.7
-    superjson:
-      specifier: ^2.2.5
-      version: 2.2.5
-    valibot:
-      specifier: ^1.1.0
-      version: 1.1.0
-    xstate:
-      specifier: 5.20.1
-      version: 5.20.1
   style:
     postcss:
       specifier: ^8.5.6
@@ -277,25 +212,54 @@ catalogs:
     '@types/react-dom':
       specifier: ^19.2.2
       version: 19.2.2
+  validation:
+    option-t:
+      specifier: ^54.2.2
+      version: 54.2.4
+    reflect-metadata:
+      specifier: ^0.2.2
+      version: 0.2.2
+    superjson:
+      specifier: ^2.2.5
+      version: 2.2.5
+    valibot:
+      specifier: ^1.1.0
+      version: 1.1.0
+  workflow:
+    '@tanstack/pacer':
+      specifier: ^0.15.4
+      version: 0.15.4
+    eventure:
+      specifier: ^0.3.0
+      version: 0.3.0
+    exsolve:
+      specifier: ^1.0.7
+      version: 1.0.7
+    knitwork:
+      specifier: ^1.2.0
+      version: 1.2.0
+    xstate:
+      specifier: 5.20.1
+      version: 5.20.1
 
 importers:
 
   .:
     dependencies:
       '@mantine/core':
-        specifier: catalog:prod
+        specifier: catalog:frontend
         version: 8.3.6(@mantine/hooks@8.3.6(react@19.2.0))(@types/react@19.2.2)(react-dom@19.2.0(react@19.2.0))(react@19.2.0)
       '@mantine/dates':
-        specifier: catalog:prod
+        specifier: catalog:frontend
         version: 8.3.6(@mantine/core@8.3.6(@mantine/hooks@8.3.6(react@19.2.0))(@types/react@19.2.2)(react-dom@19.2.0(react@19.2.0))(react@19.2.0))(@mantine/hooks@8.3.6(react@19.2.0))(dayjs@1.11.13)(react-dom@19.2.0(react@19.2.0))(react@19.2.0)
       '@mantine/hooks':
-        specifier: catalog:prod
+        specifier: catalog:frontend
         version: 8.3.6(react@19.2.0)
       '@mantine/modals':
-        specifier: catalog:prod
+        specifier: catalog:frontend
         version: 8.3.6(@mantine/core@8.3.6(@mantine/hooks@8.3.6(react@19.2.0))(@types/react@19.2.2)(react-dom@19.2.0(react@19.2.0))(react@19.2.0))(@mantine/hooks@8.3.6(react@19.2.0))(react-dom@19.2.0(react@19.2.0))(react@19.2.0)
       '@mantine/notifications':
-        specifier: catalog:prod
+        specifier: catalog:frontend
         version: 8.3.6(@mantine/core@8.3.6(@mantine/hooks@8.3.6(react@19.2.0))(@types/react@19.2.2)(react-dom@19.2.0(react@19.2.0))(react@19.2.0))(@mantine/hooks@8.3.6(react@19.2.0))(react-dom@19.2.0(react@19.2.0))(react@19.2.0)
       '@tabler/icons-react':
         specifier: catalog:icons
@@ -344,13 +308,13 @@ importers:
   packages/cli:
     dependencies:
       commander:
-        specifier: catalog:prod
+        specifier: catalog:cli
         version: 14.0.0
       inquirer:
-        specifier: catalog:prod
+        specifier: catalog:cli
         version: 12.9.4(@types/node@24.9.1)
       node-plop:
-        specifier: catalog:prod
+        specifier: catalog:cli
         version: 0.32.0
       pathe:
         specifier: catalog:node
@@ -359,34 +323,34 @@ importers:
   packages/components:
     dependencies:
       '@dnd-kit/core':
-        specifier: catalog:prod
+        specifier: catalog:frontend
         version: 6.3.1(react-dom@19.2.0(react@19.2.0))(react@19.2.0)
       '@dnd-kit/modifiers':
-        specifier: catalog:prod
+        specifier: catalog:frontend
         version: 9.0.0(@dnd-kit/core@6.3.1(react-dom@19.2.0(react@19.2.0))(react@19.2.0))(react@19.2.0)
       '@dnd-kit/sortable':
-        specifier: catalog:prod
+        specifier: catalog:frontend
         version: 10.0.0(@dnd-kit/core@6.3.1(react-dom@19.2.0(react@19.2.0))(react@19.2.0))(react@19.2.0)
       '@dnd-kit/utilities':
-        specifier: catalog:prod
+        specifier: catalog:frontend
         version: 3.2.2(react@19.2.0)
       '@gqty/react':
         specifier: catalog:frontend
         version: 3.1.1(gqty@3.6.0(graphql@16.12.0))(graphql@16.12.0)(react-dom@19.2.0(react@19.2.0))(react@19.2.0)
       '@mantine/core':
-        specifier: catalog:peer
+        specifier: catalog:frontend
         version: 8.3.6(@mantine/hooks@8.3.6(react@19.2.0))(@types/react@19.2.2)(react-dom@19.2.0(react@19.2.0))(react@19.2.0)
       '@mantine/dates':
-        specifier: catalog:peer
+        specifier: catalog:frontend
         version: 8.3.6(@mantine/core@8.3.6(@mantine/hooks@8.3.6(react@19.2.0))(@types/react@19.2.2)(react-dom@19.2.0(react@19.2.0))(react@19.2.0))(@mantine/hooks@8.3.6(react@19.2.0))(dayjs@1.11.13)(react-dom@19.2.0(react@19.2.0))(react@19.2.0)
       '@mantine/hooks':
-        specifier: catalog:peer
+        specifier: catalog:frontend
         version: 8.3.6(react@19.2.0)
       '@mantine/modals':
-        specifier: catalog:peer
+        specifier: catalog:frontend
         version: 8.3.6(@mantine/core@8.3.6(@mantine/hooks@8.3.6(react@19.2.0))(@types/react@19.2.2)(react-dom@19.2.0(react@19.2.0))(react@19.2.0))(@mantine/hooks@8.3.6(react@19.2.0))(react-dom@19.2.0(react@19.2.0))(react@19.2.0)
       '@mantine/notifications':
-        specifier: catalog:peer
+        specifier: catalog:frontend
         version: 8.3.6(@mantine/core@8.3.6(@mantine/hooks@8.3.6(react@19.2.0))(@types/react@19.2.2)(react-dom@19.2.0(react@19.2.0))(react@19.2.0))(@mantine/hooks@8.3.6(react@19.2.0))(react-dom@19.2.0(react@19.2.0))(react@19.2.0)
       '@melloware/react-logviewer':
         specifier: catalog:frontend
@@ -401,13 +365,13 @@ importers:
         specifier: catalog:frontend
         version: 1.134.9(react-dom@19.2.0(react@19.2.0))(react@19.2.0)
       gqty:
-        specifier: catalog:prod
+        specifier: catalog:graphql
         version: 3.6.0(graphql@16.12.0)
       graphql:
-        specifier: catalog:prod
+        specifier: catalog:graphql
         version: 16.12.0
       hono:
-        specifier: catalog:prod
+        specifier: catalog:backend
         version: 4.10.4
       react:
         specifier: catalog:frontend
@@ -435,7 +399,7 @@ importers:
         specifier: catalog:style
         version: 7.0.1(postcss@8.5.6)
       valibot:
-        specifier: catalog:dev
+        specifier: catalog:validation
         version: 1.1.0(typescript@5.9.3)
       valibot-form:
         specifier: workspace:*
@@ -452,16 +416,16 @@ importers:
   packages/core:
     dependencies:
       eventure:
-        specifier: catalog:prod
+        specifier: catalog:workflow
         version: 0.3.0
       option-t:
-        specifier: catalog:prod
+        specifier: catalog:validation
         version: 54.2.4
       reflect-metadata:
-        specifier: catalog:prod
+        specifier: catalog:validation
         version: 0.2.2
       xstate:
-        specifier: catalog:prod
+        specifier: catalog:workflow
         version: 5.20.1
     devDependencies:
       '@pluxel/context':
@@ -477,10 +441,10 @@ importers:
   packages/diod:
     devDependencies:
       option-t:
-        specifier: catalog:dev
+        specifier: catalog:validation
         version: 54.2.4
       reflect-metadata:
-        specifier: catalog:dev
+        specifier: catalog:validation
         version: 0.2.2
       tsdown:
         specifier: catalog:build
@@ -492,25 +456,25 @@ importers:
   packages/hmr:
     dependencies:
       '@gqloom/core':
-        specifier: catalog:prod
+        specifier: catalog:graphql
         version: 0.12.1(graphql@16.12.0)
       '@gqloom/valibot':
-        specifier: catalog:prod
+        specifier: catalog:graphql
         version: 0.12.0(@gqloom/core@0.12.1(graphql@16.12.0))(graphql@16.12.0)(valibot@1.1.0(typescript@5.9.3))
       '@gqty/cli':
-        specifier: catalog:prod
+        specifier: catalog:graphql
         version: 5.0.0(@types/node@24.9.1)(typescript@5.9.3)
       '@gqty/react':
         specifier: catalog:frontend
         version: 3.1.1(gqty@3.6.0(graphql@16.12.0))(graphql@16.12.0)(react-dom@19.2.0(react@19.2.0))(react@19.2.0)
       '@hono/node-server':
-        specifier: catalog:prod
+        specifier: catalog:backend
         version: 1.19.6(hono@4.10.4)
       '@hono/react-renderer':
         specifier: catalog:frontend
         version: 1.0.1(hono@4.10.4)(react-dom@19.2.0(react@19.2.0))(react@19.2.0)
       '@hono/valibot-validator':
-        specifier: catalog:prod
+        specifier: catalog:backend
         version: 0.5.3(hono@4.10.4)(valibot@1.1.0(typescript@5.9.3))
       '@hono/vite-dev-server':
         specifier: catalog:build
@@ -519,58 +483,58 @@ importers:
         specifier: catalog:frontend
         version: 6.3.4(react-dom@19.2.0(react@19.2.0))(react@19.2.0)
       '@swc/core':
-        specifier: catalog:prod
-        version: 1.14.0(@swc/helpers@0.5.17)
+        specifier: catalog:build
+        version: 1.15.0(@swc/helpers@0.5.17)
       '@tanstack/pacer':
-        specifier: catalog:prod
+        specifier: catalog:workflow
         version: 0.15.4
       '@tanstack/react-router':
         specifier: catalog:frontend
-        version: 1.134.9(react-dom@19.2.0(react@19.2.0))(react@19.2.0)
+        version: 1.134.13(react-dom@19.2.0(react@19.2.0))(react@19.2.0)
       chokidar:
         specifier: catalog:node
         version: 4.0.3
+      exsolve:
+        specifier: catalog:workflow
+        version: 1.0.7
       gqty:
-        specifier: catalog:prod
+        specifier: catalog:graphql
         version: 3.6.0(graphql@16.12.0)
       graphql:
-        specifier: catalog:prod
+        specifier: catalog:graphql
         version: 16.12.0
       graphql-scalars:
-        specifier: catalog:prod
+        specifier: catalog:graphql
         version: 1.25.0(graphql@16.12.0)
       graphql-yoga:
-        specifier: catalog:prod
-        version: 5.16.0(graphql@16.12.0)
+        specifier: catalog:graphql
+        version: 5.16.1(graphql@16.12.0)
       hono:
-        specifier: catalog:prod
+        specifier: catalog:backend
         version: 4.10.4
       knitwork:
-        specifier: catalog:prod
+        specifier: catalog:workflow
         version: 1.2.0
-      mlly:
-        specifier: catalog:prod
-        version: 1.8.0
       nypm:
-        specifier: catalog:prod
+        specifier: catalog:cli
         version: 0.6.2
       pathe:
         specifier: catalog:node
         version: 2.0.3
       pino:
-        specifier: catalog:prod
+        specifier: catalog:logging
         version: 10.1.0
       pino-caller:
-        specifier: catalog:prod
+        specifier: catalog:logging
         version: 4.0.0
       pino-pretty:
-        specifier: catalog:prod
+        specifier: catalog:logging
         version: 13.1.2
       pkg-types:
         specifier: catalog:node
         version: 2.3.0
       pluxel-plugin-redis:
-        specifier: catalog:prod
+        specifier: catalog:backend
         version: 0.1.0
       postcss:
         specifier: catalog:style
@@ -582,26 +546,26 @@ importers:
         specifier: catalog:style
         version: 7.0.1(postcss@8.5.6)
       rotating-file-stream:
-        specifier: catalog:prod
+        specifier: catalog:logging
         version: 3.2.7
       superjson:
-        specifier: catalog:prod
+        specifier: catalog:validation
         version: 2.2.5
       unplugin-swc:
         specifier: catalog:build
-        version: 1.5.8(@swc/core@1.14.0(@swc/helpers@0.5.17))(rollup@4.52.5)
+        version: 1.5.8(@swc/core@1.15.0(@swc/helpers@0.5.17))(rollup@4.52.5)
       valibot:
-        specifier: catalog:prod
+        specifier: catalog:validation
         version: 1.1.0(typescript@5.9.3)
       vite:
         specifier: catalog:build
-        version: 7.1.12(@types/node@24.9.1)(jiti@2.6.1)(lightningcss@1.30.1)(sugarss@5.0.1(postcss@8.5.6))(terser@5.43.1)(tsx@4.20.5)(yaml@2.8.1)
+        version: 7.2.1(@types/node@24.9.1)(jiti@2.6.1)(lightningcss@1.30.1)(sugarss@5.0.1(postcss@8.5.6))(terser@5.43.1)(tsx@4.20.5)(yaml@2.8.1)
       vite-node:
         specifier: catalog:build
         version: 3.2.4(@types/node@24.9.1)(jiti@2.6.1)(lightningcss@1.30.1)(sugarss@5.0.1(postcss@8.5.6))(terser@5.43.1)(tsx@4.20.5)(yaml@2.8.1)
       vite-tsconfig-paths:
         specifier: catalog:build
-        version: 5.1.4(typescript@5.9.3)(vite@7.1.12(@types/node@24.9.1)(jiti@2.6.1)(lightningcss@1.30.1)(sugarss@5.0.1(postcss@8.5.6))(terser@5.43.1)(tsx@4.20.5)(yaml@2.8.1))
+        version: 5.1.4(typescript@5.9.3)(vite@7.2.1(@types/node@24.9.1)(jiti@2.6.1)(lightningcss@1.30.1)(sugarss@5.0.1(postcss@8.5.6))(terser@5.43.1)(tsx@4.20.5)(yaml@2.8.1))
     devDependencies:
       '@pluxel/components':
         specifier: workspace:*
@@ -622,23 +586,23 @@ importers:
   packages/valibot-form:
     dependencies:
       valibot:
-        specifier: catalog:prod
+        specifier: catalog:validation
         version: 1.1.0(typescript@5.9.3)
     devDependencies:
       '@dnd-kit/core':
-        specifier: catalog:dev
+        specifier: catalog:frontend
         version: 6.3.1(react-dom@19.2.0(react@19.2.0))(react@19.2.0)
       '@dnd-kit/modifiers':
-        specifier: catalog:dev
+        specifier: catalog:frontend
         version: 9.0.0(@dnd-kit/core@6.3.1(react-dom@19.2.0(react@19.2.0))(react@19.2.0))(react@19.2.0)
       '@dnd-kit/sortable':
-        specifier: catalog:dev
+        specifier: catalog:frontend
         version: 10.0.0(@dnd-kit/core@6.3.1(react-dom@19.2.0(react@19.2.0))(react@19.2.0))(react@19.2.0)
       '@dnd-kit/utilities':
-        specifier: catalog:dev
+        specifier: catalog:frontend
         version: 3.2.2(react@19.2.0)
       '@mantine/core':
-        specifier: catalog:dev
+        specifier: catalog:frontend
         version: 8.3.6(@mantine/hooks@8.3.6(react@19.2.0))(@types/react@19.2.2)(react-dom@19.2.0(react@19.2.0))(react@19.2.0)
       '@tabler/icons-react':
         specifier: catalog:icons
@@ -898,11 +862,11 @@ packages:
     peerDependencies:
       react: '>=16.8.0'
 
-  '@emnapi/core@1.6.0':
-    resolution: {integrity: sha512-zq/ay+9fNIJJtJiZxdTnXS20PllcYMX3OE23ESc4HK/bdYu3cOWYVhsOhVnXALfU/uqJIxn5NBPd9z4v+SfoSg==}
+  '@emnapi/core@1.7.0':
+    resolution: {integrity: sha512-pJdKGq/1iquWYtv1RRSljZklxHCOCAJFJrImO5ZLKPJVJlVUcs8yFwNQlqS0Lo8xT1VAXXTCZocF9n26FWEKsw==}
 
-  '@emnapi/runtime@1.6.0':
-    resolution: {integrity: sha512-obtUmAHTMjll499P+D9A3axeJFlhdjOWdKUNs/U6QIGT7V5RjcUW1xToAzjvmgTSQhDbYn/NwfTRoJcQ2rNBxA==}
+  '@emnapi/runtime@1.7.0':
+    resolution: {integrity: sha512-oAYoQnCYaQZKVS53Fq23ceWMRxq5EhQsE0x0RdQ55jT7wagMu5k+fS39v1fiSLrtrLQlXwVINenqhLMtTrV/1Q==}
 
   '@emnapi/wasi-threads@1.1.0':
     resolution: {integrity: sha512-WI0DdZ8xFSbgMjR1sFsKABJ/C5OnRrjT06JXbZKexJGrDuPTzZdDYfFlsgcCXCyf+suG5QU2e/y1Wo2V/OapLQ==}
@@ -1176,14 +1140,14 @@ packages:
     peerDependencies:
       graphql: ^14.0.0 || ^15.0.0 || ^16.0.0 || ^17.0.0
 
-  '@graphql-tools/executor@1.4.10':
-    resolution: {integrity: sha512-/o7QScMdJpx/qIJlQcYs9ohB2qU2jSpuMyPStQy30kKTLHKyMETWpbljvRsuQxHJ2MJmEF3bYZgBHzdNAQHhug==}
+  '@graphql-tools/executor@1.4.11':
+    resolution: {integrity: sha512-e6WwB5Cf9UAwRc32jRy98q87MlYWiq4q81A0FNeWPoccWHNaxj8G2Wqi/6YjxfU3T1Qne2W98Q6u0nhNc5uZuQ==}
     engines: {node: '>=16.0.0'}
     peerDependencies:
       graphql: ^14.0.0 || ^15.0.0 || ^16.0.0 || ^17.0.0
 
-  '@graphql-tools/merge@9.1.2':
-    resolution: {integrity: sha512-Ny9YhWKv+KxZFdXYt+wlyEW55GzhFiq4daV4wYgpP0aRbwQaczNJd1L3VjjBsPKjmW8lctZXUoqYTqU5QPcBGw==}
+  '@graphql-tools/merge@9.1.3':
+    resolution: {integrity: sha512-O53kiNwGU/moJxX8m4BKpf9xHxVhmThhrctZ1gqHkdC3fYmafzWdzyNGkBsZcoh9x0wKM1ORPPuaE6Bwp3OFBA==}
     engines: {node: '>=16.0.0'}
     peerDependencies:
       graphql: ^14.0.0 || ^15.0.0 || ^16.0.0 || ^17.0.0
@@ -1194,20 +1158,20 @@ packages:
     peerDependencies:
       graphql: ^14.0.0 || ^15.0.0 || ^16.0.0 || ^17.0.0
 
-  '@graphql-tools/relay-operation-optimizer@7.0.22':
-    resolution: {integrity: sha512-yS2GEfCJvNECbqHxR6B3EWVIuLRra+abPD489dmpZMoCMblBnZU0YwxlGmYOeNemTU/XWRlHRca1RhEJFUXtxQ==}
+  '@graphql-tools/relay-operation-optimizer@7.0.23':
+    resolution: {integrity: sha512-L1i7QkiEJHsx7quHZsF8RUZ//a3tK6OTcideguHouf8tYfL87hKSngiDldVbN2QBSSvaUG6YlXv+AKH2yRXq3w==}
     engines: {node: '>=16.0.0'}
     peerDependencies:
       graphql: ^14.0.0 || ^15.0.0 || ^16.0.0 || ^17.0.0
 
-  '@graphql-tools/schema@10.0.26':
-    resolution: {integrity: sha512-KOmjuiWa9poP/Lza4HV0ZBPYGJI3VE3QzXA/8e0+wjcsRuEmxMLP82re1PUg0QRzp2UzifAB/gd7DoXmVGG9Fg==}
+  '@graphql-tools/schema@10.0.27':
+    resolution: {integrity: sha512-Lb5mJG8eF3TPnW0TXS9qoqR40S5rrnS3DFaY9dGf+8y3petTF2nc1khcOaLlOsvyvfSWSMUgkB/U6LRofRjb6w==}
     engines: {node: '>=16.0.0'}
     peerDependencies:
       graphql: ^14.0.0 || ^15.0.0 || ^16.0.0 || ^17.0.0
 
-  '@graphql-tools/utils@10.10.0':
-    resolution: {integrity: sha512-OOeab5Y9qeKq0zfoJCSScMcDfGcIxp05+LW2xYVCS2l3su+K3lYcg5+cAAx9n0SFxpJl8zF5denq2QDsfM7NnQ==}
+  '@graphql-tools/utils@10.10.1':
+    resolution: {integrity: sha512-9iOZ7x6tuIpp/dviNmTCSH1cDDNLIcrj6T3WKH9lU4nRWx5Pr0e7Faj7T/HmP2Njrjik63dJWuDVRxfQSTOc4g==}
     engines: {node: '>=16.0.0'}
     peerDependencies:
       graphql: ^14.0.0 || ^15.0.0 || ^16.0.0 || ^17.0.0
@@ -1755,68 +1719,68 @@ packages:
     cpu: [x64]
     os: [win32]
 
-  '@swc/core-darwin-arm64@1.14.0':
-    resolution: {integrity: sha512-uHPC8rlCt04nvYNczWzKVdgnRhxCa3ndKTBBbBpResOZsRmiwRAvByIGh599j+Oo6Z5eyTPrgY+XfJzVmXnN7Q==}
+  '@swc/core-darwin-arm64@1.15.0':
+    resolution: {integrity: sha512-TBKWkbnShnEjlIbO4/gfsrIgAqHBVqgPWLbWmPdZ80bF393yJcLgkrb7bZEnJs6FCbSSuGwZv2rx1jDR2zo6YA==}
     engines: {node: '>=10'}
     cpu: [arm64]
     os: [darwin]
 
-  '@swc/core-darwin-x64@1.14.0':
-    resolution: {integrity: sha512-2SHrlpl68vtePRknv9shvM9YKKg7B9T13tcTg9aFCwR318QTYo+FzsKGmQSv9ox/Ua0Q2/5y2BNjieffJoo4nA==}
+  '@swc/core-darwin-x64@1.15.0':
+    resolution: {integrity: sha512-f5JKL1v1H56CIZc1pVn4RGPOfnWqPwmuHdpf4wesvXunF1Bx85YgcspW5YxwqG5J9g3nPU610UFuExJXVUzOiQ==}
     engines: {node: '>=10'}
     cpu: [x64]
     os: [darwin]
 
-  '@swc/core-linux-arm-gnueabihf@1.14.0':
-    resolution: {integrity: sha512-SMH8zn01dxt809svetnxpeg/jWdpi6dqHKO3Eb11u4OzU2PK7I5uKS6gf2hx5LlTbcJMFKULZiVwjlQLe8eqtg==}
+  '@swc/core-linux-arm-gnueabihf@1.15.0':
+    resolution: {integrity: sha512-duK6nG+WyuunnfsfiTUQdzC9Fk8cyDLqT9zyXvY2i2YgDu5+BH5W6wM5O4mDNCU5MocyB/SuF5YDF7XySnowiQ==}
     engines: {node: '>=10'}
     cpu: [arm]
     os: [linux]
 
-  '@swc/core-linux-arm64-gnu@1.14.0':
-    resolution: {integrity: sha512-q2JRu2D8LVqGeHkmpVCljVNltG0tB4o4eYg+dElFwCS8l2Mnt9qurMCxIeo9mgoqz0ax+k7jWtIRHktnVCbjvQ==}
+  '@swc/core-linux-arm64-gnu@1.15.0':
+    resolution: {integrity: sha512-ITe9iDtTRXM98B91rvyPP6qDVbhUBnmA/j4UxrHlMQ0RlwpqTjfZYZkD0uclOxSZ6qIrOj/X5CaoJlDUuQ0+Cw==}
     engines: {node: '>=10'}
     cpu: [arm64]
     os: [linux]
 
-  '@swc/core-linux-arm64-musl@1.14.0':
-    resolution: {integrity: sha512-uofpVoPCEUjYIv454ZEZ3sLgMD17nIwlz2z7bsn7rl301Kt/01umFA7MscUovFfAK2IRGck6XB+uulMu6aFhKQ==}
+  '@swc/core-linux-arm64-musl@1.15.0':
+    resolution: {integrity: sha512-Q5ldc2bzriuzYEoAuqJ9Vr3FyZhakk5hiwDbniZ8tlEXpbjBhbOleGf9/gkhLaouDnkNUEazFW9mtqwUTRdh7Q==}
     engines: {node: '>=10'}
     cpu: [arm64]
     os: [linux]
 
-  '@swc/core-linux-x64-gnu@1.14.0':
-    resolution: {integrity: sha512-quTTx1Olm05fBfv66DEBuOsOgqdypnZ/1Bh3yGXWY7ANLFeeRpCDZpljD9BSjdsNdPOlwJmEUZXMHtGm3v1TZQ==}
+  '@swc/core-linux-x64-gnu@1.15.0':
+    resolution: {integrity: sha512-pY4is+jEpOxlYCSnI+7N8Oxbap9TmTz5YT84tUvRTlOlTBwFAUlWFCX0FRwWJlsfP0TxbqhIe8dNNzlsEmJbXQ==}
     engines: {node: '>=10'}
     cpu: [x64]
     os: [linux]
 
-  '@swc/core-linux-x64-musl@1.14.0':
-    resolution: {integrity: sha512-caaNAu+aIqT8seLtCf08i8C3/UC5ttQujUjejhMcuS1/LoCKtNiUs4VekJd2UGt+pyuuSrQ6dKl8CbCfWvWeXw==}
+  '@swc/core-linux-x64-musl@1.15.0':
+    resolution: {integrity: sha512-zYEt5eT8y8RUpoe7t5pjpoOdGu+/gSTExj8PV86efhj6ugB3bPlj3Y85ogdW3WMVXr4NvwqvzdaYGCZfXzSyVg==}
     engines: {node: '>=10'}
     cpu: [x64]
     os: [linux]
 
-  '@swc/core-win32-arm64-msvc@1.14.0':
-    resolution: {integrity: sha512-EeW3jFlT3YNckJ6V/JnTfGcX7UHGyh6/AiCPopZ1HNaGiXVCKHPpVQZicmtyr/UpqxCXLrTgjHOvyMke7YN26A==}
+  '@swc/core-win32-arm64-msvc@1.15.0':
+    resolution: {integrity: sha512-zC1rmOgFH5v2BCbByOazEqs0aRNpTdLRchDExfcCfgKgeaD+IdpUOqp7i3VG1YzkcnbuZjMlXfM0ugpt+CddoA==}
     engines: {node: '>=10'}
     cpu: [arm64]
     os: [win32]
 
-  '@swc/core-win32-ia32-msvc@1.14.0':
-    resolution: {integrity: sha512-dPai3KUIcihV5hfoO4QNQF5HAaw8+2bT7dvi8E5zLtecW2SfL3mUZipzampXq5FHll0RSCLzlrXnSx+dBRZIIQ==}
+  '@swc/core-win32-ia32-msvc@1.15.0':
+    resolution: {integrity: sha512-7t9U9KwMwQblkdJIH+zX1V4q1o3o41i0HNO+VlnAHT5o+5qHJ963PHKJ/pX3P2UlZnBCY465orJuflAN4rAP9A==}
     engines: {node: '>=10'}
     cpu: [ia32]
     os: [win32]
 
-  '@swc/core-win32-x64-msvc@1.14.0':
-    resolution: {integrity: sha512-nm+JajGrTqUA6sEHdghDlHMNfH1WKSiuvljhdmBACW4ta4LC3gKurX2qZuiBARvPkephW9V/i5S8QPY1PzFEqg==}
+  '@swc/core-win32-x64-msvc@1.15.0':
+    resolution: {integrity: sha512-VE0Zod5vcs8iMLT64m5QS1DlTMXJFI/qSgtMDRx8rtZrnjt6/9NW8XUaiPJuRu8GluEO1hmHoyf1qlbY19gGSQ==}
     engines: {node: '>=10'}
     cpu: [x64]
     os: [win32]
 
-  '@swc/core@1.14.0':
-    resolution: {integrity: sha512-oExhY90bes5pDTVrei0xlMVosTxwd/NMafIpqsC4dMbRYZ5KB981l/CX8tMnGsagTplj/RcG9BeRYmV6/J5m3w==}
+  '@swc/core@1.15.0':
+    resolution: {integrity: sha512-8SnJV+JV0rYbfSiEiUvYOmf62E7QwsEG+aZueqSlKoxFt0pw333+bgZSQXGUV6etXU88nxur0afVMaINujBMSw==}
     engines: {node: '>=10'}
     peerDependencies:
       '@swc/helpers': '>=0.5.17'
@@ -1865,6 +1829,13 @@ packages:
       '@tanstack/react-start':
         optional: true
 
+  '@tanstack/react-router@1.134.13':
+    resolution: {integrity: sha512-pPo56X5r0/oL+cNk6c2D/qvAW+ScCJe7tX1MCR15OuTvLLsc31W2Fw3gXpQFY8ZvqcP7DmHBvL+rgfRQvtZ6nQ==}
+    engines: {node: '>=12'}
+    peerDependencies:
+      react: '>=18.0.0 || >=19.0.0'
+      react-dom: '>=18.0.0 || >=19.0.0'
+
   '@tanstack/react-router@1.134.9':
     resolution: {integrity: sha512-JIxFamShs3gRIkOxpgz/3bglbSKZHMrzKASwNFg+sQPVXVPOLtN35D5PuEDAFTPPht9Wv48WWUNYE03ZytnNug==}
     engines: {node: '>=12'}
@@ -1883,6 +1854,10 @@ packages:
     peerDependencies:
       react: ^16.8.0 || ^17.0.0 || ^18.0.0 || ^19.0.0
       react-dom: ^16.8.0 || ^17.0.0 || ^18.0.0 || ^19.0.0
+
+  '@tanstack/router-core@1.134.13':
+    resolution: {integrity: sha512-C6UwtUPtnWqfktnDONTvzmYjsb6N3Lv94YyYd1S5xPpYNi5O5YFU3HST52EpbP6B3kZ77DlxjO7Bbpq3fyX+OA==}
+    engines: {node: '>=12'}
 
   '@tanstack/router-core@1.134.9':
     resolution: {integrity: sha512-9Vr8tYC59I70DYGVRknRf4vjQMjSfHvmc+iTM8vcpwERBh3Vgkv90f8ol85KHKqjorSsCqMeYFhFt8AM4A4CSw==}
@@ -1981,20 +1956,20 @@ packages:
     resolution: {integrity: sha512-ApcWxkrs1WmEMS2CaLLFUEem/49erT3sxIVjpzU5f6zmVcnijtDSrhoK2zVobOIikZJdH63jdAXOrvjf6eOUNQ==}
     engines: {node: '>=18.0.0'}
 
-  '@whatwg-node/fetch@0.10.11':
-    resolution: {integrity: sha512-eR8SYtf9Nem1Tnl0IWrY33qJ5wCtIWlt3Fs3c6V4aAaTFLtkEQErXu3SSZg/XCHrj9hXSJ8/8t+CdMk5Qec/ZA==}
+  '@whatwg-node/fetch@0.10.12':
+    resolution: {integrity: sha512-XmsCdDgQxbM8ha7xvIbDQyO/iES2ga0wQcM5sb+mugll1F+IzSshOMPK6n1TuqDDgjTwoU01mMa6oRhHWnpDcw==}
     engines: {node: '>=18.0.0'}
 
-  '@whatwg-node/node-fetch@0.8.1':
-    resolution: {integrity: sha512-cQmQEo7IsI0EPX9VrwygXVzrVlX43Jb7/DBZSmpnC7xH4xkyOnn/HykHpTaQk7TUs7zh59A5uTGqx3p2Ouzffw==}
+  '@whatwg-node/node-fetch@0.8.2':
+    resolution: {integrity: sha512-1PihEl0a8hm/AZD/LVRs1lEWCZCo2Q65Xm1goaHeqR314e+/Z7NI7YE10Yser8+2iZFGtv542IYr685o3aaZ/g==}
     engines: {node: '>=18.0.0'}
 
   '@whatwg-node/promise-helpers@1.3.2':
     resolution: {integrity: sha512-Nst5JdK47VIl9UcGwtv2Rcgyn5lWtZ0/mhRQ4G8NN2isxpq2TO30iqHzmwoJycjWuyUfg3GFXqP/gFHXeV57IA==}
     engines: {node: '>=16.0.0'}
 
-  '@whatwg-node/server@0.10.13':
-    resolution: {integrity: sha512-Otmxo+0mp8az3B48pLI1I4msNOXPIoP7TLm6h5wOEQmynqHt8oP9nR6NJUeJk6iI5OtFpQtkbJFwfGkmplvc3Q==}
+  '@whatwg-node/server@0.10.15':
+    resolution: {integrity: sha512-/BqffJYRIbX1HfNUZkPvtiSloC3QCvxAYC82g0uo3ruiJ44GOiCGH1q/XWF0/l5tWBvFsgX5VBA8l7IhQkCNfA==}
     engines: {node: '>=18.0.0'}
 
   acorn@8.15.0:
@@ -2219,9 +2194,6 @@ packages:
 
   concat-map@0.0.1:
     resolution: {integrity: sha512-/Srv4dswyQNBfohGpz9o6Yb3Gz3SrUDqBH5rTuhGR7ahtlbYKnVxw2bCFMRljaA7EXHaXZ8wsHdodFvbkhKmqg==}
-
-  confbox@0.1.8:
-    resolution: {integrity: sha512-RMtmw0iFkeR4YV+fUOSucriAQNb9g8zFR52MWCtl+cCZOFRNL6zeB395vPzFhEjjn4fMxXudmELnl/KF/WrK6w==}
 
   confbox@0.2.2:
     resolution: {integrity: sha512-1NB+BKqhtNipMsov4xI/NnhCKp9XG9NamYp5PVm9klAT0fsrNPjaFICsCFhNhwZJKNh7zB/3q8qXz0E9oaMNtQ==}
@@ -2572,8 +2544,8 @@ packages:
     peerDependencies:
       graphql: ^0.9.0 || ^0.10.0 || ^0.11.0 || ^0.12.0 || ^0.13.0 || ^14.0.0 || ^15.0.0 || ^16.0.0
 
-  graphql-yoga@5.16.0:
-    resolution: {integrity: sha512-/R2dJea7WgvNlXRU4F8iFwWd95Qn1mN+R+yC8XBs1wKjUzr0Pvv8cGYtt6UUcVHw5CiDEtu7iQY5oOe3sDAWCQ==}
+  graphql-yoga@5.16.1:
+    resolution: {integrity: sha512-5NIrqJjqUaqP7OtxmCgYCFSj0HDBEdBjkeGQw+Jc5v3N9aQ1ZTFkQ8VusAwYiH1ueRpi5wlrT63LqoSE+Ty54Q==}
     engines: {node: '>=18.0.0'}
     peerDependencies:
       graphql: ^15.2.0 || ^16.0.0
@@ -2779,6 +2751,10 @@ packages:
 
   isbot@5.1.31:
     resolution: {integrity: sha512-DPgQshehErHAqSCKDb3rNW03pa2wS/v5evvUqtxt6TTnHRqAG8FdzcSSJs9656pK6Y+NT7K9R4acEYXLHYfpUQ==}
+    engines: {node: '>=18'}
+
+  isbot@5.1.32:
+    resolution: {integrity: sha512-VNfjM73zz2IBZmdShMfAUg10prm6t7HFUQmNAEOAVS4YH92ZrZcvkMcGX6cIgBJAzWDzPent/EeAtYEHNPNPBQ==}
     engines: {node: '>=18'}
 
   jiti@2.6.1:
@@ -2992,9 +2968,6 @@ packages:
     engines: {node: '>=10'}
     hasBin: true
 
-  mlly@1.8.0:
-    resolution: {integrity: sha512-l8D9ODSRWLe2KHJSifWGwBqpTZXIXTeo8mlKjY+E2HAakaTeNpqAyBZ8GSqLzHgw4XmHmC8whvpjJNMbFZN7/g==}
-
   ms@2.1.3:
     resolution: {integrity: sha512-6FlzubTLZG3J2a/NVCAleEhjzq5oxgHyaCU9yYXvcLsvoVaHJq/s5xXI6/XXP6tz7R9xAOtHnSO/tXtF3WRTlA==}
 
@@ -3177,9 +3150,6 @@ packages:
   pino@10.1.0:
     resolution: {integrity: sha512-0zZC2ygfdqvqK8zJIr1e+wT1T/L+LF6qvqvbzEQ6tiMAoTqEVK9a1K3YRu8HEUvGEvNqZyPJTtb2sNIoTkB83w==}
     hasBin: true
-
-  pkg-types@1.3.1:
-    resolution: {integrity: sha512-/Jm5M4RvtBFVkKWRu2BLUTNP8/M2a+UwuAX+ae4770q1qVGtfjG+WTCupoZixokjmHiry8uI+dlY8KXYV5HVVQ==}
 
   pkg-types@2.3.0:
     resolution: {integrity: sha512-SIqCzDRg0s9npO5XQ3tNZioRY1uK06lA41ynBC1YmFTmnY6FjUjVt6s4LoADmwoig1qqD0oK8h1p/8mlMx8Oig==}
@@ -3598,6 +3568,10 @@ packages:
   tinyexec@1.0.1:
     resolution: {integrity: sha512-5uC6DDlmeqiOwCPmK9jMSdOuZTh8bU39Ys6yidB+UTt5hfZUPGAypSgFRiEp+jbi9qH40BLDvy85jIU88wKSqw==}
 
+  tinyexec@1.0.2:
+    resolution: {integrity: sha512-W/KYk+NFhkmsYpuHq5JykngiOCnxeVL8v8dFnqxSD8qEEdRfXk1SDM6JzNqcERbcGYj9tMrDQBYV9cjgnunFIg==}
+    engines: {node: '>=18'}
+
   tinyglobby@0.2.15:
     resolution: {integrity: sha512-j2Zq4NyQYG5XMST4cbs02Ak8iJUdxRM0XI5QyxXuZOzKOINmWurp3smXu3y5wDcJrptwpSjgXHzIQxR0omXljQ==}
     engines: {node: '>=12.0.0'}
@@ -3741,9 +3715,6 @@ packages:
     resolution: {integrity: sha512-LbBDqdIC5s8iROCUjMbW1f5dJQTEFB1+KO9ogbvlb3nm9n4YHa5p4KTvFPWvh2Hs8gZMBuiB1/8+pdfe/tDPug==}
     hasBin: true
 
-  ufo@1.6.1:
-    resolution: {integrity: sha512-9a4/uxlTWJ4+a5i0ooc1rU7C7YOw3wT+UGqdeNNHWnOF9qcMBgLRS+4IYUqbczewFx4mLEig6gawh7X6mFlEkA==}
-
   uglify-js@3.19.3:
     resolution: {integrity: sha512-v3Xu+yuwBXisp6QYTcH4UbH+xYJXqnq2m/LtQVWKWzYc1iehYnLixoQDN9FH6/j9/oybfd6W9Ghwkl8+UMKTKQ==}
     engines: {node: '>=0.8.0'}
@@ -3881,6 +3852,46 @@ packages:
 
   vite@7.1.12:
     resolution: {integrity: sha512-ZWyE8YXEXqJrrSLvYgrRP7p62OziLW7xI5HYGWFzOvupfAlrLvURSzv/FyGyy0eidogEM3ujU+kUG1zuHgb6Ug==}
+    engines: {node: ^20.19.0 || >=22.12.0}
+    hasBin: true
+    peerDependencies:
+      '@types/node': ^20.19.0 || >=22.12.0
+      jiti: '>=1.21.0'
+      less: ^4.0.0
+      lightningcss: ^1.21.0
+      sass: ^1.70.0
+      sass-embedded: ^1.70.0
+      stylus: '>=0.54.8'
+      sugarss: ^5.0.0
+      terser: ^5.16.0
+      tsx: ^4.8.1
+      yaml: ^2.4.2
+    peerDependenciesMeta:
+      '@types/node':
+        optional: true
+      jiti:
+        optional: true
+      less:
+        optional: true
+      lightningcss:
+        optional: true
+      sass:
+        optional: true
+      sass-embedded:
+        optional: true
+      stylus:
+        optional: true
+      sugarss:
+        optional: true
+      terser:
+        optional: true
+      tsx:
+        optional: true
+      yaml:
+        optional: true
+
+  vite@7.2.1:
+    resolution: {integrity: sha512-qTl3VF7BvOupTR85Zc561sPEgxyUSNSvTQ9fit7DEMP7yPgvvIGm5Zfa1dOM+kOwWGNviK9uFM9ra77+OjK7lQ==}
     engines: {node: ^20.19.0 || >=22.12.0}
     hasBin: true
     peerDependencies:
@@ -4270,13 +4281,13 @@ snapshots:
       react: 19.2.0
       tslib: 2.8.1
 
-  '@emnapi/core@1.6.0':
+  '@emnapi/core@1.7.0':
     dependencies:
       '@emnapi/wasi-threads': 1.1.0
       tslib: 2.8.1
     optional: true
 
-  '@emnapi/runtime@1.6.0':
+  '@emnapi/runtime@1.7.0':
     dependencies:
       tslib: 2.8.1
     optional: true
@@ -4423,7 +4434,7 @@ snapshots:
       '@commander-js/extra-typings': 13.1.0(commander@13.1.0)
       '@graphql-codegen/core': 4.0.2(graphql@16.12.0)
       '@graphql-codegen/typescript': 4.1.6(graphql@16.12.0)
-      '@graphql-tools/utils': 10.10.0(graphql@16.12.0)
+      '@graphql-tools/utils': 10.10.1(graphql@16.12.0)
       '@graphql-tools/wrap': 10.1.4(graphql@16.12.0)
       '@inquirer/prompts': 7.9.0(@types/node@24.9.1)
       chalk: 5.6.2
@@ -4461,14 +4472,14 @@ snapshots:
   '@graphql-codegen/core@4.0.2(graphql@16.12.0)':
     dependencies:
       '@graphql-codegen/plugin-helpers': 5.1.1(graphql@16.12.0)
-      '@graphql-tools/schema': 10.0.26(graphql@16.12.0)
-      '@graphql-tools/utils': 10.10.0(graphql@16.12.0)
+      '@graphql-tools/schema': 10.0.27(graphql@16.12.0)
+      '@graphql-tools/utils': 10.10.1(graphql@16.12.0)
       graphql: 16.12.0
       tslib: 2.6.3
 
   '@graphql-codegen/plugin-helpers@5.1.1(graphql@16.12.0)':
     dependencies:
-      '@graphql-tools/utils': 10.10.0(graphql@16.12.0)
+      '@graphql-tools/utils': 10.10.1(graphql@16.12.0)
       change-case-all: 1.0.15
       common-tags: 1.8.2
       graphql: 16.12.0
@@ -4479,7 +4490,7 @@ snapshots:
   '@graphql-codegen/schema-ast@4.1.0(graphql@16.12.0)':
     dependencies:
       '@graphql-codegen/plugin-helpers': 5.1.1(graphql@16.12.0)
-      '@graphql-tools/utils': 10.10.0(graphql@16.12.0)
+      '@graphql-tools/utils': 10.10.1(graphql@16.12.0)
       graphql: 16.12.0
       tslib: 2.6.3
 
@@ -4498,8 +4509,8 @@ snapshots:
     dependencies:
       '@graphql-codegen/plugin-helpers': 5.1.1(graphql@16.12.0)
       '@graphql-tools/optimize': 2.0.0(graphql@16.12.0)
-      '@graphql-tools/relay-operation-optimizer': 7.0.22(graphql@16.12.0)
-      '@graphql-tools/utils': 10.10.0(graphql@16.12.0)
+      '@graphql-tools/relay-operation-optimizer': 7.0.23(graphql@16.12.0)
+      '@graphql-tools/utils': 10.10.1(graphql@16.12.0)
       auto-bind: 4.0.0
       change-case-all: 1.0.15
       dependency-graph: 0.11.0
@@ -4512,7 +4523,7 @@ snapshots:
 
   '@graphql-tools/batch-execute@9.0.19(graphql@16.12.0)':
     dependencies:
-      '@graphql-tools/utils': 10.10.0(graphql@16.12.0)
+      '@graphql-tools/utils': 10.10.1(graphql@16.12.0)
       '@whatwg-node/promise-helpers': 1.3.2
       dataloader: 2.2.3
       graphql: 16.12.0
@@ -4521,9 +4532,9 @@ snapshots:
   '@graphql-tools/delegate@10.2.23(graphql@16.12.0)':
     dependencies:
       '@graphql-tools/batch-execute': 9.0.19(graphql@16.12.0)
-      '@graphql-tools/executor': 1.4.10(graphql@16.12.0)
-      '@graphql-tools/schema': 10.0.26(graphql@16.12.0)
-      '@graphql-tools/utils': 10.10.0(graphql@16.12.0)
+      '@graphql-tools/executor': 1.4.11(graphql@16.12.0)
+      '@graphql-tools/schema': 10.0.27(graphql@16.12.0)
+      '@graphql-tools/utils': 10.10.1(graphql@16.12.0)
       '@repeaterjs/repeater': 3.0.6
       '@whatwg-node/promise-helpers': 1.3.2
       dataloader: 2.2.3
@@ -4531,9 +4542,9 @@ snapshots:
       graphql: 16.12.0
       tslib: 2.8.1
 
-  '@graphql-tools/executor@1.4.10(graphql@16.12.0)':
+  '@graphql-tools/executor@1.4.11(graphql@16.12.0)':
     dependencies:
-      '@graphql-tools/utils': 10.10.0(graphql@16.12.0)
+      '@graphql-tools/utils': 10.10.1(graphql@16.12.0)
       '@graphql-typed-document-node/core': 3.2.0(graphql@16.12.0)
       '@repeaterjs/repeater': 3.0.6
       '@whatwg-node/disposablestack': 0.0.6
@@ -4541,9 +4552,9 @@ snapshots:
       graphql: 16.12.0
       tslib: 2.8.1
 
-  '@graphql-tools/merge@9.1.2(graphql@16.12.0)':
+  '@graphql-tools/merge@9.1.3(graphql@16.12.0)':
     dependencies:
-      '@graphql-tools/utils': 10.10.0(graphql@16.12.0)
+      '@graphql-tools/utils': 10.10.1(graphql@16.12.0)
       graphql: 16.12.0
       tslib: 2.8.1
 
@@ -4552,36 +4563,35 @@ snapshots:
       graphql: 16.12.0
       tslib: 2.8.1
 
-  '@graphql-tools/relay-operation-optimizer@7.0.22(graphql@16.12.0)':
+  '@graphql-tools/relay-operation-optimizer@7.0.23(graphql@16.12.0)':
     dependencies:
       '@ardatan/relay-compiler': 12.0.3(graphql@16.12.0)
-      '@graphql-tools/utils': 10.10.0(graphql@16.12.0)
+      '@graphql-tools/utils': 10.10.1(graphql@16.12.0)
       graphql: 16.12.0
       tslib: 2.8.1
     transitivePeerDependencies:
       - encoding
 
-  '@graphql-tools/schema@10.0.26(graphql@16.12.0)':
+  '@graphql-tools/schema@10.0.27(graphql@16.12.0)':
     dependencies:
-      '@graphql-tools/merge': 9.1.2(graphql@16.12.0)
-      '@graphql-tools/utils': 10.10.0(graphql@16.12.0)
+      '@graphql-tools/merge': 9.1.3(graphql@16.12.0)
+      '@graphql-tools/utils': 10.10.1(graphql@16.12.0)
       graphql: 16.12.0
       tslib: 2.8.1
 
-  '@graphql-tools/utils@10.10.0(graphql@16.12.0)':
+  '@graphql-tools/utils@10.10.1(graphql@16.12.0)':
     dependencies:
       '@graphql-typed-document-node/core': 3.2.0(graphql@16.12.0)
       '@whatwg-node/promise-helpers': 1.3.2
       cross-inspect: 1.0.1
-      dset: 3.1.4
       graphql: 16.12.0
       tslib: 2.8.1
 
   '@graphql-tools/wrap@10.1.4(graphql@16.12.0)':
     dependencies:
       '@graphql-tools/delegate': 10.2.23(graphql@16.12.0)
-      '@graphql-tools/schema': 10.0.26(graphql@16.12.0)
-      '@graphql-tools/utils': 10.10.0(graphql@16.12.0)
+      '@graphql-tools/schema': 10.0.27(graphql@16.12.0)
+      '@graphql-tools/utils': 10.10.1(graphql@16.12.0)
       '@whatwg-node/promise-helpers': 1.3.2
       graphql: 16.12.0
       tslib: 2.8.1
@@ -4840,8 +4850,8 @@ snapshots:
 
   '@napi-rs/wasm-runtime@1.0.7':
     dependencies:
-      '@emnapi/core': 1.6.0
-      '@emnapi/runtime': 1.6.0
+      '@emnapi/core': 1.7.0
+      '@emnapi/runtime': 1.7.0
       '@tybys/wasm-util': 0.10.1
     optional: true
 
@@ -5023,51 +5033,51 @@ snapshots:
   '@rollup/rollup-win32-x64-msvc@4.52.5':
     optional: true
 
-  '@swc/core-darwin-arm64@1.14.0':
+  '@swc/core-darwin-arm64@1.15.0':
     optional: true
 
-  '@swc/core-darwin-x64@1.14.0':
+  '@swc/core-darwin-x64@1.15.0':
     optional: true
 
-  '@swc/core-linux-arm-gnueabihf@1.14.0':
+  '@swc/core-linux-arm-gnueabihf@1.15.0':
     optional: true
 
-  '@swc/core-linux-arm64-gnu@1.14.0':
+  '@swc/core-linux-arm64-gnu@1.15.0':
     optional: true
 
-  '@swc/core-linux-arm64-musl@1.14.0':
+  '@swc/core-linux-arm64-musl@1.15.0':
     optional: true
 
-  '@swc/core-linux-x64-gnu@1.14.0':
+  '@swc/core-linux-x64-gnu@1.15.0':
     optional: true
 
-  '@swc/core-linux-x64-musl@1.14.0':
+  '@swc/core-linux-x64-musl@1.15.0':
     optional: true
 
-  '@swc/core-win32-arm64-msvc@1.14.0':
+  '@swc/core-win32-arm64-msvc@1.15.0':
     optional: true
 
-  '@swc/core-win32-ia32-msvc@1.14.0':
+  '@swc/core-win32-ia32-msvc@1.15.0':
     optional: true
 
-  '@swc/core-win32-x64-msvc@1.14.0':
+  '@swc/core-win32-x64-msvc@1.15.0':
     optional: true
 
-  '@swc/core@1.14.0(@swc/helpers@0.5.17)':
+  '@swc/core@1.15.0(@swc/helpers@0.5.17)':
     dependencies:
       '@swc/counter': 0.1.3
       '@swc/types': 0.1.25
     optionalDependencies:
-      '@swc/core-darwin-arm64': 1.14.0
-      '@swc/core-darwin-x64': 1.14.0
-      '@swc/core-linux-arm-gnueabihf': 1.14.0
-      '@swc/core-linux-arm64-gnu': 1.14.0
-      '@swc/core-linux-arm64-musl': 1.14.0
-      '@swc/core-linux-x64-gnu': 1.14.0
-      '@swc/core-linux-x64-musl': 1.14.0
-      '@swc/core-win32-arm64-msvc': 1.14.0
-      '@swc/core-win32-ia32-msvc': 1.14.0
-      '@swc/core-win32-x64-msvc': 1.14.0
+      '@swc/core-darwin-arm64': 1.15.0
+      '@swc/core-darwin-x64': 1.15.0
+      '@swc/core-linux-arm-gnueabihf': 1.15.0
+      '@swc/core-linux-arm64-gnu': 1.15.0
+      '@swc/core-linux-arm64-musl': 1.15.0
+      '@swc/core-linux-x64-gnu': 1.15.0
+      '@swc/core-linux-x64-musl': 1.15.0
+      '@swc/core-win32-arm64-msvc': 1.15.0
+      '@swc/core-win32-ia32-msvc': 1.15.0
+      '@swc/core-win32-x64-msvc': 1.15.0
       '@swc/helpers': 0.5.17
 
   '@swc/counter@0.1.3': {}
@@ -5113,6 +5123,17 @@ snapshots:
     transitivePeerDependencies:
       - react-dom
 
+  '@tanstack/react-router@1.134.13(react-dom@19.2.0(react@19.2.0))(react@19.2.0)':
+    dependencies:
+      '@tanstack/history': 1.133.28
+      '@tanstack/react-store': 0.8.0(react-dom@19.2.0(react@19.2.0))(react@19.2.0)
+      '@tanstack/router-core': 1.134.13
+      isbot: 5.1.32
+      react: 19.2.0
+      react-dom: 19.2.0(react@19.2.0)
+      tiny-invariant: 1.3.3
+      tiny-warning: 1.0.3
+
   '@tanstack/react-router@1.134.9(react-dom@19.2.0(react@19.2.0))(react@19.2.0)':
     dependencies:
       '@tanstack/history': 1.133.28
@@ -5137,6 +5158,16 @@ snapshots:
       react: 19.2.0
       react-dom: 19.2.0(react@19.2.0)
       use-sync-external-store: 1.6.0(react@19.2.0)
+
+  '@tanstack/router-core@1.134.13':
+    dependencies:
+      '@tanstack/history': 1.133.28
+      '@tanstack/store': 0.8.0
+      cookie-es: 2.0.0
+      seroval: 1.3.2
+      seroval-plugins: 1.3.3(seroval@1.3.2)
+      tiny-invariant: 1.3.3
+      tiny-warning: 1.0.3
 
   '@tanstack/router-core@1.134.9':
     dependencies:
@@ -5277,12 +5308,12 @@ snapshots:
     dependencies:
       tslib: 2.8.1
 
-  '@whatwg-node/fetch@0.10.11':
+  '@whatwg-node/fetch@0.10.12':
     dependencies:
-      '@whatwg-node/node-fetch': 0.8.1
+      '@whatwg-node/node-fetch': 0.8.2
       urlpattern-polyfill: 10.1.0
 
-  '@whatwg-node/node-fetch@0.8.1':
+  '@whatwg-node/node-fetch@0.8.2':
     dependencies:
       '@fastify/busboy': 3.2.0
       '@whatwg-node/disposablestack': 0.0.6
@@ -5293,11 +5324,11 @@ snapshots:
     dependencies:
       tslib: 2.8.1
 
-  '@whatwg-node/server@0.10.13':
+  '@whatwg-node/server@0.10.15':
     dependencies:
       '@envelop/instrumentation': 1.0.0
       '@whatwg-node/disposablestack': 0.0.6
-      '@whatwg-node/fetch': 0.10.11
+      '@whatwg-node/fetch': 0.10.12
       '@whatwg-node/promise-helpers': 1.3.2
       tslib: 2.8.1
 
@@ -5513,8 +5544,6 @@ snapshots:
   common-tags@1.8.2: {}
 
   concat-map@0.0.1: {}
-
-  confbox@0.1.8: {}
 
   confbox@0.2.2: {}
 
@@ -5873,19 +5902,18 @@ snapshots:
       graphql: 16.12.0
       tslib: 2.8.1
 
-  graphql-yoga@5.16.0(graphql@16.12.0):
+  graphql-yoga@5.16.1(graphql@16.12.0):
     dependencies:
       '@envelop/core': 5.3.2
       '@envelop/instrumentation': 1.0.0
-      '@graphql-tools/executor': 1.4.10(graphql@16.12.0)
-      '@graphql-tools/schema': 10.0.26(graphql@16.12.0)
-      '@graphql-tools/utils': 10.10.0(graphql@16.12.0)
+      '@graphql-tools/executor': 1.4.11(graphql@16.12.0)
+      '@graphql-tools/schema': 10.0.27(graphql@16.12.0)
+      '@graphql-tools/utils': 10.10.1(graphql@16.12.0)
       '@graphql-yoga/logger': 2.0.1
       '@graphql-yoga/subscription': 5.0.5
-      '@whatwg-node/fetch': 0.10.11
+      '@whatwg-node/fetch': 0.10.12
       '@whatwg-node/promise-helpers': 1.3.2
-      '@whatwg-node/server': 0.10.13
-      dset: 3.1.4
+      '@whatwg-node/server': 0.10.15
       graphql: 16.12.0
       lru-cache: 10.4.3
       tslib: 2.8.1
@@ -6074,6 +6102,8 @@ snapshots:
 
   isbot@5.1.31: {}
 
+  isbot@5.1.32: {}
+
   jiti@2.6.1: {}
 
   joycon@3.1.1: {}
@@ -6250,13 +6280,6 @@ snapshots:
 
   mkdirp@3.0.1: {}
 
-  mlly@1.8.0:
-    dependencies:
-      acorn: 8.15.0
-      pathe: 2.0.3
-      pkg-types: 1.3.1
-      ufo: 1.6.1
-
   ms@2.1.3: {}
 
   multidict@1.0.9: {}
@@ -6308,7 +6331,7 @@ snapshots:
       consola: 3.4.2
       pathe: 2.0.3
       pkg-types: 2.3.0
-      tinyexec: 1.0.1
+      tinyexec: 1.0.2
 
   object-assign@4.1.1: {}
 
@@ -6451,12 +6474,6 @@ snapshots:
       safe-stable-stringify: 2.5.0
       sonic-boom: 4.2.0
       thread-stream: 3.1.0
-
-  pkg-types@1.3.1:
-    dependencies:
-      confbox: 0.1.8
-      mlly: 1.8.0
-      pathe: 2.0.3
 
   pkg-types@2.3.0:
     dependencies:
@@ -6888,6 +6905,8 @@ snapshots:
 
   tinyexec@1.0.1: {}
 
+  tinyexec@1.0.2: {}
+
   tinyglobby@0.2.15:
     dependencies:
       fdir: 6.5.0(picomatch@4.0.3)
@@ -7004,8 +7023,6 @@ snapshots:
 
   ua-parser-js@1.0.41: {}
 
-  ufo@1.6.1: {}
-
   uglify-js@3.19.3:
     optional: true
 
@@ -7020,10 +7037,10 @@ snapshots:
 
   undici-types@7.16.0: {}
 
-  unplugin-swc@1.5.8(@swc/core@1.14.0(@swc/helpers@0.5.17))(rollup@4.52.5):
+  unplugin-swc@1.5.8(@swc/core@1.15.0(@swc/helpers@0.5.17))(rollup@4.52.5):
     dependencies:
       '@rollup/pluginutils': 5.3.0(rollup@4.52.5)
-      '@swc/core': 1.14.0(@swc/helpers@0.5.17)
+      '@swc/core': 1.15.0(@swc/helpers@0.5.17)
       load-tsconfig: 0.2.5
       unplugin: 2.3.10
     transitivePeerDependencies:
@@ -7107,7 +7124,7 @@ snapshots:
       debug: 4.4.3
       es-module-lexer: 1.7.0
       pathe: 2.0.3
-      vite: 7.1.12(@types/node@24.9.1)(jiti@2.6.1)(lightningcss@1.30.1)(sugarss@5.0.1(postcss@8.5.6))(terser@5.43.1)(tsx@4.20.5)(yaml@2.8.1)
+      vite: 7.2.1(@types/node@24.9.1)(jiti@2.6.1)(lightningcss@1.30.1)(sugarss@5.0.1(postcss@8.5.6))(terser@5.43.1)(tsx@4.20.5)(yaml@2.8.1)
     transitivePeerDependencies:
       - '@types/node'
       - jiti
@@ -7133,7 +7150,36 @@ snapshots:
       - supports-color
       - typescript
 
+  vite-tsconfig-paths@5.1.4(typescript@5.9.3)(vite@7.2.1(@types/node@24.9.1)(jiti@2.6.1)(lightningcss@1.30.1)(sugarss@5.0.1(postcss@8.5.6))(terser@5.43.1)(tsx@4.20.5)(yaml@2.8.1)):
+    dependencies:
+      debug: 4.4.3
+      globrex: 0.1.2
+      tsconfck: 3.1.6(typescript@5.9.3)
+    optionalDependencies:
+      vite: 7.2.1(@types/node@24.9.1)(jiti@2.6.1)(lightningcss@1.30.1)(sugarss@5.0.1(postcss@8.5.6))(terser@5.43.1)(tsx@4.20.5)(yaml@2.8.1)
+    transitivePeerDependencies:
+      - supports-color
+      - typescript
+
   vite@7.1.12(@types/node@24.9.1)(jiti@2.6.1)(lightningcss@1.30.1)(sugarss@5.0.1(postcss@8.5.6))(terser@5.43.1)(tsx@4.20.5)(yaml@2.8.1):
+    dependencies:
+      esbuild: 0.25.12
+      fdir: 6.5.0(picomatch@4.0.3)
+      picomatch: 4.0.3
+      postcss: 8.5.6
+      rollup: 4.52.5
+      tinyglobby: 0.2.15
+    optionalDependencies:
+      '@types/node': 24.9.1
+      fsevents: 2.3.3
+      jiti: 2.6.1
+      lightningcss: 1.30.1
+      sugarss: 5.0.1(postcss@8.5.6)
+      terser: 5.43.1
+      tsx: 4.20.5
+      yaml: 2.8.1
+
+  vite@7.2.1(@types/node@24.9.1)(jiti@2.6.1)(lightningcss@1.30.1)(sugarss@5.0.1(postcss@8.5.6))(terser@5.43.1)(tsx@4.20.5)(yaml@2.8.1):
     dependencies:
       esbuild: 0.25.12
       fdir: 6.5.0(picomatch@4.0.3)

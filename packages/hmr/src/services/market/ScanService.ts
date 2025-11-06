@@ -1,5 +1,6 @@
+import { pathToFileURL } from 'node:url'
 import { type Context, Injectable } from '@pluxel/core'
-import { resolvePath as mllyResolvePath } from 'mlly'
+import { clearResolveCache, resolveModulePath } from 'exsolve'
 import { dirname, isAbsolute, normalize, resolve as r } from 'pathe'
 import { EntryResolver } from './scan/entry-resolver'
 import { buildScanGraph } from './scan/graph-builder'
@@ -74,6 +75,7 @@ export class ScanService {
 	private defaults: ResolvedScanOptions
 	private roots: string[]
 	private readonly entryResolver = new EntryResolver()
+	private readonly installedResolver = new InstalledPackageResolver()
 	private readonly snapshotCache = new Map<string, Promise<ScanSnapshot>>()
 
 	constructor(_ctx: Context, config: ScanServiceConfig = {}) {
@@ -125,6 +127,8 @@ export class ScanService {
 	clearCaches() {
 		this.snapshotCache.clear()
 		this.entryResolver.clear()
+		this.installedResolver.clear()
+		clearResolveCache()
 	}
 
 	/**
@@ -168,7 +172,10 @@ export class ScanService {
 	/**
 	 * 按包名或目录解析入口，必要时自动回退到已安装依赖。
 	 */
-	async resolveEntry(selector: PackageSelector, request: ScanTaskOptions = {}): Promise<EntryResolution> {
+	async resolveEntry(
+		selector: PackageSelector,
+		request: ScanTaskOptions = {},
+	): Promise<EntryResolution> {
 		const focusHints = selectorFocusHints(selector)
 		const overrides = request.scan ?? {}
 		const finalScan =
@@ -180,7 +187,7 @@ export class ScanService {
 		const pkg = snapshot.findPackage(selector)
 		if (pkg) return pkg.entry
 
-		const fallback = await resolveInstalledPackage(selector, snapshot.graph.options.conditions)
+		const fallback = this.resolveInstalledFallback(selector, snapshot.graph.options.conditions)
 		return fallback ?? missingPackageResolution(selector)
 	}
 
@@ -203,7 +210,10 @@ export class ScanService {
 	/**
 	 * 直接解析 node_modules 中的已安装依赖入口，跳过工作区扫描。
 	 */
-	async resolveInstalledEntry(packageName: string, conditions?: string[]): Promise<EntryResolution> {
+	async resolveInstalledEntry(
+		packageName: string,
+		conditions?: string[],
+	): Promise<EntryResolution> {
 		const trimmed = packageName.trim()
 		if (!trimmed) {
 			return {
@@ -213,8 +223,17 @@ export class ScanService {
 				message: '包名为空，无法解析入口。',
 			}
 		}
-		const resolved = await resolveInstalledPackage(trimmed, conditions ?? this.defaults.conditions)
+		const resolved = this.installedResolver.resolve(trimmed, conditions ?? this.defaults.conditions)
 		return resolved ?? missingPackageResolution(trimmed)
+	}
+
+	private resolveInstalledFallback(
+		selector: PackageSelector,
+		conditions?: string[],
+	): EntryResolution | undefined {
+		const bare = selectorBareName(selector)
+		if (!bare) return undefined
+		return this.installedResolver.resolve(bare, conditions)
 	}
 
 	private async buildSnapshot(
@@ -250,8 +269,9 @@ export class ScanService {
 }
 
 export const isEntryOk = (entry: EntryResolution): entry is EntryResolutionOk => entry.ok
-export const isPackageEntryOk = (pkg: PackageNode): pkg is PackageNode & { entry: EntryResolutionOk } =>
-	pkg.entry.ok
+export const isPackageEntryOk = (
+	pkg: PackageNode,
+): pkg is PackageNode & { entry: EntryResolutionOk } => pkg.entry.ok
 
 function normalizeInputs(input: string | string[]): string[] {
 	const list = Array.isArray(input) ? input : [input]
@@ -372,36 +392,55 @@ function selectorLabel(selector: PackageSelector): string | undefined {
 	return dir || undefined
 }
 
-async function resolveInstalledPackage(
-	selector: PackageSelector,
-	conditions: string[] | undefined,
-): Promise<EntryResolution | undefined> {
-	const bare = selectorBareName(selector)
-	if (!bare) return undefined
+class InstalledPackageResolver {
+	private readonly from: URL
 
-	const resolveWithConditions = async (specifier: string, withConditions: boolean) => {
-		if (!withConditions) return mllyResolvePath(specifier)
-		return mllyResolvePath(specifier, { conditions })
+	constructor(baseDir: string = process.cwd()) {
+		this.from = ensureDirectoryURL(baseDir)
 	}
 
-	try {
-		const entryPath = await resolveWithConditions(bare, Boolean(conditions?.length)).catch((err) => {
-			if (conditions?.length) return mllyResolvePath(bare)
-			throw err
-		})
-		const manifestPath = await resolveWithConditions(`${bare}/package.json`, Boolean(conditions?.length)).catch(
-			() => undefined,
-		)
-		const pkgDir = manifestPath ? dirname(manifestPath) : dirname(entryPath)
-		return {
-			ok: true,
-			dir: normalize(pkgDir),
-			entry: normalize(entryPath),
-			source: 'exports',
-			tried: [],
+	resolve(bareName: string, conditions?: string[]): EntryResolutionOk | undefined {
+		for (const variant of this.resolutionPlan(conditions)) {
+			const entryPath = this.resolveWithConditions(bareName, variant)
+			if (!entryPath) continue
+
+			let manifestPath = this.resolveWithConditions(`${bareName}/package.json`, variant)
+			if (!manifestPath && variant) {
+				manifestPath = this.resolveWithConditions(`${bareName}/package.json`)
+			}
+
+			const pkgDir = manifestPath ? dirname(manifestPath) : dirname(entryPath)
+			return {
+				ok: true,
+				dir: normalize(pkgDir),
+				entry: normalize(entryPath),
+				source: 'exports',
+				tried: [],
+			}
 		}
-	} catch {
 		return undefined
+	}
+
+	clear() {
+		// no-op: resolution cache lives in exsolve global state, cleared by ScanService.
+	}
+
+	private resolveWithConditions(id: string, conditions?: string[]): string | undefined {
+		const options: { from: URL; try: true; conditions?: string[] } = {
+			from: this.from,
+			try: true,
+		}
+		if (conditions && conditions.length > 0) {
+			options.conditions = [...conditions]
+		}
+		return resolveModulePath(id, options)
+	}
+
+	private resolutionPlan(conditions?: string[]): Array<string[] | undefined> {
+		if (conditions && conditions.length > 0) {
+			return [conditions, undefined]
+		}
+		return [undefined]
 	}
 }
 
@@ -414,4 +453,10 @@ function selectorBareName(selector: PackageSelector): string | undefined {
 	if (typeof value !== 'string') return undefined
 	const trimmed = value.trim()
 	return trimmed || undefined
+}
+
+function ensureDirectoryURL(input: string): URL {
+	const normalized = normalize(input)
+	const asDir = normalized.endsWith('/') ? normalized : `${normalized}/`
+	return pathToFileURL(asDir)
 }

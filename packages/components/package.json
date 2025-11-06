@@ -11,28 +11,28 @@
 		"preview": "vite preview"
 	},
 	"peerDependencies": {
-		"@mantine/core": "catalog:peer",
-		"@mantine/dates": "catalog:peer",
-		"@mantine/hooks": "catalog:peer",
-		"@mantine/modals": "catalog:peer",
-		"@mantine/notifications": "catalog:peer",
+		"@mantine/core": "catalog:frontend",
+		"@mantine/dates": "catalog:frontend",
+		"@mantine/hooks": "catalog:frontend",
+		"@mantine/modals": "catalog:frontend",
+		"@mantine/notifications": "catalog:frontend",
 		"@tabler/icons-react": "catalog:icons",
 		"@tanstack/react-form": "catalog:frontend",
 		"react": "catalog:frontend",
 		"react-dom": "catalog:frontend",
-		"valibot": "catalog:peer"
+		"valibot": "catalog:validation"
 	},
 	"dependencies": {
-		"@dnd-kit/core": "catalog:prod",
-		"@dnd-kit/modifiers": "catalog:prod",
-		"@dnd-kit/sortable": "catalog:prod",
-		"@dnd-kit/utilities": "catalog:prod",
+		"@dnd-kit/core": "catalog:frontend",
+		"@dnd-kit/modifiers": "catalog:frontend",
+		"@dnd-kit/sortable": "catalog:frontend",
+		"@dnd-kit/utilities": "catalog:frontend",
 		"@gqty/react": "catalog:frontend",
 		"@melloware/react-logviewer": "catalog:frontend",
 		"@tanstack/react-router": "catalog:frontend",
-		"gqty": "catalog:prod",
-		"graphql": "catalog:prod",
-		"hono": "catalog:prod"
+		"gqty": "catalog:graphql",
+		"graphql": "catalog:graphql",
+		"hono": "catalog:backend"
 	},
 	"devDependencies": {
 		"@types/react": "catalog:types",
@@ -41,7 +41,7 @@
 		"postcss": "catalog:style",
 		"postcss-preset-mantine": "catalog:style",
 		"postcss-simple-vars": "catalog:style",
-		"valibot": "catalog:dev",
+		"valibot": "catalog:validation",
 		"valibot-form": "workspace:*",
 		"vite": "catalog:build",
 		"vite-tsconfig-paths": "catalog:build"

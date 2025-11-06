@@ -9,7 +9,7 @@ import {
 	type Plugin,
 	type ViteDevServer,
 } from 'vite'
-import { ViteNodeRunner } from 'vite-node/client'
+import { ModuleCacheMap, ViteNodeRunner } from 'vite-node/client'
 import { ViteNodeServer } from 'vite-node/server'
 import { installSourcemapsSupport } from 'vite-node/source-map'
 import tsconfigPaths from 'vite-tsconfig-paths'
@@ -117,6 +117,7 @@ export class HMRService {
 	private vns!: ViteNodeServer
 	private runner!: ViteNodeRunner
 	private filter!: (id: string) => boolean
+	private readonly moduleCache = new ModuleCacheMap()
 
 	// Keep these workspace packages singleton between host runtime and vite-node.
 	private readonly sharedWorkspaceModules = ['@pluxel/core', '@pluxel/core/service'] as const
@@ -187,6 +188,7 @@ export class HMRService {
 				this.runner = new ViteNodeRunner({
 					root: server.config.root,
 					base: server.config.base,
+					moduleCache: this.moduleCache,
 					fetchModule: async (id) => {
 						const clean = this.toCleanId(id)
 						const t0 = process.hrtime.bigint()
@@ -239,6 +241,38 @@ export class HMRService {
 				this.debouncer.push(this.toCleanId(ctx0.file))
 				return [] // 服务端 HMR 由我们全权处理
 			},
+		}
+	}
+
+	public get moduleCacheMap(): ModuleCacheMap {
+		return this.moduleCache
+	}
+
+	/** Allow external services (e.g. PackageService) to hydrate or refresh runner cache entries. */
+	public primeModuleCacheEntry(params: {
+		id: string
+		exports: any
+		aliases?: Iterable<string>
+	}) {
+		const cacheEntry = {
+			exports: params.exports,
+			evaluated: true,
+			imports: new Set<string>(),
+			importers: new Set<string>(),
+			promise: Promise.resolve(params.exports),
+		}
+		const ids = new Set<string>([params.id, ...(params.aliases ?? [])])
+		for (const rawId of ids) {
+			const cleanId = this.toCleanId(rawId)
+			this.moduleCache.set(cleanId, { ...cacheEntry })
+		}
+	}
+
+	/** Remove module cache mappings for a set of ids (any alias form is accepted). */
+	public dropModuleCacheEntries(ids: Iterable<string>) {
+		for (const rawId of ids) {
+			const cleanId = this.toCleanId(rawId)
+			this.moduleCache.delete(cleanId)
 		}
 	}
 
@@ -340,7 +374,12 @@ export class HMRService {
 					ids.add(this.toCleanId(resolved2.id))
 				}
 
-				for (const id of ids) this.runner.moduleCache.set(id, { ...cacheEntry })
+				const aliases = [...ids].filter((id) => id !== specifier)
+				this.primeModuleCacheEntry({
+					id: specifier,
+					exports,
+					aliases,
+				})
 			} catch (error) {
 				this.ctx.logger.warn({ specifier, error }, '[HMR] 无法桥接工作区模块')
 			}
@@ -500,7 +539,7 @@ export class HMRService {
 	/**
 	 * 统一失效 Vite transform/SSR 缓存 + vite-node 执行缓存
 	 * - 先 graph.invalidate 确保下一步 fetch/execute 拿到最新产物
-	 * - 再清 runner.moduleCache（含 ?xxx 变体），避免命中旧执行结果
+	 * - 再清模块缓存（含 ?xxx 变体），避免命中旧执行结果
 	 */
 	private invalidateCaches(affectedIds: Set<string>) {
 		const g = this.vite.moduleGraph
@@ -517,9 +556,9 @@ export class HMRService {
 		}
 
 		// 2) 失效 vite-node 执行缓存（清理所有查询后缀的等价 key）
-		for (const key of this.runner.moduleCache.keys()) {
+		for (const key of this.moduleCache.keys()) {
 			const base = this.cleanUrl(key)
-			if (affectedIds.has(base)) this.runner.moduleCache.delete(key)
+			if (affectedIds.has(base)) this.moduleCache.delete(key)
 		}
 	}
 
