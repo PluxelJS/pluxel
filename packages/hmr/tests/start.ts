@@ -24,9 +24,7 @@ setTimeout(async () => {
 	if (resolution.ok) {
 		ctx.loader.replaceModule(resolution.dir, await import(resolution.entry))
 	} */
-	const a = await ctx.packageService.loadMany(['pluxel-plugin-redis'], {
-		defaults: { skipInstall: true },
-	})
+	const a = await ctx.packageService.installAndLoad('pluxel-plugin-redis', {})
 	console.log(a)
 }, 5000)
 ctx.honoService.modifyApp((app) => {

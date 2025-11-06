@@ -9,7 +9,7 @@ const FRONTEND_PACKAGES: (string | RegExp)[] = [
   '@tanstack/react-form',
   '@tanstack/react-router',
 ]
-const BACKEND_PACKAGES: (string | RegExp)[] = ['hono', '@hono/node-server', '@hono/valibot-validator', 'pluxel-plugin-redis']
+const BACKEND_PACKAGES: (string | RegExp)[] = ['hono', '@hono/node-server', '@hono/valibot-validator']
 const GRAPHQL_PACKAGES: (string | RegExp)[] = [
   '@gqloom/core',
   '@gqloom/valibot',
