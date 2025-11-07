@@ -1,8 +1,7 @@
 // src/app.ts
 import { Hono } from 'hono'
 import { streamSSE } from 'hono/streaming'
-import type { LogRecord } from './createLogger'
-import { events, getOrderedLogs } from './createLogger'
+import { logStore, type LogRecord } from './logStore'
 
 const app = new Hono()
 
@@ -10,7 +9,8 @@ const app = new Hono()
 app.get('/latest', (c) => {
 	const name = c.req.query('name') ?? ''
 	const limit = Math.min(Number(c.req.query('limit') ?? 10), 100)
-	const lines = getOrderedLogs()
+	const lines = logStore
+		.snapshot()
 		.filter((l) => !name || l.name === name)
 		.slice(-limit)
 		.map((l) => JSON.stringify(l))
@@ -24,7 +24,8 @@ app.get('/stream', (c) => {
 	const name = c.req.query('name') ?? ''
 	return streamSSE(c, async (sse) => {
 		// 1) 推送历史日志
-		getOrderedLogs()
+		logStore
+			.snapshot()
 			.filter((l) => !name || l.name === name)
 			.forEach((l) => {
 				sse.writeSSE({ data: JSON.stringify(l) })
@@ -37,12 +38,12 @@ app.get('/stream', (c) => {
 				sse.writeSSE({ data: JSON.stringify(l) })
 			}
 		}
-		events.on('new_log', onLog)
+		const unsubscribe = logStore.subscribe(onLog)
 
 		// 3) 客户端断开时清理并标记
 		sse.onAbort(() => {
 			aborted = true
-			events.off('new_log', onLog)
+			unsubscribe()
 		})
 
 		// 4) 保持连接，直到 aborted = true

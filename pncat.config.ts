@@ -20,7 +20,14 @@ const GRAPHQL_PACKAGES: (string | RegExp)[] = [
   'graphql-yoga',
 ]
 const VALIDATION_PACKAGES: (string | RegExp)[] = ['valibot', 'option-t', 'reflect-metadata', 'superjson']
-const LOGGING_PACKAGES: (string | RegExp)[] = ['pino', 'pino-pretty', 'pino-caller', 'rotating-file-stream']
+const LOGGING_PACKAGES: (string | RegExp)[] = [
+  'pino',
+  'pino-pretty',
+  'pino-caller',
+  'rotating-file-stream',
+  '@poppinss/dumper',
+  'youch',
+]
 const WORKFLOW_PACKAGES: (string | RegExp)[] = ['eventure', 'exsolve', 'knitwork', '@tanstack/pacer', 'xstate']
 const NODE_RUNTIME_PACKAGES: (string | RegExp)[] = ['chokidar', 'pathe', 'pkg-types']
 
