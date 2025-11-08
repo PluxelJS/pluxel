@@ -66,6 +66,7 @@
 		"postcss-simple-vars": "catalog:style",
 		"rotating-file-stream": "catalog:logging",
 		"superjson": "catalog:validation",
+		"tinyglobby": "^0.2.15",
 		"unplugin-swc": "catalog:build",
 		"valibot": "catalog:validation",
 		"vite": "catalog:build",

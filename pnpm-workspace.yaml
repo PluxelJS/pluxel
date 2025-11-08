@@ -31,9 +31,6 @@ catalogs:
     vite-node: ^3.2.4
     vite-tsconfig-paths: ^5.1.4
   cli:
-    commander: ^14.0.0
-    inquirer: ^12.9.4
-    node-plop: ^0.32.0
     nypm: ^0.6.2
     pncat: ^0.7.4
   dev:

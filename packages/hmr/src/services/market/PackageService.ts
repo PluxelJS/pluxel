@@ -4,7 +4,12 @@ import type { OperationOptions } from 'nypm'
 import { addDependency, ensureDependencyInstalled } from 'nypm'
 import { normalize as normalizePath, resolve as resolvePath } from 'pathe'
 import type { RemovalScope } from '../loader'
-import type { EntryResolutionOk, ScanTaskOptions } from './ScanService'
+import {
+	type PackageStatePayload,
+	PackageStateStore,
+	type PersistedPackageEntry,
+} from './package/state-store'
+import type { EntryResolution, EntryResolutionOk, ScanTaskOptions } from './ScanService'
 import { isEntryOk } from './ScanService'
 import {
 	type NormalizedPackageSpecifier,
@@ -12,11 +17,6 @@ import {
 	type PackageSpecifierInput,
 	tryNormalizeSpecifier,
 } from './specifiers'
-import {
-	PackageStateStore,
-	type PackageStatePayload,
-	type PersistedPackageEntry,
-} from './package/state-store'
 
 const serviceName = 'packageService' as const
 
@@ -100,15 +100,17 @@ export interface ModuleCacheEntry {
 	loadedAt: number
 }
 
+export type PackageLoadIntent = 'default' | 'local' | 'fresh'
+
 export type PackageLoadDescriptor =
 	| PackageSpecifierInput
 	| {
 			spec: PackageSpecifierInput
-			options?: LoadPackageOptions
+			intent?: PackageLoadIntent
+			options?: LoadOptions
 	  }
 
 export interface PackageBatchLoadOptions {
-	defaults?: LoadPackageOptions
 	continueOnError?: boolean
 }
 
@@ -121,19 +123,18 @@ export interface InstallOptions extends OperationOptions {
 	force?: boolean
 }
 
-/** 加载选项：在安装选项基础上扩展扫描、跳过安装等配置。 */
-export interface LoadPackageOptions extends InstallOptions {
+/** 加载选项只保留解析相关配置，行为用方法表达。 */
+export interface LoadOptions {
 	scan?: ScanTaskOptions
-	skipInstall?: boolean
-	importFresh?: boolean
 	resolvedEntry?: EntryResolutionOk
-	injectIntoLoader?: boolean
+	/** 覆盖自动安装时的参数。 */
+	install?: InstallOptions
 }
 
 export interface PackageServiceConfig {
 	install?: InstallOptions
 	scan?: ScanTaskOptions
-	importFresh?: boolean
+	preferFreshImport?: boolean
 	state?: {
 		file?: string
 		debounceMs?: number
@@ -151,12 +152,17 @@ interface CachedModule {
 	module: Record<string, unknown>
 }
 
+interface LoadIntentConfig {
+	autoInstall: boolean
+	fresh?: boolean
+}
+
 @Injectable({ key: serviceName })
 export class PackageService {
 	private readonly defaults: {
 		install: ResolvedInstallOptions
 		scan?: ScanTaskOptions
-		importFresh: boolean
+		preferFreshImport: boolean
 	}
 
 	private readonly installLocks = new Map<string, Promise<PackageInstallResult>>()
@@ -175,17 +181,14 @@ export class PackageService {
 		this.defaults = {
 			install: resolveInstallDefaults(config.install),
 			scan: config.scan,
-			importFresh: config.importFresh ?? false,
+			preferFreshImport: config.preferFreshImport ?? false,
 		}
 		const stateFile = resolveStateFilePath(config.state?.file)
 		this.stateStore = new PackageStateStore({
 			file: stateFile,
 			debounceMs: config.state?.debounceMs,
 			onError: (error) => {
-				this.ctx.logger?.warn(
-					{ error, stateFile },
-					'[PackageService] 持久化包状态失败',
-				)
+				this.ctx.logger?.warn({ error, stateFile }, '[PackageService] 持久化包状态失败')
 			},
 		})
 		this.ready = this.initializeFromState()
@@ -209,7 +212,7 @@ export class PackageService {
 	/**
 	 * 安装插件包；如果明确传入版本（或 force=true）则调用 addDependency，否则使用 ensureDependencyInstalled。
 	 */
-	async installPackage(
+	async install(
 		input: PackageSpecifierInput,
 		overrides: InstallOptions = {},
 	): Promise<PackageInstallResult> {
@@ -231,84 +234,94 @@ export class PackageService {
 	}
 
 	/**
-	 * 加载插件模块；默认会尝试安装，可通过 skipInstall 跳过，仅从本地加载。
+	 * 加载插件模块；若发现未安装会自动尝试安装一次。
 	 */
-	async loadPackage(
-		input: PackageSpecifierInput,
-		options: LoadPackageOptions = {},
-	): Promise<PackageLoadResult> {
+	async load(input: PackageSpecifierInput, options: LoadOptions = {}): Promise<PackageLoadResult> {
 		await this.ensureReady()
 		const spec = this.normalizeSpecifier(input)
-		const key = spec.key
-
-		return this.runExclusive(this.loadLocks, key, async () => {
-			const {
-				skipInstall = false,
-				importFresh,
-				scan,
-				resolvedEntry,
-				injectIntoLoader,
-				...installOverrides
-			} = options
-			const installOptions = this.resolveInstallOptions(installOverrides)
-			let installResult: PackageInstallResult | undefined
-
-			if (!skipInstall) {
-				installResult = await this.performInstall(spec, installOptions)
-			}
-
-			const resolution = resolvedEntry ?? (await this.resolveEntryForSpec(spec, scan))
-			const moduleId = normalizePath(resolution.entry)
-			this.ensurePackageModuleBinding(spec.name, moduleId)
-
-			const shouldImportFresh = importFresh ?? this.defaults.importFresh
-			const cached = shouldImportFresh ? undefined : this.moduleCache.get(moduleId)
-			const module = cached?.module ?? (await this.importModule(moduleId, shouldImportFresh))
-			if (!cached || shouldImportFresh) {
-				this.moduleCache.set(moduleId, { moduleId, module })
-			}
-			this.primeHmrModuleCache(spec, moduleId, module)
-
-			const shouldInject = injectIntoLoader ?? true
-			const isAnchor = shouldInject ? this.ctx.loader.replaceModule(moduleId, module) : false
-
-			const result: PackageLoadResult = {
-				spec,
-				resolution,
-				module,
-				moduleId,
-				isAnchor,
-				install: installResult,
-				loadedAt: Date.now(),
-			}
-			this.loadedPackages.set(spec.name, result)
-			this.schedulePersistSnapshot()
-			return result
-		})
+		return this.loadWithIntent(spec, options, { autoInstall: true })
 	}
 
 	/**
-	 * 便捷封装：假定包已安装，仅刷新加载。
+	 * 仅从当前工作区加载，不触发安装；若未安装会直接抛错。
 	 */
 	async loadInstalled(
 		input: PackageSpecifierInput,
-		options: Omit<LoadPackageOptions, 'skipInstall'> = {},
+		options: LoadOptions = {},
 	): Promise<PackageLoadResult> {
-		return this.loadPackage(input, { ...options, skipInstall: true })
+		await this.ensureReady()
+		const spec = this.normalizeSpecifier(input)
+		return this.loadWithIntent(spec, options, { autoInstall: false })
 	}
 
 	/**
-	 * 便捷封装：始终先安装再加载。
+	 * 强制重新导入模块，仍然具备自动安装能力。
 	 */
-	async installAndLoad(
+	async reload(
 		input: PackageSpecifierInput,
-		options: LoadPackageOptions = {},
+		options: LoadOptions = {},
 	): Promise<PackageLoadResult> {
-		return this.loadPackage(input, { ...options, skipInstall: false })
+		await this.ensureReady()
+		const spec = this.normalizeSpecifier(input)
+		return this.loadWithIntent(spec, options, { autoInstall: true, fresh: true })
+	}
+
+	private async loadWithIntent(
+		spec: NormalizedPackageSpecifier,
+		options: LoadOptions,
+		intent: LoadIntentConfig,
+	): Promise<PackageLoadResult> {
+		const key = spec.key
+		return this.runExclusive(this.loadLocks, key, async () => {
+			try {
+				return await this.executeLoad(spec, options, intent)
+			} catch (error) {
+				if (!intent.autoInstall || !shouldRetryInstall(error)) {
+					throw error
+				}
+				const installOptions = this.resolveInstallOptions(options.install)
+				const installResult = await this.performInstall(spec, installOptions)
+				return this.executeLoad(spec, options, intent, installResult)
+			}
+		})
+	}
+
+	private async executeLoad(
+		spec: NormalizedPackageSpecifier,
+		options: LoadOptions,
+		intent: LoadIntentConfig,
+		installResult?: PackageInstallResult,
+	): Promise<PackageLoadResult> {
+		const resolution = options.resolvedEntry ?? (await this.resolveEntryForSpec(spec, options.scan))
+		const moduleId = normalizePath(resolution.entry)
+		this.ensurePackageModuleBinding(spec.name, moduleId)
+
+		const shouldImportFresh = intent.fresh ?? this.defaults.preferFreshImport
+		const cached = shouldImportFresh ? undefined : this.moduleCache.get(moduleId)
+		const module = cached?.module ?? (await this.importModule(moduleId, shouldImportFresh))
+		if (!cached || shouldImportFresh) {
+			this.moduleCache.set(moduleId, { moduleId, module })
+		}
+		this.primeHmrModuleCache(spec, moduleId, module)
+
+		const isAnchor = this.ctx.loader.replaceModule(moduleId, module)
+
+		const result: PackageLoadResult = {
+			spec,
+			resolution,
+			module,
+			moduleId,
+			isAnchor,
+			install: installResult,
+			loadedAt: Date.now(),
+		}
+		this.loadedPackages.set(spec.name, result)
+		this.schedulePersistSnapshot()
+		return result
 	}
 
 	/**
-	 * 批量加载，支持统一默认配置与按包覆写，可选择忽略失败继续。
+	 * 批量加载，条目可声明加载意图（默认 / local / fresh），可选择忽略失败继续。
 	 */
 	async loadMany(
 		descriptors: Iterable<PackageLoadDescriptor>,
@@ -316,15 +329,25 @@ export class PackageService {
 	): Promise<PackageBatchLoadResult> {
 		const results: PackageLoadResult[] = []
 		const failures: PackageLoadFailure[] = []
-		const defaults = options.defaults ?? {}
 		const continueOnError = options.continueOnError ?? false
 
 		for (const item of descriptors) {
 			const descriptor = normalizeDescriptor(item)
-			const mergedOptions = mergeLoadOptions(defaults, descriptor.options)
 			const normalized = tryNormalizeSpecifier(descriptor.spec)
 			try {
-				const result = await this.loadPackage(descriptor.spec, mergedOptions)
+				const loadOptions = descriptor.options ?? {}
+				let result: PackageLoadResult
+				switch (descriptor.intent) {
+					case 'local':
+						result = await this.loadInstalled(descriptor.spec, loadOptions)
+						break
+					case 'fresh':
+						result = await this.reload(descriptor.spec, loadOptions)
+						break
+					default:
+						result = await this.load(descriptor.spec, loadOptions)
+						break
+				}
 				results.push(result)
 			} catch (error) {
 				failures.push({ input: descriptor.spec, spec: normalized, error })
@@ -370,23 +393,16 @@ export class PackageService {
 		options: HydrateSnapshotOptions = {},
 	): Promise<PackageBatchLoadResult> {
 		const assumeInstalled = options.assumeInstalled ?? true
-		const baseDefaults = options.defaults ?? {}
-		const defaults: LoadPackageOptions = {
-			...baseDefaults,
-		}
-		if (assumeInstalled && defaults.skipInstall !== false) {
-			defaults.skipInstall = true
-		}
-
+		const intent: PackageLoadIntent = assumeInstalled ? 'local' : 'default'
 		const descriptors = snapshot.packages.map((pkg) => ({
 			spec: pkg.spec,
+			intent,
 			options: {
 				resolvedEntry: pkg.resolution,
 			},
 		}))
 
 		return this.loadMany(descriptors, {
-			defaults,
 			continueOnError: options.continueOnError,
 		})
 	}
@@ -545,7 +561,7 @@ export class PackageService {
 			const spec = entry.spec
 			try {
 				const moduleId = normalizePath(entry.moduleId || entry.resolution.entry)
-				const module = await this.importModule(moduleId, this.defaults.importFresh)
+				const module = await this.importModule(moduleId, this.defaults.preferFreshImport)
 				this.ensurePackageModuleBinding(spec.name, moduleId)
 				this.moduleCache.set(moduleId, { moduleId, module })
 				this.primeHmrModuleCache(spec, moduleId, module)
@@ -566,10 +582,7 @@ export class PackageService {
 				this.loadedPackages.set(spec.name, record)
 				mutated = true
 			} catch (error) {
-				this.ctx.logger?.warn(
-					{ error, spec },
-					'[PackageService] 恢复包失败，已跳过该条记录',
-				)
+				this.ctx.logger?.warn({ error, spec }, '[PackageService] 恢复包失败，已跳过该条记录')
 				mutated = true
 			}
 		}
@@ -696,6 +709,15 @@ export class PackageService {
 	}
 }
 
+function shouldRetryInstall(
+	error: unknown,
+): error is PackageServiceError & { detail: { resolution: EntryResolution } } {
+	if (!(error instanceof PackageServiceError)) return false
+	if (error.code !== 'RESOLUTION_FAILED') return false
+	const resolution = (error.detail as { resolution?: EntryResolution } | undefined)?.resolution
+	return Boolean(resolution && !isEntryOk(resolution) && resolution.code === 'MISSING_PACKAGE')
+}
+
 function resolveStateFilePath(file?: string): string {
 	if (file) return resolvePath(file)
 	return resolvePath(process.cwd(), '.pluxel', 'hmr', 'package-state.json')
@@ -725,30 +747,21 @@ function pickEnsureOptions(
 
 function normalizeDescriptor(input: PackageLoadDescriptor): {
 	spec: PackageSpecifierInput
-	options?: LoadPackageOptions
+	intent: PackageLoadIntent
+	options?: LoadOptions
 } {
 	if (isDescriptorObject(input)) {
-		return input
+		return {
+			spec: input.spec,
+			intent: input.intent ?? 'default',
+			options: input.options,
+		}
 	}
-	return { spec: input }
+	return { spec: input, intent: 'default' }
 }
 
 function isDescriptorObject(
 	value: PackageLoadDescriptor,
-): value is { spec: PackageSpecifierInput; options?: LoadPackageOptions } {
+): value is { spec: PackageSpecifierInput; intent?: PackageLoadIntent; options?: LoadOptions } {
 	return typeof value === 'object' && value !== null && 'spec' in value
-}
-
-function mergeLoadOptions(
-	defaults: LoadPackageOptions,
-	overrides?: LoadPackageOptions,
-): LoadPackageOptions {
-	if (!overrides) return { ...defaults }
-	const { scan, resolvedEntry, ...rest } = overrides
-	return {
-		...defaults,
-		...rest,
-		scan: scan ?? defaults.scan,
-		resolvedEntry: resolvedEntry ?? defaults.resolvedEntry,
-	}
 }

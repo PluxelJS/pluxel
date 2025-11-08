@@ -20,9 +20,9 @@
 		}
 	},
 	"dependencies": {
-		"commander": "catalog:cli",
-		"inquirer": "catalog:cli",
-		"node-plop": "catalog:cli",
+		"@clack/prompts": "^0.11.0",
+		"gunshi": "^0.26.3",
+		"node-plop": "^0.32.3",
 		"pathe": "catalog:node"
 	}
 }
