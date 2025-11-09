@@ -33,6 +33,12 @@ export interface Scalars {
   Float: { input: number; output: number };
 }
 
+export enum PluginStatusEntryLifecycleStage {
+  disabled = "disabled",
+  running = "running",
+  stopped = "stopped",
+}
+
 export interface UpdatePluginGroupsGroupsInput {
   groupId: Scalars["String"]["input"];
   name: Scalars["String"]["input"];
@@ -40,6 +46,8 @@ export interface UpdatePluginGroupsGroupsInput {
 }
 
 export enum UpdatePluginStatusStatusInput {
+  disable = "disable",
+  enable = "enable",
   restart = "restart",
   start = "start",
   stop = "stop",
@@ -48,6 +56,7 @@ export enum UpdatePluginStatusStatusInput {
 export const scalarsEnumsHash: ScalarsEnumsHash = {
   Boolean: true,
   Float: true,
+  PluginStatusEntryLifecycleStage: true,
   String: true,
   UpdatePluginStatusStatusInput: true,
 };
@@ -87,14 +96,18 @@ export const generatedSchema = {
   },
   PluginStatusEntry: {
     __typename: { __type: "String!" },
+    isEnabled: { __type: "Boolean!" },
     isRunning: { __type: "Boolean!" },
+    lifecycleStage: { __type: "PluginStatusEntryLifecycleStage!" },
     name: { __type: "String!" },
   },
   PluginStatusMutationResult: {
     __typename: { __type: "String!" },
     code: { __type: "String!" },
     error: { __type: "String" },
+    isEnabled: { __type: "Boolean" },
     isRunning: { __type: "Boolean" },
+    lifecycleStage: { __type: "PluginStatusEntryLifecycleStage" },
   },
   PluginStatusOverview: {
     __typename: { __type: "String!" },
@@ -103,6 +116,7 @@ export const generatedSchema = {
   },
   PluginStatusSummary: {
     __typename: { __type: "String!" },
+    disabled: { __type: "Float!" },
     running: { __type: "Float!" },
     stopped: { __type: "Float!" },
     total: { __type: "Float!" },
@@ -176,7 +190,9 @@ export interface PluginScope {
 
 export interface PluginStatusEntry {
   __typename?: "PluginStatusEntry";
+  isEnabled?: Scalars["Boolean"]["output"];
   isRunning?: Scalars["Boolean"]["output"];
+  lifecycleStage?: PluginStatusEntryLifecycleStage;
   name?: Scalars["String"]["output"];
 }
 
@@ -184,7 +200,9 @@ export interface PluginStatusMutationResult {
   __typename?: "PluginStatusMutationResult";
   code?: Scalars["String"]["output"];
   error?: Maybe<Scalars["String"]["output"]>;
+  isEnabled?: Maybe<Scalars["Boolean"]["output"]>;
   isRunning?: Maybe<Scalars["Boolean"]["output"]>;
+  lifecycleStage?: Maybe<PluginStatusEntryLifecycleStage>;
 }
 
 export interface PluginStatusOverview {
@@ -195,6 +213,7 @@ export interface PluginStatusOverview {
 
 export interface PluginStatusSummary {
   __typename?: "PluginStatusSummary";
+  disabled?: Scalars["Float"]["output"];
   running?: Scalars["Float"]["output"];
   stopped?: Scalars["Float"]["output"];
   total?: Scalars["Float"]["output"];

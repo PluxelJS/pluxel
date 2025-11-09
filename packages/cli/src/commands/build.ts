@@ -1,11 +1,18 @@
-import { Command } from 'commander'
+import { define } from 'gunshi'
 
-export function buildCommand() {
-	return new Command('build')
-		.description('Build current project')
-		.option('--watch', 'watch mode', false)
-		.action(async (opts) => {
-			// 这里放你现有的 build 流程（esbuild/tsup/rollup/x）
-			console.log('building...', opts)
-		})
-}
+export const buildCommand = define({
+	name: 'build',
+	description: 'Build current project',
+	args: {
+		watch: {
+			type: 'boolean',
+			description: 'Enable watch mode',
+			default: false,
+		},
+	},
+	async run(ctx) {
+		const { watch } = ctx.values
+		// TODO: wire up real build pipeline here
+		ctx.log('building...', { watch })
+	},
+})

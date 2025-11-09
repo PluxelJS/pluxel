@@ -1,9 +1,8 @@
 packages:
-  - 'packages/*'
+  - packages/*
 
 onlyBuiltDependencies:
   - '@biomejs/biome'
-  - '@swc/core'
   - esbuild
 
 public-hoist-pattern:
@@ -15,4 +14,92 @@ public-hoist-pattern:
   - '@mantine/dates'
   - '@mantine/modals'
   - '@mantine/notifications'
-  - 'tsdown'
+  - tsdown
+catalogs:
+  backend:
+    '@hono/node-server': ^1.19.6
+    '@hono/valibot-validator': ^0.5.3
+    hono: ^4.10.4
+  build:
+    '@hono/vite-dev-server': ^0.22.0
+    '@rolldown/pluginutils': ^1.0.0-beta.47
+    '@vitejs/plugin-react': ^5.1.0
+    tsdown: 0.14.2
+    vite: npm:rolldown-vite@7.2.2
+    vite-node: ^3.2.4
+    vite-tsconfig-paths: ^5.1.4
+  cli:
+    nypm: ^0.6.2
+    pncat: ^0.7.4
+  dev:
+    '@oxc-project/runtime': ^0.91.0
+    is-ci: ^4.1.0
+    jsdom: ^25.0.1
+    tinybench: ^5.1.0
+  frontend:
+    '@dnd-kit/core': ^6.3.1
+    '@dnd-kit/modifiers': ^9.0.0
+    '@dnd-kit/sortable': ^10.0.0
+    '@dnd-kit/utilities': ^3.2.2
+    '@gqty/react': ^3.1.1
+    '@hono/react-renderer': ^1.0.1
+    '@mantine/core': ^8.3.6
+    '@mantine/dates': ^8.2.2
+    '@mantine/hooks': ^8.2.2
+    '@mantine/modals': ^8.2.2
+    '@mantine/notifications': ^8.2.2
+    '@melloware/react-logviewer': ^6.3.4
+    '@tanstack/react-form': ^1.23.8
+    '@tanstack/react-router': ^1.134.13
+    react: ^19.2.0
+    react-dom: ^19.2.0
+  graphql:
+    '@gqloom/core': ^0.12.1
+    '@gqloom/valibot': ^0.12.0
+    '@gqty/cli': ^5.0.0
+    gqty: ^3.6.0
+    graphql: ^16.12.0
+    graphql-scalars: ^1.25.0
+    graphql-yoga: ^5.16.1
+  icons:
+    '@tabler/icons-react': ^3.35.0
+  lint:
+    '@biomejs/biome': ^2.3.0
+    '@repobuddy/biome': ^2.0.1
+    husky: ^9.1.7
+  logging:
+    '@poppinss/dumper': ^0.6.5
+    pino: ^10.1.0
+    pino-caller: ^4.0.0
+    pino-pretty: ^13.1.2
+    rotating-file-stream: ^3.2.7
+    youch: ^4.1.0-beta.12
+  monorepo:
+    turbo: ^2.5.8
+  node:
+    chokidar: ^4.0.3
+    pathe: ^2.0.3
+    pkg-types: ^2.3.0
+  style:
+    postcss: ^8.5.6
+    postcss-preset-mantine: ^1.18.0
+    postcss-simple-vars: ^7.0.1
+  test:
+    vitest: ^3.2.4
+  tsc:
+    typescript: ^5.9.3
+  types:
+    '@types/bun': latest
+    '@types/react': ^19.2.2
+    '@types/react-dom': ^19.2.2
+  validation:
+    option-t: ^54.2.2
+    reflect-metadata: ^0.2.2
+    superjson: ^2.2.5
+    valibot: ^1.1.0
+  workflow:
+    '@tanstack/pacer': ^0.15.4
+    eventure: ^0.3.0
+    exsolve: ^1.0.7
+    knitwork: ^1.2.0
+    xstate: 5.20.1

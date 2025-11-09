@@ -1,7 +1,12 @@
 // context.tsx
 import type React from 'react'
 import { createContext, useContext } from 'react'
-import type { PluginDependency, PluginScope, Query } from '../../gqty'
+import type {
+	PluginDependency,
+	PluginStatusEntryLifecycleStage,
+	PluginScope,
+	Query,
+} from '../../gqty'
 import { schema } from '../../gqty'
 
 export interface PluginScopeContextValue {
@@ -10,6 +15,8 @@ export interface PluginScopeContextValue {
 	scope: PluginScope
 	dependencies: readonly PluginDependency[]
 	isRunning: boolean
+	isEnabled: boolean
+	lifecycleStage: PluginStatusEntryLifecycleStage
 	isSyncing: boolean
 	refetch: () => Promise<void>
 	/**
@@ -51,6 +58,8 @@ export function usePluginMeta() {
 		pluginName: ctx.pluginName,
 		description: ctx.description,
 		isRunning: ctx.isRunning,
+		isEnabled: ctx.isEnabled,
+		lifecycleStage: ctx.lifecycleStage,
 		isSyncing: ctx.isSyncing,
 	}
 }

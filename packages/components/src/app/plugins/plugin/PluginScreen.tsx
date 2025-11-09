@@ -11,8 +11,7 @@ import {
 } from '@mantine/core'
 import { useMediaQuery } from '@mantine/hooks'
 import { memo, useCallback, useMemo } from 'react'
-import type { PluginScope } from '../../gqty'
-import { useQuery } from '../../gqty'
+import { PluginStatusEntryLifecycleStage, type PluginScope, useQuery } from '../../gqty'
 import { PluginScopeProvider } from './context'
 import { useDebouncedFlag } from './hooks/useDebouncedFlag'
 import { usePluginConfig } from './hooks/usePluginConfig'
@@ -108,6 +107,8 @@ function usePluginDetail(pluginName?: string) {
 							dep.isRunning
 						})
 						scope.status.isRunning
+						scope.status.isEnabled
+						scope.status.lifecycleStage
 					}
 				: undefined,
 	})
@@ -141,6 +142,14 @@ export const PluginScreen = memo(function PluginScreen({ pluginName }: PluginScr
 	const dependencies = scope?.detail?.dependencies ?? []
 	const description = scope?.detail?.desc ?? ''
 	const isRunning = Boolean(scope?.status?.isRunning)
+	const isEnabled = Boolean(scope?.status?.isEnabled)
+	const lifecycleStage =
+		scope?.status?.lifecycleStage ??
+		(isEnabled
+			? isRunning
+				? PluginStatusEntryLifecycleStage.running
+				: PluginStatusEntryLifecycleStage.stopped
+			: PluginStatusEntryLifecycleStage.disabled)
 
 	const configState = usePluginConfig(ready ? displayName : undefined)
 	const syncing = useDebouncedFlag(loading || configState.loading, 160)
@@ -158,9 +167,21 @@ export const PluginScreen = memo(function PluginScreen({ pluginName }: PluginScr
 			dependencies,
 			isRunning,
 			isSyncing: syncing,
+			isEnabled,
+			lifecycleStage,
 			refetch: handleRefetch,
 		}
-	}, [dependencies, description, displayName, handleRefetch, isRunning, scope, syncing])
+		}, [
+			dependencies,
+			description,
+			displayName,
+			handleRefetch,
+			isRunning,
+			isEnabled,
+			lifecycleStage,
+			scope,
+			syncing,
+		])
 
 	if (!pluginName) {
 		return (

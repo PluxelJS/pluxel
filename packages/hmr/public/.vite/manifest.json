@@ -1,33 +1,93 @@
 {
+  "../../node_modules/.pnpm/react-dom@19.2.0_react@19.2.0/node_modules/react-dom/server.browser.js": {
+    "file": "assets/server.browser-DxYyPWSg.js",
+    "name": "server.browser",
+    "src": "../../node_modules/.pnpm/react-dom@19.2.0_react@19.2.0/node_modules/react-dom/server.browser.js",
+    "isDynamicEntry": true,
+    "imports": [
+      "_react-D3kJkmPN.js"
+    ]
+  },
   "../../node_modules/.pnpm/react-ssr-prepass@1.6.0_react@19.2.0/node_modules/react-ssr-prepass/dist/react-ssr-prepass.es.js": {
-    "file": "assets/react-ssr-prepass.es-Bg44h1vH.js",
+    "file": "assets/react-ssr-prepass.es-DZOpBuI2.js",
     "name": "react-ssr-prepass.es",
     "src": "../../node_modules/.pnpm/react-ssr-prepass@1.6.0_react@19.2.0/node_modules/react-ssr-prepass/dist/react-ssr-prepass.es.js",
     "isDynamicEntry": true,
     "imports": [
+      "_vendor-C2iF0HoB.js",
+      "_react-D3kJkmPN.js"
+    ]
+  },
+  "../valibot-form/dist/DebugValues-BQApmub3.js": {
+    "file": "assets/DebugValues-BQApmub3-Bp3QLgGb.js",
+    "name": "DebugValues-BQApmub3",
+    "src": "../valibot-form/dist/DebugValues-BQApmub3.js",
+    "isDynamicEntry": true,
+    "imports": [
+      "_react-D3kJkmPN.js",
       "src/client.tsx"
     ]
   },
-  "../valibot-form/dist/DebugValues-DgXuMN4k.mjs": {
-    "file": "assets/DebugValues-DgXuMN4k-cZpy9yeX.js",
-    "name": "DebugValues-DgXuMN4k",
-    "src": "../valibot-form/dist/DebugValues-DgXuMN4k.mjs",
-    "isDynamicEntry": true,
+  "_mantine-6mm3rT5X.js": {
+    "file": "assets/mantine-6mm3rT5X.js",
+    "name": "mantine",
     "imports": [
-      "src/client.tsx"
+      "_react-D3kJkmPN.js",
+      "_rolldown-runtime-D7zIpOPY.js"
+    ],
+    "css": [
+      "assets/mantine-Bxl3nyhT.css"
+    ]
+  },
+  "_mantine-Bxl3nyhT.css": {
+    "file": "assets/mantine-Bxl3nyhT.css",
+    "src": "_mantine-Bxl3nyhT.css"
+  },
+  "_react-D3kJkmPN.js": {
+    "file": "assets/react-D3kJkmPN.js",
+    "name": "react",
+    "imports": [
+      "_rolldown-runtime-D7zIpOPY.js"
+    ]
+  },
+  "_rolldown-runtime-D7zIpOPY.js": {
+    "file": "assets/rolldown-runtime-D7zIpOPY.js",
+    "name": "rolldown-runtime"
+  },
+  "_tabler-BuxYFyQP.js": {
+    "file": "assets/tabler-BuxYFyQP.js",
+    "name": "tabler",
+    "imports": [
+      "_react-D3kJkmPN.js",
+      "_rolldown-runtime-D7zIpOPY.js"
+    ]
+  },
+  "_vendor-C2iF0HoB.js": {
+    "file": "assets/vendor-C2iF0HoB.js",
+    "name": "vendor",
+    "imports": [
+      "_react-D3kJkmPN.js",
+      "_rolldown-runtime-D7zIpOPY.js"
+    ],
+    "dynamicImports": [
+      "_react-D3kJkmPN.js",
+      "_vendor-C2iF0HoB.js"
     ]
   },
   "src/client.tsx": {
-    "file": "assets/client-CyZrtF7K.js",
+    "file": "assets/client-B6VOgNq2.js",
     "name": "client",
     "src": "src/client.tsx",
     "isEntry": true,
-    "dynamicImports": [
-      "../valibot-form/dist/DebugValues-DgXuMN4k.mjs",
-      "../../node_modules/.pnpm/react-ssr-prepass@1.6.0_react@19.2.0/node_modules/react-ssr-prepass/dist/react-ssr-prepass.es.js"
+    "imports": [
+      "_vendor-C2iF0HoB.js",
+      "_mantine-6mm3rT5X.js",
+      "_tabler-BuxYFyQP.js",
+      "_react-D3kJkmPN.js",
+      "_rolldown-runtime-D7zIpOPY.js"
     ],
-    "css": [
-      "assets/client-BCqIJVNW.css"
+    "dynamicImports": [
+      "../valibot-form/dist/DebugValues-BQApmub3.js"
     ]
   }
 }

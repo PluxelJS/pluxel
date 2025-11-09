@@ -1,6 +1,7 @@
 import { type Context, Injectable, OverrideOf } from '@pluxel/core'
 import { LoggerService } from '@pluxel/core/service'
-import { createLogger, type Logger } from './createLogger'
+import type { Bindings, Logger } from 'pino'
+import { createLogger } from './createLogger'
 
 // 1. 列出要转发的 log 级别
 const LEVELS = ['trace', 'debug', 'info', 'warn', 'error', 'fatal'] as const
@@ -9,7 +10,6 @@ type Level = (typeof LEVELS)[number]
 @OverrideOf(LoggerService)
 @Injectable
 export class PinoLoggerService {
-	private static baseLogger: Logger
 	public readonly logger: Logger
 
 	// 2. 在类上声明属性，类型完全沿用原始 Logger 的方法签名
@@ -22,20 +22,38 @@ export class PinoLoggerService {
 	public fatal!: Logger['fatal']
 
 	constructor(private readonly ctx: Context) {
-		if (PinoLoggerService.baseLogger) {
-			this.logger = PinoLoggerService.baseLogger.child({
-				name: ctx.pluginInfo.name ?? ctx.name,
-			})
-		} else {
-			this.logger = PinoLoggerService.baseLogger = createLogger({
-				name: ctx.name,
-			})
+		const scopeName = ctx.pluginInfo?.name ?? ctx.name
+		const bindings: Bindings = {
+			name: scopeName,
+			scope: scopeName,
 		}
+		const pluginName = ctx.pluginInfo?.name
+		if (pluginName && pluginName !== scopeName) {
+			bindings.plugin = pluginName
+		}
+		this.logger = deriveScopedLogger(bindings)
 
-		// 3. 运行时把每个方法绑到 logger 实例上
+		this.bindLevels()
+	}
+
+	private bindLevels() {
 		for (const level of LEVELS) {
-			// 这里强转一下，方便 TS 识别 bind 后的类型仍是 Logger[Level]
 			;(this as any)[level] = (this.logger[level] as Function).bind(this.logger)
 		}
 	}
+}
+
+let rootLogger: Logger | undefined
+
+function getRootLogger(): Logger {
+	if (!rootLogger) {
+		const defaultName = process.env.PLUXEL_LOGGER_NAME?.trim() || 'root'
+		rootLogger = createLogger({ name: defaultName })
+	}
+	return rootLogger
+}
+
+function deriveScopedLogger(bindings: Bindings): Logger {
+	const root = getRootLogger()
+	return bindings ? root.child(bindings) : root
 }

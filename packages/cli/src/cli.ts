@@ -1,14 +1,25 @@
 #!/usr/bin/env node
-import { Command } from 'commander'
+import { cli } from 'gunshi'
+import pkg from '../package.json' 
 import { buildCommand } from './commands'
 import { newCommand } from './plop'
 
-const program = new Command().name('pluxel').description('My all-in-one CLI').version('0.1.0')
+const commands = new Map([
+	['new', newCommand],
+	['build', buildCommand],
+])
 
-program.addCommand(newCommand())
-program.addCommand(buildCommand())
+async function main() {
+	try {
+		await cli(process.argv.slice(2), newCommand, {
+			name: pkg.name ?? 'pluxel',
+			version: pkg.version,
+			subCommands: commands,
+		})
+	} catch (error) {
+		console.error(error instanceof Error ? error.message : error)
+		process.exitCode = 1
+	}
+}
 
-program.parseAsync(process.argv).catch((e) => {
-	console.error(e instanceof Error ? e.message : e)
-	process.exit(1)
-})
+void main()

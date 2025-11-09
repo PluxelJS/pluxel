@@ -3,6 +3,7 @@
 	"extends": "../../tsconfig.src.json",
 	"include": [
 		"src",
+		"tests",
 		// 显式收编 manifest；或改成 "public/**/*.json"
 		"public/.vite/manifest.json"
 	],

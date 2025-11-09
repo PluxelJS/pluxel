@@ -11,12 +11,15 @@ export function getStatusOverview(pCtx: PlxContext) {
 			__typename: 'PluginStatusEntry' as const,
 			name,
 			isRunning: statuses[name].isRunning,
+			isEnabled: statuses[name].isEnabled,
+			lifecycleStage: statuses[name].lifecycleStage,
 		})),
 		summary: {
 			__typename: 'PluginStatusSummary' as const,
 			total: summary.total,
 			running: summary.running,
 			stopped: summary.stopped,
+			disabled: summary.disabled,
 		},
 	} satisfies v.InferOutput<typeof PluginStatusOverview>
 }

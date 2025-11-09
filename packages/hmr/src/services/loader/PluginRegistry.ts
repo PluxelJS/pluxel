@@ -9,6 +9,15 @@ type ExportKey = string
 type ModuleItem = Readonly<{ ctor: PluginConstructor; exportKey: ExportKey }>
 
 const EMPTY: readonly ModuleItem[] = Object.freeze([])
+export const LIFECYCLE_STATES = ['running', 'stopped', 'disabled'] as const
+export type PluginLifecycleStage = (typeof LIFECYCLE_STATES)[number]
+
+export interface PluginLifecycleSnapshot {
+	id: string
+	isRunning: boolean
+	isEnabled: boolean
+	lifecycleStage: PluginLifecycleStage
+}
 
 export class PluginRegistry {
 	// 声明层
@@ -104,6 +113,10 @@ export class PluginRegistry {
 		}
 	}
 
+	enable(name: PluginName, ctor: PluginConstructor): void {
+		this.startPlugin(name, ctor)
+	}
+
 	startPlugin(name: PluginName, ctor: PluginConstructor): void {
 		// 配置校验/补齐（幂等）
 		const schema = this.getSchema(ctor)
@@ -155,6 +168,17 @@ export class PluginRegistry {
 		})
 	}
 
+	deactivate(
+		name: PluginName,
+		ctor: PluginConstructor,
+		options: { runtimeOnly?: boolean } = {},
+	): void {
+		this.stopPlugin(name, ctor)
+		if (!options.runtimeOnly) {
+			this.disablePersisted(name)
+		}
+	}
+
 	/** 停止某模块内全部插件（只影响运行层） */
 	stopModule(moduleId: ModuleId): void {
 		const list = this.moduleMap.get(moduleId) ?? EMPTY
@@ -169,7 +193,7 @@ export class PluginRegistry {
 		this.ctx.configService.enablePlugin(...names)
 	}
 	disablePersisted(...names: readonly string[]): void {
-		this.ctx.configService.enablePlugin(...names)
+		this.ctx.configService.disablePlugin(...names)
 	}
 	/** 将该模块内所有插件的持久启用位关闭（用于 prune(persisted)） */
 	disablePersistedByModule(moduleId: ModuleId): void {

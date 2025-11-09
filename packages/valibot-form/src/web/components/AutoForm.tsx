@@ -4,7 +4,7 @@ import type { InferOutput, ObjectSchema } from 'valibot'
 import { extractInfo } from '~/core/extract'
 import { MetaRenderer } from '~/core/registry'
 import { useAppForm } from './formContext'
-import './registerRenderers'
+import { renderersRegistered } from './registerRenderers'
 
 // -------- schema 解析缓存，避免重复 extractInfo ----------
 const infoCache = new WeakMap<object, ReturnType<typeof extractInfo> | null>()
@@ -47,6 +47,9 @@ export function AutoForm<S extends ObjectSchema<any, any>>({
 	formOpts,
 	children,
 }: AutoFormProps<S>) {
+	// Force registerRenderers module to stay in the bundle
+	void renderersRegistered
+
 	const form = useAppForm(schema, formOpts)
 
 	const items = useMemo(() => {

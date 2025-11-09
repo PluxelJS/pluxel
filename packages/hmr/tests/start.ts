@@ -1,14 +1,13 @@
 import { Context } from '@pluxel/core'
-import { PluginA } from './plugins/PluginA'
-import { PluginC } from './plugins/PluginC'
-import { PinoLoggerService } from './services'
+import { PinoLoggerService } from '@pluxel/hmr/services'
+import { PluginA, PluginC } from './plugins'
 
 if (process.env.PLUXEL_HMR_SSR === undefined) {
 	process.env.PLUXEL_HMR_SSR = 'true'
 }
 
 const ctx = new Context({
-	hmrService: { dir: ['./src/plugins'] },
+	hmrService: { dir: ['./tests/plugins'] },
 	registry: {
 		plugigCTXIsolate: [PinoLoggerService],
 	},
@@ -20,8 +19,13 @@ async function bootstrap() {
 	// 如果你有其他服务，比如 Hono，也在这里启动
 }
 bootstrap()
-setTimeout(() => {
-	console.log(ctx.loader.isRunning(PluginC)) // true
+setTimeout(async () => {
+	/* const resolution = await ctx.scanService.resolveEntryByName('pluxel-plugin-redis')
+	if (resolution.ok) {
+		ctx.loader.replaceModule(resolution.dir, await import(resolution.entry))
+	} */
+	const a = await ctx.packageService.loadInstalled('pluxel-plugin-redis')
+	console.log(a)
 }, 5000)
 ctx.honoService.modifyApp((app) => {
 	app.get('/pluginadd', (c) => {

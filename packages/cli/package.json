@@ -20,9 +20,9 @@
 		}
 	},
 	"dependencies": {
-		"commander": "^14.0.0",
-		"inquirer": "^12.9.4",
-		"node-plop": "^0.32.0",
-		"pathe": "^2.0.3"
+		"@clack/prompts": "^0.11.0",
+		"gunshi": "^0.26.3",
+		"node-plop": "^0.32.3",
+		"pathe": "catalog:node"
 	}
 }

@@ -31,7 +31,6 @@
 		"prepack": "pnpm run qa && pnpm run build",
 		"size": "size-limit"
 	},
-	"peerDependencies": {},
 	"size-limit": [
 		{
 			"limit": "2 kB",
@@ -62,9 +61,9 @@
 		}
 	},
 	"devDependencies": {
-		"tsdown": "^0.14.2",
-		"typescript": "^5.9.2",
-		"option-t": "^54.2.2",
-		"reflect-metadata": "^0.2.2"
+		"tsdown": "catalog:build",
+		"typescript": "catalog:tsc",
+		"option-t": "catalog:validation",
+		"reflect-metadata": "catalog:validation"
 	}
 }
