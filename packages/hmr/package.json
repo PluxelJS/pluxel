@@ -29,7 +29,7 @@
 		"dev": "bun --conditions=\"@pluxel/source\" tests/start.ts",
 		"hot": "bun --hot tests/start.ts",
 		"test": "bun test --conditions=@pluxel/source",
-		"build": "tsdown",
+		"build": "vite build && tsdown",
 		"web": "vite build"
 	},
 	"dependencies": {
@@ -41,9 +41,9 @@
 		"@hono/react-renderer": "catalog:frontend",
 		"@hono/valibot-validator": "catalog:backend",
 		"@hono/vite-dev-server": "catalog:build",
+		"@rolldown/pluginutils": "catalog:build",
 		"@melloware/react-logviewer": "catalog:frontend",
 		"@poppinss/dumper": "catalog:logging",
-		"@swc/core": "catalog:build",
 		"@tanstack/pacer": "catalog:workflow",
 		"@tanstack/react-router": "catalog:frontend",
 		"chokidar": "catalog:node",
@@ -67,7 +67,6 @@
 		"rotating-file-stream": "catalog:logging",
 		"superjson": "catalog:validation",
 		"tinyglobby": "^0.2.15",
-		"unplugin-swc": "catalog:build",
 		"valibot": "catalog:validation",
 		"vite": "catalog:build",
 		"vite-node": "catalog:build",

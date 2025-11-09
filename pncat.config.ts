@@ -1,7 +1,7 @@
 import { defineConfig, mergeCatalogRules } from 'pncat'
 
 const CLI_PACKAGES: (string | RegExp)[] = ['commander', 'inquirer', 'node-plop', 'nypm']
-const BUILD_PACKAGES: (string | RegExp)[] = ['@swc/core', '@hono/vite-dev-server', 'unplugin-swc']
+const BUILD_PACKAGES: (string | RegExp)[] = ['@hono/vite-dev-server', '@rolldown/pluginutils']
 const FRONTEND_PACKAGES: (string | RegExp)[] = [
   /^@mantine\//,
   /^@dnd-kit\//,

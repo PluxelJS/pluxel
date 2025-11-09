@@ -1,6 +1,6 @@
 import { type Context, Injectable } from '@pluxel/core'
+import { makeIdFiltersToMatchWithQuery } from '@rolldown/pluginutils'
 import { resolve } from 'pathe'
-import swc from 'unplugin-swc'
 import {
 	createFilter,
 	createServer,
@@ -122,19 +122,6 @@ export class HMRService {
 	// Keep these workspace packages singleton between host runtime and vite-node.
 	private readonly sharedWorkspaceModules = ['@pluxel/core', '@pluxel/core/service'] as const
 
-	/** SWC：装饰器/TSX/源映射 */
-	private swc: Plugin = swc.vite({
-		sourceMaps: true,
-		jsc: {
-			parser: { syntax: 'typescript', decorators: true, tsx: true },
-			transform: {
-				legacyDecorator: true,
-				decoratorMetadata: true,
-				react: { runtime: 'automatic', refresh: true },
-			},
-		},
-	}) as Plugin
-
 	private plugin!: Plugin
 
 	/** 计时器：一轮 HMR 内聚合 */
@@ -160,9 +147,13 @@ export class HMRService {
 		private ctx: Context,
 		private config: HMRConfig,
 	) {
-		// include .ts/.tsx；排除 .d.ts
-		const includeGlobs = this.config.dir.flatMap((d) => [resolve(d, '**/*.{ts,tsx}')])
-		const excludeGlobs = this.config.dir.flatMap((d) => [resolve(d, '**/*.d.ts')])
+		// include .ts/.tsx；排除 .d.ts（兼容 ?v= 查询串）
+		const includeGlobs = makeIdFiltersToMatchWithQuery(
+			this.config.dir.flatMap((d) => [resolve(d, '**/*.{ts,tsx}')]),
+		)
+		const excludeGlobs = makeIdFiltersToMatchWithQuery(
+			this.config.dir.flatMap((d) => [resolve(d, '**/*.d.ts')]),
+		)
 		this.filter = createFilter(includeGlobs, excludeGlobs)
 
 		this.plugin = {
@@ -224,15 +215,15 @@ export class HMRService {
 					if (this.filter(file)) this.debouncer.push(this.toCleanId(file))
 				})
 
-			// 7) 冷启动：扫描 + 预热执行（让 loader 完成 anchors 首次填充）
-			console.time('[HMR] 扫描文件')
-			const files = await this.ctx.scanService.scanEntries({ roots: this.config.dir })
-			console.timeEnd('[HMR] 扫描文件')
+				// 7) 冷启动：扫描 + 预热执行（让 loader 完成 anchors 首次填充）
+				console.time('[HMR] 扫描文件')
+				const files = await this.ctx.scanService.scanEntries({ roots: this.config.dir })
+				console.timeEnd('[HMR] 扫描文件')
 
-			console.time('[HMR] 预热/执行模块')
-			const coldFiles = unique(files.map((p) => this.toCleanId(p))).sort()
-			await this.runAndLoadAll(coldFiles, /*keepOrder*/ true)
-			console.timeEnd('[HMR] 预热/执行模块')
+				console.time('[HMR] 预热/执行模块')
+				const coldFiles = unique(files.map((p) => this.toCleanId(p))).sort()
+				await this.runAndLoadAll(coldFiles, /*keepOrder*/ true)
+				console.timeEnd('[HMR] 预热/执行模块')
 			},
 
 			/** 服务端 HMR：仅入队，由批处理串行执行 */
@@ -249,11 +240,7 @@ export class HMRService {
 	}
 
 	/** Allow external services (e.g. PackageService) to hydrate or refresh runner cache entries. */
-	public primeModuleCacheEntry(params: {
-		id: string
-		exports: any
-		aliases?: Iterable<string>
-	}) {
+	public primeModuleCacheEntry(params: { id: string; exports: any; aliases?: Iterable<string> }) {
 		const cacheEntry = {
 			exports: params.exports,
 			evaluated: true,
@@ -398,12 +385,7 @@ export class HMRService {
 					'@tabler/icons-react': '@tabler/icons-react/dist/esm/icons/index.mjs',
 				},
 			},
-			plugins: [
-				tsconfigPaths(),
-				this.swc,
-				this.plugin, // ← vite-node 桥
-				this.ctx.honoService.viteHonoDevServer,
-			],
+			plugins: [tsconfigPaths(), this.plugin, this.ctx.honoService.viteHonoDevServer],
 			// ✅ 真正禁用依赖预优化，以免 graph 形变
 			optimizeDeps: {
 				force: true, // 避免某些场景下跳过预优化
@@ -675,7 +657,7 @@ export class HMRService {
 		// 2) 针对 unlink 的清理：不在图内的直接注销并清锚点
 		for (const f of files) {
 			const mods = this.vite.moduleGraph.getModulesByFile(f)
-			const exists = (mods && mods.size) || this.vite.moduleGraph.getModuleById(f)
+			const exists = mods?.size || this.vite.moduleGraph.getModuleById(f)
 			if (!exists) {
 				this.ctx.loader.pathAnchors.delete(f)
 				this.ctx.loader.pruneModule(f)

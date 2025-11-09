@@ -1,5 +1,5 @@
 {
-	"sideEffects": false,
+	"sideEffects": true,
 	"type": "module",
 	"name": "valibot-form",
 	"version": "0.1.0",

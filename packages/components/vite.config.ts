@@ -49,14 +49,35 @@ export default defineConfig(({ mode }) => {
 			sourcemap: isDev ? true : 'hidden',
 			rollupOptions: {
 				output: {
-					manualChunks(id) {
-						if (id.includes('node_modules')) {
-							if (id.includes('/react/')) return 'react'
-							if (id.includes('@mantine/')) return 'mantine'
-							if (id.includes('@emotion/')) return 'emotion'
-							if (id.includes('@tabler/icons-react')) return 'tabler'
-							return 'vendor'
-						}
+					advancedChunks: {
+						groups: [
+							{
+								name: 'react',
+								test: /[\\/]node_modules[\\/](react|react-dom)[\\/]/,
+								priority: 50,
+							},
+							{
+								name: 'mantine',
+								test: /[\\/]node_modules[\\/]@mantine[\\/]/,
+								priority: 40,
+							},
+							{
+								name: 'emotion',
+								test: /[\\/]node_modules[\\/]@emotion[\\/]/,
+								priority: 30,
+							},
+							{
+								name: 'tabler',
+								test: /[\\/]node_modules[\\/]@tabler[\\/]icons-react[\\/]/,
+								priority: 20,
+							},
+							{
+								name: 'vendor',
+								test: /[\\/]node_modules[\\/]/,
+								priority: 0,
+								minSize: 10 * 1024,
+							},
+						],
 					},
 				},
 			},
