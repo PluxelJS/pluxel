@@ -5,6 +5,5 @@
 		"outDir": "dist",
 		// Only output d.ts files and not JavaScript files.
 		"emitDeclarationOnly": true
-	},
-	"references": []
+	}
 }

@@ -18,10 +18,10 @@
       "_react-D3kJkmPN.js"
     ]
   },
-  "../valibot-form/dist/DebugValues-BQApmub3.js": {
-    "file": "assets/DebugValues-BQApmub3-Bp3QLgGb.js",
-    "name": "DebugValues-BQApmub3",
-    "src": "../valibot-form/dist/DebugValues-BQApmub3.js",
+  "../valibot-form/dist/DebugValues-CquJnlz_.mjs": {
+    "file": "assets/DebugValues-CquJnlz_-iStrmnlY.js",
+    "name": "DebugValues-CquJnlz_",
+    "src": "../valibot-form/dist/DebugValues-CquJnlz_.mjs",
     "isDynamicEntry": true,
     "imports": [
       "_react-D3kJkmPN.js",
@@ -75,7 +75,7 @@
     ]
   },
   "src/client.tsx": {
-    "file": "assets/client-B6VOgNq2.js",
+    "file": "assets/client-DDW44dMP.js",
     "name": "client",
     "src": "src/client.tsx",
     "isEntry": true,
@@ -87,7 +87,7 @@
       "_rolldown-runtime-D7zIpOPY.js"
     ],
     "dynamicImports": [
-      "../valibot-form/dist/DebugValues-BQApmub3.js"
+      "../valibot-form/dist/DebugValues-CquJnlz_.mjs"
     ]
   }
 }

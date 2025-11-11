@@ -3,18 +3,18 @@
 	"version": "0.2.0",
 	"description": "Demo example that imports a local package",
 	"main": "./dist/index.cjs",
-	"module": "./dist/index.js",
+	"module": "./dist/index.mjs",
 	"types": "./dist/index.d.cts",
 	"type": "module",
 	"exports": {
 		".": {
 			"@pluxel/source": "./src/index.ts",
-			"import": "./dist/index.js",
+			"import": "./dist/index.mjs",
 			"require": "./dist/index.cjs"
 		},
 		"./service": {
 			"@pluxel/source": "./src/service/index.ts",
-			"import": "./dist/service.js",
+			"import": "./dist/service.mjs",
 			"require": "./dist/service.cjs"
 		},
 		"./package.json": "./package.json"
@@ -42,11 +42,11 @@
 	"publishConfig": {
 		"exports": {
 			".": {
-				"import": "./dist/index.js",
+				"import": "./dist/index.mjs",
 				"require": "./dist/index.cjs"
 			},
 			"./service": {
-				"import": "./dist/service.js",
+				"import": "./dist/service.mjs",
 				"require": "./dist/service.cjs"
 			},
 			"./package.json": "./package.json"

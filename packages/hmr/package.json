@@ -2,22 +2,22 @@
 	"name": "@pluxel/hmr",
 	"version": "0.2.0",
 	"description": "Demo example that imports a local package",
-	"main": "./dist/index.js",
+	"main": "./dist/index.mjs",
 	"type": "module",
-	"module": "./dist/index.js",
-	"types": "./dist/index.d.ts",
+	"module": "./dist/index.mjs",
+	"types": "./dist/index.d.mts",
 	"exports": {
 		".": {
 			"@pluxel/source": "./src/index.ts",
-			"default": "./dist/index.js"
+			"default": "./dist/index.mjs"
 		},
 		"./config": {
 			"@pluxel/source": "./src/config.ts",
-			"default": "./dist/config.js"
+			"default": "./dist/config.mjs"
 		},
 		"./services": {
 			"@pluxel/source": "./src/services/index.ts",
-			"default": "./dist/services.js"
+			"default": "./dist/services.mjs"
 		},
 		"./package.json": "./package.json"
 	},
@@ -82,9 +82,9 @@
 	},
 	"publishConfig": {
 		"exports": {
-			".": "./dist/index.js",
-			"./config": "./dist/config.js",
-			"./services": "./dist/services.js",
+			".": "./dist/index.mjs",
+			"./config": "./dist/config.mjs",
+			"./services": "./dist/services.mjs",
 			"./package.json": "./package.json"
 		}
 	}

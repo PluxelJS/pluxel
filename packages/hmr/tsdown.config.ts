@@ -1,4 +1,7 @@
 import { defineConfig } from 'tsdown'
+import { fileURLToPath } from 'node:url'
+
+const valibotFormSrc = fileURLToPath(new URL('../valibot-form/src', import.meta.url))
 
 function appendDtsImport(snippet: string, file = 'index.d.ts') {
 	const exts = /\.d\.(?:mts|cts|ts)$/i
@@ -31,12 +34,16 @@ export default defineConfig({
 		services: 'src/services/index.ts',
 		config: 'src/config.ts',
 	},
+	alias: {
+		'~': valibotFormSrc,
+	},
 	env: {
 		BUILD_OUTPUT: true,
 		PLUXEL_HMR_SSR: false,
 	},
+	tsconfig: './tsconfig.json',
 	dts: {
-		build: true,
+		resolver: 'tsc',
 	},
 	// 不要内联 core，未来可能要用来 build。
 	external: ['@pluxel/core', '@pluxel/core/service'],

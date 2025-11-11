@@ -24,7 +24,7 @@ catalogs:
     '@hono/vite-dev-server': ^0.22.0
     '@rolldown/pluginutils': ^1.0.0-beta.47
     '@vitejs/plugin-react': ^5.1.0
-    tsdown: 0.14.2
+    tsdown: ^0.16.2
     vite: npm:rolldown-vite@7.2.2
     vite-node: ^3.2.4
     vite-tsconfig-paths: ^5.1.4

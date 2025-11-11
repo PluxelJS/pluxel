@@ -41,12 +41,12 @@
 	"engines": {
 		"node": ">=18"
 	},
-	"module": "./dist/index.js",
+	"module": "./dist/index.mjs",
 	"types": "./dist/index.d.cts",
 	"exports": {
 		".": {
 			"@pluxel/source": "./src/index.ts",
-			"import": "./dist/index.js",
+			"import": "./dist/index.mjs",
 			"require": "./dist/index.cjs"
 		},
 		"./package.json": "./package.json"
@@ -54,7 +54,7 @@
 	"publishConfig": {
 		"exports": {
 			".": {
-				"import": "./dist/index.js",
+				"import": "./dist/index.mjs",
 				"require": "./dist/index.cjs"
 			},
 			"./package.json": "./package.json"
