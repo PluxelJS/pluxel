@@ -11,29 +11,34 @@ const validationKey = {
 } as const
 
 export function extractNumberProps(schema: PipedNumberSchema): NumberMetaOptions {
-	const meta: NumberMetaOptions = { type: 'input', options: {} }
+	const meta: NumberMetaOptions = { variant: 'input' }
 
 	const pipe = schema.pipe
 	if (!pipe) return meta
 
-	// 第一项必然为元素本身不需要查
 	for (let i = pipe.length - 1; i > 0; i--) {
 		const item = pipe[i]
 		if (item.kind === 'metadata' && item.type === META_MAP.NUMBER) {
 			Object.assign(meta, item.metadata)
-			// 如果没有后续检查可换 break
 			continue
 		}
 
 		if (item.kind !== 'validation') continue
 		if (item.type === 'integer') {
-			meta.options.integer = true
+			meta.integer = true
 			continue
 		}
 
 		if (item.type in validationKey) {
-			meta.options[validationKey[item.type as keyof typeof validationKey]] = item.requirement
+			const key = validationKey[item.type as keyof typeof validationKey]
+			meta[key] = item.requirement
 		}
+	}
+
+	if (meta.variant === 'slider') {
+		if (meta.min === undefined) meta.min = 0
+		if (meta.max === undefined) meta.max = 100
+		if (meta.step === undefined) meta.step = 1
 	}
 
 	return meta

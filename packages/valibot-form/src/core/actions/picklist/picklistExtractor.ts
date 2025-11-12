@@ -10,7 +10,10 @@ type InputSchema = PipedSchema<Schema> | Schema
 export function extractPicklistProps<T extends string | number = string>(
 	schema: InputSchema,
 ): PicklistMetaOptions<T> {
-	const meta: PicklistMetaOptions<T> = {}
+	const meta: PicklistMetaOptions<T> = {
+		variant: 'select',
+		multiple: false,
+	}
 
 	meta.options = schema.options ?? (schema as PipedSchema<Schema>).pipe[0].options
 

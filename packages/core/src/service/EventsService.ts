@@ -1,6 +1,15 @@
 import { type Context, Injectable, symbols } from '@pluxel/context'
 // EventsService.ts
-import { type EventArgs, type EventEmitterOptions, type EventListener, Eventure } from 'eventure'
+import {
+	EvtChannel as Channel,
+	type DisposableSubscription,
+	type EventArgs,
+	type EventDescriptor,
+	type EventEmitterOptions,
+	type EventListener,
+	Eventure,
+	type OnOptions,
+} from 'eventure'
 import type { CommitSummary, PluginIdentifier, PluginInstance } from '../plugin'
 
 const serviceName = 'events' as const
@@ -13,7 +22,7 @@ declare module '@pluxel/context' {
 	interface Context {
 		[serviceName]: EventsService
 		on: EventsService['on']
-		prependOn: EventsService['prependOn']
+		onFront: EventsService['onFront']
 		emit: EventsService['emit']
 		emitWithContext: EventsService['emitWithContext']
 	}
@@ -21,7 +30,7 @@ declare module '@pluxel/context' {
 
 @Injectable({
 	key: serviceName,
-	methods: ['on', 'prependOn', 'emit', 'emitWithContext'] as const,
+	methods: ['on', 'onFront', 'emit', 'emitWithContext'] as const,
 })
 export class EventsService extends Eventure<Events> {
 	constructor(
@@ -33,18 +42,16 @@ export class EventsService extends Eventure<Events> {
 		super(cfg)
 	}
 
-	override on<K extends keyof Events>(event: K, listener: EventListener<Events[K]>): this {
+	protected override _register<K$1 extends keyof Events>(
+		event: K$1,
+		listener: EventListener<Events[K$1]>,
+		opts?: OnOptions,
+		forcePrepend?: boolean,
+	): DisposableSubscription {
 		;(listener as any)[symbols.ATTACH] = this.ctx
-		const unsub = super.addListener(event, listener, true)
-		this.ctx.scope.collectEffect(unsub)
-		return this
-	}
-
-	prependOn<K extends keyof Events>(event: K, listener: EventListener<Events[K]>): this {
-		;(listener as any)[symbols.ATTACH] = this.ctx
-		const unsub = super.prependListener(event, listener, true)
-		this.ctx.scope.collectEffect(unsub)
-		return this
+		const ret = super._register(event, listener, opts, forcePrepend)
+		this.ctx.scope.collectEffect(ret)
+		return ret
 	}
 
 	emitWithContext<K extends keyof Events>(
@@ -79,12 +86,40 @@ export class EventsService extends Eventure<Events> {
 	}
 }
 
+export class EvtChannel<D extends EventDescriptor> extends Channel<D> {
+	constructor(
+		private ctx: Context,
+		config?: EventEmitterOptions,
+	) {
+		const cfg: any = config ?? {}
+		cfg.logger = ctx.logger
+		super(cfg)
+	}
+
+	protected override _register(
+		listener: EventListener<D>,
+		opts?: OnOptions,
+		prepend?: boolean,
+	): DisposableSubscription {
+		;(listener as any)[symbols.ATTACH] = this.ctx
+		const ret = super._register(listener, opts, prepend)
+		this.ctx.scope.collectEffect(ret)
+		return ret
+	}
+}
+
 export interface Events {
 	onLoad: [string]
 	beforeStart: [PluginInstance] // 启动前
 	commitFailed: (failed: Set<PluginIdentifier>) => void
 	afterCommit: (summary: CommitSummary) => void
 	afterStart: [Context] // 启动成功
+	startError: [Context, Error] // 启动失败
+}
+
+// biome-ignore lint/complexity/noBannedTypes: <explanation>
+type ThisType = Object | Function
+type FilterFunction = ((attachedCtx: Context) => boolean) | undefined
 	startError: [Context, Error] // 启动失败
 }
 

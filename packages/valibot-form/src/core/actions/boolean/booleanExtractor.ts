@@ -5,7 +5,7 @@ import type { BooleanMetaOptions } from './type'
 type BooleanSchema = v.SchemaWithPipe<readonly [v.BooleanSchema<any>, ...any]>
 
 export function extractBooleanProps(schema: BooleanSchema): BooleanMetaOptions {
-	const meta: BooleanMetaOptions = {}
+	const meta: BooleanMetaOptions = { variant: 'switch' }
 
 	const pipe = schema.pipe
 	if (!pipe) return meta

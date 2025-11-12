@@ -1,6 +1,7 @@
 import { extractArrayProps } from '../actions/array/arrayExtractor'
 import { extractBooleanProps } from '../actions/boolean/booleanExtractor'
 import { extractNumberProps } from '../actions/number/numberExtractor'
+import { extractObjectProps } from '../actions/object/objectExtractor'
 import { extractPicklistProps } from '../actions/picklist/picklistExtractor'
 import { extractRecordProps } from '../actions/record/recordExtractor'
 import { extractStringProps } from '../actions/string/stringExtractor'
@@ -12,6 +13,7 @@ const extractors = {
 	picklist: { type: 'picklist', extract: extractPicklistProps },
 	array: { type: 'array', extract: extractArrayProps },
 	record: { type: 'record', extract: extractRecordProps },
+	object: { type: 'object', extract: extractObjectProps },
 } as const satisfies {
 	string: { type: ExtractableMetaType; extract: typeof extractStringProps }
 	number: { type: ExtractableMetaType; extract: typeof extractNumberProps }
@@ -19,6 +21,7 @@ const extractors = {
 	picklist: { type: ExtractableMetaType; extract: typeof extractPicklistProps }
 	array: { type: ExtractableMetaType; extract: typeof extractArrayProps }
 	record: { type: ExtractableMetaType; extract: typeof extractRecordProps }
+	object: { type: ExtractableMetaType; extract: typeof extractObjectProps }
 }
 
 export const extractMap = extractors

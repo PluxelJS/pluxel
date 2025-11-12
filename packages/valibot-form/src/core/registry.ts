@@ -1,6 +1,7 @@
 // registry.core.ts
 
 import type { PicklistOptions } from 'valibot'
+import { DEFAULT_TEXTS } from './constants'
 import type { ExtractedProps, FormBaseInfo } from './extract'
 import type { ExtractMap } from './utils'
 
@@ -15,6 +16,7 @@ interface ExtraPropsMap {
 	array: { value: unknown[] }
 	/** 补齐 record 的值类型 */
 	record: { value: Record<string, unknown> }
+	object: { value: Record<string, unknown> | undefined }
 }
 
 /** 表单输入的基础事件 props */
@@ -23,15 +25,14 @@ export interface InputProps {
 	ref?: any
 	onBlur?: any
 	onChange?: (e: any) => void
+	disabled?: boolean
+	readOnly?: boolean
 }
 
 /** 触发 change/blur 的工具函数 */
 export function triggerFormEvents<T>(props: InputProps, value: T) {
+	if (props.disabled) return
 	const { name, onChange, onBlur } = props
-	const event = {
-		target: { name, value },
-		currentTarget: { name, value },
-	} as const
 
 	onChange?.(value)
 	onBlur?.({ target: { name } })
@@ -66,7 +67,9 @@ export function registerRenderer<T extends PartialMetaType>(type: T, renderer: R
 /** 最终调用：根据 props.type 找到对应的 renderer */
 export function MetaRenderer<T extends PartialMetaType>(props: CommonProps<T>) {
 	const fn = renderers.get(props.type)
-	if (!fn) throw new Error(`未注册渲染器: ${props.type}`)
+	if (!fn) {
+		throw new Error(DEFAULT_TEXTS.errors.rendererNotFound(props.type))
+	}
 	// 这里用 any 抹平泛型，运行时已有类型保护
 	return fn(props as any)
 }

@@ -2,6 +2,9 @@ import { createMetadataFactory, type MetadataAction } from '~/core/utils/metaFac
 
 export interface ObjectMetaOptions {
 	collapse?: true
+	columns?: number
+	variant?: 'card' | 'stack'
+	gap?: number | string
 }
 
 export type objectMetaAction<TInput extends object, TMetadata extends ObjectMetaOptions> = MetadataAction<

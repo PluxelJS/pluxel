@@ -2,6 +2,7 @@ import * as v from 'valibot'
 import { describe, expect, it } from 'vitest'
 import { arrayMeta } from '~/core/actions/array'
 import { booleanMeta } from '~/core/actions/boolean'
+import { objectMeta } from '~/core/actions/objectMeta'
 import { numberMeta } from '~/core/actions/number'
 import { picklistMeta } from '~/core/actions/picklist'
 import { recordMeta } from '~/core/actions/record'
@@ -15,16 +16,18 @@ describe('extractInfo', () => {
 			v.string(),
 			stringMeta({
 				placeholder: '名称',
-				secret: true,
+				mode: 'password',
+				copyable: true,
 			}),
 		)
 
 		const info = extractInfo(schema, { title: '名称字段' })
 		expect(info?.type).toBe(META_MAP.STRING)
 		expect(info?.formInfo.required).toBe(true)
-		expect(info?.formInfo.title).toBe('名称字段')
+		expect(info?.formInfo.label).toBe('名称字段')
 		expect(info?.props.placeholder).toBe('名称')
-		expect(info?.props.secret).toBe(true)
+		expect(info?.props.mode).toBe('password')
+		expect(info?.props.copyable).toBe(true)
 	})
 
 	it('marks optional schemas as not required', () => {
@@ -50,7 +53,7 @@ describe('extractInfo', () => {
 			description: '用于登录的名称',
 		})
 
-		expect(info?.formInfo.title).toBe('用户名')
+		expect(info?.formInfo.label).toBe('用户名')
 		expect(info?.formInfo.description).toBe('用于登录的名称')
 		expect(info?.formInfo.required).toBe(true)
 	})
@@ -62,26 +65,26 @@ describe('extractInfo', () => {
 			v.minValue(1),
 			v.maxValue(5),
 			numberMeta({
-				type: 'input',
-				options: { step: 2 },
+				variant: 'slider',
+				step: 2,
 			}),
 		)
 
 		const info = extractInfo(schema, { title: '数量' })
 
 		expect(info?.type).toBe(META_MAP.NUMBER)
-		expect(info?.props.type).toBe('input')
-		expect(info?.props.options.integer).toBe(true)
-		expect(info?.props.options.min).toBe(1)
-		expect(info?.props.options.max).toBe(5)
-		expect(info?.props.options.step).toBe(2)
+		expect(info?.props.variant).toBe('slider')
+		expect(info?.props.integer).toBe(true)
+		expect(info?.props.min).toBe(1)
+		expect(info?.props.max).toBe(5)
+		expect(info?.props.step).toBe(2)
 	})
 
 	it('supports array meta defaults', () => {
 		const schema = v.pipe(
 			v.array(v.string()),
 			arrayMeta({
-				style: 'grid',
+				layout: 'grid',
 				columns: 2,
 				defaultItem: 'item',
 			}),
@@ -89,7 +92,7 @@ describe('extractInfo', () => {
 
 		const info = extractInfo(schema, { title: '标签' })
 		expect(info?.type).toBe(META_MAP.ARRAY)
-		expect(info?.props.style).toBe('grid')
+		expect(info?.props.layout).toBe('grid')
 		expect(info?.props.columns).toBe(2)
 		expect(info?.props.defaultItem).toBe('item')
 	})
@@ -119,6 +122,7 @@ describe('extractInfo', () => {
 				addable: true,
 				reorderable: true,
 				valueMode: 'number',
+				layout: 'list',
 			}),
 		)
 
@@ -126,10 +130,38 @@ describe('extractInfo', () => {
 		expect(info?.type).toBe(META_MAP.RECORD)
 		expect(info?.props.addable).toBe(true)
 		expect(info?.props.valueMode).toBe('number')
+		expect(info?.props.layout).toBe('list')
 	})
 
 	it('returns undefined for unsupported schema types', () => {
 		const info = extractInfo(v.literal('固定值'), { title: '常量' })
 		expect(info).toBeUndefined()
+	})
+
+	it('extracts nested object fields with metadata', () => {
+		const schema = v.pipe(
+			v.object({
+				street: v.pipe(v.string(), stringMeta({ placeholder: '街道' })),
+				zip: v.number(),
+			}),
+			objectMeta({ columns: 2, collapse: true }),
+		)
+
+		const info = extractInfo(schema, { title: '地址信息' })
+		expect(info?.type).toBe(META_MAP.object)
+		expect(info?.props.fields.map((field) => field.name)).toEqual(['street', 'zip'])
+		expect(info?.props.columns).toBe(2)
+		expect(info?.props.collapse).toBe(true)
+	})
+
+	it('treats intersections of objects as object fields', () => {
+		const schema = v.intersect([
+			v.object({ firstName: v.string() }),
+			v.object({ lastName: v.string() }),
+		])
+
+		const info = extractInfo(schema, { title: '姓名' })
+		expect(info?.type).toBe(META_MAP.object)
+		expect(info?.props.fields.map((field) => field.name).sort()).toEqual(['firstName', 'lastName'])
 	})
 })

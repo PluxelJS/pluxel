@@ -2,7 +2,7 @@
 
 import { type formOptions, useForm } from '@tanstack/react-form'
 import { useMemo } from 'react'
-import { getDefaults, type InferOutput, type ObjectSchema } from 'valibot'
+import { getDefaults, type InferOutput, type IntersectSchema, type ObjectSchema } from 'valibot'
 
 // —— 辅助：读取服务端注入的表单状态 —— //
 function getServerFormState<FormState>() {
@@ -16,7 +16,9 @@ function getServerFormState<FormState>() {
 	}
 }
 
-export function useAppForm<S extends ObjectSchema<any, any>, TValues = InferOutput<S>>(
+export type ObjectLikeSchema = ObjectSchema<any, any> | IntersectSchema<any, any>
+
+export function useAppForm<S extends ObjectLikeSchema, TValues = InferOutput<S>>(
 	schema: S,
 	formOpts?: ReturnType<typeof formOptions<InferOutput<S>>>,
 ) {

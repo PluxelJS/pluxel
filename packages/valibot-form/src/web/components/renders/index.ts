@@ -5,3 +5,4 @@ export * from './picklist'
 export * from './record'
 
 export * from './string'
+export * from './object'

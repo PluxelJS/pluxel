@@ -80,4 +80,10 @@ export const AUTOFORM_CASES: AutoFormCase[] = [
 		description: '包含 slider、颜色选择与基础布尔字段的混合示例。',
 		schema: UserSchema,
 	},
+	{
+		id: 'object',
+		label: 'Object Builder',
+		description: '嵌套对象与 intersection 组合示例。',
+		schema: schema.ObjectShowcaseSchema,
+	},
 ]

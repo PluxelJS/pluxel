@@ -7,10 +7,7 @@ export const RecordTableSchema = v.object({
 	table: v.pipe(
 		v.record(v.string(), v.boolean()),
 		f.recordMeta({
-			asTable: true,
-			addable: true,
-			removable: true,
-			editableKey: true,
+			layout: 'table',
 			keyPlaceholder: '例如：api-key',
 			valuePlaceholder: '值',
 			columns: { key: 260, value: 'auto' },
@@ -23,12 +20,11 @@ export const RecordListFixedKeySchema = v.object({
 	fixed: v.pipe(
 		v.record(v.string(), v.number()),
 		f.recordMeta({
-			addable: true,
-			removable: true,
 			editableKey: false,
 			keyPlaceholder: '键',
 			valuePlaceholder: '值',
 			emptyHint: '暂无配置项',
+			layout: 'list',
 		}),
 	),
 })
@@ -38,10 +34,7 @@ export const RecordMixedValueSchema = v.object({
 	mixed: v.pipe(
 		v.record(v.string(), v.unknown()),
 		f.recordMeta({
-			asTable: true,
-			addable: true,
-			removable: true,
-			editableKey: true,
+			layout: 'table',
 			columns: { key: 240, value: 'auto' },
 		}),
 	),
@@ -77,10 +70,7 @@ export const RecordFocusTestSchema = v.object({
 	table: v.pipe(
 		v.record(v.string(), v.unknown()),
 		f.recordMeta({
-			asTable: true,
-			addable: true,
-			removable: true,
-			editableKey: true,
+			layout: 'table',
 			keyPlaceholder: '键',
 			valuePlaceholder: '值',
 			columns: { key: 240, value: 'auto' },
@@ -90,9 +80,7 @@ export const RecordFocusTestSchema = v.object({
 	list: v.pipe(
 		v.record(v.string(), v.unknown()),
 		f.recordMeta({
-			addable: true,
-			removable: true,
-			editableKey: true,
+			layout: 'list',
 			keyPlaceholder: '键',
 			valuePlaceholder: '值',
 			valueMode: 'boolean', // 强制 JSON 编辑（即使当前是字符串也不切控件）

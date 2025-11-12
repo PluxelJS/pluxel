@@ -29,7 +29,7 @@
 		"bench": "bun run tests/bench/pluginLifecycle.bench.ts"
 	},
 	"dependencies": {
-		"eventure": "catalog:workflow",
+		"eventure": "file:../../../eventure",
 		"option-t": "catalog:validation",
 		"reflect-metadata": "catalog:validation",
 		"xstate": "catalog:workflow"
