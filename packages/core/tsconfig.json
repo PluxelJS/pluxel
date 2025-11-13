@@ -5,6 +5,8 @@
 		"rootDir": "..",
 		"baseUrl": ".",
 		"outDir": "dist",
+		"experimentalDecorators": true,
+		"emitDecoratorMetadata": true,
 		"paths": {
 			"diod": ["../diod/src"],
 			"diod/*": ["../diod/src/*"],
