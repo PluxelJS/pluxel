@@ -1,7 +1,7 @@
 {
 	"name": "@pluxel/cli",
 	"bin": {
-		"pluxel": "dist/cli.js"
+		"pluxel": "dist/cli.mjs"
 	},
 	"version": "0.1.2",
 	"description": "Demo example that imports a local package",
@@ -9,15 +9,6 @@
 	"scripts": {
 		"dev": "bun src/cli.ts new plugin",
 		"build": "tsdown"
-	},
-	"publishConfig": {
-		"exports": {
-			".": {
-				"import": "./dist/index.js",
-				"require": "./dist/index.cjs"
-			},
-			"./package.json": "./package.json"
-		}
 	},
 	"dependencies": {
 		"@clack/prompts": "^0.11.0",

@@ -1,9 +1,11 @@
 import { type Context, Injectable } from '@pluxel/core'
+import type { LoggerService, PluginService } from '@pluxel/core/services'
 import { makeIdFiltersToMatchWithQuery } from '@rolldown/pluginutils'
 import { resolve } from 'pathe'
 import {
 	createFilter,
 	createServer,
+	type InlineConfig,
 	type ModuleNode,
 	normalizePath,
 	type Plugin,
@@ -13,6 +15,11 @@ import { ModuleCacheMap, ViteNodeRunner } from 'vite-node/client'
 import { ViteNodeServer } from 'vite-node/server'
 import { installSourcemapsSupport } from 'vite-node/source-map'
 import tsconfigPaths from 'vite-tsconfig-paths'
+import {
+	type HMRDependencyConfig,
+	type ResolvedHMRDependencyConfig,
+	resolveHMRDependencyConfig,
+} from './config'
 
 /* -------------------------------- 配置项 -------------------------------- */
 
@@ -34,6 +41,8 @@ export interface HMRConfig {
 		/** 单批最大文件数 */
 		maxBatchFiles?: number
 	}
+	/** 依赖相关配置（external / bridge / optimizeDeps 等） */
+	deps?: HMRDependencyConfig
 }
 
 /* --------------------------------- 常量 --------------------------------- */
@@ -75,8 +84,8 @@ class Mutex {
 /** 批处理防抖器：支持 debounce / maxWait / maxBatch 限制 */
 class BatchDebouncer {
 	private pending = new Set<string>()
-	private t?: NodeJS.Timeout
-	private tMax?: NodeJS.Timeout
+	private t: NodeJS.Timeout | null = null
+	private tMax: NodeJS.Timeout | null = null
 	private epoch = 0
 	constructor(
 		private flushFn: (files: string[], epoch: number) => Promise<void>,
@@ -92,10 +101,14 @@ class BatchDebouncer {
 	}
 	private async flush(_reason: 'debounce' | 'maxwait' | 'maxbatch') {
 		if (!this.pending.size) return
-		clearTimeout(this.t!)
-		clearTimeout(this.tMax!)
-		this.t = undefined
-		this.tMax = undefined
+		if (this.t) {
+			clearTimeout(this.t)
+			this.t = null
+		}
+		if (this.tMax) {
+			clearTimeout(this.tMax)
+			this.tMax = null
+		}
 		const files = [...this.pending]
 		this.pending.clear()
 		const epoch = ++this.epoch
@@ -119,8 +132,8 @@ export class HMRService {
 	private filter!: (id: string) => boolean
 	private readonly moduleCache = new ModuleCacheMap()
 
-	// Keep these workspace packages singleton between host runtime and vite-node.
-	private readonly sharedWorkspaceModules = ['@pluxel/core', '@pluxel/core/service'] as const
+	/** 依赖/模块行为：external、bridge、optimizeDeps 等 */
+	private readonly deps: ResolvedHMRDependencyConfig
 
 	private plugin!: Plugin
 
@@ -147,6 +160,8 @@ export class HMRService {
 		private ctx: Context,
 		private config: HMRConfig,
 	) {
+		this.deps = resolveHMRDependencyConfig(this.config.deps)
+
 		// include .ts/.tsx；排除 .d.ts（兼容 ?v= 查询串）
 		const includeGlobs = makeIdFiltersToMatchWithQuery(
 			this.config.dir.flatMap((d) => [resolve(d, '**/*.{ts,tsx}')]),
@@ -168,7 +183,7 @@ export class HMRService {
 				this.vns = new ViteNodeServer(server, {
 					transformMode: { ssr: [/\.([cm]?tsx?|jsx?)$/] },
 					deps: {
-						external: [/^(react|react-dom|lodash|dayjs)(\/|$)/, /^@pluxel\/core(?:\/.*)?$/],
+						external: Array.from(this.deps.runnerExternal),
 					},
 				})
 
@@ -192,7 +207,7 @@ export class HMRService {
 				})
 
 				// 4) 把需要保持单例的工作区模块塞进 moduleCache
-				await this.bridgeWorkspaceModules(this.sharedWorkspaceModules)
+				await this.bridgeWorkspaceModules(this.deps.bridgeModules)
 
 				// 5) 批处理器
 				const bCfg = {
@@ -376,29 +391,33 @@ export class HMRService {
 	/* ------------------------------ DevServer 启动 ------------------------------ */
 
 	public async start(): Promise<void> {
-		const server = await createServer({
+		const serverConfig: InlineConfig = {
 			root: process.cwd(),
 			server: { port: 3000, middlewareMode: false },
 			resolve: {
-				alias: {
-					// 3.34.1 的 tabler icons ESM 单体导出，避免切片数过多
-					'@tabler/icons-react': '@tabler/icons-react/dist/esm/icons/index.mjs',
-				},
+				alias: [
+					{
+						// 3.34.1 的 tabler icons ESM 单体导出，避免切片数过多
+						find: '@tabler/icons-react',
+						replacement: '@tabler/icons-react/dist/esm/icons/index.mjs',
+					},
+				],
 			},
 			plugins: [tsconfigPaths(), this.plugin, this.ctx.honoService.viteHonoDevServer],
 			// ✅ 真正禁用依赖预优化，以免 graph 形变
 			optimizeDeps: {
 				force: true, // 避免某些场景下跳过预优化
-				include: ['react', 'react-dom', 'react/jsx-runtime', 'react-dom/client'],
+				include: Array.from(this.deps.optimizeDepsInclude),
 				// 某些 CJS 包需要命名导出映射时的兜底（视实际需要开启）
-				needsInterop: ['react', 'react-dom'],
+				needsInterop: Array.from(this.deps.optimizeDepsInterop),
 			},
 			ssr: {
 				// 避免把 react/react-dom external 掉，交给 Vite 处理更一致
-				noExternal: ['react', 'react-dom'],
-				external: ['@pluxel/core', '@pluxel/core/service'], // 只保留你必须 external 的
+				noExternal: Array.from(this.deps.ssrNoExternal),
+				external: Array.from(this.deps.ssrExternal), // 只保留你必须 external 的
 			},
-		})
+		}
+		const server = await createServer(serverConfig)
 		await server.listen()
 		server.printUrls()
 		this.ctx.logger.info(`HMR 服务已启动，只监听：${this.config.dir.join(', ')}`)

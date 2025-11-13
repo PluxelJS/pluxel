@@ -12,10 +12,10 @@
 			"import": "./dist/index.mjs",
 			"require": "./dist/index.cjs"
 		},
-		"./service": {
-			"@pluxel/source": "./src/service/index.ts",
-			"import": "./dist/service.mjs",
-			"require": "./dist/service.cjs"
+		"./services": {
+			"@pluxel/source": "./src/services/index.ts",
+			"import": "./dist/services.mjs",
+			"require": "./dist/services.cjs"
 		},
 		"./package.json": "./package.json"
 	},
@@ -29,14 +29,14 @@
 		"bench": "bun run tests/bench/pluginLifecycle.bench.ts"
 	},
 	"dependencies": {
-		"eventure": "file:../../../eventure",
-		"option-t": "catalog:validation",
-		"reflect-metadata": "catalog:validation",
-		"xstate": "catalog:workflow"
+		"eventure": "^0.4.2",
+		"reflect-metadata": "^0.2.2",
+		"xstate": "^5.24.0"
 	},
 	"devDependencies": {
 		"@pluxel/context": "workspace:*",
 		"diod": "workspace:*",
+		"option-t": "^55.1.0",
 		"tinybench": "catalog:dev"
 	},
 	"publishConfig": {
@@ -45,9 +45,9 @@
 				"import": "./dist/index.mjs",
 				"require": "./dist/index.cjs"
 			},
-			"./service": {
-				"import": "./dist/service.mjs",
-				"require": "./dist/service.cjs"
+			"./services": {
+				"import": "./dist/services.mjs",
+				"require": "./dist/services.cjs"
 			},
 			"./package.json": "./package.json"
 		}

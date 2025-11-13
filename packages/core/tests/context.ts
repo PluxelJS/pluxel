@@ -1,5 +1,5 @@
 import 'reflect-metadata'
 
-import '../src/service'
+import '../src/services'
 
 export * from '../src/index'

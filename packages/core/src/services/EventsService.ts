@@ -2,13 +2,13 @@ import { type Context, Injectable, symbols } from '@pluxel/context'
 // EventsService.ts
 import {
 	EvtChannel as Channel,
-	type DisposableSubscription,
 	type EventArgs,
 	type EventDescriptor,
 	type EventEmitterOptions,
 	type EventListener,
 	Eventure,
 	type OnOptions,
+	type Unsubscribe,
 } from 'eventure'
 import type { CommitSummary, PluginIdentifier, PluginInstance } from '../plugin'
 
@@ -47,7 +47,7 @@ export class EventsService extends Eventure<Events> {
 		listener: EventListener<Events[K$1]>,
 		opts?: OnOptions,
 		forcePrepend?: boolean,
-	): DisposableSubscription {
+	): Unsubscribe {
 		;(listener as any)[symbols.ATTACH] = this.ctx
 		const ret = super._register(event, listener, opts, forcePrepend)
 		this.ctx.scope.collectEffect(ret)
@@ -100,7 +100,7 @@ export class EvtChannel<D extends EventDescriptor> extends Channel<D> {
 		listener: EventListener<D>,
 		opts?: OnOptions,
 		prepend?: boolean,
-	): DisposableSubscription {
+	): Unsubscribe {
 		;(listener as any)[symbols.ATTACH] = this.ctx
 		const ret = super._register(listener, opts, prepend)
 		this.ctx.caller?.scope.collectEffect(ret)

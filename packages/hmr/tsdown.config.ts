@@ -1,5 +1,5 @@
-import { defineConfig } from 'tsdown'
 import { fileURLToPath } from 'node:url'
+import { defineConfig } from 'tsdown'
 
 const valibotFormSrc = fileURLToPath(new URL('../valibot-form/src', import.meta.url))
 
@@ -46,7 +46,7 @@ export default defineConfig({
 		resolver: 'tsc',
 	},
 	// 不要内联 core，未来可能要用来 build。
-	external: ['@pluxel/core', '@pluxel/core/service'],
+	external: ['@pluxel/core', '@pluxel/core/services'],
 	format: ['esm'],
 	sourcemap: true,
 	clean: true,

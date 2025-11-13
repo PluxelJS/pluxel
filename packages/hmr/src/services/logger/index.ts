@@ -1,11 +1,10 @@
 import { type Context, Injectable, OverrideOf } from '@pluxel/core'
-import { LoggerService } from '@pluxel/core/service'
+import { LoggerService } from '@pluxel/core/services'
 import type { Bindings, Logger } from 'pino'
 import { createLogger } from './createLogger'
 
 // 1. 列出要转发的 log 级别
 const LEVELS = ['trace', 'debug', 'info', 'warn', 'error', 'fatal'] as const
-type Level = (typeof LEVELS)[number]
 
 @OverrideOf(LoggerService)
 @Injectable

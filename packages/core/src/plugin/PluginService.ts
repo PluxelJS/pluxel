@@ -6,7 +6,7 @@ import { createErr, createOk } from 'option-t/plain_result'
 // XState v5
 import { createActor, waitFor } from 'xstate'
 import type { ServiceMap } from '../container'
-import { EffectScopeService } from '../service/EffectScopeService'
+import { EffectScopeService } from '../services/EffectScopeService'
 import { BasePlugin, PLUGIN_CTX } from './BasePlugin'
 import { PluginContainer, type PluginDiContainer } from './PluginContainer'
 import type { PluginInfo } from './PluginDecorator'
