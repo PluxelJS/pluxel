@@ -1,12 +1,5 @@
 import { basename, dirname, join } from 'pathe'
-import {
-	copyFile,
-	mkdir,
-	readFile,
-	rename,
-	rm,
-	writeFile,
-} from 'node:fs/promises'
+import { copyFile, mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import type { PackageInstallStatus } from '../PackageService'
 import type { EntryResolutionOk } from '../ScanService'
 import type { NormalizedPackageSpecifier } from '../specifiers'
@@ -83,10 +76,7 @@ export class PackageStateStore {
 async function writeJsonAtomic(file: string, payload: PackageStatePayload) {
 	const dir = dirname(file)
 	const base = basename(file)
-	const tmp = join(
-		dir,
-		`.${base}.${Date.now()}.${Math.random().toString(36).slice(2)}.tmp`,
-	)
+	const tmp = join(dir, `.${base}.${Date.now()}.${Math.random().toString(36).slice(2)}.tmp`)
 
 	await mkdir(dir, { recursive: true })
 	const content = JSON.stringify(payload, null, 2)

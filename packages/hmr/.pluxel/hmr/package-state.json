@@ -1,23 +1,23 @@
 {
-  "generatedAt": "2025-11-09T04:33:54.237Z",
-  "packages": [
-    {
-      "spec": {
-        "name": "pluxel-plugin-redis",
-        "raw": "pluxel-plugin-redis",
-        "target": "pluxel-plugin-redis",
-        "key": "pluxel-plugin-redis#latest"
-      },
-      "resolution": {
-        "ok": true,
-        "dir": "/home/ahdg/code/plugin-style-ts/node_modules/.pnpm/pluxel-plugin-redis@0.1.0/node_modules/pluxel-plugin-redis",
-        "entry": "/home/ahdg/code/plugin-style-ts/node_modules/.pnpm/pluxel-plugin-redis@0.1.0/node_modules/pluxel-plugin-redis/dist/index.mjs",
-        "source": "exports",
-        "tried": []
-      },
-      "moduleId": "/home/ahdg/code/plugin-style-ts/node_modules/.pnpm/pluxel-plugin-redis@0.1.0/node_modules/pluxel-plugin-redis/dist/index.mjs",
-      "isAnchor": true,
-      "loadedAt": 1762662834237
-    }
-  ]
+	"generatedAt": "2025-11-13T06:13:09.685Z",
+	"packages": [
+		{
+			"spec": {
+				"name": "pluxel-plugin-redis",
+				"raw": "pluxel-plugin-redis",
+				"target": "pluxel-plugin-redis",
+				"key": "pluxel-plugin-redis#latest"
+			},
+			"resolution": {
+				"ok": true,
+				"dir": "/home/ahdg/code/plugin-style-ts/node_modules/.pnpm/pluxel-plugin-redis@0.1.0/node_modules/pluxel-plugin-redis",
+				"entry": "/home/ahdg/code/plugin-style-ts/node_modules/.pnpm/pluxel-plugin-redis@0.1.0/node_modules/pluxel-plugin-redis/dist/index.mjs",
+				"source": "exports",
+				"tried": []
+			},
+			"moduleId": "/home/ahdg/code/plugin-style-ts/node_modules/.pnpm/pluxel-plugin-redis@0.1.0/node_modules/pluxel-plugin-redis/dist/index.mjs",
+			"isAnchor": true,
+			"loadedAt": 1763014389685
+		}
+	]
 }

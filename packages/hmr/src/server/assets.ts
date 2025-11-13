@@ -18,7 +18,9 @@ type Manifest = Record<string, ManifestEntry>
 const PUBLIC_BASE = process.env.CLIENT_DIST ?? '/node_modules/@pluxel/hmr/public'
 
 const pickEntry = (manifest: Manifest, entry = 'src/client.tsx') =>
-	entry in manifest ? entry : Object.keys(manifest).find((key) => manifest[key]?.isEntry) ?? Object.keys(manifest)[0]
+	entry in manifest
+		? entry
+		: (Object.keys(manifest).find((key) => manifest[key]?.isEntry) ?? Object.keys(manifest)[0])
 
 export function resolveAssets(isProd: boolean): Assets {
 	if (!isProd) {

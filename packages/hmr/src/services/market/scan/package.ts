@@ -15,4 +15,3 @@ export function manifestPathFor(dir: string): string | undefined {
 	const path = r(dir, 'package.json')
 	return existsSync(path) ? path : undefined
 }
-

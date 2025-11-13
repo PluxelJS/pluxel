@@ -1,4 +1,4 @@
-import { type ResolvedScanOptions, type ScanOptionsInput } from './types'
+import type { ResolvedScanOptions, ScanOptionsInput } from './types'
 
 export const DEFAULT_SCAN_OPTIONS: ResolvedScanOptions = {
 	conditions: ['@pluxel/source', 'node', 'import'],

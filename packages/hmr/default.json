@@ -1,1 +1,82 @@
-{"json":{"enabled":["PluginC","PluginB"],"plugins":{"PluginA":{"meta":{},"configRecord":{"config":{"url":"redis://127.0.0.1:6379a","lazy":false,"pingOnStart":true,"startupTimeoutMs":10000,"prefix":"bull","redisOptions":{},"id":0,"name":"#000000","check":true,"name1":"#000000","check1":true,"name2":"#000000","check2":true,"name3":"#000000","check3":true,"name5":"#000000","check56":true,"name15":"#000000","check13":true,"name22":"#000000","check23":true,"name36":"#000000","check34":true},"config2":{"id":2,"name":"#000000","check":true,"name1":"#000000","check1":true,"name2":"#000000","check2":true,"name3":"#000000","check3":true,"enable":false,"basePath":"/admin/queues","readOnly":false,"allowRetries":true},"config1":{"id":5,"name":"#000000","check":true,"name1":"#000000","check1":true,"name2":"#000000","check2":true,"name3":"#000000","check3":true,"name5":"#000000","check56":true,"name15":"#000000","check13":true,"name22":"#000000","check23":true,"name36":"#000000","check34":true},"a":{"name":["a","b"]}}}},"extra":{"groups":[{"groupId":"a390e2b0-57d3-49a7-9004-0e514ee0c101","name":"sdadas","pluginIds":["PluginA"]}]}},"meta":{"values":{"enabled":["set"]},"v":1}}
+{
+	"json": {
+		"enabled": ["PluginC", "PluginB"],
+		"plugins": {
+			"PluginA": {
+				"meta": {},
+				"configRecord": {
+					"config": {
+						"url": "redis://127.0.0.1:6379a",
+						"lazy": false,
+						"pingOnStart": true,
+						"startupTimeoutMs": 10000,
+						"prefix": "bull",
+						"redisOptions": {},
+						"id": 0,
+						"name": "#000000",
+						"check": true,
+						"name1": "#000000",
+						"check1": true,
+						"name2": "#000000",
+						"check2": true,
+						"name3": "#000000",
+						"check3": true,
+						"name5": "#000000",
+						"check56": true,
+						"name15": "#000000",
+						"check13": true,
+						"name22": "#000000",
+						"check23": true,
+						"name36": "#000000",
+						"check34": true
+					},
+					"config2": {
+						"id": 2,
+						"name": "#000000",
+						"check": true,
+						"name1": "#000000",
+						"check1": true,
+						"name2": "#000000",
+						"check2": true,
+						"name3": "#000000",
+						"check3": true,
+						"enable": false,
+						"basePath": "/admin/queues",
+						"readOnly": false,
+						"allowRetries": true
+					},
+					"config1": {
+						"id": 5,
+						"name": "#000000",
+						"check": true,
+						"name1": "#000000",
+						"check1": true,
+						"name2": "#000000",
+						"check2": true,
+						"name3": "#000000",
+						"check3": true,
+						"name5": "#000000",
+						"check56": true,
+						"name15": "#000000",
+						"check13": true,
+						"name22": "#000000",
+						"check23": true,
+						"name36": "#000000",
+						"check34": true
+					},
+					"a": { "name": ["a", "b"] }
+				}
+			}
+		},
+		"extra": {
+			"groups": [
+				{
+					"groupId": "a390e2b0-57d3-49a7-9004-0e514ee0c101",
+					"name": "sdadas",
+					"pluginIds": ["PluginA"]
+				}
+			]
+		}
+	},
+	"meta": { "values": { "enabled": ["set"] }, "v": 1 }
+}

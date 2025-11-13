@@ -53,7 +53,6 @@ export default defineConfig({
 	},
 	dts: {
 		sourcemap: true,
-		resolver: 'tsc'
 	},
 	format: ['esm', 'cjs'],
 	plugins: [

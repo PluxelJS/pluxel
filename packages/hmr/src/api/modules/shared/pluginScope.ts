@@ -25,7 +25,8 @@ export function createPluginScope(pCtx: PlxContext, name: string): PluginScopeOu
 
 export function getScopeCtor(pCtx: PlxContext, scope: PluginScopeOutput): PluginConstructor {
 	const internal = scope as InternalScope
-	if (internal[PLUGIN_CTOR]) return pCtx.loader.resolveRuntimeCtor(internal[PLUGIN_CTOR]) ?? internal[PLUGIN_CTOR]!
+	if (internal[PLUGIN_CTOR])
+		return pCtx.loader.resolveRuntimeCtor(internal[PLUGIN_CTOR]) ?? internal[PLUGIN_CTOR]!
 	return ensurePlugin(pCtx, scope.name)
 }
 

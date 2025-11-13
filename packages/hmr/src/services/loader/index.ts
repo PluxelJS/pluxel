@@ -8,7 +8,11 @@ import {
 	type PluginConstructor,
 } from '@pluxel/core'
 import { buildSnapshot as buildSnapshotSource } from './buildSnapshot'
-import { PluginRegistry, type PluginLifecycleSnapshot, type PluginLifecycleStage } from './PluginRegistry'
+import {
+	PluginRegistry,
+	type PluginLifecycleSnapshot,
+	type PluginLifecycleStage,
+} from './PluginRegistry'
 
 // moduleId：一般指路径，一个文件可以有多个插件 ctor。
 // config persisted 在 PluginRegistry 是在内核 this.ctx.registry 上的包装，让它和 moduleId 能联系起来。
@@ -153,10 +157,7 @@ export class LoaderService {
 		})
 	}
 
-	private deriveLifecycleStage(
-		isRunning: boolean,
-		isEnabled: boolean,
-	): PluginLifecycleStage {
+	private deriveLifecycleStage(isRunning: boolean, isEnabled: boolean): PluginLifecycleStage {
 		if (!isEnabled) return 'disabled'
 		return isRunning ? 'running' : 'stopped'
 	}

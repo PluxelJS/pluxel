@@ -25,7 +25,9 @@ export function buildSnapshot({ ctx, registry, isRunning }: SnapshotDeps): strin
 		rows.push({ name, moduleId, exportKey, alias: aliasFor(name) })
 	}
 
-	rows.sort((a, b) => (a.name === b.name ? a.moduleId.localeCompare(b.moduleId) : a.name.localeCompare(b.name)))
+	rows.sort((a, b) =>
+		a.name === b.name ? a.moduleId.localeCompare(b.moduleId) : a.name.localeCompare(b.name),
+	)
 
 	const used = new Set<string>()
 	for (const r of rows) {
@@ -77,7 +79,9 @@ export function buildSnapshot({ ctx, registry, isRunning }: SnapshotDeps): strin
 		const namedItems = list.filter((e) => e.exportKey !== 'default')
 		if (defaultItem && namedItems.length > 0) {
 			const namedPart = namedItems.map((e) => `${e.exportKey} as ${e.alias}`).join(', ')
-			importLines.push(`import ${defaultItem.alias}, { ${namedPart} } from ${JSON.stringify(moduleId)};`)
+			importLines.push(
+				`import ${defaultItem.alias}, { ${namedPart} } from ${JSON.stringify(moduleId)};`,
+			)
 		} else if (defaultItem) {
 			importLines.push(`import ${defaultItem.alias} from ${JSON.stringify(moduleId)};`)
 		} else if (namedItems.length > 0) {

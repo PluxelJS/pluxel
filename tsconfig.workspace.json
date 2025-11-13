@@ -4,10 +4,5 @@
 	"compilerOptions": {
 		"baseUrl": ".",
 		"customConditions": ["@pluxel/source"],
-		"paths": {
-			"diod": ["packages/diod/src"],
-			"@pluxel/core": ["packages/core/src"],
-			"@pluxel/context": ["packages/context/src"]
-		},
 	}
 }

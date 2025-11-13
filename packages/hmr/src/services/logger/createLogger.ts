@@ -89,8 +89,7 @@ function createPrettyErrorLoggerSink(root: Logger): PrettyErrorSink {
 	}
 }
 
-const PRETTY_DUPLEX_ENABLED =
-	(process.env.PLUXEL_LOGGER_PRETTY_DUPLEX ?? '0') !== '0'
+const PRETTY_DUPLEX_ENABLED = (process.env.PLUXEL_LOGGER_PRETTY_DUPLEX ?? '0') !== '0'
 
 /** ---------- Factory ---------- */
 /**

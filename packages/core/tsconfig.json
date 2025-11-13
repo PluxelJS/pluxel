@@ -1,10 +1,17 @@
 {
 	"extends": "../../tsconfig.src.json",
-	"include": [
-		"src",
-		"tests"
-	],
+	"include": ["src", "tests"],
 	"compilerOptions": {
-		"outDir": "dist"
+		"rootDir": "..",
+		"baseUrl": ".",
+		"outDir": "dist",
+		"paths": {
+			"diod": ["../diod/src"],
+			"diod/*": ["../diod/src/*"],
+			"@pluxel/context": ["../context/src"],
+			"@pluxel/context/*": ["../context/src/*"],
+			"@pluxel/core": ["./src"],
+			"@pluxel/core/*": ["./src/*"]
+		}
 	}
 }

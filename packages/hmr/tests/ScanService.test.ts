@@ -4,9 +4,7 @@ import { normalize } from 'pathe'
 import type { Context } from '@pluxel/core'
 import { ScanService, type EntryResolutionOk } from '../src/services/market/ScanService'
 
-const fixtureRoot = normalize(
-	fileURLToPath(new URL('./fixtures/scan/single/', import.meta.url)),
-)
+const fixtureRoot = normalize(fileURLToPath(new URL('./fixtures/scan/single/', import.meta.url)))
 
 function createService(overrides: Partial<ConstructorParameters<typeof ScanService>[1]> = {}) {
 	return new ScanService({} as Context, {
