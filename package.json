@@ -55,7 +55,7 @@
 				"@tabler/icons-react": "^3.35.0",
 				"react": "^19.1.1",
 				"react-dom": "^19.1.1",
-				"tsdown": "0.14.2"
+				"tsdown": "^0.16.4"
 			}
 		},
 		"overrides": {

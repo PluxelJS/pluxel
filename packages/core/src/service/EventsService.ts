@@ -103,7 +103,7 @@ export class EvtChannel<D extends EventDescriptor> extends Channel<D> {
 	): DisposableSubscription {
 		;(listener as any)[symbols.ATTACH] = this.ctx
 		const ret = super._register(listener, opts, prepend)
-		this.ctx.scope.collectEffect(ret)
+		this.ctx.caller?.scope.collectEffect(ret)
 		return ret
 	}
 }
@@ -114,12 +114,6 @@ export interface Events {
 	commitFailed: (failed: Set<PluginIdentifier>) => void
 	afterCommit: (summary: CommitSummary) => void
 	afterStart: [Context] // 启动成功
-	startError: [Context, Error] // 启动失败
-}
-
-// biome-ignore lint/complexity/noBannedTypes: <explanation>
-type ThisType = Object | Function
-type FilterFunction = ((attachedCtx: Context) => boolean) | undefined
 	startError: [Context, Error] // 启动失败
 }
 

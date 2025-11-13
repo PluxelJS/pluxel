@@ -1,6 +1,4 @@
 // types.ts
-import type { Maybe } from 'option-t/maybe'
-import type { Result } from 'option-t/plain_result'
 import type { ContainerAccessors } from '../container'
 /** 可 new 的类 */
 export type Newable<T> = new (...args: any[]) => T

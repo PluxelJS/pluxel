@@ -13,7 +13,6 @@
 		"container",
 		"typescript"
 	],
-	"main": "./dist/index.cjs",
 	"type": "module",
 	"files": [
 		"lib",
@@ -37,10 +36,13 @@
 			"path": "lib/diod.es.js"
 		}
 	],
-	"packageManager": "pnpm@9.12.0",
-	"engines": {
-		"node": ">=18"
+	"devDependencies": {
+		"tsdown": "catalog:build",
+		"typescript": "catalog:tsc",
+		"option-t": "catalog:validation",
+		"reflect-metadata": "catalog:validation"
 	},
+	"main": "./dist/index.cjs",
 	"module": "./dist/index.mjs",
 	"types": "./dist/index.d.cts",
 	"exports": {
@@ -59,11 +61,5 @@
 			},
 			"./package.json": "./package.json"
 		}
-	},
-	"devDependencies": {
-		"tsdown": "catalog:build",
-		"typescript": "catalog:tsc",
-		"option-t": "catalog:validation",
-		"reflect-metadata": "catalog:validation"
 	}
 }
