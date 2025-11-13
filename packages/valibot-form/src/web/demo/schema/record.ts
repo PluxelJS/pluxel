@@ -6,6 +6,7 @@ import * as f from '~/index'
 export const RecordTableSchema = v.object({
 	table: v.pipe(
 		v.record(v.string(), v.boolean()),
+		f.formMeta({ label: '表格模式 Record' }),
 		f.recordMeta({
 			layout: 'table',
 			keyPlaceholder: '例如：api-key',
@@ -19,6 +20,7 @@ export const RecordTableSchema = v.object({
 export const RecordListFixedKeySchema = v.object({
 	fixed: v.pipe(
 		v.record(v.string(), v.number()),
+		f.formMeta({ label: '固定键 Record' }),
 		f.recordMeta({
 			editableKey: false,
 			keyPlaceholder: '键',
@@ -33,6 +35,7 @@ export const RecordListFixedKeySchema = v.object({
 export const RecordMixedValueSchema = v.object({
 	mixed: v.pipe(
 		v.record(v.string(), v.unknown()),
+		f.formMeta({ label: '混合类型 Record' }),
 		f.recordMeta({
 			layout: 'table',
 			columns: { key: 240, value: 'auto' },
@@ -49,26 +52,62 @@ export const RecordAllInOneSchema = v.object({
 
 // —— 带默认值版本，便于观测 defaultValue 行为 —— //
 export const RecordWithDefaultsSchema = v.object({
-	table: v.optional(RecordTableSchema.entries.table, {
-		'api-key': 'abc-123',
-		retries: 3,
-		enabled: true,
-		meta: { a: 1, b: [2, 3] },
-	}),
-	fixed: v.optional(RecordListFixedKeySchema.entries.fixed, {
-		region: 'tokyo',
-		zone: '1a',
-	}),
-	mixed: v.optional(RecordMixedValueSchema.entries.mixed, {
-		count: 5,
-		debug: false,
-		config: { x: 1, y: { z: 2 } },
-	}),
+	table: v.optional(
+		v.pipe(
+			v.record(v.string(), v.unknown()),
+			f.formMeta({ label: '表格模式 Record' }),
+			f.recordMeta({
+				layout: 'table',
+				keyPlaceholder: '例如：api-key',
+				valuePlaceholder: '值',
+				columns: { key: 260, value: 'auto' },
+			}),
+		),
+		{
+			'api-key': 'abc-123',
+			retries: 3,
+			enabled: true,
+			meta: { a: 1, b: [2, 3] },
+		},
+	),
+	fixed: v.optional(
+		v.pipe(
+			v.record(v.string(), v.number()),
+			f.formMeta({ label: '固定键 Record' }),
+			f.recordMeta({
+				editableKey: false,
+				keyPlaceholder: '键',
+				valuePlaceholder: '值',
+				emptyHint: '暂无配置项',
+				layout: 'list',
+			}),
+		),
+		{
+			region: 1,
+			zone: 2,
+		},
+	),
+	mixed: v.optional(
+		v.pipe(
+			v.record(v.string(), v.unknown()),
+			f.formMeta({ label: '混合类型 Record' }),
+			f.recordMeta({
+				layout: 'table',
+				columns: { key: 240, value: 'auto' },
+			}),
+		),
+		{
+			count: 5,
+			debug: false,
+			config: { x: 1, y: { z: 2 } },
+		},
+	),
 })
 
 export const RecordFocusTestSchema = v.object({
 	table: v.pipe(
 		v.record(v.string(), v.unknown()),
+		f.formMeta({ label: '表格测试' }),
 		f.recordMeta({
 			layout: 'table',
 			keyPlaceholder: '键',
@@ -79,6 +118,7 @@ export const RecordFocusTestSchema = v.object({
 	),
 	list: v.pipe(
 		v.record(v.string(), v.unknown()),
+		f.formMeta({ label: '列表测试' }),
 		f.recordMeta({
 			layout: 'list',
 			keyPlaceholder: '键',
@@ -96,6 +136,6 @@ export const RecordFocusTestDefaults = v.object({
 		meta: { a: 1, b: [2, 3] },
 	}),
 	list: v.optional(RecordFocusTestSchema.entries.list, {
-		notes: '{ "x": 1 }', // 有意用字符串测试 json 模式的“固定编辑器”
+		notes: '{ "x": 1 }', // 有意用字符串测试 json 模式的"固定编辑器"
 	}),
 })

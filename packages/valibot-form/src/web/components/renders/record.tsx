@@ -18,6 +18,7 @@ import type { CommonProps } from '~/core/registry'
 import { registerRenderer, triggerFormEvents } from '~/core/registry'
 import { META_MAP } from '~/core/utils'
 import { FieldChrome } from '../shared'
+import { cleanProps } from '../../utils/propHelpers'
 
 type RendererProps = CommonProps<typeof META_MAP.RECORD> & { value?: Record<string, unknown> }
 type RecordUI = RecordMetaResult
@@ -36,10 +37,36 @@ function inferMode(
 function RecordField(props: RendererProps) {
 	const { formBaseInfo, errors, extractedPropsInfo, inputProps, value } = props
 	const ep = extractedPropsInfo ?? {}
-	const rows = useMemo(
-		() => Object.entries((value as Record<string, unknown>) ?? {}),
-		[value],
-	)
+	// 使用 state 来保持键的顺序，避免编辑时因对象键重排序导致的跳跃
+	const [orderedKeys, setOrderedKeys] = useState<string[]>([])
+
+	const rows = useMemo(() => {
+		const entries = Object.entries((value as Record<string, unknown>) ?? {})
+		// 如果是第一次加载或 value 的键集合发生了变化，更新 orderedKeys
+		const currentKeys = entries.map(([k]) => k)
+		const currentKeySet = new Set(currentKeys)
+		const orderedKeySet = new Set(orderedKeys)
+
+		// 检查是否需要更新顺序（新增或删除了键）
+		const keysChanged =
+			currentKeys.length !== orderedKeys.length ||
+			currentKeys.some(k => !orderedKeySet.has(k)) ||
+			orderedKeys.some(k => !currentKeySet.has(k))
+
+		if (keysChanged) {
+			// 保留现有顺序中仍存在的键，然后添加新键
+			const preserved = orderedKeys.filter(k => currentKeySet.has(k))
+			const newKeys = currentKeys.filter(k => !orderedKeySet.has(k))
+			const newOrder = [...preserved, ...newKeys]
+			setOrderedKeys(newOrder)
+			return newOrder.map(k => [k, (value as Record<string, unknown>)[k]] as [string, unknown])
+		}
+
+		// 使用已有的顺序
+		return orderedKeys
+			.filter(k => currentKeySet.has(k))
+			.map(k => [k, (value as Record<string, unknown>)[k]] as [string, unknown])
+	}, [value, orderedKeys])
 	const layout = ep.layout ?? 'table'
 	const minItems = ep.minItems ?? 0
 	const maxItems = ep.maxItems
@@ -78,8 +105,14 @@ function RecordField(props: RendererProps) {
 
 	const handleKeyChange = (index: number, nextKey: string) => {
 		const next = [...rows]
-		const [, currentValue] = next[index]
+		const [oldKey, currentValue] = next[index]
 		next[index] = [nextKey, currentValue]
+
+		// 更新有序键列表
+		const newOrderedKeys = [...orderedKeys]
+		newOrderedKeys[index] = nextKey
+		setOrderedKeys(newOrderedKeys)
+
 		commitRows(next)
 	}
 
@@ -108,7 +141,7 @@ function RecordField(props: RendererProps) {
 	}
 
 	const handleAdd = () => {
-		const next = [...rows, ['', '']]
+		const next: [string, unknown][] = [...rows, ['', '']]
 		commitRows(next)
 	}
 
@@ -118,20 +151,25 @@ function RecordField(props: RendererProps) {
 			case 'number':
 				return (
 					<NumberInput
-						value={typeof value === 'number' ? value : ''}
-						onChange={(val) => {
-							const parsed = val === '' || val === undefined ? undefined : Number(val)
-							handleValueChange(index, parsed ?? 0)
-						}}
-						disabled={inputProps.disabled}
+						{...cleanProps({
+							value: typeof value === 'number' ? value : '',
+							onChange: (val: string | number) => {
+								const parsed = val === '' || val === undefined ? undefined : Number(val)
+								handleValueChange(index, parsed ?? 0)
+							},
+							disabled: inputProps.disabled,
+						})}
 					/>
 				)
 			case 'boolean':
 				return (
 					<Switch
-						checked={Boolean(value)}
-						onChange={(event) => handleValueChange(index, event.currentTarget.checked)}
-						disabled={inputProps.disabled}
+						{...cleanProps({
+							checked: Boolean(value),
+							onChange: (event: React.ChangeEvent<HTMLInputElement>) =>
+								handleValueChange(index, event.currentTarget.checked),
+							disabled: inputProps.disabled,
+						})}
 					/>
 				)
 			case 'json': {
@@ -143,38 +181,43 @@ function RecordField(props: RendererProps) {
 							: '{}'
 				return (
 					<Textarea
-						key={`${index}-${rows.length}-${formatted.length}`}
-						defaultValue={formatted}
-						minRows={4}
-						autosize
-						onBlur={(event) => {
-							try {
-								const parsed = JSON.parse(event.currentTarget.value || '{}')
-								handleValueChange(index, parsed)
-								setJsonErrors((prev) => {
-									const next = { ...prev }
-									delete next[index]
-									return next
-								})
-							} catch {
-								setJsonErrors((prev) => ({
-									...prev,
-									[index]: 'JSON 格式错误',
-								}))
-							}
-						}}
-						disabled={inputProps.disabled}
-						styles={{ input: { fontFamily: 'var(--mantine-font-family-monospace)' } }}
+						{...cleanProps({
+							key: `${index}-${rows.length}-${formatted.length}`,
+							defaultValue: formatted,
+							minRows: 4,
+							autosize: true,
+							onBlur: (event: React.FocusEvent<HTMLTextAreaElement>) => {
+								try {
+									const parsed = JSON.parse(event.currentTarget.value || '{}')
+									handleValueChange(index, parsed)
+									setJsonErrors((prev) => {
+										const next = { ...prev }
+										delete next[index]
+										return next
+									})
+								} catch {
+									setJsonErrors((prev) => ({
+										...prev,
+										[index]: 'JSON 格式错误',
+									}))
+								}
+							},
+							disabled: inputProps.disabled,
+							styles: { input: { fontFamily: 'var(--mantine-font-family-monospace)' } },
+						})}
 					/>
 				)
 			}
 			default:
 				return (
 					<TextInput
-						value={typeof value === 'string' ? value : value == null ? '' : String(value)}
-						onChange={(event) => handleValueChange(index, event.currentTarget.value)}
-						placeholder={ep.valuePlaceholder}
-						disabled={inputProps.disabled}
+						{...cleanProps({
+							value: typeof value === 'string' ? value : value == null ? '' : String(value),
+							onChange: (event: React.ChangeEvent<HTMLInputElement>) =>
+								handleValueChange(index, event.currentTarget.value),
+							placeholder: ep.valuePlaceholder,
+							disabled: inputProps.disabled,
+						})}
 					/>
 				)
 		}
@@ -209,10 +252,13 @@ function RecordField(props: RendererProps) {
 							<Table.Tr key={`record-row-${idx}`}>
 								<Table.Td>
 									<TextInput
-										value={key}
-										onChange={(event) => handleKeyChange(idx, event.currentTarget.value)}
-										placeholder={ep.keyPlaceholder}
-										disabled={!editableKey || inputProps.disabled}
+										{...cleanProps({
+											value: key,
+											onChange: (event: React.ChangeEvent<HTMLInputElement>) =>
+												handleKeyChange(idx, event.currentTarget.value),
+											placeholder: ep.keyPlaceholder,
+											disabled: !editableKey || inputProps.disabled,
+										})}
 									/>
 								</Table.Td>
 								<Table.Td>
@@ -230,18 +276,22 @@ function RecordField(props: RendererProps) {
 										{canReorder ? (
 											<>
 												<ActionIcon
-													variant="subtle"
-													onClick={() => handleMove(idx, -1)}
-													disabled={idx === 0 || inputProps.disabled}
-													aria-label="上移"
+													{...cleanProps({
+														variant: 'subtle' as const,
+														onClick: () => handleMove(idx, -1),
+														disabled: idx === 0 || inputProps.disabled,
+														'aria-label': '上移',
+													})}
 												>
 													<IconArrowUp size={16} />
 												</ActionIcon>
 												<ActionIcon
-													variant="subtle"
-													onClick={() => handleMove(idx, 1)}
-													disabled={idx === rows.length - 1 || inputProps.disabled}
-													aria-label="下移"
+													{...cleanProps({
+														variant: 'subtle' as const,
+														onClick: () => handleMove(idx, 1),
+														disabled: idx === rows.length - 1 || inputProps.disabled,
+														'aria-label': '下移',
+													})}
 												>
 													<IconArrowDown size={16} />
 												</ActionIcon>
@@ -249,11 +299,13 @@ function RecordField(props: RendererProps) {
 										) : null}
 										{canRemove ? (
 											<ActionIcon
-												variant="subtle"
-												color="red"
-												onClick={() => handleRemove(idx)}
-												disabled={inputProps.disabled || rows.length <= minItems}
-												aria-label="删除"
+												{...cleanProps({
+													variant: 'subtle' as const,
+													color: 'red',
+													onClick: () => handleRemove(idx),
+													disabled: inputProps.disabled || rows.length <= minItems,
+													'aria-label': '删除',
+												})}
 											>
 												<IconTrash size={16} />
 											</ActionIcon>
@@ -277,11 +329,14 @@ function RecordField(props: RendererProps) {
 						<Card key={`record-row-${idx}`} withBorder p="md">
 							<Stack gap="sm">
 								<TextInput
-									label={ep.keyLabel ?? '键'}
-									value={key}
-									onChange={(event) => handleKeyChange(idx, event.currentTarget.value)}
-									placeholder={ep.keyPlaceholder}
-									disabled={!editableKey || inputProps.disabled}
+									{...cleanProps({
+										label: ep.keyLabel ?? '键',
+										value: key,
+										onChange: (event: React.ChangeEvent<HTMLInputElement>) =>
+											handleKeyChange(idx, event.currentTarget.value),
+										placeholder: ep.keyPlaceholder,
+										disabled: !editableKey || inputProps.disabled,
+									})}
 								/>
 								<Stack gap={4}>
 									{renderValueControl(idx, val)}
@@ -295,18 +350,22 @@ function RecordField(props: RendererProps) {
 									{canReorder ? (
 										<>
 											<ActionIcon
-												variant="subtle"
-												onClick={() => handleMove(idx, -1)}
-												disabled={idx === 0 || inputProps.disabled}
-												aria-label="上移"
+												{...cleanProps({
+													variant: 'subtle' as const,
+													onClick: () => handleMove(idx, -1),
+													disabled: idx === 0 || inputProps.disabled,
+													'aria-label': '上移',
+												})}
 											>
 												<IconArrowUp size={16} />
 											</ActionIcon>
 											<ActionIcon
-												variant="subtle"
-												onClick={() => handleMove(idx, 1)}
-												disabled={idx === rows.length - 1 || inputProps.disabled}
-												aria-label="下移"
+												{...cleanProps({
+													variant: 'subtle' as const,
+													onClick: () => handleMove(idx, 1),
+													disabled: idx === rows.length - 1 || inputProps.disabled,
+													'aria-label': '下移',
+												})}
 											>
 												<IconArrowDown size={16} />
 											</ActionIcon>
@@ -314,11 +373,13 @@ function RecordField(props: RendererProps) {
 									) : null}
 									{canRemove ? (
 										<ActionIcon
-											variant="subtle"
-											color="red"
-											onClick={() => handleRemove(idx)}
-											disabled={inputProps.disabled || rows.length <= minItems}
-											aria-label="删除"
+											{...cleanProps({
+												variant: 'subtle' as const,
+												color: 'red',
+												onClick: () => handleRemove(idx),
+												disabled: inputProps.disabled || rows.length <= minItems,
+												'aria-label': '删除',
+											})}
 										>
 											<IconTrash size={16} />
 										</ActionIcon>
@@ -333,23 +394,27 @@ function RecordField(props: RendererProps) {
 
 	return (
 		<FieldChrome
-			label={formBaseInfo.label}
-			required={formBaseInfo.required}
-			description={formBaseInfo.description}
-			helperText={formBaseInfo.helperText}
-			hint={formBaseInfo.hint}
-			tooltip={formBaseInfo.tooltip}
-			badge={formBaseInfo.badge}
-			errors={baseErrors}
+			{...cleanProps({
+				label: formBaseInfo.label,
+				required: formBaseInfo.required,
+				description: formBaseInfo.description,
+				helperText: formBaseInfo.helperText,
+				hint: formBaseInfo.hint,
+				tooltip: formBaseInfo.tooltip,
+				badge: formBaseInfo.badge,
+				errors: baseErrors,
+			})}
 		>
 			<Stack gap="md">
 				{rowsNode}
 				{canAdd ? (
 					<Button
-						leftSection={<IconPlus size={16} />}
-						variant="light"
-						onClick={handleAdd}
-						disabled={inputProps.disabled}
+						{...cleanProps({
+							leftSection: <IconPlus size={16} />,
+							variant: 'light' as const,
+							onClick: handleAdd,
+							disabled: inputProps.disabled,
+						})}
 					>
 						{ep.addLabel ?? '新增键值对'}
 					</Button>

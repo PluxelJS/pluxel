@@ -273,33 +273,36 @@ export function PicklistControl({ meta, value, onChange, disabled, required }: P
 	const nothingFound = meta.nothingFoundLabel ?? (searchable ? '无匹配项' : undefined)
 
 	if (multiple) {
-		return (
-			<MultiSelect
-				data={sharedData as any}
-				value={multiValue}
-				onChange={(ids) => {
-					const raw = ids
-						.map((id) => toRaw(id))
-						.filter((item) => item !== null) as (string | number)[]
-					onChange(raw)
-				}}
-				searchable={searchable}
-				clearable={clearable}
-				{...(meta.placeholder && { placeholder: meta.placeholder })}
-				{...(disabled !== undefined && { disabled })}
-				hidePickedOptions
-				withScrollArea
-				{...(meta.maxSelections && { maxValues: meta.maxSelections })}
-				{...(allowCreate && {
-					getCreateLabel: (query: string) => `+ 创建 "${query}"`,
-					onCreate: handleCreate as any,
-				})}
-				{...(nothingFound && { nothingFoundMessage: nothingFound })}
-				{...(SelectOptionItem && { renderOption: SelectOptionItem as any })}
-				comboboxProps={{ withinPortal: true, position: 'bottom-start' }}
-				maxDropdownHeight={280}
-			/>
-		)
+		const multiSelectProps: any = {
+			data: sharedData,
+			value: multiValue,
+			onChange: (ids: string[]) => {
+				const raw = ids
+					.map((id) => toRaw(id))
+					.filter((item) => item !== null) as (string | number)[]
+				onChange(raw)
+			},
+			searchable,
+			clearable,
+			hidePickedOptions: true,
+			withScrollArea: true,
+			comboboxProps: { withinPortal: true, position: 'bottom-start' as const },
+			maxDropdownHeight: 280,
+		}
+
+		if (meta.placeholder) multiSelectProps.placeholder = meta.placeholder
+		if (disabled !== undefined) multiSelectProps.disabled = disabled
+		if (meta.maxSelections) multiSelectProps.maxValues = meta.maxSelections
+		if (nothingFound) multiSelectProps.nothingFoundMessage = nothingFound
+		if (SelectOptionItem) multiSelectProps.renderOption = SelectOptionItem
+
+		// Mantine v7 onCreate API
+		if (allowCreate) {
+			multiSelectProps.getCreateLabel = (query: string) => `+ 创建 "${query}"`
+			multiSelectProps.onCreate = handleCreate
+		}
+
+		return <MultiSelect {...multiSelectProps} />
 	}
 
 	if (variant === 'segmented') {
@@ -335,22 +338,26 @@ export function PicklistControl({ meta, value, onChange, disabled, required }: P
 		)
 	}
 
-	return (
-		<Select
-			data={selectData as any}
-			value={singleValue || null}
-			onChange={(id) => onChange(toRaw(id))}
-			searchable={searchable}
-			clearable={clearable}
-			{...(meta.placeholder && { placeholder: meta.placeholder })}
-			{...(disabled !== undefined && { disabled })}
-			{...(nothingFound && { nothingFoundMessage: nothingFound })}
-			{...(allowCreate && {
-				getCreateLabel: (query: string) => `+ 创建 "${query}"`,
-				onCreate: handleCreate as any,
-			})}
-			{...(SelectOptionItem && { renderOption: SelectOptionItem as any })}
-			comboboxProps={{ withinPortal: true, position: 'bottom-start' }}
-		/>
-	)
+	// Single select
+	const selectProps: any = {
+		data: selectData,
+		value: singleValue || null,
+		onChange: (id: string | null) => onChange(toRaw(id)),
+		searchable,
+		clearable,
+		comboboxProps: { withinPortal: true, position: 'bottom-start' as const },
+	}
+
+	if (meta.placeholder) selectProps.placeholder = meta.placeholder
+	if (disabled !== undefined) selectProps.disabled = disabled
+	if (nothingFound) selectProps.nothingFoundMessage = nothingFound
+	if (SelectOptionItem) selectProps.renderOption = SelectOptionItem
+
+	// Mantine v7 onCreate API
+	if (allowCreate) {
+		selectProps.getCreateLabel = (query: string) => `+ 创建 "${query}"`
+		selectProps.onCreate = handleCreate
+	}
+
+	return <Select {...selectProps} />
 }
