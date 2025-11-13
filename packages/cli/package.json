@@ -3,7 +3,11 @@
 	"bin": {
 		"pluxel": "dist/cli.mjs"
 	},
-	"version": "0.1.2",
+	"files": [
+		"dist",
+		"!**/*.map"
+	],
+	"version": "0.1.4",
 	"description": "Demo example that imports a local package",
 	"type": "module",
 	"scripts": {

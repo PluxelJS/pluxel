@@ -40,8 +40,6 @@ jobs:
 
       # 递归发布：只会发布非 private 且未发过该 version 的包
       - name: Publish
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}  # npm 的 token（Automation）
         run: |
           # 确保 provenance 生效（也可直接在命令行加 --provenance）
           npm config set provenance false

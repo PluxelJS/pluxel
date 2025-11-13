@@ -20,7 +20,8 @@
 		"./package.json": "./package.json"
 	},
 	"files": [
-		"dist"
+		"dist",
+		"!**/*.map"
 	],
 	"scripts": {
 		"test": "bun test",
