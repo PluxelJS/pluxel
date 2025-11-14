@@ -15,7 +15,6 @@ import {
 	type NormalizedPackageSpecifier,
 	normalizeSpecifier,
 	type PackageSpecifierInput,
-	tryNormalizeSpecifier,
 } from './specifiers'
 
 const serviceName = 'packageService' as const
@@ -63,59 +62,6 @@ export interface PackageLoadResult {
 	isAnchor: boolean
 	install?: PackageInstallResult
 	loadedAt: number
-}
-
-export interface PackageLoadFailure {
-	input: PackageSpecifierInput
-	spec?: NormalizedPackageSpecifier
-	error: unknown
-}
-
-export interface PackageBatchLoadResult {
-	loaded: PackageLoadResult[]
-	failures: PackageLoadFailure[]
-}
-
-export interface PackageSnapshotEntry {
-	spec: NormalizedPackageSpecifier
-	resolution: EntryResolutionOk
-	moduleId: string
-	isAnchor: boolean
-	installStatus?: PackageInstallStatus
-	loadedAt: number
-}
-
-export interface PackageSnapshot {
-	generatedAt: string
-	packages: PackageSnapshotEntry[]
-}
-
-export interface ModuleCacheEntry {
-	name: string
-	spec: NormalizedPackageSpecifier
-	resolution: EntryResolutionOk
-	moduleId: string
-	module: Record<string, unknown>
-	isAnchor: boolean
-	loadedAt: number
-}
-
-export type PackageLoadIntent = 'default' | 'local' | 'fresh'
-
-export type PackageLoadDescriptor =
-	| PackageSpecifierInput
-	| {
-			spec: PackageSpecifierInput
-			intent?: PackageLoadIntent
-			options?: LoadOptions
-	  }
-
-export interface PackageBatchLoadOptions {
-	continueOnError?: boolean
-}
-
-export interface HydrateSnapshotOptions extends PackageBatchLoadOptions {
-	assumeInstalled?: boolean
 }
 
 /** 安装选项：基于 nypm 的 OperationOptions，外加 force。 */
@@ -320,130 +266,6 @@ export class PackageService {
 		return result
 	}
 
-	/**
-	 * 批量加载，条目可声明加载意图（默认 / local / fresh），可选择忽略失败继续。
-	 */
-	async loadMany(
-		descriptors: Iterable<PackageLoadDescriptor>,
-		options: PackageBatchLoadOptions = {},
-	): Promise<PackageBatchLoadResult> {
-		const results: PackageLoadResult[] = []
-		const failures: PackageLoadFailure[] = []
-		const continueOnError = options.continueOnError ?? false
-
-		for (const item of descriptors) {
-			const descriptor = normalizeDescriptor(item)
-			const normalized = tryNormalizeSpecifier(descriptor.spec)
-			try {
-				const loadOptions = descriptor.options ?? {}
-				let result: PackageLoadResult
-				switch (descriptor.intent) {
-					case 'local':
-						result = await this.loadInstalled(descriptor.spec, loadOptions)
-						break
-					case 'fresh':
-						result = await this.reload(descriptor.spec, loadOptions)
-						break
-					default:
-						result = await this.load(descriptor.spec, loadOptions)
-						break
-				}
-				results.push(result)
-			} catch (error) {
-				failures.push({ input: descriptor.spec, spec: normalized, error })
-				if (!continueOnError) {
-					throw error
-				}
-			}
-		}
-
-		return { loaded: results, failures }
-	}
-
-	getLoaded(name: string): PackageLoadResult | undefined {
-		if (!this.initialized) return undefined
-		return this.loadedPackages.get(name)
-	}
-
-	listLoaded(): PackageLoadResult[] {
-		if (!this.initialized) return []
-		return Array.from(this.loadedPackages.values())
-	}
-
-	createSnapshot(): PackageSnapshot {
-		const packages: PackageSnapshotEntry[] = []
-		for (const record of this.loadedPackages.values()) {
-			packages.push({
-				spec: record.spec,
-				resolution: record.resolution,
-				moduleId: record.moduleId,
-				isAnchor: record.isAnchor,
-				installStatus: record.install?.status,
-				loadedAt: record.loadedAt,
-			})
-		}
-		return {
-			generatedAt: new Date().toISOString(),
-			packages,
-		}
-	}
-
-	async hydrateSnapshot(
-		snapshot: PackageSnapshot,
-		options: HydrateSnapshotOptions = {},
-	): Promise<PackageBatchLoadResult> {
-		const assumeInstalled = options.assumeInstalled ?? true
-		const intent: PackageLoadIntent = assumeInstalled ? 'local' : 'default'
-		const descriptors = snapshot.packages.map((pkg) => ({
-			spec: pkg.spec,
-			intent,
-			options: {
-				resolvedEntry: pkg.resolution,
-			},
-		}))
-
-		return this.loadMany(descriptors, {
-			continueOnError: options.continueOnError,
-		})
-	}
-
-	getModuleCacheEntries(): ModuleCacheEntry[] {
-		if (!this.initialized) return []
-		const entries: ModuleCacheEntry[] = []
-		for (const [name, record] of this.loadedPackages) {
-			entries.push({
-				name,
-				spec: record.spec,
-				resolution: record.resolution,
-				moduleId: record.moduleId,
-				module: record.module,
-				isAnchor: record.isAnchor,
-				loadedAt: record.loadedAt,
-			})
-		}
-		return entries
-	}
-
-	forEachCachedModule(visitor: (entry: ModuleCacheEntry) => void) {
-		if (!this.initialized) return
-		for (const [name, record] of this.loadedPackages) {
-			visitor({
-				name,
-				spec: record.spec,
-				resolution: record.resolution,
-				moduleId: record.moduleId,
-				module: record.module,
-				isAnchor: record.isAnchor,
-				loadedAt: record.loadedAt,
-			})
-		}
-	}
-
-	getCachedModule(moduleId: string): Record<string, unknown> | undefined {
-		if (!this.initialized) return undefined
-		return this.moduleCache.get(normalizePath(moduleId))?.module
-	}
-
 	/** 主动移除指定包的模块缓存，并可选择清理 loader 运行态。 */
 	invalidatePackage(name: string, scope: RemovalScope = 'runtime') {
 		const record = this.loadedPackages.get(name)
@@ -455,45 +277,6 @@ export class PackageService {
 		this.packageModuleIds.delete(name)
 		this.loadedPackages.delete(name)
 		this.ctx.loader.pruneModule(moduleId, scope)
-		this.schedulePersistSnapshot()
-	}
-
-	/** 移除指定模块 ID 的缓存，不操作 loader。 */
-	invalidateModuleId(moduleId: string) {
-		const normalized = normalizePath(moduleId)
-		const record = this.findLoadedRecordByModuleId(normalized)
-		if (record) this.dropHmrModuleCacheForRecord(record)
-		else this.ctx.hmrService.dropModuleCacheEntries([normalized])
-		this.moduleCache.delete(normalized)
-		for (const [pkgName, id] of this.packageModuleIds) {
-			if (id === normalized) {
-				this.packageModuleIds.delete(pkgName)
-				this.loadedPackages.delete(pkgName)
-				break
-			}
-		}
-		this.schedulePersistSnapshot()
-	}
-
-	/** 清空所有运行时缓存，可选是否通知 loader。 */
-	clearCache({ prune = false, scope = 'runtime' }: { prune?: boolean; scope?: RemovalScope } = {}) {
-		if (prune) {
-			for (const moduleId of this.moduleCache.keys()) {
-				this.ctx.loader.pruneModule(moduleId, scope)
-			}
-		}
-		if (this.ctx.hmrService) {
-			const ids = new Set<string>()
-			for (const record of this.loadedPackages.values()) {
-				for (const id of this.collectHmrModuleCacheIds(record.moduleId, record.spec)) {
-					ids.add(id)
-				}
-			}
-			this.ctx.hmrService.dropModuleCacheEntries(ids)
-		}
-		this.moduleCache.clear()
-		this.packageModuleIds.clear()
-		this.loadedPackages.clear()
 		this.schedulePersistSnapshot()
 	}
 
@@ -533,13 +316,6 @@ export class PackageService {
 			// ignore invalid URL conversion
 		}
 		return ids
-	}
-
-	private findLoadedRecordByModuleId(moduleId: string): PackageLoadResult | undefined {
-		for (const record of this.loadedPackages.values()) {
-			if (record.moduleId === moduleId) return record
-		}
-		return undefined
 	}
 
 	private async initializeFromState(): Promise<void> {
@@ -595,8 +371,26 @@ export class PackageService {
 
 	private schedulePersistSnapshot() {
 		if (!this.stateStore) return
-		const snapshot = this.createSnapshot()
-		this.stateStore.scheduleWrite(snapshot)
+		this.stateStore.scheduleWrite(this.buildStatePayload())
+	}
+
+	private buildStatePayload(): PackageStatePayload {
+		const packages: PersistedPackageEntry[] = []
+		for (const record of this.loadedPackages.values()) {
+			packages.push({
+				spec: record.spec,
+				resolution: record.resolution,
+				moduleId: record.moduleId,
+				isAnchor: record.isAnchor,
+				installStatus: record.install?.status,
+				loadedAt: record.loadedAt,
+			})
+		}
+
+		return {
+			generatedAt: new Date().toISOString(),
+			packages,
+		}
 	}
 
 	private async performInstall(
@@ -607,15 +401,21 @@ export class PackageService {
 		try {
 			if (force || spec.version) {
 				await addDependency(spec.target, operationOptions)
-				return { spec, target: spec.target, status: 'installed' }
+				const result: PackageInstallResult = { spec, target: spec.target, status: 'installed' }
+				this.onPackageInstalled(result)
+				return result
 			}
 
 			const existed = await ensureDependencyInstalled(spec.name, pickEnsureOptions(options))
-			return {
+			const result: PackageInstallResult = {
 				spec,
 				target: spec.target,
 				status: existed === true ? 'reused' : 'installed',
 			}
+			if (result.status === 'installed') {
+				this.onPackageInstalled(result)
+			}
+			return result
 		} catch (error) {
 			const message = error instanceof Error ? error.message : '未知错误'
 			throw new PackageServiceError(
@@ -628,6 +428,14 @@ export class PackageService {
 				},
 			)
 		}
+	}
+
+	private onPackageInstalled(result: PackageInstallResult) {
+		this.ctx.scanService?.invalidateResolverCache()
+		this.ctx.logger?.debug(
+			{ name: result.spec.name, target: result.target },
+			'[PackageService] 已清理解析缓存，等待重新扫描。',
+		)
 	}
 
 	private async resolveEntryForSpec(
@@ -743,25 +551,4 @@ function pickEnsureOptions(
 ): Pick<ResolvedInstallOptions, 'cwd' | 'dev' | 'workspace'> {
 	const { cwd, dev, workspace } = options
 	return { cwd, dev, workspace }
-}
-
-function normalizeDescriptor(input: PackageLoadDescriptor): {
-	spec: PackageSpecifierInput
-	intent: PackageLoadIntent
-	options?: LoadOptions
-} {
-	if (isDescriptorObject(input)) {
-		return {
-			spec: input.spec,
-			intent: input.intent ?? 'default',
-			options: input.options,
-		}
-	}
-	return { spec: input, intent: 'default' }
-}
-
-function isDescriptorObject(
-	value: PackageLoadDescriptor,
-): value is { spec: PackageSpecifierInput; intent?: PackageLoadIntent; options?: LoadOptions } {
-	return typeof value === 'object' && value !== null && 'spec' in value
 }
