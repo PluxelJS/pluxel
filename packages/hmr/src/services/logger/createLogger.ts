@@ -42,13 +42,10 @@ const jsonStream = new Writable({
 		const line = chunk.toString()
 		try {
 			const obj = JSON.parse(line) as LogRecord
-			logStore.push({
-				time: obj.time || new Date().toISOString(),
-				level: obj.level,
-				name: obj.name,
-				msg: obj.msg,
-				...obj,
-			})
+			if (!obj.time) obj.time = new Date().toISOString()
+			if (obj.msg === undefined || obj.msg === null) obj.msg = ''
+			if (obj.level === undefined || obj.level === null) obj.level = 'info'
+			logStore.push(obj)
 		} catch {
 			// 非 JSON —— 忽略，但仍写文件
 		}
@@ -108,19 +105,20 @@ export function createLogger(opts: LoggerOptions): Logger {
 		{ level, stream: prettyStream },
 	]
 
-	const base = pino(
-		{
-			...opts,
-			serializers: { err: makeErrSerializer(), ...opts.serializers },
-			hooks: {
-				logMethod: createDumperLogHook({
-					transformAllObjects: false,
-				}),
-				...opts.hooks,
-			},
-		},
-		multistream(streams),
-	)
+	const hooks = {
+		...(opts.hooks ?? {}),
+		logMethod: createDumperLogHook({
+			transformAllObjects: false,
+		}),
+	} as LoggerOptions['hooks']
+
+	const config = {
+		...opts,
+		serializers: { err: makeErrSerializer(), ...opts.serializers },
+		hooks,
+	} as LoggerOptions
+
+	const base = pino(config, multistream(streams))
 
 	const prettyErrorRoot = base.child({ channel: 'pretty-error' })
 	const sinks: PrettyErrorSink[] = [writePrettyErrorToStderr]
@@ -134,10 +132,11 @@ export function createLogger(opts: LoggerOptions): Logger {
 		stackAdjustment: isBun ? 0 : 1,
 	})
 
-	return attachPrettyErrors(withCaller, {
-		scope: opts.name as string | undefined,
-		sinks,
-	})
+	const prettyOptions: { scope?: string; sinks: PrettyErrorSink[] } = { sinks }
+	if (typeof opts.name === 'string' && opts.name.length > 0) {
+		prettyOptions.scope = opts.name
+	}
+	return attachPrettyErrors(withCaller, prettyOptions)
 }
 
 export type { Logger }

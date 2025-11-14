@@ -38,14 +38,15 @@ export async function loadWorkspaceInfo(root: string): Promise<WorkspaceInfo> {
 	const packageDirs = await collectPackageDirs(root, [...patterns])
 	const isMonorepo = explicitPatterns || packageDirs.length > 0
 
-	return {
+	const info: WorkspaceInfo = {
 		root: normalize(root),
-		manifest,
-		manifestPath,
 		patterns: [...patterns],
 		packageDirs,
 		isMonorepo,
 	}
+	if (manifest) info.manifest = manifest
+	if (manifestPath) info.manifestPath = manifestPath
+	return info
 }
 
 function extractPackageWorkspaces(pkg: PackageJson | undefined): string[] {

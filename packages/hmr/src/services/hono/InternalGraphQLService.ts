@@ -84,7 +84,7 @@ export class InternalGraphQLService {
 			},
 		})
 
-		this.fetcher = (req: Request, ctx: ServerCtx) => yoga.fetch(req, ctx)
+		this.fetcher = async (req: Request, ctx: ServerCtx) => yoga.fetch(req, ctx)
 	}
 
 	private async codegenNow() {

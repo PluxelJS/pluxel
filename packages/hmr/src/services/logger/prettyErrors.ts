@@ -68,12 +68,16 @@ const defaultSinks: PrettyErrorSink[] = [writePrettyErrorToStderr]
 const ensureContext = (logger: Logger, ctx: PrettyContext) => {
 	const existing = (logger as any)[PRETTY_CONTEXT] as PrettyContext | undefined
 	if (existing) {
-		existing.scope = ctx.scope ?? existing.scope
-		existing.sinks = ctx.sinks.length ? ctx.sinks : existing.sinks
+		if (ctx.scope !== undefined) existing.scope = ctx.scope
+		if (ctx.sinks.length) existing.sinks = ctx.sinks
 		return existing
 	}
-	;(logger as any)[PRETTY_CONTEXT] = ctx
-	return ctx
+	const next: PrettyContext = {
+		sinks: ctx.sinks,
+	}
+	if (ctx.scope !== undefined) next.scope = ctx.scope
+	;(logger as any)[PRETTY_CONTEXT] = next
+	return next
 }
 
 const getContext = (logger: Logger): PrettyContext | undefined => (logger as any)[PRETTY_CONTEXT]
@@ -90,7 +94,9 @@ export function attachPrettyErrors<T extends Logger>(
 	if (!PRETTY_ERRORS_ENABLED) return logger
 
 	const sinks = options.sinks && options.sinks.length ? options.sinks : defaultSinks
-	ensureContext(logger, { scope: options.scope, sinks })
+	const context: PrettyContext = { sinks }
+	if (options.scope !== undefined) context.scope = options.scope
+	ensureContext(logger, context)
 
 	if ((logger as any)[PRETTY_PATCHED]) return logger
 	;(logger as any)[PRETTY_PATCHED] = true
@@ -109,10 +115,9 @@ export function attachPrettyErrors<T extends Logger>(
 		const parentCtx = getContext(this)
 		const scope = extractScope(bindings) ?? parentCtx?.scope ?? bindings?.name
 		const sinksOverride = parentCtx?.sinks ?? defaultSinks
-		return attachPrettyErrors(childLogger as T, {
-			scope,
-			sinks: sinksOverride,
-		})
+		const childOptions: PrettyErrorOptions = { sinks: sinksOverride }
+		if (scope !== undefined) childOptions.scope = scope
+		return attachPrettyErrors(childLogger as unknown as T, childOptions)
 	} as typeof logger.child
 
 	return logger
@@ -160,10 +165,12 @@ async function renderYouch(error: Error, ctx: PrettyContext) {
 	const output = await reporter.toANSI(error)
 	const ansi = output.endsWith('\n') ? output : `${output}\n`
 	const payload: PrettyErrorPayload = {
-		scope: ctx.scope,
 		error,
 		ansi,
 		plain: stripAnsi(ansi),
+	}
+	if (ctx.scope !== undefined) {
+		payload.scope = ctx.scope
 	}
 	for (const sink of ctx.sinks) {
 		try {
@@ -216,8 +223,10 @@ function configureYouch(instance: YouchInstance) {
 type ParsedFrame = ParsedError['frames'][number]
 
 function isInternalFrame(frame: ParsedFrame) {
-	if (!frame || typeof frame.fileName !== 'string') return false
-	return INTERNAL_FRAME_RES.some((regex) => regex.test(frame.fileName))
+	if (!frame) return false
+	const fileName = frame.fileName
+	if (typeof fileName !== 'string') return false
+	return INTERNAL_FRAME_RES.some((regex) => regex.test(fileName))
 }
 
 const ERROR_PAYLOAD_KEYS = ['err', 'error', 'cause'] as const
@@ -266,9 +275,10 @@ function summarizeError(err: Error): Record<string, unknown> {
 		message: err.message,
 		prettyErrorHandled: true,
 	}
-	for (const key of Object.keys(err as Record<string, unknown>)) {
+	const errRecord = err as unknown as Record<string, unknown>
+	for (const key of Object.keys(errRecord)) {
 		if (key === 'stack') continue
-		summary[key] = sanitizeErrorValue((err as Record<string, unknown>)[key])
+		summary[key] = sanitizeErrorValue(errRecord[key])
 	}
 	const cause = (err as any).cause
 	if (cause !== undefined && !('cause' in summary)) {

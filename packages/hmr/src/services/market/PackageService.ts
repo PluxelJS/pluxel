@@ -7,6 +7,7 @@ import type { RemovalScope } from '../loader'
 import {
 	type PackageStatePayload,
 	PackageStateStore,
+	type PackageStateStoreOptions,
 	type PersistedPackageEntry,
 } from './package/state-store'
 import type { EntryResolution, EntryResolutionOk, ScanTaskOptions } from './ScanService'
@@ -60,8 +61,19 @@ export interface PackageLoadResult {
 	module: Record<string, unknown>
 	moduleId: string
 	isAnchor: boolean
-	install?: PackageInstallResult
+	install?: PackageInstallResult | undefined
 	loadedAt: number
+}
+
+export type PackageLoadIssueSource = 'load' | 'restore'
+
+export interface PackageLoadIssue {
+	spec: NormalizedPackageSpecifier
+	source: PackageLoadIssueSource
+	message: string
+	error: unknown
+	recordedAt: number
+	moduleId?: string | undefined
 }
 
 /** 安装选项：基于 nypm 的 OperationOptions，外加 force。 */
@@ -107,7 +119,7 @@ interface LoadIntentConfig {
 export class PackageService {
 	private readonly defaults: {
 		install: ResolvedInstallOptions
-		scan?: ScanTaskOptions
+		scan?: ScanTaskOptions | undefined
 		preferFreshImport: boolean
 	}
 
@@ -116,6 +128,7 @@ export class PackageService {
 	private readonly moduleCache = new Map<string, CachedModule>()
 	private readonly packageModuleIds = new Map<string, string>()
 	private readonly loadedPackages = new Map<string, PackageLoadResult>()
+	private readonly loadFailures = new Map<string, PackageLoadIssue>()
 	private readonly stateStore: PackageStateStore
 	private readonly ready: Promise<void>
 	private initialized = false
@@ -126,17 +139,22 @@ export class PackageService {
 	) {
 		this.defaults = {
 			install: resolveInstallDefaults(config.install),
-			scan: config.scan,
 			preferFreshImport: config.preferFreshImport ?? false,
 		}
+		if (config.scan) {
+			this.defaults.scan = config.scan
+		}
 		const stateFile = resolveStateFilePath(config.state?.file)
-		this.stateStore = new PackageStateStore({
+		const stateOptions: PackageStateStoreOptions = {
 			file: stateFile,
-			debounceMs: config.state?.debounceMs,
 			onError: (error) => {
 				this.ctx.logger?.warn({ error, stateFile }, '[PackageService] 持久化包状态失败')
 			},
-		})
+		}
+		if (config.state?.debounceMs !== undefined) {
+			stateOptions.debounceMs = config.state.debounceMs
+		}
+		this.stateStore = new PackageStateStore(stateOptions)
 		this.ready = this.initializeFromState()
 			.catch((error) => {
 				this.ctx.logger?.warn({ error }, '[PackageService] 恢复包状态失败')
@@ -220,14 +238,24 @@ export class PackageService {
 		const key = spec.key
 		return this.runExclusive(this.loadLocks, key, async () => {
 			try {
-				return await this.executeLoad(spec, options, intent)
+				const result = await this.executeLoad(spec, options, intent)
+				this.clearLoadIssue(spec.name)
+				return result
 			} catch (error) {
 				if (!intent.autoInstall || !shouldRetryInstall(error)) {
+					this.recordLoadIssue(spec, error, 'load')
 					throw error
 				}
 				const installOptions = this.resolveInstallOptions(options.install)
 				const installResult = await this.performInstall(spec, installOptions)
-				return this.executeLoad(spec, options, intent, installResult)
+				try {
+					const result = await this.executeLoad(spec, options, intent, installResult)
+					this.clearLoadIssue(spec.name)
+					return result
+				} catch (retryError) {
+					this.recordLoadIssue(spec, retryError, 'load')
+					throw retryError
+				}
 			}
 		})
 	}
@@ -258,12 +286,19 @@ export class PackageService {
 			module,
 			moduleId,
 			isAnchor,
-			install: installResult,
 			loadedAt: Date.now(),
+		}
+		if (installResult) {
+			result.install = installResult
 		}
 		this.loadedPackages.set(spec.name, result)
 		this.schedulePersistSnapshot()
 		return result
+	}
+
+	listLoadIssues(): PackageLoadIssue[] {
+		if (!this.initialized) return []
+		return Array.from(this.loadFailures.values())
 	}
 
 	/** 主动移除指定包的模块缓存，并可选择清理 loader 运行态。 */
@@ -350,15 +385,22 @@ export class PackageService {
 					module,
 					moduleId,
 					isAnchor: entry.isAnchor,
-					install: entry.installStatus
-						? { spec, target: spec.target, status: entry.installStatus }
-						: undefined,
 					loadedAt: Date.now(),
 				}
+				if (entry.installStatus) {
+					record.install = { spec, target: spec.target, status: entry.installStatus }
+				}
 				this.loadedPackages.set(spec.name, record)
+				this.clearLoadIssue(spec.name)
 				mutated = true
 			} catch (error) {
 				this.ctx.logger?.warn({ error, spec }, '[PackageService] 恢复包失败，已跳过该条记录')
+				this.recordLoadIssue(
+					spec,
+					error,
+					'restore',
+					entry.moduleId ?? entry.resolution.entry,
+				)
 				mutated = true
 			}
 		}
@@ -377,14 +419,17 @@ export class PackageService {
 	private buildStatePayload(): PackageStatePayload {
 		const packages: PersistedPackageEntry[] = []
 		for (const record of this.loadedPackages.values()) {
-			packages.push({
+			const entry: PersistedPackageEntry = {
 				spec: record.spec,
 				resolution: record.resolution,
 				moduleId: record.moduleId,
 				isAnchor: record.isAnchor,
-				installStatus: record.install?.status,
 				loadedAt: record.loadedAt,
-			})
+			}
+			if (record.install?.status) {
+				entry.installStatus = record.install.status
+			}
+			packages.push(entry)
 		}
 
 		return {
@@ -442,9 +487,10 @@ export class PackageService {
 		spec: NormalizedPackageSpecifier,
 		scanOverrides?: ScanTaskOptions,
 	): Promise<EntryResolutionOk> {
+		const request = this.mergeScanOptions(scanOverrides)
 		const resolution = await this.ctx.scanService.resolveEntry(
 			{ name: spec.name },
-			this.mergeScanOptions(scanOverrides),
+			request ?? {},
 		)
 		if (!isEntryOk(resolution)) {
 			throw new PackageServiceError('RESOLUTION_FAILED', resolution.message, { spec, resolution })
@@ -472,24 +518,41 @@ export class PackageService {
 
 	private resolveInstallOptions(overrides: InstallOptions = {}): ResolvedInstallOptions {
 		const base = this.defaults.install
-		const { force, installPeerDependencies, ...rest } = overrides
-		return {
-			...base,
-			...rest,
-			cwd: rest.cwd ?? base.cwd ?? process.cwd(),
-			force: force ?? base.force,
-			installPeerDependencies: installPeerDependencies ?? base.installPeerDependencies,
-		}
+		const result: ResolvedInstallOptions = { ...base }
+
+		result.cwd = overrides.cwd ?? base.cwd ?? process.cwd()
+		result.force = overrides.force ?? base.force
+		result.installPeerDependencies =
+			overrides.installPeerDependencies ?? base.installPeerDependencies
+
+		if (overrides.dev !== undefined) result.dev = overrides.dev
+		if (overrides.workspace !== undefined) result.workspace = overrides.workspace
+		if (overrides.env !== undefined) result.env = overrides.env
+		if (overrides.silent !== undefined) result.silent = overrides.silent
+		if (overrides.packageManager !== undefined) result.packageManager = overrides.packageManager
+		if (overrides.global !== undefined) result.global = overrides.global
+		if (overrides.dry !== undefined) result.dry = overrides.dry
+
+		return result
 	}
 
 	private mergeScanOptions(overrides?: ScanTaskOptions): ScanTaskOptions | undefined {
 		const base = this.defaults.scan
 		if (!base) return overrides
 		if (!overrides) return base
-		return {
-			roots: overrides.roots ?? base.roots,
-			scan: base.scan ? { ...base.scan, ...overrides.scan } : overrides.scan,
+
+		const merged: ScanTaskOptions = {}
+		if (overrides.roots !== undefined) merged.roots = overrides.roots
+		else if (base.roots !== undefined) merged.roots = base.roots
+
+		const mergedScan = base.scan
+			? { ...base.scan, ...(overrides.scan ?? {}) }
+			: overrides.scan ?? base.scan
+		if (mergedScan !== undefined) {
+			merged.scan = mergedScan
 		}
+
+		return merged
 	}
 
 	private runExclusive<T>(
@@ -515,6 +578,35 @@ export class PackageService {
 		}
 		this.packageModuleIds.set(name, normalized)
 	}
+
+	private recordLoadIssue(
+		spec: NormalizedPackageSpecifier,
+		error: unknown,
+		source: PackageLoadIssueSource,
+		moduleId?: string,
+	) {
+		const message =
+			error instanceof PackageServiceError
+				? error.message
+				: error instanceof Error
+					? error.message
+					: String(error)
+		const issue: PackageLoadIssue = {
+			spec,
+			source,
+			error,
+			message,
+			recordedAt: Date.now(),
+		}
+		if (moduleId) {
+			issue.moduleId = moduleId
+		}
+		this.loadFailures.set(spec.name, issue)
+	}
+
+	private clearLoadIssue(name: string) {
+		this.loadFailures.delete(name)
+	}
 }
 
 function shouldRetryInstall(
@@ -532,23 +624,28 @@ function resolveStateFilePath(file?: string): string {
 }
 
 function resolveInstallDefaults(options: InstallOptions = {}): ResolvedInstallOptions {
-	return {
+	const resolved: ResolvedInstallOptions = {
 		cwd: options.cwd ?? process.cwd(),
 		dev: options.dev ?? false,
-		workspace: options.workspace,
-		env: options.env,
-		silent: options.silent,
-		packageManager: options.packageManager,
-		global: options.global,
-		dry: options.dry,
 		installPeerDependencies: options.installPeerDependencies ?? false,
 		force: options.force ?? false,
 	}
+	if (options.workspace !== undefined) resolved.workspace = options.workspace
+	if (options.env !== undefined) resolved.env = options.env
+	if (options.silent !== undefined) resolved.silent = options.silent
+	if (options.packageManager !== undefined) resolved.packageManager = options.packageManager
+	if (options.global !== undefined) resolved.global = options.global
+	if (options.dry !== undefined) resolved.dry = options.dry
+	return resolved
 }
 
 function pickEnsureOptions(
 	options: ResolvedInstallOptions,
 ): Pick<ResolvedInstallOptions, 'cwd' | 'dev' | 'workspace'> {
-	const { cwd, dev, workspace } = options
-	return { cwd, dev, workspace }
+	const picked: Pick<ResolvedInstallOptions, 'cwd' | 'dev' | 'workspace'> = {
+		cwd: options.cwd,
+	}
+	if (options.dev !== undefined) picked.dev = options.dev
+	if (options.workspace !== undefined) picked.workspace = options.workspace
+	return picked
 }

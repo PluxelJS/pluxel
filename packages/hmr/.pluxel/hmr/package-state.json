@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2025-11-14T08:47:38.738Z",
+  "generatedAt": "2025-11-14T10:30:45.774Z",
   "packages": [
     {
       "spec": {
@@ -17,7 +17,7 @@
       },
       "moduleId": "/home/ahdg/code/plugin-style-ts/node_modules/.pnpm/pluxel-plugin-redis@0.1.0/node_modules/pluxel-plugin-redis/dist/index.mjs",
       "isAnchor": true,
-      "loadedAt": 1763110058738
+      "loadedAt": 1763116245774
     }
   ]
 }

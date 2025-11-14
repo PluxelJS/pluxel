@@ -191,7 +191,14 @@ export class ScanService {
 				? { ...overrides, focusPackages: mergeFocus(overrides.focusPackages, focusHints) }
 				: overrides
 
-		const snapshot = await this.snapshot({ roots: request.roots, scan: finalScan })
+		const snapshotRequest: ScanTaskOptions = {}
+		if (request.roots !== undefined) {
+			snapshotRequest.roots = request.roots
+		}
+		if (finalScan !== undefined) {
+			snapshotRequest.scan = finalScan
+		}
+		const snapshot = await this.snapshot(snapshotRequest)
 		const pkg = snapshot.findPackage(selector)
 		if (pkg) return pkg.entry
 

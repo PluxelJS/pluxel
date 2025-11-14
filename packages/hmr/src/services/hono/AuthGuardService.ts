@@ -58,7 +58,7 @@ type ActiveGuard = AuthGuardRegistration & {
 
 @Injectable({ key: serviceName })
 export class AuthGuardService {
-	private guard?: ActiveGuard
+	private guard: ActiveGuard | undefined
 	private readonly logger: NonNullable<Context['logger']>
 
 	constructor(private readonly ctx: Context) {
@@ -134,10 +134,10 @@ export class AuthGuardService {
 		const ctx: AuthGuardContext = {
 			path: input.path,
 			method,
-			headers: headers ?? new Headers(),
-			request: input.request,
-			url: input.url,
+			headers,
 		}
+		if (input.request) ctx.request = input.request
+		if (input.url) ctx.url = input.url
 
 		let decision: AuthGuardDecision
 		try {
@@ -182,13 +182,14 @@ export class AuthGuardService {
 		const reason = (decision as any).reason as string | undefined
 		const status = (decision as any).status as ContentfulStatusCode | undefined
 
-		return {
+		const result: AuthGuardResult = {
 			allow: false,
 			pluginName: guard.pluginName,
-			reason,
 			redirectPath: guard.redirectPath,
-			status,
 		}
+		if (reason !== undefined) result.reason = reason
+		if (status !== undefined) result.status = status
+		return result
 	}
 
 	/** 通知 HonoService：是否需要对 /api/* 套上守卫 */

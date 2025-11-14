@@ -24,7 +24,6 @@ export class PinoLoggerService {
 		const scopeName = ctx.pluginInfo?.name ?? ctx.name
 		const bindings: Bindings = {
 			name: scopeName,
-			scope: scopeName,
 		}
 		const pluginName = ctx.pluginInfo?.name
 		if (pluginName && pluginName !== scopeName) {

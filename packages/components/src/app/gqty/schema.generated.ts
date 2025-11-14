@@ -33,6 +33,11 @@ export interface Scalars {
   Float: { input: number; output: number };
 }
 
+export enum PackageLoadIssueSource {
+  load = "load",
+  restore = "restore",
+}
+
 export enum PluginStatusEntryLifecycleStage {
   disabled = "disabled",
   running = "running",
@@ -56,6 +61,7 @@ export enum UpdatePluginStatusStatusInput {
 export const scalarsEnumsHash: ScalarsEnumsHash = {
   Boolean: true,
   Float: true,
+  PackageLoadIssueSource: true,
   PluginStatusEntryLifecycleStage: true,
   String: true,
   UpdatePluginStatusStatusInput: true,
@@ -66,6 +72,23 @@ export const generatedSchema = {
     error: { __type: "String" },
     ok: { __type: "Boolean!" },
     path: { __type: "String" },
+  },
+  PackageIssueSpec: {
+    __typename: { __type: "String!" },
+    name: { __type: "String!" },
+    raw: { __type: "String!" },
+    tag: { __type: "String" },
+    target: { __type: "String!" },
+    version: { __type: "String" },
+  },
+  PackageLoadIssue: {
+    __typename: { __type: "String!" },
+    error: { __type: "String" },
+    message: { __type: "String!" },
+    moduleId: { __type: "String" },
+    recordedAt: { __type: "Float!" },
+    source: { __type: "PackageLoadIssueSource!" },
+    spec: { __type: "PackageIssueSpec!" },
   },
   PluginDependency: {
     __typename: { __type: "String!" },
@@ -141,6 +164,7 @@ export const generatedSchema = {
   query: {
     __typename: { __type: "String!" },
     _empty: { __type: "String!" },
+    packageLoadIssues: { __type: "[PackageLoadIssue!]!" },
     plugin: { __type: "PluginScope!", __args: { name: "String!" } },
     pluginGroups: { __type: "[PluginGroup!]!" },
     pluginId: { __type: "PluginIdScope!", __args: { name: "String!" } },
@@ -154,6 +178,25 @@ export interface BuildSnapshotResult {
   error?: Maybe<Scalars["String"]["output"]>;
   ok?: Scalars["Boolean"]["output"];
   path?: Maybe<Scalars["String"]["output"]>;
+}
+
+export interface PackageIssueSpec {
+  __typename?: "PackageIssueSpec";
+  name?: Scalars["String"]["output"];
+  raw?: Scalars["String"]["output"];
+  tag?: Maybe<Scalars["String"]["output"]>;
+  target?: Scalars["String"]["output"];
+  version?: Maybe<Scalars["String"]["output"]>;
+}
+
+export interface PackageLoadIssue {
+  __typename?: "PackageLoadIssue";
+  error?: Maybe<Scalars["String"]["output"]>;
+  message?: Scalars["String"]["output"];
+  moduleId?: Maybe<Scalars["String"]["output"]>;
+  recordedAt?: Scalars["Float"]["output"];
+  source?: PackageLoadIssueSource;
+  spec: PackageIssueSpec;
 }
 
 export interface PluginDependency {
@@ -234,6 +277,7 @@ export interface Mutation {
 export interface Query {
   __typename?: "Query";
   _empty?: Scalars["String"]["output"];
+  packageLoadIssues: Array<PackageLoadIssue>;
   plugin: (args: { name: Scalars["String"]["input"] }) => PluginScope;
   pluginGroups: Array<PluginGroup>;
   pluginId: (args: { name: Scalars["String"]["input"] }) => PluginIdScope;
