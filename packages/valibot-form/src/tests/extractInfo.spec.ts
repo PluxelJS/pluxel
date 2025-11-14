@@ -2,8 +2,8 @@ import * as v from 'valibot'
 import { describe, expect, it } from 'vitest'
 import { arrayMeta } from '~/core/actions/array'
 import { booleanMeta } from '~/core/actions/boolean'
-import { objectMeta } from '~/core/actions/objectMeta'
 import { numberMeta } from '~/core/actions/number'
+import { objectMeta } from '~/core/actions/objectMeta'
 import { picklistMeta } from '~/core/actions/picklist'
 import { recordMeta } from '~/core/actions/record'
 import { stringMeta } from '~/core/actions/string'
@@ -21,7 +21,7 @@ describe('extractInfo', () => {
 			}),
 		)
 
-		const info = extractInfo(schema, { title: '名称字段' })
+		const info = extractInfo(schema, { label: '名称字段' })
 		expect(info?.type).toBe(META_MAP.STRING)
 		expect(info?.formInfo.required).toBe(true)
 		expect(info?.formInfo.label).toBe('名称字段')
@@ -49,7 +49,7 @@ describe('extractInfo', () => {
 		const schema = v.pipe(v.string())
 
 		const info = extractInfo(schema, {
-			title: '用户名',
+			label: '用户名',
 			description: '用于登录的名称',
 		})
 
