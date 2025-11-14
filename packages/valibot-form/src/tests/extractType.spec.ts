@@ -5,6 +5,7 @@ describe('extract type helpers', () => {
 	it('accepts known extractable meta types', () => {
 		expect(isExtractableType(META_MAP.STRING)).toBe(true)
 		expect(isExtractableType(META_MAP.NUMBER)).toBe(true)
+		expect(isExtractableType(META_MAP.object)).toBe(true)
 	})
 
 	it('rejects unsupported meta types', () => {

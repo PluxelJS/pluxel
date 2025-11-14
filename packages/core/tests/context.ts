@@ -1,5 +1,5 @@
 import 'reflect-metadata'
 
-import '../src/service'
+import '@pluxel/core/services'
 
-export * from '../src/index'
+export * from '@pluxel/core'

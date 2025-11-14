@@ -1,10 +1,19 @@
 {
 	"extends": "../../tsconfig.src.json",
-	"include": ["src", "tests"],
+	"include": ["src", "tests", "../diod", "../context"],
 	"compilerOptions": {
+		"rootDir": "..",
+		"baseUrl": ".",
 		"outDir": "dist",
-		// Only output d.ts files and not JavaScript files.
-		"emitDeclarationOnly": true
-	},
-	"references": []
+		"experimentalDecorators": true,
+		"emitDecoratorMetadata": true,
+		"paths": {
+			"diod": ["../diod/src"],
+			"diod/*": ["../diod/src/*"],
+			"@pluxel/context": ["../context/src"],
+			"@pluxel/context/*": ["../context/src/*"],
+			"@pluxel/core": ["./src"],
+			"@pluxel/core/*": ["./src/*"]
+		}
+	}
 }

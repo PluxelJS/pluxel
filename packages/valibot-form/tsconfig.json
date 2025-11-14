@@ -1,37 +1,12 @@
 {
+	"extends": "../../tsconfig.options.json",
 	"compilerOptions": {
-		// 基础选项
-		"target": "ES2022", // 编译后代码目标版本
-		"module": "ESNext", // 模块系统：支持原生 ESM
 		"jsx": "react-jsx",
+		"lib": ["ES2023", "DOM", "DOM.Iterable"],
+
 		// 输出配置
 		"outDir": "dist", // 输出目录
 		"rootDir": "src", // 源码根目录
-		"declaration": true, // 生成 .d.ts 声明文件
-		"sourceMap": true, // 生成 source map
-
-		// 严格模式 —— 强烈推荐
-		"strict": true, // 等同于开启所有严格检查
-		"composite": true,
-		"noImplicitAny": true, // 禁止隐式 any
-		"strictNullChecks": true, // 强制严格的 null/undefined 检查
-		"strictFunctionTypes": true, // 函数参数双向协变检测
-		"strictBindCallApply": true, // 对 bind/call/apply 的严格检查
-		"strictPropertyInitialization": true, // 类属性必须在构造函数中初始化
-		"noImplicitThis": true, // this 上的隐式 any 报错
-		"alwaysStrict": true, // 在输出文件顶部插入 "use strict"
-
-		// 模块互操作与兼容性
-		"esModuleInterop": true, // 支持 default 导入 CommonJS 模块
-		"allowSyntheticDefaultImports": true, // 允许从没有 default 导出的模块默认导入
-		"moduleResolution": "node", // 模块解析策略
-
-		// 辅助选项
-		"skipLibCheck": true, // 跳过声明文件类型检查，加快编译
-		"forceConsistentCasingInFileNames": true, // 强制文件名一致大小写
-		"resolveJsonModule": true, // 支持导入 .json
-		"isolatedModules": true, // 与 Babel/ts-node 等工具兼容
-		"declarationMap": true,
 
 		// 路径映射（alias）
 		"baseUrl": ".", // 相对路径基准

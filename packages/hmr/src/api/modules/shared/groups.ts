@@ -17,7 +17,10 @@ export function readGroups(pCtx: PlxContext): PluginGroupOutput[] {
 		})) satisfies PluginGroupOutput[]
 }
 
-export function writeGroups(pCtx: PlxContext, groups: PluginGroupInputValue[]): PluginGroupOutput[] {
+export function writeGroups(
+	pCtx: PlxContext,
+	groups: PluginGroupInputValue[],
+): PluginGroupOutput[] {
 	pCtx.configService.setExtra(
 		'groups',
 		groups.map((group) => ({

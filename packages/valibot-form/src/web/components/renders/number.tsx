@@ -1,56 +1,94 @@
-import { Box, InputWrapper, NumberInput, Slider } from '@mantine/core'
+import { Box, Group, NumberInput, Slider, Text } from '@mantine/core'
+import type { CommonProps } from '~/core/registry'
 import { registerRenderer, triggerFormEvents } from '~/core/registry'
 import { META_MAP } from '~/core/utils'
+import { FieldChrome } from '../shared'
+import { cleanProps } from '../../utils/propHelpers'
 
-registerRenderer(META_MAP.NUMBER, (props) => {
+type RendererProps = CommonProps<typeof META_MAP.NUMBER> & { value?: unknown }
+
+function NumberField(props: RendererProps) {
 	const { formBaseInfo, errors, extractedPropsInfo, inputProps, value } = props
-	const error = errors?.map((e) => e.message).join(', ')
-	// slider 模式
-	if (extractedPropsInfo.type === 'slider') {
-		const { min = 0, max = 100, step = 1, marks } = extractedPropsInfo.options
+	const errorMessages = (errors ?? []).map((err) => err.message)
 
-		return (
-			<InputWrapper
-				label={formBaseInfo.title}
-				required={formBaseInfo.required}
-				error={error}
-				description="测试"
-			>
-				<Box style={{ width: '100%', paddingBottom: '1.5rem' }}>
-					<Slider
-						defaultValue={value}
-						min={min}
-						max={max}
-						step={step}
-						marks={marks}
-						onChange={(val) => {
-							triggerFormEvents(inputProps, val)
-						}}
-					/>
-				</Box>
-			</InputWrapper>
-		)
-	}
+	const numericValue = typeof value === 'number' ? value
+		: (value == null || value === '') ? undefined
+		: (typeof value === 'string' && !isNaN(Number(value))) ? Number(value)
+		: undefined
 
-	// 普通 NumberInput 模式
-	const { step, min, max } = extractedPropsInfo.options
+	const variant = extractedPropsInfo.variant ?? 'input'
 
-	return (
+	const leftSection = extractedPropsInfo.prefix ? (
+		<Text size="sm" c="dimmed">{extractedPropsInfo.prefix}</Text>
+	) : undefined
+
+	const rightSection = extractedPropsInfo.suffix ? (
+		<Text size="sm" c="dimmed">{extractedPropsInfo.suffix}</Text>
+	) : undefined
+
+	const numberInput = (
 		<NumberInput
-			label={formBaseInfo.title}
-			required={formBaseInfo.required}
-			error={error}
-			defaultValue={value}
-			min={min}
-			max={max}
-			step={step}
+			value={numericValue ?? ''}
 			onChange={(val) => {
-				inputProps.onChange?.(val)
-
-				/* if (typeof val === 'number') {
-					triggerFormEvents(inputProps, val)
-				} */
+				const next = val === '' || val === undefined ? undefined : Number(val)
+				triggerFormEvents(inputProps, next)
 			}}
+			leftSection={leftSection}
+			rightSection={rightSection}
+			{...cleanProps({
+				min: extractedPropsInfo.min,
+				max: extractedPropsInfo.max,
+				step: extractedPropsInfo.step,
+				disabled: inputProps.disabled,
+				readOnly: inputProps.readOnly,
+				placeholder: extractedPropsInfo.placeholder,
+			})}
 		/>
 	)
-})
+
+	const slider = (
+		<Box style={{ width: '100%' }}>
+			<Slider
+				value={numericValue ?? extractedPropsInfo.min ?? 0}
+				onChange={(val) => triggerFormEvents(inputProps, val)}
+				min={extractedPropsInfo.min ?? 0}
+				max={extractedPropsInfo.max ?? 100}
+				step={extractedPropsInfo.step ?? 1}
+				{...cleanProps({
+					marks: extractedPropsInfo.marks,
+					disabled: inputProps.disabled || inputProps.readOnly,
+				})}
+			/>
+			{(extractedPropsInfo.prefix || extractedPropsInfo.suffix) && (
+				<Group justify="space-between" mt={4}>
+					{extractedPropsInfo.prefix && (
+						<Text size="sm" c="dimmed">{extractedPropsInfo.prefix}</Text>
+					)}
+					<Text size="sm" fw={600}>
+						{numericValue ?? extractedPropsInfo.min ?? 0}
+						{extractedPropsInfo.suffix ? ` ${extractedPropsInfo.suffix}` : ''}
+					</Text>
+				</Group>
+			)}
+		</Box>
+	)
+
+	return (
+		<FieldChrome
+			{...cleanProps({
+				label: formBaseInfo.label,
+				required: formBaseInfo.required,
+				description: formBaseInfo.description,
+				helperText: formBaseInfo.helperText,
+				hint: formBaseInfo.hint ?? extractedPropsInfo.note,
+				tooltip: formBaseInfo.tooltip,
+				badge: formBaseInfo.badge,
+				errors: errorMessages,
+			})}
+		>
+			{variant === 'slider' ? slider : numberInput}
+		</FieldChrome>
+	)
+}
+
+registerRenderer(META_MAP.NUMBER, (props: any) => <NumberField {...props} />)

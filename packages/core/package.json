@@ -3,24 +3,25 @@
 	"version": "0.2.0",
 	"description": "Demo example that imports a local package",
 	"main": "./dist/index.cjs",
-	"module": "./dist/index.js",
+	"module": "./dist/index.mjs",
 	"types": "./dist/index.d.cts",
 	"type": "module",
 	"exports": {
 		".": {
 			"@pluxel/source": "./src/index.ts",
-			"import": "./dist/index.js",
+			"import": "./dist/index.mjs",
 			"require": "./dist/index.cjs"
 		},
-		"./service": {
-			"@pluxel/source": "./src/service/index.ts",
-			"import": "./dist/service.js",
-			"require": "./dist/service.cjs"
+		"./services": {
+			"@pluxel/source": "./src/services/index.ts",
+			"import": "./dist/services.mjs",
+			"require": "./dist/services.cjs"
 		},
 		"./package.json": "./package.json"
 	},
 	"files": [
-		"dist"
+		"dist",
+		"!**/*.map"
 	],
 	"scripts": {
 		"test": "bun test",
@@ -29,25 +30,25 @@
 		"bench": "bun run tests/bench/pluginLifecycle.bench.ts"
 	},
 	"dependencies": {
-		"eventure": "catalog:workflow",
-		"option-t": "catalog:validation",
-		"reflect-metadata": "catalog:validation",
-		"xstate": "catalog:workflow"
+		"eventure": "^0.4.2",
+		"reflect-metadata": "^0.2.2",
+		"xstate": "^5.24.0"
 	},
 	"devDependencies": {
 		"@pluxel/context": "workspace:*",
 		"diod": "workspace:*",
+		"option-t": "^55.1.0",
 		"tinybench": "catalog:dev"
 	},
 	"publishConfig": {
 		"exports": {
 			".": {
-				"import": "./dist/index.js",
+				"import": "./dist/index.mjs",
 				"require": "./dist/index.cjs"
 			},
-			"./service": {
-				"import": "./dist/service.js",
-				"require": "./dist/service.cjs"
+			"./services": {
+				"import": "./dist/services.mjs",
+				"require": "./dist/services.cjs"
 			},
 			"./package.json": "./package.json"
 		}

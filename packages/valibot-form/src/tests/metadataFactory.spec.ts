@@ -15,18 +15,19 @@ describe('metadata factories', () => {
 	})
 
 	it('keeps number metadata defaults while merging validations', () => {
-		const meta = numberMeta({ type: 'input', options: { step: 1 } })
+		const meta = numberMeta({ variant: 'input', step: 1 })
 
 		expect(meta.type).toBe(META_MAP.NUMBER)
 		expect(meta.reference).toBe(numberMeta)
-		expect(meta.metadata.options.step).toBe(1)
+		expect(meta.metadata.step).toBe(1)
 	})
 
 	it('supports object metadata options', () => {
-		const meta = objectMeta({ collapse: true })
+		const meta = objectMeta({ collapse: true, columns: 2 })
 
 		expect(meta.type).toBe(META_MAP.object)
 		expect(meta.reference).toBe(objectMeta)
 		expect(meta.metadata.collapse).toBe(true)
+		expect(meta.metadata.columns).toBe(2)
 	})
 })

@@ -13,8 +13,7 @@ const INTERNAL_FRAME_PATTERNS = INTERNAL_PATTERN_ENV.split(',')
 	.filter(Boolean)
 
 const HIDE_INTERNAL_FRAMES =
-	(process.env.PLUXEL_LOGGER_HIDE_INTERNAL ?? '1') !== '0' &&
-	INTERNAL_FRAME_PATTERNS.length > 0
+	(process.env.PLUXEL_LOGGER_HIDE_INTERNAL ?? '1') !== '0' && INTERNAL_FRAME_PATTERNS.length > 0
 const KEEP_INTERNAL_FRAMES = Math.max(
 	0,
 	Number.parseInt(process.env.PLUXEL_LOGGER_KEEP_INTERNAL_FRAMES ?? '0', 10) || 0,
@@ -77,8 +76,7 @@ const ensureContext = (logger: Logger, ctx: PrettyContext) => {
 	return ctx
 }
 
-const getContext = (logger: Logger): PrettyContext | undefined =>
-	(logger as any)[PRETTY_CONTEXT]
+const getContext = (logger: Logger): PrettyContext | undefined => (logger as any)[PRETTY_CONTEXT]
 
 export interface PrettyErrorOptions {
 	scope?: string
@@ -91,8 +89,7 @@ export function attachPrettyErrors<T extends Logger>(
 ): T {
 	if (!PRETTY_ERRORS_ENABLED) return logger
 
-	const sinks =
-		options.sinks && options.sinks.length ? options.sinks : defaultSinks
+	const sinks = options.sinks && options.sinks.length ? options.sinks : defaultSinks
 	ensureContext(logger, { scope: options.scope, sinks })
 
 	if ((logger as any)[PRETTY_PATCHED]) return logger
@@ -110,10 +107,7 @@ export function attachPrettyErrors<T extends Logger>(
 	logger.child = function child(this: Logger, bindings?: Bindings, options?: any) {
 		const childLogger = originalChild.apply(this, arguments as any)
 		const parentCtx = getContext(this)
-		const scope =
-			extractScope(bindings) ??
-			parentCtx?.scope ??
-			bindings?.name
+		const scope = extractScope(bindings) ?? parentCtx?.scope ?? bindings?.name
 		const sinksOverride = parentCtx?.sinks ?? defaultSinks
 		return attachPrettyErrors(childLogger as T, {
 			scope,
@@ -278,8 +272,7 @@ function summarizeError(err: Error): Record<string, unknown> {
 	}
 	const cause = (err as any).cause
 	if (cause !== undefined && !('cause' in summary)) {
-		summary.cause =
-			cause instanceof Error ? summarizeError(cause) : sanitizeErrorValue(cause)
+		summary.cause = cause instanceof Error ? summarizeError(cause) : sanitizeErrorValue(cause)
 	}
 	return summary
 }

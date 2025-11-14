@@ -10,7 +10,13 @@ type InputSchema = PipedSchema<Schema> | Schema
 export function extractRecordProps<TKeyMeta = unknown, TValueMeta = unknown>(
 	schema: InputSchema,
 ): RecordMetaResult<TKeyMeta, TValueMeta> {
-	const meta: RecordMetaResult<TKeyMeta, TValueMeta> = {}
+	const meta: RecordMetaResult<TKeyMeta, TValueMeta> = {
+		layout: 'table',
+		addable: true,
+		removable: true,
+		reorderable: true,
+		editableKey: true,
+	}
 
 	const itemSchema = schema.value ?? (schema as PipedSchema<Schema>).pipe[0].value
 	if (itemSchema) {
@@ -26,6 +32,9 @@ export function extractRecordProps<TKeyMeta = unknown, TValueMeta = unknown>(
 		const p = pipe[i]
 		if (p.kind === 'metadata' && p.type === META_MAP.RECORD) {
 			Object.assign(meta, p.metadata)
+			if ((p.metadata as any)?.asTable && !meta.layout) {
+				meta.layout = 'table'
+			}
 			break
 		}
 	}

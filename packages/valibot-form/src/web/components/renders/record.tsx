@@ -1,657 +1,427 @@
 import {
-	closestCenter,
-	DndContext,
-	type DragEndEvent,
-	DragOverlay,
-	type DragStartEvent,
-	KeyboardSensor,
-	MeasuringStrategy,
-	PointerSensor,
-	useSensor,
-	useSensors,
-} from '@dnd-kit/core'
-import { restrictToVerticalAxis } from '@dnd-kit/modifiers'
-import {
-	arrayMove,
-	SortableContext,
-	sortableKeyboardCoordinates,
-	useSortable,
-	verticalListSortingStrategy,
-} from '@dnd-kit/sortable'
-import { CSS } from '@dnd-kit/utilities'
-import {
 	ActionIcon,
-	Badge,
 	Button,
+	Card,
 	Group,
 	NumberInput,
-	Paper,
-	rem,
 	Stack,
 	Switch,
 	Table,
 	Text,
-	Textarea,
 	TextInput,
-	Tooltip,
+	Textarea,
 } from '@mantine/core'
-import { IconGripVertical, IconPlus, IconTrash } from '@tabler/icons-react'
-import React, { memo, useCallback, useMemo, useRef, useState } from 'react'
+import { IconArrowDown, IconArrowUp, IconPlus, IconTrash } from '@tabler/icons-react'
+import { useEffect, useMemo, useState } from 'react'
+import type { RecordMetaResult } from '~/core/actions/record'
+import type { CommonProps } from '~/core/registry'
 import { registerRenderer, triggerFormEvents } from '~/core/registry'
 import { META_MAP } from '~/core/utils'
+import { FieldChrome } from '../shared'
+import { cleanProps } from '../../utils/propHelpers'
 
-/* -------------------------------- Types -------------------------------- */
-export type RecordUI = {
-	addable?: true
-	removable?: true
-	reorderable?: true
-	editableKey?: boolean
-	asTable?: true
-	columns?: { key?: number | string; value?: number | string }
-	keyPlaceholder?: string
-	valuePlaceholder?: string
-	emptyHint?: string
-	valueMode?: 'auto' | 'string' | 'number' | 'boolean' | 'json'
-}
+type RendererProps = CommonProps<typeof META_MAP.RECORD> & { value?: Record<string, unknown> }
+type RecordUI = RecordMetaResult
 
-type RendererProps = {
-	formBaseInfo: any
-	/** dotPath[0]=字段名；dotPath[1]=record 的 key */
-	errors?: { message: string; dotPath: string[] }[]
-	extractedPropsInfo?: RecordUI
-	inputProps: {
-		name?: string
-		onChange?: (v: Record<string, unknown>) => void
-		onBlur?: (evt?: any) => void
-		disabled?: boolean
-	}
-	value?: Record<string, unknown> // 仅用于初始值（或 name 变化时重建）
-}
-
-type RowData = { id: string; k: string; v: unknown }
-
-/* -------------------------------- Utils -------------------------------- */
-let __rid = 0
-const rid = () => `row_${++__rid}`
-
-const isShortText = (v: unknown) => typeof v === 'string' && v.length <= 60 && !/\n/.test(v)
-const looksLikeJson = (s: string) => {
-	const t = s.trim()
-	if (!t) return false
-	const like = (t.startsWith('{') && t.endsWith('}')) || (t.startsWith('[') && t.endsWith(']'))
-	if (!like) return false
-	try {
-		JSON.parse(t)
-		return true
-	} catch {
-		return false
-	}
-}
-const pickDefaultByMode = (mode: NonNullable<RecordUI['valueMode']>): unknown => {
-	switch (mode) {
-		case 'number':
-			return 0
-		case 'boolean':
-			return false
-		case 'json':
-			return {}
-		case 'string':
-			return ''
-		default:
-			return ''
-	}
-}
-const inferKind = (v: unknown): 'string' | 'number' | 'boolean' | 'json' => {
-	if (typeof v === 'number') return 'number'
-	if (typeof v === 'boolean') return 'boolean'
-	if (typeof v === 'string' && looksLikeJson(v)) return 'json'
-	if (v && typeof v === 'object') return 'json'
+function inferMode(
+	mode: RecordUI['valueMode'],
+	value: unknown,
+): Exclude<RecordUI['valueMode'], 'auto' | undefined> | 'string' {
+	if (mode && mode !== 'auto') return mode
+	if (typeof value === 'number') return 'number'
+	if (typeof value === 'boolean') return 'boolean'
+	if (value && typeof value === 'object') return 'json'
 	return 'string'
 }
 
-/* ---------------------------- Sortable Row ----------------------------- */
-interface RowProps {
-	row: RowData
-	idx: number
-	disabled?: boolean
-	editableKey: boolean
-	effectiveMode: 'auto' | 'string' | 'number' | 'boolean' | 'json'
-	keyPlaceholder?: string
-	valuePlaceholder?: string
-	asTable?: boolean
-	onCommit: (id: string, next: Partial<RowData>) => void
-	onRemove: (id: string) => void
-	keyWidth?: number | string
-	valueWidth?: number | string
-	/** 由上层按 key 聚合下沉（只显示到“值”控件） */
-	valueError?: string[]
-	setActiveId?: (id: string | null) => void
-	reorderable: boolean
-}
+function RecordField(props: RendererProps) {
+	const { formBaseInfo, errors, extractedPropsInfo, inputProps, value } = props
+	const ep = extractedPropsInfo ?? {}
+	// 使用 state 来保持键的顺序，避免编辑时因对象键重排序导致的跳跃
+	const [orderedKeys, setOrderedKeys] = useState<string[]>([])
 
-const Handle = React.forwardRef<HTMLButtonElement, React.ComponentProps<typeof ActionIcon>>(
-	(props, ref) => (
-		<ActionIcon
-			ref={ref}
-			variant="subtle"
-			{...props}
-			aria-label="拖拽排序"
-			tabIndex={0}
-			style={{ touchAction: 'none', cursor: 'grab' }}
-		>
-			<IconGripVertical size={16} />
-		</ActionIcon>
-	),
-)
-Handle.displayName = 'Handle'
+	const rows = useMemo(() => {
+		const entries = Object.entries((value as Record<string, unknown>) ?? {})
+		// 如果是第一次加载或 value 的键集合发生了变化，更新 orderedKeys
+		const currentKeys = entries.map(([k]) => k)
+		const currentKeySet = new Set(currentKeys)
+		const orderedKeySet = new Set(orderedKeys)
 
-const SortableRow = memo(function SortableRow(props: RowProps) {
-	const {
-		row,
-		idx,
-		disabled,
-		editableKey,
-		effectiveMode,
-		keyPlaceholder,
-		valuePlaceholder,
-		asTable,
-		onCommit,
-		onRemove,
-		keyWidth,
-		valueWidth,
-		valueError,
-		setActiveId,
-		reorderable,
-	} = props
+		// 检查是否需要更新顺序（新增或删除了键）
+		const keysChanged =
+			currentKeys.length !== orderedKeys.length ||
+			currentKeys.some(k => !orderedKeySet.has(k)) ||
+			orderedKeys.some(k => !currentKeySet.has(k))
 
-	const {
-		attributes,
-		listeners,
-		setNodeRef,
-		setActivatorNodeRef,
-		transform,
-		transition,
-		isDragging,
-	} = useSortable({
-		id: row.id,
-		disabled: !reorderable,
-	})
+		if (keysChanged) {
+			// 保留现有顺序中仍存在的键，然后添加新键
+			const preserved = orderedKeys.filter(k => currentKeySet.has(k))
+			const newKeys = currentKeys.filter(k => !orderedKeySet.has(k))
+			const newOrder = [...preserved, ...newKeys]
+			setOrderedKeys(newOrder)
+			return newOrder.map(k => [k, (value as Record<string, unknown>)[k]] as [string, unknown])
+		}
 
-	const style = {
-		transform: CSS.Transform.toString(transform),
-		transition,
-		opacity: isDragging ? 0.6 : 1,
-	} as React.CSSProperties
+		// 使用已有的顺序
+		return orderedKeys
+			.filter(k => currentKeySet.has(k))
+			.map(k => [k, (value as Record<string, unknown>)[k]] as [string, unknown])
+	}, [value, orderedKeys])
+	const layout = ep.layout ?? 'table'
+	const minItems = ep.minItems ?? 0
+	const maxItems = ep.maxItems
+	const canAdd = ep.addable !== false && !inputProps.disabled && (!maxItems || rows.length < maxItems)
+	const canRemove = ep.removable !== false
+	const canReorder = ep.reorderable !== false
+	const editableKey = ep.editableKey !== false
+	const baseErrors = (errors ?? [])
+		.filter((err) => err.dotPath.length <= 1)
+		.map((err) => err.message)
 
-	const keyRef = useRef<HTMLInputElement | null>(null)
-	const textRef = useRef<HTMLInputElement | HTMLTextAreaElement | null>(null)
-	const numRef = useRef<number | null>(typeof row.v === 'number' ? (row.v as number) : null)
-	const [boolVis, setBoolVis] = useState<boolean>(
-		typeof row.v === 'boolean' ? (row.v as boolean) : false,
-	)
+	const entryErrors = useMemo(() => {
+		const map = new Map<string, string[]>()
+		for (const err of errors ?? []) {
+			if (err.dotPath.length <= 1) continue
+			const key = err.dotPath[1]
+			if (!map.has(key)) map.set(key, [])
+			map.get(key)!.push(err.message)
+		}
+		return map
+	}, [errors])
 
-	const kind: 'string' | 'number' | 'boolean' | 'json' =
-		effectiveMode === 'auto' ? inferKind(row.v) : effectiveMode
+	const [jsonErrors, setJsonErrors] = useState<Record<number, string | undefined>>({})
 
-	const commit = useCallback(() => {
-		const next: Partial<RowData> = {}
-		if (editableKey) next.k = keyRef.current?.value ?? row.k
+	useEffect(() => {
+		setJsonErrors({})
+	}, [rows.length])
 
-		switch (kind) {
+	const commitRows = (nextRows: [string, unknown][]) => {
+		const next: Record<string, unknown> = {}
+		for (const [k, v] of nextRows) {
+			next[k] = v
+		}
+		triggerFormEvents(inputProps, next)
+	}
+
+	const handleKeyChange = (index: number, nextKey: string) => {
+		const next = [...rows]
+		const [oldKey, currentValue] = next[index]
+		next[index] = [nextKey, currentValue]
+
+		// 更新有序键列表
+		const newOrderedKeys = [...orderedKeys]
+		newOrderedKeys[index] = nextKey
+		setOrderedKeys(newOrderedKeys)
+
+		commitRows(next)
+	}
+
+	const handleValueChange = (index: number, nextValue: unknown) => {
+		const next = [...rows]
+		const [currentKey] = next[index]
+		next[index] = [currentKey, nextValue]
+		commitRows(next)
+	}
+
+	const handleRemove = (index: number) => {
+		if (!canRemove || inputProps.disabled) return
+		if (rows.length <= minItems) return
+		const next = rows.filter((_, idx) => idx !== index)
+		commitRows(next)
+	}
+
+	const handleMove = (index: number, direction: number) => {
+		if (!canReorder || inputProps.disabled) return
+		const target = index + direction
+		if (target < 0 || target >= rows.length) return
+		const next = [...rows]
+		const [removed] = next.splice(index, 1)
+		next.splice(target, 0, removed)
+		commitRows(next)
+	}
+
+	const handleAdd = () => {
+		const next: [string, unknown][] = [...rows, ['', '']]
+		commitRows(next)
+	}
+
+	const renderValueControl = (index: number, value: unknown) => {
+		const mode = inferMode(ep.valueMode, value)
+		switch (mode) {
 			case 'number':
-				next.v = numRef.current ?? 0
-				break
+				return (
+					<NumberInput
+						{...cleanProps({
+							value: typeof value === 'number' ? value : '',
+							onChange: (val: string | number) => {
+								const parsed = val === '' || val === undefined ? undefined : Number(val)
+								handleValueChange(index, parsed ?? 0)
+							},
+							disabled: inputProps.disabled,
+						})}
+					/>
+				)
 			case 'boolean':
-				next.v = boolVis
-				break
+				return (
+					<Switch
+						{...cleanProps({
+							checked: Boolean(value),
+							onChange: (event: React.ChangeEvent<HTMLInputElement>) =>
+								handleValueChange(index, event.currentTarget.checked),
+							disabled: inputProps.disabled,
+						})}
+					/>
+				)
 			case 'json': {
-				const s = (textRef.current as HTMLTextAreaElement | HTMLInputElement)?.value ?? ''
-				try {
-					next.v = JSON.parse(s)
-				} catch {
-					next.v = s
-				}
-				break
+				const formatted =
+					value && typeof value === 'object'
+						? JSON.stringify(value, null, 2)
+						: typeof value === 'string'
+							? value
+							: '{}'
+				return (
+					<Textarea
+						{...cleanProps({
+							key: `${index}-${rows.length}-${formatted.length}`,
+							defaultValue: formatted,
+							minRows: 4,
+							autosize: true,
+							onBlur: (event: React.FocusEvent<HTMLTextAreaElement>) => {
+								try {
+									const parsed = JSON.parse(event.currentTarget.value || '{}')
+									handleValueChange(index, parsed)
+									setJsonErrors((prev) => {
+										const next = { ...prev }
+										delete next[index]
+										return next
+									})
+								} catch {
+									setJsonErrors((prev) => ({
+										...prev,
+										[index]: 'JSON 格式错误',
+									}))
+								}
+							},
+							disabled: inputProps.disabled,
+							styles: { input: { fontFamily: 'var(--mantine-font-family-monospace)' } },
+						})}
+					/>
+				)
 			}
 			default:
-				next.v = (textRef.current as HTMLTextAreaElement | HTMLInputElement)?.value ?? ''
-		}
-		onCommit(row.id, next)
-	}, [editableKey, onCommit, row.id, row.k, boolVis, kind])
-
-	const onKeyDown = (e: React.KeyboardEvent) => {
-		if (e.key === 'Enter' && !e.shiftKey && kind !== 'json') {
-			e.preventDefault()
-			commit()
+				return (
+					<TextInput
+						{...cleanProps({
+							value: typeof value === 'string' ? value : value == null ? '' : String(value),
+							onChange: (event: React.ChangeEvent<HTMLInputElement>) =>
+								handleValueChange(index, event.currentTarget.value),
+							placeholder: ep.valuePlaceholder,
+							disabled: inputProps.disabled,
+						})}
+					/>
+				)
 		}
 	}
 
-	const keyCell = (
-		<TextInput
-			ref={keyRef}
-			defaultValue={row.k}
-			placeholder={keyPlaceholder ?? '键名'}
-			disabled={disabled || !editableKey}
-			onBlur={commit}
-			onKeyDown={onKeyDown}
-			styles={{ input: { width: keyWidth ?? 'auto' } }}
-		/>
-	)
-
-	const renderValueField = () => {
-		if (kind === 'number') {
-			return (
-				<NumberInput
-					defaultValue={typeof row.v === 'number' ? row.v : undefined}
-					disabled={disabled}
-					hideControls
-					allowDecimal
-					onChange={(n) => (numRef.current = typeof n === 'number' ? n : null)}
-					onBlur={commit}
-					error={valueError?.[0]}
-					styles={{ input: { width: valueWidth ?? rem(160) } }}
-				/>
-			)
-		}
-		if (kind === 'boolean') {
-			return (
-				<Stack gap={4}>
-					<Group gap="xs" align="center">
-						<Switch
-							defaultChecked={Boolean(row.v)}
-							onChange={(e) => {
-								const checked = e.currentTarget.checked
-								setBoolVis(checked)
-								onCommit(row.id, { v: checked }) // 即时提交，避免视觉不同步
-							}}
-							disabled={disabled}
-							onBlur={commit}
-						/>
-						<Badge variant="light" size="sm" color={boolVis ? 'green' : 'gray'}>
-							{boolVis ? '开启' : '关闭'}
-						</Badge>
-					</Group>
-					{valueError?.length ? (
-						<Text c="red" size="xs">
-							{valueError.join(', ')}
-						</Text>
-					) : null}
-				</Stack>
-			)
-		}
-		if (kind === 'json') {
-			const dv = typeof row.v === 'string' ? row.v : JSON.stringify(row.v ?? {}, null, 0)
-			return (
-				<Textarea
-					ref={(el) => (textRef.current = el)}
-					defaultValue={dv}
-					autosize
-					minRows={1}
-					maxRows={6}
-					placeholder={valuePlaceholder ?? 'JSON 值'}
-					disabled={disabled}
-					onBlur={commit}
-					onKeyDown={onKeyDown}
-					error={valueError?.[0]}
-					styles={{ input: { width: valueWidth ?? 'auto' } }}
-				/>
-			)
-		}
-		// string
-		const dv = typeof row.v === 'string' ? row.v : String(row.v ?? '')
-		const asShort = isShortText(dv)
-		const Comp = asShort ? TextInput : Textarea
-		return (
-			<Comp
-				ref={(el: any) => (textRef.current = el)}
-				defaultValue={dv}
-				{...(asShort ? {} : { autosize: true, minRows: 1, maxRows: 6 })}
-				placeholder={valuePlaceholder ?? '值'}
-				disabled={disabled}
-				onBlur={commit}
-				onKeyDown={onKeyDown}
-				error={valueError?.[0]}
-				styles={{ input: { width: valueWidth ?? 'auto' } }}
-			/>
-		)
-	}
-
-	const removeBtn = (
-		<Tooltip label={`删除第 ${idx + 1} 行`}>
-			<ActionIcon
-				variant="subtle"
-				color="red"
-				onClick={() => onRemove(row.id)}
-				disabled={disabled}
-				aria-label={`删除第 ${idx + 1} 行`}
-			>
-				<IconTrash size={16} />
-			</ActionIcon>
-		</Tooltip>
-	)
-
-	/** 关键：不要再覆写 onPointerDown，避免覆盖 dnd-kit 的 activator 监听器 */
-	const handleBtn = (
-		<Handle
-			{...attributes}
-			{...listeners}
-			ref={setActivatorNodeRef}
-			aria-roledescription="拖拽把手"
-		/>
-	)
-
-	if (asTable) {
-		return (
-			<tr ref={setNodeRef} style={style}>
-				<td style={{ width: rem(36) }}>{handleBtn}</td>
-				<td style={{ width: keyWidth }}>{keyCell}</td>
-				<td style={{ width: valueWidth }}>{renderValueField()}</td>
-				<td style={{ width: rem(60) }}>
-					<Group gap="xs" justify="flex-end">
-						{removeBtn}
-					</Group>
-				</td>
-			</tr>
-		)
-	}
-
-	return (
-		<Paper ref={setNodeRef as any} withBorder p="xs" radius="md" style={style}>
-			<Group align="flex-start" wrap="nowrap">
-				{handleBtn}
-				<Stack gap={6} style={{ flex: 1 }}>
-					<Group justify="space-between" gap="xs" wrap="nowrap">
-						<div style={{ flex: 1 }}>{keyCell}</div>
-						{removeBtn}
-					</Group>
-					{renderValueField()}
-				</Stack>
-			</Group>
-		</Paper>
-	)
-})
-
-/* ------------------------------- Main ---------------------------------- */
-function RecordRendererImpl(props: RendererProps) {
-	const { errors, extractedPropsInfo, inputProps, value } = props
-
-	const ep: Required<
-		Pick<
-			RecordUI,
-			'addable' | 'removable' | 'reorderable' | 'editableKey' | 'asTable' | 'valueMode'
-		>
-	> &
-		Pick<RecordUI, 'columns' | 'keyPlaceholder' | 'valuePlaceholder' | 'emptyHint'> = {
-		addable: true,
-		removable: true,
-		reorderable: true,
-		editableKey: true,
-		asTable: true,
-		valueMode: 'auto',
-		columns: undefined,
-		keyPlaceholder: '键名',
-		valuePlaceholder: '值',
-		emptyHint: '暂无数据，点击下方“添加一行”',
-		...extractedPropsInfo,
-	}
-
-	const keyWidth = useMemo(
-		() => (typeof ep.columns?.key === 'number' ? rem(ep.columns!.key as number) : ep.columns?.key),
-		[ep.columns?.key],
-	)
-	const valueWidth = useMemo(
-		() =>
-			typeof ep.columns?.value === 'number' ? rem(ep.columns!.value as number) : ep.columns?.value,
-		[ep.columns?.value],
-	)
-
-	// —— 错误下沉：严格匹配当前字段名 + key —— //
-	const { topLevelErrorText, perKeyValueErrors } = useMemo(() => {
-		const per = new Map<string, string[]>()
-		const top: string[] = []
-		const fieldName = props.inputProps.name
-		for (const e of errors ?? []) {
-			if (!e?.dotPath?.length) continue
-			if (fieldName && e.dotPath[0] !== fieldName) continue // 只收自己字段的错误
-			const key = e.dotPath[1]
-			if (!key) top.push(e.message)
-			else per.set(key, (per.get(key) ?? []).concat(e.message))
-		}
-		return { topLevelErrorText: top.join(', '), perKeyValueErrors: per }
-	}, [errors, props.inputProps.name])
-
-	// —— 初始化（仅首渲染或 name 变化）—— //
-	const initialRows = useMemo<RowData[]>(() => {
-		const obj = value ?? {}
-		return Object.entries(obj).map(([k, v]) => ({ id: rid(), k, v }))
-		// eslint-disable-next-line react-hooks/exhaustive-deps
-	}, [inputProps.name])
-
-	const [rows, setRows] = useState<RowData[]>(initialRows)
-	const [activeId, setActiveId] = useState<string | null>(null)
-
-	const sensors = useSensors(
-		useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
-		useSensor(KeyboardSensor, {
-			coordinateGetter: sortableKeyboardCoordinates,
-		}),
-	)
-
-	const emitChange = useCallback(
-		(nextRows: RowData[]) => {
-			const obj: Record<string, unknown> = {}
-			for (const r of nextRows) if (r.k) obj[r.k] = r.v
-			triggerFormEvents?.(inputProps as any, obj)
-		},
-		[inputProps],
-	)
-
-	const ensureUniqueKey = useCallback((nextKey: string, selfId: string, pool: RowData[]) => {
-		if (!nextKey) return nextKey
-		const taken = new Set(pool.filter((r) => r.id !== selfId).map((r) => r.k))
-		if (!taken.has(nextKey)) return nextKey
-		let i = 2
-		let k = `${nextKey} (${i})`
-		while (taken.has(k)) {
-			i += 1
-			k = `${nextKey} (${i})`
-		}
-		return k
-	}, [])
-
-	const onCommit = useCallback(
-		(id: string, next: Partial<RowData>) => {
-			setRows((prev) => {
-				const idx = prev.findIndex((r) => r.id === id)
-				if (idx === -1) return prev
-				const draft = [...prev]
-				const cur = draft[idx]
-				const merged: RowData = { ...cur, ...next }
-				if (ep.editableKey && next.k !== undefined) {
-					merged.k = ensureUniqueKey(next.k, id, draft)
-				}
-				draft[idx] = merged
-				emitChange(draft)
-				return draft
-			})
-		},
-		[emitChange, ensureUniqueKey, ep.editableKey],
-	)
-
-	const onRemove = useCallback(
-		(id: string) => {
-			setRows((prev) => {
-				const next = prev.filter((r) => r.id !== id)
-				emitChange(next)
-				return next
-			})
-		},
-		[emitChange],
-	)
-
-	const addRow = useCallback(() => {
-		setRows((prev) => {
-			const base = 'key'
-			const taken = new Set(prev.map((r) => r.k))
-			let i = prev.length + 1
-			let k = `${base}-${i}`
-			while (taken.has(k)) {
-				i += 1
-				k = `${base}-${i}`
-			}
-			const id = rid()
-			const v = pickDefaultByMode(ep.valueMode)
-			const next = [...prev, { id, k, v }]
-			emitChange(next)
-			return next
-		})
-	}, [emitChange, ep.valueMode])
-
-	const onDragStart = useCallback((evt: DragStartEvent) => setActiveId(String(evt.active.id)), [])
-	const onDragEnd = useCallback(
-		(evt: DragEndEvent) => {
-			setActiveId(null)
-			if (!ep.reorderable) return
-			const { active, over } = evt
-			if (!over || active.id === over.id) return
-			setRows((prev) => {
-				const oldIndex = prev.findIndex((r) => r.id === active.id)
-				const newIndex = prev.findIndex((r) => r.id === over.id)
-				const next = arrayMove(prev, oldIndex, newIndex)
-				emitChange(next)
-				return next
-			})
-		},
-		[emitChange, ep.reorderable],
-	)
-
-	const overlayRow = activeId ? rows.find((r) => r.id === activeId) : null
-
-	const header = ep.asTable ? (
-		<Table.Thead>
-			<Table.Tr>
-				<Table.Th style={{ width: rem(36) }}>排序</Table.Th>
-				<Table.Th style={{ width: keyWidth }}>键</Table.Th>
-				<Table.Th style={{ width: valueWidth }}>值</Table.Th>
-				<Table.Th style={{ width: rem(60) }}>操作</Table.Th>
-			</Table.Tr>
-		</Table.Thead>
-	) : null
-
-	return (
-		<Stack gap="xs">
-			{rows.length === 0 && (
-				<Tooltip label={ep.emptyHint} position="top-start" openDelay={300}>
-					<Text c="dimmed" size="sm">
-						{ep.emptyHint}
-					</Text>
-				</Tooltip>
-			)}
-
-			<DndContext
-				sensors={sensors}
-				onDragStart={onDragStart}
-				onDragEnd={onDragEnd}
-				collisionDetection={closestCenter}
-				measuring={{ droppable: { strategy: MeasuringStrategy.Always } }}
-				modifiers={[restrictToVerticalAxis]}
-			>
-				{ep.asTable ? (
-					<Table striped withTableBorder withColumnBorders highlightOnHover>
-						{header}
-						<Table.Tbody>
-							<SortableContext items={rows.map((r) => r.id)} strategy={verticalListSortingStrategy}>
-								{rows.map((r, i) => (
-									<SortableRow
-										key={r.id}
-										row={r}
-										idx={i}
-										disabled={inputProps.disabled}
-										editableKey={!!ep.editableKey}
-										effectiveMode={ep.valueMode ?? 'auto'}
-										keyPlaceholder={ep.keyPlaceholder}
-										valuePlaceholder={ep.valuePlaceholder}
-										asTable
-										onCommit={onCommit}
-										onRemove={onRemove}
-										keyWidth={keyWidth}
-										valueWidth={valueWidth}
-										valueError={perKeyValueErrors.get(r.k)}
-										setActiveId={setActiveId}
-										reorderable={!!ep.reorderable}
+	const rowsNode =
+		rows.length === 0 ? (
+			<Card withBorder p="md">
+				<Text size="sm" c="dimmed">
+					{ep.emptyHint ?? '暂无数据，点击下方按钮添加键值对。'}
+				</Text>
+			</Card>
+		) : layout === 'table' ? (
+			<Table highlightOnHover withTableBorder withColumnBorders>
+				<Table.Thead>
+					<Table.Tr>
+						<Table.Th style={{ width: ep.columns?.key ?? 200 }}>
+							{ep.keyLabel ?? '键'}
+						</Table.Th>
+						<Table.Th>{ep.valueLabel ?? '值'}</Table.Th>
+						<Table.Th style={{ width: 120 }}>操作</Table.Th>
+					</Table.Tr>
+				</Table.Thead>
+				<Table.Tbody>
+					{rows.map(([key, val], idx) => {
+						const errKey = key ?? String(idx)
+						const inlineErrors = [
+							...(entryErrors.get(errKey) ?? []),
+							jsonErrors[idx],
+						].filter(Boolean) as string[]
+						return (
+							<Table.Tr key={`record-row-${idx}`}>
+								<Table.Td>
+									<TextInput
+										{...cleanProps({
+											value: key,
+											onChange: (event: React.ChangeEvent<HTMLInputElement>) =>
+												handleKeyChange(idx, event.currentTarget.value),
+											placeholder: ep.keyPlaceholder,
+											disabled: !editableKey || inputProps.disabled,
+										})}
 									/>
-								))}
-							</SortableContext>
-						</Table.Tbody>
-					</Table>
-				) : (
-					<SortableContext items={rows.map((r) => r.id)} strategy={verticalListSortingStrategy}>
-						<Stack gap="sm">
-							{rows.map((r, i) => (
-								<SortableRow
-									key={r.id}
-									row={r}
-									idx={i}
-									disabled={inputProps.disabled}
-									editableKey={!!ep.editableKey}
-									effectiveMode={ep.valueMode ?? 'auto'}
-									keyPlaceholder={ep.keyPlaceholder}
-									valuePlaceholder={ep.valuePlaceholder}
-									asTable={false}
-									onCommit={onCommit}
-									onRemove={onRemove}
-									keyWidth={keyWidth}
-									valueWidth={valueWidth}
-									valueError={perKeyValueErrors.get(r.k)}
-									setActiveId={setActiveId}
-									reorderable={!!ep.reorderable}
+								</Table.Td>
+								<Table.Td>
+									<Stack gap={4}>
+										{renderValueControl(idx, val)}
+										{inlineErrors.length ? (
+											<Text size="xs" c="red.6">
+												{inlineErrors.join(', ')}
+											</Text>
+										) : null}
+									</Stack>
+								</Table.Td>
+								<Table.Td>
+									<Group gap="xs">
+										{canReorder ? (
+											<>
+												<ActionIcon
+													{...cleanProps({
+														variant: 'subtle' as const,
+														onClick: () => handleMove(idx, -1),
+														disabled: idx === 0 || inputProps.disabled,
+														'aria-label': '上移',
+													})}
+												>
+													<IconArrowUp size={16} />
+												</ActionIcon>
+												<ActionIcon
+													{...cleanProps({
+														variant: 'subtle' as const,
+														onClick: () => handleMove(idx, 1),
+														disabled: idx === rows.length - 1 || inputProps.disabled,
+														'aria-label': '下移',
+													})}
+												>
+													<IconArrowDown size={16} />
+												</ActionIcon>
+											</>
+										) : null}
+										{canRemove ? (
+											<ActionIcon
+												{...cleanProps({
+													variant: 'subtle' as const,
+													color: 'red',
+													onClick: () => handleRemove(idx),
+													disabled: inputProps.disabled || rows.length <= minItems,
+													'aria-label': '删除',
+												})}
+											>
+												<IconTrash size={16} />
+											</ActionIcon>
+										) : null}
+									</Group>
+								</Table.Td>
+							</Table.Tr>
+						)
+					})}
+				</Table.Tbody>
+			</Table>
+		) : (
+			<Stack gap="md">
+				{rows.map(([key, val], idx) => {
+					const errKey = key ?? String(idx)
+					const inlineErrors = [
+						...(entryErrors.get(errKey) ?? []),
+						jsonErrors[idx],
+					].filter(Boolean) as string[]
+					return (
+						<Card key={`record-row-${idx}`} withBorder p="md">
+							<Stack gap="sm">
+								<TextInput
+									{...cleanProps({
+										label: ep.keyLabel ?? '键',
+										value: key,
+										onChange: (event: React.ChangeEvent<HTMLInputElement>) =>
+											handleKeyChange(idx, event.currentTarget.value),
+										placeholder: ep.keyPlaceholder,
+										disabled: !editableKey || inputProps.disabled,
+									})}
 								/>
-							))}
-						</Stack>
-					</SortableContext>
-				)}
+								<Stack gap={4}>
+									{renderValueControl(idx, val)}
+									{inlineErrors.length ? (
+										<Text size="xs" c="red.6">
+											{inlineErrors.join(', ')}
+										</Text>
+									) : null}
+								</Stack>
+								<Group gap="xs" justify="flex-end">
+									{canReorder ? (
+										<>
+											<ActionIcon
+												{...cleanProps({
+													variant: 'subtle' as const,
+													onClick: () => handleMove(idx, -1),
+													disabled: idx === 0 || inputProps.disabled,
+													'aria-label': '上移',
+												})}
+											>
+												<IconArrowUp size={16} />
+											</ActionIcon>
+											<ActionIcon
+												{...cleanProps({
+													variant: 'subtle' as const,
+													onClick: () => handleMove(idx, 1),
+													disabled: idx === rows.length - 1 || inputProps.disabled,
+													'aria-label': '下移',
+												})}
+											>
+												<IconArrowDown size={16} />
+											</ActionIcon>
+										</>
+									) : null}
+									{canRemove ? (
+										<ActionIcon
+											{...cleanProps({
+												variant: 'subtle' as const,
+												color: 'red',
+												onClick: () => handleRemove(idx),
+												disabled: inputProps.disabled || rows.length <= minItems,
+												'aria-label': '删除',
+											})}
+										>
+											<IconTrash size={16} />
+										</ActionIcon>
+									) : null}
+								</Group>
+							</Stack>
+						</Card>
+					)
+				})}
+			</Stack>
+		)
 
-				<DragOverlay dropAnimation={{ duration: 150 }}>
-					{overlayRow ? (
-						<Paper
-							withBorder
-							p="xs"
-							radius="md"
-							style={{ background: 'var(--mantine-color-body)' }}
-						>
-							<Group gap="sm" wrap="nowrap">
-								<IconGripVertical size={16} />
-								<Text size="sm" fw={500} lineClamp={1}>
-									{overlayRow.k}
-								</Text>
-							</Group>
-						</Paper>
-					) : null}
-				</DragOverlay>
-			</DndContext>
-
-			<Group justify="space-between">
-				<Group gap="xs">
-					{topLevelErrorText && (
-						<Text c="red" size="sm">
-							{topLevelErrorText}
-						</Text>
-					)}
-				</Group>
-				{ep.addable && (
+	return (
+		<FieldChrome
+			{...cleanProps({
+				label: formBaseInfo.label,
+				required: formBaseInfo.required,
+				description: formBaseInfo.description,
+				helperText: formBaseInfo.helperText,
+				hint: formBaseInfo.hint,
+				tooltip: formBaseInfo.tooltip,
+				badge: formBaseInfo.badge,
+				errors: baseErrors,
+			})}
+		>
+			<Stack gap="md">
+				{rowsNode}
+				{canAdd ? (
 					<Button
-						leftSection={<IconPlus size={16} />}
-						variant="light"
-						onClick={addRow}
-						disabled={inputProps.disabled}
+						{...cleanProps({
+							leftSection: <IconPlus size={16} />,
+							variant: 'light' as const,
+							onClick: handleAdd,
+							disabled: inputProps.disabled,
+						})}
 					>
-						添加一行
+						{ep.addLabel ?? '新增键值对'}
 					</Button>
-				)}
-			</Group>
-		</Stack>
+				) : null}
+			</Stack>
+		</FieldChrome>
 	)
 }
 
-/* ------------------------------ Register ------------------------------- */
-registerRenderer(META_MAP.RECORD, (props: RendererProps) => <RecordRendererImpl {...props} />)
+registerRenderer(META_MAP.RECORD, (props) => <RecordField {...(props as RendererProps)} />)

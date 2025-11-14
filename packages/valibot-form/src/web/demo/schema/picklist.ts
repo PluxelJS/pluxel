@@ -55,6 +55,7 @@ export const PicklistSmartSchema = v.object({
 		v.picklist(['low', 'mid', 'high'] as const),
 		f.picklistMeta({
 			labels: { low: '低', mid: '中', high: '高' },
+			variant: 'segmented',
 			// searchable/clearable 走智能默认
 		}),
 	),
@@ -96,6 +97,7 @@ export const PicklistSmartSchema = v.object({
 					searchable: true,
 					clearable: true,
 					placeholder: '选择端口',
+					maxSelections: 2,
 				}),
 			),
 		),
@@ -124,6 +126,8 @@ export const PicklistSmartSchema = v.object({
 						abtest: 'A/B 测试',
 						i18n: '多语言',
 					},
+					multiple: true,
+					allowCreate: true,
 					// maxValues/limit 不配置 → 根据 options 数量使用智能默认
 				}),
 			),

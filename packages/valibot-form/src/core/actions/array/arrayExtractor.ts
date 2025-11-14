@@ -11,13 +11,19 @@ type InputSchema = PipedSchema<Schema> | Schema
 export function extractArrayProps<TItemMeta = unknown>(
 	schema: InputSchema,
 ): ArrayMetaResult<TItemMeta> {
-	const meta: ArrayMetaResult<TItemMeta> = {}
+	const meta: ArrayMetaResult<TItemMeta> = {
+		layout: 'list',
+		addable: true,
+		removable: true,
+		reorderable: true,
+	}
 
 	const itemSchema = schema.item ?? (schema as PipedSchema<Schema>).pipe[0].item
 	if (itemSchema) {
 		const type = itemSchema.type // string, number, boolean, picklist
 		if (type === 'picklist') {
 			meta.picklist = extractPicklistProps(itemSchema) as any
+			if (!meta.pickerMode) meta.pickerMode = 'picker'
 		}
 		meta.valueMode = type
 	}
@@ -30,8 +36,16 @@ export function extractArrayProps<TItemMeta = unknown>(
 		const p = pipe[i]
 		if (p.kind === 'metadata' && p.type === META_MAP.ARRAY) {
 			Object.assign(meta, p.metadata)
+			const legacyLayout = (p.metadata as any)?.style
+			if (!meta.layout && legacyLayout) {
+				meta.layout = legacyLayout
+			}
 			break
 		}
+	}
+
+	if (!meta.pickerMode) {
+		meta.pickerMode = 'list'
 	}
 
 	return meta

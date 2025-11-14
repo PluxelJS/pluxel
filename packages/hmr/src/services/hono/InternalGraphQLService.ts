@@ -2,7 +2,7 @@ import { query, resolver, type Resolver, weave } from '@gqloom/core'
 import { ValibotWeaver } from '@gqloom/valibot'
 import { generateClient } from '@gqty/cli'
 import { Injectable, type Context as PlxContext } from '@pluxel/core'
-import { type GraphQLSchema } from 'graphql'
+import type { GraphQLSchema } from 'graphql'
 import { createYoga } from 'graphql-yoga'
 import * as v from 'valibot'
 

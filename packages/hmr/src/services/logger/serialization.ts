@@ -92,8 +92,7 @@ const isPlainObject = (value: object): value is Record<string, unknown> => {
 	return proto === null || proto === Object.prototype
 }
 
-const symbolKey = (sym: symbol) =>
-	`Symbol(${sym.description ?? sym.toString().slice(7, -1)})`
+const symbolKey = (sym: symbol) => `Symbol(${sym.description ?? sym.toString().slice(7, -1)})`
 
 const cloneObject = (
 	value: Record<string | symbol, unknown>,
@@ -120,11 +119,7 @@ const cloneObject = (
 	return out
 }
 
-const mapToPlain = (
-	value: Map<unknown, unknown>,
-	seen: WeakSet<object>,
-	depth: number,
-) => {
+const mapToPlain = (value: Map<unknown, unknown>, seen: WeakSet<object>, depth: number) => {
 	const entries: Array<[unknown, unknown]> = []
 	let index = 0
 	for (const [k, v] of value.entries()) {
@@ -141,11 +136,7 @@ const mapToPlain = (
 	return payload
 }
 
-const setToPlain = (
-	value: Set<unknown>,
-	seen: WeakSet<object>,
-	depth: number,
-) => {
+const setToPlain = (value: Set<unknown>, seen: WeakSet<object>, depth: number) => {
 	const values: unknown[] = []
 	let index = 0
 	for (const item of value.values()) {
@@ -199,11 +190,7 @@ const toPlain = (
 ): unknown => {
 	if (value === null || value === undefined) return value
 	const valueType = typeof value
-	if (
-		valueType === 'string' ||
-		valueType === 'number' ||
-		valueType === 'boolean'
-	) {
+	if (valueType === 'string' || valueType === 'number' || valueType === 'boolean') {
 		return value
 	}
 	if (valueType === 'bigint') return `${value.toString()}n`
@@ -312,4 +299,3 @@ export function createDumperLogHook(
 		return method.apply(this, newArgs as unknown[])
 	}
 }
-

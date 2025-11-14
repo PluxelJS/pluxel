@@ -7,7 +7,7 @@ import {
 	PluginStatusEntry,
 	PluginStatusMutationResult,
 	UpdateStatusInput,
-	PluginStatusEntryLifecycleStage,
+	type PluginStatusEntryLifecycleStage,
 } from '../schema'
 import { createPluginScope, getScopeCtor } from './shared/pluginScope'
 
@@ -30,11 +30,7 @@ export function createPluginStatusModule(pCtx: PlxContext) {
 	const scopeStatus = resolver.of(PluginScope, {
 		status: field(PluginStatusEntry).resolve((scope) => {
 			const ctor = getScopeCtor(pCtx, scope)
-			const { isRunning, isEnabled, lifecycleStage } = readStatusSnapshot(
-				pCtx,
-				scope.name,
-				ctor,
-			)
+			const { isRunning, isEnabled, lifecycleStage } = readStatusSnapshot(pCtx, scope.name, ctor)
 			return {
 				__typename: 'PluginStatusEntry' as const,
 				name: scope.name,
@@ -86,11 +82,7 @@ export function createPluginStatusModule(pCtx: PlxContext) {
 
 					const result = await pCtx.registry.commit()
 					if (result.err) {
-						const { isRunning, isEnabled, lifecycleStage } = readStatusSnapshot(
-							pCtx,
-							name,
-							ctor,
-						)
+						const { isRunning, isEnabled, lifecycleStage } = readStatusSnapshot(pCtx, name, ctor)
 						return {
 							__typename: 'PluginStatusMutationResult' as const,
 							code: 'commit_failed',
@@ -101,11 +93,7 @@ export function createPluginStatusModule(pCtx: PlxContext) {
 						}
 					}
 
-					const { isRunning, isEnabled, lifecycleStage } = readStatusSnapshot(
-						pCtx,
-						name,
-						ctor,
-					)
+					const { isRunning, isEnabled, lifecycleStage } = readStatusSnapshot(pCtx, name, ctor)
 					return {
 						__typename: 'PluginStatusMutationResult' as const,
 						code: 'success',
@@ -116,11 +104,7 @@ export function createPluginStatusModule(pCtx: PlxContext) {
 					}
 				} catch (error) {
 					const isStart = status === 'start' || status === 'restart'
-					const { isRunning, isEnabled, lifecycleStage } = readStatusSnapshot(
-						pCtx,
-						name,
-						ctor,
-					)
+					const { isRunning, isEnabled, lifecycleStage } = readStatusSnapshot(pCtx, name, ctor)
 					return {
 						__typename: 'PluginStatusMutationResult' as const,
 						code: isStart ? 'plugin_start_failed' : 'plugin_operation_failed',

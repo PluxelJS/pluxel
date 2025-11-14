@@ -1,40 +1,102 @@
-import { Card, Stack } from '@mantine/core'
+import { Card, Divider, Stack, Text } from '@mantine/core'
 import React, { createContext, memo, Suspense, useCallback, useContext, useMemo } from 'react'
-import type { InferOutput, ObjectSchema } from 'valibot'
-import { extractInfo } from '~/core/extract'
+import type { InferOutput, ObjectLikeSchema } from 'valibot'
+import { DEFAULT_GRID_COLUMNS, DEFAULT_SECTION_ID, DEFAULT_TEXTS, GRID_COLUMN_THRESHOLD } from '~/core/constants'
 import { MetaRenderer } from '~/core/registry'
+import { collectObjectEntries } from '~/core/utils'
 import { useAppForm } from './formContext'
 import { renderersRegistered } from './registerRenderers'
-
-// -------- schema 解析缓存，避免重复 extractInfo ----------
-const infoCache = new WeakMap<object, ReturnType<typeof extractInfo> | null>()
-function cachedExtractInfo(schema: object, title: string) {
-	const cached = infoCache.get(schema)
-	if (cached !== undefined) return cached
-	const info = extractInfo(schema as any, { title })
-	infoCache.set(schema, info)
-	return info
-}
+import { cachedExtractInfo } from './schemaCache'
 
 // -------- Context（暴露同一表单实例与渲染数据） ----------
-interface Ctx<S extends ObjectSchema<any, any>> {
+interface Ctx<S extends ObjectLikeSchema> {
 	form: ReturnType<typeof useAppForm<S>>
 	items: Array<{
 		name: string
-		info: NonNullable<ReturnType<typeof extractInfo>>
+		info: NonNullable<ReturnType<typeof cachedExtractInfo>>
 	}>
 	submit: () => void
 	reset: () => void
 }
-const AutoFormCtx = createContext<Ctx<any> | null>(null)
+const AutoFormCtx = createContext<Ctx<ObjectLikeSchema> | null>(null)
 
-export function useAutoFormCtx<S extends ObjectSchema<any, any>>() {
+type FieldItem = Ctx<ObjectLikeSchema>['items'][number]
+
+interface SectionBucket {
+	id: string
+	title?: string
+	description?: string
+	columns?: number
+	order?: number
+	fields: FieldItem[]
+}
+
+function buildSections(items: FieldItem[]): SectionBucket[] {
+	const map = new Map<string, SectionBucket>()
+	for (const item of items) {
+		const sectionMeta = item.info.formInfo.section
+		const bucketId = sectionMeta?.id ?? DEFAULT_SECTION_ID
+		if (!map.has(bucketId)) {
+			const bucket: SectionBucket = {
+				id: bucketId,
+				fields: [],
+			}
+			if (sectionMeta?.title !== undefined) bucket.title = sectionMeta.title
+			if (sectionMeta?.description !== undefined) bucket.description = sectionMeta.description
+			if (sectionMeta?.columns !== undefined) bucket.columns = sectionMeta.columns
+			if (sectionMeta?.order !== undefined) bucket.order = sectionMeta.order
+			map.set(bucketId, bucket)
+		}
+		const bucket = map.get(bucketId)!
+		if (sectionMeta?.title && !bucket.title) bucket.title = sectionMeta.title
+		if (sectionMeta?.description && !bucket.description) bucket.description = sectionMeta.description
+		if (sectionMeta?.columns && !bucket.columns) bucket.columns = sectionMeta.columns
+		if (sectionMeta?.order && bucket.order === undefined) bucket.order = sectionMeta.order
+		bucket.fields.push(item)
+	}
+
+	return Array.from(map.values()).sort((a, b) => {
+		const orderA = a.order ?? 0
+		const orderB = b.order ?? 0
+		if (orderA !== orderB) return orderA - orderB
+		return (a.title ?? '').localeCompare(b.title ?? '')
+	})
+}
+
+function resolveColumns(section: SectionBucket) {
+	if (section.columns && section.columns > 0) return section.columns
+	if (section.fields.length >= GRID_COLUMN_THRESHOLD) return DEFAULT_GRID_COLUMNS
+	return 1
+}
+
+function resolveSpan(meta: FieldItem['info']['formInfo'], columns: number) {
+	if (meta.layout?.fullWidth) return columns
+	if (meta.layout?.span) return Math.min(columns, Math.max(1, meta.layout.span))
+	return 1
+}
+
+function alignToCss(align?: 'start' | 'center' | 'end' | 'stretch') {
+	switch (align) {
+		case 'center':
+			return 'center'
+		case 'end':
+			return 'flex-end'
+		case 'stretch':
+			return 'stretch'
+		default:
+			return 'flex-start'
+	}
+}
+
+export function useAutoFormCtx<S extends ObjectLikeSchema>() {
 	const ctx = useContext(AutoFormCtx)
-	if (!ctx) throw new Error('AutoForm.* must be used within <AutoForm>')
+	if (!ctx) {
+		throw new Error(DEFAULT_TEXTS.errors.autoFormContextMissing)
+	}
 	return ctx as Ctx<S>
 }
 
-export interface AutoFormProps<S extends ObjectSchema<any, any>> {
+export interface AutoFormProps<S extends ObjectLikeSchema> {
 	schema: S
 	/** 建议用 useMemo 包装后传入 */
 	formOpts?: Parameters<typeof useAppForm<S>>[1]
@@ -42,7 +104,7 @@ export interface AutoFormProps<S extends ObjectSchema<any, any>> {
 	children: React.ReactNode
 }
 
-export function AutoForm<S extends ObjectSchema<any, any>>({
+export function AutoForm<S extends ObjectLikeSchema>({
 	schema,
 	formOpts,
 	children,
@@ -53,15 +115,16 @@ export function AutoForm<S extends ObjectSchema<any, any>>({
 	const form = useAppForm(schema, formOpts)
 
 	const items = useMemo(() => {
-		const entries = Object.entries(schema.entries) as [keyof InferOutput<S>, any][]
+		const entries = collectObjectEntries(schema as any) ?? []
 		const collected: Array<{
 			name: string
-			info: NonNullable<ReturnType<typeof extractInfo>>
+			info: NonNullable<ReturnType<typeof cachedExtractInfo>>
 		}> = []
-		for (const [key, sub] of entries) {
+		for (const entry of entries as { name: keyof InferOutput<S>; schema: any }[]) {
+			const sub = entry.schema
 			if (sub?.kind !== 'schema') continue
-			const info = cachedExtractInfo(sub, String(key))
-			if (info) collected.push({ name: String(key), info })
+			const info = cachedExtractInfo(sub, String(entry.name))
+			if (info) collected.push({ name: String(entry.name), info })
 		}
 		return collected
 	}, [schema])
@@ -93,35 +156,114 @@ export function AutoForm<S extends ObjectSchema<any, any>>({
 }
 
 /* ───────── 子组件：字段渲染（字段级订阅，低重渲染） ───────── */
-function FieldsImpl() {
+export interface AutoFormFieldsProps {
+	sectionSpacing?: number | string
+}
+
+const FieldsImpl = (props?: AutoFormFieldsProps) => {
+	const { sectionSpacing = 'xl' } = props ?? {}
 	const { form, items } = useAutoFormCtx<any>()
+
+	const { visibleItems, hiddenItems } = useMemo(() => {
+		const hidden: FieldItem[] = []
+		const visible: FieldItem[] = []
+		for (const item of items) {
+			if (item.info.formInfo.hidden) hidden.push(item)
+			else visible.push(item)
+		}
+		return { hiddenItems: hidden, visibleItems: visible }
+	}, [items])
+
+	const sections = useMemo(() => buildSections(visibleItems), [visibleItems])
+
 	return (
-		<Stack gap="md" style={{ padding: 24 }}>
-			{items.map(({ name, info }) => (
-				<form.Field key={name} name={name}>
-					{(field) => {
-						return (
-							<MetaRenderer
-								type={info.type}
-								formBaseInfo={info.formInfo}
-								extractedPropsInfo={info.props}
-								errors={field.state.meta.errors as any}
-								value={field.state.value as any}
-								inputProps={{
-									name,
-									onChange: field.handleChange,
-									onBlur: field.handleBlur,
-								}}
-							/>
-						)
-					}}
+		<>
+			{hiddenItems.map(({ name }) => (
+				<form.Field key={`hidden-${name}`} name={name}>
+					{() => null}
 				</form.Field>
 			))}
+
+			<Stack gap={sectionSpacing}>
+				{sections.map((section) => (
+					<SectionBlock key={section.id} section={section} form={form} />
+				))}
+			</Stack>
+		</>
+	)
+}
+
+function SectionBlock({
+	section,
+	form,
+}: {
+	section: SectionBucket
+	form: ReturnType<typeof useAppForm<any>>
+}) {
+	const columns = resolveColumns(section)
+	const showHeader = Boolean(section.title || section.description)
+
+	return (
+		<Stack gap="sm">
+			{showHeader ? (
+				<Stack gap={4}>
+					{section.title ? <Text fw={600}>{section.title}</Text> : null}
+					{section.description ? (
+						<Text size="sm" c="dimmed">
+							{section.description}
+						</Text>
+					) : null}
+					<Divider />
+				</Stack>
+			) : null}
+			<div
+				style={{
+					display: 'grid',
+					gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))`,
+					gap: 'var(--mantine-spacing-lg)',
+				}}
+			>
+				{section.fields.map(({ name, info }) => {
+					const span = resolveSpan(info.formInfo, columns)
+					return (
+						<div
+							key={name}
+							style={{
+								gridColumn: `span ${Math.min(span, columns)}`,
+								alignSelf: alignToCss(info.formInfo.layout?.align),
+							}}
+						>
+							<form.Field name={name}>
+								{(field) => (
+									<MetaRenderer
+										type={info.type}
+										formBaseInfo={info.formInfo}
+										extractedPropsInfo={info.props}
+										errors={field.state.meta.errors as any}
+										value={field.state.value as any}
+										inputProps={{
+											name,
+											onChange: field.handleChange,
+											onBlur: field.handleBlur,
+											...(info.formInfo.disabled !== undefined && { disabled: info.formInfo.disabled }),
+											...(info.formInfo.readOnly !== undefined && { readOnly: info.formInfo.readOnly }),
+										}}
+									/>
+								)}
+							</form.Field>
+						</div>
+					)
+				})}
+			</div>
 		</Stack>
 	)
 }
-AutoForm.Fields = memo(FieldsImpl)
-AutoForm.displayName = 'AutoForm'
+
+AutoForm.Fields = memo(FieldsImpl) as React.FC<AutoFormFieldsProps>
+if (process.env.NODE_ENV !== 'production') {
+	AutoForm.Fields.displayName = 'AutoForm.Fields'
+	AutoForm.displayName = 'AutoForm'
+}
 
 /* ───────── 子组件：动作（render-props，完全自定义外观/位置） ───────── */
 export interface ActionsRenderProps {
@@ -150,8 +292,10 @@ function ActionsImpl({ children }: ActionsProps) {
 		</form.Subscribe>
 	)
 }
-AutoForm.Actions = ActionsImpl
-AutoForm.Actions.displayName = 'AutoForm.Actions'
+AutoForm.Actions = ActionsImpl as React.FC<ActionsProps>
+if (process.env.NODE_ENV !== 'production') {
+	AutoForm.Actions.displayName = 'AutoForm.Actions'
+}
 
 /* ───────── 子组件：调试（懒加载 + 类型稳） ───────── */
 const DebugValues = React.lazy(() =>

@@ -79,9 +79,6 @@ export const pluginStatus = new Hono<PluginsEnv>()
 		} catch (e: any) {
 			const isStart = status === 'start' || status === 'restart'
 			const errorCode = isStart ? 'plugin_start_failed' : 'plugin_operation_failed'
-			return c.json(
-				{ code: errorCode, error: e?.message ?? '未知错误', ...snapshot() },
-				500,
-			)
+			return c.json({ code: errorCode, error: e?.message ?? '未知错误', ...snapshot() }, 500)
 		}
 	})

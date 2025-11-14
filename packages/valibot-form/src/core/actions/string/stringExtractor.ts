@@ -25,7 +25,7 @@ const fmtMap = {
 export type fmtKey = keyof typeof fmtMap
 
 export function extractStringProps(schema: PipedStringSchema): StringMetaOptions {
-	const meta: StringMetaOptions = {}
+	const meta: StringMetaOptions = { mode: 'single' }
 
 	const pipe = schema.pipe
 	if (!pipe) return meta
@@ -49,6 +49,12 @@ export function extractStringProps(schema: PipedStringSchema): StringMetaOptions
 			// 同理，fmtMap[...] 的值已受限于 StringCheck['format']
 			meta.format = fmtMap[item.type as keyof typeof fmtMap]
 		}
+	}
+
+	if (!meta.mode) {
+		meta.mode = meta.secret ? 'password' : 'single'
+	} else if (meta.mode === 'password') {
+		meta.secret = true
 	}
 
 	return meta

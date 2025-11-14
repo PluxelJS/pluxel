@@ -28,7 +28,7 @@ const LOGGING_PACKAGES: (string | RegExp)[] = [
   '@poppinss/dumper',
   'youch',
 ]
-const WORKFLOW_PACKAGES: (string | RegExp)[] = ['eventure', 'exsolve', 'knitwork', '@tanstack/pacer', 'xstate']
+const WORKFLOW_PACKAGES: (string | RegExp)[] = ['exsolve', 'knitwork', '@tanstack/pacer', 'xstate']
 const NODE_RUNTIME_PACKAGES: (string | RegExp)[] = ['chokidar', 'pathe', 'pkg-types']
 
 export default defineConfig({

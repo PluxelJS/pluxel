@@ -59,7 +59,9 @@ export function withTag(spec: NormalizedPackageSpecifier, tag: string): Normaliz
 	})
 }
 
-function parseStringSpecifier(rawInput: string): Omit<NormalizedPackageSpecifier, 'target' | 'key'> | undefined {
+function parseStringSpecifier(
+	rawInput: string,
+): Omit<NormalizedPackageSpecifier, 'target' | 'key'> | undefined {
 	const raw = rawInput.trim()
 	if (!raw) return undefined
 
@@ -95,18 +97,16 @@ function parseStringSpecifier(rawInput: string): Omit<NormalizedPackageSpecifier
 	}
 }
 
-function parseObjectSpecifier(
-	input: { name?: string | null; version?: string | null; tag?: string | null },
-): Omit<NormalizedPackageSpecifier, 'target' | 'key'> | undefined {
+function parseObjectSpecifier(input: {
+	name?: string | null
+	version?: string | null
+	tag?: string | null
+}): Omit<NormalizedPackageSpecifier, 'target' | 'key'> | undefined {
 	const name = input.name?.trim()
 	if (!name) return undefined
 	const version = input.version?.toString().trim() || undefined
 	const tag = version ? undefined : input.tag?.toString().trim() || undefined
-	const raw = version
-		? `${name}@${version}`
-		: tag
-			? `${name}@${tag}`
-			: name
+	const raw = version ? `${name}@${version}` : tag ? `${name}@${tag}` : name
 	return {
 		name,
 		version,

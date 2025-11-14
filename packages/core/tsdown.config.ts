@@ -43,39 +43,57 @@ export function rewriteDtsModuleAugmentations(map: Record<string, string>) {
 	}
 }
 
+const moduleAugmentationMap = {
+	'@pluxel/context': '@pluxel/core',
+}
+
+const createModuleRewritePlugin = () => rewriteDtsModuleAugmentations(moduleAugmentationMap)
+
+const transformOptions = {
+	assumptions: {
+		setPublicClassFields: true,
+	},
+	typescript: {
+		removeClassFieldsWithoutInitializer: true,
+	},
+	decorator: {
+		legacy: true,
+		emitDecoratorMetadata: true,
+	},
+}
+
 export default defineConfig({
 	exports: {
 		devExports: '@pluxel/source',
 	},
 	entry: {
 		index: 'src/index.ts',
-		service: 'src/service/index.ts',
+		services: 'src/services/index.ts',
 	},
 	dts: {
 		sourcemap: true,
 	},
 	format: ['esm', 'cjs'],
-	plugins: [
-		rewriteDtsModuleAugmentations({
-			'@pluxel/context': '.',
-		}),
-	],
+	plugins: [createModuleRewritePlugin()],
 	sourcemap: true,
 	clean: true,
 	minify: true,
 	treeshake: true,
-	inputOptions: {
-		transform: {
-			assumptions: {
-				setPublicClassFields: true,
-			},
-			typescript: {
-				removeClassFieldsWithoutInitializer: true,
-			},
-			decorator: {
-				legacy: true,
-				emitDecoratorMetadata: true,
-			},
-		},
+	inputOptions(options, _format, context) {
+		options.transform = {
+			...(options.transform ?? {}),
+			...transformOptions,
+		}
+
+		if (!context.cjsDts) return
+
+		const basePlugins = options.plugins
+			? Array.isArray(options.plugins)
+				? options.plugins
+				: [options.plugins]
+			: []
+
+		options.plugins = [...basePlugins, createModuleRewritePlugin()]
+		return options
 	},
 })

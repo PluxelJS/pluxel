@@ -1,6 +1,6 @@
 // packages/hmr/tsconfig.json
 {
-	"extends": "../../tsconfig.src.json",
+	"extends": "../../tsconfig.workspace.json",
 	"include": [
 		"src",
 		"tests",
@@ -10,17 +10,11 @@
 	"compilerOptions": {
 		"outDir": "dist",
 		"jsx": "react-jsx",
-		// 允许带 import assertion 的非 TS 资源，给 manifest 用
-		"resolveJsonModule": true,
+		"lib": ["ES2023", "DOM"],
+		"types": ["@types/bun", "vite/client"],
 		"allowArbitraryExtensions": true,
-		"rootDir": "../..",
-		"module": "ESNext",
-		"moduleResolution": "Bundler",
 		"emitDeclarationOnly": true,
-		"lib": [
-			"DOM",
-			"ES2022"
-		]
-	},
-	"references": []
+		"experimentalDecorators": true,
+		"emitDecoratorMetadata": true
+	}
 }

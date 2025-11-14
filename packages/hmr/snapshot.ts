@@ -2,14 +2,14 @@
 // 2025-10-06T14:24:33.602Z
 /* eslint-disable */
 
-import { PluginB as P_PluginB } from "/home/ahdg/code/plugin-style-ts/packages/hmr/tests/plugins/PluginB.ts";
-import { PluginC as P_PluginC } from "/home/ahdg/code/plugin-style-ts/packages/hmr/tests/plugins/PluginC.ts";
+import { PluginB as P_PluginB } from '/home/ahdg/code/plugin-style-ts/packages/hmr/tests/plugins/PluginB.ts'
+import { PluginC as P_PluginC } from '/home/ahdg/code/plugin-style-ts/packages/hmr/tests/plugins/PluginC.ts'
 
-export { P_PluginB, P_PluginC };
+export { P_PluginB, P_PluginC }
 
 export const registry = {
-  PluginB: { ctor: P_PluginB, config: {} },
-  PluginC: { ctor: P_PluginC, config: {} }
-} as const;
- 
-    export type PluginName = keyof typeof registry;
+	PluginB: { ctor: P_PluginB, config: {} },
+	PluginC: { ctor: P_PluginC, config: {} },
+} as const
+
+export type PluginName = keyof typeof registry
