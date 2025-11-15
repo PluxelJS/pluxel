@@ -1,7 +1,8 @@
 import type { PluginConstructor, Context as PlxContext } from '@pluxel/core'
 import { GraphQLError } from 'graphql'
 import type * as v from 'valibot'
-import type { PluginDependency, PluginScopeOutput } from '../../schema'
+
+import type { PluginDependency, PluginScopeOutput } from './schema'
 
 const PLUGIN_CTOR = Symbol('pluginCtor')
 

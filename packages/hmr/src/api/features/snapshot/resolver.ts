@@ -3,9 +3,9 @@ import { mutation, resolver } from '@gqloom/core'
 import type { Context as PlxContext } from '@pluxel/hmr'
 import { resolve } from 'pathe'
 
-import { BuildSnapshotResult } from '../schema'
+import { BuildSnapshotResult } from './schema'
 
-export function createSnapshotModule(pCtx: PlxContext) {
+export function createSnapshotResolver(pCtx: PlxContext) {
 	return resolver({
 		buildSnapshot: mutation(BuildSnapshotResult)
 			.input({})

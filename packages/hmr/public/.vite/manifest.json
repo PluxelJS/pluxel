@@ -19,7 +19,7 @@
     ]
   },
   "../valibot-form/dist/DebugValues-CquJnlz_.mjs": {
-    "file": "assets/DebugValues-CquJnlz_-DhCqfgsE.js",
+    "file": "assets/DebugValues-CquJnlz_-CiEBbUcR.js",
     "name": "DebugValues-CquJnlz_",
     "src": "../valibot-form/dist/DebugValues-CquJnlz_.mjs",
     "isDynamicEntry": true,
@@ -32,8 +32,8 @@
     "file": "assets/mantine-Bxl3nyhT.css",
     "src": "_mantine-Bxl3nyhT.css"
   },
-  "_mantine-Db-QMeWL.js": {
-    "file": "assets/mantine-Db-QMeWL.js",
+  "_mantine-DtQz44fj.js": {
+    "file": "assets/mantine-DtQz44fj.js",
     "name": "mantine",
     "imports": [
       "_react-D3kJkmPN.js",
@@ -75,13 +75,13 @@
     ]
   },
   "src/client.tsx": {
-    "file": "assets/client-BIECXFpw.js",
+    "file": "assets/client-DDWS8ehA.js",
     "name": "client",
     "src": "src/client.tsx",
     "isEntry": true,
     "imports": [
       "_vendor--7MsD7Vc.js",
-      "_mantine-Db-QMeWL.js",
+      "_mantine-DtQz44fj.js",
       "_tabler-BNnSIHy3.js",
       "_react-D3kJkmPN.js",
       "_rolldown-runtime-D7zIpOPY.js"

@@ -1,8 +1,15 @@
 import * as v from 'valibot'
 
-const lifecycleStages = ['running', 'stopped', 'disabled'] as const
+export const PluginStatusEntryLifecycleStage = v.picklist(['running', 'stopped', 'disabled'] as const)
 
-export const PluginStatusEntryLifecycleStage = v.picklist(lifecycleStages)
+export const PluginSourceInfo = v.object({
+	__typename: v.literal('PluginSourceInfo'),
+	kind: v.picklist(['hmr', 'package', 'unknown'] as const),
+	moduleId: v.nullish(v.string()),
+	packageName: v.nullish(v.string()),
+	version: v.nullish(v.string()),
+	tag: v.nullish(v.string()),
+})
 
 export const PluginStatusEntry = v.object({
 	__typename: v.literal('PluginStatusEntry'),
@@ -10,6 +17,7 @@ export const PluginStatusEntry = v.object({
 	isRunning: v.boolean(),
 	isEnabled: v.boolean(),
 	lifecycleStage: PluginStatusEntryLifecycleStage,
+	source: PluginSourceInfo,
 })
 
 export const PluginStatusSummary = v.object({

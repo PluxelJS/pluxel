@@ -12,7 +12,7 @@ import {
 import { useMediaQuery } from '@mantine/hooks'
 import { memo, useCallback, useMemo } from 'react'
 import { PluginStatusEntryLifecycleStage, type PluginScope, useQuery } from '../../gqty'
-import { PluginScopeProvider } from './context'
+import { PluginScopeProvider, type PluginSourceKind } from './context'
 import { useDebouncedFlag } from './hooks/useDebouncedFlag'
 import { usePluginConfig } from './hooks/usePluginConfig'
 import { PluginLayout } from './PluginLayout'
@@ -106,15 +106,32 @@ function usePluginDetail(pluginName?: string) {
 							dep.name
 							dep.isRunning
 						})
-						scope.status.isRunning
-						scope.status.isEnabled
-						scope.status.lifecycleStage
+						const status = scope.status
+						status.isRunning
+						status.isEnabled
+						status.lifecycleStage
+						const source = status.source
+						source.__typename
+						source.kind
+						source.moduleId
+						source.packageName
+						source.version
+						source.tag
 					}
 				: undefined,
 	})
 
-	const scope: PluginScope | undefined =
-		pluginName !== undefined ? query.plugin({ name: pluginName }) : undefined
+	let scope: PluginScope | undefined
+	if (pluginName !== undefined) {
+		try {
+			scope = query.plugin({ name: pluginName })
+		} catch (error) {
+			if (process.env.NODE_ENV !== 'production') {
+				console.warn('[PluginScreen] Failed to read plugin scope', error)
+			}
+			scope = undefined
+		}
+	}
 	const ready = Boolean(scope?.name)
 
 	return {
@@ -160,6 +177,14 @@ export const PluginScreen = memo(function PluginScreen({ pluginName }: PluginScr
 
 	const contextValue = useMemo(() => {
 		if (!scope) return null
+		const rawSource = scope.status?.source
+		const source = {
+			kind: (rawSource?.kind ?? 'unknown') as PluginSourceKind,
+			moduleId: rawSource?.moduleId ?? null,
+			packageName: rawSource?.packageName ?? null,
+			version: rawSource?.version ?? null,
+			tag: rawSource?.tag ?? null,
+		}
 		return {
 			pluginName: displayName,
 			description,
@@ -169,19 +194,20 @@ export const PluginScreen = memo(function PluginScreen({ pluginName }: PluginScr
 			isSyncing: syncing,
 			isEnabled,
 			lifecycleStage,
+			source,
 			refetch: handleRefetch,
 		}
-		}, [
-			dependencies,
-			description,
-			displayName,
-			handleRefetch,
-			isRunning,
-			isEnabled,
-			lifecycleStage,
-			scope,
-			syncing,
-		])
+	}, [
+		dependencies,
+		description,
+		displayName,
+		handleRefetch,
+		isRunning,
+		isEnabled,
+		lifecycleStage,
+		scope,
+		syncing,
+	])
 
 	if (!pluginName) {
 		return (

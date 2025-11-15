@@ -9,6 +9,16 @@ import type {
 } from '../../gqty'
 import { schema } from '../../gqty'
 
+export type PluginSourceKind = 'hmr' | 'package' | 'unknown'
+
+export interface PluginSourceInfo {
+	kind: PluginSourceKind
+	moduleId: string | null
+	packageName?: string | null
+	version?: string | null
+	tag?: string | null
+}
+
 export interface PluginScopeContextValue {
 	pluginName: string
 	description: string
@@ -18,6 +28,7 @@ export interface PluginScopeContextValue {
 	isEnabled: boolean
 	lifecycleStage: PluginStatusEntryLifecycleStage
 	isSyncing: boolean
+	source: PluginSourceInfo
 	refetch: () => Promise<void>
 	/**
 	 * 原子写入 GQty 代理树（用于全局乐观更新）
@@ -61,6 +72,7 @@ export function usePluginMeta() {
 		isEnabled: ctx.isEnabled,
 		lifecycleStage: ctx.lifecycleStage,
 		isSyncing: ctx.isSyncing,
+		source: ctx.source,
 	}
 }
 

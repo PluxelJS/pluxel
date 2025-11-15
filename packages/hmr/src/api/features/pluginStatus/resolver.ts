@@ -1,45 +1,35 @@
 import { field, mutation, resolver } from '@gqloom/core'
-import type { Context as PlxContext, PluginConstructor } from '@pluxel/core'
-import type { InferOutput } from 'valibot'
+import type { Resolver } from '@gqloom/core'
+import type { Context as PlxContext } from '@pluxel/core'
 
+import { PluginScope } from '../plugins/schema'
+import { createPluginScope, getScopeCtor } from '../plugins/scope'
 import {
-	PluginScope,
 	PluginStatusEntry,
 	PluginStatusMutationResult,
 	UpdateStatusInput,
-	type PluginStatusEntryLifecycleStage,
-} from '../schema'
-import { createPluginScope, getScopeCtor } from './shared/pluginScope'
+} from './schema'
+import { readStatusSnapshot } from './service'
 
-type Status = InferOutput<typeof UpdateStatusInput>['status']
-
-type Snapshot = {
-	isRunning: boolean
-	isEnabled: boolean
-	lifecycleStage: InferOutput<typeof PluginStatusEntryLifecycleStage>
-}
-
-function readStatusSnapshot(pCtx: PlxContext, name: string, ctor: PluginConstructor): Snapshot {
-	const isRunning = pCtx.loader.isRunning(ctor)
-	const isEnabled = pCtx.configService.isEnable(name)
-	const lifecycleStage = !isEnabled ? 'disabled' : isRunning ? 'running' : 'stopped'
-	return { isRunning, isEnabled, lifecycleStage }
-}
-
-export function createPluginStatusModule(pCtx: PlxContext) {
+export function createPluginStatusResolvers(pCtx: PlxContext): Resolver[] {
 	const scopeStatus = resolver.of(PluginScope, {
 		status: field(PluginStatusEntry).resolve((scope) => {
 			const ctor = getScopeCtor(pCtx, scope)
-			const { isRunning, isEnabled, lifecycleStage } = readStatusSnapshot(pCtx, scope.name, ctor)
+			const { isRunning, isEnabled, lifecycleStage, source } = readStatusSnapshot(
+				pCtx,
+				scope.name,
+				ctor,
+			)
 			return {
 				__typename: 'PluginStatusEntry' as const,
 				name: scope.name,
 				isRunning,
 				isEnabled,
 				lifecycleStage,
+				source,
 			}
 		}),
-	})
+	}) as unknown as Resolver
 
 	const mutations = resolver({
 		updatePluginStatus: mutation(PluginStatusMutationResult)
@@ -117,5 +107,5 @@ export function createPluginStatusModule(pCtx: PlxContext) {
 			}),
 	})
 
-	return [scopeStatus, mutations]
+	return [scopeStatus, mutations] satisfies Resolver[]
 }

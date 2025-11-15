@@ -22,3 +22,23 @@ export const PackageLoadIssueEntry = v.object({
 })
 
 export type PackageLoadIssueOutput = v.InferOutput<typeof PackageLoadIssueEntry>
+
+export const PackageSpecifierInput = v.object({
+	raw: v.nullish(v.string()),
+	name: v.nullish(v.string()),
+	version: v.nullish(v.string()),
+	tag: v.nullish(v.string()),
+})
+
+export const PackageRemovalScope = v.picklist(['runtime', 'persisted'])
+
+export const PackageInstallStatus = v.picklist(['installed', 'reused'])
+
+export const PackageMutationResult = v.object({
+	__typename: v.literal('PackageMutationResult'),
+	ok: v.boolean(),
+	code: v.string(),
+	spec: v.nullish(PackageIssueSpec),
+	installStatus: v.nullish(PackageInstallStatus),
+	error: v.nullish(v.string()),
+})

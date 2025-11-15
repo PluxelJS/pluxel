@@ -24,6 +24,7 @@ setTimeout(async () => {
 	if (resolution.ok) {
 		ctx.loader.replaceModule(resolution.dir, await import(resolution.entry))
 	} */
+	ctx.internalGraphql.scheduleRebuild()
 	const a = await ctx.packageService.loadInstalled('pluxel-plugin-redis')
 	console.log(a)
 }, 5000)

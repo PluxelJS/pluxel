@@ -315,6 +315,16 @@ export class PackageService {
 		this.schedulePersistSnapshot()
 	}
 
+	getPackageSpecByModuleId(moduleId: string): NormalizedPackageSpecifier | undefined {
+		const normalized = normalizePath(moduleId)
+		for (const record of this.loadedPackages.values()) {
+			if (normalizePath(record.moduleId) === normalized) {
+				return record.spec
+			}
+		}
+		return undefined
+	}
+
 	/** 将外部包的执行结果灌入 HMR 的 moduleCache，避免重复实例化。 */
 	private primeHmrModuleCache(
 		spec: NormalizedPackageSpecifier,
