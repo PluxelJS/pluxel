@@ -1,0 +1,8 @@
+{
+	"name": "pluxel-cli-build-fixture",
+	"version": "1.0.0",
+	"type": "module",
+	"dependencies": {},
+	"peerDependencies": {},
+	"optionalDependencies": {}
+}

@@ -1,10 +1,10 @@
 #!/usr/bin/env node
-import { cli } from 'gunshi'
-import pkg from '../package.json' 
+import { type Command, cli, type LazyCommand } from 'gunshi'
+import pkg from '../package.json'
 import { buildCommand } from './commands'
 import { newCommand } from './plop'
 
-const commands = new Map([
+const commands = new Map<string, Command<any> | LazyCommand<any>>([
 	['new', newCommand],
 	['build', buildCommand],
 ])

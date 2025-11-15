@@ -301,9 +301,15 @@ importers:
       node-plop:
         specifier: ^0.32.3
         version: 0.32.3(@types/node@24.10.1)
+      parse-imports:
+        specifier: ^3.0.0
+        version: 3.0.0
       pathe:
         specifier: catalog:node
         version: 2.0.3
+      pkg-types:
+        specifier: ^2.3.0
+        version: 2.3.0
 
   packages/components:
     dependencies:
@@ -2998,6 +3004,10 @@ packages:
     resolution: {integrity: sha512-FwdRXKCohSVeXqwtYonZTXtbGJKrn+HNyWDYVcp5yuJlesTwNH4rsmRZ+GrKAPJ5bLpRxESMeS+Rl0VCHRvB2Q==}
     engines: {node: '>=0.8'}
 
+  parse-imports@3.0.0:
+    resolution: {integrity: sha512-IwiqoJANa4O6M76LBWEvoS2iPIUqBOnKG1lV3/J0oVM6V2XjED+mYAXedEMX5xUglVjfGpZOfaEyuOUjBuUE4g==}
+    engines: {node: '>= 22'}
+
   parse-json@5.2.0:
     resolution: {integrity: sha512-ayCKvm/phCGxOkYRSCM82iDwct8/EonSEgCSxWxD7ve6jHggsFl4fZVQBPRNgQoKiuV/odhFrGzQXZwbifC8Rg==}
     engines: {node: '>=8'}
@@ -3407,6 +3417,9 @@ packages:
 
   sisteransi@1.0.5:
     resolution: {integrity: sha512-bLGGlR1QxBcynn2d5YmDX4MGjlZvy2MRBDRNHLJ8VI6l6+9FUiyTFNJ0IveOSP0bcXgVDPRcfGqA0pjaqUpfVg==}
+
+  slashes@3.0.12:
+    resolution: {integrity: sha512-Q9VME8WyGkc7pJf6QEkj3wE+2CnvZMI+XJhwdTPR8Z/kWQRXi7boAWLDibRPyHRTUTPx5FaU7MsyrjI3yLB4HA==}
 
   snake-case@3.0.4:
     resolution: {integrity: sha512-LAOh4z89bGQvl9pFfNF8V146i7o7/CqFPbqzYgP+yYzDIDeS9HaNFtXABamRW+AQzEVODcvE79ljJ+8a9YSdMg==}
@@ -6186,6 +6199,11 @@ snapshots:
       map-cache: 0.2.2
       path-root: 0.1.1
 
+  parse-imports@3.0.0:
+    dependencies:
+      es-module-lexer: 1.7.0
+      slashes: 3.0.12
+
   parse-json@5.2.0:
     dependencies:
       '@babel/code-frame': 7.27.1
@@ -6660,6 +6678,8 @@ snapshots:
   signedsource@1.0.0: {}
 
   sisteransi@1.0.5: {}
+
+  slashes@3.0.12: {}
 
   snake-case@3.0.4:
     dependencies:

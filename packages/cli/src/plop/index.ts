@@ -153,7 +153,7 @@ function createScaffoldPlan(input: string, values: NewCommandValues): ScaffoldPl
 		throw new Error(`Target exists and not empty: ${targetDir}\nUse --force to overwrite.`)
 	}
 
-	return {
+	const plan: ScaffoldPlan = {
 		pluginName,
 		packageName,
 		className: pascalCase(pluginName),
@@ -164,9 +164,14 @@ function createScaffoldPlan(input: string, values: NewCommandValues): ScaffoldPl
 		force,
 		dryRun,
 		install,
-		pm,
 		year: new Date().getFullYear(),
 	}
+
+	if (pm) {
+		plan.pm = pm
+	}
+
+	return plan
 }
 
 async function generateFromTemplate(plan: ScaffoldPlan, log: (...args: unknown[]) => void) {
