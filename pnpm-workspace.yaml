@@ -1,20 +1,6 @@
 packages:
   - packages/*
 
-onlyBuiltDependencies:
-  - '@biomejs/biome'
-  - esbuild
-
-public-hoist-pattern:
-  - react
-  - react-dom
-  - '@tabler/icons-react'
-  - '@mantine/core'
-  - '@mantine/hooks'
-  - '@mantine/dates'
-  - '@mantine/modals'
-  - '@mantine/notifications'
-  - tsdown
 catalogs:
   backend:
     '@hono/node-server': ^1.19.6
@@ -102,3 +88,18 @@ catalogs:
     exsolve: ^1.0.7
     knitwork: ^1.2.0
     xstate: 5.20.1
+
+onlyBuiltDependencies:
+  - '@biomejs/biome'
+  - esbuild
+
+public-hoist-pattern:
+  - react
+  - react-dom
+  - '@tabler/icons-react'
+  - '@mantine/core'
+  - '@mantine/hooks'
+  - '@mantine/dates'
+  - '@mantine/modals'
+  - '@mantine/notifications'
+  - tsdown

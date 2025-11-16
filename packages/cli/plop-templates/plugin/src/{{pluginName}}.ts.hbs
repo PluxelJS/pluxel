@@ -5,7 +5,7 @@ const CfgSchema = v.object({
   test: v.optional(v.boolean(), true),
 })
 
-@Plugin({ name: '{{pluginName}}' })
+@Plugin({ name: '{{packageName}}' })
 export class {{className}} extends BasePlugin {
   @Config(CfgSchema)
   private config!: Config<typeof CfgSchema>

@@ -1,12 +1,13 @@
 #!/usr/bin/env node
 import { type Command, cli, type LazyCommand } from 'gunshi'
 import pkg from '../package.json'
-import { buildCommand } from './commands'
+import { buildCommand, workspaceCommand } from './commands'
 import { newCommand } from './plop'
 
 const commands = new Map<string, Command<any> | LazyCommand<any>>([
 	['new', newCommand],
 	['build', buildCommand],
+	['workspace', workspaceCommand],
 ])
 
 async function main() {

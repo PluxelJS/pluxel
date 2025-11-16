@@ -7,7 +7,7 @@
 		"dist",
 		"!**/*.map"
 	],
-	"version": "0.1.4",
+	"version": "0.2.0",
 	"description": "Demo example that imports a local package",
 	"type": "module",
 	"scripts": {
@@ -15,12 +15,20 @@
 		"build": "tsdown",
 		"test": "bun test"
 	},
+	"peerDependencies": {
+		"tsdown": "^0.16.4"
+	},
 	"dependencies": {
 		"@clack/prompts": "^0.11.0",
+		"fdir": "^6.5.0",
 		"gunshi": "^0.26.3",
 		"node-plop": "^0.32.3",
-		"parse-imports": "^3.0.0",
 		"pathe": "catalog:node",
-		"pkg-types": "^2.3.0"
+		"picomatch": "^4.0.2",
+		"pkg-types": "^2.3.0",
+		"yaml": "^2.5.0"
+	},
+	"devDependencies": {
+		"@types/picomatch": "^4.0.2"
 	}
 }

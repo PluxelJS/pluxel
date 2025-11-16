@@ -19,7 +19,7 @@
     ]
   },
   "../valibot-form/dist/DebugValues-CquJnlz_.mjs": {
-    "file": "assets/DebugValues-CquJnlz_-CiEBbUcR.js",
+    "file": "assets/DebugValues-CquJnlz_-UH9-KLlI.js",
     "name": "DebugValues-CquJnlz_",
     "src": "../valibot-form/dist/DebugValues-CquJnlz_.mjs",
     "isDynamicEntry": true,
@@ -75,7 +75,7 @@
     ]
   },
   "src/client.tsx": {
-    "file": "assets/client-DDWS8ehA.js",
+    "file": "assets/client-CTP_jRDx.js",
     "name": "client",
     "src": "src/client.tsx",
     "isEntry": true,
