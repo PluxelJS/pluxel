@@ -23,7 +23,7 @@
 		"fdir": "^6.5.0",
 		"gunshi": "^0.26.3",
 		"node-plop": "^0.32.3",
-		"pathe": "catalog:node",
+		"pathe": "^2.0.3",
 		"picomatch": "^4.0.2",
 		"pkg-types": "^2.3.0",
 		"yaml": "^2.5.0"

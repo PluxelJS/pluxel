@@ -38,7 +38,7 @@
 		"@pluxel/context": "workspace:*",
 		"diod": "workspace:*",
 		"option-t": "^55.1.0",
-		"tinybench": "catalog:dev"
+		"tinybench": "^5.1.0"
 	},
 	"publishConfig": {
 		"exports": {
