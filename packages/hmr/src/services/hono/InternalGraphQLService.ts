@@ -1,4 +1,4 @@
-import { query, resolver, type Resolver, weave } from '@gqloom/core'
+import { query, type Resolver, resolver, weave } from '@gqloom/core'
 import { ValibotWeaver } from '@gqloom/valibot'
 import { generateClient } from '@gqty/cli'
 import { Injectable, type Context as PlxContext } from '@pluxel/core'
@@ -21,10 +21,6 @@ type ServerCtx = {}
 @Injectable({ key: serviceName })
 export class InternalGraphQLService {
 	private readonly logger: NonNullable<PlxContext['logger']>
-	private readonly endpoint = 'http://localhost:3000/api/graphql'
-	private readonly destination = '../components/src/app/gqty/index.ts'
-	private readonly scalarTypes = { Number: 'number', Object: 'Record<string, unknown>' } as const
-	private readonly enableReactBindings = true
 
 	private schema: GraphQLSchema = this.weaveSchema()
 	private fetcher: (req: Request, ctx: ServerCtx) => Promise<Response>
@@ -91,18 +87,17 @@ export class InternalGraphQLService {
 		if (this.codegenRunning) return
 		this.codegenRunning = true
 		try {
-			this.logger.info('[GQty] Generating client…', { destination: this.destination })
+			this.logger.info('[Internal-GQty] Generating client…')
 
 			await generateClient(this.schema, {
-				endpoint: this.endpoint,
-				destination: this.destination,
-				react: this.enableReactBindings,
-				scalarTypes: this.scalarTypes,
+				endpoint: 'http://localhost:3000/api/graphql',
+				destination: '../components/src/app/gqty/index.ts',
+				react: true,
 			})
 
-			this.logger.info('[GQty] Client generated ✔', { destination: this.destination })
+			this.logger.info('[Internal-GQty] Client generated ✔')
 		} catch (e) {
-			this.logger.error('[GQty] generateClient failed', e)
+			this.logger.error('[Internal-GQty] generateClient failed', e)
 		} finally {
 			this.codegenRunning = false
 		}

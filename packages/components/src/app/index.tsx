@@ -18,6 +18,7 @@ import { Layout, type NavItem } from '../components'
 import { ClientOnly } from './ClientOnly'
 import { Header } from './Header'
 import { LiveLog } from './log_viewer/LiveLog'
+import { PackageManagerPage } from './packages/PackageManagerPage'
 import { Plugin } from './plugins/Plugin'
 import { PluginsLayout } from './plugins/PluginsLayout'
 import { RouterLinkAdapter } from './RouterLinkAdapter'
@@ -25,6 +26,7 @@ import { RouterLinkAdapter } from './RouterLinkAdapter'
 const navItems: NavItem[] = [
 	{ label: '首页', href: '/', exact: true },
 	{ label: '日志', href: '/logs' },
+	{ label: '包管理', href: '/packages' },
 	{ label: '插件', href: '/plugins' },
 ]
 
@@ -51,6 +53,14 @@ function RootAppLayout() {
 
 function PluginsRouteComponent() {
 	return <PluginsLayout />
+}
+
+function PackagesRouteComponent() {
+	return (
+		<ClientOnly>
+			<PackageManagerPage />
+		</ClientOnly>
+	)
 }
 
 function PluginsPlaceholder() {
@@ -96,6 +106,12 @@ const logsRoute = createRoute({
 	component: () => <LiveLog />,
 })
 
+const packagesRoute = createRoute({
+	getParentRoute: () => rootRoute,
+	path: 'packages',
+	component: PackagesRouteComponent,
+})
+
 const pluginsRoute = createRoute({
 	getParentRoute: () => rootRoute,
 	path: 'plugins',
@@ -117,6 +133,7 @@ const pluginDetailRoute = createRoute({
 const routeTree = rootRoute.addChildren([
 	indexRoute,
 	logsRoute,
+	packagesRoute,
 	pluginsRoute.addChildren([pluginsIndexRoute, pluginDetailRoute]),
 ])
 
