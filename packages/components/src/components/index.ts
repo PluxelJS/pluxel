@@ -1,5 +1,6 @@
 export * from 'valibot-form/web'
 export * from './AppHeader'
+export * from './ColorSchemeToggle'
 export * from './Layout'
 export * from './Navbar'
 export * from './PluginOrganizer'

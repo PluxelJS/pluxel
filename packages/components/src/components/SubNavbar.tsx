@@ -1,9 +1,28 @@
-import { Button, Flex, Text } from '@mantine/core'
+import {
+	Avatar,
+	Badge,
+	Button,
+	Group,
+	NavLink,
+	Paper,
+	Stack,
+	Text,
+} from '@mantine/core'
 import React from 'react'
+
+export interface SubNavItem {
+	label: string
+	description?: string
+	badge?: React.ReactNode
+	active?: boolean
+	onClick?: () => void
+}
 
 export interface SubNavBarProps {
 	title?: string
-	items?: string[]
+	description?: string
+	items?: Array<string | SubNavItem>
+	activeIndex?: number
 	userName?: string
 	userEmail?: string
 	onLogout?: () => void
@@ -11,34 +30,80 @@ export interface SubNavBarProps {
 
 export default function SubNavBar({
 	title = '子导航标题',
+	description = '筛选你常用的子功能',
 	items = ['子项一', '子项二', '子项三'],
+	activeIndex,
 	userName = '用户名',
 	userEmail = 'user@example.com',
 	onLogout,
 }: SubNavBarProps) {
+	const normalizedItems: SubNavItem[] = items.map((item) =>
+		typeof item === 'string' ? { label: item } : item,
+	)
+
 	return (
-		<Flex direction="column" align="start" w={217} px="md" py="sm">
-			<Text fz={20} fw={600}>
-				{title}
-			</Text>
+		<Stack w={260} p="md" gap="lg">
+			<Stack gap={4}>
+				<Text fz={20} fw={600}>
+					{title}
+				</Text>
+				<Text size="sm" c="dimmed">
+					{description}
+				</Text>
+			</Stack>
 
-			<Flex flex={1} gap={10} direction="column" align="start" my={30} w="100%">
-				{items.map((label, idx) => (
-					<div key={idx}>{label}</div>
-				))}
-			</Flex>
+			<Stack gap="xs">
+				{normalizedItems.map((item, index) => {
+					const active = item.active ?? activeIndex === index
+					return (
+						<NavLink
+							key={item.label}
+							active={active}
+							label={
+								<Stack gap={2} style={{ lineHeight: 1.2 }}>
+									<Text fw={600}>{item.label}</Text>
+									{item.description && (
+										<Text size="xs" c="dimmed">
+											{item.description}
+										</Text>
+									)}
+								</Stack>
+							}
+							rightSection={
+								item.badge ??
+								(active ? (
+									<Badge color="brand" size="xs" variant="light">
+										进行中
+									</Badge>
+								) : undefined)
+							}
+							onClick={item.onClick}
+							styles={{
+								root: {
+									borderRadius: 12,
+								},
+							}}
+						/>
+					)
+				})}
+			</Stack>
 
-			<Flex w="100%" px={10} py={10} justify="space-between" align="center">
-				<Flex direction="column" align="start">
-					<Text fz={14} fw={600}>
-						{userName}
-					</Text>
-					<Text fz={12}>{userEmail}</Text>
-				</Flex>
-				<Button m={0} p={8} onClick={onLogout}>
-					登出
-				</Button>
-			</Flex>
-		</Flex>
+			<Paper withBorder>
+				<Group align="flex-start" wrap="nowrap">
+					<Avatar radius="xl" color="brand">
+						{userName?.slice(0, 1) ?? 'U'}
+					</Avatar>
+					<div style={{ flex: 1, minWidth: 0 }}>
+						<Text fw={600}>{userName}</Text>
+						<Text size="sm" c="dimmed">
+							{userEmail}
+						</Text>
+					</div>
+					<Button variant="light" size="xs" onClick={onLogout}>
+						登出
+					</Button>
+				</Group>
+			</Paper>
+		</Stack>
 	)
 }

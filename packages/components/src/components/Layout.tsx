@@ -1,7 +1,14 @@
 // src/components/Layout/Layout.tsx
 
-import { AppShell, Box, Overlay, useMantineTheme } from '@mantine/core'
-import { useMediaQuery } from '@mantine/hooks'
+import {
+	AppShell,
+	Box,
+	Overlay,
+	rgba,
+	useComputedColorScheme,
+	useMantineTheme,
+} from '@mantine/core'
+import { useLocalStorage, useMediaQuery } from '@mantine/hooks'
 import type React from 'react'
 import { type ReactNode, useCallback, useEffect, useMemo, useState } from 'react'
 import AppHeader, { type AppHeaderProps } from './AppHeader'
@@ -63,6 +70,7 @@ export interface LayoutProps {
 	footerHeight?: number
 	currentPath?: string
 	navbarWidth?: number
+	compactNavbarWidth?: number
 
 	children: ReactNode
 }
@@ -79,12 +87,13 @@ export function Layout({
 	navItems,
 	LinkComponent,
 	navbarWidth = 280,
+	compactNavbarWidth = 84,
 	// Drawer state
 	opened: openedProp,
 	defaultOpened = true,
 	onOpenedChange,
 	// Behavior
-	collapseDesktop = false,
+	collapseDesktop = true,
 	closeOnRouteChange = true,
 	lockScrollOnMobile = true,
 	// Misc
@@ -94,18 +103,33 @@ export function Layout({
 	children,
 }: LayoutProps) {
 	const theme = useMantineTheme()
+	const colorScheme = useComputedColorScheme('light', { getInitialValueInEffect: true })
 	const isMobile = useMediaQuery(`(max-width: ${theme.breakpoints.sm})`, undefined, {
 		// SSR 安全：首帧不读 window
+		getInitialValueInEffect: true,
+	})
+	const [storedOpened, setStoredOpened] = useLocalStorage<boolean>({
+		key: 'pluxel:layout:sidebar-open',
+		defaultValue: defaultOpened,
+		getInitialValueInEffect: true,
+	})
+	const [compactNavbar, setCompactNavbar] = useLocalStorage<boolean>({
+		key: 'pluxel:layout:sidebar-compact',
+		defaultValue: false,
 		getInitialValueInEffect: true,
 	})
 
 	// —— 受控/非受控 —— //
 	const [opened, setOpened] = useControllable<boolean>({
 		value: openedProp,
-		defaultValue: defaultOpened,
-		onChange: onOpenedChange,
+		defaultValue: storedOpened,
+		onChange: (value) => {
+			setStoredOpened(value)
+			onOpenedChange?.(value)
+		},
 	})
 	const toggle = useCallback(() => setOpened((v) => !v), [setOpened])
+	const toggleCompact = useCallback(() => setCompactNavbar((v) => !v), [setCompactNavbar])
 
 	// 移动端切路由自动收起（避免遮罩残留）
 	useEffect(() => {
@@ -130,7 +154,10 @@ export function Layout({
 	}, [isMobile, opened, lockScrollOnMobile])
 
 	// —— 用于 render props 的上下文对象 —— //
-	const ctx = useMemo(() => ({ opened, toggle, isMobile }), [opened, toggle, isMobile])
+	const ctx = useMemo(
+		() => ({ opened, toggle, isMobile, compact: compactNavbar, toggleCompact }),
+		[opened, toggle, isMobile, compactNavbar, toggleCompact],
+	)
 
 	// —— 组装 Header —— //
 	const headerNode = useMemo(() => {
@@ -152,24 +179,57 @@ export function Layout({
 		if (typeof navbar === 'function') return navbar(ctx)
 		if (navbar) return navbar
 		if (!navItems?.length || !LinkComponent) return null
-		return <Navbar navItems={navItems} LinkComponent={LinkComponent} currentPath={currentPath} />
-	}, [navbar, navItems, LinkComponent, currentPath, ctx])
+		return (
+			<Navbar
+				navItems={navItems}
+				LinkComponent={LinkComponent}
+				currentPath={currentPath}
+				compact={compactNavbar}
+				onCompactToggle={toggleCompact}
+			/>
+		)
+	}, [navbar, navItems, LinkComponent, currentPath, ctx, compactNavbar, toggleCompact])
 
 	// —— Main 高度：一次算清 —— //
 	const mainHeight = `calc(100dvh - ${headerHeight}px - ${footerHeight}px)`
+
+	const borderColor =
+		colorScheme === 'dark'
+			? rgba(theme.colors.gray[8], 0.65)
+			: rgba(theme.colors.gray[3], 0.8)
+	const mainBackground =
+		colorScheme === 'dark'
+			? 'linear-gradient(135deg, rgba(23,25,35,0.95) 0%, rgba(12,13,19,1) 100%)'
+			: 'linear-gradient(135deg, rgba(247,249,255,1) 0%, rgba(255,255,255,1) 60%)'
+
+	const computedNavbarWidth = compactNavbar ? compactNavbarWidth : navbarWidth
+	const desktopCollapsed = collapseDesktop ? !opened : false
 
 	return (
 		<AppShell
 			padding={0}
 			data-nav-opened={opened ? 'true' : 'false'}
+			data-nav-compact={compactNavbar ? 'true' : undefined}
 			header={{ height: headerHeight }}
 			navbar={{
-				width: navbarWidth,
+				width: computedNavbarWidth,
 				breakpoint: 'sm',
 				// 桌面端是否参与折叠由 collapseDesktop 决定；移动端一定可折叠
 				collapsed: {
 					mobile: !opened,
-					desktop: collapseDesktop ? !opened : false,
+					desktop: desktopCollapsed,
+				},
+			}}
+			styles={{
+				main: {
+					backgroundImage: mainBackground,
+					minHeight: '100dvh',
+				},
+				navbar: {
+					borderRight: `1px solid ${borderColor}`,
+				},
+				header: {
+					borderBottom: `1px solid ${borderColor}`,
 				},
 			}}
 		>
@@ -213,7 +273,8 @@ export function Layout({
 						right: 0,
 						bottom: 0,
 					}}
-					opacity={0.2}
+					color={theme.black}
+					opacity={colorScheme === 'dark' ? 0.6 : 0.3}
 					blur={0}
 				/>
 			)}

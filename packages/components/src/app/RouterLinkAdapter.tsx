@@ -1,6 +1,7 @@
 import type React from 'react'
 import { forwardRef, useCallback } from 'react'
 import { useNavigate, useRouter } from '@tanstack/react-router'
+import { HOME_MANUAL_KEY } from './constants'
 
 export type RouterLinkAdapterProps = {
 	to: string
@@ -35,6 +36,11 @@ export const RouterLinkAdapter = forwardRef<HTMLAnchorElement, RouterLinkAdapter
 				}
 
 				event.preventDefault()
+				if (to === '/') {
+					try {
+						window.sessionStorage.setItem(HOME_MANUAL_KEY, 'true')
+					} catch {}
+				}
 				void navigate({ to })
 			},
 			[navigate, onClick, target, to],

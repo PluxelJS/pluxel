@@ -23,8 +23,8 @@ import {
 	ActionIcon,
 	Badge,
 	Box,
-	Divider,
 	Group,
+	Paper,
 	Skeleton,
 	Stack,
 	Text,
@@ -244,15 +244,15 @@ export const PluginList: React.FC<PluginListProps> = ({ pluginName }) => {
 		content = <Text c="dimmed">暂无插件</Text>
 	} else {
 		content = (
-				<PluginOrganizer
-					statuses={overview.statuses}
-					initialGroups={groupsForView}
-					activeId={pluginName}
-					onGroupsChange={handleGroupsChange}
-					filterQuery={filterQuery}
-					LinkComponent={RouterLinkAdapter}
-					locked={syncing}
-				/>
+			<PluginOrganizer
+				statuses={overview.statuses}
+				initialGroups={groupsForView}
+				activeId={pluginName}
+				onGroupsChange={handleGroupsChange}
+				filterQuery={filterQuery}
+				LinkComponent={RouterLinkAdapter}
+				locked={syncing}
+			/>
 		)
 	}
 
@@ -262,42 +262,56 @@ export const PluginList: React.FC<PluginListProps> = ({ pluginName }) => {
 			w="100%"
 			style={{ minWidth: 0, minHeight: '100%', height: '100%', flex: 1, overflow: 'hidden' }}
 		>
-			<Stack gap="sm" style={{ minWidth: 0 }}>
-				<Group justify="space-between" align="center" gap="xs" wrap="wrap" style={{ minWidth: 0 }}>
-					<Title order={6} fw={600} c="dimmed">
-						浏览与分组
-					</Title>
+			<Paper withBorder radius="md" p="sm">
+				<Group justify="space-between" align="center" gap="sm" wrap="wrap">
+					<Title order={6}>插件工作台</Title>
 					{!loading && !errorMessage && (
-						<Group gap="xs">
-							<Badge variant="light" size="sm" suppressHydrationWarning>
+						<Group gap={6}>
+							<Badge variant="light" size="xs" suppressHydrationWarning>
 								共 {overview.total}
 							</Badge>
-							<Badge variant="light" size="sm" color="green" suppressHydrationWarning>
+							<Badge variant="light" size="xs" color="green" suppressHydrationWarning>
 								运行中 {overview.running}
 							</Badge>
 							{syncing && (
-								<Badge variant="light" size="sm" color="blue">
-									同步中…
+								<Badge variant="light" size="xs" color="blue">
+									同步…
 								</Badge>
 							)}
 						</Group>
 					)}
 				</Group>
-
+				<Text c="dimmed" size="xs" mt={4}>
+					按 / 或 Ctrl/⌘ + F 快速搜索
+				</Text>
 				<TextInput
 					ref={inputRef}
+					mt="xs"
 					placeholder="搜索（组名 / 插件名称 / 插件ID）"
 					value={search}
 					onChange={(e) => setSearch(e.currentTarget.value)}
 					leftSection={<IconSearch size={14} />}
 					rightSection={clearBtn}
 					size="xs"
+					variant="filled"
+					radius="sm"
 				/>
+			</Paper>
 
-				<Divider />
-			</Stack>
-
-			<Box style={{ flex: 1, minHeight: 0, minWidth: 0 }}>{content}</Box>
+			<Box
+				style={{
+					flex: 1,
+					minHeight: 0,
+					minWidth: 0,
+					padding: 'var(--mantine-spacing-xs)',
+					background: 'var(--mantine-color-body)',
+					borderRadius: 12,
+					display: 'flex',
+					flexDirection: 'column',
+				}}
+			>
+				<Box style={{ flex: 1, minHeight: 0 }}>{content}</Box>
+			</Box>
 		</Stack>
 	)
 }

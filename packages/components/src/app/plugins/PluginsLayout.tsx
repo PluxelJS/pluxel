@@ -3,12 +3,10 @@
 import {
 	Box,
 	Button,
-	Card,
-	CardSection,
 	Center,
-	Divider,
 	Drawer,
 	Group,
+	Paper,
 	Stack,
 	Text,
 	Title,
@@ -43,7 +41,7 @@ export const PluginsLayout: React.FC = () => {
 		if (isSmall && pluginName) close()
 	}, [isSmall, pluginName, close])
 
-	const sidebarWidth = 'clamp(180px, 22vw, 240px)'
+	const sidebarWidth = 'clamp(220px, 24vw, 320px)'
 
 	return (
 		// 关键：根层必须“封顶”并禁止向外溢出，这样页面不滚，只在内部滚
@@ -70,8 +68,12 @@ export const PluginsLayout: React.FC = () => {
 			>
 				{/* 左栏：桌面常驻 + 独立滚动 */}
 				{!isSmall && (
-					<Card
+					<Paper
 						w={sidebarWidth}
+						withBorder
+						radius="xl"
+						px="md"
+						py="sm"
 						style={{
 							flex: '0 0 auto',
 							display: 'flex',
@@ -79,25 +81,23 @@ export const PluginsLayout: React.FC = () => {
 							minHeight: 0,
 						}}
 					>
-						<CardSection withBorder px="md" py="sm">
-							<Group justify="space-between" wrap="nowrap">
-								<Title order={6}>插件列表</Title>
-							</Group>
-						</CardSection>
-
-						<CardSection
-							px="md"
-							py="sm"
-							style={{ flex: 1, minHeight: 0, display: 'flex', overflow: 'hidden' }}
-						>
+						<Group justify="space-between" mb="sm">
+							<Title order={5}>插件浏览</Title>
+							<Text size="xs" c="dimmed">
+								智能分组
+							</Text>
+						</Group>
+						<Box style={{ flex: 1, minHeight: 0, display: 'flex', overflow: 'hidden' }}>
 							<PluginList pluginName={pluginName} />
-						</CardSection>
-					</Card>
+						</Box>
+					</Paper>
 				)}
 
 				{/* 右栏：主内容（内部自行处理滚动） */}
-				<Box
-					// 关键：右栏外层先截断溢出，防止把父容器“顶高”
+				<Paper
+					withBorder
+					radius="xl"
+					p="md"
 					style={{
 						flex: 1,
 						minWidth: 0,
@@ -111,12 +111,13 @@ export const PluginsLayout: React.FC = () => {
 						<Outlet />
 					) : (
 						<Center style={{ flex: 1 }}>
-							<Text c="dimmed" size="lg">
-								请选择一个插件以查看详情
-							</Text>
+							<Stack align="center" gap="xs">
+								<Title order={4}>还没有选择插件</Title>
+								<Text c="dimmed">从左侧列表挑选一个插件，查看运行状态与设置。</Text>
+							</Stack>
 						</Center>
 					)}
-				</Box>
+				</Paper>
 			</Group>
 
 			{/* 移动端抽屉：左栏 */}
@@ -128,9 +129,16 @@ export const PluginsLayout: React.FC = () => {
 				padding="md"
 				title="插件"
 				keepMounted
+				styles={{
+					content: {
+						background:
+							theme.colorScheme === 'dark'
+								? theme.colors.dark[7]
+								: theme.colors.gray[0],
+					},
+				}}
 			>
 				<Stack gap="sm" style={{ height: '100%', minHeight: 0 }}>
-					<Divider label="浏览与分组" />
 					<Box style={{ flex: 1, minHeight: 0, display: 'flex', overflow: 'hidden' }}>
 						<PluginList pluginName={pluginName} />
 					</Box>
