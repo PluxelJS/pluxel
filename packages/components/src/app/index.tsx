@@ -10,10 +10,21 @@ import {
 	Stack,
 	Text,
 	Title,
+	localStorageColorSchemeManager,
 	useComputedColorScheme,
 } from '@mantine/core'
 import { ModalsProvider } from '@mantine/modals'
 import { Notifications } from '@mantine/notifications'
+import {
+	IconBolt,
+	IconClockPlay,
+	IconHistory,
+	IconHome2,
+	IconKeyboard,
+	IconPackages,
+	IconPlugConnected,
+	IconPuzzle,
+} from '@tabler/icons-react'
 import {
 	createBrowserHistory,
 	createMemoryHistory,
@@ -26,27 +37,22 @@ import {
 	useNavigate,
 	useRouterState,
 } from '@tanstack/react-router'
-import { useEffect, useState, type ReactNode } from 'react'
+import { type ReactNode, useEffect, useState } from 'react'
 import { Layout, type NavItem } from '../components'
-import {
-	IconBolt,
-	IconClockPlay,
-	IconHome2,
-	IconHistory,
-	IconKeyboard,
-	IconPackages,
-	IconPlugConnected,
-	IconPuzzle,
-} from '@tabler/icons-react'
 import { ClientOnly } from './ClientOnly'
+import { HOME_MANUAL_KEY, LAST_ROUTE_KEY } from './constants'
 import { Header } from './Header'
 import { LiveLog } from './log_viewer/LiveLog'
 import { PackageManagerPage } from './packages/PackageManagerPage'
 import { Plugin } from './plugins/Plugin'
 import { PluginsLayout } from './plugins/PluginsLayout'
 import { RouterLinkAdapter } from './RouterLinkAdapter'
-import { HOME_MANUAL_KEY, LAST_ROUTE_KEY } from './constants'
 import { getPatternStyle } from '../patterns'
+import { theme } from '../theme'
+
+const colorSchemeManager = localStorageColorSchemeManager({
+	key: 'pluxel-color-scheme',
+})
 
 const navItems: NavItem[] = [
 	{ label: '首页', href: '/', exact: true, icon: <IconHome2 size={18} stroke={1.7} /> },
@@ -67,7 +73,14 @@ function RootAppLayout() {
 	}, [pathname])
 
 	return (
-		<MantineProvider withGlobalClasses={false} deduplicateCssVariables={false}>
+		<MantineProvider
+			theme={theme}
+			defaultColorScheme="auto"
+			colorSchemeManager={colorSchemeManager}
+			withCssVariables
+			withGlobalClasses={false}
+			deduplicateCssVariables={false}
+		>
 			<ModalsProvider>
 				<Notifications position="top-center" />
 				<Layout
@@ -278,8 +291,7 @@ function HomeIntro({ lastRoute }: { lastRoute: string | null }) {
 								display: 'flex',
 								flexDirection: 'column',
 								gap: 12,
-								backgroundColor:
-									scheme === 'dark' ? 'rgba(2,6,23,0.85)' : 'rgba(255,255,255,0.92)',
+								backgroundColor: scheme === 'dark' ? 'rgba(2,6,23,0.85)' : 'rgba(255,255,255,0.92)',
 								borderColor: scheme === 'dark' ? 'rgba(148,163,184,0.2)' : undefined,
 							}}
 						>
@@ -296,9 +308,7 @@ function HomeIntro({ lastRoute }: { lastRoute: string | null }) {
 										height: 32,
 										borderRadius: '50%',
 										background:
-											scheme === 'dark'
-												? 'rgba(99,102,241,0.25)'
-												: 'rgba(99,102,241,0.12)',
+											scheme === 'dark' ? 'rgba(99,102,241,0.25)' : 'rgba(99,102,241,0.12)',
 										display: 'flex',
 										alignItems: 'center',
 										justifyContent: 'center',

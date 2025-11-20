@@ -14,7 +14,7 @@ import {
 	useMantineTheme,
 } from '@mantine/core'
 import type React from 'react'
-import { forwardRef, memo, useCallback, useEffect, useMemo, useState } from 'react'
+import { forwardRef, memo, useEffect, useMemo, useState } from 'react'
 import {
 	IconLayoutSidebarLeftCollapse,
 	IconLayoutSidebarRightExpand,
@@ -74,26 +74,6 @@ const Navbar = memo(function Navbar({
 	onCompactToggle,
 }: NavbarProps) {
 	const theme = useMantineTheme()
-	const getVariant = useCallback(
-		(color: string, variant: 'light' | 'filled') => {
-			if (theme.fn?.variant) return theme.fn.variant({ color, variant })
-			const palette = theme.colors[color as keyof typeof theme.colors] ?? theme.colors.blue
-			if (!palette) return { background: undefined, color: undefined, border: undefined }
-			if (variant === 'filled') {
-				return {
-					background: palette[6],
-					color: theme.white,
-					border: palette[6],
-				}
-			}
-			return {
-				background: palette[0],
-				color: palette[9],
-				border: palette[1],
-			}
-		},
-		[theme],
-	)
 	// —— 激活态：优先使用 props.currentPath；否则仅在挂载后读取一次 pathname，避免 SSR 水位差 ——
 	const [pathname, setPathname] = useState<string>('')
 	useEffect(() => {
@@ -196,18 +176,27 @@ const Navbar = memo(function Navbar({
 					const active = getIsActive(pathname, href, exact)
 					const normalizedLabel = typeof label === 'string' ? label.trim() : ''
 					const showFullLabel = !compact || normalizedLabel.length <= 3
-					const variant = getVariant(
-						theme.primaryColor,
-						theme.colorScheme === 'dark' ? 'filled' : 'light',
-					)
+					const brandPalette =
+						theme.colors.brand ?? theme.colors[theme.primaryColor as keyof typeof theme.colors]
+					const activeBg = active
+						? theme.colorScheme === 'dark'
+							? rgba(brandPalette[4], 0.4)
+							: brandPalette[0]
+						: undefined
+					const activeColor = active
+						? theme.colorScheme === 'dark'
+							? theme.white
+							: brandPalette[8]
+						: undefined
 					const baseBorder =
 						theme.colorScheme === 'dark'
 							? rgba(theme.colors.dark[5], 0.6)
 							: rgba(theme.colors.gray[3], 0.85)
 					const borderColor = active
-						? variant.border ?? variant.background ?? baseBorder
+						? theme.colorScheme === 'dark'
+							? rgba(brandPalette[5], 0.7)
+							: brandPalette[2]
 						: baseBorder
-					const activeBg = active ? variant.background : undefined
 					const navLink = (
 						<NavLink
 							key={href}
@@ -227,14 +216,20 @@ const Navbar = memo(function Navbar({
 									border: `1px solid ${borderColor}`,
 									backgroundColor: activeBg,
 									transition: 'border-color 120ms ease, background-color 120ms ease',
-									color: active ? variant.color : undefined,
+									color: activeColor,
 									justifyContent: showFullLabel ? 'flex-start' : 'center',
 									paddingInline: showFullLabel ? undefined : theme.spacing.sm,
 								},
 								body: {
 									fontWeight: active ? 600 : 500,
 									display: showFullLabel ? undefined : 'none',
-									color: active ? variant.color : undefined,
+									color: activeColor,
+								},
+								label: {
+									color: activeColor,
+								},
+								icon: {
+									color: active ? activeColor : undefined,
 								},
 							}}
 						/>
