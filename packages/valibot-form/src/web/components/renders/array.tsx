@@ -14,6 +14,7 @@ import {
 } from '@mantine/core'
 import { IconArrowDown, IconArrowUp, IconPlus, IconTrash } from '@tabler/icons-react'
 import { useEffect, useMemo, useState } from 'react'
+import type { ReactNode } from 'react'
 import { DEFAULT_TEXTS } from '~/core/constants'
 import type { ArrayMetaResult } from '~/core/actions/array'
 import type { CommonProps } from '~/core/registry'
@@ -199,30 +200,38 @@ function ArrayField(props: RendererProps) {
 		updateItems(next)
 	}
 
-	const renderControl = (index: number, current: unknown) => {
+	type ControlRenderResult = { node: ReactNode; inline?: boolean }
+
+	const renderControl = (index: number, current: unknown): ControlRenderResult => {
 		const mode = inferMode(ep.valueMode, current)
 		switch (mode) {
 			case 'number':
-				return (
-					<NumberInput
-						value={typeof current === 'number' ? current : ''}
-						onChange={(val) => {
-							const parsed = val === '' || val === undefined ? undefined : Number(val)
-							handleChange(index, parsed ?? 0)
-						}}
-						disabled={inputProps.disabled ?? false}
-					/>
-				)
+				return {
+					node: (
+						<NumberInput
+							value={typeof current === 'number' ? current : ''}
+							onChange={(val) => {
+								const parsed = val === '' || val === undefined ? undefined : Number(val)
+								handleChange(index, parsed ?? 0)
+							}}
+							disabled={inputProps.disabled ?? false}
+						/>
+					),
+				}
 			case 'boolean':
-				return (
-					<Switch
-						checked={Boolean(current)}
-						onChange={(event) => {
-							handleChange(index, (event.currentTarget as HTMLInputElement).checked)
-						}}
-						disabled={inputProps.disabled ?? false}
-					/>
-				)
+				return {
+					inline: true,
+					node: (
+						<Switch
+							label={`${itemLabel} #${index + 1}`}
+							checked={Boolean(current)}
+							onChange={(event) => {
+								handleChange(index, (event.currentTarget as HTMLInputElement).checked)
+							}}
+							disabled={inputProps.disabled ?? false}
+						/>
+					),
+				}
 			case 'json': {
 				const formatted =
 					current && typeof current === 'object'
@@ -230,68 +239,172 @@ function ArrayField(props: RendererProps) {
 						: typeof current === 'string'
 							? current
 							: '{}'
-				return (
-					<Textarea
-						key={`${index}-${items.length}-${typeof current === 'object' ? JSON.stringify(current) : current}`}
-						defaultValue={formatted}
-						minRows={4}
-						autosize
-						onBlur={(event) => {
-							const value = (event.currentTarget as HTMLTextAreaElement).value
-							try {
-								const parsed = JSON.parse(value || '{}')
-								handleChange(index, parsed)
-								setJsonParseErrors((prev) => {
-									const next = { ...prev }
-									delete next[index]
-									return next
-								})
-							} catch {
-								setJsonParseErrors((prev) => ({
-									...prev,
-									[index]: DEFAULT_TEXTS.validation.jsonError,
-								}))
-							}
-						}}
-						disabled={inputProps.disabled ?? false}
-						styles={{
-							input: { fontFamily: 'var(--mantine-font-family-monospace)' },
-						}}
-					/>
-				)
+				return {
+					node: (
+						<Textarea
+							key={`${index}-${items.length}-${typeof current === 'object' ? JSON.stringify(current) : current}`}
+							defaultValue={formatted}
+							minRows={4}
+							autosize
+							onBlur={(event) => {
+								const value = (event.currentTarget as HTMLTextAreaElement).value
+								try {
+									const parsed = JSON.parse(value || '{}')
+									handleChange(index, parsed)
+									setJsonParseErrors((prev) => {
+										const next = { ...prev }
+										delete next[index]
+										return next
+									})
+								} catch {
+									setJsonParseErrors((prev) => ({
+										...prev,
+										[index]: DEFAULT_TEXTS.validation.jsonError,
+									}))
+								}
+							}}
+							disabled={inputProps.disabled ?? false}
+							styles={{
+								input: { fontFamily: 'var(--mantine-font-family-monospace)' },
+							}}
+						/>
+					),
+				}
 			}
 			case 'picklist': {
 				const currentId = current == null ? null : idOf(current as string | number)
-				return (
-					<Select
-						data={pickMeta.data}
-						value={currentId ?? null}
-						onChange={(id) => {
-							if (id === null) return handleChange(index, null)
-							const raw = pickMeta.map.get(id!) ?? (pickMeta.isAllNumbers ? Number(id) : id)
-							handleChange(index, raw)
-						}}
-						disabled={inputProps.disabled ?? false}
-						{...cleanProps({
-							placeholder: ep.picklist?.placeholder,
-							clearable: ep.picklist?.clearable,
-							searchable: ep.picklist?.searchable,
-						})}
-					/>
-				)
+				return {
+					node: (
+						<Select
+							data={pickMeta.data}
+							value={currentId ?? null}
+							onChange={(id) => {
+								if (id === null) return handleChange(index, null)
+								const raw = pickMeta.map.get(id!) ?? (pickMeta.isAllNumbers ? Number(id) : id)
+								handleChange(index, raw)
+							}}
+							disabled={inputProps.disabled ?? false}
+							{...cleanProps({
+								placeholder: ep.picklist?.placeholder,
+								clearable: ep.picklist?.clearable,
+								searchable: ep.picklist?.searchable,
+							})}
+						/>
+					),
+				}
 			}
 			default:
-				return (
-					<TextInput
-						value={typeof current === 'string' ? current : current == null ? '' : String(current)}
-						onChange={(event) => {
-							handleChange(index, (event.currentTarget as HTMLInputElement).value)
-						}}
-						disabled={inputProps.disabled ?? false}
-					/>
-				)
+				return {
+					node: (
+						<TextInput
+							value={typeof current === 'string' ? current : current == null ? '' : String(current)}
+							onChange={(event) => {
+								handleChange(index, (event.currentTarget as HTMLInputElement).value)
+							}}
+							disabled={inputProps.disabled ?? false}
+						/>
+					),
+				}
 		}
 	}
+
+	const renderActions = (idx: number) => (
+		<Group gap="xs">
+			{canReorder ? (
+				<>
+					<ActionIcon
+						variant="subtle"
+						onClick={() => handleMove(idx, -1)}
+						disabled={idx === 0 || (inputProps.disabled ?? false)}
+						aria-label="上移"
+					>
+						<IconArrowUp size={16} />
+					</ActionIcon>
+					<ActionIcon
+						variant="subtle"
+						onClick={() => handleMove(idx, 1)}
+						disabled={idx === items.length - 1 || (inputProps.disabled ?? false)}
+						aria-label="下移"
+					>
+						<IconArrowDown size={16} />
+					</ActionIcon>
+				</>
+			) : null}
+			{canRemove ? (
+				<ActionIcon
+					variant="subtle"
+					color="red"
+					onClick={() => handleRemove(idx)}
+					disabled={(inputProps.disabled ?? false) || items.length <= minItems}
+					aria-label="删除"
+				>
+					<IconTrash size={16} />
+				</ActionIcon>
+			) : null}
+		</Group>
+	)
+
+	const renderErrors = (idx: number) => {
+		const combined = [
+			...(itemErrorsMap.get(idx) ?? []),
+			jsonParseErrors[idx] ?? undefined,
+		].filter(Boolean) as string[]
+		if (!combined.length) return null
+		return (
+			<Text size="xs" c="red.6">
+				{combined.join(', ')}
+			</Text>
+		)
+	}
+
+	const renderItemCard = (item: unknown, idx: number) => {
+		const { node, inline } = renderControl(idx, item)
+		const errorsNode = renderErrors(idx)
+		const actionsNode = renderActions(idx)
+
+		if (inline) {
+			return {
+				inline: true,
+				element: (
+					<Card
+						key={`${idx}-${layout}`}
+						withBorder
+						shadow="xs"
+						p="md"
+						style={{ flex: '0 1 280px' }}
+					>
+						<Group justify="space-between" align="center">
+							{node}
+							{actionsNode}
+						</Group>
+						{errorsNode ? <div style={{ marginTop: 6 }}>{errorsNode}</div> : null}
+					</Card>
+				),
+			}
+		}
+
+		return {
+			inline: false,
+			element: (
+				<Card key={`${idx}-${layout}`} withBorder shadow="xs" p="md">
+					<Group justify="space-between" mb="sm">
+						<Text fw={600}>
+							{itemLabel} #{idx + 1}
+						</Text>
+						{actionsNode}
+					</Group>
+					<Stack gap={6}>
+						{node}
+						{errorsNode}
+					</Stack>
+				</Card>
+			),
+		}
+	}
+
+	const renderedCards = items.map((item, idx) => renderItemCard(item, idx))
+	const inlineCards = renderedCards.filter((item) => item.inline).map((item) => item.element)
+	const blockCards = renderedCards.filter((item) => !item.inline).map((item) => item.element)
 
 	const itemsNode =
 		items.length === 0 ? (
@@ -302,122 +415,17 @@ function ArrayField(props: RendererProps) {
 			</Card>
 		) : layout === 'grid' ? (
 			<SimpleGrid cols={columns} spacing="md">
-				{items.map((item, idx) => (
-					<Card key={`${idx}-${columns}`} withBorder shadow="xs" p="md">
-						<Group justify="space-between" mb="sm">
-							<Text fw={600}>
-								{itemLabel} #{idx + 1}
-							</Text>
-							<Group gap="xs">
-								{canReorder ? (
-									<>
-										<ActionIcon
-											variant="subtle"
-											onClick={() => handleMove(idx, -1)}
-											disabled={idx === 0 || (inputProps.disabled ?? false)}
-											aria-label="上移"
-										>
-											<IconArrowUp size={16} />
-										</ActionIcon>
-										<ActionIcon
-											variant="subtle"
-											onClick={() => handleMove(idx, 1)}
-											disabled={idx === items.length - 1 || (inputProps.disabled ?? false)}
-											aria-label="下移"
-										>
-											<IconArrowDown size={16} />
-										</ActionIcon>
-									</>
-								) : null}
-								{canRemove ? (
-									<ActionIcon
-										variant="subtle"
-										color="red"
-										onClick={() => handleRemove(idx)}
-										disabled={(inputProps.disabled ?? false) || items.length <= minItems}
-										aria-label="删除"
-									>
-										<IconTrash size={16} />
-									</ActionIcon>
-								) : null}
-							</Group>
-						</Group>
-						<Stack gap={6}>
-							{renderControl(idx, item)}
-							{(() => {
-								const combined = [
-									...(itemErrorsMap.get(idx) ?? []),
-									jsonParseErrors[idx] ?? undefined,
-								].filter(Boolean) as string[]
-								return combined.length ? (
-									<Text size="xs" c="red.6">
-										{combined.join(', ')}
-									</Text>
-								) : null
-							})()}
-						</Stack>
-					</Card>
-				))}
+				{renderedCards.map((item) => item.element)}
 			</SimpleGrid>
 		) : (
-			<Stack gap="md">
-				{items.map((item, idx) => (
-					<Card key={`${idx}-list`} withBorder shadow="xs" p="md">
-						<Group justify="space-between" mb="sm">
-							<Text fw={600}>
-								{itemLabel} #{idx + 1}
-							</Text>
-							<Group gap="xs">
-								{canReorder ? (
-									<>
-										<ActionIcon
-											variant="subtle"
-											onClick={() => handleMove(idx, -1)}
-											disabled={idx === 0 || (inputProps.disabled ?? false)}
-											aria-label="上移"
-										>
-											<IconArrowUp size={16} />
-										</ActionIcon>
-										<ActionIcon
-											variant="subtle"
-											onClick={() => handleMove(idx, 1)}
-											disabled={idx === items.length - 1 || (inputProps.disabled ?? false)}
-											aria-label="下移"
-										>
-											<IconArrowDown size={16} />
-										</ActionIcon>
-									</>
-								) : null}
-								{canRemove ? (
-									<ActionIcon
-										variant="subtle"
-										color="red"
-										onClick={() => handleRemove(idx)}
-										disabled={(inputProps.disabled ?? false) || items.length <= minItems}
-										aria-label="删除"
-									>
-										<IconTrash size={16} />
-									</ActionIcon>
-								) : null}
-							</Group>
-						</Group>
-						<Stack gap={6}>
-							{renderControl(idx, item)}
-							{(() => {
-								const combined = [
-									...(itemErrorsMap.get(idx) ?? []),
-									jsonParseErrors[idx] ?? undefined,
-								].filter(Boolean) as string[]
-								return combined.length ? (
-									<Text size="xs" c="red.6">
-										{combined.join(', ')}
-									</Text>
-								) : null
-							})()}
-						</Stack>
-					</Card>
-				))}
-			</Stack>
+			<>
+				{inlineCards.length ? (
+					<Group gap="md" wrap="wrap">
+						{inlineCards}
+					</Group>
+				) : null}
+				{blockCards.length ? <Stack gap="md">{blockCards}</Stack> : null}
+			</>
 		)
 
 	return (

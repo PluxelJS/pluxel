@@ -13,6 +13,7 @@ import type React from 'react'
 import { type ReactNode, useCallback, useEffect, useMemo, useState } from 'react'
 import AppHeader, { type AppHeaderProps } from './AppHeader'
 import Navbar, { type NavItem } from './Navbar'
+import { getPatternStyle } from '../patterns'
 
 /** Link 形态：最小要求 `to` 和 children；其余 a 属性透传 */
 export type LinkLikeProps = {
@@ -197,10 +198,7 @@ export function Layout({
 		colorScheme === 'dark'
 			? rgba(theme.colors.gray[8], 0.65)
 			: rgba(theme.colors.gray[3], 0.8)
-	const mainBackground =
-		colorScheme === 'dark'
-			? 'linear-gradient(135deg, rgba(23,25,35,0.95) 0%, rgba(12,13,19,1) 100%)'
-			: 'linear-gradient(135deg, rgba(247,249,255,1) 0%, rgba(255,255,255,1) 60%)'
+	const pattern = getPatternStyle(colorScheme === 'dark' ? 'dark' : 'light')
 
 	const computedNavbarWidth = compactNavbar ? compactNavbarWidth : navbarWidth
 	const desktopCollapsed = collapseDesktop ? !opened : false
@@ -220,11 +218,14 @@ export function Layout({
 					desktop: desktopCollapsed,
 				},
 			}}
-			styles={{
-				main: {
-					backgroundImage: mainBackground,
-					minHeight: '100dvh',
-				},
+				styles={{
+					main: {
+						backgroundColor: pattern.backgroundColor,
+						backgroundImage: pattern.backgroundImage,
+						backgroundSize: pattern.backgroundSize,
+						backgroundPosition: pattern.backgroundPosition,
+						minHeight: '100dvh',
+					},
 				navbar: {
 					borderRight: `1px solid ${borderColor}`,
 				},

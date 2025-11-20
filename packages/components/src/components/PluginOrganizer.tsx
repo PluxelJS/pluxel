@@ -248,7 +248,37 @@ const SortableRow = memo(function SortableRow({
 	dh: { rowH: number; px: number; py: number; font: 'xs' | 'sm' }
 }) {
 	const theme = useMantineTheme()
+	const getVariant = useCallback(
+		(color: string, variant: 'light' | 'filled') => {
+			if (theme.fn?.variant) return theme.fn.variant({ color, variant })
+			const palette = theme.colors[color as keyof typeof theme.colors] ?? theme.colors.blue
+			if (!palette) return { background: undefined, color: undefined, border: undefined }
+			if (variant === 'filled') {
+				return {
+					background: palette[6],
+					color: theme.white,
+					border: palette[6],
+				}
+			}
+			return {
+				background: palette[0],
+				color: palette[9],
+				border: palette[1],
+			}
+		},
+		[theme],
+	)
 	const rowRef = useRef<HTMLAnchorElement | HTMLSpanElement | null>(null)
+	const activeVariant = getVariant('indigo', theme.colorScheme === 'dark' ? 'filled' : 'light')
+	const selectedVariant = getVariant('blue', theme.colorScheme === 'dark' ? 'filled' : 'light')
+	const rowBackground = active
+		? activeVariant.background
+		: selected
+			? selectedVariant.background
+			: undefined
+	const rowColor = active ? activeVariant.color : selected ? selectedVariant.color : undefined
+	const separatorColor =
+		theme.colorScheme === 'dark' ? theme.colors.dark[4] : theme.colors.gray[2]
 
 	const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
 		id: iid(pid),
@@ -279,8 +309,9 @@ const SortableRow = memo(function SortableRow({
 				borderRadius: 6,
 				cursor: disabled ? 'default' : 'pointer',
 				userSelect: 'none',
-				background: active ? theme.colors.indigo[0] : selected ? theme.colors.blue[0] : undefined,
-				borderBottom: `1px solid ${theme.colors.gray[2]}`,
+				background: rowBackground,
+				color: rowColor,
+				borderBottom: `1px solid ${separatorColor}`,
 				boxSizing: 'border-box',
 			}}
 			data-po-row="1"
@@ -295,7 +326,7 @@ const SortableRow = memo(function SortableRow({
 					style={{
 						width: 2,
 						alignSelf: 'stretch',
-						background: theme.colors.indigo[6],
+						background: activeVariant.color ?? theme.colors.indigo[6],
 						borderTopLeftRadius: 6,
 						borderBottomLeftRadius: 6,
 					}}
@@ -352,16 +383,18 @@ const SortableRow = memo(function SortableRow({
 
 			{typeof running === 'boolean' && (
 				<Group gap={6} wrap="nowrap">
-					<Box
-						component="span"
-						aria-hidden
-						style={{
-							width: 6,
-							height: 6,
-							borderRadius: 6,
-							background: running ? theme.colors.green[6] : theme.colors.gray[5],
-						}}
-					/>
+				<Box
+					component="span"
+					aria-hidden
+					style={{
+						width: 6,
+						height: 6,
+						borderRadius: 6,
+						background: running
+							? getVariant('green', 'filled').background
+							: getVariant('gray', 'light').background,
+					}}
+				/>
 					<Text size="xs" c="dimmed">
 						{running ? '运行' : '停止'}
 					</Text>

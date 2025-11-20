@@ -1,92 +1,22 @@
 import { Card, Divider, Stack, Text } from '@mantine/core'
 import React, { createContext, memo, Suspense, useCallback, useContext, useMemo } from 'react'
-import type { InferOutput, ObjectLikeSchema } from 'valibot'
-import { DEFAULT_GRID_COLUMNS, DEFAULT_SECTION_ID, DEFAULT_TEXTS, GRID_COLUMN_THRESHOLD } from '~/core/constants'
+import type { ObjectLikeSchema } from 'valibot'
+import { DEFAULT_TEXTS } from '~/core/constants'
 import { MetaRenderer } from '~/core/registry'
-import { collectObjectEntries } from '~/core/utils'
 import { useAppForm } from './formContext'
+import { planSchemaFields, type PlannedField, type SectionPlan } from './fieldPlanner'
+import { alignToCss, resolveFieldSpan } from './layout'
 import { renderersRegistered } from './registerRenderers'
-import { cachedExtractInfo } from './schemaCache'
 
 // -------- Context（暴露同一表单实例与渲染数据） ----------
 interface Ctx<S extends ObjectLikeSchema> {
 	form: ReturnType<typeof useAppForm<S>>
-	items: Array<{
-		name: string
-		info: NonNullable<ReturnType<typeof cachedExtractInfo>>
-	}>
+	sections: SectionPlan[]
+	hiddenFields: PlannedField[]
 	submit: () => void
 	reset: () => void
 }
 const AutoFormCtx = createContext<Ctx<ObjectLikeSchema> | null>(null)
-
-type FieldItem = Ctx<ObjectLikeSchema>['items'][number]
-
-interface SectionBucket {
-	id: string
-	title?: string
-	description?: string
-	columns?: number
-	order?: number
-	fields: FieldItem[]
-}
-
-function buildSections(items: FieldItem[]): SectionBucket[] {
-	const map = new Map<string, SectionBucket>()
-	for (const item of items) {
-		const sectionMeta = item.info.formInfo.section
-		const bucketId = sectionMeta?.id ?? DEFAULT_SECTION_ID
-		if (!map.has(bucketId)) {
-			const bucket: SectionBucket = {
-				id: bucketId,
-				fields: [],
-			}
-			if (sectionMeta?.title !== undefined) bucket.title = sectionMeta.title
-			if (sectionMeta?.description !== undefined) bucket.description = sectionMeta.description
-			if (sectionMeta?.columns !== undefined) bucket.columns = sectionMeta.columns
-			if (sectionMeta?.order !== undefined) bucket.order = sectionMeta.order
-			map.set(bucketId, bucket)
-		}
-		const bucket = map.get(bucketId)!
-		if (sectionMeta?.title && !bucket.title) bucket.title = sectionMeta.title
-		if (sectionMeta?.description && !bucket.description) bucket.description = sectionMeta.description
-		if (sectionMeta?.columns && !bucket.columns) bucket.columns = sectionMeta.columns
-		if (sectionMeta?.order && bucket.order === undefined) bucket.order = sectionMeta.order
-		bucket.fields.push(item)
-	}
-
-	return Array.from(map.values()).sort((a, b) => {
-		const orderA = a.order ?? 0
-		const orderB = b.order ?? 0
-		if (orderA !== orderB) return orderA - orderB
-		return (a.title ?? '').localeCompare(b.title ?? '')
-	})
-}
-
-function resolveColumns(section: SectionBucket) {
-	if (section.columns && section.columns > 0) return section.columns
-	if (section.fields.length >= GRID_COLUMN_THRESHOLD) return DEFAULT_GRID_COLUMNS
-	return 1
-}
-
-function resolveSpan(meta: FieldItem['info']['formInfo'], columns: number) {
-	if (meta.layout?.fullWidth) return columns
-	if (meta.layout?.span) return Math.min(columns, Math.max(1, meta.layout.span))
-	return 1
-}
-
-function alignToCss(align?: 'start' | 'center' | 'end' | 'stretch') {
-	switch (align) {
-		case 'center':
-			return 'center'
-		case 'end':
-			return 'flex-end'
-		case 'stretch':
-			return 'stretch'
-		default:
-			return 'flex-start'
-	}
-}
 
 export function useAutoFormCtx<S extends ObjectLikeSchema>() {
 	const ctx = useContext(AutoFormCtx)
@@ -114,29 +44,17 @@ export function AutoForm<S extends ObjectLikeSchema>({
 
 	const form = useAppForm(schema, formOpts)
 
-	const items = useMemo(() => {
-		const entries = collectObjectEntries(schema as any) ?? []
-		const collected: Array<{
-			name: string
-			info: NonNullable<ReturnType<typeof cachedExtractInfo>>
-		}> = []
-		for (const entry of entries as { name: keyof InferOutput<S>; schema: any }[]) {
-			const sub = entry.schema
-			if (sub?.kind !== 'schema') continue
-			const info = cachedExtractInfo(sub, String(entry.name))
-			if (info) collected.push({ name: String(entry.name), info })
-		}
-		return collected
-	}, [schema])
+	const fieldPlan = useMemo(() => planSchemaFields(schema), [schema])
 
 	const ctx = useMemo<Ctx<S>>(
 		() => ({
 			form,
-			items,
+			sections: fieldPlan.sections,
+			hiddenFields: fieldPlan.hiddenFields,
 			submit: () => form.handleSubmit(),
 			reset: () => form.reset(),
 		}),
-		[form, items],
+		[form, fieldPlan],
 	)
 
 	const onSubmit = useCallback(
@@ -162,23 +80,11 @@ export interface AutoFormFieldsProps {
 
 const FieldsImpl = (props?: AutoFormFieldsProps) => {
 	const { sectionSpacing = 'xl' } = props ?? {}
-	const { form, items } = useAutoFormCtx<any>()
-
-	const { visibleItems, hiddenItems } = useMemo(() => {
-		const hidden: FieldItem[] = []
-		const visible: FieldItem[] = []
-		for (const item of items) {
-			if (item.info.formInfo.hidden) hidden.push(item)
-			else visible.push(item)
-		}
-		return { hiddenItems: hidden, visibleItems: visible }
-	}, [items])
-
-	const sections = useMemo(() => buildSections(visibleItems), [visibleItems])
+	const { form, sections, hiddenFields } = useAutoFormCtx<any>()
 
 	return (
 		<>
-			{hiddenItems.map(({ name }) => (
+			{hiddenFields.map(({ name }) => (
 				<form.Field key={`hidden-${name}`} name={name}>
 					{() => null}
 				</form.Field>
@@ -197,10 +103,10 @@ function SectionBlock({
 	section,
 	form,
 }: {
-	section: SectionBucket
+	section: SectionPlan
 	form: ReturnType<typeof useAppForm<any>>
 }) {
-	const columns = resolveColumns(section)
+	const columns = Math.max(1, section.columns ?? 1)
 	const showHeader = Boolean(section.title || section.description)
 
 	return (
@@ -224,7 +130,7 @@ function SectionBlock({
 				}}
 			>
 				{section.fields.map(({ name, info }) => {
-					const span = resolveSpan(info.formInfo, columns)
+					const span = resolveFieldSpan(columns, info.formInfo.layout)
 					return (
 						<div
 							key={name}
