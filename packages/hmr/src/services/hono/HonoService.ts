@@ -265,6 +265,7 @@ export class HonoService {
 	}
 
 	private createRenderer(): Promise<RenderHandler> {
+		// #if NODE_ENV !== 'production'
 		const importMetaEnv = (import.meta as ImportMeta & { env?: Record<string, any> }).env
 		const ssrFlag =
 			importMetaEnv?.PLUXEL_HMR_SSR ??
@@ -273,6 +274,8 @@ export class HonoService {
 		if (ssrFlag) {
 			return import('../../server/dev').then(({ createDevRenderer }) => createDevRenderer())
 		}
+		// #endif
+
 		return import('../../server/static').then(({ createStaticRenderer }) => createStaticRenderer())
 	}
 

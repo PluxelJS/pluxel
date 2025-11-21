@@ -21,6 +21,7 @@ export class PinoLoggerService {
 	public fatal!: Logger['fatal']
 
 	constructor(private readonly ctx: Context) {
+		// #if NODE_ENV !== 'production'
 		const scopeName = ctx.pluginInfo?.name ?? ctx.name
 		const bindings: Bindings = {
 			name: scopeName,
@@ -30,17 +31,32 @@ export class PinoLoggerService {
 			bindings.plugin = pluginName
 		}
 		this.logger = deriveScopedLogger(bindings)
-
 		this.bindLevels()
+		// #else
+		this.logger = console as unknown as Logger
+		this.bindNoopLevels()
+		// #endif
 	}
 
 	private bindLevels() {
+		// #if NODE_ENV !== 'production'
 		for (const level of LEVELS) {
 			;(this as any)[level] = (this.logger[level] as Function).bind(this.logger)
+		}
+		// #else
+		this.bindNoopLevels()
+		// #endif
+	}
+
+	private bindNoopLevels() {
+		const noop = () => {}
+		for (const level of LEVELS) {
+			;(this as any)[level] = noop
 		}
 	}
 }
 
+// #if NODE_ENV !== 'production'
 let rootLogger: Logger | undefined
 
 function getRootLogger(): Logger {
@@ -55,3 +71,4 @@ function deriveScopedLogger(bindings: Bindings): Logger {
 	const root = getRootLogger()
 	return bindings ? root.child(bindings) : root
 }
+// #endif
