@@ -38,6 +38,7 @@ import { type GroupConfig, PluginOrganizer, type PluginStatuses } from '../../co
 import { type PluginGroup, type PluginStatusEntry, useQuery } from '../gqty'
 import { client } from '../rpc'
 import { RouterLinkAdapter } from '../RouterLinkAdapter'
+import { PLUGIN_SEARCH_EVENT, PLUGIN_SEARCH_KEY } from '../constants'
 
 interface PluginListProps {
 	pluginName?: string
@@ -124,14 +125,12 @@ const areGroupsEqual = (a: GroupConfig[], b: GroupConfig[]) => {
 	return true
 }
 
-const SEARCH_KEY = 'pluxel:plugin-search'
-
 export const PluginList: React.FC<PluginListProps> = ({ pluginName }) => {
 	// —— 混合搜索（持久化 + 降压） —— //
 	const [search, setSearch] = useState(() => {
 		if (typeof window === 'undefined') return ''
 		try {
-			return localStorage.getItem(SEARCH_KEY) ?? ''
+			return localStorage.getItem(PLUGIN_SEARCH_KEY) ?? ''
 		} catch {
 			return ''
 		}
@@ -141,7 +140,7 @@ export const PluginList: React.FC<PluginListProps> = ({ pluginName }) => {
 	useEffect(() => {
 		const t = setTimeout(() => {
 			try {
-				localStorage.setItem(SEARCH_KEY, search)
+				localStorage.setItem(PLUGIN_SEARCH_KEY, search)
 			} catch {}
 		}, 200)
 		return () => clearTimeout(t)
@@ -161,6 +160,17 @@ export const PluginList: React.FC<PluginListProps> = ({ pluginName }) => {
 		}
 		window.addEventListener('keydown', onKey)
 		return () => window.removeEventListener('keydown', onKey)
+	}, [])
+
+	useEffect(() => {
+		const handler = (event: Event) => {
+			const detail = (event as CustomEvent<string | undefined>).detail
+			setSearch(detail ?? '')
+			inputRef.current?.focus()
+		}
+		window.addEventListener(PLUGIN_SEARCH_EVENT, handler as EventListener)
+		return () =>
+			window.removeEventListener(PLUGIN_SEARCH_EVENT, handler as EventListener)
 	}, [])
 
 	// —— 数据源 —— //

@@ -22,7 +22,6 @@ import {
 	Title,
 } from '@mantine/core'
 import { openConfirmModal } from '@mantine/modals'
-import { notifications } from '@mantine/notifications'
 import {
 	IconAlertTriangle,
 	IconDotsVertical,
@@ -41,6 +40,7 @@ import type {
 } from '../gqty'
 import { useMutation as useGqtyMutation, useQuery } from '../gqty'
 import { RouterLinkAdapter } from '../RouterLinkAdapter'
+import { useNotify } from '../notifications/useNotify'
 
 type Maybe<T> = T | null | undefined
 
@@ -198,6 +198,7 @@ export function PackageManagerPage() {
 
 	const [installInput, setInstallInput] = useState('')
 	const [forceInstall, setForceInstall] = useState(false)
+	const notify = useNotify()
 	const pendingInstallSpecs = useMemo(() => parseInstallSpecs(installInput), [installInput])
 
 	const statuses = useMemo(() => {
@@ -305,7 +306,7 @@ export function PackageManagerPage() {
 	const handleInstall = async () => {
 		const specs = pendingInstallSpecs
 		if (!specs.length) {
-			notifications.show({
+			notify({
 				title: '请输入包名',
 				message: '例如：pluxel-plugin-redis 或 @scope/pkg@1.0.0，每行一个。',
 				color: 'yellow',
@@ -337,7 +338,7 @@ export function PackageManagerPage() {
 					successes.length <= 3
 						? successes.join('、')
 						: `${successes.slice(0, 3).join('、')} 等${successes.length}个`
-				notifications.show({
+				notify({
 					title: '安装完成',
 					message: `${list} 已完成安装`,
 					color: 'green',
@@ -352,7 +353,7 @@ export function PackageManagerPage() {
 					failures.length <= 3
 						? failures.join('；')
 						: `${failures.slice(0, 3).join('；')} 等${failures.length}个失败`
-				notifications.show({
+				notify({
 					title: '部分安装失败',
 					message: list,
 					color: 'red',
@@ -371,21 +372,21 @@ export function PackageManagerPage() {
 		try {
 			const result = await reinstallPackageMutation({ args: { spec, scope } })
 			if (!result?.ok) {
-				notifications.show({
+				notify({
 					title: '重装失败',
 					message: result?.error ?? result?.code ?? '操作失败，请稍后重试',
 					color: 'red',
 				})
 				return
 			}
-			notifications.show({
+			notify({
 				title: '已重装',
 				message: `${row.name} 已重新载入（${scope === 'persisted' ? '包含持久态' : '运行态'}）`,
 				color: 'green',
 			})
 			await refetch()
 		} catch (error: any) {
-			notifications.show({
+			notify({
 				title: '重装失败',
 				message: error?.message ?? '操作失败，请稍后重试',
 				color: 'red',
@@ -398,21 +399,21 @@ export function PackageManagerPage() {
 		try {
 			const result = await uninstallPackageMutation({ args: { spec, scope } })
 			if (!result?.ok) {
-				notifications.show({
+				notify({
 					title: '卸载失败',
 					message: result?.error ?? result?.code ?? '操作失败，请稍后再试',
 					color: 'red',
 				})
 				return
 			}
-			notifications.show({
+			notify({
 				title: '已卸载',
 				message: `${row.name} 已移除（${scope === 'persisted' ? '含持久态' : '仅运行态'}）`,
 				color: 'green',
 			})
 			await refetch()
 		} catch (error: any) {
-			notifications.show({
+			notify({
 				title: '卸载失败',
 				message: error?.message ?? '操作失败，请稍后再试',
 				color: 'red',

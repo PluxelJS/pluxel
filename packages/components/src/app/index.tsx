@@ -24,6 +24,7 @@ import {
 	IconPackages,
 	IconPlugConnected,
 	IconPuzzle,
+	IconShoppingBag,
 } from '@tabler/icons-react'
 import {
 	createBrowserHistory,
@@ -49,6 +50,8 @@ import { PluginsLayout } from './plugins/PluginsLayout'
 import { RouterLinkAdapter } from './RouterLinkAdapter'
 import { getPatternStyle } from '../patterns'
 import { theme } from '../theme'
+import { NotificationCenterProvider } from './notifications/NotificationCenterProvider'
+import { MarketPage } from './market/MarketPage'
 
 const colorSchemeManager = localStorageColorSchemeManager({
 	key: 'pluxel-color-scheme',
@@ -59,6 +62,7 @@ const navItems: NavItem[] = [
 	{ label: '日志', href: '/logs', icon: <IconHistory size={18} stroke={1.7} /> },
 	{ label: '包管理', href: '/packages', icon: <IconPackages size={18} stroke={1.7} /> },
 	{ label: '插件', href: '/plugins', icon: <IconPuzzle size={18} stroke={1.7} /> },
+	{ label: '市场', href: '/market', icon: <IconShoppingBag size={18} stroke={1.7} /> },
 ]
 
 function RootAppLayout() {
@@ -81,18 +85,20 @@ function RootAppLayout() {
 			withGlobalClasses={false}
 			deduplicateCssVariables={false}
 		>
-			<ModalsProvider>
-				<Notifications position="top-center" />
-				<Layout
-					header={({ toggle }) => <Header onMenu={toggle} />}
-					navItems={navItems}
-					LinkComponent={RouterLinkAdapter}
-					currentPath={pathname}
-					footerHeight={0}
-				>
-					<Outlet />
-				</Layout>
-			</ModalsProvider>
+			<NotificationCenterProvider>
+				<ModalsProvider>
+					<Notifications position="top-center" />
+					<Layout
+						header={({ toggle }) => <Header onMenu={toggle} />}
+						navItems={navItems}
+						LinkComponent={RouterLinkAdapter}
+						currentPath={pathname}
+						footerHeight={0}
+					>
+						<Outlet />
+					</Layout>
+				</ModalsProvider>
+			</NotificationCenterProvider>
 		</MantineProvider>
 	)
 }
@@ -105,6 +111,14 @@ function PackagesRouteComponent() {
 	return (
 		<ClientOnly>
 			<PackageManagerPage />
+		</ClientOnly>
+	)
+}
+
+function MarketRouteComponent() {
+	return (
+		<ClientOnly>
+			<MarketPage />
 		</ClientOnly>
 	)
 }
@@ -225,6 +239,12 @@ function HomeIntro({ lastRoute }: { lastRoute: string | null }) {
 			description: '打开分组与运行状态面板',
 			to: '/plugins',
 			icon: <IconPlugConnected size={20} stroke={1.6} />,
+		},
+		{
+			title: '前往插件市场',
+			description: '挑选新插件并一键安装',
+			to: '/market',
+			icon: <IconShoppingBag size={20} stroke={1.6} />,
 		},
 		{
 			title: '查看实时日志',
@@ -353,6 +373,15 @@ function HomeIntro({ lastRoute }: { lastRoute: string | null }) {
 				</Grid.Col>
 				<Grid.Col span={{ base: 12, md: 4 }}>
 					<HomeCard
+						title="插件市场"
+						description="浏览官方快照，快速安装插件。"
+						icon={<IconShoppingBag size={24} stroke={1.6} />}
+						to="/market"
+						scheme={schemeMode}
+					/>
+				</Grid.Col>
+				<Grid.Col span={{ base: 12, md: 4 }}>
+					<HomeCard
 						title="实时日志"
 						description="监控最新日志事件，把脉系统健康度。"
 						icon={<IconHistory size={24} stroke={1.6} />}
@@ -455,6 +484,12 @@ const packagesRoute = createRoute({
 	component: PackagesRouteComponent,
 })
 
+const marketRoute = createRoute({
+	getParentRoute: () => rootRoute,
+	path: 'market',
+	component: MarketRouteComponent,
+})
+
 const pluginsRoute = createRoute({
 	getParentRoute: () => rootRoute,
 	path: 'plugins',
@@ -477,6 +512,7 @@ const routeTree = rootRoute.addChildren([
 	indexRoute,
 	logsRoute,
 	packagesRoute,
+	marketRoute,
 	pluginsRoute.addChildren([pluginsIndexRoute, pluginDetailRoute]),
 ])
 

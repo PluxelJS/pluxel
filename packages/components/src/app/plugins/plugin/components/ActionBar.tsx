@@ -2,7 +2,6 @@
 
 import { ActionIcon, Group, Switch, Tooltip } from '@mantine/core'
 import { openConfirmModal } from '@mantine/modals'
-import { notifications } from '@mantine/notifications'
 import { IconPlayerPlay, IconRotateClockwise, IconSquareX } from '@tabler/icons-react'
 import { useCallback, useRef } from 'react'
 import {
@@ -11,6 +10,7 @@ import {
 	useMutation as useGqtyMutation,
 } from '../../../gqty'
 import { usePluginScope } from '../context'
+import { useNotify } from '../../../notifications/useNotify'
 
 export interface ActionBarProps {
 	onStatusUpdated?: () => Promise<void> | void
@@ -38,6 +38,7 @@ export function ActionBar({ onStatusUpdated }: ActionBarProps) {
 	// 乱序防护：只接受最后一次操作的结果
 	const seqRef = useRef(0)
 
+	const notify = useNotify()
 	const [mutateStatus, mutationState] = useGqtyMutation(
 		(mutation, args: { plugin: string; status: UpdatePluginStatusStatusInput }) => {
 			const { plugin, status } = args
@@ -61,28 +62,28 @@ export function ActionBar({ onStatusUpdated }: ActionBarProps) {
 				if (!p) return
 				const currentEnabled = Boolean(p.status.isEnabled)
 				switch (status) {
-						case UpdatePluginStatusStatusInput.start:
-						case UpdatePluginStatusStatusInput.restart:
-							p.status.isRunning = true
-							p.status.isEnabled = true
-							p.status.lifecycleStage = PluginStatusEntryLifecycleStage.running
-							break
-						case UpdatePluginStatusStatusInput.stop:
-							p.status.isRunning = false
-							p.status.lifecycleStage = currentEnabled
-								? PluginStatusEntryLifecycleStage.stopped
-								: PluginStatusEntryLifecycleStage.disabled
-							break
-						case UpdatePluginStatusStatusInput.disable:
-							p.status.isRunning = false
-							p.status.isEnabled = false
-							p.status.lifecycleStage = PluginStatusEntryLifecycleStage.disabled
-							break
-						case UpdatePluginStatusStatusInput.enable:
-							p.status.isEnabled = true
-							p.status.lifecycleStage = p.status.isRunning
-								? PluginStatusEntryLifecycleStage.running
-								: PluginStatusEntryLifecycleStage.stopped
+					case UpdatePluginStatusStatusInput.start:
+					case UpdatePluginStatusStatusInput.restart:
+						p.status.isRunning = true
+						p.status.isEnabled = true
+						p.status.lifecycleStage = PluginStatusEntryLifecycleStage.running
+						break
+					case UpdatePluginStatusStatusInput.stop:
+						p.status.isRunning = false
+						p.status.lifecycleStage = currentEnabled
+							? PluginStatusEntryLifecycleStage.stopped
+							: PluginStatusEntryLifecycleStage.disabled
+						break
+					case UpdatePluginStatusStatusInput.disable:
+						p.status.isRunning = false
+						p.status.isEnabled = false
+						p.status.lifecycleStage = PluginStatusEntryLifecycleStage.disabled
+						break
+					case UpdatePluginStatusStatusInput.enable:
+						p.status.isEnabled = true
+						p.status.lifecycleStage = p.status.isRunning
+							? PluginStatusEntryLifecycleStage.running
+							: PluginStatusEntryLifecycleStage.stopped
 						break
 					default:
 						break
@@ -109,7 +110,7 @@ export function ActionBar({ onStatusUpdated }: ActionBarProps) {
 			if (mySeq !== seqRef.current) return
 
 			if (!res || res.code !== 'success') {
-				notifications.show({
+				notify({
 					title: '插件状态更新失败',
 					message: res?.error || res?.code || '操作失败，请稍后重试',
 					color: 'red',
@@ -122,14 +123,14 @@ export function ActionBar({ onStatusUpdated }: ActionBarProps) {
 			// ② 成功：让返回覆盖乐观态，再进行一次精准对齐
 			await syncAfterSuccess()
 
-			notifications.show({
+			notify({
 				title: '插件状态已更新',
 				message: `${pluginName} ${ACTION_LABEL[status]}成功`,
 				color: 'green',
 			})
 		} catch (e: any) {
 			if (mySeq !== seqRef.current) return
-			notifications.show({
+			notify({
 				title: '插件状态更新失败',
 				message: e?.message ?? '操作失败，请稍后重试',
 				color: 'red',
