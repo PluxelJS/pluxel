@@ -3,7 +3,7 @@
 	"compilerOptions": {
 		"target": "ES2023",
 		"module": "ESNext",
-		"moduleResolution": "nodenext",
+		"moduleResolution": "bundler",
 		"moduleDetection": "force",
 		"lib": ["ES2023"],
 
