@@ -16,7 +16,7 @@
 		"test": "bun test"
 	},
 	"peerDependencies": {
-		"tsdown": "^0.16.4"
+		"tsdown": "^0.16.6"
 	},
 	"dependencies": {
 		"@pluxel/market": "link:/../../../pluxel-market/packages/market",
