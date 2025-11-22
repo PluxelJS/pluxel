@@ -1,4 +1,4 @@
-name: "  ▶️  CI Workflow"
+name: "▶️ CI Workflow"
 
 on:
   push:
@@ -11,7 +11,7 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: pull-${{ github.ref }}-1
+  group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 env:
@@ -28,16 +28,17 @@ permissions:
   pull-requests: read
 
 jobs:
-  build:
+  test:
     runs-on: ${{ matrix.os }}
 
     strategy:
+      fail-fast: false
       matrix:
         os: [ubuntu-latest]
         node: ["lts/*"]
         bun: ["1.2.22"]
 
-    name: "Build: ${{ matrix.os }}, Node.js ${{ matrix.node }}, Bun ${{ matrix.bun }}"
+    name: "Tests · ${{ matrix.os }} · Node ${{ matrix.node }} · Bun ${{ matrix.bun }}"
 
     steps:
       - name: Prepare git
@@ -51,19 +52,60 @@ jobs:
         uses: ./.github/actions/setup-toolchain
         with:
           node-version: ${{ matrix.node }}
-          bun-version: ${{ matrix.bun }}  # ← 这行启用 Bun（你的 composite 会自动安装并缓存）
+          bun-version: ${{ matrix.bun }}
 
-      # PR：只跑受影响的包（相对 base 分支）
-      - name: "🧪 Test (affected only)"
-        if: github.event_name == 'pull_request'
-        run: pnpm -w turbo run test --filter=...[origin/${{ github.base_ref }}]
+      - name: "🧭 Determine test scope"
+        id: scope
+        env:
+          DEFAULT_BASE: main
+          PR_BASE_REF: ${{ github.base_ref || '' }}
+        shell: bash
+        run: |
+          set -euo pipefail
 
-      # main：全量跑（利用 turbo 缓存，未变的会秒跳过）
-      - name: "🧪 Test (full, cached)"
-        if: github.ref == 'refs/heads/main'
-        run: pnpm -w turbo run test
+          current_ref="$GITHUB_REF"
 
-      # 其它分支（可选）：也跑受影响包
-      - name: "🧪 Test (affected only, other branches)"
-        if: github.event_name != 'pull_request' && github.ref != 'refs/heads/main'
-        run: pnpm -w turbo run test --filter=...[origin/main]
+          # Always run full suite on main to keep cache warm and surface regressions.
+          if [ "$current_ref" = "refs/heads/main" ]; then
+            echo "mode=full" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          base_branch="${PR_BASE_REF:-}"
+          if [ -z "$base_branch" ]; then
+            base_branch="$DEFAULT_BASE"
+          fi
+
+          base_sha="origin/$base_branch"
+
+          git fetch --no-tags --depth=1 origin "$base_branch:$base_branch" >/dev/null 2>&1 || true
+
+          tmpfile="$(mktemp)"
+          cleanup() { rm -f "$tmpfile"; }
+          trap cleanup EXIT
+
+          if pnpm -w turbo run test --filter=...[$base_sha] --dry-run=json >"$tmpfile" 2>/dev/null; then
+            tasks=$(jq '.tasks | length' "$tmpfile")
+            if [ "$tasks" -gt 0 ]; then
+              echo "mode=affected" >> "$GITHUB_OUTPUT"
+              echo "filter_ref=$base_sha" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+          fi
+
+          echo "mode=full" >> "$GITHUB_OUTPUT"
+
+      - name: "🧪 Run tests"
+        shell: bash
+        run: |
+          set -euo pipefail
+          mode="${{ steps.scope.outputs.mode }}"
+          filter_ref="${{ steps.scope.outputs.filter_ref }}"
+
+          if [ "$mode" = "affected" ] && [ -n "$filter_ref" ]; then
+            echo "Running affected tests against $filter_ref"
+            pnpm -w turbo run test --filter=...[$filter_ref]
+          else
+            echo "Running full test suite"
+            pnpm -w turbo run test
+          fi

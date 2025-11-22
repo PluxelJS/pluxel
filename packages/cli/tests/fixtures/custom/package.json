@@ -1,0 +1,15 @@
+{
+	"name": "pluxel-cli-build-fixture-custom",
+	"version": "1.0.0",
+	"type": "module",
+	"dependencies": {
+		"acme-plugin-alpha": "1.2.3"
+	},
+	"devDependencies": {
+		"acme-plugin-beta": "~1.0.0"
+	},
+	"peerDependencies": {
+		"acme-plugin-beta": "~1.0.0"
+	},
+	"optionalDependencies": {}
+}

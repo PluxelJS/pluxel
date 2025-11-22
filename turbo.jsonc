@@ -6,8 +6,8 @@
 			"outputs": ["dist/**"]
 		},
 		"test": {
-			"outputs": ["coverage/**"],
-			"dependsOn": ["build"]
+			"dependsOn": ["build"],
+			"outputs": ["dist/**"]
 		},
 		"web": {
 			"outputs": ["public/**"],

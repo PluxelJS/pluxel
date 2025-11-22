@@ -1,12 +1,20 @@
-import { ColorSchemeScript } from '@mantine/core'
-import { createElement } from 'react'
-import { renderToStaticMarkup } from 'react-dom/server'
-
 import { resolveAssets } from './assets'
 import type { RenderHandler } from './types'
 
 const assets = resolveAssets(true)
-const colorSchemeScript = renderToStaticMarkup(createElement(ColorSchemeScript))
+const colorSchemeScript = `<script>
+;(() => {
+  try {
+    const key = 'mantine-color-scheme';
+    const stored = localStorage.getItem(key);
+    const system = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+    const next = stored === 'dark' || stored === 'light' ? stored : system;
+    document.documentElement.setAttribute('data-mantine-color-scheme', next);
+  } catch {
+    document.documentElement.setAttribute('data-mantine-color-scheme', 'light');
+  }
+})();
+</script>`
 
 const staticHtml = `<!DOCTYPE html>
 <html lang="zh">

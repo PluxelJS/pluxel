@@ -17,12 +17,13 @@ export interface ScanOptions {
 	/** Max number of concurrent fs-heavy tasks. */
 	batchSize: number
 	/** Restrict work to specific package names or prefixes. */
-	focusPackages?: string[]
+	focusPackages?: string[] | undefined
 }
 
 export type ScanOptionsInput = Partial<ScanOptions>
 
-export interface ResolvedScanOptions extends ScanOptions {
+export interface ResolvedScanOptions
+	extends Omit<ScanOptions, 'focusPackages'> {
 	focusPackages: string[] | undefined
 }
 

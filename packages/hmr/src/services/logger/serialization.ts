@@ -1,6 +1,6 @@
 import { dump as dumpValue } from '@poppinss/dumper/console'
 import type { ConsoleDumpConfig } from '@poppinss/dumper/console/types'
-import pino, { type LoggerOptions } from 'pino'
+import pino, { type LogFn, type Logger, type LoggerOptions } from 'pino'
 
 const clampNumber = (input: number, fallback: number, min = 1) =>
 	Number.isFinite(input) ? Math.max(min, Math.floor(input)) : fallback
@@ -193,9 +193,12 @@ const toPlain = (
 	if (valueType === 'string' || valueType === 'number' || valueType === 'boolean') {
 		return value
 	}
-	if (valueType === 'bigint') return `${value.toString()}n`
+	if (valueType === 'bigint') {
+		return `${(value as bigint).toString()}n`
+	}
 	if (valueType === 'symbol') {
-		return value.description ? `Symbol(${value.description})` : value.toString()
+		const symbolValue = value as symbol
+		return symbolValue.description ? `Symbol(${symbolValue.description})` : symbolValue.toString()
 	}
 	if (valueType === 'function') return describeWithDumper(value)
 	if (valueType !== 'object') return value
@@ -269,10 +272,16 @@ export function createDumperLogHook(
 		return toPlain(v)
 	}
 
-	return function (args, method) {
+	return function logMethod(
+		this: Logger,
+		args: Parameters<LogFn>,
+		method: LogFn,
+		level: number,
+	) {
+		void level
 		if (!args || args.length === 0) return method.apply(this, args)
 
-		const newArgs = Array.prototype.slice.call(args) as unknown[]
+	const newArgs = Array.prototype.slice.call(args) as Parameters<LogFn>
 
 		if (typeof newArgs[0] === 'string') {
 			let errIdx = -1
@@ -296,6 +305,6 @@ export function createDumperLogHook(
 			}
 		}
 
-		return method.apply(this, newArgs as unknown[])
+		return method.apply(this, newArgs)
 	}
 }

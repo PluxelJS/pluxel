@@ -9,9 +9,6 @@ export default defineConfig({
 	},
 
 	resolve: {
-		alias: {
-			'@tabler/icons-react': '@tabler/icons-react/dist/esm/icons/index.mjs',
-		},
 		// 避免多份实例导致上下文不一致（Mantine/React）
 		dedupe: [
 			'react',

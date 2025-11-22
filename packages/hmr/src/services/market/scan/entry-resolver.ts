@@ -5,9 +5,12 @@ import { pathToFileURL } from 'node:url'
 import type { PackageJson } from 'pkg-types'
 import { safeReadManifest } from './package'
 import type { EntryResolution, EntryResolutionOk, ResolvedScanOptions } from './types'
+import type { ResolveOptions } from 'exsolve'
+import { ModuleResolveCache } from './resolve-cache'
 
 export class EntryResolver {
 	private readonly cache = new Map<string, Promise<EntryResolution>>()
+	constructor(private readonly moduleResolveCache: ModuleResolveCache) {}
 
 	clear() {
 		this.cache.clear()
@@ -35,7 +38,10 @@ export class EntryResolver {
 		options: ResolvedScanOptions,
 		manifest?: PackageJson,
 	): Promise<EntryResolution> {
-		const entry = resolveModulePath('.', resolveOptionsFor(dir, options.conditions))
+		const entry = resolveModulePath(
+			'.',
+			resolveOptionsFor(dir, options.conditions, this.moduleResolveCache),
+		)
 		if (entry) {
 			return entryOk(dir, normalize(entry), 'exports', [])
 		}
@@ -103,10 +109,15 @@ export class EntryResolver {
 	}
 }
 
-function resolveOptionsFor(dir: string, conditions: string[] | undefined) {
-	const options: { from: URL; try: true; conditions?: string[] } = {
+function resolveOptionsFor(
+	dir: string,
+	conditions: string[] | undefined,
+	cache: ModuleResolveCache,
+): ResolveOptions {
+	const options: ResolveOptions = {
 		from: packageBaseURL(dir),
 		try: true,
+		cache: cache.map,
 	}
 	if (conditions && conditions.length > 0) {
 		options.conditions = [...conditions]

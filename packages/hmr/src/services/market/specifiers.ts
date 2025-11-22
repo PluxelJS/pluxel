@@ -15,6 +15,8 @@ export interface NormalizedPackageSpecifier {
 	key: string
 }
 
+type PartialNormalized = Omit<NormalizedPackageSpecifier, 'target' | 'key'>
+
 export function normalizeSpecifier(input: PackageSpecifierInput): NormalizedPackageSpecifier {
 	const normalized =
 		typeof input === 'string' ? parseStringSpecifier(input) : parseObjectSpecifier(input)
@@ -59,64 +61,52 @@ export function withTag(spec: NormalizedPackageSpecifier, tag: string): Normaliz
 	})
 }
 
-function parseStringSpecifier(
-	rawInput: string,
-): Omit<NormalizedPackageSpecifier, 'target' | 'key'> | undefined {
+function parseStringSpecifier(rawInput: string): PartialNormalized | undefined {
 	const raw = rawInput.trim()
 	if (!raw) return undefined
 
 	if (raw.startsWith('@')) {
 		const secondAt = raw.indexOf('@', 1)
 		if (secondAt === -1) {
-			return { name: raw, version: undefined, raw }
+			return { name: raw, raw }
 		}
 		const name = raw.slice(0, secondAt)
 		const suffix = raw.slice(secondAt + 1)
-		return {
-			name,
-			version: suffix || undefined,
-			raw,
-		}
+		const result: PartialNormalized = { name, raw }
+		if (suffix) result.version = suffix
+		return result
 	}
 
 	const parts = raw.split('@')
 	if (parts.length === 1) {
-		return {
-			name: parts[0],
-			version: undefined,
-			raw,
-		}
+		return { name: parts[0], raw }
 	}
 
 	const version = parts.pop() || undefined
 	const name = parts.join('@')
-	return {
-		name,
-		version: version && version.length > 0 ? version : undefined,
-		raw,
-	}
+	const result: PartialNormalized = { name, raw }
+	if (version) result.version = version
+	return result
 }
 
 function parseObjectSpecifier(input: {
 	name?: string | null
 	version?: string | null
 	tag?: string | null
-}): Omit<NormalizedPackageSpecifier, 'target' | 'key'> | undefined {
+}): PartialNormalized | undefined {
 	const name = input.name?.trim()
 	if (!name) return undefined
 	const version = input.version?.toString().trim() || undefined
 	const tag = version ? undefined : input.tag?.toString().trim() || undefined
 	const raw = version ? `${name}@${version}` : tag ? `${name}@${tag}` : name
-	return {
-		name,
-		version,
-		tag,
-		raw,
-	}
+	const result: PartialNormalized = { name, raw }
+	if (version) result.version = version
+	else if (tag) result.tag = tag
+	return result
 }
 
 function withDerivedFields(
-	base: Omit<NormalizedPackageSpecifier, 'target' | 'key'>,
+	base: PartialNormalized,
 ): NormalizedPackageSpecifier {
 	const version = base.version?.trim() || undefined
 	const tag = version ? undefined : base.tag?.trim() || undefined
@@ -127,12 +117,13 @@ function withDerivedFields(
 
 	const target = version ? `${name}@${version}` : tag ? `${name}@${tag}` : name
 	const identity = version ?? (tag ? `tag:${tag}` : 'latest')
-	return {
+	const result: NormalizedPackageSpecifier = {
 		name,
-		version,
-		tag,
 		raw: base.raw,
 		target,
 		key: `${name}#${identity}`,
 	}
+	if (version) result.version = version
+	if (tag) result.tag = tag
+	return result
 }

@@ -17,28 +17,13 @@ import { META_MAP } from '~/core/utils'
 import { FieldChrome } from '../shared'
 import { cleanProps } from '../../utils/propHelpers'
 import { cachedExtractInfo } from '../schemaCache'
+import { alignToCss, resolveFieldSpan } from '../layout'
 
 type RendererProps = CommonProps<typeof META_MAP.object>
 
 interface ChildInfo {
 	name: string
 	info: NonNullable<ReturnType<typeof cachedExtractInfo>>
-}
-
-function resolveSpan(columns: number, layout?: { span?: number; fullWidth?: boolean }) {
-	if (columns <= 1) return 1
-	if (layout?.fullWidth) return columns
-	if (layout?.span) return Math.min(columns, Math.max(1, layout.span))
-	return 1
-}
-
-function alignToCss(align?: 'start' | 'center' | 'end' | 'stretch') {
-	switch (align) {
-		case 'center': return 'center'
-		case 'end': return 'flex-end'
-		case 'stretch': return 'stretch'
-		default: return 'flex-start'
-	}
 }
 
 function ObjectField(props: RendererProps) {
@@ -119,7 +104,7 @@ function ObjectField(props: RendererProps) {
 			childInput.disabled = childDisabled
 			childInput.readOnly = childReadOnly
 
-			const span = resolveSpan(columns, child.info.formInfo.layout)
+			const span = resolveFieldSpan(columns, child.info.formInfo.layout)
 			const align = alignToCss(child.info.formInfo.layout?.align)
 
 			return (

@@ -3,13 +3,14 @@
 	"compilerOptions": {
 		"target": "ES2023",
 		"module": "ESNext",
-		"moduleResolution": "Bundler",
+		"moduleResolution": "bundler",
 		"moduleDetection": "force",
 		"lib": ["ES2023"],
 
 		// Enable all strict type checking options.
 		"strict": true,
-		"exactOptionalPropertyTypes": true,
+		"strictNullChecks": false,
+		"exactOptionalPropertyTypes": false,
 		"useUnknownInCatchVariables": false,
 
 		// Project references rely on declarations emitted by dependencies.

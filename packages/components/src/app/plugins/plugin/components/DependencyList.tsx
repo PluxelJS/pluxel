@@ -7,10 +7,9 @@ export interface DependencyListProps {
 	LinkComponent?: React.ElementType<{ to: string; children: React.ReactNode }>
 }
 
-export function DependencyList({ LinkComponent }: DependencyListProps) {
+export function usePluginDependencyEntries() {
 	const contextDeps = usePluginDependencies()
-
-	const entries = useMemo(() => {
+	return useMemo(() => {
 		const map = new Map<string, { name: string; isRunning?: boolean }>()
 		for (const dep of contextDeps ?? []) {
 			const name = dep.name?.trim()
@@ -19,6 +18,10 @@ export function DependencyList({ LinkComponent }: DependencyListProps) {
 		}
 		return [...map.values()]
 	}, [contextDeps])
+}
+
+export function DependencyList({ LinkComponent }: DependencyListProps) {
+	const entries = usePluginDependencyEntries()
 
 	if (entries.length === 0) {
 		return (

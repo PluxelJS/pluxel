@@ -1,13 +1,12 @@
-import { spawn } from 'node:child_process'
 import fs from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { cancel, intro, isCancel, note, outro, text } from '@clack/prompts'
 import { define, type ArgValues } from 'gunshi'
 import nodePlop, { type NodePlopAPI } from 'node-plop'
 import { dirname, isAbsolute, join, resolve } from 'pathe'
+import { resolvePluginEnv } from '../build/env'
+import { detectPm, runPackageManager, type PM } from '../utils/pm'
 import { resolveTemplatesDir } from './utils'
-
-type PM = 'pnpm' | 'npm' | 'yarn'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
@@ -84,13 +83,13 @@ export const newCommand = define({
 		const plan = createScaffoldPlan(packageInput, ctx.values)
 		intro(`Create ${plan.packageName}`)
 
-	const summary = [
-		`Target: ${plan.targetDir}`,
-		`Template: ${plan.templateBase}`,
-		`Install: ${plan.install ? plan.pm ?? 'auto' : 'skipped'}`,
-		plan.force ? 'Overwrite: enabled' : '',
-	]
-		.filter(Boolean)
+		const summary = [
+			`Target: ${plan.targetDir}`,
+			`Template: ${plan.templateBase}`,
+			`Install: ${plan.install ? (plan.pm ?? 'auto') : 'skipped'}`,
+			plan.force ? 'Overwrite: enabled' : '',
+		]
+			.filter(Boolean)
 			.join('\n')
 		note(summary, plan.dryRun ? 'Dry run' : 'Plan')
 
@@ -102,10 +101,9 @@ export const newCommand = define({
 		await generateFromTemplate(plan, ctx.log)
 
 		if (plan.install) {
-			const pm = plan.pm ?? detectPm(plan.workspaceRoot, 'pnpm')
-			const args = pm === 'yarn' ? [] : ['i']
+			const pm = plan.pm ?? (await detectPm(plan.workspaceRoot))
 			ctx.log(`\n→ Installing deps with ${pm}...`)
-			await run(pm, args, plan.targetDir)
+			await runPackageManager(pm, ['install'], plan.targetDir)
 			ctx.log(`\n${pm} dev`)
 		}
 
@@ -146,14 +144,15 @@ function createScaffoldPlan(input: string, values: NewCommandValues): ScaffoldPl
 	} = values
 	const workspaceRoot = resolve(process.cwd(), root)
 	const destBase = resolve(workspaceRoot, dest)
-	const { name: pluginName, packageName } = parsePackageName(input)
+	const envConfig = resolvePluginEnv()
+	const { name: pluginName, packageName } = parsePackageName(input, envConfig.pluginPrefixes)
 	const targetDir = resolve(destBase, pluginName)
 
 	if (!force && !isEmptyDir(targetDir)) {
 		throw new Error(`Target exists and not empty: ${targetDir}\nUse --force to overwrite.`)
 	}
 
-	return {
+	const plan: ScaffoldPlan = {
 		pluginName,
 		packageName,
 		className: pascalCase(pluginName),
@@ -164,9 +163,14 @@ function createScaffoldPlan(input: string, values: NewCommandValues): ScaffoldPl
 		force,
 		dryRun,
 		install,
-		pm,
 		year: new Date().getFullYear(),
 	}
+
+	if (pm) {
+		plan.pm = pm
+	}
+
+	return plan
 }
 
 async function generateFromTemplate(plan: ScaffoldPlan, log: (...args: unknown[]) => void) {
@@ -240,17 +244,32 @@ function pascalCase(s: string) {
 		.join('')
 }
 
-function parsePackageName(input: string) {
+export function parsePackageName(input: string, pluginPrefixes: string[]) {
 	const raw = String(input).trim()
 	if (!raw) throw new Error('Missing packageName')
 	const match = raw.match(/^(@[^/]+)\/(.+)$/)
+	const prefixes = pluginPrefixes.length > 0 ? pluginPrefixes : ['pluxel-plugin']
 	if (match) {
 		const scope = match[1]
 		const scopedName = kebabCase(match[2])
-		return { scope, name: scopedName, packageName: `${scope}/${scopedName}` }
+		const scopedPackage = applyPluginPrefix(scopedName, prefixes)
+		return { scope, name: scopedName, packageName: `${scope}/${scopedPackage}` }
 	}
 	const name = kebabCase(raw)
-	return { scope: '', name, packageName: name }
+	const packageName = applyPluginPrefix(name, prefixes)
+	return { scope: '', name, packageName }
+}
+
+function applyPluginPrefix(name: string, prefixes: string[]) {
+	const normalizedName = name
+	for (const prefix of prefixes) {
+		if (normalizedName.startsWith(prefix)) {
+			return normalizedName
+		}
+	}
+	const fallback = prefixes[0] ?? 'pluxel-plugin'
+	const separator = fallback.endsWith('-') || normalizedName.startsWith('-') ? '' : '-'
+	return `${fallback}${separator}${normalizedName}`
 }
 
 function isEmptyDir(dir: string) {
@@ -262,31 +281,4 @@ function resolveTemplateBase(input: string) {
 		return input
 	}
 	return resolveTemplatesDir?.(input) ?? resolve(__dirname, 'templates', input)
-}
-
-function detectPm(root: string, fallback: PM = 'pnpm'): PM {
-	try {
-		if (fs.existsSync(join(root, 'pnpm-lock.yaml'))) return 'pnpm'
-		if (fs.existsSync(join(root, 'yarn.lock'))) return 'yarn'
-		if (fs.existsSync(join(root, 'package-lock.json'))) return 'npm'
-	} catch {}
-	const ua = process.env.npm_config_user_agent || ''
-	if (ua.startsWith('pnpm')) return 'pnpm'
-	if (ua.startsWith('yarn')) return 'yarn'
-	if (ua.startsWith('npm')) return 'npm'
-	return fallback
-}
-
-async function run(pm: PM, args: string[], cwd: string) {
-	return new Promise<void>((resolvePromise, reject) => {
-		const child = spawn(pm, args, {
-			stdio: 'inherit',
-			cwd,
-			shell: process.platform === 'win32',
-		})
-		child.on('exit', (code) => {
-			if (code === 0) resolvePromise()
-			else reject(new Error(`${pm} ${args.join(' ')} failed`))
-		})
-	})
 }

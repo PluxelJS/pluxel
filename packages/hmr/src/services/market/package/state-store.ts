@@ -9,7 +9,7 @@ export interface PersistedPackageEntry {
 	resolution: EntryResolutionOk
 	moduleId: string
 	isAnchor: boolean
-	installStatus?: PackageInstallStatus
+	installStatus?: PackageInstallStatus | undefined
 	loadedAt: number
 }
 
@@ -20,16 +20,16 @@ export interface PackageStatePayload {
 
 export interface PackageStateStoreOptions {
 	file: string
-	debounceMs?: number
-	onError?: (error: unknown) => void
+	debounceMs?: number | undefined
+	onError?: ((error: unknown) => void) | undefined
 }
 
 export class PackageStateStore {
-	private timer?: NodeJS.Timeout
-	private latest?: PackageStatePayload
+	private timer: NodeJS.Timeout | undefined
+	private latest: PackageStatePayload | undefined
 	private readonly file: string
 	private readonly debounceMs: number
-	private readonly onError?: (error: unknown) => void
+	private readonly onError: ((error: unknown) => void) | undefined
 
 	constructor(options: PackageStateStoreOptions) {
 		this.file = options.file

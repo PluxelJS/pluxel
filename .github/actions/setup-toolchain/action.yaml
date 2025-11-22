@@ -1,6 +1,20 @@
 name: 'Setup toolchain'
 description: 'Install pnpm (from packageManager), Node.js, optional Bun, and prime caches'
 
+outputs:
+  node-version:
+    description: 'Resolved Node.js version'
+    value: ${{ steps.detect.outputs.node }}
+  bun-version:
+    description: 'Resolved Bun version (empty when disabled)'
+    value: ${{ steps.detect.outputs.bun }}
+  pnpm-version:
+    description: 'Resolved pnpm version'
+    value: ${{ steps.detect.outputs.pnpm }}
+  pnpm-lock-paths:
+    description: 'Newline separated pnpm lockfiles for caching'
+    value: ${{ steps.detect.outputs.pnpm-lock-paths }}
+
 inputs:
   node-version:
     description: 'Node.js version spec (falls back to workflow env NODE_VERSION or default runner tooling)'
@@ -10,9 +24,13 @@ inputs:
     required: false
     default: ''
   install:
-    description: 'Whether to run pnpm install --frozen-lockfile'
+    description: 'Whether to run pnpm install (arguments controlled via install-args input)'
     required: false
     default: 'true'
+  install-args:
+    description: 'Additional flags passed to pnpm install'
+    required: false
+    default: '--frozen-lockfile'
 
 runs:
   using: 'composite'
@@ -52,6 +70,12 @@ runs:
           pnpm_version="latest"
         fi
         echo "pnpm=$pnpm_version" >> "$GITHUB_OUTPUT"
+
+        pnpm_lock_paths="$(find . -not -path '*/.git/*' -not -path '*/node_modules/*' -name pnpm-lock.yaml -print | sed 's|^\./||')"
+        if [ -z "$pnpm_lock_paths" ]; then
+          pnpm_lock_paths="pnpm-lock.yaml"
+        fi
+        printf 'pnpm-lock-paths<<EOF\n%s\nEOF\n' "$pnpm_lock_paths" >> "$GITHUB_OUTPUT"
         echo "Resolved pnpm $pnpm_version, node ${node_version:-<system>}, bun ${bun_version:-<disabled>}"
 
     - name: '🔧 Install pnpm'
@@ -76,7 +100,7 @@ runs:
       with:
         node-version: ${{ steps.detect.outputs.node }}
         cache: pnpm
-        cache-dependency-path: pnpm-lock.yaml
+        cache-dependency-path: ${{ steps.detect.outputs.pnpm-lock-paths }}
         registry-url: 'https://registry.npmjs.org'
 
     - name: '🍞 Setup Bun'
@@ -98,4 +122,6 @@ runs:
     - name: '📦 Install dependencies'
       if: ${{ inputs.install != 'false' }}
       shell: bash
-      run: pnpm install --frozen-lockfile
+      env:
+        INSTALL_ARGS: ${{ inputs['install-args'] }}
+      run: pnpm install $INSTALL_ARGS

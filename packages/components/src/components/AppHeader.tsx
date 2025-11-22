@@ -1,56 +1,95 @@
 // src/components/Layout/AppHeader.tsx
 
-import { Box, Burger, Divider, Group, Title } from '@mantine/core'
+import {
+	ActionIcon,
+	Badge,
+	Box,
+	Divider,
+	Group,
+	Stack,
+	Text,
+	Title,
+} from '@mantine/core'
+import { IconBell, IconDots, IconMenu2 } from '@tabler/icons-react'
 import type React from 'react'
+import { ColorSchemeToggle } from './ColorSchemeToggle'
 
 export interface AppHeaderProps {
-	/** 左侧主标题（string 或自定义节点） */
 	title?: React.ReactNode
-	/** 右侧插槽：操作区/用户信息/搜索框等 */
+	subtitle?: React.ReactNode
 	right?: React.ReactNode
-	/** 是否在底部显示一条分隔线 */
 	withDivider?: boolean
-	/** 移动端是否显示汉堡按钮 */
 	showBurger?: boolean
-	/** 点击汉堡按钮（常用于打开侧栏） */
+	status?: string
 	onBurgerClick?: () => void
 }
 
 export default function AppHeader({
 	title = '这里是 AppHeader',
+	subtitle,
 	right,
 	withDivider = false,
 	showBurger = false,
+	status,
 	onBurgerClick,
 }: AppHeaderProps) {
+	const defaultRight = (
+		<Group gap="xs">
+			<ColorSchemeToggle />
+			<ActionIcon variant="default" size="lg" radius="xl" aria-label="查看通知">
+				<IconBell size={18} />
+			</ActionIcon>
+			<ActionIcon variant="default" size="lg" radius="xl" aria-label="更多操作">
+				<IconDots size={18} />
+			</ActionIcon>
+		</Group>
+	)
+
 	return (
 		<Box component="header" h="100%" role="banner">
-			<Group
-				px="md"
-				h="100%"
-				wrap="nowrap"
-				gap="sm"
-				style={{ minWidth: 0 }} // 允许内部文本截断
-			>
-				{showBurger && <Burger size="sm" onClick={onBurgerClick} aria-label="Toggle navigation" />}
+			<Group px="md" h="100%" wrap="nowrap" gap="md" style={{ minWidth: 0 }}>
+				{showBurger && (
+					<ActionIcon
+						variant="subtle"
+						size="lg"
+						radius="xl"
+						onClick={onBurgerClick}
+						aria-label="展开导航"
+					>
+						<IconMenu2 size={18} />
+					</ActionIcon>
+				)}
 
-				<Title
-					order={3}
-					fw={600}
-					// 让标题在窄屏不挤爆布局
-					style={{
-						fontSize: 18,
-						margin: 0,
-						whiteSpace: 'nowrap',
-						overflow: 'hidden',
-						textOverflow: 'ellipsis',
-					}}
-				>
-					{title}
-				</Title>
+				<Stack gap={2} style={{ minWidth: 0 }}>
+					<Group gap={8}>
+						<Title
+							order={3}
+							fw={600}
+							style={{
+								fontSize: 18,
+								margin: 0,
+								whiteSpace: 'nowrap',
+								overflow: 'hidden',
+								textOverflow: 'ellipsis',
+							}}
+						>
+							{title}
+						</Title>
+						{status && (
+							<Badge color="brand" variant="light">
+								{status}
+							</Badge>
+						)}
+					</Group>
+					{subtitle && (
+						<Text size="sm" c="dimmed" lineClamp={1}>
+							{subtitle}
+						</Text>
+					)}
+				</Stack>
 
 				<Box ml="auto" style={{ minWidth: 0 }}>
-					{right ?? <span style={{ opacity: 0.7 }}>右侧操作区</span>}
+					{right ?? defaultRight}
 				</Box>
 			</Group>
 

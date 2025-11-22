@@ -394,15 +394,7 @@ export class HMRService {
 		const serverConfig: InlineConfig = {
 			root: process.cwd(),
 			server: { port: 3000, middlewareMode: false },
-			resolve: {
-				alias: [
-					{
-						// 3.34.1 的 tabler icons ESM 单体导出，避免切片数过多
-						find: '@tabler/icons-react',
-						replacement: '@tabler/icons-react/dist/esm/icons/index.mjs',
-					},
-				],
-			},
+			resolve: {},
 			plugins: [tsconfigPaths(), this.plugin, this.ctx.honoService.viteHonoDevServer],
 			// ✅ 真正禁用依赖预优化，以免 graph 形变
 			optimizeDeps: {

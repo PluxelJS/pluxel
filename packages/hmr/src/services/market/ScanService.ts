@@ -1,10 +1,11 @@
 import { pathToFileURL } from 'node:url'
 import { type Context, Injectable } from '@pluxel/core'
-import { clearResolveCache, resolveModulePath } from 'exsolve'
+import { resolveModulePath, type ResolveOptions } from 'exsolve'
 import { dirname, isAbsolute, normalize, resolve as r } from 'pathe'
 import { EntryResolver } from './scan/entry-resolver'
 import { buildScanGraph } from './scan/graph-builder'
 import { DEFAULT_SCAN_OPTIONS, resolveScanOptions } from './scan/options'
+import { ModuleResolveCache } from './scan/resolve-cache'
 import type {
 	EntryResolution,
 	EntryResolutionOk,
@@ -74,8 +75,9 @@ export interface ScanSnapshot {
 export class ScanService {
 	private defaults: ResolvedScanOptions
 	private roots: string[]
-	private readonly entryResolver = new EntryResolver()
-	private readonly installedResolver = new InstalledPackageResolver()
+	private readonly resolveCache = new ModuleResolveCache()
+	private readonly entryResolver = new EntryResolver(this.resolveCache)
+	private readonly installedResolver = new InstalledPackageResolver(this.resolveCache)
 	private readonly snapshotCache = new Map<string, Promise<ScanSnapshot>>()
 
 	constructor(_ctx: Context, config: ScanServiceConfig = {}) {
@@ -126,9 +128,15 @@ export class ScanService {
 	 */
 	clearCaches() {
 		this.snapshotCache.clear()
+		this.invalidateResolverCache()
+	}
+
+	/**
+	 * 仅清空模块解析缓存，适合在依赖安装/升级后调用。
+	 */
+	invalidateResolverCache() {
 		this.entryResolver.clear()
-		this.installedResolver.clear()
-		clearResolveCache()
+		this.resolveCache.clear()
 	}
 
 	/**
@@ -183,7 +191,14 @@ export class ScanService {
 				? { ...overrides, focusPackages: mergeFocus(overrides.focusPackages, focusHints) }
 				: overrides
 
-		const snapshot = await this.snapshot({ roots: request.roots, scan: finalScan })
+		const snapshotRequest: ScanTaskOptions = {}
+		if (request.roots !== undefined) {
+			snapshotRequest.roots = request.roots
+		}
+		if (finalScan !== undefined) {
+			snapshotRequest.scan = finalScan
+		}
+		const snapshot = await this.snapshot(snapshotRequest)
 		const pkg = snapshot.findPackage(selector)
 		if (pkg) return pkg.entry
 
@@ -395,7 +410,7 @@ function selectorLabel(selector: PackageSelector): string | undefined {
 class InstalledPackageResolver {
 	private readonly from: URL
 
-	constructor(baseDir: string = process.cwd()) {
+	constructor(private readonly cache: ModuleResolveCache, baseDir: string = process.cwd()) {
 		this.from = ensureDirectoryURL(baseDir)
 	}
 
@@ -421,14 +436,11 @@ class InstalledPackageResolver {
 		return undefined
 	}
 
-	clear() {
-		// no-op: resolution cache lives in exsolve global state, cleared by ScanService.
-	}
-
 	private resolveWithConditions(id: string, conditions?: string[]): string | undefined {
-		const options: { from: URL; try: true; conditions?: string[] } = {
+		const options: ResolveOptions = {
 			from: this.from,
 			try: true,
+			cache: this.cache.map,
 		}
 		if (conditions && conditions.length > 0) {
 			options.conditions = [...conditions]

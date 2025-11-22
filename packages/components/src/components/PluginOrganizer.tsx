@@ -77,6 +77,8 @@ import {
 	Text,
 	Tooltip,
 	useMantineTheme,
+	useComputedColorScheme,
+	rgba,
 } from '@mantine/core'
 import {
 	IconChevronDown,
@@ -248,7 +250,30 @@ const SortableRow = memo(function SortableRow({
 	dh: { rowH: number; px: number; py: number; font: 'xs' | 'sm' }
 }) {
 	const theme = useMantineTheme()
+	const scheme = useComputedColorScheme('light', { getInitialValueInEffect: true })
+	const isDark = scheme === 'dark'
 	const rowRef = useRef<HTMLAnchorElement | HTMLSpanElement | null>(null)
+	const brand = theme.colors.brand ?? theme.colors.indigo
+	const accent = theme.colors.blue
+	const activeBg = active
+		? isDark
+			? brand[5]
+			: rgba(brand[0], 0.95)
+		: undefined
+	const selectedBg = selected
+		? isDark
+			? rgba(accent[4], 0.6)
+			: rgba(accent[0], 0.8)
+		: undefined
+	const rowBackground = active ? activeBg : selected ? selectedBg : undefined
+	const baseColorValue = isDark ? theme.colors.gray[1] : theme.colors.gray[9]
+	const rowColorValue =
+		active || selected
+			? isDark
+				? theme.white
+				: theme.colors.gray[9]
+			: baseColorValue
+	const separatorColor = isDark ? theme.colors.dark[4] : theme.colors.gray[2]
 
 	const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
 		id: iid(pid),
@@ -279,8 +304,9 @@ const SortableRow = memo(function SortableRow({
 				borderRadius: 6,
 				cursor: disabled ? 'default' : 'pointer',
 				userSelect: 'none',
-				background: active ? theme.colors.indigo[0] : selected ? theme.colors.blue[0] : undefined,
-				borderBottom: `1px solid ${theme.colors.gray[2]}`,
+				background: rowBackground,
+				color: rowColorValue,
+				borderBottom: `1px solid ${separatorColor}`,
 				boxSizing: 'border-box',
 			}}
 			data-po-row="1"
@@ -295,7 +321,8 @@ const SortableRow = memo(function SortableRow({
 					style={{
 						width: 2,
 						alignSelf: 'stretch',
-						background: theme.colors.indigo[6],
+						background:
+							isDark ? theme.white : brand[6],
 						borderTopLeftRadius: 6,
 						borderBottomLeftRadius: 6,
 					}}
@@ -322,12 +349,20 @@ const SortableRow = memo(function SortableRow({
 
 			<Box style={{ flex: 1, minWidth: 0 }}>
 				{LinkComp ? (
-					<LinkComp to={href}>
+					<LinkComp
+						to={href}
+						style={{ textDecoration: 'none', display: 'block', color: rowColorValue }}
+					>
 						<Tooltip label={name} withinPortal withArrow openDelay={200}>
 							<Text
 								ref={rowRef as any}
 								size={dh.font}
-								style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
+								style={{
+									whiteSpace: 'nowrap',
+									overflow: 'hidden',
+									textOverflow: 'ellipsis',
+									color: rowColorValue,
+								}}
 								aria-current={active ? 'page' : undefined}
 							>
 								{name}
@@ -341,7 +376,12 @@ const SortableRow = memo(function SortableRow({
 							size={dh.font}
 							href={href}
 							underline="never"
-							style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
+							style={{
+								whiteSpace: 'nowrap',
+								overflow: 'hidden',
+								textOverflow: 'ellipsis',
+								color: rowColorValue,
+							}}
 							aria-current={active ? 'page' : undefined}
 						>
 							{name}
@@ -359,10 +399,12 @@ const SortableRow = memo(function SortableRow({
 							width: 6,
 							height: 6,
 							borderRadius: 6,
-							background: running ? theme.colors.green[6] : theme.colors.gray[5],
+							background: running
+								? rgba(theme.colors.green[isDark ? 3 : 5], 0.9)
+								: rgba(theme.colors.gray[isDark ? 5 : 4], 0.8),
 						}}
 					/>
-					<Text size="xs" c="dimmed">
+					<Text size="xs" style={{ color: rowColorValue }}>
 						{running ? '运行' : '停止'}
 					</Text>
 				</Group>

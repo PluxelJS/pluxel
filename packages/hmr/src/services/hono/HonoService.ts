@@ -2,6 +2,7 @@ import devServer from '@hono/vite-dev-server'
 import { type Context, Injectable } from '@pluxel/core'
 import { Hono } from 'hono'
 import { createFactory, type Factory } from 'hono/factory'
+import type { ContentfulStatusCode } from 'hono/utils/http-status'
 import type { Plugin } from 'vite'
 
 import api from '../../api/hono'
@@ -193,7 +194,7 @@ export class HonoService {
 		const result = await service.check(guardInput)
 		if (result.allow) return undefined
 
-		const status = (result.status ?? 403) as number
+		const status: ContentfulStatusCode = result.status ?? 403
 
 		// 避免把重对象打进日志
 		this.logger.warn('[AuthGuard] Blocked request', {
@@ -264,6 +265,7 @@ export class HonoService {
 	}
 
 	private createRenderer(): Promise<RenderHandler> {
+		// #if NODE_ENV !== 'production'
 		const importMetaEnv = (import.meta as ImportMeta & { env?: Record<string, any> }).env
 		const ssrFlag =
 			importMetaEnv?.PLUXEL_HMR_SSR ??
@@ -272,6 +274,8 @@ export class HonoService {
 		if (ssrFlag) {
 			return import('../../server/dev').then(({ createDevRenderer }) => createDevRenderer())
 		}
+		// #endif
+
 		return import('../../server/static').then(({ createStaticRenderer }) => createStaticRenderer())
 	}
 

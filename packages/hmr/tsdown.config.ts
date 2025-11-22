@@ -1,5 +1,6 @@
 import { fileURLToPath } from 'node:url'
 import { defineConfig } from 'tsdown'
+import PreprocessorDirectives from 'unplugin-preprocessor-directives/rollup'
 
 const valibotFormSrc = fileURLToPath(new URL('../valibot-form/src', import.meta.url))
 
@@ -28,7 +29,11 @@ export default defineConfig({
 	exports: {
 		devExports: '@pluxel/source',
 	},
-	plugins: [appendDtsImport('import type {} from "./services"')],
+	plugins: [PreprocessorDirectives(), appendDtsImport('import type {} from "./services"')],
+	env: {
+		NODE_ENV: 'production',
+		PLUXEL_HMR_SSR: false,
+	},
 	entry: {
 		index: 'src/index.ts',
 		services: 'src/services/index.ts',
@@ -37,16 +42,12 @@ export default defineConfig({
 	alias: {
 		'~': valibotFormSrc,
 	},
-	env: {
-		BUILD_OUTPUT: true,
-		PLUXEL_HMR_SSR: false,
-	},
 	tsconfig: './tsconfig.json',
 	dts: {
 		resolver: 'tsc',
 	},
 	// 不要内联 core，未来可能要用来 build。
-	external: ['@pluxel/core', '@pluxel/core/services'],
+	external: ['@pluxel/core', '@pluxel/core/services', '@pluxel/components'],
 	format: ['esm'],
 	sourcemap: true,
 	clean: true,

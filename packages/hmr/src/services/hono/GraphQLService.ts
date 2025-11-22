@@ -30,7 +30,6 @@ interface GraphQLConfig {
 }
 const _DEFAULT_CONFIG: GraphQLConfig = {
 	endpoint: 'http://localhost:3000/graphql',
-	destination: undefined,
 	react: true,
 	scalarTypes: { Number: 'number', Object: 'Record<string, unknown>' },
 }

@@ -33,10 +33,38 @@ export interface Scalars {
   Float: { input: number; output: number };
 }
 
+export interface InstallPackageSpecInput {
+  name?: InputMaybe<Scalars["String"]["input"]>;
+  raw?: InputMaybe<Scalars["String"]["input"]>;
+  tag?: InputMaybe<Scalars["String"]["input"]>;
+  version?: InputMaybe<Scalars["String"]["input"]>;
+}
+
+export enum PackageLoadIssueSource {
+  load = "load",
+  restore = "restore",
+}
+
+export enum PackageMutationResultInstallStatus {
+  installed = "installed",
+  reused = "reused",
+}
+
+export enum PluginSourceInfoKind {
+  hmr = "hmr",
+  package = "package",
+  unknown = "unknown",
+}
+
 export enum PluginStatusEntryLifecycleStage {
   disabled = "disabled",
   running = "running",
   stopped = "stopped",
+}
+
+export enum UninstallPackageScopeInput {
+  persisted = "persisted",
+  runtime = "runtime",
 }
 
 export interface UpdatePluginGroupsGroupsInput {
@@ -56,8 +84,12 @@ export enum UpdatePluginStatusStatusInput {
 export const scalarsEnumsHash: ScalarsEnumsHash = {
   Boolean: true,
   Float: true,
+  PackageLoadIssueSource: true,
+  PackageMutationResultInstallStatus: true,
+  PluginSourceInfoKind: true,
   PluginStatusEntryLifecycleStage: true,
   String: true,
+  UninstallPackageScopeInput: true,
   UpdatePluginStatusStatusInput: true,
 };
 export const generatedSchema = {
@@ -66,6 +98,37 @@ export const generatedSchema = {
     error: { __type: "String" },
     ok: { __type: "Boolean!" },
     path: { __type: "String" },
+  },
+  InstallPackageSpecInput: {
+    name: { __type: "String" },
+    raw: { __type: "String" },
+    tag: { __type: "String" },
+    version: { __type: "String" },
+  },
+  PackageIssueSpec: {
+    __typename: { __type: "String!" },
+    name: { __type: "String!" },
+    raw: { __type: "String!" },
+    tag: { __type: "String" },
+    target: { __type: "String!" },
+    version: { __type: "String" },
+  },
+  PackageLoadIssue: {
+    __typename: { __type: "String!" },
+    error: { __type: "String" },
+    message: { __type: "String!" },
+    moduleId: { __type: "String" },
+    recordedAt: { __type: "Float!" },
+    source: { __type: "PackageLoadIssueSource!" },
+    spec: { __type: "PackageIssueSpec!" },
+  },
+  PackageMutationResult: {
+    __typename: { __type: "String!" },
+    code: { __type: "String!" },
+    error: { __type: "String" },
+    installStatus: { __type: "PackageMutationResultInstallStatus" },
+    ok: { __type: "Boolean!" },
+    spec: { __type: "PackageIssueSpec" },
   },
   PluginDependency: {
     __typename: { __type: "String!" },
@@ -94,12 +157,21 @@ export const generatedSchema = {
     name: { __type: "String!" },
     status: { __type: "PluginStatusEntry!" },
   },
+  PluginSourceInfo: {
+    __typename: { __type: "String!" },
+    kind: { __type: "PluginSourceInfoKind!" },
+    moduleId: { __type: "String" },
+    packageName: { __type: "String" },
+    tag: { __type: "String" },
+    version: { __type: "String" },
+  },
   PluginStatusEntry: {
     __typename: { __type: "String!" },
     isEnabled: { __type: "Boolean!" },
     isRunning: { __type: "Boolean!" },
     lifecycleStage: { __type: "PluginStatusEntryLifecycleStage!" },
     name: { __type: "String!" },
+    source: { __type: "PluginSourceInfo!" },
   },
   PluginStatusMutationResult: {
     __typename: { __type: "String!" },
@@ -129,6 +201,25 @@ export const generatedSchema = {
   mutation: {
     __typename: { __type: "String!" },
     buildSnapshot: { __type: "BuildSnapshotResult!" },
+    installPackage: {
+      __type: "PackageMutationResult!",
+      __args: { force: "Boolean", spec: "InstallPackageSpecInput!" },
+    },
+    reinstallPackage: {
+      __type: "PackageMutationResult!",
+      __args: {
+        force: "Boolean",
+        scope: "UninstallPackageScopeInput",
+        spec: "InstallPackageSpecInput!",
+      },
+    },
+    uninstallPackage: {
+      __type: "PackageMutationResult!",
+      __args: {
+        scope: "UninstallPackageScopeInput",
+        spec: "InstallPackageSpecInput!",
+      },
+    },
     updatePluginGroups: {
       __type: "[PluginGroup!]!",
       __args: { groups: "[UpdatePluginGroupsGroupsInput!]!" },
@@ -141,6 +232,7 @@ export const generatedSchema = {
   query: {
     __typename: { __type: "String!" },
     _empty: { __type: "String!" },
+    packageLoadIssues: { __type: "[PackageLoadIssue!]!" },
     plugin: { __type: "PluginScope!", __args: { name: "String!" } },
     pluginGroups: { __type: "[PluginGroup!]!" },
     pluginId: { __type: "PluginIdScope!", __args: { name: "String!" } },
@@ -154,6 +246,34 @@ export interface BuildSnapshotResult {
   error?: Maybe<Scalars["String"]["output"]>;
   ok?: Scalars["Boolean"]["output"];
   path?: Maybe<Scalars["String"]["output"]>;
+}
+
+export interface PackageIssueSpec {
+  __typename?: "PackageIssueSpec";
+  name?: Scalars["String"]["output"];
+  raw?: Scalars["String"]["output"];
+  tag?: Maybe<Scalars["String"]["output"]>;
+  target?: Scalars["String"]["output"];
+  version?: Maybe<Scalars["String"]["output"]>;
+}
+
+export interface PackageLoadIssue {
+  __typename?: "PackageLoadIssue";
+  error?: Maybe<Scalars["String"]["output"]>;
+  message?: Scalars["String"]["output"];
+  moduleId?: Maybe<Scalars["String"]["output"]>;
+  recordedAt?: Scalars["Float"]["output"];
+  source?: PackageLoadIssueSource;
+  spec: PackageIssueSpec;
+}
+
+export interface PackageMutationResult {
+  __typename?: "PackageMutationResult";
+  code?: Scalars["String"]["output"];
+  error?: Maybe<Scalars["String"]["output"]>;
+  installStatus?: Maybe<PackageMutationResultInstallStatus>;
+  ok?: Scalars["Boolean"]["output"];
+  spec?: Maybe<PackageIssueSpec>;
 }
 
 export interface PluginDependency {
@@ -188,12 +308,22 @@ export interface PluginScope {
   status: PluginStatusEntry;
 }
 
+export interface PluginSourceInfo {
+  __typename?: "PluginSourceInfo";
+  kind?: PluginSourceInfoKind;
+  moduleId?: Maybe<Scalars["String"]["output"]>;
+  packageName?: Maybe<Scalars["String"]["output"]>;
+  tag?: Maybe<Scalars["String"]["output"]>;
+  version?: Maybe<Scalars["String"]["output"]>;
+}
+
 export interface PluginStatusEntry {
   __typename?: "PluginStatusEntry";
   isEnabled?: Scalars["Boolean"]["output"];
   isRunning?: Scalars["Boolean"]["output"];
   lifecycleStage?: PluginStatusEntryLifecycleStage;
   name?: Scalars["String"]["output"];
+  source: PluginSourceInfo;
 }
 
 export interface PluginStatusMutationResult {
@@ -222,6 +352,19 @@ export interface PluginStatusSummary {
 export interface Mutation {
   __typename?: "Mutation";
   buildSnapshot: BuildSnapshotResult;
+  installPackage: (args: {
+    force?: Maybe<Scalars["Boolean"]["input"]>;
+    spec: InstallPackageSpecInput;
+  }) => PackageMutationResult;
+  reinstallPackage: (args: {
+    force?: Maybe<Scalars["Boolean"]["input"]>;
+    scope?: Maybe<UninstallPackageScopeInput>;
+    spec: InstallPackageSpecInput;
+  }) => PackageMutationResult;
+  uninstallPackage: (args: {
+    scope?: Maybe<UninstallPackageScopeInput>;
+    spec: InstallPackageSpecInput;
+  }) => PackageMutationResult;
   updatePluginGroups: (args: {
     groups: Array<UpdatePluginGroupsGroupsInput>;
   }) => Array<PluginGroup>;
@@ -234,6 +377,7 @@ export interface Mutation {
 export interface Query {
   __typename?: "Query";
   _empty?: Scalars["String"]["output"];
+  packageLoadIssues: Array<PackageLoadIssue>;
   plugin: (args: { name: Scalars["String"]["input"] }) => PluginScope;
   pluginGroups: Array<PluginGroup>;
   pluginId: (args: { name: Scalars["String"]["input"] }) => PluginIdScope;

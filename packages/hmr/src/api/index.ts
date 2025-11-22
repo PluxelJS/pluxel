@@ -1,16 +1,18 @@
+import type { Resolver } from '@gqloom/core'
 import type { Context as PlxContext } from '@pluxel/core'
 
-import { createPluginGroupsModule } from './modules/groups'
-import { createPluginDetailModule, createPluginQueryModule } from './modules/pluginQueries'
-import { createSnapshotModule } from './modules/snapshot'
-import { createPluginStatusModule } from './modules/status'
+import { createPluginGroupsResolver } from './features/groups'
+import { createMarketResolver } from './features/market'
+import { createPluginResolvers } from './features/plugins'
+import { createPluginStatusResolvers } from './features/pluginStatus'
+import { createSnapshotResolver } from './features/snapshot'
 
-export function getAPISchema(pCtx: PlxContext) {
+export function getAPISchema(pCtx: PlxContext): Resolver[] {
 	return [
-		createPluginQueryModule(pCtx),
-		createPluginDetailModule(pCtx),
-		createPluginGroupsModule(pCtx),
-		...createPluginStatusModule(pCtx),
-		createSnapshotModule(pCtx),
-	]
+		...createPluginResolvers(pCtx),
+		createPluginGroupsResolver(pCtx),
+		createMarketResolver(pCtx),
+		createSnapshotResolver(pCtx),
+		...createPluginStatusResolvers(pCtx),
+	] satisfies Resolver[]
 }

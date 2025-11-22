@@ -77,10 +77,10 @@ export async function buildScanGraph(
 						const node: PackageNode = {
 							dir: normalizedDir,
 							name: name ?? `@unknown/${relativeName(workspace.root, pkgDir)}`,
-							manifestPath,
-							manifest: manifest ?? undefined,
 							entry,
 						}
+						if (manifestPath) node.manifestPath = manifestPath
+						if (manifest) node.manifest = manifest
 
 						rootPackages.push(node)
 						packages.push(node)
@@ -104,11 +104,12 @@ export async function buildScanGraph(
 			const normalizedDir = normalize(dir)
 			const node: PackageNode = {
 				dir: normalizedDir,
-				name: manifest?.name,
-				manifestPath,
-				manifest: manifest ?? undefined,
 				entry,
 			}
+			const manifestName = manifest?.name
+			if (manifestName) node.name = manifestName
+			if (manifestPath) node.manifestPath = manifestPath
+			if (manifest) node.manifest = manifest
 
 			if (focusSet) markFocusMatches(focusSet, matchedFocus, node)
 

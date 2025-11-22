@@ -1,9 +1,14 @@
 {
-  "name": "pluxel-plugin-{{pluginName}}",
+  "name": "{{packageName}}",
   "version": "0.1.0",
   "type": "module",
+  "files": [
+    "dist",
+    "!**/*.map"
+  ],
+  "main": "./src/{{pluginName}}.ts",
   "scripts": {
-    "build": "tsdown"
+    "build": "pluxel build"
   },
   "peerDependencies": {},
   "devDependencies": {}

@@ -13,7 +13,6 @@ import {
 	Tooltip,
 } from '@mantine/core'
 import { useHotkeys } from '@mantine/hooks'
-import { notifications } from '@mantine/notifications'
 import { formOptions } from '@tanstack/react-form'
 import type { InferRequestType, InferResponseType } from 'hono/client'
 import { useCallback, useEffect, useMemo, useState } from 'react'
@@ -21,6 +20,7 @@ import type { InferOutput, ObjectSchema } from 'valibot'
 import { getDefaults } from 'valibot'
 import { AutoForm } from 'valibot-form/web'
 import { client } from '../rpc'
+import { useNotify } from '../notifications/useNotify'
 export interface ConfigFormProps {
 	pluginName: string
 	configs: Record<string, ObjectSchema<any, any>>
@@ -147,6 +147,7 @@ function ConfigTabPanel({
 	onSaved: (k: string) => void
 	savedAt?: number
 }) {
+	const notify = useNotify()
 	const $post = client.plugins[':name'].config.$post
 	type BasePayload = InferRequestType<typeof $post>['json']
 	type Payload = BasePayload & { signal?: AbortSignal }
@@ -163,7 +164,7 @@ function ConfigTabPanel({
 				return (await res.json()) as Response
 			} catch (error: any) {
 				if (signal?.aborted) throw error
-				notifications.show({
+				notify({
 					title: '网络或服务器错误',
 					message: String(error?.message ?? error),
 					color: 'red',
@@ -198,21 +199,22 @@ function ConfigTabPanel({
 						formData: { [tabKey]: value },
 					})
 					if (result.code !== 'success') {
-						notifications.show({
+						notify({
 							title: '提交失败',
 							message: result.code,
 							color: 'red',
 						})
 					} else {
 						onSaved(tabKey)
-						notifications.show({
+						notify({
 							title: '提交成功',
 							message: `配置 ${tabKey} 已提交到服务器。`,
+							color: 'green',
 						})
 					}
 				},
 			}),
-		[mutate, tabKey, defaults, onSaved],
+		[mutate, tabKey, defaults, onSaved, notify],
 	)
 
 	useHotkeys([

@@ -1,18 +1,79 @@
-import { define } from 'gunshi'
+import { type ArgValues, define } from 'gunshi'
+import { resolveBuildContext } from '../build/config'
+import { cliTsdownOverlay } from '../build/tsdown-config'
+import { createImportTracker } from '../build/plugins/import-tracker'
+import { createOptionalDependencyHook } from '../build/plugin-tracker'
+import { runWithTsdown } from '../build/tsdown-runner'
+import type { BuildRuntimeConfig } from '../build/types'
+
+const buildCommandArgs = {
+	root: {
+		type: 'string',
+		description: 'Project root that contains tsdown config',
+		default: '.',
+	},
+	watch: {
+		type: 'boolean',
+		description: 'Enable watch mode',
+		default: false,
+	},
+	debug: {
+		type: 'boolean',
+		description: 'Print resolved tsdown config before running',
+		default: false,
+	},
+} as const
+
+type BuildCommandArgs = typeof buildCommandArgs
+type BuildCommandValues = ArgValues<BuildCommandArgs>
 
 export const buildCommand = define({
 	name: 'build',
 	description: 'Build current project',
-	args: {
-		watch: {
-			type: 'boolean',
-			description: 'Enable watch mode',
-			default: false,
-		},
-	},
+	args: buildCommandArgs,
 	async run(ctx) {
-		const { watch } = ctx.values
-		// TODO: wire up real build pipeline here
-		ctx.log('building...', { watch })
+		// 先读取 workspace 配置，这里只负责 build 命令，不做 scaffold 以外的逻辑
+		const runtime = await resolveBuildContext(ctx.values as BuildCommandValues)
+
+		ctx.log(`[build] root: ${runtime.projectRoot}`)
+		ctx.log(`[build] package.json: ${runtime.packageJsonPath}`)
+		if (runtime.pluginPrefixes.length > 0) {
+			ctx.log(`[build] plugin prefixes: ${runtime.pluginPrefixes.join(', ')}`)
+		}
+		if (runtime.tsdownConfigPath) {
+			ctx.log(`[build] tsdown overrides: ${runtime.tsdownConfigPath}`)
+		}
+		if (runtime.debug) {
+			ctx.log('[build] debug mode enabled')
+		}
+
+		// 使用 Rolldown 插件在 bundler 内部跟踪 import，效率比提前用 parse-imports 扫目录更高
+		const importTracker = createImportTracker(runtime.pluginPrefixes)
+		const pluginHook = createOptionalDependencyHook({
+			packageJsonPath: runtime.packageJsonPath,
+			manifestField: runtime.manifestField,
+			log: ctx.log,
+			collectPlugins: () => importTracker.flush(),
+		})
+
+		await runWithTsdown({
+			context: runtime,
+			onSuccess: pluginHook,
+			log: ctx.log,
+			extraConfig: mergeOverlayPlugins(cliTsdownOverlay, importTracker.plugin),
+		})
 	},
 })
+
+function mergeOverlayPlugins(overlay: typeof cliTsdownOverlay, additional: any) {
+	return (ctx: BuildRuntimeConfig) => {
+		const resolved = typeof overlay === 'function' ? overlay(ctx) : overlay
+		const overlayPlugins = resolved.plugins
+		const plugins = overlayPlugins
+			? Array.isArray(overlayPlugins)
+				? [...overlayPlugins, additional]
+				: [overlayPlugins, additional]
+			: [additional]
+		return { ...resolved, plugins }
+	}
+}
