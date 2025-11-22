@@ -90,13 +90,6 @@
 				"label": "📁 valibot-form",
 				"foreground": "#ffffff",
 				"background": "#db0062"
-			},
-			{
-				"path": "/home/ahdg/code/pluxel-market",
-				"packageName": "pluxel-market",
-				"label": "pluxel-market",
-				"foreground": "#000000",
-				"background": "#34c12a"
 			}
 		],
 		"files.exclude": {},

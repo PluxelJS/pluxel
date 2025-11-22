@@ -1,10 +1,9 @@
 import { type ArgValues, define } from 'gunshi'
-import { resolveBuildContext } from '../build/config'
-import { cliTsdownOverlay } from '../build/tsdown-config'
-import { createImportTracker } from '../build/plugins/import-tracker'
-import { createOptionalDependencyHook } from '../build/plugin-tracker'
-import { runWithTsdown } from '../build/tsdown-runner'
-import type { BuildRuntimeConfig } from '../build/types'
+import { resolveBuildContext } from '../tsbuild/config'
+import { createOptionalDependencyHook } from '../tsbuild/plugin-tracker'
+import { createImportTracker } from '../tsbuild/plugins/import-tracker'
+import { cliTsdownOverlay } from '../tsbuild/tsdown-config'
+import { runWithTsdown } from '../tsbuild/tsdown-runner'
 
 const buildCommandArgs = {
 	root: {

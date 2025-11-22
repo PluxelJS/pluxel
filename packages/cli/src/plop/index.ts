@@ -1,11 +1,11 @@
 import fs from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { cancel, intro, isCancel, note, outro, text } from '@clack/prompts'
-import { define, type ArgValues } from 'gunshi'
+import { type ArgValues, define } from 'gunshi'
 import nodePlop, { type NodePlopAPI } from 'node-plop'
 import { dirname, isAbsolute, join, resolve } from 'pathe'
-import { resolvePluginEnv } from '../build/env'
-import { detectPm, runPackageManager, type PM } from '../utils/pm'
+import { resolvePluginEnv } from '../tsbuild/env'
+import { detectPm, type PM, runPackageManager } from '../utils/pm'
 import { resolveTemplatesDir } from './utils'
 
 const __filename = fileURLToPath(import.meta.url)
