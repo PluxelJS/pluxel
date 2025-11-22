@@ -1,7 +1,7 @@
 import type { ResolvedScanOptions, ScanOptionsInput } from './types'
 
 export const DEFAULT_SCAN_OPTIONS: ResolvedScanOptions = {
-	conditions: ['@pluxel/source', 'node', 'import'],
+	conditions: ['@pluxel/hmr', 'node', 'import'],
 	conservativeCandidates: [
 		'index.ts',
 		'index.mts',

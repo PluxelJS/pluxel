@@ -23,10 +23,10 @@ declare module '@pluxel/core' {
 }
 
 interface GraphQLConfig {
-	endpoint: string
+	endpoint?: string
 	destination?: string
-	react: boolean
-	scalarTypes: Record<string, string>
+	react?: boolean
+	scalarTypes?: Record<string, string>
 }
 const _DEFAULT_CONFIG: GraphQLConfig = {
 	endpoint: 'http://localhost:3000/graphql',

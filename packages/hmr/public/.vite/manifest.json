@@ -19,7 +19,7 @@
     ]
   },
   "../valibot-form/dist/DebugValues-DgXuMN4k.mjs": {
-    "file": "assets/DebugValues-DgXuMN4k-CKPDSVTh.js",
+    "file": "assets/DebugValues-DgXuMN4k-BRM-5VhO.js",
     "name": "DebugValues-DgXuMN4k",
     "src": "../valibot-form/dist/DebugValues-DgXuMN4k.mjs",
     "isDynamicEntry": true,
@@ -28,20 +28,20 @@
       "src/client.tsx"
     ]
   },
-  "_mantine-BZpETZZB.js": {
-    "file": "assets/mantine-BZpETZZB.js",
+  "_mantine-Bm3DR7ho.js": {
+    "file": "assets/mantine-Bm3DR7ho.js",
     "name": "mantine",
     "imports": [
       "_react-D3kJkmPN.js",
       "_rolldown-runtime-D7zIpOPY.js"
     ],
     "css": [
-      "assets/mantine-DKMcr0gv.css"
+      "assets/mantine-CkNn-aHS.css"
     ]
   },
-  "_mantine-DKMcr0gv.css": {
-    "file": "assets/mantine-DKMcr0gv.css",
-    "src": "_mantine-DKMcr0gv.css"
+  "_mantine-CkNn-aHS.css": {
+    "file": "assets/mantine-CkNn-aHS.css",
+    "src": "_mantine-CkNn-aHS.css"
   },
   "_react-D3kJkmPN.js": {
     "file": "assets/react-D3kJkmPN.js",
@@ -75,13 +75,13 @@
     ]
   },
   "src/client.tsx": {
-    "file": "assets/client-Cg4OLkBK.js",
+    "file": "assets/client-Y2Uzv-Km.js",
     "name": "client",
     "src": "src/client.tsx",
     "isEntry": true,
     "imports": [
       "_vendor-CzpoKJkP.js",
-      "_mantine-BZpETZZB.js",
+      "_mantine-Bm3DR7ho.js",
       "_tabler-6ZCCGot1.js",
       "_react-D3kJkmPN.js",
       "_rolldown-runtime-D7zIpOPY.js"

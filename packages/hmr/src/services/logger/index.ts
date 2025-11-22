@@ -21,31 +21,38 @@ export class PinoLoggerService {
 	public fatal!: Logger['fatal']
 
 	constructor(private readonly ctx: Context) {
+		const isProd = process.env.NODE_ENV === 'production'
+
 		// #if NODE_ENV !== 'production'
-		const scopeName = ctx.pluginInfo?.name ?? ctx.name
-		const bindings: Bindings = {
-			name: scopeName,
+		if (!isProd) {
+			const scopeName = ctx.pluginInfo?.name ?? ctx.name
+			const bindings: Bindings = {
+				name: scopeName,
+			}
+			const pluginName = ctx.pluginInfo?.name
+			if (pluginName && pluginName !== scopeName) {
+				bindings.plugin = pluginName
+			}
+			this.logger = deriveScopedLogger(bindings)
+			this.bindLevels()
+			return
 		}
-		const pluginName = ctx.pluginInfo?.name
-		if (pluginName && pluginName !== scopeName) {
-			bindings.plugin = pluginName
-		}
-		this.logger = deriveScopedLogger(bindings)
-		this.bindLevels()
-		// #else
+		// #endif
+
+		// #if NODE_ENV === 'production'
 		this.logger = console as unknown as Logger
 		this.bindNoopLevels()
 		// #endif
 	}
 
 	private bindLevels() {
-		// #if NODE_ENV !== 'production'
-		for (const level of LEVELS) {
-			;(this as any)[level] = (this.logger[level] as Function).bind(this.logger)
+		if (process.env.NODE_ENV !== 'production') {
+			for (const level of LEVELS) {
+				;(this as any)[level] = (this.logger[level] as Function).bind(this.logger)
+			}
+		} else {
+			this.bindNoopLevels()
 		}
-		// #else
-		this.bindNoopLevels()
-		// #endif
 	}
 
 	private bindNoopLevels() {
