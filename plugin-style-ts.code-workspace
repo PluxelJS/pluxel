@@ -31,9 +31,6 @@
 		{
 			"name": "🍀  valibot-form",
 			"path": "packages/valibot-form"
-		},
-		{
-			"path": "../pluxel-market"
 		}
 	],
 	"settings": {
