@@ -3,11 +3,11 @@ import { cp, mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'pathe'
 import { readPackageJSON } from 'pkg-types'
-import { resolveBuildContext } from '../src/build/config'
-import { createImportTracker } from '../src/build/plugins/import-tracker'
-import { createOptionalDependencyHook } from '../src/build/plugin-tracker'
-import { runWithTsdown } from '../src/build/tsdown-runner'
-import { BuildEnvKeys } from '../src/build/env'
+import { resolveBuildContext } from '../src/tsbuild/config'
+import { BuildEnvKeys } from '../src/tsbuild/env'
+import { createOptionalDependencyHook } from '../src/tsbuild/plugin-tracker'
+import { createImportTracker } from '../src/tsbuild/plugins/import-tracker'
+import { runWithTsdown } from '../src/tsbuild/tsdown-runner'
 
 const TEST_ROOT = new URL('.', import.meta.url)
 
