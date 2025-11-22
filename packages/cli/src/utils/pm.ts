@@ -45,5 +45,3 @@ function normalizeAgent(agent: AgentName | null): PM | undefined {
 	if (agent === 'bun') return 'bun'
 	return undefined
 }
-	return undefined
-}
