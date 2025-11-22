@@ -1,14 +1,15 @@
 import { defineConfig } from 'tsdown'
-import PreprocessorDirectives from 'unplugin-preprocessor-directives/rollup'
 
 export default defineConfig({
 	entry: './src/cli.ts',
 	dts: {
-		build: false,
 		sourcemap: true,
 	},
+	env: {
+		BUILD: 'true',
+	},
 	copy: ['plop-templates'],
-	plugins: [PreprocessorDirectives()],
+	plugins: [],
 	format: ['esm'],
 	clean: true,
 	minify: true,
