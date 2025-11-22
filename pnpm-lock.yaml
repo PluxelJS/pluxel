@@ -40,7 +40,7 @@ importers:
         specifier: ^0.7.6
         version: 0.7.6
       tsdown:
-        specifier: ^0.16.6
+        specifier: ^0.16.4
         version: 0.16.6(typescript@5.9.3)
       turbo:
         specifier: ^2.6.1
@@ -82,7 +82,7 @@ importers:
         specifier: ^2.3.0
         version: 2.3.0
       tsdown:
-        specifier: ^0.16.6
+        specifier: ^0.16.4
         version: 0.16.6(typescript@5.9.3)
       yaml:
         specifier: ^2.5.0
