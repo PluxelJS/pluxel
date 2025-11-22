@@ -1,8 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, resolve } from 'pathe'
+import { CLI_DEFAULTS, resolveStateDir } from '../config'
 
-const STORE_DIR = '.pluxel'
-const STORE_FILE = 'workspaces.json'
 const STORE_VERSION = 1
 
 export interface WorkspaceCandidate {
@@ -21,8 +20,11 @@ interface WorkspaceCandidatePayload {
 	entries?: WorkspaceCandidate[]
 }
 
-export function readWorkspaceCandidates(root: string): WorkspaceCandidateStore | undefined {
-	const path = storePath(root)
+export function readWorkspaceCandidates(
+	root: string,
+	env: NodeJS.ProcessEnv = process.env,
+): WorkspaceCandidateStore | undefined {
+	const path = storePath(root, env)
 	if (!existsSync(path)) return undefined
 	try {
 		const payload = JSON.parse(readFileSync(path, 'utf8')) as WorkspaceCandidatePayload
@@ -36,9 +38,11 @@ export function readWorkspaceCandidates(root: string): WorkspaceCandidateStore |
 export function writeWorkspaceCandidates(
 	root: string,
 	entries: WorkspaceCandidate[],
+	env: NodeJS.ProcessEnv = process.env,
 ): WorkspaceCandidateStore {
-	const path = storePath(root)
-	mkdirSync(dirname(path), { recursive: true })
+	const path = storePath(root, env)
+	const folder = dirname(path)
+	mkdirSync(folder, { recursive: true })
 	const normalized = normalizeEntries(entries)
 	const payload: WorkspaceCandidatePayload = { version: STORE_VERSION, entries: normalized }
 	writeFileSync(path, `${JSON.stringify(payload, null, 2)}\n`, 'utf8')
@@ -50,6 +54,7 @@ export function upsertWorkspaceCandidates(
 	paths: string[],
 	store?: WorkspaceCandidateStore,
 	source?: string,
+	env: NodeJS.ProcessEnv = process.env,
 ) {
 	const now = Date.now()
 	const map = new Map<string, WorkspaceCandidate>()
@@ -66,11 +71,12 @@ export function upsertWorkspaceCandidates(
 		}
 		map.set(path, next)
 	}
-	return writeWorkspaceCandidates(root, [...map.values()])
+	return writeWorkspaceCandidates(root, [...map.values()], env)
 }
 
-export function storePath(root: string) {
-	return resolve(root, STORE_DIR, STORE_FILE)
+export function storePath(root: string, env: NodeJS.ProcessEnv = process.env) {
+	const base = resolveStateDir(root, env)
+	return resolve(base, CLI_DEFAULTS.paths.workspaceCandidatesFile)
 }
 
 function normalizeStore(path: string, entries: WorkspaceCandidate[]): WorkspaceCandidateStore {

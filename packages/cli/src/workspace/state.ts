@@ -1,6 +1,7 @@
 import { existsSync } from 'node:fs'
 import { resolve, relative, isAbsolute, normalize } from 'pathe'
 import type { PackageJson } from 'pkg-types'
+import { CLI_DEFAULTS } from '../config'
 import { detectPm, type PM } from '../utils/pm'
 import { loadWorkspaceInfo, extractPackageWorkspaces } from './info'
 import { manifestPathFor, readRawManifest, writeManifest } from './manifest'
@@ -81,7 +82,7 @@ export async function loadWorkspaceState(root: string): Promise<WorkspaceState> 
 
 	return {
 		root: absoluteRoot,
-		packageManager: detectPm(absoluteRoot, 'pnpm'),
+		packageManager: await detectPm(absoluteRoot, CLI_DEFAULTS.packageManager.fallback),
 		info,
 		manifest,
 		pnpm,

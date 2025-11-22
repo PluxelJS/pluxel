@@ -1,19 +1,27 @@
 import { spawn } from 'node:child_process'
-import fs from 'node:fs'
-import { join } from 'pathe'
+import { type AgentName, detect as detectAgent, getUserAgent } from 'package-manager-detector'
+import { CLI_DEFAULTS } from '../config'
 
-export type PM = 'pnpm' | 'npm' | 'yarn'
+export type PM = 'pnpm' | 'npm' | 'yarn' | 'bun'
 
-export function detectPm(root: string, fallback: PM = 'pnpm'): PM {
+export async function detectPm(
+	root: string,
+	fallback: PM = CLI_DEFAULTS.packageManager.fallback,
+): Promise<PM> {
+	const userAgent = normalizeAgent(getUserAgent())
+	if (userAgent) return userAgent
+
 	try {
-		if (fs.existsSync(join(root, 'pnpm-lock.yaml'))) return 'pnpm'
-		if (fs.existsSync(join(root, 'yarn.lock'))) return 'yarn'
-		if (fs.existsSync(join(root, 'package-lock.json'))) return 'npm'
-	} catch {}
-	const ua = process.env.npm_config_user_agent || ''
-	if (ua.startsWith('pnpm')) return 'pnpm'
-	if (ua.startsWith('yarn')) return 'yarn'
-	if (ua.startsWith('npm')) return 'npm'
+		const detected = await detectAgent({
+			cwd: root,
+			...CLI_DEFAULTS.packageManager.detectOptions,
+		})
+		const normalized = normalizeAgent(detected?.name)
+		if (normalized) return normalized
+	} catch {
+		// fall through to fallback
+	}
+
 	return fallback
 }
 
@@ -29,4 +37,13 @@ export async function runPackageManager(pm: PM, args: string[], cwd: string) {
 			else reject(new Error(`${pm} ${args.join(' ')} failed`))
 		})
 	})
+}
+
+function normalizeAgent(agent: AgentName | null): PM | undefined {
+	if (!agent) return undefined
+	if (agent === 'pnpm' || agent === 'npm' || agent === 'yarn') return agent
+	if (agent === 'bun') return 'bun'
+	return undefined
+}
+	return undefined
 }

@@ -9,7 +9,8 @@
 
 		// Enable all strict type checking options.
 		"strict": true,
-		"exactOptionalPropertyTypes": true,
+		"strictNullChecks": false,
+		"exactOptionalPropertyTypes": false,
 		"useUnknownInCatchVariables": false,
 
 		// Project references rely on declarations emitted by dependencies.

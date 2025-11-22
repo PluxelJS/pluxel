@@ -222,7 +222,7 @@ function reportMutation(
 }
 
 async function installWorkspaceDeps(root: string, log: (...args: any[]) => void) {
-	const pm = detectPm(root, 'pnpm')
+	const pm = await detectPm(root)
 	log(`\n→ Running ${pm} install to sync workspaces...`)
 	await runPackageManager(pm, ['install'], root)
 }

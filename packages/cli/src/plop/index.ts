@@ -101,7 +101,7 @@ export const newCommand = define({
 		await generateFromTemplate(plan, ctx.log)
 
 		if (plan.install) {
-			const pm = plan.pm ?? detectPm(plan.workspaceRoot, 'pnpm')
+			const pm = plan.pm ?? (await detectPm(plan.workspaceRoot))
 			ctx.log(`\n→ Installing deps with ${pm}...`)
 			await runPackageManager(pm, ['install'], plan.targetDir)
 			ctx.log(`\n${pm} dev`)
