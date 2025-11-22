@@ -20,6 +20,9 @@ importers:
       '@mantine/notifications':
         specifier: ^8.3.8
         version: 8.3.8(@mantine/core@8.3.8(@mantine/hooks@8.3.8(react@19.2.0))(@types/react@19.2.6)(react-dom@19.2.0(react@19.2.0))(react@19.2.0))(@mantine/hooks@8.3.8(react@19.2.0))(react-dom@19.2.0(react@19.2.0))(react@19.2.0)
+      '@pluxel/market':
+        specifier: ^0.1.0
+        version: 0.1.0(ramda@0.32.0)(react-dom@19.2.0(react@19.2.0))(react@19.2.0)
       react:
         specifier: ^19.2.0
         version: 19.2.0
@@ -57,6 +60,9 @@ importers:
       '@clack/prompts':
         specifier: ^0.11.0
         version: 0.11.0
+      '@pluxel/market':
+        specifier: '*'
+        version: 0.1.0(ramda@0.32.0)(react-dom@19.2.0(react@19.2.0))(react@19.2.0)
       fdir:
         specifier: ^6.5.0
         version: 6.5.0(picomatch@4.0.3)
@@ -85,9 +91,6 @@ importers:
         specifier: ^2.5.0
         version: 2.8.1
     devDependencies:
-      '@pluxel/market':
-        specifier: link:/../../../pluxel-market/packages/market
-        version: link:../../../pluxel-market/packages/market
       '@types/picomatch':
         specifier: ^4.0.2
         version: 4.0.2
@@ -128,8 +131,8 @@ importers:
         specifier: ^6.3.4
         version: 6.3.4(react-dom@19.2.0(react@19.2.0))(react@19.2.0)
       '@pluxel/market':
-        specifier: link:/../../../pluxel-market/packages/market
-        version: link:../../../pluxel-market/packages/market
+        specifier: '*'
+        version: 0.1.0(ramda@0.32.0)(react-dom@19.2.0(react@19.2.0))(react@19.2.0)
       '@tabler/icons-react':
         specifier: ^3.35.0
         version: 3.35.0(react@19.2.0)
@@ -673,6 +676,11 @@ packages:
   '@floating-ui/utils@0.2.10':
     resolution: {integrity: sha512-aGTxbpbg8/b5JfU1HXSrbH3wXZuLPJcNEcZQFMxLs3oSzgtVu6nFPkbbGGUvBcUjKV2YyB9Wxxabo+HEH9tcRQ==}
 
+  '@funkia/list@0.1.0':
+    resolution: {integrity: sha512-TfVQ6iI+xaNbV0ISEL8IAaoyXEyjCd0KAWDVwuvzFwzWOikZNPit83G4vtpdxaylk1SrPe5EKd8J7C1q3iOIkQ==}
+    peerDependencies:
+      ramda: '*'
+
   '@gqloom/core@0.12.1':
     resolution: {integrity: sha512-FD8cjgjkb4gAGMnbCu3YGbfv6RfHo/qqQc83Kh4XsWQoidues6FFwZYheHOfIlVRx/X5zL8ESj+GWu1okcfncQ==}
     peerDependencies:
@@ -992,6 +1000,9 @@ packages:
   '@jridgewell/trace-mapping@0.3.31':
     resolution: {integrity: sha512-zzNR+SdQSDJzc8joaeP8QQoCQr8NuYx2dIIytl1QeBEZHJ9uW6hebsrYgbz8hJwUQao3TWCMtmfV8Nu1twOLAw==}
 
+  '@leeoniya/ufuzzy@1.0.19':
+    resolution: {integrity: sha512-0pikDeYt0IHEUPza5RTCDXc/17S1pTrYnReEMp8Aa6k1ovzw5QdZLwicW8TjljwEZRb6oYag0xmALohrcq/yOQ==}
+
   '@mantine/core@8.3.8':
     resolution: {integrity: sha512-UM3Za7Yl0FzbZ2zPgHwNyCpLgtSqkAi8ku13+gRS/6JB0FjwSkMwibERUqQIpwqAHdR5KNmIohjuqHu8guJowg==}
     peerDependencies:
@@ -1070,6 +1081,12 @@ packages:
 
   '@pinojs/redact@0.4.0':
     resolution: {integrity: sha512-k2ENnmBugE/rzQfEcdWHcCY+/FM3VLzH9cYEsbdsoqrvzAKRhUZeRNhAZvB8OitQJ1TBed3yqWtdjzS6wJKBwg==}
+
+  '@pluxel/market@0.1.0':
+    resolution: {integrity: sha512-dvij099Kczt3KJMHotf8kclgbRk1Web5Vqb/dndXtecTrOXv9dJqSgNM2mBK+n7pFt4mHxeqeZiOax+Dlg1rYg==}
+    peerDependencies:
+      react: ^19
+      react-dom: ^19
 
   '@poppinss/colors@4.1.5':
     resolution: {integrity: sha512-FvdDqtcRCtz6hThExcFOgW0cWX+xwSMWcRuQe5ZEb2m7cVQOAVZOIMt+/v9RxGiD9/OY16qJBXK4CVKWAPalBw==}
@@ -2712,6 +2729,9 @@ packages:
   quick-format-unescaped@4.0.4:
     resolution: {integrity: sha512-tYC1Q1hgyRuHgloV/YXs2w15unPVh8qfu/qCTfhTYamaw7fyhumKa2yGpdSo87vY32rIclj+4fWYQXUMs9EHvg==}
 
+  ramda@0.32.0:
+    resolution: {integrity: sha512-GQWAHhxhxWBWA8oIBr1XahFVjQ9Fic6MK9ikijfd4TZHfE2+urfk+irVlR5VOn48uwMgM+loRRBJd6Yjsbc0zQ==}
+
   react-dom@19.2.0:
     resolution: {integrity: sha512-UlbRu4cAiGaIewkPyiRGJk0imDN2T3JjieT6spoL2UeSf5od4n5LB/mQ4ejmxhCFT1tYe8IvaFulzynWovsEFQ==}
     peerDependencies:
@@ -3857,6 +3877,10 @@ snapshots:
 
   '@floating-ui/utils@0.2.10': {}
 
+  '@funkia/list@0.1.0(ramda@0.32.0)':
+    dependencies:
+      ramda: 0.32.0
+
   '@gqloom/core@0.12.1(graphql@16.12.0)':
     dependencies:
       graphql: 16.12.0
@@ -4219,6 +4243,8 @@ snapshots:
       '@jridgewell/resolve-uri': 3.1.2
       '@jridgewell/sourcemap-codec': 1.5.5
 
+  '@leeoniya/ufuzzy@1.0.19': {}
+
   '@mantine/core@8.3.8(@mantine/hooks@8.3.8(react@19.2.0))(@types/react@19.2.6)(react-dom@19.2.0(react@19.2.0))(react@19.2.0)':
     dependencies:
       '@floating-ui/react': 0.27.16(react-dom@19.2.0(react@19.2.0))(react@19.2.0)
@@ -4308,6 +4334,16 @@ snapshots:
   '@oxc-project/types@0.98.0': {}
 
   '@pinojs/redact@0.4.0': {}
+
+  '@pluxel/market@0.1.0(ramda@0.32.0)(react-dom@19.2.0(react@19.2.0))(react@19.2.0)':
+    dependencies:
+      '@funkia/list': 0.1.0(ramda@0.32.0)
+      '@leeoniya/ufuzzy': 1.0.19
+      hono: 4.10.6
+      react: 19.2.0
+      react-dom: 19.2.0(react@19.2.0)
+    transitivePeerDependencies:
+      - ramda
 
   '@poppinss/colors@4.1.5':
     dependencies:
@@ -5816,6 +5852,8 @@ snapshots:
   queue-microtask@1.2.3: {}
 
   quick-format-unescaped@4.0.4: {}
+
+  ramda@0.32.0: {}
 
   react-dom@19.2.0(react@19.2.0):
     dependencies:

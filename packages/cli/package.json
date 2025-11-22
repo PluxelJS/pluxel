@@ -16,7 +16,8 @@
 		"test": "bun test"
 	},
 	"peerDependencies": {
-		"tsdown": "*"
+		"tsdown": "*",
+		"@pluxel/market": "*"
 	},
 	"dependencies": {
 		"@clack/prompts": "^0.11.0",
@@ -30,7 +31,6 @@
 		"yaml": "^2.5.0"
 	},
 	"devDependencies": {
-		"@types/picomatch": "^4.0.2",
-		"@pluxel/market": "link:/../../../pluxel-market/packages/market"
+		"@types/picomatch": "^4.0.2"
 	}
 }
