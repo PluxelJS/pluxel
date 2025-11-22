@@ -2,23 +2,20 @@
 
 import {
 	ActionIcon,
-	Box,
 	Group,
 	NavLink,
 	Paper,
+	rgba,
 	ScrollArea,
 	Stack,
 	Text,
 	Tooltip,
-	rgba,
+	useComputedColorScheme,
 	useMantineTheme,
 } from '@mantine/core'
+import { IconLayoutSidebarLeftCollapse, IconLayoutSidebarRightExpand } from '@tabler/icons-react'
 import type React from 'react'
 import { forwardRef, memo, useEffect, useMemo, useState } from 'react'
-import {
-	IconLayoutSidebarLeftCollapse,
-	IconLayoutSidebarRightExpand,
-} from '@tabler/icons-react'
 
 export interface NavItem {
 	label: string
@@ -74,6 +71,7 @@ const Navbar = memo(function Navbar({
 	onCompactToggle,
 }: NavbarProps) {
 	const theme = useMantineTheme()
+	const colorScheme = useComputedColorScheme('light', { getInitialValueInEffect: true })
 	// —— 激活态：优先使用 props.currentPath；否则仅在挂载后读取一次 pathname，避免 SSR 水位差 ——
 	const [pathname, setPathname] = useState<string>('')
 	useEffect(() => {
@@ -121,56 +119,60 @@ const Navbar = memo(function Navbar({
 			style={{ minHeight: 0 }}
 		>
 			<Stack gap="md" p="md">
-				{onCompactToggle && (
-					<>
-						{compact ? (
-							<Tooltip label="展开侧边栏" openDelay={300}>
-								<ActionIcon
-									variant="light"
-									size="lg"
-									radius="xl"
-									onClick={onCompactToggle}
-									aria-label="展开侧边栏"
-									style={{ alignSelf: 'center' }}
-								>
-									<IconLayoutSidebarRightExpand size={18} stroke={1.8} />
-								</ActionIcon>
-							</Tooltip>
-						) : (
-							<Paper
-								withBorder
-								radius="lg"
-								px="md"
-								py="sm"
-								style={{
-									background: theme.colorScheme === 'dark'
-										? 'linear-gradient(135deg, rgba(74,89,255,0.2), rgba(110,70,255,0.25))'
-										: 'linear-gradient(135deg, rgba(244,246,255,1), rgba(232,238,255,1))',
-								}}
+				{onCompactToggle &&
+					(compact ? (
+						<Tooltip label="展开侧边栏" openDelay={300}>
+							<ActionIcon
+								variant="light"
+								size="lg"
+								radius="xl"
+								onClick={onCompactToggle}
+								aria-label="展开侧边栏"
+								style={{ alignSelf: 'center' }}
 							>
-								<Group justify="space-between" align="flex-start" gap="sm">
-									<div>
-										<Text size="xs" c="dimmed" fw={600} tt="uppercase" lh={1}>
-											控制台导航
-										</Text>
-										<Text size="sm" c="dimmed">
-											快速切换到不同工作区
-										</Text>
-									</div>
-									<ActionIcon
-										variant="white"
-										color="brand"
-										size="sm"
-										onClick={onCompactToggle}
-										aria-label="紧凑侧边栏"
-									>
-										<IconLayoutSidebarLeftCollapse size={16} stroke={1.8} />
-									</ActionIcon>
-								</Group>
-							</Paper>
-						)}
-					</>
-				)}
+								<IconLayoutSidebarRightExpand size={18} stroke={1.8} />
+							</ActionIcon>
+						</Tooltip>
+					) : (
+						<Paper
+							radius="lg"
+							px="md"
+							py="sm"
+							styles={{
+								root: {
+									background:
+										colorScheme === 'dark'
+											? `linear-gradient(135deg, ${rgba(theme.colors.dark[6], 0.6)}, ${rgba(theme.colors.dark[7], 0.4)}) !important`
+											: 'linear-gradient(135deg, rgba(249,250,255,0.95), rgba(242,245,255,0.95))',
+									border:
+										colorScheme === 'dark'
+											? `1px solid ${rgba(theme.colors.dark[4], 0.4)}`
+											: `1px solid ${rgba(theme.colors.gray[3], 0.5)}`,
+									backgroundColor: 'transparent',
+								},
+							}}
+						>
+							<Group justify="space-between" align="flex-start" gap="sm">
+								<div>
+									<Text size="xs" c="dimmed" fw={600} tt="uppercase" lh={1}>
+										控制台导航
+									</Text>
+									<Text size="sm" c="dimmed">
+										快速切换到不同工作区
+									</Text>
+								</div>
+								<ActionIcon
+									variant={colorScheme === 'dark' ? 'subtle' : 'white'}
+									color="brand"
+									size="sm"
+									onClick={onCompactToggle}
+									aria-label="紧凑侧边栏"
+								>
+									<IconLayoutSidebarLeftCollapse size={16} stroke={1.8} />
+								</ActionIcon>
+							</Group>
+						</Paper>
+					))}
 
 				{navItems.map(({ label, href, icon, rightSection, exact, disabled }) => {
 					const active = getIsActive(pathname, href, exact)
@@ -178,24 +180,25 @@ const Navbar = memo(function Navbar({
 					const showFullLabel = !compact || normalizedLabel.length <= 3
 					const brandPalette =
 						theme.colors.brand ?? theme.colors[theme.primaryColor as keyof typeof theme.colors]
+					// 优化后的配色：提升背景可见度，保持可读性
 					const activeBg = active
-						? theme.colorScheme === 'dark'
-							? rgba(brandPalette[4], 0.4)
-							: brandPalette[0]
+						? colorScheme === 'dark'
+							? rgba(brandPalette[5], 0.25) // 提升到 0.25，更明显的背景
+							: rgba(brandPalette[1], 0.5)
 						: undefined
 					const activeColor = active
-						? theme.colorScheme === 'dark'
-							? theme.white
-							: brandPalette[8]
+						? colorScheme === 'dark'
+							? theme.colors.gray[0] // 使用 gray[0] 确保高对比度
+							: brandPalette[7]
 						: undefined
 					const baseBorder =
-						theme.colorScheme === 'dark'
-							? rgba(theme.colors.dark[5], 0.6)
-							: rgba(theme.colors.gray[3], 0.85)
+						colorScheme === 'dark'
+							? rgba(theme.colors.dark[4], 0.35)
+							: rgba(theme.colors.gray[3], 0.5)
 					const borderColor = active
-						? theme.colorScheme === 'dark'
-							? rgba(brandPalette[5], 0.7)
-							: brandPalette[2]
+						? colorScheme === 'dark'
+							? rgba(brandPalette[5], 0.5) // 提升边框可见度
+							: rgba(brandPalette[3], 0.4)
 						: baseBorder
 					const navLink = (
 						<NavLink
@@ -209,27 +212,34 @@ const Navbar = memo(function Navbar({
 							aria-current={active ? 'page' : undefined}
 							aria-label={!showFullLabel ? label : undefined}
 							disabled={disabled}
-							variant="light"
 							styles={{
 								root: {
 									borderRadius: theme.radius.md,
 									border: `1px solid ${borderColor}`,
-									backgroundColor: activeBg,
+									backgroundColor: `${activeBg || 'transparent'} !important`,
 									transition: 'border-color 120ms ease, background-color 120ms ease',
-									color: activeColor,
+									color: `${activeColor || 'inherit'} !important`,
 									justifyContent: showFullLabel ? 'flex-start' : 'center',
 									paddingInline: showFullLabel ? undefined : theme.spacing.sm,
+									'&:hover': {
+										backgroundColor: `${
+											activeBg ||
+											(colorScheme === 'dark'
+												? rgba(theme.colors.dark[5], 0.3)
+												: rgba(theme.colors.gray[0], 0.5))
+										}`,
+									},
 								},
 								body: {
 									fontWeight: active ? 600 : 500,
 									display: showFullLabel ? undefined : 'none',
-									color: activeColor,
+									color: `${activeColor || 'inherit'}`,
 								},
 								label: {
-									color: activeColor,
+									color: `${activeColor || 'inherit'}`,
 								},
-								icon: {
-									color: active ? activeColor : undefined,
+								section: {
+									color: `${activeColor || 'inherit'}`,
 								},
 							}}
 						/>

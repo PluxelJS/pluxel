@@ -1,4 +1,4 @@
-import { Context } from '@pluxel/core'
+import { Context } from '@pluxel/hmr'
 import { PinoLoggerService } from '@pluxel/hmr/services'
 import { PluginA, PluginC } from './plugins'
 
