@@ -12,6 +12,11 @@ const publishArgs = {
 		description: 'Plan publish without executing',
 		default: false,
 	},
+	debug: {
+		type: 'boolean',
+		description: 'Print npm args/env keys before running publish',
+		default: false,
+	},
 	skipVersionCheck: {
 		type: 'boolean',
 		description: 'Skip checking if version already published',
@@ -31,6 +36,7 @@ export const publishCommand = define({
 		await publishPackage({
 			access: values.access,
 			dryRun: values.dryRun,
+			debug: values.debug,
 			skipVersionCheck: values.skipVersionCheck,
 			log: ctx.log,
 		})

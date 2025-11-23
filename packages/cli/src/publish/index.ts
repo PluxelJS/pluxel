@@ -1,7 +1,7 @@
 import { resolve } from 'pathe'
 import type { PackageJson } from 'pkg-types'
 import { readPackageJSON } from 'pkg-types'
-import { detectCiContext } from '../ci/context'
+import { detectCiContext, isCi } from '../ci/context'
 import { resolveOidcToken } from '../ci/oidc'
 import { CLI_DEFAULTS } from '../config'
 import { runCommand } from '../utils/exec'
@@ -12,10 +12,17 @@ type Logger = (...args: unknown[]) => void
 // eslint-disable-next-line @typescript-eslint/no-empty-function
 const noop = () => {}
 
+function isTruthyEnv(value: string | undefined) {
+	if (!value) return false
+	const normalized = value.trim().toLowerCase()
+	return normalized === '1' || normalized === 'true' || normalized === 'yes'
+}
+
 export interface PublishOptions {
 	access?: string
 	dryRun?: boolean
 	skipVersionCheck?: boolean
+	debug?: boolean
 	log?: Logger
 	cwd?: string
 	env?: NodeJS.ProcessEnv
@@ -33,7 +40,9 @@ export async function publishPackage(options: PublishOptions): Promise<PublishRe
 	const log = options.log ?? noop
 	const cwd = options.cwd ?? process.cwd()
 	const env = options.env ?? process.env
-	const access = options.access ?? CLI_DEFAULTS.publish.access
+	const debug = options.debug ?? false
+	const rawPublish = isTruthyEnv(env.PLUXEL_PUBLISH_RAW)
+	const access = rawPublish ? options.access : options.access ?? CLI_DEFAULTS.publish.access
 
 	// 读取当前目录的 package.json
 	const pkgPath = resolve(cwd, 'package.json')
@@ -63,9 +72,9 @@ export async function publishPackage(options: PublishOptions): Promise<PublishRe
 	}
 
 	// 检查版本是否已发布（除非跳过）
-	if (!options.skipVersionCheck) {
+	if (!rawPublish && !options.skipVersionCheck) {
 		log(`[publish] checking if ${pkg.name}@${pkg.version} is already published...`)
-		const publishedVersion = await getPublishedVersion(pkg.name, log)
+		const publishedVersion = await getPublishedVersion(pkg.name, log, env)
 		if (publishedVersion === pkg.version) {
 			log(`[publish] ${pkg.name}@${pkg.version} already published, skipping`)
 			result.alreadyPublished = true
@@ -76,14 +85,36 @@ export async function publishPackage(options: PublishOptions): Promise<PublishRe
 		}
 	}
 
+	// 检测 CI 环境，在 CI 中使用 --provenance 启用 OIDC
+	// 但只对公开包使用，私有包不支持 provenance
+	const ciContext = detectCiContext(env)
+	const inCi = isCi(env)
+	const isPublicPackage = access === 'public'
+
+	// 执行 npm publish，让 npm 自己处理 registry、OIDC、provenance
+	log(`[publish] publishing ${pkg.name}@${pkg.version}...`)
+	const publishArgs = ['publish']
+	if (access) {
+		publishArgs.push('--access', access)
+	}
+	if (debug) {
+		log(`[publish] debug: npm args: ${publishArgs.join(' ')}`)
+		const envKeys = Object.keys(env ?? {}).filter((key) => {
+			const upper = key.toUpperCase()
+			return (
+				upper.startsWith('NPM_CONFIG_') ||
+				upper === 'NPM_TOKEN' ||
+				upper === 'NODE_AUTH_TOKEN' ||
+				upper === 'NPM_CONFIG_REGISTRY'
+			)
+		})
+		log(`[publish] debug: npm env keys: ${envKeys.join(', ') || '(none)'}`)
+	}
+
 	if (options.dryRun) {
 		log(`[publish] (dry-run) would publish ${pkg.name}@${pkg.version}`)
 		return result
 	}
-
-	// 执行 npm publish，让 npm 自己处理 registry、OIDC、provenance
-	log(`[publish] publishing ${pkg.name}@${pkg.version}...`)
-	const publishArgs = ['publish', '--access', access]
 	const publishResult = await runCommand('npm', publishArgs, { cwd, env })
 
 	if (publishResult.code !== 0) {
@@ -96,7 +127,6 @@ export async function publishPackage(options: PublishOptions): Promise<PublishRe
 	result.published = true
 
 	// 发送 market webhook（如果在 CI 环境）
-	const ciContext = detectCiContext(env)
 	if (ciContext) {
 		try {
 			// 在 CI 环境自动获取 OIDC token
@@ -131,9 +161,13 @@ export async function publishPackage(options: PublishOptions): Promise<PublishRe
 	return result
 }
 
-async function getPublishedVersion(packageName: string, log: Logger): Promise<string | undefined> {
+async function getPublishedVersion(
+	packageName: string,
+	log: Logger,
+	env: NodeJS.ProcessEnv,
+): Promise<string | undefined> {
 	const res = await runCommand('npm', ['view', packageName, 'version', '--json'], {
-		env: process.env,
+		env,
 	})
 
 	if (res.code !== 0) {

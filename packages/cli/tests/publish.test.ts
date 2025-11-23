@@ -162,4 +162,71 @@ describe('publish with CI context', () => {
 			await teardownFixture(dir)
 		}
 	})
+
+	it('does not add provenance for restricted/private packages in CI', async () => {
+		const dir = await setupPackageFixture('example-pkg', '3.0.0')
+		const savedEnv = snapshotEnv(['GITHUB_ACTIONS', 'GITHUB_REPOSITORY'])
+		const logs: string[] = []
+
+		try {
+			process.env.GITHUB_ACTIONS = 'true'
+			process.env.GITHUB_REPOSITORY = 'acme/example'
+
+			await publishPackage({
+				cwd: dir,
+				access: 'restricted', // 私有包
+				dryRun: true,
+				skipVersionCheck: true, // 跳过版本检查以避免网络请求
+				debug: true,
+				log: (...args) => logs.push(args.join(' ')),
+			})
+
+			const debugArgs = logs.find((log) => log.includes('debug: npm args'))
+			expect(debugArgs?.includes('--provenance')).toBe(false)
+			expect(debugArgs?.includes('--access restricted')).toBe(true)
+		} finally {
+			restoreEnv(savedEnv)
+			await teardownFixture(dir)
+		}
+	})
+
+	it('skips version check in raw mode (mimics plain npm publish)', async () => {
+		const dir = await setupPackageFixture('example-pkg', '4.0.0')
+		const logs: string[] = []
+
+		try {
+			const result = await publishPackage({
+				cwd: dir,
+				dryRun: true, // avoid running npm
+				env: { ...process.env, PLUXEL_PUBLISH_RAW: '1' },
+				log: (...args) => logs.push(args.join(' ')),
+			})
+
+			expect(result.packageName).toBe('example-pkg')
+			expect(logs.some((line) => line.includes('checking if'))).toBe(false)
+		} finally {
+			await teardownFixture(dir)
+		}
+	})
+
+	it('prints debug info when enabled', async () => {
+		const dir = await setupPackageFixture('example-pkg', '5.0.0')
+		const logs: string[] = []
+
+		try {
+			await publishPackage({
+				cwd: dir,
+				dryRun: true,
+				skipVersionCheck: true,
+				debug: true,
+				env: { ...process.env, NPM_CONFIG_PROVENANCE: 'true', NODE_AUTH_TOKEN: '***' },
+				log: (...args) => logs.push(args.join(' ')),
+			})
+
+			expect(logs.some((line) => line.includes('debug: npm args'))).toBe(true)
+			expect(logs.some((line) => line.includes('debug: npm env keys'))).toBe(true)
+		} finally {
+			await teardownFixture(dir)
+		}
+	})
 })
