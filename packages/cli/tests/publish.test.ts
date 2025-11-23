@@ -2,7 +2,7 @@ import { describe, expect, it } from 'bun:test'
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'pathe'
-import { publishPackage } from '../src/publish'
+import { publishPackage, resolveWebhookAudience } from '../src/publish'
 
 async function setupPackageFixture(name: string, version: string, options?: { private?: boolean }) {
 	const target = await mkdtemp(join(tmpdir(), `pluxel-cli-publish-${name}-`))
@@ -226,6 +226,63 @@ describe('publish with CI context', () => {
 			expect(logs.some((line) => line.includes('debug: npm args'))).toBe(true)
 			expect(logs.some((line) => line.includes('debug: npm env keys'))).toBe(true)
 		} finally {
+			await teardownFixture(dir)
+		}
+	})
+
+	it('computes webhook audience from env or base URL', () => {
+		expect(resolveWebhookAudience('https://market.pluxel.dev', {} as NodeJS.ProcessEnv)).toBe(
+			'https://market.pluxel.dev/webhook',
+		)
+		expect(
+			resolveWebhookAudience('https://market.pluxel.dev/', {} as NodeJS.ProcessEnv),
+		).toBe('https://market.pluxel.dev/webhook')
+		expect(
+			resolveWebhookAudience('https://market.pluxel.dev', {
+				PLUXEL_MARKET_AUDIENCE: 'https://override/webhook',
+			} as NodeJS.ProcessEnv),
+		).toBe('https://override/webhook')
+	})
+
+	it('can trigger webhook when publish is skipped (webhook flag)', async () => {
+		const dir = await setupPackageFixture('example-pkg', '6.0.0')
+		const savedFetch = global.fetch
+		const requests: string[] = []
+
+		global.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+			const url = typeof input === 'string' ? input : input.toString()
+			requests.push(url)
+			if (url.includes('oidc')) {
+				return new Response(JSON.stringify({ value: 'test-token' }), {
+					status: 200,
+					headers: { 'Content-Type': 'application/json' },
+				})
+			}
+			return new Response('{}', { status: 200, headers: { 'Content-Type': 'application/json' } })
+		}) as typeof fetch
+
+		try {
+			const result = await publishPackage({
+				cwd: dir,
+				dryRun: true,
+				skipVersionCheck: true,
+				webhook: true,
+				env: {
+					...process.env,
+					GITHUB_ACTIONS: 'true',
+					GITHUB_REPOSITORY: 'acme/example',
+					ACTIONS_ID_TOKEN_REQUEST_URL: 'https://oidc.example.com/token',
+					ACTIONS_ID_TOKEN_REQUEST_TOKEN: 'dummy',
+					PLUXEL_MARKET_AUDIENCE: 'https://market.test/webhook',
+				},
+				log: noop,
+			})
+
+			expect(result.notified).toBe(true)
+			expect(requests.some((url) => url.includes('oidc.example.com'))).toBe(true)
+			expect(requests.some((url) => url.includes('market.pluxel.dev') || url.includes('market.test'))).toBe(true)
+		} finally {
+			global.fetch = savedFetch
 			await teardownFixture(dir)
 		}
 	})

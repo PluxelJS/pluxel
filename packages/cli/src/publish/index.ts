@@ -18,11 +18,20 @@ function isTruthyEnv(value: string | undefined) {
 	return normalized === '1' || normalized === 'true' || normalized === 'yes'
 }
 
+export function resolveWebhookAudience(baseUrl: string | undefined, env: NodeJS.ProcessEnv) {
+	if (env.PLUXEL_MARKET_AUDIENCE?.trim()) return env.PLUXEL_MARKET_AUDIENCE.trim()
+	if (env.PLUXEL_MARKET_WEBHOOK_AUDIENCE?.trim()) return env.PLUXEL_MARKET_WEBHOOK_AUDIENCE.trim()
+	if (!baseUrl) return undefined
+	const normalized = baseUrl.endsWith('/') ? baseUrl.slice(0, -1) : baseUrl
+	return `${normalized}/webhook`
+}
+
 export interface PublishOptions {
 	access?: string
 	dryRun?: boolean
 	skipVersionCheck?: boolean
 	debug?: boolean
+	webhook?: boolean
 	log?: Logger
 	cwd?: string
 	env?: NodeJS.ProcessEnv
@@ -41,6 +50,7 @@ export async function publishPackage(options: PublishOptions): Promise<PublishRe
 	const cwd = options.cwd ?? process.cwd()
 	const env = options.env ?? process.env
 	const debug = options.debug ?? false
+	const forceWebhook = options.webhook ?? false
 	const rawPublish = isTruthyEnv(env.PLUXEL_PUBLISH_RAW)
 	const access = rawPublish ? options.access : options.access ?? CLI_DEFAULTS.publish.access
 
@@ -70,6 +80,7 @@ export async function publishPackage(options: PublishOptions): Promise<PublishRe
 		published: false,
 		notified: false,
 	}
+	let skipPublish = false
 
 	// 检查版本是否已发布（除非跳过）
 	if (!rawPublish && !options.skipVersionCheck) {
@@ -78,7 +89,8 @@ export async function publishPackage(options: PublishOptions): Promise<PublishRe
 		if (publishedVersion === pkg.version) {
 			log(`[publish] ${pkg.name}@${pkg.version} already published, skipping`)
 			result.alreadyPublished = true
-			return result
+			skipPublish = true
+			if (!forceWebhook) return result
 		}
 		if (publishedVersion) {
 			log(`[publish] current published version: ${publishedVersion}`)
@@ -90,9 +102,7 @@ export async function publishPackage(options: PublishOptions): Promise<PublishRe
 	const ciContext = detectCiContext(env)
 	const inCi = isCi(env)
 	const isPublicPackage = access === 'public'
-
-	// 执行 npm publish，让 npm 自己处理 registry、OIDC、provenance
-	log(`[publish] publishing ${pkg.name}@${pkg.version}...`)
+	const shouldNotify = forceWebhook || Boolean(ciContext)
 	const publishArgs = ['publish']
 	if (access) {
 		publishArgs.push('--access', access)
@@ -111,27 +121,34 @@ export async function publishPackage(options: PublishOptions): Promise<PublishRe
 		log(`[publish] debug: npm env keys: ${envKeys.join(', ') || '(none)'}`)
 	}
 
-	if (options.dryRun) {
+	// 执行 npm publish，让 npm 自己处理 registry、OIDC、provenance
+	if (!skipPublish && !options.dryRun) {
+		log(`[publish] publishing ${pkg.name}@${pkg.version}...`)
+		const publishResult = await runCommand('npm', publishArgs, { cwd, env })
+
+		if (publishResult.code !== 0) {
+			throw new Error(
+				`npm publish failed: ${publishResult.stderr || publishResult.stdout || `exit code ${publishResult.code}`}`,
+			)
+		}
+
+		log(`[publish] ✓ ${pkg.name}@${pkg.version} published successfully`)
+		result.published = true
+	} else if (options.dryRun) {
 		log(`[publish] (dry-run) would publish ${pkg.name}@${pkg.version}`)
-		return result
-	}
-	const publishResult = await runCommand('npm', publishArgs, { cwd, env })
-
-	if (publishResult.code !== 0) {
-		throw new Error(
-			`npm publish failed: ${publishResult.stderr || publishResult.stdout || `exit code ${publishResult.code}`}`,
-		)
+	} else {
+		log('[publish] npm publish skipped')
 	}
 
-	log(`[publish] ✓ ${pkg.name}@${pkg.version} published successfully`)
-	result.published = true
-
-	// 发送 market webhook（如果在 CI 环境）
-	if (ciContext) {
+	// 发送 market webhook（如果在 CI 环境或强制开启）
+	if (shouldNotify) {
 		try {
 			// 在 CI 环境自动获取 OIDC token
+			const marketBaseUrl = CLI_DEFAULTS.publish.marketBaseUrl
+			const audience = resolveWebhookAudience(marketBaseUrl, env)
 			const oidcToken = await resolveOidcToken({
-				required: false,
+				required: forceWebhook,
+				audience,
 				log,
 				env,
 			})
@@ -139,7 +156,6 @@ export async function publishPackage(options: PublishOptions): Promise<PublishRe
 			if (!oidcToken) {
 				log('[publish] warn: skipping market notification (no OIDC token available)')
 			} else {
-				const marketBaseUrl = CLI_DEFAULTS.publish.marketBaseUrl
 				log(`[publish] notifying market at ${marketBaseUrl}...`)
 				const rpcClient = resolveMarketWebhookClient(marketBaseUrl, log)
 				if (rpcClient) {
@@ -155,7 +171,7 @@ export async function publishPackage(options: PublishOptions): Promise<PublishRe
 			log(`[publish] warn: market notification failed: ${reason}`)
 		}
 	} else {
-		log('[publish] market notification skipped (not in CI environment)')
+		log('[publish] market notification skipped')
 	}
 
 	return result

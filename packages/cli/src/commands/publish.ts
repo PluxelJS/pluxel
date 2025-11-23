@@ -17,6 +17,11 @@ const publishArgs = {
 		description: 'Print npm args/env keys before running publish',
 		default: false,
 	},
+	webhook: {
+		type: 'boolean',
+		description: 'Notify market webhook even if npm publish is skipped (requires OIDC token)',
+		default: false,
+	},
 	skipVersionCheck: {
 		type: 'boolean',
 		description: 'Skip checking if version already published',
@@ -37,6 +42,7 @@ export const publishCommand = define({
 			access: values.access,
 			dryRun: values.dryRun,
 			debug: values.debug,
+			webhook: values.webhook,
 			skipVersionCheck: values.skipVersionCheck,
 			log: ctx.log,
 		})
