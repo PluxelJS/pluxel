@@ -3,7 +3,7 @@ import type { PackageJson } from 'pkg-types'
 import { readPackageJSON } from 'pkg-types'
 import { detectCiContext } from '../ci/context'
 import { resolveOidcToken } from '../ci/oidc'
-import { CLI_DEFAULTS, resolvePublishEnv } from '../config'
+import { CLI_DEFAULTS } from '../config'
 import { runCommand } from '../utils/exec'
 import { resolveMarketWebhookClient } from './market-rpc'
 
@@ -95,25 +95,21 @@ export async function publishPackage(options: PublishOptions): Promise<PublishRe
 	log(`[publish] ✓ ${pkg.name}@${pkg.version} published successfully`)
 	result.published = true
 
-	// 发送 market webhook（如果配置了）
-	const envDefaults = resolvePublishEnv(env)
-	const marketBaseUrl = envDefaults.marketBaseUrl ?? CLI_DEFAULTS.publish.marketBaseUrl
+	// 发送 market webhook（如果在 CI 环境）
 	const ciContext = detectCiContext(env)
-
-	if (marketBaseUrl && ciContext) {
+	if (ciContext) {
 		try {
-			const audience = envDefaults.audience
+			// 在 CI 环境自动获取 OIDC token
 			const oidcToken = await resolveOidcToken({
 				required: false,
-				audience,
 				log,
 				env,
-				tokenEnvKey: CLI_DEFAULTS.publish.oidcTokenEnv,
 			})
 
 			if (!oidcToken) {
 				log('[publish] warn: skipping market notification (no OIDC token available)')
 			} else {
+				const marketBaseUrl = CLI_DEFAULTS.publish.marketBaseUrl
 				log(`[publish] notifying market at ${marketBaseUrl}...`)
 				const rpcClient = resolveMarketWebhookClient(marketBaseUrl, log)
 				if (rpcClient) {
@@ -128,7 +124,7 @@ export async function publishPackage(options: PublishOptions): Promise<PublishRe
 			const reason = error instanceof Error ? error.message : String(error)
 			log(`[publish] warn: market notification failed: ${reason}`)
 		}
-	} else if (!ciContext) {
+	} else {
 		log('[publish] market notification skipped (not in CI environment)')
 	}
 

@@ -120,18 +120,11 @@ describe('publish single package', () => {
 describe('publish with CI context', () => {
 	it('sends market notification with OIDC token in CI environment', async () => {
 		const dir = await setupPackageFixture('example-pkg', '2.0.0')
-		const savedEnv = snapshotEnv([
-			'GITHUB_ACTIONS',
-			'GITHUB_REPOSITORY',
-			'PLUXEL_OIDC_TOKEN',
-			'PLUXEL_MARKET_BASE_URL',
-		])
+		const savedEnv = snapshotEnv(['GITHUB_ACTIONS', 'GITHUB_REPOSITORY'])
 
 		try {
 			process.env.GITHUB_ACTIONS = 'true'
 			process.env.GITHUB_REPOSITORY = 'acme/example'
-			process.env.PLUXEL_OIDC_TOKEN = 'test-oidc-token'
-			process.env.PLUXEL_MARKET_BASE_URL = 'https://market.example.dev'
 
 			const result = await publishPackage({
 				cwd: dir,
