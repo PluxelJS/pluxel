@@ -1,7 +1,7 @@
 import type { ResolvedScanOptions, ScanOptionsInput } from './types'
 
 export const DEFAULT_SCAN_OPTIONS: ResolvedScanOptions = {
-	conditions: ['@pluxel/hmr', 'node', 'import'],
+	conditions: ['node', 'import'],
 	conservativeCandidates: [
 		'index.ts',
 		'index.mts',
@@ -12,6 +12,7 @@ export const DEFAULT_SCAN_OPTIONS: ResolvedScanOptions = {
 		'src/index.ts',
 		'dist/index.js',
 	],
+	preferHmrExports: false,
 	includeRoot: false,
 	skipUnnamed: true,
 	fallbackTsOnSingle: true,
@@ -32,6 +33,7 @@ export function resolveScanOptions(
 	return {
 		conditions: overrides.conditions ?? defaults.conditions,
 		conservativeCandidates: overrides.conservativeCandidates ?? defaults.conservativeCandidates,
+		preferHmrExports: overrides.preferHmrExports ?? defaults.preferHmrExports,
 		includeRoot: overrides.includeRoot ?? defaults.includeRoot,
 		skipUnnamed: overrides.skipUnnamed ?? defaults.skipUnnamed,
 		fallbackTsOnSingle: overrides.fallbackTsOnSingle ?? defaults.fallbackTsOnSingle,

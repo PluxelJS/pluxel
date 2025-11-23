@@ -17,6 +17,7 @@ import {
 	normalizeSpecifier,
 	type PackageSpecifierInput,
 } from './specifiers'
+import { loadWorkspaceInfo } from './scan/workspace'
 
 const serviceName = 'packageService' as const
 
@@ -131,6 +132,7 @@ export class PackageService {
 	private readonly loadFailures = new Map<string, PackageLoadIssue>()
 	private readonly stateStore: PackageStateStore
 	private readonly ready: Promise<void>
+	private readonly installDefaultsReady: Promise<void>
 	private initialized = false
 
 	constructor(
@@ -138,7 +140,7 @@ export class PackageService {
 		config: PackageServiceConfig = {},
 	) {
 		this.defaults = {
-			install: resolveInstallDefaults(config.install),
+			install: resolveInstallDefaults(config.install, false, null),
 			preferFreshImport: config.preferFreshImport ?? false,
 		}
 		if (config.scan) {
@@ -155,13 +157,37 @@ export class PackageService {
 			stateOptions.debounceMs = config.state.debounceMs
 		}
 		this.stateStore = new PackageStateStore(stateOptions)
-		this.ready = this.initializeFromState()
+		this.installDefaultsReady = this.initializeInstallDefaults(config.install)
+		this.ready = this.installDefaultsReady
+			.then(() => this.initializeFromState())
 			.catch((error) => {
 				this.ctx.logger?.warn({ error }, '[PackageService] 恢复包状态失败')
 			})
 			.finally(() => {
 				this.initialized = true
 			})
+	}
+
+	private async initializeInstallDefaults(overrides?: InstallOptions) {
+		const workspaceRoot = await this.detectWorkspaceRoot(overrides?.cwd)
+		this.defaults.install = resolveInstallDefaults(overrides, Boolean(workspaceRoot), workspaceRoot)
+	}
+
+	private async detectWorkspaceRoot(preferredCwd?: string): Promise<string | null> {
+		const roots = this.ctx.scanService?.defaultRoots ?? []
+		const candidates = normalizeRoots([
+			preferredCwd ?? process.cwd(),
+			...roots,
+		])
+		for (const root of candidates) {
+			try {
+				const info = await loadWorkspaceInfo(root)
+				if (info.isMonorepo) return info.root
+			} catch {
+				// ignore detection errors, fall through
+			}
+		}
+		return null
 	}
 
 	/** 统一整理包名/版本输入，非法输入会抛错。 */
@@ -543,6 +569,15 @@ export class PackageService {
 		if (overrides.global !== undefined) result.global = overrides.global
 		if (overrides.dry !== undefined) result.dry = overrides.dry
 
+		// 如果显式关闭 workspace 但当前目录是 monorepo，避免 pnpm 警告
+		if (!result.workspace && base.workspace) {
+			result.env = {
+				...(result.env ?? {}),
+				PNPM_IGNORE_WORKSPACE_ROOT_CHECK: 'true',
+				npm_config_ignore_workspace_root_check: 'true',
+			}
+		}
+
 		return result
 	}
 
@@ -633,19 +668,31 @@ function resolveStateFilePath(file?: string): string {
 	return resolvePath(process.cwd(), '.pluxel', 'hmr', 'package-state.json')
 }
 
-function resolveInstallDefaults(options: InstallOptions = {}): ResolvedInstallOptions {
+function resolveInstallDefaults(
+	options: InstallOptions = {},
+	inWorkspace: boolean,
+	workspaceRoot: string | null,
+): ResolvedInstallOptions {
+	const cwd = options.cwd ?? workspaceRoot ?? process.cwd()
 	const resolved: ResolvedInstallOptions = {
-		cwd: options.cwd ?? process.cwd(),
+		cwd,
 		dev: options.dev ?? false,
 		installPeerDependencies: options.installPeerDependencies ?? false,
 		force: options.force ?? false,
+		workspace: options.workspace ?? inWorkspace,
 	}
-	if (options.workspace !== undefined) resolved.workspace = options.workspace
 	if (options.env !== undefined) resolved.env = options.env
 	if (options.silent !== undefined) resolved.silent = options.silent
 	if (options.packageManager !== undefined) resolved.packageManager = options.packageManager
 	if (options.global !== undefined) resolved.global = options.global
 	if (options.dry !== undefined) resolved.dry = options.dry
+	if (!resolved.workspace && inWorkspace) {
+		resolved.env = {
+			...(resolved.env ?? {}),
+			PNPM_IGNORE_WORKSPACE_ROOT_CHECK: 'true',
+			npm_config_ignore_workspace_root_check: 'true',
+		}
+	}
 	return resolved
 }
 
@@ -658,4 +705,14 @@ function pickEnsureOptions(
 	if (options.dev !== undefined) picked.dev = options.dev
 	if (options.workspace !== undefined) picked.workspace = options.workspace
 	return picked
+}
+
+function normalizeRoots(roots: string[]): string[] {
+	const seen = new Set<string>()
+	return roots.filter((r) => {
+		const normalized = normalizePath(r)
+		if (seen.has(normalized)) return false
+		seen.add(normalized)
+		return true
+	})
 }

@@ -232,7 +232,10 @@ export class HMRService {
 
 				// 7) 冷启动：扫描 + 预热执行（让 loader 完成 anchors 首次填充）
 				console.time('[HMR] 扫描文件')
-				const files = await this.ctx.scanService.scanEntries({ roots: this.config.dir })
+				const files = await this.ctx.scanService.scanEntries({
+					roots: this.config.dir,
+					scan: { preferHmrExports: true },
+				})
 				console.timeEnd('[HMR] 扫描文件')
 
 				console.time('[HMR] 预热/执行模块')
