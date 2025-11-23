@@ -17,7 +17,9 @@ import {
 	normalizeSpecifier,
 	type PackageSpecifierInput,
 } from './specifiers'
+import { collectDeclaredPlugins } from './util/plugins'
 import { loadWorkspaceInfo } from './scan/workspace'
+import { createDebouncedTrigger } from './util/debounce'
 
 const serviceName = 'packageService' as const
 
@@ -133,6 +135,13 @@ export class PackageService {
 	private readonly stateStore: PackageStateStore
 	private readonly ready: Promise<void>
 	private readonly installDefaultsReady: Promise<void>
+	private readonly syncTrigger = createDebouncedTrigger({
+		delayMs: 300,
+		run: () =>
+			this.syncTrackedPlugins().catch((error) => {
+				this.ctx.logger?.warn({ error }, '[PackageService] 插件依赖同步失败')
+			}),
+	})
 	private initialized = false
 
 	constructor(
@@ -160,6 +169,7 @@ export class PackageService {
 		this.installDefaultsReady = this.initializeInstallDefaults(config.install)
 		this.ready = this.installDefaultsReady
 			.then(() => this.initializeFromState())
+			.then(() => this.syncTrackedPlugins())
 			.catch((error) => {
 				this.ctx.logger?.warn({ error }, '[PackageService] 恢复包状态失败')
 			})
@@ -188,6 +198,28 @@ export class PackageService {
 			}
 		}
 		return null
+	}
+
+	/** 扫描已声明的插件依赖（pluxel-plugin*），确保被加载并持久化。 */
+	async syncTrackedPlugins(): Promise<void> {
+		if (!this.initialized) return
+		await this.installDefaultsReady
+		const roots = this.ctx.scanService?.defaultRoots ?? [process.cwd()]
+		const found = await collectDeclaredPlugins(roots)
+		const toLoad: string[] = []
+		for (const name of found) {
+			if (this.loadedPackages.has(name)) continue
+			toLoad.push(name)
+		}
+		if (!toLoad.length) return
+
+		for (const name of toLoad) {
+			try {
+				await this.load(name)
+			} catch (error) {
+				this.ctx.logger?.warn({ name, error }, '[PackageService] 同步加载插件失败')
+			}
+		}
 	}
 
 	/** 统一整理包名/版本输入，非法输入会抛错。 */
@@ -339,6 +371,7 @@ export class PackageService {
 		this.loadedPackages.delete(name)
 		this.ctx.loader.pruneModule(moduleId, scope)
 		this.schedulePersistSnapshot()
+		this.syncTrigger.trigger()
 	}
 
 	getPackageSpecByModuleId(moduleId: string): NormalizedPackageSpecifier | undefined {

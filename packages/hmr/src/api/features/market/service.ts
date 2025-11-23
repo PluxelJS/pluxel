@@ -32,20 +32,24 @@ export async function installPackage(
 	specInput: SpecInputValue,
 	force?: boolean,
 ): Promise<MutationResult> {
+	let installResult: Awaited<ReturnType<PlxContext['packageService']['install']>> | undefined
 	try {
 		const serviceInput = toServiceSpecifierInput(specInput)
 		const overrides: InstallOptions | undefined = force === undefined ? undefined : { force }
-		const installResult = await pCtx.packageService.install(serviceInput, overrides)
+		installResult = await pCtx.packageService.install(serviceInput, overrides)
+		const loadResult = await pCtx.packageService.load(serviceInput)
 		return buildMutationResult({
 			ok: true,
-			code: installResult.status,
-			spec: installResult.spec,
+			code: 'installed_and_loaded',
+			spec: loadResult.spec,
 			installStatus: installResult.status,
 		})
 	} catch (error) {
 		return buildMutationResult({
 			ok: false,
-			code: 'install_failed',
+			code: installResult ? 'load_failed' : 'install_failed',
+			spec: installResult?.spec,
+			installStatus: installResult?.status,
 			error,
 		})
 	}
