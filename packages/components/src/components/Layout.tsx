@@ -194,10 +194,11 @@ export function Layout({
 	// —— Main 高度：一次算清 —— //
 	const mainHeight = `calc(100dvh - ${headerHeight}px - ${footerHeight}px)`
 
+	// 优化后的边框颜色：降低视觉权重
 	const borderColor =
 		colorScheme === 'dark'
-			? rgba(theme.colors.gray[8], 0.65)
-			: rgba(theme.colors.gray[3], 0.8)
+			? rgba(theme.colors.gray[8], 0.4) // 从 0.65 降低到 0.4
+			: rgba(theme.colors.gray[3], 0.45) // 从 0.8 降低到 0.45
 	const pattern = getPatternStyle(colorScheme === 'dark' ? 'dark' : 'light')
 
 	const computedNavbarWidth = compactNavbar ? compactNavbarWidth : navbarWidth

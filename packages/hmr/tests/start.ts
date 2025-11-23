@@ -1,4 +1,4 @@
-import { Context } from '@pluxel/core'
+import { Context } from '@pluxel/hmr'
 import { PinoLoggerService } from '@pluxel/hmr/services'
 import { PluginA, PluginC } from './plugins'
 
@@ -25,8 +25,8 @@ setTimeout(async () => {
 		ctx.loader.replaceModule(resolution.dir, await import(resolution.entry))
 	} */
 	ctx.internalGraphql.scheduleRebuild()
-	const a = await ctx.packageService.load('pluxel-plugin-redis')
-	console.log(a)
+	// const a = await ctx.packageService.load('pluxel-plugin-redis')
+	// console.log(a)
 }, 5000)
 ctx.honoService.modifyApp((app) => {
 	app.get('/pluginadd', (c) => {

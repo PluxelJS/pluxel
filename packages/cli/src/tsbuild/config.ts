@@ -1,6 +1,6 @@
 import { access } from 'node:fs/promises'
-import { resolvePackageJSON } from 'pkg-types'
 import { resolve } from 'pathe'
+import { resolvePackageJSON } from 'pkg-types'
 import { resolvePluginEnv } from './env'
 import type { BuildRuntimeConfig } from './types'
 
@@ -16,13 +16,12 @@ const DEFAULT_TSDOWN_CONFIG_FILES = [
 ]
 
 export interface BuildCommandArgsShape {
-	root?: string
 	watch?: boolean
 	debug?: boolean
 }
 
 export async function resolveBuildContext(values: BuildCommandArgsShape): Promise<BuildRuntimeConfig> {
-	const projectRoot = resolve(process.cwd(), values.root ?? '.')
+	const projectRoot = process.cwd()
 	const envConfig = resolvePluginEnv()
 	const packageJsonPath = await resolvePackageJsonPath(projectRoot)
 	const tsdownConfigPath =

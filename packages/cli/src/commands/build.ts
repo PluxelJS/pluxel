@@ -1,16 +1,13 @@
 import { type ArgValues, define } from 'gunshi'
+import type { Plugin } from 'rolldown'
 import { resolveBuildContext } from '../tsbuild/config'
 import { createOptionalDependencyHook } from '../tsbuild/plugin-tracker'
 import { createImportTracker } from '../tsbuild/plugins/import-tracker'
 import { cliTsdownOverlay } from '../tsbuild/tsdown-config'
 import { runWithTsdown } from '../tsbuild/tsdown-runner'
+import type { BuildRuntimeConfig } from '../tsbuild/types'
 
 const buildCommandArgs = {
-	root: {
-		type: 'string',
-		description: 'Project root that contains tsdown config',
-		default: '.',
-	},
 	watch: {
 		type: 'boolean',
 		description: 'Enable watch mode',
@@ -64,7 +61,7 @@ export const buildCommand = define({
 	},
 })
 
-function mergeOverlayPlugins(overlay: typeof cliTsdownOverlay, additional: any) {
+function mergeOverlayPlugins(overlay: typeof cliTsdownOverlay, additional: Plugin) {
 	return (ctx: BuildRuntimeConfig) => {
 		const resolved = typeof overlay === 'function' ? overlay(ctx) : overlay
 		const overlayPlugins = resolved.plugins

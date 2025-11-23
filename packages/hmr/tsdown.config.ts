@@ -4,14 +4,16 @@ import PreprocessorDirectives from 'unplugin-preprocessor-directives/rollup'
 
 const valibotFormSrc = fileURLToPath(new URL('../valibot-form/src', import.meta.url))
 
-function appendDtsImport(snippet: string, file = 'index.d.ts') {
+function appendDtsImport(snippet: string, files: string[]) {
 	const exts = /\.d\.(?:mts|cts|ts)$/i
 	return {
 		name: 'append-dts-import',
 		generateBundle(_, bundle) {
 			for (const [name, chunk] of Object.entries(bundle)) {
 				if (!exts.test(name)) continue
-				if (!name.endsWith(file)) continue
+				for (const file of files) {
+					if (name.endsWith(file)) continue
+				}
 
 				const isAsset = (chunk as any).type === 'asset'
 				const code = String(isAsset ? (chunk as any).source : (chunk as any).code)
@@ -29,7 +31,10 @@ export default defineConfig({
 	exports: {
 		devExports: '@pluxel/source',
 	},
-	plugins: [PreprocessorDirectives(), appendDtsImport('import type {} from "./services"')],
+	plugins: [
+		PreprocessorDirectives(),
+		appendDtsImport('import type {} from "./services"', ['index.d.mts']),
+	],
 	env: {
 		NODE_ENV: 'production',
 		PLUXEL_HMR_SSR: false,

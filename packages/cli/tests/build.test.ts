@@ -25,8 +25,10 @@ async function teardownFixture(dir: string) {
 describe('build command', () => {
 	it('synchronizes detected pluxel imports into package.json metadata', async () => {
 		const fixtureDir = await setupFixture('basic')
+		const originalCwd = process.cwd()
 		try {
-			const runtime = await resolveBuildContext({ root: fixtureDir })
+			process.chdir(fixtureDir)
+			const runtime = await resolveBuildContext({})
 			expect(runtime.projectRoot).toBe(fixtureDir)
 			expect(runtime.packageJsonPath).toBe(resolve(fixtureDir, 'package.json'))
 			const tracker = createImportTracker(runtime.pluginPrefixes)
@@ -56,21 +58,24 @@ describe('build command', () => {
 			expect(pkg.pluxel?.dependOn?.required).toEqual(['pluxel-plugin-alpha'])
 			expect(pkg.pluxel?.dependOn?.optional).toEqual(['pluxel-plugin-beta'])
 		} finally {
+			process.chdir(originalCwd)
 			await teardownFixture(fixtureDir)
 		}
 	})
 
 	it('respects custom env config for prefixes and manifest fields', async () => {
 		const fixtureDir = await setupFixture('custom')
+		const originalCwd = process.cwd()
 		const previousEnv: Record<string, string | undefined> = {
 			[BuildEnvKeys.pluginPrefix]: process.env[BuildEnvKeys.pluginPrefix],
 			[BuildEnvKeys.manifestField]: process.env[BuildEnvKeys.manifestField],
 		}
 		try {
+			process.chdir(fixtureDir)
 			process.env[BuildEnvKeys.pluginPrefix] = 'acme-plugin'
 			process.env[BuildEnvKeys.manifestField] = 'customField'
 
-			const runtime = await resolveBuildContext({ root: fixtureDir })
+			const runtime = await resolveBuildContext({})
 			const tracker = createImportTracker(runtime.pluginPrefixes)
 			const hook = createOptionalDependencyHook({
 				packageJsonPath: runtime.packageJsonPath,
@@ -98,6 +103,7 @@ describe('build command', () => {
 			expect(pkg.customField?.dependOn?.required).toEqual(['acme-plugin-alpha'])
 			expect(pkg.customField?.dependOn?.optional).toEqual(['acme-plugin-beta'])
 		} finally {
+			process.chdir(originalCwd)
 			restoreEnv(previousEnv)
 			await teardownFixture(fixtureDir)
 		}
@@ -105,12 +111,14 @@ describe('build command', () => {
 
 	it('fills repository metadata from GitHub env', async () => {
 		const fixtureDir = await setupFixture('basic')
+		const originalCwd = process.cwd()
 		const savedEnv = snapshotEnv(['GITHUB_ACTIONS', 'GITHUB_REPOSITORY'])
 		try {
+			process.chdir(fixtureDir)
 			process.env.GITHUB_ACTIONS = 'true'
 			process.env.GITHUB_REPOSITORY = 'pluxel/example'
 
-			const runtime = await resolveBuildContext({ root: fixtureDir })
+			const runtime = await resolveBuildContext({})
 			const tracker = createImportTracker(runtime.pluginPrefixes)
 			const hook = createOptionalDependencyHook({
 				packageJsonPath: runtime.packageJsonPath,
@@ -133,6 +141,7 @@ describe('build command', () => {
 			expect(pkg.homepage).toBe('https://github.com/pluxel/example')
 			expect(pkg.bugs).toEqual({ url: 'https://github.com/pluxel/example/issues' })
 		} finally {
+			process.chdir(originalCwd)
 			restoreEnv(savedEnv)
 			await teardownFixture(fixtureDir)
 		}
@@ -140,13 +149,15 @@ describe('build command', () => {
 
 	it('fills repository metadata from GitLab env', async () => {
 		const fixtureDir = await setupFixture('basic')
+		const originalCwd = process.cwd()
 		const savedEnv = snapshotEnv(['GITLAB_CI', 'CI_PROJECT_PATH', 'CI_SERVER_HOST'])
 		try {
+			process.chdir(fixtureDir)
 			process.env.GITLAB_CI = 'true'
 			process.env.CI_PROJECT_PATH = 'pluxel/example'
 			process.env.CI_SERVER_HOST = 'gitlab.com'
 
-			const runtime = await resolveBuildContext({ root: fixtureDir })
+			const runtime = await resolveBuildContext({})
 			const tracker = createImportTracker(runtime.pluginPrefixes)
 			const hook = createOptionalDependencyHook({
 				packageJsonPath: runtime.packageJsonPath,
@@ -169,6 +180,7 @@ describe('build command', () => {
 			expect(pkg.homepage).toBe('https://gitlab.com/pluxel/example')
 			expect(pkg.bugs).toEqual({ url: 'https://gitlab.com/pluxel/example/-/issues' })
 		} finally {
+			process.chdir(originalCwd)
 			restoreEnv(savedEnv)
 			await teardownFixture(fixtureDir)
 		}

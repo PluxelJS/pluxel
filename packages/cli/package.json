@@ -1,5 +1,7 @@
 {
 	"name": "@pluxel/cli",
+	"version": "0.2.2",
+	"description": "Demo example that imports a local package",
 	"bin": {
 		"pluxel": "dist/cli.mjs"
 	},
@@ -7,8 +9,6 @@
 		"dist",
 		"!**/*.map"
 	],
-	"version": "0.2.0",
-	"description": "Demo example that imports a local package",
 	"type": "module",
 	"scripts": {
 		"dev": "bun src/cli.ts new plugin",
@@ -31,6 +31,7 @@
 		"yaml": "^2.5.0"
 	},
 	"devDependencies": {
-		"@types/picomatch": "^4.0.2"
+		"@types/picomatch": "^4.0.2",
+		"rolldown": "^1.0.0-beta.51"
 	}
 }

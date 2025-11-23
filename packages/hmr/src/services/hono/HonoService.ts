@@ -265,14 +265,18 @@ export class HonoService {
 	}
 
 	private createRenderer(): Promise<RenderHandler> {
-		// #if NODE_ENV !== 'production'
-		const importMetaEnv = (import.meta as ImportMeta & { env?: Record<string, any> }).env
-		const ssrFlag =
-			importMetaEnv?.PLUXEL_HMR_SSR ??
-			(typeof process !== 'undefined' && process.env ? process.env.PLUXEL_HMR_SSR : undefined)
+		const isProd = process.env.NODE_ENV === 'production'
 
-		if (ssrFlag) {
-			return import('../../server/dev').then(({ createDevRenderer }) => createDevRenderer())
+		// #if NODE_ENV !== 'production'
+		if (!isProd) {
+			const importMetaEnv = (import.meta as ImportMeta & { env?: Record<string, any> }).env
+			const ssrFlag =
+				importMetaEnv?.PLUXEL_HMR_SSR ??
+				(typeof process !== 'undefined' && process.env ? process.env.PLUXEL_HMR_SSR : undefined)
+
+			if (ssrFlag) {
+				return import('../../server/dev').then(({ createDevRenderer }) => createDevRenderer())
+			}
 		}
 		// #endif
 

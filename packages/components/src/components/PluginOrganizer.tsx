@@ -255,25 +255,27 @@ const SortableRow = memo(function SortableRow({
 	const rowRef = useRef<HTMLAnchorElement | HTMLSpanElement | null>(null)
 	const brand = theme.colors.brand ?? theme.colors.indigo
 	const accent = theme.colors.blue
+
+	// 优化后的配色方案：提升背景可见度，保持文字清晰
 	const activeBg = active
 		? isDark
-			? brand[5]
-			: rgba(brand[0], 0.95)
+			? rgba(brand[5], 0.28) // 提升背景可见度到 0.28
+			: rgba(brand[1], 0.45)
 		: undefined
 	const selectedBg = selected
 		? isDark
-			? rgba(accent[4], 0.6)
-			: rgba(accent[0], 0.8)
+			? rgba(accent[5], 0.22) // 提升选中态可见度到 0.22
+			: rgba(accent[1], 0.35)
 		: undefined
 	const rowBackground = active ? activeBg : selected ? selectedBg : undefined
-	const baseColorValue = isDark ? theme.colors.gray[1] : theme.colors.gray[9]
+	const baseColorValue = isDark ? theme.colors.gray[2] : theme.colors.gray[8]
 	const rowColorValue =
 		active || selected
 			? isDark
-				? theme.white
+				? theme.colors.gray[0] // 使用 gray[0] 确保文字清晰
 				: theme.colors.gray[9]
 			: baseColorValue
-	const separatorColor = isDark ? theme.colors.dark[4] : theme.colors.gray[2]
+	const separatorColor = isDark ? rgba(theme.colors.dark[4], 0.3) : rgba(theme.colors.gray[2], 0.5)
 
 	const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
 		id: iid(pid),
@@ -321,8 +323,7 @@ const SortableRow = memo(function SortableRow({
 					style={{
 						width: 2,
 						alignSelf: 'stretch',
-						background:
-							isDark ? theme.white : brand[6],
+						background: isDark ? rgba(brand[3], 0.8) : brand[5], // 深色模式用更柔和的 brand[3]，浅色用 brand[5]
 						borderTopLeftRadius: 6,
 						borderBottomLeftRadius: 6,
 					}}
@@ -400,8 +401,12 @@ const SortableRow = memo(function SortableRow({
 							height: 6,
 							borderRadius: 6,
 							background: running
-								? rgba(theme.colors.green[isDark ? 3 : 5], 0.9)
-								: rgba(theme.colors.gray[isDark ? 5 : 4], 0.8),
+								? isDark
+									? rgba(theme.colors.teal[4], 0.85) // 使用 teal 代替 green，更柔和
+									: rgba(theme.colors.teal[6], 0.8)
+								: isDark
+									? rgba(theme.colors.gray[6], 0.5) // 降低停止状态的视觉权重
+									: rgba(theme.colors.gray[5], 0.6),
 						}}
 					/>
 					<Text size="xs" style={{ color: rowColorValue }}>
