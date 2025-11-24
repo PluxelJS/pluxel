@@ -42,3 +42,10 @@ export const PackageMutationResult = v.object({
 	installStatus: v.nullish(PackageInstallStatus),
 	error: v.nullish(v.string()),
 })
+
+export const PackageBatchMutationResult = v.object({
+	__typename: v.literal('PackageBatchMutationResult'),
+	ok: v.boolean(),
+	results: v.array(PackageMutationResult),
+	error: v.nullish(v.string()),
+})

@@ -3,6 +3,7 @@ import type { Context as PlxContext } from '@pluxel/core'
 import * as v from 'valibot'
 
 import {
+	PackageBatchMutationResult,
 	PackageLoadIssueEntry,
 	PackageMutationResult,
 	PackageRemovalScope,
@@ -10,6 +11,7 @@ import {
 } from './schema'
 import {
 	installPackage,
+	installPackages,
 	listLoadIssues,
 	reinstallPackage,
 	resolveRemovalScope,
@@ -25,6 +27,12 @@ export function createMarketResolver(pCtx: PlxContext) {
 				force: v.nullish(v.boolean()),
 			})
 			.resolve(({ spec, force }) => installPackage(pCtx, spec, force ?? undefined)),
+		installPackages: mutation(PackageBatchMutationResult)
+			.input({
+				specs: v.array(PackageSpecifierInputSchema),
+				force: v.nullish(v.boolean()),
+			})
+			.resolve(({ specs, force }) => installPackages(pCtx, specs, force ?? undefined)),
 		uninstallPackage: mutation(PackageMutationResult)
 			.input({
 				spec: PackageSpecifierInputSchema,

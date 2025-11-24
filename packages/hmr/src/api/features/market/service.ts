@@ -14,6 +14,7 @@ import type {
 import {
 	PackageLoadIssueEntry,
 	PackageMutationResult,
+	PackageBatchMutationResult,
 	PackageRemovalScope,
 	PackageSpecifierInput as PackageSpecifierInputSchema,
 } from './schema'
@@ -21,6 +22,7 @@ import {
 type IssueOutput = InferOutput<typeof PackageLoadIssueEntry>
 type SpecInputValue = InferInput<typeof PackageSpecifierInputSchema>
 type MutationResult = InferOutput<typeof PackageMutationResult>
+type BatchMutationResult = InferOutput<typeof PackageBatchMutationResult>
 type RemovalScopeInput = InferInput<typeof PackageRemovalScope>
 
 export function listLoadIssues(pCtx: PlxContext): IssueOutput[] {
@@ -52,6 +54,65 @@ export async function installPackage(
 			installStatus: installResult?.status,
 			error,
 		})
+	}
+}
+
+export async function installPackages(
+	pCtx: PlxContext,
+	specInputs: SpecInputValue[],
+	force?: boolean,
+): Promise<BatchMutationResult> {
+	if (!specInputs?.length) {
+		return {
+			__typename: 'PackageBatchMutationResult',
+			ok: false,
+			results: [],
+			error: '安装列表不能为空',
+		}
+	}
+	const overrides: InstallOptions | undefined = force === undefined ? undefined : { force }
+	try {
+		const serviceInputs = specInputs.map(toServiceSpecifierInput)
+		const installResults = await pCtx.packageService.installMany(serviceInputs, overrides)
+		const results: MutationResult[] = []
+
+		for (const installResult of installResults) {
+			try {
+				const loadResult = await pCtx.packageService.load(installResult.spec)
+				results.push(
+					buildMutationResult({
+						ok: true,
+						code: 'installed_and_loaded',
+						spec: loadResult.spec,
+						installStatus: installResult.status,
+					}),
+				)
+			} catch (error) {
+				results.push(
+					buildMutationResult({
+						ok: false,
+						code: 'load_failed',
+						spec: installResult.spec,
+						installStatus: installResult.status,
+						error,
+					}),
+				)
+			}
+		}
+
+		return {
+			__typename: 'PackageBatchMutationResult',
+			ok: results.every((r) => r.ok),
+			results,
+			error: null,
+		}
+	} catch (error) {
+		return {
+			__typename: 'PackageBatchMutationResult',
+			ok: false,
+			results: [],
+			error: formatUnknownError(error),
+		}
 	}
 }
 

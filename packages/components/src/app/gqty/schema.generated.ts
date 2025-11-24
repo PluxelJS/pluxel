@@ -105,6 +105,12 @@ export const generatedSchema = {
     tag: { __type: "String" },
     version: { __type: "String" },
   },
+  PackageBatchMutationResult: {
+    __typename: { __type: "String!" },
+    error: { __type: "String" },
+    ok: { __type: "Boolean!" },
+    results: { __type: "[PackageMutationResult!]!" },
+  },
   PackageIssueSpec: {
     __typename: { __type: "String!" },
     name: { __type: "String!" },
@@ -205,6 +211,10 @@ export const generatedSchema = {
       __type: "PackageMutationResult!",
       __args: { force: "Boolean", spec: "InstallPackageSpecInput!" },
     },
+    installPackages: {
+      __type: "PackageBatchMutationResult!",
+      __args: { force: "Boolean", specs: "[InstallPackageSpecInput!]!" },
+    },
     reinstallPackage: {
       __type: "PackageMutationResult!",
       __args: {
@@ -246,6 +256,13 @@ export interface BuildSnapshotResult {
   error?: Maybe<Scalars["String"]["output"]>;
   ok?: Scalars["Boolean"]["output"];
   path?: Maybe<Scalars["String"]["output"]>;
+}
+
+export interface PackageBatchMutationResult {
+  __typename?: "PackageBatchMutationResult";
+  error?: Maybe<Scalars["String"]["output"]>;
+  ok?: Scalars["Boolean"]["output"];
+  results: Array<PackageMutationResult>;
 }
 
 export interface PackageIssueSpec {
@@ -356,6 +373,10 @@ export interface Mutation {
     force?: Maybe<Scalars["Boolean"]["input"]>;
     spec: InstallPackageSpecInput;
   }) => PackageMutationResult;
+  installPackages: (args: {
+    force?: Maybe<Scalars["Boolean"]["input"]>;
+    specs: Array<InstallPackageSpecInput>;
+  }) => PackageBatchMutationResult;
   reinstallPackage: (args: {
     force?: Maybe<Scalars["Boolean"]["input"]>;
     scope?: Maybe<UninstallPackageScopeInput>;

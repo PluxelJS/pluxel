@@ -20,7 +20,6 @@
 		"@tanstack/react-form": "^1.23.8",
 		"react": "^19.2.0",
 		"react-dom": "^19.2.0",
-		"@pluxel/market": "*",
 		"valibot": "^1.1.0"
 	},
 	"dependencies": {
@@ -44,6 +43,7 @@
 		"postcss-simple-vars": "^7.0.1",
 		"valibot": "^1.1.0",
 		"valibot-form": "workspace:*",
+		"@pluxel/market": "link:/../../../pluxel-market/packages/market",
 		"vite": "npm:rolldown-vite@7.2.2",
 		"vite-tsconfig-paths": "^5.1.4"
 	}

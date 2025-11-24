@@ -16,7 +16,7 @@ const UserSchema = v.object({
 	id: v.pipe(
 		v.number(),
 		f.numberMeta({
-			type: 'slider',
+			variant: 'slider',
 			options: {
 				min: 0,
 				max: 100,

@@ -12,7 +12,23 @@ import {
 	Textarea,
 	TextInput,
 } from '@mantine/core'
-import { IconArrowDown, IconArrowUp, IconPlus, IconTrash } from '@tabler/icons-react'
+import { IconArrowDown, IconArrowUp, IconGripVertical, IconPlus, IconTrash } from '@tabler/icons-react'
+import {
+	DndContext,
+	PointerSensor,
+	type UniqueIdentifier,
+	useSensor,
+	useSensors,
+	DragOverlay,
+	closestCenter,
+} from '@dnd-kit/core'
+import {
+	SortableContext,
+	arrayMove,
+	rectSortingStrategy,
+	useSortable,
+} from '@dnd-kit/sortable'
+import { CSS } from '@dnd-kit/utilities'
 import { useEffect, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
 import { DEFAULT_TEXTS } from '~/core/constants'
@@ -83,6 +99,38 @@ function defaultByMode(
 		default:
 			return ''
 	}
+}
+
+export function reorderList<T>(list: readonly T[], fromIndex: number, toIndex: number): T[] {
+	if (fromIndex === toIndex || fromIndex < 0 || toIndex < 0 || fromIndex >= list.length || toIndex >= list.length) {
+		return [...list]
+	}
+	return arrayMove(list, fromIndex, toIndex)
+}
+
+type SortableCardProps = {
+	id: UniqueIdentifier
+	children: ReactNode
+	dragHandle?: ReactNode
+	disabled?: boolean
+}
+
+function SortableCard(props: SortableCardProps) {
+	const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+		id: props.id,
+		disabled: props.disabled,
+	})
+	const style = {
+		transform: CSS.Transform.toString(transform),
+		transition,
+		opacity: isDragging ? 0.75 : undefined,
+	}
+
+	return (
+		<div ref={setNodeRef} style={style} {...attributes} {...listeners}>
+			{props.children}
+		</div>
+	)
 }
 
 function ArrayField(props: RendererProps) {
@@ -187,11 +235,7 @@ function ArrayField(props: RendererProps) {
 	const handleMove = (index: number, direction: number) => {
 		if (!canReorder || inputProps.disabled) return
 		const target = index + direction
-		if (target < 0 || target >= items.length) return
-		const next = [...items]
-		const [removed] = next.splice(index, 1)
-		next.splice(target, 0, removed)
-		updateItems(next)
+		updateItems(reorderList(items, index, target))
 	}
 
 	const handleChange = (index: number, nextValue: unknown) => {
@@ -358,9 +402,15 @@ function ArrayField(props: RendererProps) {
 	}
 
 	const renderItemCard = (item: unknown, idx: number) => {
-		const { node, inline } = renderControl(idx, item)
+		const control = renderControl(idx, item)
+		const inline = reorderEnabled ? false : control.inline
 		const errorsNode = renderErrors(idx)
-		const actionsNode = renderActions(idx)
+		const actionsNode = (
+			<Group gap="xs" align="center">
+				{canReorder ? <IconGripVertical size={16} style={{ cursor: 'grab', opacity: 0.75 }} /> : null}
+				{renderActions(idx)}
+			</Group>
+		)
 
 		if (inline) {
 			return {
@@ -394,7 +444,7 @@ function ArrayField(props: RendererProps) {
 						{actionsNode}
 					</Group>
 					<Stack gap={6}>
-						{node}
+						{control.node}
 						{errorsNode}
 					</Stack>
 				</Card>
@@ -402,9 +452,67 @@ function ArrayField(props: RendererProps) {
 		}
 	}
 
-	const renderedCards = items.map((item, idx) => renderItemCard(item, idx))
-	const inlineCards = renderedCards.filter((item) => item.inline).map((item) => item.element)
-	const blockCards = renderedCards.filter((item) => !item.inline).map((item) => item.element)
+	const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }))
+	const reorderEnabled = canReorder && items.length > 1
+	const [activeId, setActiveId] = useState<UniqueIdentifier | null>(null)
+
+	const renderedCards = items.map((item, idx) => ({ ...renderItemCard(item, idx), id: `item-${idx}` as const }))
+	const inlineCards = renderedCards.filter((item) => item.inline)
+	const blockCards = renderedCards.filter((item) => !item.inline)
+
+	const dragOverlay =
+		activeId !== null ? (
+			<DragOverlay>
+				<Card shadow="lg" padding="md" radius="sm">
+					<Text size="sm" c="dimmed">
+						拖拽以调整顺序...
+					</Text>
+				</Card>
+			</DragOverlay>
+		) : null
+
+	const wrapSortable = (content: ReactNode) =>
+		reorderEnabled ? (
+			<DndContext
+				sensors={sensors}
+				collisionDetection={closestCenter}
+				onDragStart={(event) => setActiveId(event.active.id)}
+				onDragEnd={(event) => {
+					setActiveId(null)
+					const { active, over } = event
+					if (!over || active.id === over.id) return
+					const from = renderedCards.findIndex((item) => item.id === active.id)
+					const to = renderedCards.findIndex((item) => item.id === over.id)
+					updateItems(reorderList(items, from, to))
+				}}
+				onDragCancel={() => setActiveId(null)}
+			>
+				<SortableContext items={renderedCards.map((item) => item.id)} strategy={rectSortingStrategy}>
+					{content}
+				</SortableContext>
+				{dragOverlay}
+			</DndContext>
+		) : (
+			content
+		)
+
+	const sortableBlockCards =
+		reorderEnabled && blockCards.length
+			? blockCards.map((item) => (
+					<SortableCard key={item.id} id={item.id} disabled={!reorderEnabled}>
+						{item.element}
+					</SortableCard>
+				))
+			: blockCards.map((item) => item.element)
+
+	const sortableInlineCards =
+		reorderEnabled && inlineCards.length
+			? inlineCards.map((item) => (
+					<SortableCard key={item.id} id={item.id} disabled={!reorderEnabled}>
+						{item.element}
+					</SortableCard>
+				))
+			: inlineCards.map((item) => item.element)
 
 	const itemsNode =
 		items.length === 0 ? (
@@ -414,18 +522,22 @@ function ArrayField(props: RendererProps) {
 				</Text>
 			</Card>
 		) : layout === 'grid' ? (
-			<SimpleGrid cols={columns} spacing="md">
-				{renderedCards.map((item) => item.element)}
-			</SimpleGrid>
+			wrapSortable(
+				<SimpleGrid cols={columns} spacing="md">
+					{sortableBlockCards}
+				</SimpleGrid>,
+			)
 		) : (
-			<>
-				{inlineCards.length ? (
-					<Group gap="md" wrap="wrap">
-						{inlineCards}
-					</Group>
-				) : null}
-				{blockCards.length ? <Stack gap="md">{blockCards}</Stack> : null}
-			</>
+			wrapSortable(
+				<>
+					{sortableInlineCards.length ? (
+						<Group gap="md" wrap="wrap">
+							{sortableInlineCards}
+						</Group>
+					) : null}
+					{sortableBlockCards.length ? <Stack gap="md">{sortableBlockCards}</Stack> : null}
+				</>,
+			)
 		)
 
 	return (

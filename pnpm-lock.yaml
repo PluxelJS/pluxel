@@ -133,9 +133,6 @@ importers:
       '@melloware/react-logviewer':
         specifier: ^6.3.4
         version: 6.3.4(react-dom@19.2.0(react@19.2.0))(react@19.2.0)
-      '@pluxel/market':
-        specifier: '*'
-        version: 0.1.0(ramda@0.32.0)(react-dom@19.2.0(react@19.2.0))(react@19.2.0)
       '@tabler/icons-react':
         specifier: ^3.35.0
         version: 3.35.0(react@19.2.0)
@@ -161,6 +158,9 @@ importers:
         specifier: ^19.2.0
         version: 19.2.0(react@19.2.0)
     devDependencies:
+      '@pluxel/market':
+        specifier: link:/../../../pluxel-market/packages/market
+        version: link:../../../pluxel-market/packages/market
       '@types/react':
         specifier: ^19.2.4
         version: 19.2.6

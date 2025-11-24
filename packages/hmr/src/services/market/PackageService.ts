@@ -1,6 +1,6 @@
 import { pathToFileURL } from 'node:url'
 import { type Context, Injectable } from '@pluxel/core'
-import type { OperationOptions } from 'nypm'
+import type { OperationOptions, OperationResult } from 'nypm'
 import { addDependency, ensureDependencyInstalled } from 'nypm'
 import { normalize as normalizePath, resolve as resolvePath } from 'pathe'
 import type { RemovalScope } from '../loader'
@@ -120,6 +120,7 @@ interface LoadIntentConfig {
 
 @Injectable({ key: serviceName })
 export class PackageService {
+	private readonly logName = 'package-manager'
 	private readonly defaults: {
 		install: ResolvedInstallOptions
 		scan?: ScanTaskOptions | undefined
@@ -132,6 +133,7 @@ export class PackageService {
 	private readonly packageModuleIds = new Map<string, string>()
 	private readonly loadedPackages = new Map<string, PackageLoadResult>()
 	private readonly loadFailures = new Map<string, PackageLoadIssue>()
+	private readonly multiInstallLocks = new Map<string, Promise<PackageInstallResult[]>>()
 	private readonly stateStore: PackageStateStore
 	private readonly ready: Promise<void>
 	private readonly installDefaultsReady: Promise<void>
@@ -139,7 +141,7 @@ export class PackageService {
 		delayMs: 300,
 		run: () =>
 			this.syncTrackedPlugins().catch((error) => {
-				this.ctx.logger?.warn({ error }, '[PackageService] 插件依赖同步失败')
+				this.logEvent('warn', 'syncTrackedPlugins:failed', { error })
 			}),
 	})
 	private initialized = false
@@ -171,7 +173,7 @@ export class PackageService {
 			.then(() => this.initializeFromState())
 			.then(() => this.syncTrackedPlugins())
 			.catch((error) => {
-				this.ctx.logger?.warn({ error }, '[PackageService] 恢复包状态失败')
+				this.logEvent('warn', 'init:restore_failed', { error })
 			})
 			.finally(() => {
 				this.initialized = true
@@ -242,7 +244,34 @@ export class PackageService {
 		const spec = this.normalizeSpecifier(input)
 		const key = spec.key
 		const resolved = this.resolveInstallOptions(overrides)
+		this.logEvent('info', 'install:scheduled', {
+			target: spec.target,
+			force: resolved.force,
+		})
 		return this.runExclusive(this.installLocks, key, () => this.performInstall(spec, resolved))
+	}
+
+	/** 批量安装插件包，一次调用包管理器。 */
+	async installMany(
+		inputs: PackageSpecifierInput[],
+		overrides: InstallOptions = {},
+	): Promise<PackageInstallResult[]> {
+		await this.ensureReady()
+		if (!inputs.length) return []
+		const specs = inputs.map((item) => this.normalizeSpecifier(item))
+		const key = specs
+			.map((s) => s.key)
+			.slice()
+			.sort()
+			.join('|')
+		const resolved = this.resolveInstallOptions(overrides)
+		this.logEvent('info', 'installMany:scheduled', {
+			targets: specs.map((s) => s.target),
+			force: resolved.force,
+		})
+		return this.runExclusive(this.multiInstallLocks, key, () =>
+			this.performInstallMany(specs, resolved),
+		)
 	}
 
 	/** 在扫描上下文中解析入口。 */
@@ -295,9 +324,19 @@ export class PackageService {
 	): Promise<PackageLoadResult> {
 		const key = spec.key
 		return this.runExclusive(this.loadLocks, key, async () => {
+			this.logEvent('info', 'load:start', {
+				name: spec.name,
+				autoInstall: intent.autoInstall,
+				fresh: intent.fresh,
+			})
 			try {
 				const result = await this.executeLoad(spec, options, intent)
 				this.clearLoadIssue(spec.name)
+				this.logEvent('info', 'load:success', {
+					name: spec.name,
+					moduleId: result.moduleId,
+					autoInstalled: Boolean(result.install),
+				})
 				return result
 			} catch (error) {
 				if (!intent.autoInstall || !shouldRetryInstall(error)) {
@@ -309,6 +348,10 @@ export class PackageService {
 				try {
 					const result = await this.executeLoad(spec, options, intent, installResult)
 					this.clearLoadIssue(spec.name)
+					this.logEvent('info', 'load:success_after_install', {
+						name: spec.name,
+						moduleId: result.moduleId,
+					})
 					return result
 				} catch (retryError) {
 					this.recordLoadIssue(spec, retryError, 'load')
@@ -372,6 +415,7 @@ export class PackageService {
 		this.ctx.loader.pruneModule(moduleId, scope)
 		this.schedulePersistSnapshot()
 		this.syncTrigger.trigger()
+		this.logEvent('info', 'invalidate', { name, scope, moduleId })
 	}
 
 	getPackageSpecByModuleId(moduleId: string): NormalizedPackageSpecifier | undefined {
@@ -512,26 +556,49 @@ export class PackageService {
 		options: ResolvedInstallOptions,
 	): Promise<PackageInstallResult> {
 		const { force, ...operationOptions } = options
+		this.logEvent('info', 'install:start', {
+			target: spec.target,
+			force,
+		})
 		try {
 			if (force || spec.version) {
-				await addDependency(spec.target, operationOptions)
-				const result: PackageInstallResult = { spec, target: spec.target, status: 'installed' }
-				this.onPackageInstalled(result)
-				return result
+				const opResult = await addDependency(spec.target, operationOptions)
+				const installResult: PackageInstallResult = {
+					spec,
+					target: spec.target,
+					status: 'installed',
+				}
+				this.onPackageInstalled(installResult)
+				this.logPackageManagerExec('info', 'install:pm_command', spec, installResult, options, opResult)
+				this.logEvent('info', 'install:completed', {
+					target: spec.target,
+					status: installResult.status,
+				})
+				return installResult
 			}
 
-			const existed = await ensureDependencyInstalled(spec.name, pickEnsureOptions(options))
-			const result: PackageInstallResult = {
+			const ensureOptions = pickEnsureOptions(options)
+			const existed = await ensureDependencyInstalled(spec.name, ensureOptions)
+			const installResult: PackageInstallResult = {
 				spec,
 				target: spec.target,
 				status: existed === true ? 'reused' : 'installed',
 			}
-			if (result.status === 'installed') {
-				this.onPackageInstalled(result)
+			if (installResult.status === 'installed') {
+				this.onPackageInstalled(installResult)
 			}
-			return result
+			this.logPackageManagerExec('info', 'install:ensure', spec, installResult, options)
+			this.logEvent('info', 'install:completed', {
+				target: spec.target,
+				status: installResult.status,
+			})
+			return installResult
 		} catch (error) {
 			const message = error instanceof Error ? error.message : '未知错误'
+			this.logEvent('error', 'install:failed', {
+				target: spec.target,
+				message,
+			})
 			throw new PackageServiceError(
 				'INSTALL_FAILED',
 				`安装插件 "${spec.target}" 失败：${message}`,
@@ -544,12 +611,93 @@ export class PackageService {
 		}
 	}
 
+	private async performInstallMany(
+		specs: NormalizedPackageSpecifier[],
+		options: ResolvedInstallOptions,
+	): Promise<PackageInstallResult[]> {
+		const statuses: PackageInstallResult[] = []
+		const { force } = options
+		const ensureOptions = pickEnsureOptions(options)
+		const toInstall: NormalizedPackageSpecifier[] = []
+		const seen = new Set<string>()
+
+		for (const spec of specs) {
+			if (seen.has(spec.target)) continue
+			seen.add(spec.target)
+
+			if (force || spec.version) {
+				toInstall.push(spec)
+				continue
+			}
+
+			const existed = await ensureDependencyInstalled(spec.name, ensureOptions)
+			if (existed === true) {
+				statuses.push({ spec, target: spec.target, status: 'reused' })
+			} else {
+				toInstall.push(spec)
+			}
+		}
+
+		if (toInstall.length) {
+			try {
+				const opResult = await addDependency(
+					toInstall.map((s) => s.target),
+					options,
+				)
+				for (const spec of toInstall) {
+					const record: PackageInstallResult = {
+						spec,
+						target: spec.target,
+						status: 'installed',
+					}
+					statuses.push(record)
+					this.onPackageInstalled(record)
+				}
+				this.logEvent('info', 'installMany:completed', {
+					targets: toInstall.map((s) => s.target),
+					count: toInstall.length,
+					force,
+					command: opResult?.exec?.command,
+					args: opResult?.exec?.args,
+					commandLine: opResult?.exec
+						? `${opResult.exec.command} ${opResult.exec.args.join(' ')}`
+						: undefined,
+				})
+			} catch (error) {
+				const message = error instanceof Error ? error.message : '未知错误'
+				this.logEvent('error', 'installMany:failed', {
+					targets: toInstall.map((s) => s.target),
+					message,
+				})
+				throw new PackageServiceError(
+					'INSTALL_FAILED',
+					`批量安装插件失败：${message}`,
+					{
+						cause: error,
+						specs: toInstall,
+						options,
+					},
+				)
+			}
+		} else {
+			this.logEvent('info', 'installMany:skip_install', {
+				targets: specs.map((s) => s.target),
+			})
+		}
+
+		return statuses
+	}
+
 	private onPackageInstalled(result: PackageInstallResult) {
 		this.ctx.scanService?.invalidateResolverCache()
 		this.ctx.logger?.debug(
 			{ name: result.spec.name, target: result.target },
 			'[PackageService] 已清理解析缓存，等待重新扫描。',
 		)
+		this.logEvent('info', 'install:scan_cache_cleared', {
+			name: result.spec.name,
+			target: result.target,
+		})
 	}
 
 	private async resolveEntryForSpec(
@@ -680,10 +828,57 @@ export class PackageService {
 			issue.moduleId = moduleId
 		}
 		this.loadFailures.set(spec.name, issue)
+		this.logEvent('warn', 'load:issue_recorded', {
+			name: spec.name,
+			source,
+			message,
+			moduleId,
+		})
 	}
 
 	private clearLoadIssue(name: string) {
 		this.loadFailures.delete(name)
+	}
+
+	private logEvent(
+		level: 'info' | 'warn' | 'error',
+		event: string,
+		payload: Record<string, unknown> = {},
+		message?: string,
+	) {
+		const logger = this.ctx.logger
+		if (!logger) return
+		const baseMessage = message ?? `[PackageService] ${event}`
+		const record = { name: this.logName, event, ...payload }
+		if (level === 'info') {
+			logger.info(record, baseMessage)
+		} else if (level === 'warn') {
+			logger.warn(record, baseMessage)
+		} else {
+			logger.error(record, baseMessage)
+		}
+	}
+
+	private logPackageManagerExec(
+		level: 'info' | 'warn' | 'error',
+		event: string,
+		spec: NormalizedPackageSpecifier,
+		result: PackageInstallResult,
+		options: ResolvedInstallOptions,
+		exec?: OperationResult | null,
+	) {
+		const payload: Record<string, unknown> = {
+			target: spec.target,
+			status: result.status,
+			force: options.force,
+			workspace: options.workspace,
+		}
+		if (exec?.exec) {
+			payload.command = exec.exec.command
+			payload.args = exec.exec.args
+			payload.commandLine = `${exec.exec.command} ${exec.exec.args.join(' ')}`
+		}
+		this.logEvent(level, event, payload)
 	}
 }
 
