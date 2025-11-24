@@ -18,12 +18,13 @@
       "_react-D3kJkmPN.js"
     ]
   },
-  "../valibot-form/dist/DebugValues-DgXuMN4k.mjs": {
-    "file": "assets/DebugValues-DgXuMN4k-BRM-5VhO.js",
-    "name": "DebugValues-DgXuMN4k",
-    "src": "../valibot-form/dist/DebugValues-DgXuMN4k.mjs",
+  "../valibot-form/dist/DebugValues-B27FlBGC.mjs": {
+    "file": "assets/DebugValues-B27FlBGC-B0EjS29y.js",
+    "name": "DebugValues-B27FlBGC",
+    "src": "../valibot-form/dist/DebugValues-B27FlBGC.mjs",
     "isDynamicEntry": true,
     "imports": [
+      "_mantine-Bm3DR7ho.js",
       "_react-D3kJkmPN.js",
       "src/client.tsx"
     ]
@@ -75,7 +76,7 @@
     ]
   },
   "src/client.tsx": {
-    "file": "assets/client-Y2Uzv-Km.js",
+    "file": "assets/client-DBr-8VlH.js",
     "name": "client",
     "src": "src/client.tsx",
     "isEntry": true,
@@ -87,7 +88,7 @@
       "_rolldown-runtime-D7zIpOPY.js"
     ],
     "dynamicImports": [
-      "../valibot-form/dist/DebugValues-DgXuMN4k.mjs"
+      "../valibot-form/dist/DebugValues-B27FlBGC.mjs"
     ]
   }
 }
