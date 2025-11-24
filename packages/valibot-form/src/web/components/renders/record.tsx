@@ -4,6 +4,7 @@ import {
 	Card,
 	Group,
 	NumberInput,
+	Select,
 	Stack,
 	Switch,
 	Table,
@@ -19,15 +20,36 @@ import { registerRenderer, triggerFormEvents } from '~/core/registry'
 import { META_MAP } from '~/core/utils'
 import { FieldChrome } from '../shared'
 import { cleanProps } from '../../utils/propHelpers'
+import { PicklistControl } from './controls/PicklistControl'
 
 type RendererProps = CommonProps<typeof META_MAP.RECORD> & { value?: Record<string, unknown> }
 type RecordUI = RecordMetaResult
+
+const idOf = (value: string | number) => String(value)
+
+function buildPicklistData(config?: NonNullable<RecordUI['picklist']>) {
+	if (!config) return { data: [], map: new Map<string, string | number>(), isAllNumbers: false }
+	const map = new Map<string, string | number>()
+	const disabled = new Set((config.disabled ?? []).map((item) => idOf(item)))
+	const data = (config.options ?? []).map((opt) => {
+		const id = idOf(opt)
+		map.set(id, opt)
+		return {
+			value: id,
+			label: config.labels?.[opt] ?? String(opt),
+			disabled: disabled.has(id),
+		}
+	})
+	const isAllNumbers = (config.options ?? []).every((opt) => typeof opt === 'number')
+	return { data, map, isAllNumbers }
+}
 
 function inferMode(
 	mode: RecordUI['valueMode'],
 	value: unknown,
 ): Exclude<RecordUI['valueMode'], 'auto' | undefined> | 'string' {
 	if (mode && mode !== 'auto') return mode
+	if (Array.isArray(value)) return 'picklist-array'
 	if (typeof value === 'number') return 'number'
 	if (typeof value === 'boolean') return 'boolean'
 	if (value && typeof value === 'object') return 'json'
@@ -39,6 +61,8 @@ function RecordField(props: RendererProps) {
 	const ep = extractedPropsInfo ?? {}
 	// 使用 state 来保持键的顺序，避免编辑时因对象键重排序导致的跳跃
 	const [orderedKeys, setOrderedKeys] = useState<string[]>([])
+
+	const pickMeta = useMemo(() => buildPicklistData(ep.picklist), [ep.picklist])
 
 	const rows = useMemo(() => {
 		const entries = Object.entries((value as Record<string, unknown>) ?? {})
@@ -205,6 +229,56 @@ function RecordField(props: RendererProps) {
 							disabled: inputProps.disabled,
 							styles: { input: { fontFamily: 'var(--mantine-font-family-monospace)' } },
 						})}
+					/>
+				)
+			}
+			case 'picklist': {
+				const currentId = value == null ? null : idOf(value as string | number)
+				return (
+					<Select
+						data={pickMeta.data}
+						value={currentId ?? null}
+						onChange={(id) => {
+							if (id === null) return handleValueChange(index, null)
+							const raw = pickMeta.map.get(id!) ?? (pickMeta.isAllNumbers ? Number(id) : id)
+							handleValueChange(index, raw)
+						}}
+						disabled={inputProps.disabled ?? false}
+						{...cleanProps({
+							placeholder: ep.picklist?.placeholder,
+							clearable: ep.picklist?.clearable,
+							searchable: ep.picklist?.searchable,
+						})}
+					/>
+				)
+			}
+			case 'picklist-array': {
+				return (
+					<PicklistControl
+						meta={{
+							clearable: ep.picklist?.clearable ?? true,
+							allowCreate: ep.picklist?.allowCreate ?? false,
+							variant: ep.picklist?.variant ?? 'select',
+							multiple: true,
+							...cleanProps({
+								options: ep.picklist?.options,
+								entries: ep.picklist?.entries,
+								labels: ep.picklist?.labels,
+								disabled: ep.picklist?.disabled,
+								placeholder: ep.picklist?.placeholder,
+								searchable: ep.picklist?.searchable,
+								maxSelections: ep.picklist?.maxValues,
+								nothingFoundLabel: ep.picklist?.nothingFoundLabel,
+							}),
+						} as any}
+						value={Array.isArray(value) ? value : []}
+						onChange={(next) => {
+							if (Array.isArray(next)) handleValueChange(index, next)
+							else if (next == null) handleValueChange(index, [])
+							else handleValueChange(index, [next])
+						}}
+						disabled={inputProps.disabled ?? false}
+						required={false}
 					/>
 				)
 			}

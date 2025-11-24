@@ -3,6 +3,6 @@ export * from './boolean'
 export * from './number'
 export * from './picklist'
 export * from './record'
-
 export * from './string'
 export * from './object'
+export * from './union'

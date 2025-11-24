@@ -31,10 +31,33 @@ type ExtractSchemaArg<T extends keyof ExtractMap> = Parameters<ExtractMap[T]['ex
 function resolveExtractTarget(schema: Schema):
 	| { schema: Schema; type: ExtractableType }
 	| undefined {
+	// 首先检查是否有明确的 meta 类型指定
+	// 例如 v.pipe(v.intersect([...]), unionMeta({...})) 应该被当作 union 处理
+	// 如果 schema 有 pipe，检查 pipe 中的 metadata 类型
+	if ((schema as any).pipe) {
+		const pipe = (schema as any).pipe as readonly unknown[]
+		for (let i = pipe.length - 1; i >= 0; i--) {
+			const item = pipe[i] as { kind?: string; type?: string }
+			if (item?.kind === 'metadata' && item.type) {
+				// 如果找到 metadata，使用其指定的类型
+				if (isExtractableType(item.type)) {
+					return { schema, type: item.type }
+				}
+			}
+		}
+	}
+
+	// variant 类型当作 union 处理
+	if (schema.type === 'variant') {
+		return { schema, type: META_MAP.union }
+	}
+
+	// 如果类型本身是可提取的，直接使用
 	if (isExtractableType(schema.type)) {
 		return { schema, type: schema.type }
 	}
 
+	// 处理 intersect：如果没有 union metadata，则当作 object 处理
 	if (schema.type === 'intersect') {
 		const entries = collectObjectEntries(schema)
 		if (entries?.length) {
@@ -69,6 +92,11 @@ function normalizeSection(section?: FormMeta['section']): FieldSectionMeta | und
  * fieldNameToLabel('UserName') => 'User Name'
  */
 function fieldNameToLabel(fieldName: string): string {
+	// 确保 fieldName 是字符串
+	if (typeof fieldName !== 'string' || !fieldName) {
+		return '未命名字段'
+	}
+
 	// 处理 snake_case
 	if (fieldName.includes('_')) {
 		return fieldName

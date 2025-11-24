@@ -75,6 +75,34 @@ export const AUTOFORM_CASES: AutoFormCase[] = [
 		schema: schema.RecordAllInOneSchema,
 	},
 	{
+		id: 'record-picklist',
+		label: 'Record Picklist',
+		description: 'Record 字段支持 picklist 单选和多选值。',
+		schema: v.object({
+			...schema.RecordPicklistSingleSchema.entries,
+			...schema.RecordPicklistMultiSchema.entries,
+			...schema.RecordPicklistStackSchema.entries,
+		}),
+	},
+	{
+		id: 'union-basic',
+		label: 'Union: Basic',
+		description: '基础 Union 类型：条件开关和类型选择联动。',
+		schema: v.object({
+			conditional: schema.ConditionalBasicSchema,
+			typeSwitch: schema.ConditionalTypeSchema,
+		}),
+	},
+	{
+		id: 'union-advanced',
+		label: 'Union: Advanced',
+		description: '高级 Union：多级嵌套联动和简单联合类型。',
+		schema: v.object({
+			advanced: schema.ConditionalAdvancedSchema,
+			simple: schema.SimpleUnionSchema,
+		}),
+	},
+	{
 		id: 'user',
 		label: 'User Profile',
 		description: '包含 slider、颜色选择与基础布尔字段的混合示例。',

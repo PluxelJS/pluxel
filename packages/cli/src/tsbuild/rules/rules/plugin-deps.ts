@@ -8,10 +8,11 @@ export async function pluginDependencyRule(pkg: PackageJson, context: RuleContex
 	const versions = resolvePluginVersions(pkg, context)
 	const messages: string[] = []
 
-	const optionalChanges = ensureOptionalDependencies(pkg, versions)
+	// 插件不应该被包管理器带着安装，应该有明确语义。
+	/* const optionalChanges = ensureOptionalDependencies(pkg, versions)
 	if (optionalChanges.length > 0) {
 		messages.push(`optionalDependencies + ${optionalChanges.join(', ')}`)
-	}
+	} */
 
 	const peerChanges = ensurePeerDependencies(pkg, versions)
 	if (peerChanges.length > 0) {
@@ -136,12 +137,18 @@ function syncManifestDependOn(
 	required.sort((a, b) => a.localeCompare(b))
 	optional.sort((a, b) => a.localeCompare(b))
 
-	const currentManifest = isRecord(pkg[manifestField]) ? (pkg[manifestField] as Record<string, unknown>) : {}
+	const currentManifest = isRecord(pkg[manifestField])
+		? (pkg[manifestField] as Record<string, unknown>)
+		: {}
 	const dependOn = isRecord(currentManifest[dependOnField])
 		? (currentManifest[dependOnField] as Record<string, unknown>)
 		: {}
-	const prevRequired = Array.isArray(dependOn.required) ? [...dependOn.required].sort(sortStrings) : []
-	const prevOptional = Array.isArray(dependOn.optional) ? [...dependOn.optional].sort(sortStrings) : []
+	const prevRequired = Array.isArray(dependOn.required)
+		? [...dependOn.required].sort(sortStrings)
+		: []
+	const prevOptional = Array.isArray(dependOn.optional)
+		? [...dependOn.optional].sort(sortStrings)
+		: []
 
 	if (arraysEqual(required, prevRequired) && arraysEqual(optional, prevOptional)) {
 		return undefined
