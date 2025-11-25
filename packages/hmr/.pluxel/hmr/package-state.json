@@ -1,6 +1,9 @@
 {
-  "schema": 2,
-  "generatedAt": "2025-11-25T05:59:11.198Z",
+  "schema": 3,
+  "generatedAt": "2025-11-25T09:04:51.059Z",
   "packages": [],
-  "issues": []
+  "issues": [],
+  "blocked": [
+    "pluxel-plugin-wretch"
+  ]
 }

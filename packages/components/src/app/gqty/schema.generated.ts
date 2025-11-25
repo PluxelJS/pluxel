@@ -112,6 +112,15 @@ export const generatedSchema = {
     ok: { __type: "Boolean!" },
     results: { __type: "[PackageMutationResult!]!" },
   },
+  PackageInventoryEntry: {
+    __typename: { __type: "String!" },
+    installedVersion: { __type: "String" },
+    issues: { __type: "[PackageLoadIssue!]" },
+    loaded: { __type: "Boolean!" },
+    moduleId: { __type: "String" },
+    requestedVersion: { __type: "String" },
+    spec: { __type: "PackageIssueSpec!" },
+  },
   PackageIssueSpec: {
     __typename: { __type: "String!" },
     name: { __type: "String!" },
@@ -274,6 +283,10 @@ export const generatedSchema = {
   query: {
     __typename: { __type: "String!" },
     _empty: { __type: "String!" },
+    packageInventory: {
+      __type: "[PackageInventoryEntry!]!",
+      __args: { includeUntracked: "Boolean" },
+    },
     packageLoadIssues: { __type: "[PackageLoadIssue!]!" },
     plugin: { __type: "PluginScope!", __args: { name: "String!" } },
     pluginGroups: { __type: "[PluginGroup!]!" },
@@ -295,6 +308,16 @@ export interface PackageBatchMutationResult {
   error?: Maybe<Scalars["String"]["output"]>;
   ok?: Scalars["Boolean"]["output"];
   results: Array<PackageMutationResult>;
+}
+
+export interface PackageInventoryEntry {
+  __typename?: "PackageInventoryEntry";
+  installedVersion?: Maybe<Scalars["String"]["output"]>;
+  issues?: Maybe<Array<PackageLoadIssue>>;
+  loaded?: Scalars["Boolean"]["output"];
+  moduleId?: Maybe<Scalars["String"]["output"]>;
+  requestedVersion?: Maybe<Scalars["String"]["output"]>;
+  spec: PackageIssueSpec;
 }
 
 export interface PackageIssueSpec {
@@ -452,6 +475,9 @@ export interface Mutation {
 export interface Query {
   __typename?: "Query";
   _empty?: Scalars["String"]["output"];
+  packageInventory: (args?: {
+    includeUntracked?: Maybe<Scalars["Boolean"]["input"]>;
+  }) => Array<PackageInventoryEntry>;
   packageLoadIssues: Array<PackageLoadIssue>;
   plugin: (args: { name: Scalars["String"]["input"] }) => PluginScope;
   pluginGroups: Array<PluginGroup>;

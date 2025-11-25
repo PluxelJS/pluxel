@@ -114,6 +114,20 @@ export interface PackageReloadResult {
 	error?: unknown
 }
 
+export interface PackageInventoryEntry {
+	spec: NormalizedPackageSpecifier
+	installedVersion?: string | undefined
+	requestedVersion?: string | undefined
+	loaded: boolean
+	moduleId?: string | undefined
+	issues?: PackageLoadIssue[] | undefined
+	blocked?: boolean | undefined
+}
+
+export interface ListInstalledPackagesOptions {
+	includeUntracked?: boolean
+}
+
 /** 安装选项：基于 nypm 的 OperationOptions，外加 force。 */
 export interface InstallOptions extends OperationOptions {
 	force?: boolean
@@ -187,6 +201,7 @@ export class PackageService {
 	private readonly loadFailures = new Map<string, PackageLoadIssue>()
 	private readonly multiInstallLocks = new Map<string, Promise<PackageInstallResult[]>>()
 	private readonly multiUninstallLocks = new Map<string, Promise<PackageUninstallResult[]>>()
+	private readonly autoLoadBlocklist = new Set<string>()
 	private readonly stateStore: PackageStateStore
 	private readonly ready: Promise<void>
 	private readonly installDefaultsReady: Promise<void>
@@ -251,6 +266,7 @@ export class PackageService {
 	): Promise<PackageInstallResult> {
 		await this.ensureReady()
 		const spec = this.normalizeSpecifier(input)
+		this.unblockPackage(spec.name)
 		const key = spec.key
 		const resolved = this.resolveInstallOptions(overrides)
 		this.logEvent('info', 'install:scheduled', {
@@ -268,6 +284,7 @@ export class PackageService {
 		await this.ensureReady()
 		if (!inputs.length) return []
 		const specs = inputs.map((item) => this.normalizeSpecifier(item))
+		specs.forEach((spec) => this.unblockPackage(spec.name))
 		const key = specs
 			.map((s) => s.key)
 			.slice()
@@ -299,6 +316,7 @@ export class PackageService {
 	async load(input: PackageSpecifierInput, options: LoadOptions = {}): Promise<PackageLoadResult> {
 		await this.ensureReady()
 		const spec = this.normalizeSpecifier(input)
+		this.unblockPackage(spec.name)
 		return this.loadWithIntent(spec, options, { autoInstall: true, source: 'load' })
 	}
 
@@ -420,6 +438,7 @@ export class PackageService {
 
 		for (const spec of specs) {
 			try {
+				this.unblockPackage(spec.name)
 				this.invalidatePackage(spec.name, scope)
 				const installResult = await this.performInstall(spec, installOptions)
 				const record = await this.loadWithIntent(
@@ -435,6 +454,68 @@ export class PackageService {
 		}
 
 		return results
+	}
+
+	/** 列出已安装的包，包括未被 loader 加载的。 */
+	async listInstalledPackages(
+		options: ListInstalledPackagesOptions = {},
+	): Promise<PackageInventoryEntry[]> {
+		await this.ensureReady()
+		const entries = new Map<string, PackageInventoryEntry>()
+		const includeUntracked = options.includeUntracked ?? false
+		const addOrMerge = (next: PackageInventoryEntry) => {
+			const existing = entries.get(next.spec.name)
+			if (!existing) {
+				entries.set(next.spec.name, next)
+				return
+			}
+			const merged: PackageInventoryEntry = {
+				spec: existing.spec,
+				installedVersion: next.installedVersion ?? existing.installedVersion,
+				requestedVersion: next.requestedVersion ?? existing.requestedVersion,
+				loaded: existing.loaded || next.loaded,
+				moduleId: next.moduleId ?? existing.moduleId,
+				issues: existing.issues ?? next.issues,
+				blocked: next.blocked ?? existing.blocked,
+			}
+			entries.set(next.spec.name, merged)
+		}
+
+		for (const record of this.loadedPackages.values()) {
+			addOrMerge({
+				spec: record.spec,
+				installedVersion: record.resolvedVersion ?? record.manifestVersion,
+				requestedVersion: record.spec.version ?? record.spec.tag,
+				loaded: true,
+				moduleId: record.moduleId,
+				blocked: this.autoLoadBlocklist.has(record.spec.name),
+				issues: this.loadFailures.has(record.spec.name)
+					? [this.loadFailures.get(record.spec.name)!]
+					: undefined,
+			})
+		}
+
+		for (const issue of this.loadFailures.values()) {
+			addOrMerge({
+				spec: issue.spec,
+				loaded: false,
+				blocked: this.autoLoadBlocklist.has(issue.spec.name),
+				issues: [issue],
+			})
+		}
+
+		const installedDeps = await this.readInstalledDependencies(includeUntracked)
+		for (const dep of installedDeps) {
+			addOrMerge({
+				spec: dep.spec,
+				installedVersion: dep.installedVersion,
+				requestedVersion: dep.requestedVersion,
+				loaded: this.loadedPackages.has(dep.spec.name),
+				blocked: this.autoLoadBlocklist.has(dep.spec.name),
+			})
+		}
+
+		return Array.from(entries.values())
 	}
 
 	/**
@@ -493,7 +574,7 @@ export class PackageService {
 	}
 
 	/** 主动移除指定包的模块缓存，并可选择清理 loader 运行态。 */
-	invalidatePackage(name: string, scope: RemovalScope = 'runtime') {
+	invalidatePackage(name: string, scope: RemovalScope = 'runtime', options?: { resync?: boolean }) {
 		const record = this.loadedPackages.get(name)
 		const failure = this.loadFailures.get(name)
 		const moduleId =
@@ -520,7 +601,9 @@ export class PackageService {
 		this.clearLoadIssue(name)
 		this.removeDependentsOf(name)
 		this.schedulePersistSnapshot()
-		this.syncTrigger.trigger()
+		if (options?.resync !== false) {
+			this.syncTrigger.trigger()
+		}
 		this.logEvent('info', 'invalidate', { name, scope, moduleId })
 	}
 
@@ -557,6 +640,8 @@ export class PackageService {
 		const found = await collectDeclaredPlugins(roots)
 		const toLoad: string[] = []
 		for (const name of found) {
+			if (!isManagedPackageName(name)) continue
+			if (this.autoLoadBlocklist.has(name)) continue
 			if (this.loadedPackages.has(name)) continue
 			toLoad.push(name)
 		}
@@ -603,6 +688,9 @@ export class PackageService {
 		}
 		const normalized = normalizeStatePayload(payload)
 		if (!normalized) return
+		if (normalized.blocked?.length) {
+			normalized.blocked.forEach((name) => this.autoLoadBlocklist.add(name))
+		}
 		this.restorePersistedIssues(normalized)
 		const mutated = await this.restorePersistedPackages(normalized.packages)
 		if (mutated) this.schedulePersistSnapshot()
@@ -721,6 +809,7 @@ export class PackageService {
 			generatedAt: new Date().toISOString(),
 			packages,
 			issues,
+			blocked: Array.from(this.autoLoadBlocklist),
 		}
 	}
 
@@ -867,7 +956,9 @@ export class PackageService {
 
 		for (const spec of specs) {
 			try {
-				this.invalidatePackage(spec.name, scope)
+				// 卸载时统一阻止自动重载，除非用户后续显式安装/加载
+				this.blockPackage(spec.name)
+				this.invalidatePackage(spec.name, scope, { resync: false })
 			} catch (error) {
 				markFailed(spec, error)
 				this.logEvent('warn', 'uninstall:invalidate_failed', {
@@ -1041,6 +1132,57 @@ export class PackageService {
 		}
 	}
 
+	private async readInstalledDependencies(
+		includeUntracked: boolean,
+	): Promise<
+		Array<{ spec: NormalizedPackageSpecifier; installedVersion?: string; requestedVersion?: string }>
+	> {
+		const options = this.resolveInstallOptions()
+		const cwd = options.cwd ?? process.cwd()
+		const pkg = await this.readPackageJsonSafe(cwd)
+		const declared: Record<string, string> = {
+			...(pkg.dependencies ?? {}),
+			...(pkg.devDependencies ?? {}),
+			...(pkg.optionalDependencies ?? {}),
+		}
+		const entries: Array<{
+			spec: NormalizedPackageSpecifier
+			installedVersion?: string
+			requestedVersion?: string
+		}> = []
+
+		const managedNames = new Set<string>([
+			...this.loadedPackages.keys(),
+			...this.loadFailures.keys(),
+		])
+		for (const [name, requested] of Object.entries<string>(declared)) {
+			try {
+				const installed = await this.readPackageJsonSafe(name, cwd)
+				const installedVersion =
+					typeof installed?.version === 'string' ? installed.version : undefined
+				const spec = this.normalizeSpecifier({
+					name,
+					version: installedVersion ?? requested ?? undefined,
+				})
+				const managed = managedNames.has(name) || isManagedPackageName(name)
+				if (!includeUntracked && !managed) continue
+				entries.push({
+					spec,
+					installedVersion,
+					requestedVersion: requested,
+				})
+			} catch {
+				// ignore entries that cannot be read
+			}
+		}
+
+		const unique = new Map<string, (typeof entries)[number]>()
+		for (const entry of entries) {
+			if (!unique.has(entry.spec.name)) unique.set(entry.spec.name, entry)
+		}
+		return Array.from(unique.values())
+	}
+
 	private onPackageInstalled(result: PackageInstallResult) {
 		this.ctx.scanService?.invalidateResolverCache()
 		this.ctx.logger?.debug(
@@ -1163,6 +1305,18 @@ export class PackageService {
 		this.packageModuleIds.set(name, normalized)
 	}
 
+	private blockPackage(name: string) {
+		if (this.autoLoadBlocklist.has(name)) return
+		this.autoLoadBlocklist.add(name)
+		this.schedulePersistSnapshot()
+	}
+
+	private unblockPackage(name: string) {
+		if (this.autoLoadBlocklist.delete(name)) {
+			this.schedulePersistSnapshot()
+		}
+	}
+
 	private recordLoadIssue(
 		spec: NormalizedPackageSpecifier,
 		error: unknown,
@@ -1226,6 +1380,7 @@ export class PackageService {
 		intent: LoadIntentConfig,
 		installResult?: PackageInstallResult,
 	): Promise<PackageLoadResult> {
+		this.unblockPackage(spec.name)
 		const key = spec.key
 		return this.runExclusive(this.loadLocks, key, async () => {
 			this.logEvent('info', 'load:start', {
@@ -1308,6 +1463,7 @@ export class PackageService {
 	}
 
 	private registerRecord(record: PackageLoadResult) {
+		this.unblockPackage(record.spec.name)
 		const previous = this.loadedPackages.get(record.spec.name)
 		if (previous) {
 			this.untrackDependencies(previous)
@@ -1491,12 +1647,29 @@ function parseDependOn(value: unknown): string[] {
 	return normalized
 }
 
+function isManagedPackageName(name: string): boolean {
+	if (!name) return false
+	// 仅匹配插件型包，避免 @pluxel/core 等基础包被误认为插件
+	return /^(?:@[^/]+\/)?pluxel-plugin\b/.test(name)
+}
+
 function normalizeStatePayload(
 	payload: PackageStatePayload | LegacyPackageStatePayload | null,
 ): PackageStatePayload | null {
 	if (!payload) return null
-	if ('schema' in payload && payload.schema === CURRENT_STATE_SCHEMA) {
-		return payload as PackageStatePayload
+	if ('schema' in payload) {
+		if ((payload as PackageStatePayload).schema === CURRENT_STATE_SCHEMA) {
+			return payload as PackageStatePayload
+		}
+		// schema 2 兼容：无 blocked 字段
+		if ((payload as PackageStatePayload).schema === 2) {
+			const converted = payload as PackageStatePayload
+			return {
+				...converted,
+				schema: CURRENT_STATE_SCHEMA,
+				blocked: converted.blocked ?? [],
+			}
+		}
 	}
 	// 兼容旧格式：没有 issues / dependOn 等字段
 	const legacy = payload as LegacyPackageStatePayload
@@ -1524,5 +1697,6 @@ function normalizeStatePayload(
 		generatedAt: legacy.generatedAt,
 		packages,
 		issues: [],
+		blocked: [],
 	}
 }

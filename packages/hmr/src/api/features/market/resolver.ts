@@ -5,6 +5,8 @@ import * as v from 'valibot'
 import {
 	PackageBatchMutationResult,
 	PackageLoadIssueEntry,
+	PackageInventoryEntry,
+	PackageInventoryFilter,
 	PackageMutationResult,
 	PackageRemovalScope,
 	PackageSpecifierInput as PackageSpecifierInputSchema,
@@ -12,6 +14,8 @@ import {
 import {
 	installPackage,
 	installPackages,
+	listPackageInventory,
+	listPackageInventoryWithFilter,
 	listLoadIssues,
 	reinstallPackage,
 	reinstallPackages,
@@ -26,6 +30,9 @@ import {
 export function createMarketResolver(pCtx: PlxContext) {
 	return resolver({
 		packageLoadIssues: query(v.array(PackageLoadIssueEntry)).resolve(() => listLoadIssues(pCtx)),
+		packageInventory: query(v.array(PackageInventoryEntry))
+			.input(PackageInventoryFilter)
+			.resolve(({ includeUntracked }) => listPackageInventory(pCtx, { includeUntracked })),
 		installPackage: mutation(PackageMutationResult)
 			.input({
 				spec: PackageSpecifierInputSchema,

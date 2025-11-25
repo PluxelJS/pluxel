@@ -5,7 +5,7 @@ import type { PackageInstallStatus, PackageLoadIssueSource } from '../PackageSer
 import type { EntryResolutionOk } from '../ScanService'
 import type { PackageSpecifierSnapshot } from '../specifiers'
 
-export const CURRENT_STATE_SCHEMA = 2
+export const CURRENT_STATE_SCHEMA = 3
 
 export interface PersistedInstallMeta {
 	status: PackageInstallStatus
@@ -38,6 +38,7 @@ export interface PackageStatePayload {
 	generatedAt: string
 	packages: PersistedPackageEntry[]
 	issues: PersistedLoadIssue[]
+	blocked?: string[] | undefined
 }
 
 export interface LegacyPersistedPackageEntry {

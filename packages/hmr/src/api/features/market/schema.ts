@@ -49,3 +49,17 @@ export const PackageBatchMutationResult = v.object({
 	results: v.array(PackageMutationResult),
 	error: v.nullish(v.string()),
 })
+
+export const PackageInventoryEntry = v.object({
+	__typename: v.literal('PackageInventoryEntry'),
+	spec: PackageIssueSpec,
+	installedVersion: v.nullish(v.string()),
+	requestedVersion: v.nullish(v.string()),
+	loaded: v.boolean(),
+	moduleId: v.nullish(v.string()),
+	issues: v.nullish(v.array(PackageLoadIssueEntry)),
+})
+
+export const PackageInventoryFilter = v.object({
+	includeUntracked: v.nullish(v.boolean()),
+})

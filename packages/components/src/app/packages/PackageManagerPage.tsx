@@ -36,6 +36,7 @@ import type {
 	InstallPackageSpecInput,
 	PackageBatchMutationResult,
 	PackageLoadIssue,
+	PackageInventoryEntry,
 	PluginStatusEntry,
 	UninstallPackageScopeInput,
 } from '../gqty'
@@ -50,6 +51,9 @@ type PackageRow = {
 	version: string | null
 	tag: string | null
 	raw: string | null
+	installedVersion: string | null
+	requestedVersion: string | null
+	loaded: boolean
 	pluginCount: number
 	runningCount: number
 	pluginNames: string[]
@@ -86,6 +90,9 @@ function ensureRow(map: Map<string, PackageRow>, name: string, raw?: string | nu
 			version: null,
 			tag: null,
 			raw: raw ?? null,
+			installedVersion: null,
+			requestedVersion: null,
+			loaded: false,
 			pluginCount: 0,
 			runningCount: 0,
 			pluginNames: [],
@@ -101,8 +108,33 @@ function ensureRow(map: Map<string, PackageRow>, name: string, raw?: string | nu
 function buildPackageRows(
 	statuses: Array<Maybe<PluginStatusEntry>>,
 	issues: Array<Maybe<PackageLoadIssue>>,
+	inventory: Array<Maybe<PackageInventoryEntry>>,
 ): PackageRow[] {
 	const map = new Map<string, PackageRow>()
+
+	for (const entry of inventory ?? []) {
+		const spec = entry?.spec
+		if (!spec?.name) continue
+		const row = ensureRow(map, spec.name, spec.raw ?? spec.name)
+		if (spec.version && !row.version) row.version = spec.version
+		if (spec.tag && !row.tag) row.tag = spec.tag
+		if (!row.raw && spec.raw) row.raw = spec.raw
+		if (entry?.installedVersion && !row.installedVersion) {
+			row.installedVersion = entry.installedVersion
+		}
+		if (entry?.requestedVersion && !row.requestedVersion) {
+			row.requestedVersion = entry.requestedVersion
+		}
+		if (entry?.loaded) row.loaded = true
+		if (entry?.issues?.length) {
+			entry.issues.forEach((issue) => {
+				if (issue && !row.issues.includes(issue as any)) {
+					row.issues.push(issue as PackageLoadIssue)
+				}
+			})
+		}
+	}
+
 	for (const entry of statuses ?? []) {
 		const source = entry?.source
 		if (!source || source.kind !== 'package') continue
@@ -111,6 +143,7 @@ function buildPackageRows(
 		const row = ensureRow(map, pkgName, source.packageName)
 		if (source.version && !row.version) row.version = source.version
 		if (source.tag && !row.tag) row.tag = source.tag
+		row.loaded = true
 		if (entry?.isRunning) row.runningCount += 1
 		row.pluginCount += 1
 		const pluginName = entry?.name
@@ -125,6 +158,7 @@ function buildPackageRows(
 		const row = ensureRow(map, spec.name, spec.raw ?? spec.name)
 		if (!row.version && spec.version) row.version = spec.version
 		if (!row.tag && spec.tag) row.tag = spec.tag
+		if (!row.raw && spec.raw) row.raw = spec.raw
 		row.issues.push(issue)
 	}
 
@@ -134,8 +168,8 @@ function buildPackageRows(
 }
 
 function toSpecInput(row: PackageRow): InstallPackageSpecInput {
-	if (row.version) {
-		return { name: row.name, version: row.version }
+	if (row.version || row.installedVersion) {
+		return { name: row.name, version: row.version ?? row.installedVersion ?? undefined }
 	}
 	if (row.tag) {
 		return { name: row.name, tag: row.tag }
@@ -147,6 +181,10 @@ function toSpecInput(row: PackageRow): InstallPackageSpecInput {
 }
 
 function formatSpec(row: PackageRow) {
+	if (row.installedVersion && row.version && row.installedVersion !== row.version) {
+		return `v${row.installedVersion} (请求 ${row.version})`
+	}
+	if (row.installedVersion) return `v${row.installedVersion}`
 	if (row.version) return `v${row.version}`
 	if (row.tag) return `tag: ${row.tag}`
 	return 'latest'
@@ -162,6 +200,8 @@ function parseInstallSpecs(input: string): string[] {
 }
 
 export function PackageManagerPage() {
+	const [showAllPackages, setShowAllPackages] = useState(false)
+
 	const query = useQuery({
 		suspense: false,
 		operationName: 'PackageManagerPage',
@@ -182,6 +222,21 @@ export function PackageManagerPage() {
 				source.packageName
 				source.version
 				source.tag
+			})
+			const inventory = query.packageInventory({ includeUntracked: showAllPackages })
+			inventory.forEach((pkg) => {
+				pkg.loaded
+				pkg.installedVersion
+				pkg.requestedVersion
+				pkg.moduleId
+				pkg.spec.name
+				pkg.spec.raw
+				pkg.spec.version
+				pkg.spec.tag
+				pkg.issues?.forEach((iss) => {
+					iss.message
+					iss.source
+				})
 			})
 			query.packageLoadIssues.forEach((issue) => {
 				issue.message
@@ -220,7 +275,19 @@ export function PackageManagerPage() {
 		}
 	}, [query.packageLoadIssues])
 
-	const rows = useMemo(() => buildPackageRows(statuses, loadIssues), [statuses, loadIssues])
+	const inventory = useMemo(() => {
+		try {
+			return [...(query.packageInventory({ includeUntracked: showAllPackages }) ?? [])]
+		} catch (error) {
+			console.error('[PackageManager] failed to read package inventory', error)
+			return []
+		}
+	}, [query.packageInventory, showAllPackages])
+
+	const rows = useMemo(
+		() => buildPackageRows(statuses, loadIssues, inventory),
+		[statuses, loadIssues, inventory],
+	)
 	const totalPackages = rows.length
 	const runningPackages = rows.filter((row) => row.runningCount > 0).length
 	const packagesWithIssues = rows.filter((row) => row.issues.length > 0).length
@@ -594,7 +661,7 @@ export function PackageManagerPage() {
 			})
 			summarizeBatchResult(
 				result,
-				scope === 'runtime' ? '已卸载运行态' : '已彻底卸载',
+				scope === 'runtime' ? '已卸载加载' : '已彻底卸载',
 				'卸载失败',
 			)
 			if (result?.results?.length) {
@@ -610,13 +677,31 @@ export function PackageManagerPage() {
 		}
 	}
 
+	const handleLoad = async (row: PackageRow) => {
+		try {
+			const result = await reloadPackagesMutation({
+				args: { specs: [toSpecInput(row)], fresh: true },
+			})
+			summarizeBatchResult(result, '已加载包', '加载失败')
+			if (result?.results?.length) {
+				await refetch()
+			}
+		} catch (error: any) {
+			notify({
+				title: '加载失败',
+				message: error?.message ?? '操作失败，请稍后再试',
+				color: 'red',
+			})
+		}
+	}
+
 	const confirmBatchUninstall = (scope: UninstallPackageScopeInput) => {
 		if (!ensureHasSelection()) return
-		const title = scope === 'persisted' ? '彻底卸载所选包' : '卸载运行态缓存'
+		const title = scope === 'persisted' ? '彻底卸载所选包' : '卸载已加载模块'
 		const description =
 			scope === 'persisted'
 				? '将从运行态和持久依赖中移除所选包，下次需重新安装。'
-				: '仅移除运行态缓存，持久化依赖仍然保留。'
+				: '仅移除已加载模块，持久化依赖仍然保留。'
 		const preview =
 			selectedRows.length <= 5
 				? selectedRows.map((row) => row.name).join('、')
@@ -795,7 +880,7 @@ export function PackageManagerPage() {
 								onClick={() => confirmBatchUninstall('runtime')}
 								loading={uninstallBatchState.isLoading}
 							>
-								卸载运行态
+								卸载加载
 							</Button>
 							<Button
 								variant="light"
@@ -827,6 +912,7 @@ export function PackageManagerPage() {
 								</Table.Th>
 								<Table.Th>包</Table.Th>
 								<Table.Th>版本</Table.Th>
+								<Table.Th>加载</Table.Th>
 								<Table.Th>引用插件</Table.Th>
 								<Table.Th>状态</Table.Th>
 								<Table.Th>操作</Table.Th>
@@ -873,6 +959,11 @@ export function PackageManagerPage() {
 										</Badge>
 									</Table.Td>
 									<Table.Td>
+										<Badge color={row.loaded ? 'green' : 'gray'} variant="light">
+											{row.loaded ? '已加载' : '未加载'}
+										</Badge>
+									</Table.Td>
+									<Table.Td>
 										<Text size="sm">
 											{row.runningCount}/{row.pluginCount} 运行中
 										</Text>
@@ -890,15 +981,27 @@ export function PackageManagerPage() {
 									</Table.Td>
 									<Table.Td>
 										<Group justify="flex-end" gap="xs">
-											<Button
-												variant="light"
-												size="xs"
-												leftSection={<IconRotateClockwise size={14} />}
-												onClick={() => void performReinstall(row, 'runtime')}
-												disabled={busy}
-											>
-												重装
-											</Button>
+											{row.loaded ? (
+												<Button
+													variant="light"
+													size="xs"
+													leftSection={<IconRotateClockwise size={14} />}
+													onClick={() => void performReinstall(row, 'runtime')}
+													disabled={busy}
+												>
+													重装
+												</Button>
+											) : (
+												<Button
+													variant="light"
+													size="xs"
+													leftSection={<IconRefresh size={14} />}
+													onClick={() => void handleLoad(row)}
+													disabled={busy}
+												>
+													加载
+												</Button>
+											)}
 											<Menu withinPortal position="bottom-end">
 												<Menu.Target>
 													<ActionIcon variant="subtle" color="gray" disabled={busy}>
@@ -918,7 +1021,7 @@ export function PackageManagerPage() {
 														onClick={() => confirmAndUninstall(row, 'runtime')}
 														disabled={busy}
 													>
-														卸载运行态
+														卸载加载
 													</Menu.Item>
 													<Menu.Item
 														color="red"
@@ -1029,14 +1132,26 @@ export function PackageManagerPage() {
 							</Paper>
 						))}
 					</Group>
-					<Button
-						leftSection={<IconRefresh size={16} />}
-						variant="light"
-						onClick={() => void refetch()}
-						loading={refreshing && rows.length === 0}
-					>
-						刷新数据
-					</Button>
+					<Group gap="xs">
+						<Checkbox
+							label="显示全部依赖"
+							description="包含非插件相关的普通依赖"
+							checked={showAllPackages}
+							onChange={(event) => {
+								setShowAllPackages(event.currentTarget.checked)
+								void refetch()
+							}}
+							size="sm"
+						/>
+						<Button
+							leftSection={<IconRefresh size={16} />}
+							variant="light"
+							onClick={() => void refetch()}
+							loading={refreshing && rows.length === 0}
+						>
+							刷新数据
+						</Button>
+					</Group>
 				</Group>
 			</Group>
 

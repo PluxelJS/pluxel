@@ -16,6 +16,8 @@ import {
 	PackageLoadIssueEntry,
 	PackageMutationResult,
 	PackageBatchMutationResult,
+	PackageInventoryEntry,
+	PackageInventoryFilter,
 	PackageRemovalScope,
 	PackageSpecifierInput as PackageSpecifierInputSchema,
 } from './schema'
@@ -25,10 +27,30 @@ type SpecInputValue = InferInput<typeof PackageSpecifierInputSchema>
 type MutationResult = InferOutput<typeof PackageMutationResult>
 type BatchMutationResult = InferOutput<typeof PackageBatchMutationResult>
 type RemovalScopeInput = InferInput<typeof PackageRemovalScope>
+type InventoryEntry = InferOutput<typeof PackageInventoryEntry>
+type InventoryFilter = InferInput<typeof PackageInventoryFilter>
 type BatchResultBuilder = (mutations: MutationResult[], error?: unknown) => BatchMutationResult
 
 export function listLoadIssues(pCtx: PlxContext): IssueOutput[] {
 	return pCtx.packageService.listLoadIssues().map(serializeIssue)
+}
+
+export async function listPackageInventory(
+	pCtx: PlxContext,
+	filter?: InventoryFilter,
+): Promise<InventoryEntry[]> {
+	const entries = await pCtx.packageService.listInstalledPackages({
+		includeUntracked: filter?.includeUntracked ?? false,
+	})
+	return entries.map((entry) => ({
+		__typename: 'PackageInventoryEntry' as const,
+		spec: serializeSpec(entry.spec),
+		installedVersion: entry.installedVersion ?? null,
+		requestedVersion: entry.requestedVersion ?? null,
+		loaded: entry.loaded,
+		moduleId: entry.moduleId ?? null,
+		issues: entry.issues?.map(serializeIssue) ?? null,
+	}))
 }
 
 export async function installPackage(
