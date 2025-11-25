@@ -1,4 +1,6 @@
-import { Badge, Box, Button, Center, Text } from '@mantine/core'
+import { Badge, Box, Center, Loader, Text } from '@mantine/core'
+import { IconSettingsOff } from '@tabler/icons-react'
+import { EmptyState, ErrorState } from '../../../../components'
 import { ConfigForm } from '../../ConfigForm'
 import { usePluginMeta } from '../context'
 import type { PluginConfigState } from '../hooks/usePluginConfig'
@@ -28,12 +30,12 @@ export function RightPane({ config }: RightPaneProps) {
 			<PluginSection grow>
 				<Box style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
 					{config.error && !config.data ? (
-						<Center style={{ flex: 1, gap: 12, flexDirection: 'column' }}>
-							<Text c="red">{config.error.message || '加载配置失败'}</Text>
-							<Button size="xs" onClick={() => void config.refetch()}>
-								重试
-							</Button>
-						</Center>
+						<ErrorState
+							title="加载配置失败"
+							message={config.error.message || '无法获取配置信息'}
+							onRetry={() => void config.refetch()}
+							minHeight={200}
+						/>
 					) : config.data?.config ? (
 						<ConfigForm
 							pluginName={pluginName}
@@ -41,13 +43,17 @@ export function RightPane({ config }: RightPaneProps) {
 							existConfigs={config.data.existConfig as any}
 						/>
 					) : config.loading ? (
-						<Center style={{ flex: 1 }}>
+						<Center style={{ flex: 1, gap: 8 }}>
+							<Loader size="sm" />
 							<Text c="dimmed">加载配置中…</Text>
 						</Center>
 					) : (
-						<Center style={{ flex: 1 }}>
-							<Text c="dimmed">该插件暂无可配置项</Text>
-						</Center>
+						<EmptyState
+							icon={<IconSettingsOff size={28} stroke={1.5} />}
+							title="暂无可配置项"
+							description="该插件未提供可配置的选项。"
+							minHeight={200}
+						/>
 					)}
 				</Box>
 			</PluginSection>

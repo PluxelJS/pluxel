@@ -1,13 +1,13 @@
 import type { Context as PlxContext } from '@pluxel/core'
 import type { InferInput, InferOutput } from 'valibot'
 
-import type { RemovalScope } from '../../../services/loader'
 import type {
 	InstallOptions,
 	PackageInstallStatus,
 	PackageLoadIssue as ServiceIssue,
 	PackageReloadResult,
 } from '../../../services/market/PackageService'
+import { PackageServiceError } from '../../../services/market/PackageService'
 import type {
 	NormalizedPackageSpecifier,
 	PackageSpecifierInput as ServiceSpecifierInput,
@@ -18,7 +18,6 @@ import {
 	PackageBatchMutationResult,
 	PackageInventoryEntry,
 	PackageInventoryFilter,
-	PackageRemovalScope,
 	PackageSpecifierInput as PackageSpecifierInputSchema,
 } from './schema'
 
@@ -26,7 +25,6 @@ type IssueOutput = InferOutput<typeof PackageLoadIssueEntry>
 type SpecInputValue = InferInput<typeof PackageSpecifierInputSchema>
 type MutationResult = InferOutput<typeof PackageMutationResult>
 type BatchMutationResult = InferOutput<typeof PackageBatchMutationResult>
-type RemovalScopeInput = InferInput<typeof PackageRemovalScope>
 type InventoryEntry = InferOutput<typeof PackageInventoryEntry>
 type InventoryFilter = InferInput<typeof PackageInventoryFilter>
 type BatchResultBuilder = (mutations: MutationResult[], error?: unknown) => BatchMutationResult
@@ -138,17 +136,16 @@ export async function installPackages(
 export async function uninstallPackage(
 	pCtx: PlxContext,
 	specInput: SpecInputValue,
-	scope: RemovalScope,
 ): Promise<MutationResult> {
 	try {
 		const serviceInput = toServiceSpecifierInput(specInput)
-		const [result] = await pCtx.packageService.uninstallMany([serviceInput], scope)
+		const [result] = await pCtx.packageService.uninstallMany([serviceInput])
 		if (!result || result.status === 'failed') {
 			throw result?.error ?? new Error('卸载失败')
 		}
 		return buildMutationResult({
 			ok: true,
-			code: scope === 'runtime' ? 'uninstalled_runtime' : 'uninstalled',
+			code: 'uninstalled',
 			spec: result.spec,
 		})
 	} catch (error) {
@@ -163,12 +160,11 @@ export async function uninstallPackage(
 export async function reinstallPackage(
 	pCtx: PlxContext,
 	specInput: SpecInputValue,
-	options: { force: boolean | undefined; scope: RemovalScope },
+	options: { force: boolean | undefined },
 ): Promise<MutationResult> {
 	try {
 		const serviceInput = toServiceSpecifierInput(specInput)
 		const [result] = await pCtx.packageService.reinstallMany([serviceInput], {
-			scope: options.scope,
 			install: { force: options.force ?? true },
 		})
 		if (!result || result.error || !result.record) {
@@ -246,18 +242,67 @@ export async function retryFailedPackages(
 export async function uninstallPackages(
 	pCtx: PlxContext,
 	specInputs: SpecInputValue[],
-	scope: RemovalScope,
 ): Promise<BatchMutationResult> {
 	if (!specInputs?.length) {
 		return buildBatchResult([], '卸载列表不能为空')
 	}
 	try {
 		const serviceInputs = specInputs.map(toServiceSpecifierInput)
-		const results = await pCtx.packageService.uninstallMany(serviceInputs, scope)
+		const results = await pCtx.packageService.uninstallMany(serviceInputs)
 		const mutations = results.map((entry) =>
 			buildMutationResult({
 				ok: entry.status !== 'failed',
-				code: entry.scope === 'runtime' ? 'uninstalled_runtime' : 'uninstalled',
+				code: 'uninstalled',
+				spec: entry.spec,
+				error: entry.error,
+			}),
+		)
+		return buildBatchResult(mutations)
+	} catch (error) {
+		return buildBatchResult([], error)
+	}
+}
+
+export async function removePackage(
+	pCtx: PlxContext,
+	specInput: SpecInputValue,
+	overrides?: InstallOptions,
+): Promise<MutationResult> {
+	try {
+		const serviceInput = toServiceSpecifierInput(specInput)
+		const [result] = await pCtx.packageService.removePackages([serviceInput], overrides)
+		if (!result || result.status === 'failed') {
+			throw result?.error ?? new Error('移除失败')
+		}
+		return buildMutationResult({
+			ok: true,
+			code: 'removed',
+			spec: result.spec,
+		})
+	} catch (error) {
+		return buildMutationResult({
+			ok: false,
+			code: 'remove_failed',
+			error,
+		})
+	}
+}
+
+export async function removePackages(
+	pCtx: PlxContext,
+	specInputs: SpecInputValue[],
+	overrides?: InstallOptions,
+): Promise<BatchMutationResult> {
+	if (!specInputs?.length) {
+		return buildBatchResult([], '移除列表不能为空')
+	}
+	try {
+		const serviceInputs = specInputs.map(toServiceSpecifierInput)
+		const results = await pCtx.packageService.removePackages(serviceInputs, overrides)
+		const mutations = results.map((entry) =>
+			buildMutationResult({
+				ok: entry.status !== 'failed',
+				code: 'removed',
 				spec: entry.spec,
 				error: entry.error,
 			}),
@@ -271,7 +316,7 @@ export async function uninstallPackages(
 export async function reinstallPackages(
 	pCtx: PlxContext,
 	specInputs: SpecInputValue[],
-	options: { force: boolean | undefined; scope: RemovalScope },
+	options: { force: boolean | undefined },
 ): Promise<BatchMutationResult> {
 	if (!specInputs?.length) {
 		return buildBatchResult([], '重装列表不能为空')
@@ -279,13 +324,12 @@ export async function reinstallPackages(
 	try {
 		const serviceInputs = specInputs.map(toServiceSpecifierInput)
 		const results = await pCtx.packageService.reinstallMany(serviceInputs, {
-			scope: options.scope,
 			install: { force: options.force ?? true },
 		})
 		const mutations = serializeReloadResults(
 			results,
-			options.scope === 'runtime' ? 'reloaded' : 'reinstalled',
-			options.scope === 'runtime' ? 'reload_failed' : 'reinstall_failed',
+			'reloaded',
+			'reload_failed',
 		)
 		return buildBatchResult(mutations)
 	} catch (error) {
@@ -309,10 +353,6 @@ export async function reloadPackages(
 	} catch (error) {
 		return buildBatchResult([], error)
 	}
-}
-
-export function resolveRemovalScope(scope?: RemovalScopeInput | null): RemovalScope {
-	return scope === 'persisted' ? 'persisted' : 'runtime'
 }
 
 export function toServiceSpecifierInput(input: SpecInputValue): ServiceSpecifierInput {
@@ -343,7 +383,7 @@ function serializeIssue(issue: ServiceIssue): IssueOutput {
 		spec: serializeSpec(issue.spec),
 		source: issue.source,
 		message: issue.message,
-		error: formatUnknownError(issue.error),
+		error: formatUnknownError(issue.error, issue.stack),
 		moduleId: issue.moduleId ?? null,
 		recordedAt: issue.recordedAt,
 	}
@@ -408,13 +448,23 @@ function serializeReloadResults(
 	)
 }
 
-function formatUnknownError(error: unknown): string | null {
-	if (error == null) return null
-	if (error instanceof Error) return error.stack ?? error.message
-	if (typeof error === 'string') return error
+function formatUnknownError(error: unknown, fallback?: string): string | null {
+	if (error == null && !fallback) return null
+	const target = unwrapError(error) ?? fallback
+	if (target instanceof Error) return target.stack ?? target.message ?? fallback ?? null
+	if (typeof target === 'string') return target
 	try {
-		return JSON.stringify(error)
+		return JSON.stringify(target)
 	} catch {
-		return String(error)
+		return target != null ? String(target) : fallback ?? null
 	}
+}
+
+function unwrapError(error: unknown): unknown {
+	if (error instanceof PackageServiceError && error.cause) return error.cause
+	if (error && typeof error === 'object' && 'cause' in (error as any)) {
+		const cause = (error as any).cause
+		if (cause) return cause
+	}
+	return error
 }

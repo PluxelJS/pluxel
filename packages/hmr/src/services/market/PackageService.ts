@@ -5,10 +5,9 @@ import { pathToFileURL } from 'node:url'
 import { type Context, Injectable } from '@pluxel/core'
 import type { OperationOptions, OperationResult } from 'nypm'
 import { addDependency, removeDependency } from 'nypm'
-import { readPackageJSON } from 'pkg-types'
 import { normalize as normalizePath, resolve as resolvePath } from 'pathe'
+import { readPackageJSON } from 'pkg-types'
 
-import type { RemovalScope } from '../loader'
 import {
 	CURRENT_STATE_SCHEMA,
 	type LegacyPackageStatePayload,
@@ -20,15 +19,15 @@ import {
 } from './package/state-store'
 import type { EntryResolution, EntryResolutionOk, ScanTaskOptions } from './ScanService'
 import { isEntryOk } from './ScanService'
+import { loadWorkspaceInfo } from './scan/workspace'
 import {
 	type NormalizedPackageSpecifier,
+	normalizeSpecifier,
 	type PackageSpecifierInput,
 	type PackageSpecifierSnapshot,
 	fromSnapshot as specFromSnapshot,
-	normalizeSpecifier,
 	toSnapshot as specToSnapshot,
 } from './specifiers'
-import { loadWorkspaceInfo } from './scan/workspace'
 import { createDebouncedTrigger } from './util/debounce'
 import { collectDeclaredPlugins } from './util/plugins'
 
@@ -52,6 +51,7 @@ export type PackageServiceErrorCode =
 
 export class PackageServiceError extends Error {
 	override name = 'PackageServiceError'
+	public readonly cause: unknown
 
 	constructor(
 		public readonly code: PackageServiceErrorCode,
@@ -59,6 +59,15 @@ export class PackageServiceError extends Error {
 		public readonly detail?: unknown,
 	) {
 		super(message)
+		this.cause =
+			detail instanceof Error
+				? detail
+				: detail &&
+						typeof detail === 'object' &&
+						'cause' in detail &&
+						(detail as any).cause instanceof Error
+					? (detail as any).cause
+					: undefined
 	}
 }
 
@@ -95,16 +104,24 @@ export interface PackageLoadIssue {
 	source: PackageLoadIssueSource
 	message: string
 	error: unknown
+	stack?: string | undefined
 	recordedAt: number
 	moduleId?: string | undefined
 }
 
-export type PackageUninstallStatus = 'uninstalled' | 'runtime_only' | 'failed'
+export type PackageUninstallStatus = 'uninstalled' | 'failed'
 
 export interface PackageUninstallResult {
 	spec: NormalizedPackageSpecifier
-	scope: RemovalScope
 	status: PackageUninstallStatus
+	error?: unknown
+}
+
+export type PackageRemovalStatus = 'removed' | 'failed'
+
+export interface PackageRemovalResult {
+	spec: NormalizedPackageSpecifier
+	status: PackageRemovalStatus
 	error?: unknown
 }
 
@@ -201,6 +218,7 @@ export class PackageService {
 	private readonly loadFailures = new Map<string, PackageLoadIssue>()
 	private readonly multiInstallLocks = new Map<string, Promise<PackageInstallResult[]>>()
 	private readonly multiUninstallLocks = new Map<string, Promise<PackageUninstallResult[]>>()
+	private readonly multiRemoveLocks = new Map<string, Promise<PackageRemovalResult[]>>()
 	private readonly autoLoadBlocklist = new Set<string>()
 	private readonly stateStore: PackageStateStore
 	private readonly ready: Promise<void>
@@ -229,7 +247,7 @@ export class PackageService {
 		const stateOptions: PackageStateStoreOptions = {
 			file: stateFile,
 			onError: (error) => {
-				this.ctx.logger?.warn({ error, stateFile }, '[PackageService] 持久化包状态失败')
+				this.ctx.logger.warn({ error, stateFile }, '[PackageService] 持久化包状态失败')
 			},
 		}
 		if (config.state?.debounceMs !== undefined) {
@@ -333,18 +351,14 @@ export class PackageService {
 	}
 
 	/**
-	 * 卸载插件：先清理运行态占用，再调用包管理器移除依赖（persisted）。
+	 * 卸载插件：仅清理运行态占用，不再触碰持久化依赖。
 	 */
-	async uninstall(
-		input: PackageSpecifierInput,
-		scope: RemovalScope = 'persisted',
-	): Promise<void> {
+	async uninstall(input: PackageSpecifierInput): Promise<void> {
 		await this.ensureReady()
 		const spec = this.normalizeSpecifier(input)
 		const key = spec.key
-		const options = this.resolveInstallOptions()
 		return this.runExclusive(this.uninstallLocks, key, async () => {
-			const [result] = await this.performUninstallBatch([spec], scope, options)
+			const [result] = await this.performUninstallBatch([spec])
 			if (result.status === 'failed') {
 				const message =
 					result.error instanceof Error
@@ -352,16 +366,16 @@ export class PackageService {
 						: result.error
 							? String(result.error)
 							: '未知错误'
-				throw new PackageServiceError('UNINSTALL_FAILED', message, { cause: result.error, spec })
+				throw new PackageServiceError('UNINSTALL_FAILED', message, {
+					cause: result.error,
+					spec,
+				})
 			}
 		})
 	}
 
-	/** 批量卸载：清理运行态后，持久化范围内一次执行包管理器卸载。 */
-	async uninstallMany(
-		inputs: PackageSpecifierInput[],
-		scope: RemovalScope = 'persisted',
-	): Promise<PackageUninstallResult[]> {
+	/** 批量卸载：仅清理运行态。 */
+	async uninstallMany(inputs: PackageSpecifierInput[]): Promise<PackageUninstallResult[]> {
 		await this.ensureReady()
 		if (!inputs.length) return []
 		const specs = this.normalizeUniqueByName(inputs)
@@ -370,9 +384,27 @@ export class PackageService {
 			.slice()
 			.sort()
 			.join('|')
-		const options = this.resolveInstallOptions()
 		return this.runExclusive(this.multiUninstallLocks, key, () =>
-			this.performUninstallBatch(specs, scope, options),
+			this.performUninstallBatch(specs),
+		)
+	}
+
+	/** 移除包：先清理运行态，再调用包管理器删除依赖。 */
+	async removePackages(
+		inputs: PackageSpecifierInput[],
+		overrides: InstallOptions = {},
+	): Promise<PackageRemovalResult[]> {
+		await this.ensureReady()
+		if (!inputs.length) return []
+		const specs = this.normalizeUniqueByName(inputs)
+		const key = specs
+			.map((s) => s.key)
+			.slice()
+			.sort()
+			.join('|')
+		const options = this.resolveInstallOptions(overrides)
+		return this.runExclusive(this.multiRemoveLocks, key, () =>
+			this.performRemoveBatch(specs, options),
 		)
 	}
 
@@ -421,7 +453,6 @@ export class PackageService {
 	async reinstallMany(
 		inputs: PackageSpecifierInput[],
 		options: {
-			scope?: RemovalScope
 			install?: InstallOptions
 			load?: LoadOptions
 		} = {},
@@ -429,7 +460,6 @@ export class PackageService {
 		await this.ensureReady()
 		if (!inputs.length) return []
 		const specs = this.normalizeUniqueByName(inputs)
-		const scope = options.scope ?? 'persisted'
 		const installOptions = this.resolveInstallOptions({
 			...options.install,
 			force: options.install?.force ?? true,
@@ -439,7 +469,7 @@ export class PackageService {
 		for (const spec of specs) {
 			try {
 				this.unblockPackage(spec.name)
-				this.invalidatePackage(spec.name, scope)
+				this.invalidatePackage(spec.name)
 				const installResult = await this.performInstall(spec, installOptions)
 				const record = await this.loadWithIntent(
 					spec,
@@ -573,8 +603,8 @@ export class PackageService {
 		return Array.from(this.loadFailures.values())
 	}
 
-	/** 主动移除指定包的模块缓存，并可选择清理 loader 运行态。 */
-	invalidatePackage(name: string, scope: RemovalScope = 'runtime', options?: { resync?: boolean }) {
+	/** 主动移除指定包的模块缓存，仅作用于运行态。 */
+	invalidatePackage(name: string, options?: { resync?: boolean }) {
 		const record = this.loadedPackages.get(name)
 		const failure = this.loadFailures.get(name)
 		const moduleId =
@@ -591,9 +621,9 @@ export class PackageService {
 
 		if (moduleId) {
 			this.moduleCache.delete(moduleId)
-			this.ctx.loader.pruneModule(moduleId, scope)
+			this.ctx.loader.pruneModule(moduleId, 'runtime')
 		} else {
-			this.ctx.loader.prunePluginByName(name, scope)
+			this.ctx.loader.prunePluginByName(name, 'runtime')
 		}
 
 		this.packageModuleIds.delete(name)
@@ -604,7 +634,7 @@ export class PackageService {
 		if (options?.resync !== false) {
 			this.syncTrigger.trigger()
 		}
-		this.logEvent('info', 'invalidate', { name, scope, moduleId })
+		this.logEvent('info', 'invalidate', { name, scope: 'runtime', moduleId })
 	}
 
 	getPackageSpecByModuleId(moduleId: string): NormalizedPackageSpecifier | undefined {
@@ -651,7 +681,7 @@ export class PackageService {
 			try {
 				await this.load(name)
 			} catch (error) {
-				this.ctx.logger?.warn({ name, error }, '[PackageService] 同步加载插件失败')
+				this.ctx.logger.warn({ name, error }, '[PackageService] 同步加载插件失败')
 			}
 		}
 	}
@@ -663,10 +693,7 @@ export class PackageService {
 
 	private async detectWorkspaceRoot(preferredCwd?: string): Promise<string | null> {
 		const roots = this.ctx.scanService?.defaultRoots ?? []
-		const candidates = normalizeRoots([
-			preferredCwd ?? process.cwd(),
-			...roots,
-		])
+		const candidates = normalizeRoots([preferredCwd ?? process.cwd(), ...roots])
 		for (const root of candidates) {
 			try {
 				const info = await loadWorkspaceInfo(root)
@@ -683,7 +710,7 @@ export class PackageService {
 		try {
 			payload = await this.stateStore.read()
 		} catch (error) {
-			this.ctx.logger?.warn({ error }, '[PackageService] 读取包状态失败')
+			this.ctx.logger.warn({ error }, '[PackageService] 读取包状态失败')
 			throw error
 		}
 		const normalized = normalizeStatePayload(payload)
@@ -700,13 +727,16 @@ export class PackageService {
 		for (const issue of payload.issues ?? []) {
 			try {
 				const spec = specFromSnapshot(issue.spec)
+				const restoredError = new Error(issue.message)
+				if (issue.stack) restoredError.stack = issue.stack
 				this.loadFailures.set(spec.name, {
 					spec,
 					message: issue.message,
 					source: issue.source,
 					moduleId: issue.moduleId,
 					recordedAt: issue.recordedAt,
-					error: new Error(issue.message),
+					error: restoredError,
+					stack: issue.stack,
 				})
 			} catch {
 				// ignore malformed issue entries
@@ -751,13 +781,8 @@ export class PackageService {
 				this.clearLoadIssue(spec.name)
 				mutated = true
 			} catch (error) {
-				this.ctx.logger?.warn({ error, spec }, '[PackageService] 恢复包失败，已跳过该条记录')
-				this.recordLoadIssue(
-					spec,
-					error,
-					'restore',
-					entry.moduleId ?? entry.resolution.entry,
-				)
+				this.ctx.logger.warn({ error, spec }, '[PackageService] 恢复包失败，已跳过该条记录')
+				this.recordLoadIssue(spec, error, 'restore', entry.moduleId ?? entry.resolution.entry)
 				mutated = true
 			}
 		}
@@ -801,6 +826,7 @@ export class PackageService {
 				message: issue.message,
 				moduleId: issue.moduleId,
 				recordedAt: issue.recordedAt,
+				stack: issue.stack ?? this.getErrorStack(issue.error),
 			})
 		}
 
@@ -910,15 +936,11 @@ export class PackageService {
 					targets: toInstall.map((s) => s.target),
 					message,
 				})
-				throw new PackageServiceError(
-					'INSTALL_FAILED',
-					`批量安装插件失败：${message}`,
-					{
-						cause: error,
-						specs: toInstall,
-						options,
-					},
-				)
+				throw new PackageServiceError('INSTALL_FAILED', `批量安装插件失败：${message}`, {
+					cause: error,
+					specs: toInstall,
+					options,
+				})
 			}
 		} else {
 			this.logEvent('info', 'installMany:skip_install', {
@@ -931,19 +953,15 @@ export class PackageService {
 
 	private async performUninstallBatch(
 		specs: NormalizedPackageSpecifier[],
-		scope: RemovalScope,
-		options: ResolvedInstallOptions,
 	): Promise<PackageUninstallResult[]> {
 		if (!specs.length) return []
 		const results: PackageUninstallResult[] = specs.map((spec) => ({
 			spec,
-			scope,
-			status: scope === 'runtime' ? 'runtime_only' : 'uninstalled',
+			status: 'uninstalled',
 		}))
 
 		this.logEvent('info', 'uninstall:batch_start', {
 			targets: specs.map((s) => s.target),
-			scope,
 		})
 
 		const markFailed = (spec: NormalizedPackageSpecifier, error: unknown) => {
@@ -958,27 +976,11 @@ export class PackageService {
 			try {
 				// 卸载时统一阻止自动重载，除非用户后续显式安装/加载
 				this.blockPackage(spec.name)
-				this.invalidatePackage(spec.name, scope, { resync: false })
+				this.invalidatePackage(spec.name, { resync: false })
 			} catch (error) {
 				markFailed(spec, error)
 				this.logEvent('warn', 'uninstall:invalidate_failed', {
 					target: spec.target,
-					scope,
-					error,
-				})
-			}
-		}
-
-		if (scope !== 'runtime') {
-			try {
-				await this.removeTargetsWithLogs(specs, options)
-			} catch (error) {
-				for (const spec of specs) {
-					markFailed(spec, error)
-				}
-				this.logEvent('error', 'uninstall:batch_remove_failed', {
-					targets: specs.map((s) => s.target),
-					scope,
 					error,
 				})
 			}
@@ -988,13 +990,10 @@ export class PackageService {
 			const event =
 				entry.status === 'failed'
 					? 'uninstall:failed'
-					: entry.scope === 'runtime'
-						? 'uninstall:runtime_cleared'
-						: 'uninstall:completed'
+					: 'uninstall:runtime_cleared'
 			const level = entry.status === 'failed' ? 'error' : 'info'
 			this.logEvent(level, event, {
 				target: entry.spec.target,
-				scope: entry.scope,
 				error: entry.error,
 			})
 		}
@@ -1002,10 +1001,68 @@ export class PackageService {
 		return results
 	}
 
-	private async dependencyExists(
-		name: string,
+	private async performRemoveBatch(
+		specs: NormalizedPackageSpecifier[],
 		options: ResolvedInstallOptions,
-	): Promise<boolean> {
+	): Promise<PackageRemovalResult[]> {
+		if (!specs.length) return []
+		const results: PackageRemovalResult[] = specs.map((spec) => ({
+			spec,
+			status: 'removed',
+		}))
+
+		this.logEvent('info', 'remove:batch_start', {
+			targets: specs.map((s) => s.target),
+		})
+
+		const markFailed = (spec: NormalizedPackageSpecifier, error: unknown) => {
+			const entry = results.find((item) => item.spec.key === spec.key)
+			if (entry) {
+				entry.status = 'failed'
+				entry.error = error
+			}
+		}
+
+		for (const spec of specs) {
+			try {
+				this.blockPackage(spec.name)
+				this.invalidatePackage(spec.name, { resync: false })
+			} catch (error) {
+				markFailed(spec, error)
+				this.logEvent('warn', 'remove:invalidate_failed', {
+					target: spec.target,
+					error,
+				})
+			}
+		}
+
+		try {
+			await this.removeTargetsWithLogs(specs, options)
+		} catch (error) {
+			for (const spec of specs) {
+				markFailed(spec, error)
+			}
+			this.logEvent('error', 'remove:batch_remove_failed', {
+				targets: specs.map((s) => s.target),
+				error,
+			})
+		}
+
+		for (const entry of results) {
+			const event = entry.status === 'failed' ? 'remove:failed' : 'remove:completed'
+			const level = entry.status === 'failed' ? 'error' : 'info'
+			this.logEvent(level, event, {
+				target: entry.spec.target,
+				error: entry.error,
+			})
+		}
+
+		this.syncTrigger.trigger()
+
+		return results
+	}
+
+	private async dependencyExists(name: string, options: ResolvedInstallOptions): Promise<boolean> {
 		const cwd = options.cwd ?? process.cwd()
 		const resolver = createRequire(cwd.endsWith('/') ? cwd : `${cwd}/`)
 		try {
@@ -1054,13 +1111,12 @@ export class PackageService {
 		options: ResolvedInstallOptions,
 	): Promise<void> {
 		if (!specs.length) return
-		// pnpm remove 不接受版本号，统一用 name 去删除，避免 “no such dependency found”
 		const targets = Array.from(new Set(specs.map((s) => s.name)))
 		const opOptions: OperationOptions = { ...options, silent: options.silent ?? false }
 		try {
 			const opResult = await removeDependency(targets as any, opOptions)
 			if (opResult?.exec) {
-				this.logEvent('info', 'uninstall:pm_command', {
+				this.logEvent('info', 'remove:pm_command', {
 					targets,
 					command: opResult.exec.command,
 					args: opResult.exec.args,
@@ -1075,7 +1131,7 @@ export class PackageService {
 				message.includes('no such dependency found') ||
 				message.includes('Cannot remove')
 			) {
-				this.logEvent('warn', 'uninstall:skip_missing', { targets, message })
+				this.logEvent('warn', 'remove:skip_missing', { targets, message })
 				return
 			}
 			throw error
@@ -1132,10 +1188,12 @@ export class PackageService {
 		}
 	}
 
-	private async readInstalledDependencies(
-		includeUntracked: boolean,
-	): Promise<
-		Array<{ spec: NormalizedPackageSpecifier; installedVersion?: string; requestedVersion?: string }>
+	private async readInstalledDependencies(includeUntracked: boolean): Promise<
+		Array<{
+			spec: NormalizedPackageSpecifier
+			installedVersion?: string
+			requestedVersion?: string
+		}>
 	> {
 		const options = this.resolveInstallOptions()
 		const cwd = options.cwd ?? process.cwd()
@@ -1185,7 +1243,7 @@ export class PackageService {
 
 	private onPackageInstalled(result: PackageInstallResult) {
 		this.ctx.scanService?.invalidateResolverCache()
-		this.ctx.logger?.debug(
+		this.ctx.logger.debug(
 			{ name: result.spec.name, target: result.target },
 			'[PackageService] 已清理解析缓存，等待重新扫描。',
 		)
@@ -1200,10 +1258,7 @@ export class PackageService {
 		scanOverrides?: ScanTaskOptions,
 	): Promise<EntryResolutionOk> {
 		const request = this.mergeScanOptions(scanOverrides)
-		const resolution = await this.ctx.scanService.resolveEntry(
-			{ name: spec.name },
-			request ?? {},
-		)
+		const resolution = await this.ctx.scanService.resolveEntry({ name: spec.name }, request ?? {})
 		if (!isEntryOk(resolution)) {
 			throw new PackageServiceError('RESOLUTION_FAILED', resolution.message, { spec, resolution })
 		}
@@ -1221,10 +1276,23 @@ export class PackageService {
 		try {
 			return await import(url.href)
 		} catch (error) {
-			throw new PackageServiceError('IMPORT_FAILED', `导入模块 "${moduleId}" 失败。`, {
-				moduleId,
-				cause: error,
-			})
+			this.ctx.logger.error(error as Error, '[PackageService] 导入模块失败', { moduleId })
+
+			if (error instanceof Error) {
+				throw error
+			}
+			const message =
+				typeof error === 'string' ? error : error != null ? String(error) : '未知错误'
+			const wrapped = new Error(message)
+			if (
+				error &&
+				typeof error === 'object' &&
+				'stack' in (error as any) &&
+				typeof (error as any).stack === 'string'
+			) {
+				wrapped.stack = (error as any).stack
+			}
+			throw wrapped
 		}
 	}
 
@@ -1268,7 +1336,7 @@ export class PackageService {
 
 		const mergedScan = base.scan
 			? { ...base.scan, ...(overrides.scan ?? {}) }
-			: overrides.scan ?? base.scan
+			: (overrides.scan ?? base.scan)
 		if (mergedScan !== undefined) {
 			merged.scan = mergedScan
 		}
@@ -1323,17 +1391,13 @@ export class PackageService {
 		source: PackageLoadIssueSource,
 		moduleId?: string,
 	) {
-		const message =
-			error instanceof PackageServiceError
-				? error.message
-				: error instanceof Error
-					? error.message
-					: String(error)
+		const normalized = this.normalizeIssueError(error)
 		const issue: PackageLoadIssue = {
 			spec,
 			source,
-			error,
-			message,
+			error: normalized.error,
+			message: normalized.message,
+			stack: normalized.stack,
 			recordedAt: Date.now(),
 		}
 		if (moduleId) {
@@ -1347,6 +1411,44 @@ export class PackageService {
 			message,
 			moduleId,
 		})
+	}
+
+	private normalizeIssueError(error: unknown): {
+		message: string
+		error: unknown
+		stack?: string
+	} {
+		const unwrapped = this.unwrapError(error)
+		if (unwrapped instanceof Error) {
+			return { message: unwrapped.message, error: unwrapped, stack: unwrapped.stack }
+		}
+		if (typeof unwrapped === 'string') {
+			return { message: unwrapped, error: unwrapped }
+		}
+		if (unwrapped === undefined || unwrapped === null) {
+			return { message: '未知错误', error: unwrapped }
+		}
+		try {
+			return { message: JSON.stringify(unwrapped), error: unwrapped }
+		} catch {
+			return { message: String(unwrapped), error: unwrapped }
+		}
+	}
+
+	private getErrorStack(error: unknown): string | undefined {
+		const unwrapped = this.unwrapError(error)
+		if (unwrapped instanceof Error) return unwrapped.stack ?? unwrapped.message
+		if (typeof unwrapped === 'string') return unwrapped
+		return undefined
+	}
+
+	private unwrapError(error: unknown): unknown {
+		if (error instanceof PackageServiceError && error.cause) return error.cause
+		if (error && typeof error === 'object' && 'cause' in error) {
+			const cause = (error as any).cause
+			if (cause instanceof Error) return cause
+		}
+		return error
 	}
 
 	private clearLoadIssue(name: string) {
@@ -1601,17 +1703,6 @@ function resolveInstallDefaults(
 		}
 	}
 	return resolved
-}
-
-function pickEnsureOptions(
-	options: ResolvedInstallOptions,
-): Pick<ResolvedInstallOptions, 'cwd' | 'dev' | 'workspace'> {
-	const picked: Pick<ResolvedInstallOptions, 'cwd' | 'dev' | 'workspace'> = {
-		cwd: options.cwd,
-	}
-	if (options.dev !== undefined) picked.dev = options.dev
-	if (options.workspace !== undefined) picked.workspace = options.workspace
-	return picked
 }
 
 function normalizeRoots(roots: string[]): string[] {

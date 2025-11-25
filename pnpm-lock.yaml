@@ -302,6 +302,12 @@ importers:
       pkg-types:
         specifier: ^2.3.0
         version: 2.3.0
+      pluxel-plugin-kook:
+        specifier: 0.1.2
+        version: 0.1.2
+      pluxel-plugin-wretch:
+        specifier: 0.1.4
+        version: 0.1.4
       postcss:
         specifier: ^8.5.6
         version: 8.5.6
@@ -2527,6 +2533,12 @@ packages:
   pkg-types@2.3.0:
     resolution: {integrity: sha512-SIqCzDRg0s9npO5XQ3tNZioRY1uK06lA41ynBC1YmFTmnY6FjUjVt6s4LoADmwoig1qqD0oK8h1p/8mlMx8Oig==}
 
+  pluxel-plugin-kook@0.1.2:
+    resolution: {integrity: sha512-CVfpZQlCodd9WMpgOPVvsbgaTVxdHf+sVAwp3Z/tOcXMYtnGKU5adhLgTccZInWAuru1JFHeDC6bZzhPnG59GQ==}
+
+  pluxel-plugin-wretch@0.1.4:
+    resolution: {integrity: sha512-lYf5kCyLHCyJpbBztXImwNj5lRjUjKri2SJDUUFe4TSJEHms7Ot/No6hV8Fr8R4Xff4+Nx65ddmTlsUhwLMVqw==}
+
   pncat@0.7.6:
     resolution: {integrity: sha512-tbPXkUeIexyH9glQCLUqvBlTNIXWXcxdivUEPXvIRQ3QLO/3tZ3JaS1hiJW31pY/NWuLfTtrvFZnuEm/n1iC6Q==}
     hasBin: true
@@ -3358,6 +3370,10 @@ packages:
 
   wrappy@1.0.2:
     resolution: {integrity: sha512-l4Sp/DRseor9wL6EvV2+TuQn63dMkPjZ/sp9XkghTEbV9KlPS1xUsZ3u7/IQO4wxtcFB4bgpQPRcR3QCvezPcQ==}
+
+  wretch@3.0.3:
+    resolution: {integrity: sha512-vKjV3RJ4L3T5DGqgfnRTJy/+pNjqdMUT4CBkTZJr4OWgP8ELji0ChITsWg74QStEAKSm3E6ZvueryGjz6pvryQ==}
+    engines: {node: '>=22'}
 
   ws@8.18.3:
     resolution: {integrity: sha512-PEIGCY5tSlUt50cqyMXfCzX+oOPqN0vuGqWzbcJ2xvnkzkq46oOpz7dQaTDBdfICb4N14+GARUDw2XV2N4tvzg==}
@@ -5521,6 +5537,14 @@ snapshots:
       exsolve: 1.0.8
       pathe: 2.0.3
 
+  pluxel-plugin-kook@0.1.2:
+    optionalDependencies:
+      pluxel-plugin-wretch: 0.1.4
+
+  pluxel-plugin-wretch@0.1.4:
+    dependencies:
+      wretch: 3.0.3
+
   pncat@0.7.6:
     dependencies:
       '@clack/prompts': 0.11.0
@@ -6280,6 +6304,8 @@ snapshots:
       strip-ansi: 6.0.1
 
   wrappy@1.0.2: {}
+
+  wretch@3.0.3: {}
 
   ws@8.18.3: {}
 

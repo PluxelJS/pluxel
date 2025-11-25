@@ -44,14 +44,13 @@ import { ClientOnly } from './ClientOnly'
 import { HOME_MANUAL_KEY, LAST_ROUTE_KEY } from './constants'
 import { Header } from './Header'
 import { LiveLog } from './log_viewer/LiveLog'
-import { PackageManagerPage } from './packages/PackageManagerPage'
+import { PackageManagerPage, MarketPage } from './packages'
 import { Plugin } from './plugins/Plugin'
 import { PluginsLayout } from './plugins/PluginsLayout'
 import { RouterLinkAdapter } from './RouterLinkAdapter'
 import { getPatternStyle } from '../patterns'
-import { theme } from '../theme'
+import { useDynamicTheme } from '../useDynamicTheme'
 import { NotificationCenterProvider } from './notifications/NotificationCenterProvider'
-import { MarketPage } from './market/MarketPage'
 
 const colorSchemeManager = localStorageColorSchemeManager({
 	key: 'pluxel-color-scheme',
@@ -67,6 +66,7 @@ const navItems: NavItem[] = [
 
 function RootAppLayout() {
 	const pathname = useRouterState({ select: (state) => state.location.pathname })
+	const { theme } = useDynamicTheme()
 
 	useEffect(() => {
 		if (!pathname || pathname === '/') return

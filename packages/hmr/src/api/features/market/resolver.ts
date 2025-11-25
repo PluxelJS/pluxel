@@ -8,7 +8,6 @@ import {
 	PackageInventoryEntry,
 	PackageInventoryFilter,
 	PackageMutationResult,
-	PackageRemovalScope,
 	PackageSpecifierInput as PackageSpecifierInputSchema,
 } from './schema'
 import {
@@ -17,11 +16,12 @@ import {
 	listPackageInventory,
 	listPackageInventoryWithFilter,
 	listLoadIssues,
+	removePackage,
+	removePackages,
 	reinstallPackage,
 	reinstallPackages,
 	retryFailedPackages,
 	retryPackage,
-	resolveRemovalScope,
 	uninstallPackage,
 	uninstallPackages,
 	reloadPackages,
@@ -45,42 +45,44 @@ export function createMarketResolver(pCtx: PlxContext) {
 				force: v.nullish(v.boolean()),
 			})
 			.resolve(({ specs, force }) => installPackages(pCtx, specs, force ?? undefined)),
+		removePackage: mutation(PackageMutationResult)
+			.input({
+				spec: PackageSpecifierInputSchema,
+			})
+			.resolve(({ spec }) => removePackage(pCtx, spec)),
+		removePackages: mutation(PackageBatchMutationResult)
+			.input({
+				specs: v.array(PackageSpecifierInputSchema),
+			})
+			.resolve(({ specs }) => removePackages(pCtx, specs)),
 		uninstallPackage: mutation(PackageMutationResult)
 			.input({
 				spec: PackageSpecifierInputSchema,
-				scope: v.nullish(PackageRemovalScope),
 			})
-			.resolve(({ spec, scope }) => uninstallPackage(pCtx, spec, resolveRemovalScope(scope))),
+			.resolve(({ spec }) => uninstallPackage(pCtx, spec)),
 		uninstallPackages: mutation(PackageBatchMutationResult)
 			.input({
 				specs: v.array(PackageSpecifierInputSchema),
-				scope: v.nullish(PackageRemovalScope),
 			})
-			.resolve(({ specs, scope }) =>
-				uninstallPackages(pCtx, specs, resolveRemovalScope(scope)),
-			),
+			.resolve(({ specs }) => uninstallPackages(pCtx, specs)),
 		reinstallPackage: mutation(PackageMutationResult)
 			.input({
 				spec: PackageSpecifierInputSchema,
 				force: v.optional(v.boolean()),
-				scope: v.optional(PackageRemovalScope),
 			})
-			.resolve(({ spec, force, scope }) =>
+			.resolve(({ spec, force }) =>
 				reinstallPackage(pCtx, spec, {
 					force,
-					scope: resolveRemovalScope(scope),
 				}),
 			),
 		reinstallPackages: mutation(PackageBatchMutationResult)
 			.input({
 				specs: v.array(PackageSpecifierInputSchema),
 				force: v.optional(v.boolean()),
-				scope: v.optional(PackageRemovalScope),
 			})
-			.resolve(({ specs, force, scope }) =>
+			.resolve(({ specs, force }) =>
 				reinstallPackages(pCtx, specs, {
 					force,
-					scope: resolveRemovalScope(scope),
 				}),
 			),
 		reloadPackages: mutation(PackageBatchMutationResult)

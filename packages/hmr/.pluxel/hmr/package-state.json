@@ -1,9 +1,31 @@
 {
   "schema": 3,
-  "generatedAt": "2025-11-25T09:04:51.059Z",
-  "packages": [],
+  "generatedAt": "2025-11-25T12:05:55.351Z",
+  "packages": [
+    {
+      "spec": {
+        "name": "pluxel-plugin-wretch",
+        "version": "0.1.4",
+        "requested": "pluxel-plugin-wretch@0.1.4"
+      },
+      "resolution": {
+        "ok": true,
+        "dir": "/home/ahdg/code/plugin-style-ts/node_modules/.pnpm/pluxel-plugin-wretch@0.1.4/node_modules/pluxel-plugin-wretch",
+        "entry": "/home/ahdg/code/plugin-style-ts/node_modules/.pnpm/pluxel-plugin-wretch@0.1.4/node_modules/pluxel-plugin-wretch/dist/wretch.mjs",
+        "source": "exports",
+        "tried": []
+      },
+      "moduleId": "/home/ahdg/code/plugin-style-ts/node_modules/.pnpm/pluxel-plugin-wretch@0.1.4/node_modules/pluxel-plugin-wretch/dist/wretch.mjs",
+      "isAnchor": true,
+      "loadedAt": 1764068844121,
+      "dependOn": [],
+      "manifestPath": "/home/ahdg/code/plugin-style-ts/node_modules/.pnpm/pluxel-plugin-wretch@0.1.4/node_modules/pluxel-plugin-wretch/package.json",
+      "manifestVersion": "0.1.4",
+      "resolvedVersion": "0.1.4"
+    }
+  ],
   "issues": [],
   "blocked": [
-    "pluxel-plugin-wretch"
+    "pluxel-plugin-kook"
   ]
 }

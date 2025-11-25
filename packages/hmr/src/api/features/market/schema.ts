@@ -30,8 +30,6 @@ export const PackageSpecifierInput = v.object({
 	tag: v.nullish(v.string()),
 })
 
-export const PackageRemovalScope = v.picklist(['runtime', 'persisted'])
-
 export const PackageInstallStatus = v.picklist(['installed', 'reused'])
 
 export const PackageMutationResult = v.object({

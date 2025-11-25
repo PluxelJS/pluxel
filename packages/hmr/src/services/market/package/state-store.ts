@@ -31,6 +31,7 @@ export interface PersistedLoadIssue {
 	message: string
 	moduleId?: string
 	recordedAt: number
+	stack?: string | undefined
 }
 
 export interface PackageStatePayload {

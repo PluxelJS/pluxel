@@ -19,53 +19,23 @@ import {
 	createMarketRpcClient,
 	createSnapshotLoader,
 	type InstallCandidate,
-	type SnapshotResponse,
 	type SnapshotLoader,
 } from '@pluxel/market'
-import { useMutation as useGqtyMutation, useQuery, type InstallPackageSpecInput } from '../gqty'
+import type { InstallPackageSpecInput } from '../gqty'
+import { useMutation as useGqtyMutation, useQuery } from '../gqty'
 import { MARKET_BASE_URL } from '../constants'
 import { useNotify } from '../notifications/useNotify'
 import { LiveLog } from '../log_viewer/LiveLog'
-
-function buildInstalledPackages(statuses: Array<any> | undefined) {
-	const result: Record<string, string> = {}
-	if (!statuses) return result
-	for (const entry of statuses) {
-		const source = entry?.source
-		if (!source) continue
-		if (source.kind !== 'package') continue
-		const name = source.packageName || entry?.name
-		if (!name) continue
-		result[name] = source.version || ''
-	}
-	return result
-}
-
-function summarizeList(items: string[], peekCount: number, suffix: string, delimiter = '、') {
-	if (!items.length) return ''
-	if (items.length <= peekCount) {
-		return items.join(delimiter)
-	}
-	return `${items.slice(0, peekCount).join(delimiter)} 等 ${items.length}${suffix}`
-}
+import type { InstallLogEntry } from './types'
+import {
+	buildInstalledPackages,
+	summarizeList,
+	parseDependencySpec,
+	getPackageNameFromSpec,
+} from './utils'
 
 const formatCandidateLabel = (candidate: InstallCandidate) =>
 	`${candidate.plugin.name}@${candidate.version}`
-
-const parseDependencySpec = (spec: string) => {
-	const trimmed = spec.trim()
-	const match = trimmed.match(/^(@[^/@]+\/[^@]+|[^@]+)(?:@(.+))?$/)
-	return {
-		name: match?.[1] ?? trimmed,
-		version: match?.[2],
-		raw: trimmed,
-	}
-}
-
-const getPackageNameFromSpec = (spec: string) => {
-	const parsed = parseDependencySpec(spec)
-	return parsed.name
-}
 
 export function MarketPage() {
 	const notify = useNotify()
@@ -74,25 +44,18 @@ export function MarketPage() {
 	const marketBase = MARKET_BASE_URL
 	const lastNotifiedError = useRef<string | null>(null)
 	const [inlineMessage, setInlineMessage] = useState<string | null>(null)
-	const [cachedSnapshot, setCachedSnapshot] = useState<SnapshotResponse | null>(() => {
+	const [cachedSnapshot, setCachedSnapshot] = useState<unknown>(() => {
 		if (typeof window === 'undefined') return null
 		try {
 			const raw = localStorage.getItem('pluxel:market:snapshot')
 			if (!raw) return null
-			return JSON.parse(raw) as SnapshotResponse
+			return JSON.parse(raw)
 		} catch {
 			return null
 		}
 	})
 	const [installModalOpen, setInstallModalOpen] = useState(false)
-	const [installLogs, setInstallLogs] = useState<
-		Array<{
-			label: string
-			kind: 'primary' | 'dependency'
-			status: 'pending' | 'running' | 'success' | 'error'
-			message?: string
-		}>
-	>([])
+	const [installLogs, setInstallLogs] = useState<InstallLogEntry[]>([])
 
 	const marketClient = useMemo(
 		() =>
@@ -289,15 +252,17 @@ export function MarketPage() {
 				installQueue.push(task)
 			}
 
-			missingRequiredDeps.forEach((dep) => enqueue(dep))
+			for (const dep of missingRequiredDeps) {
+				enqueue(dep)
+			}
 
-			items.forEach((candidate) => {
+			for (const candidate of items) {
 				enqueue({
 					label: formatCandidateLabel(candidate),
 					spec: { name: candidate.plugin.name, version: candidate.version },
 					kind: 'primary',
 				})
-			})
+			}
 
 			setInstallModalOpen(true)
 			setInstallLogs(
@@ -308,7 +273,6 @@ export function MarketPage() {
 				})),
 			)
 
-			const successes: string[] = []
 			const failures: string[] = []
 
 			setInstallLogs((prev) => prev.map((log) => ({ ...log, status: 'running' })))
@@ -368,8 +332,7 @@ export function MarketPage() {
 						entry.spec?.name && entry.spec?.version
 							? `${entry.spec.name}@${entry.spec.version}`
 							: entry.spec?.raw ?? entry.spec?.name ?? '未知包'
-					if (entry.ok) successes.push(label)
-					else failures.push(`${label}: ${entry.error ?? entry.code ?? '未知错误'}`)
+					if (!entry.ok) failures.push(`${label}: ${entry.error ?? entry.code ?? '未知错误'}`)
 				})
 			} catch (error: any) {
 				const message = error?.message ?? '网络错误'
@@ -459,7 +422,7 @@ export function MarketPage() {
 					locale="zh-CN"
 					client={marketClient}
 					snapshotSource={snapshotLoader}
-					initialSnapshot={cachedSnapshot}
+					initialSnapshot={cachedSnapshot as any}
 					enableInstallQueue
 					onInstallSubmit={handleInstallSubmit}
 					installedPackages={installed}
