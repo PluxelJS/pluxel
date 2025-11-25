@@ -45,6 +45,30 @@ export class EntryResolver {
 	): Promise<EntryResolution> {
 		const pkgJson = manifest ?? (await safeReadManifest(dir))
 
+		if (!pkgJson) {
+			const tried: string[] = []
+			for (const rel of options.conservativeCandidates) {
+				tried.push(rel)
+				const abs = r(dir, rel)
+				if (existsSync(abs)) {
+					return entryOk(dir, normalize(abs), 'fallback', tried)
+				}
+			}
+			// 若保守候选未命中，尝试任意 .ts 作为兜底入口
+			const tsEntry = findFirstTsEntry(dir)
+			if (tsEntry) {
+				tried.push(tsEntry.relative)
+				return entryOk(dir, tsEntry.absolute, 'fallback', tried)
+			}
+			return {
+				ok: false,
+				dir,
+				code: 'NO_PACKAGE_JSON',
+				message: 'package.json not found and no fallback candidates exist.',
+				tried,
+			}
+		}
+
 		const hmrExport = options.preferHmrExports ? pickHmrExport(pkgJson?.exports) : undefined
 		if (hmrExport) {
 			const abs = r(dir, hmrExport)
@@ -67,23 +91,6 @@ export class EntryResolver {
 		}
 		const tried: string[] = []
 		const candidates: string[] = []
-
-		if (!pkgJson) {
-			for (const rel of options.conservativeCandidates) {
-				tried.push(rel)
-				const abs = r(dir, rel)
-				if (existsSync(abs)) {
-					return entryOk(dir, normalize(abs), 'fallback', tried)
-				}
-			}
-			return {
-				ok: false,
-				dir,
-				code: 'NO_PACKAGE_JSON',
-				message: 'package.json not found and no fallback candidates exist.',
-				tried,
-			}
-		}
 
 		const { main, module, types } = pkgJson as PackageJson & {
 			types?: string
@@ -162,6 +169,17 @@ function entryOk(
 		source,
 		tried,
 	}
+}
+
+function findFirstTsEntry(dir: string): { absolute: string; relative: string } | null {
+	const candidates = ['index.ts', 'src/index.ts']
+	for (const rel of candidates) {
+		const abs = r(dir, rel)
+		if (existsSync(abs)) {
+			return { absolute: normalize(abs), relative: rel }
+		}
+	}
+	return null
 }
 
 function pickHmrExport(exportsField: PackageJson['exports']): string | undefined {

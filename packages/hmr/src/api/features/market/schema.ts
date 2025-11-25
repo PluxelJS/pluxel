@@ -1,6 +1,6 @@
 import * as v from 'valibot'
 
-export const PackageIssueSource = v.picklist(['load', 'restore'])
+export const PackageIssueSource = v.picklist(['load', 'restore', 'retry'])
 
 export const PackageIssueSpec = v.object({
 	__typename: v.literal('PackageIssueSpec'),

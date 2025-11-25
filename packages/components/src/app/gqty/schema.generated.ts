@@ -43,6 +43,7 @@ export interface InstallPackageSpecInput {
 export enum PackageLoadIssueSource {
   load = "load",
   restore = "restore",
+  retry = "retry",
 }
 
 export enum PackageMutationResultInstallStatus {
@@ -223,6 +224,18 @@ export const generatedSchema = {
         spec: "InstallPackageSpecInput!",
       },
     },
+    retryFailedPackages: {
+      __type: "PackageBatchMutationResult!",
+      __args: { fresh: "Boolean", reinstall: "Boolean" },
+    },
+    retryPackage: {
+      __type: "PackageMutationResult!",
+      __args: {
+        fresh: "Boolean",
+        reinstall: "Boolean",
+        spec: "InstallPackageSpecInput!",
+      },
+    },
     uninstallPackage: {
       __type: "PackageMutationResult!",
       __args: {
@@ -380,6 +393,15 @@ export interface Mutation {
   reinstallPackage: (args: {
     force?: Maybe<Scalars["Boolean"]["input"]>;
     scope?: Maybe<UninstallPackageScopeInput>;
+    spec: InstallPackageSpecInput;
+  }) => PackageMutationResult;
+  retryFailedPackages: (args?: {
+    fresh?: Maybe<Scalars["Boolean"]["input"]>;
+    reinstall?: Maybe<Scalars["Boolean"]["input"]>;
+  }) => PackageBatchMutationResult;
+  retryPackage: (args: {
+    fresh?: Maybe<Scalars["Boolean"]["input"]>;
+    reinstall?: Maybe<Scalars["Boolean"]["input"]>;
     spec: InstallPackageSpecInput;
   }) => PackageMutationResult;
   uninstallPackage: (args: {

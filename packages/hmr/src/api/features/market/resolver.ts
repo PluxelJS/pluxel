@@ -14,6 +14,8 @@ import {
 	installPackages,
 	listLoadIssues,
 	reinstallPackage,
+	retryFailedPackages,
+	retryPackage,
 	resolveRemovalScope,
 	uninstallPackage,
 } from './service'
@@ -49,6 +51,29 @@ export function createMarketResolver(pCtx: PlxContext) {
 				reinstallPackage(pCtx, spec, {
 					force,
 					scope: resolveRemovalScope(scope),
+				}),
+			),
+		retryPackage: mutation(PackageMutationResult)
+			.input({
+				spec: PackageSpecifierInputSchema,
+				reinstall: v.nullish(v.boolean()),
+				fresh: v.nullish(v.boolean()),
+			})
+			.resolve(({ spec, reinstall, fresh }) =>
+				retryPackage(pCtx, spec, {
+					reinstall: reinstall ?? false,
+					fresh: fresh ?? true,
+				}),
+			),
+		retryFailedPackages: mutation(PackageBatchMutationResult)
+			.input({
+				reinstall: v.nullish(v.boolean()),
+				fresh: v.nullish(v.boolean()),
+			})
+			.resolve(({ reinstall, fresh }) =>
+				retryFailedPackages(pCtx, {
+					reinstall: reinstall ?? false,
+					fresh: fresh ?? true,
 				}),
 			),
 	})

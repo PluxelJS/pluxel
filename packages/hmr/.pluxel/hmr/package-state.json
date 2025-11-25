@@ -1,41 +1,6 @@
 {
-  "generatedAt": "2025-11-24T14:44:22.211Z",
-  "packages": [
-    {
-      "spec": {
-        "name": "pluxel-plugin-redis",
-        "raw": "pluxel-plugin-redis",
-        "target": "pluxel-plugin-redis",
-        "key": "pluxel-plugin-redis#latest"
-      },
-      "resolution": {
-        "ok": true,
-        "dir": "/home/ahdg/code/plugin-style-ts/node_modules/.pnpm/pluxel-plugin-redis@0.1.0/node_modules/pluxel-plugin-redis",
-        "entry": "/home/ahdg/code/plugin-style-ts/node_modules/.pnpm/pluxel-plugin-redis@0.1.0/node_modules/pluxel-plugin-redis/dist/index.mjs",
-        "source": "exports",
-        "tried": []
-      },
-      "moduleId": "/home/ahdg/code/plugin-style-ts/node_modules/.pnpm/pluxel-plugin-redis@0.1.0/node_modules/pluxel-plugin-redis/dist/index.mjs",
-      "isAnchor": true,
-      "loadedAt": 1763995414854
-    },
-    {
-      "spec": {
-        "name": "pluxel-plugin-wretch",
-        "raw": "pluxel-plugin-wretch",
-        "target": "pluxel-plugin-wretch",
-        "key": "pluxel-plugin-wretch#latest"
-      },
-      "resolution": {
-        "ok": true,
-        "dir": "/home/ahdg/code/plugin-style-ts/node_modules/.pnpm/pluxel-plugin-wretch@0.1.4/node_modules/pluxel-plugin-wretch",
-        "entry": "/home/ahdg/code/plugin-style-ts/node_modules/.pnpm/pluxel-plugin-wretch@0.1.4/node_modules/pluxel-plugin-wretch/dist/wretch.mjs",
-        "source": "exports",
-        "tried": []
-      },
-      "moduleId": "/home/ahdg/code/plugin-style-ts/node_modules/.pnpm/pluxel-plugin-wretch@0.1.4/node_modules/pluxel-plugin-wretch/dist/wretch.mjs",
-      "isAnchor": true,
-      "loadedAt": 1763995462211
-    }
-  ]
+  "schema": 2,
+  "generatedAt": "2025-11-25T05:36:21.194Z",
+  "packages": [],
+  "issues": []
 }

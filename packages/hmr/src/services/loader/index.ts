@@ -95,6 +95,32 @@ export class LoaderService {
 		this.pathAnchors.delete(moduleId)
 	}
 
+	/** 按插件名清理运行态（找不到路径也能尽量关闭/禁用） */
+	prunePluginByName(name: string, scope: RemovalScope = 'runtime') {
+		const candidates = new Set<string>()
+		const mapped = this.registry.name2PathMap.get(name)
+		if (mapped) candidates.add(mapped)
+		else {
+			for (const [moduleId, items] of this.registry.modules) {
+				if (items.some((item) => getPluginInfo(item.ctor).name === name)) {
+					candidates.add(moduleId)
+				}
+			}
+		}
+
+		if (candidates.size === 0) {
+			// 没找到模块路径，至少停运行态/禁持久启用
+			const ctor = this.registry.getPluginByName(name)
+			if (ctor) this.registry.stopPlugin(name, ctor)
+			if (scope === 'persisted') this.ctx.configService.disablePlugin(name)
+			return
+		}
+
+		for (const moduleId of candidates) {
+			this.pruneModule(moduleId, scope)
+		}
+	}
+
 	// ----------------------- 只读/工具 -----------------------
 	getLoadedPluginsName(): string[] {
 		return this.registry.getLoadedNames()

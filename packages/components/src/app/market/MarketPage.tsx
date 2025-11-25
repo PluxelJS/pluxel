@@ -1,19 +1,19 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useMemo, useRef, useState } from 'react'
 import {
 	Anchor,
 	Badge,
 	Box,
 	Button,
 	Group,
-	Modal,
 	List,
+	Modal,
 	ScrollArea,
 	Stack,
 	Text,
 	useComputedColorScheme,
 } from '@mantine/core'
 import { openConfirmModal } from '@mantine/modals'
-import { IconInfoCircle, IconExternalLink } from '@tabler/icons-react'
+import { IconExternalLink, IconInfoCircle, IconTerminal2 } from '@tabler/icons-react'
 import {
 	SnapshotDashboard,
 	createMarketRpcClient,
@@ -25,6 +25,7 @@ import {
 import { useMutation as useGqtyMutation, useQuery, type InstallPackageSpecInput } from '../gqty'
 import { MARKET_BASE_URL } from '../constants'
 import { useNotify } from '../notifications/useNotify'
+import { LiveLog } from '../log_viewer/LiveLog'
 
 function buildInstalledPackages(statuses: Array<any> | undefined) {
 	const result: Record<string, string> = {}
@@ -66,26 +67,13 @@ const getPackageNameFromSpec = (spec: string) => {
 	return parsed.name
 }
 
-const resolveLogColor = (level: unknown): 'blue' | 'yellow' | 'red' => {
-	if (typeof level === 'number') {
-		if (level >= 50) return 'red'
-		if (level >= 40) return 'yellow'
-		return 'blue'
-	}
-	if (typeof level === 'string') {
-		const lowered = level.toLowerCase()
-		if (lowered.includes('error') || lowered.includes('fatal')) return 'red'
-		if (lowered.includes('warn')) return 'yellow'
-	}
-	return 'blue'
-}
-
 export function MarketPage() {
 	const notify = useNotify()
 	const scheme = useComputedColorScheme('light', { getInitialValueInEffect: true })
 	const appearance = scheme === 'dark' ? 'dark' : 'light'
 	const marketBase = MARKET_BASE_URL
 	const lastNotifiedError = useRef<string | null>(null)
+	const [inlineMessage, setInlineMessage] = useState<string | null>(null)
 	const [cachedSnapshot, setCachedSnapshot] = useState<SnapshotResponse | null>(() => {
 		if (typeof window === 'undefined') return null
 		try {
@@ -98,7 +86,12 @@ export function MarketPage() {
 	})
 	const [installModalOpen, setInstallModalOpen] = useState(false)
 	const [installLogs, setInstallLogs] = useState<
-		Array<{ label: string; kind: 'primary' | 'dependency'; status: 'pending' | 'running' | 'success' | 'error'; message?: string }>
+		Array<{
+			label: string
+			kind: 'primary' | 'dependency'
+			status: 'pending' | 'running' | 'success' | 'error'
+			message?: string
+		}>
 	>([])
 
 	const marketClient = useMemo(
@@ -163,51 +156,6 @@ export function MarketPage() {
 		[query.pluginStatus?.statuses],
 	)
 
-	useEffect(() => {
-		if (typeof window === 'undefined') return
-		const source = new EventSource('/logs/stream?name=package-manager')
-		const connectedAt = Date.now()
-
-		source.onmessage = (event) => {
-			try {
-				const payload = JSON.parse(event.data) as {
-					msg?: string
-					event?: string
-					level?: number | string
-					target?: string
-					package?: string
-					time?: string
-				}
-				const eventTime = payload.time ? Date.parse(payload.time) : Date.now()
-				if (Number.isFinite(eventTime) && eventTime + 1500 < connectedAt) {
-					// 忽略历史日志，避免初次连接时弹窗过多。
-					return
-				}
-				const summary =
-					payload.msg ||
-					payload.event ||
-					(payload.package || payload.target
-						? `包管理事件：${payload.package ?? payload.target}`
-						: '包管理事件')
-				notify({
-					title: '包管理日志',
-					message: summary,
-					color: resolveLogColor(payload.level),
-					autoClose: 4000,
-				})
-			} catch {
-				// ignore malformed message
-			}
-		}
-		source.onerror = () => {
-			source.close()
-		}
-
-		return () => {
-			source.close()
-		}
-	}, [notify])
-
 	const [installPackagesMutation] = useGqtyMutation(
 		(
 			mutation,
@@ -234,12 +182,9 @@ export function MarketPage() {
 
 	const handleInstallSubmit = useCallback(
 		async (items: InstallCandidate[]) => {
+			setInlineMessage(null)
 			if (!items.length) {
-				notify({
-					title: '请选择插件',
-					message: '请在市场列表中勾选一个或多个插件后再提交安装。',
-					color: 'yellow',
-				})
+				setInlineMessage('请先在市场中勾选一个或多个插件后再提交安装。')
 				return
 			}
 
@@ -328,11 +273,7 @@ export function MarketPage() {
 				})
 
 				if (!confirmed) {
-					notify({
-						title: '已取消安装',
-						message: '需要先安装依赖后再提交插件安装任务。',
-						color: 'yellow',
-					})
+					setInlineMessage('已取消安装：需要先安装依赖后再提交插件安装任务。')
 					return
 				}
 			}
@@ -436,15 +377,13 @@ export function MarketPage() {
 					prev.map((log) => ({ ...log, status: 'error', message })),
 				)
 				failures.push(message)
-			}
-
-			if (successes.length) {
 				notify({
-					title: '安装任务已提交',
-					message: summarizeList(successes, 3, ' 项'),
-					color: 'green',
+					title: '安装失败',
+					message,
+					color: 'red',
 				})
 			}
+
 			if (failures.length) {
 				notify({
 					title: '部分插件安装失败',
@@ -457,7 +396,7 @@ export function MarketPage() {
 				await query.$refetch(true)
 			}
 		},
-		[installPackageMutation, installed, notify, query.$refetch],
+		[installPackagesMutation, installed, notify, query.$refetch],
 	)
 
 	return (
@@ -497,8 +436,22 @@ export function MarketPage() {
 					>
 						打开服务
 					</Button>
+					<Button
+						variant="light"
+						size="compact-sm"
+						leftSection={<IconTerminal2 size={14} />}
+						onClick={() => setInstallModalOpen(true)}
+					>
+						查看安装日志
+					</Button>
 				</Group>
 			</Group>
+
+			{inlineMessage ? (
+				<Text size="sm" c="yellow">
+					{inlineMessage}
+				</Text>
+			) : null}
 
 			<Box style={{ flex: 1, minHeight: 0, width: '100%', overflow: 'hidden' }}>
 				<SnapshotDashboard
@@ -524,11 +477,12 @@ export function MarketPage() {
 			<Modal
 				opened={installModalOpen}
 				onClose={() => setInstallModalOpen(false)}
-				title="安装进度"
+				title="安装进度与日志"
 				centered
-				size="lg"
+				size="xl"
+				styles={{ body: { display: 'flex', flexDirection: 'column', gap: 12 } }}
 			>
-				<ScrollArea.Autosize mah={320}>
+				<ScrollArea.Autosize mah={220}>
 					<Stack gap="xs">
 						{installLogs.map((log) => {
 							const color =
@@ -575,6 +529,20 @@ export function MarketPage() {
 						) : null}
 					</Stack>
 				</ScrollArea.Autosize>
+				<Box
+					style={{
+						border: '1px solid var(--mantine-color-gray-3)',
+						borderRadius: 12,
+						padding: 'var(--mantine-spacing-xs)',
+						height: '48vh',
+						minHeight: 320,
+						overflow: 'hidden',
+						background: 'var(--mantine-color-body)',
+						display: 'flex',
+					}}
+				>
+					<LiveLog module="package-manager" />
+				</Box>
 			</Modal>
 		</Stack>
 	)

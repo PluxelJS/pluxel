@@ -124,7 +124,7 @@ export async function uninstallPackage(
 	try {
 		const serviceInput = toServiceSpecifierInput(specInput)
 		const normalized = pCtx.packageService.normalizeSpecifier(serviceInput)
-		pCtx.packageService.invalidatePackage(normalized.name, scope)
+		await pCtx.packageService.uninstall(normalized, scope)
 		return buildMutationResult({
 			ok: true,
 			code: 'uninstalled',
@@ -166,6 +166,65 @@ export async function reinstallPackage(
 	}
 }
 
+export async function retryPackage(
+	pCtx: PlxContext,
+	specInput: SpecInputValue,
+	options: { reinstall?: boolean; fresh?: boolean },
+): Promise<MutationResult> {
+	try {
+		const serviceInput = toServiceSpecifierInput(specInput)
+		const loadResult = await pCtx.packageService.retryLoad(serviceInput, {
+			reinstall: options.reinstall ?? false,
+			fresh: options.fresh ?? true,
+		})
+		return buildMutationResult({
+			ok: true,
+			code: options.reinstall ? 'reinstalled_and_loaded' : 'retried',
+			spec: loadResult.spec,
+			installStatus: loadResult.install?.status,
+		})
+	} catch (error) {
+		return buildMutationResult({
+			ok: false,
+			code: 'retry_failed',
+			error,
+		})
+	}
+}
+
+export async function retryFailedPackages(
+	pCtx: PlxContext,
+	options: { reinstall?: boolean; fresh?: boolean },
+): Promise<BatchMutationResult> {
+	try {
+		const results = await pCtx.packageService.retryAllLoadIssues({
+			reinstall: options.reinstall ?? false,
+			fresh: options.fresh ?? true,
+		})
+		const mutations: MutationResult[] = results.map((record) =>
+			buildMutationResult({
+				ok: true,
+				code: options.reinstall ? 'reinstalled_and_loaded' : 'retried',
+				spec: record.spec,
+				installStatus: record.install?.status,
+			}),
+		)
+		return {
+			__typename: 'PackageBatchMutationResult',
+			ok: mutations.every((item) => item.ok),
+			results: mutations,
+			error: null,
+		}
+	} catch (error) {
+		return {
+			__typename: 'PackageBatchMutationResult',
+			ok: false,
+			results: [],
+			error: formatUnknownError(error),
+		}
+	}
+}
+
 export function resolveRemovalScope(scope?: RemovalScopeInput | null): RemovalScope {
 	return scope === 'persisted' ? 'persisted' : 'runtime'
 }
@@ -194,7 +253,7 @@ export function toServiceSpecifierInput(input: SpecInputValue): ServiceSpecifier
 
 function serializeIssue(issue: ServiceIssue): IssueOutput {
 	return {
-		__typename: 'PackageLoadIssue',
+		__typename: 'PackageLoadIssue' as const,
 		spec: serializeSpec(issue.spec),
 		source: issue.source,
 		message: issue.message,
@@ -206,7 +265,7 @@ function serializeIssue(issue: ServiceIssue): IssueOutput {
 
 function serializeSpec(spec: NormalizedPackageSpecifier) {
 	return {
-		__typename: 'PackageIssueSpec',
+		__typename: 'PackageIssueSpec' as const,
 		name: spec.name,
 		version: spec.version ?? null,
 		tag: spec.tag ?? null,

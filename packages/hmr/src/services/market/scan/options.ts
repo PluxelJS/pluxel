@@ -15,7 +15,7 @@ export const DEFAULT_SCAN_OPTIONS: ResolvedScanOptions = {
 	preferHmrExports: false,
 	includeRoot: false,
 	skipUnnamed: true,
-	fallbackTsOnSingle: true,
+	fallbackTsOnSingle: false,
 	batchSize: 8,
 	focusPackages: undefined,
 }

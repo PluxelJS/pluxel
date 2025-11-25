@@ -5,6 +5,7 @@ import type { Context } from '@pluxel/core'
 import { ScanService, type EntryResolutionOk } from '../src/services/market/ScanService'
 
 const fixtureRoot = normalize(fileURLToPath(new URL('./fixtures/scan/single/', import.meta.url)))
+const tsOnlyRoot = normalize(fileURLToPath(new URL('./fixtures/scan/ts-only/', import.meta.url)))
 
 function createService(overrides: Partial<ConstructorParameters<typeof ScanService>[1]> = {}) {
 	return new ScanService({} as Context, {
@@ -62,5 +63,28 @@ describe('ScanService', () => {
 
 		expect(resolution?.ok).toBe(true)
 		expect(asPosix((resolution as EntryResolutionOk).entry)).toMatch(/lib\/index\.js$/)
+	})
+})
+
+describe('ScanService without package.json (ts-only)', () => {
+	function createTsOnlyService() {
+		return new ScanService({} as Context, {
+			roots: tsOnlyRoot,
+		})
+	}
+
+	it('resolves index.ts as fallback entry', async () => {
+		const service = createTsOnlyService()
+		const snapshot = await service.snapshot()
+
+		expect(snapshot.entries).toHaveLength(1)
+		const entry = snapshot.entries[0]
+		expect(asPosix(entry)).toMatch(/\/ts-only\/index\.ts$/)
+
+		const pkg = snapshot.packages[0]
+		expect(pkg.entry.ok).toBe(true)
+		if (pkg.entry.ok) {
+			expect(asPosix(pkg.entry.entry)).toMatch(/\/ts-only\/index\.ts$/)
+		}
 	})
 })

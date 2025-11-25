@@ -1,25 +1,36 @@
+import { readFile } from 'node:fs/promises'
+import { createRequire } from 'node:module'
 import { pathToFileURL } from 'node:url'
+
 import { type Context, Injectable } from '@pluxel/core'
 import type { OperationOptions, OperationResult } from 'nypm'
-import { addDependency, ensureDependencyInstalled } from 'nypm'
+import { addDependency, removeDependency } from 'nypm'
+import { readPackageJSON } from 'pkg-types'
 import { normalize as normalizePath, resolve as resolvePath } from 'pathe'
+
 import type { RemovalScope } from '../loader'
 import {
+	CURRENT_STATE_SCHEMA,
+	type LegacyPackageStatePayload,
 	type PackageStatePayload,
 	PackageStateStore,
 	type PackageStateStoreOptions,
+	type PersistedLoadIssue,
 	type PersistedPackageEntry,
 } from './package/state-store'
 import type { EntryResolution, EntryResolutionOk, ScanTaskOptions } from './ScanService'
 import { isEntryOk } from './ScanService'
 import {
 	type NormalizedPackageSpecifier,
-	normalizeSpecifier,
 	type PackageSpecifierInput,
+	type PackageSpecifierSnapshot,
+	fromSnapshot as specFromSnapshot,
+	normalizeSpecifier,
+	toSnapshot as specToSnapshot,
 } from './specifiers'
-import { collectDeclaredPlugins } from './util/plugins'
 import { loadWorkspaceInfo } from './scan/workspace'
 import { createDebouncedTrigger } from './util/debounce'
+import { collectDeclaredPlugins } from './util/plugins'
 
 const serviceName = 'packageService' as const
 
@@ -35,6 +46,7 @@ declare module '@pluxel/core' {
 export type PackageServiceErrorCode =
 	| 'INVALID_SPEC'
 	| 'INSTALL_FAILED'
+	| 'UNINSTALL_FAILED'
 	| 'RESOLUTION_FAILED'
 	| 'IMPORT_FAILED'
 
@@ -56,11 +68,19 @@ export interface PackageInstallResult {
 	spec: NormalizedPackageSpecifier
 	target: string
 	status: PackageInstallStatus
+	installedAt: number
 }
 
-export interface PackageLoadResult {
+export interface PackageMetadata {
 	spec: NormalizedPackageSpecifier
 	resolution: EntryResolutionOk
+	dependOn: string[]
+	manifestPath?: string
+	manifestVersion?: string
+	resolvedVersion?: string
+}
+
+export interface PackageLoadResult extends PackageMetadata {
 	module: Record<string, unknown>
 	moduleId: string
 	isAnchor: boolean
@@ -68,7 +88,7 @@ export interface PackageLoadResult {
 	loadedAt: number
 }
 
-export type PackageLoadIssueSource = 'load' | 'restore'
+export type PackageLoadIssueSource = 'load' | 'restore' | 'retry'
 
 export interface PackageLoadIssue {
 	spec: NormalizedPackageSpecifier
@@ -90,6 +110,13 @@ export interface LoadOptions {
 	resolvedEntry?: EntryResolutionOk
 	/** 覆盖自动安装时的参数。 */
 	install?: InstallOptions
+}
+
+export interface RetryOptions extends LoadOptions {
+	/** 在重试之前先强制安装。 */
+	reinstall?: boolean
+	/** 是否强制跳过缓存导入。 */
+	fresh?: boolean
 }
 
 export interface PackageServiceConfig {
@@ -116,6 +143,14 @@ interface CachedModule {
 interface LoadIntentConfig {
 	autoInstall: boolean
 	fresh?: boolean
+	source: PackageLoadIssueSource
+}
+
+interface PackageManifestMeta {
+	manifestPath?: string
+	manifestVersion?: string
+	resolvedVersion?: string
+	dependOn: string[]
 }
 
 @Injectable({ key: serviceName })
@@ -129,9 +164,11 @@ export class PackageService {
 
 	private readonly installLocks = new Map<string, Promise<PackageInstallResult>>()
 	private readonly loadLocks = new Map<string, Promise<PackageLoadResult>>()
+	private readonly uninstallLocks = new Map<string, Promise<void>>()
 	private readonly moduleCache = new Map<string, CachedModule>()
 	private readonly packageModuleIds = new Map<string, string>()
 	private readonly loadedPackages = new Map<string, PackageLoadResult>()
+	private readonly dependencyIndex = new Map<string, Set<string>>()
 	private readonly loadFailures = new Map<string, PackageLoadIssue>()
 	private readonly multiInstallLocks = new Map<string, Promise<PackageInstallResult[]>>()
 	private readonly stateStore: PackageStateStore
@@ -180,50 +217,6 @@ export class PackageService {
 			})
 	}
 
-	private async initializeInstallDefaults(overrides?: InstallOptions) {
-		const workspaceRoot = await this.detectWorkspaceRoot(overrides?.cwd)
-		this.defaults.install = resolveInstallDefaults(overrides, Boolean(workspaceRoot), workspaceRoot)
-	}
-
-	private async detectWorkspaceRoot(preferredCwd?: string): Promise<string | null> {
-		const roots = this.ctx.scanService?.defaultRoots ?? []
-		const candidates = normalizeRoots([
-			preferredCwd ?? process.cwd(),
-			...roots,
-		])
-		for (const root of candidates) {
-			try {
-				const info = await loadWorkspaceInfo(root)
-				if (info.isMonorepo) return info.root
-			} catch {
-				// ignore detection errors, fall through
-			}
-		}
-		return null
-	}
-
-	/** 扫描已声明的插件依赖（pluxel-plugin*），确保被加载并持久化。 */
-	async syncTrackedPlugins(): Promise<void> {
-		if (!this.initialized) return
-		await this.installDefaultsReady
-		const roots = this.ctx.scanService?.defaultRoots ?? [process.cwd()]
-		const found = await collectDeclaredPlugins(roots)
-		const toLoad: string[] = []
-		for (const name of found) {
-			if (this.loadedPackages.has(name)) continue
-			toLoad.push(name)
-		}
-		if (!toLoad.length) return
-
-		for (const name of toLoad) {
-			try {
-				await this.load(name)
-			} catch (error) {
-				this.ctx.logger?.warn({ name, error }, '[PackageService] 同步加载插件失败')
-			}
-		}
-	}
-
 	/** 统一整理包名/版本输入，非法输入会抛错。 */
 	normalizeSpecifier(input: PackageSpecifierInput): NormalizedPackageSpecifier {
 		try {
@@ -234,7 +227,7 @@ export class PackageService {
 	}
 
 	/**
-	 * 安装插件包；如果明确传入版本（或 force=true）则调用 addDependency，否则使用 ensureDependencyInstalled。
+	 * 安装插件包；如果明确传入版本（或 force=true）则直接执行安装，否则会先检查本地是否已存在。
 	 */
 	async install(
 		input: PackageSpecifierInput,
@@ -290,7 +283,7 @@ export class PackageService {
 	async load(input: PackageSpecifierInput, options: LoadOptions = {}): Promise<PackageLoadResult> {
 		await this.ensureReady()
 		const spec = this.normalizeSpecifier(input)
-		return this.loadWithIntent(spec, options, { autoInstall: true })
+		return this.loadWithIntent(spec, options, { autoInstall: true, source: 'load' })
 	}
 
 	/**
@@ -302,7 +295,41 @@ export class PackageService {
 	): Promise<PackageLoadResult> {
 		await this.ensureReady()
 		const spec = this.normalizeSpecifier(input)
-		return this.loadWithIntent(spec, options, { autoInstall: false })
+		return this.loadWithIntent(spec, options, { autoInstall: false, source: 'load' })
+	}
+
+	/**
+	 * 卸载插件：先清理运行态占用，再调用包管理器移除依赖（persisted）。
+	 */
+	async uninstall(
+		input: PackageSpecifierInput,
+		scope: RemovalScope = 'persisted',
+	): Promise<void> {
+		await this.ensureReady()
+		const spec = this.normalizeSpecifier(input)
+		const key = spec.key
+		const options = this.resolveInstallOptions()
+		return this.runExclusive(this.uninstallLocks, key, async () => {
+			this.logEvent('info', 'uninstall:start', { target: spec.target, scope })
+			this.invalidatePackage(spec.name, scope)
+			if (scope === 'runtime') {
+				this.logEvent('info', 'uninstall:completed', { target: spec.target, scope })
+				return
+			}
+
+			try {
+				await this.removeTargetsWithLogs([spec], options)
+				this.logEvent('info', 'uninstall:completed', { target: spec.target, scope })
+			} catch (error) {
+				const message = error instanceof Error ? error.message : '未知错误'
+				this.logEvent('error', 'uninstall:failed', {
+					target: spec.target,
+					message,
+					scope,
+				})
+				throw new PackageServiceError('UNINSTALL_FAILED', message, { cause: error, spec })
+			}
+		})
 	}
 
 	/**
@@ -314,87 +341,61 @@ export class PackageService {
 	): Promise<PackageLoadResult> {
 		await this.ensureReady()
 		const spec = this.normalizeSpecifier(input)
-		return this.loadWithIntent(spec, options, { autoInstall: true, fresh: true })
-	}
-
-	private async loadWithIntent(
-		spec: NormalizedPackageSpecifier,
-		options: LoadOptions,
-		intent: LoadIntentConfig,
-	): Promise<PackageLoadResult> {
-		const key = spec.key
-		return this.runExclusive(this.loadLocks, key, async () => {
-			this.logEvent('info', 'load:start', {
-				name: spec.name,
-				autoInstall: intent.autoInstall,
-				fresh: intent.fresh,
-			})
-			try {
-				const result = await this.executeLoad(spec, options, intent)
-				this.clearLoadIssue(spec.name)
-				this.logEvent('info', 'load:success', {
-					name: spec.name,
-					moduleId: result.moduleId,
-					autoInstalled: Boolean(result.install),
-				})
-				return result
-			} catch (error) {
-				if (!intent.autoInstall || !shouldRetryInstall(error)) {
-					this.recordLoadIssue(spec, error, 'load')
-					throw error
-				}
-				const installOptions = this.resolveInstallOptions(options.install)
-				const installResult = await this.performInstall(spec, installOptions)
-				try {
-					const result = await this.executeLoad(spec, options, intent, installResult)
-					this.clearLoadIssue(spec.name)
-					this.logEvent('info', 'load:success_after_install', {
-						name: spec.name,
-						moduleId: result.moduleId,
-					})
-					return result
-				} catch (retryError) {
-					this.recordLoadIssue(spec, retryError, 'load')
-					throw retryError
-				}
-			}
+		return this.loadWithIntent(spec, options, {
+			autoInstall: true,
+			fresh: true,
+			source: 'load',
 		})
 	}
 
-	private async executeLoad(
-		spec: NormalizedPackageSpecifier,
-		options: LoadOptions,
-		intent: LoadIntentConfig,
-		installResult?: PackageInstallResult,
+	/**
+	 * 对记录的失败进行重试，可选自动重新安装。
+	 */
+	async retryLoad(
+		nameOrSpec: string | PackageSpecifierInput,
+		options: RetryOptions = {},
 	): Promise<PackageLoadResult> {
-		const resolution = options.resolvedEntry ?? (await this.resolveEntryForSpec(spec, options.scan))
-		const moduleId = normalizePath(resolution.entry)
-		this.ensurePackageModuleBinding(spec.name, moduleId)
-
-		const shouldImportFresh = intent.fresh ?? this.defaults.preferFreshImport
-		const cached = shouldImportFresh ? undefined : this.moduleCache.get(moduleId)
-		const module = cached?.module ?? (await this.importModule(moduleId, shouldImportFresh))
-		if (!cached || shouldImportFresh) {
-			this.moduleCache.set(moduleId, { moduleId, module })
+		await this.ensureReady()
+		const spec =
+			typeof nameOrSpec === 'string' && this.loadFailures.has(nameOrSpec)
+				? this.loadFailures.get(nameOrSpec)!.spec
+				: this.normalizeSpecifier(nameOrSpec)
+		const reinstall = options.reinstall ?? false
+		if (reinstall) {
+			const installResult = await this.performInstall(
+				spec,
+				this.resolveInstallOptions(options.install),
+			)
+			return this.loadWithIntent(
+				spec,
+				options,
+				{ autoInstall: false, fresh: options.fresh ?? true, source: 'retry' },
+				installResult,
+			)
 		}
-		this.primeHmrModuleCache(spec, moduleId, module)
+		return this.loadWithIntent(spec, options, {
+			autoInstall: true,
+			fresh: options.fresh ?? true,
+			source: 'retry',
+		})
+	}
 
-		const isAnchor = this.ctx.loader.replaceModule(moduleId, module)
-
-		const result: PackageLoadResult = {
-			spec,
-			resolution,
-			module,
-			moduleId,
-			isAnchor,
-			loadedAt: Date.now(),
+	/**
+	 * 依次重试所有失败项，便于批量恢复。
+	 */
+	async retryAllLoadIssues(options: RetryOptions = {}): Promise<PackageLoadResult[]> {
+		await this.ensureReady()
+		const issues = this.listLoadIssues()
+		const results: PackageLoadResult[] = []
+		for (const issue of issues) {
+			try {
+				const result = await this.retryLoad(issue.spec, options)
+				results.push(result)
+			} catch (error) {
+				this.recordLoadIssue(issue.spec, error, 'retry', issue.moduleId)
+			}
 		}
-		if (installResult) {
-			result.install = installResult
-		}
-		this.loadedPackages.set(spec.name, result)
-		this.schedulePersistSnapshot()
-		return result
+		return results
 	}
 
 	listLoadIssues(): PackageLoadIssue[] {
@@ -405,14 +406,30 @@ export class PackageService {
 	/** 主动移除指定包的模块缓存，并可选择清理 loader 运行态。 */
 	invalidatePackage(name: string, scope: RemovalScope = 'runtime') {
 		const record = this.loadedPackages.get(name)
-		const moduleId = record?.moduleId ?? this.packageModuleIds.get(name)
-		if (!moduleId) return
-		if (record) this.dropHmrModuleCacheForRecord(record)
-		else this.ctx.hmrService.dropModuleCacheEntries([moduleId, name])
-		this.moduleCache.delete(moduleId)
+		const failure = this.loadFailures.get(name)
+		const moduleId =
+			record?.moduleId ??
+			this.packageModuleIds.get(name) ??
+			(failure?.moduleId ? normalizePath(failure.moduleId) : undefined)
+
+		if (record && moduleId) {
+			this.dropHmrModuleCacheForRecord(record)
+			this.untrackDependencies(record)
+		} else if (moduleId) {
+			this.ctx.hmrService.dropModuleCacheEntries([moduleId, name])
+		}
+
+		if (moduleId) {
+			this.moduleCache.delete(moduleId)
+			this.ctx.loader.pruneModule(moduleId, scope)
+		} else {
+			this.ctx.loader.prunePluginByName(name, scope)
+		}
+
 		this.packageModuleIds.delete(name)
 		this.loadedPackages.delete(name)
-		this.ctx.loader.pruneModule(moduleId, scope)
+		this.clearLoadIssue(name)
+		this.removeDependentsOf(name)
 		this.schedulePersistSnapshot()
 		this.syncTrigger.trigger()
 		this.logEvent('info', 'invalidate', { name, scope, moduleId })
@@ -425,64 +442,105 @@ export class PackageService {
 				return record.spec
 			}
 		}
+		for (const issue of this.loadFailures.values()) {
+			if (issue.moduleId && normalizePath(issue.moduleId) === normalized) {
+				return issue.spec
+			}
+		}
 		return undefined
 	}
 
-	/** 将外部包的执行结果灌入 HMR 的 moduleCache，避免重复实例化。 */
-	private primeHmrModuleCache(
-		spec: NormalizedPackageSpecifier,
-		moduleId: string,
-		module: Record<string, unknown>,
-	) {
-		const hmr = this.ctx.hmrService
-		const normalized = normalizePath(moduleId)
-		const ids = this.collectHmrModuleCacheIds(normalized, spec)
-		const aliases = [...ids].filter((id) => id !== normalized)
-		hmr.primeModuleCacheEntry({ id: normalized, exports: module, aliases })
+	getDependencies(name: string): string[] {
+		const record = this.loadedPackages.get(name)
+		return record ? [...record.dependOn] : []
 	}
 
-	/** 清理对应包的 HMR moduleCache 映射（主 ID + 各别名）。 */
-	private dropHmrModuleCacheForRecord(record: PackageLoadResult) {
-		const hmr = this.ctx.hmrService
-		const ids = this.collectHmrModuleCacheIds(record.moduleId, record.spec)
-		hmr.dropModuleCacheEntries(ids)
+	getDependents(name: string): string[] {
+		const set = this.dependencyIndex.get(name)
+		return set ? Array.from(set) : []
 	}
 
-	/** 汇总同一模块在 vite-node 中可能出现的 key 形态。 */
-	private collectHmrModuleCacheIds(
-		moduleId: string,
-		spec: NormalizedPackageSpecifier,
-	): Set<string> {
-		const normalized = normalizePath(moduleId)
-		const ids = new Set<string>([normalized])
-		ids.add(spec.name)
-		ids.add(spec.target)
-		ids.add(spec.raw)
-		try {
-			ids.add(pathToFileURL(moduleId).href)
-		} catch {
-			// ignore invalid URL conversion
+	/** 扫描已声明的插件依赖（pluxel-plugin*），确保被加载并持久化。 */
+	async syncTrackedPlugins(): Promise<void> {
+		if (!this.initialized) return
+		await this.installDefaultsReady
+		const roots = this.ctx.scanService?.defaultRoots ?? [process.cwd()]
+		const found = await collectDeclaredPlugins(roots)
+		const toLoad: string[] = []
+		for (const name of found) {
+			if (this.loadedPackages.has(name)) continue
+			toLoad.push(name)
 		}
-		return ids
+		if (!toLoad.length) return
+
+		for (const name of toLoad) {
+			try {
+				await this.load(name)
+			} catch (error) {
+				this.ctx.logger?.warn({ name, error }, '[PackageService] 同步加载插件失败')
+			}
+		}
+	}
+
+	private async initializeInstallDefaults(overrides?: InstallOptions) {
+		const workspaceRoot = await this.detectWorkspaceRoot(overrides?.cwd)
+		this.defaults.install = resolveInstallDefaults(overrides, Boolean(workspaceRoot), workspaceRoot)
+	}
+
+	private async detectWorkspaceRoot(preferredCwd?: string): Promise<string | null> {
+		const roots = this.ctx.scanService?.defaultRoots ?? []
+		const candidates = normalizeRoots([
+			preferredCwd ?? process.cwd(),
+			...roots,
+		])
+		for (const root of candidates) {
+			try {
+				const info = await loadWorkspaceInfo(root)
+				if (info.isMonorepo) return info.root
+			} catch {
+				// ignore detection errors, fall through
+			}
+		}
+		return null
 	}
 
 	private async initializeFromState(): Promise<void> {
-		let payload: PackageStatePayload | null = null
+		let payload: PackageStatePayload | LegacyPackageStatePayload | null = null
 		try {
 			payload = await this.stateStore.read()
 		} catch (error) {
 			this.ctx.logger?.warn({ error }, '[PackageService] 读取包状态失败')
 			throw error
 		}
-		if (!payload) return
-		const mutated = await this.restorePersistedPackages(payload.packages)
+		const normalized = normalizeStatePayload(payload)
+		if (!normalized) return
+		this.restorePersistedIssues(normalized)
+		const mutated = await this.restorePersistedPackages(normalized.packages)
 		if (mutated) this.schedulePersistSnapshot()
+	}
+
+	private restorePersistedIssues(payload: PackageStatePayload) {
+		for (const issue of payload.issues ?? []) {
+			try {
+				const spec = specFromSnapshot(issue.spec)
+				this.loadFailures.set(spec.name, {
+					spec,
+					message: issue.message,
+					source: issue.source,
+					moduleId: issue.moduleId,
+					recordedAt: issue.recordedAt,
+					error: new Error(issue.message),
+				})
+			} catch {
+				// ignore malformed issue entries
+			}
+		}
 	}
 
 	private async restorePersistedPackages(entries: PersistedPackageEntry[]): Promise<boolean> {
 		let mutated = false
 		for (const entry of entries) {
-			const spec = entry.spec
+			const spec = specFromSnapshot(entry.spec)
 			try {
 				const moduleId = normalizePath(entry.moduleId || entry.resolution.entry)
 				const module = await this.importModule(moduleId, this.defaults.preferFreshImport)
@@ -498,12 +556,21 @@ export class PackageService {
 					module,
 					moduleId,
 					isAnchor: entry.isAnchor,
-					loadedAt: Date.now(),
+					dependOn: entry.dependOn ?? [],
+					manifestPath: entry.manifestPath,
+					manifestVersion: entry.manifestVersion,
+					resolvedVersion: entry.resolvedVersion ?? entry.manifestVersion,
+					loadedAt: entry.loadedAt,
 				}
-				if (entry.installStatus) {
-					record.install = { spec, target: spec.target, status: entry.installStatus }
+				if (entry.install) {
+					record.install = {
+						spec,
+						target: spec.target,
+						status: entry.install.status,
+						installedAt: entry.install.at,
+					}
 				}
-				this.loadedPackages.set(spec.name, record)
+				this.registerRecord(record)
 				this.clearLoadIssue(spec.name)
 				mutated = true
 			} catch (error) {
@@ -533,21 +600,38 @@ export class PackageService {
 		const packages: PersistedPackageEntry[] = []
 		for (const record of this.loadedPackages.values()) {
 			const entry: PersistedPackageEntry = {
-				spec: record.spec,
+				spec: specToSnapshot(record.spec),
 				resolution: record.resolution,
 				moduleId: record.moduleId,
 				isAnchor: record.isAnchor,
 				loadedAt: record.loadedAt,
+				dependOn: record.dependOn ?? [],
+				manifestPath: record.manifestPath,
+				manifestVersion: record.manifestVersion,
+				resolvedVersion: record.resolvedVersion,
 			}
-			if (record.install?.status) {
-				entry.installStatus = record.install.status
+			if (record.install) {
+				entry.install = { status: record.install.status, at: record.install.installedAt }
 			}
 			packages.push(entry)
 		}
 
+		const issues: PersistedLoadIssue[] = []
+		for (const issue of this.loadFailures.values()) {
+			issues.push({
+				spec: specToSnapshot(issue.spec),
+				source: issue.source,
+				message: issue.message,
+				moduleId: issue.moduleId,
+				recordedAt: issue.recordedAt,
+			})
+		}
+
 		return {
+			schema: CURRENT_STATE_SCHEMA,
 			generatedAt: new Date().toISOString(),
 			packages,
+			issues,
 		}
 	}
 
@@ -555,39 +639,33 @@ export class PackageService {
 		spec: NormalizedPackageSpecifier,
 		options: ResolvedInstallOptions,
 	): Promise<PackageInstallResult> {
-		const { force, ...operationOptions } = options
+		const { force } = options
 		this.logEvent('info', 'install:start', {
 			target: spec.target,
 			force,
 		})
 		try {
-			if (force || spec.version) {
-				const opResult = await addDependency(spec.target, operationOptions)
-				const installResult: PackageInstallResult = {
-					spec,
-					target: spec.target,
-					status: 'installed',
+			if (!force && !spec.version) {
+				const existed = await this.dependencyExists(spec.name, options)
+				if (existed) {
+					const reuseResult: PackageInstallResult = {
+						spec,
+						target: spec.target,
+						status: 'reused',
+						installedAt: Date.now(),
+					}
+					this.logEvent('info', 'install:completed', {
+						target: spec.target,
+						status: reuseResult.status,
+					})
+					return reuseResult
 				}
-				this.onPackageInstalled(installResult)
-				this.logPackageManagerExec('info', 'install:pm_command', spec, installResult, options, opResult)
-				this.logEvent('info', 'install:completed', {
-					target: spec.target,
-					status: installResult.status,
-				})
-				return installResult
 			}
 
-			const ensureOptions = pickEnsureOptions(options)
-			const existed = await ensureDependencyInstalled(spec.name, ensureOptions)
-			const installResult: PackageInstallResult = {
-				spec,
-				target: spec.target,
-				status: existed === true ? 'reused' : 'installed',
-			}
-			if (installResult.status === 'installed') {
+			const [installResult] = await this.installTargetsWithLogs([spec], options)
+			if (installResult.status === 'installed' && !options.dry) {
 				this.onPackageInstalled(installResult)
 			}
-			this.logPackageManagerExec('info', 'install:ensure', spec, installResult, options)
 			this.logEvent('info', 'install:completed', {
 				target: spec.target,
 				status: installResult.status,
@@ -617,7 +695,6 @@ export class PackageService {
 	): Promise<PackageInstallResult[]> {
 		const statuses: PackageInstallResult[] = []
 		const { force } = options
-		const ensureOptions = pickEnsureOptions(options)
 		const toInstall: NormalizedPackageSpecifier[] = []
 		const seen = new Set<string>()
 
@@ -625,43 +702,29 @@ export class PackageService {
 			if (seen.has(spec.target)) continue
 			seen.add(spec.target)
 
-			if (force || spec.version) {
-				toInstall.push(spec)
-				continue
+			if (!force && !spec.version) {
+				const existed = await this.dependencyExists(spec.name, options)
+				if (existed) {
+					statuses.push({ spec, target: spec.target, status: 'reused', installedAt: Date.now() })
+					continue
+				}
 			}
-
-			const existed = await ensureDependencyInstalled(spec.name, ensureOptions)
-			if (existed === true) {
-				statuses.push({ spec, target: spec.target, status: 'reused' })
-			} else {
-				toInstall.push(spec)
-			}
+			toInstall.push(spec)
 		}
 
 		if (toInstall.length) {
 			try {
-				const opResult = await addDependency(
-					toInstall.map((s) => s.target),
-					options,
-				)
-				for (const spec of toInstall) {
-					const record: PackageInstallResult = {
-						spec,
-						target: spec.target,
-						status: 'installed',
-					}
+				const installed = await this.installTargetsWithLogs(toInstall, options)
+				for (const record of installed) {
 					statuses.push(record)
-					this.onPackageInstalled(record)
+					if (record.status === 'installed' && !options.dry) {
+						this.onPackageInstalled(record)
+					}
 				}
 				this.logEvent('info', 'installMany:completed', {
 					targets: toInstall.map((s) => s.target),
 					count: toInstall.length,
 					force,
-					command: opResult?.exec?.command,
-					args: opResult?.exec?.args,
-					commandLine: opResult?.exec
-						? `${opResult.exec.command} ${opResult.exec.args.join(' ')}`
-						: undefined,
 				})
 			} catch (error) {
 				const message = error instanceof Error ? error.message : '未知错误'
@@ -686,6 +749,136 @@ export class PackageService {
 		}
 
 		return statuses
+	}
+
+	private async dependencyExists(
+		name: string,
+		options: ResolvedInstallOptions,
+	): Promise<boolean> {
+		const cwd = options.cwd ?? process.cwd()
+		const resolver = createRequire(cwd.endsWith('/') ? cwd : `${cwd}/`)
+		try {
+			const resolved = resolver.resolve(name)
+			return normalizePath(resolved).startsWith(normalizePath(cwd))
+		} catch {
+			return false
+		}
+	}
+
+	private async installTargetsWithLogs(
+		specs: NormalizedPackageSpecifier[],
+		options: ResolvedInstallOptions,
+	): Promise<PackageInstallResult[]> {
+		if (!specs.length) return []
+		const targets = specs.map((s) => s.target)
+		const opOptions: OperationOptions = { ...options, silent: options.silent ?? false }
+		const opResult = await addDependency(targets as any, opOptions)
+		if (opResult?.exec) {
+			this.logEvent('info', 'install:pm_command', {
+				targets,
+				command: opResult.exec.command,
+				args: opResult.exec.args,
+				commandLine: `${opResult.exec.command} ${opResult.exec.args.join(' ')}`,
+				cwd: options.cwd,
+			})
+		}
+
+		const installedAt = Date.now()
+		const results: PackageInstallResult[] = specs.map((spec) => ({
+			spec,
+			target: spec.target,
+			status: 'installed',
+			installedAt,
+		}))
+
+		if (options.installPeerDependencies && !options.dry) {
+			await this.installPeerDependencies(specs, options)
+		}
+
+		return results
+	}
+
+	private async removeTargetsWithLogs(
+		specs: NormalizedPackageSpecifier[],
+		options: ResolvedInstallOptions,
+	): Promise<void> {
+		if (!specs.length) return
+		// pnpm remove 不接受版本号，统一用 name 去删除，避免 “no such dependency found”
+		const targets = Array.from(new Set(specs.map((s) => s.name)))
+		const opOptions: OperationOptions = { ...options, silent: options.silent ?? false }
+		try {
+			const opResult = await removeDependency(targets as any, opOptions)
+			if (opResult?.exec) {
+				this.logEvent('info', 'uninstall:pm_command', {
+					targets,
+					command: opResult.exec.command,
+					args: opResult.exec.args,
+					commandLine: `${opResult.exec.command} ${opResult.exec.args.join(' ')}`,
+					cwd: options.cwd,
+				})
+			}
+		} catch (error) {
+			const message = error instanceof Error ? error.message : String(error)
+			if (
+				message.includes('ERR_PNPM_CANNOT_REMOVE_MISSING_DEPS') ||
+				message.includes('no such dependency found') ||
+				message.includes('Cannot remove')
+			) {
+				this.logEvent('warn', 'uninstall:skip_missing', { targets, message })
+				return
+			}
+			throw error
+		}
+	}
+
+	private async installPeerDependencies(
+		specs: NormalizedPackageSpecifier[],
+		options: ResolvedInstallOptions,
+	): Promise<void> {
+		if (options.dry) return
+		const cwd = options.cwd ?? process.cwd()
+		const existingPkg = await this.readPackageJsonSafe(cwd)
+		const peerDeps: string[] = []
+		const peerDevDeps: string[] = []
+
+		for (const spec of specs) {
+			const pkg = await this.readPackageJsonSafe(spec.name, cwd)
+			if (!pkg?.peerDependencies || pkg.name !== spec.name) continue
+			for (const [peer, version] of Object.entries<string>(pkg.peerDependencies ?? {})) {
+				if (pkg.peerDependenciesMeta?.[peer]?.optional) continue
+				if (existingPkg.dependencies?.[peer] || existingPkg.devDependencies?.[peer]) continue
+				const entry = `${peer}@${version}`
+				if (pkg.peerDependenciesMeta?.[peer]?.dev) peerDevDeps.push(entry)
+				else peerDeps.push(entry)
+			}
+		}
+
+		const unique = (list: string[]) => Array.from(new Set(list))
+		const installPeerGroup = async (list: string[], dev: boolean) => {
+			if (!list.length) return
+			const specsToInstall = unique(list).map((raw) => this.normalizeSpecifier(raw))
+			const installed = await this.installTargetsWithLogs(specsToInstall, {
+				...options,
+				dev,
+				installPeerDependencies: false,
+			})
+			installed.forEach((r) => this.onPackageInstalled(r))
+		}
+
+		if (peerDeps.length) {
+			await installPeerGroup(peerDeps, false)
+		}
+		if (peerDevDeps.length) {
+			await installPeerGroup(peerDevDeps, true)
+		}
+	}
+
+	private async readPackageJsonSafe(pathOrName: string, cwd?: string): Promise<any> {
+		try {
+			return await readPackageJSON(pathOrName, cwd ? { url: cwd } : undefined)
+		} catch {
+			return {}
+		}
 	}
 
 	private onPackageInstalled(result: PackageInstallResult) {
@@ -828,6 +1021,7 @@ export class PackageService {
 			issue.moduleId = moduleId
 		}
 		this.loadFailures.set(spec.name, issue)
+		this.schedulePersistSnapshot()
 		this.logEvent('warn', 'load:issue_recorded', {
 			name: spec.name,
 			source,
@@ -837,7 +1031,9 @@ export class PackageService {
 	}
 
 	private clearLoadIssue(name: string) {
-		this.loadFailures.delete(name)
+		if (this.loadFailures.delete(name)) {
+			this.schedulePersistSnapshot()
+		}
 	}
 
 	private logEvent(
@@ -859,26 +1055,188 @@ export class PackageService {
 		}
 	}
 
-	private logPackageManagerExec(
-		level: 'info' | 'warn' | 'error',
-		event: string,
+	private async loadWithIntent(
 		spec: NormalizedPackageSpecifier,
-		result: PackageInstallResult,
-		options: ResolvedInstallOptions,
-		exec?: OperationResult | null,
+		options: LoadOptions,
+		intent: LoadIntentConfig,
+		installResult?: PackageInstallResult,
+	): Promise<PackageLoadResult> {
+		const key = spec.key
+		return this.runExclusive(this.loadLocks, key, async () => {
+			this.logEvent('info', 'load:start', {
+				name: spec.name,
+				autoInstall: intent.autoInstall,
+				fresh: intent.fresh,
+				source: intent.source,
+			})
+			try {
+				const result = await this.executeLoad(spec, options, intent, installResult)
+				this.clearLoadIssue(spec.name)
+				this.logEvent('info', 'load:success', {
+					name: spec.name,
+					moduleId: result.moduleId,
+					autoInstalled: Boolean(result.install),
+					source: intent.source,
+				})
+				return result
+			} catch (error) {
+				if (!intent.autoInstall || !shouldRetryInstall(error)) {
+					this.recordLoadIssue(spec, error, intent.source)
+					throw error
+				}
+				const installOptions = this.resolveInstallOptions(options.install)
+				const nextInstallResult = await this.performInstall(spec, installOptions)
+				try {
+					const result = await this.executeLoad(spec, options, intent, nextInstallResult)
+					this.clearLoadIssue(spec.name)
+					this.logEvent('info', 'load:success_after_install', {
+						name: spec.name,
+						moduleId: result.moduleId,
+					})
+					return result
+				} catch (retryError) {
+					this.recordLoadIssue(spec, retryError, intent.source)
+					throw retryError
+				}
+			}
+		})
+	}
+
+	private async executeLoad(
+		spec: NormalizedPackageSpecifier,
+		options: LoadOptions,
+		intent: LoadIntentConfig,
+		installResult?: PackageInstallResult,
+	): Promise<PackageLoadResult> {
+		const resolution = options.resolvedEntry ?? (await this.resolveEntryForSpec(spec, options.scan))
+		const moduleId = normalizePath(resolution.entry)
+		const manifestMeta = await this.readManifestMeta(resolution.dir)
+		this.ensurePackageModuleBinding(spec.name, moduleId)
+
+		const shouldImportFresh = intent.fresh ?? this.defaults.preferFreshImport
+		const cached = shouldImportFresh ? undefined : this.moduleCache.get(moduleId)
+		const module = cached?.module ?? (await this.importModule(moduleId, shouldImportFresh))
+		if (!cached || shouldImportFresh) {
+			this.moduleCache.set(moduleId, { moduleId, module })
+		}
+		this.primeHmrModuleCache(spec, moduleId, module)
+
+		const isAnchor = this.ctx.loader.replaceModule(moduleId, module)
+
+		const result: PackageLoadResult = {
+			spec,
+			resolution,
+			module,
+			moduleId,
+			isAnchor,
+			loadedAt: Date.now(),
+			dependOn: manifestMeta.dependOn,
+			manifestPath: manifestMeta.manifestPath,
+			manifestVersion: manifestMeta.manifestVersion,
+			resolvedVersion: manifestMeta.resolvedVersion ?? manifestMeta.manifestVersion,
+		}
+		if (installResult) {
+			result.install = installResult
+		}
+		this.registerRecord(result)
+		return result
+	}
+
+	private registerRecord(record: PackageLoadResult) {
+		const previous = this.loadedPackages.get(record.spec.name)
+		if (previous) {
+			this.untrackDependencies(previous)
+		}
+		this.trackDependencies(record)
+		this.loadedPackages.set(record.spec.name, record)
+		this.schedulePersistSnapshot()
+	}
+
+	private trackDependencies(record: PackageMetadata) {
+		for (const dep of record.dependOn ?? []) {
+			const trimmed = dep.trim()
+			if (!trimmed) continue
+			const set = this.dependencyIndex.get(trimmed) ?? new Set<string>()
+			set.add(record.spec.name)
+			this.dependencyIndex.set(trimmed, set)
+		}
+	}
+
+	private untrackDependencies(record: PackageMetadata) {
+		for (const dep of record.dependOn ?? []) {
+			const trimmed = dep.trim()
+			if (!trimmed) continue
+			const set = this.dependencyIndex.get(trimmed)
+			if (!set) continue
+			set.delete(record.spec.name)
+			if (!set.size) this.dependencyIndex.delete(trimmed)
+		}
+	}
+
+	private removeDependentsOf(name: string) {
+		for (const [dep, set] of this.dependencyIndex.entries()) {
+			set.delete(name)
+			if (!set.size) {
+				this.dependencyIndex.delete(dep)
+			}
+		}
+	}
+
+	private async readManifestMeta(dir: string): Promise<PackageManifestMeta> {
+		const manifestPath = resolvePath(dir, 'package.json')
+		try {
+			const raw = await readFile(manifestPath, 'utf-8')
+			const json = JSON.parse(raw) as any
+			const version = typeof json?.version === 'string' ? json.version : undefined
+			const dependOn = parseDependOn(json?.pluxel?.dependOn)
+			return {
+				manifestPath,
+				manifestVersion: version,
+				resolvedVersion: version,
+				dependOn,
+			}
+		} catch (error) {
+			this.logEvent('warn', 'manifest:unreadable', { manifestPath, error })
+			return { manifestPath, dependOn: [] }
+		}
+	}
+
+	/** 将外部包的执行结果灌入 HMR 的 moduleCache，避免重复实例化。 */
+	private primeHmrModuleCache(
+		spec: NormalizedPackageSpecifier,
+		moduleId: string,
+		module: Record<string, unknown>,
 	) {
-		const payload: Record<string, unknown> = {
-			target: spec.target,
-			status: result.status,
-			force: options.force,
-			workspace: options.workspace,
+		const hmr = this.ctx.hmrService
+		const normalized = normalizePath(moduleId)
+		const ids = this.collectHmrModuleCacheIds(normalized, spec)
+		const aliases = [...ids].filter((id) => id !== normalized)
+		hmr.primeModuleCacheEntry({ id: normalized, exports: module, aliases })
+	}
+
+	/** 清理对应包的 HMR moduleCache 映射（主 ID + 各别名）。 */
+	private dropHmrModuleCacheForRecord(record: PackageLoadResult) {
+		const hmr = this.ctx.hmrService
+		const ids = this.collectHmrModuleCacheIds(record.moduleId, record.spec)
+		hmr.dropModuleCacheEntries(ids)
+	}
+
+	/** 汇总同一模块在 vite-node 中可能出现的 key 形态。 */
+	private collectHmrModuleCacheIds(
+		moduleId: string,
+		spec: NormalizedPackageSpecifier,
+	): Set<string> {
+		const normalized = normalizePath(moduleId)
+		const ids = new Set<string>([normalized])
+		ids.add(spec.name)
+		ids.add(spec.target)
+		ids.add(spec.raw)
+		try {
+			ids.add(pathToFileURL(moduleId).href)
+		} catch {
+			// ignore invalid URL conversion
 		}
-		if (exec?.exec) {
-			payload.command = exec.exec.command
-			payload.args = exec.exec.args
-			payload.commandLine = `${exec.exec.command} ${exec.exec.args.join(' ')}`
-		}
-		this.logEvent(level, event, payload)
+		return ids
 	}
 }
 
@@ -943,4 +1301,53 @@ function normalizeRoots(roots: string[]): string[] {
 		seen.add(normalized)
 		return true
 	})
+}
+
+function parseDependOn(value: unknown): string[] {
+	if (!value) return []
+	const collect = Array.isArray(value) ? value : [value]
+	const normalized: string[] = []
+	for (const item of collect) {
+		if (typeof item !== 'string') continue
+		const trimmed = item.trim()
+		if (!trimmed) continue
+		if (!normalized.includes(trimmed)) normalized.push(trimmed)
+	}
+	return normalized
+}
+
+function normalizeStatePayload(
+	payload: PackageStatePayload | LegacyPackageStatePayload | null,
+): PackageStatePayload | null {
+	if (!payload) return null
+	if ('schema' in payload && payload.schema === CURRENT_STATE_SCHEMA) {
+		return payload as PackageStatePayload
+	}
+	// 兼容旧格式：没有 issues / dependOn 等字段
+	const legacy = payload as LegacyPackageStatePayload
+	const packages: PersistedPackageEntry[] =
+		legacy.packages?.map((item) => {
+			const base: PersistedPackageEntry = {
+				spec: item.spec as PackageSpecifierSnapshot,
+				resolution: item.resolution,
+				moduleId: item.moduleId,
+				isAnchor: item.isAnchor,
+				loadedAt: item.loadedAt,
+				manifestPath: undefined,
+				manifestVersion: undefined,
+				resolvedVersion: undefined,
+				dependOn: [],
+			}
+			if (item.installStatus) {
+				base.install = { status: item.installStatus, at: item.loadedAt }
+			}
+			return base
+		}) ?? []
+
+	return {
+		schema: CURRENT_STATE_SCHEMA,
+		generatedAt: legacy.generatedAt,
+		packages,
+		issues: [],
+	}
 }

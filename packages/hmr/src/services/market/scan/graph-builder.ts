@@ -1,7 +1,7 @@
 import os from 'node:os'
 import { isAbsolute, normalize, resolve as r } from 'pathe'
-import { getAllTsFiles } from './fs'
 import type { EntryResolver } from './entry-resolver'
+import { getAllTsFiles } from './fs'
 import { createLimiter } from './limit'
 import { manifestPathFor, safeReadManifest } from './package'
 import type {
@@ -35,6 +35,16 @@ export async function buildScanGraph(
 	const fallbackSet = new Set<string>()
 	const diagnostics: ScanDiagnostic[] = []
 
+	const ctx: BuildContext = {
+		entryResolver,
+		options,
+		entriesSet,
+		fallbackSet,
+		focusSet,
+		matchedFocus,
+		diagnostics,
+	}
+
 	let monoRoots = 0
 	let packageCount = 0
 
@@ -43,6 +53,22 @@ export async function buildScanGraph(
 		if (workspace.isMonorepo) {
 			monoRoots++
 			const packageDirs = new Set(workspace.packageDirs)
+			const normalizedInput = normalize(dir)
+			let covered = false
+			for (const pkgDir of packageDirs) {
+				const normalizedPkg = normalize(pkgDir)
+				if (
+					normalizedInput === normalizedPkg ||
+					normalizedInput.startsWith(`${normalizedPkg}/`) ||
+					normalizedInput.startsWith(`${normalizedPkg}\\`)
+				) {
+					covered = true
+					break
+				}
+			}
+			if (!covered) {
+				packageDirs.add(normalizedInput)
+			}
 			if (options.includeRoot) {
 				packageDirs.add(workspace.root)
 			}
@@ -51,42 +77,18 @@ export async function buildScanGraph(
 			await Promise.all(
 				Array.from(packageDirs).map((pkgDir) =>
 					limit(async () => {
-						const manifest =
-							pkgDir === workspace.root ? workspace.manifest : await safeReadManifest(pkgDir)
-						const manifestPath = manifestPathFor(pkgDir)
-						const name = manifest?.name
-						const normalizedDir = normalize(pkgDir)
-						if (
-							name &&
-							focusSet &&
-							focusSet.size &&
-							!focusSet.has(name.toLowerCase()) &&
-							!focusSet.has(normalizedDir.toLowerCase())
-						) {
-							return
+						const node = await processPackageDir({
+							pkgDir,
+							workspaceRoot: workspace.root,
+							workspaceManifest: workspace.manifest,
+							isExplicitInput: normalizedInput === normalize(pkgDir),
+							ctx,
+						})
+						if (node) {
+							rootPackages.push(node)
+							packages.push(node)
+							packageCount++
 						}
-						if (
-							!name &&
-							options.skipUnnamed &&
-							(!focusSet || !focusSet.has(normalizedDir.toLowerCase()))
-						) {
-							return
-						}
-
-						const entry = await entryResolver.resolve(pkgDir, options, manifest)
-						const node: PackageNode = {
-							dir: normalizedDir,
-							name: name ?? `@unknown/${relativeName(workspace.root, pkgDir)}`,
-							entry,
-						}
-						if (manifestPath) node.manifestPath = manifestPath
-						if (manifest) node.manifest = manifest
-
-						rootPackages.push(node)
-						packages.push(node)
-						if (focusSet) markFocusMatches(focusSet, matchedFocus, node)
-						packageCount++
-						if (entry.ok) entriesSet.add(entry.entry)
 					}),
 				),
 			)
@@ -98,56 +100,31 @@ export async function buildScanGraph(
 				packages: rootPackages.sort(byPackageDir),
 			})
 		} else {
-			const manifest = workspace.manifest ?? (await safeReadManifest(dir))
-			const entry = await entryResolver.resolve(dir, options, manifest)
-			const manifestPath = manifestPathFor(dir)
-			const normalizedDir = normalize(dir)
-			const node: PackageNode = {
-				dir: normalizedDir,
-				entry,
+			const node = await processPackageDir({
+				pkgDir: dir,
+				workspaceRoot: dir,
+				workspaceManifest: workspace.manifest,
+				isExplicitInput: true,
+				ctx,
+			})
+			if (node) {
+				packages.push(node)
+				packageCount++
 			}
-			const manifestName = manifest?.name
-			if (manifestName) node.name = manifestName
-			if (manifestPath) node.manifestPath = manifestPath
-			if (manifest) node.manifest = manifest
-
-			if (focusSet) markFocusMatches(focusSet, matchedFocus, node)
-
-			if (entry.ok) {
-				entriesSet.add(entry.entry)
-			} else if (options.fallbackTsOnSingle) {
-				const files = await getAllTsFiles([dir], {
-					includeDts: false,
-					followSymlinks: true,
-					concurrency: Math.min((os.cpus()?.length ?? 4) * 2, 64),
-				})
-				if (files.length === 0) {
-					diagnostics.push({
-						severity: 'error',
-						code: 'NO_TS_FILES',
-						detail: 'No .ts files found in directory after entry resolution failed.',
-						context: { dir: normalizedDir },
-					})
-				} else {
-					node.fallbackFiles = files.map(normalize)
-					for (const file of node.fallbackFiles) fallbackSet.add(file)
-				}
-			} else if (!entry.ok) {
-				diagnostics.push({
-					severity: 'error',
-					code: 'UNREADABLE_DIR',
-					detail: entry.message,
-					context: { dir: normalizedDir },
-				})
-			}
-
-			packages.push(node)
-			packageCount++
 
 			roots.push({
 				kind: 'single',
-				dir: normalizedDir,
-				package: node,
+				dir: normalize(dir),
+				package: node ?? {
+					dir: normalize(dir),
+					entry: {
+						ok: false,
+						dir,
+						code: 'NO_ENTRY',
+						message: 'Entry not resolved.',
+						tried: [],
+					},
+				},
 			})
 		}
 	}
@@ -182,6 +159,108 @@ export async function buildScanGraph(
 		fallbackEntries: Array.from(fallbackSet).map(normalize),
 		diagnostics,
 		stats,
+	}
+}
+
+async function processPackageDir(params: {
+	pkgDir: string
+	workspaceRoot: string
+	workspaceManifest?: any
+	isExplicitInput: boolean
+	ctx: BuildContext
+}): Promise<PackageNode | null> {
+	const { pkgDir, workspaceRoot, workspaceManifest, isExplicitInput, ctx } = params
+	const manifest =
+		pkgDir === workspaceRoot ? workspaceManifest ?? (await safeReadManifest(pkgDir)) : await safeReadManifest(pkgDir)
+	const manifestPath = manifestPathFor(pkgDir)
+	const name = manifest?.name
+	const normalizedDir = normalize(pkgDir)
+	const focusSet = ctx.focusSet
+
+	if (
+		name &&
+		focusSet &&
+		focusSet.size &&
+		!focusSet.has(name.toLowerCase()) &&
+		!focusSet.has(normalizedDir.toLowerCase())
+	) {
+		return null
+	}
+	if (
+		!name &&
+		ctx.options.skipUnnamed &&
+		!isExplicitInput &&
+		(!focusSet || !focusSet.has(normalizedDir.toLowerCase()))
+	) {
+		return null
+	}
+
+	let entry: EntryResolution | null = null
+
+	// 如果没有 manifest，直接走 TS fallback
+	if (!manifest) {
+		entry = await resolveTsFallback(pkgDir, ctx)
+	} else {
+		entry = await ctx.entryResolver.resolve(pkgDir, ctx.options, manifest)
+	}
+
+	const node: PackageNode = {
+		dir: normalizedDir,
+		name: name ?? `@unknown/${relativeName(workspaceRoot, pkgDir)}`,
+		entry,
+	}
+	if (manifestPath) node.manifestPath = manifestPath
+	if (manifest) node.manifest = manifest
+
+	if (focusSet) markFocusMatches(focusSet, ctx.matchedFocus, node)
+
+	if (entry?.ok) {
+		ctx.entriesSet.add(entry.entry)
+		return node
+	}
+
+	if (ctx.options.fallbackTsOnSingle) {
+		const fallbackEntry = await resolveTsFallback(pkgDir, ctx)
+		if (fallbackEntry.ok) {
+			node.entry = fallbackEntry
+			ctx.entriesSet.add(fallbackEntry.entry)
+			return node
+		}
+	}
+
+	ctx.diagnostics.push({
+		severity: 'error',
+		code: 'UNREADABLE_DIR',
+		detail: entry?.message ?? 'Entry not resolved.',
+		context: { dir: normalizedDir },
+	})
+	return node
+}
+
+async function resolveTsFallback(pkgDir: string, ctx: BuildContext): Promise<EntryResolution> {
+	const normalizedDir = normalize(pkgDir)
+	const files = await getAllTsFiles([pkgDir], {
+		includeDts: false,
+		followSymlinks: true,
+		concurrency: Math.min((os.cpus()?.length ?? 4) * 2, 64),
+	})
+	if (files.length === 0) {
+		return {
+			ok: false,
+			dir: normalizedDir,
+			code: 'NO_TS_FILES',
+			message: 'No .ts files found in directory.',
+			tried: [],
+		}
+	}
+	const entry = normalize(files[0])
+	ctx.fallbackSet.add(entry)
+	return {
+		ok: true,
+		dir: normalizedDir,
+		entry,
+		source: 'fallback',
+		tried: [],
 	}
 }
 

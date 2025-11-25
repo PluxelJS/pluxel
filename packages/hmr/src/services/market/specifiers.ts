@@ -15,6 +15,17 @@ export interface NormalizedPackageSpecifier {
 	key: string
 }
 
+/**
+ * Minimal snapshot shape persisted to disk; avoids redundant fields so future
+ * versions can reconstruct the normalized form as needed.
+ */
+export interface PackageSpecifierSnapshot {
+	name: string
+	version?: string | undefined
+	tag?: string | undefined
+	requested: string
+}
+
 type PartialNormalized = Omit<NormalizedPackageSpecifier, 'target' | 'key'>
 
 export function normalizeSpecifier(input: PackageSpecifierInput): NormalizedPackageSpecifier {
@@ -32,6 +43,21 @@ export function tryNormalizeSpecifier(
 	const normalized =
 		typeof input === 'string' ? parseStringSpecifier(input) : parseObjectSpecifier(input)
 	return normalized ? withDerivedFields(normalized) : undefined
+}
+
+export function toSnapshot(spec: NormalizedPackageSpecifier): PackageSpecifierSnapshot {
+	return {
+		name: spec.name,
+		version: spec.version,
+		tag: spec.tag,
+		requested: spec.raw,
+	}
+}
+
+export function fromSnapshot(snapshot: PackageSpecifierSnapshot): NormalizedPackageSpecifier {
+	const { name, version, tag } = snapshot
+	const hint = version ? `${name}@${version}` : tag ? `${name}@${tag}` : snapshot.requested || name
+	return normalizeSpecifier(hint)
 }
 
 export function withVersion(
