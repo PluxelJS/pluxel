@@ -224,6 +224,18 @@ export const generatedSchema = {
         spec: "InstallPackageSpecInput!",
       },
     },
+    reinstallPackages: {
+      __type: "PackageBatchMutationResult!",
+      __args: {
+        force: "Boolean",
+        scope: "UninstallPackageScopeInput",
+        specs: "[InstallPackageSpecInput!]!",
+      },
+    },
+    reloadPackages: {
+      __type: "PackageBatchMutationResult!",
+      __args: { fresh: "Boolean", specs: "[InstallPackageSpecInput!]!" },
+    },
     retryFailedPackages: {
       __type: "PackageBatchMutationResult!",
       __args: { fresh: "Boolean", reinstall: "Boolean" },
@@ -241,6 +253,13 @@ export const generatedSchema = {
       __args: {
         scope: "UninstallPackageScopeInput",
         spec: "InstallPackageSpecInput!",
+      },
+    },
+    uninstallPackages: {
+      __type: "PackageBatchMutationResult!",
+      __args: {
+        scope: "UninstallPackageScopeInput",
+        specs: "[InstallPackageSpecInput!]!",
       },
     },
     updatePluginGroups: {
@@ -395,6 +414,15 @@ export interface Mutation {
     scope?: Maybe<UninstallPackageScopeInput>;
     spec: InstallPackageSpecInput;
   }) => PackageMutationResult;
+  reinstallPackages: (args: {
+    force?: Maybe<Scalars["Boolean"]["input"]>;
+    scope?: Maybe<UninstallPackageScopeInput>;
+    specs: Array<InstallPackageSpecInput>;
+  }) => PackageBatchMutationResult;
+  reloadPackages: (args: {
+    fresh?: Maybe<Scalars["Boolean"]["input"]>;
+    specs: Array<InstallPackageSpecInput>;
+  }) => PackageBatchMutationResult;
   retryFailedPackages: (args?: {
     fresh?: Maybe<Scalars["Boolean"]["input"]>;
     reinstall?: Maybe<Scalars["Boolean"]["input"]>;
@@ -408,6 +436,10 @@ export interface Mutation {
     scope?: Maybe<UninstallPackageScopeInput>;
     spec: InstallPackageSpecInput;
   }) => PackageMutationResult;
+  uninstallPackages: (args: {
+    scope?: Maybe<UninstallPackageScopeInput>;
+    specs: Array<InstallPackageSpecInput>;
+  }) => PackageBatchMutationResult;
   updatePluginGroups: (args: {
     groups: Array<UpdatePluginGroupsGroupsInput>;
   }) => Array<PluginGroup>;

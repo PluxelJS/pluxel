@@ -6,6 +6,7 @@ import type {
 	InstallOptions,
 	PackageInstallStatus,
 	PackageLoadIssue as ServiceIssue,
+	PackageReloadResult,
 } from '../../../services/market/PackageService'
 import type {
 	NormalizedPackageSpecifier,
@@ -24,6 +25,7 @@ type SpecInputValue = InferInput<typeof PackageSpecifierInputSchema>
 type MutationResult = InferOutput<typeof PackageMutationResult>
 type BatchMutationResult = InferOutput<typeof PackageBatchMutationResult>
 type RemovalScopeInput = InferInput<typeof PackageRemovalScope>
+type BatchResultBuilder = (mutations: MutationResult[], error?: unknown) => BatchMutationResult
 
 export function listLoadIssues(pCtx: PlxContext): IssueOutput[] {
 	return pCtx.packageService.listLoadIssues().map(serializeIssue)
@@ -107,12 +109,7 @@ export async function installPackages(
 			error: null,
 		}
 	} catch (error) {
-		return {
-			__typename: 'PackageBatchMutationResult',
-			ok: false,
-			results: [],
-			error: formatUnknownError(error),
-		}
+		return buildBatchResult([], error)
 	}
 }
 
@@ -123,12 +120,14 @@ export async function uninstallPackage(
 ): Promise<MutationResult> {
 	try {
 		const serviceInput = toServiceSpecifierInput(specInput)
-		const normalized = pCtx.packageService.normalizeSpecifier(serviceInput)
-		await pCtx.packageService.uninstall(normalized, scope)
+		const [result] = await pCtx.packageService.uninstallMany([serviceInput], scope)
+		if (!result || result.status === 'failed') {
+			throw result?.error ?? new Error('卸载失败')
+		}
 		return buildMutationResult({
 			ok: true,
-			code: 'uninstalled',
-			spec: normalized,
+			code: scope === 'runtime' ? 'uninstalled_runtime' : 'uninstalled',
+			spec: result.spec,
 		})
 	} catch (error) {
 		return buildMutationResult({
@@ -146,16 +145,18 @@ export async function reinstallPackage(
 ): Promise<MutationResult> {
 	try {
 		const serviceInput = toServiceSpecifierInput(specInput)
-		const normalized = pCtx.packageService.normalizeSpecifier(serviceInput)
-		pCtx.packageService.invalidatePackage(normalized.name, options.scope)
-		const force = options.force ?? true
-		const installResult = await pCtx.packageService.install(serviceInput, { force })
-		await pCtx.packageService.reload(serviceInput)
+		const [result] = await pCtx.packageService.reinstallMany([serviceInput], {
+			scope: options.scope,
+			install: { force: options.force ?? true },
+		})
+		if (!result || result.error || !result.record) {
+			throw result?.error ?? new Error('重装失败')
+		}
 		return buildMutationResult({
 			ok: true,
 			code: 'reinstalled',
-			spec: installResult.spec,
-			installStatus: installResult.status,
+			spec: result.record.spec,
+			installStatus: result.record.install?.status,
 		})
 	} catch (error) {
 		return buildMutationResult({
@@ -216,12 +217,75 @@ export async function retryFailedPackages(
 			error: null,
 		}
 	} catch (error) {
-		return {
-			__typename: 'PackageBatchMutationResult',
-			ok: false,
-			results: [],
-			error: formatUnknownError(error),
-		}
+		return buildBatchResult([], error)
+	}
+}
+
+export async function uninstallPackages(
+	pCtx: PlxContext,
+	specInputs: SpecInputValue[],
+	scope: RemovalScope,
+): Promise<BatchMutationResult> {
+	if (!specInputs?.length) {
+		return buildBatchResult([], '卸载列表不能为空')
+	}
+	try {
+		const serviceInputs = specInputs.map(toServiceSpecifierInput)
+		const results = await pCtx.packageService.uninstallMany(serviceInputs, scope)
+		const mutations = results.map((entry) =>
+			buildMutationResult({
+				ok: entry.status !== 'failed',
+				code: entry.scope === 'runtime' ? 'uninstalled_runtime' : 'uninstalled',
+				spec: entry.spec,
+				error: entry.error,
+			}),
+		)
+		return buildBatchResult(mutations)
+	} catch (error) {
+		return buildBatchResult([], error)
+	}
+}
+
+export async function reinstallPackages(
+	pCtx: PlxContext,
+	specInputs: SpecInputValue[],
+	options: { force: boolean | undefined; scope: RemovalScope },
+): Promise<BatchMutationResult> {
+	if (!specInputs?.length) {
+		return buildBatchResult([], '重装列表不能为空')
+	}
+	try {
+		const serviceInputs = specInputs.map(toServiceSpecifierInput)
+		const results = await pCtx.packageService.reinstallMany(serviceInputs, {
+			scope: options.scope,
+			install: { force: options.force ?? true },
+		})
+		const mutations = serializeReloadResults(
+			results,
+			options.scope === 'runtime' ? 'reloaded' : 'reinstalled',
+			options.scope === 'runtime' ? 'reload_failed' : 'reinstall_failed',
+		)
+		return buildBatchResult(mutations)
+	} catch (error) {
+		return buildBatchResult([], error)
+	}
+}
+
+export async function reloadPackages(
+	pCtx: PlxContext,
+	specInputs: SpecInputValue[],
+	options: { fresh?: boolean },
+): Promise<BatchMutationResult> {
+	if (!specInputs?.length) {
+		return buildBatchResult([], '重载列表不能为空')
+	}
+	try {
+		const serviceInputs = specInputs.map(toServiceSpecifierInput)
+		const results = await pCtx.packageService.reloadMany(serviceInputs, {}, { fresh: options.fresh ?? true })
+		const mutations = serializeReloadResults(results, 'reloaded', 'reload_failed')
+		return buildBatchResult(mutations)
+	} catch (error) {
+		return buildBatchResult([], error)
 	}
 }
 
@@ -291,6 +355,35 @@ function buildMutationResult(config: MutationResultConfig): MutationResult {
 		installStatus: config.installStatus ?? null,
 		error: formatUnknownError(config.error),
 	}
+}
+
+const buildBatchResult: BatchResultBuilder = (mutations, error) => ({
+	__typename: 'PackageBatchMutationResult',
+	ok: mutations.every((item) => item.ok),
+	results: mutations,
+	error: formatUnknownError(error),
+})
+
+function serializeReloadResults(
+	results: PackageReloadResult[],
+	successCode: string,
+	failureCode: string,
+): MutationResult[] {
+	return results.map((entry) =>
+		entry.record
+			? buildMutationResult({
+					ok: true,
+					code: successCode,
+					spec: entry.record.spec,
+					installStatus: entry.record.install?.status,
+				})
+			: buildMutationResult({
+					ok: false,
+					code: failureCode,
+					spec: entry.spec,
+					error: entry.error,
+				}),
+	)
 }
 
 function formatUnknownError(error: unknown): string | null {

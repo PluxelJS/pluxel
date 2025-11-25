@@ -14,10 +14,13 @@ import {
 	installPackages,
 	listLoadIssues,
 	reinstallPackage,
+	reinstallPackages,
 	retryFailedPackages,
 	retryPackage,
 	resolveRemovalScope,
 	uninstallPackage,
+	uninstallPackages,
+	reloadPackages,
 } from './service'
 
 export function createMarketResolver(pCtx: PlxContext) {
@@ -41,6 +44,14 @@ export function createMarketResolver(pCtx: PlxContext) {
 				scope: v.nullish(PackageRemovalScope),
 			})
 			.resolve(({ spec, scope }) => uninstallPackage(pCtx, spec, resolveRemovalScope(scope))),
+		uninstallPackages: mutation(PackageBatchMutationResult)
+			.input({
+				specs: v.array(PackageSpecifierInputSchema),
+				scope: v.nullish(PackageRemovalScope),
+			})
+			.resolve(({ specs, scope }) =>
+				uninstallPackages(pCtx, specs, resolveRemovalScope(scope)),
+			),
 		reinstallPackage: mutation(PackageMutationResult)
 			.input({
 				spec: PackageSpecifierInputSchema,
@@ -51,6 +62,28 @@ export function createMarketResolver(pCtx: PlxContext) {
 				reinstallPackage(pCtx, spec, {
 					force,
 					scope: resolveRemovalScope(scope),
+				}),
+			),
+		reinstallPackages: mutation(PackageBatchMutationResult)
+			.input({
+				specs: v.array(PackageSpecifierInputSchema),
+				force: v.optional(v.boolean()),
+				scope: v.optional(PackageRemovalScope),
+			})
+			.resolve(({ specs, force, scope }) =>
+				reinstallPackages(pCtx, specs, {
+					force,
+					scope: resolveRemovalScope(scope),
+				}),
+			),
+		reloadPackages: mutation(PackageBatchMutationResult)
+			.input({
+				specs: v.array(PackageSpecifierInputSchema),
+				fresh: v.nullish(v.boolean()),
+			})
+			.resolve(({ specs, fresh }) =>
+				reloadPackages(pCtx, specs, {
+					fresh: fresh ?? true,
 				}),
 			),
 		retryPackage: mutation(PackageMutationResult)

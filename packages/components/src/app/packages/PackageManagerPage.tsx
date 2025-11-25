@@ -31,9 +31,10 @@ import {
 	IconTrash,
 } from '@tabler/icons-react'
 import type { FormEventHandler } from 'react'
-import { useCallback, useDeferredValue, useMemo, useState } from 'react'
+import { useCallback, useDeferredValue, useEffect, useMemo, useState } from 'react'
 import type {
 	InstallPackageSpecInput,
+	PackageBatchMutationResult,
 	PackageLoadIssue,
 	PluginStatusEntry,
 	UninstallPackageScopeInput,
@@ -248,6 +249,61 @@ export function PackageManagerPage() {
 		})
 	}, [rows, deferredPackageSearch])
 
+	const [selectedPackages, setSelectedPackages] = useState<Set<string>>(new Set())
+	const selectedRows = useMemo(
+		() => rows.filter((row) => selectedPackages.has(row.name)),
+		[rows, selectedPackages],
+	)
+	const selectedVisibleCount = useMemo(
+		() => filteredRows.filter((row) => selectedPackages.has(row.name)).length,
+		[filteredRows, selectedPackages],
+	)
+
+	useEffect(() => {
+		setSelectedPackages((prev) => {
+			const rowNames = new Set(rows.map((row) => row.name))
+			let changed = false
+			const next = new Set<string>()
+			for (const name of prev) {
+				if (rowNames.has(name)) {
+					next.add(name)
+				} else {
+					changed = true
+				}
+			}
+			if (!changed && next.size === prev.size) {
+				return prev
+			}
+			return next
+		})
+	}, [rows])
+
+	const setRowSelected = useCallback((name: string, checked: boolean) => {
+		setSelectedPackages((prev) => {
+			const next = new Set(prev)
+			if (checked) next.add(name)
+			else next.delete(name)
+			return next
+		})
+	}, [])
+
+	const toggleSelectAllVisible = useCallback(
+		(checked: boolean) => {
+			setSelectedPackages((prev) => {
+				const next = new Set(prev)
+				if (checked) {
+					filteredRows.forEach((row) => next.add(row.name))
+				} else {
+					filteredRows.forEach((row) => next.delete(row.name))
+				}
+				return next
+			})
+		},
+		[filteredRows],
+	)
+
+	const clearSelection = useCallback(() => setSelectedPackages(new Set()), [])
+
 	const [installPackageMutation, installState] = useGqtyMutation(
 		(mutation, variables: { spec: InstallPackageSpecInput; force?: boolean }) => {
 			const result = mutation.installPackage({
@@ -295,13 +351,122 @@ export function PackageManagerPage() {
 		{ suspense: false },
 	)
 
+	const [reloadPackagesMutation, reloadBatchState] = useGqtyMutation(
+		(mutation, variables: { specs: InstallPackageSpecInput[]; fresh?: boolean | null }) => {
+			const result = mutation.reloadPackages({
+				specs: variables.specs,
+				fresh: variables.fresh ?? null,
+			})
+			result.ok
+			result.error
+			result.results.forEach((entry) => {
+				entry.ok
+				entry.code
+				entry.error
+				entry.spec?.name
+			})
+			return result
+		},
+		{ suspense: false },
+	)
+
+	const [reinstallPackagesMutation, reinstallBatchState] = useGqtyMutation(
+		(mutation, variables: { specs: InstallPackageSpecInput[]; scope: UninstallPackageScopeInput }) => {
+			const result = mutation.reinstallPackages({
+				specs: variables.specs,
+				force: true,
+				scope: variables.scope,
+			})
+			result.ok
+			result.error
+			result.results.forEach((entry) => {
+				entry.ok
+				entry.code
+				entry.error
+				entry.installStatus
+				entry.spec?.name
+			})
+			return result
+		},
+		{ suspense: false },
+	)
+
+	const [uninstallPackagesMutation, uninstallBatchState] = useGqtyMutation(
+		(mutation, variables: { specs: InstallPackageSpecInput[]; scope: UninstallPackageScopeInput }) => {
+			const result = mutation.uninstallPackages({
+				specs: variables.specs,
+				scope: variables.scope,
+			})
+			result.ok
+			result.error
+			result.results.forEach((entry) => {
+				entry.ok
+				entry.code
+				entry.error
+				entry.spec?.name
+			})
+			return result
+		},
+		{ suspense: false },
+	)
+
 	const refreshing = query.$state.isLoading
-	const busy = installState.isLoading || reinstallState.isLoading || uninstallState.isLoading
+	const busy =
+		installState.isLoading ||
+		reinstallState.isLoading ||
+		uninstallState.isLoading ||
+		reloadBatchState.isLoading ||
+		reinstallBatchState.isLoading ||
+		uninstallBatchState.isLoading
 	const refetchFn = query.$refetch
 
 	const refetch = useCallback(async () => {
 		await refetchFn(true)
 	}, [refetchFn])
+
+	const summarizeBatchResult = useCallback(
+		(
+			result: PackageBatchMutationResult | null | undefined,
+			successTitle: string,
+			fallbackError: string,
+		) => {
+			if (!result) {
+				throw new Error(fallbackError)
+			}
+			const successes = result.results.filter((item) => item?.ok)
+			const failures = result.results.filter((item) => !item?.ok)
+			if (successes.length) {
+				const names = successes.map(
+					(item) => item.spec?.name || item.spec?.raw || item.code || '未知包',
+				)
+				const message =
+					names.length <= 4
+						? names.join('、')
+						: `${names.slice(0, 4).join('、')} 等${names.length}个`
+				notify({
+					title: successTitle,
+					message,
+					color: 'green',
+				})
+			}
+			if (failures.length) {
+				const messages = failures.map((item) => {
+					const label = item.spec?.name || item.spec?.raw || '未知包'
+					return `${label}: ${item.error ?? item.code ?? '未知错误'}`
+				})
+				const message =
+					messages.length <= 3
+						? messages.join('；')
+						: `${messages.slice(0, 3).join('；')} 等${messages.length}个失败`
+				notify({
+					title: '部分操作失败',
+					message,
+					color: 'red',
+				})
+			}
+		},
+		[notify],
+	)
 
 	const handleInstall = async () => {
 		const specs = pendingInstallSpecs
@@ -365,6 +530,113 @@ export function PackageManagerPage() {
 	const submitInstall: FormEventHandler<HTMLFormElement> = (event) => {
 		event.preventDefault()
 		void handleInstall()
+	}
+
+	const ensureHasSelection = useCallback(() => {
+		if (selectedRows.length === 0) {
+			notify({
+				title: '请选择包',
+				message: '请先在列表中勾选至少一个包后再执行批量操作。',
+				color: 'yellow',
+			})
+			return false
+		}
+		return true
+	}, [notify, selectedRows.length])
+
+	const handleBatchReload = async (fresh = true) => {
+		if (!ensureHasSelection()) return
+		try {
+			const result = await reloadPackagesMutation({
+				args: { specs: selectedRows.map(toSpecInput), fresh },
+			})
+			summarizeBatchResult(result, '已重载所选包', '重载失败')
+			if (result?.results?.length) {
+				await refetch()
+			}
+		} catch (error: any) {
+			notify({
+				title: '重载失败',
+				message: error?.message ?? '操作失败，请稍后再试',
+				color: 'red',
+			})
+		}
+	}
+
+	const handleBatchReinstall = async (scope: UninstallPackageScopeInput) => {
+		if (!ensureHasSelection()) return
+		try {
+			const result = await reinstallPackagesMutation({
+				args: { specs: selectedRows.map(toSpecInput), scope },
+			})
+			summarizeBatchResult(
+				result,
+				scope === 'runtime' ? '已重装运行态' : '已重装并刷新持久态',
+				'重装失败',
+			)
+			if (result?.results?.length) {
+				await refetch()
+			}
+		} catch (error: any) {
+			notify({
+				title: '重装失败',
+				message: error?.message ?? '操作失败，请稍后再试',
+				color: 'red',
+			})
+		}
+	}
+
+	const handleBatchUninstall = async (scope: UninstallPackageScopeInput) => {
+		if (!ensureHasSelection()) return
+		try {
+			const result = await uninstallPackagesMutation({
+				args: { specs: selectedRows.map(toSpecInput), scope },
+			})
+			summarizeBatchResult(
+				result,
+				scope === 'runtime' ? '已卸载运行态' : '已彻底卸载',
+				'卸载失败',
+			)
+			if (result?.results?.length) {
+				await refetch()
+			}
+			clearSelection()
+		} catch (error: any) {
+			notify({
+				title: '卸载失败',
+				message: error?.message ?? '操作失败，请稍后再试',
+				color: 'red',
+			})
+		}
+	}
+
+	const confirmBatchUninstall = (scope: UninstallPackageScopeInput) => {
+		if (!ensureHasSelection()) return
+		const title = scope === 'persisted' ? '彻底卸载所选包' : '卸载运行态缓存'
+		const description =
+			scope === 'persisted'
+				? '将从运行态和持久依赖中移除所选包，下次需重新安装。'
+				: '仅移除运行态缓存，持久化依赖仍然保留。'
+		const preview =
+			selectedRows.length <= 5
+				? selectedRows.map((row) => row.name).join('、')
+				: `${selectedRows
+						.slice(0, 5)
+						.map((row) => row.name)
+						.join('、')} 等${selectedRows.length}个`
+		openConfirmModal({
+			title,
+			children: (
+				<Text size="sm">
+					{description}
+					<br />
+					目标：{preview}
+				</Text>
+			),
+			labels: { confirm: '确认', cancel: '取消' },
+			confirmProps: { color: scope === 'persisted' ? 'red' : 'orange' },
+			onConfirm: () => void handleBatchUninstall(scope),
+		})
 	}
 
 	const performReinstall = async (row: PackageRow, scope: UninstallPackageScopeInput) => {
@@ -475,114 +747,197 @@ export function PackageManagerPage() {
 			)
 		}
 
+		const allVisibleSelected =
+			filteredRows.length > 0 && selectedVisibleCount === filteredRows.length
+		const isIndeterminate =
+			selectedVisibleCount > 0 && selectedVisibleCount < filteredRows.length
+
 		return (
-			<ScrollArea style={{ height: '100%' }}>
-				<Table striped highlightOnHover miw={600}>
-					<Table.Thead>
-						<Table.Tr>
-							<Table.Th>包</Table.Th>
-							<Table.Th>版本</Table.Th>
-							<Table.Th>引用插件</Table.Th>
-							<Table.Th>状态</Table.Th>
-							<Table.Th>操作</Table.Th>
-						</Table.Tr>
-					</Table.Thead>
-					<Table.Tbody>
-						{filteredRows.map((row) => (
-							<Table.Tr key={row.name}>
-								<Table.Td>
-									<Flex gap={6} align="center" wrap="wrap">
-										<Text fw={600}>{row.name}</Text>
-										{row.pluginNames.length > 0 ? (
-											row.pluginNames.map((plugin) => (
-												<Badge
-													key={plugin}
-													variant="light"
-													color="blue"
-													component={RouterLinkAdapter}
-													to={`/plugins/${encodeURIComponent(plugin)}`}
-													style={{ cursor: 'pointer' }}
-												>
-													{plugin}
-												</Badge>
-											))
-										) : (
-											<Text size="xs" c="dimmed">
-												暂无关联插件
-											</Text>
-										)}
-									</Flex>
-								</Table.Td>
-								<Table.Td>
-									<Badge variant="light" color="blue">
-										{formatSpec(row)}
-									</Badge>
-								</Table.Td>
-								<Table.Td>
-									<Text size="sm">
-										{row.runningCount}/{row.pluginCount} 运行中
-									</Text>
-								</Table.Td>
-								<Table.Td>
-									{row.issues.length ? (
-										<Badge color="red" variant="filled">
-											{row.issues.length} 个告警
-										</Badge>
-									) : (
-										<Badge color="green" variant="light">
-											正常
-										</Badge>
-									)}
-								</Table.Td>
-								<Table.Td>
-									<Group justify="flex-end" gap="xs">
-										<Button
-											variant="light"
-											size="xs"
-											leftSection={<IconRotateClockwise size={14} />}
-											onClick={() => void performReinstall(row, 'runtime')}
-											disabled={busy}
-										>
-											重装
-										</Button>
-										<Menu withinPortal position="bottom-end">
-											<Menu.Target>
-												<ActionIcon variant="subtle" color="gray" disabled={busy}>
-													<IconDotsVertical size={16} />
-												</ActionIcon>
-											</Menu.Target>
-											<Menu.Dropdown>
-												<Menu.Item
-													leftSection={<IconRefresh size={14} />}
-													onClick={() => void performReinstall(row, 'persisted')}
-													disabled={busy}
-												>
-													重装并刷新持久态
-												</Menu.Item>
-												<Menu.Item
-													leftSection={<IconTrash size={14} />}
-													onClick={() => confirmAndUninstall(row, 'runtime')}
-													disabled={busy}
-												>
-													卸载运行态
-												</Menu.Item>
-												<Menu.Item
-													color="red"
-													leftSection={<IconTrash size={14} />}
-													onClick={() => confirmAndUninstall(row, 'persisted')}
-													disabled={busy}
-												>
-													彻底卸载
-												</Menu.Item>
-											</Menu.Dropdown>
-										</Menu>
-									</Group>
-								</Table.Td>
+			<Stack gap="xs" style={{ height: '100%' }}>
+				{selectedPackages.size ? (
+					<Group justify="space-between" align="center" wrap="wrap">
+						<Group gap="xs" wrap="wrap">
+							<Badge color="blue" variant="light">
+								已选 {selectedPackages.size} 项
+							</Badge>
+							<Button
+								variant="light"
+								size="xs"
+								leftSection={<IconRefresh size={14} />}
+								onClick={() => void handleBatchReload(true)}
+								loading={reloadBatchState.isLoading}
+							>
+								重载
+							</Button>
+							<Button
+								variant="light"
+								size="xs"
+								leftSection={<IconRotateClockwise size={14} />}
+								onClick={() => void handleBatchReinstall('runtime')}
+								loading={reinstallBatchState.isLoading}
+							>
+								重装运行态
+							</Button>
+							<Button
+								variant="filled"
+								size="xs"
+								leftSection={<IconRotateClockwise size={14} />}
+								onClick={() => void handleBatchReinstall('persisted')}
+								loading={reinstallBatchState.isLoading}
+							>
+								重装并刷新持久态
+							</Button>
+							<Button
+								variant="light"
+								size="xs"
+								color="orange"
+								leftSection={<IconTrash size={14} />}
+								onClick={() => confirmBatchUninstall('runtime')}
+								loading={uninstallBatchState.isLoading}
+							>
+								卸载运行态
+							</Button>
+							<Button
+								variant="light"
+								size="xs"
+								color="red"
+								leftSection={<IconTrash size={14} />}
+								onClick={() => confirmBatchUninstall('persisted')}
+								loading={uninstallBatchState.isLoading}
+							>
+								彻底卸载
+							</Button>
+						</Group>
+						<Button variant="subtle" size="xs" onClick={clearSelection}>
+							清空选择
+						</Button>
+					</Group>
+				) : null}
+				<ScrollArea style={{ height: '100%' }}>
+					<Table striped highlightOnHover miw={720}>
+						<Table.Thead>
+							<Table.Tr>
+								<Table.Th w={42}>
+									<Checkbox
+										checked={allVisibleSelected}
+										indeterminate={isIndeterminate}
+										onChange={(event) => toggleSelectAllVisible(event.currentTarget.checked)}
+										aria-label="全选"
+									/>
+								</Table.Th>
+								<Table.Th>包</Table.Th>
+								<Table.Th>版本</Table.Th>
+								<Table.Th>引用插件</Table.Th>
+								<Table.Th>状态</Table.Th>
+								<Table.Th>操作</Table.Th>
 							</Table.Tr>
-						))}
-					</Table.Tbody>
-				</Table>
-			</ScrollArea>
+						</Table.Thead>
+						<Table.Tbody>
+							{filteredRows.map((row) => (
+								<Table.Tr key={row.name}>
+									<Table.Td>
+										<Checkbox
+											checked={selectedPackages.has(row.name)}
+											onChange={(event) =>
+												setRowSelected(row.name, event.currentTarget.checked)
+											}
+											aria-label={`选择 ${row.name}`}
+										/>
+									</Table.Td>
+									<Table.Td>
+										<Flex gap={6} align="center" wrap="wrap">
+											<Text fw={600}>{row.name}</Text>
+											{row.pluginNames.length > 0 ? (
+												row.pluginNames.map((plugin) => (
+													<Badge
+														key={plugin}
+														variant="light"
+														color="blue"
+														component={RouterLinkAdapter}
+														to={`/plugins/${encodeURIComponent(plugin)}`}
+														style={{ cursor: 'pointer' }}
+													>
+														{plugin}
+													</Badge>
+												))
+											) : (
+												<Text size="xs" c="dimmed">
+													暂无关联插件
+												</Text>
+											)}
+										</Flex>
+									</Table.Td>
+									<Table.Td>
+										<Badge variant="light" color="blue">
+											{formatSpec(row)}
+										</Badge>
+									</Table.Td>
+									<Table.Td>
+										<Text size="sm">
+											{row.runningCount}/{row.pluginCount} 运行中
+										</Text>
+									</Table.Td>
+									<Table.Td>
+										{row.issues.length ? (
+											<Badge color="red" variant="filled">
+												{row.issues.length} 个告警
+											</Badge>
+										) : (
+											<Badge color="green" variant="light">
+												正常
+											</Badge>
+										)}
+									</Table.Td>
+									<Table.Td>
+										<Group justify="flex-end" gap="xs">
+											<Button
+												variant="light"
+												size="xs"
+												leftSection={<IconRotateClockwise size={14} />}
+												onClick={() => void performReinstall(row, 'runtime')}
+												disabled={busy}
+											>
+												重装
+											</Button>
+											<Menu withinPortal position="bottom-end">
+												<Menu.Target>
+													<ActionIcon variant="subtle" color="gray" disabled={busy}>
+														<IconDotsVertical size={16} />
+													</ActionIcon>
+												</Menu.Target>
+												<Menu.Dropdown>
+													<Menu.Item
+														leftSection={<IconRefresh size={14} />}
+														onClick={() => void performReinstall(row, 'persisted')}
+														disabled={busy}
+													>
+														重装并刷新持久态
+													</Menu.Item>
+													<Menu.Item
+														leftSection={<IconTrash size={14} />}
+														onClick={() => confirmAndUninstall(row, 'runtime')}
+														disabled={busy}
+													>
+														卸载运行态
+													</Menu.Item>
+													<Menu.Item
+														color="red"
+														leftSection={<IconTrash size={14} />}
+														onClick={() => confirmAndUninstall(row, 'persisted')}
+														disabled={busy}
+													>
+														彻底卸载
+													</Menu.Item>
+												</Menu.Dropdown>
+											</Menu>
+										</Group>
+									</Table.Td>
+								</Table.Tr>
+							))}
+						</Table.Tbody>
+					</Table>
+				</ScrollArea>
+			</Stack>
 		)
 	}
 

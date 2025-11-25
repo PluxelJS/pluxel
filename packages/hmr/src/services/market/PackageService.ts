@@ -99,6 +99,21 @@ export interface PackageLoadIssue {
 	moduleId?: string | undefined
 }
 
+export type PackageUninstallStatus = 'uninstalled' | 'runtime_only' | 'failed'
+
+export interface PackageUninstallResult {
+	spec: NormalizedPackageSpecifier
+	scope: RemovalScope
+	status: PackageUninstallStatus
+	error?: unknown
+}
+
+export interface PackageReloadResult {
+	spec: NormalizedPackageSpecifier
+	record?: PackageLoadResult
+	error?: unknown
+}
+
 /** 安装选项：基于 nypm 的 OperationOptions，外加 force。 */
 export interface InstallOptions extends OperationOptions {
 	force?: boolean
@@ -171,6 +186,7 @@ export class PackageService {
 	private readonly dependencyIndex = new Map<string, Set<string>>()
 	private readonly loadFailures = new Map<string, PackageLoadIssue>()
 	private readonly multiInstallLocks = new Map<string, Promise<PackageInstallResult[]>>()
+	private readonly multiUninstallLocks = new Map<string, Promise<PackageUninstallResult[]>>()
 	private readonly stateStore: PackageStateStore
 	private readonly ready: Promise<void>
 	private readonly installDefaultsReady: Promise<void>
@@ -310,26 +326,36 @@ export class PackageService {
 		const key = spec.key
 		const options = this.resolveInstallOptions()
 		return this.runExclusive(this.uninstallLocks, key, async () => {
-			this.logEvent('info', 'uninstall:start', { target: spec.target, scope })
-			this.invalidatePackage(spec.name, scope)
-			if (scope === 'runtime') {
-				this.logEvent('info', 'uninstall:completed', { target: spec.target, scope })
-				return
-			}
-
-			try {
-				await this.removeTargetsWithLogs([spec], options)
-				this.logEvent('info', 'uninstall:completed', { target: spec.target, scope })
-			} catch (error) {
-				const message = error instanceof Error ? error.message : '未知错误'
-				this.logEvent('error', 'uninstall:failed', {
-					target: spec.target,
-					message,
-					scope,
-				})
-				throw new PackageServiceError('UNINSTALL_FAILED', message, { cause: error, spec })
+			const [result] = await this.performUninstallBatch([spec], scope, options)
+			if (result.status === 'failed') {
+				const message =
+					result.error instanceof Error
+						? result.error.message
+						: result.error
+							? String(result.error)
+							: '未知错误'
+				throw new PackageServiceError('UNINSTALL_FAILED', message, { cause: result.error, spec })
 			}
 		})
+	}
+
+	/** 批量卸载：清理运行态后，持久化范围内一次执行包管理器卸载。 */
+	async uninstallMany(
+		inputs: PackageSpecifierInput[],
+		scope: RemovalScope = 'persisted',
+	): Promise<PackageUninstallResult[]> {
+		await this.ensureReady()
+		if (!inputs.length) return []
+		const specs = this.normalizeUniqueByName(inputs)
+		const key = specs
+			.map((s) => s.key)
+			.slice()
+			.sort()
+			.join('|')
+		const options = this.resolveInstallOptions()
+		return this.runExclusive(this.multiUninstallLocks, key, () =>
+			this.performUninstallBatch(specs, scope, options),
+		)
 	}
 
 	/**
@@ -346,6 +372,69 @@ export class PackageService {
 			fresh: true,
 			source: 'load',
 		})
+	}
+
+	/** 批量重载：默认 fresh 导入，允许自动安装缺失的包。 */
+	async reloadMany(
+		inputs: PackageSpecifierInput[],
+		options: LoadOptions = {},
+		intent: Partial<Pick<LoadIntentConfig, 'autoInstall' | 'fresh' | 'source'>> = {},
+	): Promise<PackageReloadResult[]> {
+		await this.ensureReady()
+		if (!inputs.length) return []
+		const specs = this.normalizeUniqueByName(inputs)
+		const results: PackageReloadResult[] = []
+		for (const spec of specs) {
+			try {
+				const record = await this.loadWithIntent(spec, options, {
+					autoInstall: intent.autoInstall ?? true,
+					fresh: intent.fresh ?? true,
+					source: intent.source ?? 'load',
+				})
+				results.push({ spec, record })
+			} catch (error) {
+				results.push({ spec, error })
+			}
+		}
+		return results
+	}
+
+	/** 批量重装：先清理 scope，再强制安装并 fresh 重载。 */
+	async reinstallMany(
+		inputs: PackageSpecifierInput[],
+		options: {
+			scope?: RemovalScope
+			install?: InstallOptions
+			load?: LoadOptions
+		} = {},
+	): Promise<PackageReloadResult[]> {
+		await this.ensureReady()
+		if (!inputs.length) return []
+		const specs = this.normalizeUniqueByName(inputs)
+		const scope = options.scope ?? 'persisted'
+		const installOptions = this.resolveInstallOptions({
+			...options.install,
+			force: options.install?.force ?? true,
+		})
+		const results: PackageReloadResult[] = []
+
+		for (const spec of specs) {
+			try {
+				this.invalidatePackage(spec.name, scope)
+				const installResult = await this.performInstall(spec, installOptions)
+				const record = await this.loadWithIntent(
+					spec,
+					options.load ?? {},
+					{ autoInstall: false, fresh: true, source: 'load' },
+					installResult,
+				)
+				results.push({ spec, record })
+			} catch (error) {
+				results.push({ spec, error })
+			}
+		}
+
+		return results
 	}
 
 	/**
@@ -751,6 +840,77 @@ export class PackageService {
 		return statuses
 	}
 
+	private async performUninstallBatch(
+		specs: NormalizedPackageSpecifier[],
+		scope: RemovalScope,
+		options: ResolvedInstallOptions,
+	): Promise<PackageUninstallResult[]> {
+		if (!specs.length) return []
+		const results: PackageUninstallResult[] = specs.map((spec) => ({
+			spec,
+			scope,
+			status: scope === 'runtime' ? 'runtime_only' : 'uninstalled',
+		}))
+
+		this.logEvent('info', 'uninstall:batch_start', {
+			targets: specs.map((s) => s.target),
+			scope,
+		})
+
+		const markFailed = (spec: NormalizedPackageSpecifier, error: unknown) => {
+			const entry = results.find((item) => item.spec.key === spec.key)
+			if (entry) {
+				entry.status = 'failed'
+				entry.error = error
+			}
+		}
+
+		for (const spec of specs) {
+			try {
+				this.invalidatePackage(spec.name, scope)
+			} catch (error) {
+				markFailed(spec, error)
+				this.logEvent('warn', 'uninstall:invalidate_failed', {
+					target: spec.target,
+					scope,
+					error,
+				})
+			}
+		}
+
+		if (scope !== 'runtime') {
+			try {
+				await this.removeTargetsWithLogs(specs, options)
+			} catch (error) {
+				for (const spec of specs) {
+					markFailed(spec, error)
+				}
+				this.logEvent('error', 'uninstall:batch_remove_failed', {
+					targets: specs.map((s) => s.target),
+					scope,
+					error,
+				})
+			}
+		}
+
+		for (const entry of results) {
+			const event =
+				entry.status === 'failed'
+					? 'uninstall:failed'
+					: entry.scope === 'runtime'
+						? 'uninstall:runtime_cleared'
+						: 'uninstall:completed'
+			const level = entry.status === 'failed' ? 'error' : 'info'
+			this.logEvent(level, event, {
+				target: entry.spec.target,
+				scope: entry.scope,
+				error: entry.error,
+			})
+		}
+
+		return results
+	}
+
 	private async dependencyExists(
 		name: string,
 		options: ResolvedInstallOptions,
@@ -972,6 +1132,11 @@ export class PackageService {
 		}
 
 		return merged
+	}
+
+	private normalizeUniqueByName(inputs: PackageSpecifierInput[]): NormalizedPackageSpecifier[] {
+		const specs = inputs.map((item) => this.normalizeSpecifier(item))
+		return dedupeByName(specs)
 	}
 
 	private runExclusive<T>(
@@ -1301,6 +1466,16 @@ function normalizeRoots(roots: string[]): string[] {
 		seen.add(normalized)
 		return true
 	})
+}
+
+function dedupeByName(specs: NormalizedPackageSpecifier[]): NormalizedPackageSpecifier[] {
+	const map = new Map<string, NormalizedPackageSpecifier>()
+	for (const spec of specs) {
+		if (!map.has(spec.name)) {
+			map.set(spec.name, spec)
+		}
+	}
+	return Array.from(map.values())
 }
 
 function parseDependOn(value: unknown): string[] {
