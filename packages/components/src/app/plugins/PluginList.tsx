@@ -31,10 +31,11 @@ import {
 	TextInput,
 	Title,
 } from '@mantine/core'
-import { IconSearch, IconX } from '@tabler/icons-react'
+import { IconPlugConnected, IconSearch, IconSearchOff, IconX } from '@tabler/icons-react'
 import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react'
 import type { JSX } from 'react/jsx-runtime'
 import { type GroupConfig, PluginOrganizer, type PluginStatuses } from '../../components'
+import { EmptyState, ErrorState } from '../../components'
 import { type PluginGroup, type PluginStatusEntry, useQuery } from '../gqty'
 import { client } from '../rpc'
 import { RouterLinkAdapter } from '../RouterLinkAdapter'
@@ -249,9 +250,33 @@ export const PluginList: React.FC<PluginListProps> = ({ pluginName }) => {
 			</Stack>
 		)
 	} else if (errorMessage) {
-		content = <Text c="red">{errorMessage}</Text>
+		content = (
+			<ErrorState
+				title="加载失败"
+				message={errorMessage}
+				onRetry={() => void query.$refetch(true)}
+				minHeight={160}
+			/>
+		)
 	} else if (overview.total === 0) {
-		content = <Text c="dimmed">暂无插件</Text>
+		content = (
+			<EmptyState
+				icon={<IconPlugConnected size={28} stroke={1.5} />}
+				title="暂无插件"
+				description="安装插件后，这里会显示所有可用的插件列表。"
+				withPattern
+				minHeight={160}
+			/>
+		)
+	} else if (filterQuery && groupsForView.every((g) => g.pluginIds.length === 0)) {
+		content = (
+			<EmptyState
+				icon={<IconSearchOff size={28} stroke={1.5} />}
+				title={`没有匹配"${filterQuery}"的结果`}
+				description="尝试其他关键词搜索。"
+				minHeight={160}
+			/>
+		)
 	} else {
 		content = (
 			<PluginOrganizer

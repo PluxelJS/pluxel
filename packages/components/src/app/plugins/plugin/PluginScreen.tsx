@@ -1,16 +1,15 @@
 import {
-	Button,
 	Card,
 	CardSection,
-	Center,
 	Flex,
 	Skeleton,
 	Stack,
-	Text,
 	useMantineTheme,
 } from '@mantine/core'
 import { useMediaQuery } from '@mantine/hooks'
+import { IconPuzzle } from '@tabler/icons-react'
 import { memo, useCallback, useMemo } from 'react'
+import { EmptyState, ErrorState } from '../../../components'
 import { PluginStatusEntryLifecycleStage, type PluginScope, useQuery } from '../../gqty'
 import { PluginScopeProvider, type PluginSourceKind } from './context'
 import { useDebouncedFlag } from './hooks/useDebouncedFlag'
@@ -211,22 +210,25 @@ export const PluginScreen = memo(function PluginScreen({ pluginName }: PluginScr
 
 	if (!pluginName) {
 		return (
-			<Center h="100%">
-				<Text c="dimmed" size="lg">
-					请选择一个插件以查看详情
-				</Text>
-			</Center>
+			<EmptyState
+				icon={<IconPuzzle size={28} stroke={1.5} />}
+				title="请选择一个插件"
+				description="从左侧列表选择插件以查看详情。"
+				withPattern
+				minHeight="100%"
+			/>
 		)
 	}
 
 	if (error && !ready) {
 		return (
-			<Center h="100%" style={{ gap: 12, flexDirection: 'column' }}>
-				<Text c="red">{error.message || '加载失败，请重试'}</Text>
-				<Button size="xs" onClick={() => void refetch(true)}>
-					重试
-				</Button>
-			</Center>
+			<ErrorState
+				title="加载失败"
+				message={error.message || '无法加载插件详情，请重试'}
+				onRetry={() => void refetch(true)}
+				withPattern
+				minHeight="100%"
+			/>
 		)
 	}
 

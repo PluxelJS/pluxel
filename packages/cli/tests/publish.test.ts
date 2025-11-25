@@ -2,7 +2,7 @@ import { describe, expect, it } from 'bun:test'
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'pathe'
-import { publishPackage } from '../src/publish'
+import { publishPackage, resolveWebhookAudience } from '../src/publish'
 
 async function setupPackageFixture(name: string, version: string, options?: { private?: boolean }) {
 	const target = await mkdtemp(join(tmpdir(), `pluxel-cli-publish-${name}-`))
@@ -159,6 +159,130 @@ describe('publish with CI context', () => {
 			expect(result.notified).toBe(false)
 		} finally {
 			restoreEnv(savedEnv)
+			await teardownFixture(dir)
+		}
+	})
+
+	it('does not add provenance for restricted/private packages in CI', async () => {
+		const dir = await setupPackageFixture('example-pkg', '3.0.0')
+		const savedEnv = snapshotEnv(['GITHUB_ACTIONS', 'GITHUB_REPOSITORY'])
+		const logs: string[] = []
+
+		try {
+			process.env.GITHUB_ACTIONS = 'true'
+			process.env.GITHUB_REPOSITORY = 'acme/example'
+
+			await publishPackage({
+				cwd: dir,
+				access: 'restricted', // 私有包
+				dryRun: true,
+				skipVersionCheck: true, // 跳过版本检查以避免网络请求
+				debug: true,
+				log: (...args) => logs.push(args.join(' ')),
+			})
+
+			const debugArgs = logs.find((log) => log.includes('debug: npm args'))
+			expect(debugArgs?.includes('--provenance')).toBe(false)
+			expect(debugArgs?.includes('--access restricted')).toBe(true)
+		} finally {
+			restoreEnv(savedEnv)
+			await teardownFixture(dir)
+		}
+	})
+
+	it('skips version check in raw mode (mimics plain npm publish)', async () => {
+		const dir = await setupPackageFixture('example-pkg', '4.0.0')
+		const logs: string[] = []
+
+		try {
+			const result = await publishPackage({
+				cwd: dir,
+				dryRun: true, // avoid running npm
+				env: { ...process.env, PLUXEL_PUBLISH_RAW: '1' },
+				log: (...args) => logs.push(args.join(' ')),
+			})
+
+			expect(result.packageName).toBe('example-pkg')
+			expect(logs.some((line) => line.includes('checking if'))).toBe(false)
+		} finally {
+			await teardownFixture(dir)
+		}
+	})
+
+	it('prints debug info when enabled', async () => {
+		const dir = await setupPackageFixture('example-pkg', '5.0.0')
+		const logs: string[] = []
+
+		try {
+			await publishPackage({
+				cwd: dir,
+				dryRun: true,
+				skipVersionCheck: true,
+				debug: true,
+				env: { ...process.env, NPM_CONFIG_PROVENANCE: 'true', NODE_AUTH_TOKEN: '***' },
+				log: (...args) => logs.push(args.join(' ')),
+			})
+
+			expect(logs.some((line) => line.includes('debug: npm args'))).toBe(true)
+			expect(logs.some((line) => line.includes('debug: npm env keys'))).toBe(true)
+		} finally {
+			await teardownFixture(dir)
+		}
+	})
+
+	it('computes webhook audience from env or base URL', () => {
+		expect(resolveWebhookAudience('https://market.pluxel.dev', {} as NodeJS.ProcessEnv)).toBe(
+			'https://market.pluxel.dev/webhook',
+		)
+		expect(
+			resolveWebhookAudience('https://market.pluxel.dev/', {} as NodeJS.ProcessEnv),
+		).toBe('https://market.pluxel.dev/webhook')
+		expect(
+			resolveWebhookAudience('https://market.pluxel.dev', {
+				PLUXEL_MARKET_AUDIENCE: 'https://override/webhook',
+			} as NodeJS.ProcessEnv),
+		).toBe('https://override/webhook')
+	})
+
+	it('can trigger webhook when publish is skipped (webhook flag)', async () => {
+		const dir = await setupPackageFixture('example-pkg', '6.0.0')
+		const savedFetch = global.fetch
+		const requests: string[] = []
+
+		global.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+			const url = typeof input === 'string' ? input : input.toString()
+			requests.push(url)
+			if (url.includes('oidc')) {
+				return new Response(JSON.stringify({ value: 'test-token' }), {
+					status: 200,
+					headers: { 'Content-Type': 'application/json' },
+				})
+			}
+			return new Response('{}', { status: 200, headers: { 'Content-Type': 'application/json' } })
+		}) as typeof fetch
+
+		try {
+			const result = await publishPackage({
+				cwd: dir,
+				dryRun: true,
+				skipVersionCheck: true,
+				webhook: true,
+				env: {
+					...process.env,
+					GITHUB_ACTIONS: 'true',
+					GITHUB_REPOSITORY: 'acme/example',
+					ACTIONS_ID_TOKEN_REQUEST_URL: 'https://oidc.example.com/token',
+					ACTIONS_ID_TOKEN_REQUEST_TOKEN: 'dummy',
+					PLUXEL_MARKET_AUDIENCE: 'https://market.test/webhook',
+				},
+				log: noop,
+			})
+
+			expect(result.notified).toBe(true)
+			expect(requests.some((url) => url.includes('oidc.example.com'))).toBe(true)
+			expect(requests.some((url) => url.includes('market.pluxel.dev') || url.includes('market.test'))).toBe(true)
+		} finally {
+			global.fetch = savedFetch
 			await teardownFixture(dir)
 		}
 	})

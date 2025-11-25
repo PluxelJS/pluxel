@@ -43,6 +43,7 @@ export interface InstallPackageSpecInput {
 export enum PackageLoadIssueSource {
   load = "load",
   restore = "restore",
+  retry = "retry",
 }
 
 export enum PackageMutationResultInstallStatus {
@@ -60,11 +61,6 @@ export enum PluginStatusEntryLifecycleStage {
   disabled = "disabled",
   running = "running",
   stopped = "stopped",
-}
-
-export enum UninstallPackageScopeInput {
-  persisted = "persisted",
-  runtime = "runtime",
 }
 
 export interface UpdatePluginGroupsGroupsInput {
@@ -89,7 +85,6 @@ export const scalarsEnumsHash: ScalarsEnumsHash = {
   PluginSourceInfoKind: true,
   PluginStatusEntryLifecycleStage: true,
   String: true,
-  UninstallPackageScopeInput: true,
   UpdatePluginStatusStatusInput: true,
 };
 export const generatedSchema = {
@@ -104,6 +99,21 @@ export const generatedSchema = {
     raw: { __type: "String" },
     tag: { __type: "String" },
     version: { __type: "String" },
+  },
+  PackageBatchMutationResult: {
+    __typename: { __type: "String!" },
+    error: { __type: "String" },
+    ok: { __type: "Boolean!" },
+    results: { __type: "[PackageMutationResult!]!" },
+  },
+  PackageInventoryEntry: {
+    __typename: { __type: "String!" },
+    installedVersion: { __type: "String" },
+    issues: { __type: "[PackageLoadIssue!]" },
+    loaded: { __type: "Boolean!" },
+    moduleId: { __type: "String" },
+    requestedVersion: { __type: "String" },
+    spec: { __type: "PackageIssueSpec!" },
   },
   PackageIssueSpec: {
     __typename: { __type: "String!" },
@@ -205,20 +215,49 @@ export const generatedSchema = {
       __type: "PackageMutationResult!",
       __args: { force: "Boolean", spec: "InstallPackageSpecInput!" },
     },
+    installPackages: {
+      __type: "PackageBatchMutationResult!",
+      __args: { force: "Boolean", specs: "[InstallPackageSpecInput!]!" },
+    },
     reinstallPackage: {
       __type: "PackageMutationResult!",
+      __args: { force: "Boolean", spec: "InstallPackageSpecInput!" },
+    },
+    reinstallPackages: {
+      __type: "PackageBatchMutationResult!",
+      __args: { force: "Boolean", specs: "[InstallPackageSpecInput!]!" },
+    },
+    reloadPackages: {
+      __type: "PackageBatchMutationResult!",
+      __args: { fresh: "Boolean", specs: "[InstallPackageSpecInput!]!" },
+    },
+    removePackage: {
+      __type: "PackageMutationResult!",
+      __args: { spec: "InstallPackageSpecInput!" },
+    },
+    removePackages: {
+      __type: "PackageBatchMutationResult!",
+      __args: { specs: "[InstallPackageSpecInput!]!" },
+    },
+    retryFailedPackages: {
+      __type: "PackageBatchMutationResult!",
+      __args: { fresh: "Boolean", reinstall: "Boolean" },
+    },
+    retryPackage: {
+      __type: "PackageMutationResult!",
       __args: {
-        force: "Boolean",
-        scope: "UninstallPackageScopeInput",
+        fresh: "Boolean",
+        reinstall: "Boolean",
         spec: "InstallPackageSpecInput!",
       },
     },
     uninstallPackage: {
       __type: "PackageMutationResult!",
-      __args: {
-        scope: "UninstallPackageScopeInput",
-        spec: "InstallPackageSpecInput!",
-      },
+      __args: { spec: "InstallPackageSpecInput!" },
+    },
+    uninstallPackages: {
+      __type: "PackageBatchMutationResult!",
+      __args: { specs: "[InstallPackageSpecInput!]!" },
     },
     updatePluginGroups: {
       __type: "[PluginGroup!]!",
@@ -232,6 +271,10 @@ export const generatedSchema = {
   query: {
     __typename: { __type: "String!" },
     _empty: { __type: "String!" },
+    packageInventory: {
+      __type: "[PackageInventoryEntry!]!",
+      __args: { includeUntracked: "Boolean" },
+    },
     packageLoadIssues: { __type: "[PackageLoadIssue!]!" },
     plugin: { __type: "PluginScope!", __args: { name: "String!" } },
     pluginGroups: { __type: "[PluginGroup!]!" },
@@ -246,6 +289,23 @@ export interface BuildSnapshotResult {
   error?: Maybe<Scalars["String"]["output"]>;
   ok?: Scalars["Boolean"]["output"];
   path?: Maybe<Scalars["String"]["output"]>;
+}
+
+export interface PackageBatchMutationResult {
+  __typename?: "PackageBatchMutationResult";
+  error?: Maybe<Scalars["String"]["output"]>;
+  ok?: Scalars["Boolean"]["output"];
+  results: Array<PackageMutationResult>;
+}
+
+export interface PackageInventoryEntry {
+  __typename?: "PackageInventoryEntry";
+  installedVersion?: Maybe<Scalars["String"]["output"]>;
+  issues?: Maybe<Array<PackageLoadIssue>>;
+  loaded?: Scalars["Boolean"]["output"];
+  moduleId?: Maybe<Scalars["String"]["output"]>;
+  requestedVersion?: Maybe<Scalars["String"]["output"]>;
+  spec: PackageIssueSpec;
 }
 
 export interface PackageIssueSpec {
@@ -356,15 +416,43 @@ export interface Mutation {
     force?: Maybe<Scalars["Boolean"]["input"]>;
     spec: InstallPackageSpecInput;
   }) => PackageMutationResult;
+  installPackages: (args: {
+    force?: Maybe<Scalars["Boolean"]["input"]>;
+    specs: Array<InstallPackageSpecInput>;
+  }) => PackageBatchMutationResult;
   reinstallPackage: (args: {
     force?: Maybe<Scalars["Boolean"]["input"]>;
-    scope?: Maybe<UninstallPackageScopeInput>;
+    spec: InstallPackageSpecInput;
+  }) => PackageMutationResult;
+  reinstallPackages: (args: {
+    force?: Maybe<Scalars["Boolean"]["input"]>;
+    specs: Array<InstallPackageSpecInput>;
+  }) => PackageBatchMutationResult;
+  reloadPackages: (args: {
+    fresh?: Maybe<Scalars["Boolean"]["input"]>;
+    specs: Array<InstallPackageSpecInput>;
+  }) => PackageBatchMutationResult;
+  removePackage: (args: {
+    spec: InstallPackageSpecInput;
+  }) => PackageMutationResult;
+  removePackages: (args: {
+    specs: Array<InstallPackageSpecInput>;
+  }) => PackageBatchMutationResult;
+  retryFailedPackages: (args?: {
+    fresh?: Maybe<Scalars["Boolean"]["input"]>;
+    reinstall?: Maybe<Scalars["Boolean"]["input"]>;
+  }) => PackageBatchMutationResult;
+  retryPackage: (args: {
+    fresh?: Maybe<Scalars["Boolean"]["input"]>;
+    reinstall?: Maybe<Scalars["Boolean"]["input"]>;
     spec: InstallPackageSpecInput;
   }) => PackageMutationResult;
   uninstallPackage: (args: {
-    scope?: Maybe<UninstallPackageScopeInput>;
     spec: InstallPackageSpecInput;
   }) => PackageMutationResult;
+  uninstallPackages: (args: {
+    specs: Array<InstallPackageSpecInput>;
+  }) => PackageBatchMutationResult;
   updatePluginGroups: (args: {
     groups: Array<UpdatePluginGroupsGroupsInput>;
   }) => Array<PluginGroup>;
@@ -377,6 +465,9 @@ export interface Mutation {
 export interface Query {
   __typename?: "Query";
   _empty?: Scalars["String"]["output"];
+  packageInventory: (args?: {
+    includeUntracked?: Maybe<Scalars["Boolean"]["input"]>;
+  }) => Array<PackageInventoryEntry>;
   packageLoadIssues: Array<PackageLoadIssue>;
   plugin: (args: { name: Scalars["String"]["input"] }) => PluginScope;
   pluginGroups: Array<PluginGroup>;

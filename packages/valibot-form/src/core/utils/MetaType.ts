@@ -8,6 +8,7 @@ import type {
 } from '../actions'
 import type { FormMeta } from '../actions/formMeta'
 import type { ObjectMetaOptions } from '../actions/objectMeta'
+import type { UnionMetaOptions } from '../actions/union'
 
 export const META_MAP = {
 	FORM: 'form',
@@ -18,6 +19,7 @@ export const META_MAP = {
 	ARRAY: 'array',
 	RECORD: 'record',
 	object: 'object',
+	union: 'union',
 } as const
 
 export type MetaType = (typeof META_MAP)[keyof typeof META_MAP]
@@ -34,6 +36,7 @@ export interface MetaReturnMap {
 	array: ArrayMetaOptions
 	record: RecordMetaOptions
 	object: ObjectMetaOptions
+	union: UnionMetaOptions
 }
 
 export type MetaTypeReturn<T extends MetaType> = MetaReturnMap[T]

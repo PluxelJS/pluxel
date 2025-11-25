@@ -1,23 +1,31 @@
 {
-  "generatedAt": "2025-11-22T15:46:46.881Z",
+  "schema": 3,
+  "generatedAt": "2025-11-25T12:05:55.351Z",
   "packages": [
     {
       "spec": {
-        "name": "pluxel-plugin-redis",
-        "raw": "pluxel-plugin-redis",
-        "target": "pluxel-plugin-redis",
-        "key": "pluxel-plugin-redis#latest"
+        "name": "pluxel-plugin-wretch",
+        "version": "0.1.4",
+        "requested": "pluxel-plugin-wretch@0.1.4"
       },
       "resolution": {
         "ok": true,
-        "dir": "/home/ahdg/code/plugin-style-ts/node_modules/.pnpm/pluxel-plugin-redis@0.1.0/node_modules/pluxel-plugin-redis",
-        "entry": "/home/ahdg/code/plugin-style-ts/node_modules/.pnpm/pluxel-plugin-redis@0.1.0/node_modules/pluxel-plugin-redis/dist/index.mjs",
+        "dir": "/home/ahdg/code/plugin-style-ts/node_modules/.pnpm/pluxel-plugin-wretch@0.1.4/node_modules/pluxel-plugin-wretch",
+        "entry": "/home/ahdg/code/plugin-style-ts/node_modules/.pnpm/pluxel-plugin-wretch@0.1.4/node_modules/pluxel-plugin-wretch/dist/wretch.mjs",
         "source": "exports",
         "tried": []
       },
-      "moduleId": "/home/ahdg/code/plugin-style-ts/node_modules/.pnpm/pluxel-plugin-redis@0.1.0/node_modules/pluxel-plugin-redis/dist/index.mjs",
+      "moduleId": "/home/ahdg/code/plugin-style-ts/node_modules/.pnpm/pluxel-plugin-wretch@0.1.4/node_modules/pluxel-plugin-wretch/dist/wretch.mjs",
       "isAnchor": true,
-      "loadedAt": 1763826406881
+      "loadedAt": 1764068844121,
+      "dependOn": [],
+      "manifestPath": "/home/ahdg/code/plugin-style-ts/node_modules/.pnpm/pluxel-plugin-wretch@0.1.4/node_modules/pluxel-plugin-wretch/package.json",
+      "manifestVersion": "0.1.4",
+      "resolvedVersion": "0.1.4"
     }
+  ],
+  "issues": [],
+  "blocked": [
+    "pluxel-plugin-kook"
   ]
 }

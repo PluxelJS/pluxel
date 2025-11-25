@@ -5,13 +5,9 @@ import type { RuleContext } from '../types'
 export async function pluginDependencyRule(pkg: PackageJson, context: RuleContext) {
 	if (context.pluginUsages.size === 0) return undefined
 
+	const runtimeDependencies = new Set(Object.keys(pkg.dependencies ?? {}))
 	const versions = resolvePluginVersions(pkg, context)
 	const messages: string[] = []
-
-	const optionalChanges = ensureOptionalDependencies(pkg, versions)
-	if (optionalChanges.length > 0) {
-		messages.push(`optionalDependencies + ${optionalChanges.join(', ')}`)
-	}
 
 	const peerChanges = ensurePeerDependencies(pkg, versions)
 	if (peerChanges.length > 0) {
@@ -31,6 +27,7 @@ export async function pluginDependencyRule(pkg: PackageJson, context: RuleContex
 	const manifestUpdate = syncManifestDependOn(
 		pkg,
 		context.pluginUsages,
+		runtimeDependencies,
 		context.manifestField,
 		MANIFEST_DEPEND_ON_FIELD,
 	)
@@ -47,33 +44,10 @@ export async function pluginDependencyRule(pkg: PackageJson, context: RuleContex
 function resolvePluginVersions(pkg: PackageJson, context: RuleContext) {
 	const versions = new Map<string, string>()
 	for (const name of context.pluginUsages.keys()) {
-		const version =
-			pkg.dependencies?.[name] ??
-			pkg.devDependencies?.[name] ??
-			pkg.peerDependencies?.[name] ??
-			pkg.optionalDependencies?.[name] ??
-			'*'
+		const version = pkg.dependencies?.[name] ?? pkg.devDependencies?.[name] ?? pkg.peerDependencies?.[name] ?? '*'
 		versions.set(name, version)
 	}
 	return versions
-}
-
-function ensureOptionalDependencies(pkg: PackageJson, versions: Map<string, string>) {
-	const optional = { ...(pkg.optionalDependencies ?? {}) }
-	const additions: string[] = []
-	let mutated = false
-
-	for (const [name, version] of versions) {
-		if (optional[name]) continue
-		optional[name] = version
-		additions.push(`${name}@${version}`)
-		mutated = true
-	}
-
-	if (!mutated) return additions
-	pkg.optionalDependencies = sortRecord(optional)
-	additions.sort((a, b) => a.localeCompare(b))
-	return additions
 }
 
 function ensurePeerDependencies(pkg: PackageJson, versions: Map<string, string>) {
@@ -122,6 +96,7 @@ function removeEntries(
 function syncManifestDependOn(
 	pkg: PackageJson,
 	pluginUsages: Map<string, { hasStaticImport: boolean; hasDynamicImport: boolean }>,
+	runtimeDependencies: Set<string>,
 	manifestField: string,
 	dependOnField: string,
 ) {
@@ -129,19 +104,35 @@ function syncManifestDependOn(
 	const optional: string[] = []
 
 	for (const [name, usage] of pluginUsages) {
-		if (usage.hasStaticImport) required.push(name)
-		else if (usage.hasDynamicImport) optional.push(name)
+		if (!usage.hasStaticImport && !usage.hasDynamicImport) continue
+
+		// 只有在项目声明了运行时依赖并且是静态引入时，才视为必需插件；
+		// 其余情况（动态引入、仅开发依赖等）都被视为可选。
+		const declaredInDependencies = runtimeDependencies.has(name)
+
+		if (usage.hasStaticImport && declaredInDependencies) {
+			required.push(name)
+			continue
+		}
+
+		optional.push(name)
 	}
 
 	required.sort((a, b) => a.localeCompare(b))
 	optional.sort((a, b) => a.localeCompare(b))
 
-	const currentManifest = isRecord(pkg[manifestField]) ? (pkg[manifestField] as Record<string, unknown>) : {}
+	const currentManifest = isRecord(pkg[manifestField])
+		? (pkg[manifestField] as Record<string, unknown>)
+		: {}
 	const dependOn = isRecord(currentManifest[dependOnField])
 		? (currentManifest[dependOnField] as Record<string, unknown>)
 		: {}
-	const prevRequired = Array.isArray(dependOn.required) ? [...dependOn.required].sort(sortStrings) : []
-	const prevOptional = Array.isArray(dependOn.optional) ? [...dependOn.optional].sort(sortStrings) : []
+	const prevRequired = Array.isArray(dependOn.required)
+		? [...dependOn.required].sort(sortStrings)
+		: []
+	const prevOptional = Array.isArray(dependOn.optional)
+		? [...dependOn.optional].sort(sortStrings)
+		: []
 
 	if (arraysEqual(required, prevRequired) && arraysEqual(optional, prevOptional)) {
 		return undefined

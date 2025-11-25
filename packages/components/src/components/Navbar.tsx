@@ -2,6 +2,7 @@
 
 import {
 	ActionIcon,
+	Box,
 	Group,
 	NavLink,
 	Paper,
@@ -16,6 +17,7 @@ import {
 import { IconLayoutSidebarLeftCollapse, IconLayoutSidebarRightExpand } from '@tabler/icons-react'
 import type React from 'react'
 import { forwardRef, memo, useEffect, useMemo, useState } from 'react'
+import { ThemeCustomizer } from './ThemeCustomizer'
 
 export interface NavItem {
 	label: string
@@ -111,70 +113,76 @@ const Navbar = memo(function Navbar({
 	LinkWrapper.displayName = 'NavLinkWrapper'
 
 	return (
-		<ScrollArea
-			h="100%"
-			type="auto"
-			offsetScrollbars
-			// 防止在 AppShell.Navbar 内出现“嵌套滚动导致的意外溢出”
-			style={{ minHeight: 0 }}
+		<Box
+			style={{
+				height: '100%',
+				display: 'flex',
+				flexDirection: 'column',
+				minHeight: 0,
+			}}
 		>
-			<Stack gap="md" p="md">
-				{onCompactToggle &&
-					(compact ? (
-						<Tooltip label="展开侧边栏" openDelay={300}>
-							<ActionIcon
-								variant="light"
-								size="lg"
-								radius="xl"
-								onClick={onCompactToggle}
-								aria-label="展开侧边栏"
-								style={{ alignSelf: 'center' }}
-							>
-								<IconLayoutSidebarRightExpand size={18} stroke={1.8} />
-							</ActionIcon>
-						</Tooltip>
-					) : (
-						<Paper
-							radius="lg"
-							px="md"
-							py="sm"
-							styles={{
-								root: {
-									background:
-										colorScheme === 'dark'
-											? `linear-gradient(135deg, ${rgba(theme.colors.dark[6], 0.6)}, ${rgba(theme.colors.dark[7], 0.4)}) !important`
-											: 'linear-gradient(135deg, rgba(249,250,255,0.95), rgba(242,245,255,0.95))',
-									border:
-										colorScheme === 'dark'
-											? `1px solid ${rgba(theme.colors.dark[4], 0.4)}`
-											: `1px solid ${rgba(theme.colors.gray[3], 0.5)}`,
-									backgroundColor: 'transparent',
-								},
-							}}
-						>
-							<Group justify="space-between" align="flex-start" gap="sm">
-								<div>
-									<Text size="xs" c="dimmed" fw={600} tt="uppercase" lh={1}>
-										控制台导航
-									</Text>
-									<Text size="sm" c="dimmed">
-										快速切换到不同工作区
-									</Text>
-								</div>
+			<ScrollArea
+				style={{ flex: 1, minHeight: 0 }}
+				type="auto"
+				offsetScrollbars
+			>
+				<Stack gap="md" p="md">
+					{onCompactToggle &&
+						(compact ? (
+							<Tooltip label="展开侧边栏" openDelay={300}>
 								<ActionIcon
-									variant={colorScheme === 'dark' ? 'subtle' : 'white'}
-									color="brand"
-									size="sm"
+									variant="light"
+									size="lg"
+									radius="xl"
 									onClick={onCompactToggle}
-									aria-label="紧凑侧边栏"
+									aria-label="展开侧边栏"
+									style={{ alignSelf: 'center' }}
 								>
-									<IconLayoutSidebarLeftCollapse size={16} stroke={1.8} />
+									<IconLayoutSidebarRightExpand size={18} stroke={1.8} />
 								</ActionIcon>
-							</Group>
-						</Paper>
-					))}
+							</Tooltip>
+						) : (
+							<Paper
+								radius="lg"
+								px="md"
+								py="sm"
+								styles={{
+									root: {
+										background:
+											colorScheme === 'dark'
+												? `linear-gradient(135deg, ${rgba(theme.colors.dark[6], 0.6)}, ${rgba(theme.colors.dark[7], 0.4)}) !important`
+												: 'linear-gradient(135deg, rgba(249,250,255,0.95), rgba(242,245,255,0.95))',
+										border:
+											colorScheme === 'dark'
+												? `1px solid ${rgba(theme.colors.dark[4], 0.4)}`
+												: `1px solid ${rgba(theme.colors.gray[3], 0.5)}`,
+										backgroundColor: 'transparent',
+									},
+								}}
+							>
+								<Group justify="space-between" align="flex-start" gap="sm">
+									<div>
+										<Text size="xs" c="dimmed" fw={600} tt="uppercase" lh={1}>
+											控制台导航
+										</Text>
+										<Text size="sm" c="dimmed">
+											快速切换到不同工作区
+										</Text>
+									</div>
+									<ActionIcon
+										variant={colorScheme === 'dark' ? 'subtle' : 'white'}
+										color="brand"
+										size="sm"
+										onClick={onCompactToggle}
+										aria-label="紧凑侧边栏"
+									>
+										<IconLayoutSidebarLeftCollapse size={16} stroke={1.8} />
+									</ActionIcon>
+								</Group>
+							</Paper>
+						))}
 
-				{navItems.map(({ label, href, icon, rightSection, exact, disabled }) => {
+					{navItems.map(({ label, href, icon, rightSection, exact, disabled }) => {
 					const active = getIsActive(pathname, href, exact)
 					const normalizedLabel = typeof label === 'string' ? label.trim() : ''
 					const showFullLabel = !compact || normalizedLabel.length <= 3
@@ -252,8 +260,14 @@ const Navbar = memo(function Navbar({
 						navLink
 					)
 				})}
-			</Stack>
-		</ScrollArea>
+				</Stack>
+			</ScrollArea>
+
+			{/* 底部主题设置 */}
+			<Box p="md" pt={0}>
+				<ThemeCustomizer compact={compact} />
+			</Box>
+		</Box>
 	)
 })
 

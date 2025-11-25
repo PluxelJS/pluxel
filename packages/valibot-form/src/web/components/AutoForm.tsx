@@ -1,4 +1,4 @@
-import { Card, Divider, Stack, Text } from '@mantine/core'
+import { Divider, Stack, Text } from '@mantine/core'
 import React, { createContext, memo, Suspense, useCallback, useContext, useMemo } from 'react'
 import type { ObjectLikeSchema } from 'valibot'
 import { DEFAULT_TEXTS } from '~/core/constants'
@@ -220,21 +220,19 @@ function DebugPanelImpl() {
 	})()
 	if (!isDev) return null
 	return (
-		<Card withBorder style={{ padding: 24 }}>
-			<form.Subscribe
-				selector={(s) => ({
-					values: s.values,
-					errorMap: s.errorMap,
-					errors: s.errors,
-				})}
-			>
-				{({ values, errorMap, errors }) => (
-					<Suspense fallback={null}>
-						<DebugValues formValues={{ values, errorMap, errors }} />
-					</Suspense>
-				)}
-			</form.Subscribe>
-		</Card>
+		<form.Subscribe
+			selector={(s) => ({
+				values: s.values,
+				errorMap: s.errorMap,
+				errors: s.errors,
+			})}
+		>
+			{({ values, errorMap, errors }) => (
+				<Suspense fallback={null}>
+					<DebugValues formValues={{ values, errorMap, errors }} />
+				</Suspense>
+			)}
+		</form.Subscribe>
 	)
 }
 AutoForm.DebugPanel = DebugPanelImpl

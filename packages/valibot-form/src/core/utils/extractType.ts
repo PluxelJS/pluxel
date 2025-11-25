@@ -5,6 +5,7 @@ import { extractObjectProps } from '../actions/object/objectExtractor'
 import { extractPicklistProps } from '../actions/picklist/picklistExtractor'
 import { extractRecordProps } from '../actions/record/recordExtractor'
 import { extractStringProps } from '../actions/string/stringExtractor'
+import { extractUnionProps } from '../actions/union/unionExtractor'
 import type { ExtractableMetaType } from './MetaType'
 const extractors = {
 	string: { type: 'string', extract: extractStringProps },
@@ -14,6 +15,7 @@ const extractors = {
 	array: { type: 'array', extract: extractArrayProps },
 	record: { type: 'record', extract: extractRecordProps },
 	object: { type: 'object', extract: extractObjectProps },
+	union: { type: 'union', extract: extractUnionProps },
 } as const satisfies {
 	string: { type: ExtractableMetaType; extract: typeof extractStringProps }
 	number: { type: ExtractableMetaType; extract: typeof extractNumberProps }
@@ -22,6 +24,7 @@ const extractors = {
 	array: { type: ExtractableMetaType; extract: typeof extractArrayProps }
 	record: { type: ExtractableMetaType; extract: typeof extractRecordProps }
 	object: { type: ExtractableMetaType; extract: typeof extractObjectProps }
+	union: { type: ExtractableMetaType; extract: typeof extractUnionProps }
 }
 
 export const extractMap = extractors

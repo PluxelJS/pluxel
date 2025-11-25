@@ -4,8 +4,10 @@ import { resolve as r } from 'pathe'
 import type { PackageJson } from 'pkg-types'
 
 export async function safeReadManifest(dir: string): Promise<PackageJson | undefined> {
+	const manifestPath = r(dir, 'package.json')
+	if (!existsSync(manifestPath)) return undefined
 	try {
-		return await readPackageJSON(dir)
+		return await readPackageJSON(manifestPath)
 	} catch {
 		return undefined
 	}

@@ -3,7 +3,6 @@
 import {
 	Box,
 	Button,
-	Center,
 	Drawer,
 	Group,
 	Paper,
@@ -13,9 +12,11 @@ import {
 	useMantineTheme,
 } from '@mantine/core'
 import { useDisclosure, useMediaQuery } from '@mantine/hooks'
+import { IconPuzzle } from '@tabler/icons-react'
 import type React from 'react'
 import { useEffect } from 'react'
 import { Outlet, useRouterState } from '@tanstack/react-router'
+import { EmptyState } from '../../components'
 import { PluginList } from './PluginList'
 
 export const PluginsLayout: React.FC = () => {
@@ -110,12 +111,13 @@ export const PluginsLayout: React.FC = () => {
 					{pluginName ? (
 						<Outlet />
 					) : (
-						<Center style={{ flex: 1 }}>
-							<Stack align="center" gap="xs">
-								<Title order={4}>还没有选择插件</Title>
-								<Text c="dimmed">从左侧列表挑选一个插件，查看运行状态与设置。</Text>
-							</Stack>
-						</Center>
+						<EmptyState
+							icon={<IconPuzzle size={28} stroke={1.5} />}
+							title="还没有选择插件"
+							description="从左侧列表挑选一个插件，查看运行状态与设置。"
+							withPattern
+							minHeight="100%"
+						/>
 					)}
 				</Paper>
 			</Group>

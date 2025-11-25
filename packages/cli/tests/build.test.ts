@@ -49,8 +49,8 @@ describe('build command', () => {
 			})
 
 			const pkg = await readPackageJSON(runtime.packageJsonPath)
-			expect(pkg.optionalDependencies?.['pluxel-plugin-alpha']).toBe('^1.0.0')
-			expect(pkg.optionalDependencies?.['pluxel-plugin-beta']).toBe('^0.5.0')
+			expect(pkg.optionalDependencies?.['pluxel-plugin-alpha']).toBeUndefined()
+			expect(pkg.optionalDependencies?.['pluxel-plugin-beta']).toBeUndefined()
 			expect(pkg.peerDependencies?.['pluxel-plugin-alpha']).toBe('^1.0.0')
 			expect(pkg.peerDependencies?.['pluxel-plugin-beta']).toBe('^0.5.0')
 			expect(pkg.dependencies?.['pluxel-plugin-alpha']).toBeUndefined()
@@ -94,8 +94,8 @@ describe('build command', () => {
 			})
 
 			const pkg = await readPackageJSON(runtime.packageJsonPath)
-			expect(pkg.optionalDependencies?.['acme-plugin-alpha']).toBe('1.2.3')
-			expect(pkg.optionalDependencies?.['acme-plugin-beta']).toBe('~1.0.0')
+			expect(pkg.optionalDependencies?.['acme-plugin-alpha']).toBeUndefined()
+			expect(pkg.optionalDependencies?.['acme-plugin-beta']).toBeUndefined()
 			expect(pkg.peerDependencies?.['acme-plugin-alpha']).toBe('1.2.3')
 			expect(pkg.peerDependencies?.['acme-plugin-beta']).toBe('~1.0.0')
 			expect(pkg.dependencies?.['acme-plugin-alpha']).toBeUndefined()

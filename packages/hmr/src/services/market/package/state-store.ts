@@ -1,11 +1,49 @@
-import { basename, dirname, join } from 'pathe'
 import { copyFile, mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
-import type { PackageInstallStatus } from '../PackageService'
+import { basename, dirname, join } from 'pathe'
+
+import type { PackageInstallStatus, PackageLoadIssueSource } from '../PackageService'
 import type { EntryResolutionOk } from '../ScanService'
-import type { NormalizedPackageSpecifier } from '../specifiers'
+import type { PackageSpecifierSnapshot } from '../specifiers'
+
+export const CURRENT_STATE_SCHEMA = 3
+
+export interface PersistedInstallMeta {
+	status: PackageInstallStatus
+	at: number
+}
 
 export interface PersistedPackageEntry {
-	spec: NormalizedPackageSpecifier
+	spec: PackageSpecifierSnapshot
+	resolution: EntryResolutionOk
+	moduleId: string
+	isAnchor: boolean
+	loadedAt: number
+	dependOn: string[]
+	manifestPath?: string
+	manifestVersion?: string
+	resolvedVersion?: string
+	install?: PersistedInstallMeta
+}
+
+export interface PersistedLoadIssue {
+	spec: PackageSpecifierSnapshot
+	source: PackageLoadIssueSource
+	message: string
+	moduleId?: string
+	recordedAt: number
+	stack?: string | undefined
+}
+
+export interface PackageStatePayload {
+	schema: number
+	generatedAt: string
+	packages: PersistedPackageEntry[]
+	issues: PersistedLoadIssue[]
+	blocked?: string[] | undefined
+}
+
+export interface LegacyPersistedPackageEntry {
+	spec: PackageSpecifierSnapshot
 	resolution: EntryResolutionOk
 	moduleId: string
 	isAnchor: boolean
@@ -13,9 +51,10 @@ export interface PersistedPackageEntry {
 	loadedAt: number
 }
 
-export interface PackageStatePayload {
+export interface LegacyPackageStatePayload {
 	generatedAt: string
-	packages: PersistedPackageEntry[]
+	packages: LegacyPersistedPackageEntry[]
+	schema?: number
 }
 
 export interface PackageStateStoreOptions {
@@ -24,6 +63,11 @@ export interface PackageStateStoreOptions {
 	onError?: ((error: unknown) => void) | undefined
 }
 
+/**
+ * Lightweight debounced writer for package state.
+ * - Does not attempt to validate the payload; the caller owns shape conversion.
+ * - Writes atomically via a temp file to avoid partial state.
+ */
 export class PackageStateStore {
 	private timer: NodeJS.Timeout | undefined
 	private latest: PackageStatePayload | undefined
@@ -37,10 +81,10 @@ export class PackageStateStore {
 		this.onError = options.onError
 	}
 
-	async read(): Promise<PackageStatePayload | null> {
+	async read(): Promise<PackageStatePayload | LegacyPackageStatePayload | null> {
 		try {
 			const raw = await readFile(this.file, 'utf-8')
-			return JSON.parse(raw) as PackageStatePayload
+			return JSON.parse(raw) as PackageStatePayload | LegacyPackageStatePayload
 		} catch (error) {
 			if ((error as NodeJS.ErrnoException)?.code === 'ENOENT') {
 				return null

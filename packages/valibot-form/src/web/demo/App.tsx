@@ -1,4 +1,15 @@
-import { Box, Button, Group, ScrollArea, Stack, Tabs, Text } from '@mantine/core'
+import {
+	Accordion,
+	Box,
+	Button,
+	Card,
+	Group,
+	ScrollArea,
+	Stack,
+	Tabs,
+	Text,
+	Title,
+} from '@mantine/core'
 import { useState } from 'react'
 import { AutoForm } from '../index'
 import { AUTOFORM_CASES } from './cases'
@@ -31,11 +42,39 @@ function DemoCase({ demo }: { demo: (typeof AUTOFORM_CASES)[number] }) {
 
 	return (
 		<Stack gap="md" style={{ minHeight: 'calc(100vh - 120px)', paddingTop: 16 }}>
+			{/* Description */}
 			{description ? (
 				<Text size="sm" c="dimmed">
 					{description}
 				</Text>
 			) : null}
+
+			{/* Schema Viewer */}
+			<Accordion variant="contained" chevronPosition="left">
+				<Accordion.Item value="schema">
+					<Accordion.Control>
+						<Text size="sm" fw={500}>
+							查看 Schema 定义
+						</Text>
+					</Accordion.Control>
+					<Accordion.Panel>
+						<ScrollArea h={300} offsetScrollbars type="auto">
+							<pre
+								style={{
+									fontSize: '12px',
+									margin: 0,
+									padding: '12px',
+									backgroundColor: 'var(--mantine-color-gray-0)',
+									borderRadius: '4px',
+									overflow: 'auto',
+								}}
+							>
+								<code>{JSON.stringify(schema, null, 2)}</code>
+							</pre>
+						</ScrollArea>
+					</Accordion.Panel>
+				</Accordion.Item>
+			</Accordion>
 
 			<AutoForm key={id} schema={schema as any} formOpts={formOpts}>
 				<AutoForm.Actions>
@@ -67,7 +106,15 @@ function DemoCase({ demo }: { demo: (typeof AUTOFORM_CASES)[number] }) {
 					</Box>
 				</ScrollArea>
 
-				<AutoForm.DebugPanel />
+				{/* Enhanced Debug Panel */}
+				<Card withBorder style={{ marginTop: 16 }}>
+					<Stack gap="xs">
+						<Title order={5} size="sm" c="dimmed">
+							调试信息
+						</Title>
+						<AutoForm.DebugPanel />
+					</Stack>
+				</Card>
 			</AutoForm>
 		</Stack>
 	)

@@ -1,6 +1,6 @@
 import * as v from 'valibot'
 
-export const PackageIssueSource = v.picklist(['load', 'restore'])
+export const PackageIssueSource = v.picklist(['load', 'restore', 'retry'])
 
 export const PackageIssueSpec = v.object({
 	__typename: v.literal('PackageIssueSpec'),
@@ -30,8 +30,6 @@ export const PackageSpecifierInput = v.object({
 	tag: v.nullish(v.string()),
 })
 
-export const PackageRemovalScope = v.picklist(['runtime', 'persisted'])
-
 export const PackageInstallStatus = v.picklist(['installed', 'reused'])
 
 export const PackageMutationResult = v.object({
@@ -41,4 +39,25 @@ export const PackageMutationResult = v.object({
 	spec: v.nullish(PackageIssueSpec),
 	installStatus: v.nullish(PackageInstallStatus),
 	error: v.nullish(v.string()),
+})
+
+export const PackageBatchMutationResult = v.object({
+	__typename: v.literal('PackageBatchMutationResult'),
+	ok: v.boolean(),
+	results: v.array(PackageMutationResult),
+	error: v.nullish(v.string()),
+})
+
+export const PackageInventoryEntry = v.object({
+	__typename: v.literal('PackageInventoryEntry'),
+	spec: PackageIssueSpec,
+	installedVersion: v.nullish(v.string()),
+	requestedVersion: v.nullish(v.string()),
+	loaded: v.boolean(),
+	moduleId: v.nullish(v.string()),
+	issues: v.nullish(v.array(PackageLoadIssueEntry)),
+})
+
+export const PackageInventoryFilter = v.object({
+	includeUntracked: v.nullish(v.boolean()),
 })
