@@ -160,17 +160,21 @@ export class PluginRegistry {
 			const patch: Record<string, unknown> = Object.create(null)
 			for (const [k, vSchema] of Object.entries(schema)) {
 				const cur = (configRecord as any)[k]
-				const val = cur === undefined ? getDefault(vSchema) : cur
-				const res = safeParse(vSchema as any, val)
+				// 首次启动缺失配置时，为对象 schema 提供 {} 以便套用默认值
+				const candidate =
+					cur === undefined
+						? getDefault(vSchema) ?? (this.isObjectSchema(vSchema) ? {} : undefined)
+						: cur
+				const res = safeParse(vSchema as any, candidate)
 				if (!res.success) {
 					const issue = res.issues[0]
 					const where = issue?.path?.map((p: any) => p.key ?? p.index).join('.') || k
 					throw new Error(`插件 ${name} 配置无效：${where} -> ${issue?.message ?? 'unknown'}`)
 				}
-				if (cur === undefined) patch[k] = val
+				if (cur === undefined && res.output !== undefined) patch[k] = res.output
 			}
 			if (Object.keys(patch).length > 0) {
-				this.ctx.configService.setConfig(name, patch)
+				this.ctx.configService.setConfig(name, { configRecord: patch })
 			}
 		}
 
@@ -248,5 +252,9 @@ export class PluginRegistry {
 		} catch (err) {
 			this.ctx.logger?.warn({ err, label }, `[PluginRegistry] 可恢复异常：${label}`)
 		}
+	}
+
+	private isObjectSchema(schema: unknown): boolean {
+		return (schema as { type?: string })?.type === 'object'
 	}
 }

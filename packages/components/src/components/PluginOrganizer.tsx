@@ -296,7 +296,7 @@ const SortableRow = memo(function SortableRow({
 			}}
 			style={{
 				transform: transform ? `translate3d(${transform.x}px, ${transform.y}px, 0)` : undefined,
-				transition,
+				transition: transition ?? 'opacity 120ms ease-out, background 120ms ease-out',
 				opacity: isDragging ? 0.9 : 1,
 				height: dh.rowH,
 				padding: `${dh.py}px ${dh.px}px`,
@@ -476,7 +476,7 @@ const GroupCard = memo(function GroupCard(props: {
 			p="xs"
 			style={{
 				transform: transform ? `translate3d(${transform.x}px, ${transform.y}px, 0)` : undefined,
-				transition,
+				transition: transition ?? 'opacity 120ms ease-out',
 				minWidth: 0,
 			}}
 			role="group"

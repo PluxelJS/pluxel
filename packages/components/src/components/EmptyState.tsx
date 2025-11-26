@@ -25,14 +25,20 @@ export function EmptyState({
 	minHeight = 200,
 }: EmptyStateProps) {
 	const scheme = useComputedColorScheme('light', { getInitialValueInEffect: true })
-	const pattern = withPattern ? getPatternStyle(scheme === 'dark' ? 'dark' : 'light') : null
+	const isDark = scheme === 'dark'
+	const pattern = withPattern ? getPatternStyle(isDark ? 'dark' : 'light') : null
+
+	// 默认使用柔和的半透明背景，视觉上更统一
+	const defaultBg = isDark ? 'rgba(30, 41, 59, 0.5)' : 'rgba(248, 250, 252, 0.8)'
 
 	const borderStyle = withBorder
 		? {
-				border: `1px solid ${scheme === 'dark' ? 'rgba(148,163,184,0.2)' : 'rgba(15,23,42,0.08)'}`,
+				border: `1px solid ${isDark ? 'rgba(148,163,184,0.2)' : 'rgba(15,23,42,0.08)'}`,
 				borderRadius: 'var(--mantine-radius-lg)',
 			}
-		: {}
+		: {
+				borderRadius: 'var(--mantine-radius-md)',
+			}
 
 	return (
 		<Center
@@ -40,15 +46,16 @@ export function EmptyState({
 				minHeight,
 				width: '100%',
 				padding: 'var(--mantine-spacing-xl)',
+				backgroundColor: pattern ? pattern.backgroundColor : defaultBg,
 				...(pattern
 					? {
-							backgroundColor: pattern.backgroundColor,
 							backgroundImage: pattern.backgroundImage,
 							backgroundSize: pattern.backgroundSize,
 							backgroundPosition: pattern.backgroundPosition,
 						}
 					: {}),
 				...borderStyle,
+				transition: 'opacity 150ms ease, background-color 150ms ease',
 			}}
 		>
 			<Stack align="center" gap="md" maw={400}>

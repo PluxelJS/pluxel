@@ -152,6 +152,8 @@ export function PackageManagerPage() {
 	const [packageSearch, setPackageSearch] = useState('')
 	const deferredPackageSearch = useDeferredValue(packageSearch.trim().toLowerCase())
 	const searchActive = deferredPackageSearch.length > 0
+	// 搜索过渡状态，用于降低视觉闪烁
+	const isSearchTransitioning = packageSearch.trim().toLowerCase() !== deferredPackageSearch
 	const filteredRows = useMemo(() => {
 		if (!deferredPackageSearch) return rows
 		return rows.filter((row) => {
@@ -1279,7 +1281,16 @@ export function PackageManagerPage() {
 						</Group>
 					</Group>
 				</CardSection>
-				<CardSection px="md" py="sm" style={{ flex: 1, minHeight: 0 }}>
+				<CardSection
+					px="md"
+					py="sm"
+					style={{
+						flex: 1,
+						minHeight: 0,
+						opacity: isSearchTransitioning ? 0.7 : 1,
+						transition: 'opacity 100ms ease-out',
+					}}
+				>
 					{renderPackageTable()}
 				</CardSection>
 			</Card>
