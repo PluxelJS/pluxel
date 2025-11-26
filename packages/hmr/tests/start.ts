@@ -10,7 +10,12 @@ const ctx = new Context({
 	hmrService: {
 		dir: ['./tests/plugins'],
 		log: {
-			debugNamespaces: ['pluxel:hmr:modules', 'pluxel:hmr:time', 'pluxel:hmr:time:entry'],
+			debugNamespaces: [
+				'pluxel:hmr:modules',
+				'pluxel:hmr:time',
+				'pluxel:hmr:time:entry',
+				'pluxel:hmr:warmup',
+			],
 		},
 	},
 	registry: {

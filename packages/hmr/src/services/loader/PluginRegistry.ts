@@ -76,6 +76,11 @@ export class PluginRegistry {
 		const candidateIsIndexAlias =
 			existedPath && existedPath !== moduleId && isIndexFile(moduleId) && sameDir(existedPath, moduleId)
 
+		// 若原主提供者是 index.*，让位给同目录的真实文件前，先停掉旧运行态以避免双注册
+		if (existingIsIndexAlias && !candidateIsIndexAlias) {
+			this.stopPlugin(name, existed!)
+		}
+
 		if (
 			existed &&
 			existed !== ctor &&

@@ -4,7 +4,7 @@ import { BasePlugin, Plugin } from '@pluxel/core'
 export class PluginB extends BasePlugin {
 	init(): void {
 		this.ctx.logger.info('PluginB initialized')
-		throw new Error('aaaaaa')
+		throw new Error('d')
 	}
 
 	doSomething(): void {

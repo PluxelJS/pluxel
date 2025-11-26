@@ -1,6 +1,6 @@
 import { type Context, Injectable } from '@pluxel/core'
 import { makeIdFiltersToMatchWithQuery } from '@rolldown/pluginutils'
-import { createDebug, enable as enableDebug } from 'obug'
+import { enable as enableDebug } from 'obug'
 import { resolve } from 'pathe'
 import {
 	createFilter,
@@ -21,6 +21,7 @@ import {
 	resolveHMRDependencyConfig,
 } from './config'
 import {
+	createHmrDebug,
 	type HMRLogConfig,
 	type ResolvedHMRLogConfig,
 	resolveHmrLogConfig,
@@ -134,8 +135,7 @@ type TimingBucket = 'transform' | 'evaluate' | 'inject'
 
 /** obug 驱动的计时收集：统一记录 transform/evaluate/inject。 */
 class TimingTracker {
-	private readonly debug = createDebug('pluxel:hmr:time')
-	private readonly debugEntry = createDebug('pluxel:hmr:time:entry')
+	private readonly debugEntry
 	private readonly buckets: Record<TimingBucket, NumMap> = {
 		transform: new Map<string, number>(),
 		evaluate: new Map<string, number>(),
@@ -148,8 +148,7 @@ class TimingTracker {
 			formatId: (id: string) => string
 		},
 	) {
-		this.debug.useColors = options.useColors
-		this.debugEntry.useColors = options.useColors
+		this.debugEntry = createHmrDebug('pluxel:hmr:time:entry', options.useColors)
 	}
 
 	clear() {
@@ -169,13 +168,8 @@ class TimingTracker {
 		bump(this.buckets[kind], id, durationMs)
 		if (this.debugEntry.enabled) {
 			const total = this.buckets[kind].get(id) ?? durationMs
-			this.debugEntry(
-				'%s %s %sms (agg=%sms)',
-				kind,
-				this.options.formatId(id),
-				durationMs.toFixed(3),
-				total.toFixed(3),
-			)
+			// 使用 %t 格式化器高亮时间，%p 高亮路径
+			this.debugEntry('%s %p %t (agg=%t)', kind, this.options.formatId(id), durationMs, total)
 		}
 	}
 
@@ -237,9 +231,13 @@ export class HMRService {
 
 	/** 日志控制 */
 	private readonly logConfig: ResolvedHMRLogConfig
-	/** obug 细粒度调试（默认关闭，需 DEBUG=pluxel:hmr:modules 开启） */
-	private readonly dbg = {
-		modules: createDebug('pluxel:hmr:modules'),
+	/** obug 细粒度调试（默认关闭，需 DEBUG=pluxel:hmr:* 开启） */
+	private readonly dbg: {
+		modules: ReturnType<typeof createHmrDebug>
+		warmup: ReturnType<typeof createHmrDebug>
+		batch: ReturnType<typeof createHmrDebug>
+		cache: ReturnType<typeof createHmrDebug>
+		graph: ReturnType<typeof createHmrDebug>
 	}
 
 	constructor(
@@ -248,9 +246,19 @@ export class HMRService {
 	) {
 		this.deps = resolveHMRDependencyConfig(this.config.deps)
 		this.logConfig = resolveHmrLogConfig(this.config.log)
-		this.dbg.modules.useColors = this.logConfig.useColors
+
+		// 初始化所有 debug 实例
+		const useColors = this.logConfig.useColors
+		this.dbg = {
+			modules: createHmrDebug('pluxel:hmr:modules', useColors),
+			warmup: createHmrDebug('pluxel:hmr:warmup', useColors),
+			batch: createHmrDebug('pluxel:hmr:batch', useColors),
+			cache: createHmrDebug('pluxel:hmr:cache', useColors),
+			graph: createHmrDebug('pluxel:hmr:graph', useColors),
+		}
+
 		this.timing = new TimingTracker({
-			useColors: this.logConfig.useColors,
+			useColors,
 			formatId: (id) => this.prettyId(id),
 		})
 
@@ -337,6 +345,12 @@ export class HMRService {
 
 				const endWarmup = startTimer()
 				const coldFiles = unique(files.map((p) => this.toCleanId(p))).sort()
+
+				// 详细输出预热文件列表（需 DEBUG=pluxel:hmr:warmup）
+				if (this.dbg.warmup.enabled) {
+					this.dbg.warmup('files (%n): %l', coldFiles.length, coldFiles.map((f) => this.prettyId(f)))
+				}
+
 				await this.runAndLoadAll(coldFiles, /*keepOrder*/ true)
 				this.ctx.logger.info('[HMR] warmup: %d files in %sms', coldFiles.length, endWarmup().toFixed(1))
 			},
@@ -456,13 +470,8 @@ export class HMRService {
 			}
 			const injectMs = endInject()
 
-			this.dbg.modules(
-				'execute %s: eval=%sms inject=%sms plugin=%s',
-				this.prettyId(id),
-				evaluateMs.toFixed(1),
-				injectMs.toFixed(1),
-				hasPlugin,
-			)
+			// 使用格式化器：%p 路径高亮，%t 时间高亮，%b 布尔高亮
+			this.dbg.modules('execute %p: eval=%t inject=%t plugin=%b', this.prettyId(id), evaluateMs, injectMs, hasPlugin)
 		}
 
 		const endCommit = startTimer()
@@ -668,24 +677,45 @@ export class HMRService {
 	 */
 	private invalidateCaches(affectedIds: Set<string>) {
 		const g = this.vite.moduleGraph
+		let viteInvalidated = 0
+		let runnerInvalidated = 0
 
 		// 1) 失效 Vite 的 transform/ssr 缓存
 		for (const id of affectedIds) {
 			for (const variant of this.moduleIdVariants(id)) {
 				const mods = g.getModulesByFile(variant)
 				if (mods?.size) {
-					for (const m of mods) g.invalidateModule(m)
+					for (const m of mods) {
+						g.invalidateModule(m)
+						viteInvalidated++
+					}
 				} else {
 					const m = g.getModuleById(variant)
-					if (m) g.invalidateModule(m)
+					if (m) {
+						g.invalidateModule(m)
+						viteInvalidated++
+					}
 				}
 			}
 		}
 
 		// 2) 失效 vite-node 执行缓存（清理所有查询后缀的等价 key）
+		const invalidatedKeys: string[] = []
 		for (const key of this.moduleCache.keys()) {
 			const base = this.toCleanId(key)
-			if (affectedIds.has(base)) this.moduleCache.delete(key)
+			if (affectedIds.has(base)) {
+				this.moduleCache.delete(key)
+				runnerInvalidated++
+				invalidatedKeys.push(key)
+			}
+		}
+
+		// 详细输出缓存失效情况（需 DEBUG=pluxel:hmr:cache）
+		if (this.dbg.cache.enabled) {
+			this.dbg.cache('invalidated: vite=%n runner=%n', viteInvalidated, runnerInvalidated)
+			if (invalidatedKeys.length > 0) {
+				this.dbg.cache('runner keys: %l', invalidatedKeys.map((k) => this.prettyId(k)))
+			}
 		}
 	}
 
@@ -777,6 +807,11 @@ export class HMRService {
 		this.anchorCache.clear()
 		this.ctx.logger.info('[HMR#%d] begin: %d files', epoch, files.length)
 
+		// 详细输出触发文件（需 DEBUG=pluxel:hmr:batch）
+		if (this.dbg.batch.enabled) {
+			this.dbg.batch('changed files (%n): %l', files.length, files.map((f) => this.prettyId(f)))
+		}
+
 		// 1) 合并受影响子图（多起点）
 		const affectedIds = new Set<string>()
 		const rootsAll: string[] = []
@@ -791,6 +826,16 @@ export class HMRService {
 				const prev = distance.get(id)
 				if (prev === undefined || d < prev) distance.set(id, d)
 			})
+		}
+
+		// 详细输出受影响子图（需 DEBUG=pluxel:hmr:graph）
+		if (this.dbg.graph.enabled) {
+			const affectedList = [...affectedIds].map((id) => {
+				const d = distance.get(id) ?? -1
+				return `${this.prettyId(id)} (d=${d})`
+			})
+			this.dbg.graph('affected (%n): %l', affectedIds.size, affectedList)
+			this.dbg.graph('roots (%n): %l', rootsAll.length, rootsAll.map((r) => this.prettyId(r)))
 		}
 
 		// 2) 针对 unlink 的清理：不在图内的直接注销并清锚点
@@ -808,6 +853,11 @@ export class HMRService {
 
 		// 4) 最近锚点挑选（不可达则回退 roots）
 		const targets = this.pickTargetsByAnchors(affectedIds, rootsAll, this.ctx.loader.pathAnchors)
+
+		// 详细输出 targets（需 DEBUG=pluxel:hmr:batch）
+		if (this.dbg.batch.enabled) {
+			this.dbg.batch('targets (%n): %l', targets.length, targets.map((t) => this.prettyId(t)))
+		}
 
 		// 5) 预取 transform（优先只对将执行的 targets；为空则回落 affectedIds）
 		if ((this.config.attribution ?? 'prefetch') === 'prefetch') {
