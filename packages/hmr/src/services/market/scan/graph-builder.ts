@@ -54,6 +54,7 @@ export async function buildScanGraph(
 			monoRoots++
 			const packageDirs = new Set(workspace.packageDirs)
 			const normalizedInput = normalize(dir)
+			const normalizedWorkspaceRoot = normalize(workspace.root)
 			let covered = false
 			for (const pkgDir of packageDirs) {
 				const normalizedPkg = normalize(pkgDir)
@@ -66,7 +67,7 @@ export async function buildScanGraph(
 					break
 				}
 			}
-			if (!covered) {
+			if (!covered && (options.includeRoot || normalizedInput !== normalizedWorkspaceRoot)) {
 				packageDirs.add(normalizedInput)
 			}
 			if (options.includeRoot) {
@@ -196,10 +197,17 @@ async function processPackageDir(params: {
 	}
 
 	let entry: EntryResolution | null = null
+	let fallbackFiles: string[] | undefined
 
 	// 如果没有 manifest，直接走 TS fallback
 	if (!manifest) {
-		entry = await resolveTsFallback(pkgDir, ctx)
+		if (ctx.options.fallbackTsOnSingle) {
+			const fallback = await resolveTsFallback(pkgDir, ctx)
+			entry = fallback.entry
+			fallbackFiles = fallback.fallbackFiles
+		} else {
+			entry = noManifestEntry(normalizedDir)
+		}
 	} else {
 		entry = await ctx.entryResolver.resolve(pkgDir, ctx.options, manifest)
 	}
@@ -211,21 +219,13 @@ async function processPackageDir(params: {
 	}
 	if (manifestPath) node.manifestPath = manifestPath
 	if (manifest) node.manifest = manifest
+	if (fallbackFiles?.length) node.fallbackFiles = fallbackFiles
 
 	if (focusSet) markFocusMatches(focusSet, ctx.matchedFocus, node)
 
 	if (entry?.ok) {
 		ctx.entriesSet.add(entry.entry)
 		return node
-	}
-
-	if (ctx.options.fallbackTsOnSingle) {
-		const fallbackEntry = await resolveTsFallback(pkgDir, ctx)
-		if (fallbackEntry.ok) {
-			node.entry = fallbackEntry
-			ctx.entriesSet.add(fallbackEntry.entry)
-			return node
-		}
 	}
 
 	ctx.diagnostics.push({
@@ -237,7 +237,10 @@ async function processPackageDir(params: {
 	return node
 }
 
-async function resolveTsFallback(pkgDir: string, ctx: BuildContext): Promise<EntryResolution> {
+async function resolveTsFallback(
+	pkgDir: string,
+	ctx: BuildContext,
+): Promise<{ entry: EntryResolution; fallbackFiles: string[] }> {
 	const normalizedDir = normalize(pkgDir)
 	const files = await getAllTsFiles([pkgDir], {
 		includeDts: false,
@@ -246,20 +249,38 @@ async function resolveTsFallback(pkgDir: string, ctx: BuildContext): Promise<Ent
 	})
 	if (files.length === 0) {
 		return {
-			ok: false,
-			dir: normalizedDir,
-			code: 'NO_TS_FILES',
-			message: 'No .ts files found in directory.',
-			tried: [],
+			entry: {
+				ok: false,
+				dir: normalizedDir,
+				code: 'NO_TS_FILES',
+				message: 'No .ts files found in directory.',
+				tried: [],
+			},
+			fallbackFiles: [],
 		}
 	}
-	const entry = normalize(files[0])
-	ctx.fallbackSet.add(entry)
+
+	const normalizedFiles = files.map(normalize)
+	for (const file of normalizedFiles) ctx.fallbackSet.add(file)
+
 	return {
-		ok: true,
-		dir: normalizedDir,
-		entry,
-		source: 'fallback',
+		entry: {
+			ok: true,
+			dir: normalizedDir,
+			entry: normalizedFiles[0],
+			source: 'fallback',
+			tried: [],
+		},
+		fallbackFiles: normalizedFiles,
+	}
+}
+
+function noManifestEntry(dir: string): EntryResolution {
+	return {
+		ok: false,
+		dir,
+		code: 'NO_PACKAGE_JSON',
+		message: 'package.json not found and TS fallback is disabled.',
 		tried: [],
 	}
 }

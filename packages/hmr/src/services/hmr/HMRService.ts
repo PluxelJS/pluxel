@@ -1,6 +1,6 @@
 import { type Context, Injectable } from '@pluxel/core'
-import type { LoggerService, PluginService } from '@pluxel/core/services'
 import { makeIdFiltersToMatchWithQuery } from '@rolldown/pluginutils'
+import { createDebug, enable as enableDebug } from 'obug'
 import { resolve } from 'pathe'
 import {
 	createFilter,
@@ -20,6 +20,12 @@ import {
 	type ResolvedHMRDependencyConfig,
 	resolveHMRDependencyConfig,
 } from './config'
+import {
+	type HMRLogConfig,
+	type ResolvedHMRLogConfig,
+	resolveHmrLogConfig,
+	toDebugNamespaceString,
+} from './logging'
 
 /* -------------------------------- 配置项 -------------------------------- */
 
@@ -43,6 +49,8 @@ export interface HMRConfig {
 	}
 	/** 依赖相关配置（external / bridge / optimizeDeps 等） */
 	deps?: HMRDependencyConfig
+	/** 日志与调试开关 */
+	log?: HMRLogConfig
 }
 
 /* --------------------------------- 常量 --------------------------------- */
@@ -67,6 +75,12 @@ const nsToMs = (ns: bigint) => Number(ns) / 1e6
 type NumMap = Map<string, number>
 const bump = (m: NumMap, k: string, v: number) => m.set(k, (m.get(k) ?? 0) + v)
 const unique = <T>(iter: Iterable<T>) => Array.from(new Set(iter))
+
+/** 简单计时器，返回结束函数 */
+const startTimer = () => {
+	const t0 = process.hrtime.bigint()
+	return () => nsToMs(process.hrtime.bigint() - t0)
+}
 
 /** 轻量互斥，确保批处理串行执行 */
 class Mutex {
@@ -116,6 +130,79 @@ class BatchDebouncer {
 	}
 }
 
+type TimingBucket = 'transform' | 'evaluate' | 'inject'
+
+/** obug 驱动的计时收集：统一记录 transform/evaluate/inject。 */
+class TimingTracker {
+	private readonly debug = createDebug('pluxel:hmr:time')
+	private readonly debugEntry = createDebug('pluxel:hmr:time:entry')
+	private readonly buckets: Record<TimingBucket, NumMap> = {
+		transform: new Map<string, number>(),
+		evaluate: new Map<string, number>(),
+		inject: new Map<string, number>(),
+	}
+
+	constructor(
+		private readonly options: {
+			useColors: boolean
+			formatId: (id: string) => string
+		},
+	) {
+		this.debug.useColors = options.useColors
+		this.debugEntry.useColors = options.useColors
+	}
+
+	clear() {
+		for (const bucket of Object.values(this.buckets)) bucket.clear()
+	}
+
+	start(kind: TimingBucket, id: string) {
+		const t0 = process.hrtime.bigint()
+		return () => {
+			const durationMs = nsToMs(process.hrtime.bigint() - t0)
+			this.record(kind, id, durationMs)
+			return durationMs
+		}
+	}
+
+	record(kind: TimingBucket, id: string, durationMs: number) {
+		bump(this.buckets[kind], id, durationMs)
+		if (this.debugEntry.enabled) {
+			const total = this.buckets[kind].get(id) ?? durationMs
+			this.debugEntry(
+				'%s %s %sms (agg=%sms)',
+				kind,
+				this.options.formatId(id),
+				durationMs.toFixed(3),
+				total.toFixed(3),
+			)
+		}
+	}
+
+	top(kind: TimingBucket, n = 5) {
+		return [...this.buckets[kind].entries()].sort((a, b) => b[1] - a[1]).slice(0, n)
+	}
+
+	snapshot() {
+		return {
+			transformMs: this.buckets.transform,
+			evalMs: this.buckets.evaluate,
+			injectMs: this.buckets.inject,
+		}
+	}
+}
+
+/** 归一化 moduleCache key，避免 /@fs/ 与根相对路径重复执行。 */
+class NormalizedModuleCacheMap extends ModuleCacheMap {
+	constructor(private readonly normalize: (id: string) => string) {
+		super()
+	}
+
+	override normalizePath(fsPath: string): string {
+		return this.normalize(fsPath)
+	}
+}
+
 /* ------------------------------ HMR Service ----------------------------- */
 /**
  * HMRService（anchors 实时读取 + 计时归因 + 批处理串行）
@@ -130,24 +217,16 @@ export class HMRService {
 	private vns!: ViteNodeServer
 	private runner!: ViteNodeRunner
 	private filter!: (id: string) => boolean
-	private readonly moduleCache = new ModuleCacheMap()
+	private readonly moduleCache = new NormalizedModuleCacheMap((id) => this.toCleanId(id))
+	private serverRoot = ''
 
 	/** 依赖/模块行为：external、bridge、optimizeDeps 等 */
 	private readonly deps: ResolvedHMRDependencyConfig
 
 	private plugin!: Plugin
 
-	/** 计时器：一轮 HMR 内聚合 */
-	private trace = {
-		transformMs: new Map<string, number>() as NumMap,
-		evalMs: new Map<string, number>() as NumMap,
-		injectMs: new Map<string, number>() as NumMap,
-		clear() {
-			this.transformMs.clear()
-			this.evalMs.clear()
-			this.injectMs.clear()
-		},
-	}
+	/** obug 驱动的计时收集 */
+	private timing: TimingTracker
 
 	/** 串行互斥 + 防抖出批 */
 	private mutex = new Mutex()
@@ -156,11 +235,28 @@ export class HMRService {
 	/** 最近锚点缓存（按批清空，批内复用） */
 	private anchorCache = new Map<string, string | null>()
 
+	/** 日志控制 */
+	private readonly logConfig: ResolvedHMRLogConfig
+	/** obug 细粒度调试（默认关闭，需 DEBUG=pluxel:hmr:modules 开启） */
+	private readonly dbg = {
+		modules: createDebug('pluxel:hmr:modules'),
+	}
+
 	constructor(
 		private ctx: Context,
 		private config: HMRConfig,
 	) {
 		this.deps = resolveHMRDependencyConfig(this.config.deps)
+		this.logConfig = resolveHmrLogConfig(this.config.log)
+		this.dbg.modules.useColors = this.logConfig.useColors
+		this.timing = new TimingTracker({
+			useColors: this.logConfig.useColors,
+			formatId: (id) => this.prettyId(id),
+		})
+
+		// 可选开启 obug namespace（否则遵循 DEBUG 环境变量）
+		const ns = toDebugNamespaceString(this.logConfig.debugNamespaces)
+		if (ns) enableDebug(ns)
 
 		// include .ts/.tsx；排除 .d.ts（兼容 ?v= 查询串）
 		const includeGlobs = makeIdFiltersToMatchWithQuery(
@@ -178,6 +274,7 @@ export class HMRService {
 			/** DevServer 生命周期：桥接 vite-node、预热业务代码、注册监听 */
 			configureServer: async (server) => {
 				this.vite = server
+				this.serverRoot = this.toViteId(server.config.root)
 
 				// 1) vite-node 服务端（transform/依赖判定交给 vite）
 				this.vns = new ViteNodeServer(server, {
@@ -197,11 +294,10 @@ export class HMRService {
 					moduleCache: this.moduleCache,
 					fetchModule: async (id) => {
 						const clean = this.toCleanId(id)
-						const t0 = process.hrtime.bigint()
-						const r = await this.vns.fetchModule(id) // transform on demand
-						const t1 = process.hrtime.bigint()
-						bump(this.trace.transformMs, clean, nsToMs(t1 - t0))
-						return r
+						const end = this.timing.start('transform', clean)
+						const result = await this.vns.fetchModule(id) // transform on demand
+						end()
+						return result
 					},
 					resolveId: (id, importer) => this.vns.resolveId(id, importer),
 				})
@@ -231,18 +327,18 @@ export class HMRService {
 				})
 
 				// 7) 冷启动：扫描 + 预热执行（让 loader 完成 anchors 首次填充）
-				console.time('[HMR] 扫描文件')
+				const endScan = startTimer()
 				const scanRoots = this.config.dir.map((d) => resolve(process.cwd(), d))
 				const files = await this.ctx.scanService.scanEntries({
 					roots: scanRoots,
 					scan: { preferHmrExports: true, fallbackTsOnSingle: true },
 				})
-				console.timeEnd('[HMR] 扫描文件')
+				this.ctx.logger.info('[HMR] scan: %d files in %sms', files.length, endScan().toFixed(1))
 
-				console.time('[HMR] 预热/执行模块')
+				const endWarmup = startTimer()
 				const coldFiles = unique(files.map((p) => this.toCleanId(p))).sort()
 				await this.runAndLoadAll(coldFiles, /*keepOrder*/ true)
-				console.timeEnd('[HMR] 预热/执行模块')
+				this.ctx.logger.info('[HMR] warmup: %d files in %sms', coldFiles.length, endWarmup().toFixed(1))
 			},
 
 			/** 服务端 HMR：仅入队，由批处理串行执行 */
@@ -284,6 +380,23 @@ export class HMRService {
 
 	/* --------------------------- 路径规范化工具 --------------------------- */
 
+	/** 生成常见等价 ID（绝对、/@fs、根相对），用于查 graph 与缓存 */
+	private moduleIdVariants(pOrId: string): string[] {
+		const canonical = this.toCleanId(pOrId)
+		const variants = new Set<string>([canonical])
+
+		if (canonical.startsWith('/')) {
+			variants.add(`/@fs${canonical}`)
+			if (this.serverRoot && canonical.startsWith(this.serverRoot)) {
+				const rel = canonical.slice(this.serverRoot.length)
+				const relWithSlash = rel.startsWith('/') ? rel : `/${rel}`
+				variants.add(relWithSlash)
+			}
+		}
+
+		return [...variants]
+	}
+
 	private toViteId(p: string) {
 		return normalizePath(p) // Windows \ → /；保持与 vite graph 一致
 	}
@@ -292,7 +405,20 @@ export class HMRService {
 		return i >= 0 ? id.slice(0, i) : id
 	}
 	private toCleanId(pOrId: string) {
-		return this.cleanUrl(this.toViteId(pOrId))
+		const clean = this.cleanUrl(this.toViteId(pOrId))
+		// 1) Vite 内部访问文件系统会加 /@fs/ 前缀
+		let normalized = clean.replace(/^\/@fs\//, '/')
+		// 2) 处理 dev server 根相对的路径（/tests/...）
+		if (this.serverRoot && normalized.startsWith('/') && !normalized.startsWith(this.serverRoot)) {
+			normalized = normalizePath(resolve(this.serverRoot, normalized.slice(1)))
+		}
+		return normalized
+	}
+	private prettyId(pOrId: string) {
+		const clean = this.toCleanId(pOrId)
+		const cwd = this.toViteId(process.cwd())
+		if (clean.startsWith(cwd)) return clean.slice(cwd.length).replace(/^\\\//, '')
+		return clean
 	}
 
 	/* ------------------------------ 执行 + 注入 ------------------------------ */
@@ -304,13 +430,13 @@ export class HMRService {
 	 * - 失败隔离：单入口失败不阻断整批；最终 commit 一次
 	 */
 	private async runAndLoadAll(filesPath: string[], keepOrder = true) {
-		if (!filesPath.length) return
+		if (!filesPath.length) return undefined
 
 		const dedup = unique(filesPath.map((p) => this.toCleanId(p)))
 		const ordered = keepOrder ? dedup : [...dedup]
 
 		for (const id of ordered) {
-			const t0 = process.hrtime.bigint()
+			const endEvaluate = this.timing.start('evaluate', id)
 			let mod: any
 			try {
 				mod = await this.runner.executeFile(id) // Evaluate 入口
@@ -318,8 +444,9 @@ export class HMRService {
 				this.ctx.logger.error({ file: id, err }, '[HMR] execute failed')
 				continue
 			}
-			const t1 = process.hrtime.bigint()
+			const evaluateMs = endEvaluate()
 
+			const endInject = this.timing.start('inject', id)
 			let hasPlugin = false
 			try {
 				hasPlugin = this.ctx.loader.replaceModule(id, mod)
@@ -327,23 +454,20 @@ export class HMRService {
 				this.ctx.logger.error({ file: id, err }, '[HMR] replaceModule failed')
 				continue
 			}
-			const t2 = process.hrtime.bigint()
+			const injectMs = endInject()
 
-			const evaluateMs = nsToMs(t1 - t0)
-			const injectMs = nsToMs(t2 - t1)
-			bump(this.trace.evalMs, id, evaluateMs)
-			bump(this.trace.injectMs, id, injectMs)
-
-			this.ctx.logger.info(
-				{ file: id, timings: { evaluateMs, loadModuleMs: injectMs }, pluginEntry: hasPlugin },
-				'[HMR] execute module',
+			this.dbg.modules(
+				'execute %s: eval=%sms inject=%sms plugin=%s',
+				this.prettyId(id),
+				evaluateMs.toFixed(1),
+				injectMs.toFixed(1),
+				hasPlugin,
 			)
 		}
 
-		const tc0 = process.hrtime.bigint()
+		const endCommit = startTimer()
 		const res = await this.ctx.registry.commit()
-		const tc1 = process.hrtime.bigint()
-		this.ctx.logger.info({ durationMs: nsToMs(tc1 - tc0) }, '[HMR] registry.commit()')
+		this.ctx.logger.info('[HMR] commit: %sms', endCommit().toFixed(1))
 
 		return res
 	}
@@ -423,11 +547,15 @@ export class HMRService {
 
 	/** 从 FS 路径拿到 graph 模块节点（兼容 byFile / byId 两支） */
 	private getModulesByFile(fileOrId: string) {
-		const id = this.toCleanId(fileOrId)
-		const byFile = this.vite.moduleGraph.getModulesByFile(id)
-		if (byFile?.size) return [...byFile]
-		const single = this.vite.moduleGraph.getModuleById(id)
-		return single ? [single] : []
+		for (const variant of this.moduleIdVariants(fileOrId)) {
+			const byFile = this.vite.moduleGraph.getModulesByFile(variant)
+			if (byFile?.size) return [...byFile]
+		}
+		for (const variant of this.moduleIdVariants(fileOrId)) {
+			const single = this.vite.moduleGraph.getModuleById(variant)
+			if (single) return [single]
+		}
+		return []
 	}
 
 	/**
@@ -450,7 +578,7 @@ export class HMRService {
 		while (cursor < queue.length) {
 			const { m, d } = queue[cursor++]
 			if (!m?.id) continue
-			const id = this.cleanUrl(m.id)
+			const id = this.toCleanId(m.id)
 			if (!this.filter(id) || id.startsWith('\0')) continue
 			if (visited.has(id)) continue
 			visited.add(id)
@@ -465,7 +593,7 @@ export class HMRService {
 		for (const id of affectedIds) {
 			const m = idToMod.get(id)!
 			const hasImporterInside = [...m.importers].some(
-				(im) => im.id && affectedIds.has(this.cleanUrl(im.id)),
+				(im) => im.id && affectedIds.has(this.toCleanId(im.id)),
 			)
 			if (!hasImporterInside) roots.push(id)
 		}
@@ -513,7 +641,7 @@ export class HMRService {
 		while (cursor < queue.length) {
 			const m = queue[cursor++]
 			if (!m?.id) continue
-			const id = this.cleanUrl(m.id)
+			const id = this.toCleanId(m.id)
 			if (visited.has(id)) continue
 			visited.add(id)
 
@@ -543,18 +671,20 @@ export class HMRService {
 
 		// 1) 失效 Vite 的 transform/ssr 缓存
 		for (const id of affectedIds) {
-			const mods = g.getModulesByFile(id)
-			if (mods?.size) {
-				for (const m of mods) g.invalidateModule(m)
-			} else {
-				const m = g.getModuleById(id)
-				if (m) g.invalidateModule(m)
+			for (const variant of this.moduleIdVariants(id)) {
+				const mods = g.getModulesByFile(variant)
+				if (mods?.size) {
+					for (const m of mods) g.invalidateModule(m)
+				} else {
+					const m = g.getModuleById(variant)
+					if (m) g.invalidateModule(m)
+				}
 			}
 		}
 
 		// 2) 失效 vite-node 执行缓存（清理所有查询后缀的等价 key）
 		for (const key of this.moduleCache.keys()) {
-			const base = this.cleanUrl(key)
+			const base = this.toCleanId(key)
 			if (affectedIds.has(base)) this.moduleCache.delete(key)
 		}
 	}
@@ -588,70 +718,64 @@ export class HMRService {
 			const id = this.toCleanId(raw)
 			if (seen.has(id)) continue
 			seen.add(id)
-			const t0 = process.hrtime.bigint()
+			const end = this.timing.start('transform', id)
 			try {
 				await this.vns.fetchModule(id)
 			} catch {
 				// 某些非代码资源或边缘情况：忽略预取失败，不影响后续 evaluate
 			}
-			const t1 = process.hrtime.bigint()
-			bump(this.trace.transformMs, id, nsToMs(t1 - t0))
+			end()
 		}
 	}
 
 	/* ------------------------------ 观测输出 ------------------------------ */
 
-	private topN(m: NumMap, n = 5) {
-		return [...m.entries()].sort((a, b) => b[1] - a[1]).slice(0, n)
+	/** 格式化 top 排名 */
+	private formatTopEntries(
+		entries: Array<[string, number]>,
+		marker?: (id: string) => string | undefined,
+	): string {
+		if (!entries.length) return '    (none)'
+		return entries
+			.map(([id, ms], i) => {
+				const tag = marker?.(id)
+				const suffix = tag ? ` [${tag}]` : ''
+				return `    ${i + 1}. ${this.prettyId(id)} ${ms.toFixed(1)}ms${suffix}`
+			})
+			.join('\n')
 	}
 
 	private printAttribution(
 		changed: string,
-		_affectedd: Set<string>,
+		_affectedIds: Set<string>,
 		targets: string[],
-		extra?: {
-			prefetchCandidates?: number
-		},
 	) {
 		const targetSet = new Set(targets)
+		const marker = (id: string) => (targetSet.has(id) ? 'target' : id === changed ? 'changed' : undefined)
 
-		const report: Record<string, unknown> = {
-			changed,
-			targets: [...targetSet],
-			metrics: {
-				prefetchCandidates: extra?.prefetchCandidates ?? targets.length,
-			},
-		}
-		if (this.trace.transformMs.size) {
-			report.transformTop = this.topN(this.trace.transformMs).map(([id, ms]) => ({
-				id,
-				durationMs: ms,
-				marker: targetSet.has(id) ? 'target' : id === changed ? 'changed' : undefined,
-			}))
-		}
-		if (this.trace.evalMs.size) {
-			report.evaluateTop = this.topN(this.trace.evalMs, 3).map(([id, ms]) => ({
-				id,
-				durationMs: ms,
-			}))
-		}
-		if (this.trace.injectMs.size) {
-			report.injectTop = this.topN(this.trace.injectMs, 3).map(([id, ms]) => ({
-				id,
-				durationMs: ms,
-			}))
-		}
+		const transformTop = this.timing.top('transform', 5)
+		const evaluateTop = this.timing.top('evaluate', 3)
+		const injectTop = this.timing.top('inject', 3)
 
-		this.ctx.logger.info(report, '[HMR] timing attribution')
+		const lines = [
+			`[HMR] attribution: ${this.prettyId(changed)} → ${targets.length} targets`,
+			'  transform:',
+			this.formatTopEntries(transformTop, marker),
+			'  evaluate:',
+			this.formatTopEntries(evaluateTop),
+			'  inject:',
+			this.formatTopEntries(injectTop),
+		]
+		this.ctx.logger.info(lines.join('\n'))
 	}
 
 	/* ------------------------------ 批处理主流程 ------------------------------ */
 
 	private async processBatch(files: string[], epoch: number) {
-		const stamp = `[HMR#${epoch}]`
-		this.trace.clear()
+		const endBatch = startTimer()
+		this.timing.clear()
 		this.anchorCache.clear()
-		this.ctx.logger.info({ files }, `${stamp} begin`)
+		this.ctx.logger.info('[HMR#%d] begin: %d files', epoch, files.length)
 
 		// 1) 合并受影响子图（多起点）
 		const affectedIds = new Set<string>()
@@ -704,10 +828,8 @@ export class HMRService {
 		await this.runAndLoadAll(execOrder, /*keepOrder*/ true)
 
 		// 7) 观测输出
-		this.printAttribution(files[0] ?? 'N/A', affectedIds, execOrder, {
-			prefetchCandidates: targets.length ? targets.length : affectedIds.size,
-		})
-		const activeServices = this.ctx.registry.pluginRegistry.lastContainer.services.size
-		this.ctx.logger.info({ activeServices }, `${stamp} end`)
+		this.printAttribution(files[0] ?? 'N/A', affectedIds, execOrder)
+		const activeServices = this.ctx.registry.pluginRegistry.lastContainer?.services.size ?? 0
+		this.ctx.logger.info('[HMR#%d] end: %d services, %sms', epoch, activeServices, endBatch().toFixed(1))
 	}
 }

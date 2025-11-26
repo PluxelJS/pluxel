@@ -287,6 +287,9 @@ importers:
       nypm:
         specifier: ^0.6.2
         version: 0.6.2
+      obug:
+        specifier: ^2.1.1
+        version: 2.1.1
       pathe:
         specifier: ^2.0.3
         version: 2.0.3

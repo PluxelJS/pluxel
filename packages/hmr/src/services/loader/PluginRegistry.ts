@@ -2,6 +2,7 @@
 import { type Context, getPluginInfo, type PluginConstructor } from '@pluxel/core'
 import { getDefault, safeParse } from 'valibot'
 import type { ConfigSchemaMap } from '../..'
+import { dirname, normalize } from 'pathe'
 
 type ModuleId = string
 type PluginName = string
@@ -9,6 +10,8 @@ type ExportKey = string
 type ModuleItem = Readonly<{ ctor: PluginConstructor; exportKey: ExportKey }>
 
 const EMPTY: readonly ModuleItem[] = Object.freeze([])
+const isIndexFile = (p: string) => /(?:^|\/)index\.[cm]?[tj]sx?$/.test(p)
+const sameDir = (a: string, b: string) => dirname(normalize(a)) === dirname(normalize(b))
 export const LIFECYCLE_STATES = ['running', 'stopped', 'disabled'] as const
 export type PluginLifecycleStage = (typeof LIFECYCLE_STATES)[number]
 
@@ -28,6 +31,12 @@ export class PluginRegistry {
 	private enrolled = new WeakMap<PluginConstructor, Set<ModuleId>>() // 模块级去重
 
 	constructor(private ctx: Context) {}
+
+	private isPrimaryProvider(moduleId: ModuleId, ctor: PluginConstructor): boolean {
+		const { name } = getPluginInfo(ctor)
+		const primary = this.name2Path.get(name)
+		return primary === undefined || primary === moduleId
+	}
 
 	// ---------- 只读 ----------
 	get modules(): ReadonlyMap<ModuleId, readonly ModuleItem[]> {
@@ -60,7 +69,22 @@ export class PluginRegistry {
 		// 冲突：允许“同路径热替换”，拒绝“跨路径重名”
 		const existed = this.nameMap.get(name)
 		const existedPath = this.name2Path.get(name)
-		if (existed && existed !== ctor && existedPath && existedPath !== moduleId) {
+		const enrolledPaths = existed ? this.enrolled.get(existed) : undefined
+		const isKnownAlias = enrolledPaths?.has(moduleId)
+		const existingIsIndexAlias =
+			existedPath && existedPath !== moduleId && isIndexFile(existedPath) && sameDir(existedPath, moduleId)
+		const candidateIsIndexAlias =
+			existedPath && existedPath !== moduleId && isIndexFile(moduleId) && sameDir(existedPath, moduleId)
+
+		if (
+			existed &&
+			existed !== ctor &&
+			existedPath &&
+			existedPath !== moduleId &&
+			!isKnownAlias &&
+			!existingIsIndexAlias &&
+			!candidateIsIndexAlias
+		) {
 			throw new Error(`插件名冲突：${name} 已由 ${existedPath} 提供，拒绝来自 ${moduleId}`)
 		}
 
@@ -75,8 +99,13 @@ export class PluginRegistry {
 		}
 
 		this.nameMap.set(name, ctor)
-		this.name2Path.set(name, moduleId)
-		this.name2ExportKey.set(name, exportKey)
+		// 避免被“同 ctor 的跨路径再导出”覆盖掉首个声明的主路径；除非要把 index.* 别名让位给真实文件
+		const shouldUpdatePrimaryMapping =
+			(!existedPath || existedPath === moduleId || existed !== ctor || existingIsIndexAlias) && !candidateIsIndexAlias
+		if (shouldUpdatePrimaryMapping) {
+			this.name2Path.set(name, moduleId)
+			this.name2ExportKey.set(name, exportKey)
+		}
 	}
 
 	/** 清空模块的声明（通常在 replace/prune 前调用） */
@@ -107,6 +136,7 @@ export class PluginRegistry {
 		const list = this.moduleMap.get(moduleId) ?? EMPTY
 		for (const { ctor } of list) {
 			const { name } = getPluginInfo(ctor)
+			if (!this.isPrimaryProvider(moduleId, ctor)) continue
 			if (this.ctx.configService.isEnable(name)) {
 				this.startPlugin(name, ctor)
 			}
@@ -184,6 +214,7 @@ export class PluginRegistry {
 		const list = this.moduleMap.get(moduleId) ?? EMPTY
 		for (const { ctor } of list) {
 			const { name } = getPluginInfo(ctor)
+			if (!this.isPrimaryProvider(moduleId, ctor)) continue
 			this.stopPlugin(name, ctor)
 		}
 	}
@@ -200,6 +231,7 @@ export class PluginRegistry {
 		const list = this.moduleMap.get(moduleId) ?? EMPTY
 		for (const { ctor } of list) {
 			const { name } = getPluginInfo(ctor)
+			if (!this.isPrimaryProvider(moduleId, ctor)) continue
 			this.disablePersisted(name)
 		}
 	}

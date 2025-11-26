@@ -33,7 +33,7 @@ export default defineConfig({
 	},
 	plugins: [
 		PreprocessorDirectives(),
-		appendDtsImport('import type {} from "./services"', ['index.d.mts']),
+		appendDtsImport('import type {} from "./services.d.mts"', ['index.d.mts']),
 	],
 	env: {
 		NODE_ENV: 'production',

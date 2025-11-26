@@ -7,7 +7,12 @@ if (process.env.PLUXEL_HMR_SSR === undefined) {
 }
 
 const ctx = new Context({
-	hmrService: { dir: ['./tests/plugins'] },
+	hmrService: {
+		dir: ['./tests/plugins'],
+		log: {
+			debugNamespaces: ['pluxel:hmr:modules', 'pluxel:hmr:time', 'pluxel:hmr:time:entry'],
+		},
+	},
 	registry: {
 		plugigCTXIsolate: [PinoLoggerService],
 	},
