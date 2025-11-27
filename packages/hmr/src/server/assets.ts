@@ -15,7 +15,7 @@ type ManifestEntry = {
 
 type Manifest = Record<string, ManifestEntry>
 
-const PUBLIC_BASE = process.env.CLIENT_DIST ?? '/node_modules/@pluxel/hmr/public'
+const PUBLIC_BASE = process.env.CLIENT_DIST ?? '/node_modules/@pluxel/hmr/dist/public'
 
 const pickEntry = (manifest: Manifest, entry = 'src/client.tsx') =>
 	entry in manifest
