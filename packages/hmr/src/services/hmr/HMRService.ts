@@ -15,7 +15,7 @@ import { ModuleCacheMap, ViteNodeRunner } from 'vite-node/client'
 import { ViteNodeServer } from 'vite-node/server'
 import { installSourcemapsSupport } from 'vite-node/source-map'
 import tsconfigPaths from 'vite-tsconfig-paths'
-import { configSourcePlugin } from '../../vite-plugins/configSourcePlugin'
+import { configSourcePlugin } from '@pluxel/rolldown'
 import {
 	type HMRDependencyConfig,
 	type ResolvedHMRDependencyConfig,

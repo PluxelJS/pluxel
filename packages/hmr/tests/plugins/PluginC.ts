@@ -1,10 +1,14 @@
 import { BasePlugin, Plugin } from '@pluxel/core'
+import { Config } from '@pluxel/hmr'
 import * as v from 'valibot'
 // biome-ignore lint/correctness/noUnusedImports: <explanation>
 import { demoBookModule } from './demo-parent'
+import { test1 } from './testconfig'
 
 @Plugin({ name: 'PluginC', type: 'hook' })
 export class PluginC extends BasePlugin {
+	@Config(test1)
+	private test1!: Config<typeof test1>
 	init(): void {
 		this.ctx.logger.info('PluginC initialized')
 

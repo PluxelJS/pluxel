@@ -14,7 +14,7 @@ interface Ctx<S extends ObjectLikeSchema> {
 	sections: SectionPlan[]
 	hiddenFields: PlannedField[]
 	submit: () => void
-	reset: () => void
+	reset: (values?: Record<string, any>) => void
 }
 const AutoFormCtx = createContext<Ctx<ObjectLikeSchema> | null>(null)
 
@@ -52,7 +52,7 @@ export function AutoForm<S extends ObjectLikeSchema>({
 			sections: fieldPlan.sections,
 			hiddenFields: fieldPlan.hiddenFields,
 			submit: () => form.handleSubmit(),
-			reset: () => form.reset(),
+			reset: (values?: Record<string, any>) => form.reset(values as any),
 		}),
 		[form, fieldPlan],
 	)
@@ -174,7 +174,7 @@ if (process.env.NODE_ENV !== 'production') {
 /* ───────── 子组件：动作（render-props，完全自定义外观/位置） ───────── */
 export interface ActionsRenderProps {
 	submit: () => void
-	reset: () => void
+	reset: (values?: Record<string, any>) => void
 	setValues: (values: Record<string, any>) => void
 	dirty: boolean
 	canSubmit: boolean

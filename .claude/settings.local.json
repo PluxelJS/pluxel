@@ -5,7 +5,8 @@
       "Bash(cat:*)",
       "Bash(npx tsc:*)",
       "Bash(npm run build:*)",
-      "Bash(pnpm run build:*)"
+      "Bash(pnpm run build:*)",
+      "Bash(bun test)"
     ],
     "deny": [],
     "ask": []

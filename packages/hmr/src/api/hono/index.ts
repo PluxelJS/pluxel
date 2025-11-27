@@ -16,52 +16,14 @@ const app = new Hono<AppEnv>()
 			return c.text('Internal RPC error', 500)
 		}
 	})
-	// ============ REST API 路由（替代 capnweb RPC） ============
-	// 插件 schema
+	// ============ REST API（仅调试/直连调试用） ============
+	// 仅保留 schema GET，方便通过浏览器快速排查，无需 RPC 客户端
 	.get('/plugins/:name/schema', (c) => {
 		const name = c.req.param('name')
 		const handle = new PluginHandle(c.var.plugin_ctx, name)
 		return c.json(handle.schema())
 	})
-	// 插件 config
-	.get('/plugins/:name/config', (c) => {
-		const name = c.req.param('name')
-		const handle = new PluginHandle(c.var.plugin_ctx, name)
-		return c.json(handle.config())
-	})
-	// 插件状态
-	.get('/plugins/:name/status', (c) => {
-		const name = c.req.param('name')
-		const handle = new PluginHandle(c.var.plugin_ctx, name)
-		return c.json(handle.status())
-	})
-	// 保存插件配置
-	.post('/plugins/:name/config', async (c) => {
-		const name = c.req.param('name')
-		const handle = new PluginHandle(c.var.plugin_ctx, name)
-		const patch = await c.req.json()
-		return c.json(handle.saveConfig(patch))
-	})
-	// 重置插件配置
-	.post('/plugins/:name/config/reset', async (c) => {
-		const name = c.req.param('name')
-		const handle = new PluginHandle(c.var.plugin_ctx, name)
-		const body = await c.req.json().catch(() => ({}))
-		return c.json(handle.resetConfig(body.keys))
-	})
-	// 更新插件状态（start/stop/restart/enable/disable）
-	.post('/plugins/:name/status', async (c) => {
-		const name = c.req.param('name')
-		const handle = new PluginHandle(c.var.plugin_ctx, name)
-		const { action } = await c.req.json()
-		return c.json(await handle.updateStatus(action))
-	})
-	// 全局插件状态概览
-	.get('/plugin-status', (c) => {
-		const api = new HmrRpcApi(c.var.plugin_ctx)
-		return c.json(api.pluginStatus())
-	})
-	// 插件分组
+	// 插件分组（仍使用 REST，因 UI 直接发请求）
 	.get('/plugin-groups', (c) => {
 		const api = new HmrRpcApi(c.var.plugin_ctx)
 		return c.json(api.pluginGroups())

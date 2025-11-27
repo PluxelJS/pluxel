@@ -3,8 +3,8 @@ import { f, v } from '@pluxel/hmr/config'
 import { Config } from 'packages/hmr'
 
 export const config = v.object({
-	name: v.optional(v.pipe(v.string(), v.hexColor()), '#000000'),
-})
+	name: v.optional(v.pipe(v.string(),v.hexColor()), '#000000'),
+}) 
 
 @Plugin({ name: 'PluginB', type: 'hook' })
 export class PluginB extends BasePlugin {

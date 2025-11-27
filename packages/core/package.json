@@ -36,6 +36,7 @@
 	},
 	"devDependencies": {
 		"@pluxel/context": "workspace:*",
+		"@pluxel/rolldown": "workspace:*",
 		"diod": "workspace:*",
 		"option-t": "^55.1.0",
 		"tinybench": "^5.1.0"

@@ -168,7 +168,7 @@ function rebuildInfoSnapshot(ctor: Function, s: State): void {
 
 	const configSourceMap =
 		s.configSource && Object.keys(s.configSource).length
-			? (s.configSource as Readonly<Record<string, string>>)
+			? (normalizeConfigSourceMap(s.configSource) as Readonly<Record<string, string>>)
 			: undefined
 
 	const snap: PluginInfo = __DEV__
@@ -445,6 +445,17 @@ export function getConfigSource(
 	ctor: Function,
 ): Readonly<Record<string, string>> | undefined {
 	const s = STATE.get(ctor)
-	if (!s?.configSource || !Object.keys(s.configSource).length) return undefined
-	return __DEV__ ? $freeze({ ...s.configSource }) : s.configSource
+	return normalizeConfigSourceMap(s?.configSource ?? undefined)
+}
+
+function normalizeConfigSourceMap(
+	source: Record<string, string> | null | undefined,
+): Readonly<Record<string, string>> | undefined {
+	if (!source || !Object.keys(source).length) return undefined
+	const proto = Object.getPrototypeOf(source)
+	if (!__DEV__ && proto === Object.prototype) {
+		return source as Readonly<Record<string, string>>
+	}
+	const plain = { ...source }
+	return __DEV__ ? $freeze(plain) : plain
 }

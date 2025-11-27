@@ -38,6 +38,7 @@ export function RightPane({ config }: RightPaneProps) {
 						/>
 					) : config.data?.schemaMap ? (
 						<ConfigForm
+							key={pluginName ?? 'config-form'}
 							pluginName={pluginName}
 							schemas={config.data.schemaMap}
 							savedConfig={config.data.savedConfig}

@@ -1,0 +1,6 @@
+export { rewriteDtsModuleAugmentations } from "./plugins/rewriteDtsModuleAugmentations"
+export { appendDtsImport } from "./plugins/appendDtsImport"
+export { configSourcePlugin } from "./plugins/configSourcePlugin"
+export type { ConfigSourcePluginOptions } from "./plugins/configSourcePlugin"
+export { importTypeFixerPlugin } from "./plugins/importTypeFixerPlugin"
+export type { ImportTypeFixerPluginOptions } from "./plugins/importTypeFixerPlugin"

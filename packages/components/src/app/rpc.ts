@@ -13,3 +13,16 @@ export const client = hc<AppType>('/api')
  * 重新创建 session，避免出现 “Batch RPC request ended” 错误。
  */
 export const createRpcClient = (): RpcStub<HmrRpcApi> => newHttpBatchRpcSession<HmrRpcApi>('/api/rpc')
+
+/** 运行一次 RPC 调用并在结束后自动释放 session。 */
+export async function runRpc<T>(
+	runner: (rpc: RpcStub<HmrRpcApi>) => T | Promise<T>,
+): Promise<Awaited<T>> {
+	const session = createRpcClient()
+	try {
+		return await runner(session)
+	} finally {
+		const dispose = (session as any)[Symbol.dispose] as (() => void) | undefined
+		dispose?.call(session)
+	}
+}

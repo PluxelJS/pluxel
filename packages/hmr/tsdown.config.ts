@@ -1,31 +1,9 @@
 import { fileURLToPath } from 'node:url'
+import { appendDtsImport } from '@pluxel/rolldown'
 import { defineConfig } from 'tsdown'
 import PreprocessorDirectives from 'unplugin-preprocessor-directives/rollup'
 
 const valibotFormSrc = fileURLToPath(new URL('../valibot-form/src', import.meta.url))
-
-function appendDtsImport(snippet: string, files: string[]) {
-	const exts = /\.d\.(?:mts|cts|ts)$/i
-	return {
-		name: 'append-dts-import',
-		generateBundle(_, bundle) {
-			for (const [name, chunk] of Object.entries(bundle)) {
-				if (!exts.test(name)) continue
-				for (const file of files) {
-					if (name.endsWith(file)) continue
-				}
-
-				const isAsset = (chunk as any).type === 'asset'
-				const code = String(isAsset ? (chunk as any).source : (chunk as any).code)
-				const hasNL = /\n$/.test(code)
-				const next = code + (hasNL ? '' : '\n') + snippet + '\n'
-
-				if (isAsset) (chunk as any).source = next
-				else (chunk as any).code = next
-			}
-		},
-	}
-}
 
 export default defineConfig({
 	exports: {

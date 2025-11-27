@@ -19,7 +19,7 @@ import type { ObjectSchema } from 'valibot'
 import { getDefaults } from 'valibot'
 import { AutoForm } from 'valibot-form/web'
 import { useNotify } from '../notifications/useNotify'
-import { client } from '../rpc'
+import { runRpc } from '../rpc'
 
 export interface ConfigFormProps {
 	pluginName: string
@@ -131,11 +131,9 @@ function ConfigTabPanel({
 			formOptions({
 				defaultValues: initialValue,
 				onSubmit: async ({ value }) => {
-					const res = await client.plugins[':name'].config.$post({
-						param: { name: pluginName },
-						json: { [tabKey]: value },
-					})
-					const result = (await res.json()) as any
+					const result = await runRpc((rpc) =>
+						rpc.plugin(pluginName).saveConfig({ [tabKey]: value }),
+					)
 					if (result.ok) {
 						onSaved(tabKey)
 						notify({ title: '提交成功', message: `配置 ${tabKey} 已保存`, color: 'green' })
@@ -156,20 +154,20 @@ function ConfigTabPanel({
 
 	return (
 		<Tabs.Panel value={tabKey} pt="md" style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-			<AutoForm schema={schema as any} formOpts={opts}>
+			<AutoForm key={`${pluginName}-${tabKey}`} schema={schema as any} formOpts={opts}>
 				<Box px="sm" pb={96}>
 					<AutoForm.Fields />
 				</Box>
 				<AutoForm.Actions>
-					{({ submit, setValues, dirty, canSubmit, submitting }) => (
+					{({ submit, reset, dirty, canSubmit, submitting }) => (
 						<FloatingBar
 							title={tabKey}
 							dirty={dirty}
 							canSubmit={canSubmit}
 							submitting={submitting}
 							onSubmit={submit}
-							onCancel={() => setValues(initialValue)}
-							onResetToDefaults={() => setValues(defaultValue)}
+							onCancel={() => reset(initialValue)}
+							onResetToDefaults={() => reset(defaultValue)}
 							savedAt={savedAt}
 						/>
 					)}
@@ -184,6 +182,13 @@ export function ConfigForm({ pluginName, schemas, savedConfig, defaults }: Confi
 	const [tab, setTab] = useState(keys[0] || '')
 	const [savedAtMap, setSavedAtMap] = useState<Record<string, number | undefined>>({})
 	const onSaved = useCallback((k: string) => setSavedAtMap((m) => ({ ...m, [k]: Date.now() })), [])
+
+	useEffect(() => {
+		setTab((prev) => {
+			if (prev && keys.includes(prev)) return prev
+			return keys[0] ?? ''
+		})
+	}, [keys])
 
 	const items = useMemo(() => {
 		return keys.map((key) => {
@@ -216,7 +221,7 @@ export function ConfigForm({ pluginName, schemas, savedConfig, defaults }: Confi
 				</Tabs.List>
 
 				{items.map(({ key, schema, savedValue, defaultValue }) => (
-					<ScrollAreaAutosize key={key}>
+					<ScrollAreaAutosize key={`${pluginName}-${key}`}>
 						<ConfigTabPanel
 							pluginName={pluginName}
 							tabKey={key}
