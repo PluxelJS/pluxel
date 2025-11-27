@@ -23,8 +23,7 @@
 	},
 	"files": [
 		"!**/*.map",
-		"dist",
-		"public"
+		"dist"
 	],
 	"scripts": {
 		"hmr": "bun --conditions=\"@pluxel/source\" tests/start.ts",
@@ -43,12 +42,13 @@
 		"@poppinss/dumper": "^0.6.5",
 		"@rolldown/pluginutils": "1.0.0-beta.51",
 		"@tanstack/pacer": "^0.16.3",
-		"@tanstack/react-router": "^1.139.3",
+		"@tanstack/react-router": "^1.139.7",
+		"capnweb": "^0.2.0",
 		"chokidar": "^4.0.3",
 		"exsolve": "^1.0.8",
 		"graphql": "^16.12.0",
 		"graphql-yoga": "^5.16.2",
-		"hono": "^4.10.6",
+		"hono": "^4.10.7",
 		"knitwork": "^1.3.0",
 		"nypm": "^0.6.2",
 		"obug": "^2.1.1",
@@ -57,8 +57,6 @@
 		"pino-caller": "^4.0.0",
 		"pino-pretty": "^13.1.2",
 		"pkg-types": "^2.3.0",
-		"pluxel-plugin-kook": "0.1.2",
-		"pluxel-plugin-wretch": "0.1.4",
 		"postcss": "^8.5.6",
 		"postcss-preset-mantine": "^1.18.0",
 		"postcss-simple-vars": "^7.0.1",
@@ -76,6 +74,7 @@
 		"@pluxel/core": "workspace:*",
 		"@types/react": "^19.2.7",
 		"@types/react-dom": "^19.2.3",
+		"oxc-parser": "^0.99.0",
 		"valibot-form": "workspace:*"
 	},
 	"publishConfig": {

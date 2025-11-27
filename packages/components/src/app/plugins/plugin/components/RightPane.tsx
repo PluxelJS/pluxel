@@ -36,11 +36,12 @@ export function RightPane({ config }: RightPaneProps) {
 							onRetry={() => void config.refetch()}
 							minHeight={200}
 						/>
-					) : config.data?.config ? (
+					) : config.data?.schemaMap ? (
 						<ConfigForm
 							pluginName={pluginName}
-							configs={config.data.config as any}
-							existConfigs={config.data.existConfig as any}
+							schemas={config.data.schemaMap}
+							savedConfig={config.data.savedConfig}
+							defaults={config.data.defaults}
 						/>
 					) : config.loading ? (
 						<Center style={{ flex: 1, gap: 8 }}>

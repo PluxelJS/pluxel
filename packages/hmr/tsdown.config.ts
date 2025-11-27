@@ -44,6 +44,7 @@ export default defineConfig({
 		services: 'src/services/index.ts',
 		config: 'src/config.ts',
 	},
+	copy: ['public'],
 	alias: {
 		'~': valibotFormSrc,
 	},
@@ -56,7 +57,7 @@ export default defineConfig({
 	format: ['esm'],
 	sourcemap: true,
 	clean: true,
-	minify: false,
+	minify: true,
 	treeshake: true,
 	inputOptions: {
 		transform: {

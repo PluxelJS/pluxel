@@ -175,6 +175,7 @@ if (process.env.NODE_ENV !== 'production') {
 export interface ActionsRenderProps {
 	submit: () => void
 	reset: () => void
+	setValues: (values: Record<string, any>) => void
 	dirty: boolean
 	canSubmit: boolean
 	submitting: boolean
@@ -184,6 +185,11 @@ export interface ActionsProps {
 }
 function ActionsImpl({ children }: ActionsProps) {
 	const { form, submit, reset } = useAutoFormCtx<any>()
+	const setValues = useCallback((values: Record<string, any>) => {
+		for (const [key, value] of Object.entries(values)) {
+			form.setFieldValue(key, value)
+		}
+	}, [form])
 	return (
 		<form.Subscribe
 			selector={(s) => ({
@@ -193,7 +199,7 @@ function ActionsImpl({ children }: ActionsProps) {
 			})}
 		>
 			{({ dirty, canSubmit, submitting }) =>
-				children({ submit, reset, dirty, canSubmit, submitting })
+				children({ submit, reset, setValues, dirty, canSubmit, submitting })
 			}
 		</form.Subscribe>
 	)

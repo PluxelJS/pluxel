@@ -1,96 +1,107 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import * as v from 'valibot'
+import * as f from 'valibot-form'
 import { client } from '../../../rpc'
 
-export type PluginConfigResponse = {
-	config?: Record<string, any>
-	existConfig?: Record<string, any>
+export type PluginConfigData = {
+	schemaMap: Record<string, any>
+	/** schema 默认值 */
+	defaults: Record<string, any>
+	/** 已保存的配置（来自 configService） */
+	savedConfig: Record<string, any>
 }
 
 export type PluginConfigState = {
-	data?: PluginConfigResponse
+	data?: PluginConfigData
 	loading: boolean
 	error?: Error
 	refetch: () => Promise<void>
 }
 
-const configCache = new Map<string, PluginConfigResponse>()
+// Schema 缓存（按插件名）
+const schemaCache = new Map<string, { schemaMap: Record<string, any>; defaults: Record<string, any> }>()
+
+/** 清除缓存 */
+export function invalidateSchemaCache(pluginName?: string) {
+	if (pluginName) schemaCache.delete(pluginName)
+	else schemaCache.clear()
+}
+
+// HMR 自动失效（前端代码变更时）
+if (import.meta.hot) {
+	import.meta.hot.on('vite:beforeUpdate', () => invalidateSchemaCache())
+}
+
+/** 通过 REST API 加载 schema（带缓存） */
+async function loadSchema(pluginName: string, forceRefresh = false) {
+	if (!forceRefresh) {
+		const cached = schemaCache.get(pluginName)
+		if (cached) return cached
+	}
+
+	const res = await client.plugins[':name'].schema.$get({ param: { name: pluginName } })
+	const result = await res.json() as any
+	if (!result.ok) {
+		throw new Error(result.message ?? 'schema 加载失败')
+	}
+
+	// 将 schema 源代码转换为 valibot schema 对象
+	const schemaMap: Record<string, any> = {}
+	for (const [key, expr] of Object.entries(result.schemaSource as Record<string, string>)) {
+		schemaMap[key] = new Function('v', 'f', `return ${expr}`)(v, f)
+	}
+
+	const payload = { schemaMap, defaults: result.defaults as Record<string, any> }
+	schemaCache.set(pluginName, payload)
+	return payload
+}
+
+/** 通过 REST API 加载已保存的配置 */
+async function loadSavedConfig(pluginName: string): Promise<Record<string, any>> {
+	const res = await client.plugins[':name'].config.$get({ param: { name: pluginName } })
+	const result = await res.json() as any
+	return result.ok ? (result.config as Record<string, any>) : {}
+}
 
 export function usePluginConfig(pluginName: string | undefined): PluginConfigState {
-	const [state, setState] = useState<{
-		data?: PluginConfigResponse
-		loading: boolean
-		error?: Error
-	}>(() => ({
-		data: pluginName ? configCache.get(pluginName) : undefined,
-		loading: Boolean(pluginName && !configCache.has(pluginName)),
+	const [state, setState] = useState<{ data?: PluginConfigData; loading: boolean; error?: Error }>({
+		data: undefined,
+		loading: !!pluginName,
 		error: undefined,
-	}))
+	})
 	const abortRef = useRef<AbortController | null>(null)
 
-	const fetchConfig = useCallback(
-		async (signal?: AbortSignal) => {
-			if (!pluginName) return undefined
-			const res = await client.plugins[':name'].config.$get(
-				{ param: { name: pluginName } },
-				{ init: { signal } },
-			)
-			if (!res.ok) throw new Error('获取插件配置出错')
-			return (await res.json()) as PluginConfigResponse
-		},
-		[pluginName],
-	)
-
-	const startFetch = useCallback(async () => {
+	const doFetch = useCallback(async (forceRefresh = false) => {
 		if (!pluginName) return
-
 		abortRef.current?.abort()
-		const controller = new AbortController()
-		abortRef.current = controller
+		const ctrl = (abortRef.current = new AbortController())
 
-		setState((prev) => ({
-			data: prev.data ?? configCache.get(pluginName),
-			loading: true,
-			error: undefined,
-		}))
+		setState((s) => ({ ...s, loading: true, error: undefined }))
 
 		try {
-			const data = await fetchConfig(controller.signal)
-			if (controller.signal.aborted) return
-			if (data) configCache.set(pluginName, data)
-			setState({ data, loading: false, error: undefined })
-		} catch (error: any) {
-			if (controller.signal.aborted) return
-			setState((prev) => ({
-				...prev,
-				loading: false,
-				error: error instanceof Error ? error : new Error('加载插件配置失败'),
-			}))
+			const [schema, savedConfig] = await Promise.all([
+				loadSchema(pluginName, forceRefresh),
+				loadSavedConfig(pluginName),
+			])
+			if (ctrl.signal.aborted) return
+			setState({ data: { ...schema, savedConfig }, loading: false, error: undefined })
+		} catch (e) {
+			if (ctrl.signal.aborted) return
+			setState((s) => ({ ...s, loading: false, error: e instanceof Error ? e : new Error('加载失败') }))
 		}
-	}, [fetchConfig, pluginName])
+	}, [pluginName])
 
 	useEffect(() => {
 		if (!pluginName) {
 			setState({ data: undefined, loading: false, error: undefined })
-			return () => {}
+			return undefined
 		}
+		void doFetch()
+		return () => abortRef.current?.abort()
+	}, [pluginName, doFetch])
 
-		const cached = configCache.get(pluginName)
-		setState({ data: cached, loading: !cached, error: undefined })
-		void startFetch()
+	// 暴露的 refetch 强制刷新缓存
+	const refetch = useCallback(() => doFetch(true), [doFetch])
 
-		return () => {
-			abortRef.current?.abort()
-		}
-	}, [pluginName, startFetch])
-
-	const refetch = useCallback(async () => {
-		await startFetch()
-	}, [startFetch])
-
-	return {
-		data: state.data,
-		loading: state.loading,
-		error: state.error,
-		refetch,
-	}
+	return { ...state, refetch }
 }

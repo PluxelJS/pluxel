@@ -175,6 +175,12 @@ export class LoaderService {
 		return this.registry.getSchema(ctor)
 	}
 
+	getPluginSchemaSource(target: PluginConstructor | string) {
+		const ctor = this.resolveRuntimeCtor(target)
+		if (ctor === undefined) return
+		return this.registry.getSchemaSource(ctor)
+	}
+
 	buildSnapshot(): string {
 		return buildSnapshotSource({
 			ctx: this.ctx,

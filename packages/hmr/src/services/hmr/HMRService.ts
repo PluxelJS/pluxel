@@ -15,6 +15,7 @@ import { ModuleCacheMap, ViteNodeRunner } from 'vite-node/client'
 import { ViteNodeServer } from 'vite-node/server'
 import { installSourcemapsSupport } from 'vite-node/source-map'
 import tsconfigPaths from 'vite-tsconfig-paths'
+import { configSourcePlugin } from '../../vite-plugins/configSourcePlugin'
 import {
 	type HMRDependencyConfig,
 	type ResolvedHMRDependencyConfig,
@@ -532,7 +533,12 @@ export class HMRService {
 			root: process.cwd(),
 			server: { port: 3000, middlewareMode: false },
 			resolve: {},
-			plugins: [tsconfigPaths(), this.plugin, this.ctx.honoService.viteHonoDevServer],
+			plugins: [
+				tsconfigPaths(),
+				configSourcePlugin({ include: this.config.dir.map((d) => `${d}/**/*.{ts,tsx}`) }),
+				this.plugin,
+				this.ctx.honoService.viteHonoDevServer,
+			],
 			// ✅ 真正禁用依赖预优化，以免 graph 形变
 			optimizeDeps: {
 				force: true, // 避免某些场景下跳过预优化

@@ -58,6 +58,9 @@ export class PluginRegistry {
 	getSchema(ctor: PluginConstructor): ConfigSchemaMap | undefined {
 		return getPluginInfo(ctor)?.configMap
 	}
+	getSchemaSource(ctor: PluginConstructor): Readonly<Record<string, string>> | undefined {
+		return getPluginInfo(ctor)?.configSourceMap
+	}
 	getExportKeyByName(name: string): ExportKey | undefined {
 		return this.name2ExportKey.get(name)
 	}

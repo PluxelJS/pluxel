@@ -236,7 +236,7 @@ export const PluginList: React.FC<PluginListProps> = ({ pluginName }) => {
 	}, [query.$state.error, query.$state.isLoading])
 
 	const handleGroupsChange = useCallback((next: GroupConfig[]) => {
-		client.plugins.groups.$post({ json: next })
+		void client['plugin-groups'].$post({ json: next })
 	}, [])
 
 	// —— 视图渲染 —— //
