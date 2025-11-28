@@ -63,6 +63,7 @@ type OverviewSnapshot = {
 	groups: GroupConfig[]
 	total: number
 	running: number
+	disabled: number
 }
 
 const EMPTY_OVERVIEW: OverviewSnapshot = {
@@ -70,6 +71,7 @@ const EMPTY_OVERVIEW: OverviewSnapshot = {
 	groups: [],
 	total: 0,
 	running: 0,
+	disabled: 0,
 }
 
 const toStatuses = (entries: Array<PluginStatusEntry | null | undefined> | undefined) => {
@@ -81,6 +83,7 @@ const toStatuses = (entries: Array<PluginStatusEntry | null | undefined> | undef
 			id,
 			name: entry?.name ?? id,
 			isRunning: Boolean(entry?.isRunning),
+			isEnabled: entry?.isEnabled !== false,
 		}
 	}
 	return snapshot
@@ -97,22 +100,28 @@ const toGroups = (groups: Array<PluginGroup | null | undefined> | undefined) => 
 const buildOverview = (args: {
 	statuses: Array<PluginStatusEntry | null | undefined> | undefined
 	groups: Array<PluginGroup | null | undefined> | undefined
-	summary?: { total?: number | null; running?: number | null } | null
+	summary?: { total?: number | null; running?: number | null; disabled?: number | null } | null
 }) => {
 	const { statuses, groups, summary } = args
 	const summaryStatuses = toStatuses(statuses)
 	let computedRunning = 0
-	for (const entry of Object.values(summaryStatuses)) if (entry?.isRunning) computedRunning += 1
+	let computedDisabled = 0
+	for (const entry of Object.values(summaryStatuses)) {
+		if (entry?.isRunning) computedRunning += 1
+		if (entry?.isEnabled === false) computedDisabled += 1
+	}
 
 	const total =
 		typeof summary?.total === 'number' ? summary.total : Object.keys(summaryStatuses).length
 	const running = typeof summary?.running === 'number' ? summary.running : computedRunning
+	const disabled = typeof summary?.disabled === 'number' ? summary.disabled : computedDisabled
 
 	return {
 		statuses: summaryStatuses,
 		groups: toGroups(groups),
 		total,
 		running,
+		disabled,
 	}
 }
 
@@ -328,6 +337,11 @@ export const PluginList: React.FC<PluginListProps> = ({ pluginName }) => {
 							<Badge variant="light" size="xs" color="green" suppressHydrationWarning>
 								运行中 {overview.running}
 							</Badge>
+							{overview.disabled > 0 && (
+								<Badge variant="light" size="xs" color="gray" suppressHydrationWarning>
+									禁用 {overview.disabled}
+								</Badge>
+							)}
 							{syncing && (
 								<Badge variant="light" size="xs" color="blue">
 									同步…

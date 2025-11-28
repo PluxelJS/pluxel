@@ -102,6 +102,7 @@ export interface PluginStatus {
 	id: string
 	name?: string
 	isRunning: boolean
+	isEnabled?: boolean
 }
 export interface GroupConfig {
 	groupId: string
@@ -232,6 +233,7 @@ const SortableRow = memo(function SortableRow({
 	pid,
 	name,
 	running,
+	enabled,
 	selected,
 	active,
 	onRightSelect,
@@ -242,6 +244,7 @@ const SortableRow = memo(function SortableRow({
 	pid: string
 	name: string
 	running?: boolean
+	enabled?: boolean
 	selected: boolean
 	active: boolean
 	onRightSelect: (e: React.MouseEvent, pid: string) => void
@@ -410,7 +413,7 @@ const SortableRow = memo(function SortableRow({
 						}}
 					/>
 					<Text size="xs" style={{ color: rowColorValue }}>
-						{running ? '运行' : '停止'}
+						{running ? '运行' : enabled === false ? '禁用' : '停止'}
 					</Text>
 				</Group>
 			)}
@@ -423,6 +426,7 @@ const GroupCard = memo(function GroupCard(props: {
 	g: GroupConfig
 	visibleIds: string[]
 	runningSet: Set<string>
+	enabledSet: Set<string>
 	selectedSet: Set<string>
 	activeSet: Set<string>
 	onRightSelect: (e: React.MouseEvent, id: string) => void
@@ -441,6 +445,7 @@ const GroupCard = memo(function GroupCard(props: {
 		g,
 		visibleIds,
 		runningSet,
+		enabledSet,
 		selectedSet,
 		activeSet,
 		onRightSelect,
@@ -588,6 +593,7 @@ const GroupCard = memo(function GroupCard(props: {
 									pid={id}
 									name={getName(id)}
 									running={runningSet.has(id)}
+									enabled={enabledSet.has(id)}
 									selected={selectedSet.has(id)}
 									active={activeSet.has(id)}
 									onRightSelect={onRightSelect}
@@ -624,6 +630,11 @@ export function PluginOrganizer({
 	const runningSet = useMemo(() => {
 		const s = new Set<string>()
 		for (const [id, status] of Object.entries(statuses)) if (status.isRunning) s.add(id)
+		return s
+	}, [statuses])
+	const enabledSet = useMemo(() => {
+		const s = new Set<string>()
+		for (const [id, status] of Object.entries(statuses)) if (status.isEnabled !== false) s.add(id)
 		return s
 	}, [statuses])
 	const getName = useCallback((id: string) => statuses[id]?.name ?? id, [statuses])
@@ -1103,6 +1114,7 @@ export function PluginOrganizer({
 										pid={id}
 										name={getName(id)}
 										running={runningSet.has(id)}
+										enabled={enabledSet.has(id)}
 										selected={selectedSet.has(id)}
 										active={activeSet.has(id)}
 										onRightSelect={handleRightSelect}
@@ -1153,6 +1165,7 @@ export function PluginOrganizer({
 													g={g}
 													visibleIds={vis}
 													runningSet={runningSet}
+													enabledSet={enabledSet}
 													selectedSet={selectedSet}
 													activeSet={activeSet}
 													onRightSelect={handleRightSelect}

@@ -8,16 +8,20 @@ import * as v from 'valibot'
 import { readGroups, writeGroups } from '../../features/groups/service'
 import { PluginGroupInput, type PluginGroupInputValue } from '../../features/groups/schema'
 import { getStatusOverview } from '../../features/pluginStatus/service'
+import type { RpcExtensions } from '../../../services/hono/RpcService'
 import type { GroupMutationResult } from './types'
 import { formatGroupIssues } from './utils'
 import { PluginHandle } from './PluginHandle'
+import { MarketHandle } from './MarketHandle'
 
 export class HmrRpcApi extends RpcTarget {
 	#ctx: Context
+	#ext: RpcExtensions
 
 	constructor(ctx: Context) {
 		super()
 		this.#ctx = ctx
+		this.#ext = ctx.rpc.createExtensionsView(ctx)
 	}
 
 	ping() {
@@ -26,6 +30,26 @@ export class HmrRpcApi extends RpcTarget {
 
 	plugin(name: string) {
 		return new PluginHandle(this.#ctx, name)
+	}
+
+	/** 包管理操作 */
+	market() {
+		return new MarketHandle(this.#ctx)
+	}
+
+	/**
+	 * 访问插件注册的 RPC 扩展
+	 * @example rpc.ext['my-plugin'].method()
+	 */
+	get ext(): RpcExtensions {
+		return this.#ext
+	}
+
+	/**
+	 * 列出所有已注册的 RPC 扩展命名空间
+	 */
+	extensions(): string[] {
+		return this.#ctx.rpc.getNamespaces()
 	}
 
 	pluginStatus() {

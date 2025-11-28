@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import * as v from 'valibot'
 import * as f from 'valibot-form'
-import { runRpc } from '../../../rpc'
+
+import { createRpcClient } from '../../../rpc'
 
 export type PluginConfigData = {
 	schemaMap: Record<string, any>
@@ -19,7 +20,10 @@ export type PluginConfigState = {
 }
 
 // Schema 缓存（按插件名）
-const schemaCache = new Map<string, { schemaMap: Record<string, any>; defaults: Record<string, any> }>()
+const schemaCache = new Map<
+	string,
+	{ schemaMap: Record<string, any>; defaults: Record<string, any> }
+>()
 
 /** 清除缓存 */
 export function invalidateSchemaCache(pluginName?: string) {
@@ -32,33 +36,46 @@ if (import.meta.hot) {
 	import.meta.hot.on('vite:beforeUpdate', () => invalidateSchemaCache())
 }
 
-/** 通过 RPC 加载 schema（带缓存） */
-async function loadSchema(pluginName: string, forceRefresh = false) {
-	if (!forceRefresh) {
-		const cached = schemaCache.get(pluginName)
-		if (cached) return cached
-	}
+/** 一次性加载插件的 schema 和 config（自动 batch） */
+async function loadPluginData(
+	pluginName: string,
+	forceRefresh = false,
+): Promise<{ schemaMap: Record<string, any>; defaults: Record<string, any>; savedConfig: Record<string, any> }> {
+	const cachedSchema = forceRefresh ? null : schemaCache.get(pluginName)
 
-	const result = await runRpc((rpc) => rpc.plugin(pluginName).schema())
-	if (!result.ok) {
-		throw new Error(result.message ?? result.code ?? 'schema 加载失败')
-	}
+	// 同一个 session 内的调用会被 capnweb 自动 batch
+	using rpc = createRpcClient()
+	const p = rpc.plugin(pluginName)
 
-	// 将 schema 源代码转换为 valibot schema 对象
+	// 发起调用（不 await），capnweb 会在 Promise.all 时 batch 发送
+	const schemaPromise = cachedSchema ? null : p.schema()
+	const configPromise = p.config()
+
+	const [schemaResult, configResult] = await Promise.all([schemaPromise, configPromise])
+	const savedConfig = configResult.ok ? (configResult.config as Record<string, any>) : {}
+
+	if (cachedSchema) return { ...cachedSchema, savedConfig }
+
+	if (!schemaResult) throw new Error('schema 加载失败')
+	if (schemaResult.ok === false) throw new Error(schemaResult.message ?? schemaResult.code)
+
+	// 转换 schema 表达式
 	const schemaMap: Record<string, any> = {}
-	for (const [key, expr] of Object.entries(result.schemaSource as Record<string, string>)) {
-		schemaMap[key] = new Function('v', 'f', `return ${expr}`)(v, f)
+	const pending: Promise<void>[] = []
+
+	for (const [key, expr] of Object.entries(schemaResult.schemaSource)) {
+		const schema = new Function('v', 'f', 'rpc', `return ${expr}`)(v, f, rpc)
+		if (schema instanceof Promise) {
+			pending.push(schema.then((r) => { schemaMap[key] = r }))
+		} else {
+			schemaMap[key] = schema
+		}
 	}
+	if (pending.length) await Promise.all(pending)
 
-	const payload = { schemaMap, defaults: result.defaults as Record<string, any> }
+	const payload = { schemaMap, defaults: schemaResult.defaults }
 	schemaCache.set(pluginName, payload)
-	return payload
-}
-
-/** 通过 RPC 加载已保存的配置 */
-async function loadSavedConfig(pluginName: string): Promise<Record<string, any>> {
-	const result = await runRpc((rpc) => rpc.plugin(pluginName).config())
-	return result.ok ? (result.config as Record<string, any>) : {}
+	return { ...payload, savedConfig }
 }
 
 export function usePluginConfig(pluginName: string | undefined): PluginConfigState {
@@ -69,29 +86,29 @@ export function usePluginConfig(pluginName: string | undefined): PluginConfigSta
 	})
 	const abortRef = useRef<AbortController | null>(null)
 
-	const doFetch = useCallback(async (forceRefresh = false) => {
-		if (!pluginName) return
-		abortRef.current?.abort()
-		const ctrl = (abortRef.current = new AbortController())
+	const doFetch = useCallback(
+		async (forceRefresh = false) => {
+			if (!pluginName) return
+			abortRef.current?.abort()
+			const ctrl = (abortRef.current = new AbortController())
 
-		setState({ data: undefined, loading: true, error: undefined })
+			setState({ data: undefined, loading: true, error: undefined })
 
-		try {
-			const [schema, savedConfig] = await Promise.all([
-				loadSchema(pluginName, forceRefresh),
-				loadSavedConfig(pluginName),
-			])
-			if (ctrl.signal.aborted) return
-			setState({ data: { ...schema, savedConfig }, loading: false, error: undefined })
-		} catch (e) {
-			if (ctrl.signal.aborted) return
-			setState({
-				data: undefined,
-				loading: false,
-				error: e instanceof Error ? e : new Error('加载失败'),
-			})
-		}
-	}, [pluginName])
+			try {
+				const data = await loadPluginData(pluginName, forceRefresh)
+				if (ctrl.signal.aborted) return
+				setState({ data, loading: false, error: undefined })
+			} catch (e) {
+				if (ctrl.signal.aborted) return
+				setState({
+					data: undefined,
+					loading: false,
+					error: e instanceof Error ? e : new Error('加载失败'),
+				})
+			}
+		},
+		[pluginName],
+	)
 
 	useEffect(() => {
 		if (!pluginName) {

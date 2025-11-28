@@ -38,3 +38,34 @@ export type SchemaResult = SchemaResultOk | SchemaResultErr
 export type GroupMutationResult =
 	| { ok: true; groups: unknown }
 	| { ok: false; code: 'validation_failed'; errors: ConfigValidationErrors }
+
+// Market 相关类型
+export type PackageSpecInput = {
+	raw?: string | null
+	name?: string | null
+	version?: string | null
+	tag?: string | null
+}
+
+export type MarketMutationResult = {
+	__typename: 'PackageMutationResult'
+	ok: boolean
+	code: string
+	spec: {
+		__typename: 'PackageIssueSpec'
+		name: string
+		version: string | null
+		tag: string | null
+		target: string
+		raw: string
+	} | null
+	installStatus: 'installed' | 'reused' | null
+	error: string | null
+}
+
+export type MarketBatchResult = {
+	__typename: 'PackageBatchMutationResult'
+	ok: boolean
+	results: MarketMutationResult[]
+	error: string | null
+}

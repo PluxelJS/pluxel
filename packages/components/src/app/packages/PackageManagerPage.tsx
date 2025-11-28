@@ -34,8 +34,8 @@ import {
 } from '@tabler/icons-react'
 import type { FormEventHandler } from 'react'
 import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react'
-import type { InstallPackageSpecInput, PackageBatchMutationResult } from '../gqty'
-import { useMutation as useGqtyMutation, useQuery } from '../gqty'
+import { useQuery } from '../gqty'
+import { createRpcClient } from '../rpc'
 import { RouterLinkAdapter } from '../RouterLinkAdapter'
 import { useNotify } from '../notifications/useNotify'
 import type { PackageRow } from './types'
@@ -241,149 +241,26 @@ export function PackageManagerPage() {
 
 	const clearSelection = useCallback(() => setSelectedPackages(new Set()), [])
 
-	const [installPackageMutation, installState] = useGqtyMutation(
-		(mutation, variables: { spec: InstallPackageSpecInput; force?: boolean }) => {
-			const result = mutation.installPackage({
-				spec: variables.spec,
-				force: variables.force || null,
-			})
-			result.ok
-			result.code
-			result.error
-			result.installStatus
-			result.spec?.name
-			result.spec?.version
-			return result
-		},
-		{ suspense: false },
-	)
-
-	const [reinstallPackageMutation, reinstallState] = useGqtyMutation(
-		(mutation, variables: { spec: InstallPackageSpecInput }) => {
-			const result = mutation.reinstallPackage({
-				spec: variables.spec,
-				force: true,
-			})
-			result.ok
-			result.code
-			result.error
-			result.installStatus
-			return result
-		},
-		{ suspense: false },
-	)
-
-	const [uninstallPackageMutation, uninstallState] = useGqtyMutation(
-		(mutation, variables: { spec: InstallPackageSpecInput }) => {
-			const result = mutation.uninstallPackage({
-				spec: variables.spec,
-			})
-			result.ok
-			result.code
-			result.error
-			return result
-		},
-		{ suspense: false },
-	)
-
-	const [reloadPackagesMutation, reloadBatchState] = useGqtyMutation(
-		(mutation, variables: { specs: InstallPackageSpecInput[]; fresh?: boolean | null }) => {
-			const result = mutation.reloadPackages({
-				specs: variables.specs,
-				fresh: variables.fresh ?? null,
-			})
-			result.ok
-			result.error
-			result.results.forEach((entry) => {
-				entry.ok
-				entry.code
-				entry.error
-				entry.spec?.name
-			})
-			return result
-		},
-		{ suspense: false },
-	)
-
-	const [reinstallPackagesMutation, reinstallBatchState] = useGqtyMutation(
-		(mutation, variables: { specs: InstallPackageSpecInput[] }) => {
-			const result = mutation.reinstallPackages({
-				specs: variables.specs,
-				force: true,
-			})
-			result.ok
-			result.error
-			result.results.forEach((entry) => {
-				entry.ok
-				entry.code
-				entry.error
-				entry.installStatus
-				entry.spec?.name
-			})
-			return result
-		},
-		{ suspense: false },
-	)
-
-	const [uninstallPackagesMutation, uninstallBatchState] = useGqtyMutation(
-		(mutation, variables: { specs: InstallPackageSpecInput[] }) => {
-			const result = mutation.uninstallPackages({
-				specs: variables.specs,
-			})
-			result.ok
-			result.error
-			result.results.forEach((entry) => {
-				entry.ok
-				entry.code
-				entry.error
-				entry.spec?.name
-			})
-			return result
-		},
-		{ suspense: false },
-	)
-
-	const [removePackageMutation, removeState] = useGqtyMutation(
-		(mutation, variables: { spec: InstallPackageSpecInput }) => {
-			const result = mutation.removePackage({
-				spec: variables.spec,
-			})
-			result.ok
-			result.code
-			result.error
-			return result
-		},
-		{ suspense: false },
-	)
-
-	const [removePackagesMutation, removeBatchState] = useGqtyMutation(
-		(mutation, variables: { specs: InstallPackageSpecInput[] }) => {
-			const result = mutation.removePackages({
-				specs: variables.specs,
-			})
-			result.ok
-			result.error
-			result.results.forEach((entry) => {
-				entry.ok
-				entry.code
-				entry.error
-				entry.spec?.name
-			})
-			return result
-		},
-		{ suspense: false },
-	)
+	// Loading states for RPC operations
+	const [installLoading, setInstallLoading] = useState(false)
+	const [reinstallLoading, setReinstallLoading] = useState(false)
+	const [uninstallLoading, setUninstallLoading] = useState(false)
+	const [removeLoading, setRemoveLoading] = useState(false)
+	const [reloadBatchLoading, setReloadBatchLoading] = useState(false)
+	const [reinstallBatchLoading, setReinstallBatchLoading] = useState(false)
+	const [uninstallBatchLoading, setUninstallBatchLoading] = useState(false)
+	const [removeBatchLoading, setRemoveBatchLoading] = useState(false)
 
 	const refreshing = query.$state.isLoading
 	const busy =
-		installState.isLoading ||
-		reinstallState.isLoading ||
-		uninstallState.isLoading ||
-		removeState.isLoading ||
-		reloadBatchState.isLoading ||
-		reinstallBatchState.isLoading ||
-		uninstallBatchState.isLoading ||
-		removeBatchState.isLoading
+		installLoading ||
+		reinstallLoading ||
+		uninstallLoading ||
+		removeLoading ||
+		reloadBatchLoading ||
+		reinstallBatchLoading ||
+		uninstallBatchLoading ||
+		removeBatchLoading
 	const refetchFn = query.$refetch
 
 	const refetch = useCallback(async () => {
@@ -392,7 +269,7 @@ export function PackageManagerPage() {
 
 	const summarizeBatchResult = useCallback(
 		(
-			result: PackageBatchMutationResult | null | undefined,
+			result: { ok: boolean; results: Array<{ ok: boolean; spec?: { name?: string; raw?: string } | null; code?: string; error?: string | null }> } | null | undefined,
 			successTitle: string,
 			fallbackError: string,
 		) => {
@@ -439,15 +316,15 @@ export function PackageManagerPage() {
 
 		const successes: string[] = []
 		const failures: string[] = []
+		setInstallLoading(true)
 
 		try {
+			using rpc = createRpcClient()
 			for (const raw of specs) {
 				try {
-					const result = await installPackageMutation({
-						args: { spec: { raw }, force: forceInstall },
-					})
-					if (!result?.ok) {
-						failures.push(`${raw}: ${result?.error ?? result?.code ?? '未知错误'}`)
+					const result = await rpc.market().install({ raw }, { force: forceInstall })
+					if (result.ok === false) {
+						failures.push(`${raw}: ${result.error ?? result.code ?? '未知错误'}`)
 					} else {
 						successes.push(result.spec?.name ?? raw)
 					}
@@ -456,6 +333,7 @@ export function PackageManagerPage() {
 				}
 			}
 		} finally {
+			setInstallLoading(false)
 			if (successes.length) {
 				notify({
 					title: '安装完成',
@@ -500,10 +378,10 @@ export function PackageManagerPage() {
 		setOperationTitle('重载包')
 		setOperationLogs(targets.map((name) => ({ label: name, status: 'running' })))
 		setOperationLogOpen(true)
+		setReloadBatchLoading(true)
 		try {
-			const result = await reloadPackagesMutation({
-				args: { specs: selectedRows.map(toSpecInput), fresh },
-			})
+			using rpc = createRpcClient()
+			const result = await rpc.market().reloadMany(selectedRows.map(toSpecInput), { fresh })
 			// 更新日志状态
 			setOperationLogs((prev) =>
 				prev.map((log) => {
@@ -527,6 +405,8 @@ export function PackageManagerPage() {
 				message: error?.message ?? '操作失败，请稍后再试',
 				color: 'red',
 			})
+		} finally {
+			setReloadBatchLoading(false)
 		}
 	}
 
@@ -536,10 +416,10 @@ export function PackageManagerPage() {
 		setOperationTitle('重装包')
 		setOperationLogs(targets.map((name) => ({ label: name, status: 'running' })))
 		setOperationLogOpen(true)
+		setReinstallBatchLoading(true)
 		try {
-			const result = await reinstallPackagesMutation({
-				args: { specs: selectedRows.map(toSpecInput) },
-			})
+			using rpc = createRpcClient()
+			const result = await rpc.market().reinstallMany(selectedRows.map(toSpecInput), { force: true })
 			setOperationLogs((prev) =>
 				prev.map((log) => {
 					const entry = result?.results?.find(
@@ -562,6 +442,8 @@ export function PackageManagerPage() {
 				message: error?.message ?? '操作失败，请稍后再试',
 				color: 'red',
 			})
+		} finally {
+			setReinstallBatchLoading(false)
 		}
 	}
 
@@ -571,10 +453,10 @@ export function PackageManagerPage() {
 		setOperationTitle('卸载包')
 		setOperationLogs(targets.map((name) => ({ label: name, status: 'running' })))
 		setOperationLogOpen(true)
+		setUninstallBatchLoading(true)
 		try {
-			const result = await uninstallPackagesMutation({
-				args: { specs: selectedRows.map(toSpecInput) },
-			})
+			using rpc = createRpcClient()
+			const result = await rpc.market().uninstallMany(selectedRows.map(toSpecInput))
 			setOperationLogs((prev) =>
 				prev.map((log) => {
 					const entry = result?.results?.find(
@@ -598,6 +480,8 @@ export function PackageManagerPage() {
 				message: error?.message ?? '操作失败，请稍后再试',
 				color: 'red',
 			})
+		} finally {
+			setUninstallBatchLoading(false)
 		}
 	}
 
@@ -607,10 +491,10 @@ export function PackageManagerPage() {
 		setOperationTitle('移除包')
 		setOperationLogs(targets.map((name) => ({ label: name, status: 'running' })))
 		setOperationLogOpen(true)
+		setRemoveBatchLoading(true)
 		try {
-			const result = await removePackagesMutation({
-				args: { specs: selectedRows.map(toSpecInput) },
-			})
+			using rpc = createRpcClient()
+			const result = await rpc.market().removeMany(selectedRows.map(toSpecInput))
 			setOperationLogs((prev) =>
 				prev.map((log) => {
 					const entry = result?.results?.find(
@@ -634,14 +518,16 @@ export function PackageManagerPage() {
 				message: error?.message ?? '操作失败，请稍后再试',
 				color: 'red',
 			})
+		} finally {
+			setRemoveBatchLoading(false)
 		}
 	}
 
 	const handleLoad = async (row: PackageRow) => {
+		setReloadBatchLoading(true)
 		try {
-			const result = await reloadPackagesMutation({
-				args: { specs: [toSpecInput(row)], fresh: true },
-			})
+			using rpc = createRpcClient()
+			const result = await rpc.market().reloadMany([toSpecInput(row)], { fresh: true })
 			summarizeBatchResult(result, '已加载包', '加载失败')
 			if (result?.results?.length) {
 				await refetch()
@@ -652,6 +538,8 @@ export function PackageManagerPage() {
 				message: error?.message ?? '操作失败，请稍后再试',
 				color: 'red',
 			})
+		} finally {
+			setReloadBatchLoading(false)
 		}
 	}
 
@@ -697,12 +585,14 @@ export function PackageManagerPage() {
 
 	const performReinstall = async (row: PackageRow) => {
 		const spec = toSpecInput(row)
+		setReinstallLoading(true)
 		try {
-			const result = await reinstallPackageMutation({ args: { spec } })
-			if (!result?.ok) {
+			using rpc = createRpcClient()
+			const result = await rpc.market().reinstall(spec, { force: true })
+			if (result.ok === false) {
 				notify({
 					title: '重装失败',
-					message: result?.error ?? result?.code ?? '操作失败，请稍后重试',
+					message: result.error ?? result.code ?? '操作失败，请稍后重试',
 					color: 'red',
 				})
 				return
@@ -719,17 +609,21 @@ export function PackageManagerPage() {
 				message: error?.message ?? '操作失败，请稍后重试',
 				color: 'red',
 			})
+		} finally {
+			setReinstallLoading(false)
 		}
 	}
 
 	const performUninstall = async (row: PackageRow) => {
 		const spec = toSpecInput(row)
+		setUninstallLoading(true)
 		try {
-			const result = await uninstallPackageMutation({ args: { spec } })
-			if (!result?.ok) {
+			using rpc = createRpcClient()
+			const result = await rpc.market().uninstall(spec)
+			if (result.ok === false) {
 				notify({
 					title: '卸载失败',
-					message: result?.error ?? result?.code ?? '操作失败，请稍后再试',
+					message: result.error ?? result.code ?? '操作失败，请稍后再试',
 					color: 'red',
 				})
 				return
@@ -746,6 +640,8 @@ export function PackageManagerPage() {
 				message: error?.message ?? '操作失败，请稍后再试',
 				color: 'red',
 			})
+		} finally {
+			setUninstallLoading(false)
 		}
 	}
 
@@ -769,12 +665,14 @@ export function PackageManagerPage() {
 
 	const performRemove = async (row: PackageRow) => {
 		const spec = toSpecInput(row)
+		setRemoveLoading(true)
 		try {
-			const result = await removePackageMutation({ args: { spec } })
-			if (!result?.ok) {
+			using rpc = createRpcClient()
+			const result = await rpc.market().remove(spec)
+			if (result.ok === false) {
 				notify({
 					title: '移除失败',
-					message: result?.error ?? result?.code ?? '操作失败，请稍后再试',
+					message: result.error ?? result.code ?? '操作失败，请稍后再试',
 					color: 'red',
 				})
 				return
@@ -791,6 +689,8 @@ export function PackageManagerPage() {
 				message: error?.message ?? '操作失败，请稍后再试',
 				color: 'red',
 			})
+		} finally {
+			setRemoveLoading(false)
 		}
 	}
 
@@ -898,7 +798,7 @@ export function PackageManagerPage() {
 									color="blue"
 									size="md"
 									onClick={() => void handleBatchReload(true)}
-									loading={reloadBatchState.isLoading}
+									loading={reloadBatchLoading}
 								>
 									<IconRefresh size={18} />
 								</ActionIcon>
@@ -908,7 +808,7 @@ export function PackageManagerPage() {
 									variant="light"
 									color="blue"
 									size="md"
-									loading={reinstallBatchState.isLoading}
+									loading={reinstallBatchLoading}
 									onClick={() => void handleBatchReinstall()}
 								>
 									<IconRotateClockwise size={18} />
@@ -919,7 +819,7 @@ export function PackageManagerPage() {
 									variant="light"
 									color="orange"
 									size="md"
-									loading={uninstallBatchState.isLoading}
+									loading={uninstallBatchLoading}
 									onClick={() => confirmBatchUninstall()}
 								>
 									<IconTrash size={18} />
@@ -930,7 +830,7 @@ export function PackageManagerPage() {
 									variant="light"
 									color="red"
 									size="md"
-									loading={removeBatchState.isLoading}
+									loading={removeBatchLoading}
 									onClick={() => confirmBatchRemove()}
 								>
 									<IconX size={18} />
@@ -1197,7 +1097,7 @@ export function PackageManagerPage() {
 							onChange={(event) => setForceInstall(event.currentTarget.checked)}
 							size="xs"
 						/>
-						<Button type="submit" loading={installState.isLoading} size="sm">
+						<Button type="submit" loading={installLoading} size="sm">
 							{pendingInstallSpecs.length > 1 ? `批量安装 (${pendingInstallSpecs.length})` : '安装'}
 						</Button>
 					</Stack>

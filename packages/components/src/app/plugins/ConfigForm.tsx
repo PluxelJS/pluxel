@@ -19,7 +19,7 @@ import type { ObjectSchema } from 'valibot'
 import { getDefaults } from 'valibot'
 import { AutoForm } from 'valibot-form/web'
 import { useNotify } from '../notifications/useNotify'
-import { runRpc } from '../rpc'
+import { createRpcClient } from '../rpc'
 
 export interface ConfigFormProps {
 	pluginName: string
@@ -131,15 +131,14 @@ function ConfigTabPanel({
 			formOptions({
 				defaultValues: initialValue,
 				onSubmit: async ({ value }) => {
-					const result = await runRpc((rpc) =>
-						rpc.plugin(pluginName).saveConfig({ [tabKey]: value }),
-					)
-					if (result.ok) {
-						onSaved(tabKey)
-						notify({ title: '提交成功', message: `配置 ${tabKey} 已保存`, color: 'green' })
-					} else {
+					using rpc = createRpcClient()
+					const result = await rpc.plugin(pluginName).saveConfig({ [tabKey]: value })
+					if (result.ok === false) {
 						notify({ title: '提交失败', message: result.message ?? result.code ?? '未知错误', color: 'red' })
+						return
 					}
+					onSaved(tabKey)
+					notify({ title: '提交成功', message: `配置 ${tabKey} 已保存`, color: 'green' })
 				},
 			}),
 		[tabKey, initialValue, onSaved, notify, pluginName],

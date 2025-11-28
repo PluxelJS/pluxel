@@ -3,12 +3,10 @@
 import { ActionIcon, Group, Switch, Tooltip } from '@mantine/core'
 import { openConfirmModal } from '@mantine/modals'
 import { IconPlayerPlay, IconRotateClockwise, IconSquareX } from '@tabler/icons-react'
-import { useCallback, useRef } from 'react'
-import {
-	PluginStatusEntryLifecycleStage,
-	UpdatePluginStatusStatusInput,
-	useMutation as useGqtyMutation,
-} from '../../../gqty'
+import { useCallback, useRef, useState } from 'react'
+import { PluginStatusEntryLifecycleStage } from '../../../gqty'
+import { createRpcClient } from '../../../rpc'
+import type { PluginStatusAction } from '../../../../../../hmr/src/api/hono/rpc/types'
 import { usePluginScope } from '../context'
 import { useNotify } from '../../../notifications/useNotify'
 
@@ -16,7 +14,7 @@ export interface ActionBarProps {
 	onStatusUpdated?: () => Promise<void> | void
 }
 
-const ACTION_LABEL: Record<UpdatePluginStatusStatusInput, string> = {
+const ACTION_LABEL: Record<PluginStatusAction, string> = {
 	start: '启动',
 	stop: '终止',
 	restart: '重启',
@@ -37,49 +35,36 @@ export function ActionBar({ onStatusUpdated }: ActionBarProps) {
 
 	// 乱序防护：只接受最后一次操作的结果
 	const seqRef = useRef(0)
+	const [isLoading, setIsLoading] = useState(false)
 
 	const notify = useNotify()
-	const [mutateStatus, mutationState] = useGqtyMutation(
-		(mutation, args: { plugin: string; status: UpdatePluginStatusStatusInput }) => {
-			const { plugin, status } = args
-			const result = mutation.updatePluginStatus({ name: plugin, status })
-			// 选择关键字段，成功时覆盖乐观态
-			result.code
-			result.error
-			result.isRunning
-			result.isEnabled
-			result.lifecycleStage
-			return result
-		},
-		{ suspense: false },
-	)
 
 	const applyOptimistic = useCallback(
-		(status: UpdatePluginStatusStatusInput) => {
+		(action: PluginStatusAction) => {
 			if (!pluginName) return
 			write((q) => {
 				const p = q.plugin({ name: pluginName })
 				if (!p) return
 				const currentEnabled = Boolean(p.status.isEnabled)
-				switch (status) {
-					case UpdatePluginStatusStatusInput.start:
-					case UpdatePluginStatusStatusInput.restart:
+				switch (action) {
+					case 'start':
+					case 'restart':
 						p.status.isRunning = true
 						p.status.isEnabled = true
 						p.status.lifecycleStage = PluginStatusEntryLifecycleStage.running
 						break
-					case UpdatePluginStatusStatusInput.stop:
+					case 'stop':
 						p.status.isRunning = false
 						p.status.lifecycleStage = currentEnabled
 							? PluginStatusEntryLifecycleStage.stopped
 							: PluginStatusEntryLifecycleStage.disabled
 						break
-					case UpdatePluginStatusStatusInput.disable:
+					case 'disable':
 						p.status.isRunning = false
 						p.status.isEnabled = false
 						p.status.lifecycleStage = PluginStatusEntryLifecycleStage.disabled
 						break
-					case UpdatePluginStatusStatusInput.enable:
+					case 'enable':
 						p.status.isEnabled = true
 						p.status.lifecycleStage = p.status.isRunning
 							? PluginStatusEntryLifecycleStage.running
@@ -98,21 +83,23 @@ export function ActionBar({ onStatusUpdated }: ActionBarProps) {
 		await onStatusUpdated?.()
 	}, [onStatusUpdated, refetch])
 
-	const performAction = async (status: UpdatePluginStatusStatusInput) => {
+	const performAction = async (action: PluginStatusAction) => {
 		if (!pluginName) return
 		const mySeq = ++seqRef.current
 
 		// ① 全局乐观：立即写入运行/同步态
-		applyOptimistic(status)
+		applyOptimistic(action)
+		setIsLoading(true)
 
 		try {
-			const res = await mutateStatus({ args: { plugin: pluginName, status } })
+			using rpc = createRpcClient()
+			const res = await rpc.plugin(pluginName).updateStatus(action)
 			if (mySeq !== seqRef.current) return
 
-			if (!res || res.code !== 'success') {
+			if (res.ok === false) {
 				notify({
 					title: '插件状态更新失败',
-					message: res?.error || res?.code || '操作失败，请稍后重试',
+					message: res.error || res.code || '操作失败，请稍后重试',
 					color: 'red',
 				})
 				// 失败直接以真实数据为准（无需手写回滚）：拉齐一次
@@ -125,7 +112,7 @@ export function ActionBar({ onStatusUpdated }: ActionBarProps) {
 
 			notify({
 				title: '插件状态已更新',
-				message: `${pluginName} ${ACTION_LABEL[status]}成功`,
+				message: `${pluginName} ${ACTION_LABEL[action]}成功`,
 				color: 'green',
 			})
 		} catch (e: any) {
@@ -137,26 +124,24 @@ export function ActionBar({ onStatusUpdated }: ActionBarProps) {
 			})
 			await refetch()
 		} finally {
-			// 同步状态由 query/config 的 loading 推导，无需手动清理
+			setIsLoading(false)
 		}
 	}
 
-	const handleAction = (status: UpdatePluginStatusStatusInput) => {
-		const needsDependencyCheck =
-			status === UpdatePluginStatusStatusInput.start ||
-			status === UpdatePluginStatusStatusInput.restart
+	const handleAction = (action: PluginStatusAction) => {
+		const needsDependencyCheck = action === 'start' || action === 'restart'
 		const missing = needsDependencyCheck
 			? dependencies.filter((d) => !d.isRunning && !d.optional).map((d) => d.name)
 			: []
 
-		const proceed = () => void performAction(status)
+		const proceed = () => void performAction(action)
 
 		if (missing.length) {
 			openConfirmModal({
 				title: '前置依赖未启动',
 				children: (
 					<div>
-						请确认是否强制{ACTION_LABEL[status]}。
+						请确认是否强制{ACTION_LABEL[action]}。
 						<div style={{ marginTop: 10 }}>以下依赖尚未运行：{missing.join('，')}</div>
 					</div>
 				),
@@ -168,7 +153,7 @@ export function ActionBar({ onStatusUpdated }: ActionBarProps) {
 		}
 	}
 
-	const busy = mutationState.isLoading || isSyncing
+	const busy = isLoading || isSyncing
 	const canToggle = !busy
 	const persistDisabled = busy
 
@@ -186,11 +171,7 @@ export function ActionBar({ onStatusUpdated }: ActionBarProps) {
 					offLabel="禁用"
 					disabled={persistDisabled}
 					onChange={(event) =>
-						void performAction(
-							event.currentTarget.checked
-								? UpdatePluginStatusStatusInput.enable
-								: UpdatePluginStatusStatusInput.disable,
-						)
+						void performAction(event.currentTarget.checked ? 'enable' : 'disable')
 					}
 				/>
 			</Tooltip>
@@ -199,7 +180,7 @@ export function ActionBar({ onStatusUpdated }: ActionBarProps) {
 				<ActionIcon
 					variant="light"
 					size="lg"
-					onClick={() => handleAction(UpdatePluginStatusStatusInput.start)}
+					onClick={() => handleAction('start')}
 					disabled={!canToggle || isRunning}
 				>
 					<IconPlayerPlay size={18} />
@@ -211,7 +192,7 @@ export function ActionBar({ onStatusUpdated }: ActionBarProps) {
 					variant="light"
 					size="lg"
 					color="red"
-					onClick={() => handleAction(UpdatePluginStatusStatusInput.stop)}
+					onClick={() => handleAction('stop')}
 					disabled={!canToggle || !isRunning}
 				>
 					<IconSquareX size={18} />
@@ -223,7 +204,7 @@ export function ActionBar({ onStatusUpdated }: ActionBarProps) {
 					variant="light"
 					size="lg"
 					color="green"
-					onClick={() => handleAction(UpdatePluginStatusStatusInput.restart)}
+					onClick={() => handleAction('restart')}
 					disabled={!canToggle || !isRunning}
 				>
 					<IconRotateClockwise size={18} />
