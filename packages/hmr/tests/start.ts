@@ -32,7 +32,7 @@ bootstrap()
 setTimeout(async () => {
 	/* const resolution = await ctx.scanService.resolveEntryByName('pluxel-plugin-redis')
 	if (resolution.ok) {
-		ctx.loader.replaceModule(resolution.dir, await import(resolution.entry))
+		await ctx.loader.replaceModule(resolution.dir, await import(resolution.entry))
 	} */
 	ctx.internalGraphql.scheduleRebuild()
 	// const a = await ctx.packageService.load('pluxel-plugin-redis')

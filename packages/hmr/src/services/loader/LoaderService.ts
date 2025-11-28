@@ -59,8 +59,8 @@ export class LoaderService {
 		})
 	}
 
-	// 先停旧运行态，再把“已执行的新模块”导出解析并装入。
-	replaceModule(moduleId: string, mod: Record<string, unknown>): boolean {
+	// 先停旧运行态，再把"已执行的新模块"导出解析并装入。
+	async replaceModule(moduleId: string, mod: Record<string, unknown>): Promise<boolean> {
 		// 停旧（只影响运行层，保留声明关系以便冲突判断更清晰）
 		this.registry.stopModule(moduleId)
 
@@ -76,7 +76,7 @@ export class LoaderService {
 		}
 
 		// 运行层：根据持久启用位，自动启用需要启用的插件
-		this.registry.syncRuntimeForModule(moduleId)
+		await this.registry.syncRuntimeForModule(moduleId)
 
 		// 维护锚点
 		if (isAnchor) this.pathAnchors.add(moduleId)

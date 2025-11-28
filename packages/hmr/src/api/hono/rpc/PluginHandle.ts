@@ -1,7 +1,7 @@
 // rpc/PluginHandle.ts - 插件操作 RPC
 import type { Context, PluginConstructor } from '@pluxel/core'
 import { RpcTarget } from 'capnweb'
-import { getDefault } from 'valibot'
+import * as v from 'valibot'
 import { readStatusSnapshot } from '../../features/pluginStatus/service'
 import type {
 	ConfigPatch,
@@ -57,14 +57,14 @@ export class PluginHandle extends RpcTarget {
 		try {
 			switch (action) {
 				case 'start':
-					registry.enable(this.name, ctor)
+					await registry.enable(this.name, ctor)
 					break
 				case 'stop':
 					registry.deactivate(this.name, ctor, { runtimeOnly: true })
 					break
 				case 'restart':
 					registry.deactivate(this.name, ctor, { runtimeOnly: true })
-					registry.enable(this.name, ctor)
+					await registry.enable(this.name, ctor)
 					break
 				case 'disable':
 					registry.deactivate(this.name, ctor, { runtimeOnly: false })
@@ -104,7 +104,7 @@ export class PluginHandle extends RpcTarget {
 	}
 
 	/** 获取插件 schema（源代码形式，用于前端动态构建表单） */
-	schema(): SchemaResult {
+	async schema(): Promise<SchemaResult> {
 		const ctor = this.resolveCtor()
 		const schemaMap = this.#ctx.loader.getPluginSchema(ctor)
 		if (!schemaMap) {
@@ -129,18 +129,18 @@ export class PluginHandle extends RpcTarget {
 		return {
 			ok: true,
 			schemaSource,
-			defaults: collectDefaults(schemaMap),
+			defaults: await collectDefaults(schemaMap),
 		}
 	}
 
-	config(): ConfigResultOk {
+	async config(): Promise<ConfigResultOk> {
 		const schema = this.#ctx.loader.getPluginSchema(this.resolveCtor())
-		const defaults = collectDefaults(schema)
+		const defaults = await collectDefaults(schema)
 		const config = this.#ctx.configService.getConfig(this.name).configRecord
 		return { ok: true, saved: false, config, defaults }
 	}
 
-	validateConfig(patch: ConfigPatch): ConfigResult {
+	async validateConfig(patch: ConfigPatch): Promise<ConfigResult> {
 		const schema = this.#ctx.loader.getPluginSchema(this.resolveCtor())
 		if (!schema)
 			return {
@@ -149,8 +149,12 @@ export class PluginHandle extends RpcTarget {
 				message: 'No config schema registered for this plugin.',
 			}
 
-		const defaults = collectDefaults(schema)
-		const validation = validateConfigPatch(schema, patch)
+		// 并行执行 defaults 收集和验证
+		const [defaults, validation] = await Promise.all([
+			collectDefaults(schema),
+			validateConfigPatch(schema, patch),
+		])
+
 		if (!validation.ok) {
 			return {
 				ok: false,
@@ -171,7 +175,7 @@ export class PluginHandle extends RpcTarget {
 		}
 	}
 
-	saveConfig(patch: ConfigPatch): ConfigResult {
+	async saveConfig(patch: ConfigPatch): Promise<ConfigResult> {
 		const schema = this.#ctx.loader.getPluginSchema(this.resolveCtor())
 		if (!schema)
 			return {
@@ -180,8 +184,12 @@ export class PluginHandle extends RpcTarget {
 				message: 'No config schema registered for this plugin.',
 			}
 
-		const defaults = collectDefaults(schema)
-		const validation = validateConfigPatch(schema, patch)
+		// 并行执行 defaults 收集和验证
+		const [defaults, validation] = await Promise.all([
+			collectDefaults(schema),
+			validateConfigPatch(schema, patch),
+		])
+
 		if (!validation.ok) {
 			return {
 				ok: false,
@@ -201,7 +209,7 @@ export class PluginHandle extends RpcTarget {
 		return { ok: true, saved: true, config, defaults }
 	}
 
-	resetConfig(keys?: string[]): ConfigResult {
+	async resetConfig(keys?: string[]): Promise<ConfigResult> {
 		const schema = this.#ctx.loader.getPluginSchema(this.resolveCtor())
 		if (!schema)
 			return {
@@ -211,15 +219,21 @@ export class PluginHandle extends RpcTarget {
 			}
 
 		const targetKeys = keys?.length ? keys : Object.keys(schema)
-		const patch: ConfigPatch = {}
-		for (const key of targetKeys) {
-			const checker = schema[key]
-			if (!checker) continue
-			patch[key] = getDefault(checker as any) ?? {}
-		}
+		const entries = targetKeys
+			.map((key) => [key, schema[key]] as const)
+			.filter((e): e is [string, NonNullable<typeof e[1]>] => e[1] != null)
 
-		const defaults = collectDefaults(schema)
-		const validation = validateConfigPatch(schema, patch)
+		// 获取默认值：getDefault 是同步的，只读取静态默认值
+		const patch: ConfigPatch = Object.fromEntries(
+			entries.map(([key, checker]) => [key, v.getDefault(checker as any) ?? {}]),
+		)
+
+		// 并行执行 defaults 收集和验证
+		const [defaults, validation] = await Promise.all([
+			collectDefaults(schema),
+			validateConfigPatch(schema, patch),
+		])
+
 		if (!validation.ok) {
 			return {
 				ok: false,

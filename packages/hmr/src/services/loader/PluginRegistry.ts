@@ -1,6 +1,6 @@
 // loader/PluginRegistry.ts
 import { type Context, getPluginInfo, type PluginConstructor } from '@pluxel/core'
-import { getDefault, safeParse } from 'valibot'
+import * as v from 'valibot'
 import type { ConfigSchemaMap } from '../..'
 import { dirname, normalize } from 'pathe'
 
@@ -140,35 +140,31 @@ export class PluginRegistry {
 
 	// =============== 运行层：启/停 ===============
 	/** 根据 config 启用位，为该模块内需要启用的插件执行 start */
-	syncRuntimeForModule(moduleId: ModuleId): void {
+	async syncRuntimeForModule(moduleId: ModuleId): Promise<void> {
 		const list = this.moduleMap.get(moduleId) ?? EMPTY
-		for (const { ctor } of list) {
+		// 并行启动（registerPlugin 只是声明，依赖处理在 commit 时）
+		const toStart = list.flatMap(({ ctor }) => {
 			const { name } = getPluginInfo(ctor)
-			if (!this.isPrimaryProvider(moduleId, ctor)) continue
-			if (this.ctx.configService.isEnable(name)) {
-				this.startPlugin(name, ctor)
-			}
-		}
+			if (!this.isPrimaryProvider(moduleId, ctor) || !this.ctx.configService.isEnable(name)) return []
+			return [this.startPlugin(name, ctor)]
+		})
+		if (toStart.length > 0) await Promise.all(toStart)
 	}
 
-	enable(name: PluginName, ctor: PluginConstructor): void {
-		this.startPlugin(name, ctor)
+	async enable(name: PluginName, ctor: PluginConstructor): Promise<void> {
+		await this.startPlugin(name, ctor)
 	}
 
-	startPlugin(name: PluginName, ctor: PluginConstructor): void {
+	async startPlugin(name: PluginName, ctor: PluginConstructor): Promise<void> {
 		// 配置校验/补齐（幂等）
 		const schema = this.getSchema(ctor)
 		if (schema) {
 			const { configRecord } = this.ctx.configService.getConfig(name)
+			const entries = Object.entries(schema)
+			const hasAsync = entries.some(([, s]) => s.async)
+
 			const patch: Record<string, unknown> = Object.create(null)
-			for (const [k, vSchema] of Object.entries(schema)) {
-				const cur = (configRecord as any)[k]
-				// 首次启动缺失配置时，为对象 schema 提供 {} 以便套用默认值
-				const candidate =
-					cur === undefined
-						? getDefault(vSchema) ?? (this.isObjectSchema(vSchema) ? {} : undefined)
-						: cur
-				const res = safeParse(vSchema as any, candidate)
+			const handleResult = (k: string, cur: unknown, res: v.SafeParseResult<any>) => {
 				if (!res.success) {
 					const issue = res.issues[0]
 					const where = issue?.path?.map((p: any) => p.key ?? p.index).join('.') || k
@@ -176,6 +172,34 @@ export class PluginRegistry {
 				}
 				if (cur === undefined && res.output !== undefined) patch[k] = res.output
 			}
+
+			if (!hasAsync) {
+				// 快速同步路径
+				for (const [k, vSchema] of entries) {
+					const cur = (configRecord as any)[k]
+					const candidate =
+						cur === undefined
+							? v.getDefault(vSchema as any) ?? (this.isObjectSchema(vSchema) ? {} : undefined)
+							: cur
+					handleResult(k, cur, v.safeParse(vSchema as any, candidate))
+				}
+			} else {
+				// 异步路径：并行处理
+				const results = await Promise.all(
+					entries.map(async ([k, vSchema]) => {
+						const cur = (configRecord as any)[k]
+						const defaultVal = v.getDefault(vSchema as any)
+						const candidate =
+							cur === undefined ? defaultVal ?? (this.isObjectSchema(vSchema) ? {} : undefined) : cur
+						const res = vSchema.async
+							? await v.safeParseAsync(vSchema as any, candidate)
+							: v.safeParse(vSchema as any, candidate)
+						return { k, cur, res }
+					}),
+				)
+				for (const { k, cur, res } of results) handleResult(k, cur, res)
+			}
+
 			if (Object.keys(patch).length > 0) {
 				this.ctx.configService.setConfig(name, { configRecord: patch })
 			}

@@ -464,7 +464,7 @@ export class HMRService {
 			const endInject = this.timing.start('inject', id)
 			let hasPlugin = false
 			try {
-				hasPlugin = this.ctx.loader.replaceModule(id, mod)
+				hasPlugin = await this.ctx.loader.replaceModule(id, mod)
 			} catch (err) {
 				this.ctx.logger.error({ file: id, err }, '[HMR] replaceModule failed')
 				continue
