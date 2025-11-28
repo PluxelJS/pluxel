@@ -130,10 +130,31 @@ function ConfigTabPanel({
 		() =>
 			formOptions({
 				defaultValues: initialValue,
-				onSubmit: async ({ value }) => {
+				onSubmit: async ({ value, formApi }) => {
 					using rpc = createRpcClient()
 					const result = await rpc.plugin(pluginName).saveConfig({ [tabKey]: value })
 					if (result.ok === false) {
+						// 应用服务端验证错误到表单字段
+						if (result.code === 'validation_failed' && result.errors) {
+							const fieldErrors = result.errors[tabKey]
+							if (fieldErrors) {
+								for (const [fieldName, issues] of Object.entries(fieldErrors)) {
+									if (fieldName === '_root' || fieldName === '_unknown') continue
+									// valibot-form 期望 errors 格式为 { message, dotPath }
+									// tanstack form 会把 errorMap 的每个值作为 errors 数组的一个元素
+									formApi.setFieldMeta(fieldName as any, (meta) => ({
+										...meta,
+										errorMap: {
+											...meta.errorMap,
+											onSubmit: {
+												message: issues.map((i) => i.message).join('; '),
+												dotPath: issues[0]?.path ?? [],
+											},
+										},
+									}))
+								}
+							}
+						}
 						notify({ title: '提交失败', message: result.message ?? result.code ?? '未知错误', color: 'red' })
 						return
 					}

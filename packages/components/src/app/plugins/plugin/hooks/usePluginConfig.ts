@@ -40,7 +40,11 @@ if (import.meta.hot) {
 async function loadPluginData(
 	pluginName: string,
 	forceRefresh = false,
-): Promise<{ schemaMap: Record<string, any>; defaults: Record<string, any>; savedConfig: Record<string, any> }> {
+): Promise<{
+	schemaMap: Record<string, any>
+	defaults: Record<string, any>
+	savedConfig: Record<string, any>
+}> {
 	const cachedSchema = forceRefresh ? null : schemaCache.get(pluginName)
 
 	// 同一个 session 内的调用会被 capnweb 自动 batch
@@ -64,9 +68,13 @@ async function loadPluginData(
 	const pending: Promise<void>[] = []
 
 	for (const [key, expr] of Object.entries(schemaResult.schemaSource)) {
-		const schema = new Function('v', 'f', 'rpc', `return ${expr}`)(v, f, rpc)
+		const schema = new Function('v', 'f', `return ${expr}`)(v, f)
 		if (schema instanceof Promise) {
-			pending.push(schema.then((r) => { schemaMap[key] = r }))
+			pending.push(
+				schema.then((r) => {
+					schemaMap[key] = r
+				}),
+			)
 		} else {
 			schemaMap[key] = schema
 		}

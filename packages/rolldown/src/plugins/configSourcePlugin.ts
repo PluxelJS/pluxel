@@ -13,6 +13,7 @@ import type { Decorator, Program, PropertyDefinition } from 'oxc-parser'
 import { parseSync } from 'oxc-parser'
 import type { Plugin } from 'vite'
 import { normalizePath } from 'vite'
+import { normalizeSchemaSource } from '../utils/configHandler'
 
 export interface ConfigSourcePluginOptions {
 	/** File patterns to include (default: *.ts, *.tsx in plugin directories) */
@@ -130,7 +131,7 @@ export function configSourcePlugin(options: ConfigSourcePluginOptions = {}): Plu
 							// 直接从文件系统读取源码（更可靠）
 							try {
 								const targetCode = await readFile(resolvedId, 'utf-8')
-								const targetAst = parseSync(resolvedId, targetCode, { sourceType: 'module' }).program
+								const targetAst = this.parse(targetCode, { sourceType: 'module' }) as Program
 								collectExportedSchemas(targetCode, resolvedId, targetAst)
 
 								// 再次检查缓存
@@ -454,7 +455,8 @@ function generateInjection(configs: ExtractedConfig[]): string {
 			.replace(/,\s+/g, ',')
 			.replace(/:\s+/g, ':')
 			.trim()
-		const escapedSource = JSON.stringify(compactSource)
+		const final = normalizeSchemaSource(compactSource)
+		const escapedSource = JSON.stringify(final)
 		lines.push(`__setConfigSource__(${className}, ${JSON.stringify(fieldName)}, ${escapedSource});`)
 	}
 
