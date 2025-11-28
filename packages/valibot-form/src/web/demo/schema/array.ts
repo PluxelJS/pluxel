@@ -57,4 +57,27 @@ export const ArrayShowcaseSchema = v.object({
 			emptyHint: '通过一个控件即可多选',
 		}),
 	),
+	// 新增：defaults-picker 模式，选项来自 tanstack form 的 defaultValues
+	dynamicPick: v.pipe(
+		v.array(v.string()),
+		f.arrayMeta({
+			valueMode: 'defaults-picker',
+			pickerMode: 'picker',
+			picklist: {
+				searchable: true,
+				clearable: true,
+				labels: {
+					apple: '苹果',
+					banana: '香蕉',
+					cherry: '樱桃',
+					durian: '榴莲',
+				},
+			},
+			emptyHint: '选项来自 defaultValues',
+		}),
+		f.formMeta({
+			label: '动态选项（defaults-picker）',
+			description: '选项列表来自 tanstack form 的 defaultValues',
+		}),
+	),
 })

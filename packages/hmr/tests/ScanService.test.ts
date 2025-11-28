@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'bun:test'
 import { fileURLToPath } from 'node:url'
-import { normalize } from 'pathe'
 import type { Context } from '@pluxel/core'
-import { ScanService, type EntryResolutionOk } from '../src/services/market/ScanService'
+import { normalize } from 'pathe'
+import { type EntryResolutionOk, ScanService } from '../src/services/market/ScanService'
 
 const fixtureRoot = normalize(fileURLToPath(new URL('./fixtures/scan/single/', import.meta.url)))
 const tsOnlyRoot = normalize(fileURLToPath(new URL('./fixtures/scan/ts-only/', import.meta.url)))
@@ -70,6 +70,9 @@ describe('ScanService without package.json (ts-only)', () => {
 	function createTsOnlyService() {
 		return new ScanService({} as Context, {
 			roots: tsOnlyRoot,
+			options: {
+				fallbackTsOnSingle: true,
+			},
 		})
 	}
 

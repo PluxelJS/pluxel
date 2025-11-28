@@ -67,6 +67,12 @@ export const AUTOFORM_CASES: AutoFormCase[] = [
 		label: 'Array Showcase',
 		description: '列表/网格/表格模式的数组操作以及默认值逻辑。',
 		schema: schema.ArrayShowcaseSchema,
+		formOpts: formOptions({
+			defaultValues: {
+				// defaults-picker 模式：选项列表来自这里
+				dynamicPick: ['apple', 'banana', 'cherry', 'durian'],
+			},
+		}),
 	},
 	{
 		id: 'record',

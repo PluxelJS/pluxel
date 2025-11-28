@@ -111,6 +111,27 @@ describe('configSourcePlugin', () => {
 		// 应该包含嵌套导入的 schema 源码
 		expect(code).toMatch(/v\.object\(\{apiKey:v\.string\(\),endpoint:v\.pipe\(v\.string\(\),v\.url\(\)\)/)
 	})
+
+	it('inlines composed object schemas (local + cross-file)', async () => {
+		const bundle = await rolldown({
+			input: resolve(fixturesDir, 'plugin-with-composed-schema.ts'),
+			plugins: [configSourcePlugin()],
+			external: ['valibot', '@pluxel/core'],
+		})
+
+		const { output } = await bundle.generate({ format: 'esm' })
+		const code = output[0].code
+
+		// 本地 const 组合应被内联
+		expect(code).toMatch(
+			/v\.object\(\{array:v\.array\(v\.number\(\)\),external:v\.array\(v\.pipe\(v\.string\(\),v\.minLength\(1\)\)\),?\}\)/,
+		)
+
+		// 跨文件导入的 schema 组合应被内联
+		expect(code).toMatch(
+			/v\.object\(\{external:v\.object\(\{flag:v\.boolean\(\),array:v\.array\(v\.pipe\(v\.string\(\),v\.minLength\(1\)\)\),?\}\),array:v\.array\(v\.pipe\(v\.string\(\),v\.minLength\(1\)\)\),?\}\)/,
+		)
+	})
 })
 
 describe('importTypeFixerPlugin', () => {

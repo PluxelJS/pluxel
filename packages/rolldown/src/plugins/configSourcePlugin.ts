@@ -9,7 +9,16 @@
  */
 
 import { readFile } from 'node:fs/promises'
-import type { Decorator, Program, PropertyDefinition } from 'oxc-parser'
+import type {
+	CallExpression,
+	Decorator,
+	Expression,
+	IdentifierName,
+	ObjectProperty,
+	Program,
+	PropertyDefinition,
+	SpreadElement,
+} from 'oxc-parser'
 import { parseSync } from 'oxc-parser'
 import type { Plugin } from 'vite'
 import { normalizePath } from 'vite'
@@ -28,21 +37,31 @@ interface ExtractedConfig {
 	source: string
 }
 
-interface PendingResolve {
-	className: string
-	fieldName: string
-	importSource: string
-	importedName: string
-	localName: string
+interface DeclarationInfo {
+	node: Expression
+	start: number
+	end: number
+	source: string
 }
 
-interface ExtractResult {
-	extracted: ExtractedConfig[]
-	pendingResolve: PendingResolve[]
+interface ImportInfo {
+	source: string
+	imported: string
 }
 
-// 跨文件 schema 缓存：moduleId -> Map<exportName, source>
-const schemaCache = new Map<string, Map<string, string>>()
+interface ModuleInfo {
+	id: string
+	code: string
+	declarations: Map<string, DeclarationInfo>
+	imports: Map<string, ImportInfo>
+	exports: Map<string, string>
+	reExports: Map<string, ImportInfo>
+}
+
+// 模块级 schema 信息缓存
+const moduleInfoCache = new Map<string, ModuleInfo>()
+const moduleInfoPromises = new Map<string, Promise<ModuleInfo | undefined>>()
+const DEFAULT_EXPORT = '__pluxel_default_export__'
 
 /** 根据文件扩展名获取 parser lang 选项 */
 function getLangFromId(id: string): 'ts' | 'tsx' | 'js' | 'jsx' {
@@ -79,7 +98,7 @@ export function configSourcePlugin(options: ConfigSourcePluginOptions = {}): Plu
 				if (!code.includes('@Plugin')) {
 					try {
 						const ast = this.parse(code, { lang: getLangFromId(id) }) as Program
-						collectExportedSchemas(code, normalizedId, ast)
+						collectModuleInfo(code, normalizedId, ast)
 					} catch {
 						// 解析失败，忽略
 					}
@@ -102,56 +121,17 @@ export function configSourcePlugin(options: ConfigSourcePluginOptions = {}): Plu
 
 				try {
 					// 第一步：收集并缓存本模块的导出 schema 定义
-					collectExportedSchemas(code, normalizedId, ast)
+					const moduleInfo = collectModuleInfo(code, normalizedId, ast)
+
+					const resolveModuleId: ModuleResolver = async (sourceSpecifier, importer) => {
+						const resolved = await this.resolve(sourceSpecifier, importer)
+						if (!resolved) return null
+						const cleaned = resolved.id.split('?')[0]
+						return normalizePath(cleaned)
+					}
 
 					// 第二步：提取 @Config 装饰器源代码
-					const { extracted, pendingResolve } = extractConfigSources(code, id, ast)
-
-					// 第三步：尝试解析跨文件引用
-					for (const pending of pendingResolve) {
-						const resolved = await this.resolve(pending.importSource, id)
-						if (resolved) {
-							const resolvedId = normalizePath(resolved.id)
-
-							// 检查缓存中是否已有该模块的 schema
-							const moduleSchemas = schemaCache.get(resolvedId)
-							if (moduleSchemas) {
-								const source =
-									moduleSchemas.get(pending.importedName) ?? moduleSchemas.get(pending.localName)
-								if (source) {
-									extracted.push({
-										className: pending.className,
-										fieldName: pending.fieldName,
-										source,
-									})
-									continue
-								}
-							}
-
-							// 直接从文件系统读取源码（更可靠）
-							try {
-								const targetCode = await readFile(resolvedId, 'utf-8')
-								const targetAst = this.parse(targetCode, { sourceType: 'module' }) as Program
-								collectExportedSchemas(targetCode, resolvedId, targetAst)
-
-								// 再次检查缓存
-								const targetSchemas = schemaCache.get(resolvedId)
-								if (targetSchemas) {
-									const source =
-										targetSchemas.get(pending.importedName) ?? targetSchemas.get(pending.localName)
-									if (source) {
-										extracted.push({
-											className: pending.className,
-											fieldName: pending.fieldName,
-											source,
-										})
-									}
-								}
-							} catch {
-								// 读取或解析失败，跳过
-							}
-						}
-					}
+					const extracted = await extractConfigSources(moduleInfo, ast, resolveModuleId)
 
 					if (extracted.length === 0) return null
 
@@ -171,109 +151,499 @@ export function configSourcePlugin(options: ConfigSourcePluginOptions = {}): Plu
 }
 
 /**
- * 收集模块中导出的 schema 定义，并更新缓存
+ * 收集模块内的声明/导入/导出信息，缓存后返回
  */
-function collectExportedSchemas(code: string, moduleId: string, ast: Program): void {
-	const moduleCache = new Map<string, string>()
+function collectModuleInfo(code: string, moduleId: string, ast: Program): ModuleInfo {
+	const info: ModuleInfo = {
+		id: moduleId,
+		code,
+		declarations: new Map(),
+		imports: new Map(),
+		exports: new Map(),
+		reExports: new Map(),
+	}
+
+	const addDeclaration = (name: string, init: Expression) => {
+		info.declarations.set(name, {
+			node: init,
+			start: init.start,
+			end: init.end,
+			source: code.slice(init.start, init.end),
+		})
+	}
 
 	for (const node of ast.body) {
-		// export const schema = v.object({...})
-		if (
-			node.type === 'ExportNamedDeclaration' &&
-			node.declaration?.type === 'VariableDeclaration'
-		) {
-			const varDecl = node.declaration
-			if (varDecl.kind === 'const') {
-				for (const decl of varDecl.declarations) {
-					if (decl.id.type === 'Identifier' && decl.init) {
-						const initSource = code.slice(decl.init.start, decl.init.end)
-						if (isLikelyValibotSchema(initSource)) {
-							moduleCache.set(decl.id.name, initSource)
+		switch (node.type) {
+			case 'ImportDeclaration': {
+				const source = node.source.value
+				for (const spec of node.specifiers) {
+					if (spec.type === 'ImportSpecifier') {
+						const imported =
+							spec.imported.type === 'Identifier'
+								? spec.imported.name
+								: (spec.imported as { value: string }).value
+						info.imports.set(spec.local.name, { source, imported })
+					} else if (spec.type === 'ImportDefaultSpecifier') {
+						info.imports.set(spec.local.name, { source, imported: 'default' })
+					} else if (spec.type === 'ImportNamespaceSpecifier') {
+						info.imports.set(spec.local.name, { source, imported: '*' })
+					}
+				}
+				break
+			}
+			case 'ExportNamedDeclaration': {
+				if (node.declaration?.type === 'VariableDeclaration' && node.declaration.kind === 'const') {
+					for (const decl of node.declaration.declarations) {
+						if (decl.id.type === 'Identifier' && decl.init) {
+							addDeclaration(decl.id.name, decl.init)
+							info.exports.set(decl.id.name, decl.id.name)
 						}
 					}
 				}
-			}
-		}
 
-		// const schema = v.object({...})（非导出，但可能被本地使用）
-		if (node.type === 'VariableDeclaration' && node.kind === 'const') {
-			for (const decl of node.declarations) {
-				if (decl.id.type === 'Identifier' && decl.init) {
-					const initSource = code.slice(decl.init.start, decl.init.end)
-					if (isLikelyValibotSchema(initSource)) {
-						moduleCache.set(decl.id.name, initSource)
+				for (const spec of node.specifiers ?? []) {
+					if (spec.type !== 'ExportSpecifier') continue
+					const exported =
+						spec.exported.type === 'Identifier'
+							? spec.exported.name
+							: (spec.exported as { value: string }).value
+					const local =
+						spec.local.type === 'Identifier'
+							? spec.local.name
+							: (spec.local as { value: string }).value
+					if (node.source) {
+						info.reExports.set(exported, { source: node.source.value, imported: local })
+					} else {
+						info.exports.set(exported, local)
 					}
 				}
+				break
 			}
+			case 'ExportDefaultDeclaration': {
+				const decl = node.declaration
+				if (decl.type === 'Identifier') {
+					info.exports.set('default', decl.name)
+				} else if (
+					(decl.type === 'FunctionDeclaration' || decl.type === 'ClassDeclaration') &&
+					decl.id
+				) {
+					info.exports.set('default', decl.id.name)
+				} else if (decl.type !== 'FunctionDeclaration' && decl.type !== 'ClassDeclaration') {
+					const key = DEFAULT_EXPORT
+					info.declarations.set(key, {
+						node: decl,
+						start: decl.start,
+						end: decl.end,
+						source: code.slice(decl.start, decl.end),
+					})
+					info.exports.set('default', key)
+				}
+				break
+			}
+			case 'VariableDeclaration': {
+				if (node.kind !== 'const') break
+				for (const decl of node.declarations) {
+					if (decl.id.type === 'Identifier' && decl.init) {
+						addDeclaration(decl.id.name, decl.init)
+					}
+				}
+				break
+			}
+			default:
+				break
 		}
 	}
 
-	if (moduleCache.size > 0) {
-		schemaCache.set(moduleId, moduleCache)
+	moduleInfoCache.set(moduleId, info)
+	return info
+}
+
+async function ensureModuleInfo(moduleId: string): Promise<ModuleInfo | undefined> {
+	const cached = moduleInfoCache.get(moduleId)
+	if (cached) return cached
+
+	const pending = moduleInfoPromises.get(moduleId)
+	if (pending) return pending
+
+	const promise = (async () => {
+		try {
+			const source = await readFile(moduleId, 'utf-8')
+			const parsed = parseSync(moduleId, source, {
+				lang: getLangFromId(moduleId),
+				sourceType: 'module',
+			}).program as Program
+			return collectModuleInfo(source, moduleId, parsed)
+		} catch {
+			return undefined
+		} finally {
+			moduleInfoPromises.delete(moduleId)
+		}
+	})()
+
+	moduleInfoPromises.set(moduleId, promise)
+	return promise
+}
+
+type ModuleResolver = (source: string, importer: string) => Promise<string | null>
+
+async function expandExpressionWithModule(
+	moduleInfo: ModuleInfo,
+	expr: Expression,
+	resolveModuleId: ModuleResolver,
+	seen: Set<string>,
+): Promise<string> {
+	const normalized = unwrapExpression(expr)
+	if (normalized.type === 'Identifier') {
+		const resolved = await resolveIdentifierValue(moduleInfo, normalized.name, resolveModuleId, seen)
+		return resolved ?? normalized.name
+	}
+	if (normalized.type === 'CallExpression' && isObjectSchemaCall(normalized.callee)) {
+		return expandObjectCallWithInlining(moduleInfo, normalized, resolveModuleId, seen)
+	}
+	const replacements = await collectIdentifierReplacements(
+		normalized,
+		moduleInfo,
+		resolveModuleId,
+		seen,
+	)
+	if (replacements.length === 0) return moduleInfo.code.slice(normalized.start, normalized.end)
+	return applyReplacements(moduleInfo.code, normalized.start, normalized.end, replacements)
+}
+
+async function resolveIdentifierValue(
+	moduleInfo: ModuleInfo,
+	name: string,
+	resolveModuleId: ModuleResolver,
+	seen: Set<string>,
+): Promise<string | undefined> {
+	const key = `${moduleInfo.id}::${name}`
+	if (seen.has(key)) return undefined
+	seen.add(key)
+	try {
+		const decl = moduleInfo.declarations.get(name)
+		if (decl) {
+			return expandExpressionWithModule(moduleInfo, decl.node, resolveModuleId, seen)
+		}
+
+		const importInfo = moduleInfo.imports.get(name)
+		if (importInfo && importInfo.imported !== '*') {
+			const resolvedId = await resolveModuleId(importInfo.source, moduleInfo.id)
+			if (!resolvedId) return undefined
+			const targetInfo = await ensureModuleInfo(resolvedId)
+			if (!targetInfo) return undefined
+			return resolveExportedValue(targetInfo, importInfo.imported, resolveModuleId, seen)
+		}
+
+		return undefined
+	} finally {
+		seen.delete(key)
 	}
 }
 
-/**
- * 简单启发式检测是否是 valibot schema
- */
-function isLikelyValibotSchema(source: string): boolean {
-	return /\bv\./.test(source) || /\bvalibot\./.test(source) || /\bf\./.test(source)
+async function resolveExportedValue(
+	moduleInfo: ModuleInfo,
+	exportedName: string,
+	resolveModuleId: ModuleResolver,
+	seen: Set<string>,
+): Promise<string | undefined> {
+	const key = `${moduleInfo.id}::export::${exportedName}`
+	if (seen.has(key)) return undefined
+	seen.add(key)
+	try {
+		const localName = moduleInfo.exports.get(exportedName)
+		if (localName) {
+			const decl = moduleInfo.declarations.get(localName)
+			if (decl) {
+				return expandExpressionWithModule(moduleInfo, decl.node, resolveModuleId, seen)
+			}
+		}
+
+		const reExport = moduleInfo.reExports.get(exportedName)
+		if (reExport && reExport.imported !== '*') {
+			const resolvedId = await resolveModuleId(reExport.source, moduleInfo.id)
+			if (!resolvedId) return undefined
+			const targetInfo = await ensureModuleInfo(resolvedId)
+			if (!targetInfo) return undefined
+			return resolveExportedValue(targetInfo, reExport.imported, resolveModuleId, seen)
+		}
+
+		return undefined
+	} finally {
+		seen.delete(key)
+	}
+}
+
+function isObjectSchemaCall(callee: Expression): boolean {
+	if (callee.type !== 'MemberExpression') return false
+	if (callee.computed) return false
+	if (callee.property.type !== 'Identifier') return false
+	const propName = callee.property.name
+	if (propName !== 'object' && propName !== 'objectAsync') return false
+	if (callee.object.type !== 'Identifier') return false
+	const objName = (callee.object as IdentifierName).name
+	return objName === 'v' || objName === 'valibot'
+}
+
+async function expandObjectCallWithInlining(
+	moduleInfo: ModuleInfo,
+	expr: CallExpression,
+	resolveModuleId: ModuleResolver,
+	seen: Set<string>,
+): Promise<string> {
+	const baseSource = moduleInfo.code.slice(expr.start, expr.end)
+	const rawArg = expr.arguments[0]
+	if (!rawArg) return baseSource
+	const argExpr = unwrapExpression(rawArg.type === 'SpreadElement' ? rawArg.argument : rawArg)
+	if (!argExpr || argExpr.type !== 'ObjectExpression') return baseSource
+
+	const replacements: Replacement[] = []
+
+	for (const prop of argExpr.properties) {
+		if (isSpreadElement(prop)) {
+			replacements.push(
+				...(await collectIdentifierReplacements(prop.argument, moduleInfo, resolveModuleId, seen)),
+			)
+			continue
+		}
+		if (prop.type !== 'Property') continue
+		if (prop.shorthand && prop.key.type === 'Identifier') {
+			const resolved = await resolveIdentifierValue(moduleInfo, prop.key.name, resolveModuleId, seen)
+			if (!resolved) continue
+			const keySource = moduleInfo.code.slice(prop.key.start, prop.key.end)
+			replacements.push({
+				start: prop.start,
+				end: prop.end,
+				text: `${keySource}:${resolved}`,
+			})
+			continue
+		}
+		if (prop.computed && prop.key.type !== 'Identifier') {
+			replacements.push(
+				...(await collectIdentifierReplacements(prop.key as Expression, moduleInfo, resolveModuleId, seen)),
+			)
+		}
+		if (prop.value) {
+			replacements.push(
+				...(await collectIdentifierReplacements(prop.value, moduleInfo, resolveModuleId, seen)),
+			)
+		}
+	}
+
+	for (const extraArg of expr.arguments.slice(1)) {
+		if (extraArg.type === 'SpreadElement') {
+			replacements.push(
+				...(await collectIdentifierReplacements(extraArg.argument, moduleInfo, resolveModuleId, seen)),
+			)
+		} else {
+			replacements.push(
+				...(await collectIdentifierReplacements(extraArg, moduleInfo, resolveModuleId, seen)),
+			)
+		}
+	}
+
+	if (replacements.length === 0) return baseSource
+	return applyReplacements(moduleInfo.code, expr.start, expr.end, replacements)
+}
+
+function unwrapExpression(expr: Expression): Expression {
+	let current = expr
+	while (true) {
+		if (
+			current.type === 'TSAsExpression' ||
+			current.type === 'TSSatisfiesExpression' ||
+			current.type === 'TSTypeAssertion' ||
+			current.type === 'TSInstantiationExpression' ||
+			current.type === 'TSNonNullExpression'
+		) {
+			current = current.expression
+			continue
+		}
+		if (current.type === 'ParenthesizedExpression') {
+			current = current.expression
+			continue
+		}
+		break
+	}
+	return current
+}
+
+function applyReplacements(
+	source: string,
+	start: number,
+	end: number,
+	replacements: Array<{ start: number; end: number; text: string }>,
+): string {
+	let cursor = start
+	let result = ''
+	const sorted = replacements.slice().sort((a, b) => a.start - b.start)
+	for (const rep of sorted) {
+		if (rep.start < cursor) continue
+		result += source.slice(cursor, rep.start)
+		result += rep.text
+		cursor = rep.end
+	}
+	result += source.slice(cursor, end)
+	return result
+}
+
+type Replacement = { start: number; end: number; text: string }
+
+async function collectIdentifierReplacements(
+	node: Expression,
+	moduleInfo: ModuleInfo,
+	resolveModuleId: ModuleResolver,
+	seen: Set<string>,
+): Promise<Replacement[]> {
+	const normalized = unwrapExpression(node)
+	const replacements: Replacement[] = []
+
+	const visit = async (child: Expression | null | undefined) => {
+		if (!child) return
+		replacements.push(...(await collectIdentifierReplacements(child, moduleInfo, resolveModuleId, seen)))
+	}
+
+	switch (normalized.type) {
+		case 'Identifier': {
+			const resolved = await resolveIdentifierValue(moduleInfo, normalized.name, resolveModuleId, seen)
+			if (resolved) {
+				replacements.push({
+					start: normalized.start,
+					end: normalized.end,
+					text: resolved,
+				})
+			}
+			break
+		}
+		case 'CallExpression': {
+			await visit(normalized.callee)
+			for (const arg of normalized.arguments) {
+				if (arg.type === 'SpreadElement') await visit(arg.argument)
+				else await visit(arg)
+			}
+			break
+		}
+		case 'MemberExpression': {
+			await visit(normalized.object)
+			if (normalized.computed) await visit(normalized.property as Expression)
+			break
+		}
+		case 'ArrayExpression': {
+			for (const element of normalized.elements) {
+				if (!element) continue
+				if (element.type === 'SpreadElement') await visit(element.argument)
+				else await visit(element)
+			}
+			break
+		}
+		case 'ObjectExpression': {
+			for (const prop of normalized.properties) {
+				if (isSpreadElement(prop)) {
+					await visit(prop.argument)
+					continue
+				}
+				if (prop.type !== 'Property') continue
+				if (prop.shorthand && prop.key.type === 'Identifier') {
+					const resolved = await resolveIdentifierValue(
+						moduleInfo,
+						prop.key.name,
+						resolveModuleId,
+						seen,
+					)
+					if (resolved) {
+						const keySource = moduleInfo.code.slice(prop.key.start, prop.key.end)
+						replacements.push({
+							start: prop.start,
+							end: prop.end,
+							text: `${keySource}:${resolved}`,
+						})
+						continue
+					}
+				}
+				if (prop.computed && prop.key.type !== 'Identifier') {
+					await visit(prop.key as Expression)
+				}
+				await visit(prop.value)
+			}
+			break
+		}
+		case 'UnaryExpression':
+		case 'AwaitExpression': {
+			await visit(normalized.argument)
+			break
+		}
+		case 'UpdateExpression': {
+			// 不替换自增运算符目标
+			break
+		}
+		case 'YieldExpression': {
+			await visit(normalized.argument ?? undefined)
+			break
+		}
+		case 'BinaryExpression':
+		case 'LogicalExpression': {
+			await visit(normalized.left)
+			await visit(normalized.right)
+			break
+		}
+		case 'AssignmentExpression': {
+			await visit(normalized.right)
+			break
+		}
+		case 'ConditionalExpression': {
+			await visit(normalized.test)
+			await visit(normalized.consequent)
+			await visit(normalized.alternate)
+			break
+		}
+		case 'SequenceExpression': {
+			for (const exprItem of normalized.expressions) await visit(exprItem)
+			break
+		}
+		case 'NewExpression': {
+			await visit(normalized.callee)
+			for (const arg of normalized.arguments ?? []) {
+				if (arg.type === 'SpreadElement') await visit(arg.argument)
+				else await visit(arg)
+			}
+			break
+		}
+		case 'TaggedTemplateExpression': {
+			await visit(normalized.tag)
+			await visit(normalized.quasi)
+			break
+		}
+		case 'TemplateLiteral': {
+			for (const exprItem of normalized.expressions) await visit(exprItem)
+			break
+		}
+		case 'ChainExpression': {
+			await visit(normalized.expression)
+			break
+		}
+		case 'ParenthesizedExpression': {
+			await visit(normalized.expression)
+			break
+		}
+		default:
+			break
+	}
+
+	return replacements
+}
+
+function isSpreadElement(node: any): node is SpreadElement {
+	return node?.type === 'SpreadElement'
 }
 
 /**
  * 提取 @Config 装饰器的源代码
  */
-function extractConfigSources(code: string, moduleId: string, ast: Program): ExtractResult {
+async function extractConfigSources(
+	moduleInfo: ModuleInfo,
+	ast: Program,
+	resolveModuleId: ModuleResolver,
+): Promise<ExtractedConfig[]> {
 	const extracted: ExtractedConfig[] = []
-	const pendingResolve: PendingResolve[] = []
-
-	// 收集本文件的顶层声明
-	const localDeclarations = new Map<string, string>()
-	// 收集导入映射：localName -> { source, imported }
-	const imports = new Map<string, { source: string; imported: string }>()
-
-	// 第一遍：收集声明和导入
-	for (const node of ast.body) {
-		// 收集导入
-		if (node.type === 'ImportDeclaration') {
-			const source = node.source.value
-			for (const spec of node.specifiers) {
-				if (spec.type === 'ImportSpecifier') {
-					const imported =
-						spec.imported.type === 'Identifier'
-							? spec.imported.name
-							: (spec.imported as { value: string }).value
-					imports.set(spec.local.name, { source, imported })
-				} else if (spec.type === 'ImportDefaultSpecifier') {
-					imports.set(spec.local.name, { source, imported: 'default' })
-				}
-			}
-		}
-
-		// 收集本地 const 声明
-		if (node.type === 'VariableDeclaration' && node.kind === 'const') {
-			for (const decl of node.declarations) {
-				if (decl.id.type === 'Identifier' && decl.init) {
-					localDeclarations.set(decl.id.name, code.slice(decl.init.start, decl.init.end))
-				}
-			}
-		}
-
-		// 收集导出的 const 声明
-		if (
-			node.type === 'ExportNamedDeclaration' &&
-			node.declaration?.type === 'VariableDeclaration'
-		) {
-			const varDecl = node.declaration
-			if (varDecl.kind === 'const') {
-				for (const decl of varDecl.declarations) {
-					if (decl.id.type === 'Identifier' && decl.init) {
-						localDeclarations.set(decl.id.name, code.slice(decl.init.start, decl.init.end))
-					}
-				}
-			}
-		}
-	}
 
 	// 第二遍：查找带 @Plugin 的类（因为 @Config 和 @Plugin 必须一起出现）
 	for (const node of ast.body) {
@@ -307,29 +677,23 @@ function extractConfigSources(code: string, moduleId: string, ast: Program): Ext
 			if (!fieldName || !propDef.decorators) continue
 
 			for (const decorator of propDef.decorators) {
-				const result = extractConfigDecoratorSource(
+				const source = await extractConfigDecoratorSource(
 					decorator,
-					code,
-					localDeclarations,
-					imports,
-					className,
-					fieldName,
-					moduleId,
+					moduleInfo,
+					resolveModuleId,
 				)
-				if (result.type === 'resolved') {
+				if (source) {
 					extracted.push({
 						className,
 						fieldName,
-						source: result.source,
+						source,
 					})
-				} else if (result.type === 'pending') {
-					pendingResolve.push(result.pending)
 				}
 			}
 		}
 	}
 
-	return { extracted, pendingResolve }
+	return extracted
 }
 
 /**
@@ -356,25 +720,16 @@ function hasPluginDecorator(decorators: Decorator[] | undefined | null): boolean
 	return false
 }
 
-type ExtractDecoratorResult =
-	| { type: 'resolved'; source: string }
-	| { type: 'pending'; pending: PendingResolve }
-	| { type: 'none' }
-
 /**
  * 从装饰器提取 schema 源代码
  */
-function extractConfigDecoratorSource(
+async function extractConfigDecoratorSource(
 	decorator: Decorator,
-	code: string,
-	localDecls: Map<string, string>,
-	imports: Map<string, { source: string; imported: string }>,
-	className: string,
-	fieldName: string,
-	_moduleId: string,
-): ExtractDecoratorResult {
+	moduleInfo: ModuleInfo,
+	resolveModuleId: ModuleResolver,
+): Promise<string | undefined> {
 	const expr = decorator.expression
-	if (expr.type !== 'CallExpression') return { type: 'none' }
+	if (expr.type !== 'CallExpression') return undefined
 
 	// 检查是否是 @Config 调用
 	const callee = expr.callee
@@ -384,53 +739,25 @@ function extractConfigDecoratorSource(
 			callee.property.type === 'Identifier' &&
 			callee.property.name === 'Config')
 
-	if (!isConfigCall) return { type: 'none' }
-	if (expr.arguments.length === 0) return { type: 'none' }
+	if (!isConfigCall) return undefined
+	if (expr.arguments.length === 0) return undefined
 
 	const arg = expr.arguments[0]
+	const resolvedArg = arg.type === 'SpreadElement' ? arg.argument : arg
 
-	// 如果参数是标识符，尝试解析
-	if (arg.type === 'Identifier') {
-		const name = arg.name
+	if (!resolvedArg) return undefined
 
-		// 1. 先查本地声明
-		const localSource = localDecls.get(name)
-		if (localSource) return { type: 'resolved', source: localSource }
-
-		// 2. 查导入，返回待解析信息
-		const importInfo = imports.get(name)
-		if (importInfo) {
-			// 先尝试从缓存中解析跨文件引用
-			for (const entry of Array.from(schemaCache.entries())) {
-				const [cachedModuleId, moduleSchemas] = entry
-				if (
-					cachedModuleId.includes(importInfo.source.replace(/^\.\//, '').replace(/^\.\.\//, ''))
-				) {
-					const exportedName = importInfo.imported === 'default' ? 'default' : importInfo.imported
-					const cachedSource = moduleSchemas.get(exportedName) ?? moduleSchemas.get(name)
-					if (cachedSource) return { type: 'resolved', source: cachedSource }
-				}
-			}
-
-			// 返回待解析信息，让调用方通过 this.resolve/this.load 解析
-			return {
-				type: 'pending',
-				pending: {
-					className,
-					fieldName,
-					importSource: importInfo.source,
-					importedName: importInfo.imported,
-					localName: name,
-				},
-			}
-		}
-
-		// 无法解析，返回标识符名作为 fallback
-		return { type: 'resolved', source: name }
+	if (resolvedArg.type === 'Identifier') {
+		const viaIdentifier = await resolveIdentifierValue(
+			moduleInfo,
+			resolvedArg.name,
+			resolveModuleId,
+			new Set(),
+		)
+		return viaIdentifier ?? resolvedArg.name
 	}
 
-	// 否则，直接提取参数源代码
-	return { type: 'resolved', source: code.slice(arg.start, arg.end) }
+	return expandExpressionWithModule(moduleInfo, resolvedArg, resolveModuleId, new Set())
 }
 
 /**
