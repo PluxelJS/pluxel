@@ -1,6 +1,6 @@
+import type { TrackedPluginUsage } from '@pluxel/rolldown'
 import type { ResolvedConfig } from 'tsdown'
 import { runRules } from './rules'
-import type { TrackedPluginUsage } from './plugins/import-tracker'
 import type { BuildLogger, BuildRuntimeConfig, BuildSuccessHook } from './types'
 
 export interface PluginTrackerOptions extends Pick<BuildRuntimeConfig, 'packageJsonPath' | 'manifestField'> {

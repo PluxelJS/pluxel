@@ -3,10 +3,10 @@ import { cp, mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'pathe'
 import { readPackageJSON } from 'pkg-types'
+import { createImportTracker } from '@pluxel/rolldown'
 import { resolveBuildContext } from '../src/tsbuild/config'
 import { BuildEnvKeys } from '../src/tsbuild/env'
 import { createOptionalDependencyHook } from '../src/tsbuild/plugin-tracker'
-import { createImportTracker } from '../src/tsbuild/plugins/import-tracker'
 import { runWithTsdown } from '../src/tsbuild/tsdown-runner'
 
 const TEST_ROOT = new URL('.', import.meta.url)
@@ -31,7 +31,7 @@ describe('build command', () => {
 			const runtime = await resolveBuildContext({})
 			expect(runtime.projectRoot).toBe(fixtureDir)
 			expect(runtime.packageJsonPath).toBe(resolve(fixtureDir, 'package.json'))
-			const tracker = createImportTracker(runtime.pluginPrefixes)
+			const tracker = createImportTracker({ prefixes: runtime.pluginPrefixes })
 			const hook = createOptionalDependencyHook({
 				packageJsonPath: runtime.packageJsonPath,
 				manifestField: runtime.manifestField,
@@ -76,7 +76,7 @@ describe('build command', () => {
 			process.env[BuildEnvKeys.manifestField] = 'customField'
 
 			const runtime = await resolveBuildContext({})
-			const tracker = createImportTracker(runtime.pluginPrefixes)
+			const tracker = createImportTracker({ prefixes: runtime.pluginPrefixes })
 			const hook = createOptionalDependencyHook({
 				packageJsonPath: runtime.packageJsonPath,
 				manifestField: runtime.manifestField,
@@ -119,7 +119,7 @@ describe('build command', () => {
 			process.env.GITHUB_REPOSITORY = 'pluxel/example'
 
 			const runtime = await resolveBuildContext({})
-			const tracker = createImportTracker(runtime.pluginPrefixes)
+			const tracker = createImportTracker({ prefixes: runtime.pluginPrefixes })
 			const hook = createOptionalDependencyHook({
 				packageJsonPath: runtime.packageJsonPath,
 				manifestField: runtime.manifestField,
@@ -158,7 +158,7 @@ describe('build command', () => {
 			process.env.CI_SERVER_HOST = 'gitlab.com'
 
 			const runtime = await resolveBuildContext({})
-			const tracker = createImportTracker(runtime.pluginPrefixes)
+			const tracker = createImportTracker({ prefixes: runtime.pluginPrefixes })
 			const hook = createOptionalDependencyHook({
 				packageJsonPath: runtime.packageJsonPath,
 				manifestField: runtime.manifestField,

@@ -13,7 +13,7 @@
 	"scripts": {
 		"dev": "bun src/cli.ts new plugin",
 		"build": "tsdown",
-		"test": "bun test"
+		"test": "bun test --conditions=@pluxel/source"
 	},
 	"peerDependencies": {
 		"tsdown": "*",
@@ -32,6 +32,6 @@
 	},
 	"devDependencies": {
 		"@types/picomatch": "^4.0.2",
-		"rolldown": "^1.0.0-beta.51"
+		"@pluxel/rolldown": "workspace:*"
 	}
 }

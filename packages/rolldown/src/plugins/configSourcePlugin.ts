@@ -20,8 +20,8 @@ import type {
 	SpreadElement,
 } from 'oxc-parser'
 import { parseSync } from 'oxc-parser'
+import { normalize as normalizePath } from 'pathe'
 import type { Plugin } from 'vite'
-import { normalizePath } from 'vite'
 import { normalizeSchemaSource } from '../utils/configHandler'
 
 export interface ConfigSourcePluginOptions {
@@ -56,6 +56,17 @@ interface ModuleInfo {
 	imports: Map<string, ImportInfo>
 	exports: Map<string, string>
 	reExports: Map<string, ImportInfo>
+}
+
+/**
+ * 解析上下文 - 用于缓存已解析的标识符值，避免重复解析
+ */
+interface ResolveContext {
+	moduleResolver: ModuleResolver
+	/** 已解析的标识符值缓存: key = "moduleId::name", value = resolved source */
+	resolvedValues: Map<string, string>
+	/** 正在解析的标识符（用于循环检测） */
+	pending: Set<string>
 }
 
 // 模块级 schema 信息缓存
@@ -131,7 +142,12 @@ export function configSourcePlugin(options: ConfigSourcePluginOptions = {}): Plu
 					}
 
 					// 第二步：提取 @Config 装饰器源代码
-					const extracted = await extractConfigSources(moduleInfo, ast, resolveModuleId)
+					const ctx: ResolveContext = {
+						moduleResolver: resolveModuleId,
+						resolvedValues: new Map(),
+						pending: new Set(),
+					}
+					const extracted = await extractConfigSources(moduleInfo, ast, ctx)
 
 					if (extracted.length === 0) return null
 
@@ -289,23 +305,17 @@ type ModuleResolver = (source: string, importer: string) => Promise<string | nul
 async function expandExpressionWithModule(
 	moduleInfo: ModuleInfo,
 	expr: Expression,
-	resolveModuleId: ModuleResolver,
-	seen: Set<string>,
+	ctx: ResolveContext,
 ): Promise<string> {
 	const normalized = unwrapExpression(expr)
 	if (normalized.type === 'Identifier') {
-		const resolved = await resolveIdentifierValue(moduleInfo, normalized.name, resolveModuleId, seen)
+		const resolved = await resolveIdentifierValue(moduleInfo, normalized.name, ctx)
 		return resolved ?? normalized.name
 	}
 	if (normalized.type === 'CallExpression' && isObjectSchemaCall(normalized.callee)) {
-		return expandObjectCallWithInlining(moduleInfo, normalized, resolveModuleId, seen)
+		return expandObjectCallWithInlining(moduleInfo, normalized, ctx)
 	}
-	const replacements = await collectIdentifierReplacements(
-		normalized,
-		moduleInfo,
-		resolveModuleId,
-		seen,
-	)
+	const replacements = await collectIdentifierReplacements(normalized, moduleInfo, ctx)
 	if (replacements.length === 0) return moduleInfo.code.slice(normalized.start, normalized.end)
 	return applyReplacements(moduleInfo.code, normalized.start, normalized.end, replacements)
 }
@@ -313,63 +323,93 @@ async function expandExpressionWithModule(
 async function resolveIdentifierValue(
 	moduleInfo: ModuleInfo,
 	name: string,
-	resolveModuleId: ModuleResolver,
-	seen: Set<string>,
+	ctx: ResolveContext,
 ): Promise<string | undefined> {
 	const key = `${moduleInfo.id}::${name}`
-	if (seen.has(key)) return undefined
-	seen.add(key)
+
+	// 检查缓存
+	const cached = ctx.resolvedValues.get(key)
+	if (cached !== undefined) return cached
+
+	// 循环检测
+	if (ctx.pending.has(key)) return undefined
+	ctx.pending.add(key)
+
 	try {
+		let result: string | undefined
+
 		const decl = moduleInfo.declarations.get(name)
 		if (decl) {
-			return expandExpressionWithModule(moduleInfo, decl.node, resolveModuleId, seen)
+			result = await expandExpressionWithModule(moduleInfo, decl.node, ctx)
+		} else {
+			const importInfo = moduleInfo.imports.get(name)
+			if (importInfo && importInfo.imported !== '*') {
+				const resolvedId = await ctx.moduleResolver(importInfo.source, moduleInfo.id)
+				if (resolvedId) {
+					const targetInfo = await ensureModuleInfo(resolvedId)
+					if (targetInfo) {
+						result = await resolveExportedValue(targetInfo, importInfo.imported, ctx)
+					}
+				}
+			}
 		}
 
-		const importInfo = moduleInfo.imports.get(name)
-		if (importInfo && importInfo.imported !== '*') {
-			const resolvedId = await resolveModuleId(importInfo.source, moduleInfo.id)
-			if (!resolvedId) return undefined
-			const targetInfo = await ensureModuleInfo(resolvedId)
-			if (!targetInfo) return undefined
-			return resolveExportedValue(targetInfo, importInfo.imported, resolveModuleId, seen)
+		// 缓存结果
+		if (result !== undefined) {
+			ctx.resolvedValues.set(key, result)
 		}
-
-		return undefined
+		return result
 	} finally {
-		seen.delete(key)
+		ctx.pending.delete(key)
 	}
 }
 
 async function resolveExportedValue(
 	moduleInfo: ModuleInfo,
 	exportedName: string,
-	resolveModuleId: ModuleResolver,
-	seen: Set<string>,
+	ctx: ResolveContext,
 ): Promise<string | undefined> {
 	const key = `${moduleInfo.id}::export::${exportedName}`
-	if (seen.has(key)) return undefined
-	seen.add(key)
+
+	// 检查缓存
+	const cached = ctx.resolvedValues.get(key)
+	if (cached !== undefined) return cached
+
+	// 循环检测
+	if (ctx.pending.has(key)) return undefined
+	ctx.pending.add(key)
+
 	try {
+		let result: string | undefined
+
 		const localName = moduleInfo.exports.get(exportedName)
 		if (localName) {
 			const decl = moduleInfo.declarations.get(localName)
 			if (decl) {
-				return expandExpressionWithModule(moduleInfo, decl.node, resolveModuleId, seen)
+				result = await expandExpressionWithModule(moduleInfo, decl.node, ctx)
 			}
 		}
 
-		const reExport = moduleInfo.reExports.get(exportedName)
-		if (reExport && reExport.imported !== '*') {
-			const resolvedId = await resolveModuleId(reExport.source, moduleInfo.id)
-			if (!resolvedId) return undefined
-			const targetInfo = await ensureModuleInfo(resolvedId)
-			if (!targetInfo) return undefined
-			return resolveExportedValue(targetInfo, reExport.imported, resolveModuleId, seen)
+		if (result === undefined) {
+			const reExport = moduleInfo.reExports.get(exportedName)
+			if (reExport && reExport.imported !== '*') {
+				const resolvedId = await ctx.moduleResolver(reExport.source, moduleInfo.id)
+				if (resolvedId) {
+					const targetInfo = await ensureModuleInfo(resolvedId)
+					if (targetInfo) {
+						result = await resolveExportedValue(targetInfo, reExport.imported, ctx)
+					}
+				}
+			}
 		}
 
-		return undefined
+		// 缓存结果
+		if (result !== undefined) {
+			ctx.resolvedValues.set(key, result)
+		}
+		return result
 	} finally {
-		seen.delete(key)
+		ctx.pending.delete(key)
 	}
 }
 
@@ -387,8 +427,7 @@ function isObjectSchemaCall(callee: Expression): boolean {
 async function expandObjectCallWithInlining(
 	moduleInfo: ModuleInfo,
 	expr: CallExpression,
-	resolveModuleId: ModuleResolver,
-	seen: Set<string>,
+	ctx: ResolveContext,
 ): Promise<string> {
 	const baseSource = moduleInfo.code.slice(expr.start, expr.end)
 	const rawArg = expr.arguments[0]
@@ -400,14 +439,12 @@ async function expandObjectCallWithInlining(
 
 	for (const prop of argExpr.properties) {
 		if (isSpreadElement(prop)) {
-			replacements.push(
-				...(await collectIdentifierReplacements(prop.argument, moduleInfo, resolveModuleId, seen)),
-			)
+			replacements.push(...(await collectIdentifierReplacements(prop.argument, moduleInfo, ctx)))
 			continue
 		}
 		if (prop.type !== 'Property') continue
 		if (prop.shorthand && prop.key.type === 'Identifier') {
-			const resolved = await resolveIdentifierValue(moduleInfo, prop.key.name, resolveModuleId, seen)
+			const resolved = await resolveIdentifierValue(moduleInfo, prop.key.name, ctx)
 			if (!resolved) continue
 			const keySource = moduleInfo.code.slice(prop.key.start, prop.key.end)
 			replacements.push({
@@ -419,25 +456,21 @@ async function expandObjectCallWithInlining(
 		}
 		if (prop.computed && prop.key.type !== 'Identifier') {
 			replacements.push(
-				...(await collectIdentifierReplacements(prop.key as Expression, moduleInfo, resolveModuleId, seen)),
+				...(await collectIdentifierReplacements(prop.key as Expression, moduleInfo, ctx)),
 			)
 		}
 		if (prop.value) {
-			replacements.push(
-				...(await collectIdentifierReplacements(prop.value, moduleInfo, resolveModuleId, seen)),
-			)
+			replacements.push(...(await collectIdentifierReplacements(prop.value, moduleInfo, ctx)))
 		}
 	}
 
 	for (const extraArg of expr.arguments.slice(1)) {
 		if (extraArg.type === 'SpreadElement') {
 			replacements.push(
-				...(await collectIdentifierReplacements(extraArg.argument, moduleInfo, resolveModuleId, seen)),
+				...(await collectIdentifierReplacements(extraArg.argument, moduleInfo, ctx)),
 			)
 		} else {
-			replacements.push(
-				...(await collectIdentifierReplacements(extraArg, moduleInfo, resolveModuleId, seen)),
-			)
+			replacements.push(...(await collectIdentifierReplacements(extraArg, moduleInfo, ctx)))
 		}
 	}
 
@@ -491,20 +524,19 @@ type Replacement = { start: number; end: number; text: string }
 async function collectIdentifierReplacements(
 	node: Expression,
 	moduleInfo: ModuleInfo,
-	resolveModuleId: ModuleResolver,
-	seen: Set<string>,
+	ctx: ResolveContext,
 ): Promise<Replacement[]> {
 	const normalized = unwrapExpression(node)
 	const replacements: Replacement[] = []
 
 	const visit = async (child: Expression | null | undefined) => {
 		if (!child) return
-		replacements.push(...(await collectIdentifierReplacements(child, moduleInfo, resolveModuleId, seen)))
+		replacements.push(...(await collectIdentifierReplacements(child, moduleInfo, ctx)))
 	}
 
 	switch (normalized.type) {
 		case 'Identifier': {
-			const resolved = await resolveIdentifierValue(moduleInfo, normalized.name, resolveModuleId, seen)
+			const resolved = await resolveIdentifierValue(moduleInfo, normalized.name, ctx)
 			if (resolved) {
 				replacements.push({
 					start: normalized.start,
@@ -543,12 +575,7 @@ async function collectIdentifierReplacements(
 				}
 				if (prop.type !== 'Property') continue
 				if (prop.shorthand && prop.key.type === 'Identifier') {
-					const resolved = await resolveIdentifierValue(
-						moduleInfo,
-						prop.key.name,
-						resolveModuleId,
-						seen,
-					)
+					const resolved = await resolveIdentifierValue(moduleInfo, prop.key.name, ctx)
 					if (resolved) {
 						const keySource = moduleInfo.code.slice(prop.key.start, prop.key.end)
 						replacements.push({
@@ -641,7 +668,7 @@ function isSpreadElement(node: any): node is SpreadElement {
 async function extractConfigSources(
 	moduleInfo: ModuleInfo,
 	ast: Program,
-	resolveModuleId: ModuleResolver,
+	ctx: ResolveContext,
 ): Promise<ExtractedConfig[]> {
 	const extracted: ExtractedConfig[] = []
 
@@ -677,11 +704,7 @@ async function extractConfigSources(
 			if (!fieldName || !propDef.decorators) continue
 
 			for (const decorator of propDef.decorators) {
-				const source = await extractConfigDecoratorSource(
-					decorator,
-					moduleInfo,
-					resolveModuleId,
-				)
+				const source = await extractConfigDecoratorSource(decorator, moduleInfo, ctx)
 				if (source) {
 					extracted.push({
 						className,
@@ -726,7 +749,7 @@ function hasPluginDecorator(decorators: Decorator[] | undefined | null): boolean
 async function extractConfigDecoratorSource(
 	decorator: Decorator,
 	moduleInfo: ModuleInfo,
-	resolveModuleId: ModuleResolver,
+	ctx: ResolveContext,
 ): Promise<string | undefined> {
 	const expr = decorator.expression
 	if (expr.type !== 'CallExpression') return undefined
@@ -748,16 +771,11 @@ async function extractConfigDecoratorSource(
 	if (!resolvedArg) return undefined
 
 	if (resolvedArg.type === 'Identifier') {
-		const viaIdentifier = await resolveIdentifierValue(
-			moduleInfo,
-			resolvedArg.name,
-			resolveModuleId,
-			new Set(),
-		)
+		const viaIdentifier = await resolveIdentifierValue(moduleInfo, resolvedArg.name, ctx)
 		return viaIdentifier ?? resolvedArg.name
 	}
 
-	return expandExpressionWithModule(moduleInfo, resolvedArg, resolveModuleId, new Set())
+	return expandExpressionWithModule(moduleInfo, resolvedArg, ctx)
 }
 
 /**

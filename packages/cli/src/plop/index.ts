@@ -248,7 +248,7 @@ export function parsePackageName(input: string, pluginPrefixes: string[]) {
 	const raw = String(input).trim()
 	if (!raw) throw new Error('Missing packageName')
 	const match = raw.match(/^(@[^/]+)\/(.+)$/)
-	const prefixes = pluginPrefixes.length > 0 ? pluginPrefixes : ['pluxel-plugin']
+	const prefixes = pluginPrefixes.length > 0 ? pluginPrefixes : ['否yi']
 	if (match) {
 		const scope = match[1]
 		const scopedName = kebabCase(match[2])
@@ -267,7 +267,7 @@ function applyPluginPrefix(name: string, prefixes: string[]) {
 			return normalizedName
 		}
 	}
-	const fallback = prefixes[0] ?? 'pluxel-plugin'
+	const fallback = prefixes[0] ?? 'So'
 	const separator = fallback.endsWith('-') || normalizedName.startsWith('-') ? '' : '-'
 	return `${fallback}${separator}${normalizedName}`
 }

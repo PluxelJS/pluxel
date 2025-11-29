@@ -122,15 +122,120 @@ describe('configSourcePlugin', () => {
 		const { output } = await bundle.generate({ format: 'esm' })
 		const code = output[0].code
 
-		// 本地 const 组合应被内联
+		// 1. 本地 const 组合应被内联
 		expect(code).toMatch(
 			/v\.object\(\{array:v\.array\(v\.number\(\)\),external:v\.array\(v\.pipe\(v\.string\(\),v\.minLength\(1\)\)\),?\}\)/,
 		)
 
-		// 跨文件导入的 schema 组合应被内联
+		// 2. 跨文件导入的 schema 组合应被内联
 		expect(code).toMatch(
 			/v\.object\(\{external:v\.object\(\{flag:v\.boolean\(\),array:v\.array\(v\.pipe\(v\.string\(\),v\.minLength\(1\)\)\),?\}\),array:v\.array\(v\.pipe\(v\.string\(\),v\.minLength\(1\)\)\),?\}\)/,
 		)
+	})
+
+	it('inlines spread object fields from cross-file import', async () => {
+		const bundle = await rolldown({
+			input: resolve(fixturesDir, 'plugin-with-composed-schema.ts'),
+			plugins: [configSourcePlugin()],
+			external: ['valibot', '@pluxel/core'],
+		})
+
+		const { output } = await bundle.generate({ format: 'esm' })
+		const code = output[0].code
+
+		// 3. spread 拼接 - baseFields 应被内联展开
+		// v.object({ ...baseFields, extra: v.boolean() })
+		// baseFields = { name: v.string(), id: v.pipe(v.number(), v.integer()) }
+		expect(code).toContain('__setConfigSource__(ComposedPlugin, "spread"')
+		expect(code).toMatch(/\.\.\.\{name:v\.string\(\),id:v\.pipe\(v\.number\(\),v\.integer\(\)\),?\}/)
+	})
+
+	it('inlines shorthand properties from cross-file import', async () => {
+		const bundle = await rolldown({
+			input: resolve(fixturesDir, 'plugin-with-composed-schema.ts'),
+			plugins: [configSourcePlugin()],
+			external: ['valibot', '@pluxel/core'],
+		})
+
+		const { output } = await bundle.generate({ format: 'esm' })
+		const code = output[0].code
+
+		// 4. shorthand 属性 - 跨文件 schema 应被展开为 key:value 形式
+		// v.object({ enabledSchema, countSchema })
+		// enabledSchema = v.boolean(), countSchema = v.pipe(v.number(), v.minValue(0))
+		expect(code).toContain('__setConfigSource__(ComposedPlugin, "shorthand"')
+		expect(code).toMatch(/enabledSchema:v\.boolean\(\)/)
+		expect(code).toMatch(/countSchema:v\.pipe\(v\.number\(\),v\.minValue\(0\)\)/)
+	})
+
+	it('inlines local shorthand properties', async () => {
+		const bundle = await rolldown({
+			input: resolve(fixturesDir, 'plugin-with-composed-schema.ts'),
+			plugins: [configSourcePlugin()],
+			external: ['valibot', '@pluxel/core'],
+		})
+
+		const { output } = await bundle.generate({ format: 'esm' })
+		const code = output[0].code
+
+		// 5. 本地 shorthand - timeout 应被展开
+		// timeout = v.optional(v.number(), 5000)
+		expect(code).toContain('__setConfigSource__(ComposedPlugin, "localShorthand"')
+		expect(code).toMatch(/timeout:v\.optional\(v\.number\(\),5000\)/)
+	})
+
+	it('inlines deeply nested object schemas', async () => {
+		const bundle = await rolldown({
+			input: resolve(fixturesDir, 'plugin-with-composed-schema.ts'),
+			plugins: [configSourcePlugin()],
+			external: ['valibot', '@pluxel/core'],
+		})
+
+		const { output } = await bundle.generate({ format: 'esm' })
+		const code = output[0].code
+
+		// 6. 深层嵌套 object - 应完整内联
+		expect(code).toContain('__setConfigSource__(ComposedPlugin, "nested"')
+		expect(code).toMatch(
+			/v\.object\(\{level1:v\.object\(\{level2:v\.object\(\{value:v\.string\(\),?\}\),?\}\),?\}\)/,
+		)
+	})
+
+	it('handles v.objectAsync variant', async () => {
+		const bundle = await rolldown({
+			input: resolve(fixturesDir, 'plugin-with-composed-schema.ts'),
+			plugins: [configSourcePlugin()],
+			external: ['valibot', '@pluxel/core'],
+		})
+
+		const { output } = await bundle.generate({ format: 'esm' })
+		const code = output[0].code
+
+		// 7. v.objectAsync 应被正确处理
+		expect(code).toContain('__setConfigSource__(ComposedPlugin, "asyncSchema"')
+		expect(code).toMatch(/v\.objectAsync\(\{asyncField:v\.string\(\)/)
+		// nested sharedObject 应被内联
+		expect(code).toMatch(/nested:v\.object\(\{flag:v\.boolean\(\)/)
+	})
+
+	it('handles mixed scenario: spread + shorthand + cross-file', async () => {
+		const bundle = await rolldown({
+			input: resolve(fixturesDir, 'plugin-with-composed-schema.ts'),
+			plugins: [configSourcePlugin()],
+			external: ['valibot', '@pluxel/core'],
+		})
+
+		const { output } = await bundle.generate({ format: 'esm' })
+		const code = output[0].code
+
+		// 8. 混合场景
+		expect(code).toContain('__setConfigSource__(ComposedPlugin, "mixed"')
+		// spread baseFields
+		expect(code).toMatch(/\.\.\.\{name:v\.string\(\),id:v\.pipe\(v\.number\(\),v\.integer\(\)\),?\}/)
+		// shorthand enabledSchema
+		expect(code).toMatch(/enabledSchema:v\.boolean\(\)/)
+		// nested sharedObject
+		expect(code).toMatch(/nested:v\.object\(\{flag:v\.boolean\(\)/)
 	})
 })
 
