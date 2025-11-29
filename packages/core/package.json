@@ -1,6 +1,6 @@
 {
 	"name": "@pluxel/core",
-	"version": "0.2.0",
+	"version": "0.2.10",
 	"description": "Demo example that imports a local package",
 	"main": "./dist/index.cjs",
 	"module": "./dist/index.mjs",

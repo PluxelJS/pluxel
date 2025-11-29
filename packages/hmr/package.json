@@ -1,6 +1,6 @@
 {
 	"name": "@pluxel/hmr",
-	"version": "0.2.8",
+	"version": "0.2.10",
 	"description": "Demo example that imports a local package",
 	"main": "./dist/index.mjs",
 	"type": "module",
