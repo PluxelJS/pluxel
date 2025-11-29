@@ -10,7 +10,6 @@ import {
 	Stack,
 	Text,
 	TextInput,
-	Tooltip,
 	Box,
 	useComputedColorScheme,
 } from '@mantine/core'
@@ -18,7 +17,7 @@ import { IconArrowRight, IconBell, IconDotsVertical, IconMenu2, IconSearch } fro
 import { useState, useCallback, useEffect, useRef } from 'react'
 import { useNavigate, useRouterState } from '@tanstack/react-router'
 import { ColorSchemeToggle } from '../components'
-import { useMutation as useGqtyMutation } from './gqty'
+import { createRpcClient } from './rpc'
 import { useNotify } from './notifications/useNotify'
 import { useNotificationCenter } from './notifications/NotificationCenterProvider'
 import { PLUGIN_SEARCH_EVENT, PLUGIN_SEARCH_KEY } from './constants'
@@ -41,21 +40,17 @@ function formatTime(ts: number) {
 export function Header({ onMenu }: { onMenu: () => void }) {
 	const [search, setSearch] = useState('')
 	const searchInputRef = useRef<HTMLInputElement | null>(null)
-	const [buildSnapshot, buildState] = useGqtyMutation((mutation) => {
-		const result = mutation.buildSnapshot
-		result.ok
-		result.error
-		result.path
-		return result
-	})
+	const [isBuildLoading, setIsBuildLoading] = useState(false)
 	const notify = useNotify()
 	const navigate = useNavigate()
 	const pathname = useRouterState({ select: (state) => state.location.pathname })
 
 	const handleBuild = async () => {
+		setIsBuildLoading(true)
 		try {
-			const result = await buildSnapshot()
-			if (!result.ok) {
+			using rpc = createRpcClient()
+			const result = await rpc.buildSnapshot()
+			if (result.ok === false) {
 				notify({
 					title: '生成快照失败',
 					message: result.error || '未知错误',
@@ -74,6 +69,8 @@ export function Header({ onMenu }: { onMenu: () => void }) {
 				message: error?.message || '操作失败，请稍后再试',
 				color: 'red',
 			})
+		} finally {
+			setIsBuildLoading(false)
 		}
 	}
 
@@ -173,7 +170,7 @@ export function Header({ onMenu }: { onMenu: () => void }) {
 
 				<ColorSchemeToggle />
 
-				<Button onClick={handleBuild} loading={buildState.isLoading} leftSection="⚡">
+				<Button onClick={handleBuild} loading={isBuildLoading} leftSection="⚡">
 					构建 SNAPSHOT
 				</Button>
 

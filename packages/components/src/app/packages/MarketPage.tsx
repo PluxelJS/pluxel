@@ -22,7 +22,8 @@ import {
 	type SnapshotLoader,
 } from '@pluxel/market'
 import type { InstallPackageSpecInput } from '../gqty'
-import { useMutation as useGqtyMutation, useQuery } from '../gqty'
+import { useQuery } from '../gqty'
+import { createRpcClient } from '../rpc'
 import { MARKET_BASE_URL } from '../constants'
 import { useNotify } from '../notifications/useNotify'
 import { LiveLog } from '../log_viewer/LiveLog'
@@ -117,30 +118,6 @@ export function MarketPage() {
 	const installed = useMemo(
 		() => buildInstalledPackages(query.pluginStatus?.statuses),
 		[query.pluginStatus?.statuses],
-	)
-
-	const [installPackagesMutation] = useGqtyMutation(
-		(
-			mutation,
-			variables: { specs: InstallPackageSpecInput[]; force?: boolean | null },
-		) => {
-			const result = mutation.installPackages({
-				specs: variables.specs,
-				force: variables.force ?? null,
-			})
-			result.ok
-			result.error
-			result.results.forEach((entry) => {
-				entry.ok
-				entry.code
-				entry.error
-				entry.installStatus
-				entry.spec?.name
-				entry.spec?.version
-			})
-			return result
-		},
-		{ suspense: false },
 	)
 
 	const handleInstallSubmit = useCallback(
@@ -281,18 +258,17 @@ export function MarketPage() {
 				(spec?.raw || `${spec?.name ?? ''}@${spec?.version ?? spec?.tag ?? ''}` || '').toLowerCase()
 
 			try {
-				const res = await installPackagesMutation({
-					args: {
-						specs: installQueue.map((task) => task.spec),
-						force: installQueue.some((task) => task.force) ? true : null,
-					},
-				})
+				using rpc = createRpcClient()
+				const res = await rpc.market().installMany(
+					installQueue.map((task) => task.spec),
+					{ force: installQueue.some((task) => task.force) },
+				)
 
 				if (!res) {
 					throw new Error('安装接口无返回结果')
 				}
 
-				if (!res.ok && res.error) {
+				if (res.ok === false && res.error) {
 					throw new Error(res.error)
 				}
 
@@ -359,7 +335,7 @@ export function MarketPage() {
 				await query.$refetch(true)
 			}
 		},
-		[installPackagesMutation, installed, notify, query.$refetch],
+		[installed, notify, query.$refetch],
 	)
 
 	return (

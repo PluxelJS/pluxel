@@ -38,6 +38,8 @@ import {
 	useNavigate,
 	useRouterState,
 } from '@tanstack/react-router'
+import * as valibot from 'valibot'
+import * as valibotForm from 'valibot-form'
 import { type ReactNode, useEffect, useState } from 'react'
 import { Layout, type NavItem } from '../components'
 import { ClientOnly } from './ClientOnly'
@@ -51,6 +53,21 @@ import { RouterLinkAdapter } from './RouterLinkAdapter'
 import { getPatternStyle } from '../patterns'
 import { useDynamicTheme } from '../useDynamicTheme'
 import { NotificationCenterProvider } from './notifications/NotificationCenterProvider'
+
+declare global {
+	// eslint-disable-next-line @typescript-eslint/consistent-type-definitions
+	interface GlobalThis {
+		__PLUXEL_SCHEMA_VENDORS__?: {
+			valibot: typeof valibot
+			valibotForm: typeof valibotForm
+		}
+	}
+}
+
+const schemaVendors = { valibot, valibotForm }
+if (typeof globalThis !== 'undefined' && !globalThis.__PLUXEL_SCHEMA_VENDORS__) {
+	globalThis.__PLUXEL_SCHEMA_VENDORS__ = schemaVendors
+}
 
 const colorSchemeManager = localStorageColorSchemeManager({
 	key: 'pluxel-color-scheme',

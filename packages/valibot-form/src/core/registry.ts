@@ -51,6 +51,8 @@ export type CommonProps<T extends PartialMetaType> = {
 	extractedPropsInfo: ExtractedProps<T>
 	errors?: { message: string; dotPath: string[] }[]
 	inputProps: InputProps
+	/** 从 tanstack form defaultValues 中获取的该字段默认值 */
+	defaultValue?: unknown
 } & ExtraProps<T>
 
 /** 渲染器签名：把 props 映射成「框架无关」的节点描述 */

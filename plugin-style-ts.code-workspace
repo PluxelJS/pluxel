@@ -5,31 +5,35 @@
 			"path": "."
 		},
 		{
-			"name": "🍀  @pluxel/cli",
+			"name": "📁 @pluxel/cli",
 			"path": "packages/cli"
 		},
 		{
-			"name": "🍀  @pluxel/components",
+			"name": "📁 @pluxel/components",
 			"path": "packages/components"
 		},
 		{
-			"name": "🍀  @pluxel/context",
+			"name": "📁 @pluxel/context",
 			"path": "packages/context"
 		},
 		{
-			"name": "🍀  @pluxel/core",
+			"name": "📁 @pluxel/core",
 			"path": "packages/core"
 		},
 		{
-			"name": "🍀  diod",
+			"name": "📁 diod",
 			"path": "packages/diod"
 		},
 		{
-			"name": "🍀  @pluxel/hmr",
+			"name": "📁 @pluxel/hmr",
 			"path": "packages/hmr"
 		},
 		{
-			"name": "🍀  valibot-form",
+			"name": "📁 @pluxel/rolldown",
+			"path": "packages/rolldown"
+		},
+		{
+			"name": "📁 valibot-form",
 			"path": "packages/valibot-form"
 		}
 	],
@@ -83,6 +87,13 @@
 				"label": "📁 @pluxel/hmr",
 				"foreground": "#ffffff",
 				"background": "#662b90"
+			},
+			{
+				"path": "/home/ahdg/code/plugin-style-ts/packages/rolldown",
+				"packageName": "@pluxel/rolldown",
+				"label": "📁 @pluxel/rolldown",
+				"foreground": "#ffffff",
+				"background": "#2d497c"
 			},
 			{
 				"path": "/home/ahdg/code/plugin-style-ts/packages/valibot-form",

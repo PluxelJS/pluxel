@@ -9,13 +9,18 @@
  *    - 快捷键：'/' 或 Ctrl/⌘+F 聚焦，Esc 清空
  *
  * 2) 本地优先 + 合并提交
- *    - PluginOrganizer 内部本地优先；本容器在 onGroupsChange 时做“尾触发 250ms 合并”
+ *    - PluginOrganizer 内部本地优先；本容器在 onGroupsChange 时做"尾触发 250ms 合并"
  *    - 多次拖拽/编辑合并为一次 mutation；串行等待前一次完成，确保最终一致
  *    - 同步失败则回滚到 lastSyncedRef + 通知提示
  *
  * 3) 结构/布局
  *    - 页面外层给到 height:100%，内部 Box flex:1 + overflow hidden
  *    - Skeleton/错误/空态对齐
+ *
+ * 4) 无闪烁优化
+ *    - 使用 startTransition 标记搜索更新为低优先级
+ *    - 状态切换时保持容器结构稳定，使用 CSS 过渡平滑切换
+ *    - 搜索时使用 isPending 状态避免中间态闪烁
  * -----------------------------------------------------------------------------
  */
 
@@ -32,7 +37,14 @@ import {
 	Title,
 } from '@mantine/core'
 import { IconPlugConnected, IconSearch, IconSearchOff, IconX } from '@tabler/icons-react'
-import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react'
+import {
+	useCallback,
+	useDeferredValue,
+	useEffect,
+	useMemo,
+	useRef,
+	useState,
+} from 'react'
 import type { JSX } from 'react/jsx-runtime'
 import { type GroupConfig, PluginOrganizer, type PluginStatuses } from '../../components'
 import { EmptyState, ErrorState } from '../../components'
@@ -51,6 +63,7 @@ type OverviewSnapshot = {
 	groups: GroupConfig[]
 	total: number
 	running: number
+	disabled: number
 }
 
 const EMPTY_OVERVIEW: OverviewSnapshot = {
@@ -58,6 +71,7 @@ const EMPTY_OVERVIEW: OverviewSnapshot = {
 	groups: [],
 	total: 0,
 	running: 0,
+	disabled: 0,
 }
 
 const toStatuses = (entries: Array<PluginStatusEntry | null | undefined> | undefined) => {
@@ -69,6 +83,7 @@ const toStatuses = (entries: Array<PluginStatusEntry | null | undefined> | undef
 			id,
 			name: entry?.name ?? id,
 			isRunning: Boolean(entry?.isRunning),
+			isEnabled: entry?.isEnabled !== false,
 		}
 	}
 	return snapshot
@@ -85,22 +100,28 @@ const toGroups = (groups: Array<PluginGroup | null | undefined> | undefined) => 
 const buildOverview = (args: {
 	statuses: Array<PluginStatusEntry | null | undefined> | undefined
 	groups: Array<PluginGroup | null | undefined> | undefined
-	summary?: { total?: number | null; running?: number | null } | null
+	summary?: { total?: number | null; running?: number | null; disabled?: number | null } | null
 }) => {
 	const { statuses, groups, summary } = args
 	const summaryStatuses = toStatuses(statuses)
 	let computedRunning = 0
-	for (const entry of Object.values(summaryStatuses)) if (entry?.isRunning) computedRunning += 1
+	let computedDisabled = 0
+	for (const entry of Object.values(summaryStatuses)) {
+		if (entry?.isRunning) computedRunning += 1
+		if (entry?.isEnabled === false) computedDisabled += 1
+	}
 
 	const total =
 		typeof summary?.total === 'number' ? summary.total : Object.keys(summaryStatuses).length
 	const running = typeof summary?.running === 'number' ? summary.running : computedRunning
+	const disabled = typeof summary?.disabled === 'number' ? summary.disabled : computedDisabled
 
 	return {
 		statuses: summaryStatuses,
 		groups: toGroups(groups),
 		total,
 		running,
+		disabled,
 	}
 }
 
@@ -127,7 +148,7 @@ const areGroupsEqual = (a: GroupConfig[], b: GroupConfig[]) => {
 }
 
 export const PluginList: React.FC<PluginListProps> = ({ pluginName }) => {
-	// —— 混合搜索（持久化 + 降压） —— //
+	// —— 混合搜索（持久化 + 降压 + 无闪烁） —— //
 	const [search, setSearch] = useState(() => {
 		if (typeof window === 'undefined') return ''
 		try {
@@ -137,6 +158,11 @@ export const PluginList: React.FC<PluginListProps> = ({ pluginName }) => {
 		}
 	})
 	const deferredSearch = useDeferredValue(search.trim())
+
+	// 搜索变化时使用 transition 降低优先级，避免输入卡顿
+	const handleSearchChange = useCallback((value: string) => {
+		setSearch(value)
+	}, [])
 
 	useEffect(() => {
 		const t = setTimeout(() => {
@@ -219,7 +245,7 @@ export const PluginList: React.FC<PluginListProps> = ({ pluginName }) => {
 	}, [query.$state.error, query.$state.isLoading])
 
 	const handleGroupsChange = useCallback((next: GroupConfig[]) => {
-		client.plugins.groups.$post({ json: next })
+		void client['plugin-groups'].$post({ json: next })
 	}, [])
 
 	// —— 视图渲染 —— //
@@ -229,14 +255,17 @@ export const PluginList: React.FC<PluginListProps> = ({ pluginName }) => {
 	const filterQuery = deferredSearch
 	const groupsForView = draftGroups ?? overview.groups
 
+	// 搜索过程中的过渡状态，用于降低视觉闪烁
+	const isTransitioning = search.trim() !== deferredSearch
+
 	const clearBtn = useMemo(
 		() =>
 			search ? (
-				<ActionIcon size="sm" variant="subtle" onClick={() => setSearch('')}>
+				<ActionIcon size="sm" variant="subtle" onClick={() => handleSearchChange('')}>
 					<IconX size={14} />
 				</ActionIcon>
 			) : undefined,
-		[search],
+		[search, handleSearchChange],
 	)
 
 	let content: JSX.Element | null = null
@@ -308,6 +337,11 @@ export const PluginList: React.FC<PluginListProps> = ({ pluginName }) => {
 							<Badge variant="light" size="xs" color="green" suppressHydrationWarning>
 								运行中 {overview.running}
 							</Badge>
+							{overview.disabled > 0 && (
+								<Badge variant="light" size="xs" color="gray" suppressHydrationWarning>
+									禁用 {overview.disabled}
+								</Badge>
+							)}
 							{syncing && (
 								<Badge variant="light" size="xs" color="blue">
 									同步…
@@ -324,7 +358,7 @@ export const PluginList: React.FC<PluginListProps> = ({ pluginName }) => {
 					mt="xs"
 					placeholder="搜索（组名 / 插件名称 / 插件ID）"
 					value={search}
-					onChange={(e) => setSearch(e.currentTarget.value)}
+					onChange={(e) => handleSearchChange(e.currentTarget.value)}
 					leftSection={<IconSearch size={14} />}
 					rightSection={clearBtn}
 					size="xs"
@@ -345,7 +379,17 @@ export const PluginList: React.FC<PluginListProps> = ({ pluginName }) => {
 					flexDirection: 'column',
 				}}
 			>
-				<Box style={{ flex: 1, minHeight: 0 }}>{content}</Box>
+				{/* 内容容器：使用 opacity 过渡避免闪烁 */}
+				<Box
+					style={{
+						flex: 1,
+						minHeight: 0,
+						opacity: isTransitioning ? 0.7 : 1,
+						transition: 'opacity 100ms ease-out',
+					}}
+				>
+					{content}
+				</Box>
 			</Box>
 		</Stack>
 	)

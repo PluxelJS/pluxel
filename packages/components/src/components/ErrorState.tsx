@@ -28,14 +28,20 @@ export function ErrorState({
 	minHeight = 200,
 }: ErrorStateProps) {
 	const scheme = useComputedColorScheme('light', { getInitialValueInEffect: true })
-	const pattern = withPattern ? getPatternStyle(scheme === 'dark' ? 'dark' : 'light') : null
+	const isDark = scheme === 'dark'
+	const pattern = withPattern ? getPatternStyle(isDark ? 'dark' : 'light') : null
+
+	// 错误状态使用带有红色调的半透明背景
+	const defaultBg = isDark ? 'rgba(50, 30, 30, 0.5)' : 'rgba(254, 242, 242, 0.8)'
 
 	const borderStyle = withBorder
 		? {
-				border: `1px solid ${scheme === 'dark' ? 'rgba(248,113,113,0.3)' : 'rgba(239,68,68,0.2)'}`,
+				border: `1px solid ${isDark ? 'rgba(248,113,113,0.3)' : 'rgba(239,68,68,0.2)'}`,
 				borderRadius: 'var(--mantine-radius-lg)',
 			}
-		: {}
+		: {
+				borderRadius: 'var(--mantine-radius-md)',
+			}
 
 	return (
 		<Center
@@ -43,15 +49,16 @@ export function ErrorState({
 				minHeight,
 				width: '100%',
 				padding: 'var(--mantine-spacing-xl)',
+				backgroundColor: pattern ? pattern.backgroundColor : defaultBg,
 				...(pattern
 					? {
-							backgroundColor: pattern.backgroundColor,
 							backgroundImage: pattern.backgroundImage,
 							backgroundSize: pattern.backgroundSize,
 							backgroundPosition: pattern.backgroundPosition,
 						}
 					: {}),
 				...borderStyle,
+				transition: 'opacity 150ms ease, background-color 150ms ease',
 			}}
 		>
 			<Stack align="center" gap="md" maw={400}>

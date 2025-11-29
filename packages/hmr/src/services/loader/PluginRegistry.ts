@@ -1,7 +1,8 @@
 // loader/PluginRegistry.ts
 import { type Context, getPluginInfo, type PluginConstructor } from '@pluxel/core'
-import { getDefault, safeParse } from 'valibot'
+import * as v from 'valibot'
 import type { ConfigSchemaMap } from '../..'
+import { dirname, normalize } from 'pathe'
 
 type ModuleId = string
 type PluginName = string
@@ -9,6 +10,8 @@ type ExportKey = string
 type ModuleItem = Readonly<{ ctor: PluginConstructor; exportKey: ExportKey }>
 
 const EMPTY: readonly ModuleItem[] = Object.freeze([])
+const isIndexFile = (p: string) => /(?:^|\/)index\.[cm]?[tj]sx?$/.test(p)
+const sameDir = (a: string, b: string) => dirname(normalize(a)) === dirname(normalize(b))
 export const LIFECYCLE_STATES = ['running', 'stopped', 'disabled'] as const
 export type PluginLifecycleStage = (typeof LIFECYCLE_STATES)[number]
 
@@ -28,6 +31,12 @@ export class PluginRegistry {
 	private enrolled = new WeakMap<PluginConstructor, Set<ModuleId>>() // 模块级去重
 
 	constructor(private ctx: Context) {}
+
+	private isPrimaryProvider(moduleId: ModuleId, ctor: PluginConstructor): boolean {
+		const { name } = getPluginInfo(ctor)
+		const primary = this.name2Path.get(name)
+		return primary === undefined || primary === moduleId
+	}
 
 	// ---------- 只读 ----------
 	get modules(): ReadonlyMap<ModuleId, readonly ModuleItem[]> {
@@ -49,6 +58,9 @@ export class PluginRegistry {
 	getSchema(ctor: PluginConstructor): ConfigSchemaMap | undefined {
 		return getPluginInfo(ctor)?.configMap
 	}
+	getSchemaSource(ctor: PluginConstructor): Readonly<Record<string, string>> | undefined {
+		return getPluginInfo(ctor)?.configSourceMap
+	}
 	getExportKeyByName(name: string): ExportKey | undefined {
 		return this.name2ExportKey.get(name)
 	}
@@ -60,7 +72,27 @@ export class PluginRegistry {
 		// 冲突：允许“同路径热替换”，拒绝“跨路径重名”
 		const existed = this.nameMap.get(name)
 		const existedPath = this.name2Path.get(name)
-		if (existed && existed !== ctor && existedPath && existedPath !== moduleId) {
+		const enrolledPaths = existed ? this.enrolled.get(existed) : undefined
+		const isKnownAlias = enrolledPaths?.has(moduleId)
+		const existingIsIndexAlias =
+			existedPath && existedPath !== moduleId && isIndexFile(existedPath) && sameDir(existedPath, moduleId)
+		const candidateIsIndexAlias =
+			existedPath && existedPath !== moduleId && isIndexFile(moduleId) && sameDir(existedPath, moduleId)
+
+		// 若原主提供者是 index.*，让位给同目录的真实文件前，先停掉旧运行态以避免双注册
+		if (existingIsIndexAlias && !candidateIsIndexAlias) {
+			this.stopPlugin(name, existed!)
+		}
+
+		if (
+			existed &&
+			existed !== ctor &&
+			existedPath &&
+			existedPath !== moduleId &&
+			!isKnownAlias &&
+			!existingIsIndexAlias &&
+			!candidateIsIndexAlias
+		) {
 			throw new Error(`插件名冲突：${name} 已由 ${existedPath} 提供，拒绝来自 ${moduleId}`)
 		}
 
@@ -75,8 +107,13 @@ export class PluginRegistry {
 		}
 
 		this.nameMap.set(name, ctor)
-		this.name2Path.set(name, moduleId)
-		this.name2ExportKey.set(name, exportKey)
+		// 避免被“同 ctor 的跨路径再导出”覆盖掉首个声明的主路径；除非要把 index.* 别名让位给真实文件
+		const shouldUpdatePrimaryMapping =
+			(!existedPath || existedPath === moduleId || existed !== ctor || existingIsIndexAlias) && !candidateIsIndexAlias
+		if (shouldUpdatePrimaryMapping) {
+			this.name2Path.set(name, moduleId)
+			this.name2ExportKey.set(name, exportKey)
+		}
 	}
 
 	/** 清空模块的声明（通常在 replace/prune 前调用） */
@@ -103,39 +140,68 @@ export class PluginRegistry {
 
 	// =============== 运行层：启/停 ===============
 	/** 根据 config 启用位，为该模块内需要启用的插件执行 start */
-	syncRuntimeForModule(moduleId: ModuleId): void {
+	async syncRuntimeForModule(moduleId: ModuleId): Promise<void> {
 		const list = this.moduleMap.get(moduleId) ?? EMPTY
-		for (const { ctor } of list) {
+		// 并行启动（registerPlugin 只是声明，依赖处理在 commit 时）
+		const toStart = list.flatMap(({ ctor }) => {
 			const { name } = getPluginInfo(ctor)
-			if (this.ctx.configService.isEnable(name)) {
-				this.startPlugin(name, ctor)
-			}
-		}
+			if (!this.isPrimaryProvider(moduleId, ctor) || !this.ctx.configService.isEnable(name)) return []
+			return [this.startPlugin(name, ctor)]
+		})
+		if (toStart.length > 0) await Promise.all(toStart)
 	}
 
-	enable(name: PluginName, ctor: PluginConstructor): void {
-		this.startPlugin(name, ctor)
+	async enable(name: PluginName, ctor: PluginConstructor): Promise<void> {
+		await this.startPlugin(name, ctor)
 	}
 
-	startPlugin(name: PluginName, ctor: PluginConstructor): void {
+	async startPlugin(name: PluginName, ctor: PluginConstructor): Promise<void> {
 		// 配置校验/补齐（幂等）
 		const schema = this.getSchema(ctor)
 		if (schema) {
 			const { configRecord } = this.ctx.configService.getConfig(name)
+			const entries = Object.entries(schema)
+			const hasAsync = entries.some(([, s]) => s.async)
+
 			const patch: Record<string, unknown> = Object.create(null)
-			for (const [k, vSchema] of Object.entries(schema)) {
-				const cur = (configRecord as any)[k]
-				const val = cur === undefined ? getDefault(vSchema) : cur
-				const res = safeParse(vSchema as any, val)
+			const handleResult = (k: string, cur: unknown, res: v.SafeParseResult<any>) => {
 				if (!res.success) {
 					const issue = res.issues[0]
 					const where = issue?.path?.map((p: any) => p.key ?? p.index).join('.') || k
 					throw new Error(`插件 ${name} 配置无效：${where} -> ${issue?.message ?? 'unknown'}`)
 				}
-				if (cur === undefined) patch[k] = val
+				if (cur === undefined && res.output !== undefined) patch[k] = res.output
 			}
+
+			if (!hasAsync) {
+				// 快速同步路径
+				for (const [k, vSchema] of entries) {
+					const cur = (configRecord as any)[k]
+					const candidate =
+						cur === undefined
+							? v.getDefault(vSchema as any) ?? (this.isObjectSchema(vSchema) ? {} : undefined)
+							: cur
+					handleResult(k, cur, v.safeParse(vSchema as any, candidate))
+				}
+			} else {
+				// 异步路径：并行处理
+				const results = await Promise.all(
+					entries.map(async ([k, vSchema]) => {
+						const cur = (configRecord as any)[k]
+						const defaultVal = v.getDefault(vSchema as any)
+						const candidate =
+							cur === undefined ? defaultVal ?? (this.isObjectSchema(vSchema) ? {} : undefined) : cur
+						const res = vSchema.async
+							? await v.safeParseAsync(vSchema as any, candidate)
+							: v.safeParse(vSchema as any, candidate)
+						return { k, cur, res }
+					}),
+				)
+				for (const { k, cur, res } of results) handleResult(k, cur, res)
+			}
+
 			if (Object.keys(patch).length > 0) {
-				this.ctx.configService.setConfig(name, patch)
+				this.ctx.configService.setConfig(name, { configRecord: patch })
 			}
 		}
 
@@ -184,6 +250,7 @@ export class PluginRegistry {
 		const list = this.moduleMap.get(moduleId) ?? EMPTY
 		for (const { ctor } of list) {
 			const { name } = getPluginInfo(ctor)
+			if (!this.isPrimaryProvider(moduleId, ctor)) continue
 			this.stopPlugin(name, ctor)
 		}
 	}
@@ -200,6 +267,7 @@ export class PluginRegistry {
 		const list = this.moduleMap.get(moduleId) ?? EMPTY
 		for (const { ctor } of list) {
 			const { name } = getPluginInfo(ctor)
+			if (!this.isPrimaryProvider(moduleId, ctor)) continue
 			this.disablePersisted(name)
 		}
 	}
@@ -211,5 +279,9 @@ export class PluginRegistry {
 		} catch (err) {
 			this.ctx.logger?.warn({ err, label }, `[PluginRegistry] 可恢复异常：${label}`)
 		}
+	}
+
+	private isObjectSchema(schema: unknown): boolean {
+		return (schema as { type?: string })?.type === 'object'
 	}
 }

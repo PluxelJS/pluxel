@@ -1,6 +1,6 @@
 {
 	"name": "@pluxel/core",
-	"version": "0.2.0",
+	"version": "0.2.10",
 	"description": "Demo example that imports a local package",
 	"main": "./dist/index.cjs",
 	"module": "./dist/index.mjs",
@@ -36,6 +36,7 @@
 	},
 	"devDependencies": {
 		"@pluxel/context": "workspace:*",
+		"@pluxel/rolldown": "workspace:*",
 		"diod": "workspace:*",
 		"option-t": "^55.1.0",
 		"tinybench": "^5.1.0"

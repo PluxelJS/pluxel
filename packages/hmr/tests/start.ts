@@ -7,7 +7,17 @@ if (process.env.PLUXEL_HMR_SSR === undefined) {
 }
 
 const ctx = new Context({
-	hmrService: { dir: ['./tests/plugins'] },
+	hmrService: {
+		dir: ['./tests/plugins'],
+		log: {
+			debugNamespaces: [
+				'pluxel:hmr:modules',
+				'pluxel:hmr:time',
+				'pluxel:hmr:time:entry',
+				'pluxel:hmr:warmup',
+			],
+		},
+	},
 	registry: {
 		plugigCTXIsolate: [PinoLoggerService],
 	},
@@ -22,7 +32,7 @@ bootstrap()
 setTimeout(async () => {
 	/* const resolution = await ctx.scanService.resolveEntryByName('pluxel-plugin-redis')
 	if (resolution.ok) {
-		ctx.loader.replaceModule(resolution.dir, await import(resolution.entry))
+		await ctx.loader.replaceModule(resolution.dir, await import(resolution.entry))
 	} */
 	ctx.internalGraphql.scheduleRebuild()
 	// const a = await ctx.packageService.load('pluxel-plugin-redis')

@@ -40,7 +40,7 @@ import { FieldChrome } from '../shared'
 import { cleanProps } from '../../utils/propHelpers'
 import { PicklistControl } from './controls/PicklistControl'
 
-type RendererProps = CommonProps<typeof META_MAP.ARRAY> & { value?: unknown[] }
+type RendererProps = CommonProps<typeof META_MAP.ARRAY> & { value?: unknown[]; defaultValue?: unknown }
 type ArrayUI = ArrayMetaResult
 
 const idOf = (value: string | number) => String(value)
@@ -134,7 +134,7 @@ function SortableCard(props: SortableCardProps) {
 }
 
 function ArrayField(props: RendererProps) {
-	const { formBaseInfo, errors, extractedPropsInfo, inputProps, value } = props
+	const { formBaseInfo, errors, extractedPropsInfo, inputProps, value, defaultValue } = props
 	const ep = extractedPropsInfo ?? {}
 	const items = Array.isArray(value) ? (value as unknown[]) : []
 	const layout = ep.layout ?? ep.style ?? 'list'
@@ -198,6 +198,54 @@ function ArrayField(props: RendererProps) {
 						...cleanProps({
 							options: ep.picklist?.options,
 							entries: ep.picklist?.entries,
+							labels: ep.picklist?.labels,
+							disabled: ep.picklist?.disabled,
+							placeholder: ep.picklist?.placeholder,
+							searchable: ep.picklist?.searchable,
+							maxSelections: ep.picklist?.maxValues,
+							nothingFoundLabel: ep.picklist?.nothingFoundLabel,
+						}),
+					} as any}
+					value={items}
+					onChange={(next) => {
+						if (Array.isArray(next)) updateItems(next)
+						else if (next == null) updateItems([])
+						else updateItems([next])
+					}}
+					disabled={inputProps.disabled ?? false}
+					required={false}
+				/>
+			</FieldChrome>
+		)
+	}
+
+	// defaults-picker 模式：从 defaultValue 中获取选项
+	const useDefaultsPicker =
+		ep.valueMode === 'defaults-picker' && Array.isArray(defaultValue) && defaultValue.length > 0
+
+	if (useDefaultsPicker) {
+		const options = defaultValue as (string | number)[]
+		return (
+			<FieldChrome
+				{...cleanProps({
+					label: formBaseInfo.label,
+					required: formBaseInfo.required,
+					description: formBaseInfo.description,
+					helperText: formBaseInfo.helperText,
+					hint: formBaseInfo.hint,
+					tooltip: formBaseInfo.tooltip,
+					badge: formBaseInfo.badge,
+					errors: baseErrors,
+				})}
+			>
+				<PicklistControl
+					meta={{
+						clearable: ep.picklist?.clearable ?? true,
+						allowCreate: false,
+						variant: ep.picklist?.variant ?? 'select',
+						multiple: true,
+						options,
+						...cleanProps({
 							labels: ep.picklist?.labels,
 							disabled: ep.picklist?.disabled,
 							placeholder: ep.picklist?.placeholder,

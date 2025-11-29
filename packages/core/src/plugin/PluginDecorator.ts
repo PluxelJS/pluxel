@@ -45,6 +45,8 @@ export interface PluginInfo {
 	readonly base?: PluginIdentifier
 	/** 由 @Config 聚合出的 schema map（null-proto 对象） */
 	readonly configMap?: ConfigSchemaList
+	/** 由 Vite 插件注入的 @Config 源代码 map（fieldName -> source） */
+	readonly configSourceMap?: Readonly<Record<string, string>>
 }
 
 /*───────────────────────────────────────────────────────────
@@ -56,6 +58,8 @@ type State = {
 	declaredMeta: PluginMetadata | null
 	base: PluginIdentifier | null
 	config: ConfigSchemaList | null
+	// Vite 插件注入的 @Config 源代码（fieldName -> source）
+	configSource: Record<string, string> | null
 
 	// 预取的设计期构造参数类型（热路径不再触碰 Reflect）
 	rtypes: readonly unknown[]
@@ -84,6 +88,7 @@ const S = (ctor: Function): State => {
 		declaredMeta: null,
 		base: null,
 		config: null,
+		configSource: null,
 		rtypes: EMPTY_ARR,
 		name: null,
 
@@ -150,7 +155,7 @@ function applyOverride(dst: unknown[], override?: ParamOverride): void {
 	}
 }
 
-/** 依据“当前有效对外名”重建对外快照（不动 epoch） */
+/** 依据"当前有效对外名"重建对外快照（不动 epoch） */
 function rebuildInfoSnapshot(ctor: Function, s: State): void {
 	const declaredName = s.declaredMeta?.name ?? fallbackCtorName(ctor)
 	const effectiveName = s.name ?? declaredName
@@ -161,18 +166,25 @@ function rebuildInfoSnapshot(ctor: Function, s: State): void {
 		? (restMeta as DeclaredMetaView)
 		: undefined
 
+	const configSourceMap =
+		s.configSource && Object.keys(s.configSource).length
+			? (normalizeConfigSourceMap(s.configSource) as Readonly<Record<string, string>>)
+			: undefined
+
 	const snap: PluginInfo = __DEV__
 		? $freeze({
 				name: effectiveName,
 				metadata,
 				base: (s.base ?? undefined) as PluginIdentifier | undefined,
 				configMap: s.config ?? undefined,
+				configSourceMap,
 			})
 		: {
 				name: effectiveName,
 				metadata,
 				base: (s.base ?? undefined) as PluginIdentifier | undefined,
 				configMap: s.config ?? undefined,
+				configSourceMap,
 			}
 
 	s.infoSnap = snap
@@ -403,4 +415,47 @@ export function getStoredParamTokens(
 	if (!t) return
 	const copy = t.slice()
 	return __DEV__ ? $freeze(copy) : copy
+}
+
+/*───────────────────────────────────────────────────────────
+  Config Source：Vite 插件注入的 @Config 源代码
+  - __setConfigSource__：编译期注入（由 Vite 插件调用）
+  - getConfigSource：读取源代码 map
+───────────────────────────────────────────────────────────*/
+
+/**
+ * 由 Vite 插件在编译期注入，存储 @Config 装饰器参数的源代码。
+ * 在 @Plugin 装饰器执行后调用，因为此时 ctor 已经完成类定义。
+ */
+export function __setConfigSource__(
+	ctor: Function,
+	fieldName: string,
+	source: string,
+): void {
+	const s = S(ctor)
+	const bucket = s.configSource ?? Object.create(null)
+	bucket[fieldName] = source
+	s.configSource = bucket
+	// 重建快照以包含新的 configSourceMap
+	if (s.infoSnap) rebuildInfoSnapshot(ctor, s)
+}
+
+/** 读取 @Config 源代码 map（fieldName -> source） */
+export function getConfigSource(
+	ctor: Function,
+): Readonly<Record<string, string>> | undefined {
+	const s = STATE.get(ctor)
+	return normalizeConfigSourceMap(s?.configSource ?? undefined)
+}
+
+function normalizeConfigSourceMap(
+	source: Record<string, string> | null | undefined,
+): Readonly<Record<string, string>> | undefined {
+	if (!source || !Object.keys(source).length) return undefined
+	const proto = Object.getPrototypeOf(source)
+	if (!__DEV__ && proto === Object.prototype) {
+		return source as Readonly<Record<string, string>>
+	}
+	const plain = { ...source }
+	return __DEV__ ? $freeze(plain) : plain
 }

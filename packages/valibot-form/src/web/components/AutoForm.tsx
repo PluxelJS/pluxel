@@ -13,8 +13,9 @@ interface Ctx<S extends ObjectLikeSchema> {
 	form: ReturnType<typeof useAppForm<S>>
 	sections: SectionPlan[]
 	hiddenFields: PlannedField[]
+	defaultValues: Record<string, unknown>
 	submit: () => void
-	reset: () => void
+	reset: (values?: Record<string, any>) => void
 }
 const AutoFormCtx = createContext<Ctx<ObjectLikeSchema> | null>(null)
 
@@ -51,8 +52,9 @@ export function AutoForm<S extends ObjectLikeSchema>({
 			form,
 			sections: fieldPlan.sections,
 			hiddenFields: fieldPlan.hiddenFields,
+			defaultValues: (form.options.defaultValues ?? {}) as Record<string, unknown>,
 			submit: () => form.handleSubmit(),
-			reset: () => form.reset(),
+			reset: (values?: Record<string, any>) => form.reset(values as any),
 		}),
 		[form, fieldPlan],
 	)
@@ -80,7 +82,7 @@ export interface AutoFormFieldsProps {
 
 const FieldsImpl = (props?: AutoFormFieldsProps) => {
 	const { sectionSpacing = 'xl' } = props ?? {}
-	const { form, sections, hiddenFields } = useAutoFormCtx<any>()
+	const { form, sections, hiddenFields, defaultValues } = useAutoFormCtx<any>()
 
 	return (
 		<>
@@ -92,7 +94,7 @@ const FieldsImpl = (props?: AutoFormFieldsProps) => {
 
 			<Stack gap={sectionSpacing}>
 				{sections.map((section) => (
-					<SectionBlock key={section.id} section={section} form={form} />
+					<SectionBlock key={section.id} section={section} form={form} defaultValues={defaultValues} />
 				))}
 			</Stack>
 		</>
@@ -102,9 +104,11 @@ const FieldsImpl = (props?: AutoFormFieldsProps) => {
 function SectionBlock({
 	section,
 	form,
+	defaultValues,
 }: {
 	section: SectionPlan
 	form: ReturnType<typeof useAppForm<any>>
+	defaultValues: Record<string, unknown>
 }) {
 	const columns = Math.max(1, section.columns ?? 1)
 	const showHeader = Boolean(section.title || section.description)
@@ -147,6 +151,7 @@ function SectionBlock({
 										extractedPropsInfo={info.props}
 										errors={field.state.meta.errors as any}
 										value={field.state.value as any}
+										defaultValue={defaultValues[name]}
 										inputProps={{
 											name,
 											onChange: field.handleChange,
@@ -174,7 +179,8 @@ if (process.env.NODE_ENV !== 'production') {
 /* ───────── 子组件：动作（render-props，完全自定义外观/位置） ───────── */
 export interface ActionsRenderProps {
 	submit: () => void
-	reset: () => void
+	reset: (values?: Record<string, any>) => void
+	setValues: (values: Record<string, any>) => void
 	dirty: boolean
 	canSubmit: boolean
 	submitting: boolean
@@ -184,6 +190,11 @@ export interface ActionsProps {
 }
 function ActionsImpl({ children }: ActionsProps) {
 	const { form, submit, reset } = useAutoFormCtx<any>()
+	const setValues = useCallback((values: Record<string, any>) => {
+		for (const [key, value] of Object.entries(values)) {
+			form.setFieldValue(key, value)
+		}
+	}, [form])
 	return (
 		<form.Subscribe
 			selector={(s) => ({
@@ -193,7 +204,7 @@ function ActionsImpl({ children }: ActionsProps) {
 			})}
 		>
 			{({ dirty, canSubmit, submitting }) =>
-				children({ submit, reset, dirty, canSubmit, submitting })
+				children({ submit, reset, setValues, dirty, canSubmit, submitting })
 			}
 		</form.Subscribe>
 	)

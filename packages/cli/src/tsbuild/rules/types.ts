@@ -1,4 +1,4 @@
-import type { TrackedPluginUsage } from '../plugins/import-tracker'
+import type { TrackedPluginUsage } from '@pluxel/rolldown'
 
 export interface RuleContext {
 	packageJsonPath: string

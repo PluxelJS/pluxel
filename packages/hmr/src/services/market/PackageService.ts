@@ -755,7 +755,7 @@ export class PackageService {
 				this.moduleCache.set(moduleId, { moduleId, module })
 				this.primeHmrModuleCache(spec, moduleId, module)
 				if (entry.isAnchor) {
-					this.ctx.loader.replaceModule(moduleId, module)
+					await this.ctx.loader.replaceModule(moduleId, module)
 				}
 				const record: PackageLoadResult = {
 					spec,
@@ -1543,7 +1543,7 @@ export class PackageService {
 		}
 		this.primeHmrModuleCache(spec, moduleId, module)
 
-		const isAnchor = this.ctx.loader.replaceModule(moduleId, module)
+		const isAnchor = await this.ctx.loader.replaceModule(moduleId, module)
 
 		const result: PackageLoadResult = {
 			spec,

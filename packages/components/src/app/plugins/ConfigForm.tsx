@@ -14,66 +14,54 @@ import {
 } from '@mantine/core'
 import { useHotkeys } from '@mantine/hooks'
 import { formOptions } from '@tanstack/react-form'
-import type { InferRequestType, InferResponseType } from 'hono/client'
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import type { InferOutput, ObjectSchema } from 'valibot'
+import type { ObjectSchema } from 'valibot'
 import { getDefaults } from 'valibot'
 import { AutoForm } from 'valibot-form/web'
-import { client } from '../rpc'
 import { useNotify } from '../notifications/useNotify'
+import { createRpcClient } from '../rpc'
+
 export interface ConfigFormProps {
 	pluginName: string
-	configs: Record<string, ObjectSchema<any, any>>
-	existConfigs?: any
+	schemas: Record<string, ObjectSchema<any, any>>
+	/** 已保存的配置 */
+	savedConfig: Record<string, any>
+	/** schema 默认值 */
+	defaults: Record<string, any>
 }
 
-/** 徽标：已修改 / 未修改 / 已保存几秒前（带 1s 自刷） */
+/** 状态徽标 */
 function SavedStatus({ dirty, savedAt }: { dirty: boolean; savedAt?: number }) {
-	const [, force] = useState(0)
+	const [now, setNow] = useState(Date.now)
 	useEffect(() => {
-		if (!savedAt || dirty) return
-		const id = setInterval(() => force((n) => n + 1), 1000)
+		if (!savedAt || dirty) return undefined
+		const id = setInterval(() => setNow(Date.now), 1000)
 		return () => clearInterval(id)
 	}, [savedAt, dirty])
 
-	if (dirty)
-		return (
-			<Badge variant="light" color="yellow">
-				已修改
-			</Badge>
-		)
-	if (!savedAt)
-		return (
-			<Badge variant="light" color="gray">
-				未修改
-			</Badge>
-		)
+	if (dirty) return <Badge variant="light" color="yellow">已修改</Badge>
+	if (!savedAt) return <Badge variant="light" color="gray">未修改</Badge>
 
-	const sec = Math.max(0, Math.floor((Date.now() - savedAt) / 1000))
+	const sec = Math.max(0, Math.floor((now - savedAt) / 1000))
 	return (
 		<Tooltip label={new Date(savedAt).toLocaleString()}>
-			<Badge variant="light" color="green">
-				已保存 {sec}s 前
-			</Badge>
+			<Badge variant="light" color="green">已保存 {sec}s 前</Badge>
 		</Tooltip>
 	)
 }
 
-/** 底部悬浮操作条：集成标题 + 状态 + 操作 */
+/** 悬浮操作条 - 三个按钮 */
 function FloatingBar(props: {
 	title: string
 	dirty: boolean
 	canSubmit: boolean
 	submitting: boolean
 	onSubmit(): void
-	onReset(): void
+	onCancel(): void
+	onResetToDefaults(): void
 	savedAt?: number
 }) {
-	const { title, dirty, canSubmit, submitting, onSubmit, onReset, savedAt } = props
-
-	// 干净时半透明，脏/提交中满不透明；鼠标移上去也满不透明
-	const [hovered, setHovered] = useState(false)
-	const opacity = dirty || submitting || hovered ? 1 : 0.7
+	const { title, dirty, canSubmit, submitting, onSubmit, onCancel, onResetToDefaults, savedAt } = props
 
 	return (
 		<Affix position={{ bottom: 16, right: 16 }} withinPortal zIndex={1000}>
@@ -82,46 +70,27 @@ function FloatingBar(props: {
 				radius="xl"
 				p="xs"
 				shadow="md"
-				onMouseEnter={() => setHovered(true)}
-				onMouseLeave={() => setHovered(false)}
-				style={{ opacity, transition: 'opacity 120ms ease' }}
+				style={{
+					opacity: dirty || submitting ? 1 : 0.7,
+					transition: 'opacity 120ms ease',
+				}}
+				styles={{ root: { '&:hover': { opacity: 1 } } }}
 			>
 				<Group gap="sm" wrap="nowrap" align="center">
-					{/* 左侧：标题 + 状态 */}
 					<Group gap={8} wrap="nowrap" style={{ minWidth: 0 }}>
-						<Text
-							fw={600}
-							size="sm"
-							style={{
-								maxWidth: 220,
-								overflow: 'hidden',
-								whiteSpace: 'nowrap',
-								textOverflow: 'ellipsis',
-							}}
-							title={title}
-						>
+						<Text fw={600} size="sm" style={{ maxWidth: 220, overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis' }} title={title}>
 							{title}
 						</Text>
 						<SavedStatus dirty={dirty} savedAt={savedAt} />
 					</Group>
-					{/* 右侧：操作 */}
 					<Group gap="xs" wrap="nowrap">
-						<Button
-							id={`reset-fab-${title}`}
-							variant="default"
-							onClick={onReset}
-							disabled={!dirty || submitting}
-							type="button"
-						>
+						<Button id={`cancel-fab-${title}`} variant="default" onClick={onCancel} disabled={!dirty || submitting}>
 							取消
 						</Button>
-						<Button
-							id={`submit-fab-${title}`}
-							onClick={onSubmit}
-							disabled={!canSubmit}
-							loading={submitting}
-							type="button"
-						>
+						<Button id={`reset-fab-${title}`} variant="subtle" onClick={onResetToDefaults} disabled={submitting}>
+							重置
+						</Button>
+						<Button id={`submit-fab-${title}`} onClick={onSubmit} disabled={!canSubmit} loading={submitting}>
 							{submitting ? '提交中…' : '提交'}
 						</Button>
 					</Group>
@@ -131,123 +100,84 @@ function FloatingBar(props: {
 	)
 }
 
-/** 单个 Tab 面板（Hook 不在 .map 内定义） */
+/** 单个配置 Tab */
 function ConfigTabPanel({
 	pluginName,
 	tabKey,
 	schema,
-	defaults,
+	savedValue,
+	defaultValue,
 	onSaved,
 	savedAt,
 }: {
 	tabKey: string
 	pluginName: string
 	schema: ObjectSchema<any, any>
-	defaults: InferOutput<typeof schema>
+	savedValue: Record<string, any>
+	defaultValue: Record<string, any>
 	onSaved: (k: string) => void
 	savedAt?: number
 }) {
 	const notify = useNotify()
-	const $post = client.plugins[':name'].config.$post
-	type BasePayload = InferRequestType<typeof $post>['json']
-	type Payload = BasePayload & { signal?: AbortSignal }
-	type Response = InferResponseType<typeof $post>
 
-	const mutate = useCallback(
-		async (body: Payload): Promise<Response> => {
-			const { signal, ...payload } = body
-			try {
-				const res = await $post(
-					{ param: { name: pluginName }, json: payload as BasePayload },
-					{ init: { signal } },
-				)
-				return (await res.json()) as Response
-			} catch (error: any) {
-				if (signal?.aborted) throw error
-				notify({
-					title: '网络或服务器错误',
-					message: String(error?.message ?? error),
-					color: 'red',
-				})
-				throw error instanceof Error ? error : new Error(String(error))
-			}
-		},
-		[$post, pluginName],
+	// 初始值 = defaults 合并 savedConfig
+	const initialValue = useMemo(
+		() => ({ ...defaultValue, ...savedValue }),
+		[defaultValue, savedValue],
 	)
 
 	const opts = useMemo(
 		() =>
 			formOptions({
-				defaultValues: defaults,
-				asyncAlways: true,
-				asyncDebounceMs: 200,
-				validators: {
-					onChangeAsync: async ({ value, signal }) => {
-						const result = await mutate({
-							isSubmitAction: false,
-							formData: { [tabKey]: value },
-							signal,
-						})
-						if (result.code === 'validation_error') {
-							return { fields: result.errors[tabKey] }
+				defaultValues: initialValue,
+				onSubmit: async ({ value, formApi }) => {
+					using rpc = createRpcClient()
+					const result = await rpc.plugin(pluginName).saveConfig({ [tabKey]: value })
+					if (result.ok === false) {
+						// 应用服务端验证错误到表单字段
+						if (result.code === 'validation_failed' && result.errors) {
+							const fieldErrors = result.errors[tabKey]
+							if (fieldErrors) {
+								for (const [fieldName, issues] of Object.entries(fieldErrors)) {
+									if (fieldName === '_root' || fieldName === '_unknown') continue
+									// valibot-form 期望 errors 格式为 { message, dotPath }
+									// tanstack form 会把 errorMap 的每个值作为 errors 数组的一个元素
+									formApi.setFieldMeta(fieldName as any, (meta) => ({
+										...meta,
+										errorMap: {
+											...meta.errorMap,
+											onSubmit: {
+												message: issues.map((i) => i.message).join('; '),
+												dotPath: issues[0]?.path ?? [],
+											},
+										},
+									}))
+								}
+							}
 						}
-					},
-				},
-				onSubmit: async ({ value }) => {
-					const result = await mutate({
-						isSubmitAction: true,
-						formData: { [tabKey]: value },
-					})
-					if (result.code !== 'success') {
-						notify({
-							title: '提交失败',
-							message: result.code,
-							color: 'red',
-						})
-					} else {
-						onSaved(tabKey)
-						notify({
-							title: '提交成功',
-							message: `配置 ${tabKey} 已提交到服务器。`,
-							color: 'green',
-						})
+						notify({ title: '提交失败', message: result.message ?? result.code ?? '未知错误', color: 'red' })
+						return
 					}
+					onSaved(tabKey)
+					notify({ title: '提交成功', message: `配置 ${tabKey} 已保存`, color: 'green' })
 				},
 			}),
-		[mutate, tabKey, defaults, onSaved, notify],
+		[tabKey, initialValue, onSaved, notify, pluginName],
 	)
 
-	useHotkeys([
-		[
-			'mod+S',
-			(e) => {
-				e.preventDefault()
-				;(document.getElementById(`submit-fab-${tabKey}`) as HTMLButtonElement)?.click()
-			},
-		],
-		[
-			'Escape',
-			() => (document.getElementById(`reset-fab-${tabKey}`) as HTMLButtonElement)?.click(),
-		],
-	])
+	// memoize hotkeys 配置
+	const hotkeys = useMemo((): [string, (e: KeyboardEvent) => void][] => [
+		['mod+S', (e) => { e.preventDefault(); document.getElementById(`submit-fab-${tabKey}`)?.click() }],
+		['Escape', () => document.getElementById(`cancel-fab-${tabKey}`)?.click()],
+	], [tabKey])
+	useHotkeys(hotkeys)
 
 	return (
-		<Tabs.Panel
-			value={tabKey}
-			pt="md"
-			style={{
-				flex: 1,
-				minHeight: 0,
-				display: 'flex',
-				flexDirection: 'column',
-				overflow: 'hidden',
-			}}
-		>
-			<AutoForm schema={schema as any} formOpts={opts}>
+		<Tabs.Panel value={tabKey} pt="md" style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+			<AutoForm key={`${pluginName}-${tabKey}`} schema={schema as any} formOpts={opts}>
 				<Box px="sm" pb={96}>
 					<AutoForm.Fields />
 				</Box>
-
 				<AutoForm.Actions>
 					{({ submit, reset, dirty, canSubmit, submitting }) => (
 						<FloatingBar
@@ -256,7 +186,8 @@ function ConfigTabPanel({
 							canSubmit={canSubmit}
 							submitting={submitting}
 							onSubmit={submit}
-							onReset={reset}
+							onCancel={() => reset(initialValue)}
+							onResetToDefaults={() => reset(defaultValue)}
 							savedAt={savedAt}
 						/>
 					)}
@@ -266,47 +197,36 @@ function ConfigTabPanel({
 	)
 }
 
-export function ConfigForm({ pluginName, configs, existConfigs }: ConfigFormProps) {
-	const keys = useMemo(() => Object.keys(configs), [configs])
+export function ConfigForm({ pluginName, schemas, savedConfig, defaults }: ConfigFormProps) {
+	const keys = useMemo(() => Object.keys(schemas), [schemas])
 	const [tab, setTab] = useState(keys[0] || '')
+	const [savedAtMap, setSavedAtMap] = useState<Record<string, number | undefined>>({})
+	const onSaved = useCallback((k: string) => setSavedAtMap((m) => ({ ...m, [k]: Date.now() })), [])
 
-	// 预计算每个 Tab 的 schema + 默认值
+	useEffect(() => {
+		setTab((prev) => {
+			if (prev && keys.includes(prev)) return prev
+			return keys[0] ?? ''
+		})
+	}, [keys])
+
 	const items = useMemo(() => {
 		return keys.map((key) => {
-			const schema = configs[key]!
-			const exist = (existConfigs?.[key] ?? {}) as Record<string, any>
-			const defaults = Object.assign(getDefaults(schema) as any, exist) as InferOutput<
-				typeof schema
-			>
-			return { key, schema, defaults }
+			const schema = schemas[key]!
+			const schemaDefaults = getDefaults(schema) as Record<string, any>
+			return {
+				key,
+				schema,
+				savedValue: savedConfig[key] ?? {},
+				defaultValue: { ...schemaDefaults, ...(defaults[key] ?? {}) },
+			}
 		})
-	}, [configs, existConfigs, keys])
-
-	// 保存时间（给状态用）
-	const [savedAtMap, setSavedAtMap] = useState<Record<string, number | undefined>>({})
-	const onSaved = (k: string) => setSavedAtMap((m) => ({ ...m, [k]: Date.now() }))
+	}, [schemas, savedConfig, defaults, keys])
 
 	return (
-		<Box
-			style={{
-				display: 'flex',
-				flexDirection: 'column',
-				flex: 1,
-				minHeight: 0,
-				minWidth: 0,
-			}}
-		>
-			{/* 页头（静态信息，不再塞操作） */}
+		<Box style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, minWidth: 0 }}>
 			<Group justify="space-between" mb="md" wrap="nowrap">
-				<Title
-					order={3}
-					style={{
-						overflow: 'hidden',
-						textOverflow: 'ellipsis',
-						whiteSpace: 'nowrap',
-					}}
-					title={`${pluginName} 配置`}
-				>
+				<Title order={3} style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={`${pluginName} 配置`}>
 					{pluginName} 配置
 				</Title>
 				<Anchor href={`/plugins/${pluginName}/docs`} target="_blank" rel="noreferrer">
@@ -314,35 +234,20 @@ export function ConfigForm({ pluginName, configs, existConfigs }: ConfigFormProp
 				</Anchor>
 			</Group>
 
-			<Tabs
-				value={tab}
-				onChange={(v) => setTab(String(v))}
-				variant="outline"
-				keepMounted={false} // 只渲染当前面板，避免多份 Affix
-				style={{
-					display: 'flex',
-					flexDirection: 'column',
-					flex: 1,
-					minHeight: 0,
-					overflow: 'hidden',
-				}}
-			>
+			<Tabs value={tab} onChange={(v) => setTab(String(v))} variant="outline" keepMounted={false}
+				style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, overflow: 'hidden' }}>
 				<Tabs.List>
-					{keys.map((k) => (
-						<Tabs.Tab key={k} value={k}>
-							{k}
-						</Tabs.Tab>
-					))}
+					{keys.map((k) => <Tabs.Tab key={k} value={k}>{k}</Tabs.Tab>)}
 				</Tabs.List>
 
-				{items.map(({ key, schema, defaults }) => (
-					<ScrollAreaAutosize key={key}>
+				{items.map(({ key, schema, savedValue, defaultValue }) => (
+					<ScrollAreaAutosize key={`${pluginName}-${key}`}>
 						<ConfigTabPanel
 							pluginName={pluginName}
-							key={key}
 							tabKey={key}
 							schema={schema}
-							defaults={defaults}
+							savedValue={savedValue}
+							defaultValue={defaultValue}
 							onSaved={onSaved}
 							savedAt={savedAtMap[key]}
 						/>
