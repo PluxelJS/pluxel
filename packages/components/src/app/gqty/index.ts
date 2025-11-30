@@ -83,7 +83,7 @@ export const {
 } = createReactClient<GeneratedSchema>(client, {
 	defaults: {
 		// Enable Suspense, you can override this option for each hook.
-		suspense: true,
+		suspense: false,
 	},
 })
 

@@ -9,7 +9,8 @@ export type {
 
 import { type ConfigSchemaList, Config as OrigConfig } from '@pluxel/core'
 import { type InferOutput, isOfType, type ObjectSchema, type ObjectSchemaAsync } from 'valibot'
-import type {} from './services'
+// 必须为值导入，让 @Injectable 装饰器执行以注册服务到 Context
+import './services'
 
 type ConfigSchema = ObjectSchema<any, any> | ObjectSchemaAsync<any, any>
 export type ConfigSchemaMap = ConfigSchemaList<ConfigSchema>

@@ -4,6 +4,8 @@ import { defineConfig } from 'vite'
 
 export default defineConfig({
 	appType: 'custom',
+	// 输出目录与 public 相同，为了避免 Vite 拷贝 public -> public 产生警告，直接关闭 publicDir
+	publicDir: false,
 	ssr: {
 		external: ['react', 'react-dom'],
 	},

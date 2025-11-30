@@ -16,6 +16,33 @@ const app = new Hono<AppEnv>()
 			return c.text('Internal RPC error', 500)
 		}
 	})
+	// ============ Extension API ============
+	// 获取扩展清单
+	.get('/extensions/manifest', (c) => {
+		const ctx = c.var.plugin_ctx
+		const extensionService = ctx.extensionService
+		if (!extensionService) {
+			return c.json({ version: 0, bundles: [] })
+		}
+		return c.json(extensionService.getManifest())
+	})
+	// 获取插件 bundle
+	.get('/extensions/:pluginName/bundle.mjs', async (c) => {
+		const ctx = c.var.plugin_ctx
+		const extensionService = ctx.extensionService
+		if (!extensionService) {
+			return c.text('Extension service not available', 503)
+		}
+		const pluginName = c.req.param('pluginName')
+		const bundle = await extensionService.getBundle(pluginName)
+		if (!bundle) {
+			return c.text('Bundle not found', 404)
+		}
+		return c.text(bundle, 200, {
+			'Content-Type': 'application/javascript',
+			'Cache-Control': 'no-cache',
+		})
+	})
 	// ============ REST API（仅调试/直连调试用） ============
 	// 仅保留 schema GET，方便通过浏览器快速排查，无需 RPC 客户端
 	.get('/plugins/:name/schema', (c) => {

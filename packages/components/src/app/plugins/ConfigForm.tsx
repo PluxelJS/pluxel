@@ -20,6 +20,7 @@ import { getDefaults } from 'valibot'
 import { AutoForm } from 'valibot-form/web'
 import { useNotify } from '../notifications/useNotify'
 import { createRpcClient } from '../rpc'
+import { EmptyState } from '../../components'
 
 export interface ConfigFormProps {
 	pluginName: string
@@ -198,7 +199,8 @@ function ConfigTabPanel({
 }
 
 export function ConfigForm({ pluginName, schemas, savedConfig, defaults }: ConfigFormProps) {
-	const keys = useMemo(() => Object.keys(schemas), [schemas])
+	const safeSchemas = schemas ?? {}
+	const keys = useMemo(() => Object.keys(safeSchemas), [safeSchemas])
 	const [tab, setTab] = useState(keys[0] || '')
 	const [savedAtMap, setSavedAtMap] = useState<Record<string, number | undefined>>({})
 	const onSaved = useCallback((k: string) => setSavedAtMap((m) => ({ ...m, [k]: Date.now() })), [])
@@ -212,7 +214,7 @@ export function ConfigForm({ pluginName, schemas, savedConfig, defaults }: Confi
 
 	const items = useMemo(() => {
 		return keys.map((key) => {
-			const schema = schemas[key]!
+			const schema = safeSchemas[key]!
 			const schemaDefaults = getDefaults(schema) as Record<string, any>
 			return {
 				key,
@@ -221,7 +223,9 @@ export function ConfigForm({ pluginName, schemas, savedConfig, defaults }: Confi
 				defaultValue: { ...schemaDefaults, ...(defaults[key] ?? {}) },
 			}
 		})
-	}, [schemas, savedConfig, defaults, keys])
+	}, [safeSchemas, savedConfig, defaults, keys])
+
+	const hasConfig = items.length > 0
 
 	return (
 		<Box style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, minWidth: 0 }}>
@@ -234,6 +238,16 @@ export function ConfigForm({ pluginName, schemas, savedConfig, defaults }: Confi
 				</Anchor>
 			</Group>
 
+			{!hasConfig ? (
+				<Paper withBorder radius="lg" p="xl" style={{ flex: 1, minHeight: 0 }}>
+					<EmptyState
+						title="暂无可填写的配置"
+						description="该插件当前未公开任何配置 schema。"
+						icon={null}
+						minHeight="auto"
+					/>
+				</Paper>
+			) : (
 			<Tabs value={tab} onChange={(v) => setTab(String(v))} variant="outline" keepMounted={false}
 				style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, overflow: 'hidden' }}>
 				<Tabs.List>
@@ -254,6 +268,7 @@ export function ConfigForm({ pluginName, schemas, savedConfig, defaults }: Confi
 					</ScrollAreaAutosize>
 				))}
 			</Tabs>
+			)}
 		</Box>
 	)
 }

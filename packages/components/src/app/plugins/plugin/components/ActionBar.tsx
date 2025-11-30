@@ -7,6 +7,7 @@ import { useCallback, useRef, useState } from 'react'
 import { PluginStatusEntryLifecycleStage } from '../../../gqty'
 import { createRpcClient } from '../../../rpc'
 import type { PluginStatusAction } from '../../../../../../hmr/src/api/hono/rpc/types'
+import { ExtensionSlot } from '../../../../extension'
 import { usePluginScope } from '../context'
 import { useNotify } from '../../../notifications/useNotify'
 
@@ -159,6 +160,8 @@ export function ActionBar({ onStatusUpdated }: ActionBarProps) {
 
 	return (
 		<Group gap="xs" align="right">
+			<ExtensionSlot point="plugin:actions" fallback={null} />
+
 			<Tooltip
 				label={
 					busy ? '同步中…' : isEnabled ? '禁用后将停止运行并移除持久启用' : '启用后可持久保留该插件'

@@ -10,6 +10,7 @@ import { useMediaQuery } from '@mantine/hooks'
 import { IconPuzzle } from '@tabler/icons-react'
 import { memo, useCallback, useMemo } from 'react'
 import { EmptyState, ErrorState } from '../../../components'
+import { ExtensionProvider, useExtensionContext } from '../../../extension'
 import { PluginStatusEntryLifecycleStage, type PluginScope, useQuery } from '../../gqty'
 import { PluginScopeProvider, type PluginSourceKind } from './context'
 import { useDebouncedFlag } from './hooks/useDebouncedFlag'
@@ -153,6 +154,7 @@ export const PluginScreen = memo(function PluginScreen({ pluginName }: PluginScr
 	})
 
 	const { scope, ready, error, loading, refetch } = usePluginDetail(pluginName)
+	const parentExtensionCtx = useExtensionContext()
 
 	const displayName = scope?.name ?? pluginName
 	const dependencies = scope?.detail?.dependencies ?? []
@@ -208,6 +210,15 @@ export const PluginScreen = memo(function PluginScreen({ pluginName }: PluginScr
 		syncing,
 	])
 
+	const pluginExtensionCtx = useMemo(() => {
+		if (!parentExtensionCtx) return null
+		return {
+			...parentExtensionCtx,
+			pluginName: displayName,
+			isPluginRunning: isRunning,
+		}
+	}, [parentExtensionCtx, displayName, isRunning])
+
 	if (!pluginName) {
 		return (
 			<EmptyState
@@ -233,11 +244,13 @@ export const PluginScreen = memo(function PluginScreen({ pluginName }: PluginScr
 	}
 
 	if (!ready) return <PluginSkeleton stacked={Boolean(isStacked)} />
-	if (!scope || !contextValue) return null
+	if (!scope || !contextValue || !pluginExtensionCtx) return null
 
 	return (
-		<PluginScopeProvider value={contextValue}>
-			<PluginLayout config={configState} stacked={Boolean(isStacked)} />
-		</PluginScopeProvider>
+		<ExtensionProvider value={pluginExtensionCtx}>
+			<PluginScopeProvider value={contextValue}>
+				<PluginLayout config={configState} stacked={Boolean(isStacked)} />
+			</PluginScopeProvider>
+		</ExtensionProvider>
 	)
 })

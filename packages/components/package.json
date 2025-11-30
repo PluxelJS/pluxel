@@ -4,6 +4,16 @@
 	"version": "0.1.0",
 	"description": "Demo example that imports a local package",
 	"main": "./src/index.ts",
+	"exports": {
+		".": {
+			"types": "./src/index.ts",
+			"default": "./src/index.ts"
+		},
+		"./extension": {
+			"types": "./src/extension/index.ts",
+			"default": "./src/extension/index.ts"
+		}
+	},
 	"type": "module",
 	"scripts": {
 		"dev": "vite",

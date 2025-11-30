@@ -17,6 +17,7 @@ import { IconArrowRight, IconBell, IconDotsVertical, IconMenu2, IconSearch } fro
 import { useState, useCallback, useEffect, useRef } from 'react'
 import { useNavigate, useRouterState } from '@tanstack/react-router'
 import { ColorSchemeToggle } from '../components'
+import { ExtensionSlot } from '../extension'
 import { createRpcClient } from './rpc'
 import { useNotify } from './notifications/useNotify'
 import { useNotificationCenter } from './notifications/NotificationCenterProvider'
@@ -166,6 +167,9 @@ export function Header({ onMenu }: { onMenu: () => void }) {
 			/>
 
 			<Group gap="xs" wrap="nowrap">
+				{/* 扩展插槽：插件可以在这里添加按钮/徽章 */}
+				<ExtensionSlot point="header:actions" />
+
 				<NotificationBell />
 
 				<ColorSchemeToggle />

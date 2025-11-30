@@ -1,4 +1,3 @@
-import { useCallback, useMemo, useRef, useState } from 'react'
 import {
 	Anchor,
 	Badge,
@@ -13,26 +12,26 @@ import {
 	useComputedColorScheme,
 } from '@mantine/core'
 import { openConfirmModal } from '@mantine/modals'
-import { IconExternalLink, IconInfoCircle, IconTerminal2 } from '@tabler/icons-react'
 import {
-	SnapshotDashboard,
 	createMarketRpcClient,
 	createSnapshotLoader,
 	type InstallCandidate,
+	SnapshotDashboard,
 	type SnapshotLoader,
 } from '@pluxel/market'
-import type { InstallPackageSpecInput } from '../gqty'
-import { useQuery } from '../gqty'
-import { createRpcClient } from '../rpc'
+import { IconExternalLink, IconInfoCircle, IconTerminal2 } from '@tabler/icons-react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { MARKET_BASE_URL } from '../constants'
-import { useNotify } from '../notifications/useNotify'
+import { useQuery } from '../gqty'
 import { LiveLog } from '../log_viewer/LiveLog'
+import { useNotify } from '../notifications/useNotify'
+import { createRpcClient } from '../rpc'
 import type { InstallLogEntry } from './types'
 import {
 	buildInstalledPackages,
-	summarizeList,
-	parseDependencySpec,
 	getPackageNameFromSpec,
+	parseDependencySpec,
+	summarizeList,
 } from './utils'
 
 const formatCandidateLabel = (candidate: InstallCandidate) =>
@@ -40,6 +39,11 @@ const formatCandidateLabel = (candidate: InstallCandidate) =>
 
 export function MarketPage() {
 	const notify = useNotify()
+	const notifyRef = useRef(notify)
+	useEffect(() => {
+		notifyRef.current = notify
+	}, [notify])
+
 	const scheme = useComputedColorScheme('light', { getInitialValueInEffect: true })
 	const appearance = scheme === 'dark' ? 'dark' : 'light'
 	const marketBase = MARKET_BASE_URL
@@ -55,6 +59,7 @@ export function MarketPage() {
 			return null
 		}
 	})
+	const cachedSnapshotRef = useRef(cachedSnapshot)
 	const [installModalOpen, setInstallModalOpen] = useState(false)
 	const [installLogs, setInstallLogs] = useState<InstallLogEntry[]>([])
 
@@ -69,10 +74,10 @@ export function MarketPage() {
 	const query = useQuery({
 		suspense: false,
 		operationName: 'MarketInstalledPackages',
-		notifyOnNetworkStatusChange: true,
-		refetchOnReconnect: true,
+		notifyOnNetworkStatusChange: false,
+		refetchOnReconnect: false,
 		refetchOnWindowVisible: false,
-		fetchInBackground: true,
+		fetchInBackground: false,
 		prepare: ({ query }) => {
 			const overview = query.pluginStatus
 			overview.summary.running
@@ -85,35 +90,38 @@ export function MarketPage() {
 		},
 	})
 
-	const snapshotLoader = useMemo<SnapshotLoader>(() => {
+	// 使用 useCallback 创建稳定的 snapshotLoader 引用，避免无限刷新
+	const snapshotLoader = useCallback<SnapshotLoader>(async () => {
 		const loadSnapshot = createSnapshotLoader(marketClient)
-		return async () => {
-			try {
-				const data = await loadSnapshot()
-				lastNotifiedError.current = null
-				if (typeof window !== 'undefined') {
-					try {
-						localStorage.setItem('pluxel:market:snapshot', JSON.stringify(data))
+		try {
+			const data = await loadSnapshot()
+			lastNotifiedError.current = null
+			if (typeof window !== 'undefined') {
+				try {
+					localStorage.setItem('pluxel:market:snapshot', JSON.stringify(data))
+					// 只在数据真正变化时更新状态，避免触发重渲染
+					if (JSON.stringify(cachedSnapshotRef.current) !== JSON.stringify(data)) {
+						cachedSnapshotRef.current = data
 						setCachedSnapshot(data)
-					} catch {
-						// ignore cache write errors
 					}
+				} catch {
+					// ignore cache write errors
 				}
-				return data
-			} catch (error: any) {
-				const message = error?.message ?? '无法获取市场快照'
-				if (lastNotifiedError.current !== message) {
-					lastNotifiedError.current = message
-					notify({
-						title: '市场数据请求失败',
-						message,
-						color: 'red',
-					})
-				}
-				throw error
 			}
+			return data
+		} catch (error) {
+			const message = error instanceof Error ? error.message : '无法获取市场快照'
+			if (lastNotifiedError.current !== message) {
+				lastNotifiedError.current = message
+				notifyRef.current({
+					title: '市场数据请求失败',
+					message,
+					color: 'red',
+				})
+			}
+			throw error
 		}
-	}, [marketClient, notify])
+	}, [marketClient])
 
 	const installed = useMemo(
 		() => buildInstalledPackages(query.pluginStatus?.statuses),
@@ -307,16 +315,14 @@ export function MarketPage() {
 					const label =
 						entry.spec?.name && entry.spec?.version
 							? `${entry.spec.name}@${entry.spec.version}`
-							: entry.spec?.raw ?? entry.spec?.name ?? '未知包'
+							: (entry.spec?.raw ?? entry.spec?.name ?? '未知包')
 					if (!entry.ok) failures.push(`${label}: ${entry.error ?? entry.code ?? '未知错误'}`)
 				})
-			} catch (error: any) {
-				const message = error?.message ?? '网络错误'
-				setInstallLogs((prev) =>
-					prev.map((log) => ({ ...log, status: 'error', message })),
-				)
+			} catch (error) {
+				const message = error instanceof Error ? error.message : '网络错误'
+				setInstallLogs((prev) => prev.map((log) => ({ ...log, status: 'error', message })))
 				failures.push(message)
-				notify({
+				notifyRef.current({
 					title: '安装失败',
 					message,
 					color: 'red',
@@ -324,7 +330,7 @@ export function MarketPage() {
 			}
 
 			if (failures.length) {
-				notify({
+				notifyRef.current({
 					title: '部分插件安装失败',
 					message: summarizeList(failures, 2, ' 项', '；'),
 					color: 'red',
@@ -335,7 +341,7 @@ export function MarketPage() {
 				await query.$refetch(true)
 			}
 		},
-		[installed, notify, query.$refetch],
+		[installed, query.$refetch],
 	)
 
 	return (
@@ -402,6 +408,7 @@ export function MarketPage() {
 					enableInstallQueue
 					onInstallSubmit={handleInstallSubmit}
 					installedPackages={installed}
+					disableLocaleReload
 					className="pluxel-market-dashboard"
 					style={{
 						height: '100%',

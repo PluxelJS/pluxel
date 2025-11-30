@@ -1,6 +1,8 @@
-import { Badge, Box, Center, Loader, Text } from '@mantine/core'
+import { Badge, Box, Center, Loader, Tabs, Text } from '@mantine/core'
 import { IconSettingsOff } from '@tabler/icons-react'
+import { useEffect, useMemo, useState } from 'react'
 import { EmptyState, ErrorState } from '../../../../components'
+import { useExtensions } from '../../../../extension'
 import { ConfigForm } from '../../ConfigForm'
 import { usePluginMeta } from '../context'
 import type { PluginConfigState } from '../hooks/usePluginConfig'
@@ -13,6 +15,36 @@ interface RightPaneProps {
 
 export function RightPane({ config }: RightPaneProps) {
 	const { pluginName, isSyncing } = usePluginMeta()
+	const { nodes: tabNodes, items: tabItems } = useExtensions('plugin:tabs')
+	const tabDefs = useMemo(
+		() =>
+			tabItems.map((item, index) => {
+				const id =
+					(typeof item.meta.id === 'string' && item.meta.id.length > 0
+						? item.meta.id
+						: `${pluginName}:tab:${index}`) ?? `${pluginName}:tab:${index}`
+				const label =
+					typeof item.meta.label === 'string' && item.meta.label.length > 0
+						? (item.meta.label as string)
+						: `扩展面板 ${index + 1}`
+				return { id, label }
+			}),
+		[pluginName, tabItems],
+	)
+	const [activeTab, setActiveTab] = useState('config')
+
+	useEffect(() => {
+		setActiveTab('config')
+	}, [pluginName])
+
+	useEffect(() => {
+		if (activeTab === 'config') return
+		if (!tabDefs.some((tab) => tab.id === activeTab)) {
+			setActiveTab('config')
+		}
+	}, [activeTab, tabDefs])
+
+	const hasTabs = tabNodes.length > 0
 
 	return (
 		<PluginPanel
@@ -29,36 +61,86 @@ export function RightPane({ config }: RightPaneProps) {
 		>
 			<PluginSection grow>
 				<Box style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
-					{config.error && !config.data ? (
-						<ErrorState
-							title="加载配置失败"
-							message={config.error.message || '无法获取配置信息'}
-							onRetry={() => void config.refetch()}
-							minHeight={200}
-						/>
-					) : config.data?.schemaMap ? (
-						<ConfigForm
-							key={pluginName ?? 'config-form'}
-							pluginName={pluginName}
-							schemas={config.data.schemaMap}
-							savedConfig={config.data.savedConfig}
-							defaults={config.data.defaults}
-						/>
-					) : config.loading ? (
-						<Center style={{ flex: 1, gap: 8 }}>
-							<Loader size="sm" />
-							<Text c="dimmed">加载配置中…</Text>
-						</Center>
+					{hasTabs ? (
+						<Tabs
+							value={activeTab}
+							onChange={(value) => setActiveTab(value ?? 'config')}
+							keepMounted={false}
+							style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}
+						>
+							<Tabs.List mb="sm">
+								<Tabs.Tab value="config">配置</Tabs.Tab>
+								{tabDefs.map((tab) => (
+									<Tabs.Tab key={tab.id} value={tab.id}>
+										{tab.label}
+									</Tabs.Tab>
+								))}
+							</Tabs.List>
+							<Tabs.Panel
+								value="config"
+								style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}
+							>
+								<ConfigContent config={config} pluginName={pluginName} />
+							</Tabs.Panel>
+							{tabNodes.map((node, index) => {
+								const tab = tabDefs[index]
+								const id = tab?.id ?? `${pluginName}:tab:${index}`
+								return (
+									<Tabs.Panel
+										key={id}
+										value={id}
+										style={{
+											flex: 1,
+											minHeight: 0,
+											display: 'flex',
+											flexDirection: 'column',
+										}}
+									>
+										{node}
+									</Tabs.Panel>
+								)
+							})}
+						</Tabs>
 					) : (
-						<EmptyState
-							icon={<IconSettingsOff size={28} stroke={1.5} />}
-							title="暂无可配置项"
-							description="该插件未提供可配置的选项。"
-							minHeight={200}
-						/>
+						<ConfigContent config={config} pluginName={pluginName} />
 					)}
 				</Box>
 			</PluginSection>
 		</PluginPanel>
+	)
+}
+
+function ConfigContent({ config, pluginName }: { config: PluginConfigState; pluginName: string }) {
+	return (
+		<Box style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
+			{config.error && !config.data ? (
+				<ErrorState
+					title="加载配置失败"
+					message={config.error.message || '无法获取配置信息'}
+					onRetry={() => void config.refetch()}
+					minHeight={200}
+				/>
+			) : config.data?.schemaMap ? (
+				<ConfigForm
+					key={pluginName ?? 'config-form'}
+					pluginName={pluginName}
+					schemas={config.data.schemaMap}
+					savedConfig={config.data.savedConfig}
+					defaults={config.data.defaults}
+				/>
+			) : config.loading ? (
+				<Center style={{ flex: 1, gap: 8 }}>
+					<Loader size="sm" />
+					<Text c="dimmed">加载配置中…</Text>
+				</Center>
+			) : (
+				<EmptyState
+					icon={<IconSettingsOff size={28} stroke={1.5} />}
+					title="暂无可配置项"
+					description="该插件未提供可配置的选项。"
+					minHeight={200}
+				/>
+			)}
+		</Box>
 	)
 }

@@ -3,7 +3,7 @@ import { PinoLoggerService } from '@pluxel/hmr/services'
 import { PluginA, PluginC } from './plugins'
 
 if (process.env.PLUXEL_HMR_SSR === undefined) {
-	process.env.PLUXEL_HMR_SSR = 'true'
+	process.env.PLUXEL_HMR_SSR = 'false'
 }
 
 const ctx = new Context({
