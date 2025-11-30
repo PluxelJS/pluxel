@@ -1,4 +1,3 @@
-import React, { lazy } from 'react'
 import {
 	createBrowserHistory,
 	createMemoryHistory,
@@ -9,32 +8,12 @@ import {
 } from '@tanstack/react-router'
 import { RootShell } from '../layout/RootShell'
 import { HomeRoute } from '../routes/HomeRoute'
-import { RouteSuspense } from '../routes/RouteSuspense'
 import { LiveLog } from '../log_viewer/LiveLog'
-
-const PackagesRoute = lazy(async () => ({
-	default: (await import('../routes/PackagesRoute')).PackagesRoute,
-}))
-
-const MarketRoute = lazy(async () => ({
-	default: (await import('../routes/MarketRoute')).MarketRoute,
-}))
-
-const PluginsRoute = lazy(async () => ({
-	default: (await import('../routes/PluginsRoute')).PluginsRoute,
-}))
-
-const PluginsPlaceholder = lazy(async () => ({
-	default: (await import('../routes/PluginsRoute')).PluginsPlaceholder,
-}))
-
-const PluginDetailRoute = lazy(async () => ({
-	default: (await import('../routes/PluginDetailRoute')).PluginDetailRoute,
-}))
-
-const ExtensionRoute = lazy(async () => ({
-	default: (await import('../routes/ExtensionRoute')).ExtensionRoute,
-}))
+import { PackagesRoute } from '../routes/PackagesRoute'
+import { MarketRoute } from '../routes/MarketRoute'
+import { PluginsRoute, PluginsPlaceholder } from '../routes/PluginsRoute'
+import { PluginDetailRoute } from '../routes/PluginDetailRoute'
+import { ExtensionRoute } from '../routes/ExtensionRoute'
 
 const rootRoute = createRootRoute({
 	component: RootShell,
@@ -55,61 +34,37 @@ const logsRoute = createRoute({
 const packagesRoute = createRoute({
 	getParentRoute: () => rootRoute,
 	path: 'packages',
-	component: () => (
-		<RouteSuspense label="正在加载包管理…">
-			<PackagesRoute />
-		</RouteSuspense>
-	),
+	component: PackagesRoute,
 })
 
 const marketRoute = createRoute({
 	getParentRoute: () => rootRoute,
 	path: 'market',
-	component: () => (
-		<RouteSuspense label="正在加载市场…">
-			<MarketRoute />
-		</RouteSuspense>
-	),
+	component: MarketRoute,
 })
 
 const pluginsRoute = createRoute({
 	getParentRoute: () => rootRoute,
 	path: 'plugins',
-	component: () => (
-		<RouteSuspense label="正在加载插件列表…">
-			<PluginsRoute />
-		</RouteSuspense>
-	),
+	component: PluginsRoute,
 })
 
 const pluginsIndexRoute = createRoute({
 	getParentRoute: () => pluginsRoute,
 	path: '/',
-	component: () => (
-		<RouteSuspense>
-			<PluginsPlaceholder />
-		</RouteSuspense>
-	),
+	component: PluginsPlaceholder,
 })
 
 const pluginDetailRoute = createRoute({
 	getParentRoute: () => pluginsRoute,
 	path: '$name',
-	component: () => (
-		<RouteSuspense label="正在加载插件详情…">
-			<PluginDetailRoute />
-		</RouteSuspense>
-	),
+	component: PluginDetailRoute,
 })
 
 const extensionRoute = createRoute({
 	getParentRoute: () => rootRoute,
 	path: 'ext/$pluginName/$path*',
-	component: () => (
-		<RouteSuspense label="正在加载扩展页面…">
-			<ExtensionRoute />
-		</RouteSuspense>
-	),
+	component: ExtensionRoute,
 })
 
 const routeTree = rootRoute.addChildren([

@@ -4,7 +4,7 @@ import { type Context, getPluginInfo, Injectable } from '@pluxel/core'
 import chokidar, { type FSWatcher } from 'chokidar'
 import { createHash } from 'node:crypto'
 import { existsSync } from 'node:fs'
-import { mkdir, readFile, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, readdir, stat, writeFile } from 'node:fs/promises'
 import { dirname, isAbsolute, join, resolve } from 'pathe'
 import type {
 	CompiledExtensionBundle,
@@ -58,6 +58,17 @@ const VENDOR_PACKAGES = [
 	'@mantine/modals',
 	'@mantine/notifications',
 ] as const
+
+const WATCHER_IGNORED_GLOBS = [
+	'**/node_modules/**',
+	'**/.git/**',
+	'**/.turbo/**',
+	'**/.pluxel/**',
+	'**/dist/**',
+	'**/build/**',
+] as const
+
+const HASH_IGNORED_SEGMENTS = ['node_modules', '.git', '.turbo', '.pluxel', 'dist', 'build', '.next'] as const
 
 /**
  * 转换编译后的代码，将 vendor 包的 import 替换为全局引用
@@ -478,6 +489,7 @@ export class ExtensionService {
 		const watcher = chokidar.watch(targets, {
 			ignoreInitial: true,
 			awaitWriteFinish: { stabilityThreshold: 100, pollInterval: 50 },
+			ignored: WATCHER_IGNORED_GLOBS,
 		})
 		const handleChange = () => {
 			if (!entry.active) return
@@ -629,30 +641,32 @@ export function setup() {
 	 * 收集源文件列表
 	 */
 	private collectSourceFiles(config: PluginExtensionConfig): string[] {
-		const files: string[] = []
+		const targets = new Set<string>()
+		const addTarget = (input: string | null) => {
+			if (!input) return
+			targets.add(input)
+			const directory = dirname(input)
+			if (directory && directory !== input) {
+				targets.add(directory)
+			}
+		}
 
 		if (config.entryPath) {
 			const entryFile = this.resolvePluginFile(config.pluginName, config.entryPath)
-			if (entryFile) {
-				files.push(entryFile)
-			}
+			addTarget(entryFile)
 		}
 
 		for (const ui of config.ui ?? []) {
 			const resolved = this.resolvePluginFile(config.pluginName, ui.componentPath)
-			if (resolved) {
-				files.push(resolved)
-			}
+			addTarget(resolved)
 		}
 
 		for (const route of config.routes ?? []) {
 			const resolved = this.resolvePluginFile(config.pluginName, route.componentPath)
-			if (resolved) {
-				files.push(resolved)
-			}
+			addTarget(resolved)
 		}
 
-		return files
+		return Array.from(targets)
 	}
 
 	/**
@@ -660,8 +674,10 @@ export function setup() {
 	 */
 	private async computeSourceHash(files: string[]): Promise<string> {
 		const hash = createHash('sha256')
+		const expanded = await this.expandHashTargets(files)
+		expanded.sort()
 
-		for (const file of files.sort()) {
+		for (const file of expanded) {
 			try {
 				if (existsSync(file)) {
 					const content = await readFile(file, 'utf-8')
@@ -674,6 +690,61 @@ export function setup() {
 		}
 
 		return hash.digest('hex').slice(0, 16)
+	}
+
+	private async expandHashTargets(files: string[]): Promise<string[]> {
+		const collected: string[] = []
+		const visited = new Set<string>()
+
+		for (const target of files) {
+			if (!target) continue
+			const absolute = resolve(target)
+			await this.collectHashableFiles(absolute, collected, visited)
+		}
+
+		return collected
+	}
+
+	private async collectHashableFiles(
+		target: string,
+		acc: string[],
+		visited: Set<string>,
+	): Promise<void> {
+		if (visited.has(target)) return
+		visited.add(target)
+
+		try {
+			const stats = await stat(target)
+			if (stats.isDirectory()) {
+				if (this.shouldIgnoreHashDir(target)) return
+				const entries = await readdir(target)
+				for (const entry of entries) {
+					await this.collectHashableFiles(join(target, entry), acc, visited)
+				}
+				return
+			}
+
+			if (stats.isFile() && !this.shouldIgnoreHashFile(target)) {
+				acc.push(target)
+			}
+		} catch {
+			// ignore
+		}
+	}
+
+	private shouldIgnoreHashDir(pathname: string): boolean {
+		return this.pathContainsIgnoredSegment(pathname)
+	}
+
+	private shouldIgnoreHashFile(pathname: string): boolean {
+		return this.pathContainsIgnoredSegment(pathname)
+	}
+
+	private pathContainsIgnoredSegment(pathname: string): boolean {
+		const normalized = pathname.replace(/\\/g, '/')
+		return HASH_IGNORED_SEGMENTS.some(
+			(segment) => normalized.includes(`/${segment}/`) || normalized.endsWith(`/${segment}`),
+		)
 	}
 
 	private notify(): void {

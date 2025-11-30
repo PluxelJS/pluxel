@@ -9,6 +9,7 @@ import { useEffect, useMemo } from 'react'
 import { useExtensionManager, type PluginInfo } from '../extension'
 import { fetchExtensionManifest } from '../extension/api/manifest'
 import { useQuery } from './gqty'
+import { subscribePluginStatusEvents } from './plugins/statusEvents'
 
 interface ExtensionLoaderProps {
 	/** 轮询间隔（毫秒），0 表示不轮询 */
@@ -61,6 +62,26 @@ export function ExtensionLoader({ pollInterval = 5000, onRunningPluginsChange }:
 		}
 		onRunningPluginsChange(next)
 	}, [plugins, onRunningPluginsChange])
+
+	useEffect(() => {
+		let inflight = false
+		let pending = false
+		const triggerRefetch = () => {
+			if (inflight) {
+				pending = true
+				return
+			}
+			inflight = true
+			void query.$refetch(true).finally(() => {
+				inflight = false
+				if (pending) {
+					pending = false
+					triggerRefetch()
+				}
+			})
+		}
+		return subscribePluginStatusEvents(triggerRefetch)
+	}, [query.$refetch])
 
 	// 使用扩展管理器
 	useExtensionManager(plugins, {

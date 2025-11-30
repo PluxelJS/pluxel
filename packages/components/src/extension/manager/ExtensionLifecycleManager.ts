@@ -1,5 +1,5 @@
 import { getLoadedModules, loadPluginUI, syncWithManifest, unloadPluginUI } from '../runtime'
-import type { ExtensionManifest } from '../types'
+import type { CompiledExtensionBundle, ExtensionManifest } from '../types'
 import type {
 	ExtensionManagerOptions,
 	ExtensionManagerState,
@@ -31,6 +31,7 @@ export class ExtensionLifecycleManager {
 	private runningKey = ''
 	private manifest: ExtensionManifest | null = null
 	private lastVersion = 0
+	private bundleRevisions = new Map<string, string>()
 	private syncing = false
 	private rerunRequested = false
 	private rerunForce = false
@@ -181,8 +182,9 @@ export class ExtensionLifecycleManager {
 			}
 			manifest = ensuredManifest
 
+			const { changedPlugins, nextRevisions } = this.diffBundleRevisions(manifest.bundles)
 			const versionChanged = manifest.version !== this.lastVersion
-			if (!versionChanged && !forceReload) {
+			if (!versionChanged && !forceReload && changedPlugins.size === 0) {
 				const loadedBefore = getLoadedModules()
 				for (const pluginName of loadedBefore.keys()) {
 					if (!runningSet.has(pluginName)) {
@@ -198,8 +200,12 @@ export class ExtensionLifecycleManager {
 				}
 			} else {
 				this.lastVersion = manifest.version
-				await syncWithManifest(manifest.bundles, runningSet)
+				await syncWithManifest(manifest.bundles, runningSet, {
+					forceReload,
+					changedPlugins,
+				})
 			}
+			this.bundleRevisions = nextRevisions
 
 			this.updateState({
 				manifestVersion: manifest.version,
@@ -266,5 +272,29 @@ export class ExtensionLifecycleManager {
 			}
 		}
 		return manifest
+	}
+
+	private diffBundleRevisions(bundles: CompiledExtensionBundle[]): {
+		changedPlugins: Set<string>
+		nextRevisions: Map<string, string>
+	} {
+		const changedPlugins = new Set<string>()
+		const nextRevisions = new Map<string, string>()
+
+		for (const bundle of bundles) {
+			const revision = this.buildRevisionKey(bundle)
+			nextRevisions.set(bundle.pluginName, revision)
+			if (this.bundleRevisions.get(bundle.pluginName) !== revision) {
+				changedPlugins.add(bundle.pluginName)
+			}
+		}
+
+		return { changedPlugins, nextRevisions }
+	}
+
+	private buildRevisionKey(bundle: CompiledExtensionBundle): string {
+		const hash = bundle.sourceHash || 'dev'
+		const compiled = bundle.compiledAt || 0
+		return `${hash}:${compiled}`
 	}
 }

@@ -60,6 +60,15 @@ function getModuleCacheKey(pluginName: string, sourceHash: string): string {
 	return `${pluginName}:${sourceHash || 'dev'}`
 }
 
+interface LoadPluginOptions {
+	forceReload?: boolean
+}
+
+interface SyncManifestOptions {
+	forceReload?: boolean
+	changedPlugins?: ReadonlySet<string>
+}
+
 function appendCacheBustingQuery(url: string, token: string): string {
 	return url.includes('?') ? `${url}&${token}` : `${url}?${token}`
 }
@@ -101,9 +110,15 @@ export class ExtensionRuntime {
 		return routes
 	}
 
-	async loadPluginUI(pluginName: string, bundleUrl: string, sourceHash: string): Promise<boolean> {
+	async loadPluginUI(
+		pluginName: string,
+		bundleUrl: string,
+		sourceHash: string,
+		options: LoadPluginOptions = {},
+	): Promise<boolean> {
+		const shouldForceReload = options.forceReload === true
 		const existing = this.loadedModules.get(pluginName)
-		if (existing && existing.sourceHash === sourceHash) {
+		if (!shouldForceReload && existing && existing.sourceHash === sourceHash) {
 			return true
 		}
 
@@ -113,9 +128,13 @@ export class ExtensionRuntime {
 
 		try {
 			const cacheKey = getModuleCacheKey(pluginName, sourceHash)
-			let mod = this.moduleCache.get(cacheKey)
+			let mod: PluginUIModule | undefined
+			if (!shouldForceReload) {
+				mod = this.moduleCache.get(cacheKey)
+			}
 			if (!mod) {
-				const cacheToken = sourceHash ? `v=${sourceHash}` : `t=${Date.now()}`
+				const cacheToken =
+					shouldForceReload || !sourceHash ? `t=${Date.now()}` : `v=${sourceHash}`
 				const urlWithCache = appendCacheBustingQuery(bundleUrl, cacheToken)
 				mod = (await import(/* @vite-ignore */ urlWithCache)) as PluginUIModule
 				this.moduleCache.set(cacheKey, mod)
@@ -207,7 +226,13 @@ export class ExtensionRuntime {
 		return true
 	}
 
-	async syncWithManifest(bundles: CompiledExtensionBundle[], runningPlugins: Set<string>): Promise<void> {
+	async syncWithManifest(
+		bundles: CompiledExtensionBundle[],
+		runningPlugins: Set<string>,
+		options: SyncManifestOptions = {},
+	): Promise<void> {
+		const shouldForceReload = options.forceReload === true
+		const changedPlugins = options.changedPlugins
 		const bundleMap = new Map(bundles.map((b) => [b.pluginName, b]))
 
 		for (const pluginName of this.loadedModules.keys()) {
@@ -223,9 +248,18 @@ export class ExtensionRuntime {
 			}
 
 			const existing = this.loadedModules.get(bundle.pluginName)
-			if (!existing || existing.sourceHash !== bundle.sourceHash) {
-				await this.loadPluginUI(bundle.pluginName, bundle.bundleUrl, bundle.sourceHash)
+			const pluginChanged = changedPlugins?.has(bundle.pluginName) ?? false
+			const forceThisPlugin = shouldForceReload || pluginChanged
+			const needsReload =
+				!existing || forceThisPlugin || existing.sourceHash !== bundle.sourceHash
+
+			if (!needsReload) {
+				continue
 			}
+
+			await this.loadPluginUI(bundle.pluginName, bundle.bundleUrl, bundle.sourceHash, {
+				forceReload: forceThisPlugin && !!existing,
+			})
 		}
 	}
 

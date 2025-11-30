@@ -52,6 +52,7 @@ import { type PluginGroup, type PluginStatusEntry, useQuery } from '../gqty'
 import { client } from '../rpc'
 import { RouterLinkAdapter } from '../RouterLinkAdapter'
 import { PLUGIN_SEARCH_EVENT, PLUGIN_SEARCH_KEY } from '../constants'
+import { subscribePluginStatusEvents } from './statusEvents'
 
 interface PluginListProps {
 	pluginName?: string
@@ -243,6 +244,26 @@ export const PluginList: React.FC<PluginListProps> = ({ pluginName }) => {
 			setHasLoadedOnce(true)
 		}
 	}, [query.$state.error, query.$state.isLoading])
+
+	useEffect(() => {
+		let inflight = false
+		let pending = false
+		const handle = () => {
+			if (inflight) {
+				pending = true
+				return
+			}
+			inflight = true
+			void query.$refetch(true).finally(() => {
+				inflight = false
+				if (pending) {
+					pending = false
+					handle()
+				}
+			})
+		}
+		return subscribePluginStatusEvents(handle)
+	}, [query.$refetch])
 
 	const handleGroupsChange = useCallback((next: GroupConfig[]) => {
 		void client['plugin-groups'].$post({ json: next })

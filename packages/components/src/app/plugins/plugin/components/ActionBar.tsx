@@ -10,6 +10,7 @@ import type { PluginStatusAction } from '../../../../../../hmr/src/api/hono/rpc/
 import { ExtensionSlot } from '../../../../extension'
 import { usePluginScope } from '../context'
 import { useNotify } from '../../../notifications/useNotify'
+import { emitPluginStatusEvent } from '../../statusEvents'
 
 export interface ActionBarProps {
 	onStatusUpdated?: () => Promise<void> | void
@@ -79,10 +80,14 @@ export function ActionBar({ onStatusUpdated }: ActionBarProps) {
 		[pluginName, write],
 	)
 
-	const syncAfterSuccess = useCallback(async () => {
-		await refetch()
-		await onStatusUpdated?.()
-	}, [onStatusUpdated, refetch])
+	const syncAfterSuccess = useCallback(
+		async (action: PluginStatusAction) => {
+			await refetch()
+			await onStatusUpdated?.()
+			emitPluginStatusEvent({ pluginName, action })
+		},
+		[onStatusUpdated, pluginName, refetch],
+	)
 
 	const performAction = async (action: PluginStatusAction) => {
 		if (!pluginName) return
@@ -109,7 +114,7 @@ export function ActionBar({ onStatusUpdated }: ActionBarProps) {
 			}
 
 			// ② 成功：让返回覆盖乐观态，再进行一次精准对齐
-			await syncAfterSuccess()
+			await syncAfterSuccess(action)
 
 			notify({
 				title: '插件状态已更新',
