@@ -45,7 +45,6 @@ const VENDOR_PACKAGES = [
 	'@mantine/hooks',
 	'@mantine/modals',
 	'@mantine/notifications',
-	'@tabler/icons-react',
 ] as const
 
 const WATCHER_IGNORED_GLOBS = [

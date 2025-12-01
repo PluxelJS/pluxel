@@ -5,13 +5,13 @@
       "pluginName": "PluginStatusBadge",
       "moduleUrl": "/api/extensions/modules/PluginStatusBadge/52744a83f8998864.mjs",
       "sourceHash": "52744a83f8998864",
-      "compiledAt": 1764577828852
+      "compiledAt": 1764578999625
     },
     {
       "pluginName": "PluginWithUI",
       "moduleUrl": "/api/extensions/modules/PluginWithUI/c3057550d3743b40.mjs",
       "sourceHash": "c3057550d3743b40",
-      "compiledAt": 1764577829662
+      "compiledAt": 1764579000263
     }
   ]
 }

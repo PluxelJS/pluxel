@@ -10,7 +10,6 @@ import * as MantineCore from "@mantine/core"
 import * as MantineHooks from "@mantine/hooks"
 import * as MantineModals from "@mantine/modals"
 import * as MantineNotifications from "@mantine/notifications"
-import * as TablerIcons from "@tabler/icons-react"
 
 /**
  * 共享依赖 vendors 对象
@@ -28,7 +27,6 @@ export const vendors = {
 	"@mantine/hooks": MantineHooks,
 	"@mantine/modals": MantineModals,
 	"@mantine/notifications": MantineNotifications,
-	"@tabler/icons-react": TablerIcons,
 }
 
 export type Vendors = typeof vendors
@@ -76,7 +74,6 @@ export const vendorPackages = [
 	"@mantine/hooks",
 	"@mantine/modals",
 	"@mantine/notifications",
-	"@tabler/icons-react",
 ] as const
 
 export type VendorPackage = (typeof vendorPackages)[number]

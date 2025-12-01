@@ -1,6 +1,6 @@
 {
 	"name": "@pluxel/cli",
-	"version": "0.2.10",
+	"version": "0.2.12",
 	"description": "Demo example that imports a local package",
 	"bin": {
 		"pluxel": "dist/cli.mjs"
