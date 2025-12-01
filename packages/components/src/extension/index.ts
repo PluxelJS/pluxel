@@ -44,10 +44,18 @@ export {
 	getRouteComponent,
 	getExtensionRoutes,
 	syncWithManifest,
+	subscribeExtensionRouteChanges,
+	getExtensionRouteVersion,
 } from './runtime'
 
 // Hooks
-export { useExtensionManager, useExtensionVersion, type PluginInfo } from './hooks'
+export {
+	useExtensionManager,
+	useExtensionRouteVersion,
+	useExtensionVersion,
+	usePluginUILoadState,
+	type PluginInfo,
+} from './hooks'
 
 // Vendors (共享依赖)
 export { vendors, initVendors, getVendor, vendorPackages, type Vendors, type VendorPackage } from './vendors'

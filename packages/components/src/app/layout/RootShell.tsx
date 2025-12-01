@@ -45,8 +45,8 @@ export function RootShell() {
 function RootShellContent() {
 	const pathname = useRouterState({ select: (state) => state.location.pathname })
 	const colorScheme = useComputedColorScheme('light', { getInitialValueInEffect: true })
-	const navbarSurface = useExtensionSurface(ExtensionPoints.NavbarItems)
 	const [runningPlugins, setRunningPlugins] = useState<ReadonlySet<string>>(() => new Set())
+	const [runningReady, setRunningReady] = useState(false)
 
 	const handleRunningPluginsChange = useCallback((next: ReadonlySet<string>) => {
 		setRunningPlugins((prev) => {
@@ -64,7 +64,36 @@ function RootShellContent() {
 			}
 			return new Set(next)
 		})
+		setRunningReady(true)
 	}, [])
+
+	const extensionContext = useMemo<ExtensionContext>(
+		() => ({
+			pathname,
+			colorScheme,
+			runningPlugins,
+			runningPluginsReady: runningReady,
+		}),
+		[pathname, colorScheme, runningPlugins, runningReady],
+	)
+
+	return (
+		<ExtensionProvider value={extensionContext}>
+			<RootShellApp
+				pathname={pathname}
+				onRunningPluginsChange={handleRunningPluginsChange}
+			/>
+		</ExtensionProvider>
+	)
+}
+
+interface RootShellAppProps {
+	pathname: string
+	onRunningPluginsChange: (plugins: ReadonlySet<string>) => void
+}
+
+function RootShellApp({ pathname, onRunningPluginsChange }: RootShellAppProps) {
+	const navbarSurface = useExtensionSurface(ExtensionPoints.NavbarItems)
 
 	const extensionNavItems = useMemo<NavItem[]>(() => {
 		if (navbarSurface.items.length === 0) return []
@@ -96,35 +125,21 @@ function RootShellContent() {
 		} catch {}
 	}, [pathname])
 
-	const extensionContext = useMemo<ExtensionContext>(
-		() => ({
-			pathname,
-			colorScheme,
-			runningPlugins,
-		}),
-		[pathname, colorScheme, runningPlugins],
-	)
-
 	return (
-		<ExtensionProvider value={extensionContext}>
-			<NotificationCenterProvider>
-				<ModalsProvider>
-					<Notifications position="top-center" />
-					<ExtensionLoader
-						pollInterval={5000}
-						onRunningPluginsChange={handleRunningPluginsChange}
-					/>
-					<Layout
-						header={({ toggle }) => <Header onMenu={toggle} />}
-						navItems={combinedNavItems}
-						LinkComponent={RouterLinkAdapter}
-						currentPath={pathname}
-						footerHeight={0}
-					>
-						<Outlet />
-					</Layout>
-				</ModalsProvider>
-			</NotificationCenterProvider>
-		</ExtensionProvider>
+		<NotificationCenterProvider>
+			<ModalsProvider>
+				<Notifications position="top-center" />
+				<ExtensionLoader pollInterval={5000} onRunningPluginsChange={onRunningPluginsChange} />
+				<Layout
+					header={({ toggle }) => <Header onMenu={toggle} />}
+					navItems={combinedNavItems}
+					LinkComponent={RouterLinkAdapter}
+					currentPath={pathname}
+					footerHeight={0}
+				>
+					<Outlet />
+				</Layout>
+			</ModalsProvider>
+		</NotificationCenterProvider>
 	)
 }

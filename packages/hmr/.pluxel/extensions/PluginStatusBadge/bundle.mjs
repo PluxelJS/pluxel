@@ -1,7 +1,7 @@
 // packages/hmr/tests/plugins/ui/StatusBadge.tsx
 // 简单的状态徽章组件
 const {Badge, Tooltip} = window.__PLUXEL_VENDORS__["@mantine/core"];
-import { IconActivity } from "/node_modules/.vite/deps/@tabler_icons-react.js?v=479d94cc";
+import { IconActivity } from "/node_modules/.vite/deps/@tabler_icons-react.js?v=cf3de066";
 import { definePluginUIModule } from "/src/web.ts";
 var _jsxFileName = "/home/ahdg/code/plugin-style-ts/packages/hmr/tests/plugins/ui/StatusBadge.tsx";
 const __vite__cjsImport3_react_jsxDevRuntime = window.__PLUXEL_VENDORS__["react/jsx-dev-runtime"].default || window.__PLUXEL_VENDORS__["react/jsx-dev-runtime"]; const _jsxDEV = __vite__cjsImport3_react_jsxDevRuntime["jsxDEV"];

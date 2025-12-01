@@ -79,6 +79,10 @@ export class ExtensionRuntime {
 	private readonly loadedModules = new Map<string, LoadedModule>()
 	private readonly moduleCache = new Map<string, PluginUIModule>()
 	private readonly routeComponents = new Map<string, RouteComponent>()
+	private routeVersion = 0
+	private readonly routeListeners = new Set<() => void>()
+	private moduleVersion = 0
+	private readonly moduleListeners = new Set<() => void>()
 
 	constructor(private readonly registry = extensionRegistry) {}
 
@@ -97,6 +101,50 @@ export class ExtensionRuntime {
 	getRouteComponent(fullPath: string): RouteComponent | undefined {
 		const normalized = normalizeFullRouteKey(fullPath)
 		return this.routeComponents.get(normalized)
+	}
+
+	subscribeRouteChanges(listener: () => void): () => void {
+		this.routeListeners.add(listener)
+		return () => {
+			this.routeListeners.delete(listener)
+		}
+	}
+
+	getRouteVersion(): number {
+		return this.routeVersion
+	}
+
+	private notifyRouteChange(): void {
+		this.routeVersion++
+		for (const listener of this.routeListeners) {
+			try {
+				listener()
+			} catch {
+				// ignore route listener errors
+			}
+		}
+	}
+
+	subscribeModuleChanges(listener: () => void): () => void {
+		this.moduleListeners.add(listener)
+		return () => {
+			this.moduleListeners.delete(listener)
+		}
+	}
+
+	getModuleVersion(): number {
+		return this.moduleVersion
+	}
+
+	private notifyModuleChange(): void {
+		this.moduleVersion++
+		for (const listener of this.moduleListeners) {
+			try {
+				listener()
+			} catch {
+				// ignore module listener errors
+			}
+		}
 	}
 
 	getExtensionRoutes(): Array<{ path: string; pluginName: string }> {
@@ -208,6 +256,7 @@ export class ExtensionRuntime {
 				loadedAt: Date.now(),
 				sourceHash,
 			})
+			this.notifyModuleChange()
 
 			return true
 		} catch (error) {
@@ -223,6 +272,7 @@ export class ExtensionRuntime {
 		loaded.cleanups.forEach((fn) => fn())
 		this.unregisterRouteComponents(pluginName)
 		this.loadedModules.delete(pluginName)
+		this.notifyModuleChange()
 		return true
 	}
 
@@ -266,14 +316,20 @@ export class ExtensionRuntime {
 	private registerRouteComponent(pluginName: string, path: string, component: RouteComponent): void {
 		const key = buildExtensionRouteKey(pluginName, path)
 		this.routeComponents.set(key, component)
+		this.notifyRouteChange()
 	}
 
 	private unregisterRouteComponents(pluginName: string): void {
 		const prefix = buildExtensionRouteKey(pluginName, '')
+		let removed = false
 		for (const key of this.routeComponents.keys()) {
 			if (key.startsWith(prefix)) {
 				this.routeComponents.delete(key)
+				removed = true
 			}
+		}
+		if (removed) {
+			this.notifyRouteChange()
 		}
 	}
 }
@@ -287,3 +343,7 @@ export const getLoadedModules = extensionRuntime.getLoadedModules.bind(extension
 export const getRouteComponent = extensionRuntime.getRouteComponent.bind(extensionRuntime)
 export const getExtensionRoutes = extensionRuntime.getExtensionRoutes.bind(extensionRuntime)
 export const syncWithManifest = extensionRuntime.syncWithManifest.bind(extensionRuntime)
+export const subscribeExtensionRouteChanges = extensionRuntime.subscribeRouteChanges.bind(extensionRuntime)
+export const getExtensionRouteVersion = extensionRuntime.getRouteVersion.bind(extensionRuntime)
+export const subscribeExtensionModuleChanges = extensionRuntime.subscribeModuleChanges.bind(extensionRuntime)
+export const getExtensionModuleVersion = extensionRuntime.getModuleVersion.bind(extensionRuntime)

@@ -1,12 +1,14 @@
-import { Center, Stack, Text } from '@mantine/core'
+import { Center, Loader, Stack, Text } from '@mantine/core'
 import { useMemo } from 'react'
-import { useParams } from '@tanstack/react-router'
+import { useParams, useRouterState } from '@tanstack/react-router'
 import {
 	ExtensionErrorBoundary,
 	ExtensionProvider,
 	getRouteComponent,
 	type ExtensionContext,
 	useExtensionContext,
+	useExtensionRouteVersion,
+	usePluginUILoadState,
 } from '../../extension'
 
 function normalizeExtensionRestPath(raw?: string): string {
@@ -27,6 +29,7 @@ function normalizeExtensionRestPath(raw?: string): string {
 
 export function ExtensionRoute() {
 	const { pluginName: rawName, path: rawRest } = useParams({ from: '/ext/$pluginName/$path*' })
+	const locationPath = useRouterState({ select: (state) => state.location.pathname })
 	let pluginName = rawName
 	try {
 		pluginName = decodeURIComponent(rawName)
@@ -34,11 +37,29 @@ export function ExtensionRoute() {
 		pluginName = rawName
 	}
 
-	const restPath = normalizeExtensionRestPath(rawRest)
+	const restPathFromParams = normalizeExtensionRestPath(rawRest)
+	const restPathFromLocation = useMemo(() => {
+		if (!locationPath) return ''
+		const match = locationPath.match(/^\/ext\/([^/]+)(.*)$/)
+		if (!match) return ''
+		const [, segment, rest] = match
+		if (segment !== rawName) return ''
+		return normalizeExtensionRestPath(rest)
+	}, [locationPath, rawName])
+	const restPath = restPathFromParams || restPathFromLocation
 	const fullPath = `/ext/${pluginName}${restPath}`
-	const ExtensionComponent = getRouteComponent(fullPath)
+	const routeVersion = useExtensionRouteVersion()
+	const moduleLoaded = usePluginUILoadState(pluginName)
+	const ExtensionComponent = useMemo(
+		() => getRouteComponent(fullPath),
+		[fullPath, routeVersion],
+	)
 
 	const parentCtx = useExtensionContext()
+	const runningPlugins = parentCtx.runningPlugins
+	const runningPluginsReady = parentCtx.runningPluginsReady ?? false
+	const pluginRunning = runningPlugins?.has(pluginName) ?? false
+
 	const extensionCtx = useMemo<ExtensionContext>(
 		() => ({
 			...parentCtx,
@@ -47,6 +68,33 @@ export function ExtensionRoute() {
 		}),
 		[parentCtx, fullPath, pluginName],
 	)
+
+	if (!pluginRunning && runningPluginsReady) {
+		return (
+			<Center style={{ flex: 1 }}>
+				<Stack gap="xs" align="center">
+					<Text fw={600}>插件未运行</Text>
+					<Text c="dimmed" size="sm">
+						请先启动插件 {pluginName}，才能访问 {fullPath}
+					</Text>
+				</Stack>
+			</Center>
+		)
+	}
+
+	if (!moduleLoaded) {
+		return (
+			<Center style={{ flex: 1 }}>
+				<Stack gap="xs" align="center">
+					<Loader size="sm" />
+					<Text fw={600}>扩展页面加载中</Text>
+					<Text c="dimmed" size="sm">
+						正在等待插件 {pluginName} 注册 UI 页面…
+					</Text>
+				</Stack>
+			</Center>
+		)
+	}
 
 	if (!ExtensionComponent) {
 		return (

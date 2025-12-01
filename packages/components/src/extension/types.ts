@@ -39,6 +39,8 @@ export interface ExtensionContext {
 	isPluginRunning?: boolean
 	/** 当前运行中的插件集合 */
 	runningPlugins?: ReadonlySet<string>
+	/** 运行中插件集合是否已准备好 */
+	runningPluginsReady?: boolean
 	/** 颜色模式 */
 	colorScheme: 'light' | 'dark'
 }
