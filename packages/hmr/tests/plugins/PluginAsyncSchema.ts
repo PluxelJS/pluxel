@@ -1,5 +1,4 @@
-import { BasePlugin, Plugin } from '@pluxel/core'
-import { Config } from '@pluxel/hmr'
+import { BasePlugin, Config, Plugin } from '@pluxel/core'
 import { f, v } from '@pluxel/hmr/config'
 
 const font = v.pipe(

@@ -1,5 +1,5 @@
 import { Center, Stack, Text, Title } from '@mantine/core'
-import { PluginsLayout } from '../plugins/PluginsLayout'
+import { PluginsLayout } from '../plugins/list'
 
 export function PluginsRoute() {
 	return <PluginsLayout />

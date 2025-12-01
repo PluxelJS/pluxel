@@ -18,9 +18,9 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { ObjectSchema } from 'valibot'
 import { getDefaults } from 'valibot'
 import { AutoForm } from 'valibot-form/web'
-import { useNotify } from '../notifications/useNotify'
-import { createRpcClient } from '../rpc'
-import { EmptyState } from '../../components'
+import { useNotify } from '../../hooks'
+import { createRpcClient } from '../../rpc'
+import { EmptyState } from '../../../components'
 
 export interface ConfigFormProps {
 	pluginName: string

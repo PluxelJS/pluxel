@@ -1,6 +1,6 @@
 import { notifications, type NotificationData } from '@mantine/notifications'
 import { useCallback } from 'react'
-import { useNotificationCenter } from './NotificationCenterProvider'
+import { useNotificationCenter } from '../notifications/NotificationCenterProvider'
 
 const getText = (value: NotificationData['message']) => {
 	if (typeof value === 'string') return value

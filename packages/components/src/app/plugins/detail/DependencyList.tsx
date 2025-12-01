@@ -1,7 +1,7 @@
 import { Badge, Box, Group, Text } from '@mantine/core'
 import type React from 'react'
 import { useMemo } from 'react'
-import { usePluginDependencies } from '../context'
+import { usePluginDependencies } from './context'
 
 export interface DependencyListProps {
 	LinkComponent?: React.ElementType<{ to: string; children: React.ReactNode }>

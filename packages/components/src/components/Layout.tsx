@@ -10,33 +10,17 @@ import {
 } from '@mantine/core'
 import { useLocalStorage, useMediaQuery } from '@mantine/hooks'
 import type React from 'react'
-import { type ReactNode, useCallback, useEffect, useMemo, useState } from 'react'
+import { type ReactNode, useCallback, useEffect, useMemo } from 'react'
 import AppHeader, { type AppHeaderProps } from './AppHeader'
 import Navbar, { type NavItem } from './Navbar'
-import { getPatternStyle } from '../patterns'
+import { getPatternStyle } from '../theme'
+import { useControllable } from '../hooks'
 
 /** Link 形态：最小要求 `to` 和 children；其余 a 属性透传 */
 export type LinkLikeProps = {
 	to: string
 	children: React.ReactNode
 } & Omit<React.ComponentPropsWithoutRef<'a'>, 'children' | 'href'>
-
-/** 受控/非受控辅助 Hook（和 Mantine 行为一致） */
-function useControllable<T>(opts: { value?: T; defaultValue: T; onChange?: (v: T) => void }) {
-	const { value, defaultValue, onChange } = opts
-	const [inner, setInner] = useState<T>(defaultValue)
-	const isControlled = value !== undefined
-	const state = isControlled ? (value as T) : inner
-	const set = useCallback(
-		(v: T | ((prev: T) => T)) => {
-			const next = typeof v === 'function' ? (v as (prev: T) => T)(state) : v
-			if (!isControlled) setInner(next)
-			onChange?.(next)
-		},
-		[isControlled, onChange, state],
-	)
-	return [state, set] as const
-}
 
 export interface LayoutProps {
 	/** —— Header 可插拔 —— */

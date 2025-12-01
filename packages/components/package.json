@@ -2,16 +2,28 @@
 	"private": true,
 	"name": "@pluxel/components",
 	"version": "0.1.0",
-	"description": "Demo example that imports a local package",
+	"description": "Pluxel UI components and application framework",
 	"main": "./src/index.ts",
 	"exports": {
 		".": {
 			"types": "./src/index.ts",
 			"default": "./src/index.ts"
 		},
+		"./components": {
+			"types": "./src/components/index.ts",
+			"default": "./src/components/index.ts"
+		},
 		"./extension": {
 			"types": "./src/extension/index.ts",
 			"default": "./src/extension/index.ts"
+		},
+		"./theme": {
+			"types": "./src/theme/index.ts",
+			"default": "./src/theme/index.ts"
+		},
+		"./hooks": {
+			"types": "./src/hooks/index.ts",
+			"default": "./src/hooks/index.ts"
 		}
 	},
 	"type": "module",
@@ -21,11 +33,11 @@
 		"preview": "vite preview"
 	},
 	"peerDependencies": {
-		"@mantine/core": "^8.3.8",
+		"@mantine/core": "^8.3.9",
 		"@mantine/dates": "^8.3.7",
-		"@mantine/hooks": "^8.3.8",
+		"@mantine/hooks": "^8.3.9",
 		"@mantine/modals": "^8.3.7",
-		"@mantine/notifications": "^8.3.8",
+		"@mantine/notifications": "^8.3.9",
 		"@tabler/icons-react": "^3.35.0",
 		"@tanstack/react-form": "^1.23.8",
 		"react": "^19.2.0",

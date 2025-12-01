@@ -19,6 +19,10 @@
 			"@pluxel/source": "./src/services/index.ts",
 			"default": "./dist/services.mjs"
 		},
+		"./web": {
+			"@pluxel/source": "./src/web.ts",
+			"default": "./dist/web.mjs"
+		},
 		"./package.json": "./package.json"
 	},
 	"files": [
@@ -70,7 +74,8 @@
 		"youch": "4.1.0-beta.13"
 	},
 	"peerDependencies": {
-		"rolldown": "*"
+		"rolldown": "workspace:*",
+		"@tabler/icons-react": "workspace:*"
 	},
 	"devDependencies": {
 		"@pluxel/components": "workspace:*",
@@ -85,6 +90,7 @@
 			".": "./dist/index.mjs",
 			"./config": "./dist/config.mjs",
 			"./services": "./dist/services.mjs",
+			"./web": "./dist/web.mjs",
 			"./package.json": "./package.json"
 		}
 	}

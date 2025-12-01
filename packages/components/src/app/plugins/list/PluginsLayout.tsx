@@ -16,7 +16,7 @@ import { IconPuzzle } from '@tabler/icons-react'
 import type React from 'react'
 import { useEffect } from 'react'
 import { Outlet, useRouterState } from '@tanstack/react-router'
-import { EmptyState } from '../../components'
+import { EmptyState } from '../../../components'
 import { PluginList } from './PluginList'
 
 export const PluginsLayout: React.FC = () => {

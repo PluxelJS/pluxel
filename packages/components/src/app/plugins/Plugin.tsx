@@ -1,1 +1,1 @@
-export { PluginScreen as Plugin } from './plugin/PluginScreen'
+export { PluginScreen as Plugin } from './detail'

@@ -6,8 +6,8 @@ import { createLogger } from './createLogger'
 // 1. 列出要转发的 log 级别
 const LEVELS = ['trace', 'debug', 'info', 'warn', 'error', 'fatal'] as const
 
-@OverrideOf(LoggerService)
 @Injectable
+@OverrideOf(LoggerService)
 export class PinoLoggerService {
 	public readonly logger: Logger
 

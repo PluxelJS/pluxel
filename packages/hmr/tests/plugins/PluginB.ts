@@ -1,6 +1,5 @@
-import { BasePlugin, Plugin } from '@pluxel/core'
+import { BasePlugin, Config, Plugin } from '@pluxel/core'
 import { f, v } from '@pluxel/hmr/config'
-import { Config } from 'packages/hmr'
 
 export const config = v.object({
 	name: v.optional(

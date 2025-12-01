@@ -13,8 +13,8 @@ import {
 import { IconCheck, IconCopy } from '@tabler/icons-react'
 import type { ReactNode } from 'react'
 import { useMemo } from 'react'
-import type { PluginSourceInfo } from '../context'
-import { usePluginMeta } from '../context'
+import type { PluginSourceInfo } from './context'
+import { usePluginMeta } from './context'
 import type { DependencyListProps } from './DependencyList'
 import { DependencyList, usePluginDependencyEntries } from './DependencyList'
 

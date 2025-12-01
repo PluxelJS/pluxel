@@ -46,13 +46,13 @@ import {
 	useState,
 } from 'react'
 import type { JSX } from 'react/jsx-runtime'
-import { type GroupConfig, PluginOrganizer, type PluginStatuses } from '../../components'
-import { EmptyState, ErrorState } from '../../components'
-import { type PluginGroup, type PluginStatusEntry, useQuery } from '../gqty'
-import { client } from '../rpc'
-import { RouterLinkAdapter } from '../RouterLinkAdapter'
-import { PLUGIN_SEARCH_EVENT, PLUGIN_SEARCH_KEY } from '../constants'
-import { subscribePluginStatusEvents } from './statusEvents'
+import { type GroupConfig, PluginOrganizer, type PluginStatuses } from '../organizer'
+import { EmptyState, ErrorState } from '../../../components'
+import { type PluginGroup, type PluginStatusEntry, useQuery } from '../../gqty'
+import { client } from '../../rpc'
+import { RouterLinkAdapter } from '../../RouterLinkAdapter'
+import { PLUGIN_SEARCH_EVENT, PLUGIN_SEARCH_KEY } from '../../constants'
+import { subscribePluginStatusEvents } from '../statusEvents'
 
 interface PluginListProps {
 	pluginName?: string

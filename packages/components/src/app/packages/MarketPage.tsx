@@ -24,7 +24,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { MARKET_BASE_URL } from '../constants'
 import { useQuery } from '../gqty'
 import { LiveLog } from '../log_viewer/LiveLog'
-import { useNotify } from '../notifications/useNotify'
+import { useNotify } from '../hooks'
 import { createRpcClient } from '../rpc'
 import type { InstallLogEntry } from './types'
 import {

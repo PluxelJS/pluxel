@@ -20,7 +20,7 @@ import {
 } from "@tabler/icons-react"
 import type { ReactNode } from "react"
 import { RouterLinkAdapter } from "../RouterLinkAdapter"
-import { getPatternStyle } from "../../patterns"
+import { getPatternStyle } from "../../theme"
 
 export function HomeIntro({ lastRoute }: { lastRoute: string | null }) {
 	const scheme = useComputedColorScheme("light", { getInitialValueInEffect: true })

@@ -37,7 +37,7 @@ import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } f
 import { useQuery } from '../gqty'
 import { createRpcClient } from '../rpc'
 import { RouterLinkAdapter } from '../RouterLinkAdapter'
-import { useNotify } from '../notifications/useNotify'
+import { useNotify } from '../hooks'
 import type { PackageRow } from './types'
 import { buildPackageRows, formatSpec, parseInstallSpecs, summarizeList, toSpecInput } from './utils'
 import { CollapsibleIssuesPanel, type IssueData } from './components/CollapsibleIssuesPanel'

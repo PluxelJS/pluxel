@@ -1,7 +1,7 @@
 import { Box, Flex } from '@mantine/core'
-import { LeftPane } from './components/LeftPane'
-import { RightPane } from './components/RightPane'
-import type { PluginConfigState } from './hooks/usePluginConfig'
+import { LeftPane } from './LeftPane'
+import { RightPane } from './RightPane'
+import type { PluginConfigState } from '../../hooks'
 
 const LEFT_WIDTH = 'clamp(320px, 32vw, 440px)'
 

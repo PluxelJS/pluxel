@@ -19,7 +19,7 @@ import { useNavigate, useRouterState } from '@tanstack/react-router'
 import { ColorSchemeToggle } from '../components'
 import { ExtensionSlot } from '../extension'
 import { createRpcClient } from './rpc'
-import { useNotify } from './notifications/useNotify'
+import { useNotify } from './hooks'
 import { useNotificationCenter } from './notifications/NotificationCenterProvider'
 import { PLUGIN_SEARCH_EVENT, PLUGIN_SEARCH_KEY } from './constants'
 

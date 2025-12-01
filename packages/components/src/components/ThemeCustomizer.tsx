@@ -28,7 +28,7 @@ import {
 	DEFAULT_COLOR_KEY,
 	THEME_CHANGE_EVENT,
 	THEME_COLOR_STORAGE_KEY,
-} from '../colorPresets'
+} from '../theme'
 
 export interface ThemeCustomizerProps {
 	/** 紧凑模式：仅显示图标 */

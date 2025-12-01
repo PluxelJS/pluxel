@@ -14,7 +14,7 @@ import {
 	ExtensionProvider,
 	useExtensionSurface,
 } from '../../extension'
-import { useDynamicTheme } from '../../useDynamicTheme'
+import { useDynamicTheme } from '../../theme'
 import { LAST_ROUTE_KEY } from '../constants'
 import { ExtensionLoader } from '../ExtensionLoader'
 import { Header } from '../Header'
