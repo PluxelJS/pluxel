@@ -2,8 +2,9 @@
 
 // 类型
 export type {
-	CompiledExtensionBundle,
+	CompiledExtensionModule,
 	ExtensionContext,
+	ExtensionManifestEvent,
 	ExtensionManifest,
 	ExtensionMeta,
 	ExtensionPoint,
@@ -40,7 +41,8 @@ export {
 	getPluginRouteComponent,
 	getExtensionRuntimeRevision,
 	subscribeExtensionRuntimeChanges,
-	applyExtensionBundle,
+	loadExtensionModule,
+	unloadExtensionModule,
 } from './runtime'
 
 // Hooks

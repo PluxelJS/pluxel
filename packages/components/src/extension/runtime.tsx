@@ -1,7 +1,7 @@
 import type { ComponentType } from 'react'
 import { ExtensionErrorBoundary } from './ErrorBoundary'
 import { extensionRegistry } from './registry'
-import type { AggregatedPluginModule, ExtensionMeta, PluginUIModule } from './types'
+import type { ExtensionMeta, PluginUIModule } from './types'
 
 function normalizeExtensionRoutePath(path: string): string {
 	if (!path) return ''
@@ -35,6 +35,7 @@ type RouteComponent = ComponentType
 class ExtensionRuntime {
 	private readonly pluginCleanups = new Map<string, Array<() => void>>()
 	private readonly routeComponents = new Map<string, Map<string, RouteComponent>>()
+	private readonly pluginHashes = new Map<string, string>()
 	private revision = 0
 	private readonly listeners = new Set<() => void>()
 
@@ -60,38 +61,57 @@ class ExtensionRuntime {
 		}
 	}
 
-	async applyBundle(modules: AggregatedPluginModule[]): Promise<void> {
-		for (const cleanups of this.pluginCleanups.values()) {
+	async loadPluginModule(
+		pluginName: string,
+		importer: () => Promise<PluginUIModule | { default?: PluginUIModule }>,
+		sourceHash: string,
+	): Promise<void> {
+		const existingHash = this.pluginHashes.get(pluginName)
+		if (existingHash === sourceHash) {
+			return
+		}
+
+		this.disposePlugin(pluginName)
+
+		const evaluated = await this.evaluateModule(importer)
+		await this.registerPlugin(pluginName, evaluated)
+		this.pluginHashes.set(pluginName, sourceHash)
+
+		this.notify()
+	}
+
+	unloadPluginModule(pluginName: string): void {
+		if (!this.pluginCleanups.has(pluginName)) return
+		this.disposePlugin(pluginName)
+		this.notify()
+	}
+
+	private disposePlugin(pluginName: string): void {
+		const cleanups = this.pluginCleanups.get(pluginName)
+		if (cleanups) {
 			for (const cleanup of cleanups) {
 				try {
 					cleanup()
 				} catch {}
 			}
 		}
-		this.pluginCleanups.clear()
-		this.routeComponents.clear()
-
-		for (const plugin of modules) {
-			await this.registerPlugin(plugin)
-		}
-
-		this.notify()
+		this.pluginCleanups.delete(pluginName)
+		this.routeComponents.delete(pluginName)
+		this.pluginHashes.delete(pluginName)
 	}
 
-	private async registerPlugin(plugin: AggregatedPluginModule): Promise<void> {
-		const evaluated = await this.evaluateModule(plugin.code)
-		const mod = (evaluated.default ?? evaluated) as PluginUIModule
+	private async registerPlugin(pluginName: string, module: PluginUIModule): Promise<void> {
 		const cleanups: Array<() => void> = []
 
-		if (mod.setup) {
-			await mod.setup()
+		if (module.setup) {
+			await module.setup()
 		}
 
-		if (mod.extensions) {
-			for (const ext of mod.extensions) {
+		if (module.extensions) {
+			for (const ext of module.extensions) {
 				const meta: ExtensionMeta = {
-					id: `${plugin.pluginName}:${ext.point}:${Math.random().toString(36).slice(2)}`,
-					pluginName: plugin.pluginName,
+					id: `${pluginName}:${ext.point}:${Math.random().toString(36).slice(2)}`,
+					pluginName,
 					priority: ext.meta?.priority ?? 0,
 					requireRunning: ext.meta?.requireRunning ?? false,
 					...ext.meta,
@@ -105,7 +125,7 @@ class ExtensionRuntime {
 						return (
 							<ExtensionErrorBoundary
 								key={meta.id}
-								pluginName={plugin.pluginName}
+								pluginName={pluginName}
 								extensionId={meta.id}
 								point={ext.point}
 							>
@@ -118,25 +138,27 @@ class ExtensionRuntime {
 			}
 		}
 
-		if (mod.routes) {
-			let routeMap = this.routeComponents.get(plugin.pluginName)
+		if (module.routes) {
+			let routeMap = this.routeComponents.get(pluginName)
 			if (!routeMap) {
 				routeMap = new Map()
-				this.routeComponents.set(plugin.pluginName, routeMap)
+				this.routeComponents.set(pluginName, routeMap)
+			} else {
+				routeMap.clear()
 			}
 
-			for (const route of mod.routes) {
+			for (const route of module.routes) {
 				const normalizedPath = normalizeExtensionRoutePath(route.definition.path)
 				routeMap.set(normalizedPath, route.Component)
 
 				if (route.definition.addToNav) {
 					const meta: ExtensionMeta = {
-						id: `${plugin.pluginName}:route:${normalizedPath || '/'}`,
-						pluginName: plugin.pluginName,
+						id: `${pluginName}:route:${normalizedPath || '/'}`,
+						pluginName,
 						priority: route.definition.navPriority ?? 0,
 						requireRunning: false,
 						label: route.definition.title,
-						href: buildExtensionHref(plugin.pluginName, normalizedPath),
+						href: buildExtensionHref(pluginName, normalizedPath),
 						icon: route.definition.icon,
 					}
 
@@ -149,17 +171,17 @@ class ExtensionRuntime {
 			}
 		}
 
-		this.pluginCleanups.set(plugin.pluginName, cleanups)
+		this.pluginCleanups.set(pluginName, cleanups)
 	}
 
-	private async evaluateModule(code: string): Promise<PluginUIModule> {
-		const blob = new Blob([code], { type: 'application/javascript' })
-		const url = URL.createObjectURL(blob)
-		try {
-			return (await import(/* @vite-ignore */ url)) as PluginUIModule
-		} finally {
-			URL.revokeObjectURL(url)
+	private async evaluateModule(
+		importer: () => Promise<PluginUIModule | { default?: PluginUIModule }>,
+	): Promise<PluginUIModule> {
+		const loaded = await importer()
+		if (loaded && typeof loaded === 'object' && 'default' in loaded && loaded.default) {
+			return loaded.default as PluginUIModule
 		}
+		return loaded as PluginUIModule
 	}
 
 	getRouteComponent(pluginName: string, restPath: string): RouteComponent | undefined {
@@ -172,7 +194,8 @@ class ExtensionRuntime {
 
 export const extensionRuntime = new ExtensionRuntime()
 
-export const applyExtensionBundle = extensionRuntime.applyBundle.bind(extensionRuntime)
+export const loadExtensionModule = extensionRuntime.loadPluginModule.bind(extensionRuntime)
+export const unloadExtensionModule = extensionRuntime.unloadPluginModule.bind(extensionRuntime)
 export const subscribeExtensionRuntimeChanges = extensionRuntime.subscribe.bind(extensionRuntime)
 export const getExtensionRuntimeRevision = extensionRuntime.getRevision.bind(extensionRuntime)
 export const getPluginRouteComponent = extensionRuntime.getRouteComponent.bind(extensionRuntime)

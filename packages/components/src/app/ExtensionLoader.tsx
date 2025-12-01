@@ -1,6 +1,11 @@
 // packages/components/src/app/ExtensionLoader.tsx
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { type AggregatedPluginModule, applyExtensionBundle } from '../extension'
+import {
+	loadExtensionModule,
+	unloadExtensionModule,
+	type CompiledExtensionModule,
+	type ExtensionManifestEvent,
+} from '../extension'
 import { fetchExtensionManifest } from '../extension/api/manifest'
 import { useQuery } from './gqty'
 import { subscribePluginStatusEvents } from './plugins/statusEvents'
@@ -13,6 +18,10 @@ interface ExtensionLoaderProps {
 interface PluginInfo {
 	name: string
 	isRunning: boolean
+}
+
+interface LoadedPluginModule extends CompiledExtensionModule {
+	inflight?: Promise<void>
 }
 
 export function ExtensionLoader({
@@ -87,47 +96,99 @@ export function ExtensionLoader({
 		onRunningPluginsChange(next)
 	}, [effectivePlugins, onRunningPluginsChange])
 
-	const bundleVersionRef = useRef(0)
+	const manifestVersionRef = useRef(0)
+	const manifestSignatureRef = useRef('')
 	const loadingRef = useRef(false)
+	const moduleCacheRef = useRef<Map<string, LoadedPluginModule>>(new Map())
 
-	const loadBundle = useCallback(async () => {
+	const recomputeManifestSignature = useCallback(() => {
+		const signature = Array.from(moduleCacheRef.current.values())
+			.map((mod) => `${mod.pluginName}:${mod.sourceHash}`)
+			.sort()
+			.join('|')
+		manifestSignatureRef.current = signature
+	}, [])
+
+	const ensureModuleLoaded = useCallback(async (module: CompiledExtensionModule) => {
+		const cached = moduleCacheRef.current.get(module.pluginName)
+		if (cached && cached.sourceHash === module.sourceHash) {
+			if (cached.inflight) {
+				await cached.inflight
+			}
+			return
+		}
+
+		const url = withCacheBusting(module.moduleUrl, module.sourceHash, module.compiledAt)
+		const loadPromise = loadExtensionModule(module.pluginName, () => import(/* @vite-ignore */ url), module.sourceHash)
+		moduleCacheRef.current.set(module.pluginName, {
+			...module,
+			inflight: loadPromise,
+		})
+
+		try {
+			await loadPromise
+		} catch (error) {
+			moduleCacheRef.current.delete(module.pluginName)
+			throw error
+		} finally {
+			const latest = moduleCacheRef.current.get(module.pluginName)
+			if (latest && latest.sourceHash === module.sourceHash) {
+				latest.inflight = undefined
+			}
+		}
+	}, [])
+
+	const syncManifest = useCallback(async (force?: boolean) => {
 		if (loadingRef.current) return
 		loadingRef.current = true
 		try {
 			const manifest = await fetchExtensionManifest()
-			if (!manifest.bundleUrl) {
-				bundleVersionRef.current = manifest.version
+			const nextSignature = manifest.modules
+				.map((module) => `${module.pluginName}:${module.sourceHash}`)
+				.sort()
+				.join('|')
+			if (!force && manifest.version === manifestVersionRef.current && nextSignature === manifestSignatureRef.current) {
 				return
 			}
-			if (manifest.version === bundleVersionRef.current) return
-			const cacheSuffix = manifest.sourceHash || String(manifest.version)
-			const url = manifest.bundleUrl.includes('?')
-				? `${manifest.bundleUrl}&v=${cacheSuffix}`
-				: `${manifest.bundleUrl}?v=${cacheSuffix}`
-			const mod = (await import(/* @vite-ignore */ url)) as {
-				plugins?: AggregatedPluginModule[]
-				default?: AggregatedPluginModule[]
+			const seen = new Set<string>()
+			await Promise.all(
+				manifest.modules.map(async (module) => {
+					seen.add(module.pluginName)
+					try {
+						await ensureModuleLoaded(module)
+					} catch (error) {
+						if (process.env.NODE_ENV !== 'production') {
+							console.error('[ExtensionLoader] failed to load module', module.pluginName, error)
+						}
+					}
+				}),
+			)
+			for (const name of Array.from(moduleCacheRef.current.keys())) {
+				if (!seen.has(name)) {
+					moduleCacheRef.current.delete(name)
+					unloadExtensionModule(name)
+				}
 			}
-			const payload = (mod.plugins ?? mod.default ?? []) as AggregatedPluginModule[]
-			await applyExtensionBundle(payload)
-			bundleVersionRef.current = manifest.version
+			manifestVersionRef.current = manifest.version
+			manifestSignatureRef.current = nextSignature
 		} catch (error) {
 			if (process.env.NODE_ENV !== 'production') {
-				console.error('[ExtensionLoader] failed to load bundle', error)
+				console.error('[ExtensionLoader] failed to sync manifest', error)
 			}
 		} finally {
 			loadingRef.current = false
+			recomputeManifestSignature()
 		}
-	}, [])
+	}, [ensureModuleLoaded, recomputeManifestSignature])
 
 	useEffect(() => {
-		void loadBundle()
+		void syncManifest()
 		if (pollInterval <= 0) return
 		const timer = setInterval(() => {
-			void loadBundle()
+			void syncManifest()
 		}, pollInterval)
 		return () => clearInterval(timer)
-	}, [loadBundle, pollInterval])
+	}, [pollInterval, syncManifest])
 
 	useEffect(() => {
 		if (typeof window === 'undefined') {
@@ -151,21 +212,65 @@ export function ExtensionLoader({
 						triggerRefetch()
 					}
 				})
-			void loadBundle()
+			void syncManifest()
 		}
 		const unsubscribe = subscribePluginStatusEvents(triggerRefetch)
 		const events = new EventSource('/api/extensions/events')
 		events.onmessage = (event) => {
-			const next = Number(event.data)
-			if (!Number.isNaN(next) && next !== bundleVersionRef.current) {
-				void loadBundle()
+			let payload: ExtensionManifestEvent | null = null
+			try {
+				payload = JSON.parse(event.data) as ExtensionManifestEvent
+			} catch (error) {
+				if (process.env.NODE_ENV !== 'production') {
+					console.warn('[ExtensionLoader] invalid extension event payload', error)
+				}
+				return
 			}
-		}
+
+				if (!payload) return
+				if (payload.type === 'sync') {
+					if (payload.version > manifestVersionRef.current) {
+						void syncManifest(true)
+					}
+					manifestVersionRef.current = payload.version
+					return
+				}
+				if (payload.version <= manifestVersionRef.current) {
+					return
+				}
+				manifestVersionRef.current = payload.version
+
+				if (payload.type === 'update') {
+					void ensureModuleLoaded({
+						pluginName: payload.pluginName,
+						moduleUrl: payload.moduleUrl,
+						sourceHash: payload.sourceHash,
+						compiledAt: payload.compiledAt,
+					})
+						.then(recomputeManifestSignature)
+						.catch((error) => {
+							if (process.env.NODE_ENV !== 'production') {
+								console.error('[ExtensionLoader] failed to refresh module', payload.pluginName, error)
+							}
+						})
+				} else if (payload.type === 'remove') {
+					if (moduleCacheRef.current.has(payload.pluginName)) {
+						moduleCacheRef.current.delete(payload.pluginName)
+						unloadExtensionModule(payload.pluginName)
+						recomputeManifestSignature()
+					}
+				}
+			}
 		return () => {
 			unsubscribe()
 			events.close()
 		}
-	}, [loadBundle, query.$refetch])
+	}, [ensureModuleLoaded, query.$refetch, recomputeManifestSignature, syncManifest])
 
 	return null
+}
+
+function withCacheBusting(url: string, hash: string, compiledAt: number): string {
+	const suffix = `v=${hash}:${compiledAt}`
+	return url.includes('?') ? `${url}&${suffix}` : `${url}?${suffix}`
 }

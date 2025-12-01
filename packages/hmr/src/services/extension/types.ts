@@ -76,18 +76,33 @@ export interface PluginExtensionConfig {
 	entryPath?: string
 }
 
-export interface AggregatedPluginModule {
+export interface CompiledExtensionModule {
 	pluginName: string
-	code: string
-	points: ExtensionPoint[]
-	routes: string[]
-	compiledAt: number
+	moduleUrl: string
 	sourceHash: string
+	compiledAt: number
 }
 
 export interface ExtensionManifest {
 	version: number
-	bundleUrl: string | null
-	sourceHash: string
-	moduleCount: number
+	modules: CompiledExtensionModule[]
 }
+
+export type ExtensionManifestEvent =
+	| {
+			type: 'update'
+			version: number
+			pluginName: string
+			sourceHash: string
+			moduleUrl: string
+			compiledAt: number
+	  }
+	| {
+			type: 'remove'
+			version: number
+			pluginName: string
+	  }
+	| {
+			type: 'sync'
+			version: number
+	  }

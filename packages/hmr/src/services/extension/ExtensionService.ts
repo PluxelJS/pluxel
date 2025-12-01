@@ -1,13 +1,13 @@
 import { createHash } from 'node:crypto'
 import { existsSync } from 'node:fs'
-import { mkdir, readdir, readFile, stat, writeFile } from 'node:fs/promises'
+import { mkdir, readdir, readFile, stat, unlink, writeFile } from 'node:fs/promises'
 import { type Context, getPluginInfo, Injectable } from '@pluxel/core'
 import chokidar, { type FSWatcher } from 'chokidar'
 import { dirname, isAbsolute, join, resolve } from 'pathe'
 import type {
-	AggregatedPluginModule,
+	CompiledExtensionModule,
 	ExtensionManifest,
-	ExtensionPoint,
+	ExtensionManifestEvent,
 	PluginExtensionConfig,
 } from './types'
 
@@ -29,7 +29,8 @@ interface PluginExtensionEntry {
 	sourceFiles: string[]
 	lastCompiledAt?: number
 	lastSourceHash?: string
-	compiledCode?: string
+	modulePath?: string
+	moduleUrl?: string
 	active: boolean
 	watcher?: FSWatcher | null
 }
@@ -65,38 +66,40 @@ const HASH_IGNORED_SEGMENTS = [
 	'build',
 	'.next',
 ] as const
-const BUNDLE_FILENAME = 'bundle.mjs'
+const MODULE_FILE_EXTENSION = '.mjs'
+const MODULE_ENDPOINT_PREFIX = '/api/extensions/modules'
+const MANIFEST_FILENAME = 'manifest.json'
 
 @Injectable({ key: serviceName })
 export class ExtensionService {
 	private readonly entries = new Map<string, PluginExtensionEntry>()
 	private readonly outDir: string
-	private readonly bundlePath: string
+	private readonly manifestPath: string
 	private manifestVersion = 0
 	private manifest: ExtensionManifest = {
 		version: 0,
-		bundleUrl: null,
-		sourceHash: '',
-		moduleCount: 0,
+		modules: [],
 	}
 	private pendingPlugins = new Set<string>()
 	private flushTimer: NodeJS.Timeout | null = null
 	private flushPromise: Promise<void> | null = null
-	private manifestListeners = new Set<(version: number) => void>()
+	private manifestListeners = new Set<(event: ExtensionManifestEvent) => void>()
 
 	constructor(
 		private ctx: Context,
 		config?: ExtensionServiceConfig,
 	) {
 		this.outDir = config?.outDir ?? resolve(process.cwd(), '.pluxel/extensions')
-		this.bundlePath = join(this.outDir, BUNDLE_FILENAME)
+		this.manifestPath = join(this.outDir, MANIFEST_FILENAME)
 
 		this.ctx.registry.afterCommit(async (summary) => {
 			await this.onAfterCommit(summary)
 		})
+
+		void this.restorePersistedManifest()
 	}
 
-	subscribeManifest(callback: (version: number) => void): () => void {
+	subscribeManifest(callback: (event: ExtensionManifestEvent) => void): () => void {
 		this.manifestListeners.add(callback)
 		return () => this.manifestListeners.delete(callback)
 	}
@@ -105,9 +108,10 @@ export class ExtensionService {
 		return this.manifest
 	}
 
-	async getBundle(): Promise<string | null> {
-		if (!existsSync(this.bundlePath)) return null
-		return readFile(this.bundlePath, 'utf-8')
+	async getModuleSource(pluginName: string, sourceHash: string): Promise<string | null> {
+		const file = this.getModuleFilePath(pluginName, sourceHash)
+		if (!existsSync(file)) return null
+		return readFile(file, 'utf-8')
 	}
 
 	register(config: PluginExtensionConfig): () => void {
@@ -139,7 +143,7 @@ export class ExtensionService {
 			this.disposeWatcher(stored)
 			this.pendingPlugins.delete(config.pluginName)
 			this.entries.delete(config.pluginName)
-			void this.buildAggregateBundle()
+			void this.handlePluginRemoval(config.pluginName, stored)
 		}
 	}
 
@@ -160,10 +164,10 @@ export class ExtensionService {
 		return this.pendingPlugins.size > 0
 	}
 
-	private notifyManifest(): void {
+	private notifyManifest(event: ExtensionManifestEvent): void {
 		for (const listener of this.manifestListeners) {
 			try {
-				listener(this.manifestVersion)
+				listener(event)
 			} catch (error) {
 				console.error('[ExtensionService] manifest listener failed', error)
 			}
@@ -190,7 +194,6 @@ export class ExtensionService {
 
 		const task = (async () => {
 			const queue = [...this.pendingPlugins]
-			let compiled = false
 
 			for (const pluginName of queue) {
 				const entry = this.entries.get(pluginName)
@@ -201,15 +204,8 @@ export class ExtensionService {
 				if (runningPlugins && !runningPlugins.has(pluginName)) {
 					continue
 				}
-				const success = await this.compilePlugin(pluginName)
+				await this.compilePlugin(pluginName)
 				this.pendingPlugins.delete(pluginName)
-				if (success) {
-					compiled = true
-				}
-			}
-
-			if (compiled) {
-				await this.buildAggregateBundle()
 			}
 		})()
 
@@ -218,70 +214,34 @@ export class ExtensionService {
 		this.flushPromise = null
 	}
 
-	private async buildAggregateBundle(): Promise<void> {
-		await mkdir(this.outDir, { recursive: true })
-		const modules: AggregatedPluginModule[] = []
-
-		for (const [pluginName, entry] of this.entries) {
-			if (!entry.compiledCode) continue
-			const points = new Set<ExtensionPoint>()
-			for (const ui of entry.config.ui ?? []) {
-				points.add(ui.point)
-			}
-			const routes = new Set<string>()
-			for (const route of entry.config.routes ?? []) {
-				routes.add(normalizeRoutePath(route.path) || '/')
-			}
-			modules.push({
-				pluginName,
-				code: entry.compiledCode,
-				points: Array.from(points),
-				routes: Array.from(routes),
-				compiledAt: entry.lastCompiledAt ?? Date.now(),
-				sourceHash: entry.lastSourceHash ?? '',
-			})
-		}
-
-		const content = this.generateAggregateModule(modules)
-		await writeFile(this.bundlePath, content, 'utf-8')
-		const hash = createHash('sha256').update(content).digest('hex').slice(0, 16)
-		this.manifestVersion += 1
-		this.manifest = {
-			version: this.manifestVersion,
-			bundleUrl: '/api/extensions/bundle.mjs',
-			sourceHash: hash,
-			moduleCount: modules.length,
-		}
-		this.notifyManifest()
-	}
-
-	private generateAggregateModule(modules: AggregatedPluginModule[]): string {
-		const payload = modules
-			.map((module) => {
-				return `{
-  pluginName: ${JSON.stringify(module.pluginName)},
-  code: ${JSON.stringify(module.code)},
-  points: ${JSON.stringify(module.points)},
-  routes: ${JSON.stringify(module.routes)},
-  compiledAt: ${module.compiledAt},
-  sourceHash: ${JSON.stringify(module.sourceHash)}
-}`
-			})
-			.join(',\n')
-
-		return `export const plugins = [\n${payload}\n];\nexport default plugins;\n`
-	}
-
 	private async compilePlugin(pluginName: string): Promise<boolean> {
 		const entry = this.entries.get(pluginName)
 		if (!entry) return false
 		const start = Date.now()
 		try {
+			const sourceHash = await this.computeSourceHash(entry.sourceFiles)
+			const targetFile = this.getModuleFilePath(pluginName, sourceHash)
+			const moduleUrl = this.getModuleUrl(pluginName, sourceHash)
+
+			if (existsSync(targetFile)) {
+				const stats = await stat(targetFile).catch(() => null)
+				entry.lastCompiledAt = stats ? Math.floor(stats.mtimeMs) : Date.now()
+				entry.lastSourceHash = sourceHash
+				entry.modulePath = targetFile
+				entry.moduleUrl = moduleUrl
+				this.handleManifestUpdate(pluginName, entry)
+				return true
+			}
+
 			const code = await this.generateBundle(entry.config)
-			entry.compiledCode = code
+			await mkdir(dirname(targetFile), { recursive: true })
+			await writeFile(targetFile, code, 'utf-8')
+			await this.removeOldModuleFile(entry, targetFile)
 			entry.lastCompiledAt = Date.now()
-			entry.lastSourceHash = await this.computeSourceHash(entry.sourceFiles)
-			entry.isDirty = false
+			entry.lastSourceHash = sourceHash
+			entry.modulePath = targetFile
+			entry.moduleUrl = moduleUrl
+			this.handleManifestUpdate(pluginName, entry)
 			return true
 		} catch (error) {
 			console.error('[ExtensionService] failed to compile', pluginName, error)
@@ -375,6 +335,142 @@ export class ExtensionService {
 		}
 
 		return transformVendorImports(result.code)
+	}
+
+	private async removeOldModuleFile(entry: PluginExtensionEntry, nextPath: string): Promise<void> {
+		const previous = entry.modulePath
+		if (!previous || previous === nextPath) return
+		if (!existsSync(previous)) return
+		await unlink(previous).catch(() => {})
+	}
+
+	private handleManifestUpdate(
+		pluginName: string,
+		entry: PluginExtensionEntry | null,
+	): void {
+		const previous = this.manifest.modules.find((mod) => mod.pluginName === pluginName)
+		const nextModules = this.manifest.modules
+			.filter((mod) => mod.pluginName !== pluginName)
+			.slice()
+
+		if (entry && entry.moduleUrl && entry.lastSourceHash) {
+			const moduleRecord: CompiledExtensionModule = {
+				pluginName,
+				moduleUrl: entry.moduleUrl,
+				sourceHash: entry.lastSourceHash,
+				compiledAt: entry.lastCompiledAt ?? Date.now(),
+			}
+			if (
+				previous &&
+				previous.sourceHash === moduleRecord.sourceHash &&
+				previous.moduleUrl === moduleRecord.moduleUrl
+			) {
+				return
+			}
+			nextModules.push(moduleRecord)
+			nextModules.sort((a, b) => a.pluginName.localeCompare(b.pluginName))
+
+				this.manifestVersion += 1
+				this.manifest = { version: this.manifestVersion, modules: nextModules }
+				this.persistManifest()
+				this.notifyManifest({
+					type: 'update',
+					version: this.manifestVersion,
+					pluginName,
+				sourceHash: moduleRecord.sourceHash,
+				moduleUrl: moduleRecord.moduleUrl,
+				compiledAt: moduleRecord.compiledAt,
+			})
+			return
+		}
+
+		if (!previous) {
+			return
+		}
+
+		this.manifestVersion += 1
+		this.manifest = { version: this.manifestVersion, modules: nextModules }
+		this.persistManifest()
+		this.notifyManifest({
+			type: 'remove',
+			version: this.manifestVersion,
+			pluginName,
+		})
+	}
+
+	private async handlePluginRemoval(
+		pluginName: string,
+		entry: PluginExtensionEntry | null,
+	): Promise<void> {
+		if (entry?.modulePath && existsSync(entry.modulePath)) {
+			await unlink(entry.modulePath).catch(() => {})
+		}
+		this.handleManifestUpdate(pluginName, null)
+	}
+
+	private getPluginOutDir(pluginName: string): string {
+		return join(this.outDir, sanitizePluginName(pluginName))
+	}
+
+	private getModuleFilePath(pluginName: string, sourceHash: string): string {
+		return join(this.getPluginOutDir(pluginName), `${sourceHash}${MODULE_FILE_EXTENSION}`)
+	}
+
+	private getModuleUrl(pluginName: string, sourceHash: string): string {
+		const encodedName = encodeURIComponent(pluginName)
+		return `${MODULE_ENDPOINT_PREFIX}/${encodedName}/${sourceHash}${MODULE_FILE_EXTENSION}`
+	}
+
+	private async restorePersistedManifest(): Promise<void> {
+		if (!existsSync(this.manifestPath)) return
+		try {
+			const raw = await readFile(this.manifestPath, 'utf-8')
+			const parsed = JSON.parse(raw) as Partial<ExtensionManifest>
+			if (!parsed || !Array.isArray(parsed.modules)) {
+				return
+			}
+			const restored: CompiledExtensionModule[] = []
+			for (const module of parsed.modules) {
+				if (
+					!module ||
+					typeof module.pluginName !== 'string' ||
+					typeof module.moduleUrl !== 'string' ||
+					typeof module.sourceHash !== 'string'
+				) {
+					continue
+				}
+				const filePath = this.getModuleFilePath(module.pluginName, module.sourceHash)
+				if (!existsSync(filePath)) {
+					continue
+				}
+				const stats = await stat(filePath).catch(() => null)
+				restored.push({
+					pluginName: module.pluginName,
+					moduleUrl: module.moduleUrl,
+					sourceHash: module.sourceHash,
+					compiledAt: module.compiledAt ?? (stats ? Math.floor(stats.mtimeMs) : Date.now()),
+				})
+			}
+			this.manifestVersion = typeof parsed.version === 'number' ? parsed.version : 0
+			this.manifest = {
+				version: this.manifestVersion,
+				modules: restored,
+			}
+		} catch (error) {
+			console.warn('[ExtensionService] failed to restore manifest', error)
+		}
+	}
+
+	private persistManifest(): void {
+		const snapshot = JSON.stringify(this.manifest, null, 2)
+		void (async () => {
+			try {
+				await mkdir(this.outDir, { recursive: true })
+				await writeFile(this.manifestPath, snapshot, 'utf-8')
+			} catch (error) {
+				console.warn('[ExtensionService] failed to persist manifest', error)
+			}
+		})()
 	}
 
 	private collectSourceFiles(config: PluginExtensionConfig): string[] {
@@ -527,14 +623,6 @@ function escapeRegex(str: string): string {
 	return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }
 
-function normalizeRoutePath(path: string | null | undefined): string {
-	if (!path) return ''
-	const trimmed = path.trim()
-	if (!trimmed || trimmed === '/') return ''
-	const segments = trimmed
-		.split('/')
-		.map((segment) => segment.trim())
-		.filter((segment) => segment.length > 0 && segment !== '.' && segment !== '..')
-	if (segments.length === 0) return ''
-	return `/${segments.join('/')}`
+function sanitizePluginName(name: string): string {
+	return name.replace(/[^a-zA-Z0-9_-]/g, '_')
 }

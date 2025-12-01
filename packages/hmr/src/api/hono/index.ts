@@ -22,24 +22,28 @@ const app = new Hono<AppEnv>()
 		const ctx = c.var.plugin_ctx
 		const extensionService = ctx.extensionService
 		if (!extensionService) {
-			return c.json({ version: 0, bundles: [] })
+			return c.json({ version: 0, modules: [] })
 		}
 		return c.json(extensionService.getManifest())
 	})
-	// 获取聚合 bundle
-	.get('/extensions/bundle.mjs', async (c) => {
+	// 获取单个插件模块
+	.get('/extensions/modules/:plugin/:file', async (c) => {
 		const ctx = c.var.plugin_ctx
 		const extensionService = ctx.extensionService
 		if (!extensionService) {
 			return c.text('Extension service not available', 503)
 		}
-		const bundle = await extensionService.getBundle()
-		if (!bundle) {
-			return c.text('Bundle not found', 404)
+		const pluginParam = c.req.param('plugin')
+		const pluginName = decodeURIComponent(pluginParam)
+		const file = c.req.param('file')
+		const hash = file.endsWith('.mjs') ? file.slice(0, -4) : file
+		const code = await extensionService.getModuleSource(pluginName, hash)
+		if (!code) {
+			return c.text('Module not found', 404)
 		}
-		return c.text(bundle, 200, {
+		return c.text(code, 200, {
 			'Content-Type': 'application/javascript',
-			'Cache-Control': 'no-cache',
+			'Cache-Control': 'public, max-age=31536000, immutable',
 		})
 	})
 	.get('/extensions/events', (c) => {
@@ -51,10 +55,10 @@ const app = new Hono<AppEnv>()
 		const stream = new ReadableStream({
 			start(controller) {
 				const encoder = new TextEncoder()
-				const send = (version: number) => {
-					controller.enqueue(encoder.encode(`data: ${version}\n\n`))
+				const send = (event: import('../../services/extension').ExtensionManifestEvent) => {
+					controller.enqueue(encoder.encode(`data: ${JSON.stringify(event)}\n\n`))
 				}
-				send(extensionService.getManifest().version)
+				send({ type: 'sync', version: extensionService.getManifest().version })
 				const unsubscribe = extensionService.subscribeManifest(send)
 				return () => {
 					unsubscribe()
