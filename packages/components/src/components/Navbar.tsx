@@ -75,10 +75,10 @@ const Navbar = memo(function Navbar({
 	const theme = useMantineTheme()
 	const colorScheme = useComputedColorScheme('light', { getInitialValueInEffect: true })
 	// —— 激活态：优先使用 props.currentPath；否则仅在挂载后读取一次 pathname，避免 SSR 水位差 ——
-	const [pathname, setPathname] = useState<string>('')
+	const [pathname, setPathname] = useState<string>(() => currentPath ?? '')
 	useEffect(() => {
 		if (currentPath != null) {
-			setPathname(currentPath)
+			setPathname((prev) => (prev === currentPath ? prev : currentPath))
 			return
 		}
 		if (typeof window !== 'undefined') {

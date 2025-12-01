@@ -114,22 +114,18 @@ export interface PluginUIModule {
 	setup?: () => void | Promise<void>
 }
 
-/**
- * 编译后的扩展 bundle 信息（来自后端）
- */
-export interface CompiledExtensionBundle {
+export interface AggregatedPluginModule {
 	pluginName: string
-	bundleUrl: string
+	code: string
 	points: ExtensionPoint[]
 	routes: string[]
 	compiledAt: number
 	sourceHash: string
 }
 
-/**
- * 扩展清单（来自后端 API）
- */
 export interface ExtensionManifest {
 	version: number
-	bundles: CompiledExtensionBundle[]
+	bundleUrl: string | null
+	sourceHash: string
+	moduleCount: number
 }

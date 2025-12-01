@@ -26,21 +26,45 @@ const app = new Hono<AppEnv>()
 		}
 		return c.json(extensionService.getManifest())
 	})
-	// 获取插件 bundle
-	.get('/extensions/:pluginName/bundle.mjs', async (c) => {
+	// 获取聚合 bundle
+	.get('/extensions/bundle.mjs', async (c) => {
 		const ctx = c.var.plugin_ctx
 		const extensionService = ctx.extensionService
 		if (!extensionService) {
 			return c.text('Extension service not available', 503)
 		}
-		const pluginName = c.req.param('pluginName')
-		const bundle = await extensionService.getBundle(pluginName)
+		const bundle = await extensionService.getBundle()
 		if (!bundle) {
 			return c.text('Bundle not found', 404)
 		}
 		return c.text(bundle, 200, {
 			'Content-Type': 'application/javascript',
 			'Cache-Control': 'no-cache',
+		})
+	})
+	.get('/extensions/events', (c) => {
+		const ctx = c.var.plugin_ctx
+		const extensionService = ctx.extensionService
+		if (!extensionService) {
+			return c.text('Extension service not available', 503)
+		}
+		const stream = new ReadableStream({
+			start(controller) {
+				const encoder = new TextEncoder()
+				const send = (version: number) => {
+					controller.enqueue(encoder.encode(`data: ${version}\n\n`))
+				}
+				send(extensionService.getManifest().version)
+				const unsubscribe = extensionService.subscribeManifest(send)
+				return () => {
+					unsubscribe()
+				}
+			},
+		})
+		return c.newResponse(stream, 200, {
+			'Content-Type': 'text/event-stream',
+			'Cache-Control': 'no-cache',
+			Connection: 'keep-alive',
 		})
 	})
 	// ============ REST API（仅调试/直连调试用） ============

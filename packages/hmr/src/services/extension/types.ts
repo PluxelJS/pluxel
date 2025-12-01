@@ -11,7 +11,6 @@ export type ExtensionPoint =
 	| 'plugin:actions' // 插件操作按钮
 	| 'plugin:info' // 插件信息卡片
 	| 'global:statusBar' // 全局状态栏
-	| 'routes' // 新页面路由
 
 /**
  * 扩展条件
@@ -77,27 +76,18 @@ export interface PluginExtensionConfig {
 	entryPath?: string
 }
 
-/**
- * 编译后的扩展 bundle 信息
- */
-export interface CompiledExtensionBundle {
+export interface AggregatedPluginModule {
 	pluginName: string
-	/** 编译后的 mjs URL（相对于服务器） */
-	bundleUrl: string
-	/** 包含的扩展点 */
+	code: string
 	points: ExtensionPoint[]
-	/** 包含的路由 */
 	routes: string[]
-	/** 编译时间戳 */
 	compiledAt: number
-	/** 源文件 hash */
 	sourceHash: string
 }
 
-/**
- * 前端需要的扩展清单
- */
 export interface ExtensionManifest {
 	version: number
-	bundles: CompiledExtensionBundle[]
+	bundleUrl: string | null
+	sourceHash: string
+	moduleCount: number
 }

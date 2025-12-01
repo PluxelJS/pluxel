@@ -37,25 +37,14 @@ export { ExtensionErrorBoundary } from './ErrorBoundary'
 
 // Runtime
 export {
-	loadPluginUI,
-	unloadPluginUI,
-	isPluginUILoaded,
-	getLoadedModules,
-	getRouteComponent,
-	getExtensionRoutes,
-	syncWithManifest,
-	subscribeExtensionRouteChanges,
-	getExtensionRouteVersion,
+	getPluginRouteComponent,
+	getExtensionRuntimeRevision,
+	subscribeExtensionRuntimeChanges,
+	applyExtensionBundle,
 } from './runtime'
 
 // Hooks
-export {
-	useExtensionManager,
-	useExtensionRouteVersion,
-	useExtensionVersion,
-	usePluginUILoadState,
-	type PluginInfo,
-} from './hooks'
+export { useExtensionRuntimeVersion, useExtensionVersion } from './hooks'
 
 // Vendors (共享依赖)
 export { vendors, initVendors, getVendor, vendorPackages, type Vendors, type VendorPackage } from './vendors'

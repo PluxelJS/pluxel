@@ -1,7 +1,7 @@
 // packages/hmr/tests/plugins/ui/index.tsx
 // 插件 UI 扩展入口模块
 const {Badge, Button, Paper, Text, Group, Stack} = window.__PLUXEL_VENDORS__["@mantine/core"];
-import { IconRocket, IconDashboard } from "/node_modules/.vite/deps/@tabler_icons-react.js?v=cf3de066";
+import { IconRocket, IconDashboard } from "/node_modules/.vite/deps/@tabler_icons-react.js?v=438d26be";
 import { definePluginUIModule } from "/src/web.ts";
 var _jsxFileName = "/home/ahdg/code/plugin-style-ts/packages/hmr/tests/plugins/ui/index.tsx";
 const __vite__cjsImport3_react_jsxDevRuntime = window.__PLUXEL_VENDORS__["react/jsx-dev-runtime"].default || window.__PLUXEL_VENDORS__["react/jsx-dev-runtime"]; const _jsxDEV = __vite__cjsImport3_react_jsxDevRuntime["jsxDEV"];

@@ -323,6 +323,9 @@ importers:
       postcss-simple-vars:
         specifier: ^7.0.1
         version: 7.0.1(postcss@8.5.6)
+      rolldown:
+        specifier: '*'
+        version: 1.0.0-beta.52
       rotating-file-stream:
         specifier: ^3.2.7
         version: 3.2.7

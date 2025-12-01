@@ -1,34 +1,28 @@
 // packages/components/src/app/ExtensionLoader.tsx
-/**
- * 扩展加载器组件
- *
- * 负责从后端获取扩展清单并加载插件 UI 模块
- */
-
-import { useEffect, useMemo } from 'react'
-import { useExtensionManager, type PluginInfo } from '../extension'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { type AggregatedPluginModule, applyExtensionBundle } from '../extension'
 import { fetchExtensionManifest } from '../extension/api/manifest'
 import { useQuery } from './gqty'
 import { subscribePluginStatusEvents } from './plugins/statusEvents'
 
 interface ExtensionLoaderProps {
-	/** 轮询间隔（毫秒），0 表示不轮询 */
 	pollInterval?: number
-	/** 运行中插件集合变化回调 */
 	onRunningPluginsChange?: (plugins: ReadonlySet<string>) => void
 }
 
-/**
- * 扩展加载器
- *
- * 订阅插件状态变化，自动加载/卸载插件 UI 扩展
- */
-export function ExtensionLoader({ pollInterval = 5000, onRunningPluginsChange }: ExtensionLoaderProps) {
+interface PluginInfo {
+	name: string
+	isRunning: boolean
+}
+
+export function ExtensionLoader({
+	pollInterval = 5000,
+	onRunningPluginsChange,
+}: ExtensionLoaderProps) {
 	const query = useQuery({
 		refetchOnWindowVisible: false,
 		fetchInBackground: true,
 		prepare: ({ query }) => {
-			// 显式访问需要的字段，让 gqty 知道要获取哪些数据
 			query.pluginStatus?.statuses?.forEach((status) => {
 				status?.name
 				status?.isRunning
@@ -36,12 +30,16 @@ export function ExtensionLoader({ pollInterval = 5000, onRunningPluginsChange }:
 		},
 	})
 
-	// 获取所有插件状态
-	const pluginStatuses = query.pluginStatus?.statuses ?? []
+	const rawStatuses = query.pluginStatus?.statuses ?? []
 
-	// 转换为 PluginInfo 格式（使用稳定的 key 生成）
-	const plugins: PluginInfo[] = useMemo(() => {
-		return pluginStatuses
+	const derivedPlugins: PluginInfo[] = useMemo(() => {
+		return rawStatuses
+			.slice()
+			.sort((a, b) => {
+				const an = typeof a?.name === 'string' ? a.name : ''
+				const bn = typeof b?.name === 'string' ? b.name : ''
+				return an.localeCompare(bn)
+			})
 			.filter(
 				(entry): entry is NonNullable<typeof entry> & { name: string } =>
 					typeof entry?.name === 'string' && entry.name.trim().length > 0,
@@ -50,20 +48,91 @@ export function ExtensionLoader({ pollInterval = 5000, onRunningPluginsChange }:
 				name: entry.name.trim(),
 				isRunning: Boolean(entry.isRunning),
 			}))
-	}, [pluginStatuses])
+	}, [rawStatuses])
+
+	const signature = useMemo(
+		() => derivedPlugins.map((p) => `${p.name}:${p.isRunning ? 1 : 0}`).join('|'),
+		[derivedPlugins],
+	)
+
+	const cachedRef = useRef<{ key: string; plugins: PluginInfo[] }>({
+		key: signature,
+		plugins: derivedPlugins,
+	})
+
+	const [stablePlugins, setStablePlugins] = useState<PluginInfo[]>(derivedPlugins)
+	const isLoading = query.$state.isLoading === true || query.$state.isFetching === true
+
+	useEffect(() => {
+		if (isLoading) return
+		if (cachedRef.current.key === signature) {
+			setStablePlugins(cachedRef.current.plugins)
+			return
+		}
+		const cloned = derivedPlugins.map((plugin) => ({ ...plugin }))
+		cachedRef.current = { key: signature, plugins: cloned }
+		setStablePlugins(cloned)
+	}, [derivedPlugins, signature, isLoading])
+
+	const effectivePlugins = isLoading ? cachedRef.current.plugins : stablePlugins
 
 	useEffect(() => {
 		if (!onRunningPluginsChange) return
 		const next = new Set<string>()
-		for (const plugin of plugins) {
+		for (const plugin of effectivePlugins) {
 			if (plugin.isRunning && plugin.name) {
 				next.add(plugin.name)
 			}
 		}
 		onRunningPluginsChange(next)
-	}, [plugins, onRunningPluginsChange])
+	}, [effectivePlugins, onRunningPluginsChange])
+
+	const bundleVersionRef = useRef(0)
+	const loadingRef = useRef(false)
+
+	const loadBundle = useCallback(async () => {
+		if (loadingRef.current) return
+		loadingRef.current = true
+		try {
+			const manifest = await fetchExtensionManifest()
+			if (!manifest.bundleUrl) {
+				bundleVersionRef.current = manifest.version
+				return
+			}
+			if (manifest.version === bundleVersionRef.current) return
+			const cacheSuffix = manifest.sourceHash || String(manifest.version)
+			const url = manifest.bundleUrl.includes('?')
+				? `${manifest.bundleUrl}&v=${cacheSuffix}`
+				: `${manifest.bundleUrl}?v=${cacheSuffix}`
+			const mod = (await import(/* @vite-ignore */ url)) as {
+				plugins?: AggregatedPluginModule[]
+				default?: AggregatedPluginModule[]
+			}
+			const payload = (mod.plugins ?? mod.default ?? []) as AggregatedPluginModule[]
+			await applyExtensionBundle(payload)
+			bundleVersionRef.current = manifest.version
+		} catch (error) {
+			if (process.env.NODE_ENV !== 'production') {
+				console.error('[ExtensionLoader] failed to load bundle', error)
+			}
+		} finally {
+			loadingRef.current = false
+		}
+	}, [])
 
 	useEffect(() => {
+		void loadBundle()
+		if (pollInterval <= 0) return
+		const timer = setInterval(() => {
+			void loadBundle()
+		}, pollInterval)
+		return () => clearInterval(timer)
+	}, [loadBundle, pollInterval])
+
+	useEffect(() => {
+		if (typeof window === 'undefined') {
+			return
+		}
 		let inflight = false
 		let pending = false
 		const triggerRefetch = () => {
@@ -72,47 +141,31 @@ export function ExtensionLoader({ pollInterval = 5000, onRunningPluginsChange }:
 				return
 			}
 			inflight = true
-			void query.$refetch(true).finally(() => {
-				inflight = false
-				if (pending) {
-					pending = false
-					triggerRefetch()
-				}
-			})
+			void query
+				.$refetch(true)
+				.catch(() => {})
+				.finally(() => {
+					inflight = false
+					if (pending) {
+						pending = false
+						triggerRefetch()
+					}
+				})
+			void loadBundle()
 		}
-		return subscribePluginStatusEvents(triggerRefetch)
-	}, [query.$refetch])
+		const unsubscribe = subscribePluginStatusEvents(triggerRefetch)
+		const events = new EventSource('/api/extensions/events')
+		events.onmessage = (event) => {
+			const next = Number(event.data)
+			if (!Number.isNaN(next) && next !== bundleVersionRef.current) {
+				void loadBundle()
+			}
+		}
+		return () => {
+			unsubscribe()
+			events.close()
+		}
+	}, [loadBundle, query.$refetch])
 
-	// 使用扩展管理器
-	useExtensionManager(plugins, {
-		fetchManifest: fetchExtensionManifest,
-		pollInterval,
-	})
-
-	// 此组件不渲染任何 UI
 	return null
-}
-
-/**
- * 简化版扩展加载 Hook（不依赖 GraphQL）
- *
- * 适用于不使用 gqty 的场景
- */
-export function useSimpleExtensionLoader(
-	runningPlugins: string[],
-	options: { pollInterval?: number } = {},
-) {
-	const { pollInterval = 5000 } = options
-
-	const plugins: PluginInfo[] = useMemo(() => {
-		return runningPlugins.map((name) => ({
-			name,
-			isRunning: true,
-		}))
-	}, [runningPlugins])
-
-	return useExtensionManager(plugins, {
-		fetchManifest: fetchExtensionManifest,
-		pollInterval,
-	})
 }

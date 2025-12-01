@@ -4,11 +4,10 @@ import { useParams, useRouterState } from '@tanstack/react-router'
 import {
 	ExtensionErrorBoundary,
 	ExtensionProvider,
-	getRouteComponent,
+	getPluginRouteComponent,
 	type ExtensionContext,
 	useExtensionContext,
-	useExtensionRouteVersion,
-	usePluginUILoadState,
+	useExtensionRuntimeVersion,
 } from '../../extension'
 
 function normalizeExtensionRestPath(raw?: string): string {
@@ -48,12 +47,11 @@ export function ExtensionRoute() {
 	}, [locationPath, rawName])
 	const restPath = restPathFromParams || restPathFromLocation
 	const fullPath = `/ext/${pluginName}${restPath}`
-	const routeVersion = useExtensionRouteVersion()
-	const moduleLoaded = usePluginUILoadState(pluginName)
-	const ExtensionComponent = useMemo(
-		() => getRouteComponent(fullPath),
-		[fullPath, routeVersion],
-	)
+	const routeVersion = useExtensionRuntimeVersion()
+
+	const ExtensionComponent = useMemo(() => {
+		return getPluginRouteComponent(pluginName, restPath)
+	}, [pluginName, restPath, routeVersion])
 
 	const parentCtx = useExtensionContext()
 	const runningPlugins = parentCtx.runningPlugins
@@ -82,14 +80,14 @@ export function ExtensionRoute() {
 		)
 	}
 
-	if (!moduleLoaded) {
+	if (routeVersion === 0) {
 		return (
 			<Center style={{ flex: 1 }}>
 				<Stack gap="xs" align="center">
 					<Loader size="sm" />
-					<Text fw={600}>扩展页面加载中</Text>
+					<Text fw={600}>扩展模块加载中</Text>
 					<Text c="dimmed" size="sm">
-						正在等待插件 {pluginName} 注册 UI 页面…
+						正在初始化插件 UI，请稍候…
 					</Text>
 				</Stack>
 			</Center>
