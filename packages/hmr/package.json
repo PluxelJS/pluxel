@@ -74,8 +74,8 @@
 		"youch": "4.1.0-beta.13"
 	},
 	"peerDependencies": {
-		"rolldown": "workspace:*",
-		"@tabler/icons-react": "workspace:*"
+		"rolldown": "*",
+		"@tabler/icons-react": "*"
 	},
 	"devDependencies": {
 		"@pluxel/components": "workspace:*",
