@@ -21,6 +21,7 @@ export default defineConfig({
 		index: 'src/index.ts',
 		services: 'src/services/index.ts',
 		config: 'src/config.ts',
+		web: 'src/web.ts',
 	},
 	copy: ['public'],
 	alias: {

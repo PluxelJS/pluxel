@@ -3,7 +3,10 @@
 
 import { Badge, Button, Paper, Text, Group, Stack } from '@mantine/core'
 import { IconRocket, IconDashboard } from '@tabler/icons-react'
-import type { PluginUIModule, ExtensionContext } from '@pluxel/components/extension'
+import {
+	definePluginUIModule,
+	type ExtensionContext,
+} from '../../../src/web'
 
 // ─────────────────────────────────────────────────────────
 // Header 按钮组件
@@ -96,43 +99,46 @@ function Dashboard() {
 // ─────────────────────────────────────────────────────────
 // 模块导出
 // ─────────────────────────────────────────────────────────
-export const extensions: PluginUIModule['extensions'] = [
-	{
-		point: 'header:actions',
-		meta: { priority: 100 },
-		Component: HeaderButton,
-	},
-	{
-		point: 'plugin:tabs',
-		meta: {
-			priority: 10,
-			label: '自定义面板',
-			id: 'PluginWithUI:plugin:tabs',
+const module = definePluginUIModule({
+	extensions: [
+		{
+			point: 'header:actions',
+			meta: { priority: 100 },
+			Component: HeaderButton,
 		},
-		when: (ctx) => ctx.pluginName === 'PluginWithUI',
-		Component: CustomTab,
-	},
-	{
-		point: 'plugin:info',
-		meta: { priority: 5, requireRunning: true },
-		when: (ctx) => ctx.pluginName === 'PluginWithUI' && ctx.isPluginRunning === true,
-		Component: InfoCard,
-	},
-]
-
-export const routes: PluginUIModule['routes'] = [
-	{
-		definition: {
-			path: '/dashboard',
-			title: 'PluginWithUI Dashboard',
-			icon: <IconDashboard size={18} stroke={1.7} />,
-			addToNav: true,
-			navPriority: 50,
+		{
+			point: 'plugin:tabs',
+			meta: {
+				priority: 10,
+				label: '自定义面板',
+				id: 'PluginWithUI:plugin:tabs',
+			},
+			when: (ctx) => ctx.pluginName === 'PluginWithUI',
+			Component: CustomTab,
 		},
-		Component: Dashboard,
+		{
+			point: 'plugin:info',
+			meta: { priority: 5, requireRunning: true },
+			when: (ctx) => ctx.pluginName === 'PluginWithUI' && ctx.isPluginRunning === true,
+			Component: InfoCard,
+		},
+	],
+	routes: [
+		{
+			definition: {
+				path: '/dashboard',
+				title: 'PluginWithUI Dashboard',
+				icon: <IconDashboard size={18} stroke={1.7} />,
+				addToNav: true,
+				navPriority: 50,
+			},
+			Component: Dashboard,
+		},
+	],
+	setup() {
+		console.log('[PluginWithUI] UI module loaded')
 	},
-]
+})
 
-export function setup() {
-	console.log('[PluginWithUI] UI module loaded')
-}
+export const { extensions, routes, setup } = module
+export default module

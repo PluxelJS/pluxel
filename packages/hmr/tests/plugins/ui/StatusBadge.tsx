@@ -3,7 +3,10 @@
 
 import { Badge, Tooltip } from '@mantine/core'
 import { IconActivity } from '@tabler/icons-react'
-import type { PluginUIModule, ExtensionContext } from '@pluxel/components/extension'
+import {
+	definePluginUIModule,
+	type ExtensionContext,
+} from '../../../src/web'
 
 function StatusBadge({ ctx }: { ctx: ExtensionContext }) {
 	return (
@@ -20,14 +23,18 @@ function StatusBadge({ ctx }: { ctx: ExtensionContext }) {
 	)
 }
 
-export const extensions: PluginUIModule['extensions'] = [
-	{
-		point: 'header:actions',
-		meta: { priority: 50 },
-		Component: StatusBadge,
+const module = definePluginUIModule({
+	extensions: [
+		{
+			point: 'header:actions',
+			meta: { priority: 50 },
+			Component: StatusBadge,
+		},
+	],
+	setup() {
+		console.log('[PluginStatusBadge] UI loaded')
 	},
-]
+})
 
-export function setup() {
-	console.log('[PluginStatusBadge] UI loaded')
-}
+export const { extensions, setup } = module
+export default module

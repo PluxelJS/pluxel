@@ -1,9 +1,10 @@
 // packages/hmr/tests/plugins/ui/index.tsx
 // 插件 UI 扩展入口模块
 const {Badge, Button, Paper, Text, Group, Stack} = window.__PLUXEL_VENDORS__["@mantine/core"];
-import { IconRocket, IconDashboard } from "/node_modules/.vite/deps/@tabler_icons-react.js?v=effb3932";
+import { IconRocket, IconDashboard } from "/node_modules/.vite/deps/@tabler_icons-react.js?v=479d94cc";
+import { definePluginUIModule } from "/src/web.ts";
 var _jsxFileName = "/home/ahdg/code/plugin-style-ts/packages/hmr/tests/plugins/ui/index.tsx";
-const __vite__cjsImport2_react_jsxDevRuntime = window.__PLUXEL_VENDORS__["react/jsx-dev-runtime"].default || window.__PLUXEL_VENDORS__["react/jsx-dev-runtime"]; const _jsxDEV = __vite__cjsImport2_react_jsxDevRuntime["jsxDEV"];
+const __vite__cjsImport3_react_jsxDevRuntime = window.__PLUXEL_VENDORS__["react/jsx-dev-runtime"].default || window.__PLUXEL_VENDORS__["react/jsx-dev-runtime"]; const _jsxDEV = __vite__cjsImport3_react_jsxDevRuntime["jsxDEV"];
 // ─────────────────────────────────────────────────────────
 // Header 按钮组件
 // ─────────────────────────────────────────────────────────
@@ -13,14 +14,14 @@ function HeaderButton({ ctx }) {
 		size: "xs",
 		leftSection: /* @__PURE__ */ _jsxDEV(IconRocket, { size: 14 }, void 0, false, {
 			fileName: _jsxFileName,
-			lineNumber: 16,
+			lineNumber: 19,
 			columnNumber: 17
 		}, this),
 		color: "grape",
 		children: "PluginWithUI"
 	}, void 0, false, {
 		fileName: _jsxFileName,
-		lineNumber: 13,
+		lineNumber: 16,
 		columnNumber: 3
 	}, this);
 }
@@ -37,7 +38,7 @@ function CustomTab({ ctx }) {
 				children: "自定义配置面板"
 			}, void 0, false, {
 				fileName: _jsxFileName,
-				lineNumber: 30,
+				lineNumber: 33,
 				columnNumber: 4
 			}, this),
 			/* @__PURE__ */ _jsxDEV(Text, {
@@ -45,7 +46,7 @@ function CustomTab({ ctx }) {
 				children: "这是由 PluginWithUI 插件注入的自定义 Tab 内容。 你可以在这里添加任何自定义的配置界面。"
 			}, void 0, false, {
 				fileName: _jsxFileName,
-				lineNumber: 33,
+				lineNumber: 36,
 				columnNumber: 4
 			}, this),
 			/* @__PURE__ */ _jsxDEV(Paper, {
@@ -56,30 +57,30 @@ function CustomTab({ ctx }) {
 					justify: "space-between",
 					children: [/* @__PURE__ */ _jsxDEV(Text, { children: "当前插件" }, void 0, false, {
 						fileName: _jsxFileName,
-						lineNumber: 39,
+						lineNumber: 42,
 						columnNumber: 6
 					}, this), /* @__PURE__ */ _jsxDEV(Badge, {
 						color: "grape",
 						children: ctx.pluginName
 					}, void 0, false, {
 						fileName: _jsxFileName,
-						lineNumber: 40,
+						lineNumber: 43,
 						columnNumber: 6
 					}, this)]
 				}, void 0, true, {
 					fileName: _jsxFileName,
-					lineNumber: 38,
+					lineNumber: 41,
 					columnNumber: 5
 				}, this)
 			}, void 0, false, {
 				fileName: _jsxFileName,
-				lineNumber: 37,
+				lineNumber: 40,
 				columnNumber: 4
 			}, this)
 		]
 	}, void 0, true, {
 		fileName: _jsxFileName,
-		lineNumber: 29,
+		lineNumber: 32,
 		columnNumber: 3
 	}, this);
 }
@@ -98,7 +99,7 @@ function InfoCard({ ctx }) {
 				gap: "xs",
 				children: [/* @__PURE__ */ _jsxDEV(IconRocket, { size: 16 }, void 0, false, {
 					fileName: _jsxFileName,
-					lineNumber: 55,
+					lineNumber: 58,
 					columnNumber: 6
 				}, this), /* @__PURE__ */ _jsxDEV(Text, {
 					size: "sm",
@@ -106,12 +107,12 @@ function InfoCard({ ctx }) {
 					children: "PluginWithUI 状态"
 				}, void 0, false, {
 					fileName: _jsxFileName,
-					lineNumber: 56,
+					lineNumber: 59,
 					columnNumber: 6
 				}, this)]
 			}, void 0, true, {
 				fileName: _jsxFileName,
-				lineNumber: 54,
+				lineNumber: 57,
 				columnNumber: 5
 			}, this), /* @__PURE__ */ _jsxDEV(Text, {
 				size: "xs",
@@ -119,17 +120,17 @@ function InfoCard({ ctx }) {
 				children: "插件正在运行中，提供额外的 UI 扩展功能。"
 			}, void 0, false, {
 				fileName: _jsxFileName,
-				lineNumber: 60,
+				lineNumber: 63,
 				columnNumber: 5
 			}, this)]
 		}, void 0, true, {
 			fileName: _jsxFileName,
-			lineNumber: 53,
+			lineNumber: 56,
 			columnNumber: 4
 		}, this)
 	}, void 0, false, {
 		fileName: _jsxFileName,
-		lineNumber: 52,
+		lineNumber: 55,
 		columnNumber: 3
 	}, this);
 }
@@ -144,7 +145,7 @@ function Dashboard() {
 			gap: "sm",
 			children: [/* @__PURE__ */ _jsxDEV(IconDashboard, { size: 24 }, void 0, false, {
 				fileName: _jsxFileName,
-				lineNumber: 75,
+				lineNumber: 78,
 				columnNumber: 5
 			}, this), /* @__PURE__ */ _jsxDEV(Text, {
 				size: "xl",
@@ -152,12 +153,12 @@ function Dashboard() {
 				children: "PluginWithUI Dashboard"
 			}, void 0, false, {
 				fileName: _jsxFileName,
-				lineNumber: 76,
+				lineNumber: 79,
 				columnNumber: 5
 			}, this)]
 		}, void 0, true, {
 			fileName: _jsxFileName,
-			lineNumber: 74,
+			lineNumber: 77,
 			columnNumber: 4
 		}, this), /* @__PURE__ */ _jsxDEV(Paper, {
 			withBorder: true,
@@ -167,7 +168,7 @@ function Dashboard() {
 				gap: "md",
 				children: [/* @__PURE__ */ _jsxDEV(Text, { children: "这是一个由插件注入的独立页面。 通过路由扩展，插件可以添加完整的页面到应用中。" }, void 0, false, {
 					fileName: _jsxFileName,
-					lineNumber: 83,
+					lineNumber: 86,
 					columnNumber: 6
 				}, this), /* @__PURE__ */ _jsxDEV(Text, {
 					c: "dimmed",
@@ -175,71 +176,75 @@ function Dashboard() {
 					children: "路径: /ext/PluginWithUI/dashboard"
 				}, void 0, false, {
 					fileName: _jsxFileName,
-					lineNumber: 87,
+					lineNumber: 90,
 					columnNumber: 6
 				}, this)]
 			}, void 0, true, {
 				fileName: _jsxFileName,
-				lineNumber: 82,
+				lineNumber: 85,
 				columnNumber: 5
 			}, this)
 		}, void 0, false, {
 			fileName: _jsxFileName,
-			lineNumber: 81,
+			lineNumber: 84,
 			columnNumber: 4
 		}, this)]
 	}, void 0, true, {
 		fileName: _jsxFileName,
-		lineNumber: 73,
+		lineNumber: 76,
 		columnNumber: 3
 	}, this);
 }
 // ─────────────────────────────────────────────────────────
 // 模块导出
 // ─────────────────────────────────────────────────────────
-export const extensions = [
-	{
-		point: "header:actions",
-		meta: { priority: 100 },
-		Component: HeaderButton
-	},
-	{
-		point: "plugin:tabs",
-		meta: {
-			priority: 10,
-			label: "自定义面板",
-			id: "PluginWithUI:plugin:tabs"
+const module = definePluginUIModule({
+	extensions: [
+		{
+			point: "header:actions",
+			meta: { priority: 100 },
+			Component: HeaderButton
 		},
-		when: (ctx) => ctx.pluginName === "PluginWithUI",
-		Component: CustomTab
-	},
-	{
-		point: "plugin:info",
-		meta: {
-			priority: 5,
-			requireRunning: true
+		{
+			point: "plugin:tabs",
+			meta: {
+				priority: 10,
+				label: "自定义面板",
+				id: "PluginWithUI:plugin:tabs"
+			},
+			when: (ctx) => ctx.pluginName === "PluginWithUI",
+			Component: CustomTab
 		},
-		when: (ctx) => ctx.pluginName === "PluginWithUI" && ctx.isPluginRunning === true,
-		Component: InfoCard
+		{
+			point: "plugin:info",
+			meta: {
+				priority: 5,
+				requireRunning: true
+			},
+			when: (ctx) => ctx.pluginName === "PluginWithUI" && ctx.isPluginRunning === true,
+			Component: InfoCard
+		}
+	],
+	routes: [{
+		definition: {
+			path: "/dashboard",
+			title: "PluginWithUI Dashboard",
+			icon: /* @__PURE__ */ _jsxDEV(IconDashboard, {
+				size: 18,
+				stroke: 1.7
+			}, void 0, false, {
+				fileName: _jsxFileName,
+				lineNumber: 131,
+				columnNumber: 11
+			}, this),
+			addToNav: true,
+			navPriority: 50
+		},
+		Component: Dashboard
+	}],
+	setup() {
+		console.log("[PluginWithUI] UI module loaded");
 	}
-];
-export const routes = [{
-	definition: {
-		path: "/dashboard",
-		title: "PluginWithUI Dashboard",
-		icon: /* @__PURE__ */ _jsxDEV(IconDashboard, {
-			size: 18,
-			stroke: 1.7
-		}, void 0, false, {
-			fileName: _jsxFileName,
-			lineNumber: 128,
-			columnNumber: 10
-		}, this),
-		addToNav: true,
-		navPriority: 50
-	},
-	Component: Dashboard
-}];
-export function setup() {
-	console.log("[PluginWithUI] UI module loaded");
-}
+});
+export const { extensions, routes, setup } = module;
+export default module;
