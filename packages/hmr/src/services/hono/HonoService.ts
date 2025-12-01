@@ -269,7 +269,9 @@ export class HonoService {
 
 		// #if NODE_ENV !== 'production'
 		if (!isProd) {
+			// #if PLUXEL_HMR_SSR
 			const importMetaEnv = (import.meta as ImportMeta & { env?: Record<string, any> }).env
+
 			const ssrFlag =
 				importMetaEnv?.PLUXEL_HMR_SSR ??
 				(typeof process !== 'undefined' && process.env ? process.env.PLUXEL_HMR_SSR : undefined)
@@ -277,6 +279,7 @@ export class HonoService {
 			if (ssrFlag) {
 				return import('../../server/dev').then(({ createDevRenderer }) => createDevRenderer())
 			}
+			// #endif
 		}
 		// #endif
 

@@ -251,12 +251,6 @@ importers:
       '@gqty/cli':
         specifier: ^5.0.0
         version: 5.0.0(@types/node@24.10.1)(typescript@5.9.3)
-      '@hono/react-renderer':
-        specifier: ^1.0.1
-        version: 1.0.1(hono@4.10.7)(react-dom@19.2.0(react@19.2.0))(react@19.2.0)
-      '@hono/valibot-validator':
-        specifier: ^0.6.0
-        version: 0.6.0(hono@4.10.7)(valibot@1.2.0(typescript@5.9.3))
       '@hono/vite-dev-server':
         specifier: ^0.23.0
         version: 0.23.0(hono@4.10.7)
@@ -272,9 +266,6 @@ importers:
       '@tanstack/pacer':
         specifier: ^0.16.3
         version: 0.16.3
-      '@tanstack/react-router':
-        specifier: ^1.139.7
-        version: 1.139.12(react-dom@19.2.0(react@19.2.0))(react@19.2.0)
       capnweb:
         specifier: ^0.2.0
         version: 0.2.0
@@ -317,15 +308,6 @@ importers:
       pkg-types:
         specifier: ^2.3.0
         version: 2.3.0
-      postcss:
-        specifier: ^8.5.6
-        version: 8.5.6
-      postcss-preset-mantine:
-        specifier: ^1.18.0
-        version: 1.18.0(postcss@8.5.6)
-      postcss-simple-vars:
-        specifier: ^7.0.1
-        version: 7.0.1(postcss@8.5.6)
       rolldown:
         specifier: '*'
         version: 1.0.0-beta.52
@@ -354,6 +336,9 @@ importers:
         specifier: 4.1.0-beta.13
         version: 4.1.0-beta.13
     devDependencies:
+      '@hono/react-renderer':
+        specifier: ^1.0.1
+        version: 1.0.1(hono@4.10.7)(react-dom@19.2.0(react@19.2.0))(react@19.2.0)
       '@pluxel/components':
         specifier: workspace:*
         version: link:../components
@@ -363,12 +348,24 @@ importers:
       '@pluxel/rolldown':
         specifier: workspace:*
         version: link:../rolldown
+      '@tanstack/react-router':
+        specifier: ^1.139.7
+        version: 1.139.12(react-dom@19.2.0(react@19.2.0))(react@19.2.0)
       '@types/react':
         specifier: ^19.2.7
         version: 19.2.7
       '@types/react-dom':
         specifier: ^19.2.3
         version: 19.2.3(@types/react@19.2.7)
+      postcss:
+        specifier: ^8.5.6
+        version: 8.5.6
+      postcss-preset-mantine:
+        specifier: ^1.18.0
+        version: 1.18.0(postcss@8.5.6)
+      postcss-simple-vars:
+        specifier: ^7.0.1
+        version: 7.0.1(postcss@8.5.6)
       valibot-form:
         specifier: workspace:*
         version: link:../valibot-form
@@ -866,12 +863,6 @@ packages:
       hono: '*'
       react: ^19.0.0
       react-dom: ^19.0.0
-
-  '@hono/valibot-validator@0.6.0':
-    resolution: {integrity: sha512-p1kbfF9FiXX9+tjWZmDkfjs0GcZ+o6XGFMwCiXiTlUDl9C6Bu+qH5YMgxtokK6hAvMk4s3eScAFwKLC0qeN2Ow==}
-    peerDependencies:
-      hono: '>=3.9.0'
-      valibot: ^1.0.0 || ^1.0.0-beta.4 || ^1.0.0-rc
 
   '@hono/vite-dev-server@0.23.0':
     resolution: {integrity: sha512-tHV86xToed9Up0j/dubQW2PDP4aYNFDSfQrjcV6Ra7bqCGrxhtg/zZBmbgSco3aTxKOEPzDXKK+6seAAfsbIXw==}
@@ -4207,11 +4198,6 @@ snapshots:
       hono: 4.10.7
       react: 19.2.0
       react-dom: 19.2.0(react@19.2.0)
-
-  '@hono/valibot-validator@0.6.0(hono@4.10.7)(valibot@1.2.0(typescript@5.9.3))':
-    dependencies:
-      hono: 4.10.7
-      valibot: 1.2.0(typescript@5.9.3)
 
   '@hono/vite-dev-server@0.23.0(hono@4.10.7)':
     dependencies:
