@@ -368,6 +368,10 @@ importers:
         version: link:../valibot-form
 
   packages/rolldown:
+    dependencies:
+      vite:
+        specifier: npm:rolldown-vite@7.2.2
+        version: rolldown-vite@7.2.2(@types/node@24.10.1)(jiti@2.6.1)(sugarss@5.0.1(postcss@8.5.6))(yaml@2.8.2)
     devDependencies:
       oxc-parser:
         specifier: ^0.99.0
@@ -378,9 +382,6 @@ importers:
       rolldown:
         specifier: 1.0.0-beta.52
         version: 1.0.0-beta.52
-      vite:
-        specifier: npm:rolldown-vite@7.2.2
-        version: rolldown-vite@7.2.2(@types/node@24.10.1)(jiti@2.6.1)(sugarss@5.0.1(postcss@8.5.6))(yaml@2.8.2)
 
   packages/valibot-form:
     dependencies:
