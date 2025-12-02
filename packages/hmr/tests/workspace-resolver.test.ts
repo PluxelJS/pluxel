@@ -44,4 +44,16 @@ describe('workspace resolver', () => {
 
 		expect(result?.replace(/\\/g, '/')).toMatch(/packages\/wretch\/src\/wretch\.ts$/)
 	})
+
+	it('ignores non-bare specifiers', async () => {
+		const scanService = createScanService()
+		const result = await resolveBareImport({
+			specifier: './relative/path',
+			importer: kookEntry,
+			scanService,
+			conditions: HMR_CONDITIONS,
+			fallbackBaseDirs: [fixtureRoot],
+		})
+		expect(result).toBeNull()
+	})
 })

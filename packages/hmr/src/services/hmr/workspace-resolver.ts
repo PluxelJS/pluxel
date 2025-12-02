@@ -6,6 +6,7 @@ import { resolveModulePath, type ResolveOptions } from 'exsolve'
 import type { ScanService } from '../market/ScanService'
 
 const DEFAULT_CONDITIONS = ['@pluxel/hmr', '@pluxel/source', 'import', 'module', 'default']
+const DRIVE_PATH_RE = /^[a-zA-Z]:[\\/]/
 
 interface ResolveBareImportArgs {
 	specifier: string
@@ -22,6 +23,7 @@ export async function resolveBareImport({
 	conditions = DEFAULT_CONDITIONS,
 	fallbackBaseDirs = [process.cwd()],
 }: ResolveBareImportArgs): Promise<string | null> {
+	if (!isBareSpecifier(specifier)) return null
 	// 首先尝试通过 workspace 扫描器解析（可返回 TS 源入口）。
 	if (scanService) {
 		try {
@@ -35,12 +37,21 @@ export async function resolveBareImport({
 	}
 
 	const importerBases = resolveImporterBases(importer)
-	for (const base of new Set([...importerBases, ...fallbackBaseDirs])) {
-		const resolved = tryResolveWithExsolve(specifier, base, conditions)
+	const searchBases = mergeResolutionBases(importerBases, fallbackBaseDirs)
+	const normalizedConditions = dedupeStrings(conditions)
+	for (const base of searchBases) {
+		const resolved = tryResolveWithExsolve(specifier, base, normalizedConditions)
 		if (resolved) return await canonicalizePath(resolved)
 	}
 
 	return null
+}
+
+function isBareSpecifier(id: string | undefined) {
+	if (!id) return false
+	if (id.startsWith('.') || id.startsWith('/') || id.startsWith('\0')) return false
+	if (DRIVE_PATH_RE.test(id)) return false
+	return true
 }
 
 function resolveImporterBases(importer?: string | null): string[] {
@@ -49,6 +60,17 @@ function resolveImporterBases(importer?: string | null): string[] {
 	const normalized = normalize(asPath)
 	const dir = dirname(normalized)
 	return dir ? [dir] : []
+}
+
+function mergeResolutionBases(importerBases: string[], fallback: readonly string[]) {
+	const merged = new Set<string>()
+	for (const base of importerBases) if (base) merged.add(base)
+	for (const base of fallback) if (base) merged.add(normalize(base))
+	return [...merged]
+}
+
+function dedupeStrings(values: readonly string[]) {
+	return [...new Set(values)]
 }
 
 function tryResolveWithExsolve(
@@ -62,8 +84,8 @@ function tryResolveWithExsolve(
 		const options: ResolveOptions = {
 			from,
 			try: true,
-			conditions: [...new Set(conditions)],
 		}
+		if (conditions.length) options.conditions = [...conditions]
 		const resolved = resolveModulePath(spec, options)
 		return resolved ? normalizePath(resolved) : null
 	} catch {

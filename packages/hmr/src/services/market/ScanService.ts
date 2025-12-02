@@ -177,20 +177,19 @@ export class ScanService {
 		request: ScanTaskOptions = {},
 	): Promise<EntryResolution> {
 		const focusHints = selectorFocusHints(selector)
-		const overrides = request.scan ?? {}
+		const baseScan = request.scan
 		const finalScan =
 			focusHints.length > 0
-				? { ...overrides, focusPackages: mergeFocus(overrides.focusPackages, focusHints) }
-				: overrides
+				? {
+					...(baseScan ?? {}),
+					focusPackages: mergeFocus(baseScan?.focusPackages, focusHints),
+				}
+				: baseScan
 
-		const snapshotRequest: ScanTaskOptions = {}
-		if (request.roots !== undefined) {
-			snapshotRequest.roots = request.roots
-		}
-		if (finalScan !== undefined) {
-			snapshotRequest.scan = finalScan
-		}
-		const snapshot = await this.snapshot(snapshotRequest)
+		const snapshot = await this.snapshot({
+			roots: request.roots,
+			scan: finalScan,
+		})
 		const pkg = snapshot.findPackage(selector)
 		if (pkg) return pkg.entry
 
@@ -206,7 +205,7 @@ export class ScanService {
 	 * 便捷入口：仅提供包名时的解析逻辑，自动修剪输入。
 	 */
 	async resolveEntryByName(name: string, request: ScanTaskOptions = {}): Promise<EntryResolution> {
-		const trimmed = name.trim()
+		const trimmed = toTrimmed(name)
 		if (!trimmed) {
 			return {
 				ok: false,
@@ -239,7 +238,7 @@ export class ScanService {
 		packageName: string,
 		conditions?: string[],
 	): Promise<EntryResolution> {
-		const trimmed = packageName.trim()
+		const trimmed = toTrimmed(packageName)
 		if (!trimmed) {
 			return {
 				ok: false,
@@ -303,44 +302,44 @@ function selectPackage(
 	byName: Map<string, PackageNode>,
 	byDir: Map<string, PackageNode>,
 ): PackageNode | undefined {
-	if (typeof selector === 'string') {
-		const nameKey = normalizePackageName(selector)
-		if (nameKey) {
-			const match = byName.get(nameKey)
-			if (match) return match
-		}
-		const dirKey = normalizePackageDir(selector)
-		if (dirKey) {
-			const match = byDir.get(dirKey)
-			if (match) return match
-		}
-		return undefined
-	}
-
-	const nameKey = normalizePackageName(selector.name)
-	if (nameKey) {
-		const match = byName.get(nameKey)
+	const keys = selectorKeys(selector)
+	if (keys.name) {
+		const match = byName.get(keys.name)
 		if (match) return match
 	}
-
-	const dirKey = normalizePackageDir(selector.dir)
-	if (dirKey) {
-		const match = byDir.get(dirKey)
+	if (keys.dir) {
+		const match = byDir.get(keys.dir)
 		if (match) return match
 	}
-
 	return undefined
 }
 
-function normalizePackageName(value?: string | null): string | undefined {
-	if (!value) return undefined
+function selectorKeys(selector: PackageSelector) {
+	if (typeof selector === 'string') {
+		return {
+			name: normalizePackageName(selector),
+			dir: normalizePackageDir(selector),
+		}
+	}
+	return {
+		name: normalizePackageName(selector.name),
+		dir: normalizePackageDir(selector.dir),
+	}
+}
+
+function toTrimmed(value?: string | null): string | undefined {
+	if (typeof value !== 'string') return undefined
 	const trimmed = value.trim()
+	return trimmed || undefined
+}
+
+function normalizePackageName(value?: string | null): string | undefined {
+	const trimmed = toTrimmed(value)
 	return trimmed ? trimmed.toLowerCase() : undefined
 }
 
 function normalizePackageDir(value?: string | null): string | undefined {
-	if (!value) return undefined
-	const trimmed = value.trim()
+	const trimmed = toTrimmed(value)
 	if (!trimmed) return undefined
 	const abs = isAbsolute(trimmed) ? trimmed : r(process.cwd(), trimmed)
 	return normalize(abs).toLowerCase()
@@ -348,26 +347,16 @@ function normalizePackageDir(value?: string | null): string | undefined {
 
 function selectorFocusHints(selector: PackageSelector): string[] {
 	const focus = new Set<string>()
-	if (typeof selector === 'string') {
-		const nameHint = normalizePackageName(selector)
-		if (nameHint) focus.add(nameHint)
-		const dirHint = normalizePackageDir(selector)
-		if (dirHint) focus.add(dirHint)
-		return [...focus]
-	}
-
-	const nameHint = normalizePackageName(selector.name)
-	if (nameHint) focus.add(nameHint)
-	const dirHint = normalizePackageDir(selector.dir)
-	if (dirHint) focus.add(dirHint)
+	const keys = selectorKeys(selector)
+	if (keys.name) focus.add(keys.name)
+	if (keys.dir) focus.add(keys.dir)
 	return [...focus]
 }
 
 function mergeFocus(existing: string[] | undefined, additions: string[]): string[] {
 	const merged = new Set(existing ?? [])
 	for (const hint of additions) {
-		const trimmed = hint.trim()
-		if (trimmed) merged.add(trimmed)
+		if (hint) merged.add(hint)
 	}
 	return [...merged]
 }
@@ -383,14 +372,8 @@ function missingPackageResolution(selector: PackageSelector): EntryResolution {
 }
 
 function selectorLabel(selector: PackageSelector): string | undefined {
-	if (typeof selector === 'string') {
-		const trimmed = selector.trim()
-		return trimmed || undefined
-	}
-	const name = selector.name?.toString().trim()
-	if (name) return name
-	const dir = selector.dir?.toString().trim()
-	return dir || undefined
+	if (typeof selector === 'string') return toTrimmed(selector)
+	return toTrimmed(selector.name) ?? toTrimmed(selector.dir)
 }
 
 class InstalledPackageResolver {
@@ -446,14 +429,8 @@ class InstalledPackageResolver {
 }
 
 function selectorBareName(selector: PackageSelector): string | undefined {
-	if (typeof selector === 'string') {
-		const trimmed = selector.trim()
-		return trimmed || undefined
-	}
-	const value = selector.name
-	if (typeof value !== 'string') return undefined
-	const trimmed = value.trim()
-	return trimmed || undefined
+	if (typeof selector === 'string') return toTrimmed(selector)
+	return toTrimmed(selector.name)
 }
 
 function ensureDirectoryURL(input: string): URL {

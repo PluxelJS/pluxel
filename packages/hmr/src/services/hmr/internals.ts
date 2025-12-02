@@ -39,6 +39,11 @@ export class Mutex {
 	}
 }
 
+type BatchDebounceReason = 'debounce' | 'maxwait' | 'maxbatch'
+const defaultBatchDebounceErrorHandler = (error: unknown) => {
+	console.error('[BatchDebouncer] flush failed', error)
+}
+
 export class BatchDebouncer {
 	private pending = new Set<string>()
 	private t: NodeJS.Timeout | null = null
@@ -49,6 +54,7 @@ export class BatchDebouncer {
 		private debounceMs: number,
 		private maxWaitMs: number,
 		private maxBatchFiles: number,
+		private readonly onError: (error: unknown) => void = defaultBatchDebounceErrorHandler,
 	) {}
 	push(id: string) {
 		this.pending.add(id)
@@ -56,8 +62,15 @@ export class BatchDebouncer {
 		if (!this.tMax) this.tMax = setTimeout(() => this.flush('maxwait'), this.maxWaitMs)
 		if (this.pending.size >= this.maxBatchFiles) this.flush('maxbatch')
 	}
-	private async flush(_reason: 'debounce' | 'maxwait' | 'maxbatch') {
+	private flush(_reason: BatchDebounceReason) {
 		if (!this.pending.size) return
+		this.clearTimers()
+		const files = [...this.pending]
+		this.pending.clear()
+		const epoch = ++this.epoch
+		this.runFlush(files, epoch)
+	}
+	private clearTimers() {
 		if (this.t) {
 			clearTimeout(this.t)
 			this.t = null
@@ -66,10 +79,13 @@ export class BatchDebouncer {
 			clearTimeout(this.tMax)
 			this.tMax = null
 		}
-		const files = [...this.pending]
-		this.pending.clear()
-		const epoch = ++this.epoch
-		await this.flushFn(files, epoch)
+	}
+	private async runFlush(files: string[], epoch: number) {
+		try {
+			await this.flushFn(files, epoch)
+		} catch (error) {
+			this.onError(error)
+		}
 	}
 }
 

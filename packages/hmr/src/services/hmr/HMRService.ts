@@ -73,6 +73,7 @@ export interface HMRConfig {
 /* --------------------------------- 常量 --------------------------------- */
 
 const DEFAULT_PREFETCH_LIMIT = 200
+const PREFETCH_CONCURRENCY = 8
 
 const hmrPackageRoot = (() => {
 	try {
@@ -105,6 +106,8 @@ declare module '@pluxel/core' {
 
 const unique = <T>(iter: Iterable<T>) => Array.from(new Set(iter))
 
+type RootInfo = { raw: string; normalized: string }
+
 /* ------------------------------ HMR Service ----------------------------- */
 /**
  * HMRService（anchors 实时读取 + 计时归因 + 批处理串行）
@@ -121,6 +124,10 @@ export class HMRService {
 	private filter!: (id: string) => boolean
 	private readonly moduleCache = new NormalizedModuleCacheMap((id) => this.toCleanId(id))
 	private serverRoot = ''
+	private readonly cwd = process.cwd()
+	private readonly cwdNormalized = normalizePath(this.cwd)
+	private readonly scanRootsAbs: string[]
+	private resolveBaseDirs: string[] = []
 
 	/** 依赖/模块行为：external、bridge、optimizeDeps 等 */
 	private readonly deps: ResolvedHMRDependencyConfig
@@ -153,6 +160,10 @@ export class HMRService {
 		private ctx: Context,
 		private config: HMRConfig,
 	) {
+		this.scanRootsAbs = unique(
+			this.config.dir.map((dir) => normalizePath(resolve(this.cwd, dir))),
+		)
+		this.recomputeResolveBaseDirs()
 		this.deps = resolveHMRDependencyConfig(this.config.deps)
 		this.logConfig = resolveHmrLogConfig(this.config.log)
 
@@ -177,11 +188,11 @@ export class HMRService {
 
 		// include .ts/.tsx；排除 .d.ts（兼容 ?v= 查询串）
 		const includeGlobs = makeIdFiltersToMatchWithQuery(
-			this.config.dir.flatMap((d) => [resolve(d, '**/*.{ts,tsx}')]),
+			this.scanRootsAbs.flatMap((dir) => [`${dir}/**/*.{ts,tsx}`]),
 		)
-		const excludePatterns = this.config.dir.flatMap((d) => [
-			resolve(d, '**/*.d.ts'),
-			resolve(d, '**/node_modules/**'),
+		const excludePatterns = this.scanRootsAbs.flatMap((dir) => [
+			`${dir}/**/*.d.ts`,
+			`${dir}/**/node_modules/**`,
 		])
 		const excludeGlobs = makeIdFiltersToMatchWithQuery([
 			...excludePatterns,
@@ -202,6 +213,7 @@ export class HMRService {
 			configureServer: async (server) => {
 				this.vite = server
 				this.serverRoot = this.toViteId(server.config.root)
+				this.recomputeResolveBaseDirs()
 				await this.initRunner(server)
 				await this.bridgeWorkspaceModules(this.deps.bridgeModules)
 				this.setupBatching()
@@ -211,8 +223,7 @@ export class HMRService {
 
 			/** 服务端 HMR：仅入队，由批处理串行执行 */
 			handleHotUpdate: async (ctx0) => {
-				if (!this.filter(ctx0.file)) return []
-				this.debouncer.push(this.toCleanId(ctx0.file))
+				this.enqueueFileChange(ctx0.file)
 				return [] // 服务端 HMR 由我们全权处理
 			},
 		}
@@ -289,22 +300,28 @@ export class HMRService {
 			bCfg.debounceMs,
 			bCfg.maxWaitMs,
 			bCfg.maxBatchFiles,
+			(error) => this.ctx.logger.error({ error }, '[HMR] batch flush failed'),
 		)
 	}
 
 	private registerWatchers(server: ViteDevServer) {
 		server.watcher.on('add', (file) => {
-			if (this.filter(file)) this.debouncer.push(this.toCleanId(file))
+			this.enqueueFileChange(file)
 		})
 		server.watcher.on('unlink', (file) => {
-			if (this.filter(file)) this.debouncer.push(this.toCleanId(file))
+			this.enqueueFileChange(file)
 		})
+	}
+
+	private enqueueFileChange(file: string) {
+		if (!this.filter(file)) return false
+		this.debouncer.push(this.toCleanId(file))
+		return true
 	}
 
 	private async performColdStart() {
 		const endScan = startTimer()
-		const scanRoots = this.config.dir.map((d) => resolve(process.cwd(), d))
-		const files = await this.collectSourceEntries(scanRoots)
+		const files = await this.collectSourceEntries(this.scanRootsAbs)
 		this.ctx.logger.info('[HMR] scan: %d files in %sms', files.length, endScan().toFixed(1))
 
 		const endWarmup = startTimer()
@@ -366,8 +383,8 @@ export class HMRService {
 	}
 	private prettyId(pOrId: string) {
 		const clean = this.toCleanId(pOrId)
-		const cwd = this.toViteId(process.cwd())
-		if (clean.startsWith(cwd)) return clean.slice(cwd.length).replace(/^\\\//, '')
+		if (clean.startsWith(this.cwdNormalized))
+			return clean.slice(this.cwdNormalized.length).replace(/^\\\//, '')
 		return clean
 	}
 	private async resolveBareModule(specifier: string, importer?: string | null) {
@@ -384,70 +401,79 @@ export class HMRService {
 		)
 	}
 
+	private recomputeResolveBaseDirs() {
+		const bases = new Set<string>([this.cwdNormalized])
+		for (const dir of this.scanRootsAbs) bases.add(dir)
+		if (this.serverRoot) bases.add(this.serverRoot)
+		this.resolveBaseDirs = [...bases]
+	}
+
 	private computeFallbackResolveDirs(importer?: string | null): string[] {
-		const bases = new Set<string>()
+		const bases = new Set<string>(this.resolveBaseDirs)
 		if (importer && importer.startsWith('/')) {
 			const importerDir = dirname(importer)
 			bases.add(importerDir)
 			const pkgRoot = findNearestPackageRoot(importerDir)
 			if (pkgRoot) {
 				bases.add(pkgRoot)
-				bases.add(resolve(pkgRoot, 'node_modules'))
+				bases.add(normalizePath(resolve(pkgRoot, 'node_modules')))
 			}
 		}
-		if (this.serverRoot) bases.add(this.serverRoot)
-		for (const dir of this.config.dir) {
-			bases.add(normalizePath(resolve(process.cwd(), dir)))
-		}
-		bases.add(process.cwd())
-		return [...bases].filter(Boolean)
+		return [...bases]
 	}
 
 	private async collectSourceEntries(roots: string[]): Promise<string[]> {
 		if (!roots.length) return []
 		const entries = new Set<string>()
-		const rootInfos = roots.map((raw) => ({
+		const rootInfos: RootInfo[] = roots.map((raw) => ({
 			raw,
 			normalized: normalizePath(raw),
 		}))
-		const scanService = this.ctx.scanService
+		const workspaceResult = await this.tryCollectWorkspaceEntries(rootInfos)
+		if (workspaceResult) {
+			for (const entry of workspaceResult.entries) entries.add(entry)
+		}
+		const coveredRoots = workspaceResult?.covered
+		const uncovered = rootInfos
+			.filter((info) => !coveredRoots?.has(info.normalized))
+			.map((info) => info.raw)
+		if (uncovered.length) {
+			const fallbackEntries = await this.collectDirectoryFallbackEntries(uncovered)
+			for (const entry of fallbackEntries) entries.add(entry)
+		}
+		return [...entries]
+	}
 
-		if (scanService) {
-			try {
-				const workspaceEntries = await scanService.listWorkspaceEntries({
-					roots,
-					workspaceOnly: true,
-					scan: {
-						preferHmrExports: true,
-						conditions: this.workspaceConditions as unknown as string[],
-					},
-				})
-				const covered = new Set<string>()
-				for (const pkg of workspaceEntries) {
-					const entryId = this.toCleanId(pkg.entry)
-					entries.add(entryId)
-					const dirNorm = normalizePath(pkg.dir)
-					for (const info of rootInfos) {
-						if (dirNorm.startsWith(info.normalized)) {
-							covered.add(info.normalized)
-							break
-						}
+	private async tryCollectWorkspaceEntries(rootInfos: RootInfo[]) {
+		const scanService = this.ctx.scanService
+		if (!scanService) return null
+		const roots = rootInfos.map((info) => info.raw)
+		try {
+			const workspaceEntries = await scanService.listWorkspaceEntries({
+				roots,
+				workspaceOnly: true,
+				scan: {
+					preferHmrExports: true,
+					conditions: this.workspaceConditions as unknown as string[],
+				},
+			})
+			const covered = new Set<string>()
+			const entries: string[] = []
+			for (const pkg of workspaceEntries) {
+				const entryId = this.toCleanId(pkg.entry)
+				entries.add(entryId)
+				const dirNorm = normalizePath(pkg.dir)
+				for (const info of rootInfos) {
+					if (!covered.has(info.normalized) && dirNorm.startsWith(info.normalized)) {
+						covered.add(info.normalized)
+						break
 					}
 				}
-				const uncovered = rootInfos
-					.filter((info) => !covered.has(info.normalized))
-					.map((info) => info.raw)
-				const fallbackEntries = await this.collectDirectoryFallbackEntries(uncovered)
-				for (const entry of fallbackEntries) entries.add(entry)
-				return [...entries]
-			} catch {
-				// scan failure fall back to glob
 			}
+			return { entries, covered }
+		} catch {
+			return null
 		}
-
-		const fallbackEntries = await this.collectDirectoryFallbackEntries(roots)
-		for (const entry of fallbackEntries) entries.add(entry)
-		return [...entries]
 	}
 
 	private async collectDirectoryFallbackEntries(roots: string[]): Promise<string[]> {
@@ -562,7 +588,7 @@ export class HMRService {
 	public async start(): Promise<void> {
 		const serverFsAllow = this.resolveFsAllowList()
 		const serverConfig: InlineConfig = {
-			root: process.cwd(),
+			root: this.cwd,
 			server: {
 				port: 3000,
 				middlewareMode: false,
@@ -602,11 +628,12 @@ export class HMRService {
 
 	/** 从 FS 路径拿到 graph 模块节点（兼容 byFile / byId 两支） */
 	private getModulesByFile(fileOrId: string) {
-		for (const variant of this.moduleIdVariants(fileOrId)) {
+		const variants = this.moduleIdVariants(fileOrId)
+		for (const variant of variants) {
 			const byFile = this.vite.moduleGraph.getModulesByFile(variant)
 			if (byFile?.size) return [...byFile]
 		}
-		for (const variant of this.moduleIdVariants(fileOrId)) {
+		for (const variant of variants) {
 			const single = this.vite.moduleGraph.getModuleById(variant)
 			if (single) return [single]
 		}
@@ -658,27 +685,24 @@ export class HMRService {
 
 	private resolveFsAllowList(): string[] {
 		const allow = new Set<string>()
-		const cwd = process.cwd()
-		const normalizedCwd = normalizePath(cwd)
-		const workspaceRoot = searchForWorkspaceRoot(cwd)
+		const workspaceRoot = searchForWorkspaceRoot(this.cwd)
 		if (workspaceRoot) allow.add(normalizePath(workspaceRoot))
-		allow.add(normalizedCwd)
+		allow.add(this.cwdNormalized)
 		if (hmrPackageRoot) allow.add(hmrPackageRoot)
 		const packageRoots = new Set<string>()
-		for (const dir of this.config.dir) {
-			const absDir = normalizePath(resolve(cwd, dir))
-			allow.add(absDir)
-			const pkgRoot = findNearestPackageRoot(absDir)
+		for (const dir of this.scanRootsAbs) {
+			allow.add(dir)
+			const pkgRoot = findNearestPackageRoot(dir)
 			if (pkgRoot) packageRoots.add(pkgRoot)
 		}
 		for (const pkgRoot of packageRoots) {
 			allow.add(pkgRoot)
-			const pkgNodeModules = resolve(pkgRoot, 'node_modules')
-			if (existsSync(pkgNodeModules)) allow.add(normalizePath(pkgNodeModules))
+			const pkgNodeModules = normalizePath(resolve(pkgRoot, 'node_modules'))
+			if (existsSync(pkgNodeModules)) allow.add(pkgNodeModules)
 		}
 		if (Array.isArray(this.config.fsAllow)) {
 			for (const extra of this.config.fsAllow) {
-				allow.add(normalizePath(resolve(cwd, extra)))
+				allow.add(normalizePath(resolve(this.cwd, extra)))
 			}
 		}
 		return [...allow]
@@ -829,18 +853,31 @@ export class HMRService {
 	/** 仅 transform，不 evaluate；把账记到每个受影响文件 */
 	private async prefetchTransforms(ids: Iterable<string>) {
 		const seen = new Set<string>()
+		const queue: string[] = []
 		for (const raw of ids) {
 			const id = this.toCleanId(raw)
 			if (seen.has(id)) continue
 			seen.add(id)
-			const end = this.timing.start('transform', id)
-			try {
-				await this.vns.fetchModule(id)
-			} catch {
-				// 某些非代码资源或边缘情况：忽略预取失败，不影响后续 evaluate
-			}
-			end()
+			queue.push(id)
 		}
+		if (!queue.length) return
+		let cursor = 0
+		const workerCount = Math.min(PREFETCH_CONCURRENCY, queue.length)
+		const worker = async () => {
+			while (true) {
+				const index = cursor++
+				if (index >= queue.length) break
+				const id = queue[index]
+				const end = this.timing.start('transform', id)
+				try {
+					await this.vns.fetchModule(id)
+				} catch {
+					// 某些非代码资源或边缘情况：忽略预取失败，不影响后续 evaluate
+				}
+				end()
+			}
+		}
+		await Promise.all(Array.from({ length: workerCount }, () => worker()))
 	}
 
 	/* ------------------------------ 观测输出 ------------------------------ */
