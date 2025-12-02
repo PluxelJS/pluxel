@@ -2,7 +2,10 @@
 
 export type PluginStatusAction = 'start' | 'stop' | 'restart' | 'enable' | 'disable'
 export type ConfigPatch = Record<string, unknown>
-export type ConfigValidationErrors = Record<string, Record<string, { message: string; path: string[] }[]>>
+export type ConfigValidationErrors = Record<
+	string,
+	Record<string, { message: string; path: string[] }[]>
+>
 
 export type ConfigResultOk = {
 	ok: true

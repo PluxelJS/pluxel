@@ -343,14 +343,9 @@ export class ExtensionService {
 		await unlink(previous).catch(() => {})
 	}
 
-	private handleManifestUpdate(
-		pluginName: string,
-		entry: PluginExtensionEntry | null,
-	): void {
+	private handleManifestUpdate(pluginName: string, entry: PluginExtensionEntry | null): void {
 		const previous = this.manifest.modules.find((mod) => mod.pluginName === pluginName)
-		const nextModules = this.manifest.modules
-			.filter((mod) => mod.pluginName !== pluginName)
-			.slice()
+		const nextModules = this.manifest.modules.filter((mod) => mod.pluginName !== pluginName).slice()
 
 		if (entry && entry.moduleUrl && entry.lastSourceHash) {
 			const moduleRecord: CompiledExtensionModule = {
@@ -369,13 +364,13 @@ export class ExtensionService {
 			nextModules.push(moduleRecord)
 			nextModules.sort((a, b) => a.pluginName.localeCompare(b.pluginName))
 
-				this.manifestVersion += 1
-				this.manifest = { version: this.manifestVersion, modules: nextModules }
-				this.persistManifest()
-				this.notifyManifest({
-					type: 'update',
-					version: this.manifestVersion,
-					pluginName,
+			this.manifestVersion += 1
+			this.manifest = { version: this.manifestVersion, modules: nextModules }
+			this.persistManifest()
+			this.notifyManifest({
+				type: 'update',
+				version: this.manifestVersion,
+				pluginName,
 				sourceHash: moduleRecord.sourceHash,
 				moduleUrl: moduleRecord.moduleUrl,
 				compiledAt: moduleRecord.compiledAt,

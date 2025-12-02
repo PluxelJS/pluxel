@@ -74,7 +74,8 @@ export class RpcService {
 	 * 使用 Object.defineProperty 定义 getter，避免 Proxy
 	 */
 	createExtensionsView(ctx: Context): RpcExtensions {
-		const view = Object.create(null) as RpcExtensions
+		// 需要使用普通对象（带 Object.prototype）以便 RPC 层能够序列化
+		const view = {} as RpcExtensions
 		for (const name in this.extensions) {
 			const factory = this.extensions[name]
 			if (factory === null) continue

@@ -1,4 +1,7 @@
-export function createDebouncedTrigger(config: { delayMs: number; run: () => void | Promise<void> }) {
+export function createDebouncedTrigger(config: {
+	delayMs: number
+	run: () => void | Promise<void>
+}) {
 	let timer: NodeJS.Timeout | null = null
 	let pending = false
 

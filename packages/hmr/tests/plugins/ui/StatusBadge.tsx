@@ -3,20 +3,12 @@
 
 import { Badge, Tooltip } from '@mantine/core'
 import { IconActivity } from '@tabler/icons-react'
-import {
-	definePluginUIModule,
-	type ExtensionContext,
-} from '../../../src/web'
+import { definePluginUIModule, type ExtensionContext } from '../../../src/web'
 
 function StatusBadge({ ctx }: { ctx: ExtensionContext }) {
 	return (
 		<Tooltip label="PluginStatusBadge 运行中">
-			<Badge
-				variant="dot"
-				color="teal"
-				size="sm"
-				leftSection={<IconActivity size={12} />}
-			>
+			<Badge variant="dot" color="teal" size="sm" leftSection={<IconActivity size={12} />}>
 				Active
 			</Badge>
 		</Tooltip>

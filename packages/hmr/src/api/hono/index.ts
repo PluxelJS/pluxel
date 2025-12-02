@@ -99,7 +99,10 @@ const app = new Hono<AppEnv>()
 		const ctx = c.var.plugin_ctx
 		const registry = ctx.loader.registry
 		const names = registry.getLoadedNames()
-		const result: Record<string, { hasSchema: boolean; hasSchemaSource: boolean; schemaSource?: Record<string, string> }> = {}
+		const result: Record<
+			string,
+			{ hasSchema: boolean; hasSchemaSource: boolean; schemaSource?: Record<string, string> }
+		> = {}
 		for (const name of names) {
 			const ctor = registry.getPluginByName(name)
 			if (!ctor) continue

@@ -75,9 +75,15 @@ export class PluginRegistry {
 		const enrolledPaths = existed ? this.enrolled.get(existed) : undefined
 		const isKnownAlias = enrolledPaths?.has(moduleId)
 		const existingIsIndexAlias =
-			existedPath && existedPath !== moduleId && isIndexFile(existedPath) && sameDir(existedPath, moduleId)
+			existedPath &&
+			existedPath !== moduleId &&
+			isIndexFile(existedPath) &&
+			sameDir(existedPath, moduleId)
 		const candidateIsIndexAlias =
-			existedPath && existedPath !== moduleId && isIndexFile(moduleId) && sameDir(existedPath, moduleId)
+			existedPath &&
+			existedPath !== moduleId &&
+			isIndexFile(moduleId) &&
+			sameDir(existedPath, moduleId)
 
 		// 若原主提供者是 index.*，让位给同目录的真实文件前，先停掉旧运行态以避免双注册
 		if (existingIsIndexAlias && !candidateIsIndexAlias) {
@@ -109,7 +115,8 @@ export class PluginRegistry {
 		this.nameMap.set(name, ctor)
 		// 避免被“同 ctor 的跨路径再导出”覆盖掉首个声明的主路径；除非要把 index.* 别名让位给真实文件
 		const shouldUpdatePrimaryMapping =
-			(!existedPath || existedPath === moduleId || existed !== ctor || existingIsIndexAlias) && !candidateIsIndexAlias
+			(!existedPath || existedPath === moduleId || existed !== ctor || existingIsIndexAlias) &&
+			!candidateIsIndexAlias
 		if (shouldUpdatePrimaryMapping) {
 			this.name2Path.set(name, moduleId)
 			this.name2ExportKey.set(name, exportKey)
@@ -145,7 +152,8 @@ export class PluginRegistry {
 		// 并行启动（registerPlugin 只是声明，依赖处理在 commit 时）
 		const toStart = list.flatMap(({ ctor }) => {
 			const { name } = getPluginInfo(ctor)
-			if (!this.isPrimaryProvider(moduleId, ctor) || !this.ctx.configService.isEnable(name)) return []
+			if (!this.isPrimaryProvider(moduleId, ctor) || !this.ctx.configService.isEnable(name))
+				return []
 			return [this.startPlugin(name, ctor)]
 		})
 		if (toStart.length > 0) await Promise.all(toStart)
@@ -179,7 +187,7 @@ export class PluginRegistry {
 					const cur = (configRecord as any)[k]
 					const candidate =
 						cur === undefined
-							? v.getDefault(vSchema as any) ?? (this.isObjectSchema(vSchema) ? {} : undefined)
+							? (v.getDefault(vSchema as any) ?? (this.isObjectSchema(vSchema) ? {} : undefined))
 							: cur
 					handleResult(k, cur, v.safeParse(vSchema as any, candidate))
 				}
@@ -190,7 +198,9 @@ export class PluginRegistry {
 						const cur = (configRecord as any)[k]
 						const defaultVal = v.getDefault(vSchema as any)
 						const candidate =
-							cur === undefined ? defaultVal ?? (this.isObjectSchema(vSchema) ? {} : undefined) : cur
+							cur === undefined
+								? (defaultVal ?? (this.isObjectSchema(vSchema) ? {} : undefined))
+								: cur
 						const res = vSchema.async
 							? await v.safeParseAsync(vSchema as any, candidate)
 							: v.safeParse(vSchema as any, candidate)

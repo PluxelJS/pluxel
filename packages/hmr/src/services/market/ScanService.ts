@@ -410,7 +410,10 @@ function selectorLabel(selector: PackageSelector): string | undefined {
 class InstalledPackageResolver {
 	private readonly from: URL
 
-	constructor(private readonly cache: ModuleResolveCache, baseDir: string = process.cwd()) {
+	constructor(
+		private readonly cache: ModuleResolveCache,
+		baseDir: string = process.cwd(),
+	) {
 		this.from = ensureDirectoryURL(baseDir)
 	}
 

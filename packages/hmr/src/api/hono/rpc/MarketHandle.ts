@@ -43,7 +43,10 @@ export class MarketHandle extends RpcTarget {
 	}
 
 	/** 批量安装 */
-	installMany(specs: PackageSpecInput[], options?: { force?: boolean }): Promise<MarketBatchResult> {
+	installMany(
+		specs: PackageSpecInput[],
+		options?: { force?: boolean },
+	): Promise<MarketBatchResult> {
 		return installPackages(this.#ctx, specs, options?.force)
 	}
 
@@ -73,7 +76,10 @@ export class MarketHandle extends RpcTarget {
 	}
 
 	/** 批量重装 */
-	reinstallMany(specs: PackageSpecInput[], options?: { force?: boolean }): Promise<MarketBatchResult> {
+	reinstallMany(
+		specs: PackageSpecInput[],
+		options?: { force?: boolean },
+	): Promise<MarketBatchResult> {
 		return reinstallPackages(this.#ctx, specs, { force: options?.force })
 	}
 
@@ -83,7 +89,10 @@ export class MarketHandle extends RpcTarget {
 	}
 
 	/** 重试加载失败的包 */
-	retry(spec: PackageSpecInput, options?: { reinstall?: boolean; fresh?: boolean }): Promise<MarketMutationResult> {
+	retry(
+		spec: PackageSpecInput,
+		options?: { reinstall?: boolean; fresh?: boolean },
+	): Promise<MarketMutationResult> {
 		return retryPackage(this.#ctx, spec, {
 			reinstall: options?.reinstall ?? false,
 			fresh: options?.fresh ?? true,

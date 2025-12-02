@@ -384,9 +384,7 @@ export class PackageService {
 			.slice()
 			.sort()
 			.join('|')
-		return this.runExclusive(this.multiUninstallLocks, key, () =>
-			this.performUninstallBatch(specs),
-		)
+		return this.runExclusive(this.multiUninstallLocks, key, () => this.performUninstallBatch(specs))
 	}
 
 	/** 移除包：先清理运行态，再调用包管理器删除依赖。 */
@@ -987,10 +985,7 @@ export class PackageService {
 		}
 
 		for (const entry of results) {
-			const event =
-				entry.status === 'failed'
-					? 'uninstall:failed'
-					: 'uninstall:runtime_cleared'
+			const event = entry.status === 'failed' ? 'uninstall:failed' : 'uninstall:runtime_cleared'
 			const level = entry.status === 'failed' ? 'error' : 'info'
 			this.logEvent(level, event, {
 				target: entry.spec.target,
@@ -1281,8 +1276,7 @@ export class PackageService {
 			if (error instanceof Error) {
 				throw error
 			}
-			const message =
-				typeof error === 'string' ? error : error != null ? String(error) : '未知错误'
+			const message = typeof error === 'string' ? error : error != null ? String(error) : '未知错误'
 			const wrapped = new Error(message)
 			if (
 				error &&

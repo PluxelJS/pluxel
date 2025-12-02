@@ -2,9 +2,8 @@
 // 2025-11-22T15:16:55.420Z
 /* eslint-disable */
 
+export {}
 
-export {  };
+export const registry = {} as const
 
-export const registry = {} as const;
- 
-    export type PluginName = keyof typeof registry;
+export type PluginName = keyof typeof registry

@@ -1,11 +1,7 @@
 import type { Context as PlxContext, PluginConstructor } from '@pluxel/core'
 import type { InferOutput } from 'valibot'
 
-import {
-	PluginSourceInfo,
-	PluginStatusEntryLifecycleStage,
-	PluginStatusOverview,
-} from './schema'
+import { PluginSourceInfo, PluginStatusEntryLifecycleStage, PluginStatusOverview } from './schema'
 
 type LifecycleStage = InferOutput<typeof PluginStatusEntryLifecycleStage>
 type SourceOutput = InferOutput<typeof PluginSourceInfo>

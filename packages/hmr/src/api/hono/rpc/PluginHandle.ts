@@ -221,7 +221,7 @@ export class PluginHandle extends RpcTarget {
 		const targetKeys = keys?.length ? keys : Object.keys(schema)
 		const entries = targetKeys
 			.map((key) => [key, schema[key]] as const)
-			.filter((e): e is [string, NonNullable<typeof e[1]>] => e[1] != null)
+			.filter((e): e is [string, NonNullable<(typeof e)[1]>] => e[1] != null)
 
 		// 获取默认值：getDefault 是同步的，只读取静态默认值
 		const patch: ConfigPatch = Object.fromEntries(

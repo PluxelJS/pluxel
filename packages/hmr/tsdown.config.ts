@@ -22,6 +22,7 @@ export default defineConfig({
 		services: 'src/services/index.ts',
 		config: 'src/config.ts',
 		web: 'src/web.ts',
+		capnweb: 'src/capnweb.ts',
 	},
 	copy: ['public'],
 	alias: {
@@ -29,7 +30,7 @@ export default defineConfig({
 	},
 	tsconfig: './tsconfig.json',
 	dts: {
-		resolver: 'tsc',
+		resolver: 'oxc',
 	},
 	// 不要内联 core，未来可能要用来 build。
 	external: ['@pluxel/core', '@pluxel/core/services', '@pluxel/components'],

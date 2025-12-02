@@ -11,6 +11,10 @@
 			"@pluxel/source": "./src/index.ts",
 			"default": "./dist/index.mjs"
 		},
+		"./capnweb": {
+			"@pluxel/source": "./src/capnweb.ts",
+			"default": "./dist/capnweb.mjs"
+		},
 		"./config": {
 			"@pluxel/source": "./src/config.ts",
 			"default": "./dist/config.mjs"
@@ -86,6 +90,7 @@
 	"publishConfig": {
 		"exports": {
 			".": "./dist/index.mjs",
+			"./capnweb": "./dist/capnweb.mjs",
 			"./config": "./dist/config.mjs",
 			"./services": "./dist/services.mjs",
 			"./web": "./dist/web.mjs",

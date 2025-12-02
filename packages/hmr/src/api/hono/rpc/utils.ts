@@ -19,7 +19,9 @@ function safeSerialize(value: unknown): unknown {
 }
 
 /** 收集 schema 的默认值（确保返回 JSON 可序列化的值） */
-export async function collectDefaults(schemaMap?: ConfigSchemaMap): Promise<Record<string, unknown>> {
+export async function collectDefaults(
+	schemaMap?: ConfigSchemaMap,
+): Promise<Record<string, unknown>> {
 	if (!schemaMap) return {}
 	const entries = Object.entries(schemaMap)
 	if (entries.length === 0) return {}
