@@ -11,6 +11,30 @@ import * as MantineHooks from "@mantine/hooks"
 import * as MantineModals from "@mantine/modals"
 import * as MantineNotifications from "@mantine/notifications"
 
+function createJsxDevRuntimeVendor() {
+	const vendor: Record<string, unknown> = { ...ReactJSXDevRuntime }
+	const prodRuntime = ReactJSXRuntime as Record<string, unknown>
+
+	if (typeof vendor.jsxDEV !== "function" && typeof prodRuntime["jsx"] === "function") {
+		const jsx = prodRuntime["jsx"] as (...runtimeArgs: unknown[]) => unknown
+		vendor.jsxDEV = (...args: unknown[]) => jsx(...args)
+	}
+
+	if (typeof vendor.jsxs !== "function" && typeof prodRuntime["jsxs"] === "function") {
+		const jsxs = prodRuntime["jsxs"] as (...runtimeArgs: unknown[]) => unknown
+		vendor.jsxs = (...args: unknown[]) => jsxs(...args)
+	}
+
+	if (typeof vendor.jsx !== "function" && typeof prodRuntime["jsx"] === "function") {
+		const jsx = prodRuntime["jsx"] as (...runtimeArgs: unknown[]) => unknown
+		vendor.jsx = (...args: unknown[]) => jsx(...args)
+	}
+
+	return vendor
+}
+
+const ReactJSXDevRuntimeVendor = createJsxDevRuntimeVendor()
+
 /**
  * 共享依赖 vendors 对象
  *
@@ -20,7 +44,7 @@ import * as MantineNotifications from "@mantine/notifications"
 export const vendors = {
 	react: React,
 	"react/jsx-runtime": ReactJSXRuntime,
-	"react/jsx-dev-runtime": ReactJSXDevRuntime,
+	"react/jsx-dev-runtime": ReactJSXDevRuntimeVendor,
 	"react-dom": ReactDOM,
 	"react-dom/client": ReactDOMClient,
 	"@mantine/core": MantineCore,

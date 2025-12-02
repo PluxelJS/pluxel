@@ -333,7 +333,7 @@ export class ExtensionService {
 			throw new Error('Failed to compile entry module')
 		}
 
-		return transformVendorImports(result.code)
+		return normalizeJsxRuntime(transformVendorImports(result.code))
 	}
 
 	private async removeOldModuleFile(entry: PluginExtensionEntry, nextPath: string): Promise<void> {
@@ -620,6 +620,15 @@ const {${trimmed}} = window.__PLUXEL_VENDORS__["${pkg}"];`
 
 function escapeRegex(str: string): string {
 	return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+function normalizeJsxRuntime(code: string): string {
+	return code
+		.replaceAll('react/jsx-dev-runtime', 'react/jsx-runtime')
+		.replaceAll('react_jsx-dev-runtime', 'react_jsx-runtime')
+		.replaceAll('jsxDevRuntime', 'jsxRuntime')
+		.replaceAll('_jsxDEV', '_jsx')
+		.replaceAll('jsxDEV', 'jsx')
 }
 
 function sanitizePluginName(name: string): string {
