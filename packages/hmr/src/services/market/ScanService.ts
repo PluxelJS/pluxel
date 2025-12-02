@@ -44,6 +44,8 @@ export interface ScanServiceConfig {
 	roots?: string | string[]
 	/** 默认扫描选项，将与内置默认合并。 */
 	options?: ScanOptionsInput
+	/** ROOT used when resolving already installed packages. Defaults to process.cwd(). */
+	installedBase?: string
 }
 
 export interface ScanTaskOptions {
@@ -51,10 +53,17 @@ export interface ScanTaskOptions {
 	roots?: string | string[]
 	/** 临时覆盖扫描参数。 */
 	scan?: ScanOptionsInput
+	/** 当为 true 时，仅返回工作区包，不回退到已安装依赖。 */
+	workspaceOnly?: boolean
+}
+
+export interface WorkspaceEntryInfo {
+	dir: string
+	entry: string
 }
 
 /** 扫描结果快照，包含索引和原始数据。 */
-export interface ScanSnapshot {
+interface ScanSnapshot {
 	graph: ScanGraph
 	packages: PackageNode[]
 	entries: string[]
@@ -78,12 +87,16 @@ export class ScanService {
 	private roots: string[]
 	private readonly resolveCache = new ModuleResolveCache()
 	private readonly entryResolver = new EntryResolver(this.resolveCache)
-	private readonly installedResolver = new InstalledPackageResolver(this.resolveCache)
+	private readonly installedResolver: InstalledPackageResolver
 	private readonly snapshotCache = new Map<string, Promise<ScanSnapshot>>()
 
 	constructor(_ctx: Context, config: ScanServiceConfig = {}) {
 		this.defaults = resolveScanOptions(DEFAULT_SCAN_OPTIONS, config.options)
 		this.roots = normalizeScanInputs(config.roots ?? process.cwd())
+		this.installedResolver = new InstalledPackageResolver(
+			this.resolveCache,
+			config.installedBase ?? process.cwd(),
+		)
 	}
 
 	/**
@@ -120,7 +133,7 @@ export class ScanService {
 	 * 重新指定默认扫描根目录。
 	 */
 	setRoots(roots: string | string[]) {
-		this.roots = normalizeInputs(roots)
+		this.roots = normalizeScanInputs(roots)
 		this.clearCaches()
 	}
 
@@ -140,10 +153,7 @@ export class ScanService {
 		this.resolveCache.clear()
 	}
 
-	/**
-	 * 构建（或复用缓存）扫描快照，包含包图、入口列表与索引。
-	 */
-	async snapshot(request: ScanTaskOptions = {}): Promise<ScanSnapshot> {
+	private async snapshot(request: ScanTaskOptions = {}): Promise<ScanSnapshot> {
 		const roots = resolveScanRoots(this.roots, request.roots)
 		const options = resolveScanOptions(this.defaults, request.scan)
 		const cacheKey = createScanCacheKey(roots, options)
@@ -157,25 +167,6 @@ export class ScanService {
 		})
 		this.snapshotCache.set(cacheKey, promise)
 		return promise
-	}
-
-	/**
-	 * 返回所有已解析入口（含 TS 回退），适合做预热或生成白名单。
-	 */
-	async scanEntries(request: ScanTaskOptions = {}): Promise<string[]> {
-		const snapshot = await this.snapshot(request)
-		const all = new Set<string>()
-		for (const entry of snapshot.entries) all.add(entry)
-		for (const file of snapshot.fallbackEntries) all.add(file)
-		return Array.from(all)
-	}
-
-	/**
-	 * 获取完整扫描图（roots / packages / diagnostics / stats）。
-	 */
-	async scanGraph(request: ScanTaskOptions = {}): Promise<ScanGraph> {
-		const snapshot = await this.snapshot(request)
-		return snapshot.graph
 	}
 
 	/**
@@ -203,6 +194,10 @@ export class ScanService {
 		const pkg = snapshot.findPackage(selector)
 		if (pkg) return pkg.entry
 
+		if (request.workspaceOnly) {
+			return missingPackageResolution(selector)
+		}
+
 		const fallback = this.resolveInstalledFallback(selector, snapshot.graph.options.conditions)
 		return fallback ?? missingPackageResolution(selector)
 	}
@@ -221,6 +216,20 @@ export class ScanService {
 			}
 		}
 		return this.resolveEntry({ name: trimmed }, request)
+	}
+
+	async listWorkspaceEntries(request: ScanTaskOptions = {}): Promise<WorkspaceEntryInfo[]> {
+		const snapshot = await this.snapshot(request)
+		const entries: WorkspaceEntryInfo[] = []
+		for (const pkg of snapshot.packages) {
+			if (isPackageEntryOk(pkg)) {
+				entries.push({
+					dir: pkg.dir,
+					entry: pkg.entry.entry,
+				})
+			}
+		}
+		return entries
 	}
 
 	/**

@@ -1335,6 +1335,9 @@ export class PackageService {
 			merged.scan = mergedScan
 		}
 
+		if (overrides.workspaceOnly !== undefined) merged.workspaceOnly = overrides.workspaceOnly
+		else if (base.workspaceOnly !== undefined) merged.workspaceOnly = base.workspaceOnly
+
 		return merged
 	}
 

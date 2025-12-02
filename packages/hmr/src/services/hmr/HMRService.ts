@@ -1,9 +1,11 @@
 import { existsSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { type Context, Injectable } from '@pluxel/core'
+import { configSourcePlugin } from '@pluxel/rolldown'
 import { makeIdFiltersToMatchWithQuery } from '@rolldown/pluginutils'
 import { enable as enableDebug } from 'obug'
 import { dirname, resolve } from 'pathe'
+import { glob } from 'tinyglobby'
 import {
 	createFilter,
 	createServer,
@@ -14,16 +16,23 @@ import {
 	searchForWorkspaceRoot,
 	type ViteDevServer,
 } from 'vite'
-import { ModuleCacheMap, ViteNodeRunner } from 'vite-node/client'
+import { type ModuleCacheMap, ViteNodeRunner } from 'vite-node/client'
 import { ViteNodeServer } from 'vite-node/server'
 import { installSourcemapsSupport } from 'vite-node/source-map'
 import tsconfigPaths from 'vite-tsconfig-paths'
-import { configSourcePlugin } from '@pluxel/rolldown'
 import {
 	type HMRDependencyConfig,
 	type ResolvedHMRDependencyConfig,
 	resolveHMRDependencyConfig,
 } from './config'
+import {
+	BatchDebouncer,
+	findNearestPackageRoot,
+	Mutex,
+	NormalizedModuleCacheMap,
+	startTimer,
+	TimingTracker,
+} from './internals'
 import {
 	createHmrDebug,
 	type HMRLogConfig,
@@ -31,6 +40,7 @@ import {
 	resolveHmrLogConfig,
 	toDebugNamespaceString,
 } from './logging'
+import { resolveBareImport } from './workspace-resolver'
 
 /* -------------------------------- 配置项 -------------------------------- */
 
@@ -63,21 +73,23 @@ export interface HMRConfig {
 /* --------------------------------- 常量 --------------------------------- */
 
 const DEFAULT_PREFETCH_LIMIT = 200
+
 const hmrPackageRoot = (() => {
 	try {
-		let current = dirname(fileURLToPath(import.meta.url))
-		while (true) {
-			if (existsSync(resolve(current, 'package.json'))) return normalizePath(current)
-			const parent = dirname(current)
-			if (parent === current) return null
-			current = parent
-		}
+		return findNearestPackageRoot(dirname(fileURLToPath(import.meta.url)))
 	} catch {
 		return null
 	}
 })()
 
 const serviceName = 'hmrService' as const
+const HMR_EXPORT_CONDITIONS = [
+	'@pluxel/hmr',
+	'@pluxel/source',
+	'import',
+	'module',
+	'default',
+] as const
 declare module '@pluxel/core' {
 	interface Context {
 		[serviceName]: HMRService
@@ -91,130 +103,7 @@ declare module '@pluxel/core' {
 
 /* --------------------------------- 工具 --------------------------------- */
 
-const nsToMs = (ns: bigint) => Number(ns) / 1e6
-type NumMap = Map<string, number>
-const bump = (m: NumMap, k: string, v: number) => m.set(k, (m.get(k) ?? 0) + v)
 const unique = <T>(iter: Iterable<T>) => Array.from(new Set(iter))
-
-/** 简单计时器，返回结束函数 */
-const startTimer = () => {
-	const t0 = process.hrtime.bigint()
-	return () => nsToMs(process.hrtime.bigint() - t0)
-}
-
-/** 轻量互斥，确保批处理串行执行 */
-class Mutex {
-	private q = Promise.resolve()
-	run<T>(fn: () => Promise<T>): Promise<T> {
-		const next = this.q.then(fn, fn)
-		this.q = next.then(
-			() => {},
-			() => {},
-		)
-		return next
-	}
-}
-
-/** 批处理防抖器：支持 debounce / maxWait / maxBatch 限制 */
-class BatchDebouncer {
-	private pending = new Set<string>()
-	private t: NodeJS.Timeout | null = null
-	private tMax: NodeJS.Timeout | null = null
-	private epoch = 0
-	constructor(
-		private flushFn: (files: string[], epoch: number) => Promise<void>,
-		private debounceMs: number,
-		private maxWaitMs: number,
-		private maxBatchFiles: number,
-	) {}
-	push(id: string) {
-		this.pending.add(id)
-		if (!this.t) this.t = setTimeout(() => this.flush('debounce'), this.debounceMs)
-		if (!this.tMax) this.tMax = setTimeout(() => this.flush('maxwait'), this.maxWaitMs)
-		if (this.pending.size >= this.maxBatchFiles) this.flush('maxbatch')
-	}
-	private async flush(_reason: 'debounce' | 'maxwait' | 'maxbatch') {
-		if (!this.pending.size) return
-		if (this.t) {
-			clearTimeout(this.t)
-			this.t = null
-		}
-		if (this.tMax) {
-			clearTimeout(this.tMax)
-			this.tMax = null
-		}
-		const files = [...this.pending]
-		this.pending.clear()
-		const epoch = ++this.epoch
-		await this.flushFn(files, epoch)
-	}
-}
-
-type TimingBucket = 'transform' | 'evaluate' | 'inject'
-
-/** obug 驱动的计时收集：统一记录 transform/evaluate/inject。 */
-class TimingTracker {
-	private readonly debugEntry
-	private readonly buckets: Record<TimingBucket, NumMap> = {
-		transform: new Map<string, number>(),
-		evaluate: new Map<string, number>(),
-		inject: new Map<string, number>(),
-	}
-
-	constructor(
-		private readonly options: {
-			useColors: boolean
-			formatId: (id: string) => string
-		},
-	) {
-		this.debugEntry = createHmrDebug('pluxel:hmr:time:entry', options.useColors)
-	}
-
-	clear() {
-		for (const bucket of Object.values(this.buckets)) bucket.clear()
-	}
-
-	start(kind: TimingBucket, id: string) {
-		const t0 = process.hrtime.bigint()
-		return () => {
-			const durationMs = nsToMs(process.hrtime.bigint() - t0)
-			this.record(kind, id, durationMs)
-			return durationMs
-		}
-	}
-
-	record(kind: TimingBucket, id: string, durationMs: number) {
-		bump(this.buckets[kind], id, durationMs)
-		if (this.debugEntry.enabled) {
-			const total = this.buckets[kind].get(id) ?? durationMs
-			// 使用 %t 格式化器高亮时间，%p 高亮路径
-			this.debugEntry('%s %p %t (agg=%t)', kind, this.options.formatId(id), durationMs, total)
-		}
-	}
-
-	top(kind: TimingBucket, n = 5) {
-		return [...this.buckets[kind].entries()].sort((a, b) => b[1] - a[1]).slice(0, n)
-	}
-
-	snapshot() {
-		return {
-			transformMs: this.buckets.transform,
-			evalMs: this.buckets.evaluate,
-			injectMs: this.buckets.inject,
-		}
-	}
-}
-
-/** 归一化 moduleCache key，避免 /@fs/ 与根相对路径重复执行。 */
-class NormalizedModuleCacheMap extends ModuleCacheMap {
-	constructor(private readonly normalize: (id: string) => string) {
-		super()
-	}
-
-	override normalizePath(fsPath: string): string {
-		return this.normalize(fsPath)
-	}
-}
 
 /* ------------------------------ HMR Service ----------------------------- */
 /**
@@ -258,6 +147,7 @@ export class HMRService {
 		cache: ReturnType<typeof createHmrDebug>
 		graph: ReturnType<typeof createHmrDebug>
 	}
+	private readonly workspaceConditions = [...HMR_EXPORT_CONDITIONS]
 
 	constructor(
 		private ctx: Context,
@@ -289,10 +179,20 @@ export class HMRService {
 		const includeGlobs = makeIdFiltersToMatchWithQuery(
 			this.config.dir.flatMap((d) => [resolve(d, '**/*.{ts,tsx}')]),
 		)
-		const excludeGlobs = makeIdFiltersToMatchWithQuery(
-			this.config.dir.flatMap((d) => [resolve(d, '**/*.d.ts')]),
-		)
-		this.filter = createFilter(includeGlobs, excludeGlobs)
+		const excludePatterns = this.config.dir.flatMap((d) => [
+			resolve(d, '**/*.d.ts'),
+			resolve(d, '**/node_modules/**'),
+		])
+		const excludeGlobs = makeIdFiltersToMatchWithQuery([
+			...excludePatterns,
+			'**/node_modules/**',
+		])
+		const baseFilter = createFilter(includeGlobs, excludeGlobs)
+		this.filter = (id: string) => {
+			const normalized = this.toViteId(id)
+			if (normalized.includes('/node_modules/')) return false
+			return baseFilter(normalized)
+		}
 
 		this.plugin = {
 			name: 'pluxel-runner',
@@ -302,83 +202,11 @@ export class HMRService {
 			configureServer: async (server) => {
 				this.vite = server
 				this.serverRoot = this.toViteId(server.config.root)
-
-				// 1) vite-node 服务端（transform/依赖判定交给 vite）
-				this.vns = new ViteNodeServer(server, {
-					transformMode: { ssr: [/\.([cm]?tsx?|jsx?)$/] },
-					deps: {
-						external: Array.from(this.deps.runnerExternal),
-					},
-				})
-
-				// 2) 源映射
-				installSourcemapsSupport({ getSourceMap: (src) => this.vns.getSourceMap(src) })
-
-				// 3) 运行器：包裹 fetch 以记录 transform 耗时（命中缓存会是极小值）
-				this.runner = new ViteNodeRunner({
-					root: server.config.root,
-					base: server.config.base,
-					moduleCache: this.moduleCache,
-					fetchModule: async (id) => {
-						const clean = this.toCleanId(id)
-						const end = this.timing.start('transform', clean)
-						const result = await this.vns.fetchModule(id) // transform on demand
-						end()
-						return result
-					},
-					resolveId: (id, importer) => this.vns.resolveId(id, importer),
-				})
-
-				// 4) 把需要保持单例的工作区模块塞进 moduleCache
+				await this.initRunner(server)
 				await this.bridgeWorkspaceModules(this.deps.bridgeModules)
-
-				// 5) 批处理器
-				const bCfg = {
-					debounceMs: this.config.batch?.debounceMs ?? 30,
-					maxWaitMs: this.config.batch?.maxWaitMs ?? 120,
-					maxBatchFiles: this.config.batch?.maxBatchFiles ?? 2000,
-				}
-				this.debouncer = new BatchDebouncer(
-					(files, epoch) => this.mutex.run(() => this.processBatch(files, epoch)),
-					bCfg.debounceMs,
-					bCfg.maxWaitMs,
-					bCfg.maxBatchFiles,
-				)
-
-				// 6) FS 监听：add/unlink 也纳入批处理（锚点新增/清理）
-				server.watcher.on('add', (file) => {
-					if (this.filter(file)) this.debouncer.push(this.toCleanId(file))
-				})
-				server.watcher.on('unlink', (file) => {
-					if (this.filter(file)) this.debouncer.push(this.toCleanId(file))
-				})
-
-				// 7) 冷启动：扫描 + 预热执行（让 loader 完成 anchors 首次填充）
-				const endScan = startTimer()
-				const scanRoots = this.config.dir.map((d) => resolve(process.cwd(), d))
-				const files = await this.ctx.hmrWorkspaceService.scanEntries({
-					roots: scanRoots,
-				})
-				this.ctx.logger.info('[HMR] scan: %d files in %sms', files.length, endScan().toFixed(1))
-
-				const endWarmup = startTimer()
-				const coldFiles = unique(files.map((p) => this.toCleanId(p))).sort()
-
-				// 详细输出预热文件列表（需 DEBUG=pluxel:hmr:warmup）
-				if (this.dbg.warmup.enabled) {
-					this.dbg.warmup(
-						'files (%n): %l',
-						coldFiles.length,
-						coldFiles.map((f) => this.prettyId(f)),
-					)
-				}
-
-				await this.runAndLoadAll(coldFiles, /*keepOrder*/ true)
-				this.ctx.logger.info(
-					'[HMR] warmup: %d files in %sms',
-					coldFiles.length,
-					endWarmup().toFixed(1),
-				)
+				this.setupBatching()
+				this.registerWatchers(server)
+				await this.performColdStart()
 			},
 
 			/** 服务端 HMR：仅入队，由批处理串行执行 */
@@ -418,6 +246,82 @@ export class HMRService {
 		}
 	}
 
+	/* ------------------------- DevServer lifecycle helpers ------------------------- */
+
+	private async initRunner(server: ViteDevServer) {
+		this.vns = new ViteNodeServer(server, {
+			transformMode: { ssr: [/\.([cm]?tsx?|jsx?)$/] },
+			deps: {
+				external: Array.from(this.deps.runnerExternal),
+			},
+		})
+
+		installSourcemapsSupport({ getSourceMap: (src) => this.vns.getSourceMap(src) })
+
+		this.runner = new ViteNodeRunner({
+			root: server.config.root,
+			base: server.config.base,
+			moduleCache: this.moduleCache,
+			fetchModule: async (id) => {
+				const clean = this.toCleanId(id)
+				const end = this.timing.start('transform', clean)
+				const result = await this.vns.fetchModule(id)
+				end()
+				return result
+			},
+			resolveId: async (id, importer) => {
+				const resolved = await this.vns.resolveId(id, importer)
+				if (resolved) return resolved
+				const bareResolved = await this.resolveBareModule(id, importer)
+				return bareResolved ? { id: bareResolved } : null
+			},
+		})
+	}
+
+	private setupBatching() {
+		const bCfg = {
+			debounceMs: this.config.batch?.debounceMs ?? 30,
+			maxWaitMs: this.config.batch?.maxWaitMs ?? 120,
+			maxBatchFiles: this.config.batch?.maxBatchFiles ?? 2000,
+		}
+		this.debouncer = new BatchDebouncer(
+			(files, epoch) => this.mutex.run(() => this.processBatch(files, epoch)),
+			bCfg.debounceMs,
+			bCfg.maxWaitMs,
+			bCfg.maxBatchFiles,
+		)
+	}
+
+	private registerWatchers(server: ViteDevServer) {
+		server.watcher.on('add', (file) => {
+			if (this.filter(file)) this.debouncer.push(this.toCleanId(file))
+		})
+		server.watcher.on('unlink', (file) => {
+			if (this.filter(file)) this.debouncer.push(this.toCleanId(file))
+		})
+	}
+
+	private async performColdStart() {
+		const endScan = startTimer()
+		const scanRoots = this.config.dir.map((d) => resolve(process.cwd(), d))
+		const files = await this.collectSourceEntries(scanRoots)
+		this.ctx.logger.info('[HMR] scan: %d files in %sms', files.length, endScan().toFixed(1))
+
+		const endWarmup = startTimer()
+		const coldFiles = unique(files.map((p) => this.toCleanId(p))).sort()
+
+		if (this.dbg.warmup.enabled) {
+			this.dbg.warmup(
+				'files (%n): %l',
+				coldFiles.length,
+				coldFiles.map((f) => this.prettyId(f)),
+			)
+		}
+
+		await this.runAndLoadAll(coldFiles, /*keepOrder*/ true)
+		this.ctx.logger.info('[HMR] warmup: %d files in %sms', coldFiles.length, endWarmup().toFixed(1))
+	}
+
 	/* --------------------------- 路径规范化工具 --------------------------- */
 
 	/** 生成常见等价 ID（绝对、/@fs、根相对），用于查 graph 与缓存 */
@@ -444,6 +348,12 @@ export class HMRService {
 		const i = id.indexOf('?') // 去除 ?v= / ?import 变体
 		return i >= 0 ? id.slice(0, i) : id
 	}
+	private isBareImport(id: string) {
+		if (!id) return false
+		if (id.startsWith('.') || id.startsWith('/') || id.startsWith('\0')) return false
+		if (/^[a-zA-Z]:[\\/]/.test(id)) return false
+		return true
+	}
 	private toCleanId(pOrId: string) {
 		const clean = this.cleanUrl(this.toViteId(pOrId))
 		// 1) Vite 内部访问文件系统会加 /@fs/ 前缀
@@ -459,6 +369,96 @@ export class HMRService {
 		const cwd = this.toViteId(process.cwd())
 		if (clean.startsWith(cwd)) return clean.slice(cwd.length).replace(/^\\\//, '')
 		return clean
+	}
+	private async resolveBareModule(specifier: string, importer?: string | null) {
+		if (!this.isBareImport(specifier)) return null
+		const normalizedImporter = importer ? this.toCleanId(importer) : importer
+		return (
+			(await resolveBareImport({
+				specifier,
+				importer: normalizedImporter,
+				scanService: this.ctx.scanService,
+				conditions: this.workspaceConditions,
+				fallbackBaseDirs: this.computeFallbackResolveDirs(normalizedImporter ?? undefined),
+			})) ?? null
+		)
+	}
+
+	private computeFallbackResolveDirs(importer?: string | null): string[] {
+		const bases = new Set<string>()
+		if (importer && importer.startsWith('/')) {
+			const importerDir = dirname(importer)
+			bases.add(importerDir)
+			const pkgRoot = findNearestPackageRoot(importerDir)
+			if (pkgRoot) {
+				bases.add(pkgRoot)
+				bases.add(resolve(pkgRoot, 'node_modules'))
+			}
+		}
+		if (this.serverRoot) bases.add(this.serverRoot)
+		for (const dir of this.config.dir) {
+			bases.add(normalizePath(resolve(process.cwd(), dir)))
+		}
+		bases.add(process.cwd())
+		return [...bases].filter(Boolean)
+	}
+
+	private async collectSourceEntries(roots: string[]): Promise<string[]> {
+		if (!roots.length) return []
+		const entries = new Set<string>()
+		const rootInfos = roots.map((raw) => ({
+			raw,
+			normalized: normalizePath(raw),
+		}))
+		const scanService = this.ctx.scanService
+
+		if (scanService) {
+			try {
+				const workspaceEntries = await scanService.listWorkspaceEntries({
+					roots,
+					workspaceOnly: true,
+					scan: {
+						preferHmrExports: true,
+						conditions: this.workspaceConditions as unknown as string[],
+					},
+				})
+				const covered = new Set<string>()
+				for (const pkg of workspaceEntries) {
+					const entryId = this.toCleanId(pkg.entry)
+					entries.add(entryId)
+					const dirNorm = normalizePath(pkg.dir)
+					for (const info of rootInfos) {
+						if (dirNorm.startsWith(info.normalized)) {
+							covered.add(info.normalized)
+							break
+						}
+					}
+				}
+				const uncovered = rootInfos
+					.filter((info) => !covered.has(info.normalized))
+					.map((info) => info.raw)
+				const fallbackEntries = await this.collectDirectoryFallbackEntries(uncovered)
+				for (const entry of fallbackEntries) entries.add(entry)
+				return [...entries]
+			} catch {
+				// scan failure fall back to glob
+			}
+		}
+
+		const fallbackEntries = await this.collectDirectoryFallbackEntries(roots)
+		for (const entry of fallbackEntries) entries.add(entry)
+		return [...entries]
+	}
+
+	private async collectDirectoryFallbackEntries(roots: string[]): Promise<string[]> {
+		if (!roots.length) return []
+		const patterns = roots.flatMap((root) => [`${root}/**/*.ts`, `${root}/**/*.tsx`])
+		const files = await glob(patterns, {
+			absolute: true,
+			onlyFiles: true,
+			ignore: ['**/*.d.ts', '**/node_modules/**'],
+		})
+		return unique(files.map((file) => this.toCleanId(file)))
 	}
 
 	/* ------------------------------ 执行 + 注入 ------------------------------ */
@@ -658,16 +658,27 @@ export class HMRService {
 
 	private resolveFsAllowList(): string[] {
 		const allow = new Set<string>()
-		const workspaceRoot = searchForWorkspaceRoot(process.cwd())
+		const cwd = process.cwd()
+		const normalizedCwd = normalizePath(cwd)
+		const workspaceRoot = searchForWorkspaceRoot(cwd)
 		if (workspaceRoot) allow.add(normalizePath(workspaceRoot))
-		allow.add(normalizePath(process.cwd()))
+		allow.add(normalizedCwd)
 		if (hmrPackageRoot) allow.add(hmrPackageRoot)
+		const packageRoots = new Set<string>()
 		for (const dir of this.config.dir) {
-			allow.add(normalizePath(resolve(process.cwd(), dir)))
+			const absDir = normalizePath(resolve(cwd, dir))
+			allow.add(absDir)
+			const pkgRoot = findNearestPackageRoot(absDir)
+			if (pkgRoot) packageRoots.add(pkgRoot)
+		}
+		for (const pkgRoot of packageRoots) {
+			allow.add(pkgRoot)
+			const pkgNodeModules = resolve(pkgRoot, 'node_modules')
+			if (existsSync(pkgNodeModules)) allow.add(normalizePath(pkgNodeModules))
 		}
 		if (Array.isArray(this.config.fsAllow)) {
 			for (const extra of this.config.fsAllow) {
-				allow.add(normalizePath(resolve(process.cwd(), extra)))
+				allow.add(normalizePath(resolve(cwd, extra)))
 			}
 		}
 		return [...allow]
@@ -677,9 +688,7 @@ export class HMRService {
 		const preferred = ['@pluxel/hmr', '@pluxel/source', 'source']
 		const defaults = ['module', 'browser', 'development', 'production', 'default']
 		const extras =
-			process.env.NODE_ENV && !defaults.includes(process.env.NODE_ENV)
-				? [process.env.NODE_ENV]
-				: []
+			process.env.NODE_ENV && !defaults.includes(process.env.NODE_ENV) ? [process.env.NODE_ENV] : []
 		return [...new Set([...preferred, ...defaults, ...extras])]
 	}
 

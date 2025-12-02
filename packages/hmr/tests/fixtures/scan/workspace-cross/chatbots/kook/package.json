@@ -1,0 +1,14 @@
+{
+  "name": "pluxel-plugin-kook",
+  "version": "0.1.0",
+  "type": "module",
+  "exports": {
+    ".": {
+      "@pluxel/hmr": "./src/kook.ts",
+      "default": "./dist/kook.mjs"
+    }
+  },
+  "peerDependencies": {
+    "pluxel-plugin-wretch": "workspace:*"
+  }
+}
