@@ -34,11 +34,12 @@ import type { ReactNode } from 'react'
 import { DEFAULT_TEXTS } from '~/core/constants'
 import type { ArrayMetaResult } from '~/core/actions/array'
 import type { CommonProps } from '~/core/registry'
-import { registerRenderer, triggerFormEvents } from '~/core/registry'
+import { MetaRenderer, registerRenderer, triggerFormEvents } from '~/core/registry'
 import { META_MAP } from '~/core/utils'
 import { FieldChrome } from '../shared'
 import { cleanProps } from '../../utils/propHelpers'
 import { PicklistControl } from './controls/PicklistControl'
+import { cachedExtractInfo } from '../schemaCache'
 
 type RendererProps = CommonProps<typeof META_MAP.ARRAY> & { value?: unknown[]; defaultValue?: unknown }
 type ArrayUI = ArrayMetaResult
@@ -69,7 +70,7 @@ function inferMode(
 	if (mode && mode !== 'auto') return mode
 	if (typeof value === 'number') return 'number'
 	if (typeof value === 'boolean') return 'boolean'
-	if (value && typeof value === 'object') return 'json'
+	// 不再自动推断为 json，让 object/array 保持原样
 	return 'string'
 }
 
@@ -381,6 +382,87 @@ function ArrayField(props: RendererProps) {
 								clearable: ep.picklist?.clearable,
 								searchable: ep.picklist?.searchable,
 							})}
+						/>
+					),
+				}
+			}
+			case 'object':
+			case 'array':
+			case 'variant':
+			case 'union': {
+				// 递归渲染嵌套的 object/array/variant/union
+				if (!ep.itemSchema) {
+					// fallback 到 json 模式
+					const formatted = current && typeof current === 'object'
+						? JSON.stringify(current, null, 2)
+						: '{}'
+					return {
+						node: (
+							<Textarea
+								key={`${index}-${items.length}`}
+								defaultValue={formatted}
+								minRows={4}
+								autosize
+								onBlur={(event) => {
+									const value = (event.currentTarget as HTMLTextAreaElement).value
+									try {
+										const parsed = JSON.parse(value || (mode === 'array' ? '[]' : '{}'))
+										handleChange(index, parsed)
+										setJsonParseErrors((prev) => {
+											const next = { ...prev }
+											delete next[index]
+											return next
+										})
+									} catch {
+										setJsonParseErrors((prev) => ({
+											...prev,
+											[index]: DEFAULT_TEXTS.validation.jsonError,
+										}))
+									}
+								}}
+								disabled={inputProps.disabled ?? false}
+								styles={{
+									input: { fontFamily: 'var(--mantine-font-family-monospace)' },
+								}}
+							/>
+						),
+					}
+				}
+
+				const itemInfo = cachedExtractInfo(ep.itemSchema as object, `${index}`)
+				if (!itemInfo) {
+					return { node: null }
+				}
+
+				const nestedName = inputProps.name ? `${inputProps.name}.${index}` : String(index)
+				const nestedInputProps = {
+					name: nestedName,
+					onChange: (nextValue: unknown) => handleChange(index, nextValue),
+					onBlur: () => inputProps.onBlur?.({ target: { name: nestedName } } as any),
+					disabled: inputProps.disabled,
+					readOnly: inputProps.readOnly,
+				}
+
+				// 提取该索引的错误
+				const itemErrors = (itemErrorsMap.get(index) ?? []).map((msg) => ({
+					message: msg,
+					dotPath: [String(index)],
+				}))
+
+				// 嵌套类型使用紧凑布局
+				const nestedProps = itemInfo.type === 'object'
+					? { ...itemInfo.props, variant: 'stack' as const, gap: 'sm', columns: itemInfo.props.columns ?? 2 }
+					: (itemInfo.type === 'union' ? { ...itemInfo.props, compact: true } : itemInfo.props)
+
+				return {
+					node: (
+						<MetaRenderer
+							type={itemInfo.type}
+							formBaseInfo={{ ...itemInfo.formInfo, label: undefined, hideLabel: true }}
+							extractedPropsInfo={nestedProps}
+							errors={itemErrors}
+							value={current}
+							inputProps={nestedInputProps as any}
 						/>
 					),
 				}

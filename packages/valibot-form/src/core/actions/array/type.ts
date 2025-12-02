@@ -12,7 +12,7 @@ export type ArrayMetaOptions<T extends string | number = string | number> = {
 	columns?: number
 	itemLabel?: string
 	defaultItem?: unknown
-	valueMode?: 'auto' | 'string' | 'number' | 'boolean' | 'json' | 'picklist' | 'defaults-picker'
+	valueMode?: 'auto' | 'string' | 'number' | 'boolean' | 'json' | 'picklist' | 'defaults-picker' | 'object' | 'array' | 'variant' | 'union'
 	emptyHint?: string
 	minItems?: number
 	maxItems?: number
@@ -43,4 +43,6 @@ export type ArrayMetaOptions<T extends string | number = string | number> = {
 /** 提炼结果：可带出子项元数据（由回调决定） */
 export type ArrayMetaResult<TItemMeta = unknown> = ArrayMetaOptions & {
 	item?: TItemMeta
+	/** 数组项的 schema，用于嵌套对象/数组的递归渲染 */
+	itemSchema?: unknown
 }

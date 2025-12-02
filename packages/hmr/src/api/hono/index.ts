@@ -46,25 +46,47 @@ const app = new Hono<AppEnv>()
 			'Cache-Control': 'public, max-age=31536000, immutable',
 		})
 	})
-	.get('/extensions/events', (c) => {
-		const ctx = c.var.plugin_ctx
-		const extensionService = ctx.extensionService
-		if (!extensionService) {
-			return c.text('Extension service not available', 503)
-		}
-		const stream = new ReadableStream({
-			start(controller) {
-				const encoder = new TextEncoder()
-				const send = (event: import('../../services/extension').ExtensionManifestEvent) => {
-					controller.enqueue(encoder.encode(`data: ${JSON.stringify(event)}\n\n`))
+		.get('/extensions/events', (c) => {
+			const ctx = c.var.plugin_ctx
+			const extensionService = ctx.extensionService
+			if (!extensionService) {
+				return c.text('Extension service not available', 503)
+			}
+			let cleanup = () => {}
+			const stream = new ReadableStream({
+				cancel() {
+					cleanup()
+				},
+				start(controller) {
+					const encoder = new TextEncoder()
+					let closed = false
+					let unsubscribe: (() => void) | null = null
+
+					cleanup = () => {
+						if (closed) return
+						closed = true
+						try {
+							controller.close()
+						} catch {}
+						unsubscribe?.()
+						unsubscribe = null
+					}
+
+					const send = (event: import('../../services/extension').ExtensionManifestEvent) => {
+						if (closed) return
+						try {
+							controller.enqueue(encoder.encode(`data: ${JSON.stringify(event)}\n\n`))
+					} catch (err) {
+						console.warn('[ExtensionService] failed to push manifest event', err)
+						cleanup()
+					}
 				}
-				send({ type: 'sync', version: extensionService.getManifest().version })
-				const unsubscribe = extensionService.subscribeManifest(send)
-				return () => {
-					unsubscribe()
-				}
-			},
-		})
+
+					send({ type: 'sync', version: extensionService.getManifest().version })
+					unsubscribe = extensionService.subscribeManifest(send)
+
+				},
+			})
 		return c.newResponse(stream, 200, {
 			'Content-Type': 'text/event-stream',
 			'Cache-Control': 'no-cache',

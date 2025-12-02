@@ -139,4 +139,6 @@ export type UnionMetaResult = UnionMetaOptions & {
 	discriminatorSource?: 'shared' | 'branch' | 'inferred' | 'none'
 	/** 实际使用的选择控件 */
 	resolvedVariant: Exclude<UnionSelectorVariant, 'auto'>
+	/** 紧凑模式：不渲染 Card 边框（用于数组嵌套场景） */
+	compact?: boolean
 }

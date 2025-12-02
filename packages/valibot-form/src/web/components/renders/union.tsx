@@ -431,87 +431,88 @@ function UnionField(props: RendererProps) {
 	}, [selectedBranch, fieldName, selectedBranchIndex, nonBranchKeys, discriminator])
 
 	const branchFieldsNode = useMemo(() => {
-		if (branchFields.length === 0) return renderEmptyBranch()
+		if (branchFields.length === 0) return ep.compact ? null : renderEmptyBranch()
 
-		return (
-			<Card withBorder p="md">
-				<Stack gap="md">
-					{branchFields.map((field) => {
-						const fieldKey = field.key
-						const extracted = field.extracted ?? cachedExtractInfo(field.schema, {}, fieldKey)
-						if (!extracted) return null
+		const fieldsContent = (
+			<Stack gap="md">
+				{branchFields.map((field) => {
+					const fieldKey = field.key
+					const extracted = field.extracted ?? cachedExtractInfo(field.schema, {}, fieldKey)
+					if (!extracted) return null
 
-						const fieldErrors = field.replaceBranchValue
-							? errors ?? []
-							: (errors ?? [])
-									.filter((err) => err.dotPath.length > 1 && err.dotPath[1] === fieldKey)
-									.map((err) => ({
-										...err,
-										dotPath: err.dotPath.slice(1),
-									}))
-						const fieldValue = field.replaceBranchValue
-							? value
-							: isObject(value)
-								? (value as Record<string, unknown>)[fieldKey]
-								: undefined
+					const fieldErrors = field.replaceBranchValue
+						? errors ?? []
+						: (errors ?? [])
+								.filter((err) => err.dotPath.length > 1 && err.dotPath[1] === fieldKey)
+								.map((err) => ({
+									...err,
+									dotPath: err.dotPath.slice(1),
+								}))
+					const fieldValue = field.replaceBranchValue
+						? value
+						: isObject(value)
+							? (value as Record<string, unknown>)[fieldKey]
+							: undefined
 
-						return (
-							<MetaRenderer
-								key={fieldKey}
-								type={extracted.type}
-								fieldName={fieldKey}
-								formBaseInfo={extracted.formInfo}
-								extractedPropsInfo={extracted.props}
-								value={fieldValue}
-								errors={fieldErrors}
-								inputProps={{
-									...inputProps,
-									name: inputProps.name ? `${inputProps.name}.${fieldKey}` : fieldKey,
-									onChange: (event: any) => {
-										const newFieldValue = event?.target?.value ?? event
-										if (field.replaceBranchValue) {
-											const currentValue = isObject(value) ? (value as Record<string, unknown>) : {}
-											const baseValue: Record<string, unknown> = isObject(newFieldValue)
-												? { ...(newFieldValue as Record<string, unknown>) }
-												: { [fieldKey]: newFieldValue }
+					return (
+						<MetaRenderer
+							key={fieldKey}
+							type={extracted.type}
+							fieldName={fieldKey}
+							formBaseInfo={extracted.formInfo}
+							extractedPropsInfo={extracted.props}
+							value={fieldValue}
+							errors={fieldErrors}
+							inputProps={{
+								...inputProps,
+								name: inputProps.name ? `${inputProps.name}.${fieldKey}` : fieldKey,
+								onChange: (event: any) => {
+									const newFieldValue = event?.target?.value ?? event
+									if (field.replaceBranchValue) {
+										const currentValue = isObject(value) ? (value as Record<string, unknown>) : {}
+										const baseValue: Record<string, unknown> = isObject(newFieldValue)
+											? { ...(newFieldValue as Record<string, unknown>) }
+											: { [fieldKey]: newFieldValue }
 
-											for (const key of nonBranchKeys) {
-												if (key === discriminator) continue
-												if (key in currentValue && !(key in baseValue)) {
-													baseValue[key] = currentValue[key]
-												}
+										for (const key of nonBranchKeys) {
+											if (key === discriminator) continue
+											if (key in currentValue && !(key in baseValue)) {
+												baseValue[key] = currentValue[key]
 											}
-
-											if (
-												discriminator &&
-												selectedBranch?.discriminatorValue !== null &&
-												selectedBranch?.discriminatorValue !== undefined
-											) {
-												baseValue[discriminator] = selectedBranch.discriminatorValue
-											}
-
-											triggerFormEvents(inputProps, baseValue)
-										} else {
-											const currentValue = isObject(value) ? (value as Record<string, unknown>) : {}
-											const nextValue: Record<string, unknown> = { ...currentValue, [fieldKey]: newFieldValue }
-											if (
-												discriminator &&
-												selectedBranch?.discriminatorValue !== null &&
-												selectedBranch?.discriminatorValue !== undefined
-											) {
-												nextValue[discriminator] = selectedBranch.discriminatorValue
-											}
-											triggerFormEvents(inputProps, nextValue)
 										}
-									},
-								}}
-							/>
-						)
-					})}
-				</Stack>
-			</Card>
+
+										if (
+											discriminator &&
+											selectedBranch?.discriminatorValue !== null &&
+											selectedBranch?.discriminatorValue !== undefined
+										) {
+											baseValue[discriminator] = selectedBranch.discriminatorValue
+										}
+
+										triggerFormEvents(inputProps, baseValue)
+									} else {
+										const currentValue = isObject(value) ? (value as Record<string, unknown>) : {}
+										const nextValue: Record<string, unknown> = { ...currentValue, [fieldKey]: newFieldValue }
+										if (
+											discriminator &&
+											selectedBranch?.discriminatorValue !== null &&
+											selectedBranch?.discriminatorValue !== undefined
+										) {
+											nextValue[discriminator] = selectedBranch.discriminatorValue
+										}
+										triggerFormEvents(inputProps, nextValue)
+									}
+								},
+							}}
+						/>
+					)
+				})}
+			</Stack>
 		)
-	}, [branchFields, errors, value, inputProps, discriminator, selectedBranch])
+
+		// 紧凑模式不渲染 Card 边框
+		return ep.compact ? fieldsContent : <Card withBorder p="md">{fieldsContent}</Card>
+	}, [branchFields, errors, value, inputProps, discriminator, selectedBranch, ep.compact, nonBranchKeys])
 
 	return (
 		<FieldChrome

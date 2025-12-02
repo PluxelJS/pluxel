@@ -56,6 +56,18 @@ const picklistValidators = formOptions({
 
 export const AUTOFORM_CASES: AutoFormCase[] = [
 	{
+		id: 'nested-array',
+		label: 'Nested Array',
+		description: 'Array 嵌套 Object 的递归渲染演示（如机器人配置列表）。',
+		schema: schema.NestedArraySchema,
+	},
+	{
+		id: 'complex-nested',
+		label: 'Complex Nested',
+		description: '多层嵌套 + Union 联动：服务列表 → 连接列表 → HTTP/WebSocket 切换。',
+		schema: schema.ComplexNestedSchema,
+	},
+	{
 		id: 'picklist',
 		label: 'Picklist Smart',
 		description: '多尺寸枚举 + 多选组合，覆盖 clear/search/max 的智能默认。',

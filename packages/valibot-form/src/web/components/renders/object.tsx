@@ -68,11 +68,10 @@ function ObjectField(props: RendererProps) {
 
 	// 布局配置
 	const variant = extractedPropsInfo.variant ?? 'card'
-	const columns = variant === 'stack' ? 1
-		: Math.max(1, Math.min(
-			extractedPropsInfo.columns ?? (childInfos.length >= GRID_COLUMN_THRESHOLD ? DEFAULT_GRID_COLUMNS : 1),
-			4
-		))
+	const columns = Math.max(1, Math.min(
+		extractedPropsInfo.columns ?? (childInfos.length >= GRID_COLUMN_THRESHOLD ? DEFAULT_GRID_COLUMNS : 1),
+		4
+	))
 	const gapValue = extractedPropsInfo.gap ?? theme.spacing.lg
 
 	// 性能优化：使用 useCallback 缓存构建子字段 props 的函数
@@ -132,6 +131,7 @@ function ObjectField(props: RendererProps) {
 				display: 'grid',
 				gap: gapValue,
 				gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))`,
+				alignItems: 'end', // 底部对齐，让不同高度的字段视觉上更协调
 			}}>
 				{renderedChildren}
 			</div>
@@ -167,6 +167,27 @@ function ObjectField(props: RendererProps) {
 			)}
 		</Group>
 	)
+
+	// stack 变体：不渲染 Card，直接输出内容
+	if (variant === 'stack') {
+		return (
+			<FieldChrome
+				{...cleanProps({
+					label: formBaseInfo.label,
+					required: formBaseInfo.required,
+					description: formBaseInfo.description,
+					helperText: formBaseInfo.helperText,
+					hint: formBaseInfo.hint,
+					tooltip: formBaseInfo.tooltip,
+					badge: formBaseInfo.badge,
+					errors: baseErrors,
+					hideLabel: formBaseInfo.hideLabel,
+				})}
+			>
+				{content}
+			</FieldChrome>
+		)
+	}
 
 	return (
 		<FieldChrome
