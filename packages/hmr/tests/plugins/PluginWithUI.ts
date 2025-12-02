@@ -106,7 +106,7 @@ export class PluginWithUIRpc extends RpcTarget {
 	}
 }
 
-declare module '@pluxel/hmr' {
+declare module '@pluxel/hmr/services' {
 	interface RpcExtensions {
 		PluginWithUI: PluginWithUIRpc
 	}
