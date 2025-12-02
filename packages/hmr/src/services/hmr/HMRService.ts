@@ -1,7 +1,6 @@
 import { existsSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { type Context, Injectable } from '@pluxel/core'
-import { configSourcePlugin } from '@pluxel/rolldown'
 import { makeIdFiltersToMatchWithQuery } from '@rolldown/pluginutils'
 import { enable as enableDebug } from 'obug'
 import { dirname, resolve } from 'pathe'
@@ -9,7 +8,6 @@ import { glob } from 'tinyglobby'
 import {
 	createFilter,
 	createServer,
-	type InlineConfig,
 	type ModuleNode,
 	normalizePath,
 	type Plugin,
@@ -19,8 +17,8 @@ import {
 import { type ModuleCacheMap, ViteNodeRunner } from 'vite-node/client'
 import { ViteNodeServer } from 'vite-node/server'
 import { installSourcemapsSupport } from 'vite-node/source-map'
-import tsconfigPaths from 'vite-tsconfig-paths'
 import {
+	buildHmrViteConfig,
 	type HMRDependencyConfig,
 	type ResolvedHMRDependencyConfig,
 	resolveHMRDependencyConfig,
@@ -160,9 +158,7 @@ export class HMRService {
 		private ctx: Context,
 		private config: HMRConfig,
 	) {
-		this.scanRootsAbs = unique(
-			this.config.dir.map((dir) => normalizePath(resolve(this.cwd, dir))),
-		)
+		this.scanRootsAbs = unique(this.config.dir.map((dir) => normalizePath(resolve(this.cwd, dir))))
 		this.recomputeResolveBaseDirs()
 		this.deps = resolveHMRDependencyConfig(this.config.deps)
 		this.logConfig = resolveHmrLogConfig(this.config.log)
@@ -194,10 +190,7 @@ export class HMRService {
 			`${dir}/**/*.d.ts`,
 			`${dir}/**/node_modules/**`,
 		])
-		const excludeGlobs = makeIdFiltersToMatchWithQuery([
-			...excludePatterns,
-			'**/node_modules/**',
-		])
+		const excludeGlobs = makeIdFiltersToMatchWithQuery([...excludePatterns, '**/node_modules/**'])
 		const baseFilter = createFilter(includeGlobs, excludeGlobs)
 		this.filter = (id: string) => {
 			const normalized = this.toViteId(id)
@@ -461,7 +454,7 @@ export class HMRService {
 			const entries: string[] = []
 			for (const pkg of workspaceEntries) {
 				const entryId = this.toCleanId(pkg.entry)
-				entries.add(entryId)
+				entries.push(entryId)
 				const dirNorm = normalizePath(pkg.dir)
 				for (const info of rootInfos) {
 					if (!covered.has(info.normalized) && dirNorm.startsWith(info.normalized)) {
@@ -587,37 +580,14 @@ export class HMRService {
 
 	public async start(): Promise<void> {
 		const serverFsAllow = this.resolveFsAllowList()
-		const serverConfig: InlineConfig = {
+		const serverConfig = buildHmrViteConfig({
 			root: this.cwd,
-			server: {
-				port: 3000,
-				middlewareMode: false,
-				fs: {
-					allow: serverFsAllow,
-				},
-			},
-			resolve: {
-				conditions: this.getViteResolveConditions(),
-			},
-			plugins: [
-				tsconfigPaths(),
-				configSourcePlugin({ include: this.config.dir.map((d) => `${d}/**/*.{ts,tsx}`) }),
-				this.plugin,
-				this.ctx.honoService.viteHonoDevServer,
-			],
-			// ✅ 真正禁用依赖预优化，以免 graph 形变
-			optimizeDeps: {
-				force: true, // 避免某些场景下跳过预优化
-				include: Array.from(this.deps.optimizeDepsInclude),
-				// 某些 CJS 包需要命名导出映射时的兜底（视实际需要开启）
-				needsInterop: Array.from(this.deps.optimizeDepsInterop),
-			},
-			ssr: {
-				// 避免把 react/react-dom external 掉，交给 Vite 处理更一致
-				noExternal: Array.from(this.deps.ssrNoExternal),
-				external: Array.from(this.deps.ssrExternal), // 只保留你必须 external 的
-			},
-		}
+			fsAllow: serverFsAllow,
+			scanDirs: this.config.dir,
+			deps: this.deps,
+			runnerPlugin: this.plugin,
+			honoPlugin: this.ctx.honoService.viteHonoDevServer,
+		})
 		const server = await createServer(serverConfig)
 		await server.listen()
 		server.printUrls()
@@ -706,14 +676,6 @@ export class HMRService {
 			}
 		}
 		return [...allow]
-	}
-
-	private getViteResolveConditions(): string[] {
-		const preferred = ['@pluxel/hmr', '@pluxel/source', 'source']
-		const defaults = ['module', 'browser', 'development', 'production', 'default']
-		const extras =
-			process.env.NODE_ENV && !defaults.includes(process.env.NODE_ENV) ? [process.env.NODE_ENV] : []
-		return [...new Set([...preferred, ...defaults, ...extras])]
 	}
 
 	/* ------------------------------ 目标挑选（最近锚点） ------------------------------ */

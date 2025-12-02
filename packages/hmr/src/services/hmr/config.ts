@@ -47,6 +47,9 @@ const DEFAULT_OPTIMIZE_DEPS_INCLUDE = [
 ] as const
 const DEFAULT_OPTIMIZE_DEPS_INTEROP = ['react', 'react-dom'] as const
 
+export const BASE_HMR_RESOLVE_CONDITIONS = ['@pluxel/hmr', '@pluxel/source', 'source'] as const
+const DEFAULT_RESOLVE_CONDITIONS = ['module', 'browser', 'development', 'production', 'default']
+
 export const DEFAULT_HMR_DEPENDENCY_CONFIG: ResolvedHMRDependencyConfig = {
 	bridgeModules: DEFAULT_BRIDGE_MODULES,
 	runnerExternal: DEFAULT_RUNNER_EXTERNAL,
@@ -70,3 +73,58 @@ export function resolveHMRDependencyConfig(
 		optimizeDepsInterop: overrides.optimizeDepsInterop ?? DEFAULT_OPTIMIZE_DEPS_INTEROP,
 	}
 }
+
+export function buildHmrResolveConditions(env = process.env.NODE_ENV): string[] {
+	const extras = env && !DEFAULT_RESOLVE_CONDITIONS.includes(env) ? [env] : []
+	return [...new Set([...BASE_HMR_RESOLVE_CONDITIONS, ...DEFAULT_RESOLVE_CONDITIONS, ...extras])]
+}
+
+export interface HmrViteConfigOptions {
+	root: string
+	fsAllow: string[]
+	scanDirs: string[]
+	deps: ResolvedHMRDependencyConfig
+	runnerPlugin: Plugin
+	honoPlugin: Plugin
+	port?: number
+}
+
+export function buildHmrViteConfig(opts: HmrViteConfigOptions): InlineConfig {
+	const conditions = buildHmrResolveConditions()
+	return {
+		root: opts.root,
+		server: {
+			port: opts.port ?? 3000,
+			middlewareMode: false,
+			fs: {
+				allow: opts.fsAllow,
+			},
+		},
+		resolve: {
+			conditions,
+		},
+		plugins: [
+			tsconfigPaths(),
+			configSourcePlugin({ include: opts.scanDirs.map((d) => `${d}/**/*.{ts,tsx}`) }),
+			importTypeFixerPlugin(),
+			opts.runnerPlugin,
+			opts.honoPlugin,
+		],
+		optimizeDeps: {
+			force: true,
+			include: Array.from(opts.deps.optimizeDepsInclude),
+			needsInterop: Array.from(opts.deps.optimizeDepsInterop),
+		},
+		ssr: {
+			noExternal: Array.from(opts.deps.ssrNoExternal),
+			external: Array.from(opts.deps.ssrExternal),
+			resolve: {
+				conditions,
+			},
+		},
+	}
+}
+
+import { configSourcePlugin, importTypeFixerPlugin } from '@pluxel/rolldown'
+import type { InlineConfig, Plugin } from 'vite'
+import tsconfigPaths from 'vite-tsconfig-paths'
