@@ -28,11 +28,13 @@ const DEFAULT_BRIDGE_MODULES = [
 	'@pluxel/hmr',
 	'@pluxel/hmr/services',
 	'@pluxel/hmr/config',
+	'@pluxel/hmr/web',
+	'@pluxel/hmr/capnweb',
 ] as const
 
 const DEFAULT_RUNNER_EXTERNAL: ReadonlyArray<string | RegExp> = [
 	/^(react|react-dom|lodash|dayjs)(\/|$)/,
-	/^@pluxel(?:\/.*)?$/,
+	...DEFAULT_BRIDGE_MODULES,
 ]
 
 const DEFAULT_SSR_EXTERNAL = DEFAULT_BRIDGE_MODULES

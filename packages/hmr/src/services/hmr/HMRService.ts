@@ -1,7 +1,9 @@
+import { existsSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
 import { type Context, Injectable } from '@pluxel/core'
 import { makeIdFiltersToMatchWithQuery } from '@rolldown/pluginutils'
 import { enable as enableDebug } from 'obug'
-import { resolve } from 'pathe'
+import { dirname, resolve } from 'pathe'
 import {
 	createFilter,
 	createServer,
@@ -9,6 +11,7 @@ import {
 	type ModuleNode,
 	normalizePath,
 	type Plugin,
+	searchForWorkspaceRoot,
 	type ViteDevServer,
 } from 'vite'
 import { ModuleCacheMap, ViteNodeRunner } from 'vite-node/client'
@@ -34,6 +37,8 @@ import {
 export interface HMRConfig {
 	/** 业务扫描边界：仅这些目录下的 .ts/.tsx 会被纳入 HMR 入口挑选 */
 	dir: string[]
+	/** 额外允许 Vite Dev Server 访问的目录（绝对路径或会基于 cwd 解析的相对路径） */
+	fsAllow?: string[]
 	/** 计时归因策略：'off' 关闭预取归因，仅保留 evaluate/inject；'prefetch' 预取受影响文件做 transform 计时（默认） */
 	attribution?: 'off' | 'prefetch'
 	/** 预取上限：避免超大变更范围引发 storm（默认 200） */
@@ -58,6 +63,19 @@ export interface HMRConfig {
 /* --------------------------------- 常量 --------------------------------- */
 
 const DEFAULT_PREFETCH_LIMIT = 200
+const hmrPackageRoot = (() => {
+	try {
+		let current = dirname(fileURLToPath(import.meta.url))
+		while (true) {
+			if (existsSync(resolve(current, 'package.json'))) return normalizePath(current)
+			const parent = dirname(current)
+			if (parent === current) return null
+			current = parent
+		}
+	} catch {
+		return null
+	}
+})()
 
 const serviceName = 'hmrService' as const
 declare module '@pluxel/core' {
@@ -338,9 +356,8 @@ export class HMRService {
 				// 7) 冷启动：扫描 + 预热执行（让 loader 完成 anchors 首次填充）
 				const endScan = startTimer()
 				const scanRoots = this.config.dir.map((d) => resolve(process.cwd(), d))
-				const files = await this.ctx.scanService.scanEntries({
+				const files = await this.ctx.hmrWorkspaceService.scanEntries({
 					roots: scanRoots,
-					scan: { preferHmrExports: true, fallbackTsOnSingle: true },
 				})
 				this.ctx.logger.info('[HMR] scan: %d files in %sms', files.length, endScan().toFixed(1))
 
@@ -543,10 +560,19 @@ export class HMRService {
 	/* ------------------------------ DevServer 启动 ------------------------------ */
 
 	public async start(): Promise<void> {
+		const serverFsAllow = this.resolveFsAllowList()
 		const serverConfig: InlineConfig = {
 			root: process.cwd(),
-			server: { port: 3000, middlewareMode: false },
-			resolve: {},
+			server: {
+				port: 3000,
+				middlewareMode: false,
+				fs: {
+					allow: serverFsAllow,
+				},
+			},
+			resolve: {
+				conditions: this.getViteResolveConditions(),
+			},
 			plugins: [
 				tsconfigPaths(),
 				configSourcePlugin({ include: this.config.dir.map((d) => `${d}/**/*.{ts,tsx}`) }),
@@ -628,6 +654,33 @@ export class HMRService {
 		}
 
 		return { affectedIds, roots, distance }
+	}
+
+	private resolveFsAllowList(): string[] {
+		const allow = new Set<string>()
+		const workspaceRoot = searchForWorkspaceRoot(process.cwd())
+		if (workspaceRoot) allow.add(normalizePath(workspaceRoot))
+		allow.add(normalizePath(process.cwd()))
+		if (hmrPackageRoot) allow.add(hmrPackageRoot)
+		for (const dir of this.config.dir) {
+			allow.add(normalizePath(resolve(process.cwd(), dir)))
+		}
+		if (Array.isArray(this.config.fsAllow)) {
+			for (const extra of this.config.fsAllow) {
+				allow.add(normalizePath(resolve(process.cwd(), extra)))
+			}
+		}
+		return [...allow]
+	}
+
+	private getViteResolveConditions(): string[] {
+		const preferred = ['@pluxel/hmr', '@pluxel/source', 'source']
+		const defaults = ['module', 'browser', 'development', 'production', 'default']
+		const extras =
+			process.env.NODE_ENV && !defaults.includes(process.env.NODE_ENV)
+				? [process.env.NODE_ENV]
+				: []
+		return [...new Set([...preferred, ...defaults, ...extras])]
 	}
 
 	/* ------------------------------ 目标挑选（最近锚点） ------------------------------ */

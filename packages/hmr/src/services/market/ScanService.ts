@@ -6,6 +6,7 @@ import { EntryResolver } from './scan/entry-resolver'
 import { buildScanGraph } from './scan/graph-builder'
 import { DEFAULT_SCAN_OPTIONS, resolveScanOptions } from './scan/options'
 import { ModuleResolveCache } from './scan/resolve-cache'
+import { createScanCacheKey, normalizeScanInputs, resolveScanRoots } from './scan/shared'
 import type {
 	EntryResolution,
 	EntryResolutionOk,
@@ -82,7 +83,7 @@ export class ScanService {
 
 	constructor(_ctx: Context, config: ScanServiceConfig = {}) {
 		this.defaults = resolveScanOptions(DEFAULT_SCAN_OPTIONS, config.options)
-		this.roots = normalizeInputs(config.roots ?? process.cwd())
+		this.roots = normalizeScanInputs(config.roots ?? process.cwd())
 	}
 
 	/**
@@ -102,7 +103,7 @@ export class ScanService {
 			mutated = true
 		}
 		if (config.roots) {
-			this.roots = normalizeInputs(config.roots)
+			this.roots = normalizeScanInputs(config.roots)
 			mutated = true
 		}
 		if (mutated) this.clearCaches()
@@ -143,9 +144,9 @@ export class ScanService {
 	 * 构建（或复用缓存）扫描快照，包含包图、入口列表与索引。
 	 */
 	async snapshot(request: ScanTaskOptions = {}): Promise<ScanSnapshot> {
-		const roots = resolveRoots(this.roots, request.roots)
+		const roots = resolveScanRoots(this.roots, request.roots)
 		const options = resolveScanOptions(this.defaults, request.scan)
-		const cacheKey = createCacheKey(roots, options)
+		const cacheKey = createScanCacheKey(roots, options)
 
 		const cached = this.snapshotCache.get(cacheKey)
 		if (cached) return cached
@@ -287,30 +288,6 @@ export const isEntryOk = (entry: EntryResolution): entry is EntryResolutionOk =>
 export const isPackageEntryOk = (
 	pkg: PackageNode,
 ): pkg is PackageNode & { entry: EntryResolutionOk } => pkg.entry.ok
-
-function normalizeInputs(input: string | string[]): string[] {
-	const list = Array.isArray(input) ? input : [input]
-	const out = new Set<string>()
-	for (const raw of list) {
-		const trimmed = typeof raw === 'string' ? raw.trim() : ''
-		const candidate = trimmed || '.'
-		const abs = isAbsolute(candidate) ? candidate : r(process.cwd(), candidate)
-		out.add(normalize(abs))
-	}
-	if (out.size === 0) {
-		return [normalize(r(process.cwd(), '.'))]
-	}
-	return Array.from(out).sort()
-}
-
-function createCacheKey(inputs: string[], options: ResolvedScanOptions): string {
-	return JSON.stringify([[...inputs].sort(), options])
-}
-
-function resolveRoots(defaultRoots: string[], override?: string | string[]): string[] {
-	if (!override) return defaultRoots
-	return normalizeInputs(override)
-}
 
 function selectPackage(
 	selector: PackageSelector,
