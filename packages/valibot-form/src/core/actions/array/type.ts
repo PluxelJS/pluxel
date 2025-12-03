@@ -16,6 +16,8 @@ export type ArrayMetaOptions<T extends string | number = string | number> = {
 	emptyHint?: string
 	minItems?: number
 	maxItems?: number
+	/** 禁用自动多列布局（用于嵌套场景，避免空间过小） */
+	disableAutoGrid?: boolean
 	/** 当 valueMode === 'picklist' 时启用 MultiSelect（默认一切合理默认）；defaults-picker 模式下 options 可选 */
 	picklist?: {
 		/** picklist 模式必填，defaults-picker 模式可选（选项来自 defaultValues） */

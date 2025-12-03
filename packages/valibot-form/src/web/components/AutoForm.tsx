@@ -134,7 +134,7 @@ function SectionBlock({
 				}}
 			>
 				{section.fields.map(({ name, info }) => {
-					const span = resolveFieldSpan(columns, info.formInfo.layout)
+					const span = resolveFieldSpan(columns, info.formInfo.layout, info.type)
 					return (
 						<div
 							key={name}

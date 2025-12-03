@@ -17,7 +17,7 @@ import { META_MAP } from '~/core/utils'
 import { FieldChrome } from '../shared'
 import { cleanProps } from '../../utils/propHelpers'
 import { cachedExtractInfo } from '../schemaCache'
-import { alignToCss, resolveFieldSpan } from '../layout'
+import { alignToCss, countCompactFields, resolveFieldSpan } from '../layout'
 
 type RendererProps = CommonProps<typeof META_MAP.object>
 
@@ -68,8 +68,9 @@ function ObjectField(props: RendererProps) {
 
 	// 布局配置
 	const variant = extractedPropsInfo.variant ?? 'card'
+	const compactCount = countCompactFields(childInfos.map(c => ({ type: c.info.type })))
 	const columns = Math.max(1, Math.min(
-		extractedPropsInfo.columns ?? (childInfos.length >= GRID_COLUMN_THRESHOLD ? DEFAULT_GRID_COLUMNS : 1),
+		extractedPropsInfo.columns ?? (compactCount >= GRID_COLUMN_THRESHOLD ? DEFAULT_GRID_COLUMNS : 1),
 		4
 	))
 	const gapValue = extractedPropsInfo.gap ?? theme.spacing.lg
@@ -103,7 +104,7 @@ function ObjectField(props: RendererProps) {
 			childInput.disabled = childDisabled
 			childInput.readOnly = childReadOnly
 
-			const span = resolveFieldSpan(columns, child.info.formInfo.layout)
+			const span = resolveFieldSpan(columns, child.info.formInfo.layout, child.info.type)
 			const align = alignToCss(child.info.formInfo.layout?.align)
 
 			return (
@@ -182,6 +183,7 @@ function ObjectField(props: RendererProps) {
 					badge: formBaseInfo.badge,
 					errors: baseErrors,
 					hideLabel: formBaseInfo.hideLabel,
+					hideRequired: formBaseInfo.hideRequired,
 				})}
 			>
 				{content}
@@ -201,6 +203,7 @@ function ObjectField(props: RendererProps) {
 				badge: formBaseInfo.badge,
 				errors: baseErrors,
 				hideLabel: true,
+				hideRequired: formBaseInfo.hideRequired,
 			})}
 		>
 			<Card withBorder radius="md" p="md">

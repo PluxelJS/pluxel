@@ -3,7 +3,7 @@
  */
 
 // 表单布局
-export const GRID_COLUMN_THRESHOLD = 4
+export const GRID_COLUMN_THRESHOLD = 3 // 紧凑字段数量达到此值时启用双列布局
 export const DEFAULT_GRID_COLUMNS = 2
 
 // 数组字段

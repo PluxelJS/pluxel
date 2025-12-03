@@ -31,7 +31,7 @@ import {
 import { CSS } from '@dnd-kit/utilities'
 import { useEffect, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
-import { DEFAULT_TEXTS } from '~/core/constants'
+import { DEFAULT_TEXTS, GRID_COLUMN_THRESHOLD } from '~/core/constants'
 import type { ArrayMetaResult } from '~/core/actions/array'
 import type { CommonProps } from '~/core/registry'
 import { MetaRenderer, registerRenderer, triggerFormEvents } from '~/core/registry'
@@ -102,6 +102,113 @@ function defaultByMode(
 	}
 }
 
+/**
+ * 数组项布局信息
+ * - compact: 是否适合多列布局
+ * - maxColumns: 推荐的最大列数（基于项类型的自然宽度）
+ */
+interface ArrayItemLayoutInfo {
+	compact: boolean
+	maxColumns: 1 | 2 | 3
+}
+
+/**
+ * 分析数组项的布局特性
+ * 根据项类型决定是否适合多列以及最大列数
+ */
+function analyzeArrayItemLayout(ep: ArrayUI & { itemSchema?: unknown }): ArrayItemLayoutInfo {
+	// 显式指定的 valueMode 优先
+	if (ep.valueMode && ep.valueMode !== 'auto') {
+		switch (ep.valueMode) {
+			case 'boolean':
+				// 开关控件非常紧凑，可以 3 列
+				return { compact: true, maxColumns: 3 }
+			case 'number':
+			case 'picklist':
+				// 数字和选择器适合 2-3 列
+				return { compact: true, maxColumns: 3 }
+			case 'string':
+				// 字符串默认 2 列（除非是 textarea）
+				return { compact: true, maxColumns: 2 }
+			case 'json':
+			case 'object':
+			case 'array':
+			case 'union':
+			case 'variant':
+				return { compact: false, maxColumns: 1 }
+			default:
+				return { compact: false, maxColumns: 1 }
+		}
+	}
+
+	// 从 itemSchema 推断
+	if (ep.itemSchema) {
+		const info = cachedExtractInfo(ep.itemSchema as object, 'item')
+		if (info) {
+			switch (info.type) {
+				case 'boolean':
+					return { compact: true, maxColumns: 3 }
+				case 'number':
+				case 'picklist':
+					return { compact: true, maxColumns: 3 }
+				case 'string': {
+					// 检查 string 的 mode，textarea/code 需要单列
+					const mode = (info.props as any)?.mode
+					if (mode === 'textarea' || mode === 'code') {
+						return { compact: false, maxColumns: 1 }
+					}
+					return { compact: true, maxColumns: 2 }
+				}
+				case 'object':
+				case 'array':
+				case 'union':
+				case 'record':
+					return { compact: false, maxColumns: 1 }
+				default:
+					return { compact: false, maxColumns: 1 }
+			}
+		}
+	}
+
+	return { compact: false, maxColumns: 1 }
+}
+
+/**
+ * 计算数组的最佳列数
+ * @param layoutInfo 项布局信息
+ * @param itemCount 项数量
+ * @param explicitColumns 显式指定的列数
+ * @param disableAutoGrid 是否禁用自动多列（嵌套场景）
+ */
+function resolveArrayColumns(
+	layoutInfo: ArrayItemLayoutInfo,
+	itemCount: number,
+	explicitColumns?: number,
+	disableAutoGrid?: boolean,
+): number {
+	// 显式指定优先
+	if (explicitColumns && explicitColumns > 0) {
+		return Math.min(explicitColumns, layoutInfo.maxColumns)
+	}
+
+	// 禁用自动多列（嵌套场景）
+	if (disableAutoGrid) return 1
+
+	// 非紧凑类型强制单列
+	if (!layoutInfo.compact) return 1
+
+	// 项数不足时单列
+	if (itemCount < GRID_COLUMN_THRESHOLD) return 1
+
+	// 根据项数量和最大列数计算最佳列数
+	// 原则：尽量填满行，避免最后一行只有一个元素显得孤单
+	const maxCols = layoutInfo.maxColumns
+	if (itemCount >= 6 && maxCols >= 3) return 3
+	if (itemCount >= 4 && maxCols >= 2) return 2
+	if (itemCount >= 3 && maxCols >= 2) return 2
+	return 1
+}
+
 export function reorderList<T>(list: readonly T[], fromIndex: number, toIndex: number): T[] {
 	if (fromIndex === toIndex || fromIndex < 0 || toIndex < 0 || fromIndex >= list.length || toIndex >= list.length) {
 		return [...list]
@@ -138,8 +245,14 @@ function ArrayField(props: RendererProps) {
 	const { formBaseInfo, errors, extractedPropsInfo, inputProps, value, defaultValue } = props
 	const ep = extractedPropsInfo ?? {}
 	const items = Array.isArray(value) ? (value as unknown[]) : []
-	const layout = ep.layout ?? ep.style ?? 'list'
-	const columns = layout === 'grid' ? (ep.columns ?? 2) : 1
+
+	// 布局计算：基于项类型智能决定列数
+	const explicitLayout = ep.layout ?? ep.style
+	const layoutInfo = analyzeArrayItemLayout(ep)
+	const columns = resolveArrayColumns(layoutInfo, items.length, ep.columns, ep.disableAutoGrid)
+	// 有多列时使用 grid 布局
+	const layout = explicitLayout ?? (columns > 1 ? 'grid' : 'list')
+
 	const minItems = ep.minItems ?? 0
 	const maxItems = ep.maxItems
 	const canAdd =
@@ -188,6 +301,8 @@ function ArrayField(props: RendererProps) {
 					tooltip: formBaseInfo.tooltip,
 					badge: formBaseInfo.badge,
 					errors: baseErrors,
+					hideLabel: formBaseInfo.hideLabel,
+					hideRequired: formBaseInfo.hideRequired,
 				})}
 			>
 				<PicklistControl
@@ -237,6 +352,8 @@ function ArrayField(props: RendererProps) {
 					tooltip: formBaseInfo.tooltip,
 					badge: formBaseInfo.badge,
 					errors: baseErrors,
+					hideLabel: formBaseInfo.hideLabel,
+					hideRequired: formBaseInfo.hideRequired,
 				})}
 			>
 				<PicklistControl
@@ -449,16 +566,18 @@ function ArrayField(props: RendererProps) {
 					dotPath: [String(index)],
 				}))
 
-				// 嵌套类型使用紧凑布局
+				// 嵌套类型使用紧凑布局，禁用自动多列（空间有限）
 				const nestedProps = itemInfo.type === 'object'
 					? { ...itemInfo.props, variant: 'stack' as const, gap: 'sm', columns: itemInfo.props.columns ?? 2 }
-					: (itemInfo.type === 'union' ? { ...itemInfo.props, compact: true } : itemInfo.props)
+					: itemInfo.type === 'array'
+						? { ...itemInfo.props, disableAutoGrid: true }
+						: (itemInfo.type === 'union' ? { ...itemInfo.props, compact: true } : itemInfo.props)
 
 				return {
 					node: (
 						<MetaRenderer
 							type={itemInfo.type}
-							formBaseInfo={{ ...itemInfo.formInfo, label: undefined, hideLabel: true }}
+							formBaseInfo={{ ...itemInfo.formInfo, label: undefined, hideLabel: true, hideRequired: true }}
 							extractedPropsInfo={nestedProps}
 							errors={itemErrors}
 							value={current}
@@ -554,7 +673,7 @@ function ArrayField(props: RendererProps) {
 						style={{ flex: '0 1 280px' }}
 					>
 						<Group justify="space-between" align="center">
-							{node}
+							{control.node}
 							{actionsNode}
 						</Group>
 						{errorsNode ? <div style={{ marginTop: 6 }}>{errorsNode}</div> : null}
@@ -681,6 +800,8 @@ function ArrayField(props: RendererProps) {
 				tooltip: formBaseInfo.tooltip,
 				badge: formBaseInfo.badge,
 				errors: baseErrors,
+				hideLabel: formBaseInfo.hideLabel,
+				hideRequired: formBaseInfo.hideRequired,
 			})}
 		>
 			<Stack gap="md">

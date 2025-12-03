@@ -525,6 +525,8 @@ function UnionField(props: RendererProps) {
 				tooltip: formBaseInfo.tooltip,
 				badge: formBaseInfo.badge,
 				errors: baseErrors,
+				hideLabel: formBaseInfo.hideLabel,
+				hideRequired: formBaseInfo.hideRequired,
 			})}
 		>
 			<Stack gap="md">

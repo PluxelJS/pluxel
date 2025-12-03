@@ -56,6 +56,12 @@ const picklistValidators = formOptions({
 
 export const AUTOFORM_CASES: AutoFormCase[] = [
 	{
+		id: 'telegram',
+		label: 'Telegram Config',
+		description: 'Telegram 机器人配置示例：Union + Array 嵌套。',
+		schema: schema.TelegramConfigSchema,
+	},
+	{
 		id: 'nested-array',
 		label: 'Nested Array',
 		description: 'Array 嵌套 Object 的递归渲染演示（如机器人配置列表）。',
