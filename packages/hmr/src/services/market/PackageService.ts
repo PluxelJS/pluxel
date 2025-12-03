@@ -608,7 +608,7 @@ export class PackageService {
 		const moduleId =
 			record?.moduleId ??
 			this.packageModuleIds.get(name) ??
-			(failure?.moduleId ? normalizePath(failure.moduleId) : undefined)
+			(failure?.moduleId ? this.normalizeModuleId(failure.moduleId) : undefined)
 
 		if (record && moduleId) {
 			this.dropHmrModuleCacheForRecord(record)
@@ -636,14 +636,14 @@ export class PackageService {
 	}
 
 	getPackageSpecByModuleId(moduleId: string): NormalizedPackageSpecifier | undefined {
-		const normalized = normalizePath(moduleId)
+		const normalized = this.normalizeModuleId(moduleId)
 		for (const record of this.loadedPackages.values()) {
-			if (normalizePath(record.moduleId) === normalized) {
+			if (this.normalizeModuleId(record.moduleId) === normalized) {
 				return record.spec
 			}
 		}
 		for (const issue of this.loadFailures.values()) {
-			if (issue.moduleId && normalizePath(issue.moduleId) === normalized) {
+			if (issue.moduleId && this.normalizeModuleId(issue.moduleId) === normalized) {
 				return issue.spec
 			}
 		}
@@ -747,7 +747,7 @@ export class PackageService {
 		for (const entry of entries) {
 			const spec = specFromSnapshot(entry.spec)
 			try {
-				const moduleId = normalizePath(entry.moduleId || entry.resolution.entry)
+				const moduleId = this.normalizeModuleId(entry.moduleId || entry.resolution.entry)
 				const module = await this.importModule(moduleId, this.defaults.preferFreshImport)
 				this.ensurePackageModuleBinding(spec.name, moduleId)
 				this.moduleCache.set(moduleId, { moduleId, module })
@@ -1361,13 +1361,17 @@ export class PackageService {
 	}
 
 	private ensurePackageModuleBinding(name: string, nextModuleId: string) {
-		const normalized = normalizePath(nextModuleId)
+		const normalized = this.normalizeModuleId(nextModuleId)
 		const current = this.packageModuleIds.get(name)
 		if (current && current !== normalized) {
 			this.moduleCache.delete(current)
 			this.ctx.loader.pruneModule(current, 'runtime')
 		}
 		this.packageModuleIds.set(name, normalized)
+	}
+
+	private normalizeModuleId(moduleId: string): string {
+		return this.ctx.hmrService.normalizeId(moduleId)
 	}
 
 	private blockPackage(name: string) {
@@ -1528,7 +1532,7 @@ export class PackageService {
 		installResult?: PackageInstallResult,
 	): Promise<PackageLoadResult> {
 		const resolution = options.resolvedEntry ?? (await this.resolveEntryForSpec(spec, options.scan))
-		const moduleId = normalizePath(resolution.entry)
+		const moduleId = this.normalizeModuleId(resolution.entry)
 		const manifestMeta = await this.readManifestMeta(resolution.dir)
 		this.ensurePackageModuleBinding(spec.name, moduleId)
 
@@ -1627,10 +1631,10 @@ export class PackageService {
 		moduleId: string,
 		module: Record<string, unknown>,
 	) {
-		const hmr = this.ctx.hmrService
-		const normalized = normalizePath(moduleId)
+		const normalized = this.normalizeModuleId(moduleId)
 		const ids = this.collectHmrModuleCacheIds(normalized, spec)
 		const aliases = [...ids].filter((id) => id !== normalized)
+		const hmr = this.ctx.hmrService
 		hmr.primeModuleCacheEntry({ id: normalized, exports: module, aliases })
 	}
 
@@ -1646,13 +1650,15 @@ export class PackageService {
 		moduleId: string,
 		spec: NormalizedPackageSpecifier,
 	): Set<string> {
-		const normalized = normalizePath(moduleId)
-		const ids = new Set<string>([normalized])
+		const hmr = this.ctx.hmrService
+		const normalized = hmr.normalizeId(moduleId)
+		const ids = new Set<string>(hmr.moduleIdAliases(normalized))
+		ids.add(normalizePath(moduleId))
 		ids.add(spec.name)
 		ids.add(spec.target)
 		ids.add(spec.raw)
 		try {
-			ids.add(pathToFileURL(moduleId).href)
+			ids.add(pathToFileURL(normalized).href)
 		} catch {
 			// ignore invalid URL conversion
 		}

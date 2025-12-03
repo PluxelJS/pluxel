@@ -1,18 +1,24 @@
 import { pathToFileURL } from 'node:url'
 import { type Context, Injectable } from '@pluxel/core'
 import { resolveModulePath, type ResolveOptions } from 'exsolve'
-import { dirname, isAbsolute, normalize, resolve as r } from 'pathe'
+import { dirname, normalize } from 'pathe'
 import { EntryResolver } from './scan/entry-resolver'
-import { buildScanGraph } from './scan/graph-builder'
 import { DEFAULT_SCAN_OPTIONS, resolveScanOptions } from './scan/options'
 import { ModuleResolveCache } from './scan/resolve-cache'
-import { createScanCacheKey, normalizeScanInputs, resolveScanRoots } from './scan/shared'
+import { normalizeScanInputs, resolveScanRoots } from './scan/shared'
+import {
+	mergeFocus,
+	missingPackageResolution,
+	type PackageSelector,
+	selectorBareName,
+	selectorFocusHints,
+} from './scan/selectors'
+import { ScanSnapshotBuilder, ScanSnapshotCache, type ScanSnapshot } from './scan/snapshot'
 import type {
 	EntryResolution,
 	EntryResolutionOk,
 	PackageNode,
 	ResolvedScanOptions,
-	ScanGraph,
 	ScanOptionsInput,
 } from './scan/types'
 
@@ -36,8 +42,8 @@ export type {
 	ScanOptionsInput,
 	ScanStats,
 } from './scan/types'
-
-export type PackageSelector = string | { name?: string | null; dir?: string | null }
+export type { PackageSelector } from './scan/selectors'
+export type { ScanSnapshot } from './scan/snapshot'
 
 export interface ScanServiceConfig {
 	/** 默认扫描根目录，可传单个路径或路径数组。 */
@@ -62,19 +68,7 @@ export interface WorkspaceEntryInfo {
 	entry: string
 }
 
-/** 扫描结果快照，包含索引和原始数据。 */
-interface ScanSnapshot {
-	graph: ScanGraph
-	packages: PackageNode[]
-	entries: string[]
-	fallbackEntries: string[]
-	byName: ReadonlyMap<string, PackageNode>
-	byDir: ReadonlyMap<string, PackageNode>
-	findPackage(selector: PackageSelector): PackageNode | undefined
-	resolveEntry(selector: PackageSelector): EntryResolution | undefined
-}
-
-/**
+/** 
  * 扫描工作区并解析包入口的核心服务。
  *
  * - 自动识别 pnpm / Yarn / npm workspaces 以及传统的 `packages/*` 结构。
@@ -87,8 +81,9 @@ export class ScanService {
 	private roots: string[]
 	private readonly resolveCache = new ModuleResolveCache()
 	private readonly entryResolver = new EntryResolver(this.resolveCache)
+	private readonly snapshotBuilder = new ScanSnapshotBuilder(this.entryResolver)
+	private readonly snapshotCache = new ScanSnapshotCache(this.snapshotBuilder)
 	private readonly installedResolver: InstalledPackageResolver
-	private readonly snapshotCache = new Map<string, Promise<ScanSnapshot>>()
 
 	constructor(_ctx: Context, config: ScanServiceConfig = {}) {
 		this.defaults = resolveScanOptions(DEFAULT_SCAN_OPTIONS, config.options)
@@ -156,17 +151,7 @@ export class ScanService {
 	private async snapshot(request: ScanTaskOptions = {}): Promise<ScanSnapshot> {
 		const roots = resolveScanRoots(this.roots, request.roots)
 		const options = resolveScanOptions(this.defaults, request.scan)
-		const cacheKey = createScanCacheKey(roots, options)
-
-		const cached = this.snapshotCache.get(cacheKey)
-		if (cached) return cached
-
-		const promise = this.buildSnapshot(roots, options).catch((err) => {
-			this.snapshotCache.delete(cacheKey)
-			throw err
-		})
-		this.snapshotCache.set(cacheKey, promise)
-		return promise
+		return this.snapshotCache.get(roots, options)
 	}
 
 	/**
@@ -205,7 +190,7 @@ export class ScanService {
 	 * 便捷入口：仅提供包名时的解析逻辑，自动修剪输入。
 	 */
 	async resolveEntryByName(name: string, request: ScanTaskOptions = {}): Promise<EntryResolution> {
-		const trimmed = toTrimmed(name)
+		const trimmed = selectorBareName(name)
 		if (!trimmed) {
 			return {
 				ok: false,
@@ -238,7 +223,7 @@ export class ScanService {
 		packageName: string,
 		conditions?: string[],
 	): Promise<EntryResolution> {
-		const trimmed = toTrimmed(packageName)
+		const trimmed = selectorBareName(packageName)
 		if (!trimmed) {
 			return {
 				ok: false,
@@ -259,122 +244,12 @@ export class ScanService {
 		if (!bare) return undefined
 		return this.installedResolver.resolve(bare, conditions)
 	}
-
-	private async buildSnapshot(
-		inputs: string[],
-		options: ResolvedScanOptions,
-	): Promise<ScanSnapshot> {
-		const graph = await buildScanGraph(inputs, options, this.entryResolver)
-		const byName = new Map<string, PackageNode>()
-		const byDir = new Map<string, PackageNode>()
-
-		for (const pkg of graph.packages) {
-			const dirKey = normalizePackageDir(pkg.dir)
-			if (dirKey && !byDir.has(dirKey)) byDir.set(dirKey, pkg)
-
-			const nameKey = normalizePackageName(pkg.name)
-			if (nameKey && !byName.has(nameKey)) byName.set(nameKey, pkg)
-		}
-
-		const findPackage = (selector: PackageSelector) => selectPackage(selector, byName, byDir)
-		const resolve = (selector: PackageSelector) => findPackage(selector)?.entry
-
-		return {
-			graph,
-			packages: graph.packages,
-			entries: graph.entries,
-			fallbackEntries: graph.fallbackEntries,
-			byName,
-			byDir,
-			findPackage,
-			resolveEntry: resolve,
-		}
-	}
 }
 
 export const isEntryOk = (entry: EntryResolution): entry is EntryResolutionOk => entry.ok
 export const isPackageEntryOk = (
 	pkg: PackageNode,
 ): pkg is PackageNode & { entry: EntryResolutionOk } => pkg.entry.ok
-
-function selectPackage(
-	selector: PackageSelector,
-	byName: Map<string, PackageNode>,
-	byDir: Map<string, PackageNode>,
-): PackageNode | undefined {
-	const keys = selectorKeys(selector)
-	if (keys.name) {
-		const match = byName.get(keys.name)
-		if (match) return match
-	}
-	if (keys.dir) {
-		const match = byDir.get(keys.dir)
-		if (match) return match
-	}
-	return undefined
-}
-
-function selectorKeys(selector: PackageSelector) {
-	if (typeof selector === 'string') {
-		return {
-			name: normalizePackageName(selector),
-			dir: normalizePackageDir(selector),
-		}
-	}
-	return {
-		name: normalizePackageName(selector.name),
-		dir: normalizePackageDir(selector.dir),
-	}
-}
-
-function toTrimmed(value?: string | null): string | undefined {
-	if (typeof value !== 'string') return undefined
-	const trimmed = value.trim()
-	return trimmed || undefined
-}
-
-function normalizePackageName(value?: string | null): string | undefined {
-	const trimmed = toTrimmed(value)
-	return trimmed ? trimmed.toLowerCase() : undefined
-}
-
-function normalizePackageDir(value?: string | null): string | undefined {
-	const trimmed = toTrimmed(value)
-	if (!trimmed) return undefined
-	const abs = isAbsolute(trimmed) ? trimmed : r(process.cwd(), trimmed)
-	return normalize(abs).toLowerCase()
-}
-
-function selectorFocusHints(selector: PackageSelector): string[] {
-	const focus = new Set<string>()
-	const keys = selectorKeys(selector)
-	if (keys.name) focus.add(keys.name)
-	if (keys.dir) focus.add(keys.dir)
-	return [...focus]
-}
-
-function mergeFocus(existing: string[] | undefined, additions: string[]): string[] {
-	const merged = new Set(existing ?? [])
-	for (const hint of additions) {
-		if (hint) merged.add(hint)
-	}
-	return [...merged]
-}
-
-function missingPackageResolution(selector: PackageSelector): EntryResolution {
-	const label = selectorLabel(selector)
-	return {
-		ok: false,
-		dir: label ?? '',
-		code: 'MISSING_PACKAGE',
-		message: label ? `未在扫描范围内找到包 "${label}"。` : '未在扫描范围内找到目标包。',
-	}
-}
-
-function selectorLabel(selector: PackageSelector): string | undefined {
-	if (typeof selector === 'string') return toTrimmed(selector)
-	return toTrimmed(selector.name) ?? toTrimmed(selector.dir)
-}
 
 class InstalledPackageResolver {
 	private readonly from: URL
@@ -426,11 +301,6 @@ class InstalledPackageResolver {
 		}
 		return [undefined]
 	}
-}
-
-function selectorBareName(selector: PackageSelector): string | undefined {
-	if (typeof selector === 'string') return toTrimmed(selector)
-	return toTrimmed(selector.name)
 }
 
 function ensureDirectoryURL(input: string): URL {

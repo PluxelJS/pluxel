@@ -9,9 +9,9 @@ import {
 } from '@pluxel/core'
 import { buildSnapshot as buildSnapshotSource } from './buildSnapshot'
 import {
-	PluginRegistry,
 	type PluginLifecycleSnapshot,
 	type PluginLifecycleStage,
+	PluginRegistry,
 } from './PluginRegistry'
 
 // moduleId：一般指路径，一个文件可以有多个插件 ctor。
@@ -61,26 +61,27 @@ export class LoaderService {
 
 	// 先停旧运行态，再把"已执行的新模块"导出解析并装入。
 	async replaceModule(moduleId: string, mod: Record<string, unknown>): Promise<boolean> {
+		const id = this.normalizeModuleId(moduleId)
 		// 停旧（只影响运行层，保留声明关系以便冲突判断更清晰）
-		this.registry.stopModule(moduleId)
+		this.registry.stopModule(id)
 
 		// 清理旧声明，准备落新声明
-		this.registry.undeclareModule(moduleId)
+		this.registry.undeclareModule(id)
 
 		let isAnchor = false
 		for (const [exportKey, exp] of Object.entries(mod)) {
 			if (typeof exp !== 'function') continue
 			if (!checkPluginDecorator(exp)) continue
-			this.registry.declarePlugin(moduleId, exp as PluginConstructor, exportKey)
+			this.registry.declarePlugin(id, exp as PluginConstructor, exportKey)
 			isAnchor = true
 		}
 
 		// 运行层：根据持久启用位，自动启用需要启用的插件
-		await this.registry.syncRuntimeForModule(moduleId)
+		await this.registry.syncRuntimeForModule(id)
 
 		// 维护锚点
-		if (isAnchor) this.pathAnchors.add(moduleId)
-		else this.pathAnchors.delete(moduleId)
+		if (isAnchor) this.pathAnchors.add(id)
+		else this.pathAnchors.delete(id)
 
 		return isAnchor
 	}
@@ -89,10 +90,11 @@ export class LoaderService {
 	// 2) 删除文件：停运并解除声明；scope 控制是否连持久启用位一起关
 	// ------------------------------------------------------------------
 	pruneModule(moduleId: string, scope: RemovalScope = 'runtime') {
-		if (scope === 'persisted') this.registry.disablePersistedByModule(moduleId)
-		this.registry.stopModule(moduleId)
-		this.registry.undeclareModule(moduleId)
-		this.pathAnchors.delete(moduleId)
+		const id = this.normalizeModuleId(moduleId)
+		if (scope === 'persisted') this.registry.disablePersistedByModule(id)
+		this.registry.stopModule(id)
+		this.registry.undeclareModule(id)
+		this.pathAnchors.delete(id)
 	}
 
 	/** 按插件名清理运行态（找不到路径也能尽量关闭/禁用） */
@@ -192,5 +194,9 @@ export class LoaderService {
 	private deriveLifecycleStage(isRunning: boolean, isEnabled: boolean): PluginLifecycleStage {
 		if (!isEnabled) return 'disabled'
 		return isRunning ? 'running' : 'stopped'
+	}
+
+	private normalizeModuleId(moduleId: string) {
+		return this.ctx.hmrService.normalizeId(moduleId)
 	}
 }

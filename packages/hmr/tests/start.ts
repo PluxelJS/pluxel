@@ -15,6 +15,8 @@ const ctx = new Context({
 				'pluxel:hmr:time',
 				'pluxel:hmr:time:entry',
 				'pluxel:hmr:warmup',
+				'pluxel:hmr:batch',
+				'pluxel:hmr:graph',
 			],
 		},
 	},

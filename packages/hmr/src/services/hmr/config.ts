@@ -79,6 +79,39 @@ export function buildHmrResolveConditions(env = process.env.NODE_ENV): string[] 
 	return [...new Set([...BASE_HMR_RESOLVE_CONDITIONS, ...DEFAULT_RESOLVE_CONDITIONS, ...extras])]
 }
 
+export interface FsAllowOptions {
+	cwd: string
+	cwdNormalized: string
+	scanRoots: string[]
+	configFsAllow?: string[]
+	hmrPackageRoot?: string | null
+}
+
+export function resolveFsAllowList(opts: FsAllowOptions): string[] {
+	const allow = new Set<string>()
+	const workspaceRoot = searchForWorkspaceRoot(opts.cwd)
+	if (workspaceRoot) allow.add(normalizePath(workspaceRoot))
+	allow.add(opts.cwdNormalized)
+	if (opts.hmrPackageRoot) allow.add(opts.hmrPackageRoot)
+	const packageRoots = new Set<string>()
+	for (const dir of opts.scanRoots) {
+		allow.add(dir)
+		const pkgRoot = findNearestPackageRoot(dir)
+		if (pkgRoot) packageRoots.add(pkgRoot)
+	}
+	for (const pkgRoot of packageRoots) {
+		allow.add(pkgRoot)
+		const pkgNodeModules = normalizePath(resolve(pkgRoot, 'node_modules'))
+		if (existsSync(pkgNodeModules)) allow.add(pkgNodeModules)
+	}
+	if (Array.isArray(opts.configFsAllow)) {
+		for (const extra of opts.configFsAllow) {
+			allow.add(normalizePath(resolve(opts.cwd, extra)))
+		}
+	}
+	return [...allow]
+}
+
 export interface HmrViteConfigOptions {
 	root: string
 	fsAllow: string[]
@@ -127,4 +160,8 @@ export function buildHmrViteConfig(opts: HmrViteConfigOptions): InlineConfig {
 
 import { configSourcePlugin, importTypeFixerPlugin } from '@pluxel/rolldown'
 import type { InlineConfig, Plugin } from 'vite'
+import { normalizePath, searchForWorkspaceRoot } from 'vite'
+import { existsSync } from 'node:fs'
+import { resolve } from 'pathe'
+import { findNearestPackageRoot } from './internals'
 import tsconfigPaths from 'vite-tsconfig-paths'

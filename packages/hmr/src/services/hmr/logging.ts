@@ -161,3 +161,105 @@ export function createHmrDebugGroup<T extends Record<string, string>>(
 	}
 	return result
 }
+
+/* --------------------------- 计时与归因 --------------------------- */
+
+export type TimingBucket = 'transform' | 'evaluate' | 'inject'
+
+type NumMap = Map<string, number>
+const bump = (m: NumMap, k: string, v: number) => m.set(k, (m.get(k) ?? 0) + v)
+const nsToMs = (ns: bigint) => Number(ns) / 1e6
+
+export class TimingTracker {
+	private readonly debugEntry
+	private readonly buckets: Record<TimingBucket, NumMap> = {
+		transform: new Map<string, number>(),
+		evaluate: new Map<string, number>(),
+		inject: new Map<string, number>(),
+	}
+
+	constructor(
+		private readonly options: {
+			useColors: boolean
+			formatId: (id: string) => string
+		},
+	) {
+		this.debugEntry = createHmrDebug('pluxel:hmr:time:entry', options.useColors)
+	}
+
+	clear() {
+		for (const bucket of Object.values(this.buckets)) bucket.clear()
+	}
+
+	start(kind: TimingBucket, id: string) {
+		const t0 = process.hrtime.bigint()
+		return () => {
+			const durationMs = nsToMs(process.hrtime.bigint() - t0)
+			this.record(kind, id, durationMs)
+			return durationMs
+		}
+	}
+
+	record(kind: TimingBucket, id: string, durationMs: number) {
+		bump(this.buckets[kind], id, durationMs)
+		if (this.debugEntry.enabled) {
+			const total = this.buckets[kind].get(id) ?? durationMs
+			this.debugEntry('%s %p %t (agg=%t)', kind, this.options.formatId(id), durationMs, total)
+		}
+	}
+
+	top(kind: TimingBucket, n = 5) {
+		return [...this.buckets[kind].entries()].sort((a, b) => b[1] - a[1]).slice(0, n)
+	}
+
+	snapshot() {
+		return {
+			transformMs: this.buckets.transform,
+			evalMs: this.buckets.evaluate,
+			injectMs: this.buckets.inject,
+		}
+	}
+}
+
+type PrettyIdFn = (id: string) => string
+
+const formatTopEntries = (
+	entries: Array<[string, number]>,
+	prettyId: PrettyIdFn,
+	marker?: (id: string) => string | undefined,
+): string => {
+	if (!entries.length) return '    (none)'
+	return entries
+		.map(([id, ms], i) => {
+			const tag = marker?.(id)
+			const suffix = tag ? ` [${tag}]` : ''
+			return `    ${i + 1}. ${prettyId(id)} ${ms.toFixed(1)}ms${suffix}`
+		})
+		.join('\n')
+}
+
+export const formatAttributionReport = (params: {
+	changed: string
+	targets: string[]
+	timing: TimingTracker
+	prettyId: PrettyIdFn
+}) => {
+	const targetSet = new Set(params.targets)
+	const marker = (id: string) =>
+		targetSet.has(id) ? 'target' : id === params.changed ? 'changed' : undefined
+
+	const transformTop = params.timing.top('transform', 5)
+	const evaluateTop = params.timing.top('evaluate', 3)
+	const injectTop = params.timing.top('inject', 3)
+
+	const lines = [
+		`[HMR] attribution: ${params.prettyId(params.changed)} → ${params.targets.length} targets`,
+		'  transform:',
+		formatTopEntries(transformTop, params.prettyId, marker),
+		'  evaluate:',
+		formatTopEntries(evaluateTop, params.prettyId),
+		'  inject:',
+		formatTopEntries(injectTop, params.prettyId),
+	]
+	return lines.join('\n')
+}

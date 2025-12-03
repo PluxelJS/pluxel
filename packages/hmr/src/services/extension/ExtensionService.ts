@@ -549,9 +549,15 @@ export class ExtensionService {
 	}
 
 	private findPluginDir(pluginName: string): string | null {
+		const registryPath = this.ctx.loader.registry.name2PathMap.get(pluginName)
+		if (registryPath) {
+			return dirname(registryPath)
+		}
+
+		const needle = pluginName.toLowerCase()
 		const anchors = this.ctx.loader.pathAnchors
 		for (const path of anchors) {
-			if (path.includes(pluginName)) {
+			if (path.toLowerCase().includes(needle)) {
 				return dirname(path)
 			}
 		}

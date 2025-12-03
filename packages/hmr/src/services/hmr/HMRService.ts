@@ -1,19 +1,9 @@
-import { existsSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { type Context, Injectable } from '@pluxel/core'
-import { makeIdFiltersToMatchWithQuery } from '@rolldown/pluginutils'
 import { enable as enableDebug } from 'obug'
 import { dirname, resolve } from 'pathe'
 import { glob } from 'tinyglobby'
-import {
-	createFilter,
-	createServer,
-	type ModuleNode,
-	normalizePath,
-	type Plugin,
-	searchForWorkspaceRoot,
-	type ViteDevServer,
-} from 'vite'
+import { createServer, type ModuleNode, normalizePath, type Plugin, type ViteDevServer } from 'vite'
 import { type ModuleCacheMap, ViteNodeRunner } from 'vite-node/client'
 import { ViteNodeServer } from 'vite-node/server'
 import { installSourcemapsSupport } from 'vite-node/source-map'
@@ -21,6 +11,7 @@ import {
 	buildHmrViteConfig,
 	type HMRDependencyConfig,
 	type ResolvedHMRDependencyConfig,
+	resolveFsAllowList,
 	resolveHMRDependencyConfig,
 } from './config'
 import {
@@ -29,16 +20,17 @@ import {
 	Mutex,
 	NormalizedModuleCacheMap,
 	startTimer,
-	TimingTracker,
 } from './internals'
+import { HmrEnvironment, type HmrPathApi, type HmrToolkit } from './environment'
 import {
 	createHmrDebug,
 	type HMRLogConfig,
+	formatAttributionReport,
 	type ResolvedHMRLogConfig,
 	resolveHmrLogConfig,
+	TimingTracker,
 	toDebugNamespaceString,
 } from './logging'
-import { resolveBareImport } from './workspace-resolver'
 
 /* -------------------------------- 配置项 -------------------------------- */
 
@@ -72,7 +64,6 @@ export interface HMRConfig {
 
 const DEFAULT_PREFETCH_LIMIT = 200
 const PREFETCH_CONCURRENCY = 8
-
 const hmrPackageRoot = (() => {
 	try {
 		return findNearestPackageRoot(dirname(fileURLToPath(import.meta.url)))
@@ -105,6 +96,11 @@ declare module '@pluxel/core' {
 const unique = <T>(iter: Iterable<T>) => Array.from(new Set(iter))
 
 type RootInfo = { raw: string; normalized: string }
+type BatchGraphContext = {
+	affectedIds: Set<string>
+	rootsAll: string[]
+	distance: Map<string, number>
+}
 
 /* ------------------------------ HMR Service ----------------------------- */
 /**
@@ -119,13 +115,14 @@ export class HMRService {
 	private vite!: ViteDevServer
 	private vns!: ViteNodeServer
 	private runner!: ViteNodeRunner
-	private filter!: (id: string) => boolean
-	private readonly moduleCache = new NormalizedModuleCacheMap((id) => this.toCleanId(id))
-	private serverRoot = ''
 	private readonly cwd = process.cwd()
-	private readonly cwdNormalized = normalizePath(this.cwd)
 	private readonly scanRootsAbs: string[]
-	private resolveBaseDirs: string[] = []
+	private readonly env: HmrEnvironment
+	/** 路径规范化 / 过滤 / 解析的组合工具，便于外部复用 */
+	public readonly toolkit!: HmrToolkit
+	/** path 工具快捷访问（兼容现有调用） */
+	public readonly path!: HmrPathApi
+	private readonly moduleCache: NormalizedModuleCacheMap
 
 	/** 依赖/模块行为：external、bridge、optimizeDeps 等 */
 	private readonly deps: ResolvedHMRDependencyConfig
@@ -159,7 +156,14 @@ export class HMRService {
 		private config: HMRConfig,
 	) {
 		this.scanRootsAbs = unique(this.config.dir.map((dir) => normalizePath(resolve(this.cwd, dir))))
-		this.recomputeResolveBaseDirs()
+		this.env = new HmrEnvironment(this.ctx, {
+			cwd: this.cwd,
+			scanRootsAbs: this.scanRootsAbs,
+			workspaceConditions: this.workspaceConditions,
+		})
+		this.toolkit = this.env.toolkit
+		this.path = this.toolkit.path
+		this.moduleCache = new NormalizedModuleCacheMap((id) => this.path.toClean(id))
 		this.deps = resolveHMRDependencyConfig(this.config.deps)
 		this.logConfig = resolveHmrLogConfig(this.config.log)
 
@@ -175,28 +179,12 @@ export class HMRService {
 
 		this.timing = new TimingTracker({
 			useColors,
-			formatId: (id) => this.prettyId(id),
+			formatId: (id) => this.path.pretty(id),
 		})
 
 		// 可选开启 obug namespace（否则遵循 DEBUG 环境变量）
 		const ns = toDebugNamespaceString(this.logConfig.debugNamespaces)
 		if (ns) enableDebug(ns)
-
-		// include .ts/.tsx；排除 .d.ts（兼容 ?v= 查询串）
-		const includeGlobs = makeIdFiltersToMatchWithQuery(
-			this.scanRootsAbs.flatMap((dir) => [`${dir}/**/*.{ts,tsx}`]),
-		)
-		const excludePatterns = this.scanRootsAbs.flatMap((dir) => [
-			`${dir}/**/*.d.ts`,
-			`${dir}/**/node_modules/**`,
-		])
-		const excludeGlobs = makeIdFiltersToMatchWithQuery([...excludePatterns, '**/node_modules/**'])
-		const baseFilter = createFilter(includeGlobs, excludeGlobs)
-		this.filter = (id: string) => {
-			const normalized = this.toViteId(id)
-			if (normalized.includes('/node_modules/')) return false
-			return baseFilter(normalized)
-		}
 
 		this.plugin = {
 			name: 'pluxel-runner',
@@ -205,8 +193,7 @@ export class HMRService {
 			/** DevServer 生命周期：桥接 vite-node、预热业务代码、注册监听 */
 			configureServer: async (server) => {
 				this.vite = server
-				this.serverRoot = this.toViteId(server.config.root)
-				this.recomputeResolveBaseDirs()
+				this.setServerRoot(server.config.root)
 				await this.initRunner(server)
 				await this.bridgeWorkspaceModules(this.deps.bridgeModules)
 				this.setupBatching()
@@ -216,7 +203,7 @@ export class HMRService {
 
 			/** 服务端 HMR：仅入队，由批处理串行执行 */
 			handleHotUpdate: async (ctx0) => {
-				this.enqueueFileChange(ctx0.file)
+				this.enqueueFileChange(ctx0.file, 'change')
 				return [] // 服务端 HMR 由我们全权处理
 			},
 		}
@@ -224,6 +211,18 @@ export class HMRService {
 
 	public get moduleCacheMap(): ModuleCacheMap {
 		return this.moduleCache
+	}
+
+	public normalizeId(id: string): string {
+		return this.path.toClean(id)
+	}
+
+	public moduleIdAliases(id: string): string[] {
+		return this.path.variants(id)
+	}
+
+	public setServerRoot(root: string) {
+		this.env.setServerRoot(root)
 	}
 
 	/** Allow external services (e.g. PackageService) to hydrate or refresh runner cache entries. */
@@ -237,7 +236,7 @@ export class HMRService {
 		}
 		const ids = new Set<string>([params.id, ...(params.aliases ?? [])])
 		for (const rawId of ids) {
-			const cleanId = this.toCleanId(rawId)
+			const cleanId = this.path.toClean(rawId)
 			this.moduleCache.set(cleanId, { ...cacheEntry })
 		}
 	}
@@ -245,7 +244,7 @@ export class HMRService {
 	/** Remove module cache mappings for a set of ids (any alias form is accepted). */
 	public dropModuleCacheEntries(ids: Iterable<string>) {
 		for (const rawId of ids) {
-			const cleanId = this.toCleanId(rawId)
+			const cleanId = this.path.toClean(rawId)
 			this.moduleCache.delete(cleanId)
 		}
 	}
@@ -267,7 +266,7 @@ export class HMRService {
 			base: server.config.base,
 			moduleCache: this.moduleCache,
 			fetchModule: async (id) => {
-				const clean = this.toCleanId(id)
+				const clean = this.path.toClean(id)
 				const end = this.timing.start('transform', clean)
 				const result = await this.vns.fetchModule(id)
 				end()
@@ -276,7 +275,7 @@ export class HMRService {
 			resolveId: async (id, importer) => {
 				const resolved = await this.vns.resolveId(id, importer)
 				if (resolved) return resolved
-				const bareResolved = await this.resolveBareModule(id, importer)
+				const bareResolved = await this.env.resolveBareModule(id, importer)
 				return bareResolved ? { id: bareResolved } : null
 			},
 		})
@@ -298,17 +297,22 @@ export class HMRService {
 	}
 
 	private registerWatchers(server: ViteDevServer) {
+		server.watcher.on('change', (file) => {
+			this.enqueueFileChange(file, 'change')
+		})
 		server.watcher.on('add', (file) => {
-			this.enqueueFileChange(file)
+			this.enqueueFileChange(file, 'add')
 		})
 		server.watcher.on('unlink', (file) => {
-			this.enqueueFileChange(file)
+			this.enqueueFileChange(file, 'unlink')
 		})
 	}
 
-	private enqueueFileChange(file: string) {
-		if (!this.filter(file)) return false
-		this.debouncer.push(this.toCleanId(file))
+	private enqueueFileChange(file: string, _kind: 'change' | 'add' | 'unlink') {
+		const clean = this.path.toClean(file)
+		if (!this.toolkit.pathFilter(clean)) return false
+
+		this.debouncer.push(clean)
 		return true
 	}
 
@@ -318,13 +322,13 @@ export class HMRService {
 		this.ctx.logger.info('[HMR] scan: %d files in %sms', files.length, endScan().toFixed(1))
 
 		const endWarmup = startTimer()
-		const coldFiles = unique(files.map((p) => this.toCleanId(p))).sort()
+		const coldFiles = unique(files.map((p) => this.path.toClean(p))).sort()
 
 		if (this.dbg.warmup.enabled) {
 			this.dbg.warmup(
 				'files (%n): %l',
 				coldFiles.length,
-				coldFiles.map((f) => this.prettyId(f)),
+				coldFiles.map((f) => this.path.pretty(f)),
 			)
 		}
 
@@ -332,99 +336,22 @@ export class HMRService {
 		this.ctx.logger.info('[HMR] warmup: %d files in %sms', coldFiles.length, endWarmup().toFixed(1))
 	}
 
-	/* --------------------------- 路径规范化工具 --------------------------- */
-
-	/** 生成常见等价 ID（绝对、/@fs、根相对），用于查 graph 与缓存 */
-	private moduleIdVariants(pOrId: string): string[] {
-		const canonical = this.toCleanId(pOrId)
-		const variants = new Set<string>([canonical])
-
-		if (canonical.startsWith('/')) {
-			variants.add(`/@fs${canonical}`)
-			if (this.serverRoot && canonical.startsWith(this.serverRoot)) {
-				const rel = canonical.slice(this.serverRoot.length)
-				const relWithSlash = rel.startsWith('/') ? rel : `/${rel}`
-				variants.add(relWithSlash)
-			}
-		}
-
-		return [...variants]
-	}
-
-	private toViteId(p: string) {
-		return normalizePath(p) // Windows \ → /；保持与 vite graph 一致
-	}
-	private cleanUrl(id: string) {
-		const i = id.indexOf('?') // 去除 ?v= / ?import 变体
-		return i >= 0 ? id.slice(0, i) : id
-	}
-	private isBareImport(id: string) {
-		if (!id) return false
-		if (id.startsWith('.') || id.startsWith('/') || id.startsWith('\0')) return false
-		if (/^[a-zA-Z]:[\\/]/.test(id)) return false
-		return true
-	}
-	private toCleanId(pOrId: string) {
-		const clean = this.cleanUrl(this.toViteId(pOrId))
-		// 1) Vite 内部访问文件系统会加 /@fs/ 前缀
-		let normalized = clean.replace(/^\/@fs\//, '/')
-		// 2) 处理 dev server 根相对的路径（/tests/...）
-		if (this.serverRoot && normalized.startsWith('/') && !normalized.startsWith(this.serverRoot)) {
-			normalized = normalizePath(resolve(this.serverRoot, normalized.slice(1)))
-		}
-		return normalized
-	}
-	private prettyId(pOrId: string) {
-		const clean = this.toCleanId(pOrId)
-		if (clean.startsWith(this.cwdNormalized))
-			return clean.slice(this.cwdNormalized.length).replace(/^\\\//, '')
-		return clean
-	}
-	private async resolveBareModule(specifier: string, importer?: string | null) {
-		if (!this.isBareImport(specifier)) return null
-		const normalizedImporter = importer ? this.toCleanId(importer) : importer
-		return (
-			(await resolveBareImport({
-				specifier,
-				importer: normalizedImporter,
-				scanService: this.ctx.scanService,
-				conditions: this.workspaceConditions,
-				fallbackBaseDirs: this.computeFallbackResolveDirs(normalizedImporter ?? undefined),
-			})) ?? null
-		)
-	}
-
-	private recomputeResolveBaseDirs() {
-		const bases = new Set<string>([this.cwdNormalized])
-		for (const dir of this.scanRootsAbs) bases.add(dir)
-		if (this.serverRoot) bases.add(this.serverRoot)
-		this.resolveBaseDirs = [...bases]
-	}
-
-	private computeFallbackResolveDirs(importer?: string | null): string[] {
-		const bases = new Set<string>(this.resolveBaseDirs)
-		if (importer && importer.startsWith('/')) {
-			const importerDir = dirname(importer)
-			bases.add(importerDir)
-			const pkgRoot = findNearestPackageRoot(importerDir)
-			if (pkgRoot) {
-				bases.add(pkgRoot)
-				bases.add(normalizePath(resolve(pkgRoot, 'node_modules')))
-			}
-		}
-		return [...bases]
-	}
-
 	private async collectSourceEntries(roots: string[]): Promise<string[]> {
 		if (!roots.length) return []
 		const entries = new Set<string>()
+		for (const anchor of this.ctx.loader.pathAnchors) {
+			const clean = this.path.toClean(anchor)
+			entries.add(clean)
+		}
 		const rootInfos: RootInfo[] = roots.map((raw) => ({
 			raw,
 			normalized: normalizePath(raw),
 		}))
 		const workspaceResult = await this.tryCollectWorkspaceEntries(rootInfos)
 		if (workspaceResult) {
-			for (const entry of workspaceResult.entries) entries.add(entry)
+			for (const entry of workspaceResult.entries) {
+				entries.add(entry)
+			}
 		}
 		const coveredRoots = workspaceResult?.covered
 		const uncovered = rootInfos
@@ -453,7 +380,7 @@ export class HMRService {
 			const covered = new Set<string>()
 			const entries: string[] = []
 			for (const pkg of workspaceEntries) {
-				const entryId = this.toCleanId(pkg.entry)
+				const entryId = this.path.toClean(pkg.entry)
 				entries.push(entryId)
 				const dirNorm = normalizePath(pkg.dir)
 				for (const info of rootInfos) {
@@ -477,7 +404,7 @@ export class HMRService {
 			onlyFiles: true,
 			ignore: ['**/*.d.ts', '**/node_modules/**'],
 		})
-		return unique(files.map((file) => this.toCleanId(file)))
+		return unique(files.map((file) => this.path.toClean(file)))
 	}
 
 	/* ------------------------------ 执行 + 注入 ------------------------------ */
@@ -491,7 +418,7 @@ export class HMRService {
 	private async runAndLoadAll(filesPath: string[], keepOrder = true) {
 		if (!filesPath.length) return undefined
 
-		const dedup = unique(filesPath.map((p) => this.toCleanId(p)))
+		const dedup = unique(filesPath.map((p) => this.path.toClean(p)))
 		const ordered = keepOrder ? dedup : [...dedup]
 
 		for (const id of ordered) {
@@ -518,7 +445,7 @@ export class HMRService {
 			// 使用格式化器：%p 路径高亮，%t 时间高亮，%b 布尔高亮
 			this.dbg.modules(
 				'execute %p: eval=%t inject=%t plugin=%b',
-				this.prettyId(id),
+				this.path.pretty(id),
 				evaluateMs,
 				injectMs,
 				hasPlugin,
@@ -556,12 +483,12 @@ export class HMRService {
 				}
 
 				// 4. 同一模块可能被以多种 key 访问，尽可能覆盖
-				const ids = new Set<string>([specifier, resolved1.id, this.toCleanId(resolved1.id)])
+				const ids = new Set<string>([specifier, resolved1.id, this.path.toClean(resolved1.id)])
 
 				const resolved2 = await this.vns.resolveId(resolved1.id)
 				if (resolved2?.id) {
 					ids.add(resolved2.id)
-					ids.add(this.toCleanId(resolved2.id))
+					ids.add(this.path.toClean(resolved2.id))
 				}
 
 				const aliases = [...ids].filter((id) => id !== specifier)
@@ -579,7 +506,13 @@ export class HMRService {
 	/* ------------------------------ DevServer 启动 ------------------------------ */
 
 	public async start(): Promise<void> {
-		const serverFsAllow = this.resolveFsAllowList()
+		const serverFsAllow = resolveFsAllowList({
+			cwd: this.cwd,
+			cwdNormalized: this.env.paths.cwdNormalizedPath,
+			scanRoots: this.scanRootsAbs,
+			configFsAllow: Array.isArray(this.config.fsAllow) ? this.config.fsAllow : undefined,
+			hmrPackageRoot,
+		})
 		const serverConfig = buildHmrViteConfig({
 			root: this.cwd,
 			fsAllow: serverFsAllow,
@@ -598,7 +531,7 @@ export class HMRService {
 
 	/** 从 FS 路径拿到 graph 模块节点（兼容 byFile / byId 两支） */
 	private getModulesByFile(fileOrId: string) {
-		const variants = this.moduleIdVariants(fileOrId)
+		const variants = this.path.variants(fileOrId)
 		for (const variant of variants) {
 			const byFile = this.vite.moduleGraph.getModulesByFile(variant)
 			if (byFile?.size) return [...byFile]
@@ -612,7 +545,7 @@ export class HMRService {
 
 	/**
 	 * 受影响收集（仅业务边界）
-	 * - 自底向上沿 importers 递归，将命中 this.filter 且非虚拟模块(\0) 的节点纳入
+	 * - 自底向上沿 importers 递归，将命中 pathFilter 且非虚拟模块(\0) 的节点纳入
 	 * - roots：受影响集合中“其 importer 不在集合内”的最上游节点（兜底执行）
 	 * - distance：自变更点起的上行 BFS 距离（用于预取排序）
 	 */
@@ -630,8 +563,8 @@ export class HMRService {
 		while (cursor < queue.length) {
 			const { m, d } = queue[cursor++]
 			if (!m?.id) continue
-			const id = this.toCleanId(m.id)
-			if (!this.filter(id) || id.startsWith('\0')) continue
+			const id = this.path.toClean(m.id)
+			if (!this.toolkit.pathFilter(id) || id.startsWith('\0')) continue
 			if (visited.has(id)) continue
 			visited.add(id)
 			affectedIds.add(id)
@@ -645,7 +578,7 @@ export class HMRService {
 		for (const id of affectedIds) {
 			const m = idToMod.get(id)!
 			const hasImporterInside = [...m.importers].some(
-				(im) => im.id && affectedIds.has(this.toCleanId(im.id)),
+				(im) => im.id && affectedIds.has(this.path.toClean(im.id)),
 			)
 			if (!hasImporterInside) roots.push(id)
 		}
@@ -653,29 +586,57 @@ export class HMRService {
 		return { affectedIds, roots, distance }
 	}
 
-	private resolveFsAllowList(): string[] {
-		const allow = new Set<string>()
-		const workspaceRoot = searchForWorkspaceRoot(this.cwd)
-		if (workspaceRoot) allow.add(normalizePath(workspaceRoot))
-		allow.add(this.cwdNormalized)
-		if (hmrPackageRoot) allow.add(hmrPackageRoot)
-		const packageRoots = new Set<string>()
-		for (const dir of this.scanRootsAbs) {
-			allow.add(dir)
-			const pkgRoot = findNearestPackageRoot(dir)
-			if (pkgRoot) packageRoots.add(pkgRoot)
+	private collectBatchGraph(files: string[]): BatchGraphContext {
+		const affectedIds = new Set<string>()
+		const rootsAll: string[] = []
+		const distance = new Map<string, number>()
+
+		for (const f of files) {
+			const { affectedIds: a, roots, distance: dist } = this.collectAffected(f)
+			for (const id of a) affectedIds.add(id)
+			rootsAll.push(...roots)
+			dist.forEach((d, id) => {
+				const prev = distance.get(id)
+				if (prev === undefined || d < prev) distance.set(id, d)
+			})
 		}
-		for (const pkgRoot of packageRoots) {
-			allow.add(pkgRoot)
-			const pkgNodeModules = normalizePath(resolve(pkgRoot, 'node_modules'))
-			if (existsSync(pkgNodeModules)) allow.add(pkgNodeModules)
-		}
-		if (Array.isArray(this.config.fsAllow)) {
-			for (const extra of this.config.fsAllow) {
-				allow.add(normalizePath(resolve(this.cwd, extra)))
+
+		return { affectedIds, rootsAll, distance }
+	}
+
+	private logGraphDebug(graph: BatchGraphContext) {
+		if (!this.dbg.graph.enabled) return
+		const affectedList = [...graph.affectedIds].map((id) => {
+			const d = graph.distance.get(id) ?? -1
+			return `${this.path.pretty(id)} (d=${d})`
+		})
+		this.dbg.graph('affected (%n): %l', graph.affectedIds.size, affectedList)
+		this.dbg.graph(
+			'roots (%n): %l',
+			graph.rootsAll.length,
+			graph.rootsAll.map((r) => this.path.pretty(r)),
+		)
+	}
+
+	private pruneMissingModules(files: string[]) {
+		for (const f of files) {
+			const mods = this.vite.moduleGraph.getModulesByFile(f)
+			const exists = mods?.size || this.vite.moduleGraph.getModuleById(f)
+			if (!exists) {
+				this.ctx.loader.pathAnchors.delete(f)
+				this.ctx.loader.pruneModule(f)
 			}
 		}
-		return [...allow]
+	}
+
+	private logBatchList(label: string, files: string[]) {
+		if (!this.dbg.batch.enabled) return
+		this.dbg.batch(
+			'%s (%n): %l',
+			label,
+			files.length,
+			files.map((f) => this.path.pretty(f)),
+		)
 	}
 
 	/* ------------------------------ 目标挑选（最近锚点） ------------------------------ */
@@ -691,7 +652,7 @@ export class HMRService {
 		pathAnchors: Set<string>,
 	) {
 		const anchorSet = new Set<string>()
-		for (const a of pathAnchors) anchorSet.add(this.toCleanId(a))
+		for (const a of pathAnchors) anchorSet.add(this.path.toClean(a))
 
 		const targets = new Set<string>()
 		let needFallbackRoots = false
@@ -702,7 +663,7 @@ export class HMRService {
 			else needFallbackRoots = true
 		}
 
-		if (needFallbackRoots) for (const r of rawRoots) targets.add(this.toCleanId(r))
+		if (needFallbackRoots) for (const r of rawRoots) targets.add(this.path.toClean(r))
 		return Array.from(targets)
 	}
 
@@ -718,11 +679,11 @@ export class HMRService {
 		while (cursor < queue.length) {
 			const m = queue[cursor++]
 			if (!m?.id) continue
-			const id = this.toCleanId(m.id)
+			const id = this.path.toClean(m.id)
 			if (visited.has(id)) continue
 			visited.add(id)
 
-			if (!this.filter(id) || id.startsWith('\0')) continue
+			if (!this.toolkit.pathFilter(id) || id.startsWith('\0')) continue
 
 			if (anchors.has(id)) {
 				this.anchorCache.set(startCleanId, id)
@@ -750,7 +711,7 @@ export class HMRService {
 
 		// 1) 失效 Vite 的 transform/ssr 缓存
 		for (const id of affectedIds) {
-			for (const variant of this.moduleIdVariants(id)) {
+			for (const variant of this.path.variants(id)) {
 				const mods = g.getModulesByFile(variant)
 				if (mods?.size) {
 					for (const m of mods) {
@@ -770,7 +731,7 @@ export class HMRService {
 		// 2) 失效 vite-node 执行缓存（清理所有查询后缀的等价 key）
 		const invalidatedKeys: string[] = []
 		for (const key of this.moduleCache.keys()) {
-			const base = this.toCleanId(key)
+			const base = this.path.toClean(key)
 			if (affectedIds.has(base)) {
 				this.moduleCache.delete(key)
 				runnerInvalidated++
@@ -784,7 +745,7 @@ export class HMRService {
 			if (invalidatedKeys.length > 0) {
 				this.dbg.cache(
 					'runner keys: %l',
-					invalidatedKeys.map((k) => this.prettyId(k)),
+					invalidatedKeys.map((k) => this.path.pretty(k)),
 				)
 			}
 		}
@@ -812,12 +773,20 @@ export class HMRService {
 		return items.slice(0, Math.max(1, limit))
 	}
 
+	private buildPrefetchPlan(targets: string[], graph: BatchGraphContext) {
+		if ((this.config.attribution ?? 'prefetch') !== 'prefetch') return []
+		const limit = this.config.prefetchLimit ?? DEFAULT_PREFETCH_LIMIT
+		const order = this.config.prefetchOrder ?? 'near'
+		const base = targets.length ? new Set(targets) : graph.affectedIds
+		return this.buildPrefetchList(base, graph.distance, order, limit)
+	}
+
 	/** 仅 transform，不 evaluate；把账记到每个受影响文件 */
 	private async prefetchTransforms(ids: Iterable<string>) {
 		const seen = new Set<string>()
 		const queue: string[] = []
 		for (const raw of ids) {
-			const id = this.toCleanId(raw)
+			const id = this.path.toClean(raw)
 			if (seen.has(id)) continue
 			seen.add(id)
 			queue.push(id)
@@ -842,44 +811,6 @@ export class HMRService {
 		await Promise.all(Array.from({ length: workerCount }, () => worker()))
 	}
 
-	/* ------------------------------ 观测输出 ------------------------------ */
-
-	/** 格式化 top 排名 */
-	private formatTopEntries(
-		entries: Array<[string, number]>,
-		marker?: (id: string) => string | undefined,
-	): string {
-		if (!entries.length) return '    (none)'
-		return entries
-			.map(([id, ms], i) => {
-				const tag = marker?.(id)
-				const suffix = tag ? ` [${tag}]` : ''
-				return `    ${i + 1}. ${this.prettyId(id)} ${ms.toFixed(1)}ms${suffix}`
-			})
-			.join('\n')
-	}
-
-	private printAttribution(changed: string, _affectedIds: Set<string>, targets: string[]) {
-		const targetSet = new Set(targets)
-		const marker = (id: string) =>
-			targetSet.has(id) ? 'target' : id === changed ? 'changed' : undefined
-
-		const transformTop = this.timing.top('transform', 5)
-		const evaluateTop = this.timing.top('evaluate', 3)
-		const injectTop = this.timing.top('inject', 3)
-
-		const lines = [
-			`[HMR] attribution: ${this.prettyId(changed)} → ${targets.length} targets`,
-			'  transform:',
-			this.formatTopEntries(transformTop, marker),
-			'  evaluate:',
-			this.formatTopEntries(evaluateTop),
-			'  inject:',
-			this.formatTopEntries(injectTop),
-		]
-		this.ctx.logger.info(lines.join('\n'))
-	}
-
 	/* ------------------------------ 批处理主流程 ------------------------------ */
 
 	private async processBatch(files: string[], epoch: number) {
@@ -888,90 +819,45 @@ export class HMRService {
 		this.anchorCache.clear()
 		this.ctx.logger.info('[HMR#%d] begin: %d files', epoch, files.length)
 
-		// 详细输出触发文件（需 DEBUG=pluxel:hmr:batch）
-		if (this.dbg.batch.enabled) {
-			this.dbg.batch(
-				'changed files (%n): %l',
-				files.length,
-				files.map((f) => this.prettyId(f)),
-			)
-		}
+		this.logBatchList('changed files', files)
 
-		// 1) 合并受影响子图（多起点）
-		const affectedIds = new Set<string>()
-		const rootsAll: string[] = []
-		const distance = new Map<string, number>()
-		for (const f of files) {
-			const { affectedIds: a, roots, distance: dist } = this.collectAffected(f)
-			for (const id of a) {
-				affectedIds.add(id)
-			}
-			rootsAll.push(...roots)
-			dist.forEach((d, id) => {
-				const prev = distance.get(id)
-				if (prev === undefined || d < prev) distance.set(id, d)
-			})
-		}
+		const graph = this.collectBatchGraph(files)
+		this.logGraphDebug(graph)
 
-		// 详细输出受影响子图（需 DEBUG=pluxel:hmr:graph）
-		if (this.dbg.graph.enabled) {
-			const affectedList = [...affectedIds].map((id) => {
-				const d = distance.get(id) ?? -1
-				return `${this.prettyId(id)} (d=${d})`
-			})
-			this.dbg.graph('affected (%n): %l', affectedIds.size, affectedList)
-			this.dbg.graph(
-				'roots (%n): %l',
-				rootsAll.length,
-				rootsAll.map((r) => this.prettyId(r)),
-			)
-		}
+		this.pruneMissingModules(files)
+		this.invalidateCaches(graph.affectedIds)
 
-		// 2) 针对 unlink 的清理：不在图内的直接注销并清锚点
-		for (const f of files) {
-			const mods = this.vite.moduleGraph.getModulesByFile(f)
-			const exists = mods?.size || this.vite.moduleGraph.getModuleById(f)
-			if (!exists) {
-				this.ctx.loader.pathAnchors.delete(f)
-				this.ctx.loader.pruneModule(f)
-			}
-		}
+		const targets = this.pickTargetsByAnchors(
+			graph.affectedIds,
+			graph.rootsAll,
+			this.ctx.loader.pathAnchors,
+		)
 
-		// 3) 缓存失效（Vite + vite-node）
-		this.invalidateCaches(affectedIds)
+		this.logBatchList('targets', targets)
 
-		// 4) 最近锚点挑选（不可达则回退 roots）
-		const targets = this.pickTargetsByAnchors(affectedIds, rootsAll, this.ctx.loader.pathAnchors)
-
-		// 详细输出 targets（需 DEBUG=pluxel:hmr:batch）
-		if (this.dbg.batch.enabled) {
-			this.dbg.batch(
-				'targets (%n): %l',
-				targets.length,
-				targets.map((t) => this.prettyId(t)),
-			)
-		}
-
-		// 5) 预取 transform（优先只对将执行的 targets；为空则回落 affectedIds）
-		if ((this.config.attribution ?? 'prefetch') === 'prefetch') {
-			const limit = this.config.prefetchLimit ?? DEFAULT_PREFETCH_LIMIT
-			const order = this.config.prefetchOrder ?? 'near'
-			const base = targets.length ? new Set(targets) : affectedIds
-			const prefetchList = this.buildPrefetchList(base, distance, order, limit)
+		const prefetchList = this.buildPrefetchPlan(targets, graph)
+		if (prefetchList.length) {
 			await this.prefetchTransforms(prefetchList)
 		}
 
 		// 6) 执行入口（按距离近→远）
 		const execOrder = this.buildPrefetchList(
 			new Set(targets),
-			distance,
+			graph.distance,
 			'near',
 			targets.length || 1,
 		)
 		await this.runAndLoadAll(execOrder, /*keepOrder*/ true)
 
 		// 7) 观测输出
-		this.printAttribution(files[0] ?? 'N/A', affectedIds, execOrder)
+		this.ctx.logger.info(
+			formatAttributionReport({
+				changed: files[0] ?? 'N/A',
+				targets: execOrder,
+				timing: this.timing,
+				prettyId: (id) => this.path.pretty(id),
+			}),
+		)
 		const activeServices = this.ctx.registry.pluginRegistry.lastContainer?.services.size ?? 0
 		this.ctx.logger.info(
 			'[HMR#%d] end: %d services, %sms',
