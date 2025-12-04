@@ -97,8 +97,9 @@ export type RecordMetaOptions = {
 	 * - `'json'`: JSON 编辑器
 	 * - `'picklist'`: 单选下拉框
 	 * - `'picklist-array'`: 多选下拉框（值为数组）
+	 * - `'object' | 'array' | 'union' | 'variant'`: 嵌套表单（自动渲染子 schema）
 	 */
-	valueMode?: 'auto' | 'string' | 'number' | 'boolean' | 'json' | 'picklist' | 'picklist-array'
+	valueMode?: 'auto' | 'string' | 'number' | 'boolean' | 'json' | 'picklist' | 'picklist-array' | 'object' | 'array' | 'union' | 'variant'
 
 	/** 最少键值对数量 */
 	minItems?: number
@@ -150,6 +151,9 @@ export type RecordMetaOptions = {
 		/** 无匹配时的提示文本 */
 		nothingFoundLabel?: string
 	}
+
+	/** 记录值的 schema，供嵌套表单渲染（自动注入） */
+	valueSchema?: unknown
 }
 
 /**

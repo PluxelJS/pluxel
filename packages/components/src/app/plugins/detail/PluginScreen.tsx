@@ -145,13 +145,22 @@ function usePluginDetail(pluginName?: string) {
 
 export const PluginScreen = memo(function PluginScreen({ pluginName }: PluginScreenProps) {
 	const theme = useMantineTheme()
-	const breakpointLg =
-		typeof theme.breakpoints?.lg === 'number'
-			? `${theme.breakpoints.lg}px`
-			: (theme.breakpoints?.lg ?? '62em')
-	const isStacked = useMediaQuery(`(max-width: ${breakpointLg})`, false, {
+	// 更早进入纵向堆叠，确保右侧配置区域在窄屏下可读
+	const isStackedWide = useMediaQuery('(max-width: 1500px)', false, {
 		getInitialValueInEffect: true,
 	})
+	const isStackedBreak = useMediaQuery(
+		`(max-width: ${
+			typeof theme.breakpoints?.lg === 'number'
+				? `${theme.breakpoints.lg}px`
+				: theme.breakpoints?.lg ?? '62em'
+		})`,
+		false,
+		{
+			getInitialValueInEffect: true,
+		},
+	)
+	const isStacked = isStackedWide || isStackedBreak
 
 	const { scope, ready, error, loading, refetch } = usePluginDetail(pluginName)
 	const parentExtensionCtx = useExtensionContext()

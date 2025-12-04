@@ -1,9 +1,8 @@
-import { Box, Flex } from '@mantine/core'
+import { Box, useMantineTheme } from '@mantine/core'
+import { useMediaQuery } from '@mantine/hooks'
 import { LeftPane } from './LeftPane'
 import { RightPane } from './RightPane'
 import type { PluginConfigState } from '../../hooks'
-
-const LEFT_WIDTH = 'clamp(320px, 32vw, 440px)'
 
 interface PluginLayoutProps {
 	config: PluginConfigState
@@ -11,28 +10,35 @@ interface PluginLayoutProps {
 }
 
 export function PluginLayout({ config, stacked = false }: PluginLayoutProps) {
+	const theme = useMantineTheme()
+	const isUltraNarrow = useMediaQuery(`(max-width: ${theme.breakpoints?.md ? `${theme.breakpoints.md}px` : '62em'})`, false, {
+		getInitialValueInEffect: true,
+	})
+	const effectiveStacked = stacked || isUltraNarrow
+	const leftMin = 340
+	const leftMax = 460
+	const columns = effectiveStacked ? '1fr' : `minmax(${leftMin}px, ${leftMax}px) minmax(0, 1fr)`
+
 	return (
-		<Flex
-			direction={stacked ? 'column' : 'row'}
-			gap="md"
-			align="stretch"
-			style={{ flex: 1, minHeight: 0, minWidth: 0 }}
+		<Box
+			style={{
+				display: 'grid',
+				gridTemplateColumns: columns,
+				gridAutoRows: effectiveStacked ? 'auto' : 'minmax(0, 1fr)',
+				gap: 'var(--mantine-spacing-md)',
+				alignItems: 'stretch',
+				flex: 1,
+				minHeight: 0,
+				minWidth: 0,
+			}}
 		>
-			<Box
-				style={{
-					flex: stacked ? 'initial' : '0 0 auto',
-					width: stacked ? '100%' : LEFT_WIDTH,
-					minWidth: 0,
-					minHeight: stacked ? 'auto' : '100%',
-					display: 'flex',
-				}}
-			>
-				<LeftPane compact={stacked} />
+			<Box style={{ minWidth: 0, minHeight: 0, display: 'flex' }}>
+				<LeftPane compact={effectiveStacked} />
 			</Box>
 
 			<Box style={{ flex: 1, minWidth: 0, minHeight: 0, display: 'flex' }}>
 				<RightPane config={config} />
 			</Box>
-		</Flex>
+		</Box>
 	)
 }

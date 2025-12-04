@@ -1,4 +1,5 @@
 import { BasePlugin, Config, Plugin } from '@pluxel/core'
+import { TelegramConfig } from './config'
 // PluginA.ts
 // PluginA 依赖 PluginB 为必选依赖，依赖 PluginC 为可选依赖
 // biome-ignore lint/style/useImportType: <PluginSystem>
@@ -13,6 +14,9 @@ export class PluginA extends BasePlugin {
 
 	@Config(test1)
 	private test1!: Config<typeof test1>
+
+	@Config(TelegramConfig)
+	private telegram!: Config<typeof TelegramConfig>
 
 	constructor(public pluginB: PluginB) {
 		super()

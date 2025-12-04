@@ -16,11 +16,12 @@ import { IconArrowDown, IconArrowUp, IconPlus, IconTrash } from '@tabler/icons-r
 import { useEffect, useMemo, useState } from 'react'
 import type { RecordMetaResult } from '~/core/actions/record'
 import type { CommonProps } from '~/core/registry'
-import { registerRenderer, triggerFormEvents } from '~/core/registry'
+import { MetaRenderer, registerRenderer, triggerFormEvents } from '~/core/registry'
 import { META_MAP } from '~/core/utils'
 import { FieldChrome } from '../shared'
 import { cleanProps } from '../../utils/propHelpers'
 import { PicklistControl } from './controls/PicklistControl'
+import { cachedExtractInfo } from '../schemaCache'
 
 type RendererProps = CommonProps<typeof META_MAP.RECORD> & { value?: Record<string, unknown> }
 type RecordUI = RecordMetaResult
@@ -55,6 +56,12 @@ function inferMode(
 	if (value && typeof value === 'object') return 'json'
 	return 'string'
 }
+
+const slug = (value: string) =>
+	value
+		.toLowerCase()
+		.replace(/[^a-z0-9_-]+/gi, '-')
+		.replace(/^-+|-+$/g, '') || 'item'
 
 function RecordField(props: RendererProps) {
 	const { formBaseInfo, errors, extractedPropsInfo, inputProps, value } = props
@@ -103,12 +110,12 @@ function RecordField(props: RendererProps) {
 		.map((err) => err.message)
 
 	const entryErrors = useMemo(() => {
-		const map = new Map<string, string[]>()
+		const map = new Map<string, { message: string; dotPath: string[] }[]>()
 		for (const err of errors ?? []) {
 			if (err.dotPath.length <= 1) continue
-			const key = err.dotPath[1]
+			const key = String(err.dotPath[1])
 			if (!map.has(key)) map.set(key, [])
-			map.get(key)!.push(err.message)
+			map.get(key)!.push({ message: err.message, dotPath: err.dotPath.slice(1) })
 		}
 		return map
 	}, [errors])
@@ -282,6 +289,46 @@ function RecordField(props: RendererProps) {
 					/>
 				)
 			}
+			case 'object':
+			case 'array':
+			case 'union':
+			case 'variant': {
+				const itemInfo = cachedExtractInfo(ep.valueSchema as object, `${index}`)
+				if (!itemInfo) return null
+
+				const nestedName = inputProps.name ? `${inputProps.name}.${rows[index]?.[0] ?? index}` : String(index)
+				const nestedInputProps = {
+					name: nestedName,
+					onChange: (nextValue: unknown) => handleValueChange(index, nextValue),
+					onBlur: () => inputProps.onBlur?.({ target: { name: nestedName } } as any),
+					disabled: inputProps.disabled,
+					readOnly: inputProps.readOnly,
+				}
+				const nestedErrors = (entryErrors.get(rows[index]?.[0] ?? '') ?? []).map((err) => ({
+					message: err.message,
+					dotPath: err.dotPath,
+				}))
+
+				const nestedProps =
+					itemInfo.type === 'object'
+						? { ...itemInfo.props, variant: 'stack' as const, gap: 'sm', columns: itemInfo.props.columns ?? 2 }
+						: itemInfo.type === 'array'
+							? { ...itemInfo.props, disableAutoGrid: true }
+							: itemInfo.type === 'union'
+								? { ...itemInfo.props, compact: true }
+								: itemInfo.props
+
+				return (
+					<MetaRenderer
+						type={itemInfo.type}
+						formBaseInfo={{ ...itemInfo.formInfo, label: undefined, hideLabel: true, hideRequired: true }}
+						extractedPropsInfo={nestedProps}
+						errors={nestedErrors}
+						value={value}
+						inputProps={nestedInputProps as any}
+					/>
+				)
+			}
 			default:
 				return (
 					<TextInput
@@ -317,17 +364,27 @@ function RecordField(props: RendererProps) {
 				</Table.Thead>
 				<Table.Tbody>
 					{rows.map(([key, val], idx) => {
-						const errKey = key ?? String(idx)
+						const keyDisplay = key ?? ''
+						const entryLabel = keyDisplay === '' ? `条目 ${idx + 1}` : String(keyDisplay)
+						const errKey = keyDisplay === '' ? String(idx) : String(keyDisplay)
 						const inlineErrors = [
-							...(entryErrors.get(errKey) ?? []),
+							...(entryErrors.get(errKey)?.map((e) => e.message) ?? []),
 							jsonErrors[idx],
 						].filter(Boolean) as string[]
+						const anchorId = `${inputProps.name ?? 'record'}-${slug(entryLabel)}-${idx}`
 						return (
 							<Table.Tr key={`record-row-${idx}`}>
-								<Table.Td>
+								<Table.Td style={{ position: 'relative' }}>
+									<div
+										id={anchorId}
+										data-config-anchor
+										data-config-anchor-depth={3}
+										data-config-anchor-label={entryLabel}
+										style={{ position: 'absolute', inset: 0, height: 0, scrollMarginTop: '72px' }}
+									/>
 									<TextInput
 										{...cleanProps({
-											value: key,
+											value: keyDisplay,
 											onChange: (event: React.ChangeEvent<HTMLInputElement>) =>
 												handleKeyChange(idx, event.currentTarget.value),
 											placeholder: ep.keyPlaceholder,
@@ -394,18 +451,34 @@ function RecordField(props: RendererProps) {
 		) : (
 			<Stack gap="md">
 				{rows.map(([key, val], idx) => {
-					const errKey = key ?? String(idx)
+					const keyDisplay = key ?? ''
+					const entryLabel = keyDisplay === '' ? `条目 ${idx + 1}` : String(keyDisplay)
+					const errKey = keyDisplay === '' ? String(idx) : String(keyDisplay)
 					const inlineErrors = [
-						...(entryErrors.get(errKey) ?? []),
+						...(entryErrors.get(errKey)?.map((e) => e.message) ?? []),
 						jsonErrors[idx],
 					].filter(Boolean) as string[]
+					const anchorId = `${inputProps.name ?? 'record'}-${slug(entryLabel)}-${idx}`
 					return (
-						<Card key={`record-row-${idx}`} withBorder p="md">
+						<Card key={`record-row-${idx}`} withBorder p="md" style={{ scrollMarginTop: '72px', position: 'relative' }}>
+							<div
+								id={anchorId}
+								data-config-anchor
+								data-config-anchor-depth={3}
+								data-config-anchor-label={entryLabel}
+								style={{ position: 'absolute', inset: 0, height: 0 }}
+							/>
 							<Stack gap="sm">
+								<Group justify="space-between" align="center">
+									<Text fw={600}>{entryLabel}</Text>
+									<Text size="xs" c="dimmed">
+										{formBaseInfo.label}
+									</Text>
+								</Group>
 								<TextInput
 									{...cleanProps({
 										label: ep.keyLabel ?? '键',
-										value: key,
+										value: keyDisplay,
 										onChange: (event: React.ChangeEvent<HTMLInputElement>) =>
 											handleKeyChange(idx, event.currentTarget.value),
 										placeholder: ep.keyPlaceholder,

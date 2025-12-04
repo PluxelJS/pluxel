@@ -66,6 +66,7 @@ const HASH_IGNORED_SEGMENTS = [
 	'.next',
 ] as const
 const MODULE_FILE_EXTENSION = '.mjs'
+const MODULE_RETENTION_COUNT = 2
 const MODULE_ENDPOINT_PREFIX = '/api/extensions/modules'
 const MANIFEST_FILENAME = 'manifest.json'
 
@@ -228,6 +229,7 @@ export class ExtensionService {
 				entry.lastSourceHash = sourceHash
 				entry.modulePath = targetFile
 				entry.moduleUrl = moduleUrl
+				void this.cleanupOldModuleFiles(pluginName, MODULE_RETENTION_COUNT)
 				this.handleManifestUpdate(pluginName, entry)
 				return true
 			}
@@ -235,7 +237,7 @@ export class ExtensionService {
 			const code = await this.generateBundle(entry.config)
 			await mkdir(dirname(targetFile), { recursive: true })
 			await writeFile(targetFile, code, 'utf-8')
-			await this.removeOldModuleFile(entry, targetFile)
+			void this.cleanupOldModuleFiles(pluginName, MODULE_RETENTION_COUNT)
 			entry.lastCompiledAt = Date.now()
 			entry.lastSourceHash = sourceHash
 			entry.modulePath = targetFile
@@ -336,11 +338,25 @@ export class ExtensionService {
 		return normalizeJsxRuntime(transformVendorImports(result.code))
 	}
 
-	private async removeOldModuleFile(entry: PluginExtensionEntry, nextPath: string): Promise<void> {
-		const previous = entry.modulePath
-		if (!previous || previous === nextPath) return
-		if (!existsSync(previous)) return
-		await unlink(previous).catch(() => {})
+	private async cleanupOldModuleFiles(pluginName: string, keep: number): Promise<void> {
+		if (keep <= 0) return
+		const dir = this.getPluginOutDir(pluginName)
+		const entries = await readdir(dir).catch(() => [])
+		if (!entries.length) return
+
+		const modules: Array<{ path: string; mtime: number }> = []
+		for (const name of entries) {
+			if (!name.endsWith(MODULE_FILE_EXTENSION)) continue
+			const fullPath = join(dir, name)
+			const stats = await stat(fullPath).catch(() => null)
+			if (!stats?.isFile()) continue
+			modules.push({ path: fullPath, mtime: stats.mtimeMs })
+		}
+
+		modules.sort((a, b) => b.mtime - a.mtime)
+		for (const stale of modules.slice(keep)) {
+			await unlink(stale.path).catch(() => {})
+		}
 	}
 
 	private handleManifestUpdate(pluginName: string, entry: PluginExtensionEntry | null): void {
