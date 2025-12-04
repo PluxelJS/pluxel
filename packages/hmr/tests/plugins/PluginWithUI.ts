@@ -2,7 +2,6 @@
 // 示例：带有 UI 扩展的插件
 
 import { BasePlugin, Plugin } from '@pluxel/core'
-import type { SseEvents } from '@pluxel/hmr'
 import { RpcTarget } from 'capnweb'
 
 type PluginMemoEntry = {
@@ -162,12 +161,9 @@ declare module '@pluxel/hmr/services' {
 	interface RpcExtensions {
 		PluginWithUI: PluginWithUIRpc
 	}
-}
 
-declare module '@pluxel/hmr/services' {
 	interface SseEvents {
 		PluginWithUI:
-			| PluginMemoEntry
 			| { type: 'sync'; notes: PluginMemoEntry[] }
 			| { type: 'tick'; now: number }
 	}

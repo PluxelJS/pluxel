@@ -15,8 +15,6 @@ import {
 	useMantineColorScheme,
 	useMantineTheme,
 } from '@mantine/core'
-import { IconDashboard, IconMessage2, IconRocket, IconTrash } from '@tabler/icons-react'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
 	definePluginUIModule,
 	type ExtensionContext,
@@ -24,6 +22,8 @@ import {
 	rpcErrorMessage,
 	webClient,
 } from '@pluxel/hmr/web'
+import { IconDashboard, IconMessage2, IconRocket, IconTrash } from '@tabler/icons-react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 type PluginWithUIRpc = HmrWebClient['rpc']['PluginWithUI']
 type PluginOverview = Awaited<ReturnType<PluginWithUIRpc['overview']>>
@@ -70,12 +70,15 @@ function RealTimeTicker({ sse }: RealTimeTickerProps) {
 	useEffect(() => {
 		const offOpen = sse.onOpen(() => setConnected(true))
 		const offError = sse.onError(() => setConnected(false))
-		const offTick = sse.PluginWithUI.on((msg) => {
-			const payload = msg.payload as any
-			if (payload?.type === 'tick' && typeof payload.now === 'number') {
-				setNow(new Date(payload.now).toLocaleTimeString())
-			}
-		}, ['tick', 'ready'])
+		const offTick = sse.PluginWithUI.on(
+			(msg) => {
+				const payload = msg.payload
+				if (payload?.type === 'tick' && typeof payload.now === 'number') {
+					setNow(new Date(payload.now).toLocaleTimeString())
+				}
+			},
+			['tick', 'ready'],
+		)
 		return () => {
 			offOpen()
 			offError()
@@ -317,27 +320,30 @@ function NotesPanel({ sse }: NotesPanelProps) {
 
 	// SSE 实时同步：无需传 namespaces，直接点出插件命名空间
 	useEffect(() => {
-		const off = sse.PluginWithUI.on((msg) => {
-			const payload = msg.payload as PluginNote | { type: 'sync'; notes: PluginNote[] }
-			if (payload && typeof payload === 'object' && 'type' in payload) {
-				if (payload.type === 'sync') {
-					setNotes(payload.notes)
-					setLoading(false)
-					return
+		const off = sse.PluginWithUI.on(
+			(msg) => {
+				const payload = msg.payload as PluginNote | { type: 'sync'; notes: PluginNote[] }
+				if (payload && typeof payload === 'object' && 'type' in payload) {
+					if (payload.type === 'sync') {
+						setNotes(payload.notes)
+						setLoading(false)
+						return
+					}
+					if (payload.type === 'ready') {
+						setLoading(false)
+						return
+					}
+					if (payload.type === 'tick') {
+						// ignore in NotesPanel
+						return
+					}
 				}
-				if (payload.type === 'ready') {
-					setLoading(false)
-					return
-				}
-				if (payload.type === 'tick') {
-					// ignore in NotesPanel
-					return
-				}
-			}
-			if (!payload || typeof payload !== 'object') return
-			setNotes((prev) => [payload as PluginNote, ...prev].slice(0, 8))
-			setLoading(false)
-		}, ['sync', 'note', 'ready', 'tick'])
+				if (!payload || typeof payload !== 'object') return
+				setNotes((prev) => [payload as PluginNote, ...prev].slice(0, 8))
+				setLoading(false)
+			},
+			['sync', 'note', 'ready', 'tick'],
+		)
 
 		return () => off()
 	}, [sse])
@@ -493,39 +499,42 @@ function LiveSseActivity({ sse }: LiveSseActivityProps) {
 			)
 		})
 
-		const offPlugin = sse.PluginWithUI.on((msg) => {
-			const payload = msg.payload as any
-			const tag =
-				payload?.type === 'sync'
-					? '同步'
-					: payload?.type === 'ready'
-						? '就绪'
+		const offPlugin = sse.PluginWithUI.on(
+			(msg) => {
+				const payload = msg.payload as any
+				const tag =
+					payload?.type === 'sync'
+						? '同步'
+						: payload?.type === 'ready'
+							? '就绪'
+							: payload?.type === 'tick'
+								? '时间'
+								: '备注'
+				const label =
+					payload?.type === 'ready'
+						? '插件 SSE 就绪'
 						: payload?.type === 'tick'
-							? '时间'
-							: '备注'
-			const label =
-				payload?.type === 'ready'
-					? '插件 SSE 就绪'
-					: payload?.type === 'tick'
-						? `当前时间 ${new Date(payload.now).toLocaleTimeString()}`
-					: `[${tag}] ${payload?.message ?? payload?.type ?? '更新'}`
-			if (payload?.type === 'tick' && typeof payload.now === 'number') {
-				setLastTick(new Date(payload.now).toLocaleTimeString())
-			}
+							? `当前时间 ${new Date(payload.now).toLocaleTimeString()}`
+							: `[${tag}] ${payload?.message ?? payload?.type ?? '更新'}`
+				if (payload?.type === 'tick' && typeof payload.now === 'number') {
+					setLastTick(new Date(payload.now).toLocaleTimeString())
+				}
 
-			setItems((prev) =>
-				[
-					{
-						key: `sse-${msg.event}-${Date.now()}-${prev.length}`,
-						label,
-						detail: payload?.author ?? payload?.type,
-						time: new Date().toLocaleTimeString(),
-						color: tag === '同步' ? 'grape' : 'teal',
-					},
-					...prev,
-				].slice(0, 8),
-			)
-		}, ['sync', 'note'])
+				setItems((prev) =>
+					[
+						{
+							key: `sse-${msg.event}-${Date.now()}-${prev.length}`,
+							label,
+							detail: payload?.author ?? payload?.type,
+							time: new Date().toLocaleTimeString(),
+							color: tag === '同步' ? 'grape' : 'teal',
+						},
+						...prev,
+					].slice(0, 8),
+				)
+			},
+			['sync', 'note'],
+		)
 
 		const offExt = sse.extensions?.on?.((msg) => {
 			const payload = msg.payload as any
@@ -644,5 +653,4 @@ const module = definePluginUIModule({
 	},
 })
 
-export const { extensions, routes, setup } = module
 export default module
