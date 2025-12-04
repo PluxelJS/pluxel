@@ -2,6 +2,7 @@
 // 示例：带有 UI 扩展的插件
 
 import { BasePlugin, Plugin } from '@pluxel/core'
+import type { SseEvents } from '@pluxel/hmr'
 import { RpcTarget } from 'capnweb'
 
 type PluginMemoEntry = {
@@ -16,6 +17,7 @@ export class PluginWithUI extends BasePlugin {
 	private startedAt = Date.now()
 	private notes: PluginMemoEntry[] = []
 	private noteSeq = 1
+	private noteSubscribers = new Set<(note: PluginMemoEntry | null, kind: 'note' | 'sync') => void>()
 
 	override async init() {
 		this.startedAt = Date.now()
@@ -28,6 +30,7 @@ export class PluginWithUI extends BasePlugin {
 		})
 
 		this.ctx.rpc.registerExtension(() => new PluginWithUIRpc(this))
+		this.ctx.sse.registerExtension(() => this.pushNotes())
 		this.createNote('UI 扩展已就绪，欢迎使用 👋', 'system')
 
 		this.ctx.logger.info('[PluginWithUI] UI extensions registered')
@@ -58,7 +61,38 @@ export class PluginWithUI extends BasePlugin {
 	removeNote(id: number) {
 		const sizeBefore = this.notes.length
 		this.notes = this.notes.filter((note) => note.id !== id)
-		return sizeBefore !== this.notes.length
+		const removed = sizeBefore !== this.notes.length
+		if (removed) {
+			this.notifyNote(this.notes[0] ?? null, 'note')
+		}
+		return removed
+	}
+
+	private pushNotes() {
+		return (channel: SseChannel) => {
+			// 首次同步全量，方便 UI 初始化
+			channel.emit('sync', { type: 'sync', notes: this.getNotesSnapshot() })
+			channel.emit('tick', { type: 'tick', now: Date.now() })
+
+			// 周期性心跳，便于 UI 展示“实时时间”
+			const timer = setInterval(() => {
+				channel.emit('tick', { type: 'tick', now: Date.now() })
+			}, 1000)
+
+			const unsubscribe = this.subscribeNotes((note, kind) => {
+				if (kind === 'sync') {
+					channel.emit('sync', { type: 'sync', notes: this.getNotesSnapshot() })
+					return
+				}
+				channel.emit('note', note)
+			})
+			channel.onAbort(unsubscribe)
+			channel.onAbort(() => clearInterval(timer))
+			return () => {
+				unsubscribe()
+				clearInterval(timer)
+			}
+		}
 	}
 
 	private createNote(message: string, author: PluginMemoEntry['author']) {
@@ -75,7 +109,25 @@ export class PluginWithUI extends BasePlugin {
 		}
 
 		this.notes = [note, ...this.notes].slice(0, 8)
+		this.notifyNote(note, 'note')
 		return { ...note }
+	}
+
+	private subscribeNotes(
+		fn: (note: PluginMemoEntry | null, kind: 'note' | 'sync') => void,
+	): () => void {
+		this.noteSubscribers.add(fn)
+		return () => this.noteSubscribers.delete(fn)
+	}
+
+	private notifyNote(note: PluginMemoEntry | null, kind: 'note' | 'sync') {
+		for (const fn of this.noteSubscribers) {
+			try {
+				fn(note ? { ...note } : null, kind)
+			} catch (error) {
+				this.ctx.logger.warn('[PluginWithUI] note subscriber failed', error)
+			}
+		}
 	}
 }
 
@@ -109,5 +161,14 @@ export class PluginWithUIRpc extends RpcTarget {
 declare module '@pluxel/hmr/services' {
 	interface RpcExtensions {
 		PluginWithUI: PluginWithUIRpc
+	}
+}
+
+declare module '@pluxel/hmr/services' {
+	interface SseEvents {
+		PluginWithUI:
+			| PluginMemoEntry
+			| { type: 'sync'; notes: PluginMemoEntry[] }
+			| { type: 'tick'; now: number }
 	}
 }

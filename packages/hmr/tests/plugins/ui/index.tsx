@@ -1,7 +1,6 @@
 // packages/hmr/tests/plugins/ui/index.tsx
 // 插件 UI 扩展入口模块
 
-import { useCallback, useEffect, useRef, useState } from 'react'
 import {
 	ActionIcon,
 	Alert,
@@ -13,11 +12,20 @@ import {
 	Stack,
 	Text,
 	Textarea,
+	useMantineColorScheme,
+	useMantineTheme,
 } from '@mantine/core'
 import { IconDashboard, IconMessage2, IconRocket, IconTrash } from '@tabler/icons-react'
-import { definePluginUIModule, type ExtensionContext, rpc, rpcErrorMessage } from '../../../src/web'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import {
+	definePluginUIModule,
+	type ExtensionContext,
+	type HmrWebClient,
+	rpcErrorMessage,
+	webClient,
+} from '@pluxel/hmr/web'
 
-type PluginWithUIRpc = ReturnType<typeof rpc>['PluginWithUI']
+type PluginWithUIRpc = HmrWebClient['rpc']['PluginWithUI']
 type PluginOverview = Awaited<ReturnType<PluginWithUIRpc['overview']>>
 type PluginNote = Awaited<ReturnType<PluginWithUIRpc['notes']>>[number]
 
@@ -52,9 +60,61 @@ function HeaderButton({ ctx }: { ctx: ExtensionContext }) {
 }
 
 // ─────────────────────────────────────────────────────────
+// 实时时间（来自插件 SSE tick）
+// ─────────────────────────────────────────────────────────
+type RealTimeTickerProps = { sse: ReturnType<typeof webClient.createSse> }
+function RealTimeTicker({ sse }: RealTimeTickerProps) {
+	const [now, setNow] = useState<string>(() => new Date().toLocaleTimeString())
+	const [connected, setConnected] = useState(false)
+
+	useEffect(() => {
+		const offOpen = sse.onOpen(() => setConnected(true))
+		const offError = sse.onError(() => setConnected(false))
+		const offTick = sse.PluginWithUI.on((msg) => {
+			const payload = msg.payload as any
+			if (payload?.type === 'tick' && typeof payload.now === 'number') {
+				setNow(new Date(payload.now).toLocaleTimeString())
+			}
+		}, ['tick', 'ready'])
+		return () => {
+			offOpen()
+			offError()
+			offTick()
+		}
+	}, [sse])
+
+	return (
+		<Paper withBorder p="sm" radius="md">
+			<Group justify="space-between" align="center">
+				<Group gap="xs">
+					<Badge color={connected ? 'teal' : 'red'} variant="light">
+						{connected ? 'SSE 已连接' : 'SSE 未连接'}
+					</Badge>
+					<Text size="sm" fw={600}>
+						插件实时时间
+					</Text>
+				</Group>
+				<Text size="lg" fw={700}>
+					{now}
+				</Text>
+			</Group>
+		</Paper>
+	)
+}
+
+// ─────────────────────────────────────────────────────────
 // 自定义 Tab 内容
 // ─────────────────────────────────────────────────────────
 function CustomTab({ ctx }: { ctx: ExtensionContext }) {
+	const sharedSse = useMemo(
+		() => webClient.createSse({ namespaces: ['logs', 'extensions', ctx.pluginName] }),
+		[ctx.pluginName],
+	)
+
+	useEffect(() => {
+		return () => sharedSse.close()
+	}, [sharedSse])
+
 	return (
 		<Stack gap="md">
 			<Text size="lg" fw={600}>
@@ -63,7 +123,9 @@ function CustomTab({ ctx }: { ctx: ExtensionContext }) {
 			<Text c="dimmed">
 				这是由 PluginWithUI 插件注入的自定义 Tab 内容。 你可以在这里添加任何自定义的配置界面。
 			</Text>
-			<NotesPanel />
+			<NotesPanel sse={sharedSse} />
+			<RealTimeTicker sse={sharedSse} />
+			<LiveSseActivity sse={sharedSse} />
 			<Paper withBorder p="md" radius="md">
 				<Group justify="space-between">
 					<Text>当前插件</Text>
@@ -82,6 +144,9 @@ function InfoCard({ ctx }: { ctx: ExtensionContext }) {
 	const [statusMessage, setStatusMessage] = useState(`正在同步 ${ctx.pluginName} 状态...`)
 	const [loading, setLoading] = useState(true)
 	const mountedRef = useRef(true)
+	const theme = useMantineTheme()
+	const { colorScheme } = useMantineColorScheme()
+	const cardBg = colorScheme === 'dark' ? theme.colors.dark[6] : theme.colors.grape[0]
 
 	useEffect(() => {
 		return () => {
@@ -91,7 +156,7 @@ function InfoCard({ ctx }: { ctx: ExtensionContext }) {
 
 	const refreshOverview = useCallback(async () => {
 		try {
-			const current = await rpc().PluginWithUI.overview()
+			const current = await webClient.rpc.PluginWithUI.overview()
 			if (!mountedRef.current) {
 				return
 			}
@@ -126,7 +191,7 @@ function InfoCard({ ctx }: { ctx: ExtensionContext }) {
 	}
 
 	return (
-		<Paper withBorder p="sm" radius="md" bg="grape.0">
+		<Paper withBorder p="sm" radius="md" bg={cardBg}>
 			<Stack gap="xs">
 				<Group key="header" gap="xs" justify="space-between" align="center">
 					<Group gap="xs">
@@ -197,7 +262,9 @@ function Dashboard() {
 // ─────────────────────────────────────────────────────────
 // 插件备注面板（调用 PluginWithUI RPC）
 // ─────────────────────────────────────────────────────────
-function NotesPanel() {
+type NotesPanelProps = { sse: ReturnType<typeof webClient.createSse> }
+
+function NotesPanel({ sse }: NotesPanelProps) {
 	const [notes, setNotes] = useState<PluginNote[]>([])
 	const [message, setMessage] = useState('')
 	const [loading, setLoading] = useState(true)
@@ -214,7 +281,7 @@ function NotesPanel() {
 	}, [])
 
 	const fetchNotes = useCallback(async () => {
-		return rpc().PluginWithUI.notes()
+		return webClient.rpc.PluginWithUI.notes()
 	}, [])
 
 	const refreshNotes = useCallback(
@@ -248,6 +315,33 @@ function NotesPanel() {
 		refreshNotes().catch(() => {})
 	}, [refreshNotes])
 
+	// SSE 实时同步：无需传 namespaces，直接点出插件命名空间
+	useEffect(() => {
+		const off = sse.PluginWithUI.on((msg) => {
+			const payload = msg.payload as PluginNote | { type: 'sync'; notes: PluginNote[] }
+			if (payload && typeof payload === 'object' && 'type' in payload) {
+				if (payload.type === 'sync') {
+					setNotes(payload.notes)
+					setLoading(false)
+					return
+				}
+				if (payload.type === 'ready') {
+					setLoading(false)
+					return
+				}
+				if (payload.type === 'tick') {
+					// ignore in NotesPanel
+					return
+				}
+			}
+			if (!payload || typeof payload !== 'object') return
+			setNotes((prev) => [payload as PluginNote, ...prev].slice(0, 8))
+			setLoading(false)
+		}, ['sync', 'note', 'ready', 'tick'])
+
+		return () => off()
+	}, [sse])
+
 	const handleAdd = async () => {
 		const text = message.trim()
 		if (text.length === 0) {
@@ -257,7 +351,7 @@ function NotesPanel() {
 		setFormError(null)
 		setSubmitting(true)
 		try {
-			await rpc().PluginWithUI.addNote(text)
+			await webClient.rpc.PluginWithUI.addNote(text)
 			if (!mountedRef.current) {
 				return
 			}
@@ -279,7 +373,7 @@ function NotesPanel() {
 	const handleRemove = async (id: number) => {
 		setRemovingId(id)
 		try {
-			await rpc().PluginWithUI.removeNote(id)
+			await webClient.rpc.PluginWithUI.removeNote(id)
 			await refreshNotes({ silent: true })
 		} catch (error) {
 			if (!mountedRef.current) {
@@ -359,6 +453,145 @@ function NotesPanel() {
 					{!notes.length && !loading && (
 						<Text size="sm" c="dimmed">
 							暂无备注，快来添加第一条吧。
+						</Text>
+					)}
+				</Stack>
+			</Stack>
+		</Paper>
+	)
+}
+
+// ─────────────────────────────────────────────────────────
+// 实时 SSE 活动摘要（展示 logs 与插件命名空间事件）
+// ─────────────────────────────────────────────────────────
+type LiveSseActivityProps = { sse: ReturnType<typeof webClient.createSse> }
+
+function LiveSseActivity({ sse }: LiveSseActivityProps) {
+	const [items, setItems] = useState<
+		Array<{ key: string; label: string; detail?: string; time: string; color: string }>
+	>([])
+	const [connected, setConnected] = useState(false)
+	const [lastTick, setLastTick] = useState<string | null>(null)
+
+	useEffect(() => {
+		const offOpen = sse.onOpen(() => setConnected(true))
+		const offError = sse.onError(() => setConnected(false))
+
+		const offLogs = sse.logs.onAny((msg) => {
+			const payload = msg.payload as any
+			setItems((prev) =>
+				[
+					{
+						key: `log-${payload?.time ?? Date.now()}-${prev.length}`,
+						label: payload?.msg ?? '日志',
+						detail: payload?.name,
+						time: payload?.time ?? new Date().toLocaleTimeString(),
+						color: 'cyan',
+					},
+					...prev,
+				].slice(0, 8),
+			)
+		})
+
+		const offPlugin = sse.PluginWithUI.on((msg) => {
+			const payload = msg.payload as any
+			const tag =
+				payload?.type === 'sync'
+					? '同步'
+					: payload?.type === 'ready'
+						? '就绪'
+						: payload?.type === 'tick'
+							? '时间'
+							: '备注'
+			const label =
+				payload?.type === 'ready'
+					? '插件 SSE 就绪'
+					: payload?.type === 'tick'
+						? `当前时间 ${new Date(payload.now).toLocaleTimeString()}`
+					: `[${tag}] ${payload?.message ?? payload?.type ?? '更新'}`
+			if (payload?.type === 'tick' && typeof payload.now === 'number') {
+				setLastTick(new Date(payload.now).toLocaleTimeString())
+			}
+
+			setItems((prev) =>
+				[
+					{
+						key: `sse-${msg.event}-${Date.now()}-${prev.length}`,
+						label,
+						detail: payload?.author ?? payload?.type,
+						time: new Date().toLocaleTimeString(),
+						color: tag === '同步' ? 'grape' : 'teal',
+					},
+					...prev,
+				].slice(0, 8),
+			)
+		}, ['sync', 'note'])
+
+		const offExt = sse.extensions?.on?.((msg) => {
+			const payload = msg.payload as any
+			setItems((prev) =>
+				[
+					{
+						key: `ext-${payload?.version ?? Date.now()}-${prev.length}`,
+						label: `[扩展] ${payload?.type ?? '更新'}`,
+						detail: payload?.pluginName,
+						time: new Date().toLocaleTimeString(),
+						color: 'yellow',
+					},
+					...prev,
+				].slice(0, 8),
+			)
+		})
+
+		return () => {
+			offLogs()
+			offPlugin()
+			offExt?.()
+			offOpen()
+			offError()
+		}
+	}, [sse])
+
+	return (
+		<Paper withBorder radius="md" p="md">
+			<Stack gap="sm">
+				<Group justify="space-between">
+					<Group gap="xs">
+						<IconDashboard size={18} />
+						<Text fw={600}>实时活动 (SSE)</Text>
+					</Group>
+					<Badge color="cyan" variant="light">
+						最近 {items.length} 条
+					</Badge>
+				</Group>
+				{lastTick && (
+					<Text size="xs" c="dimmed">
+						最近心跳：{lastTick}
+					</Text>
+				)}
+				<Stack gap="xs">
+					{items.map((item) => (
+						<Paper key={item.key} withBorder radius="md" p="sm">
+							<Group justify="space-between" align="center">
+								<Group gap="sm">
+									<Badge size="xs" color={item.color}>
+										{item.time}
+									</Badge>
+									<Text size="sm" fw={600}>
+										{item.label}
+									</Text>
+								</Group>
+								{item.detail && (
+									<Text size="xs" c="dimmed">
+										{item.detail}
+									</Text>
+								)}
+							</Group>
+						</Paper>
+					))}
+					{!items.length && (
+						<Text size="sm" c="dimmed">
+							{connected ? '等待实时事件...' : 'SSE 连接中...'}
 						</Text>
 					)}
 				</Stack>

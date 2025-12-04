@@ -110,8 +110,27 @@ export class ExtensionService {
 
 	async getModuleSource(pluginName: string, sourceHash: string): Promise<string | null> {
 		const file = this.getModuleFilePath(pluginName, sourceHash)
-		if (!existsSync(file)) return null
-		return readFile(file, 'utf-8')
+		if (existsSync(file)) {
+			return readFile(file, 'utf-8')
+		}
+
+		// 自愈：如果磁盘文件丢失，尝试重新编译，并在失败时清理掉陈旧清单
+		const entry = this.entries.get(pluginName)
+		if (entry) {
+			await this.compilePlugin(pluginName)
+			const nextHash = entry.lastSourceHash
+			const nextPath = nextHash ? this.getModuleFilePath(pluginName, nextHash) : null
+			if (nextPath && existsSync(nextPath)) {
+				if (nextHash === sourceHash) {
+					return readFile(nextPath, 'utf-8')
+				}
+				// 旧 hash：让前端重新拉最新 manifest
+				return null
+			}
+		}
+
+		this.removeManifestEntry(pluginName)
+		return null
 	}
 
 	register(config: PluginExtensionConfig): () => void {
@@ -357,6 +376,19 @@ export class ExtensionService {
 		for (const stale of modules.slice(keep)) {
 			await unlink(stale.path).catch(() => {})
 		}
+	}
+
+	private removeManifestEntry(pluginName: string): void {
+		const nextModules = this.manifest.modules.filter((mod) => mod.pluginName !== pluginName)
+		if (nextModules.length === this.manifest.modules.length) return
+		this.manifestVersion += 1
+		this.manifest = { version: this.manifestVersion, modules: nextModules }
+		this.persistManifest()
+		this.notifyManifest({
+			type: 'remove',
+			version: this.manifestVersion,
+			pluginName,
+		})
 	}
 
 	private handleManifestUpdate(pluginName: string, entry: PluginExtensionEntry | null): void {
@@ -627,10 +659,19 @@ const {${trimmed}} = window.__PLUXEL_VENDORS__["${pkg}"];`
 		})
 	}
 
-	result = result.replace(
-		/import\s+\{\s*definePluginUIModule\s*\}\s*from\s*["']\/src\/web\.ts["'];?/g,
-		'const definePluginUIModule = (module) => module;',
+	const definePluginImport = new RegExp(
+		[
+			'import\\s+\\{\\s*definePluginUIModule\\s*\\}\\s*from\\s*["\']',
+			'(?:',
+			'@pluxel\\/hmr\\/web', // package entry
+			'|\\/?src\\/web(?:\\/web)?\\.ts', // source path (with or without nested /web.ts)
+			'|.*\\/web\\/web\\.ts', // relative paths used in tests
+			')["\'];?',
+		].join(''),
+		'g',
 	)
+
+	result = result.replace(definePluginImport, 'const definePluginUIModule = (module) => module;')
 
 	return result
 }

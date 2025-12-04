@@ -3,7 +3,7 @@
 
 import { Badge, Tooltip } from '@mantine/core'
 import { IconActivity } from '@tabler/icons-react'
-import { definePluginUIModule, type ExtensionContext } from '../../../src/web'
+import { definePluginUIModule, type ExtensionContext } from '@pluxel/hmr/web'
 
 function StatusBadge({ ctx }: { ctx: ExtensionContext }) {
 	return (

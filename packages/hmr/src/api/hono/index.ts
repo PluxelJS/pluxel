@@ -7,6 +7,9 @@ import { HmrRpcApi, PluginHandle } from './rpc'
 
 const app = new Hono<AppEnv>()
 	.get('/', (c) => c.text('Pluxel HMR RPC ready'))
+	// Server-Sent Events：统一入口，支持多命名空间复用单条连接
+	.get('/sse', (c) => c.var.plugin_ctx.sse.stream(c))
+	.get('/sse/namespaces', (c) => c.json({ namespaces: c.var.plugin_ctx.sse.getNamespaces() }))
 	.all('/rpc', async (c) => {
 		try {
 			const api = new HmrRpcApi(c.var.plugin_ctx)
@@ -46,53 +49,7 @@ const app = new Hono<AppEnv>()
 			'Cache-Control': 'public, max-age=31536000, immutable',
 		})
 	})
-		.get('/extensions/events', (c) => {
-			const ctx = c.var.plugin_ctx
-			const extensionService = ctx.extensionService
-			if (!extensionService) {
-				return c.text('Extension service not available', 503)
-			}
-			let cleanup = () => {}
-			const stream = new ReadableStream({
-				cancel() {
-					cleanup()
-				},
-				start(controller) {
-					const encoder = new TextEncoder()
-					let closed = false
-					let unsubscribe: (() => void) | null = null
-
-					cleanup = () => {
-						if (closed) return
-						closed = true
-						try {
-							controller.close()
-						} catch {}
-						unsubscribe?.()
-						unsubscribe = null
-					}
-
-					const send = (event: import('../../services/extension').ExtensionManifestEvent) => {
-						if (closed) return
-						try {
-							controller.enqueue(encoder.encode(`data: ${JSON.stringify(event)}\n\n`))
-					} catch (err) {
-						console.warn('[ExtensionService] failed to push manifest event', err)
-						cleanup()
-					}
-				}
-
-					send({ type: 'sync', version: extensionService.getManifest().version })
-					unsubscribe = extensionService.subscribeManifest(send)
-
-				},
-			})
-		return c.newResponse(stream, 200, {
-			'Content-Type': 'text/event-stream',
-			'Cache-Control': 'no-cache',
-			Connection: 'keep-alive',
-		})
-	})
+	.get('/extensions/events', (c) => c.var.plugin_ctx.sse.stream(c, ['extensions']))
 	// ============ REST API（仅调试/直连调试用） ============
 	// 仅保留 schema GET，方便通过浏览器快速排查，无需 RPC 客户端
 	.get('/plugins/:name/schema', (c) => {

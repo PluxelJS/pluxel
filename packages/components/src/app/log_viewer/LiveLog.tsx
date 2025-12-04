@@ -3,6 +3,7 @@
 import { useElementSize } from '@mantine/hooks'
 import { LazyLog, ScrollFollow } from '@melloware/react-logviewer'
 import React, { useEffect, useMemo, useRef, useState } from 'react'
+import { sse } from '../rpc'
 import { createPrettyPrinter } from './pretty'
 
 const pretty = createPrettyPrinter({
@@ -250,10 +251,8 @@ export function LiveLog({ module }: Props) {
 	}, [cols])
 
 	// —— 快照 + SSE（仅跟随 module 变化；不受 cols 影响） —— //
-	const esRef = useRef<EventSource | null>(null)
+	const streamRef = useRef<ReturnType<typeof sse> | null>(null)
 	const abortRef = useRef<AbortController | null>(null)
-	const reconnectTimerRef = useRef<number | null>(null)
-	const backoffRef = useRef<number>(RECONNECT_MIN)
 	const didInitRef = useRef(false) // dev 下规避严格模式二次执行
 
 	useEffect(() => {
@@ -267,13 +266,9 @@ export function LiveLog({ module }: Props) {
 			abortRef.current.abort()
 			abortRef.current = null
 		}
-		if (esRef.current) {
-			esRef.current.close()
-			esRef.current = null
-		}
-		if (reconnectTimerRef.current != null) {
-			clearTimeout(reconnectTimerRef.current)
-			reconnectTimerRef.current = null
+		if (streamRef.current) {
+			streamRef.current.close()
+			streamRef.current = null
 		}
 		rawRingRef.current.clear()
 		viewRingRef.current.clear()
@@ -300,35 +295,29 @@ export function LiveLog({ module }: Props) {
 			})
 
 		// —— 连接 SSE —— //
-		const connect = () => {
-			const es = new EventSource(`/api/logs/stream?${params.toString()}`)
-			esRef.current = es
-			es.onmessage = (e) => pushRaw(e.data)
-			es.onerror = () => {
-				es.close()
-				esRef.current = null
-				// 退避重连（有去重，重复也会被 TTL 吃掉）
-				const delay = backoffRef.current
-				backoffRef.current = Math.min(backoffRef.current * 2, RECONNECT_MAX)
-				reconnectTimerRef.current = window.setTimeout(connect, delay)
+		const stream = sse({
+			namespaces: ['logs'],
+			params: module ? { name: module } : undefined,
+			retry: { min: RECONNECT_MIN, max: RECONNECT_MAX },
+		})
+		streamRef.current = stream
+		const off = stream.logs.on(({ payload }) => {
+			try {
+				pushRaw(JSON.stringify(payload))
+			} catch {
+				// ignore
 			}
-			// 成功时重置退避
-			backoffRef.current = RECONNECT_MIN
-		}
-		connect()
+		})
 
 		return () => {
 			if (abortRef.current) {
 				abortRef.current.abort()
 				abortRef.current = null
 			}
-			if (esRef.current) {
-				esRef.current.close()
-				esRef.current = null
-			}
-			if (reconnectTimerRef.current != null) {
-				clearTimeout(reconnectTimerRef.current)
-				reconnectTimerRef.current = null
+			off()
+			if (streamRef.current) {
+				streamRef.current.close()
+				streamRef.current = null
 			}
 			if (process.env.NODE_ENV !== 'production') {
 				didInitRef.current = false

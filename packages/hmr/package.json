@@ -12,7 +12,7 @@
 			"default": "./dist/index.mjs"
 		},
 		"./capnweb": {
-			"@pluxel/source": "./src/capnweb.ts",
+			"@pluxel/source": "./src/web/capnweb.ts",
 			"default": "./dist/capnweb.mjs"
 		},
 		"./config": {
@@ -24,7 +24,7 @@
 			"default": "./dist/services.mjs"
 		},
 		"./web": {
-			"@pluxel/source": "./src/web.ts",
+			"@pluxel/source": "./src/web/web.ts",
 			"default": "./dist/web.mjs"
 		},
 		"./package.json": "./package.json"

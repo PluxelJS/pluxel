@@ -21,8 +21,8 @@ export default defineConfig({
 		index: 'src/index.ts',
 		services: 'src/services/index.ts',
 		config: 'src/config.ts',
-		web: 'src/web.ts',
-		capnweb: 'src/capnweb.ts',
+		web: 'src/web/web.ts',
+		capnweb: 'src/web/capnweb.ts',
 	},
 	copy: ['public'],
 	alias: {
