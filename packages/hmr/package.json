@@ -47,6 +47,7 @@
 		"@hono/vite-dev-server": "^0.23.0",
 		"@poppinss/dumper": "^0.6.5",
 		"@rolldown/pluginutils": "1.0.0-beta.52",
+		"better-sse": "^0.15.1",
 		"@tanstack/pacer": "^0.16.3",
 		"capnweb": "^0.2.0",
 		"chokidar": "^5.0.0",

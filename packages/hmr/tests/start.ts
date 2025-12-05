@@ -8,7 +8,7 @@ if (process.env.PLUXEL_HMR_SSR === undefined) {
 
 const ctx = new Context({
 	hmrService: {
-		dir: ['./tests/plugins'],
+		dir: ['./tests/plugins', './tests/ui-demos'],
 		log: {
 			debugNamespaces: [
 				'pluxel:hmr:modules',

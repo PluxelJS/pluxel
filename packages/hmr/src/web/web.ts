@@ -78,6 +78,8 @@ export interface HmrWebClient {
 	sse: SseClientWithNamespaces
 	streamLogs: (options?: Omit<SseClientOptions, 'namespaces'> & { name?: string }) => SseClientWithNamespaces
 	streamExtensions: (options?: Omit<SseClientOptions, 'namespaces'>) => SseClientWithNamespaces
+	/** 手动回收单例 SSE，便于在宿主卸载时释放连接 */
+	dispose: () => void
 }
 
 /**
@@ -123,6 +125,12 @@ export function createHmrWebClient(options: WebClientOptions = {}): HmrWebClient
 		return memoSse
 	}
 
+	const dispose = () => {
+		if (!memoSse) return
+		memoSse.close()
+		memoSse = null
+	}
+
 	const streamLogs = (opts?: Omit<SseClientOptions, 'namespaces'> & { name?: string }) => {
 		const params = { ...(baseSseOptions.params ?? {}), ...(opts?.params ?? {}) }
 		if (opts?.name) params.name = opts.name
@@ -145,6 +153,7 @@ export function createHmrWebClient(options: WebClientOptions = {}): HmrWebClient
 		},
 		streamLogs,
 		streamExtensions,
+		dispose,
 	}
 }
 

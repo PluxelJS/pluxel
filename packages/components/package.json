@@ -40,8 +40,8 @@
 		"@mantine/notifications": "^8.3.9",
 		"@tabler/icons-react": "^3.35.0",
 		"@tanstack/react-form": "^1.23.8",
-		"react": "^19.2.0",
-		"react-dom": "^19.2.0",
+		"react": "^19.2.1",
+		"react-dom": "^19.2.1",
 		"valibot": "^1.2.0"
 	},
 	"dependencies": {

@@ -1,4 +1,4 @@
-// packages/hmr/tests/plugins/ui/StatusBadge.tsx
+// packages/hmr/tests/plugins/ui-demos/PluginStatusBadge/ui/StatusBadge.tsx
 // 简单的状态徽章组件
 
 import { Badge, Tooltip } from '@mantine/core'

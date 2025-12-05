@@ -1,5 +1,5 @@
+import { createResponse, type Session } from 'better-sse'
 import { type Context, Injectable } from '@pluxel/core'
-import { type SSEStreamingApi, streamSSE } from 'hono/streaming'
 
 import type { AppEnv } from './env'
 
@@ -57,22 +57,20 @@ interface RegisterOptions {
 	namespace?: string
 }
 
-type SSEMessage = {
-	data?: string
-	event?: string
-	id?: string
-	retry?: number
-	comment?: string
+type SessionState = {
+	requested: Set<string>
+	handlers: Map<string, () => void | Promise<void>>
+	query?: URLSearchParams
+	honoCtx?: import('hono').Context<AppEnv>
 }
 
 @Injectable({ key: serviceName })
 export class SseService {
 	private extensions = new Map<string, SseExtensionFactory>()
+	private readonly sessions = new Set<Session<SessionState>>()
+	private readonly pendingByNamespace = new Map<string, Set<Session<SessionState>>>()
 	private static readonly KEEPALIVE_MS = 25_000
-	private static readonly KEEPALIVE_EVENT: SSEMessage = {
-		comment: 'keep-alive',
-		data: '',
-	}
+	private static readonly RETRY_MS = 2_000
 
 	constructor(private ctx: Context) {}
 
@@ -80,14 +78,20 @@ export class SseService {
 		const namespace = options.namespace ?? this.ctx.pluginInfo?.name
 		if (!namespace) throw new Error('[SSE] registerExtension: namespace required')
 
-		if (this.extensions.has(namespace)) {
-			this.ctx.logger?.warn(`[SSE] Extension "${namespace}" already registered, overwriting`)
+		const already = this.extensions.has(namespace)
+		if (already) {
+			this.ctx.logger?.warn(`[SSE] Extension "${namespace}" already registered, refreshing`)
+			this.detachNamespace(namespace)
 		}
 
 		this.extensions.set(namespace, factory)
+		this.rebindNamespace(namespace)
+		this.tryAttachPending(namespace)
 
 		return this.ctx.scope.collectEffect(() => {
-			if (this.extensions.get(namespace) === factory) this.extensions.delete(namespace)
+			if (this.extensions.get(namespace) !== factory) return
+			this.extensions.delete(namespace)
+			this.detachNamespace(namespace)
 		})
 	}
 
@@ -109,60 +113,19 @@ export class SseService {
 			c.var.plugin_ctx.logger?.warn?.('[SSE] namespaces missing, fallback', missing)
 		}
 
-		return streamSSE(c, async (sse) => {
-			let closed = false
-			const cleanups: Array<() => void | Promise<void>> = []
-
-			const channelBase = {
-				query: params,
-				hono: c,
-				ctx: this.ctx,
-				get closed() {
-					return closed
+		return createResponse<SessionState>(
+			c.req.raw,
+			{
+				keepAlive: SseService.KEEPALIVE_MS,
+				retry: SseService.RETRY_MS,
+				serializer: (value) => this.stringify(value),
+				state: {
+					requested: new Set(requestedRaw),
+					handlers: new Map(),
 				},
-				onAbort(cb: () => void) {
-					sse.onAbort(cb)
-				},
-			} as const
-
-			const tryAttach = () => {
-				for (let i = missing.length - 1; i >= 0; i--) {
-					const ns = missing[i]!
-					const factory = this.extensions.get(ns)
-					if (!factory) continue
-					missing.splice(i, 1)
-					const channel = this.createChannel(ns, sse, channelBase)
-					void this.runHandler(factory, channel, cleanups)
-				}
-			}
-
-			const runInitial = async () => {
-				for (const namespace of available) {
-					const factory = this.extensions.get(namespace)
-					if (!factory) continue
-					const channel = this.createChannel(namespace, sse, channelBase)
-					await this.runHandler(factory, channel, cleanups)
-				}
-				tryAttach()
-			}
-
-			const heartbeat = setInterval(() => {
-				if (closed) return
-				this.writeSseSafely(sse, SseService.KEEPALIVE_EVENT)
-				tryAttach()
-			}, SseService.KEEPALIVE_MS)
-
-			sse.onAbort(() => {
-				closed = true
-				clearInterval(heartbeat)
-			})
-
-			await runInitial()
-
-			await this.awaitAbort(sse)
-			clearInterval(heartbeat)
-			await this.runCleanups(cleanups)
-		})
+			},
+			(session) => this.attachSession(session, c, params, available, missing),
+		)
 	}
 
 	getNamespaces(): string[] {
@@ -173,15 +136,97 @@ export class SseService {
 		return this.extensions.has(namespace)
 	}
 
+	private attachSession(
+		session: Session<SessionState>,
+		honoCtx: import('hono').Context<AppEnv>,
+		query: URLSearchParams,
+		available: string[],
+		missing: string[],
+	) {
+		this.sessions.add(session)
+		const clean = () => this.cleanupSession(session)
+		session.once('disconnected', clean)
+
+		session.state.honoCtx = honoCtx
+		session.state.query = query
+
+		for (const ns of available) {
+			void this.attachNamespaceToSession(session, ns)
+		}
+
+		for (const ns of missing) {
+			this.markPending(ns, session)
+			void this.attachNamespaceToSession(session, ns)
+		}
+	}
+
+	private createChannelBase(
+		session: Session<SessionState>,
+		honoCtx: import('hono').Context<AppEnv>,
+		query: URLSearchParams,
+	): Omit<SseChannel, 'namespace' | 'send' | 'emit'> {
+		return {
+			query,
+			hono: honoCtx,
+			ctx: this.ctx,
+			get closed() {
+				return !session.isConnected
+			},
+			onAbort: (cb) => {
+				if (!session.isConnected) {
+					cb()
+					return
+				}
+				session.once('disconnected', cb)
+			},
+		}
+	}
+
+	private async attachNamespaceToSession(
+		session: Session<SessionState>,
+		namespace: string,
+	) {
+		const state = session.state
+		if (state.handlers.has(namespace)) return
+		const factory = this.extensions.get(namespace)
+		if (!factory) {
+			this.markPending(namespace, session)
+			return
+		}
+
+		this.unmarkPending(namespace, session)
+
+		const honoCtx = state.honoCtx
+		if (!honoCtx) {
+			this.ctx.logger?.warn?.('[SSE] missing Hono context for session, skip attach')
+			return
+		}
+
+		const base = this.createChannelBase(
+			session,
+			honoCtx,
+			state.query ?? new URL(session.getRequest().url).searchParams,
+		)
+		const channel = this.createChannel(namespace, session, base)
+		const cleanup = await this.runHandler(factory, channel)
+		state.handlers.set(namespace, cleanup)
+	}
+
 	private createChannel(
 		namespace: string,
-		sse: SSEStreamingApi,
+		session: Session<SessionState>,
 		base: Omit<SseChannel, 'namespace' | 'send' | 'emit'>,
 	): SseChannel {
 		const send = (payload: SsePayload) => {
-			if (base.closed) return
+			if (!session.isConnected) return
 			const message = this.normalizePayload(namespace, payload)
-			this.writeSseSafely(sse, message)
+			if (!message) return
+			try {
+				const { data, event, id } = message
+				session.push(data, event, id)
+			} catch (err) {
+				this.ctx.logger?.warn('[SSE] push failed', err)
+			}
 		}
 
 		const emit = (
@@ -193,9 +238,12 @@ export class SseService {
 		return { namespace, ...base, send, emit }
 	}
 
-	private normalizePayload(namespace: string, payload: SsePayload): SSEMessage | null {
+	private normalizePayload(
+		namespace: string,
+		payload: SsePayload,
+	): { data: string; event?: string; id?: string } | null {
 		if (payload === undefined) return null
-		const { event, data, id, retry, comment, raw } = payload as SseEventPayload
+		const { event, data, id, raw } = payload as SseEventPayload
 		const eventName = event ?? namespace
 		const body =
 			typeof payload === 'object' && payload !== null && !(payload instanceof Date)
@@ -204,27 +252,14 @@ export class SseService {
 					: payload
 				: payload
 
-		// 使用默认 message 事件，避免浏览器只走自定义事件监听
 		return {
 			id,
-			retry,
-			comment,
+			// Always use the default "message" event so EventSource.onmessage receives it.
+			// The logical event name is carried inside the payload instead.
+			event: undefined,
 			data: raw
 				? this.stringify(body)
 				: this.stringify({ namespace, event: eventName, payload: body ?? null }),
-		}
-	}
-
-	/** Hono 的 writeSSE 要求 data 不为 undefined，这里做一次兜底 */
-	private writeSseSafely(sse: SSEStreamingApi, message: SSEMessage | null | undefined) {
-		if (!message) return
-		if (message.data === undefined) {
-			message = { ...message, data: '' }
-		}
-		try {
-			sse.writeSSE(message)
-		} catch (err) {
-			this.ctx.logger?.warn('[SSE] write failed', err)
 		}
 	}
 
@@ -239,15 +274,11 @@ export class SseService {
 		}
 	}
 
-	private async runHandler(
-		factory: SseExtensionFactory,
-		channel: SseChannel,
-		cleanups: Array<() => void | Promise<void>>,
-	) {
+	private async runHandler(factory: SseExtensionFactory, channel: SseChannel) {
 		try {
 			const handler = factory(this.ctx)
 			const maybeCleanup = await handler(channel)
-			if (typeof maybeCleanup === 'function') cleanups.push(maybeCleanup)
+			return typeof maybeCleanup === 'function' ? maybeCleanup : undefined
 		} catch (err) {
 			this.ctx.logger?.error?.('[SSE] handler crashed', err)
 		}
@@ -262,23 +293,79 @@ export class SseService {
 			.filter(Boolean)
 	}
 
-	private async runCleanups(cleanups: Array<() => void | Promise<void>>) {
-		for (let i = cleanups.length - 1; i >= 0; i--) {
-			const fn = cleanups[i]
-			try {
-				await fn()
-			} catch (err) {
-				this.ctx.logger?.warn('[SSE] cleanup failed', err)
-			}
-		}
-	}
-
 	private normalizeNamespaces(namespaces: string[]): string[] {
 		return Array.from(new Set(namespaces.filter(Boolean)))
 	}
 
-	private awaitAbort(sse: SSEStreamingApi): Promise<void> {
-		return new Promise((resolve) => sse.onAbort(resolve))
+	private markPending(namespace: string, session: Session<SessionState>) {
+		let set = this.pendingByNamespace.get(namespace)
+		if (!set) {
+			set = new Set()
+			this.pendingByNamespace.set(namespace, set)
+		}
+		set.add(session)
+	}
+
+	private unmarkPending(namespace: string, session: Session<SessionState>) {
+		const set = this.pendingByNamespace.get(namespace)
+		if (!set) return
+		set.delete(session)
+		if (set.size === 0) this.pendingByNamespace.delete(namespace)
+	}
+
+	private tryAttachPending(namespace: string) {
+		const waiters = this.pendingByNamespace.get(namespace)
+		if (!waiters?.size) return
+		for (const session of Array.from(waiters)) {
+			if (!session.isConnected) {
+				this.unmarkPending(namespace, session)
+				continue
+			}
+			void this.attachNamespaceToSession(session, namespace)
+		}
+	}
+
+	private cleanupSession(session: Session<SessionState>) {
+		this.sessions.delete(session)
+		for (const [ns, set] of this.pendingByNamespace) {
+			if (!set.delete(session)) continue
+			if (set.size === 0) this.pendingByNamespace.delete(ns)
+		}
+
+		for (const [namespace, cleanup] of session.state.handlers) {
+			if (!cleanup) continue
+			this.runCleanup(cleanup, namespace)
+		}
+		session.state.handlers.clear()
+	}
+
+	private detachNamespace(namespace: string) {
+		const set = this.pendingByNamespace.get(namespace)
+		if (set) {
+			set.clear()
+			this.pendingByNamespace.delete(namespace)
+		}
+
+		for (const session of this.sessions) {
+			const cleanup = session.state.handlers.get(namespace)
+			if (!cleanup) continue
+			this.runCleanup(cleanup, namespace)
+			session.state.handlers.delete(namespace)
+		}
+	}
+
+	private runCleanup(cleanup: () => void | Promise<void>, namespace: string) {
+		Promise.resolve(cleanup()).catch((err) => {
+			this.ctx.logger?.warn?.(`[SSE] cleanup failed for "${namespace}"`, err)
+		})
+	}
+
+	private rebindNamespace(namespace: string) {
+		for (const session of this.sessions) {
+			if (!session.isConnected) continue
+			if (!session.state.requested.has(namespace)) continue
+			void this.attachNamespaceToSession(session, namespace)
+		}
 	}
 }
 

@@ -1,4 +1,4 @@
-// packages/hmr/tests/plugins/ui/index.tsx
+// packages/hmr/tests/plugins/ui-demos/PluginWithUI/ui/index.tsx
 // 插件 UI 扩展入口模块
 
 import {

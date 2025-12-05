@@ -1,5 +1,5 @@
-// packages/hmr/tests/plugins/PluginWithUI.ts
-// 示例：带有 UI 扩展的插件
+// packages/hmr/tests/plugins/ui-demos/PluginWithUI.ts
+// 展示型插件：演示插件页面、RPC、SSE 复用等能力
 
 import { BasePlugin, Plugin } from '@pluxel/core'
 import { RpcTarget } from 'capnweb'
@@ -22,14 +22,18 @@ export class PluginWithUI extends BasePlugin {
 		this.startedAt = Date.now()
 		this.ctx.logger.info('[PluginWithUI] Initializing...')
 
-		// 注册 UI 扩展入口，实际扩展在入口模块内声明
+		// UI 扩展示例：自带完整页面 + 自定义 Tab + Header 按钮
 		this.ctx.extensionService.register({
 			pluginName: 'PluginWithUI',
-			entryPath: './ui/index.tsx',
+			entryPath: './PluginWithUI/ui/index.tsx',
 		})
 
+		// RPC：供 UI 调用
 		this.ctx.rpc.registerExtension(() => new PluginWithUIRpc(this))
+
+		// SSE：复用宿主统一 /api/sse 连接（命名空间 = 插件名）
 		this.ctx.sse.registerExtension(() => this.pushNotes())
+
 		this.createNote('UI 扩展已就绪，欢迎使用 👋', 'system')
 
 		this.ctx.logger.info('[PluginWithUI] UI extensions registered')
@@ -78,6 +82,7 @@ export class PluginWithUI extends BasePlugin {
 				channel.emit('tick', { type: 'tick', now: Date.now() })
 			}, 1000)
 
+			// “批量广播”示例：每次新增笔记时同步最新快照
 			const unsubscribe = this.subscribeNotes((note, kind) => {
 				if (kind === 'sync') {
 					channel.emit('sync', { type: 'sync', notes: this.getNotesSnapshot() })
@@ -107,6 +112,7 @@ export class PluginWithUI extends BasePlugin {
 			createdAt: Date.now(),
 		}
 
+		// 保留最新 8 条，模拟“批量+迭代”场景
 		this.notes = [note, ...this.notes].slice(0, 8)
 		this.notifyNote(note, 'note')
 		return { ...note }

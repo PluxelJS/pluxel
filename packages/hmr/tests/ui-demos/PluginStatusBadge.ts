@@ -1,5 +1,5 @@
-// packages/hmr/tests/plugins/PluginStatusBadge.ts
-// 示例：简单的状态徽章插件
+// packages/hmr/tests/plugins/ui-demos/PluginStatusBadge.ts
+// 展示型插件：在宿主公共区域插入 UI（非插件详情页）
 
 import { BasePlugin, Plugin } from '@pluxel/core'
 
@@ -8,13 +8,13 @@ export class PluginStatusBadge extends BasePlugin {
 	private counter = 0
 
 	override async init() {
-		// 注册一个简单的 Header 扩展
+		// 注册 Header 扩展，强调“非插件页面”的挂载点
 		this.ctx.extensionService.register({
 			pluginName: 'PluginStatusBadge',
-			entryPath: './ui/StatusBadge.tsx',
+			entryPath: './PluginStatusBadge/ui/StatusBadge.tsx',
 		})
 
-		// 每秒更新计数器
+		// 简单的计时器，供 UI 徽章显示
 		const timer = setInterval(() => {
 			this.counter++
 		}, 1000)

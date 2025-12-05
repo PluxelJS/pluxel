@@ -1,6 +1,4 @@
 export * from './PluginA'
 export * from './PluginB'
 export * from './PluginC'
-export * from './PluginStatusBadge'
-export * from './PluginWithUI'
 export * from './testconfig'
