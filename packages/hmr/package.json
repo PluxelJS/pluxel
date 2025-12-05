@@ -23,6 +23,10 @@
 			"@pluxel/source": "./src/services/index.ts",
 			"default": "./dist/services.mjs"
 		},
+		"./signaldb": {
+			"@pluxel/source": "./src/web/signaldb.ts",
+			"default": "./dist/signaldb.mjs"
+		},
 		"./web": {
 			"@pluxel/source": "./src/web/web.ts",
 			"default": "./dist/web.mjs"
@@ -63,6 +67,8 @@
 		"pino-caller": "^4.0.0",
 		"pino-pretty": "^13.1.2",
 		"pkg-types": "^2.3.0",
+		"@signaldb/core": "^1.7.1",
+		"@signaldb/fs": "^1.0.1",
 		"rotating-file-stream": "^3.2.7",
 		"superjson": "^2.2.5",
 		"tinyglobby": "^0.2.15",
@@ -94,6 +100,7 @@
 			"./capnweb": "./dist/capnweb.mjs",
 			"./config": "./dist/config.mjs",
 			"./services": "./dist/services.mjs",
+			"./signaldb": "./dist/signaldb.mjs",
 			"./web": "./dist/web.mjs",
 			"./package.json": "./package.json"
 		}

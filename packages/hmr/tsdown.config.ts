@@ -23,6 +23,7 @@ export default defineConfig({
 		config: 'src/config.ts',
 		web: 'src/web/web.ts',
 		capnweb: 'src/web/capnweb.ts',
+		signaldb: 'src/web/signaldb.ts',
 	},
 	copy: ['public'],
 	alias: {

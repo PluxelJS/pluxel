@@ -49,4 +49,11 @@ export {
 export { useExtensionRuntimeVersion, useExtensionVersion } from './hooks'
 
 // Vendors (共享依赖)
-export { vendors, initVendors, getVendor, vendorPackages, type Vendors, type VendorPackage } from './vendors'
+export {
+	vendors,
+	initVendors,
+	getVendor,
+	vendorPackages,
+	type Vendors,
+	type VendorPackage,
+} from './vendors'

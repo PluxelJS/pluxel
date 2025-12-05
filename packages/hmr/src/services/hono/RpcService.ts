@@ -10,13 +10,12 @@ export type RpcExtensionFactory<T extends RpcTarget = RpcTarget> = (ctx: Context
 /**
  * RPC 扩展接口，插件通过 declare module 扩展
  * @example
- * declare module '@pluxel/hmr' {
+ * declare module '@pluxel/hmr/services' {
  *   interface RpcExtensions {
  *     'my-plugin': MyPluginRpc
  *   }
  * }
  */
-
 // biome-ignore lint/suspicious/noEmptyInterface: <外部扩展>
 export interface RpcExtensions {}
 

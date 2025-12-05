@@ -4,9 +4,10 @@
 import { BasePlugin, Plugin } from '@pluxel/core'
 import { RpcTarget } from '@pluxel/hmr/capnweb'
 import type { SseChannel } from '@pluxel/hmr/services'
+import {Collection} from '@pluxel/hmr/signaldb'
 
 type PluginMemoEntry = {
-	id: number
+	id: string
 	message: string
 	author: 'system' | 'ui'
 	createdAt: number
@@ -15,9 +16,8 @@ type PluginMemoEntry = {
 @Plugin({ name: 'PluginWithUI', type: 'event' })
 export class PluginWithUI extends BasePlugin {
 	private startedAt = Date.now()
-	private notes: PluginMemoEntry[] = []
+	private notes!: Collection<PluginMemoEntry>
 	private noteSeq = 1
-	private noteSubscribers = new Set<(note: PluginMemoEntry | null, kind: 'note' | 'sync') => void>()
 
 	override async init() {
 		this.startedAt = Date.now()
@@ -35,7 +35,7 @@ export class PluginWithUI extends BasePlugin {
 		// SSE：复用宿主统一 /api/sse 连接（命名空间 = 插件名）
 		this.ctx.sse.registerExtension(() => this.pushNotes())
 
-		this.createNote('UI 扩展已就绪，欢迎使用 👋', 'system')
+		await this.initNotes()
 
 		this.ctx.logger.info('[PluginWithUI] UI extensions registered')
 	}
@@ -49,33 +49,34 @@ export class PluginWithUI extends BasePlugin {
 			status: 'running',
 			startedAt: this.startedAt,
 			uptimeMs: Date.now() - this.startedAt,
-			noteCount: this.notes.length,
+			noteCount: this.noteSeq - 1,
 			name: this.ctx.pluginInfo.name,
 		}
 	}
 
-	getNotesSnapshot(): PluginMemoEntry[] {
-		return this.notes.map((note) => ({ ...note }))
+	async getNotesSnapshot(): Promise<PluginMemoEntry[]> {
+		const docs = await this.notes.find()
+		return docs
+			.map((note) => ({ ...note }))
+			.sort((a, b) => b.createdAt - a.createdAt)
 	}
 
 	addUserNote(message: string) {
 		return this.createNote(message, 'ui')
 	}
 
-	removeNote(id: number) {
-		const sizeBefore = this.notes.length
-		this.notes = this.notes.filter((note) => note.id !== id)
-		const removed = sizeBefore !== this.notes.length
-		if (removed) {
-			this.notifyNote(this.notes[0] ?? null, 'note')
-		}
-		return removed
+	async removeNote(id: string) {
+		const ok = await this.notes.removeOne({ id })
+		return ok
 	}
 
 	private pushNotes() {
 		return (channel: SseChannel) => {
-			// 首次同步全量，方便 UI 初始化
-			channel.emit('sync', { type: 'sync', notes: this.getNotesSnapshot() })
+			const sendSync = async () => {
+				channel.emit('sync', { type: 'sync', notes: await this.getNotesSnapshot() })
+			}
+
+			void sendSync()
 			channel.emit('tick', { type: 'tick', now: Date.now() })
 
 			// 周期性心跳，便于 UI 展示“实时时间”
@@ -83,57 +84,62 @@ export class PluginWithUI extends BasePlugin {
 				channel.emit('tick', { type: 'tick', now: Date.now() })
 			}, 1000)
 
-			// “批量广播”示例：每次新增笔记时同步最新快照
-			const unsubscribe = this.subscribeNotes((note, kind) => {
-				if (kind === 'sync') {
-					channel.emit('sync', { type: 'sync', notes: this.getNotesSnapshot() })
-					return
-				}
-				channel.emit('note', note)
-			})
-			channel.onAbort(unsubscribe)
-			channel.onAbort(() => clearInterval(timer))
-			return () => {
-				unsubscribe()
+			const onChange = () => {
+				void sendSync()
+			}
+			this.notes.on('added', onChange)
+			this.notes.on('changed', onChange)
+			this.notes.on('removed', onChange)
+
+			channel.onAbort(() => {
+				this.notes.off('added', onChange)
+				this.notes.off('changed', onChange)
+				this.notes.off('removed', onChange)
 				clearInterval(timer)
+			})
+			return () => {
+				clearInterval(timer)
+				this.notes.off('added', onChange)
+				this.notes.off('changed', onChange)
+				this.notes.off('removed', onChange)
 			}
 		}
 	}
 
-	private createNote(message: string, author: PluginMemoEntry['author']) {
+	private async initNotes() {
+		const persistence = await this.ctx.pluginData.persistence<PluginMemoEntry>({
+			serialize: (items) => JSON.stringify(items, null, 2),
+			deserialize: (txt) => JSON.parse(txt) as PluginMemoEntry[],
+		})
+		this.notes = new Collection<PluginMemoEntry, string, PluginMemoEntry>({
+			name: `PluginWithUI:${this.ctx.pluginInfo.name}`,
+			persistence,
+		})
+		const existing = await this.getNotesSnapshot()
+		if (existing.length === 0) {
+			await this.createNote('UI 扩展已就绪，欢迎使用 👋', 'system')
+		} else {
+			// 恢复 seq，避免 id 冲突
+			const maxId = existing.reduce((acc, n) => Math.max(acc, Number(n.id) || 0), 0)
+			this.noteSeq = maxId + 1
+		}
+	}
+
+	private async createNote(message: string, author: PluginMemoEntry['author']) {
 		const trimmed = message.trim()
 		if (!trimmed) {
 			throw new Error('备注内容不能为空')
 		}
 
 		const note: PluginMemoEntry = {
-			id: this.noteSeq++,
+			id: String(this.noteSeq++),
 			message: trimmed,
 			author,
 			createdAt: Date.now(),
 		}
 
-		// 保留最新 8 条，模拟“批量+迭代”场景
-		this.notes = [note, ...this.notes].slice(0, 8)
-		this.notifyNote(note, 'note')
+		await this.notes.insert(note)
 		return { ...note }
-	}
-
-	private subscribeNotes(
-		fn: (note: PluginMemoEntry | null, kind: 'note' | 'sync') => void,
-	): () => void {
-		this.noteSubscribers.add(fn)
-		return () => this.noteSubscribers.delete(fn)
-	}
-
-	private notifyNote(note: PluginMemoEntry | null, kind: 'note' | 'sync') {
-		for (const fn of this.noteSubscribers) {
-			try {
-				fn(note ? { ...note } : null, kind)
-			} catch (error) {
-				this.ctx.logger.warn('[PluginWithUI] note subscriber failed', error)
-			}
-		}
 	}
 }
 
@@ -159,8 +165,8 @@ export class PluginWithUIRpc extends RpcTarget {
 		return this.plugin.addUserNote(message)
 	}
 
-	removeNote(id: number) {
-		return { ok: this.plugin.removeNote(id) }
+	async removeNote(id: string) {
+		return { ok: await this.plugin.removeNote(id) }
 	}
 }
 
@@ -170,6 +176,8 @@ declare module '@pluxel/hmr/services' {
 	}
 
 	interface SseEvents {
-		PluginWithUI: { type: 'sync'; notes: PluginMemoEntry[] } | { type: 'tick'; now: number }
+		PluginWithUI:
+			| { type: 'sync'; notes: PluginMemoEntry[] }
+			| { type: 'tick'; now: number }
 	}
 }

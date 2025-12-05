@@ -1,4 +1,5 @@
-import type { ExtensionManifestEvent } from '@pluxel/components/extension'
+import type { ExtensionManifestEvent } from "../services/extension"
+import type { SseEvents } from "../services/hono/SseService"
 
 export interface LogRecord {
 	time: string
@@ -13,10 +14,6 @@ export interface BuiltinSseEvents {
 	logs: LogRecord
 }
 
-// 插件/应用可通过声明合并扩展
-// declare module '@pluxel/hmr' { interface SseEvents { 'my-plugin': { foo: string } } }
-// biome-ignore lint/suspicious/noEmptyInterface: 用于外部扩展
-export interface SseEvents {}
 export type ResolvedSseEvents = BuiltinSseEvents & SseEvents
 
 type PayloadForNs<Ns extends string> = Ns extends keyof ResolvedSseEvents

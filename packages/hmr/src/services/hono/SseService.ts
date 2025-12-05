@@ -1,5 +1,5 @@
-import { createResponse, type Session } from 'better-sse'
 import { type Context, Injectable } from '@pluxel/core'
+import { createResponse, type Session } from 'better-sse'
 
 import type { AppEnv } from './env'
 
@@ -10,6 +10,17 @@ declare module '@pluxel/core' {
 		[serviceName]: SseService
 	}
 }
+/**
+ * 插件/应用可通过声明合并扩展
+ * @example
+ * declare module '@pluxel/hmr/services' {
+ *   interface SseEvents {
+ *     'my-plugin': MyPluginRpc
+ *   }
+ * }
+ */
+// biome-ignore lint/suspicious/noEmptyInterface: 用于外部扩展
+export interface SseEvents {}
 
 export interface SseEventPayload {
 	event?: string
@@ -102,7 +113,7 @@ export class SseService {
 		const missing: string[] = []
 
 		for (const ns of requestedRaw) {
-			(this.hasExtension(ns) ? available : missing).push(ns)
+			;(this.hasExtension(ns) ? available : missing).push(ns)
 		}
 
 		if (available.length === 0 && missing.length === 0) {
@@ -182,10 +193,7 @@ export class SseService {
 		}
 	}
 
-	private async attachNamespaceToSession(
-		session: Session<SessionState>,
-		namespace: string,
-	) {
+	private async attachNamespaceToSession(session: Session<SessionState>, namespace: string) {
 		const state = session.state
 		if (state.handlers.has(namespace)) return
 		const factory = this.extensions.get(namespace)

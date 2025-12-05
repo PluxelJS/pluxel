@@ -260,6 +260,12 @@ importers:
       '@rolldown/pluginutils':
         specifier: 1.0.0-beta.52
         version: 1.0.0-beta.52
+      '@signaldb/core':
+        specifier: ^1.7.1
+        version: 1.7.1
+      '@signaldb/fs':
+        specifier: ^1.0.1
+        version: 1.0.1(@signaldb/core@1.7.1)
       '@tabler/icons-react':
         specifier: '*'
         version: 3.35.0(react@19.2.1)
@@ -1587,6 +1593,14 @@ packages:
   '@rolldown/pluginutils@1.0.0-beta.53':
     resolution: {integrity: sha512-vENRlFU4YbrwVqNDZ7fLvy+JR1CRkyr01jhSiDpE1u6py3OMzQfztQU2jxykW3ALNxO4kSlqIDeYyD0Y9RcQeQ==}
 
+  '@signaldb/core@1.7.1':
+    resolution: {integrity: sha512-nS520gkkFnjWMJNbXeNo0IDal62+v51HMa9dtFWYyvRfS/fWKWYdzUOwg40wjGx60mtNIHrCOLsYaHYKUaNmQA==}
+
+  '@signaldb/fs@1.0.1':
+    resolution: {integrity: sha512-swa1xkVoBuObgKZlcpPC5U6WpIawyXnyyyGsWdB8Tpgcw7l9Rq+KG+4f2Vbe7tGm/LdQnUFMgJ44gEbjlSzvDQ==}
+    peerDependencies:
+      '@signaldb/core': 1.x
+
   '@sindresorhus/is@7.1.1':
     resolution: {integrity: sha512-rO92VvpgMc3kfiTjGT52LEtJ8Yc5kCWhZjLQ3LwlA4pSgPpQO7bVpYXParOD8Jwf+cVQECJo3yP/4I8aZtUQTQ==}
     engines: {node: '>=18'}
@@ -2184,6 +2198,9 @@ packages:
   fast-safe-stringify@2.1.1:
     resolution: {integrity: sha512-W+KJc2dmILlPplD/H4K9l9LcAHAfPtP6BY84uVLXQ6Evcz9Lcg33Y2z1IVblT6xdY54PXYVHEv+0Wpq8Io6zkA==}
 
+  fast-sort@3.4.1:
+    resolution: {integrity: sha512-76uvGPsF6So53sZAqenP9UVT3p5l7cyTHkLWVCMinh41Y8NDrK1IYXJgaBMfc1gk7nJiSRZp676kddFG2Aa5+A==}
+
   fastq@1.19.1:
     resolution: {integrity: sha512-GwLTyxkCXjXbxqIhTsMI2Nui8huMPtnxg7krajPJAjnEG/iiOS7i+zCtWGZR9G0NBKbXKh6X9m9UIsYX/N6vvQ==}
 
@@ -2651,6 +2668,9 @@ packages:
   mimic-fn@2.1.0:
     resolution: {integrity: sha512-OqbOk5oEQeAZ8WXWydlu9HJjz9WVdEIvamMCcXmuqUYjTknH/sqsWvhQ3vgwKFRR1HpjvNBKQ37nbJgYzGqGcg==}
     engines: {node: '>=6'}
+
+  mingo@6.7.2:
+    resolution: {integrity: sha512-5HKLu2GiNxw71EYZbWPh6dpcucHLlHqOXa0gbsYYtAjRpT/8EbDBJURLlUt3cNkISd9grOJ/AeYogyWj3QoxGA==}
 
   minimatch@9.0.5:
     resolution: {integrity: sha512-G6T0ZX48xgozx7587koeX9Ys2NYy6Gmv//P89sEte9V9whIapMNF4idKxnW2QtCcLiTWlb/wfCabAtAFWhhBow==}
@@ -4819,6 +4839,15 @@ snapshots:
 
   '@rolldown/pluginutils@1.0.0-beta.53': {}
 
+  '@signaldb/core@1.7.1':
+    dependencies:
+      fast-sort: 3.4.1
+      mingo: 6.7.2
+
+  '@signaldb/fs@1.0.1(@signaldb/core@1.7.1)':
+    dependencies:
+      '@signaldb/core': 1.7.1
+
   '@sindresorhus/is@7.1.1': {}
 
   '@speed-highlight/core@1.2.12': {}
@@ -5416,6 +5445,8 @@ snapshots:
 
   fast-safe-stringify@2.1.1: {}
 
+  fast-sort@3.4.1: {}
+
   fastq@1.19.1:
     dependencies:
       reusify: 1.1.0
@@ -5855,6 +5886,8 @@ snapshots:
       mime-db: 1.52.0
 
   mimic-fn@2.1.0: {}
+
+  mingo@6.7.2: {}
 
   minimatch@9.0.5:
     dependencies:

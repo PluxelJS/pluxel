@@ -1,12 +1,4 @@
 export * from '@pluxel/core'
-export type {
-	AuthGuardCheckInput,
-	AuthGuardContext,
-	AuthGuardDecision,
-	AuthGuardRegistration,
-	AuthGuardResult,
-} from './services/hono/AuthGuardService'
-export type { SseEvents, ResolvedSseEvents } from './web/sse'
 
 import { type ConfigSchemaList, Config as OrigConfig } from '@pluxel/core'
 import { type InferOutput, isOfType, type ObjectSchema, type ObjectSchemaAsync } from 'valibot'
