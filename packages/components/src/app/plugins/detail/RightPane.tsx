@@ -32,19 +32,25 @@ export function RightPane({ config }: RightPaneProps) {
 		[pluginName, tabItems],
 	)
 	const [activeTab, setActiveTab] = useState('config')
-
-	useEffect(() => {
-		setActiveTab('config')
-	}, [pluginName])
-
-	useEffect(() => {
-		if (activeTab === 'config') return
-		if (!tabDefs.some((tab) => tab.id === activeTab)) {
-			setActiveTab('config')
-		}
-	}, [activeTab, tabDefs])
-
+	const hasConfigSchema = useMemo(
+		() => Object.keys(config.data?.schemaMap ?? {}).length > 0,
+		[config.data?.schemaMap],
+	)
+	const showConfigTab = hasConfigSchema || config.loading || Boolean(config.error)
 	const hasTabs = tabNodes.length > 0
+
+	useEffect(() => {
+		const fallback = tabDefs[0]?.id ?? 'config'
+		setActiveTab(showConfigTab ? 'config' : fallback)
+	}, [pluginName, showConfigTab, tabDefs])
+
+	useEffect(() => {
+		if (activeTab === 'config' && showConfigTab) return
+		if (!tabDefs.some((tab) => tab.id === activeTab)) {
+			const fallback = showConfigTab ? 'config' : tabDefs[0]?.id ?? 'config'
+			setActiveTab(fallback)
+		}
+	}, [activeTab, showConfigTab, tabDefs])
 
 	return (
 		<PluginPanel
@@ -69,19 +75,21 @@ export function RightPane({ config }: RightPaneProps) {
 							style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}
 						>
 							<Tabs.List mb="sm">
-								<Tabs.Tab value="config">配置</Tabs.Tab>
+								{showConfigTab ? <Tabs.Tab value="config">配置</Tabs.Tab> : null}
 								{tabDefs.map((tab) => (
 									<Tabs.Tab key={tab.id} value={tab.id}>
 										{tab.label}
 									</Tabs.Tab>
 								))}
 							</Tabs.List>
-							<Tabs.Panel
-								value="config"
-								style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}
-							>
-								<ConfigContent config={config} pluginName={pluginName} />
-							</Tabs.Panel>
+							{showConfigTab ? (
+								<Tabs.Panel
+									value="config"
+									style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}
+								>
+									<ConfigContent config={config} pluginName={pluginName} />
+								</Tabs.Panel>
+							) : null}
 							{tabNodes.map((node, index) => {
 								const tab = tabDefs[index]
 								const id = tab?.id ?? `${pluginName}:tab:${index}`

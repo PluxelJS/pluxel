@@ -61,7 +61,15 @@ async function loadPluginData(
 	if (cachedSchema) return { ...cachedSchema, savedConfig }
 
 	if (!schemaResult) throw new Error('schema 加载失败')
-	if (schemaResult.ok === false) throw new Error(schemaResult.message ?? schemaResult.code)
+	if (schemaResult.ok === false) {
+		// schema_not_found 代表插件未暴露配置 schema，此时视为“没有可配置项”而不是错误
+		if (schemaResult.code === 'schema_not_found') {
+			const payload = { schemaMap: {}, defaults: {} }
+			schemaCache.set(pluginName, payload)
+			return { ...payload, savedConfig }
+		}
+		throw new Error(schemaResult.message ?? schemaResult.code)
+	}
 
 	// 转换 schema 表达式
 	const schemaMap: Record<string, any> = {}

@@ -2,7 +2,8 @@
 // 展示型插件：演示插件页面、RPC、SSE 复用等能力
 
 import { BasePlugin, Plugin } from '@pluxel/core'
-import { RpcTarget } from 'capnweb'
+import { RpcTarget } from '@pluxel/hmr/capnweb'
+import type { SseChannel } from '@pluxel/hmr/services'
 
 type PluginMemoEntry = {
 	id: number
@@ -169,8 +170,6 @@ declare module '@pluxel/hmr/services' {
 	}
 
 	interface SseEvents {
-		PluginWithUI:
-			| { type: 'sync'; notes: PluginMemoEntry[] }
-			| { type: 'tick'; now: number }
+		PluginWithUI: { type: 'sync'; notes: PluginMemoEntry[] } | { type: 'tick'; now: number }
 	}
 }
