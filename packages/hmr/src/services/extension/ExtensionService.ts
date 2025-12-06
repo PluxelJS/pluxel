@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto'
 import { existsSync } from 'node:fs'
 import { mkdir, readdir, readFile, stat, unlink, writeFile } from 'node:fs/promises'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import { type Context, getPluginInfo, Injectable } from '@pluxel/core'
 import chokidar, { type FSWatcher } from 'chokidar'
 import { dirname, isAbsolute, join, resolve } from 'pathe'
@@ -349,12 +350,13 @@ export class ExtensionService {
 			url = '/' + url
 		}
 
-		const result = await vite.transformRequest(url)
-		if (!result?.code) {
-			throw new Error('Failed to compile entry module')
-		}
-
-		return normalizeJsxRuntime(transformVendorImports(result.code))
+		// 将入口与本地依赖打成单文件，避免子模块继续各自 import react 导致出现多个 React 副本
+		// （多 React 副本会让 hooks dispatcher 为 null，触发 “reading 'useMemo' of null”）
+		const bundled = await bundlePluginEntry({
+			entry: absoluteEntry,
+			vite,
+		})
+		return normalizeJsxRuntime(transformVendorImports(bundled))
 	}
 
 	private async cleanupOldModuleFiles(pluginName: string, keep: number): Promise<void> {
@@ -640,8 +642,8 @@ function transformVendorImports(code: string): string {
 		]
 
 		result = result.replace(patterns[0]!, (_, names: string) => {
-			const trimmed = names.trim()
-			return `const {${trimmed}} = window.__PLUXEL_VENDORS__["${pkg}"];`
+			const destructure = rewriteVendorNamedImports(names, pkg)
+			return destructure ? destructure : ''
 		})
 
 		result = result.replace(patterns[1]!, (_, name: string) => {
@@ -649,9 +651,9 @@ function transformVendorImports(code: string): string {
 		})
 
 		result = result.replace(patterns[3]!, (_, defaultName: string, namedImports: string) => {
-			const trimmed = namedImports.trim()
-			return `const ${defaultName} = window.__PLUXEL_VENDORS__["${pkg}"].default || window.__PLUXEL_VENDORS__["${pkg}"];
-const {${trimmed}} = window.__PLUXEL_VENDORS__["${pkg}"];`
+			const named = rewriteVendorNamedImports(namedImports, pkg)
+			const defaultLine = `const ${defaultName} = window.__PLUXEL_VENDORS__["${pkg}"].default || window.__PLUXEL_VENDORS__["${pkg}"];`
+			return named ? `${defaultLine}\n${named}` : defaultLine
 		})
 
 		result = result.replace(patterns[2]!, (_, name: string) => {
@@ -678,6 +680,68 @@ const {${trimmed}} = window.__PLUXEL_VENDORS__["${pkg}"];`
 
 function escapeRegex(str: string): string {
 	return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+async function bundlePluginEntry(options: {
+	entry: string
+	vite: import('vite').ViteDevServer
+}): Promise<string> {
+	const pool = getBundlePool()
+	const { entry, vite } = options
+	return pool.run({
+		entry,
+		root: vite.config.root,
+		resolve: vite.config.resolve,
+		vendors: Array.from(VENDOR_PACKAGES),
+	})
+}
+
+let bundlePool: import('tinypool').default | null = null
+function getBundlePool(): import('tinypool').default {
+	if (bundlePool) return bundlePool
+	// 延迟创建，避免未用时初始化线程
+	const { default: Tinypool } = require('tinypool') as typeof import('tinypool')
+	const worker = resolveWorkerPath()
+	bundlePool = new Tinypool({
+		filename: worker,
+		maxThreads: Math.max(1, Math.min(4, require('os').cpus().length - 1)),
+	})
+	return bundlePool
+}
+
+function resolveWorkerPath(): string {
+	const currentDir = dirname(fileURLToPath(import.meta.url))
+	const pkgRoot = resolve(currentDir, '../../..')
+	const candidates = [
+		pathToFileURL(resolve(pkgRoot, 'dist/bundle-worker.mjs')).href, // copied by tsdown
+		pathToFileURL(join(currentDir, 'bundle-worker.mjs')).href, // same dir as compiled chunk
+		pathToFileURL(resolve(pkgRoot, 'src/services/extension/bundle-worker.mjs')).href, // source fallback
+	]
+	for (const href of candidates) {
+		try {
+			if (existsSync(fileURLToPath(href))) {
+				return href
+			}
+		} catch {}
+	}
+	return candidates[candidates.length - 1]!
+}
+
+function rewriteVendorNamedImports(names: string, pkg: string): string {
+	const parts = names
+		.split(',')
+		.map((part) => part.trim())
+		.filter(Boolean)
+		.map((part) => {
+			const match = part.match(/^([\\w$]+)\\s+as\\s+([\\w$]+)$/)
+			if (match) {
+				return `${match[1]}: ${match[2]}`
+			}
+			return part
+		})
+
+	if (!parts.length) return ''
+	return `const { ${parts.join(', ')} } = window.__PLUXEL_VENDORS__["${pkg}"];`
 }
 
 function normalizeJsxRuntime(code: string): string {

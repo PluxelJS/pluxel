@@ -2,6 +2,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
 	type CompiledExtensionModule,
+	initVendors,
 	loadExtensionModule,
 	unloadExtensionModule,
 } from '../extension'
@@ -94,7 +95,29 @@ export function ExtensionLoader({
 			}
 		}
 		onRunningPluginsChange(next)
-	}, [effectivePlugins, onRunningPluginsChange])
+		}, [effectivePlugins, onRunningPluginsChange])
+
+	// 如果插件已停止运行，主动卸载其扩展模块，避免 UI 继续渲染
+	useEffect(() => {
+		const running = new Set<string>()
+		for (const plugin of effectivePlugins) {
+			if (plugin.isRunning && plugin.name) {
+				running.add(plugin.name)
+			}
+		}
+
+		let removed = false
+		for (const name of Array.from(moduleCacheRef.current.keys())) {
+			if (!running.has(name)) {
+				moduleCacheRef.current.delete(name)
+				unloadExtensionModule(name)
+				removed = true
+			}
+		}
+		if (removed) {
+			recomputeManifestSignature()
+		}
+	}, [effectivePlugins, recomputeManifestSignature])
 
 	const manifestVersionRef = useRef(0)
 	const manifestSignatureRef = useRef('')
@@ -119,11 +142,7 @@ export function ExtensionLoader({
 		}
 
 		const url = withCacheBusting(module.moduleUrl, module.sourceHash, module.compiledAt)
-		const loadPromise = loadExtensionModule(
-			module.pluginName,
-			() => import(/* @vite-ignore */ url),
-			module.sourceHash,
-		)
+		const loadPromise = loadExtensionModule(module.pluginName, () => dynamicImport(url), module.sourceHash)
 		moduleCacheRef.current.set(module.pluginName, {
 			...module,
 			inflight: loadPromise,
@@ -193,6 +212,9 @@ export function ExtensionLoader({
 	)
 
 	useEffect(() => {
+		// 确保扩展运行前共享 vendors 已挂载（防止页面初始化较慢时未注入 React/Mantine）
+		initVendors()
+
 		void syncManifest()
 		if (pollInterval <= 0) return
 		const timer = setInterval(() => {
@@ -276,3 +298,5 @@ function withCacheBusting(url: string, hash: string, compiledAt: number): string
 	const suffix = `v=${hash}:${compiledAt}`
 	return url.includes('?') ? `${url}&${suffix}` : `${url}?${suffix}`
 }
+
+const dynamicImport = (path: string) => import(/* @vite-ignore */ path)

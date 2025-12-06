@@ -25,7 +25,7 @@ export default defineConfig({
 		capnweb: 'src/web/capnweb.ts',
 		signaldb: 'src/web/signaldb.ts',
 	},
-	copy: ['public'],
+	copy: ['public', 'src/services/extension/bundle-worker.mjs'],
 	alias: {
 		'~': valibotFormSrc,
 	},
