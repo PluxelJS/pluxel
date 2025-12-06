@@ -7,9 +7,8 @@ import type { AppType } from '../api/hono/index'
 import type { RpcExtensions } from '../services'
 import {
 	type ResolvedSseEvents,
-	type SseClientWithNamespaces,
-	type SseEvents,
 	type SseClientOptions,
+	type SseClientWithNamespaces,
 	type SseMessage,
 	sse,
 } from './sse'
@@ -76,7 +75,9 @@ export interface HmrWebClient {
 	createSse: (options?: SseClientOptions) => SseClientWithNamespaces
 	/** 预配置的 SSE 客户端，可直接点出命名空间（无需再传 namespaces） */
 	sse: SseClientWithNamespaces
-	streamLogs: (options?: Omit<SseClientOptions, 'namespaces'> & { name?: string }) => SseClientWithNamespaces
+	streamLogs: (
+		options?: Omit<SseClientOptions, 'namespaces'> & { name?: string },
+	) => SseClientWithNamespaces
 	streamExtensions: (options?: Omit<SseClientOptions, 'namespaces'>) => SseClientWithNamespaces
 	/** 手动回收单例 SSE，便于在宿主卸载时释放连接 */
 	dispose: () => void
@@ -99,10 +100,7 @@ export function createHmrWebClient(options: WebClientOptions = {}): HmrWebClient
 	const rawRpc = () => newHttpBatchRpcSession<HmrRpcApi>(rpcBase)
 	const baseNamespaces = mergeNamespaces(baseSseOptions.namespaces, defaultNamespaces)
 
-	const buildSseOptions = (
-		opts?: SseClientOptions,
-		inheritNamespaces = true,
-	): SseClientOptions => {
+	const buildSseOptions = (opts?: SseClientOptions, inheritNamespaces = true): SseClientOptions => {
 		const params = { ...(baseSseOptions.params ?? {}), ...(opts?.params ?? {}) }
 		const namespaces = inheritNamespaces
 			? mergeNamespaces(baseNamespaces, opts?.namespaces)
@@ -166,7 +164,6 @@ export {
 	type ResolvedSseEvents,
 	type SseClientOptions,
 	type SseClientWithNamespaces,
-	type SseEvents,
 	type SseMessage,
 }
 

@@ -9,13 +9,13 @@
 	"exports": {
 		".": {
 			"@pluxel/source": "./src/index.ts",
-			"import": "./dist/index.mjs",
-			"require": "./dist/index.cjs"
+			"require": "./dist/index.cjs",
+			"import": "./dist/index.mjs"
 		},
 		"./services": {
 			"@pluxel/source": "./src/services/index.ts",
-			"import": "./dist/services.mjs",
-			"require": "./dist/services.cjs"
+			"require": "./dist/services.cjs",
+			"import": "./dist/services.mjs"
 		},
 		"./package.json": "./package.json"
 	},
@@ -44,12 +44,12 @@
 	"publishConfig": {
 		"exports": {
 			".": {
-				"import": "./dist/index.mjs",
-				"require": "./dist/index.cjs"
+				"require": "./dist/index.cjs",
+				"import": "./dist/index.mjs"
 			},
 			"./services": {
-				"import": "./dist/services.mjs",
-				"require": "./dist/services.cjs"
+				"require": "./dist/services.cjs",
+				"import": "./dist/services.mjs"
 			},
 			"./package.json": "./package.json"
 		}

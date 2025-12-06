@@ -1,4 +1,4 @@
-import { Badge, Box, Center, Loader, Tabs, Text } from '@mantine/core'
+import { Badge, Box, Center, Loader, ScrollArea, Tabs, Text } from '@mantine/core'
 import { IconSettingsOff } from '@tabler/icons-react'
 import { useEffect, useMemo, useState } from 'react'
 import { EmptyState, ErrorState } from '../../../components'
@@ -16,6 +16,10 @@ interface RightPaneProps {
 export function RightPane({ config }: RightPaneProps) {
 	const { pluginName, isSyncing } = usePluginMeta()
 	const { nodes: tabNodes, items: tabItems } = useExtensions('plugin:tabs')
+	const column = useMemo(
+		() => ({ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' as const }),
+		[],
+	)
 	const tabDefs = useMemo(
 		() =>
 			tabItems.map((item, index) => {
@@ -66,13 +70,13 @@ export function RightPane({ config }: RightPaneProps) {
 			gap="lg"
 		>
 			<PluginSection grow>
-				<Box style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
+				<Box style={column}>
 					{hasTabs ? (
 						<Tabs
 							value={activeTab}
 							onChange={(value) => setActiveTab(value ?? 'config')}
 							keepMounted={false}
-							style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}
+							style={column}
 						>
 							<Tabs.List mb="sm">
 								{showConfigTab ? <Tabs.Tab value="config">配置</Tabs.Tab> : null}
@@ -85,7 +89,7 @@ export function RightPane({ config }: RightPaneProps) {
 							{showConfigTab ? (
 								<Tabs.Panel
 									value="config"
-									style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}
+									style={column}
 								>
 									<ConfigContent config={config} pluginName={pluginName} />
 								</Tabs.Panel>
@@ -97,14 +101,18 @@ export function RightPane({ config }: RightPaneProps) {
 									<Tabs.Panel
 										key={id}
 										value={id}
-										style={{
-											flex: 1,
-											minHeight: 0,
-											display: 'flex',
-											flexDirection: 'column',
-										}}
+										style={column}
 									>
-										{node}
+										<ScrollArea
+											type="auto"
+											scrollbarSize={10}
+											offsetScrollbars
+											style={column}
+										>
+											<Box p="xs" style={{ minHeight: '100%' }}>
+												{node}
+											</Box>
+										</ScrollArea>
 									</Tabs.Panel>
 								)
 							})}
