@@ -2,6 +2,7 @@ import type { ComponentType } from 'react'
 import { ExtensionErrorBoundary } from './ErrorBoundary'
 import { extensionRegistry } from './registry'
 import type { ExtensionMeta, PluginUIModule } from './types'
+import { extRuntime } from './debug'
 
 function normalizeExtensionRoutePath(path: string): string {
 	if (!path) return ''
@@ -71,6 +72,7 @@ class ExtensionRuntime {
 			return
 		}
 
+		extRuntime('loading runtime %s@%s', pluginName, sourceHash)
 		this.disposePlugin(pluginName)
 
 		const evaluated = await this.evaluateModule(importer)
@@ -78,10 +80,12 @@ class ExtensionRuntime {
 		this.pluginHashes.set(pluginName, sourceHash)
 
 		this.notify()
+		extRuntime('loaded runtime %s@%s', pluginName, sourceHash)
 	}
 
 	unloadPluginModule(pluginName: string): void {
 		if (!this.pluginCleanups.has(pluginName)) return
+		extRuntime('unload runtime %s', pluginName)
 		this.disposePlugin(pluginName)
 		this.notify()
 	}
@@ -109,12 +113,18 @@ class ExtensionRuntime {
 
 		if (module.extensions) {
 			for (const ext of module.extensions) {
+				// 如果用户提供了 id，确保前置 pluginName；否则自动生成
+				const rawId = ext.meta?.id
+				const extId = rawId
+					? (rawId.startsWith(`${pluginName}:`) ? rawId : `${pluginName}:${rawId}`)
+					: `${pluginName}:${ext.point}:${Math.random().toString(36).slice(2)}`
+
 				const meta: ExtensionMeta = {
-					id: `${pluginName}:${ext.point}:${Math.random().toString(36).slice(2)}`,
+					...ext.meta,
+					id: extId,
 					pluginName,
 					priority: ext.meta?.priority ?? 0,
 					requireRunning: ext.meta?.requireRunning ?? false,
-					...ext.meta,
 				}
 
 				const cleanup = extensionRegistry.register(ext.point, {

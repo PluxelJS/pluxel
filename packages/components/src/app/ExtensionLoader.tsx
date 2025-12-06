@@ -6,6 +6,7 @@ import {
 	loadExtensionModule,
 	unloadExtensionModule,
 } from '../extension'
+import { extLog } from '../extension/debug'
 import { fetchExtensionManifest } from '../extension/api/manifest'
 import { useQuery } from './gqty'
 import { subscribePluginStatusEvents } from './plugins/statusEvents'
@@ -97,6 +98,19 @@ export function ExtensionLoader({
 		onRunningPluginsChange(next)
 		}, [effectivePlugins, onRunningPluginsChange])
 
+	const manifestVersionRef = useRef(0)
+	const manifestSignatureRef = useRef('')
+	const loadingRef = useRef(false)
+	const moduleCacheRef = useRef<Map<string, LoadedPluginModule>>(new Map())
+
+	const recomputeManifestSignature = useCallback(() => {
+		const signature = Array.from(moduleCacheRef.current.values())
+			.map((mod) => `${mod.pluginName}:${mod.sourceHash}`)
+			.sort()
+			.join('|')
+		manifestSignatureRef.current = signature
+	}, [])
+
 	// 如果插件已停止运行，主动卸载其扩展模块，避免 UI 继续渲染
 	useEffect(() => {
 		const running = new Set<string>()
@@ -111,6 +125,7 @@ export function ExtensionLoader({
 			if (!running.has(name)) {
 				moduleCacheRef.current.delete(name)
 				unloadExtensionModule(name)
+				extLog('unloaded %s due to stop', name)
 				removed = true
 			}
 		}
@@ -118,19 +133,6 @@ export function ExtensionLoader({
 			recomputeManifestSignature()
 		}
 	}, [effectivePlugins, recomputeManifestSignature])
-
-	const manifestVersionRef = useRef(0)
-	const manifestSignatureRef = useRef('')
-	const loadingRef = useRef(false)
-	const moduleCacheRef = useRef<Map<string, LoadedPluginModule>>(new Map())
-
-	const recomputeManifestSignature = useCallback(() => {
-		const signature = Array.from(moduleCacheRef.current.values())
-			.map((mod) => `${mod.pluginName}:${mod.sourceHash}`)
-			.sort()
-			.join('|')
-		manifestSignatureRef.current = signature
-	}, [])
 
 	const ensureModuleLoaded = useCallback(async (module: CompiledExtensionModule) => {
 		const cached = moduleCacheRef.current.get(module.pluginName)
@@ -142,7 +144,12 @@ export function ExtensionLoader({
 		}
 
 		const url = withCacheBusting(module.moduleUrl, module.sourceHash, module.compiledAt)
-		const loadPromise = loadExtensionModule(module.pluginName, () => dynamicImport(url), module.sourceHash)
+		extLog('loading %s@%s', module.pluginName, module.sourceHash)
+		const loadPromise = loadExtensionModule(
+			module.pluginName,
+			() => dynamicImport(url),
+			module.sourceHash,
+		)
 		moduleCacheRef.current.set(module.pluginName, {
 			...module,
 			inflight: loadPromise,
@@ -150,8 +157,10 @@ export function ExtensionLoader({
 
 		try {
 			await loadPromise
+			extLog('loaded %s@%s', module.pluginName, module.sourceHash)
 		} catch (error) {
 			moduleCacheRef.current.delete(module.pluginName)
+			extLog('failed to load %s: %o', module.pluginName, error)
 			throw error
 		} finally {
 			const latest = moduleCacheRef.current.get(module.pluginName)
@@ -166,7 +175,9 @@ export function ExtensionLoader({
 			if (loadingRef.current) return
 			loadingRef.current = true
 			try {
+				extLog('fetching manifest')
 				const manifest = await fetchExtensionManifest()
+				extLog('fetched manifest v%d', manifest.version)
 				const nextSignature = manifest.modules
 					.map((module) => `${module.pluginName}:${module.sourceHash}`)
 					.sort()
@@ -198,7 +209,8 @@ export function ExtensionLoader({
 					}
 				}
 				manifestVersionRef.current = manifest.version
-				manifestSignatureRef.current = nextSignature
+					manifestSignatureRef.current = nextSignature
+				extLog('synced manifest v%d (%d modules)', manifest.version, manifest.modules.length)
 			} catch (error) {
 				if (process.env.NODE_ENV !== 'production') {
 					console.error('[ExtensionLoader] failed to sync manifest', error)

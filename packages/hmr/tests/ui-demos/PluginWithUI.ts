@@ -48,7 +48,6 @@ export class PluginWithUI extends BasePlugin {
 
 		// UI 扩展示例：自带完整页面 + 自定义 Tab + Header 按钮
 		this.ctx.extensionService.register({
-			pluginName: 'PluginWithUI',
 			entryPath: './PluginWithUI/ui/index.tsx',
 		})
 

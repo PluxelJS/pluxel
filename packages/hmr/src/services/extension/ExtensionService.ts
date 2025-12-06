@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto'
 import { existsSync } from 'node:fs'
 import { mkdir, readdir, readFile, stat, unlink, writeFile } from 'node:fs/promises'
 import { fileURLToPath, pathToFileURL } from 'node:url'
+import { createDebug } from 'obug'
 import { type Context, getPluginInfo, Injectable } from '@pluxel/core'
 import chokidar, { type FSWatcher } from 'chokidar'
 import { dirname, isAbsolute, join, resolve } from 'pathe'
@@ -26,7 +27,8 @@ export interface ExtensionServiceConfig {
 }
 
 interface PluginExtensionEntry {
-	config: PluginExtensionConfig
+	pluginName: string
+	entryPath: string
 	sourceFiles: string[]
 	lastCompiledAt?: number
 	lastSourceHash?: string
@@ -76,6 +78,7 @@ export class ExtensionService {
 	private readonly entries = new Map<string, PluginExtensionEntry>()
 	private readonly outDir: string
 	private readonly manifestPath: string
+	private readonly dbg = createDebug('pluxel:ext:compile')
 	private manifestVersion = 0
 	private manifest: ExtensionManifest = {
 		version: 0,
@@ -134,36 +137,41 @@ export class ExtensionService {
 		return null
 	}
 
+	/**
+	 * 注册插件 UI 扩展（自动从当前 Context 获取 pluginName）
+	 */
 	register(config: PluginExtensionConfig): () => void {
-		if (!config.entryPath) {
-			throw new Error(`Extension for ${config.pluginName} 必须提供 entryPath`)
+		const pluginName = this.ctx.pluginInfo?.name
+		if (!pluginName) {
+			throw new Error('无法获取 pluginName，请确保在插件内调用')
 		}
 
-		const existing = this.entries.get(config.pluginName)
+		const existing = this.entries.get(pluginName)
 		if (existing) {
 			this.disposeWatcher(existing)
 		}
 
-		const sourceFiles = this.collectSourceFiles(config)
+		const sourceFiles = this.collectSourceFiles(pluginName, config.entryPath)
 		const entry: PluginExtensionEntry = {
-			config,
+			pluginName,
+			entryPath: config.entryPath,
 			sourceFiles,
 			active: true,
 			watcher: null,
 		}
 
-		this.entries.set(config.pluginName, entry)
-		this.setupWatcher(config.pluginName, entry)
-		this.enqueueCompile(config.pluginName)
+		this.entries.set(pluginName, entry)
+		this.setupWatcher(pluginName, entry)
+		this.enqueueCompile(pluginName)
 
 		return () => {
-			const stored = this.entries.get(config.pluginName)
+			const stored = this.entries.get(pluginName)
 			if (!stored) return
 			stored.active = false
 			this.disposeWatcher(stored)
-			this.pendingPlugins.delete(config.pluginName)
-			this.entries.delete(config.pluginName)
-			void this.handlePluginRemoval(config.pluginName, stored)
+			this.pendingPlugins.delete(pluginName)
+			this.entries.delete(pluginName)
+			void this.handlePluginRemoval(pluginName, stored)
 		}
 	}
 
@@ -237,7 +245,7 @@ export class ExtensionService {
 	private async compilePlugin(pluginName: string): Promise<boolean> {
 		const entry = this.entries.get(pluginName)
 		if (!entry) return false
-		const start = Date.now()
+		this.dbg('compile start %s', pluginName)
 		try {
 			const sourceHash = await this.computeSourceHash(entry.sourceFiles)
 			const targetFile = this.getModuleFilePath(pluginName, sourceHash)
@@ -251,10 +259,11 @@ export class ExtensionService {
 				entry.moduleUrl = moduleUrl
 				void this.cleanupOldModuleFiles(pluginName, MODULE_RETENTION_COUNT)
 				this.handleManifestUpdate(pluginName, entry)
+				this.dbg('compile done %s (cached)', pluginName)
 				return true
 			}
 
-			const code = await this.generateBundle(entry.config)
+			const code = await this.generateBundle(entry.pluginName, entry.entryPath)
 			await mkdir(dirname(targetFile), { recursive: true })
 			await writeFile(targetFile, code, 'utf-8')
 			void this.cleanupOldModuleFiles(pluginName, MODULE_RETENTION_COUNT)
@@ -263,13 +272,11 @@ export class ExtensionService {
 			entry.modulePath = targetFile
 			entry.moduleUrl = moduleUrl
 			this.handleManifestUpdate(pluginName, entry)
+			this.dbg('compile done %s', pluginName)
 			return true
 		} catch (error) {
 			console.error('[ExtensionService] failed to compile', pluginName, error)
 			return false
-		} finally {
-			const duration = Date.now() - start
-			this.ctx.logger.info('[Extension] compiled %s in %dms', pluginName, duration)
 		}
 	}
 
@@ -317,11 +324,8 @@ export class ExtensionService {
 		}
 	}
 
-	private async generateBundle(config: PluginExtensionConfig): Promise<string> {
-		if (!config.entryPath) {
-			throw new Error(`插件 ${config.pluginName} 必须提供 entryPath`)
-		}
-		return this.compileEntryModule(config.pluginName, config.entryPath)
+	private async generateBundle(pluginName: string, entryPath: string): Promise<string> {
+		return this.compileEntryModule(pluginName, entryPath)
 	}
 
 	private async compileEntryModule(pluginName: string, entryPath: string): Promise<string> {
@@ -517,7 +521,7 @@ export class ExtensionService {
 		})()
 	}
 
-	private collectSourceFiles(config: PluginExtensionConfig): string[] {
+	private collectSourceFiles(pluginName: string, entryPath: string): string[] {
 		const targets = new Set<string>()
 		const addTarget = (input: string | null) => {
 			if (!input) return
@@ -528,7 +532,7 @@ export class ExtensionService {
 			}
 		}
 
-		const entryFile = this.resolvePluginFile(config.pluginName, config.entryPath)
+		const entryFile = this.resolvePluginFile(pluginName, entryPath)
 		addTarget(entryFile)
 
 		return Array.from(targets)

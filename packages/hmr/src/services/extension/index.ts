@@ -2,11 +2,7 @@
 export { ExtensionService, type ExtensionServiceConfig } from './ExtensionService'
 export type {
 	CompiledExtensionModule,
-	ExtensionCondition,
 	ExtensionManifest,
 	ExtensionManifestEvent,
-	ExtensionPoint,
 	PluginExtensionConfig,
-	RouteExtension,
-	UIExtension,
 } from './types'

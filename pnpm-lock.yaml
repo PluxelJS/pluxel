@@ -148,6 +148,9 @@ importers:
       graphql:
         specifier: ^16.12.0
         version: 16.12.0
+      obug:
+        specifier: ^2.1.1
+        version: 2.1.1
       react:
         specifier: ^19.2.1
         version: 19.2.1
@@ -333,14 +336,14 @@ importers:
         specifier: ^1.2.0
         version: 1.2.0(typescript@5.9.3)
       vite:
-        specifier: npm:rolldown-vite@7.2.10
-        version: rolldown-vite@7.2.10(@types/node@24.10.1)(jiti@2.6.1)(sugarss@5.0.1(postcss@8.5.6))(yaml@2.8.2)
+        specifier: npm:rolldown-vite@7.2.2
+        version: rolldown-vite@7.2.2(@types/node@24.10.1)(jiti@2.6.1)(sugarss@5.0.1(postcss@8.5.6))(yaml@2.8.2)
       vite-node:
         specifier: ^5.2.0
         version: 5.2.0(@types/node@24.10.1)(jiti@2.6.1)(sugarss@5.0.1(postcss@8.5.6))(yaml@2.8.2)
       vite-tsconfig-paths:
         specifier: ^5.1.4
-        version: 5.1.4(rolldown-vite@7.2.10(@types/node@24.10.1)(jiti@2.6.1)(sugarss@5.0.1(postcss@8.5.6))(yaml@2.8.2))(typescript@5.9.3)
+        version: 5.1.4(rolldown-vite@7.2.2(@types/node@24.10.1)(jiti@2.6.1)(sugarss@5.0.1(postcss@8.5.6))(yaml@2.8.2))(typescript@5.9.3)
       youch:
         specifier: 4.1.0-beta.13
         version: 4.1.0-beta.13
@@ -3099,46 +3102,6 @@ packages:
       typescript:
         optional: true
       vue-tsc:
-        optional: true
-
-  rolldown-vite@7.2.10:
-    resolution: {integrity: sha512-v2ekZjuVLfumjp1Cr7LSQM1n2oOo3+gMruhOgT0Q4/cQ2J3nkTDLTAWLQQ86UHMbFYyVIN1wGh8BEZbvjkyctg==}
-    engines: {node: ^20.19.0 || >=22.12.0}
-    hasBin: true
-    peerDependencies:
-      '@types/node': ^20.19.0 || >=22.12.0
-      esbuild: ^0.25.0
-      jiti: '>=1.21.0'
-      less: ^4.0.0
-      sass: ^1.70.0
-      sass-embedded: ^1.70.0
-      stylus: '>=0.54.8'
-      sugarss: ^5.0.0
-      terser: ^5.16.0
-      tsx: ^4.8.1
-      yaml: ^2.4.2
-    peerDependenciesMeta:
-      '@types/node':
-        optional: true
-      esbuild:
-        optional: true
-      jiti:
-        optional: true
-      less:
-        optional: true
-      sass:
-        optional: true
-      sass-embedded:
-        optional: true
-      stylus:
-        optional: true
-      sugarss:
-        optional: true
-      terser:
-        optional: true
-      tsx:
-        optional: true
-      yaml:
         optional: true
 
   rolldown-vite@7.2.2:
@@ -6396,22 +6359,6 @@ snapshots:
     transitivePeerDependencies:
       - oxc-resolver
 
-  rolldown-vite@7.2.10(@types/node@24.10.1)(jiti@2.6.1)(sugarss@5.0.1(postcss@8.5.6))(yaml@2.8.2):
-    dependencies:
-      '@oxc-project/runtime': 0.101.0
-      fdir: 6.5.0(picomatch@4.0.3)
-      lightningcss: 1.30.2
-      picomatch: 4.0.3
-      postcss: 8.5.6
-      rolldown: 1.0.0-beta.53
-      tinyglobby: 0.2.15
-    optionalDependencies:
-      '@types/node': 24.10.1
-      fsevents: 2.3.3
-      jiti: 2.6.1
-      sugarss: 5.0.1(postcss@8.5.6)
-      yaml: 2.8.2
-
   rolldown-vite@7.2.2(@types/node@24.10.1)(jiti@2.6.1)(sugarss@5.0.1(postcss@8.5.6))(yaml@2.8.2):
     dependencies:
       '@oxc-project/runtime': 0.96.0
@@ -6943,17 +6890,6 @@ snapshots:
       - terser
       - tsx
       - yaml
-
-  vite-tsconfig-paths@5.1.4(rolldown-vite@7.2.10(@types/node@24.10.1)(jiti@2.6.1)(sugarss@5.0.1(postcss@8.5.6))(yaml@2.8.2))(typescript@5.9.3):
-    dependencies:
-      debug: 4.4.3
-      globrex: 0.1.2
-      tsconfck: 3.1.6(typescript@5.9.3)
-    optionalDependencies:
-      vite: rolldown-vite@7.2.10(@types/node@24.10.1)(jiti@2.6.1)(sugarss@5.0.1(postcss@8.5.6))(yaml@2.8.2)
-    transitivePeerDependencies:
-      - supports-color
-      - typescript
 
   vite-tsconfig-paths@5.1.4(rolldown-vite@7.2.2(@types/node@24.10.1)(jiti@2.6.1)(sugarss@5.0.1(postcss@8.5.6))(yaml@2.8.2))(typescript@5.9.3):
     dependencies:
