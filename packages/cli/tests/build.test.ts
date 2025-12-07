@@ -4,10 +4,10 @@ import { tmpdir } from 'node:os'
 import { join, resolve } from 'pathe'
 import { readPackageJSON } from 'pkg-types'
 import { createImportTracker } from '@pluxel/rolldown'
-import { resolveBuildContext } from '../src/tsbuild/config'
-import { BuildEnvKeys } from '../src/tsbuild/env'
-import { createOptionalDependencyHook } from '../src/tsbuild/plugin-tracker'
-import { runWithTsdown } from '../src/tsbuild/tsdown-runner'
+import { resolveBuildContext } from '../src/build/config'
+import { BuildEnvKeys } from '../src/build/env'
+import { createOptionalDependencyHook } from '../src/build/plugin-tracker'
+import { runWithTsdown } from '../src/build/tsdown-runner'
 
 const TEST_ROOT = new URL('.', import.meta.url)
 

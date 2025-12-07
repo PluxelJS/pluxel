@@ -4,7 +4,7 @@ import { cancel, intro, isCancel, note, outro, text } from '@clack/prompts'
 import { type ArgValues, define } from 'gunshi'
 import nodePlop, { type NodePlopAPI } from 'node-plop'
 import { dirname, isAbsolute, join, resolve } from 'pathe'
-import { resolvePluginEnv } from '../tsbuild/env'
+import { resolvePluginEnv } from '../build/env'
 import { detectPm, type PM, runPackageManager } from '../utils/pm'
 import { resolveTemplatesDir } from './utils'
 
@@ -280,5 +280,5 @@ function resolveTemplateBase(input: string) {
 	if (isAbsolute(input) || /^[A-Za-z]:[\\/]/.test(input)) {
 		return input
 	}
-	return resolveTemplatesDir?.(input) ?? resolve(__dirname, 'templates', input)
+	return resolveTemplatesDir(input)
 }
