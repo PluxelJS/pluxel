@@ -13,11 +13,11 @@ export interface CiContext extends RepoInfo {
 }
 
 export function detectCiContext(env: NodeJS.ProcessEnv = process.env): CiContext | undefined {
-	const github = detectGithub(env)
-	if (github) return github
-
 	const gitlab = detectGitlab(env)
 	if (gitlab) return gitlab
+
+	const github = detectGithub(env)
+	if (github) return github
 
 	return undefined
 }

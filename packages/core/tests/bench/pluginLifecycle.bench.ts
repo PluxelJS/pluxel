@@ -100,6 +100,8 @@ const toDisplay = (value: number | null | undefined) =>
 	value == null || Number.isNaN(value) ? '—' : value.toLocaleString()
 const pctDisplay = (value: number | null | undefined) =>
 	value == null || Number.isNaN(value) ? '—' : `${value > 0 ? '+' : ''}${value.toFixed(2)}%`
+const countDisplay = (value: number | null | undefined) =>
+	value == null || Number.isNaN(value) ? '—' : value.toLocaleString()
 const metricSummary = (
 	current: number | null | undefined,
 	delta: number | null | undefined,
@@ -138,9 +140,13 @@ const rows = bench.tasks.map((task) => {
 		throw new Error(`Benchmark task "${task.name}" has no result.`)
 	}
 	const { latency, throughput } = result
+	const runs =
+		latency.samplesCount ??
+		throughput.samplesCount ??
+		(Number.isFinite(task.runs) ? task.runs : undefined)
 	return {
 		name: task.name,
-		runs: latency.samples.length,
+		runs: runs ?? null,
 		totalTimeMs: round(result.totalTime),
 		opsMean: round(throughput.mean),
 		opsMin: round(throughput.min),
@@ -439,7 +445,7 @@ const markdownLines = [
 			toDisplay(row.latencyP75Ms),
 			toDisplay(row.latencyP99Ms),
 			row.latencyMaxMs.toLocaleString(),
-			row.runs.toLocaleString(),
+			countDisplay(row.runs),
 		]
 			.map((cell) => String(cell))
 			.join(' | '),
