@@ -57,8 +57,8 @@ type HookNames<H> = H extends { enter?: Record<string, infer N1>; exit?: Record<
 	: never
 
 type ImplFor<Cb extends string, Hook extends string> =
-	(Cb extends never ? { callbacks?: Record<Cb, AnyFn> } : { callbacks: Record<Cb, AnyFn> }) &
-		(Hook extends never ? { hooks?: Record<Hook, HookFn> } : { hooks: Record<Hook, HookFn> })
+	([Cb] extends [never] ? { callbacks?: Record<Cb, AnyFn> } : { callbacks: Record<Cb, AnyFn> }) &
+		([Hook] extends [never] ? { hooks?: Record<Hook, HookFn> } : { hooks: Record<Hook, HookFn> })
 
 type MachineLike<SMap extends Record<string, number>, EMap extends Record<string, number>> = UltraMachine & {
 	getState(): SMap[keyof SMap]
@@ -376,9 +376,9 @@ export function hydrateMachine<const B extends BakedMachine<any, any, any, any>>
 
 	// factories (宏期会把这段函数源码内联进产物)
 	const createMachine = (logger?: any) =>
-		new UltraMachine(Def, logger) as MachineLike<StateMap<States>, EventMap<Events>>
+		new UltraMachine(Def, logger) as MachineLike<StateMap<StatesOf<B>>, EventMap<EventsOf<B>>>
 	const createMachineSync = (logger?: any) =>
-		new UltraMachineSync(Def, logger) as MachineSyncLike<StateMap<States>, EventMap<Events>>
+		new UltraMachineSync(Def, logger) as MachineSyncLike<StateMap<StatesOf<B>>, EventMap<EventsOf<B>>>
 
 	return { S: baked.S, E: baked.E, Def, createMachine, createMachineSync }
 }
