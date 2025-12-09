@@ -9,10 +9,13 @@ import { BasePlugin, PLUGIN_CTX } from './BasePlugin'
 import { PluginContainer, type PluginDiContainer } from './PluginContainer'
 import type { PluginInfo } from './PluginDecorator'
 import {
-	createPluginLifecycle,
-	type PluginLifecycleRef,
+	PluginLifecycleActor,
+	lifecycleSelectors,
+	type LifecycleSnapshot,
 } from './pluginActor'
 import type { PluginIdentifier, PluginInstance } from './types'
+
+const PLUGIN_LIFECYCLE = Symbol.for('pluxel:plugin:lifecycle')
 
 type PluginServiceConfig = {
 	plugigCTXIsolate?: ServiceClass<any>[]
@@ -47,24 +50,10 @@ type OptionalOptions = {
 	onError?: (error: unknown) => void
 }
 
-type LifecycleSnapshot = ReturnType<PluginLifecycleRef['getSnapshot']>
-
 type InitPlan = {
 	batches: PluginIdentifier[][]
 	leftovers: Set<PluginIdentifier>
 	dependencies: Map<PluginIdentifier, readonly PluginIdentifier[]>
-}
-
-const isStoppedSnapshot = (snapshot: LifecycleSnapshot): boolean =>
-	!!snapshot && (snapshot.status === 'stopped' || snapshot.value === 'stopped')
-
-const isRunningSnapshot = (snapshot: LifecycleSnapshot): boolean =>
-	!!snapshot && snapshot.value === 'running'
-
-const isStableSnapshot = (snapshot: LifecycleSnapshot): boolean => {
-	if (!snapshot) return false
-	const v = snapshot.value
-	return v === 'running' || v === 'failing' || v === 'stopped'
 }
 
 const serviceName = 'registry' as const
@@ -86,14 +75,6 @@ declare module '@pluxel/context' {
 export class PluginService {
 	// 容器：负责“构造实例 + 注入 ctx”；生命周期全由 XState 负责
 	public pluginRegistry: PluginContainer
-
-	/** 每个插件一个生命周期 actor（唯一真相来源） */
-	private readonly actors = new WeakMap<PluginIdentifier, PluginLifecycleRef>()
-
-	private readonly lifecycleFactory = createPluginLifecycle({
-		autoStart: false,
-		useErrorChannel: true,
-	})
 
 	/** 串行化 commit */
 	private _commitLock: Promise<unknown> = Promise.resolve()
@@ -137,13 +118,61 @@ export class PluginService {
 		)
 	}
 
+	private ensureLifecycleSlot(
+		plugin: BasePlugin,
+	): { [PLUGIN_LIFECYCLE]: PluginLifecycleActor | null } {
+		if (!Object.hasOwn(plugin, PLUGIN_LIFECYCLE)) {
+			Object.defineProperty(plugin, PLUGIN_LIFECYCLE, {
+				value: null,
+				writable: true,
+				configurable: false,
+				enumerable: false,
+			})
+		}
+		return plugin as any
+	}
+
+	private getLifecycle(plugin: BasePlugin): PluginLifecycleActor | undefined {
+		const slot = this.ensureLifecycleSlot(plugin)
+		return slot[PLUGIN_LIFECYCLE] ?? undefined
+	}
+
+	private setLifecycle(plugin: BasePlugin, ref?: PluginLifecycleActor) {
+		const slot = this.ensureLifecycleSlot(plugin)
+		slot[PLUGIN_LIFECYCLE] = ref ?? null
+	}
+
+	private createLifecycle(id: PluginIdentifier, plugin: BasePlugin): PluginLifecycleActor {
+		const ref = new PluginLifecycleActor(
+			{ autoStart: false, useErrorChannel: true },
+			{ id, runtime: BasePlugin.getLifecycleRuntime(plugin) },
+		)
+		ref.subscribe({
+			error: (err) =>
+				this.ctx.logger?.error?.(err, `[actor:${String((id as any)?.name ?? id)}] unhandled error`),
+		})
+		ref.start()
+		this.setLifecycle(plugin, ref)
+		return ref
+	}
+
+	private ensureLifecycle(id: PluginIdentifier, plugin: BasePlugin): PluginLifecycleActor {
+		const existing = this.getLifecycle(plugin)
+		if (existing) {
+			const snapshot = existing.getSnapshot?.()
+			if (!lifecycleSelectors.isStopped(snapshot)) return existing
+			this.setLifecycle(plugin)
+		}
+		return this.createLifecycle(id, plugin)
+	}
+
 	/* ------------------------------ 状态查询 ------------------------------ */
 
 	isRunning(id: PluginIdentifier): boolean {
-		const ref = this.actors.get(id)
-		const snapshot = ref?.getSnapshot()
-		if (snapshot === undefined) return false
-		return isRunningSnapshot(snapshot)
+		const instance = this.pluginRegistry.singletons.get(id as any) as BasePlugin | undefined
+		if (!instance) return false
+		const snapshot = this.getLifecycle(instance)?.getSnapshot?.()
+		return lifecycleSelectors.isRunning(snapshot)
 	}
 
 	public optional<T extends PluginIdentifier>(
@@ -444,119 +473,76 @@ export class PluginService {
 		return order
 	}
 
-	/* ------------------------------ Actor 管理 ------------------------------ */
+	/* ------------------------------ 生命周期管理 ------------------------------ */
 
-	private ensureActor(id: PluginIdentifier, plugin: BasePlugin): PluginLifecycleRef {
-		const key = id
-		let ref = this.actors.get(key)
-
-		// 若已有 actor 但已停止，丢弃并重建
-		const snapshot = ref?.getSnapshot?.()
-		const stopped = isStoppedSnapshot(snapshot)
-		if (ref && stopped) {
-			try {
-				;(ref as any).stop?.()
-			} catch {}
-			this.actors.delete(key)
-			ref = undefined as any
-		}
-
-		if (ref) return ref
-
-		ref = this.lifecycleFactory({ id, runtime: BasePlugin.getLifecycleRuntime(plugin) })
-		// 观察 actor 的错误事件，辅助诊断（不改变状态机逻辑）
-		ref.subscribe({
-			error: (err) =>
-				this.ctx.logger?.error?.(err, `[actor:${String((id as any)?.name ?? id)}] unhandled error`),
-		})
-
-		ref.start()
-		this.actors.set(key, ref)
-		return ref
-	}
-
-	/** 启动：成功返回；失败抛出真实 init 错误（保留 cause）并保证清理 */
-	private async startByActor(id: PluginIdentifier, plugin: BasePlugin): Promise<void> {
-		const ref = this.ensureActor(id, plugin)
-		const key = id
+	private async startLifecycle(id: PluginIdentifier, plugin: BasePlugin): Promise<void> {
+		const ref = this.ensureLifecycle(id, plugin)
 		const snapshotBeforeStart = ref.getSnapshot?.()
-		if (isRunningSnapshot(snapshotBeforeStart)) return
+		if (lifecycleSelectors.isRunning(snapshotBeforeStart)) return
 
 		ref.send({ type: 'START' })
 
 		let snapshot: LifecycleSnapshot
 		try {
-			snapshot = await ref.waitUntil(isStableSnapshot, this.startTimeoutMs)
+			snapshot = await ref.waitForStable(this.startTimeoutMs)
 		} catch (error) {
-			await this.forceStop(ref)
-			this.actors.delete(key)
-			throw new Error(`Plugin ${id} start timeout after ${this.startTimeoutMs}ms`, {
+			await this.stopLifecycle(id, plugin, ref)
+			throw new Error(`Plugin ${String(id)} start timeout after ${this.startTimeoutMs}ms`, {
 				cause: error,
 			})
 		}
 
-		if (isRunningSnapshot(snapshot)) return
+		if (lifecycleSelectors.isRunning(snapshot)) return
 
 		const latest = ref.getSnapshot?.()
-		// 捕获失败原因（若有）
 		const capturedErr: unknown =
 			(latest as any)?.context?.err ??
 			(snapshot as any)?.context?.err ??
 			(snapshot as any)?.error ??
 			undefined
 
-		// 启动失败 → 主动 STOP（确保清理）
-		await this.forceStop(ref)
-		this.actors.delete(key)
+		await this.stopLifecycle(id, plugin, ref)
 
 		if (capturedErr instanceof Error) throw capturedErr
 		if (capturedErr != null) throw new Error(String(capturedErr), { cause: capturedErr })
-
-		throw new Error(`Plugin ${id} failed to start`)
+		throw new Error(`Plugin ${String(id)} failed to start`)
 	}
 
-	private async forceStop(ref: PluginLifecycleRef): Promise<void> {
-		try {
-			ref.send({ type: 'STOP' })
-		} catch {}
-		await this.waitUntilStopped(ref)
-	}
+	private async stopLifecycle(
+		id: PluginIdentifier,
+		plugin: BasePlugin,
+		ref?: PluginLifecycleActor,
+	): Promise<void> {
+		const lifecycle = ref ?? this.getLifecycle(plugin)
+		if (!lifecycle) return
 
-	private async waitUntilStopped(ref: PluginLifecycleRef): Promise<void> {
-		const snapshot = ref.getSnapshot?.()
-		if (isStoppedSnapshot(snapshot)) return
 		try {
-			await ref.waitUntil(isStoppedSnapshot, this.stopTimeoutMs)
+			lifecycle.send({ type: 'STOP' })
 		} catch {
-			/* 忽略 */
+			/* ignore */
+		}
+
+		await this.waitUntilStopped(lifecycle)
+		this.setLifecycle(plugin)
+	}
+
+	private async waitUntilStopped(ref: PluginLifecycleActor): Promise<void> {
+		const snapshot = ref.getSnapshot?.()
+		if (lifecycleSelectors.isStopped(snapshot)) return
+		try {
+			await ref.waitForStopped(this.stopTimeoutMs)
+		} catch {
+			/* ignore */
 		}
 	}
 
-	/** 停止：若 actor 存在，用它；否则冷启动一个只为 STOP 的 actor（也会 cleanup） */
-	private async stopByActor(id: PluginIdentifier, pluginOrUndefined?: BasePlugin): Promise<void> {
-		const key = id
-		const existing = this.actors.get(key)
-		if (existing) {
-			const current = existing.getSnapshot?.()
-			if (isStoppedSnapshot(current)) {
-				this.actors.delete(key)
-				return
-			}
-			await this.forceStop(existing)
-			this.actors.delete(key)
-			return
-		}
-
-		// 没有 actor：从容器或入参取实例，创建“冷 actor”仅用于清理
-		const plugin = pluginOrUndefined ?? this.pluginRegistry?.lastContainer?.get(key)
+	private async stopPlugin(id: PluginIdentifier, pluginOrUndefined?: BasePlugin): Promise<void> {
+		const plugin =
+			pluginOrUndefined ??
+			(this.pluginRegistry.singletons.get(id as any) as BasePlugin | undefined) ??
+			this.pluginRegistry.lastContainer?.get(id)
 		if (!plugin) return
-
-		const ref = this.ensureActor(id, plugin)
-		try {
-			await this.forceStop(ref)
-		} finally {
-			this.actors.delete(key)
-		}
+		await this.stopLifecycle(id, plugin)
 	}
 
 	/* --------------------------------- Commit -------------------------------- */
@@ -596,7 +582,7 @@ export class PluginService {
 		const order = this.planTeardown(container.dependents, toStop)
 		for (const id of order) {
 			const instance = container.get(id)
-			if (instance) await this.stopByActor(id, instance)
+			if (instance) await this.stopPlugin(id, instance)
 		}
 	}
 
@@ -616,7 +602,7 @@ export class PluginService {
 		const pluginCtx = instance[PLUGIN_CTX]
 
 		try {
-			await this.startByActor(id, instance)
+			await this.startLifecycle(id, instance)
 		} catch (error) {
 			const logger = pluginCtx?.logger ?? this.ctx.logger
 			logger?.error?.(error, `启动 ${String(id)} 失败`)

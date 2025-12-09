@@ -120,7 +120,7 @@ const bakedLifecycle = bakeMachine({
 
 type LifecycleImpl = MachineImpl<typeof bakedLifecycle>
 
-class PluginLifecycleActor {
+export class PluginLifecycleActor {
 	private readonly ctx: LifecycleCtx
 	private readonly opts: LifecycleOptions
 	private readonly listeners = new Set<Observer<LifecycleSnapshot>>()
@@ -301,6 +301,19 @@ class PluginLifecycleActor {
 		})
 	}
 
+	waitForState(states: readonly LifecycleState[], timeoutMs?: number): Promise<LifecycleSnapshot> {
+		const set = new Set(states)
+		return this.waitUntil((s) => set.has(s.value), timeoutMs)
+	}
+
+	waitForStable(timeoutMs?: number): Promise<LifecycleSnapshot> {
+		return this.waitForState(['running', 'failing', 'stopped'], timeoutMs)
+	}
+
+	waitForStopped(timeoutMs?: number): Promise<LifecycleSnapshot> {
+		return this.waitForState(['stopped'], timeoutMs)
+	}
+
 	send(event: LifecycleEvent): void {
 		const ev = this.toEvent(event.type)
 		const args = event.type === 'ASYNC_ERROR' ? [event.error] : []
@@ -355,15 +368,22 @@ class PluginLifecycleActor {
 	}
 }
 
-export type PluginLifecycleRef = PluginLifecycleActor
-
-export function createPluginLifecycle(opts: LifecycleOptions = {}) {
-	return (input: LifecycleInput): PluginLifecycleRef => new PluginLifecycleActor(opts, input)
-}
-
 /* ────────────────────────── 便捷 selector ────────────────────────── */
+type SnapshotLike = LifecycleSnapshot | undefined
+
+const isState =
+	<T extends LifecycleState>(target: T) =>
+		(s: SnapshotLike) =>
+			!!s && s.value === target
+
+const isRunning = isState('running')
+const isStopped = (s: SnapshotLike) => !!s && (s.status === 'stopped' || s.value === 'stopped')
+const isStable = (s: SnapshotLike) => !!s && (isRunning(s) || s.value === 'failing' || isStopped(s))
+
 export const lifecycleSelectors = {
-	isRunning: (s: { value: unknown }) => (s as any).value === 'running',
+	isRunning,
+	isStopped,
+	isStable,
 	lastError: <C extends LifecycleCtx>(s: { context: C }) => s.context.err,
 	uptime: <C extends LifecycleCtx>(s: { context: C }) =>
 		s.context.startedAt ? Date.now() - s.context.startedAt : undefined,

@@ -154,9 +154,10 @@ export class PluginContainer {
 		const result = builder.build()
 		if (result.err) return createErr({ err: result.err, ret })
 
-		ret.container = result.val as DiodContainer<BasePlugin>
+		const container = result.val as PluginDiContainer
+		ret.container = container
 		ret.confirm = () => {
-			this.lastContainer = result.val as DiodContainer<BasePlugin>
+			this.lastContainer = container
 		}
 		return createOk(ret)
 	}
