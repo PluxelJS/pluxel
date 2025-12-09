@@ -232,12 +232,7 @@ export class PluginLifecycleActor {
 		}
 
 		// hydrate machine with instance-specific impl
-		const { E, S, createMachine } = hydrateMachine<
-			(typeof stateNames)[number],
-			keyof typeof bakedLifecycle.E,
-			(typeof bakedLifecycle.def.callbackNames)[number],
-			(typeof bakedLifecycle.def.hookNames)[number]
-		>(bakedLifecycle, impl)
+		const { E, S, createMachine } = hydrateMachine(bakedLifecycle, impl)
 		this.E = E
 		this.S = S
 		this.machine = createMachine()

@@ -37,13 +37,32 @@ export interface UltraDef {
 const errNoTran = (from: number, event: number) =>
   `No transition: from ${from} event ${event}`;
 
+const isPromiseLike = (v: unknown): v is PromiseLike<unknown> =>
+  typeof v === 'object' && v !== null && typeof (v as any).then === 'function';
+
 type HookCtx = {
-	state: number
-	from: number
-	to: number
-	event: number
-	signal?: AbortSignal
-}
+	state: number;
+	from: number;
+	to: number;
+	event: number;
+	signal?: AbortSignal;
+};
+
+const setHookCtx = (
+	ctx: HookCtx,
+	state: number,
+	from: number,
+	to: number,
+	event: number,
+	signal?: AbortSignal,
+) => {
+	ctx.state = state;
+	ctx.from = from;
+	ctx.to = to;
+	ctx.event = event;
+	ctx.signal = signal;
+	return ctx;
+};
 
 export class UltraMachine {
   private _s: number;
@@ -88,6 +107,7 @@ export class UltraMachine {
   getSignal(): AbortSignal | undefined { return this._abort?.signal; }
 
   can(event: number): boolean {
+    if (event < 0 || event >= this.eventCount) return false;
     const idx = this._s * this.eventCount + event;
     return this.next[idx] !== -1;
   }
@@ -97,6 +117,12 @@ export class UltraMachine {
   }
 
   async dispatch(event: number, ...args: any[]): Promise<void> {
+    if (event < 0 || event >= this.eventCount) {
+      const msg = errNoTran(this._s, event);
+      this.logger.error(msg);
+      throw new Error(msg);
+    }
+
     const from = this._s;
     const idx = from * this.eventCount + event;
 
@@ -107,74 +133,52 @@ export class UltraMachine {
       throw new Error(msg);
     }
 
-    // Abort lifecycle
-    let nextAbort: AbortController | null = null;
-    if (this.abortOnStateChange) {
-      const ab = this._abort;
-      if (ab) ab.abort();
-      nextAbort = new AbortController();
-    }
+    const prevAbort = this._abort;
+    const nextAbort = this.abortOnStateChange ? new AbortController() : null;
 
-    // Exit hook
-    const exitHId = this.exitId[from];
-    if (exitHId !== -1) {
-      try {
-        const ctx = this.hookCtx;
-        ctx.state = from;
-        ctx.from = from;
-        ctx.to = to;
-        ctx.event = event;
-        ctx.signal = undefined;
-        await Promise.resolve(
-          this.hooks[exitHId](ctx)
+    let step = 'exit hook';
+    try {
+      const exitHId = this.exitId[from];
+      if (exitHId !== -1) {
+        const res = this.hooks[exitHId](setHookCtx(this.hookCtx, from, from, to, event, undefined));
+        if (isPromiseLike(res)) await res;
+      }
+
+      step = 'state commit';
+      this._s = to;
+      if (nextAbort) this._abort = nextAbort;
+
+      const enterHId = this.enterId[to];
+      if (enterHId !== -1) {
+        step = 'onEnter hook';
+        const res = this.hooks[enterHId](
+          setHookCtx(this.hookCtx, to, from, to, event, nextAbort?.signal)
         );
-      } catch (e) {
-        this.logger.error("Exception in onExit hook", e);
-        throw e;
+        if (isPromiseLike(res)) await res;
       }
-    }
 
-    // Commit state
-    this._s = to;
-    if (nextAbort) this._abort = nextAbort;
-
-    // Enter hook
-    const enterHId = this.enterId[to];
-    if (enterHId !== -1) {
-      try {
-        const ctx = this.hookCtx;
-        ctx.state = to;
-        ctx.from = from;
-        ctx.to = to;
-        ctx.event = event;
-        ctx.signal = this._abort?.signal;
-        await Promise.resolve(
-          this.hooks[enterHId](ctx)
-        );
-      } catch (e) {
-        this.logger.error("Exception in onEnter hook", e);
-        throw e;
+      const cbIdx = this.cbId[idx];
+      if (cbIdx !== -1) {
+        step = 'transition callback';
+        const res = this.callbacks[cbIdx](...args);
+        if (isPromiseLike(res)) await res;
       }
-    }
 
-    // Transition callback
-    const cbIdx = this.cbId[idx];
-    if (cbIdx !== -1) {
-      try {
-        await Promise.resolve(this.callbacks[cbIdx](...args));
-      } catch (e) {
-        this.logger.error("Exception in transition callback", e);
-        throw e;
+      // Abort previous state only after the transition finishes so rollbacks keep the old signal intact.
+      if (this.abortOnStateChange && prevAbort && prevAbort !== nextAbort) {
+        prevAbort.abort();
       }
+    } catch (e) {
+      this._s = from;
+      if (nextAbort) nextAbort.abort();
+      if (this.abortOnStateChange) this._abort = prevAbort;
+      this.logger.error(`Exception in ${step}`, e);
+      throw e;
     }
   }
 
   dispatchAsync(event: number, ...args: any[]): Promise<void> {
-    return new Promise((resolve, reject) => {
-      queueMicrotask(() => {
-        this.dispatch(event, ...args).then(resolve, reject);
-      });
-    });
+    return Promise.resolve().then(() => this.dispatch(event, ...args));
   }
 }
 
@@ -221,6 +225,7 @@ export class UltraMachineSync {
   getSignal(): AbortSignal | undefined { return this._abort?.signal; }
 
   can(event: number): boolean {
+    if (event < 0 || event >= this.eventCount) return false;
     const idx = this._s * this.eventCount + event;
     return this.next[idx] !== -1;
   }
@@ -230,6 +235,11 @@ export class UltraMachineSync {
   }
 
   syncDispatch(event: number, ...args: any[]): boolean {
+    if (event < 0 || event >= this.eventCount) {
+      this.logger.error(errNoTran(this._s, event));
+      return false;
+    }
+
     const from = this._s;
     const idx = from * this.eventCount + event;
 
@@ -239,48 +249,56 @@ export class UltraMachineSync {
       return false;
     }
 
-    let nextAbort: AbortController | null = null;
-    if (this.abortOnStateChange) {
-      const ab = this._abort;
-      if (ab) ab.abort();
-      nextAbort = new AbortController();
-    }
+    const prevAbort = this._abort;
+    const nextAbort = this.abortOnStateChange ? new AbortController() : null;
 
+    let step = 'exit hook';
     try {
       const exitHId = this.exitId[from];
       if (exitHId !== -1) {
-        const ctx = this.hookCtx;
-        ctx.state = from;
-        ctx.from = from;
-        ctx.to = to;
-        ctx.event = event;
-        ctx.signal = undefined;
-        this.hooks[exitHId](ctx);
+        const res = this.hooks[exitHId](
+          setHookCtx(this.hookCtx, from, from, to, event, undefined)
+        );
+        if (isPromiseLike(res)) {
+          throw new Error('sync onExit hook returned a Promise; use dispatch() instead');
+        }
       }
 
+      step = 'state commit';
       this._s = to;
       if (nextAbort) this._abort = nextAbort;
 
       const enterHId = this.enterId[to];
       if (enterHId !== -1) {
-        const ctx = this.hookCtx;
-        ctx.state = to;
-        ctx.from = from;
-        ctx.to = to;
-        ctx.event = event;
-        ctx.signal = this._abort?.signal;
-        this.hooks[enterHId](ctx);
+        step = 'onEnter hook';
+        const res = this.hooks[enterHId](
+          setHookCtx(this.hookCtx, to, from, to, event, nextAbort?.signal)
+        );
+        if (isPromiseLike(res)) {
+          throw new Error('sync onEnter hook returned a Promise; use dispatch() instead');
+        }
       }
 
       const cbIdx = this.cbId[idx];
       if (cbIdx !== -1) {
-        this.callbacks[cbIdx](...args);
+        step = 'transition callback';
+        const res = this.callbacks[cbIdx](...args);
+        if (isPromiseLike(res)) {
+          throw new Error('sync transition callback returned a Promise; use dispatch() instead');
+        }
+      }
+
+      // Abort previous state only after the transition finishes so rollbacks keep the old signal intact.
+      if (this.abortOnStateChange && prevAbort && prevAbort !== nextAbort) {
+        prevAbort.abort();
       }
 
       return true;
     } catch (e) {
       this._s = from;
-      this.logger.error("Exception in sync dispatch", e);
+      if (nextAbort) nextAbort.abort();
+      if (this.abortOnStateChange) this._abort = prevAbort;
+      this.logger.error(`Exception in ${step}`, e);
       throw e;
     }
   }

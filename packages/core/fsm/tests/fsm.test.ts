@@ -1,5 +1,6 @@
 // file: test/fsm.test.ts
 import { describe, expect, test } from 'bun:test'
+import { defineMachine } from '../defineMachine.macro'
 import { fsm } from '../machine.runtime'
 
 describe('Ultra FSM', () => {
@@ -57,5 +58,161 @@ describe('Ultra FSM', () => {
 
 		expect(m.syncDispatch(fsm.E.stop)).toBe(true)
 		expect(m.getState()).toBe(fsm.S.stopped)
+	})
+
+	test('invalid event ids are rejected', async () => {
+		const m = fsm.createMachine()
+		expect(m.can(999)).toBe(false)
+		await expect(m.dispatch(999)).rejects.toThrow(/No transition/)
+	})
+
+	test('dispatch rolls back state when callbacks throw', async () => {
+		const err = new Error('fail transition')
+		const cfg = defineMachine({
+			states: ['idle', 'running'] as const,
+			events: ['start'] as const,
+			init: 'idle',
+			transitions: [['idle', 'start', 'running', 'boom']] as const,
+			abortOnStateChange: true,
+			impl: {
+				callbacks: {
+					boom: () => {
+						throw err
+					},
+				},
+				hooks: {},
+			},
+		})
+
+		const m = cfg.createMachine()
+		const initialSignal = m.getSignal()
+		await expect(m.dispatch(cfg.E.start)).rejects.toThrow(err)
+		expect(m.getState()).toBe(cfg.S.idle)
+		expect(m.getSignal()).toBe(initialSignal)
+		expect(initialSignal?.aborted).toBe(false)
+	})
+
+	test('syncDispatch rolls back when hooks throw', () => {
+		const cfg = defineMachine({
+			states: ['idle', 'running'] as const,
+			events: ['start'] as const,
+			init: 'idle',
+			transitions: [['idle', 'start', 'running']] as const,
+			hooks: {
+				enter: { running: 'onEnter' },
+			} as const,
+			abortOnStateChange: true,
+			impl: {
+				callbacks: {},
+				hooks: {
+					onEnter: () => {
+						throw new Error('enter fail')
+					},
+				},
+			},
+		})
+
+		const m = cfg.createMachineSync()
+		const initialSignal = m.getSignal()
+		expect(() => m.syncDispatch(cfg.E.start)).toThrow('enter fail')
+		expect(m.getState()).toBe(cfg.S.idle)
+		expect(m.getSignal()).toBe(initialSignal)
+		expect(initialSignal?.aborted).toBe(false)
+	})
+
+	test('dispatchAsync schedules work to next tick', async () => {
+		const m = fsm.createMachine()
+		const p = m.dispatchAsync(fsm.E.start)
+		expect(m.getState()).toBe(fsm.S.idle)
+		await p
+		expect(m.getState()).toBe(fsm.S.running)
+	})
+
+	test('dispatch awaits async hooks and callbacks in order', async () => {
+		const order: string[] = []
+		const cfg = defineMachine({
+			states: ['idle', 'running'] as const,
+			events: ['start'] as const,
+			init: 'idle',
+			transitions: [['idle', 'start', 'running', 'cb']] as const,
+			hooks: {
+				exit: { idle: 'onExit' },
+				enter: { running: 'onEnter' },
+			} as const,
+			impl: {
+				callbacks: {
+					cb: async () => {
+						await Promise.resolve()
+						order.push('cb')
+					},
+				},
+				hooks: {
+					onExit: async () => {
+						await Promise.resolve()
+						order.push('exit')
+					},
+					onEnter: async () => {
+						order.push('enter')
+						await Promise.resolve()
+					},
+				},
+			},
+		})
+
+		const m = cfg.createMachine()
+		await m.dispatch(cfg.E.start)
+		expect(order).toEqual(['exit', 'enter', 'cb'])
+		expect(m.getState()).toBe(cfg.S.running)
+	})
+
+	test('abortOnStateChange rotates signals after success', async () => {
+		const cfg = defineMachine({
+			states: ['idle', 'running', 'stopped'] as const,
+			events: ['start', 'stop'] as const,
+			init: 'idle',
+			transitions: [
+				['idle', 'start', 'running'],
+				['running', 'stop', 'stopped'],
+			] as const,
+			abortOnStateChange: true,
+			impl: { callbacks: {}, hooks: {} },
+		})
+
+		const m = cfg.createMachine()
+		const sig0 = m.getSignal()
+		expect(sig0?.aborted).toBe(false)
+
+		await m.dispatch(cfg.E.start)
+		const sig1 = m.getSignal()
+		expect(sig1).not.toBe(sig0)
+		expect(sig0?.aborted).toBe(true)
+
+		await m.dispatch(cfg.E.stop)
+		const sig2 = m.getSignal()
+		expect(sig2).not.toBe(sig1)
+		expect(sig1?.aborted).toBe(true)
+		expect(sig2?.aborted).toBe(false)
+	})
+
+	test('syncDispatch rejects promise-returning hooks', () => {
+		const cfg = defineMachine({
+			states: ['idle', 'running'] as const,
+			events: ['start'] as const,
+			init: 'idle',
+			transitions: [['idle', 'start', 'running']] as const,
+			hooks: {
+				enter: { running: 'onEnter' },
+			} as const,
+			impl: {
+				callbacks: {},
+				hooks: {
+					onEnter: () => Promise.resolve(),
+				},
+			},
+		})
+
+		const m = cfg.createMachineSync()
+		expect(() => m.syncDispatch(cfg.E.start)).toThrow(/sync onEnter hook/)
+		expect(m.getState()).toBe(cfg.S.idle)
 	})
 })
