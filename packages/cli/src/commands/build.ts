@@ -1,11 +1,11 @@
 import { configSourcePlugin, createImportTracker, importTypeFixerPlugin } from '@pluxel/rolldown'
 import { type ArgValues, define } from 'gunshi'
 import type { InlineConfig } from 'tsdown'
-import { resolveBuildContext } from '../build/config'
-import { createOptionalDependencyHook } from '../build/plugin-tracker'
-import { cliTsdownOverlay } from '../build/tsdown-config'
-import { runWithTsdown } from '../build/tsdown-runner'
-import type { BuildRuntimeConfig } from '../build/types'
+import { resolveBuildContext } from '../build_impl/config'
+import { createOptionalDependencyHook } from '../build_impl/plugin-tracker'
+import { cliTsdownOverlay } from '../build_impl/tsdown-config'
+import { runWithTsdown } from '../build_impl/tsdown-runner'
+import type { BuildRuntimeConfig } from '../build_impl/types'
 
 const buildCommandArgs = {
 	watch: {
