@@ -3,14 +3,15 @@
 import type { Context, ServiceClass } from '@pluxel/context'
 import { Injectable } from '@pluxel/context'
 import { createErr, createOk } from 'option-t/plain_result'
-// XState v5
-import { createActor, waitFor } from 'xstate'
 import type { ServiceMap } from '../container'
 import { EffectScopeService } from '../services/EffectScopeService'
 import { BasePlugin, PLUGIN_CTX } from './BasePlugin'
 import { PluginContainer, type PluginDiContainer } from './PluginContainer'
 import type { PluginInfo } from './PluginDecorator'
-import { createPluginLifecycle, type PluginLifecycleRef } from './pluginActor'
+import {
+	createPluginLifecycle,
+	type PluginLifecycleRef,
+} from './pluginActor'
 import type { PluginIdentifier, PluginInstance } from './types'
 
 type PluginServiceConfig = {
@@ -27,6 +28,25 @@ export interface CommitSummary {
 	failed: PluginIdentifier[]
 }
 
+type OptionalHandler<T> = (
+	optional: T | undefined,
+	summary: CommitSummary | undefined,
+) => void | Promise<void>
+
+type InstancesOf<T extends readonly PluginIdentifier[]> = {
+	[K in keyof T]: InstanceType<T[K]> | undefined
+}
+
+type OptionalImporter<T extends PluginIdentifier> =
+	| Promise<T | T[] | readonly T[]>
+	| (() => Promise<T | T[] | readonly T[]>)
+
+type OptionalOptions = {
+	watch?: boolean
+	multi?: boolean
+	onError?: (error: unknown) => void
+}
+
 type LifecycleSnapshot = ReturnType<PluginLifecycleRef['getSnapshot']>
 
 type InitPlan = {
@@ -35,27 +55,17 @@ type InitPlan = {
 	dependencies: Map<PluginIdentifier, readonly PluginIdentifier[]>
 }
 
-const snapshotMatches = (snapshot: LifecycleSnapshot, state: string): boolean => {
-	if (!snapshot) return false
-	const matches = (snapshot as any)?.matches
-	if (typeof matches === 'function') {
-		try {
-			return matches.call(snapshot, state)
-		} catch {
-			return false
-		}
-	}
-	return false
-}
-
 const isStoppedSnapshot = (snapshot: LifecycleSnapshot): boolean =>
-	!!snapshot && (snapshot.status === 'stopped' || snapshotMatches(snapshot, 'stopped'))
+	!!snapshot && (snapshot.status === 'stopped' || snapshot.value === 'stopped')
 
 const isRunningSnapshot = (snapshot: LifecycleSnapshot): boolean =>
-	!!snapshot && snapshotMatches(snapshot, 'running')
+	!!snapshot && snapshot.value === 'running'
 
-const isStableSnapshot = (snapshot: LifecycleSnapshot): boolean =>
-	isRunningSnapshot(snapshot) || snapshotMatches(snapshot, 'failing') || isStoppedSnapshot(snapshot)
+const isStableSnapshot = (snapshot: LifecycleSnapshot): boolean => {
+	if (!snapshot) return false
+	const v = snapshot.value
+	return v === 'running' || v === 'failing' || v === 'stopped'
+}
 
 const serviceName = 'registry' as const
 declare module '@pluxel/context' {
@@ -80,7 +90,7 @@ export class PluginService {
 	/** 每个插件一个生命周期 actor（唯一真相来源） */
 	private readonly actors = new WeakMap<PluginIdentifier, PluginLifecycleRef>()
 
-	private readonly lifecycleMachine = createPluginLifecycle({
+	private readonly lifecycleFactory = createPluginLifecycle({
 		autoStart: false,
 		useErrorChannel: true,
 	})
@@ -93,6 +103,27 @@ export class PluginService {
 	private readonly stopTimeoutMs
 	private _lastCommit?: CommitSummary
 	private order = 0
+	/** caller -> (pluginId -> wrapped view) 缓存，保证 optional 返回的实例在 caller 侧稳定 */
+	private optionalViews = new WeakMap<
+		Context,
+		Map<PluginIdentifier, { source: BasePlugin; view: BasePlugin }>
+	>()
+	private readonly wrapOptionalWithCaller = (() => {
+		const desc: PropertyDescriptor = {
+			value: null,
+			writable: false,
+			enumerable: false,
+			configurable: false,
+		}
+		return <P extends BasePlugin>(instance: P, callerCtx: Context): P => {
+			const view = Object.create((instance as any)[PLUGIN_CTX])
+			view.caller = callerCtx
+			desc.value = view
+			const injected = Object.create(instance, { ctx: desc })
+			desc.value = null
+			return injected
+		}
+	})()
 	constructor(
 		private ctx: Context,
 		config: PluginServiceConfig,
@@ -115,14 +146,205 @@ export class PluginService {
 		return isRunningSnapshot(snapshot)
 	}
 
-	public optional<T extends PluginIdentifier>(ctor: T) {
-		const optionalDep = this.pluginRegistry.lastContainer?.getMaybe(ctor)
-		return optionalDep
+	public optional<T extends PluginIdentifier>(
+		plugin: T,
+		handler?: OptionalHandler<InstanceType<T>>,
+		opts?: OptionalOptions,
+	): InstanceType<T> | undefined
+	public optional<T extends PluginIdentifier>(
+		importer: OptionalImporter<T>,
+		handler?: OptionalHandler<InstanceType<T>>,
+		opts?: OptionalOptions & { multi?: false },
+	): Promise<InstanceType<T> | undefined>
+	public optional<T extends readonly PluginIdentifier[]>(
+		importer: Promise<T> | (() => Promise<T>),
+		handler: OptionalHandler<InstancesOf<T>>,
+		opts: OptionalOptions & { multi: true },
+	): Promise<InstancesOf<T> | undefined>
+	public optional<T extends PluginIdentifier>(
+		importer: OptionalImporter<T>,
+		handler: OptionalHandler<Array<InstanceType<T> | undefined>>,
+		opts: OptionalOptions & { multi: true },
+	): Promise<Array<InstanceType<T> | undefined> | undefined>
+	public optional(
+		target: PluginIdentifier | OptionalImporter<PluginIdentifier>,
+		handler?: OptionalHandler<BasePlugin> | OptionalHandler<BasePlugin[]>,
+		opts?: OptionalOptions,
+	) {
+		const callerCtx = this.ctx
+		const isPluginIdentifier = (v: unknown): v is PluginIdentifier =>
+			typeof v === 'function' && v.prototype instanceof BasePlugin
+
+			const watch = opts?.watch ?? true
+			const multi = opts?.multi ?? false
+			const describe = (ids: PluginIdentifier[]) =>
+				ids.map((id) => String((id as any)?.name ?? id)).join(', ')
+			const collectWithGaps = <P extends PluginIdentifier>(ids: P[]) =>
+				ids.map((id) => this.getRunningOptional(id, callerCtx))
+			const collectCompact = <P extends PluginIdentifier>(ids: P[]) =>
+				collectWithGaps(ids).filter((x): x is InstanceType<P> => x !== undefined)
+			const hasChanged = (
+				prev: Array<BasePlugin | undefined>,
+				next: Array<BasePlugin | undefined>,
+			) => {
+				if (prev.length !== next.length) return true
+				for (let i = 0; i < next.length; i++) {
+					if (prev[i] !== next[i]) return true
+				}
+				return false
+			}
+			const invokeHandler = (
+				handlerFn: OptionalHandler<BasePlugin> | OptionalHandler<BasePlugin[]> | undefined,
+				payload: Array<BasePlugin | undefined> | undefined,
+				summary: CommitSummary | undefined,
+				label: string,
+				asMulti: boolean,
+			) => {
+				if (!handlerFn) return
+			const value = (asMulti ? payload ?? [] : payload?.[0]) as any
+			return Promise.resolve(handlerFn(value, summary)).catch((error) => {
+				this.ctx.logger?.error?.(error, `optional(${label}) 处理失败`)
+			})
+		}
+			const logUnavailable = (ids: PluginIdentifier[], label: string) => {
+				const container = this.pluginRegistry.lastContainer
+				const missingInContainer = ids.filter((id) => !container?.services?.has(id))
+				if (missingInContainer.length) {
+					this.ctx.logger?.warn?.(
+					{ plugins: missingInContainer.map(String) },
+					`optional(${label}) 未在容器中，可能尚未注册`,
+				)
+				return
+			}
+			const notRunning = ids.filter((id) => !this.isRunning(id))
+				if (notRunning.length) {
+					this.ctx.logger?.info?.(
+						{ plugins: notRunning.map(String) },
+						`optional(${label}) 已注册但未运行`,
+					)
+				}
+			}
+			const attachWatcher = (
+				ids: PluginIdentifier[],
+				label: string,
+				asMulti: boolean,
+				keepGaps: boolean,
+			) => {
+				if (!handler || !watch) return
+				let last = (keepGaps ? collectWithGaps(ids) : collectCompact(ids)) as Array<
+					BasePlugin | undefined
+				>
+				this.ctx.on('afterCommit', (summary) => {
+					const current = (keepGaps ? collectWithGaps(ids) : collectCompact(ids)) as Array<
+						BasePlugin | undefined
+					>
+					if (!hasChanged(last, current)) return
+					last = current
+					if (!current.length || current.every((item) => item === undefined)) {
+						logUnavailable(ids, label)
+					}
+					void invokeHandler(handler as any, current, summary, label, asMulti)
+				})
+			}
+
+		if (!isPluginIdentifier(target)) {
+			const importer = typeof target === 'function' ? target : () => target
+			const label = importer.name || 'dynamic import'
+
+			return this.optionalImport(importer, { onError: opts?.onError, label }).then((mod) => {
+				if (mod === undefined) {
+					return invokeHandler(handler as any, undefined, this._lastCommit, label, multi)
+				}
+
+				const ids = this.normalizePluginIdentifiers(mod)
+				if (!ids.length) {
+					const err = new Error(`optional(${label}) 未找到 BasePlugin 导出`)
+					this.ctx.logger?.warn?.(err)
+					opts?.onError?.(err)
+					return Promise.resolve(
+						invokeHandler(handler as any, undefined, this._lastCommit, label, multi),
+					).then(() => (multi ? [] : undefined))
+				}
+
+				const payload = (
+					multi ? collectWithGaps(ids) : collectCompact(ids)
+				) as Array<BasePlugin | undefined>
+				if (!payload.length || payload.every((item) => item === undefined)) {
+					logUnavailable(ids, label)
+				}
+				if (handler) void invokeHandler(handler as any, payload, this._lastCommit, label, multi)
+				attachWatcher(ids, label, multi, multi)
+				return (multi ? payload : payload[0]) as any
+			})
+		}
+
+		const ids = [target]
+		const label = describe(ids)
+		const payload = collectCompact(ids)
+		if (!payload.length) logUnavailable(ids, label)
+		void invokeHandler(handler as any, payload, this._lastCommit, label, false)
+		attachWatcher(ids, label, false, false)
+		return payload[0] as any
 	}
 
-	public afterCommit(listener: (summary: CommitSummary) => void | Promise<void>): void {
-		this.ctx.on('afterCommit', listener)
+	public async optionalImport<T>(
+		importer: () => Promise<T>,
+		opts?: { onError?: (error: unknown) => void; label?: string },
+	): Promise<T | undefined> {
+		try {
+			return await importer()
+		} catch (error) {
+			if (opts?.onError) {
+				opts.onError(error)
+			} else {
+				const name = (opts?.label ?? importer.name) || 'optionalImport'
+				this.ctx.logger?.warn?.(error, `${name} 动态导入失败`)
+			}
+			return undefined
+		}
 	}
+
+	private getRunningOptional<T extends PluginIdentifier>(
+		ctor: T,
+		callerCtx: Context,
+	): InstanceType<T> | undefined {
+		if (!this.isRunning(ctor)) {
+			this.optionalViews.get(callerCtx)?.delete(ctor)
+			return undefined
+		}
+
+		const instance = this.pluginRegistry.singletons.get(ctor as any) as InstanceType<T> | undefined
+		if (!instance) {
+			this.optionalViews.get(callerCtx)?.delete(ctor)
+			return undefined
+		}
+
+		let map = this.optionalViews.get(callerCtx)
+		const cached = map?.get(ctor)
+		if (cached && cached.source === instance) return cached.view as InstanceType<T>
+
+		const wrapped = this.wrapOptionalWithCaller(instance, callerCtx) as InstanceType<T>
+		if (!map) {
+			map = new Map()
+			this.optionalViews.set(callerCtx, map)
+		}
+		map.set(ctor, { source: instance, view: wrapped })
+		return wrapped
+	}
+
+	private normalizePluginIdentifiers(input: unknown): PluginIdentifier[] {
+		if (typeof input === 'function' && input.prototype instanceof BasePlugin) {
+			return [input as PluginIdentifier]
+		}
+		if (Array.isArray(input)) {
+			return input.filter(
+				(item): item is PluginIdentifier =>
+					typeof item === 'function' && item.prototype instanceof BasePlugin,
+			)
+		}
+		return []
+	}
+
 
 	public get lastCommit(): CommitSummary | undefined {
 		return this._lastCommit
@@ -241,9 +463,7 @@ export class PluginService {
 
 		if (ref) return ref
 
-		ref = createActor(this.lifecycleMachine, {
-			input: { id, runtime: BasePlugin.getLifecycleRuntime(plugin) },
-		})
+		ref = this.lifecycleFactory({ id, runtime: BasePlugin.getLifecycleRuntime(plugin) })
 		// 观察 actor 的错误事件，辅助诊断（不改变状态机逻辑）
 		ref.subscribe({
 			error: (err) =>
@@ -266,9 +486,7 @@ export class PluginService {
 
 		let snapshot: LifecycleSnapshot
 		try {
-			snapshot = await waitFor(ref, isStableSnapshot, {
-				timeout: this.startTimeoutMs,
-			})
+			snapshot = await ref.waitUntil(isStableSnapshot, this.startTimeoutMs)
 		} catch (error) {
 			await this.forceStop(ref)
 			this.actors.delete(key)
@@ -308,9 +526,7 @@ export class PluginService {
 		const snapshot = ref.getSnapshot?.()
 		if (isStoppedSnapshot(snapshot)) return
 		try {
-			await waitFor(ref, isStoppedSnapshot, {
-				timeout: this.stopTimeoutMs,
-			})
+			await ref.waitUntil(isStoppedSnapshot, this.stopTimeoutMs)
 		} catch {
 			/* 忽略 */
 		}
@@ -448,7 +664,7 @@ export class PluginService {
 	}
 
 	/**
-	 * 非事务化提交（纯 XState 托管）：
+	 * 非事务化提交（自管生命周期 FSM）：
 	 * - 停机：对 remove/replace 逆拓扑停机（仅 send STOP + 等待 stopped）
 	 * - 启动：对 add/replace 拓扑分批启动；失败只影响其依赖链，其它继续
 	 * - 失败插件从 builder singletons 中清理（避免泄漏/误复用）

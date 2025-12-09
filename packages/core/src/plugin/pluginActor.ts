@@ -1,4 +1,5 @@
-import { type ActorRefFrom, fromCallback, fromPromise, setup } from 'xstate'
+import { bakeMachine } from '../../fsm/defineMachine.macro' with { type: 'macro' }
+import { hydrateMachine, type MachineImpl } from '../../fsm/defineMachine.macro'
 import type { PluginLifecycleRuntime } from './BasePlugin'
 
 /* ────────────────────────── 外部事件 ────────────────────────── */
@@ -6,22 +7,13 @@ export type LifecycleEvent =
 	| { type: 'START' }
 	| { type: 'STOP' }
 	| { type: 'RETRY' }
-
-/* ───────────────────── 系统事件（onError/onDone） ───────────────────── */
-type SystemEvents =
-	| { type: string; error: unknown } // v5: 形如 xstate.error.actor.start
-	| { type: 'xstate.done.actor'; output?: unknown }
-
-/* ────────────────────────── 被调用 actor 的输入 ────────────────────────── */
-type StartInput = { runtime: LifecycleRuntime }
-type StopInput = { runtime: LifecycleRuntime }
+	| { type: 'ASYNC_ERROR'; error: unknown }
 
 /* ────────────────────────── 机器输入 & 上下文 ────────────────────────── */
-export type LifecycleRuntime = PluginLifecycleRuntime
 
 export interface LifecycleInput {
 	id: unknown
-	runtime: LifecycleRuntime
+	runtime: PluginLifecycleRuntime
 }
 
 type FailedStep = 'start' | 'stop' | 'runtime' | undefined
@@ -41,13 +33,16 @@ export interface LifecycleOptions {
 	useErrorChannel?: boolean
 }
 
-/* ────────────────────────── 实用函数 ────────────────────────── */
-function assertInput<T extends { runtime?: LifecycleRuntime }>(
-	input: T | undefined,
-): asserts input is T & { runtime: LifecycleRuntime } {
-	if (input == null || input.runtime == null)
-		throw new Error('plugin lifecycle invoke: missing runtime input')
+export interface LifecycleSnapshot {
+	value: LifecycleState
+	context: LifecycleCtx
+	status?: 'stopped'
 }
+
+type Observer<T> = { next?: (value: T) => void; error?: (err: unknown) => void }
+
+const errNoTran = (from: LifecycleState, event: string) =>
+	`No transition: from ${from} event ${event}`
 
 /** 循环安全的 JSON 序列化（尽量给出可读 message） */
 function safeStringify(x: unknown): string {
@@ -86,211 +81,289 @@ const toError = (e: unknown): Error => {
 	return new Error(msg, { cause: e })
 }
 
-/**
- * 创建插件生命周期状态机（XState v5）
- * - start/stop 的错误均写入 context.err，失败进入 `failing`
- * - STOP 统一走 `stopping`，永远执行 stop + disposeAll（即使没启动过）
- * - 可选运行期错误通道（ctx.onError）：上报 `ASYNC_ERROR` → failing
- */
-export function createPluginLifecycle(opts: LifecycleOptions = {}) {
-	return setup({
-		types: {
-			context: {} as LifecycleCtx,
-			events: {} as LifecycleEvent | SystemEvents | { type: 'ASYNC_ERROR'; error: unknown },
-			input: {} as LifecycleInput,
-		},
+const stateNames = ['idle', 'starting', 'running', 'stopping', 'failing', 'stopped'] as const
+type LifecycleState = (typeof stateNames)[number]
 
-		actors: {
-			start: fromPromise<void, StartInput>(async ({ input, signal }) => {
-				assertInput(input)
-				const { runtime } = input
-				try {
-					signal.throwIfAborted?.()
-					runtime.beforeStart?.()
-					// 同步/异步抛错都压入 microtask 链进行捕获
-					await runtime.init?.(signal)
-				} catch (e) {
-					throw toError(e)
-				} finally {
-					// 若启动阶段被取消（例如外部 STOP），兜底做一次资源回收
-					if (signal.aborted) {
-						try {
-							await runtime.dispose?.()
-						} catch {
-							/* 忽略清理异常 */
-						}
-					}
-				}
-			}),
+const bakedLifecycle = bakeMachine({
+	states: ['idle', 'starting', 'running', 'stopping', 'failing', 'stopped'] as const,
+	events: [
+		'start',
+		'startOk',
+		'startErr',
+		'stop',
+		'stopOk',
+		'stopErr',
+		'asyncError',
+		'retry',
+	] as const,
+	init: 'idle',
+	transitions: [
+		['idle', 'start', 'starting', 'onStart'],
+		['idle', 'stop', 'stopped', 'onStop'],
+		['starting', 'startOk', 'running'],
+		['starting', 'startErr', 'failing'],
+		['starting', 'stop', 'stopping', 'onStop'],
+		['running', 'stop', 'stopping', 'onStop'],
+		['running', 'asyncError', 'failing', 'onAsyncError'],
+		['failing', 'stop', 'stopping', 'onStop'],
+		['failing', 'retry', 'starting'],
+		['stopping', 'stopOk', 'stopped'],
+		['stopping', 'stopErr', 'stopped'],
+		['stopped', 'start', 'starting', 'onStart'],
+	] as const,
+	hooks: {
+		enter: { running: 'onEnterRunning' },
+		exit: { running: 'onExitRunning' },
+	} as const,
+	abortOnStateChange: false,
+})
 
-			stopOrCleanup: fromPromise<void, StopInput>(async ({ input, signal }) => {
-				assertInput(input)
-				try {
-					// 即使“没启动过”，stop 也应当是幂等且容错的
-					await input.runtime.stop?.(signal)
-				} catch (e) {
-					throw toError(e)
-				} finally {
-					// 无条件清理作用域，确保回收
-					try {
-						await input.runtime.dispose?.()
-					} catch {
-						/* 忽略清理异常 */
-					}
-				}
-			}),
+type LifecycleImpl = MachineImpl<typeof bakedLifecycle>
 
-		// 运行期错误通道：插件侧可通过 ctx.onError(cb) 上报
-			errorChannel: fromCallback<
-				{ type: 'ASYNC_ERROR'; error: unknown },
-				{ runtime: LifecycleRuntime }
-			>(({ input, sendBack }) => {
-				const unsub = input?.runtime.subscribeErrors?.((err) => {
-					sendBack({ type: 'ASYNC_ERROR', error: err })
-				})
-				return () => {
-					try {
-						;(unsub as any)?.()
-					} catch {
-						/* 忽略 */
-					}
-				}
-			}),
-		},
+class PluginLifecycleActor {
+	private readonly ctx: LifecycleCtx
+	private readonly opts: LifecycleOptions
+	private readonly listeners = new Set<Observer<LifecycleSnapshot>>()
+	private snapshot: LifecycleSnapshot
+	private queue = Promise.resolve()
+	private errorUnsub: (() => void) | undefined
+	private startAbort: AbortController | null = null
+	private stopAbort: AbortController | null = null
+	private pendingStop = false
+	private readonly machine
+	private readonly E
+	private readonly S
+	private readonly stateNames = stateNames
 
-		actions: {
-			maybeAutoStart: ({ self }) => {
-				if (opts.autoStart) self.send({ type: 'START' })
-			},
-
-			markStarted: ({ context }) => {
-				if (!context.startedAt) context.startedAt = Date.now()
-				context.err = undefined
-				context.attempt = 0
-				context.failedStep = undefined
-			},
-
-			// —— 修复点：不与固定事件名做等值比较，只要带 error 字段就记录 —— //
-			saveStartError: ({ context, event }) => {
-				const anyEv = event as any
-				if ('error' in anyEv) {
-					context.err = toError(anyEv.error)
-					context.failedStep = 'start'
-					context.attempt++
-				}
-			},
-
-			// stop 阶段错误不覆盖之前的根因；但记一次 attempt
-			saveStopError: ({ context, event }) => {
-				const anyEv = event as any
-				if ('error' in anyEv) {
-					if (context.err == null) {
-						context.err = toError(anyEv.error)
-						context.failedStep = 'stop'
-					}
-					context.attempt++
-				}
-			},
-
-			// 运行期错误：默认覆盖（也可改成仅首错误）
-			saveAsyncError: ({ context, event }) => {
-				if (event.type === 'ASYNC_ERROR') {
-					context.err = toError(event.error)
-					context.failedStep = 'runtime'
-					context.attempt++
-				}
-			},
-		},
-
-		guards: {
-			failedOnStart: ({ context }) => context.failedStep === 'start',
-			failedOnStop: ({ context }) => context.failedStep === 'stop',
-			hasEverStarted: ({ context }) => !!context.startedAt,
-		},
-	}).createMachine({
-		id: 'plugin-lifecycle',
-		initial: 'idle',
-
-		context: ({ input }) => ({
+	constructor(opts: LifecycleOptions, input: LifecycleInput) {
+		this.opts = opts
+		this.ctx = {
 			...input,
 			attempt: 0,
 			err: undefined,
 			startedAt: undefined,
 			failedStep: undefined,
-		}),
+		}
 
-		entry: 'maybeAutoStart',
+		const dispatch = (ev: number, ...args: any[]) => this.dispatch(ev, ...args)
 
-		states: {
-			/* ─── 冷态 ─── */
-			idle: {
-				on: {
-					START: 'starting',
-					STOP: 'stopping', // 统一走 stopping，确保清理
-				},
-			},
-
-			/* ─── 启动 ─── */
-			starting: {
-				invoke: {
-					id: 'start', // 显式 id，便于调试与事件追踪
-					src: 'start',
-					input: ({ context }) => ({ runtime: context.runtime }),
-					onDone: { target: 'running', actions: 'markStarted' },
-					onError: { target: 'failing', actions: 'saveStartError' },
-				},
-				on: { STOP: 'stopping' },
-			},
-
-		/* ─── 运行 ─── */
-		running: {
-				invoke: opts.useErrorChannel
-					? {
-							id: 'errorChannel',
-							src: 'errorChannel',
-							input: ({ context }) => ({ runtime: context.runtime }),
+		const impl: LifecycleImpl = {
+			callbacks: {
+				onStart: async () => {
+					this.pendingStop = false
+					this.startAbort = new AbortController()
+					const { runtime } = this.ctx
+					try {
+						runtime.beforeStart?.()
+						if (runtime.init) await runtime.init(this.startAbort.signal)
+						if (this.startAbort.signal.aborted || this.pendingStop) return
+						if (!this.ctx.startedAt) this.ctx.startedAt = Date.now()
+						this.ctx.err = undefined
+						this.ctx.attempt = 0
+						this.ctx.failedStep = undefined
+						if (this.machine.getState() === this.S.starting) {
+							await dispatch(E.startOk)
 						}
-					: undefined,
-				on: {
-					ASYNC_ERROR: { target: 'failing', actions: 'saveAsyncError' },
-					STOP: 'stopping',
+					} catch (e) {
+						if (this.startAbort.signal.aborted && this.pendingStop) return
+						this.ctx.err = toError(e)
+						this.ctx.failedStep = 'start'
+						this.ctx.attempt++
+						if (this.machine.getState() === this.S.starting) {
+							await dispatch(E.startErr)
+						}
+					} finally {
+						this.startAbort = null
+					}
+				},
+				onStop: async () => {
+					this.pendingStop = true
+					if (this.startAbort) this.startAbort.abort()
+					this.stopAbort = new AbortController()
+					const { runtime } = this.ctx
+					let stopErr: unknown
+					try {
+						if (runtime.stop) await runtime.stop(this.stopAbort.signal)
+					} catch (e) {
+						stopErr = e
+					}
+					try {
+						await runtime.dispose?.()
+					} catch {
+						/* ignore */
+					}
+					if (stopErr) {
+						if (!this.ctx.err) this.ctx.err = toError(stopErr)
+						if (!this.ctx.failedStep) this.ctx.failedStep = 'stop'
+						this.ctx.attempt++
+						await dispatch(E.stopErr)
+					} else {
+						await dispatch(E.stopOk)
+					}
+					this.stopAbort = null
+					this.pendingStop = false
+				},
+				onAsyncError: async (err: unknown) => {
+					this.ctx.err = toError(err)
+					this.ctx.failedStep = 'runtime'
+					this.ctx.attempt++
 				},
 			},
-
-		/* ─── 停止（必清理）─── */
-		stopping: {
-				invoke: {
-					id: 'stopOrCleanup',
-					src: 'stopOrCleanup',
-					input: ({ context }) => ({ runtime: context.runtime }),
-					onDone: 'stopped',
-					onError: { target: 'stopped', actions: 'saveStopError' },
+			hooks: {
+				onEnterRunning: () => {
+					if (this.opts.useErrorChannel && this.errorUnsub == null) {
+						const unsub = this.ctx.runtime.subscribeErrors?.((err) => {
+							void dispatch(E.asyncError, err)
+						})
+						if (typeof unsub === 'function') this.errorUnsub = unsub
+					}
+				},
+				onExitRunning: () => {
+					if (this.errorUnsub) {
+						try {
+							this.errorUnsub()
+						} catch {
+							/* ignore */
+						}
+						this.errorUnsub = undefined
+					}
 				},
 			},
+		}
 
-		/* ─── 失败：只响应你的手动选择 ─── */
-		failing: {
-			on: {
-				STOP: 'stopping',
-				RETRY: [
-					{ target: 'starting', guard: 'failedOnStart' },
-					{ target: 'stopping', guard: 'failedOnStop' },
-				],
+		// hydrate machine with instance-specific impl
+		const { E, S, createMachine } = hydrateMachine<
+			(typeof stateNames)[number],
+			keyof typeof bakedLifecycle.E,
+			(typeof bakedLifecycle.def.callbackNames)[number],
+			(typeof bakedLifecycle.def.hookNames)[number]
+		>(bakedLifecycle, impl)
+		this.E = E
+		this.S = S
+		this.machine = createMachine()
+		this.snapshot = this.buildSnapshot()
+	}
+
+	start() {
+		if (this.opts.autoStart) this.send({ type: 'START' })
+	}
+
+	stop() {
+		this.send({ type: 'STOP' })
+	}
+
+	getSnapshot(): LifecycleSnapshot {
+		return this.snapshot
+	}
+
+	subscribe(observer: Observer<LifecycleSnapshot> | ((s: LifecycleSnapshot) => void)) {
+		const obs: Observer<LifecycleSnapshot> =
+			typeof observer === 'function' ? { next: observer } : observer
+		this.listeners.add(obs)
+		return {
+			unsubscribe: () => {
+				this.listeners.delete(obs)
 			},
-		},
+		}
+	}
 
-			/* ─── 终态 ─── */
-			stopped: { type: 'final' },
-		},
-	})
+	waitUntil(
+		predicate: (snapshot: LifecycleSnapshot) => boolean,
+		timeoutMs?: number,
+	): Promise<LifecycleSnapshot> {
+		const current = this.getSnapshot()
+		if (predicate(current)) return Promise.resolve(current)
+
+		return new Promise((resolve, reject) => {
+			let done = false
+			let timer: any
+
+			const sub = this.subscribe((snapshot: LifecycleSnapshot) => {
+				if (done || !predicate(snapshot)) return
+				done = true
+				cleanup()
+				resolve(snapshot)
+			})
+
+			const cleanup = () => {
+				if (timer) clearTimeout(timer)
+				sub.unsubscribe()
+			}
+
+			if (timeoutMs != null) {
+				timer = setTimeout(() => {
+					if (done) return
+					done = true
+					cleanup()
+					reject(new Error(`Timed out after ${timeoutMs}ms`))
+				}, timeoutMs)
+			}
+		})
+	}
+
+	send(event: LifecycleEvent): void {
+		const ev = this.toEvent(event.type)
+		const args = event.type === 'ASYNC_ERROR' ? [event.error] : []
+		const current = this.snapshot.value
+		if (event.type === 'STOP') {
+			if (current === 'stopped' || current === 'stopping') return
+			this.pendingStop = true
+		}
+		if (event.type === 'START' && (current === 'running' || current === 'starting')) return
+		this.queue = this.queue.then(() => this.dispatch(ev, ...args)).catch((err) => {
+			this.notifyError(err)
+		})
+	}
+
+	private toEvent(type: LifecycleEvent['type']): number {
+		switch (type) {
+			case 'START':
+				return this.E.start
+			case 'STOP':
+				return this.E.stop
+			case 'RETRY':
+				return this.E.retry
+			case 'ASYNC_ERROR':
+				return this.E.asyncError
+			default:
+				throw new Error(`Unknown event ${type}`)
+		}
+	}
+
+	private async dispatch(ev: number, ...args: any[]): Promise<void> {
+		await this.machine.dispatch(ev, ...args)
+		this.snapshot = this.buildSnapshot()
+		this.notify()
+	}
+
+	private notify() {
+		for (const l of this.listeners) l.next?.(this.snapshot)
+	}
+
+	private notifyError(err: unknown) {
+		for (const l of this.listeners) l.error?.(err)
+	}
+
+	private buildSnapshot(): LifecycleSnapshot {
+		const id = this.machine.getState()
+		const value = this.stateNames[id] as LifecycleState
+		return {
+			value,
+			context: this.ctx,
+			status: value === 'stopped' ? 'stopped' : undefined,
+		}
+	}
 }
 
-/* ────────────────────────── ActorRef 类型 ────────────────────────── */
-export type PluginLifecycleRef = ActorRefFrom<ReturnType<typeof createPluginLifecycle>>
+export type PluginLifecycleRef = PluginLifecycleActor
+
+export function createPluginLifecycle(opts: LifecycleOptions = {}) {
+	return (input: LifecycleInput): PluginLifecycleRef => new PluginLifecycleActor(opts, input)
+}
 
 /* ────────────────────────── 便捷 selector ────────────────────────── */
 export const lifecycleSelectors = {
-	isRunning: (s: { value: unknown }) => (s as any).matches?.('running') ?? false,
+	isRunning: (s: { value: unknown }) => (s as any).value === 'running',
 	lastError: <C extends LifecycleCtx>(s: { context: C }) => s.context.err,
 	uptime: <C extends LifecycleCtx>(s: { context: C }) =>
 		s.context.startedAt ? Date.now() - s.context.startedAt : undefined,

@@ -2,9 +2,9 @@ import { createHash } from 'node:crypto'
 import { existsSync } from 'node:fs'
 import { mkdir, readdir, readFile, stat, unlink, writeFile } from 'node:fs/promises'
 import { fileURLToPath, pathToFileURL } from 'node:url'
-import { createDebug } from 'obug'
 import { type Context, getPluginInfo, Injectable } from '@pluxel/core'
 import chokidar, { type FSWatcher } from 'chokidar'
+import { createDebug } from 'obug'
 import { dirname, isAbsolute, join, resolve } from 'pathe'
 import type {
 	CompiledExtensionModule,
@@ -96,7 +96,7 @@ export class ExtensionService {
 		this.outDir = config?.outDir ?? resolve(process.cwd(), '.pluxel/extensions')
 		this.manifestPath = join(this.outDir, MANIFEST_FILENAME)
 
-		this.ctx.registry.afterCommit(async (summary) => {
+		this.ctx.events.on('afterCommit', async (summary) => {
 			await this.onAfterCommit(summary)
 		})
 
