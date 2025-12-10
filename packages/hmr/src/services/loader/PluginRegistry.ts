@@ -1,8 +1,14 @@
 // loader/PluginRegistry.ts
-import { type Context, getPluginInfo, type PluginConstructor } from '@pluxel/core'
+import {
+	type Context,
+	getDeclaredName,
+	getPluginInfo,
+	type PluginConstructor,
+	setPluginIdentity,
+} from '@pluxel/core'
+import { dirname, normalize } from 'pathe'
 import * as v from 'valibot'
 import type { ConfigSchemaMap } from '../..'
-import { dirname, normalize } from 'pathe'
 
 type ModuleId = string
 type PluginName = string
@@ -14,6 +20,17 @@ const isIndexFile = (p: string) => /(?:^|\/)index\.[cm]?[tj]sx?$/.test(p)
 const sameDir = (a: string, b: string) => dirname(normalize(a)) === dirname(normalize(b))
 export const LIFECYCLE_STATES = ['running', 'stopped', 'disabled'] as const
 export type PluginLifecycleStage = (typeof LIFECYCLE_STATES)[number]
+
+/**
+ * 从模块路径提取包名
+ * e.g., "/path/node_modules/pkg-a/dist/plugin.js" -> "pkg-a"
+ * e.g., "/path/node_modules/@scope/pkg/index.js" -> "@scope/pkg"
+ * e.g., "/project/src/plugins/foo.ts" -> null (本地文件，无包名)
+ */
+function extractPackageName(moduleId: string): string | null {
+	const match = moduleId.match(/node_modules\/(@[^/]+\/[^/]+|[^/]+)/)
+	return match?.[1] ?? null
+}
 
 export interface PluginLifecycleSnapshot {
 	id: string
@@ -67,9 +84,10 @@ export class PluginRegistry {
 
 	// =============== 声明层：落/撤 ===============
 	declarePlugin(moduleId: ModuleId, ctor: PluginConstructor, exportKey: ExportKey): void {
-		const { id: name } = getPluginInfo(ctor)
+		const declaredName = getDeclaredName(ctor)
+		let { id: name } = getPluginInfo(ctor)
 
-		// 冲突：允许“同路径热替换”，拒绝“跨路径重名”
+		// 冲突：允许"同路径热替换"，拒绝"跨路径重名"
 		const existed = this.nameMap.get(name)
 		const existedPath = this.name2Path.get(name)
 		const enrolledPaths = existed ? this.enrolled.get(existed) : undefined
@@ -90,7 +108,8 @@ export class PluginRegistry {
 			this.stopPlugin(name, existed!)
 		}
 
-		if (
+		// 检测真正的冲突
+		const isConflict =
 			existed &&
 			existed !== ctor &&
 			existedPath &&
@@ -98,8 +117,27 @@ export class PluginRegistry {
 			!isKnownAlias &&
 			!existingIsIndexAlias &&
 			!candidateIsIndexAlias
-		) {
-			throw new Error(`插件名冲突：${name} 已由 ${existedPath} 提供，拒绝来自 ${moduleId}`)
+
+		if (isConflict) {
+			// 尝试自动解决：给后来者添加包名前缀
+			const pkgName = extractPackageName(moduleId)
+			if (pkgName === null) {
+				throw new Error(`插件名冲突：${name} 已由 ${existedPath} 提供，拒绝来自 ${moduleId}`)
+			}
+			const prefixedId = `${pkgName}/${declaredName}`
+			// 检查前缀后是否仍然冲突
+			if (this.nameMap.has(prefixedId)) {
+				throw new Error(
+					`插件名冲突：${name} 已由 ${existedPath} 提供，` +
+						`尝试使用 ${prefixedId} 仍然冲突，拒绝来自 ${moduleId}`,
+				)
+			}
+			// 设置新的 id 和包名
+			setPluginIdentity(ctor, { id: prefixedId, packageName: pkgName })
+			name = prefixedId
+			this.ctx.logger?.info(
+				`[PluginRegistry] 插件 "${declaredName}" 来自包 ${pkgName}，已自动重命名为 "${prefixedId}"`,
+			)
 		}
 
 		const seen = this.enrolled.get(ctor) ?? new Set<ModuleId>()
