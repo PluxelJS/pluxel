@@ -124,7 +124,7 @@ export class ConfigService {
 	 * 读取某插件的配置（不存在时返回只读“空视图”，避免误改未落盘）
 	 */
 	getConfig<T extends object = Record<string, unknown>>(
-		name: string = this.ctx.pluginInfo.name,
+		name: string = this.ctx.pluginInfo.id,
 	): Readonly<PluginEntry<T>> {
 		const entry = this.data.plugins[name]
 		if (entry) return entry as PluginEntry<T>

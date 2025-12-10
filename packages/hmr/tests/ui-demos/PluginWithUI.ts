@@ -73,7 +73,7 @@ export class PluginWithUI extends BasePlugin {
 			uptimeMs: Date.now() - this.startedAt,
 			noteCount: this.noteSeq - 1,
 			taskCount: this.taskSeq - 1,
-			name: this.ctx.pluginInfo.name,
+			name: this.ctx.pluginInfo.id,
 		}
 	}
 

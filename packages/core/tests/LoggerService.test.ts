@@ -30,9 +30,9 @@ describe('LoggerService', () => {
 		expect(infoSpy.mock.calls[0]).toEqual(['[root:core-test]', 'hello', { id: 1 }])
 	})
 
-	it('uses plugin metadata name when available', () => {
+	it('uses plugin id when available', () => {
 		const ctx = new Context({ name: 'plugin-test' })
-		ctx.pluginInfo = { name: 'PluginX' } as any
+		ctx.pluginInfo = { id: 'PluginX' } as any
 		const warnSpy = spyOn(console, 'warn')
 		remember(() => warnSpy.mockRestore())
 

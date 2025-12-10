@@ -38,7 +38,7 @@ export abstract class BasePlugin<C extends Context = Context> {
 	static [Symbol.toPrimitive](_hint: string) {
 		return `${
 			// biome-ignore lint/complexity/noThisInStatic: <explanation>
-			getPluginInfo(this)?.name
+			getPluginInfo(this)?.id
 		}(${
 			// biome-ignore lint/complexity/noThisInStatic: <explanation>
 			this.name

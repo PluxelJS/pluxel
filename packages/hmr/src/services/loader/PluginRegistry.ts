@@ -33,7 +33,7 @@ export class PluginRegistry {
 	constructor(private ctx: Context) {}
 
 	private isPrimaryProvider(moduleId: ModuleId, ctor: PluginConstructor): boolean {
-		const { name } = getPluginInfo(ctor)
+		const { id: name } = getPluginInfo(ctor)
 		const primary = this.name2Path.get(name)
 		return primary === undefined || primary === moduleId
 	}
@@ -67,7 +67,7 @@ export class PluginRegistry {
 
 	// =============== 声明层：落/撤 ===============
 	declarePlugin(moduleId: ModuleId, ctor: PluginConstructor, exportKey: ExportKey): void {
-		const { name } = getPluginInfo(ctor)
+		const { id: name } = getPluginInfo(ctor)
 
 		// 冲突：允许“同路径热替换”，拒绝“跨路径重名”
 		const existed = this.nameMap.get(name)
@@ -128,7 +128,7 @@ export class PluginRegistry {
 		const list = this.moduleMap.get(moduleId) ?? EMPTY
 		for (const item of list) {
 			const ctor = item.ctor
-			const { name } = getPluginInfo(ctor)
+			const { id: name } = getPluginInfo(ctor)
 
 			// 仅当映射仍指向该 moduleId 才移除（避免其他路径已重建时误删）
 			if (this.name2Path.get(name) === moduleId) {
@@ -151,7 +151,7 @@ export class PluginRegistry {
 		const list = this.moduleMap.get(moduleId) ?? EMPTY
 		// 并行启动（registerPlugin 只是声明，依赖处理在 commit 时）
 		const toStart = list.flatMap(({ ctor }) => {
-			const { name } = getPluginInfo(ctor)
+			const { id: name } = getPluginInfo(ctor)
 			if (!this.isPrimaryProvider(moduleId, ctor) || !this.ctx.configService.isEnable(name))
 				return []
 			return [this.startPlugin(name, ctor)]
@@ -259,7 +259,7 @@ export class PluginRegistry {
 	stopModule(moduleId: ModuleId): void {
 		const list = this.moduleMap.get(moduleId) ?? EMPTY
 		for (const { ctor } of list) {
-			const { name } = getPluginInfo(ctor)
+			const { id: name } = getPluginInfo(ctor)
 			if (!this.isPrimaryProvider(moduleId, ctor)) continue
 			this.stopPlugin(name, ctor)
 		}
@@ -276,7 +276,7 @@ export class PluginRegistry {
 	disablePersistedByModule(moduleId: ModuleId): void {
 		const list = this.moduleMap.get(moduleId) ?? EMPTY
 		for (const { ctor } of list) {
-			const { name } = getPluginInfo(ctor)
+			const { id: name } = getPluginInfo(ctor)
 			if (!this.isPrimaryProvider(moduleId, ctor)) continue
 			this.disablePersisted(name)
 		}

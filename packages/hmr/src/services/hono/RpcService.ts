@@ -40,7 +40,7 @@ export class RpcService {
 	 * @returns 清理函数（自动与 scope 集成）
 	 */
 	registerExtension<T extends RpcTarget>(factory: RpcExtensionFactory<T>): () => void {
-		const namespace = this.ctx.pluginInfo.name
+		const namespace = this.ctx.pluginInfo.id
 		if (namespace in this.extensions && this.extensions[namespace] !== null) {
 			this.ctx.logger?.warn(`[RPC] Extension "${namespace}" already registered, overwriting`)
 		}

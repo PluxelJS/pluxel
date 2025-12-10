@@ -86,7 +86,7 @@ export class SseService {
 	constructor(private ctx: Context) {}
 
 	registerExtension(factory: SseExtensionFactory, options: RegisterOptions = {}): () => void {
-		const namespace = options.namespace ?? this.ctx.pluginInfo?.name
+		const namespace = options.namespace ?? this.ctx.pluginInfo?.id
 		if (!namespace) throw new Error('[SSE] registerExtension: namespace required')
 
 		const already = this.extensions.has(namespace)

@@ -76,23 +76,23 @@ export class AuthGuardService {
 			throw new Error('[AuthGuardService] redirectPath is required when registering a guard.')
 		}
 
-		const pluginName = this.ctx.pluginInfo?.name ?? this.ctx.name
+		const pluginId = this.ctx.pluginInfo?.id ?? this.ctx.name
 		const existing = this.guard
 
-		if (existing && existing.pluginName !== pluginName) {
+		if (existing && existing.pluginName !== pluginId) {
 			throw new Error(
 				`[AuthGuardService] Guard already registered by ${existing.pluginName}. Wait it to unload before registering a new guard.`,
 			)
 		}
 
-		// 同插件“更新”——先静默清理，避免闪烁日志与多次同步
+		// 同插件"更新"——先静默清理，避免闪烁日志与多次同步
 		if (existing) {
 			this.clearGuard(existing, { skipSync: true, silent: true })
 		}
 
 		const active: ActiveGuard = {
 			...reg,
-			pluginName,
+			pluginName: pluginId,
 			removeFromScope: () => {},
 		}
 
@@ -101,7 +101,7 @@ export class AuthGuardService {
 
 		this.guard = active
 		this.logger.info(existing ? '[AuthGuard] Guard updated' : '[AuthGuard] Guard registered', {
-			pluginName,
+			pluginName: pluginId,
 		})
 
 		this.syncHonoGuardState()

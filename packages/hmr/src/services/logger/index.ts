@@ -25,13 +25,13 @@ export class PinoLoggerService {
 
 		// #if NODE_ENV !== 'production'
 		if (!isProd) {
-			const scopeName = ctx.pluginInfo?.name ?? ctx.name
+			const scopeName = ctx.pluginInfo?.id ?? ctx.name
 			const bindings: Bindings = {
 				name: scopeName,
 			}
-			const pluginName = ctx.pluginInfo?.name
-			if (pluginName && pluginName !== scopeName) {
-				bindings.plugin = pluginName
+			const pluginId = ctx.pluginInfo?.id
+			if (pluginId && pluginId !== scopeName) {
+				bindings.plugin = pluginId
 			}
 			this.logger = deriveScopedLogger(bindings)
 			this.bindLevels()

@@ -43,7 +43,7 @@ export class LoaderService {
 			const ctor = plugin.constructor as PluginConstructor
 			const schemaMap = this.registry.getSchema(ctor)
 			if (!schemaMap) return
-			const { name } = plugin.ctx.pluginInfo
+			const { id: name } = plugin.ctx.pluginInfo
 			const { configRecord } = plugin.ctx.configService.getConfig(name)
 			for (const key of Object.keys(schemaMap)) {
 				;(plugin as any)[key] = (configRecord as any)[key]
@@ -53,7 +53,7 @@ export class LoaderService {
 		// --- 原子提交失败：回滚运行层（不触碰持久层启用位） ---
 		this.ctx.on('commitFailed', (failed) => {
 			for (const ctor of failed) {
-				const { name } = getPluginInfo(ctor as PluginConstructor)
+				const { id: name } = getPluginInfo(ctor as PluginConstructor)
 				this.registry.stopPlugin(name, ctor as PluginConstructor) // 只停运
 			}
 		})
@@ -104,7 +104,7 @@ export class LoaderService {
 		if (mapped) candidates.add(mapped)
 		else {
 			for (const [moduleId, items] of this.registry.modules) {
-				if (items.some((item) => getPluginInfo(item.ctor).name === name)) {
+				if (items.some((item) => getPluginInfo(item.ctor).id === name)) {
 					candidates.add(moduleId)
 				}
 			}
@@ -131,7 +131,7 @@ export class LoaderService {
 	// 由于 HMR 的存在，普通运行时可能会缓存另一个 ctor 而不用vite内部缓存，通过调用该函数可以返回 HMR 那个。
 	resolveRuntimeCtor(target: PluginConstructor | string): PluginConstructor | undefined {
 		if (typeof target === 'string') return this.registry.getPluginByName(target)
-		const { name } = getPluginInfo(target)
+		const { id: name } = getPluginInfo(target)
 		return this.registry.getPluginByName(name) ?? target
 	}
 
@@ -165,7 +165,7 @@ export class LoaderService {
 	getPluginDependenciesInfo(ctor: PluginConstructor) {
 		return getClassParams<PluginConstructor>(ctor)
 			.map((dep) => {
-				const { name } = getPluginInfo(dep)
+				const { id: name } = getPluginInfo(dep)
 				return { name, isRunning: this.isRunning(dep) }
 			})
 			.filter(Boolean) as Array<{ name: string; isRunning: boolean }>

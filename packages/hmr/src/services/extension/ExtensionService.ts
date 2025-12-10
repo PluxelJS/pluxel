@@ -141,9 +141,9 @@ export class ExtensionService {
 	 * 注册插件 UI 扩展（自动从当前 Context 获取 pluginName）
 	 */
 	register(config: PluginExtensionConfig): () => void {
-		const pluginName = this.ctx.pluginInfo?.name
+		const pluginName = this.ctx.pluginInfo?.id
 		if (!pluginName) {
-			throw new Error('无法获取 pluginName，请确保在插件内调用')
+			throw new Error('无法获取 pluginId，请确保在插件内调用')
 		}
 
 		const existing = this.entries.get(pluginName)
@@ -286,8 +286,8 @@ export class ExtensionService {
 		for (const [id] of summary.container.services) {
 			try {
 				const info = getPluginInfo(id as Function)
-				if (info?.name && this.pendingPlugins.has(info.name)) {
-					runningPlugins.add(info.name)
+				if (info?.id && this.pendingPlugins.has(info.id)) {
+					runningPlugins.add(info.id)
 				}
 			} catch {}
 		}
