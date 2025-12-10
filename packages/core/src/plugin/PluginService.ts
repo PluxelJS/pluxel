@@ -8,17 +8,15 @@ import { EffectScopeService } from '../services/EffectScopeService'
 import { BasePlugin, PLUGIN_CTX } from './BasePlugin'
 import { PluginContainer, type PluginDiContainer } from './PluginContainer'
 import type { PluginInfo } from './PluginDecorator'
-import {
-	PluginLifecycleActor,
-	lifecycleSelectors,
-	type LifecycleSnapshot,
-} from './pluginActor'
+import { PluginLifecycleActor, lifecycleSelectors, type LifecycleSnapshot } from './pluginActor'
 import type { PluginIdentifier, PluginInstance } from './types'
 
 const PLUGIN_LIFECYCLE = Symbol.for('pluxel:plugin:lifecycle')
 
+/* ─────────────────────────── Types ─────────────────────────── */
+
 type PluginServiceConfig = {
-	plugigCTXIsolate?: ServiceClass<any>[]
+	pluginCTXIsolate?: ServiceClass<any>[]
 	startTimeoutMs?: number
 	stopTimeoutMs?: number
 }
@@ -56,6 +54,24 @@ type InitPlan = {
 	dependencies: Map<PluginIdentifier, readonly PluginIdentifier[]>
 }
 
+/* ─────────────────────────── Helpers ─────────────────────────── */
+
+const isPluginIdentifier = (v: unknown): v is PluginIdentifier =>
+	typeof v === 'function' && v.prototype instanceof BasePlugin
+
+const describeIds = (ids: PluginIdentifier[]) =>
+	ids.map((id) => String((id as any)?.name ?? id)).join(', ')
+
+const arraysEqual = <T>(a: T[], b: T[]): boolean => {
+	if (a.length !== b.length) return false
+	for (let i = 0; i < a.length; i++) {
+		if (a[i] !== b[i]) return false
+	}
+	return true
+}
+
+/* ─────────────────────────── Module Augmentation ─────────────────────────── */
+
 const serviceName = 'registry' as const
 declare module '@pluxel/context' {
 	namespace Context {
@@ -71,40 +87,24 @@ declare module '@pluxel/context' {
 	}
 }
 
+/* ─────────────────────────── Service ─────────────────────────── */
+
 @Injectable({ key: serviceName })
 export class PluginService {
-	// 容器：负责“构造实例 + 注入 ctx”；生命周期全由 XState 负责
 	public pluginRegistry: PluginContainer
 
-	/** 串行化 commit */
 	private _commitLock: Promise<unknown> = Promise.resolve()
-
-	/** 可调等待超时（毫秒） */
-	private readonly startTimeoutMs
-	private readonly stopTimeoutMs
+	private readonly startTimeoutMs: number
+	private readonly stopTimeoutMs: number
 	private _lastCommit?: CommitSummary
 	private order = 0
-	/** caller -> (pluginId -> wrapped view) 缓存，保证 optional 返回的实例在 caller 侧稳定 */
+
+	/** caller -> (pluginId -> wrapped view) 缓存 */
 	private optionalViews = new WeakMap<
 		Context,
 		Map<PluginIdentifier, { source: BasePlugin; view: BasePlugin }>
 	>()
-	private readonly wrapOptionalWithCaller = (() => {
-		const desc: PropertyDescriptor = {
-			value: null,
-			writable: false,
-			enumerable: false,
-			configurable: false,
-		}
-		return <P extends BasePlugin>(instance: P, callerCtx: Context): P => {
-			const view = Object.create((instance as any)[PLUGIN_CTX])
-			view.caller = callerCtx
-			desc.value = view
-			const injected = Object.create(instance, { ctx: desc })
-			desc.value = null
-			return injected
-		}
-	})()
+
 	constructor(
 		private ctx: Context,
 		config: PluginServiceConfig,
@@ -112,11 +112,13 @@ export class PluginService {
 		this.startTimeoutMs = config?.startTimeoutMs ?? 1_500
 		this.stopTimeoutMs = config?.stopTimeoutMs ?? 3_000
 
-		const isolated = Array.from(new Set([...(config?.plugigCTXIsolate ?? []), EffectScopeService]))
+		const isolated = [...new Set([...(config?.pluginCTXIsolate ?? []), EffectScopeService])]
 		this.pluginRegistry = new PluginContainer(() =>
 			this.ctx.root.isolate(isolated, { name: `${this.order++}` }),
 		)
 	}
+
+	/* ─────────────────────────── Lifecycle Slot ─────────────────────────── */
 
 	private ensureLifecycleSlot(
 		plugin: BasePlugin,
@@ -133,13 +135,11 @@ export class PluginService {
 	}
 
 	private getLifecycle(plugin: BasePlugin): PluginLifecycleActor | undefined {
-		const slot = this.ensureLifecycleSlot(plugin)
-		return slot[PLUGIN_LIFECYCLE] ?? undefined
+		return this.ensureLifecycleSlot(plugin)[PLUGIN_LIFECYCLE] ?? undefined
 	}
 
 	private setLifecycle(plugin: BasePlugin, ref?: PluginLifecycleActor) {
-		const slot = this.ensureLifecycleSlot(plugin)
-		slot[PLUGIN_LIFECYCLE] = ref ?? null
+		this.ensureLifecycleSlot(plugin)[PLUGIN_LIFECYCLE] = ref ?? null
 	}
 
 	private createLifecycle(id: PluginIdentifier, plugin: BasePlugin): PluginLifecycleActor {
@@ -159,21 +159,25 @@ export class PluginService {
 	private ensureLifecycle(id: PluginIdentifier, plugin: BasePlugin): PluginLifecycleActor {
 		const existing = this.getLifecycle(plugin)
 		if (existing) {
-			const snapshot = existing.getSnapshot?.()
-			if (!lifecycleSelectors.isStopped(snapshot)) return existing
+			if (!lifecycleSelectors.isStopped(existing.getSnapshot?.())) return existing
 			this.setLifecycle(plugin)
 		}
 		return this.createLifecycle(id, plugin)
 	}
 
-	/* ------------------------------ 状态查询 ------------------------------ */
+	/* ─────────────────────────── State Query ─────────────────────────── */
 
 	isRunning(id: PluginIdentifier): boolean {
 		const instance = this.pluginRegistry.singletons.get(id as any) as BasePlugin | undefined
 		if (!instance) return false
-		const snapshot = this.getLifecycle(instance)?.getSnapshot?.()
-		return lifecycleSelectors.isRunning(snapshot)
+		return lifecycleSelectors.isRunning(this.getLifecycle(instance)?.getSnapshot?.())
 	}
+
+	public get lastCommit(): CommitSummary | undefined {
+		return this._lastCommit
+	}
+
+	/* ─────────────────────────── Optional Dependencies ─────────────────────────── */
 
 	public optional<T extends PluginIdentifier>(
 		plugin: T,
@@ -201,88 +205,17 @@ export class PluginService {
 		opts?: OptionalOptions,
 	) {
 		const callerCtx = this.ctx
-		const isPluginIdentifier = (v: unknown): v is PluginIdentifier =>
-			typeof v === 'function' && v.prototype instanceof BasePlugin
+		const watch = opts?.watch ?? true
+		const multi = opts?.multi ?? false
 
-			const watch = opts?.watch ?? true
-			const multi = opts?.multi ?? false
-			const describe = (ids: PluginIdentifier[]) =>
-				ids.map((id) => String((id as any)?.name ?? id)).join(', ')
-			const collectWithGaps = <P extends PluginIdentifier>(ids: P[]) =>
-				ids.map((id) => this.getRunningOptional(id, callerCtx))
-			const collectCompact = <P extends PluginIdentifier>(ids: P[]) =>
-				collectWithGaps(ids).filter((x): x is InstanceType<P> => x !== undefined)
-			const hasChanged = (
-				prev: Array<BasePlugin | undefined>,
-				next: Array<BasePlugin | undefined>,
-			) => {
-				if (prev.length !== next.length) return true
-				for (let i = 0; i < next.length; i++) {
-					if (prev[i] !== next[i]) return true
-				}
-				return false
-			}
-			const invokeHandler = (
-				handlerFn: OptionalHandler<BasePlugin> | OptionalHandler<BasePlugin[]> | undefined,
-				payload: Array<BasePlugin | undefined> | undefined,
-				summary: CommitSummary | undefined,
-				label: string,
-				asMulti: boolean,
-			) => {
-				if (!handlerFn) return
-			const value = (asMulti ? payload ?? [] : payload?.[0]) as any
-			return Promise.resolve(handlerFn(value, summary)).catch((error) => {
-				this.ctx.logger?.error?.(error, `optional(${label}) 处理失败`)
-			})
-		}
-			const logUnavailable = (ids: PluginIdentifier[], label: string) => {
-				const container = this.pluginRegistry.lastContainer
-				const missingInContainer = ids.filter((id) => !container?.services?.has(id))
-				if (missingInContainer.length) {
-					this.ctx.logger?.warn?.(
-					{ plugins: missingInContainer.map(String) },
-					`optional(${label}) 未在容器中，可能尚未注册`,
-				)
-				return
-			}
-			const notRunning = ids.filter((id) => !this.isRunning(id))
-				if (notRunning.length) {
-					this.ctx.logger?.info?.(
-						{ plugins: notRunning.map(String) },
-						`optional(${label}) 已注册但未运行`,
-					)
-				}
-			}
-			const attachWatcher = (
-				ids: PluginIdentifier[],
-				label: string,
-				asMulti: boolean,
-				keepGaps: boolean,
-			) => {
-				if (!handler || !watch) return
-				let last = (keepGaps ? collectWithGaps(ids) : collectCompact(ids)) as Array<
-					BasePlugin | undefined
-				>
-				this.ctx.on('afterCommit', (summary) => {
-					const current = (keepGaps ? collectWithGaps(ids) : collectCompact(ids)) as Array<
-						BasePlugin | undefined
-					>
-					if (!hasChanged(last, current)) return
-					last = current
-					if (!current.length || current.every((item) => item === undefined)) {
-						logUnavailable(ids, label)
-					}
-					void invokeHandler(handler as any, current, summary, label, asMulti)
-				})
-			}
-
+		// Async import path
 		if (!isPluginIdentifier(target)) {
 			const importer = typeof target === 'function' ? target : () => target
 			const label = importer.name || 'dynamic import'
 
 			return this.optionalImport(importer, { onError: opts?.onError, label }).then((mod) => {
 				if (mod === undefined) {
-					return invokeHandler(handler as any, undefined, this._lastCommit, label, multi)
+					return this.invokeOptionalHandler(handler, undefined, this._lastCommit, label, multi)
 				}
 
 				const ids = this.normalizePluginIdentifiers(mod)
@@ -291,28 +224,33 @@ export class PluginService {
 					this.ctx.logger?.warn?.(err)
 					opts?.onError?.(err)
 					return Promise.resolve(
-						invokeHandler(handler as any, undefined, this._lastCommit, label, multi),
+						this.invokeOptionalHandler(handler, undefined, this._lastCommit, label, multi),
 					).then(() => (multi ? [] : undefined))
 				}
 
-				const payload = (
-					multi ? collectWithGaps(ids) : collectCompact(ids)
-				) as Array<BasePlugin | undefined>
+				const payload = this.collectOptionals(ids, callerCtx, multi)
 				if (!payload.length || payload.every((item) => item === undefined)) {
-					logUnavailable(ids, label)
+					this.logUnavailable(ids, label)
 				}
-				if (handler) void invokeHandler(handler as any, payload, this._lastCommit, label, multi)
-				attachWatcher(ids, label, multi, multi)
+				if (handler) {
+					void this.invokeOptionalHandler(handler, payload, this._lastCommit, label, multi)
+				}
+				if (watch && handler) {
+					this.attachOptionalWatcher(ids, callerCtx, handler, label, multi, multi)
+				}
 				return (multi ? payload : payload[0]) as any
 			})
 		}
 
+		// Sync path
 		const ids = [target]
-		const label = describe(ids)
-		const payload = collectCompact(ids)
-		if (!payload.length) logUnavailable(ids, label)
-		void invokeHandler(handler as any, payload, this._lastCommit, label, false)
-		attachWatcher(ids, label, false, false)
+		const label = describeIds(ids)
+		const payload = this.collectOptionals(ids, callerCtx, false)
+		if (!payload.length) this.logUnavailable(ids, label)
+		void this.invokeOptionalHandler(handler, payload, this._lastCommit, label, false)
+		if (watch && handler) {
+			this.attachOptionalWatcher(ids, callerCtx, handler, label, false, false)
+		}
 		return payload[0] as any
 	}
 
@@ -331,6 +269,68 @@ export class PluginService {
 			}
 			return undefined
 		}
+	}
+
+	private collectOptionals(
+		ids: PluginIdentifier[],
+		callerCtx: Context,
+		keepGaps: boolean,
+	): Array<BasePlugin | undefined> {
+		const result = ids.map((id) => this.getRunningOptional(id, callerCtx))
+		return keepGaps ? result : result.filter((x): x is BasePlugin => x !== undefined)
+	}
+
+	private invokeOptionalHandler(
+		handler: OptionalHandler<BasePlugin> | OptionalHandler<BasePlugin[]> | undefined,
+		payload: Array<BasePlugin | undefined> | undefined,
+		summary: CommitSummary | undefined,
+		label: string,
+		asMulti: boolean,
+	) {
+		if (!handler) return
+		const value = (asMulti ? payload ?? [] : payload?.[0]) as any
+		return Promise.resolve(handler(value, summary)).catch((error) => {
+			this.ctx.logger?.error?.(error, `optional(${label}) 处理失败`)
+		})
+	}
+
+	private logUnavailable(ids: PluginIdentifier[], label: string) {
+		const container = this.pluginRegistry.lastContainer
+		const missingInContainer = ids.filter((id) => !container?.services?.has(id))
+		if (missingInContainer.length) {
+			this.ctx.logger?.warn?.(
+				{ plugins: missingInContainer.map(String) },
+				`optional(${label}) 未在容器中，可能尚未注册`,
+			)
+			return
+		}
+		const notRunning = ids.filter((id) => !this.isRunning(id))
+		if (notRunning.length) {
+			this.ctx.logger?.info?.(
+				{ plugins: notRunning.map(String) },
+				`optional(${label}) 已注册但未运行`,
+			)
+		}
+	}
+
+	private attachOptionalWatcher(
+		ids: PluginIdentifier[],
+		callerCtx: Context,
+		handler: OptionalHandler<BasePlugin> | OptionalHandler<BasePlugin[]>,
+		label: string,
+		asMulti: boolean,
+		keepGaps: boolean,
+	) {
+		let last = this.collectOptionals(ids, callerCtx, keepGaps)
+		this.ctx.on('afterCommit', (summary) => {
+			const current = this.collectOptionals(ids, callerCtx, keepGaps)
+			if (arraysEqual(last, current)) return
+			last = current
+			if (!current.length || current.every((item) => item === undefined)) {
+				this.logUnavailable(ids, label)
+			}
+			void this.invokeOptionalHandler(handler as any, current, summary, label, asMulti)
+		})
 	}
 
 	private getRunningOptional<T extends PluginIdentifier>(
@@ -352,7 +352,7 @@ export class PluginService {
 		const cached = map?.get(ctor)
 		if (cached && cached.source === instance) return cached.view as InstanceType<T>
 
-		const wrapped = this.wrapOptionalWithCaller(instance, callerCtx) as InstanceType<T>
+		const wrapped = this.wrapWithCaller(instance, callerCtx) as InstanceType<T>
 		if (!map) {
 			map = new Map()
 			this.optionalViews.set(callerCtx, map)
@@ -361,25 +361,21 @@ export class PluginService {
 		return wrapped
 	}
 
+	private wrapWithCaller<P extends BasePlugin>(instance: P, callerCtx: Context): P {
+		const view = Object.create((instance as any)[PLUGIN_CTX])
+		view.caller = callerCtx
+		return Object.create(instance, {
+			ctx: { value: view, writable: false, enumerable: false, configurable: false },
+		})
+	}
+
 	private normalizePluginIdentifiers(input: unknown): PluginIdentifier[] {
-		if (typeof input === 'function' && input.prototype instanceof BasePlugin) {
-			return [input as PluginIdentifier]
-		}
-		if (Array.isArray(input)) {
-			return input.filter(
-				(item): item is PluginIdentifier =>
-					typeof item === 'function' && item.prototype instanceof BasePlugin,
-			)
-		}
+		if (isPluginIdentifier(input)) return [input]
+		if (Array.isArray(input)) return input.filter(isPluginIdentifier)
 		return []
 	}
 
-
-	public get lastCommit(): CommitSummary | undefined {
-		return this._lastCommit
-	}
-
-	/* ------------------------------ Topo Utils ------------------------------ */
+	/* ─────────────────────────── Topo Utils ─────────────────────────── */
 
 	private computeInitPlan(plugins: ServiceMap<BasePlugin>): InitPlan {
 		const inDegree = new Map<PluginIdentifier, number>()
@@ -394,8 +390,7 @@ export class PluginService {
 		for (const [id, plugin] of plugins) {
 			const deps = (plugin.dependencies ?? []) as PluginIdentifier[]
 			dependencies.set(id, deps)
-			for (let i = 0; i < deps.length; i++) {
-				const dep = deps[i]!
+			for (const dep of deps) {
 				if (!inDegree.has(dep)) continue
 				inDegree.set(id, inDegree.get(id)! + 1)
 				graph.get(dep)!.push(id)
@@ -403,17 +398,16 @@ export class PluginService {
 		}
 
 		const batches: PluginIdentifier[][] = []
-		const zeroDegree: PluginIdentifier[] = []
-		for (const [id, degree] of inDegree) if (degree === 0) zeroDegree.push(id)
+		let frontier: PluginIdentifier[] = []
+		for (const [id, degree] of inDegree) {
+			if (degree === 0) frontier.push(id)
+		}
 
-		let frontier = zeroDegree
 		while (frontier.length) {
 			batches.push(frontier)
 			const next: PluginIdentifier[] = []
 			for (const current of frontier) {
-				const dependents = graph.get(current)!
-				for (let i = 0; i < dependents.length; i++) {
-					const dependent = dependents[i]!
+				for (const dependent of graph.get(current)!) {
 					const remaining = inDegree.get(dependent)! - 1
 					inDegree.set(dependent, remaining)
 					if (remaining === 0) next.push(dependent)
@@ -423,7 +417,9 @@ export class PluginService {
 		}
 
 		const leftovers = new Set<PluginIdentifier>()
-		for (const [id, degree] of inDegree) if (degree > 0) leftovers.add(id)
+		for (const [id, degree] of inDegree) {
+			if (degree > 0) leftovers.add(id)
+		}
 
 		return { batches, leftovers, dependencies }
 	}
@@ -448,37 +444,37 @@ export class PluginService {
 			for (const child of children) {
 				if (!affected.has(child)) continue
 				remainingChildren.set(id, (remainingChildren.get(id) ?? 0) + 1)
-				const list = parents.get(child)!
-				list.push(id)
+				parents.get(child)!.push(id)
 			}
 		}
 
 		const order: PluginIdentifier[] = []
 		const stack: PluginIdentifier[] = []
-		for (const [id, count] of remainingChildren) if (count === 0) stack.push(id)
+		for (const [id, count] of remainingChildren) {
+			if (count === 0) stack.push(id)
+		}
 
 		while (stack.length) {
 			const current = stack.pop()!
 			order.push(current)
-			const ancestors = parents.get(current)!
-			for (let i = 0; i < ancestors.length; i++) {
-				const parent = ancestors[i]!
+			for (const parent of parents.get(current)!) {
 				const next = (remainingChildren.get(parent) ?? 0) - 1
 				remainingChildren.set(parent, next)
 				if (next === 0) stack.push(parent)
 			}
 		}
 
-		for (const [id, count] of remainingChildren) if (count > 0) order.push(id)
+		for (const [id, count] of remainingChildren) {
+			if (count > 0) order.push(id)
+		}
 		return order
 	}
 
-	/* ------------------------------ 生命周期管理 ------------------------------ */
+	/* ─────────────────────────── Lifecycle Management ─────────────────────────── */
 
 	private async startLifecycle(id: PluginIdentifier, plugin: BasePlugin): Promise<void> {
 		const ref = this.ensureLifecycle(id, plugin)
-		const snapshotBeforeStart = ref.getSnapshot?.()
-		if (lifecycleSelectors.isRunning(snapshotBeforeStart)) return
+		if (lifecycleSelectors.isRunning(ref.getSnapshot?.())) return
 
 		ref.send({ type: 'START' })
 
@@ -494,12 +490,10 @@ export class PluginService {
 
 		if (lifecycleSelectors.isRunning(snapshot)) return
 
-		const latest = ref.getSnapshot?.()
 		const capturedErr: unknown =
-			(latest as any)?.context?.err ??
+			(ref.getSnapshot?.() as any)?.context?.err ??
 			(snapshot as any)?.context?.err ??
-			(snapshot as any)?.error ??
-			undefined
+			(snapshot as any)?.error
 
 		await this.stopLifecycle(id, plugin, ref)
 
@@ -527,8 +521,7 @@ export class PluginService {
 	}
 
 	private async waitUntilStopped(ref: PluginLifecycleActor): Promise<void> {
-		const snapshot = ref.getSnapshot?.()
-		if (lifecycleSelectors.isStopped(snapshot)) return
+		if (lifecycleSelectors.isStopped(ref.getSnapshot?.())) return
 		try {
 			await ref.waitForStopped(this.stopTimeoutMs)
 		} catch {
@@ -545,30 +538,18 @@ export class PluginService {
 		await this.stopLifecycle(id, plugin)
 	}
 
-	/* --------------------------------- Commit -------------------------------- */
+	/* ─────────────────────────── Commit ─────────────────────────── */
 
-	private partitionChanges(changes: Array<{ type: string; key: unknown }>): {
-		added: Set<PluginIdentifier>
-		replaced: Set<PluginIdentifier>
-		removed: Set<PluginIdentifier>
-	} {
+	private partitionChanges(changes: Array<{ type: string; key: unknown }>) {
 		const added = new Set<PluginIdentifier>()
 		const replaced = new Set<PluginIdentifier>()
 		const removed = new Set<PluginIdentifier>()
 
-		for (const change of changes) {
-			const id = change.key as PluginIdentifier
-			switch (change.type) {
-				case 'add':
-					added.add(id)
-					break
-				case 'replace':
-					replaced.add(id)
-					break
-				default:
-					removed.add(id)
-					break
-			}
+		for (const { type, key } of changes) {
+			const id = key as PluginIdentifier
+			if (type === 'add') added.add(id)
+			else if (type === 'replace') replaced.add(id)
+			else removed.add(id)
 		}
 
 		return { added, replaced, removed }
@@ -620,7 +601,7 @@ export class PluginService {
 		plan: InitPlan,
 	): Promise<Set<PluginIdentifier>> {
 		const failed = new Set<PluginIdentifier>(plan.leftovers)
-		const dependencies = plan.dependencies
+		const { dependencies } = plan
 
 		for (const batch of plan.batches) {
 			const tasks: Promise<void>[] = []
@@ -628,14 +609,7 @@ export class PluginService {
 				if (failed.has(id)) continue
 
 				const deps = dependencies.get(id) ?? []
-				let blocked = false
-				for (let i = 0; i < deps.length; i++) {
-					if (failed.has(deps[i]!)) {
-						blocked = true
-						break
-					}
-				}
-				if (blocked) {
+				if (deps.some((dep) => failed.has(dep))) {
 					failed.add(id)
 					continue
 				}
@@ -650,10 +624,10 @@ export class PluginService {
 	}
 
 	/**
-	 * 非事务化提交（自管生命周期 FSM）：
-	 * - 停机：对 remove/replace 逆拓扑停机（仅 send STOP + 等待 stopped）
-	 * - 启动：对 add/replace 拓扑分批启动；失败只影响其依赖链，其它继续
-	 * - 失败插件从 builder singletons 中清理（避免泄漏/误复用）
+	 * 非事务化提交：
+	 * - 停机：对 remove/replace 逆拓扑停机
+	 * - 启动：对 add/replace 拓扑分批启动；失败只影响其依赖链
+	 * - 失败插件从 singletons 中清理
 	 */
 	async commit() {
 		const next = this._commitLock
@@ -701,16 +675,17 @@ export class PluginService {
 		)
 
 		const oldContainer = this.pluginRegistry.lastContainer
-		const toStop = new Set<PluginIdentifier>([...removed, ...replaced])
-		const toStart = new Set<PluginIdentifier>([...added, ...replaced])
+		const toStop = new Set([...removed, ...replaced])
+		const toStart = new Set([...added, ...replaced])
 
 		await this.applyTeardown(oldContainer, toStop)
 
 		const toInitMap: ServiceMap<BasePlugin> = new Map()
 		if (toStart.size) {
 			for (const [serviceId, value] of container.services) {
-				const id = serviceId as PluginIdentifier
-				if (toStart.has(id)) toInitMap.set(id, value)
+				if (toStart.has(serviceId as PluginIdentifier)) {
+					toInitMap.set(serviceId as PluginIdentifier, value)
+				}
 			}
 		}
 
@@ -738,9 +713,6 @@ export class PluginService {
 			this.ctx.emit('commitFailed', failed)
 		}
 
-		return createOk({
-			container: this.pluginRegistry.lastContainer,
-			changes,
-		})
+		return createOk({ container: this.pluginRegistry.lastContainer, changes })
 	}
 }

@@ -7,12 +7,13 @@ declare module '@pluxel/context' {
 		[serviceName]: EffectScopeService
 		collectEffect: EffectScopeService['collectEffect']
 		disposeAll: EffectScopeService['disposeAll']
+		shutdown: EffectScopeService['shutdown']
 	}
 }
 
 @Injectable({
 	key: serviceName,
-	methods: ['collectEffect', 'disposeAll'] as const,
+	methods: ['collectEffect', 'disposeAll', 'shutdown'] as const,
 })
 export class EffectScopeService {
 	/** 私有存放所有注册的清理回调 */
@@ -50,9 +51,24 @@ export class EffectScopeService {
 		}
 	}
 
-	dispose(plugin: PluginIdentifier) {
-		const target = plugin
-		this.ctx.registry.pluginRegistry.unregisterPlugin(target)
+	/**
+	 * 让当前插件主动关闭自己
+	 * 适用于插件运行一段时间后需要正常退出的场景
+	 */
+	shutdown(): void {
+		const pluginInfo = this.ctx.pluginInfo
+		if (!pluginInfo) {
+			throw new Error('Cannot shutdown: not in a plugin context')
+		}
+		const pluginClass = (pluginInfo.base ?? pluginInfo.class) as PluginIdentifier
+		this.unload(pluginClass)
+	}
+
+	/**
+	 * 卸载指定插件（及其依赖链）
+	 */
+	unload(plugin: PluginIdentifier): void {
+		this.ctx.registry.pluginRegistry.unregisterPlugin(plugin)
 		this.ctx.registry.commit()
 	}
 }

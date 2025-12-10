@@ -21,7 +21,7 @@ const ctx = new Context({
 		},
 	},
 	registry: {
-		plugigCTXIsolate: [PinoLoggerService],
+		pluginCTXIsolate: [PinoLoggerService],
 	},
 })
 async function bootstrap() {

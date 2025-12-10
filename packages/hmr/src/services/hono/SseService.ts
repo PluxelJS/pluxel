@@ -377,4 +377,4 @@ export class SseService {
 	}
 }
 
-export type { ResolvedSseEvents, SseEvents } from '../../web/sse'
+export type { ResolvedSseEvents } from '../../web/sse'
