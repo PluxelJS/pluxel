@@ -1,11 +1,11 @@
 // 再导出 API（这里不会重复注册，因为 Injectable 内部有跳过逻辑）
 export * from '@pluxel/core/services'
 export * from './ConfigService'
-export * from './PluginDataService'
 export * from './extension'
 export * from './hmr/HMRService'
 export * from './hono/AuthGuardService'
 export * from './hono/index'
 export * from './loader/LoaderService'
-export * from './logger'
+export * from './logger/PinoLoggerService'
 export * from './market'
+export * from './PluginDataService'
