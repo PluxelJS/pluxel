@@ -1,10 +1,12 @@
 // loader/index.ts
 import {
+	BasePlugin,
 	type Context,
 	checkPluginDecorator,
 	getClassParams,
 	getPluginInfo,
 	Injectable,
+	setParamTokens,
 	type PluginConstructor,
 } from '@pluxel/core'
 import { buildSnapshot as buildSnapshotSource } from './buildSnapshot'
@@ -62,6 +64,7 @@ export class LoaderService {
 	// 先停旧运行态，再把"已执行的新模块"导出解析并装入。
 	async replaceModule(moduleId: string, mod: Record<string, unknown>): Promise<boolean> {
 		const id = this.normalizeModuleId(moduleId)
+		const oldItems = this.registry.modules.get(id) ?? []
 		// 停旧（只影响运行层，保留声明关系以便冲突判断更清晰）
 		this.registry.stopModule(id)
 
@@ -78,6 +81,7 @@ export class LoaderService {
 
 		// 运行层：根据持久启用位，自动启用需要启用的插件
 		await this.registry.syncRuntimeForModule(id)
+		this.refreshDependents(oldItems)
 
 		// 维护锚点
 		if (isAnchor) this.pathAnchors.add(id)
@@ -189,6 +193,48 @@ export class LoaderService {
 			registry: this.registry,
 			isRunning: (target) => this.isRunning(target),
 		})
+	}
+
+	/**
+	 * 热更后，用当前 name -> ctor 映射重绑依赖者的构造参数引用，避免旧引用导致 MissingDependency。
+	 * 只处理受影响插件的直接依赖者，开销低。
+	 */
+	private refreshDependents(oldItems: readonly { ctor: PluginConstructor }[]) {
+		if (oldItems.length === 0) return
+		const dependentsMap = this.ctx.registry.pluginRegistry.lastContainer?.dependents
+		if (!dependentsMap?.size) return
+
+		const affected = new Set<PluginConstructor>()
+		for (const { ctor } of oldItems) {
+			const deps = dependentsMap.get(ctor as any)
+			if (!deps) continue
+			for (const dep of deps) affected.add(dep as PluginConstructor)
+		}
+		if (affected.size === 0) return
+
+		const nameMap = this.registry.names
+		for (const depCtor of affected) {
+			const params = getClassParams(depCtor)
+			const next = params.slice()
+			let mutated = false
+			for (let i = 0; i < next.length; i++) {
+				const p = next[i]
+				if (typeof p !== 'function') continue
+				if (!((p as any)?.prototype instanceof BasePlugin)) continue
+				let pid: string
+				try {
+					pid = getPluginInfo(p as PluginConstructor).id
+				} catch {
+					continue
+				}
+				const current = nameMap.get(pid)
+				if (current && current !== p) {
+					next[i] = current
+					mutated = true
+				}
+			}
+			if (mutated) setParamTokens(depCtor, next as any)
+		}
 	}
 
 	private deriveLifecycleStage(isRunning: boolean, isEnabled: boolean): PluginLifecycleStage {
