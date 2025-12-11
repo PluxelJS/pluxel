@@ -10,7 +10,7 @@ import { extLog } from '../extension/debug'
 import { fetchExtensionManifest } from '../extension/api/manifest'
 import { useQuery } from './gqty'
 import { subscribePluginStatusEvents } from './plugins/statusEvents'
-import { sse } from './rpc'
+import { useSseClient } from './rpc'
 
 interface ExtensionLoaderProps {
 	pollInterval?: number
@@ -30,6 +30,7 @@ export function ExtensionLoader({
 	pollInterval = 5000,
 	onRunningPluginsChange,
 }: ExtensionLoaderProps) {
+	const stream = useSseClient({ namespaces: ['extensions'] })
 	const query = useQuery({
 		refetchOnWindowVisible: false,
 		fetchInBackground: true,
@@ -260,7 +261,6 @@ export function ExtensionLoader({
 			void syncManifest()
 		}
 		const unsubscribe = subscribePluginStatusEvents(triggerRefetch)
-		const stream = sse({ namespaces: ['extensions'] })
 		const off = stream.extensions.on(({ payload }) => {
 			if (!payload) return
 			if (payload.type === 'sync') {
@@ -299,9 +299,8 @@ export function ExtensionLoader({
 		return () => {
 			unsubscribe()
 			off()
-			stream.close()
 		}
-	}, [ensureModuleLoaded, query.$refetch, recomputeManifestSignature, syncManifest])
+	}, [ensureModuleLoaded, query.$refetch, recomputeManifestSignature, stream, syncManifest])
 
 	return null
 }

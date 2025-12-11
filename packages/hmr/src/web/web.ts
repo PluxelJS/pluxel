@@ -169,7 +169,7 @@ export {
 
 export type { HmrWebClient, WebClientOptions }
 
-function mergeNamespaces(...lists: Array<string[] | undefined>): string[] {
+export function mergeNamespaces(...lists: Array<string[] | undefined>): string[] {
 	return Array.from(
 		new Set(
 			lists

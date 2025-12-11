@@ -31,6 +31,10 @@
 			"@pluxel/source": "./src/web/web.ts",
 			"default": "./dist/web.mjs"
 		},
+		"./web/react": {
+			"@pluxel/source": "./src/web/react.tsx",
+			"default": "./dist/web/react.mjs"
+		},
 		"./package.json": "./package.json"
 	},
 	"files": [
@@ -103,6 +107,7 @@
 			"./services": "./dist/services.mjs",
 			"./signaldb": "./dist/signaldb.mjs",
 			"./web": "./dist/web.mjs",
+			"./web/react": "./dist/web/react.mjs",
 			"./package.json": "./package.json"
 		}
 	}

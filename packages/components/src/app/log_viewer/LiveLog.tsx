@@ -301,9 +301,15 @@ export function LiveLog({ module }: Props) {
 			retry: { min: RECONNECT_MIN, max: RECONNECT_MAX },
 		})
 		streamRef.current = stream
-		const off = stream.logs.on(({ payload }) => {
+		const off = stream.logs.on((msg) => {
+			if (msg.event !== 'log') return
+			const payload = msg.payload as any
+			const enriched =
+				payload && typeof payload === 'object'
+					? { level: 'info', time: new Date().toISOString(), ...payload }
+					: { level: 'info', time: new Date().toISOString(), msg: String(payload ?? '') }
 			try {
-				pushRaw(JSON.stringify(payload))
+				pushRaw(JSON.stringify(enriched))
 			} catch {
 				// ignore
 			}

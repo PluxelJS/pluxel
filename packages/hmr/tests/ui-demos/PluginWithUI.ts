@@ -46,6 +46,8 @@ export class PluginWithUI extends BasePlugin {
 		this.startedAt = Date.now()
 		this.ctx.logger.info('[PluginWithUI] Initializing...')
 
+		await this.initData()
+
 		// UI 扩展示例：自带完整页面 + 自定义 Tab + Header 按钮
 		this.ctx.extensionService.register({
 			entryPath: './PluginWithUI/ui/index.tsx',
@@ -56,8 +58,6 @@ export class PluginWithUI extends BasePlugin {
 
 		// SSE：复用宿主统一 /api/sse 连接（命名空间 = 插件名）
 		this.ctx.sse.registerExtension(() => this.pushData())
-
-		await this.initData()
 
 		this.ctx.logger.info('[PluginWithUI] UI extensions registered')
 	}

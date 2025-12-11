@@ -22,6 +22,7 @@ export default defineConfig({
 		services: 'src/services/index.ts',
 		config: 'src/config.ts',
 		web: 'src/web/web.ts',
+		'web/react': 'src/web/react.tsx',
 		capnweb: 'src/web/capnweb.ts',
 		signaldb: 'src/web/signaldb.ts',
 	},
@@ -33,8 +34,15 @@ export default defineConfig({
 	dts: {
 		resolver: 'oxc',
 	},
-	// 不要内联 core，未来可能要用来 build。
-	external: ['@pluxel/core', '@pluxel/core/services', '@pluxel/components'],
+	// 不要内联 core / react 相关，避免重复 vendor。
+	external: [
+		'@pluxel/core',
+		'@pluxel/core/services',
+		'@pluxel/components',
+		'react',
+		'react/jsx-runtime',
+		'react-dom',
+	],
 	format: ['esm'],
 	sourcemap: true,
 	clean: true,

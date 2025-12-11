@@ -1,5 +1,6 @@
 import { RouterProvider, type RouterHistory } from '@tanstack/react-router'
 import { useState } from 'react'
+import { HmrWebClientProvider } from './rpc'
 import './bootstrap'
 import { createAppRouter } from './router'
 
@@ -9,5 +10,9 @@ export interface AppProps {
 
 export function App({ history }: AppProps = {}) {
 	const [router] = useState(() => createAppRouter({ history }))
-	return <RouterProvider router={router} />
+	return (
+		<HmrWebClientProvider>
+			<RouterProvider router={router} />
+		</HmrWebClientProvider>
+	)
 }
