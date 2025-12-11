@@ -42,6 +42,22 @@ export type GroupMutationResult =
 	| { ok: true; groups: unknown }
 	| { ok: false; code: 'validation_failed'; errors: ConfigValidationErrors }
 
+export type PluginStatusBatchAction = { name: string; action: PluginStatusAction }
+export type PluginStatusMutationResult = {
+	name: string
+	ok: boolean
+	code?: string
+	error?: string
+	isRunning?: boolean
+	isEnabled?: boolean
+	lifecycleStage?: string
+}
+export type PluginStatusBatchResult = {
+	ok: boolean
+	results: PluginStatusMutationResult[]
+	commitError?: string
+}
+
 // Market 相关类型
 export type PackageSpecInput = {
 	raw?: string | null

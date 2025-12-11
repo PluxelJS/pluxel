@@ -4,13 +4,14 @@ import { ActionIcon, Group, Switch, Tooltip } from '@mantine/core'
 import { openConfirmModal } from '@mantine/modals'
 import { IconPlayerPlay, IconRotateClockwise, IconSquareX } from '@tabler/icons-react'
 import { useCallback, useRef, useState } from 'react'
-import { PluginStatusEntryLifecycleStage } from '../../gqty'
-import { createRpcClient } from '../../rpc'
-import type { PluginStatusAction } from '../../../../../../hmr/src/api/hono/rpc/types'
+import type { PluginStatusAction } from '../../../../../hmr/src/api/hono/rpc/types'
 import { ExtensionSlot } from '../../../extension'
-import { usePluginScope } from './context'
+import { PluginStatusEntryLifecycleStage } from '../../gqty'
 import { useNotify } from '../../hooks'
+import { createRpcClient } from '../../rpc'
+import { buildStartPlan, executeStartPlan } from '../actions'
 import { emitPluginStatusEvent } from '../statusEvents'
+import { usePluginScope } from './context'
 
 export interface ActionBarProps {
 	onStatusUpdated?: () => Promise<void> | void
@@ -25,15 +26,8 @@ const ACTION_LABEL: Record<PluginStatusAction, string> = {
 }
 
 export function ActionBar({ onStatusUpdated }: ActionBarProps) {
-	const {
-		pluginName,
-		dependencies,
-		isRunning,
-		isEnabled,
-		isSyncing,
-		refetch,
-		write,
-	} = usePluginScope()
+	const { pluginName, dependencies, isRunning, isEnabled, isSyncing, refetch, write } =
+		usePluginScope()
 
 	// 乱序防护：只接受最后一次操作的结果
 	const seqRef = useRef(0)
@@ -134,10 +128,83 @@ export function ActionBar({ onStatusUpdated }: ActionBarProps) {
 		}
 	}
 
+	const cascadeStart = async (deps: string[], action: PluginStatusAction) => {
+		if (!pluginName) return
+		const mySeq = ++seqRef.current
+		setIsLoading(true)
+
+		try {
+			const plan = await buildStartPlan([...deps, pluginName], {
+				includeTargets: true,
+				includeRunningTargets: action === 'restart',
+				requireConfiguredFor: 'dependencies',
+			})
+
+			if (plan.missing.length) {
+				notify({
+					title: '部分依赖未找到',
+					message: `已跳过：${plan.missing.join('，')}`,
+					color: 'yellow',
+				})
+			}
+
+			if (plan.blockedByConfig.length) {
+				notify({
+					title: '级联启动已取消',
+					message: `以下依赖尚未配置：${plan.blockedByConfig.join('，')}`,
+					color: 'yellow',
+				})
+				return
+			}
+
+			if (plan.order.length === 0) {
+				notify({
+					title: '依赖已就绪',
+					message: '所有依赖均已运行，无需级联启动。',
+					color: 'blue',
+				})
+				return
+			}
+
+			const results = await executeStartPlan(plan.order, action === 'restart' ? 'restart' : 'start')
+			if (mySeq !== seqRef.current) return
+			const failed = results.filter((r) => !r.ok)
+			if (failed.length) {
+				notify({
+					title: '部分依赖启动失败',
+					message: failed.map((f) => f.name).join('，') || '启动失败',
+					color: 'red',
+				})
+				await refetch()
+				return
+			}
+
+			await syncAfterSuccess(action)
+			notify({
+				title: '已级联启动',
+				message: `已按依赖顺序${ACTION_LABEL[action]}：${plan.order.join(' → ')}`,
+				color: 'green',
+			})
+		} catch (e: any) {
+			if (mySeq !== seqRef.current) return
+			notify({
+				title: '级联启动失败',
+				message: e?.message ?? '操作失败，请稍后重试',
+				color: 'red',
+			})
+			await refetch()
+		} finally {
+			setIsLoading(false)
+		}
+	}
+
 	const handleAction = (action: PluginStatusAction) => {
 		const needsDependencyCheck = action === 'start' || action === 'restart'
 		const missing = needsDependencyCheck
-			? dependencies.filter((d) => !d.isRunning && !d.optional).map((d) => d.name)
+			? dependencies
+					.filter((d) => !d.isRunning && !(d as any)?.optional)
+					.map((d) => d.name)
+					.filter(Boolean)
 			: []
 
 		const proceed = () => void performAction(action)
@@ -147,12 +214,13 @@ export function ActionBar({ onStatusUpdated }: ActionBarProps) {
 				title: '前置依赖未启动',
 				children: (
 					<div>
-						请确认是否强制{ACTION_LABEL[action]}。
+						<div>可尝试级联启动已配置的依赖链，然后启动当前插件。</div>
 						<div style={{ marginTop: 10 }}>以下依赖尚未运行：{missing.join('，')}</div>
 					</div>
 				),
-				labels: { confirm: '继续', cancel: '取消' },
-				onConfirm: proceed,
+				labels: { confirm: '级联启动', cancel: '取消' },
+				onConfirm: () => void cascadeStart(missing, action),
+				closeOnConfirm: true,
 			})
 		} else {
 			proceed()

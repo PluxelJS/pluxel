@@ -9,9 +9,9 @@ import { readGroups, writeGroups } from '../../features/groups/service'
 import { PluginGroupInput, type PluginGroupInputValue } from '../../features/groups/schema'
 import { getStatusOverview } from '../../features/pluginStatus/service'
 import type { RpcExtensions } from '../../../services/hono/RpcService'
-import type { GroupMutationResult } from './types'
+import type { GroupMutationResult, PluginStatusBatchAction, PluginStatusBatchResult } from './types'
 import { formatGroupIssues } from './utils'
-import { PluginHandle } from './PluginHandle'
+import { applyStatusActions, PluginHandle } from './PluginHandle'
 import { MarketHandle } from './MarketHandle'
 
 export class HmrRpcApi extends RpcTarget {
@@ -77,5 +77,9 @@ export class HmrRpcApi extends RpcTarget {
 			return { ok: false, code: 'validation_failed', errors: formatGroupIssues(parsed.issues) }
 		}
 		return { ok: true, groups: writeGroups(this.#ctx, parsed.output) }
+	}
+
+	updatePluginStatuses(actions: PluginStatusBatchAction[]): Promise<PluginStatusBatchResult> {
+		return applyStatusActions(this.#ctx, actions ?? [])
 	}
 }

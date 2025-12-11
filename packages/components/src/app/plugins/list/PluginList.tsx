@@ -28,6 +28,7 @@ import {
 	ActionIcon,
 	Badge,
 	Box,
+	Button,
 	Group,
 	Paper,
 	Skeleton,
@@ -50,9 +51,12 @@ import { type GroupConfig, PluginOrganizer, type PluginStatuses } from '../organ
 import { EmptyState, ErrorState } from '../../../components'
 import { type PluginGroup, type PluginStatusEntry, useQuery } from '../../gqty'
 import { client } from '../../rpc'
+import { useNotify } from '../../hooks'
 import { RouterLinkAdapter } from '../../RouterLinkAdapter'
 import { PLUGIN_SEARCH_EVENT, PLUGIN_SEARCH_KEY } from '../../constants'
+import { updatePluginStatuses } from '../actions'
 import { subscribePluginStatusEvents } from '../statusEvents'
+import type { PluginStatusAction } from '../../../../../hmr/src/api/hono/rpc/types'
 
 interface PluginListProps {
 	pluginName?: string
@@ -73,6 +77,14 @@ const EMPTY_OVERVIEW: OverviewSnapshot = {
 	total: 0,
 	running: 0,
 	disabled: 0,
+}
+
+const ACTION_LABEL: Record<PluginStatusAction, string> = {
+	start: '启动',
+	stop: '终止',
+	restart: '重启',
+	enable: '启用',
+	disable: '禁用',
 }
 
 const toStatuses = (entries: Array<PluginStatusEntry | null | undefined> | undefined) => {
@@ -205,6 +217,9 @@ export const PluginList: React.FC<PluginListProps> = ({ pluginName }) => {
 	const [draftGroups, setDraftGroups] = useState<GroupConfig[] | null>(null)
 	const lastSyncedRef = useRef<GroupConfig[]>([])
 	const [hasLoadedOnce, setHasLoadedOnce] = useState(false)
+	const [selectedIds, setSelectedIds] = useState<string[]>([])
+	const [bulkBusy, setBulkBusy] = useState(false)
+	const notify = useNotify()
 
 	const query = useQuery({
 		suspense: false,
@@ -269,6 +284,42 @@ export const PluginList: React.FC<PluginListProps> = ({ pluginName }) => {
 		void client['plugin-groups'].$post({ json: next })
 	}, [])
 
+	const handleBulkStatus = useCallback(
+		async (action: Exclude<PluginStatusAction, 'start' | 'restart'>) => {
+			if (selectedIds.length === 0) return
+			setBulkBusy(true)
+			try {
+				const results = await updatePluginStatuses(
+					selectedIds.map((name) => ({ name, action })),
+				)
+				const failed = results.filter((r) => !r.ok)
+				if (failed.length > 0) {
+					notify({
+						title: '操作完成但部分失败',
+						message: failed.map((f) => f.name).join('，') || '操作失败',
+						color: 'red',
+					})
+				} else {
+					notify({
+						title: '批量操作成功',
+						message: `${selectedIds.length} 个插件已 ${ACTION_LABEL[action]}`,
+						color: 'green',
+					})
+					if (action === 'disable' || action === 'stop') setSelectedIds([])
+				}
+			} catch (error: any) {
+				notify({
+					title: '操作失败',
+					message: error?.message ?? '批量操作失败，请稍后重试。',
+					color: 'red',
+				})
+			} finally {
+				setBulkBusy(false)
+			}
+		},
+		[selectedIds, notify],
+	)
+
 	// —— 视图渲染 —— //
 	const loading = !hasLoadedOnce && query.$state.isLoading
 	const syncing = hasLoadedOnce && query.$state.isLoading
@@ -327,19 +378,21 @@ export const PluginList: React.FC<PluginListProps> = ({ pluginName }) => {
 				minHeight={160}
 			/>
 		)
-	} else {
-		content = (
-			<PluginOrganizer
-				statuses={overview.statuses}
-				initialGroups={groupsForView}
-				activeId={pluginName}
-				onGroupsChange={handleGroupsChange}
-				filterQuery={filterQuery}
-				LinkComponent={RouterLinkAdapter}
-				locked={syncing}
-			/>
-		)
-	}
+		} else {
+			content = (
+				<PluginOrganizer
+					statuses={overview.statuses}
+					initialGroups={groupsForView}
+					activeId={pluginName}
+					onGroupsChange={handleGroupsChange}
+					selectedIds={selectedIds}
+					onSelectedIdsChange={setSelectedIds}
+					filterQuery={filterQuery}
+					LinkComponent={RouterLinkAdapter}
+					locked={syncing || bulkBusy}
+				/>
+			)
+		}
 
 	return (
 		<Stack
@@ -387,6 +440,45 @@ export const PluginList: React.FC<PluginListProps> = ({ pluginName }) => {
 					radius="sm"
 				/>
 			</Paper>
+
+			{selectedIds.length > 0 ? (
+				<Paper withBorder radius="md" p="sm" shadow="xs">
+					<Group justify="space-between" align="center" gap="sm" wrap="wrap">
+						<Group gap="xs" align="center">
+							<Badge variant="light" color="blue" size="sm">
+								已选 {selectedIds.length}
+							</Badge>
+							<Text size="xs" c="dimmed">
+								右键/多选后可批量操作（仅停用/启用/停止）。
+							</Text>
+						</Group>
+						<Group gap="xs" wrap="wrap">
+							<Button size="xs" variant="subtle" disabled={bulkBusy} onClick={() => void handleBulkStatus('stop')}>
+								停止
+							</Button>
+							<Button
+								size="xs"
+								variant="subtle"
+								disabled={bulkBusy}
+								onClick={() => void handleBulkStatus('disable')}
+							>
+								禁用
+							</Button>
+							<Button
+								size="xs"
+								variant="subtle"
+								disabled={bulkBusy}
+								onClick={() => void handleBulkStatus('enable')}
+							>
+								启用
+							</Button>
+							<Button size="xs" variant="default" disabled={bulkBusy} onClick={() => setSelectedIds([])}>
+								清空选择
+							</Button>
+						</Group>
+					</Group>
+				</Paper>
+			) : null}
 
 			<Box
 				style={{

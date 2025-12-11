@@ -8,6 +8,9 @@ import type {
 	ConfigResult,
 	ConfigResultOk,
 	PluginStatusAction,
+	PluginStatusBatchAction,
+	PluginStatusBatchResult,
+	PluginStatusMutationResult,
 	SchemaResult,
 } from './types'
 import { collectDefaults, validateConfigPatch } from './utils'
@@ -17,6 +20,92 @@ function resolvePlugin(ctx: Context, name: string, hint?: PluginConstructor): Pl
 		ctx.loader.resolveRuntimeCtor(name) ?? ctx.loader.resolveRuntimeCtor(hint ?? name) ?? hint
 	if (!ctor) throw new Error(`Plugin not found: ${name}`)
 	return ctor
+}
+
+async function runStatusAction(
+	ctx: Context,
+	name: string,
+	action: PluginStatusAction,
+): Promise<PluginStatusMutationResult> {
+	try {
+		const ctor = resolvePlugin(ctx, name)
+		const registry = ctx.loader.registry
+
+		switch (action) {
+			case 'start':
+				await registry.enable(name, ctor)
+				break
+			case 'stop':
+				registry.deactivate(name, ctor, { runtimeOnly: true })
+				break
+			case 'restart':
+				registry.deactivate(name, ctor, { runtimeOnly: true })
+				await registry.enable(name, ctor)
+				break
+			case 'disable':
+				registry.deactivate(name, ctor, { runtimeOnly: false })
+				break
+			case 'enable':
+				registry.enablePersisted(name)
+				break
+			default:
+				return { name, ok: false, code: 'invalid_status', error: `Unsupported: ${action}` }
+		}
+		return { name, ok: true }
+	} catch (error) {
+		const isStart = action === 'start' || action === 'restart'
+		const message = (error as Error)?.message ?? 'Unknown error'
+		const code = message.includes('Plugin not found')
+			? 'plugin_not_found'
+			: isStart
+				? 'plugin_start_failed'
+				: 'plugin_operation_failed'
+		return {
+			name,
+			ok: false,
+			code,
+			error: message,
+		}
+	}
+}
+
+export async function applyStatusActions(
+	ctx: Context,
+	actions: PluginStatusBatchAction[],
+): Promise<PluginStatusBatchResult> {
+	if (!actions.length) return { ok: true, results: [] }
+
+	const interim: PluginStatusMutationResult[] = []
+	const touched = new Set<string>()
+
+	for (const { name, action } of actions) {
+		const res = await runStatusAction(ctx, name, action)
+		interim.push(res)
+		if (res.ok) touched.add(name)
+	}
+
+	const commitResult = await ctx.registry.commit()
+	if (commitResult.err) {
+		const commitError = String(commitResult.err)
+		return {
+			ok: false,
+			commitError,
+			results: interim.map((r) =>
+				r.ok ? { ...r, ok: false, code: 'commit_failed', error: commitError } : r,
+			),
+		}
+	}
+
+	const snapshots = Array.from(touched).map((name) => {
+		const ctor = resolvePlugin(ctx, name)
+		return { name, ...readStatusSnapshot(ctx, name, ctor) }
+	})
+	const snapMap = new Map(snapshots.map((s) => [s.name, s]))
+
+	return {
+		ok: interim.every((r) => r.ok),
+		results: interim.map((r) => (r.ok ? { ...r, ...snapMap.get(r.name) } : r)),
+	}
 }
 
 export class PluginHandle extends RpcTarget {
@@ -50,56 +139,21 @@ export class PluginHandle extends RpcTarget {
 	}
 
 	async updateStatus(action: PluginStatusAction) {
-		const ctor = this.resolveCtor()
-		const registry = this.#ctx.loader.registry
-		const snapshot = () => readStatusSnapshot(this.#ctx, this.name, ctor)
-
-		try {
-			switch (action) {
-				case 'start':
-					await registry.enable(this.name, ctor)
-					break
-				case 'stop':
-					registry.deactivate(this.name, ctor, { runtimeOnly: true })
-					break
-				case 'restart':
-					registry.deactivate(this.name, ctor, { runtimeOnly: true })
-					await registry.enable(this.name, ctor)
-					break
-				case 'disable':
-					registry.deactivate(this.name, ctor, { runtimeOnly: false })
-					break
-				case 'enable':
-					registry.enablePersisted(this.name)
-					break
-				default:
-					return {
-						ok: false as const,
-						code: 'invalid_status',
-						error: `Unsupported status: ${action}`,
-						...snapshot(),
-					}
-			}
-
-			const result = await this.#ctx.registry.commit()
-			if (result.err) {
-				return {
-					ok: false as const,
-					code: 'commit_failed',
-					error: String(result.err),
-					...snapshot(),
-				}
-			}
-
-			return { ok: true as const, ...snapshot() }
-		} catch (error) {
-			const isStart = action === 'start' || action === 'restart'
+		const batch = await applyStatusActions(this.#ctx, [{ name: this.name, action }])
+		const res = batch.results[0]
+		if (!res) {
 			return {
 				ok: false as const,
-				code: isStart ? 'plugin_start_failed' : 'plugin_operation_failed',
-				error: (error as Error)?.message ?? 'Unknown error',
-				...snapshot(),
+				code: 'unknown',
+				error: 'Empty status result',
 			}
+		}
+		if (batch.ok && res.ok) return res
+		return {
+			...res,
+			ok: false as const,
+			code: res.code ?? (batch.commitError ? 'commit_failed' : 'plugin_operation_failed'),
+			error: res.error ?? batch.commitError ?? 'Unknown error',
 		}
 	}
 

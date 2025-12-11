@@ -125,6 +125,8 @@ type Props = {
 	LinkComponent?: React.ComponentType<{ to: string; children: React.ReactNode }>
 	activeId?: string | null
 	activeIds?: string[]
+	selectedIds?: string[]
+	onSelectedIdsChange?: (ids: string[]) => void
 	/** 紧凑度：默认 'compact' */
 	density?: Density
 	/** 上传中/锁定态：禁用拖拽和分组操作 */
@@ -163,6 +165,14 @@ function sanitize(allIds: string[], groups: GroupConfig[]) {
 	return { groups: nextGroups, ungrouped }
 }
 const unique = (arr: string[]) => Array.from(new Set(arr))
+const arraysEqual = (a: string[], b: string[]) => {
+	if (a === b) return true
+	if (a.length !== b.length) return false
+	for (let i = 0; i < a.length; i += 1) {
+		if (a[i] !== b[i]) return false
+	}
+	return true
+}
 const assertNoDup = (groups: GroupConfig[], ungrouped: string[]) => {
 	if (process.env.NODE_ENV !== 'production') {
 		const seen = new Map<string, number>()
@@ -297,6 +307,7 @@ const SortableRow = memo(function SortableRow({
 				e.stopPropagation()
 				onRightSelect(e, pid)
 			}}
+			data-plugin-row="true"
 			style={{
 				transform: transform ? `translate3d(${transform.x}px, ${transform.y}px, 0)` : undefined,
 				transition: transition ?? 'opacity 120ms ease-out, background 120ms ease-out',
@@ -619,6 +630,8 @@ export function PluginOrganizer({
 	LinkComponent,
 	activeId: propActiveId = null,
 	activeIds,
+	selectedIds: controlledSelectedIds,
+	onSelectedIdsChange,
 	density = 'compact',
 	locked = false,
 	className,
@@ -649,7 +662,28 @@ export function PluginOrganizer({
 	const [groups, setGroups] = useState<GroupConfig[]>(() => saneGroups)
 	const [ungroupedOrder, setUngroupedOrder] = useState<string[]>(() => saneUngrouped)
 
-	const [selectedIds, setSelectedIds] = useState<string[]>([])
+	const [internalSelectedIds, setInternalSelectedIds] = useState<string[]>([])
+	const selectedIds = controlledSelectedIds ?? internalSelectedIds
+	const setSelectedIds = useCallback(
+		(next: React.SetStateAction<string[]>) => {
+			if (controlledSelectedIds === undefined) {
+				setInternalSelectedIds((prev) => {
+					const resolved =
+						typeof next === 'function' ? (next as (p: string[]) => string[])(prev) : next
+					if (arraysEqual(resolved, prev)) return prev
+					onSelectedIdsChange?.(resolved)
+					return resolved
+				})
+				return
+			}
+			const base = controlledSelectedIds
+			const resolved =
+				typeof next === 'function' ? (next as (p: string[]) => string[])(base) : next
+			if (arraysEqual(resolved, base)) return
+			onSelectedIdsChange?.(resolved)
+		},
+		[controlledSelectedIds, onSelectedIdsChange],
+	)
 	const selectedSet = useMemo(() => new Set(selectedIds), [selectedIds])
 	const lastSelectedRef = useRef<string | null>(null)
 	const [collapsed, setCollapsed] = useState<Record<string, boolean>>(() => readCollapsedState())
@@ -686,6 +720,16 @@ export function PluginOrganizer({
 			return name.includes(q) || id.toLowerCase().includes(q)
 		},
 		[isFiltering, q, statuses],
+	)
+
+	const handleBackgroundClick = useCallback(
+		(e: React.MouseEvent) => {
+			// 点击空白区域时清空选择；如果命中行则不清空
+			const target = e.target as HTMLElement | null
+			if (target?.closest('[data-plugin-row]')) return
+			setSelectedIds([])
+		},
+		[setSelectedIds],
 	)
 
 	// 可见数据
@@ -729,30 +773,43 @@ export function PluginOrganizer({
 	const handleRightSelect = useCallback(
 		(e: React.MouseEvent, id: string) => {
 			startTransition(() => {
-				if (e.shiftKey && lastSelectedRef.current) {
+				setSelectedIds((prev) => {
 					const containers = buildContainers(groupsRef.current, ungroupedRef.current)
-					const cidA = containers.itemToContainer.get(id)
-					const cidB = containers.itemToContainer.get(lastSelectedRef.current)
-					if (cidA && cidB && cidA === cidB) {
-						const list = containers.containerToItems.get(cidA) ?? []
-						const a = list.indexOf(id)
-						const b = list.indexOf(lastSelectedRef.current)
-						if (a >= 0 && b >= 0) {
-							const [lo, hi] = a < b ? [a, b] : [b, a]
-							setSelectedIds((sel) => unique([...sel, ...list.slice(lo, hi + 1)]))
-							return
+					const itemContainer = containers.itemToContainer.get(id)
+
+					const toggle = e.ctrlKey || e.metaKey
+					const range = e.shiftKey && lastSelectedRef.current
+					let next = prev
+
+					if (range && itemContainer) {
+						const anchor = lastSelectedRef.current!
+						const anchorContainer = containers.itemToContainer.get(anchor)
+						if (anchorContainer && anchorContainer === itemContainer) {
+							const list = containers.containerToItems.get(itemContainer) ?? []
+							const a = list.indexOf(id)
+							const b = list.indexOf(anchor)
+							if (a >= 0 && b >= 0) {
+								const [lo, hi] = a < b ? [a, b] : [b, a]
+								const merged = new Set(prev)
+								for (const pid of list.slice(lo, hi + 1)) merged.add(pid)
+								next = Array.from(merged)
+							}
+						} else {
+							next = [id]
 						}
+					} else if (toggle) {
+						next = prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
+					} else {
+						// 右键默认保持现有选择，未选中则单选
+						next = prev.includes(id) ? prev : [id]
 					}
-				}
-				lastSelectedRef.current = id
-				if (e.ctrlKey || e.metaKey) {
-					setSelectedIds((sel) => (sel.includes(id) ? sel.filter((x) => x !== id) : [...sel, id]))
-				} else {
-					setSelectedIds([id])
-				}
+
+					lastSelectedRef.current = next.includes(id) ? id : lastSelectedRef.current
+					return next
+				})
 			})
 		},
-		[buildContainers],
+		[buildContainers, setSelectedIds],
 	)
 
 	// —— 外界状态变化（新增/删除插件 id）下的本地对齐 —— //
@@ -936,11 +993,14 @@ export function PluginOrganizer({
 			setDragActiveId(active.id)
 			if (isIid(active.id)) {
 				const pid = fromIid(String(active.id))
-				if (!selectedSet.has(pid)) startTransition(() => setSelectedIds([pid]))
+				if (!selectedSet.has(pid))
+					startTransition(() =>
+						setSelectedIds((prev) => (prev.includes(pid) ? prev : [...prev, pid])),
+					)
 			}
 			document.body.style.userSelect = 'none'
 		},
-		[selectedSet],
+		[selectedSet, setSelectedIds],
 	)
 
 	const handleDragEnd = useCallback(
@@ -1074,6 +1134,7 @@ export function PluginOrganizer({
 					height: '100%',
 					...style,
 				}}
+				onClick={handleBackgroundClick}
 			>
 				{/* 未分组：固定在顶部，不参与主滚动区 */}
 				<Card withBorder radius="md" p="xs" style={{ minWidth: 0 }}>
