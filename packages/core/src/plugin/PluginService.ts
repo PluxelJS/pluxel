@@ -8,7 +8,7 @@ import { EffectScopeService } from '../services/EffectScopeService'
 import { BasePlugin, PLUGIN_CTX } from './BasePlugin'
 import { PluginContainer, type PluginDiContainer } from './PluginContainer'
 import type { PluginInfo } from './PluginDecorator'
-import { PluginLifecycleActor, lifecycleSelectors, type LifecycleSnapshot } from './pluginActor'
+import { type LifecycleSnapshot, lifecycleSelectors, PluginLifecycleActor } from './pluginActor'
 import type { PluginIdentifier, PluginInstance } from './types'
 
 const PLUGIN_LIFECYCLE = Symbol.for('pluxel:plugin:lifecycle')
@@ -120,9 +120,9 @@ export class PluginService {
 
 	/* ─────────────────────────── Lifecycle Slot ─────────────────────────── */
 
-	private ensureLifecycleSlot(
-		plugin: BasePlugin,
-	): { [PLUGIN_LIFECYCLE]: PluginLifecycleActor | null } {
+	private ensureLifecycleSlot(plugin: BasePlugin): {
+		[PLUGIN_LIFECYCLE]: PluginLifecycleActor | null
+	} {
 		if (!Object.hasOwn(plugin, PLUGIN_LIFECYCLE)) {
 			Object.defineProperty(plugin, PLUGIN_LIFECYCLE, {
 				value: null,
@@ -288,7 +288,7 @@ export class PluginService {
 		asMulti: boolean,
 	) {
 		if (!handler) return
-		const value = (asMulti ? payload ?? [] : payload?.[0]) as any
+		const value = (asMulti ? (payload ?? []) : payload?.[0]) as any
 		return Promise.resolve(handler(value, summary)).catch((error) => {
 			this.ctx.logger?.error?.(error, `optional(${label}) 处理失败`)
 		})
@@ -322,7 +322,8 @@ export class PluginService {
 		keepGaps: boolean,
 	) {
 		let last = this.collectOptionals(ids, callerCtx, keepGaps)
-		this.ctx.on('afterCommit', (summary) => {
+		// optional 应该只管一次 commit，毕竟 optional 只会在 commit 后执行，执行后马上取消监听。
+		this.ctx.events.once('afterCommit', (summary) => {
 			const current = this.collectOptionals(ids, callerCtx, keepGaps)
 			if (arraysEqual(last, current)) return
 			last = current
