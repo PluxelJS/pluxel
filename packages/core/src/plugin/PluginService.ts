@@ -322,8 +322,8 @@ export class PluginService {
 		keepGaps: boolean,
 	) {
 		let last = this.collectOptionals(ids, callerCtx, keepGaps)
-		// optional 应该只管一次 commit，毕竟 optional 只会在 commit 后执行，执行后马上取消监听。
-		this.ctx.events.once('afterCommit', (summary) => {
+		// 持续监听直到状态变化，再执行 handler 并解绑；避免首次 afterCommit 值相同导致永不触发。
+		const unsub = this.ctx.events.on('afterCommit', (summary) => {
 			const current = this.collectOptionals(ids, callerCtx, keepGaps)
 			if (arraysEqual(last, current)) return
 			last = current
@@ -331,6 +331,7 @@ export class PluginService {
 				this.logUnavailable(ids, label)
 			}
 			void this.invokeOptionalHandler(handler as any, current, summary, label, asMulti)
+			unsub()
 		})
 	}
 
