@@ -56,8 +56,10 @@ export class ContainerBuilder {
 	/* ---------------------------- simple cache line --------------------------- */
 	private _dirty = true
 	private _lastAutowire: boolean | undefined
+	private _lastAliasPolicy: AliasConflictPolicy | undefined
 	private _servicesCache?: Map<Identifier<unknown>, ServiceData<unknown>>
 	private _dependentsCache?: Map<Identifier<unknown>, Set<Identifier<unknown>>>
+	private _aliasIndexCache?: Map<AliasKey, Identifier<unknown>>
 	private _errorsCache?: ServiceVerificationAggregateError
 	private _frozen = false
 
@@ -65,6 +67,7 @@ export class ContainerBuilder {
 		this._dirty = true
 		this._servicesCache = undefined
 		this._dependentsCache = undefined
+		this._aliasIndexCache = undefined
 		this._errorsCache = undefined
 	}
 
@@ -163,44 +166,113 @@ export class ContainerBuilder {
 
 	/* --------------------------- Build & Verification -------------------------- */
 
+	private computeAliasIndex(
+		services: ServiceMap,
+		aliasPolicy: AliasConflictPolicy,
+	): { aliasIndex: Map<AliasKey, Identifier<unknown>>; errors: VerificationError[] } {
+		const aliasIndex = new Map<AliasKey, Identifier<unknown>>()
+		const errors: VerificationError[] = []
+
+		if (aliasPolicy === 'firstWins') {
+			for (const [id, meta] of services) {
+				const aliases = meta.aliases as readonly AliasKey[] | undefined
+				if (!aliases) continue
+				for (let i = 0; i < aliases.length; i++) {
+					const a = aliases[i]!
+					if (!aliasIndex.has(a)) aliasIndex.set(a, id)
+				}
+			}
+			return { aliasIndex, errors }
+		}
+
+		if (aliasPolicy === 'lastWins') {
+			for (const [id, meta] of services) {
+				const aliases = meta.aliases as readonly AliasKey[] | undefined
+				if (!aliases) continue
+				for (let i = 0; i < aliases.length; i++) {
+					aliasIndex.set(aliases[i]!, id)
+				}
+			}
+			return { aliasIndex, errors }
+		}
+
+		// aliasPolicy === 'error'
+		const seen = new Map<AliasKey, Identifier<unknown>>()
+		const conflicts = new Map<AliasKey, Identifier<unknown>[]>()
+
+		for (const [id, meta] of services) {
+			const aliases = meta.aliases as readonly AliasKey[] | undefined
+			if (!aliases) continue
+			for (let i = 0; i < aliases.length; i++) {
+				const a = aliases[i]!
+				const prev = seen.get(a)
+				if (prev === undefined) {
+					seen.set(a, id)
+				} else if (prev !== id) {
+					const existed = conflicts.get(a)
+					if (existed) existed.push(id)
+					else conflicts.set(a, [prev, id])
+				}
+			}
+		}
+
+		for (const [a, id] of seen) aliasIndex.set(a, id)
+		if (conflicts.size) {
+			for (const [alias, ids] of conflicts) {
+				errors.push({ kind: 'AliasConflict', alias, ids })
+			}
+		}
+		return { aliasIndex, errors }
+	}
+
 	public buildServices({
 		autowire = true,
-	}: {
-		autowire?: boolean
-	} = {}): Result<
+		aliasPolicy = 'error',
+	}: BuildOptions = {}): Result<
 		{
 			services: ServiceMap
 			dependents: Map<Identifier<unknown>, Set<Identifier<unknown>>>
+			aliasIndex: ReadonlyMap<AliasKey, Identifier<unknown>>
 		},
 		ServiceVerificationAggregateError
 	> {
 		if (
 			!this._dirty &&
 			this._servicesCache &&
-			this._lastAutowire === autowire
+			this._lastAutowire === autowire &&
+			this._lastAliasPolicy === aliasPolicy &&
+			this._aliasIndexCache
 		) {
 			if (this._errorsCache) return createErr(this._errorsCache)
 			return createOk({
 				services: this._servicesCache,
 				dependents: this._dependentsCache ?? new Map(),
+				aliasIndex: this._aliasIndexCache,
 			})
 		}
 
 		const built = this.buildMetadataMap(autowire)
 		this._servicesCache = built.services
 		this._lastAutowire = autowire
+		this._lastAliasPolicy = aliasPolicy
+
+		const alias = this.computeAliasIndex(built.services, aliasPolicy)
+		this._aliasIndexCache = alias.aliasIndex
 
 		const { dependentsMap, errors } = verifyAndComputeDependents(
 			built.services as ServiceListMetadata,
+			alias.aliasIndex,
 		)
-		const allErrors = built.errors.length
-			? [...built.errors, ...errors]
-			: errors
+		const allErrors =
+			built.errors.length || errors.length || alias.errors.length
+				? [...built.errors, ...errors, ...alias.errors]
+				: []
 
 		if (allErrors.length > 0) {
 			const agg = new ServiceVerificationAggregateError(allErrors)
 			this._errorsCache = agg
 			this._dependentsCache = new Map()
+			this._aliasIndexCache = alias.aliasIndex
 			this._dirty = false
 			return createErr(agg)
 		}
@@ -208,7 +280,11 @@ export class ContainerBuilder {
 		this._errorsCache = undefined
 		this._dependentsCache = dependentsMap
 		this._dirty = false
-		return createOk({ services: built.services, dependents: dependentsMap })
+		return createOk({
+			services: built.services,
+			dependents: dependentsMap,
+			aliasIndex: alias.aliasIndex,
+		})
 	}
 
 	/** 基于校验结果构建容器 + 别名索引 */
@@ -219,64 +295,15 @@ export class ContainerBuilder {
 		DiodContainer,
 		ServiceVerificationAggregateError
 	> {
-		const r = this.buildServices({ autowire })
+		const r = this.buildServices({ autowire, aliasPolicy })
 		if (!isOk(r)) return r
-		const { services, dependents } = r.val
-
-		// 直接从最新 services 计算别名索引（小规模时成本很低，且最可靠）
-		const aliasIndex = new Map<AliasKey, Identifier<unknown>>()
-		if (aliasPolicy === 'firstWins' || aliasPolicy === 'lastWins') {
-			for (const [id, meta] of services) {
-				const aliases = meta.aliases as readonly AliasKey[] | undefined
-				if (!aliases) continue
-				if (aliasPolicy === 'firstWins') {
-					for (let i = 0; i < aliases.length; i++) {
-						const a = aliases[i]!
-						if (!aliasIndex.has(a)) aliasIndex.set(a, id)
-					}
-				} else {
-					// lastWins
-					for (let i = 0; i < aliases.length; i++) {
-						aliasIndex.set(aliases[i]!, id)
-					}
-				}
-			}
-		} else {
-			// aliasPolicy === 'error'
-			const seen = new Map<AliasKey, Identifier<unknown>>()
-			const conflicts: { alias: AliasKey; ids: Identifier<unknown>[] }[] = []
-			for (const [id, meta] of services) {
-				const aliases = meta.aliases as readonly AliasKey[] | undefined
-				if (!aliases) continue
-				for (let i = 0; i < aliases.length; i++) {
-					const a = aliases[i]!
-					const prev = seen.get(a)
-					if (prev === undefined) {
-						seen.set(a, id)
-					} else if (prev !== id) {
-						const bucket = conflicts.find((x) => x.alias === a)
-						if (bucket) bucket.ids.push(id)
-						else conflicts.push({ alias: a, ids: [prev, id] })
-					}
-				}
-			}
-			if (conflicts.length) {
-				const errors = conflicts.map((c) => ({
-					kind: 'AliasConflict' as const,
-					alias: c.alias,
-					ids: c.ids,
-				}))
-				return createErr(new ServiceVerificationAggregateError(errors))
-			}
-			// 无冲突：seen 即索引
-			for (const [a, id] of seen) aliasIndex.set(a, id)
-		}
+		const { services, dependents, aliasIndex } = r.val
 
 		const container = new DiodContainer(
 			services,
 			dependents,
 			this.builderSingletons,
-			aliasIndex,
+			aliasIndex as any,
 		)
 		return createOk(container)
 	}

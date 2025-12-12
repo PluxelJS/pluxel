@@ -6,16 +6,15 @@ import 'reflect-metadata'
 import { BasePlugin } from './BasePlugin'
 import type { Identifier, PluginIdentifier, SubclassOf } from './types'
 
-// DI key cache:
-// - Originals: base ?? self
-// - Forks: self (set by clonePluginDefinition)
-// This keeps canonicalization O(1) on hot-ish runtime queries.
-const PLUGIN_DI_KEY = Symbol.for('pluxel:plugin:diKey')
-
-/** Return the canonical DI key for a plugin ctor. */
+/**
+ * Canonical DI key for a plugin.
+ *
+ * Current policy (performance + determinism):
+ * - The DI key is always the ctor itself (including forks).
+ * - Abstract bases/interfaces are supported via DI aliases (see diod aliasIndex).
+ */
 export function getPluginDiKey(id: PluginIdentifier): PluginIdentifier {
-	if (typeof id !== 'function') return id
-	return ((id as any)[PLUGIN_DI_KEY] as PluginIdentifier | undefined) ?? id
+	return id
 }
 
 /*───────────────────────────────────────────────────────────
@@ -318,15 +317,6 @@ export function Plugin(a?: PluginMetadata | PluginIdentifier, b?: PluginMetadata
 
 		s.base = base
 
-		// Cache canonical DI key on ctor for fast runtime lookups.
-		// For originals, the DI key is the declared base (if any), otherwise self.
-		Object.defineProperty(ctor, PLUGIN_DI_KEY, {
-			value: (base ?? ctor) as PluginIdentifier,
-			writable: false,
-			enumerable: false,
-			configurable: true,
-		})
-
 		// 聚合 pending @Config
 		if (s.pending && Object.keys(s.pending).length) {
 			s.config = __DEV__ ? $freeze(s.pending as ConfigSchemaList) : (s.pending as ConfigSchemaList)
@@ -625,14 +615,6 @@ export function clonePluginDefinition(
 	// fork ctor becomes the runtime class
 	dst.ctor = to
 	dst.pending = null
-
-	// Forks always use their own ctor as DI key.
-	Object.defineProperty(to as any, PLUGIN_DI_KEY, {
-		value: to,
-		writable: false,
-		enumerable: false,
-		configurable: true,
-	})
 
 	rebuildInfoSnapshot(to as unknown as Function, dst)
 }

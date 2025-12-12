@@ -255,4 +255,34 @@ describe('PluginService commit()', () => {
 			expect(caller).toBe(consumerCtx)
 		}
 	})
+
+	it('retries failed plugins on later commits even without container changes', async () => {
+		const ctx = new Context()
+		const { pluginRegistry } = ctx.registry
+
+		let attempt = 0
+		const events: string[] = []
+
+		@Plugin({ name: 'Flaky' })
+		class Flaky extends BasePlugin {
+			override init(): void {
+				attempt++
+				if (attempt === 1) throw new Error('boom')
+				events.push('ok')
+			}
+		}
+
+		pluginRegistry.registerPlugin(Flaky)
+
+		const first = await ctx.registry.commit()
+		expect(first.ok).toBe(true)
+		expect(ctx.registry.lastCommit?.failed).toContain(Flaky)
+		expect(ctx.registry.isRunning(Flaky)).toBe(false)
+
+		// No container changes, but Flaky should be retried.
+		const second = await ctx.registry.commit()
+		expect(second.ok).toBe(true)
+		expect(ctx.registry.isRunning(Flaky)).toBe(true)
+		expect(events).toEqual(['ok'])
+	})
 })

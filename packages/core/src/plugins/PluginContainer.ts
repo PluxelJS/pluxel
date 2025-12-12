@@ -7,7 +7,8 @@ import type { Context } from '@pluxel/context'
 import { createErr, createOk, unwrapOk } from 'option-t/plain_result'
 import { type DiodContainer, ExtendedContainerBuilder } from '../container'
 import { BasePlugin, FORK_CTX, PLUGIN_CTX } from './BasePlugin'
-import { getClassParams, getPluginDiKey, getPluginInfo } from './PluginDecorator'
+import { getForkOf } from './fork'
+import { getClassParams, getPluginInfo } from './PluginDecorator'
 import type { PluginConstructor, PluginIdentifier, PluginInstance } from './types'
 
 export type PluginDiContainer = DiodContainer<BasePlugin>
@@ -20,32 +21,29 @@ export class PluginContainer {
 	constructor(private createPluginContext: createCTX) {}
 
 	public lastContainer!: PluginDiContainer
+
 	/**
-	 * Canonicalize a user‑facing identifier to the actual DI key.
-	 *
-	 * - Originals that declare `base` are registered under that base key.
-	 * - Fork ctors are always registered under themselves.
-	 *
-	 * This is a cold path (register/unregister/reload), so we prefer correctness
-	 * over micro‑optimizations here.
+	 * Registration policy (deterministic + fast):
+	 * - A plugin's DI key is always the ctor itself (including forks).
+	 * - Abstract base/interface tokens are supported via DI aliases on the same registration.
+	 *   (diod resolves aliases in getResult()/dependency resolution.)
 	 */
-	private canonicalize(id: PluginIdentifier): PluginIdentifier {
-		return getPluginDiKey(id)
-	}
 	/**
 	 * Factory 仅构造实例并挂载 ctx，不在此触发生命周期
 	 * 所有依赖在构造阶段视为必需，缺失将立即抛错
 	 */
-	public registerPlugin(Plugin: PluginConstructor): void {
+	public registerPlugin(
+		Plugin: PluginConstructor,
+		opts?: { provideBase?: boolean },
+	): void {
 		const info = getPluginInfo(Plugin)
 		if (!info) throw new Error('缺少 @Plugin 装饰器元数据')
 
 		const paramTypes = getClassParams(Plugin) as PluginIdentifier[]
 		const depsCount = paramTypes.length
-		const baseOrSelf = getPluginDiKey(Plugin)
 
-		this.builder
-			.register(baseOrSelf as any)
+		const reg = this.builder
+			.register(Plugin as any)
 			.useFactory((c) => {
 				const pluginCTX = this.createPluginContext()
 				pluginCTX.pluginInfo = info
@@ -102,13 +100,23 @@ export class PluginContainer {
 			})
 			.withDependencies(depsCount === 0 ? [] : (paramTypes as PluginIdentifier[]))
 			.asBuilderSingleton()
+
+		// Base/interface binding:
+		// - Originals: default provideBase=true when a base is declared.
+		// - Forks: default provideBase=false to avoid nondeterministic provider replacement.
+		const isFork = !!getForkOf(Plugin)
+		const provideBase =
+			opts?.provideBase ?? (info.base ? !isFork : false)
+		if (provideBase && info.base) {
+			reg.addAlias(info.base as any)
+		}
 	}
 
 	/**
 	 * 卸载：深度优先仅修改草稿；实际停机在 PluginService.commit() 中统一执行
 	 */
 	public unregisterPlugin(plugin: PluginIdentifier): void {
-		const canonical = this.canonicalize(plugin)
+		const canonical = (this.lastContainer?.resolveIdentifier?.(plugin as any) ?? plugin) as PluginIdentifier
 		const children = this.lastContainer?.dependents.get(canonical) ?? new Set<PluginIdentifier>()
 		for (const dep of children) this.unregisterPlugin(dep)
 		this.builder.tryUnregister(canonical)
@@ -119,7 +127,7 @@ export class PluginContainer {
 	 * 实际启停仍在 PluginService.commit()
 	 */
 	public reloadPlugin(root: PluginIdentifier, newClass?: PluginConstructor): void {
-		const canonicalRoot = this.canonicalize(root)
+		const canonicalRoot = (this.lastContainer?.resolveIdentifier?.(root as any) ?? root) as PluginIdentifier
 		if (!this.builder.buildables.has(canonicalRoot)) {
 			throw new Error('You can not reload an unloaded Plugin.')
 		}

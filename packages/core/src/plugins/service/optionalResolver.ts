@@ -6,7 +6,7 @@
 import type { Context } from '@pluxel/context'
 import { BasePlugin, PLUGIN_CTX } from '../BasePlugin'
 import type { PluginContainer } from '../PluginContainer'
-import { getPluginDiKey } from '../PluginDecorator'
+import type { PluginDiContainer } from '../PluginContainer'
 import type { PluginIdentifier } from '../types'
 import type { CommitSummary } from './PluginService'
 
@@ -58,6 +58,9 @@ export class OptionalResolver {
 		private readonly pluginRegistry: PluginContainer,
 		private readonly isRunning: (id: PluginIdentifier) => boolean,
 		private readonly getLastCommit: () => CommitSummary | undefined,
+		// During PluginService.commit(), lastContainer is still the previous one until confirm().
+		// Use the active draft container to avoid false "not registered" warnings.
+		private readonly getActiveContainer: () => PluginDiContainer | undefined,
 	) {}
 
 	private get ctx(): Context {
@@ -181,9 +184,11 @@ export class OptionalResolver {
 	}
 
 	private logUnavailable(ids: PluginIdentifier[], label: string) {
-		const container = this.pluginRegistry.lastContainer
-		const keys = ids.map((id) => getPluginDiKey(id))
-		const missingInContainer = keys.filter((id) => !container?.services?.has(id))
+		const container = this.getActiveContainer() ?? this.pluginRegistry.lastContainer
+		const missingInContainer = ids.filter((id) => {
+			const key = container?.resolveIdentifier?.(id as any) ?? id
+			return !container?.services?.has(key as any)
+		})
 		if (missingInContainer.length) {
 			this.ctx.logger?.warn?.(
 				{ plugins: missingInContainer.map(String) },
@@ -191,7 +196,7 @@ export class OptionalResolver {
 			)
 			return
 		}
-		const notRunning = keys.filter((id) => !this.isRunning(id))
+		const notRunning = ids.filter((id) => !this.isRunning(id))
 		if (notRunning.length) {
 			this.ctx.logger?.info?.(
 				{ plugins: notRunning.map(String) },
@@ -226,8 +231,10 @@ export class OptionalResolver {
 		ctor: T,
 		callerCtx: Context,
 	): InstanceType<T> | undefined {
-		const key = getPluginDiKey(ctor)
-		if (!this.isRunning(key)) {
+		const container = this.getActiveContainer() ?? this.pluginRegistry.lastContainer
+		const key = (container?.resolveIdentifier?.(ctor as any) ?? ctor) as PluginIdentifier
+
+		if (!this.isRunning(ctor)) {
 			this.optionalViews.get(callerCtx)?.delete(key)
 			return undefined
 		}

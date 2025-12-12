@@ -13,7 +13,10 @@ export type InitPlan = {
 	dependencies: Map<PluginIdentifier, readonly PluginIdentifier[]>
 }
 
-export function computeInitPlan(plugins: ServiceMap<BasePlugin>): InitPlan {
+export function computeInitPlan(
+	plugins: ServiceMap<BasePlugin>,
+	resolve: (id: PluginIdentifier) => PluginIdentifier = (id) => id,
+): InitPlan {
 	const inDegree = new Map<PluginIdentifier, number>()
 	const graph = new Map<PluginIdentifier, PluginIdentifier[]>()
 	const dependencies = new Map<PluginIdentifier, readonly PluginIdentifier[]>()
@@ -24,7 +27,8 @@ export function computeInitPlan(plugins: ServiceMap<BasePlugin>): InitPlan {
 	}
 
 	for (const [id, plugin] of plugins) {
-		const deps = (plugin.dependencies ?? []) as PluginIdentifier[]
+		const raw = (plugin.dependencies ?? []) as PluginIdentifier[]
+		const deps = raw.length ? raw.map(resolve) : raw
 		dependencies.set(id, deps)
 		for (const dep of deps) {
 			if (!inDegree.has(dep)) continue
@@ -120,4 +124,3 @@ export function partitionChanges(changes: Array<{ type: string; key: unknown }>)
 
 	return { added, replaced, removed }
 }
-

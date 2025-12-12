@@ -17,7 +17,6 @@ import { BasePlugin, PLUGIN_CTX } from '../BasePlugin'
 import { forkPlugin, getForkedCtor, listForks } from '../fork'
 import { PluginContainer, type PluginDiContainer } from '../PluginContainer'
 import type { PluginInfo } from '../PluginDecorator'
-import { getPluginDiKey } from '../PluginDecorator'
 import type { ForkablePluginConstructor, PluginConstructor, PluginIdentifier, PluginInstance } from '../types'
 import { computeInitPlan, partitionChanges, planTeardown, type InitPlan } from './commitPlanner'
 import { LifecycleManager } from './lifecycleManager'
@@ -85,6 +84,10 @@ export class PluginService {
 	private readonly startTimeoutMs: number
 	private readonly stopTimeoutMs: number
 	private _lastCommit?: CommitSummary
+	/** Active draft container during commit() before confirm(). */
+	private _activeContainer?: PluginDiContainer
+	/** Plugins that should be (re)started on the next commit. */
+	private _pendingStart = new Set<PluginIdentifier>()
 	private order = 0
 
 	// Internal helpers (single instances; no per‑commit allocations).
@@ -129,13 +132,15 @@ export class PluginService {
 			this.pluginRegistry,
 			(id) => this.isRunning(id),
 			() => this._lastCommit,
+			() => this._activeContainer ?? this.pluginRegistry.lastContainer,
 		)
 	}
 
 	/* ─────────────────────────── State Query ─────────────────────────── */
 
 	isRunning(id: PluginIdentifier): boolean {
-		const key = getPluginDiKey(id)
+		const container = this._activeContainer ?? this.pluginRegistry.lastContainer
+		const key = container?.resolveIdentifier?.(id as any) ?? id
 		const instance = this.pluginRegistry.singletons.get(key as any) as BasePlugin | undefined
 		return this.lifecycle.isRunning(instance)
 	}
@@ -164,9 +169,10 @@ export class PluginService {
 	public registerFork<T extends ForkablePluginConstructor>(
 		ctor: T,
 		forkId: string,
+		opts?: { provideBase?: boolean },
 	): PluginConstructor {
 		const ForkCtor = forkPlugin(ctor, forkId)
-		this.pluginRegistry.registerPlugin(ForkCtor)
+		this.pluginRegistry.registerPlugin(ForkCtor, opts)
 		return ForkCtor
 	}
 
@@ -329,69 +335,119 @@ export class PluginService {
 		}
 
 		const { changes, container, confirm } = action.val
+		this._activeContainer = container
+		try {
 
-		if (changes.length === 0) {
+			if (changes.length === 0) {
+				// Even without container changes, we may have plugins that previously failed to start.
+				// Keep the core promise: "registered == will retry on future commits".
+				let failed = new Set<PluginIdentifier>()
+				if (this._pendingStart.size) {
+					const toInitMap: ServiceMap<BasePlugin> = new Map()
+					for (const id of this._pendingStart) {
+						const key = container.resolveIdentifier?.(id as any) ?? id
+						const value = container.services.get(key as any)
+						if (value) toInitMap.set(key as PluginIdentifier, value)
+					}
+					if (toInitMap.size) {
+						const plan = computeInitPlan(
+							toInitMap,
+							(id) => container.resolveIdentifier?.(id as any) ?? id,
+						)
+						failed = await this.startPlugins(container, plan)
+					}
+				}
+
+				// update pending retry set
+				this._pendingStart.clear()
+				for (const id of failed) this._pendingStart.add(id)
+
+				const summary: CommitSummary = {
+					container,
+					added: [],
+					replaced: [],
+					removed: [],
+					failed: [...failed],
+				}
+				this._lastCommit = summary
+				this.ctx.emit('afterCommit', summary)
+
+				if (failed.size) {
+					for (const id of failed) this.pluginRegistry.singletons.delete(id)
+					this.ctx.logger.warn({ failed: [...failed].map(String) }, '以下插件启动失败')
+					this.ctx.emit('commitFailed', failed)
+				}
+
+				return createOk({ container, changes })
+			}
+
+			const { added, replaced, removed } = partitionChanges(changes)
+			this.ctx.logger.info(
+				{
+					remove: [...removed].map(String),
+					replace: [...replaced].map(String),
+					add: [...added].map(String),
+				},
+				'插件变更',
+			)
+
+			const oldContainer = this.pluginRegistry.lastContainer
+			const toStop = new Set([...removed, ...replaced])
+			const toStart = new Set([...added, ...replaced])
+
+			// Retry previously failed plugins opportunistically on any commit.
+			for (const id of this._pendingStart) {
+				if (toStop.has(id)) continue
+				const key = container.resolveIdentifier?.(id as any) ?? id
+				if (container.services.has(key as any)) toStart.add(key as PluginIdentifier)
+			}
+
+			await this.applyTeardown(oldContainer, toStop)
+
+			const toInitMap: ServiceMap<BasePlugin> = new Map()
+			if (toStart.size) {
+				// Perf: toStart is usually small (HMR / incremental enables),
+				// so index into the service map instead of scanning the whole container.
+				for (const serviceId of toStart) {
+					const value = container.services.get(serviceId as any)
+					if (value) toInitMap.set(serviceId as PluginIdentifier, value)
+				}
+			}
+
+			let failed = new Set<PluginIdentifier>()
+			if (toInitMap.size) {
+				const plan = computeInitPlan(
+					toInitMap,
+					(id) => container.resolveIdentifier?.(id as any) ?? id,
+				)
+				failed = await this.startPlugins(container, plan)
+			}
+
+			confirm()
+
 			const summary: CommitSummary = {
-				container,
-				added: [],
-				replaced: [],
-				removed: [],
-				failed: [],
+				container: this.pluginRegistry.lastContainer,
+				added: [...added],
+				replaced: [...replaced],
+				removed: [...removed],
+				failed: [...failed],
 			}
 			this._lastCommit = summary
 			this.ctx.emit('afterCommit', summary)
-			return createOk({ container, changes })
-		}
 
-		const { added, replaced, removed } = partitionChanges(changes)
-		this.ctx.logger.info(
-			{
-				remove: [...removed].map(String),
-				replace: [...replaced].map(String),
-				add: [...added].map(String),
-			},
-			'插件变更',
-		)
+			// update pending retry set
+			this._pendingStart.clear()
+			for (const id of failed) this._pendingStart.add(id)
 
-		const oldContainer = this.pluginRegistry.lastContainer
-		const toStop = new Set([...removed, ...replaced])
-		const toStart = new Set([...added, ...replaced])
-
-		await this.applyTeardown(oldContainer, toStop)
-
-		const toInitMap: ServiceMap<BasePlugin> = new Map()
-		if (toStart.size) {
-			for (const [serviceId, value] of container.services) {
-				if (toStart.has(serviceId as PluginIdentifier)) {
-					toInitMap.set(serviceId as PluginIdentifier, value)
-				}
+			if (failed.size) {
+				for (const id of failed) this.pluginRegistry.singletons.delete(id)
+				this.ctx.logger.warn({ failed: [...failed].map(String) }, '以下插件启动失败')
+				this.ctx.emit('commitFailed', failed)
 			}
+
+			return createOk({ container: this.pluginRegistry.lastContainer, changes })
+		} finally {
+			this._activeContainer = undefined
 		}
-
-		let failed = new Set<PluginIdentifier>()
-		if (toInitMap.size) {
-			const plan = computeInitPlan(toInitMap)
-			failed = await this.startPlugins(container, plan)
-		}
-
-		confirm()
-
-		const summary: CommitSummary = {
-			container: this.pluginRegistry.lastContainer,
-			added: [...added],
-			replaced: [...replaced],
-			removed: [...removed],
-			failed: [...failed],
-		}
-		this._lastCommit = summary
-		this.ctx.emit('afterCommit', summary)
-
-		if (failed.size) {
-			for (const id of failed) this.pluginRegistry.singletons.delete(id)
-			this.ctx.logger.warn({ failed: [...failed].map(String) }, '以下插件启动失败')
-			this.ctx.emit('commitFailed', failed)
-		}
-
-		return createOk({ container: this.pluginRegistry.lastContainer, changes })
 	}
 }
