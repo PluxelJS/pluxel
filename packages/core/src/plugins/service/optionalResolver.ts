@@ -6,6 +6,7 @@
 import type { Context } from '@pluxel/context'
 import { BasePlugin, PLUGIN_CTX } from '../BasePlugin'
 import type { PluginContainer } from '../PluginContainer'
+import { getPluginDiKey } from '../PluginDecorator'
 import type { PluginIdentifier } from '../types'
 import type { CommitSummary } from './PluginService'
 
@@ -181,7 +182,8 @@ export class OptionalResolver {
 
 	private logUnavailable(ids: PluginIdentifier[], label: string) {
 		const container = this.pluginRegistry.lastContainer
-		const missingInContainer = ids.filter((id) => !container?.services?.has(id))
+		const keys = ids.map((id) => getPluginDiKey(id))
+		const missingInContainer = keys.filter((id) => !container?.services?.has(id))
 		if (missingInContainer.length) {
 			this.ctx.logger?.warn?.(
 				{ plugins: missingInContainer.map(String) },
@@ -189,7 +191,7 @@ export class OptionalResolver {
 			)
 			return
 		}
-		const notRunning = ids.filter((id) => !this.isRunning(id))
+		const notRunning = keys.filter((id) => !this.isRunning(id))
 		if (notRunning.length) {
 			this.ctx.logger?.info?.(
 				{ plugins: notRunning.map(String) },
@@ -224,19 +226,20 @@ export class OptionalResolver {
 		ctor: T,
 		callerCtx: Context,
 	): InstanceType<T> | undefined {
-		if (!this.isRunning(ctor)) {
-			this.optionalViews.get(callerCtx)?.delete(ctor)
+		const key = getPluginDiKey(ctor)
+		if (!this.isRunning(key)) {
+			this.optionalViews.get(callerCtx)?.delete(key)
 			return undefined
 		}
 
-		const instance = this.pluginRegistry.singletons.get(ctor as any) as InstanceType<T> | undefined
+		const instance = this.pluginRegistry.singletons.get(key as any) as InstanceType<T> | undefined
 		if (!instance) {
-			this.optionalViews.get(callerCtx)?.delete(ctor)
+			this.optionalViews.get(callerCtx)?.delete(key)
 			return undefined
 		}
 
 		let map = this.optionalViews.get(callerCtx)
-		const cached = map?.get(ctor)
+		const cached = map?.get(key)
 		if (cached && cached.source === instance) return cached.view as InstanceType<T>
 
 		const wrapped = this.wrapWithCaller(instance, callerCtx) as InstanceType<T>
@@ -244,7 +247,7 @@ export class OptionalResolver {
 			map = new Map()
 			this.optionalViews.set(callerCtx, map)
 		}
-		map.set(ctor, { source: instance, view: wrapped })
+		map.set(key, { source: instance, view: wrapped })
 		return wrapped
 	}
 

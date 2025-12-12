@@ -46,13 +46,18 @@ export abstract class BasePlugin<C extends Context = Context> {
 	}
 
 	static [Symbol.toPrimitive](_hint: string) {
-		return `${
+		// Some abstract base classes are used only as DI keys and may not be
+		// decorated with @Plugin. Avoid throwing during logging/stringification.
+		let id: string
+		try {
 			// biome-ignore lint/complexity/noThisInStatic: <explanation>
-			getPluginInfo(this)?.id
-		}(${
-			// biome-ignore lint/complexity/noThisInStatic: <explanation>
-			this.name
-		})`
+			id = getPluginInfo(this)?.id ?? this.name
+		} catch {
+			// undecorated base
+			id = this.name
+		}
+		// biome-ignore lint/complexity/noThisInStatic: <explanation>
+		return `${id}(${this.name})`
 	}
 
 	/** —— Optional lifecycles ——
@@ -85,3 +90,15 @@ export abstract class BasePlugin<C extends Context = Context> {
 		}
 	}
 }
+
+/**
+ * ForkablePlugin
+ *
+ * Only plugins that extend this class are allowed to be forked into multiple
+ * runtime instances (multiple ForkCtors).
+ *
+ * This is a strict opt‑in to keep the system deterministic and fast:
+ * - no runtime decorators/flags;
+ * - no fallback paths.
+ */
+export abstract class ForkablePlugin<C extends Context = Context> extends BasePlugin<C> {}

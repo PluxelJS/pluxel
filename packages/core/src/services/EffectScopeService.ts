@@ -70,8 +70,10 @@ export class EffectScopeService {
 		if (!pluginInfo) {
 			throw new Error('Cannot shutdown: not in a plugin context')
 		}
-		const pluginClass = (pluginInfo.base ?? pluginInfo.class) as PluginIdentifier
-		this.unload(pluginClass)
+		// Use the runtime class as the unload target.
+		// Originals will be canonicalized to their base key by PluginContainer;
+		// forks stay on their own key.
+		this.unload(pluginInfo.class as PluginIdentifier)
 	}
 
 	/**

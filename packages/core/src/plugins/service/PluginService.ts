@@ -14,9 +14,11 @@ import { createErr, createOk } from 'option-t/plain_result'
 import type { ServiceMap } from '../../container'
 import { EffectScopeService } from '../../services/EffectScopeService'
 import { BasePlugin, PLUGIN_CTX } from '../BasePlugin'
+import { forkPlugin, getForkedCtor, listForks } from '../fork'
 import { PluginContainer, type PluginDiContainer } from '../PluginContainer'
 import type { PluginInfo } from '../PluginDecorator'
-import type { PluginIdentifier, PluginInstance } from '../types'
+import { getPluginDiKey } from '../PluginDecorator'
+import type { ForkablePluginConstructor, PluginConstructor, PluginIdentifier, PluginInstance } from '../types'
 import { computeInitPlan, partitionChanges, planTeardown, type InitPlan } from './commitPlanner'
 import { LifecycleManager } from './lifecycleManager'
 import { OptionalResolver } from './optionalResolver'
@@ -133,12 +135,55 @@ export class PluginService {
 	/* ─────────────────────────── State Query ─────────────────────────── */
 
 	isRunning(id: PluginIdentifier): boolean {
-		const instance = this.pluginRegistry.singletons.get(id as any) as BasePlugin | undefined
+		const key = getPluginDiKey(id)
+		const instance = this.pluginRegistry.singletons.get(key as any) as BasePlugin | undefined
 		return this.lifecycle.isRunning(instance)
 	}
 
 	public get lastCommit(): CommitSummary | undefined {
 		return this._lastCommit
+	}
+
+	/* ─────────────────────────── Forks ─────────────────────────── */
+
+	/**
+	 * Create (or reuse) a fork ctor for a ForkablePlugin.
+	 * This does not register it into the container.
+	 */
+	public fork<T extends ForkablePluginConstructor>(
+		ctor: T,
+		forkId: string,
+	): PluginConstructor {
+		return forkPlugin(ctor, forkId)
+	}
+
+	/**
+	 * Convenience: fork + register into the current draft container.
+	 * The fork will be started on the next commit().
+	 */
+	public registerFork<T extends ForkablePluginConstructor>(
+		ctor: T,
+		forkId: string,
+	): PluginConstructor {
+		const ForkCtor = forkPlugin(ctor, forkId)
+		this.pluginRegistry.registerPlugin(ForkCtor)
+		return ForkCtor
+	}
+
+	/** Get a running fork instance if present; otherwise undefined. */
+	public getFork<T extends PluginIdentifier>(
+		ctor: T,
+		forkId: string,
+	): InstanceType<T> | undefined {
+		const ForkCtor = getForkedCtor(ctor, forkId)
+		if (!ForkCtor) return undefined
+		return (this.pluginRegistry.lastContainer?.get(ForkCtor as any) ??
+			this.pluginRegistry.singletons.get(ForkCtor as any)) as InstanceType<T> | undefined
+	}
+
+	/** List all fork ctors created for a given original ctor. */
+	public listForks<T extends PluginIdentifier>(ctor: T): PluginConstructor[] {
+		return listForks(ctor)
 	}
 
 	/* ─────────────────────────── Optional Dependencies ─────────────────────────── */

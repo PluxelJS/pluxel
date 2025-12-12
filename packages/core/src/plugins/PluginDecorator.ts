@@ -6,6 +6,18 @@ import 'reflect-metadata'
 import { BasePlugin } from './BasePlugin'
 import type { Identifier, PluginIdentifier, SubclassOf } from './types'
 
+// DI key cache:
+// - Originals: base ?? self
+// - Forks: self (set by clonePluginDefinition)
+// This keeps canonicalization O(1) on hot-ish runtime queries.
+const PLUGIN_DI_KEY = Symbol.for('pluxel:plugin:diKey')
+
+/** Return the canonical DI key for a plugin ctor. */
+export function getPluginDiKey(id: PluginIdentifier): PluginIdentifier {
+	if (typeof id !== 'function') return id
+	return ((id as any)[PLUGIN_DI_KEY] as PluginIdentifier | undefined) ?? id
+}
+
 /*───────────────────────────────────────────────────────────
   Runtime Policy
   - DEV: 冻结返回值/快照，尽早暴露"误改"。
@@ -306,6 +318,15 @@ export function Plugin(a?: PluginMetadata | PluginIdentifier, b?: PluginMetadata
 
 		s.base = base
 
+		// Cache canonical DI key on ctor for fast runtime lookups.
+		// For originals, the DI key is the declared base (if any), otherwise self.
+		Object.defineProperty(ctor, PLUGIN_DI_KEY, {
+			value: (base ?? ctor) as PluginIdentifier,
+			writable: false,
+			enumerable: false,
+			configurable: true,
+		})
+
 		// 聚合 pending @Config
 		if (s.pending && Object.keys(s.pending).length) {
 			s.config = __DEV__ ? $freeze(s.pending as ConfigSchemaList) : (s.pending as ConfigSchemaList)
@@ -562,4 +583,56 @@ function normalizeConfigSourceMap(
 	}
 	const plain = { ...source }
 	return __DEV__ ? $freeze(plain) : plain
+}
+
+/*───────────────────────────────────────────────────────────
+  Fork Support
+  - A fork is a lightweight subclass used as a separate DI key.
+  - It inherits all definition metadata from the original ctor.
+  - Only identity fields (id/displayName) are typically overridden.
+───────────────────────────────────────────────────────────*/
+
+export function clonePluginDefinition(
+	from: PluginIdentifier,
+	to: PluginIdentifier,
+	identity?: { id?: string | null; displayName?: string | null; packageName?: string | null },
+): void {
+	const src = STATE.get(from as unknown as Function)
+	if (!src || !src.infoSnap) {
+		throw new Error(`clonePluginDefinition(${nameOf(from)}) 失败：源类未装饰 @Plugin`)
+	}
+	const dst = S(to as unknown as Function)
+
+	// cold/immutable data
+	dst.declaredMeta = src.declaredMeta
+	dst.declaredName = src.declaredName
+	dst.base = src.base
+	dst.config = src.config
+	dst.configSource = src.configSource
+	dst.rtypes = src.rtypes
+
+	// identity (override allowed)
+	dst.id = identity?.id ?? src.id
+	dst.displayName = identity?.displayName ?? src.displayName
+	dst.packageName = identity?.packageName ?? src.packageName
+
+	// persistent tokens: share array reference (writers always copy on write)
+	dst.tokens = src.tokens
+	dst.epoch = src.epoch
+	dst.paramCache = null
+	dst.paramCacheEpoch = -1
+
+	// fork ctor becomes the runtime class
+	dst.ctor = to
+	dst.pending = null
+
+	// Forks always use their own ctor as DI key.
+	Object.defineProperty(to as any, PLUGIN_DI_KEY, {
+		value: to,
+		writable: false,
+		enumerable: false,
+		configurable: true,
+	})
+
+	rebuildInfoSnapshot(to as unknown as Function, dst)
 }

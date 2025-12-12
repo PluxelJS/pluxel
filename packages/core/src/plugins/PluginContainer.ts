@@ -7,7 +7,7 @@ import type { Context } from '@pluxel/context'
 import { createErr, createOk, unwrapOk } from 'option-t/plain_result'
 import { type DiodContainer, ExtendedContainerBuilder } from '../container'
 import { BasePlugin, FORK_CTX, PLUGIN_CTX } from './BasePlugin'
-import { getClassParams, getPluginInfo } from './PluginDecorator'
+import { getClassParams, getPluginDiKey, getPluginInfo } from './PluginDecorator'
 import type { PluginConstructor, PluginIdentifier, PluginInstance } from './types'
 
 export type PluginDiContainer = DiodContainer<BasePlugin>
@@ -21,6 +21,18 @@ export class PluginContainer {
 
 	public lastContainer!: PluginDiContainer
 	/**
+	 * Canonicalize a user‑facing identifier to the actual DI key.
+	 *
+	 * - Originals that declare `base` are registered under that base key.
+	 * - Fork ctors are always registered under themselves.
+	 *
+	 * This is a cold path (register/unregister/reload), so we prefer correctness
+	 * over micro‑optimizations here.
+	 */
+	private canonicalize(id: PluginIdentifier): PluginIdentifier {
+		return getPluginDiKey(id)
+	}
+	/**
 	 * Factory 仅构造实例并挂载 ctx，不在此触发生命周期
 	 * 所有依赖在构造阶段视为必需，缺失将立即抛错
 	 */
@@ -30,7 +42,7 @@ export class PluginContainer {
 
 		const paramTypes = getClassParams(Plugin) as PluginIdentifier[]
 		const depsCount = paramTypes.length
-		const baseOrSelf = info.base ?? Plugin
+		const baseOrSelf = getPluginDiKey(Plugin)
 
 		this.builder
 			.register(baseOrSelf as any)
@@ -96,7 +108,7 @@ export class PluginContainer {
 	 * 卸载：深度优先仅修改草稿；实际停机在 PluginService.commit() 中统一执行
 	 */
 	public unregisterPlugin(plugin: PluginIdentifier): void {
-		const canonical = plugin
+		const canonical = this.canonicalize(plugin)
 		const children = this.lastContainer?.dependents.get(canonical) ?? new Set<PluginIdentifier>()
 		for (const dep of children) this.unregisterPlugin(dep)
 		this.builder.tryUnregister(canonical)
@@ -107,7 +119,7 @@ export class PluginContainer {
 	 * 实际启停仍在 PluginService.commit()
 	 */
 	public reloadPlugin(root: PluginIdentifier, newClass?: PluginConstructor): void {
-		const canonicalRoot = root
+		const canonicalRoot = this.canonicalize(root)
 		if (!this.builder.buildables.has(canonicalRoot)) {
 			throw new Error('You can not reload an unloaded Plugin.')
 		}

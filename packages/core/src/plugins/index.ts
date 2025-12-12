@@ -9,6 +9,7 @@
 export * from './BasePlugin'
 export * from './PluginContainer'
 export * from './PluginDecorator'
+export * from './fork'
 export * from './service/PluginService'
 export * from './lifecycle/pluginActor'
 export * from './types'
