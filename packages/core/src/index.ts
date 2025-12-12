@@ -1,5 +1,5 @@
 export * from '@pluxel/context'
 export * from './container'
-export * from './plugin'
+export * from './plugins'
 
 import type {} from './services'

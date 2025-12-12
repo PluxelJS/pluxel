@@ -10,7 +10,7 @@ import {
 	type OnOptions,
 	type Unsubscribe,
 } from 'eventure'
-import type { CommitSummary, PluginIdentifier, PluginInstance } from '../plugin'
+import type { CommitSummary, PluginIdentifier, PluginInstance } from '../plugins'
 
 const serviceName = 'events' as const
 declare module '@pluxel/context' {

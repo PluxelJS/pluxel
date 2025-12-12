@@ -1,4 +1,7 @@
 // PluginDecorator.ts
+// Definition‑time decorators and metadata store for plugins.
+// All data here is immutable after decoration, and optimized for fast reads
+// during DI construction.
 import 'reflect-metadata'
 import { BasePlugin } from './BasePlugin'
 import type { Identifier, PluginIdentifier, SubclassOf } from './types'

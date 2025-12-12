@@ -1,4 +1,4 @@
 export * from './EffectScopeService'
 export * from './EventsService'
 export * from './LoggerService'
-export { PluginService, type CommitSummary } from '../plugin/PluginService'
+export { PluginService, type CommitSummary } from '../plugins/service/PluginService'

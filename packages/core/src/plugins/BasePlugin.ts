@@ -1,3 +1,13 @@
+// BasePlugin.ts
+// Core runtime base class for all plugins.
+//
+// Responsibilities:
+// - Provide `ctx` (DI context) to instances via FORK_CTX injection.
+// - Offer optional lifecycle hooks (`init`, `stop`).
+// - Expose `getLifecycleRuntime` adapter used by the lifecycle actor.
+//
+// This file sits on the construction hot‑path; keep it allocation‑light.
+
 import type { Context } from '@pluxel/context'
 import { getPluginInfo } from './PluginDecorator'
 

@@ -1,4 +1,7 @@
 // PluginContainer.ts
+// Thin DI adapter around diod with draft/commit semantics.
+// It only creates plugin instances and wires ctx; lifecycles are managed
+// by PluginService during commit().
 
 import type { Context } from '@pluxel/context'
 import { createErr, createOk, unwrapOk } from 'option-t/plain_result'
