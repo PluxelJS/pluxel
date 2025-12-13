@@ -24,26 +24,52 @@ import {
 	IconRocket,
 	IconTrash,
 } from '@tabler/icons-react'
-import { useCallback, useEffect, useRef, useState } from 'react'
 import {
-	type ExtensionContext,
-	type HmrWebClient,
+	createContext,
+	type ReactNode,
+	useCallback,
+	useContext,
+	useEffect,
+	useMemo,
+	useRef,
+	useState,
+} from 'react'
+import {
+	type PluginExtensionContext,
+	type GlobalExtensionContext,
 	rpcErrorMessage,
-	useHmrWebClient,
 } from '@pluxel/hmr/web/react'
 
-type PluginWithUIRpc = HmrWebClient['rpc']['PluginWithUI']
+type PluginWithUIRpc = PluginExtensionContext['services']['hmr']['rpc']['PluginWithUI']
 type PluginOverview = Awaited<ReturnType<PluginWithUIRpc['overview']>>
 type PluginNote = Awaited<ReturnType<PluginWithUIRpc['notes']>>[number]
 type PluginTask = Awaited<ReturnType<PluginWithUIRpc['tasks']>>[number]
 type PluginActivity = Awaited<ReturnType<PluginWithUIRpc['activity']>>[number]
-type PluginSse = ReturnType<HmrWebClient['createSse']>
+type PluginSse = ReturnType<PluginExtensionContext['services']['hmr']['createSse']>
 
-export { usePluginSse } from '@pluxel/hmr/web/react'
+const PluginApiContext = createContext<{ rpc: PluginWithUIRpc; sse: PluginSse } | null>(null)
 
-const usePluginRpc = (): PluginWithUIRpc => {
-	const client = useHmrWebClient()
-	return client.rpc.PluginWithUI
+export function PluginApiProvider({
+	ctx,
+	children,
+}: {
+	ctx: PluginExtensionContext
+	children: ReactNode
+}) {
+	const hmr = ctx.services.hmr
+	const rpc = hmr.rpc.PluginWithUI
+	const sseClient = useMemo(() => hmr.createSse({ namespaces: [ctx.pluginName] }), [hmr, ctx.pluginName])
+	useEffect(() => {
+		return () => sseClient.close()
+	}, [sseClient])
+	const value = useMemo(() => ({ rpc, sse: sseClient }), [rpc, sseClient])
+	return <PluginApiContext.Provider value={value}>{children}</PluginApiContext.Provider>
+}
+
+export function usePluginApi() {
+	const ctx = useContext(PluginApiContext)
+	if (!ctx) throw new Error('usePluginApi must be used within PluginApiProvider')
+	return ctx
 }
 
 export const taskPriorityLabel: Record<PluginTask['priority'], string> = {
@@ -90,11 +116,45 @@ export const formatTimestamp = (value: number): string => {
 }
 
 // Header 按钮组件
-export function HeaderButton({ ctx }: { ctx: ExtensionContext }) {
+export function HeaderButton({ ctx: _ctx }: { ctx: GlobalExtensionContext }) {
 	return (
 		<Button variant="light" size="xs" leftSection={<IconRocket size={14} />} color="grape">
 			PluginWithUI
 		</Button>
+	)
+}
+
+export function GlobalStatusBar({ ctx }: { ctx: GlobalExtensionContext }) {
+	const hmr = ctx.services.hmr
+	const ready = ctx.runningPluginsReady
+	const count = ctx.runningPlugins.size
+	const [extVersion, setExtVersion] = useState<number>(0)
+
+	useEffect(() => {
+		const stream = hmr.streamExtensions()
+		const off = stream.extensions.on((msg) => {
+			const payload = msg.payload
+			if (payload?.type === 'sync') setExtVersion(payload.version)
+			if (payload?.type === 'update' || payload?.type === 'remove') setExtVersion(payload.version)
+		})
+		return () => {
+			off()
+			stream.close()
+		}
+	}, [hmr])
+
+	return (
+		<Group gap="xs">
+			<Badge variant="light" color={ready ? 'teal' : 'gray'}>
+				{ready ? 'Plugins Ready' : 'Plugins Loading'}
+			</Badge>
+			<Text size="xs" c="dimmed">
+				Running: {count}
+			</Text>
+			<Text size="xs" c="dimmed">
+				Ext v{extVersion}
+			</Text>
+		</Group>
 	)
 }
 
@@ -152,7 +212,7 @@ export function TaskBoard({ sse }: { sse: PluginSse }) {
 	const [error, setError] = useState<string | null>(null)
 	const mountedRef = useRef(true)
 
-	const rpc = usePluginRpc()
+	const { rpc } = usePluginApi()
 
 	useEffect(() => {
 		return () => {
@@ -382,7 +442,7 @@ export function ActivityTimeline({ sse }: { sse: PluginSse }) {
 	const [error, setError] = useState<string | null>(null)
 	const mountedRef = useRef(true)
 
-	const rpc = usePluginRpc()
+	const { rpc } = usePluginApi()
 
 	useEffect(() => {
 		return () => {
@@ -445,7 +505,7 @@ export function ActivityTimeline({ sse }: { sse: PluginSse }) {
 				)}
 				<Stack gap="xs">
 					{activity.map((item) => (
-						<Paper key={item.id} withBorder radius="md" p="sm">
+						<Paper key={`${item.id}:${item.at}`} withBorder radius="md" p="sm">
 							<Group justify="space-between">
 								<Group gap="xs">
 									<Badge size="xs" color={item.scope === 'note' ? 'grape' : 'cyan'}>
@@ -492,7 +552,7 @@ export function NotesPanel({ sse }: { sse: PluginSse }) {
 	const [formError, setFormError] = useState<string | null>(null)
 	const mountedRef = useRef(true)
 
-	const rpc = usePluginRpc()
+	const { rpc } = usePluginApi()
 
 	useEffect(() => {
 		return () => {
@@ -829,16 +889,17 @@ export function LiveSseActivity({ sse }: { sse: PluginSse }) {
 }
 
 // 插件信息卡片
-export function InfoCard({ ctx }: { ctx: ExtensionContext }) {
+export function InfoCard({ ctx }: { ctx: PluginExtensionContext }) {
+	const pluginName = ctx.pluginName
 	const [overview, setOverview] = useState<PluginOverview | null>(null)
-	const [statusMessage, setStatusMessage] = useState(`正在同步 ${ctx.pluginName} 状态...`)
+	const [statusMessage, setStatusMessage] = useState(`正在同步 ${pluginName} 状态...`)
 	const [loading, setLoading] = useState(true)
 	const mountedRef = useRef(true)
 	const theme = useMantineTheme()
 	const { colorScheme } = useMantineColorScheme()
 	const cardBg = colorScheme === 'dark' ? theme.colors.dark[6] : theme.colors.grape[0]
 
-	const rpc = usePluginRpc()
+	const { rpc } = usePluginApi()
 
 	useEffect(() => {
 		return () => {
@@ -886,13 +947,14 @@ export function InfoCard({ ctx }: { ctx: ExtensionContext }) {
 		<Paper withBorder p="sm" radius="md" bg={cardBg}>
 			<Stack gap="xs">
 				<Group key="header" gap="xs" justify="space-between" align="center">
-					<Group gap="xs">
-						<IconRocket size={16} />
-						<Text size="sm" fw={500}>
-							{ctx.pluginName} 状态
+					<Group key="title" gap="xs">
+						<IconRocket key="icon" size={16} />
+						<Text key="label" size="sm" fw={500}>
+							{pluginName} 状态
 						</Text>
 					</Group>
 					<Button
+						key="refresh"
 						size="compact-xs"
 						variant="light"
 						color="grape"

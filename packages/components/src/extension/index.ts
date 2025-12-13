@@ -4,15 +4,28 @@
 export type {
 	CompiledExtensionModule,
 	ExtensionContext,
+	GlobalExtensionContext,
 	ExtensionManifestEvent,
 	ExtensionManifest,
 	ExtensionMeta,
 	ExtensionPoint,
+	ExtensionPointCtx,
+	ExtensionPointMap,
+	ExtensionPointMeta,
 	ExtensionItem,
+	PluginExtensionContext,
 	PluginUIModule,
+	ExtensionDef,
+	AnyExtensionDef,
 	RouteExtensionDef,
 } from './types'
 export { ExtensionPoints } from './types'
+export {
+	createGlobalExtensionContext,
+	createPluginExtensionContext,
+	isExtensionPluginRunning,
+	toGlobalExtensionContext,
+} from './types'
 
 // Registry
 export {

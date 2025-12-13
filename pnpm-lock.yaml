@@ -133,6 +133,12 @@ importers:
       '@melloware/react-logviewer':
         specifier: ^6.3.4
         version: 6.3.4(react-dom@19.2.1(react@19.2.1))(react@19.2.1)
+      '@pluxel/hmr-web':
+        specifier: workspace:*
+        version: link:../hmr-web
+      '@pluxel/plugin-ui':
+        specifier: workspace:*
+        version: link:../plugin-ui
       '@tabler/icons-react':
         specifier: ^3.35.0
         version: 3.35.0(react@19.2.1)
@@ -354,6 +360,12 @@ importers:
       '@pluxel/core':
         specifier: workspace:*
         version: link:../core
+      '@pluxel/hmr-web':
+        specifier: workspace:*
+        version: link:../hmr-web
+      '@pluxel/plugin-ui':
+        specifier: workspace:*
+        version: link:../plugin-ui
       '@pluxel/rolldown':
         specifier: workspace:*
         version: link:../rolldown
@@ -381,6 +393,38 @@ importers:
       valibot-form:
         specifier: workspace:*
         version: link:../valibot-form
+
+  packages/hmr-web:
+    dependencies:
+      '@pluxel/plugin-ui':
+        specifier: workspace:*
+        version: link:../plugin-ui
+      capnweb:
+        specifier: ^0.2.0
+        version: 0.2.0
+      hono:
+        specifier: ^4.10.7
+        version: 4.10.7
+      react:
+        specifier: ^19.0.0
+        version: 19.2.1
+    devDependencies:
+      '@types/react':
+        specifier: ^19.2.7
+        version: 19.2.7
+      tsdown:
+        specifier: 0.17.0
+        version: 0.17.0(typescript@5.9.3)
+
+  packages/plugin-ui:
+    dependencies:
+      react:
+        specifier: ^19.0.0
+        version: 19.2.1
+    devDependencies:
+      '@types/react':
+        specifier: ^19.2.7
+        version: 19.2.7
 
   packages/rolldown:
     dependencies:

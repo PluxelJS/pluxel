@@ -3,21 +3,23 @@
 
 import { Stack, Text } from '@mantine/core'
 import { IconDashboard } from '@tabler/icons-react'
-import { definePluginUIModule, type ExtensionContext } from '@pluxel/hmr/web'
+import { definePluginUIModule, type PluginExtensionContext } from '@pluxel/hmr/web'
 import {
 	ActivityTimeline,
 	Dashboard,
+	GlobalStatusBar,
 	HeaderButton,
 	InfoCard,
 	LiveSseActivity,
 	NotesPanel,
 	RealTimeTicker,
 	TaskBoard,
-	usePluginSse,
+	PluginApiProvider,
+	usePluginApi,
 } from './components'
 
-function OverviewTabPanel({ ctx }: { ctx: ExtensionContext }) {
-	const sse = usePluginSse(ctx.pluginName)
+function OverviewTabContent({ ctx }: { ctx: PluginExtensionContext }) {
+	const { sse } = usePluginApi()
 	return (
 		<Stack gap="md">
 			<InfoCard ctx={ctx} />
@@ -26,8 +28,8 @@ function OverviewTabPanel({ ctx }: { ctx: ExtensionContext }) {
 	)
 }
 
-function DataTabPanel({ ctx }: { ctx: ExtensionContext }) {
-	const sse = usePluginSse(ctx.pluginName)
+function DataTabContent() {
+	const { sse } = usePluginApi()
 	return (
 		<Stack gap="md">
 			<Text size="sm" c="dimmed">
@@ -39,8 +41,8 @@ function DataTabPanel({ ctx }: { ctx: ExtensionContext }) {
 	)
 }
 
-function LiveTabPanel({ ctx }: { ctx: ExtensionContext }) {
-	const sse = usePluginSse(ctx.pluginName)
+function LiveTabContent() {
+	const { sse } = usePluginApi()
 	return (
 		<Stack gap="md">
 			<Text size="sm" c="dimmed">
@@ -52,48 +54,89 @@ function LiveTabPanel({ ctx }: { ctx: ExtensionContext }) {
 	)
 }
 
+function OverviewTabPanel({ ctx }: { ctx: PluginExtensionContext }) {
+	return (
+		<PluginApiProvider ctx={ctx}>
+			<OverviewTabContent ctx={ctx} />
+		</PluginApiProvider>
+	)
+}
+
+function DataTabPanel({ ctx }: { ctx: PluginExtensionContext }) {
+	return (
+		<PluginApiProvider ctx={ctx}>
+			<DataTabContent />
+		</PluginApiProvider>
+	)
+}
+
+function LiveTabPanel({ ctx }: { ctx: PluginExtensionContext }) {
+	return (
+		<PluginApiProvider ctx={ctx}>
+			<LiveTabContent />
+		</PluginApiProvider>
+	)
+}
+
+function PluginInfoCard({ ctx }: { ctx: PluginExtensionContext }) {
+	return (
+		<PluginApiProvider ctx={ctx}>
+			<InfoCard ctx={ctx} />
+		</PluginApiProvider>
+	)
+}
+
 const module = definePluginUIModule({
 	extensions: [
 		{
+			point: 'global:statusBar',
+			id: 'global-statusbar',
+			priority: 5,
+			meta: { label: 'PluginWithUI' },
+			Component: GlobalStatusBar,
+		},
+		{
 			point: 'header:actions',
-			meta: { priority: 100, id: 'PluginWithUI:header:actions' },
+			id: 'header-actions',
+			priority: 100,
 			Component: HeaderButton,
 		},
 		{
 			point: 'plugin:tabs',
+			id: 'tab-overview',
+			priority: 10,
 			meta: {
-				priority: 10,
 				label: '概览',
-				id: 'PluginWithUI:plugin:tabs:overview',
 			},
 			when: (ctx) => ctx.pluginName === 'PluginWithUI',
 			Component: OverviewTabPanel,
 		},
 		{
 			point: 'plugin:tabs',
+			id: 'tab-data',
+			priority: 11,
 			meta: {
-				priority: 11,
 				label: '数据',
-				id: 'PluginWithUI:plugin:tabs:data',
 			},
 			when: (ctx) => ctx.pluginName === 'PluginWithUI',
 			Component: DataTabPanel,
 		},
 		{
 			point: 'plugin:tabs',
+			id: 'tab-live',
+			priority: 12,
 			meta: {
-				priority: 12,
 				label: '实时',
-				id: 'PluginWithUI:plugin:tabs:live',
 			},
 			when: (ctx) => ctx.pluginName === 'PluginWithUI',
 			Component: LiveTabPanel,
 		},
 		{
 			point: 'plugin:info',
-			meta: { priority: 5, requireRunning: true, id: 'PluginWithUI:plugin:info' },
-			when: (ctx) => ctx.pluginName === 'PluginWithUI' && ctx.isPluginRunning === true,
-			Component: InfoCard,
+			id: 'plugin-info',
+			priority: 5,
+			requireRunning: true,
+			Component: PluginInfoCard,
 		},
 	],
 	routes: [
@@ -108,8 +151,8 @@ const module = definePluginUIModule({
 			Component: Dashboard,
 		},
 	],
-	setup() {
-		console.log('[PluginWithUI] UI module loaded')
+	setup({ pluginName }) {
+		console.log(`[${pluginName}] UI module loaded`)
 	},
 })
 

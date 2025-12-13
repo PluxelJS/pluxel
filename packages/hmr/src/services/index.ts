@@ -9,3 +9,9 @@ export * from './loader/LoaderService'
 export * from './logger/PinoLoggerService'
 export * from './market'
 export * from './PluginDataService'
+
+// Plugin extensibility surface (types only)
+export type { RpcExtensions, SseEvents } from './extensions'
+
+// Ensure module augmentations are part of the program when importing `@pluxel/hmr/services`.
+import './augment-hmr-web'

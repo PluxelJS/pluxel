@@ -55,8 +55,8 @@ export function ExtensionRoute() {
 
 	const parentCtx = useExtensionContext()
 	const runningPlugins = parentCtx.runningPlugins
-	const runningPluginsReady = parentCtx.runningPluginsReady ?? false
-	const pluginRunning = runningPlugins?.has(pluginName) ?? false
+	const runningPluginsReady = parentCtx.runningPluginsReady
+	const pluginRunning = runningPlugins.has(pluginName)
 
 	const extensionCtx = useMemo<ExtensionContext>(
 		() => ({

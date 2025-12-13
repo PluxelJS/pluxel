@@ -89,6 +89,8 @@
 	"devDependencies": {
 		"@hono/react-renderer": "^1.0.1",
 		"@pluxel/components": "workspace:*",
+		"@pluxel/hmr-web": "workspace:*",
+		"@pluxel/plugin-ui": "workspace:*",
 		"@pluxel/core": "workspace:*",
 		"@pluxel/rolldown": "workspace:*",
 		"@tanstack/react-router": "^1.139.14",

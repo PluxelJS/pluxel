@@ -1,5 +1,5 @@
 // statusEvents.ts
-import type { PluginStatusAction } from '../../../../hmr/src/api/hono/rpc/types'
+import type { PluginStatusAction } from '@pluxel/hmr-web'
 
 export interface PluginStatusEvent {
 	pluginName?: string

@@ -290,6 +290,15 @@ export class PluginWithUI extends BasePlugin {
 			const maxTaskId = existingTasks.reduce((acc, n) => Math.max(acc, Number(n.id) || 0), 0)
 			this.taskSeq = maxTaskId + 1
 		}
+
+		const existingActivity = this.activity
+			.find({}, { limit: 128 })
+			.fetch()
+			.map((item) => ({ ...item }))
+		if (existingActivity.length > 0) {
+			const maxActivityId = existingActivity.reduce((acc, item) => Math.max(acc, Number(item.id) || 0), 0)
+			this.activitySeq = maxActivityId + 1
+		}
 	}
 
 	private async createNote(message: string, author: PluginMemoEntry['author']) {

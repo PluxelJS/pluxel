@@ -16,18 +16,19 @@ export default async function runBundle(job) {
 		root,
 		configFile: false,
 		publicDir: false,
+		logLevel: 'error',
 		plugins: [tsconfigPaths()],
 		resolve,
-		ssr: {
-			noExternal: true,
-			external: vendors,
-		},
 		build: {
-			ssr: true,
 			write: false,
 			target: 'esnext',
+			// 用 lib 模式确保输出保留 ESM exports（我们需要 dynamic import 拿到 default）
+			lib: {
+				entry,
+				formats: ['es'],
+				fileName: () => 'index',
+			},
 			rollupOptions: {
-				input: entry,
 				external: vendors,
 				output: {
 					inlineDynamicImports: true,
@@ -38,7 +39,9 @@ export default async function runBundle(job) {
 	})
 
 	const outputs = normalizeOutput(result).flatMap((entry) => entry.output ?? []).filter(Boolean)
-	const chunk = outputs.find((item) => item.type === 'chunk' && typeof item.code === 'string')
+	const chunk =
+		outputs.find((item) => item.type === 'chunk' && item.isEntry && typeof item.code === 'string') ??
+		outputs.find((item) => item.type === 'chunk' && typeof item.code === 'string')
 	if (!chunk?.code) {
 		throw new Error('Failed to produce bundled code for extension entry (worker)')
 	}

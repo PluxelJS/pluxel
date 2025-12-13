@@ -12,8 +12,10 @@ import {
 	type ExtensionContext,
 	ExtensionPoints,
 	ExtensionProvider,
+	createGlobalExtensionContext,
 	useExtensionSurface,
 } from '../../extension'
+import { useHmrWebClient } from '../rpc'
 import { useDynamicTheme } from '../../theme'
 import { LAST_ROUTE_KEY } from '../constants'
 import { ExtensionLoader } from '../ExtensionLoader'
@@ -47,6 +49,7 @@ function RootShellContent() {
 	const colorScheme = useComputedColorScheme('light', { getInitialValueInEffect: true })
 	const [runningPlugins, setRunningPlugins] = useState<ReadonlySet<string>>(() => new Set())
 	const [runningReady, setRunningReady] = useState(false)
+	const hmr = useHmrWebClient()
 
 	const handleRunningPluginsChange = useCallback((next: ReadonlySet<string>) => {
 		setRunningPlugins((prev) => {
@@ -68,13 +71,15 @@ function RootShellContent() {
 	}, [])
 
 	const extensionContext = useMemo<ExtensionContext>(
-		() => ({
-			pathname,
-			colorScheme,
-			runningPlugins,
-			runningPluginsReady: runningReady,
-		}),
-		[pathname, colorScheme, runningPlugins, runningReady],
+		() =>
+			createGlobalExtensionContext({
+				pathname,
+				colorScheme,
+				runningPlugins,
+				runningPluginsReady: runningReady,
+				services: { hmr },
+			}),
+		[pathname, colorScheme, runningPlugins, runningReady, hmr],
 	)
 
 	return (
@@ -94,6 +99,7 @@ interface RootShellAppProps {
 
 function RootShellApp({ pathname, onRunningPluginsChange }: RootShellAppProps) {
 	const navbarSurface = useExtensionSurface(ExtensionPoints.NavbarItems)
+	const statusBarSurface = useExtensionSurface(ExtensionPoints.GlobalStatusBar)
 
 	const extensionNavItems = useMemo<NavItem[]>(() => {
 		if (navbarSurface.items.length === 0) return []
@@ -135,7 +141,22 @@ function RootShellApp({ pathname, onRunningPluginsChange }: RootShellAppProps) {
 					navItems={combinedNavItems}
 					LinkComponent={RouterLinkAdapter}
 					currentPath={pathname}
-					footerHeight={0}
+					footerHeight={statusBarSurface.hasFill ? 44 : 0}
+					footer={
+						statusBarSurface.hasFill ? (
+							<div
+								style={{
+									height: 44,
+									display: 'flex',
+									alignItems: 'center',
+									gap: 8,
+									padding: '0 12px',
+								}}
+							>
+								{statusBarSurface.nodes}
+							</div>
+						) : null
+					}
 				>
 					<Outlet />
 				</Layout>

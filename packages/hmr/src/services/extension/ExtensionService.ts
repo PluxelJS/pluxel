@@ -5,7 +5,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 import { type Context, getPluginInfo, Injectable } from '@pluxel/core'
 import chokidar, { type FSWatcher } from 'chokidar'
 import { createDebug } from 'obug'
-import { dirname, isAbsolute, join, resolve } from 'pathe'
+import { dirname, isAbsolute, join, relative, resolve } from 'pathe'
 import type {
 	CompiledExtensionModule,
 	ExtensionManifest,
@@ -28,6 +28,7 @@ export interface ExtensionServiceConfig {
 
 interface PluginExtensionEntry {
 	pluginName: string
+	pluginDir: string
 	entryPath: string
 	sourceFiles: string[]
 	lastCompiledAt?: number
@@ -57,6 +58,12 @@ const WATCHER_IGNORED_GLOBS = [
 	'**/.pluxel/**',
 	'**/dist/**',
 	'**/build/**',
+	// editor/temp files
+	'**/.*',
+	'**/*.swp',
+	'**/*.swo',
+	'**/*.tmp',
+	'**/*~',
 ] as const
 
 const HASH_IGNORED_SEGMENTS = [
@@ -68,10 +75,27 @@ const HASH_IGNORED_SEGMENTS = [
 	'build',
 	'.next',
 ] as const
+
+const HASH_ALLOWED_EXTENSIONS = [
+	'.ts',
+	'.tsx',
+	'.js',
+	'.jsx',
+	'.mjs',
+	'.cjs',
+	'.css',
+	'.scss',
+	'.sass',
+	'.less',
+	'.json',
+] as const
 const MODULE_FILE_EXTENSION = '.mjs'
 const MODULE_RETENTION_COUNT = 2
 const MODULE_ENDPOINT_PREFIX = '/api/extensions/modules'
 const MANIFEST_FILENAME = 'manifest.json'
+
+// Bump this when the bundling/rewriting logic changes, so clients don't reuse stale cached modules.
+const EXTENSION_COMPILER_VERSION = 7
 
 @Injectable({ key: serviceName })
 export class ExtensionService {
@@ -79,6 +103,7 @@ export class ExtensionService {
 	private readonly outDir: string
 	private readonly manifestPath: string
 	private readonly dbg = createDebug('pluxel:ext:compile')
+	private readonly enabled: boolean
 	private manifestVersion = 0
 	private manifest: ExtensionManifest = {
 		version: 0,
@@ -93,6 +118,7 @@ export class ExtensionService {
 		private ctx: Context,
 		config?: ExtensionServiceConfig,
 	) {
+		this.enabled = config?.enabled !== false
 		this.outDir = config?.outDir ?? resolve(process.cwd(), '.pluxel/extensions')
 		this.manifestPath = join(this.outDir, MANIFEST_FILENAME)
 
@@ -100,7 +126,9 @@ export class ExtensionService {
 			await this.onAfterCommit(summary)
 		})
 
-		void this.restorePersistedManifest()
+		if (this.enabled) {
+			void this.restorePersistedManifest()
+		}
 	}
 
 	subscribeManifest(callback: (event: ExtensionManifestEvent) => void): () => void {
@@ -109,13 +137,20 @@ export class ExtensionService {
 	}
 
 	getManifest(): ExtensionManifest {
+		if (!this.enabled) return { version: 0, modules: [] }
 		return this.manifest
 	}
 
 	async getModuleSource(pluginName: string, sourceHash: string): Promise<string | null> {
+		if (!this.enabled) return null
 		const file = this.getModuleFilePath(pluginName, sourceHash)
 		if (existsSync(file)) {
-			return readFile(file, 'utf-8')
+			const code = await readFile(file, 'utf-8').catch(() => null)
+			if (code && !looksLikeLegacyBrokenBundle(code)) {
+				return code
+			}
+			// 老编译器产物可能存在非法语法（例如解构里出现 `as`），这里主动触发重新编译并让前端刷新 manifest
+			await unlink(file).catch(() => {})
 		}
 
 		// 自愈：如果磁盘文件丢失，尝试重新编译，并在失败时清理掉陈旧清单
@@ -141,6 +176,7 @@ export class ExtensionService {
 	 * 注册插件 UI 扩展（自动从当前 Context 获取 pluginName）
 	 */
 	register(config: PluginExtensionConfig): () => void {
+		if (!this.enabled) return () => {}
 		const pluginName = this.ctx.pluginInfo?.id
 		if (!pluginName) {
 			throw new Error('无法获取 pluginId，请确保在插件内调用')
@@ -151,9 +187,14 @@ export class ExtensionService {
 			this.disposeWatcher(existing)
 		}
 
-		const sourceFiles = this.collectSourceFiles(pluginName, config.entryPath)
+		const pluginDir = this.findPluginDir(pluginName)
+		if (!pluginDir) {
+			throw new Error(`无法定位插件目录: ${pluginName}`)
+		}
+		const sourceFiles = this.collectSourceFiles(pluginDir, config.entryPath)
 		const entry: PluginExtensionEntry = {
 			pluginName,
+			pluginDir,
 			entryPath: config.entryPath,
 			sourceFiles,
 			active: true,
@@ -247,7 +288,8 @@ export class ExtensionService {
 		if (!entry) return false
 		this.dbg('compile start %s', pluginName)
 		try {
-			const sourceHash = await this.computeSourceHash(entry.sourceFiles)
+			await this.refreshWatchFiles(entry)
+			const sourceHash = await this.computeSourceHash(entry.sourceFiles, entry.pluginDir)
 			const targetFile = this.getModuleFilePath(pluginName, sourceHash)
 			const moduleUrl = this.getModuleUrl(pluginName, sourceHash)
 
@@ -263,7 +305,7 @@ export class ExtensionService {
 				return true
 			}
 
-			const code = await this.generateBundle(entry.pluginName, entry.entryPath)
+			const code = await this.generateBundle(entry, entry.entryPath)
 			await mkdir(dirname(targetFile), { recursive: true })
 			await writeFile(targetFile, code, 'utf-8')
 			void this.cleanupOldModuleFiles(pluginName, MODULE_RETENTION_COUNT)
@@ -324,11 +366,11 @@ export class ExtensionService {
 		}
 	}
 
-	private async generateBundle(pluginName: string, entryPath: string): Promise<string> {
-		return this.compileEntryModule(pluginName, entryPath)
+	private async generateBundle(entry: PluginExtensionEntry, entryPath: string): Promise<string> {
+		return this.compileEntryModule(entry, entryPath)
 	}
 
-	private async compileEntryModule(pluginName: string, entryPath: string): Promise<string> {
+	private async compileEntryModule(entry: PluginExtensionEntry, entryPath: string): Promise<string> {
 		const hmr = this.ctx.hmrService
 		if (!hmr) {
 			throw new Error('HMRService not available')
@@ -340,7 +382,7 @@ export class ExtensionService {
 			throw new Error('ViteDevServer not initialized')
 		}
 
-		const absoluteEntry = this.resolvePluginFile(pluginName, entryPath)
+		const absoluteEntry = this.resolvePluginFile(entry.pluginDir, entryPath)
 		if (!absoluteEntry || !existsSync(absoluteEntry)) {
 			throw new Error(`Entry file not found: ${absoluteEntry}`)
 		}
@@ -397,28 +439,26 @@ export class ExtensionService {
 		})
 	}
 
-	private handleManifestUpdate(pluginName: string, entry: PluginExtensionEntry | null): void {
-		const previous = this.manifest.modules.find((mod) => mod.pluginName === pluginName)
-		const nextModules = this.manifest.modules.filter((mod) => mod.pluginName !== pluginName).slice()
+		private handleManifestUpdate(pluginName: string, entry: PluginExtensionEntry | null): void {
+			const previous = this.manifest.modules.find((mod) => mod.pluginName === pluginName)
+			const nextModules = this.manifest.modules.filter((mod) => mod.pluginName !== pluginName).slice()
 
-		if (entry && entry.moduleUrl && entry.lastSourceHash) {
-			const moduleRecord: CompiledExtensionModule = {
-				pluginName,
-				moduleUrl: entry.moduleUrl,
-				sourceHash: entry.lastSourceHash,
-				compiledAt: entry.lastCompiledAt ?? Date.now(),
-			}
-			if (
-				previous &&
-				previous.sourceHash === moduleRecord.sourceHash &&
-				previous.moduleUrl === moduleRecord.moduleUrl
-			) {
-				return
-			}
-			nextModules.push(moduleRecord)
-			nextModules.sort((a, b) => a.pluginName.localeCompare(b.pluginName))
+			if (entry && entry.moduleUrl && entry.lastSourceHash) {
+				const moduleRecord: CompiledExtensionModule = {
+					pluginName,
+					moduleUrl: entry.moduleUrl,
+					sourceHash: entry.lastSourceHash,
+					compiledAt: entry.lastCompiledAt ?? Date.now(),
+				}
+				// manifest 的“有效变更”只取决于 moduleUrl/sourceHash。
+				// compiledAt 只是调试字段，不应导致版本抖动（会让前端无限刷新/重复 import）。
+				if (previous && previous.sourceHash === moduleRecord.sourceHash && previous.moduleUrl === moduleRecord.moduleUrl) {
+					return
+				}
+				nextModules.push(moduleRecord)
+				nextModules.sort((a, b) => a.pluginName.localeCompare(b.pluginName))
 
-			this.manifestVersion += 1
+				this.manifestVersion += 1
 			this.manifest = { version: this.manifestVersion, modules: nextModules }
 			this.persistManifest()
 			this.notifyManifest({
@@ -521,25 +561,15 @@ export class ExtensionService {
 		})()
 	}
 
-	private collectSourceFiles(pluginName: string, entryPath: string): string[] {
-		const targets = new Set<string>()
-		const addTarget = (input: string | null) => {
-			if (!input) return
-			targets.add(input)
-			const directory = dirname(input)
-			if (directory && directory !== input) {
-				targets.add(directory)
-			}
-		}
-
-		const entryFile = this.resolvePluginFile(pluginName, entryPath)
-		addTarget(entryFile)
-
-		return Array.from(targets)
+	private collectSourceFiles(pluginDir: string, entryPath: string): string[] {
+		const entryFile = this.resolvePluginFile(pluginDir, entryPath)
+		return entryFile ? [entryFile] : []
 	}
 
-	private async computeSourceHash(files: string[]): Promise<string> {
+	private async computeSourceHash(files: string[], baseDir?: string): Promise<string> {
 		const hash = createHash('sha256')
+		hash.update(`compiler:${EXTENSION_COMPILER_VERSION}`)
+		hash.update(`vendors:${Array.from(VENDOR_PACKAGES).join('|')}`)
 		const expanded = await this.expandHashTargets(files)
 		expanded.sort()
 
@@ -547,7 +577,11 @@ export class ExtensionService {
 			try {
 				if (existsSync(file)) {
 					const content = await readFile(file, 'utf-8')
-					hash.update(file)
+					if (baseDir && file.startsWith(baseDir)) {
+						hash.update(relative(baseDir, file))
+					} else {
+						hash.update(file)
+					}
 					hash.update(content)
 				}
 			} catch {}
@@ -560,7 +594,8 @@ export class ExtensionService {
 		const collected: string[] = []
 		const visited = new Set<string>()
 
-		for (const target of files) {
+		const queue = files.slice()
+		for (const target of queue) {
 			if (!target) continue
 			if (visited.has(target)) continue
 			visited.add(target)
@@ -569,6 +604,11 @@ export class ExtensionService {
 			if (stats.isDirectory()) {
 				const entries = await readdir(target)
 				for (const entry of entries) {
+					// ignore dotfiles and typical editor temps
+					if (entry.startsWith('.')) continue
+					if (entry.endsWith('~') || entry.endsWith('.swp') || entry.endsWith('.swo') || entry.endsWith('.tmp')) {
+						continue
+					}
 					const fullPath = join(target, entry)
 					if (HASH_IGNORED_SEGMENTS.some((segment) => fullPath.includes(segment))) {
 						continue
@@ -576,12 +616,20 @@ export class ExtensionService {
 					const nestedStats = await stat(fullPath).catch(() => null)
 					if (!nestedStats) continue
 					if (nestedStats.isDirectory()) {
-						files.push(fullPath)
+						queue.push(fullPath)
 					} else {
+						// Only hash relevant source-ish files.
+						// Avoid spurious rebuilds from unrelated files.
+						const lower = entry.toLowerCase()
+						if (lower.endsWith('.d.ts') || lower.endsWith('.map')) continue
+						if (!HASH_ALLOWED_EXTENSIONS.some((ext) => lower.endsWith(ext))) continue
 						collected.push(fullPath)
 					}
 				}
 			} else {
+				const lower = target.toLowerCase()
+				if (lower.endsWith('.d.ts') || lower.endsWith('.map')) continue
+				if (!HASH_ALLOWED_EXTENSIONS.some((ext) => lower.endsWith(ext))) continue
 				collected.push(target)
 			}
 		}
@@ -589,16 +637,81 @@ export class ExtensionService {
 		return collected
 	}
 
-	private resolvePluginFile(
-		pluginName: string,
-		targetPath: string | null | undefined,
-	): string | null {
+	private async refreshWatchFiles(entry: PluginExtensionEntry): Promise<void> {
+		const hmr = this.ctx.hmrService
+		// @ts-expect-error accessing private
+		const vite = hmr?.vite as import('vite').ViteDevServer | undefined
+		if (!vite) return
+
+		const absoluteEntry = this.resolvePluginFile(entry.pluginDir, entry.entryPath)
+		if (!absoluteEntry || !existsSync(absoluteEntry)) return
+
+		const root = vite.config.root
+		let url = absoluteEntry
+		if (url.startsWith(root)) {
+			url = url.slice(root.length)
+		}
+		if (!url.startsWith('/')) {
+			url = '/' + url
+		}
+
+		try {
+			// Ensure module graph populated for this entry
+			await vite.transformRequest(url)
+
+			const rootModule = await vite.moduleGraph.getModuleByUrl(url)
+			if (!rootModule) return
+
+			const nextFiles = this.collectModuleGraphFiles(rootModule)
+			const nextSignature = nextFiles.join('\n')
+			const prevSignature = entry.sourceFiles.join('\n')
+			if (nextSignature === prevSignature) return
+
+			entry.sourceFiles = nextFiles
+			this.setupWatcher(entry.pluginName, entry)
+		} catch {
+			// Keep previous watcher/hash targets on failure.
+		}
+	}
+
+	private collectModuleGraphFiles(root: import('vite').ModuleNode): string[] {
+		const files = new Set<string>()
+		const visited = new Set<import('vite').ModuleNode>()
+		const stack = [root]
+
+		while (stack.length) {
+			const node = stack.pop()!
+			if (visited.has(node)) continue
+			visited.add(node)
+
+			if (node.file && this.isHashableSourceFile(node.file)) {
+				files.add(node.file)
+			}
+
+			for (const next of node.importedModules) stack.push(next)
+			for (const next of node.dynamicallyImportedModules) stack.push(next)
+		}
+
+		// moduleGraph 里有时会缺失一些依赖（例如未 transform 的模块），兜底补齐入口自身
+		if (root.file && this.isHashableSourceFile(root.file)) {
+			files.add(root.file)
+		}
+
+		return Array.from(files).sort()
+	}
+
+	private isHashableSourceFile(filePath: string): boolean {
+		const lower = filePath.toLowerCase()
+		if (HASH_IGNORED_SEGMENTS.some((segment) => lower.includes(segment))) return false
+		if (lower.endsWith('.d.ts') || lower.endsWith('.map')) return false
+		return HASH_ALLOWED_EXTENSIONS.some((ext) => lower.endsWith(ext))
+	}
+
+	private resolvePluginFile(pluginDir: string, targetPath: string | null | undefined): string | null {
 		if (!targetPath) return null
 		if (isAbsolute(targetPath)) {
 			return targetPath
 		}
-		const pluginDir = this.findPluginDir(pluginName)
-		if (!pluginDir) return null
 		return resolve(pluginDir, targetPath)
 	}
 
@@ -619,8 +732,41 @@ export class ExtensionService {
 	}
 }
 
+function looksLikeLegacyBrokenBundle(code: string): boolean {
+	// 典型坏产物：把 `import { Foo as bar }` 直接拼进了解构，导致语法错误
+	// `const { Foo as bar } = window.__PLUXEL_VENDORS__[...]`
+	const head = code.slice(0, 20000)
+	// 注意：不要用宽泛的 `{ ... as ... }` 检测，否则会误判字符串
+	//（例如 "as a constructor"）导致每次请求都删文件 → 无限编译/无限加载。
+	if (
+		/window\.__PLUXEL_VENDORS__/.test(head) &&
+		/\bconst\s*\{\s*[^}]*\bas\s+[\w$]+[^}]*\}\s*=\s*window\.__PLUXEL_VENDORS__/.test(head)
+	) {
+		return true
+	}
+	// 旧 worker 使用 app build，会生成“可执行脚本”而不是“可 import 模块”，最终没有任何 export。
+	// dynamic import 不会报错，但拿到空 module namespace，导致 UI 永远不注册。
+	if (!/\bexport\s+/.test(code) && !/\bexport\{/.test(code)) {
+		return true
+	}
+	// 兼容之前遇到的 node-only / side-effect import 输出
+	if (/from\s+["']node:module["']/.test(head) || /createRequire\(/.test(head)) return true
+	if (/import\s+["']react\/jsx-runtime["'];?/.test(head)) return true
+	// 浏览器没有 process，全量 bundle 里出现 process.env 说明有 node-style env 检测残留
+	if (/\bprocess\.env\b/.test(head)) return true
+	return false
+}
+
 function transformVendorImports(code: string): string {
 	let result = code
+
+	// Defensive: strip Node-only createRequire helpers that may appear in SSR-oriented outputs.
+	// These modules are executed in the browser.
+	result = result.replace(
+		/^\s*import\s+\{\s*createRequire\s*\}\s+from\s+["'](?:node:module|module)["'];?\s*$/gm,
+		'',
+	)
+	result = result.replace(/^\s*createRequire\s*\(\s*import\.meta\.url\s*\)\s*;?\s*$/gm, '')
 
 	for (const pkg of VENDOR_PACKAGES) {
 		const normalized = pkg.replace(/\//g, '_')
@@ -663,6 +809,14 @@ function transformVendorImports(code: string): string {
 		result = result.replace(patterns[2]!, (_, name: string) => {
 			return `const ${name} = window.__PLUXEL_VENDORS__["${pkg}"].default || window.__PLUXEL_VENDORS__["${pkg}"];`
 		})
+
+		// Side-effect-only imports are invalid in browser for bare specifiers (no import map).
+		// Example: `import "react/jsx-runtime";`
+		const sideEffectImport = new RegExp(
+			`(^|\\n)\\s*import\\s*["']${escapeRegex(pkg)}["'];?\\s*(?=\\n|$)`,
+			'g',
+		)
+		result = result.replace(sideEffectImport, '$1')
 	}
 
 	const definePluginImport = new RegExp(
@@ -737,7 +891,7 @@ function rewriteVendorNamedImports(names: string, pkg: string): string {
 		.map((part) => part.trim())
 		.filter(Boolean)
 		.map((part) => {
-			const match = part.match(/^([\\w$]+)\\s+as\\s+([\\w$]+)$/)
+			const match = part.match(/^([\w$]+)\s+as\s+([\w$]+)$/)
 			if (match) {
 				return `${match[1]}: ${match[2]}`
 			}

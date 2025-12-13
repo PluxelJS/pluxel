@@ -2,19 +2,17 @@
 
 import type { ReactNode } from 'react'
 import { useExtensionSurface } from './ExtensionSurface'
-import type { ExtensionContext, ExtensionPoint, ExtensionItem } from '../types'
+import type { ExtensionPoint, ExtensionItem } from '../types'
 
-export interface ExtensionSlotProps {
+export interface ExtensionSlotProps<P extends ExtensionPoint = ExtensionPoint> {
 	/** 扩展点 */
-	point: ExtensionPoint
+	point: P
 	/** 无扩展时的后备内容 */
 	fallback?: ReactNode
 	/** 自定义渲染包装 */
 	wrapper?: (nodes: ReactNode[]) => ReactNode
 	/** 自定义容器 className */
 	className?: string
-	/** 上下文覆盖/合并（用于插件特定上下文） */
-	context?: Partial<ExtensionContext>
 }
 
 /**
@@ -30,12 +28,16 @@ export interface ExtensionSlotProps {
  * // 带插件上下文
  * <ExtensionSlot
  *   point="plugin:tabs"
- *   context={{ pluginName: 'MyPlugin', isPluginRunning: true }}
  * />
  * ```
  */
-export function ExtensionSlot({ point, fallback, wrapper, className, context }: ExtensionSlotProps) {
-	const { nodes, hasFill } = useExtensionSurface(point, { context })
+export function ExtensionSlot<P extends ExtensionPoint>({
+	point,
+	fallback,
+	wrapper,
+	className,
+}: ExtensionSlotProps<P>) {
+	const { nodes, hasFill } = useExtensionSurface(point)
 
 	if (!hasFill) {
 		return <>{fallback}</>
@@ -52,15 +54,13 @@ export function ExtensionSlot({ point, fallback, wrapper, className, context }: 
 	return <>{nodes}</>
 }
 
-export interface ExtensionSlotRenderProps {
+export interface ExtensionSlotRenderProps<P extends ExtensionPoint = ExtensionPoint> {
 	/** 扩展点 */
-	point: ExtensionPoint
-	/** 上下文覆盖/合并 */
-	context?: Partial<ExtensionContext>
+	point: P
 	/** 渲染函数 */
 	children: (info: {
 		nodes: ReactNode[]
-		items: Array<{ meta: ExtensionItem['meta'] }>
+		items: Array<{ meta: ExtensionItem<P>['meta'] }>
 		hasFill: boolean
 	}) => ReactNode
 }
@@ -85,8 +85,11 @@ export interface ExtensionSlotRenderProps {
  * </ExtensionSlotRender>
  * ```
  */
-export function ExtensionSlotRender({ point, context, children }: ExtensionSlotRenderProps) {
-	const surface = useExtensionSurface(point, { context })
+export function ExtensionSlotRender<P extends ExtensionPoint>({
+	point,
+	children,
+}: ExtensionSlotRenderProps<P>) {
+	const surface = useExtensionSurface(point)
 
 	return (
 		<>

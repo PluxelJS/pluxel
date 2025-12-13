@@ -53,6 +53,7 @@ export interface LayoutProps {
 	/** —— 其他 —— */
 	mainPadding?: string | number
 	footerHeight?: number
+	footer?: React.ReactNode | ((ctx: { opened: boolean; toggle: () => void; isMobile: boolean }) => React.ReactNode)
 	currentPath?: string
 	navbarWidth?: number
 	compactNavbarWidth?: number
@@ -84,6 +85,7 @@ export function Layout({
 	// Misc
 	mainPadding = 'md',
 	footerHeight = 0,
+	footer,
 	currentPath,
 	children,
 }: LayoutProps) {
@@ -159,6 +161,12 @@ export function Layout({
 		return <AppHeader {...props} />
 	}, [header, headerProps, ctx, isMobile, collapseDesktop, toggle])
 
+	const footerNode = useMemo(() => {
+		if (!footer) return null
+		if (typeof footer === 'function') return footer(ctx as any)
+		return footer
+	}, [footer, ctx])
+
 	// —— 组装 Navbar —— //
 	const navbarNode = useMemo(() => {
 		if (typeof navbar === 'function') return navbar(ctx)
@@ -194,6 +202,7 @@ export function Layout({
 			data-nav-opened={opened ? 'true' : 'false'}
 			data-nav-compact={compactNavbar ? 'true' : undefined}
 			header={{ height: headerHeight }}
+			footer={footerNode ? { height: footerHeight } : undefined}
 			navbar={{
 				width: computedNavbarWidth,
 				breakpoint: 'sm',
@@ -245,6 +254,9 @@ export function Layout({
 					</Box>
 				</Box>
 			</AppShell.Main>
+
+			{/* Footer（可空） */}
+			{footerNode && <AppShell.Footer>{footerNode}</AppShell.Footer>}
 
 			{/* 移动端抽屉遮罩（只盖 Main，不遮 Header） */}
 			{opened && isMobile && (

@@ -1,23 +1,14 @@
 // RpcService.ts - RPC 扩展管理服务
 import { type Context, Injectable } from '@pluxel/core'
 import type { RpcTarget } from 'capnweb'
+import type { RpcExtensions } from '@pluxel/hmr/services'
 
 const serviceName = 'rpc' as const
 
 /** 扩展工厂：每次 RPC 请求时调用，返回 RpcTarget 实例 */
 export type RpcExtensionFactory<T extends RpcTarget = RpcTarget> = (ctx: Context) => T
 
-/**
- * RPC 扩展接口，插件通过 declare module 扩展
- * @example
- * declare module '@pluxel/hmr/services' {
- *   interface RpcExtensions {
- *     'my-plugin': MyPluginRpc
- *   }
- * }
- */
-// biome-ignore lint/suspicious/noEmptyInterface: <外部扩展>
-export interface RpcExtensions {}
+export type { RpcExtensions } from '@pluxel/hmr/services'
 
 declare module '@pluxel/core' {
 	interface Context {

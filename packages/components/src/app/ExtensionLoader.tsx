@@ -30,6 +30,16 @@ export function ExtensionLoader({
 	pollInterval = 5000,
 	onRunningPluginsChange,
 }: ExtensionLoaderProps) {
+	useEffect(() => {
+		if (typeof window === 'undefined') return
+		if (process.env.NODE_ENV !== 'production') {
+			console.log('[ExtensionLoader] mounted', {
+				origin: window.location.origin,
+				pathname: window.location.pathname,
+			})
+		}
+	}, [])
+
 	const stream = useSseClient({ namespaces: ['extensions'] })
 	const query = useQuery({
 		refetchOnWindowVisible: false,
@@ -97,7 +107,7 @@ export function ExtensionLoader({
 			}
 		}
 		onRunningPluginsChange(next)
-		}, [effectivePlugins, onRunningPluginsChange])
+	}, [effectivePlugins, onRunningPluginsChange])
 
 	const manifestVersionRef = useRef(0)
 	const manifestSignatureRef = useRef('')
@@ -145,6 +155,13 @@ export function ExtensionLoader({
 		}
 
 		const url = withCacheBusting(module.moduleUrl, module.sourceHash, module.compiledAt)
+		if (process.env.NODE_ENV !== 'production') {
+			console.log('[ExtensionLoader] importing', {
+				pluginName: module.pluginName,
+				sourceHash: module.sourceHash,
+				url,
+			})
+		}
 		extLog('loading %s@%s', module.pluginName, module.sourceHash)
 		const loadPromise = loadExtensionModule(
 			module.pluginName,
@@ -158,6 +175,12 @@ export function ExtensionLoader({
 
 		try {
 			await loadPromise
+			if (process.env.NODE_ENV !== 'production') {
+				console.log('[ExtensionLoader] loaded', {
+					pluginName: module.pluginName,
+					sourceHash: module.sourceHash,
+				})
+			}
 			extLog('loaded %s@%s', module.pluginName, module.sourceHash)
 		} catch (error) {
 			moduleCacheRef.current.delete(module.pluginName)
@@ -178,7 +201,18 @@ export function ExtensionLoader({
 			try {
 				extLog('fetching manifest')
 				const manifest = await fetchExtensionManifest()
+				if (process.env.NODE_ENV !== 'production') {
+					console.log('[ExtensionLoader] fetched manifest', {
+						version: manifest.version,
+						modules: manifest.modules.map((m) => ({
+							pluginName: m.pluginName,
+							sourceHash: m.sourceHash,
+							moduleUrl: m.moduleUrl,
+						})),
+					})
+				}
 				extLog('fetched manifest v%d', manifest.version)
+				const failedPlugins: string[] = []
 				const nextSignature = manifest.modules
 					.map((module) => `${module.pluginName}:${module.sourceHash}`)
 					.sort()
@@ -197,12 +231,27 @@ export function ExtensionLoader({
 						try {
 							await ensureModuleLoaded(module)
 						} catch (error) {
-							if (process.env.NODE_ENV !== 'production') {
-								console.error('[ExtensionLoader] failed to load module', module.pluginName, error)
-							}
+							failedPlugins.push(module.pluginName)
+							console.error('[ExtensionLoader] failed to load module', module.pluginName, error)
 						}
 					}),
 				)
+
+				// 自愈：如果加载失败（比如服务端删除了陈旧 hash 并触发重新编译），立刻刷新 manifest 再重试一次
+				if (failedPlugins.length) {
+					const retryManifest = await fetchExtensionManifest()
+					await Promise.all(
+						failedPlugins.map(async (pluginName) => {
+							const next = retryManifest.modules.find((m) => m.pluginName === pluginName)
+							if (!next) return
+							try {
+								await ensureModuleLoaded(next)
+							} catch (error) {
+								console.error('[ExtensionLoader] retry failed', pluginName, error)
+							}
+						}),
+					)
+				}
 				for (const name of Array.from(moduleCacheRef.current.keys())) {
 					if (!seen.has(name)) {
 						moduleCacheRef.current.delete(name)
@@ -213,9 +262,7 @@ export function ExtensionLoader({
 					manifestSignatureRef.current = nextSignature
 				extLog('synced manifest v%d (%d modules)', manifest.version, manifest.modules.length)
 			} catch (error) {
-				if (process.env.NODE_ENV !== 'production') {
-					console.error('[ExtensionLoader] failed to sync manifest', error)
-				}
+				console.error('[ExtensionLoader] failed to sync manifest', error)
 			} finally {
 				loadingRef.current = false
 				recomputeManifestSignature()

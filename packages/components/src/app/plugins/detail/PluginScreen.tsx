@@ -224,9 +224,8 @@ export const PluginScreen = memo(function PluginScreen({ pluginName }: PluginScr
 		return {
 			...parentExtensionCtx,
 			pluginName: displayName,
-			isPluginRunning: isRunning,
 		}
-	}, [parentExtensionCtx, displayName, isRunning])
+	}, [parentExtensionCtx, displayName])
 
 	if (!pluginName) {
 		return (

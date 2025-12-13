@@ -1,5 +1,6 @@
 import { type Context, Injectable } from '@pluxel/core'
 import { createResponse, type Session } from 'better-sse'
+import type { SseEvents } from '@pluxel/hmr/services'
 
 import type { AppEnv } from './env'
 
@@ -10,17 +11,7 @@ declare module '@pluxel/core' {
 		[serviceName]: SseService
 	}
 }
-/**
- * 插件/应用可通过声明合并扩展
- * @example
- * declare module '@pluxel/hmr/services' {
- *   interface SseEvents {
- *     'my-plugin': MyPluginRpc
- *   }
- * }
- */
-// biome-ignore lint/suspicious/noEmptyInterface: 用于外部扩展
-export interface SseEvents {}
+export type { SseEvents } from '@pluxel/hmr/services'
 
 export interface SseEventPayload {
 	event?: string

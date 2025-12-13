@@ -56,7 +56,7 @@ import { RouterLinkAdapter } from '../../RouterLinkAdapter'
 import { PLUGIN_SEARCH_EVENT, PLUGIN_SEARCH_KEY } from '../../constants'
 import { updatePluginStatuses } from '../actions'
 import { subscribePluginStatusEvents } from '../statusEvents'
-import type { PluginStatusAction } from '../../../../../hmr/src/api/hono/rpc/types'
+import type { PluginStatusAction } from '@pluxel/hmr-web'
 
 interface PluginListProps {
 	pluginName?: string

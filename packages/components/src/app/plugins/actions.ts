@@ -3,7 +3,7 @@ import type {
 	PluginStatusBatchAction,
 	PluginStatusBatchResult,
 	PluginStatusMutationResult,
-} from '../../../../hmr/src/api/hono/rpc/types'
+} from '@pluxel/hmr-web'
 import { createRpcClient } from '../rpc'
 import { emitPluginStatusEvent } from './statusEvents'
 

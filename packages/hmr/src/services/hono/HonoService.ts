@@ -175,8 +175,8 @@ export class HonoService {
 		}
 
 		channel.emit('ready', { type: 'ready' })
-		// 先推一次版本与全量清单，客户端收到 sync 后可按需拉取 modules
-		channel.emit('sync', service.getManifest())
+		// 先推一次版本；客户端收到 sync 后按需拉取 manifest
+		channel.emit('sync', { type: 'sync', version: service.getManifest().version })
 
 		const send = (event: ExtensionManifestEvent) => channel.emit(event.type, event)
 		const unsubscribe = service.subscribeManifest(send)

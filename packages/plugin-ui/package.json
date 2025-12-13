@@ -1,0 +1,41 @@
+{
+	"private": true,
+	"name": "@pluxel/plugin-ui",
+	"version": "0.1.0",
+	"description": "Shared plugin UI types (no runtime)",
+	"main": "./dist/index.cjs",
+	"module": "./dist/index.mjs",
+	"types": "./dist/index.d.cts",
+	"type": "module",
+	"exports": {
+		".": {
+			"@pluxel/source": "./src/index.ts",
+			"require": "./dist/index.cjs",
+			"import": "./dist/index.mjs"
+		},
+		"./package.json": "./package.json"
+	},
+	"files": [
+		"dist",
+		"!**/*.map"
+	],
+	"scripts": {
+		"build": "tsdown"
+	},
+	"peerDependencies": {
+		"react": "^19.0.0"
+	},
+	"devDependencies": {
+		"@types/react": "^19.2.7"
+	},
+	"publishConfig": {
+		"exports": {
+			".": {
+				"require": "./dist/index.cjs",
+				"import": "./dist/index.mjs"
+			},
+			"./package.json": "./package.json"
+		}
+	}
+}
+

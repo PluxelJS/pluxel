@@ -108,28 +108,26 @@ class ExtensionRuntime {
 		const cleanups: Array<() => void> = []
 
 		if (module.setup) {
-			await module.setup()
+			const maybe = await module.setup({ pluginName })
+			if (typeof maybe === 'function') cleanups.push(maybe)
 		}
 
 		if (module.extensions) {
 			for (const ext of module.extensions) {
-				// 如果用户提供了 id，确保前置 pluginName；否则自动生成
-				const rawId = ext.meta?.id
-				const extId = rawId
-					? (rawId.startsWith(`${pluginName}:`) ? rawId : `${pluginName}:${rawId}`)
-					: `${pluginName}:${ext.point}:${Math.random().toString(36).slice(2)}`
-
+				const extId = `${pluginName}:${ext.id}`
 				const meta: ExtensionMeta = {
-					...ext.meta,
+					...(ext.meta as any),
 					id: extId,
 					pluginName,
-					priority: ext.meta?.priority ?? 0,
-					requireRunning: ext.meta?.requireRunning ?? false,
+					priority: ext.priority ?? 0,
+					// Default to hiding plugin-provided UI when the plugin is not running.
+					// Plugins can opt out per extension via `requireRunning: false`.
+					requireRunning: ext.requireRunning ?? true,
 				}
 
 				const cleanup = extensionRegistry.register(ext.point, {
 					meta,
-					when: ext.when,
+					when: ext.when as any,
 					render: (ctx) => {
 						const Component = ext.Component
 						return (
@@ -138,8 +136,31 @@ class ExtensionRuntime {
 								pluginName={pluginName}
 								extensionId={meta.id}
 								point={ext.point}
+								fallback={
+									process.env.NODE_ENV !== 'production'
+										? ({ error }) => (
+												<div
+													style={{
+														padding: 8,
+														borderRadius: 8,
+														border: '1px solid rgba(255, 0, 0, 0.25)',
+														background: 'rgba(255, 0, 0, 0.06)',
+														fontSize: 12,
+														lineHeight: 1.4,
+													}}
+												>
+													<div style={{ fontWeight: 600 }}>
+														Extension render failed: {pluginName} · {ext.point}
+													</div>
+													<div style={{ opacity: 0.85 }}>
+														{error?.message ?? String(error ?? 'unknown error')}
+													</div>
+												</div>
+											)
+										: null
+								}
 							>
-								<Component ctx={ctx} />
+								<Component ctx={ctx as any} />
 							</ExtensionErrorBoundary>
 						)
 					},

@@ -4,15 +4,14 @@ import type { Context } from '@pluxel/core'
 import { RpcTarget } from 'capnweb'
 import { resolve } from 'pathe'
 import * as v from 'valibot'
-
-import { readGroups, writeGroups } from '../../features/groups/service'
-import { PluginGroupInput, type PluginGroupInputValue } from '../../features/groups/schema'
-import { getStatusOverview } from '../../features/pluginStatus/service'
 import type { RpcExtensions } from '../../../services/hono/RpcService'
+import { PluginGroupInput, type PluginGroupInputValue } from '../../features/groups/schema'
+import { readGroups, writeGroups } from '../../features/groups/service'
+import { getStatusOverview } from '../../features/pluginStatus/service'
+import { MarketHandle } from './MarketHandle'
+import { applyStatusActions, PluginHandle } from './PluginHandle'
 import type { GroupMutationResult, PluginStatusBatchAction, PluginStatusBatchResult } from './types'
 import { formatGroupIssues } from './utils'
-import { applyStatusActions, PluginHandle } from './PluginHandle'
-import { MarketHandle } from './MarketHandle'
 
 export class HmrRpcApi extends RpcTarget {
 	#ctx: Context
