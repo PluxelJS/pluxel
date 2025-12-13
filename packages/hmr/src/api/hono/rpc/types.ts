@@ -58,6 +58,45 @@ export type PluginStatusBatchResult = {
 	commitError?: string
 }
 
+export type PluginDependencyKind = 'plugin' | 'base' | 'forkable'
+
+export type PluginDependencyOption = {
+	name: string
+	isRunning: boolean
+	isEnabled: boolean
+}
+
+export type PluginDependencyState = {
+	index: number
+	token: string
+	kind: PluginDependencyKind
+	effective: string
+	isRunning: boolean
+	selected: string | null
+	baseProvider: string | null
+	options: PluginDependencyOption[]
+}
+
+export type PluginDependencyMutationResult = {
+	ok: boolean
+	code?: string
+	error?: string
+}
+
+export type EnsureForkResult = {
+	ok: boolean
+	forkName?: string
+	code?: string
+	error?: string
+}
+
+export type BaseProvisionInfo = {
+	baseToken: string
+	currentDefault: string | null
+	isDefault: boolean
+	providers: PluginDependencyOption[]
+}
+
 // Market 相关类型
 export type PackageSpecInput = {
 	raw?: string | null

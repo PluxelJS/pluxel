@@ -117,14 +117,29 @@ function usePluginDetail(pluginName?: string) {
 						source.packageName
 						source.version
 						source.tag
+
+						// For dependency links: we need a list of real plugin names.
+						// Base tokens (abstract classes) are not plugins and should not be clickable.
+						query.pluginStatus?.statuses.forEach((entry) => {
+							entry.name
+						})
 					}
 				: undefined,
 	})
 
 	let scope: PluginScope | undefined
+	let knownPluginNames = new Set<string>()
 	if (pluginName !== undefined) {
 		try {
 			scope = query.plugin({ name: pluginName })
+			try {
+				const names = new Set<string>()
+				for (const entry of query.pluginStatus?.statuses ?? []) {
+					const name = entry?.name
+					if (typeof name === 'string' && name) names.add(name)
+				}
+				knownPluginNames = names
+			} catch {}
 		} catch (error) {
 			if (process.env.NODE_ENV !== 'production') {
 				console.warn('[PluginScreen] Failed to read plugin scope', error)
@@ -136,10 +151,15 @@ function usePluginDetail(pluginName?: string) {
 
 	return {
 		scope,
+		knownPluginNames,
 		ready,
 		error: query.$state.error,
 		loading: query.$state.isLoading,
-		refetch: query.$refetch,
+		refetch: (force?: boolean) => {
+			const fn = (query as any)?.$refetch as ((force?: boolean) => Promise<unknown>) | undefined
+			if (typeof fn !== 'function') return Promise.resolve()
+			return fn(force).then(() => undefined)
+		},
 	}
 }
 
@@ -162,7 +182,7 @@ export const PluginScreen = memo(function PluginScreen({ pluginName }: PluginScr
 	)
 	const isStacked = isStackedWide || isStackedBreak
 
-	const { scope, ready, error, loading, refetch } = usePluginDetail(pluginName)
+	const { scope, knownPluginNames, ready, error, loading, refetch } = usePluginDetail(pluginName)
 	const parentExtensionCtx = useExtensionContext()
 
 	const displayName = scope?.name ?? pluginName
@@ -200,6 +220,7 @@ export const PluginScreen = memo(function PluginScreen({ pluginName }: PluginScr
 			description,
 			scope,
 			dependencies,
+			knownPluginNames,
 			isRunning,
 			isSyncing: syncing,
 			isEnabled,
@@ -212,6 +233,7 @@ export const PluginScreen = memo(function PluginScreen({ pluginName }: PluginScr
 		description,
 		displayName,
 		handleRefetch,
+		knownPluginNames,
 		isRunning,
 		isEnabled,
 		lifecycleStage,

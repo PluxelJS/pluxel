@@ -9,6 +9,12 @@ import {
 import { dirname, normalize } from 'pathe'
 import * as v from 'valibot'
 import type { ConfigSchemaMap } from '../..'
+import {
+	EXTRA_BASE_PROVIDERS,
+	EXTRA_FORKS,
+	type BaseProvidersExtra,
+	type ForksExtra,
+} from './selection'
 
 type ModuleId = string
 type PluginName = string
@@ -48,6 +54,40 @@ export class PluginRegistry {
 	private enrolled = new WeakMap<PluginConstructor, Set<ModuleId>>() // 模块级去重
 
 	constructor(private ctx: Context) {}
+
+	private getForkIds(originalName: string): string[] {
+		const getExtra = (this.ctx.configService as any)?.getExtra as
+			| ((key: string) => unknown)
+			| undefined
+		if (typeof getExtra !== 'function') return []
+
+		const map = getExtra.call(this.ctx.configService, EXTRA_FORKS) as ForksExtra | undefined
+		const list = map?.[originalName]
+		if (!Array.isArray(list) || list.length === 0) return []
+		const out: string[] = []
+		for (const id of list) {
+			const forkId = typeof id === 'string' ? id.trim() : ''
+			if (forkId) out.push(forkId)
+		}
+		return out
+	}
+
+	private recordBaseProvider(baseToken: Function, providerName: string) {
+		const baseKey = getDeclaredName(baseToken)
+		const getExtra = (this.ctx.configService as any)?.getExtra as
+			| ((key: string) => unknown)
+			| undefined
+		const setExtra = (this.ctx.configService as any)?.setExtra as
+			| ((key: string, value: unknown) => void)
+			| undefined
+		if (typeof getExtra !== 'function' || typeof setExtra !== 'function') return
+
+		const prev =
+			(getExtra.call(this.ctx.configService, EXTRA_BASE_PROVIDERS) as BaseProvidersExtra | undefined) ??
+			{}
+		if (prev[baseKey] === providerName) return
+		setExtra.call(this.ctx.configService, EXTRA_BASE_PROVIDERS, { ...prev, [baseKey]: providerName })
+	}
 
 	/* ----------------------------- Transaction ----------------------------- */
 	/**
@@ -295,6 +335,34 @@ export class PluginRegistry {
 			return [this.startPlugin(name, ctor)]
 		})
 		if (toStart.length > 0) await Promise.all(toStart)
+
+		// Forks: start enabled forks for forkable plugins from this module.
+		const forkStarts: Array<Promise<void>> = []
+		for (const { ctor } of list) {
+			let name: string
+			try {
+				name = getPluginInfo(ctor).id
+			} catch {
+				continue
+			}
+			const forkIds = this.getForkIds(name)
+			if (forkIds.length === 0) continue
+
+			for (const forkId of forkIds) {
+				const forkName = `${name}#${forkId}`
+				if (!this.ctx.configService.isEnable(forkName)) continue
+				try {
+					const ForkCtor = this.ctx.registry.fork(ctor as any, forkId) as PluginConstructor
+					forkStarts.push(this.startPlugin(forkName, ForkCtor))
+				} catch (err) {
+					this.ctx.logger?.warn(
+						{ err, name, forkId },
+						`[PluginRegistry] 启动 fork 失败：${name}#${forkId}`,
+					)
+				}
+			}
+		}
+		if (forkStarts.length > 0) await Promise.all(forkStarts)
 	}
 
 	async enable(name: PluginName, ctor: PluginConstructor): Promise<void> {
@@ -302,6 +370,47 @@ export class PluginRegistry {
 	}
 
 	async startPlugin(name: PluginName, ctor: PluginConstructor): Promise<void> {
+		// Base provider selection (global default):
+		// - keep multiple providers enabled/running if desired;
+		// - only the selected provider binds the base token alias (provideBase=true);
+		// - others register only by their ctor (provideBase=false).
+		let provideBase: boolean | undefined
+		try {
+			const info = getPluginInfo(ctor)
+			const base = info.base as unknown as Function | null
+			if (base) {
+				const baseKey = getDeclaredName(base)
+				const getExtra = (this.ctx.configService as any)?.getExtra as
+					| ((key: string) => unknown)
+					| undefined
+				const setExtra = (this.ctx.configService as any)?.setExtra as
+					| ((key: string, value: unknown) => void)
+					| undefined
+
+				const map =
+					typeof getExtra === 'function'
+						? ((getExtra.call(this.ctx.configService, EXTRA_BASE_PROVIDERS) as BaseProvidersExtra | undefined) ??
+							{})
+						: {}
+				const selected = map?.[baseKey]
+
+				if (typeof selected === 'string' && selected.length > 0) {
+					provideBase = selected === name
+				} else {
+					// No selection yet -> first started provider becomes default.
+					provideBase = true
+					if (typeof setExtra === 'function') {
+						setExtra.call(this.ctx.configService, EXTRA_BASE_PROVIDERS, {
+							...map,
+							[baseKey]: name,
+						})
+					}
+				}
+			}
+		} catch {
+			// ignore
+		}
+
 		// 配置校验/补齐（幂等）
 		const schema = this.getSchema(ctor)
 		if (schema) {
@@ -360,7 +469,17 @@ export class PluginRegistry {
 				this.ctx.configService.enablePlugin(name)
 			}
 			enabled = true
-			this.ctx.registry.pluginRegistry.registerPlugin(ctor)
+			this.ctx.registry.pluginRegistry.registerPlugin(
+				ctor,
+				provideBase === undefined ? undefined : { provideBase },
+			)
+			if (provideBase) {
+				try {
+					const info = getPluginInfo(ctor)
+					const base = info.base as unknown as Function | null
+					if (base) this.recordBaseProvider(base, name)
+				} catch {}
+			}
 		} catch (err) {
 			// 回滚
 			this.logGuard(`core.unregister(${name})`, () => {
@@ -400,6 +519,14 @@ export class PluginRegistry {
 			const { id: name } = getPluginInfo(ctor)
 			if (!this.isPrimaryProvider(moduleId, ctor)) continue
 			this.stopPlugin(name, ctor)
+
+			// Stop forks derived from this ctor as well (module is going away).
+			for (const forkCtor of this.ctx.registry.listForks(ctor as any)) {
+				try {
+					const forkName = getPluginInfo(forkCtor as any).id
+					this.stopPlugin(forkName, forkCtor as any)
+				} catch {}
+			}
 		}
 	}
 
@@ -417,6 +544,9 @@ export class PluginRegistry {
 			const { id: name } = getPluginInfo(ctor)
 			if (!this.isPrimaryProvider(moduleId, ctor)) continue
 			this.disablePersisted(name)
+
+			const forkIds = this.getForkIds(name)
+			for (const forkId of forkIds) this.disablePersisted(`${name}#${forkId}`)
 		}
 	}
 

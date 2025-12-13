@@ -91,24 +91,18 @@ import {
 } from '@tabler/icons-react'
 import type React from 'react'
 import { memo, startTransition, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import type { GroupConfig, PluginStatuses } from './types'
+import {
+	COLLAPSE_STORAGE_KEY,
+	arraysEqual,
+	assertNoDup,
+	genGroupId,
+	readCollapsedState,
+	sanitize,
+	unique,
+} from './utils'
 
-// ---------- types & utils ----------
-const genGroupId = () =>
-	globalThis.crypto?.randomUUID?.() ??
-	`g_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`
-
-export type PluginStatuses = { [name: string]: PluginStatus }
-export interface PluginStatus {
-	id: string
-	name?: string
-	isRunning: boolean
-	isEnabled?: boolean
-}
-export interface GroupConfig {
-	groupId: string
-	name: string
-	pluginIds: string[]
-}
+export type { GroupConfig, PluginStatus, PluginStatuses } from './types'
 
 type Density = 'comfortable' | 'compact' | 'ultra'
 const DENSITY: Record<Density, { rowH: number; px: number; py: number; font: 'xs' | 'sm' }> = {
@@ -150,64 +144,6 @@ const fromIid = (id: string) => id.slice(2)
 const gid = (g: string) => `g:${g}`
 const isGid = (id: UniqueIdentifier) => typeof id === 'string' && id.startsWith('g:')
 const fromGid = (id: string) => id.slice(2)
-
-function sanitize(allIds: string[], groups: GroupConfig[]) {
-	const seen = new Set<string>()
-	const allow = new Set(allIds)
-	const nextGroups = groups.map((g) => ({
-		groupId: g.groupId,
-		name: g.name,
-		pluginIds: g.pluginIds
-			.filter((id) => allow.has(id))
-			.filter((id) => !seen.has(id) && (seen.add(id), true)),
-	}))
-	const ungrouped = allIds.filter((id) => !seen.has(id))
-	return { groups: nextGroups, ungrouped }
-}
-const unique = (arr: string[]) => Array.from(new Set(arr))
-const arraysEqual = (a: string[], b: string[]) => {
-	if (a === b) return true
-	if (a.length !== b.length) return false
-	for (let i = 0; i < a.length; i += 1) {
-		if (a[i] !== b[i]) return false
-	}
-	return true
-}
-const assertNoDup = (groups: GroupConfig[], ungrouped: string[]) => {
-	if (process.env.NODE_ENV !== 'production') {
-		const seen = new Map<string, number>()
-		for (const id of ungrouped) seen.set(id, (seen.get(id) ?? 0) + 1)
-		for (const g of groups) for (const id of g.pluginIds) seen.set(id, (seen.get(id) ?? 0) + 1)
-		const dup = [...seen].filter(([, n]) => n > 1).map(([id]) => id)
-		if (dup.length) console.warn('[PluginOrganizer] Duplicate ids detected:', dup)
-	}
-}
-
-const COLLAPSE_STORAGE_KEY = 'pluxel:plugin-organizer:collapsed'
-const readCollapsedState = (): Record<string, boolean> => {
-	if (typeof window === 'undefined') return {}
-	try {
-		const raw = window.localStorage.getItem(COLLAPSE_STORAGE_KEY)
-		if (!raw) return {}
-		const parsed = JSON.parse(raw)
-		if (Array.isArray(parsed)) {
-			return parsed.reduce<Record<string, boolean>>((acc, id) => {
-				if (typeof id === 'string') acc[id] = true
-				return acc
-			}, {})
-		}
-		if (parsed && typeof parsed === 'object') {
-			const acc: Record<string, boolean> = {}
-			for (const [key, value] of Object.entries(parsed)) {
-				if (typeof value === 'boolean' && value) acc[key] = true
-			}
-			return acc
-		}
-	} catch (error) {
-		console.warn('[PluginOrganizer] Failed to parse collapse state', error)
-	}
-	return {}
-}
 
 // ---------- Droppable（空容器也能投放） ----------
 function DroppableContainer({

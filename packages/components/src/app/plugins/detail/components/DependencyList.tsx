@@ -1,10 +1,11 @@
-import { Badge, Box, Group, Text } from '@mantine/core'
+import { Badge, Box, Group, Text, Tooltip } from '@mantine/core'
 import type React from 'react'
 import { useMemo } from 'react'
-import { usePluginDependencies } from './context'
+import { usePluginDependencies } from '../context'
 
 export interface DependencyListProps {
 	LinkComponent?: React.ElementType<{ to: string; children: React.ReactNode }>
+	isLinkable?: (name: string) => boolean
 }
 
 export function usePluginDependencyEntries() {
@@ -20,7 +21,7 @@ export function usePluginDependencyEntries() {
 	}, [contextDeps])
 }
 
-export function DependencyList({ LinkComponent }: DependencyListProps) {
+export function DependencyList({ LinkComponent, isLinkable }: DependencyListProps) {
 	const entries = usePluginDependencyEntries()
 
 	if (entries.length === 0) {
@@ -47,18 +48,26 @@ export function DependencyList({ LinkComponent }: DependencyListProps) {
 					/>
 				)
 
-				if (!LinkComponent) {
+				const linkable = LinkComponent ? (isLinkable ? isLinkable(dep.name) : true) : false
+				if (!LinkComponent || !linkable) {
 					return (
-						<Badge
+						<Tooltip
 							key={dep.name}
-							variant="light"
-							color={color}
-							leftSection={dot}
-							radius="sm"
-							size="sm"
+							label={!LinkComponent ? undefined : '这是依赖 token（非插件），不可跳转'}
+							withArrow
+							disabled={!LinkComponent}
 						>
-							{dep.name}
-						</Badge>
+							<Badge
+								variant="light"
+								color={color}
+								leftSection={dot}
+								radius="sm"
+								size="sm"
+								style={{ textTransform: 'none' }}
+							>
+								{dep.name}
+							</Badge>
+						</Tooltip>
 					)
 				}
 				return (
@@ -71,7 +80,7 @@ export function DependencyList({ LinkComponent }: DependencyListProps) {
 						leftSection={dot}
 						radius="sm"
 						size="sm"
-						style={{ textDecoration: 'none' }}
+						style={{ textDecoration: 'none', textTransform: 'none' }}
 					>
 						{dep.name}
 					</Badge>

@@ -30,7 +30,7 @@ export interface ConfigShape {
 
 @Injectable({ key: 'configService' })
 export class ConfigService {
-	private data!: ConfigShape
+	private data: ConfigShape = { enabled: new Set(), plugins: {}, extra: {} }
 	private watcher!: FSWatcher
 	private saveDebounced: () => void
 
@@ -40,6 +40,10 @@ export class ConfigService {
 	private batching = 0 // 事务计数
 
 	constructor(private ctx: Context) {
+		// 允许调用方把方法解构出来用（避免丢失 this 导致 this.data 为空）
+		this.getExtra = this.getExtra.bind(this)
+		this.setExtra = this.setExtra.bind(this)
+
 		const file = ctx.config.path ?? 'default.json'
 		const resolvedFile = resolve(file)
 		this.filePath = resolvedFile

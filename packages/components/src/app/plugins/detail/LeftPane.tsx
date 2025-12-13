@@ -17,9 +17,7 @@ import { LiveLog as LiveLogRaw } from '../../log_viewer/LiveLog'
 import { RouterLinkAdapter } from '../../RouterLinkAdapter'
 import { ExtensionSlot } from '../../../extension'
 import { usePluginMeta } from './context'
-import { ActionBar } from './ActionBar'
-import { PluginPanel } from './PluginPanel'
-import { PluginSourceCard } from './PluginSourceCard'
+import { ActionBar, PluginPanel, PluginSourceCard } from './components'
 
 const LiveLog = memo(LiveLogRaw)
 
@@ -152,29 +150,29 @@ export function LeftPane({ compact = false }: LeftPaneProps) {
 			<Stack gap="md" style={{ flex: 1, minHeight: 0 }}>
 				<Paper withBorder radius="md" p="sm" shadow="xs" style={{ overflow: 'hidden' }}>
 					<Group justify="space-between" align="center">
-					<SectionToggle
-						onClick={toggleDetails}
-						open={detailsOpen}
-						ariaLabel={detailsOpen ? '收起插件详情' : '展开插件详情'}
-						right={<div style={{ marginLeft: 'auto', flexShrink: 0 }}>{statusBadges}</div>}
-					>
-						<Text size="sm" fw={600}>
-							插件详情
-						</Text>
-						<Box style={{ flex: 1, minWidth: 0 }}>
-							{description ? (
-								<Tooltip label={description} multiline maw={320}>
-									<Text size="xs" c="dimmed" lineClamp={1}>
-										{description}
+						<SectionToggle
+							onClick={toggleDetails}
+							open={detailsOpen}
+							ariaLabel={detailsOpen ? '收起插件详情' : '展开插件详情'}
+							right={<div style={{ marginLeft: 'auto', flexShrink: 0 }}>{statusBadges}</div>}
+						>
+							<Text size="sm" fw={600}>
+								插件详情
+							</Text>
+							<Box style={{ flex: 1, minWidth: 0 }}>
+								{description ? (
+									<Tooltip label={description} multiline maw={320}>
+										<Text size="xs" c="dimmed" lineClamp={1}>
+											{description}
+										</Text>
+									</Tooltip>
+								) : (
+									<Text size="xs" c="dimmed">
+										暂无描述
 									</Text>
-								</Tooltip>
-							) : (
-								<Text size="xs" c="dimmed">
-									暂无描述
-								</Text>
-							)}
-						</Box>
-					</SectionToggle>
+								)}
+							</Box>
+						</SectionToggle>
 					</Group>
 					<Collapse in={detailsOpen}>
 						<Stack gap="sm" mt="sm">

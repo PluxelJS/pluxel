@@ -13,10 +13,12 @@ import {
 import { IconCheck, IconCopy } from '@tabler/icons-react'
 import type { ReactNode } from 'react'
 import { useMemo } from 'react'
-import type { PluginSourceInfo } from './context'
-import { usePluginMeta } from './context'
+import type { PluginSourceInfo } from '../context'
+import { usePluginScope } from '../context'
 import type { DependencyListProps } from './DependencyList'
 import { DependencyList, usePluginDependencyEntries } from './DependencyList'
+import { BaseProviderCard } from './BaseProviderCard'
+import { DependencyOverridesCard } from './DependencyOverridesCard'
 
 function shortenPath(path: string, keep = 3) {
 	const segments = path.split(/[/\\]+/).filter(Boolean)
@@ -45,30 +47,30 @@ function CopyAction({ value, label = '复制路径' }: { value: string | null; l
 }
 
 function renderSourceContent(source: PluginSourceInfo, themeColor: string): ReactNode {
-		switch (source.kind) {
-			case 'hmr': {
-				const fullPath = source.moduleId
-				const preview = fullPath ? shortenPath(fullPath) : '未提供路径'
-				return (
-					<Group gap="xs" wrap="nowrap" align="center">
-						<Tooltip label={fullPath ?? '路径未知'} withArrow>
-							<Text
-								size="sm"
-								lh={1.4}
-								style={{
+	switch (source.kind) {
+		case 'hmr': {
+			const fullPath = source.moduleId
+			const preview = fullPath ? shortenPath(fullPath) : '未提供路径'
+			return (
+				<Group gap="xs" wrap="nowrap" align="center">
+					<Tooltip label={fullPath ?? '路径未知'} withArrow>
+						<Text
+							size="sm"
+							lh={1.4}
+							style={{
 								fontFamily: 'var(--mantine-font-monospace)',
 								color: themeColor,
 								wordBreak: 'break-all',
 								maxWidth: '100%',
 							}}
-							>
-								{preview}
-							</Text>
-						</Tooltip>
-						<CopyAction value={fullPath} />
-					</Group>
-				)
-			}
+						>
+							{preview}
+						</Text>
+					</Tooltip>
+					<CopyAction value={fullPath} />
+				</Group>
+			)
+		}
 		case 'package': {
 			const revision = source.version ?? source.tag ?? ''
 			const versionToken = revision ? `@${revision}` : ''
@@ -111,7 +113,7 @@ export interface PluginSourceCardProps {
 }
 
 export function PluginSourceCard({ LinkComponent }: PluginSourceCardProps) {
-	const { source } = usePluginMeta()
+	const { source, knownPluginNames } = usePluginScope()
 	const theme = useMantineTheme()
 	const badge = getBadgeLabel(source)
 	const accent =
@@ -123,32 +125,45 @@ export function PluginSourceCard({ LinkComponent }: PluginSourceCardProps) {
 		[source, accent],
 	)
 	const labelStyle = { width: 44, flexShrink: 0 }
+	const isLinkable = useMemo(() => {
+		return (name: string) => {
+			if (knownPluginNames.has(name)) return true
+			const hash = name.lastIndexOf('#')
+			if (hash > 0) return knownPluginNames.has(name.slice(0, hash))
+			return false
+		}
+	}, [knownPluginNames])
 
 	return (
-		<Paper withBorder radius="md" p="sm" shadow="xs">
-			<Stack gap="xs">
-				<Group gap="xs" align="flex-start" wrap="nowrap">
-					<Text size="xs" c="dimmed" fw={600} style={labelStyle}>
-						来源
-					</Text>
-					<Badge variant="light" color={badge.color} size="sm" radius="sm">
-						{badge.label}
-					</Badge>
-					<Box style={{ flex: 1, minWidth: 0 }}>{content}</Box>
-				</Group>
+		<Stack gap="sm">
+			<BaseProviderCard />
+			<Paper withBorder radius="md" p="sm" shadow="xs">
+				<Stack gap="xs">
+					<Group gap="xs" align="flex-start" wrap="nowrap">
+						<Text size="xs" c="dimmed" fw={600} style={labelStyle}>
+							来源
+						</Text>
+						<Badge variant="light" color={badge.color} size="sm" radius="sm">
+							{badge.label}
+						</Badge>
+						<Box style={{ flex: 1, minWidth: 0 }}>{content}</Box>
+					</Group>
 
-				<Group gap="xs" align="flex-start" wrap="nowrap">
-					<Text size="xs" c="dimmed" fw={600} style={labelStyle}>
-						依赖
-					</Text>
-					<Badge variant="light" size="sm" color="gray" radius="sm">
-						{dependencies.length}
-					</Badge>
-					<Box style={{ flex: 1, minWidth: 0 }}>
-						<DependencyList LinkComponent={LinkComponent} />
-					</Box>
-				</Group>
-			</Stack>
-		</Paper>
+					<Group gap="xs" align="flex-start" wrap="nowrap">
+						<Text size="xs" c="dimmed" fw={600} style={labelStyle}>
+							依赖
+						</Text>
+						<Badge variant="light" size="sm" color="gray" radius="sm">
+							{dependencies.length}
+						</Badge>
+						<Box style={{ flex: 1, minWidth: 0 }}>
+							<DependencyList LinkComponent={LinkComponent} isLinkable={isLinkable} />
+						</Box>
+					</Group>
+				</Stack>
+			</Paper>
+
+			<DependencyOverridesCard />
+		</Stack>
 	)
 }

@@ -48,8 +48,8 @@ export function PluginPanel({
 		>
 			<Stack gap={gap} style={{ flex: 1, minHeight: 0 }}>
 				{title || description || rightSection ? (
-				<Group justify="space-between" align="flex-start" wrap="nowrap" gap={12}>
-					<Stack gap={2} style={{ minWidth: 0 }}>
+					<Group justify="space-between" align="flex-start" wrap="nowrap" gap={12}>
+						<Stack gap={2} style={{ minWidth: 0 }}>
 							{typeof title === 'string' ? (
 								<Text fw={600} size="lg" lineClamp={1}>
 									{title}

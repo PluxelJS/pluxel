@@ -3,9 +3,11 @@ import {
 	BasePlugin,
 	type Context,
 	checkPluginDecorator,
+	clearParamToken,
 	getClassParams,
 	getPluginInfo,
 	Injectable,
+	setParamToken,
 	setParamTokens,
 	type PluginConstructor,
 } from '@pluxel/core'
@@ -15,6 +17,7 @@ import {
 	type PluginLifecycleStage,
 	PluginRegistry,
 } from './PluginRegistry'
+import { EXTRA_DEP_OVERRIDES, type DepOverridesExtra } from './selection'
 
 // moduleId：一般指路径，一个文件可以有多个插件 ctor。
 // config persisted 在 PluginRegistry 是在内核 this.ctx.registry 上的包装，让它和 moduleId 能联系起来。
@@ -114,12 +117,17 @@ export class LoaderService {
 		this.registry.undeclareModule(id, tx)
 
 		let isAnchor = false
+		const declared: PluginConstructor[] = []
 		for (const [exportKey, exp] of Object.entries(mod)) {
 			if (typeof exp !== 'function') continue
 			if (!checkPluginDecorator(exp)) continue
 			this.registry.declarePlugin(id, exp as PluginConstructor, exportKey, tx)
+			declared.push(exp as PluginConstructor)
 			isAnchor = true
 		}
+
+		// Apply persisted dependency overrides after all exports are declared
+		for (const ctor of declared) this.applyStoredDependencyOverrides(ctor)
 
 		// 运行层：根据持久启用位，自动启用需要启用的插件
 		await this.registry.syncRuntimeForModule(id)
@@ -130,6 +138,36 @@ export class LoaderService {
 		else this.pathAnchors.delete(id)
 
 		return isAnchor
+	}
+
+	/**
+	 * Apply persisted constructor parameter token overrides (fork selection, etc.)
+	 * onto a freshly declared ctor (important across HMR reloads).
+	 */
+	private applyStoredDependencyOverrides(ctor: PluginConstructor) {
+		const getExtra = (this.ctx.configService as any)?.getExtra as
+			| ((key: string) => unknown)
+			| undefined
+		if (typeof getExtra !== 'function') return
+
+		const name = getPluginInfo(ctor).id
+		const all = getExtra.call(this.ctx.configService, EXTRA_DEP_OVERRIDES) as DepOverridesExtra | undefined
+		const overrides = all?.[name]
+		if (!overrides) return
+
+		for (const [rawIndex, targetName] of Object.entries(overrides)) {
+			const index = Number(rawIndex)
+			if (!Number.isFinite(index) || index < 0) continue
+
+			if (typeof targetName !== 'string' || targetName.trim() === '') {
+				clearParamToken(ctor, index)
+				continue
+			}
+
+			const token = this.resolveRuntimeCtor(targetName)
+			if (!token) continue
+			setParamToken(ctor, index, token as any)
+		}
 	}
 
 	// ------------------------------------------------------------------
@@ -176,7 +214,22 @@ export class LoaderService {
 
 	// 由于 HMR 的存在，普通运行时可能会缓存另一个 ctor 而不用vite内部缓存，通过调用该函数可以返回 HMR 那个。
 	resolveRuntimeCtor(target: PluginConstructor | string): PluginConstructor | undefined {
-		if (typeof target === 'string') return this.registry.getPluginByName(target)
+		if (typeof target === 'string') {
+			const hash = target.lastIndexOf('#')
+			if (hash > 0) {
+				const baseName = target.slice(0, hash)
+				const forkId = target.slice(hash + 1)
+				const baseCtor = this.registry.getPluginByName(baseName)
+				if (baseCtor && forkId) {
+					try {
+						return this.ctx.registry.fork(baseCtor as any, forkId) as PluginConstructor
+					} catch {
+						// fall through
+					}
+				}
+			}
+			return this.registry.getPluginByName(target)
+		}
 		const { id: name } = getPluginInfo(target)
 		return this.registry.getPluginByName(name) ?? target
 	}

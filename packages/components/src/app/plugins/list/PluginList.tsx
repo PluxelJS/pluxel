@@ -47,9 +47,9 @@ import {
 	useState,
 } from 'react'
 import type { JSX } from 'react/jsx-runtime'
-import { type GroupConfig, PluginOrganizer, type PluginStatuses } from '../organizer'
+import { type GroupConfig, PluginOrganizer } from '../organizer'
 import { EmptyState, ErrorState } from '../../../components'
-import { type PluginGroup, type PluginStatusEntry, useQuery } from '../../gqty'
+import { useQuery } from '../../gqty'
 import { client } from '../../rpc'
 import { useNotify } from '../../hooks'
 import { RouterLinkAdapter } from '../../RouterLinkAdapter'
@@ -57,26 +57,17 @@ import { PLUGIN_SEARCH_EVENT, PLUGIN_SEARCH_KEY } from '../../constants'
 import { updatePluginStatuses } from '../actions'
 import { subscribePluginStatusEvents } from '../statusEvents'
 import type { PluginStatusAction } from '@pluxel/hmr-web'
+import {
+	EMPTY_OVERVIEW,
+	areGroupsEqual,
+	buildOverview,
+	cloneGroups,
+	type OverviewSnapshot,
+} from './overview'
 
 interface PluginListProps {
 	pluginName?: string
 	onItemSelect?: () => void
-}
-
-type OverviewSnapshot = {
-	statuses: PluginStatuses
-	groups: GroupConfig[]
-	total: number
-	running: number
-	disabled: number
-}
-
-const EMPTY_OVERVIEW: OverviewSnapshot = {
-	statuses: {},
-	groups: [],
-	total: 0,
-	running: 0,
-	disabled: 0,
 }
 
 const ACTION_LABEL: Record<PluginStatusAction, string> = {
@@ -85,79 +76,6 @@ const ACTION_LABEL: Record<PluginStatusAction, string> = {
 	restart: '重启',
 	enable: '启用',
 	disable: '禁用',
-}
-
-const toStatuses = (entries: Array<PluginStatusEntry | null | undefined> | undefined) => {
-	const snapshot: PluginStatuses = {}
-	for (const entry of entries ?? []) {
-		const id = entry?.name
-		if (!id) continue
-		snapshot[id] = {
-			id,
-			name: entry?.name ?? id,
-			isRunning: Boolean(entry?.isRunning),
-			isEnabled: entry?.isEnabled !== false,
-		}
-	}
-	return snapshot
-}
-
-const toGroups = (groups: Array<PluginGroup | null | undefined> | undefined) => {
-	return (groups ?? []).map((group) => ({
-		groupId: group?.groupId ?? '',
-		name: group?.name ?? '',
-		pluginIds: [...(group?.pluginIds ?? [])],
-	}))
-}
-
-const buildOverview = (args: {
-	statuses: Array<PluginStatusEntry | null | undefined> | undefined
-	groups: Array<PluginGroup | null | undefined> | undefined
-	summary?: { total?: number | null; running?: number | null; disabled?: number | null } | null
-}) => {
-	const { statuses, groups, summary } = args
-	const summaryStatuses = toStatuses(statuses)
-	let computedRunning = 0
-	let computedDisabled = 0
-	for (const entry of Object.values(summaryStatuses)) {
-		if (entry?.isRunning) computedRunning += 1
-		if (entry?.isEnabled === false) computedDisabled += 1
-	}
-
-	const total =
-		typeof summary?.total === 'number' ? summary.total : Object.keys(summaryStatuses).length
-	const running = typeof summary?.running === 'number' ? summary.running : computedRunning
-	const disabled = typeof summary?.disabled === 'number' ? summary.disabled : computedDisabled
-
-	return {
-		statuses: summaryStatuses,
-		groups: toGroups(groups),
-		total,
-		running,
-		disabled,
-	}
-}
-
-const cloneGroups = (input: GroupConfig[]): GroupConfig[] =>
-	input.map((group) => ({
-		groupId: group.groupId,
-		name: group.name,
-		pluginIds: [...group.pluginIds],
-	}))
-
-const areGroupsEqual = (a: GroupConfig[], b: GroupConfig[]) => {
-	if (a.length !== b.length) return false
-	for (let i = 0; i < a.length; i += 1) {
-		const ga = a[i]
-		const gb = b[i]
-		if (!gb) return false
-		if (ga.groupId !== gb.groupId || ga.name !== gb.name) return false
-		if (ga.pluginIds.length !== gb.pluginIds.length) return false
-		for (let j = 0; j < ga.pluginIds.length; j += 1) {
-			if (ga.pluginIds[j] !== gb.pluginIds[j]) return false
-		}
-	}
-	return true
 }
 
 export const PluginList: React.FC<PluginListProps> = ({ pluginName }) => {

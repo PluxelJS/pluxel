@@ -66,17 +66,22 @@ describe('LoaderService', () => {
 	it('batch rollback keeps loader state consistent when core commit fails', async () => {
 		const core = new Context()
 		const ctx = createHmrCtx(core)
-		// Enable both plugins so loader will register them into the core container.
-		ctx.configService.enablePlugin('Impl1', 'Impl2')
+		// Enable baseline provider; the later consumer will be enabled too.
+		ctx.configService.enablePlugin('Impl1', 'Consumer')
 		const loader = new LoaderService(ctx)
 
 		abstract class Abs extends BasePlugin {}
+		abstract class MissingBase extends BasePlugin {}
 
 		@Plugin(Abs, { name: 'Impl1' })
 		class Impl1 extends Abs {}
 
-		@Plugin(Abs, { name: 'Impl2' })
-		class Impl2 extends Abs {}
+		@Plugin({ name: 'Consumer' })
+		class Consumer extends BasePlugin {
+			constructor(_dep: MissingBase) {
+				super()
+			}
+		}
 
 		// Baseline: load module A providing Impl1 and commit successfully.
 		{
@@ -90,18 +95,18 @@ describe('LoaderService', () => {
 		expect(core.registry.isRunning(Abs)).toBe(true)
 		expect(core.registry.optional(Abs)).toBeInstanceOf(Impl1)
 
-		// Hot update: load module B providing another provider for the same base -> commit should fail.
+		// Hot update: load module B providing an enabled plugin with missing deps -> commit should fail.
 		{
 			const batch = loader.beginBatch()
-			await batch.replaceModule('B.ts', { Impl2 })
+			await batch.replaceModule('B.ts', { Consumer })
 			const res = await core.registry.commit()
 			expect(res.ok).toBe(false)
 			batch.rollback()
 			core.registry.pluginRegistry.resetDraft()
 		}
 
-		// After rollback, loader should not claim Impl2 is loaded.
-		expect(loader.registry.getPluginByName('Impl2')).toBeUndefined()
+		// After rollback, loader should not claim Consumer is loaded.
+		expect(loader.registry.getPluginByName('Consumer')).toBeUndefined()
 		expect(loader.pathAnchors.has('B.ts')).toBe(false)
 
 		// Core should still be on the previous container: base resolves to Impl1 and remains running.

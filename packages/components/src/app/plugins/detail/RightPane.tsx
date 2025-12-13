@@ -6,8 +6,7 @@ import { useExtensions } from '../../../extension'
 import { ConfigForm } from '../config'
 import { usePluginMeta } from './context'
 import type { PluginConfigState } from '../../hooks'
-import { PluginPanel } from './PluginPanel'
-import { PluginSection } from './PluginSection'
+import { PluginPanel, PluginSection } from './components'
 
 interface RightPaneProps {
 	config: PluginConfigState

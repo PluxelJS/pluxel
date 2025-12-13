@@ -1,6 +1,5 @@
 export {
 	PluginOrganizer,
-	type GroupConfig,
-	type PluginStatus,
-	type PluginStatuses,
 } from './PluginOrganizer'
+
+export type { GroupConfig, PluginStatus, PluginStatuses } from './types'

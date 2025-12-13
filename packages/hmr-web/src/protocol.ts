@@ -82,6 +82,48 @@ export type PluginStatusBatchResult = {
 	commitError?: string
 }
 
+export type PluginDependencyKind = 'plugin' | 'base' | 'forkable'
+
+export type PluginDependencyOption = {
+	name: string
+	isRunning: boolean
+	isEnabled: boolean
+}
+
+export type PluginDependencyState = {
+	index: number
+	token: string
+	kind: PluginDependencyKind
+	/** current effective target token name (after overrides) */
+	effective: string
+	isRunning: boolean
+	/** persisted selection (index -> targetName), if any */
+	selected: string | null
+	/** base-token resolution (provider plugin id), when kind === 'base' */
+	baseProvider: string | null
+	options: PluginDependencyOption[]
+}
+
+export type PluginDependencyMutationResult = {
+	ok: boolean
+	code?: string
+	error?: string
+}
+
+export type EnsureForkResult = {
+	ok: boolean
+	forkName?: string
+	code?: string
+	error?: string
+}
+
+export type BaseProvisionInfo = {
+	baseToken: string
+	currentDefault: string | null
+	isDefault: boolean
+	providers: PluginDependencyOption[]
+}
+
 export type PackageSpecInput = {
 	raw?: string | null
 	name?: string | null
@@ -136,6 +178,11 @@ export interface PluginHandleApi {
 	detail: () => unknown
 	status: () => unknown
 	updateStatus: (action: PluginStatusAction) => Promise<PluginStatusMutationResult>
+	dependencyState: () => Promise<PluginDependencyState[]>
+	setDependencyTarget: (index: number, targetName: string | null) => Promise<PluginDependencyMutationResult>
+	setBaseProvider: (baseToken: string, providerName: string | null) => Promise<PluginDependencyMutationResult>
+	ensureFork: (baseName: string, forkId: string, options?: { enable?: boolean }) => Promise<EnsureForkResult>
+	baseProvision: () => Promise<BaseProvisionInfo | null>
 	schema: () => Promise<SchemaResult>
 	config: () => Promise<ConfigResultOk>
 	validateConfig: (patch: ConfigPatch) => Promise<ConfigResult>
