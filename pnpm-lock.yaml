@@ -375,6 +375,9 @@ importers:
       postcss-simple-vars:
         specifier: ^7.0.1
         version: 7.0.1(postcss@8.5.6)
+      reflect-metadata:
+        specifier: ^0.2.2
+        version: 0.2.2
       valibot-form:
         specifier: workspace:*
         version: link:../valibot-form

@@ -421,6 +421,11 @@ export class HMRService {
 		const dedup = unique(filesPath.map((p) => this.path.toClean(p)))
 		const ordered = keepOrder ? dedup : [...dedup]
 
+		// Batch-inject should be atomic at the loader layer:
+		// - If core commit/build fails, we must roll back loader declaration state, otherwise
+		//   loader will think a plugin is loaded/enabled while core never switched containers.
+		const batch = this.ctx.loader.beginBatch()
+
 		for (const id of ordered) {
 			const endEvaluate = this.timing.start('evaluate', id)
 			let mod: any
@@ -435,10 +440,13 @@ export class HMRService {
 			const endInject = this.timing.start('inject', id)
 			let hasPlugin = false
 			try {
-				hasPlugin = await this.ctx.loader.replaceModule(id, mod)
+				hasPlugin = await batch.replaceModule(id, mod)
 			} catch (err) {
 				this.ctx.logger.error({ file: id, err }, '[HMR] replaceModule failed')
-				continue
+				// Do not continue with a partially mutated loader/core draft.
+				batch.rollback()
+				this.ctx.registry.pluginRegistry.resetDraft()
+				return undefined
 			}
 			const injectMs = endInject()
 
@@ -455,6 +463,15 @@ export class HMRService {
 		const endCommit = startTimer()
 		const res = await this.ctx.registry.commit()
 		this.ctx.logger.info('[HMR] commit: %sms', endCommit().toFixed(1))
+
+		if (!res.ok) {
+			batch.rollback()
+			// commit() build failures already attempt an internal rollback, but we keep a
+			// direct resetDraft() here to ensure no leftover uncommitted ops linger.
+			this.ctx.registry.pluginRegistry.resetDraft()
+		} else {
+			batch.commit()
+		}
 
 		return res
 	}

@@ -49,6 +49,93 @@ export class PluginRegistry {
 
 	constructor(private ctx: Context) {}
 
+	/* ----------------------------- Transaction ----------------------------- */
+	/**
+	 * Loader 内部事务（仅保护 loader 的声明层状态）。
+	 *
+	 * 说明：
+	 * - core 的 DI 草稿回滚由 `ctx.registry.pluginRegistry` 负责；
+	 * - 这里仅保证「模块声明层」与「name->ctor 映射」在 commit(含 build 校验)失败时可恢复，
+	 *   避免 loader 与 core 的容器状态出现漂移。
+	 *
+	 * 性能：只记录变更 key 的旧值（O(变更)），不 clone 全表（O(插件总数)）。
+	 */
+	public beginTransaction() {
+		type Undo = () => void
+		const undos: Undo[] = []
+		const seen = new Map<object, Set<any>>() // map -> keys
+
+		const record = <K, V>(map: Map<K, V>, key: K) => {
+			let keys = seen.get(map as any)
+			if (!keys) {
+				keys = new Set()
+				seen.set(map as any, keys)
+			}
+			if (keys.has(key)) return
+			keys.add(key)
+			const had = map.has(key)
+			const prev = map.get(key)
+			undos.push(() => {
+				if (!had) map.delete(key)
+				else map.set(key, prev as V)
+			})
+		}
+
+		const recordWeak = (wm: WeakMap<any, any>, key: object) => {
+			let keys = seen.get(wm as any)
+			if (!keys) {
+				keys = new Set()
+				seen.set(wm as any, keys)
+			}
+			if (keys.has(key)) return
+			keys.add(key)
+			const had = wm.has(key)
+			const prev = wm.get(key)
+			undos.push(() => {
+				if (!had) wm.delete(key)
+				else wm.set(key, prev)
+			})
+		}
+
+		const recordIdentity = (ctor: PluginConstructor) => {
+			// identity is stored in @pluxel/core decorator state; treat it as part of loader state.
+			let keys = seen.get(ctor as any)
+			if (!keys) {
+				keys = new Set()
+				seen.set(ctor as any, keys)
+			}
+			if (keys.has('__identity__')) return
+			keys.add('__identity__')
+			const info = getPluginInfo(ctor)
+			const prev = {
+				id: info.id ?? null,
+				displayName: (info as any).displayName ?? null,
+				packageName: (info as any).packageName ?? null,
+			}
+			undos.push(() => {
+				setPluginIdentity(ctor, prev)
+			})
+		}
+
+		return {
+			recordModule: (moduleId: ModuleId) => record(this.moduleMap, moduleId),
+			recordName: (name: PluginName) => {
+				record(this.nameMap, name)
+				record(this.name2Path, name)
+				record(this.name2ExportKey, name)
+			},
+			recordEnrolled: (ctor: PluginConstructor) => recordWeak(this.enrolled as any, ctor as any),
+			recordIdentity,
+			rollback: () => {
+				for (let i = undos.length - 1; i >= 0; i--) undos[i]!()
+			},
+			commit: () => {
+				undos.length = 0
+				seen.clear()
+			},
+		}
+	}
+
 	private isPrimaryProvider(moduleId: ModuleId, ctor: PluginConstructor): boolean {
 		const { id: name } = getPluginInfo(ctor)
 		const primary = this.name2Path.get(name)
@@ -83,9 +170,16 @@ export class PluginRegistry {
 	}
 
 	// =============== 声明层：落/撤 ===============
-	declarePlugin(moduleId: ModuleId, ctor: PluginConstructor, exportKey: ExportKey): void {
+	declarePlugin(
+		moduleId: ModuleId,
+		ctor: PluginConstructor,
+		exportKey: ExportKey,
+		tx?: ReturnType<PluginRegistry['beginTransaction']>,
+	): void {
+		tx?.recordModule(moduleId)
 		const declaredName = getDeclaredName(ctor)
 		let { id: name } = getPluginInfo(ctor)
+		tx?.recordName(name)
 
 		// 冲突：允许"同路径热替换"，拒绝"跨路径重名"
 		const existed = this.nameMap.get(name)
@@ -133,6 +227,8 @@ export class PluginRegistry {
 				)
 			}
 			// 设置新的 id 和包名
+			tx?.recordName(prefixedId)
+			tx?.recordIdentity(ctor)
 			setPluginIdentity(ctor, { id: prefixedId, packageName: pkgName })
 			name = prefixedId
 			this.ctx.logger?.info(
@@ -142,6 +238,7 @@ export class PluginRegistry {
 
 		const seen = this.enrolled.get(ctor) ?? new Set<ModuleId>()
 		if (seen.has(moduleId)) return
+		tx?.recordEnrolled(ctor)
 		seen.add(moduleId)
 		this.enrolled.set(ctor, seen)
 
@@ -162,11 +259,13 @@ export class PluginRegistry {
 	}
 
 	/** 清空模块的声明（通常在 replace/prune 前调用） */
-	undeclareModule(moduleId: ModuleId): void {
+	undeclareModule(moduleId: ModuleId, tx?: ReturnType<PluginRegistry['beginTransaction']>): void {
+		tx?.recordModule(moduleId)
 		const list = this.moduleMap.get(moduleId) ?? EMPTY
 		for (const item of list) {
 			const ctor = item.ctor
 			const { id: name } = getPluginInfo(ctor)
+			tx?.recordName(name)
 
 			// 仅当映射仍指向该 moduleId 才移除（避免其他路径已重建时误删）
 			if (this.name2Path.get(name) === moduleId) {
@@ -176,6 +275,7 @@ export class PluginRegistry {
 			}
 			const seen = this.enrolled.get(ctor)
 			if (seen) {
+				tx?.recordEnrolled(ctor)
 				seen.delete(moduleId)
 				if (seen.size === 0) this.enrolled.delete(ctor)
 			}

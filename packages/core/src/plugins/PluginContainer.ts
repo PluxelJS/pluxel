@@ -6,6 +6,7 @@
 import type { Context } from '@pluxel/context'
 import { createErr, createOk, unwrapOk } from 'option-t/plain_result'
 import { type DiodContainer, ExtendedContainerBuilder } from '../container'
+import { LeanMapTracker } from '../container/LeanMapTracker'
 import { BasePlugin, FORK_CTX, PLUGIN_CTX } from './BasePlugin'
 import { getForkOf } from './fork'
 import { getClassParams, getPluginInfo } from './PluginDecorator'
@@ -15,12 +16,22 @@ export type PluginDiContainer = DiodContainer<BasePlugin>
 export type createCTX = () => Context
 export class PluginContainer {
 	/** Builder_Singleton 实例缓存（ExtendedContainerBuilder 共享） */
-	public singletons = new Map<PluginIdentifier, PluginInstance>()
+	public singletons = new LeanMapTracker<PluginIdentifier, PluginInstance>()
 	private builder = new ExtendedContainerBuilder(this.singletons)
 
 	constructor(private createPluginContext: createCTX) {}
 
 	public lastContainer!: PluginDiContainer
+
+	/**
+	 * Roll back draft mutations since the last confirmed container.
+	 * This is primarily for upstream orchestrators (e.g. HMR) that want
+	 * "all-or-nothing" batch application without forcing a build/commit attempt.
+	 */
+	public resetDraft(): void {
+		this.builder.buildables.reset()
+		this.singletons.reset()
+	}
 
 	/**
 	 * Registration policy (deterministic + fast):
@@ -160,13 +171,18 @@ export class PluginContainer {
 		const ret: {
 			container: PluginDiContainer
 			confirm: () => void
-			undo: () => ReturnType<typeof builder.buildables.reset>
+			undo: () => void
 			changes: ReturnType<typeof builder.buildables.commit>
 		} = {
 			container: this.lastContainer,
 			confirm: () => {},
 			changes: [],
-			undo: () => builder.buildables.reset(),
+			undo: () => {
+				// Restore draft state when build/verification fails.
+				// Both buildables and builder-singletons participate in draft mutations.
+				builder.buildables.reset()
+				this.singletons.reset()
+			},
 		}
 
 		if (builder.buildables.pendingOps.length === 0 && this.lastContainer) {
@@ -181,6 +197,9 @@ export class PluginContainer {
 		ret.container = container
 		ret.confirm = () => {
 			this.lastContainer = container
+			// Seal rollback baselines only after the container is confirmed.
+			builder.buildables.seal()
+			this.singletons.seal()
 		}
 		return createOk(ret)
 	}

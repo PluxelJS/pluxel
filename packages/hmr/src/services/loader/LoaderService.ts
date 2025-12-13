@@ -63,19 +63,61 @@ export class LoaderService {
 
 	// 先停旧运行态，再把"已执行的新模块"导出解析并装入。
 	async replaceModule(moduleId: string, mod: Record<string, unknown>): Promise<boolean> {
-		const id = this.normalizeModuleId(moduleId)
+		return this.replaceModuleInternal(moduleId, mod)
+	}
+
+	/**
+	 * HMR 批量注入事务（loader 层的声明状态回滚）。
+	 * - core 容器的草稿回滚由 `ctx.registry.pluginRegistry.resetDraft()`/commit 内部负责；
+	 * - 这里确保 loader 自身不“先走一步”导致状态漂移。
+	 */
+	beginBatch() {
+		const tx = this.registry.beginTransaction()
+		const anchorBefore = new Map<string, boolean>()
+
+		const recordAnchor = (id: string) => {
+			if (anchorBefore.has(id)) return
+			anchorBefore.set(id, this.pathAnchors.has(id))
+		}
+
+		return {
+			replaceModule: async (moduleId: string, mod: Record<string, unknown>) => {
+				const id = this.normalizeModuleId(moduleId)
+				recordAnchor(id)
+				return this.replaceModuleInternal(id, mod, tx)
+			},
+			rollback: () => {
+				tx.rollback()
+				for (const [id, had] of anchorBefore) {
+					if (had) this.pathAnchors.add(id)
+					else this.pathAnchors.delete(id)
+				}
+			},
+			commit: () => {
+				tx.commit()
+				anchorBefore.clear()
+			},
+		}
+	}
+
+	private async replaceModuleInternal(
+		moduleIdOrNormalized: string,
+		mod: Record<string, unknown>,
+		tx?: ReturnType<PluginRegistry['beginTransaction']>,
+	): Promise<boolean> {
+		const id = tx ? moduleIdOrNormalized : this.normalizeModuleId(moduleIdOrNormalized)
 		const oldItems = this.registry.modules.get(id) ?? []
 		// 停旧（只影响运行层，保留声明关系以便冲突判断更清晰）
 		this.registry.stopModule(id)
 
 		// 清理旧声明，准备落新声明
-		this.registry.undeclareModule(id)
+		this.registry.undeclareModule(id, tx)
 
 		let isAnchor = false
 		for (const [exportKey, exp] of Object.entries(mod)) {
 			if (typeof exp !== 'function') continue
 			if (!checkPluginDecorator(exp)) continue
-			this.registry.declarePlugin(id, exp as PluginConstructor, exportKey)
+			this.registry.declarePlugin(id, exp as PluginConstructor, exportKey, tx)
 			isAnchor = true
 		}
 
@@ -169,8 +211,16 @@ export class LoaderService {
 	getPluginDependenciesInfo(ctor: PluginConstructor) {
 		return getClassParams<PluginConstructor>(ctor)
 			.map((dep) => {
-				const { id: name } = getPluginInfo(dep)
-				return { name, isRunning: this.isRunning(dep) }
+				if (typeof dep !== 'function') return undefined
+				let name: string
+				try {
+					name = getPluginInfo(dep).id
+				} catch {
+					name = (dep as any)?.name ?? String(dep)
+				}
+				// Core registry can resolve abstract/base tokens via DI aliases.
+				const isRunning = this.ctx.registry.isRunning(dep as any)
+				return { name, isRunning }
 			})
 			.filter(Boolean) as Array<{ name: string; isRunning: boolean }>
 	}
@@ -243,6 +293,7 @@ export class LoaderService {
 	}
 
 	private normalizeModuleId(moduleId: string) {
-		return this.ctx.hmrService.normalizeId(moduleId)
+		// HMRService is optional in unit tests and some non-HMR runtimes.
+		return (this.ctx as any)?.hmrService?.normalizeId?.(moduleId) ?? moduleId
 	}
 }
