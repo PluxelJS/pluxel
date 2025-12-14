@@ -7,14 +7,14 @@ import {
 	type RouterHistory,
 } from '@tanstack/react-router'
 import { RootShell } from '../layout/RootShell'
-import { HomeRoute } from '../routes/HomeRoute'
 import { LiveLog } from '../log_viewer/LiveLog'
-import { PackagesRoute } from '../routes/PackagesRoute'
-import { MarketRoute } from '../routes/MarketRoute'
-import { PluginsRoute, PluginsPlaceholder } from '../routes/PluginsRoute'
-import { PluginDetailRoute } from '../routes/PluginDetailRoute'
 import { ExtensionRoute } from '../routes/ExtensionRoute'
+import { HomeRoute } from '../routes/HomeRoute'
+import { MarketRoute } from '../routes/MarketRoute'
 import { NotFoundRoute } from '../routes/NotFoundRoute'
+import { PackagesRoute } from '../routes/PackagesRoute'
+import { PluginDetailRoute } from '../routes/PluginDetailRoute'
+import { PluginsPlaceholder, PluginsRoute } from '../routes/PluginsRoute'
 import { RouteError } from '../routes/RouteError'
 
 const rootRoute = createRootRoute({
@@ -63,6 +63,19 @@ const pluginDetailRoute = createRoute({
 	component: PluginDetailRoute,
 })
 
+const pluginDetailIndexRoute = createRoute({
+	getParentRoute: () => pluginDetailRoute,
+	path: '/',
+	component: () => null,
+})
+
+// 支持 /plugins/:name/* 作为插件页的“子路由”，避免切换子路由时整页卸载（对动态注入 UI 更友好）
+const pluginDetailPathRoute = createRoute({
+	getParentRoute: () => pluginDetailRoute,
+	path: '$path*',
+	component: () => null,
+})
+
 const extensionRoute = createRoute({
 	getParentRoute: () => rootRoute,
 	path: 'ext/$pluginName/$path*',
@@ -75,7 +88,10 @@ const routeTree = rootRoute.addChildren([
 	packagesRoute,
 	marketRoute,
 	extensionRoute,
-	pluginsRoute.addChildren([pluginsIndexRoute, pluginDetailRoute]),
+	pluginsRoute.addChildren([
+		pluginsIndexRoute,
+		pluginDetailRoute.addChildren([pluginDetailIndexRoute, pluginDetailPathRoute]),
+	]),
 ])
 
 export interface CreateRouterOptions {

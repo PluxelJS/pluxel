@@ -1,20 +1,13 @@
-import {
-	Card,
-	CardSection,
-	Flex,
-	Skeleton,
-	Stack,
-	useMantineTheme,
-} from '@mantine/core'
+import { Card, CardSection, Flex, Skeleton, Stack, useMantineTheme } from '@mantine/core'
 import { useMediaQuery } from '@mantine/hooks'
 import { IconPuzzle } from '@tabler/icons-react'
 import { memo, useCallback, useEffect, useMemo, useRef } from 'react'
 import { EmptyState, ErrorState } from '../../../components'
 import { ExtensionProvider, useExtensionContext } from '../../../extension'
-import { PluginStatusEntryLifecycleStage, type PluginScope, useQuery } from '../../gqty'
-import { PluginScopeProvider, type PluginSourceKind } from './context'
 import { useDebouncedFlag } from '../../../hooks'
+import { type PluginScope, PluginStatusEntryLifecycleStage, useQuery } from '../../gqty'
 import { usePluginConfig } from '../../hooks'
+import { PluginScopeProvider, type PluginSourceKind } from './context'
 import { PluginLayout } from './PluginLayout'
 
 const LEFT_SKELETON_WIDTH = 'clamp(320px, 34vw, 480px)'
@@ -89,14 +82,49 @@ export interface PluginScreenProps {
 }
 
 function usePluginDetail(pluginName?: string) {
-	const query = useQuery({
+	// 先只取 pluginStatus（稳定、便宜），用于：
+	// 1) 判断插件是否存在（不存在就不要再请求 detail，避免 404/错误导致“疯狂重试刷屏”）
+	// 2) 给依赖列表提供“可跳转的真实插件名”集合（base token 不可跳转）
+	const statusQuery = useQuery({
+		suspense: false,
+		operationName: 'PluginStatusForDetail',
+		notifyOnNetworkStatusChange: true,
+		refetchOnWindowVisible: false,
+		refetchOnReconnect: false,
+		prepare: ({ query }) => {
+			query.pluginStatus?.statuses.forEach((entry) => {
+				entry.name
+				entry.isRunning
+			})
+		},
+	})
+
+	const knownPluginNames = useMemo(() => {
+		const names = new Set<string>()
+		for (const entry of statusQuery.pluginStatus?.statuses ?? []) {
+			const name = entry?.name
+			if (typeof name === 'string' && name) names.add(name)
+		}
+		return names
+	}, [statusQuery.pluginStatus?.statuses])
+
+	const exists = useMemo(() => {
+		if (!pluginName) return false
+		if (knownPluginNames.has(pluginName)) return true
+		const hash = pluginName.lastIndexOf('#')
+		if (hash > 0) return knownPluginNames.has(pluginName.slice(0, hash))
+		return false
+	}, [pluginName, knownPluginNames])
+
+	// 仅在 exists 时才请求 detail，避免“不存在插件”导致 detail query 报错然后持续重试
+	const detailQuery = useQuery({
 		suspense: false,
 		operationName: 'PluginDetailView',
 		notifyOnNetworkStatusChange: true,
 		refetchOnWindowVisible: false,
 		refetchOnReconnect: false,
 		prepare:
-			pluginName !== undefined
+			pluginName !== undefined && exists
 				? ({ query }) => {
 						const scope = query.plugin({ name: pluginName })
 						scope.name
@@ -117,50 +145,14 @@ function usePluginDetail(pluginName?: string) {
 						source.packageName
 						source.version
 						source.tag
-
-						// For dependency links: we need a list of real plugin names.
-						// Base tokens (abstract classes) are not plugins and should not be clickable.
-						query.pluginStatus?.statuses.forEach((entry) => {
-							entry.name
-						})
 					}
 				: undefined,
 	})
 
-	// plugin 不存在时：避免进入“不断 refetch/不断 render skeleton”的循环。
-	// 我们用 pluginStatus 的全量名称做一次 membership 判断（它本来就会被 prepare 触发一次），
-	// 对不存在的路由直接走稳定 NotFound 视图。
-	const exists = useMemo(() => {
-		if (!pluginName) return false
-		try {
-			const statuses = query.pluginStatus?.statuses ?? []
-			for (const entry of statuses) {
-				if (entry?.name === pluginName) return true
-			}
-			const hash = pluginName.lastIndexOf('#')
-			if (hash > 0) {
-				const base = pluginName.slice(0, hash)
-				for (const entry of statuses) {
-					if (entry?.name === base) return true
-				}
-			}
-		} catch {}
-		return false
-	}, [pluginName, query.pluginStatus?.statuses])
-
 	let scope: PluginScope | undefined
-	let knownPluginNames = new Set<string>()
 	if (pluginName !== undefined && exists) {
 		try {
-			scope = query.plugin({ name: pluginName })
-			try {
-				const names = new Set<string>()
-				for (const entry of query.pluginStatus?.statuses ?? []) {
-					const name = entry?.name
-					if (typeof name === 'string' && name) names.add(name)
-				}
-				knownPluginNames = names
-			} catch {}
+			scope = detailQuery.plugin({ name: pluginName })
 		} catch (error) {
 			if (process.env.NODE_ENV !== 'production') {
 				console.warn('[PluginScreen] Failed to read plugin scope', error)
@@ -170,18 +162,30 @@ function usePluginDetail(pluginName?: string) {
 	}
 	const ready = Boolean(scope?.name)
 
+	const loading =
+		Boolean(statusQuery.$state.isLoading || statusQuery.$state.isFetching) ||
+		(exists && Boolean(detailQuery.$state.isLoading || detailQuery.$state.isFetching))
+	const error = statusQuery.$state.error ?? detailQuery.$state.error
+
+	const refetch = (force?: boolean) => {
+		type Refetchable = { $refetch?: (force?: boolean) => Promise<unknown> }
+		const tasks: Promise<unknown>[] = []
+		const statusRefetch = (statusQuery as unknown as Refetchable).$refetch
+		if (typeof statusRefetch === 'function') tasks.push(statusRefetch(force))
+		const detailRefetch = (detailQuery as unknown as Refetchable).$refetch
+		if (typeof detailRefetch === 'function' && exists) tasks.push(detailRefetch(force))
+		if (tasks.length === 0) return Promise.resolve()
+		return Promise.allSettled(tasks).then(() => undefined)
+	}
+
 	return {
 		scope,
 		knownPluginNames,
 		ready,
 		exists,
-		error: query.$state.error,
-		loading: query.$state.isLoading,
-		refetch: (force?: boolean) => {
-			const fn = (query as any)?.$refetch as ((force?: boolean) => Promise<unknown>) | undefined
-			if (typeof fn !== 'function') return Promise.resolve()
-			return fn(force).then(() => undefined)
-		},
+		error,
+		loading,
+		refetch,
 	}
 }
 
@@ -195,7 +199,7 @@ export const PluginScreen = memo(function PluginScreen({ pluginName }: PluginScr
 		`(max-width: ${
 			typeof theme.breakpoints?.lg === 'number'
 				? `${theme.breakpoints.lg}px`
-				: theme.breakpoints?.lg ?? '62em'
+				: (theme.breakpoints?.lg ?? '62em')
 		})`,
 		false,
 		{
@@ -214,9 +218,19 @@ export const PluginScreen = memo(function PluginScreen({ pluginName }: PluginScr
 		scope: PluginScope
 		name: string
 		desc: string
-		dependencies: any[]
-		status: { isRunning: boolean; isEnabled: boolean; lifecycleStage: any } | null
-		source: any | null
+		dependencies: Array<{ name?: string | null; isRunning?: boolean | null }>
+		status: {
+			isRunning: boolean
+			isEnabled: boolean
+			lifecycleStage: PluginStatusEntryLifecycleStage
+		} | null
+		source: {
+			kind?: unknown
+			moduleId?: string | null
+			packageName?: string | null
+			version?: string | null
+			tag?: string | null
+		} | null
 	} | null>(null)
 
 	useEffect(() => {
