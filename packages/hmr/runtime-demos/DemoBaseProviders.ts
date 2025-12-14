@@ -31,7 +31,10 @@ export class DemoClockFixed extends DemoClock {
 
 	override init(): void {
 		this.fixed = Date.now()
-		this.ctx.logger.info({ id: this.ctx.pluginInfo.id, fixed: this.format(this.fixed) }, '[DemoClockFixed] ready')
+		this.ctx.logger.info(
+			{ id: this.ctx.pluginInfo.id, fixed: this.format(this.fixed) },
+			'[DemoClockFixed] ready',
+		)
 	}
 
 	now(): number {
@@ -56,4 +59,3 @@ export class DemoClockConsumer extends BasePlugin {
 		)
 	}
 }
-

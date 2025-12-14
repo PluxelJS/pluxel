@@ -1,8 +1,6 @@
 {
-	"$schema": "https://biomejs.dev/schemas/2.2.2/schema.json",
-	"extends": [
-		"@repobuddy/biome/performant"
-	],
+	"$schema": "https://biomejs.dev/schemas/2.3.8/schema.json",
+	"extends": ["@repobuddy/biome/performant"],
 	"vcs": {
 		"enabled": true,
 		"clientKind": "git",
@@ -10,9 +8,7 @@
 	},
 	"files": {
 		"ignoreUnknown": true,
-		"includes": [
-			"packages/**"
-		]
+		"includes": ["packages/**"]
 	},
 	"formatter": {
 		"enabled": true,
@@ -36,15 +32,10 @@
 	},
 	"overrides": [
 		{
-			"includes": [
-				"**/*.mjs"
-			]
+			"includes": ["**/*.mjs"]
 		},
 		{
-			"includes": [
-				"**/*.ts",
-				"**/*.tsx"
-			],
+			"includes": ["**/*.ts", "**/*.tsx"],
 			"linter": {
 				"rules": {
 					"complexity": {
@@ -66,9 +57,7 @@
 			}
 		},
 		{
-			"includes": [
-				"**/test/**/*.ts"
-			],
+			"includes": ["**/test/**/*.ts"],
 			"linter": {
 				"rules": {
 					"style": {

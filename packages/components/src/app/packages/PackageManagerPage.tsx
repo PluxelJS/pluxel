@@ -99,6 +99,7 @@ export function PackageManagerPage() {
 			})
 		},
 	})
+	const pageError = query.$state.error
 
 	const [installInput, setInstallInput] = useState('')
 	const [forceInstall, setForceInstall] = useState(false)
@@ -266,6 +267,19 @@ export function PackageManagerPage() {
 	const refetch = useCallback(async () => {
 		await refetchFn(true)
 	}, [refetchFn])
+
+	// 顶层错误：不再继续渲染复杂 UI（会触发更多懒读取/请求），直接给稳定错误态 + 手动重试。
+	if (pageError) {
+		return (
+			<ErrorState
+				title="加载失败"
+				message={pageError.message || '无法加载包管理数据'}
+				onRetry={() => void refetch()}
+				withPattern
+				minHeight="100%"
+			/>
+		)
+	}
 
 	const summarizeBatchResult = useCallback(
 		(

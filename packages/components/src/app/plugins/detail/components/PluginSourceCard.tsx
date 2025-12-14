@@ -163,6 +163,7 @@ export function PluginSourceCard({ LinkComponent }: PluginSourceCardProps) {
 				</Stack>
 			</Paper>
 
+			{/* DI 选择存在“条件渲染”，避免加载期间闪烁导致布局重排 */}
 			<DependencyOverridesCard />
 		</Stack>
 	)

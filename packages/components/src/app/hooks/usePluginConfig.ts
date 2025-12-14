@@ -100,7 +100,12 @@ export function usePluginConfig(pluginName: string | undefined): PluginConfigSta
 		loading: !!pluginName,
 		error: undefined,
 	})
+	const stateRef = useRef(state)
 	const abortRef = useRef<AbortController | null>(null)
+
+	useEffect(() => {
+		stateRef.current = state
+	}, [state])
 
 	const doFetch = useCallback(
 		async (forceRefresh = false) => {
@@ -108,7 +113,9 @@ export function usePluginConfig(pluginName: string | undefined): PluginConfigSta
 			abortRef.current?.abort()
 			const ctrl = (abortRef.current = new AbortController())
 
-			setState({ data: undefined, loading: true, error: undefined })
+			// stale-while-revalidate：refetch 时保留旧数据，避免表单/布局闪烁
+			const prev = stateRef.current
+			setState({ data: prev.data, loading: true, error: undefined })
 
 			try {
 				const data = await loadPluginData(pluginName, forceRefresh)

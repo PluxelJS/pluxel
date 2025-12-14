@@ -3,10 +3,10 @@ import { IconSettingsOff } from '@tabler/icons-react'
 import { useEffect, useMemo, useState } from 'react'
 import { EmptyState, ErrorState } from '../../../components'
 import { useExtensions } from '../../../extension'
-import { ConfigForm } from '../config'
-import { usePluginMeta } from './context'
 import type { PluginConfigState } from '../../hooks'
+import { ConfigForm } from '../config'
 import { PluginPanel, PluginSection } from './components'
+import { usePluginMeta } from './context'
 
 interface RightPaneProps {
 	config: PluginConfigState
@@ -22,10 +22,11 @@ export function RightPane({ config }: RightPaneProps) {
 	const tabDefs = useMemo(
 		() =>
 			tabItems.map((item, index) => {
-				const id =
-					(typeof item.meta.id === 'string' && item.meta.id.length > 0
+				const rawId =
+					typeof item.meta.id === 'string' && item.meta.id.length > 0
 						? item.meta.id
-						: `${pluginName}:tab:${index}`) ?? `${pluginName}:tab:${index}`
+						: `${pluginName}:tab:${index}`
+				const id = rawId === 'config' ? `${pluginName}:tab:${index}` : rawId
 				const label =
 					typeof item.meta.label === 'string' && item.meta.label.length > 0
 						? (item.meta.label as string)
@@ -35,11 +36,8 @@ export function RightPane({ config }: RightPaneProps) {
 		[pluginName, tabItems],
 	)
 	const [activeTab, setActiveTab] = useState('config')
-	const hasConfigSchema = useMemo(
-		() => Object.keys(config.data?.schemaMap ?? {}).length > 0,
-		[config.data?.schemaMap],
-	)
-	const showConfigTab = hasConfigSchema || config.loading || Boolean(config.error)
+	// 配置表单需要与自定义 Tab 共存：即使没有 schema，也展示一个“暂无可配置项”的稳定入口。
+	const showConfigTab = true
 	const hasTabs = tabNodes.length > 0
 
 	useEffect(() => {
@@ -50,7 +48,7 @@ export function RightPane({ config }: RightPaneProps) {
 	useEffect(() => {
 		if (activeTab === 'config' && showConfigTab) return
 		if (!tabDefs.some((tab) => tab.id === activeTab)) {
-			const fallback = showConfigTab ? 'config' : tabDefs[0]?.id ?? 'config'
+			const fallback = showConfigTab ? 'config' : (tabDefs[0]?.id ?? 'config')
 			setActiveTab(fallback)
 		}
 	}, [activeTab, showConfigTab, tabDefs])
@@ -86,10 +84,7 @@ export function RightPane({ config }: RightPaneProps) {
 								))}
 							</Tabs.List>
 							{showConfigTab ? (
-								<Tabs.Panel
-									value="config"
-									style={column}
-								>
+								<Tabs.Panel value="config" style={column}>
 									<ConfigContent config={config} pluginName={pluginName} />
 								</Tabs.Panel>
 							) : null}
@@ -97,17 +92,8 @@ export function RightPane({ config }: RightPaneProps) {
 								const tab = tabDefs[index]
 								const id = tab?.id ?? `${pluginName}:tab:${index}`
 								return (
-									<Tabs.Panel
-										key={id}
-										value={id}
-										style={column}
-									>
-										<ScrollArea
-											type="auto"
-											scrollbarSize={10}
-											offsetScrollbars
-											style={column}
-										>
+									<Tabs.Panel key={id} value={id} style={column}>
+										<ScrollArea type="auto" scrollbarSize={10} offsetScrollbars style={column}>
 											<Box p="xs" style={{ minHeight: '100%' }}>
 												{node}
 											</Box>
@@ -126,16 +112,22 @@ export function RightPane({ config }: RightPaneProps) {
 }
 
 function ConfigContent({ config, pluginName }: { config: PluginConfigState; pluginName: string }) {
+	const hasSchema = Object.keys(config.data?.schemaMap ?? {}).length > 0
 	return (
 		<Box style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
-			{config.error && !config.data ? (
+			{config.error ? (
 				<ErrorState
 					title="加载配置失败"
 					message={config.error.message || '无法获取配置信息'}
 					onRetry={() => void config.refetch()}
 					minHeight={200}
 				/>
-			) : config.data?.schemaMap ? (
+			) : config.loading && !config.data ? (
+				<Center style={{ flex: 1, gap: 8 }}>
+					<Loader size="sm" />
+					<Text c="dimmed">加载配置中…</Text>
+				</Center>
+			) : hasSchema ? (
 				<ConfigForm
 					key={pluginName ?? 'config-form'}
 					pluginName={pluginName}
@@ -143,11 +135,6 @@ function ConfigContent({ config, pluginName }: { config: PluginConfigState; plug
 					savedConfig={config.data.savedConfig}
 					defaults={config.data.defaults}
 				/>
-			) : config.loading ? (
-				<Center style={{ flex: 1, gap: 8 }}>
-					<Loader size="sm" />
-					<Text c="dimmed">加载配置中…</Text>
-				</Center>
 			) : (
 				<EmptyState
 					icon={<IconSettingsOff size={28} stroke={1.5} />}

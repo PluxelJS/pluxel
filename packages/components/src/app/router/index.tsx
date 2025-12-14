@@ -14,6 +14,8 @@ import { MarketRoute } from '../routes/MarketRoute'
 import { PluginsRoute, PluginsPlaceholder } from '../routes/PluginsRoute'
 import { PluginDetailRoute } from '../routes/PluginDetailRoute'
 import { ExtensionRoute } from '../routes/ExtensionRoute'
+import { NotFoundRoute } from '../routes/NotFoundRoute'
+import { RouteError } from '../routes/RouteError'
 
 const rootRoute = createRootRoute({
 	component: RootShell,
@@ -88,6 +90,8 @@ export function createAppRouter(options: CreateRouterOptions = {}) {
 		routeTree,
 		history,
 		defaultPreload: 'intent',
+		defaultNotFoundComponent: NotFoundRoute,
+		defaultErrorComponent: RouteError,
 	})
 }
 

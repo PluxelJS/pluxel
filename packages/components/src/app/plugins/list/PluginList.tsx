@@ -182,6 +182,8 @@ export const PluginList: React.FC<PluginListProps> = ({ pluginName }) => {
 		let inflight = false
 		let pending = false
 		const handle = () => {
+			// 遇到错误就不要自动 refetch，避免刷屏；改为等待用户点“重试”
+			if (query.$state.error) return
 			if (inflight) {
 				pending = true
 				return

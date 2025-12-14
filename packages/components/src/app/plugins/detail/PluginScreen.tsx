@@ -8,7 +8,7 @@ import {
 } from '@mantine/core'
 import { useMediaQuery } from '@mantine/hooks'
 import { IconPuzzle } from '@tabler/icons-react'
-import { memo, useCallback, useMemo } from 'react'
+import { memo, useCallback, useEffect, useMemo, useRef } from 'react'
 import { EmptyState, ErrorState } from '../../../components'
 import { ExtensionProvider, useExtensionContext } from '../../../extension'
 import { PluginStatusEntryLifecycleStage, type PluginScope, useQuery } from '../../gqty'
@@ -127,9 +127,30 @@ function usePluginDetail(pluginName?: string) {
 				: undefined,
 	})
 
+	// plugin 不存在时：避免进入“不断 refetch/不断 render skeleton”的循环。
+	// 我们用 pluginStatus 的全量名称做一次 membership 判断（它本来就会被 prepare 触发一次），
+	// 对不存在的路由直接走稳定 NotFound 视图。
+	const exists = useMemo(() => {
+		if (!pluginName) return false
+		try {
+			const statuses = query.pluginStatus?.statuses ?? []
+			for (const entry of statuses) {
+				if (entry?.name === pluginName) return true
+			}
+			const hash = pluginName.lastIndexOf('#')
+			if (hash > 0) {
+				const base = pluginName.slice(0, hash)
+				for (const entry of statuses) {
+					if (entry?.name === base) return true
+				}
+			}
+		} catch {}
+		return false
+	}, [pluginName, query.pluginStatus?.statuses])
+
 	let scope: PluginScope | undefined
 	let knownPluginNames = new Set<string>()
-	if (pluginName !== undefined) {
+	if (pluginName !== undefined && exists) {
 		try {
 			scope = query.plugin({ name: pluginName })
 			try {
@@ -153,6 +174,7 @@ function usePluginDetail(pluginName?: string) {
 		scope,
 		knownPluginNames,
 		ready,
+		exists,
 		error: query.$state.error,
 		loading: query.$state.isLoading,
 		refetch: (force?: boolean) => {
@@ -182,32 +204,80 @@ export const PluginScreen = memo(function PluginScreen({ pluginName }: PluginScr
 	)
 	const isStacked = isStackedWide || isStackedBreak
 
-	const { scope, knownPluginNames, ready, error, loading, refetch } = usePluginDetail(pluginName)
+	const { scope, knownPluginNames, ready, exists, error, loading, refetch } =
+		usePluginDetail(pluginName)
 	const parentExtensionCtx = useExtensionContext()
 
-	const displayName = scope?.name ?? pluginName
-	const dependencies = scope?.detail?.dependencies ?? []
-	const description = scope?.detail?.desc ?? ''
-	const isRunning = Boolean(scope?.status?.isRunning)
-	const isEnabled = Boolean(scope?.status?.isEnabled)
+	// 稳定快照：refetch/同步期间，GQty 可能短暂返回空字段，导致 UI “0 依赖/空注入卡片”闪一下。
+	// 这里缓存上一份成功读取到的 detail/status，用于过渡期展示。
+	const lastStableRef = useRef<{
+		scope: PluginScope
+		name: string
+		desc: string
+		dependencies: any[]
+		status: { isRunning: boolean; isEnabled: boolean; lifecycleStage: any } | null
+		source: any | null
+	} | null>(null)
+
+	useEffect(() => {
+		if (!exists || !scope?.name) {
+			lastStableRef.current = null
+			return
+		}
+		try {
+			const deps = Array.isArray(scope.detail?.dependencies) ? [...scope.detail.dependencies] : []
+			lastStableRef.current = {
+				scope,
+				name: scope.name,
+				desc: scope.detail?.desc ?? '',
+				dependencies: deps,
+				status: scope.status
+					? {
+							isRunning: Boolean(scope.status.isRunning),
+							isEnabled: Boolean(scope.status.isEnabled),
+							lifecycleStage: scope.status.lifecycleStage,
+						}
+					: null,
+				source: scope.status?.source ?? null,
+			}
+		} catch {
+			// ignore
+		}
+	}, [exists, scope?.name, scope?.detail?.desc, scope?.detail?.dependencies, scope?.status])
+
+	const stable = lastStableRef.current
+	const viewReady = ready || Boolean(stable?.name)
+	const displayName = scope?.name ?? stable?.name ?? pluginName
+	const description = scope?.detail?.desc ?? stable?.desc ?? ''
+	const isRunning = Boolean(scope?.status?.isRunning ?? stable?.status?.isRunning)
+	const isEnabled = Boolean(scope?.status?.isEnabled ?? stable?.status?.isEnabled)
 	const lifecycleStage =
 		scope?.status?.lifecycleStage ??
+		stable?.status?.lifecycleStage ??
 		(isEnabled
 			? isRunning
 				? PluginStatusEntryLifecycleStage.running
 				: PluginStatusEntryLifecycleStage.stopped
 			: PluginStatusEntryLifecycleStage.disabled)
 
-	const configState = usePluginConfig(ready ? displayName : undefined)
+	const configState = usePluginConfig(viewReady ? displayName : undefined)
 	const syncing = useDebouncedFlag(loading || configState.loading, 160)
+
+	const rawDeps = scope?.detail?.dependencies
+	const stableDeps = stable?.dependencies ?? []
+	const preferStableDeps = Boolean(
+		rawDeps && Array.isArray(rawDeps) && rawDeps.length === 0 && stableDeps.length > 0,
+	)
+	const dependencies = syncing && preferStableDeps ? stableDeps : (rawDeps ?? stableDeps)
 
 	const handleRefetch = useCallback(async () => {
 		await refetch(true)
 	}, [refetch])
 
 	const contextValue = useMemo(() => {
-		if (!scope) return null
-		const rawSource = scope.status?.source
+		const effectiveScope = scope ?? stable?.scope
+		if (!effectiveScope) return null
+		const rawSource = scope?.status?.source ?? stable?.source
 		const source = {
 			kind: (rawSource?.kind ?? 'unknown') as PluginSourceKind,
 			moduleId: rawSource?.moduleId ?? null,
@@ -218,7 +288,7 @@ export const PluginScreen = memo(function PluginScreen({ pluginName }: PluginScr
 		return {
 			pluginName: displayName,
 			description,
-			scope,
+			scope: effectiveScope,
 			dependencies,
 			knownPluginNames,
 			isRunning,
@@ -238,6 +308,7 @@ export const PluginScreen = memo(function PluginScreen({ pluginName }: PluginScr
 		isEnabled,
 		lifecycleStage,
 		scope,
+		stable,
 		syncing,
 	])
 
@@ -261,6 +332,19 @@ export const PluginScreen = memo(function PluginScreen({ pluginName }: PluginScr
 		)
 	}
 
+	// 不存在：稳定 NotFound，避免循环请求刷屏。
+	if (pluginName && !exists && !loading) {
+		return (
+			<EmptyState
+				icon={<IconPuzzle size={28} stroke={1.5} />}
+				title="插件不存在"
+				description={`未找到插件：${pluginName}`}
+				withPattern
+				minHeight="100%"
+			/>
+		)
+	}
+
 	if (error && !ready) {
 		return (
 			<ErrorState
@@ -273,8 +357,8 @@ export const PluginScreen = memo(function PluginScreen({ pluginName }: PluginScr
 		)
 	}
 
-	if (!ready) return <PluginSkeleton stacked={Boolean(isStacked)} />
-	if (!scope || !contextValue || !pluginExtensionCtx) return null
+	if (!viewReady) return <PluginSkeleton stacked={Boolean(isStacked)} />
+	if (!contextValue || !pluginExtensionCtx) return null
 
 	return (
 		<ExtensionProvider value={pluginExtensionCtx}>

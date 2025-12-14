@@ -113,6 +113,16 @@ export function ExtensionLoader({
 	const manifestSignatureRef = useRef('')
 	const loadingRef = useRef(false)
 	const moduleCacheRef = useRef<Map<string, LoadedPluginModule>>(new Map())
+	const manifestBackoffRef = useRef<{ at: number; backoffMs: number } | null>(null)
+
+	const shouldSkipManifestSync = useCallback(
+		() => {
+			const state = manifestBackoffRef.current
+			if (!state) return false
+			return Date.now() - state.at < state.backoffMs
+		},
+		[],
+	)
 
 	const recomputeManifestSignature = useCallback(() => {
 		const signature = Array.from(moduleCacheRef.current.values())
@@ -196,11 +206,13 @@ export function ExtensionLoader({
 
 	const syncManifest = useCallback(
 		async (force?: boolean) => {
+			if (!force && shouldSkipManifestSync()) return
 			if (loadingRef.current) return
 			loadingRef.current = true
 			try {
 				extLog('fetching manifest')
 				const manifest = await fetchExtensionManifest()
+				manifestBackoffRef.current = null
 				if (process.env.NODE_ENV !== 'production') {
 					console.log('[ExtensionLoader] fetched manifest', {
 						version: manifest.version,
@@ -262,13 +274,17 @@ export function ExtensionLoader({
 					manifestSignatureRef.current = nextSignature
 				extLog('synced manifest v%d (%d modules)', manifest.version, manifest.modules.length)
 			} catch (error) {
+				const now = Date.now()
+				const prev = manifestBackoffRef.current
+				const backoffMs = prev ? Math.min(prev.backoffMs * 2, 60_000) : 2_000
+				manifestBackoffRef.current = { at: now, backoffMs }
 				console.error('[ExtensionLoader] failed to sync manifest', error)
 			} finally {
 				loadingRef.current = false
 				recomputeManifestSignature()
 			}
 		},
-		[ensureModuleLoaded, recomputeManifestSignature],
+		[ensureModuleLoaded, recomputeManifestSignature, shouldSkipManifestSync],
 	)
 
 	useEffect(() => {
@@ -290,6 +306,8 @@ export function ExtensionLoader({
 		let inflight = false
 		let pending = false
 		const triggerRefetch = () => {
+			// 遇到错误就停掉“自动刷新”，避免一直刷屏打后端
+			if (query.$state.error) return
 			if (inflight) {
 				pending = true
 				return
