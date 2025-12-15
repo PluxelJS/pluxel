@@ -44,34 +44,18 @@ export class PinoLoggerService {
 
 	constructor(ctx: Context, config: PinoLoggerConfig = {}) {
 		this.config = resolvePinoLoggerConfig(config)
-		const isProd = process.env.NODE_ENV === 'production'
 
-		// #if NODE_ENV !== 'production'
-		if (!isProd) {
-			// 向上查找 pluginId，支持子 context 继承父 context 的 pluginInfo
-			const pluginId = findPluginId(ctx)
-			const bindings: Bindings = {
-				// name 保持当前 context 名称，用于显示
-				name: ctx.name,
-			}
-			// pluginId 用于前端过滤
-			if (pluginId) {
-				bindings.pluginId = pluginId
-			}
-			this.logger = deriveScopedLogger(bindings, this.config)
-			this.bindPinoLevels(this.logger)
-			return
+		const bindings: Bindings = {
+			// name 保持当前 context 名称，用于显示
+			name: ctx.name,
 		}
-		// #endif
-
-		// #if NODE_ENV === 'production'
-		this.logger = console as unknown as Logger
-		if (this.config.production.enabled) {
-			this.bindConsoleLevels(this.config.production.level)
-		} else {
-			this.bindNoopLevels()
+		// pluginId 用于前端过滤
+		const pluginId = findPluginId(ctx)
+		if (pluginId) {
+			bindings.pluginId = pluginId
 		}
-		// #endif
+		this.logger = deriveScopedLogger(bindings, this.config)
+		this.bindPinoLevels(this.logger)
 	}
 
 	private bindPinoLevels(logger: Logger) {
@@ -82,50 +66,8 @@ export class PinoLoggerService {
 		this.error = logger.error.bind(logger)
 		this.fatal = logger.fatal.bind(logger)
 	}
-
-	private bindConsoleLevels(minLevel: LevelWithSilent) {
-		const threshold = LEVEL_WEIGHTS[minLevel] ?? LEVEL_WEIGHTS.info
-
-		const traceImpl =
-			LEVEL_WEIGHTS.trace < threshold
-				? noop
-				: (console.trace?.bind(console) ?? console.log.bind(console))
-		const debugImpl =
-			LEVEL_WEIGHTS.debug < threshold
-				? noop
-				: (console.debug?.bind(console) ?? console.log.bind(console))
-		const infoImpl =
-			LEVEL_WEIGHTS.info < threshold
-				? noop
-				: (console.info?.bind(console) ?? console.log.bind(console))
-		const warnImpl =
-			LEVEL_WEIGHTS.warn < threshold
-				? noop
-				: (console.warn?.bind(console) ?? console.log.bind(console))
-		const errorImpl =
-			LEVEL_WEIGHTS.error < threshold
-				? noop
-				: (console.error?.bind(console) ?? console.log.bind(console))
-
-		this.trace = asPinoFn(traceImpl) as Logger['trace']
-		this.debug = asPinoFn(debugImpl) as Logger['debug']
-		this.info = asPinoFn(infoImpl) as Logger['info']
-		this.warn = asPinoFn(warnImpl) as Logger['warn']
-		this.error = asPinoFn(errorImpl) as Logger['error']
-		this.fatal = asPinoFn(errorImpl) as Logger['fatal']
-	}
-
-	private bindNoopLevels() {
-		this.trace = noopPino
-		this.debug = noopPino
-		this.info = noopPino
-		this.warn = noopPino
-		this.error = noopPino
-		this.fatal = noopPino
-	}
 }
 
-// #if NODE_ENV !== 'production'
 let rootLogger: Logger | undefined
 let rootLoggerLevel: LevelWithSilent | undefined
 let rootLoggerName: string | undefined
@@ -149,4 +91,3 @@ function deriveScopedLogger(bindings: Bindings, config: ResolvedPinoLoggerConfig
 	const root = getRootLogger(config)
 	return bindings ? root.child(bindings) : root
 }
-// #endif

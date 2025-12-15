@@ -163,7 +163,10 @@ export class HonoService {
 		for (const dispose of disposers) this.ctx.scope.collectEffect(dispose)
 	}
 
-	private registerBuiltinSse(namespace: string, handler: (channel: SseChannel) => void | (() => void)) {
+	private registerBuiltinSse(
+		namespace: string,
+		handler: (channel: SseChannel) => void | (() => void),
+	) {
 		return this.ctx.sse.registerExtension(() => handler, { namespace })
 	}
 
@@ -313,21 +316,15 @@ export class HonoService {
 	}
 
 	private createRenderer(): Promise<RenderHandler> {
-		const isProd = process.env.NODE_ENV === 'production'
+		// #if SOURCE_ONLY
+		const importMetaEnv = (import.meta as ImportMeta & { env?: Record<string, any> }).env
 
-		// #if NODE_ENV !== 'production'
-		if (!isProd) {
-			// #if PLUXEL_HMR_SSR
-			const importMetaEnv = (import.meta as ImportMeta & { env?: Record<string, any> }).env
+		const ssrFlag =
+			importMetaEnv?.PLUXEL_HMR_SSR ??
+			(typeof process !== 'undefined' && process.env ? process.env.PLUXEL_HMR_SSR : undefined)
 
-			const ssrFlag =
-				importMetaEnv?.PLUXEL_HMR_SSR ??
-				(typeof process !== 'undefined' && process.env ? process.env.PLUXEL_HMR_SSR : undefined)
-
-			if (ssrFlag) {
-				return import('../../server/dev').then(({ createDevRenderer }) => createDevRenderer())
-			}
-			// #endif
+		if (ssrFlag) {
+			return import('../../server/dev').then(({ createDevRenderer }) => createDevRenderer())
 		}
 		// #endif
 

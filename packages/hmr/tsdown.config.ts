@@ -13,10 +13,7 @@ export default defineConfig({
 		PreprocessorDirectives(),
 		appendDtsImport('import type {} from "./services.d.mts"', ['index.d.mts']),
 	],
-	env: {
-		NODE_ENV: 'production',
-		PLUXEL_HMR_SSR: false,
-	},
+	env: {},
 	entry: {
 		index: 'src/index.ts',
 		services: 'src/services/index.ts',
