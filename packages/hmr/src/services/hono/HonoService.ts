@@ -8,7 +8,7 @@ import type { Plugin } from 'vite'
 import api from '../../api/hono'
 import type { RenderHandler } from '../../server/types'
 import type { ExtensionManifestEvent } from '../extension'
-import { logStore } from '../logger/logStore'
+import { logStore, matchesFilter } from '../logger/logStore'
 import type { AuthGuardCheckInput } from './AuthGuardService'
 import type { AppEnv, HonoWithAppEnvType } from './env'
 import type { SseChannel } from './SseService'
@@ -185,18 +185,18 @@ export class HonoService {
 	}
 
 	private streamLogs(channel: SseChannel) {
-		const name = channel.query.get('name') ?? ''
+		const filter = channel.query.get('name') ?? ''
 
-		channel.emit('ready', { type: 'ready', name })
+		channel.emit('ready', { type: 'ready', name: filter })
 		const send = (log: unknown) => channel.emit('log', log)
 
 		logStore
 			.snapshot()
-			.filter((l) => !name || l.name === name)
+			.filter((l) => matchesFilter(l, filter))
 			.forEach(send)
 
 		const unsubscribe = logStore.subscribe((l) => {
-			if (!name || l.name === name) send(l)
+			if (matchesFilter(l, filter)) send(l)
 		})
 		channel.onAbort(unsubscribe)
 		return () => unsubscribe()

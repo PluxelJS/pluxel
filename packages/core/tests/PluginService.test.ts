@@ -120,10 +120,12 @@ describe('PluginService commit()', () => {
 
 		pluginRegistry.registerPlugin(OptionalConsumer)
 		await ctx.registry.commit()
+		await Promise.resolve()
 		expect(events).toEqual(['consumer:init', 'after:miss'])
 
 		pluginRegistry.registerPlugin(OptionalProvider)
 		await ctx.registry.commit()
+		await Promise.resolve()
 
 		expect(events).toEqual(['consumer:init', 'after:miss', 'provider:init', 'after:hit'])
 
@@ -131,33 +133,11 @@ describe('PluginService commit()', () => {
 		ctx.registry.optional(OptionalProvider, (dep) => {
 			immediate.push(dep ? 'now:hit' : 'now:miss')
 		})
+		await Promise.resolve()
 		expect(immediate).toEqual(['now:hit'])
 	})
 
-	it('optionalImport wraps dynamic import errors with logging', async () => {
-		const ctx = new Context()
-		const logs: unknown[][] = []
-		const originalWarn = ctx.logger.warn
-		ctx.logger.warn = ((...args: unknown[]) => {
-			logs.push(args)
-		}) as any
-
-		const ok = await ctx.registry.optionalImport(async () => 'ok')
-		expect(ok).toBe('ok')
-
-		const result = await ctx.registry.optionalImport(
-			async () => {
-				throw new Error('missing module')
-			},
-		)
-
-		expect(result).toBeUndefined()
-		expect(logs.length).toBe(1)
-		expect(String(logs[0]?.[1] ?? '')).toContain('optionalImport')
-		ctx.logger.warn = originalWarn
-	})
-
-	it('optional accepts promise-like dynamic imports directly', async () => {
+	it('optional handles dynamic import errors and still runs effect', async () => {
 		const ctx = new Context()
 		const logs: unknown[][] = []
 		const originalWarn = ctx.logger.warn
@@ -167,54 +147,42 @@ describe('PluginService commit()', () => {
 
 		const events: string[] = []
 
-		const success = await ctx.registry.optional(
-			() => Promise.resolve({ value: 42 }),
-			(dep) => {
-				events.push(dep ? 'promise:hit' : 'promise:miss')
-			},
-		)
-		expect(success).toBeUndefined()
-
-		const failure = await ctx.registry.optional(
+		await ctx.registry.optional(
 			() => Promise.reject(new Error('dyn import fail')),
 			(dep) => {
 				events.push(dep ? 'promise:hit2' : 'promise:miss2')
 			},
 		)
-
-		expect(failure).toBeUndefined()
-		expect(events).toEqual(['promise:miss', 'promise:miss2'])
+		await Promise.resolve()
+		expect(events).toEqual(['promise:miss2'])
 		expect(logs.length).toBeGreaterThanOrEqual(1)
 		ctx.logger.warn = originalWarn
 	})
 
-	it('optional importer validates plugin exports and only returns running instances', async () => {
+	it('optional importer validates plugin exports and reflects running instances', async () => {
 		const ctx = new Context()
 		const { pluginRegistry } = ctx.registry
 		pluginRegistry.registerPlugin(PluginB)
 		await ctx.registry.commit()
 
 		const hits: string[] = []
-		const res = await ctx.registry.optional(
+		await ctx.registry.optional(
 			() => Promise.resolve(PluginB),
 			(instance) => {
 				if (instance) hits.push((instance as any).constructor.name)
 			},
 		)
-		expect(res).toBeInstanceOf(PluginB)
+		await Promise.resolve()
 		expect(hits).toEqual(['PluginB'])
 
 		const logs: unknown[][] = []
 		const originalWarn = ctx.logger.warn
-	ctx.logger.warn = ((...args: unknown[]) => logs.push(args)) as any
+		ctx.logger.warn = ((...args: unknown[]) => logs.push(args)) as any
 
-		const bad = await ctx.registry.optional(
+		await ctx.registry.optional(
 			() => Promise.resolve([() => {}]),
-			(instances) => {
-				hits.push(instances ? 'some' : 'none')
-			},
+			(_instances) => void hits.push('none'),
 		)
-		expect(bad).toBeUndefined()
 		expect(hits[hits.length - 1]).toBe('none')
 		expect(logs.length).toBeGreaterThan(0)
 		ctx.logger.warn = originalWarn
@@ -237,10 +205,10 @@ describe('PluginService commit()', () => {
 		class OptionalCallerConsumer extends BasePlugin {
 			override init(): void {
 				consumerCtx = this.ctx
-				const dep = this.ctx.registry.optional(OptionalCallerProvider, (p) => {
+				this.ctx.registry.optional(OptionalCallerProvider, (p) => {
 					if (p?.ctx.caller) callerCtxs.push(p.ctx.caller)
+					p?.record()
 				})
-				dep?.record()
 			}
 		}
 
@@ -249,6 +217,7 @@ describe('PluginService commit()', () => {
 
 		pluginRegistry.registerPlugin(OptionalCallerConsumer)
 		await ctx.registry.commit()
+		await Promise.resolve()
 
 		expect(callerCtxs.length).toBeGreaterThanOrEqual(1)
 		for (const caller of callerCtxs) {

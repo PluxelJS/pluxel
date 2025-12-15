@@ -19,6 +19,16 @@ function asPinoFn(fn: (...args: unknown[]) => void): Logger['info'] {
 	return fn as unknown as Logger['info']
 }
 
+/** 向上遍历 context 链查找 pluginInfo.id */
+function findPluginId(ctx: Context): string | undefined {
+	let current: Context | undefined = ctx
+	while (current) {
+		if (current.pluginInfo?.id) return current.pluginInfo.id
+		current = current.parent ?? current.caller
+	}
+	return undefined
+}
+
 @Injectable
 @OverrideOf(LoggerService)
 export class PinoLoggerService {
@@ -38,13 +48,15 @@ export class PinoLoggerService {
 
 		// #if NODE_ENV !== 'production'
 		if (!isProd) {
-			const scopeName = ctx.pluginInfo?.id ?? ctx.name
+			// 向上查找 pluginId，支持子 context 继承父 context 的 pluginInfo
+			const pluginId = findPluginId(ctx)
 			const bindings: Bindings = {
-				name: scopeName,
+				// name 保持当前 context 名称，用于显示
+				name: ctx.name,
 			}
-			const pluginId = ctx.pluginInfo?.id
-			if (pluginId && pluginId !== scopeName) {
-				bindings.plugin = pluginId
+			// pluginId 用于前端过滤
+			if (pluginId) {
+				bindings.pluginId = pluginId
 			}
 			this.logger = deriveScopedLogger(bindings, this.config)
 			this.bindPinoLevels(this.logger)

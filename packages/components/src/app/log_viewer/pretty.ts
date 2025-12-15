@@ -264,6 +264,7 @@ export function createPrettyPrinter(opts: PrettyOptions = {}): PrettyPrinter {
 		'time',
 		'level',
 		'name',
+		'pluginId',
 		'msg',
 		'logger',
 		'module',

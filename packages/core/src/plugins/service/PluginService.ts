@@ -20,7 +20,13 @@ import type { PluginInfo } from '../PluginDecorator'
 import type { ForkablePluginConstructor, PluginConstructor, PluginIdentifier, PluginInstance } from '../types'
 import { computeInitPlan, partitionChanges, planTeardown, type InitPlan } from './commitPlanner'
 import { LifecycleManager } from './lifecycleManager'
-import { OptionalResolver } from './optionalResolver'
+import {
+	type InstancesOf,
+	type OptionalEffectHandler,
+	type OptionalEffectOptions as OptionalSubscriptionOptions,
+	type OptionalImporter,
+	OptionalResolver,
+} from './optionalResolver'
 
 /* ─────────────────────────── Types ─────────────────────────── */
 
@@ -36,25 +42,6 @@ export interface CommitSummary {
 	replaced: PluginIdentifier[]
 	removed: PluginIdentifier[]
 	failed: PluginIdentifier[]
-}
-
-type OptionalHandler<T> = (
-	optional: T | undefined,
-	summary: CommitSummary | undefined,
-) => void | Promise<void>
-
-type InstancesOf<T extends readonly PluginIdentifier[]> = {
-	[K in keyof T]: InstanceType<T[K]> | undefined
-}
-
-type OptionalImporter<T extends PluginIdentifier> =
-	| Promise<T | T[] | readonly T[]>
-	| (() => Promise<T | T[] | readonly T[]>)
-
-type OptionalOptions = {
-	watch?: boolean
-	multi?: boolean
-	onError?: (error: unknown) => void
 }
 
 /* ─────────────────────────── Module Augmentation ─────────────────────────── */
@@ -132,7 +119,7 @@ export class PluginService {
 			this.pluginRegistry,
 			(id) => this.isRunning(id),
 			() => this._lastCommit,
-			() => this._activeContainer ?? this.pluginRegistry.lastContainer,
+			() => this._activeContainer,
 		)
 	}
 
@@ -194,39 +181,37 @@ export class PluginService {
 
 	/* ─────────────────────────── Optional Dependencies ─────────────────────────── */
 
+	/**
+	 * The ONLY supported optional dependency API:
+	 * - returns a disposer (also collected into caller ctx.scope)
+	 * - effect is executed on "settled" state (afterCommit when called during commit())
+	 */
 	public optional<T extends PluginIdentifier>(
 		plugin: T,
-		handler?: OptionalHandler<InstanceType<T>>,
-		opts?: OptionalOptions,
-	): InstanceType<T> | undefined
-	public optional<T extends PluginIdentifier>(
-		importer: OptionalImporter<T>,
-		handler?: OptionalHandler<InstanceType<T>>,
-		opts?: OptionalOptions & { multi?: false },
-	): Promise<InstanceType<T> | undefined>
+		effect: OptionalEffectHandler<InstanceType<T> | undefined>,
+		opts?: OptionalSubscriptionOptions & { multi?: false },
+	): () => void
 	public optional<T extends readonly PluginIdentifier[]>(
-		importer: Promise<T> | (() => Promise<T>),
-		handler: OptionalHandler<InstancesOf<T>>,
-		opts: OptionalOptions & { multi: true },
-	): Promise<InstancesOf<T> | undefined>
+		plugins: T,
+		effect: OptionalEffectHandler<InstancesOf<T>>,
+		opts: OptionalSubscriptionOptions & { multi: true },
+	): () => void
 	public optional<T extends PluginIdentifier>(
 		importer: OptionalImporter<T>,
-		handler: OptionalHandler<Array<InstanceType<T> | undefined>>,
-		opts: OptionalOptions & { multi: true },
-	): Promise<Array<InstanceType<T> | undefined> | undefined>
+		effect: OptionalEffectHandler<InstanceType<T> | undefined>,
+		opts?: OptionalSubscriptionOptions & { multi?: false },
+	): Promise<() => void>
+	public optional<T extends PluginIdentifier>(
+		importer: OptionalImporter<T>,
+		effect: OptionalEffectHandler<Array<InstanceType<T> | undefined>>,
+		opts: OptionalSubscriptionOptions & { multi: true },
+	): Promise<() => void>
 	public optional(
-		target: PluginIdentifier | OptionalImporter<PluginIdentifier>,
-		handler?: OptionalHandler<BasePlugin> | OptionalHandler<BasePlugin[]>,
-		opts?: OptionalOptions,
+		target: PluginIdentifier | OptionalImporter<PluginIdentifier> | readonly PluginIdentifier[],
+		effect: OptionalEffectHandler<BasePlugin | Array<BasePlugin | undefined> | undefined>,
+		opts?: OptionalSubscriptionOptions,
 	) {
-		return (this.optionals as any).optional(target, handler as any, opts as any)
-	}
-
-	public optionalImport<T>(
-		importer: () => Promise<T>,
-		opts?: { onError?: (error: unknown) => void; label?: string },
-	): Promise<T | undefined> {
-		return this.optionals.optionalImport(importer, opts)
+		return (this.optionals as any).optional(target, effect, opts)
 	}
 
 	/* ─────────────────────────── Commit Internals ─────────────────────────── */
@@ -259,8 +244,17 @@ export class PluginService {
 	): Promise<void> {
 		const resolution = container.getResult(id)
 		if (resolution.err) {
+			const err =
+				resolution.err instanceof Error
+					? resolution.err
+					: new Error(String(resolution.err), { cause: resolution.err })
+			try {
+				this.ctx.emit('resolveError', id, err)
+			} catch {
+				// ignore: events service may be overridden
+			}
 			failed.add(id)
-			this.ctx.logger.error(resolution.err, `解析 ${String(id)} 失败`)
+			this.ctx.logger.error(err, `解析 ${String(id)} 失败`)
 			return
 		}
 

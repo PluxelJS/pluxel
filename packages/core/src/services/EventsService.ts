@@ -115,6 +115,7 @@ export interface Events {
 	afterCommit: (summary: CommitSummary) => void
 	afterStart: [Context] // 启动成功
 	startError: [Context, Error] // 启动失败
+	resolveError: [PluginIdentifier, Error] // 构造/依赖解析失败（无 plugin ctx）
 }
 
 // biome-ignore lint/complexity/noBannedTypes: <explanation>

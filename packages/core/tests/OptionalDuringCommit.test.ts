@@ -35,6 +35,7 @@ describe('optional() during commit()', () => {
 		ctx.registry.pluginRegistry.registerPlugin(Provider)
 		ctx.registry.pluginRegistry.registerPlugin(Consumer)
 		await ctx.registry.commit()
+		await Promise.resolve()
 
 		// The warning should NOT claim "not registered" because Provider is in the draft container.
 		expect(
@@ -50,4 +51,3 @@ describe('optional() during commit()', () => {
 		ctx.logger.info = originalInfo
 	})
 })
-

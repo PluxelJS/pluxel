@@ -95,7 +95,14 @@ export class LifecycleManager {
 			})
 		}
 
-		if (lifecycleSelectors.isRunning(snapshot)) return
+		if (lifecycleSelectors.isRunning(snapshot)) {
+			try {
+				this.ctx.emit('afterStart', plugin.ctx)
+			} catch {
+				// ignore: events service may be overridden
+			}
+			return
+		}
 
 		const capturedErr: unknown =
 			(ref.getSnapshot?.() as any)?.context?.err ??
@@ -104,9 +111,20 @@ export class LifecycleManager {
 
 		await this.stopLifecycle(id, plugin, ref)
 
-		if (capturedErr instanceof Error) throw capturedErr
-		if (capturedErr != null) throw new Error(String(capturedErr), { cause: capturedErr })
-		throw new Error(`Plugin ${String(id)} failed to start`)
+		const pluginCtx = plugin.ctx
+		const err =
+			capturedErr instanceof Error
+				? capturedErr
+				: capturedErr != null
+					? new Error(String(capturedErr), { cause: capturedErr })
+					: new Error(`Plugin ${String(id)} failed to start`)
+
+		try {
+			this.ctx.emit('startError', pluginCtx, err)
+		} catch {
+			// ignore: events service may be overridden
+		}
+		throw err
 	}
 
 	async stopLifecycle(

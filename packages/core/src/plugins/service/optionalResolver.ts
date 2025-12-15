@@ -1,31 +1,55 @@
 // optionalResolver.ts
-// Implements registry.optional()/optionalImport().
-// Optional deps are *never* required for construction; they are looked up at runtime
-// and may re‑fire a handler after the next commit if the set of running deps changes.
+// Implements registry.optional().
+//
+// Design goals:
+// - Never block plugin startup: if called during commit(), we defer handler/effects
+//   to afterCommit, but we do NOT await afterCommit (otherwise init() could deadlock).
+// - Deterministic semantics: handlers observe the "settled" state of a commit cycle.
+// - Scoped cleanup: watchers and effects are collected into caller ctx.scope.
+// - Clear diagnostics: unregistered vs idle vs failed.
 
 import type { Context } from '@pluxel/context'
 import { BasePlugin, PLUGIN_CTX } from '../BasePlugin'
-import type { PluginContainer } from '../PluginContainer'
-import type { PluginDiContainer } from '../PluginContainer'
+import type { PluginContainer, PluginDiContainer } from '../PluginContainer'
+import { getPluginInfo } from '../PluginDecorator'
 import type { PluginIdentifier } from '../types'
 import type { CommitSummary } from './PluginService'
 
-type OptionalHandler<T> = (
-	optional: T | undefined,
-	summary: CommitSummary | undefined,
-) => void | Promise<void>
-
-type InstancesOf<T extends readonly PluginIdentifier[]> = {
+export type InstancesOf<T extends readonly PluginIdentifier[]> = {
 	[K in keyof T]: InstanceType<T[K]> | undefined
 }
 
-type OptionalImporter<T extends PluginIdentifier> =
+export type OptionalImporter<T extends PluginIdentifier> =
 	| Promise<T | T[] | readonly T[]>
 	| (() => Promise<T | T[] | readonly T[]>)
 
-type OptionalOptions = {
-	watch?: boolean
+export type OptionalAvailability =
+	| { state: 'running' }
+	| { state: 'unregistered'; missingInContainer: string[] }
+	| { state: 'idle'; idle: string[] }
+	| { state: 'failed'; failed: Array<{ plugin: string; error: Error }>; idle: string[] }
+
+export type OptionalEffectInfo = {
+	label: string
+	ids: PluginIdentifier[]
+	summary: CommitSummary | undefined
+	availability: OptionalAvailability
+}
+
+export type OptionalEffectCleanup =
+	| void
+	| (() => void | Promise<void>)
+	| Promise<void | (() => void | Promise<void>)>
+export type OptionalEffectHandler<T> = (optional: T, info: OptionalEffectInfo) => OptionalEffectCleanup
+
+export type OptionalEffectOptions = {
 	multi?: boolean
+	/** Listen to plugin start/commit changes. Default: true. */
+	watch?: boolean
+	/** Fire once immediately. Default: true. */
+	runOnInit?: boolean
+	/** Log missing reasons when optional is unavailable. Default: true. */
+	logUnavailable?: boolean
 	onError?: (error: unknown) => void
 }
 
@@ -50,99 +74,59 @@ export class OptionalResolver {
 		Map<PluginIdentifier, { source: BasePlugin; view: BasePlugin }>
 	>()
 
+	/**
+	 * Last startup/resolve error by pluginInfo.id.
+	 * Used purely for better optional diagnostics/logs.
+	 */
+	private lastErrors = new Map<string, Error>()
+
 	constructor(
-		// Context in PluginService is mutable (Context getter rebinds inst.ctx per caller).
-		// We therefore take a getter so optional() always uses the *current* caller ctx
-		// for caller‑injection and event attachment.
 		private readonly getCtx: () => Context,
 		private readonly pluginRegistry: PluginContainer,
 		private readonly isRunning: (id: PluginIdentifier) => boolean,
 		private readonly getLastCommit: () => CommitSummary | undefined,
-		// During PluginService.commit(), lastContainer is still the previous one until confirm().
-		// Use the active draft container to avoid false "not registered" warnings.
-		private readonly getActiveContainer: () => PluginDiContainer | undefined,
-	) {}
+		private readonly getDraftContainer: () => PluginDiContainer | undefined,
+	) {
+		const rootCtx = this.getCtx().root
+		try {
+			rootCtx.events.on('resolveError', (pluginId, error) => {
+				const id = this.idOf(pluginId)
+				if (id) this.lastErrors.set(id, error)
+			})
+			rootCtx.events.on('startError', (pluginCtx, error) => {
+				const id = (pluginCtx as any)?.pluginInfo?.id
+				if (typeof id === 'string' && id.length) this.lastErrors.set(id, error)
+			})
+			rootCtx.events.on('afterStart', (pluginCtx) => {
+				const id = (pluginCtx as any)?.pluginInfo?.id
+				if (typeof id === 'string' && id.length) this.lastErrors.delete(id)
+			})
+		} catch {
+			// ignore: events service may be overridden/removed
+		}
+	}
 
 	private get ctx(): Context {
 		return this.getCtx()
 	}
 
-	public optional<T extends PluginIdentifier>(
-		plugin: T,
-		handler?: OptionalHandler<InstanceType<T>>,
-		opts?: OptionalOptions,
-	): InstanceType<T> | undefined
-	public optional<T extends PluginIdentifier>(
-		importer: OptionalImporter<T>,
-		handler?: OptionalHandler<InstanceType<T>>,
-		opts?: OptionalOptions & { multi?: false },
-	): Promise<InstanceType<T> | undefined>
-	public optional<T extends readonly PluginIdentifier[]>(
-		importer: Promise<T> | (() => Promise<T>),
-		handler: OptionalHandler<InstancesOf<T>>,
-		opts: OptionalOptions & { multi: true },
-	): Promise<InstancesOf<T> | undefined>
-	public optional<T extends PluginIdentifier>(
-		importer: OptionalImporter<T>,
-		handler: OptionalHandler<Array<InstanceType<T> | undefined>>,
-		opts: OptionalOptions & { multi: true },
-	): Promise<Array<InstanceType<T> | undefined> | undefined>
-	public optional(
-		target: PluginIdentifier | OptionalImporter<PluginIdentifier>,
-		handler?: OptionalHandler<BasePlugin> | OptionalHandler<BasePlugin[]>,
-		opts?: OptionalOptions,
-	) {
-		const callerCtx = this.ctx
-		const watch = opts?.watch ?? true
-		const multi = opts?.multi ?? false
-
-		// Async import path
-		if (!isPluginIdentifier(target)) {
-			const importer = typeof target === 'function' ? target : () => target
-			const label = importer.name || 'dynamic import'
-
-			return this.optionalImport(importer, { onError: opts?.onError, label }).then((mod) => {
-				if (mod === undefined) {
-					return this.invokeOptionalHandler(handler, undefined, this.getLastCommit(), label, multi)
-				}
-
-				const ids = this.normalizePluginIdentifiers(mod)
-				if (!ids.length) {
-					const err = new Error(`optional(${label}) 未找到 BasePlugin 导出`)
-					callerCtx.logger?.warn?.(err)
-					opts?.onError?.(err)
-					return Promise.resolve(
-						this.invokeOptionalHandler(handler, undefined, this.getLastCommit(), label, multi),
-					).then(() => (multi ? [] : undefined))
-				}
-
-				const payload = this.collectOptionals(ids, callerCtx, multi)
-				if (!payload.length || payload.every((item) => item === undefined)) {
-					this.logUnavailable(ids, label)
-				}
-				if (handler) {
-					void this.invokeOptionalHandler(handler, payload, this.getLastCommit(), label, multi)
-				}
-				if (watch && handler) {
-					this.attachOptionalWatcher(ids, callerCtx, handler, label, multi, multi)
-				}
-				return (multi ? payload : payload[0]) as any
-			})
-		}
-
-		// Sync path
-		const ids = [target]
-		const label = describeIds(ids)
-		const payload = this.collectOptionals(ids, callerCtx, false)
-		if (!payload.length) this.logUnavailable(ids, label)
-		void this.invokeOptionalHandler(handler, payload, this.getLastCommit(), label, false)
-		if (watch && handler) {
-			this.attachOptionalWatcher(ids, callerCtx, handler, label, false, false)
-		}
-		return payload[0] as any
+	private isCommitting(): boolean {
+		return this.getDraftContainer() !== undefined
 	}
 
-	public async optionalImport<T>(
+	private containerForChecks(): PluginDiContainer | undefined {
+		return this.getDraftContainer() ?? this.pluginRegistry.lastContainer
+	}
+
+	private idOf(id: PluginIdentifier): string {
+		const info = getPluginInfo(id)
+		if (info?.id) return info.id
+		const raw = String(id)
+		const paren = raw.indexOf('(')
+		return (paren > 0 ? raw.slice(0, paren) : raw).trim()
+	}
+
+	private async optionalImport<T>(
 		importer: () => Promise<T>,
 		opts?: { onError?: (error: unknown) => void; label?: string },
 	): Promise<T | undefined> {
@@ -153,11 +137,172 @@ export class OptionalResolver {
 			if (opts?.onError) {
 				opts.onError(error)
 			} else {
-				const name = (opts?.label ?? importer.name) || 'optionalImport'
-				callerCtx.logger?.warn?.(error, `${name} 动态导入失败`)
+				const name = (opts?.label ?? importer.name) || 'dynamic import'
+				callerCtx.logger?.warn?.(error, `optional(${name}) 动态导入失败`)
 			}
 			return undefined
 		}
+	}
+
+	/** The ONLY supported optional API: a scoped effect subscription. */
+	public optional<T extends PluginIdentifier>(
+		plugin: T,
+		effect: OptionalEffectHandler<InstanceType<T> | undefined>,
+		opts?: OptionalEffectOptions & { multi?: false },
+	): () => void
+	public optional<T extends readonly PluginIdentifier[]>(
+		plugins: T,
+		effect: OptionalEffectHandler<InstancesOf<T>>,
+		opts: OptionalEffectOptions & { multi: true },
+	): () => void
+	public optional<T extends PluginIdentifier>(
+		importer: OptionalImporter<T>,
+		effect: OptionalEffectHandler<InstanceType<T> | undefined>,
+		opts?: OptionalEffectOptions & { multi?: false },
+	): Promise<() => void>
+	public optional<T extends PluginIdentifier>(
+		importer: OptionalImporter<T>,
+		effect: OptionalEffectHandler<Array<InstanceType<T> | undefined>>,
+		opts: OptionalEffectOptions & { multi: true },
+	): Promise<() => void>
+	public optional(
+		target: PluginIdentifier | OptionalImporter<PluginIdentifier> | readonly PluginIdentifier[],
+		effect: OptionalEffectHandler<any>,
+		opts?: OptionalEffectOptions,
+	): any {
+		const callerCtx = this.ctx
+		const watch = opts?.watch ?? true
+		const multi = opts?.multi ?? false
+		const runOnInit = opts?.runOnInit ?? true
+		const logUnavailable = opts?.logUnavailable ?? true
+
+		const attach = (ids: PluginIdentifier[], label: string) => {
+			let stopped = false
+			let last = this.collectOptionals(ids, callerCtx, multi)
+			let first = true
+			let cleanup: (() => void | Promise<void>) | undefined
+			let chain: Promise<void> = Promise.resolve()
+
+			const run = (summary?: CommitSummary) => {
+				chain = chain
+					.then(async () => {
+						if (stopped) return
+						const current = this.collectOptionals(ids, callerCtx, multi)
+						const same = arraysEqual(last, current)
+
+						if (first) {
+							first = false
+							if (!runOnInit && same) return
+						} else if (same) {
+							return
+						}
+
+						last = current
+
+						const allMissing = !current.length || current.every((item) => item === undefined)
+						if (allMissing && logUnavailable) this.logUnavailable(ids, label)
+
+						const info: OptionalEffectInfo = {
+							label,
+							ids,
+							summary: summary ?? this.getLastCommit(),
+							availability: this.getAvailability(ids),
+						}
+
+						try {
+							if (cleanup) await cleanup()
+						} catch (error) {
+							callerCtx.logger?.warn?.(error, `optional(${label}) 清理失败`)
+						}
+						cleanup = undefined
+						if (stopped) return
+
+						try {
+							const value = (multi ? current : current[0]) as any
+							const ret = await effect(value, info)
+							if (typeof ret === 'function') cleanup = ret as any
+						} catch (error) {
+							if (opts?.onError) opts.onError(error)
+							else callerCtx.logger?.error?.(error, `optional(${label}) 执行失败`)
+						}
+					})
+					.catch((error) => {
+						callerCtx.logger?.error?.(error, `optional(${label}) 内部异常`)
+					})
+			}
+
+			const offStart = watch ? callerCtx.events.on('afterStart', () => run(undefined)) : (() => {})
+			const offCommit = watch ? callerCtx.events.on('afterCommit', (s) => run(s)) : (() => {})
+
+			const dispose = () => {
+				if (stopped) return
+				stopped = true
+				try {
+					offStart()
+					offCommit()
+				} catch {
+					/* ignore */
+				}
+				chain = chain.finally(async () => {
+					try {
+						await cleanup?.()
+					} catch (error) {
+						callerCtx.logger?.warn?.(error, `optional(${label}) 清理失败`)
+					}
+					cleanup = undefined
+				})
+			}
+
+			try {
+				;(callerCtx as any)?.scope?.collectEffect?.(dispose)
+			} catch {
+				/* ignore */
+			}
+
+			// IMPORTANT: when called during commit(), we defer the first run to afterCommit
+			// to avoid "early miss" within init().
+			if (runOnInit) {
+				if (this.isCommitting()) {
+					const off = callerCtx.events.on('afterCommit', (s) => {
+						off()
+						run(s)
+					})
+				} else {
+					run(this.getLastCommit())
+				}
+			}
+
+			return dispose
+		}
+
+		if (Array.isArray(target)) {
+			const ids = [...target].filter(isPluginIdentifier)
+			return attach(ids, describeIds(ids))
+		}
+
+		if (!isPluginIdentifier(target)) {
+			const importer = typeof target === 'function' ? target : () => target
+			const label = importer.name || 'dynamic import'
+			return this.optionalImport(importer, { onError: opts?.onError, label }).then((mod) => {
+				const ids = this.normalizePluginIdentifiers(mod)
+				if (mod !== undefined && ids.length === 0) {
+					const err = new Error(`optional(${label}) 未找到 BasePlugin 导出`)
+					callerCtx.logger?.warn?.(err)
+					opts?.onError?.(err)
+				}
+				return attach(ids, label)
+			})
+		}
+
+		return attach([target], describeIds([target]))
+	}
+
+	/* ─────────────────────────── Internals ─────────────────────────── */
+
+	private normalizePluginIdentifiers(input: unknown): PluginIdentifier[] {
+		if (isPluginIdentifier(input)) return [input]
+		if (Array.isArray(input)) return input.filter(isPluginIdentifier)
+		return []
 	}
 
 	private collectOptionals(
@@ -165,73 +310,70 @@ export class OptionalResolver {
 		callerCtx: Context,
 		keepGaps: boolean,
 	): Array<BasePlugin | undefined> {
-		const result = ids.map((id) => this.getRunningOptional(id, callerCtx))
-		return keepGaps ? result : result.filter((x): x is BasePlugin => x !== undefined)
+		const out = ids.map((id) => this.getRunningOptional(id, callerCtx))
+		return keepGaps ? out : out.filter((x): x is BasePlugin => x !== undefined)
 	}
 
-	private invokeOptionalHandler(
-		handler: OptionalHandler<BasePlugin> | OptionalHandler<BasePlugin[]> | undefined,
-		payload: Array<BasePlugin | undefined> | undefined,
-		summary: CommitSummary | undefined,
-		label: string,
-		asMulti: boolean,
-	) {
-		if (!handler) return
-		const value = (asMulti ? (payload ?? []) : payload?.[0]) as any
-		return Promise.resolve(handler(value, summary)).catch((error) => {
-			this.ctx.logger?.error?.(error, `optional(${label}) 处理失败`)
-		})
-	}
-
-	private logUnavailable(ids: PluginIdentifier[], label: string) {
-		const container = this.getActiveContainer() ?? this.pluginRegistry.lastContainer
+	private getAvailability(ids: PluginIdentifier[]): OptionalAvailability {
+		if (ids.length === 0) return { state: 'unregistered', missingInContainer: [] }
+		const container = this.containerForChecks()
 		const missingInContainer = ids.filter((id) => {
 			const key = container?.resolveIdentifier?.(id as any) ?? id
 			return !container?.services?.has(key as any)
 		})
 		if (missingInContainer.length) {
-			this.ctx.logger?.warn?.(
-				{ plugins: missingInContainer.map(String) },
-				`optional(${label}) 未在容器中，可能尚未注册`,
-			)
-			return
+			return { state: 'unregistered', missingInContainer: missingInContainer.map(String) }
 		}
+
 		const notRunning = ids.filter((id) => !this.isRunning(id))
-		if (notRunning.length) {
-			this.ctx.logger?.info?.(
-				{ plugins: notRunning.map(String) },
-				`optional(${label}) 已注册但未运行`,
-			)
+		if (!notRunning.length) return { state: 'running' }
+
+		const failed: Array<{ plugin: string; error: Error }> = []
+		const idle: string[] = []
+		for (const id of notRunning) {
+			const raw = String(id)
+			const err = this.lastErrors.get(this.idOf(id))
+			if (err) failed.push({ plugin: raw, error: err })
+			else idle.push(raw)
 		}
+		if (failed.length) return { state: 'failed', failed, idle }
+		return { state: 'idle', idle }
 	}
 
-	private attachOptionalWatcher(
-		ids: PluginIdentifier[],
-		callerCtx: Context,
-		handler: OptionalHandler<BasePlugin> | OptionalHandler<BasePlugin[]>,
-		label: string,
-		asMulti: boolean,
-		keepGaps: boolean,
-	) {
-		let last = this.collectOptionals(ids, callerCtx, keepGaps)
-		// 持续监听直到状态变化，再执行 handler 并解绑；避免首次 afterCommit 值相同导致永不触发。
-		const unsub = callerCtx.events.on('afterCommit', (summary) => {
-			const current = this.collectOptionals(ids, callerCtx, keepGaps)
-			if (arraysEqual(last, current)) return
-			last = current
-			if (!current.length || current.every((item) => item === undefined)) {
-				this.logUnavailable(ids, label)
-			}
-			void this.invokeOptionalHandler(handler as any, current, summary, label, asMulti)
-			unsub()
-		})
+	private logUnavailable(ids: PluginIdentifier[], label: string) {
+		const availability = this.getAvailability(ids)
+		switch (availability.state) {
+			case 'unregistered':
+				this.ctx.logger?.warn?.(
+					{ plugins: availability.missingInContainer },
+					`optional(${label}) 未在容器中，可能尚未注册`,
+				)
+				return
+			case 'failed':
+				this.ctx.logger?.info?.(
+					{
+						failed: availability.failed.map((x) => ({
+							plugin: x.plugin,
+							message: x.error.message || String(x.error),
+						})),
+						idle: availability.idle.length ? availability.idle : undefined,
+					},
+					`optional(${label}) 已注册但未运行（最近启动失败）`,
+				)
+				return
+			case 'idle':
+				this.ctx.logger?.info?.({ plugins: availability.idle }, `optional(${label}) 已注册但未运行`)
+				return
+			case 'running':
+				return
+		}
 	}
 
 	private getRunningOptional<T extends PluginIdentifier>(
 		ctor: T,
 		callerCtx: Context,
 	): InstanceType<T> | undefined {
-		const container = this.getActiveContainer() ?? this.pluginRegistry.lastContainer
+		const container = this.containerForChecks()
 		const key = (container?.resolveIdentifier?.(ctor as any) ?? ctor) as PluginIdentifier
 
 		if (!this.isRunning(ctor)) {
@@ -264,11 +406,5 @@ export class OptionalResolver {
 		return Object.create(instance, {
 			ctx: { value: view, writable: false, enumerable: false, configurable: false },
 		})
-	}
-
-	private normalizePluginIdentifiers(input: unknown): PluginIdentifier[] {
-		if (isPluginIdentifier(input)) return [input]
-		if (Array.isArray(input)) return input.filter(isPluginIdentifier)
-		return []
 	}
 }

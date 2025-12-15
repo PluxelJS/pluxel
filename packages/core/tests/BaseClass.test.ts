@@ -37,12 +37,20 @@ describe('Abstract base and canonical ids', () => {
 
 		// impl ctor should still be a valid identifier for queries
 		expect(ctx.registry.isRunning(Impl)).toBe(true)
-		const opt = ctx.registry.optional(Impl)
+		let opt: Impl | undefined
+		ctx.registry.optional(Impl, (dep) => {
+			opt = dep
+		})
+		await Promise.resolve()
 		expect(opt).toBeInstanceOf(Impl)
 
 		// base token should also resolve via alias
 		expect(ctx.registry.isRunning(Abs)).toBe(true)
-		const optByBase = ctx.registry.optional(Abs)
+		let optByBase: Abs | undefined
+		ctx.registry.optional(Abs, (dep) => {
+			optByBase = dep
+		})
+		await Promise.resolve()
 		expect(optByBase).toBeInstanceOf(Impl)
 
 		// unloading by base should remove provider + dependents
@@ -129,7 +137,12 @@ describe('Abstract base and canonical ids', () => {
 		expect(consumer!.dep.ctx.pluginInfo.id).toBe('Impl')
 
 		// base token resolves to the primary provider, not forks
-		expect(ctx.registry.optional(Abs)?.ctx.pluginInfo.id).toBe('Impl')
+		let base: Abs | undefined
+		ctx.registry.optional(Abs, (dep) => {
+			base = dep
+		})
+		await Promise.resolve()
+		expect(base?.ctx.pluginInfo.id).toBe('Impl')
 
 		expect(ctx.registry.getFork(Impl, 'a')!.ctx.pluginInfo.id).toBe('Impl#a')
 		expect(ctx.registry.getFork(Impl, 'b')!.ctx.pluginInfo.id).toBe('Impl#b')
