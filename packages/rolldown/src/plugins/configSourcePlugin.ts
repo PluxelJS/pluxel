@@ -793,7 +793,7 @@ function generateInjection(configs: ExtractedConfig[]): string {
 	]
 
 	for (const { className, fieldName, source } of configs) {
-		// 将 source 压缩（移除多余空白）后作为字符串字面量注入
+		// 将 source 压缩（移除多余空白和尾随逗号）后作为字符串字面量注入
 		const compactSource = source
 			.replace(/\s+/g, ' ')
 			.replace(/\(\s+/g, '(')
@@ -802,6 +802,9 @@ function generateInjection(configs: ExtractedConfig[]): string {
 			.replace(/\s+}/g, '}')
 			.replace(/,\s+/g, ',')
 			.replace(/:\s+/g, ':')
+			.replace(/,\)/g, ')') // 移除尾随逗号 ,) -> )
+			.replace(/,}/g, '}') // 移除尾随逗号 ,} -> }
+			.replace(/,]/g, ']') // 移除尾随逗号 ,] -> ]
 			.trim()
 		const final = normalizeSchemaSource(compactSource)
 		const escapedSource = JSON.stringify(final)

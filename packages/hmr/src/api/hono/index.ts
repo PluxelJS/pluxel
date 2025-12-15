@@ -2,6 +2,7 @@ import { newHttpBatchRpcResponse } from 'capnweb'
 import { Hono } from 'hono'
 
 import loggerApp from '../../services/logger/api'
+import debugApp from './debug'
 import type { AppEnv } from './env'
 import { HmrRpcApi, PluginHandle } from './rpc'
 
@@ -68,33 +69,7 @@ const app = new Hono<AppEnv>()
 		return c.json(api.updatePluginGroups(groups))
 	})
 	// ============ 调试路由 ============
-	.get('/debug/plugins/:name/schema', (c) => {
-		const name = c.req.param('name')
-		const handle = new PluginHandle(c.var.plugin_ctx, name)
-		const result = handle.schema()
-		return c.json(result, result.ok ? 200 : 404)
-	})
-	.get('/debug/schemas', (c) => {
-		const ctx = c.var.plugin_ctx
-		const registry = ctx.loader.registry
-		const names = registry.getLoadedNames()
-		const result: Record<
-			string,
-			{ hasSchema: boolean; hasSchemaSource: boolean; schemaSource?: Record<string, string> }
-		> = {}
-		for (const name of names) {
-			const ctor = registry.getPluginByName(name)
-			if (!ctor) continue
-			const schema = registry.getSchema(ctor)
-			const schemaSource = registry.getSchemaSource(ctor)
-			result[name] = {
-				hasSchema: !!schema && Object.keys(schema).length > 0,
-				hasSchemaSource: !!schemaSource && Object.keys(schemaSource).length > 0,
-				schemaSource: schemaSource ?? undefined,
-			}
-		}
-		return c.json(result)
-	})
+	.route('/debug', debugApp)
 	.route('/logs', loggerApp)
 	.all('/graphql', (c) => c.var.plugin_ctx.internalGraphql.fetch(c.req.raw, { hono: c } as any))
 
