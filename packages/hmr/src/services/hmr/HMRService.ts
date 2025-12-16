@@ -445,7 +445,7 @@ export class HMRService {
 				this.ctx.logger.error({ file: id, err }, '[HMR] replaceModule failed')
 				// Do not continue with a partially mutated loader/core draft.
 				batch.rollback()
-				this.ctx.registry.pluginRegistry.resetDraft()
+				this.ctx.registry.resetDraft()
 				return undefined
 			}
 			const injectMs = endInject()
@@ -468,7 +468,7 @@ export class HMRService {
 			batch.rollback()
 			// commit() build failures already attempt an internal rollback, but we keep a
 			// direct resetDraft() here to ensure no leftover uncommitted ops linger.
-			this.ctx.registry.pluginRegistry.resetDraft()
+			this.ctx.registry.resetDraft()
 		} else {
 			batch.commit()
 		}
@@ -875,7 +875,7 @@ export class HMRService {
 				prettyId: (id) => this.path.pretty(id),
 			}),
 		)
-		const activeServices = this.ctx.registry.pluginRegistry.lastContainer?.services.size ?? 0
+		const activeServices = this.ctx.registry.container?.services.size ?? 0
 		this.ctx.logger.info(
 			'[HMR#%d] end: %d services, %sms',
 			epoch,

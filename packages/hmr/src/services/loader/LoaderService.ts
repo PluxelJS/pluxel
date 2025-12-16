@@ -59,7 +59,7 @@ export class LoaderService {
 
 	/**
 	 * HMR 批量注入事务（loader 层的声明状态回滚）。
-	 * - core 容器的草稿回滚由 `ctx.registry.pluginRegistry.resetDraft()`/commit 内部负责；
+	 * - core 容器的草稿回滚由 `ctx.registry.resetDraft()`/commit 内部负责；
 	 * - 这里确保 loader 自身不“先走一步”导致状态漂移。
 	 */
 	beginBatch() {
@@ -292,7 +292,7 @@ export class LoaderService {
 	 */
 	private refreshDependents(oldItems: readonly { ctor: PluginConstructor }[]) {
 		if (oldItems.length === 0) return
-		const dependentsMap = this.ctx.registry.pluginRegistry.lastContainer?.dependents
+		const dependentsMap = this.ctx.registry.container?.dependents
 		if (!dependentsMap?.size) return
 
 		const affected = new Set<PluginConstructor>()

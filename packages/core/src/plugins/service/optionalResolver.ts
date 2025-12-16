@@ -10,7 +10,7 @@
 
 import type { Context } from '@pluxel/context'
 import { BasePlugin } from '../BasePlugin'
-import type { PluginContainer, PluginDiContainer } from '../PluginContainer'
+import type { PluginDiContainer } from '../PluginDefinitions'
 import { getPluginInfo } from '../PluginDecorator'
 import type { PluginIdentifier } from '../types'
 import type { CommitSummary } from './PluginService'
@@ -82,7 +82,8 @@ export class OptionalResolver {
 
 	constructor(
 		private readonly getCtx: () => Context,
-		private readonly pluginRegistry: PluginContainer,
+		private readonly getContainer: () => PluginDiContainer | undefined,
+		private readonly getInstances: () => Map<PluginIdentifier, BasePlugin>,
 		private readonly isRunning: (id: PluginIdentifier) => boolean,
 		private readonly getLastCommit: () => CommitSummary | undefined,
 		private readonly getDraftContainer: () => PluginDiContainer | undefined,
@@ -115,7 +116,7 @@ export class OptionalResolver {
 	}
 
 	private containerForChecks(): PluginDiContainer | undefined {
-		return this.getDraftContainer() ?? this.pluginRegistry.lastContainer
+		return this.getDraftContainer() ?? this.getContainer()
 	}
 
 	private idOf(id: PluginIdentifier): string {
@@ -384,7 +385,7 @@ export class OptionalResolver {
 			return undefined
 		}
 
-		const instance = this.pluginRegistry.singletons.get(key as any) as InstanceType<T> | undefined
+		const instance = this.getInstances().get(key as any) as InstanceType<T> | undefined
 		if (!instance) {
 			this.optionalViews.get(callerCtx)?.delete(key)
 			return undefined

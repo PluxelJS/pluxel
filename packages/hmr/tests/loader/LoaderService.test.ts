@@ -61,8 +61,8 @@ describe('LoaderService', () => {
 			}
 		}
 
-		core.registry.pluginRegistry.registerPlugin(Impl)
-		core.registry.pluginRegistry.registerPlugin(Consumer)
+		core.registry.register(Impl)
+		core.registry.register(Consumer)
 		const res = await core.registry.commit()
 		expect(res.ok).toBe(true)
 
@@ -114,7 +114,7 @@ describe('LoaderService', () => {
 			const res = await core.registry.commit()
 			expect(res.ok).toBe(false)
 			batch.rollback()
-			core.registry.pluginRegistry.resetDraft()
+			core.registry.resetDraft()
 		}
 
 		// After rollback, loader should not claim Consumer is loaded.

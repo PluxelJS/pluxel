@@ -81,29 +81,25 @@ const ensureOk = (result: CommitResult) => {
 bench
 	.add('load/unload A+B+C', async () => {
 		const ctx = new Context({ name: 'bench-load' })
-		const { pluginRegistry } = ctx.registry
-
-		pluginRegistry.registerPlugin(PluginB)
-		pluginRegistry.registerPlugin(PluginC)
-		pluginRegistry.registerPlugin(PluginA)
+		ctx.registry.register(PluginB)
+		ctx.registry.register(PluginC)
+		ctx.registry.register(PluginA)
 		ensureOk(await ctx.registry.commit())
 
-		pluginRegistry.unregisterPlugin(PluginA)
-		pluginRegistry.unregisterPlugin(PluginB)
-		pluginRegistry.unregisterPlugin(PluginC)
+		ctx.registry.unregister(PluginA)
+		ctx.registry.unregister(PluginB)
+		ctx.registry.unregister(PluginC)
 		ensureOk(await ctx.registry.commit())
 
 		ctx.disposeAll()
 	})
 	.add('reload PluginA', async () => {
 		const ctx = new Context({ name: 'bench-reload' })
-		const { pluginRegistry } = ctx.registry
-
-		pluginRegistry.registerPlugin(PluginB)
-		pluginRegistry.registerPlugin(PluginA)
+		ctx.registry.register(PluginB)
+		ctx.registry.register(PluginA)
 		ensureOk(await ctx.registry.commit())
 
-		pluginRegistry.reloadPlugin(PluginA)
+		ctx.registry.restart(PluginA)
 		ensureOk(await ctx.registry.commit())
 
 		ctx.disposeAll()

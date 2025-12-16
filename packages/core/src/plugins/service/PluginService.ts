@@ -12,10 +12,11 @@ import type { Context, ServiceClass } from '@pluxel/context'
 import { Injectable } from '@pluxel/context'
 import { createErr, createOk } from 'option-t/plain_result'
 import type { ServiceMap } from '../../container'
+import { LeanMapTracker } from '../../container/LeanMapTracker'
 import { EffectScopeService } from '../../services/EffectScopeService'
 import { BasePlugin } from '../BasePlugin'
 import { forkPlugin, getForkedCtor, listForks } from '../fork'
-import { PluginContainer, type PluginDiContainer } from '../PluginContainer'
+import { PluginDefinitions, type PluginDiContainer } from '../PluginDefinitions'
 import type { PluginInfo } from '../PluginDecorator'
 import type {
 	ForkablePluginConstructor,
@@ -70,7 +71,8 @@ declare module '@pluxel/context' {
 
 @Injectable({ key: serviceName })
 export class PluginService {
-	public pluginRegistry: PluginContainer
+	private readonly definitions: PluginDefinitions
+	private readonly builderSingletons = new LeanMapTracker<PluginIdentifier, PluginInstance>()
 
 	private _commitLock: Promise<unknown> = Promise.resolve()
 	private readonly startTimeoutMs: number
@@ -80,6 +82,8 @@ export class PluginService {
 	private _activeContainer?: PluginDiContainer
 	/** Plugins that should be (re)started on the next commit. */
 	private _pendingStart = new Set<PluginIdentifier>()
+	/** Plugins that should be restarted (re-instantiated) on the next commit. */
+	private _pendingRestart = new Set<PluginIdentifier>()
 	private order = 0
 
 	// Internal helpers (single instances; no per‑commit allocations).
@@ -94,7 +98,7 @@ export class PluginService {
 		this.stopTimeoutMs = config?.stopTimeoutMs ?? 3_000
 
 		const isolated = [...new Set([...(config?.pluginCTXIsolate ?? []), EffectScopeService])]
-		this.pluginRegistry = new PluginContainer(() => {
+		this.definitions = new PluginDefinitions(() => {
 			const pluginCTX = this.ctx.root.isolate(isolated, { name: `${this.order++}` })
 
 			// Scope is per‑plugin by design and used heavily for disposables.
@@ -116,12 +120,13 @@ export class PluginService {
 			}
 
 			return pluginCTX
-		})
+		}, this.builderSingletons)
 
 		this.lifecycle = new LifecycleManager(this.ctx, this.startTimeoutMs, this.stopTimeoutMs)
 		this.optionals = new OptionalResolver(
 			() => this.ctx,
-			this.pluginRegistry,
+			() => this.container,
+			() => this.builderSingletons,
 			(id) => this.isRunning(id),
 			() => this._lastCommit,
 			() => this._activeContainer,
@@ -156,9 +161,9 @@ export class PluginService {
 	/* ─────────────────────────── State Query ─────────────────────────── */
 
 	isRunning(id: PluginIdentifier): boolean {
-		const container = this._activeContainer ?? this.pluginRegistry.lastContainer
+		const container = this._activeContainer ?? this.container
 		const key = container?.resolveIdentifier?.(id as any) ?? id
-		const instance = this.pluginRegistry.singletons.get(key as any) as BasePlugin | undefined
+		const instance = this.builderSingletons.get(key as any) as BasePlugin | undefined
 		return this.lifecycle.isRunning(instance)
 	}
 
@@ -171,9 +176,9 @@ export class PluginService {
 	 * This does not instantiate or start anything; it only reads the runtime cache.
 	 */
 	public getInstance<T extends PluginIdentifier>(id: T): InstanceType<T> | undefined {
-		const container = this._activeContainer ?? this.pluginRegistry.lastContainer
+		const container = this._activeContainer ?? this.container
 		const key = (container?.resolveIdentifier?.(id as any) ?? id) as PluginIdentifier
-		return this.pluginRegistry.singletons.get(key as any) as InstanceType<T> | undefined
+		return this.builderSingletons.get(key as any) as InstanceType<T> | undefined
 	}
 
 	/* ─────────────────────────── Forks ─────────────────────────── */
@@ -199,7 +204,7 @@ export class PluginService {
 		opts?: { provideBase?: boolean },
 	): PluginConstructor {
 		const ForkCtor = forkPlugin(ctor, forkId)
-		this.pluginRegistry.registerPlugin(ForkCtor, opts)
+		this.register(ForkCtor, opts)
 		return ForkCtor
 	}
 
@@ -210,13 +215,113 @@ export class PluginService {
 	): InstanceType<T> | undefined {
 		const ForkCtor = getForkedCtor(ctor, forkId)
 		if (!ForkCtor) return undefined
-		return (this.pluginRegistry.lastContainer?.get(ForkCtor as any) ??
-			this.pluginRegistry.singletons.get(ForkCtor as any)) as InstanceType<T> | undefined
+		return (this.container?.get(ForkCtor as any) ??
+			this.builderSingletons.get(ForkCtor as any)) as InstanceType<T> | undefined
 	}
 
 	/** List all fork ctors created for a given original ctor. */
 	public listForks<T extends PluginIdentifier>(ctor: T): PluginConstructor[] {
 		return listForks(ctor)
+	}
+
+	/* ─────────────────────────── Declaration Layer ─────────────────────────── */
+
+	/** Last committed DI container (may be undefined before the first successful commit). */
+	public get container(): PluginDiContainer | undefined {
+		return this.definitions.lastContainer
+	}
+
+	/** Roll back draft registrations since last confirmed container. */
+	public resetDraft(): void {
+		this.definitions.resetDraft()
+	}
+
+	/** Register a plugin ctor into the draft container. */
+	public register(Plugin: PluginConstructor, opts?: { provideBase?: boolean }): void {
+		this.definitions.register(Plugin, opts)
+	}
+
+	private collectDependents(
+		container: PluginDiContainer | undefined,
+		roots: Iterable<PluginIdentifier>,
+	): Set<PluginIdentifier> {
+		if (!container) return new Set(roots)
+		const resolve = (id: PluginIdentifier) =>
+			(container.resolveIdentifier?.(id as any) ?? id) as PluginIdentifier
+
+		const affected = new Set<PluginIdentifier>()
+		const stack: PluginIdentifier[] = []
+		for (const r of roots) stack.push(resolve(r))
+
+		while (stack.length) {
+			const current = stack.pop()!
+			if (affected.has(current)) continue
+			affected.add(current)
+			const children = container.dependents.get(current)
+			if (!children) continue
+			for (const dep of children) stack.push(resolve(dep as any))
+		}
+		return affected
+	}
+
+	/**
+	 * Unregister a plugin from the declaration layer.
+	 * Default behavior cascades to dependents to keep DI verification valid.
+	 */
+	public unregister(
+		id: PluginIdentifier,
+		opts?: { cascadeDependents?: boolean },
+	): void {
+		const cascade = opts?.cascadeDependents ?? true
+		const container = this.container
+		const targets = cascade ? this.collectDependents(container, [id]) : new Set([id])
+		for (const t of targets) this.definitions.unregister(t)
+		for (const t of targets) {
+			this._pendingStart.delete(t)
+			this._pendingRestart.delete(t)
+		}
+	}
+
+	/**
+	 * Restart a registered plugin (and optionally its dependents) on next commit.
+	 * This does not change registrations; it only re-instantiates instances.
+	 */
+	public restart(
+		id: PluginIdentifier,
+		opts?: { cascadeDependents?: boolean },
+	): void {
+		const cascade = opts?.cascadeDependents ?? true
+		const container = this.container
+		const targets = cascade ? this.collectDependents(container, [id]) : new Set([id])
+		for (const t of targets) {
+			if (container && !container.services.has((container.resolveIdentifier?.(t as any) ?? t) as any)) {
+				throw new Error(`You can not restart an unloaded Plugin: ${String(t)}`)
+			}
+			this._pendingRestart.add(t)
+		}
+	}
+
+	/**
+	 * Replace a plugin implementation (HMR) while keeping old tokens resolvable via alias.
+	 * Also schedules a restart for the affected subtree on next commit.
+	 */
+	public replace(
+		target: PluginIdentifier,
+		next: PluginConstructor,
+		opts?: { cascadeDependents?: boolean; provideBase?: boolean },
+	): void {
+		const container = this.container
+		const canonical = (container?.resolveIdentifier?.(target as any) ?? target) as PluginIdentifier
+		const targets = (opts?.cascadeDependents ?? true)
+			? this.collectDependents(container, [canonical])
+			: new Set([canonical])
+
+		// Update declaration layer: unregister old provider and register new one with aliases.
+		this.definitions.unregister(canonical)
+		this.definitions.register(next, { provideBase: opts?.provideBase, aliases: [target, canonical] })
+
+		// Runtime intent: restart affected plugins so they observe the new provider instance.
+		for (const t of targets) this._pendingRestart.add(t)
 	}
 
 	/* ─────────────────────────── Optional Dependencies ─────────────────────────── */
@@ -259,8 +364,8 @@ export class PluginService {
 	private async stopPlugin(id: PluginIdentifier, pluginOrUndefined?: BasePlugin): Promise<void> {
 		const plugin =
 			pluginOrUndefined ??
-			(this.pluginRegistry.singletons.get(id as any) as BasePlugin | undefined) ??
-			this.pluginRegistry.lastContainer?.get(id)
+			(this.builderSingletons.get(id as any) as BasePlugin | undefined) ??
+			this.container?.get(id)
 		if (!plugin) return
 		await this.lifecycle.stopLifecycle(id, plugin)
 	}
@@ -361,7 +466,7 @@ export class PluginService {
 	}
 
 	private async executeCommit() {
-		const action = this.pluginRegistry.build()
+		const action = this.definitions.build()
 		if (!action.ok) {
 			action.err.ret.undo()
 			this.ctx.logger.error(action.err.err, '插件在依赖项解析时失败')
@@ -371,63 +476,24 @@ export class PluginService {
 		const { changes, container, confirm } = action.val
 		this._activeContainer = container
 		try {
+			const { added, replaced, removed } = partitionChanges(changes)
+			const oldContainer = this.container
 
-			if (changes.length === 0) {
-				// Even without container changes, we may have plugins that previously failed to start.
-				// Keep the core promise: "registered == will retry on future commits".
-				let failed = new Set<PluginIdentifier>()
-				if (this._pendingStart.size) {
-					const toInitMap: ServiceMap<BasePlugin> = new Map()
-					for (const id of this._pendingStart) {
-						const key = container.resolveIdentifier?.(id as any) ?? id
-						const value = container.services.get(key as any)
-						if (value) toInitMap.set(key as PluginIdentifier, value)
-					}
-					if (toInitMap.size) {
-						const plan = computeInitPlan(
-							toInitMap,
-							(id) => container.resolveIdentifier?.(id as any) ?? id,
-						)
-						failed = await this.startPlugins(container, plan)
-					}
-				}
+			// Normalize restart requests against both old and new containers.
+			const restartRequested = new Set(this._pendingRestart)
+			this._pendingRestart.clear()
 
-				// update pending retry set
-				this._pendingStart.clear()
-				for (const id of failed) this._pendingStart.add(id)
-
-				const summary: CommitSummary = {
-					container,
-					added: [],
-					replaced: [],
-					removed: [],
-					failed: [...failed],
-				}
-				this._lastCommit = summary
-				this.ctx.emit('afterCommit', summary)
-
-				if (failed.size) {
-					for (const id of failed) this.pluginRegistry.singletons.delete(id)
-					this.ctx.logger.warn({ failed: [...failed].map(String) }, '以下插件启动失败')
-					this.ctx.emit('commitFailed', failed)
-				}
-
-				return createOk({ container, changes })
+			const restartStop = new Set<PluginIdentifier>()
+			const restartStart = new Set<PluginIdentifier>()
+			for (const id of restartRequested) {
+				const stopKey = (oldContainer?.resolveIdentifier?.(id as any) ?? id) as PluginIdentifier
+				if (oldContainer?.services.has(stopKey as any)) restartStop.add(stopKey)
+				const startKey = (container.resolveIdentifier?.(id as any) ?? id) as PluginIdentifier
+				if (container.services.has(startKey as any)) restartStart.add(startKey)
 			}
 
-			const { added, replaced, removed } = partitionChanges(changes)
-			this.ctx.logger.info(
-				{
-					remove: [...removed].map(String),
-					replace: [...replaced].map(String),
-					add: [...added].map(String),
-				},
-				'插件变更',
-			)
-
-			const oldContainer = this.pluginRegistry.lastContainer
-			const toStop = new Set([...removed, ...replaced])
-			const toStart = new Set([...added, ...replaced])
+			const toStop = new Set<PluginIdentifier>([...removed, ...replaced, ...restartStop])
+			const toStart = new Set<PluginIdentifier>([...added, ...replaced, ...restartStart])
 
 			// Retry previously failed plugins opportunistically on any commit.
 			for (const id of this._pendingStart) {
@@ -436,7 +502,36 @@ export class PluginService {
 				if (container.services.has(key as any)) toStart.add(key as PluginIdentifier)
 			}
 
+			// No-op commit: still report state (after applying pending restarts/retries).
+			if (changes.length === 0 && toStop.size === 0 && toStart.size === 0) {
+				const summary: CommitSummary = {
+					container,
+					added: [],
+					replaced: [],
+					removed: [],
+					failed: [],
+				}
+				this._lastCommit = summary
+				this.ctx.emit('afterCommit', summary)
+				this.builderSingletons.seal()
+				return createOk({ container, changes })
+			}
+
+			this.ctx.logger.info(
+				{
+					remove: [...removed].map(String),
+					replace: [...replaced].map(String),
+					add: [...added].map(String),
+					restart: restartRequested.size ? [...restartRequested].map(String) : undefined,
+				},
+				'插件变更',
+			)
+
 			await this.applyTeardown(oldContainer, toStop)
+
+			// Ensure fresh instances for restarts/replacements.
+			for (const id of toStop) this.builderSingletons.delete(id as any)
+			for (const id of [...replaced, ...restartStart]) this.builderSingletons.delete(id as any)
 
 			const toInitMap: ServiceMap<BasePlugin> = new Map()
 			if (toStart.size) {
@@ -460,7 +555,7 @@ export class PluginService {
 			confirm()
 
 			const summary: CommitSummary = {
-				container: this.pluginRegistry.lastContainer,
+				container: this.container!,
 				added: [...added],
 				replaced: [...replaced],
 				removed: [...removed],
@@ -474,12 +569,13 @@ export class PluginService {
 			for (const id of failed) this._pendingStart.add(id)
 
 			if (failed.size) {
-				for (const id of failed) this.pluginRegistry.singletons.delete(id)
+				for (const id of failed) this.builderSingletons.delete(id as any)
 				this.ctx.logger.warn({ failed: [...failed].map(String) }, '以下插件启动失败')
 				this.ctx.emit('commitFailed', failed)
 			}
 
-			return createOk({ container: this.pluginRegistry.lastContainer, changes })
+			this.builderSingletons.seal()
+			return createOk({ container: this.container, changes })
 		} finally {
 			this._activeContainer = undefined
 		}

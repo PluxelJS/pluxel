@@ -13,7 +13,7 @@ const createCtx = () =>
 		},
 		registry: {
 			commit: async () => ({}),
-			pluginRegistry: { lastContainer: { services: new Map() } },
+			container: { services: new Map() },
 		},
 		honoService: { viteHonoDevServer: { name: 'noop', apply: 'serve', configureServer() {} } },
 	}) as any

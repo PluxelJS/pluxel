@@ -278,7 +278,7 @@ export class PluginHandle extends RpcTarget {
 			if (kind === 'base') {
 				const baseToken = token
 				try {
-					const resolved = this.#ctx.registry.pluginRegistry.lastContainer?.resolveIdentifier?.(
+					const resolved = this.#ctx.registry.container?.resolveIdentifier?.(
 						baseToken as any,
 					) as any
 					if (typeof resolved === 'function') baseProvider = tokenName(resolved)
@@ -378,7 +378,7 @@ export class PluginHandle extends RpcTarget {
 				await this.#ctx.loader.registry.enable(normalized, token)
 			}
 
-			this.#ctx.registry.pluginRegistry.reloadPlugin(ctor)
+			this.#ctx.registry.restart(ctor)
 
 			const commit = await this.#ctx.registry.commit()
 			if (commit.err) {
@@ -465,7 +465,7 @@ export class PluginHandle extends RpcTarget {
 			}
 
 			try {
-				this.#ctx.registry.pluginRegistry.reloadPlugin(target.baseCtor as any)
+				this.#ctx.registry.restart(target.baseCtor as any)
 			} catch {}
 
 			const commit = await this.#ctx.registry.commit()

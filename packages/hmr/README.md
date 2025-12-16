@@ -13,7 +13,7 @@
 - **冲突语义（确定性）**：同一个 base token 出现多个 provider 时，冲突在 build/commit（DI 验证）阶段被检测并报错；不是在 `registerPlugin()` 时“隐式覆盖”。
 
 相关实现入口：
-- `packages/core/src/plugins/PluginContainer.ts`：`registerPlugin(ctor, { provideBase? })` 负责把 ctor 注册为服务，并可为 base token 添加 alias。
+- `packages/core/src/plugins/PluginDefinitions.ts`：声明层（register/unregister/build）。
 - `packages/core/src/plugins/service/PluginService.ts`：`commit()` 负责构建新容器、拓扑启动、失败收集与重试。
 
 ### 1.2 Commit 语义（非事务化启动，但 build 可回滚）
@@ -26,7 +26,7 @@
 HMR/Loader 会在 commit 前进行大量“声明层变更”（register/unregister/reload）。当 build/verify 失败时必须撤销这些草稿变更，否则后续 commit 会带着“脏草稿”继续滚动，导致难以定位问题。
 
 因此 core 提供：
-- `PluginContainer.resetDraft()`：回滚 DI builder 的草稿注册（buildables）与 builder-singleton 缓存草稿变更（singletons）。
+- `ctx.registry.resetDraft()`：回滚 DI builder 的草稿注册（buildables）。
 
 > 注意：这不是“回滚到旧版本插件继续运行”，而是“回滚到上一次 confirm 后的草稿基线”。
 
@@ -42,7 +42,7 @@ diod 默认按“构造函数引用”做依赖键：引用不一致即视为缺
 - 仅处理 `BasePlugin` 子类 token；其他参数不动。
 
 性能取舍：
-- 只触碰“受影响插件的直接 dependents”，依赖图来自 `ctx.registry.pluginRegistry.lastContainer?.dependents`，不会全量扫描所有插件。
+ - 只触碰“受影响插件的直接 dependents”，依赖图来自 `ctx.registry.container?.dependents`，不会全量扫描所有插件。
 
 ### 2.3 关键策略二：批量注入事务（避免 loader/core 状态漂移）
 `HMRService.runAndLoadAll()` 是“逐入口 evaluate + 注入（replaceModule）+ 单次 commit”：
@@ -52,7 +52,7 @@ diod 默认按“构造函数引用”做依赖键：引用不一致即视为缺
 因此 `LoaderService.beginBatch()` 提供 **loader 声明层事务**：
 - batch 内多次 `replaceModule()` 会记录 module/name 映射的旧值（O(变更)）。
 - commit 成功：`batch.commit()` 固化这些声明层变更。
-- commit 失败（仅 build/verify）：`batch.rollback()` 回滚声明层；同时调用 `ctx.registry.pluginRegistry.resetDraft()` 回滚 core 的 DI 草稿。
+- commit 失败（仅 build/verify）：`batch.rollback()` 回滚声明层；同时调用 `ctx.registry.resetDraft()` 回滚 core 的 DI 草稿。
 
 失败边界（这是预期行为）：
 - **DI build/verify 失败**：回滚（因为容器没切换，本次变更“无效”）。
@@ -70,7 +70,7 @@ diod 默认按“构造函数引用”做依赖键：引用不一致即视为缺
 - HMR 批量执行入口：`packages/hmr/src/services/hmr/HMRService.ts`（`runAndLoadAll()`）
 - Loader 注入与 dependents 重绑：`packages/hmr/src/services/loader/LoaderService.ts`
 - Loader 声明层与 config/runtime 协调：`packages/hmr/src/services/loader/PluginRegistry.ts`
-- Core 插件容器与草稿/确认：`packages/core/src/plugins/PluginContainer.ts`
+- Core 插件容器与草稿/确认：`packages/core/src/plugins/PluginDefinitions.ts`
 - Core commit 编排与失败语义：`packages/core/src/plugins/service/PluginService.ts`
 
 ## 5) 注意事项（避免误解）

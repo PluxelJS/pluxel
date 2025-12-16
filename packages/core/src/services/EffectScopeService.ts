@@ -71,8 +71,7 @@ export class EffectScopeService {
 			throw new Error('Cannot shutdown: not in a plugin context')
 		}
 		// Use the runtime class as the unload target.
-		// Originals will be canonicalized to their base key by PluginContainer;
-		// forks stay on their own key.
+		// Canonicalization/aliases are handled by the DI container.
 		this.unload(pluginInfo.class as PluginIdentifier)
 	}
 
@@ -80,7 +79,7 @@ export class EffectScopeService {
 	 * 卸载指定插件（及其依赖链）
 	 */
 	unload(plugin: PluginIdentifier): void {
-		this.ctx.registry.pluginRegistry.unregisterPlugin(plugin)
+		this.ctx.registry.unregister(plugin)
 		this.ctx.registry.commit()
 	}
 }

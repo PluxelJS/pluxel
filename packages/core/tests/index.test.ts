@@ -16,8 +16,8 @@ describe('Plugin lifecycle with commit()', () => {
 			// A 依赖 B，C 可选，因此都应存在
 			expect(readPluginSet()).toEqual(new Set([PluginB, PluginC, PluginA]))
 
-			// reload A，再注销 A
-			host.reload(PluginA)
+			// restart A，再注销 A
+			host.restart(PluginA)
 			host.unregister(PluginA)
 			await host.commitStrict()
 			expect(readPluginSet()).toEqual(new Set([PluginB, PluginC]))

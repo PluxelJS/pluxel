@@ -47,7 +47,8 @@ export type TestHost = {
 
 	/** Draft mutations. */
 	unregister: (id: PluginIdentifier) => void
-	reload: (id: PluginIdentifier, next?: PluginConstructor) => void
+	restart: (id: PluginIdentifier, opts?: { cascadeDependents?: boolean }) => void
+	replace: (id: PluginIdentifier, next: PluginConstructor) => void
 
 	/** Commit and lifecycle. */
 	tryCommit: () => Promise<CommitAttempt>
@@ -111,9 +112,9 @@ export function createTestHost(config: Context.Config = {}): TestHost {
 	const host: TestHost = {
 		ctx,
 
-		register: (Plugin, opts) => registry.pluginRegistry.registerPlugin(Plugin, opts),
+		register: (Plugin, opts) => registry.register(Plugin, opts),
 		registerAll: (...plugins) => {
-			for (const Plugin of plugins) registry.pluginRegistry.registerPlugin(Plugin)
+			for (const Plugin of plugins) registry.register(Plugin)
 		},
 
 		fork: registry.fork.bind(registry),
@@ -134,8 +135,9 @@ export function createTestHost(config: Context.Config = {}): TestHost {
 		disablePlugins: (...names) => configService.disableInConfig(...names),
 		isEnabled: (name) => configService.isEnabledInConfig(name),
 
-		unregister: (id) => registry.pluginRegistry.unregisterPlugin(id),
-		reload: (id, next) => registry.pluginRegistry.reloadPlugin(id, next),
+		unregister: (id) => registry.unregister(id),
+		restart: (id, opts) => registry.restart(id, opts),
+		replace: (id, next) => registry.replace(id, next),
 
 		tryCommit,
 		commit: async () => {
@@ -169,13 +171,13 @@ export function createTestHost(config: Context.Config = {}): TestHost {
 		dispose: async () => {
 			try {
 				// Ensure any uncommitted draft ops don't leak across tests.
-				registry.pluginRegistry.resetDraft()
+				registry.resetDraft()
 
 				// Unregister all decorated plugins from the last committed container (if any).
-				for (const id of listPlugins()) registry.pluginRegistry.unregisterPlugin(id)
+				for (const id of listPlugins()) registry.unregister(id)
 				if (lastCommit()) await host.commit()
 			} finally {
-				registry.pluginRegistry.resetDraft()
+				registry.resetDraft()
 				ctx.disposeAll()
 			}
 		},
@@ -219,9 +221,9 @@ export function createTestContext(config: Context.Config = {}): TestContext {
 		dispose: () => {
 			// Best-effort cleanup; keeps tests isolated even if they didn't use host.
 			try {
-				ctx.registry.pluginRegistry.resetDraft()
+				ctx.registry.resetDraft()
 				ctx.disposeAll()
-				ctx.registry.pluginRegistry.resetDraft()
+				ctx.registry.resetDraft()
 			} catch {
 				/* ignore */
 			}
