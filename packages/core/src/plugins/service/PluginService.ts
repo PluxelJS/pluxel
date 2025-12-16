@@ -131,16 +131,6 @@ export class PluginService {
 			() => this._lastCommit,
 			() => this._activeContainer,
 		)
-
-		// Core responsibility: inject @Config fields before plugin init().
-		// Upstream runtimes (HMR/apps) only need to provide a ConfigService implementation.
-		try {
-			this.ctx.on('beforeStart', (plugin) => {
-				this.injectConfig(plugin)
-			})
-		} catch {
-			// ignore: events service may be overridden/absent
-		}
 	}
 
 	private injectConfig(plugin: PluginInstance): void {
@@ -405,6 +395,15 @@ export class PluginService {
 
 		const instance: PluginInstance = resolution.val
 		const pluginCtx = instance.ctx
+
+		// Core responsibility: inject @Config fields before plugin init().
+		// Doing it directly avoids an extra event hop on every plugin start.
+		try {
+			this.injectConfig(instance)
+		} catch (error) {
+			const logger = pluginCtx.logger ?? this.ctx.logger
+			logger.warn(error, `注入配置到 ${String(id)} 失败`)
+		}
 
 		try {
 			await this.lifecycle.startLifecycle(id, instance)

@@ -11,9 +11,9 @@
 // - runtime instance cache mutation -> PluginService (builderSingletons is owned there)
 
 import type { Context } from '@pluxel/context'
-import { createErr, createOk, unwrapOk } from 'option-t/plain_result'
+import { createErr, createOk } from 'option-t/plain_result'
 import { type DiodContainer, ExtendedContainerBuilder } from '../container'
-import { LeanMapTracker } from '../container/LeanMapTracker'
+import type { LeanMapTracker } from '../container/LeanMapTracker'
 import { BasePlugin, FORK_CTX, PLUGIN_CTX } from './BasePlugin'
 import { getForkOf } from './fork'
 import { getClassParams, getPluginInfo } from './PluginDecorator'
@@ -76,6 +76,14 @@ export class PluginDefinitions {
 				const pluginCTX = this.createPluginContext()
 				pluginCTX.pluginInfo = info
 
+				const mustGet = (id: PluginIdentifier): BasePlugin => {
+					const dep = c.get(id) as BasePlugin | null | undefined
+					if (!dep) {
+						throw new Error(`Missing dependency at runtime (did you bypass verify?): ${String(id)}`)
+					}
+					return dep
+				}
+
 				// Bind ctx onto the instance via a lightweight wrapper.
 				const wrap = (() => {
 					const desc: PropertyDescriptor = {
@@ -99,24 +107,21 @@ export class PluginDefinitions {
 				try {
 					switch (depsCount) {
 						case 0:
-							return new (Plugin)()
+							return new Plugin()
 						case 1:
-							return new (Plugin)(wrap(unwrapOk(c.getResult(paramTypes[0]))!))
+							return new Plugin(wrap(mustGet(paramTypes[0])))
 						case 2:
-							return new (Plugin)(
-								wrap(unwrapOk(c.getResult(paramTypes[0]))!),
-								wrap(unwrapOk(c.getResult(paramTypes[1]))!),
-							)
+							return new Plugin(wrap(mustGet(paramTypes[0])), wrap(mustGet(paramTypes[1])))
 						case 3:
 							return new (Plugin as any)(
-								wrap(unwrapOk(c.getResult(paramTypes[0]))!),
-								wrap(unwrapOk(c.getResult(paramTypes[1]))!),
-								wrap(unwrapOk(c.getResult(paramTypes[2]))!),
+								wrap(mustGet(paramTypes[0])),
+								wrap(mustGet(paramTypes[1])),
+								wrap(mustGet(paramTypes[2])),
 							)
 						default: {
 							const args = new Array<BasePlugin>(depsCount)
 							for (let i = 0; i < depsCount; i++) {
-								args[i] = wrap(unwrapOk(c.getResult(paramTypes[i]))!)
+								args[i] = wrap(mustGet(paramTypes[i]))
 							}
 							return new (Plugin as any)(...args)
 						}
