@@ -20,7 +20,9 @@ export interface BuildCommandArgsShape {
 	debug?: boolean
 }
 
-export async function resolveBuildContext(values: BuildCommandArgsShape): Promise<BuildRuntimeConfig> {
+export async function resolveBuildContext(
+	values: BuildCommandArgsShape,
+): Promise<BuildRuntimeConfig> {
 	const projectRoot = process.cwd()
 	const envConfig = resolvePluginEnv()
 	const packageJsonPath = await resolvePackageJsonPath(projectRoot)

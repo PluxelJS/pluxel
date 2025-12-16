@@ -321,7 +321,9 @@ export function Plugin(a?: PluginMetadata | PluginIdentifier, b?: PluginMetadata
 		s.declaredName = declaredName || nameOf(ctor)
 		s.declaredMeta =
 			Object.keys(restMeta).length > 0
-				? (__DEV__ ? $freeze(restMeta as DeclaredMetaView) : (restMeta as DeclaredMetaView))
+				? __DEV__
+					? $freeze(restMeta as DeclaredMetaView)
+					: (restMeta as DeclaredMetaView)
 				: null
 
 		s.base = base
@@ -415,7 +417,7 @@ export function getEffectiveName(ctor: Function): string {
 
 export function checkPluginDecorator(ctor: Function): boolean {
 	const s = STATE.get(ctor)
-	return !!(s?.infoSnap)
+	return !!s?.infoSnap
 }
 
 export function getPluginInfo(ctor: Function): PluginInfo {

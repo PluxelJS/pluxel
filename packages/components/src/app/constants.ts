@@ -12,7 +12,7 @@ declare global {
 
 const runtimeMarketBase =
 	typeof window !== 'undefined'
-		? window.__PLUXEL_MARKET_BASE_URL__ ?? window.PLUXEL_MARKET_BASE_URL
+		? (window.__PLUXEL_MARKET_BASE_URL__ ?? window.PLUXEL_MARKET_BASE_URL)
 		: undefined
 
 export const MARKET_BASE_URL =

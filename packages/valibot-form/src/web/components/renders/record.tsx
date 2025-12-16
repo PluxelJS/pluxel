@@ -81,27 +81,28 @@ function RecordField(props: RendererProps) {
 		// 检查是否需要更新顺序（新增或删除了键）
 		const keysChanged =
 			currentKeys.length !== orderedKeys.length ||
-			currentKeys.some(k => !orderedKeySet.has(k)) ||
-			orderedKeys.some(k => !currentKeySet.has(k))
+			currentKeys.some((k) => !orderedKeySet.has(k)) ||
+			orderedKeys.some((k) => !currentKeySet.has(k))
 
 		if (keysChanged) {
 			// 保留现有顺序中仍存在的键，然后添加新键
-			const preserved = orderedKeys.filter(k => currentKeySet.has(k))
-			const newKeys = currentKeys.filter(k => !orderedKeySet.has(k))
+			const preserved = orderedKeys.filter((k) => currentKeySet.has(k))
+			const newKeys = currentKeys.filter((k) => !orderedKeySet.has(k))
 			const newOrder = [...preserved, ...newKeys]
 			setOrderedKeys(newOrder)
-			return newOrder.map(k => [k, (value as Record<string, unknown>)[k]] as [string, unknown])
+			return newOrder.map((k) => [k, (value as Record<string, unknown>)[k]] as [string, unknown])
 		}
 
 		// 使用已有的顺序
 		return orderedKeys
-			.filter(k => currentKeySet.has(k))
-			.map(k => [k, (value as Record<string, unknown>)[k]] as [string, unknown])
+			.filter((k) => currentKeySet.has(k))
+			.map((k) => [k, (value as Record<string, unknown>)[k]] as [string, unknown])
 	}, [value, orderedKeys])
 	const layout = ep.layout ?? 'table'
 	const minItems = ep.minItems ?? 0
 	const maxItems = ep.maxItems
-	const canAdd = ep.addable !== false && !inputProps.disabled && (!maxItems || rows.length < maxItems)
+	const canAdd =
+		ep.addable !== false && !inputProps.disabled && (!maxItems || rows.length < maxItems)
 	const canRemove = ep.removable !== false
 	const canReorder = ep.reorderable !== false
 	const editableKey = ep.editableKey !== false
@@ -262,22 +263,24 @@ function RecordField(props: RendererProps) {
 			case 'picklist-array': {
 				return (
 					<PicklistControl
-						meta={{
-							clearable: ep.picklist?.clearable ?? true,
-							allowCreate: ep.picklist?.allowCreate ?? false,
-							variant: ep.picklist?.variant ?? 'select',
-							multiple: true,
-							...cleanProps({
-								options: ep.picklist?.options,
-								entries: ep.picklist?.entries,
-								labels: ep.picklist?.labels,
-								disabled: ep.picklist?.disabled,
-								placeholder: ep.picklist?.placeholder,
-								searchable: ep.picklist?.searchable,
-								maxSelections: ep.picklist?.maxValues,
-								nothingFoundLabel: ep.picklist?.nothingFoundLabel,
-							}),
-						} as any}
+						meta={
+							{
+								clearable: ep.picklist?.clearable ?? true,
+								allowCreate: ep.picklist?.allowCreate ?? false,
+								variant: ep.picklist?.variant ?? 'select',
+								multiple: true,
+								...cleanProps({
+									options: ep.picklist?.options,
+									entries: ep.picklist?.entries,
+									labels: ep.picklist?.labels,
+									disabled: ep.picklist?.disabled,
+									placeholder: ep.picklist?.placeholder,
+									searchable: ep.picklist?.searchable,
+									maxSelections: ep.picklist?.maxValues,
+									nothingFoundLabel: ep.picklist?.nothingFoundLabel,
+								}),
+							} as any
+						}
 						value={Array.isArray(value) ? value : []}
 						onChange={(next) => {
 							if (Array.isArray(next)) handleValueChange(index, next)
@@ -296,7 +299,9 @@ function RecordField(props: RendererProps) {
 				const itemInfo = cachedExtractInfo(ep.valueSchema as object, `${index}`)
 				if (!itemInfo) return null
 
-				const nestedName = inputProps.name ? `${inputProps.name}.${rows[index]?.[0] ?? index}` : String(index)
+				const nestedName = inputProps.name
+					? `${inputProps.name}.${rows[index]?.[0] ?? index}`
+					: String(index)
 				const nestedInputProps = {
 					name: nestedName,
 					onChange: (nextValue: unknown) => handleValueChange(index, nextValue),
@@ -311,7 +316,12 @@ function RecordField(props: RendererProps) {
 
 				const nestedProps =
 					itemInfo.type === 'object'
-						? { ...itemInfo.props, variant: 'stack' as const, gap: 'sm', columns: itemInfo.props.columns ?? 2 }
+						? {
+								...itemInfo.props,
+								variant: 'stack' as const,
+								gap: 'sm',
+								columns: itemInfo.props.columns ?? 2,
+							}
 						: itemInfo.type === 'array'
 							? { ...itemInfo.props, disableAutoGrid: true }
 							: itemInfo.type === 'union'
@@ -321,7 +331,12 @@ function RecordField(props: RendererProps) {
 				return (
 					<MetaRenderer
 						type={itemInfo.type}
-						formBaseInfo={{ ...itemInfo.formInfo, label: undefined, hideLabel: true, hideRequired: true }}
+						formBaseInfo={{
+							...itemInfo.formInfo,
+							label: undefined,
+							hideLabel: true,
+							hideRequired: true,
+						}}
 						extractedPropsInfo={nestedProps}
 						errors={nestedErrors}
 						value={value}
@@ -355,9 +370,7 @@ function RecordField(props: RendererProps) {
 			<Table highlightOnHover withTableBorder withColumnBorders>
 				<Table.Thead>
 					<Table.Tr>
-						<Table.Th style={{ width: ep.columns?.key ?? 200 }}>
-							{ep.keyLabel ?? '键'}
-						</Table.Th>
+						<Table.Th style={{ width: ep.columns?.key ?? 200 }}>{ep.keyLabel ?? '键'}</Table.Th>
 						<Table.Th>{ep.valueLabel ?? '值'}</Table.Th>
 						<Table.Th style={{ width: 120 }}>操作</Table.Th>
 					</Table.Tr>
@@ -460,7 +473,12 @@ function RecordField(props: RendererProps) {
 					].filter(Boolean) as string[]
 					const anchorId = `${inputProps.name ?? 'record'}-${slug(entryLabel)}-${idx}`
 					return (
-						<Card key={`record-row-${idx}`} withBorder p="md" style={{ scrollMarginTop: '72px', position: 'relative' }}>
+						<Card
+							key={`record-row-${idx}`}
+							withBorder
+							p="md"
+							style={{ scrollMarginTop: '72px', position: 'relative' }}
+						>
 							<div
 								id={anchorId}
 								data-config-anchor

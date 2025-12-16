@@ -26,7 +26,7 @@ const CfgSchema = v.object({
 export class PluginB extends BasePlugin {
 	@Config(config)
 	private a: Config<typeof config>
-		@Config(CfgSchema)
+	@Config(CfgSchema)
 	private ba: Config<typeof CfgSchema>
 	init(): void {
 		this.ctx.logger.info('PluginB initialized')

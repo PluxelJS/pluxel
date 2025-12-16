@@ -139,7 +139,9 @@ export class LoaderService {
 		if (typeof getExtra !== 'function') return
 
 		const name = getPluginInfo(ctor).id
-		const all = getExtra.call(this.ctx.configService, EXTRA_DEP_OVERRIDES) as DepOverridesExtra | undefined
+		const all = getExtra.call(this.ctx.configService, EXTRA_DEP_OVERRIDES) as
+			| DepOverridesExtra
+			| undefined
 		const overrides = all?.[name]
 		if (!overrides) return
 

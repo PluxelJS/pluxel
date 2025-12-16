@@ -1,13 +1,4 @@
-import {
-	Avatar,
-	Badge,
-	Button,
-	Group,
-	NavLink,
-	Paper,
-	Stack,
-	Text,
-} from '@mantine/core'
+import { Avatar, Badge, Button, Group, NavLink, Paper, Stack, Text } from '@mantine/core'
 import React from 'react'
 
 export interface SubNavItem {

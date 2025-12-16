@@ -7,7 +7,7 @@ import { pathToFileURL } from 'node:url'
 describe('macro baked fsm', () => {
 	test('bun build should execute macros and output usable factory', async () => {
 		const outdir = join(__dirname, '.tmp', 'macro-test')
-		const entry = join( __dirname, 'fixtures', 'macro-entry.ts')
+		const entry = join(__dirname, 'fixtures', 'macro-entry.ts')
 
 		const result = await Bun.build({
 			entrypoints: [entry],

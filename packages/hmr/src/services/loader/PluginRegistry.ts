@@ -83,10 +83,14 @@ export class PluginRegistry {
 		if (typeof getExtra !== 'function' || typeof setExtra !== 'function') return
 
 		const prev =
-			(getExtra.call(this.ctx.configService, EXTRA_BASE_PROVIDERS) as BaseProvidersExtra | undefined) ??
-			{}
+			(getExtra.call(this.ctx.configService, EXTRA_BASE_PROVIDERS) as
+				| BaseProvidersExtra
+				| undefined) ?? {}
 		if (prev[baseKey] === providerName) return
-		setExtra.call(this.ctx.configService, EXTRA_BASE_PROVIDERS, { ...prev, [baseKey]: providerName })
+		setExtra.call(this.ctx.configService, EXTRA_BASE_PROVIDERS, {
+			...prev,
+			[baseKey]: providerName,
+		})
 	}
 
 	/* ----------------------------- Transaction ----------------------------- */
@@ -330,7 +334,10 @@ export class PluginRegistry {
 		// 并行启动（registerPlugin 只是声明，依赖处理在 commit 时）
 		const toStart = list.flatMap(({ ctor }) => {
 			const { id: name } = getPluginInfo(ctor)
-			if (!this.isPrimaryProvider(moduleId, ctor) || !this.ctx.configService.isEnabledInConfig(name))
+			if (
+				!this.isPrimaryProvider(moduleId, ctor) ||
+				!this.ctx.configService.isEnabledInConfig(name)
+			)
 				return []
 			return [this.startPlugin(name, ctor)]
 		})
@@ -389,8 +396,9 @@ export class PluginRegistry {
 
 				const map =
 					typeof getExtra === 'function'
-						? ((getExtra.call(this.ctx.configService, EXTRA_BASE_PROVIDERS) as BaseProvidersExtra | undefined) ??
-							{})
+						? ((getExtra.call(this.ctx.configService, EXTRA_BASE_PROVIDERS) as
+								| BaseProvidersExtra
+								| undefined) ?? {})
 						: {}
 				const selected = map?.[baseKey]
 
@@ -469,10 +477,7 @@ export class PluginRegistry {
 				this.ctx.configService.enableInConfig(name)
 			}
 			enabled = true
-			this.ctx.registry.register(
-				ctor,
-				provideBase === undefined ? undefined : { provideBase },
-			)
+			this.ctx.registry.register(ctor, provideBase === undefined ? undefined : { provideBase })
 			if (provideBase) {
 				try {
 					const info = getPluginInfo(ctor)

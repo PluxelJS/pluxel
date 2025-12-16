@@ -367,7 +367,10 @@ export class ExtensionService {
 		return this.compileEntryModule(entry, entryPath)
 	}
 
-	private async compileEntryModule(entry: PluginExtensionEntry, entryPath: string): Promise<string> {
+	private async compileEntryModule(
+		entry: PluginExtensionEntry,
+		entryPath: string,
+	): Promise<string> {
 		const hmr = this.ctx.hmrService
 		if (!hmr) {
 			throw new Error('HMRService not available')
@@ -436,26 +439,30 @@ export class ExtensionService {
 		})
 	}
 
-		private handleManifestUpdate(pluginName: string, entry: PluginExtensionEntry | null): void {
-			const previous = this.manifest.modules.find((mod) => mod.pluginName === pluginName)
-			const nextModules = this.manifest.modules.filter((mod) => mod.pluginName !== pluginName).slice()
+	private handleManifestUpdate(pluginName: string, entry: PluginExtensionEntry | null): void {
+		const previous = this.manifest.modules.find((mod) => mod.pluginName === pluginName)
+		const nextModules = this.manifest.modules.filter((mod) => mod.pluginName !== pluginName).slice()
 
-			if (entry && entry.moduleUrl && entry.lastSourceHash) {
-				const moduleRecord: CompiledExtensionModule = {
-					pluginName,
-					moduleUrl: entry.moduleUrl,
-					sourceHash: entry.lastSourceHash,
-					compiledAt: entry.lastCompiledAt ?? Date.now(),
-				}
-				// manifest 的“有效变更”只取决于 moduleUrl/sourceHash。
-				// compiledAt 只是调试字段，不应导致版本抖动（会让前端无限刷新/重复 import）。
-				if (previous && previous.sourceHash === moduleRecord.sourceHash && previous.moduleUrl === moduleRecord.moduleUrl) {
-					return
-				}
-				nextModules.push(moduleRecord)
-				nextModules.sort((a, b) => a.pluginName.localeCompare(b.pluginName))
+		if (entry && entry.moduleUrl && entry.lastSourceHash) {
+			const moduleRecord: CompiledExtensionModule = {
+				pluginName,
+				moduleUrl: entry.moduleUrl,
+				sourceHash: entry.lastSourceHash,
+				compiledAt: entry.lastCompiledAt ?? Date.now(),
+			}
+			// manifest 的“有效变更”只取决于 moduleUrl/sourceHash。
+			// compiledAt 只是调试字段，不应导致版本抖动（会让前端无限刷新/重复 import）。
+			if (
+				previous &&
+				previous.sourceHash === moduleRecord.sourceHash &&
+				previous.moduleUrl === moduleRecord.moduleUrl
+			) {
+				return
+			}
+			nextModules.push(moduleRecord)
+			nextModules.sort((a, b) => a.pluginName.localeCompare(b.pluginName))
 
-				this.manifestVersion += 1
+			this.manifestVersion += 1
 			this.manifest = { version: this.manifestVersion, modules: nextModules }
 			this.persistManifest()
 			this.notifyManifest({
@@ -603,7 +610,12 @@ export class ExtensionService {
 				for (const entry of entries) {
 					// ignore dotfiles and typical editor temps
 					if (entry.startsWith('.')) continue
-					if (entry.endsWith('~') || entry.endsWith('.swp') || entry.endsWith('.swo') || entry.endsWith('.tmp')) {
+					if (
+						entry.endsWith('~') ||
+						entry.endsWith('.swp') ||
+						entry.endsWith('.swo') ||
+						entry.endsWith('.tmp')
+					) {
 						continue
 					}
 					const fullPath = join(target, entry)
@@ -704,7 +716,10 @@ export class ExtensionService {
 		return HASH_ALLOWED_EXTENSIONS.some((ext) => lower.endsWith(ext))
 	}
 
-	private resolvePluginFile(pluginDir: string, targetPath: string | null | undefined): string | null {
+	private resolvePluginFile(
+		pluginDir: string,
+		targetPath: string | null | undefined,
+	): string | null {
 		if (!targetPath) return null
 		if (isAbsolute(targetPath)) {
 			return targetPath

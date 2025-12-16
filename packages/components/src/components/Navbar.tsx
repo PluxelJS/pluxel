@@ -121,11 +121,7 @@ const Navbar = memo(function Navbar({
 				minHeight: 0,
 			}}
 		>
-			<ScrollArea
-				style={{ flex: 1, minHeight: 0 }}
-				type="auto"
-				offsetScrollbars
-			>
+			<ScrollArea style={{ flex: 1, minHeight: 0 }} type="auto" offsetScrollbars>
 				<Stack gap="md" p="md">
 					{onCompactToggle &&
 						(compact ? (
@@ -183,83 +179,83 @@ const Navbar = memo(function Navbar({
 						))}
 
 					{navItems.map(({ label, href, icon, rightSection, exact, disabled }) => {
-					const active = getIsActive(pathname, href, exact)
-					const normalizedLabel = typeof label === 'string' ? label.trim() : ''
-					const showFullLabel = !compact || normalizedLabel.length <= 3
-					const brandPalette =
-						theme.colors.brand ?? theme.colors[theme.primaryColor as keyof typeof theme.colors]
-					// 优化后的配色：提升背景可见度，保持可读性
-					const activeBg = active
-						? colorScheme === 'dark'
-							? rgba(brandPalette[5], 0.25) // 提升到 0.25，更明显的背景
-							: rgba(brandPalette[1], 0.5)
-						: undefined
-					const activeColor = active
-						? colorScheme === 'dark'
-							? theme.colors.gray[0] // 使用 gray[0] 确保高对比度
-							: brandPalette[7]
-						: undefined
-					const baseBorder =
-						colorScheme === 'dark'
-							? rgba(theme.colors.dark[4], 0.35)
-							: rgba(theme.colors.gray[3], 0.5)
-					const borderColor = active
-						? colorScheme === 'dark'
-							? rgba(brandPalette[5], 0.5) // 提升边框可见度
-							: rgba(brandPalette[3], 0.4)
-						: baseBorder
-					const navLink = (
-						<NavLink
-							key={href}
-							component={LinkWrapper}
-							to={href}
-							label={showFullLabel ? label : undefined}
-							leftSection={icon}
-							rightSection={showFullLabel ? rightSection : undefined}
-							active={active}
-							aria-current={active ? 'page' : undefined}
-							aria-label={!showFullLabel ? label : undefined}
-							disabled={disabled}
-							styles={{
-								root: {
-									borderRadius: theme.radius.md,
-									border: `1px solid ${borderColor}`,
-									backgroundColor: `${activeBg || 'transparent'} !important`,
-									transition: 'border-color 120ms ease, background-color 120ms ease',
-									color: `${activeColor || 'inherit'} !important`,
-									justifyContent: showFullLabel ? 'flex-start' : 'center',
-									paddingInline: showFullLabel ? undefined : theme.spacing.sm,
-									'&:hover': {
-										backgroundColor: `${
-											activeBg ||
-											(colorScheme === 'dark'
-												? rgba(theme.colors.dark[5], 0.3)
-												: rgba(theme.colors.gray[0], 0.5))
-										}`,
+						const active = getIsActive(pathname, href, exact)
+						const normalizedLabel = typeof label === 'string' ? label.trim() : ''
+						const showFullLabel = !compact || normalizedLabel.length <= 3
+						const brandPalette =
+							theme.colors.brand ?? theme.colors[theme.primaryColor as keyof typeof theme.colors]
+						// 优化后的配色：提升背景可见度，保持可读性
+						const activeBg = active
+							? colorScheme === 'dark'
+								? rgba(brandPalette[5], 0.25) // 提升到 0.25，更明显的背景
+								: rgba(brandPalette[1], 0.5)
+							: undefined
+						const activeColor = active
+							? colorScheme === 'dark'
+								? theme.colors.gray[0] // 使用 gray[0] 确保高对比度
+								: brandPalette[7]
+							: undefined
+						const baseBorder =
+							colorScheme === 'dark'
+								? rgba(theme.colors.dark[4], 0.35)
+								: rgba(theme.colors.gray[3], 0.5)
+						const borderColor = active
+							? colorScheme === 'dark'
+								? rgba(brandPalette[5], 0.5) // 提升边框可见度
+								: rgba(brandPalette[3], 0.4)
+							: baseBorder
+						const navLink = (
+							<NavLink
+								key={href}
+								component={LinkWrapper}
+								to={href}
+								label={showFullLabel ? label : undefined}
+								leftSection={icon}
+								rightSection={showFullLabel ? rightSection : undefined}
+								active={active}
+								aria-current={active ? 'page' : undefined}
+								aria-label={!showFullLabel ? label : undefined}
+								disabled={disabled}
+								styles={{
+									root: {
+										borderRadius: theme.radius.md,
+										border: `1px solid ${borderColor}`,
+										backgroundColor: `${activeBg || 'transparent'} !important`,
+										transition: 'border-color 120ms ease, background-color 120ms ease',
+										color: `${activeColor || 'inherit'} !important`,
+										justifyContent: showFullLabel ? 'flex-start' : 'center',
+										paddingInline: showFullLabel ? undefined : theme.spacing.sm,
+										'&:hover': {
+											backgroundColor: `${
+												activeBg ||
+												(colorScheme === 'dark'
+													? rgba(theme.colors.dark[5], 0.3)
+													: rgba(theme.colors.gray[0], 0.5))
+											}`,
+										},
 									},
-								},
-								body: {
-									fontWeight: active ? 600 : 500,
-									display: showFullLabel ? undefined : 'none',
-									color: `${activeColor || 'inherit'}`,
-								},
-								label: {
-									color: `${activeColor || 'inherit'}`,
-								},
-								section: {
-									color: `${activeColor || 'inherit'}`,
-								},
-							}}
-						/>
-					)
-					return !showFullLabel && typeof label === 'string' ? (
-						<Tooltip key={href} label={label} position="right" openDelay={300}>
-							{navLink}
-						</Tooltip>
-					) : (
-						navLink
-					)
-				})}
+									body: {
+										fontWeight: active ? 600 : 500,
+										display: showFullLabel ? undefined : 'none',
+										color: `${activeColor || 'inherit'}`,
+									},
+									label: {
+										color: `${activeColor || 'inherit'}`,
+									},
+									section: {
+										color: `${activeColor || 'inherit'}`,
+									},
+								}}
+							/>
+						)
+						return !showFullLabel && typeof label === 'string' ? (
+							<Tooltip key={href} label={label} position="right" openDelay={300}>
+								{navLink}
+							</Tooltip>
+						) : (
+							navLink
+						)
+					})}
 				</Stack>
 			</ScrollArea>
 

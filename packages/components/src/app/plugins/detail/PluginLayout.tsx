@@ -11,9 +11,13 @@ interface PluginLayoutProps {
 
 export function PluginLayout({ config, stacked = false }: PluginLayoutProps) {
 	const theme = useMantineTheme()
-	const isUltraNarrow = useMediaQuery(`(max-width: ${theme.breakpoints?.md ? `${theme.breakpoints.md}px` : '62em'})`, false, {
-		getInitialValueInEffect: true,
-	})
+	const isUltraNarrow = useMediaQuery(
+		`(max-width: ${theme.breakpoints?.md ? `${theme.breakpoints.md}px` : '62em'})`,
+		false,
+		{
+			getInitialValueInEffect: true,
+		},
+	)
 	const effectiveStacked = stacked || isUltraNarrow
 	const leftMin = 340
 	const leftMax = 460

@@ -39,13 +39,7 @@ export function PluginPanel({
 	style,
 }: PluginPanelProps) {
 	return (
-		<Card
-			withBorder
-			shadow="sm"
-			radius="lg"
-			style={{ ...ROOT_STYLE, ...style }}
-			p={padding}
-		>
+		<Card withBorder shadow="sm" radius="lg" style={{ ...ROOT_STYLE, ...style }} p={padding}>
 			<Stack gap={gap} style={{ flex: 1, minHeight: 0 }}>
 				{title || description || rightSection ? (
 					<Group justify="space-between" align="flex-start" wrap="nowrap" gap={12}>

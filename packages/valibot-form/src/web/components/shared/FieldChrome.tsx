@@ -47,7 +47,10 @@ export function FieldChrome({
 	hideRequired,
 	inlineLabel,
 }: FieldChromeProps) {
-	const errorText = (errors ?? []).map((e) => e?.trim()).filter(Boolean).join('\n')
+	const errorText = (errors ?? [])
+		.map((e) => e?.trim())
+		.filter(Boolean)
+		.join('\n')
 	const showRequired = required && !hideRequired
 
 	const labelContent = hideLabel ? null : (

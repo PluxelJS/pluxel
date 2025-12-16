@@ -34,10 +34,11 @@ type NamespaceClient<Ns extends string> = {
 	onAny(handler: (msg: SseMessage<Ns>) => void): () => void
 }
 
-export type SseClientWithNamespaces = SseClient &
-	{ ns<Ns extends string>(name: Ns): NamespaceClient<Ns> } & {
-		[K in keyof ResolvedSseEvents]: NamespaceClient<K & string>
-	}
+export type SseClientWithNamespaces = SseClient & {
+	ns<Ns extends string>(name: Ns): NamespaceClient<Ns>
+} & {
+	[K in keyof ResolvedSseEvents]: NamespaceClient<K & string>
+}
 
 export interface SseClientOptions {
 	/** 想要订阅的命名空间，默认全量 */

@@ -277,11 +277,14 @@ export function useRegisterExtension() {
 				...options.meta,
 			}
 
-			return extensionRegistry.register(point as any, {
-				meta,
-				when: options.when,
-				render: options.render,
-			} as any)
+			return extensionRegistry.register(
+				point as any,
+				{
+					meta,
+					when: options.when,
+					render: options.render,
+				} as any,
+			)
 		},
 		[],
 	)

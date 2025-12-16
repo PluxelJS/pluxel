@@ -32,12 +32,10 @@ export class PluginDataService {
 	 * 最简单的持久化：一个插件一个文件，直接序列化整个 Collection。
 	 * 适合单 Collection 场景或演示用途。
 	 */
-	async persistence<T extends BaseItem<string> = BaseItem<string>>(
-		options?: {
-			serialize?: (items: T[]) => string
-			deserialize?: (txt: string) => T[]
-		},
-	): Promise<PersistenceAdapter<T, string>> {
+	async persistence<T extends BaseItem<string> = BaseItem<string>>(options?: {
+		serialize?: (items: T[]) => string
+		deserialize?: (txt: string) => T[]
+	}): Promise<PersistenceAdapter<T, string>> {
 		const ns = this.normalizeNamespace(this.ctx.pluginInfo.id)
 		const file = this.fileForNamespace(ns)
 
@@ -46,9 +44,7 @@ export class PluginDataService {
 			serialize: options?.serialize ?? ((items) => SuperJSON.stringify(items)),
 			deserialize: (txt) => {
 				try {
-					return (options?.deserialize?.(txt) ??
-						(SuperJSON.parse(txt) as T[]) ??
-						[]) as T[]
+					return (options?.deserialize?.(txt) ?? (SuperJSON.parse(txt) as T[]) ?? []) as T[]
 				} catch {
 					return []
 				}
@@ -155,7 +151,11 @@ export class PluginDataService {
 				load: async () => ({ items: await loadItems() }),
 				save: async (items) => {
 					const serialized = options?.serialize ? options.serialize(items) : items
-					await writeFile(file, typeof serialized === 'string' ? serialized : JSON.stringify(serialized, null, 2), 'utf8')
+					await writeFile(
+						file,
+						typeof serialized === 'string' ? serialized : JSON.stringify(serialized, null, 2),
+						'utf8',
+					)
 				},
 				register: async (onChange) => {
 					const notify = async () => {

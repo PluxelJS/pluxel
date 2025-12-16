@@ -1,15 +1,6 @@
 // src/components/Layout/AppHeader.tsx
 
-import {
-	ActionIcon,
-	Badge,
-	Box,
-	Divider,
-	Group,
-	Stack,
-	Text,
-	Title,
-} from '@mantine/core'
+import { ActionIcon, Badge, Box, Divider, Group, Stack, Text, Title } from '@mantine/core'
 import { IconBell, IconDots, IconMenu2 } from '@tabler/icons-react'
 import type React from 'react'
 import { ColorSchemeToggle } from './ColorSchemeToggle'

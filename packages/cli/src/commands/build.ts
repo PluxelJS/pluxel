@@ -65,7 +65,10 @@ export const buildCommand = define({
 	},
 })
 
-function mergeOverlayPlugins(overlay: typeof cliTsdownOverlay, additional: InlineConfig['plugins']) {
+function mergeOverlayPlugins(
+	overlay: typeof cliTsdownOverlay,
+	additional: InlineConfig['plugins'],
+) {
 	return async (ctx: BuildRuntimeConfig): Promise<InlineConfig> => {
 		const awaited = typeof overlay === 'function' ? await overlay(ctx) : overlay
 		// defineConfig 可能返回数组，取第一个

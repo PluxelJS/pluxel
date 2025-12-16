@@ -18,7 +18,9 @@ export interface HmrWebClient {
 	rpc: RpcExtensions
 	createSse: (options?: SseClientOptions) => SseClientWithNamespaces
 	sse: SseClientWithNamespaces
-	streamLogs: (options?: Omit<SseClientOptions, 'namespaces'> & { name?: string }) => SseClientWithNamespaces
+	streamLogs: (
+		options?: Omit<SseClientOptions, 'namespaces'> & { name?: string },
+	) => SseClientWithNamespaces
 	streamExtensions: (options?: Omit<SseClientOptions, 'namespaces'>) => SseClientWithNamespaces
 	dispose: () => void
 }

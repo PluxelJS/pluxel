@@ -65,4 +65,3 @@ export const readCollapsedState = (): Record<string, boolean> => {
 	}
 	return {}
 }
-

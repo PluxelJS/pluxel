@@ -20,7 +20,7 @@ export function isComplexType(type: string): boolean {
 
 /** 计算紧凑字段数量（排除复杂类型） */
 export function countCompactFields(fields: Array<{ type: string }>): number {
-	return fields.filter(f => !isComplexType(f.type)).length
+	return fields.filter((f) => !isComplexType(f.type)).length
 }
 
 /**
@@ -29,7 +29,11 @@ export function countCompactFields(fields: Array<{ type: string }>): number {
  * @param explicit 显式指定的列数（优先级最高）
  * @param compactCount 紧凑字段数量
  */
-export function resolveSectionColumns(fieldCount: number, explicit?: number, compactCount = 0): number {
+export function resolveSectionColumns(
+	fieldCount: number,
+	explicit?: number,
+	compactCount = 0,
+): number {
 	// 显式指定优先
 	if (explicit && explicit > 0) return explicit
 	// 单字段无需多列
@@ -49,7 +53,11 @@ export function resolveSectionColumns(fieldCount: number, explicit?: number, com
  * @param layout 字段的布局配置
  * @param fieldType 字段类型（用于判断复杂类型）
  */
-export function resolveFieldSpan(columns: number, layout?: FieldLayoutMeta, fieldType?: string): number {
+export function resolveFieldSpan(
+	columns: number,
+	layout?: FieldLayoutMeta,
+	fieldType?: string,
+): number {
 	if (columns <= 1) return 1
 	// 复杂类型始终占满整行
 	if (fieldType && isComplexType(fieldType)) return columns

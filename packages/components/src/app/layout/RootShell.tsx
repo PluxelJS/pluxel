@@ -84,10 +84,7 @@ function RootShellContent() {
 
 	return (
 		<ExtensionProvider value={extensionContext}>
-			<RootShellApp
-				pathname={pathname}
-				onRunningPluginsChange={handleRunningPluginsChange}
-			/>
+			<RootShellApp pathname={pathname} onRunningPluginsChange={handleRunningPluginsChange} />
 		</ExtensionProvider>
 	)
 }

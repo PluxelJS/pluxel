@@ -115,14 +115,11 @@ export function ExtensionLoader({
 	const moduleCacheRef = useRef<Map<string, LoadedPluginModule>>(new Map())
 	const manifestBackoffRef = useRef<{ at: number; backoffMs: number } | null>(null)
 
-	const shouldSkipManifestSync = useCallback(
-		() => {
-			const state = manifestBackoffRef.current
-			if (!state) return false
-			return Date.now() - state.at < state.backoffMs
-		},
-		[],
-	)
+	const shouldSkipManifestSync = useCallback(() => {
+		const state = manifestBackoffRef.current
+		if (!state) return false
+		return Date.now() - state.at < state.backoffMs
+	}, [])
 
 	const recomputeManifestSignature = useCallback(() => {
 		const signature = Array.from(moduleCacheRef.current.values())
@@ -271,7 +268,7 @@ export function ExtensionLoader({
 					}
 				}
 				manifestVersionRef.current = manifest.version
-					manifestSignatureRef.current = nextSignature
+				manifestSignatureRef.current = nextSignature
 				extLog('synced manifest v%d (%d modules)', manifest.version, manifest.modules.length)
 			} catch (error) {
 				const now = Date.now()

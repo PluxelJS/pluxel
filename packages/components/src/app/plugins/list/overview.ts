@@ -89,4 +89,3 @@ export const areGroupsEqual = (a: GroupConfig[], b: GroupConfig[]) => {
 	}
 	return true
 }
-

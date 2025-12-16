@@ -234,9 +234,9 @@ describe('publish with CI context', () => {
 		expect(resolveWebhookAudience('https://market.pluxel.dev', {} as NodeJS.ProcessEnv)).toBe(
 			'https://market.pluxel.dev/webhook',
 		)
-		expect(
-			resolveWebhookAudience('https://market.pluxel.dev/', {} as NodeJS.ProcessEnv),
-		).toBe('https://market.pluxel.dev/webhook')
+		expect(resolveWebhookAudience('https://market.pluxel.dev/', {} as NodeJS.ProcessEnv)).toBe(
+			'https://market.pluxel.dev/webhook',
+		)
 		expect(
 			resolveWebhookAudience('https://market.pluxel.dev', {
 				PLUXEL_MARKET_AUDIENCE: 'https://override/webhook',
@@ -280,7 +280,9 @@ describe('publish with CI context', () => {
 
 			expect(result.notified).toBe(true)
 			expect(requests.some((url) => url.includes('oidc.example.com'))).toBe(true)
-			expect(requests.some((url) => url.includes('market.pluxel.dev') || url.includes('market.test'))).toBe(true)
+			expect(
+				requests.some((url) => url.includes('market.pluxel.dev') || url.includes('market.test')),
+			).toBe(true)
 		} finally {
 			global.fetch = savedFetch
 			await teardownFixture(dir)

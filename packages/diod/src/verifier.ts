@@ -158,7 +158,9 @@ export const validateAllServices = (
 		const meta = services.get(node) as ServiceData<unknown> | undefined
 		if (meta) {
 			for (const dep of meta.dependencies) {
-				const resolved = services.has(dep) ? dep : (aliasIndex.get(dep as any) ?? dep)
+				const resolved = services.has(dep)
+					? dep
+					: (aliasIndex.get(dep as any) ?? dep)
 				if (!services.has(resolved)) {
 					errors.push({
 						kind: 'MissingDependency',
@@ -193,7 +195,9 @@ const computeDependents = (
 	const dependentsMap = new Map<Identifier<unknown>, Set<Identifier<unknown>>>()
 	for (const [service, metadata] of services) {
 		for (const dep of metadata.dependencies) {
-			const resolved = services.has(dep) ? dep : (aliasIndex.get(dep as any) ?? dep)
+			const resolved = services.has(dep)
+				? dep
+				: (aliasIndex.get(dep as any) ?? dep)
 			let set = dependentsMap.get(resolved)
 			if (!set) {
 				set = new Set<Identifier<unknown>>()
@@ -249,7 +253,10 @@ export const verifyAsResult = (
 	Map<Identifier<unknown>, Set<Identifier<unknown>>>,
 	ServiceVerificationAggregateError
 > => {
-	const { dependentsMap, errors } = verifyAndComputeDependents(services, aliasIndex)
+	const { dependentsMap, errors } = verifyAndComputeDependents(
+		services,
+		aliasIndex,
+	)
 	if (errors.length > 0)
 		return createErr(new ServiceVerificationAggregateError(errors))
 	return createOk(dependentsMap)

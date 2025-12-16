@@ -158,14 +158,26 @@ export interface MarketHandleApi {
 	loadIssues: () => unknown
 	inventory: (options?: { includeUntracked?: boolean }) => unknown
 	install: (spec: PackageSpecInput, options?: { force?: boolean }) => Promise<MarketMutationResult>
-	installMany: (specs: PackageSpecInput[], options?: { force?: boolean }) => Promise<MarketBatchResult>
+	installMany: (
+		specs: PackageSpecInput[],
+		options?: { force?: boolean },
+	) => Promise<MarketBatchResult>
 	uninstall: (spec: PackageSpecInput) => Promise<MarketMutationResult>
 	uninstallMany: (specs: PackageSpecInput[]) => Promise<MarketBatchResult>
 	remove: (spec: PackageSpecInput) => Promise<MarketMutationResult>
 	removeMany: (specs: PackageSpecInput[]) => Promise<MarketBatchResult>
-	reinstall: (spec: PackageSpecInput, options?: { force?: boolean }) => Promise<MarketMutationResult>
-	reinstallMany: (specs: PackageSpecInput[], options?: { force?: boolean }) => Promise<MarketBatchResult>
-	reloadMany: (specs: PackageSpecInput[], options?: { fresh?: boolean }) => Promise<MarketBatchResult>
+	reinstall: (
+		spec: PackageSpecInput,
+		options?: { force?: boolean },
+	) => Promise<MarketMutationResult>
+	reinstallMany: (
+		specs: PackageSpecInput[],
+		options?: { force?: boolean },
+	) => Promise<MarketBatchResult>
+	reloadMany: (
+		specs: PackageSpecInput[],
+		options?: { fresh?: boolean },
+	) => Promise<MarketBatchResult>
 	retry: (
 		spec: PackageSpecInput,
 		options?: { reinstall?: boolean; fresh?: boolean },
@@ -179,9 +191,19 @@ export interface PluginHandleApi {
 	status: () => unknown
 	updateStatus: (action: PluginStatusAction) => Promise<PluginStatusMutationResult>
 	dependencyState: () => Promise<PluginDependencyState[]>
-	setDependencyTarget: (index: number, targetName: string | null) => Promise<PluginDependencyMutationResult>
-	setBaseProvider: (baseToken: string, providerName: string | null) => Promise<PluginDependencyMutationResult>
-	ensureFork: (baseName: string, forkId: string, options?: { enable?: boolean }) => Promise<EnsureForkResult>
+	setDependencyTarget: (
+		index: number,
+		targetName: string | null,
+	) => Promise<PluginDependencyMutationResult>
+	setBaseProvider: (
+		baseToken: string,
+		providerName: string | null,
+	) => Promise<PluginDependencyMutationResult>
+	ensureFork: (
+		baseName: string,
+		forkId: string,
+		options?: { enable?: boolean },
+	) => Promise<EnsureForkResult>
 	baseProvision: () => Promise<BaseProvisionInfo | null>
 	schema: () => Promise<SchemaResult>
 	config: () => Promise<ConfigResultOk>

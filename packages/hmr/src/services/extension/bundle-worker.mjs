@@ -38,10 +38,13 @@ export default async function runBundle(job) {
 		},
 	})
 
-	const outputs = normalizeOutput(result).flatMap((entry) => entry.output ?? []).filter(Boolean)
+	const outputs = normalizeOutput(result)
+		.flatMap((entry) => entry.output ?? [])
+		.filter(Boolean)
 	const chunk =
-		outputs.find((item) => item.type === 'chunk' && item.isEntry && typeof item.code === 'string') ??
-		outputs.find((item) => item.type === 'chunk' && typeof item.code === 'string')
+		outputs.find(
+			(item) => item.type === 'chunk' && item.isEntry && typeof item.code === 'string',
+		) ?? outputs.find((item) => item.type === 'chunk' && typeof item.code === 'string')
 	if (!chunk?.code) {
 		throw new Error('Failed to produce bundled code for extension entry (worker)')
 	}

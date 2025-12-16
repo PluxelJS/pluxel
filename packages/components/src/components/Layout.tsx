@@ -53,7 +53,9 @@ export interface LayoutProps {
 	/** —— 其他 —— */
 	mainPadding?: string | number
 	footerHeight?: number
-	footer?: React.ReactNode | ((ctx: { opened: boolean; toggle: () => void; isMobile: boolean }) => React.ReactNode)
+	footer?:
+		| React.ReactNode
+		| ((ctx: { opened: boolean; toggle: () => void; isMobile: boolean }) => React.ReactNode)
 	currentPath?: string
 	navbarWidth?: number
 	compactNavbarWidth?: number
@@ -212,14 +214,14 @@ export function Layout({
 					desktop: desktopCollapsed,
 				},
 			}}
-				styles={{
-					main: {
-						backgroundColor: pattern.backgroundColor,
-						backgroundImage: pattern.backgroundImage,
-						backgroundSize: pattern.backgroundSize,
-						backgroundPosition: pattern.backgroundPosition,
-						minHeight: '100dvh',
-					},
+			styles={{
+				main: {
+					backgroundColor: pattern.backgroundColor,
+					backgroundImage: pattern.backgroundImage,
+					backgroundSize: pattern.backgroundSize,
+					backgroundPosition: pattern.backgroundPosition,
+					minHeight: '100dvh',
+				},
 				navbar: {
 					borderRight: `1px solid ${borderColor}`,
 				},

@@ -5,29 +5,36 @@ import { defineConfig } from 'vite'
 import tsconfigPaths from 'vite-tsconfig-paths'
 
 export default defineConfig(({ mode }) => {
-    const isDev = mode !== 'production'
+	const isDev = mode !== 'production'
 
-    return {
-        server: {
-            proxy: {
-                // API + GraphQL 走后端 3000，方便本地联调
-                '/api': {
-                    target: 'http://localhost:3000',
-                    changeOrigin: true,
-                },
-                '/graphql': {
-                    target: 'http://localhost:3000',
-                    changeOrigin: true,
-                },
-            },
-        },
-        resolve: {
-            dedupe: ['react', 'react-dom', '@mantine/core', '@mantine/hooks', '@mantine/notifications', '@mantine/dates'],
-            alias: {
-                // 你的设置：避免为每个图标单独切 chunk
-                '@tabler/icons-react': '@tabler/icons-react/dist/esm/icons/index.mjs',
-            },
-        },
+	return {
+		server: {
+			proxy: {
+				// API + GraphQL 走后端 3000，方便本地联调
+				'/api': {
+					target: 'http://localhost:3000',
+					changeOrigin: true,
+				},
+				'/graphql': {
+					target: 'http://localhost:3000',
+					changeOrigin: true,
+				},
+			},
+		},
+		resolve: {
+			dedupe: [
+				'react',
+				'react-dom',
+				'@mantine/core',
+				'@mantine/hooks',
+				'@mantine/notifications',
+				'@mantine/dates',
+			],
+			alias: {
+				// 你的设置：避免为每个图标单独切 chunk
+				'@tabler/icons-react': '@tabler/icons-react/dist/esm/icons/index.mjs',
+			},
+		},
 
 		plugins: [react(), tsconfigPaths()],
 

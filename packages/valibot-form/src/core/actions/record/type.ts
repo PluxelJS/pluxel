@@ -99,7 +99,18 @@ export type RecordMetaOptions = {
 	 * - `'picklist-array'`: 多选下拉框（值为数组）
 	 * - `'object' | 'array' | 'union' | 'variant'`: 嵌套表单（自动渲染子 schema）
 	 */
-	valueMode?: 'auto' | 'string' | 'number' | 'boolean' | 'json' | 'picklist' | 'picklist-array' | 'object' | 'array' | 'union' | 'variant'
+	valueMode?:
+		| 'auto'
+		| 'string'
+		| 'number'
+		| 'boolean'
+		| 'json'
+		| 'picklist'
+		| 'picklist-array'
+		| 'object'
+		| 'array'
+		| 'union'
+		| 'variant'
 
 	/** 最少键值对数量 */
 	minItems?: number

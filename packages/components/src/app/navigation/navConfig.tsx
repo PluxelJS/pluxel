@@ -34,8 +34,7 @@ export interface ExtensionNavMeta {
 
 export function buildExtensionNavItems(entries: ExtensionNavMeta[]): NavItem[] {
 	return entries.map((entry) => {
-		const label =
-			typeof entry.label === 'string' && entry.label.length > 0 ? entry.label : entry.id
+		const label = typeof entry.label === 'string' && entry.label.length > 0 ? entry.label : entry.id
 		const href = typeof entry.href === 'string' && entry.href.length > 0 ? entry.href : '#'
 		const rightSection = isValidElement(entry.rightSection)
 			? (entry.rightSection as ReactNode)

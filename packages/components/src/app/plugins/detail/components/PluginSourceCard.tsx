@@ -32,12 +32,7 @@ function CopyAction({ value, label = '复制路径' }: { value: string | null; l
 		<CopyButton value={value}>
 			{({ copied, copy }) => (
 				<Tooltip label={copied ? '已复制' : label} withArrow>
-					<ActionIcon
-						size="sm"
-						variant="subtle"
-						color={copied ? 'teal' : 'gray'}
-						onClick={copy}
-					>
+					<ActionIcon size="sm" variant="subtle" color={copied ? 'teal' : 'gray'} onClick={copy}>
 						{copied ? <IconCheck size={14} /> : <IconCopy size={14} />}
 					</ActionIcon>
 				</Tooltip>
@@ -116,14 +111,10 @@ export function PluginSourceCard({ LinkComponent }: PluginSourceCardProps) {
 	const { source, knownPluginNames } = usePluginScope()
 	const theme = useMantineTheme()
 	const badge = getBadgeLabel(source)
-	const accent =
-		theme.colors[theme.primaryColor]?.[6] ?? theme.colors.blue?.[6] ?? theme.black
+	const accent = theme.colors[theme.primaryColor]?.[6] ?? theme.colors.blue?.[6] ?? theme.black
 	const dependencies = usePluginDependencyEntries()
 
-	const content = useMemo(
-		() => renderSourceContent(source, accent),
-		[source, accent],
-	)
+	const content = useMemo(() => renderSourceContent(source, accent), [source, accent])
 	const labelStyle = { width: 44, flexShrink: 0 }
 	const isLinkable = useMemo(() => {
 		return (name: string) => {

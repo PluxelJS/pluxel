@@ -39,7 +39,13 @@ import { createRpcClient } from '../rpc'
 import { RouterLinkAdapter } from '../RouterLinkAdapter'
 import { useNotify } from '../hooks'
 import type { PackageRow } from './types'
-import { buildPackageRows, formatSpec, parseInstallSpecs, summarizeList, toSpecInput } from './utils'
+import {
+	buildPackageRows,
+	formatSpec,
+	parseInstallSpecs,
+	summarizeList,
+	toSpecInput,
+} from './utils'
 import { CollapsibleIssuesPanel, type IssueData } from './components/CollapsibleIssuesPanel'
 import { OperationLogModal, type OperationLogEntry } from './components/OperationLogModal'
 import { IconPackages, IconSearch as IconSearchEmpty } from '@tabler/icons-react'
@@ -179,22 +185,31 @@ export function PackageManagerPage() {
 
 	// Keyboard shortcuts
 	useHotkeys([
-		['mod+f', (e) => {
-			e.preventDefault()
-			searchInputRef.current?.focus()
-			searchInputRef.current?.select()
-		}],
-		['Escape', () => {
-			if (document.activeElement === searchInputRef.current) {
-				setPackageSearch('')
-				searchInputRef.current?.blur()
-			}
-		}],
-		['mod+a', (e) => {
-			if (document.activeElement === searchInputRef.current) return
-			e.preventDefault()
-			toggleSelectAllVisible(true)
-		}],
+		[
+			'mod+f',
+			(e) => {
+				e.preventDefault()
+				searchInputRef.current?.focus()
+				searchInputRef.current?.select()
+			},
+		],
+		[
+			'Escape',
+			() => {
+				if (document.activeElement === searchInputRef.current) {
+					setPackageSearch('')
+					searchInputRef.current?.blur()
+				}
+			},
+		],
+		[
+			'mod+a',
+			(e) => {
+				if (document.activeElement === searchInputRef.current) return
+				e.preventDefault()
+				toggleSelectAllVisible(true)
+			},
+		],
 	])
 
 	useEffect(() => {
@@ -283,7 +298,18 @@ export function PackageManagerPage() {
 
 	const summarizeBatchResult = useCallback(
 		(
-			result: { ok: boolean; results: Array<{ ok: boolean; spec?: { name?: string; raw?: string } | null; code?: string; error?: string | null }> } | null | undefined,
+			result:
+				| {
+						ok: boolean
+						results: Array<{
+							ok: boolean
+							spec?: { name?: string; raw?: string } | null
+							code?: string
+							error?: string | null
+						}>
+				  }
+				| null
+				| undefined,
 			successTitle: string,
 			fallbackError: string,
 		) => {
@@ -413,7 +439,9 @@ export function PackageManagerPage() {
 				await refetch()
 			}
 		} catch (error: any) {
-			setOperationLogs((prev) => prev.map((log) => ({ ...log, status: 'error', message: error?.message })))
+			setOperationLogs((prev) =>
+				prev.map((log) => ({ ...log, status: 'error', message: error?.message })),
+			)
 			notify({
 				title: '重载失败',
 				message: error?.message ?? '操作失败，请稍后再试',
@@ -433,7 +461,9 @@ export function PackageManagerPage() {
 		setReinstallBatchLoading(true)
 		try {
 			using rpc = createRpcClient()
-			const result = await rpc.market().reinstallMany(selectedRows.map(toSpecInput), { force: true })
+			const result = await rpc
+				.market()
+				.reinstallMany(selectedRows.map(toSpecInput), { force: true })
 			setOperationLogs((prev) =>
 				prev.map((log) => {
 					const entry = result?.results?.find(
@@ -450,7 +480,9 @@ export function PackageManagerPage() {
 				await refetch()
 			}
 		} catch (error: any) {
-			setOperationLogs((prev) => prev.map((log) => ({ ...log, status: 'error', message: error?.message })))
+			setOperationLogs((prev) =>
+				prev.map((log) => ({ ...log, status: 'error', message: error?.message })),
+			)
 			notify({
 				title: '重装失败',
 				message: error?.message ?? '操作失败，请稍后再试',
@@ -488,7 +520,9 @@ export function PackageManagerPage() {
 			}
 			clearSelection()
 		} catch (error: any) {
-			setOperationLogs((prev) => prev.map((log) => ({ ...log, status: 'error', message: error?.message })))
+			setOperationLogs((prev) =>
+				prev.map((log) => ({ ...log, status: 'error', message: error?.message })),
+			)
 			notify({
 				title: '卸载失败',
 				message: error?.message ?? '操作失败，请稍后再试',
@@ -526,7 +560,9 @@ export function PackageManagerPage() {
 			}
 			clearSelection()
 		} catch (error: any) {
-			setOperationLogs((prev) => prev.map((log) => ({ ...log, status: 'error', message: error?.message })))
+			setOperationLogs((prev) =>
+				prev.map((log) => ({ ...log, status: 'error', message: error?.message })),
+			)
 			notify({
 				title: '移除失败',
 				message: error?.message ?? '操作失败，请稍后再试',
@@ -561,7 +597,11 @@ export function PackageManagerPage() {
 		if (!ensureHasSelection()) return
 		const title = '卸载已加载模块'
 		const description = '仅移除已加载模块，不会删除持久化依赖。'
-		const preview = summarizeList(selectedRows.map((row) => row.name), 5, '个')
+		const preview = summarizeList(
+			selectedRows.map((row) => row.name),
+			5,
+			'个',
+		)
 		openConfirmModal({
 			title,
 			children: (
@@ -581,7 +621,11 @@ export function PackageManagerPage() {
 		if (!ensureHasSelection()) return
 		const title = '彻底移除所选包'
 		const description = '将从运行态和持久依赖中完全移除所选包，下次需重新安装。'
-		const preview = summarizeList(selectedRows.map((row) => row.name), 5, '个')
+		const preview = summarizeList(
+			selectedRows.map((row) => row.name),
+			5,
+			'个',
+		)
 		openConfirmModal({
 			title,
 			children: (
@@ -786,8 +830,7 @@ export function PackageManagerPage() {
 
 		const allVisibleSelected =
 			filteredRows.length > 0 && selectedVisibleCount === filteredRows.length
-		const isIndeterminate =
-			selectedVisibleCount > 0 && selectedVisibleCount < filteredRows.length
+		const isIndeterminate = selectedVisibleCount > 0 && selectedVisibleCount < filteredRows.length
 
 		return (
 			<Stack gap="xs" style={{ height: '100%' }}>
@@ -888,9 +931,7 @@ export function PackageManagerPage() {
 									<Table.Td>
 										<Checkbox
 											checked={selectedPackages.has(row.name)}
-											onChange={(event) =>
-												setRowSelected(row.name, event.currentTarget.checked)
-											}
+											onChange={(event) => setRowSelected(row.name, event.currentTarget.checked)}
 											aria-label={`选择 ${row.name}`}
 										/>
 									</Table.Td>
@@ -1155,11 +1196,7 @@ export function PackageManagerPage() {
 									leftSection={<IconSearch size={14} />}
 									rightSection={
 										packageSearch && (
-											<ActionIcon
-												size="xs"
-												variant="subtle"
-												onClick={() => setPackageSearch('')}
-											>
+											<ActionIcon size="xs" variant="subtle" onClick={() => setPackageSearch('')}>
 												<IconX size={12} />
 											</ActionIcon>
 										)
@@ -1171,21 +1208,13 @@ export function PackageManagerPage() {
 								/>
 							</Tooltip>
 							<Tooltip label="查看操作日志">
-								<ActionIcon
-									variant="light"
-									color="gray"
-									onClick={() => setOperationLogOpen(true)}
-								>
+								<ActionIcon variant="light" color="gray" onClick={() => setOperationLogOpen(true)}>
 									<IconTerminal2 size={16} />
 								</ActionIcon>
 							</Tooltip>
 							{!showIssuesPanel && sortedIssues.length > 0 && (
 								<Tooltip label="显示告警面板">
-									<ActionIcon
-										variant="light"
-										color="red"
-										onClick={() => setShowIssuesPanel(true)}
-									>
+									<ActionIcon variant="light" color="red" onClick={() => setShowIssuesPanel(true)}>
 										<Badge color="red" size="xs" circle>
 											{sortedIssues.length}
 										</Badge>

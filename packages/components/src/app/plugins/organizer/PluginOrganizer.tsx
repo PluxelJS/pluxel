@@ -613,8 +613,7 @@ export function PluginOrganizer({
 				return
 			}
 			const base = controlledSelectedIds
-			const resolved =
-				typeof next === 'function' ? (next as (p: string[]) => string[])(base) : next
+			const resolved = typeof next === 'function' ? (next as (p: string[]) => string[])(base) : next
 			if (arraysEqual(resolved, base)) return
 			onSelectedIdsChange?.(resolved)
 		},

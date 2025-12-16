@@ -16,51 +16,52 @@ type StateMap<States extends readonly string[]> = { [K in States[number]]: State
 type EventMap<Events extends readonly string[]> = { [K in Events[number]]: EventId<K> }
 
 export interface DefineMachineInput<
-   States extends readonly string[],
-   Events extends readonly string[],
+	States extends readonly string[],
+	Events extends readonly string[],
 > {
-  states: States;
-  events: Events;
-  init: States[number];
+	states: States
+	events: Events
+	init: States[number]
 
-  transitions: readonly TransitionTuple<States[number], Events[number]>[];
+	transitions: readonly TransitionTuple<States[number], Events[number]>[]
 
-  hooks?: {
-    enter?: Partial<Record<States[number], string>>;
-    exit?: Partial<Record<States[number], string>>;
-  };
+	hooks?: {
+		enter?: Partial<Record<States[number], string>>
+		exit?: Partial<Record<States[number], string>>
+	}
 
-  /**
-   * 实现映射：
-   * - 宏期：可用来把函数标识符收敛成函数池
-   * - 运行期：同样可用，保证测试/开发不依赖宏也能跑
-   */
-  impl?: {
-    callbacks?: Record<string, AnyFn>;
-    hooks?: Record<string, HookFn>;
-  };
+	/**
+	 * 实现映射：
+	 * - 宏期：可用来把函数标识符收敛成函数池
+	 * - 运行期：同样可用，保证测试/开发不依赖宏也能跑
+	 */
+	impl?: {
+		callbacks?: Record<string, AnyFn>
+		hooks?: Record<string, HookFn>
+	}
 
-  abortOnStateChange?: boolean;
+	abortOnStateChange?: boolean
 
-  /**
-   * 默认 true：同一 (from,event) 重复时直接报错
-   */
-	strictDuplicateEdge?: boolean;
+	/**
+	 * 默认 true：同一 (from,event) 重复时直接报错
+	 */
+	strictDuplicateEdge?: boolean
 }
 
-type CallbackNames<T extends readonly TransitionTuple<any, any>[]> = Extract<
-	T[number][3],
-	string
->
+type CallbackNames<T extends readonly TransitionTuple<any, any>[]> = Extract<T[number][3], string>
 type HookNames<H> = H extends { enter?: Record<string, infer N1>; exit?: Record<string, infer N2> }
 	? Extract<N1 | N2, string>
 	: never
 
-type ImplFor<Cb extends string, Hook extends string> =
-	([Cb] extends [never] ? { callbacks?: Record<Cb, AnyFn> } : { callbacks: Record<Cb, AnyFn> }) &
-		([Hook] extends [never] ? { hooks?: Record<Hook, HookFn> } : { hooks: Record<Hook, HookFn> })
+type ImplFor<Cb extends string, Hook extends string> = ([Cb] extends [never]
+	? { callbacks?: Record<Cb, AnyFn> }
+	: { callbacks: Record<Cb, AnyFn> }) &
+	([Hook] extends [never] ? { hooks?: Record<Hook, HookFn> } : { hooks: Record<Hook, HookFn> })
 
-type MachineLike<SMap extends Record<string, number>, EMap extends Record<string, number>> = UltraMachine & {
+type MachineLike<
+	SMap extends Record<string, number>,
+	EMap extends Record<string, number>,
+> = UltraMachine & {
 	getState(): SMap[keyof SMap]
 	getSignal(): AbortSignal | undefined
 	can(event: EMap[keyof EMap]): boolean
@@ -68,14 +69,16 @@ type MachineLike<SMap extends Record<string, number>, EMap extends Record<string
 	dispatchAsync(event: EMap[keyof EMap], ...args: any[]): Promise<void>
 }
 
-type MachineSyncLike<SMap extends Record<string, number>, EMap extends Record<string, number>> =
-	UltraMachineSync & {
-		getState(): SMap[keyof SMap]
-		getSignal(): AbortSignal | undefined
-		can(event: EMap[keyof EMap]): boolean
-		isFinal(): boolean
-		syncDispatch(event: EMap[keyof EMap], ...args: any[]): boolean
-	}
+type MachineSyncLike<
+	SMap extends Record<string, number>,
+	EMap extends Record<string, number>,
+> = UltraMachineSync & {
+	getState(): SMap[keyof SMap]
+	getSignal(): AbortSignal | undefined
+	can(event: EMap[keyof EMap]): boolean
+	isFinal(): boolean
+	syncDispatch(event: EMap[keyof EMap], ...args: any[]): boolean
+}
 
 export interface DefineMachineResult<
 	States extends readonly string[],
@@ -87,7 +90,9 @@ export interface DefineMachineResult<
 	E: EventMap<Events>
 	Def: UltraDef
 
-	createMachine: (logger?: ConstructorParameters<typeof UltraMachine>[1]) => MachineLike<StateMap<States>, EventMap<Events>>
+	createMachine: (
+		logger?: ConstructorParameters<typeof UltraMachine>[1],
+	) => MachineLike<StateMap<States>, EventMap<Events>>
 	createMachineSync: (
 		logger?: ConstructorParameters<typeof UltraMachineSync>[1],
 	) => MachineSyncLike<StateMap<States>, EventMap<Events>>
@@ -121,33 +126,14 @@ export type MachineImpl<M extends BakedMachine<any, any, any, any>> = ImplFor<
 	M['def']['hookNames'][number]
 >
 
-type StatesOf<B extends BakedMachine<any, any, any, any>> = B extends BakedMachine<
-	infer S,
-	any,
-	any,
-	any
->
-	? S
-	: never
-type EventsOf<B extends BakedMachine<any, any, any, any>> = B extends BakedMachine<
-	any,
-	infer E,
-	any,
-	any
->
-	? E
-	: never
-type CallbacksOf<B extends BakedMachine<any, any, any, any>> = B extends BakedMachine<
-	any,
-	any,
-	infer C,
-	any
->
-	? C
-	: never
-type HooksOf<B extends BakedMachine<any, any, any, any>> = B extends BakedMachine<any, any, any, infer H>
-	? H
-	: never
+type StatesOf<B extends BakedMachine<any, any, any, any>> =
+	B extends BakedMachine<infer S, any, any, any> ? S : never
+type EventsOf<B extends BakedMachine<any, any, any, any>> =
+	B extends BakedMachine<any, infer E, any, any> ? E : never
+type CallbacksOf<B extends BakedMachine<any, any, any, any>> =
+	B extends BakedMachine<any, any, infer C, any> ? C : never
+type HooksOf<B extends BakedMachine<any, any, any, any>> =
+	B extends BakedMachine<any, any, any, infer H> ? H : never
 
 function assertUniqueNames(names: readonly string[], kind: string) {
 	const seen = new Set<string>()
@@ -175,9 +161,9 @@ function bakeDefinition<
 	const States extends readonly string[],
 	const Events extends readonly string[],
 	const Transitions extends readonly TransitionTuple<States[number], Events[number]>[],
-const HooksInput extends DefineMachineInput<States, Events>['hooks'],
-const Cb extends string = CallbackNames<Transitions>,
-const Hook extends string = HookNames<HooksInput>,
+	const HooksInput extends DefineMachineInput<States, Events>['hooks'],
+	const Cb extends string = CallbackNames<Transitions>,
+	const Hook extends string = HookNames<HooksInput>,
 >(
 	input: Omit<DefineMachineInput<States, Events>, 'transitions' | 'hooks' | 'impl'> & {
 		transitions: Transitions
@@ -378,7 +364,10 @@ export function hydrateMachine<const B extends BakedMachine<any, any, any, any>>
 	const createMachine = (logger?: any) =>
 		new UltraMachine(Def, logger) as MachineLike<StateMap<StatesOf<B>>, EventMap<EventsOf<B>>>
 	const createMachineSync = (logger?: any) =>
-		new UltraMachineSync(Def, logger) as MachineSyncLike<StateMap<StatesOf<B>>, EventMap<EventsOf<B>>>
+		new UltraMachineSync(Def, logger) as MachineSyncLike<
+			StateMap<StatesOf<B>>,
+			EventMap<EventsOf<B>>
+		>
 
 	return { S: baked.S, E: baked.E, Def, createMachine, createMachineSync }
 }

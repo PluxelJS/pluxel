@@ -58,7 +58,10 @@ export function PluginApiProvider({
 }) {
 	const hmr = ctx.services.hmr
 	const rpc = hmr.rpc.PluginWithUI
-	const sseClient = useMemo(() => hmr.createSse({ namespaces: [ctx.pluginName] }), [hmr, ctx.pluginName])
+	const sseClient = useMemo(
+		() => hmr.createSse({ namespaces: [ctx.pluginName] }),
+		[hmr, ctx.pluginName],
+	)
 	useEffect(() => {
 		return () => sseClient.close()
 	}, [sseClient])
@@ -251,18 +254,21 @@ export function TaskBoard({ sse }: { sse: PluginSse }) {
 	}, [refreshTasks])
 
 	useEffect(() => {
-		const off = sse.PluginWithUI.on((msg) => {
-			const payload = msg.payload as any
-			if (payload?.type === 'cursor' && Array.isArray(payload.tasks)) {
-				setTasks(payload.tasks)
-				setLoading(false)
-				return
-			}
-			if (payload?.type === 'sync' && Array.isArray(payload.tasks)) {
-				setTasks(payload.tasks)
-				setLoading(false)
-			}
-		}, ['cursor', 'sync'])
+		const off = sse.PluginWithUI.on(
+			(msg) => {
+				const payload = msg.payload as any
+				if (payload?.type === 'cursor' && Array.isArray(payload.tasks)) {
+					setTasks(payload.tasks)
+					setLoading(false)
+					return
+				}
+				if (payload?.type === 'sync' && Array.isArray(payload.tasks)) {
+					setTasks(payload.tasks)
+					setLoading(false)
+				}
+			},
+			['cursor', 'sync'],
+		)
 		return () => off()
 	}, [sse])
 
@@ -386,7 +392,13 @@ export function TaskBoard({ sse }: { sse: PluginSse }) {
 										</Badge>
 										<Badge
 											size="xs"
-											color={task.status === 'done' ? 'teal' : task.status === 'doing' ? 'yellow' : 'gray'}
+											color={
+												task.status === 'done'
+													? 'teal'
+													: task.status === 'doing'
+														? 'yellow'
+														: 'gray'
+											}
 											variant="light"
 										>
 											状态：{taskStatusLabel[task.status]}
@@ -411,7 +423,11 @@ export function TaskBoard({ sse }: { sse: PluginSse }) {
 									loading={updatingId === task.id}
 									aria-label="切换状态"
 								>
-									{task.status === 'done' ? <IconCircleDashed size={16} /> : <IconCircleCheck size={16} />}
+									{task.status === 'done' ? (
+										<IconCircleDashed size={16} />
+									) : (
+										<IconCircleCheck size={16} />
+									)}
 								</ActionIcon>
 							</Group>
 						</Paper>
@@ -476,18 +492,21 @@ export function ActivityTimeline({ sse }: { sse: PluginSse }) {
 	}, [refreshActivity])
 
 	useEffect(() => {
-		const off = sse.PluginWithUI.on((msg) => {
-			const payload = msg.payload as any
-			if (payload?.type === 'cursor' && Array.isArray(payload.activity)) {
-				setActivity(payload.activity)
-				setLoading(false)
-				return
-			}
-			if (payload?.type === 'sync' && Array.isArray(payload.activity)) {
-				setActivity(payload.activity)
-				setLoading(false)
-			}
-		}, ['cursor', 'sync'])
+		const off = sse.PluginWithUI.on(
+			(msg) => {
+				const payload = msg.payload as any
+				if (payload?.type === 'cursor' && Array.isArray(payload.activity)) {
+					setActivity(payload.activity)
+					setLoading(false)
+					return
+				}
+				if (payload?.type === 'sync' && Array.isArray(payload.activity)) {
+					setActivity(payload.activity)
+					setLoading(false)
+				}
+			},
+			['cursor', 'sync'],
+		)
 		return () => off()
 	}, [sse])
 
@@ -511,7 +530,11 @@ export function ActivityTimeline({ sse }: { sse: PluginSse }) {
 									<Badge size="xs" color={item.scope === 'note' ? 'grape' : 'cyan'}>
 										{item.scope === 'note' ? '备注' : '任务'}
 									</Badge>
-									<Badge size="xs" color={item.action === 'removed' ? 'red' : 'green'} variant="light">
+									<Badge
+										size="xs"
+										color={item.action === 'removed' ? 'red' : 'green'}
+										variant="light"
+									>
 										{item.action}
 									</Badge>
 									<Text size="sm">{item.detail}</Text>

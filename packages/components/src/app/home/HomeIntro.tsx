@@ -8,7 +8,7 @@ import {
 	Text,
 	Title,
 	useComputedColorScheme,
-} from "@mantine/core"
+} from '@mantine/core'
 import {
 	IconBolt,
 	IconClockPlay,
@@ -17,29 +17,29 @@ import {
 	IconPackages,
 	IconPlugConnected,
 	IconShoppingBag,
-} from "@tabler/icons-react"
-import type { ReactNode } from "react"
-import { RouterLinkAdapter } from "../RouterLinkAdapter"
-import { getPatternStyle } from "../../theme"
+} from '@tabler/icons-react'
+import type { ReactNode } from 'react'
+import { RouterLinkAdapter } from '../RouterLinkAdapter'
+import { getPatternStyle } from '../../theme'
 
 export function HomeIntro({ lastRoute }: { lastRoute: string | null }) {
-	const scheme = useComputedColorScheme("light", { getInitialValueInEffect: true })
-	const pattern = getPatternStyle(scheme === "dark" ? "dark" : "light")
+	const scheme = useComputedColorScheme('light', { getInitialValueInEffect: true })
+	const pattern = getPatternStyle(scheme === 'dark' ? 'dark' : 'light')
 	const quickActions = buildQuickActions(lastRoute)
 
-	const heroBorder = scheme === "dark" ? "rgba(148,163,184,0.25)" : "rgba(15,23,42,0.08)"
+	const heroBorder = scheme === 'dark' ? 'rgba(148,163,184,0.25)' : 'rgba(15,23,42,0.08)'
 	const heroShadow =
-		scheme === "dark" ? "0 30px 80px rgba(2,6,23,0.85)" : "0 20px 60px rgba(15, 23, 42, 0.08)"
-	const schemeMode = scheme === "dark" ? "dark" : "light"
+		scheme === 'dark' ? '0 30px 80px rgba(2,6,23,0.85)' : '0 20px 60px rgba(15, 23, 42, 0.08)'
+	const schemeMode = scheme === 'dark' ? 'dark' : 'light'
 
 	return (
-		<Stack gap="lg" p="lg" style={{ height: "100%", minHeight: 0 }}>
+		<Stack gap="lg" p="lg" style={{ height: '100%', minHeight: 0 }}>
 			<Paper
 				radius="xl"
 				withBorder
 				style={{
 					borderRadius: 32,
-					padding: "var(--mantine-spacing-xl)",
+					padding: 'var(--mantine-spacing-xl)',
 					boxShadow: heroShadow,
 					border: `1px solid ${heroBorder}`,
 					backgroundColor: pattern.backgroundColor,
@@ -75,20 +75,20 @@ export function HomeIntro({ lastRoute }: { lastRoute: string | null }) {
 							radius="lg"
 							p="md"
 							style={{
-								flex: "1 1 220px",
-								display: "flex",
-								flexDirection: "column",
+								flex: '1 1 220px',
+								display: 'flex',
+								flexDirection: 'column',
 								gap: 12,
-								backgroundColor: scheme === "dark" ? "rgba(2,6,23,0.85)" : "rgba(255,255,255,0.92)",
+								backgroundColor: scheme === 'dark' ? 'rgba(2,6,23,0.85)' : 'rgba(255,255,255,0.92)',
 								border: `1px solid ${
-									scheme === "dark" ? "rgba(148,163,184,0.2)" : "rgba(15,23,42,0.08)"
+									scheme === 'dark' ? 'rgba(148,163,184,0.2)' : 'rgba(15,23,42,0.08)'
 								}`,
 							}}
 						>
 							<Group justify="space-between" align="flex-start">
 								<div>
 									<Text fw={600}>{action.title}</Text>
-									<Text size="sm" c={scheme === "dark" ? "gray.4" : "dimmed"}>
+									<Text size="sm" c={scheme === 'dark' ? 'gray.4' : 'dimmed'}>
 										{action.description}
 									</Text>
 								</div>
@@ -96,12 +96,12 @@ export function HomeIntro({ lastRoute }: { lastRoute: string | null }) {
 									style={{
 										width: 32,
 										height: 32,
-										borderRadius: "50%",
+										borderRadius: '50%',
 										background:
-											scheme === "dark" ? "rgba(99,102,241,0.25)" : "rgba(99,102,241,0.12)",
-										display: "flex",
-										alignItems: "center",
-										justifyContent: "center",
+											scheme === 'dark' ? 'rgba(99,102,241,0.25)' : 'rgba(99,102,241,0.12)',
+										display: 'flex',
+										alignItems: 'center',
+										justifyContent: 'center',
 									}}
 								>
 									{action.icon}
@@ -193,21 +193,21 @@ function buildQuickActions(lastRoute: string | null): QuickAction[] {
 	const actions: Array<QuickAction | null> = [
 		createResumeAction(lastRoute),
 		{
-			title: "浏览插件",
-			description: "打开分组与运行状态面板",
-			to: "/plugins",
+			title: '浏览插件',
+			description: '打开分组与运行状态面板',
+			to: '/plugins',
 			icon: <IconPlugConnected size={20} stroke={1.6} />,
 		},
 		{
-			title: "前往插件市场",
-			description: "挑选新插件并一键安装",
-			to: "/market",
+			title: '前往插件市场',
+			description: '挑选新插件并一键安装',
+			to: '/market',
 			icon: <IconShoppingBag size={20} stroke={1.6} />,
 		},
 		{
-			title: "查看实时日志",
-			description: "即时洞察最新输出",
-			to: "/logs",
+			title: '查看实时日志',
+			description: '即时洞察最新输出',
+			to: '/logs',
 			icon: <IconHistory size={20} stroke={1.6} />,
 		},
 	]
@@ -216,20 +216,20 @@ function buildQuickActions(lastRoute: string | null): QuickAction[] {
 
 function createResumeAction(lastRoute: string | null): QuickAction | null {
 	if (!lastRoute) return null
-	if (lastRoute.startsWith("/plugins/")) {
-		const raw = lastRoute.replace("/plugins/", "")
+	if (lastRoute.startsWith('/plugins/')) {
+		const raw = lastRoute.replace('/plugins/', '')
 		try {
 			const decoded = decodeURIComponent(raw)
 			return {
-				title: "继续上次工作",
+				title: '继续上次工作',
 				description: `继续查看「${decoded}」`,
 				to: lastRoute,
 				icon: <IconClockPlay size={20} stroke={1.6} />,
 			}
 		} catch {
 			return {
-				title: "继续上次工作",
-				description: "快速返回刚才的插件详情",
+				title: '继续上次工作',
+				description: '快速返回刚才的插件详情',
 				to: lastRoute,
 				icon: <IconClockPlay size={20} stroke={1.6} />,
 			}
@@ -237,22 +237,22 @@ function createResumeAction(lastRoute: string | null): QuickAction | null {
 	}
 
 	const map: Record<string, QuickAction> = {
-		"/plugins": {
-			title: "继续上次工作",
-			description: "返回插件工作台",
-			to: "/plugins",
+		'/plugins': {
+			title: '继续上次工作',
+			description: '返回插件工作台',
+			to: '/plugins',
 			icon: <IconPlugConnected size={20} stroke={1.6} />,
 		},
-		"/packages": {
-			title: "继续上次工作",
-			description: "回到包管理",
-			to: "/packages",
+		'/packages': {
+			title: '继续上次工作',
+			description: '回到包管理',
+			to: '/packages',
 			icon: <IconPackages size={20} stroke={1.6} />,
 		},
-		"/logs": {
-			title: "继续上次工作",
-			description: "回到实时日志",
-			to: "/logs",
+		'/logs': {
+			title: '继续上次工作',
+			description: '回到实时日志',
+			to: '/logs',
 			icon: <IconHistory size={20} stroke={1.6} />,
 		},
 	}
@@ -271,9 +271,9 @@ function HomeCard({
 	description: string
 	to: string
 	icon: ReactNode
-	scheme: "light" | "dark"
+	scheme: 'light' | 'dark'
 }) {
-	const isDark = scheme === "dark"
+	const isDark = scheme === 'dark'
 	return (
 		<Button
 			component={RouterLinkAdapter}
@@ -281,22 +281,22 @@ function HomeCard({
 			variant="default"
 			radius="lg"
 			style={{
-				width: "100%",
-				height: "100%",
-				display: "flex",
-				alignItems: "flex-start",
-				justifyContent: "space-between",
-				flexDirection: "column",
-				textAlign: "left",
-				padding: "var(--mantine-spacing-lg)",
-				backgroundColor: isDark ? "rgba(2,6,23,0.85)" : "rgba(255,255,255,0.92)",
-				border: isDark ? "1px solid rgba(148,163,184,0.25)" : "1px solid rgba(15,23,42,0.08)",
-				color: isDark ? "var(--mantine-color-gray-0)" : undefined,
+				width: '100%',
+				height: '100%',
+				display: 'flex',
+				alignItems: 'flex-start',
+				justifyContent: 'space-between',
+				flexDirection: 'column',
+				textAlign: 'left',
+				padding: 'var(--mantine-spacing-lg)',
+				backgroundColor: isDark ? 'rgba(2,6,23,0.85)' : 'rgba(255,255,255,0.92)',
+				border: isDark ? '1px solid rgba(148,163,184,0.25)' : '1px solid rgba(15,23,42,0.08)',
+				color: isDark ? 'var(--mantine-color-gray-0)' : undefined,
 			}}
 		>
 			<div>
 				<Title order={4}>{title}</Title>
-				<Text c={isDark ? "gray.4" : "dimmed"} size="sm" mt={4}>
+				<Text c={isDark ? 'gray.4' : 'dimmed'} size="sm" mt={4}>
 					{description}
 				</Text>
 			</div>

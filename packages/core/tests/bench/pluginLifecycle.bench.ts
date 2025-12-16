@@ -2,7 +2,13 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-import { Bench, type TaskResult, type TaskResultRuntimeInfo, type TaskResultTimestampProviderInfo, type TaskResultWithStatistics } from 'tinybench'
+import {
+	Bench,
+	type TaskResult,
+	type TaskResultRuntimeInfo,
+	type TaskResultTimestampProviderInfo,
+	type TaskResultWithStatistics,
+} from 'tinybench'
 
 import { Context } from '@pluxel/core/test'
 import { PluginA, PluginB, PluginC } from '../plugins'
@@ -37,7 +43,9 @@ if (process.env.DEBUG_BENCH === '1') {
 	console.log('[bench] cwd:', process.cwd())
 }
 
-type CompletedResult = TaskResultWithStatistics & TaskResultRuntimeInfo & TaskResultTimestampProviderInfo
+type CompletedResult = TaskResultWithStatistics &
+	TaskResultRuntimeInfo &
+	TaskResultTimestampProviderInfo
 const assertCompleted = (
 	taskName: string,
 	result: TaskResult & TaskResultRuntimeInfo & TaskResultTimestampProviderInfo,

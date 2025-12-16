@@ -23,7 +23,10 @@ export function extractRecordProps<TKeyMeta = unknown, TValueMeta = unknown>(
 		const type = itemSchema.type // string, number, boolean, object...
 		meta.valueMode = type
 		meta.valueSchema = itemSchema as any
-		if ((type === 'object' || type === 'array' || type === 'union' || type === 'variant') && !meta.layout) {
+		if (
+			(type === 'object' || type === 'array' || type === 'union' || type === 'variant') &&
+			!meta.layout
+		) {
 			meta.layout = 'list'
 		}
 	}

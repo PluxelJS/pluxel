@@ -198,12 +198,7 @@ export function LeftPane({ compact = false }: LeftPaneProps) {
 									</Text>
 								</SectionToggle>
 								<Collapse in={extensionsOpen}>
-									<ScrollArea
-										type="auto"
-										scrollbarSize={8}
-										offsetScrollbars={false}
-										mah={320}
-									>
+									<ScrollArea type="auto" scrollbarSize={8} offsetScrollbars={false} mah={320}>
 										<Stack gap="sm" style={{ width: '100%', paddingTop: 8 }}>
 											{list}
 										</Stack>

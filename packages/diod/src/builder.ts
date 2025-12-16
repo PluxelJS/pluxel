@@ -169,7 +169,10 @@ export class ContainerBuilder {
 	private computeAliasIndex(
 		services: ServiceMap,
 		aliasPolicy: AliasConflictPolicy,
-	): { aliasIndex: Map<AliasKey, Identifier<unknown>>; errors: VerificationError[] } {
+	): {
+		aliasIndex: Map<AliasKey, Identifier<unknown>>
+		errors: VerificationError[]
+	} {
 		const aliasIndex = new Map<AliasKey, Identifier<unknown>>()
 		const errors: VerificationError[] = []
 

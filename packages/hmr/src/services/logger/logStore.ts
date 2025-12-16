@@ -3,8 +3,8 @@ import EventEmitter from 'node:events'
 export interface LogRecord {
 	time: string
 	level: number | string
-	name?: string      // 显示名称（scope/module）
-	pluginId?: string  // 插件标识，用于过滤
+	name?: string // 显示名称（scope/module）
+	pluginId?: string // 插件标识，用于过滤
 	msg: string
 	[key: string]: any
 }

@@ -113,7 +113,7 @@ export class PluginDefinitions {
 						case 2:
 							return new Plugin(wrap(mustGet(paramTypes[0])), wrap(mustGet(paramTypes[1])))
 						case 3:
-							return new (Plugin)(
+							return new Plugin(
 								wrap(mustGet(paramTypes[0])),
 								wrap(mustGet(paramTypes[1])),
 								wrap(mustGet(paramTypes[2])),

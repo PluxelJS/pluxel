@@ -1,10 +1,4 @@
-import {
-	ActionIcon,
-	ColorInput,
-	Text,
-	TextInput,
-	Textarea,
-} from '@mantine/core'
+import { ActionIcon, ColorInput, Text, TextInput, Textarea } from '@mantine/core'
 import { IconCheck, IconCopy } from '@tabler/icons-react'
 import { useCallback, useMemo, useState } from 'react'
 import { DEFAULT_TEXTS } from '~/core/constants'
@@ -20,10 +14,7 @@ function StringField(props: RendererProps) {
 	const { formBaseInfo, errors, extractedPropsInfo, inputProps, value } = props
 	const [copied, setCopied] = useState(false)
 
-	const errorMessages = useMemo(() =>
-		(errors ?? []).map((err) => err.message),
-		[errors]
-	)
+	const errorMessages = useMemo(() => (errors ?? []).map((err) => err.message), [errors])
 
 	const currentValue = value == null ? '' : typeof value === 'string' ? value : String(value)
 	const mode = extractedPropsInfo.mode ?? (extractedPropsInfo.secret ? 'password' : 'single')
@@ -41,27 +32,32 @@ function StringField(props: RendererProps) {
 
 	// 构建左右装饰
 	const leftSection = extractedPropsInfo.prefix ? (
-		<Text size="sm" c="dimmed">{extractedPropsInfo.prefix}</Text>
+		<Text size="sm" c="dimmed">
+			{extractedPropsInfo.prefix}
+		</Text>
 	) : undefined
 
-	const rightSection = (extractedPropsInfo.suffix || extractedPropsInfo.copyable) ? (
-		<div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-			{extractedPropsInfo.suffix && (
-				<Text size="sm" c="dimmed">{extractedPropsInfo.suffix}</Text>
-			)}
-			{extractedPropsInfo.copyable && (mode === 'single' || mode === 'password') && (
-				<ActionIcon
-					size="sm"
-					variant="subtle"
-					onClick={handleCopy}
-					aria-label="复制字段值"
-					disabled={!currentValue || (inputProps.readOnly ?? false)}
-				>
-					{copied ? <IconCheck size={14} /> : <IconCopy size={14} />}
-				</ActionIcon>
-			)}
-		</div>
-	) : undefined
+	const rightSection =
+		extractedPropsInfo.suffix || extractedPropsInfo.copyable ? (
+			<div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+				{extractedPropsInfo.suffix && (
+					<Text size="sm" c="dimmed">
+						{extractedPropsInfo.suffix}
+					</Text>
+				)}
+				{extractedPropsInfo.copyable && (mode === 'single' || mode === 'password') && (
+					<ActionIcon
+						size="sm"
+						variant="subtle"
+						onClick={handleCopy}
+						aria-label="复制字段值"
+						disabled={!currentValue || (inputProps.readOnly ?? false)}
+					>
+						{copied ? <IconCheck size={14} /> : <IconCopy size={14} />}
+					</ActionIcon>
+				)}
+			</div>
+		) : undefined
 
 	// 渲染控件
 	let control: React.ReactNode
@@ -88,9 +84,13 @@ function StringField(props: RendererProps) {
 					readOnly: inputProps.readOnly,
 					placeholder: extractedPropsInfo.placeholder,
 				})}
-				styles={mode === 'code' ? {
-					input: { fontFamily: 'var(--mantine-font-family-monospace)' },
-				} : undefined}
+				styles={
+					mode === 'code'
+						? {
+								input: { fontFamily: 'var(--mantine-font-family-monospace)' },
+							}
+						: undefined
+				}
 			/>
 		)
 	} else {

@@ -12,10 +12,7 @@ export interface ColorSchemeToggleProps
 	label?: string
 }
 
-export function ColorSchemeToggle({
-	label = '切换明暗主题',
-	...props
-}: ColorSchemeToggleProps) {
+export function ColorSchemeToggle({ label = '切换明暗主题', ...props }: ColorSchemeToggleProps) {
 	const { setColorScheme } = useMantineColorScheme()
 	const computed = useComputedColorScheme('light', { getInitialValueInEffect: true })
 

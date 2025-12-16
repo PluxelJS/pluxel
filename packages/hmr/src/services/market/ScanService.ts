@@ -68,7 +68,7 @@ export interface WorkspaceEntryInfo {
 	entry: string
 }
 
-/** 
+/**
  * 扫描工作区并解析包入口的核心服务。
  *
  * - 自动识别 pnpm / Yarn / npm workspaces 以及传统的 `packages/*` 结构。
@@ -166,9 +166,9 @@ export class ScanService {
 		const finalScan =
 			focusHints.length > 0
 				? {
-					...(baseScan ?? {}),
-					focusPackages: mergeFocus(baseScan?.focusPackages, focusHints),
-				}
+						...(baseScan ?? {}),
+						focusPackages: mergeFocus(baseScan?.focusPackages, focusHints),
+					}
 				: baseScan
 
 		const snapshot = await this.snapshot({

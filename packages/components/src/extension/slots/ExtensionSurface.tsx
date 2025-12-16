@@ -2,7 +2,10 @@ import { useCallback, useMemo, type ReactNode } from 'react'
 import { useExtensionsWithContext } from '../registry'
 import type { ExtensionPoint, ExtensionItem, ExtensionPointCtx } from '../types'
 
-export interface ExtensionSurfaceOptions<P extends ExtensionPoint, TMeta = ExtensionItem<P>['meta']> {
+export interface ExtensionSurfaceOptions<
+	P extends ExtensionPoint,
+	TMeta = ExtensionItem<P>['meta'],
+> {
 	projectMeta?: (meta: ExtensionItem<P>['meta']) => TMeta
 }
 

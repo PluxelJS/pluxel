@@ -12,7 +12,18 @@ export type ArrayMetaOptions<T extends string | number = string | number> = {
 	columns?: number
 	itemLabel?: string
 	defaultItem?: unknown
-	valueMode?: 'auto' | 'string' | 'number' | 'boolean' | 'json' | 'picklist' | 'defaults-picker' | 'object' | 'array' | 'variant' | 'union'
+	valueMode?:
+		| 'auto'
+		| 'string'
+		| 'number'
+		| 'boolean'
+		| 'json'
+		| 'picklist'
+		| 'defaults-picker'
+		| 'object'
+		| 'array'
+		| 'variant'
+		| 'union'
 	emptyHint?: string
 	minItems?: number
 	maxItems?: number

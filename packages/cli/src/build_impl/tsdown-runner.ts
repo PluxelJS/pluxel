@@ -98,7 +98,9 @@ async function loadUserOverrides(
 	const overridePath = context.tsdownConfigPath
 	if (!overridePath) return undefined
 
-	const resolved = isAbsolute(overridePath) ? overridePath : resolve(context.projectRoot, overridePath)
+	const resolved = isAbsolute(overridePath)
+		? overridePath
+		: resolve(context.projectRoot, overridePath)
 	const moduleUrl = pathToFileURL(resolved).href
 
 	try {
@@ -158,10 +160,7 @@ function applyOverlay(target: InlineConfig, overlay: InlineConfig) {
 			target[key as keyof InlineConfig] = {
 				...(current as Record<string, unknown>),
 			} as InlineConfig[keyof InlineConfig]
-			applyOverlay(
-				target[key as keyof InlineConfig] as InlineConfig,
-				value as InlineConfig,
-			)
+			applyOverlay(target[key as keyof InlineConfig] as InlineConfig, value as InlineConfig)
 		} else {
 			target[key as keyof InlineConfig] = value as InlineConfig[keyof InlineConfig]
 		}
@@ -195,7 +194,8 @@ function mergeExternal(
 
 	const overlayFn = overlayIsFn ? overlayExternal : createMatcher(overlayExternal)
 	const userFn = userIsFn ? userExternal : createMatcher(userExternal)
-	return (...args: any[]) => Boolean((overlayFn?.(...args) ?? false) || (userFn?.(...args) ?? false))
+	return (...args: any[]) =>
+		Boolean((overlayFn?.(...args) ?? false) || (userFn?.(...args) ?? false))
 }
 
 function mergeInlineOnly(
@@ -391,7 +391,8 @@ function describePlugins(plugins: InlineConfig['plugins']) {
 		if (typeof plugin === 'string') return { name: plugin }
 		if (typeof plugin !== 'object') return { name: `plugin-${index + 1}`, type: typeof plugin }
 		const name =
-			typeof (plugin as { name?: unknown }).name === 'string' && (plugin as { name?: string }).name?.length
+			typeof (plugin as { name?: unknown }).name === 'string' &&
+			(plugin as { name?: string }).name?.length
 				? (plugin as { name: string }).name
 				: `plugin-${index + 1}`
 		const enforce =
@@ -409,7 +410,8 @@ function sanitizeDebugValue<T>(value: T): unknown {
 function cloneValue(value: unknown, seen: WeakSet<object>): unknown {
 	if (value === null) return null
 	if (typeof value === 'undefined') return undefined
-	if (typeof value === 'number' || typeof value === 'string' || typeof value === 'boolean') return value
+	if (typeof value === 'number' || typeof value === 'string' || typeof value === 'boolean')
+		return value
 	if (typeof value === 'function') return '[function]'
 	if (value instanceof RegExp) return value.toString()
 	if (Array.isArray(value)) {

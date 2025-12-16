@@ -7,7 +7,12 @@ import {
 	useRef,
 	useState,
 } from 'react'
-import { createHmrWebClient, hmrWebClient, type HmrWebClient, type HmrWebClientOptions } from './web'
+import {
+	createHmrWebClient,
+	hmrWebClient,
+	type HmrWebClient,
+	type HmrWebClientOptions,
+} from './web'
 import { sse, type SseClientOptions, type SseClientWithNamespaces } from './sse'
 import { mergeNamespaces } from './utils'
 
@@ -93,7 +98,8 @@ const noopSseClient: SseClientWithNamespaces = new Proxy(
 export function useSseClient(options?: UseSseClientOptions): SseClientWithNamespaces {
 	const client = useHmrWebClient()
 	const autoPauseOnHidden = options?.autoPauseOnHidden ?? true
-	const useShared = options?.shared !== false && !options?.url && !options?.params && !options?.retry
+	const useShared =
+		options?.shared !== false && !options?.url && !options?.params && !options?.retry
 
 	const [pageVisible, setPageVisible] = useState(
 		typeof document === 'undefined' ? true : document.visibilityState === 'visible',
@@ -106,12 +112,16 @@ export function useSseClient(options?: UseSseClientOptions): SseClientWithNamesp
 		return () => document.removeEventListener('visibilitychange', listener)
 	}, [autoPauseOnHidden, useShared])
 
-	const optionsKey = useMemo(() => JSON.stringify({
-		url: options?.url,
-		namespaces: options?.namespaces ?? [],
-		params: options?.params ?? {},
-		retry: options?.retry ?? {},
-	}), [options])
+	const optionsKey = useMemo(
+		() =>
+			JSON.stringify({
+				url: options?.url,
+				namespaces: options?.namespaces ?? [],
+				params: options?.params ?? {},
+				retry: options?.retry ?? {},
+			}),
+		[options],
+	)
 
 	const latestOptions = useRef(options)
 	useEffect(() => {
@@ -160,7 +170,10 @@ export function useSseClient(options?: UseSseClientOptions): SseClientWithNamesp
 	return sseClient
 }
 
-export function usePluginSse(pluginName: string, options?: UsePluginSseOptions): SseClientWithNamespaces {
+export function usePluginSse(
+	pluginName: string,
+	options?: UsePluginSseOptions,
+): SseClientWithNamespaces {
 	const namespaces = mergeNamespaces(
 		[pluginName],
 		(options?.includeExtensions ?? true) ? ['extensions'] : undefined,

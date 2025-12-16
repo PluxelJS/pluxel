@@ -22,4 +22,3 @@ export type ForksExtra = Record<string, string[]>
  * val: index -> target plugin id (may include '#')
  */
 export type DepOverridesExtra = Record<string, Record<number, string>>
-

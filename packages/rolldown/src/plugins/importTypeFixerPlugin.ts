@@ -334,10 +334,7 @@ function hasPluginDecorator(decorators: any[] | undefined | null): boolean {
  * 3. `import { type Foo } from 'bar'` -> `import { Foo } from 'bar'`
  * 4. `import { type Foo, Bar } from 'bar'` -> `import { Foo, Bar } from 'bar'`
  */
-function convertTypeImportToValueImport(
-	original: string,
-	node: ImportDeclaration,
-): string | null {
+function convertTypeImportToValueImport(original: string, node: ImportDeclaration): string | null {
 	// Case 1 & 2: 整体 type-only import
 	if (node.importKind === 'type') {
 		// 简单情况：直接移除 'type' 关键字

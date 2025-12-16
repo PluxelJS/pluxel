@@ -20,10 +20,7 @@ const PollingConfigSchema = v.object({
 	),
 	allowedUpdates: v.pipe(
 		v.optional(
-			v.pipe(
-				v.array(v.string()),
-				f.arrayMeta({ addLabel: '添加类型', itemLabel: '类型' }),
-			),
+			v.pipe(v.array(v.string()), f.arrayMeta({ addLabel: '添加类型', itemLabel: '类型' })),
 		),
 		f.formMeta({ label: '允许的更新类型', description: '不设置则接收所有类型' }),
 	),
@@ -54,10 +51,7 @@ const WebhookConfigSchema = v.object({
 	),
 	allowedUpdates: v.pipe(
 		v.optional(
-			v.pipe(
-				v.array(v.string()),
-				f.arrayMeta({ addLabel: '添加类型', itemLabel: '类型' }),
-			),
+			v.pipe(v.array(v.string()), f.arrayMeta({ addLabel: '添加类型', itemLabel: '类型' })),
 		),
 		f.formMeta({ label: '允许的更新类型' }),
 	),

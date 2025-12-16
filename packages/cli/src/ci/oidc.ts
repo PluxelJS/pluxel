@@ -73,7 +73,9 @@ export async function resolveOidcToken(options: OidcOptions = {}) {
 	}
 
 	if (options.required) {
-		throw new Error(`OIDC token is required but missing provider credentials for ${context.provider}`)
+		throw new Error(
+			`OIDC token is required but missing provider credentials for ${context.provider}`,
+		)
 	}
 	return undefined
 }

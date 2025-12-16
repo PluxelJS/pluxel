@@ -38,9 +38,7 @@ describe('optional() during commit()', () => {
 			await Promise.resolve()
 
 			// The warning should NOT claim "not registered" because Provider is in the draft container.
-			expect(
-				warns.some((args) => String(args?.[1] ?? '').includes('未在容器中')),
-			).toBe(false)
+			expect(warns.some((args) => String(args?.[1] ?? '').includes('未在容器中'))).toBe(false)
 
 			// Handler should eventually observe Provider as running after the commit completes.
 			expect(events).toContain('consumer:init')

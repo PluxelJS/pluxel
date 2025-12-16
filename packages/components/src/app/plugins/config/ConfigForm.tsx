@@ -17,7 +17,12 @@ import {
 } from '@mantine/core'
 import { useHotkeys } from '@mantine/hooks'
 import { formOptions } from '@tanstack/react-form'
-import { IconChevronLeft, IconChevronRight, IconCircleFilled, IconListDetails } from '@tabler/icons-react'
+import {
+	IconChevronLeft,
+	IconChevronRight,
+	IconCircleFilled,
+	IconListDetails,
+} from '@tabler/icons-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ObjectSchema } from 'valibot'
 import { getDefaults } from 'valibot'
@@ -44,13 +49,25 @@ function SavedStatus({ dirty, savedAt }: { dirty: boolean; savedAt?: number }) {
 		return () => clearInterval(id)
 	}, [savedAt, dirty])
 
-	if (dirty) return <Badge variant="light" color="yellow">已修改</Badge>
-	if (!savedAt) return <Badge variant="light" color="gray">未修改</Badge>
+	if (dirty)
+		return (
+			<Badge variant="light" color="yellow">
+				已修改
+			</Badge>
+		)
+	if (!savedAt)
+		return (
+			<Badge variant="light" color="gray">
+				未修改
+			</Badge>
+		)
 
 	const sec = Math.max(0, Math.floor((now - savedAt) / 1000))
 	return (
 		<Tooltip label={new Date(savedAt).toLocaleString()}>
-			<Badge variant="light" color="green">已保存 {sec}s 前</Badge>
+			<Badge variant="light" color="green">
+				已保存 {sec}s 前
+			</Badge>
 		</Tooltip>
 	)
 }
@@ -66,7 +83,8 @@ function FloatingBar(props: {
 	onResetToDefaults(): void
 	savedAt?: number
 }) {
-	const { title, dirty, canSubmit, submitting, onSubmit, onCancel, onResetToDefaults, savedAt } = props
+	const { title, dirty, canSubmit, submitting, onSubmit, onCancel, onResetToDefaults, savedAt } =
+		props
 
 	return (
 		<Affix position={{ bottom: 16, right: 16 }} withinPortal zIndex={1000}>
@@ -83,19 +101,44 @@ function FloatingBar(props: {
 			>
 				<Group gap="sm" wrap="nowrap" align="center">
 					<Group gap={8} wrap="nowrap" style={{ minWidth: 0 }}>
-						<Text fw={600} size="sm" style={{ maxWidth: 220, overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis' }} title={title}>
+						<Text
+							fw={600}
+							size="sm"
+							style={{
+								maxWidth: 220,
+								overflow: 'hidden',
+								whiteSpace: 'nowrap',
+								textOverflow: 'ellipsis',
+							}}
+							title={title}
+						>
 							{title}
 						</Text>
 						<SavedStatus dirty={dirty} savedAt={savedAt} />
 					</Group>
 					<Group gap="xs" wrap="nowrap">
-						<Button id={`cancel-fab-${title}`} variant="default" onClick={onCancel} disabled={!dirty || submitting}>
+						<Button
+							id={`cancel-fab-${title}`}
+							variant="default"
+							onClick={onCancel}
+							disabled={!dirty || submitting}
+						>
 							取消
 						</Button>
-						<Button id={`reset-fab-${title}`} variant="subtle" onClick={onResetToDefaults} disabled={submitting}>
+						<Button
+							id={`reset-fab-${title}`}
+							variant="subtle"
+							onClick={onResetToDefaults}
+							disabled={submitting}
+						>
 							重置
 						</Button>
-						<Button id={`submit-fab-${title}`} onClick={onSubmit} disabled={!canSubmit} loading={submitting}>
+						<Button
+							id={`submit-fab-${title}`}
+							onClick={onSubmit}
+							disabled={!canSubmit}
+							loading={submitting}
+						>
 							{submitting ? '提交中…' : '提交'}
 						</Button>
 					</Group>
@@ -106,10 +149,12 @@ function FloatingBar(props: {
 }
 
 function toDomSlug(value: string) {
-	return value
-		.toLowerCase()
-		.replace(/[^a-z0-9_-]+/gi, '-')
-		.replace(/^-+|-+$/g, '') || 'section'
+	return (
+		value
+			.toLowerCase()
+			.replace(/[^a-z0-9_-]+/gi, '-')
+			.replace(/^-+|-+$/g, '') || 'section'
+	)
 }
 
 function findScrollableParent(node: HTMLElement | null): HTMLElement | null {
@@ -152,24 +197,26 @@ function FormToc({
 	const peekWidth = 72
 
 	// 计算节点的层级结构
-	const buildTree = useCallback(
-		(list: { id: string; label: string; depth: number }[]) => {
-			const roots: { id: string; label: string; depth: number; children: any[] }[] = []
-			const stack: { id: string; label: string; depth: number; children: any[] }[] = []
-			for (const anchor of list) {
-				const node = { id: anchor.id, label: anchor.label, depth: anchor.depth, children: [] as any[] }
-				while (stack.length && stack[stack.length - 1].depth >= node.depth) stack.pop()
-				if (stack.length) {
-					stack[stack.length - 1].children.push(node)
-				} else {
-					roots.push(node)
-				}
-				stack.push(node)
+	const buildTree = useCallback((list: { id: string; label: string; depth: number }[]) => {
+		const roots: { id: string; label: string; depth: number; children: any[] }[] = []
+		const stack: { id: string; label: string; depth: number; children: any[] }[] = []
+		for (const anchor of list) {
+			const node = {
+				id: anchor.id,
+				label: anchor.label,
+				depth: anchor.depth,
+				children: [] as any[],
 			}
-			return roots
-		},
-		[],
-	)
+			while (stack.length && stack[stack.length - 1].depth >= node.depth) stack.pop()
+			if (stack.length) {
+				stack[stack.length - 1].children.push(node)
+			} else {
+				roots.push(node)
+			}
+			stack.push(node)
+		}
+		return roots
+	}, [])
 
 	useEffect(() => {
 		const host = scrollHost ?? document
@@ -219,9 +266,14 @@ function FormToc({
 						(scrollHost && scrollHost.contains(el) ? scrollHost : null) ??
 						el.closest<HTMLElement>('[data-config-scroll-root]') ??
 						findScrollableParent(el)
-					const pos = container && container !== document.scrollingElement && container !== document.documentElement
-						? el.getBoundingClientRect().top - container.getBoundingClientRect().top + container.scrollTop
-						: el.getBoundingClientRect().top + window.scrollY
+					const pos =
+						container &&
+						container !== document.scrollingElement &&
+						container !== document.documentElement
+							? el.getBoundingClientRect().top -
+								container.getBoundingClientRect().top +
+								container.scrollTop
+							: el.getBoundingClientRect().top + window.scrollY
 					const delta = Math.abs(pos - scrollTop - anchorOffset)
 					const inView = pos >= scrollTop - 20 && pos < scrollTop + viewport - 120
 					const score = inView ? delta * 0.5 : delta
@@ -249,13 +301,18 @@ function FormToc({
 			if (!id) return
 			const target = document.getElementById(id)
 			if (!target) return
-			const scrollMarginTop = Number.parseFloat(getComputedStyle(target).scrollMarginTop || '0') || 0
+			const scrollMarginTop =
+				Number.parseFloat(getComputedStyle(target).scrollMarginTop || '0') || 0
 			const container =
 				(scrollHost && scrollHost.contains(target) ? scrollHost : null) ??
 				target.closest<HTMLElement>('[data-config-scroll-root]') ??
 				findScrollableParent(target)
 
-			if (container && container !== document.scrollingElement && container !== document.documentElement) {
+			if (
+				container &&
+				container !== document.scrollingElement &&
+				container !== document.documentElement
+			) {
 				const targetBox = target.getBoundingClientRect()
 				const hostBox = container.getBoundingClientRect()
 				const top = targetBox.top - hostBox.top + container.scrollTop - scrollMarginTop
@@ -293,7 +350,9 @@ function FormToc({
 					padding: '10px 12px',
 					cursor: 'pointer',
 					border: `1px solid ${isActive ? 'var(--mantine-color-blue-outline)' : 'var(--mantine-color-default-border)'}`,
-					backgroundColor: isActive ? 'var(--mantine-color-blue-light)' : 'var(--mantine-color-body)',
+					backgroundColor: isActive
+						? 'var(--mantine-color-blue-light)'
+						: 'var(--mantine-color-body)',
 					boxShadow: isActive ? 'var(--mantine-shadow-sm)' : 'none',
 					marginLeft: depth ? 10 : 0,
 					position: 'relative',
@@ -302,7 +361,12 @@ function FormToc({
 				<Group justify="space-between" align="center" gap={6} style={{ minWidth: 0 }}>
 					<Group gap={6} align="center" style={{ minWidth: 0 }}>
 						<IconCircleFilled size={12} color="var(--mantine-color-blue-filled)" />
-						<Text size="sm" fw={isActive ? 700 : 600} style={{ flex: 1, minWidth: 0 }} lineClamp={1}>
+						<Text
+							size="sm"
+							fw={isActive ? 700 : 600}
+							style={{ flex: 1, minWidth: 0 }}
+							lineClamp={1}
+						>
 							{node.label}
 						</Text>
 					</Group>
@@ -348,7 +412,16 @@ function FormToc({
 					<Group justify="space-between" align="center" gap="xs">
 						<Group gap={8} wrap="nowrap" style={{ minWidth: 0 }}>
 							<IconListDetails size={18} color="var(--mantine-color-blue-filled)" />
-							<Text size="sm" fw={700} style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: peekWidth - 12 }}>
+							<Text
+								size="sm"
+								fw={700}
+								style={{
+									whiteSpace: 'nowrap',
+									overflow: 'hidden',
+									textOverflow: 'ellipsis',
+									maxWidth: peekWidth - 12,
+								}}
+							>
 								配置导航
 							</Text>
 							<Badge size="xs" variant="light" color="blue">
@@ -450,7 +523,11 @@ function ConfigTabContent({
 								}
 							}
 						}
-						notify({ title: '提交失败', message: result.message ?? result.code ?? '未知错误', color: 'red' })
+						notify({
+							title: '提交失败',
+							message: result.message ?? result.code ?? '未知错误',
+							color: 'red',
+						})
 						return
 					}
 					onSaved(tabKey)
@@ -461,10 +538,19 @@ function ConfigTabContent({
 	)
 
 	// memoize hotkeys 配置
-	const hotkeys = useMemo((): [string, (e: KeyboardEvent) => void][] => [
-		['mod+S', (e) => { e.preventDefault(); document.getElementById(`submit-fab-${tabKey}`)?.click() }],
-		['Escape', () => document.getElementById(`cancel-fab-${tabKey}`)?.click()],
-	], [tabKey])
+	const hotkeys = useMemo(
+		(): [string, (e: KeyboardEvent) => void][] => [
+			[
+				'mod+S',
+				(e) => {
+					e.preventDefault()
+					document.getElementById(`submit-fab-${tabKey}`)?.click()
+				},
+			],
+			['Escape', () => document.getElementById(`cancel-fab-${tabKey}`)?.click()],
+		],
+		[tabKey],
+	)
 	useHotkeys(hotkeys)
 
 	return (
@@ -505,7 +591,13 @@ function ConfigTabPanel(props: Parameters<typeof ConfigTabContent>[0]) {
 		<Tabs.Panel
 			value={props.tabKey}
 			pt="md"
-			style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}
+			style={{
+				flex: 1,
+				minHeight: 0,
+				display: 'flex',
+				flexDirection: 'column',
+				overflow: 'hidden',
+			}}
 		>
 			<ConfigTabContent {...props} />
 		</Tabs.Panel>
@@ -538,7 +630,7 @@ export function ConfigForm({ pluginName, schemas, savedConfig, defaults }: Confi
 				savedValue: savedConfig[key] ?? {},
 				defaultValue: { ...schemaDefaults, ...(defaults[key] ?? {}) },
 			}
-	})
+		})
 	}, [safeSchemas, savedConfig, defaults, keys])
 
 	const hasConfig = items.length > 0
@@ -546,7 +638,11 @@ export function ConfigForm({ pluginName, schemas, savedConfig, defaults }: Confi
 	return (
 		<Box style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, minWidth: 0 }}>
 			<Group justify="space-between" mb="md" wrap="nowrap">
-				<Title order={3} style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={`${pluginName} 配置`}>
+				<Title
+					order={3}
+					style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+					title={`${pluginName} 配置`}
+				>
 					{pluginName} 配置
 				</Title>
 				<Anchor href={`/plugins/${pluginName}/docs`} target="_blank" rel="noreferrer">
@@ -564,10 +660,25 @@ export function ConfigForm({ pluginName, schemas, savedConfig, defaults }: Confi
 					/>
 				</Paper>
 			) : (
-				<Tabs value={tab} onChange={(v) => setTab(String(v))} variant="outline" keepMounted={false}
-					style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, overflow: 'hidden' }}>
+				<Tabs
+					value={tab}
+					onChange={(v) => setTab(String(v))}
+					variant="outline"
+					keepMounted={false}
+					style={{
+						display: 'flex',
+						flexDirection: 'column',
+						flex: 1,
+						minHeight: 0,
+						overflow: 'hidden',
+					}}
+				>
 					<Tabs.List>
-						{keys.map((k) => <Tabs.Tab key={k} value={k}>{k}</Tabs.Tab>)}
+						{keys.map((k) => (
+							<Tabs.Tab key={k} value={k}>
+								{k}
+							</Tabs.Tab>
+						))}
 					</Tabs.List>
 
 					{items.map(({ key, schema, savedValue, defaultValue }) => (

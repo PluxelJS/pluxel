@@ -8,4 +8,3 @@ export function mergeNamespaces(...lists: Array<string[] | undefined>): string[]
 		),
 	)
 }
-

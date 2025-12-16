@@ -87,7 +87,11 @@ export interface FormMeta {
 	hideRequired?: boolean
 }
 
-export type formMetaAction<TInput, TMetadata extends FormMeta> = MetadataAction<'form', TInput, TMetadata>
+export type formMetaAction<TInput, TMetadata extends FormMeta> = MetadataAction<
+	'form',
+	TInput,
+	TMetadata
+>
 
 /**
  * 创建表单元数据

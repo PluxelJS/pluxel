@@ -60,7 +60,10 @@ export class DiodContainer<U = unknown> implements Container {
 
 	/** Resolve an identifier through the alias index if applicable. */
 	public resolveIdentifier<T>(identifier: Identifier<T>): Identifier<T> {
-		return (this.aliasIndex.get(identifier as any) as Identifier<T> | undefined) ?? identifier
+		return (
+			(this.aliasIndex.get(identifier as any) as Identifier<T> | undefined) ??
+			identifier
+		)
 	}
 
 	/* ------------------------------ Public API ------------------------------- */

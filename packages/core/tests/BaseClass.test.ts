@@ -44,17 +44,17 @@ describe('Abstract base and canonical ids', () => {
 			// base token should also resolve via alias
 			expect(host.isRunning(Abs)).toBe(true)
 			let optByBase: Abs | undefined
-			host.optional(Abs , (dep) => {
-				optByBase = dep 
+			host.optional(Abs, (dep) => {
+				optByBase = dep
 			})
 			await Promise.resolve()
 			expect(optByBase).toBeInstanceOf(Impl)
 
 			// unloading by base should remove provider + dependents
-			host.unregister(Abs )
+			host.unregister(Abs)
 			await host.commitStrict()
 			expect(host.isRunning(Impl)).toBe(false)
-			expect(host.isRunning(Abs )).toBe(false)
+			expect(host.isRunning(Abs)).toBe(false)
 		})
 	})
 
@@ -133,8 +133,8 @@ describe('Abstract base and canonical ids', () => {
 
 			// base token resolves to the primary provider, not forks
 			let base: Abs | undefined
-			host.optional(Abs , (dep) => {
-				base = dep 
+			host.optional(Abs, (dep) => {
+				base = dep
 			})
 			await Promise.resolve()
 			expect(base?.ctx.pluginInfo.id).toBe('Impl')

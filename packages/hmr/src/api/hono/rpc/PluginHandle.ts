@@ -60,9 +60,7 @@ function tokenName(token: unknown): string {
 }
 
 function readDepOverrides(ctx: Context, consumerName: string): Record<number, string> | undefined {
-	const getExtra = (ctx.configService as any)?.getExtra as
-		| ((key: string) => unknown)
-		| undefined
+	const getExtra = (ctx.configService as any)?.getExtra as ((key: string) => unknown) | undefined
 	if (typeof getExtra !== 'function') return undefined
 	const all = getExtra.call(ctx.configService, EXTRA_DEP_OVERRIDES) as DepOverridesExtra | undefined
 	return all?.[consumerName]
@@ -74,9 +72,7 @@ function writeDepOverride(
 	index: number,
 	targetName: string | null,
 ) {
-	const getExtra = (ctx.configService as any)?.getExtra as
-		| ((key: string) => unknown)
-		| undefined
+	const getExtra = (ctx.configService as any)?.getExtra as ((key: string) => unknown) | undefined
 	const setExtra = (ctx.configService as any)?.setExtra as
 		| ((key: string, value: unknown) => void)
 		| undefined
@@ -97,9 +93,7 @@ function writeDepOverride(
 }
 
 function addForkToCatalog(ctx: Context, originalName: string, forkId: string) {
-	const getExtra = (ctx.configService as any)?.getExtra as
-		| ((key: string) => unknown)
-		| undefined
+	const getExtra = (ctx.configService as any)?.getExtra as ((key: string) => unknown) | undefined
 	const setExtra = (ctx.configService as any)?.setExtra as
 		| ((key: string, value: unknown) => void)
 		| undefined
@@ -305,7 +299,8 @@ export class PluginHandle extends RpcTarget {
 				}
 
 				const forkIds: string[] = []
-				const fromCatalog = this.#ctx.configService.getExtra<ForksExtra>(EXTRA_FORKS)?.[originalName] ?? []
+				const fromCatalog =
+					this.#ctx.configService.getExtra<ForksExtra>(EXTRA_FORKS)?.[originalName] ?? []
 				for (const id of fromCatalog) {
 					const fid = typeof id === 'string' ? id.trim() : ''
 					if (fid) forkIds.push(fid)
@@ -358,7 +353,8 @@ export class PluginHandle extends RpcTarget {
 				return { ok: false, code: 'invalid_index', error: `Invalid index: ${index}` }
 			}
 
-			const normalized = typeof targetName === 'string' && targetName.trim() ? targetName.trim() : null
+			const normalized =
+				typeof targetName === 'string' && targetName.trim() ? targetName.trim() : null
 			writeDepOverride(this.#ctx, this.name, index, normalized)
 
 			if (!normalized) {
@@ -386,7 +382,11 @@ export class PluginHandle extends RpcTarget {
 			}
 			return { ok: true }
 		} catch (error) {
-			return { ok: false, code: 'set_dependency_failed', error: (error as any)?.message ?? String(error) }
+			return {
+				ok: false,
+				code: 'set_dependency_failed',
+				error: (error as any)?.message ?? String(error),
+			}
 		}
 	}
 
@@ -427,7 +427,9 @@ export class PluginHandle extends RpcTarget {
 				if (typeof setExtra === 'function') {
 					const prev =
 						(typeof getExtra === 'function'
-							? (getExtra.call(this.#ctx.configService, EXTRA_BASE_PROVIDERS) as BaseProvidersExtra | undefined)
+							? (getExtra.call(this.#ctx.configService, EXTRA_BASE_PROVIDERS) as
+									| BaseProvidersExtra
+									| undefined)
 							: undefined) ?? {}
 					if (prev[baseKey]) {
 						const next = { ...prev }
@@ -440,17 +442,25 @@ export class PluginHandle extends RpcTarget {
 
 			const target = providers.find((p) => p.name === normalizedProvider)
 			if (!target) {
-				return { ok: false, code: 'provider_not_found', error: `Provider not found: ${normalizedProvider}` }
+				return {
+					ok: false,
+					code: 'provider_not_found',
+					error: `Provider not found: ${normalizedProvider}`,
+				}
 			}
 
 			// Persist global default mapping.
 			if (typeof setExtra === 'function') {
 				const prev =
 					typeof getExtra === 'function'
-						? ((getExtra.call(this.#ctx.configService, EXTRA_BASE_PROVIDERS) as BaseProvidersExtra | undefined) ??
-							{})
+						? ((getExtra.call(this.#ctx.configService, EXTRA_BASE_PROVIDERS) as
+								| BaseProvidersExtra
+								| undefined) ?? {})
 						: {}
-				setExtra.call(this.#ctx.configService, EXTRA_BASE_PROVIDERS, { ...prev, [baseKey]: target.name })
+				setExtra.call(this.#ctx.configService, EXTRA_BASE_PROVIDERS, {
+					...prev,
+					[baseKey]: target.name,
+				})
 			}
 
 			// Reconcile runtime registrations so the selected provider binds the base alias.
@@ -484,7 +494,8 @@ export class PluginHandle extends RpcTarget {
 		try {
 			const base = typeof baseName === 'string' ? baseName.trim() : ''
 			const fid = typeof forkId === 'string' ? forkId.trim() : ''
-			if (!base || !fid) return { ok: false, code: 'invalid_fork', error: 'baseName/forkId required' }
+			if (!base || !fid)
+				return { ok: false, code: 'invalid_fork', error: 'baseName/forkId required' }
 
 			const baseCtor = resolvePlugin(this.#ctx, base)
 			const forkCtor = this.#ctx.registry.fork(baseCtor as any, fid) as PluginConstructor
@@ -500,7 +511,11 @@ export class PluginHandle extends RpcTarget {
 			if (commit.err) return { ok: false, code: 'commit_failed', error: String(commit.err) }
 			return { ok: true, forkName }
 		} catch (error) {
-			return { ok: false, code: 'ensure_fork_failed', error: (error as any)?.message ?? String(error) }
+			return {
+				ok: false,
+				code: 'ensure_fork_failed',
+				error: (error as any)?.message ?? String(error),
+			}
 		}
 	}
 
@@ -516,8 +531,9 @@ export class PluginHandle extends RpcTarget {
 			| undefined
 		const map =
 			typeof getExtra === 'function'
-				? ((getExtra.call(this.#ctx.configService, EXTRA_BASE_PROVIDERS) as BaseProvidersExtra | undefined) ??
-					{})
+				? ((getExtra.call(this.#ctx.configService, EXTRA_BASE_PROVIDERS) as
+						| BaseProvidersExtra
+						| undefined) ?? {})
 				: {}
 		const currentDefault = (map?.[baseToken] as string | undefined) ?? null
 

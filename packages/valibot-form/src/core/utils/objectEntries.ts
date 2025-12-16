@@ -6,7 +6,9 @@ export interface ObjectEntry {
 }
 
 function isSchema(value: unknown): value is Schema {
-	return Boolean(value) && typeof value === 'object' && (value as { kind?: string }).kind === 'schema'
+	return (
+		Boolean(value) && typeof value === 'object' && (value as { kind?: string }).kind === 'schema'
+	)
 }
 
 const isDevEnv = () => {

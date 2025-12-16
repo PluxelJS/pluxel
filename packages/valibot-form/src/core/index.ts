@@ -6,4 +6,3 @@ export * from './registry'
 export * from './utils'
 
 export type ObjectLikeSchema = ObjectSchema<any, any>
-

@@ -12,7 +12,13 @@ import {
 	Textarea,
 	TextInput,
 } from '@mantine/core'
-import { IconArrowDown, IconArrowUp, IconGripVertical, IconPlus, IconTrash } from '@tabler/icons-react'
+import {
+	IconArrowDown,
+	IconArrowUp,
+	IconGripVertical,
+	IconPlus,
+	IconTrash,
+} from '@tabler/icons-react'
 import {
 	DndContext,
 	PointerSensor,
@@ -22,12 +28,7 @@ import {
 	DragOverlay,
 	closestCenter,
 } from '@dnd-kit/core'
-import {
-	SortableContext,
-	arrayMove,
-	rectSortingStrategy,
-	useSortable,
-} from '@dnd-kit/sortable'
+import { SortableContext, arrayMove, rectSortingStrategy, useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import { useEffect, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
@@ -41,7 +42,10 @@ import { cleanProps } from '../../utils/propHelpers'
 import { PicklistControl } from './controls/PicklistControl'
 import { cachedExtractInfo } from '../schemaCache'
 
-type RendererProps = CommonProps<typeof META_MAP.ARRAY> & { value?: unknown[]; defaultValue?: unknown }
+type RendererProps = CommonProps<typeof META_MAP.ARRAY> & {
+	value?: unknown[]
+	defaultValue?: unknown
+}
 type ArrayUI = ArrayMetaResult
 
 const idOf = (value: string | number) => String(value)
@@ -210,7 +214,13 @@ function resolveArrayColumns(
 }
 
 export function reorderList<T>(list: readonly T[], fromIndex: number, toIndex: number): T[] {
-	if (fromIndex === toIndex || fromIndex < 0 || toIndex < 0 || fromIndex >= list.length || toIndex >= list.length) {
+	if (
+		fromIndex === toIndex ||
+		fromIndex < 0 ||
+		toIndex < 0 ||
+		fromIndex >= list.length ||
+		toIndex >= list.length
+	) {
 		return [...list]
 	}
 	return arrayMove(list, fromIndex, toIndex)
@@ -286,8 +296,7 @@ function ArrayField(props: RendererProps) {
 
 	const updateItems = (next: unknown[]) => triggerFormEvents(inputProps, next)
 
-	const usePicklistPicker =
-		ep.valueMode === 'picklist' && ep.pickerMode === 'picker' && ep.picklist
+	const usePicklistPicker = ep.valueMode === 'picklist' && ep.pickerMode === 'picker' && ep.picklist
 
 	if (usePicklistPicker) {
 		return (
@@ -306,22 +315,24 @@ function ArrayField(props: RendererProps) {
 				})}
 			>
 				<PicklistControl
-					meta={{
-						clearable: ep.picklist?.clearable ?? true,
-						allowCreate: ep.picklist?.allowCreate ?? false,
-						variant: ep.picklist?.variant ?? 'select',
-						multiple: true,
-						...cleanProps({
-							options: ep.picklist?.options,
-							entries: ep.picklist?.entries,
-							labels: ep.picklist?.labels,
-							disabled: ep.picklist?.disabled,
-							placeholder: ep.picklist?.placeholder,
-							searchable: ep.picklist?.searchable,
-							maxSelections: ep.picklist?.maxValues,
-							nothingFoundLabel: ep.picklist?.nothingFoundLabel,
-						}),
-					} as any}
+					meta={
+						{
+							clearable: ep.picklist?.clearable ?? true,
+							allowCreate: ep.picklist?.allowCreate ?? false,
+							variant: ep.picklist?.variant ?? 'select',
+							multiple: true,
+							...cleanProps({
+								options: ep.picklist?.options,
+								entries: ep.picklist?.entries,
+								labels: ep.picklist?.labels,
+								disabled: ep.picklist?.disabled,
+								placeholder: ep.picklist?.placeholder,
+								searchable: ep.picklist?.searchable,
+								maxSelections: ep.picklist?.maxValues,
+								nothingFoundLabel: ep.picklist?.nothingFoundLabel,
+							}),
+						} as any
+					}
 					value={items}
 					onChange={(next) => {
 						if (Array.isArray(next)) updateItems(next)
@@ -357,21 +368,23 @@ function ArrayField(props: RendererProps) {
 				})}
 			>
 				<PicklistControl
-					meta={{
-						clearable: ep.picklist?.clearable ?? true,
-						allowCreate: false,
-						variant: ep.picklist?.variant ?? 'select',
-						multiple: true,
-						options,
-						...cleanProps({
-							labels: ep.picklist?.labels,
-							disabled: ep.picklist?.disabled,
-							placeholder: ep.picklist?.placeholder,
-							searchable: ep.picklist?.searchable,
-							maxSelections: ep.picklist?.maxValues,
-							nothingFoundLabel: ep.picklist?.nothingFoundLabel,
-						}),
-					} as any}
+					meta={
+						{
+							clearable: ep.picklist?.clearable ?? true,
+							allowCreate: false,
+							variant: ep.picklist?.variant ?? 'select',
+							multiple: true,
+							options,
+							...cleanProps({
+								labels: ep.picklist?.labels,
+								disabled: ep.picklist?.disabled,
+								placeholder: ep.picklist?.placeholder,
+								searchable: ep.picklist?.searchable,
+								maxSelections: ep.picklist?.maxValues,
+								nothingFoundLabel: ep.picklist?.nothingFoundLabel,
+							}),
+						} as any
+					}
 					value={items}
 					onChange={(next) => {
 						if (Array.isArray(next)) updateItems(next)
@@ -510,9 +523,8 @@ function ArrayField(props: RendererProps) {
 				// 递归渲染嵌套的 object/array/variant/union
 				if (!ep.itemSchema) {
 					// fallback 到 json 模式
-					const formatted = current && typeof current === 'object'
-						? JSON.stringify(current, null, 2)
-						: '{}'
+					const formatted =
+						current && typeof current === 'object' ? JSON.stringify(current, null, 2) : '{}'
 					return {
 						node: (
 							<Textarea
@@ -567,17 +579,30 @@ function ArrayField(props: RendererProps) {
 				}))
 
 				// 嵌套类型使用紧凑布局，禁用自动多列（空间有限）
-				const nestedProps = itemInfo.type === 'object'
-					? { ...itemInfo.props, variant: 'stack' as const, gap: 'sm', columns: itemInfo.props.columns ?? 2 }
-					: itemInfo.type === 'array'
-						? { ...itemInfo.props, disableAutoGrid: true }
-						: (itemInfo.type === 'union' ? { ...itemInfo.props, compact: true } : itemInfo.props)
+				const nestedProps =
+					itemInfo.type === 'object'
+						? {
+								...itemInfo.props,
+								variant: 'stack' as const,
+								gap: 'sm',
+								columns: itemInfo.props.columns ?? 2,
+							}
+						: itemInfo.type === 'array'
+							? { ...itemInfo.props, disableAutoGrid: true }
+							: itemInfo.type === 'union'
+								? { ...itemInfo.props, compact: true }
+								: itemInfo.props
 
 				return {
 					node: (
 						<MetaRenderer
 							type={itemInfo.type}
-							formBaseInfo={{ ...itemInfo.formInfo, label: undefined, hideLabel: true, hideRequired: true }}
+							formBaseInfo={{
+								...itemInfo.formInfo,
+								label: undefined,
+								hideLabel: true,
+								hideRequired: true,
+							}}
 							extractedPropsInfo={nestedProps}
 							errors={itemErrors}
 							value={current}
@@ -638,10 +663,9 @@ function ArrayField(props: RendererProps) {
 	)
 
 	const renderErrors = (idx: number) => {
-		const combined = [
-			...(itemErrorsMap.get(idx) ?? []),
-			jsonParseErrors[idx] ?? undefined,
-		].filter(Boolean) as string[]
+		const combined = [...(itemErrorsMap.get(idx) ?? []), jsonParseErrors[idx] ?? undefined].filter(
+			Boolean,
+		) as string[]
 		if (!combined.length) return null
 		return (
 			<Text size="xs" c="red.6">
@@ -656,7 +680,9 @@ function ArrayField(props: RendererProps) {
 		const errorsNode = renderErrors(idx)
 		const actionsNode = (
 			<Group gap="xs" align="center">
-				{canReorder ? <IconGripVertical size={16} style={{ cursor: 'grab', opacity: 0.75 }} /> : null}
+				{canReorder ? (
+					<IconGripVertical size={16} style={{ cursor: 'grab', opacity: 0.75 }} />
+				) : null}
 				{renderActions(idx)}
 			</Group>
 		)
@@ -705,7 +731,10 @@ function ArrayField(props: RendererProps) {
 	const reorderEnabled = canReorder && items.length > 1
 	const [activeId, setActiveId] = useState<UniqueIdentifier | null>(null)
 
-	const renderedCards = items.map((item, idx) => ({ ...renderItemCard(item, idx), id: `item-${idx}` as const }))
+	const renderedCards = items.map((item, idx) => ({
+		...renderItemCard(item, idx),
+		id: `item-${idx}` as const,
+	}))
 	const inlineCards = renderedCards.filter((item) => item.inline)
 	const blockCards = renderedCards.filter((item) => !item.inline)
 
@@ -736,7 +765,10 @@ function ArrayField(props: RendererProps) {
 				}}
 				onDragCancel={() => setActiveId(null)}
 			>
-				<SortableContext items={renderedCards.map((item) => item.id)} strategy={rectSortingStrategy}>
+				<SortableContext
+					items={renderedCards.map((item) => item.id)}
+					strategy={rectSortingStrategy}
+				>
 					{content}
 				</SortableContext>
 				{dragOverlay}

@@ -38,14 +38,7 @@ import {
 	Title,
 } from '@mantine/core'
 import { IconPlugConnected, IconSearch, IconSearchOff, IconX } from '@tabler/icons-react'
-import {
-	useCallback,
-	useDeferredValue,
-	useEffect,
-	useMemo,
-	useRef,
-	useState,
-} from 'react'
+import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react'
 import type { JSX } from 'react/jsx-runtime'
 import { type GroupConfig, PluginOrganizer } from '../organizer'
 import { EmptyState, ErrorState } from '../../../components'
@@ -127,8 +120,7 @@ export const PluginList: React.FC<PluginListProps> = ({ pluginName }) => {
 			inputRef.current?.focus()
 		}
 		window.addEventListener(PLUGIN_SEARCH_EVENT, handler as EventListener)
-		return () =>
-			window.removeEventListener(PLUGIN_SEARCH_EVENT, handler as EventListener)
+		return () => window.removeEventListener(PLUGIN_SEARCH_EVENT, handler as EventListener)
 	}, [])
 
 	// —— 数据源 —— //
@@ -209,9 +201,7 @@ export const PluginList: React.FC<PluginListProps> = ({ pluginName }) => {
 			if (selectedIds.length === 0) return
 			setBulkBusy(true)
 			try {
-				const results = await updatePluginStatuses(
-					selectedIds.map((name) => ({ name, action })),
-				)
+				const results = await updatePluginStatuses(selectedIds.map((name) => ({ name, action })))
 				const failed = results.filter((r) => !r.ok)
 				if (failed.length > 0) {
 					notify({
@@ -298,21 +288,21 @@ export const PluginList: React.FC<PluginListProps> = ({ pluginName }) => {
 				minHeight={160}
 			/>
 		)
-		} else {
-			content = (
-				<PluginOrganizer
-					statuses={overview.statuses}
-					initialGroups={groupsForView}
-					activeId={pluginName}
-					onGroupsChange={handleGroupsChange}
-					selectedIds={selectedIds}
-					onSelectedIdsChange={setSelectedIds}
-					filterQuery={filterQuery}
-					LinkComponent={RouterLinkAdapter}
-					locked={syncing || bulkBusy}
-				/>
-			)
-		}
+	} else {
+		content = (
+			<PluginOrganizer
+				statuses={overview.statuses}
+				initialGroups={groupsForView}
+				activeId={pluginName}
+				onGroupsChange={handleGroupsChange}
+				selectedIds={selectedIds}
+				onSelectedIdsChange={setSelectedIds}
+				filterQuery={filterQuery}
+				LinkComponent={RouterLinkAdapter}
+				locked={syncing || bulkBusy}
+			/>
+		)
+	}
 
 	return (
 		<Stack
@@ -373,7 +363,12 @@ export const PluginList: React.FC<PluginListProps> = ({ pluginName }) => {
 							</Text>
 						</Group>
 						<Group gap="xs" wrap="wrap">
-							<Button size="xs" variant="subtle" disabled={bulkBusy} onClick={() => void handleBulkStatus('stop')}>
+							<Button
+								size="xs"
+								variant="subtle"
+								disabled={bulkBusy}
+								onClick={() => void handleBulkStatus('stop')}
+							>
 								停止
 							</Button>
 							<Button
@@ -392,7 +387,12 @@ export const PluginList: React.FC<PluginListProps> = ({ pluginName }) => {
 							>
 								启用
 							</Button>
-							<Button size="xs" variant="default" disabled={bulkBusy} onClick={() => setSelectedIds([])}>
+							<Button
+								size="xs"
+								variant="default"
+								disabled={bulkBusy}
+								onClick={() => setSelectedIds([])}
+							>
 								清空选择
 							</Button>
 						</Group>

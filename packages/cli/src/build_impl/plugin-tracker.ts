@@ -3,7 +3,8 @@ import type { ResolvedConfig } from 'tsdown'
 import { runRules } from './rules'
 import type { BuildLogger, BuildRuntimeConfig, BuildSuccessHook } from './types'
 
-export interface PluginTrackerOptions extends Pick<BuildRuntimeConfig, 'packageJsonPath' | 'manifestField'> {
+export interface PluginTrackerOptions
+	extends Pick<BuildRuntimeConfig, 'packageJsonPath' | 'manifestField'> {
 	log: BuildLogger
 	collectPlugins: () => Map<string, TrackedPluginUsage>
 }

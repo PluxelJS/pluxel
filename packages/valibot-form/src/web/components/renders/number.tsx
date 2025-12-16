@@ -11,19 +11,27 @@ function NumberField(props: RendererProps) {
 	const { formBaseInfo, errors, extractedPropsInfo, inputProps, value } = props
 	const errorMessages = (errors ?? []).map((err) => err.message)
 
-	const numericValue = typeof value === 'number' ? value
-		: (value == null || value === '') ? undefined
-		: (typeof value === 'string' && !isNaN(Number(value))) ? Number(value)
-		: undefined
+	const numericValue =
+		typeof value === 'number'
+			? value
+			: value == null || value === ''
+				? undefined
+				: typeof value === 'string' && !isNaN(Number(value))
+					? Number(value)
+					: undefined
 
 	const variant = extractedPropsInfo.variant ?? 'input'
 
 	const leftSection = extractedPropsInfo.prefix ? (
-		<Text size="sm" c="dimmed">{extractedPropsInfo.prefix}</Text>
+		<Text size="sm" c="dimmed">
+			{extractedPropsInfo.prefix}
+		</Text>
 	) : undefined
 
 	const rightSection = extractedPropsInfo.suffix ? (
-		<Text size="sm" c="dimmed">{extractedPropsInfo.suffix}</Text>
+		<Text size="sm" c="dimmed">
+			{extractedPropsInfo.suffix}
+		</Text>
 	) : undefined
 
 	const numberInput = (
@@ -62,7 +70,9 @@ function NumberField(props: RendererProps) {
 			{(extractedPropsInfo.prefix || extractedPropsInfo.suffix) && (
 				<Group justify="space-between" mt={4}>
 					{extractedPropsInfo.prefix && (
-						<Text size="sm" c="dimmed">{extractedPropsInfo.prefix}</Text>
+						<Text size="sm" c="dimmed">
+							{extractedPropsInfo.prefix}
+						</Text>
 					)}
 					<Text size="sm" fw={600}>
 						{numericValue ?? extractedPropsInfo.min ?? 0}

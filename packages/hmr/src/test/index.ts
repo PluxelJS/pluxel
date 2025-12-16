@@ -69,9 +69,7 @@ export async function withInMemoryCapnwebRpcClient<T>(
 	const originalFetch = globalThis.fetch
 	globalThis.fetch = (async (input: any, init?: any) => {
 		const req =
-			input instanceof Request
-				? input
-				: new Request(String(input), init as RequestInit | undefined)
+			input instanceof Request ? input : new Request(String(input), init as RequestInit | undefined)
 		return await newHttpBatchRpcResponse(req, localMain)
 	}) as any
 

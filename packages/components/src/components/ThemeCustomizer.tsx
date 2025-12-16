@@ -15,13 +15,7 @@ import {
 	useMantineTheme,
 } from '@mantine/core'
 import { useLocalStorage } from '@mantine/hooks'
-import {
-	IconCheck,
-	IconMoonStars,
-	IconPalette,
-	IconSun,
-	IconSunMoon,
-} from '@tabler/icons-react'
+import { IconCheck, IconMoonStars, IconPalette, IconSun, IconSunMoon } from '@tabler/icons-react'
 import { useCallback, useState } from 'react'
 import {
 	COLOR_PRESETS,
@@ -51,9 +45,7 @@ export function ThemeCustomizer({ compact = false }: ThemeCustomizerProps) {
 		(key: string) => {
 			setAccentColor(key)
 			// 触发主题变更事件，让 MantineProvider 响应
-			window.dispatchEvent(
-				new CustomEvent(THEME_CHANGE_EVENT, { detail: { accentColor: key } }),
-			)
+			window.dispatchEvent(new CustomEvent(THEME_CHANGE_EVENT, { detail: { accentColor: key } }))
 		},
 		[setAccentColor],
 	)
@@ -164,9 +156,7 @@ export function ThemeCustomizer({ compact = false }: ThemeCustomizerProps) {
 												onClick={() => handleColorChange(preset.key)}
 												style={{
 													background:
-														accentColor === preset.key
-															? rgba(preset.color, 0.2)
-															: undefined,
+														accentColor === preset.key ? rgba(preset.color, 0.2) : undefined,
 													border:
 														accentColor === preset.key
 															? `2px solid ${preset.color}`

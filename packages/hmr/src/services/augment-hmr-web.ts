@@ -1,4 +1,7 @@
-import type { RpcExtensions as ServicesRpcExtensions, SseEvents as ServicesSseEvents } from './extensions'
+import type {
+	RpcExtensions as ServicesRpcExtensions,
+	SseEvents as ServicesSseEvents,
+} from './extensions'
 
 /**
  * Bridge: 让 `@pluxel/hmr-web` 的 `RpcExtensions`/`SseEvents` 自动包含
@@ -12,4 +15,3 @@ declare module '@pluxel/hmr-web' {
 	// biome-ignore lint/suspicious/noEmptyInterface: declaration merging target
 	interface SseEvents extends ServicesSseEvents {}
 }
-

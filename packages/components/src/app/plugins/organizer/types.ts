@@ -12,4 +12,3 @@ export interface GroupConfig {
 	name: string
 	pluginIds: string[]
 }
-

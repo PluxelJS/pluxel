@@ -32,10 +32,7 @@ function ObjectField(props: RendererProps) {
 	const [collapsed, setCollapsed] = useState(extractedPropsInfo.collapse === true)
 
 	// 规范化 value
-	const objectValue = useMemo(() =>
-		(value && typeof value === 'object') ? value : {},
-		[value]
-	)
+	const objectValue = useMemo(() => (value && typeof value === 'object' ? value : {}), [value])
 
 	// 提取子字段信息（带缓存）
 	const childInfos = useMemo<ChildInfo[]>(() => {
@@ -68,59 +65,77 @@ function ObjectField(props: RendererProps) {
 
 	// 布局配置
 	const variant = extractedPropsInfo.variant ?? 'card'
-	const compactCount = countCompactFields(childInfos.map(c => ({ type: c.info.type })))
-	const columns = Math.max(1, Math.min(
-		extractedPropsInfo.columns ?? (compactCount >= GRID_COLUMN_THRESHOLD ? DEFAULT_GRID_COLUMNS : 1),
-		4
-	))
+	const compactCount = countCompactFields(childInfos.map((c) => ({ type: c.info.type })))
+	const columns = Math.max(
+		1,
+		Math.min(
+			extractedPropsInfo.columns ??
+				(compactCount >= GRID_COLUMN_THRESHOLD ? DEFAULT_GRID_COLUMNS : 1),
+			4,
+		),
+	)
 	const gapValue = extractedPropsInfo.gap ?? theme.spacing.lg
 
 	// 性能优化：使用 useCallback 缓存构建子字段 props 的函数
-	const buildChildInputProps = useCallback((fieldName: string) => {
-		const nestedName = inputProps.name ? `${inputProps.name}.${fieldName}` : fieldName
-		return {
-			name: nestedName,
-			onChange: (nextValue: unknown) => {
-				if (inputProps.disabled) return
-				inputProps.onChange?.({ ...objectValue, [fieldName]: nextValue })
-			},
-			onBlur: () => {
-				if (inputProps.disabled) return
-				inputProps.onBlur?.({ target: { name: nestedName } } as any)
-			},
-			disabled: inputProps.disabled,
-			readOnly: inputProps.readOnly,
-		}
-	}, [inputProps, objectValue])
+	const buildChildInputProps = useCallback(
+		(fieldName: string) => {
+			const nestedName = inputProps.name ? `${inputProps.name}.${fieldName}` : fieldName
+			return {
+				name: nestedName,
+				onChange: (nextValue: unknown) => {
+					if (inputProps.disabled) return
+					inputProps.onChange?.({ ...objectValue, [fieldName]: nextValue })
+				},
+				onBlur: () => {
+					if (inputProps.disabled) return
+					inputProps.onBlur?.({ target: { name: nestedName } } as any)
+				},
+				disabled: inputProps.disabled,
+				readOnly: inputProps.readOnly,
+			}
+		},
+		[inputProps, objectValue],
+	)
 
 	// 渲染子字段
-	const renderedChildren = useMemo(() =>
-		childInfos.map((child) => {
-			const errorsForChild = childErrors.get(child.name) ?? []
-			const childDisabled = Boolean(inputProps.disabled || child.info.formInfo.disabled)
-			const childReadOnly = Boolean(inputProps.readOnly || child.info.formInfo.readOnly)
+	const renderedChildren = useMemo(
+		() =>
+			childInfos.map((child) => {
+				const errorsForChild = childErrors.get(child.name) ?? []
+				const childDisabled = Boolean(inputProps.disabled || child.info.formInfo.disabled)
+				const childReadOnly = Boolean(inputProps.readOnly || child.info.formInfo.readOnly)
 
-			const childInput = buildChildInputProps(child.name)
-			childInput.disabled = childDisabled
-			childInput.readOnly = childReadOnly
+				const childInput = buildChildInputProps(child.name)
+				childInput.disabled = childDisabled
+				childInput.readOnly = childReadOnly
 
-			const span = resolveFieldSpan(columns, child.info.formInfo.layout, child.info.type)
-			const align = alignToCss(child.info.formInfo.layout?.align)
+				const span = resolveFieldSpan(columns, child.info.formInfo.layout, child.info.type)
+				const align = alignToCss(child.info.formInfo.layout?.align)
 
-			return (
-				<div key={child.name} style={{ gridColumn: `span ${span}`, alignSelf: align }}>
-					<MetaRenderer
-						type={child.info.type}
-						formBaseInfo={{ ...child.info.formInfo, disabled: childDisabled, readOnly: childReadOnly } as any}
-						extractedPropsInfo={child.info.props}
-						errors={errorsForChild}
-						value={objectValue[child.name]}
-						inputProps={childInput as any}
-					/>
-				</div>
-			)
-		}),
-		[childInfos, childErrors, inputProps.disabled, inputProps.readOnly, buildChildInputProps, columns, objectValue]
+				return (
+					<div key={child.name} style={{ gridColumn: `span ${span}`, alignSelf: align }}>
+						<MetaRenderer
+							type={child.info.type}
+							formBaseInfo={
+								{ ...child.info.formInfo, disabled: childDisabled, readOnly: childReadOnly } as any
+							}
+							extractedPropsInfo={child.info.props}
+							errors={errorsForChild}
+							value={objectValue[child.name]}
+							inputProps={childInput as any}
+						/>
+					</div>
+				)
+			}),
+		[
+			childInfos,
+			childErrors,
+			inputProps.disabled,
+			inputProps.readOnly,
+			buildChildInputProps,
+			columns,
+			objectValue,
+		],
 	)
 
 	// 构建内容
@@ -128,17 +143,21 @@ function ObjectField(props: RendererProps) {
 		columns === 1 ? (
 			<Stack gap={gapValue}>{renderedChildren}</Stack>
 		) : (
-			<div style={{
-				display: 'grid',
-				gap: gapValue,
-				gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))`,
-				alignItems: 'end', // 底部对齐，让不同高度的字段视觉上更协调
-			}}>
+			<div
+				style={{
+					display: 'grid',
+					gap: gapValue,
+					gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))`,
+					alignItems: 'end', // 底部对齐，让不同高度的字段视觉上更协调
+				}}
+			>
 				{renderedChildren}
 			</div>
 		)
 	) : (
-		<Text size="sm" c="dimmed">暂无子字段</Text>
+		<Text size="sm" c="dimmed">
+			暂无子字段
+		</Text>
 	)
 
 	// Card 变体的标题和折叠功能
@@ -148,10 +167,19 @@ function ObjectField(props: RendererProps) {
 			<Group gap={6}>
 				<Text fw={600}>
 					{headerLabel}
-					{formBaseInfo.required && <Text span c="red"> *</Text>}
+					{formBaseInfo.required && (
+						<Text span c="red">
+							{' '}
+							*
+						</Text>
+					)}
 				</Text>
 				{formBaseInfo.badge && (
-					<Badge variant="light" size="sm" color={typeof formBaseInfo.badge === 'string' ? undefined : formBaseInfo.badge.color}>
+					<Badge
+						variant="light"
+						size="sm"
+						color={typeof formBaseInfo.badge === 'string' ? undefined : formBaseInfo.badge.color}
+					>
 						{typeof formBaseInfo.badge === 'string' ? formBaseInfo.badge : formBaseInfo.badge.label}
 					</Badge>
 				)}
@@ -209,11 +237,11 @@ function ObjectField(props: RendererProps) {
 			<Card withBorder radius="md" p="md">
 				{headerNode}
 				{formBaseInfo.description && (
-					<Text size="sm" c="dimmed" mb="sm">{formBaseInfo.description}</Text>
+					<Text size="sm" c="dimmed" mb="sm">
+						{formBaseInfo.description}
+					</Text>
 				)}
-				<Collapse in={!collapsed}>
-					{content}
-				</Collapse>
+				<Collapse in={!collapsed}>{content}</Collapse>
 			</Card>
 		</FieldChrome>
 	)

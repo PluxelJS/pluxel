@@ -69,7 +69,8 @@ function applySectionMeta(bucket: SectionBucket, field: PlannedField) {
 
 	if (sectionMeta.title && !bucket.title) bucket.title = sectionMeta.title
 	if (sectionMeta.description && !bucket.description) bucket.description = sectionMeta.description
-	if (sectionMeta.order !== undefined && bucket.order === undefined) bucket.order = sectionMeta.order
+	if (sectionMeta.order !== undefined && bucket.order === undefined)
+		bucket.order = sectionMeta.order
 	if (sectionMeta.columns && !bucket.explicitColumns) bucket.explicitColumns = sectionMeta.columns
 }
 
@@ -90,14 +91,18 @@ function buildSections(fields: PlannedField[]): SectionPlan[] {
 			if (orderA !== orderB) return orderA - orderB
 			return (a.title ?? '').localeCompare(b.title ?? '')
 		})
-			.map((bucket) => ({
-				id: bucket.id,
-				title: bucket.title,
-				description: bucket.description,
-				order: bucket.order,
-				columns: resolveSectionColumns(bucket.fields.length, bucket.explicitColumns, bucket.compactCount),
-				fields: bucket.fields,
-			}))
+		.map((bucket) => ({
+			id: bucket.id,
+			title: bucket.title,
+			description: bucket.description,
+			order: bucket.order,
+			columns: resolveSectionColumns(
+				bucket.fields.length,
+				bucket.explicitColumns,
+				bucket.compactCount,
+			),
+			fields: bucket.fields,
+		}))
 }
 
 export function planSchemaFields(schema: ObjectLikeSchema): FieldPlanResult {

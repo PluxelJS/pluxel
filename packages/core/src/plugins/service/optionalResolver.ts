@@ -40,7 +40,10 @@ export type OptionalEffectCleanup =
 	| void
 	| (() => void | Promise<void>)
 	| Promise<void | (() => void | Promise<void>)>
-export type OptionalEffectHandler<T> = (optional: T, info: OptionalEffectInfo) => OptionalEffectCleanup
+export type OptionalEffectHandler<T> = (
+	optional: T,
+	info: OptionalEffectInfo,
+) => OptionalEffectCleanup
 
 export type OptionalEffectOptions = {
 	multi?: boolean
@@ -235,8 +238,8 @@ export class OptionalResolver {
 					})
 			}
 
-			const offStart = watch ? callerCtx.events.on('afterStart', () => run(undefined)) : (() => {})
-			const offCommit = watch ? callerCtx.events.on('afterCommit', (s) => run(s)) : (() => {})
+			const offStart = watch ? callerCtx.events.on('afterStart', () => run(undefined)) : () => {}
+			const offCommit = watch ? callerCtx.events.on('afterCommit', (s) => run(s)) : () => {}
 
 			const dispose = () => {
 				if (stopped) return

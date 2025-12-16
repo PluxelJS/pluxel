@@ -7,4 +7,3 @@ declare module '@pluxel/plugin-ui' {
 }
 
 export {}
-

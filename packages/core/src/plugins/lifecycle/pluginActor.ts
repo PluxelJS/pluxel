@@ -322,9 +322,11 @@ export class PluginLifecycleActor {
 			this.pendingStop = true
 		}
 		if (event.type === 'START' && (current === 'running' || current === 'starting')) return
-		this.queue = this.queue.then(() => this.dispatch(ev, ...args)).catch((err) => {
-			this.notifyError(err)
-		})
+		this.queue = this.queue
+			.then(() => this.dispatch(ev, ...args))
+			.catch((err) => {
+				this.notifyError(err)
+			})
 	}
 
 	private toEvent(type: LifecycleEvent['type']): number {
@@ -372,8 +374,8 @@ type SnapshotLike = LifecycleSnapshot | undefined
 
 const isState =
 	<T extends LifecycleState>(target: T) =>
-		(s: SnapshotLike) =>
-			!!s && s.value === target
+	(s: SnapshotLike) =>
+		!!s && s.value === target
 
 const isRunning = isState('running')
 const isStopped = (s: SnapshotLike) => !!s && (s.status === 'stopped' || s.value === 'stopped')

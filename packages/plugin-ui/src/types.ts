@@ -73,7 +73,11 @@ export interface ExtensionPointMap {
 		metaRequired?: false
 	}
 	'plugin:info': { ctx: PluginExtensionContext; meta: {}; metaRequired?: false }
-	'global:statusBar': { ctx: GlobalExtensionContext; meta: { label?: string }; metaRequired?: false }
+	'global:statusBar': {
+		ctx: GlobalExtensionContext
+		meta: { label?: string }
+		metaRequired?: false
+	}
 }
 
 export type ExtensionPoint = keyof ExtensionPointMap & string
@@ -190,9 +194,7 @@ export interface PluginUIModule {
 		definition: RouteExtensionDef
 		Component: ComponentType
 	}>
-	setup?: (
-		ctx: { pluginName: string },
-	) => void | (() => void) | Promise<void | (() => void)>
+	setup?: (ctx: { pluginName: string }) => void | (() => void) | Promise<void | (() => void)>
 }
 
 export function definePluginUIModule<T extends PluginUIModule>(module: T): T {
@@ -236,7 +238,11 @@ function validatePluginUIModule(module: PluginUIModule): void {
 				continue
 			}
 			if (seen.has(id)) {
-				console.error('[plugin-ui] Duplicate extension id detected (must be unique per module).', id, ext)
+				console.error(
+					'[plugin-ui] Duplicate extension id detected (must be unique per module).',
+					id,
+					ext,
+				)
 			}
 			seen.add(id)
 		}
@@ -253,7 +259,11 @@ function validatePluginUIModule(module: PluginUIModule): void {
 				continue
 			}
 			if (seen.has(path)) {
-				console.error('[plugin-ui] Duplicate route path detected (must be unique per module).', path, route)
+				console.error(
+					'[plugin-ui] Duplicate route path detected (must be unique per module).',
+					path,
+					route,
+				)
 			}
 			seen.add(path)
 		}

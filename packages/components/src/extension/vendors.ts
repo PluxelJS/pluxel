@@ -1,32 +1,32 @@
 // packages/components/src/extension/vendors.ts
 // 共享依赖导出 - 供插件 UI 模块使用
 
-import * as React from "react"
-import * as ReactJSXRuntime from "react/jsx-runtime"
-import * as ReactJSXDevRuntime from "react/jsx-dev-runtime"
-import * as ReactDOM from "react-dom"
-import * as ReactDOMClient from "react-dom/client"
-import * as MantineCore from "@mantine/core"
-import * as MantineHooks from "@mantine/hooks"
-import * as MantineModals from "@mantine/modals"
-import * as MantineNotifications from "@mantine/notifications"
+import * as React from 'react'
+import * as ReactJSXRuntime from 'react/jsx-runtime'
+import * as ReactJSXDevRuntime from 'react/jsx-dev-runtime'
+import * as ReactDOM from 'react-dom'
+import * as ReactDOMClient from 'react-dom/client'
+import * as MantineCore from '@mantine/core'
+import * as MantineHooks from '@mantine/hooks'
+import * as MantineModals from '@mantine/modals'
+import * as MantineNotifications from '@mantine/notifications'
 
 function createJsxDevRuntimeVendor() {
 	const vendor: Record<string, unknown> = { ...ReactJSXDevRuntime }
 	const prodRuntime = ReactJSXRuntime as Record<string, unknown>
 
-	if (typeof vendor.jsxDEV !== "function" && typeof prodRuntime["jsx"] === "function") {
-		const jsx = prodRuntime["jsx"] as (...runtimeArgs: unknown[]) => unknown
+	if (typeof vendor.jsxDEV !== 'function' && typeof prodRuntime['jsx'] === 'function') {
+		const jsx = prodRuntime['jsx'] as (...runtimeArgs: unknown[]) => unknown
 		vendor.jsxDEV = (...args: unknown[]) => jsx(...args)
 	}
 
-	if (typeof vendor.jsxs !== "function" && typeof prodRuntime["jsxs"] === "function") {
-		const jsxs = prodRuntime["jsxs"] as (...runtimeArgs: unknown[]) => unknown
+	if (typeof vendor.jsxs !== 'function' && typeof prodRuntime['jsxs'] === 'function') {
+		const jsxs = prodRuntime['jsxs'] as (...runtimeArgs: unknown[]) => unknown
 		vendor.jsxs = (...args: unknown[]) => jsxs(...args)
 	}
 
-	if (typeof vendor.jsx !== "function" && typeof prodRuntime["jsx"] === "function") {
-		const jsx = prodRuntime["jsx"] as (...runtimeArgs: unknown[]) => unknown
+	if (typeof vendor.jsx !== 'function' && typeof prodRuntime['jsx'] === 'function') {
+		const jsx = prodRuntime['jsx'] as (...runtimeArgs: unknown[]) => unknown
 		vendor.jsx = (...args: unknown[]) => jsx(...args)
 	}
 
@@ -43,14 +43,14 @@ const ReactJSXDevRuntimeVendor = createJsxDevRuntimeVendor()
  */
 export const vendors = {
 	react: React,
-	"react/jsx-runtime": ReactJSXRuntime,
-	"react/jsx-dev-runtime": ReactJSXDevRuntimeVendor,
-	"react-dom": ReactDOM,
-	"react-dom/client": ReactDOMClient,
-	"@mantine/core": MantineCore,
-	"@mantine/hooks": MantineHooks,
-	"@mantine/modals": MantineModals,
-	"@mantine/notifications": MantineNotifications,
+	'react/jsx-runtime': ReactJSXRuntime,
+	'react/jsx-dev-runtime': ReactJSXDevRuntimeVendor,
+	'react-dom': ReactDOM,
+	'react-dom/client': ReactDOMClient,
+	'@mantine/core': MantineCore,
+	'@mantine/hooks': MantineHooks,
+	'@mantine/modals': MantineModals,
+	'@mantine/notifications': MantineNotifications,
 }
 
 export type Vendors = typeof vendors
@@ -68,7 +68,7 @@ declare global {
  * 在应用入口调用，确保插件可以访问共享依赖
  */
 export function initVendors(): void {
-	if (typeof window !== "undefined" && !window.__PLUXEL_VENDORS__) {
+	if (typeof window !== 'undefined' && !window.__PLUXEL_VENDORS__) {
 		window.__PLUXEL_VENDORS__ = vendors
 	}
 }
@@ -79,7 +79,7 @@ export function initVendors(): void {
  * 插件 runtime 用于解析 import
  */
 export function getVendor(name: string): unknown {
-	if (typeof window !== "undefined" && window.__PLUXEL_VENDORS__) {
+	if (typeof window !== 'undefined' && window.__PLUXEL_VENDORS__) {
 		return (window.__PLUXEL_VENDORS__ as Record<string, unknown>)[name]
 	}
 	return undefined
@@ -89,15 +89,15 @@ export function getVendor(name: string): unknown {
  * 所有可用的 vendor 包名
  */
 export const vendorPackages = [
-	"react",
-	"react/jsx-runtime",
-	"react/jsx-dev-runtime",
-	"react-dom",
-	"react-dom/client",
-	"@mantine/core",
-	"@mantine/hooks",
-	"@mantine/modals",
-	"@mantine/notifications",
+	'react',
+	'react/jsx-runtime',
+	'react/jsx-dev-runtime',
+	'react-dom',
+	'react-dom/client',
+	'@mantine/core',
+	'@mantine/hooks',
+	'@mantine/modals',
+	'@mantine/notifications',
 ] as const
 
 export type VendorPackage = (typeof vendorPackages)[number]

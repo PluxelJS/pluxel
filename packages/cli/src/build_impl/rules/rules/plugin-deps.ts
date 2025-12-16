@@ -44,7 +44,8 @@ export async function pluginDependencyRule(pkg: PackageJson, context: RuleContex
 function resolvePluginVersions(pkg: PackageJson, context: RuleContext) {
 	const versions = new Map<string, string>()
 	for (const name of context.pluginUsages.keys()) {
-		const version = pkg.dependencies?.[name] ?? pkg.devDependencies?.[name] ?? pkg.peerDependencies?.[name] ?? '*'
+		const version =
+			pkg.dependencies?.[name] ?? pkg.devDependencies?.[name] ?? pkg.peerDependencies?.[name] ?? '*'
 		versions.set(name, version)
 	}
 	return versions

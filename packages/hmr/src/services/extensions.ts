@@ -29,4 +29,3 @@ export interface RpcExtensions {}
  */
 // biome-ignore lint/suspicious/noEmptyInterface: 外部扩展
 export interface SseEvents {}
-

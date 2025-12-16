@@ -177,10 +177,7 @@ export class PluginService {
 	 * Create (or reuse) a fork ctor for a ForkablePlugin.
 	 * This does not register it into the container.
 	 */
-	public fork<T extends ForkablePluginConstructor>(
-		ctor: T,
-		forkId: string,
-	): PluginConstructor {
+	public fork<T extends ForkablePluginConstructor>(ctor: T, forkId: string): PluginConstructor {
 		return forkPlugin(ctor, forkId)
 	}
 
@@ -199,14 +196,12 @@ export class PluginService {
 	}
 
 	/** Get a running fork instance if present; otherwise undefined. */
-	public getFork<T extends PluginIdentifier>(
-		ctor: T,
-		forkId: string,
-	): InstanceType<T> | undefined {
+	public getFork<T extends PluginIdentifier>(ctor: T, forkId: string): InstanceType<T> | undefined {
 		const ForkCtor = getForkedCtor(ctor, forkId)
 		if (!ForkCtor) return undefined
-		return (this.container?.get(ForkCtor as any) ??
-			this.builderSingletons.get(ForkCtor as any)) as InstanceType<T> | undefined
+		return (this.container?.get(ForkCtor as any) ?? this.builderSingletons.get(ForkCtor as any)) as
+			| InstanceType<T>
+			| undefined
 	}
 
 	/** List all fork ctors created for a given original ctor. */
@@ -258,10 +253,7 @@ export class PluginService {
 	 * Unregister a plugin from the declaration layer.
 	 * Default behavior cascades to dependents to keep DI verification valid.
 	 */
-	public unregister(
-		id: PluginIdentifier,
-		opts?: { cascadeDependents?: boolean },
-	): void {
+	public unregister(id: PluginIdentifier, opts?: { cascadeDependents?: boolean }): void {
 		const cascade = opts?.cascadeDependents ?? true
 		const container = this.container
 		const targets = cascade ? this.collectDependents(container, [id]) : new Set([id])
@@ -276,15 +268,15 @@ export class PluginService {
 	 * Restart a registered plugin (and optionally its dependents) on next commit.
 	 * This does not change registrations; it only re-instantiates instances.
 	 */
-	public restart(
-		id: PluginIdentifier,
-		opts?: { cascadeDependents?: boolean },
-	): void {
+	public restart(id: PluginIdentifier, opts?: { cascadeDependents?: boolean }): void {
 		const cascade = opts?.cascadeDependents ?? true
 		const container = this.container
 		const targets = cascade ? this.collectDependents(container, [id]) : new Set([id])
 		for (const t of targets) {
-			if (container && !container.services.has((container.resolveIdentifier?.(t as any) ?? t) as any)) {
+			if (
+				container &&
+				!container.services.has((container.resolveIdentifier?.(t as any) ?? t) as any)
+			) {
 				throw new Error(`You can not restart an unloaded Plugin: ${String(t)}`)
 			}
 			this._pendingRestart.add(t)
@@ -302,13 +294,17 @@ export class PluginService {
 	): void {
 		const container = this.container
 		const canonical = (container?.resolveIdentifier?.(target as any) ?? target) as PluginIdentifier
-		const targets = (opts?.cascadeDependents ?? true)
-			? this.collectDependents(container, [canonical])
-			: new Set([canonical])
+		const targets =
+			(opts?.cascadeDependents ?? true)
+				? this.collectDependents(container, [canonical])
+				: new Set([canonical])
 
 		// Update declaration layer: unregister old provider and register new one with aliases.
 		this.definitions.unregister(canonical)
-		this.definitions.register(next, { provideBase: opts?.provideBase, aliases: [target, canonical] })
+		this.definitions.register(next, {
+			provideBase: opts?.provideBase,
+			aliases: [target, canonical],
+		})
 
 		// Runtime intent: restart affected plugins so they observe the new provider instance.
 		for (const t of targets) this._pendingRestart.add(t)

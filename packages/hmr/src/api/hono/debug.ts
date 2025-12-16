@@ -345,7 +345,11 @@ function renderPluginCard(plugin: PluginSchemaInfo, expanded = false) {
 			<div class="card-body ${expanded ? '' : 'collapsed'}">
 				${
 					fields.length > 0
-						? fields.map(([fieldName, source], i) => renderSchemaField(plugin.name, fieldName, source, i)).join('')
+						? fields
+								.map(([fieldName, source], i) =>
+									renderSchemaField(plugin.name, fieldName, source, i),
+								)
+								.join('')
 						: '<p style="color: var(--text-muted); font-size: 13px;">No schema source extracted for this plugin.</p>'
 				}
 			</div>
@@ -503,7 +507,11 @@ const debugApp = new Hono<AppEnv>()
 					<h2 style="margin-top: 0;">Schema Source</h2>
 					${
 						fields.length > 0
-							? fields.map(([fieldName, source], i) => renderSchemaField(name, fieldName, source as string, i)).join('')
+							? fields
+									.map(([fieldName, source], i) =>
+										renderSchemaField(name, fieldName, source as string, i),
+									)
+									.join('')
 							: '<p style="color: var(--text-muted);">No schema source extracted</p>'
 					}
 
