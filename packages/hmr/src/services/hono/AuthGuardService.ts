@@ -76,7 +76,7 @@ export class AuthGuardService {
 			throw new Error('[AuthGuardService] redirectPath is required when registering a guard.')
 		}
 
-		const pluginId = this.ctx.pluginInfo?.id ?? this.ctx.name
+		const pluginId = this.ctx.pluginInfo.id
 		const existing = this.guard
 
 		if (existing && existing.pluginName !== pluginId) {

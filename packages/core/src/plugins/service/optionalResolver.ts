@@ -94,12 +94,12 @@ export class OptionalResolver {
 				if (id) this.lastErrors.set(id, error)
 			})
 			rootCtx.events.on('startError', (pluginCtx, error) => {
-				const id = pluginCtx.pluginInfo?.id
-				if (typeof id === 'string' && id.length) this.lastErrors.set(id, error)
+				const id = pluginCtx.pluginInfo.id
+				this.lastErrors.set(id, error)
 			})
 			rootCtx.events.on('afterStart', (pluginCtx) => {
-				const id = pluginCtx.pluginInfo?.id
-				if (typeof id === 'string' && id.length) this.lastErrors.delete(id)
+				const id = pluginCtx.pluginInfo.id
+				this.lastErrors.delete(id)
 			})
 		} catch {
 			// ignore: events service may be overridden/removed
@@ -119,11 +119,14 @@ export class OptionalResolver {
 	}
 
 	private idOf(id: PluginIdentifier): string {
-		const info = getPluginInfo(id)
-		if (info?.id) return info.id
-		const raw = String(id)
-		const paren = raw.indexOf('(')
-		return (paren > 0 ? raw.slice(0, paren) : raw).trim()
+		try {
+			return getPluginInfo(id).id
+		} catch {
+			// fall back for non-decorated identifiers
+			const raw = String(id)
+			const paren = raw.indexOf('(')
+			return (paren > 0 ? raw.slice(0, paren) : raw).trim()
+		}
 	}
 
 	private async optionalImport<T>(

@@ -227,11 +227,20 @@ function applyOverride(dst: unknown[], override?: ParamOverride): void {
   Snapshot Builder
 ───────────────────────────────────────────────────────────*/
 
+const normalizeId = (raw: string | null | undefined, declaredName: string): string => {
+	// 空/空白 ID 都视为错误：插件必须拥有稳定的系统标识符
+	const id = (raw ?? declaredName).trim()
+	if (!id) {
+		throw new Error(`[PluginDecorator] 插件 "${declaredName}" 缺少有效 id`)
+	}
+	return id
+}
+
 /** 重建对外快照（不动 epoch） */
 function rebuildInfoSnapshot(ctor: Function, s: State): void {
 	const declaredName = s.declaredName || nameOf(ctor)
-	const id = s.id || declaredName
-	const displayName = s.displayName || id
+	const id = normalizeId(s.id, declaredName)
+	const displayName = s.displayName?.trim() || id
 
 	const configSourceMap =
 		s.configSource && Object.keys(s.configSource).length
@@ -343,13 +352,16 @@ export function getDeclaredName(ctor: Function): string {
 /** 获取系统 ID（考虑 loader 设置） */
 export function getPluginId(ctor: Function): string {
 	const s = STATE.get(ctor)
-	return s?.id || s?.declaredName || nameOf(ctor)
+	return s ? normalizeId(s.id, s.declaredName || nameOf(ctor)) : nameOf(ctor)
 }
 
 /** 获取显示名 */
 export function getDisplayName(ctor: Function): string {
 	const s = STATE.get(ctor)
-	return s?.displayName || s?.id || s?.declaredName || nameOf(ctor)
+	if (!s) return nameOf(ctor)
+	const declaredName = s.declaredName || nameOf(ctor)
+	const id = normalizeId(s.id, declaredName)
+	return s.displayName?.trim() || id
 }
 
 /** 获取包名 */
@@ -358,9 +370,9 @@ export function getPackageName(ctor: Function): string | null {
 }
 
 /** 设置系统 ID（通常由 loader 调用） */
-export function setPluginId(ctor: Function, id: string | null): void {
+export function setPluginId(ctor: Function, id: string): void {
 	const s = S(ctor)
-	s.id = id
+	s.id = normalizeId(id, s.declaredName || nameOf(ctor))
 	if (s.infoSnap) rebuildInfoSnapshot(ctor, s)
 }
 
@@ -383,18 +395,13 @@ export function setPackageName(ctor: Function, name: string | null): void {
  */
 export function setPluginIdentity(
 	ctor: Function,
-	identity: { id?: string | null; displayName?: string | null; packageName?: string | null },
+	identity: { id?: string; displayName?: string | null; packageName?: string | null },
 ): void {
 	const s = S(ctor)
-	if (identity.id !== undefined) s.id = identity.id
+	if (identity.id !== undefined) s.id = normalizeId(identity.id, s.declaredName || nameOf(ctor))
 	if (identity.displayName !== undefined) s.displayName = identity.displayName
 	if (identity.packageName !== undefined) s.packageName = identity.packageName
 	if (s.infoSnap) rebuildInfoSnapshot(ctor, s)
-}
-
-/** @deprecated 使用 setPluginId 代替 */
-export function setPluginName(ctor: Function, name?: string | null): void {
-	setPluginId(ctor, name ?? null)
 }
 
 /** @deprecated 使用 getPluginId 代替 */

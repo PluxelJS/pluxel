@@ -140,12 +140,11 @@ export class PluginService {
 
 	private injectConfig(plugin: PluginInstance): void {
 		const pluginCtx = plugin.ctx
-		const info: PluginInfo | undefined = pluginCtx?.pluginInfo
-		const schemaMap = info?.configMap as Record<string, unknown> | null | undefined
+		const info: PluginInfo = pluginCtx.pluginInfo
+		const schemaMap = info.configMap as Record<string, unknown> | null | undefined
 		if (!schemaMap) return
 
-		const id = info?.id
-		if (!id) return
+		const id = info.id
 
 		const record = pluginCtx.configService.getConfigSnapshot(id)?.configRecord ?? {}
 

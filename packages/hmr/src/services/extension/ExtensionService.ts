@@ -177,10 +177,7 @@ export class ExtensionService {
 	 */
 	register(config: PluginExtensionConfig): () => void {
 		if (!this.enabled) return () => {}
-		const pluginName = this.ctx.pluginInfo?.id
-		if (!pluginName) {
-			throw new Error('无法获取 pluginId，请确保在插件内调用')
-		}
+		const pluginName = this.ctx.pluginInfo.id
 
 		const existing = this.entries.get(pluginName)
 		if (existing) {
@@ -328,7 +325,7 @@ export class ExtensionService {
 		for (const [id] of summary.container.services) {
 			try {
 				const info = getPluginInfo(id as Function)
-				if (info?.id && this.pendingPlugins.has(info.id)) {
+				if (this.pendingPlugins.has(info.id)) {
 					runningPlugins.add(info.id)
 				}
 			} catch {}

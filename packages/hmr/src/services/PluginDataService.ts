@@ -38,7 +38,7 @@ export class PluginDataService {
 			deserialize?: (txt: string) => T[]
 		},
 	): Promise<PersistenceAdapter<T, string>> {
-		const ns = this.normalizeNamespace(this.ctx.pluginInfo?.id ?? 'default')
+		const ns = this.normalizeNamespace(this.ctx.pluginInfo.id)
 		const file = this.fileForNamespace(ns)
 
 		await mkdir(dirname(file), { recursive: true })
@@ -68,7 +68,7 @@ export class PluginDataService {
 			mode?: CollectionPersistenceMode
 		},
 	): Promise<PersistenceAdapter<T, string>> {
-		const ns = this.normalizeNamespace(this.ctx.pluginInfo?.id ?? 'default')
+		const ns = this.normalizeNamespace(this.ctx.pluginInfo.id)
 		const mode: CollectionPersistenceMode = options?.mode ?? 'perCollection'
 
 		if (mode === 'perCollection') {
@@ -303,7 +303,7 @@ export class PluginDataService {
 
 	/** 获取对应 namespace 的默认存储文件路径（已规范化）。 */
 	getFilePath(): string {
-		return this.fileForNamespace(this.normalizeNamespace(this.ctx.pluginInfo?.id ?? 'default'))
+		return this.fileForNamespace(this.normalizeNamespace(this.ctx.pluginInfo.id))
 	}
 
 	private fileForNamespace(namespace: string): string {

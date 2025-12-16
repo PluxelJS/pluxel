@@ -148,7 +148,7 @@ export class PluginRegistry {
 			keys.add('__identity__')
 			const info = getPluginInfo(ctor)
 			const prev = {
-				id: info.id ?? null,
+				id: info.id,
 				displayName: (info as any).displayName ?? null,
 				packageName: (info as any).packageName ?? null,
 			}

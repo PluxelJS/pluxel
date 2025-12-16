@@ -23,7 +23,8 @@ function asPinoFn(fn: (...args: unknown[]) => void): Logger['info'] {
 function findPluginId(ctx: Context): string | undefined {
 	let current: Context | undefined = ctx
 	while (current) {
-		if (current.pluginInfo?.id) return current.pluginInfo.id
+		const info = current.pluginInfo as Context['pluginInfo'] | undefined
+		if (info && info.id) return info.id
 		current = current.parent ?? current.caller
 	}
 	return undefined
