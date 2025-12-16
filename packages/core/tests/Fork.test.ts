@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'bun:test'
 
-import { BasePlugin, ForkablePlugin, Plugin, setParamToken, withPluginTestHost } from '@pluxel/core/test'
+import { BasePlugin, ForkablePlugin, Plugin, setParamToken, withTestHost } from '@pluxel/core/test'
 
 describe('Forkable plugins', () => {
 	it('rejects forking non‑forkable plugins', () => {
-		return withPluginTestHost((host) => {
+		return withTestHost((host) => {
 			@Plugin({ name: 'NotForkable' })
 			class NotForkable extends BasePlugin {}
 
@@ -13,7 +13,7 @@ describe('Forkable plugins', () => {
 	})
 
 	it('runs multiple forks with isolated ctx and identity', async () => {
-		await withPluginTestHost(async (host) => {
+		await withTestHost(async (host) => {
 			const events: string[] = []
 
 			@Plugin({ name: 'Forkee' })
@@ -41,7 +41,7 @@ describe('Forkable plugins', () => {
 	})
 
 	it('allows setParamToken to inject a specific fork', async () => {
-		await withPluginTestHost(async (host) => {
+		await withTestHost(async (host) => {
 			@Plugin({ name: 'Dep' })
 			class Dep extends ForkablePlugin {}
 

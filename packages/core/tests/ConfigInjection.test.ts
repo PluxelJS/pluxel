@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'bun:test'
 
-import { BasePlugin, Config, ForkablePlugin, Plugin, withPluginTestHost } from '@pluxel/core/test'
+import { BasePlugin, Config, ForkablePlugin, Plugin, withTestHost } from '@pluxel/core/test'
 
 describe('TestHost config injection', () => {
 	it('injects @Config fields before init()', async () => {
-		await withPluginTestHost(async (host) => {
+		await withTestHost(async (host) => {
 			const seen: Array<{ foo: unknown; count: unknown }> = []
 
 			@Plugin({ name: 'Cfg' })
@@ -28,7 +28,7 @@ describe('TestHost config injection', () => {
 	})
 
 	it('supports fork ids via runtime pluginInfo.id', async () => {
-		await withPluginTestHost(async (host) => {
+		await withTestHost(async (host) => {
 			@Plugin({ name: 'ForkCfg' })
 			class ForkCfg extends ForkablePlugin {
 				@Config({}) v!: string

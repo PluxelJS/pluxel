@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'bun:test'
 
-import { BasePlugin, Plugin, withPluginTestHost } from '@pluxel/core/test'
+import { BasePlugin, Plugin, withTestHost } from '@pluxel/core/test'
 
 describe('optional() during commit()', () => {
 	it('does not warn "not registered" for plugins in the active draft container', async () => {
-		await withPluginTestHost(async (host) => {
+		await withTestHost(async (host) => {
 			const ctx = host.ctx as any
 			const warns: unknown[][] = []
 			const infos: unknown[][] = []

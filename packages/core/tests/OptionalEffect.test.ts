@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'bun:test'
 
-import { BasePlugin, Plugin, withPluginTestHost } from '@pluxel/core/test'
+import { BasePlugin, Plugin, withTestHost } from '@pluxel/core/test'
 
 describe('registry.optional()', () => {
 	it('runs effect on availability changes and cleans up previous effects', async () => {
-		await withPluginTestHost(async (host) => {
+		await withTestHost(async (host) => {
 			const events: string[] = []
 
 			@Plugin({ name: 'EffectProvider' })
@@ -46,7 +46,7 @@ describe('registry.optional()', () => {
 	})
 
 	it('marks DI/resolve failures as failed in optional logs', async () => {
-		await withPluginTestHost(async (host) => {
+		await withTestHost(async (host) => {
 			@Plugin({ name: 'ResolveFail' })
 			class ResolveFail extends BasePlugin {
 				constructor() {

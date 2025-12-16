@@ -8,7 +8,22 @@ import type { CommitSummary, PluginService } from '../plugins/service/PluginServ
 import type { PluginConstructor, PluginIdentifier } from '../plugins/types'
 import type { ConfigService } from '../services/ConfigService'
 
-export * from '../index'
+// ---------------------------------------------------------------------------
+// Stable public surface for @pluxel/core/test
+// Keep exports explicit to avoid accidental API drift.
+// ---------------------------------------------------------------------------
+
+export { Context } from '@pluxel/context'
+export { BasePlugin, ForkablePlugin } from '../plugins/BasePlugin'
+export {
+	Config,
+	Plugin,
+	checkPluginDecorator,
+	clearParamToken,
+	getPluginInfo,
+	setParamToken,
+	setParamTokens,
+} from '../plugins/PluginDecorator'
 export { EffectScopeService } from '../services/EffectScopeService'
 export { EventsService } from '../services/EventsService'
 export { LoggerService } from '../services/LoggerService'
@@ -19,8 +34,12 @@ export type TestHost = {
 	/** Root context for this test. */
 	ctx: Context
 
-	/** Register plugin ctors into the draft container. */
+	/**
+	 * Register a plugin ctor into the current *draft* container.
+	 * Call `commit()`/`commitStrict()` to actually build a container and start it.
+	 */
 	register: (Plugin: PluginConstructor, opts?: { provideBase?: boolean }) => void
+	/** Convenience: register multiple ctors into the draft container. */
 	registerAll: (...plugins: PluginConstructor[]) => void
 
 	/** Fork helpers. */
@@ -32,10 +51,20 @@ export type TestHost = {
 	/** Runtime state helpers. */
 	isRunning: PluginService['isRunning']
 	optional: PluginService['optional']
+	/**
+	 * Read the current in-memory instance cache.
+	 * Does not instantiate or start anything.
+	 */
 	get: <T extends PluginIdentifier>(id: T) => InstanceType<T> | undefined
+	/** Like `get()`, but throws with a helpful message when missing. */
 	getOrThrow: <T extends PluginIdentifier>(id: T) => InstanceType<T>
 	/** Config injection helpers (LoaderService-like). */
 	config: ConfigService
+	/**
+	 * Patch the config snapshot used by `@Config` injection.
+	 * - Use plugin ctor or plugin name (`pluginInfo.id`) as target.
+	 * - Takes effect on the next (re)start of that plugin.
+	 */
 	setConfig: (
 		target: PluginConstructor | string,
 		configRecord: Record<string, unknown>,
@@ -46,14 +75,36 @@ export type TestHost = {
 	isEnabled: (name: string) => boolean
 
 	/** Draft mutations. */
+	/**
+	 * Unregister a plugin from the draft container.
+	 * Default behavior is cascading: dependents are removed too (to keep DI valid).
+	 */
 	unregister: (id: PluginIdentifier) => void
+	/**
+	 * Restart a plugin on next commit.
+	 * Default behavior is cascading: dependents are restarted too.
+	 */
 	restart: (id: PluginIdentifier, opts?: { cascadeDependents?: boolean }) => void
+	/**
+	 * Replace a plugin implementation (HMR-style).
+	 * Keeps old tokens resolvable via DI aliases and schedules a restart of the affected subtree.
+	 */
 	replace: (id: PluginIdentifier, next: PluginConstructor) => void
 
 	/** Commit and lifecycle. */
+	/**
+	 * Build/verify container, apply lifecycle changes, and return a typed result.
+	 * Prefer this when you want to assert build failures.
+	 */
 	tryCommit: () => Promise<CommitAttempt>
+	/** Like `tryCommit()` but throws on build failure. */
 	commit: () => Promise<CommitSummary>
+	/** Like `commit()` but throws if any plugin failed to start. */
 	commitStrict: () => Promise<CommitSummary>
+	/**
+	 * Convenience: register + commitStrict + getOrThrow.
+	 * Good for single-plugin tests.
+	 */
 	start: <T extends PluginConstructor>(
 		Plugin: T,
 		opts?: { provideBase?: boolean },
@@ -72,6 +123,13 @@ export type TestHost = {
 
 export type PluginTestHost = TestHost
 
+/**
+ * Create a test host (Context + plugin registry helpers).
+ *
+ * Notes:
+ * - This function is *side-effectful*: importing `@pluxel/core/test` installs core services.
+ * - All `register/unregister/restart/replace` operations are draft-only until you `commit()`.
+ */
 export function createTestHost(config: Context.Config = {}): TestHost {
 	const ctx = new Context({ name: 'test', ...config })
 	const registry = ctx.registry as PluginService
@@ -190,7 +248,11 @@ export function createPluginTestHost(config: Context.Config = {}): PluginTestHos
 	return createTestHost(config)
 }
 
-export async function withPluginTestHost<T>(
+/**
+ * Run a test with an isolated host and guaranteed cleanup.
+ * This is the recommended helper for plugin-system tests.
+ */
+export async function withTestHost<T>(
 	fn: (host: TestHost) => Promise<T> | T,
 	config: Context.Config = {},
 ): Promise<T> {
@@ -202,11 +264,12 @@ export async function withPluginTestHost<T>(
 	}
 }
 
-export async function withTestHost<T>(
+/** Back-compat alias for older tests. Prefer `withTestHost`. */
+export async function withPluginTestHost<T>(
 	fn: (host: TestHost) => Promise<T> | T,
 	config: Context.Config = {},
 ): Promise<T> {
-	return withPluginTestHost(fn, config)
+	return withTestHost(fn, config)
 }
 
 export type TestContext = {
@@ -214,6 +277,10 @@ export type TestContext = {
 	dispose: () => void
 }
 
+/**
+ * Create a bare Context for service-level tests (no plugin host helpers).
+ * Prefer `withTestContext()` for automatic cleanup.
+ */
 export function createTestContext(config: Context.Config = {}): TestContext {
 	const ctx = new Context({ name: 'test', ...config })
 	return {
@@ -231,6 +298,7 @@ export function createTestContext(config: Context.Config = {}): TestContext {
 	}
 }
 
+/** Run a test with an isolated Context and guaranteed cleanup. */
 export async function withTestContext<T>(
 	fn: (ctx: Context) => Promise<T> | T,
 	config: Context.Config = {},

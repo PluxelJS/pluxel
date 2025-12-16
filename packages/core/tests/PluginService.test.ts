@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'bun:test'
 
-import { BasePlugin, Plugin, withPluginTestHost } from '@pluxel/core/test'
-import { PluginB } from './plugins'
+import { BasePlugin, Plugin, withTestHost } from '@pluxel/core/test'
+import { PluginA, PluginB, PluginC } from './plugins'
 
 function createDeferred() {
 	let resolve!: () => void
@@ -15,7 +15,7 @@ function createDeferred() {
 
 describe('PluginService commit()', () => {
 	it('serializes overlapping commits and preserves plugin state', async () => {
-		await withPluginTestHost(async (host) => {
+		await withTestHost(async (host) => {
 			const summaries: any[] = []
 			host.ctx.on('afterCommit', (summary) => {
 				summaries.push(summary)
@@ -76,7 +76,7 @@ describe('PluginService commit()', () => {
 	})
 
 	it('captures failing plugins and clears singletons for retries', async () => {
-		await withPluginTestHost(async (host) => {
+		await withTestHost(async (host) => {
 			@Plugin({ name: 'ThrowPlugin' })
 			class ThrowPlugin extends BasePlugin {
 				override init(): void {
@@ -94,7 +94,7 @@ describe('PluginService commit()', () => {
 	})
 
 	it('allows optional deps to run logic after commit', async () => {
-		await withPluginTestHost(async (host) => {
+		await withTestHost(async (host) => {
 			const events: string[] = []
 
 			@Plugin({ name: 'OptionalProvider' })
@@ -135,7 +135,7 @@ describe('PluginService commit()', () => {
 	})
 
 	it('optional handles dynamic import errors and still runs effect', async () => {
-		await withPluginTestHost(async (host) => {
+		await withTestHost(async (host) => {
 			const ctx = host.ctx as any
 			const logs: unknown[][] = []
 			const originalWarn = ctx.logger.warn
@@ -159,7 +159,7 @@ describe('PluginService commit()', () => {
 	})
 
 	it('optional importer validates plugin exports and reflects running instances', async () => {
-		await withPluginTestHost(async (host) => {
+		await withTestHost(async (host) => {
 			const ctx = host.ctx as any
 			host.register(PluginB)
 			await host.commitStrict()
@@ -189,7 +189,7 @@ describe('PluginService commit()', () => {
 	})
 
 	it('optional injects caller context like a required dependency', async () => {
-		await withPluginTestHost(async (host) => {
+		await withTestHost(async (host) => {
 			const callerCtxs: any[] = []
 			let consumerCtx: any | undefined
 
@@ -226,7 +226,7 @@ describe('PluginService commit()', () => {
 	})
 
 	it('retries failed plugins on later commits even without container changes', async () => {
-		await withPluginTestHost(async (host) => {
+		await withTestHost(async (host) => {
 			let attempt = 0
 			const events: string[] = []
 
@@ -251,6 +251,32 @@ describe('PluginService commit()', () => {
 			expect(second.ok).toBe(true)
 			expect(host.isRunning(Flaky)).toBe(true)
 			expect(events).toEqual(['ok'])
+		})
+	})
+
+	it('updates registered plugin set across commits', async () => {
+		await withTestHost(async (host) => {
+			const readPluginSet = () => new Set<any>(host.listPlugins())
+
+			host.registerAll(PluginB, PluginC, PluginA)
+			await host.commitStrict()
+
+			expect(readPluginSet()).toEqual(new Set([PluginB, PluginC, PluginA]))
+
+			host.restart(PluginA)
+			host.unregister(PluginA)
+			await host.commitStrict()
+			expect(readPluginSet()).toEqual(new Set([PluginB, PluginC]))
+
+			host.register(PluginA)
+			await host.commitStrict()
+			expect(readPluginSet()).toEqual(new Set([PluginB, PluginC, PluginA]))
+			expect(host.isRunning(PluginA)).toBe(true)
+
+			host.unregister(PluginA)
+			await host.commitStrict()
+			expect(readPluginSet()).toEqual(new Set([PluginB, PluginC]))
+			expect(host.isRunning(PluginA)).toBe(false)
 		})
 	})
 })
