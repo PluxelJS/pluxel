@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url'
 
 import { Bench, type TaskResult, type TaskResultRuntimeInfo, type TaskResultTimestampProviderInfo, type TaskResultWithStatistics } from 'tinybench'
 
-import { Context } from '../context'
+import { Context } from '@pluxel/core/test'
 import { PluginA, PluginB, PluginC } from '../plugins'
 
 type CommitResult = Awaited<ReturnType<Context['registry']['commit']>>

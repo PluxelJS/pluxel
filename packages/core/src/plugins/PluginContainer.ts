@@ -127,10 +127,34 @@ export class PluginContainer {
 	 * 卸载：深度优先仅修改草稿；实际停机在 PluginService.commit() 中统一执行
 	 */
 	public unregisterPlugin(plugin: PluginIdentifier): void {
-		const canonical = (this.lastContainer?.resolveIdentifier?.(plugin as any) ?? plugin) as PluginIdentifier
-		const children = this.lastContainer?.dependents.get(canonical) ?? new Set<PluginIdentifier>()
-		for (const dep of children) this.unregisterPlugin(dep)
-		this.builder.tryUnregister(canonical)
+		const container = this.lastContainer
+		const resolve = (id: PluginIdentifier) =>
+			(container?.resolveIdentifier?.(id as any) ?? id) as PluginIdentifier
+
+		const root = resolve(plugin)
+		const visited = new Set<PluginIdentifier>()
+		const stack: Array<{ id: PluginIdentifier; expanded: boolean }> = [{ id: root, expanded: false }]
+
+		while (stack.length) {
+			const top = stack.pop()!
+			if (top.expanded) {
+				this.builder.tryUnregister(top.id)
+				continue
+			}
+
+			if (visited.has(top.id)) continue
+			visited.add(top.id)
+
+			// Post-order: dependents first, then self.
+			stack.push({ id: top.id, expanded: true })
+
+			const children = container?.dependents.get(top.id)
+			if (!children || children.size === 0) continue
+			for (const dep of children) {
+				const child = resolve(dep)
+				if (!visited.has(child)) stack.push({ id: child, expanded: false })
+			}
+		}
 	}
 
 	/**

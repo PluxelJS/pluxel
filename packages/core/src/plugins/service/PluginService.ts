@@ -136,6 +136,16 @@ export class PluginService {
 		return this._lastCommit
 	}
 
+	/**
+	 * Get the current singleton instance for an identifier if it was constructed.
+	 * This does not instantiate or start anything; it only reads the runtime cache.
+	 */
+	public getInstance<T extends PluginIdentifier>(id: T): InstanceType<T> | undefined {
+		const container = this._activeContainer ?? this.pluginRegistry.lastContainer
+		const key = (container?.resolveIdentifier?.(id as any) ?? id) as PluginIdentifier
+		return this.pluginRegistry.singletons.get(key as any) as InstanceType<T> | undefined
+	}
+
 	/* ─────────────────────────── Forks ─────────────────────────── */
 
 	/**

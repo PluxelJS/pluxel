@@ -1,5 +1,4 @@
-import 'reflect-metadata'
-import '@pluxel/core/services'
+import '@pluxel/core/test/setup'
 
 import { describe, expect, it } from 'bun:test'
 import { BasePlugin, Context, Plugin } from '@pluxel/core'

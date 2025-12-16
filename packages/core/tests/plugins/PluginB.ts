@@ -1,4 +1,4 @@
-import { BasePlugin, Plugin } from '../context'
+import { BasePlugin, Plugin } from '@pluxel/core/test'
 
 @Plugin()
 export class PluginB extends BasePlugin {

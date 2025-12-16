@@ -1,47 +1,39 @@
 // start.test.ts
-import 'reflect-metadata'
 import { describe, expect, it } from 'bun:test'
 
-import { Context } from './context'
+import { withPluginTestHost } from '@pluxel/core/test'
 import { PluginA, PluginB, PluginC } from './plugins'
-
-// 工具函数：读取容器里的插件集合
-function readPluginSet(ctx: Context) {
-	const { pluginRegistry } = ctx.registry
-	const keys = pluginRegistry.lastContainer.services.keys()
-	return new Set<any>(keys)
-}
 
 describe('Plugin lifecycle with commit()', () => {
 	it('should update plugins set across commits', async () => {
-		const ctx = new Context()
-		const { pluginRegistry } = ctx.registry
+		await withPluginTestHost(async (host) => {
+			const readPluginSet = () =>
+				new Set<any>(host.registry.lastCommit?.container.services.keys() ?? [])
 
-		// 注册 B、C、A
-		pluginRegistry.registerPlugin(PluginB)
-		pluginRegistry.registerPlugin(PluginC)
-		pluginRegistry.registerPlugin(PluginA)
-		await ctx.registry.commit()
+			// 注册 B、C、A
+			host.registerAll(PluginB, PluginC, PluginA)
+			await host.commitStrict()
 
-		// A 依赖 B，C 可选，因此都应存在
-		expect(readPluginSet(ctx)).toEqual(new Set([PluginB, PluginC, PluginA]))
+			// A 依赖 B，C 可选，因此都应存在
+			expect(readPluginSet()).toEqual(new Set([PluginB, PluginC, PluginA]))
 
-		// reload A，再注销 A
-		pluginRegistry.reloadPlugin(PluginA)
-		pluginRegistry.unregisterPlugin(PluginA)
-		await ctx.registry.commit()
-		expect(readPluginSet(ctx)).toEqual(new Set([PluginB, PluginC]))
+			// reload A，再注销 A
+			host.reload(PluginA)
+			host.unregister(PluginA)
+			await host.commitStrict()
+			expect(readPluginSet()).toEqual(new Set([PluginB, PluginC]))
 
-		// 再注册 A
-		pluginRegistry.registerPlugin(PluginA)
-		await ctx.registry.commit()
-		expect(readPluginSet(ctx)).toEqual(new Set([PluginB, PluginC, PluginA]))
-		expect(ctx.registry.isRunning(PluginA)).toEqual(true)
+			// 再注册 A
+			host.register(PluginA)
+			await host.commitStrict()
+			expect(readPluginSet()).toEqual(new Set([PluginB, PluginC, PluginA]))
+			expect(host.isRunning(PluginA)).toEqual(true)
 
-		// 最终再次注销 A
-		pluginRegistry.unregisterPlugin(PluginA)
-		await ctx.registry.commit()
-		expect(readPluginSet(ctx)).toEqual(new Set([PluginB, PluginC]))
-		expect(ctx.registry.isRunning(PluginA)).toEqual(false)
+			// 最终再次注销 A
+			host.unregister(PluginA)
+			await host.commitStrict()
+			expect(readPluginSet()).toEqual(new Set([PluginB, PluginC]))
+			expect(host.isRunning(PluginA)).toEqual(false)
+		})
 	})
 })

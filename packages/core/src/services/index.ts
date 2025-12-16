@@ -1,3 +1,5 @@
+import '../reflection'
+
 export * from './EffectScopeService'
 export * from './EventsService'
 export * from './LoggerService'

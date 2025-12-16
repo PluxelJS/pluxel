@@ -1,7 +1,5 @@
 // start.ts
-import 'reflect-metadata'
-
-import { Context } from './context'
+import { Context } from '@pluxel/core/test'
 import { PluginA, PluginB, PluginC } from './plugins'
 
 const ctx = new Context()

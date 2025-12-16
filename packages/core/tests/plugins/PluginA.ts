@@ -1,4 +1,4 @@
-import { BasePlugin, Plugin } from '../context'
+import { BasePlugin, Plugin } from '@pluxel/core/test'
 // PluginA.ts
 // PluginA 依赖 PluginB 为必选依赖，依赖 PluginC 为可选依赖
 // biome-ignore lint/style/useImportType: <PluginSystem>

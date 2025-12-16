@@ -17,6 +17,16 @@
 			"require": "./dist/services.cjs",
 			"import": "./dist/services.mjs"
 		},
+		"./test": {
+			"@pluxel/source": "./src/test/index.ts",
+			"require": "./dist/test.cjs",
+			"import": "./dist/test.mjs"
+		},
+		"./test/setup": {
+			"@pluxel/source": "./src/test/setup.ts",
+			"require": "./dist/test/setup.cjs",
+			"import": "./dist/test/setup.mjs"
+		},
 		"./package.json": "./package.json"
 	},
 	"files": [
@@ -24,16 +34,16 @@
 		"!**/*.map"
 	],
 	"scripts": {
-		"test": "bun test",
+		"test": "bun test --conditions=@pluxel/source",
 		"build": "tsdown",
-		"dev": "bun --watch run tests/start.ts",
-		"bench": "bun run tests/bench/pluginLifecycle.bench.ts"
+		"dev": "bun --conditions=@pluxel/source --watch run tests/start.ts",
+		"bench": "bun --conditions=@pluxel/source run tests/bench/pluginLifecycle.bench.ts"
 	},
 	"dependencies": {
-		"eventure": "^0.4.2",
-		"reflect-metadata": "^0.2.2"
+		"eventure": "^0.4.2"
 	},
 	"devDependencies": {
+		"@abraham/reflection": "^0.13.0",
 		"@pluxel/context": "workspace:*",
 		"@pluxel/rolldown": "workspace:*",
 		"diod": "workspace:*",
@@ -49,6 +59,14 @@
 			"./services": {
 				"require": "./dist/services.cjs",
 				"import": "./dist/services.mjs"
+			},
+			"./test": {
+				"require": "./dist/test.cjs",
+				"import": "./dist/test.mjs"
+			},
+			"./test/setup": {
+				"require": "./dist/test/setup.cjs",
+				"import": "./dist/test/setup.mjs"
 			},
 			"./package.json": "./package.json"
 		}

@@ -211,10 +211,10 @@ importers:
       eventure:
         specifier: ^0.4.2
         version: 0.4.2
-      reflect-metadata:
-        specifier: ^0.2.2
-        version: 0.2.2
     devDependencies:
+      '@abraham/reflection':
+        specifier: ^0.13.0
+        version: 0.13.0
       '@pluxel/context':
         specifier: workspace:*
         version: link:../context
@@ -384,9 +384,6 @@ importers:
       postcss-simple-vars:
         specifier: ^7.0.1
         version: 7.0.1(postcss@8.5.6)
-      reflect-metadata:
-        specifier: ^0.2.2
-        version: 0.2.2
       valibot-form:
         specifier: workspace:*
         version: link:../valibot-form
@@ -501,6 +498,9 @@ importers:
         version: 3.2.4(@types/node@25.0.2)(jiti@2.6.1)(jsdom@25.0.1)(sugarss@5.0.1(postcss@8.5.6))(yaml@2.8.2)
 
 packages:
+
+  '@abraham/reflection@0.13.0':
+    resolution: {integrity: sha512-sQYhhraGPPRP6zoqpqpSaoYL+XY5KNmQCcoB3IuQh1z1aWmkHXcxwyTxRkTJ60L2aUjrbiqIqoYkrB/1c7kjQA==}
 
   '@ardatan/relay-compiler@12.0.3':
     resolution: {integrity: sha512-mBDFOGvAoVlWaWqs3hm1AciGHSQE1rqFc/liZTyYz/Oek9yZdT5H26pH2zAFuEiTiBVPPyMuqf5VjOFPI2DGsQ==}
@@ -3764,6 +3764,8 @@ packages:
     resolution: {integrity: sha512-3+AG1Xvt+R7M7PSDudhbfbwiyveW6B8PLBIwTyEC598biEYIjHhC89i6DBEvR0EZUjGY3uGSnC429HpIa2Z09g==}
 
 snapshots:
+
+  '@abraham/reflection@0.13.0': {}
 
   '@ardatan/relay-compiler@12.0.3(graphql@16.12.0)':
     dependencies:
