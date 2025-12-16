@@ -7,19 +7,27 @@ import { LoaderService } from '../../src/services/loader/LoaderService'
 function createHmrCtx(core: Context) {
 	const enabled = new Set<string>()
 	const configService = {
-		isEnable(name: string) {
+		isEnabledInConfig(name: string) {
 			return enabled.has(name)
 		},
-		enablePlugin(...names: string[]) {
+		setEnabledInConfig(name: string, on: boolean) {
+			if (on) enabled.add(name)
+			else enabled.delete(name)
+		},
+		enableInConfig(...names: string[]) {
 			for (const n of names) enabled.add(n)
 		},
-		disablePlugin(...names: string[]) {
+		disableInConfig(...names: string[]) {
 			for (const n of names) enabled.delete(n)
 		},
-		getConfig(_name: string) {
+		getConfigSnapshot(_name: string) {
 			return { meta: {}, configRecord: {} }
 		},
-		setConfig() {},
+		patchConfigSnapshot() {},
+		getExtra() {
+			return undefined
+		},
+		setExtra() {},
 	}
 
 	// Context from @pluxel/core exposes many services as readonly getters.
@@ -66,7 +74,7 @@ describe('LoaderService', () => {
 		const core = new Context()
 		const ctx = createHmrCtx(core)
 		// Enable baseline provider; the later consumer will be enabled too.
-		ctx.configService.enablePlugin('Impl1', 'Consumer')
+		ctx.configService.enableInConfig('Impl1', 'Consumer')
 		const loader = new LoaderService(ctx)
 
 		abstract class Abs extends BasePlugin {}

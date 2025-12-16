@@ -271,7 +271,7 @@ export class PluginRegistry {
 			tx?.recordIdentity(ctor)
 			setPluginIdentity(ctor, { id: prefixedId, packageName: pkgName })
 			name = prefixedId
-			this.ctx.logger?.info(
+			this.ctx.logger.info(
 				`[PluginRegistry] 插件 "${declaredName}" 来自包 ${pkgName}，已自动重命名为 "${prefixedId}"`,
 			)
 		}
@@ -330,7 +330,7 @@ export class PluginRegistry {
 		// 并行启动（registerPlugin 只是声明，依赖处理在 commit 时）
 		const toStart = list.flatMap(({ ctor }) => {
 			const { id: name } = getPluginInfo(ctor)
-			if (!this.isPrimaryProvider(moduleId, ctor) || !this.ctx.configService.isEnable(name))
+			if (!this.isPrimaryProvider(moduleId, ctor) || !this.ctx.configService.isEnabledInConfig(name))
 				return []
 			return [this.startPlugin(name, ctor)]
 		})
@@ -350,12 +350,12 @@ export class PluginRegistry {
 
 			for (const forkId of forkIds) {
 				const forkName = `${name}#${forkId}`
-				if (!this.ctx.configService.isEnable(forkName)) continue
+				if (!this.ctx.configService.isEnabledInConfig(forkName)) continue
 				try {
 					const ForkCtor = this.ctx.registry.fork(ctor as any, forkId) as PluginConstructor
 					forkStarts.push(this.startPlugin(forkName, ForkCtor))
 				} catch (err) {
-					this.ctx.logger?.warn(
+					this.ctx.logger.warn(
 						{ err, name, forkId },
 						`[PluginRegistry] 启动 fork 失败：${name}#${forkId}`,
 					)
@@ -414,7 +414,7 @@ export class PluginRegistry {
 		// 配置校验/补齐（幂等）
 		const schema = this.getSchema(ctor)
 		if (schema) {
-			const { configRecord } = this.ctx.configService.getConfig(name)
+			const { configRecord } = this.ctx.configService.getConfigSnapshot(name)
 			const entries = Object.entries(schema)
 			const hasAsync = entries.some(([, s]) => s.async)
 
@@ -458,15 +458,15 @@ export class PluginRegistry {
 			}
 
 			if (Object.keys(patch).length > 0) {
-				this.ctx.configService.setConfig(name, { configRecord: patch })
+				this.ctx.configService.patchConfigSnapshot(name, { configRecord: patch })
 			}
 		}
 
 		// 进入运行层（两段式，失败回滚）
 		let enabled = false
 		try {
-			if (!this.ctx.configService.isEnable(name)) {
-				this.ctx.configService.enablePlugin(name)
+			if (!this.ctx.configService.isEnabledInConfig(name)) {
+				this.ctx.configService.enableInConfig(name)
 			}
 			enabled = true
 			this.ctx.registry.pluginRegistry.registerPlugin(
@@ -487,7 +487,7 @@ export class PluginRegistry {
 			})
 			if (enabled) {
 				this.logGuard(`config.disable(${name})`, () => {
-					this.ctx.configService.disablePlugin(name)
+					this.ctx.configService.disableInConfig(name)
 				})
 			}
 			throw err
@@ -532,10 +532,10 @@ export class PluginRegistry {
 
 	// =============== 持久层（配置启用位） ===============
 	enablePersisted(...names: readonly string[]): void {
-		this.ctx.configService.enablePlugin(...names)
+		this.ctx.configService.enableInConfig(...names)
 	}
 	disablePersisted(...names: readonly string[]): void {
-		this.ctx.configService.disablePlugin(...names)
+		this.ctx.configService.disableInConfig(...names)
 	}
 	/** 将该模块内所有插件的持久启用位关闭（用于 prune(persisted)） */
 	disablePersistedByModule(moduleId: ModuleId): void {
@@ -555,7 +555,7 @@ export class PluginRegistry {
 		try {
 			fn()
 		} catch (err) {
-			this.ctx.logger?.warn({ err, label }, `[PluginRegistry] 可恢复异常：${label}`)
+			this.ctx.logger.warn({ err, label }, `[PluginRegistry] 可恢复异常：${label}`)
 		}
 	}
 

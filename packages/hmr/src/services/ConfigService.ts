@@ -1,7 +1,8 @@
 import { readFileSync } from 'node:fs'
 import fs from 'node:fs/promises'
 import { join as joinPath, dirname, basename, resolve } from 'node:path'
-import { type Context, Injectable } from '@pluxel/core'
+import { type Context, Injectable, OverrideOf } from '@pluxel/core'
+import { ConfigService as CoreConfigService } from '@pluxel/core/services'
 import { debounce } from '@tanstack/pacer'
 import chokidar, { type FSWatcher } from 'chokidar'
 import { SuperJSON } from 'superjson'
@@ -28,7 +29,8 @@ export interface ConfigShape {
 	extra: Record<string, unknown>
 }
 
-@Injectable({ key: 'configService' })
+@Injectable
+@OverrideOf(CoreConfigService)
 export class ConfigService {
 	private data: ConfigShape = { enabled: new Set(), plugins: {}, extra: {} }
 	private watcher!: FSWatcher
@@ -127,7 +129,7 @@ export class ConfigService {
 	/**
 	 * 读取某插件的配置（不存在时返回只读“空视图”，避免误改未落盘）
 	 */
-	getConfig<T extends object = Record<string, unknown>>(
+	getConfigSnapshot<T extends object = Record<string, unknown>>(
 		name: string = this.ctx.pluginInfo.id,
 	): Readonly<PluginEntry<T>> {
 		const entry = this.data.plugins[name]
@@ -140,7 +142,7 @@ export class ConfigService {
 		return this.data.extra[key] as T | undefined
 	}
 
-	isEnable(name: string): boolean {
+	isEnabledInConfig(name: string): boolean {
 		return this.data.enabled.has(name)
 	}
 
@@ -162,7 +164,7 @@ export class ConfigService {
 	/**
 	 * 设置 / 覆盖配置条目（存在则浅合并）
 	 */
-	setConfig<T extends object = Record<string, unknown>>(
+	patchConfigSnapshot<T extends object = Record<string, unknown>>(
 		name: string,
 		partial: Partial<PluginEntry<T>>,
 	) {
@@ -178,25 +180,33 @@ export class ConfigService {
 	}
 
 	/**
-	 * 批量启用：ConfigService.enable('a', 'b', 'c')
+	 * 批量启用：ConfigService.enableInConfig('a', 'b', 'c')
 	 */
-	enablePlugin(...names: readonly string[]) {
+	enableInConfig(...names: readonly string[]) {
 		for (let i = 0; i < names.length; i++) this.data.enabled.add(names[i])
 		this.saveDebounced()
 	}
 
 	/**
-	 * 批量禁用：ConfigService.disable('a', 'b')
+	 * 批量禁用：ConfigService.disableInConfig('a', 'b')
 	 */
-	disablePlugin(...names: readonly string[]) {
+	disableInConfig(...names: readonly string[]) {
 		for (let i = 0; i < names.length; i++) this.data.enabled.delete(names[i])
 		this.saveDebounced()
 	}
 
 	/**
+	 * 单个开关（更语义化）
+	 */
+	setEnabledInConfig(name: string, enabled: boolean) {
+		if (enabled) this.enableInConfig(name)
+		else this.disableInConfig(name)
+	}
+
+	/**
 	 * 一次性覆盖启用集合（常用于 UI “全选/重置”）
 	 */
-	setEnabled(names: Iterable<string>) {
+	replaceEnabledInConfigSet(names: Iterable<string>) {
 		this.data.enabled.clear()
 		for (const n of names) this.data.enabled.add(n)
 		this.saveDebounced()

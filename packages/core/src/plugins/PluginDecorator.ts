@@ -173,13 +173,13 @@ const S = (ctor: Function): State => {
 /*───────────────────────────────────────────────────────────
   Tiny Utils
 ───────────────────────────────────────────────────────────*/
-const nameOf = (fn: any): string => (fn && fn.name) || '<anonymous>'
+const nameOf = (fn: { name?: string } | null | undefined): string => fn?.name || '<anonymous>'
 
 const isSubclassOf = (ctor: Function, base: Function): boolean => {
 	if (ctor === base) return true
 	if (typeof ctor !== 'function' || typeof base !== 'function') return false
-	const cp = (ctor as any).prototype
-	const bp = (base as any).prototype
+	const cp = (ctor as { prototype?: object }).prototype
+	const bp = (base as { prototype?: object }).prototype
 	return !!(cp && bp && bp.isPrototypeOf(cp))
 }
 
@@ -201,7 +201,7 @@ function sparseObjectToArray(o: Readonly<Record<number, Identifier<any>>>): Toke
 	const arr = new Array<Identifier<any> | undefined>(max + 1)
 	for (let i = 0; i < ks.length; i++) {
 		const idx = (ks[i] as unknown as number) | 0
-		arr[idx] = (o as any)[idx]
+		arr[idx] = (o as unknown as Record<string, Identifier<any>>)[String(idx)]
 	}
 	return arr
 }
@@ -217,7 +217,7 @@ function applyOverride(dst: unknown[], override?: ParamOverride): void {
 		const ks = Object.keys(override)
 		for (let i = 0; i < ks.length; i++) {
 			const idx = (ks[i] as unknown as number) | 0
-			const v = (override as any)[idx]
+			const v = (override as unknown as Record<string, Identifier<any>>)[String(idx)]
 			if (v !== undefined) dst[idx] = v
 		}
 	}

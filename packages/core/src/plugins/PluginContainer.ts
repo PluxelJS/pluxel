@@ -54,7 +54,7 @@ export class PluginContainer {
 		const depsCount = paramTypes.length
 
 		const reg = this.builder
-			.register(Plugin as any)
+			.register(Plugin)
 			.useFactory((c) => {
 				const pluginCTX = this.createPluginContext()
 				pluginCTX.pluginInfo = info
@@ -82,11 +82,11 @@ export class PluginContainer {
 				try {
 					switch (depsCount) {
 						case 0:
-							return new (Plugin as any)()
+							return new (Plugin)()
 						case 1:
-							return new (Plugin as any)(wrap(unwrapOk(c.getResult(paramTypes[0]))!))
+							return new (Plugin)(wrap(unwrapOk(c.getResult(paramTypes[0]))!))
 						case 2:
-							return new (Plugin as any)(
+							return new (Plugin)(
 								wrap(unwrapOk(c.getResult(paramTypes[0]))!),
 								wrap(unwrapOk(c.getResult(paramTypes[1]))!),
 							)

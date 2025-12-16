@@ -48,7 +48,7 @@ export class EventsService extends Eventure<Events> {
 		opts?: OnOptions,
 		forcePrepend?: boolean,
 	): Unsubscribe {
-		;(listener as any)[symbols.ATTACH] = this.ctx
+		;(listener as unknown as { [symbols.ATTACH]?: Context })[symbols.ATTACH] = this.ctx
 		const ret = super._register(event, listener, opts, forcePrepend)
 		this.ctx.scope.collectEffect(ret)
 		return ret
@@ -60,7 +60,7 @@ export class EventsService extends Eventure<Events> {
 		...args: EventArgs<Events[K]>
 	): this {
 		// 1. 从 thisArg 上取出可选的过滤函数
-		const filterFn = (thisArg as any)[symbols.FILTER] as FilterFunction
+		const filterFn = (thisArg as unknown as { [symbols.FILTER]?: FilterFunction })[symbols.FILTER]
 
 		// 2. 拿到所有当前事件的 listeners（不是每次都重新 query 多次）
 		const listeners = this.queryListeners(event)
@@ -73,7 +73,9 @@ export class EventsService extends Eventure<Events> {
 		for (let i = 0; i < listeners.length; i++) {
 			const fn = listeners[i]
 			// 注册时存下的 ctx
-			const attachedCtx = (fn as any)[attachSym] as Context
+			const attachedCtx =
+				((fn as unknown as { [symbols.ATTACH]?: Context })[attachSym] as Context | undefined) ??
+				this.ctx
 
 			// 如果有 filterFn，就用它判断；否则直接调用
 			if (!filterFn || filterFn.call(thisArg, attachedCtx)) {
@@ -101,7 +103,7 @@ export class EvtChannel<D extends EventDescriptor> extends Channel<D> {
 		opts?: OnOptions,
 		prepend?: boolean,
 	): Unsubscribe {
-		;(listener as any)[symbols.ATTACH] = this.ctx
+		;(listener as unknown as { [symbols.ATTACH]?: Context })[symbols.ATTACH] = this.ctx
 		const ret = super._register(listener, opts, prepend)
 		this.ctx.caller?.scope.collectEffect(ret)
 		return ret

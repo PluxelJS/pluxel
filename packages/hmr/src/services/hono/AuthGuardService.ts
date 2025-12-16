@@ -195,7 +195,7 @@ export class AuthGuardService {
 	/** 通知 HonoService：是否需要对 /api/* 套上守卫 */
 	private syncHonoGuardState() {
 		// HonoService 可能尚未构造完成；此处只做尽力同步
-		this.ctx.honoService?.switchAuthGuard(this.guard !== undefined)
+		this.ctx.honoService.switchAuthGuard(this.guard !== undefined)
 	}
 
 	private clearGuard(expected?: ActiveGuard, opts?: { skipSync?: boolean; silent?: boolean }) {

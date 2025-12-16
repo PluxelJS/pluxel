@@ -13,11 +13,16 @@ import { Injectable } from '@pluxel/context'
 import { createErr, createOk } from 'option-t/plain_result'
 import type { ServiceMap } from '../../container'
 import { EffectScopeService } from '../../services/EffectScopeService'
-import { BasePlugin, PLUGIN_CTX } from '../BasePlugin'
+import { BasePlugin } from '../BasePlugin'
 import { forkPlugin, getForkedCtor, listForks } from '../fork'
 import { PluginContainer, type PluginDiContainer } from '../PluginContainer'
 import type { PluginInfo } from '../PluginDecorator'
-import type { ForkablePluginConstructor, PluginConstructor, PluginIdentifier, PluginInstance } from '../types'
+import type {
+	ForkablePluginConstructor,
+	PluginConstructor,
+	PluginIdentifier,
+	PluginInstance,
+} from '../types'
 import { computeInitPlan, partitionChanges, planTeardown, type InitPlan } from './commitPlanner'
 import { LifecycleManager } from './lifecycleManager'
 import {
@@ -97,7 +102,7 @@ export class PluginService {
 			// 1) avoid repeated Context service‑getter overhead on hot collectEffect calls;
 			// 2) keep scope identity stable for this plugin context.
 			try {
-				const scope = (pluginCTX as any).scope
+				const scope = pluginCTX.scope
 				if (scope) {
 					Object.defineProperty(pluginCTX, 'scope', {
 						value: scope,
@@ -121,6 +126,32 @@ export class PluginService {
 			() => this._lastCommit,
 			() => this._activeContainer,
 		)
+
+		// Core responsibility: inject @Config fields before plugin init().
+		// Upstream runtimes (HMR/apps) only need to provide a ConfigService implementation.
+		try {
+			this.ctx.on('beforeStart', (plugin) => {
+				this.injectConfig(plugin)
+			})
+		} catch {
+			// ignore: events service may be overridden/absent
+		}
+	}
+
+	private injectConfig(plugin: PluginInstance): void {
+		const pluginCtx = plugin.ctx
+		const info: PluginInfo | undefined = pluginCtx?.pluginInfo
+		const schemaMap = info?.configMap as Record<string, unknown> | null | undefined
+		if (!schemaMap) return
+
+		const id = info?.id
+		if (!id) return
+
+		const record = pluginCtx.configService.getConfigSnapshot(id)?.configRecord ?? {}
+
+		for (const key of Object.keys(schemaMap)) {
+			;(plugin as any)[key] = (record as any)[key]
+		}
 	}
 
 	/* ─────────────────────────── State Query ─────────────────────────── */
@@ -269,15 +300,15 @@ export class PluginService {
 		}
 
 		const instance: PluginInstance = resolution.val
-		const pluginCtx = instance[PLUGIN_CTX]
+		const pluginCtx = instance.ctx
 
 		try {
 			await this.lifecycle.startLifecycle(id, instance)
 		} catch (error) {
-			const logger = pluginCtx?.logger ?? this.ctx.logger
-			logger?.error?.(error, `启动 ${String(id)} 失败`)
+			const logger = pluginCtx.logger ?? this.ctx.logger
+			logger.error(error, `启动 ${String(id)} 失败`)
 			try {
-				await pluginCtx?.scope?.disposeAll?.()
+				await pluginCtx.scope.disposeAll()
 			} catch {
 				/* ignored */
 			}

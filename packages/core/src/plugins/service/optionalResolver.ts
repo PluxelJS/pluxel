@@ -9,7 +9,7 @@
 // - Clear diagnostics: unregistered vs idle vs failed.
 
 import type { Context } from '@pluxel/context'
-import { BasePlugin, PLUGIN_CTX } from '../BasePlugin'
+import { BasePlugin } from '../BasePlugin'
 import type { PluginContainer, PluginDiContainer } from '../PluginContainer'
 import { getPluginInfo } from '../PluginDecorator'
 import type { PluginIdentifier } from '../types'
@@ -57,7 +57,7 @@ const isPluginIdentifier = (v: unknown): v is PluginIdentifier =>
 	typeof v === 'function' && v.prototype instanceof BasePlugin
 
 const describeIds = (ids: PluginIdentifier[]) =>
-	ids.map((id) => String((id as any)?.name ?? id)).join(', ')
+	ids.map((id) => (typeof id === 'function' ? (id as Function).name : String(id))).join(', ')
 
 const arraysEqual = <T>(a: T[], b: T[]): boolean => {
 	if (a.length !== b.length) return false
@@ -94,11 +94,11 @@ export class OptionalResolver {
 				if (id) this.lastErrors.set(id, error)
 			})
 			rootCtx.events.on('startError', (pluginCtx, error) => {
-				const id = (pluginCtx as any)?.pluginInfo?.id
+				const id = pluginCtx.pluginInfo?.id
 				if (typeof id === 'string' && id.length) this.lastErrors.set(id, error)
 			})
 			rootCtx.events.on('afterStart', (pluginCtx) => {
-				const id = (pluginCtx as any)?.pluginInfo?.id
+				const id = pluginCtx.pluginInfo?.id
 				if (typeof id === 'string' && id.length) this.lastErrors.delete(id)
 			})
 		} catch {
@@ -138,7 +138,7 @@ export class OptionalResolver {
 				opts.onError(error)
 			} else {
 				const name = (opts?.label ?? importer.name) || 'dynamic import'
-				callerCtx.logger?.warn?.(error, `optional(${name}) 动态导入失败`)
+				callerCtx.logger.warn(error, `optional(${name}) 动态导入失败`)
 			}
 			return undefined
 		}
@@ -212,7 +212,7 @@ export class OptionalResolver {
 						try {
 							if (cleanup) await cleanup()
 						} catch (error) {
-							callerCtx.logger?.warn?.(error, `optional(${label}) 清理失败`)
+							callerCtx.logger.warn(error, `optional(${label}) 清理失败`)
 						}
 						cleanup = undefined
 						if (stopped) return
@@ -223,11 +223,11 @@ export class OptionalResolver {
 							if (typeof ret === 'function') cleanup = ret as any
 						} catch (error) {
 							if (opts?.onError) opts.onError(error)
-							else callerCtx.logger?.error?.(error, `optional(${label}) 执行失败`)
+							else callerCtx.logger.error(error, `optional(${label}) 执行失败`)
 						}
 					})
 					.catch((error) => {
-						callerCtx.logger?.error?.(error, `optional(${label}) 内部异常`)
+						callerCtx.logger.error(error, `optional(${label}) 内部异常`)
 					})
 			}
 
@@ -247,14 +247,14 @@ export class OptionalResolver {
 					try {
 						await cleanup?.()
 					} catch (error) {
-						callerCtx.logger?.warn?.(error, `optional(${label}) 清理失败`)
+						callerCtx.logger.warn(error, `optional(${label}) 清理失败`)
 					}
 					cleanup = undefined
 				})
 			}
 
 			try {
-				;(callerCtx as any)?.scope?.collectEffect?.(dispose)
+				callerCtx.collectEffect(dispose)
 			} catch {
 				/* ignore */
 			}
@@ -287,7 +287,7 @@ export class OptionalResolver {
 				const ids = this.normalizePluginIdentifiers(mod)
 				if (mod !== undefined && ids.length === 0) {
 					const err = new Error(`optional(${label}) 未找到 BasePlugin 导出`)
-					callerCtx.logger?.warn?.(err)
+					callerCtx.logger.warn(err)
 					opts?.onError?.(err)
 				}
 				return attach(ids, label)
@@ -344,13 +344,13 @@ export class OptionalResolver {
 		const availability = this.getAvailability(ids)
 		switch (availability.state) {
 			case 'unregistered':
-				this.ctx.logger?.warn?.(
+				this.ctx.logger.warn(
 					{ plugins: availability.missingInContainer },
 					`optional(${label}) 未在容器中，可能尚未注册`,
 				)
 				return
 			case 'failed':
-				this.ctx.logger?.info?.(
+				this.ctx.logger.info(
 					{
 						failed: availability.failed.map((x) => ({
 							plugin: x.plugin,
@@ -362,7 +362,7 @@ export class OptionalResolver {
 				)
 				return
 			case 'idle':
-				this.ctx.logger?.info?.({ plugins: availability.idle }, `optional(${label}) 已注册但未运行`)
+				this.ctx.logger.info({ plugins: availability.idle }, `optional(${label}) 已注册但未运行`)
 				return
 			case 'running':
 				return
@@ -401,7 +401,7 @@ export class OptionalResolver {
 	}
 
 	private wrapWithCaller<P extends BasePlugin>(instance: P, callerCtx: Context): P {
-		const view = Object.create((instance as any)[PLUGIN_CTX])
+		const view = Object.create(instance.ctx) as Context
 		view.caller = callerCtx
 		return Object.create(instance, {
 			ctx: { value: view, writable: false, enumerable: false, configurable: false },

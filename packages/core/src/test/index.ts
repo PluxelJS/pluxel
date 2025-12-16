@@ -3,127 +3,208 @@ import '../reflection'
 import '../services'
 
 import { Context } from '@pluxel/context'
-import { checkPluginDecorator } from '../plugins/PluginDecorator'
-import type { PluginConstructor, PluginIdentifier } from '../plugins/types'
+import { checkPluginDecorator, getPluginInfo } from '../plugins/PluginDecorator'
 import type { CommitSummary, PluginService } from '../plugins/service/PluginService'
+import type { PluginConstructor, PluginIdentifier } from '../plugins/types'
+import type { ConfigService } from '../services/ConfigService'
 
 export * from '../index'
 export { EffectScopeService } from '../services/EffectScopeService'
 export { EventsService } from '../services/EventsService'
 export { LoggerService } from '../services/LoggerService'
 
-export type PluginTestHost = {
+export type CommitAttempt = { ok: true; summary: CommitSummary } | { ok: false; error: any }
+
+export type TestHost = {
+	/** Root context for this test. */
 	ctx: Context
-	registry: PluginService
+
+	/** Register plugin ctors into the draft container. */
 	register: (Plugin: PluginConstructor, opts?: { provideBase?: boolean }) => void
 	registerAll: (...plugins: PluginConstructor[]) => void
+
+	/** Fork helpers. */
 	fork: PluginService['fork']
 	registerFork: PluginService['registerFork']
 	getFork: PluginService['getFork']
 	listForks: PluginService['listForks']
+
+	/** Runtime state helpers. */
 	isRunning: PluginService['isRunning']
 	optional: PluginService['optional']
-	unregister: (id: PluginIdentifier) => void
-	reload: (id: PluginIdentifier, next?: PluginConstructor) => void
-	commitResult: PluginService['commit']
-	commit: () => Promise<CommitSummary>
-	commitStrict: () => Promise<CommitSummary>
-	start: <T extends PluginConstructor>(Plugin: T, opts?: { provideBase?: boolean }) => Promise<InstanceType<T>>
 	get: <T extends PluginIdentifier>(id: T) => InstanceType<T> | undefined
 	getOrThrow: <T extends PluginIdentifier>(id: T) => InstanceType<T>
+	/** Config injection helpers (LoaderService-like). */
+	config: ConfigService
+	setConfig: (
+		target: PluginConstructor | string,
+		configRecord: Record<string, unknown>,
+		meta?: Record<string, unknown>,
+	) => void
+	enablePlugins: (...names: string[]) => void
+	disablePlugins: (...names: string[]) => void
+	isEnabled: (name: string) => boolean
+
+	/** Draft mutations. */
+	unregister: (id: PluginIdentifier) => void
+	reload: (id: PluginIdentifier, next?: PluginConstructor) => void
+
+	/** Commit and lifecycle. */
+	tryCommit: () => Promise<CommitAttempt>
+	commit: () => Promise<CommitSummary>
+	commitStrict: () => Promise<CommitSummary>
+	start: <T extends PluginConstructor>(
+		Plugin: T,
+		opts?: { provideBase?: boolean },
+	) => Promise<InstanceType<T>>
+
+	/** Introspection over the last successful commit. */
+	lastCommit: () => CommitSummary | undefined
+	listServiceIds: () => unknown[]
+	listPlugins: () => PluginConstructor[]
+	hasService: (id: unknown) => boolean
+	hasPlugin: (Plugin: PluginConstructor) => boolean
+
+	/** Cleanup. */
 	dispose: () => Promise<void>
 }
 
-export function createPluginTestHost(config: Context.Config = {}): PluginTestHost {
+export type PluginTestHost = TestHost
+
+export function createTestHost(config: Context.Config = {}): TestHost {
 	const ctx = new Context({ name: 'test', ...config })
 	const registry = ctx.registry as PluginService
 
-	const host: PluginTestHost = {
+	const configService = ctx.configService
+
+	const lastCommit = () => registry.lastCommit
+
+	const listServiceIds = () => [...(lastCommit()?.container.services.keys() ?? [])]
+	const listPlugins = () =>
+		listServiceIds().filter(
+			(id): id is PluginConstructor => typeof id === 'function' && checkPluginDecorator(id),
+		)
+	const hasService = (id: unknown) =>
+		(lastCommit()?.container.services as Map<unknown, unknown> | undefined)?.has(id) ?? false
+	const hasPlugin = (Plugin: PluginConstructor) => hasService(Plugin)
+
+	const get = <T extends PluginIdentifier>(id: T) => registry.getInstance(id)
+	const getOrThrow = <T extends PluginIdentifier>(id: T) => {
+		const instance = get(id)
+		if (!instance) {
+			throw new Error(
+				`Plugin instance not found (did you forget to register+commit?): ${String(id)}`,
+			)
+		}
+		return instance
+	}
+
+	const tryCommit = async (): Promise<CommitAttempt> => {
+		const result = await registry.commit()
+		if (!result.ok) return { ok: false, error: result.err }
+		const summary = registry.lastCommit
+		if (!summary)
+			return { ok: false, error: new Error('commit succeeded but lastCommit is missing') }
+		return { ok: true, summary }
+	}
+
+	const host: TestHost = {
 		ctx,
-		registry,
 
 		register: (Plugin, opts) => registry.pluginRegistry.registerPlugin(Plugin, opts),
 		registerAll: (...plugins) => {
 			for (const Plugin of plugins) registry.pluginRegistry.registerPlugin(Plugin)
 		},
+
 		fork: registry.fork.bind(registry),
 		registerFork: registry.registerFork.bind(registry),
 		getFork: registry.getFork.bind(registry),
 		listForks: registry.listForks.bind(registry),
+
 		isRunning: registry.isRunning.bind(registry),
-		optional: registry.optional.bind(registry) as any,
+		optional: registry.optional.bind(registry) as TestHost['optional'],
+		get,
+		getOrThrow,
+		config: configService,
+		setConfig: (target, configRecord, meta = {}) => {
+			const name = typeof target === 'string' ? target : getPluginInfo(target).id
+			configService.patchConfigSnapshot(name, { meta, configRecord })
+		},
+		enablePlugins: (...names) => configService.enableInConfig(...names),
+		disablePlugins: (...names) => configService.disableInConfig(...names),
+		isEnabled: (name) => configService.isEnabledInConfig(name),
+
 		unregister: (id) => registry.pluginRegistry.unregisterPlugin(id),
 		reload: (id, next) => registry.pluginRegistry.reloadPlugin(id, next),
 
-		commitResult: registry.commit.bind(registry) as PluginService['commit'],
+		tryCommit,
 		commit: async () => {
-			const result = await registry.commit()
-			if (!result.ok) {
-				throw result.err instanceof Error ? result.err : new Error(String(result.err))
+			const attempted = await tryCommit()
+			if (attempted.ok === false) {
+				throw attempted.error instanceof Error
+					? attempted.error
+					: new Error(String(attempted.error))
 			}
-			const summary = registry.lastCommit
-			if (!summary) throw new Error('commit succeeded but lastCommit is missing')
-			return summary
+			return attempted.summary
 		},
 		commitStrict: async () => {
 			const summary = await host.commit()
 			if (summary.failed.length) {
-				throw new Error(
-					`Some plugins failed to start: ${summary.failed.map(String).join(', ')}`,
-				)
+				throw new Error(`Some plugins failed to start: ${summary.failed.map(String).join(', ')}`)
 			}
 			return summary
 		},
 		start: async (Plugin, opts) => {
-			registry.pluginRegistry.registerPlugin(Plugin, opts)
+			host.register(Plugin, opts)
 			await host.commitStrict()
 			return host.getOrThrow(Plugin)
-			},
-
-			get: (id) => {
-				return registry.getInstance(id as any) as any
-			},
-		getOrThrow: (id) => {
-			const instance = host.get(id)
-			if (!instance) {
-				throw new Error(`Plugin instance not found (did you forget to register+commit?): ${String(id)}`)
-			}
-			return instance
 		},
 
-			dispose: async () => {
-				try {
-					// Ensure any uncommitted draft ops don't leak across tests.
-					registry.pluginRegistry.resetDraft()
+		lastCommit,
+		listServiceIds,
+		listPlugins,
+		hasService,
+		hasPlugin,
 
-					const container = registry.pluginRegistry.lastContainer
-					if (container) {
-						const ids = [...container.services.keys()].filter(
-							(id): id is PluginConstructor => typeof id === 'function' && checkPluginDecorator(id),
-						)
-						for (const id of ids) registry.pluginRegistry.unregisterPlugin(id)
-						await host.commit()
-					}
-				} finally {
-					registry.pluginRegistry.resetDraft()
-					;(ctx as any).disposeAll?.()
-				}
-			},
-		}
+		dispose: async () => {
+			try {
+				// Ensure any uncommitted draft ops don't leak across tests.
+				registry.pluginRegistry.resetDraft()
+
+				// Unregister all decorated plugins from the last committed container (if any).
+				for (const id of listPlugins()) registry.pluginRegistry.unregisterPlugin(id)
+				if (lastCommit()) await host.commit()
+			} finally {
+				registry.pluginRegistry.resetDraft()
+				ctx.disposeAll()
+			}
+		},
+	}
 
 	return host
 }
 
+export function createPluginTestHost(config: Context.Config = {}): PluginTestHost {
+	return createTestHost(config)
+}
+
 export async function withPluginTestHost<T>(
-	fn: (host: PluginTestHost) => Promise<T> | T,
+	fn: (host: TestHost) => Promise<T> | T,
 	config: Context.Config = {},
 ): Promise<T> {
-	const host = createPluginTestHost(config)
+	const host = createTestHost(config)
 	try {
 		return await fn(host)
 	} finally {
 		await host.dispose()
 	}
+}
+
+export async function withTestHost<T>(
+	fn: (host: TestHost) => Promise<T> | T,
+	config: Context.Config = {},
+): Promise<T> {
+	return withPluginTestHost(fn, config)
 }
 
 export type TestContext = {
@@ -137,9 +218,13 @@ export function createTestContext(config: Context.Config = {}): TestContext {
 		ctx,
 		dispose: () => {
 			// Best-effort cleanup; keeps tests isolated even if they didn't use host.
-			;(ctx as any).registry?.pluginRegistry?.resetDraft?.()
-			;(ctx as any).disposeAll?.()
-			;(ctx as any).registry?.pluginRegistry?.resetDraft?.()
+			try {
+				ctx.registry.pluginRegistry.resetDraft()
+				ctx.disposeAll()
+				ctx.registry.pluginRegistry.resetDraft()
+			} catch {
+				/* ignore */
+			}
 		},
 	}
 }

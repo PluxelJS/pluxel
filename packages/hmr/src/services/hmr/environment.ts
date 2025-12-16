@@ -191,7 +191,7 @@ export class HmrEnvironment {
 		return (raw: string) => {
 			const id = this.paths.toCleanId(raw)
 			const anchorSet = new Set<string>()
-			for (const a of this.ctx.loader?.pathAnchors ?? []) anchorSet.add(this.paths.toCleanId(a))
+			for (const a of this.ctx.loader.pathAnchors ?? []) anchorSet.add(this.paths.toCleanId(a))
 			if (anchorSet.has(id)) return true
 			if (id.includes('/node_modules/')) return false
 			return baseFilter(id)

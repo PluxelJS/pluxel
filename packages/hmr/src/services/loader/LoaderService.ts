@@ -43,18 +43,6 @@ export class LoaderService {
 	constructor(private ctx: Context) {
 		this.registry = new PluginRegistry(this.ctx)
 
-		// --- 生命周期：启动前把校验过/补齐过的配置灌入实例 ---
-		this.ctx.on('beforeStart', (plugin) => {
-			const ctor = plugin.constructor as PluginConstructor
-			const schemaMap = this.registry.getSchema(ctor)
-			if (!schemaMap) return
-			const { id: name } = plugin.ctx.pluginInfo
-			const { configRecord } = plugin.ctx.configService.getConfig(name)
-			for (const key of Object.keys(schemaMap)) {
-				;(plugin as any)[key] = (configRecord as any)[key]
-			}
-		})
-
 		// --- 原子提交失败：回滚运行层（不触碰持久层启用位） ---
 		this.ctx.on('commitFailed', (failed) => {
 			for (const ctor of failed) {
@@ -198,7 +186,7 @@ export class LoaderService {
 			// 没找到模块路径，至少停运行态/禁持久启用
 			const ctor = this.registry.getPluginByName(name)
 			if (ctor) this.registry.stopPlugin(name, ctor)
-			if (scope === 'persisted') this.ctx.configService.disablePlugin(name)
+			if (scope === 'persisted') this.ctx.configService.disableInConfig(name)
 			return
 		}
 
@@ -248,7 +236,7 @@ export class LoaderService {
 		let disabled = 0
 		for (const [name, ctor] of loaded) {
 			const isRunning = this.isRunning(ctor)
-			const isEnabled = this.ctx.configService.isEnable(name)
+			const isEnabled = this.ctx.configService.isEnabledInConfig(name)
 			const lifecycleStage = this.deriveLifecycleStage(isRunning, isEnabled)
 			statuses[name] = { id: name, isRunning, isEnabled, lifecycleStage }
 			if (!isEnabled) disabled++

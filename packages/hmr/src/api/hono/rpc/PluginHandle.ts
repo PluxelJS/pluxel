@@ -290,7 +290,7 @@ export class PluginHandle extends RpcTarget {
 						if (info.base !== (baseToken as any)) continue
 						options.push({
 							name,
-							isEnabled: this.#ctx.configService.isEnable(name),
+							isEnabled: this.#ctx.configService.isEnabledInConfig(name),
 							isRunning: this.#ctx.loader.isRunning(pCtor),
 						})
 					} catch {}
@@ -317,7 +317,7 @@ export class PluginHandle extends RpcTarget {
 
 				options.push({
 					name: originalName,
-					isEnabled: this.#ctx.configService.isEnable(originalName),
+					isEnabled: this.#ctx.configService.isEnabledInConfig(originalName),
 					isRunning: this.#ctx.loader.isRunning(original as any),
 				})
 				for (const fid of forkIds) {
@@ -325,7 +325,7 @@ export class PluginHandle extends RpcTarget {
 					const forkCtor = this.#ctx.loader.resolveRuntimeCtor(forkName)
 					options.push({
 						name: forkName,
-						isEnabled: this.#ctx.configService.isEnable(forkName),
+						isEnabled: this.#ctx.configService.isEnabledInConfig(forkName),
 						isRunning: forkCtor ? this.#ctx.loader.isRunning(forkCtor) : false,
 					})
 				}
@@ -455,7 +455,7 @@ export class PluginHandle extends RpcTarget {
 
 			// Reconcile runtime registrations so the selected provider binds the base alias.
 			const enabled = [...this.#ctx.loader.registry.names].filter(([name]) =>
-				this.#ctx.configService.isEnable(name),
+				this.#ctx.configService.isEnabledInConfig(name),
 			)
 			for (const [name, ctor] of enabled) this.#ctx.loader.registry.stopPlugin(name, ctor)
 			for (const [name, ctor] of enabled) await this.#ctx.loader.registry.enable(name, ctor)
@@ -528,7 +528,7 @@ export class PluginHandle extends RpcTarget {
 				if (pInfo.base !== (base as any)) continue
 				providers.push({
 					name,
-					isEnabled: this.#ctx.configService.isEnable(name),
+					isEnabled: this.#ctx.configService.isEnabledInConfig(name),
 					isRunning: this.#ctx.loader.isRunning(pCtor),
 				})
 			} catch {}
@@ -576,7 +576,7 @@ export class PluginHandle extends RpcTarget {
 	async config(): Promise<ConfigResultOk> {
 		const schema = this.#ctx.loader.getPluginSchema(this.resolveCtor())
 		const defaults = await collectDefaults(schema)
-		const config = this.#ctx.configService.getConfig(this.name).configRecord
+		const config = this.#ctx.configService.getConfigSnapshot(this.name).configRecord
 		return { ok: true, saved: false, config, defaults }
 	}
 
@@ -608,7 +608,7 @@ export class PluginHandle extends RpcTarget {
 			ok: true,
 			saved: false,
 			config: {
-				...this.#ctx.configService.getConfig(this.name).configRecord,
+				...this.#ctx.configService.getConfigSnapshot(this.name).configRecord,
 				...validation.output,
 			},
 			defaults,
@@ -640,12 +640,12 @@ export class PluginHandle extends RpcTarget {
 		}
 
 		if (Object.keys(validation.output).length > 0) {
-			this.#ctx.configService.setConfig(this.name, {
+			this.#ctx.configService.patchConfigSnapshot(this.name, {
 				configRecord: validation.output,
 			})
 		}
 
-		const config = this.#ctx.configService.getConfig(this.name).configRecord
+		const config = this.#ctx.configService.getConfigSnapshot(this.name).configRecord
 		return { ok: true, saved: true, config, defaults }
 	}
 
@@ -683,8 +683,8 @@ export class PluginHandle extends RpcTarget {
 			}
 		}
 
-		this.#ctx.configService.setConfig(this.name, { configRecord: validation.output })
-		const config = this.#ctx.configService.getConfig(this.name).configRecord
+		this.#ctx.configService.patchConfigSnapshot(this.name, { configRecord: validation.output })
+		const config = this.#ctx.configService.getConfigSnapshot(this.name).configRecord
 		return { ok: true, saved: true, config, defaults }
 	}
 }

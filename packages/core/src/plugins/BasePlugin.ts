@@ -71,9 +71,14 @@ export abstract class BasePlugin<C extends Context = Context> {
 		plugin: P,
 	): PluginLifecycleRuntime<PluginContextOf<P>> {
 		const ctx = plugin[PLUGIN_CTX] as PluginContextOf<P>
-		const scope = (ctx as any)?.scope
-		const emitWithContext = (ctx as any)?.emitWithContext
-		const onError = (ctx as any)?.onError
+		const extended = ctx as unknown as {
+			scope?: { disposeAll?: () => void | Promise<void> }
+			emitWithContext?: (thisArg: unknown, event: string, ...args: unknown[]) => unknown
+			onError?: (cb: (err: unknown) => void) => unknown
+		}
+		const scope = extended.scope
+		const emitWithContext = extended.emitWithContext
+		const onError = extended.onError
 
 		return {
 			beforeStart:

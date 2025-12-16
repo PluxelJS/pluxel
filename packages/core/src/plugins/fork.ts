@@ -20,9 +20,9 @@ const forks: ForkTable = new WeakMap()
 
 function assertForkable(ctor: PluginIdentifier): asserts ctor is ForkablePluginConstructor {
 	if (!(ctor.prototype instanceof ForkablePlugin)) {
+		const ctorName = (ctor as unknown as Function | undefined)?.name
 		throw new Error(
-			`Plugin ${String((ctor as any)?.name ?? ctor)} is not forkable. ` +
-				'Extend ForkablePlugin to opt‑in.',
+			`Plugin ${ctorName || '<anonymous>'} is not forkable. Extend ForkablePlugin to opt‑in.`,
 		)
 	}
 }
@@ -44,7 +44,8 @@ export function forkPlugin<T extends ForkablePluginConstructor>(
 	if (existing) return existing as PluginConstructor
 
 	// Create a minimal subclass used only as a DI key.
-	const ForkCtor = class extends (ctor as any) {} as PluginConstructor
+	const Base = ctor as unknown as new (...args: any[]) => ForkablePlugin
+	const ForkCtor = class extends Base {} as unknown as PluginConstructor
 
 	const info = getPluginInfo(ctor)
 	const id = `${info.id}#${forkId}`
@@ -53,7 +54,7 @@ export function forkPlugin<T extends ForkablePluginConstructor>(
 	Object.defineProperty(ForkCtor, FORK_ID, { value: forkId, enumerable: false })
 	Object.defineProperty(ForkCtor, FORK_OF, { value: ctor, enumerable: false })
 
-	map.set(forkId, ForkCtor as any)
+	map.set(forkId, ForkCtor)
 	return ForkCtor
 }
 
@@ -70,10 +71,9 @@ export function listForks<T extends PluginIdentifier>(ctor: T): PluginConstructo
 }
 
 export function getForkId(ctor: PluginIdentifier): string | undefined {
-	return (ctor as any)[FORK_ID] as string | undefined
+	return (ctor as unknown as { [FORK_ID]?: string })[FORK_ID]
 }
 
 export function getForkOf(ctor: PluginIdentifier): PluginIdentifier | undefined {
-	return (ctor as any)[FORK_OF] as PluginIdentifier | undefined
+	return (ctor as unknown as { [FORK_OF]?: PluginIdentifier })[FORK_OF]
 }
-

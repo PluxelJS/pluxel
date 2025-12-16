@@ -34,7 +34,7 @@ export class LifecycleManager {
 				enumerable: false,
 			})
 		}
-		return plugin as any
+		return plugin as unknown as { [PLUGIN_LIFECYCLE]: PluginLifecycleActor | null }
 	}
 
 	private getLifecycle(plugin: BasePlugin): PluginLifecycleActor | undefined {
@@ -51,8 +51,10 @@ export class LifecycleManager {
 			{ id, runtime: BasePlugin.getLifecycleRuntime(plugin) },
 		)
 		ref.subscribe({
-			error: (err) =>
-				this.ctx.logger?.error?.(err, `[actor:${String((id as any)?.name ?? id)}] unhandled error`),
+			error: (err) => {
+				const label = typeof id === 'function' ? (id as Function).name : String(id)
+				this.ctx.logger.error(err, `[actor:${label}] unhandled error`)
+			},
 		})
 		ref.start()
 		this.setLifecycle(plugin, ref)
@@ -104,10 +106,12 @@ export class LifecycleManager {
 			return
 		}
 
+		const refSnap = ref.getSnapshot?.() as unknown as
+			| { context?: { err?: unknown }; error?: unknown }
+			| undefined
+		const stableSnap = snapshot as unknown as { context?: { err?: unknown }; error?: unknown }
 		const capturedErr: unknown =
-			(ref.getSnapshot?.() as any)?.context?.err ??
-			(snapshot as any)?.context?.err ??
-			(snapshot as any)?.error
+			refSnap?.context?.err ?? stableSnap.context?.err ?? stableSnap.error
 
 		await this.stopLifecycle(id, plugin, ref)
 

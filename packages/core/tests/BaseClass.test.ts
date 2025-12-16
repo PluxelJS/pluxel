@@ -44,17 +44,17 @@ describe('Abstract base and canonical ids', () => {
 			// base token should also resolve via alias
 			expect(host.isRunning(Abs)).toBe(true)
 			let optByBase: Abs | undefined
-			host.optional(Abs as any, (dep) => {
-				optByBase = dep as any
+			host.optional(Abs , (dep) => {
+				optByBase = dep 
 			})
 			await Promise.resolve()
 			expect(optByBase).toBeInstanceOf(Impl)
 
 			// unloading by base should remove provider + dependents
-			host.unregister(Abs as any)
+			host.unregister(Abs )
 			await host.commitStrict()
 			expect(host.isRunning(Impl)).toBe(false)
-			expect(host.isRunning(Abs as any)).toBe(false)
+			expect(host.isRunning(Abs )).toBe(false)
 		})
 	})
 
@@ -103,7 +103,7 @@ describe('Abstract base and canonical ids', () => {
 
 			host.registerAll(Impl1, Impl2)
 			// alias conflict is detected at build/commit time (deterministic error)
-			const res = await host.commitResult()
+			const res = await host.tryCommit()
 			expect(res.ok).toBe(false)
 		})
 	})
@@ -133,8 +133,8 @@ describe('Abstract base and canonical ids', () => {
 
 			// base token resolves to the primary provider, not forks
 			let base: Abs | undefined
-			host.optional(Abs as any, (dep) => {
-				base = dep as any
+			host.optional(Abs , (dep) => {
+				base = dep 
 			})
 			await Promise.resolve()
 			expect(base?.ctx.pluginInfo.id).toBe('Impl')
@@ -154,7 +154,7 @@ describe('Abstract base and canonical ids', () => {
 			host.register(Impl)
 			host.registerFork(Impl, 'a', { provideBase: true })
 
-			const res = await host.commitResult()
+			const res = await host.tryCommit()
 			expect(res.ok).toBe(false)
 		})
 	})

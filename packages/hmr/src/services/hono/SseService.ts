@@ -82,7 +82,7 @@ export class SseService {
 
 		const already = this.extensions.has(namespace)
 		if (already) {
-			this.ctx.logger?.warn(`[SSE] Extension "${namespace}" already registered, refreshing`)
+			this.ctx.logger.warn(`[SSE] Extension "${namespace}" already registered, refreshing`)
 			this.detachNamespace(namespace)
 		}
 
@@ -112,7 +112,7 @@ export class SseService {
 		}
 
 		if (missing.length) {
-			c.var.plugin_ctx.logger?.warn?.('[SSE] namespaces missing, fallback', missing)
+			c.var.plugin_ctx.logger.warn('[SSE] namespaces missing, fallback', missing)
 		}
 
 		return createResponse<SessionState>(
@@ -197,7 +197,7 @@ export class SseService {
 
 		const honoCtx = state.honoCtx
 		if (!honoCtx) {
-			this.ctx.logger?.warn?.('[SSE] missing Hono context for session, skip attach')
+			this.ctx.logger.warn('[SSE] missing Hono context for session, skip attach')
 			return
 		}
 
@@ -224,7 +224,7 @@ export class SseService {
 				const { data, event, id } = message
 				session.push(data, event, id)
 			} catch (err) {
-				this.ctx.logger?.warn('[SSE] push failed', err)
+				this.ctx.logger.warn('[SSE] push failed', err)
 			}
 		}
 
@@ -279,7 +279,7 @@ export class SseService {
 			const maybeCleanup = await handler(channel)
 			return typeof maybeCleanup === 'function' ? maybeCleanup : undefined
 		} catch (err) {
-			this.ctx.logger?.error?.('[SSE] handler crashed', err)
+			this.ctx.logger.error('[SSE] handler crashed', err)
 		}
 	}
 
@@ -355,7 +355,7 @@ export class SseService {
 
 	private runCleanup(cleanup: () => void | Promise<void>, namespace: string) {
 		Promise.resolve(cleanup()).catch((err) => {
-			this.ctx.logger?.warn?.(`[SSE] cleanup failed for "${namespace}"`, err)
+			this.ctx.logger.warn(`[SSE] cleanup failed for "${namespace}"`, err)
 		})
 	}
 

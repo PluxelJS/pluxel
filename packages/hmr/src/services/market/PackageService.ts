@@ -664,7 +664,7 @@ export class PackageService {
 	async syncTrackedPlugins(): Promise<void> {
 		if (!this.initialized) return
 		await this.installDefaultsReady
-		const roots = this.ctx.scanService?.defaultRoots ?? [process.cwd()]
+		const roots = this.ctx.scanService.defaultRoots ?? [process.cwd()]
 		const found = await collectDeclaredPlugins(roots)
 		const toLoad: string[] = []
 		for (const name of found) {
@@ -690,7 +690,7 @@ export class PackageService {
 	}
 
 	private async detectWorkspaceRoot(preferredCwd?: string): Promise<string | null> {
-		const roots = this.ctx.scanService?.defaultRoots ?? []
+		const roots = this.ctx.scanService.defaultRoots ?? []
 		const candidates = normalizeRoots([preferredCwd ?? process.cwd(), ...roots])
 		for (const root of candidates) {
 			try {
@@ -1237,7 +1237,7 @@ export class PackageService {
 	}
 
 	private onPackageInstalled(result: PackageInstallResult) {
-		this.ctx.scanService?.invalidateResolverCache()
+		this.ctx.scanService.invalidateResolverCache()
 		this.ctx.logger.debug(
 			{ name: result.spec.name, target: result.target },
 			'[PackageService] 已清理解析缓存，等待重新扫描。',

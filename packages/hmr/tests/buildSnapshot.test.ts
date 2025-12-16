@@ -20,7 +20,7 @@ const pathMap = new Map<string, string>([
 function createContextStub(config: Record<string, object>): Context {
 	return {
 		configService: {
-			getConfig(name: string) {
+			getConfigSnapshot(name: string) {
 				return {
 					meta: {},
 					configRecord: config[name] ?? {},

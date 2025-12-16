@@ -7,8 +7,7 @@ import { PluginA, PluginB, PluginC } from './plugins'
 describe('Plugin lifecycle with commit()', () => {
 	it('should update plugins set across commits', async () => {
 		await withPluginTestHost(async (host) => {
-			const readPluginSet = () =>
-				new Set<any>(host.registry.lastCommit?.container.services.keys() ?? [])
+			const readPluginSet = () => new Set<any>(host.listPlugins())
 
 			// 注册 B、C、A
 			host.registerAll(PluginB, PluginC, PluginA)

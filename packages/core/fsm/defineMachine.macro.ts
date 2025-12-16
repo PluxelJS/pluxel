@@ -320,8 +320,8 @@ const Hook extends string = HookNames<HooksInput>,
 	}
 
 	return {
-		S: S as any,
-		E: E as any,
+		S: S,
+		E: E,
 		def: {
 			init: initId,
 			stateCount,

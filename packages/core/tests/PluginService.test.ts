@@ -36,7 +36,7 @@ describe('PluginService commit()', () => {
 			let secondResolved = false
 
 			host.register(SlowPlugin)
-			const first = host.commitResult().then((result) => {
+			const first = host.tryCommit().then((result) => {
 				firstResolved = true
 				return result
 			})
@@ -46,7 +46,7 @@ describe('PluginService commit()', () => {
 			}
 
 			host.register(PluginB)
-			const second = host.commitResult().then((result) => {
+			const second = host.tryCommit().then((result) => {
 				secondResolved = true
 				return result
 			})
@@ -68,7 +68,7 @@ describe('PluginService commit()', () => {
 			expect(summaries[0]?.added).toEqual([SlowPlugin])
 			expect(new Set(summaries[1]?.added)).toEqual(new Set([PluginB]))
 
-			const lastContainer = host.registry.lastCommit?.container
+			const lastContainer = host.lastCommit()?.container
 			expect(lastContainer).toBeDefined()
 			expect(lastContainer!.services.has(SlowPlugin)).toBe(true)
 			expect(lastContainer!.services.has(PluginB)).toBe(true)
@@ -85,10 +85,8 @@ describe('PluginService commit()', () => {
 			}
 
 			host.register(ThrowPlugin)
-			const result = await host.commitResult()
-			expect(result.ok).toBe(true)
+			const summary = await host.commit()
 
-			const summary = host.registry.lastCommit
 			expect(summary?.failed).toContain(ThrowPlugin)
 			expect(summary?.added).toContain(ThrowPlugin)
 			expect(host.get(ThrowPlugin)).toBeUndefined()
@@ -243,13 +241,13 @@ describe('PluginService commit()', () => {
 
 			host.register(Flaky)
 
-			const first = await host.commitResult()
+			const first = await host.tryCommit()
 			expect(first.ok).toBe(true)
-			expect(host.registry.lastCommit?.failed).toContain(Flaky)
+			expect(host.lastCommit()?.failed).toContain(Flaky)
 			expect(host.isRunning(Flaky)).toBe(false)
 
 			// No container changes, but Flaky should be retried.
-			const second = await host.commitResult()
+			const second = await host.tryCommit()
 			expect(second.ok).toBe(true)
 			expect(host.isRunning(Flaky)).toBe(true)
 			expect(events).toEqual(['ok'])
