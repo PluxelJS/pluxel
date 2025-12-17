@@ -58,6 +58,14 @@ export class DiodContainer<U = unknown> implements Container {
 		}
 	}
 
+	/** Resolve an identifier through the alias index if applicable. */
+	public resolveIdentifier<T>(identifier: Identifier<T>): Identifier<T> {
+		return (
+			(this.aliasIndex.get(identifier as any) as Identifier<T> | undefined) ??
+			identifier
+		)
+	}
+
 	/* ------------------------------ Public API ------------------------------- */
 
 	public getResult<T>(identifier: Identifier<T>): Result<T, ResolveError> {
@@ -308,7 +316,14 @@ export class DiodContainer<U = unknown> implements Container {
 		identifier: Identifier<T>,
 		isDependency: boolean,
 	): Result<ServiceData<T>, ResolveError> {
-		const svc = this.services.get(identifier)
+		let svc = this.services.get(identifier as any)
+		if (!svc) {
+			// Alias lookup: allow AliasKey to behave as a primary identifier for resolution.
+			// This enables patterns like "provide abstract base/interface" without registering
+			// duplicate services (which would otherwise appear in dependents graphs).
+			const aliased = this.aliasIndex.get(identifier as any)
+			if (aliased) svc = this.services.get(aliased as any)
+		}
 		if (!svc) return createErr({ kind: 'NotRegistered', id: identifier })
 		if (!isDependency && svc.isPrivate)
 			return createErr({ kind: 'PrivateService', id: identifier })

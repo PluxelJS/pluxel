@@ -20,12 +20,14 @@ export function extractArrayProps<TItemMeta = unknown>(
 
 	const itemSchema = schema.item ?? (schema as PipedSchema<Schema>).pipe[0].item
 	if (itemSchema) {
-		const type = itemSchema.type // string, number, boolean, picklist
+		const type = itemSchema.type // string, number, boolean, picklist, object
 		if (type === 'picklist') {
 			meta.picklist = extractPicklistProps(itemSchema) as any
 			if (!meta.pickerMode) meta.pickerMode = 'picker'
 		}
 		meta.valueMode = type
+		// 保存 itemSchema 以支持递归渲染（object/array 嵌套）
+		meta.itemSchema = itemSchema
 	}
 
 	const pipe = (schema as PipedSchema<Schema>).pipe

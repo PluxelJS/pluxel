@@ -54,7 +54,7 @@ export class InternalGraphQLService {
 		this.rebuildDirty = false
 		this.schema = this.weaveSchema()
 		this.pushFetch()
-		// #if NODE_ENV !== 'production'
+		// #if SOURCE_ONLY
 		void this.codegenNow()
 		// #endif
 	}
@@ -85,7 +85,7 @@ export class InternalGraphQLService {
 		this.fetcher = async (req: Request, ctx: ServerCtx) => yoga.fetch(req, ctx)
 	}
 
-	// #if NODE_ENV !== 'production'
+	// #if SOURCE_ONLY
 	private async codegenNow() {
 		if (process.env.NODE_ENV === 'production') return
 		if (this.codegenRunning) return

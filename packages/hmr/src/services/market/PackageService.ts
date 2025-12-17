@@ -384,9 +384,7 @@ export class PackageService {
 			.slice()
 			.sort()
 			.join('|')
-		return this.runExclusive(this.multiUninstallLocks, key, () =>
-			this.performUninstallBatch(specs),
-		)
+		return this.runExclusive(this.multiUninstallLocks, key, () => this.performUninstallBatch(specs))
 	}
 
 	/** 移除包：先清理运行态，再调用包管理器删除依赖。 */
@@ -610,7 +608,7 @@ export class PackageService {
 		const moduleId =
 			record?.moduleId ??
 			this.packageModuleIds.get(name) ??
-			(failure?.moduleId ? normalizePath(failure.moduleId) : undefined)
+			(failure?.moduleId ? this.normalizeModuleId(failure.moduleId) : undefined)
 
 		if (record && moduleId) {
 			this.dropHmrModuleCacheForRecord(record)
@@ -638,14 +636,14 @@ export class PackageService {
 	}
 
 	getPackageSpecByModuleId(moduleId: string): NormalizedPackageSpecifier | undefined {
-		const normalized = normalizePath(moduleId)
+		const normalized = this.normalizeModuleId(moduleId)
 		for (const record of this.loadedPackages.values()) {
-			if (normalizePath(record.moduleId) === normalized) {
+			if (this.normalizeModuleId(record.moduleId) === normalized) {
 				return record.spec
 			}
 		}
 		for (const issue of this.loadFailures.values()) {
-			if (issue.moduleId && normalizePath(issue.moduleId) === normalized) {
+			if (issue.moduleId && this.normalizeModuleId(issue.moduleId) === normalized) {
 				return issue.spec
 			}
 		}
@@ -666,7 +664,7 @@ export class PackageService {
 	async syncTrackedPlugins(): Promise<void> {
 		if (!this.initialized) return
 		await this.installDefaultsReady
-		const roots = this.ctx.scanService?.defaultRoots ?? [process.cwd()]
+		const roots = this.ctx.scanService.defaultRoots ?? [process.cwd()]
 		const found = await collectDeclaredPlugins(roots)
 		const toLoad: string[] = []
 		for (const name of found) {
@@ -692,7 +690,7 @@ export class PackageService {
 	}
 
 	private async detectWorkspaceRoot(preferredCwd?: string): Promise<string | null> {
-		const roots = this.ctx.scanService?.defaultRoots ?? []
+		const roots = this.ctx.scanService.defaultRoots ?? []
 		const candidates = normalizeRoots([preferredCwd ?? process.cwd(), ...roots])
 		for (const root of candidates) {
 			try {
@@ -749,7 +747,7 @@ export class PackageService {
 		for (const entry of entries) {
 			const spec = specFromSnapshot(entry.spec)
 			try {
-				const moduleId = normalizePath(entry.moduleId || entry.resolution.entry)
+				const moduleId = this.normalizeModuleId(entry.moduleId || entry.resolution.entry)
 				const module = await this.importModule(moduleId, this.defaults.preferFreshImport)
 				this.ensurePackageModuleBinding(spec.name, moduleId)
 				this.moduleCache.set(moduleId, { moduleId, module })
@@ -987,10 +985,7 @@ export class PackageService {
 		}
 
 		for (const entry of results) {
-			const event =
-				entry.status === 'failed'
-					? 'uninstall:failed'
-					: 'uninstall:runtime_cleared'
+			const event = entry.status === 'failed' ? 'uninstall:failed' : 'uninstall:runtime_cleared'
 			const level = entry.status === 'failed' ? 'error' : 'info'
 			this.logEvent(level, event, {
 				target: entry.spec.target,
@@ -1242,7 +1237,7 @@ export class PackageService {
 	}
 
 	private onPackageInstalled(result: PackageInstallResult) {
-		this.ctx.scanService?.invalidateResolverCache()
+		this.ctx.scanService.invalidateResolverCache()
 		this.ctx.logger.debug(
 			{ name: result.spec.name, target: result.target },
 			'[PackageService] 已清理解析缓存，等待重新扫描。',
@@ -1281,8 +1276,7 @@ export class PackageService {
 			if (error instanceof Error) {
 				throw error
 			}
-			const message =
-				typeof error === 'string' ? error : error != null ? String(error) : '未知错误'
+			const message = typeof error === 'string' ? error : error != null ? String(error) : '未知错误'
 			const wrapped = new Error(message)
 			if (
 				error &&
@@ -1341,6 +1335,9 @@ export class PackageService {
 			merged.scan = mergedScan
 		}
 
+		if (overrides.workspaceOnly !== undefined) merged.workspaceOnly = overrides.workspaceOnly
+		else if (base.workspaceOnly !== undefined) merged.workspaceOnly = base.workspaceOnly
+
 		return merged
 	}
 
@@ -1364,13 +1361,17 @@ export class PackageService {
 	}
 
 	private ensurePackageModuleBinding(name: string, nextModuleId: string) {
-		const normalized = normalizePath(nextModuleId)
+		const normalized = this.normalizeModuleId(nextModuleId)
 		const current = this.packageModuleIds.get(name)
 		if (current && current !== normalized) {
 			this.moduleCache.delete(current)
 			this.ctx.loader.pruneModule(current, 'runtime')
 		}
 		this.packageModuleIds.set(name, normalized)
+	}
+
+	private normalizeModuleId(moduleId: string): string {
+		return this.ctx.hmrService.normalizeId(moduleId)
 	}
 
 	private blockPackage(name: string) {
@@ -1531,7 +1532,7 @@ export class PackageService {
 		installResult?: PackageInstallResult,
 	): Promise<PackageLoadResult> {
 		const resolution = options.resolvedEntry ?? (await this.resolveEntryForSpec(spec, options.scan))
-		const moduleId = normalizePath(resolution.entry)
+		const moduleId = this.normalizeModuleId(resolution.entry)
 		const manifestMeta = await this.readManifestMeta(resolution.dir)
 		this.ensurePackageModuleBinding(spec.name, moduleId)
 
@@ -1630,10 +1631,10 @@ export class PackageService {
 		moduleId: string,
 		module: Record<string, unknown>,
 	) {
-		const hmr = this.ctx.hmrService
-		const normalized = normalizePath(moduleId)
+		const normalized = this.normalizeModuleId(moduleId)
 		const ids = this.collectHmrModuleCacheIds(normalized, spec)
 		const aliases = [...ids].filter((id) => id !== normalized)
+		const hmr = this.ctx.hmrService
 		hmr.primeModuleCacheEntry({ id: normalized, exports: module, aliases })
 	}
 
@@ -1649,13 +1650,15 @@ export class PackageService {
 		moduleId: string,
 		spec: NormalizedPackageSpecifier,
 	): Set<string> {
-		const normalized = normalizePath(moduleId)
-		const ids = new Set<string>([normalized])
+		const hmr = this.ctx.hmrService
+		const normalized = hmr.normalizeId(moduleId)
+		const ids = new Set<string>(hmr.moduleIdAliases(normalized))
+		ids.add(normalizePath(moduleId))
 		ids.add(spec.name)
 		ids.add(spec.target)
 		ids.add(spec.raw)
 		try {
-			ids.add(pathToFileURL(moduleId).href)
+			ids.add(pathToFileURL(normalized).href)
 		} catch {
 			// ignore invalid URL conversion
 		}

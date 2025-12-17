@@ -1,10 +1,11 @@
 import { Divider, Stack, Text } from '@mantine/core'
+import { useElementSize, useMediaQuery } from '@mantine/hooks'
 import React, { createContext, memo, Suspense, useCallback, useContext, useMemo } from 'react'
-import type { ObjectLikeSchema } from 'valibot'
-import { DEFAULT_TEXTS } from '~/core/constants'
+import type { ObjectLikeSchema } from '~/core'
+import { DEFAULT_SECTION_ID, DEFAULT_TEXTS } from '~/core/constants'
 import { MetaRenderer } from '~/core/registry'
+import { type PlannedField, planSchemaFields, type SectionPlan } from './fieldPlanner'
 import { useAppForm } from './formContext'
-import { planSchemaFields, type PlannedField, type SectionPlan } from './fieldPlanner'
 import { alignToCss, resolveFieldSpan } from './layout'
 import { renderersRegistered } from './registerRenderers'
 
@@ -78,10 +79,14 @@ export function AutoForm<S extends ObjectLikeSchema>({
 /* ───────── 子组件：字段渲染（字段级订阅，低重渲染） ───────── */
 export interface AutoFormFieldsProps {
 	sectionSpacing?: number | string
+	/** 给每个 section 生成 DOM id，方便外部导航 */
+	sectionIdPrefix?: string
+	/** 给字段容器生成 DOM id，支持 TOC 滚动定位 */
+	fieldIdPrefix?: string
 }
 
 const FieldsImpl = (props?: AutoFormFieldsProps) => {
-	const { sectionSpacing = 'xl' } = props ?? {}
+	const { sectionSpacing = 'xl', sectionIdPrefix, fieldIdPrefix } = props ?? {}
 	const { form, sections, hiddenFields, defaultValues } = useAutoFormCtx<any>()
 
 	return (
@@ -94,10 +99,26 @@ const FieldsImpl = (props?: AutoFormFieldsProps) => {
 
 			<Stack gap={sectionSpacing}>
 				{sections.map((section) => (
-					<SectionBlock key={section.id} section={section} form={form} defaultValues={defaultValues} />
+					<SectionBlock
+						key={section.id}
+						section={section}
+						form={form}
+						defaultValues={defaultValues}
+						sectionIdPrefix={sectionIdPrefix}
+						fieldIdPrefix={fieldIdPrefix}
+					/>
 				))}
 			</Stack>
 		</>
+	)
+}
+
+function toDomSlug(value: string) {
+	return (
+		value
+			.toLowerCase()
+			.replace(/[^a-z0-9_-]+/gi, '-')
+			.replace(/^-+|-+$/g, '') || 'section'
 	)
 }
 
@@ -105,16 +126,46 @@ function SectionBlock({
 	section,
 	form,
 	defaultValues,
+	sectionIdPrefix,
+	fieldIdPrefix,
 }: {
 	section: SectionPlan
 	form: ReturnType<typeof useAppForm<any>>
 	defaultValues: Record<string, unknown>
+	sectionIdPrefix?: string
+	fieldIdPrefix?: string
 }) {
-	const columns = Math.max(1, section.columns ?? 1)
+	const { ref, width } = useElementSize()
+	const isNarrowViewport = useMediaQuery('(max-width: 1500px)')
+	const baseColumns = Math.max(1, section.columns ?? 1)
+	const responsiveColumns = useMemo(() => {
+		const minColWidth = 720 // px, 更早切换为较少列，提升窄屏可读性
+		if (!width) return isNarrowViewport ? 1 : baseColumns
+		const fit = Math.max(1, Math.floor(width / minColWidth))
+		const computed = Math.min(baseColumns, fit || 1)
+		return isNarrowViewport ? Math.min(computed, 1) : computed
+	}, [width, baseColumns, isNarrowViewport])
 	const showHeader = Boolean(section.title || section.description)
+	const domId =
+		section.id === DEFAULT_SECTION_ID
+			? undefined
+			: sectionIdPrefix
+				? `${sectionIdPrefix}${toDomSlug(section.id)}`
+				: undefined
+	const isAnchorVisible = Boolean(domId)
 
 	return (
-		<Stack gap="sm">
+		<Stack
+			gap="sm"
+			id={domId}
+			data-section-id={section.id}
+			{...(isAnchorVisible && {
+				'data-config-anchor': true,
+				'data-config-anchor-depth': 1,
+				'data-config-anchor-label': section.title ?? section.id,
+			})}
+			style={{ scrollMarginTop: '72px' }}
+		>
 			{showHeader ? (
 				<Stack gap={4}>
 					{section.title ? <Text fw={600}>{section.title}</Text> : null}
@@ -127,21 +178,29 @@ function SectionBlock({
 				</Stack>
 			) : null}
 			<div
+				ref={ref}
 				style={{
 					display: 'grid',
-					gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))`,
+					gridTemplateColumns: `repeat(${responsiveColumns}, minmax(0, 1fr))`,
 					gap: 'var(--mantine-spacing-lg)',
 				}}
 			>
 				{section.fields.map(({ name, info }) => {
-					const span = resolveFieldSpan(columns, info.formInfo.layout)
+					const span = resolveFieldSpan(responsiveColumns, info.formInfo.layout, info.type)
+					const fieldDomId = fieldIdPrefix ? `${fieldIdPrefix}${toDomSlug(name)}` : undefined
 					return (
 						<div
 							key={name}
 							style={{
-								gridColumn: `span ${Math.min(span, columns)}`,
+								gridColumn: `span ${Math.min(span, responsiveColumns)}`,
 								alignSelf: alignToCss(info.formInfo.layout?.align),
+								scrollMarginTop: '72px',
 							}}
+							id={fieldDomId}
+							data-config-anchor
+							data-config-anchor-depth={2}
+							data-config-anchor-label={info.formInfo.label ?? name}
+							data-config-anchor-field-id={fieldDomId}
 						>
 							<form.Field name={name}>
 								{(field) => (
@@ -156,8 +215,12 @@ function SectionBlock({
 											name,
 											onChange: field.handleChange,
 											onBlur: field.handleBlur,
-											...(info.formInfo.disabled !== undefined && { disabled: info.formInfo.disabled }),
-											...(info.formInfo.readOnly !== undefined && { readOnly: info.formInfo.readOnly }),
+											...(info.formInfo.disabled !== undefined && {
+												disabled: info.formInfo.disabled,
+											}),
+											...(info.formInfo.readOnly !== undefined && {
+												readOnly: info.formInfo.readOnly,
+											}),
 										}}
 									/>
 								)}
@@ -190,11 +253,14 @@ export interface ActionsProps {
 }
 function ActionsImpl({ children }: ActionsProps) {
 	const { form, submit, reset } = useAutoFormCtx<any>()
-	const setValues = useCallback((values: Record<string, any>) => {
-		for (const [key, value] of Object.entries(values)) {
-			form.setFieldValue(key, value)
-		}
-	}, [form])
+	const setValues = useCallback(
+		(values: Record<string, any>) => {
+			for (const [key, value] of Object.entries(values)) {
+				form.setFieldValue(key, value)
+			}
+		},
+		[form],
+	)
 	return (
 		<form.Subscribe
 			selector={(s) => ({
@@ -246,4 +312,3 @@ function DebugPanelImpl() {
 		</form.Subscribe>
 	)
 }
-AutoForm.DebugPanel = DebugPanelImpl

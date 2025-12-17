@@ -37,7 +37,7 @@
 		}
 	],
 	"devDependencies": {
-		"tsdown": "^0.16.6",
+		"tsdown": "0.17.0",
 		"typescript": "^5.9.3",
 		"option-t": "^55.1.0",
 		"reflect-metadata": "^0.2.2"
@@ -48,16 +48,16 @@
 	"exports": {
 		".": {
 			"@pluxel/source": "./src/index.ts",
-			"import": "./dist/index.mjs",
-			"require": "./dist/index.cjs"
+			"require": "./dist/index.cjs",
+			"import": "./dist/index.mjs"
 		},
 		"./package.json": "./package.json"
 	},
 	"publishConfig": {
 		"exports": {
 			".": {
-				"import": "./dist/index.mjs",
-				"require": "./dist/index.cjs"
+				"require": "./dist/index.cjs",
+				"import": "./dist/index.mjs"
 			},
 			"./package.json": "./package.json"
 		}

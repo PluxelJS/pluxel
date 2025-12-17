@@ -3,8 +3,17 @@ import { META_MAP, collectObjectEntries, type Schema } from '~/core/utils'
 import type { UnionMetaOptions, UnionMetaResult, UnionSelectorVariant } from './type'
 
 type UnionSchema = Schema & { type: 'union'; options: readonly Schema[]; pipe?: readonly unknown[] }
-type VariantSchema = Schema & { type: 'variant'; key: string; options: readonly Schema[]; pipe?: readonly unknown[] }
-type IntersectSchema = Schema & { type: 'intersect'; options: readonly Schema[]; pipe?: readonly unknown[] }
+type VariantSchema = Schema & {
+	type: 'variant'
+	key: string
+	options: readonly Schema[]
+	pipe?: readonly unknown[]
+}
+type IntersectSchema = Schema & {
+	type: 'intersect'
+	options: readonly Schema[]
+	pipe?: readonly unknown[]
+}
 
 type DiscriminatorValue = string | number | boolean | null
 
@@ -89,7 +98,9 @@ function inferDiscriminatorKey(branches: readonly Schema[]): string | undefined 
 	})
 	if (!validCandidates.length) return undefined
 
-	const booleanCandidate = validCandidates.find(([_, values]) => values.every((v) => BOOLEANISH.has(v)))
+	const booleanCandidate = validCandidates.find(([_, values]) =>
+		values.every((v) => BOOLEANISH.has(v)),
+	)
 	if (booleanCandidate) return booleanCandidate[0]
 
 	const priority = ['type', 'kind', 'mode', 'enabled']
@@ -120,7 +131,10 @@ function findEntrySchema(branchSchema: Schema, key: string): Schema | undefined 
 function gatherUnionParts(schema: UnionSchema | VariantSchema | IntersectSchema) {
 	if (schema.type !== 'intersect') {
 		return {
-			unionSchema: schema.type === 'union' || schema.type === 'variant' ? (schema as UnionSchema | VariantSchema) : undefined,
+			unionSchema:
+				schema.type === 'union' || schema.type === 'variant'
+					? (schema as UnionSchema | VariantSchema)
+					: undefined,
 			sharedObjects: [] as Schema[],
 			mode: schema.type,
 		}
@@ -206,13 +220,17 @@ function resolveVariant(
 /**
  * 提取 Union/Variant 的配置与分支信息，涵盖 intersect 包裹的场景。
  */
-export function extractUnionProps(schema: UnionSchema | VariantSchema | IntersectSchema): UnionMetaResult {
+export function extractUnionProps(
+	schema: UnionSchema | VariantSchema | IntersectSchema,
+): UnionMetaResult {
 	const metadata = readUnionMetadata(schema)
 	const { unionSchema, sharedObjects } = gatherUnionParts(schema)
 
 	if (!unionSchema) {
 		if (isDevEnv()) {
-			console.warn('[valibot-form] unionMeta() 需要作用在 union/variant schema 上才能提取表单信息。')
+			console.warn(
+				'[valibot-form] unionMeta() 需要作用在 union/variant schema 上才能提取表单信息。',
+			)
 		}
 		const fallbackVariant =
 			metadata.variant && metadata.variant !== 'auto' ? metadata.variant : ('select' as const)
@@ -241,13 +259,14 @@ export function extractUnionProps(schema: UnionSchema | VariantSchema | Intersec
 		discriminator,
 	)
 
-const branches = unionSchema.options.map((branchSchema) => {
-	const discriminatorValue = extractDiscriminatorValueFromBranch(branchSchema, discriminator) ?? null
-	return {
-		discriminatorValue,
-		schema: branchSchema,
-	}
-})
+	const branches = unionSchema.options.map((branchSchema) => {
+		const discriminatorValue =
+			extractDiscriminatorValueFromBranch(branchSchema, discriminator) ?? null
+		return {
+			discriminatorValue,
+			schema: branchSchema,
+		}
+	})
 
 	const labelKeys = metadata.branchLabels ? Object.keys(metadata.branchLabels) : []
 	for (let i = 0; i < branches.length; i++) {

@@ -10,6 +10,7 @@ const tsOnlyRoot = normalize(fileURLToPath(new URL('./fixtures/scan/ts-only/', i
 function createService(overrides: Partial<ConstructorParameters<typeof ScanService>[1]> = {}) {
 	return new ScanService({} as Context, {
 		roots: fixtureRoot,
+		installedBase: fixtureRoot,
 		...overrides,
 	})
 }
@@ -19,20 +20,6 @@ function asPosix(input: string) {
 }
 
 describe('ScanService', () => {
-	it('builds snapshot for single package root', async () => {
-		const service = createService()
-		const snapshot = await service.snapshot()
-
-		expect(snapshot.packages.length).toBe(1)
-		const pkg = snapshot.packages[0]
-		expect(pkg.name).toBe('scan-single-fixture')
-		expect(pkg.entry.ok).toBe(true)
-		expect(asPosix((pkg.entry as EntryResolutionOk).entry)).toMatch(/lib\/index\.js$/)
-
-		expect(snapshot.entries).toHaveLength(1)
-		expect(asPosix(snapshot.entries[0])).toMatch(/lib\/index\.js$/)
-	})
-
 	it('resolves entry by package name inside workspace', async () => {
 		const service = createService()
 		const resolution = await service.resolveEntryByName('scan-single-fixture')
@@ -47,6 +34,13 @@ describe('ScanService', () => {
 
 		expect(resolution.ok).toBe(true)
 		expect(asPosix((resolution as EntryResolutionOk).entry)).toContain('node_modules/pathe')
+	})
+
+	it('can skip installed fallback when workspaceOnly is true', async () => {
+		const service = createService()
+		const resolution = await service.resolveEntry('pathe', { workspaceOnly: true })
+
+		expect(resolution.ok).toBe(false)
 	})
 
 	it('directly resolves installed package entries', async () => {
@@ -64,12 +58,21 @@ describe('ScanService', () => {
 		expect(resolution?.ok).toBe(true)
 		expect(asPosix((resolution as EntryResolutionOk).entry)).toMatch(/lib\/index\.js$/)
 	})
+
+	it('lists workspace entries scoped by roots', async () => {
+		const service = createService()
+		const entries = await service.listWorkspaceEntries({ roots: fixtureRoot })
+
+		expect(entries.length).toBeGreaterThan(0)
+		expect(asPosix(entries[0].entry)).toMatch(/lib\/index\.js$/)
+	})
 })
 
 describe('ScanService without package.json (ts-only)', () => {
 	function createTsOnlyService() {
 		return new ScanService({} as Context, {
 			roots: tsOnlyRoot,
+			installedBase: tsOnlyRoot,
 			options: {
 				fallbackTsOnSingle: true,
 			},
@@ -78,16 +81,10 @@ describe('ScanService without package.json (ts-only)', () => {
 
 	it('resolves index.ts as fallback entry', async () => {
 		const service = createTsOnlyService()
-		const snapshot = await service.snapshot()
-
-		expect(snapshot.entries).toHaveLength(1)
-		const entry = snapshot.entries[0]
-		expect(asPosix(entry)).toMatch(/\/ts-only\/index\.ts$/)
-
-		const pkg = snapshot.packages[0]
-		expect(pkg.entry.ok).toBe(true)
-		if (pkg.entry.ok) {
-			expect(asPosix(pkg.entry.entry)).toMatch(/\/ts-only\/index\.ts$/)
+		const entry = await service.resolveEntry({ dir: tsOnlyRoot })
+		expect(entry.ok).toBe(true)
+		if (entry.ok) {
+			expect(asPosix(entry.entry)).toMatch(/\/ts-only\/index\.ts$/)
 		}
 	})
 })

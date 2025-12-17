@@ -1,6 +1,10 @@
 import * as v from 'valibot'
 
-export const PluginStatusEntryLifecycleStage = v.picklist(['running', 'stopped', 'disabled'] as const)
+export const PluginStatusEntryLifecycleStage = v.picklist([
+	'running',
+	'stopped',
+	'disabled',
+] as const)
 
 export const PluginSourceInfo = v.object({
 	__typename: v.literal('PluginSourceInfo'),

@@ -1,17 +1,17 @@
 // src/app.ts
 import { Hono } from 'hono'
 import { streamSSE } from 'hono/streaming'
-import { logStore, type LogRecord } from './logStore'
+import { logStore, matchesFilter, type LogRecord } from './logStore'
 
 const app = new Hono()
 
 // —— 静态快照：返回最近 N 条 JSON 日志 ——
 app.get('/latest', (c) => {
-	const name = c.req.query('name') ?? ''
+	const filter = c.req.query('name') ?? ''
 	const limit = Math.min(Number(c.req.query('limit') ?? 10), 100)
 	const lines = logStore
 		.snapshot()
-		.filter((l) => !name || l.name === name)
+		.filter((l) => matchesFilter(l, filter))
 		.slice(-limit)
 		.map((l) => JSON.stringify(l))
 	return c.text(lines.join('\n') + '\n', 200, {
@@ -21,12 +21,12 @@ app.get('/latest', (c) => {
 
 // —— 实时流：Server-Sent Events 推送 JSON 日志 ——
 app.get('/stream', (c) => {
-	const name = c.req.query('name') ?? ''
+	const filter = c.req.query('name') ?? ''
 	return streamSSE(c, async (sse) => {
 		// 1) 推送历史日志
 		logStore
 			.snapshot()
-			.filter((l) => !name || l.name === name)
+			.filter((l) => matchesFilter(l, filter))
 			.forEach((l) => {
 				sse.writeSSE({ data: JSON.stringify(l) })
 			})
@@ -34,7 +34,7 @@ app.get('/stream', (c) => {
 		// 2) 订阅新日志
 		let aborted = false
 		const onLog = (l: LogRecord) => {
-			if (!name || l.name === name) {
+			if (matchesFilter(l, filter)) {
 				sse.writeSSE({ data: JSON.stringify(l) })
 			}
 		}

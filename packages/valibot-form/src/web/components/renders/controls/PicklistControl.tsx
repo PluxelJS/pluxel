@@ -60,7 +60,7 @@ const SelectOptionItem = forwardRef<HTMLDivElement, any>(
 				</Text>
 			) : null}
 		</div>
-	)
+	),
 )
 SelectOptionItem.displayName = 'PicklistOptionItem'
 
@@ -78,12 +78,7 @@ const MultiValueChip = forwardRef<HTMLDivElement, any>(
 		>
 			<Text size="sm">{label}</Text>
 			{disabled ? null : (
-				<CloseButton
-					size="xs"
-					variant="transparent"
-					onMouseDown={onRemove}
-					onClick={onRemove}
-				/>
+				<CloseButton size="xs" variant="transparent" onMouseDown={onRemove} onClick={onRemove} />
 			)}
 		</Badge>
 	),
@@ -129,7 +124,13 @@ function normalizeOptions(
 	return { entries: mapped, isAllNumbers }
 }
 
-export function PicklistControl({ meta, value, onChange, disabled, required }: PicklistControlProps) {
+export function PicklistControl({
+	meta,
+	value,
+	onChange,
+	disabled,
+	required,
+}: PicklistControlProps) {
 	const multiple = Boolean(meta.multiple)
 	const variant = meta.variant ?? (multiple ? 'select' : 'select')
 
@@ -191,7 +192,7 @@ export function PicklistControl({ meta, value, onChange, disabled, required }: P
 	)
 
 	const singleValue = useMemo(
-		() => (value == null ? '' : rawToId.get(value as any) ?? String(value)),
+		() => (value == null ? '' : (rawToId.get(value as any) ?? String(value))),
 		[value, rawToId],
 	)
 
@@ -277,9 +278,10 @@ export function PicklistControl({ meta, value, onChange, disabled, required }: P
 			data: sharedData,
 			value: multiValue,
 			onChange: (ids: string[]) => {
-				const raw = ids
-					.map((id) => toRaw(id))
-					.filter((item) => item !== null) as (string | number)[]
+				const raw = ids.map((id) => toRaw(id)).filter((item) => item !== null) as (
+					| string
+					| number
+				)[]
 				onChange(raw)
 			},
 			searchable,

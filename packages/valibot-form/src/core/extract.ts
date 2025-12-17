@@ -28,9 +28,9 @@ export interface FormBaseInfo extends Omit<FormMeta, 'section'> {
 export type ExtractedProps<T extends keyof ExtractMap> = ReturnType<ExtractMap[T]['extract']>
 type ExtractSchemaArg<T extends keyof ExtractMap> = Parameters<ExtractMap[T]['extract']>[0]
 
-function resolveExtractTarget(schema: Schema):
-	| { schema: Schema; type: ExtractableType }
-	| undefined {
+function resolveExtractTarget(
+	schema: Schema,
+): { schema: Schema; type: ExtractableType } | undefined {
 	// 首先检查是否有明确的 meta 类型指定
 	// 例如 v.pipe(v.intersect([...]), unionMeta({...})) 应该被当作 union 处理
 	// 如果 schema 有 pipe，检查 pipe 中的 metadata 类型
@@ -101,14 +101,14 @@ function fieldNameToLabel(fieldName: string): string {
 	if (fieldName.includes('_')) {
 		return fieldName
 			.split('_')
-			.map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+			.map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
 			.join(' ')
 	}
 
 	// 处理 camelCase 和 PascalCase
 	const result = fieldName
 		.replace(/([A-Z])/g, ' $1') // 在大写字母前插入空格
-		.replace(/^./, str => str.toUpperCase()) // 首字母大写
+		.replace(/^./, (str) => str.toUpperCase()) // 首字母大写
 		.trim()
 
 	return result
@@ -155,6 +155,8 @@ export function extractInfo(schema: Schema, defaults: FormMeta, fieldName?: stri
 	const { schema: targetSchema, type } = normalized
 	const { extract } = extractMap[type]
 
-	const props = extract(targetSchema as ExtractSchemaArg<typeof type>) as ExtractedProps<typeof type>
+	const props = extract(targetSchema as ExtractSchemaArg<typeof type>) as ExtractedProps<
+		typeof type
+	>
 	return { props, formInfo, type }
 }

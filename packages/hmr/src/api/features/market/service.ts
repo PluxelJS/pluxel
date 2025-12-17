@@ -326,11 +326,7 @@ export async function reinstallPackages(
 		const results = await pCtx.packageService.reinstallMany(serviceInputs, {
 			install: { force: options.force ?? true },
 		})
-		const mutations = serializeReloadResults(
-			results,
-			'reloaded',
-			'reload_failed',
-		)
+		const mutations = serializeReloadResults(results, 'reloaded', 'reload_failed')
 		return buildBatchResult(mutations)
 	} catch (error) {
 		return buildBatchResult([], error)
@@ -347,7 +343,11 @@ export async function reloadPackages(
 	}
 	try {
 		const serviceInputs = specInputs.map(toServiceSpecifierInput)
-		const results = await pCtx.packageService.reloadMany(serviceInputs, {}, { fresh: options.fresh ?? true })
+		const results = await pCtx.packageService.reloadMany(
+			serviceInputs,
+			{},
+			{ fresh: options.fresh ?? true },
+		)
 		const mutations = serializeReloadResults(results, 'reloaded', 'reload_failed')
 		return buildBatchResult(mutations)
 	} catch (error) {
@@ -456,7 +456,7 @@ function formatUnknownError(error: unknown, fallback?: string): string | null {
 	try {
 		return JSON.stringify(target)
 	} catch {
-		return target != null ? String(target) : fallback ?? null
+		return target != null ? String(target) : (fallback ?? null)
 	}
 }
 

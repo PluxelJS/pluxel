@@ -10,33 +10,17 @@ import {
 } from '@mantine/core'
 import { useLocalStorage, useMediaQuery } from '@mantine/hooks'
 import type React from 'react'
-import { type ReactNode, useCallback, useEffect, useMemo, useState } from 'react'
+import { type ReactNode, useCallback, useEffect, useMemo } from 'react'
 import AppHeader, { type AppHeaderProps } from './AppHeader'
 import Navbar, { type NavItem } from './Navbar'
-import { getPatternStyle } from '../patterns'
+import { getPatternStyle } from '../theme'
+import { useControllable } from '../hooks'
 
 /** Link 形态：最小要求 `to` 和 children；其余 a 属性透传 */
 export type LinkLikeProps = {
 	to: string
 	children: React.ReactNode
 } & Omit<React.ComponentPropsWithoutRef<'a'>, 'children' | 'href'>
-
-/** 受控/非受控辅助 Hook（和 Mantine 行为一致） */
-function useControllable<T>(opts: { value?: T; defaultValue: T; onChange?: (v: T) => void }) {
-	const { value, defaultValue, onChange } = opts
-	const [inner, setInner] = useState<T>(defaultValue)
-	const isControlled = value !== undefined
-	const state = isControlled ? (value as T) : inner
-	const set = useCallback(
-		(v: T | ((prev: T) => T)) => {
-			const next = typeof v === 'function' ? (v as (prev: T) => T)(state) : v
-			if (!isControlled) setInner(next)
-			onChange?.(next)
-		},
-		[isControlled, onChange, state],
-	)
-	return [state, set] as const
-}
 
 export interface LayoutProps {
 	/** —— Header 可插拔 —— */
@@ -69,6 +53,9 @@ export interface LayoutProps {
 	/** —— 其他 —— */
 	mainPadding?: string | number
 	footerHeight?: number
+	footer?:
+		| React.ReactNode
+		| ((ctx: { opened: boolean; toggle: () => void; isMobile: boolean }) => React.ReactNode)
 	currentPath?: string
 	navbarWidth?: number
 	compactNavbarWidth?: number
@@ -100,6 +87,7 @@ export function Layout({
 	// Misc
 	mainPadding = 'md',
 	footerHeight = 0,
+	footer,
 	currentPath,
 	children,
 }: LayoutProps) {
@@ -175,6 +163,12 @@ export function Layout({
 		return <AppHeader {...props} />
 	}, [header, headerProps, ctx, isMobile, collapseDesktop, toggle])
 
+	const footerNode = useMemo(() => {
+		if (!footer) return null
+		if (typeof footer === 'function') return footer(ctx as any)
+		return footer
+	}, [footer, ctx])
+
 	// —— 组装 Navbar —— //
 	const navbarNode = useMemo(() => {
 		if (typeof navbar === 'function') return navbar(ctx)
@@ -210,6 +204,7 @@ export function Layout({
 			data-nav-opened={opened ? 'true' : 'false'}
 			data-nav-compact={compactNavbar ? 'true' : undefined}
 			header={{ height: headerHeight }}
+			footer={footerNode ? { height: footerHeight } : undefined}
 			navbar={{
 				width: computedNavbarWidth,
 				breakpoint: 'sm',
@@ -219,14 +214,14 @@ export function Layout({
 					desktop: desktopCollapsed,
 				},
 			}}
-				styles={{
-					main: {
-						backgroundColor: pattern.backgroundColor,
-						backgroundImage: pattern.backgroundImage,
-						backgroundSize: pattern.backgroundSize,
-						backgroundPosition: pattern.backgroundPosition,
-						minHeight: '100dvh',
-					},
+			styles={{
+				main: {
+					backgroundColor: pattern.backgroundColor,
+					backgroundImage: pattern.backgroundImage,
+					backgroundSize: pattern.backgroundSize,
+					backgroundPosition: pattern.backgroundPosition,
+					minHeight: '100dvh',
+				},
 				navbar: {
 					borderRight: `1px solid ${borderColor}`,
 				},
@@ -261,6 +256,9 @@ export function Layout({
 					</Box>
 				</Box>
 			</AppShell.Main>
+
+			{/* Footer（可空） */}
+			{footerNode && <AppShell.Footer>{footerNode}</AppShell.Footer>}
 
 			{/* 移动端抽屉遮罩（只盖 Main，不遮 Header） */}
 			{opened && isMobile && (

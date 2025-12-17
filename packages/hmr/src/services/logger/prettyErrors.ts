@@ -127,7 +127,7 @@ function extractScope(bindings?: Bindings): string | undefined {
 	if (!bindings) return undefined
 	if (typeof bindings.name === 'string' && bindings.name) return bindings.name
 	if (typeof (bindings as any).scope === 'string') return (bindings as any).scope
-	if (typeof (bindings as any).plugin === 'string') return (bindings as any).plugin
+	if (typeof (bindings as any).pluginId === 'string') return (bindings as any).pluginId
 	return undefined
 }
 

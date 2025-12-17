@@ -22,10 +22,7 @@ describe('extractUnionProps', () => {
 
 	it('fills missing discriminator values from branch labels', () => {
 		const schema = v.pipe(
-			v.union([
-				v.object({ foo: v.string() }),
-				v.object({ bar: v.number() }),
-			]),
+			v.union([v.object({ foo: v.string() }), v.object({ bar: v.number() })]),
 			unionMeta({
 				discriminator: 'mode',
 				branchLabels: { foo: 'Foo', bar: 'Bar' },

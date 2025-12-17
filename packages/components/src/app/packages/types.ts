@@ -1,9 +1,4 @@
-import type {
-	InstallPackageSpecInput,
-	PackageLoadIssue,
-	PackageInventoryEntry,
-	PluginStatusEntry,
-} from '../gqty'
+import type { PackageInventoryEntry, PackageLoadIssue, PluginStatusEntry } from '../gqty'
 
 export type Maybe<T> = T | null | undefined
 
@@ -21,14 +16,6 @@ export type PackageRow = {
 	issues: PackageLoadIssue[]
 }
 
-export type InstallTask = {
-	label: string
-	spec: InstallPackageSpecInput
-	kind: 'primary' | 'dependency'
-	from?: string
-	force?: boolean
-}
-
 export type InstallLogEntry = {
 	label: string
 	kind: 'primary' | 'dependency'
@@ -41,4 +28,4 @@ export const ISSUE_SOURCE_LABEL: Record<string, string> = {
 	restore: '恢复',
 }
 
-export { type InstallPackageSpecInput, type PackageLoadIssue, type PackageInventoryEntry, type PluginStatusEntry }
+export type { PackageLoadIssue, PackageInventoryEntry, PluginStatusEntry }

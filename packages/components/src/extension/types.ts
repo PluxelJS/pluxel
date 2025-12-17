@@ -1,0 +1,25 @@
+// packages/components/src/extension/types.ts
+
+export {
+	ExtensionPoints,
+	createGlobalExtensionContext,
+	createPluginExtensionContext,
+	isExtensionPluginRunning,
+	toGlobalExtensionContext,
+	type CompiledExtensionModule,
+	type ExtensionContext,
+	type GlobalExtensionContext,
+	type ExtensionManifest,
+	type ExtensionManifestEvent,
+	type ExtensionMeta,
+	type ExtensionItem,
+	type ExtensionPoint,
+	type ExtensionPointCtx,
+	type ExtensionPointMap,
+	type ExtensionPointMeta,
+	type PluginExtensionContext,
+	type PluginUIModule,
+	type ExtensionDef,
+	type AnyExtensionDef,
+	type RouteExtensionDef,
+} from '@pluxel/plugin-ui'

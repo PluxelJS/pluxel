@@ -9,4 +9,3 @@ export class ModuleResolveCache {
 		this.store.clear()
 	}
 }
-

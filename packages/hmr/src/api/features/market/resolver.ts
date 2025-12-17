@@ -2,15 +2,8 @@ import { query, resolver } from '@gqloom/core'
 import type { Context as PlxContext } from '@pluxel/core'
 import * as v from 'valibot'
 
-import {
-	PackageLoadIssueEntry,
-	PackageInventoryEntry,
-	PackageInventoryFilter,
-} from './schema'
-import {
-	listPackageInventory,
-	listLoadIssues,
-} from './service'
+import { PackageLoadIssueEntry, PackageInventoryEntry, PackageInventoryFilter } from './schema'
+import { listPackageInventory, listLoadIssues } from './service'
 
 /**
  * Market GraphQL resolver - queries only

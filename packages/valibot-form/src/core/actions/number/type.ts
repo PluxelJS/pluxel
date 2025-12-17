@@ -14,8 +14,8 @@ export interface NumberCheck {
  * 数字输入控件类型
  */
 export type NumberInputVariant =
-	| 'input'   // 数字输入框
-	| 'slider'  // 滑块选择器
+	| 'input' // 数字输入框
+	| 'slider' // 滑块选择器
 
 /**
  * 数字字段配置选项

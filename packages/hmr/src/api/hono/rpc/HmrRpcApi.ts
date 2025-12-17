@@ -4,15 +4,14 @@ import type { Context } from '@pluxel/core'
 import { RpcTarget } from 'capnweb'
 import { resolve } from 'pathe'
 import * as v from 'valibot'
-
-import { readGroups, writeGroups } from '../../features/groups/service'
-import { PluginGroupInput, type PluginGroupInputValue } from '../../features/groups/schema'
-import { getStatusOverview } from '../../features/pluginStatus/service'
 import type { RpcExtensions } from '../../../services/hono/RpcService'
-import type { GroupMutationResult } from './types'
-import { formatGroupIssues } from './utils'
-import { PluginHandle } from './PluginHandle'
+import { PluginGroupInput, type PluginGroupInputValue } from '../../features/groups/schema'
+import { readGroups, writeGroups } from '../../features/groups/service'
+import { getStatusOverview } from '../../features/pluginStatus/service'
 import { MarketHandle } from './MarketHandle'
+import { applyStatusActions, PluginHandle } from './PluginHandle'
+import type { GroupMutationResult, PluginStatusBatchAction, PluginStatusBatchResult } from './types'
+import { formatGroupIssues } from './utils'
 
 export class HmrRpcApi extends RpcTarget {
 	#ctx: Context
@@ -77,5 +76,9 @@ export class HmrRpcApi extends RpcTarget {
 			return { ok: false, code: 'validation_failed', errors: formatGroupIssues(parsed.issues) }
 		}
 		return { ok: true, groups: writeGroups(this.#ctx, parsed.output) }
+	}
+
+	updatePluginStatuses(actions: PluginStatusBatchAction[]): Promise<PluginStatusBatchResult> {
+		return applyStatusActions(this.#ctx, actions ?? [])
 	}
 }

@@ -12,10 +12,23 @@ export type ArrayMetaOptions<T extends string | number = string | number> = {
 	columns?: number
 	itemLabel?: string
 	defaultItem?: unknown
-	valueMode?: 'auto' | 'string' | 'number' | 'boolean' | 'json' | 'picklist' | 'defaults-picker'
+	valueMode?:
+		| 'auto'
+		| 'string'
+		| 'number'
+		| 'boolean'
+		| 'json'
+		| 'picklist'
+		| 'defaults-picker'
+		| 'object'
+		| 'array'
+		| 'variant'
+		| 'union'
 	emptyHint?: string
 	minItems?: number
 	maxItems?: number
+	/** 禁用自动多列布局（用于嵌套场景，避免空间过小） */
+	disableAutoGrid?: boolean
 	/** 当 valueMode === 'picklist' 时启用 MultiSelect（默认一切合理默认）；defaults-picker 模式下 options 可选 */
 	picklist?: {
 		/** picklist 模式必填，defaults-picker 模式可选（选项来自 defaultValues） */
@@ -43,4 +56,6 @@ export type ArrayMetaOptions<T extends string | number = string | number> = {
 /** 提炼结果：可带出子项元数据（由回调决定） */
 export type ArrayMetaResult<TItemMeta = unknown> = ArrayMetaOptions & {
 	item?: TItemMeta
+	/** 数组项的 schema，用于嵌套对象/数组的递归渲染 */
+	itemSchema?: unknown
 }

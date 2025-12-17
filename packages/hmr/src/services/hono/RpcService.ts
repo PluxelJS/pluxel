@@ -1,24 +1,14 @@
 // RpcService.ts - RPC 扩展管理服务
 import { type Context, Injectable } from '@pluxel/core'
 import type { RpcTarget } from 'capnweb'
+import type { RpcExtensions } from '@pluxel/hmr/services'
 
 const serviceName = 'rpc' as const
 
 /** 扩展工厂：每次 RPC 请求时调用，返回 RpcTarget 实例 */
 export type RpcExtensionFactory<T extends RpcTarget = RpcTarget> = (ctx: Context) => T
 
-/**
- * RPC 扩展接口，插件通过 declare module 扩展
- * @example
- * declare module '@pluxel/hmr' {
- *   interface RpcExtensions {
- *     'my-plugin': MyPluginRpc
- *   }
- * }
- */
-
-// biome-ignore lint/suspicious/noEmptyInterface: <外部扩展>
-export interface RpcExtensions {}
+export type { RpcExtensions } from '@pluxel/hmr/services'
 
 declare module '@pluxel/core' {
 	interface Context {
@@ -41,9 +31,9 @@ export class RpcService {
 	 * @returns 清理函数（自动与 scope 集成）
 	 */
 	registerExtension<T extends RpcTarget>(factory: RpcExtensionFactory<T>): () => void {
-		const namespace = this.ctx.pluginInfo.name
+		const namespace = this.ctx.pluginInfo.id
 		if (namespace in this.extensions && this.extensions[namespace] !== null) {
-			this.ctx.logger?.warn(`[RPC] Extension "${namespace}" already registered, overwriting`)
+			this.ctx.logger.warn(`[RPC] Extension "${namespace}" already registered, overwriting`)
 		}
 
 		this.extensions[namespace] = factory
@@ -74,7 +64,8 @@ export class RpcService {
 	 * 使用 Object.defineProperty 定义 getter，避免 Proxy
 	 */
 	createExtensionsView(ctx: Context): RpcExtensions {
-		const view = Object.create(null) as RpcExtensions
+		// 需要使用普通对象（带 Object.prototype）以便 RPC 层能够序列化
+		const view = {} as RpcExtensions
 		for (const name in this.extensions) {
 			const factory = this.extensions[name]
 			if (factory === null) continue

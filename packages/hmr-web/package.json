@@ -1,0 +1,47 @@
+{
+	"private": true,
+	"name": "@pluxel/hmr-web",
+	"version": "0.1.0",
+	"description": "Browser client for Pluxel HMR (RPC/SSE helpers + React hooks)",
+	"main": "./dist/index.mjs",
+	"type": "module",
+	"module": "./dist/index.mjs",
+	"types": "./dist/index.d.mts",
+	"exports": {
+		".": {
+			"@pluxel/source": "./src/index.ts",
+			"default": "./dist/index.mjs"
+		},
+		"./react": {
+			"@pluxel/source": "./src/react.tsx",
+			"default": "./dist/react.mjs"
+		},
+		"./package.json": "./package.json"
+	},
+	"files": [
+		"!**/*.map",
+		"dist"
+	],
+	"scripts": {
+		"build": "tsdown"
+	},
+	"dependencies": {
+		"@pluxel/plugin-ui": "workspace:*",
+		"capnweb": "^0.2.0",
+		"hono": "^4.10.7"
+	},
+	"peerDependencies": {
+		"react": "^19.2.1"
+	},
+	"devDependencies": {
+		"@types/react": "^19.2.7",
+		"tsdown": "0.17.0"
+	},
+	"publishConfig": {
+		"exports": {
+			".": "./dist/index.mjs",
+			"./react": "./dist/react.mjs",
+			"./package.json": "./package.json"
+		}
+	}
+}

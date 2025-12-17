@@ -1,0 +1,109 @@
+import { realpath } from 'node:fs/promises'
+import { fileURLToPath, pathToFileURL } from 'node:url'
+import { dirname, normalize } from 'pathe'
+import { normalizePath } from 'vite'
+import { resolveModulePath, type ResolveOptions } from 'exsolve'
+import type { ScanService } from '../market/ScanService'
+
+const DEFAULT_CONDITIONS = ['@pluxel/hmr', '@pluxel/source', 'import', 'module', 'default']
+const DRIVE_PATH_RE = /^[a-zA-Z]:[\\/]/
+
+interface ResolveBareImportArgs {
+	specifier: string
+	importer?: string | null
+	scanService?: ScanService
+	conditions?: readonly string[]
+	fallbackBaseDirs?: readonly string[]
+}
+
+export async function resolveBareImport({
+	specifier,
+	importer,
+	scanService,
+	conditions = DEFAULT_CONDITIONS,
+	fallbackBaseDirs = [process.cwd()],
+}: ResolveBareImportArgs): Promise<string | null> {
+	if (!isBareSpecifier(specifier)) return null
+	// 首先尝试通过 workspace 扫描器解析（可返回 TS 源入口）。
+	if (scanService) {
+		try {
+			const resolved = await scanService.resolveEntry({ name: specifier }, { workspaceOnly: true })
+			if (resolved?.ok) {
+				return await canonicalizePath(resolved.entry)
+			}
+		} catch {
+			// ignore scan failures and fall through to local resolution
+		}
+	}
+
+	const importerBases = resolveImporterBases(importer)
+	const searchBases = mergeResolutionBases(importerBases, fallbackBaseDirs)
+	const normalizedConditions = dedupeStrings(conditions)
+	for (const base of searchBases) {
+		const resolved = tryResolveWithExsolve(specifier, base, normalizedConditions)
+		if (resolved) return await canonicalizePath(resolved)
+	}
+
+	return null
+}
+
+function isBareSpecifier(id: string | undefined) {
+	if (!id) return false
+	if (id.startsWith('.') || id.startsWith('/') || id.startsWith('\0')) return false
+	if (DRIVE_PATH_RE.test(id)) return false
+	return true
+}
+
+function resolveImporterBases(importer?: string | null): string[] {
+	if (!importer) return []
+	const asPath = importer.startsWith('file://') ? fileURLToPath(importer) : importer
+	const normalized = normalize(asPath)
+	const dir = dirname(normalized)
+	return dir ? [dir] : []
+}
+
+function mergeResolutionBases(importerBases: string[], fallback: readonly string[]) {
+	const merged = new Set<string>()
+	for (const base of importerBases) if (base) merged.add(base)
+	for (const base of fallback) if (base) merged.add(normalize(base))
+	return [...merged]
+}
+
+function dedupeStrings(values: readonly string[]) {
+	return [...new Set(values)]
+}
+
+function tryResolveWithExsolve(
+	spec: string,
+	baseDir: string | undefined,
+	conditions: readonly string[],
+): string | null {
+	if (!baseDir) return null
+	try {
+		const from = ensureDirectoryURL(baseDir)
+		const options: ResolveOptions = {
+			from,
+			try: true,
+		}
+		if (conditions.length) options.conditions = [...conditions]
+		const resolved = resolveModulePath(spec, options)
+		return resolved ? normalizePath(resolved) : null
+	} catch {
+		return null
+	}
+}
+
+function ensureDirectoryURL(input: string): URL {
+	const normalized = normalize(input)
+	const asDir = normalized.endsWith('/') ? normalized : `${normalized}/`
+	return pathToFileURL(asDir)
+}
+
+async function canonicalizePath(input: string): Promise<string> {
+	try {
+		const real = await realpath(input)
+		return normalizePath(real)
+	} catch {
+		return normalizePath(input)
+	}
+}

@@ -1,6 +1,5 @@
 import { Context } from '@pluxel/hmr'
 import { PinoLoggerService } from '@pluxel/hmr/services'
-import { PluginA, PluginC } from './plugins'
 
 if (process.env.PLUXEL_HMR_SSR === undefined) {
 	process.env.PLUXEL_HMR_SSR = 'true'
@@ -8,18 +7,20 @@ if (process.env.PLUXEL_HMR_SSR === undefined) {
 
 const ctx = new Context({
 	hmrService: {
-		dir: ['./tests/plugins'],
+		dir: ['./tests/plugins', './tests/ui-demos', './runtime-demos'],
 		log: {
 			debugNamespaces: [
 				'pluxel:hmr:modules',
 				'pluxel:hmr:time',
 				'pluxel:hmr:time:entry',
 				'pluxel:hmr:warmup',
+				'pluxel:hmr:batch',
+				'pluxel:hmr:graph',
 			],
 		},
 	},
 	registry: {
-		plugigCTXIsolate: [PinoLoggerService],
+		pluginCTXIsolate: [PinoLoggerService],
 	},
 })
 async function bootstrap() {

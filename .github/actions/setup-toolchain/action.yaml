@@ -20,9 +20,9 @@ inputs:
     description: 'Node.js version spec (falls back to workflow env NODE_VERSION or default runner tooling)'
     required: false
   bun-version:
-    description: 'Bun version (set empty string to skip)'
+    description: 'Bun version (defaults to latest; set empty string to skip)'
     required: false
-    default: ''
+    default: 'latest'
   install:
     description: 'Whether to run pnpm install (arguments controlled via install-args input)'
     required: false

@@ -108,6 +108,7 @@ export class ServiceVerificationAggregateError extends Error {
  * ------------------------------------------------------------------------- */
 export const validateAllServices = (
 	services: ServiceListMetadata,
+	aliasIndex: ReadonlyMap<AliasKey, Identifier<unknown>>,
 ): VerificationError[] => {
 	const color = new Map<Identifier<unknown>, 0 | 1 | 2>() // 0:white 1:gray 2:black
 	const stack: Identifier<unknown>[] = []
@@ -157,7 +158,10 @@ export const validateAllServices = (
 		const meta = services.get(node) as ServiceData<unknown> | undefined
 		if (meta) {
 			for (const dep of meta.dependencies) {
-				if (!services.has(dep)) {
+				const resolved = services.has(dep)
+					? dep
+					: (aliasIndex.get(dep as any) ?? dep)
+				if (!services.has(resolved)) {
 					errors.push({
 						kind: 'MissingDependency',
 						missing: dep,
@@ -165,7 +169,7 @@ export const validateAllServices = (
 					})
 					continue
 				}
-				dfs(dep)
+				dfs(resolved)
 			}
 		}
 
@@ -186,14 +190,18 @@ export const validateAllServices = (
  * ------------------------------------------------------------------------- */
 const computeDependents = (
 	services: ServiceListMetadata,
+	aliasIndex: ReadonlyMap<AliasKey, Identifier<unknown>>,
 ): Map<Identifier<unknown>, Set<Identifier<unknown>>> => {
 	const dependentsMap = new Map<Identifier<unknown>, Set<Identifier<unknown>>>()
 	for (const [service, metadata] of services) {
 		for (const dep of metadata.dependencies) {
-			let set = dependentsMap.get(dep)
+			const resolved = services.has(dep)
+				? dep
+				: (aliasIndex.get(dep as any) ?? dep)
+			let set = dependentsMap.get(resolved)
 			if (!set) {
 				set = new Set<Identifier<unknown>>()
-				dependentsMap.set(dep, set)
+				dependentsMap.set(resolved, set)
 			}
 			set.add(service)
 		}
@@ -210,11 +218,12 @@ const computeDependents = (
  * ------------------------------------------------------------------------- */
 export const verifyAndComputeDependents = (
 	services: ServiceListMetadata,
+	aliasIndex: ReadonlyMap<AliasKey, Identifier<unknown>>,
 ): {
 	dependentsMap: Map<Identifier<unknown>, Set<Identifier<unknown>>>
 	errors: VerificationError[]
 } => {
-	const errors = validateAllServices(services)
+	const errors = validateAllServices(services, aliasIndex)
 
 	// 聚合“问题节点”
 	const problematic = new Set<Identifier<unknown>>()
@@ -224,14 +233,14 @@ export const verifyAndComputeDependents = (
 		} else if (e.kind === 'InsufficientExplicitDependencies') {
 			problematic.add(e.id)
 		}
-		// AliasConflict/InvalidRegistration 不在这里处理
+		// InvalidRegistration is handled earlier
 	}
 
 	const validServices: ServiceListMetadata = new Map(
 		[...services].filter(([id]) => !problematic.has(id)),
 	)
 
-	return { dependentsMap: computeDependents(validServices), errors }
+	return { dependentsMap: computeDependents(validServices, aliasIndex), errors }
 }
 
 /* ----------------------------------------------------------------------------
@@ -239,11 +248,15 @@ export const verifyAndComputeDependents = (
  * ------------------------------------------------------------------------- */
 export const verifyAsResult = (
 	services: ServiceListMetadata,
+	aliasIndex: ReadonlyMap<AliasKey, Identifier<unknown>>,
 ): Result<
 	Map<Identifier<unknown>, Set<Identifier<unknown>>>,
 	ServiceVerificationAggregateError
 > => {
-	const { dependentsMap, errors } = verifyAndComputeDependents(services)
+	const { dependentsMap, errors } = verifyAndComputeDependents(
+		services,
+		aliasIndex,
+	)
 	if (errors.length > 0)
 		return createErr(new ServiceVerificationAggregateError(errors))
 	return createOk(dependentsMap)

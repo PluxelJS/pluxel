@@ -58,7 +58,11 @@ function formatVersion(issue: IssueData) {
 	return 'latest'
 }
 
-export function CollapsibleIssuesPanel({ issues, maxHeight = 200, onClose }: CollapsibleIssuesPanelProps) {
+export function CollapsibleIssuesPanel({
+	issues,
+	maxHeight = 200,
+	onClose,
+}: CollapsibleIssuesPanelProps) {
 	const [expandedKeys, setExpandedKeys] = useState<Set<string>>(new Set())
 
 	// 使用索引生成唯一key，避免同包多告警的key冲突

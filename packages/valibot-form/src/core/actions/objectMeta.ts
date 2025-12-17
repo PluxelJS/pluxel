@@ -7,11 +7,10 @@ export interface ObjectMetaOptions {
 	gap?: number | string
 }
 
-export type objectMetaAction<TInput extends object, TMetadata extends ObjectMetaOptions> = MetadataAction<
-	'object',
-	TInput,
-	TMetadata
->
+export type objectMetaAction<
+	TInput extends object,
+	TMetadata extends ObjectMetaOptions,
+> = MetadataAction<'object', TInput, TMetadata>
 
 /**
  * 一次性定义多种 string 状态

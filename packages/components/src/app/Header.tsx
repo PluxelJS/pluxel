@@ -1,6 +1,7 @@
 import {
 	ActionIcon,
 	Badge,
+	Box,
 	Button,
 	Group,
 	Indicator,
@@ -10,17 +11,23 @@ import {
 	Stack,
 	Text,
 	TextInput,
-	Box,
 	useComputedColorScheme,
 } from '@mantine/core'
-import { IconArrowRight, IconBell, IconDotsVertical, IconMenu2, IconSearch } from '@tabler/icons-react'
-import { useState, useCallback, useEffect, useRef } from 'react'
+import {
+	IconArrowRight,
+	IconBell,
+	IconDotsVertical,
+	IconMenu2,
+	IconSearch,
+} from '@tabler/icons-react'
 import { useNavigate, useRouterState } from '@tanstack/react-router'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { ColorSchemeToggle } from '../components'
-import { createRpcClient } from './rpc'
-import { useNotify } from './notifications/useNotify'
-import { useNotificationCenter } from './notifications/NotificationCenterProvider'
+import { ExtensionSlot } from '../extension'
 import { PLUGIN_SEARCH_EVENT, PLUGIN_SEARCH_KEY } from './constants'
+import { useNotify } from './hooks'
+import { useNotificationCenter } from './notifications/NotificationCenterProvider'
+import { createRpcClient } from './rpc'
 
 const timeFormatter = new Intl.DateTimeFormat('zh-CN', {
 	month: '2-digit',
@@ -113,13 +120,7 @@ export function Header({ onMenu }: { onMenu: () => void }) {
 	return (
 		<Group h="100%" px="md" justify="space-between" gap="md" wrap="nowrap">
 			<Group gap="sm" wrap="nowrap">
-				<ActionIcon
-					variant="default"
-					size="lg"
-					radius="xl"
-					onClick={onMenu}
-					aria-label="展开导航"
-				>
+				<ActionIcon variant="default" size="lg" radius="xl" onClick={onMenu} aria-label="展开导航">
 					<IconMenu2 size={18} />
 				</ActionIcon>
 				<div style={{ minWidth: 0 }}>
@@ -151,12 +152,7 @@ export function Header({ onMenu }: { onMenu: () => void }) {
 				variant="filled"
 				leftSection={<IconSearch size={16} />}
 				rightSection={
-					<ActionIcon
-						variant="subtle"
-						size="sm"
-						aria-label="执行搜索"
-						onClick={handleSearchSubmit}
-					>
+					<ActionIcon variant="subtle" size="sm" aria-label="执行搜索" onClick={handleSearchSubmit}>
 						<IconArrowRight size={16} />
 					</ActionIcon>
 				}
@@ -166,6 +162,9 @@ export function Header({ onMenu }: { onMenu: () => void }) {
 			/>
 
 			<Group gap="xs" wrap="nowrap">
+				{/* 扩展插槽：插件可以在这里添加按钮/徽章 */}
+				<ExtensionSlot point="header:actions" />
+
 				<NotificationBell />
 
 				<ColorSchemeToggle />
@@ -206,10 +205,8 @@ function NotificationBell() {
 	const { items, unread, markAllRead, clear } = useNotificationCenter()
 	const [opened, setOpened] = useState(false)
 	const scheme = useComputedColorScheme('light', { getInitialValueInEffect: true })
-	const unreadBg =
-		scheme === 'dark' ? 'rgba(91, 140, 255, 0.18)' : 'rgba(91, 140, 255, 0.1)'
-	const borderColor =
-		scheme === 'dark' ? 'rgba(255, 255, 255, 0.1)' : 'rgba(15, 23, 42, 0.08)'
+	const unreadBg = scheme === 'dark' ? 'rgba(91, 140, 255, 0.18)' : 'rgba(91, 140, 255, 0.1)'
+	const borderColor = scheme === 'dark' ? 'rgba(255, 255, 255, 0.1)' : 'rgba(15, 23, 42, 0.08)'
 
 	return (
 		<Popover
@@ -245,12 +242,7 @@ function NotificationBell() {
 					<Group justify="space-between" align="center">
 						<Text fw={600}>通知中心</Text>
 						<Group gap={6}>
-							<Button
-								variant="subtle"
-								size="compact-xs"
-								onClick={markAllRead}
-								disabled={!unread}
-							>
+							<Button variant="subtle" size="compact-xs" onClick={markAllRead} disabled={!unread}>
 								全部已读
 							</Button>
 							<Button
@@ -293,13 +285,7 @@ function NotificationBell() {
 											{item.message || '—'}
 										</Text>
 										{item.color && (
-											<Badge
-												size="xs"
-												variant="light"
-												color={item.color}
-												mt={6}
-												w="fit-content"
-											>
+											<Badge size="xs" variant="light" color={item.color} mt={6} w="fit-content">
 												{item.color}
 											</Badge>
 										)}

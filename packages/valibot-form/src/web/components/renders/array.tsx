@@ -12,7 +12,13 @@ import {
 	Textarea,
 	TextInput,
 } from '@mantine/core'
-import { IconArrowDown, IconArrowUp, IconGripVertical, IconPlus, IconTrash } from '@tabler/icons-react'
+import {
+	IconArrowDown,
+	IconArrowUp,
+	IconGripVertical,
+	IconPlus,
+	IconTrash,
+} from '@tabler/icons-react'
 import {
 	DndContext,
 	PointerSensor,
@@ -22,25 +28,24 @@ import {
 	DragOverlay,
 	closestCenter,
 } from '@dnd-kit/core'
-import {
-	SortableContext,
-	arrayMove,
-	rectSortingStrategy,
-	useSortable,
-} from '@dnd-kit/sortable'
+import { SortableContext, arrayMove, rectSortingStrategy, useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import { useEffect, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
-import { DEFAULT_TEXTS } from '~/core/constants'
+import { DEFAULT_TEXTS, GRID_COLUMN_THRESHOLD } from '~/core/constants'
 import type { ArrayMetaResult } from '~/core/actions/array'
 import type { CommonProps } from '~/core/registry'
-import { registerRenderer, triggerFormEvents } from '~/core/registry'
+import { MetaRenderer, registerRenderer, triggerFormEvents } from '~/core/registry'
 import { META_MAP } from '~/core/utils'
 import { FieldChrome } from '../shared'
 import { cleanProps } from '../../utils/propHelpers'
 import { PicklistControl } from './controls/PicklistControl'
+import { cachedExtractInfo } from '../schemaCache'
 
-type RendererProps = CommonProps<typeof META_MAP.ARRAY> & { value?: unknown[]; defaultValue?: unknown }
+type RendererProps = CommonProps<typeof META_MAP.ARRAY> & {
+	value?: unknown[]
+	defaultValue?: unknown
+}
 type ArrayUI = ArrayMetaResult
 
 const idOf = (value: string | number) => String(value)
@@ -69,7 +74,7 @@ function inferMode(
 	if (mode && mode !== 'auto') return mode
 	if (typeof value === 'number') return 'number'
 	if (typeof value === 'boolean') return 'boolean'
-	if (value && typeof value === 'object') return 'json'
+	// 不再自动推断为 json，让 object/array 保持原样
 	return 'string'
 }
 
@@ -101,8 +106,121 @@ function defaultByMode(
 	}
 }
 
+/**
+ * 数组项布局信息
+ * - compact: 是否适合多列布局
+ * - maxColumns: 推荐的最大列数（基于项类型的自然宽度）
+ */
+interface ArrayItemLayoutInfo {
+	compact: boolean
+	maxColumns: 1 | 2 | 3
+}
+
+/**
+ * 分析数组项的布局特性
+ * 根据项类型决定是否适合多列以及最大列数
+ */
+function analyzeArrayItemLayout(ep: ArrayUI & { itemSchema?: unknown }): ArrayItemLayoutInfo {
+	// 显式指定的 valueMode 优先
+	if (ep.valueMode && ep.valueMode !== 'auto') {
+		switch (ep.valueMode) {
+			case 'boolean':
+				// 开关控件非常紧凑，可以 3 列
+				return { compact: true, maxColumns: 3 }
+			case 'number':
+			case 'picklist':
+				// 数字和选择器适合 2-3 列
+				return { compact: true, maxColumns: 3 }
+			case 'string':
+				// 字符串默认 2 列（除非是 textarea）
+				return { compact: true, maxColumns: 2 }
+			case 'json':
+			case 'object':
+			case 'array':
+			case 'union':
+			case 'variant':
+				return { compact: false, maxColumns: 1 }
+			default:
+				return { compact: false, maxColumns: 1 }
+		}
+	}
+
+	// 从 itemSchema 推断
+	if (ep.itemSchema) {
+		const info = cachedExtractInfo(ep.itemSchema as object, 'item')
+		if (info) {
+			switch (info.type) {
+				case 'boolean':
+					return { compact: true, maxColumns: 3 }
+				case 'number':
+				case 'picklist':
+					return { compact: true, maxColumns: 3 }
+				case 'string': {
+					// 检查 string 的 mode，textarea/code 需要单列
+					const mode = (info.props as any)?.mode
+					if (mode === 'textarea' || mode === 'code') {
+						return { compact: false, maxColumns: 1 }
+					}
+					return { compact: true, maxColumns: 2 }
+				}
+				case 'object':
+				case 'array':
+				case 'union':
+				case 'record':
+					return { compact: false, maxColumns: 1 }
+				default:
+					return { compact: false, maxColumns: 1 }
+			}
+		}
+	}
+
+	return { compact: false, maxColumns: 1 }
+}
+
+/**
+ * 计算数组的最佳列数
+ * @param layoutInfo 项布局信息
+ * @param itemCount 项数量
+ * @param explicitColumns 显式指定的列数
+ * @param disableAutoGrid 是否禁用自动多列（嵌套场景）
+ */
+function resolveArrayColumns(
+	layoutInfo: ArrayItemLayoutInfo,
+	itemCount: number,
+	explicitColumns?: number,
+	disableAutoGrid?: boolean,
+): number {
+	// 显式指定优先
+	if (explicitColumns && explicitColumns > 0) {
+		return Math.min(explicitColumns, layoutInfo.maxColumns)
+	}
+
+	// 禁用自动多列（嵌套场景）
+	if (disableAutoGrid) return 1
+
+	// 非紧凑类型强制单列
+	if (!layoutInfo.compact) return 1
+
+	// 项数不足时单列
+	if (itemCount < GRID_COLUMN_THRESHOLD) return 1
+
+	// 根据项数量和最大列数计算最佳列数
+	// 原则：尽量填满行，避免最后一行只有一个元素显得孤单
+	const maxCols = layoutInfo.maxColumns
+	if (itemCount >= 6 && maxCols >= 3) return 3
+	if (itemCount >= 4 && maxCols >= 2) return 2
+	if (itemCount >= 3 && maxCols >= 2) return 2
+	return 1
+}
+
 export function reorderList<T>(list: readonly T[], fromIndex: number, toIndex: number): T[] {
-	if (fromIndex === toIndex || fromIndex < 0 || toIndex < 0 || fromIndex >= list.length || toIndex >= list.length) {
+	if (
+		fromIndex === toIndex ||
+		fromIndex < 0 ||
+		toIndex < 0 ||
+		fromIndex >= list.length ||
+		toIndex >= list.length
+	) {
 		return [...list]
 	}
 	return arrayMove(list, fromIndex, toIndex)
@@ -137,8 +255,14 @@ function ArrayField(props: RendererProps) {
 	const { formBaseInfo, errors, extractedPropsInfo, inputProps, value, defaultValue } = props
 	const ep = extractedPropsInfo ?? {}
 	const items = Array.isArray(value) ? (value as unknown[]) : []
-	const layout = ep.layout ?? ep.style ?? 'list'
-	const columns = layout === 'grid' ? (ep.columns ?? 2) : 1
+
+	// 布局计算：基于项类型智能决定列数
+	const explicitLayout = ep.layout ?? ep.style
+	const layoutInfo = analyzeArrayItemLayout(ep)
+	const columns = resolveArrayColumns(layoutInfo, items.length, ep.columns, ep.disableAutoGrid)
+	// 有多列时使用 grid 布局
+	const layout = explicitLayout ?? (columns > 1 ? 'grid' : 'list')
+
 	const minItems = ep.minItems ?? 0
 	const maxItems = ep.maxItems
 	const canAdd =
@@ -172,8 +296,7 @@ function ArrayField(props: RendererProps) {
 
 	const updateItems = (next: unknown[]) => triggerFormEvents(inputProps, next)
 
-	const usePicklistPicker =
-		ep.valueMode === 'picklist' && ep.pickerMode === 'picker' && ep.picklist
+	const usePicklistPicker = ep.valueMode === 'picklist' && ep.pickerMode === 'picker' && ep.picklist
 
 	if (usePicklistPicker) {
 		return (
@@ -187,25 +310,29 @@ function ArrayField(props: RendererProps) {
 					tooltip: formBaseInfo.tooltip,
 					badge: formBaseInfo.badge,
 					errors: baseErrors,
+					hideLabel: formBaseInfo.hideLabel,
+					hideRequired: formBaseInfo.hideRequired,
 				})}
 			>
 				<PicklistControl
-					meta={{
-						clearable: ep.picklist?.clearable ?? true,
-						allowCreate: ep.picklist?.allowCreate ?? false,
-						variant: ep.picklist?.variant ?? 'select',
-						multiple: true,
-						...cleanProps({
-							options: ep.picklist?.options,
-							entries: ep.picklist?.entries,
-							labels: ep.picklist?.labels,
-							disabled: ep.picklist?.disabled,
-							placeholder: ep.picklist?.placeholder,
-							searchable: ep.picklist?.searchable,
-							maxSelections: ep.picklist?.maxValues,
-							nothingFoundLabel: ep.picklist?.nothingFoundLabel,
-						}),
-					} as any}
+					meta={
+						{
+							clearable: ep.picklist?.clearable ?? true,
+							allowCreate: ep.picklist?.allowCreate ?? false,
+							variant: ep.picklist?.variant ?? 'select',
+							multiple: true,
+							...cleanProps({
+								options: ep.picklist?.options,
+								entries: ep.picklist?.entries,
+								labels: ep.picklist?.labels,
+								disabled: ep.picklist?.disabled,
+								placeholder: ep.picklist?.placeholder,
+								searchable: ep.picklist?.searchable,
+								maxSelections: ep.picklist?.maxValues,
+								nothingFoundLabel: ep.picklist?.nothingFoundLabel,
+							}),
+						} as any
+					}
 					value={items}
 					onChange={(next) => {
 						if (Array.isArray(next)) updateItems(next)
@@ -236,24 +363,28 @@ function ArrayField(props: RendererProps) {
 					tooltip: formBaseInfo.tooltip,
 					badge: formBaseInfo.badge,
 					errors: baseErrors,
+					hideLabel: formBaseInfo.hideLabel,
+					hideRequired: formBaseInfo.hideRequired,
 				})}
 			>
 				<PicklistControl
-					meta={{
-						clearable: ep.picklist?.clearable ?? true,
-						allowCreate: false,
-						variant: ep.picklist?.variant ?? 'select',
-						multiple: true,
-						options,
-						...cleanProps({
-							labels: ep.picklist?.labels,
-							disabled: ep.picklist?.disabled,
-							placeholder: ep.picklist?.placeholder,
-							searchable: ep.picklist?.searchable,
-							maxSelections: ep.picklist?.maxValues,
-							nothingFoundLabel: ep.picklist?.nothingFoundLabel,
-						}),
-					} as any}
+					meta={
+						{
+							clearable: ep.picklist?.clearable ?? true,
+							allowCreate: false,
+							variant: ep.picklist?.variant ?? 'select',
+							multiple: true,
+							options,
+							...cleanProps({
+								labels: ep.picklist?.labels,
+								disabled: ep.picklist?.disabled,
+								placeholder: ep.picklist?.placeholder,
+								searchable: ep.picklist?.searchable,
+								maxSelections: ep.picklist?.maxValues,
+								nothingFoundLabel: ep.picklist?.nothingFoundLabel,
+							}),
+						} as any
+					}
 					value={items}
 					onChange={(next) => {
 						if (Array.isArray(next)) updateItems(next)
@@ -385,6 +516,101 @@ function ArrayField(props: RendererProps) {
 					),
 				}
 			}
+			case 'object':
+			case 'array':
+			case 'variant':
+			case 'union': {
+				// 递归渲染嵌套的 object/array/variant/union
+				if (!ep.itemSchema) {
+					// fallback 到 json 模式
+					const formatted =
+						current && typeof current === 'object' ? JSON.stringify(current, null, 2) : '{}'
+					return {
+						node: (
+							<Textarea
+								key={`${index}-${items.length}`}
+								defaultValue={formatted}
+								minRows={4}
+								autosize
+								onBlur={(event) => {
+									const value = (event.currentTarget as HTMLTextAreaElement).value
+									try {
+										const parsed = JSON.parse(value || (mode === 'array' ? '[]' : '{}'))
+										handleChange(index, parsed)
+										setJsonParseErrors((prev) => {
+											const next = { ...prev }
+											delete next[index]
+											return next
+										})
+									} catch {
+										setJsonParseErrors((prev) => ({
+											...prev,
+											[index]: DEFAULT_TEXTS.validation.jsonError,
+										}))
+									}
+								}}
+								disabled={inputProps.disabled ?? false}
+								styles={{
+									input: { fontFamily: 'var(--mantine-font-family-monospace)' },
+								}}
+							/>
+						),
+					}
+				}
+
+				const itemInfo = cachedExtractInfo(ep.itemSchema as object, `${index}`)
+				if (!itemInfo) {
+					return { node: null }
+				}
+
+				const nestedName = inputProps.name ? `${inputProps.name}.${index}` : String(index)
+				const nestedInputProps = {
+					name: nestedName,
+					onChange: (nextValue: unknown) => handleChange(index, nextValue),
+					onBlur: () => inputProps.onBlur?.({ target: { name: nestedName } } as any),
+					disabled: inputProps.disabled,
+					readOnly: inputProps.readOnly,
+				}
+
+				// 提取该索引的错误
+				const itemErrors = (itemErrorsMap.get(index) ?? []).map((msg) => ({
+					message: msg,
+					dotPath: [String(index)],
+				}))
+
+				// 嵌套类型使用紧凑布局，禁用自动多列（空间有限）
+				const nestedProps =
+					itemInfo.type === 'object'
+						? {
+								...itemInfo.props,
+								variant: 'stack' as const,
+								gap: 'sm',
+								columns: itemInfo.props.columns ?? 2,
+							}
+						: itemInfo.type === 'array'
+							? { ...itemInfo.props, disableAutoGrid: true }
+							: itemInfo.type === 'union'
+								? { ...itemInfo.props, compact: true }
+								: itemInfo.props
+
+				return {
+					node: (
+						<MetaRenderer
+							type={itemInfo.type}
+							formBaseInfo={{
+								...itemInfo.formInfo,
+								label: undefined,
+								hideLabel: true,
+								hideRequired: true,
+							}}
+							extractedPropsInfo={nestedProps}
+							errors={itemErrors}
+							value={current}
+							inputProps={nestedInputProps as any}
+						/>
+					),
+				}
+			}
 			default:
 				return {
 					node: (
@@ -437,10 +663,9 @@ function ArrayField(props: RendererProps) {
 	)
 
 	const renderErrors = (idx: number) => {
-		const combined = [
-			...(itemErrorsMap.get(idx) ?? []),
-			jsonParseErrors[idx] ?? undefined,
-		].filter(Boolean) as string[]
+		const combined = [...(itemErrorsMap.get(idx) ?? []), jsonParseErrors[idx] ?? undefined].filter(
+			Boolean,
+		) as string[]
 		if (!combined.length) return null
 		return (
 			<Text size="xs" c="red.6">
@@ -455,7 +680,9 @@ function ArrayField(props: RendererProps) {
 		const errorsNode = renderErrors(idx)
 		const actionsNode = (
 			<Group gap="xs" align="center">
-				{canReorder ? <IconGripVertical size={16} style={{ cursor: 'grab', opacity: 0.75 }} /> : null}
+				{canReorder ? (
+					<IconGripVertical size={16} style={{ cursor: 'grab', opacity: 0.75 }} />
+				) : null}
 				{renderActions(idx)}
 			</Group>
 		)
@@ -472,7 +699,7 @@ function ArrayField(props: RendererProps) {
 						style={{ flex: '0 1 280px' }}
 					>
 						<Group justify="space-between" align="center">
-							{node}
+							{control.node}
 							{actionsNode}
 						</Group>
 						{errorsNode ? <div style={{ marginTop: 6 }}>{errorsNode}</div> : null}
@@ -504,7 +731,10 @@ function ArrayField(props: RendererProps) {
 	const reorderEnabled = canReorder && items.length > 1
 	const [activeId, setActiveId] = useState<UniqueIdentifier | null>(null)
 
-	const renderedCards = items.map((item, idx) => ({ ...renderItemCard(item, idx), id: `item-${idx}` as const }))
+	const renderedCards = items.map((item, idx) => ({
+		...renderItemCard(item, idx),
+		id: `item-${idx}` as const,
+	}))
 	const inlineCards = renderedCards.filter((item) => item.inline)
 	const blockCards = renderedCards.filter((item) => !item.inline)
 
@@ -535,7 +765,10 @@ function ArrayField(props: RendererProps) {
 				}}
 				onDragCancel={() => setActiveId(null)}
 			>
-				<SortableContext items={renderedCards.map((item) => item.id)} strategy={rectSortingStrategy}>
+				<SortableContext
+					items={renderedCards.map((item) => item.id)}
+					strategy={rectSortingStrategy}
+				>
 					{content}
 				</SortableContext>
 				{dragOverlay}
@@ -599,6 +832,8 @@ function ArrayField(props: RendererProps) {
 				tooltip: formBaseInfo.tooltip,
 				badge: formBaseInfo.badge,
 				errors: baseErrors,
+				hideLabel: formBaseInfo.hideLabel,
+				hideRequired: formBaseInfo.hideRequired,
 			})}
 		>
 			<Stack gap="md">

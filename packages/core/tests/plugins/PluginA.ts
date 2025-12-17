@@ -1,4 +1,4 @@
-import { BasePlugin, Plugin } from '../context'
+import { BasePlugin, Plugin } from '@pluxel/core/test'
 // PluginA.ts
 // PluginA 依赖 PluginB 为必选依赖，依赖 PluginC 为可选依赖
 // biome-ignore lint/style/useImportType: <PluginSystem>
@@ -15,16 +15,15 @@ export class PluginA extends BasePlugin {
 	private pluginC?: PluginC
 
 	init(): void {
-		this.ctx.registry.afterCommit(() => {
-			const optionalC = this.ctx.registry.optional(PluginC) as PluginC | undefined
-			if (!optionalC) {
-				this.ctx.logger.info('PluginA: PluginC dependency not injected')
-				return
-			}
-			this.pluginC = optionalC
-			optionalC.doExampleLog()
-			this.ctx.logger.info('PluginA using PluginC dependency')
-		})
+		this.ctx.registry.optional(
+			() => import('./PluginC').then((m) => [m.PluginC, m.PluginD] as const),
+			([c, d]) => {
+				c?.doExampleLog()
+				d?.doSomethingElse()
+			},
+			{ multi: true },
+		)
+
 		this.ctx.logger.info('PluginA initialized')
 		// 使用必需依赖 PluginB
 		this.pluginB.doSomething()

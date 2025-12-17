@@ -24,8 +24,7 @@ export interface ScanOptions {
 
 export type ScanOptionsInput = Partial<ScanOptions>
 
-export interface ResolvedScanOptions
-	extends Omit<ScanOptions, 'focusPackages'> {
+export interface ResolvedScanOptions extends Omit<ScanOptions, 'focusPackages'> {
 	focusPackages: string[] | undefined
 }
 

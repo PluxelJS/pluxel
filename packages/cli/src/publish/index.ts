@@ -52,7 +52,7 @@ export async function publishPackage(options: PublishOptions): Promise<PublishRe
 	const debug = options.debug ?? false
 	const forceWebhook = options.webhook ?? false
 	const rawPublish = isTruthyEnv(env.PLUXEL_PUBLISH_RAW)
-	const access = rawPublish ? options.access : options.access ?? CLI_DEFAULTS.publish.access
+	const access = rawPublish ? options.access : (options.access ?? CLI_DEFAULTS.publish.access)
 
 	// 读取当前目录的 package.json
 	const pkgPath = resolve(cwd, 'package.json')

@@ -37,7 +37,9 @@ describe('configSourcePlugin', () => {
 		const code = output[0].code
 
 		// 应该包含本地 schema 的源码（注意末尾可能有逗号）
-		expect(code).toMatch(/v\.object\(\{name:v\.string\(\),count:v\.pipe\(v\.number\(\),v\.integer\(\)\),?\}\)/)
+		expect(code).toMatch(
+			/v\.object\(\{name:v\.string\(\),count:v\.pipe\(v\.number\(\),v\.integer\(\)\),?\}\)/,
+		)
 	})
 
 	it('extracts cross-file imported schema source', async () => {
@@ -51,7 +53,9 @@ describe('configSourcePlugin', () => {
 		const code = output[0].code
 
 		// 应该包含跨文件导入的 schema 源码（注意末尾可能有逗号）
-		expect(code).toMatch(/v\.object\(\{host:v\.string\(\),port:v\.pipe\(v\.number\(\),v\.minValue\(1\),v\.maxValue\(65535\)\),?\}\)/)
+		expect(code).toMatch(
+			/v\.object\(\{host:v\.string\(\),port:v\.pipe\(v\.number\(\),v\.minValue\(1\),v\.maxValue\(65535\)\),?\}\)/,
+		)
 
 		// 确保 externalConfig 字段有对应的 __setConfigSource__ 调用
 		expect(code).toContain('__setConfigSource__(TestPlugin, "externalConfig"')
@@ -109,7 +113,9 @@ describe('configSourcePlugin', () => {
 		expect(code).toContain('__setConfigSource__(NestedImportPlugin, "nestedConfig"')
 
 		// 应该包含嵌套导入的 schema 源码
-		expect(code).toMatch(/v\.object\(\{apiKey:v\.string\(\),endpoint:v\.pipe\(v\.string\(\),v\.url\(\)\)/)
+		expect(code).toMatch(
+			/v\.object\(\{apiKey:v\.string\(\),endpoint:v\.pipe\(v\.string\(\),v\.url\(\)\)/,
+		)
 	})
 
 	it('inlines composed object schemas (local + cross-file)', async () => {
@@ -147,7 +153,9 @@ describe('configSourcePlugin', () => {
 		// v.object({ ...baseFields, extra: v.boolean() })
 		// baseFields = { name: v.string(), id: v.pipe(v.number(), v.integer()) }
 		expect(code).toContain('__setConfigSource__(ComposedPlugin, "spread"')
-		expect(code).toMatch(/\.\.\.\{name:v\.string\(\),id:v\.pipe\(v\.number\(\),v\.integer\(\)\),?\}/)
+		expect(code).toMatch(
+			/\.\.\.\{name:v\.string\(\),id:v\.pipe\(v\.number\(\),v\.integer\(\)\),?\}/,
+		)
 	})
 
 	it('inlines shorthand properties from cross-file import', async () => {
@@ -231,7 +239,9 @@ describe('configSourcePlugin', () => {
 		// 8. 混合场景
 		expect(code).toContain('__setConfigSource__(ComposedPlugin, "mixed"')
 		// spread baseFields
-		expect(code).toMatch(/\.\.\.\{name:v\.string\(\),id:v\.pipe\(v\.number\(\),v\.integer\(\)\),?\}/)
+		expect(code).toMatch(
+			/\.\.\.\{name:v\.string\(\),id:v\.pipe\(v\.number\(\),v\.integer\(\)\),?\}/,
+		)
 		// shorthand enabledSchema
 		expect(code).toMatch(/enabledSchema:v\.boolean\(\)/)
 		// nested sharedObject
@@ -304,10 +314,7 @@ describe('plugins integration', () => {
 	it('both plugins work together', async () => {
 		const bundle = await rolldown({
 			input: resolve(fixturesDir, 'plugin-with-config.ts'),
-			plugins: [
-				importTypeFixerPlugin(),
-				configSourcePlugin(),
-			],
+			plugins: [importTypeFixerPlugin(), configSourcePlugin()],
 			external: ['valibot', '@pluxel/core'],
 		})
 

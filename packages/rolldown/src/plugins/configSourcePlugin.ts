@@ -19,7 +19,6 @@ import type {
 	PropertyDefinition,
 	SpreadElement,
 } from 'oxc-parser'
-import { parseSync } from 'oxc-parser'
 import { normalize as normalizePath } from 'pathe'
 import type { Plugin } from 'vite'
 import { normalizeSchemaSource } from '../utils/configHandler'
@@ -63,6 +62,8 @@ interface ModuleInfo {
  */
 interface ResolveContext {
 	moduleResolver: ModuleResolver
+	/** 解析代码为 AST（使用 rolldown 的 this.parse） */
+	parse: (code: string, moduleId: string) => Program
 	/** 已解析的标识符值缓存: key = "moduleId::name", value = resolved source */
 	resolvedValues: Map<string, string>
 	/** 正在解析的标识符（用于循环检测） */
@@ -144,6 +145,8 @@ export function configSourcePlugin(options: ConfigSourcePluginOptions = {}): Plu
 					// 第二步：提取 @Config 装饰器源代码
 					const ctx: ResolveContext = {
 						moduleResolver: resolveModuleId,
+						parse: (source, moduleId) =>
+							this.parse(source, { lang: getLangFromId(moduleId) }) as Program,
 						resolvedValues: new Map(),
 						pending: new Set(),
 					}
@@ -274,7 +277,10 @@ function collectModuleInfo(code: string, moduleId: string, ast: Program): Module
 	return info
 }
 
-async function ensureModuleInfo(moduleId: string): Promise<ModuleInfo | undefined> {
+async function ensureModuleInfo(
+	moduleId: string,
+	ctx: ResolveContext,
+): Promise<ModuleInfo | undefined> {
 	const cached = moduleInfoCache.get(moduleId)
 	if (cached) return cached
 
@@ -284,10 +290,7 @@ async function ensureModuleInfo(moduleId: string): Promise<ModuleInfo | undefine
 	const promise = (async () => {
 		try {
 			const source = await readFile(moduleId, 'utf-8')
-			const parsed = parseSync(moduleId, source, {
-				lang: getLangFromId(moduleId),
-				sourceType: 'module',
-			}).program as Program
+			const parsed = ctx.parse(source, moduleId)
 			return collectModuleInfo(source, moduleId, parsed)
 		} catch {
 			return undefined
@@ -346,7 +349,7 @@ async function resolveIdentifierValue(
 			if (importInfo && importInfo.imported !== '*') {
 				const resolvedId = await ctx.moduleResolver(importInfo.source, moduleInfo.id)
 				if (resolvedId) {
-					const targetInfo = await ensureModuleInfo(resolvedId)
+					const targetInfo = await ensureModuleInfo(resolvedId, ctx)
 					if (targetInfo) {
 						result = await resolveExportedValue(targetInfo, importInfo.imported, ctx)
 					}
@@ -395,7 +398,7 @@ async function resolveExportedValue(
 			if (reExport && reExport.imported !== '*') {
 				const resolvedId = await ctx.moduleResolver(reExport.source, moduleInfo.id)
 				if (resolvedId) {
-					const targetInfo = await ensureModuleInfo(resolvedId)
+					const targetInfo = await ensureModuleInfo(resolvedId, ctx)
 					if (targetInfo) {
 						result = await resolveExportedValue(targetInfo, reExport.imported, ctx)
 					}
@@ -790,7 +793,7 @@ function generateInjection(configs: ExtractedConfig[]): string {
 	]
 
 	for (const { className, fieldName, source } of configs) {
-		// 将 source 压缩（移除多余空白）后作为字符串字面量注入
+		// 将 source 压缩（移除多余空白和尾随逗号）后作为字符串字面量注入
 		const compactSource = source
 			.replace(/\s+/g, ' ')
 			.replace(/\(\s+/g, '(')
@@ -799,6 +802,9 @@ function generateInjection(configs: ExtractedConfig[]): string {
 			.replace(/\s+}/g, '}')
 			.replace(/,\s+/g, ',')
 			.replace(/:\s+/g, ':')
+			.replace(/,\)/g, ')') // 移除尾随逗号 ,) -> )
+			.replace(/,}/g, '}') // 移除尾随逗号 ,} -> }
+			.replace(/,]/g, ']') // 移除尾随逗号 ,] -> ]
 			.trim()
 		const final = normalizeSchemaSource(compactSource)
 		const escapedSource = JSON.stringify(final)

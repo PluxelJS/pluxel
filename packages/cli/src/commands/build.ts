@@ -1,11 +1,11 @@
 import { configSourcePlugin, createImportTracker, importTypeFixerPlugin } from '@pluxel/rolldown'
 import { type ArgValues, define } from 'gunshi'
 import type { InlineConfig } from 'tsdown'
-import { resolveBuildContext } from '../tsbuild/config'
-import { createOptionalDependencyHook } from '../tsbuild/plugin-tracker'
-import { cliTsdownOverlay } from '../tsbuild/tsdown-config'
-import { runWithTsdown } from '../tsbuild/tsdown-runner'
-import type { BuildRuntimeConfig } from '../tsbuild/types'
+import { resolveBuildContext } from '../build_impl/config'
+import { createOptionalDependencyHook } from '../build_impl/plugin-tracker'
+import { cliTsdownOverlay } from '../build_impl/tsdown-config'
+import { runWithTsdown } from '../build_impl/tsdown-runner'
+import type { BuildRuntimeConfig } from '../build_impl/types'
 
 const buildCommandArgs = {
 	watch: {
@@ -65,7 +65,10 @@ export const buildCommand = define({
 	},
 })
 
-function mergeOverlayPlugins(overlay: typeof cliTsdownOverlay, additional: InlineConfig['plugins']) {
+function mergeOverlayPlugins(
+	overlay: typeof cliTsdownOverlay,
+	additional: InlineConfig['plugins'],
+) {
 	return async (ctx: BuildRuntimeConfig): Promise<InlineConfig> => {
 		const awaited = typeof overlay === 'function' ? await overlay(ctx) : overlay
 		// defineConfig 可能返回数组，取第一个

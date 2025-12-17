@@ -82,9 +82,16 @@ export interface FormMeta {
 
 	/** 是否使用内联标签布局 */
 	inlineLabel?: boolean
+
+	/** 是否隐藏必填标记（*），用于嵌套场景 */
+	hideRequired?: boolean
 }
 
-export type formMetaAction<TInput, TMetadata extends FormMeta> = MetadataAction<'form', TInput, TMetadata>
+export type formMetaAction<TInput, TMetadata extends FormMeta> = MetadataAction<
+	'form',
+	TInput,
+	TMetadata
+>
 
 /**
  * 创建表单元数据

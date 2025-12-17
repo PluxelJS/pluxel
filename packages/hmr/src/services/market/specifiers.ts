@@ -131,9 +131,7 @@ function parseObjectSpecifier(input: {
 	return result
 }
 
-function withDerivedFields(
-	base: PartialNormalized,
-): NormalizedPackageSpecifier {
+function withDerivedFields(base: PartialNormalized): NormalizedPackageSpecifier {
 	const version = base.version?.trim() || undefined
 	const tag = version ? undefined : base.tag?.trim() || undefined
 	const name = base.name.trim()

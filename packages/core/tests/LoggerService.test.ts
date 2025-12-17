@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, spyOn } from 'bun:test'
 
-import { Context } from './context'
+import { withTestContext } from '@pluxel/core/test'
 
 describe('LoggerService', () => {
 	const originalTrace = console.trace
@@ -20,40 +20,52 @@ describe('LoggerService', () => {
 	})
 
 	it('prefixes messages with root context name when plugin info is missing', () => {
-		const ctx = new Context({ name: 'core-test' })
-		const infoSpy = spyOn(console, 'info')
-		remember(() => infoSpy.mockRestore())
+		return withTestContext(
+			(ctx) => {
+				const infoSpy = spyOn(console, 'info')
+				remember(() => infoSpy.mockRestore())
 
-		ctx.logger.info('hello', { id: 1 })
+				ctx.logger.info('hello', { id: 1 })
 
-		expect(infoSpy).toHaveBeenCalledTimes(1)
-		expect(infoSpy.mock.calls[0]).toEqual(['[root:core-test]', 'hello', { id: 1 }])
+				expect(infoSpy).toHaveBeenCalledTimes(1)
+				expect(infoSpy.mock.calls[0]).toEqual(['[root:core-test]', 'hello', { id: 1 }])
+			},
+			{ name: 'core-test' },
+		)
 	})
 
-	it('uses plugin metadata name when available', () => {
-		const ctx = new Context({ name: 'plugin-test' })
-		ctx.pluginInfo = { name: 'PluginX' } as any
-		const warnSpy = spyOn(console, 'warn')
-		remember(() => warnSpy.mockRestore())
+	it('uses plugin id when available', () => {
+		return withTestContext(
+			(ctx) => {
+				ctx.pluginInfo = { id: 'PluginX' } as any
+				const warnSpy = spyOn(console, 'warn')
+				remember(() => warnSpy.mockRestore())
 
-		ctx.logger.warn('warn message')
+				ctx.logger.warn('warn message')
 
-		expect(warnSpy).toHaveBeenCalledTimes(1)
-		expect(warnSpy.mock.calls[0]).toEqual(['[PluginX:plugin-test]', 'warn message'])
+				expect(warnSpy).toHaveBeenCalledTimes(1)
+				expect(warnSpy.mock.calls[0]).toEqual(['[PluginX:plugin-test]', 'warn message'])
+			},
+			{ name: 'plugin-test' },
+		)
 	})
 
 	it('falls back to console.log when level method is missing', () => {
-		const ctx = new Context({ name: 'trace-fallback' })
-		const logSpy = spyOn(console, 'log')
-		remember(() => logSpy.mockRestore())
+		return withTestContext(
+			(ctx) => {
+				const logSpy = spyOn(console, 'log')
+				remember(() => logSpy.mockRestore())
 
-		remember(() => {
-			console.trace = originalTrace
-		})
-		console.trace = undefined as any
-		ctx.logger.trace('trace missing')
+				remember(() => {
+					console.trace = originalTrace
+				})
+				console.trace = undefined as any
+				ctx.logger.trace('trace missing')
 
-		expect(logSpy).toHaveBeenCalledTimes(1)
-		expect(logSpy.mock.calls[0]).toEqual(['[root:trace-fallback]', 'trace missing'])
+				expect(logSpy).toHaveBeenCalledTimes(1)
+				expect(logSpy.mock.calls[0]).toEqual(['[root:trace-fallback]', 'trace missing'])
+			},
+			{ name: 'trace-fallback' },
+		)
 	})
 })

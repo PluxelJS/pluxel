@@ -107,7 +107,8 @@
 		"typescript.tsdk": "🌱  monorepo\\node_modules\\typescript\\lib",
 		"exportall.config.folderListener": [
 			"/packages/components/src/components/Plugin",
-			"/packages/components/src/form/schema"
+			"/packages/components/src/form/schema",
+			"/packages/hmr/tests/ui-demos"
 		],
 		"exportall.config.relExclusion": [
 			"/packages/components/src/app/Dashboard/Example.tsx"

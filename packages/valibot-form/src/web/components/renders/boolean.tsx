@@ -23,9 +23,8 @@ function BooleanField(props: RendererProps) {
 		...getControlProps(inputProps),
 	}
 
-	const control = variant === 'checkbox'
-		? <Checkbox {...controlProps} />
-		: <Switch {...controlProps} />
+	const control =
+		variant === 'checkbox' ? <Checkbox {...controlProps} /> : <Switch {...controlProps} />
 
 	return (
 		<FieldChrome

@@ -62,6 +62,16 @@ export class LeanMapTracker<K, V> extends Map<K, V> {
 		return ops
 	}
 
+	/**
+	 * 将当前状态作为新的“可回滚基线”。
+	 * - reset() 仅回滚到最近一次 seal() 时的状态
+	 * - commit() 只清空 pendingOps（用于生成变更列表），不影响可回滚能力
+	 */
+	seal(): void {
+		this.undoStack = []
+		this.redoStack = []
+	}
+
 	/** 回滚到上次 commit 时状态 */
 	reset(): void {
 		// 反向执行 undoStack

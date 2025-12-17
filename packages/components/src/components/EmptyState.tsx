@@ -1,6 +1,6 @@
 import { Box, Center, Stack, Text, Title, useComputedColorScheme } from '@mantine/core'
 import type { ReactNode } from 'react'
-import { getPatternStyle } from '../patterns'
+import { getPatternStyle } from '../theme'
 
 export interface EmptyStateProps {
 	icon?: ReactNode

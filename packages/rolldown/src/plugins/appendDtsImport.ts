@@ -2,14 +2,13 @@ import type { Plugin } from 'rolldown'
 
 export function appendDtsImport(snippet: string, files: string[]): Plugin {
 	const exts = /\.d\.(?:mts|cts|ts)$/i
+	const targets = files?.length ? files.slice() : null
 	return {
 		name: 'append-dts-import',
 		generateBundle(_, bundle) {
 			for (const [name, chunk] of Object.entries(bundle)) {
 				if (!exts.test(name)) continue
-				for (const file of files) {
-					if (name.endsWith(file)) continue
-				}
+				if (targets && !targets.some((file) => name.endsWith(file))) continue
 
 				const isAsset = (chunk as any).type === 'asset'
 				const code = String(isAsset ? (chunk as any).source : (chunk as any).code)

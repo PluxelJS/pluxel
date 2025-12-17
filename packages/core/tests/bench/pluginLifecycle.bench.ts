@@ -2,9 +2,15 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-import { Bench } from 'tinybench'
+import {
+	Bench,
+	type TaskResult,
+	type TaskResultRuntimeInfo,
+	type TaskResultTimestampProviderInfo,
+	type TaskResultWithStatistics,
+} from 'tinybench'
 
-import { Context } from '../context'
+import { Context } from '@pluxel/core/test'
 import { PluginA, PluginB, PluginC } from '../plugins'
 
 type CommitResult = Awaited<ReturnType<Context['registry']['commit']>>
@@ -16,10 +22,18 @@ const numberFromEnv = (key: string, fallback: number) => {
 	return Number.isFinite(parsed) ? parsed : fallback
 }
 
-const bench = new Bench({
+const benchOptions = {
 	time: numberFromEnv('PLUXEL_BENCH_TIME', 350),
 	warmupTime: numberFromEnv('PLUXEL_BENCH_WARMUP_TIME', 150),
 	warmupIterations: numberFromEnv('PLUXEL_BENCH_WARMUP_ITERATIONS', 24),
+	iterations: numberFromEnv('PLUXEL_BENCH_ITERATIONS', Number.NaN),
+}
+
+const bench = new Bench({
+	time: benchOptions.time,
+	warmupTime: benchOptions.warmupTime,
+	warmupIterations: benchOptions.warmupIterations,
+	iterations: Number.isFinite(benchOptions.iterations) ? benchOptions.iterations : undefined,
 })
 
 const tolerancePct = numberFromEnv('PLUXEL_BENCH_TOLERANCE', 5)
@@ -27,6 +41,19 @@ const strictMode = process.env.PLUXEL_BENCH_STRICT === '1'
 
 if (process.env.DEBUG_BENCH === '1') {
 	console.log('[bench] cwd:', process.cwd())
+}
+
+type CompletedResult = TaskResultWithStatistics &
+	TaskResultRuntimeInfo &
+	TaskResultTimestampProviderInfo
+const assertCompleted = (
+	taskName: string,
+	result: TaskResult & TaskResultRuntimeInfo & TaskResultTimestampProviderInfo,
+): CompletedResult => {
+	if (result.state !== 'completed') {
+		throw new Error(`Benchmark task "${taskName}" did not complete (state: ${result.state})`)
+	}
+	return result
 }
 
 const silencePluginLogs = () => {
@@ -62,29 +89,25 @@ const ensureOk = (result: CommitResult) => {
 bench
 	.add('load/unload A+B+C', async () => {
 		const ctx = new Context({ name: 'bench-load' })
-		const { pluginRegistry } = ctx.registry
-
-		pluginRegistry.registerPlugin(PluginB)
-		pluginRegistry.registerPlugin(PluginC)
-		pluginRegistry.registerPlugin(PluginA)
+		ctx.registry.register(PluginB)
+		ctx.registry.register(PluginC)
+		ctx.registry.register(PluginA)
 		ensureOk(await ctx.registry.commit())
 
-		pluginRegistry.unregisterPlugin(PluginA)
-		pluginRegistry.unregisterPlugin(PluginB)
-		pluginRegistry.unregisterPlugin(PluginC)
+		ctx.registry.unregister(PluginA)
+		ctx.registry.unregister(PluginB)
+		ctx.registry.unregister(PluginC)
 		ensureOk(await ctx.registry.commit())
 
 		ctx.disposeAll()
 	})
 	.add('reload PluginA', async () => {
 		const ctx = new Context({ name: 'bench-reload' })
-		const { pluginRegistry } = ctx.registry
-
-		pluginRegistry.registerPlugin(PluginB)
-		pluginRegistry.registerPlugin(PluginA)
+		ctx.registry.register(PluginB)
+		ctx.registry.register(PluginA)
 		ensureOk(await ctx.registry.commit())
 
-		pluginRegistry.reloadPlugin(PluginA)
+		ctx.registry.restart(PluginA)
 		ensureOk(await ctx.registry.commit())
 
 		ctx.disposeAll()
@@ -100,6 +123,8 @@ const toDisplay = (value: number | null | undefined) =>
 	value == null || Number.isNaN(value) ? '—' : value.toLocaleString()
 const pctDisplay = (value: number | null | undefined) =>
 	value == null || Number.isNaN(value) ? '—' : `${value > 0 ? '+' : ''}${value.toFixed(2)}%`
+const countDisplay = (value: number | null | undefined) =>
+	value == null || Number.isNaN(value) ? '—' : value.toLocaleString()
 const metricSummary = (
 	current: number | null | undefined,
 	delta: number | null | undefined,
@@ -133,15 +158,16 @@ const runtime = {
 }
 
 const rows = bench.tasks.map((task) => {
-	const result = task.result
-	if (!result) {
-		throw new Error(`Benchmark task "${task.name}" has no result.`)
-	}
-	const { latency, throughput } = result
+	const result = assertCompleted(task.name, task.result)
+	const { latency, throughput, totalTime } = result
+	const runs =
+		latency.samplesCount ??
+		throughput.samplesCount ??
+		(Number.isFinite(task.runs) ? task.runs : undefined)
 	return {
 		name: task.name,
-		runs: latency.samples.length,
-		totalTimeMs: round(result.totalTime),
+		runs: runs ?? null,
+		totalTimeMs: round(totalTime),
 		opsMean: round(throughput.mean),
 		opsMin: round(throughput.min),
 		opsMax: round(throughput.max),
@@ -202,10 +228,8 @@ type ComparisonRow = {
 }
 
 const baselineEnvPath = process.env.PLUXEL_BENCH_BASELINE
-let baselineReport: {
-	tasks?: BenchRow[]
-	recordedAt?: string
-} | null = null
+type BaselineReport = { tasks: BenchRow[]; recordedAt?: string }
+let baselineReport: BaselineReport | null = null
 
 const resolveBaselinePath = (input: string): string | null => {
 	if (path.isAbsolute(input)) return input
@@ -230,7 +254,10 @@ if (baselinePath && existsSync(baselinePath)) {
 	try {
 		const parsed = JSON.parse(readFileSync(baselinePath, 'utf8'))
 		if (Array.isArray(parsed?.tasks)) {
-			baselineReport = parsed
+			baselineReport = {
+				tasks: parsed.tasks as BenchRow[],
+				recordedAt: typeof parsed.recordedAt === 'string' ? parsed.recordedAt : undefined,
+			}
 		}
 		if (process.env.DEBUG_BENCH === '1') {
 			console.log('[bench] Loaded baseline from', baselinePath)
@@ -242,17 +269,19 @@ if (baselinePath && existsSync(baselinePath)) {
 	console.log('[bench] Baseline path not found:', baselineEnvPath)
 }
 
-const comparison: ComparisonRow[] = rows.map((row) => ({
-	name: row.name,
-	baselineOpsMean: null,
-	baselineLatencyMeanMs: null,
-	opsMean: row.opsMean,
-	latencyMeanMs: row.latencyMeanMs,
-	opsDeltaPct: null,
-	latencyDeltaPct: null,
-	runs: row.runs,
-	status: 'new',
-}))
+const comparison: ComparisonRow[] = rows.map(
+	(row): ComparisonRow => ({
+		name: row.name,
+		baselineOpsMean: null,
+		baselineLatencyMeanMs: null,
+		opsMean: row.opsMean,
+		latencyMeanMs: row.latencyMeanMs,
+		opsDeltaPct: null,
+		latencyDeltaPct: null,
+		runs: row.runs,
+		status: 'new',
+	}),
+)
 
 if (baselineReport?.tasks) {
 	const baselineIndex = new Map<string, BenchRow>()
@@ -333,10 +362,10 @@ const report = {
 	recordedAt,
 	runtime,
 	options: {
-		timeMs: bench.opts.time,
-		warmupTimeMs: bench.opts.warmupTime,
-		warmupIterations: bench.opts.warmupIterations,
-		minIterations: bench.opts.iterations,
+		timeMs: benchOptions.time,
+		warmupTimeMs: benchOptions.warmupTime,
+		warmupIterations: benchOptions.warmupIterations,
+		minIterations: Number.isFinite(benchOptions.iterations) ? benchOptions.iterations : null,
 	},
 	tasks: rows,
 	keyMetrics: rows.map((row) => ({
@@ -392,7 +421,7 @@ const markdownLines = [
 	'',
 	`- Recorded at: ${recordedAt}`,
 	`- Runtime: ${runtime.name} ${runtime.version}`,
-	`- Target benchmark time: ${bench.opts.time}ms (warmup ${bench.opts.warmupTime}ms)`,
+	`- Target benchmark time: ${benchOptions.time}ms (warmup ${benchOptions.warmupTime}ms)`,
 	`- Baseline: ${baselineRecordedAt ?? 'not available'}`,
 	`- Regression tolerance: ±${tolerancePct}%`,
 	'',
@@ -439,7 +468,7 @@ const markdownLines = [
 			toDisplay(row.latencyP75Ms),
 			toDisplay(row.latencyP99Ms),
 			row.latencyMaxMs.toLocaleString(),
-			row.runs.toLocaleString(),
+			countDisplay(row.runs),
 		]
 			.map((cell) => String(cell))
 			.join(' | '),

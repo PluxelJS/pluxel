@@ -47,14 +47,7 @@ export const RouterLinkAdapter = forwardRef<HTMLAnchorElement, RouterLinkAdapter
 		)
 
 		return (
-			<a
-				ref={ref}
-				href={href}
-				target={target}
-				rel={rel}
-				onClick={handleClick}
-				{...rest}
-			>
+			<a ref={ref} href={href} target={target} rel={rel} onClick={handleClick} {...rest}>
 				{children}
 			</a>
 		)

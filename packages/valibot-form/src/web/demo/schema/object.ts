@@ -12,11 +12,7 @@ const AddressSchema = v.pipe(
 			stringMeta({ placeholder: '南京东路' }),
 		),
 		city: v.pipe(v.string(), formMeta({ label: '城市' })),
-		zip: v.pipe(
-			v.number(),
-			numberMeta({ variant: 'input', step: 1 }),
-			formMeta({ label: '邮编' }),
-		),
+		zip: v.pipe(v.number(), numberMeta({ variant: 'input', step: 1 }), formMeta({ label: '邮编' })),
 	}),
 	formMeta({ label: '地址信息', description: '用于配送和发票的地址' }),
 	objectMeta({ columns: 2, collapse: true }),

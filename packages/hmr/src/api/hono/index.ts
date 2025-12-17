@@ -2,11 +2,15 @@ import { newHttpBatchRpcResponse } from 'capnweb'
 import { Hono } from 'hono'
 
 import loggerApp from '../../services/logger/api'
+import debugApp from './debug'
 import type { AppEnv } from './env'
 import { HmrRpcApi, PluginHandle } from './rpc'
 
 const app = new Hono<AppEnv>()
 	.get('/', (c) => c.text('Pluxel HMR RPC ready'))
+	// Server-Sent Events：统一入口，支持多命名空间复用单条连接
+	.get('/sse', (c) => c.var.plugin_ctx.sse.stream(c))
+	.get('/sse/namespaces', (c) => c.json({ namespaces: c.var.plugin_ctx.sse.getNamespaces() }))
 	.all('/rpc', async (c) => {
 		try {
 			const api = new HmrRpcApi(c.var.plugin_ctx)
@@ -16,6 +20,37 @@ const app = new Hono<AppEnv>()
 			return c.text('Internal RPC error', 500)
 		}
 	})
+	// ============ Extension API ============
+	// 获取扩展清单
+	.get('/extensions/manifest', (c) => {
+		const ctx = c.var.plugin_ctx
+		const extensionService = ctx.extensionService
+		if (!extensionService) {
+			return c.json({ version: 0, modules: [] })
+		}
+		return c.json(extensionService.getManifest())
+	})
+	// 获取单个插件模块
+	.get('/extensions/modules/:plugin/:file', async (c) => {
+		const ctx = c.var.plugin_ctx
+		const extensionService = ctx.extensionService
+		if (!extensionService) {
+			return c.text('Extension service not available', 503)
+		}
+		const pluginParam = c.req.param('plugin')
+		const pluginName = decodeURIComponent(pluginParam)
+		const file = c.req.param('file')
+		const hash = file.endsWith('.mjs') ? file.slice(0, -4) : file
+		const code = await extensionService.getModuleSource(pluginName, hash)
+		if (!code) {
+			return c.text('Module not found', 404)
+		}
+		return c.text(code, 200, {
+			'Content-Type': 'application/javascript',
+			'Cache-Control': 'public, max-age=31536000, immutable',
+		})
+	})
+	.get('/extensions/events', (c) => c.var.plugin_ctx.sse.stream(c, ['extensions']))
 	// ============ REST API（仅调试/直连调试用） ============
 	// 仅保留 schema GET，方便通过浏览器快速排查，无需 RPC 客户端
 	.get('/plugins/:name/schema', (c) => {
@@ -34,30 +69,7 @@ const app = new Hono<AppEnv>()
 		return c.json(api.updatePluginGroups(groups))
 	})
 	// ============ 调试路由 ============
-	.get('/debug/plugins/:name/schema', (c) => {
-		const name = c.req.param('name')
-		const handle = new PluginHandle(c.var.plugin_ctx, name)
-		const result = handle.schema()
-		return c.json(result, result.ok ? 200 : 404)
-	})
-	.get('/debug/schemas', (c) => {
-		const ctx = c.var.plugin_ctx
-		const registry = ctx.loader.registry
-		const names = registry.getLoadedNames()
-		const result: Record<string, { hasSchema: boolean; hasSchemaSource: boolean; schemaSource?: Record<string, string> }> = {}
-		for (const name of names) {
-			const ctor = registry.getPluginByName(name)
-			if (!ctor) continue
-			const schema = registry.getSchema(ctor)
-			const schemaSource = registry.getSchemaSource(ctor)
-			result[name] = {
-				hasSchema: !!schema && Object.keys(schema).length > 0,
-				hasSchemaSource: !!schemaSource && Object.keys(schemaSource).length > 0,
-				schemaSource: schemaSource ?? undefined,
-			}
-		}
-		return c.json(result)
-	})
+	.route('/debug', debugApp)
 	.route('/logs', loggerApp)
 	.all('/graphql', (c) => c.var.plugin_ctx.internalGraphql.fetch(c.req.raw, { hono: c } as any))
 

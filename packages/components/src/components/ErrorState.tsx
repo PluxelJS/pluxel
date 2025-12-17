@@ -1,7 +1,7 @@
 import { Box, Button, Center, Stack, Text, Title, useComputedColorScheme } from '@mantine/core'
 import { IconAlertTriangle, IconRefresh } from '@tabler/icons-react'
 import type { ReactNode } from 'react'
-import { getPatternStyle } from '../patterns'
+import { getPatternStyle } from '../theme'
 
 export interface ErrorStateProps {
 	icon?: ReactNode

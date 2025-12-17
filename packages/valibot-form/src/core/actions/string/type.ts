@@ -21,10 +21,10 @@ export interface StringCheck {
  * 字符串输入模式
  */
 export type StringInputMode =
-	| 'single'    // 单行文本框
-	| 'textarea'  // 多行文本框
-	| 'password'  // 密码输入框
-	| 'code'      // 代码编辑器（等宽字体）
+	| 'single' // 单行文本框
+	| 'textarea' // 多行文本框
+	| 'password' // 密码输入框
+	| 'code' // 代码编辑器（等宽字体）
 
 /**
  * 字符串字段配置选项

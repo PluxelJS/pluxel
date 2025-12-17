@@ -18,10 +18,4 @@ export class ExtendedContainerBuilder extends ContainerBuilder {
 		super()
 		this.builderSingletons = builderSingleton
 	}
-
-	dispatchReload(key: any) {
-		const value = this.buildables.get(key)
-		if (value === undefined) throw new Error('不能 reload 不存在的 key。')
-		this.buildables.set(key, value)
-	}
 }

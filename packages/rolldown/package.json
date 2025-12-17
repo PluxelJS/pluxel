@@ -10,8 +10,8 @@
 	"exports": {
 		".": {
 			"@pluxel/source": "./src/index.ts",
-			"import": "./dist/index.mjs",
-			"require": "./dist/index.cjs"
+			"require": "./dist/index.cjs",
+			"import": "./dist/index.mjs"
 		},
 		"./package.json": "./package.json"
 	},
@@ -19,18 +19,19 @@
 		"test": "bun test",
 		"build": "tsdown"
 	},
-	"dependencies": {},
+	"dependencies": {
+		"vite": "npm:rolldown-vite@7.2.10"
+	},
 	"devDependencies": {
-		"vite": "npm:rolldown-vite@7.2.8",
-		"pathe": "2.0.3",
+		"pathe": "^2.0.3",
 		"oxc-parser": "^0.99.0",
 		"rolldown": "1.0.0-beta.52"
 	},
 	"publishConfig": {
 		"exports": {
 			".": {
-				"import": "./dist/index.mjs",
-				"require": "./dist/index.cjs"
+				"require": "./dist/index.cjs",
+				"import": "./dist/index.mjs"
 			},
 			"./package.json": "./package.json"
 		}

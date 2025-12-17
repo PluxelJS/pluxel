@@ -11,7 +11,7 @@ export function extractRecordProps<TKeyMeta = unknown, TValueMeta = unknown>(
 	schema: InputSchema,
 ): RecordMetaResult<TKeyMeta, TValueMeta> {
 	const meta: RecordMetaResult<TKeyMeta, TValueMeta> = {
-		layout: 'table',
+		layout: undefined,
 		addable: true,
 		removable: true,
 		reorderable: true,
@@ -20,8 +20,15 @@ export function extractRecordProps<TKeyMeta = unknown, TValueMeta = unknown>(
 
 	const itemSchema = schema.value ?? (schema as PipedSchema<Schema>).pipe[0].value
 	if (itemSchema) {
-		const type = itemSchema.type // string, number, boolean
+		const type = itemSchema.type // string, number, boolean, object...
 		meta.valueMode = type
+		meta.valueSchema = itemSchema as any
+		if (
+			(type === 'object' || type === 'array' || type === 'union' || type === 'variant') &&
+			!meta.layout
+		) {
+			meta.layout = 'list'
+		}
 	}
 
 	const pipe = (schema as PipedSchema<Schema>).pipe
@@ -37,6 +44,10 @@ export function extractRecordProps<TKeyMeta = unknown, TValueMeta = unknown>(
 			}
 			break
 		}
+	}
+
+	if (!meta.layout) {
+		meta.layout = 'table'
 	}
 
 	return meta

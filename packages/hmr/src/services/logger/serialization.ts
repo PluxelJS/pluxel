@@ -272,16 +272,11 @@ export function createDumperLogHook(
 		return toPlain(v)
 	}
 
-	return function logMethod(
-		this: Logger,
-		args: Parameters<LogFn>,
-		method: LogFn,
-		level: number,
-	) {
+	return function logMethod(this: Logger, args: Parameters<LogFn>, method: LogFn, level: number) {
 		void level
 		if (!args || args.length === 0) return method.apply(this, args)
 
-	const newArgs = Array.prototype.slice.call(args) as Parameters<LogFn>
+		const newArgs = Array.prototype.slice.call(args) as Parameters<LogFn>
 
 		if (typeof newArgs[0] === 'string') {
 			let errIdx = -1

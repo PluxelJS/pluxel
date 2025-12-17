@@ -1,11 +1,7 @@
 import type { Context as PlxContext, PluginConstructor } from '@pluxel/core'
 import type { InferOutput } from 'valibot'
 
-import {
-	PluginSourceInfo,
-	PluginStatusEntryLifecycleStage,
-	PluginStatusOverview,
-} from './schema'
+import { PluginSourceInfo, PluginStatusEntryLifecycleStage, PluginStatusOverview } from './schema'
 
 type LifecycleStage = InferOutput<typeof PluginStatusEntryLifecycleStage>
 type SourceOutput = InferOutput<typeof PluginSourceInfo>
@@ -70,7 +66,7 @@ export function readStatusSnapshot(
 	source: SourceOutput
 } {
 	const isRunning = pCtx.loader.isRunning(ctor)
-	const isEnabled = pCtx.configService.isEnable(name)
+	const isEnabled = pCtx.configService.isEnabledInConfig(name)
 	const lifecycleStage = !isEnabled ? 'disabled' : isRunning ? 'running' : 'stopped'
 	const source = resolvePluginSource(pCtx, name, ctor)
 	return { isRunning, isEnabled, lifecycleStage, source }

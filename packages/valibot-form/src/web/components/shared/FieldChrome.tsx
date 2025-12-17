@@ -13,6 +13,7 @@ export interface FieldChromeProps {
 	errors?: string[]
 	children: ReactNode
 	hideLabel?: boolean
+	hideRequired?: boolean
 	inlineLabel?: boolean
 }
 
@@ -43,15 +44,20 @@ export function FieldChrome({
 	errors,
 	children,
 	hideLabel,
+	hideRequired,
 	inlineLabel,
 }: FieldChromeProps) {
-	const errorText = (errors ?? []).map((e) => e?.trim()).filter(Boolean).join('\n')
+	const errorText = (errors ?? [])
+		.map((e) => e?.trim())
+		.filter(Boolean)
+		.join('\n')
+	const showRequired = required && !hideRequired
 
 	const labelContent = hideLabel ? null : (
 		<Group gap={6} align="center" wrap="nowrap">
 			<Text fw={600} size="sm">
 				{label}
-				{required ? (
+				{showRequired ? (
 					<Text span c="red">
 						{' '}
 						*

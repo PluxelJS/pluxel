@@ -7,8 +7,11 @@ import type { Plugin } from 'vite'
 
 import api from '../../api/hono'
 import type { RenderHandler } from '../../server/types'
+import type { ExtensionManifestEvent } from '../extension'
+import { logStore, matchesFilter } from '../logger/logStore'
 import type { AuthGuardCheckInput } from './AuthGuardService'
 import type { AppEnv, HonoWithAppEnvType } from './env'
+import type { SseChannel } from './SseService'
 
 const serviceName = 'honoService' as const
 
@@ -50,11 +53,13 @@ export class HonoService {
 
 	private readonly logger: NonNullable<Context['logger']>
 	private readonly renderer: Promise<RenderHandler>
+	private sseBuiltinsReady = false
 
 	constructor(private ctx: Context) {
 		this.logger = ctx.logger!
 		this.renderer = this.createRenderer()
 		this.rebuildApp()
+		this.registerSseBuiltins()
 
 		// GraphQL 初次装配在其它服务就绪后由其通知；这里只是确保会触发一次重织
 		ctx.graphql.scheduleRebuild()
@@ -63,12 +68,7 @@ export class HonoService {
 	/** 将 plugin_ctx 暴露给下游（Hono 工厂） */
 	public createFactory(): Factory<AppEnv, string> {
 		return createFactory<AppEnv>({
-			initApp: (app) => {
-				app.use(async (c, next) => {
-					c.set('plugin_ctx', this.ctx)
-					await next()
-				})
-			},
+			initApp: (app) => this.attachPluginContext(app),
 		})
 	}
 
@@ -127,10 +127,7 @@ export class HonoService {
 		const app = new Hono<AppEnv>({})
 
 		// 注入 plugin_ctx
-		app.use(async (c, next) => {
-			c.set('plugin_ctx', this.ctx)
-			await next()
-		})
+		this.attachPluginContext(app)
 
 		// 1) 内部 API：可选守卫，仅作用于 /api/*，不影响外部注入
 		this.mountInternalAPI(app as HonoWithAppEnvType)
@@ -152,6 +149,60 @@ export class HonoService {
 		this.updateFetchPtr()
 
 		return this.app
+	}
+
+	private registerSseBuiltins() {
+		if (this.sseBuiltinsReady) return
+		this.sseBuiltinsReady = true
+
+		const disposers = [
+			this.registerBuiltinSse('extensions', (channel) => this.streamManifestEvents(channel)),
+			this.registerBuiltinSse('logs', (channel) => this.streamLogs(channel)),
+		]
+
+		for (const dispose of disposers) this.ctx.scope.collectEffect(dispose)
+	}
+
+	private registerBuiltinSse(
+		namespace: string,
+		handler: (channel: SseChannel) => void | (() => void),
+	) {
+		return this.ctx.sse.registerExtension(() => handler, { namespace })
+	}
+
+	private streamManifestEvents(channel: SseChannel) {
+		const service = this.ctx.extensionService
+		if (!service) {
+			channel.emit('error', { reason: 'Extension service unavailable' })
+			return
+		}
+
+		channel.emit('ready', { type: 'ready' })
+		// 先推一次版本；客户端收到 sync 后按需拉取 manifest
+		channel.emit('sync', { type: 'sync', version: service.getManifest().version })
+
+		const send = (event: ExtensionManifestEvent) => channel.emit(event.type, event)
+		const unsubscribe = service.subscribeManifest(send)
+		channel.onAbort(unsubscribe)
+		return () => unsubscribe()
+	}
+
+	private streamLogs(channel: SseChannel) {
+		const filter = channel.query.get('name') ?? ''
+
+		channel.emit('ready', { type: 'ready', name: filter })
+		const send = (log: unknown) => channel.emit('log', log)
+
+		logStore
+			.snapshot()
+			.filter((l) => matchesFilter(l, filter))
+			.forEach(send)
+
+		const unsubscribe = logStore.subscribe((l) => {
+			if (matchesFilter(l, filter)) send(l)
+		})
+		channel.onAbort(unsubscribe)
+		return () => unsubscribe()
 	}
 
 	/** 仅对“内部 API”应用守卫 */
@@ -265,18 +316,15 @@ export class HonoService {
 	}
 
 	private createRenderer(): Promise<RenderHandler> {
-		const isProd = process.env.NODE_ENV === 'production'
+		// #if SOURCE_ONLY
+		const importMetaEnv = (import.meta as ImportMeta & { env?: Record<string, any> }).env
 
-		// #if NODE_ENV !== 'production'
-		if (!isProd) {
-			const importMetaEnv = (import.meta as ImportMeta & { env?: Record<string, any> }).env
-			const ssrFlag =
-				importMetaEnv?.PLUXEL_HMR_SSR ??
-				(typeof process !== 'undefined' && process.env ? process.env.PLUXEL_HMR_SSR : undefined)
+		const ssrFlag =
+			importMetaEnv?.PLUXEL_HMR_SSR ??
+			(typeof process !== 'undefined' && process.env ? process.env.PLUXEL_HMR_SSR : undefined)
 
-			if (ssrFlag) {
-				return import('../../server/dev').then(({ createDevRenderer }) => createDevRenderer())
-			}
+		if (ssrFlag) {
+			return import('../../server/dev').then(({ createDevRenderer }) => createDevRenderer())
 		}
 		// #endif
 
@@ -286,5 +334,12 @@ export class HonoService {
 	private async render(c: import('hono').Context<AppEnv>) {
 		const handler = await this.renderer
 		return handler(c)
+	}
+
+	private attachPluginContext(app: Pick<Hono<AppEnv>, 'use'>) {
+		app.use(async (c, next) => {
+			c.set('plugin_ctx', this.ctx)
+			await next()
+		})
 	}
 }

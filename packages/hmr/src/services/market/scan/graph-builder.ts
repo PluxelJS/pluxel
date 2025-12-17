@@ -172,7 +172,9 @@ async function processPackageDir(params: {
 }): Promise<PackageNode | null> {
 	const { pkgDir, workspaceRoot, workspaceManifest, isExplicitInput, ctx } = params
 	const manifest =
-		pkgDir === workspaceRoot ? workspaceManifest ?? (await safeReadManifest(pkgDir)) : await safeReadManifest(pkgDir)
+		pkgDir === workspaceRoot
+			? (workspaceManifest ?? (await safeReadManifest(pkgDir)))
+			: await safeReadManifest(pkgDir)
 	const manifestPath = manifestPathFor(pkgDir)
 	const name = manifest?.name
 	const normalizedDir = normalize(pkgDir)

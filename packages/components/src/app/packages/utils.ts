@@ -1,4 +1,9 @@
-import type { InstallPackageSpecInput, PackageLoadIssue, PackageInventoryEntry, PluginStatusEntry } from '../gqty'
+import type {
+	InstallPackageSpecInput,
+	PackageLoadIssue,
+	PackageInventoryEntry,
+	PluginStatusEntry,
+} from '../gqty'
 import type { Maybe, PackageRow } from './types'
 
 const timeFormatter = new Intl.DateTimeFormat('zh-CN', {
@@ -135,7 +140,12 @@ export function parseInstallSpecs(input: string): string[] {
 		.filter((item, index, array) => item.length > 0 && array.indexOf(item) === index)
 }
 
-export function summarizeList(items: string[], peekCount: number, suffix: string, delimiter = '、') {
+export function summarizeList(
+	items: string[],
+	peekCount: number,
+	suffix: string,
+	delimiter = '、',
+) {
 	if (!items.length) return ''
 	if (items.length <= peekCount) {
 		return items.join(delimiter)

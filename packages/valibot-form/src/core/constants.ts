@@ -3,7 +3,7 @@
  */
 
 // 表单布局
-export const GRID_COLUMN_THRESHOLD = 4
+export const GRID_COLUMN_THRESHOLD = 3 // 紧凑字段数量达到此值时启用双列布局
 export const DEFAULT_GRID_COLUMNS = 2
 
 // 数组字段
@@ -33,7 +33,6 @@ export const DEFAULT_TEXTS = {
 		rendererNotFound: (type: string) =>
 			`[valibot-form] 未注册渲染器: "${type}". 请确保已经导入并注册对应的渲染器。`,
 		autoFormContextMissing: '[valibot-form] AutoForm.* 组件必须在 <AutoForm> 内使用',
-		extractionFailed: (schemaType: string) =>
-			`[valibot-form] 无法提取 schema 信息: ${schemaType}`,
+		extractionFailed: (schemaType: string) => `[valibot-form] 无法提取 schema 信息: ${schemaType}`,
 	},
 } as const
