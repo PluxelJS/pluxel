@@ -422,7 +422,7 @@ export class PluginRegistry {
 		// 配置校验/补齐（幂等）
 		const schema = this.getSchema(ctor)
 		if (schema) {
-			const { configRecord } = this.ctx.configService.getConfigSnapshot(name)
+			const configRecord = this.ctx.configService.getConfig(name)
 			const entries = Object.entries(schema)
 			const hasAsync = entries.some(([, s]) => s.async)
 
@@ -466,7 +466,7 @@ export class PluginRegistry {
 			}
 
 			if (Object.keys(patch).length > 0) {
-				this.ctx.configService.patchConfigSnapshot(name, { configRecord: patch })
+				this.ctx.configService.patchConfig(name, patch)
 			}
 		}
 

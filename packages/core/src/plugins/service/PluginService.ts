@@ -141,10 +141,14 @@ export class PluginService {
 
 		const id = info.id
 
-		const record = pluginCtx.configService.getConfigSnapshot(id)?.configRecord ?? {}
+		const record = pluginCtx.configService.getConfig(id)
+		const pluginAny = plugin as any
+		const recordAny = record as any
 
-		for (const key of Object.keys(schemaMap)) {
-			;(plugin as any)[key] = (record as any)[key]
+		const keys = Object.keys(schemaMap)
+		for (let i = 0; i < keys.length; i++) {
+			const key = keys[i]
+			pluginAny[key] = recordAny[key]
 		}
 	}
 

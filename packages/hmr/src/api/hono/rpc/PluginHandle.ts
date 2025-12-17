@@ -592,7 +592,7 @@ export class PluginHandle extends RpcTarget {
 	async config(): Promise<ConfigResultOk> {
 		const schema = this.#ctx.loader.getPluginSchema(this.resolveCtor())
 		const defaults = await collectDefaults(schema)
-		const config = this.#ctx.configService.getConfigSnapshot(this.name).configRecord
+		const config = this.#ctx.configService.getConfig(this.name)
 		return { ok: true, saved: false, config, defaults }
 	}
 
@@ -620,15 +620,15 @@ export class PluginHandle extends RpcTarget {
 			}
 		}
 
-		return {
-			ok: true,
-			saved: false,
-			config: {
-				...this.#ctx.configService.getConfigSnapshot(this.name).configRecord,
-				...validation.output,
-			},
-			defaults,
-		}
+			return {
+				ok: true,
+				saved: false,
+				config: {
+					...this.#ctx.configService.getConfig(this.name),
+					...validation.output,
+				},
+				defaults,
+			}
 	}
 
 	async saveConfig(patch: ConfigPatch): Promise<ConfigResult> {
@@ -655,15 +655,13 @@ export class PluginHandle extends RpcTarget {
 			}
 		}
 
-		if (Object.keys(validation.output).length > 0) {
-			this.#ctx.configService.patchConfigSnapshot(this.name, {
-				configRecord: validation.output,
-			})
-		}
+			if (Object.keys(validation.output).length > 0) {
+				this.#ctx.configService.patchConfig(this.name, validation.output)
+			}
 
-		const config = this.#ctx.configService.getConfigSnapshot(this.name).configRecord
-		return { ok: true, saved: true, config, defaults }
-	}
+			const config = this.#ctx.configService.getConfig(this.name)
+			return { ok: true, saved: true, config, defaults }
+		}
 
 	async resetConfig(keys?: string[]): Promise<ConfigResult> {
 		const schema = this.#ctx.loader.getPluginSchema(this.resolveCtor())
@@ -699,8 +697,8 @@ export class PluginHandle extends RpcTarget {
 			}
 		}
 
-		this.#ctx.configService.patchConfigSnapshot(this.name, { configRecord: validation.output })
-		const config = this.#ctx.configService.getConfigSnapshot(this.name).configRecord
+		this.#ctx.configService.patchConfig(this.name, validation.output)
+		const config = this.#ctx.configService.getConfig(this.name)
 		return { ok: true, saved: true, config, defaults }
 	}
 }

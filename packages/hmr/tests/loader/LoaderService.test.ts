@@ -20,10 +20,10 @@ function createHmrCtx(core: Context) {
 		disableInConfig(...names: string[]) {
 			for (const n of names) enabled.delete(n)
 		},
-		getConfigSnapshot(_name: string) {
-			return { meta: {}, configRecord: {} }
+		getConfig(_name: string) {
+			return {}
 		},
-		patchConfigSnapshot() {},
+		patchConfig() {},
 		getExtra() {
 			return undefined
 		},
