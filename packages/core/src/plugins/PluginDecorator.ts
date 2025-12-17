@@ -138,7 +138,32 @@ interface State {
 	pending: Record<string, unknown> | null
 }
 
-const STATE = new WeakMap<Function, State>()
+/**
+ * NOTE: This state must be shared across duplicate copies of `@pluxel/core` loaded in the same JS runtime.
+ * HMR runners (Vite ModuleRunner / vite-node) can easily evaluate workspace code with a different module
+ * instance than the host runtime, and we still need `checkPluginDecorator/getPluginInfo` to work across them.
+ */
+const STATE_KEY = Symbol.for('pluxel:plugin:decorator-state')
+const STATE: WeakMap<Function, State> = (() => {
+	const g = globalThis as any
+	const existing = g?.[STATE_KEY]
+	if (existing && typeof existing.get === 'function' && typeof existing.set === 'function') {
+		return existing as WeakMap<Function, State>
+	}
+	const created = new WeakMap<Function, State>()
+	try {
+		Object.defineProperty(g, STATE_KEY, {
+			value: created,
+			writable: false,
+			enumerable: false,
+			configurable: false,
+		})
+	} catch {
+		// Fallback for unusual runtimes where defineProperty on globalThis is restricted.
+		g[STATE_KEY] = created
+	}
+	return created
+})()
 
 /** 获取或创建 State（固定 shape，JIT 友好） */
 const S = (ctor: Function): State => {

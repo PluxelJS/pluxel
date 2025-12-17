@@ -14,6 +14,8 @@ interface ResolveBareImportArgs {
 	scanService?: ScanService
 	conditions?: readonly string[]
 	fallbackBaseDirs?: readonly string[]
+	/** Only resolve from workspace scan results, skip node_modules fallback. */
+	workspaceOnly?: boolean
 }
 
 export async function resolveBareImport({
@@ -22,6 +24,7 @@ export async function resolveBareImport({
 	scanService,
 	conditions = DEFAULT_CONDITIONS,
 	fallbackBaseDirs = [process.cwd()],
+	workspaceOnly = false,
 }: ResolveBareImportArgs): Promise<string | null> {
 	if (!isBareSpecifier(specifier)) return null
 	// 首先尝试通过 workspace 扫描器解析（可返回 TS 源入口）。
@@ -35,6 +38,7 @@ export async function resolveBareImport({
 			// ignore scan failures and fall through to local resolution
 		}
 	}
+	if (workspaceOnly) return null
 
 	const importerBases = resolveImporterBases(importer)
 	const searchBases = mergeResolutionBases(importerBases, fallbackBaseDirs)

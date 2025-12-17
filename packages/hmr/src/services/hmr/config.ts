@@ -1,12 +1,27 @@
+import { existsSync } from 'node:fs'
+import { configSourcePlugin, importTypeFixerPlugin } from '@pluxel/rolldown'
+import { resolve } from 'pathe'
+import type { InlineConfig, Plugin } from 'vite'
+import { normalizePath, searchForWorkspaceRoot } from 'vite'
+import tsconfigPaths from 'vite-tsconfig-paths'
+import { findNearestPackageRoot } from './internals'
+
 export interface HMRDependencyConfig {
 	/** Reuse host exports for these specifiers so class singletons survive HMR. */
 	bridgeModules?: readonly string[]
-	/** Packages that vite-node should never try to inline/transform. */
-	runnerExternal?: ReadonlyArray<string | RegExp>
 	/** Forwarded to Vite's ssr.external to keep core runtime modules untouched. */
 	ssrExternal?: readonly string[]
 	/** Forwarded to Vite's ssr.noExternal to make sure React stack stays bundled. */
 	ssrNoExternal?: readonly string[]
+	/**
+	 * Force externalization for known CommonJS-only packages (or prefixes), to avoid runner crashes like
+	 * "require is not defined" when Vite tries to inline/evaluate them as ESM.
+	 *
+	 * Supported patterns:
+	 * - exact: `cjs-pkg`
+	 * - prefix: `@napi-rs/*` matches `@napi-rs/canvas`, `@napi-rs/xxx`
+	 */
+	cjsExternal?: readonly string[]
 	/** optimizeDeps.include white-list. */
 	optimizeDepsInclude?: readonly string[]
 	/** optimizeDeps.needsInterop white-list. */
@@ -15,9 +30,9 @@ export interface HMRDependencyConfig {
 
 export interface ResolvedHMRDependencyConfig {
 	bridgeModules: readonly string[]
-	runnerExternal: ReadonlyArray<string | RegExp>
 	ssrExternal: readonly string[]
 	ssrNoExternal: readonly string[]
+	cjsExternal: readonly string[]
 	optimizeDepsInclude: readonly string[]
 	optimizeDepsInterop: readonly string[]
 }
@@ -32,13 +47,21 @@ const DEFAULT_BRIDGE_MODULES = [
 	'@pluxel/hmr/capnweb',
 ] as const
 
-const DEFAULT_RUNNER_EXTERNAL: ReadonlyArray<string | RegExp> = [
-	/^(react|react-dom|lodash|dayjs)(\/|$)/,
-	...DEFAULT_BRIDGE_MODULES,
-]
+const DEFAULT_SSR_NO_EXTERNAL_BASE = ['react', 'react-dom'] as const
 
-const DEFAULT_SSR_EXTERNAL = DEFAULT_BRIDGE_MODULES
-const DEFAULT_SSR_NO_EXTERNAL = ['react', 'react-dom'] as const
+/**
+ * IMPORTANT:
+ * - Modules listed in `ssr.external` are loaded by the host runtime (native import/require), bypassing
+ *   Vite's ModuleRunner evaluation pipeline.
+ * - For workspace packages that must share singletons with the host (decorators, BasePlugin, DI tokens),
+ *   we generally want them to go through the runner so we can bridge/cache them deterministically.
+ */
+const DEFAULT_SSR_EXTERNAL: readonly string[] = []
+const DEFAULT_SSR_NO_EXTERNAL = [
+	...DEFAULT_SSR_NO_EXTERNAL_BASE,
+	...DEFAULT_BRIDGE_MODULES,
+] as const
+const DEFAULT_CJS_EXTERNAL = ['pluxel-plugin-napi-rs/*', '@napi-rs/*'] as const
 const DEFAULT_OPTIMIZE_DEPS_INCLUDE = [
 	'react',
 	'react-dom',
@@ -52,9 +75,9 @@ const DEFAULT_RESOLVE_CONDITIONS = ['module', 'browser', 'development', 'product
 
 export const DEFAULT_HMR_DEPENDENCY_CONFIG: ResolvedHMRDependencyConfig = {
 	bridgeModules: DEFAULT_BRIDGE_MODULES,
-	runnerExternal: DEFAULT_RUNNER_EXTERNAL,
 	ssrExternal: DEFAULT_SSR_EXTERNAL,
 	ssrNoExternal: DEFAULT_SSR_NO_EXTERNAL,
+	cjsExternal: DEFAULT_CJS_EXTERNAL,
 	optimizeDepsInclude: DEFAULT_OPTIMIZE_DEPS_INCLUDE,
 	optimizeDepsInterop: DEFAULT_OPTIMIZE_DEPS_INTEROP,
 }
@@ -66,9 +89,9 @@ export function resolveHMRDependencyConfig(
 
 	return {
 		bridgeModules: overrides.bridgeModules ?? DEFAULT_BRIDGE_MODULES,
-		runnerExternal: overrides.runnerExternal ?? DEFAULT_RUNNER_EXTERNAL,
 		ssrExternal: overrides.ssrExternal ?? DEFAULT_SSR_EXTERNAL,
 		ssrNoExternal: overrides.ssrNoExternal ?? DEFAULT_SSR_NO_EXTERNAL,
+		cjsExternal: overrides.cjsExternal ?? DEFAULT_CJS_EXTERNAL,
 		optimizeDepsInclude: overrides.optimizeDepsInclude ?? DEFAULT_OPTIMIZE_DEPS_INCLUDE,
 		optimizeDepsInterop: overrides.optimizeDepsInterop ?? DEFAULT_OPTIMIZE_DEPS_INTEROP,
 	}
@@ -151,17 +174,16 @@ export function buildHmrViteConfig(opts: HmrViteConfigOptions): InlineConfig {
 		ssr: {
 			noExternal: Array.from(opts.deps.ssrNoExternal),
 			external: Array.from(opts.deps.ssrExternal),
+			// Make CJS-only dependencies safer to consume from TS/ESM plugin sources:
+			// Vite can pre-bundle & interop CJS deps for SSR when they are not externalized.
+			// (externalized deps are handled by Vite/Node runtime, including require-only exports in many cases.)
+			optimizeDeps: {
+				include: Array.from(opts.deps.optimizeDepsInclude),
+				needsInterop: Array.from(opts.deps.optimizeDepsInterop),
+			},
 			resolve: {
 				conditions,
 			},
 		},
 	}
 }
-
-import { configSourcePlugin, importTypeFixerPlugin } from '@pluxel/rolldown'
-import type { InlineConfig, Plugin } from 'vite'
-import { normalizePath, searchForWorkspaceRoot } from 'vite'
-import { existsSync } from 'node:fs'
-import { resolve } from 'pathe'
-import { findNearestPackageRoot } from './internals'
-import tsconfigPaths from 'vite-tsconfig-paths'
