@@ -1,0 +1,64 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    paths-ignore:
+      - ".vscode/**"
+      - "LICENSE"
+      - "README.md"
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pull-requests: read
+
+defaults:
+  run:
+    shell: bash
+
+env:
+  CI: "true"
+
+jobs:
+  test:
+    name: Tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Prepare git
+        run: git config --global core.autocrlf false
+
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup toolchain
+        uses: ./.github/actions/setup-toolchain
+
+      - name: Determine test scope
+        id: scope
+        env:
+          DEFAULT_BASE: main
+          PR_BASE_REF: ${{ github.base_ref || '' }}
+        run: bash ./.github/scripts/determine-test-scope.sh
+
+      - name: Run tests
+        env:
+          MODE: ${{ steps.scope.outputs.mode }}
+          FILTER_REF: ${{ steps.scope.outputs.filter_ref }}
+        run: |
+          set -euo pipefail
+          if [ "${MODE:-full}" = "affected" ] && [ -n "${FILTER_REF:-}" ]; then
+            echo "Running affected tests against ${FILTER_REF}"
+            pnpm -w turbo run test "--filter=...[${FILTER_REF}]"
+          else
+            echo "Running full test suite"
+            pnpm -w turbo run test
+          fi
