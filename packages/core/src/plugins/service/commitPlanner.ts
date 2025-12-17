@@ -28,7 +28,12 @@ export function computeInitPlan(
 
 	for (const [id, plugin] of plugins) {
 		const raw = (plugin.dependencies ?? []) as PluginIdentifier[]
-		const deps = raw.length ? raw.map(resolve) : raw
+		let deps = raw
+		if (raw.length) {
+			const next = new Array<PluginIdentifier>(raw.length)
+			for (let i = 0; i < raw.length; i++) next[i] = resolve(raw[i])
+			deps = next
+		}
 		dependencies.set(id, deps)
 		for (const dep of deps) {
 			if (!inDegree.has(dep)) continue

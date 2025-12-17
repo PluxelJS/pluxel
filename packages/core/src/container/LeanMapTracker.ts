@@ -16,8 +16,8 @@ export class LeanMapTracker<K, V> extends Map<K, V> {
 	}
 
 	override set(key: K, value: V): this {
-		const has = this.has(key)
-		const oldValue = this.get(key)
+		const has = super.has(key)
+		const oldValue = has ? super.get(key) : undefined
 		const op: Op<K, V> = {
 			type: has ? 'replace' : 'add',
 			key,
@@ -31,8 +31,8 @@ export class LeanMapTracker<K, V> extends Map<K, V> {
 	}
 
 	override delete(key: K): boolean {
-		if (!this.has(key)) return false
-		const oldValue = this.get(key)!
+		if (!super.has(key)) return false
+		const oldValue = super.get(key)!
 		// 先记录，再删
 		const op: Op<K, V> = { type: 'remove', key, oldValue }
 		super.delete(key)
