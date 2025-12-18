@@ -32,7 +32,7 @@ Use `hmrService.deps.cjsExternal` to mark CommonJS-only packages:
 - Exact match: `cjs-pkg`
 - Prefix match: `pluxel-plugin-napi-rs/*` matches `pluxel-plugin-napi-rs/canvas`, `.../pinyin`, etc.
 
-Default value: `['pluxel-plugin-napi-rs/*']` (see `config.ts`).
+Default value: `['pluxel-plugin-napi-rs/*', '@napi-rs/*']` (see `config.ts`).
 
 ### Runtime behavior
 
@@ -58,6 +58,16 @@ This forces the runner to execute it through the host CJS loader and also avoids
 
 `deps.bridgeModules` lists specifiers that must share **singletons** between the host process and the runner (DI tokens, decorators, base classes).
 
+### Required bridge modules
+
+Some core runtime packages are **always** bridged and cannot be disabled via config:
+
+- `@pluxel/core` (and `@pluxel/core/*`)
+- `@pluxel/context` (and `@pluxel/context/*`)
+- `@pluxel/hmr` (and `@pluxel/hmr/*`)
+
+User config can only append extra bridge modules via `deps.bridgeModules`.
+
 Implementation notes:
 
 - `HmrRunner.bridgeHostModules()` imports these specifiers via native Node import and primes `evaluatedModules` so subsequent runner imports reuse the same exports.
@@ -74,4 +84,3 @@ Implementation notes:
 - `runtime-shims.ts`: runtime shims (e.g. `reflect-metadata`) + scoped `require` shims for those shims.
 - `logging.ts`: debug namespaces + timing attribution helpers.
 - `internals.ts`: small utilities (debouncer/timer/etc).
-

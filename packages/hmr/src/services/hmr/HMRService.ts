@@ -11,7 +11,7 @@ import {
 	resolveHMRDependencyConfig,
 } from './config'
 import { HmrEnvironment, type HmrPathApi, type HmrToolkit } from './environment'
-import { BatchDebouncer, findNearestPackageRoot, startTimer } from './internals'
+import { BatchDebouncer, findNearestPackageRoot, matchesSpecifierPattern, startTimer } from './internals'
 import {
 	createHmrDebug,
 	formatAttributionReport,
@@ -229,18 +229,23 @@ export class HMRService {
 			enforce: 'pre',
 			apply: 'serve',
 
-			configureServer: async (server) => {
-				this.vite = server
+				configureServer: async (server) => {
+					this.vite = server
 					this.setServerRoot(server.config.root)
 
-					this.runner.init(server, { cjsExternal: this.deps.cjsExternal, skipPlugin: this.plugin })
+					this.runner.init(server, {
+						cjsExternal: this.deps.cjsExternal,
+						bridgeModules: this.deps.bridgeModules,
+						skipPlugin: this.plugin,
+					})
 					this.ssrEnv = this.runner.env
 
 					await this.runner.bridgeHostModules(this.deps.bridgeModules, this.path, this.ctx.logger as any)
+					await this.runner.assertBridgedSingletons(this.deps.bridgeModules)
 
-				this.executor = new HmrExecutor(
-					this.ctx,
-					this.runner,
+					this.executor = new HmrExecutor(
+						this.ctx,
+						this.runner,
 					this.path,
 					this.timing,
 					{
@@ -285,16 +290,13 @@ export class HMRService {
 				const shimResolved = service.runtimeShims.resolveId(id)
 				if (shimResolved) return shimResolved
 
-				// CJS-only deps (especially native wrappers like @napi-rs/*) must not be inlined and executed as ESM,
-				// otherwise they crash with "require is not defined".
-				if (service.isBareImport(id) && !service.isBridgeModule(id) && service.isCjsExternalSpecifier(id)) {
-					// IMPORTANT: keep the specifier bare.
-					// The module runner will externalize bare imports (and run CJS via Node/require),
-					// but once we resolve it to a file path Vite will inline/evaluate it as ESM and crash.
-					return { id, external: true }
-				}
-
 				if (service.ctx.scanService) {
+					// Never let workspace resolution rewrite bridged singleton modules, otherwise we may end up
+					// evaluating a second copy (e.g. workspace TS sources) in the runner.
+					if (service.isHardBridgeModule(id) || service.isBridgeModule(id)) {
+						return null
+					}
+
 					const resolved = await service.resolveBareWorkspaceEntry(id, importer ?? null)
 					if (resolved) return { id: resolved }
 				}
@@ -389,28 +391,17 @@ export class HMRService {
 	}
 
 	private isBridgeModule(specifier: string) {
-		return this.deps.bridgeModules.includes(specifier)
-	}
-
-	private isCjsExternalSpecifier(specifier: string) {
-		for (const pattern of this.deps.cjsExternal) {
+		for (const pattern of this.deps.bridgeModules) {
 			if (matchesSpecifierPattern(specifier, pattern)) return true
 		}
 		return false
 	}
 
-	private isBareImport(id: string) {
-		if (!id) return false
-		if (id.startsWith('.') || id.startsWith('/') || id.startsWith('\0')) return false
-		return true
+	private isHardBridgeModule(specifier: string) {
+		if (specifier === '@pluxel/core' || specifier.startsWith('@pluxel/core/')) return true
+		if (specifier === '@pluxel/hmr' || specifier.startsWith('@pluxel/hmr/')) return true
+		if (specifier === '@pluxel/context' || specifier.startsWith('@pluxel/context/')) return true
+		return false
 	}
-}
 
-function matchesSpecifierPattern(specifier: string, pattern: string) {
-	if (!pattern) return false
-	if (pattern.endsWith('/*')) {
-		const prefix = pattern.slice(0, -1) // keep trailing slash
-		return specifier.startsWith(prefix)
-	}
-	return specifier === pattern
 }

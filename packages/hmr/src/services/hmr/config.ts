@@ -37,9 +37,17 @@ export interface ResolvedHMRDependencyConfig {
 	optimizeDepsInterop: readonly string[]
 }
 
-const DEFAULT_BRIDGE_MODULES = [
+/**
+ * Modules that are required to be singletons between the host process and the runner.
+ *
+ * NOTE:
+ * These are intentionally NOT removable via user config. Users may only append additional bridge
+ * modules for their own runtime singletons.
+ */
+const REQUIRED_BRIDGE_MODULES = [
 	'@pluxel/core',
 	'@pluxel/core/services',
+	'@pluxel/context',
 	'@pluxel/hmr',
 	'@pluxel/hmr/services',
 	'@pluxel/hmr/config',
@@ -59,7 +67,7 @@ const DEFAULT_SSR_NO_EXTERNAL_BASE = ['react', 'react-dom'] as const
 const DEFAULT_SSR_EXTERNAL: readonly string[] = []
 const DEFAULT_SSR_NO_EXTERNAL = [
 	...DEFAULT_SSR_NO_EXTERNAL_BASE,
-	...DEFAULT_BRIDGE_MODULES,
+	...REQUIRED_BRIDGE_MODULES,
 ] as const
 const DEFAULT_CJS_EXTERNAL = ['pluxel-plugin-napi-rs/*', '@napi-rs/*'] as const
 const DEFAULT_OPTIMIZE_DEPS_INCLUDE = [
@@ -74,7 +82,7 @@ export const BASE_HMR_RESOLVE_CONDITIONS = ['@pluxel/hmr', '@pluxel/source', 'so
 const DEFAULT_RESOLVE_CONDITIONS = ['module', 'browser', 'development', 'production', 'default']
 
 export const DEFAULT_HMR_DEPENDENCY_CONFIG: ResolvedHMRDependencyConfig = {
-	bridgeModules: DEFAULT_BRIDGE_MODULES,
+	bridgeModules: REQUIRED_BRIDGE_MODULES,
 	ssrExternal: DEFAULT_SSR_EXTERNAL,
 	ssrNoExternal: DEFAULT_SSR_NO_EXTERNAL,
 	cjsExternal: DEFAULT_CJS_EXTERNAL,
@@ -82,13 +90,16 @@ export const DEFAULT_HMR_DEPENDENCY_CONFIG: ResolvedHMRDependencyConfig = {
 	optimizeDepsInterop: DEFAULT_OPTIMIZE_DEPS_INTEROP,
 }
 
+const mergeRequired = (required: readonly string[], extra?: readonly string[]) =>
+	extra ? [...new Set([...required, ...extra])] : [...required]
+
 export function resolveHMRDependencyConfig(
 	overrides?: HMRDependencyConfig,
 ): ResolvedHMRDependencyConfig {
 	if (!overrides) return DEFAULT_HMR_DEPENDENCY_CONFIG
 
 	return {
-		bridgeModules: overrides.bridgeModules ?? DEFAULT_BRIDGE_MODULES,
+		bridgeModules: mergeRequired(REQUIRED_BRIDGE_MODULES, overrides.bridgeModules),
 		ssrExternal: overrides.ssrExternal ?? DEFAULT_SSR_EXTERNAL,
 		ssrNoExternal: overrides.ssrNoExternal ?? DEFAULT_SSR_NO_EXTERNAL,
 		cjsExternal: overrides.cjsExternal ?? DEFAULT_CJS_EXTERNAL,

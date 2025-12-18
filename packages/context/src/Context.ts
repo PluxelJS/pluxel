@@ -169,6 +169,26 @@ export class Context {
 	}
 }
 
+const CONTEXT_IMPL = Symbol.for('pluxel:context:impl')
+const existingContextImpl = (globalThis as any)[CONTEXT_IMPL] as typeof Context | undefined
+if (existingContextImpl && existingContextImpl !== Context) {
+	throw new Error(
+		[
+			'[pluxel/context] Multiple Context implementations detected in the same runtime.',
+			'This indicates that more than one copy of @pluxel/context was evaluated (e.g. via HMR runner/workspace resolution).',
+			'Fix your module resolution to guarantee a single implementation.',
+		].join('\n'),
+	)
+}
+if (!existingContextImpl) {
+	Object.defineProperty(globalThis, CONTEXT_IMPL, {
+		value: Context,
+		configurable: false,
+		enumerable: false,
+		writable: false,
+	})
+}
+
 export namespace Context {
 	type Fn = (...args: any[]) => any
 	type MethodKeys<T> = {

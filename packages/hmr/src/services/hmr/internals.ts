@@ -23,6 +23,15 @@ export const startTimer = () => {
 	return () => nsToMs(process.hrtime.bigint() - t0)
 }
 
+export function matchesSpecifierPattern(specifier: string, pattern: string) {
+	if (!pattern) return false
+	if (pattern.endsWith('/*')) {
+		const prefix = pattern.slice(0, -1) // keep trailing slash
+		return specifier.startsWith(prefix)
+	}
+	return specifier === pattern
+}
+
 type BatchDebounceReason = 'debounce' | 'maxwait' | 'maxbatch'
 const defaultBatchDebounceErrorHandler = (error: unknown) => {
 	console.error('[BatchDebouncer] flush failed', error)
