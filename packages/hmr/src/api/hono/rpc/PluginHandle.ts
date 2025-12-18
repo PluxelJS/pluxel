@@ -592,7 +592,10 @@ export class PluginHandle extends RpcTarget {
 	async config(): Promise<ConfigResultOk> {
 		const schema = this.#ctx.loader.getPluginSchema(this.resolveCtor())
 		const defaults = await collectDefaults(schema)
-		const config = this.#ctx.configService.getConfig(this.name)
+		const rawConfig = this.#ctx.configService.getConfig(this.name)
+		// ConfigService 内部为了安全会使用 null-prototype 的 record（Object.create(null)）。
+		// capnweb RPC pass-by-value 对象要求 prototype === Object.prototype，因此这里做一次浅拷贝“正则化”。
+		const config = Object.assign({}, rawConfig as Record<string, unknown>)
 		return { ok: true, saved: false, config, defaults }
 	}
 
@@ -660,7 +663,12 @@ export class PluginHandle extends RpcTarget {
 			}
 
 			const config = this.#ctx.configService.getConfig(this.name)
-			return { ok: true, saved: true, config, defaults }
+			return {
+				ok: true,
+				saved: true,
+				config: Object.assign({}, config as Record<string, unknown>),
+				defaults,
+			}
 		}
 
 	async resetConfig(keys?: string[]): Promise<ConfigResult> {
@@ -699,6 +707,11 @@ export class PluginHandle extends RpcTarget {
 
 		this.#ctx.configService.patchConfig(this.name, validation.output)
 		const config = this.#ctx.configService.getConfig(this.name)
-		return { ok: true, saved: true, config, defaults }
+		return {
+			ok: true,
+			saved: true,
+			config: Object.assign({}, config as Record<string, unknown>),
+			defaults,
+		}
 	}
 }

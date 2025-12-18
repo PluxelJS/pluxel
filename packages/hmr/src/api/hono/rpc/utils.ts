@@ -8,17 +8,7 @@ function hasAsyncSchema(schemaMap: ConfigSchemaMap): boolean {
 	return Object.values(schemaMap).some((s) => s.async)
 }
 
-/** 安全序列化值（过滤不可序列化内容） */
-function safeSerialize(value: unknown): unknown {
-	if (value === undefined || value === null) return undefined
-	try {
-		return JSON.parse(JSON.stringify(value))
-	} catch {
-		return undefined
-	}
-}
-
-/** 收集 schema 的默认值（确保返回 JSON 可序列化的值） */
+/** 收集 schema 的默认值 */
 export async function collectDefaults(
 	schemaMap?: ConfigSchemaMap,
 ): Promise<Record<string, unknown>> {
@@ -30,8 +20,7 @@ export async function collectDefaults(
 	if (!hasAsyncSchema(schemaMap)) {
 		const defaults: Record<string, unknown> = {}
 		for (const [key, schema] of entries) {
-			const value = safeSerialize(v.getDefaults(schema as any))
-			if (value !== undefined) defaults[key] = value
+			defaults[key] = v.getDefaults(schema as any)
 		}
 		return defaults
 	}
@@ -42,10 +31,10 @@ export async function collectDefaults(
 			const raw = schema.async
 				? await v.getDefaultsAsync(schema as any)
 				: v.getDefaults(schema as any)
-			return [key, safeSerialize(raw)] as const
+			return [key, raw] as const
 		}),
 	)
-	return Object.fromEntries(results.filter(([, v]) => v !== undefined))
+	return Object.fromEntries(results)
 }
 
 /** 解析单个 schema 的验证结果 */

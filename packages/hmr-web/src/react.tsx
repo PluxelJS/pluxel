@@ -113,13 +113,20 @@ export function useSseClient(options?: UseSseClientOptions): SseClientWithNamesp
 	}, [autoPauseOnHidden, useShared])
 
 	const optionsKey = useMemo(
-		() =>
-			JSON.stringify({
+		() => {
+			const keyPayload = {
 				url: options?.url,
 				namespaces: options?.namespaces ?? [],
 				params: options?.params ?? {},
 				retry: options?.retry ?? {},
-			}),
+			}
+			try {
+				return JSON.stringify(keyPayload)
+			} catch {
+				// 避免非 JSON-safe 的 params/retry 导致 hook 直接崩溃；降级为弱键会触发更频繁的重连，但比崩溃更可控。
+				return `__nonserializable_options__:${keyPayload.url ?? ''}:${keyPayload.namespaces.join(',')}`
+			}
+		},
 		[options],
 	)
 
