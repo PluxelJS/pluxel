@@ -68,7 +68,6 @@ export type TestHost = {
 	setConfig: (
 		target: PluginConstructor | string,
 		configRecord: Record<string, unknown>,
-		meta?: Record<string, unknown>,
 	) => void
 	enablePlugins: (...names: string[]) => void
 	disablePlugins: (...names: string[]) => void
@@ -185,9 +184,9 @@ export function createTestHost(config: Context.Config = {}): TestHost {
 		get,
 		getOrThrow,
 		config: configService,
-		setConfig: (target, configRecord, meta = {}) => {
+		setConfig: (target, configRecord) => {
 			const name = typeof target === 'string' ? target : getPluginInfo(target).id
-			configService.patchConfigSnapshot(name, { meta, configRecord })
+			configService.patchConfig(name, configRecord)
 		},
 		enablePlugins: (...names) => configService.enableInConfig(...names),
 		disablePlugins: (...names) => configService.disableInConfig(...names),

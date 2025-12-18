@@ -64,7 +64,9 @@ jobs:
       - name: Prepare baseline report
         run: |
           mkdir -p packages/core/benchmarks
-          if [ -f packages/core/benchmarks/baseline/plugin-lifecycle.json ]; then
+          if [ -f packages/core/benchmarks/baseline/plugin-lifecycle.baseline.json ]; then
+            cp packages/core/benchmarks/baseline/plugin-lifecycle.baseline.json packages/core/benchmarks/baseline.json
+          elif [ -f packages/core/benchmarks/baseline/plugin-lifecycle.json ]; then
             cp packages/core/benchmarks/baseline/plugin-lifecycle.json packages/core/benchmarks/baseline.json
           else
             echo '{}' > packages/core/benchmarks/baseline.json
@@ -75,7 +77,8 @@ jobs:
           PLUXEL_BENCH_BASELINE: packages/core/benchmarks/baseline.json
           PLUXEL_BENCH_TOLERANCE: ${{ env.BENCH_TOLERANCE }}
           PLUXEL_BENCH_STRICT: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.fail_on_regression == 'true' && '1' || '0' }}
-        run: pnpm --filter @pluxel/core bench
+          PLUXEL_BENCH_WRITE_BASELINE: ${{ github.ref_name == github.event.repository.default_branch && '1' || '0' }}
+        run: pnpm --filter @pluxel/core bench:dist
 
       - name: Upload benchmark artifacts
         uses: actions/upload-artifact@v4
@@ -92,7 +95,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: core-bench-baseline
-          path: packages/core/benchmarks/plugin-lifecycle.json
+          path: |
+            packages/core/benchmarks/plugin-lifecycle.json
+            packages/core/benchmarks/plugin-lifecycle.baseline.json
           if-no-files-found: error
 
 

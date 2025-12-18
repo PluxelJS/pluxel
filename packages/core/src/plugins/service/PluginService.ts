@@ -141,10 +141,13 @@ export class PluginService {
 
 		const id = info.id
 
-		const record = pluginCtx.configService.getConfigSnapshot(id)?.configRecord ?? {}
+		const record = pluginCtx.configService.getConfig(id)
+		const pluginAny = plugin as any
+		const recordAny = record as any
 
-		for (const key of Object.keys(schemaMap)) {
-			;(plugin as any)[key] = (record as any)[key]
+		for (const key in schemaMap) {
+			if (!Object.prototype.hasOwnProperty.call(schemaMap, key)) continue
+			pluginAny[key] = recordAny[key]
 		}
 	}
 
@@ -347,11 +350,10 @@ export class PluginService {
 
 	/* ─────────────────────────── Commit Internals ─────────────────────────── */
 
-	private async stopPlugin(id: PluginIdentifier, pluginOrUndefined?: BasePlugin): Promise<void> {
-		const plugin =
-			pluginOrUndefined ??
-			(this.builderSingletons.get(id as any) as BasePlugin | undefined) ??
-			this.container?.get(id)
+	private async stopPlugin(id: PluginIdentifier): Promise<void> {
+		// Important: don't call container.get() here; it may instantiate plugins just to stop them.
+		// Only stop plugins that were actually constructed (and thus may be running).
+		const plugin = this.builderSingletons.get(id as any) as BasePlugin | undefined
 		if (!plugin) return
 		await this.lifecycle.stopLifecycle(id, plugin)
 	}
@@ -363,8 +365,7 @@ export class PluginService {
 		if (!container || toStop.size === 0) return
 		const order = planTeardown(container.dependents, toStop)
 		for (const id of order) {
-			const instance = container.get(id)
-			if (instance) await this.stopPlugin(id, instance)
+			await this.stopPlugin(id)
 		}
 	}
 
@@ -423,20 +424,36 @@ export class PluginService {
 		const { dependencies } = plan
 
 		for (const batch of plan.batches) {
-			const tasks: Promise<void>[] = []
+			let single: Promise<void> | undefined
+			let tasks: Promise<void>[] | undefined
 			for (const id of batch) {
 				if (failed.has(id)) continue
 
-				const deps = dependencies.get(id) ?? []
-				if (deps.some((dep) => failed.has(dep))) {
-					failed.add(id)
-					continue
+				const deps = dependencies.get(id)
+				if (deps && deps.length) {
+					let blocked = false
+					for (let i = 0; i < deps.length; i++) {
+						if (failed.has(deps[i])) {
+							blocked = true
+							break
+						}
+					}
+					if (blocked) {
+						failed.add(id)
+						continue
+					}
 				}
 
-				tasks.push(this.instantiateAndStart(container, id, failed))
+				const p = this.instantiateAndStart(container, id, failed)
+				if (!single) single = p
+				else {
+					tasks ??= [single]
+					tasks.push(p)
+				}
 			}
 
-			if (tasks.length) await Promise.all(tasks)
+			if (tasks) await Promise.all(tasks)
+			else if (single) await single
 		}
 
 		return failed
@@ -487,8 +504,15 @@ export class PluginService {
 				if (container.services.has(startKey as any)) restartStart.add(startKey)
 			}
 
-			const toStop = new Set<PluginIdentifier>([...removed, ...replaced, ...restartStop])
-			const toStart = new Set<PluginIdentifier>([...added, ...replaced, ...restartStart])
+			const toStop = new Set<PluginIdentifier>()
+			for (const id of removed) toStop.add(id)
+			for (const id of replaced) toStop.add(id)
+			for (const id of restartStop) toStop.add(id)
+
+			const toStart = new Set<PluginIdentifier>()
+			for (const id of added) toStart.add(id)
+			for (const id of replaced) toStart.add(id)
+			for (const id of restartStart) toStart.add(id)
 
 			// Retry previously failed plugins opportunistically on any commit.
 			for (const id of this._pendingStart) {
@@ -526,7 +550,8 @@ export class PluginService {
 
 			// Ensure fresh instances for restarts/replacements.
 			for (const id of toStop) this.builderSingletons.delete(id as any)
-			for (const id of [...replaced, ...restartStart]) this.builderSingletons.delete(id as any)
+			for (const id of replaced) this.builderSingletons.delete(id as any)
+			for (const id of restartStart) this.builderSingletons.delete(id as any)
 
 			const toInitMap: ServiceMap<BasePlugin> = new Map()
 			if (toStart.size) {

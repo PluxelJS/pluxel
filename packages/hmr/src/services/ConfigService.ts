@@ -7,32 +7,23 @@ import { debounce } from '@tanstack/pacer'
 import chokidar, { type FSWatcher } from 'chokidar'
 import { SuperJSON } from 'superjson'
 
-// —— 1. Metadata ——
-// 建议导出名用 PascalCase：与 TS 社区习惯一致
-export interface PluginInfo {
-	dir?: string
-	version?: string
-	[key: string]: unknown
-}
-
-// —— 2. 插件条目 ——
-// configRecord 约束为“可序列化对象”，你也可引入 Valibot 校验
-export interface PluginEntry<T extends object = Record<string, unknown>> {
-	meta: PluginInfo
-	configRecord: T
-}
-
 // —— 3. 全局配置 ——
 export interface ConfigShape {
 	enabled: Set<string>
-	plugins: Record<string, PluginEntry>
+	plugins: Record<string, Record<string, unknown>>
 	extra: Record<string, unknown>
 }
 
 @Injectable
 @OverrideOf(CoreConfigService)
 export class ConfigService {
-	private data: ConfigShape = { enabled: new Set(), plugins: {}, extra: {} }
+	private static readonly EMPTY_CONFIG: Readonly<Record<string, unknown>> = Object.freeze(Object.create(null))
+
+	private readonly data: ConfigShape = {
+		enabled: new Set(),
+		plugins: Object.create(null),
+		extra: Object.create(null),
+	}
 	private watcher!: FSWatcher
 	private saveDebounced: () => void
 
@@ -69,20 +60,24 @@ export class ConfigService {
 
 			const parsed = SuperJSON.parse(txt) as Partial<ConfigShape> & { enabled?: unknown }
 
-			this.data = {
-				enabled: new Set(
-					Array.isArray(parsed.enabled)
-						? (parsed.enabled as string[])
-						: parsed?.enabled instanceof Set
-							? Array.from(parsed.enabled as Set<string>)
-							: [],
-				),
-				plugins: parsed.plugins ?? {},
-				extra: parsed.extra ?? {},
-			}
+			this.data.enabled.clear()
+			const enabledList = Array.isArray(parsed.enabled)
+				? (parsed.enabled as string[])
+				: parsed?.enabled instanceof Set
+					? Array.from(parsed.enabled as Set<string>)
+					: []
+			for (let i = 0; i < enabledList.length; i++) this.data.enabled.add(enabledList[i])
+
+			clearRecord(this.data.plugins)
+			if (parsed.plugins) Object.assign(this.data.plugins, coercePlugins(parsed.plugins))
+
+			clearRecord(this.data.extra)
+			if (parsed.extra) Object.assign(this.data.extra, parsed.extra)
 		} catch {
 			// 首次无文件：落一个干净默认
-			this.data = { enabled: new Set(), plugins: {}, extra: {} }
+			this.data.enabled.clear()
+			clearRecord(this.data.plugins)
+			clearRecord(this.data.extra)
 			await this.saveToDisk(file)
 		}
 	}
@@ -129,13 +124,8 @@ export class ConfigService {
 	/**
 	 * 读取某插件的配置（不存在时返回只读“空视图”，避免误改未落盘）
 	 */
-	getConfigSnapshot<T extends object = Record<string, unknown>>(
-		name: string = this.ctx.pluginInfo.id,
-	): Readonly<PluginEntry<T>> {
-		const entry = this.data.plugins[name]
-		if (entry) return entry as PluginEntry<T>
-		// 返回稳定的空视图对象（不要 new 一个再缓存，避免调用方“改了却没写回”的假象）
-		return { meta: {}, configRecord: {} } as const as Readonly<PluginEntry<T>>
+	getConfig<T extends object = Record<string, unknown>>(name: string = this.ctx.pluginInfo.id): Readonly<T> {
+		return (this.data.plugins[name] as T | undefined) ?? (ConfigService.EMPTY_CONFIG as T)
 	}
 
 	getExtra<T = unknown>(key: string): T | undefined {
@@ -164,13 +154,9 @@ export class ConfigService {
 	/**
 	 * 设置 / 覆盖配置条目（存在则浅合并）
 	 */
-	patchConfigSnapshot<T extends object = Record<string, unknown>>(
-		name: string,
-		partial: Partial<PluginEntry<T>>,
-	) {
-		const entry = (this.data.plugins[name] ??= { meta: {}, configRecord: {} })
-		if (partial.meta) Object.assign(entry.meta, partial.meta)
-		if (partial.configRecord) Object.assign(entry.configRecord, partial.configRecord)
+	patchConfig<T extends object = Record<string, unknown>>(name: string, partial: Partial<T>) {
+		const entry = (this.data.plugins[name] ??= Object.create(null))
+		Object.assign(entry, partial)
 		this.saveDebounced()
 	}
 
@@ -217,4 +203,23 @@ declare module '@pluxel/core' {
 	interface Context {
 		configService: ConfigService
 	}
+}
+
+function clearRecord(record: Record<string, unknown>) {
+	for (const k in record) delete record[k]
+}
+
+function coercePlugins(input: Record<string, unknown>): Record<string, Record<string, unknown>> {
+	const out: Record<string, Record<string, unknown>> = Object.create(null)
+	for (const [name, raw] of Object.entries(input)) {
+		if (!raw || typeof raw !== 'object' || Array.isArray(raw)) continue
+		const maybe = raw as any
+		const record = maybe?.configRecord
+		if (record && typeof record === 'object' && !Array.isArray(record)) {
+			out[name] = record as Record<string, unknown>
+		} else {
+			out[name] = raw as Record<string, unknown>
+		}
+	}
+	return out
 }

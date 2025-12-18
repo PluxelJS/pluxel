@@ -93,7 +93,7 @@ export function buildSnapshot({ ctx, registry, isRunning }: SnapshotDeps): strin
 	}
 
 	const entries: [string, string][] = rows.map((r) => {
-		const { configRecord } = ctx.configService.getConfigSnapshot(r.name)
+		const configRecord = ctx.configService.getConfig(r.name)
 		const cfg = genObjectFromValues(stripUndef(configRecord))
 		const valCode = `{ ctor: ${r.alias}, config: ${cfg} }`
 		return [r.name, valCode]

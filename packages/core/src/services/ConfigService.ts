@@ -1,9 +1,6 @@
 import { type Context, Injectable } from '@pluxel/context'
 
-export type PluginConfigSnapshot = {
-	meta: Record<string, unknown>
-	configRecord: Record<string, unknown>
-}
+const EMPTY_CONFIG: Readonly<Record<string, unknown>> = Object.freeze(Object.create(null))
 
 const serviceName = 'configService' as const
 declare module '@pluxel/context' {
@@ -25,7 +22,8 @@ declare module '@pluxel/context' {
 @Injectable({ key: serviceName })
 export class ConfigService {
 	private enabledInConfig = new Set<string>()
-	private store = new Map<string, PluginConfigSnapshot>()
+	private store = new Map<string, Record<string, unknown>>()
+	private extra: Record<string, unknown> = Object.create(null)
 
 	isEnabledInConfig(name: string): boolean {
 		return this.enabledInConfig.has(name)
@@ -49,16 +47,25 @@ export class ConfigService {
 		for (const n of names) this.enabledInConfig.add(n)
 	}
 
-	getConfigSnapshot(name: string): PluginConfigSnapshot {
-		return this.store.get(name) ?? { meta: {}, configRecord: {} }
+	getConfig<T extends object = Record<string, unknown>>(name: string): Readonly<T> {
+		return (this.store.get(name) as T | undefined) ?? (EMPTY_CONFIG as T)
 	}
 
-	patchConfigSnapshot(name: string, patch: Partial<PluginConfigSnapshot>) {
-		const prev = this.getConfigSnapshot(name)
-		this.store.set(name, {
-			meta: { ...prev.meta, ...(patch.meta ?? {}) },
-			configRecord: { ...prev.configRecord, ...(patch.configRecord ?? {}) },
-		})
+	patchConfig<T extends object = Record<string, unknown>>(name: string, patch: Partial<T>) {
+		let entry = this.store.get(name)
+		if (!entry) {
+			entry = Object.create(null)
+			this.store.set(name, entry)
+		}
+		Object.assign(entry, patch)
+	}
+
+	getExtra<T = unknown>(key: string): T | undefined {
+		return this.extra[key] as T | undefined
+	}
+
+	setExtra(key: string, value: unknown): void {
+		this.extra[key] = value
 	}
 
 	constructor(_ctx: Context) {}

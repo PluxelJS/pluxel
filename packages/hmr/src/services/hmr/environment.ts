@@ -54,8 +54,7 @@ export class HmrPathResolver {
 
 	prettyId(pOrId: string) {
 		const clean = this.toCleanId(pOrId)
-		if (clean.startsWith(this.cwdNormalized))
-			return clean.slice(this.cwdNormalized.length).replace(/^\\\//, '')
+		if (clean.startsWith(this.cwdNormalized)) return clean.slice(this.cwdNormalized.length).replace(/^\/+/, '')
 		return clean
 	}
 
@@ -115,7 +114,6 @@ export interface HmrPathApi {
 export interface HmrToolkit {
 	path: HmrPathApi
 	pathFilter: (id: string) => boolean
-	resolveBareModule: (specifier: string, importer?: string | null) => Promise<string | null>
 }
 
 const DRIVE_PATH_RE = /^[a-zA-Z]:[\\/]/
@@ -152,7 +150,6 @@ export class HmrEnvironment {
 				variants: (id: string) => this.paths.moduleIdVariants(id),
 			},
 			pathFilter: (id) => this.pathFilter(id),
-			resolveBareModule: (specifier, importer) => this.resolveBareModule(specifier, importer),
 		}
 	}
 
@@ -180,22 +177,11 @@ export class HmrEnvironment {
 		const includeGlobs = makeIdFiltersToMatchWithQuery(
 			this.scanRootsAbs.flatMap((dir) => [`${dir}/**/*.ts`]),
 		)
-		const excludePatterns = this.scanRootsAbs.flatMap((dir) => [
-			`${dir}/**/*.d.ts`,
-			`${dir}/**/*.tsx`,
-			`${dir}/**/node_modules/**`,
-		])
+		const excludePatterns = this.scanRootsAbs.flatMap((dir) => [`${dir}/**/*.d.ts`, `${dir}/**/node_modules/**`])
 		const excludeGlobs = makeIdFiltersToMatchWithQuery([...excludePatterns, '**/node_modules/**'])
 		const baseFilter = createFilter(includeGlobs, excludeGlobs)
 
-		return (raw: string) => {
-			const id = this.paths.toCleanId(raw)
-			const anchorSet = new Set<string>()
-			for (const a of this.ctx.loader.pathAnchors ?? []) anchorSet.add(this.paths.toCleanId(a))
-			if (anchorSet.has(id)) return true
-			if (id.includes('/node_modules/')) return false
-			return baseFilter(id)
-		}
+		return (cleanId: string) => (cleanId.includes('/node_modules/') ? false : baseFilter(cleanId))
 	}
 
 	private isBareImport(id: string | undefined) {
@@ -205,7 +191,7 @@ export class HmrEnvironment {
 		return true
 	}
 
-	async resolveBareModule(specifier: string, importer?: string | null) {
+	async resolveBareWorkspaceModule(specifier: string, importer?: string | null) {
 		if (!this.isBareImport(specifier)) return null
 		const normalizedImporter = importer ? this.normalizeId(importer) : importer
 		return (
@@ -215,6 +201,7 @@ export class HmrEnvironment {
 				scanService: this.ctx.scanService,
 				conditions: this.workspaceConditions,
 				fallbackBaseDirs: this.paths.computeFallbackResolveDirs(normalizedImporter ?? undefined),
+				workspaceOnly: true,
 			})) ?? null
 		)
 	}

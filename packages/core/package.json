@@ -37,7 +37,8 @@
 		"test": "bun test --conditions=@pluxel/source",
 		"build": "tsdown",
 		"dev": "bun --conditions=@pluxel/source --watch run tests/start.ts",
-		"bench": "bun --conditions=@pluxel/source run tests/bench/pluginLifecycle.bench.ts"
+		"bench": "bun --conditions=@pluxel/source run bench/pluginLifecycle.bench.ts",
+		"bench:dist": "pnpm --filter rolldown build && pnpm run build && bun run --tsconfig-override=\"./bench-tsconfig.json\" bench/pluginLifecycle.bench.ts"
 	},
 	"dependencies": {
 		"eventure": "^0.4.2"

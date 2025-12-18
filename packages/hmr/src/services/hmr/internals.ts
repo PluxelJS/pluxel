@@ -1,7 +1,6 @@
 import { existsSync } from 'node:fs'
 import { dirname, resolve } from 'pathe'
 import { normalizePath } from 'vite'
-import { ModuleCacheMap } from 'vite-node/client'
 
 const nsToMs = (ns: bigint) => Number(ns) / 1e6
 
@@ -24,16 +23,13 @@ export const startTimer = () => {
 	return () => nsToMs(process.hrtime.bigint() - t0)
 }
 
-export class Mutex {
-	private q = Promise.resolve()
-	run<T>(fn: () => Promise<T>): Promise<T> {
-		const next = this.q.then(fn, fn)
-		this.q = next.then(
-			() => {},
-			() => {},
-		)
-		return next
+export function matchesSpecifierPattern(specifier: string, pattern: string) {
+	if (!pattern) return false
+	if (pattern.endsWith('/*')) {
+		const prefix = pattern.slice(0, -1) // keep trailing slash
+		return specifier.startsWith(prefix)
 	}
+	return specifier === pattern
 }
 
 type BatchDebounceReason = 'debounce' | 'maxwait' | 'maxbatch'
@@ -46,6 +42,7 @@ export class BatchDebouncer {
 	private t: NodeJS.Timeout | null = null
 	private tMax: NodeJS.Timeout | null = null
 	private epoch = 0
+	private inFlight: Promise<void> = Promise.resolve()
 	constructor(
 		private flushFn: (files: string[], epoch: number) => Promise<void>,
 		private debounceMs: number,
@@ -65,7 +62,7 @@ export class BatchDebouncer {
 		const files = [...this.pending]
 		this.pending.clear()
 		const epoch = ++this.epoch
-		this.runFlush(files, epoch)
+		this.enqueueFlush(files, epoch)
 	}
 	private clearTimers() {
 		if (this.t) {
@@ -77,21 +74,9 @@ export class BatchDebouncer {
 			this.tMax = null
 		}
 	}
-	private async runFlush(files: string[], epoch: number) {
-		try {
-			await this.flushFn(files, epoch)
-		} catch (error) {
-			this.onError(error)
-		}
-	}
-}
-
-export class NormalizedModuleCacheMap extends ModuleCacheMap {
-	constructor(private readonly normalize: (id: string) => string) {
-		super()
-	}
-
-	override normalizePath(fsPath: string): string {
-		return this.normalize(fsPath)
+	private enqueueFlush(files: string[], epoch: number) {
+		this.inFlight = this.inFlight
+			.then(() => this.flushFn(files, epoch))
+			.catch((error) => this.onError(error))
 	}
 }
