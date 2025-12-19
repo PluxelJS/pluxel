@@ -29,7 +29,7 @@ export function matchesSpecifierPattern(specifier: string, pattern: string) {
 		const prefix = pattern.slice(0, -1) // keep trailing slash
 		return specifier.startsWith(prefix)
 	}
-	return specifier === pattern
+	return specifier === pattern || specifier.startsWith(`${pattern}/`)
 }
 
 type BatchDebounceReason = 'debounce' | 'maxwait' | 'maxbatch'

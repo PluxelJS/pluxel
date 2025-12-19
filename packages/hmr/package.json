@@ -27,14 +27,6 @@
 			"@pluxel/source": "./src/web/signaldb.ts",
 			"default": "./dist/signaldb.mjs"
 		},
-		"./test": {
-			"@pluxel/source": "./src/test/index.ts",
-			"default": "./dist/test.mjs"
-		},
-		"./test/setup": {
-			"@pluxel/source": "./src/test/setup.ts",
-			"default": "./dist/test/setup.mjs"
-		},
 		"./web": {
 			"@pluxel/source": "./src/web/web.ts",
 			"default": "./dist/web.mjs"
@@ -115,8 +107,6 @@
 			"./config": "./dist/config.mjs",
 			"./services": "./dist/services.mjs",
 			"./signaldb": "./dist/signaldb.mjs",
-			"./test": "./dist/test.mjs",
-			"./test/setup": "./dist/test/setup.mjs",
 			"./web": "./dist/web.mjs",
 			"./web/react": "./dist/web/react.mjs",
 			"./package.json": "./package.json"

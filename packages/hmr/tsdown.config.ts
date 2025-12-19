@@ -16,8 +16,6 @@ export default defineConfig({
 	env: {},
 	entry: {
 		index: 'src/index.ts',
-		test: 'src/test/index.ts',
-		'test/setup': 'src/test/setup.ts',
 		services: 'src/services/index.ts',
 		config: 'src/config.ts',
 		web: 'src/web/web.ts',
