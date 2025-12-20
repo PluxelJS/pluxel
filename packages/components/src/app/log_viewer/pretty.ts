@@ -26,6 +26,8 @@ export interface PrettyOptions {
 	extrasMaxLen?: number
 	/** 名称最大长度（方括号段）；默认 40（0=不截断） */
 	nameMax?: number
+	/** 是否显示 name；默认 true */
+	showName?: boolean
 	/** 额外忽略键（在默认忽略集之外） */
 	ignoreKeys?: string[]
 	/** 强制彩色（覆盖自动判断） */
@@ -242,6 +244,7 @@ export function createPrettyPrinter(opts: PrettyOptions = {}): PrettyPrinter {
 		extrasStyle = 'kv',
 		nameMax = 40,
 		extrasMaxLen = 160,
+		showName = true,
 		ignoreKeys = [],
 		forceColor,
 		timeFormatter,
@@ -287,8 +290,10 @@ export function createPrettyPrinter(opts: PrettyOptions = {}): PrettyPrinter {
 		if (!name) name = (obj as any).logger as string | undefined
 		if (!name) name = (obj as any).module as string | undefined
 		if (!name) name = (obj as any).ns as string | undefined
+		if (!name) name = (obj as any).pluginId as string | undefined
 		if (!name) name = (obj as any).context as string | undefined
-		const nameSeg = name ? ' [' + clamp(String(name), nameMax) + ']' : ''
+		const nameSeg =
+			showName && name ? ' [' + clamp(String(name), nameMax) + ']' : ''
 
 		// msg：优先字符串，否则 JSON 压缩
 		let msg = ''

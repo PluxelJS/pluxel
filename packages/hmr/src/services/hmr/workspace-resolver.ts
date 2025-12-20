@@ -27,10 +27,21 @@ export async function resolveBareImport({
 	workspaceOnly = false,
 }: ResolveBareImportArgs): Promise<string | null> {
 	if (!isBareSpecifier(specifier)) return null
+	const normalizedConditions = dedupeStrings(conditions)
 	// 首先尝试通过 workspace 扫描器解析（可返回 TS 源入口）。
 	if (scanService) {
 		try {
-			const resolved = await scanService.resolveEntry({ name: specifier }, { workspaceOnly: true })
+			const preferHmrExports = normalizedConditions.includes('@pluxel/hmr')
+			const resolved = await scanService.resolveEntry(
+				{ name: specifier },
+				{
+					workspaceOnly: true,
+					scan: {
+						conditions: normalizedConditions as string[],
+						...(preferHmrExports ? { preferHmrExports: true } : {}),
+					},
+				},
+			)
 			if (resolved?.ok) {
 				return await canonicalizePath(resolved.entry)
 			}
@@ -42,7 +53,6 @@ export async function resolveBareImport({
 
 	const importerBases = resolveImporterBases(importer)
 	const searchBases = mergeResolutionBases(importerBases, fallbackBaseDirs)
-	const normalizedConditions = dedupeStrings(conditions)
 	for (const base of searchBases) {
 		const resolved = tryResolveWithExsolve(specifier, base, normalizedConditions)
 		if (resolved) return await canonicalizePath(resolved)

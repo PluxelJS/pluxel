@@ -3,21 +3,17 @@ import { LoggerService } from '@pluxel/core/services'
 import type { Bindings, LevelWithSilent, Logger } from 'pino'
 import { createLogger } from './createLogger'
 import {
-	LEVEL_WEIGHTS,
 	type PinoLoggerConfig,
 	type ResolvedPinoLoggerConfig,
 	resolvePinoLoggerConfig,
 } from './pinoLoggerConfig'
+import { formatLogName } from './logName'
 
 export type { PinoLoggerConfig, ResolvedPinoLoggerConfig } from './pinoLoggerConfig'
 export { resolvePinoLoggerConfig } from './pinoLoggerConfig'
 
 const noop = () => undefined
 const noopPino = noop as unknown as Logger['info']
-
-function asPinoFn(fn: (...args: unknown[]) => void): Logger['info'] {
-	return fn as unknown as Logger['info']
-}
 
 /** 向上遍历 context 链查找 pluginInfo.id */
 function findPluginId(ctx: Context): string | undefined {
@@ -33,8 +29,9 @@ function findPluginId(ctx: Context): string | undefined {
 @Injectable
 @OverrideOf(LoggerService)
 export class PinoLoggerService {
-	public readonly logger: Logger
+	private _logger!: Logger
 	private readonly config: ResolvedPinoLoggerConfig
+	private _ctx: Context
 
 	public trace: Logger['trace'] = noopPino
 	public debug: Logger['debug'] = noopPino
@@ -44,19 +41,40 @@ export class PinoLoggerService {
 	public fatal: Logger['fatal'] = noopPino
 
 	constructor(ctx: Context, config: PinoLoggerConfig = {}) {
+		this._ctx = ctx
 		this.config = resolvePinoLoggerConfig(config)
 
-		const bindings: Bindings = {
-			// name 保持当前 context 名称，用于显示
-			name: ctx.name,
-		}
-		// pluginId 用于前端过滤
 		const pluginId = findPluginId(ctx)
-		if (pluginId) {
-			bindings.pluginId = pluginId
+		const name = formatLogName(ctx.name, pluginId)
+		const bindings: Bindings = pluginId
+			? {
+					// name 用于展示/筛选，pluginId/context 便于简单过滤
+					name,
+					pluginId,
+					context: ctx.name,
+				}
+			: {
+					name,
+				}
+		this._logger = deriveScopedLogger(bindings, this.config)
+		this.bindPinoLevels(this._logger)
+	}
+
+	public get logger(): Logger {
+		return this._logger
+	}
+
+	public get ctx(): Context {
+		return this._ctx
+	}
+
+	public set ctx(ctx: Context) {
+		if (this._ctx && ctx !== this._ctx) {
+			throw new Error(
+				'[PinoLoggerService] Logger context was rebound. Use registry.pluginCTXIsolate: [PinoLoggerService] to scope per-plugin instances.',
+			)
 		}
-		this.logger = deriveScopedLogger(bindings, this.config)
-		this.bindPinoLevels(this.logger)
+		this._ctx = ctx
 	}
 
 	private bindPinoLevels(logger: Logger) {

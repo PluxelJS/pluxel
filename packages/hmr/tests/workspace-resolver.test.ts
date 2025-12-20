@@ -34,6 +34,19 @@ describe('workspace resolver', () => {
 		expect(result?.replace(/\\/g, '/')).toMatch(/packages\/wretch\/src\/wretch\.ts$/)
 	})
 
+	it('prefers @pluxel/hmr exports even when default comes first', async () => {
+		const scanService = createScanService()
+		const result = await resolveBareImport({
+			specifier: 'pluxel-plugin-default-first',
+			importer: kookEntry,
+			scanService,
+			conditions: HMR_CONDITIONS,
+			fallbackBaseDirs: [fixtureRoot],
+		})
+
+		expect(result?.replace(/\\/g, '/')).toMatch(/packages\/default-first\/src\/index\.ts$/)
+	})
+
 	it('falls back to installed node_modules when scan service is not provided', async () => {
 		const result = await resolveBareImport({
 			specifier: 'pluxel-plugin-wretch',

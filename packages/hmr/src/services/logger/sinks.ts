@@ -95,7 +95,7 @@ function getPrettyStream(): DestinationStream {
 	if (prettyStream) return prettyStream
 	prettyStream = pinoPretty({
 		colorize: true,
-		ignore: 'pid,hostname',
+		ignore: 'pid,hostname,pluginId,context',
 		translateTime: 'SYS:standard',
 	})
 	return prettyStream

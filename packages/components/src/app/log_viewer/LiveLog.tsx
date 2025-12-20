@@ -6,7 +6,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { sse } from '../rpc'
 import { createPrettyPrinter } from './pretty'
 
-const pretty = createPrettyPrinter({
+const prettyWithName = createPrettyPrinter({
 	forceColor: true,
 	ignoreKeys: ['caller'],
 	withDate: true,
@@ -15,10 +15,12 @@ const pretty = createPrettyPrinter({
 	extrasStyle: 'kv',
 	extrasMaxLen: 120,
 	nameMax: 24,
+	showName: true,
 })
 
 interface Props {
 	module?: string
+	showName?: boolean
 }
 
 const SNAPSHOT_MAX = 1000 // 首屏最多加载多少行历史
@@ -142,7 +144,20 @@ function createRing(cap = 2000) {
 }
 
 /* ================== LiveLog ================== */
-export function LiveLog({ module }: Props) {
+const prettyNoName = createPrettyPrinter({
+	forceColor: true,
+	ignoreKeys: ['caller'],
+	withDate: true,
+	withMillis: true,
+	withIcons: false,
+	extrasStyle: 'kv',
+	extrasMaxLen: 120,
+	nameMax: 24,
+	showName: false,
+})
+
+export function LiveLog({ module, showName = true }: Props) {
+	const pretty = showName ? prettyWithName : prettyNoName
 	const { ref, height, width } = useElementSize()
 	const [text, setText] = useState('')
 
@@ -248,7 +263,7 @@ export function LiveLog({ module }: Props) {
 				rebuildIdleRef.current = null
 			}
 		}
-	}, [cols])
+	}, [cols, showName])
 
 	// —— 快照 + SSE（仅跟随 module 变化；不受 cols 影响） —— //
 	const streamRef = useRef<ReturnType<typeof sse> | null>(null)
@@ -329,7 +344,7 @@ export function LiveLog({ module }: Props) {
 				didInitRef.current = false
 			}
 		}
-	}, [module])
+	}, [module, showName])
 
 	// —— 渲染 —— //
 	const logHeight = useMemo(() => Math.max(120, height || 0), [height])

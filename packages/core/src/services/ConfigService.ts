@@ -47,8 +47,13 @@ export class ConfigService {
 		for (const n of names) this.enabledInConfig.add(n)
 	}
 
-	getConfig<T extends object = Record<string, unknown>>(name: string): Readonly<T> {
-		return (this.store.get(name) as T | undefined) ?? (EMPTY_CONFIG as T)
+	getConfig<T extends object = Record<string, unknown>>(name?: string): Readonly<T> {
+		const resolved =
+			name ??
+			(this.ctx as Context & { pluginInfo?: { id?: string } }).pluginInfo?.id ??
+			''
+		if (!resolved) return EMPTY_CONFIG as T
+		return (this.store.get(resolved) as T | undefined) ?? (EMPTY_CONFIG as T)
 	}
 
 	patchConfig<T extends object = Record<string, unknown>>(name: string, patch: Partial<T>) {
@@ -66,6 +71,13 @@ export class ConfigService {
 
 	setExtra(key: string, value: unknown): void {
 		this.extra[key] = value
+	}
+
+	/**
+	 * 事务批量修改：Core 版为同步合批（与 HMR 版 API 对齐）。
+	 */
+	batch(run: () => void) {
+		run()
 	}
 
 	constructor(_ctx: Context) {}
