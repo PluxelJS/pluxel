@@ -1,6 +1,7 @@
 // src/createLogger.ts
 
 import pino, { type Logger, type LoggerOptions, multistream } from 'pino'
+import { normalizePath, searchForWorkspaceRoot } from 'vite'
 import { withCallerFormatters } from './caller'
 /** ---------- Structured record + store ---------- */
 import { logStore } from './logStore'
@@ -44,6 +45,19 @@ function createPrettyErrorLoggerSink(root: Logger): PrettyErrorSink {
 }
 
 const PRETTY_DUPLEX_ENABLED = (process.env.PLUXEL_LOGGER_PRETTY_DUPLEX ?? '0') !== '0'
+let cachedCallerRoot: string | null | undefined
+
+function resolveCallerRoot() {
+	if (cachedCallerRoot !== undefined) return cachedCallerRoot
+	const envRoot = process.env.PLUXEL_LOGGER_CALLER_ROOT?.trim()
+	if (envRoot) {
+		cachedCallerRoot = normalizePath(envRoot)
+		return cachedCallerRoot
+	}
+	const workspaceRoot = searchForWorkspaceRoot(process.cwd())
+	cachedCallerRoot = normalizePath(workspaceRoot || process.cwd())
+	return cachedCallerRoot
+}
 
 /** ---------- Factory ---------- */
 /**
@@ -68,7 +82,7 @@ export function createLogger(opts: LoggerOptions): Logger {
 	} as LoggerOptions['hooks']
 
 	const formatters = withCallerFormatters(opts.formatters, {
-		relativeTo: process.cwd(),
+		relativeTo: resolveCallerRoot(),
 		stackAdjustment: isBun ? 0 : 1,
 	})
 

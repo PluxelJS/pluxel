@@ -244,13 +244,14 @@ export function makeErrSerializer() {
 		if (!(e instanceof Error)) return toPlain(e)
 		const out: any = pino.stdSerializers.err(e as any)
 		for (const k of Object.keys(e as any)) {
-			if (k in out) continue
 			try {
 				;(out as any)[k] = toPlain((e as any)[k])
 			} catch {
 				/* ignore */
 			}
 		}
+		if (out.errors !== undefined) out.errors = toPlain(out.errors)
+		if (out.aggregateErrors !== undefined) out.aggregateErrors = toPlain(out.aggregateErrors)
 		const c = (e as any).cause
 		if (c instanceof Error) out.cause = visit(c)
 		else if (c !== undefined) out.cause = toPlain(c)

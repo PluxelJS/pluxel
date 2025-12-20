@@ -4,6 +4,12 @@ import type { ParsedError } from 'youch/types'
 const PRETTY_ERRORS_ENABLED =
 	process.env.NODE_ENV !== 'production' &&
 	(process.env.PLUXEL_LOGGER_PRETTY ?? process.env.PLUXEL_YOUCH ?? '1') !== '0'
+const PRETTY_SKIP_COMPILED = (process.env.PLUXEL_LOGGER_PRETTY_SKIP_COMPILED ?? '1') !== '0'
+const COMPILED_PATH_HINTS = (process.env.PLUXEL_LOGGER_PRETTY_COMPILED_HINTS ?? 'dist,build,lib')
+	.split(',')
+	.map((item) => item.trim())
+	.filter(Boolean)
+const COMPILED_EXTS = new Set(['.js', '.mjs', '.cjs'])
 
 const DEFAULT_INTERNAL_PATTERNS = ['@pluxel/']
 const INTERNAL_PATTERN_ENV =
@@ -27,7 +33,6 @@ const globToRegExp = (pattern: string) => {
 
 const INTERNAL_FRAME_RES = INTERNAL_FRAME_PATTERNS.map(globToRegExp)
 
-const PRETTY_SCOPE = Symbol('pluxel.logger.scope')
 const PRETTY_PATCHED = Symbol('pluxel.logger.pretty_patched')
 const PRETTY_CONTEXT = Symbol('pluxel.logger.pretty_context')
 
@@ -137,6 +142,7 @@ function maybeRenderPrettyError(logger: Logger, args: readonly unknown[]) {
 	if (!ctx) return args
 	const err = extractError(args)
 	if (!err || seenErrors.has(err)) return args
+	if (PRETTY_SKIP_COMPILED && shouldSkipPrettyError(err)) return args
 	seenErrors.add(err)
 	renderQueue = renderQueue
 		.then(() => renderYouch(err, ctx))
@@ -180,6 +186,54 @@ async function renderYouch(error: Error, ctx: PrettyContext) {
 			console.error('[logger] pretty error sink failed', sinkError)
 		}
 	}
+}
+
+function shouldSkipPrettyError(error: Error): boolean {
+	const stack = error.stack
+	if (!stack) return false
+	const lines = stack.split('\n').slice(1)
+	let hasSourceFrame = false
+	let hasCompiledFrame = false
+	for (const line of lines) {
+		const file = extractStackFile(line)
+		if (!file) continue
+		const normalized = file.replaceAll('\\', '/')
+		if (normalized.startsWith('node:')) continue
+		if (normalized.includes('/node_modules/')) continue
+		if (isInternalPath(normalized)) continue
+		const candidate = normalized.replace(/:\d+(?::\d+)?$/, '')
+		const ext = candidate.slice(candidate.lastIndexOf('.')).toLowerCase()
+		if (!COMPILED_EXTS.has(ext)) {
+			hasSourceFrame = true
+			continue
+		}
+		if (COMPILED_PATH_HINTS.length === 0) {
+			hasCompiledFrame = true
+			continue
+		}
+		for (const hint of COMPILED_PATH_HINTS) {
+			const token = hint.startsWith('/') ? hint : `/${hint}/`
+			if (candidate.includes(token)) {
+				hasCompiledFrame = true
+				break
+			}
+		}
+	}
+	if (hasSourceFrame) return false
+	return hasCompiledFrame
+}
+
+function extractStackFile(line: string): string | undefined {
+	const trimmed = line.trim()
+	if (!trimmed.startsWith('at ')) return undefined
+	const match = trimmed.match(/\((.*)\)$/)
+	if (match?.[1]) return match[1]
+	const parts = trimmed.replace(/^at\s+/, '')
+	return parts.includes(':') ? parts : undefined
+}
+
+function isInternalPath(fileName: string): boolean {
+	return INTERNAL_FRAME_RES.some((regex) => regex.test(fileName))
 }
 
 async function ensureYouch(): Promise<YouchInstance> {

@@ -26,8 +26,16 @@ const ACTION_LABEL: Record<PluginStatusAction, string> = {
 }
 
 export function ActionBar({ onStatusUpdated }: ActionBarProps) {
-	const { pluginName, dependencies, isRunning, isEnabled, isSyncing, refetch, write } =
-		usePluginScope()
+	const {
+		pluginName,
+		dependencies,
+		knownPluginNames,
+		isRunning,
+		isEnabled,
+		isSyncing,
+		refetch,
+		write,
+	} = usePluginScope()
 
 	// 乱序防护：只接受最后一次操作的结果
 	const seqRef = useRef(0)
@@ -158,11 +166,13 @@ export function ActionBar({ onStatusUpdated }: ActionBarProps) {
 			}
 
 			if (plan.order.length === 0) {
-				notify({
-					title: '依赖已就绪',
-					message: '所有依赖均已运行，无需级联启动。',
-					color: 'blue',
-				})
+				if (plan.missing.length === 0) {
+					notify({
+						title: '依赖已就绪',
+						message: '所有依赖均已运行，无需级联启动。',
+						color: 'blue',
+					})
+				}
 				return
 			}
 
@@ -200,11 +210,16 @@ export function ActionBar({ onStatusUpdated }: ActionBarProps) {
 
 	const handleAction = (action: PluginStatusAction) => {
 		const needsDependencyCheck = action === 'start' || action === 'restart'
+		const isKnownPlugin = (name: string) => {
+			if (knownPluginNames.has(name)) return true
+			const hash = name.lastIndexOf('#')
+			return hash > 0 ? knownPluginNames.has(name.slice(0, hash)) : false
+		}
 		const missing = needsDependencyCheck
 			? dependencies
 					.filter((d) => !d.isRunning && !(d as any)?.optional)
 					.map((d) => d.name)
-					.filter(Boolean)
+					.filter((name): name is string => Boolean(name && isKnownPlugin(name)))
 			: []
 
 		const proceed = () => void performAction(action)

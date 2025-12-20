@@ -24,6 +24,7 @@ const LOG_EVENT = 'new_log'
 export class LogStore {
 	private readonly buffer: Array<LogRecord | undefined>
 	private pointer = 0
+	private count = 0
 	public readonly events = new EventEmitter()
 
 	constructor(private readonly size = 500) {
@@ -34,14 +35,16 @@ export class LogStore {
 	push(record: LogRecord) {
 		this.buffer[this.pointer] = record
 		this.pointer = (this.pointer + 1) % this.size
+		if (this.count < this.size) this.count++
 		this.events.emit(LOG_EVENT, record)
 	}
 
 	snapshot(limit = this.size): LogRecord[] {
 		const result: LogRecord[] = []
-		const count = Math.min(limit, this.size)
-		for (let i = 0; i < count; i++) {
-			const idx = (this.pointer + i) % this.size
+		const target = Math.min(limit, this.count)
+		const start = (this.pointer - target + this.size) % this.size
+		for (let i = 0; i < target; i++) {
+			const idx = (start + i) % this.size
 			const rec = this.buffer[idx]
 			if (rec) result.push(rec)
 		}
