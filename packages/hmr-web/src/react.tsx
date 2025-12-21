@@ -77,15 +77,16 @@ export function useHmrWebClient(options?: HmrWebClientOptions): HmrWebClient {
 
 const noopDisposer = () => {}
 const noopNamespace = { on: () => noopDisposer, onAny: () => noopDisposer }
-const noopSseClient: SseClientWithNamespaces = new Proxy(
-	{
+const noopSseTarget = {
 		on: () => noopDisposer,
 		onAny: () => noopDisposer,
 		onOpen: () => noopDisposer,
 		onError: () => noopDisposer,
 		ns: () => noopNamespace,
 		close: () => {},
-	} as SseClientWithNamespaces,
+	}
+const noopSseClient = new Proxy(
+	noopSseTarget as unknown as SseClientWithNamespaces,
 	{
 		get(target, prop, receiver) {
 			if (prop === 'ns') return target.ns
@@ -93,7 +94,7 @@ const noopSseClient: SseClientWithNamespaces = new Proxy(
 			return Reflect.get(target, prop, receiver)
 		},
 	},
-)
+) as unknown as SseClientWithNamespaces
 
 export function useSseClient(options?: UseSseClientOptions): SseClientWithNamespaces {
 	const client = useHmrWebClient()
@@ -106,7 +107,7 @@ export function useSseClient(options?: UseSseClientOptions): SseClientWithNamesp
 	)
 
 	useEffect(() => {
-		if (!autoPauseOnHidden || typeof document === 'undefined' || useShared) return
+		if (!autoPauseOnHidden || typeof document === 'undefined' || useShared) return undefined
 		const listener = () => setPageVisible(document.visibilityState === 'visible')
 		document.addEventListener('visibilitychange', listener)
 		return () => document.removeEventListener('visibilitychange', listener)
@@ -153,14 +154,14 @@ export function useSseClient(options?: UseSseClientOptions): SseClientWithNamesp
 				if (prev !== next && prev !== noopSseClient) prev.close()
 				return next
 			})
-			return
+			return undefined
 		}
 		if (!effectiveEnabled || typeof window === 'undefined') {
 			setSseClient((prev) => {
 				if (prev !== noopSseClient) prev.close()
 				return noopSseClient
 			})
-			return
+			return undefined
 		}
 		setSseClient((prev) => {
 			if (prev !== noopSseClient) prev.close()

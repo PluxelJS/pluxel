@@ -570,7 +570,7 @@ export function NotesPanel({ sse }: { sse: PluginSse }) {
 	const [message, setMessage] = useState('')
 	const [loading, setLoading] = useState(true)
 	const [submitting, setSubmitting] = useState(false)
-	const [removingId, setRemovingId] = useState<number | null>(null)
+	const [removingId, setRemovingId] = useState<string | null>(null)
 	const [error, setError] = useState<string | null>(null)
 	const [formError, setFormError] = useState<string | null>(null)
 	const mountedRef = useRef(true)
@@ -680,7 +680,7 @@ export function NotesPanel({ sse }: { sse: PluginSse }) {
 		}
 	}
 
-	const handleRemove = async (id: number) => {
+	const handleRemove = async (id: string) => {
 		setRemovingId(id)
 		try {
 			await rpc.removeNote(id)

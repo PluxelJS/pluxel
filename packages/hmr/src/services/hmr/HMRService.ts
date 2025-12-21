@@ -343,7 +343,7 @@ export class HMRService {
 		const endScan = startTimer()
 		const entries = await collectColdStartEntries({
 			rootsAbs: this.scanRootsAbs,
-			anchors: this.ctx.loader.pathAnchors,
+			anchors: this.ctx.loader.api.anchors.list(),
 			path: this.path,
 			scanService: this.ctx.scanService,
 			workspaceConditions: this.workspaceConditions,
@@ -386,7 +386,9 @@ export class HMRService {
 
 	private getAnchorsClean() {
 		this.anchorsCleanCache.clear()
-		for (const a of this.ctx.loader.pathAnchors ?? new Set<string>()) this.anchorsCleanCache.add(this.path.toClean(a))
+		for (const a of this.ctx.loader.api.anchors.list()) {
+			this.anchorsCleanCache.add(this.path.toClean(a))
+		}
 		return this.anchorsCleanCache
 	}
 

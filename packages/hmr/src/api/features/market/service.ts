@@ -8,26 +8,49 @@ import type {
 	PackageReloadResult,
 } from '../../../services/market/PackageService'
 import { PackageServiceError } from '../../../services/market/PackageService'
-import type {
-	NormalizedPackageSpecifier,
-	PackageSpecifierInput as ServiceSpecifierInput,
+import {
+	normalizeSpecifier,
+	type NormalizedPackageSpecifier,
+	type PackageSpecifierInput as ServiceSpecifierInput,
 } from '../../../services/market/specifiers'
 import {
 	PackageLoadIssueEntry,
-	PackageMutationResult,
-	PackageBatchMutationResult,
 	PackageInventoryEntry,
 	PackageInventoryFilter,
 	PackageSpecifierInput as PackageSpecifierInputSchema,
 } from './schema'
+import type { MarketBatchResult, MarketMutationResult } from '../../hono/rpc/types'
+import type {
+	MarketMutationAction,
+	MarketMutationInput,
+	MarketMutationOptions,
+} from '../../hono/rpc/types'
 
 type IssueOutput = InferOutput<typeof PackageLoadIssueEntry>
 type SpecInputValue = InferInput<typeof PackageSpecifierInputSchema>
-type MutationResult = InferOutput<typeof PackageMutationResult>
-type BatchMutationResult = InferOutput<typeof PackageBatchMutationResult>
+type MutationResult = MarketMutationResult
+type BatchMutationResult = MarketBatchResult
 type InventoryEntry = InferOutput<typeof PackageInventoryEntry>
 type InventoryFilter = InferInput<typeof PackageInventoryFilter>
-type BatchResultBuilder = (mutations: MutationResult[], error?: unknown) => BatchMutationResult
+
+type ParsedSpecInput = {
+	input: SpecInputValue
+	serviceInput: ServiceSpecifierInput
+	normalized: NormalizedPackageSpecifier
+}
+
+type ParsedSpecs = {
+	valid: ParsedSpecInput[]
+	invalid: MutationResult[]
+}
+
+type MutationHandler = (
+	pCtx: PlxContext,
+	specInputs: SpecInputValue[],
+	options: MarketMutationOptions,
+) => Promise<BatchMutationResult>
+
+const MUTATION_CONCURRENCY = 4
 
 export function listLoadIssues(pCtx: PlxContext): IssueOutput[] {
 	return pCtx.packageService.listLoadIssues().map(serializeIssue)
@@ -51,308 +74,17 @@ export async function listPackageInventory(
 	}))
 }
 
-export async function installPackage(
+export async function applyMarketMutation(
 	pCtx: PlxContext,
-	specInput: SpecInputValue,
-	force?: boolean,
-): Promise<MutationResult> {
-	let installResult: Awaited<ReturnType<PlxContext['packageService']['install']>> | undefined
-	try {
-		const serviceInput = toServiceSpecifierInput(specInput)
-		const overrides: InstallOptions | undefined = force === undefined ? undefined : { force }
-		installResult = await pCtx.packageService.install(serviceInput, overrides)
-		const loadResult = await pCtx.packageService.load(serviceInput)
-		return buildMutationResult({
-			ok: true,
-			code: 'installed_and_loaded',
-			spec: loadResult.spec,
-			installStatus: installResult.status,
-		})
-	} catch (error) {
-		return buildMutationResult({
-			ok: false,
-			code: installResult ? 'load_failed' : 'install_failed',
-			spec: installResult?.spec,
-			installStatus: installResult?.status,
-			error,
-		})
-	}
-}
-
-export async function installPackages(
-	pCtx: PlxContext,
-	specInputs: SpecInputValue[],
-	force?: boolean,
+	input: MarketMutationInput,
 ): Promise<BatchMutationResult> {
-	if (!specInputs?.length) {
-		return {
-			__typename: 'PackageBatchMutationResult',
-			ok: false,
-			results: [],
-			error: '安装列表不能为空',
-		}
-	}
-	const overrides: InstallOptions | undefined = force === undefined ? undefined : { force }
-	try {
-		const serviceInputs = specInputs.map(toServiceSpecifierInput)
-		const installResults = await pCtx.packageService.installMany(serviceInputs, overrides)
-		const results: MutationResult[] = []
-
-		for (const installResult of installResults) {
-			try {
-				const loadResult = await pCtx.packageService.load(installResult.spec)
-				results.push(
-					buildMutationResult({
-						ok: true,
-						code: 'installed_and_loaded',
-						spec: loadResult.spec,
-						installStatus: installResult.status,
-					}),
-				)
-			} catch (error) {
-				results.push(
-					buildMutationResult({
-						ok: false,
-						code: 'load_failed',
-						spec: installResult.spec,
-						installStatus: installResult.status,
-						error,
-					}),
-				)
-			}
-		}
-
-		return {
-			__typename: 'PackageBatchMutationResult',
-			ok: results.every((r) => r.ok),
-			results,
-			error: null,
-		}
-	} catch (error) {
-		return buildBatchResult([], error)
-	}
-}
-
-export async function uninstallPackage(
-	pCtx: PlxContext,
-	specInput: SpecInputValue,
-): Promise<MutationResult> {
-	try {
-		const serviceInput = toServiceSpecifierInput(specInput)
-		const [result] = await pCtx.packageService.uninstallMany([serviceInput])
-		if (!result || result.status === 'failed') {
-			throw result?.error ?? new Error('卸载失败')
-		}
-		return buildMutationResult({
-			ok: true,
-			code: 'uninstalled',
-			spec: result.spec,
-		})
-	} catch (error) {
-		return buildMutationResult({
-			ok: false,
-			code: 'uninstall_failed',
-			error,
-		})
-	}
-}
-
-export async function reinstallPackage(
-	pCtx: PlxContext,
-	specInput: SpecInputValue,
-	options: { force: boolean | undefined },
-): Promise<MutationResult> {
-	try {
-		const serviceInput = toServiceSpecifierInput(specInput)
-		const [result] = await pCtx.packageService.reinstallMany([serviceInput], {
-			install: { force: options.force ?? true },
-		})
-		if (!result || result.error || !result.record) {
-			throw result?.error ?? new Error('重装失败')
-		}
-		return buildMutationResult({
-			ok: true,
-			code: 'reinstalled',
-			spec: result.record.spec,
-			installStatus: result.record.install?.status,
-		})
-	} catch (error) {
-		return buildMutationResult({
-			ok: false,
-			code: 'reinstall_failed',
-			error,
-		})
-	}
-}
-
-export async function retryPackage(
-	pCtx: PlxContext,
-	specInput: SpecInputValue,
-	options: { reinstall?: boolean; fresh?: boolean },
-): Promise<MutationResult> {
-	try {
-		const serviceInput = toServiceSpecifierInput(specInput)
-		const loadResult = await pCtx.packageService.retryLoad(serviceInput, {
-			reinstall: options.reinstall ?? false,
-			fresh: options.fresh ?? true,
-		})
-		return buildMutationResult({
-			ok: true,
-			code: options.reinstall ? 'reinstalled_and_loaded' : 'retried',
-			spec: loadResult.spec,
-			installStatus: loadResult.install?.status,
-		})
-	} catch (error) {
-		return buildMutationResult({
-			ok: false,
-			code: 'retry_failed',
-			error,
-		})
-	}
-}
-
-export async function retryFailedPackages(
-	pCtx: PlxContext,
-	options: { reinstall?: boolean; fresh?: boolean },
-): Promise<BatchMutationResult> {
-	try {
-		const results = await pCtx.packageService.retryAllLoadIssues({
-			reinstall: options.reinstall ?? false,
-			fresh: options.fresh ?? true,
-		})
-		const mutations: MutationResult[] = results.map((record) =>
-			buildMutationResult({
-				ok: true,
-				code: options.reinstall ? 'reinstalled_and_loaded' : 'retried',
-				spec: record.spec,
-				installStatus: record.install?.status,
-			}),
-		)
-		return {
-			__typename: 'PackageBatchMutationResult',
-			ok: mutations.every((item) => item.ok),
-			results: mutations,
-			error: null,
-		}
-	} catch (error) {
-		return buildBatchResult([], error)
-	}
-}
-
-export async function uninstallPackages(
-	pCtx: PlxContext,
-	specInputs: SpecInputValue[],
-): Promise<BatchMutationResult> {
-	if (!specInputs?.length) {
-		return buildBatchResult([], '卸载列表不能为空')
-	}
-	try {
-		const serviceInputs = specInputs.map(toServiceSpecifierInput)
-		const results = await pCtx.packageService.uninstallMany(serviceInputs)
-		const mutations = results.map((entry) =>
-			buildMutationResult({
-				ok: entry.status !== 'failed',
-				code: 'uninstalled',
-				spec: entry.spec,
-				error: entry.error,
-			}),
-		)
-		return buildBatchResult(mutations)
-	} catch (error) {
-		return buildBatchResult([], error)
-	}
-}
-
-export async function removePackage(
-	pCtx: PlxContext,
-	specInput: SpecInputValue,
-	overrides?: InstallOptions,
-): Promise<MutationResult> {
-	try {
-		const serviceInput = toServiceSpecifierInput(specInput)
-		const [result] = await pCtx.packageService.removePackages([serviceInput], overrides)
-		if (!result || result.status === 'failed') {
-			throw result?.error ?? new Error('移除失败')
-		}
-		return buildMutationResult({
-			ok: true,
-			code: 'removed',
-			spec: result.spec,
-		})
-	} catch (error) {
-		return buildMutationResult({
-			ok: false,
-			code: 'remove_failed',
-			error,
-		})
-	}
-}
-
-export async function removePackages(
-	pCtx: PlxContext,
-	specInputs: SpecInputValue[],
-	overrides?: InstallOptions,
-): Promise<BatchMutationResult> {
-	if (!specInputs?.length) {
-		return buildBatchResult([], '移除列表不能为空')
-	}
-	try {
-		const serviceInputs = specInputs.map(toServiceSpecifierInput)
-		const results = await pCtx.packageService.removePackages(serviceInputs, overrides)
-		const mutations = results.map((entry) =>
-			buildMutationResult({
-				ok: entry.status !== 'failed',
-				code: 'removed',
-				spec: entry.spec,
-				error: entry.error,
-			}),
-		)
-		return buildBatchResult(mutations)
-	} catch (error) {
-		return buildBatchResult([], error)
-	}
-}
-
-export async function reinstallPackages(
-	pCtx: PlxContext,
-	specInputs: SpecInputValue[],
-	options: { force: boolean | undefined },
-): Promise<BatchMutationResult> {
-	if (!specInputs?.length) {
-		return buildBatchResult([], '重装列表不能为空')
-	}
-	try {
-		const serviceInputs = specInputs.map(toServiceSpecifierInput)
-		const results = await pCtx.packageService.reinstallMany(serviceInputs, {
-			install: { force: options.force ?? true },
-		})
-		const mutations = serializeReloadResults(results, 'reloaded', 'reload_failed')
-		return buildBatchResult(mutations)
-	} catch (error) {
-		return buildBatchResult([], error)
-	}
-}
-
-export async function reloadPackages(
-	pCtx: PlxContext,
-	specInputs: SpecInputValue[],
-	options: { fresh?: boolean },
-): Promise<BatchMutationResult> {
-	if (!specInputs?.length) {
-		return buildBatchResult([], '重载列表不能为空')
-	}
-	try {
-		const serviceInputs = specInputs.map(toServiceSpecifierInput)
-		const results = await pCtx.packageService.reloadMany(
-			serviceInputs,
-			{},
-			{ fresh: options.fresh ?? true },
-		)
-		const mutations = serializeReloadResults(results, 'reloaded', 'reload_failed')
-		return buildBatchResult(mutations)
-	} catch (error) {
-		return buildBatchResult([], error)
-	}
+	const action = input.action
+	const specInputs = Array.isArray(input.specs) ? input.specs : []
+	const options = input.options ?? {}
+	if (!action) return buildBatchResult([], '操作不能为空')
+	const handler = mutationHandlers[action]
+	if (!handler) return buildBatchResult([], '未知操作')
+	return handler(pCtx, specInputs, options)
 }
 
 export function toServiceSpecifierInput(input: SpecInputValue): ServiceSpecifierInput {
@@ -375,6 +107,232 @@ export function toServiceSpecifierInput(input: SpecInputValue): ServiceSpecifier
 	}
 
 	return { name }
+}
+
+const mutationHandlers: Record<MarketMutationAction, MutationHandler> = {
+	install: async (pCtx, specInputs, options) => {
+		if (!specInputs.length) return buildBatchResult([], '安装列表不能为空')
+		const parsed = parseSpecInputs(specInputs)
+		if (!parsed.valid.length) return buildBatchResult(parsed.invalid)
+		const overrides: InstallOptions | undefined =
+			options.force === undefined ? undefined : { force: options.force }
+		try {
+			const installResults = await pCtx.packageService.installMany(
+				parsed.valid.map((entry) => entry.serviceInput),
+				overrides,
+			)
+			const loadResults = await mapWithConcurrency(
+				installResults,
+				resolveConcurrency(installResults.length),
+				async (installResult) => {
+					try {
+						const loadResult = await pCtx.packageService.load(installResult.spec)
+						return buildMutationResult({
+							ok: true,
+							code: 'installed_and_loaded',
+							spec: loadResult.spec,
+							installStatus: installResult.status,
+						})
+					} catch (error) {
+						return buildMutationResult({
+							ok: false,
+							code: 'load_failed',
+							spec: installResult.spec,
+							installStatus: installResult.status,
+							error,
+						})
+					}
+				},
+			)
+			return buildBatchResult([...parsed.invalid, ...loadResults])
+		} catch (error) {
+			const failures = parsed.valid.map((entry) =>
+				buildMutationResult({
+					ok: false,
+					code: 'install_failed',
+					spec: entry.normalized,
+					error,
+				}),
+			)
+			return buildBatchResult([...parsed.invalid, ...failures], error)
+		}
+	},
+	uninstall: async (pCtx, specInputs) => {
+		if (!specInputs.length) return buildBatchResult([], '卸载列表不能为空')
+		const parsed = parseSpecInputs(specInputs)
+		if (!parsed.valid.length) return buildBatchResult(parsed.invalid)
+		try {
+			const results = await pCtx.packageService.uninstallMany(
+				parsed.valid.map((entry) => entry.serviceInput),
+			)
+			const mutations = results.map((entry) =>
+				buildMutationResult({
+					ok: entry.status !== 'failed',
+					code: entry.status === 'failed' ? 'uninstall_failed' : 'uninstalled',
+					spec: entry.spec,
+					error: entry.error,
+				}),
+			)
+			return buildBatchResult([...parsed.invalid, ...mutations])
+		} catch (error) {
+			const failures = parsed.valid.map((entry) =>
+				buildMutationResult({
+					ok: false,
+					code: 'uninstall_failed',
+					spec: entry.normalized,
+					error,
+				}),
+			)
+			return buildBatchResult([...parsed.invalid, ...failures], error)
+		}
+	},
+	remove: async (pCtx, specInputs) => {
+		if (!specInputs.length) return buildBatchResult([], '移除列表不能为空')
+		const parsed = parseSpecInputs(specInputs)
+		if (!parsed.valid.length) return buildBatchResult(parsed.invalid)
+		try {
+			const results = await pCtx.packageService.removePackages(
+				parsed.valid.map((entry) => entry.serviceInput),
+			)
+			const mutations = results.map((entry) =>
+				buildMutationResult({
+					ok: entry.status !== 'failed',
+					code: entry.status === 'failed' ? 'remove_failed' : 'removed',
+					spec: entry.spec,
+					error: entry.error,
+				}),
+			)
+			return buildBatchResult([...parsed.invalid, ...mutations])
+		} catch (error) {
+			const failures = parsed.valid.map((entry) =>
+				buildMutationResult({
+					ok: false,
+					code: 'remove_failed',
+					spec: entry.normalized,
+					error,
+				}),
+			)
+			return buildBatchResult([...parsed.invalid, ...failures], error)
+		}
+	},
+	reinstall: async (pCtx, specInputs, options) => {
+		if (!specInputs.length) return buildBatchResult([], '重装列表不能为空')
+		const parsed = parseSpecInputs(specInputs)
+		if (!parsed.valid.length) return buildBatchResult(parsed.invalid)
+		try {
+			const results = await pCtx.packageService.reinstallMany(
+				parsed.valid.map((entry) => entry.serviceInput),
+				{ install: { force: options.force ?? true } },
+			)
+			const mutations = serializeReloadResults(results, 'reinstalled', 'reinstall_failed')
+			return buildBatchResult([...parsed.invalid, ...mutations])
+		} catch (error) {
+			const failures = parsed.valid.map((entry) =>
+				buildMutationResult({
+					ok: false,
+					code: 'reinstall_failed',
+					spec: entry.normalized,
+					error,
+				}),
+			)
+			return buildBatchResult([...parsed.invalid, ...failures], error)
+		}
+	},
+	reload: async (pCtx, specInputs, options) => {
+		if (!specInputs.length) return buildBatchResult([], '重载列表不能为空')
+		const parsed = parseSpecInputs(specInputs)
+		if (!parsed.valid.length) return buildBatchResult(parsed.invalid)
+		try {
+			const results = await pCtx.packageService.reloadMany(
+				parsed.valid.map((entry) => entry.serviceInput),
+				{},
+				{ fresh: options.fresh ?? true },
+			)
+			const mutations = serializeReloadResults(results, 'reloaded', 'reload_failed')
+			return buildBatchResult([...parsed.invalid, ...mutations])
+		} catch (error) {
+			const failures = parsed.valid.map((entry) =>
+				buildMutationResult({
+					ok: false,
+					code: 'reload_failed',
+					spec: entry.normalized,
+					error,
+				}),
+			)
+			return buildBatchResult([...parsed.invalid, ...failures], error)
+		}
+	},
+	retry: async (pCtx, specInputs, options) => {
+		const retryOptions = {
+			reinstall: options.reinstall ?? false,
+			fresh: options.fresh ?? true,
+		}
+		if (!specInputs.length) {
+			try {
+				const results = await pCtx.packageService.retryAllLoadIssues(retryOptions)
+				const mutations = results.map((record) =>
+					buildMutationResult({
+						ok: true,
+						code: retryOptions.reinstall ? 'reinstalled_and_loaded' : 'retried',
+						spec: record.spec,
+						installStatus: record.install?.status,
+					}),
+				)
+				return buildBatchResult(mutations)
+			} catch (error) {
+				return buildBatchResult([], error)
+			}
+		}
+		const parsed = parseSpecInputs(specInputs)
+		if (!parsed.valid.length) return buildBatchResult(parsed.invalid)
+		const mutations = await mapWithConcurrency(
+			parsed.valid,
+			resolveConcurrency(parsed.valid.length),
+			async (entry) => {
+				try {
+					const loadResult = await pCtx.packageService.retryLoad(
+						entry.serviceInput,
+						retryOptions,
+					)
+					return buildMutationResult({
+						ok: true,
+						code: retryOptions.reinstall ? 'reinstalled_and_loaded' : 'retried',
+						spec: loadResult.spec,
+						installStatus: loadResult.install?.status,
+					})
+				} catch (error) {
+					return buildMutationResult({
+						ok: false,
+						code: 'retry_failed',
+						spec: entry.normalized,
+						error,
+					})
+				}
+			},
+		)
+		return buildBatchResult([...parsed.invalid, ...mutations])
+	},
+}
+
+function parseSpecInputs(specInputs: SpecInputValue[]): ParsedSpecs {
+	const valid: ParsedSpecInput[] = []
+	const invalid: MutationResult[] = []
+	for (const input of specInputs) {
+		try {
+			const serviceInput = toServiceSpecifierInput(input)
+			const normalized = normalizeSpecifier(serviceInput)
+			valid.push({ input, serviceInput, normalized })
+		} catch (error) {
+			invalid.push(
+				buildMutationResult({
+					ok: false,
+					code: 'invalid_spec',
+					error,
+				}),
+			)
+		}
+	}
+	return { valid, invalid }
 }
 
 function serializeIssue(issue: ServiceIssue): IssueOutput {
@@ -419,12 +377,15 @@ function buildMutationResult(config: MutationResultConfig): MutationResult {
 	}
 }
 
-const buildBatchResult: BatchResultBuilder = (mutations, error) => ({
-	__typename: 'PackageBatchMutationResult',
-	ok: mutations.every((item) => item.ok),
-	results: mutations,
-	error: formatUnknownError(error),
-})
+function buildBatchResult(mutations: MutationResult[], error?: unknown): BatchMutationResult {
+	const resolvedError = formatUnknownError(error)
+	return {
+		__typename: 'PackageBatchMutationResult',
+		ok: !resolvedError && mutations.every((item) => item.ok),
+		results: mutations,
+		error: resolvedError,
+	}
+}
 
 function serializeReloadResults(
 	results: PackageReloadResult[],
@@ -456,7 +417,7 @@ function formatUnknownError(error: unknown, fallback?: string): string | null {
 	try {
 		return JSON.stringify(target)
 	} catch {
-		return target != null ? String(target) : (fallback ?? null)
+		return target != null ? String(target) : fallback ?? null
 	}
 }
 
@@ -467,4 +428,30 @@ function unwrapError(error: unknown): unknown {
 		if (cause) return cause
 	}
 	return error
+}
+
+function resolveConcurrency(size: number): number {
+	return Math.max(1, Math.min(MUTATION_CONCURRENCY, size))
+}
+
+async function mapWithConcurrency<T, R>(
+	items: T[],
+	concurrency: number,
+	mapper: (item: T, index: number) => Promise<R>,
+): Promise<R[]> {
+	if (!items.length) return []
+	const results = new Array<R>(items.length)
+	let cursor = 0
+	const limit = Math.max(1, Math.min(concurrency, items.length))
+
+	const workers = Array.from({ length: limit }, async () => {
+		while (true) {
+			const index = cursor
+			if (index >= items.length) return
+			cursor += 1
+			results[index] = await mapper(items[index], index)
+		}
+	})
+	await Promise.all(workers)
+	return results
 }

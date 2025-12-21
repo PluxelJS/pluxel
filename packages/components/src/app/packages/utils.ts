@@ -1,9 +1,5 @@
-import type {
-	InstallPackageSpecInput,
-	PackageLoadIssue,
-	PackageInventoryEntry,
-	PluginStatusEntry,
-} from '../gqty'
+import type { PackageLoadIssue, PackageInventoryEntry, PluginStatusEntry } from '../gqty'
+import type { PackageSpecInput } from '../rpc'
 import type { Maybe, PackageRow } from './types'
 
 const timeFormatter = new Intl.DateTimeFormat('zh-CN', {
@@ -108,7 +104,7 @@ export function buildPackageRows(
 	)
 }
 
-export function toSpecInput(row: PackageRow): InstallPackageSpecInput {
+export function toSpecInput(row: PackageRow): PackageSpecInput {
 	if (row.version || row.installedVersion) {
 		return { name: row.name, version: row.version ?? row.installedVersion ?? undefined }
 	}

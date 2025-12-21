@@ -25,7 +25,7 @@ import { MARKET_BASE_URL } from '../constants'
 import { useQuery } from '../gqty'
 import { LiveLog } from '../log_viewer/LiveLog'
 import { useNotify } from '../hooks'
-import { createRpcClient } from '../rpc'
+import { createRpcClient, type PackageSpecInput } from '../rpc'
 import type { InstallLogEntry } from './types'
 import {
 	buildInstalledPackages,
@@ -138,7 +138,7 @@ export function MarketPage() {
 
 			type InstallTask = {
 				label: string
-				spec: InstallPackageSpecInput
+				spec: PackageSpecInput
 				kind: 'primary' | 'dependency'
 				from?: string
 				force?: boolean
@@ -262,15 +262,16 @@ export function MarketPage() {
 
 			setInstallLogs((prev) => prev.map((log) => ({ ...log, status: 'running' })))
 
-			const specKey = (spec?: InstallPackageSpecInput) =>
+			const specKey = (spec?: PackageSpecInput) =>
 				(spec?.raw || `${spec?.name ?? ''}@${spec?.version ?? spec?.tag ?? ''}` || '').toLowerCase()
 
 			try {
 				using rpc = createRpcClient()
-				const res = await rpc.market().installMany(
-					installQueue.map((task) => task.spec),
-					{ force: installQueue.some((task) => task.force) },
-				)
+				const res = await rpc.market().mutate({
+					action: 'install',
+					specs: installQueue.map((task) => task.spec),
+					options: { force: installQueue.some((task) => task.force) },
+				})
 
 				if (!res) {
 					throw new Error('安装接口无返回结果')

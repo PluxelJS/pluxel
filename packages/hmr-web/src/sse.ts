@@ -124,7 +124,7 @@ class SseClient {
 			const namespace = String(msg?.namespace ?? '')
 			const event = String(msg?.event ?? '')
 			const payload = msg?.payload
-			const shaped: SseMessage = {
+			const shaped: SseMessage<string> = {
 				namespace,
 				event,
 				payload,

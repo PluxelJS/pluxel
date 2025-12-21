@@ -25,6 +25,7 @@ describe('HMR CJS dependency handling', () => {
 			)
 
 			const errorLogs: Array<{ msg: string; obj: any }> = []
+			const anchors = new Set<string>()
 			const ctx = {
 				logger: {
 					info() {},
@@ -34,7 +35,12 @@ describe('HMR CJS dependency handling', () => {
 					},
 				},
 				loader: {
-					pathAnchors: new Set<string>(),
+					api: {
+						anchors: {
+							list: () => anchors,
+							remove: (id: string) => anchors.delete(id),
+						},
+					},
 					beginBatch() {
 						return {
 							replaceModule: async () => false,
@@ -130,6 +136,7 @@ describe('HMR CJS dependency handling', () => {
 			)
 
 			const errorLogs: Array<{ msg: string; obj: any }> = []
+			const anchors = new Set<string>()
 			const ctx = {
 				logger: {
 					info() {},
@@ -139,7 +146,12 @@ describe('HMR CJS dependency handling', () => {
 					},
 				},
 				loader: {
-					pathAnchors: new Set<string>(),
+					api: {
+						anchors: {
+							list: () => anchors,
+							remove: (id: string) => anchors.delete(id),
+						},
+					},
 					beginBatch() {
 						return {
 							replaceModule: async () => false,
@@ -242,6 +254,7 @@ describe('HMR CJS dependency handling', () => {
 			)
 
 			const errorLogs: Array<{ msg: string; obj: any }> = []
+			const anchors = new Set<string>()
 			const ctx = {
 				logger: {
 					info() {},
@@ -257,7 +270,12 @@ describe('HMR CJS dependency handling', () => {
 					},
 				},
 				loader: {
-					pathAnchors: new Set<string>(),
+					api: {
+						anchors: {
+							list: () => anchors,
+							remove: (id: string) => anchors.delete(id),
+						},
+					},
 					beginBatch() {
 						return {
 							replaceModule: async () => false,
@@ -356,10 +374,16 @@ describe('HMR CJS dependency handling', () => {
 			)
 			writeFileSync(join(root, 'entry.ts'), "import pkg from 'cjs-pkg'; export const platform = pkg.platform;\n")
 
+			const anchors = new Set<string>()
 			const ctx = {
 				logger: { info() {}, warn() {}, error() {} },
 				loader: {
-					pathAnchors: new Set<string>(),
+					api: {
+						anchors: {
+							list: () => anchors,
+							remove: (id: string) => anchors.delete(id),
+						},
+					},
 					beginBatch() {
 						return {
 							replaceModule: async () => false,
@@ -470,6 +494,7 @@ describe('HMR CJS dependency handling', () => {
 			)
 
 			const errorLogs: Array<{ msg: string; obj: any }> = []
+			const anchors = new Set<string>()
 			const ctx = {
 				logger: {
 					info() {},
@@ -479,7 +504,12 @@ describe('HMR CJS dependency handling', () => {
 					},
 				},
 				loader: {
-					pathAnchors: new Set<string>(),
+					api: {
+						anchors: {
+							list: () => anchors,
+							remove: (id: string) => anchors.delete(id),
+						},
+					},
 					beginBatch() {
 						return {
 							replaceModule: async () => false,

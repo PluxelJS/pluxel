@@ -24,7 +24,7 @@ function createHmrCtx(core: Context) {
 			return {}
 		},
 		patchConfig() {},
-		getExtra() {
+		getExtra(): undefined {
 			return undefined
 		},
 		setExtra() {},
@@ -44,7 +44,7 @@ function createHmrCtx(core: Context) {
 }
 
 describe('LoaderService', () => {
-	it('getPluginDependenciesInfo tolerates abstract/base tokens', async () => {
+	it('dependency inspector tolerates abstract/base tokens', async () => {
 		const core = new Context()
 		const ctx = createHmrCtx(core)
 		const loader = new LoaderService(ctx)
@@ -66,7 +66,7 @@ describe('LoaderService', () => {
 		const res = await core.registry.commit()
 		expect(res.ok).toBe(true)
 
-		const deps = loader.getPluginDependenciesInfo(Consumer)
+		const deps = loader.api.deps.list(Consumer)
 		expect(deps).toEqual([{ name: 'Abs', isRunning: true }])
 	})
 
@@ -118,8 +118,8 @@ describe('LoaderService', () => {
 		}
 
 		// After rollback, loader should not claim Consumer is loaded.
-		expect(loader.registry.getPluginByName('Consumer')).toBeUndefined()
-		expect(loader.pathAnchors.has('B.ts')).toBe(false)
+		expect(loader.api.registry.getCtor('Consumer')).toBeUndefined()
+		expect(loader.api.anchors.list().has('B.ts')).toBe(false)
 
 		// Core should still be on the previous container: base resolves to Impl1 and remains running.
 		expect(core.registry.isRunning(Abs)).toBe(true)
@@ -129,5 +129,42 @@ describe('LoaderService', () => {
 		})
 		await Promise.resolve()
 		expect(dep2).toBeInstanceOf(Impl1)
+	})
+
+	it('registry view exposes module ids and loaded names', async () => {
+		const core = new Context()
+		const ctx = createHmrCtx(core)
+		const loader = new LoaderService(ctx)
+
+		@Plugin({ name: 'Alpha' })
+		class Alpha extends BasePlugin {}
+
+		@Plugin({ name: 'Beta' })
+		class Beta extends BasePlugin {}
+
+		const batch = loader.beginBatch()
+		await batch.replaceModule('B.ts', { Beta })
+		await batch.replaceModule('A.ts', { Alpha })
+		const res = await core.registry.commit()
+		expect(res.ok).toBe(true)
+		batch.commit()
+
+		expect(loader.api.registry.findModuleId('Alpha')).toBe('A.ts')
+		expect(loader.api.registry.findModuleIdByName('Beta')).toBe('B.ts')
+		expect(loader.api.registry.listLoadedNames()).toEqual(['Alpha', 'Beta'])
+	})
+
+	it('anchors remove normalizes module ids via hmrService', () => {
+		const core = new Context()
+		const ctx = createHmrCtx(core)
+		;(ctx as any).hmrService = {
+			normalizeId: (id: string) => id.replace('/@fs', ''),
+		}
+		const loader = new LoaderService(ctx)
+		const anchors = loader.api.anchors.list() as Set<string>
+		anchors.add('/abs/Plugin.ts')
+
+		loader.api.anchors.remove('/@fs/abs/Plugin.ts')
+		expect(anchors.has('/abs/Plugin.ts')).toBe(false)
 	})
 })

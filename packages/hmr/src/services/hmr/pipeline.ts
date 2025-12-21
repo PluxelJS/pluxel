@@ -640,8 +640,8 @@ export class HmrBatchProcessor {
 			const exists = mods?.size || this.env.moduleGraph.getModuleById(file)
 			if (exists) continue
 
-			for (const a of this.ctx.loader.pathAnchors) {
-				if (this.path.toClean(a) === file) this.ctx.loader.pathAnchors.delete(a)
+			for (const a of this.ctx.loader.api.anchors.list()) {
+				if (this.path.toClean(a) === file) this.ctx.loader.api.anchors.remove(a)
 			}
 			this.ctx.loader.pruneModule(file)
 		}
