@@ -50,7 +50,8 @@ export class EventsService extends Eventure<Events> {
 	): Unsubscribe {
 		;(listener as unknown as { [symbols.ATTACH]?: Context })[symbols.ATTACH] = this.ctx
 		const ret = super._register(event, listener, opts, forcePrepend)
-		this.ctx.scope.collectEffect(ret)
+		const collect = this.ctx.caller?.scope?.collectEffect ?? this.ctx.scope.collectEffect.bind(this.ctx.scope)
+		collect(ret)
 		return ret
 	}
 
@@ -105,7 +106,8 @@ export class EvtChannel<D extends EventDescriptor> extends Channel<D> {
 	): Unsubscribe {
 		;(listener as unknown as { [symbols.ATTACH]?: Context })[symbols.ATTACH] = this.ctx
 		const ret = super._register(listener, opts, prepend)
-		this.ctx.caller?.scope.collectEffect(ret)
+		const collect = this.ctx.caller?.scope?.collectEffect ?? this.ctx.scope.collectEffect.bind(this.ctx.scope)
+		collect(ret)
 		return ret
 	}
 }

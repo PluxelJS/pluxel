@@ -1,8 +1,9 @@
 // src/createLogger.ts
 
 import pino, { type Logger, type LoggerOptions, multistream } from 'pino'
-import { normalizePath, searchForWorkspaceRoot } from 'vite'
-import { withCallerFormatters } from './caller'
+import { withCallerFormatters } from './pretty/caller'
+import type { ResolvedLoggerRuntimeConfig } from './loggerRuntimeConfig'
+import { getLoggerRuntimeConfig } from './loggerRuntimeConfig'
 /** ---------- Structured record + store ---------- */
 import { logStore } from './logStore'
 import {
@@ -10,8 +11,8 @@ import {
 	type PrettyErrorPayload,
 	type PrettyErrorSink,
 	writePrettyErrorToStderr,
-} from './prettyErrors'
-import { createDumperLogHook, makeErrSerializer } from './serialization'
+} from './pretty/errors'
+import { configureSerialization, createDumperLogHook, makeErrSerializer } from './serialization'
 import { getDefaultStreams } from './sinks'
 
 export type { LogRecord } from './logStore'
@@ -44,21 +45,6 @@ function createPrettyErrorLoggerSink(root: Logger): PrettyErrorSink {
 	}
 }
 
-const PRETTY_DUPLEX_ENABLED = (process.env.PLUXEL_LOGGER_PRETTY_DUPLEX ?? '0') !== '0'
-let cachedCallerRoot: string | null | undefined
-
-function resolveCallerRoot() {
-	if (cachedCallerRoot !== undefined) return cachedCallerRoot
-	const envRoot = process.env.PLUXEL_LOGGER_CALLER_ROOT?.trim()
-	if (envRoot) {
-		cachedCallerRoot = normalizePath(envRoot)
-		return cachedCallerRoot
-	}
-	const workspaceRoot = searchForWorkspaceRoot(process.cwd())
-	cachedCallerRoot = normalizePath(workspaceRoot || process.cwd())
-	return cachedCallerRoot
-}
-
 /** ---------- Factory ---------- */
 /**
  * 创建 Logger：
@@ -68,11 +54,15 @@ function resolveCallerRoot() {
  * - Error → 自定义 err serializer（含 cause + 附加字段）
  * - ✅ Dumper hook 不再写只读的 args（修复 TS “readonly 参数” 报错）
  */
-const versions = process?.versions as unknown as { bun?: string } | undefined
-const isBun = !!versions?.bun
-export function createLogger(opts: LoggerOptions): Logger {
+export function createLogger(
+	opts: LoggerOptions,
+	runtime?: ResolvedLoggerRuntimeConfig,
+): Logger {
+	const resolvedRuntime = runtime ?? getLoggerRuntimeConfig()
 	const level = opts.level ?? 'info'
-	const streams = getDefaultStreams(level)
+	const streams = getDefaultStreams(level, resolvedRuntime)
+
+	configureSerialization(resolvedRuntime.dumper)
 
 	const hooks = {
 		...(opts.hooks ?? {}),
@@ -81,31 +71,24 @@ export function createLogger(opts: LoggerOptions): Logger {
 		}),
 	} as LoggerOptions['hooks']
 
-	const formatters = withCallerFormatters(opts.formatters, {
-		relativeTo: resolveCallerRoot(),
-		stackAdjustment: isBun ? 0 : 1,
-	})
+	const formatters = withCallerFormatters(opts.formatters, resolvedRuntime.pretty.caller)
 
 	const config = {
 		...opts,
+		level,
 		serializers: { err: makeErrSerializer(), ...opts.serializers },
 		hooks,
 		formatters,
 	} as LoggerOptions
 
 	const base = pino(config, multistream(streams))
-
-	const prettyErrorRoot = base.child({ channel: 'pretty-error' })
-	const sinks: PrettyErrorSink[] = [writePrettyErrorToStderr]
-	if (PRETTY_DUPLEX_ENABLED) {
-		sinks.push(createPrettyErrorLoggerSink(prettyErrorRoot))
-	}
-
+	const sinks: PrettyErrorSink[] =
+		resolvedRuntime.pretty.duplex && resolvedRuntime.pretty.errors.enabled
+			? [writePrettyErrorToStderr, createPrettyErrorLoggerSink(base.child({ channel: 'pretty-error' }))]
+			: [writePrettyErrorToStderr]
 	const prettyOptions: { scope?: string; sinks: PrettyErrorSink[] } = { sinks }
-	if (typeof opts.name === 'string' && opts.name.length > 0) {
-		prettyOptions.scope = opts.name
-	}
-	return attachPrettyErrors(base, prettyOptions)
+	if (typeof opts.name === 'string' && opts.name.length > 0) prettyOptions.scope = opts.name
+	return attachPrettyErrors(base, prettyOptions, resolvedRuntime.pretty.errors)
 }
 
 export type { Logger }

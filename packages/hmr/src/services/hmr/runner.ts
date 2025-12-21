@@ -50,6 +50,7 @@ export class HmrRunner {
 		this.runner_ = createServerModuleRunner(this.env_, {
 			hmr: false,
 			evaluatedModules: this.evaluatedModules,
+			sourcemapInterceptor: 'prepareStackTrace',
 		})
 
 		this.cjsExternal_ = opts.cjsExternal ?? []

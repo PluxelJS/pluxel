@@ -176,7 +176,10 @@ export function ActionBar({ onStatusUpdated }: ActionBarProps) {
 				return
 			}
 
-			const results = await executeStartPlan(plan.order, action === 'restart' ? 'restart' : 'start')
+			const results = await executeStartPlan(
+				plan.order,
+				action === 'restart' ? 'restart' : 'start',
+			)
 			if (mySeq !== seqRef.current) return
 			const failed = results.filter((r) => !r.ok)
 			if (failed.length) {

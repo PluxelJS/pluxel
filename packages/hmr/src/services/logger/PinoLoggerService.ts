@@ -93,7 +93,7 @@ let rootLoggerName: string | undefined
 
 function getRootLogger(config: ResolvedPinoLoggerConfig): Logger {
 	if (!rootLogger || rootLoggerName !== config.name) {
-		rootLogger = createLogger({ name: config.name, level: config.level })
+		rootLogger = createLogger({ name: config.name, level: config.level }, config.runtime)
 		rootLoggerLevel = config.level
 		rootLoggerName = config.name
 		return rootLogger

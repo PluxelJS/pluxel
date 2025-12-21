@@ -137,7 +137,7 @@ export class OptionalResolver {
 		importer: () => Promise<T>,
 		opts?: { onError?: (error: unknown) => void; label?: string },
 	): Promise<T | undefined> {
-		const callerCtx = this.ctx
+		const callerCtx = this.ctx.caller ?? this.ctx
 		try {
 			return await importer()
 		} catch (error) {

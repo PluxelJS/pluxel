@@ -6,9 +6,6 @@ export const config = v.object({
 		v.pipe(
 			v.string(),
 			v.hexColor(),
-			v.check((input) => {
-				return false
-			}, '测试不通过'),
 		),
 		'#000000',
 	),

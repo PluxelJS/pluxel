@@ -74,6 +74,7 @@ interface ResolveContext {
 const moduleInfoCache = new Map<string, ModuleInfo>()
 const moduleInfoPromises = new Map<string, Promise<ModuleInfo | undefined>>()
 const DEFAULT_EXPORT = '__pluxel_default_export__'
+const CONFIG_DECORATOR_SOURCES = ['@pluxel/core', '@pluxel/hmr'] as const
 
 /** 根据文件扩展名获取 parser lang 选项 */
 function getLangFromId(id: string): 'ts' | 'tsx' | 'js' | 'jsx' {
@@ -97,7 +98,7 @@ export function configSourcePlugin(options: ConfigSourcePluginOptions = {}): Plu
 					include: includePatterns,
 					exclude: excludePatterns,
 				},
-				// 以 @Plugin 为标记（@Plugin 和 @Config 必须一起出现）
+				// 以 @Plugin 为标记（@Config 可能被重命名）
 				// 同时匹配可能有 schema 定义的文件（v./valibot./f.）
 				code: {
 					include: /@Plugin|v\.|valibot\.|f\./,
@@ -114,11 +115,6 @@ export function configSourcePlugin(options: ConfigSourcePluginOptions = {}): Plu
 					} catch {
 						// 解析失败，忽略
 					}
-					return null
-				}
-
-				// 没有 @Config 就不需要提取
-				if (!code.includes('@Config')) {
 					return null
 				}
 
@@ -304,6 +300,20 @@ async function ensureModuleInfo(
 }
 
 type ModuleResolver = (source: string, importer: string) => Promise<string | null>
+
+function isConfigImportSource(source: string): boolean {
+	for (const base of CONFIG_DECORATOR_SOURCES) {
+		if (source === base || source.startsWith(`${base}/`)) return true
+	}
+	return false
+}
+
+function isConfigIdentifier(name: string, moduleInfo: ModuleInfo): boolean {
+	if (name === 'Config') return true
+	const importInfo = moduleInfo.imports.get(name)
+	if (!importInfo) return false
+	return importInfo.imported === 'Config' && isConfigImportSource(importInfo.source)
+}
 
 async function expandExpressionWithModule(
 	moduleInfo: ModuleInfo,
@@ -760,7 +770,7 @@ async function extractConfigDecoratorSource(
 	// 检查是否是 @Config 调用
 	const callee = expr.callee
 	const isConfigCall =
-		(callee.type === 'Identifier' && callee.name === 'Config') ||
+		(callee.type === 'Identifier' && isConfigIdentifier(callee.name, moduleInfo)) ||
 		(callee.type === 'MemberExpression' &&
 			callee.property.type === 'Identifier' &&
 			callee.property.name === 'Config')

@@ -15,21 +15,24 @@ It favors structured JSON output for persistence and a readable console view for
 1) `PinoLoggerService` creates a scoped logger per plugin context.
 2) `createLogger()` configures:
    - `hooks.logMethod` to normalize payloads and error args (`serialization.ts`).
-   - `formatters.log` to add `caller` when enabled (`caller.ts`).
+   - `formatters.log` to add `caller` when enabled (`pretty/caller.ts`).
    - `serializers.err` to emit stable error payloads (`serialization.ts`).
 3) `pino` writes to a multistream:
    - JSON stream -> `logStore` + rotating log file (`sinks.ts`).
-   - Pretty stream -> console (`sinks.ts`).
-4) `prettyErrors.ts` intercepts `error`/`fatal` logs in dev and emits Youch output,
+   - Pretty stream -> console (`pretty/stream.ts`).
+4) `pretty/errors.ts` intercepts `error`/`fatal` logs in dev and emits Youch output,
    then sanitizes error args so JSON stays compact.
 
 ## Key components
 
 - `PinoLoggerService.ts`: binds plugin context into logger bindings and keeps a stable root logger.
 - `createLogger.ts`: central factory that wires hooks/formatters/serializers and pretty-error sinks.
-- `caller.ts`: captures call-site info and optionally shortens paths via `relativeTo`.
+- `pretty/caller.ts`: captures call-site info and optionally shortens paths via `relativeTo`.
+- `loggerRuntimeConfig.ts`: central env/config resolver that gates pretty/caller/youch.
 - `serialization.ts`: converts complex values (Map/Set/Buffer/BigInt) into JSON-safe shapes.
-- `prettyErrors.ts`: Youch-based pretty error renderer with optional internal-frame filtering.
+- `pretty/errors.ts`: Youch-based pretty error renderer with optional internal-frame filtering.
+- `pretty/stack.ts`: shared stack parsing + compiled-path matcher.
+- `pretty/stream.ts`: pino-pretty console formatter.
 - `sinks.ts`: JSON stream + pretty stream; JSON stream feeds `logStore`.
 - `logStore.ts`: in-memory ring buffer + SSE-friendly subscription.
 - `api.ts`: SSE/HTTP endpoint for streaming logs to the UI.
@@ -52,20 +55,22 @@ The JSON stream stores a `LogRecord` with at least:
 
 General:
 - `PLUXEL_LOGGER_NAME` / `PLUXEL_LOGGER_LEVEL` / `PLUXEL_LOG_LEVEL` / `LOG_LEVEL`
-- `PLUXEL_LOGGER_CALLER` = `0` to disable caller capture
+
+Pretty + caller + youch (centralized, gated in `loggerRuntimeConfig.ts`):
+- `PLUXEL_LOGGER_PRETTY` = `0` to disable console pretty output (gates caller + youch)
+- `PLUXEL_LOGGER_YOUCH` = `0` to disable Youch even if pretty is on
+- `PLUXEL_LOGGER_CALLER` = `0` to disable caller even if pretty is on
+- `PLUXEL_LOGGER_PRETTY_DUPLEX` = `1` to log pretty errors into the JSON stream
+- `PLUXEL_LOGGER_COMPILED_HINTS` = `dist,build,lib` (shared compiled path hints)
+- `PLUXEL_LOGGER_SKIP_COMPILED` = `0` to keep compiled frames in caller output + show Youch for compiled stacks
+- `PLUXEL_LOGGER_CALLER_STACK_LIMIT` = fixed stack trace limit for caller capture (unset → adaptive base→base*2)
 - `PLUXEL_LOGGER_CALLER_ROOT` = absolute path to trim from call sites
+- `PLUXEL_LOGGER_HIDE_INTERNAL` / `PLUXEL_LOGGER_HIDE_INTERNAL_PATTERNS`
+- `PLUXEL_LOGGER_KEEP_INTERNAL_FRAMES`
 
 Log store:
 - `PLUXEL_LOGGER_STORE` = `0` to disable in-memory store
 - `PLUXEL_LOGGER_STORE_MIN_LEVEL` = min level kept in the store
-
-Pretty errors (dev-only by default):
-- `PLUXEL_LOGGER_PRETTY` / `PLUXEL_YOUCH` = `0` to disable
-- `PLUXEL_LOGGER_PRETTY_SKIP_COMPILED` = `0` to show Youch for compiled stacks
-- `PLUXEL_LOGGER_PRETTY_COMPILED_HINTS` = `dist,build,lib` (comma-separated)
-- `PLUXEL_LOGGER_PRETTY_DUPLEX` = `1` to log pretty errors into the JSON stream
-- `PLUXEL_LOGGER_HIDE_INTERNAL` / `PLUXEL_LOGGER_HIDE_INTERNAL_PATTERNS`
-- `PLUXEL_LOGGER_KEEP_INTERNAL_FRAMES`
 
 Dumper (object normalization):
 - `PLUXEL_LOGGER_DUMP_DEPTH`
@@ -73,6 +78,9 @@ Dumper (object normalization):
 - `PLUXEL_LOGGER_DUMP_TYPED_ARRAY_LIMIT`
 - `PLUXEL_LOGGER_DUMP_BUFFER_PREVIEW`
 - `PLUXEL_LOGGER_DUMP_STRING_LIMIT`
+
+Programmatic overrides:
+- `Context.Config.logger.runtime` can override pretty/caller/youch/store/dumper without env.
 
 ## Notes / gotchas
 

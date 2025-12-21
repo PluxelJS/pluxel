@@ -1,35 +1,19 @@
 import { dump as dumpValue } from '@poppinss/dumper/console'
 import type { ConsoleDumpConfig } from '@poppinss/dumper/console/types'
 import pino, { type LogFn, type Logger, type LoggerOptions } from 'pino'
+import type { LoggerDumperConfig } from './loggerRuntimeConfig'
 
 const clampNumber = (input: number, fallback: number, min = 1) =>
 	Number.isFinite(input) ? Math.max(min, Math.floor(input)) : fallback
 
-const DUMP_MAX_DEPTH = clampNumber(
-	Number.parseInt(process.env.PLUXEL_LOGGER_DUMP_DEPTH ?? '4', 10),
-	4,
-	1,
-)
-const DUMP_COLLECTION_LIMIT = clampNumber(
-	Number.parseInt(process.env.PLUXEL_LOGGER_DUMP_COLLECTION_LIMIT ?? '50', 10),
-	50,
-	1,
-)
-const DUMP_TYPED_ARRAY_LIMIT = clampNumber(
-	Number.parseInt(process.env.PLUXEL_LOGGER_DUMP_TYPED_ARRAY_LIMIT ?? '64', 10),
-	64,
-	1,
-)
-const DUMP_BUFFER_PREVIEW = clampNumber(
-	Number.parseInt(process.env.PLUXEL_LOGGER_DUMP_BUFFER_PREVIEW ?? '64', 10),
-	64,
-	4,
-)
-const DUMP_STRING_LIMIT = clampNumber(
-	Number.parseInt(process.env.PLUXEL_LOGGER_DUMP_STRING_LIMIT ?? '4000', 10),
-	4000,
-	64,
-)
+const DEFAULT_DUMPER_CONFIG: LoggerDumperConfig = {
+	depth: 4,
+	collectionLimit: 50,
+	typedArrayLimit: 64,
+	bufferPreview: 64,
+	stringLimit: 4000,
+}
+let dumperSettings: LoggerDumperConfig = { ...DEFAULT_DUMPER_CONFIG }
 
 const identityStyle = (value: string) => value
 const dumperPlainStyles: ConsoleDumpConfig['styles'] = {
@@ -67,15 +51,34 @@ const dumperPlainStyles: ConsoleDumpConfig['styles'] = {
 	unknownLabel: identityStyle,
 } as const
 
-const dumperConfig: ConsoleDumpConfig = {
-	depth: DUMP_MAX_DEPTH,
-	showHidden: false,
-	inspectObjectPrototype: false,
-	inspectArrayPrototype: false,
-	inspectStaticMembers: false,
-	maxArrayLength: DUMP_COLLECTION_LIMIT,
-	maxStringLength: DUMP_STRING_LIMIT,
-	styles: dumperPlainStyles,
+let dumperConfig: ConsoleDumpConfig = buildDumperConfig(dumperSettings)
+
+function buildDumperConfig(settings: LoggerDumperConfig): ConsoleDumpConfig {
+	return {
+		depth: settings.depth,
+		showHidden: false,
+		inspectObjectPrototype: false,
+		inspectArrayPrototype: false,
+		inspectStaticMembers: false,
+		maxArrayLength: settings.collectionLimit,
+		maxStringLength: settings.stringLimit,
+		styles: dumperPlainStyles,
+	}
+}
+
+function normalizeDumperConfig(config: LoggerDumperConfig): LoggerDumperConfig {
+	return {
+		depth: clampNumber(config.depth, DEFAULT_DUMPER_CONFIG.depth, 1),
+		collectionLimit: clampNumber(config.collectionLimit, DEFAULT_DUMPER_CONFIG.collectionLimit, 1),
+		typedArrayLimit: clampNumber(config.typedArrayLimit, DEFAULT_DUMPER_CONFIG.typedArrayLimit, 1),
+		bufferPreview: clampNumber(config.bufferPreview, DEFAULT_DUMPER_CONFIG.bufferPreview, 4),
+		stringLimit: clampNumber(config.stringLimit, DEFAULT_DUMPER_CONFIG.stringLimit, 64),
+	}
+}
+
+export function configureSerialization(config: LoggerDumperConfig) {
+	dumperSettings = normalizeDumperConfig(config)
+	dumperConfig = buildDumperConfig(dumperSettings)
 }
 
 const describeWithDumper = (value: unknown): string => {
@@ -123,7 +126,7 @@ const mapToPlain = (value: Map<unknown, unknown>, seen: WeakSet<object>, depth: 
 	const entries: Array<[unknown, unknown]> = []
 	let index = 0
 	for (const [k, v] of value.entries()) {
-		if (index >= DUMP_COLLECTION_LIMIT) break
+		if (index >= dumperSettings.collectionLimit) break
 		entries.push([toPlain(k, seen, depth), toPlain(v, seen, depth)])
 		index++
 	}
@@ -140,7 +143,7 @@ const setToPlain = (value: Set<unknown>, seen: WeakSet<object>, depth: number) =
 	const values: unknown[] = []
 	let index = 0
 	for (const item of value.values()) {
-		if (index >= DUMP_COLLECTION_LIMIT) break
+		if (index >= dumperSettings.collectionLimit) break
 		values.push(toPlain(item, seen, depth))
 		index++
 	}
@@ -154,7 +157,7 @@ const setToPlain = (value: Set<unknown>, seen: WeakSet<object>, depth: number) =
 }
 
 const bufferToPlain = (value: Buffer) => {
-	const preview = value.subarray(0, DUMP_BUFFER_PREVIEW)
+	const preview = value.subarray(0, dumperSettings.bufferPreview)
 	return {
 		type: 'Buffer',
 		byteLength: value.byteLength,
@@ -169,7 +172,7 @@ const typedArrayToPlain = (value: ArrayBufferView) => {
 			byteLength: value.byteLength,
 		}
 	}
-	const limit = Math.min(DUMP_TYPED_ARRAY_LIMIT, (value as any).length ?? 0)
+	const limit = Math.min(dumperSettings.typedArrayLimit, (value as any).length ?? 0)
 	const values = Array.from({ length: limit }, (_, idx) => (value as any)[idx])
 	const payload: Record<string, unknown> = {
 		type: value.constructor?.name ?? 'TypedArray',
@@ -186,7 +189,7 @@ const typedArrayToPlain = (value: ArrayBufferView) => {
 const toPlain = (
 	value: unknown,
 	seen: WeakSet<object> = new WeakSet(),
-	depth = DUMP_MAX_DEPTH,
+	depth = dumperSettings.depth,
 ): unknown => {
 	if (value === null || value === undefined) return value
 	const valueType = typeof value

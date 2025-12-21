@@ -1,4 +1,6 @@
 import type { LevelWithSilent } from 'pino'
+import type { LoggerRuntimeConfig, ResolvedLoggerRuntimeConfig } from './loggerRuntimeConfig'
+import { resolveLoggerRuntimeConfig } from './loggerRuntimeConfig'
 
 const VALID_LEVELS = new Set<LevelWithSilent>([
 	'fatal',
@@ -38,6 +40,8 @@ export interface PinoLoggerConfig {
 		enabled?: boolean
 		level?: LevelWithSilent
 	}
+	/** 运行时日志行为（pretty / caller / youch / store / dumper） */
+	runtime?: LoggerRuntimeConfig
 }
 
 export interface ResolvedPinoLoggerConfig {
@@ -47,6 +51,7 @@ export interface ResolvedPinoLoggerConfig {
 		enabled: boolean
 		level: LevelWithSilent
 	}
+	runtime: ResolvedLoggerRuntimeConfig
 }
 
 type ProductionConfig = NonNullable<PinoLoggerConfig['production']>
@@ -58,6 +63,7 @@ const DEFAULT_CONFIG: ResolvedPinoLoggerConfig = {
 		enabled: false,
 		level: DEFAULT_LOG_LEVEL,
 	},
+	runtime: resolveLoggerRuntimeConfig(),
 }
 
 export function resolvePinoLoggerConfig(config: PinoLoggerConfig = {}): ResolvedPinoLoggerConfig {
@@ -71,6 +77,7 @@ export function resolvePinoLoggerConfig(config: PinoLoggerConfig = {}): Resolved
 			enabled: prod.enabled ?? DEFAULT_CONFIG.production.enabled,
 			level: prodLevel,
 		},
+		runtime: resolveLoggerRuntimeConfig(config.runtime),
 	}
 }
 
