@@ -15,6 +15,11 @@ import {
 	useMantineTheme,
 } from '@mantine/core'
 import {
+	type GlobalExtensionContext,
+	type PluginExtensionContext,
+	rpcErrorMessage,
+} from '@pluxel/hmr/web/react'
+import {
 	IconCircleCheck,
 	IconCircleDashed,
 	IconDashboard,
@@ -34,11 +39,6 @@ import {
 	useRef,
 	useState,
 } from 'react'
-import {
-	type PluginExtensionContext,
-	type GlobalExtensionContext,
-	rpcErrorMessage,
-} from '@pluxel/hmr/web/react'
 
 type PluginWithUIRpc = PluginExtensionContext['services']['hmr']['rpc']['PluginWithUI']
 type PluginOverview = Awaited<ReturnType<PluginWithUIRpc['overview']>>
@@ -58,13 +58,7 @@ export function PluginApiProvider({
 }) {
 	const hmr = ctx.services.hmr
 	const rpc = hmr.rpc.PluginWithUI
-	const sseClient = useMemo(
-		() => hmr.createSse({ namespaces: [ctx.pluginName] }),
-		[hmr, ctx.pluginName],
-	)
-	useEffect(() => {
-		return () => sseClient.close()
-	}, [sseClient])
+	const sseClient = useMemo(() => hmr.sse, [hmr])
 	const value = useMemo(() => ({ rpc, sse: sseClient }), [rpc, sseClient])
 	return <PluginApiContext.Provider value={value}>{children}</PluginApiContext.Provider>
 }
@@ -134,7 +128,7 @@ export function GlobalStatusBar({ ctx }: { ctx: GlobalExtensionContext }) {
 	const [extVersion, setExtVersion] = useState<number>(0)
 
 	useEffect(() => {
-		const stream = hmr.streamExtensions()
+		const stream = hmr.sse
 		const off = stream.extensions.on((msg) => {
 			const payload = msg.payload
 			if (payload?.type === 'sync') setExtVersion(payload.version)
@@ -142,7 +136,6 @@ export function GlobalStatusBar({ ctx }: { ctx: GlobalExtensionContext }) {
 		})
 		return () => {
 			off()
-			stream.close()
 		}
 	}, [hmr])
 
@@ -250,20 +243,22 @@ export function TaskBoard({ sse }: { sse: PluginSse }) {
 	)
 
 	useEffect(() => {
-		refreshTasks().catch(() => {})
+		refreshTasks().catch(() => undefined)
 	}, [refreshTasks])
 
 	useEffect(() => {
 		const off = sse.PluginWithUI.on(
 			(msg) => {
-				const payload = msg.payload as any
-				if (payload?.type === 'cursor' && Array.isArray(payload.tasks)) {
-					setTasks(payload.tasks)
+				const payload = msg.payload
+				if (!payload || typeof payload !== 'object') return
+				const record = payload as { type?: unknown; tasks?: unknown }
+				if (record.type === 'cursor' && Array.isArray(record.tasks)) {
+					setTasks(record.tasks as PluginTask[])
 					setLoading(false)
 					return
 				}
-				if (payload?.type === 'sync' && Array.isArray(payload.tasks)) {
-					setTasks(payload.tasks)
+				if (record.type === 'sync' && Array.isArray(record.tasks)) {
+					setTasks(record.tasks as PluginTask[])
 					setLoading(false)
 				}
 			},
@@ -488,20 +483,23 @@ export function ActivityTimeline({ sse }: { sse: PluginSse }) {
 	}, [fetchActivity])
 
 	useEffect(() => {
-		refreshActivity().catch(() => {})
+		refreshActivity().catch(() => undefined)
 	}, [refreshActivity])
 
 	useEffect(() => {
 		const off = sse.PluginWithUI.on(
 			(msg) => {
-				const payload = msg.payload as any
-				if (payload?.type === 'cursor' && Array.isArray(payload.activity)) {
-					setActivity(payload.activity)
+				const payload = msg.payload
+				if (!payload || typeof payload !== 'object') return
+				const record = payload as { type?: unknown; activity?: unknown }
+
+				if (record.type === 'cursor' && Array.isArray(record.activity)) {
+					setActivity(record.activity as PluginActivity[])
 					setLoading(false)
 					return
 				}
-				if (payload?.type === 'sync' && Array.isArray(payload.activity)) {
-					setActivity(payload.activity)
+				if (record.type === 'sync' && Array.isArray(record.activity)) {
+					setActivity(record.activity as PluginActivity[])
 					setLoading(false)
 				}
 			},
@@ -615,34 +613,37 @@ export function NotesPanel({ sse }: { sse: PluginSse }) {
 	)
 
 	useEffect(() => {
-		refreshNotes().catch(() => {})
+		refreshNotes().catch(() => undefined)
 	}, [refreshNotes])
 
 	// SSE 实时同步：无需传 namespaces，直接点出插件命名空间
 	useEffect(() => {
 		const off = sse.PluginWithUI.on(
 			(msg) => {
-				const payload = msg.payload as any
-				if (payload?.type === 'cursor' && Array.isArray(payload.notes)) {
-					setNotes(payload.notes)
+				const payload = msg.payload
+				if (!payload || typeof payload !== 'object') return
+
+				const record = payload as { type?: unknown; notes?: unknown }
+
+				if (record.type === 'cursor' && Array.isArray(record.notes)) {
+					setNotes(record.notes as PluginNote[])
 					setLoading(false)
 					return
 				}
-				if (payload && typeof payload === 'object' && 'type' in payload) {
-					if (payload.type === 'sync') {
-						setNotes(payload.notes)
-						setLoading(false)
-						return
-					}
-					if (payload.type === 'ready') {
-						setLoading(false)
-						return
-					}
-					if (payload.type === 'tick') {
-						return
-					}
+
+				if (record.type === 'sync' && Array.isArray(record.notes)) {
+					setNotes(record.notes as PluginNote[])
+					setLoading(false)
+					return
 				}
-				if (!payload || typeof payload !== 'object') return
+				if (record.type === 'ready') {
+					setLoading(false)
+					return
+				}
+				if (record.type === 'tick') {
+					return
+				}
+
 				setNotes((prev) => [payload as PluginNote, ...prev].slice(0, 8))
 				setLoading(false)
 			},
@@ -673,10 +674,7 @@ export function NotesPanel({ sse }: { sse: PluginSse }) {
 			}
 			setError(rpcErrorMessage(error, '无法新增备注'))
 		} finally {
-			if (!mountedRef.current) {
-				return
-			}
-			setSubmitting(false)
+			if (mountedRef.current) setSubmitting(false)
 		}
 	}
 
@@ -784,14 +782,19 @@ export function LiveSseActivity({ sse }: { sse: PluginSse }) {
 		const offError = sse.onError(() => setConnected(false))
 
 		const offLogs = sse.logs.onAny((msg) => {
-			const payload = msg.payload as any
+			const payload = msg.payload
+			const record =
+				payload && typeof payload === 'object' ? (payload as Record<string, unknown>) : null
+			const time = typeof record?.time === 'string' ? record.time : new Date().toLocaleTimeString()
+			const label = typeof record?.msg === 'string' ? record.msg : '日志'
+			const detail = typeof record?.name === 'string' ? record.name : undefined
 			setItems((prev) =>
 				[
 					{
-						key: `log-${payload?.time ?? Date.now()}-${prev.length}`,
-						label: payload?.msg ?? '日志',
-						detail: payload?.name,
-						time: payload?.time ?? new Date().toLocaleTimeString(),
+						key: `log-${time || Date.now()}-${prev.length}`,
+						label,
+						detail,
+						time,
 						color: 'cyan',
 					},
 					...prev,
@@ -801,25 +804,31 @@ export function LiveSseActivity({ sse }: { sse: PluginSse }) {
 
 		const offPlugin = sse.PluginWithUI.on(
 			(msg) => {
-				const payload = msg.payload as any
+				const payload = msg.payload
+				const record =
+					payload && typeof payload === 'object' ? (payload as Record<string, unknown>) : null
+				const type = typeof record?.type === 'string' ? record.type : ''
+				const now = typeof record?.now === 'number' ? record.now : null
+				const message = typeof record?.message === 'string' ? record.message : undefined
+				const author = typeof record?.author === 'string' ? record.author : undefined
 				const tag =
-					payload?.type === 'sync'
+					type === 'sync'
 						? '同步'
-						: payload?.type === 'cursor'
+						: type === 'cursor'
 							? '光标'
-							: payload?.type === 'ready'
+							: type === 'ready'
 								? '就绪'
-								: payload?.type === 'tick'
+								: type === 'tick'
 									? '时间'
 									: '备注'
 				const label =
-					payload?.type === 'ready'
+					type === 'ready'
 						? '插件 SSE 就绪'
-						: payload?.type === 'tick'
-							? `当前时间 ${new Date(payload.now).toLocaleTimeString()}`
-							: `[${tag}] ${payload?.message ?? payload?.type ?? '更新'}`
-				if (payload?.type === 'tick' && typeof payload.now === 'number') {
-					setLastTick(new Date(payload.now).toLocaleTimeString())
+						: type === 'tick' && now != null
+							? `当前时间 ${new Date(now).toLocaleTimeString()}`
+							: `[${tag}] ${message ?? (type || '更新')}`
+				if (type === 'tick' && now != null) {
+					setLastTick(new Date(now).toLocaleTimeString())
 				}
 
 				setItems((prev) =>
@@ -827,7 +836,7 @@ export function LiveSseActivity({ sse }: { sse: PluginSse }) {
 						{
 							key: `sse-${msg.event}-${Date.now()}-${prev.length}`,
 							label,
-							detail: payload?.author ?? payload?.type,
+							detail: author ?? type,
 							time: new Date().toLocaleTimeString(),
 							color: tag === '同步' ? 'grape' : tag === '光标' ? 'violet' : 'teal',
 						},
@@ -839,13 +848,21 @@ export function LiveSseActivity({ sse }: { sse: PluginSse }) {
 		)
 
 		const offExt = sse.extensions?.on?.((msg) => {
-			const payload = msg.payload as any
+			const payload = msg.payload
+			const record =
+				payload && typeof payload === 'object' ? (payload as Record<string, unknown>) : null
+			const version =
+				typeof record?.version === 'number' || typeof record?.version === 'string'
+					? String(record.version)
+					: String(Date.now())
+			const type = typeof record?.type === 'string' ? record.type : '更新'
+			const pluginName = typeof record?.pluginName === 'string' ? record.pluginName : undefined
 			setItems((prev) =>
 				[
 					{
-						key: `ext-${payload?.version ?? Date.now()}-${prev.length}`,
-						label: `[扩展] ${payload?.type ?? '更新'}`,
-						detail: payload?.pluginName,
+						key: `ext-${version}-${prev.length}`,
+						label: `[扩展] ${type}`,
+						detail: pluginName,
 						time: new Date().toLocaleTimeString(),
 						color: 'yellow',
 					},
@@ -944,18 +961,15 @@ export function InfoCard({ ctx }: { ctx: PluginExtensionContext }) {
 			}
 			setStatusMessage(`状态异常：${rpcErrorMessage(error, '无法获取插件状态')}`)
 		} finally {
-			if (!mountedRef.current) {
-				return
-			}
-			setLoading(false)
+			if (mountedRef.current) setLoading(false)
 		}
 	}, [])
 
 	useEffect(() => {
 		const timer = setInterval(() => {
-			refreshOverview().catch(() => {})
+			refreshOverview().catch(() => undefined)
 		}, 10_000)
-		refreshOverview().catch(() => {})
+		refreshOverview().catch(() => undefined)
 		return () => {
 			clearInterval(timer)
 		}
@@ -963,7 +977,7 @@ export function InfoCard({ ctx }: { ctx: PluginExtensionContext }) {
 
 	const handleManualRefresh = () => {
 		setLoading(true)
-		refreshOverview().catch(() => {})
+		refreshOverview().catch(() => undefined)
 	}
 
 	return (

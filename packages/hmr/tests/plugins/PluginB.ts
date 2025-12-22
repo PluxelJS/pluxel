@@ -27,7 +27,6 @@ export class PluginB extends BasePlugin {
 	private ba: Config<typeof CfgSchema>
 	init(): void {
 		this.ctx.logger.info('PluginB initialized')
-		throw new Error('d')
 	}
 
 	doSomething(): void {
