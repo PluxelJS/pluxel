@@ -1,4 +1,4 @@
-import { configSourcePlugin, createImportTracker, importTypeFixerPlugin } from '@pluxel/rolldown'
+import { configSourcePlugin, createImportTracker, importTypeFixerPlugin, Macros } from '@pluxel/rolldown'
 import { type ArgValues, define } from 'gunshi'
 import type { InlineConfig } from 'tsdown'
 import { resolveBuildContext } from '../build_impl/config'
@@ -60,6 +60,7 @@ export const buildCommand = define({
 				importTypeFixerPlugin(),
 				configSourcePlugin(),
 				importTracker.plugin,
+				Macros()
 			]),
 		})
 	},

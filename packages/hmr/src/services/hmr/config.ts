@@ -1,5 +1,5 @@
 import { existsSync } from 'node:fs'
-import { configSourcePlugin, importTypeFixerPlugin } from '@pluxel/rolldown'
+import { configSourcePlugin, importTypeFixerPlugin, Macros } from '@pluxel/rolldown'
 import { resolve } from 'pathe'
 import type { InlineConfig, Plugin } from 'vite'
 import { normalizePath, searchForWorkspaceRoot } from 'vite'
@@ -174,6 +174,7 @@ export function buildHmrViteConfig(opts: HmrViteConfigOptions): InlineConfig {
 			tsconfigPaths(),
 			configSourcePlugin({ include: opts.scanDirs.map((d) => `${d}/**/*.{ts,tsx}`) }),
 			importTypeFixerPlugin(),
+			Macros(),
 			opts.runnerPlugin,
 			opts.honoPlugin,
 		],
