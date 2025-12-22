@@ -381,7 +381,19 @@ export class PluginService {
 		// Only stop plugins that were actually constructed (and thus may be running).
 		const plugin = this.getRuntimeInstance(id as any)
 		if (!plugin) return
-		await this.lifecycle.stopLifecycle(id, plugin)
+		await this.lifecycle.stopLifecycle(id, plugin, { timeoutMs: this.resolveStopTimeoutMs(plugin) })
+	}
+
+	private resolveStartTimeoutMs(plugin: BasePlugin): number | undefined {
+		const info = plugin.ctx.pluginInfo
+		const fromMeta = (info.metadata as any)?.startTimeoutMs
+		return isFinitePositiveMs(fromMeta) ? fromMeta : undefined
+	}
+
+	private resolveStopTimeoutMs(plugin: BasePlugin): number | undefined {
+		const info = plugin.ctx.pluginInfo
+		const fromMeta = (info.metadata as any)?.stopTimeoutMs
+		return isFinitePositiveMs(fromMeta) ? fromMeta : undefined
 	}
 
 	private pruneDetachedSingletons(): void {
@@ -455,7 +467,7 @@ export class PluginService {
 		}
 
 		try {
-			await this.lifecycle.startLifecycle(id, instance)
+			await this.lifecycle.startLifecycle(id, instance, this.resolveStartTimeoutMs(instance))
 		} catch (error) {
 			const logger = pluginCtx.logger ?? this.ctx.logger
 			logger.error(error, `启动 ${String(id)} 失败`)
@@ -627,4 +639,8 @@ export class PluginService {
 			this._activeContainer = undefined
 		}
 	}
+}
+
+function isFinitePositiveMs(value: unknown): value is number {
+	return typeof value === 'number' && Number.isFinite(value) && value > 0
 }

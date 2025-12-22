@@ -249,6 +249,63 @@ describe('PluginService commit()', () => {
 		)
 	})
 
+	it('respects global startTimeoutMs when no override is provided', async () => {
+		await withTestHost(
+			async (host) => {
+				@Plugin({ name: 'TO-global' })
+				class Slow extends BasePlugin {
+					override async init(signal: AbortSignal): Promise<void> {
+						await new Promise<void>((resolve, reject) => {
+							const t = setTimeout(resolve, 50)
+							signal.addEventListener(
+								'abort',
+								() => {
+									clearTimeout(t)
+									reject(new Error('aborted'))
+								},
+								{ once: true },
+							)
+						})
+					}
+				}
+
+				host.register(Slow)
+				const summary = await host.commit()
+				expect(summary.failed).toContain(Slow)
+				expect(host.isRunning(Slow)).toBe(false)
+			},
+			{ registry: { startTimeoutMs: 10 } },
+		)
+	})
+
+	it('allows per-plugin startTimeoutMs via @Plugin metadata', async () => {
+		await withTestHost(
+			async (host) => {
+				@Plugin({ name: 'TO-meta', startTimeoutMs: 200 })
+				class Slow extends BasePlugin {
+					override async init(signal: AbortSignal): Promise<void> {
+						await new Promise<void>((resolve, reject) => {
+							const t = setTimeout(resolve, 50)
+							signal.addEventListener(
+								'abort',
+								() => {
+									clearTimeout(t)
+									reject(new Error('aborted'))
+								},
+								{ once: true },
+							)
+						})
+					}
+				}
+
+				host.register(Slow)
+				await host.commitStrict()
+				expect(host.isRunning(Slow)).toBe(true)
+			},
+			{ registry: { startTimeoutMs: 10 } },
+		)
+	})
+
 	it('teardown stops dependents before parents', async () => {
 		await withTestHost(
 			async (host) => {

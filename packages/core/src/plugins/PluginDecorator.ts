@@ -35,6 +35,12 @@ const EMPTY_ARR: readonly unknown[] = $freeze([])
 export interface PluginMetadata {
 	/** 声明期 name，可缺省；最终 id 由 Loader 决定 */
 	name?: string
+	/**
+	 * Optional per-plugin lifecycle timeout overrides (milliseconds).
+	 * These are read by the runtime registry and only affect this plugin's lifecycle.
+	 */
+	startTimeoutMs?: number
+	stopTimeoutMs?: number
 	[key: string]: any
 }
 

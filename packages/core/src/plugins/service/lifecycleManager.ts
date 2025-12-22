@@ -81,18 +81,20 @@ export class LifecycleManager {
 
 	/* ─────────────────────────── Lifecycle Management ─────────────────────────── */
 
-	async startLifecycle(id: PluginIdentifier, plugin: BasePlugin): Promise<void> {
+	async startLifecycle(id: PluginIdentifier, plugin: BasePlugin, timeoutMs?: number): Promise<void> {
 		const ref = this.ensureLifecycle(id, plugin)
 		if (lifecycleSelectors.isRunning(ref.getSnapshot?.())) return
 
 		ref.send({ type: 'START' })
 
+		const startTimeoutMs = normalizeTimeoutMs(timeoutMs, this.startTimeoutMs)
+
 		let snapshot: LifecycleSnapshot
 		try {
-			snapshot = await ref.waitForStable(this.startTimeoutMs)
+			snapshot = await ref.waitForStable(startTimeoutMs)
 		} catch (error) {
-			await this.stopLifecycle(id, plugin, ref)
-			throw new Error(`Plugin ${String(id)} start timeout after ${this.startTimeoutMs}ms`, {
+			await this.stopLifecycle(id, plugin, { ref })
+			throw new Error(`Plugin ${String(id)} start timeout after ${startTimeoutMs}ms`, {
 				cause: error,
 			})
 		}
@@ -113,7 +115,7 @@ export class LifecycleManager {
 		const capturedErr: unknown =
 			refSnap?.context?.err ?? stableSnap.context?.err ?? stableSnap.error
 
-		await this.stopLifecycle(id, plugin, ref)
+		await this.stopLifecycle(id, plugin, { ref })
 
 		const pluginCtx = plugin.ctx
 		const err =
@@ -134,9 +136,9 @@ export class LifecycleManager {
 	async stopLifecycle(
 		id: PluginIdentifier,
 		plugin: BasePlugin,
-		ref?: PluginLifecycleActor,
+		opts?: { ref?: PluginLifecycleActor; timeoutMs?: number },
 	): Promise<void> {
-		const lifecycle = ref ?? this.getLifecycle(plugin)
+		const lifecycle = opts?.ref ?? this.getLifecycle(plugin)
 		if (!lifecycle) return
 
 		try {
@@ -145,16 +147,24 @@ export class LifecycleManager {
 			/* ignore */
 		}
 
-		await this.waitUntilStopped(lifecycle)
+		const timeoutMs = normalizeTimeoutMs(opts?.timeoutMs, this.stopTimeoutMs)
+		await this.waitUntilStopped(lifecycle, timeoutMs)
 		this.setLifecycle(plugin)
 	}
 
-	private async waitUntilStopped(ref: PluginLifecycleActor): Promise<void> {
+	private async waitUntilStopped(ref: PluginLifecycleActor, timeoutMs: number): Promise<void> {
 		if (lifecycleSelectors.isStopped(ref.getSnapshot?.())) return
 		try {
-			await ref.waitForStopped(this.stopTimeoutMs)
+			await ref.waitForStopped(timeoutMs)
 		} catch {
 			/* ignore */
 		}
 	}
+}
+
+function normalizeTimeoutMs(value: number | undefined, fallback: number): number {
+	if (value == null) return fallback
+	if (!Number.isFinite(value)) return fallback
+	const ms = Math.floor(value)
+	return ms > 0 ? ms : fallback
 }
