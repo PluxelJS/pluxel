@@ -20,7 +20,7 @@ import type {
 	SpreadElement,
 } from 'oxc-parser'
 import { normalize as normalizePath } from 'pathe'
-import type { Plugin } from 'vite'
+import type { Plugin } from 'rolldown'
 import { normalizeSchemaSource } from '../utils/configHandler'
 
 export interface ConfigSourcePluginOptions {
@@ -90,6 +90,7 @@ export function configSourcePlugin(options: ConfigSourcePluginOptions = {}): Plu
 
 	return {
 		name: 'pluxel-config-source',
+		// @ts-expect-error: "vite 存在这个字段，我们 rolldown 插件只是为了避免 rolldown 包引入 vite 却只为其类型"
 		enforce: 'pre',
 		// 使用 rolldown filter 模式减少 JS-Rust 通信开销
 		transform: {

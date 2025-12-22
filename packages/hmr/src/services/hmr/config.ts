@@ -1,6 +1,7 @@
 import { existsSync } from 'node:fs'
-import { configSourcePlugin, importTypeFixerPlugin, Macros } from '@pluxel/rolldown'
+import { configSourcePlugin, importTypeFixerPlugin } from '@pluxel/rolldown'
 import { resolve } from 'pathe'
+import Macros from 'unplugin-macros/rolldown'
 import type { InlineConfig, Plugin } from 'vite'
 import { normalizePath, searchForWorkspaceRoot } from 'vite'
 import tsconfigPaths from 'vite-tsconfig-paths'

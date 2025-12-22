@@ -1,4 +1,3 @@
-export { default as Macros } from 'unplugin-macros/rolldown'
 export { appendDtsImport } from './plugins/appendDtsImport'
 export type { ConfigSourcePluginOptions } from './plugins/configSourcePlugin'
 export { configSourcePlugin } from './plugins/configSourcePlugin'
