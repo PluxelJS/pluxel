@@ -1,7 +1,7 @@
 import '@pluxel/core/test/setup'
 
 import { describe, expect, it } from 'bun:test'
-import { BasePlugin, Context, Plugin } from '@pluxel/core'
+import { BasePlugin, Context, Plugin, setParamToken } from '@pluxel/core'
 import { LoaderService } from '../../src/services/loader/LoaderService'
 
 function createHmrCtx(core: Context) {
@@ -60,6 +60,7 @@ describe('LoaderService', () => {
 				super()
 			}
 		}
+		setParamToken(Consumer, 0, Abs)
 
 		core.registry.register(Impl)
 		core.registry.register(Consumer)
@@ -89,6 +90,7 @@ describe('LoaderService', () => {
 				super()
 			}
 		}
+		setParamToken(Consumer, 0, MissingBase)
 
 		// Baseline: load module A providing Impl1 and commit successfully.
 		{

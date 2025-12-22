@@ -24,8 +24,13 @@ import type {
 	PluginIdentifier,
 	PluginInstance,
 } from '../types'
-import { computeInitPlan, partitionChanges, planTeardown, type InitPlan } from './commitPlanner'
+import { computeInitPlan, partitionChanges, type InitPlan } from './commitPlanner'
 import { LifecycleManager } from './lifecycleManager'
+import {
+	type PluginStartStrategy,
+	startPluginsWithStrategy,
+} from './startupStrategy'
+import { stopPluginsTopo } from './teardownStrategy'
 import {
 	type InstancesOf,
 	type OptionalEffectHandler,
@@ -40,6 +45,9 @@ type PluginServiceConfig = {
 	pluginCTXIsolate?: ServiceClass<any>[]
 	startTimeoutMs?: number
 	stopTimeoutMs?: number
+	startStrategy?: PluginStartStrategy
+	startConcurrency?: number
+	stopConcurrency?: number
 }
 
 export interface CommitSummary {
@@ -73,10 +81,21 @@ declare module '@pluxel/context' {
 export class PluginService {
 	private readonly definitions: PluginDefinitions
 	private readonly builderSingletons = new LeanMapTracker<PluginIdentifier, PluginInstance>()
+	/**
+	 * Runtime instances that were detached from the DI builder cache by draft mutations
+	 * (e.g. `unregister()` / `replace()`), but are still running until the next commit.
+	 *
+	 * This exists because `diod`'s builder currently deletes builder-singletons on
+	 * unregister, which would otherwise make teardown impossible before commit.
+	 */
+	private readonly detachedSingletons = new Map<PluginIdentifier, PluginInstance>()
 
 	private _commitLock: Promise<unknown> = Promise.resolve()
 	private readonly startTimeoutMs: number
 	private readonly stopTimeoutMs: number
+	private readonly startStrategy: PluginStartStrategy
+	private readonly startConcurrency: number
+	private readonly stopConcurrency: number
 	private _lastCommit?: CommitSummary
 	/** Active draft container during commit() before confirm(). */
 	private _activeContainer?: PluginDiContainer
@@ -96,6 +115,9 @@ export class PluginService {
 	) {
 		this.startTimeoutMs = config?.startTimeoutMs ?? 1_500
 		this.stopTimeoutMs = config?.stopTimeoutMs ?? 3_000
+		this.startStrategy = config?.startStrategy ?? 'ready-queue'
+		this.startConcurrency = config?.startConcurrency ?? 8
+		this.stopConcurrency = config?.stopConcurrency ?? 1
 
 		const isolated = [...new Set([...(config?.pluginCTXIsolate ?? []), EffectScopeService])]
 		this.definitions = new PluginDefinitions(() => {
@@ -126,7 +148,7 @@ export class PluginService {
 		this.optionals = new OptionalResolver(
 			() => this.ctx,
 			() => this.container,
-			() => this.builderSingletons,
+			(id) => this.getRuntimeInstance(id),
 			(id) => this.isRunning(id),
 			() => this._lastCommit,
 			() => this._activeContainer,
@@ -156,7 +178,7 @@ export class PluginService {
 	isRunning(id: PluginIdentifier): boolean {
 		const container = this._activeContainer ?? this.container
 		const key = container?.resolveIdentifier?.(id as any) ?? id
-		const instance = this.builderSingletons.get(key as any) as BasePlugin | undefined
+		const instance = this.getRuntimeInstance(key as any)
 		return this.lifecycle.isRunning(instance)
 	}
 
@@ -171,7 +193,7 @@ export class PluginService {
 	public getInstance<T extends PluginIdentifier>(id: T): InstanceType<T> | undefined {
 		const container = this._activeContainer ?? this.container
 		const key = (container?.resolveIdentifier?.(id as any) ?? id) as PluginIdentifier
-		return this.builderSingletons.get(key as any) as InstanceType<T> | undefined
+		return this.getRuntimeInstance(key as any) as InstanceType<T> | undefined
 	}
 
 	/* ─────────────────────────── Forks ─────────────────────────── */
@@ -202,9 +224,10 @@ export class PluginService {
 	public getFork<T extends PluginIdentifier>(ctor: T, forkId: string): InstanceType<T> | undefined {
 		const ForkCtor = getForkedCtor(ctor, forkId)
 		if (!ForkCtor) return undefined
-		return (this.container?.get(ForkCtor as any) ?? this.builderSingletons.get(ForkCtor as any)) as
-			| InstanceType<T>
-			| undefined
+		return (
+			(this.container?.get(ForkCtor as any) as InstanceType<T> | undefined) ??
+			(this.getRuntimeInstance(ForkCtor as any) as InstanceType<T> | undefined)
+		)
 	}
 
 	/** List all fork ctors created for a given original ctor. */
@@ -222,6 +245,7 @@ export class PluginService {
 	/** Roll back draft registrations since last confirmed container. */
 	public resetDraft(): void {
 		this.definitions.resetDraft()
+		this.pruneDetachedSingletons()
 	}
 
 	/** Register a plugin ctor into the draft container. */
@@ -260,6 +284,7 @@ export class PluginService {
 		const cascade = opts?.cascadeDependents ?? true
 		const container = this.container
 		const targets = cascade ? this.collectDependents(container, [id]) : new Set([id])
+		for (const t of targets) this.stashRuntimeInstance(t)
 		for (const t of targets) this.definitions.unregister(t)
 		for (const t of targets) {
 			this._pendingStart.delete(t)
@@ -303,6 +328,7 @@ export class PluginService {
 				: new Set([canonical])
 
 		// Update declaration layer: unregister old provider and register new one with aliases.
+		this.stashRuntimeInstance(canonical)
 		this.definitions.unregister(canonical)
 		this.definitions.register(next, {
 			provideBase: opts?.provideBase,
@@ -353,9 +379,32 @@ export class PluginService {
 	private async stopPlugin(id: PluginIdentifier): Promise<void> {
 		// Important: don't call container.get() here; it may instantiate plugins just to stop them.
 		// Only stop plugins that were actually constructed (and thus may be running).
-		const plugin = this.builderSingletons.get(id as any) as BasePlugin | undefined
+		const plugin = this.getRuntimeInstance(id as any)
 		if (!plugin) return
 		await this.lifecycle.stopLifecycle(id, plugin)
+	}
+
+	private pruneDetachedSingletons(): void {
+		// Detached instances are only needed when the DI builder cache no longer holds them.
+		// Prune entries that became reachable again via builderSingletons (e.g. undo/resetDraft).
+		if (this.detachedSingletons.size === 0) return
+		for (const id of this.detachedSingletons.keys()) {
+			if (this.builderSingletons.has(id as any)) this.detachedSingletons.delete(id)
+		}
+	}
+
+	private getRuntimeInstance(id: PluginIdentifier): BasePlugin | undefined {
+		return (
+			(this.builderSingletons.get(id as any) as BasePlugin | undefined) ??
+			(this.detachedSingletons.get(id as any) as BasePlugin | undefined)
+		)
+	}
+
+	private stashRuntimeInstance(id: PluginIdentifier): void {
+		const container = this._activeContainer ?? this.container
+		const key = (container?.resolveIdentifier?.(id as any) ?? id) as PluginIdentifier
+		const instance = this.builderSingletons.get(key as any) as PluginInstance | undefined
+		if (instance) this.detachedSingletons.set(key, instance)
 	}
 
 	private async applyTeardown(
@@ -363,10 +412,13 @@ export class PluginService {
 		toStop: Set<PluginIdentifier>,
 	): Promise<void> {
 		if (!container || toStop.size === 0) return
-		const order = planTeardown(container.dependents, toStop)
-		for (const id of order) {
-			await this.stopPlugin(id)
-		}
+		// Default concurrency is 1 (sequential) to preserve legacy stop behavior.
+		await stopPluginsTopo(
+			container.dependents as unknown as ReadonlyMap<PluginIdentifier, Set<PluginIdentifier>>,
+			toStop,
+			(id) => this.stopPlugin(id),
+			{ concurrency: this.stopConcurrency },
+		)
 	}
 
 	private async instantiateAndStart(
@@ -420,43 +472,11 @@ export class PluginService {
 		container: PluginDiContainer,
 		plan: InitPlan,
 	): Promise<Set<PluginIdentifier>> {
-		const failed = new Set<PluginIdentifier>(plan.leftovers)
-		const { dependencies } = plan
-
-		for (const batch of plan.batches) {
-			let single: Promise<void> | undefined
-			let tasks: Promise<void>[] | undefined
-			for (const id of batch) {
-				if (failed.has(id)) continue
-
-				const deps = dependencies.get(id)
-				if (deps && deps.length) {
-					let blocked = false
-					for (let i = 0; i < deps.length; i++) {
-						if (failed.has(deps[i])) {
-							blocked = true
-							break
-						}
-					}
-					if (blocked) {
-						failed.add(id)
-						continue
-					}
-				}
-
-				const p = this.instantiateAndStart(container, id, failed)
-				if (!single) single = p
-				else {
-					tasks ??= [single]
-					tasks.push(p)
-				}
-			}
-
-			if (tasks) await Promise.all(tasks)
-			else if (single) await single
-		}
-
-		return failed
+		return startPluginsWithStrategy(
+			plan,
+			(id, failed) => this.instantiateAndStart(container, id, failed),
+			{ strategy: this.startStrategy, concurrency: this.startConcurrency },
+		)
 	}
 
 	/**
@@ -481,6 +501,7 @@ export class PluginService {
 		const action = this.definitions.build()
 		if (!action.ok) {
 			action.err.ret.undo()
+			this.pruneDetachedSingletons()
 			this.ctx.logger.error(action.err.err, '插件在依赖项解析时失败')
 			return createErr(action.err.err)
 		}
@@ -533,6 +554,8 @@ export class PluginService {
 				this._lastCommit = summary
 				this.ctx.emit('afterCommit', summary)
 				this.builderSingletons.seal()
+				// Keep detached instances: draft mutations may have happened during this commit.
+				this.pruneDetachedSingletons()
 				return createOk({ container, changes })
 			}
 
@@ -550,6 +573,7 @@ export class PluginService {
 
 			// Ensure fresh instances for restarts/replacements.
 			for (const id of toStop) this.builderSingletons.delete(id as any)
+			for (const id of toStop) this.detachedSingletons.delete(id as any)
 			for (const id of replaced) this.builderSingletons.delete(id as any)
 			for (const id of restartStart) this.builderSingletons.delete(id as any)
 
@@ -590,11 +614,14 @@ export class PluginService {
 
 			if (failed.size) {
 				for (const id of failed) this.builderSingletons.delete(id as any)
+				for (const id of failed) this.detachedSingletons.delete(id as any)
 				this.ctx.logger.warn({ failed: [...failed].map(String) }, '以下插件启动失败')
 				this.ctx.emit('commitFailed', failed)
 			}
 
 			this.builderSingletons.seal()
+			// Keep detached instances: draft mutations may have happened during this commit.
+			this.pruneDetachedSingletons()
 			return createOk({ container: this.container, changes })
 		} finally {
 			this._activeContainer = undefined

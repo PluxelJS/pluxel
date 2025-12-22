@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'bun:test'
 
-import { BasePlugin, Plugin, withTestHost } from '@pluxel/core/test'
+import { BasePlugin, Plugin, setParamToken, withTestHost } from '@pluxel/core/test'
 import { PluginA, PluginB, PluginC } from './plugins'
 
 function createDeferred() {
@@ -13,7 +13,324 @@ function createDeferred() {
 	return { promise, resolve, reject }
 }
 
+async function waitUntil(cond: () => boolean, opts?: { timeoutMs?: number }) {
+	const timeoutMs = opts?.timeoutMs ?? 1_000
+	const start = Date.now()
+	while (!cond()) {
+		if (Date.now() - start > timeoutMs) throw new Error('waitUntil timeout')
+		await new Promise((resolve) => setTimeout(resolve, 0))
+	}
+}
+
 describe('PluginService commit()', () => {
+	it('ready-queue starts dependents without batch barriers', async () => {
+		await withTestHost(
+			async (host) => {
+				const events: string[] = []
+
+				const aGate = createDeferred()
+				const cGate = createDeferred()
+
+				let aStarted = false
+				let cStarted = false
+				let bStarted = false
+
+				@Plugin({ name: 'RQ-A' })
+				class A extends BasePlugin {
+					override async init(): Promise<void> {
+						aStarted = true
+						events.push('A:start')
+						await aGate.promise
+						events.push('A:done')
+					}
+				}
+
+				@Plugin({ name: 'RQ-C' })
+				class C extends BasePlugin {
+					override async init(): Promise<void> {
+						cStarted = true
+						events.push('C:start')
+						await cGate.promise
+						events.push('C:done')
+					}
+				}
+
+				@Plugin({ name: 'RQ-B' })
+				class B extends BasePlugin {
+					constructor(public a: A) {
+						super()
+					}
+
+					override init(): void {
+						bStarted = true
+						events.push('B:init')
+					}
+				}
+				setParamToken(B, 0, A)
+
+				host.registerAll(A, C, B)
+				const attemptPromise = host.tryCommit()
+
+				await waitUntil(() => aStarted && cStarted)
+
+				aGate.resolve()
+				await waitUntil(() => bStarted)
+				expect(events).not.toContain('C:done')
+
+				cGate.resolve()
+				const attempt = await attemptPromise
+				expect(attempt.ok).toBe(true)
+			},
+			{ registry: { startStrategy: 'ready-queue', startConcurrency: 2 } },
+		)
+	})
+
+	it('batch strategy keeps depth barriers', async () => {
+		await withTestHost(
+			async (host) => {
+				const events: string[] = []
+
+				const aGate = createDeferred()
+				const cGate = createDeferred()
+
+				let aStarted = false
+				let cStarted = false
+				let bStarted = false
+
+				@Plugin({ name: 'BATCH-A' })
+				class A extends BasePlugin {
+					override async init(): Promise<void> {
+						aStarted = true
+						events.push('A:start')
+						await aGate.promise
+						events.push('A:done')
+					}
+				}
+
+				@Plugin({ name: 'BATCH-C' })
+				class C extends BasePlugin {
+					override async init(): Promise<void> {
+						cStarted = true
+						events.push('C:start')
+						await cGate.promise
+						events.push('C:done')
+					}
+				}
+
+				@Plugin({ name: 'BATCH-B' })
+				class B extends BasePlugin {
+					constructor(public a: A) {
+						super()
+					}
+
+					override init(): void {
+						bStarted = true
+						events.push('B:init')
+					}
+				}
+				setParamToken(B, 0, A)
+
+				host.registerAll(A, C, B)
+				const attemptPromise = host.tryCommit()
+
+				await waitUntil(() => aStarted && cStarted)
+
+				aGate.resolve()
+				await new Promise((resolve) => setTimeout(resolve, 10))
+				expect(bStarted).toBe(false)
+				expect(events).not.toContain('B:init')
+
+				cGate.resolve()
+				await waitUntil(() => bStarted)
+
+				const attempt = await attemptPromise
+				expect(attempt.ok).toBe(true)
+			},
+			{ registry: { startStrategy: 'batch' } },
+		)
+	})
+
+	it('ready-queue enforces bounded concurrency', async () => {
+		await withTestHost(
+			async (host) => {
+				let active = 0
+				let maxActive = 0
+				const unblockers: Array<() => void> = []
+
+				const makeSlow = (name: string) => {
+					const gate = createDeferred()
+					@Plugin({ name })
+					class Slow extends BasePlugin {
+						override async init(): Promise<void> {
+							active++
+							maxActive = Math.max(maxActive, active)
+							unblockers.push(gate.resolve)
+							try {
+								await gate.promise
+							} finally {
+								active--
+							}
+						}
+					}
+					return Slow
+				}
+
+				const S1 = makeSlow('S1')
+				const S2 = makeSlow('S2')
+				const S3 = makeSlow('S3')
+
+				host.registerAll(S1, S2, S3)
+				const attemptPromise = host.tryCommit()
+
+				await waitUntil(() => active === 2 && unblockers.length === 2)
+				expect(maxActive).toBe(2)
+
+				// Free up one slot, third plugin should start.
+				unblockers[0]!()
+				await waitUntil(() => unblockers.length === 3)
+				expect(maxActive).toBe(2)
+
+				// Finish remaining.
+				for (const u of unblockers) u()
+				const attempt = await attemptPromise
+				expect(attempt.ok).toBe(true)
+			},
+			{ registry: { startStrategy: 'ready-queue', startConcurrency: 2 } },
+		)
+	})
+
+	it('ready-queue fails fast on dependency chain', async () => {
+		await withTestHost(
+			async (host) => {
+				let bInit = false
+				let cInit = false
+
+				@Plugin({ name: 'FF-A' })
+				class A extends BasePlugin {
+					override init(): void {
+						throw new Error('boom')
+					}
+				}
+
+				@Plugin({ name: 'FF-B' })
+				class B extends BasePlugin {
+					constructor(_a: A) {
+						super()
+					}
+					override init(): void {
+						bInit = true
+					}
+				}
+				setParamToken(B, 0, A)
+
+				@Plugin({ name: 'FF-C' })
+				class C extends BasePlugin {
+					constructor(_b: B) {
+						super()
+					}
+					override init(): void {
+						cInit = true
+					}
+				}
+				setParamToken(C, 0, B)
+
+				host.registerAll(A, B, C)
+				const summary = await host.commit()
+
+				expect(summary.failed).toContain(A)
+				expect(summary.failed).toContain(B)
+				expect(summary.failed).toContain(C)
+				expect(bInit).toBe(false)
+				expect(cInit).toBe(false)
+				expect(host.get(B)).toBeUndefined()
+				expect(host.get(C)).toBeUndefined()
+			},
+			{ registry: { startStrategy: 'ready-queue', startConcurrency: 3 } },
+		)
+	})
+
+	it('teardown stops dependents before parents', async () => {
+		await withTestHost(
+			async (host) => {
+				const events: string[] = []
+
+				@Plugin({ name: 'Stop-A' })
+				class A extends BasePlugin {
+					override stop(): void {
+						events.push('A:stop')
+					}
+				}
+
+				const bStopGate = createDeferred()
+
+				@Plugin({ name: 'Stop-B' })
+				class B extends BasePlugin {
+					constructor(_a: A) {
+						super()
+					}
+					override async stop(): Promise<void> {
+						events.push('B:stop')
+						await bStopGate.promise
+					}
+				}
+				setParamToken(B, 0, A)
+
+				host.registerAll(A, B)
+				await host.commitStrict()
+				expect(host.get(A)).toBeDefined()
+				expect(host.get(B)).toBeDefined()
+				expect(host.isRunning(A)).toBe(true)
+				expect(host.isRunning(B)).toBe(true)
+
+				events.length = 0
+				host.unregister(A) // cascades to dependents, so A and B are both stopped
+				const attemptPromise = host.tryCommit()
+
+				await waitUntil(() => events.includes('B:stop'))
+				expect(events.includes('A:stop')).toBe(false)
+
+				bStopGate.resolve()
+				const attempt = await attemptPromise
+				expect(attempt.ok).toBe(true)
+				expect(events).toEqual(['B:stop', 'A:stop'])
+			},
+			{ registry: { stopConcurrency: 2 } },
+		)
+	})
+
+	it('can unregister during an active commit and still stop on the next commit', async () => {
+		await withTestHost(async (host) => {
+			const summaries: any[] = []
+			host.ctx.on('afterCommit', (summary) => {
+				summaries.push(summary)
+			})
+
+			let stopped = 0
+
+			@Plugin({ name: 'SelfUnloader' })
+			class SelfUnloader extends BasePlugin {
+				override init(): void {
+					this.ctx.registry.unregister(SelfUnloader)
+					void this.ctx.registry.commit()
+				}
+
+				override stop(): void {
+					stopped++
+				}
+			}
+
+			host.register(SelfUnloader)
+			const first = await host.tryCommit()
+			expect(first.ok).toBe(true)
+
+			await waitUntil(() => summaries.length >= 2)
+
+			expect(stopped).toBe(1)
+			expect(host.isRunning(SelfUnloader)).toBe(false)
+			expect(host.get(SelfUnloader)).toBeUndefined()
+		})
+	})
+
 	it('serializes overlapping commits and preserves plugin state', async () => {
 		await withTestHost(async (host) => {
 			const summaries: any[] = []
@@ -257,6 +574,10 @@ describe('PluginService commit()', () => {
 	it('updates registered plugin set across commits', async () => {
 		await withTestHost(async (host) => {
 			const readPluginSet = () => new Set<any>(host.listPlugins())
+
+			// Bun's TS transpilation may not emit `design:paramtypes` metadata;
+			// set tokens explicitly to keep DI behavior deterministic in tests.
+			setParamToken(PluginA, 0, PluginB)
 
 			host.registerAll(PluginB, PluginC, PluginA)
 			await host.commitStrict()
