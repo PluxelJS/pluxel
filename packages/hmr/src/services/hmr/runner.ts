@@ -1,5 +1,6 @@
 import { createServerModuleRunner, type DevEnvironment, type ViteDevServer } from 'vite'
 import { EvaluatedModules, type EvaluatedModuleNode, type ModuleRunner } from 'vite/module-runner'
+import { ESModulesEvaluator } from 'vite/module-runner'
 import type { Plugin } from 'vite'
 import { existsSync } from 'node:fs'
 import { readFile, realpath } from 'node:fs/promises'
@@ -51,6 +52,9 @@ export class HmrRunner {
 			hmr: false,
 			evaluatedModules: this.evaluatedModules,
 			sourcemapInterceptor: 'prepareStackTrace',
+			// Ensure stack traces are aligned when running modules via AsyncFunction wrapper.
+			// (ESModulesEvaluator applies the appropriate `startOffset` for inlined sourcemaps.)
+			evaluator: new ESModulesEvaluator(),
 		})
 
 		this.cjsExternal_ = opts.cjsExternal ?? []

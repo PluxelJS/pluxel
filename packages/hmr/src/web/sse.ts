@@ -1,4 +1,4 @@
-import type { ExtensionManifestEvent } from '../services/extension'
+import type { ExtensionManifestEvent } from '../services/runtime-compile'
 import type { SseEvents } from '../services/hono/SseService'
 
 export interface LogRecord {

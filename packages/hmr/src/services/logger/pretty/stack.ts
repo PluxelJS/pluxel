@@ -24,7 +24,15 @@ export const extractStackFile = (line: string): string | undefined => {
 	const trimmed = line.trim()
 	if (!trimmed.startsWith('at ')) return undefined
 	const match = trimmed.match(/\((.*)\)$/)
-	if (match?.[1]) return match[1]
+	if (match?.[1]) {
+		let inside = match[1]
+		const nestedOpen = inside.lastIndexOf('(')
+		const nestedClose = inside.lastIndexOf(')')
+		if (nestedOpen !== -1 && nestedClose !== -1 && nestedClose > nestedOpen) {
+			inside = inside.slice(nestedOpen + 1, nestedClose)
+		}
+		return inside
+	}
 	const parts = trimmed.replace(/^at\s+/, '')
 	return parts.includes(':') ? parts : undefined
 }

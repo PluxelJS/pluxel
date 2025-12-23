@@ -8,7 +8,7 @@ import type { Plugin } from 'vite'
 
 import api from '../../api/hono'
 import type { RenderHandler } from '../../server/types'
-import type { ExtensionManifestEvent } from '../extension'
+import type { ExtensionManifestEvent } from '../runtime-compile'
 import { logStore, matchesFilter } from '../logger/logStore'
 import type { AuthGuardCheckInput } from './AuthGuardService'
 import type { AppEnv, HonoWithAppEnvType } from './env'

@@ -10,7 +10,8 @@ const normalizeOutput = (res) => {
 }
 
 export default async function runBundle(job) {
-	const { entry, root, resolve, vendors } = job
+	const { entry, root, resolve } = job
+	const external = job.vendors ?? job.external ?? []
 
 	const result = await build({
 		root,
@@ -29,7 +30,7 @@ export default async function runBundle(job) {
 				fileName: () => 'index',
 			},
 			rollupOptions: {
-				external: vendors,
+				external,
 				output: {
 					inlineDynamicImports: true,
 					format: 'es',
@@ -46,7 +47,7 @@ export default async function runBundle(job) {
 			(item) => item.type === 'chunk' && item.isEntry && typeof item.code === 'string',
 		) ?? outputs.find((item) => item.type === 'chunk' && typeof item.code === 'string')
 	if (!chunk?.code) {
-		throw new Error('Failed to produce bundled code for extension entry (worker)')
+		throw new Error('Failed to produce bundled code (worker)')
 	}
 	return chunk.code
 }

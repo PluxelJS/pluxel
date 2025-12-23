@@ -1,5 +1,5 @@
-import { normalizePath, searchForWorkspaceRoot } from 'vite'
 import type { LevelWithSilent } from 'pino'
+import { normalizePath } from 'vite'
 
 export type LoggerCallerConfig = {
 	enabled: boolean
@@ -117,8 +117,7 @@ const resolveCallerRoot = () => {
 		cachedCallerRoot = normalizePath(envRoot)
 		return cachedCallerRoot
 	}
-	const workspaceRoot = searchForWorkspaceRoot(process.cwd())
-	cachedCallerRoot = normalizePath(workspaceRoot || process.cwd())
+	cachedCallerRoot = normalizePath(process.cwd())
 	return cachedCallerRoot
 }
 
@@ -129,7 +128,10 @@ const resolvePrettyEnabled = (overrides: LoggerRuntimeConfig['pretty'] | undefin
 	return DEFAULT_PRETTY_ENABLED
 }
 
-const resolvePrettyErrorsEnabled = (prettyEnabled: boolean, overrides: LoggerRuntimeConfig | undefined) => {
+const resolvePrettyErrorsEnabled = (
+	prettyEnabled: boolean,
+	overrides: LoggerRuntimeConfig | undefined,
+) => {
 	const override = overrides?.pretty?.errors?.enabled
 	if (override !== undefined) return prettyEnabled && override
 	const explicit = parseBool(process.env.PLUXEL_LOGGER_YOUCH)
@@ -137,7 +139,10 @@ const resolvePrettyErrorsEnabled = (prettyEnabled: boolean, overrides: LoggerRun
 	return prettyEnabled
 }
 
-const resolveCallerEnabled = (prettyEnabled: boolean, overrides: LoggerRuntimeConfig | undefined) => {
+const resolveCallerEnabled = (
+	prettyEnabled: boolean,
+	overrides: LoggerRuntimeConfig | undefined,
+) => {
 	const override = overrides?.pretty?.caller?.enabled
 	if (override !== undefined) return prettyEnabled && override
 	const explicit = parseBool(process.env.PLUXEL_LOGGER_CALLER)
@@ -174,8 +179,7 @@ export function resolveLoggerRuntimeConfig(
 
 	const prettyErrorsSkipCompiled =
 		overrides.pretty?.errors?.skipCompiled ?? sharedSkipCompiled ?? true
-	const callerSkipCompiled =
-		overrides.pretty?.caller?.skipCompiled ?? sharedSkipCompiled ?? true
+	const callerSkipCompiled = overrides.pretty?.caller?.skipCompiled ?? sharedSkipCompiled ?? true
 
 	const hideInternal =
 		overrides.pretty?.errors?.hideInternal ??
@@ -189,7 +193,8 @@ export function resolveLoggerRuntimeConfig(
 		overrides.pretty?.errors?.keepInternalFrames ??
 		parsePositiveInt(process.env.PLUXEL_LOGGER_KEEP_INTERNAL_FRAMES, 0, 0)
 
-	const storeEnabled = overrides.store?.enabled ?? (parseBool(process.env.PLUXEL_LOGGER_STORE) ?? true)
+	const storeEnabled =
+		overrides.store?.enabled ?? parseBool(process.env.PLUXEL_LOGGER_STORE) ?? true
 	const storeMinLevel = normalizeLevel(
 		overrides.store?.minLevel ?? process.env.PLUXEL_LOGGER_STORE_MIN_LEVEL,
 		'trace',
@@ -233,7 +238,8 @@ export function resolveLoggerRuntimeConfig(
 	return {
 		pretty: {
 			enabled: prettyEnabled,
-			duplex: overrides.pretty?.duplex ?? (parseBool(process.env.PLUXEL_LOGGER_PRETTY_DUPLEX) ?? false),
+			duplex:
+				overrides.pretty?.duplex ?? parseBool(process.env.PLUXEL_LOGGER_PRETTY_DUPLEX) ?? false,
 			caller: {
 				enabled: prettyEnabled && callerEnabled,
 				relativeTo: callerRelativeTo,

@@ -18,6 +18,20 @@ const CALLER_STACK_LIMIT_FALLBACK = clampNumber(CALLER_STACK_LIMIT_BASE * 2, 12,
 let callerStackLimit = CALLER_STACK_LIMIT_BASE
 
 const LOGGER_DIR = path.dirname(normalizeFileName(import.meta.url)).replace(/\\/g, '/').concat('/')
+// When packages are bundled (e.g. `dist/services.mjs`), `LOGGER_DIR` might not contain the original
+// directory structure, but sourcemapped stacks still point to `.../services/logger/...`.
+// Keep these stable markers so we can reliably skip internal logger frames in both source and dist.
+const LOGGER_INTERNAL_MARKERS = ['/services/logger/pretty/caller.', '/services/logger/pretty/', '/services/logger/']
+const LOGGER_DIR_TOKENS = (() => {
+	const tokens = new Set<string>([LOGGER_DIR, ...LOGGER_INTERNAL_MARKERS])
+	const marker = '/services/logger/'
+	const markerIndex = LOGGER_DIR.lastIndexOf(marker)
+	if (markerIndex !== -1) {
+		tokens.add(LOGGER_DIR.slice(markerIndex))
+		tokens.add(marker)
+	}
+	return [...tokens].filter(Boolean)
+})()
 
 const CALLER_SKIP_PATTERNS = [
 	'/node_modules/pino/',
@@ -27,12 +41,12 @@ const CALLER_SKIP_PATTERNS = [
 ]
 const CALLER_SKIP_TOKENS = CALLER_SKIP_PATTERNS.map(normalizePath)
 const CALLER_SKIP_PREFIXES = ['node:', 'internal:', LOGGER_DIR]
-const CALLER_SKIP_INCLUDES = ['evalmachine.<anonymous>', ...CALLER_SKIP_TOKENS]
+const CALLER_SKIP_INCLUDES = ['evalmachine.<anonymous>', ...LOGGER_DIR_TOKENS, ...CALLER_SKIP_TOKENS]
 const STACK_SKIP_TOKENS = [
 	'node:',
 	'internal/',
 	'evalmachine.<anonymous>',
-	LOGGER_DIR,
+	...LOGGER_DIR_TOKENS,
 	...CALLER_SKIP_TOKENS,
 ]
 
@@ -150,7 +164,9 @@ function getCaller(runtime: CallerRuntime): string | undefined {
 
 function getCallerFromStackString(runtime: CallerRuntime): string | undefined {
 	try {
-		const raw = String(new Error().stack ?? '')
+		const err = new Error()
+		Error.captureStackTrace?.(err, getCallerFromStackString)
+		const raw = String(err.stack ?? '')
 		const lines = raw.split('\n').slice(1)
 		const filtered = lines.filter((line) => {
 			const l = line.trim()
@@ -161,12 +177,21 @@ function getCallerFromStackString(runtime: CallerRuntime): string | undefined {
 		const picked = filtered[0]
 		if (!picked) return undefined
 		const withoutAt = picked.trim().replace(/^at\s+/, '')
-		const match = withoutAt.match(/\((.*)\)$/)
-		if (match?.[1]) {
+		if (withoutAt.endsWith(')')) {
 			const openParen = withoutAt.indexOf('(')
-			const name = openParen > 0 ? withoutAt.slice(0, openParen).trim() : ''
-			const loc = stripRelativeTo(match[1], runtime.relativeTo)
-			return name ? `${name} (${loc})` : loc
+			if (openParen !== -1) {
+				const name = withoutAt.slice(0, openParen).trim()
+				let locRaw = withoutAt.slice(openParen + 1, -1)
+				const nestedOpen = locRaw.lastIndexOf('(')
+				const nestedClose = locRaw.lastIndexOf(')')
+				if (nestedOpen !== -1 && nestedClose !== -1 && nestedClose > nestedOpen) {
+					locRaw = locRaw.slice(nestedOpen + 1, nestedClose)
+				} else if (locRaw.endsWith(')')) {
+					locRaw = locRaw.slice(0, -1)
+				}
+				const loc = stripRelativeTo(locRaw, runtime.relativeTo)
+				return name ? `${name} (${loc})` : loc
+			}
 		}
 		return stripRelativeTo(withoutAt, runtime.relativeTo)
 	} catch {
