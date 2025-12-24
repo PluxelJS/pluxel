@@ -12,7 +12,7 @@ import type { ExtensionManifestEvent } from '../runtime-compile'
 import { logStore, matchesFilter } from '../logger/logStore'
 import type { AuthGuardCheckInput } from './AuthGuardService'
 import type { AppEnv, HonoWithAppEnvType } from './env'
-import type { SseChannel } from './SseService'
+import type { SseChannel } from '../plugin-interaction'
 
 @Injectable
 @OverrideOf(CoreHonoService)
@@ -129,11 +129,11 @@ export class HonoService extends CoreHonoService {
 		namespace: string,
 		handler: (channel: SseChannel) => void | (() => void),
 	) {
-		return this.ctx.sse.registerExtension(() => handler, { namespace })
+		return this.ctx.ext.sse.registerExtension(() => handler, { namespace })
 	}
 
 	private streamManifestEvents(channel: SseChannel) {
-		const service = this.ctx.extensionService
+		const service = this.ctx.ext.ui
 		if (!service) {
 			channel.emit('error', { reason: 'Extension service unavailable' })
 			return

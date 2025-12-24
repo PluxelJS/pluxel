@@ -3,8 +3,10 @@ import { type Context, Injectable } from '@pluxel/context'
 const serviceName = 'honoService' as const
 
 declare module '@pluxel/context' {
-	export interface Context {
-		[serviceName]: HonoService
+	namespace Context {
+		interface Services {
+			[serviceName]: HonoService
+		}
 	}
 }
 
@@ -25,7 +27,7 @@ export class HonoService {
 	protected gqlFetch: GraphQLFetch = async () =>
 		new Response('GraphQL not ready', { status: 503 })
 
-	constructor(protected readonly ctx: Context) {}
+	constructor(public ctx: Context) {}
 
 	get fetch() {
 		return this.fetchPtr

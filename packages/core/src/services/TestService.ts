@@ -5,8 +5,10 @@ import { EffectScopeService } from './EffectScopeService'
  * 模块声明合并：补全 Context 上的类型提示
  */
 declare module '@pluxel/context' {
-	export interface Context {
-		test: TestService
+	namespace Context {
+		interface Services {
+			test: TestService
+		}
 	}
 }
 
@@ -14,7 +16,7 @@ declare module '@pluxel/context' {
 export class TestService {
 	static key = 'test'
 
-	constructor(private ctx: Context) {}
+	constructor(public ctx: Context) {}
 
 	collect() {
 		const test = () => {

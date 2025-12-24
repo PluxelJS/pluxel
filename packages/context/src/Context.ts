@@ -1,6 +1,7 @@
 // Context.ts
 
 import type { ServiceCfg, ServiceClass, ServiceContext, ServiceInst } from './service-types'
+import type { ServiceWithCtx } from './service-types'
 
 type SymMap = { [k in symbol]?: symbol }
 
@@ -54,11 +55,12 @@ export class Context {
 
 				let inst = store[ik] as ServiceInst<S>
 				if (inst) {
-					;(inst as any).ctx = this
+					;(inst as unknown as ServiceWithCtx<Context>).ctx = this
 					return inst
 				}
 				const cfg = (this.config as any)[key] as ServiceCfg<S>
 				inst = new ctor(this as any, cfg) as ServiceInst<S>
+				;(inst as unknown as ServiceWithCtx<Context>).ctx = this
 				store[ik] = inst
 				return inst
 			},
@@ -109,11 +111,12 @@ export class Context {
 
 				let inst = store[ik] as ServiceInst<S>
 				if (inst) {
-					;(inst as any).ctx = this
+					;(inst as unknown as ServiceWithCtx<Context>).ctx = this
 					return inst
 				}
 				const cfg = (this.config as any)[key] as ServiceCfg<S>
 				inst = new overrideCtor(this as any, cfg) as ServiceInst<S>
+				;(inst as unknown as ServiceWithCtx<Context>).ctx = this
 				store[ik] = inst
 				return inst
 			},
@@ -195,6 +198,16 @@ export namespace Context {
 		[K in keyof T]-?: T[K] extends Fn ? K : never
 	}[keyof T]
 
+	/**
+	 * Service registry (type-level). Packages should augment this interface.
+	 *
+	 * `Context` instances will expose these services with `ctx` omitted from their public type.
+	 */
+	export interface Services {}
+
+	export type PublicService<T> = T extends { ctx: any } ? Omit<T, 'ctx'> : T
+	export type PublicServices = { [K in keyof Services]: PublicService<Services[K]> }
+
 	// 这些键不允许通过 extend 覆写（内部或结构键）
 	type InternalKeys = 'parent' | 'root' | 'mapping' | 'instances' | 'constructor'
 
@@ -208,3 +221,6 @@ export namespace Context {
 		[key: string]: any
 	}
 }
+
+// Merge service surface into Context instances (types only).
+export interface Context extends Context.PublicServices {}

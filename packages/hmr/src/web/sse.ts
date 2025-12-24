@@ -1,5 +1,5 @@
 import type { ExtensionManifestEvent } from '../services/runtime-compile'
-import type { SseEvents } from '../services/hono/SseService'
+import type { SseEvents } from '../services'
 
 export interface LogRecord {
 	time: string

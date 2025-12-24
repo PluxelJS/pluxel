@@ -1,12 +1,20 @@
 // Service.ts
 
 import { Context } from './Context'
-import type { ServiceCfg, ServiceClass, ServiceContext, ServiceInst } from './service-types'
+import type {
+	ServiceCfg,
+	ServiceClass,
+	ServiceContext,
+	ServiceInst,
+	ServiceWithCtx,
+} from './service-types'
+
+type InjectableCtor = new (ctx: Context, cfg: any) => ServiceWithCtx<Context>
 
 /**
  * 装饰器可选项
  */
-export type ServiceOptions<S extends new (ctx: any, cfg: any) => any> = {
+export type ServiceOptions<S extends InjectableCtor> = {
 	key?: string
 	methods?: readonly Extract<keyof ServiceInst<S>, string>[]
 }
@@ -15,8 +23,8 @@ export const OVERRIDE_FLAG = Symbol('isOverride')
 /**
  * 可注入装饰器 @Injectable 和 @Injectable({...})
  */
-export function Injectable<S extends new (ctx: any, cfg: any) => any>(ctor: ServiceClass<S>): void
-export function Injectable<S extends new (ctx: any, cfg: any) => any>(
+export function Injectable<S extends InjectableCtor>(ctor: ServiceClass<S>): void
+export function Injectable<S extends InjectableCtor>(
 	options: ServiceOptions<S>,
 ): (ctor: ServiceClass<S>) => void
 
@@ -34,7 +42,7 @@ export function Injectable<S extends new (...args: any) => any>(ctorOrOpts: any)
 
 	// 用 @Injectable({...})
 	const opts = ctorOrOpts as ServiceOptions<any>
-	return <T extends new (...args: any) => any>(ctor: ServiceClass<T>) => {
+	return <T extends InjectableCtor>(ctor: ServiceClass<T>) => {
 		if ((ctor as any)[OVERRIDE_FLAG]) {
 			// override 的也跳过
 		} else {
@@ -45,8 +53,12 @@ export function Injectable<S extends new (...args: any) => any>(ctorOrOpts: any)
 	}
 }
 
-export function OverrideOf<S extends new (...args: any) => any>(original: ServiceClass<S>) {
-	return <T extends new (...args: any) => any>(overrideCtor: ServiceClass<T>) => {
+export function OverrideOf<S extends InjectableCtor>(original: ServiceClass<S>) {
+	return <
+		T extends new (ctx: ServiceContext<S>, cfg: ServiceCfg<S>) => ServiceWithCtx<ServiceContext<S>>,
+	>(
+		overrideCtor: ServiceClass<T>,
+	) => {
 		// 打个标记，让 Injectable 跳过 registerService
 		;(overrideCtor as any)[OVERRIDE_FLAG] = true
 		;(overrideCtor as any).key = (original as any).key

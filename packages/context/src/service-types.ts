@@ -8,6 +8,12 @@ export type ServiceInst<S> = S extends new (ctx: any, cfg: any) => infer I ? I :
 export type ServiceCfg<S> = S extends new (ctx: any, cfg: infer C) => any ? C : undefined
 
 /**
+ * Services are expected to expose a writable `ctx` property so `Context` can
+ * rebind the current execution context on every access.
+ */
+export type ServiceWithCtx<C> = { ctx: C }
+
+/**
  * 强约束：任意可注入 ctor 必须符合 new(ctx, cfg) => inst
  */
 export type ServiceCtor<S extends new (ctx: any, cfg: any) => any> = S

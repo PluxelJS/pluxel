@@ -32,7 +32,7 @@ export class ConfigService {
 	private filePath = 'default.json'
 	private batching = 0 // 事务计数
 
-	constructor(private ctx: Context) {
+	constructor(public ctx: Context, _cfg: unknown = undefined) {
 		// 允许调用方把方法解构出来用（避免丢失 this 导致 this.data 为空）
 		this.getExtra = this.getExtra.bind(this)
 		this.setExtra = this.setExtra.bind(this)
@@ -196,12 +196,6 @@ export class ConfigService {
 		this.data.enabled.clear()
 		for (const n of names) this.data.enabled.add(n)
 		this.saveDebounced()
-	}
-}
-
-declare module '@pluxel/core' {
-	interface Context {
-		configService: ConfigService
 	}
 }
 

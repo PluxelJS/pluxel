@@ -9,8 +9,8 @@ import { HmrRpcApi, PluginHandle } from './rpc'
 const app = new Hono<AppEnv>()
 	.get('/', (c) => c.text('Pluxel HMR RPC ready'))
 	// Server-Sent Events：统一入口，支持多命名空间复用单条连接
-	.get('/sse', (c) => c.var.plugin_ctx.sse.stream(c))
-	.get('/sse/namespaces', (c) => c.json({ namespaces: c.var.plugin_ctx.sse.getNamespaces() }))
+	.get('/sse', (c) => c.var.plugin_ctx.ext.sse.stream(c))
+	.get('/sse/namespaces', (c) => c.json({ namespaces: c.var.plugin_ctx.ext.sse.getNamespaces() }))
 	.all('/rpc', async (c) => {
 		try {
 			const api = new HmrRpcApi(c.var.plugin_ctx)
@@ -24,7 +24,7 @@ const app = new Hono<AppEnv>()
 	// 获取扩展清单
 	.get('/extensions/manifest', (c) => {
 		const ctx = c.var.plugin_ctx
-		const extensionService = ctx.extensionService
+		const extensionService = ctx.ext.ui
 		if (!extensionService) {
 			return c.json({ version: 0, modules: [] })
 		}
@@ -33,7 +33,7 @@ const app = new Hono<AppEnv>()
 	// 获取单个插件模块
 	.get('/extensions/modules/:plugin/:file', async (c) => {
 		const ctx = c.var.plugin_ctx
-		const extensionService = ctx.extensionService
+		const extensionService = ctx.ext.ui
 		if (!extensionService) {
 			return c.text('Extension service not available', 503)
 		}
@@ -50,7 +50,7 @@ const app = new Hono<AppEnv>()
 			'Cache-Control': 'public, max-age=31536000, immutable',
 		})
 	})
-	.get('/extensions/events', (c) => c.var.plugin_ctx.sse.stream(c, ['extensions']))
+	.get('/extensions/events', (c) => c.var.plugin_ctx.ext.sse.stream(c, ['extensions']))
 	// ============ REST API（仅调试/直连调试用） ============
 	// 仅保留 schema GET，方便通过浏览器快速排查，无需 RPC 客户端
 	.get('/plugins/:name/schema', (c) => {

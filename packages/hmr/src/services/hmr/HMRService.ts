@@ -84,10 +84,10 @@ const serviceName = 'hmrService' as const
 const HMR_EXPORT_CONDITIONS = ['@pluxel/hmr', '@pluxel/source', 'import', 'module', 'default'] as const
 
 declare module '@pluxel/core' {
-	interface Context {
-		[serviceName]: HMRService
-	}
 	namespace Context {
+		interface Services {
+			[serviceName]: HMRService
+		}
 		interface Config {
 			[serviceName]: HMRConfig
 		}
@@ -135,7 +135,7 @@ export class HMRService {
 	private readonly workspaceConditions = [...HMR_EXPORT_CONDITIONS]
 
 	constructor(
-		private readonly ctx: Context,
+		public ctx: Context,
 		private readonly config: HMRConfig,
 	) {
 		this.scanRootsAbs = unique(this.config.dir.map((dir) => normalizePath(resolve(this.cwd, dir))))

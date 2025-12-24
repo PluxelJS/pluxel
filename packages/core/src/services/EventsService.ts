@@ -20,11 +20,15 @@ declare module '@pluxel/context' {
 		}
 	}
 	interface Context {
-		[serviceName]: EventsService
 		on: EventsService['on']
 		onFront: EventsService['onFront']
 		emit: EventsService['emit']
 		emitWithContext: EventsService['emitWithContext']
+	}
+	namespace Context {
+		interface Services {
+			[serviceName]: EventsService
+		}
 	}
 }
 
@@ -34,7 +38,7 @@ declare module '@pluxel/context' {
 })
 export class EventsService extends Eventure<Events> {
 	constructor(
-		private ctx: Context,
+		public ctx: Context,
 		config?: EventEmitterOptions,
 	) {
 		const cfg: any = config ?? {}
@@ -91,7 +95,7 @@ export class EventsService extends Eventure<Events> {
 
 export class EvtChannel<D extends EventDescriptor> extends Channel<D> {
 	constructor(
-		private ctx: Context,
+		public ctx: Context,
 		config?: EventEmitterOptions,
 	) {
 		const cfg: any = config ?? {}

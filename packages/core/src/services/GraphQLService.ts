@@ -3,8 +3,10 @@ import { type Context, Injectable } from '@pluxel/context'
 const serviceName = 'graphql' as const
 
 declare module '@pluxel/context' {
-	export interface Context {
-		[serviceName]: GraphQLService
+	namespace Context {
+		interface Services {
+			[serviceName]: GraphQLService
+		}
 	}
 	export namespace Context {
 		interface Config {
@@ -71,7 +73,7 @@ export class GraphQLService {
 	protected factoryRef: GraphQLFactory = EMPTY_FACTORY
 	protected valibotRef: unknown
 
-	constructor(protected readonly ctx: Context, config: GraphQLConfig = {}) {
+	constructor(public ctx: Context, config: GraphQLConfig = {}) {
 		this.config = config
 		if (config.factory) this.factoryRef = config.factory
 		if (config.valibot) this.valibotRef = config.valibot

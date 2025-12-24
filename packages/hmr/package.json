@@ -43,7 +43,7 @@
 	],
 	"scripts": {
 		"hmr": "bun --conditions=\"@pluxel/source\" tests/start.ts",
-		"mock": "bun --conditions=\"@pluxel/hmr\" tests/start.ts",
+		"mock": "node tests/start.js",
 		"hot": "bun --hot tests/start.ts",
 		"test": "bun test --conditions=@pluxel/source",
 		"build": "vite build && tsdown",

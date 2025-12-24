@@ -4,8 +4,10 @@ const EMPTY_CONFIG: Readonly<Record<string, unknown>> = Object.freeze(Object.cre
 
 const serviceName = 'configService' as const
 declare module '@pluxel/context' {
-	export interface Context {
-		[serviceName]: ConfigService
+	namespace Context {
+		interface Services {
+			[serviceName]: ConfigService
+		}
 	}
 }
 
@@ -21,9 +23,14 @@ declare module '@pluxel/context' {
  */
 @Injectable({ key: serviceName })
 export class ConfigService {
+	public ctx: Context
 	private enabledInConfig = new Set<string>()
 	private store = new Map<string, Record<string, unknown>>()
 	private extra: Record<string, unknown> = Object.create(null)
+
+	constructor(ctx: Context, _config: unknown = undefined) {
+		this.ctx = ctx
+	}
 
 	isEnabledInConfig(name: string): boolean {
 		return this.enabledInConfig.has(name)
@@ -79,6 +86,4 @@ export class ConfigService {
 	batch(run: () => void) {
 		run()
 	}
-
-	constructor(_ctx: Context) {}
 }

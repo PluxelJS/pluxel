@@ -1,11 +1,43 @@
 import { type Context, Injectable } from '@pluxel/core'
-
+import {
+	dedupeByName,
+	isManagedPackageName,
+	normalizeRoots,
+	normalizeStatePayload,
+	resolveInstallDefaults,
+	resolveStateFilePath,
+} from './package/helpers'
+import { PackageInstallFlow } from './package/install-flow'
+import { PackageInstaller } from './package/installer'
+import type { ResolvedInstallOptions } from './package/internal-types'
+import { type LoadIntentConfig, PackageLoader } from './package/loader'
+import { KeyedLock } from './package/locks'
+import { PackageRemovalFlow } from './package/removal-flow'
+import { PackageRuntime } from './package/runtime'
+import { PackageState } from './package/state'
 import {
 	type LegacyPackageStatePayload,
 	type PackageStatePayload,
 	PackageStateStore,
 	type PackageStateStoreOptions,
 } from './package/state-store'
+import type {
+	InstallOptions,
+	ListInstalledPackagesOptions,
+	LoadOptions,
+	PackageInstallResult,
+	PackageInstallStatus,
+	PackageInventoryEntry,
+	PackageLoadIssue,
+	PackageLoadIssueSource,
+	PackageLoadResult,
+	PackageReloadResult,
+	PackageRemovalResult,
+	PackageServiceConfig,
+	PackageServiceErrorCode,
+	PackageUninstallResult,
+	RetryOptions,
+} from './package/types'
 import type { EntryResolution, EntryResolutionOk, ScanTaskOptions } from './ScanService'
 import { isEntryOk } from './ScanService'
 import { loadWorkspaceInfo } from './scan/workspace'
@@ -16,45 +48,13 @@ import {
 } from './specifiers'
 import { createDebouncedTrigger } from './util/debounce'
 import { collectDeclaredPlugins } from './util/plugins'
-import {
-	dedupeByName,
-	isManagedPackageName,
-	normalizeRoots,
-	normalizeStatePayload,
-	resolveInstallDefaults,
-	resolveStateFilePath,
-} from './package/helpers'
-import { PackageInstaller } from './package/installer'
-import { PackageInstallFlow } from './package/install-flow'
-import { PackageLoader, type LoadIntentConfig } from './package/loader'
-import { PackageRemovalFlow } from './package/removal-flow'
-import type { ResolvedInstallOptions } from './package/internal-types'
-import { KeyedLock } from './package/locks'
-import { PackageRuntime } from './package/runtime'
-import { PackageState } from './package/state'
-import type {
-	InstallOptions,
-	ListInstalledPackagesOptions,
-	LoadOptions,
-	RetryOptions,
-	PackageInventoryEntry,
-	PackageLoadIssue,
-	PackageLoadIssueSource,
-	PackageLoadResult,
-	PackageReloadResult,
-	PackageRemovalResult,
-	PackageUninstallResult,
-	PackageServiceConfig,
-	PackageServiceErrorCode,
-	PackageInstallResult,
-	PackageInstallStatus,
-} from './package/types'
 
 export type {
 	InstallOptions,
 	ListInstalledPackagesOptions,
 	LoadOptions,
-	RetryOptions,
+	PackageInstallResult,
+	PackageInstallStatus,
 	PackageInventoryEntry,
 	PackageLoadIssue,
 	PackageLoadIssueSource,
@@ -62,21 +62,22 @@ export type {
 	PackageMetadata,
 	PackageReloadResult,
 	PackageRemovalResult,
-	PackageUninstallResult,
 	PackageServiceConfig,
 	PackageServiceErrorCode,
-	PackageInstallResult,
-	PackageInstallStatus,
+	PackageUninstallResult,
+	RetryOptions,
 } from './package/types'
 
 const serviceName = 'packageService' as const
 
 declare module '@pluxel/core' {
-	interface Context {
-		[serviceName]: PackageService
-	}
-	interface Config {
-		[serviceName]?: PackageServiceConfig
+	namespace Context {
+		interface Services {
+			[serviceName]: PackageService
+		}
+		interface Config {
+			[serviceName]?: PackageServiceConfig
+		}
 	}
 }
 
@@ -137,7 +138,7 @@ export class PackageService {
 	private initialized = false
 
 	constructor(
-		private readonly ctx: Context,
+		public ctx: Context,
 		config: PackageServiceConfig = {},
 	) {
 		this.defaults = {
@@ -170,7 +171,8 @@ export class PackageService {
 			this.installer,
 			(level, event, payload, message) => this.logEvent(level, event, payload, message),
 			(result) => this.onPackageInstalled(result),
-			(code, message, detail) => new PackageServiceError(code as PackageServiceErrorCode, message, detail),
+			(code, message, detail) =>
+				new PackageServiceError(code as PackageServiceErrorCode, message, detail),
 		)
 		this.loader = new PackageLoader(
 			this.ctx,
@@ -181,7 +183,8 @@ export class PackageService {
 			(spec, error, source, moduleId) => this.recordLoadIssue(spec, error, source, moduleId),
 			(spec, options) => this.installFlow.installOne(spec, options),
 			(overrides) => this.resolveInstallOptions(overrides),
-			(code, message, detail) => new PackageServiceError(code as PackageServiceErrorCode, message, detail),
+			(code, message, detail) =>
+				new PackageServiceError(code as PackageServiceErrorCode, message, detail),
 			shouldRetryInstall,
 		)
 		this.removalFlow = new PackageRemovalFlow(
@@ -297,7 +300,7 @@ export class PackageService {
 						? result.error.message
 						: result.error
 							? String(result.error)
-						: '未知错误'
+							: '未知错误'
 				throw new PackageServiceError('UNINSTALL_FAILED', message, {
 					cause: result.error,
 					spec,
@@ -645,8 +648,6 @@ export class PackageService {
 		return this.ready
 	}
 
-
-
 	private onPackageInstalled(result: PackageInstallResult) {
 		this.installer.invalidateCache()
 		this.ctx.scanService.invalidateResolverCache()
@@ -659,7 +660,6 @@ export class PackageService {
 			target: result.target,
 		})
 	}
-
 
 	private resolveInstallOptions(overrides: InstallOptions = {}): ResolvedInstallOptions {
 		const base = this.defaults.install
@@ -688,7 +688,6 @@ export class PackageService {
 
 		return result
 	}
-
 
 	private normalizeUniqueByName(inputs: PackageSpecifierInput[]): NormalizedPackageSpecifier[] {
 		const specs = inputs.map((item) => this.normalizeSpecifier(item))

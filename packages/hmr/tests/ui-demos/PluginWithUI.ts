@@ -49,15 +49,15 @@ export class PluginWithUI extends BasePlugin {
 		await this.initData()
 
 		// UI 扩展示例：自带完整页面 + 自定义 Tab + Header 按钮
-		this.ctx.extensionService.register({
+		this.ctx.ext.ui.register({
 			entryPath: './PluginWithUI/ui/index.tsx',
 		})
 
 		// RPC：供 UI 调用
-		this.ctx.rpc.registerExtension(() => new PluginWithUIRpc(this))
+		this.ctx.ext.rpc.registerExtension(() => new PluginWithUIRpc(this))
 
 		// SSE：复用宿主统一 /api/sse 连接（命名空间 = 插件名）
-		this.ctx.sse.registerExtension(() => this.pushData())
+		this.ctx.ext.sse.registerExtension(() => this.pushData())
 
 		this.ctx.logger.info('[PluginWithUI] UI extensions registered')
 	}

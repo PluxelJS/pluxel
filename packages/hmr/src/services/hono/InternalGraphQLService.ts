@@ -11,8 +11,10 @@ import { getAPISchema } from '../../api'
 const serviceName = 'internalGraphql' as const
 
 declare module '@pluxel/core' {
-	interface Context {
-		[serviceName]: InternalGraphQLService
+	namespace Context {
+		interface Services {
+			[serviceName]: InternalGraphQLService
+		}
 	}
 }
 
@@ -29,7 +31,7 @@ export class InternalGraphQLService {
 	private rebuildDirty = false
 	private codegenRunning = false
 
-	constructor(private readonly ctx: PlxContext) {
+	constructor(public ctx: PlxContext) {
 		this.logger = ctx.logger!
 		this.fetcher = async () => new Response('Internal GraphQL not ready', { status: 503 })
 		this.scheduleRebuild()

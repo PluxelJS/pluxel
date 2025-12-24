@@ -8,6 +8,7 @@ export * from './loader/LoaderService'
 export * from './logger/PinoLoggerService'
 export * from './market'
 export * from './PluginDataService'
+export * from './plugin-interaction'
 export * from './runtime-compile'
 
 // Plugin extensibility surface (types only)

@@ -68,10 +68,14 @@ declare module '@pluxel/context' {
 		}
 	}
 	export interface Context {
-		[serviceName]: PluginService
 		pluginInfo: PluginInfo
 		parent?: Context
 		caller?: Context
+	}
+	export namespace Context {
+		interface Services {
+			[serviceName]: PluginService
+		}
 	}
 }
 
@@ -110,7 +114,7 @@ export class PluginService {
 	private readonly optionals: OptionalResolver
 
 	constructor(
-		private ctx: Context,
+		public ctx: Context,
 		config: PluginServiceConfig,
 	) {
 		this.startTimeoutMs = config?.startTimeoutMs ?? 1_500

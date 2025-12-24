@@ -4,7 +4,7 @@ import type { Context } from '@pluxel/core'
 import { RpcTarget } from 'capnweb'
 import { resolve } from 'pathe'
 import * as v from 'valibot'
-import type { RpcExtensions } from '../../../services/hono/RpcService'
+import type { RpcExtensions } from '../../../services'
 import { PluginGroupInput, type PluginGroupInputValue } from '../../features/groups/schema'
 import { readGroups, writeGroups } from '../../features/groups/service'
 import { getStatusOverview } from '../../features/pluginStatus/service'
@@ -20,7 +20,7 @@ export class HmrRpcApi extends RpcTarget {
 	constructor(ctx: Context) {
 		super()
 		this.#ctx = ctx
-		this.#ext = ctx.rpc.createExtensionsView(ctx)
+		this.#ext = ctx.ext.rpc.createExtensionsView(ctx)
 	}
 
 	ping() {
@@ -48,7 +48,7 @@ export class HmrRpcApi extends RpcTarget {
 	 * 列出所有已注册的 RPC 扩展命名空间
 	 */
 	extensions(): string[] {
-		return this.#ctx.rpc.getNamespaces()
+		return this.#ctx.ext.rpc.getNamespaces()
 	}
 
 	pluginStatus() {

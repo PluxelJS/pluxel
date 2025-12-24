@@ -1,4 +1,4 @@
-import { watch, type FSWatcher } from 'node:fs'
+import { type FSWatcher, watch } from 'node:fs'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { basename, dirname, resolve } from 'node:path'
 import { type Context, Injectable } from '@pluxel/core'
@@ -9,8 +9,10 @@ import { SuperJSON } from 'superjson'
 const serviceName = 'pluginData' as const
 
 declare module '@pluxel/core' {
-	interface Context {
-		[serviceName]: PluginDataService
+	namespace Context {
+		interface Services {
+			pluginData: PluginDataService
+		}
 	}
 }
 
@@ -22,7 +24,7 @@ export class PluginDataService {
 	private baseDir: string
 	private watchers = new Map<string, Set<FSWatcher>>()
 
-	constructor(private ctx: Context) {
+	constructor(public ctx: Context) {
 		const cfg = (ctx.config as any)?.pluginData ?? {}
 		const dir = cfg.dir ?? cfg.baseDir ?? '.pluxel/plugin-data'
 		this.baseDir = resolve(dir)

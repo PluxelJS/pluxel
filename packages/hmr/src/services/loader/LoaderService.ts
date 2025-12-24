@@ -4,16 +4,16 @@ import { buildSnapshot as buildSnapshotSource } from './buildSnapshot'
 import { ModuleReplacer } from './module-replacer'
 import { PluginRegistry } from './PluginRegistry'
 import {
+	LoaderAnchors,
+	type LoaderApi,
 	LoaderBatchSession,
 	LoaderControl,
+	LoaderRegistryView,
 	PluginDependencyInspector,
 	PluginPruner,
-	LoaderRegistryView,
-	LoaderAnchors,
 	PluginStatusReporter,
-	RuntimeResolver,
-	type LoaderApi,
 	type RemovalScope,
+	RuntimeResolver,
 } from './support'
 
 export type { LoaderApi, RemovalScope } from './support'
@@ -21,8 +21,10 @@ export type { LoaderApi, RemovalScope } from './support'
 const serviceName = 'loader' as const
 
 declare module '@pluxel/core' {
-	interface Context {
-		[serviceName]: LoaderService
+	namespace Context {
+		interface Services {
+			[serviceName]: LoaderService
+		}
 	}
 }
 
@@ -44,7 +46,7 @@ export class LoaderService {
 	// Stable public API surface for external callers (RPC/HMR/Extension).
 	public readonly api: LoaderApi
 
-	constructor(private ctx: Context) {
+	constructor(public ctx: Context) {
 		this.registry = new PluginRegistry(this.ctx)
 		this.runtime = new RuntimeResolver(this.ctx, this.registry)
 		this.moduleReplacer = new ModuleReplacer(
@@ -54,16 +56,11 @@ export class LoaderService {
 			(name) => this.runtime.resolve(name),
 			(moduleId) => this.runtime.normalizeId(moduleId),
 		)
-		this.pruner = new PluginPruner(
-			this.ctx,
-			this.registry,
-			this.anchors,
-			(moduleId) => this.runtime.normalizeId(moduleId),
+		this.pruner = new PluginPruner(this.ctx, this.registry, this.anchors, (moduleId) =>
+			this.runtime.normalizeId(moduleId),
 		)
-		this.statusReporter = new PluginStatusReporter(
-			this.registry,
-			this.runtime,
-			(name) => this.ctx.configService.isEnabledInConfig(name),
+		this.statusReporter = new PluginStatusReporter(this.registry, this.runtime, (name) =>
+			this.ctx.configService.isEnabledInConfig(name),
 		)
 		this.dependencyInspector = new PluginDependencyInspector(this.ctx)
 		this.registryView = new LoaderRegistryView(this.registry, this.runtime)
@@ -98,7 +95,11 @@ export class LoaderService {
 	 * - 这里确保 loader 自身不“先走一步”导致状态漂移。
 	 */
 	beginBatch() {
-		return new LoaderBatchSession(this.moduleReplacer, this.registry.beginTransaction(), this.anchors)
+		return new LoaderBatchSession(
+			this.moduleReplacer,
+			this.registry.beginTransaction(),
+			this.anchors,
+		)
 	}
 
 	// ------------------------------------------------------------------

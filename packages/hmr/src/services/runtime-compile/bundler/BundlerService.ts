@@ -10,8 +10,10 @@ import { collectModuleGraphFiles } from './moduleGraph'
 const serviceName = 'bundlerService' as const
 
 declare module '@pluxel/core' {
-	interface Context {
-		[serviceName]: BundlerService
+	namespace Context {
+		interface Services {
+			[serviceName]: BundlerService
+		}
 	}
 }
 
@@ -52,7 +54,7 @@ export class BundlerService {
 	private readonly outDir: string
 
 	constructor(
-		readonly ctx: Context,
+		public ctx: Context,
 		config?: BundlerServiceConfig,
 	) {
 		this.enabled = config?.enabled !== false
