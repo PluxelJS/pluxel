@@ -1,5 +1,5 @@
 import { Avatar, Badge, Button, Group, NavLink, Paper, Stack, Text } from '@mantine/core'
-import React from 'react'
+import type React from 'react'
 
 export interface SubNavItem {
 	label: string

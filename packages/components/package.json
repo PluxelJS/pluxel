@@ -33,15 +33,15 @@
 		"preview": "vite preview"
 	},
 	"peerDependencies": {
-		"@mantine/core": "^8.3.9",
+		"@mantine/core": "^8.3.10",
 		"@mantine/dates": "^8.3.7",
-		"@mantine/hooks": "^8.3.9",
+		"@mantine/hooks": "^8.3.10",
 		"@mantine/modals": "^8.3.7",
-		"@mantine/notifications": "^8.3.9",
+		"@mantine/notifications": "^8.3.10",
 		"@tabler/icons-react": "^3.35.0",
 		"@tanstack/react-form": "^1.23.8",
-		"react": "^19.2.1",
-		"react-dom": "^19.2.1",
+		"react": "^19.2.3",
+		"react-dom": "^19.2.3",
 		"valibot": "^1.2.0"
 	},
 	"dependencies": {
@@ -53,13 +53,13 @@
 		"@dnd-kit/utilities": "^3.2.2",
 		"@gqty/react": "^3.1.1",
 		"@melloware/react-logviewer": "^6.3.4",
-		"@tanstack/react-router": "^1.139.14",
+		"@tanstack/react-router": "^1.143.4",
 		"gqty": "^3.6.0",
 		"graphql": "^16.12.0",
 		"obug": "^2.1.1"
 	},
 	"devDependencies": {
-		"hono": "^4.10.7",
+		"hono": "^4.11.1",
 		"capnweb": "^0.2.0",
 		"@pluxel/market": "link:../../../pluxel-market/packages/market",
 		"@types/react": "^19.2.7",
@@ -71,6 +71,6 @@
 		"valibot": "^1.2.0",
 		"valibot-form": "workspace:*",
 		"vite": "npm:rolldown-vite@7.2.10",
-		"vite-tsconfig-paths": "^5.1.4"
+		"vite-tsconfig-paths": "^6.0.3"
 	}
 }

@@ -13,7 +13,7 @@ import {
 	type NormalizedPackageSpecifier,
 	type PackageSpecifierInput as ServiceSpecifierInput,
 } from '../../../services/market/specifiers'
-import {
+import type {
 	PackageLoadIssueEntry,
 	PackageInventoryEntry,
 	PackageInventoryFilter,

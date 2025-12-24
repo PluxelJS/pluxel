@@ -5,5 +5,3 @@ declare module '@pluxel/plugin-ui' {
 		hmr: HmrWebClient
 	}
 }
-
-export {}

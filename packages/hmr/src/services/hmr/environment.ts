@@ -1,4 +1,4 @@
-import { type Context } from '@pluxel/core'
+import type { Context } from '@pluxel/core'
 import { makeIdFiltersToMatchWithQuery } from '@rolldown/pluginutils'
 import { dirname, isAbsolute, resolve } from 'pathe'
 import { createFilter, normalizePath } from 'vite'

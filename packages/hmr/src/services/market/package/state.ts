@@ -1,6 +1,6 @@
 import {
 	CURRENT_STATE_SCHEMA,
-	PackageStateStore,
+	type PackageStateStore,
 	type PackageStatePayload,
 	type PersistedLoadIssue,
 	type PersistedPackageEntry,

@@ -10,7 +10,7 @@ import {
 	type PluginConstructor,
 } from '@pluxel/core'
 import type { PluginRegistry } from './PluginRegistry'
-import { AnchorJournal } from './support'
+import type { AnchorJournal } from './support'
 import { EXTRA_DEP_OVERRIDES, type DepOverridesExtra } from './selection'
 
 type PluginRegistryTx = ReturnType<PluginRegistry['beginTransaction']>

@@ -14,12 +14,12 @@
 		"dev:hmr": "pnpm --filter hmr hmr"
 	},
 	"devDependencies": {
-		"@biomejs/biome": "^2.3.8",
-		"@repobuddy/biome": "^2.1.0",
-		"@types/bun": "^1.3.3",
+		"@biomejs/biome": "^2.3.10",
+		"@repobuddy/biome": "^2.2.0",
+		"@types/bun": "^1.3.5",
 		"pncat": "^0.7.7",
-		"tsdown": "^0.18.0",
-		"turbo": "^2.6.3",
+		"tsdown": "^0.18.2",
+		"turbo": "^2.7.2",
 		"typescript": "^5.9.3",
 		"unplugin-preprocessor-directives": "^1.2.0"
 	},
@@ -32,12 +32,12 @@
 	},
 	"packageManager": "pnpm@10.25.0+sha512.5e82639027af37cf832061bcc6d639c219634488e0f2baebe785028a793de7b525ffcd3f7ff574f5e9860654e098fe852ba8ac5dd5cefe1767d23a020a92f501",
 	"dependencies": {
-		"@mantine/core": "^8.3.9",
-		"@mantine/hooks": "^8.3.9",
-		"@mantine/notifications": "^8.3.9",
+		"@mantine/core": "^8.3.10",
+		"@mantine/hooks": "^8.3.10",
+		"@mantine/notifications": "^8.3.10",
 		"@pluxel/market": "^0.1.0",
-		"react": "^19.2.1",
-		"react-dom": "^19.2.1"
+		"react": "^19.2.3",
+		"react-dom": "^19.2.3"
 	},
 	"pnpm": {
 		"peerDependencyRules": {

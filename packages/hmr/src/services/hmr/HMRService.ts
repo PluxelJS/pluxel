@@ -223,7 +223,6 @@ export class HMRService {
 	}
 
 	private createRunnerPlugin(): Plugin {
-		const service = this
 		const plugin: Plugin = {
 			name: 'pluxel-runner',
 			enforce: 'pre',
@@ -286,25 +285,25 @@ export class HMRService {
 				return []
 			},
 
-			resolveId: async function (id, importer) {
-				const shimResolved = service.runtimeShims.resolveId(id)
+			resolveId: async (id, importer) => {
+				const shimResolved = this.runtimeShims.resolveId(id)
 				if (shimResolved) return shimResolved
 
-				if (service.ctx.scanService) {
+				if (this.ctx.scanService) {
 					// Never let workspace resolution rewrite bridged singleton modules, otherwise we may end up
 					// evaluating a second copy (e.g. workspace TS sources) in the runner.
-					if (service.isHardBridgeModule(id) || service.isBridgeModule(id)) {
+					if (this.isHardBridgeModule(id) || this.isBridgeModule(id)) {
 						return null
 					}
 
-					const resolved = await service.resolveBareWorkspaceEntry(id, importer ?? null)
+					const resolved = await this.resolveBareWorkspaceEntry(id, importer ?? null)
 					if (resolved) return { id: resolved }
 				}
 				return null
 			},
 
 			load: (id) => {
-				return service.runtimeShims.load(id)
+				return this.runtimeShims.load(id)
 			},
 		}
 		return plugin

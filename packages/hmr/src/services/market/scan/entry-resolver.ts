@@ -6,7 +6,7 @@ import type { PackageJson } from 'pkg-types'
 import { safeReadManifest } from './package'
 import type { EntryResolution, EntryResolutionOk, ResolvedScanOptions } from './types'
 import type { ResolveOptions } from 'exsolve'
-import { ModuleResolveCache } from './resolve-cache'
+import type { ModuleResolveCache } from './resolve-cache'
 
 export class EntryResolver {
 	private readonly cache = new Map<string, Promise<EntryResolution>>()

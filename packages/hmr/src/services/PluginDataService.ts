@@ -325,6 +325,6 @@ export class PluginDataService {
 
 	private normalizeNamespace(ns: string): string {
 		const trimmed = ns || 'default'
-		return basename(trimmed).replace(/[^A-Za-z0-9_\-]/g, '_')
+		return basename(trimmed).replace(/[^A-Za-z0-9_-]/g, '_')
 	}
 }

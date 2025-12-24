@@ -14,7 +14,7 @@ import { createErr, createOk } from 'option-t/plain_result'
 import type { ServiceMap } from '../../container'
 import { LeanMapTracker } from '../../container/LeanMapTracker'
 import { EffectScopeService } from '../../services/EffectScopeService'
-import { BasePlugin } from '../BasePlugin'
+import type { BasePlugin } from '../BasePlugin'
 import { forkPlugin, getForkedCtor, listForks } from '../fork'
 import { PluginDefinitions, type PluginDiContainer } from '../PluginDefinitions'
 import type { PluginInfo } from '../PluginDecorator'
@@ -168,7 +168,7 @@ export class PluginService {
 		const recordAny = record as any
 
 		for (const key in schemaMap) {
-			if (!Object.prototype.hasOwnProperty.call(schemaMap, key)) continue
+			if (!Object.hasOwn(schemaMap, key)) continue
 			pluginAny[key] = recordAny[key]
 		}
 	}
