@@ -1,5 +1,4 @@
 import { build } from 'vite'
-import tsconfigPaths from 'vite-tsconfig-paths'
 
 const normalizeOutput = (res) => {
 	if (Array.isArray(res)) return res
@@ -18,8 +17,10 @@ export default async function runBundle(job) {
 		configFile: false,
 		publicDir: false,
 		logLevel: 'error',
-		plugins: [tsconfigPaths()],
-		resolve,
+		resolve: {
+			tsconfigPaths: true,
+			...(resolve ?? {}),
+		},
 		build: {
 			write: false,
 			target: 'esnext',

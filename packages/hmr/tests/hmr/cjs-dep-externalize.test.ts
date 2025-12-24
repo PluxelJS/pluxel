@@ -97,10 +97,10 @@ describe('HMR CJS dependency handling', () => {
 					honoPlugin: { name: 'noop' },
 					port: 0,
 				}),
-				server: { port: 0, middlewareMode: false, fs: { allow: fsAllow } },
+				server: { middlewareMode: true, fs: { allow: fsAllow } },
 			})
 			try {
-				await server.listen()
+				await hmr.executeFiles([join(root, 'entry.ts')])
 			} finally {
 				await server.close()
 			}
@@ -208,10 +208,10 @@ describe('HMR CJS dependency handling', () => {
 					honoPlugin: { name: 'noop' },
 					port: 0,
 				}),
-				server: { port: 0, middlewareMode: false, fs: { allow: fsAllow } },
+				server: { middlewareMode: true, fs: { allow: fsAllow } },
 			})
 			try {
-				await server.listen()
+				await hmr.executeFiles([join(root, 'entry.ts')])
 			} finally {
 				await server.close()
 			}
@@ -332,10 +332,10 @@ describe('HMR CJS dependency handling', () => {
 					honoPlugin: { name: 'noop' },
 					port: 0,
 				}),
-				server: { port: 0, middlewareMode: false, fs: { allow: fsAllow } },
+				server: { middlewareMode: true, fs: { allow: fsAllow } },
 			})
 			try {
-				await server.listen()
+				await hmr.executeFiles([join(root, 'entry.ts')])
 			} finally {
 				await server.close()
 			}
@@ -356,6 +356,7 @@ describe('HMR CJS dependency handling', () => {
 			writeFileSync(
 				join(root, 'tsconfig.json'),
 				JSON.stringify({
+					include: ['**/*'],
 					compilerOptions: {
 						baseUrl: '.',
 						paths: {
@@ -443,9 +444,9 @@ describe('HMR CJS dependency handling', () => {
 						honoPlugin: { name: 'noop' },
 						port: 0,
 					}),
-					server: { port: 0, middlewareMode: false, fs: { allow: fsAllow } },
+					server: { middlewareMode: true, fs: { allow: fsAllow } },
 				})
-				await server.listen()
+				await hmr.executeFiles([join(root, 'entry.ts')])
 			} catch (e) {
 				thrown = e
 			} finally {
@@ -472,6 +473,7 @@ describe('HMR CJS dependency handling', () => {
 			writeFileSync(
 				join(root, 'tsconfig.json'),
 				JSON.stringify({
+					include: ['**/*'],
 					compilerOptions: {
 						baseUrl: '.',
 						paths: {
@@ -566,10 +568,10 @@ describe('HMR CJS dependency handling', () => {
 					honoPlugin: { name: 'noop' },
 					port: 0,
 				}),
-				server: { port: 0, middlewareMode: false, fs: { allow: fsAllow } },
+				server: { middlewareMode: true, fs: { allow: fsAllow } },
 			})
 			try {
-				await server.listen()
+				await hmr.executeFiles([join(root, 'entry.ts')])
 			} finally {
 				await server.close()
 			}

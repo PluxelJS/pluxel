@@ -200,6 +200,19 @@ export class HMRService {
 		this.runner.dropModuleCacheEntries(ids)
 	}
 
+	/**
+	 * Execute and (optionally) inject plugin modules, using the same pipeline as HMR updates.
+	 *
+	 * This is intentionally a thin wrapper around the internal executor so tests and tooling can
+	 * trigger evaluation without reaching into private fields.
+	 */
+	public executeFiles(filesPath: readonly string[], keepOrder = true) {
+		if (!this.executor) {
+			throw new Error('HMRService not initialized (Vite server not configured yet)')
+		}
+		return this.executor.runAndLoadAll(filesPath, keepOrder)
+	}
+
 	public async start(): Promise<void> {
 		const serverFsAllow = resolveFsAllowList({
 			cwd: this.cwd,
@@ -228,30 +241,24 @@ export class HMRService {
 			enforce: 'pre',
 			apply: 'serve',
 
-				configureServer: async (server) => {
-					this.vite = server
-					this.setServerRoot(server.config.root)
+			configureServer: async (server) => {
+				this.vite = server
+				this.setServerRoot(server.config.root)
 
-					this.runner.init(server, {
-						cjsExternal: this.deps.cjsExternal,
-						bridgeModules: this.deps.bridgeModules,
-						skipPlugin: this.plugin,
-					})
-					this.ssrEnv = this.runner.env
+				this.runner.init(server, {
+					cjsExternal: this.deps.cjsExternal,
+					bridgeModules: this.deps.bridgeModules,
+					skipPlugin: this.plugin,
+				})
+				this.ssrEnv = this.runner.env
 
-					await this.runner.bridgeHostModules(this.deps.bridgeModules, this.path, this.ctx.logger as any)
-					await this.runner.assertBridgedSingletons(this.deps.bridgeModules)
+				await this.runner.bridgeHostModules(this.deps.bridgeModules, this.path, this.ctx.logger as any)
+				await this.runner.assertBridgedSingletons(this.deps.bridgeModules)
 
-					this.executor = new HmrExecutor(
-						this.ctx,
-						this.runner,
-					this.path,
-					this.timing,
-					{
-						dbgModules: this.dbg.modules.enabled ? this.dbg.modules : null,
-						useRequireShims: this.useRequireShims,
-					},
-				)
+				this.executor = new HmrExecutor(this.ctx, this.runner, this.path, this.timing, {
+					dbgModules: this.dbg.modules.enabled ? this.dbg.modules : null,
+					useRequireShims: this.useRequireShims,
+				})
 
 				this.batchProcessor = new HmrBatchProcessor(
 					this.ctx,

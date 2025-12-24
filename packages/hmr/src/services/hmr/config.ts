@@ -4,7 +4,6 @@ import { resolve } from 'pathe'
 import Macros from 'unplugin-macros/vite'
 import type { InlineConfig, Plugin } from 'vite'
 import { normalizePath, searchForWorkspaceRoot } from 'vite'
-import tsconfigPaths from 'vite-tsconfig-paths'
 import { findNearestPackageRoot } from './internals'
 
 export interface HMRDependencyConfig {
@@ -170,9 +169,11 @@ export function buildHmrViteConfig(opts: HmrViteConfigOptions): InlineConfig {
 		},
 		resolve: {
 			conditions,
+			// Vite 8: built-in tsconfig paths support.
+			// (We intentionally avoid `vite-tsconfig-paths` to keep behavior consistent across environments.)
+			tsconfigPaths: true,
 		},
 		plugins: [
-			tsconfigPaths(),
 			configSourcePlugin({ include: opts.scanDirs.map((d) => `${d}/**/*.{ts,tsx}`) }),
 			importTypeFixerPlugin(),
 			Macros(),
