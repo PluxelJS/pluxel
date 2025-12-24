@@ -168,8 +168,8 @@ importers:
         version: 19.2.3(react@19.2.3)
     devDependencies:
       '@pluxel/market':
-        specifier: link:../../../pluxel-market/packages/market
-        version: link:../../../pluxel-market/packages/market
+        specifier: ^0.1.0
+        version: 0.1.0(ramda@0.32.0)(react-dom@19.2.3(react@19.2.3))(react@19.2.3)
       '@types/react':
         specifier: ^19.2.7
         version: 19.2.7

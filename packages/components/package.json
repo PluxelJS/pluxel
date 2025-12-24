@@ -61,7 +61,7 @@
 	"devDependencies": {
 		"hono": "^4.11.1",
 		"capnweb": "^0.2.0",
-		"@pluxel/market": "link:../../../pluxel-market/packages/market",
+		"@pluxel/market": "^0.1.0",
 		"@types/react": "^19.2.7",
 		"@types/react-dom": "^19.2.3",
 		"@vitejs/plugin-react": "^5.1.1",
