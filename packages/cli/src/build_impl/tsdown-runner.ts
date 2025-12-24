@@ -33,7 +33,20 @@ export async function runWithTsdown(options: TsdownRunnerOptions) {
 		hasBaseOnSuccess: Boolean(options.onSuccess),
 	})
 
-	await runTsdown(configPlan.inlineConfig)
+	const bundles = await runTsdown(configPlan.inlineConfig)
+
+	// tsdown v0.18+ does not await `onSuccess` (it calls it "fire-and-forget"),
+	// but our CLI uses it for critical post-build tasks (e.g. syncing package.json),
+	// and tests expect those side-effects to be completed when build returns.
+	//
+	// In non-watch mode we run the combined hook ourselves and await it.
+	if (!options.context.watch && configPlan.onSuccess) {
+		const controller = new AbortController()
+		for (const bundle of bundles) {
+			await configPlan.onSuccess(bundle.config, controller.signal)
+			if (controller.signal.aborted) break
+		}
+	}
 }
 
 interface ResolvedConfigSources {
@@ -55,6 +68,7 @@ async function resolveConfigSources(options: TsdownRunnerOptions): Promise<Resol
 interface InlineConfigBuildResult {
 	inlineConfig: InlineConfig
 	plugins?: InlineConfig['plugins']
+	onSuccess?: BuildSuccessHook
 	hasUserOnSuccess: boolean
 	hasCombinedOnSuccess: boolean
 }
@@ -78,9 +92,12 @@ function buildInlineConfig(
 			plugins: mergedPlugins,
 			cwd: restOverrides.cwd ?? options.context.projectRoot,
 			watch: options.context.watch,
-			...(combinedOnSuccess ? { onSuccess: combinedOnSuccess } : {}),
+			// In non-watch mode, `onSuccess` is executed/awaited by our runner after build(),
+			// because tsdown's internal onSuccess is not awaited.
+			...(options.context.watch && combinedOnSuccess ? { onSuccess: combinedOnSuccess } : {}),
 		}),
 		plugins: mergedPlugins,
+		onSuccess: combinedOnSuccess,
 		hasUserOnSuccess: Boolean(overrideOnSuccess),
 		hasCombinedOnSuccess: Boolean(combinedOnSuccess),
 	}

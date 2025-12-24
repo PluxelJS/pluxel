@@ -1,6 +1,10 @@
 import devServer from '@hono/vite-dev-server'
 import { type Context, Injectable, OverrideOf } from '@pluxel/core'
-import { HonoService as CoreHonoService, type GraphQLFetch } from '@pluxel/core/services'
+import {
+	type AppMod,
+	HonoService as CoreHonoService,
+	type GraphQLFetch,
+} from '@pluxel/core/services'
 import { Hono } from 'hono'
 import { createFactory, type Factory } from 'hono/factory'
 import type { ContentfulStatusCode } from 'hono/utils/http-status'
@@ -8,11 +12,11 @@ import type { Plugin } from 'vite'
 
 import api from '../../api/hono'
 import type { RenderHandler } from '../../server/types'
-import type { ExtensionManifestEvent } from '../runtime-compile'
 import { logStore, matchesFilter } from '../logger/logStore'
+import type { SseChannel } from '../plugin-interaction'
+import type { ExtensionManifestEvent } from '../runtime-compile'
 import type { AuthGuardCheckInput } from './AuthGuardService'
 import type { AppEnv, HonoWithAppEnvType } from './env'
-import type { SseChannel } from '../plugin-interaction'
 
 @Injectable
 @OverrideOf(CoreHonoService)
@@ -46,6 +50,10 @@ export class HonoService extends CoreHonoService {
 		return createFactory<AppEnv>({
 			initApp: (app) => this.attachPluginContext(app),
 		})
+	}
+
+	override modifyApp<App = HonoWithAppEnvType>(mod: AppMod<App>): () => void {
+		return super.modifyApp(mod)
 	}
 
 	/** GraphQLService 重织：仅替换函数指针 */

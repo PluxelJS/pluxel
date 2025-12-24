@@ -94,8 +94,7 @@ export class GraphQLService {
 		const dispose = () => {
 			if (this.globals.delete(mw)) this.scheduleRebuild()
 		}
-		const collect = (this.ctx as Context & { collectEffect?: (fn: () => void) => () => void })
-			.collectEffect
+		const collect = this.ctx.collectEffect
 		return collect ? collect.call(this.ctx, dispose) : dispose
 	}
 
