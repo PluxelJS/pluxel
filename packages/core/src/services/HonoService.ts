@@ -2,13 +2,14 @@ import { type Context, Injectable } from '@pluxel/context'
 
 const serviceName = 'honoService' as const
 
-declare module '@pluxel/context' {
+// 交给上游类型增强的去 declare
+/* declare module '@pluxel/context' {
 	namespace Context {
 		interface Services {
 			[serviceName]: HonoService
 		}
 	}
-}
+} */
 
 export type AppMod<App = unknown> = (app: App) => void
 export type HonoFetch = (

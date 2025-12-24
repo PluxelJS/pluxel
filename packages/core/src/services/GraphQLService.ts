@@ -2,7 +2,8 @@ import { type Context, Injectable } from '@pluxel/context'
 
 const serviceName = 'graphql' as const
 
-declare module '@pluxel/context' {
+// 交给上游类型增强的去 declare
+/* declare module '@pluxel/context' {
 	namespace Context {
 		interface Services {
 			[serviceName]: GraphQLService
@@ -13,7 +14,7 @@ declare module '@pluxel/context' {
 			[serviceName]?: GraphQLConfig
 		}
 	}
-}
+} */
 
 export type GraphQLResolver = unknown
 export type GraphQLMiddleware = unknown
