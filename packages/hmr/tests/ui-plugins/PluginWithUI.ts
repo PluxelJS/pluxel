@@ -49,7 +49,7 @@ export class PluginWithUI extends BasePlugin {
 		await this.initData()
 
 		// 插件 UI 模块示例：自带完整页面 + 自定义 Tab + Header 按钮
-		// 说明：builtin doc 展示已独立到 PluginBuiltinShowcase，
+		// 说明：builtin（infoCard/rpcAutoForm）展示已独立到 PluginBuiltinShowcase，
 		// PluginWithUI 只聚焦“插件自带 UI 模块”的能力演示。
 		this.ctx.ext.ui.register({
 			entryPath: './PluginWithUI/ui/index.tsx',

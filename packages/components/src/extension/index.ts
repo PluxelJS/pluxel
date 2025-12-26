@@ -37,9 +37,14 @@ export type {
 	BuiltinExtensionBase,
 	BuiltinExtensionDef,
 	BuiltinExtensionKind,
-	BuiltinInfoCardExtensionDef,
+	BuiltinDocBlock,
+	BuiltinDocBlockKind,
+	BuiltinDocExtensionDef,
+	BuiltinInfoCardBlock,
+	BuiltinInfoCardLayout,
 	BuiltinInfoCardRow,
 	BuiltinRpcArg,
+	BuiltinRpcAutoFormBlock,
 	BuiltinSseRef,
 	BuiltinValue,
 	CompiledExtensionModule,
@@ -65,8 +70,11 @@ export type {
 export {
 	createGlobalExtensionContext,
 	createPluginExtensionContext,
+	defineDocBlocks,
 	ExtensionPoints,
 	isExtensionPluginRunning,
+	md,
+	blockRef,
 	toGlobalExtensionContext,
 } from './types'
 

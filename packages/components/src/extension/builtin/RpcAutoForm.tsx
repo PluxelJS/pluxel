@@ -5,7 +5,7 @@ import type { ObjectSchema } from 'valibot'
 import * as v from 'valibot'
 import * as f from 'valibot-form'
 import { AutoForm, useAutoFormCtx } from 'valibot-form/web'
-import type { BuiltinRpcArg, BuiltinRpcAutoFormExtensionDef, ExtensionContext } from '../types'
+import type { BuiltinRpcArg, BuiltinRpcAutoFormBlock, ExtensionContext } from '../types'
 import { isObject, resolveSseRef, useSseForValues } from './_shared'
 
 type SchemaCacheEntry = { schema: ObjectSchema<any, any>; defaults: Record<string, any> }
@@ -267,10 +267,12 @@ async function loadSchema(
 
 export function BuiltinRpcAutoForm({
 	ctx,
-	def,
+	pluginName,
+	block,
 }: {
 	ctx: ExtensionContext
-	def: BuiltinRpcAutoFormExtensionDef
+	pluginName: string
+	block: BuiltinRpcAutoFormBlock
 }) {
 	const mountedRef = useRef(true)
 	useEffect(() => {
@@ -280,16 +282,15 @@ export function BuiltinRpcAutoForm({
 		}
 	}, [])
 
-	const pluginName = def.pluginName
-	const schemaKey = normalizeKey(def.schemaKey)
-	const submitMode = def.submitMode ?? 'manual'
+	const schemaKey = normalizeKey(block.schemaKey)
+	const submitMode = block.submitMode ?? 'manual'
 	const autoSubmitDebounceMs =
-		typeof def.autoSubmitDebounceMs === 'number' && def.autoSubmitDebounceMs >= 0
-			? def.autoSubmitDebounceMs
+		typeof block.autoSubmitDebounceMs === 'number' && block.autoSubmitDebounceMs >= 0
+			? block.autoSubmitDebounceMs
 			: 250
 	const sseSyncHoldMs =
-		typeof def.syncHoldMs === 'number' && def.syncHoldMs >= 0
-			? def.syncHoldMs
+		typeof block.syncHoldMs === 'number' && block.syncHoldMs >= 0
+			? block.syncHoldMs
 			: Math.max(800, autoSubmitDebounceMs * 4)
 	const lastSuccessSigRef = useRef('')
 	const lastSuccessAtRef = useRef(0)
@@ -327,7 +328,7 @@ export function BuiltinRpcAutoForm({
 
 	const notifySuccess = (titleFallback: string) => {
 		const notify = ctx.services.ui?.notify
-		const success = def.feedback?.success
+		const success = block.feedback?.success
 		if (typeof notify !== 'function' || !success) return
 		notify({
 			tone: 'success',
@@ -339,7 +340,7 @@ export function BuiltinRpcAutoForm({
 
 	const notifyError = (err: unknown) => {
 		const notify = ctx.services.ui?.notify
-		const error = def.feedback?.error
+		const error = block.feedback?.error
 		if (typeof notify !== 'function' || !error) return
 		notify({
 			tone: 'error',
@@ -352,12 +353,12 @@ export function BuiltinRpcAutoForm({
 
 	const [submitting, setSubmitting] = useState(false)
 
-	const sseStateByEvent = useSseForValues(ctx, pluginName, [def.syncFromSse as any])
+	const sseStateByEvent = useSseForValues(ctx, pluginName, [block.syncFromSse as any])
 	const syncPayload = useMemo(() => {
-		const ref: any = def.syncFromSse
+		const ref: any = block.syncFromSse
 		if (!isObject(ref) || ref.kind !== 'sse') return null
 		return resolveSseRef(ref as any, sseStateByEvent)
-	}, [def.syncFromSse, sseStateByEvent])
+	}, [block.syncFromSse, sseStateByEvent])
 
 	const opts = useMemo(() => {
 		if (state.status !== 'ready') return null
@@ -367,7 +368,7 @@ export function BuiltinRpcAutoForm({
 			onSubmit: async ({ value, formApi }) => {
 				if (submitting) return
 
-				const confirm = def.confirm
+				const confirm = block.confirm
 				if (confirm?.message) {
 					const ok = await (async () => {
 						const svc = ctx.services.ui?.confirm
@@ -386,24 +387,24 @@ export function BuiltinRpcAutoForm({
 
 				setSubmitting(true)
 				try {
-					const method = String(def.rpc?.method ?? '').trim()
+					const method = String(block.rpc?.method ?? '').trim()
 					if (!method) throw new Error('Missing rpc.method')
 					const rpcNs = (ctx.services as any)?.hmr?.rpc?.[pluginName]
 					const fn = rpcNs?.[method]
 					if (typeof fn !== 'function')
 						throw new Error(`RPC method not found: ${pluginName}.${method}`)
 
-					const args = buildArgsFromTemplate(value, def.rpc?.args)
+					const args = buildArgsFromTemplate(value, block.rpc?.args)
 					await fn(...args)
 
 					lastSuccessSigRef.current = safeStringify(value)
 					lastSuccessAtRef.current = Date.now()
-					const hasSseSync = submitMode === 'onChange' && Boolean(def.syncFromSse)
+					const hasSseSync = submitMode === 'onChange' && Boolean(block.syncFromSse)
 					awaitingSseRef.current = hasSseSync
 					notifySuccess('提交成功')
-					if (def.resetOnSuccess) {
+					if (block.resetOnSuccess) {
 						formApi.reset()
-					} else if (def.submitMode === 'onChange' && !hasSseSync) {
+					} else if (block.submitMode === 'onChange' && !hasSseSync) {
 						formApi.reset(value as any)
 					}
 				} catch (e) {
@@ -415,15 +416,17 @@ export function BuiltinRpcAutoForm({
 		})
 	}, [
 		ctx.services,
-		def.confirm,
-		def.feedback,
-		def.resetOnSuccess,
-		def.rpc?.args,
-		def.rpc?.method,
+		block.confirm,
+		block.feedback,
+		block.resetOnSuccess,
+		block.rpc?.args,
+		block.rpc?.method,
+		block.syncFromSse,
 		pluginName,
 		state.status,
 		state.status === 'ready' ? state.defaults : null,
 		submitting,
+		submitMode,
 	])
 
 	if (state.status === 'loading') {
@@ -443,7 +446,7 @@ export function BuiltinRpcAutoForm({
 		return (
 			<Paper withBorder radius="md" p="sm" shadow="xs">
 				<Text size="sm" fw={650}>
-					{def.title ?? 'Form'}
+					{block.title ?? 'Form'}
 				</Text>
 				<Text size="xs" c="red" mt={6}>
 					{state.error.message}
@@ -455,14 +458,14 @@ export function BuiltinRpcAutoForm({
 	return (
 		<Paper withBorder radius="md" p="sm" shadow="xs">
 			<Stack gap="sm">
-				{def.title ? (
+				{block.title ? (
 					<Box>
 						<Text size="sm" fw={650} style={{ lineHeight: 1.2 }}>
-							{def.title}
+							{block.title}
 						</Text>
-						{def.description ? (
+						{block.description ? (
 							<Text size="xs" c="dimmed" mt={4}>
-								{def.description}
+								{block.description}
 							</Text>
 						) : null}
 					</Box>
@@ -470,7 +473,7 @@ export function BuiltinRpcAutoForm({
 
 				<AutoForm schema={state.schema as any} formOpts={opts as any}>
 					<SseSyncSlot
-						enabled={submitMode === 'onChange' && Boolean(def.syncFromSse)}
+						enabled={submitMode === 'onChange' && Boolean(block.syncFromSse)}
 						payload={syncPayload}
 						allowedKeys={Object.keys(state.defaults ?? {})}
 						holdMs={sseSyncHoldMs}
@@ -502,7 +505,7 @@ export function BuiltinRpcAutoForm({
 												<Text size="xs">提交中…</Text>
 											</Group>
 										) : (
-											(def.submitLabel ?? 'Submit')
+											(block.submitLabel ?? 'Submit')
 										)}
 									</Button>
 								</Group>

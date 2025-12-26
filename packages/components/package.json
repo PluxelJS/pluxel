@@ -56,7 +56,11 @@
 		"@tanstack/react-router": "^1.143.4",
 		"gqty": "^3.6.0",
 		"graphql": "^16.12.0",
-		"obug": "^2.1.1"
+		"obug": "^2.1.1",
+		"react-markdown": "^9.0.1",
+		"remark-directive": "^3.0.0",
+		"remark-gfm": "^4.0.0",
+		"unist-util-visit": "^5.0.0"
 	},
 	"devDependencies": {
 		"hono": "^4.11.1",

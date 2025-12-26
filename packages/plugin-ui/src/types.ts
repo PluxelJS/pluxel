@@ -337,14 +337,13 @@ export interface UiConfirmPayload {
  * These are intentionally JSON-serializable so plugins can contribute UI without shipping
  * browser-side code (e.g. simple info cards powered by RPC results).
  */
-export type BuiltinExtensionKind = 'infoCard' | 'rpcAutoForm'
+export type BuiltinExtensionKind = 'doc'
 
 type BuiltinMetaProp<P extends ExtensionPoint> = ExtensionPointMap[P] extends { metaRequired: true }
 	? { meta: ExtensionPointMeta<P> }
 	: { meta?: ExtensionPointMeta<P> }
 
-export interface BuiltinExtensionBase<P extends ExtensionPoint = ExtensionPoint>
-	extends BuiltinMetaProp<P> {
+export type BuiltinExtensionBase<P extends ExtensionPoint = ExtensionPoint> = BuiltinMetaProp<P> & {
 	kind: BuiltinExtensionKind
 	/** Extension point to mount into */
 	point: P
@@ -414,8 +413,9 @@ export type BuiltinInfoCardLayout = {
 	valueAlign?: 'left' | 'right'
 }
 
-export interface BuiltinInfoCardExtensionDef<P extends ExtensionPoint = ExtensionPoint>
-	extends BuiltinExtensionBase<P> {
+export type BuiltinDocBlockKind = 'infoCard' | 'rpcAutoForm'
+
+export type BuiltinInfoCardBlock = {
 	kind: 'infoCard'
 	title?: string
 	description?: string
@@ -423,10 +423,7 @@ export interface BuiltinInfoCardExtensionDef<P extends ExtensionPoint = Extensio
 	layout?: BuiltinInfoCardLayout
 }
 
-export type BuiltinRpcArg = unknown | { kind: 'field'; key: string }
-
-export interface BuiltinRpcAutoFormExtensionDef<P extends ExtensionPoint = ExtensionPoint>
-	extends BuiltinExtensionBase<P> {
+export type BuiltinRpcAutoFormBlock = {
 	kind: 'rpcAutoForm'
 	title?: string
 	description?: string
@@ -469,9 +466,56 @@ export interface BuiltinRpcAutoFormExtensionDef<P extends ExtensionPoint = Exten
 	resetOnSuccess?: boolean
 }
 
+export type BuiltinDocBlock = BuiltinInfoCardBlock | BuiltinRpcAutoFormBlock
+
+export type BuiltinDocExtensionDef<P extends ExtensionPoint = ExtensionPoint> = BuiltinExtensionBase<P> & {
+	kind: 'doc'
+	title?: string
+	description?: string
+	/** Markdown content with `::block[blockId]` placeholders. */
+	content?: string
+	/** Builtin blocks referenced by `::block[...]`. */
+	blocks?: Record<string, BuiltinDocBlock>
+	/** Ordering used when `content` is omitted. */
+	blockOrder?: string[]
+}
+
+export type BuiltinRpcArg = unknown | { kind: 'field'; key: string }
+
+export const defineDocBlocks = <T extends Record<string, BuiltinDocBlock>>(blocks: T): T => blocks
+
+export function md(
+	strings: TemplateStringsArray,
+	...values: Array<string | number>
+): string {
+	let out = ''
+	for (let i = 0; i < strings.length; i++) {
+		out += strings[i] ?? ''
+		if (i < values.length) out += String(values[i])
+	}
+	const lines = out.replace(/\r\n/g, '\n').split('\n')
+	while (lines.length && lines[0].trim() === '') lines.shift()
+	while (lines.length && lines[lines.length - 1].trim() === '') lines.pop()
+	let minIndent = Number.POSITIVE_INFINITY
+	for (const line of lines) {
+		if (!line.trim()) continue
+		const match = line.match(/^[\t ]+/)
+		const indent = match ? match[0].length : 0
+		minIndent = Math.min(minIndent, indent)
+	}
+	if (!Number.isFinite(minIndent) || minIndent <= 0) return lines.join('\n')
+	return lines.map((line) => (line.trim() ? line.slice(minIndent) : '')).join('\n')
+}
+
+export function blockRef<T extends Record<string, BuiltinDocBlock>>(
+	_blocks: T,
+	key: keyof T,
+): string {
+	return `::block[${String(key)}]`
+}
+
 export type BuiltinExtensionDef =
-	| BuiltinInfoCardExtensionDef
-	| BuiltinRpcAutoFormExtensionDef
+	| BuiltinDocExtensionDef
 
 export interface CompiledExtensionModule {
 	pluginName: string

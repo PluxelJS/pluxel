@@ -1,6 +1,6 @@
 import { Badge, Box, Divider, Group, Paper, Stack, Text } from '@mantine/core'
 import { useMemo } from 'react'
-import type { BuiltinBadgeValue, BuiltinInfoCardExtensionDef, ExtensionContext } from '../types'
+import type { BuiltinBadgeValue, BuiltinInfoCardBlock, ExtensionContext } from '../types'
 import { isObject, resolveSseRef, useSseForValues } from './_shared'
 
 function isBadgeValue(value: unknown): value is BuiltinBadgeValue {
@@ -66,15 +66,17 @@ function shouldAutoSpanFullWidth(value: unknown): boolean {
 
 export function BuiltinInfoCard({
 	ctx,
-	def,
+	pluginName,
+	block,
 }: {
 	ctx: ExtensionContext
-	def: BuiltinInfoCardExtensionDef
+	pluginName: string
+	block: BuiltinInfoCardBlock
 }) {
-	const rows = Array.isArray(def.rows) ? def.rows : []
+	const rows = Array.isArray(block.rows) ? block.rows : []
 	const sseStateByEvent = useSseForValues(
 		ctx,
-		def.pluginName,
+		pluginName,
 		rows.map((r) => r?.value),
 	)
 
@@ -87,7 +89,7 @@ export function BuiltinInfoCard({
 		})
 	}, [rows, sseStateByEvent])
 
-	const layout = def.layout ?? {}
+	const layout = block.layout ?? {}
 	const density = layout.density ?? 'comfortable'
 	const variant = layout.variant ?? 'list'
 	const valueAlign = layout.valueAlign ?? 'right'
@@ -107,18 +109,18 @@ export function BuiltinInfoCard({
 	return (
 		<Paper withBorder radius="md" p={cardPadding} shadow="xs">
 			<Stack gap={density === 'compact' ? 6 : 8}>
-				{def.title || def.description ? (
+				{block.title || block.description ? (
 					<Stack gap={headerGap}>
-						{def.title ? (
+						{block.title ? (
 							<Group justify="space-between" align="center" wrap="nowrap">
 								<Text size={titleSize} fw={650} style={{ lineHeight: 1.2 }}>
-									{def.title}
+									{block.title}
 								</Text>
 							</Group>
 						) : null}
-						{def.description ? (
+						{block.description ? (
 							<Text size={descSize} c="dimmed" style={{ lineHeight: 1.35 }}>
-								{def.description}
+								{block.description}
 							</Text>
 						) : null}
 					</Stack>
@@ -126,7 +128,7 @@ export function BuiltinInfoCard({
 
 				{resolvedRows.length ? (
 					<>
-						{def.title || def.description ? <Divider /> : null}
+						{block.title || block.description ? <Divider /> : null}
 						{variant === 'grid' || columns > 1 ? (
 							<Box
 								style={{

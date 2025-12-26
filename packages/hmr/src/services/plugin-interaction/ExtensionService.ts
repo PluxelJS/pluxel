@@ -4,8 +4,7 @@ import { mkdir, readdir, readFile, stat, unlink, writeFile } from 'node:fs/promi
 import { type Context, getPluginInfo } from '@pluxel/core'
 import type {
 	BuiltinExtensionDef,
-	BuiltinInfoCardExtensionDef,
-	BuiltinRpcAutoFormExtensionDef,
+	BuiltinDocExtensionDef,
 	CompiledExtensionModule,
 	ExtensionManifest,
 	ExtensionManifestEvent,
@@ -215,7 +214,7 @@ export class ExtensionService {
 	/**
 	 * Register a host-rendered (JSON-serializable) UI extension, without shipping a plugin UI module.
 	 *
-	 * Designed for simple status/info cards and small UI inserts that should not require `await import()`.
+	 * Designed for markdown docs with builtin blocks that should not require `await import()`.
 	 */
 	registerBuiltin(def: Omit<BuiltinExtensionDef, 'pluginName'>): () => void {
 		if (!this.enabled) return () => {}
@@ -264,23 +263,12 @@ export class ExtensionService {
 		})
 	}
 
-	infoCard<P extends ExtensionPoint = 'plugin:info'>(
-		input: Omit<BuiltinInfoCardExtensionDef<P>, 'kind' | 'pluginName' | 'point'> & { point?: P },
+	doc<P extends ExtensionPoint = 'plugin:tabs'>(
+		input: Omit<BuiltinDocExtensionDef<P>, 'kind' | 'pluginName' | 'point'> & { point?: P },
 	): () => void {
 		const { point, ...rest } = input
 		return this.registerBuiltin({
-			kind: 'infoCard',
-			point: (point ?? ('plugin:info' as P)) as P,
-			...(rest as any),
-		})
-	}
-
-	rpcAutoForm<P extends ExtensionPoint = 'plugin:tabs'>(
-		input: Omit<BuiltinRpcAutoFormExtensionDef<P>, 'kind' | 'pluginName' | 'point'> & { point?: P },
-	): () => void {
-		const { point, ...rest } = input
-		return this.registerBuiltin({
-			kind: 'rpcAutoForm',
+			kind: 'doc',
 			point: (point ?? ('plugin:tabs' as P)) as P,
 			...(rest as any),
 		})

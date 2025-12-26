@@ -13,10 +13,10 @@ This package defines the **stable UI extension protocol** between:
 
 ## Recommended pragmatic surface
 
-If you want low learning-cost + low coupling to a specific frontend, prefer:
+If you want low learning-cost + low coupling to a specific frontend, use:
 
-- **Read-only**: `infoCard`.
-- **Interaction**: `rpcAutoForm` (valibot-form AutoForm + RPC submit).
+- **Single entry**: `doc` (markdown content with builtin block placeholders).
+- **Blocks**: `infoCard` / `rpcAutoForm` are used *inside* `doc`.
 
 For richer UI (charts, complex layout, form logic), use a full UI module.
 
@@ -28,6 +28,8 @@ For richer UI (charts, complex layout, form logic), use a full UI module.
   but can still be referenced by `rpcAutoForm.schemaKey`.
 - **Mixed tabs**: `plugin:tabs` meta supports `meta.tab: { id, label, icon? }` so multiple extensions can render into
   the same host tab (mixed layouts).
+- **Doc blocks**: use `::block[blockId]` inside markdown and supply `blocks: { blockId: { kind, ... } }`.
+- **Auto layout**: omit `content` to render blocks in `blockOrder` (or object order).
 
 ## Where to look
 

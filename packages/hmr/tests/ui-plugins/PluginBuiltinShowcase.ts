@@ -5,7 +5,6 @@ import { BasePlugin, Config, Plugin } from '@pluxel/hmr'
 import { RpcTarget } from '@pluxel/hmr/capnweb'
 import { f, v } from '@pluxel/hmr/config'
 import type { SseChannel } from '@pluxel/hmr/services'
-import { blockRef, defineDocBlocks, md } from '@pluxel/plugin-ui'
 
 const MIN_REFRESH_MS = 250
 const MAX_REFRESH_MS = 10_000
@@ -446,173 +445,75 @@ export class PluginBuiltinShowcase extends BasePlugin {
 	}
 
 	private registerBuiltins() {
-		this.registerOverviewDoc()
-		this.registerTabDocs()
+		this.registerOverviewCard()
+		this.registerTabs()
 	}
 
-	private registerOverviewDoc() {
-		const blocks = defineDocBlocks({
-			overview: {
-				kind: 'infoCard',
-				layout: { variant: 'grid', density: 'compact', columns: 3, labelPlacement: 'top' },
-				rows: [
-					{ label: 'Plugin', value: this.ctx.pluginInfo.id },
-					{ label: 'Uptime', value: this.sse('uptimeLabel', '0s') },
-					{ label: 'Ticks', value: this.sse('ticks', 0) },
-					{ label: 'Tick step', value: this.sse('tickStep', DEFAULTS.behavior.tickStep) },
-					{ label: 'Paused', value: this.sse('paused', false) },
-					{ label: 'Max ticks', value: this.sse('maxTicks', DEFAULTS.behavior.maxTicks) },
-					{ label: 'Refresh (ms)', value: this.sse('refreshMs', DEFAULTS.display.refreshMs) },
-				],
-			},
-		})
-
-		this.ctx.ext.ui.doc({
+	private registerOverviewCard() {
+		this.ctx.ext.ui.infoCard({
 			id: 'summary',
 			point: 'plugin:info',
 			title: 'Builtin Overview',
 			description: 'Host-rendered preset UI (no plugin UI module).',
 			requireRunning: false,
-			blocks,
-			blockOrder: ['overview'],
+			layout: { variant: 'grid', density: 'compact', columns: 3, labelPlacement: 'top' },
+			rows: [
+				{ label: 'Plugin', value: this.ctx.pluginInfo.id },
+				{ label: 'Uptime', value: this.sse('uptimeLabel', '0s') },
+				{ label: 'Ticks', value: this.sse('ticks', 0) },
+				{ label: 'Tick step', value: this.sse('tickStep', DEFAULTS.behavior.tickStep) },
+				{ label: 'Paused', value: this.sse('paused', false) },
+				{ label: 'Max ticks', value: this.sse('maxTicks', DEFAULTS.behavior.maxTicks) },
+				{ label: 'Refresh (ms)', value: this.sse('refreshMs', DEFAULTS.display.refreshMs) },
+			],
 		})
 	}
 
-	private registerTabDocs() {
+	private registerTabs() {
 		const controlTab = { id: 'controls', label: 'Controls', icon: 'form' }
 		const metricsTab = { id: 'metrics', label: 'Metrics', icon: 'activity' }
-		const guideTab = { id: 'guide', label: 'Guide', icon: 'book' }
 
-		const controlBlocks = defineDocBlocks({
-			toggle: {
-				kind: 'rpcAutoForm',
-				title: 'Pause',
-				description: 'submitMode=onChange + SSE sync.',
-				submitMode: 'onChange',
-				autoSubmitDebounceMs: 120,
-				syncFromSse: { kind: 'sse' },
-				schemaKey: '_runtimeToggle',
-				rpc: { method: 'setPaused', args: [{ kind: 'field', key: 'paused' }] },
-			},
-			setTicks: {
-				kind: 'rpcAutoForm',
-				title: 'Set ticks',
-				description: 'Manual submit → RPC.',
-				submitLabel: 'Submit',
-				submitMode: 'manual',
-				schemaKey: '_runtime',
-				rpc: { method: 'setTicks', args: [{ kind: 'field', key: 'ticks' }] },
-				feedback: { success: { title: 'Submitted', tone: 'success' } },
-				resetOnSuccess: false,
-			},
-		})
-
-		this.ctx.ext.ui.doc({
-			id: 'controls-doc',
+		this.ctx.ext.ui.rpcAutoForm({
+			id: 'control-toggle',
 			point: 'plugin:tabs',
 			requireRunning: false,
 			priority: 20,
-			meta: { label: 'Controls', icon: 'form', tab: controlTab },
-			blocks: controlBlocks,
-			blockOrder: ['toggle', 'setTicks'],
+			meta: { label: 'Pause', icon: 'switch', tab: controlTab },
+			title: 'Pause (AutoForm)',
+			description: 'submitMode=onChange + SSE sync.',
+			submitMode: 'onChange',
+			autoSubmitDebounceMs: 120,
+			syncFromSse: { kind: 'sse' },
+			schemaKey: '_runtimeToggle',
+			rpc: { method: 'setPaused', args: [{ kind: 'field', key: 'paused' }] },
 		})
 
-		const metricsBlocks = defineDocBlocks({
-			metrics: {
-				kind: 'infoCard',
-				title: 'Metrics Stream',
-				description: 'Compact status list (auto-updated).',
-				layout: { variant: 'list', density: 'compact', valueAlign: 'right' },
-				rows: this.buildMetricRows(),
-			},
-		})
-
-		this.ctx.ext.ui.doc({
-			id: 'metrics-doc',
+		this.ctx.ext.ui.rpcAutoForm({
+			id: 'control-set-ticks',
 			point: 'plugin:tabs',
 			requireRunning: false,
 			priority: 10,
-			meta: { label: 'Metrics', icon: 'list', tab: metricsTab },
-			blocks: metricsBlocks,
-			blockOrder: ['metrics'],
+			meta: { label: 'Ticks', icon: 'form', tab: controlTab },
+			title: 'Set ticks (AutoForm)',
+			description: 'Manual submit → RPC.',
+			submitLabel: 'Submit',
+			submitMode: 'manual',
+			schemaKey: '_runtime',
+			rpc: { method: 'setTicks', args: [{ kind: 'field', key: 'ticks' }] },
+			feedback: { success: { title: 'Submitted', tone: 'success' } },
+			resetOnSuccess: false,
 		})
 
-		const docBlocks = defineDocBlocks({
-			snapshot: {
-				kind: 'infoCard',
-				title: 'Live Snapshot',
-				description: 'Markdown + builtin blocks.',
-				layout: { variant: 'grid', density: 'compact', columns: 3, labelPlacement: 'top' },
-				rows: [
-					{ label: 'Uptime', value: this.sse('uptimeLabel', '0s') },
-					{ label: 'Ticks', value: this.sse('ticks', 0) },
-					{ label: 'Paused', value: this.sse('paused', false) },
-					{ label: 'Tick step', value: this.sse('tickStep', DEFAULTS.behavior.tickStep) },
-					{ label: 'Refresh (ms)', value: this.sse('refreshMs', DEFAULTS.display.refreshMs) },
-				],
-			},
-			quickToggle: {
-				kind: 'rpcAutoForm',
-				title: 'Quick Pause',
-				description: 'onChange + SSE sync.',
-				submitMode: 'onChange',
-				autoSubmitDebounceMs: 120,
-				syncFromSse: { kind: 'sse' },
-				schemaKey: '_runtimeToggle',
-				rpc: { method: 'setPaused', args: [{ kind: 'field', key: 'paused' }] },
-			},
-		})
-
-		const docContent = md`
-			# Builtin Doc
-			基于 markdown 的内容区域，可以注入内置组件。
-
-			## Snapshot
-			${blockRef(docBlocks, 'snapshot')}
-
-			## Quick controls
-			${blockRef(docBlocks, 'quickToggle')}
-
-			- 纯文段和 builtin 表单可以混合排布
-			- 适合在说明文档中加入可交互控件
-
-			## 说明
-			本段用于拉长文本，测试目录与滚动条联动效果。
-
-			### 为什么选择 doc
-			doc 让插件作者可以先写一段解释，再插入交互组件。
-			同一页面里既能阅读，也能操作。
-
-			### 使用建议
-			- 段落要有结构
-			- 章节层级不要太深
-			- 关键点放在标题后几行
-
-			### 视觉测试
-			这里连续堆叠几段文本来制造滚动高度。
-			在真实插件里可以用配置说明、故障排查步骤、变更记录等填充。
-
-			#### 变更记录
-			1. 新增内置 doc 渲染
-			2. 支持 block 注入
-			3. 支持 TOC
-
-			#### 常见问题
-			Q: 为什么要统一入口？
-			A: 避免多套 UI 能力碎片化，降低维护成本。
-
-			Q: 是否支持更复杂组件？
-			A: 可以在 block 扩展里逐步加入。
-		`
-
-		this.ctx.ext.ui.doc({
-			id: 'guide-doc',
+		this.ctx.ext.ui.infoCard({
+			id: 'metrics',
 			point: 'plugin:tabs',
 			requireRunning: false,
-			priority: 0,
-			meta: { label: 'Guide', icon: 'book', tab: guideTab },
-			content: docContent,
-			blocks: docBlocks,
+			priority: 5,
+			meta: { label: 'Metrics', icon: 'list', tab: metricsTab },
+			title: 'Metrics Stream',
+			description: 'Compact status list (auto-updated).',
+			layout: { variant: 'list', density: 'compact', valueAlign: 'right' },
+			rows: this.buildMetricRows(),
 		})
 	}
 
