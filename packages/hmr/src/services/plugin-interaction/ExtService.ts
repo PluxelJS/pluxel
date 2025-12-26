@@ -10,10 +10,13 @@ export class ExtService {
 	private _sse: SseService | null = null
 	private _ui: ExtensionService | null = null
 
-	constructor(public ctx: Context, _cfg: unknown = undefined) {}
+	constructor(
+		public ctx: Context,
+		_cfg: unknown = undefined,
+	) {}
 
 	/** Plugin RPC extensions registry */
-	get rpc(): RpcService {
+	get rpc(): Context.PublicService<RpcService> {
 		const ctx = this.ctx
 		let inst = this._rpc
 		if (!inst) {
@@ -21,11 +24,11 @@ export class ExtService {
 			this._rpc = inst
 		}
 		inst.ctx = ctx
-		return inst
+		return inst as any
 	}
 
 	/** Server-Sent Events extension registry + stream entry */
-	get sse(): SseService {
+	get sse(): Context.PublicService<SseService> {
 		const ctx = this.ctx
 		let inst = this._sse
 		if (!inst) {
@@ -33,11 +36,11 @@ export class ExtService {
 			this._sse = inst
 		}
 		inst.ctx = ctx
-		return inst
+		return inst as any
 	}
 
 	/** Plugin UI module compiler/manifest service */
-	get ui(): ExtensionService {
+	get ui(): Context.PublicService<ExtensionService> {
 		const ctx = this.ctx
 		let inst = this._ui
 		if (!inst) {
@@ -45,7 +48,7 @@ export class ExtService {
 			this._ui = inst
 		}
 		inst.ctx = ctx
-		return inst
+		return inst as any
 	}
 
 	// No isolate() here by design: ExtService owns the subservices and rebinds `ctx`

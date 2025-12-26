@@ -1,6 +1,7 @@
-import { createContext, useCallback, useContext, useMemo } from 'react'
-import type React from 'react'
 import { useLocalStorage } from '@mantine/hooks'
+import type React from 'react'
+import { createContext, useCallback, useContext, useEffect, useMemo } from 'react'
+import { setNotificationCenterPush } from './notifyBridge'
 
 export type NotificationRecord = {
 	id: string
@@ -78,6 +79,10 @@ export function NotificationCenterProvider({ children }: { children: React.React
 		}),
 		[items, unread, push, markAllRead, clear],
 	)
+
+	useEffect(() => {
+		return setNotificationCenterPush(push)
+	}, [push])
 
 	return (
 		<NotificationCenterContext.Provider value={value}>

@@ -1,14 +1,26 @@
-import { Box, Tabs } from '@mantine/core'
+import { Box } from '@mantine/core'
 import { useHotkeys } from '@mantine/hooks'
 import { formOptions } from '@tanstack/react-form'
-import { useMemo } from 'react'
+import { useEffect, useMemo } from 'react'
 import type { ObjectSchema } from 'valibot'
-import { AutoForm } from 'valibot-form/web'
+import { AutoForm, useAutoFormCtx } from 'valibot-form/web'
 import { useNotify } from '../../hooks'
 import { createRpcClient } from '../../rpc'
-import { FloatingBar } from './components/FloatingBar'
 import { FormToc } from './components/FormToc'
 import { makeFieldAnchorPrefix, makeSectionAnchorPrefix } from './utils'
+
+export type ConfigFormState = {
+	dirty: boolean
+	canSubmit: boolean
+	submitting: boolean
+	values: Record<string, any>
+}
+
+export type ConfigFormBridge = {
+	form: any
+	reset: (values?: Record<string, any>) => void
+	submit: () => void
+}
 
 export function ConfigTabContent({
 	pluginName,
@@ -17,25 +29,29 @@ export function ConfigTabContent({
 	savedValue,
 	defaultValue,
 	onSaved,
-	savedAt,
 	showToc,
+	active = true,
 	sectionIdPrefix,
 	fieldIdPrefix,
 	scrollHost,
 	scrollHostVersion,
+	registerForm,
+	reportState,
 }: {
 	tabKey: string
 	pluginName: string
 	schema: ObjectSchema<any, any>
 	savedValue: Record<string, any>
 	defaultValue: Record<string, any>
-	onSaved: (k: string) => void
-	savedAt?: number
+	onSaved: (k: string, value: Record<string, any>) => void
 	showToc?: boolean
+	active?: boolean
 	sectionIdPrefix?: string
 	fieldIdPrefix?: string
 	scrollHost?: HTMLElement | null
 	scrollHostVersion?: number
+	registerForm?: (key: string, api: ConfigFormBridge) => void | (() => void)
+	reportState?: (key: string, state: ConfigFormState) => void
 }) {
 	const notify = useNotify()
 	const sectionAnchorPrefix = useMemo(
@@ -82,7 +98,8 @@ export function ConfigTabContent({
 						})
 						return
 					}
-					onSaved(tabKey)
+					formApi.reset(value as any)
+					onSaved(tabKey, value as any)
 					notify({ title: '提交成功', message: `配置 ${tabKey} 已保存`, color: 'green' })
 				},
 			}),
@@ -106,6 +123,9 @@ export function ConfigTabContent({
 
 	return (
 		<AutoForm key={`${pluginName}-${tabKey}`} schema={schema as any} formOpts={opts}>
+			{registerForm ? <FormBridge tabKey={tabKey} registerForm={registerForm} /> : null}
+			{reportState ? <FormStateSlot tabKey={tabKey} reportState={reportState} /> : null}
+			{active ? <FormHotkeys active={active} initialValue={initialValue} /> : null}
 			{showToc ? (
 				<FormToc
 					sectionIdPrefix={sectionAnchorPrefix}
@@ -114,32 +134,108 @@ export function ConfigTabContent({
 					scrollHostVersion={scrollHostVersion ?? 0}
 				/>
 			) : null}
-			<Box px="sm" pb={96} style={{ position: 'relative' }}>
+			<Box px="xs" pb={96} style={{ position: 'relative' }}>
 				<AutoForm.Fields sectionIdPrefix={sectionAnchorPrefix} fieldIdPrefix={fieldAnchorPrefix} />
 			</Box>
-			<AutoForm.Actions>
-				{({ submit, reset, dirty, canSubmit, submitting }) => (
-					<FloatingBar
-						title={tabKey}
-						dirty={dirty}
-						canSubmit={canSubmit}
-						submitting={submitting}
-						onSubmit={submit}
-						onCancel={() => reset(initialValue)}
-						onResetToDefaults={() => reset(defaultValue)}
-						savedAt={savedAt}
-					/>
-				)}
-			</AutoForm.Actions>
 		</AutoForm>
 	)
 }
 
+function FormBridge({
+	tabKey,
+	registerForm,
+}: {
+	tabKey: string
+	registerForm: (key: string, api: ConfigFormBridge) => void | (() => void)
+}) {
+	const { form, reset, submit } = useAutoFormCtx<any>()
+
+	useEffect(() => {
+		const disposer = registerForm(tabKey, { form, reset, submit })
+		return () => {
+			if (typeof disposer === 'function') disposer()
+		}
+	}, [form, registerForm, reset, tabKey])
+
+	return null
+}
+
+function FormStateSlot({
+	tabKey,
+	reportState,
+}: {
+	tabKey: string
+	reportState: (key: string, state: ConfigFormState) => void
+}) {
+	const { form } = useAutoFormCtx<any>()
+	return (
+		<form.Subscribe
+			selector={(s: any) => ({
+				dirty: s.isDirty,
+				canSubmit: s.canSubmit,
+				submitting: s.isSubmitting,
+				values: s.values,
+			})}
+		>
+			{(state) => <FormStateReporter tabKey={tabKey} state={state} reportState={reportState} />}
+		</form.Subscribe>
+	)
+}
+
+function FormStateReporter({
+	tabKey,
+	state,
+	reportState,
+}: {
+	tabKey: string
+	state: ConfigFormState
+	reportState: (key: string, state: ConfigFormState) => void
+}) {
+	useEffect(() => {
+		reportState(tabKey, state)
+	}, [reportState, state, tabKey])
+
+	return null
+}
+
+function FormHotkeys({
+	active,
+	initialValue,
+}: {
+	active: boolean
+	initialValue: Record<string, any>
+}) {
+	const { submit, reset } = useAutoFormCtx<any>()
+	const hotkeys = useMemo(
+		() =>
+			active
+				? [
+						[
+							'mod+S',
+							(e) => {
+								e.preventDefault()
+								submit()
+							},
+						],
+						[
+							'Escape',
+							() => {
+								reset(initialValue)
+							},
+						],
+				  ]
+				: [],
+		[active, initialValue, reset, submit],
+	)
+	useHotkeys(hotkeys)
+
+	return null
+}
+
 export function ConfigTabPanel(props: Parameters<typeof ConfigTabContent>[0]) {
 	return (
-		<Tabs.Panel
-			value={props.tabKey}
-			pt="md"
+		<Box
+			pt="xs"
 			style={{
 				flex: 1,
 				minHeight: 0,
@@ -149,6 +245,6 @@ export function ConfigTabPanel(props: Parameters<typeof ConfigTabContent>[0]) {
 			}}
 		>
 			<ConfigTabContent {...props} />
-		</Tabs.Panel>
+		</Box>
 	)
 }

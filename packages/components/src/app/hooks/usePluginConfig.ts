@@ -76,6 +76,9 @@ async function loadPluginData(
 	const pending: Promise<void>[] = []
 
 	for (const [key, expr] of Object.entries(schemaResult.schemaSource)) {
+		// Convention: schema keys starting with "_" are treated as private/internal and
+		// are hidden from the Config UI (still available to other host-rendered surfaces).
+		if (key.startsWith('_')) continue
 		const schema = new Function('v', 'f', `return ${expr}`)(v, f)
 		if (schema instanceof Promise) {
 			pending.push(
@@ -89,7 +92,12 @@ async function loadPluginData(
 	}
 	if (pending.length) await Promise.all(pending)
 
-	const payload = { schemaMap, defaults: schemaResult.defaults }
+	const visibleDefaults: Record<string, any> = {}
+	for (const k of Object.keys(schemaMap)) {
+		visibleDefaults[k] = (schemaResult.defaults ?? {})[k]
+	}
+
+	const payload = { schemaMap, defaults: visibleDefaults }
 	schemaCache.set(pluginName, payload)
 	return { ...payload, savedConfig }
 }

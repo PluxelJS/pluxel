@@ -2,15 +2,19 @@ import { createHash } from 'node:crypto'
 import { existsSync } from 'node:fs'
 import { mkdir, readdir, readFile, stat, unlink, writeFile } from 'node:fs/promises'
 import { type Context, getPluginInfo } from '@pluxel/core'
-import chokidar, { type FSWatcher } from 'chokidar'
-import { createDebug } from 'obug'
-import { dirname, isAbsolute, join, relative, resolve } from 'pathe'
 import type {
+	BuiltinExtensionDef,
+	BuiltinInfoCardExtensionDef,
+	BuiltinRpcAutoFormExtensionDef,
 	CompiledExtensionModule,
 	ExtensionManifest,
 	ExtensionManifestEvent,
+	ExtensionPoint,
 	PluginExtensionConfig,
 } from '@pluxel/plugin-ui'
+import chokidar, { type FSWatcher } from 'chokidar'
+import { createDebug } from 'obug'
+import { dirname, isAbsolute, join, relative, resolve } from 'pathe'
 import { collectModuleGraphFiles } from '../runtime-compile/bundler/moduleGraph'
 
 export interface ExtensionServiceConfig {
@@ -91,6 +95,7 @@ const EXTENSION_COMPILER_VERSION = 7
 
 export class ExtensionService {
 	private readonly entries = new Map<string, PluginExtensionEntry>()
+	private readonly builtinByPlugin = new Map<string, Map<string, BuiltinExtensionDef>>()
 	private readonly outDir: string
 	private readonly manifestPath: string
 	private readonly dbg = createDebug('pluxel:ext:compile')
@@ -128,8 +133,11 @@ export class ExtensionService {
 	}
 
 	getManifest(): ExtensionManifest {
-		if (!this.enabled) return { version: 0, modules: [] }
-		return this.manifest
+		if (!this.enabled) return { version: 0, modules: [], builtins: [] }
+		return {
+			...this.manifest,
+			builtins: this.getBuiltinsSnapshot(),
+		}
 	}
 
 	async getModuleSource(pluginName: string, sourceHash: string): Promise<string | null> {
@@ -193,7 +201,7 @@ export class ExtensionService {
 		this.setupWatcher(pluginName, entry)
 		this.enqueueCompile(pluginName)
 
-		return () => {
+		return this.ctx.scope.collectEffect(() => {
 			const stored = this.entries.get(pluginName)
 			if (!stored) return
 			stored.active = false
@@ -201,7 +209,81 @@ export class ExtensionService {
 			this.pendingPlugins.delete(pluginName)
 			this.entries.delete(pluginName)
 			void this.handlePluginRemoval(pluginName, stored)
+		})
+	}
+
+	/**
+	 * Register a host-rendered (JSON-serializable) UI extension, without shipping a plugin UI module.
+	 *
+	 * Designed for simple status/info cards and small UI inserts that should not require `await import()`.
+	 */
+	registerBuiltin(def: Omit<BuiltinExtensionDef, 'pluginName'>): () => void {
+		if (!this.enabled) return () => {}
+		const pluginName = this.ctx.pluginInfo.id
+		const id = String((def as any).id ?? '').trim()
+		const point = String((def as any).point ?? '').trim()
+		const kind = String((def as any).kind ?? '').trim()
+		if (!id) throw new Error('[ExtensionService] registerBuiltin: id required')
+		if (!point) throw new Error('[ExtensionService] registerBuiltin: point required')
+		if (!kind) throw new Error('[ExtensionService] registerBuiltin: kind required')
+		const key = `${point}:${id}`
+
+		const normalized: BuiltinExtensionDef = {
+			...(def as any),
+			id,
+			point: point as ExtensionPoint,
+			kind: kind as BuiltinExtensionDef['kind'],
+			pluginName,
 		}
+		try {
+			// Builtins must be JSON-serializable so the manifest can be safely transported
+			// and remain frontend-implementation-agnostic.
+			JSON.stringify(normalized)
+		} catch (err) {
+			throw new Error(
+				`[ExtensionService] registerBuiltin: def must be JSON-serializable (id=${id}, point=${point}, kind=${kind})`,
+			)
+		}
+
+		let bucket = this.builtinByPlugin.get(pluginName)
+		if (!bucket) {
+			bucket = new Map()
+			this.builtinByPlugin.set(pluginName, bucket)
+		}
+		bucket.set(key, normalized)
+		this.bumpManifestVersion('builtin')
+
+		return this.ctx.scope.collectEffect(() => {
+			const current = this.builtinByPlugin.get(pluginName)
+			if (!current) return
+			const existing = current.get(key)
+			if (existing !== normalized) return
+			current.delete(key)
+			if (current.size === 0) this.builtinByPlugin.delete(pluginName)
+			this.bumpManifestVersion('builtin')
+		})
+	}
+
+	infoCard<P extends ExtensionPoint = 'plugin:info'>(
+		input: Omit<BuiltinInfoCardExtensionDef<P>, 'kind' | 'pluginName' | 'point'> & { point?: P },
+	): () => void {
+		const { point, ...rest } = input
+		return this.registerBuiltin({
+			kind: 'infoCard',
+			point: (point ?? ('plugin:info' as P)) as P,
+			...(rest as any),
+		})
+	}
+
+	rpcAutoForm<P extends ExtensionPoint = 'plugin:tabs'>(
+		input: Omit<BuiltinRpcAutoFormExtensionDef<P>, 'kind' | 'pluginName' | 'point'> & { point?: P },
+	): () => void {
+		const { point, ...rest } = input
+		return this.registerBuiltin({
+			kind: 'rpcAutoForm',
+			point: (point ?? ('plugin:tabs' as P)) as P,
+			...(rest as any),
+		})
 	}
 
 	invalidate(pluginName: string): void {
@@ -438,6 +520,31 @@ export class ExtensionService {
 			version: this.manifestVersion,
 			pluginName,
 		})
+	}
+
+	private getBuiltinsSnapshot(): BuiltinExtensionDef[] {
+		const list: BuiltinExtensionDef[] = []
+		for (const bucket of this.builtinByPlugin.values()) {
+			for (const def of bucket.values()) {
+				list.push(def)
+			}
+		}
+		list.sort((a, b) => {
+			const pn = a.pluginName.localeCompare(b.pluginName)
+			if (pn !== 0) return pn
+			const pt = String(a.point).localeCompare(String(b.point))
+			if (pt !== 0) return pt
+			return String(a.id).localeCompare(String(b.id))
+		})
+		return list
+	}
+
+	private bumpManifestVersion(reason: 'builtin'): void {
+		// Builtins are runtime-only; we still bump the global manifest version to trigger a client sync.
+		this.manifestVersion += 1
+		this.manifest = { version: this.manifestVersion, modules: this.manifest.modules }
+		this.persistManifest()
+		this.notifyManifest({ type: 'sync', version: this.manifestVersion })
 	}
 
 	private handleManifestUpdate(pluginName: string, entry: PluginExtensionEntry | null): void {

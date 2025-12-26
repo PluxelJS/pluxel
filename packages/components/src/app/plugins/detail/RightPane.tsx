@@ -1,7 +1,19 @@
-import { Badge, Box, Button, Center, Loader, ScrollArea, Stack, Tabs, Text } from '@mantine/core'
+import {
+	Badge,
+	Box,
+	Button,
+	Center,
+	Group,
+	Loader,
+	ScrollArea,
+	Stack,
+	Tabs,
+	Text,
+} from '@mantine/core'
 import { IconSettingsOff } from '@tabler/icons-react'
-import { useRouterState } from '@tanstack/react-router'
-import { useEffect, useMemo, useState } from 'react'
+import { useNavigate, useRouterState } from '@tanstack/react-router'
+import type { ComponentType } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { EmptyState, ErrorState } from '../../../components'
 import {
 	ExtensionErrorBoundary,
@@ -13,11 +25,23 @@ import {
 import type { PluginConfigState } from '../../hooks'
 import { RouterLinkAdapter } from '../../RouterLinkAdapter'
 import { ConfigForm } from '../config'
-import { PluginPanel, PluginSection } from './components'
+import { PluginPanel } from './components'
 import { usePluginMeta } from './context'
 
 interface RightPaneProps {
 	config: PluginConfigState
+}
+
+const COLUMN_STYLE = {
+	flex: 1,
+	minHeight: 0,
+	display: 'flex',
+	flexDirection: 'column' as const,
+}
+
+type RightPaneState = {
+	tab?: string
+	schema?: string
 }
 
 function normalizeRestPath(raw?: string): string {
@@ -36,33 +60,134 @@ function normalizeRestPath(raw?: string): string {
 	return `/${segments.join('/')}`
 }
 
+function encodeURIComponentSafe(value: string): string {
+	try {
+		return encodeURIComponent(value)
+	} catch {
+		return value
+	}
+}
+
+function normalizeSearchRecord(input: unknown): Record<string, unknown> {
+	if (!input) return {}
+	if (typeof input === 'string') {
+		const params = new URLSearchParams(input)
+		const out: Record<string, unknown> = {}
+		for (const [key, value] of params.entries()) {
+			out[key] = value
+		}
+		return out
+	}
+	if (typeof input === 'object') return { ...(input as Record<string, unknown>) }
+	return {}
+}
+
+function readSearchValue(search: unknown, key: string): string | undefined {
+	if (!search) return undefined
+	if (typeof search === 'string') {
+		const value = new URLSearchParams(search).get(key)
+		return value ?? undefined
+	}
+	if (typeof search === 'object') {
+		const raw = (search as Record<string, unknown>)[key]
+		if (typeof raw === 'string') return raw
+		if (Array.isArray(raw) && typeof raw[0] === 'string') return raw[0]
+	}
+	return undefined
+}
+
+function readPaneState(key: string): RightPaneState {
+	if (typeof window === 'undefined') return {}
+	try {
+		const raw = window.localStorage.getItem(key)
+		if (!raw) return {}
+		const parsed = JSON.parse(raw)
+		if (!parsed || typeof parsed !== 'object') return {}
+		return {
+			tab: typeof (parsed as any).tab === 'string' ? (parsed as any).tab : undefined,
+			schema: typeof (parsed as any).schema === 'string' ? (parsed as any).schema : undefined,
+		}
+	} catch {
+		return {}
+	}
+}
+
+function writePaneState(key: string, state: RightPaneState) {
+	if (typeof window === 'undefined') return
+	try {
+		const payload = {
+			tab: typeof state.tab === 'string' ? state.tab : undefined,
+			schema: typeof state.schema === 'string' ? state.schema : undefined,
+		}
+		window.localStorage.setItem(key, JSON.stringify(payload))
+	} catch {}
+}
+
 export function RightPane({ config }: RightPaneProps) {
 	const { pluginName, isSyncing } = usePluginMeta()
 	const { nodes: tabNodes, items: tabItems } = useExtensions('plugin:tabs')
+	const navigate = useNavigate()
 	const pathname = useRouterState({ select: (state) => state.location.pathname })
-	const column = useMemo(
-		() => ({ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' as const }),
-		[],
-	)
-	const tabDefs = useMemo(
-		() =>
-			tabItems.map((item, index) => {
-				const rawId =
-					typeof item.meta.id === 'string' && item.meta.id.length > 0
+	const search = useRouterState({ select: (state) => state.location.search })
+	const encodedPluginName = useMemo(() => encodeURIComponentSafe(pluginName), [pluginName])
+	const basePath = `/plugins/${encodedPluginName}`
+	const tabGroups = useMemo(() => {
+		const entries = tabItems.map((item, index) => ({ item, node: tabNodes[index] }))
+		const byId = new Map<string, { id: string; label: string; priority: number; nodes: any[] }>()
+
+		for (const { item, node } of entries) {
+			const tabMeta = (item.meta as any)?.tab as { id?: unknown; label?: unknown } | undefined
+			const rawGroupId =
+				typeof tabMeta?.id === 'string' && tabMeta.id.trim().length > 0
+					? tabMeta.id.trim()
+					: typeof item.meta.id === 'string' && item.meta.id.length > 0
 						? item.meta.id
-						: `${pluginName}:tab:${index}`
-				const id = rawId === 'config' ? `${pluginName}:tab:${index}` : rawId
-				const label =
-					typeof item.meta.label === 'string' && item.meta.label.length > 0
-						? (item.meta.label as string)
-						: `扩展面板 ${index + 1}`
-				return { id, label }
-			}),
-		[pluginName, tabItems],
-	)
+						: `${pluginName}:tab:${byId.size}`
+			const groupId =
+				rawGroupId === 'config' || rawGroupId === 'route'
+					? `${pluginName}:tab:${rawGroupId}`
+					: rawGroupId
+
+			const groupLabel =
+				typeof tabMeta?.label === 'string' && tabMeta.label.trim().length > 0
+					? tabMeta.label.trim()
+					: typeof (item.meta as any)?.label === 'string' &&
+							String((item.meta as any).label).trim().length > 0
+						? String((item.meta as any).label).trim()
+						: '扩展面板'
+
+			const existing = byId.get(groupId)
+			if (!existing) {
+				byId.set(groupId, {
+					id: groupId,
+					label: groupLabel,
+					priority: typeof item.meta.priority === 'number' ? item.meta.priority : 0,
+					nodes: node ? [node] : [],
+				})
+				continue
+			}
+
+			existing.priority = Math.max(
+				existing.priority,
+				typeof item.meta.priority === 'number' ? item.meta.priority : 0,
+			)
+			if (node) existing.nodes.push(node)
+		}
+
+		return Array.from(byId.values()).sort((a, b) => {
+			const prio = b.priority - a.priority
+			if (prio !== 0) return prio
+			return a.id.localeCompare(b.id)
+		})
+	}, [pluginName, tabItems, tabNodes])
 	const [activeTab, setActiveTab] = useState('config')
 	// 配置表单需要与自定义 Tab 共存：即使没有 schema，也展示一个“暂无可配置项”的稳定入口。
 	const showConfigTab = true
+	const storageKey = useMemo(
+		() => `pluxel:plugin:${pluginName}:rightpane`,
+		[pluginName],
+	)
+	const [storedState, setStoredState] = useState<RightPaneState>(() => readPaneState(storageKey))
 
 	const restPath = useMemo(() => {
 		if (!pathname) return ''
@@ -86,98 +211,234 @@ export function RightPane({ config }: RightPaneProps) {
 	}, [pluginName, restPath, routeVersion])
 	const showRouteTab = Boolean(restPath)
 
-	const hasTabs = tabNodes.length > 0 || showRouteTab
+	const updateSearch = useCallback(
+		(patch: Record<string, string | undefined>, target?: string) => {
+			const base = normalizeSearchRecord(search)
+			const next = { ...base }
+			let changed = false
+
+			for (const [key, value] of Object.entries(patch)) {
+				if (value === undefined || value === '') {
+					if (key in next) {
+						delete next[key]
+						changed = true
+					}
+					continue
+				}
+				if (next[key] !== value) {
+					next[key] = value
+					changed = true
+				}
+			}
+
+			const shouldNavigate = Boolean(target && target !== pathname)
+			if (!changed && !shouldNavigate) return
+
+			const nav = { replace: true, search: next } as {
+				replace: true
+				search: Record<string, unknown>
+				to?: string
+			}
+			if (target) nav.to = target
+			void navigate(nav as never)
+		},
+		[navigate, pathname, search],
+	)
+
+	const tabFromSearch = useMemo(() => readSearchValue(search, 'tab'), [search])
+	const schemaFromSearch = useMemo(() => readSearchValue(search, 'schema'), [search])
+
+	const resolveTab = useCallback(
+		(value: string | undefined) => {
+			if (!value) return undefined
+			if (value === 'config' && showConfigTab) return 'config'
+			if (value === 'route') return showRouteTab ? 'route' : undefined
+			return tabGroups.some((tab) => tab.id === value) ? value : undefined
+		},
+		[showConfigTab, showRouteTab, tabGroups],
+	)
+
+	const schemaKeys = useMemo(
+		() => Object.keys(config.data?.schemaMap ?? {}),
+		[config.data?.schemaMap],
+	)
+	const resolveSchema = useCallback(
+		(value: string | undefined) => (value && schemaKeys.includes(value) ? value : undefined),
+		[schemaKeys],
+	)
+
+	const hasTabs = showConfigTab || tabGroups.length > 0 || showRouteTab
 
 	useEffect(() => {
-		if (showRouteTab) {
-			setActiveTab('route')
-			return
-		}
-		const fallback = tabDefs[0]?.id ?? 'config'
-		setActiveTab(showConfigTab ? 'config' : fallback)
-	}, [pluginName, showConfigTab, showRouteTab, tabDefs])
+		setStoredState(readPaneState(storageKey))
+	}, [storageKey])
 
 	useEffect(() => {
 		if (showRouteTab) {
 			if (activeTab !== 'route') setActiveTab('route')
 			return
 		}
-		if (activeTab === 'config' && showConfigTab) return
-		if (!tabDefs.some((tab) => tab.id === activeTab)) {
-			const fallback = showConfigTab ? 'config' : (tabDefs[0]?.id ?? 'config')
-			setActiveTab(fallback)
-		}
-	}, [activeTab, showConfigTab, showRouteTab, tabDefs])
+		const resolved = resolveTab(tabFromSearch)
+		const fallback = resolveTab(storedState.tab)
+		const next =
+			resolved ??
+			fallback ??
+			(showConfigTab ? 'config' : tabGroups[0]?.id ?? 'config')
+		if (next && next !== activeTab) setActiveTab(next)
+	}, [activeTab, resolveTab, showConfigTab, showRouteTab, storedState.tab, tabFromSearch, tabGroups])
+
+	const activeSchemaKey = useMemo(() => {
+		return resolveSchema(schemaFromSearch) ?? resolveSchema(storedState.schema) ?? schemaKeys[0] ?? ''
+	}, [resolveSchema, schemaFromSearch, schemaKeys, storedState.schema])
+
+	useEffect(() => {
+		if (!schemaKeys.length) return
+		if (resolveSchema(schemaFromSearch)) return
+		if (activeTab !== 'config') return
+		if (activeSchemaKey) updateSearch({ schema: activeSchemaKey })
+	}, [activeSchemaKey, activeTab, resolveSchema, schemaFromSearch, schemaKeys, updateSearch])
+
+	useEffect(() => {
+		if (showRouteTab) return
+		const resolved = resolveTab(tabFromSearch)
+		if (resolved) return
+		if (activeTab === 'route') return
+		updateSearch({ tab: activeTab, schema: activeSchemaKey || undefined })
+	}, [activeSchemaKey, activeTab, resolveTab, showRouteTab, tabFromSearch, updateSearch])
+
+	const persistState = useCallback(
+		(next: RightPaneState) => {
+			const merged = {
+				tab: typeof next.tab === 'string' ? next.tab : activeTab,
+				schema: typeof next.schema === 'string' ? next.schema : activeSchemaKey,
+			}
+			writePaneState(storageKey, merged)
+			setStoredState(merged)
+		},
+		[activeSchemaKey, activeTab, storageKey],
+	)
+
+	const handleTabChange = useCallback(
+		(value: string | null) => {
+			const next = String(value ?? 'config')
+			setActiveTab(next)
+			persistState({ tab: next })
+			if (next === 'route') return
+			const patch: Record<string, string | undefined> = {
+				tab: next,
+				schema: activeSchemaKey || undefined,
+			}
+			updateSearch(patch, restPath ? basePath : undefined)
+		},
+		[activeSchemaKey, basePath, persistState, restPath, updateSearch],
+	)
+
+	const handleSchemaChange = useCallback(
+		(nextKey: string) => {
+			persistState({ schema: nextKey })
+			if (activeTab !== 'config') return
+			updateSearch({ schema: nextKey })
+		},
+		[activeTab, persistState, updateSearch],
+	)
 
 	return (
 		<PluginPanel
-			title="配置"
-			rightSection={
-				isSyncing ? (
-					<Badge variant="dot" color="blue" radius="sm">
-						同步中…
-					</Badge>
-				) : null
-			}
-			padding="lg"
-			gap="lg"
+			padding="sm"
+			gap="sm"
 		>
-			<PluginSection grow>
-				<Box style={column}>
-					{hasTabs ? (
-						<Tabs
-							value={activeTab}
-							onChange={(value) => setActiveTab(value ?? 'config')}
-							keepMounted
-							style={column}
-						>
-							<Tabs.List mb="sm">
+			<Box style={COLUMN_STYLE}>
+				{hasTabs ? (
+					<Tabs
+						value={activeTab}
+						onChange={handleTabChange}
+						keepMounted
+						style={COLUMN_STYLE}
+					>
+						<Group gap="xs" align="center" justify="space-between" wrap="nowrap">
+							<Tabs.List style={{ flex: 1, minWidth: 0 }}>
 								{showRouteTab ? <Tabs.Tab value="route">页面</Tabs.Tab> : null}
 								{showConfigTab ? <Tabs.Tab value="config">配置</Tabs.Tab> : null}
-								{tabDefs.map((tab) => (
+								{tabGroups.map((tab) => (
 									<Tabs.Tab key={tab.id} value={tab.id}>
 										{tab.label}
 									</Tabs.Tab>
 								))}
 							</Tabs.List>
-							{showRouteTab ? (
-								<Tabs.Panel value="route" style={column}>
-									<RouteContent
-										pluginName={pluginName}
-										restPath={restPath}
-										RouteComponent={RouteComponent}
-									/>
-								</Tabs.Panel>
+							{isSyncing ? (
+								<Badge variant="dot" color="blue" radius="sm">
+									同步中…
+								</Badge>
 							) : null}
-							{showConfigTab ? (
-								<Tabs.Panel value="config" style={column}>
-									<ConfigContent config={config} pluginName={pluginName} />
+						</Group>
+
+						{showRouteTab ? (
+							<Tabs.Panel value="route" style={COLUMN_STYLE}>
+								<RouteContent
+									pluginName={pluginName}
+									restPath={restPath}
+									RouteComponent={RouteComponent}
+								/>
+							</Tabs.Panel>
+						) : null}
+
+						{showConfigTab ? (
+							<Tabs.Panel value="config" style={COLUMN_STYLE}>
+								<ConfigContent
+									config={config}
+									pluginName={pluginName}
+									active={activeTab === 'config'}
+									activeSchemaKey={activeSchemaKey}
+									onSchemaChange={handleSchemaChange}
+								/>
+							</Tabs.Panel>
+						) : null}
+
+						{tabGroups.map((tab) => {
+							const id = tab.id
+							return (
+								<Tabs.Panel key={id} value={id} style={COLUMN_STYLE}>
+									<ScrollArea
+										type="auto"
+										scrollbarSize={10}
+										offsetScrollbars
+										style={COLUMN_STYLE}
+									>
+										<Box p="xs" style={{ minHeight: '100%' }}>
+											<Stack gap="sm">{tab.nodes}</Stack>
+										</Box>
+									</ScrollArea>
 								</Tabs.Panel>
-							) : null}
-							{tabNodes.map((node, index) => {
-								const tab = tabDefs[index]
-								const id = tab?.id ?? `${pluginName}:tab:${index}`
-								return (
-									<Tabs.Panel key={id} value={id} style={column}>
-										<ScrollArea type="auto" scrollbarSize={10} offsetScrollbars style={column}>
-											<Box p="xs" style={{ minHeight: '100%' }}>
-												{node}
-											</Box>
-										</ScrollArea>
-									</Tabs.Panel>
-								)
-							})}
-						</Tabs>
-					) : (
-						<ConfigContent config={config} pluginName={pluginName} />
-					)}
-				</Box>
-			</PluginSection>
+							)
+						})}
+					</Tabs>
+				) : (
+					<ConfigContent
+						config={config}
+						pluginName={pluginName}
+						active
+						activeSchemaKey={activeSchemaKey}
+						onSchemaChange={handleSchemaChange}
+					/>
+				)}
+			</Box>
 		</PluginPanel>
 	)
 }
 
-function ConfigContent({ config, pluginName }: { config: PluginConfigState; pluginName: string }) {
+function ConfigContent({
+	config,
+	pluginName,
+	active,
+	activeSchemaKey,
+	onSchemaChange,
+}: {
+	config: PluginConfigState
+	pluginName: string
+	active: boolean
+	activeSchemaKey: string
+	onSchemaChange: (key: string) => void
+}) {
 	const hasSchema = Object.keys(config.data?.schemaMap ?? {}).length > 0
 	return (
 		<Box style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
@@ -200,6 +461,9 @@ function ConfigContent({ config, pluginName }: { config: PluginConfigState; plug
 					schemas={config.data.schemaMap}
 					savedConfig={config.data.savedConfig}
 					defaults={config.data.defaults}
+					active={active}
+					activeKey={activeSchemaKey}
+					onActiveKeyChange={onSchemaChange}
 				/>
 			) : (
 				<EmptyState
@@ -220,7 +484,7 @@ function RouteContent({
 }: {
 	pluginName: string
 	restPath: string
-	RouteComponent: React.ComponentType | undefined
+	RouteComponent: ComponentType | undefined
 }) {
 	const ctx = useExtensionContext()
 	const runningPlugins = ctx.runningPlugins
@@ -229,14 +493,7 @@ function RouteContent({
 	const routeVersion = useExtensionRuntimeVersion()
 
 	const fullPath = useMemo(() => {
-		const encoded = (() => {
-			try {
-				return encodeURIComponent(pluginName)
-			} catch {
-				return pluginName
-			}
-		})()
-		return `/plugins/${encoded}${restPath}`
+		return `/plugins/${encodeURIComponentSafe(pluginName)}${restPath}`
 	}, [pluginName, restPath])
 
 	if (!pluginRunning && runningPluginsReady) {
@@ -251,7 +508,7 @@ function RouteContent({
 						size="xs"
 						variant="light"
 						component={RouterLinkAdapter}
-						to={`/plugins/${encodeURIComponent(pluginName)}`}
+						to={`/plugins/${encodeURIComponentSafe(pluginName)}`}
 					>
 						返回插件详情
 					</Button>
@@ -281,7 +538,7 @@ function RouteContent({
 						size="xs"
 						variant="light"
 						component={RouterLinkAdapter}
-						to={`/plugins/${encodeURIComponent(pluginName)}`}
+						to={`/plugins/${encodeURIComponentSafe(pluginName)}`}
 					>
 						返回插件详情
 					</Button>

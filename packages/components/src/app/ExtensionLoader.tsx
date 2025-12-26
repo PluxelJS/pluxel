@@ -1,13 +1,19 @@
 // packages/components/src/app/ExtensionLoader.tsx
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
+	type BuiltinExtensionDef,
+	type BuiltinExtensionKind,
 	type CompiledExtensionModule,
+	type ExtensionMeta,
+	ExtensionErrorBoundary,
+	extensionRegistry,
 	initVendors,
 	loadExtensionModule,
 	unloadExtensionModule,
 } from '../extension'
-import { extLog } from '../extension/debug'
 import { fetchExtensionManifest } from '../extension/api/manifest'
+import { builtinComponents } from '../extension/builtin'
+import { extLog } from '../extension/debug'
 import { useQuery } from './gqty'
 import { subscribePluginStatusEvents } from './plugins/statusEvents'
 import { useSseClient } from './rpc'
@@ -113,6 +119,7 @@ export function ExtensionLoader({
 	const manifestSignatureRef = useRef('')
 	const loadingRef = useRef(false)
 	const moduleCacheRef = useRef<Map<string, LoadedPluginModule>>(new Map())
+	const builtinCacheRef = useRef<Map<string, { sig: string; cleanup: () => void }>>(new Map())
 	const manifestBackoffRef = useRef<{ at: number; backoffMs: number } | null>(null)
 
 	const shouldSkipManifestSync = useCallback(() => {
@@ -122,11 +129,111 @@ export function ExtensionLoader({
 	}, [])
 
 	const recomputeManifestSignature = useCallback(() => {
-		const signature = Array.from(moduleCacheRef.current.values())
+		const moduleSig = Array.from(moduleCacheRef.current.values())
 			.map((mod) => `${mod.pluginName}:${mod.sourceHash}`)
 			.sort()
 			.join('|')
-		manifestSignatureRef.current = signature
+		const builtinSig = Array.from(builtinCacheRef.current.entries())
+			.map(([key, v]) => `${key}:${v.sig}`)
+			.sort()
+			.join('|')
+		manifestSignatureRef.current = `${moduleSig}||builtins:${builtinSig}`
+	}, [])
+
+	const syncBuiltins = useCallback((builtins?: BuiltinExtensionDef[]) => {
+		const next = Array.isArray(builtins) ? builtins : []
+		const seen = new Set<string>()
+		const fallbackSig = (
+			def: BuiltinExtensionDef,
+			meta: { kind: string; pluginName: string; point: string; id: string },
+		) => {
+			try {
+				return JSON.stringify(def)
+			} catch {
+				return `${meta.kind}:${meta.pluginName}:${meta.point}:${meta.id}`
+			}
+		}
+
+		for (const def of next) {
+			if (!def || typeof def !== 'object') continue
+			const pluginName = typeof (def as any).pluginName === 'string' ? (def as any).pluginName : ''
+			const point = typeof (def as any).point === 'string' ? (def as any).point : ''
+			const id = typeof (def as any).id === 'string' ? (def as any).id : ''
+			const kind = typeof (def as any).kind === 'string' ? (def as any).kind : ''
+			if (!pluginName || !point || !id || !kind) continue
+
+			const runtimeId = `${pluginName}:builtin:${point}:${id}`
+			seen.add(runtimeId)
+
+			const sig = fallbackSig(def, { kind, pluginName, point, id })
+
+			const cached = builtinCacheRef.current.get(runtimeId)
+			if (cached && cached.sig === sig) continue
+			if (cached) {
+				try {
+					cached.cleanup()
+				} catch {}
+				builtinCacheRef.current.delete(runtimeId)
+			}
+
+			const meta: ExtensionMeta = {
+				...((def as any).meta ?? {}),
+				id: runtimeId,
+				pluginName,
+				priority: typeof (def as any).priority === 'number' ? (def as any).priority : 0,
+				requireRunning: (def as any).requireRunning ?? true,
+			}
+
+			const Component = builtinComponents[kind as BuiltinExtensionKind]
+			if (!Component) {
+				extLog('skip builtin kind=%s (id=%s)', kind, runtimeId)
+				continue
+			}
+
+			const render = (ctx: any) => (
+				<ExtensionErrorBoundary
+					pluginName={pluginName}
+					extensionId={runtimeId}
+					point={point}
+					fallback={
+						process.env.NODE_ENV !== 'production'
+							? ({ error }) => (
+									<div
+										style={{
+											padding: 8,
+											borderRadius: 8,
+											border: '1px solid rgba(255, 0, 0, 0.25)',
+											background: 'rgba(255, 0, 0, 0.06)',
+											fontSize: 12,
+											lineHeight: 1.4,
+										}}
+									>
+										<div style={{ fontWeight: 600 }}>
+											Builtin render failed: {pluginName} · {point}
+										</div>
+										<div style={{ opacity: 0.85 }}>
+											{error?.message ?? String(error ?? 'unknown error')}
+										</div>
+									</div>
+								)
+							: null
+					}
+				>
+					<Component ctx={ctx} def={def as any} />
+				</ExtensionErrorBoundary>
+			)
+
+			const cleanup = extensionRegistry.register(point as any, { meta, render })
+			builtinCacheRef.current.set(runtimeId, { sig, cleanup })
+		}
+
+		for (const [key, cached] of Array.from(builtinCacheRef.current.entries())) {
+			if (seen.has(key)) continue
+			try {
+				cached.cleanup()
+			} catch {}
+			builtinCacheRef.current.delete(key)
+		}
 	}, [])
 
 	// 如果插件已停止运行，主动卸载其扩展模块，避免 UI 继续渲染
@@ -221,55 +328,96 @@ export function ExtensionLoader({
 					})
 				}
 				extLog('fetched manifest v%d', manifest.version)
-				const failedPlugins: string[] = []
-				const nextSignature = manifest.modules
-					.map((module) => `${module.pluginName}:${module.sourceHash}`)
-					.sort()
-					.join('|')
-				if (
-					!force &&
-					manifest.version === manifestVersionRef.current &&
-					nextSignature === manifestSignatureRef.current
-				) {
-					return
-				}
-				const seen = new Set<string>()
-				await Promise.all(
-					manifest.modules.map(async (module) => {
-						seen.add(module.pluginName)
-						try {
-							await ensureModuleLoaded(module)
-						} catch (error) {
-							failedPlugins.push(module.pluginName)
-							console.error('[ExtensionLoader] failed to load module', module.pluginName, error)
-						}
-					}),
-				)
 
-				// 自愈：如果加载失败（比如服务端删除了陈旧 hash 并触发重新编译），立刻刷新 manifest 再重试一次
-				if (failedPlugins.length) {
-					const retryManifest = await fetchExtensionManifest()
-					await Promise.all(
-						failedPlugins.map(async (pluginName) => {
-							const next = retryManifest.modules.find((m) => m.pluginName === pluginName)
-							if (!next) return
+				const computeSignature = (payload: typeof manifest) => {
+					const modulesSig = payload.modules
+						.map((module) => `${module.pluginName}:${module.sourceHash}`)
+						.sort()
+						.join('|')
+					const builtinsSig = (payload.builtins ?? [])
+						.map((b) => {
 							try {
-								await ensureModuleLoaded(next)
+								return JSON.stringify(b)
+							} catch {
+								const pluginName = (b as any)?.pluginName ?? ''
+								const point = (b as any)?.point ?? ''
+								const id = (b as any)?.id ?? ''
+								const kind = (b as any)?.kind ?? ''
+								return `${kind}:${pluginName}:${point}:${id}`
+							}
+						})
+						.sort()
+						.join('|')
+					return `${modulesSig}||builtins:${builtinsSig}`
+				}
+
+				const applyManifest = async (
+					payload: typeof manifest,
+					allowRetry: boolean,
+				): Promise<{ signature: string; version: number; moduleCount: number; skipped: boolean }> => {
+					const nextSignature = computeSignature(payload)
+					if (
+						!force &&
+						payload.version === manifestVersionRef.current &&
+						nextSignature === manifestSignatureRef.current
+					) {
+						return {
+							signature: nextSignature,
+							version: payload.version,
+							moduleCount: payload.modules.length,
+							skipped: true,
+						}
+					}
+
+					const failedPlugins: string[] = []
+					const seen = new Set<string>()
+					await Promise.all(
+						payload.modules.map(async (module) => {
+							seen.add(module.pluginName)
+							try {
+								await ensureModuleLoaded(module)
 							} catch (error) {
-								console.error('[ExtensionLoader] retry failed', pluginName, error)
+								failedPlugins.push(module.pluginName)
+								console.error('[ExtensionLoader] failed to load module', module.pluginName, error)
 							}
 						}),
 					)
-				}
-				for (const name of Array.from(moduleCacheRef.current.keys())) {
-					if (!seen.has(name)) {
-						moduleCacheRef.current.delete(name)
-						unloadExtensionModule(name)
+
+					syncBuiltins(payload.builtins)
+
+					// 自愈：如果加载失败（比如服务端删除了陈旧 hash 并触发重新编译），立刻刷新 manifest 再重试一次
+					if (allowRetry && failedPlugins.length) {
+						const retryManifest = await fetchExtensionManifest()
+						const retrySignature = computeSignature(retryManifest)
+						if (
+							retryManifest.version !== payload.version ||
+							retrySignature !== nextSignature
+						) {
+							return applyManifest(retryManifest, false)
+						}
+					}
+
+					for (const name of Array.from(moduleCacheRef.current.keys())) {
+						if (!seen.has(name)) {
+							moduleCacheRef.current.delete(name)
+							unloadExtensionModule(name)
+						}
+					}
+
+					return {
+						signature: nextSignature,
+						version: payload.version,
+						moduleCount: payload.modules.length,
+						skipped: false,
 					}
 				}
-				manifestVersionRef.current = manifest.version
-				manifestSignatureRef.current = nextSignature
-				extLog('synced manifest v%d (%d modules)', manifest.version, manifest.modules.length)
+
+				const applied = await applyManifest(manifest, true)
+				if (applied.skipped) return
+
+				manifestVersionRef.current = applied.version
+				manifestSignatureRef.current = applied.signature
+				extLog('synced manifest v%d (%d modules)', applied.version, applied.moduleCount)
 			} catch (error) {
 				const now = Date.now()
 				const prev = manifestBackoffRef.current
@@ -281,7 +429,7 @@ export function ExtensionLoader({
 				recomputeManifestSignature()
 			}
 		},
-		[ensureModuleLoaded, recomputeManifestSignature, shouldSkipManifestSync],
+		[ensureModuleLoaded, recomputeManifestSignature, shouldSkipManifestSync, syncBuiltins],
 	)
 
 	useEffect(() => {
