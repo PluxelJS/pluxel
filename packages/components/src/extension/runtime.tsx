@@ -37,8 +37,10 @@ class ExtensionRuntime {
 	private readonly pluginCleanups = new Map<string, Array<() => void>>()
 	private readonly routeComponents = new Map<string, Map<string, RouteComponent>>()
 	private readonly pluginHashes = new Map<string, string>()
+	private readonly pluginVersions = new Map<string, number>()
 	private revision = 0
 	private readonly listeners = new Set<() => void>()
+	private readonly pluginListeners = new Map<string, Set<() => void>>()
 
 	subscribe(listener: () => void): () => void {
 		this.listeners.add(listener)
@@ -47,6 +49,10 @@ class ExtensionRuntime {
 
 	getRevision(): number {
 		return this.revision
+	}
+
+	getPluginRevision(pluginName: string): number {
+		return this.pluginVersions.get(pluginName) ?? 0
 	}
 
 	private notify(): void {
@@ -58,6 +64,39 @@ class ExtensionRuntime {
 				if (process.env.NODE_ENV !== 'production') {
 					console.error('[ExtensionRuntime] listener failed', error)
 				}
+			}
+		}
+	}
+
+	private notifyPlugin(pluginName: string): void {
+		const next = (this.pluginVersions.get(pluginName) ?? 0) + 1
+		this.pluginVersions.set(pluginName, next)
+		const listeners = this.pluginListeners.get(pluginName)
+		if (!listeners) return
+		for (const listener of listeners) {
+			try {
+				listener()
+			} catch (error) {
+				if (process.env.NODE_ENV !== 'production') {
+					console.error('[ExtensionRuntime] plugin listener failed', error)
+				}
+			}
+		}
+	}
+
+	subscribePlugin(pluginName: string, listener: () => void): () => void {
+		let bucket = this.pluginListeners.get(pluginName)
+		if (!bucket) {
+			bucket = new Set()
+			this.pluginListeners.set(pluginName, bucket)
+		}
+		bucket.add(listener)
+		return () => {
+			const current = this.pluginListeners.get(pluginName)
+			if (!current) return
+			current.delete(listener)
+			if (current.size === 0) {
+				this.pluginListeners.delete(pluginName)
 			}
 		}
 	}
@@ -80,6 +119,7 @@ class ExtensionRuntime {
 		this.pluginHashes.set(pluginName, sourceHash)
 
 		this.notify()
+		this.notifyPlugin(pluginName)
 		extRuntime('loaded runtime %s@%s', pluginName, sourceHash)
 	}
 
@@ -88,6 +128,7 @@ class ExtensionRuntime {
 		extRuntime('unload runtime %s', pluginName)
 		this.disposePlugin(pluginName)
 		this.notify()
+		this.notifyPlugin(pluginName)
 	}
 
 	private disposePlugin(pluginName: string): void {
@@ -229,4 +270,8 @@ export const loadExtensionModule = extensionRuntime.loadPluginModule.bind(extens
 export const unloadExtensionModule = extensionRuntime.unloadPluginModule.bind(extensionRuntime)
 export const subscribeExtensionRuntimeChanges = extensionRuntime.subscribe.bind(extensionRuntime)
 export const getExtensionRuntimeRevision = extensionRuntime.getRevision.bind(extensionRuntime)
+export const subscribePluginExtensionRuntimeChanges =
+	extensionRuntime.subscribePlugin.bind(extensionRuntime)
+export const getPluginExtensionRuntimeRevision =
+	extensionRuntime.getPluginRevision.bind(extensionRuntime)
 export const getPluginRouteComponent = extensionRuntime.getRouteComponent.bind(extensionRuntime)

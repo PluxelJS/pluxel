@@ -204,7 +204,7 @@ export function RightPane({ config }: RightPaneProps) {
 		return normalizeRestPath(rest)
 	}, [pathname, pluginName])
 
-	const routeVersion = useExtensionRuntimeVersion()
+	const routeVersion = useExtensionRuntimeVersion(pluginName)
 	const RouteComponent = useMemo(() => {
 		if (!restPath) return undefined
 		return getPluginRouteComponent(pluginName, restPath)
@@ -490,7 +490,7 @@ function RouteContent({
 	const runningPlugins = ctx.runningPlugins
 	const runningPluginsReady = ctx.runningPluginsReady
 	const pluginRunning = runningPlugins.has(pluginName)
-	const routeVersion = useExtensionRuntimeVersion()
+	const routeVersion = useExtensionRuntimeVersion(pluginName)
 
 	const fullPath = useMemo(() => {
 		return `/plugins/${encodeURIComponentSafe(pluginName)}${restPath}`

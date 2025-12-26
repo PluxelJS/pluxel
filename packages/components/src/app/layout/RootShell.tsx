@@ -1,8 +1,4 @@
-import {
-	localStorageColorSchemeManager,
-	MantineProvider,
-	useComputedColorScheme,
-} from '@mantine/core'
+import { useComputedColorScheme } from '@mantine/core'
 import { ModalsProvider, openConfirmModal } from '@mantine/modals'
 import { Notifications } from '@mantine/notifications'
 import { Outlet, useRouterState } from '@tanstack/react-router'
@@ -15,7 +11,6 @@ import {
 	ExtensionProvider,
 	useExtensionSurface,
 } from '../../extension'
-import { useDynamicTheme } from '../../theme'
 import { LAST_ROUTE_KEY } from '../constants'
 import { ExtensionLoader } from '../ExtensionLoader'
 import { Header } from '../Header'
@@ -25,24 +20,8 @@ import { notifyAndRecord } from '../notifications/notifyBridge'
 import { RouterLinkAdapter } from '../RouterLinkAdapter'
 import { useHmrWebClient } from '../rpc'
 
-const colorSchemeManager = localStorageColorSchemeManager({
-	key: 'pluxel-color-scheme',
-})
-
 export function RootShell() {
-	const { theme } = useDynamicTheme()
-
-	return (
-		<MantineProvider
-			theme={theme}
-			colorSchemeManager={colorSchemeManager}
-			withCssVariables
-			withGlobalClasses={false}
-			deduplicateCssVariables={false}
-		>
-			<RootShellContent />
-		</MantineProvider>
-	)
+	return <RootShellContent />
 }
 
 function RootShellContent() {
