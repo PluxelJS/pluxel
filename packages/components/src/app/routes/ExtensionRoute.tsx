@@ -1,6 +1,6 @@
 import { Center, Loader, Stack, Text } from '@mantine/core'
 import { useMemo } from 'react'
-import { useParams, useRouterState } from '@tanstack/react-router'
+import { useParams } from '@tanstack/react-router'
 import {
 	ExtensionErrorBoundary,
 	ExtensionProvider,
@@ -9,6 +9,7 @@ import {
 	useExtensionContext,
 	useExtensionRuntimeVersion,
 } from '../../extension'
+import { useCurrentPathname } from '../router/useCurrentRoute'
 
 function normalizeExtensionRestPath(raw?: string): string {
 	if (!raw) return ''
@@ -28,7 +29,7 @@ function normalizeExtensionRestPath(raw?: string): string {
 
 export function ExtensionRoute() {
 	const { pluginName: rawName, path: rawRest } = useParams({ from: '/ext/$pluginName/$path*' })
-	const locationPath = useRouterState({ select: (state) => state.location.pathname })
+	const locationPath = useCurrentPathname()
 	let pluginName = rawName
 	try {
 		pluginName = decodeURIComponent(rawName)

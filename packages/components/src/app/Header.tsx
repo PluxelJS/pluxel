@@ -20,7 +20,7 @@ import {
 	IconMenu2,
 	IconSearch,
 } from '@tabler/icons-react'
-import { useNavigate, useRouterState } from '@tanstack/react-router'
+import { useNavigate } from '@tanstack/react-router'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { ColorSchemeToggle } from '../components'
 import { ExtensionSlot } from '../extension'
@@ -28,6 +28,7 @@ import { PLUGIN_SEARCH_EVENT, PLUGIN_SEARCH_KEY } from './constants'
 import { useNotify } from './hooks'
 import { useNotificationCenter } from './notifications/NotificationCenterProvider'
 import { createRpcClient } from './rpc'
+import { useCurrentPathname } from './router/useCurrentRoute'
 
 const timeFormatter = new Intl.DateTimeFormat('zh-CN', {
 	month: '2-digit',
@@ -50,7 +51,7 @@ export function Header({ onMenu }: { onMenu: () => void }) {
 	const [isBuildLoading, setIsBuildLoading] = useState(false)
 	const notify = useNotify()
 	const navigate = useNavigate()
-	const pathname = useRouterState({ select: (state) => state.location.pathname })
+	const pathname = useCurrentPathname()
 
 	const handleBuild = async () => {
 		setIsBuildLoading(true)

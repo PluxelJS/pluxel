@@ -11,7 +11,7 @@ import {
 	Text,
 } from '@mantine/core'
 import { IconSettingsOff } from '@tabler/icons-react'
-import { useNavigate, useRouterState } from '@tanstack/react-router'
+import { useNavigate } from '@tanstack/react-router'
 import type { ComponentType } from 'react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { EmptyState, ErrorState } from '../../../components'
@@ -27,6 +27,7 @@ import { RouterLinkAdapter } from '../../RouterLinkAdapter'
 import { ConfigForm } from '../config'
 import { PluginPanel } from './components'
 import { usePluginMeta } from './context'
+import { useCurrentPathname, useCurrentSearch } from '../../router/useCurrentRoute'
 
 interface RightPaneProps {
 	config: PluginConfigState
@@ -127,8 +128,8 @@ export function RightPane({ config }: RightPaneProps) {
 	const { pluginName, isSyncing } = usePluginMeta()
 	const { nodes: tabNodes, items: tabItems } = useExtensions('plugin:tabs')
 	const navigate = useNavigate()
-	const pathname = useRouterState({ select: (state) => state.location.pathname })
-	const search = useRouterState({ select: (state) => state.location.search })
+	const pathname = useCurrentPathname()
+	const search = useCurrentSearch()
 	const encodedPluginName = useMemo(() => encodeURIComponentSafe(pluginName), [pluginName])
 	const basePath = `/plugins/${encodedPluginName}`
 	const tabGroups = useMemo(() => {
