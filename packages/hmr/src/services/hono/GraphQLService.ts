@@ -3,31 +3,13 @@
 import { type Middleware, mutation, query, type Resolver, resolver, weave } from '@gqloom/core'
 import { ValibotWeaver } from '@gqloom/valibot'
 import { generateClient } from '@gqty/cli'
-import { Injectable, type Context as PlxContext } from '@pluxel/core'
+import { Injectable, OverrideOf, type Context as PlxContext } from '@pluxel/core'
+import { GraphQLService as CoreGraphQLService, type GraphQLConfig } from '@pluxel/core/services'
 import type { GraphQLSchema } from 'graphql'
 import { createYoga, type YogaInitialContext } from 'graphql-yoga'
 import * as v from 'valibot'
 
 // -------------------- Config (Valibot) --------------------
-const serviceName = 'graphql' as const
-
-declare module '@pluxel/core' {
-	interface Context {
-		[serviceName]: GraphQLService
-	}
-	namespace Context {
-		interface Config {
-			[serviceName]?: GraphQLConfig
-		}
-	}
-}
-
-interface GraphQLConfig {
-	endpoint?: string
-	destination?: string
-	react?: boolean
-	scalarTypes?: Record<string, string>
-}
 const _DEFAULT_CONFIG: GraphQLConfig = {
 	endpoint: 'http://localhost:3000/graphql',
 	react: true,
@@ -39,92 +21,24 @@ export type FullCtx = YogaInitialContext & ServerCtx
 type ServerCtx = {}
 
 // -------------------- Module Types --------------------
-type GqlModule = { resolvers: readonly Resolver[]; middlewares?: readonly Middleware[] }
-type GqlModuleInput = GqlModule | Resolver | readonly Resolver[]
-
-function isGqlModule(x: unknown): x is GqlModule {
-	return !!x && typeof x === 'object' && 'resolvers' in (x as any)
-}
-
-function normalizeModule(mod: GqlModuleInput): GqlModule {
-	if (Array.isArray(mod)) return { resolvers: mod }
-	if (isGqlModule(mod))
-		return { resolvers: mod.resolvers ?? [], middlewares: mod.middlewares ?? [] }
-	return { resolvers: [mod as Resolver] }
-}
-
 // -------------------- GraphQL Service --------------------
-@Injectable({ key: serviceName })
-export class GraphQLService {
-	// 注册表
-	private readonly modules = new Map<string | symbol, GqlModule>()
-	private readonly globals = new Set<Middleware>()
+@Injectable
+@OverrideOf(CoreGraphQLService)
+export class GraphQLService extends CoreGraphQLService {
 	private readonly logger: NonNullable<PlxContext['logger']>
 
 	// 当前 GraphQLSchema（确保类型稳定）
 	private schema: GraphQLSchema = this.weaveSchema()
 
-	// 重建批处理
-	private rebuildPending = false
-	private rebuildDirty = false
-
 	// codegen 并发闸
 	private codegenRunning = false
 
-	constructor(
-		private readonly ctx: PlxContext,
-		private config: GraphQLConfig = _DEFAULT_CONFIG,
-	) {
-		this.config = { ..._DEFAULT_CONFIG, ...config }
+	constructor(ctx: PlxContext, config: GraphQLConfig = _DEFAULT_CONFIG) {
+		const merged = { ..._DEFAULT_CONFIG, ...config }
+		super(ctx, merged)
 		this.logger = ctx.logger!
-	}
-
-	// -------- 对外 API --------
-	get valibot() {
-		return v
-	}
-	get factory() {
-		return { resolver, query, mutation }
-	}
-	/** 挂全局中间件（自动去重 + 可撤销） */
-	useGlobal(mw: Middleware) {
-		this.globals.add(mw)
-		this.scheduleRebuild()
-		return this.ctx.scope.collectEffect(() => {
-			if (this.globals.delete(mw)) this.scheduleRebuild()
-		})
-	}
-
-	/** 挂模块（Resolver[]/Resolver/GqlModule，支持 key 覆盖 + 可撤销） */
-	useModule(mod: GqlModuleInput, key: string | symbol = Symbol('gql-mod')) {
-		this.modules.set(key, normalizeModule(mod))
-		this.scheduleRebuild()
-		return this.ctx.scope.collectEffect(() => {
-			if (this.modules.delete(key)) this.scheduleRebuild()
-		})
-	}
-
-	// -------- 内部：重建与推送 --------
-	scheduleRebuild() {
-		this.rebuildDirty = true
-		if (this.rebuildPending) return
-		this.rebuildPending = true
-		queueMicrotask(() => {
-			this.rebuildPending = false
-			if (!this.rebuildDirty) return
-			this.rebuildNow()
-		})
-	}
-
-	rebuildNow() {
-		this.rebuildDirty = false
-
-		this.schema = this.weaveSchema()
-		// Yoga fetch 指针热替换（不重启 Hono）
-		this.pushFetch()
-
-		// 不阻塞主线
-		void this.codegenNow()
+		if (!merged.factory) this.setFactory({ resolver, query, mutation })
+		if (!merged.valibot) this.setValibot(v)
 	}
 
 	private weaveSchema() {
@@ -136,10 +50,10 @@ export class GraphQLService {
 		]
 		const middlewares: Middleware[] = []
 
-		if (this.globals.size) middlewares.push(...this.globals)
+		if (this.globals.size) middlewares.push(...(this.globals as Set<Middleware>))
 		for (const m of this.modules.values()) {
-			if (m.resolvers?.length) resolvers.push(...m.resolvers)
-			if (m.middlewares?.length) middlewares.push(...m.middlewares)
+			if (m.resolvers?.length) resolvers.push(...(m.resolvers as Resolver[]))
+			if (m.middlewares?.length) middlewares.push(...(m.middlewares as Middleware[]))
 		}
 		// gqloom 的 weave 可以混合放入 Resolver/Middleware；这里显式分组后再展开，便于阅读与调试
 		return weave(ValibotWeaver, ...middlewares, ...resolvers)
@@ -163,6 +77,15 @@ export class GraphQLService {
 		// HonoService 内部声明合并了 setGraphQLFetch，这里避免循环依赖，保留弱类型转发
 		const fetcher = (req: Request, ctx: ServerCtx) => yoga.fetch(req, ctx)
 		this.ctx.honoService.setGraphQLFetch(fetcher as any)
+	}
+
+	protected override onRebuild() {
+		this.schema = this.weaveSchema()
+		// Yoga fetch 指针热替换（不重启 Hono）
+		this.pushFetch()
+
+		// 不阻塞主线
+		void this.codegenNow()
 	}
 
 	// -------- GQty 代码生成：防并发、稳态日志 --------

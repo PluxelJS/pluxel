@@ -6,18 +6,25 @@ import { HMRService } from '../../src/services/hmr/HMRService'
 import { buildHmrViteConfig, resolveFsAllowList, resolveHMRDependencyConfig } from '../../src/services/hmr/config'
 
 // Minimal ctx stub to construct HMRService without booting the whole app.
-const createCtx = () =>
-	({
+const createCtx = () => {
+	const anchors = new Set<string>()
+	return {
 		logger: { info() {}, error() {}, warn() {} },
 		loader: {
-			pathAnchors: new Set<string>(),
+			api: {
+				anchors: {
+					list: () => anchors,
+					remove: (id: string) => anchors.delete(id),
+				},
+			},
 		},
 		registry: {
 			commit: async () => ({ ok: true }),
 			container: { services: new Map() },
 		},
 		honoService: { viteHonoDevServer: { name: 'noop', apply: 'serve', configureServer() {} } },
-	}) as any
+	} as any
+}
 
 describe('HMR runner bridge', () => {
 	it('reuses host @pluxel/core singletons in the runner', async () => {

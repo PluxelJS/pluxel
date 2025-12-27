@@ -1,12 +1,12 @@
-export { rewriteDtsModuleAugmentations } from './plugins/rewriteDtsModuleAugmentations'
 export { appendDtsImport } from './plugins/appendDtsImport'
-export { configSourcePlugin } from './plugins/configSourcePlugin'
 export type { ConfigSourcePluginOptions } from './plugins/configSourcePlugin'
-export { importTypeFixerPlugin } from './plugins/importTypeFixerPlugin'
-export type { ImportTypeFixerPluginOptions } from './plugins/importTypeFixerPlugin'
-export { createImportTracker } from './plugins/importTrackerPlugin'
+export { configSourcePlugin } from './plugins/configSourcePlugin'
 export type {
 	ImportTracker,
 	ImportTrackerPluginOptions,
 	TrackedPluginUsage,
 } from './plugins/importTrackerPlugin'
+export { createImportTracker } from './plugins/importTrackerPlugin'
+export type { ImportTypeFixerPluginOptions } from './plugins/importTypeFixerPlugin'
+export { importTypeFixerPlugin } from './plugins/importTypeFixerPlugin'
+export { rewriteDtsModuleAugmentations } from './plugins/rewriteDtsModuleAugmentations'

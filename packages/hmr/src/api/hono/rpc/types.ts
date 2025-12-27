@@ -105,6 +105,20 @@ export type PackageSpecInput = {
 	tag?: string | null
 }
 
+export type MarketMutationAction = 'install' | 'uninstall' | 'remove' | 'reinstall' | 'reload' | 'retry'
+
+export type MarketMutationOptions = {
+	force?: boolean
+	fresh?: boolean
+	reinstall?: boolean
+}
+
+export type MarketMutationInput = {
+	action: MarketMutationAction
+	specs: PackageSpecInput[]
+	options?: MarketMutationOptions
+}
+
 export type MarketMutationResult = {
 	__typename: 'PackageMutationResult'
 	ok: boolean

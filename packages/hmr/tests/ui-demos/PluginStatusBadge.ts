@@ -9,7 +9,7 @@ export class PluginStatusBadge extends BasePlugin {
 
 	override async init() {
 		// 注册 Header 扩展，强调"非插件页面"的挂载点
-		this.ctx.extensionService.register({
+		this.ctx.ext.ui.register({
 			entryPath: './PluginStatusBadge/ui/StatusBadge.tsx',
 		})
 

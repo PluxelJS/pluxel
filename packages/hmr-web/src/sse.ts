@@ -6,7 +6,7 @@ export interface LogRecord {
 	level: number | string
 	name?: string
 	msg: string
-	[key: string]: any
+	[key: string]: unknown
 }
 
 export interface BuiltinSseEvents {
@@ -27,7 +27,7 @@ export type SseMessage<Ns extends string = keyof ResolvedSseEvents> = {
 	raw: MessageEvent
 }
 
-type AnyHandler = (msg: SseMessage<any>) => void
+type AnyHandler = (msg: SseMessage<string>) => void
 
 type NamespaceClient<Ns extends string> = {
 	on(handler: (msg: SseMessage<Ns>) => void, events?: string | string[]): () => void
@@ -102,7 +102,9 @@ class SseClient {
 		if (this.stopped) return
 		try {
 			this.source?.close()
-		} catch {}
+		} catch {
+			void 0
+		}
 		const src = new EventSource(this.url)
 		this.source = src
 
@@ -115,16 +117,16 @@ class SseClient {
 			this.scheduleReconnect()
 		}
 		src.onmessage = (ev) => {
-			let msg: any = null
+			let msg: { namespace?: unknown; event?: unknown; payload?: unknown } | null = null
 			try {
-				msg = JSON.parse(ev.data)
+				msg = JSON.parse(ev.data) as { namespace?: unknown; event?: unknown; payload?: unknown }
 			} catch {
 				return
 			}
 			const namespace = String(msg?.namespace ?? '')
 			const event = String(msg?.event ?? '')
 			const payload = msg?.payload
-			const shaped: SseMessage = {
+			const shaped: SseMessage<string> = {
 				namespace,
 				event,
 				payload,
@@ -159,7 +161,9 @@ class SseClient {
 		if (!list.length) return this.onAny(handler)
 		const unsubs: Array<() => void> = []
 		for (const ns of list) unsubs.push(this.ns(ns).onAny(handler))
-		return () => unsubs.forEach((fn) => fn())
+		return () => {
+			for (const fn of unsubs) fn()
+		}
 	}
 
 	ns<Ns extends string>(name: Ns): NamespaceClient<Ns> {
@@ -172,7 +176,11 @@ class SseClient {
 		return {
 			on: (handler, events) => {
 				const list = Array.isArray(events) ? events : events ? [events] : []
-				if (!list.length) return this.onAny(handler)
+				if (!list.length) {
+					const h = handler as unknown as AnyHandler
+					bucket!.any.add(h)
+					return () => bucket!.any.delete(h)
+				}
 				const unsubs: Array<() => void> = []
 				for (const ev of list) {
 					let set = bucket!.events.get(ev)
@@ -180,14 +188,18 @@ class SseClient {
 						set = new Set()
 						bucket!.events.set(ev, set)
 					}
-					set.add(handler as any)
-					unsubs.push(() => set!.delete(handler as any))
+					const h = handler as unknown as AnyHandler
+					set.add(h)
+					unsubs.push(() => set!.delete(h))
 				}
-				return () => unsubs.forEach((fn) => fn())
+				return () => {
+					for (const fn of unsubs) fn()
+				}
 			},
 			onAny: (handler) => {
-				bucket!.any.add(handler as any)
-				return () => bucket!.any.delete(handler as any)
+				const h = handler as unknown as AnyHandler
+				bucket!.any.add(h)
+				return () => bucket!.any.delete(h)
 			},
 		}
 	}
@@ -200,7 +212,9 @@ class SseClient {
 		}
 		try {
 			this.source?.close()
-		} catch {}
+		} catch {
+			void 0
+		}
 		this.source = null
 	}
 }

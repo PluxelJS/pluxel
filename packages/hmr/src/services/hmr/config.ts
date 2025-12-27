@@ -1,9 +1,9 @@
 import { existsSync } from 'node:fs'
 import { configSourcePlugin, importTypeFixerPlugin } from '@pluxel/rolldown'
 import { resolve } from 'pathe'
+import Macros from 'unplugin-macros/vite'
 import type { InlineConfig, Plugin } from 'vite'
 import { normalizePath, searchForWorkspaceRoot } from 'vite'
-import tsconfigPaths from 'vite-tsconfig-paths'
 import { findNearestPackageRoot } from './internals'
 
 export interface HMRDependencyConfig {
@@ -154,10 +154,13 @@ export interface HmrViteConfigOptions {
 	runnerPlugin: Plugin
 	honoPlugin: Plugin
 	port?: number
+	includeGlobs?: string[]
+	excludeGlobs?: string[]
 }
 
 export function buildHmrViteConfig(opts: HmrViteConfigOptions): InlineConfig {
 	const conditions = buildHmrResolveConditions()
+	const includePatterns = opts.includeGlobs ?? opts.scanDirs.map((d) => `${d}/**/*.ts`)
 	return {
 		root: opts.root,
 		server: {
@@ -169,11 +172,14 @@ export function buildHmrViteConfig(opts: HmrViteConfigOptions): InlineConfig {
 		},
 		resolve: {
 			conditions,
+			// Vite 8: built-in tsconfig paths support.
+			// (We intentionally avoid `vite-tsconfig-paths` to keep behavior consistent across environments.)
+			tsconfigPaths: true,
 		},
 		plugins: [
-			tsconfigPaths(),
-			configSourcePlugin({ include: opts.scanDirs.map((d) => `${d}/**/*.{ts,tsx}`) }),
+			configSourcePlugin({ include: includePatterns, exclude: opts.excludeGlobs }),
 			importTypeFixerPlugin(),
+			Macros(),
 			opts.runnerPlugin,
 			opts.honoPlugin,
 		],

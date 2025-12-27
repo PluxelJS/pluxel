@@ -1,7 +1,7 @@
 import { copyFile, mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { basename, dirname, join } from 'pathe'
 
-import type { PackageInstallStatus, PackageLoadIssueSource } from '../PackageService'
+import type { PackageInstallStatus, PackageLoadIssueSource } from './types'
 import type { EntryResolutionOk } from '../ScanService'
 import type { PackageSpecifierSnapshot } from '../specifiers'
 

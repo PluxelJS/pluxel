@@ -1,25 +1,20 @@
 import { createHash } from 'node:crypto'
 import { existsSync } from 'node:fs'
 import { mkdir, readdir, readFile, stat, unlink, writeFile } from 'node:fs/promises'
-import { fileURLToPath, pathToFileURL } from 'node:url'
-import { type Context, getPluginInfo, Injectable } from '@pluxel/core'
-import chokidar, { type FSWatcher } from 'chokidar'
-import { createDebug } from 'obug'
-import { dirname, isAbsolute, join, relative, resolve } from 'pathe'
+import { type Context, getPluginInfo } from '@pluxel/core'
 import type {
+	BuiltinExtensionDef,
+	BuiltinDocExtensionDef,
 	CompiledExtensionModule,
 	ExtensionManifest,
 	ExtensionManifestEvent,
+	ExtensionPoint,
 	PluginExtensionConfig,
-} from './types'
-
-const serviceName = 'extensionService' as const
-
-declare module '@pluxel/core' {
-	interface Context {
-		[serviceName]: ExtensionService
-	}
-}
+} from '@pluxel/plugin-ui'
+import chokidar, { type FSWatcher } from 'chokidar'
+import { createDebug } from 'obug'
+import { dirname, isAbsolute, join, relative, resolve } from 'pathe'
+import { collectModuleGraphFiles } from '../runtime-compile/bundler/moduleGraph'
 
 export interface ExtensionServiceConfig {
 	outDir?: string
@@ -97,9 +92,9 @@ const MANIFEST_FILENAME = 'manifest.json'
 // Bump this when the bundling/rewriting logic changes, so clients don't reuse stale cached modules.
 const EXTENSION_COMPILER_VERSION = 7
 
-@Injectable({ key: serviceName })
 export class ExtensionService {
 	private readonly entries = new Map<string, PluginExtensionEntry>()
+	private readonly builtinByPlugin = new Map<string, Map<string, BuiltinExtensionDef>>()
 	private readonly outDir: string
 	private readonly manifestPath: string
 	private readonly dbg = createDebug('pluxel:ext:compile')
@@ -115,7 +110,7 @@ export class ExtensionService {
 	private manifestListeners = new Set<(event: ExtensionManifestEvent) => void>()
 
 	constructor(
-		private ctx: Context,
+		public ctx: Context,
 		config?: ExtensionServiceConfig,
 	) {
 		this.enabled = config?.enabled !== false
@@ -137,8 +132,11 @@ export class ExtensionService {
 	}
 
 	getManifest(): ExtensionManifest {
-		if (!this.enabled) return { version: 0, modules: [] }
-		return this.manifest
+		if (!this.enabled) return { version: 0, modules: [], builtins: [] }
+		return {
+			...this.manifest,
+			builtins: this.getBuiltinsSnapshot(),
+		}
 	}
 
 	async getModuleSource(pluginName: string, sourceHash: string): Promise<string | null> {
@@ -202,7 +200,7 @@ export class ExtensionService {
 		this.setupWatcher(pluginName, entry)
 		this.enqueueCompile(pluginName)
 
-		return () => {
+		return this.ctx.scope.collectEffect(() => {
 			const stored = this.entries.get(pluginName)
 			if (!stored) return
 			stored.active = false
@@ -210,7 +208,70 @@ export class ExtensionService {
 			this.pendingPlugins.delete(pluginName)
 			this.entries.delete(pluginName)
 			void this.handlePluginRemoval(pluginName, stored)
+		})
+	}
+
+	/**
+	 * Register a host-rendered (JSON-serializable) UI extension, without shipping a plugin UI module.
+	 *
+	 * Designed for markdown docs with builtin blocks that should not require `await import()`.
+	 */
+	registerBuiltin(def: Omit<BuiltinExtensionDef, 'pluginName'>): () => void {
+		if (!this.enabled) return () => {}
+		const pluginName = this.ctx.pluginInfo.id
+		const id = String((def as any).id ?? '').trim()
+		const point = String((def as any).point ?? '').trim()
+		const kind = String((def as any).kind ?? '').trim()
+		if (!id) throw new Error('[ExtensionService] registerBuiltin: id required')
+		if (!point) throw new Error('[ExtensionService] registerBuiltin: point required')
+		if (!kind) throw new Error('[ExtensionService] registerBuiltin: kind required')
+		const key = `${point}:${id}`
+
+		const normalized: BuiltinExtensionDef = {
+			...(def as any),
+			id,
+			point: point as ExtensionPoint,
+			kind: kind as BuiltinExtensionDef['kind'],
+			pluginName,
 		}
+		try {
+			// Builtins must be JSON-serializable so the manifest can be safely transported
+			// and remain frontend-implementation-agnostic.
+			JSON.stringify(normalized)
+		} catch (err) {
+			throw new Error(
+				`[ExtensionService] registerBuiltin: def must be JSON-serializable (id=${id}, point=${point}, kind=${kind})`,
+			)
+		}
+
+		let bucket = this.builtinByPlugin.get(pluginName)
+		if (!bucket) {
+			bucket = new Map()
+			this.builtinByPlugin.set(pluginName, bucket)
+		}
+		bucket.set(key, normalized)
+		this.bumpManifestVersion('builtin')
+
+		return this.ctx.scope.collectEffect(() => {
+			const current = this.builtinByPlugin.get(pluginName)
+			if (!current) return
+			const existing = current.get(key)
+			if (existing !== normalized) return
+			current.delete(key)
+			if (current.size === 0) this.builtinByPlugin.delete(pluginName)
+			this.bumpManifestVersion('builtin')
+		})
+	}
+
+	doc<P extends ExtensionPoint = 'plugin:tabs'>(
+		input: Omit<BuiltinDocExtensionDef<P>, 'kind' | 'pluginName' | 'point'> & { point?: P },
+	): () => void {
+		const { point, ...rest } = input
+		return this.registerBuiltin({
+			kind: 'doc',
+			point: (point ?? ('plugin:tabs' as P)) as P,
+			...(rest as any),
+		})
 	}
 
 	invalidate(pluginName: string): void {
@@ -302,7 +363,7 @@ export class ExtensionService {
 				return true
 			}
 
-			const code = await this.generateBundle(entry, entry.entryPath)
+			const code = await this.generateBundle(entry, entry.entryPath, sourceHash)
 			await mkdir(dirname(targetFile), { recursive: true })
 			await writeFile(targetFile, code, 'utf-8')
 			void this.cleanupOldModuleFiles(pluginName, MODULE_RETENTION_COUNT)
@@ -363,13 +424,18 @@ export class ExtensionService {
 		}
 	}
 
-	private async generateBundle(entry: PluginExtensionEntry, entryPath: string): Promise<string> {
-		return this.compileEntryModule(entry, entryPath)
+	private async generateBundle(
+		entry: PluginExtensionEntry,
+		entryPath: string,
+		sourceHash: string,
+	): Promise<string> {
+		return this.compileEntryModule(entry, entryPath, sourceHash)
 	}
 
 	private async compileEntryModule(
 		entry: PluginExtensionEntry,
 		entryPath: string,
+		sourceHash: string,
 	): Promise<string> {
 		const hmr = this.ctx.hmrService
 		if (!hmr) {
@@ -398,10 +464,15 @@ export class ExtensionService {
 
 		// 将入口与本地依赖打成单文件，避免子模块继续各自 import react 导致出现多个 React 副本
 		// （多 React 副本会让 hooks dispatcher 为 null，触发 “reading 'useMemo' of null”）
-		const bundled = await bundlePluginEntry({
-			entry: absoluteEntry,
-			vite,
-		})
+		const bundled = (
+			await this.ctx.bundlerService.bundle({
+				entry: absoluteEntry,
+				root: vite.config.root,
+				resolve: vite.config.resolve,
+				external: Array.from(VENDOR_PACKAGES),
+				cacheKey: `ext-${sanitizePluginName(entry.pluginName)}-${sourceHash}`,
+			})
+		).code
 		return normalizeJsxRuntime(transformVendorImports(bundled))
 	}
 
@@ -437,6 +508,31 @@ export class ExtensionService {
 			version: this.manifestVersion,
 			pluginName,
 		})
+	}
+
+	private getBuiltinsSnapshot(): BuiltinExtensionDef[] {
+		const list: BuiltinExtensionDef[] = []
+		for (const bucket of this.builtinByPlugin.values()) {
+			for (const def of bucket.values()) {
+				list.push(def)
+			}
+		}
+		list.sort((a, b) => {
+			const pn = a.pluginName.localeCompare(b.pluginName)
+			if (pn !== 0) return pn
+			const pt = String(a.point).localeCompare(String(b.point))
+			if (pt !== 0) return pt
+			return String(a.id).localeCompare(String(b.id))
+		})
+		return list
+	}
+
+	private bumpManifestVersion(reason: 'builtin'): void {
+		// Builtins are runtime-only; we still bump the global manifest version to trigger a client sync.
+		this.manifestVersion += 1
+		this.manifest = { version: this.manifestVersion, modules: this.manifest.modules }
+		this.persistManifest()
+		this.notifyManifest({ type: 'sync', version: this.manifestVersion })
 	}
 
 	private handleManifestUpdate(pluginName: string, entry: PluginExtensionEntry | null): void {
@@ -671,7 +767,9 @@ export class ExtensionService {
 			const rootModule = await vite.moduleGraph.getModuleByUrl(url)
 			if (!rootModule) return
 
-			const nextFiles = this.collectModuleGraphFiles(rootModule)
+			const nextFiles = collectModuleGraphFiles(rootModule, {
+				include: (filePath) => this.isHashableSourceFile(filePath),
+			})
 			const nextSignature = nextFiles.join('\n')
 			const prevSignature = entry.sourceFiles.join('\n')
 			if (nextSignature === prevSignature) return
@@ -681,32 +779,6 @@ export class ExtensionService {
 		} catch {
 			// Keep previous watcher/hash targets on failure.
 		}
-	}
-
-	private collectModuleGraphFiles(root: import('vite').ModuleNode): string[] {
-		const files = new Set<string>()
-		const visited = new Set<import('vite').ModuleNode>()
-		const stack = [root]
-
-		while (stack.length) {
-			const node = stack.pop()!
-			if (visited.has(node)) continue
-			visited.add(node)
-
-			if (node.file && this.isHashableSourceFile(node.file)) {
-				files.add(node.file)
-			}
-
-			for (const next of node.importedModules) stack.push(next)
-			for (const next of node.dynamicallyImportedModules) stack.push(next)
-		}
-
-		// moduleGraph 里有时会缺失一些依赖（例如未 transform 的模块），兜底补齐入口自身
-		if (root.file && this.isHashableSourceFile(root.file)) {
-			files.add(root.file)
-		}
-
-		return Array.from(files).sort()
 	}
 
 	private isHashableSourceFile(filePath: string): boolean {
@@ -728,14 +800,13 @@ export class ExtensionService {
 	}
 
 	private findPluginDir(pluginName: string): string | null {
-		const registryPath = this.ctx.loader.registry.name2PathMap.get(pluginName)
+		const registryPath = this.ctx.loader.api.registry.findModuleIdByName(pluginName)
 		if (registryPath) {
 			return dirname(registryPath)
 		}
 
 		const needle = pluginName.toLowerCase()
-		const anchors = this.ctx.loader.pathAnchors
-		for (const path of anchors) {
+		for (const path of this.ctx.loader.api.anchors.list()) {
 			if (path.toLowerCase().includes(needle)) {
 				return dirname(path)
 			}
@@ -850,51 +921,6 @@ function transformVendorImports(code: string): string {
 
 function escapeRegex(str: string): string {
 	return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-}
-
-async function bundlePluginEntry(options: {
-	entry: string
-	vite: import('vite').ViteDevServer
-}): Promise<string> {
-	const pool = getBundlePool()
-	const { entry, vite } = options
-	return pool.run({
-		entry,
-		root: vite.config.root,
-		resolve: vite.config.resolve,
-		vendors: Array.from(VENDOR_PACKAGES),
-	})
-}
-
-let bundlePool: import('tinypool').default | null = null
-function getBundlePool(): import('tinypool').default {
-	if (bundlePool) return bundlePool
-	// 延迟创建，避免未用时初始化线程
-	const { default: Tinypool } = require('tinypool') as typeof import('tinypool')
-	const worker = resolveWorkerPath()
-	bundlePool = new Tinypool({
-		filename: worker,
-		maxThreads: Math.max(1, Math.min(4, require('os').cpus().length - 1)),
-	})
-	return bundlePool
-}
-
-function resolveWorkerPath(): string {
-	const currentDir = dirname(fileURLToPath(import.meta.url))
-	const pkgRoot = resolve(currentDir, '../../..')
-	const candidates = [
-		pathToFileURL(resolve(pkgRoot, 'dist/bundle-worker.mjs')).href, // copied by tsdown
-		pathToFileURL(join(currentDir, 'bundle-worker.mjs')).href, // same dir as compiled chunk
-		pathToFileURL(resolve(pkgRoot, 'src/services/extension/bundle-worker.mjs')).href, // source fallback
-	]
-	for (const href of candidates) {
-		try {
-			if (existsSync(fileURLToPath(href))) {
-				return href
-			}
-		} catch {}
-	}
-	return candidates[candidates.length - 1]!
 }
 
 function rewriteVendorNamedImports(names: string, pkg: string): string {

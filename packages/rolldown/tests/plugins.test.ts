@@ -26,6 +26,21 @@ describe('configSourcePlugin', () => {
 		expect(code).toContain('v.object({inline:v.boolean()})')
 	})
 
+	it('extracts aliased @Config decorator imports', async () => {
+		const bundle = await rolldown({
+			input: resolve(fixturesDir, 'plugin-with-config-alias.ts'),
+			plugins: [configSourcePlugin()],
+			external: ['valibot', '@pluxel/hmr'],
+		})
+
+		const { output } = await bundle.generate({ format: 'esm' })
+		const code = output[0].code
+
+		expect(code).toContain('__setConfigSource__')
+		expect(code).toContain('__setConfigSource__(AliasConfigPlugin')
+		expect(code).toContain('v.object({name:v.string()})')
+	})
+
 	it('extracts local schema source', async () => {
 		const bundle = await rolldown({
 			input: resolve(fixturesDir, 'plugin-with-config.ts'),

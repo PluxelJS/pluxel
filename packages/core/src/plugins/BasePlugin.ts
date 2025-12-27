@@ -54,7 +54,7 @@ export abstract class BasePlugin<C extends Context = Context> {
 			id = getPluginInfo(this)?.id ?? this.name
 		} catch {
 			// undecorated base
-			id = this.name
+			id = BasePlugin.name
 		}
 		// biome-ignore lint/complexity/noThisInStatic: <explanation>
 		return `${id}(${this.name})`

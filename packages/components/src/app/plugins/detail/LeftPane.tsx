@@ -226,7 +226,7 @@ export function LeftPane({ compact = false }: LeftPaneProps) {
 						}}
 					>
 						<div style={{ flex: 1, minHeight: 0, minWidth: 0 }}>
-							<LiveLog module={pluginName} />
+							<LiveLog module={pluginName} showName={false} />
 						</div>
 					</Paper>
 				</Box>

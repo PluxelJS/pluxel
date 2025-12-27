@@ -32,6 +32,9 @@ export type {
 	SchemaResultOk,
 	SchemaResultErr,
 	PackageSpecInput,
+	MarketMutationAction,
+	MarketMutationInput,
+	MarketMutationOptions,
 	MarketMutationResult,
 	MarketBatchResult,
 } from './protocol'

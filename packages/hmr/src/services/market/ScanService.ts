@@ -1,11 +1,10 @@
 import { pathToFileURL } from 'node:url'
 import { type Context, Injectable } from '@pluxel/core'
-import { resolveModulePath, type ResolveOptions } from 'exsolve'
+import { type ResolveOptions, resolveModulePath } from 'exsolve'
 import { dirname, normalize } from 'pathe'
 import { EntryResolver } from './scan/entry-resolver'
 import { DEFAULT_SCAN_OPTIONS, resolveScanOptions } from './scan/options'
 import { ModuleResolveCache } from './scan/resolve-cache'
-import { normalizeScanInputs, resolveScanRoots } from './scan/shared'
 import {
 	mergeFocus,
 	missingPackageResolution,
@@ -13,7 +12,8 @@ import {
 	selectorBareName,
 	selectorFocusHints,
 } from './scan/selectors'
-import { ScanSnapshotBuilder, ScanSnapshotCache, type ScanSnapshot } from './scan/snapshot'
+import { normalizeScanInputs, resolveScanRoots } from './scan/shared'
+import { type ScanSnapshot, ScanSnapshotBuilder, ScanSnapshotCache } from './scan/snapshot'
 import type {
 	EntryResolution,
 	EntryResolutionOk,
@@ -25,14 +25,18 @@ import type {
 const serviceName = 'scanService' as const
 
 declare module '@pluxel/core' {
-	interface Context {
-		[serviceName]: ScanService
-	}
-	interface Config {
-		[serviceName]?: ScanServiceConfig
+	namespace Context {
+		interface Services {
+			[serviceName]: ScanService
+		}
+		interface Config {
+			[serviceName]?: ScanServiceConfig
+		}
 	}
 }
 
+export type { PackageSelector } from './scan/selectors'
+export type { ScanSnapshot } from './scan/snapshot'
 export type {
 	EntryResolution,
 	EntryResolutionOk,
@@ -42,8 +46,6 @@ export type {
 	ScanOptionsInput,
 	ScanStats,
 } from './scan/types'
-export type { PackageSelector } from './scan/selectors'
-export type { ScanSnapshot } from './scan/snapshot'
 
 export interface ScanServiceConfig {
 	/** 默认扫描根目录，可传单个路径或路径数组。 */
@@ -77,6 +79,7 @@ export interface WorkspaceEntryInfo {
  */
 @Injectable({ key: serviceName })
 export class ScanService {
+	public ctx: Context
 	private defaults: ResolvedScanOptions
 	private roots: string[]
 	private readonly resolveCache = new ModuleResolveCache()
@@ -85,7 +88,8 @@ export class ScanService {
 	private readonly snapshotCache = new ScanSnapshotCache(this.snapshotBuilder)
 	private readonly installedResolver: InstalledPackageResolver
 
-	constructor(_ctx: Context, config: ScanServiceConfig = {}) {
+	constructor(ctx: Context, config: ScanServiceConfig = {}) {
+		this.ctx = ctx
 		this.defaults = resolveScanOptions(DEFAULT_SCAN_OPTIONS, config.options)
 		this.roots = normalizeScanInputs(config.roots ?? process.cwd())
 		this.installedResolver = new InstalledPackageResolver(

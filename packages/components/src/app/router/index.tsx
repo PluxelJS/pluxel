@@ -6,6 +6,7 @@ import {
 	createRouter,
 	type RouterHistory,
 } from '@tanstack/react-router'
+import { AppErrorBoundary } from '../AppErrorBoundary'
 import { RootShell } from '../layout/RootShell'
 import { LiveLog } from '../log_viewer/LiveLog'
 import { ExtensionRoute } from '../routes/ExtensionRoute'
@@ -18,7 +19,11 @@ import { PluginsPlaceholder, PluginsRoute } from '../routes/PluginsRoute'
 import { RouteError } from '../routes/RouteError'
 
 const rootRoute = createRootRoute({
-	component: RootShell,
+	component: () => (
+		<AppErrorBoundary>
+			<RootShell />
+		</AppErrorBoundary>
+	),
 })
 
 const homeRoute = createRoute({

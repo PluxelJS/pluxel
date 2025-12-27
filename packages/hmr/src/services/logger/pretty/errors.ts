@@ -1,23 +1,13 @@
 import type { Bindings, Logger } from 'pino'
 import type { ParsedError } from 'youch/types'
-
-const PRETTY_ERRORS_ENABLED =
-	process.env.NODE_ENV !== 'production' &&
-	(process.env.PLUXEL_LOGGER_PRETTY ?? process.env.PLUXEL_YOUCH ?? '1') !== '0'
-
-const DEFAULT_INTERNAL_PATTERNS = ['@pluxel/']
-const INTERNAL_PATTERN_ENV =
-	process.env.PLUXEL_LOGGER_HIDE_INTERNAL_PATTERNS ?? DEFAULT_INTERNAL_PATTERNS.join(',')
-const INTERNAL_FRAME_PATTERNS = INTERNAL_PATTERN_ENV.split(',')
-	.map((item) => item.trim())
-	.filter(Boolean)
-
-const HIDE_INTERNAL_FRAMES =
-	(process.env.PLUXEL_LOGGER_HIDE_INTERNAL ?? '1') !== '0' && INTERNAL_FRAME_PATTERNS.length > 0
-const KEEP_INTERNAL_FRAMES = Math.max(
-	0,
-	Number.parseInt(process.env.PLUXEL_LOGGER_KEEP_INTERNAL_FRAMES ?? '0', 10) || 0,
-)
+import type { LoggerPrettyErrorsConfig } from '../loggerRuntimeConfig'
+import { getLoggerRuntimeConfig } from '../loggerRuntimeConfig'
+import {
+	createCompiledPathMatcher,
+	extractStackFile,
+	normalizeFileName,
+	type CompiledPathMatcher,
+} from './stack'
 const escapeRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 const globToRegExp = (pattern: string) => {
 	const escaped = escapeRegExp(pattern)
@@ -25,9 +15,6 @@ const globToRegExp = (pattern: string) => {
 	return new RegExp(globReady, 'i')
 }
 
-const INTERNAL_FRAME_RES = INTERNAL_FRAME_PATTERNS.map(globToRegExp)
-
-const PRETTY_SCOPE = Symbol('pluxel.logger.scope')
 const PRETTY_PATCHED = Symbol('pluxel.logger.pretty_patched')
 const PRETTY_CONTEXT = Symbol('pluxel.logger.pretty_context')
 
@@ -53,6 +40,21 @@ const ANSI_ESCAPE_RE =
 	/[\u001B\u009B][[\]()#;?]*(?:[0-9]{1,4}(?:;[0-9]{0,4})*)?[0-9A-ORZcf-nqry=><~]/g
 const stripAnsi = (value: string) => value.replace(ANSI_ESCAPE_RE, '')
 
+type PreparedPrettyErrorsConfig = LoggerPrettyErrorsConfig & {
+	compiledMatcher: CompiledPathMatcher
+	internalFrameRes: RegExp[]
+}
+
+const preparePrettyConfig = (config: LoggerPrettyErrorsConfig): PreparedPrettyErrorsConfig => {
+	const internalFrameRes =
+		config.internalPatterns.length > 0 ? config.internalPatterns.map(globToRegExp) : []
+	return {
+		...config,
+		compiledMatcher: createCompiledPathMatcher(config.compiledHints),
+		internalFrameRes,
+	}
+}
+
 export const writePrettyErrorToStderr: PrettyErrorSink = ({ ansi }) => {
 	const body = ansi.endsWith('\n') ? ansi : `${ansi}\n`
 	process.stderr.write(body.startsWith('\n') ? body : `\n${body}`)
@@ -61,6 +63,7 @@ export const writePrettyErrorToStderr: PrettyErrorSink = ({ ansi }) => {
 interface PrettyContext {
 	scope?: string
 	sinks: PrettyErrorSink[]
+	config: PreparedPrettyErrorsConfig
 }
 
 const defaultSinks: PrettyErrorSink[] = [writePrettyErrorToStderr]
@@ -70,10 +73,12 @@ const ensureContext = (logger: Logger, ctx: PrettyContext) => {
 	if (existing) {
 		if (ctx.scope !== undefined) existing.scope = ctx.scope
 		if (ctx.sinks.length) existing.sinks = ctx.sinks
+		existing.config = ctx.config
 		return existing
 	}
 	const next: PrettyContext = {
 		sinks: ctx.sinks,
+		config: ctx.config,
 	}
 	if (ctx.scope !== undefined) next.scope = ctx.scope
 	;(logger as any)[PRETTY_CONTEXT] = next
@@ -90,11 +95,12 @@ export interface PrettyErrorOptions {
 export function attachPrettyErrors<T extends Logger>(
 	logger: T,
 	options: PrettyErrorOptions = {},
+	runtimeConfig: LoggerPrettyErrorsConfig = getLoggerRuntimeConfig().pretty.errors,
 ): T {
-	if (!PRETTY_ERRORS_ENABLED) return logger
+	if (!runtimeConfig.enabled) return logger
 
 	const sinks = options.sinks && options.sinks.length ? options.sinks : defaultSinks
-	const context: PrettyContext = { sinks }
+	const context: PrettyContext = { sinks, config: preparePrettyConfig(runtimeConfig) }
 	if (options.scope !== undefined) context.scope = options.scope
 	ensureContext(logger, context)
 
@@ -117,7 +123,7 @@ export function attachPrettyErrors<T extends Logger>(
 		const sinksOverride = parentCtx?.sinks ?? defaultSinks
 		const childOptions: PrettyErrorOptions = { sinks: sinksOverride }
 		if (scope !== undefined) childOptions.scope = scope
-		return attachPrettyErrors(childLogger as unknown as T, childOptions)
+		return attachPrettyErrors(childLogger as unknown as T, childOptions, parentCtx?.config ?? context.config)
 	} as typeof logger.child
 
 	return logger
@@ -132,11 +138,11 @@ function extractScope(bindings?: Bindings): string | undefined {
 }
 
 function maybeRenderPrettyError(logger: Logger, args: readonly unknown[]) {
-	if (!PRETTY_ERRORS_ENABLED) return args
 	const ctx = getContext(logger)
-	if (!ctx) return args
+	if (!ctx || !ctx.config.enabled) return args
 	const err = extractError(args)
 	if (!err || seenErrors.has(err)) return args
+	if (ctx.config.skipCompiled && shouldSkipPrettyError(err, ctx.config)) return args
 	seenErrors.add(err)
 	renderQueue = renderQueue
 		.then(() => renderYouch(err, ctx))
@@ -161,7 +167,7 @@ function extractError(args: readonly unknown[]): Error | undefined {
 }
 
 async function renderYouch(error: Error, ctx: PrettyContext) {
-	const reporter = await ensureYouch()
+	const reporter = await ensureYouch(ctx.config)
 	const output = await reporter.toANSI(error)
 	const ansi = output.endsWith('\n') ? output : `${output}\n`
 	const payload: PrettyErrorPayload = {
@@ -182,28 +188,50 @@ async function renderYouch(error: Error, ctx: PrettyContext) {
 	}
 }
 
-async function ensureYouch(): Promise<YouchInstance> {
+function shouldSkipPrettyError(error: Error, config: PreparedPrettyErrorsConfig): boolean {
+	const stack = error.stack
+	if (!stack) return false
+	const lines = stack.split('\n').slice(1)
+	let hasCompiledFrame = false
+	for (const line of lines) {
+		const file = extractStackFile(line)
+		if (!file) continue
+		const normalized = normalizeFileName(file)
+		if (normalized.startsWith('node:')) continue
+		if (normalized.includes('/node_modules/')) continue
+		if (isInternalPath(normalized, config.internalFrameRes)) continue
+		if (!config.compiledMatcher.isCompiledPath(normalized)) return false
+		hasCompiledFrame = true
+	}
+	return hasCompiledFrame
+}
+
+function isInternalPath(fileName: string, internalFrameRes: RegExp[]): boolean {
+	return internalFrameRes.some((regex) => regex.test(fileName))
+}
+
+async function ensureYouch(config: PreparedPrettyErrorsConfig): Promise<YouchInstance> {
 	if (!youchModulePromise) {
 		youchModulePromise = import('youch') as Promise<YouchModule>
 	}
 	const mod = await youchModulePromise
 	if (!youchInstance) youchInstance = new mod.Youch()
 	if (!youchConfigured) {
-		configureYouch(youchInstance)
+		configureYouch(youchInstance, config)
 		youchConfigured = true
 	}
 	return youchInstance
 }
 
-function configureYouch(instance: YouchInstance) {
-	if (!HIDE_INTERNAL_FRAMES) return
+function configureYouch(instance: YouchInstance, config: PreparedPrettyErrorsConfig) {
+	if (!config.hideInternal || config.internalFrameRes.length === 0) return
 	instance.useTransformer((parsedError: ParsedError) => {
 		if (!Array.isArray(parsedError.frames)) return
 		const filtered: typeof parsedError.frames = []
 		let keptInternal = 0
 		for (const frame of parsedError.frames) {
-			if (isInternalFrame(frame)) {
-				if (keptInternal < KEEP_INTERNAL_FRAMES) {
+			if (isInternalFrame(frame, config.internalFrameRes)) {
+				if (keptInternal < config.keepInternalFrames) {
 					keptInternal++
 					filtered.push(frame)
 				}
@@ -212,7 +240,7 @@ function configureYouch(instance: YouchInstance) {
 			filtered.push(frame)
 		}
 		if (filtered.length === 0) {
-			const fallbackCount = Math.max(1, KEEP_INTERNAL_FRAMES || 1)
+			const fallbackCount = Math.max(1, config.keepInternalFrames || 1)
 			parsedError.frames = parsedError.frames.slice(0, fallbackCount)
 		} else {
 			parsedError.frames = filtered
@@ -222,11 +250,11 @@ function configureYouch(instance: YouchInstance) {
 
 type ParsedFrame = ParsedError['frames'][number]
 
-function isInternalFrame(frame: ParsedFrame) {
+function isInternalFrame(frame: ParsedFrame, internalFrameRes: RegExp[]) {
 	if (!frame) return false
 	const fileName = frame.fileName
 	if (typeof fileName !== 'string') return false
-	return INTERNAL_FRAME_RES.some((regex) => regex.test(fileName))
+	return internalFrameRes.some((regex) => regex.test(fileName))
 }
 
 const ERROR_PAYLOAD_KEYS = ['err', 'error', 'cause'] as const

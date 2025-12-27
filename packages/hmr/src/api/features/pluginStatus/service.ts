@@ -1,21 +1,13 @@
 import type { Context as PlxContext, PluginConstructor } from '@pluxel/core'
 import type { InferOutput } from 'valibot'
 
-import { PluginSourceInfo, PluginStatusEntryLifecycleStage, PluginStatusOverview } from './schema'
+import type { PluginSourceInfo, PluginStatusEntryLifecycleStage, PluginStatusOverview } from './schema'
 
 type LifecycleStage = InferOutput<typeof PluginStatusEntryLifecycleStage>
 type SourceOutput = InferOutput<typeof PluginSourceInfo>
 
 function findModuleId(pCtx: PlxContext, name: string, ctor?: PluginConstructor) {
-	const direct = pCtx.loader.registry.name2PathMap.get(name)
-	if (direct) return direct
-	if (!ctor) return null
-	for (const [moduleId, modules] of pCtx.loader.registry.modules) {
-		if (modules.some((item) => item.ctor === ctor)) {
-			return moduleId
-		}
-	}
-	return null
+	return pCtx.loader.api.registry.findModuleId(name, ctor)
 }
 
 export function resolvePluginSource(
@@ -65,7 +57,7 @@ export function readStatusSnapshot(
 	lifecycleStage: LifecycleStage
 	source: SourceOutput
 } {
-	const isRunning = pCtx.loader.isRunning(ctor)
+	const isRunning = pCtx.loader.api.runtime.isRunning(ctor)
 	const isEnabled = pCtx.configService.isEnabledInConfig(name)
 	const lifecycleStage = !isEnabled ? 'disabled' : isRunning ? 'running' : 'stopped'
 	const source = resolvePluginSource(pCtx, name, ctor)
@@ -73,8 +65,8 @@ export function readStatusSnapshot(
 }
 
 export function getStatusOverview(pCtx: PlxContext) {
-	const { statuses, summary } = pCtx.loader.getFullPluginStatus()
-	const nameToCtor = pCtx.loader.registry.names
+	const { statuses, summary } = pCtx.loader.api.status.snapshot()
+	const nameToCtor = pCtx.loader.api.registry.listRegistered()
 	return {
 		__typename: 'PluginStatusOverview' as const,
 		statuses: Object.keys(statuses).map((name) => ({

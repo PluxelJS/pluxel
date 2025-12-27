@@ -6,9 +6,6 @@ export const config = v.object({
 		v.pipe(
 			v.string(),
 			v.hexColor(),
-			v.check((input) => {
-				return false
-			}, '测试不通过'),
 		),
 		'#000000',
 	),
@@ -30,7 +27,7 @@ export class PluginB extends BasePlugin {
 	private ba: Config<typeof CfgSchema>
 	init(): void {
 		this.ctx.logger.info('PluginB initialized')
-		throw new Error('d')
+		throw new Error("a")
 	}
 
 	doSomething(): void {

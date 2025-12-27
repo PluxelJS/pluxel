@@ -35,6 +35,39 @@ export function createImportTracker(options: ImportTrackerPluginOptions): Import
 
 	const collected = new Map<string, TrackedPluginUsage>()
 
+	const record = (specifier: string, kind: 'static' | 'dynamic') => {
+		const name = normalizeSpecifier(specifier, prefixes)
+		if (!name) return
+		const current = collected.get(name) ?? { hasStaticImport: false, hasDynamicImport: false }
+		if (kind === 'static') current.hasStaticImport = true
+		else current.hasDynamicImport = true
+		collected.set(name, current)
+	}
+
+	const collectFromSource = (code: string) => {
+		// We intentionally parse via regex to also capture external/unresolved imports,
+		// which may not be present in `moduleParsed().importedIds` depending on bundler internals.
+		//
+		// Static:
+		// - import 'pkg'
+		// - import x from 'pkg'
+		// - export * from 'pkg'
+		// Dynamic:
+		// - import('pkg')
+		const staticRe =
+			/\b(?:import|export)\s+(?:type\s+)?(?:[^'"]*?\s+from\s+)?['"]([^'"]+)['"]/g
+		const dynamicRe = /\bimport\s*\(\s*['"]([^'"]+)['"]\s*\)/g
+
+		for (const match of code.matchAll(staticRe)) {
+			const spec = match[1]
+			if (spec) record(spec, 'static')
+		}
+		for (const match of code.matchAll(dynamicRe)) {
+			const spec = match[1]
+			if (spec) record(spec, 'dynamic')
+		}
+	}
+
 	const plugin: Plugin = {
 		name: 'pluxel-import-tracker',
 		buildStart() {
@@ -51,29 +84,10 @@ export function createImportTracker(options: ImportTrackerPluginOptions): Import
 					include: /@Plugin/,
 				},
 			},
-			handler(_code, _id) {
-				// transform hook 仅用于触发 filter，实际收集在 moduleParsed 中完成
+			handler(code, _id) {
+				collectFromSource(code)
 				return null
 			},
-		},
-		moduleParsed(moduleInfo) {
-			// 只处理包含 @Plugin 的模块
-			if (!moduleInfo.code?.includes('@Plugin')) return
-
-			for (const id of moduleInfo.importedIds) {
-				const name = normalizeSpecifier(id, prefixes)
-				if (!name) continue
-				const current = collected.get(name) ?? { hasStaticImport: false, hasDynamicImport: false }
-				current.hasStaticImport = true
-				collected.set(name, current)
-			}
-			for (const id of moduleInfo.dynamicallyImportedIds ?? []) {
-				const name = normalizeSpecifier(id, prefixes)
-				if (!name) continue
-				const current = collected.get(name) ?? { hasStaticImport: false, hasDynamicImport: false }
-				current.hasDynamicImport = true
-				collected.set(name, current)
-			}
 		},
 	}
 

@@ -2,7 +2,6 @@
 
 import react from '@vitejs/plugin-react'
 import { defineConfig } from 'vite'
-import tsconfigPaths from 'vite-tsconfig-paths'
 
 export default defineConfig(({ mode }) => {
 	const isDev = mode !== 'production'
@@ -22,6 +21,7 @@ export default defineConfig(({ mode }) => {
 			},
 		},
 		resolve: {
+			tsconfigPaths: true,
 			dedupe: [
 				'react',
 				'react-dom',
@@ -36,7 +36,7 @@ export default defineConfig(({ mode }) => {
 			},
 		},
 
-		plugins: [react(), tsconfigPaths()],
+		plugins: [react()],
 
 		// 关键：把 Mantine/Emotion 相关预打包，减少 cold start + 提升 HMR 稳定
 		optimizeDeps: {

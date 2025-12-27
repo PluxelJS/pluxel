@@ -163,9 +163,17 @@ export async function buildStartPlan(
 	const uniqueOrder = startOrder.filter(
 		(name, idx) => startOrder.indexOf(name) === idx && !missing.has(name),
 	)
+	const finalOrder = uniqueOrder.slice()
+	if (includeTargets) {
+		for (const root of roots) {
+			if (missing.has(root)) continue
+			if (!includeRunningTargets && running.has(root)) continue
+			if (!finalOrder.includes(root)) finalOrder.push(root)
+		}
+	}
 
 	return {
-		order: uniqueOrder,
+		order: finalOrder,
 		blockedByConfig,
 		missing: Array.from(missing),
 		alreadyRunning: [...running].filter((name) => touchSet.has(name)),

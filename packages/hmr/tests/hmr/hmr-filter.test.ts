@@ -3,11 +3,17 @@ import { join, normalize } from 'pathe'
 import { HMRService } from '../../src/services/hmr/HMRService'
 
 // Minimal ctx stub to construct HMRService without booting Vite.
-const createCtx = () =>
-	({
+const createCtx = () => {
+	const anchors = new Set<string>()
+	return {
 		logger: { info() {}, error() {}, warn() {} },
 		loader: {
-			pathAnchors: new Set<string>(),
+			api: {
+				anchors: {
+					list: () => anchors,
+					remove: (id: string) => anchors.delete(id),
+				},
+			},
 			replaceModule: async () => true,
 			pruneModule() {},
 		},
@@ -16,7 +22,8 @@ const createCtx = () =>
 			container: { services: new Map() },
 		},
 		honoService: { viteHonoDevServer: { name: 'noop', apply: 'serve', configureServer() {} } },
-	}) as any
+	} as any
+}
 
 const pkgRoot = process.cwd()
 const pluginDir = join(pkgRoot, 'tests/plugins')

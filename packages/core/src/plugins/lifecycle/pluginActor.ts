@@ -154,10 +154,15 @@ export class PluginLifecycleActor {
 		const impl: LifecycleImpl = {
 			callbacks: {
 				onStart: async () => {
-					this.pendingStop = false
 					this.startAbort = new AbortController()
 					const { runtime } = this.ctx
 					try {
+						// If a stop was requested before the start transition actually runs,
+						// do not execute init() at all.
+						if (this.pendingStop) {
+							this.startAbort.abort()
+							return
+						}
 						runtime.beforeStart?.()
 						if (runtime.init) await runtime.init(this.startAbort.signal)
 						if (this.startAbort.signal.aborted || this.pendingStop) return
@@ -320,6 +325,15 @@ export class PluginLifecycleActor {
 		if (event.type === 'STOP') {
 			if (current === 'stopped' || current === 'stopping') return
 			this.pendingStop = true
+			// Abort in-flight init immediately; waiting for the STOP transition can be too late
+			// because onStart awaits init() and blocks the machine dispatch.
+			if (this.startAbort) {
+				try {
+					this.startAbort.abort()
+				} catch {
+					/* ignore */
+				}
+			}
 		}
 		if (event.type === 'START' && (current === 'running' || current === 'starting')) return
 		this.queue = this.queue

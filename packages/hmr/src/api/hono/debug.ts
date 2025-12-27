@@ -12,15 +12,14 @@ interface PluginSchemaInfo {
 }
 
 function getPluginSchemaInfos(ctx: AppEnv['Variables']['plugin_ctx']): PluginSchemaInfo[] {
-	const registry = ctx.loader.registry
-	const names = registry.getLoadedNames()
+	const names = ctx.loader.api.registry.listLoadedNames()
 	const result: PluginSchemaInfo[] = []
 
 	for (const name of names) {
-		const ctor = registry.getPluginByName(name)
+		const ctor = ctx.loader.api.registry.getCtor(name)
 		if (!ctor) continue
-		const schema = registry.getSchema(ctor)
-		const schemaSource = registry.getSchemaSource(ctor)
+		const schema = ctx.loader.api.registry.getSchema(ctor)
+		const schemaSource = ctx.loader.api.registry.getSchemaSource(ctor)
 		result.push({
 			name,
 			hasSchema: !!schema && Object.keys(schema).length > 0,

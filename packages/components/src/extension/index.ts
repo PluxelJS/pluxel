@@ -1,72 +1,89 @@
 // packages/components/src/extension/index.ts
 
-// 类型
-export type {
-	CompiledExtensionModule,
-	ExtensionContext,
-	GlobalExtensionContext,
-	ExtensionManifestEvent,
-	ExtensionManifest,
-	ExtensionMeta,
-	ExtensionPoint,
-	ExtensionPointCtx,
-	ExtensionPointMap,
-	ExtensionPointMeta,
-	ExtensionItem,
-	PluginExtensionContext,
-	PluginUIModule,
-	ExtensionDef,
-	AnyExtensionDef,
-	RouteExtensionDef,
-} from './types'
-export { ExtensionPoints } from './types'
-export {
-	createGlobalExtensionContext,
-	createPluginExtensionContext,
-	isExtensionPluginRunning,
-	toGlobalExtensionContext,
-} from './types'
-
+export { ExtensionErrorBoundary } from './ErrorBoundary'
+// Hooks
+export { useExtensionRuntimeVersion, useExtensionVersion } from './hooks'
 // Registry
 export {
-	extensionRegistry,
 	ExtensionProvider,
+	extensionRegistry,
 	useExtensionContext,
 	useExtensionContextMaybe,
 	useExtensions,
 	useExtensionsWithContext,
 	useRegisterExtension,
 } from './registry'
+// Runtime
+export {
+	getExtensionRuntimeRevision,
+	getPluginRouteComponent,
+	loadExtensionModule,
+	subscribeExtensionRuntimeChanges,
+	unloadExtensionModule,
+} from './runtime'
 
 // 组件 & Slot helpers
 export { ExtensionSlot, ExtensionSlotRender } from './slots/ExtensionSlot'
 export {
-	useExtensionSurface,
 	type ExtensionSurfaceOptions,
 	type ExtensionSurfaceRender,
 	type ExtensionSurfaceRenderPayload,
 	type ExtensionSurfaceResult,
+	useExtensionSurface,
 } from './slots/ExtensionSurface'
-export { ExtensionErrorBoundary } from './ErrorBoundary'
-
-// Runtime
+// 类型
+export type {
+	AnyExtensionDef,
+	BuiltinExtensionBase,
+	BuiltinExtensionDef,
+	BuiltinExtensionKind,
+	BuiltinDocBlock,
+	BuiltinDocBlockKind,
+	BuiltinDocExtensionDef,
+	BuiltinInfoCardBlock,
+	BuiltinInfoCardLayout,
+	BuiltinInfoCardRow,
+	BuiltinRpcArg,
+	BuiltinRpcAutoFormBlock,
+	BuiltinSseRef,
+	BuiltinValue,
+	CompiledExtensionModule,
+	ExtensionContext,
+	ExtensionDef,
+	ExtensionItem,
+	ExtensionManifest,
+	ExtensionManifestEvent,
+	ExtensionMeta,
+	ExtensionPoint,
+	ExtensionPointCtx,
+	ExtensionPointMap,
+	ExtensionPointMeta,
+	GlobalExtensionContext,
+	PluginExtensionContext,
+	PluginUIModule,
+	RouteExtensionDef,
+	UiConfirmPayload,
+	UiConfirmTone,
+	UiNotifyPayload,
+	UiNotifyTone,
+} from './types'
 export {
-	getPluginRouteComponent,
-	getExtensionRuntimeRevision,
-	subscribeExtensionRuntimeChanges,
-	loadExtensionModule,
-	unloadExtensionModule,
-} from './runtime'
-
-// Hooks
-export { useExtensionRuntimeVersion, useExtensionVersion } from './hooks'
+	createGlobalExtensionContext,
+	createPluginExtensionContext,
+	defineDocBlocks,
+	ExtensionPoints,
+	isExtensionPluginRunning,
+	md,
+	blockRef,
+	toGlobalExtensionContext,
+} from './types'
 
 // Vendors (共享依赖)
 export {
-	vendors,
-	initVendors,
 	getVendor,
-	vendorPackages,
-	type Vendors,
+	initVendors,
 	type VendorPackage,
+	type Vendors,
+	vendorPackages,
+	vendors,
 } from './vendors'

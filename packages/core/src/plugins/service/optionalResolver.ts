@@ -86,7 +86,7 @@ export class OptionalResolver {
 	constructor(
 		private readonly getCtx: () => Context,
 		private readonly getContainer: () => PluginDiContainer | undefined,
-		private readonly getInstances: () => Map<PluginIdentifier, BasePlugin>,
+		private readonly getInstance: (id: PluginIdentifier) => BasePlugin | undefined,
 		private readonly isRunning: (id: PluginIdentifier) => boolean,
 		private readonly getLastCommit: () => CommitSummary | undefined,
 		private readonly getDraftContainer: () => PluginDiContainer | undefined,
@@ -137,7 +137,7 @@ export class OptionalResolver {
 		importer: () => Promise<T>,
 		opts?: { onError?: (error: unknown) => void; label?: string },
 	): Promise<T | undefined> {
-		const callerCtx = this.ctx
+		const callerCtx = this.ctx.caller ?? this.ctx
 		try {
 			return await importer()
 		} catch (error) {
@@ -388,7 +388,7 @@ export class OptionalResolver {
 			return undefined
 		}
 
-		const instance = this.getInstances().get(key as any) as InstanceType<T> | undefined
+		const instance = this.getInstance(key) as InstanceType<T> | undefined
 		if (!instance) {
 			this.optionalViews.get(callerCtx)?.delete(key)
 			return undefined

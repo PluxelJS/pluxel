@@ -35,7 +35,7 @@ import {
 import type { FormEventHandler } from 'react'
 import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery } from '../gqty'
-import { createRpcClient } from '../rpc'
+import { createRpcClient, type MarketBatchResult, type PackageSpecInput } from '../rpc'
 import { RouterLinkAdapter } from '../RouterLinkAdapter'
 import { useNotify } from '../hooks'
 import type { PackageRow } from './types'
@@ -49,7 +49,7 @@ import {
 import { CollapsibleIssuesPanel, type IssueData } from './components/CollapsibleIssuesPanel'
 import { OperationLogModal, type OperationLogEntry } from './components/OperationLogModal'
 import { IconPackages, IconSearch as IconSearchEmpty } from '@tabler/icons-react'
-import { EmptyState } from '../../components'
+import { EmptyState, ErrorState } from '../../components'
 
 export function PackageManagerPage() {
 	const [showAllPackages, setShowAllPackages] = useState(false)
@@ -297,22 +297,7 @@ export function PackageManagerPage() {
 	}
 
 	const summarizeBatchResult = useCallback(
-		(
-			result:
-				| {
-						ok: boolean
-						results: Array<{
-							ok: boolean
-							spec?: { name?: string; raw?: string } | null
-							code?: string
-							error?: string | null
-						}>
-				  }
-				| null
-				| undefined,
-			successTitle: string,
-			fallbackError: string,
-		) => {
+		(result: MarketBatchResult | null | undefined, successTitle: string, fallbackError: string) => {
 			if (!result) {
 				throw new Error(fallbackError)
 			}
@@ -328,11 +313,14 @@ export function PackageManagerPage() {
 					color: 'green',
 				})
 			}
-			if (failures.length) {
-				const messages = failures.map((item) => {
-					const label = item.spec?.name || item.spec?.raw || '未知包'
-					return `${label}: ${item.error ?? item.code ?? '未知错误'}`
-				})
+			const messages = failures.map((item) => {
+				const label = item.spec?.name || item.spec?.raw || '未知包'
+				return `${label}: ${item.error ?? item.code ?? '未知错误'}`
+			})
+			if (result.error) {
+				messages.push(result.error)
+			}
+			if (messages.length) {
 				notify({
 					title: '部分操作失败',
 					message: summarizeList(messages, 3, '个失败', '；'),
@@ -342,6 +330,32 @@ export function PackageManagerPage() {
 		},
 		[notify],
 	)
+
+	const runMarketMutation = useCallback(
+		async (
+			action: 'install' | 'uninstall' | 'remove' | 'reinstall' | 'reload' | 'retry',
+			specs: PackageSpecInput[],
+			options?: { force?: boolean; fresh?: boolean; reinstall?: boolean },
+		): Promise<MarketBatchResult> => {
+			using rpc = createRpcClient()
+			return rpc.market().mutate({ action, specs, options })
+		},
+		[],
+	)
+
+	const applyOperationLogs = useCallback((result?: MarketBatchResult | null) => {
+		setOperationLogs((prev) =>
+			prev.map((log) => {
+				const entry = result?.results?.find(
+					(r) => r.spec?.name === log.label || r.spec?.raw === log.label,
+				)
+				if (!entry) return { ...log, status: 'success' }
+				return entry.ok
+					? { ...log, status: 'success' }
+					: { ...log, status: 'error', message: entry.error ?? entry.code ?? '未知错误' }
+			}),
+		)
+	}, [])
 
 	const handleInstall = async () => {
 		const specs = pendingInstallSpecs
@@ -359,17 +373,39 @@ export function PackageManagerPage() {
 		setInstallLoading(true)
 
 		try {
-			using rpc = createRpcClient()
+			const specKey = (spec?: PackageSpecInput) => {
+				const raw = spec?.raw?.trim()
+				if (raw) return raw.toLowerCase()
+				const name = spec?.name?.trim() ?? ''
+				const hint = spec?.version ?? spec?.tag
+				return (hint ? `${name}@${hint}` : name).toLowerCase()
+			}
+
+			const result = await runMarketMutation(
+				'install',
+				specs.map((raw) => ({ raw })),
+				{ force: forceInstall },
+			)
+			if (!result) {
+				throw new Error('安装接口无返回结果')
+			}
+			if (result.error) {
+				failures.push(result.error)
+			}
+
+			const resultsByKey = new Map(
+				result.results.map((entry) => [specKey(entry.spec ?? undefined), entry]),
+			)
 			for (const raw of specs) {
-				try {
-					const result = await rpc.market().install({ raw }, { force: forceInstall })
-					if (result.ok === false) {
-						failures.push(`${raw}: ${result.error ?? result.code ?? '未知错误'}`)
-					} else {
-						successes.push(result.spec?.name ?? raw)
-					}
-				} catch (error: any) {
-					failures.push(`${raw}: ${error?.message ?? '网络错误'}`)
+				const entry = resultsByKey.get(specKey({ raw }))
+				if (!entry) {
+					failures.push(`${raw}: 未返回结果`)
+					continue
+				}
+				if (entry.ok === false) {
+					failures.push(`${raw}: ${entry.error ?? entry.code ?? '未知错误'}`)
+				} else {
+					successes.push(entry.spec?.name ?? raw)
 				}
 			}
 		} finally {
@@ -420,20 +456,8 @@ export function PackageManagerPage() {
 		setOperationLogOpen(true)
 		setReloadBatchLoading(true)
 		try {
-			using rpc = createRpcClient()
-			const result = await rpc.market().reloadMany(selectedRows.map(toSpecInput), { fresh })
-			// 更新日志状态
-			setOperationLogs((prev) =>
-				prev.map((log) => {
-					const entry = result?.results?.find(
-						(r) => r.spec?.name === log.label || r.spec?.raw === log.label,
-					)
-					if (!entry) return { ...log, status: 'success' }
-					return entry.ok
-						? { ...log, status: 'success' }
-						: { ...log, status: 'error', message: entry.error ?? entry.code ?? '未知错误' }
-				}),
-			)
+			const result = await runMarketMutation('reload', selectedRows.map(toSpecInput), { fresh })
+			applyOperationLogs(result)
 			summarizeBatchResult(result, '已重载所选包', '重载失败')
 			if (result?.results?.length) {
 				await refetch()
@@ -460,21 +484,10 @@ export function PackageManagerPage() {
 		setOperationLogOpen(true)
 		setReinstallBatchLoading(true)
 		try {
-			using rpc = createRpcClient()
-			const result = await rpc
-				.market()
-				.reinstallMany(selectedRows.map(toSpecInput), { force: true })
-			setOperationLogs((prev) =>
-				prev.map((log) => {
-					const entry = result?.results?.find(
-						(r) => r.spec?.name === log.label || r.spec?.raw === log.label,
-					)
-					if (!entry) return { ...log, status: 'success' }
-					return entry.ok
-						? { ...log, status: 'success' }
-						: { ...log, status: 'error', message: entry.error ?? entry.code ?? '未知错误' }
-				}),
-			)
+			const result = await runMarketMutation('reinstall', selectedRows.map(toSpecInput), {
+				force: true,
+			})
+			applyOperationLogs(result)
 			summarizeBatchResult(result, '已重装运行态', '重装失败')
 			if (result?.results?.length) {
 				await refetch()
@@ -501,19 +514,8 @@ export function PackageManagerPage() {
 		setOperationLogOpen(true)
 		setUninstallBatchLoading(true)
 		try {
-			using rpc = createRpcClient()
-			const result = await rpc.market().uninstallMany(selectedRows.map(toSpecInput))
-			setOperationLogs((prev) =>
-				prev.map((log) => {
-					const entry = result?.results?.find(
-						(r) => r.spec?.name === log.label || r.spec?.raw === log.label,
-					)
-					if (!entry) return { ...log, status: 'success' }
-					return entry.ok
-						? { ...log, status: 'success' }
-						: { ...log, status: 'error', message: entry.error ?? entry.code ?? '未知错误' }
-				}),
-			)
+			const result = await runMarketMutation('uninstall', selectedRows.map(toSpecInput))
+			applyOperationLogs(result)
 			summarizeBatchResult(result, '已卸载运行态', '卸载失败')
 			if (result?.results?.length) {
 				await refetch()
@@ -541,19 +543,8 @@ export function PackageManagerPage() {
 		setOperationLogOpen(true)
 		setRemoveBatchLoading(true)
 		try {
-			using rpc = createRpcClient()
-			const result = await rpc.market().removeMany(selectedRows.map(toSpecInput))
-			setOperationLogs((prev) =>
-				prev.map((log) => {
-					const entry = result?.results?.find(
-						(r) => r.spec?.name === log.label || r.spec?.raw === log.label,
-					)
-					if (!entry) return { ...log, status: 'success' }
-					return entry.ok
-						? { ...log, status: 'success' }
-						: { ...log, status: 'error', message: entry.error ?? entry.code ?? '未知错误' }
-				}),
-			)
+			const result = await runMarketMutation('remove', selectedRows.map(toSpecInput))
+			applyOperationLogs(result)
 			summarizeBatchResult(result, '已彻底移除', '移除失败')
 			if (result?.results?.length) {
 				await refetch()
@@ -576,8 +567,7 @@ export function PackageManagerPage() {
 	const handleLoad = async (row: PackageRow) => {
 		setReloadBatchLoading(true)
 		try {
-			using rpc = createRpcClient()
-			const result = await rpc.market().reloadMany([toSpecInput(row)], { fresh: true })
+			const result = await runMarketMutation('reload', [toSpecInput(row)], { fresh: true })
 			summarizeBatchResult(result, '已加载包', '加载失败')
 			if (result?.results?.length) {
 				await refetch()
@@ -645,12 +635,12 @@ export function PackageManagerPage() {
 		const spec = toSpecInput(row)
 		setReinstallLoading(true)
 		try {
-			using rpc = createRpcClient()
-			const result = await rpc.market().reinstall(spec, { force: true })
-			if (result.ok === false) {
+			const result = await runMarketMutation('reinstall', [spec], { force: true })
+			const entry = result?.results?.[0]
+			if (!entry || result?.error || entry.ok === false) {
 				notify({
 					title: '重装失败',
-					message: result.error ?? result.code ?? '操作失败，请稍后重试',
+					message: result?.error ?? entry?.error ?? entry?.code ?? '操作失败，请稍后重试',
 					color: 'red',
 				})
 				return
@@ -676,12 +666,12 @@ export function PackageManagerPage() {
 		const spec = toSpecInput(row)
 		setUninstallLoading(true)
 		try {
-			using rpc = createRpcClient()
-			const result = await rpc.market().uninstall(spec)
-			if (result.ok === false) {
+			const result = await runMarketMutation('uninstall', [spec])
+			const entry = result?.results?.[0]
+			if (!entry || result?.error || entry.ok === false) {
 				notify({
 					title: '卸载失败',
-					message: result.error ?? result.code ?? '操作失败，请稍后再试',
+					message: result?.error ?? entry?.error ?? entry?.code ?? '操作失败，请稍后再试',
 					color: 'red',
 				})
 				return
@@ -725,12 +715,12 @@ export function PackageManagerPage() {
 		const spec = toSpecInput(row)
 		setRemoveLoading(true)
 		try {
-			using rpc = createRpcClient()
-			const result = await rpc.market().remove(spec)
-			if (result.ok === false) {
+			const result = await runMarketMutation('remove', [spec])
+			const entry = result?.results?.[0]
+			if (!entry || result?.error || entry.ok === false) {
 				notify({
 					title: '移除失败',
-					message: result.error ?? result.code ?? '操作失败，请稍后再试',
+					message: result?.error ?? entry?.error ?? entry?.code ?? '操作失败，请稍后再试',
 					color: 'red',
 				})
 				return

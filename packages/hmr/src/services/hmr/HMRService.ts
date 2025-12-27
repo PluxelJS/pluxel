@@ -1,7 +1,7 @@
 import { fileURLToPath } from 'node:url'
 import { type Context, Injectable } from '@pluxel/core'
 import { enable as enableDebug } from 'obug'
-import { dirname, resolve } from 'pathe'
+import { dirname, isAbsolute, resolve } from 'pathe'
 import { createServer, type DevEnvironment, normalizePath, type Plugin, type ViteDevServer } from 'vite'
 import {
 	buildHmrViteConfig,
@@ -30,8 +30,19 @@ import {
 } from './runtime-shims'
 
 export interface HMRConfig {
-	/** 业务扫描边界：仅这些目录下的 `.ts` 会被纳入 HMR 入口挑选（`.tsx` 通常由浏览器端 HMR 处理） */
+	/** 业务扫描边界：默认仅这些目录下的 `.ts` 会被纳入 HMR 入口挑选（`.tsx`/`.jsx` 默认排除） */
 	dir: string[]
+	/**
+	 * 额外的 HMR include glob（优先级高于默认的 `dir/**` + `.ts`）。
+	 * - 需要完整路径或相对 cwd 的 glob
+	 * - 适用于强制隔离“插件 HMR”与“前端 HMR”
+	 */
+	include?: string[]
+	/**
+	 * 额外的 HMR exclude glob（默认已排除 `node_modules`/`.d.ts`）。
+	 * - 需要完整路径或相对 cwd 的 glob
+	 */
+	exclude?: string[]
 	/** 额外允许 Vite Dev Server 访问的目录（绝对路径或会基于 cwd 解析的相对路径） */
 	fsAllow?: string[]
 	/** 计时归因策略：'off' 关闭预取归因，仅保留 evaluate/inject；'prefetch' 预取受影响文件做 transform 计时（默认） */
@@ -84,10 +95,10 @@ const serviceName = 'hmrService' as const
 const HMR_EXPORT_CONDITIONS = ['@pluxel/hmr', '@pluxel/source', 'import', 'module', 'default'] as const
 
 declare module '@pluxel/core' {
-	interface Context {
-		[serviceName]: HMRService
-	}
 	namespace Context {
+		interface Services {
+			[serviceName]: HMRService
+		}
 		interface Config {
 			[serviceName]: HMRConfig
 		}
@@ -110,6 +121,8 @@ export class HMRService {
 	private readonly env: HmrEnvironment
 	public readonly toolkit: HmrToolkit
 	public readonly path: HmrPathApi
+	private readonly includeGlobs?: string[]
+	private readonly excludeGlobs?: string[]
 
 	private readonly deps: ResolvedHMRDependencyConfig
 	private readonly runtimeShims: RuntimeShimRegistry
@@ -135,14 +148,18 @@ export class HMRService {
 	private readonly workspaceConditions = [...HMR_EXPORT_CONDITIONS]
 
 	constructor(
-		private readonly ctx: Context,
+		public ctx: Context,
 		private readonly config: HMRConfig,
 	) {
 		this.scanRootsAbs = unique(this.config.dir.map((dir) => normalizePath(resolve(this.cwd, dir))))
+		this.includeGlobs = resolveGlobPatterns(this.config.include, this.cwd)
+		this.excludeGlobs = resolveGlobPatterns(this.config.exclude, this.cwd)
 		this.env = new HmrEnvironment(this.ctx, {
 			cwd: this.cwd,
 			scanRootsAbs: this.scanRootsAbs,
 			workspaceConditions: this.workspaceConditions,
+			includeGlobs: this.includeGlobs,
+			excludeGlobs: this.excludeGlobs,
 		})
 		this.toolkit = this.env.toolkit
 		this.path = this.toolkit.path
@@ -200,6 +217,19 @@ export class HMRService {
 		this.runner.dropModuleCacheEntries(ids)
 	}
 
+	/**
+	 * Execute and (optionally) inject plugin modules, using the same pipeline as HMR updates.
+	 *
+	 * This is intentionally a thin wrapper around the internal executor so tests and tooling can
+	 * trigger evaluation without reaching into private fields.
+	 */
+	public executeFiles(filesPath: readonly string[], keepOrder = true) {
+		if (!this.executor) {
+			throw new Error('HMRService not initialized (Vite server not configured yet)')
+		}
+		return this.executor.runAndLoadAll(filesPath, keepOrder)
+	}
+
 	public async start(): Promise<void> {
 		const serverFsAllow = resolveFsAllowList({
 			cwd: this.cwd,
@@ -215,6 +245,8 @@ export class HMRService {
 			deps: this.deps,
 			runnerPlugin: this.plugin,
 			honoPlugin: this.ctx.honoService.viteHonoDevServer,
+			includeGlobs: this.includeGlobs,
+			excludeGlobs: this.excludeGlobs,
 		})
 		const server = await createServer(serverConfig)
 		await server.listen()
@@ -223,36 +255,29 @@ export class HMRService {
 	}
 
 	private createRunnerPlugin(): Plugin {
-		const service = this
 		const plugin: Plugin = {
 			name: 'pluxel-runner',
 			enforce: 'pre',
 			apply: 'serve',
 
-				configureServer: async (server) => {
-					this.vite = server
-					this.setServerRoot(server.config.root)
+			configureServer: async (server) => {
+				this.vite = server
+				this.setServerRoot(server.config.root)
 
-					this.runner.init(server, {
-						cjsExternal: this.deps.cjsExternal,
-						bridgeModules: this.deps.bridgeModules,
-						skipPlugin: this.plugin,
-					})
-					this.ssrEnv = this.runner.env
+				this.runner.init(server, {
+					cjsExternal: this.deps.cjsExternal,
+					bridgeModules: this.deps.bridgeModules,
+					skipPlugin: this.plugin,
+				})
+				this.ssrEnv = this.runner.env
 
-					await this.runner.bridgeHostModules(this.deps.bridgeModules, this.path, this.ctx.logger as any)
-					await this.runner.assertBridgedSingletons(this.deps.bridgeModules)
+				await this.runner.bridgeHostModules(this.deps.bridgeModules, this.path, this.ctx.logger as any)
+				await this.runner.assertBridgedSingletons(this.deps.bridgeModules)
 
-					this.executor = new HmrExecutor(
-						this.ctx,
-						this.runner,
-					this.path,
-					this.timing,
-					{
-						dbgModules: this.dbg.modules.enabled ? this.dbg.modules : null,
-						useRequireShims: this.useRequireShims,
-					},
-				)
+				this.executor = new HmrExecutor(this.ctx, this.runner, this.path, this.timing, {
+					dbgModules: this.dbg.modules.enabled ? this.dbg.modules : null,
+					useRequireShims: this.useRequireShims,
+				})
 
 				this.batchProcessor = new HmrBatchProcessor(
 					this.ctx,
@@ -286,25 +311,25 @@ export class HMRService {
 				return []
 			},
 
-			resolveId: async function (id, importer) {
-				const shimResolved = service.runtimeShims.resolveId(id)
+			resolveId: async (id, importer) => {
+				const shimResolved = this.runtimeShims.resolveId(id)
 				if (shimResolved) return shimResolved
 
-				if (service.ctx.scanService) {
+				if (this.ctx.scanService) {
 					// Never let workspace resolution rewrite bridged singleton modules, otherwise we may end up
 					// evaluating a second copy (e.g. workspace TS sources) in the runner.
-					if (service.isHardBridgeModule(id) || service.isBridgeModule(id)) {
+					if (this.isHardBridgeModule(id) || this.isBridgeModule(id)) {
 						return null
 					}
 
-					const resolved = await service.resolveBareWorkspaceEntry(id, importer ?? null)
+					const resolved = await this.resolveBareWorkspaceEntry(id, importer ?? null)
 					if (resolved) return { id: resolved }
 				}
 				return null
 			},
 
 			load: (id) => {
-				return service.runtimeShims.load(id)
+				return this.runtimeShims.load(id)
 			},
 		}
 		return plugin
@@ -343,7 +368,7 @@ export class HMRService {
 		const endScan = startTimer()
 		const entries = await collectColdStartEntries({
 			rootsAbs: this.scanRootsAbs,
-			anchors: this.ctx.loader.pathAnchors,
+			anchors: this.getAnchorsClean(),
 			path: this.path,
 			scanService: this.ctx.scanService,
 			workspaceConditions: this.workspaceConditions,
@@ -386,7 +411,11 @@ export class HMRService {
 
 	private getAnchorsClean() {
 		this.anchorsCleanCache.clear()
-		for (const a of this.ctx.loader.pathAnchors ?? new Set<string>()) this.anchorsCleanCache.add(this.path.toClean(a))
+		for (const a of this.ctx.loader.api.anchors.list()) {
+			const clean = this.path.toClean(a)
+			if (!this.toolkit.pathFilter(clean)) continue
+			this.anchorsCleanCache.add(clean)
+		}
 		return this.anchorsCleanCache
 	}
 
@@ -404,4 +433,14 @@ export class HMRService {
 		return false
 	}
 
+}
+
+function resolveGlobPatterns(patterns: readonly string[] | undefined, cwd: string): string[] | undefined {
+	if (!patterns?.length) return undefined
+	return patterns.map((pattern) => {
+		const negated = pattern.startsWith('!')
+		const raw = negated ? pattern.slice(1) : pattern
+		const normalized = isAbsolute(raw) ? normalizePath(raw) : normalizePath(resolve(cwd, raw))
+		return negated ? `!${normalized}` : normalized
+	})
 }

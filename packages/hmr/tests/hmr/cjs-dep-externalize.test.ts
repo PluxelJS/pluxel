@@ -25,6 +25,7 @@ describe('HMR CJS dependency handling', () => {
 			)
 
 			const errorLogs: Array<{ msg: string; obj: any }> = []
+			const anchors = new Set<string>()
 			const ctx = {
 				logger: {
 					info() {},
@@ -34,7 +35,12 @@ describe('HMR CJS dependency handling', () => {
 					},
 				},
 				loader: {
-					pathAnchors: new Set<string>(),
+					api: {
+						anchors: {
+							list: () => anchors,
+							remove: (id: string) => anchors.delete(id),
+						},
+					},
 					beginBatch() {
 						return {
 							replaceModule: async () => false,
@@ -91,10 +97,10 @@ describe('HMR CJS dependency handling', () => {
 					honoPlugin: { name: 'noop' },
 					port: 0,
 				}),
-				server: { port: 0, middlewareMode: false, fs: { allow: fsAllow } },
+				server: { middlewareMode: true, fs: { allow: fsAllow } },
 			})
 			try {
-				await server.listen()
+				await hmr.executeFiles([join(root, 'entry.ts')])
 			} finally {
 				await server.close()
 			}
@@ -130,6 +136,7 @@ describe('HMR CJS dependency handling', () => {
 			)
 
 			const errorLogs: Array<{ msg: string; obj: any }> = []
+			const anchors = new Set<string>()
 			const ctx = {
 				logger: {
 					info() {},
@@ -139,7 +146,12 @@ describe('HMR CJS dependency handling', () => {
 					},
 				},
 				loader: {
-					pathAnchors: new Set<string>(),
+					api: {
+						anchors: {
+							list: () => anchors,
+							remove: (id: string) => anchors.delete(id),
+						},
+					},
 					beginBatch() {
 						return {
 							replaceModule: async () => false,
@@ -196,10 +208,10 @@ describe('HMR CJS dependency handling', () => {
 					honoPlugin: { name: 'noop' },
 					port: 0,
 				}),
-				server: { port: 0, middlewareMode: false, fs: { allow: fsAllow } },
+				server: { middlewareMode: true, fs: { allow: fsAllow } },
 			})
 			try {
-				await server.listen()
+				await hmr.executeFiles([join(root, 'entry.ts')])
 			} finally {
 				await server.close()
 			}
@@ -242,6 +254,7 @@ describe('HMR CJS dependency handling', () => {
 			)
 
 			const errorLogs: Array<{ msg: string; obj: any }> = []
+			const anchors = new Set<string>()
 			const ctx = {
 				logger: {
 					info() {},
@@ -257,7 +270,12 @@ describe('HMR CJS dependency handling', () => {
 					},
 				},
 				loader: {
-					pathAnchors: new Set<string>(),
+					api: {
+						anchors: {
+							list: () => anchors,
+							remove: (id: string) => anchors.delete(id),
+						},
+					},
 					beginBatch() {
 						return {
 							replaceModule: async () => false,
@@ -314,10 +332,10 @@ describe('HMR CJS dependency handling', () => {
 					honoPlugin: { name: 'noop' },
 					port: 0,
 				}),
-				server: { port: 0, middlewareMode: false, fs: { allow: fsAllow } },
+				server: { middlewareMode: true, fs: { allow: fsAllow } },
 			})
 			try {
-				await server.listen()
+				await hmr.executeFiles([join(root, 'entry.ts')])
 			} finally {
 				await server.close()
 			}
@@ -338,6 +356,7 @@ describe('HMR CJS dependency handling', () => {
 			writeFileSync(
 				join(root, 'tsconfig.json'),
 				JSON.stringify({
+					include: ['**/*'],
 					compilerOptions: {
 						baseUrl: '.',
 						paths: {
@@ -356,10 +375,16 @@ describe('HMR CJS dependency handling', () => {
 			)
 			writeFileSync(join(root, 'entry.ts'), "import pkg from 'cjs-pkg'; export const platform = pkg.platform;\n")
 
+			const anchors = new Set<string>()
 			const ctx = {
 				logger: { info() {}, warn() {}, error() {} },
 				loader: {
-					pathAnchors: new Set<string>(),
+					api: {
+						anchors: {
+							list: () => anchors,
+							remove: (id: string) => anchors.delete(id),
+						},
+					},
 					beginBatch() {
 						return {
 							replaceModule: async () => false,
@@ -419,9 +444,9 @@ describe('HMR CJS dependency handling', () => {
 						honoPlugin: { name: 'noop' },
 						port: 0,
 					}),
-					server: { port: 0, middlewareMode: false, fs: { allow: fsAllow } },
+					server: { middlewareMode: true, fs: { allow: fsAllow } },
 				})
-				await server.listen()
+				await hmr.executeFiles([join(root, 'entry.ts')])
 			} catch (e) {
 				thrown = e
 			} finally {
@@ -435,6 +460,124 @@ describe('HMR CJS dependency handling', () => {
 			expect(thrown).toBeTruthy()
 			expect(String(thrown?.message ?? '')).toContain('cjs-pkg')
 			expect(String(thrown?.message ?? '')).not.toContain('rolldown-vite')
+		} finally {
+			rmSync(root, { recursive: true, force: true })
+		}
+	})
+
+	it('externalizes marked CJS deps even when resolved to /@fs/ file URLs', async () => {
+		const root = mkdtempSync(join(tmpdir(), 'pluxel-hmr-cjs-fsurl-'))
+		try {
+			// Force a bare specifier to resolve into a local .cjs file via tsconfig paths.
+			mkdirSync(join(root, 'cjs-pkg'), { recursive: true })
+			writeFileSync(
+				join(root, 'tsconfig.json'),
+				JSON.stringify({
+					include: ['**/*'],
+					compilerOptions: {
+						baseUrl: '.',
+						paths: {
+							'cjs-pkg': ['./cjs-pkg/index.cjs'],
+						},
+					},
+				}),
+			)
+			writeFileSync(
+				join(root, 'cjs-pkg', 'package.json'),
+				JSON.stringify({ name: 'cjs-pkg', version: '1.0.0' }),
+			)
+			writeFileSync(
+				join(root, 'cjs-pkg', 'index.cjs'),
+				"const { platform } = require('os'); module.exports = { platform };\n",
+			)
+			writeFileSync(
+				join(root, 'entry.ts'),
+				"import pkg from 'cjs-pkg'; export const platform = pkg.platform;\n",
+			)
+
+			const errorLogs: Array<{ msg: string; obj: any }> = []
+			const anchors = new Set<string>()
+			const ctx = {
+				logger: {
+					info() {},
+					warn() {},
+					error(obj: any, msg: string) {
+						errorLogs.push({ msg, obj })
+					},
+				},
+				loader: {
+					api: {
+						anchors: {
+							list: () => anchors,
+							remove: (id: string) => anchors.delete(id),
+						},
+					},
+					beginBatch() {
+						return {
+							replaceModule: async () => false,
+							rollback() {},
+							commit() {},
+						}
+					},
+					pruneModule() {},
+				},
+				registry: {
+					commit: async () => ({ ok: true }),
+					resetDraft() {},
+					container: { services: new Map() },
+				},
+				honoService: { viteHonoDevServer: { name: 'noop', apply: 'serve', configureServer() {} } },
+			} as any
+
+			const hmr = new HMRService(ctx, {
+				dir: [root],
+				attribution: 'off',
+				deps: {
+					bridgeModules: [],
+					ssrExternal: [],
+					ssrNoExternal: [],
+					cjsExternal: ['cjs-pkg'],
+					optimizeDepsInclude: [],
+					optimizeDepsInterop: [],
+				},
+				log: { useColors: false },
+			})
+			hmr.setServerRoot(root)
+
+			const deps = resolveHMRDependencyConfig({
+				bridgeModules: [],
+				ssrExternal: [],
+				ssrNoExternal: [],
+				cjsExternal: ['cjs-pkg'],
+				optimizeDepsInclude: [],
+				optimizeDepsInterop: [],
+			})
+			const fsAllow = resolveFsAllowList({
+				cwd: root,
+				cwdNormalized: normalizePath(root),
+				scanRoots: [normalizePath(root)],
+			})
+
+			const server = await createServer({
+				...buildHmrViteConfig({
+					root,
+					fsAllow,
+					scanDirs: [root],
+					deps,
+					runnerPlugin: (hmr as any).plugin,
+					honoPlugin: { name: 'noop' },
+					port: 0,
+				}),
+				server: { middlewareMode: true, fs: { allow: fsAllow } },
+			})
+			try {
+				await hmr.executeFiles([join(root, 'entry.ts')])
+			} finally {
+				await server.close()
+			}
+
+			const executeFailed = errorLogs.find((e) => e.msg === '[HMR] execute failed')
+			expect(executeFailed).toBeUndefined()
 		} finally {
 			rmSync(root, { recursive: true, force: true })
 		}

@@ -1,10 +1,13 @@
 import { createServerModuleRunner, type DevEnvironment, type ViteDevServer } from 'vite'
 import { EvaluatedModules, type EvaluatedModuleNode, type ModuleRunner } from 'vite/module-runner'
+import { ESModulesEvaluator } from 'vite/module-runner'
 import type { Plugin } from 'vite'
-import { realpath } from 'node:fs/promises'
-import { pathToFileURL } from 'node:url'
+import { existsSync } from 'node:fs'
+import { readFile, realpath } from 'node:fs/promises'
+import { fileURLToPath, pathToFileURL } from 'node:url'
+import { dirname, resolve } from 'pathe'
 import type { HmrPathApi } from './environment'
-import { matchesSpecifierPattern } from './internals'
+import { findNearestPackageRoot, matchesSpecifierPattern } from './internals'
 
 export type PrimeModuleCacheEntryParams = {
 	id: string
@@ -23,6 +26,12 @@ export type HmrRunnerInitOptions = {
 
 const HARD_BRIDGE_IDS = ['@pluxel/core', '@pluxel/hmr', '@pluxel/context'] as const
 const HARD_BRIDGE_PREFIXES = ['@pluxel/core/', '@pluxel/hmr/', '@pluxel/context/'] as const
+const DEBUG_FETCH = Boolean(process.env.PLUXEL_HMR_DEBUG_FETCH)
+const dbgFetch = (...args: any[]) => {
+	if (!DEBUG_FETCH) return
+	// eslint-disable-next-line no-console
+	console.warn('[HMR][fetchModule]', ...args)
+}
 
 export class HmrRunner {
 	public readonly evaluatedModules = new EvaluatedModules()
@@ -33,6 +42,8 @@ export class HmrRunner {
 	private skipPlugin_: Plugin | null = null
 	private bridgeModules_: readonly string[] = []
 	private realpathCache = new Map<string, Promise<string>>()
+	private packageNameByPackageRoot = new Map<string, Promise<string | null>>()
+	private packageNameByFile = new Map<string, Promise<string | null>>()
 	private bridgedHostExports = new Map<string, any>()
 
 	init(server: ViteDevServer, opts: HmrRunnerInitOptions = {}) {
@@ -40,6 +51,10 @@ export class HmrRunner {
 		this.runner_ = createServerModuleRunner(this.env_, {
 			hmr: false,
 			evaluatedModules: this.evaluatedModules,
+			sourcemapInterceptor: 'prepareStackTrace',
+			// Ensure stack traces are aligned when running modules via AsyncFunction wrapper.
+			// (ESModulesEvaluator applies the appropriate `startOffset` for inlined sourcemaps.)
+			evaluator: new ESModulesEvaluator(),
 		})
 
 		this.cjsExternal_ = opts.cjsExternal ?? []
@@ -184,15 +199,34 @@ export class HmrRunner {
 		if (!url) return null
 
 		const rawId = unwrapViteId(url)
-		if (!isBareSpecifier(rawId)) return null
-
-		// Bridge core runtime packages: always externalize to the host runtime so singleton identity is preserved.
-		if (isHardBridgeSpecifier(rawId) || this.isBridgeModule(rawId)) {
-			return await this.externalizeBareId(rawId, importer, { typeHint: 'module' })
+		if (DEBUG_FETCH && (rawId.includes('cjs') || rawId.includes('@napi-rs') || rawId.includes('napi-rs'))) {
+			dbgFetch({ url, rawId, importer, cjsExternal: this.cjsExternal_ })
 		}
 
-		if (!this.isCjsExternal(rawId)) return null
-		return await this.externalizeBareId(rawId, importer, { typeHint: 'commonjs' })
+		if (isBareSpecifier(rawId)) {
+			// Bridge core runtime packages: always externalize to the host runtime so singleton identity is preserved.
+			if (isHardBridgeSpecifier(rawId) || this.isBridgeModule(rawId)) {
+				return await this.externalizeBareId(rawId, importer, { typeHint: 'module' })
+			}
+
+			if (!this.isCjsExternal(rawId)) return null
+			if (DEBUG_FETCH && (rawId.includes('cjs') || rawId.includes('@napi-rs') || rawId.includes('napi-rs'))) {
+				dbgFetch('externalize bare as CJS', rawId)
+			}
+			return await this.externalizeBareId(rawId, importer, { typeHint: 'commonjs' })
+		}
+
+		// Some resolvers (tsconfig paths, workspace aliases) can turn a marked bare import into a /@fs/ file URL
+		// before the runner sees it. In that case we infer the package name from the file path and apply the
+		// user's `cjsExternal` patterns against that name.
+		if (this.cjsExternal_.length === 0) return null
+		const fsPath = urlToFsPath(this.env.config.root, rawId)
+		if (!fsPath) return null
+		if (!(await this.isCjsExternalFile(fsPath))) return null
+		if (DEBUG_FETCH && (rawId.includes('cjs') || rawId.includes('@napi-rs') || rawId.includes('napi-rs'))) {
+			dbgFetch('externalize fsPath as CJS', fsPath)
+		}
+		return await this.externalizeFsPath(fsPath, { typeHint: 'commonjs' })
 	}
 
 	private async externalizeBareId(
@@ -220,11 +254,56 @@ export class HmrRunner {
 		}
 	}
 
+	private async externalizeFsPath(
+		fsPath: string,
+		opts: { typeHint: 'module' | 'commonjs' },
+	): Promise<any> {
+		const canonical = await this.realpathCached(fsPath)
+		const type = inferModuleTypeFromPath(canonical, opts.typeHint)
+		return {
+			externalize: pathToFileURL(canonical).toString(),
+			type,
+		}
+	}
+
 	private isCjsExternal(specifier: string) {
 		for (const pattern of this.cjsExternal_) {
 			if (matchesSpecifierPattern(specifier, pattern)) return true
 		}
 		return false
+	}
+
+	private async isCjsExternalFile(fsPath: string) {
+		const canonical = await this.realpathCached(fsPath)
+		const cached = this.packageNameByFile.get(canonical)
+		if (cached) {
+			const name = await cached
+			return name ? this.isCjsExternal(name) : false
+		}
+		const promise = this.resolvePackageNameForFile(canonical)
+		this.packageNameByFile.set(canonical, promise)
+		const name = await promise
+		return name ? this.isCjsExternal(name) : false
+	}
+
+	private resolvePackageNameForFile(fsPath: string): Promise<string | null> {
+		const pkgRoot = findNearestPackageRoot(dirname(fsPath))
+		if (!pkgRoot) return Promise.resolve(null)
+		const cached = this.packageNameByPackageRoot.get(pkgRoot)
+		if (cached) return cached
+		const promise = this.readPackageName(pkgRoot)
+		this.packageNameByPackageRoot.set(pkgRoot, promise)
+		return promise
+	}
+
+	private async readPackageName(packageRoot: string): Promise<string | null> {
+		try {
+			const json = await readFile(`${packageRoot}/package.json`, 'utf8')
+			const parsed = JSON.parse(json)
+			return typeof parsed?.name === 'string' ? parsed.name : null
+		} catch {
+			return null
+		}
 	}
 
 	private isBridgeModule(specifier: string) {
@@ -278,6 +357,32 @@ function cleanUrl(id: string) {
 function idToFsPath(id: string): string | null {
 	const cleaned = cleanUrl(id)
 	if (cleaned.startsWith('/@fs/')) return cleaned.slice('/@fs'.length)
-	if (cleaned.startsWith('/')) return cleaned
 	return null
+}
+
+function urlToFsPath(serverRoot: string, idOrUrl: string): string | null {
+	if (idOrUrl.startsWith('file://')) {
+		try {
+			return fileURLToPath(idOrUrl)
+		} catch {
+			return null
+		}
+	}
+	const asFs = idToFsPath(idOrUrl)
+	if (asFs) return asFs
+
+	const cleaned = cleanUrl(idOrUrl)
+	if (!cleaned.startsWith('/')) return null
+
+	// `/abs/path` may be a real filesystem path, but it can also be a Vite URL path (root-relative).
+	// Prefer real paths when they exist; otherwise resolve against the server root.
+	if (existsSync(cleaned)) return cleaned
+	return resolve(serverRoot, cleaned.slice(1))
+}
+
+function inferModuleTypeFromPath(fsPath: string, hint: 'module' | 'commonjs') {
+	const lower = fsPath.toLowerCase()
+	if (lower.endsWith('.mjs') || lower.endsWith('.mts')) return 'module'
+	if (lower.endsWith('.cjs') || lower.endsWith('.cts')) return 'commonjs'
+	return hint
 }

@@ -2,8 +2,10 @@ import { type Context, Injectable } from '@pluxel/context'
 
 const serviceName = 'logger' as const
 declare module '@pluxel/context' {
-	export interface Context {
-		[serviceName]: LoggerService
+	namespace Context {
+		interface Services {
+			[serviceName]: LoggerService
+		}
 	}
 }
 
@@ -11,7 +13,7 @@ declare module '@pluxel/context' {
 	key: serviceName,
 })
 export class LoggerService {
-	constructor(private ctx: Context) {}
+	constructor(public ctx: Context) {}
 
 	private write(level: 'trace' | 'debug' | 'info' | 'warn' | 'error', ...args: unknown[]) {
 		// 选一个 console 方法；如果不存在，就用 log

@@ -4,8 +4,10 @@ import type { ContentfulStatusCode } from 'hono/utils/http-status'
 const serviceName = 'authGuard' as const
 
 declare module '@pluxel/core' {
-	interface Context {
-		[serviceName]: AuthGuardService
+	namespace Context {
+		interface Services {
+			[serviceName]: AuthGuardService
+		}
 	}
 }
 
@@ -61,7 +63,7 @@ export class AuthGuardService {
 	private guard: ActiveGuard | undefined
 	private readonly logger: NonNullable<Context['logger']>
 
-	constructor(private readonly ctx: Context) {
+	constructor(public ctx: Context) {
 		this.logger = ctx.logger!
 	}
 

@@ -2,11 +2,11 @@
 
 import { useElementSize } from '@mantine/hooks'
 import { LazyLog, ScrollFollow } from '@melloware/react-logviewer'
-import React, { useEffect, useMemo, useRef, useState } from 'react'
-import { sse } from '../rpc'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { useSseClient } from '../rpc'
 import { createPrettyPrinter } from './pretty'
 
-const pretty = createPrettyPrinter({
+const prettyWithName = createPrettyPrinter({
 	forceColor: true,
 	ignoreKeys: ['caller'],
 	withDate: true,
@@ -15,10 +15,12 @@ const pretty = createPrettyPrinter({
 	extrasStyle: 'kv',
 	extrasMaxLen: 120,
 	nameMax: 24,
+	showName: true,
 })
 
 interface Props {
 	module?: string
+	showName?: boolean
 }
 
 const SNAPSHOT_MAX = 1000 // 首屏最多加载多少行历史
@@ -26,13 +28,20 @@ const RAW_RING_CAP = 4000 // 原始环容量（原始行）
 const VIEW_RING_CAP = 4000 // 展示环容量（wrap 后的行）
 const FLUSH_MS = 80 // 合批最迟刷新间隔
 const SEEN_TTL_MS = 3000 // 去重时间窗：快照与首段 SSE 重叠
-const RECONNECT_MIN = 800 // SSE 最小重连间隔
-const RECONNECT_MAX = 10_000 // SSE 最大重连间隔
 
 /* ================= 等宽字符宽度测量（更稳的平均法） ================= */
 const MONO_FONT = '13px ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace'
 const LOG_SIDE_PADDING = 32 // LazyLog 视图左右内边距（估算用于列数换算）
 const MIN_COLS = 8
+
+type IdleDeadlineLike = { didTimeout: boolean; timeRemaining: () => number }
+type IdleCallbackWindow = Window & {
+	requestIdleCallback?: (
+		cb: (deadline: IdleDeadlineLike) => void,
+		opts?: { timeout?: number },
+	) => number
+	cancelIdleCallback?: (handle: number) => void
+}
 
 function measureMonoCharWidth(): number {
 	if (typeof document === 'undefined') return 7
@@ -142,9 +151,23 @@ function createRing(cap = 2000) {
 }
 
 /* ================== LiveLog ================== */
-export function LiveLog({ module }: Props) {
+const prettyNoName = createPrettyPrinter({
+	forceColor: true,
+	ignoreKeys: ['caller'],
+	withDate: true,
+	withMillis: true,
+	withIcons: false,
+	extrasStyle: 'kv',
+	extrasMaxLen: 120,
+	nameMax: 24,
+	showName: false,
+})
+
+export function LiveLog({ module, showName = true }: Props) {
+	const pretty = showName ? prettyWithName : prettyNoName
 	const { ref, height, width } = useElementSize()
 	const [text, setText] = useState('')
+	const stream = useSseClient({ namespaces: ['logs'] })
 
 	// —— 列数估算（与组件换行解耦） —— //
 	const [cols, setCols] = useState<number>(0)
@@ -170,11 +193,11 @@ export function LiveLog({ module }: Props) {
 	// —— 合批刷入（把“展示行”批量落入 viewRing，再 setText） —— //
 	const pendingViewRef = useRef<string[]>([])
 	const rafRef = useRef<number | null>(null)
-	const flushTimerRef = useRef<number | ReturnType<typeof setTimeout> | null>(null)
+	const flushTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 	const flush = () => {
 		rafRef.current = null
 		if (flushTimerRef.current) {
-			clearTimeout(flushTimerRef.current as any)
+			clearTimeout(flushTimerRef.current)
 			flushTimerRef.current = null
 		}
 		if (pendingViewRef.current.length === 0) return
@@ -215,8 +238,9 @@ export function LiveLog({ module }: Props) {
 	useEffect(() => {
 		// 取消上一个重排
 		if (rebuildIdleRef.current != null) {
-			const cancelIdle = (window as any).cancelIdleCallback
-			cancelIdle ? cancelIdle(rebuildIdleRef.current) : clearTimeout(rebuildIdleRef.current as any)
+			const w = window as IdleCallbackWindow
+			if (w.cancelIdleCallback) w.cancelIdleCallback(rebuildIdleRef.current)
+			else clearTimeout(rebuildIdleRef.current)
 			rebuildIdleRef.current = null
 		}
 		// 重新 wrap raw → view
@@ -231,27 +255,23 @@ export function LiveLog({ module }: Props) {
 			}
 			setText(view.join())
 		}
-		const ric = (window as any).requestIdleCallback as
-			| ((cb: (dl: any) => void, opts?: { timeout?: number }) => number)
-			| undefined
-		if (ric) {
-			rebuildIdleRef.current = ric(() => run(), { timeout: 200 })
+		const w = window as IdleCallbackWindow
+		if (w.requestIdleCallback) {
+			rebuildIdleRef.current = w.requestIdleCallback(() => run(), { timeout: 200 })
 		} else {
 			rebuildIdleRef.current = window.setTimeout(run, 0)
 		}
 		return () => {
 			if (rebuildIdleRef.current != null) {
-				const cancelIdle = (window as any).cancelIdleCallback
-				cancelIdle
-					? cancelIdle(rebuildIdleRef.current)
-					: clearTimeout(rebuildIdleRef.current as any)
+				const w = window as IdleCallbackWindow
+				if (w.cancelIdleCallback) w.cancelIdleCallback(rebuildIdleRef.current)
+				else clearTimeout(rebuildIdleRef.current)
 				rebuildIdleRef.current = null
 			}
 		}
-	}, [cols])
+	}, [cols, showName])
 
 	// —— 快照 + SSE（仅跟随 module 变化；不受 cols 影响） —— //
-	const streamRef = useRef<ReturnType<typeof sse> | null>(null)
 	const abortRef = useRef<AbortController | null>(null)
 	const didInitRef = useRef(false) // dev 下规避严格模式二次执行
 
@@ -265,10 +285,6 @@ export function LiveLog({ module }: Props) {
 		if (abortRef.current) {
 			abortRef.current.abort()
 			abortRef.current = null
-		}
-		if (streamRef.current) {
-			streamRef.current.close()
-			streamRef.current = null
 		}
 		rawRingRef.current.clear()
 		viewRingRef.current.clear()
@@ -289,31 +305,35 @@ export function LiveLog({ module }: Props) {
 				const start = Math.max(0, lines.length - SNAPSHOT_MAX)
 				for (let i = start; i < lines.length; i++) pushRaw(lines[i])
 			})
-			.catch(() => {})
+			.catch(() => undefined)
 			.finally(() => {
 				abortRef.current = null
 			})
 
 		// —— 连接 SSE —— //
-		const stream = sse({
-			namespaces: ['logs'],
-			params: module ? { name: module } : undefined,
-			retry: { min: RECONNECT_MIN, max: RECONNECT_MAX },
-		})
-		streamRef.current = stream
 		const off = stream.logs.on((msg) => {
-			if (msg.event !== 'log') return
-			const payload = msg.payload as any
+			const payload = msg.payload
+			if (module && payload && typeof payload === 'object') {
+				const record = payload as Record<string, unknown>
+				const pluginId = typeof record.pluginId === 'string' ? record.pluginId : undefined
+				const context = typeof record.context === 'string' ? record.context : undefined
+				const name = typeof record.name === 'string' ? record.name : undefined
+				if (pluginId !== module && context !== module && name !== module) return
+			}
 			const enriched =
 				payload && typeof payload === 'object'
-					? { level: 'info', time: new Date().toISOString(), ...payload }
+					? {
+							level: 'info',
+							time: new Date().toISOString(),
+							...(payload as Record<string, unknown>),
+						}
 					: { level: 'info', time: new Date().toISOString(), msg: String(payload ?? '') }
 			try {
 				pushRaw(JSON.stringify(enriched))
 			} catch {
 				// ignore
 			}
-		})
+		}, 'log')
 
 		return () => {
 			if (abortRef.current) {
@@ -321,15 +341,11 @@ export function LiveLog({ module }: Props) {
 				abortRef.current = null
 			}
 			off()
-			if (streamRef.current) {
-				streamRef.current.close()
-				streamRef.current = null
-			}
 			if (process.env.NODE_ENV !== 'production') {
 				didInitRef.current = false
 			}
 		}
-	}, [module])
+	}, [module, showName, stream])
 
 	// —— 渲染 —— //
 	const logHeight = useMemo(() => Math.max(120, height || 0), [height])

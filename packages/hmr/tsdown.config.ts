@@ -16,8 +16,6 @@ export default defineConfig({
 	env: {},
 	entry: {
 		index: 'src/index.ts',
-		test: 'src/test/index.ts',
-		'test/setup': 'src/test/setup.ts',
 		services: 'src/services/index.ts',
 		config: 'src/config.ts',
 		web: 'src/web/web.ts',
@@ -25,7 +23,7 @@ export default defineConfig({
 		capnweb: 'src/web/capnweb.ts',
 		signaldb: 'src/web/signaldb.ts',
 	},
-	copy: ['public', 'src/services/extension/bundle-worker.mjs'],
+	copy: ['public', 'src/services/runtime-compile/bundler/bundle-worker.mjs'],
 	alias: {
 		'~': valibotFormSrc,
 	},

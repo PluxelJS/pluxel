@@ -56,6 +56,17 @@ This forces the runner to execute it through the host CJS loader and also avoids
 
 ## Bridge modules
 
+## Scope filtering
+
+By default, the HMR scope is `dir/**/*.ts` (plus anchors), with `node_modules`/`.d.ts`/`.tsx`/`.jsx` excluded.
+You can further isolate plugin HMR from frontend/UI changes by providing:
+
+- `hmrService.include`: explicit glob list (overrides the default `dir/**/*.ts`)
+- `hmrService.exclude`: extra glob list appended to defaults
+
+The same include/exclude rules are forwarded to `configSourcePlugin`, so decorator source extraction stays in sync
+with the HMR scope (and avoids touching UI/TSX by default).
+
 `deps.bridgeModules` lists specifiers that must share **singletons** between the host process and the runner (DI tokens, decorators, base classes).
 
 ### Required bridge modules

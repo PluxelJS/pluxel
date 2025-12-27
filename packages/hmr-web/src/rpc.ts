@@ -41,6 +41,17 @@ export function createRpcExtensionsView(raw: () => HmrRpcStub): RpcExtensions {
 	//
 	// To make this ergonomic and safe, we return a stable proxy where each method
 	// call creates a fresh session.
+	const dispose = (client: HmrRpcStub) => {
+		const disposer =
+			(client as any)[Symbol.dispose] ??
+			(client as any)[Symbol.asyncDispose] ??
+			(client as any).dispose
+		if (typeof disposer === 'function') {
+			try {
+				disposer.call(client)
+			} catch {}
+		}
+	}
 	return new Proxy(
 		{},
 		{
@@ -53,7 +64,12 @@ export function createRpcExtensionsView(raw: () => HmrRpcStub): RpcExtensions {
 							if (typeof method !== 'string') return undefined
 							return (...args: any[]) => {
 								const client = raw()
-								return (client.ext as any)?.[namespace]?.[method]?.(...args)
+								const result = (client.ext as any)?.[namespace]?.[method]?.(...args)
+								if (result && typeof result.then === 'function') {
+									return result.finally(() => dispose(client))
+								}
+								dispose(client)
+								return result
 							}
 						},
 					},

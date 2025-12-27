@@ -37,7 +37,7 @@
 		}
 	],
 	"devDependencies": {
-		"tsdown": "0.17.0",
+		"tsdown": "^0.18.2",
 		"typescript": "^5.9.3",
 		"option-t": "^55.1.0",
 		"reflect-metadata": "^0.2.2"

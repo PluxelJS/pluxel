@@ -1,47 +1,27 @@
-import {
-	localStorageColorSchemeManager,
-	MantineProvider,
-	useComputedColorScheme,
-} from '@mantine/core'
-import { ModalsProvider } from '@mantine/modals'
+import { useComputedColorScheme } from '@mantine/core'
+import { ModalsProvider, openConfirmModal } from '@mantine/modals'
 import { Notifications } from '@mantine/notifications'
 import { Outlet, useRouterState } from '@tanstack/react-router'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Layout, type NavItem } from '../../components'
 import {
+	createGlobalExtensionContext,
 	type ExtensionContext,
 	ExtensionPoints,
 	ExtensionProvider,
-	createGlobalExtensionContext,
 	useExtensionSurface,
 } from '../../extension'
-import { useHmrWebClient } from '../rpc'
-import { useDynamicTheme } from '../../theme'
 import { LAST_ROUTE_KEY } from '../constants'
 import { ExtensionLoader } from '../ExtensionLoader'
 import { Header } from '../Header'
 import { baseNavItems, buildExtensionNavItems } from '../navigation/navConfig'
 import { NotificationCenterProvider } from '../notifications/NotificationCenterProvider'
+import { notifyAndRecord } from '../notifications/notifyBridge'
 import { RouterLinkAdapter } from '../RouterLinkAdapter'
-
-const colorSchemeManager = localStorageColorSchemeManager({
-	key: 'pluxel-color-scheme',
-})
+import { useHmrWebClient } from '../rpc'
 
 export function RootShell() {
-	const { theme } = useDynamicTheme()
-
-	return (
-		<MantineProvider
-			theme={theme}
-			colorSchemeManager={colorSchemeManager}
-			withCssVariables
-			withGlobalClasses={false}
-			deduplicateCssVariables={false}
-		>
-			<RootShellContent />
-		</MantineProvider>
-	)
+	return <RootShellContent />
 }
 
 function RootShellContent() {
@@ -77,7 +57,43 @@ function RootShellContent() {
 				colorScheme,
 				runningPlugins,
 				runningPluginsReady: runningReady,
-				services: { hmr },
+				services: {
+					hmr,
+					ui: {
+						notify: (payload) => {
+							const tone = payload?.tone ?? 'info'
+							notifyAndRecord({
+								title: payload?.title,
+								message: payload?.message,
+								color:
+									tone === 'success'
+										? 'green'
+										: tone === 'warning'
+											? 'yellow'
+											: tone === 'error'
+												? 'red'
+												: 'blue',
+							})
+						},
+						confirm: async (payload) => {
+							return new Promise<boolean>((resolve) => {
+								openConfirmModal({
+									title: payload?.title,
+									children: payload?.message,
+									labels: {
+										confirm: payload?.confirmLabel ?? '确认',
+										cancel: payload?.cancelLabel ?? '取消',
+									},
+									confirmProps: payload?.tone === 'danger' ? { color: 'red' } : undefined,
+									onConfirm: () => resolve(true),
+									onCancel: () => resolve(false),
+									onClose: () => resolve(false),
+									closeOnConfirm: true,
+								})
+							})
+						},
+					},
+				},
 			}),
 		[pathname, colorScheme, runningPlugins, runningReady, hmr],
 	)

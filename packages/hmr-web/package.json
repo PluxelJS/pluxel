@@ -27,15 +27,15 @@
 	},
 	"dependencies": {
 		"@pluxel/plugin-ui": "workspace:*",
-		"capnweb": "^0.2.0",
-		"hono": "^4.10.7"
+		"capnweb": "^0.3.0",
+		"hono": "^4.11.1"
 	},
 	"peerDependencies": {
-		"react": "^19.2.1"
+		"react": "^19.2.3"
 	},
 	"devDependencies": {
 		"@types/react": "^19.2.7",
-		"tsdown": "0.17.0"
+		"tsdown": "^0.18.2"
 	},
 	"publishConfig": {
 		"exports": {

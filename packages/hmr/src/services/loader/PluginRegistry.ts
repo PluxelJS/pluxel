@@ -331,6 +331,16 @@ export class PluginRegistry {
 	/** 根据 config 启用位，为该模块内需要启用的插件执行 start */
 	async syncRuntimeForModule(moduleId: ModuleId): Promise<void> {
 		const list = this.moduleMap.get(moduleId) ?? EMPTY
+		const safeStart = async (name: string, ctor: PluginConstructor) => {
+			try {
+				await this.startPlugin(name, ctor)
+			} catch (err) {
+				this.ctx.logger.warn(
+					{ err, name, moduleId },
+					`[PluginRegistry] 启动失败：${name}`,
+				)
+			}
+		}
 		// 并行启动（registerPlugin 只是声明，依赖处理在 commit 时）
 		const toStart = list.flatMap(({ ctor }) => {
 			const { id: name } = getPluginInfo(ctor)
@@ -339,7 +349,7 @@ export class PluginRegistry {
 				!this.ctx.configService.isEnabledInConfig(name)
 			)
 				return []
-			return [this.startPlugin(name, ctor)]
+			return [safeStart(name, ctor)]
 		})
 		if (toStart.length > 0) await Promise.all(toStart)
 
@@ -360,7 +370,7 @@ export class PluginRegistry {
 				if (!this.ctx.configService.isEnabledInConfig(forkName)) continue
 				try {
 					const ForkCtor = this.ctx.registry.fork(ctor as any, forkId) as PluginConstructor
-					forkStarts.push(this.startPlugin(forkName, ForkCtor))
+					forkStarts.push(safeStart(forkName, ForkCtor))
 				} catch (err) {
 					this.ctx.logger.warn(
 						{ err, name, forkId },

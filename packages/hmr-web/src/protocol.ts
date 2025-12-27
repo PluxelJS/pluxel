@@ -131,6 +131,20 @@ export type PackageSpecInput = {
 	tag?: string | null
 }
 
+export type MarketMutationAction = 'install' | 'uninstall' | 'remove' | 'reinstall' | 'reload' | 'retry'
+
+export type MarketMutationOptions = {
+	force?: boolean
+	fresh?: boolean
+	reinstall?: boolean
+}
+
+export type MarketMutationInput = {
+	action: MarketMutationAction
+	specs: PackageSpecInput[]
+	options?: MarketMutationOptions
+}
+
 export type MarketMutationResult = {
 	__typename: 'PackageMutationResult'
 	ok: boolean
@@ -157,32 +171,7 @@ export type MarketBatchResult = {
 export interface MarketHandleApi {
 	loadIssues: () => unknown
 	inventory: (options?: { includeUntracked?: boolean }) => unknown
-	install: (spec: PackageSpecInput, options?: { force?: boolean }) => Promise<MarketMutationResult>
-	installMany: (
-		specs: PackageSpecInput[],
-		options?: { force?: boolean },
-	) => Promise<MarketBatchResult>
-	uninstall: (spec: PackageSpecInput) => Promise<MarketMutationResult>
-	uninstallMany: (specs: PackageSpecInput[]) => Promise<MarketBatchResult>
-	remove: (spec: PackageSpecInput) => Promise<MarketMutationResult>
-	removeMany: (specs: PackageSpecInput[]) => Promise<MarketBatchResult>
-	reinstall: (
-		spec: PackageSpecInput,
-		options?: { force?: boolean },
-	) => Promise<MarketMutationResult>
-	reinstallMany: (
-		specs: PackageSpecInput[],
-		options?: { force?: boolean },
-	) => Promise<MarketBatchResult>
-	reloadMany: (
-		specs: PackageSpecInput[],
-		options?: { fresh?: boolean },
-	) => Promise<MarketBatchResult>
-	retry: (
-		spec: PackageSpecInput,
-		options?: { reinstall?: boolean; fresh?: boolean },
-	) => Promise<MarketMutationResult>
-	retryAllFailed: (options?: { reinstall?: boolean; fresh?: boolean }) => Promise<MarketBatchResult>
+	mutate: (input: MarketMutationInput) => Promise<MarketBatchResult>
 }
 
 export interface PluginHandleApi {

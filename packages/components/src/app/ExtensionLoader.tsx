@@ -1,13 +1,19 @@
 // packages/components/src/app/ExtensionLoader.tsx
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
+	type BuiltinExtensionDef,
+	type BuiltinExtensionKind,
 	type CompiledExtensionModule,
+	type ExtensionMeta,
+	ExtensionErrorBoundary,
+	extensionRegistry,
 	initVendors,
 	loadExtensionModule,
 	unloadExtensionModule,
 } from '../extension'
-import { extLog } from '../extension/debug'
 import { fetchExtensionManifest } from '../extension/api/manifest'
+import { builtinComponents } from '../extension/builtin'
+import { extLog } from '../extension/debug'
 import { useQuery } from './gqty'
 import { subscribePluginStatusEvents } from './plugins/statusEvents'
 import { useSseClient } from './rpc'
@@ -15,6 +21,10 @@ import { useSseClient } from './rpc'
 interface ExtensionLoaderProps {
 	pollInterval?: number
 	onRunningPluginsChange?: (plugins: ReadonlySet<string>) => void
+	/** Keep extension modules loaded even when plugins stop running. */
+	unloadOnStop?: boolean
+	/** Delay unload when unloadOnStop is true, to avoid flapping. */
+	unloadDelayMs?: number
 }
 
 interface PluginInfo {
@@ -26,9 +36,57 @@ interface LoadedPluginModule extends CompiledExtensionModule {
 	inflight?: Promise<void>
 }
 
+const loaderState = {
+	manifestVersion: 0,
+	manifestSignature: '',
+	loading: false,
+	pendingForce: false,
+	moduleCache: new Map<string, LoadedPluginModule>(),
+	builtinCache: new Map<string, { sig: string; cleanup: () => void }>(),
+	manifestBackoff: null as { at: number; backoffMs: number } | null,
+	unloadTimers: new Map<string, number>(),
+}
+
+const DEFAULT_UNLOAD_DELAY_MS = 8_000
+
+function recomputeLoaderSignature() {
+	const moduleSig = Array.from(loaderState.moduleCache.values())
+		.map((mod) => `${mod.pluginName}:${mod.sourceHash}`)
+		.sort()
+		.join('|')
+	const builtinSig = Array.from(loaderState.builtinCache.entries())
+		.map(([key, v]) => `${key}:${v.sig}`)
+		.sort()
+		.join('|')
+	loaderState.manifestSignature = `${moduleSig}||builtins:${builtinSig}`
+}
+
+function cancelScheduledUnload(pluginName: string) {
+	const timer = loaderState.unloadTimers.get(pluginName)
+	if (!timer) return
+	clearTimeout(timer)
+	loaderState.unloadTimers.delete(pluginName)
+}
+
+function scheduleUnload(pluginName: string, delayMs: number, reason: string) {
+	if (loaderState.unloadTimers.has(pluginName)) return
+	const timer = setTimeout(() => {
+		loaderState.unloadTimers.delete(pluginName)
+		if (loaderState.moduleCache.has(pluginName)) {
+			loaderState.moduleCache.delete(pluginName)
+			unloadExtensionModule(pluginName)
+			extLog('unloaded %s (%s)', pluginName, reason)
+			recomputeLoaderSignature()
+		}
+	}, delayMs)
+	loaderState.unloadTimers.set(pluginName, timer)
+}
+
 export function ExtensionLoader({
 	pollInterval = 5000,
 	onRunningPluginsChange,
+	unloadOnStop = false,
+	unloadDelayMs = DEFAULT_UNLOAD_DELAY_MS,
 }: ExtensionLoaderProps) {
 	useEffect(() => {
 		if (typeof window === 'undefined') return
@@ -84,6 +142,7 @@ export function ExtensionLoader({
 
 	const [stablePlugins, setStablePlugins] = useState<PluginInfo[]>(derivedPlugins)
 	const isLoading = query.$state.isLoading === true || query.$state.isFetching === true
+	const statusReadyRef = useRef(false)
 
 	useEffect(() => {
 		if (isLoading) return
@@ -99,6 +158,10 @@ export function ExtensionLoader({
 	const effectivePlugins = isLoading ? cachedRef.current.plugins : stablePlugins
 
 	useEffect(() => {
+		if (!isLoading) statusReadyRef.current = true
+	}, [isLoading])
+
+	useEffect(() => {
 		if (!onRunningPluginsChange) return
 		const next = new Set<string>()
 		for (const plugin of effectivePlugins) {
@@ -109,28 +172,115 @@ export function ExtensionLoader({
 		onRunningPluginsChange(next)
 	}, [effectivePlugins, onRunningPluginsChange])
 
-	const manifestVersionRef = useRef(0)
-	const manifestSignatureRef = useRef('')
-	const loadingRef = useRef(false)
-	const moduleCacheRef = useRef<Map<string, LoadedPluginModule>>(new Map())
-	const manifestBackoffRef = useRef<{ at: number; backoffMs: number } | null>(null)
-
 	const shouldSkipManifestSync = useCallback(() => {
-		const state = manifestBackoffRef.current
+		const state = loaderState.manifestBackoff
 		if (!state) return false
 		return Date.now() - state.at < state.backoffMs
 	}, [])
 
-	const recomputeManifestSignature = useCallback(() => {
-		const signature = Array.from(moduleCacheRef.current.values())
-			.map((mod) => `${mod.pluginName}:${mod.sourceHash}`)
-			.sort()
-			.join('|')
-		manifestSignatureRef.current = signature
+	const recomputeManifestSignature = useCallback(recomputeLoaderSignature, [])
+
+	const syncBuiltins = useCallback((builtins?: BuiltinExtensionDef[]) => {
+		const next = Array.isArray(builtins) ? builtins : []
+		const seen = new Set<string>()
+		const fallbackSig = (
+			def: BuiltinExtensionDef,
+			meta: { kind: string; pluginName: string; point: string; id: string },
+		) => {
+			try {
+				return JSON.stringify(def)
+			} catch {
+				return `${meta.kind}:${meta.pluginName}:${meta.point}:${meta.id}`
+			}
+		}
+
+		for (const def of next) {
+			if (!def || typeof def !== 'object') continue
+			const pluginName = typeof (def as any).pluginName === 'string' ? (def as any).pluginName : ''
+			const point = typeof (def as any).point === 'string' ? (def as any).point : ''
+			const id = typeof (def as any).id === 'string' ? (def as any).id : ''
+			const kind = typeof (def as any).kind === 'string' ? (def as any).kind : ''
+			if (!pluginName || !point || !id || !kind) continue
+
+			const runtimeId = `${pluginName}:builtin:${point}:${id}`
+			seen.add(runtimeId)
+
+			const sig = fallbackSig(def, { kind, pluginName, point, id })
+
+			const cached = loaderState.builtinCache.get(runtimeId)
+			if (cached && cached.sig === sig) continue
+			if (cached) {
+				try {
+					cached.cleanup()
+				} catch {}
+				loaderState.builtinCache.delete(runtimeId)
+			}
+
+			const meta: ExtensionMeta = {
+				...((def as any).meta ?? {}),
+				id: runtimeId,
+				pluginName,
+				priority: typeof (def as any).priority === 'number' ? (def as any).priority : 0,
+				requireRunning: (def as any).requireRunning ?? true,
+			}
+
+			const Component = builtinComponents[kind as BuiltinExtensionKind]
+			if (!Component) {
+				extLog('skip builtin kind=%s (id=%s)', kind, runtimeId)
+				continue
+			}
+
+			const render = (ctx: any) => (
+				<ExtensionErrorBoundary
+					pluginName={pluginName}
+					extensionId={runtimeId}
+					point={point}
+					fallback={
+						process.env.NODE_ENV !== 'production'
+							? ({ error }) => (
+									<div
+										style={{
+											padding: 8,
+											borderRadius: 8,
+											border: '1px solid rgba(255, 0, 0, 0.25)',
+											background: 'rgba(255, 0, 0, 0.06)',
+											fontSize: 12,
+											lineHeight: 1.4,
+										}}
+									>
+										<div style={{ fontWeight: 600 }}>
+											Builtin render failed: {pluginName} · {point}
+										</div>
+										<div style={{ opacity: 0.85 }}>
+											{error?.message ?? String(error ?? 'unknown error')}
+										</div>
+									</div>
+								)
+							: null
+					}
+				>
+					<Component ctx={ctx} def={def as any} />
+				</ExtensionErrorBoundary>
+			)
+
+			const cleanup = extensionRegistry.register(point as any, { meta, render })
+			loaderState.builtinCache.set(runtimeId, { sig, cleanup })
+		}
+
+		for (const [key, cached] of Array.from(loaderState.builtinCache.entries())) {
+			if (seen.has(key)) continue
+			try {
+				cached.cleanup()
+			} catch {}
+			loaderState.builtinCache.delete(key)
+		}
 	}, [])
 
-	// 如果插件已停止运行，主动卸载其扩展模块，避免 UI 继续渲染
+	// 插件停止后是否卸载扩展模块（避免频繁加载/卸载可延迟执行）
 	useEffect(() => {
+		if (!unloadOnStop) return
+		if (!statusReadyRef.current) return
+		const delayMs = Math.max(0, unloadDelayMs)
 		const running = new Set<string>()
 		for (const plugin of effectivePlugins) {
 			if (plugin.isRunning && plugin.name) {
@@ -138,26 +288,23 @@ export function ExtensionLoader({
 			}
 		}
 
-		let removed = false
-		for (const name of Array.from(moduleCacheRef.current.keys())) {
+		for (const name of Array.from(loaderState.moduleCache.keys())) {
 			if (!running.has(name)) {
-				moduleCacheRef.current.delete(name)
-				unloadExtensionModule(name)
-				extLog('unloaded %s due to stop', name)
-				removed = true
+				scheduleUnload(name, delayMs, 'plugin-stop')
+			} else {
+				cancelScheduledUnload(name)
 			}
 		}
-		if (removed) {
-			recomputeManifestSignature()
-		}
-	}, [effectivePlugins, recomputeManifestSignature])
+		recomputeManifestSignature()
+	}, [effectivePlugins, recomputeManifestSignature, unloadDelayMs, unloadOnStop])
 
 	const ensureModuleLoaded = useCallback(async (module: CompiledExtensionModule) => {
-		const cached = moduleCacheRef.current.get(module.pluginName)
+		const cached = loaderState.moduleCache.get(module.pluginName)
 		if (cached && cached.sourceHash === module.sourceHash) {
 			if (cached.inflight) {
 				await cached.inflight
 			}
+			cancelScheduledUnload(module.pluginName)
 			return
 		}
 
@@ -175,13 +322,14 @@ export function ExtensionLoader({
 			() => dynamicImport(url),
 			module.sourceHash,
 		)
-		moduleCacheRef.current.set(module.pluginName, {
+		loaderState.moduleCache.set(module.pluginName, {
 			...module,
 			inflight: loadPromise,
 		})
 
 		try {
 			await loadPromise
+			cancelScheduledUnload(module.pluginName)
 			if (process.env.NODE_ENV !== 'production') {
 				console.log('[ExtensionLoader] loaded', {
 					pluginName: module.pluginName,
@@ -190,11 +338,11 @@ export function ExtensionLoader({
 			}
 			extLog('loaded %s@%s', module.pluginName, module.sourceHash)
 		} catch (error) {
-			moduleCacheRef.current.delete(module.pluginName)
+			loaderState.moduleCache.delete(module.pluginName)
 			extLog('failed to load %s: %o', module.pluginName, error)
 			throw error
 		} finally {
-			const latest = moduleCacheRef.current.get(module.pluginName)
+			const latest = loaderState.moduleCache.get(module.pluginName)
 			if (latest && latest.sourceHash === module.sourceHash) {
 				latest.inflight = undefined
 			}
@@ -204,12 +352,15 @@ export function ExtensionLoader({
 	const syncManifest = useCallback(
 		async (force?: boolean) => {
 			if (!force && shouldSkipManifestSync()) return
-			if (loadingRef.current) return
-			loadingRef.current = true
+			if (loaderState.loading) {
+				if (force) loaderState.pendingForce = true
+				return
+			}
+			loaderState.loading = true
 			try {
 				extLog('fetching manifest')
 				const manifest = await fetchExtensionManifest()
-				manifestBackoffRef.current = null
+				loaderState.manifestBackoff = null
 				if (process.env.NODE_ENV !== 'production') {
 					console.log('[ExtensionLoader] fetched manifest', {
 						version: manifest.version,
@@ -221,67 +372,115 @@ export function ExtensionLoader({
 					})
 				}
 				extLog('fetched manifest v%d', manifest.version)
-				const failedPlugins: string[] = []
-				const nextSignature = manifest.modules
-					.map((module) => `${module.pluginName}:${module.sourceHash}`)
-					.sort()
-					.join('|')
-				if (
-					!force &&
-					manifest.version === manifestVersionRef.current &&
-					nextSignature === manifestSignatureRef.current
-				) {
-					return
-				}
-				const seen = new Set<string>()
-				await Promise.all(
-					manifest.modules.map(async (module) => {
-						seen.add(module.pluginName)
-						try {
-							await ensureModuleLoaded(module)
-						} catch (error) {
-							failedPlugins.push(module.pluginName)
-							console.error('[ExtensionLoader] failed to load module', module.pluginName, error)
-						}
-					}),
-				)
 
-				// 自愈：如果加载失败（比如服务端删除了陈旧 hash 并触发重新编译），立刻刷新 manifest 再重试一次
-				if (failedPlugins.length) {
-					const retryManifest = await fetchExtensionManifest()
-					await Promise.all(
-						failedPlugins.map(async (pluginName) => {
-							const next = retryManifest.modules.find((m) => m.pluginName === pluginName)
-							if (!next) return
+				const computeSignature = (payload: typeof manifest) => {
+					const modulesSig = payload.modules
+						.map((module) => `${module.pluginName}:${module.sourceHash}`)
+						.sort()
+						.join('|')
+					const builtinsSig = (payload.builtins ?? [])
+						.map((b) => {
 							try {
-								await ensureModuleLoaded(next)
+								return JSON.stringify(b)
+							} catch {
+								const pluginName = (b as any)?.pluginName ?? ''
+								const point = (b as any)?.point ?? ''
+								const id = (b as any)?.id ?? ''
+								const kind = (b as any)?.kind ?? ''
+								return `${kind}:${pluginName}:${point}:${id}`
+							}
+						})
+						.sort()
+						.join('|')
+					return `${modulesSig}||builtins:${builtinsSig}`
+				}
+
+				const applyManifest = async (
+					payload: typeof manifest,
+					allowRetry: boolean,
+				): Promise<{ signature: string; version: number; moduleCount: number; skipped: boolean }> => {
+					const nextSignature = computeSignature(payload)
+					if (
+						!force &&
+						payload.version === loaderState.manifestVersion &&
+						nextSignature === loaderState.manifestSignature
+					) {
+						return {
+							signature: nextSignature,
+							version: payload.version,
+							moduleCount: payload.modules.length,
+							skipped: true,
+						}
+					}
+
+					const failedPlugins: string[] = []
+					const seen = new Set<string>()
+					await Promise.all(
+						payload.modules.map(async (module) => {
+							seen.add(module.pluginName)
+							try {
+								await ensureModuleLoaded(module)
 							} catch (error) {
-								console.error('[ExtensionLoader] retry failed', pluginName, error)
+								failedPlugins.push(module.pluginName)
+								console.error('[ExtensionLoader] failed to load module', module.pluginName, error)
 							}
 						}),
 					)
-				}
-				for (const name of Array.from(moduleCacheRef.current.keys())) {
-					if (!seen.has(name)) {
-						moduleCacheRef.current.delete(name)
-						unloadExtensionModule(name)
+
+					syncBuiltins(payload.builtins)
+
+					// 自愈：如果加载失败（比如服务端删除了陈旧 hash 并触发重新编译），立刻刷新 manifest 再重试一次
+					if (allowRetry && failedPlugins.length) {
+						const retryManifest = await fetchExtensionManifest()
+						const retrySignature = computeSignature(retryManifest)
+						if (
+							retryManifest.version !== payload.version ||
+							retrySignature !== nextSignature
+						) {
+							return applyManifest(retryManifest, false)
+						}
+					}
+
+					for (const name of Array.from(loaderState.moduleCache.keys())) {
+						if (!seen.has(name)) {
+							cancelScheduledUnload(name)
+							loaderState.moduleCache.delete(name)
+							unloadExtensionModule(name)
+						}
+					}
+
+					return {
+						signature: nextSignature,
+						version: payload.version,
+						moduleCount: payload.modules.length,
+						skipped: false,
 					}
 				}
-				manifestVersionRef.current = manifest.version
-				manifestSignatureRef.current = nextSignature
-				extLog('synced manifest v%d (%d modules)', manifest.version, manifest.modules.length)
+
+				const applied = await applyManifest(manifest, true)
+				if (applied.skipped) return
+
+				loaderState.manifestVersion = applied.version
+				loaderState.manifestSignature = applied.signature
+				extLog('synced manifest v%d (%d modules)', applied.version, applied.moduleCount)
 			} catch (error) {
 				const now = Date.now()
-				const prev = manifestBackoffRef.current
+				const prev = loaderState.manifestBackoff
 				const backoffMs = prev ? Math.min(prev.backoffMs * 2, 60_000) : 2_000
-				manifestBackoffRef.current = { at: now, backoffMs }
+				loaderState.manifestBackoff = { at: now, backoffMs }
 				console.error('[ExtensionLoader] failed to sync manifest', error)
 			} finally {
-				loadingRef.current = false
+				loaderState.loading = false
 				recomputeManifestSignature()
+				if (loaderState.pendingForce) {
+					loaderState.pendingForce = false
+					queueMicrotask(() => {
+						void syncManifest(true)
+					})
+				}
 			}
 		},
-		[ensureModuleLoaded, recomputeManifestSignature, shouldSkipManifestSync],
+		[ensureModuleLoaded, recomputeManifestSignature, shouldSkipManifestSync, syncBuiltins],
 	)
 
 	useEffect(() => {
@@ -326,16 +525,16 @@ export function ExtensionLoader({
 		const off = stream.extensions.on(({ payload }) => {
 			if (!payload) return
 			if (payload.type === 'sync') {
-				if (payload.version > manifestVersionRef.current) {
+				if (payload.version > loaderState.manifestVersion) {
 					void syncManifest(true)
 				}
-				manifestVersionRef.current = payload.version
+				loaderState.manifestVersion = payload.version
 				return
 			}
-			if (payload.version <= manifestVersionRef.current) {
+			if (payload.version <= loaderState.manifestVersion) {
 				return
 			}
-			manifestVersionRef.current = payload.version
+			loaderState.manifestVersion = payload.version
 
 			if (payload.type === 'update') {
 				void ensureModuleLoaded({
@@ -351,8 +550,9 @@ export function ExtensionLoader({
 						}
 					})
 			} else if (payload.type === 'remove') {
-				if (moduleCacheRef.current.has(payload.pluginName)) {
-					moduleCacheRef.current.delete(payload.pluginName)
+				if (loaderState.moduleCache.has(payload.pluginName)) {
+					cancelScheduledUnload(payload.pluginName)
+					loaderState.moduleCache.delete(payload.pluginName)
 					unloadExtensionModule(payload.pluginName)
 					recomputeManifestSignature()
 				}

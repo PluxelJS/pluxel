@@ -1,5 +1,10 @@
 import devServer from '@hono/vite-dev-server'
-import { type Context, Injectable } from '@pluxel/core'
+import { type Context, Injectable, OverrideOf } from '@pluxel/core'
+import {
+	type AppMod,
+	HonoService as CoreHonoService,
+	type GraphQLFetch,
+} from '@pluxel/core/services'
 import { Hono } from 'hono'
 import { createFactory, type Factory } from 'hono/factory'
 import type { ContentfulStatusCode } from 'hono/utils/http-status'
@@ -7,46 +12,20 @@ import type { Plugin } from 'vite'
 
 import api from '../../api/hono'
 import type { RenderHandler } from '../../server/types'
-import type { ExtensionManifestEvent } from '../extension'
 import { logStore, matchesFilter } from '../logger/logStore'
+import type { SseChannel } from '../plugin-interaction'
+import type { ExtensionManifestEvent } from '../runtime-compile'
 import type { AuthGuardCheckInput } from './AuthGuardService'
 import type { AppEnv, HonoWithAppEnvType } from './env'
-import type { SseChannel } from './SseService'
 
-const serviceName = 'honoService' as const
-
-declare module '@pluxel/core' {
-	interface Context {
-		[serviceName]: HonoService
-	}
-}
-
-type AppMod = (app: HonoWithAppEnvType) => void
-type GraphQLFetch = (
-	req: Request,
-	ctx: { hono: import('hono').Context<AppEnv> },
-) => Promise<Response>
-
-@Injectable({ key: serviceName })
-export class HonoService {
-	private mods = new Set<AppMod>()
-
+@Injectable
+@OverrideOf(CoreHonoService)
+export class HonoService extends CoreHonoService {
 	// 活跃 Hono 实例
 	private app!: HonoWithAppEnvType
 
-	// 稳定 fetch 指针：只替换目标，不换引用
-	private fetchPtr: (req: Request, env?: any, ctx?: any) => Response | Promise<Response> = (
-		req,
-		env,
-		ctx,
-	) => this.app.fetch(req, env, ctx)
-
 	// 合批重建/全量刷新
-	private pendingRebuild = false
 	private shouldReload = false
-
-	// GraphQL：函数指针替换 → 零重建
-	private gqlFetch: GraphQLFetch = async () => new Response('GraphQL not ready', { status: 503 })
 
 	// 是否需要对内部 /api/* 套 Guard
 	private guardRegistered = false
@@ -55,7 +34,8 @@ export class HonoService {
 	private readonly renderer: Promise<RenderHandler>
 	private sseBuiltinsReady = false
 
-	constructor(private ctx: Context) {
+	constructor(ctx: Context) {
+		super(ctx)
 		this.logger = ctx.logger!
 		this.renderer = this.createRenderer()
 		this.rebuildApp()
@@ -66,41 +46,31 @@ export class HonoService {
 	}
 
 	/** 将 plugin_ctx 暴露给下游（Hono 工厂） */
-	public createFactory(): Factory<AppEnv, string> {
+	public override createFactory(): Factory<AppEnv, string> {
 		return createFactory<AppEnv>({
 			initApp: (app) => this.attachPluginContext(app),
 		})
 	}
 
+	override modifyApp<App = HonoWithAppEnvType>(mod: AppMod<App>): () => void {
+		return super.modifyApp(mod)
+	}
+
 	/** GraphQLService 重织：仅替换函数指针 */
-	setGraphQLFetch(fn: GraphQLFetch) {
+	override setGraphQLFetch(fn: GraphQLFetch) {
 		this.gqlFetch = fn
 		this.requestFullReload()
 	}
 
-	/** 稳定 fetch 入口（供适配器/Vite Dev Server 用） */
-	get fetch() {
-		return this.fetchPtr
-	}
-
-	/** 插件注入/撤销 Hono 补丁（自动合批重建） */
-	modifyApp(mod: AppMod) {
-		this.mods.add(mod)
-		this.scheduleRebuild()
-		return this.ctx.scope.collectEffect(() => {
-			if (this.mods.delete(mod)) this.scheduleRebuild()
-		})
-	}
-
 	/** AuthGuardService 通知：是否启用 /api/* 守卫 */
-	switchAuthGuard(toggle: boolean) {
+	override switchAuthGuard(toggle: boolean) {
 		if (this.guardRegistered === toggle) return
 		this.guardRegistered = toggle
 		this.scheduleRebuild()
 	}
 
 	// —— Vite Dev Server 插件：仅负责 full-reload 信号 —— //
-	get viteHonoDevServer(): Plugin {
+	override get viteHonoDevServer(): Plugin {
 		return devServer({
 			exclude: [
 				/^\/@.+$/,
@@ -167,11 +137,11 @@ export class HonoService {
 		namespace: string,
 		handler: (channel: SseChannel) => void | (() => void),
 	) {
-		return this.ctx.sse.registerExtension(() => handler, { namespace })
+		return this.ctx.ext.sse.registerExtension(() => handler, { namespace })
 	}
 
 	private streamManifestEvents(channel: SseChannel) {
-		const service = this.ctx.extensionService
+		const service = this.ctx.ext.ui
 		if (!service) {
 			channel.emit('error', { reason: 'Extension service unavailable' })
 			return
@@ -300,14 +270,9 @@ export class HonoService {
 	}
 
 	/** 合批重建，避免抖动 */
-	private scheduleRebuild() {
-		if (this.pendingRebuild) return
-		this.pendingRebuild = true
-		queueMicrotask(() => {
-			this.pendingRebuild = false
-			this.rebuildApp()
-			this.requestFullReload()
-		})
+	protected override rebuildNow() {
+		this.rebuildApp()
+		this.requestFullReload()
 	}
 
 	/** 仅做标记，由 Vite 插件感知并下发 full-reload */

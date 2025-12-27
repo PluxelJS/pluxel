@@ -47,7 +47,7 @@ export function ExtensionRoute() {
 	}, [locationPath, rawName])
 	const restPath = restPathFromParams || restPathFromLocation
 	const fullPath = `/ext/${pluginName}${restPath}`
-	const routeVersion = useExtensionRuntimeVersion()
+	const routeVersion = useExtensionRuntimeVersion(pluginName)
 
 	const ExtensionComponent = useMemo(() => {
 		return getPluginRouteComponent(pluginName, restPath)

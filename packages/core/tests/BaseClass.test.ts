@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'bun:test'
 
-import { BasePlugin, ForkablePlugin, Plugin, withTestHost } from '@pluxel/core/test'
+import { BasePlugin, ForkablePlugin, Plugin, setParamToken, withTestHost } from '@pluxel/core/test'
 
 describe('Abstract base and canonical ids', () => {
 	it('injects abstract base and resolves by impl ctor', async () => {
@@ -24,6 +24,7 @@ describe('Abstract base and canonical ids', () => {
 					this.dep = dep
 				}
 			}
+			setParamToken(Consumer, 0, Abs)
 
 			host.registerAll(Impl, Consumer)
 			await host.commitStrict()
@@ -85,6 +86,7 @@ describe('Abstract base and canonical ids', () => {
 					events.push('consumer')
 				}
 			}
+			setParamToken(Consumer, 0, Abs)
 
 			host.registerAll(Provider, Consumer)
 			await host.commitStrict()
@@ -121,6 +123,7 @@ describe('Abstract base and canonical ids', () => {
 					super()
 				}
 			}
+			setParamToken(Consumer, 0, Abs)
 
 			host.register(Impl)
 			host.registerFork(Impl, 'a')

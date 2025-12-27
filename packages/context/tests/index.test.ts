@@ -30,7 +30,7 @@ class MathService {
 	static methods = ['add'] as const
 
 	constructor(
-		private ctx: Context,
+		public ctx: Context,
 		private cfg: Context.Config['mathService'] | undefined,
 	) {}
 
@@ -84,7 +84,7 @@ class NewMathService {
 	static key = 'mathService' as const
 	static methods = ['add'] as const
 	constructor(
-		private ctx: Context,
+		public ctx: Context,
 		private cfg: Context.Config['mathService'] | undefined,
 	) {}
 	add(a: number, b: number) {
@@ -96,7 +96,7 @@ class NewestMathService {
 	static key = 'mathService' as const
 	static methods = ['add'] as const
 	constructor(
-		private ctx: Context,
+		public ctx: Context,
 		private cfg: Context.Config['mathService'] | undefined,
 	) {}
 	add(a: number, b: number) {

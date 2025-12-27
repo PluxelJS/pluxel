@@ -4,10 +4,14 @@ import type { PluginIdentifier } from '../plugins'
 const serviceName = 'scope' as const
 declare module '@pluxel/context' {
 	interface Context {
-		[serviceName]: EffectScopeService
 		collectEffect: EffectScopeService['collectEffect']
 		disposeAll: EffectScopeService['disposeAll']
 		shutdown: EffectScopeService['shutdown']
+	}
+	namespace Context {
+		interface Services {
+			[serviceName]: EffectScopeService
+		}
 	}
 }
 
@@ -27,7 +31,7 @@ export class EffectScopeService {
 	 */
 	public disposables: Set<() => void> = new Set()
 
-	constructor(private ctx: Context) {}
+	constructor(public ctx: Context) {}
 
 	/**
 	 * 注册一个清理函数到当前作用域，

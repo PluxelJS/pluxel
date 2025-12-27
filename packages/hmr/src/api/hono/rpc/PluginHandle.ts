@@ -45,7 +45,7 @@ import { collectDefaults, validateConfigPatch } from './utils'
 
 function resolvePlugin(ctx: Context, name: string, hint?: PluginConstructor): PluginConstructor {
 	const ctor =
-		ctx.loader.resolveRuntimeCtor(name) ?? ctx.loader.resolveRuntimeCtor(hint ?? name) ?? hint
+		ctx.loader.api.runtime.resolve(name) ?? ctx.loader.api.runtime.resolve(hint ?? name) ?? hint
 	if (!ctor) throw new Error(`Plugin not found: ${name}`)
 	return ctor
 }
@@ -112,24 +112,23 @@ async function runStatusAction(
 ): Promise<PluginStatusMutationResult> {
 	try {
 		const ctor = resolvePlugin(ctx, name)
-		const registry = ctx.loader.registry
 
 		switch (action) {
 			case 'start':
-				await registry.enable(name, ctor)
+				await ctx.loader.api.control.enable(name, ctor)
 				break
 			case 'stop':
-				registry.deactivate(name, ctor, { runtimeOnly: true })
+				ctx.loader.api.control.deactivate(name, ctor, { runtimeOnly: true })
 				break
 			case 'restart':
-				registry.deactivate(name, ctor, { runtimeOnly: true })
-				await registry.enable(name, ctor)
+				ctx.loader.api.control.deactivate(name, ctor, { runtimeOnly: true })
+				await ctx.loader.api.control.enable(name, ctor)
 				break
 			case 'disable':
-				registry.deactivate(name, ctor, { runtimeOnly: false })
+				ctx.loader.api.control.deactivate(name, ctor, { runtimeOnly: false })
 				break
 			case 'enable':
-				registry.enablePersisted(name)
+				ctx.loader.api.control.enablePersisted(name)
 				break
 			default:
 				return { name, ok: false, code: 'invalid_status', error: `Unsupported: ${action}` }
@@ -212,7 +211,7 @@ export class PluginHandle extends RpcTarget {
 		return {
 			name: this.name,
 			desc: '插件示例描述',
-			dependencies: this.#ctx.loader.getPluginDependenciesInfo(ctor),
+			dependencies: this.#ctx.loader.api.deps.list(ctor),
 		}
 	}
 
@@ -278,14 +277,14 @@ export class PluginHandle extends RpcTarget {
 					if (typeof resolved === 'function') baseProvider = tokenName(resolved)
 				} catch {}
 
-				for (const [name, pCtor] of this.#ctx.loader.registry.names) {
+				for (const [name, pCtor] of this.#ctx.loader.api.registry.listRegistered()) {
 					try {
 						const info = getPluginInfo(pCtor)
 						if (info.base !== (baseToken as any)) continue
 						options.push({
 							name,
 							isEnabled: this.#ctx.configService.isEnabledInConfig(name),
-							isRunning: this.#ctx.loader.isRunning(pCtor),
+							isRunning: this.#ctx.loader.api.runtime.isRunning(pCtor),
 						})
 					} catch {}
 				}
@@ -313,15 +312,15 @@ export class PluginHandle extends RpcTarget {
 				options.push({
 					name: originalName,
 					isEnabled: this.#ctx.configService.isEnabledInConfig(originalName),
-					isRunning: this.#ctx.loader.isRunning(original as any),
+					isRunning: this.#ctx.loader.api.runtime.isRunning(original as any),
 				})
 				for (const fid of forkIds) {
 					const forkName = `${originalName}#${fid}`
-					const forkCtor = this.#ctx.loader.resolveRuntimeCtor(forkName)
+					const forkCtor = this.#ctx.loader.api.runtime.resolve(forkName)
 					options.push({
 						name: forkName,
 						isEnabled: this.#ctx.configService.isEnabledInConfig(forkName),
-						isRunning: forkCtor ? this.#ctx.loader.isRunning(forkCtor) : false,
+						isRunning: forkCtor ? this.#ctx.loader.api.runtime.isRunning(forkCtor) : false,
 					})
 				}
 				options.sort((a, b) => a.name.localeCompare(b.name))
@@ -371,7 +370,7 @@ export class PluginHandle extends RpcTarget {
 				}
 
 				// Ensure the selected target is enabled & registered, otherwise DI will fail.
-				await this.#ctx.loader.registry.enable(normalized, token)
+				await this.#ctx.loader.api.control.enable(normalized, token)
 			}
 
 			this.#ctx.registry.restart(ctor)
@@ -406,7 +405,7 @@ export class PluginHandle extends RpcTarget {
 			if (!baseKey) return { ok: false, code: 'invalid_base', error: 'baseToken is required' }
 
 			const providers: Array<{ name: string; ctor: PluginConstructor; baseCtor: Function }> = []
-			for (const [name, pCtor] of this.#ctx.loader.registry.names) {
+			for (const [name, pCtor] of this.#ctx.loader.api.registry.listRegistered()) {
 				try {
 					const info = getPluginInfo(pCtor)
 					const base = info.base as any as Function | null
@@ -464,14 +463,14 @@ export class PluginHandle extends RpcTarget {
 			}
 
 			// Reconcile runtime registrations so the selected provider binds the base alias.
-			const enabled = [...this.#ctx.loader.registry.names].filter(([name]) =>
+			const enabled = [...this.#ctx.loader.api.registry.listRegistered()].filter(([name]) =>
 				this.#ctx.configService.isEnabledInConfig(name),
 			)
-			for (const [name, ctor] of enabled) this.#ctx.loader.registry.stopPlugin(name, ctor)
-			for (const [name, ctor] of enabled) await this.#ctx.loader.registry.enable(name, ctor)
+			for (const [name, ctor] of enabled) this.#ctx.loader.api.control.stop(name, ctor)
+			for (const [name, ctor] of enabled) await this.#ctx.loader.api.control.enable(name, ctor)
 			// Ensure selected provider is enabled as well (in case it was disabled).
 			if (!enabled.some(([name]) => name === target.name)) {
-				await this.#ctx.loader.registry.enable(target.name, target.ctor)
+				await this.#ctx.loader.api.control.enable(target.name, target.ctor)
 			}
 
 			try {
@@ -504,7 +503,7 @@ export class PluginHandle extends RpcTarget {
 			addForkToCatalog(this.#ctx, base, fid)
 
 			if (options?.enable !== false) {
-				await this.#ctx.loader.registry.enable(forkName, forkCtor)
+				await this.#ctx.loader.api.control.enable(forkName, forkCtor)
 			}
 
 			const commit = await this.#ctx.registry.commit()
@@ -538,14 +537,14 @@ export class PluginHandle extends RpcTarget {
 		const currentDefault = (map?.[baseToken] as string | undefined) ?? null
 
 		const providers: PluginDependencyOption[] = []
-		for (const [name, pCtor] of this.#ctx.loader.registry.names) {
+		for (const [name, pCtor] of this.#ctx.loader.api.registry.listRegistered()) {
 			try {
 				const pInfo = getPluginInfo(pCtor)
 				if (pInfo.base !== (base as any)) continue
 				providers.push({
 					name,
 					isEnabled: this.#ctx.configService.isEnabledInConfig(name),
-					isRunning: this.#ctx.loader.isRunning(pCtor),
+					isRunning: this.#ctx.loader.api.runtime.isRunning(pCtor),
 				})
 			} catch {}
 		}
@@ -562,7 +561,7 @@ export class PluginHandle extends RpcTarget {
 	/** 获取插件 schema（源代码形式，用于前端动态构建表单） */
 	async schema(): Promise<SchemaResult> {
 		const ctor = this.resolveCtor()
-		const schemaMap = this.#ctx.loader.getPluginSchema(ctor)
+		const schemaMap = this.#ctx.loader.api.registry.getSchema(ctor)
 		if (!schemaMap) {
 			return {
 				ok: false,
@@ -571,7 +570,7 @@ export class PluginHandle extends RpcTarget {
 			}
 		}
 
-		const schemaSource = this.#ctx.loader.getPluginSchemaSource(ctor)
+		const schemaSource = this.#ctx.loader.api.registry.getSchemaSource(ctor)
 		if (!schemaSource || Object.keys(schemaSource).length === 0) {
 			// schemaSource 为空可能是因为 configSourcePlugin 没有正确注入
 			// 这通常发生在 Vite 没有提供 AST 的情况下
@@ -590,14 +589,17 @@ export class PluginHandle extends RpcTarget {
 	}
 
 	async config(): Promise<ConfigResultOk> {
-		const schema = this.#ctx.loader.getPluginSchema(this.resolveCtor())
+		const schema = this.#ctx.loader.api.registry.getSchema(this.resolveCtor())
 		const defaults = await collectDefaults(schema)
-		const config = this.#ctx.configService.getConfig(this.name)
+		const rawConfig = this.#ctx.configService.getConfig(this.name)
+		// ConfigService 内部为了安全会使用 null-prototype 的 record（Object.create(null)）。
+		// capnweb RPC pass-by-value 对象要求 prototype === Object.prototype，因此这里做一次浅拷贝“正则化”。
+		const config = Object.assign({}, rawConfig as Record<string, unknown>)
 		return { ok: true, saved: false, config, defaults }
 	}
 
 	async validateConfig(patch: ConfigPatch): Promise<ConfigResult> {
-		const schema = this.#ctx.loader.getPluginSchema(this.resolveCtor())
+		const schema = this.#ctx.loader.api.registry.getSchema(this.resolveCtor())
 		if (!schema)
 			return {
 				ok: false,
@@ -632,7 +634,7 @@ export class PluginHandle extends RpcTarget {
 	}
 
 	async saveConfig(patch: ConfigPatch): Promise<ConfigResult> {
-		const schema = this.#ctx.loader.getPluginSchema(this.resolveCtor())
+		const schema = this.#ctx.loader.api.registry.getSchema(this.resolveCtor())
 		if (!schema)
 			return {
 				ok: false,
@@ -660,11 +662,16 @@ export class PluginHandle extends RpcTarget {
 			}
 
 			const config = this.#ctx.configService.getConfig(this.name)
-			return { ok: true, saved: true, config, defaults }
+			return {
+				ok: true,
+				saved: true,
+				config: Object.assign({}, config as Record<string, unknown>),
+				defaults,
+			}
 		}
 
 	async resetConfig(keys?: string[]): Promise<ConfigResult> {
-		const schema = this.#ctx.loader.getPluginSchema(this.resolveCtor())
+		const schema = this.#ctx.loader.api.registry.getSchema(this.resolveCtor())
 		if (!schema)
 			return {
 				ok: false,
@@ -699,6 +706,11 @@ export class PluginHandle extends RpcTarget {
 
 		this.#ctx.configService.patchConfig(this.name, validation.output)
 		const config = this.#ctx.configService.getConfig(this.name)
-		return { ok: true, saved: true, config, defaults }
+		return {
+			ok: true,
+			saved: true,
+			config: Object.assign({}, config as Record<string, unknown>),
+			defaults,
+		}
 	}
 }

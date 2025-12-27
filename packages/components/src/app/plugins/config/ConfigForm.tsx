@@ -1,35 +1,13 @@
-import {
-	ActionIcon,
-	Affix,
-	Anchor,
-	Badge,
-	Box,
-	Button,
-	Group,
-	Paper,
-	ScrollArea,
-	ScrollAreaAutosize,
-	Stack,
-	Tabs,
-	Text,
-	Title,
-	Tooltip,
-} from '@mantine/core'
-import { useHotkeys } from '@mantine/hooks'
-import { formOptions } from '@tanstack/react-form'
-import {
-	IconChevronLeft,
-	IconChevronRight,
-	IconCircleFilled,
-	IconListDetails,
-} from '@tabler/icons-react'
+import { Box, Group, ScrollArea, SegmentedControl, Stack, Text, Tooltip } from '@mantine/core'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ObjectSchema } from 'valibot'
 import { getDefaults } from 'valibot'
-import { AutoForm, useAutoFormCtx } from 'valibot-form/web'
+import { EmptyState } from '../../../components'
 import { useNotify } from '../../hooks'
 import { createRpcClient } from '../../rpc'
-import { EmptyState } from '../../../components'
+import { ConfigTabPanel, type ConfigFormBridge, type ConfigFormState } from './ConfigTab'
+import { ConfigActionDock } from './components/ConfigActionDock'
+import { makeFieldAnchorPrefix, makeSectionAnchorPrefix } from './utils'
 
 export interface ConfigFormProps {
 	pluginName: string
@@ -38,633 +16,305 @@ export interface ConfigFormProps {
 	savedConfig: Record<string, any>
 	/** schema 默认值 */
 	defaults: Record<string, any>
+	active?: boolean
+	activeKey?: string
+	onActiveKeyChange?: (key: string) => void
 }
 
-/** 状态徽标 */
-function SavedStatus({ dirty, savedAt }: { dirty: boolean; savedAt?: number }) {
-	const [now, setNow] = useState(Date.now)
-	useEffect(() => {
-		if (!savedAt || dirty) return undefined
-		const id = setInterval(() => setNow(Date.now), 1000)
-		return () => clearInterval(id)
-	}, [savedAt, dirty])
+type FormBridge = ConfigFormBridge
+type FormState = ConfigFormState
 
-	if (dirty)
-		return (
-			<Badge variant="light" color="yellow">
-				已修改
-			</Badge>
-		)
-	if (!savedAt)
-		return (
-			<Badge variant="light" color="gray">
-				未修改
-			</Badge>
-		)
-
-	const sec = Math.max(0, Math.floor((now - savedAt) / 1000))
-	return (
-		<Tooltip label={new Date(savedAt).toLocaleString()}>
-			<Badge variant="light" color="green">
-				已保存 {sec}s 前
-			</Badge>
-		</Tooltip>
+export function ConfigForm({
+	pluginName,
+	schemas,
+	savedConfig,
+	defaults,
+	active = true,
+	activeKey: activeKeyProp,
+	onActiveKeyChange,
+}: ConfigFormProps) {
+	const safeSchemas = schemas ?? {}
+	const keys = useMemo(() => Object.keys(safeSchemas), [safeSchemas])
+	const [activeKey, setActiveKey] = useState(keys[0] || '')
+	const [savedAtMap, setSavedAtMap] = useState<Record<string, number | undefined>>({})
+	const [savingAll, setSavingAll] = useState(false)
+	const [baselineOverrides, setBaselineOverrides] = useState<Record<string, Record<string, any>>>(
+		{},
 	)
-}
-
-/** 悬浮操作条 - 三个按钮 */
-function FloatingBar(props: {
-	title: string
-	dirty: boolean
-	canSubmit: boolean
-	submitting: boolean
-	onSubmit(): void
-	onCancel(): void
-	onResetToDefaults(): void
-	savedAt?: number
-}) {
-	const { title, dirty, canSubmit, submitting, onSubmit, onCancel, onResetToDefaults, savedAt } =
-		props
-
-	return (
-		<Affix position={{ bottom: 16, right: 16 }} withinPortal zIndex={1000}>
-			<Paper
-				withBorder
-				radius="xl"
-				p="xs"
-				shadow="md"
-				style={{
-					opacity: dirty || submitting ? 1 : 0.7,
-					transition: 'opacity 120ms ease',
-				}}
-				styles={{ root: { '&:hover': { opacity: 1 } } }}
-			>
-				<Group gap="sm" wrap="nowrap" align="center">
-					<Group gap={8} wrap="nowrap" style={{ minWidth: 0 }}>
-						<Text
-							fw={600}
-							size="sm"
-							style={{
-								maxWidth: 220,
-								overflow: 'hidden',
-								whiteSpace: 'nowrap',
-								textOverflow: 'ellipsis',
-							}}
-							title={title}
-						>
-							{title}
-						</Text>
-						<SavedStatus dirty={dirty} savedAt={savedAt} />
-					</Group>
-					<Group gap="xs" wrap="nowrap">
-						<Button
-							id={`cancel-fab-${title}`}
-							variant="default"
-							onClick={onCancel}
-							disabled={!dirty || submitting}
-						>
-							取消
-						</Button>
-						<Button
-							id={`reset-fab-${title}`}
-							variant="subtle"
-							onClick={onResetToDefaults}
-							disabled={submitting}
-						>
-							重置
-						</Button>
-						<Button
-							id={`submit-fab-${title}`}
-							onClick={onSubmit}
-							disabled={!canSubmit}
-							loading={submitting}
-						>
-							{submitting ? '提交中…' : '提交'}
-						</Button>
-					</Group>
-				</Group>
-			</Paper>
-		</Affix>
-	)
-}
-
-function toDomSlug(value: string) {
-	return (
-		value
-			.toLowerCase()
-			.replace(/[^a-z0-9_-]+/gi, '-')
-			.replace(/^-+|-+$/g, '') || 'section'
-	)
-}
-
-function findScrollableParent(node: HTMLElement | null): HTMLElement | null {
-	let current: HTMLElement | null = node
-	while (current && current !== document.body) {
-		const style = getComputedStyle(current)
-		const overflowY = style.overflowY
-		if (overflowY === 'auto' || overflowY === 'scroll') {
-			return current
-		}
-		current = current.parentElement
-	}
-	return document.scrollingElement as HTMLElement | null
-}
-
-function makeSectionAnchorPrefix(pluginName: string, tabKey: string) {
-	return `config-${toDomSlug(pluginName)}-${toDomSlug(tabKey)}-section-`
-}
-
-function makeFieldAnchorPrefix(pluginName: string, tabKey: string) {
-	return `config-${toDomSlug(pluginName)}-${toDomSlug(tabKey)}-field-`
-}
-
-function FormToc({
-	sectionIdPrefix,
-	fieldIdPrefix,
-	scrollHost,
-	scrollHostVersion = 0,
-}: {
-	sectionIdPrefix: string
-	fieldIdPrefix: string
-	scrollHost?: HTMLElement | null
-	scrollHostVersion: number
-}) {
-	const { sections } = useAutoFormCtx<any>()
-	const [anchors, setAnchors] = useState<{ id: string; label: string; depth: number }[]>([])
-	const anchorsRef = useRef<typeof anchors>([])
-	const [activeId, setActiveId] = useState<string | null>(null)
-	const [expanded, setExpanded] = useState(false)
-	const peekWidth = 72
-
-	// 计算节点的层级结构
-	const buildTree = useCallback((list: { id: string; label: string; depth: number }[]) => {
-		const roots: { id: string; label: string; depth: number; children: any[] }[] = []
-		const stack: { id: string; label: string; depth: number; children: any[] }[] = []
-		for (const anchor of list) {
-			const node = {
-				id: anchor.id,
-				label: anchor.label,
-				depth: anchor.depth,
-				children: [] as any[],
-			}
-			while (stack.length && stack[stack.length - 1].depth >= node.depth) stack.pop()
-			if (stack.length) {
-				stack[stack.length - 1].children.push(node)
-			} else {
-				roots.push(node)
-			}
-			stack.push(node)
-		}
-		return roots
+	const notify = useNotify()
+	const scrollHostsRef = useRef<Record<string, HTMLDivElement | null>>({})
+	const [scrollHostVersion, setScrollHostVersion] = useState(0)
+	const formBridgeRef = useRef<Record<string, FormBridge>>({})
+	const [formStates, setFormStates] = useState<Record<string, FormState>>({})
+	const markSaved = useCallback((key: string, value: Record<string, any>) => {
+		const savedAt = Date.now()
+		setSavedAtMap((m) => ({ ...m, [key]: savedAt }))
+		setBaselineOverrides((prev) => ({ ...prev, [key]: value }))
 	}, [])
 
 	useEffect(() => {
-		const host = scrollHost ?? document
-		let frame = 0
-		let observer: MutationObserver | null = null
+		const next = keys[0] ?? ''
+		const prop = typeof activeKeyProp === 'string' && activeKeyProp ? activeKeyProp : ''
 
-		const scan = () => {
-			frame = 0
-			const nodes = Array.from(host.querySelectorAll('[data-config-anchor]')) as HTMLElement[]
-			const parsed = nodes.map((el) => ({
-				id: el.id,
-				label: el.getAttribute('data-config-anchor-label') ?? el.id,
-				depth: Number(el.getAttribute('data-config-anchor-depth') ?? 1),
-			}))
-			anchorsRef.current = parsed
-			setAnchors(parsed)
-			setActiveId((prev) => prev ?? parsed[0]?.id ?? null)
-		}
-
-		scan()
-		if (scrollHost && typeof MutationObserver !== 'undefined') {
-			observer = new MutationObserver(() => {
-				if (frame) cancelAnimationFrame(frame)
-				frame = requestAnimationFrame(scan)
-			})
-			observer.observe(scrollHost, {
-				childList: true,
-				subtree: true,
-				attributes: true,
-				attributeFilter: ['id', 'data-config-anchor-label'],
-			})
-		}
-
-		const root = scrollHost ?? window
-		const onScroll = () => {
-			if (frame) cancelAnimationFrame(frame)
-			frame = requestAnimationFrame(() => {
-				const scrollTop = scrollHost ? scrollHost.scrollTop : window.scrollY
-				const viewport = scrollHost ? scrollHost.clientHeight : window.innerHeight
-				const anchorOffset = 72
-				let current: { id: string; score: number } | null = null
-
-				for (const anchor of anchorsRef.current) {
-					const el = document.getElementById(anchor.id)
-					if (!el) continue
-					const container =
-						(scrollHost && scrollHost.contains(el) ? scrollHost : null) ??
-						el.closest<HTMLElement>('[data-config-scroll-root]') ??
-						findScrollableParent(el)
-					const pos =
-						container &&
-						container !== document.scrollingElement &&
-						container !== document.documentElement
-							? el.getBoundingClientRect().top -
-								container.getBoundingClientRect().top +
-								container.scrollTop
-							: el.getBoundingClientRect().top + window.scrollY
-					const delta = Math.abs(pos - scrollTop - anchorOffset)
-					const inView = pos >= scrollTop - 20 && pos < scrollTop + viewport - 120
-					const score = inView ? delta * 0.5 : delta
-					if (!current || score < current.score) {
-						current = { id: anchor.id, score }
-					}
-				}
-				if (current?.id) setActiveId(current.id)
-			})
-		}
-		root.addEventListener('scroll', onScroll, { passive: true })
-		onScroll()
-
-		return () => {
-			root.removeEventListener('scroll', onScroll)
-			if (observer) observer.disconnect()
-			if (frame) cancelAnimationFrame(frame)
-		}
-	}, [scrollHost, sections.length, sectionIdPrefix, fieldIdPrefix, scrollHostVersion])
-
-	const items = useMemo(() => buildTree(anchors), [anchors, buildTree])
-
-	const scrollToSection = useCallback(
-		(id: string) => {
-			if (!id) return
-			const target = document.getElementById(id)
-			if (!target) return
-			const scrollMarginTop =
-				Number.parseFloat(getComputedStyle(target).scrollMarginTop || '0') || 0
-			const container =
-				(scrollHost && scrollHost.contains(target) ? scrollHost : null) ??
-				target.closest<HTMLElement>('[data-config-scroll-root]') ??
-				findScrollableParent(target)
-
-			if (
-				container &&
-				container !== document.scrollingElement &&
-				container !== document.documentElement
-			) {
-				const targetBox = target.getBoundingClientRect()
-				const hostBox = container.getBoundingClientRect()
-				const top = targetBox.top - hostBox.top + container.scrollTop - scrollMarginTop
-				container.scrollTo({ top, behavior: 'smooth' })
-			} else {
-				const top = target.getBoundingClientRect().top + window.scrollY - scrollMarginTop
-				window.scrollTo({ top, behavior: 'smooth' })
+		if (prop) {
+			if (keys.includes(prop)) {
+				setActiveKey(prop)
+				return
 			}
-		},
-		[scrollHost],
-	)
+			if (next && onActiveKeyChange) {
+				onActiveKeyChange(next)
+			}
+		}
 
-	if (!items.length) return null
-
-	const renderNode = (node: { id: string; label: string; children: any[] }, depth = 0) => {
-		const isActive = node.id === activeId
-		return (
-			<Box
-				key={node.id}
-				onClick={(e) => {
-					e.stopPropagation()
-					scrollToSection(node.id)
-				}}
-				role="button"
-				tabIndex={0}
-				onKeyDown={(e) => {
-					if (e.key === 'Enter' || e.key === ' ') {
-						e.preventDefault()
-						e.stopPropagation()
-						scrollToSection(node.id)
-					}
-				}}
-				style={{
-					borderRadius: 12,
-					padding: '10px 12px',
-					cursor: 'pointer',
-					border: `1px solid ${isActive ? 'var(--mantine-color-blue-outline)' : 'var(--mantine-color-default-border)'}`,
-					backgroundColor: isActive
-						? 'var(--mantine-color-blue-light)'
-						: 'var(--mantine-color-body)',
-					boxShadow: isActive ? 'var(--mantine-shadow-sm)' : 'none',
-					marginLeft: depth ? 10 : 0,
-					position: 'relative',
-				}}
-			>
-				<Group justify="space-between" align="center" gap={6} style={{ minWidth: 0 }}>
-					<Group gap={6} align="center" style={{ minWidth: 0 }}>
-						<IconCircleFilled size={12} color="var(--mantine-color-blue-filled)" />
-						<Text
-							size="sm"
-							fw={isActive ? 700 : 600}
-							style={{ flex: 1, minWidth: 0 }}
-							lineClamp={1}
-						>
-							{node.label}
-						</Text>
-					</Group>
-					{node.children.length ? (
-						<Badge variant="light" size="xs" color="gray">
-							{node.children.length}
-						</Badge>
-					) : null}
-				</Group>
-				{node.children.length ? (
-					<Stack gap={6} mt={8}>
-						{node.children.map((child) => renderNode(child, depth + 1))}
-					</Stack>
-				) : null}
-			</Box>
-		)
-	}
-
-	return (
-		<Box
-			onMouseEnter={() => setExpanded(true)}
-			onMouseLeave={() => setExpanded(false)}
-			onFocus={() => setExpanded(true)}
-			onBlur={() => setExpanded(false)}
-			style={{ width: 320, maxWidth: '80vw' }}
-		>
-			<Paper
-				withBorder
-				shadow="md"
-				p="sm"
-				radius="lg"
-				style={{
-					transition: 'transform 160ms ease, box-shadow 160ms ease',
-					transform: expanded ? 'translateX(0)' : `translateX(calc(100% - ${peekWidth}px))`,
-					maxHeight: '72vh',
-					overflow: 'hidden',
-					backgroundColor: 'var(--mantine-color-body)',
-					border: '1px solid var(--mantine-color-default-border)',
-					boxShadow: expanded ? 'var(--mantine-shadow-lg)' : 'var(--mantine-shadow-sm)',
-				}}
-			>
-				<Stack gap="xs" style={{ height: '100%' }}>
-					<Group justify="space-between" align="center" gap="xs">
-						<Group gap={8} wrap="nowrap" style={{ minWidth: 0 }}>
-							<IconListDetails size={18} color="var(--mantine-color-blue-filled)" />
-							<Text
-								size="sm"
-								fw={700}
-								style={{
-									whiteSpace: 'nowrap',
-									overflow: 'hidden',
-									textOverflow: 'ellipsis',
-									maxWidth: peekWidth - 12,
-								}}
-							>
-								配置导航
-							</Text>
-							<Badge size="xs" variant="light" color="blue">
-								TOC
-							</Badge>
-						</Group>
-						<ActionIcon
-							variant="subtle"
-							aria-label={expanded ? '收起目录' : '展开目录'}
-							onClick={() => setExpanded((v) => !v)}
-						>
-							{expanded ? <IconChevronRight size={16} /> : <IconChevronLeft size={16} />}
-						</ActionIcon>
-					</Group>
-					<Text size="xs" c="dimmed">
-						悬停展开，点击跳转到对应 section/字段。
-					</Text>
-					<ScrollArea style={{ maxHeight: '62vh' }} type="auto" scrollbarSize={8}>
-						<Stack gap="xs" pr={4}>
-							{items.map((item) => renderNode(item))}
-						</Stack>
-					</ScrollArea>
-				</Stack>
-			</Paper>
-		</Box>
-	)
-}
-
-/** 单个配置 Tab */
-function ConfigTabContent({
-	pluginName,
-	tabKey,
-	schema,
-	savedValue,
-	defaultValue,
-	onSaved,
-	savedAt,
-	showToc,
-	sectionIdPrefix,
-	fieldIdPrefix,
-	scrollHost,
-	scrollHostVersion,
-}: {
-	tabKey: string
-	pluginName: string
-	schema: ObjectSchema<any, any>
-	savedValue: Record<string, any>
-	defaultValue: Record<string, any>
-	onSaved: (k: string) => void
-	savedAt?: number
-	showToc?: boolean
-	sectionIdPrefix?: string
-	fieldIdPrefix?: string
-	scrollHost?: HTMLElement | null
-	scrollHostVersion?: number
-}) {
-	const notify = useNotify()
-	const sectionAnchorPrefix = useMemo(
-		() => sectionIdPrefix ?? makeSectionAnchorPrefix(pluginName, tabKey),
-		[pluginName, sectionIdPrefix, tabKey],
-	)
-	const fieldAnchorPrefix = useMemo(
-		() => fieldIdPrefix ?? makeFieldAnchorPrefix(pluginName, tabKey),
-		[fieldIdPrefix, pluginName, tabKey],
-	)
-
-	// 初始值 = defaults 合并 savedConfig
-	const initialValue = useMemo(
-		() => ({ ...defaultValue, ...savedValue }),
-		[defaultValue, savedValue],
-	)
-
-	const opts = useMemo(
-		() =>
-			formOptions({
-				defaultValues: initialValue,
-				onSubmit: async ({ value, formApi }) => {
-					using rpc = createRpcClient()
-					const result = await rpc.plugin(pluginName).saveConfig({ [tabKey]: value })
-					if (result.ok === false) {
-						// 应用服务端验证错误到表单字段
-						if (result.code === 'validation_failed' && result.errors) {
-							const fieldErrors = result.errors[tabKey]
-							if (fieldErrors) {
-								for (const [fieldName, issues] of Object.entries(fieldErrors)) {
-									if (fieldName === '_root' || fieldName === '_unknown') continue
-									// valibot-form 期望 errors 格式为 { message, dotPath }
-									// tanstack form 会把 errorMap 的每个值作为 errors 数组的一个元素
-									formApi.setFieldMeta(fieldName as any, (meta) => ({
-										...meta,
-										errorMap: {
-											...meta.errorMap,
-											onSubmit: {
-												message: issues.map((i) => i.message).join('; '),
-												dotPath: issues[0]?.path ?? [],
-											},
-										},
-									}))
-								}
-							}
-						}
-						notify({
-							title: '提交失败',
-							message: result.message ?? result.code ?? '未知错误',
-							color: 'red',
-						})
-						return
-					}
-					onSaved(tabKey)
-					notify({ title: '提交成功', message: `配置 ${tabKey} 已保存`, color: 'green' })
-				},
-			}),
-		[tabKey, initialValue, onSaved, notify, pluginName],
-	)
-
-	// memoize hotkeys 配置
-	const hotkeys = useMemo(
-		(): [string, (e: KeyboardEvent) => void][] => [
-			[
-				'mod+S',
-				(e) => {
-					e.preventDefault()
-					document.getElementById(`submit-fab-${tabKey}`)?.click()
-				},
-			],
-			['Escape', () => document.getElementById(`cancel-fab-${tabKey}`)?.click()],
-		],
-		[tabKey],
-	)
-	useHotkeys(hotkeys)
-
-	return (
-		<AutoForm key={`${pluginName}-${tabKey}`} schema={schema as any} formOpts={opts}>
-			{showToc ? (
-				<Affix position={{ top: 86, right: 16 }} zIndex={950} withinPortal>
-					<FormToc
-						sectionIdPrefix={sectionAnchorPrefix}
-						fieldIdPrefix={fieldAnchorPrefix}
-						scrollHost={scrollHost}
-						scrollHostVersion={scrollHostVersion}
-					/>
-				</Affix>
-			) : null}
-			<Box px="sm" pb={96} style={{ position: 'relative' }}>
-				<AutoForm.Fields sectionIdPrefix={sectionAnchorPrefix} fieldIdPrefix={fieldAnchorPrefix} />
-			</Box>
-			<AutoForm.Actions>
-				{({ submit, reset, dirty, canSubmit, submitting }) => (
-					<FloatingBar
-						title={tabKey}
-						dirty={dirty}
-						canSubmit={canSubmit}
-						submitting={submitting}
-						onSubmit={submit}
-						onCancel={() => reset(initialValue)}
-						onResetToDefaults={() => reset(defaultValue)}
-						savedAt={savedAt}
-					/>
-				)}
-			</AutoForm.Actions>
-		</AutoForm>
-	)
-}
-
-function ConfigTabPanel(props: Parameters<typeof ConfigTabContent>[0]) {
-	return (
-		<Tabs.Panel
-			value={props.tabKey}
-			pt="md"
-			style={{
-				flex: 1,
-				minHeight: 0,
-				display: 'flex',
-				flexDirection: 'column',
-				overflow: 'hidden',
-			}}
-		>
-			<ConfigTabContent {...props} />
-		</Tabs.Panel>
-	)
-}
-
-export function ConfigForm({ pluginName, schemas, savedConfig, defaults }: ConfigFormProps) {
-	const safeSchemas = schemas ?? {}
-	const keys = useMemo(() => Object.keys(safeSchemas), [safeSchemas])
-	const [tab, setTab] = useState(keys[0] || '')
-	const [savedAtMap, setSavedAtMap] = useState<Record<string, number | undefined>>({})
-	const scrollHostsRef = useRef<Record<string, HTMLDivElement | null>>({})
-	const [scrollHostVersion, setScrollHostVersion] = useState(0)
-	const onSaved = useCallback((k: string) => setSavedAtMap((m) => ({ ...m, [k]: Date.now() })), [])
-
-	useEffect(() => {
-		setTab((prev) => {
+		setActiveKey((prev) => {
 			if (prev && keys.includes(prev)) return prev
-			return keys[0] ?? ''
+			return next
 		})
-	}, [keys])
+	}, [activeKeyProp, keys, onActiveKeyChange])
 
-	const items = useMemo(() => {
+	const schemaItems = useMemo(() => {
 		return keys.map((key) => {
 			const schema = safeSchemas[key]!
 			const schemaDefaults = getDefaults(schema) as Record<string, any>
+			const defaultValue = { ...schemaDefaults, ...(defaults[key] ?? {}) }
+			const savedValue = baselineOverrides[key] ?? savedConfig[key] ?? {}
 			return {
 				key,
 				schema,
-				savedValue: savedConfig[key] ?? {},
-				defaultValue: { ...schemaDefaults, ...(defaults[key] ?? {}) },
+				savedValue,
+				defaultValue,
+				initialValue: { ...defaultValue, ...savedValue },
 			}
 		})
-	}, [safeSchemas, savedConfig, defaults, keys])
+	}, [safeSchemas, savedConfig, defaults, keys, baselineOverrides])
 
-	const hasConfig = items.length > 0
+	const resolvedActiveKey =
+		typeof activeKeyProp === 'string' && keys.includes(activeKeyProp) ? activeKeyProp : activeKey
+
+	const hasConfig = schemaItems.length > 0
+	const hasMultipleSchemas = schemaItems.length > 1
+
+	const registerForm = useCallback((key: string, bridge: FormBridge) => {
+		formBridgeRef.current[key] = bridge
+		return () => {
+			if (formBridgeRef.current[key] === bridge) delete formBridgeRef.current[key]
+		}
+	}, [])
+
+	const reportState = useCallback((key: string, next: FormState) => {
+		setFormStates((prev) => {
+			const existing = prev[key]
+			if (
+				existing &&
+				existing.dirty === next.dirty &&
+				existing.canSubmit === next.canSubmit &&
+				existing.submitting === next.submitting &&
+				existing.values === next.values
+			) {
+				return prev
+			}
+			return { ...prev, [key]: next }
+		})
+	}, [])
+
+	const applyFieldErrors = useCallback((form: any, fieldErrors: Record<string, any[]>) => {
+		for (const [fieldName, issues] of Object.entries(fieldErrors)) {
+			if (fieldName === '_root' || fieldName === '_unknown') continue
+			form.setFieldMeta(fieldName as any, (meta: any) => ({
+				...meta,
+				errorMap: {
+					...meta.errorMap,
+					onSubmit: {
+						message: issues.map((i) => i.message).join('; '),
+						dotPath: issues[0]?.path ?? [],
+					},
+				},
+			}))
+		}
+	}, [])
+
+	const saveAll = useCallback(async () => {
+		if (savingAll || !hasMultipleSchemas) return
+		const bridges = formBridgeRef.current
+		const patch: Record<string, any> = {}
+		for (const item of schemaItems) {
+			const bridge = bridges[item.key]
+			if (!bridge) continue
+			if (!bridge.form?.state?.isDirty) continue
+			patch[item.key] = bridge.form?.state?.values ?? {}
+		}
+
+		if (Object.keys(patch).length === 0) {
+			notify({ title: '无需提交', message: '没有变更的配置', color: 'blue' })
+			return
+		}
+
+		setSavingAll(true)
+		try {
+			using rpc = createRpcClient()
+			const result = await rpc.plugin(pluginName).saveConfig(patch)
+			if (result.ok === false) {
+				if (result.code === 'validation_failed' && result.errors) {
+					for (const [tabKey, errors] of Object.entries(result.errors)) {
+						const bridge = bridges[tabKey]
+						if (!bridge || !errors) continue
+						applyFieldErrors(bridge.form, errors as Record<string, any[]>)
+					}
+				}
+				notify({
+					title: '提交失败',
+					message: result.message ?? result.code ?? '未知错误',
+					color: 'red',
+				})
+				return
+			}
+
+			const savedAt = Date.now()
+			setSavedAtMap((prev) => {
+				const next = { ...prev }
+				for (const key of Object.keys(patch)) next[key] = savedAt
+				return next
+			})
+			setBaselineOverrides((prev) => {
+				const next = { ...prev }
+				for (const [key, value] of Object.entries(patch)) {
+					next[key] = value as Record<string, any>
+				}
+				return next
+			})
+			for (const [key, bridge] of Object.entries(bridges)) {
+				if (!patch[key]) continue
+				const values = bridge.form?.state?.values ?? {}
+				bridge.reset(values)
+			}
+			notify({ title: '提交成功', message: '已保存全部配置', color: 'green' })
+		} finally {
+			setSavingAll(false)
+		}
+	}, [applyFieldErrors, hasMultipleSchemas, notify, pluginName, savingAll, schemaItems])
+
+	const submitCurrent = useCallback(() => {
+		const bridge = formBridgeRef.current[resolvedActiveKey]
+		if (!bridge?.submit) return
+		bridge.submit()
+	}, [resolvedActiveKey])
+
+	const resetCurrent = useCallback(() => {
+		const bridge = formBridgeRef.current[resolvedActiveKey]
+		const current = schemaItems.find((item) => item.key === resolvedActiveKey)
+		if (!bridge || !current) return
+		bridge.reset(current.initialValue)
+	}, [resolvedActiveKey, schemaItems])
+
+	const resetToDefaults = useCallback(() => {
+		const bridge = formBridgeRef.current[resolvedActiveKey]
+		const current = schemaItems.find((item) => item.key === resolvedActiveKey)
+		if (!bridge || !current) return
+		bridge.reset(current.defaultValue)
+	}, [resolvedActiveKey, schemaItems])
+
+	const setScrollHost = useCallback((key: string, node: HTMLDivElement | null) => {
+		if (!node || scrollHostsRef.current[key] === node) return
+		node.dataset.configScrollRoot = 'true'
+		scrollHostsRef.current[key] = node
+		setScrollHostVersion((v) => v + 1)
+	}, [])
+
+	const dirtyKeys = useMemo(() => {
+		return schemaItems
+			.filter((item) => formStates[item.key]?.dirty)
+			.map((item) => item.key)
+	}, [formStates, schemaItems])
+
+	const activeState = formStates[resolvedActiveKey] ?? {
+		dirty: false,
+		canSubmit: false,
+		submitting: false,
+		values: {},
+	}
+
+	const changedFieldsByKey = useMemo(() => {
+		const out: Record<string, string[]> = {}
+		for (const item of schemaItems) {
+			const current = formStates[item.key]?.values
+			if (!current) {
+				out[item.key] = []
+				continue
+			}
+			const baseline = item.initialValue
+			const keys = new Set([...Object.keys(baseline), ...Object.keys(current)])
+			const changed: string[] = []
+			for (const key of keys) {
+				if (!Object.is(baseline[key], current[key])) changed.push(key)
+			}
+			out[item.key] = changed
+		}
+		return out
+	}, [formStates, schemaItems])
+
+	const schemaOptions = useMemo(() => {
+		return schemaItems.map((item) => {
+			const state = formStates[item.key]
+			const dirty = Boolean(state?.dirty)
+			const changedFields = changedFieldsByKey[item.key] ?? []
+			const savedAt = savedAtMap[item.key]
+
+			const label = (
+				<Tooltip
+					withArrow
+					openDelay={300}
+					label={
+						<Stack gap={4}>
+							<Text size="xs" fw={600}>
+								{item.key}
+							</Text>
+							{dirty ? (
+								<Text size="xs">
+									{changedFields.length > 0
+										? `已修改 ${changedFields.length} 项：${formatFieldList(changedFields)}`
+										: '已修改'}
+								</Text>
+							) : savedAt ? (
+								<Text size="xs">上次保存：{new Date(savedAt).toLocaleString()}</Text>
+							) : (
+								<Text size="xs">未修改</Text>
+							)}
+						</Stack>
+					}
+				>
+					<Group gap={6} wrap="nowrap">
+						<Text size="xs">{item.key}</Text>
+						{dirty ? (
+							<Box
+								style={{
+									width: 6,
+									height: 6,
+									borderRadius: 999,
+									background: 'var(--mantine-color-yellow-filled)',
+								}}
+							/>
+						) : null}
+					</Group>
+				</Tooltip>
+			)
+
+			return { value: item.key, label }
+		})
+	}, [changedFieldsByKey, formStates, savedAtMap, schemaItems])
 
 	return (
 		<Box style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, minWidth: 0 }}>
-			<Group justify="space-between" mb="md" wrap="nowrap">
-				<Title
-					order={3}
-					style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
-					title={`${pluginName} 配置`}
-				>
-					{pluginName} 配置
-				</Title>
-				<Anchor href={`/plugins/${pluginName}/docs`} target="_blank" rel="noreferrer">
-					查看文档
-				</Anchor>
-			</Group>
-
 			{!hasConfig ? (
-				<Paper withBorder radius="lg" p="xl" style={{ flex: 1, minHeight: 0 }}>
+				<Box style={{ flex: 1, minHeight: 0 }}>
 					<EmptyState
 						title="暂无可填写的配置"
 						description="该插件当前未公开任何配置 schema。"
 						icon={null}
 						minHeight="auto"
 					/>
-				</Paper>
+				</Box>
 			) : (
-				<Tabs
-					value={tab}
-					onChange={(v) => setTab(String(v))}
-					variant="outline"
-					keepMounted={false}
+				<Box
 					style={{
 						display: 'flex',
 						flexDirection: 'column',
@@ -673,46 +323,78 @@ export function ConfigForm({ pluginName, schemas, savedConfig, defaults }: Confi
 						overflow: 'hidden',
 					}}
 				>
-					<Tabs.List>
-						{keys.map((k) => (
-							<Tabs.Tab key={k} value={k}>
-								{k}
-							</Tabs.Tab>
-						))}
-					</Tabs.List>
-
-					{items.map(({ key, schema, savedValue, defaultValue }) => (
-						<ScrollAreaAutosize
-							key={`${pluginName}-${key}`}
-							type="auto"
-							scrollbarSize={10}
-							offsetScrollbars
-							viewportRef={(node) => {
-								if (node && scrollHostsRef.current[key] !== node) {
-									node.dataset.configScrollRoot = 'true'
-									scrollHostsRef.current[key] = node
-									setScrollHostVersion((v) => v + 1)
-								}
-							}}
-						>
-							<ConfigTabPanel
-								pluginName={pluginName}
-								tabKey={key}
-								schema={schema}
-								savedValue={savedValue}
-								defaultValue={defaultValue}
-								onSaved={onSaved}
-								savedAt={savedAtMap[key]}
-								showToc
-								sectionIdPrefix={makeSectionAnchorPrefix(pluginName, key)}
-								fieldIdPrefix={makeFieldAnchorPrefix(pluginName, key)}
-								scrollHost={scrollHostsRef.current[key]}
-								scrollHostVersion={scrollHostVersion}
+					{hasMultipleSchemas ? (
+						<Group justify="space-between" mb="xs" wrap="nowrap">
+							<SegmentedControl
+								size="xs"
+								radius="xl"
+								value={resolvedActiveKey}
+								onChange={(v) => {
+									const nextKey = String(v)
+									setActiveKey(nextKey)
+									onActiveKeyChange?.(nextKey)
+								}}
+								data={schemaOptions}
 							/>
-						</ScrollAreaAutosize>
-					))}
-				</Tabs>
+						</Group>
+					) : null}
+
+					{schemaItems.map(({ key, schema, savedValue, defaultValue }) => {
+						const isActive = key === resolvedActiveKey
+						const showOverlay = active && isActive
+						return (
+							<ScrollArea
+								key={`${pluginName}-${key}`}
+								type="auto"
+								scrollbarSize={10}
+								offsetScrollbars
+								style={{
+									display: isActive ? 'block' : 'none',
+									flex: 1,
+									minHeight: 0,
+								}}
+								viewportRef={(node) => setScrollHost(key, node)}
+							>
+								<ConfigTabPanel
+									pluginName={pluginName}
+									tabKey={key}
+									schema={schema}
+									savedValue={savedValue}
+									defaultValue={defaultValue}
+									onSaved={markSaved}
+									showToc={showOverlay}
+									active={showOverlay}
+									sectionIdPrefix={makeSectionAnchorPrefix(pluginName, key)}
+									fieldIdPrefix={makeFieldAnchorPrefix(pluginName, key)}
+									scrollHost={scrollHostsRef.current[key]}
+									scrollHostVersion={scrollHostVersion}
+									registerForm={registerForm}
+									reportState={reportState}
+								/>
+							</ScrollArea>
+						)
+					})}
+				</Box>
 			)}
+			{active && hasConfig ? (
+				<ConfigActionDock
+					activeKey={resolvedActiveKey}
+					activeState={activeState}
+					activeSavedAt={savedAtMap[resolvedActiveKey]}
+					dirtyKeys={dirtyKeys}
+					hasMultipleSchemas={hasMultipleSchemas}
+					savingAll={savingAll}
+					onSubmitCurrent={submitCurrent}
+					onSubmitAll={saveAll}
+					onResetCurrent={resetCurrent}
+					onResetDefaults={resetToDefaults}
+				/>
+			) : null}
 		</Box>
 	)
+}
+
+function formatFieldList(fields: string[], limit = 4) {
+	if (fields.length <= limit) return fields.join(', ')
+	return `${fields.slice(0, limit).join(', ')} +${fields.length - limit}`
 }

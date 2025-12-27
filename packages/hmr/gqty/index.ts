@@ -6,10 +6,10 @@ import { createReactClient } from '@gqty/react'
 import { Cache, createClient, defaultResponseHandler, type QueryFetcher } from 'gqty'
 import { generatedSchema, scalarsEnumsHash, type GeneratedSchema } from './schema.generated'
 
-const queryFetcher: QueryFetcher = async function (
+const queryFetcher: QueryFetcher = async (
 	{ query, variables, operationName },
 	fetchOptions,
-) {
+) => {
 	// Modify "http://localhost:3000/graphql" if needed
 	const response = await fetch('http://localhost:3000/graphql', {
 		method: 'POST',

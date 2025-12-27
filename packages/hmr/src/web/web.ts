@@ -3,3 +3,6 @@
 import type {} from '../services'
 
 export * from '@pluxel/hmr-web'
+
+// Ergonomic aliases
+export { createHmrWebClient as createHmrClient, hmrWebClient as hmr } from '@pluxel/hmr-web'
