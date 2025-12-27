@@ -880,17 +880,17 @@ function transformVendorImports(code: string): string {
 		})
 
 		result = result.replace(patterns[1]!, (_, name: string) => {
-			return `const ${name} = window.__PLUXEL_VENDORS__["${pkg}"];`
+			return `var ${name} = window.__PLUXEL_VENDORS__["${pkg}"];`
 		})
 
 		result = result.replace(patterns[3]!, (_, defaultName: string, namedImports: string) => {
 			const named = rewriteVendorNamedImports(namedImports, pkg)
-			const defaultLine = `const ${defaultName} = window.__PLUXEL_VENDORS__["${pkg}"].default || window.__PLUXEL_VENDORS__["${pkg}"];`
+			const defaultLine = `var ${defaultName} = window.__PLUXEL_VENDORS__["${pkg}"].default || window.__PLUXEL_VENDORS__["${pkg}"];`
 			return named ? `${defaultLine}\n${named}` : defaultLine
 		})
 
 		result = result.replace(patterns[2]!, (_, name: string) => {
-			return `const ${name} = window.__PLUXEL_VENDORS__["${pkg}"].default || window.__PLUXEL_VENDORS__["${pkg}"];`
+			return `var ${name} = window.__PLUXEL_VENDORS__["${pkg}"].default || window.__PLUXEL_VENDORS__["${pkg}"];`
 		})
 
 		// Side-effect-only imports are invalid in browser for bare specifiers (no import map).
@@ -937,7 +937,7 @@ function rewriteVendorNamedImports(names: string, pkg: string): string {
 		})
 
 	if (!parts.length) return ''
-	return `const { ${parts.join(', ')} } = window.__PLUXEL_VENDORS__["${pkg}"];`
+	return `var { ${parts.join(', ')} } = window.__PLUXEL_VENDORS__["${pkg}"];`
 }
 
 function normalizeJsxRuntime(code: string): string {

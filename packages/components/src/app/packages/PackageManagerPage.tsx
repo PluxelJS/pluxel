@@ -35,7 +35,7 @@ import {
 import type { FormEventHandler } from 'react'
 import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery } from '../gqty'
-import { createRpcClient, type MarketBatchResult, type PackageSpecInput } from '../rpc'
+import { createRpcClient, type PackageBatchResult, type PackageSpecInput } from '../rpc'
 import { RouterLinkAdapter } from '../RouterLinkAdapter'
 import { useNotify } from '../hooks'
 import type { PackageRow } from './types'
@@ -297,7 +297,7 @@ export function PackageManagerPage() {
 	}
 
 	const summarizeBatchResult = useCallback(
-		(result: MarketBatchResult | null | undefined, successTitle: string, fallbackError: string) => {
+		(result: PackageBatchResult | null | undefined, successTitle: string, fallbackError: string) => {
 			if (!result) {
 				throw new Error(fallbackError)
 			}
@@ -336,14 +336,14 @@ export function PackageManagerPage() {
 			action: 'install' | 'uninstall' | 'remove' | 'reinstall' | 'reload' | 'retry',
 			specs: PackageSpecInput[],
 			options?: { force?: boolean; fresh?: boolean; reinstall?: boolean },
-		): Promise<MarketBatchResult> => {
+		): Promise<PackageBatchResult> => {
 			using rpc = createRpcClient()
-			return rpc.market().mutate({ action, specs, options })
+			return rpc.package().mutate({ action, specs, options })
 		},
 		[],
 	)
 
-	const applyOperationLogs = useCallback((result?: MarketBatchResult | null) => {
+	const applyOperationLogs = useCallback((result?: PackageBatchResult | null) => {
 		setOperationLogs((prev) =>
 			prev.map((log) => {
 				const entry = result?.results?.find(

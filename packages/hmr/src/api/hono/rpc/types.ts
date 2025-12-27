@@ -97,7 +97,7 @@ export type BaseProvisionInfo = {
 	providers: PluginDependencyOption[]
 }
 
-// Market 相关类型
+// Package 相关类型
 export type PackageSpecInput = {
 	raw?: string | null
 	name?: string | null
@@ -105,21 +105,21 @@ export type PackageSpecInput = {
 	tag?: string | null
 }
 
-export type MarketMutationAction = 'install' | 'uninstall' | 'remove' | 'reinstall' | 'reload' | 'retry'
+export type PackageMutationAction = 'install' | 'uninstall' | 'remove' | 'reinstall' | 'reload' | 'retry'
 
-export type MarketMutationOptions = {
+export type PackageMutationOptions = {
 	force?: boolean
 	fresh?: boolean
 	reinstall?: boolean
 }
 
-export type MarketMutationInput = {
-	action: MarketMutationAction
+export type PackageMutationInput = {
+	action: PackageMutationAction
 	specs: PackageSpecInput[]
-	options?: MarketMutationOptions
+	options?: PackageMutationOptions
 }
 
-export type MarketMutationResult = {
+export type PackageMutationResult = {
 	__typename: 'PackageMutationResult'
 	ok: boolean
 	code: string
@@ -135,9 +135,16 @@ export type MarketMutationResult = {
 	error: string | null
 }
 
-export type MarketBatchResult = {
+export type PackageBatchResult = {
 	__typename: 'PackageBatchMutationResult'
 	ok: boolean
-	results: MarketMutationResult[]
+	results: PackageMutationResult[]
 	error: string | null
 }
+
+// Backward-compatible aliases
+export type MarketMutationAction = PackageMutationAction
+export type MarketMutationOptions = PackageMutationOptions
+export type MarketMutationInput = PackageMutationInput
+export type MarketMutationResult = PackageMutationResult
+export type MarketBatchResult = PackageBatchResult

@@ -11,7 +11,6 @@ import { RootShell } from '../layout/RootShell'
 import { LiveLog } from '../log_viewer/LiveLog'
 import { ExtensionRoute } from '../routes/ExtensionRoute'
 import { HomeRoute } from '../routes/HomeRoute'
-import { MarketRoute } from '../routes/MarketRoute'
 import { NotFoundRoute } from '../routes/NotFoundRoute'
 import { PackagesRoute } from '../routes/PackagesRoute'
 import { PluginDetailRoute } from '../routes/PluginDetailRoute'
@@ -44,11 +43,6 @@ const packagesRoute = createRoute({
 	component: PackagesRoute,
 })
 
-const marketRoute = createRoute({
-	getParentRoute: () => rootRoute,
-	path: 'market',
-	component: MarketRoute,
-})
 
 const pluginsRoute = createRoute({
 	getParentRoute: () => rootRoute,
@@ -91,7 +85,6 @@ const routeTree = rootRoute.addChildren([
 	homeRoute,
 	logsRoute,
 	packagesRoute,
-	marketRoute,
 	extensionRoute,
 	pluginsRoute.addChildren([
 		pluginsIndexRoute,

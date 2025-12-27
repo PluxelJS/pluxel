@@ -8,7 +8,7 @@ import type { RpcExtensions } from '../../../services'
 import { PluginGroupInput, type PluginGroupInputValue } from '../../features/groups/schema'
 import { readGroups, writeGroups } from '../../features/groups/service'
 import { getStatusOverview } from '../../features/pluginStatus/service'
-import { MarketHandle } from './MarketHandle'
+import { PackageHandle } from './PackageHandle'
 import { applyStatusActions, PluginHandle } from './PluginHandle'
 import type { GroupMutationResult, PluginStatusBatchAction, PluginStatusBatchResult } from './types'
 import { formatGroupIssues } from './utils'
@@ -32,8 +32,8 @@ export class HmrRpcApi extends RpcTarget {
 	}
 
 	/** 包管理操作 */
-	market() {
-		return new MarketHandle(this.#ctx)
+	package() {
+		return new PackageHandle(this.#ctx)
 	}
 
 	/**

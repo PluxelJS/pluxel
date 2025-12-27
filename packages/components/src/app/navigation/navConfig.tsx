@@ -4,7 +4,6 @@ import {
 	IconHome2,
 	IconPackages,
 	IconPuzzle,
-	IconShoppingBag,
 } from '@tabler/icons-react'
 import type { NavItem } from '../../components'
 
@@ -13,7 +12,6 @@ export const baseNavItems: NavItem[] = [
 	{ label: '日志', href: '/logs', icon: <IconHistory size={18} stroke={1.7} /> },
 	{ label: '包管理', href: '/packages', icon: <IconPackages size={18} stroke={1.7} /> },
 	{ label: '插件', href: '/plugins', icon: <IconPuzzle size={18} stroke={1.7} /> },
-	{ label: '市场', href: '/market', icon: <IconShoppingBag size={18} stroke={1.7} /> },
 ]
 
 // Shell 不再提供图标库，插件若需图标必须传入完整 ReactNode
