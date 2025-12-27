@@ -139,19 +139,19 @@ export function GlobalStatusBar({ ctx }: { ctx: GlobalExtensionContext }) {
 		}
 	}, [hmr])
 
-	return (
-		<Group gap="xs">
-			<Badge variant="light" color={ready ? 'teal' : 'gray'}>
-				{ready ? 'Plugins Ready' : 'Plugins Loading'}
-			</Badge>
-			<Text size="xs" c="dimmed">
-				Running: {count}
-			</Text>
-			<Text size="xs" c="dimmed">
-				Ext v{extVersion}
-			</Text>
-		</Group>
-	)
+	const items = [
+		<Badge key="status" variant="light" color={ready ? 'teal' : 'gray'}>
+			{ready ? 'Plugins Ready' : 'Plugins Loading'}
+		</Badge>,
+		<Text key="running" size="xs" c="dimmed">
+			Running: {count}
+		</Text>,
+		<Text key="version" size="xs" c="dimmed">
+			Ext v{extVersion}
+		</Text>,
+	]
+
+	return <Group gap="xs">{items}</Group>
 }
 
 // 实时时间（来自插件 SSE tick）
