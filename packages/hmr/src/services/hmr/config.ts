@@ -154,10 +154,13 @@ export interface HmrViteConfigOptions {
 	runnerPlugin: Plugin
 	honoPlugin: Plugin
 	port?: number
+	includeGlobs?: string[]
+	excludeGlobs?: string[]
 }
 
 export function buildHmrViteConfig(opts: HmrViteConfigOptions): InlineConfig {
 	const conditions = buildHmrResolveConditions()
+	const includePatterns = opts.includeGlobs ?? opts.scanDirs.map((d) => `${d}/**/*.ts`)
 	return {
 		root: opts.root,
 		server: {
@@ -174,7 +177,7 @@ export function buildHmrViteConfig(opts: HmrViteConfigOptions): InlineConfig {
 			tsconfigPaths: true,
 		},
 		plugins: [
-			configSourcePlugin({ include: opts.scanDirs.map((d) => `${d}/**/*.{ts,tsx}`) }),
+			configSourcePlugin({ include: includePatterns, exclude: opts.excludeGlobs }),
 			importTypeFixerPlugin(),
 			Macros(),
 			opts.runnerPlugin,

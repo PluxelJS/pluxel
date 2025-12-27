@@ -1,7 +1,7 @@
 import { fileURLToPath } from 'node:url'
 import { type Context, Injectable } from '@pluxel/core'
 import { enable as enableDebug } from 'obug'
-import { dirname, resolve } from 'pathe'
+import { dirname, isAbsolute, resolve } from 'pathe'
 import { createServer, type DevEnvironment, normalizePath, type Plugin, type ViteDevServer } from 'vite'
 import {
 	buildHmrViteConfig,
@@ -30,8 +30,19 @@ import {
 } from './runtime-shims'
 
 export interface HMRConfig {
-	/** 业务扫描边界：仅这些目录下的 `.ts` 会被纳入 HMR 入口挑选（`.tsx` 通常由浏览器端 HMR 处理） */
+	/** 业务扫描边界：默认仅这些目录下的 `.ts` 会被纳入 HMR 入口挑选（`.tsx`/`.jsx` 默认排除） */
 	dir: string[]
+	/**
+	 * 额外的 HMR include glob（优先级高于默认的 `dir/**` + `.ts`）。
+	 * - 需要完整路径或相对 cwd 的 glob
+	 * - 适用于强制隔离“插件 HMR”与“前端 HMR”
+	 */
+	include?: string[]
+	/**
+	 * 额外的 HMR exclude glob（默认已排除 `node_modules`/`.d.ts`）。
+	 * - 需要完整路径或相对 cwd 的 glob
+	 */
+	exclude?: string[]
 	/** 额外允许 Vite Dev Server 访问的目录（绝对路径或会基于 cwd 解析的相对路径） */
 	fsAllow?: string[]
 	/** 计时归因策略：'off' 关闭预取归因，仅保留 evaluate/inject；'prefetch' 预取受影响文件做 transform 计时（默认） */
@@ -110,6 +121,8 @@ export class HMRService {
 	private readonly env: HmrEnvironment
 	public readonly toolkit: HmrToolkit
 	public readonly path: HmrPathApi
+	private readonly includeGlobs?: string[]
+	private readonly excludeGlobs?: string[]
 
 	private readonly deps: ResolvedHMRDependencyConfig
 	private readonly runtimeShims: RuntimeShimRegistry
@@ -139,10 +152,14 @@ export class HMRService {
 		private readonly config: HMRConfig,
 	) {
 		this.scanRootsAbs = unique(this.config.dir.map((dir) => normalizePath(resolve(this.cwd, dir))))
+		this.includeGlobs = resolveGlobPatterns(this.config.include, this.cwd)
+		this.excludeGlobs = resolveGlobPatterns(this.config.exclude, this.cwd)
 		this.env = new HmrEnvironment(this.ctx, {
 			cwd: this.cwd,
 			scanRootsAbs: this.scanRootsAbs,
 			workspaceConditions: this.workspaceConditions,
+			includeGlobs: this.includeGlobs,
+			excludeGlobs: this.excludeGlobs,
 		})
 		this.toolkit = this.env.toolkit
 		this.path = this.toolkit.path
@@ -228,6 +245,8 @@ export class HMRService {
 			deps: this.deps,
 			runnerPlugin: this.plugin,
 			honoPlugin: this.ctx.honoService.viteHonoDevServer,
+			includeGlobs: this.includeGlobs,
+			excludeGlobs: this.excludeGlobs,
 		})
 		const server = await createServer(serverConfig)
 		await server.listen()
@@ -349,7 +368,7 @@ export class HMRService {
 		const endScan = startTimer()
 		const entries = await collectColdStartEntries({
 			rootsAbs: this.scanRootsAbs,
-			anchors: this.ctx.loader.api.anchors.list(),
+			anchors: this.getAnchorsClean(),
 			path: this.path,
 			scanService: this.ctx.scanService,
 			workspaceConditions: this.workspaceConditions,
@@ -393,7 +412,9 @@ export class HMRService {
 	private getAnchorsClean() {
 		this.anchorsCleanCache.clear()
 		for (const a of this.ctx.loader.api.anchors.list()) {
-			this.anchorsCleanCache.add(this.path.toClean(a))
+			const clean = this.path.toClean(a)
+			if (!this.toolkit.pathFilter(clean)) continue
+			this.anchorsCleanCache.add(clean)
 		}
 		return this.anchorsCleanCache
 	}
@@ -412,4 +433,14 @@ export class HMRService {
 		return false
 	}
 
+}
+
+function resolveGlobPatterns(patterns: readonly string[] | undefined, cwd: string): string[] | undefined {
+	if (!patterns?.length) return undefined
+	return patterns.map((pattern) => {
+		const negated = pattern.startsWith('!')
+		const raw = negated ? pattern.slice(1) : pattern
+		const normalized = isAbsolute(raw) ? normalizePath(raw) : normalizePath(resolve(cwd, raw))
+		return negated ? `!${normalized}` : normalized
+	})
 }

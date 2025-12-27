@@ -126,6 +126,8 @@ export class HmrEnvironment {
 	private pathFilterImpl: HmrFilterFactory
 	private readonly workspaceConditions: readonly string[]
 	private scanRootsAbs: string[]
+	private readonly includeGlobs?: string[]
+	private readonly excludeGlobs?: string[]
 
 	public readonly paths: HmrPathResolver
 	public readonly toolkit: HmrToolkit
@@ -136,10 +138,14 @@ export class HmrEnvironment {
 			cwd: string
 			scanRootsAbs: string[]
 			workspaceConditions: readonly string[]
+			includeGlobs?: string[]
+			excludeGlobs?: string[]
 		},
 	) {
 		this.workspaceConditions = [...opts.workspaceConditions]
 		this.scanRootsAbs = [...opts.scanRootsAbs]
+		this.includeGlobs = opts.includeGlobs
+		this.excludeGlobs = opts.excludeGlobs
 		this.paths = new HmrPathResolver(opts.cwd, this.scanRootsAbs)
 		this.pathFilterImpl = this.createFilters()
 		this.toolkit = {
@@ -175,10 +181,16 @@ export class HmrEnvironment {
 
 	private createFilters(): HmrFilterFactory {
 		const includeGlobs = makeIdFiltersToMatchWithQuery(
-			this.scanRootsAbs.flatMap((dir) => [`${dir}/**/*.ts`]),
+			this.includeGlobs?.length ? this.includeGlobs : this.scanRootsAbs.flatMap((dir) => [`${dir}/**/*.ts`]),
 		)
-		const excludePatterns = this.scanRootsAbs.flatMap((dir) => [`${dir}/**/*.d.ts`, `${dir}/**/node_modules/**`])
-		const excludeGlobs = makeIdFiltersToMatchWithQuery([...excludePatterns, '**/node_modules/**'])
+		const excludePatterns = this.scanRootsAbs.flatMap((dir) => [`${dir}/**/*.d.ts`])
+		const excludeGlobs = makeIdFiltersToMatchWithQuery([
+			...excludePatterns,
+			...(this.excludeGlobs ?? []),
+			'**/*.tsx',
+			'**/*.jsx',
+			'**/node_modules/**',
+		])
 		const baseFilter = createFilter(includeGlobs, excludeGlobs)
 
 		return (cleanId: string) => (cleanId.includes('/node_modules/') ? false : baseFilter(cleanId))
