@@ -1,6 +1,6 @@
 {
 	"name": "@pluxel/hmr",
-	"version": "0.2.14",
+	"version": "0.3.0",
 	"description": "Demo example that imports a local package",
 	"main": "./dist/index.mjs",
 	"type": "module",
@@ -91,6 +91,7 @@
 		"@pluxel/components": "workspace:*",
 		"@pluxel/core": "workspace:*",
 		"@pluxel/hmr-web": "workspace:*",
+		"@pluxel/market": "^0.1.0",
 		"@pluxel/plugin-ui": "workspace:*",
 		"@pluxel/rolldown": "workspace:*",
 		"@tanstack/react-router": "^1.143.4",

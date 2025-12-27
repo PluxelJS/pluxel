@@ -7,7 +7,6 @@ import {
 	NavLink,
 	Paper,
 	rgba,
-	ScrollArea,
 	Stack,
 	Text,
 	Tooltip,
@@ -121,7 +120,7 @@ const Navbar = memo(function Navbar({
 				minHeight: 0,
 			}}
 		>
-			<ScrollArea style={{ flex: 1, minHeight: 0 }} type="auto" offsetScrollbars>
+			<Box style={{ flex: 1, minHeight: 0, overflowY: 'auto', overflowX: 'hidden' }}>
 				<Stack gap="md" p="md">
 					{onCompactToggle &&
 						(compact ? (
@@ -257,7 +256,7 @@ const Navbar = memo(function Navbar({
 						)
 					})}
 				</Stack>
-			</ScrollArea>
+			</Box>
 
 			{/* 底部主题设置 */}
 			<Box p="md" pt={0}>

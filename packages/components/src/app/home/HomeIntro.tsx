@@ -16,7 +16,6 @@ import {
 	IconKeyboard,
 	IconPackages,
 	IconPlugConnected,
-	IconShoppingBag,
 } from '@tabler/icons-react'
 import type { ReactNode } from 'react'
 import { RouterLinkAdapter } from '../RouterLinkAdapter'
@@ -143,15 +142,6 @@ export function HomeIntro({ lastRoute }: { lastRoute: string | null }) {
 				</Grid.Col>
 				<Grid.Col span={{ base: 12, md: 4 }}>
 					<HomeCard
-						title="插件市场"
-						description="浏览官方快照，快速安装插件。"
-						icon={<IconShoppingBag size={24} stroke={1.6} />}
-						to="/market"
-						scheme={schemeMode}
-					/>
-				</Grid.Col>
-				<Grid.Col span={{ base: 12, md: 4 }}>
-					<HomeCard
 						title="实时日志"
 						description="监控最新日志事件，把脉系统健康度。"
 						icon={<IconHistory size={24} stroke={1.6} />}
@@ -197,12 +187,6 @@ function buildQuickActions(lastRoute: string | null): QuickAction[] {
 			description: '打开分组与运行状态面板',
 			to: '/plugins',
 			icon: <IconPlugConnected size={20} stroke={1.6} />,
-		},
-		{
-			title: '前往插件市场',
-			description: '挑选新插件并一键安装',
-			to: '/market',
-			icon: <IconShoppingBag size={20} stroke={1.6} />,
 		},
 		{
 			title: '查看实时日志',

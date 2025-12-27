@@ -1,6 +1,6 @@
 import { Component, type ErrorInfo, type ReactNode } from 'react'
-import { useRouterState } from '@tanstack/react-router'
 import { RouteError } from './routes/RouteError'
+import { useCurrentPathname } from './router/useCurrentRoute'
 
 type AppErrorBoundaryProps = {
 	children: ReactNode
@@ -9,16 +9,20 @@ type AppErrorBoundaryProps = {
 
 type AppErrorBoundaryState = {
 	error: Error | null
+	errorKey: string | null
 }
 
 class AppErrorBoundaryImpl extends Component<AppErrorBoundaryProps, AppErrorBoundaryState> {
-	state: AppErrorBoundaryState = { error: null }
+	state: AppErrorBoundaryState = { error: null, errorKey: null }
 
 	static getDerivedStateFromError(error: Error): AppErrorBoundaryState {
-		return { error }
+		return { error, errorKey: null }
 	}
 
 	override componentDidCatch(error: Error, info: ErrorInfo) {
+		if (this.state.errorKey !== this.props.resetKey) {
+			this.setState({ errorKey: this.props.resetKey })
+		}
 		console.error('[AppErrorBoundary] route error', {
 			path: this.props.resetKey,
 			error,
@@ -27,8 +31,13 @@ class AppErrorBoundaryImpl extends Component<AppErrorBoundaryProps, AppErrorBoun
 	}
 
 	override componentDidUpdate(prevProps: AppErrorBoundaryProps) {
-		if (this.state.error && prevProps.resetKey !== this.props.resetKey) {
-			this.setState({ error: null })
+		if (
+			this.state.error &&
+			this.state.errorKey &&
+			prevProps.resetKey !== this.props.resetKey &&
+			this.props.resetKey !== this.state.errorKey
+		) {
+			this.setState({ error: null, errorKey: null })
 		}
 	}
 
@@ -41,6 +50,6 @@ class AppErrorBoundaryImpl extends Component<AppErrorBoundaryProps, AppErrorBoun
 }
 
 export function AppErrorBoundary({ children }: { children: ReactNode }) {
-	const pathname = useRouterState({ select: (state) => state.location.pathname })
+	const pathname = useCurrentPathname()
 	return <AppErrorBoundaryImpl resetKey={pathname}>{children}</AppErrorBoundaryImpl>
 }

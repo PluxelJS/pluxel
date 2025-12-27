@@ -14,23 +14,23 @@ import {
 import { useDisclosure, useMediaQuery } from '@mantine/hooks'
 import { IconPuzzle } from '@tabler/icons-react'
 import type React from 'react'
-import { useEffect } from 'react'
-import { Outlet, useRouterState } from '@tanstack/react-router'
+import { useEffect, useMemo } from 'react'
+import { Outlet } from '@tanstack/react-router'
 import { EmptyState } from '../../../components'
 import { PluginList } from './PluginList'
+import { useCurrentPathname } from '../../router/useCurrentRoute'
 
 export const PluginsLayout: React.FC = () => {
-	const pluginName = useRouterState({
-		select: (state) => {
-			const match = state.location.pathname.match(/^\/plugins\/([^/]+)/)
-			if (!match?.[1]) return undefined
-			try {
-				return decodeURIComponent(match[1])
-			} catch {
-				return match[1]
-			}
-		},
-	})
+	const pathname = useCurrentPathname()
+	const pluginName = useMemo(() => {
+		const match = pathname.match(/^\/plugins\/([^/]+)/)
+		if (!match?.[1]) return undefined
+		try {
+			return decodeURIComponent(match[1])
+		} catch {
+			return match[1]
+		}
+	}, [pathname])
 
 	const theme = useMantineTheme()
 	const isSmall = useMediaQuery(`(max-width: ${theme.breakpoints.md})`, undefined, {

@@ -1,7 +1,7 @@
 import { useComputedColorScheme } from '@mantine/core'
 import { ModalsProvider, openConfirmModal } from '@mantine/modals'
 import { Notifications } from '@mantine/notifications'
-import { Outlet, useRouterState } from '@tanstack/react-router'
+import { Outlet } from '@tanstack/react-router'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Layout, type NavItem } from '../../components'
 import {
@@ -19,13 +19,14 @@ import { NotificationCenterProvider } from '../notifications/NotificationCenterP
 import { notifyAndRecord } from '../notifications/notifyBridge'
 import { RouterLinkAdapter } from '../RouterLinkAdapter'
 import { useHmrWebClient } from '../rpc'
+import { useCurrentPathname } from '../router/useCurrentRoute'
 
 export function RootShell() {
 	return <RootShellContent />
 }
 
 function RootShellContent() {
-	const pathname = useRouterState({ select: (state) => state.location.pathname })
+	const pathname = useCurrentPathname()
 	const colorScheme = useComputedColorScheme('light', { getInitialValueInEffect: true })
 	const [runningPlugins, setRunningPlugins] = useState<ReadonlySet<string>>(() => new Set())
 	const [runningReady, setRunningReady] = useState(false)

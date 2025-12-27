@@ -1,9 +1,9 @@
 import { Center, Stack, Text, Title } from '@mantine/core'
-import { useRouterState } from '@tanstack/react-router'
 import { EmptyState } from '../../components'
+import { useCurrentPathname } from '../router/useCurrentRoute'
 
 export function NotFoundRoute() {
-	const path = useRouterState({ select: (s) => s.location.pathname })
+	const path = useCurrentPathname()
 	return (
 		<Center style={{ flex: 1 }}>
 			<Stack align="center" gap="xs" maw={520}>

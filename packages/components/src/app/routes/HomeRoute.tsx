@@ -1,12 +1,11 @@
 import { Center, Text } from '@mantine/core'
-import { useNavigate, useRouterState } from '@tanstack/react-router'
+import { useNavigate } from '@tanstack/react-router'
 import { useEffect, useState } from 'react'
 import { HOME_MANUAL_KEY, LAST_ROUTE_KEY } from '../constants'
 import { HomeIntro } from '../home/HomeIntro'
 
 export function HomeRoute() {
 	const navigate = useNavigate()
-	const routerState = useRouterState({ select: (state) => state.location.pathname })
 	const [showIntro, setShowIntro] = useState(false)
 	const [lastRoute, setLastRoute] = useState<string | null>(null)
 
@@ -20,12 +19,12 @@ export function HomeRoute() {
 			setShowIntro(true)
 			return
 		}
-		if (last && last !== '/' && last !== routerState) {
+		if (last && last !== '/') {
 			navigate({ to: last as never, replace: true })
 			return
 		}
 		setShowIntro(true)
-	}, [navigate, routerState])
+	}, [navigate])
 
 	if (!showIntro) {
 		return (

@@ -19,17 +19,18 @@ import type {
 	PackageInventoryFilter,
 	PackageSpecifierInput as PackageSpecifierInputSchema,
 } from './schema'
-import type { MarketBatchResult, MarketMutationResult } from '../../hono/rpc/types'
 import type {
-	MarketMutationAction,
-	MarketMutationInput,
-	MarketMutationOptions,
+	PackageBatchResult,
+	PackageMutationAction,
+	PackageMutationInput,
+	PackageMutationOptions,
+	PackageMutationResult,
 } from '../../hono/rpc/types'
 
 type IssueOutput = InferOutput<typeof PackageLoadIssueEntry>
 type SpecInputValue = InferInput<typeof PackageSpecifierInputSchema>
-type MutationResult = MarketMutationResult
-type BatchMutationResult = MarketBatchResult
+type MutationResult = PackageMutationResult
+type BatchMutationResult = PackageBatchResult
 type InventoryEntry = InferOutput<typeof PackageInventoryEntry>
 type InventoryFilter = InferInput<typeof PackageInventoryFilter>
 
@@ -47,7 +48,7 @@ type ParsedSpecs = {
 type MutationHandler = (
 	pCtx: PlxContext,
 	specInputs: SpecInputValue[],
-	options: MarketMutationOptions,
+	options: PackageMutationOptions,
 ) => Promise<BatchMutationResult>
 
 const MUTATION_CONCURRENCY = 4
@@ -76,7 +77,7 @@ export async function listPackageInventory(
 
 export async function applyMarketMutation(
 	pCtx: PlxContext,
-	input: MarketMutationInput,
+	input: PackageMutationInput,
 ): Promise<BatchMutationResult> {
 	const action = input.action
 	const specInputs = Array.isArray(input.specs) ? input.specs : []
@@ -109,7 +110,7 @@ export function toServiceSpecifierInput(input: SpecInputValue): ServiceSpecifier
 	return { name }
 }
 
-const mutationHandlers: Record<MarketMutationAction, MutationHandler> = {
+const mutationHandlers: Record<PackageMutationAction, MutationHandler> = {
 	install: async (pCtx, specInputs, options) => {
 		if (!specInputs.length) return buildBatchResult([], '安装列表不能为空')
 		const parsed = parseSpecInputs(specInputs)

@@ -131,21 +131,21 @@ export type PackageSpecInput = {
 	tag?: string | null
 }
 
-export type MarketMutationAction = 'install' | 'uninstall' | 'remove' | 'reinstall' | 'reload' | 'retry'
+export type PackageMutationAction = 'install' | 'uninstall' | 'remove' | 'reinstall' | 'reload' | 'retry'
 
-export type MarketMutationOptions = {
+export type PackageMutationOptions = {
 	force?: boolean
 	fresh?: boolean
 	reinstall?: boolean
 }
 
-export type MarketMutationInput = {
-	action: MarketMutationAction
+export type PackageMutationInput = {
+	action: PackageMutationAction
 	specs: PackageSpecInput[]
-	options?: MarketMutationOptions
+	options?: PackageMutationOptions
 }
 
-export type MarketMutationResult = {
+export type PackageMutationResult = {
 	__typename: 'PackageMutationResult'
 	ok: boolean
 	code: string
@@ -161,18 +161,26 @@ export type MarketMutationResult = {
 	error: string | null
 }
 
-export type MarketBatchResult = {
+export type PackageBatchResult = {
 	__typename: 'PackageBatchMutationResult'
 	ok: boolean
-	results: MarketMutationResult[]
+	results: PackageMutationResult[]
 	error: string | null
 }
 
-export interface MarketHandleApi {
+export interface PackageHandleApi {
 	loadIssues: () => unknown
 	inventory: (options?: { includeUntracked?: boolean }) => unknown
-	mutate: (input: MarketMutationInput) => Promise<MarketBatchResult>
+	mutate: (input: PackageMutationInput) => Promise<PackageBatchResult>
 }
+
+// Backward-compatible aliases
+export type MarketMutationAction = PackageMutationAction
+export type MarketMutationOptions = PackageMutationOptions
+export type MarketMutationInput = PackageMutationInput
+export type MarketMutationResult = PackageMutationResult
+export type MarketBatchResult = PackageBatchResult
+export type MarketHandleApi = PackageHandleApi
 
 export interface PluginHandleApi {
 	name: string
@@ -213,6 +221,7 @@ export interface BuildSnapshotResult {
 export interface HmrRpcApi {
 	ping: () => string
 	plugin: (name: string) => PluginHandleApi
+	package: () => PackageHandleApi
 	market: () => MarketHandleApi
 	ext: RpcExtensions
 	extensions: () => string[]

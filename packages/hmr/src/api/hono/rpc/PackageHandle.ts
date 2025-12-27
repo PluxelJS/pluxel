@@ -1,10 +1,10 @@
-// rpc/MarketHandle.ts - 包管理 RPC
+// rpc/PackageHandle.ts - 包管理 RPC
 import type { Context } from '@pluxel/core'
 import { RpcTarget } from 'capnweb'
 import { applyMarketMutation, listLoadIssues, listPackageInventory } from '../../features/market/service'
-import type { MarketBatchResult, MarketMutationInput } from './types'
+import type { PackageBatchResult, PackageMutationInput } from './types'
 
-export class MarketHandle extends RpcTarget {
+export class PackageHandle extends RpcTarget {
 	#ctx: Context
 
 	constructor(ctx: Context) {
@@ -23,7 +23,7 @@ export class MarketHandle extends RpcTarget {
 	}
 
 	/** 执行包管理操作 */
-	mutate(input: MarketMutationInput): Promise<MarketBatchResult> {
+	mutate(input: PackageMutationInput): Promise<PackageBatchResult> {
 		return applyMarketMutation(this.#ctx, input)
 	}
 }
