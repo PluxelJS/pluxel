@@ -1,1 +1,3 @@
-import './index'
+import '../env'
+import '../reflection'
+import '../services'

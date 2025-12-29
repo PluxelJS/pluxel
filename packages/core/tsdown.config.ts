@@ -26,6 +26,7 @@ export default defineConfig({
 	},
 	noExternal: ['@abraham/reflection'],
 	entry: {
+		env: 'src/env.ts',
 		index: 'src/index.ts',
 		services: 'src/services/index.ts',
 		test: 'src/test/index.ts',

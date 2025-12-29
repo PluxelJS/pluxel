@@ -179,9 +179,6 @@ importers:
         specifier: ^5.0.0
         version: 5.0.0
     devDependencies:
-      '@pluxel/market':
-        specifier: ^0.1.0
-        version: 0.1.0(ramda@0.32.0)(react-dom@19.2.3(react@19.2.3))(react@19.2.3)
       '@types/react':
         specifier: ^19.2.7
         version: 19.2.7
@@ -223,6 +220,9 @@ importers:
       eventure:
         specifier: ^0.4.2
         version: 0.4.2
+      std-env:
+        specifier: ^3.10.0
+        version: 3.10.0
     devDependencies:
       '@abraham/reflection':
         specifier: ^0.13.0
@@ -372,6 +372,9 @@ importers:
       '@pluxel/hmr-web':
         specifier: workspace:*
         version: link:../hmr-web
+      '@pluxel/market':
+        specifier: ^0.1.0
+        version: 0.1.0(ramda@0.32.0)(react-dom@19.2.3(react@19.2.3))(react@19.2.3)
       '@pluxel/plugin-ui':
         specifier: workspace:*
         version: link:../plugin-ui

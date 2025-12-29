@@ -12,6 +12,11 @@
 			"require": "./dist/index.cjs",
 			"import": "./dist/index.mjs"
 		},
+		"./env": {
+			"@pluxel/source": "./src/env.ts",
+			"require": "./dist/env.cjs",
+			"import": "./dist/env.mjs"
+		},
 		"./services": {
 			"@pluxel/source": "./src/services/index.ts",
 			"require": "./dist/services.cjs",
@@ -41,7 +46,8 @@
 		"bench:dist": "pnpm --filter rolldown build && pnpm run build && bun run --tsconfig-override=\"./bench-tsconfig.json\" bench/pluginLifecycle.bench.ts"
 	},
 	"dependencies": {
-		"eventure": "^0.4.2"
+		"eventure": "^0.4.2",
+		"std-env": "^3.10.0"
 	},
 	"devDependencies": {
 		"@abraham/reflection": "^0.13.0",
@@ -56,6 +62,10 @@
 			".": {
 				"require": "./dist/index.cjs",
 				"import": "./dist/index.mjs"
+			},
+			"./env": {
+				"require": "./dist/env.cjs",
+				"import": "./dist/env.mjs"
 			},
 			"./services": {
 				"require": "./dist/services.cjs",

@@ -1,6 +1,4 @@
-import '../reflection'
-
-import '../services'
+import './setup'
 
 import { Context } from '@pluxel/context'
 import { checkPluginDecorator, getPluginInfo } from '../plugins/PluginDecorator'
