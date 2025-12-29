@@ -2,7 +2,13 @@ import { fileURLToPath } from 'node:url'
 import { type Context, Injectable } from '@pluxel/core'
 import { enable as enableDebug } from 'obug'
 import { dirname, isAbsolute, resolve } from 'pathe'
-import { createServer, type DevEnvironment, normalizePath, type Plugin, type ViteDevServer } from 'vite'
+import {
+	createServer,
+	type DevEnvironment,
+	normalizePath,
+	type Plugin,
+	type ViteDevServer,
+} from 'vite'
 import {
 	buildHmrViteConfig,
 	type HMRDependencyConfig,
@@ -11,7 +17,12 @@ import {
 	resolveHMRDependencyConfig,
 } from './config'
 import { HmrEnvironment, type HmrPathApi, type HmrToolkit } from './environment'
-import { BatchDebouncer, findNearestPackageRoot, matchesSpecifierPattern, startTimer } from './internals'
+import {
+	BatchDebouncer,
+	findNearestPackageRoot,
+	matchesSpecifierPattern,
+	startTimer,
+} from './internals'
 import {
 	createHmrDebug,
 	formatAttributionReport,
@@ -21,13 +32,9 @@ import {
 	TimingTracker,
 	toDebugNamespaceString,
 } from './logging'
-import { HmrBatchProcessor, HmrExecutor, collectColdStartEntries } from './pipeline'
+import { collectColdStartEntries, HmrBatchProcessor, HmrExecutor } from './pipeline'
 import { HmrRunner } from './runner'
-import {
-	installRequireShims,
-	type RuntimeShimConfig,
-	RuntimeShimRegistry,
-} from './runtime-shims'
+import { installRequireShims, type RuntimeShimConfig, RuntimeShimRegistry } from './runtime-shims'
 
 export interface HMRConfig {
 	/** 业务扫描边界：默认仅这些目录下的 `.ts` 会被纳入 HMR 入口挑选（`.tsx`/`.jsx` 默认排除） */
@@ -92,7 +99,7 @@ const hmrPackageRoot = (() => {
 })()
 
 const serviceName = 'hmrService' as const
-const HMR_EXPORT_CONDITIONS = ['@pluxel/hmr', '@pluxel/source', 'import', 'module', 'default'] as const
+const HMR_EXPORT_CONDITIONS = ['@pluxel/hmr', 'import', 'module', 'default'] as const
 
 declare module '@pluxel/core' {
 	namespace Context {
@@ -174,7 +181,8 @@ export class HMRService {
 		}
 		this.runtimeShims = new RuntimeShimRegistry(runtimeResolved)
 		this.useRequireShims =
-			Boolean(runtimeResolved.shimReflectMetadata) || Object.keys(runtimeResolved.shims ?? {}).length > 0
+			Boolean(runtimeResolved.shimReflectMetadata) ||
+			Object.keys(runtimeResolved.shims ?? {}).length > 0
 		if (this.useRequireShims) installRequireShims((id) => this.runtimeShims.require(id))
 
 		const useColors = this.logConfig.useColors
@@ -271,7 +279,11 @@ export class HMRService {
 				})
 				this.ssrEnv = this.runner.env
 
-				await this.runner.bridgeHostModules(this.deps.bridgeModules, this.path, this.ctx.logger as any)
+				await this.runner.bridgeHostModules(
+					this.deps.bridgeModules,
+					this.path,
+					this.ctx.logger as any,
+				)
 				await this.runner.assertBridgedSingletons(this.deps.bridgeModules)
 
 				this.executor = new HmrExecutor(this.ctx, this.runner, this.path, this.timing, {
@@ -288,7 +300,8 @@ export class HMRService {
 					this.toolkit,
 					this.timing,
 					{
-						attribution: (this.config.attribution ?? 'prefetch') === 'prefetch' ? 'prefetch' : 'off',
+						attribution:
+							(this.config.attribution ?? 'prefetch') === 'prefetch' ? 'prefetch' : 'off',
 						prefetchLimit: this.config.prefetchLimit ?? DEFAULT_PREFETCH_LIMIT,
 						prefetchOrder: this.config.prefetchOrder ?? 'near',
 						prefetchConcurrency: PREFETCH_CONCURRENCY,
@@ -432,10 +445,12 @@ export class HMRService {
 		if (specifier === '@pluxel/context' || specifier.startsWith('@pluxel/context/')) return true
 		return false
 	}
-
 }
 
-function resolveGlobPatterns(patterns: readonly string[] | undefined, cwd: string): string[] | undefined {
+function resolveGlobPatterns(
+	patterns: readonly string[] | undefined,
+	cwd: string,
+): string[] | undefined {
 	if (!patterns?.length) return undefined
 	return patterns.map((pattern) => {
 		const negated = pattern.startsWith('!')

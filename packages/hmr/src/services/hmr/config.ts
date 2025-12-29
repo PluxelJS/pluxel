@@ -2,7 +2,7 @@ import { existsSync } from 'node:fs'
 import { configSourcePlugin, importTypeFixerPlugin } from '@pluxel/rolldown'
 import { resolve } from 'pathe'
 import Macros from 'unplugin-macros/vite'
-import type { InlineConfig, Plugin } from 'vite'
+import { createLogger, type InlineConfig, type Logger, type Plugin } from 'vite'
 import { normalizePath, searchForWorkspaceRoot } from 'vite'
 import { findNearestPackageRoot } from './internals'
 
@@ -78,7 +78,7 @@ const DEFAULT_OPTIMIZE_DEPS_INCLUDE = [
 ] as const
 const DEFAULT_OPTIMIZE_DEPS_INTEROP = ['react', 'react-dom'] as const
 
-export const BASE_HMR_RESOLVE_CONDITIONS = ['@pluxel/hmr', '@pluxel/source', 'source'] as const
+export const BASE_HMR_RESOLVE_CONDITIONS = ['@pluxel/hmr'] as const
 const DEFAULT_RESOLVE_CONDITIONS = ['module', 'browser', 'development', 'production', 'default']
 
 export const DEFAULT_HMR_DEPENDENCY_CONFIG: ResolvedHMRDependencyConfig = {
@@ -161,8 +161,23 @@ export interface HmrViteConfigOptions {
 export function buildHmrViteConfig(opts: HmrViteConfigOptions): InlineConfig {
 	const conditions = buildHmrResolveConditions()
 	const includePatterns = opts.includeGlobs ?? opts.scanDirs.map((d) => `${d}/**/*.ts`)
+
+	const baseLogger = createLogger(undefined, { prefix: '[pluxel-hmr]' })
+	const customLogger: Logger = {
+		...baseLogger,
+		warn(msg, options) {
+			if (shouldSilenceDynamicImportWarning(msg)) return
+			baseLogger.warn(msg, options)
+		},
+		warnOnce(msg, options) {
+			if (shouldSilenceDynamicImportWarning(msg)) return
+			baseLogger.warnOnce(msg, options)
+		},
+	}
+
 	return {
 		root: opts.root,
+		customLogger,
 		server: {
 			port: opts.port ?? 3000,
 			middlewareMode: false,
@@ -187,6 +202,13 @@ export function buildHmrViteConfig(opts: HmrViteConfigOptions): InlineConfig {
 			force: true,
 			include: Array.from(opts.deps.optimizeDepsInclude),
 			needsInterop: Array.from(opts.deps.optimizeDepsInterop),
+			// Vite 8 uses rolldown for dependency optimization. Some packages ship optional
+			// Node wrappers with conditional requires that rolldown may try to resolve eagerly
+			// (e.g. `lightningcss`'s `require('../pkg')` branch where `pkg/` isn't published).
+			// Externalize these optional paths to avoid optimizer crashes during dev.
+			rolldownOptions: {
+				external: externalizeOptionalLightningCssPkg,
+			},
 		},
 		ssr: {
 			noExternal: Array.from(opts.deps.ssrNoExternal),
@@ -203,4 +225,23 @@ export function buildHmrViteConfig(opts: HmrViteConfigOptions): InlineConfig {
 			},
 		},
 	}
+}
+
+function externalizeOptionalLightningCssPkg(id: string, importer?: string): boolean {
+	if (id !== '../pkg') return false
+	if (!importer) return false
+	const cleaned = importer.split('?')[0]
+	return cleaned.includes('lightningcss/node/index.js') || cleaned.includes('lightningcss\\node\\index.js')
+}
+
+function shouldSilenceDynamicImportWarning(msg: string): boolean {
+	// Vite import-analysis warns on dynamic import patterns it can't statically analyze.
+	// We intentionally use them in a few server-only places (runner/market loader).
+	if (!msg.includes('The above dynamic import cannot be analyzed by Vite.')) return false
+	return (
+		msg.includes('/packages/hmr/') ||
+		msg.includes('\\packages\\hmr\\') ||
+		msg.includes('/node_modules/@pluxel/hmr/') ||
+		msg.includes('\\node_modules\\@pluxel\\hmr\\')
+	)
 }

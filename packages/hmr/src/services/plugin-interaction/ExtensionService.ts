@@ -15,6 +15,7 @@ import chokidar, { type FSWatcher } from 'chokidar'
 import { createDebug } from 'obug'
 import { dirname, isAbsolute, join, relative, resolve } from 'pathe'
 import { collectModuleGraphFiles } from '../runtime-compile/bundler/moduleGraph'
+import type { ResolveOptions } from 'vite'
 
 export interface ExtensionServiceConfig {
 	outDir?: string
@@ -464,11 +465,15 @@ export class ExtensionService {
 
 		// 将入口与本地依赖打成单文件，避免子模块继续各自 import react 导致出现多个 React 副本
 		// （多 React 副本会让 hooks dispatcher 为 null，触发 “reading 'useMemo' of null”）
+		//
+		// Important: do NOT forward HMR-only resolve conditions like `@pluxel/source` into the browser bundle.
+		// Otherwise Vite may resolve `@pluxel/*` to TS source entries (macros, server-only deps) and break bundling.
+		const resolveForBrowserBundle = toBrowserBundleResolve(vite.config.resolve as ResolveOptions)
 		const bundled = (
 			await this.ctx.bundlerService.bundle({
 				entry: absoluteEntry,
 				root: vite.config.root,
-				resolve: vite.config.resolve,
+				resolve: resolveForBrowserBundle,
 				external: Array.from(VENDOR_PACKAGES),
 				cacheKey: `ext-${sanitizePluginName(entry.pluginName)}-${sourceHash}`,
 			})
@@ -813,6 +818,16 @@ export class ExtensionService {
 		}
 		return null
 	}
+}
+
+function toBrowserBundleResolve(resolve: ResolveOptions): ResolveOptions {
+	const conditions = Array.isArray(resolve.conditions) ? resolve.conditions : null
+	if (!conditions) return resolve
+
+	const filtered = conditions.filter((c) => c !== '@pluxel/source' && c !== 'source' && c !== '@pluxel/hmr')
+	if (filtered.length === conditions.length) return resolve
+
+	return { ...resolve, conditions: filtered }
 }
 
 function looksLikeLegacyBrokenBundle(code: string): boolean {

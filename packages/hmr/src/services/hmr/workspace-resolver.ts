@@ -1,11 +1,11 @@
 import { realpath } from 'node:fs/promises'
 import { fileURLToPath, pathToFileURL } from 'node:url'
+import { type ResolveOptions, resolveModulePath } from 'exsolve'
 import { dirname, normalize } from 'pathe'
 import { normalizePath } from 'vite'
-import { resolveModulePath, type ResolveOptions } from 'exsolve'
 import type { ScanService } from '../market/ScanService'
 
-const DEFAULT_CONDITIONS = ['@pluxel/hmr', '@pluxel/source', 'import', 'module', 'default']
+const DEFAULT_CONDITIONS = ['@pluxel/hmr', 'import', 'module', 'default']
 const DRIVE_PATH_RE = /^[a-zA-Z]:[\\/]/
 
 interface ResolveBareImportArgs {

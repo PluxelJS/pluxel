@@ -11,6 +11,16 @@ const normalizeOutput = (res) => {
 export default async function runBundle(job) {
 	const { entry, root, resolve } = job
 	const external = job.vendors ?? job.external ?? []
+	const externalSet = new Set(external)
+
+	// Work around LightningCSS's Node wrapper having an optional `require('../pkg')` branch.
+	// Some bundlers try to resolve it eagerly and fail because `pkg/` isn't published.
+	const shouldExternalize = (id, importer) => {
+		if (externalSet.has(id)) return true
+		if (id !== '../pkg' || typeof importer !== 'string') return false
+		const cleaned = importer.split('?')[0]
+		return cleaned.includes('lightningcss/node/index.js') || cleaned.includes('lightningcss\\node\\index.js')
+	}
 
 	const result = await build({
 		root,
@@ -31,7 +41,7 @@ export default async function runBundle(job) {
 				fileName: () => 'index',
 			},
 			rollupOptions: {
-				external,
+				external: shouldExternalize,
 				output: {
 					inlineDynamicImports: true,
 					format: 'es',
