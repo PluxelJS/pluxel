@@ -22,33 +22,50 @@ export default async function runBundle(job) {
 		return cleaned.includes('lightningcss/node/index.js') || cleaned.includes('lightningcss\\node\\index.js')
 	}
 
-	const result = await build({
-		root,
-		configFile: false,
-		publicDir: false,
-		logLevel: 'error',
-		resolve: {
-			tsconfigPaths: true,
-			...(resolve ?? {}),
-		},
-		build: {
-			write: false,
-			target: 'esnext',
-			// 用 lib 模式确保输出保留 ESM exports（我们需要 dynamic import 拿到 default）
-			lib: {
-				entry,
-				formats: ['es'],
-				fileName: () => 'index',
+	let result
+	try {
+		result = await build({
+			root,
+			configFile: false,
+			publicDir: false,
+			logLevel: 'error',
+			resolve: {
+				tsconfigPaths: true,
+				...(resolve ?? {}),
 			},
-			rollupOptions: {
-				external: shouldExternalize,
-				output: {
-					inlineDynamicImports: true,
-					format: 'es',
+			build: {
+				write: false,
+				target: 'esnext',
+				// 用 lib 模式确保输出保留 ESM exports（我们需要 dynamic import 拿到 default）
+				lib: {
+					entry,
+					formats: ['es'],
+					fileName: () => 'index',
+				},
+				rollupOptions: {
+					external: shouldExternalize,
+					output: {
+						inlineDynamicImports: true,
+						format: 'es',
+					},
 				},
 			},
-		},
-	})
+		})
+	} catch (error) {
+		let msg
+		if (error instanceof Error) {
+			msg = error.stack || error.message
+		} else if (typeof error === 'string') {
+			msg = error
+		} else {
+			try {
+				msg = JSON.stringify(error)
+			} catch {
+				msg = String(error)
+			}
+		}
+		throw new Error(`[bundler-worker] Vite build failed (entry=${entry}): ${msg}`)
+	}
 
 	const outputs = normalizeOutput(result)
 		.flatMap((entry) => entry.output ?? [])

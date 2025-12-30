@@ -324,7 +324,11 @@ export class HMRService {
 				return []
 			},
 
-			resolveId: async (id, importer) => {
+			resolveId: async (id, importer, options) => {
+				// Hard isolation: runner-only resolution must never affect the client environment
+				// (the dev server also serves a browser UI + extension compilation).
+				if (!options?.ssr) return null
+
 				const shimResolved = this.runtimeShims.resolveId(id)
 				if (shimResolved) return shimResolved
 
@@ -341,8 +345,9 @@ export class HMRService {
 				return null
 			},
 
-			load: (id) => {
-				return this.runtimeShims.load(id)
+			load: (id, options) => {
+				if (!options?.ssr) return null
+				return this.runtimeShims.load(id) ?? null
 			},
 		}
 		return plugin

@@ -105,16 +105,22 @@ export class BundlerService {
 			throw new Error('ViteDevServer not available (required for compileTinypoolWorker)')
 		}
 
+		// Workers are executed in Node (Tinypool), so use the SSR environment for resolution and dependency keys.
+		const ssrEnv = vite.environments?.ssr
+		if (!ssrEnv) {
+			throw new Error('ViteDevServer SSR environment not available (required for compileTinypoolWorker)')
+		}
+
 		const absoluteEntry = this.resolveEntryForContext(tsEntry)
-		const url = this.toViteUrl(absoluteEntry, vite.config.root)
-		const cacheKey = await this.computeViteModuleGraphKey(url, vite, {
+		const url = this.toViteUrl(absoluteEntry, ssrEnv.config.root)
+		const cacheKey = await this.computeViteModuleGraphKey(url, ssrEnv, {
 			external: opts?.external ?? [],
 		})
 
 		const result = await this.bundle({
 			entry: absoluteEntry,
-			root: vite.config.root,
-			resolve: vite.config.resolve,
+			root: ssrEnv.config.root,
+			resolve: ssrEnv.config.resolve,
 			external: opts?.external ?? [],
 			cacheKey: `worker-${cacheKey}`,
 		})
@@ -203,7 +209,7 @@ export class BundlerService {
 
 	private async computeViteModuleGraphKey(
 		url: string,
-		vite: import('vite').ViteDevServer,
+		env: Pick<import('vite').DevEnvironment, 'config' | 'moduleGraph' | 'transformRequest'>,
 		opts: { external: string[] },
 	): Promise<string> {
 		const hash = createHash('sha256')
@@ -212,8 +218,8 @@ export class BundlerService {
 		hash.update(opts.external.join('|'))
 
 		try {
-			await vite.transformRequest(url)
-			const rootModule = await vite.moduleGraph.getModuleByUrl(url)
+			await env.transformRequest(url)
+			const rootModule = await env.moduleGraph.getModuleByUrl(url)
 			if (rootModule) {
 				const files = collectModuleGraphFiles(rootModule)
 				for (const file of files) {

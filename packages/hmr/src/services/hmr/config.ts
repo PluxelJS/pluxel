@@ -2,8 +2,14 @@ import { existsSync } from 'node:fs'
 import { configSourcePlugin, importTypeFixerPlugin } from '@pluxel/rolldown'
 import { resolve } from 'pathe'
 import Macros from 'unplugin-macros/vite'
-import { createLogger, type InlineConfig, type Logger, type Plugin } from 'vite'
-import { normalizePath, searchForWorkspaceRoot } from 'vite'
+import {
+	createLogger,
+	type InlineConfig,
+	type Logger,
+	normalizePath,
+	type Plugin,
+	searchForWorkspaceRoot,
+} from 'vite'
 import { findNearestPackageRoot } from './internals'
 
 export interface HMRDependencyConfig {
@@ -159,20 +165,30 @@ export interface HmrViteConfigOptions {
 }
 
 export function buildHmrViteConfig(opts: HmrViteConfigOptions): InlineConfig {
-	const conditions = buildHmrResolveConditions()
+	const ssrConditions = buildHmrResolveConditions()
+	// The HMR dev server hosts BOTH:
+	// - a browser UI (client environment)
+	// - a server-side runner (ssr environment)
+	//
+	// `@pluxel/hmr` is a *server-only* export condition (workspace TS sources, Node-only deps).
+	// If we forward it into the client environment, Vite may resolve packages like
+	// `pluxel-plugin-wretch` to `./src/...` and then try to analyze/optimize Node-only imports
+	// (e.g. `undici`) as if they were browser deps.
+	const clientConditions = ssrConditions.filter((c) => c !== '@pluxel/hmr')
 	const includePatterns = opts.includeGlobs ?? opts.scanDirs.map((d) => `${d}/**/*.ts`)
+	const forceOptimizeDeps = process.env.PLUXEL_HMR_FORCE_OPTIMIZE_DEPS === '1'
 
 	const baseLogger = createLogger(undefined, { prefix: '[pluxel-hmr]' })
-	const customLogger: Logger = {
-		...baseLogger,
-		warn(msg, options) {
-			if (shouldSilenceDynamicImportWarning(msg)) return
-			baseLogger.warn(msg, options)
-		},
-		warnOnce(msg, options) {
-			if (shouldSilenceDynamicImportWarning(msg)) return
-			baseLogger.warnOnce(msg, options)
-		},
+	// Avoid `{...baseLogger}` here: Vite mutates `logger.hasWarned`, and spreading would copy a stale boolean.
+	// We only override warning output to silence known-noisy Vite import-analysis warnings.
+	const customLogger = Object.create(baseLogger) as Logger
+	customLogger.warn = (msg, options) => {
+		if (shouldSilenceDynamicImportWarning(msg)) return
+		baseLogger.warn(msg, options)
+	}
+	customLogger.warnOnce = (msg, options) => {
+		if (shouldSilenceDynamicImportWarning(msg)) return
+		baseLogger.warnOnce(msg, options)
 	}
 
 	return {
@@ -186,10 +202,17 @@ export function buildHmrViteConfig(opts: HmrViteConfigOptions): InlineConfig {
 			},
 		},
 		resolve: {
-			conditions,
+			conditions: clientConditions,
 			// Vite 8: built-in tsconfig paths support.
 			// (We intentionally avoid `vite-tsconfig-paths` to keep behavior consistent across environments.)
 			tsconfigPaths: true,
+		},
+		environments: {
+			ssr: {
+				resolve: {
+					conditions: ssrConditions,
+				},
+			},
 		},
 		plugins: [
 			configSourcePlugin({ include: includePatterns, exclude: opts.excludeGlobs }),
@@ -199,7 +222,9 @@ export function buildHmrViteConfig(opts: HmrViteConfigOptions): InlineConfig {
 			opts.honoPlugin,
 		],
 		optimizeDeps: {
-			force: true,
+			force: forceOptimizeDeps,
+			// This dev server is used to power plugin UI bundling/runtime evaluation.
+			noDiscovery: false,
 			include: Array.from(opts.deps.optimizeDepsInclude),
 			needsInterop: Array.from(opts.deps.optimizeDepsInterop),
 			// Vite 8 uses rolldown for dependency optimization. Some packages ship optional
@@ -217,11 +242,12 @@ export function buildHmrViteConfig(opts: HmrViteConfigOptions): InlineConfig {
 			// Vite can pre-bundle & interop CJS deps for SSR when they are not externalized.
 			// (externalized deps are handled by Vite/Node runtime, including require-only exports in many cases.)
 			optimizeDeps: {
+				noDiscovery: true,
 				include: Array.from(opts.deps.optimizeDepsInclude),
 				needsInterop: Array.from(opts.deps.optimizeDepsInterop),
 			},
 			resolve: {
-				conditions,
+				conditions: ssrConditions,
 			},
 		},
 	}
@@ -231,7 +257,10 @@ function externalizeOptionalLightningCssPkg(id: string, importer?: string): bool
 	if (id !== '../pkg') return false
 	if (!importer) return false
 	const cleaned = importer.split('?')[0]
-	return cleaned.includes('lightningcss/node/index.js') || cleaned.includes('lightningcss\\node\\index.js')
+	return (
+		cleaned.includes('lightningcss/node/index.js') ||
+		cleaned.includes('lightningcss\\node\\index.js')
+	)
 }
 
 function shouldSilenceDynamicImportWarning(msg: string): boolean {
