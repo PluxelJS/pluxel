@@ -11,15 +11,28 @@ import type {
 	ExtensionPoint,
 	PluginExtensionConfig,
 } from '@pluxel/plugin-ui'
+import { extensionVendorPackages } from '@pluxel/plugin-ui'
 import chokidar, { type FSWatcher } from 'chokidar'
 import { createDebug } from 'obug'
 import { dirname, isAbsolute, join, relative, resolve } from 'pathe'
 import { collectModuleGraphFiles } from '../runtime-compile/bundler/moduleGraph'
+import {
+	looksLikeLegacyBrokenBundle,
+	normalizeJsxRuntime,
+	toBrowserBundleResolve,
+	transformVendorImports,
+} from './extensionBundleTransform'
 import type { ResolveOptions } from 'vite'
 
 export interface ExtensionServiceConfig {
 	outDir?: string
 	enabled?: boolean
+	/**
+	 * Packages provided by the host app (via `window.__PLUXEL_VENDORS__`).
+	 *
+	 * These are externalized from extension bundles and rewritten to global lookups.
+	 */
+	vendorPackages?: string[]
 }
 
 interface PluginExtensionEntry {
@@ -34,18 +47,6 @@ interface PluginExtensionEntry {
 	active: boolean
 	watcher?: FSWatcher | null
 }
-
-const VENDOR_PACKAGES = [
-	'react',
-	'react/jsx-runtime',
-	'react/jsx-dev-runtime',
-	'react-dom',
-	'react-dom/client',
-	'@mantine/core',
-	'@mantine/hooks',
-	'@mantine/modals',
-	'@mantine/notifications',
-] as const
 
 const WATCHER_IGNORED_GLOBS = [
 	'**/node_modules/**',
@@ -91,7 +92,7 @@ const MODULE_ENDPOINT_PREFIX = '/api/extensions/modules'
 const MANIFEST_FILENAME = 'manifest.json'
 
 // Bump this when the bundling/rewriting logic changes, so clients don't reuse stale cached modules.
-const EXTENSION_COMPILER_VERSION = 7
+const EXTENSION_COMPILER_VERSION = 8
 
 export class ExtensionService {
 	private readonly entries = new Map<string, PluginExtensionEntry>()
@@ -100,6 +101,7 @@ export class ExtensionService {
 	private readonly manifestPath: string
 	private readonly dbg = createDebug('pluxel:ext:compile')
 	private readonly enabled: boolean
+	private readonly vendorPackages: readonly string[]
 	private manifestVersion = 0
 	private manifest: ExtensionManifest = {
 		version: 0,
@@ -117,6 +119,9 @@ export class ExtensionService {
 		this.enabled = config?.enabled !== false
 		this.outDir = config?.outDir ?? resolve(process.cwd(), '.pluxel/extensions')
 		this.manifestPath = join(this.outDir, MANIFEST_FILENAME)
+		this.vendorPackages = config?.vendorPackages?.length
+			? config.vendorPackages
+			: extensionVendorPackages
 
 		this.ctx.events.on('afterCommit', async (summary) => {
 			await this.onAfterCommit(summary)
@@ -454,15 +459,6 @@ export class ExtensionService {
 			throw new Error(`Entry file not found: ${absoluteEntry}`)
 		}
 
-		const root = vite.config.root
-		let url = absoluteEntry
-		if (url.startsWith(root)) {
-			url = url.slice(root.length)
-		}
-		if (!url.startsWith('/')) {
-			url = '/' + url
-		}
-
 		// 将入口与本地依赖打成单文件，避免子模块继续各自 import react 导致出现多个 React 副本
 		// （多 React 副本会让 hooks dispatcher 为 null，触发 “reading 'useMemo' of null”）
 		//
@@ -474,11 +470,10 @@ export class ExtensionService {
 				entry: absoluteEntry,
 				root: vite.config.root,
 				resolve: resolveForBrowserBundle,
-				external: Array.from(VENDOR_PACKAGES),
-				cacheKey: `ext-${sanitizePluginName(entry.pluginName)}-${sourceHash}`,
+				external: Array.from(this.vendorPackages),
 			})
 		).code
-		return normalizeJsxRuntime(transformVendorImports(bundled))
+		return normalizeJsxRuntime(transformVendorImports(bundled, this.vendorPackages))
 	}
 
 	private async cleanupOldModuleFiles(pluginName: string, keep: number): Promise<void> {
@@ -674,7 +669,7 @@ export class ExtensionService {
 	private async computeSourceHash(files: string[], baseDir?: string): Promise<string> {
 		const hash = createHash('sha256')
 		hash.update(`compiler:${EXTENSION_COMPILER_VERSION}`)
-		hash.update(`vendors:${Array.from(VENDOR_PACKAGES).join('|')}`)
+		hash.update(`vendors:${Array.from(this.vendorPackages).join('|')}`)
 		const expanded = await this.expandHashTargets(files)
 		expanded.sort()
 
@@ -818,150 +813,6 @@ export class ExtensionService {
 		}
 		return null
 	}
-}
-
-function toBrowserBundleResolve(resolve: ResolveOptions): ResolveOptions {
-	const conditions = Array.isArray(resolve.conditions) ? resolve.conditions : null
-	if (!conditions) return resolve
-
-	const filtered = conditions.filter((c) => c !== '@pluxel/source' && c !== 'source' && c !== '@pluxel/hmr')
-	if (filtered.length === conditions.length) return resolve
-
-	return { ...resolve, conditions: filtered }
-}
-
-function looksLikeLegacyBrokenBundle(code: string): boolean {
-	// 典型坏产物：把 `import { Foo as bar }` 直接拼进了解构，导致语法错误
-	// `const { Foo as bar } = window.__PLUXEL_VENDORS__[...]`
-	const head = code.slice(0, 20000)
-	// 注意：不要用宽泛的 `{ ... as ... }` 检测，否则会误判字符串
-	//（例如 "as a constructor"）导致每次请求都删文件 → 无限编译/无限加载。
-	if (
-		/window\.__PLUXEL_VENDORS__/.test(head) &&
-		/\bconst\s*\{\s*[^}]*\bas\s+[\w$]+[^}]*\}\s*=\s*window\.__PLUXEL_VENDORS__/.test(head)
-	) {
-		return true
-	}
-	// 旧 worker 使用 app build，会生成“可执行脚本”而不是“可 import 模块”，最终没有任何 export。
-	// dynamic import 不会报错，但拿到空 module namespace，导致 UI 永远不注册。
-	if (!/\bexport\s+/.test(code) && !/\bexport\{/.test(code)) {
-		return true
-	}
-	// 兼容之前遇到的 node-only / side-effect import 输出
-	if (/from\s+["']node:module["']/.test(head) || /createRequire\(/.test(head)) return true
-	if (/import\s+["']react\/jsx-runtime["'];?/.test(head)) return true
-	// 浏览器没有 process，全量 bundle 里出现 process.env 说明有 node-style env 检测残留
-	if (/\bprocess\.env\b/.test(head)) return true
-	return false
-}
-
-function transformVendorImports(code: string): string {
-	let result = code
-
-	// Defensive: strip Node-only createRequire helpers that may appear in SSR-oriented outputs.
-	// These modules are executed in the browser.
-	result = result.replace(
-		/^\s*import\s+\{\s*createRequire\s*\}\s+from\s+["'](?:node:module|module)["'];?\s*$/gm,
-		'',
-	)
-	result = result.replace(/^\s*createRequire\s*\(\s*import\.meta\.url\s*\)\s*;?\s*$/gm, '')
-
-	for (const pkg of VENDOR_PACKAGES) {
-		const normalized = pkg.replace(/\//g, '_')
-		const viteStaticImportPattern = new RegExp(
-			`(from\\s*["'])/node_modules/\\.vite/deps/${escapeRegex(normalized)}\\.js(?:\\?[^"']*)?(["'])`,
-			'g',
-		)
-		const viteDynamicImportPattern = new RegExp(
-			`(import\\s*\\(\\s*["'])/node_modules/\\.vite/deps/${escapeRegex(normalized)}\\.js(?:\\?[^"']*)?(["']\\s*\\))`,
-			'g',
-		)
-		result = result.replace(viteStaticImportPattern, `$1${pkg}$2`)
-		result = result.replace(viteDynamicImportPattern, `$1${pkg}$2`)
-
-		const patterns = [
-			new RegExp(`import\\s*\\{([^}]+)\\}\\s*from\\s*["']${escapeRegex(pkg)}["'];?`, 'g'),
-			new RegExp(`import\\s*\\*\\s*as\\s+(\\w+)\\s*from\\s*["']${escapeRegex(pkg)}["'];?`, 'g'),
-			new RegExp(`import\\s+(\\w+)\\s*from\\s*["']${escapeRegex(pkg)}["'];?`, 'g'),
-			new RegExp(
-				`import\\s+(\\w+)\\s*,\\s*\\{([^}]+)\\}\\s*from\\s*["']${escapeRegex(pkg)}["'];?`,
-				'g',
-			),
-		]
-
-		result = result.replace(patterns[0]!, (_, names: string) => {
-			const destructure = rewriteVendorNamedImports(names, pkg)
-			return destructure ? destructure : ''
-		})
-
-		result = result.replace(patterns[1]!, (_, name: string) => {
-			return `var ${name} = window.__PLUXEL_VENDORS__["${pkg}"];`
-		})
-
-		result = result.replace(patterns[3]!, (_, defaultName: string, namedImports: string) => {
-			const named = rewriteVendorNamedImports(namedImports, pkg)
-			const defaultLine = `var ${defaultName} = window.__PLUXEL_VENDORS__["${pkg}"].default || window.__PLUXEL_VENDORS__["${pkg}"];`
-			return named ? `${defaultLine}\n${named}` : defaultLine
-		})
-
-		result = result.replace(patterns[2]!, (_, name: string) => {
-			return `var ${name} = window.__PLUXEL_VENDORS__["${pkg}"].default || window.__PLUXEL_VENDORS__["${pkg}"];`
-		})
-
-		// Side-effect-only imports are invalid in browser for bare specifiers (no import map).
-		// Example: `import "react/jsx-runtime";`
-		const sideEffectImport = new RegExp(
-			`(^|\\n)\\s*import\\s*["']${escapeRegex(pkg)}["'];?\\s*(?=\\n|$)`,
-			'g',
-		)
-		result = result.replace(sideEffectImport, '$1')
-	}
-
-	const definePluginImport = new RegExp(
-		[
-			'import\\s+\\{\\s*definePluginUIModule\\s*\\}\\s*from\\s*["\']',
-			'(?:',
-			'@pluxel\\/hmr\\/web', // package entry
-			'|\\/?src\\/web(?:\\/web)?\\.ts', // source path (with or without nested /web.ts)
-			'|.*\\/web\\/web\\.ts', // relative paths used in tests
-			')["\'];?',
-		].join(''),
-		'g',
-	)
-
-	result = result.replace(definePluginImport, 'const definePluginUIModule = (module) => module;')
-
-	return result
-}
-
-function escapeRegex(str: string): string {
-	return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-}
-
-function rewriteVendorNamedImports(names: string, pkg: string): string {
-	const parts = names
-		.split(',')
-		.map((part) => part.trim())
-		.filter(Boolean)
-		.map((part) => {
-			const match = part.match(/^([\w$]+)\s+as\s+([\w$]+)$/)
-			if (match) {
-				return `${match[1]}: ${match[2]}`
-			}
-			return part
-		})
-
-	if (!parts.length) return ''
-	return `var { ${parts.join(', ')} } = window.__PLUXEL_VENDORS__["${pkg}"];`
-}
-
-function normalizeJsxRuntime(code: string): string {
-	return code
-		.replaceAll('react/jsx-dev-runtime', 'react/jsx-runtime')
-		.replaceAll('react_jsx-dev-runtime', 'react_jsx-runtime')
-		.replaceAll('jsxDevRuntime', 'jsxRuntime')
-		.replaceAll('_jsxDEV', '_jsx')
-		.replaceAll('jsxDEV', 'jsx')
 }
 
 function sanitizePluginName(name: string): string {

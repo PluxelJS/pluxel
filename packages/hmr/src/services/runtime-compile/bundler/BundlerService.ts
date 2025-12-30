@@ -66,7 +66,6 @@ export class BundlerService {
 			throw new Error('BundlerService disabled')
 		}
 
-		const signature = await this.computeSignature(job)
 		const cacheKey = job.cacheKey?.trim() || null
 		const cachedFile = cacheKey ? join(this.outDir, `${cacheKey}.mjs`) : null
 		if (cachedFile && existsSync(cachedFile)) {
@@ -74,6 +73,7 @@ export class BundlerService {
 			return { code, hash: cacheKey }
 		}
 
+		const signature = cacheKey ? null : await this.computeSignature(job)
 		const pool = this.getPool()
 		this.dbg('bundle start %s', job.entry)
 		const code = await pool.run({
@@ -87,7 +87,7 @@ export class BundlerService {
 			await writeFile(cachedFile, code, 'utf-8')
 		}
 		this.dbg('bundle done %s', job.entry)
-		return { code, hash: cacheKey ?? signature }
+		return { code, hash: cacheKey ?? signature! }
 	}
 
 	/**

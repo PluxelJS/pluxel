@@ -45,3 +45,5 @@ export {
 	type UiNotifyPayload,
 	type UiNotifyTone,
 } from './types'
+
+export { extensionVendorPackages, type ExtensionVendorPackage } from './vendors'

@@ -10,6 +10,10 @@ import * as MantineCore from '@mantine/core'
 import * as MantineHooks from '@mantine/hooks'
 import * as MantineModals from '@mantine/modals'
 import * as MantineNotifications from '@mantine/notifications'
+import * as Capnweb from 'capnweb'
+import * as HmrWeb from '@pluxel/hmr-web'
+import * as HmrWebReact from '@pluxel/hmr-web/react'
+import { extensionVendorPackages } from '@pluxel/plugin-ui'
 
 function createJsxDevRuntimeVendor() {
 	const vendor: Record<string, unknown> = { ...ReactJSXDevRuntime }
@@ -51,6 +55,19 @@ export const vendors = {
 	'@mantine/hooks': MantineHooks,
 	'@mantine/modals': MantineModals,
 	'@mantine/notifications': MantineNotifications,
+	capnweb: Capnweb,
+	'@pluxel/hmr-web': HmrWeb,
+	// Extensions typically import from `@pluxel/hmr/web`, which re-exports `@pluxel/hmr-web`
+	// plus a couple of ergonomic aliases. Provide a compatible shape here.
+	'@pluxel/hmr/web': {
+		...HmrWeb,
+		createHmrClient: HmrWeb.createHmrWebClient,
+		hmr: HmrWeb.hmrWebClient,
+	},
+	'@pluxel/hmr-web/react': HmrWebReact,
+	// At runtime, `@pluxel/hmr/web/react` is a thin re-export of `@pluxel/hmr-web/react`.
+	'@pluxel/hmr/web/react': HmrWebReact,
+	'@pluxel/hmr/capnweb': Capnweb,
 }
 
 export type Vendors = typeof vendors
@@ -88,16 +105,6 @@ export function getVendor(name: string): unknown {
 /**
  * 所有可用的 vendor 包名
  */
-export const vendorPackages = [
-	'react',
-	'react/jsx-runtime',
-	'react/jsx-dev-runtime',
-	'react-dom',
-	'react-dom/client',
-	'@mantine/core',
-	'@mantine/hooks',
-	'@mantine/modals',
-	'@mantine/notifications',
-] as const
+export const vendorPackages = extensionVendorPackages
 
 export type VendorPackage = (typeof vendorPackages)[number]
