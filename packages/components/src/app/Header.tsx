@@ -20,9 +20,8 @@ import {
 	IconMenu2,
 	IconSearch,
 } from '@tabler/icons-react'
-import { useNavigate } from '@tanstack/react-router'
+import { useRouter } from '@tanstack/react-router'
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { ColorSchemeToggle } from '../components'
 import { ExtensionSlot } from '../extension'
 import { PLUGIN_SEARCH_EVENT, PLUGIN_SEARCH_KEY } from './constants'
 import { useNotify } from './hooks'
@@ -50,7 +49,7 @@ export function Header({ onMenu }: { onMenu: () => void }) {
 	const searchInputRef = useRef<HTMLInputElement | null>(null)
 	const [isBuildLoading, setIsBuildLoading] = useState(false)
 	const notify = useNotify()
-	const navigate = useNavigate()
+	const router = useRouter()
 	const pathname = useCurrentPathname()
 
 	const handleBuild = async () => {
@@ -98,8 +97,8 @@ export function Header({ onMenu }: { onMenu: () => void }) {
 			} catch {}
 			window.dispatchEvent(new CustomEvent<string>(PLUGIN_SEARCH_EVENT, { detail: value }))
 		}
-		navigate({ to: '/plugins' as never })
-	}, [navigate, notify, search])
+		router.history.push('/plugins')
+	}, [notify, router.history, search])
 
 	useEffect(() => {
 		const handler = (event: KeyboardEvent) => {
@@ -167,8 +166,6 @@ export function Header({ onMenu }: { onMenu: () => void }) {
 				<ExtensionSlot point="header:actions" />
 
 				<NotificationBell />
-
-				<ColorSchemeToggle />
 
 				<Button onClick={handleBuild} loading={isBuildLoading} leftSection="⚡">
 					构建 SNAPSHOT

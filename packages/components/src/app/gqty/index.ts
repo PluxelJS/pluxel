@@ -4,12 +4,18 @@
 
 import { createReactClient } from '@gqty/react'
 import { Cache, createClient, defaultResponseHandler, type QueryFetcher } from 'gqty'
+import { createAuthAwareFetch } from '@pluxel/hmr-web'
 import { type GeneratedSchema, generatedSchema, scalarsEnumsHash } from './schema.generated'
+
+const baseFetch =
+	typeof globalThis.fetch === 'function' ? globalThis.fetch.bind(globalThis) : undefined
+const authFetch = baseFetch ? createAuthAwareFetch(baseFetch) : undefined
 
 const queryFetcher: QueryFetcher = async ({ query, variables, operationName }, fetchOptions) => {
 	// 浏览器走相对路径；SSR 端需要绝对 URL
 	const endpoint = '/api/graphql'
-	const response = await fetch(endpoint, {
+	if (!authFetch) throw new Error('[gqty] global fetch is unavailable')
+	const response = await authFetch(endpoint, {
 		method: 'POST',
 		headers: {
 			'Content-Type': 'application/json',
@@ -22,20 +28,6 @@ const queryFetcher: QueryFetcher = async ({ query, variables, operationName }, f
 		mode: 'cors',
 		...fetchOptions,
 	})
-
-	if (response.status === 401 || response.status === 403) {
-		try {
-			const cloned = response.clone()
-			const payload = await cloned.json()
-			const redirectPath = payload?.redirectPath ?? payload?.extensions?.redirectPath
-			if (redirectPath && typeof window !== 'undefined') {
-				window.location.assign(redirectPath)
-			}
-			throw new Error('Access denied')
-		} catch (error) {
-			throw error instanceof Error ? error : new Error('Access denied')
-		}
-	}
 
 	return await defaultResponseHandler(response)
 }

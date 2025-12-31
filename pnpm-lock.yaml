@@ -151,6 +151,9 @@ importers:
       '@tanstack/react-router':
         specifier: ^1.143.4
         version: 1.143.4(react-dom@19.2.3(react@19.2.3))(react@19.2.3)
+      capnweb:
+        specifier: ^0.3.0
+        version: 0.3.0
       gqty:
         specifier: ^3.6.0
         version: 3.6.0(graphql@16.12.0)
@@ -188,9 +191,6 @@ importers:
       '@vitejs/plugin-react':
         specifier: ^5.1.1
         version: 5.1.2(vite@8.0.0-beta.0(@types/node@25.0.3)(jiti@2.6.1)(sugarss@5.0.1(postcss@8.5.6))(yaml@2.8.2))
-      capnweb:
-        specifier: ^0.2.0
-        version: 0.2.0
       hono:
         specifier: ^4.11.1
         version: 4.11.1
@@ -1879,9 +1879,6 @@ packages:
 
   capital-case@1.0.4:
     resolution: {integrity: sha512-ds37W8CytHgwnhGGTi88pcPyR15qoNkOpYwmMMfnWqqWgESapLqvDx6huFjQ5vqWSn2Z06173XNA7LtMOeUh1A==}
-
-  capnweb@0.2.0:
-    resolution: {integrity: sha512-fQSW5h6HIefRM4rHZMyAsWcu/qE/6Qr2OC8B99whifjDJatI5KLFcODSykKmpyCCKF50N3HvZ5lB26YBdh0fRg==}
 
   capnweb@0.3.0:
     resolution: {integrity: sha512-H77DjTZBJFY2MauC4dWoj/uheOWA+1q+xLZosa7/QWHwy1eCLMv4iVjn2IIL4YB0+lwR61KvNK1BZIpskwZ8Gw==}
@@ -5318,8 +5315,6 @@ snapshots:
       no-case: 3.0.4
       tslib: 2.6.3
       upper-case-first: 2.0.2
-
-  capnweb@0.2.0: {}
 
   capnweb@0.3.0: {}
 

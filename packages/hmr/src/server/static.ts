@@ -5,7 +5,7 @@ const assets = resolveAssets(true)
 const colorSchemeScript = `<script>
 ;(() => {
   try {
-    const key = 'mantine-color-scheme';
+    const key = 'pluxel-color-scheme';
     const stored = localStorage.getItem(key);
     const system = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
     const next = stored === 'dark' || stored === 'light' ? stored : system;
@@ -21,7 +21,7 @@ const staticHtml = `<!DOCTYPE html>
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
-    <title>My App</title>
+    <title>Pluxel HMR</title>
     ${colorSchemeScript}
     ${assets.css.map((href) => `<link rel="stylesheet" href="${href}" />`).join('\n    ')}
     ${assets.preload.map((href) => `<link rel="modulepreload" href="${href}" />`).join('\n    ')}

@@ -55,6 +55,15 @@ export {
 } from './web'
 
 export {
+	createAuthAwareFetch,
+	defaultOnAuthBlocked,
+	installGlobalAuthFetch,
+	type AuthAwareFetchOptions,
+	type AuthBlockedInfo,
+	type OnAuthBlocked,
+} from './auth'
+
+export {
 	sse,
 	type ResolvedSseEvents,
 	type SseClientOptions,

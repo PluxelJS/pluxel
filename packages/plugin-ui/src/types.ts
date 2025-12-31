@@ -7,6 +7,7 @@ export const ExtensionPoints = {
 	HeaderActions: 'header:actions',
 	NavbarItems: 'navbar:items',
 	NavbarFooter: 'navbar:footer',
+	NavbarAuthText: 'navbar:authText',
 	PluginTabs: 'plugin:tabs',
 	PluginActions: 'plugin:actions',
 	PluginInfo: 'plugin:info',
@@ -62,6 +63,11 @@ export interface ExtensionPointMap {
 		}
 		metaRequired?: false
 	}
+	/**
+	 * Sidebar 登录状态文本（支持多用户场景：显示当前用户、审计信息入口等）。
+	 * - 宿主不会强制格式；插件可返回任意 ReactNode。
+	 */
+	'navbar:authText': { ctx: GlobalExtensionContext; meta: {}; metaRequired?: false }
 	'plugin:tabs': {
 		ctx: PluginExtensionContext
 		meta: {

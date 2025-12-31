@@ -3,7 +3,7 @@
 import { useElementSize } from '@mantine/hooks'
 import { LazyLog, ScrollFollow } from '@melloware/react-logviewer'
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { useSseClient } from '../rpc'
+import { createAuthAwareFetch, useSseClient } from '../rpc'
 import { createPrettyPrinter } from './pretty'
 
 const prettyWithName = createPrettyPrinter({
@@ -28,6 +28,10 @@ const RAW_RING_CAP = 4000 // 原始环容量（原始行）
 const VIEW_RING_CAP = 4000 // 展示环容量（wrap 后的行）
 const FLUSH_MS = 80 // 合批最迟刷新间隔
 const SEEN_TTL_MS = 3000 // 去重时间窗：快照与首段 SSE 重叠
+
+const baseFetch =
+	typeof globalThis.fetch === 'function' ? globalThis.fetch.bind(globalThis) : undefined
+const authFetch = baseFetch ? createAuthAwareFetch(baseFetch) : undefined
 
 /* ================= 等宽字符宽度测量（更稳的平均法） ================= */
 const MONO_FONT = '13px ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace'
@@ -298,17 +302,21 @@ export function LiveLog({ module, showName = true }: Props) {
 		const ac = new AbortController()
 		abortRef.current = ac
 
-		fetch(`/api/logs/latest?${params.toString()}`, { signal: ac.signal })
-			.then((r) => (r.ok ? r.text() : Promise.reject(new Error(`HTTP ${r.status}`))))
-			.then((t) => {
-				const lines = t.split('\n').filter(Boolean)
-				const start = Math.max(0, lines.length - SNAPSHOT_MAX)
-				for (let i = start; i < lines.length; i++) pushRaw(lines[i])
-			})
-			.catch(() => undefined)
-			.finally(() => {
-				abortRef.current = null
-			})
+		if (authFetch) {
+			authFetch(`/api/logs/latest?${params.toString()}`, { signal: ac.signal })
+				.then((r) => (r.ok ? r.text() : Promise.reject(new Error(`HTTP ${r.status}`))))
+				.then((t) => {
+					const lines = t.split('\n').filter(Boolean)
+					const start = Math.max(0, lines.length - SNAPSHOT_MAX)
+					for (let i = start; i < lines.length; i++) pushRaw(lines[i])
+				})
+				.catch(() => undefined)
+				.finally(() => {
+					abortRef.current = null
+				})
+		} else {
+			abortRef.current = null
+		}
 
 		// —— 连接 SSE —— //
 		const off = stream.logs.on((msg) => {

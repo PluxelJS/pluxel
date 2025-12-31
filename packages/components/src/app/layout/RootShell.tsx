@@ -1,4 +1,4 @@
-import { useComputedColorScheme } from '@mantine/core'
+import { Stack, useComputedColorScheme } from '@mantine/core'
 import { ModalsProvider, openConfirmModal } from '@mantine/modals'
 import { Notifications } from '@mantine/notifications'
 import { Outlet } from '@tanstack/react-router'
@@ -14,6 +14,7 @@ import {
 import { LAST_ROUTE_KEY } from '../constants'
 import { ExtensionLoader } from '../ExtensionLoader'
 import { Header } from '../Header'
+import { NavbarFooterActions } from './NavbarFooterActions'
 import { baseNavItems, buildExtensionNavItems } from '../navigation/navConfig'
 import { NotificationCenterProvider } from '../notifications/NotificationCenterProvider'
 import { notifyAndRecord } from '../notifications/notifyBridge'
@@ -113,6 +114,7 @@ interface RootShellAppProps {
 
 function RootShellApp({ pathname, onRunningPluginsChange }: RootShellAppProps) {
 	const navbarSurface = useExtensionSurface(ExtensionPoints.NavbarItems)
+	const navbarFooterSurface = useExtensionSurface(ExtensionPoints.NavbarFooter)
 	const statusBarSurface = useExtensionSurface(ExtensionPoints.GlobalStatusBar)
 
 	const extensionNavItems = useMemo<NavItem[]>(() => {
@@ -155,6 +157,12 @@ function RootShellApp({ pathname, onRunningPluginsChange }: RootShellAppProps) {
 					navItems={combinedNavItems}
 					LinkComponent={RouterLinkAdapter}
 					currentPath={pathname}
+					navbarFooter={({ compact }) => (
+						<Stack gap="sm">
+							<NavbarFooterActions compact={compact} />
+							{navbarFooterSurface.hasFill ? <div>{navbarFooterSurface.nodes}</div> : null}
+						</Stack>
+					)}
 					footerHeight={statusBarSurface.hasFill ? 44 : 0}
 					footer={
 						statusBarSurface.hasFill ? (

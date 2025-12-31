@@ -22,20 +22,26 @@ export type LinkLikeProps = {
 	children: React.ReactNode
 } & Omit<React.ComponentPropsWithoutRef<'a'>, 'children' | 'href'>
 
+type LayoutRenderCtx = {
+	opened: boolean
+	toggle: () => void
+	isMobile: boolean
+	compact: boolean
+	toggleCompact: () => void
+}
+
 export interface LayoutProps {
 	/** —— Header 可插拔 —— */
-	header?:
-		| React.ReactNode
-		| ((ctx: { opened: boolean; toggle: () => void; isMobile: boolean }) => React.ReactNode)
+	header?: React.ReactNode | ((ctx: LayoutRenderCtx) => React.ReactNode)
 	headerProps?: Partial<AppHeaderProps>
 	headerHeight?: number
 
 	/** —— Navbar 可插拔 —— */
-	navbar?:
-		| React.ReactNode
-		| ((ctx: { opened: boolean; toggle: () => void; isMobile: boolean }) => React.ReactNode)
+	navbar?: React.ReactNode | ((ctx: LayoutRenderCtx) => React.ReactNode)
 	navItems?: NavItem[]
 	LinkComponent?: React.ComponentType<LinkLikeProps>
+	/** Navbar 底部区域（紧贴主题设置附近） */
+	navbarFooter?: React.ReactNode | ((ctx: LayoutRenderCtx) => React.ReactNode)
 
 	/** —— 抽屉开合（可控/非控） —— */
 	opened?: boolean
@@ -53,9 +59,7 @@ export interface LayoutProps {
 	/** —— 其他 —— */
 	mainPadding?: string | number
 	footerHeight?: number
-	footer?:
-		| React.ReactNode
-		| ((ctx: { opened: boolean; toggle: () => void; isMobile: boolean }) => React.ReactNode)
+	footer?: React.ReactNode | ((ctx: LayoutRenderCtx) => React.ReactNode)
 	currentPath?: string
 	navbarWidth?: number
 	compactNavbarWidth?: number
@@ -74,6 +78,7 @@ export function Layout({
 	navbar,
 	navItems,
 	LinkComponent,
+	navbarFooter,
 	navbarWidth = 280,
 	compactNavbarWidth = 84,
 	// Drawer state
@@ -165,9 +170,15 @@ export function Layout({
 
 	const footerNode = useMemo(() => {
 		if (!footer) return null
-		if (typeof footer === 'function') return footer(ctx as any)
+		if (typeof footer === 'function') return footer(ctx)
 		return footer
 	}, [footer, ctx])
+
+	const navbarFooterNode = useMemo(() => {
+		if (!navbarFooter) return null
+		if (typeof navbarFooter === 'function') return navbarFooter(ctx)
+		return navbarFooter
+	}, [navbarFooter, ctx])
 
 	// —— 组装 Navbar —— //
 	const navbarNode = useMemo(() => {
@@ -181,9 +192,10 @@ export function Layout({
 				currentPath={currentPath}
 				compact={compactNavbar}
 				onCompactToggle={toggleCompact}
+				footer={navbarFooterNode}
 			/>
 		)
-	}, [navbar, navItems, LinkComponent, currentPath, ctx, compactNavbar, toggleCompact])
+	}, [navbar, navItems, LinkComponent, currentPath, ctx, compactNavbar, toggleCompact, navbarFooterNode])
 
 	// —— Main 高度：一次算清 —— //
 	const mainHeight = `calc(100dvh - ${headerHeight}px - ${footerHeight}px)`

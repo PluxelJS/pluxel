@@ -1,5 +1,4 @@
 import { type Context, Injectable } from '@pluxel/core'
-import type { ContentfulStatusCode } from 'hono/utils/http-status'
 
 const serviceName = 'authGuard' as const
 
@@ -11,28 +10,26 @@ declare module '@pluxel/core' {
 	}
 }
 
-/** 插件可返回 boolean 或部分字段的对象；内部会做归一化 */
-export type AuthGuardDecision =
-	| boolean
-	| {
-			allow?: boolean
-			reason?: string
-			status?: ContentfulStatusCode
-	  }
+export type AuthGuardKind = 'ui' | 'api' | 'graphql'
 
 export interface AuthGuardContext {
+	kind: AuthGuardKind
 	path: string
 	method: string
+	url: string
 	headers: Headers
-	request?: Request
-	url?: string
+	request: Request
 }
 
 export interface AuthGuardRegistration {
-	/** 被拒绝时建议前端跳转到的路径（统一入口） */
+	/**
+	 * 未登录/未通过验证时的跳转路径（例如 /login）。
+	 * - UI 请求会 302
+	 * - API/GraphQL 会返回 401 + redirectPath 供客户端处理
+	 */
 	redirectPath: string
-	/** 同步或异步检查器 */
-	check: (ctx: AuthGuardContext) => Promise<AuthGuardDecision> | AuthGuardDecision
+	/** 同步或异步鉴权：true 放行，false 拒绝 */
+	authorize: (ctx: AuthGuardContext) => Promise<boolean> | boolean
 }
 
 export type AuthGuardResult =
@@ -40,18 +37,8 @@ export type AuthGuardResult =
 	| {
 			allow: false
 			pluginName: string
-			reason?: string
 			redirectPath: string
-			status?: ContentfulStatusCode
 	  }
-
-export interface AuthGuardCheckInput {
-	path: string
-	method?: string
-	headers?: Headers
-	request?: Request
-	url?: string
-}
 
 type ActiveGuard = AuthGuardRegistration & {
 	pluginName: string
@@ -67,15 +54,12 @@ export class AuthGuardService {
 		this.logger = ctx.logger!
 	}
 
-	/**
-	 * 注册/更新当前插件的 Guard。
-	 * - 不允许覆盖其他插件的 Guard；
-	 * - 同插件重复注册视为“更新”；
-	 * - 返回取消函数（随 scope 自动回收）。
-	 */
-	registerGuard(reg: AuthGuardRegistration): () => void {
-		if (!reg.redirectPath) {
-			throw new Error('[AuthGuardService] redirectPath is required when registering a guard.')
+	register(reg: AuthGuardRegistration): () => void {
+		if (!reg?.authorize) {
+			throw new Error('[AuthGuardService] register({ authorize }) is required.')
+		}
+		if (!reg?.redirectPath) {
+			throw new Error('[AuthGuardService] register({ redirectPath }) is required.')
 		}
 
 		const pluginId = this.ctx.pluginInfo.id
@@ -87,30 +71,28 @@ export class AuthGuardService {
 			)
 		}
 
-		// 同插件"更新"——先静默清理，避免闪烁日志与多次同步
 		if (existing) {
-			this.clearGuard(existing, { skipSync: true, silent: true })
+			this.clearGuard(existing, { silent: true })
 		}
 
 		const active: ActiveGuard = {
-			...reg,
 			pluginName: pluginId,
+			redirectPath: reg.redirectPath,
+			authorize: reg.authorize,
 			removeFromScope: () => {},
 		}
 
-		// 与插件生命周期绑定：卸载/热更时自动撤销
 		active.removeFromScope = this.ctx.scope.collectEffect(() => this.clearGuard(active))
-
 		this.guard = active
+
 		this.logger.info(existing ? '[AuthGuard] Guard updated' : '[AuthGuard] Guard registered', {
 			pluginName: pluginId,
 		})
 
-		this.syncHonoGuardState()
 		return () => this.clearGuard(active)
 	}
 
-	unregisterGuard(): void {
+	unregister(): void {
 		this.clearGuard()
 	}
 
@@ -118,102 +100,54 @@ export class AuthGuardService {
 		return !!this.guard
 	}
 
-	/**
-	 * 统一入口：将“可能不完整”的输入补齐，并调用 Guard。
-	 * Guard 抛错时按拒绝处理（更安全），日志记录具体原因。
-	 */
-	async check(input: AuthGuardCheckInput): Promise<AuthGuardResult> {
+	getActivePluginName(): string | undefined {
+		return this.guard?.pluginName
+	}
+
+	getRedirectPath(): string | undefined {
+		return this.guard?.redirectPath
+	}
+
+	/** 统一入口：插件抛错视为拒绝（更安全）。 */
+	async check(input: AuthGuardContext): Promise<AuthGuardResult> {
 		const active = this.guard
 		if (!active) return { allow: true }
 
-		const method = (input.method ?? input.request?.method ?? 'GET').toUpperCase()
-		const headers =
-			input.headers ??
-			(input.request?.headers instanceof Headers
-				? input.request.headers
-				: new Headers(input.request?.headers))
-
-		const ctx: AuthGuardContext = {
-			path: input.path,
-			method,
-			headers,
-		}
-		if (input.request) ctx.request = input.request
-		if (input.url) ctx.url = input.url
-
-		let decision: AuthGuardDecision
 		try {
-			decision = await active.check(ctx)
-		} catch (err: any) {
-			this.logger.error('[AuthGuard] Guard check threw', {
-				pluginName: active.pluginName,
-				path: ctx.path,
-				method: ctx.method,
-				reason: err?.message ?? String(err),
-			})
-			// 抛错视为拒绝更安全；前端可拿到 redirectPath 统一跳转
+			const allow = await active.authorize(input)
+			if (allow) return { allow: true }
 			return {
 				allow: false,
 				pluginName: active.pluginName,
 				redirectPath: active.redirectPath,
-				reason: 'guard_threw',
-				status: 403 as ContentfulStatusCode,
 			}
-		}
-
-		return this.buildResult(active, decision)
-	}
-
-	// —— 内部实现 —— //
-
-	private buildResult(guard: ActiveGuard, decision: AuthGuardDecision): AuthGuardResult {
-		// 宽容输入：null/undefined 视为允许
-		if (decision == null || decision === true) return { allow: true }
-		if (decision === false) {
+		} catch (err: any) {
+			this.logger.error('[AuthGuard] Guard threw', {
+				pluginName: active.pluginName,
+				kind: input.kind,
+				path: input.path,
+				method: input.method,
+				reason: err?.message ?? String(err),
+			})
 			return {
 				allow: false,
-				pluginName: guard.pluginName,
-				redirectPath: guard.redirectPath,
+				pluginName: active.pluginName,
+				redirectPath: active.redirectPath,
 			}
 		}
-
-		// 对象场景：默认 allow=false 除非显式 allow===true
-		const allow = !!(decision as any).allow
-		if (allow) return { allow: true }
-
-		const reason = (decision as any).reason as string | undefined
-		const status = (decision as any).status as ContentfulStatusCode | undefined
-
-		const result: AuthGuardResult = {
-			allow: false,
-			pluginName: guard.pluginName,
-			redirectPath: guard.redirectPath,
-		}
-		if (reason !== undefined) result.reason = reason
-		if (status !== undefined) result.status = status
-		return result
 	}
 
-	/** 通知 HonoService：是否需要对 /api/* 套上守卫 */
-	private syncHonoGuardState() {
-		// HonoService 可能尚未构造完成；此处只做尽力同步
-		this.ctx.honoService.switchAuthGuard(this.guard !== undefined)
-	}
-
-	private clearGuard(expected?: ActiveGuard, opts?: { skipSync?: boolean; silent?: boolean }) {
+	private clearGuard(expected?: ActiveGuard, opts?: { silent?: boolean }) {
 		const current = this.guard
 		if (!current) return
 		if (expected && current !== expected) return
 
 		current.removeFromScope()
 		current.removeFromScope = () => {}
-
 		this.guard = undefined
+
 		if (!opts?.silent) {
 			this.logger.info('[AuthGuard] Guard unregistered', { pluginName: current.pluginName })
-		}
-		if (!opts?.skipSync) {
-			this.syncHonoGuardState()
 		}
 	}
 }

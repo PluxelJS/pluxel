@@ -8,6 +8,48 @@ import { HmrRpcApi, PluginHandle } from './rpc'
 
 const app = new Hono<AppEnv>()
 	.get('/', (c) => c.text('Pluxel HMR RPC ready'))
+	// ============ 认证元信息（不受守卫保护） ============
+	.get('/auth/meta', async (c) => {
+		const ctx = c.var.plugin_ctx
+		const authGuard = ctx.authGuard
+
+		// 未启用守卫：前端不需要做任何登录相关处理
+		if (!authGuard || !authGuard.isActive()) {
+			return c.json(
+				{
+					enabled: false,
+					pluginName: null,
+					redirectPath: null,
+					authenticated: true,
+				},
+				200,
+				{ 'Cache-Control': 'no-store' },
+			)
+		}
+
+		const request = c.req.raw
+		const headers = request.headers instanceof Headers ? request.headers : new Headers(request.headers)
+
+		const result = await authGuard.check({
+			kind: 'api',
+			path: c.req.path,
+			method: c.req.method,
+			url: c.req.url,
+			headers,
+			request,
+		})
+
+		return c.json(
+			{
+				enabled: true,
+				pluginName: authGuard.getActivePluginName() ?? null,
+				redirectPath: authGuard.getRedirectPath() ?? null,
+				authenticated: result.allow,
+			},
+			200,
+			{ 'Cache-Control': 'no-store' },
+		)
+	})
 	// Server-Sent Events：统一入口，支持多命名空间复用单条连接
 	.get('/sse', (c) => c.var.plugin_ctx.ext.sse.stream(c))
 	.get('/sse/namespaces', (c) => c.json({ namespaces: c.var.plugin_ctx.ext.sse.getNamespaces() }))

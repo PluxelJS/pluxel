@@ -13,6 +13,7 @@ import {
 	type HmrWebClient,
 	type HmrWebClientOptions,
 } from './web'
+import { defaultOnAuthBlocked, installGlobalAuthFetch } from './auth'
 import { sse, type SseClientOptions, type SseClientWithNamespaces } from './sse'
 import { mergeNamespaces } from './utils'
 
@@ -56,6 +57,20 @@ export function HmrWebClientProvider({
 			if (shouldDispose) ref.current?.dispose()
 		}
 	}, [shouldDispose])
+	useEffect(() => {
+		if (!options?.auth?.globalFetch) return () => {}
+		const disposeAuth = installGlobalAuthFetch({
+			enabled: options?.auth?.enabled,
+			onBlocked: options?.auth?.onBlocked ?? defaultOnAuthBlocked,
+			requireMarkerHeader: options?.auth?.requireMarkerHeader,
+		})
+		return () => disposeAuth()
+	}, [
+		options?.auth?.globalFetch,
+		options?.auth?.enabled,
+		options?.auth?.onBlocked,
+		options?.auth?.requireMarkerHeader,
+	])
 	return <WebClientContext.Provider value={ref.current}>{children}</WebClientContext.Provider>
 }
 

@@ -69,16 +69,25 @@ export function ThemeCustomizer({ compact = false }: ThemeCustomizerProps) {
 		computed === 'dark' ? rgba(theme.colors.dark[4], 0.35) : rgba(theme.colors.gray[3], 0.5)
 
 	if (compact) {
+		const schemeLabel =
+			colorScheme === 'light' ? '浅色' : colorScheme === 'dark' ? '深色' : '跟随系统'
+		const schemeIcon =
+			colorScheme === 'light' ? <IconSun size={18} stroke={1.8} /> : colorScheme === 'dark' ? <IconMoonStars size={18} stroke={1.8} /> : <IconSunMoon size={18} stroke={1.8} />
+		const cycleScheme = () => {
+			const next = colorScheme === 'auto' ? 'light' : colorScheme === 'light' ? 'dark' : 'auto'
+			handleSchemeChange(next)
+		}
 		return (
-			<Tooltip label="主题设置" position="right">
+			<Tooltip label={`外观模式：${schemeLabel}`} position="right" openDelay={300}>
 				<ActionIcon
 					variant="light"
 					size="lg"
 					radius="xl"
-					onClick={() => setExpanded((v) => !v)}
 					style={{ alignSelf: 'center' }}
+					aria-label="切换外观模式"
+					onClick={cycleScheme}
 				>
-					<IconPalette size={18} stroke={1.8} />
+					{schemeIcon}
 				</ActionIcon>
 			</Tooltip>
 		)

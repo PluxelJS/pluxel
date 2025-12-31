@@ -221,7 +221,7 @@ export const COLOR_PRESETS: ColorPreset[] = [
 ]
 
 /** 默认主题色 key */
-export const DEFAULT_COLOR_KEY = 'indigo'
+export const DEFAULT_COLOR_KEY = 'emerald'
 
 /** 根据 key 获取颜色预设 */
 export function getColorPreset(key: string): ColorPreset {

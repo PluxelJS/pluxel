@@ -15,7 +15,7 @@ import type { RenderHandler } from '../../server/types'
 import { logStore, matchesFilter } from '../logger/logStore'
 import type { SseChannel } from '../plugin-interaction'
 import type { ExtensionManifestEvent } from '../runtime-compile'
-import type { AuthGuardCheckInput } from './AuthGuardService'
+import type { AuthGuardContext, AuthGuardKind, AuthGuardResult } from './AuthGuardService'
 import type { AppEnv, HonoWithAppEnvType } from './env'
 
 @Injectable
@@ -26,9 +26,6 @@ export class HonoService extends CoreHonoService {
 
 	// 合批重建/全量刷新
 	private shouldReload = false
-
-	// 是否需要对内部 /api/* 套 Guard
-	private guardRegistered = false
 
 	private readonly logger: NonNullable<Context['logger']>
 	private readonly renderer: Promise<RenderHandler>
@@ -64,9 +61,8 @@ export class HonoService extends CoreHonoService {
 
 	/** AuthGuardService 通知：是否启用 /api/* 守卫 */
 	override switchAuthGuard(toggle: boolean) {
-		if (this.guardRegistered === toggle) return
-		this.guardRegistered = toggle
-		this.scheduleRebuild()
+		// 旧接口保留：当前实现按请求动态读取 AuthGuardService 状态，不需要重建 app。
+		void toggle
 	}
 
 	// —— Vite Dev Server 插件：仅负责 full-reload 信号 —— //
@@ -103,14 +99,20 @@ export class HonoService extends CoreHonoService {
 		this.mountInternalAPI(app as HonoWithAppEnvType)
 
 		// 2) GraphQL：只挂一次路由，内部转发到函数指针
-		app.all('/graphql', (c) => this.gqlFetch(c.req.raw, { hono: c }))
+		app.all('/graphql', async (c) => {
+			const denied = await this.guardInternalRequest(c, 'graphql')
+			if (denied) return denied
+			return this.gqlFetch(c.req.raw, { hono: c })
+		})
 
 		// 3) 插件追加的外部路由/中间件（不被守卫包裹）
 		for (const m of this.mods) m(app as HonoWithAppEnvType)
 
-		// 4) SSR 兜底（仅 HTML 导航）
+		// 4) SPA 兜底（仅 HTML 导航）
 		app.use('*', async (c, next) => {
 			if (!this.isHtmlNavigation(c)) return next()
+			const denied = await this.guardInternalRequest(c, 'ui')
+			if (denied) return denied
 			return this.render(c)
 		})
 
@@ -177,23 +179,23 @@ export class HonoService extends CoreHonoService {
 
 	/** 仅对“内部 API”应用守卫 */
 	private mountInternalAPI(app: HonoWithAppEnvType) {
-		if (!this.guardRegistered) {
-			app.route('/api', api)
-			return
-		}
-
-		const guarded = new Hono<AppEnv>()
-		guarded.use('*', async (c, next) => {
-			const denied = await this.guardApiRequest(c)
+		app.use('/api', async (c, next) => {
+			const denied = await this.guardInternalRequest(c, 'api')
 			if (denied) return denied
 			return next()
 		})
-		guarded.route('/', api)
-
-		app.route('/api', guarded as any)
+		app.use('/api/*', async (c, next) => {
+			const denied = await this.guardInternalRequest(c, 'api')
+			if (denied) return denied
+			return next()
+		})
+		app.route('/api', api)
 	}
 
-	private async guardApiRequest(c: import('hono').Context<AppEnv>): Promise<Response | undefined> {
+	private async guardInternalRequest(
+		c: import('hono').Context<AppEnv>,
+		kind: AuthGuardKind,
+	): Promise<Response | undefined> {
 		const service = this.ctx.authGuard
 		if (!service || !service.isActive()) return undefined
 
@@ -204,7 +206,11 @@ export class HonoService extends CoreHonoService {
 		const path = c.req.path
 		const method = (request.method ?? c.req.method).toUpperCase()
 
-		const guardInput: AuthGuardCheckInput = {
+		// 认证元信息必须可达：用于前端在不打全局补丁的前提下获取登录入口 redirectPath 等信息。
+		if (kind === 'api' && path === '/api/auth/meta') return undefined
+
+		const input: AuthGuardContext = {
+			kind,
 			path,
 			method,
 			headers,
@@ -212,36 +218,43 @@ export class HonoService extends CoreHonoService {
 			url,
 		}
 
-		const result = await service.check(guardInput)
+		const result = await service.check(input)
 		if (result.allow) return undefined
 
-		const status: ContentfulStatusCode = result.status ?? 403
-
-		// 避免把重对象打进日志
 		this.logger.warn('[AuthGuard] Blocked request', {
+			kind,
 			path,
 			method,
 			plugin: result.pluginName,
-			reason: result.reason,
-			redirect: result.redirectPath,
-			status,
 		})
+
+		return this.buildAuthDeniedResponse(c, kind, result)
+	}
+
+	private buildAuthDeniedResponse(
+		c: import('hono').Context<AppEnv>,
+		kind: AuthGuardKind,
+		result: Extract<AuthGuardResult, { allow: false }>,
+	): Response {
+		if (kind === 'ui') {
+			return c.redirect(result.redirectPath, 302)
+		}
 
 		return c.json(
 			{
 				allow: false,
 				code: 'access_denied',
-				path,
-				method,
+				kind,
+				path: c.req.path,
+				method: c.req.method,
 				pluginName: result.pluginName,
-				reason: result.reason,
 				redirectPath: result.redirectPath,
 			},
-			status,
+			401,
 			{
 				'Cache-Control': 'no-store',
-				// 客户端可据此快速判断“需要处理重定向”
 				'X-Pluxel-Auth-Blocked': '1',
+				'X-Pluxel-Redirect-Path': result.redirectPath,
 			},
 		)
 	}
@@ -282,15 +295,7 @@ export class HonoService extends CoreHonoService {
 
 	private createRenderer(): Promise<RenderHandler> {
 		// #if SOURCE_ONLY
-		const importMetaEnv = (import.meta as ImportMeta & { env?: Record<string, any> }).env
-
-		const ssrFlag =
-			importMetaEnv?.PLUXEL_HMR_SSR ??
-			(typeof process !== 'undefined' && process.env ? process.env.PLUXEL_HMR_SSR : undefined)
-
-		if (ssrFlag) {
-			return import('../../server/dev').then(({ createDevRenderer }) => createDevRenderer())
-		}
+		return import('../../server/dev').then(({ createDevRenderer }) => createDevRenderer())
 		// #endif
 
 		return import('../../server/static').then(({ createStaticRenderer }) => createStaticRenderer())

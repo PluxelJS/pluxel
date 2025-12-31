@@ -1,5 +1,6 @@
 import type { RpcStub } from 'capnweb'
 import type { HmrRpcApi, RpcExtensions } from './protocol'
+import { createAuthAwareFetch, defaultOnAuthBlocked, type AuthAwareFetchOptions } from './auth'
 import { createRpcClientFactory, createRpcExtensionsView } from './rpc'
 import { mergeNamespaces } from './utils'
 import { sse, type SseClientOptions, type SseClientWithNamespaces } from './sse'
@@ -10,6 +11,21 @@ export type HmrWebClientOptions = {
 	rpcBase?: string
 	sse?: SseClientOptions
 	defaultNamespace?: string
+	/**
+	 * Custom fetch implementation (defaults to global fetch).
+	 * If `auth` is enabled, this fetch will be wrapped.
+	 */
+	fetch?: typeof fetch
+	/**统一鉴权失败处理（401/403 + redirectPath）。*/
+	auth?: AuthAwareFetchOptions & {
+		/** 是否启用 auth-aware fetch 包装（默认启用）。 */
+		enabled?: boolean
+		/**
+		 * 是否在 React Provider 中对 globalThis.fetch 打补丁（默认不启用）。
+		 * 建议仅在代码里大量直接用 `fetch()` 且希望统一重定向时启用。
+		 */
+		globalFetch?: boolean
+	}
 }
 
 export interface HmrWebClient {
@@ -31,7 +47,22 @@ export function createHmrWebClient(options: HmrWebClientOptions = {}): HmrWebCli
 	const baseSseOptions = options.sse ?? {}
 	const defaultNamespaces = options.defaultNamespace ? [options.defaultNamespace] : undefined
 
-	const api = hc(apiBase)
+	const baseFetch =
+		options.fetch ??
+		(typeof globalThis.fetch === 'function' ? globalThis.fetch.bind(globalThis) : undefined)
+	if (!baseFetch) {
+		throw new Error('[hmr-web] global fetch is unavailable; pass `options.fetch` explicitly.')
+	}
+
+	const authEnabled = options.auth?.enabled !== false
+	const authFetch = authEnabled
+		? createAuthAwareFetch(baseFetch, {
+				onBlocked: options.auth?.onBlocked ?? defaultOnAuthBlocked,
+				requireMarkerHeader: options.auth?.requireMarkerHeader,
+			})
+		: baseFetch
+
+	const api = hc(apiBase, { fetch: authFetch })
 	const rawRpc = createRpcClientFactory(rpcBase)
 	const rpc = createRpcExtensionsView(rawRpc)
 

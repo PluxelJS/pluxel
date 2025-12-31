@@ -53,6 +53,8 @@ export interface NavbarProps {
 	/** 紧凑模式：仅显示图标，文字隐藏（保留短标签） */
 	compact?: boolean
 	onCompactToggle?: () => void
+	/** Navbar 底部自定义区域（位于主题设置之上） */
+	footer?: React.ReactNode
 }
 
 function defaultIsActive(pathname: string, href: string, exact?: boolean) {
@@ -70,6 +72,7 @@ const Navbar = memo(function Navbar({
 	getIsActive = defaultIsActive,
 	compact = false,
 	onCompactToggle,
+	footer,
 }: NavbarProps) {
 	const theme = useMantineTheme()
 	const colorScheme = useComputedColorScheme('light', { getInitialValueInEffect: true })
@@ -260,7 +263,10 @@ const Navbar = memo(function Navbar({
 
 			{/* 底部主题设置 */}
 			<Box p="md" pt={0}>
-				<ThemeCustomizer compact={compact} />
+				<Stack gap="sm">
+					{footer ? <div>{footer}</div> : null}
+					<ThemeCustomizer compact={compact} />
+				</Stack>
 			</Box>
 		</Box>
 	)

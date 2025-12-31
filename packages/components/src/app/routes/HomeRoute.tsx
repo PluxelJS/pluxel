@@ -1,30 +1,40 @@
 import { Center, Text } from '@mantine/core'
-import { useNavigate } from '@tanstack/react-router'
-import { useEffect, useState } from 'react'
-import { HOME_MANUAL_KEY, LAST_ROUTE_KEY } from '../constants'
+import { useRouter, useRouterState } from '@tanstack/react-router'
+import { useEffect, useRef, useState } from 'react'
+import { LAST_ROUTE_KEY } from '../constants'
 import { HomeIntro } from '../home/HomeIntro'
 
 export function HomeRoute() {
-	const navigate = useNavigate()
+	const router = useRouter()
+	// 使用 useRouterState + select 精确订阅，减少不必要的重渲染
+	// https://github.com/TanStack/router/issues/3110
+	const isManual = useRouterState({
+		select: (s) => (s.location.state as { manual?: boolean } | null)?.manual === true,
+	})
 	const [showIntro, setShowIntro] = useState(false)
 	const [lastRoute, setLastRoute] = useState<string | null>(null)
+	const hasNavigatedRef = useRef(false)
 
 	useEffect(() => {
-		if (typeof window === 'undefined') return
-		const manual = window.sessionStorage.getItem(HOME_MANUAL_KEY)
-		const last = window.localStorage.getItem(LAST_ROUTE_KEY)
+		if (hasNavigatedRef.current) return
+
+		const last = localStorage.getItem(LAST_ROUTE_KEY)
 		setLastRoute(last)
-		if (manual) {
-			window.sessionStorage.removeItem(HOME_MANUAL_KEY)
+
+		if (isManual) {
 			setShowIntro(true)
 			return
 		}
+
+		// 非主动访问首页时，尝试恢复上次路由
 		if (last && last !== '/') {
-			navigate({ to: last as never, replace: true })
+			hasNavigatedRef.current = true
+			router.history.replace(last)
 			return
 		}
+
 		setShowIntro(true)
-	}, [navigate])
+	}, [isManual, router.history])
 
 	if (!showIntro) {
 		return (

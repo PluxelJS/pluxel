@@ -1,0 +1,118 @@
+import '@pluxel/core/test/setup'
+
+// Ensure @pluxel/hmr services (HonoService/AuthGuardService/ExtService) are registered.
+import '../../src/services'
+
+import { afterEach, describe, expect, it } from 'bun:test'
+import { createTestHost, type TestHost } from '@pluxel/core/test'
+import { AuthGuardTestPlugin } from '../plugins/AuthGuardTestPlugin'
+
+function req(url: string, init?: RequestInit) {
+	return new Request(url, init)
+}
+
+function pickCookie(setCookie: string | null): string {
+	if (!setCookie) throw new Error('missing Set-Cookie header')
+	return setCookie.split(';')[0]!.trim()
+}
+
+describe('AuthGuard end-to-end (HonoService)', () => {
+	let host: TestHost | null = null
+
+	afterEach(async () => {
+		if (!host) return
+		await host.dispose()
+		host = null
+	})
+
+	it('guards /api and HTML navigation; /auth verify unblocks; unload removes guard', async () => {
+		host = createTestHost()
+
+		// Force service construction.
+		void host.ctx.honoService
+		void host.ctx.authGuard
+
+		// Baseline: no guard -> /api is accessible without cookie.
+		{
+			const res = await host.ctx.honoService.fetch(req('http://local/api'))
+			expect(res.status).toBe(200)
+			expect(await res.text()).toContain('Pluxel HMR RPC ready')
+		}
+
+		// Start the test plugin which registers a guard and mounts /auth + /auth/verify.
+		host.register(AuthGuardTestPlugin)
+		host.enablePlugins('AuthGuardTest')
+		await host.commitStrict()
+
+		expect(host.ctx.authGuard.isActive()).toBe(true)
+
+		// /api is blocked without cookie (marker header + redirectPath).
+		{
+			const res = await host.ctx.honoService.fetch(
+				req('http://local/api', {
+					headers: { accept: 'application/json' },
+				}),
+			)
+			expect(res.status).toBe(401)
+			expect(res.headers.get('X-Pluxel-Auth-Blocked')).toBe('1')
+			expect(res.headers.get('X-Pluxel-Redirect-Path')).toBe('/auth')
+
+			const payload = (await res.json()) as any
+			expect(payload?.allow).toBe(false)
+			expect(payload?.redirectPath).toBe('/auth')
+		}
+
+		// HTML navigation is redirected to /auth.
+		{
+			const res = await host.ctx.honoService.fetch(
+				req('http://local/', {
+					headers: {
+						accept: 'text/html',
+						'sec-fetch-mode': 'navigate',
+						'sec-fetch-dest': 'document',
+					},
+				}),
+			)
+			expect(res.status).toBe(302)
+			expect(res.headers.get('location')).toBe('/auth')
+		}
+
+		// /auth page exists (plugin route, not guarded).
+		{
+			const res = await host.ctx.honoService.fetch(
+				req('http://local/auth', { headers: { accept: 'text/html' } }),
+			)
+			expect(res.status).toBe(200)
+			expect(await res.text()).toContain('id="verify"')
+		}
+
+		// "Click verify": POST /auth/verify gives a cookie that allows /api.
+		const cookie = await (async () => {
+			const res = await host!.ctx.honoService.fetch(
+				req('http://local/auth/verify', { method: 'POST' }),
+			)
+			expect(res.status).toBe(200)
+			return pickCookie(res.headers.get('set-cookie'))
+		})()
+
+		{
+			const res = await host.ctx.honoService.fetch(
+				req('http://local/api', {
+					headers: { cookie },
+				}),
+			)
+			expect(res.status).toBe(200)
+		}
+
+		// Unload plugin -> guard is removed -> /api is accessible again without cookie.
+		host.unregister(AuthGuardTestPlugin)
+		await host.commitStrict()
+
+		expect(host.ctx.authGuard.isActive()).toBe(false)
+
+		{
+			const res = await host.ctx.honoService.fetch(req('http://local/api'))
+			expect(res.status).toBe(200)
+		}
+	})
+})
