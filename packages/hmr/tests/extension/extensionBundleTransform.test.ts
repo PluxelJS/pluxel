@@ -5,7 +5,7 @@ describe('extension bundle vendor transform', () => {
 	it('rewrites host-provided vendor imports to window globals', () => {
 		const input = [
 			'import { createRpcClient, definePluginUIModule } from "@pluxel/hmr/web";',
-			'import { useSseClient } from "@pluxel/hmr/web/react";',
+			'import { useSseClient } from "@pluxel/hmr/web";',
 			'import * as Capnweb from "capnweb";',
 			'import React, { useMemo as useMemo2 } from "react";',
 			'import { Button } from "@mantine/core";',
@@ -15,7 +15,6 @@ describe('extension bundle vendor transform', () => {
 
 		const out = normalizeJsxRuntime(transformVendorImports(input))
 		expect(out).toContain('window.__PLUXEL_VENDORS__["@pluxel/hmr/web"]')
-		expect(out).toContain('window.__PLUXEL_VENDORS__["@pluxel/hmr/web/react"]')
 		expect(out).toContain('window.__PLUXEL_VENDORS__["capnweb"]')
 		expect(out).toContain('window.__PLUXEL_VENDORS__["react"]')
 		expect(out).toContain('window.__PLUXEL_VENDORS__["@mantine/core"]')

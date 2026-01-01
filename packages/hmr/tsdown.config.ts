@@ -19,7 +19,6 @@ export default defineConfig({
 		services: 'src/services/index.ts',
 		config: 'src/config.ts',
 		web: 'src/web/web.ts',
-		'web/react': 'src/web/react.tsx',
 		capnweb: 'src/web/capnweb.ts',
 		signaldb: 'src/web/signaldb.ts',
 	},

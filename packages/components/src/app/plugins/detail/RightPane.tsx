@@ -12,8 +12,7 @@ import {
 } from '@mantine/core'
 import { IconSettingsOff } from '@tabler/icons-react'
 import { useRouter } from '@tanstack/react-router'
-import type { ComponentType } from 'react'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { Fragment, type ComponentType, type ReactNode, useCallback, useEffect, useMemo, useState } from 'react'
 import { EmptyState, ErrorState } from '../../../components'
 import {
 	ExtensionErrorBoundary,
@@ -156,10 +155,17 @@ export function RightPane({ config }: RightPaneProps) {
 	const encodedPluginName = useMemo(() => encodeURIComponentSafe(pluginName), [pluginName])
 	const basePath = `/plugins/${encodedPluginName}`
 	const tabGroups = useMemo(() => {
-		const entries = tabItems.map((item, index) => ({ item, node: tabNodes[index] }))
-		const byId = new Map<string, { id: string; label: string; priority: number; nodes: any[] }>()
+		const entries = tabItems.map((item, index) => ({
+			item,
+			node: tabNodes[index] as ReactNode,
+			nodeKey: item.meta.id,
+		}))
+		const byId = new Map<
+			string,
+			{ id: string; label: string; priority: number; nodes: Array<{ key: string; node: ReactNode }> }
+		>()
 
-		for (const { item, node } of entries) {
+		for (const { item, node, nodeKey } of entries) {
 			const tabMeta = (item.meta as any)?.tab as { id?: unknown; label?: unknown } | undefined
 			const rawGroupId =
 				typeof tabMeta?.id === 'string' && tabMeta.id.trim().length > 0
@@ -186,7 +192,7 @@ export function RightPane({ config }: RightPaneProps) {
 					id: groupId,
 					label: groupLabel,
 					priority: typeof item.meta.priority === 'number' ? item.meta.priority : 0,
-					nodes: node ? [node] : [],
+					nodes: node ? [{ key: nodeKey, node }] : [],
 				})
 				continue
 			}
@@ -195,7 +201,7 @@ export function RightPane({ config }: RightPaneProps) {
 				existing.priority,
 				typeof item.meta.priority === 'number' ? item.meta.priority : 0,
 			)
-			if (node) existing.nodes.push(node)
+			if (node) existing.nodes.push({ key: nodeKey, node })
 		}
 
 		return Array.from(byId.values()).sort((a, b) => {
@@ -425,7 +431,11 @@ export function RightPane({ config }: RightPaneProps) {
 										style={COLUMN_STYLE}
 									>
 										<Box p="xs" style={{ minHeight: '100%' }}>
-											<Stack gap="sm">{tab.nodes}</Stack>
+											<Stack gap="sm">
+												{tab.nodes.map(({ key, node }) => (
+													<Fragment key={key}>{node}</Fragment>
+												))}
+											</Stack>
 										</Box>
 									</ScrollArea>
 								</Tabs.Panel>

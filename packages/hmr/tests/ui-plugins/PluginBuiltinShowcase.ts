@@ -624,19 +624,21 @@ export class PluginBuiltinShowcaseRpc extends RpcTarget {
 }
 
 declare module '@pluxel/hmr/services' {
-	interface RpcExtensions {
-		PluginBuiltinShowcase: PluginBuiltinShowcaseRpc
-	}
+	namespace UI {
+		interface rpc {
+			PluginBuiltinShowcase: PluginBuiltinShowcaseRpc
+		}
 
-	interface SseEvents {
-		PluginBuiltinShowcase: {
-			uptimeMs: number
-			uptimeLabel: string
-			ticks: number
-			paused: boolean
-			refreshMs: number
-			tickStep: number
-			maxTicks: number
+		interface sse {
+			PluginBuiltinShowcase: {
+				uptimeMs: number
+				uptimeLabel: string
+				ticks: number
+				paused: boolean
+				refreshMs: number
+				tickStep: number
+				maxTicks: number
+			}
 		}
 	}
 }

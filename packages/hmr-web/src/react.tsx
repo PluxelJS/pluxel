@@ -9,7 +9,7 @@ import {
 } from 'react'
 import {
 	createHmrWebClient,
-	hmrWebClient,
+	getHmrWebClient,
 	type HmrWebClient,
 	type HmrWebClientOptions,
 } from './web'
@@ -78,11 +78,11 @@ export function useHmrWebClient(options?: HmrWebClientOptions): HmrWebClient {
 	const ctxClient = useContext(WebClientContext)
 	const localRef = useRef<HmrWebClient | null>(null)
 	if (!ctxClient && !localRef.current) {
-		localRef.current = options ? createHmrWebClient(options) : hmrWebClient
+		localRef.current = options ? createHmrWebClient(options) : getHmrWebClient()
 	}
 	useEffect(() => {
 		return () => {
-			if (!ctxClient && localRef.current && localRef.current !== hmrWebClient) {
+			if (!ctxClient && localRef.current && localRef.current !== getHmrWebClient()) {
 				localRef.current.dispose()
 			}
 		}

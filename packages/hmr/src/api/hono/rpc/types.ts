@@ -141,10 +141,3 @@ export type PackageBatchResult = {
 	results: PackageMutationResult[]
 	error: string | null
 }
-
-// Backward-compatible aliases
-export type MarketMutationAction = PackageMutationAction
-export type MarketMutationOptions = PackageMutationOptions
-export type MarketMutationInput = PackageMutationInput
-export type MarketMutationResult = PackageMutationResult
-export type MarketBatchResult = PackageBatchResult

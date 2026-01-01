@@ -1,5 +1,6 @@
 import type { ExtensionManifestEvent } from '@pluxel/plugin-ui'
-import type { SseEvents } from './protocol'
+import { defaultOnAuthBlocked, type OnAuthBlocked } from './auth'
+import type { UI } from './protocol'
 
 export interface LogRecord {
 	time: string
@@ -14,7 +15,7 @@ export interface BuiltinSseEvents {
 	logs: LogRecord
 }
 
-export type ResolvedSseEvents = BuiltinSseEvents & SseEvents
+export type ResolvedSseEvents = BuiltinSseEvents & UI.sse
 
 type PayloadForNs<Ns extends string> = Ns extends keyof ResolvedSseEvents
 	? ResolvedSseEvents[Ns]
@@ -48,6 +49,15 @@ export interface SseClientOptions {
 	/** 自定义 SSE 入口（默认 /api/sse） */
 	url?: string
 	retry?: { min?: number; max?: number }
+	/**
+	 * Optional auth integration: when SSE errors, we can probe auth state and redirect
+	 * instead of reconnecting forever.
+	 */
+	auth?: {
+		metaUrl: string
+		fetch?: typeof fetch
+		onBlocked?: OnAuthBlocked
+	}
 }
 
 class SseClient {
@@ -57,6 +67,8 @@ class SseClient {
 		string,
 		{ any: Set<AnyHandler>; events: Map<string, Set<AnyHandler>> }
 	>()
+	private readonly lastByNamespace = new Map<string, SseMessage<string>>()
+	private readonly lastByNamespaceEvent = new Map<string, Map<string, SseMessage<string>>>()
 	private readonly openHandlers = new Set<() => void>()
 	private readonly errorHandlers = new Set<() => void>()
 	private stopped = false
@@ -65,6 +77,16 @@ class SseClient {
 	private readonly retryMin: number
 	private readonly retryMax: number
 	private readonly url: string
+	private readonly auth?: NonNullable<SseClientOptions['auth']>
+	private authProbeInFlight: Promise<boolean> | null = null
+	private lastAuthProbeAt = 0
+	private connected = false
+
+	private static readonly MAX_CACHED_EVENTS_PER_NAMESPACE = 64
+	private static asap(fn: () => void) {
+		if (typeof globalThis.queueMicrotask === 'function') globalThis.queueMicrotask(fn)
+		else Promise.resolve().then(fn)
+	}
 
 	constructor(options: SseClientOptions = {}) {
 		const min = options.retry?.min ?? 800
@@ -83,8 +105,45 @@ class SseClient {
 			}
 		}
 		this.url = url.toString()
+		this.auth = options.auth
 
 		this.connect()
+	}
+
+	private async probeAuthBlocked(): Promise<boolean> {
+		const auth = this.auth
+		if (!auth?.metaUrl) return false
+
+		const now = Date.now()
+		// Throttle probes: avoid spamming auth/meta on flaky networks.
+		if (now - this.lastAuthProbeAt < 1500) return false
+		this.lastAuthProbeAt = now
+
+		const fetchImpl =
+			auth.fetch ??
+			(typeof globalThis.fetch === 'function' ? globalThis.fetch.bind(globalThis) : undefined)
+		if (!fetchImpl) return false
+
+		try {
+			const res = await fetchImpl(auth.metaUrl, {
+				method: 'GET',
+				headers: { 'Cache-Control': 'no-store' },
+			})
+			if (!res.ok) return false
+			const payload = (await res.json()) as any
+			if (!payload || payload.enabled !== true) return false
+			if (payload.authenticated === true) return false
+
+			const redirectPath =
+				typeof payload.redirectPath === 'string' && payload.redirectPath
+					? payload.redirectPath
+					: undefined
+			const onBlocked = auth.onBlocked ?? defaultOnAuthBlocked
+			onBlocked({ status: 401, url: this.url, redirectPath })
+			return true
+		} catch {
+			return false
+		}
 	}
 
 	private scheduleReconnect() {
@@ -100,6 +159,7 @@ class SseClient {
 
 	private connect() {
 		if (this.stopped) return
+		this.connected = false
 		try {
 			this.source?.close()
 		} catch {
@@ -109,11 +169,28 @@ class SseClient {
 		this.source = src
 
 		src.onopen = () => {
+			this.connected = true
 			this.backoff = this.retryMin
 			for (const fn of this.openHandlers) fn()
 		}
 		src.onerror = () => {
+			this.connected = false
 			for (const fn of this.errorHandlers) fn()
+			if (this.auth && typeof window !== 'undefined') {
+				if (!this.authProbeInFlight) {
+					this.authProbeInFlight = this.probeAuthBlocked().finally(() => {
+						this.authProbeInFlight = null
+					})
+				}
+				void this.authProbeInFlight.then((blocked) => {
+					if (blocked) {
+						this.close()
+						return
+					}
+					this.scheduleReconnect()
+				})
+				return
+			}
 			this.scheduleReconnect()
 		}
 		src.onmessage = (ev) => {
@@ -132,6 +209,7 @@ class SseClient {
 				payload,
 				raw: ev,
 			}
+			this.cacheLast(shaped)
 			for (const fn of this.anyHandlers) fn(shaped)
 			const bucket = this.nsHandlers.get(namespace)
 			if (!bucket) return
@@ -141,8 +219,31 @@ class SseClient {
 		}
 	}
 
+	private cacheLast(msg: SseMessage<string>) {
+		const ns = msg.namespace
+		const ev = msg.event
+
+		this.lastByNamespace.set(ns, msg)
+
+		let byEvent = this.lastByNamespaceEvent.get(ns)
+		if (!byEvent) {
+			byEvent = new Map()
+			this.lastByNamespaceEvent.set(ns, byEvent)
+		}
+		if (!byEvent.has(ev) && byEvent.size >= SseClient.MAX_CACHED_EVENTS_PER_NAMESPACE) {
+			const oldest = byEvent.keys().next().value as string | undefined
+			if (oldest) byEvent.delete(oldest)
+		}
+		byEvent.set(ev, msg)
+	}
+
 	onOpen(handler: () => void): () => void {
 		this.openHandlers.add(handler)
+		if (this.connected) {
+			SseClient.asap(() => {
+				if (this.openHandlers.has(handler)) handler()
+			})
+		}
 		return () => this.openHandlers.delete(handler)
 	}
 
@@ -179,6 +280,12 @@ class SseClient {
 				if (!list.length) {
 					const h = handler as unknown as AnyHandler
 					bucket!.any.add(h)
+					const last = this.lastByNamespace.get(namespace)
+					if (last) {
+						SseClient.asap(() => {
+							if (bucket!.any.has(h)) h(last)
+						})
+					}
 					return () => bucket!.any.delete(h)
 				}
 				const unsubs: Array<() => void> = []
@@ -190,6 +297,12 @@ class SseClient {
 					}
 					const h = handler as unknown as AnyHandler
 					set.add(h)
+					const last = this.lastByNamespaceEvent.get(namespace)?.get(ev)
+					if (last) {
+						SseClient.asap(() => {
+							if (set!.has(h)) h(last)
+						})
+					}
 					unsubs.push(() => set!.delete(h))
 				}
 				return () => {
@@ -199,6 +312,12 @@ class SseClient {
 			onAny: (handler) => {
 				const h = handler as unknown as AnyHandler
 				bucket!.any.add(h)
+				const last = this.lastByNamespace.get(namespace)
+				if (last) {
+					SseClient.asap(() => {
+						if (bucket!.any.has(h)) h(last)
+					})
+				}
 				return () => bucket!.any.delete(h)
 			},
 		}
@@ -206,6 +325,9 @@ class SseClient {
 
 	close(): void {
 		this.stopped = true
+		this.connected = false
+		this.lastByNamespace.clear()
+		this.lastByNamespaceEvent.clear()
 		if (this.reconnectTimer) {
 			clearTimeout(this.reconnectTimer)
 			this.reconnectTimer = null

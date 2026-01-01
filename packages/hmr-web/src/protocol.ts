@@ -3,30 +3,31 @@
  *
  * 说明：
  * - 这里不是“纯类型包”，协议类型与浏览器 client 同属一个包，减少碎片化。
- * - 对外推荐通过 `@pluxel/hmr/services` 做 declaration merging 扩展 `RpcExtensions` / `SseEvents`。
- * - `@pluxel/hmr-web` 的同名 interface 作为内部/桥接存在（不建议插件直接依赖）。
+ * - 对外推荐通过 `@pluxel/hmr/services` 做 declaration merging 扩展 `UI.rpc` / `UI.sse`。
  */
 
 /**
- * RPC 扩展接口（插件通过 declaration merging 扩展）
+ * UI extensibility surface.
  *
  * @example
  * declare module '@pluxel/hmr/services' {
- *   interface RpcExtensions {
- *     MyPlugin: MyPluginRpc
+ *   namespace UI {
+ *     interface rpc {
+ *       MyPlugin: MyPluginRpc
+ *     }
+ *
+ *     interface sse {
+ *       MyPlugin: MyPluginSsePayload
+ *     }
  *   }
  * }
  */
-// biome-ignore lint/suspicious/noEmptyInterface: 外部扩展（通过 @pluxel/hmr/services bridge 进来）
-export interface RpcExtensions {}
-
-/**
- * SSE 事件接口（插件通过 declaration merging 扩展）
- *
- * key 是 namespace，value 是 payload 的 union/shape。
- */
-// biome-ignore lint/suspicious/noEmptyInterface: 外部扩展（通过 @pluxel/hmr/services bridge 进来）
-export interface SseEvents {}
+export declare namespace UI {
+	// biome-ignore lint/suspicious/noEmptyInterface: declaration merging target (bridged from @pluxel/hmr/services)
+	interface rpc {}
+	// biome-ignore lint/suspicious/noEmptyInterface: declaration merging target (bridged from @pluxel/hmr/services)
+	interface sse {}
+}
 
 export type PluginStatusAction = 'start' | 'stop' | 'restart' | 'enable' | 'disable'
 export type ConfigPatch = Record<string, unknown>
@@ -174,14 +175,6 @@ export interface PackageHandleApi {
 	mutate: (input: PackageMutationInput) => Promise<PackageBatchResult>
 }
 
-// Backward-compatible aliases
-export type MarketMutationAction = PackageMutationAction
-export type MarketMutationOptions = PackageMutationOptions
-export type MarketMutationInput = PackageMutationInput
-export type MarketMutationResult = PackageMutationResult
-export type MarketBatchResult = PackageBatchResult
-export type MarketHandleApi = PackageHandleApi
-
 export interface PluginHandleApi {
 	name: string
 	detail: () => unknown
@@ -222,8 +215,7 @@ export interface HmrRpcApi {
 	ping: () => string
 	plugin: (name: string) => PluginHandleApi
 	package: () => PackageHandleApi
-	market: () => MarketHandleApi
-	ext: RpcExtensions
+	ext: UI.rpc
 	extensions: () => string[]
 	pluginStatus: () => unknown
 	buildSnapshot: () => Promise<BuildSnapshotResult>

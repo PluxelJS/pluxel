@@ -1,6 +1,5 @@
 import { type Context } from '@pluxel/core'
 import { createResponse, type Session } from 'better-sse'
-import type { SseEvents } from '../extensions'
 
 import type { AppEnv } from '../hono/env'
 
@@ -358,4 +357,4 @@ export class SseService {
 	}
 }
 
-export type { ResolvedSseEvents } from '../../web/sse'
+export type { ResolvedSseEvents } from '@pluxel/hmr-web'

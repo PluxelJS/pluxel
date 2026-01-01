@@ -12,7 +12,7 @@ export * from './plugin-interaction'
 export * from './runtime-compile'
 
 // Plugin extensibility surface (types only)
-export type { RpcExtensions, SseEvents } from './extensions'
+export type { UI } from './plugin-interaction'
 
 // Ensure module augmentations are part of the program when importing `@pluxel/hmr/services`.
 import './augment-hmr-web'

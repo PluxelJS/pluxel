@@ -10,9 +10,8 @@ export type {
 
 export { ExtensionPoints, definePluginUIModule } from '@pluxel/plugin-ui'
 
+export type { UI } from './protocol'
 export type {
-	RpcExtensions,
-	SseEvents,
 	HmrRpcApi,
 	PluginStatusAction,
 	PluginStatusBatchAction,
@@ -38,18 +37,12 @@ export type {
 	PackageMutationOptions,
 	PackageMutationResult,
 	PackageBatchResult,
-	MarketHandleApi,
-	MarketMutationAction,
-	MarketMutationInput,
-	MarketMutationOptions,
-	MarketMutationResult,
-	MarketBatchResult,
 } from './protocol'
 
 export {
 	createHmrWebClient,
-	hmrWebClient,
-	client,
+	getHmrWebClient,
+	disposeHmrWebClient,
 	type HmrWebClient,
 	type HmrWebClientOptions,
 } from './web'

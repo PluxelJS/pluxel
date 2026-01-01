@@ -20,11 +20,8 @@ export const extensionVendorPackages = [
 
 	// Host-provided browser client helpers
 	'capnweb',
-	'@pluxel/hmr-web',
 	'@pluxel/hmr/web',
 	'@pluxel/hmr/capnweb',
-	'@pluxel/hmr-web/react',
-	'@pluxel/hmr/web/react',
 ] as const
 
 export type ExtensionVendorPackage = (typeof extensionVendorPackages)[number]

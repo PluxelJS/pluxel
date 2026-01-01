@@ -1,142 +1,128 @@
-// packages/hmr/tests/plugins/ui-demos/PluginWithUI/ui/index.tsx
-// 插件 UI 扩展入口模块（拆分组件 + 多 Tab 展示）
+import { Badge, Button, Group, Stack, Text } from '@mantine/core'
+import { IconDashboard, IconExternalLink, IconRocket } from '@tabler/icons-react'
+import { definePluginUIModule, ExtensionPoints, type GlobalExtensionContext, type PluginExtensionContext } from '@pluxel/hmr/web'
+import { OverviewPanel, EventsPanel, PluginRuntimeProvider, RoutePage, StreamsPanel } from './components'
 
-import { Stack, Text } from '@mantine/core'
-import { IconDashboard } from '@tabler/icons-react'
-import { definePluginUIModule, type PluginExtensionContext } from '@pluxel/hmr/web'
-import {
-	ActivityTimeline,
-	Dashboard,
-	GlobalStatusBar,
-	HeaderButton,
-	InfoCard,
-	LiveSseActivity,
-	NotesPanel,
-	RealTimeTicker,
-	TaskBoard,
-	PluginApiProvider,
-	usePluginApi,
-} from './components'
-
-function OverviewTabContent({ ctx }: { ctx: PluginExtensionContext }) {
-	const { sse } = usePluginApi()
+function HeaderAction() {
 	return (
-		<Stack gap="md">
-			<InfoCard ctx={ctx} />
-			<RealTimeTicker sse={sse} />
-		</Stack>
+		<Button variant="light" size="xs" leftSection={<IconRocket size={14} />} color="grape">
+			PluginWithUI
+		</Button>
 	)
 }
 
-function DataTabContent() {
-	const { sse } = usePluginApi()
+function GlobalStatusBar({ ctx }: { ctx: GlobalExtensionContext }) {
 	return (
-		<Stack gap="md">
-			<Text size="sm" c="dimmed">
-				使用 RPC + cursor SSE 同步，演示多 Collection（notes/tasks）的互动。
+		<Group gap="xs">
+			<Badge variant="dot" color="grape">
+				UI Demo
+			</Badge>
+			<Text size="xs" c="dimmed">
+				{ctx.runningPluginsReady ? 'plugins ready' : 'plugins loading…'}
 			</Text>
-			<NotesPanel sse={sse} />
-			<TaskBoard sse={sse} />
-		</Stack>
+		</Group>
 	)
 }
 
-function LiveTabContent() {
-	const { sse } = usePluginApi()
+function TabOverview({ ctx }: { ctx: PluginExtensionContext }) {
 	return (
-		<Stack gap="md">
-			<Text size="sm" c="dimmed">
-				实时事件总览：日志、插件 SSE（tick/sync/cursor）与活动流。
-			</Text>
-			<LiveSseActivity sse={sse} />
-			<ActivityTimeline sse={sse} />
-		</Stack>
+		<PluginRuntimeProvider ctx={ctx}>
+			<OverviewPanel />
+		</PluginRuntimeProvider>
 	)
 }
 
-function OverviewTabPanel({ ctx }: { ctx: PluginExtensionContext }) {
+function TabEvents({ ctx }: { ctx: PluginExtensionContext }) {
 	return (
-		<PluginApiProvider ctx={ctx}>
-			<OverviewTabContent ctx={ctx} />
-		</PluginApiProvider>
+		<PluginRuntimeProvider ctx={ctx}>
+			<EventsPanel />
+		</PluginRuntimeProvider>
 	)
 }
 
-function DataTabPanel({ ctx }: { ctx: PluginExtensionContext }) {
+function TabStreams({ ctx }: { ctx: PluginExtensionContext }) {
 	return (
-		<PluginApiProvider ctx={ctx}>
-			<DataTabContent />
-		</PluginApiProvider>
+		<PluginRuntimeProvider ctx={ctx}>
+			<StreamsPanel />
+		</PluginRuntimeProvider>
 	)
 }
 
-function LiveTabPanel({ ctx }: { ctx: PluginExtensionContext }) {
+function PluginInfo({ ctx }: { ctx: PluginExtensionContext }) {
 	return (
-		<PluginApiProvider ctx={ctx}>
-			<LiveTabContent />
-		</PluginApiProvider>
+		<PluginRuntimeProvider ctx={ctx}>
+			<Stack gap="xs">
+				<Text fw={600}>PluginWithUI</Text>
+				<Text size="sm" c="dimmed">
+					演示扩展 UI：Tab、Route、SSE、RPC。
+				</Text>
+				<Button
+					variant="light"
+					size="xs"
+					leftSection={<IconExternalLink size={14} />}
+					component="a"
+					href={`/plugins/${encodeURIComponent(ctx.pluginName)}/dashboard`}
+				>
+					打开 Dashboard
+				</Button>
+			</Stack>
+		</PluginRuntimeProvider>
 	)
 }
 
-function PluginInfoCard({ ctx }: { ctx: PluginExtensionContext }) {
+function RouteDashboard({ ctx }: { ctx: PluginExtensionContext }) {
 	return (
-		<PluginApiProvider ctx={ctx}>
-			<InfoCard ctx={ctx} />
-		</PluginApiProvider>
+		<PluginRuntimeProvider ctx={ctx}>
+			<RoutePage />
+		</PluginRuntimeProvider>
 	)
 }
 
-const module = definePluginUIModule({
+export default definePluginUIModule({
 	extensions: [
 		{
-			point: 'global:statusBar',
-			id: 'global-statusbar',
-			priority: 5,
+			point: ExtensionPoints.GlobalStatusBar,
+			id: 'global-status',
+			priority: 50,
 			meta: { label: 'PluginWithUI' },
 			Component: GlobalStatusBar,
 		},
 		{
-			point: 'header:actions',
-			id: 'header-actions',
+			point: ExtensionPoints.HeaderActions,
+			id: 'header-action',
 			priority: 100,
-			Component: HeaderButton,
+			Component: HeaderAction,
 		},
 		{
-			point: 'plugin:tabs',
+			point: ExtensionPoints.PluginTabs,
 			id: 'tab-overview',
-			priority: 10,
-			meta: {
-				label: '概览',
-			},
+			priority: 20,
+			meta: { label: '概览' },
 			when: (ctx) => ctx.pluginName === 'PluginWithUI',
-			Component: OverviewTabPanel,
+			Component: TabOverview,
 		},
 		{
-			point: 'plugin:tabs',
-			id: 'tab-data',
-			priority: 11,
-			meta: {
-				label: '数据',
-			},
+			point: ExtensionPoints.PluginTabs,
+			id: 'tab-events',
+			priority: 19,
+			meta: { label: '事件' },
 			when: (ctx) => ctx.pluginName === 'PluginWithUI',
-			Component: DataTabPanel,
+			Component: TabEvents,
 		},
 		{
-			point: 'plugin:tabs',
-			id: 'tab-live',
-			priority: 12,
-			meta: {
-				label: '实时',
-			},
+			point: ExtensionPoints.PluginTabs,
+			id: 'tab-streams',
+			priority: 18,
+			meta: { label: 'Streams' },
 			when: (ctx) => ctx.pluginName === 'PluginWithUI',
-			Component: LiveTabPanel,
+			Component: TabStreams,
 		},
 		{
-			point: 'plugin:info',
+			point: ExtensionPoints.PluginInfo,
 			id: 'plugin-info',
-			priority: 5,
+			priority: 10,
 			requireRunning: true,
-			Component: PluginInfoCard,
+			Component: PluginInfo,
 		},
 	],
 	routes: [
@@ -148,7 +134,7 @@ const module = definePluginUIModule({
 				addToNav: true,
 				navPriority: 50,
 			},
-			Component: Dashboard,
+			Component: RouteDashboard,
 		},
 	],
 	setup({ pluginName }) {
@@ -156,4 +142,3 @@ const module = definePluginUIModule({
 	},
 })
 
-export default module

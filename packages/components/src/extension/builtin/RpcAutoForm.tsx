@@ -34,6 +34,58 @@ function safeStringify(input: unknown): string {
 	}
 }
 
+function requireHmr(ctx: ExtensionContext) {
+	const hmr = ctx.services.hmr
+	if (!hmr) throw new Error('rpcAutoForm requires ctx.services.hmr')
+	return hmr
+}
+
+type SchemaLoadState =
+	| { status: 'loading' }
+	| { status: 'error'; error: Error }
+	| { status: 'ready'; schema: ObjectSchema<any, any>; defaults: Record<string, any> }
+
+function useRpcAutoFormSchema(
+	ctx: ExtensionContext,
+	pluginName: string,
+	schemaKey: string,
+): SchemaLoadState {
+	const [state, setState] = useState<SchemaLoadState>({ status: 'loading' })
+	const hmr = ctx.services.hmr
+
+	useEffect(() => {
+		if (!schemaKey) {
+			setState({ status: 'error', error: new Error('schemaKey is required') })
+			return
+		}
+		if (!hmr) {
+			setState({ status: 'error', error: new Error('rpcAutoForm requires ctx.services.hmr') })
+			return
+		}
+
+		let cancelled = false
+		setState({ status: 'loading' })
+		void loadSchema(hmr, pluginName, schemaKey)
+			.then((entry) => {
+				if (cancelled) return
+				setState({ status: 'ready', schema: entry.schema, defaults: entry.defaults })
+			})
+			.catch((e) => {
+				if (cancelled) return
+				setState({
+					status: 'error',
+					error: e instanceof Error ? e : new Error('schema load failed'),
+				})
+			})
+
+		return () => {
+			cancelled = true
+		}
+	}, [hmr, pluginName, schemaKey])
+
+	return state
+}
+
 function pickKnownValues(source: unknown, allowedKeys: string[]): Record<string, unknown> {
 	if (!source || typeof source !== 'object') return {}
 	const obj = source as Record<string, unknown>
@@ -216,17 +268,8 @@ function AutoSubmitSlot({
 	)
 }
 
-function disposeRpcClient(client: any) {
-	const disposer = client?.[Symbol.dispose] ?? client?.[Symbol.asyncDispose] ?? client?.dispose
-	if (typeof disposer === 'function') {
-		try {
-			disposer.call(client)
-		} catch {}
-	}
-}
-
 async function loadSchema(
-	ctx: ExtensionContext,
+	hmr: ReturnType<typeof requireHmr>,
 	pluginName: string,
 	schemaKey: string,
 ): Promise<SchemaCacheEntry> {
@@ -234,18 +277,7 @@ async function loadSchema(
 	const cached = schemaCache.get(cacheKey)
 	if (cached) return cached
 
-	const hmr = (ctx.services as any)?.hmr
-	const rawRpc = hmr?.rawRpc
-	if (typeof rawRpc !== 'function') {
-		throw new Error('rpcAutoForm requires ctx.services.hmr.rawRpc')
-	}
-	const client = rawRpc()
-	let result: any
-	try {
-		result = await client.plugin(pluginName).schema()
-	} finally {
-		disposeRpcClient(client)
-	}
+	const result: any = await hmr.withRpc((client: any) => client.plugin(pluginName).schema())
 	if (!result || result.ok === false) {
 		throw new Error(result?.message ?? result?.code ?? 'schema_not_found')
 	}
@@ -274,16 +306,17 @@ export function BuiltinRpcAutoForm({
 	pluginName: string
 	block: BuiltinRpcAutoFormBlock
 }) {
-	const mountedRef = useRef(true)
+	const isMountedRef = useRef(true)
 	useEffect(() => {
-		mountedRef.current = true
 		return () => {
-			mountedRef.current = false
+			isMountedRef.current = false
 		}
 	}, [])
 
 	const schemaKey = normalizeKey(block.schemaKey)
 	const submitMode = block.submitMode ?? 'manual'
+	const rpcMethod = normalizeKey(block.rpc?.method)
+	const shouldSyncFromSse = submitMode === 'onChange' && Boolean(block.syncFromSse)
 	const autoSubmitDebounceMs =
 		typeof block.autoSubmitDebounceMs === 'number' && block.autoSubmitDebounceMs >= 0
 			? block.autoSubmitDebounceMs
@@ -296,35 +329,7 @@ export function BuiltinRpcAutoForm({
 	const lastSuccessAtRef = useRef(0)
 	const awaitingSseRef = useRef(false)
 
-	const [state, setState] = useState<
-		| { status: 'loading' }
-		| { status: 'error'; error: Error }
-		| { status: 'ready'; schema: ObjectSchema<any, any>; defaults: Record<string, any> }
-	>({ status: 'loading' })
-
-	useEffect(() => {
-		if (!schemaKey) {
-			setState({ status: 'error', error: new Error('schemaKey is required') })
-			return
-		}
-		let cancelled = false
-		setState({ status: 'loading' })
-		void loadSchema(ctx, pluginName, schemaKey)
-			.then((entry) => {
-				if (cancelled) return
-				setState({ status: 'ready', schema: entry.schema, defaults: entry.defaults })
-			})
-			.catch((e) => {
-				if (cancelled) return
-				setState({
-					status: 'error',
-					error: e instanceof Error ? e : new Error('schema load failed'),
-				})
-			})
-		return () => {
-			cancelled = true
-		}
-	}, [ctx, pluginName, schemaKey])
+	const state = useRpcAutoFormSchema(ctx, pluginName, schemaKey)
 
 	const notifySuccess = (titleFallback: string) => {
 		const notify = ctx.services.ui?.notify
@@ -353,14 +358,24 @@ export function BuiltinRpcAutoForm({
 
 	const [submitting, setSubmitting] = useState(false)
 
-	const sseStateByEvent = useSseForValues(ctx, pluginName, [block.syncFromSse as any])
+	const sseStateByEvent = useSseForValues(
+		ctx,
+		pluginName,
+		shouldSyncFromSse ? [block.syncFromSse as any] : [],
+	)
 	const syncPayload = useMemo(() => {
+		if (!shouldSyncFromSse) return null
 		const ref: any = block.syncFromSse
 		if (!isObject(ref) || ref.kind !== 'sse') return null
 		return resolveSseRef(ref as any, sseStateByEvent)
-	}, [block.syncFromSse, sseStateByEvent])
+	}, [block.syncFromSse, sseStateByEvent, shouldSyncFromSse])
 
-	const opts = useMemo(() => {
+	const allowedKeys = useMemo(() => {
+		if (state.status !== 'ready') return []
+		return Object.keys(state.defaults ?? {})
+	}, [state.status, state.status === 'ready' ? state.defaults : null])
+
+	const formOpts = useMemo(() => {
 		if (state.status !== 'ready') return null
 		const initialValue = state.defaults ?? {}
 		return formOptions({
@@ -387,30 +402,29 @@ export function BuiltinRpcAutoForm({
 
 				setSubmitting(true)
 				try {
-					const method = String(block.rpc?.method ?? '').trim()
-					if (!method) throw new Error('Missing rpc.method')
-					const rpcNs = (ctx.services as any)?.hmr?.rpc?.[pluginName]
-					const fn = rpcNs?.[method]
+					if (!rpcMethod) throw new Error('Missing rpc.method')
+					const hmr = requireHmr(ctx)
+					const rpcNs = (hmr.rpc as any)?.[pluginName]
+					const fn = rpcNs?.[rpcMethod]
 					if (typeof fn !== 'function')
-						throw new Error(`RPC method not found: ${pluginName}.${method}`)
+						throw new Error(`RPC method not found: ${pluginName}.${rpcMethod}`)
 
 					const args = buildArgsFromTemplate(value, block.rpc?.args)
 					await fn(...args)
 
 					lastSuccessSigRef.current = safeStringify(value)
 					lastSuccessAtRef.current = Date.now()
-					const hasSseSync = submitMode === 'onChange' && Boolean(block.syncFromSse)
-					awaitingSseRef.current = hasSseSync
+					awaitingSseRef.current = shouldSyncFromSse
 					notifySuccess('提交成功')
 					if (block.resetOnSuccess) {
 						formApi.reset()
-					} else if (block.submitMode === 'onChange' && !hasSseSync) {
+					} else if (submitMode === 'onChange' && !shouldSyncFromSse) {
 						formApi.reset(value as any)
 					}
 				} catch (e) {
 					notifyError(e)
 				} finally {
-					if (mountedRef.current) setSubmitting(false)
+					if (isMountedRef.current) setSubmitting(false)
 				}
 			},
 		})
@@ -420,13 +434,13 @@ export function BuiltinRpcAutoForm({
 		block.feedback,
 		block.resetOnSuccess,
 		block.rpc?.args,
-		block.rpc?.method,
-		block.syncFromSse,
+		rpcMethod,
 		pluginName,
 		state.status,
 		state.status === 'ready' ? state.defaults : null,
 		submitting,
 		submitMode,
+		shouldSyncFromSse,
 	])
 
 	if (state.status === 'loading') {
@@ -471,11 +485,11 @@ export function BuiltinRpcAutoForm({
 					</Box>
 				) : null}
 
-				<AutoForm schema={state.schema as any} formOpts={opts as any}>
+				<AutoForm schema={state.schema as any} formOpts={formOpts as any}>
 					<SseSyncSlot
-						enabled={submitMode === 'onChange' && Boolean(block.syncFromSse)}
+						enabled={shouldSyncFromSse}
 						payload={syncPayload}
-						allowedKeys={Object.keys(state.defaults ?? {})}
+						allowedKeys={allowedKeys}
 						holdMs={sseSyncHoldMs}
 						lastSuccessSigRef={lastSuccessSigRef}
 						lastSuccessAtRef={lastSuccessAtRef}

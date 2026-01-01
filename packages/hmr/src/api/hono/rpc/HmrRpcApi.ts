@@ -4,7 +4,7 @@ import type { Context } from '@pluxel/core'
 import { RpcTarget } from 'capnweb'
 import { resolve } from 'pathe'
 import * as v from 'valibot'
-import type { RpcExtensions } from '../../../services'
+import type { UI } from '../../../services'
 import { PluginGroupInput, type PluginGroupInputValue } from '../../features/groups/schema'
 import { readGroups, writeGroups } from '../../features/groups/service'
 import { getStatusOverview } from '../../features/pluginStatus/service'
@@ -15,7 +15,7 @@ import { formatGroupIssues } from './utils'
 
 export class HmrRpcApi extends RpcTarget {
 	#ctx: Context
-	#ext: RpcExtensions
+	#ext: UI.rpc
 
 	constructor(ctx: Context) {
 		super()
@@ -40,7 +40,7 @@ export class HmrRpcApi extends RpcTarget {
 	 * 访问插件注册的 RPC 扩展
 	 * @example rpc.ext['my-plugin'].method()
 	 */
-	get ext(): RpcExtensions {
+	get ext(): UI.rpc {
 		return this.#ext
 	}
 

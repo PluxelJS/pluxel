@@ -1,7 +1,7 @@
 import type { RpcStub } from 'capnweb'
-import type { HmrRpcApi, RpcExtensions } from './protocol'
+import type { HmrRpcApi, UI } from './protocol'
 import { createAuthAwareFetch, defaultOnAuthBlocked, type AuthAwareFetchOptions } from './auth'
-import { createRpcClientFactory, createRpcExtensionsView } from './rpc'
+import { createRpcClientFactory, createRpcExtensionsView, invokeRpc } from './rpc'
 import { mergeNamespaces } from './utils'
 import { sse, type SseClientOptions, type SseClientWithNamespaces } from './sse'
 import { hc } from 'hono/client'
@@ -30,8 +30,8 @@ export type HmrWebClientOptions = {
 
 export interface HmrWebClient {
 	api: ReturnType<typeof hc>
-	rawRpc: () => RpcStub<HmrRpcApi>
-	rpc: RpcExtensions
+	rpc: UI.rpc
+	withRpc: <T>(runner: (client: RpcStub<HmrRpcApi>) => Promise<T>) => Promise<T>
 	createSse: (options?: SseClientOptions) => SseClientWithNamespaces
 	sse: SseClientWithNamespaces
 	streamLogs: (
@@ -65,6 +65,8 @@ export function createHmrWebClient(options: HmrWebClientOptions = {}): HmrWebCli
 	const api = hc(apiBase, { fetch: authFetch })
 	const rawRpc = createRpcClientFactory(rpcBase)
 	const rpc = createRpcExtensionsView(rawRpc)
+	const withRpc = <T,>(runner: (client: RpcStub<HmrRpcApi>) => Promise<T>) =>
+		invokeRpc(runner, { rpcBase })
 
 	const baseNamespaces = mergeNamespaces(baseSseOptions.namespaces, defaultNamespaces)
 
@@ -78,6 +80,13 @@ export function createHmrWebClient(options: HmrWebClientOptions = {}): HmrWebCli
 			...baseSseOptions,
 			...opts,
 			url: opts?.url ?? baseSseOptions.url ?? '/api/sse',
+			auth: authEnabled
+				? {
+						metaUrl: `${apiBase}/auth/meta`,
+						fetch: authFetch,
+						onBlocked: options.auth?.onBlocked ?? defaultOnAuthBlocked,
+					}
+				: undefined,
 			params,
 			namespaces: namespaces.length ? namespaces : undefined,
 		}
@@ -109,8 +118,8 @@ export function createHmrWebClient(options: HmrWebClientOptions = {}): HmrWebCli
 
 	return {
 		api,
-		rawRpc,
 		rpc,
+		withRpc,
 		createSse,
 		get sse() {
 			return getSse()
@@ -121,6 +130,21 @@ export function createHmrWebClient(options: HmrWebClientOptions = {}): HmrWebCli
 	}
 }
 
-export const hmrWebClient = createHmrWebClient()
+let _defaultClient: HmrWebClient | null = null
 
-export const client = hmrWebClient.api
+/**
+ * Lazily create a shared default client (no side effects until first call).
+ *
+ * If you pass options, it always creates a new client (not memoized).
+ */
+export function getHmrWebClient(options?: HmrWebClientOptions): HmrWebClient {
+	if (options) return createHmrWebClient(options)
+	if (!_defaultClient) _defaultClient = createHmrWebClient()
+	return _defaultClient
+}
+
+export function disposeHmrWebClient(): void {
+	if (!_defaultClient) return
+	_defaultClient.dispose()
+	_defaultClient = null
+}
