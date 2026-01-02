@@ -18,9 +18,12 @@ import {
 	type SnapshotLoader,
 } from '@pluxel/market'
 import {
-	createRpcClient,
 	definePluginUIModule,
+	type PackageBatchResult,
+	type PackageInventoryEntry,
 	type PackageSpecInput,
+	type PluginExtensionContext,
+	useExtensionContext,
 } from '@pluxel/hmr/web'
 import { IconExternalLink, IconInfoCircle, IconShoppingBag } from '@tabler/icons-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
@@ -85,14 +88,20 @@ const specKey = (spec?: PackageSpecInput) =>
 		''
 	).toLowerCase()
 
-function buildInstalledPackages(inventory: unknown): Record<string, string> {
-	if (!Array.isArray(inventory)) return {}
+async function fetchPackageInventory(
+	hmr: PluginExtensionContext['services']['hmr'],
+	includeUntracked: boolean,
+): Promise<PackageInventoryEntry[]> {
+	return hmr.withRpc((rpc) => rpc.package().inventory({ includeUntracked }))
+}
+
+function buildInstalledPackages(inventory: PackageInventoryEntry[]): Record<string, string> {
 	const result: Record<string, string> = {}
 	for (const entry of inventory) {
-		const spec = (entry as any)?.spec
+		const spec = entry.spec
 		const name = spec?.name
 		if (!name) continue
-		const installed = (entry as any)?.installedVersion ?? spec?.version ?? ''
+		const installed = entry.installedVersion ?? spec?.version ?? ''
 		result[name] = installed ?? ''
 	}
 	return result
@@ -105,6 +114,7 @@ function resolveMessage(error: unknown, fallback: string) {
 }
 
 function MarketPage() {
+	const hmr = useExtensionContext('plugin').services.hmr
 	const scheme = useComputedColorScheme('light', { getInitialValueInEffect: true })
 	const appearance = scheme === 'dark' ? 'dark' : 'light'
 	const marketBase = useMemo(() => resolveMarketBase(), [])
@@ -137,8 +147,7 @@ function MarketPage() {
 
 	const loadInventory = useCallback(async () => {
 		try {
-			using rpc = createRpcClient()
-			const inventory = await rpc.package().inventory({ includeUntracked: false })
+			const inventory = await fetchPackageInventory(hmr, false)
 			setInstalledPackages(buildInstalledPackages(inventory))
 		} catch (error) {
 			notify({
@@ -147,7 +156,7 @@ function MarketPage() {
 				tone: 'error',
 			})
 		}
-	}, [notify])
+	}, [hmr, notify])
 
 	useEffect(() => {
 		void loadInventory()
@@ -268,12 +277,13 @@ function MarketPage() {
 			setInstalling(true)
 			const failures: string[] = []
 			try {
-				using rpc = createRpcClient()
-				const res = await rpc.package().mutate({
-					action: 'install',
-					specs: installQueue.map((task) => task.spec),
-					options: { force: installQueue.some((task) => task.force) },
-				})
+				const res = await hmr.withRpc((rpc) =>
+					rpc.package().mutate({
+						action: 'install',
+						specs: installQueue.map((task) => task.spec),
+						options: { force: installQueue.some((task) => task.force) },
+					}),
+				)
 				if (!res) {
 					throw new Error('安装接口无返回结果')
 				}
@@ -283,7 +293,7 @@ function MarketPage() {
 				}
 
 				const resultsByKey = new Map(
-					(res.results ?? []).map((entry: any) => [
+					(res.results ?? []).map((entry: PackageBatchResult['results'][number]) => [
 						specKey({
 							raw: entry?.spec?.raw ?? undefined,
 							name: entry?.spec?.name ?? undefined,
@@ -328,7 +338,7 @@ function MarketPage() {
 				void loadInventory()
 			}
 		},
-		[confirm, installing, installedPackages, loadInventory, notify],
+		[confirm, hmr, installing, installedPackages, loadInventory, notify],
 	)
 
 	return (
@@ -400,7 +410,7 @@ function MarketPage() {
 	)
 }
 
-const module = definePluginUIModule({
+export default definePluginUIModule({
 	routes: [
 		{
 			definition: {
@@ -410,12 +420,10 @@ const module = definePluginUIModule({
 				addToNav: true,
 				navPriority: 40,
 			},
-			Component: MarketPage,
+			render: () => <MarketPage />,
 		},
 	],
 	setup({ pluginName }) {
 		console.log(`[${pluginName}] Market UI module loaded`)
 	},
 })
-
-export default module

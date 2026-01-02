@@ -3,21 +3,22 @@
 
 import { Badge, Tooltip } from '@mantine/core'
 import { IconActivity } from '@tabler/icons-react'
-import { definePluginUIModule, type GlobalExtensionContext } from '@pluxel/hmr/web'
+import { definePluginUIModule, ExtensionPoints, useExtensionContext } from '@pluxel/hmr/web'
 import { useEffect, useState } from 'react'
 
-function StatusBadge({ ctx }: { ctx: GlobalExtensionContext }) {
+function StatusBadge() {
+	const hmr = useExtensionContext('global').services.hmr
 	const [connected, setConnected] = useState(false)
 
 	useEffect(() => {
-		const sse = ctx.services.hmr.sse
+		const sse = hmr.sse
 		const offOpen = sse.onOpen(() => setConnected(true))
 		const offErr = sse.onError(() => setConnected(false))
 		return () => {
 			offOpen()
 			offErr()
 		}
-	}, [ctx.services.hmr])
+	}, [hmr])
 
 	return (
 		<Tooltip label={connected ? 'SSE 已连接' : 'SSE 连接中'}>
@@ -33,19 +34,16 @@ function StatusBadge({ ctx }: { ctx: GlobalExtensionContext }) {
 	)
 }
 
-const module = definePluginUIModule({
+export default definePluginUIModule({
 	extensions: [
 		{
-			point: 'header:actions',
+			point: ExtensionPoints.HeaderActions,
 			id: 'status-badge',
 			priority: 50,
-			Component: StatusBadge,
+			render: () => <StatusBadge />,
 		},
 	],
 	setup({ pluginName }) {
 		console.log(`[${pluginName}] UI loaded`)
 	},
 })
-
-export const { extensions, setup } = module
-export default module

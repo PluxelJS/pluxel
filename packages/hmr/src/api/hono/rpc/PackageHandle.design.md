@@ -8,7 +8,7 @@
 
 ## API Shape
 - `package().mutate(input)` accepts `{ action, specs, options }` and returns `PackageBatchMutationResult`.
-- `package().loadIssues()` and `package().inventory()` remain as read-only queries.
+- Read-only queries (`inventory`, `loadIssues`) live on the same RPC handle for a single access pattern.
 - `market()` remains as a deprecated alias for compatibility.
 
 ## Behavior

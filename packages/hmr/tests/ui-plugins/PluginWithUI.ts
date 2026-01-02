@@ -4,6 +4,7 @@ import type { SseChannel } from '@pluxel/hmr/services'
 import { Collection } from '@pluxel/hmr/signaldb'
 
 type CounterDoc = { id: 'counter'; value: number; updatedAt: number }
+type EventSeqDoc = { id: 'event-seq'; value: number }
 
 export type DemoEvent = {
 	id: string
@@ -33,8 +34,9 @@ export class PluginWithUI extends BasePlugin {
 
 	private counter!: Collection<CounterDoc>
 	private events!: Collection<DemoEvent>
+	private meta!: Collection<EventSeqDoc>
 
-	private seq = 1
+	private eventSeq = 1
 	private channels = new Set<SseChannel>()
 
 	override async init() {
@@ -76,7 +78,7 @@ export class PluginWithUI extends BasePlugin {
 		for (const ch of this.channels) {
 			try {
 				// `type` doubles as SSE event name here; keep them aligned for filtering.
-				ch.emit(payload.type, payload as any)
+				ch.emit(payload.type, payload)
 			} catch {}
 		}
 	}
@@ -90,6 +92,10 @@ export class PluginWithUI extends BasePlugin {
 			name: 'events',
 			persistence: await this.ctx.pluginData.persistenceForCollection<DemoEvent>('events'),
 		})
+		this.meta = new Collection<EventSeqDoc, string, EventSeqDoc>({
+			name: 'meta',
+			persistence: await this.ctx.pluginData.persistenceForCollection<EventSeqDoc>('meta'),
+		})
 
 		const existingCounter = this.counter.findOne({ id: 'counter' })
 		if (!existingCounter) {
@@ -97,13 +103,51 @@ export class PluginWithUI extends BasePlugin {
 		}
 
 		const existingEvents = await this.events.find()
+		const existingList = existingEvents.map((e) => ({ ...e }))
+		const buckets = new Map<string, DemoEvent[]>()
+		for (const event of existingList) {
+			const id = String(event.id ?? '')
+			if (!id) continue
+			const bucket = buckets.get(id)
+			if (bucket) {
+				bucket.push(event)
+			} else {
+				buckets.set(id, [event])
+			}
+		}
+		for (const [id, bucket] of buckets) {
+			const hasDuplicate = bucket.length > 1
+			const isNormalized = String(bucket[0]?.id ?? '') === id
+			if (!hasDuplicate && isNormalized) continue
+			if (hasDuplicate) {
+				this.ctx.logger.warn('[PluginWithUI] duplicate event id detected', {
+					id,
+					count: bucket.length,
+				})
+			}
+			const keep = bucket.slice().sort((a, b) => b.at - a.at)[0]
+			const rawIds = new Set(bucket.map((item) => String(item.id)))
+			for (const rawId of rawIds) {
+				this.events.removeMany({ id: rawId })
+			}
+			this.events.insert({ ...keep, id })
+		}
+
+		const maxId = Array.from(buckets.keys())
+			.map((id) => Number(id) || 0)
+			.reduce((acc, n) => Math.max(acc, n), 0)
+		const seqDoc = this.meta.findOne({ id: 'event-seq' })
+		const persisted = seqDoc?.value ?? 0
+		const last = Math.max(maxId, persisted)
+		this.eventSeq = last + 1
+		if (!seqDoc) {
+			await this.meta.insert({ id: 'event-seq', value: last })
+		} else if (seqDoc.value !== last) {
+			this.meta.updateOne({ id: 'event-seq' }, { $set: { value: last } })
+		}
+
 		if (existingEvents.count() === 0) {
 			await this.appendEvent('system', 'UI 扩展已加载：RPC/SSE/Routes/Tabs 都已就绪。')
-		} else {
-			const maxId = existingEvents
-				.map((e) => Number(e.id) || 0)
-				.reduce((acc, n) => Math.max(acc, n), 0)
-			this.seq = maxId + 1
 		}
 	}
 
@@ -122,7 +166,7 @@ export class PluginWithUI extends BasePlugin {
 		const events = this.events
 			.find({}, { limit: 50 })
 			.fetch()
-			.map((e) => ({ ...e }))
+			.map((e) => ({ ...e, id: String(e.id) }))
 			.sort((a, b) => b.at - a.at)
 		return { status: this.getStatus(), events }
 	}
@@ -131,7 +175,7 @@ export class PluginWithUI extends BasePlugin {
 		const capped = Math.max(0, Math.min(200, Math.floor(limit)))
 		const docs = await this.events.find()
 		return docs
-			.map((e) => ({ ...e }))
+			.map((e) => ({ ...e, id: String(e.id) }))
 			.sort((a, b) => b.at - a.at)
 			.slice(0, capped)
 	}
@@ -140,14 +184,20 @@ export class PluginWithUI extends BasePlugin {
 		const trimmed = message.trim()
 		if (!trimmed) throw new Error('消息不能为空')
 
+		let nextId = this.eventSeq
+		while (this.events.findOne({ id: String(nextId) })) {
+			nextId += 1
+		}
+		this.eventSeq = nextId + 1
 		const event: DemoEvent = {
-			id: String(this.seq++),
+			id: String(nextId),
 			kind,
 			message: trimmed,
 			at: Date.now(),
 		}
 
 		await this.events.insert(event)
+		this.meta.updateOne({ id: 'event-seq' }, { $set: { value: Number(event.id) || 0 } })
 
 		// Hard-cap to keep demo stable.
 		const all = await this.events.find()

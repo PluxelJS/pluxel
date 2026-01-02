@@ -5,7 +5,7 @@ import { BasePlugin, Config, Plugin } from '@pluxel/hmr'
 import { RpcTarget } from '@pluxel/hmr/capnweb'
 import { f, v } from '@pluxel/hmr/config'
 import type { SseChannel } from '@pluxel/hmr/services'
-import { blockRef, defineDocBlocks, md } from '@pluxel/plugin-ui'
+import { blockRef, defineDocBlocks, md } from '@pluxel/hmr/web'
 
 const MIN_REFRESH_MS = 250
 const MAX_REFRESH_MS = 10_000

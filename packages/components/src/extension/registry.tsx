@@ -1,19 +1,14 @@
 // packages/components/src/extension/registry.ts
 
+export { ExtensionProvider, useExtensionContext } from './types'
+
+import { useMemo, useSyncExternalStore } from 'react'
 import {
-	createContext,
-	Fragment,
-	useCallback,
-	useContext,
-	useMemo,
-	useRef,
-	useSyncExternalStore,
-	type ReactNode,
-} from 'react'
-import {
+	ExtensionProvider,
 	isExtensionPluginRunning,
 	toGlobalExtensionContext,
 	type ExtensionContext,
+	useExtensionContext,
 	type ExtensionItem,
 	type ExtensionMeta,
 	type ExtensionPoint,
@@ -137,57 +132,10 @@ class ExtensionRegistry {
 export const extensionRegistry = new ExtensionRegistry()
 
 /**
- * 扩展上下文 Context
- */
-const ExtensionCtx = createContext<ExtensionContext | null>(null)
-
-export interface ExtensionProviderProps {
-	value: ExtensionContext
-	children: ReactNode
-}
-
-/**
- * 扩展上下文 Provider
- */
-export function ExtensionProvider({ value, children }: ExtensionProviderProps) {
-	return <ExtensionCtx.Provider value={value}>{children}</ExtensionCtx.Provider>
-}
-
-/**
- * 获取扩展上下文
- */
-export function useExtensionContext(): ExtensionContext {
-	const ctx = useContext(ExtensionCtx)
-	if (!ctx) {
-		throw new Error('useExtensionContext must be used within ExtensionProvider')
-	}
-	return ctx
-}
-
-/**
- * 尝试获取扩展上下文（不抛错）
- */
-export function useExtensionContextMaybe(): ExtensionContext | null {
-	return useContext(ExtensionCtx)
-}
-
-/**
  * Hook: 获取扩展点的扩展
  */
 export function useExtensions<P extends ExtensionPoint>(point: P) {
-	return useExtensionsWithContext(point)
-}
-
-/**
- * Hook: 获取扩展点的扩展（支持上下文覆盖）
- *
- * @param point 扩展点
- * @param contextOverride 额外上下文（会与全局上下文合并）
- */
-export function useExtensionsWithContext<P extends ExtensionPoint>(point: P) {
-	const globalCtx = useExtensionContextMaybe()
-
-	const ctx = useMemo(() => globalCtx, [globalCtx])
+	const ctx = useExtensionContext()
 
 	// 订阅 registry 变化
 	const items = useSyncExternalStore(
@@ -197,7 +145,6 @@ export function useExtensionsWithContext<P extends ExtensionPoint>(point: P) {
 	)
 
 	const ctxForPoint = useMemo<ExtensionPointCtx<P> | null>(() => {
-		if (!ctx) return null
 		if (point.startsWith('plugin:')) {
 			if (!('pluginName' in ctx)) return null
 			return ctx as PluginExtensionContext as ExtensionPointCtx<P>
@@ -205,14 +152,11 @@ export function useExtensionsWithContext<P extends ExtensionPoint>(point: P) {
 		return toGlobalExtensionContext(ctx) as GlobalExtensionContext as ExtensionPointCtx<P>
 	}, [ctx, point])
 
-	// 如果没有 context，返回空（安全降级）
+	// 对于 plugin:* 扩展点，如果当前不是 plugin ctx，则不渲染（安全降级）。
 	const visible = useMemo(() => {
 		if (!ctxForPoint) return []
 
 		return items.filter((item) => {
-			// when 条件
-			if (item.when && !item.when(ctxForPoint as any)) return false
-
 			// requireRunning 检查
 			if (
 				item.meta.requireRunning &&
@@ -242,52 +186,18 @@ export function useExtensionsWithContext<P extends ExtensionPoint>(point: P) {
 	// 渲染节点
 	const nodes = useMemo(() => {
 		if (!ctxForPoint) return []
+		// Important: extension components read ctx via hooks. For plugin:* points we must
+		// provide a plugin-scoped context even though the root provider is global.
+		const scoped = ctxForPoint as unknown as ExtensionContext
 		return visible.map((item) => (
-			<Fragment key={item.meta.id}>{item.render(ctxForPoint as any)}</Fragment>
+			<ExtensionProvider
+				key={`${point}:${item.meta.pluginName ?? '__static__'}:${item.meta.id}`}
+				value={scoped}
+			>
+				{item.render(scoped as any)}
+			</ExtensionProvider>
 		))
-	}, [visible, ctxForPoint])
+	}, [visible, ctxForPoint, point])
 
 	return { items: visible as ExtensionItem<P>[], nodes, context: ctxForPoint }
-}
-
-/**
- * Hook: 手动注册扩展
- */
-export function useRegisterExtension() {
-	const seqRef = useRef(0)
-	const register = useCallback(
-		(
-			point: ExtensionPoint,
-			options: {
-				id?: string
-				pluginName?: string
-				priority?: number
-				requireRunning?: boolean
-				when?: (ctx: any) => boolean
-				render: (ctx: any) => ReactNode
-				meta?: Record<string, unknown>
-			},
-		) => {
-			const id = options.id ?? `manual:${point}:${++seqRef.current}`
-			const meta: ExtensionMeta = {
-				id,
-				pluginName: options.pluginName ?? '__manual__',
-				priority: options.priority ?? 0,
-				requireRunning: options.requireRunning ?? false,
-				...options.meta,
-			}
-
-			return extensionRegistry.register(
-				point as any,
-				{
-					meta,
-					when: options.when,
-					render: options.render,
-				} as any,
-			)
-		},
-		[],
-	)
-
-	return { register }
 }

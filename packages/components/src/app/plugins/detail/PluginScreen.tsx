@@ -1,12 +1,13 @@
 import { Card, CardSection, Flex, Skeleton, Stack, useMantineTheme } from '@mantine/core'
 import { useMediaQuery } from '@mantine/hooks'
 import { IconPuzzle } from '@tabler/icons-react'
-import { memo, useCallback, useEffect, useMemo, useRef } from 'react'
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { EmptyState, ErrorState } from '../../../components'
 import { ExtensionProvider, useExtensionContext } from '../../../extension'
 import { useDebouncedFlag } from '../../../hooks'
-import { type PluginScope, PluginStatusEntryLifecycleStage, useQuery } from '../../gqty'
+import { type PluginScope, type PluginStatusEntry, PluginStatusEntryLifecycleStage, useQuery } from '../../gqty'
 import { usePluginConfig } from '../../hooks'
+import { usePluginOverview } from '../data'
 import { PluginScopeProvider, type PluginSourceKind } from './context'
 import { PluginLayout } from './PluginLayout'
 
@@ -82,33 +83,37 @@ export interface PluginScreenProps {
 }
 
 function usePluginDetail(pluginName?: string) {
-	// 先只取 pluginStatus（稳定、便宜），用于：
-	// 1) 判断插件是否存在（不存在就不要再请求 detail，避免 404/错误导致“疯狂重试刷屏”）
-	// 2) 给依赖列表提供“可跳转的真实插件名”集合（base token 不可跳转）
-	const statusQuery = useQuery({
-		suspense: false,
-		operationName: 'PluginStatusForDetail',
-		notifyOnNetworkStatusChange: true,
-		refetchOnWindowVisible: false,
-		refetchOnReconnect: false,
-		prepare: ({ query }) => {
-			query.pluginStatus?.statuses.forEach((entry) => {
-				entry.name
-				entry.isRunning
-			})
-		},
-	})
+	// Reuse the global overview snapshot to avoid duplicate status requests on plugin pages.
+	const overview = usePluginOverview()
+	const statusEntries = overview.overview?.status?.statuses ?? []
+
+	const statusMap = useMemo(() => {
+		const map = new Map<string, PluginStatusEntry>()
+		for (const entry of statusEntries) {
+			if (entry?.name) map.set(entry.name, entry)
+		}
+		return map
+	}, [statusEntries])
 
 	const knownPluginNames = useMemo(() => {
 		const names = new Set<string>()
-		for (const entry of statusQuery.pluginStatus?.statuses ?? []) {
-			const name = entry?.name
-			if (typeof name === 'string' && name) names.add(name)
+		for (const entry of statusEntries) {
+			if (entry?.name) names.add(entry.name)
 		}
 		return names
-	}, [statusQuery.pluginStatus?.statuses])
+	}, [statusEntries])
 
-	const exists = useMemo(() => {
+	const statusEntry = useMemo(() => {
+		if (!pluginName) return null
+		let entry = statusMap.get(pluginName) ?? null
+		if (!entry) {
+			const hash = pluginName.lastIndexOf('#')
+			if (hash > 0) entry = statusMap.get(pluginName.slice(0, hash)) ?? null
+		}
+		return entry
+	}, [pluginName, statusMap])
+
+	const listed = useMemo(() => {
 		if (!pluginName) return false
 		if (knownPluginNames.has(pluginName)) return true
 		const hash = pluginName.lastIndexOf('#')
@@ -116,7 +121,7 @@ function usePluginDetail(pluginName?: string) {
 		return false
 	}, [pluginName, knownPluginNames])
 
-	// 仅在 exists 时才请求 detail，避免“不存在插件”导致 detail query 报错然后持续重试
+	// Always request detail; we handle missing plugins via stable UI decisions instead of gating.
 	const detailQuery = useQuery({
 		suspense: false,
 		operationName: 'PluginDetailView',
@@ -124,7 +129,7 @@ function usePluginDetail(pluginName?: string) {
 		refetchOnWindowVisible: false,
 		refetchOnReconnect: false,
 		prepare:
-			pluginName !== undefined && exists
+			pluginName !== undefined
 				? ({ query }) => {
 						const scope = query.plugin({ name: pluginName })
 						scope.name
@@ -134,23 +139,13 @@ function usePluginDetail(pluginName?: string) {
 							dep.name
 							dep.isRunning
 						})
-						const status = scope.status
-						status.isRunning
-						status.isEnabled
-						status.lifecycleStage
-						const source = status.source
-						source.__typename
-						source.kind
-						source.moduleId
-						source.packageName
-						source.version
-						source.tag
+						// status comes from overview snapshot
 					}
 				: undefined,
 	})
 
 	let scope: PluginScope | undefined
-	if (pluginName !== undefined && exists) {
+	if (pluginName !== undefined) {
 		try {
 			scope = detailQuery.plugin({ name: pluginName })
 		} catch (error) {
@@ -163,17 +158,14 @@ function usePluginDetail(pluginName?: string) {
 	const ready = Boolean(scope?.name)
 
 	const loading =
-		Boolean(statusQuery.$state.isLoading || statusQuery.$state.isFetching) ||
-		(exists && Boolean(detailQuery.$state.isLoading || detailQuery.$state.isFetching))
-	const error = statusQuery.$state.error ?? detailQuery.$state.error
+		Boolean(detailQuery.$state.isLoading || detailQuery.$state.isFetching)
+	const error = detailQuery.$state.error
 
 	const refetch = (force?: boolean) => {
 		type Refetchable = { $refetch?: (force?: boolean) => Promise<unknown> }
 		const tasks: Promise<unknown>[] = []
-		const statusRefetch = (statusQuery as unknown as Refetchable).$refetch
-		if (typeof statusRefetch === 'function') tasks.push(statusRefetch(force))
 		const detailRefetch = (detailQuery as unknown as Refetchable).$refetch
-		if (typeof detailRefetch === 'function' && exists) tasks.push(detailRefetch(force))
+		if (typeof detailRefetch === 'function') tasks.push(detailRefetch(force))
 		if (tasks.length === 0) return Promise.resolve()
 		return Promise.allSettled(tasks).then(() => undefined)
 	}
@@ -182,7 +174,9 @@ function usePluginDetail(pluginName?: string) {
 		scope,
 		knownPluginNames,
 		ready,
-		exists,
+		listed,
+		hasStatusSnapshot: overview.hasSnapshot,
+		statusEntry,
 		error,
 		loading,
 		refetch,
@@ -208,33 +202,21 @@ export const PluginScreen = memo(function PluginScreen({ pluginName }: PluginScr
 	)
 	const isStacked = isStackedWide || isStackedBreak
 
-	const { scope, knownPluginNames, ready, exists, error, loading, refetch } =
+	const { scope, knownPluginNames, ready, listed, hasStatusSnapshot, statusEntry, error, loading, refetch } =
 		usePluginDetail(pluginName)
 	const parentExtensionCtx = useExtensionContext()
 
 	// 稳定快照：refetch/同步期间，GQty 可能短暂返回空字段，导致 UI “0 依赖/空注入卡片”闪一下。
-	// 这里缓存上一份成功读取到的 detail/status，用于过渡期展示。
+	// 这里缓存上一份成功读取到的 detail，用于过渡期展示。
 	const lastStableRef = useRef<{
 		scope: PluginScope
 		name: string
 		desc: string
 		dependencies: Array<{ name?: string | null; isRunning?: boolean | null }>
-		status: {
-			isRunning: boolean
-			isEnabled: boolean
-			lifecycleStage: PluginStatusEntryLifecycleStage
-		} | null
-		source: {
-			kind?: unknown
-			moduleId?: string | null
-			packageName?: string | null
-			version?: string | null
-			tag?: string | null
-		} | null
 	} | null>(null)
 
 	useEffect(() => {
-		if (!exists || !scope?.name) {
+		if (!scope?.name) {
 			lastStableRef.current = null
 			return
 		}
@@ -245,29 +227,72 @@ export const PluginScreen = memo(function PluginScreen({ pluginName }: PluginScr
 				name: scope.name,
 				desc: scope.detail?.desc ?? '',
 				dependencies: deps,
-				status: scope.status
-					? {
-							isRunning: Boolean(scope.status.isRunning),
-							isEnabled: Boolean(scope.status.isEnabled),
-							lifecycleStage: scope.status.lifecycleStage,
-						}
-					: null,
-				source: scope.status?.source ?? null,
 			}
 		} catch {
 			// ignore
 		}
-	}, [exists, scope?.name, scope?.detail?.desc, scope?.detail?.dependencies, scope?.status])
+	}, [scope?.name, scope?.detail?.desc, scope?.detail?.dependencies])
 
 	const stable = lastStableRef.current
 	const viewReady = ready || Boolean(stable?.name)
 	const displayName = scope?.name ?? stable?.name ?? pluginName
 	const description = scope?.detail?.desc ?? stable?.desc ?? ''
-	const isRunning = Boolean(scope?.status?.isRunning ?? stable?.status?.isRunning)
-	const isEnabled = Boolean(scope?.status?.isEnabled ?? stable?.status?.isEnabled)
+	const statusRef = useRef<{
+		isRunning: boolean
+		isEnabled: boolean
+		lifecycleStage: PluginStatusEntryLifecycleStage
+		source: NonNullable<PluginStatusEntry['source']> | null
+	} | null>(null)
+	const statusEntryRef = useRef<PluginStatusEntry | null>(null)
+	const [statusOverride, setStatusOverride] = useState<{
+		isRunning: boolean
+		isEnabled: boolean
+		lifecycleStage: PluginStatusEntryLifecycleStage
+	} | null>(null)
+
+	useEffect(() => {
+		statusRef.current = null
+		statusEntryRef.current = null
+		setStatusOverride(null)
+	}, [pluginName])
+
+	const resolvedStatus = useMemo(() => {
+		if (!statusEntry) return null
+		const isEnabled = statusEntry.isEnabled !== false
+		const isRunning = Boolean(statusEntry.isRunning)
+		const lifecycleStage =
+			statusEntry.lifecycleStage ??
+			(isEnabled
+				? isRunning
+					? PluginStatusEntryLifecycleStage.running
+					: PluginStatusEntryLifecycleStage.stopped
+				: PluginStatusEntryLifecycleStage.disabled)
+		return {
+			isRunning,
+			isEnabled,
+			lifecycleStage,
+			source: statusEntry.source ?? null,
+		}
+	}, [statusEntry])
+
+	useEffect(() => {
+		if (resolvedStatus) statusRef.current = resolvedStatus
+	}, [resolvedStatus])
+
+	useEffect(() => {
+		if (statusEntry) statusEntryRef.current = statusEntry
+	}, [statusEntry])
+
+	useEffect(() => {
+		if (resolvedStatus) setStatusOverride(null)
+	}, [resolvedStatus])
+
+	const effectiveStatus = statusOverride ?? resolvedStatus ?? statusRef.current
+	const effectiveStatusEntry = statusEntry ?? statusEntryRef.current ?? null
+	const isRunning = Boolean(effectiveStatus?.isRunning)
+	const isEnabled = effectiveStatus?.isEnabled ?? true
 	const lifecycleStage =
-		scope?.status?.lifecycleStage ??
-		stable?.status?.lifecycleStage ??
+		effectiveStatus?.lifecycleStage ??
 		(isEnabled
 			? isRunning
 				? PluginStatusEntryLifecycleStage.running
@@ -288,10 +313,17 @@ export const PluginScreen = memo(function PluginScreen({ pluginName }: PluginScr
 		await refetch(true)
 	}, [refetch])
 
+	const handleStatusOverride = useCallback(
+		(next: { isRunning: boolean; isEnabled: boolean; lifecycleStage: PluginStatusEntryLifecycleStage }) => {
+			setStatusOverride(next)
+		},
+		[],
+	)
+
 	const contextValue = useMemo(() => {
 		const effectiveScope = scope ?? stable?.scope
 		if (!effectiveScope) return null
-		const rawSource = scope?.status?.source ?? stable?.source
+		const rawSource = effectiveStatusEntry?.source ?? effectiveStatus?.source
 		const source = {
 			kind: (rawSource?.kind ?? 'unknown') as PluginSourceKind,
 			moduleId: rawSource?.moduleId ?? null,
@@ -305,23 +337,29 @@ export const PluginScreen = memo(function PluginScreen({ pluginName }: PluginScr
 			scope: effectiveScope,
 			dependencies,
 			knownPluginNames,
+			status: effectiveStatusEntry,
 			isRunning,
 			isSyncing: syncing,
 			isEnabled,
 			lifecycleStage,
 			source,
 			refetch: handleRefetch,
+			setStatusOverride: handleStatusOverride,
 		}
 	}, [
 		dependencies,
 		description,
 		displayName,
+		effectiveStatus,
 		handleRefetch,
+		handleStatusOverride,
 		knownPluginNames,
+		effectiveStatusEntry,
 		isRunning,
 		isEnabled,
 		lifecycleStage,
 		scope,
+		statusEntry,
 		stable,
 		syncing,
 	])
@@ -346,8 +384,8 @@ export const PluginScreen = memo(function PluginScreen({ pluginName }: PluginScr
 		)
 	}
 
-	// 不存在：稳定 NotFound，避免循环请求刷屏。
-	if (pluginName && !exists && !loading) {
+	// Not found: only decide when we have a status snapshot AND the detail request errored.
+	if (pluginName && hasStatusSnapshot && !listed && Boolean(error) && !loading) {
 		return (
 			<EmptyState
 				icon={<IconPuzzle size={28} stroke={1.5} />}

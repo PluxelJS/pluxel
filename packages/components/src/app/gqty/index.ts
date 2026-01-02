@@ -11,25 +11,50 @@ const baseFetch =
 	typeof globalThis.fetch === 'function' ? globalThis.fetch.bind(globalThis) : undefined
 const authFetch = baseFetch ? createAuthAwareFetch(baseFetch) : undefined
 
+const inflightGraphql = new Map<string, Promise<any>>()
+
+function graphqlKey(input: { query?: unknown; variables?: unknown; operationName?: unknown }): string {
+	try {
+		return JSON.stringify(input) ?? ''
+	} catch {
+		// Avoid throwing from key generation; fallback to query string only.
+		return String((input as any)?.query ?? '')
+	}
+}
+
 const queryFetcher: QueryFetcher = async ({ query, variables, operationName }, fetchOptions) => {
 	// 浏览器走相对路径；SSR 端需要绝对 URL
 	const endpoint = '/api/graphql'
 	if (!authFetch) throw new Error('[gqty] global fetch is unavailable')
-	const response = await authFetch(endpoint, {
-		method: 'POST',
-		headers: {
-			'Content-Type': 'application/json',
-		},
-		body: JSON.stringify({
-			query,
-			variables,
-			operationName,
-		}),
-		mode: 'cors',
-		...fetchOptions,
-	})
 
-	return await defaultResponseHandler(response)
+	const key = graphqlKey({ query, variables, operationName })
+	const existing = inflightGraphql.get(key)
+	if (existing) return existing
+
+	const task = (async () => {
+		const response = await authFetch(endpoint, {
+			method: 'POST',
+			headers: {
+				'Content-Type': 'application/json',
+			},
+			body: JSON.stringify({
+				query,
+				variables,
+				operationName,
+			}),
+			mode: 'cors',
+			...fetchOptions,
+		})
+
+		return await defaultResponseHandler(response)
+	})()
+
+	inflightGraphql.set(key, task)
+	try {
+		return await task
+	} finally {
+		inflightGraphql.delete(key)
+	}
 }
 
 const cache = new Cache(

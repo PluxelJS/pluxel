@@ -6,6 +6,7 @@ import {
 	ExtensionProvider,
 	getPluginRouteComponent,
 	type ExtensionContext,
+	type PluginExtensionContext,
 	useExtensionContext,
 	useExtensionRuntimeVersion,
 } from '../../extension'
@@ -50,7 +51,7 @@ export function ExtensionRoute() {
 	const fullPath = `/ext/${pluginName}${restPath}`
 	const routeVersion = useExtensionRuntimeVersion(pluginName)
 
-	const ExtensionComponent = useMemo(() => {
+	const routeRender = useMemo(() => {
 		return getPluginRouteComponent(pluginName, restPath)
 	}, [pluginName, restPath, routeVersion])
 
@@ -95,7 +96,7 @@ export function ExtensionRoute() {
 		)
 	}
 
-	if (!ExtensionComponent) {
+	if (!routeRender) {
 		return (
 			<Center style={{ flex: 1 }}>
 				<Stack gap="xs" align="center">
@@ -108,14 +109,16 @@ export function ExtensionRoute() {
 		)
 	}
 
+	const pluginCtx = extensionCtx as PluginExtensionContext
+
 	return (
-		<ExtensionProvider value={extensionCtx}>
+		<ExtensionProvider value={pluginCtx}>
 			<ExtensionErrorBoundary
 				pluginName={pluginName}
 				extensionId={`${pluginName}:${fullPath}`}
 				point={`route:${fullPath}`}
 			>
-				<ExtensionComponent />
+				{routeRender(pluginCtx)}
 			</ExtensionErrorBoundary>
 		</ExtensionProvider>
 	)

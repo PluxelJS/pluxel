@@ -1,7 +1,7 @@
 # Market Service Design
 
 ## Responsibilities
-- Provide RPC-facing market queries (`listLoadIssues`, `listPackageInventory`).
+- Provide read models for both GraphQL and RPC (`listLoadIssues`, `listPackageInventory`).
 - Normalize mutation inputs and execute package operations via `PackageService`.
 - Serialize results into stable `PackageMutationResult` / `PackageBatchMutationResult` payloads.
 

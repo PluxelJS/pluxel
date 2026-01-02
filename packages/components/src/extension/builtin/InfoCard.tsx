@@ -1,6 +1,6 @@
 import { Badge, Box, Divider, Group, Paper, Stack, Text } from '@mantine/core'
 import { useMemo } from 'react'
-import type { BuiltinBadgeValue, BuiltinInfoCardBlock, ExtensionContext } from '../types'
+import type { BuiltinBadgeValue, BuiltinInfoCardBlock } from '../types'
 import { isObject, resolveSseRef, useSseForValues } from './_shared'
 
 function isBadgeValue(value: unknown): value is BuiltinBadgeValue {
@@ -65,17 +65,14 @@ function shouldAutoSpanFullWidth(value: unknown): boolean {
 }
 
 export function BuiltinInfoCard({
-	ctx,
 	pluginName,
 	block,
 }: {
-	ctx: ExtensionContext
 	pluginName: string
 	block: BuiltinInfoCardBlock
 }) {
 	const rows = Array.isArray(block.rows) ? block.rows : []
 	const sseStateByEvent = useSseForValues(
-		ctx,
 		pluginName,
 		rows.map((r) => r?.value),
 	)

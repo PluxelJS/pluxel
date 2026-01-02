@@ -1,4 +1,4 @@
-import { extensionVendorPackages } from '@pluxel/plugin-ui'
+import { extensionVendorPackages } from '@pluxel/hmr-web'
 import type { ResolveOptions } from 'vite'
 
 export function toBrowserBundleResolve(resolve: ResolveOptions): ResolveOptions {
@@ -133,4 +133,3 @@ function rewriteVendorNamedImports(names: string, pkg: string): string {
 function escapeRegex(str: string): string {
 	return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }
-

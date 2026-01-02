@@ -16,8 +16,9 @@ import type { PluginDependencyState } from '@pluxel/hmr-web'
 import { IconPlus, IconRefresh } from '@tabler/icons-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNotify } from '../../../hooks'
-import { createRpcClient, rpcErrorMessage } from '../../../rpc'
+import { rpcErrorMessage, useHmrWebClient } from '../../../rpc'
 import { usePluginScope } from '../context'
+import { loadDependencyState } from './rpcResourceCache'
 
 function runtimeColor(isRunning: boolean) {
 	return isRunning ? 'green' : 'gray'
@@ -36,6 +37,7 @@ function kindLabel(kind: PluginDependencyState['kind']) {
 
 export function DependencyOverridesCard() {
 	const { pluginName, refetch } = usePluginScope()
+	const hmr = useHmrWebClient()
 	const notify = useNotify()
 	const [state, setState] = useState<PluginDependencyState[] | null>(null)
 	const [loading, setLoading] = useState(false)
@@ -48,29 +50,31 @@ export function DependencyOverridesCard() {
 		}
 	}, [])
 
-	const load = useCallback(async () => {
-		if (!pluginName) return
-		setLoading(true)
-		try {
-			using rpc = createRpcClient()
-			const deps = await rpc.plugin(pluginName).dependencyState()
-			if (!mountedRef.current) return
-			const rows = Array.isArray(deps) ? deps : []
-			// 仅在“可操作”的依赖存在时展示：base/forkable 才需要注入选择；
-			// 普通插件依赖已经在“依赖”列表里表达，无需重复一份 UI。
-			setState(rows.filter((row) => row.kind === 'base' || row.kind === 'forkable'))
-		} catch (error) {
-			if (!mountedRef.current) return
-			setState([])
-			notify({
-				title: '读取依赖失败',
-				message: rpcErrorMessage(error, '无法读取依赖状态'),
-				color: 'red',
-			})
-		} finally {
-			if (mountedRef.current) setLoading(false)
-		}
-	}, [notify, pluginName])
+	const load = useCallback(
+		async (options?: { force?: boolean }) => {
+			if (!pluginName) return
+			setLoading(true)
+			try {
+				const deps = await loadDependencyState(hmr, pluginName, options)
+				if (!mountedRef.current) return
+				const rows = Array.isArray(deps) ? deps : []
+				// 仅在“可操作”的依赖存在时展示：base/forkable 才需要注入选择；
+				// 普通插件依赖已经在“依赖”列表里表达，无需重复一份 UI。
+				setState(rows.filter((row) => row.kind === 'base' || row.kind === 'forkable'))
+			} catch (error) {
+				if (!mountedRef.current) return
+				setState([])
+				notify({
+					title: '读取依赖失败',
+					message: rpcErrorMessage(error, '无法读取依赖状态'),
+					color: 'red',
+				})
+			} finally {
+				if (mountedRef.current) setLoading(false)
+			}
+		},
+		[hmr, notify, pluginName],
+	)
 
 	useEffect(() => {
 		void load()
@@ -79,27 +83,27 @@ export function DependencyOverridesCard() {
 	const rows = useMemo(() => state ?? [], [state])
 
 	const triggerRefresh = useCallback(async () => {
-		await load()
+		await load({ force: true })
 		await refetch()
 	}, [load, refetch])
 
 	const setDependencyTarget = useCallback(
 		async (index: number, next: string | null) => {
-			using rpc = createRpcClient()
-			const res = await rpc.plugin(pluginName).setDependencyTarget(index, next)
+			const res = await hmr.withRpc((rpc) => rpc.plugin(pluginName).setDependencyTarget(index, next))
 			if (!res.ok) throw new Error(res.error || res.code || '操作失败')
 		},
-		[pluginName],
+		[hmr, pluginName],
 	)
 
 	const ensureFork = useCallback(
 		async (baseName: string, forkId: string) => {
-			using rpc = createRpcClient()
-			const res = await rpc.plugin(pluginName).ensureFork(baseName, forkId, { enable: true })
+			const res = await hmr.withRpc((rpc) =>
+				rpc.plugin(pluginName).ensureFork(baseName, forkId, { enable: true }),
+			)
 			if (!res.ok) throw new Error(res.error || res.code || '创建 fork 失败')
 			return res.forkName ?? `${baseName}#${forkId}`
 		},
-		[pluginName],
+		[hmr, pluginName],
 	)
 
 	const handleForkCreate = useCallback(

@@ -8,9 +8,9 @@ import type { PluginStatusAction } from '@pluxel/hmr-web'
 import { ExtensionSlot } from '../../../../extension'
 import { PluginStatusEntryLifecycleStage } from '../../../gqty'
 import { useNotify } from '../../../hooks'
-import { createRpcClient } from '../../../rpc'
+import { useHmrWebClient } from '../../../rpc'
 import { buildStartPlan, executeStartPlan } from '../../actions'
-import { emitPluginStatusEvent } from '../../statusEvents'
+import { invalidate } from '../../../data/invalidations'
 import { usePluginScope } from '../context'
 
 export interface ActionBarProps {
@@ -26,15 +26,17 @@ const ACTION_LABEL: Record<PluginStatusAction, string> = {
 }
 
 export function ActionBar({ onStatusUpdated }: ActionBarProps) {
+	const hmr = useHmrWebClient()
 	const {
 		pluginName,
 		dependencies,
 		knownPluginNames,
 		isRunning,
 		isEnabled,
+		lifecycleStage,
 		isSyncing,
 		refetch,
-		write,
+		setStatusOverride,
 	} = usePluginScope()
 
 	// 乱序防护：只接受最后一次操作的结果
@@ -46,47 +48,53 @@ export function ActionBar({ onStatusUpdated }: ActionBarProps) {
 	const applyOptimistic = useCallback(
 		(action: PluginStatusAction) => {
 			if (!pluginName) return
-			write((q) => {
-				const p = q.plugin({ name: pluginName })
-				if (!p) return
-				const currentEnabled = Boolean(p.status.isEnabled)
-				switch (action) {
-					case 'start':
-					case 'restart':
-						p.status.isRunning = true
-						p.status.isEnabled = true
-						p.status.lifecycleStage = PluginStatusEntryLifecycleStage.running
-						break
-					case 'stop':
-						p.status.isRunning = false
-						p.status.lifecycleStage = currentEnabled
-							? PluginStatusEntryLifecycleStage.stopped
-							: PluginStatusEntryLifecycleStage.disabled
-						break
-					case 'disable':
-						p.status.isRunning = false
-						p.status.isEnabled = false
-						p.status.lifecycleStage = PluginStatusEntryLifecycleStage.disabled
-						break
-					case 'enable':
-						p.status.isEnabled = true
-						p.status.lifecycleStage = p.status.isRunning
-							? PluginStatusEntryLifecycleStage.running
-							: PluginStatusEntryLifecycleStage.stopped
-						break
-					default:
-						break
-				}
+			if (!setStatusOverride) return
+			const currentEnabled = Boolean(isEnabled)
+			const currentRunning = Boolean(isRunning)
+			let nextRunning = currentRunning
+			let nextEnabled = currentEnabled
+			let nextStage = lifecycleStage
+			switch (action) {
+				case 'start':
+				case 'restart':
+					nextRunning = true
+					nextEnabled = true
+					nextStage = PluginStatusEntryLifecycleStage.running
+					break
+				case 'stop':
+					nextRunning = false
+					nextStage = currentEnabled
+						? PluginStatusEntryLifecycleStage.stopped
+						: PluginStatusEntryLifecycleStage.disabled
+					break
+				case 'disable':
+					nextRunning = false
+					nextEnabled = false
+					nextStage = PluginStatusEntryLifecycleStage.disabled
+					break
+				case 'enable':
+					nextEnabled = true
+					nextStage = currentRunning
+						? PluginStatusEntryLifecycleStage.running
+						: PluginStatusEntryLifecycleStage.stopped
+					break
+				default:
+					break
+			}
+			setStatusOverride({
+				isRunning: nextRunning,
+				isEnabled: nextEnabled,
+				lifecycleStage: nextStage,
 			})
 		},
-		[pluginName, write],
+		[pluginName, setStatusOverride, isEnabled, isRunning, lifecycleStage],
 	)
 
 	const syncAfterSuccess = useCallback(
 		async (action: PluginStatusAction) => {
 			await refetch()
 			await onStatusUpdated?.()
-			emitPluginStatusEvent({ pluginName, action })
+			invalidate({ topic: 'plugin-status', pluginName, reason: action })
 		},
 		[onStatusUpdated, pluginName, refetch],
 	)
@@ -100,8 +108,7 @@ export function ActionBar({ onStatusUpdated }: ActionBarProps) {
 		setIsLoading(true)
 
 		try {
-			using rpc = createRpcClient()
-			const res = await rpc.plugin(pluginName).updateStatus(action)
+			const res = await hmr.withRpc((rpc) => rpc.plugin(pluginName).updateStatus(action))
 			if (mySeq !== seqRef.current) return
 
 			if (res.ok === false) {

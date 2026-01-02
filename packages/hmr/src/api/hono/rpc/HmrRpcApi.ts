@@ -3,15 +3,16 @@ import { writeFile } from 'node:fs/promises'
 import type { Context } from '@pluxel/core'
 import { RpcTarget } from 'capnweb'
 import { resolve } from 'pathe'
-import * as v from 'valibot'
+import { writeGroups } from '../../features/groups/service'
 import type { UI } from '../../../services'
-import { PluginGroupInput, type PluginGroupInputValue } from '../../features/groups/schema'
-import { readGroups, writeGroups } from '../../features/groups/service'
-import { getStatusOverview } from '../../features/pluginStatus/service'
 import { PackageHandle } from './PackageHandle'
 import { applyStatusActions, PluginHandle } from './PluginHandle'
-import type { GroupMutationResult, PluginStatusBatchAction, PluginStatusBatchResult } from './types'
-import { formatGroupIssues } from './utils'
+import type {
+	PluginGroup,
+	PluginGroupInput,
+	PluginStatusBatchAction,
+	PluginStatusBatchResult,
+} from './types'
 
 export class HmrRpcApi extends RpcTarget {
 	#ctx: Context
@@ -51,10 +52,6 @@ export class HmrRpcApi extends RpcTarget {
 		return this.#ctx.ext.rpc.getNamespaces()
 	}
 
-	pluginStatus() {
-		return getStatusOverview(this.#ctx)
-	}
-
 	async buildSnapshot() {
 		try {
 			const content = this.#ctx.loader.buildSnapshot()
@@ -66,19 +63,12 @@ export class HmrRpcApi extends RpcTarget {
 		}
 	}
 
-	pluginGroups(): ReturnType<typeof readGroups> {
-		return readGroups(this.#ctx)
-	}
-
-	updatePluginGroups(groups: PluginGroupInputValue[]): GroupMutationResult {
-		const parsed = v.safeParse(v.array(PluginGroupInput), groups)
-		if (!parsed.success) {
-			return { ok: false, code: 'validation_failed', errors: formatGroupIssues(parsed.issues) }
-		}
-		return { ok: true, groups: writeGroups(this.#ctx, parsed.output) }
-	}
-
 	updatePluginStatuses(actions: PluginStatusBatchAction[]): Promise<PluginStatusBatchResult> {
 		return applyStatusActions(this.#ctx, actions ?? [])
+	}
+
+	updatePluginGroups(groups: PluginGroupInput[]): Promise<PluginGroup[]> {
+		const safe = Array.isArray(groups) ? groups : []
+		return Promise.resolve(writeGroups(this.#ctx, safe))
 	}
 }

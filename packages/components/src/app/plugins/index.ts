@@ -10,6 +10,7 @@ export {
 	PluginLayout,
 	PluginScopeProvider,
 	usePluginMeta,
+	usePluginStatus,
 	usePluginScope,
 } from './detail'
 export type { PluginSourceKind, PluginSourceInfo } from './detail'
@@ -26,4 +27,10 @@ export {
 export { ConfigForm, type ConfigFormProps } from './config'
 
 // Events
-export { emitPluginStatusEvent, subscribePluginStatusEvents } from './statusEvents'
+export {
+	PluginOverviewProvider,
+	getPluginOverviewSnapshot,
+	requestPluginOverviewRefetch,
+	setPluginOverviewGroups,
+	usePluginOverview,
+} from './data'

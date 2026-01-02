@@ -42,14 +42,14 @@ import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } f
 import type { JSX } from 'react/jsx-runtime'
 import { type GroupConfig, PluginOrganizer } from '../organizer'
 import { EmptyState, ErrorState } from '../../../components'
-import { useQuery } from '../../gqty'
-import { client } from '../../rpc'
 import { useNotify } from '../../hooks'
 import { RouterLinkAdapter } from '../../RouterLinkAdapter'
 import { PLUGIN_SEARCH_EVENT, PLUGIN_SEARCH_KEY } from '../../constants'
 import { updatePluginStatuses } from '../actions'
-import { subscribePluginStatusEvents } from '../statusEvents'
+import { requestPluginOverviewRefetch, setPluginOverviewGroups, usePluginOverview } from '../data'
 import type { PluginStatusAction } from '@pluxel/hmr-web'
+import { useHmrWebClient } from '../../rpc'
+import { invalidate } from '../../data/invalidations'
 import {
 	EMPTY_OVERVIEW,
 	areGroupsEqual,
@@ -72,6 +72,7 @@ const ACTION_LABEL: Record<PluginStatusAction, string> = {
 }
 
 export const PluginList: React.FC<PluginListProps> = ({ pluginName }) => {
+	const hmr = useHmrWebClient()
 	// —— 混合搜索（持久化 + 降压 + 无闪烁） —— //
 	const [search, setSearch] = useState(() => {
 		if (typeof window === 'undefined') return ''
@@ -129,29 +130,27 @@ export const PluginList: React.FC<PluginListProps> = ({ pluginName }) => {
 	const [hasLoadedOnce, setHasLoadedOnce] = useState(false)
 	const [selectedIds, setSelectedIds] = useState<string[]>([])
 	const [bulkBusy, setBulkBusy] = useState(false)
+	const [organizerResetToken, setOrganizerResetToken] = useState(0)
 	const notify = useNotify()
 
-	const query = useQuery({
-		suspense: false,
-		operationName: 'PluginOverview',
-		notifyOnNetworkStatusChange: true,
-		refetchOnReconnect: false,
-		refetchOnWindowVisible: false,
-		fetchInBackground: true,
-	})
+	const overviewState = usePluginOverview()
 
 	const overview = useMemo<OverviewSnapshot>(() => {
 		try {
 			return buildOverview({
-				statuses: query.pluginStatus?.statuses,
-				groups: query.pluginGroups,
-				summary: query.pluginStatus?.summary,
+				statuses: overviewState.overview?.status?.statuses,
+				groups: overviewState.overview?.groups,
+				summary: overviewState.overview?.status?.summary,
 			})
 		} catch (error) {
 			console.error('[PluginList] Failed to build overview snapshot', error)
 			return EMPTY_OVERVIEW
 		}
-	}, [query.pluginGroups, query.pluginStatus?.statuses, query.pluginStatus?.summary])
+	}, [
+		overviewState.overview?.groups,
+		overviewState.overview?.status?.statuses,
+		overviewState.overview?.status?.summary,
+	])
 
 	useEffect(() => {
 		if (draftGroups) {
@@ -165,35 +164,66 @@ export const PluginList: React.FC<PluginListProps> = ({ pluginName }) => {
 	}, [draftGroups, overview.groups])
 
 	useEffect(() => {
-		if (!query.$state.isLoading && !query.$state.error) {
+		if (!overviewState.isLoading && !overviewState.error) {
 			setHasLoadedOnce(true)
 		}
-	}, [query.$state.error, query.$state.isLoading])
+	}, [overviewState.error, overviewState.isLoading])
 
-	useEffect(() => {
-		let inflight = false
-		let pending = false
-		const handle = () => {
-			// 遇到错误就不要自动 refetch，避免刷屏；改为等待用户点“重试”
-			if (query.$state.error) return
-			if (inflight) {
-				pending = true
-				return
-			}
-			inflight = true
-			void query.$refetch(true).finally(() => {
-				inflight = false
-				if (pending) {
-					pending = false
-					handle()
+	const commitTimerRef = useRef<number | null>(null)
+	const inflightCommitRef = useRef<Promise<void> | null>(null)
+	const pendingCommitRef = useRef<GroupConfig[] | null>(null)
+	const queuedCommitRef = useRef(false)
+
+	const flushGroupCommit = useCallback(() => {
+		const pending = pendingCommitRef.current
+		if (!pending) return
+		if (inflightCommitRef.current) {
+			queuedCommitRef.current = true
+			return
+		}
+		pendingCommitRef.current = null
+		const task = hmr
+			.withRpc((rpc) => rpc.updatePluginGroups(pending))
+			.then((result) => {
+				const nextGroups = Array.isArray(result) ? result : pending
+				lastSyncedRef.current = cloneGroups(nextGroups)
+				setDraftGroups(null)
+				setPluginOverviewGroups(nextGroups)
+				invalidate({ topic: 'plugin-groups', reason: 'rpc' })
+			})
+			.catch((error: any) => {
+				const message = error?.message ?? '分组同步失败，请稍后重试。'
+				notify({ title: '同步失败', message, color: 'red' })
+				const rollback = cloneGroups(lastSyncedRef.current)
+				setDraftGroups(rollback)
+				setPluginOverviewGroups(rollback)
+				setOrganizerResetToken((n) => n + 1)
+			})
+			.finally(() => {
+				inflightCommitRef.current = null
+				if (queuedCommitRef.current || pendingCommitRef.current) {
+					queuedCommitRef.current = false
+					flushGroupCommit()
 				}
 			})
-		}
-		return subscribePluginStatusEvents(handle)
-	}, [query.$refetch])
+		inflightCommitRef.current = task
+	}, [hmr, notify])
 
-	const handleGroupsChange = useCallback((next: GroupConfig[]) => {
-		void client['plugin-groups'].$post({ json: next })
+	const handleGroupsChange = useCallback(
+		(next: GroupConfig[]) => {
+			if (areGroupsEqual(next, lastSyncedRef.current) && !pendingCommitRef.current) return
+			pendingCommitRef.current = cloneGroups(next)
+			setDraftGroups(next)
+			if (commitTimerRef.current) window.clearTimeout(commitTimerRef.current)
+			commitTimerRef.current = window.setTimeout(flushGroupCommit, 250)
+		},
+		[flushGroupCommit],
+	)
+
+	useEffect(() => {
+		return () => {
+			if (commitTimerRef.current) window.clearTimeout(commitTimerRef.current)
+		}
 	}, [])
 
 	const handleBulkStatus = useCallback(
@@ -231,9 +261,9 @@ export const PluginList: React.FC<PluginListProps> = ({ pluginName }) => {
 	)
 
 	// —— 视图渲染 —— //
-	const loading = !hasLoadedOnce && query.$state.isLoading
-	const syncing = hasLoadedOnce && query.$state.isLoading
-	const errorMessage = query.$state.error?.message
+	const loading = !hasLoadedOnce && overviewState.isLoading
+	const syncing = hasLoadedOnce && overviewState.isLoading
+	const errorMessage = !overviewState.hasSnapshot ? overviewState.error : undefined
 	const filterQuery = deferredSearch
 	const groupsForView = draftGroups ?? overview.groups
 
@@ -265,7 +295,7 @@ export const PluginList: React.FC<PluginListProps> = ({ pluginName }) => {
 			<ErrorState
 				title="加载失败"
 				message={errorMessage}
-				onRetry={() => void query.$refetch(true)}
+				onRetry={() => void requestPluginOverviewRefetch()}
 				minHeight={160}
 			/>
 		)
@@ -291,6 +321,7 @@ export const PluginList: React.FC<PluginListProps> = ({ pluginName }) => {
 	} else {
 		content = (
 			<PluginOrganizer
+				key={organizerResetToken}
 				statuses={overview.statuses}
 				initialGroups={groupsForView}
 				activeId={pluginName}

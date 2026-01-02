@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import * as v from 'valibot'
 import * as f from 'valibot-form'
 
-import { createRpcClient } from '../rpc'
+import { invokeRpc } from '../rpc'
 
 export type PluginConfigData = {
 	schemaMap: Record<string, any>
@@ -47,59 +47,59 @@ async function loadPluginData(
 }> {
 	const cachedSchema = forceRefresh ? null : schemaCache.get(pluginName)
 
-	// 同一个 session 内的调用会被 capnweb 自动 batch
-	using rpc = createRpcClient()
-	const p = rpc.plugin(pluginName)
+	return invokeRpc(async (rpc) => {
+		const p = rpc.plugin(pluginName)
 
-	// 发起调用（不 await），capnweb 会在 Promise.all 时 batch 发送
-	const schemaPromise = cachedSchema ? null : p.schema()
-	const configPromise = p.config()
+		// 发起调用（不 await），capnweb 会在 Promise.all 时 batch 发送
+		const schemaPromise = cachedSchema ? null : p.schema()
+		const configPromise = p.config()
 
-	const [schemaResult, configResult] = await Promise.all([schemaPromise, configPromise])
-	const savedConfig = configResult.ok ? (configResult.config as Record<string, any>) : {}
+		const [schemaResult, configResult] = await Promise.all([schemaPromise, configPromise])
+		const savedConfig = configResult.ok ? (configResult.config as Record<string, any>) : {}
 
-	if (cachedSchema) return { ...cachedSchema, savedConfig }
+		if (cachedSchema) return { ...cachedSchema, savedConfig }
 
-	if (!schemaResult) throw new Error('schema 加载失败')
-	if (schemaResult.ok === false) {
-		// schema_not_found 代表插件未暴露配置 schema，此时视为“没有可配置项”而不是错误
-		if (schemaResult.code === 'schema_not_found') {
-			const payload = { schemaMap: {}, defaults: {} }
-			schemaCache.set(pluginName, payload)
-			return { ...payload, savedConfig }
+		if (!schemaResult) throw new Error('schema 加载失败')
+		if (schemaResult.ok === false) {
+			// schema_not_found 代表插件未暴露配置 schema，此时视为“没有可配置项”而不是错误
+			if (schemaResult.code === 'schema_not_found') {
+				const payload = { schemaMap: {}, defaults: {} }
+				schemaCache.set(pluginName, payload)
+				return { ...payload, savedConfig }
+			}
+			throw new Error(schemaResult.message ?? schemaResult.code)
 		}
-		throw new Error(schemaResult.message ?? schemaResult.code)
-	}
 
-	// 转换 schema 表达式
-	const schemaMap: Record<string, any> = {}
-	const pending: Promise<void>[] = []
+		// 转换 schema 表达式
+		const schemaMap: Record<string, any> = {}
+		const pending: Promise<void>[] = []
 
-	for (const [key, expr] of Object.entries(schemaResult.schemaSource)) {
-		// Convention: schema keys starting with "_" are treated as private/internal and
-		// are hidden from the Config UI (still available to other host-rendered surfaces).
-		if (key.startsWith('_')) continue
-		const schema = new Function('v', 'f', `return ${expr}`)(v, f)
-		if (schema instanceof Promise) {
-			pending.push(
-				schema.then((r) => {
-					schemaMap[key] = r
-				}),
-			)
-		} else {
-			schemaMap[key] = schema
+		for (const [key, expr] of Object.entries(schemaResult.schemaSource)) {
+			// Convention: schema keys starting with "_" are treated as private/internal and
+			// are hidden from the Config UI (still available to other host-rendered surfaces).
+			if (key.startsWith('_')) continue
+			const schema = new Function('v', 'f', `return ${expr}`)(v, f)
+			if (schema instanceof Promise) {
+				pending.push(
+					schema.then((r) => {
+						schemaMap[key] = r
+					}),
+				)
+			} else {
+				schemaMap[key] = schema
+			}
 		}
-	}
-	if (pending.length) await Promise.all(pending)
+		if (pending.length) await Promise.all(pending)
 
-	const visibleDefaults: Record<string, any> = {}
-	for (const k of Object.keys(schemaMap)) {
-		visibleDefaults[k] = (schemaResult.defaults ?? {})[k]
-	}
+		const visibleDefaults: Record<string, any> = {}
+		for (const k of Object.keys(schemaMap)) {
+			visibleDefaults[k] = (schemaResult.defaults ?? {})[k]
+		}
 
-	const payload = { schemaMap, defaults: visibleDefaults }
-	schemaCache.set(pluginName, payload)
-	return { ...payload, savedConfig }
+		const payload = { schemaMap, defaults: visibleDefaults }
+		schemaCache.set(pluginName, payload)
+		return { ...payload, savedConfig }
+	})
 }
 
 export function usePluginConfig(pluginName: string | undefined): PluginConfigState {

@@ -26,7 +26,6 @@
 		"build": "tsdown"
 	},
 	"dependencies": {
-		"@pluxel/plugin-ui": "workspace:*",
 		"capnweb": "^0.3.0",
 		"hono": "^4.11.1"
 	},

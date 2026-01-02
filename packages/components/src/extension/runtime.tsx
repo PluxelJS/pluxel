@@ -1,7 +1,8 @@
-import type { ComponentType } from 'react'
+import type { ReactNode } from 'react'
 import { ExtensionErrorBoundary } from './ErrorBoundary'
+import { unregisterPluginI18n, registerPluginI18n } from './i18n'
 import { extensionRegistry } from './registry'
-import type { ExtensionMeta, PluginUIModule } from './types'
+import type { ExtensionMeta, PluginExtensionContext, PluginUIModule } from './types'
 import { extRuntime } from './debug'
 
 function normalizeExtensionRoutePath(path: string): string {
@@ -31,7 +32,7 @@ function buildExtensionHref(pluginName: string, path: string): string {
 	return `${EXTENSION_ROUTE_PREFIX}${encodedName}${normalizedPath}`
 }
 
-type RouteComponent = ComponentType
+type RouteComponent = (ctx: PluginExtensionContext) => ReactNode
 
 class ExtensionRuntime {
 	private readonly pluginCleanups = new Map<string, Array<() => void>>()
@@ -143,10 +144,15 @@ class ExtensionRuntime {
 		this.pluginCleanups.delete(pluginName)
 		this.routeComponents.delete(pluginName)
 		this.pluginHashes.delete(pluginName)
+		unregisterPluginI18n(pluginName)
 	}
 
 	private async registerPlugin(pluginName: string, module: PluginUIModule): Promise<void> {
 		const cleanups: Array<() => void> = []
+
+		if (module.i18n) {
+			registerPluginI18n(pluginName, module.i18n)
+		}
 
 		if (module.setup) {
 			const maybe = await module.setup({ pluginName })
@@ -168,9 +174,7 @@ class ExtensionRuntime {
 
 				const cleanup = extensionRegistry.register(ext.point, {
 					meta,
-					when: ext.when as any,
 					render: (ctx) => {
-						const Component = ext.Component
 						return (
 							<ExtensionErrorBoundary
 								key={meta.id}
@@ -201,7 +205,7 @@ class ExtensionRuntime {
 										: null
 								}
 							>
-								<Component ctx={ctx as any} />
+								{ext.render(ctx as any)}
 							</ExtensionErrorBoundary>
 						)
 					},
@@ -221,7 +225,7 @@ class ExtensionRuntime {
 
 			for (const route of module.routes) {
 				const normalizedPath = normalizeExtensionRoutePath(route.definition.path)
-				routeMap.set(normalizedPath, route.Component)
+				routeMap.set(normalizedPath, route.render)
 
 				if (route.definition.addToNav) {
 					const meta: ExtensionMeta = {

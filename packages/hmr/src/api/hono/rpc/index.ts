@@ -7,7 +7,8 @@ export type {
 	ConfigResultErr,
 	ConfigResultOk,
 	ConfigValidationErrors,
-	GroupMutationResult,
+	PluginGroup,
+	PluginGroupInput,
 	PluginStatusAction,
 	PluginStatusBatchAction,
 	PluginStatusBatchResult,
@@ -16,4 +17,4 @@ export type {
 	SchemaResultErr,
 	SchemaResultOk,
 } from './types'
-export { collectDefaults, formatGroupIssues, validateConfigPatch } from './utils'
+export { collectDefaults, validateConfigPatch } from './utils'

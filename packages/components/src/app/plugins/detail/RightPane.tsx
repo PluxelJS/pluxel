@@ -12,11 +12,13 @@ import {
 } from '@mantine/core'
 import { IconSettingsOff } from '@tabler/icons-react'
 import { useRouter } from '@tanstack/react-router'
-import { Fragment, type ComponentType, type ReactNode, useCallback, useEffect, useMemo, useState } from 'react'
+import { Fragment, type ReactNode, useCallback, useEffect, useMemo, useState } from 'react'
 import { EmptyState, ErrorState } from '../../../components'
 import {
 	ExtensionErrorBoundary,
+	ExtensionProvider,
 	getPluginRouteComponent,
+	type PluginExtensionContext,
 	useExtensionContext,
 	useExtensionRuntimeVersion,
 	useExtensions,
@@ -235,7 +237,7 @@ export function RightPane({ config }: RightPaneProps) {
 	}, [pathname, pluginName])
 
 	const routeVersion = useExtensionRuntimeVersion(pluginName)
-	const RouteComponent = useMemo(() => {
+	const routeRender = useMemo(() => {
 		if (!restPath) return undefined
 		return getPluginRouteComponent(pluginName, restPath)
 	}, [pluginName, restPath, routeVersion])
@@ -403,7 +405,7 @@ export function RightPane({ config }: RightPaneProps) {
 								<RouteContent
 									pluginName={pluginName}
 									restPath={restPath}
-									RouteComponent={RouteComponent}
+									routeRender={routeRender}
 								/>
 							</Tabs.Panel>
 						) : null}
@@ -510,11 +512,11 @@ function ConfigContent({
 function RouteContent({
 	pluginName,
 	restPath,
-	RouteComponent,
+	routeRender,
 }: {
 	pluginName: string
 	restPath: string
-	RouteComponent: ComponentType | undefined
+	routeRender: ((ctx: PluginExtensionContext) => ReactNode) | undefined
 }) {
 	const ctx = useExtensionContext()
 	const runningPlugins = ctx.runningPlugins
@@ -556,7 +558,7 @@ function RouteContent({
 		)
 	}
 
-	if (!RouteComponent) {
+	if (!routeRender) {
 		return (
 			<Center style={{ flex: 1 }}>
 				<Stack gap="xs" align="center">
@@ -577,16 +579,27 @@ function RouteContent({
 		)
 	}
 
+	const pluginCtx = useMemo<PluginExtensionContext>(
+		() => ({
+			...ctx,
+			pathname: fullPath,
+			pluginName,
+		}),
+		[ctx, fullPath, pluginName],
+	)
+
 	return (
 		<ScrollArea type="auto" scrollbarSize={10} offsetScrollbars style={{ flex: 1, minHeight: 0 }}>
 			<Box p="xs" style={{ minHeight: '100%' }}>
-				<ExtensionErrorBoundary
-					pluginName={pluginName}
-					extensionId={`${pluginName}:route:${restPath || '/'}`}
-					point={`route:${fullPath}`}
-				>
-					<RouteComponent />
-				</ExtensionErrorBoundary>
+				<ExtensionProvider value={pluginCtx}>
+					<ExtensionErrorBoundary
+						pluginName={pluginName}
+						extensionId={`${pluginName}:route:${restPath || '/'}`}
+						point={`route:${fullPath}`}
+					>
+						{routeRender(pluginCtx)}
+					</ExtensionErrorBoundary>
+				</ExtensionProvider>
 			</Box>
 		</ScrollArea>
 	)

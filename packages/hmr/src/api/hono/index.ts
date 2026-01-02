@@ -100,16 +100,7 @@ const app = new Hono<AppEnv>()
 		const handle = new PluginHandle(c.var.plugin_ctx, name)
 		return c.json(handle.schema())
 	})
-	// 插件分组（仍使用 REST，因 UI 直接发请求）
-	.get('/plugin-groups', (c) => {
-		const api = new HmrRpcApi(c.var.plugin_ctx)
-		return c.json(api.pluginGroups())
-	})
-	.post('/plugin-groups', async (c) => {
-		const api = new HmrRpcApi(c.var.plugin_ctx)
-		const groups = await c.req.json()
-		return c.json(api.updatePluginGroups(groups))
-	})
+	// 插件分组统一走 GraphQL（此处不再暴露 REST）
 	// ============ 调试路由 ============
 	.route('/debug', debugApp)
 	.route('/logs', loggerApp)

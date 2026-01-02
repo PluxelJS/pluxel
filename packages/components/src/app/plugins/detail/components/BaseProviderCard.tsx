@@ -2,12 +2,14 @@ import { ActionIcon, Badge, Box, Group, Paper, Select, Stack, Text, Tooltip } fr
 import { IconRefresh, IconStar } from '@tabler/icons-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { BaseProvisionInfo } from '@pluxel/hmr-web'
-import { createRpcClient, rpcErrorMessage } from '../../../rpc'
+import { rpcErrorMessage, useHmrWebClient } from '../../../rpc'
 import { useNotify } from '../../../hooks'
 import { usePluginScope } from '../context'
+import { loadBaseProvision } from './rpcResourceCache'
 
 export function BaseProviderCard() {
 	const { pluginName, refetch } = usePluginScope()
+	const hmr = useHmrWebClient()
 	const notify = useNotify()
 	const [info, setInfo] = useState<BaseProvisionInfo | null>(null)
 	const [loading, setLoading] = useState(false)
@@ -20,27 +22,29 @@ export function BaseProviderCard() {
 		}
 	}, [])
 
-	const load = useCallback(async () => {
-		if (!pluginName) return
-		setLoading(true)
-		try {
-			using rpc = createRpcClient()
-			const res = await rpc.plugin(pluginName).baseProvision()
-			if (!mountedRef.current) return
-			setInfo(res ?? null)
-		} catch (error) {
-			if (!mountedRef.current) return
-			setInfo(null)
-			notify({
-				title: '读取提供者信息失败',
-				message: rpcErrorMessage(error, '无法读取 base provider 信息'),
-				color: 'red',
-			})
-		} finally {
-			if (!mountedRef.current) return
-			setLoading(false)
-		}
-	}, [notify, pluginName])
+	const load = useCallback(
+		async (options?: { force?: boolean }) => {
+			if (!pluginName) return
+			setLoading(true)
+			try {
+				const res = await loadBaseProvision(hmr, pluginName, options)
+				if (!mountedRef.current) return
+				setInfo(res ?? null)
+			} catch (error) {
+				if (!mountedRef.current) return
+				setInfo(null)
+				notify({
+					title: '读取提供者信息失败',
+					message: rpcErrorMessage(error, '无法读取 base provider 信息'),
+					color: 'red',
+				})
+			} finally {
+				if (!mountedRef.current) return
+				setLoading(false)
+			}
+		},
+		[hmr, notify, pluginName],
+	)
 
 	useEffect(() => {
 		void load()
@@ -59,10 +63,11 @@ export function BaseProviderCard() {
 			if (!pluginName || !info) return
 			if (!value) return
 			try {
-				using rpc = createRpcClient()
-				const res = await rpc.plugin(pluginName).setBaseProvider(info.baseToken, value)
+				const res = await hmr.withRpc((rpc) =>
+					rpc.plugin(pluginName).setBaseProvider(info.baseToken, value),
+				)
 				if (!res.ok) throw new Error(res.error || res.code || '操作失败')
-				await load()
+				await load({ force: true })
 				await refetch()
 				notify({
 					title: '已更新默认实现',
@@ -77,7 +82,7 @@ export function BaseProviderCard() {
 				})
 			}
 		},
-		[info, load, notify, pluginName, refetch],
+		[hmr, info, load, notify, pluginName, refetch],
 	)
 
 	if (!info) return null
@@ -114,7 +119,12 @@ export function BaseProviderCard() {
 				</Stack>
 
 				<Tooltip label={loading ? '加载中…' : '刷新'} withArrow>
-					<ActionIcon size="sm" variant="subtle" onClick={() => void load()} disabled={loading}>
+					<ActionIcon
+						size="sm"
+						variant="subtle"
+						onClick={() => void load({ force: true })}
+						disabled={loading}
+					>
 						<IconRefresh size={14} />
 					</ActionIcon>
 				</Tooltip>

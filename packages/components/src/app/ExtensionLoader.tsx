@@ -14,9 +14,9 @@ import {
 import { fetchExtensionManifest } from '../extension/api/manifest'
 import { builtinComponents } from '../extension/builtin'
 import { extLog } from '../extension/debug'
-import { useQuery } from './gqty'
-import { subscribePluginStatusEvents } from './plugins/statusEvents'
-import { useSseClient } from './rpc'
+import { usePluginOverview } from './plugins/data'
+import { subscribeInvalidations } from './data/invalidations'
+import { useHmrWebClient } from './rpc'
 
 interface ExtensionLoaderProps {
 	pollInterval?: number
@@ -98,19 +98,9 @@ export function ExtensionLoader({
 		}
 	}, [])
 
-	const stream = useSseClient({ namespaces: ['extensions'] })
-	const query = useQuery({
-		refetchOnWindowVisible: false,
-		fetchInBackground: true,
-		prepare: ({ query }) => {
-			query.pluginStatus?.statuses?.forEach((status) => {
-				status?.name
-				status?.isRunning
-			})
-		},
-	})
-
-	const rawStatuses = query.pluginStatus?.statuses ?? []
+	const stream = useHmrWebClient().sse
+	const overviewState = usePluginOverview()
+	const rawStatuses = overviewState.overview?.status?.statuses ?? []
 
 	const derivedPlugins: PluginInfo[] = useMemo(() => {
 		return rawStatuses
@@ -141,11 +131,13 @@ export function ExtensionLoader({
 	})
 
 	const [stablePlugins, setStablePlugins] = useState<PluginInfo[]>(derivedPlugins)
-	const isLoading = query.$state.isLoading === true || query.$state.isFetching === true
-	const statusReadyRef = useRef(false)
+	const isLoading = overviewState.isLoading === true
+	const hasError = !overviewState.hasSnapshot && Boolean(overviewState.error)
 
 	useEffect(() => {
-		if (isLoading) return
+		// IMPORTANT: during refetch/errors, GQty may temporarily surface empty arrays.
+		// Never overwrite the stable snapshot with an "empty flash" (would break plugin pages).
+		if (isLoading || hasError) return
 		if (cachedRef.current.key === signature) {
 			setStablePlugins(cachedRef.current.plugins)
 			return
@@ -153,13 +145,10 @@ export function ExtensionLoader({
 		const cloned = derivedPlugins.map((plugin) => ({ ...plugin }))
 		cachedRef.current = { key: signature, plugins: cloned }
 		setStablePlugins(cloned)
-	}, [derivedPlugins, signature, isLoading])
+	}, [derivedPlugins, hasError, signature, isLoading])
 
-	const effectivePlugins = isLoading ? cachedRef.current.plugins : stablePlugins
-
-	useEffect(() => {
-		if (!isLoading) statusReadyRef.current = true
-	}, [isLoading])
+	const effectivePlugins = isLoading || hasError ? cachedRef.current.plugins : stablePlugins
+	const effectiveSignature = isLoading || hasError ? cachedRef.current.key : signature
 
 	useEffect(() => {
 		if (!onRunningPluginsChange) return
@@ -230,7 +219,7 @@ export function ExtensionLoader({
 				continue
 			}
 
-			const render = (ctx: any) => (
+			const render = () => (
 				<ExtensionErrorBoundary
 					pluginName={pluginName}
 					extensionId={runtimeId}
@@ -259,7 +248,7 @@ export function ExtensionLoader({
 							: null
 					}
 				>
-					<Component ctx={ctx} def={def as any} />
+					<Component def={def as any} />
 				</ExtensionErrorBoundary>
 			)
 
@@ -501,27 +490,26 @@ export function ExtensionLoader({
 		}
 		let inflight = false
 		let pending = false
-		const triggerRefetch = () => {
-			// 遇到错误就停掉“自动刷新”，避免一直刷屏打后端
-			if (query.$state.error) return
+		const triggerSync = () => {
 			if (inflight) {
 				pending = true
 				return
 			}
 			inflight = true
-			void query
-				.$refetch(true)
+			void syncManifest()
 				.catch(() => {})
 				.finally(() => {
 					inflight = false
 					if (pending) {
 						pending = false
-						triggerRefetch()
+						triggerSync()
 					}
 				})
-			void syncManifest()
 		}
-		const unsubscribe = subscribePluginStatusEvents(triggerRefetch)
+		const unsubscribe = subscribeInvalidations((event) => {
+			if (event.topic !== 'plugin-status') return
+			triggerSync()
+		})
 		const off = stream.extensions.on(({ payload }) => {
 			if (!payload) return
 			if (payload.type === 'sync') {
@@ -562,7 +550,7 @@ export function ExtensionLoader({
 			unsubscribe()
 			off()
 		}
-	}, [ensureModuleLoaded, query.$refetch, recomputeManifestSignature, stream, syncManifest])
+	}, [ensureModuleLoaded, recomputeManifestSignature, stream, syncManifest])
 
 	return null
 }

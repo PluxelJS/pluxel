@@ -1,9 +1,8 @@
 {
-	"extends": "../../tsconfig.workspace.json",
+	"extends": "../../tsconfig.src.json",
+	"include": ["src", "tests"],
 	"compilerOptions": {
-		"lib": ["DOM", "DOM.Iterable", "ES2023"],
-		"jsx": "react-jsx",
-		"noEmit": true
-	},
-	"include": ["src"]
+		"outDir": "dist",
+		"emitDeclarationOnly": true
+	}
 }

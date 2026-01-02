@@ -1,6 +1,8 @@
 // packages/components/src/extension/index.ts
 
 export { ExtensionErrorBoundary } from './ErrorBoundary'
+// i18n (optional host service used by plugin ctx)
+export { getExtensionI18nService, setExtensionLocale } from './i18n'
 // Hooks
 export { useExtensionRuntimeVersion, useExtensionVersion } from './hooks'
 // Registry
@@ -8,10 +10,7 @@ export {
 	ExtensionProvider,
 	extensionRegistry,
 	useExtensionContext,
-	useExtensionContextMaybe,
 	useExtensions,
-	useExtensionsWithContext,
-	useRegisterExtension,
 } from './registry'
 // Runtime
 export {
@@ -23,7 +22,7 @@ export {
 } from './runtime'
 
 // 组件 & Slot helpers
-export { ExtensionSlot, ExtensionSlotRender } from './slots/ExtensionSlot'
+export { ExtensionSlot } from './slots/ExtensionSlot'
 export {
 	type ExtensionSurfaceOptions,
 	type ExtensionSurfaceRender,

@@ -1,5 +1,5 @@
-import type { PackageLoadIssue, PackageInventoryEntry, PluginStatusEntry } from '../gqty'
-import type { PackageSpecInput } from '../rpc'
+import type { PluginStatusEntry } from '../gqty'
+import type { PackageInventoryEntry, PackageLoadIssue, PackageSpecInput } from '../rpc'
 import type { Maybe, PackageRow } from './types'
 
 const timeFormatter = new Intl.DateTimeFormat('zh-CN', {
@@ -65,8 +65,8 @@ export function buildPackageRows(
 		if (entry?.loaded) row.loaded = true
 		if (entry?.issues?.length) {
 			entry.issues.forEach((issue) => {
-				if (issue && !row.issues.includes(issue as any)) {
-					row.issues.push(issue as PackageLoadIssue)
+				if (issue && !row.issues.includes(issue)) {
+					row.issues.push(issue)
 				}
 			})
 		}
@@ -149,7 +149,7 @@ export function summarizeList(
 	return `${items.slice(0, peekCount).join(delimiter)} 等 ${items.length}${suffix}`
 }
 
-export function buildInstalledPackages(statuses: Array<any> | undefined) {
+export function buildInstalledPackages(statuses: Array<Maybe<PluginStatusEntry>> | undefined) {
 	const result: Record<string, string> = {}
 	if (!statuses) return result
 	for (const entry of statuses) {

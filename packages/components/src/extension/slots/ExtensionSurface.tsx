@@ -1,5 +1,5 @@
 import { useCallback, useMemo, type ReactNode } from 'react'
-import { useExtensionsWithContext } from '../registry'
+import { useExtensions } from '../registry'
 import type { ExtensionPoint, ExtensionItem, ExtensionPointCtx } from '../types'
 
 export interface ExtensionSurfaceOptions<
@@ -32,7 +32,7 @@ export function useExtensionSurface<P extends ExtensionPoint, TMeta = ExtensionI
 	point: P,
 	options: ExtensionSurfaceOptions<P, TMeta> = {},
 ): ExtensionSurfaceResult<P, TMeta> {
-	const { items, nodes, context } = useExtensionsWithContext(point)
+	const { items, nodes, context } = useExtensions(point)
 
 	const projectedItems = useMemo(() => {
 		const projector = options.projectMeta

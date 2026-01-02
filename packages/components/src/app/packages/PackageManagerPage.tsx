@@ -34,8 +34,13 @@ import {
 } from '@tabler/icons-react'
 import type { FormEventHandler } from 'react'
 import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react'
-import { useQuery } from '../gqty'
-import { createRpcClient, type PackageBatchResult, type PackageSpecInput } from '../rpc'
+import {
+	type PackageBatchResult,
+	type PackageInventoryEntry,
+	type PackageLoadIssue,
+	type PackageSpecInput,
+	useHmrWebClient,
+} from '../rpc'
 import { RouterLinkAdapter } from '../RouterLinkAdapter'
 import { useNotify } from '../hooks'
 import type { PackageRow } from './types'
@@ -50,62 +55,26 @@ import { CollapsibleIssuesPanel, type IssueData } from './components/Collapsible
 import { OperationLogModal, type OperationLogEntry } from './components/OperationLogModal'
 import { IconPackages, IconSearch as IconSearchEmpty } from '@tabler/icons-react'
 import { EmptyState, ErrorState } from '../../components'
+import { usePluginOverview } from '../plugins/data'
+import { subscribeInvalidations, invalidate } from '../data/invalidations'
 
 export function PackageManagerPage() {
+	const hmr = useHmrWebClient()
 	const [showAllPackages, setShowAllPackages] = useState(false)
 	const [showIssuesPanel, setShowIssuesPanel] = useState(true)
 	const searchInputRef = useRef<HTMLInputElement>(null)
+	const overviewState = usePluginOverview()
 
-	const query = useQuery({
-		suspense: false,
-		operationName: 'PackageManagerPage',
-		notifyOnNetworkStatusChange: true,
-		refetchOnReconnect: true,
-		refetchOnWindowVisible: false,
-		fetchInBackground: true,
-		prepare: ({ query }) => {
-			const overview = query.pluginStatus
-			const summary = overview.summary
-			summary.total
-			summary.running
-			overview.statuses.forEach((status) => {
-				status.name
-				status.isRunning
-				const source = status.source
-				source.kind
-				source.packageName
-				source.version
-				source.tag
-			})
-			const inventory = query.packageInventory({ includeUntracked: showAllPackages })
-			inventory.forEach((pkg) => {
-				pkg.loaded
-				pkg.installedVersion
-				pkg.requestedVersion
-				pkg.moduleId
-				pkg.spec.name
-				pkg.spec.raw
-				pkg.spec.version
-				pkg.spec.tag
-				pkg.issues?.forEach((iss) => {
-					iss.message
-					iss.source
-				})
-			})
-			query.packageLoadIssues.forEach((issue) => {
-				issue.message
-				issue.recordedAt
-				issue.source
-				issue.spec.name
-				issue.spec.raw
-				issue.spec.version
-				issue.spec.tag
-				issue.spec.target
-				issue.error
-			})
-		},
-	})
-	const pageError = query.$state.error
+	const [inventory, setInventory] = useState<PackageInventoryEntry[]>([])
+	const [loadIssues, setLoadIssues] = useState<PackageLoadIssue[]>([])
+	const [pageError, setPageError] = useState<Error | null>(null)
+	const [inlineError, setInlineError] = useState<string | null>(null)
+	const [refreshing, setRefreshing] = useState(false)
+	const inflightRef = useRef<Promise<void> | null>(null)
+	const inflightKeyRef = useRef<string | null>(null)
+	const requestIdRef = useRef(0)
+	const hasSnapshotRef = useRef(false)
+	const snapshotKeyRef = useRef('')
 
 	const [installInput, setInstallInput] = useState('')
 	const [forceInstall, setForceInstall] = useState(false)
@@ -114,30 +83,67 @@ export function PackageManagerPage() {
 
 	const statuses = useMemo(() => {
 		try {
-			return [...(query.pluginStatus?.statuses ?? [])]
+			return [...(overviewState.overview?.status?.statuses ?? [])]
 		} catch (error) {
 			console.error('[PackageManager] failed to read plugin statuses', error)
 			return []
 		}
-	}, [query.pluginStatus?.statuses])
+	}, [overviewState.overview?.status?.statuses])
 
-	const loadIssues = useMemo(() => {
-		try {
-			return [...(query.packageLoadIssues ?? [])]
-		} catch (error) {
-			console.error('[PackageManager] failed to read load issues', error)
-			return []
+	const refetch = useCallback(async () => {
+		const snapshotKey = showAllPackages ? 'all' : 'tracked'
+		const hasSnapshot = hasSnapshotRef.current && snapshotKeyRef.current === snapshotKey
+		if (inflightRef.current && inflightKeyRef.current === snapshotKey) {
+			return inflightRef.current
 		}
-	}, [query.packageLoadIssues])
+		const requestId = ++requestIdRef.current
+		const task = (async () => {
+			setRefreshing(true)
+			setInlineError(null)
+			if (!hasSnapshot) setPageError(null)
+			try {
+				const result = await hmr.withRpc(async (rpc) => {
+					const pkg = rpc.package()
+					const [nextInventory, nextIssues] = await Promise.all([
+						pkg.inventory({ includeUntracked: showAllPackages }),
+						pkg.loadIssues(),
+					])
+					return { inventory: nextInventory, issues: nextIssues }
+				})
+				if (requestId !== requestIdRef.current) return
+				setInventory(Array.isArray(result.inventory) ? result.inventory : [])
+				setLoadIssues(Array.isArray(result.issues) ? result.issues : [])
+				hasSnapshotRef.current = true
+				snapshotKeyRef.current = snapshotKey
+				setPageError(null)
+			} catch (error) {
+				const message =
+					error instanceof Error ? error.message : error ? String(error) : '无法加载包管理数据'
+				if (requestId !== requestIdRef.current) return
+				if (hasSnapshot) setInlineError(message)
+				else setPageError(error instanceof Error ? error : new Error(message))
+			} finally {
+				if (requestId !== requestIdRef.current) return
+				setRefreshing(false)
+				inflightRef.current = null
+				inflightKeyRef.current = null
+			}
+		})()
+		inflightRef.current = task
+		inflightKeyRef.current = snapshotKey
+		return task
+	}, [hmr, showAllPackages])
 
-	const inventory = useMemo(() => {
-		try {
-			return [...(query.packageInventory({ includeUntracked: showAllPackages }) ?? [])]
-		} catch (error) {
-			console.error('[PackageManager] failed to read package inventory', error)
-			return []
-		}
-	}, [query.packageInventory, showAllPackages])
+	useEffect(() => {
+		void refetch()
+	}, [refetch])
+
+	useEffect(() => {
+		return subscribeInvalidations((event) => {
+			if (event.topic !== 'package-data') return
+			void refetch()
+		})
+	}, [refetch])
 
 	const rows = useMemo(
 		() => buildPackageRows(statuses, loadIssues, inventory),
@@ -267,7 +273,6 @@ export function PackageManagerPage() {
 	const [uninstallBatchLoading, setUninstallBatchLoading] = useState(false)
 	const [removeBatchLoading, setRemoveBatchLoading] = useState(false)
 
-	const refreshing = query.$state.isLoading
 	const busy =
 		installLoading ||
 		reinstallLoading ||
@@ -277,12 +282,6 @@ export function PackageManagerPage() {
 		reinstallBatchLoading ||
 		uninstallBatchLoading ||
 		removeBatchLoading
-	const refetchFn = query.$refetch
-
-	const refetch = useCallback(async () => {
-		await refetchFn(true)
-	}, [refetchFn])
-
 	// 顶层错误：不再继续渲染复杂 UI（会触发更多懒读取/请求），直接给稳定错误态 + 手动重试。
 	if (pageError) {
 		return (
@@ -337,10 +336,11 @@ export function PackageManagerPage() {
 			specs: PackageSpecInput[],
 			options?: { force?: boolean; fresh?: boolean; reinstall?: boolean },
 		): Promise<PackageBatchResult> => {
-			using rpc = createRpcClient()
-			return rpc.package().mutate({ action, specs, options })
+			const result = await hmr.withRpc((rpc) => rpc.package().mutate({ action, specs, options }))
+			invalidate({ topic: 'package-data', reason: action })
+			return result
 		},
-		[],
+		[hmr],
 	)
 
 	const applyOperationLogs = useCallback((result?: PackageBatchResult | null) => {
@@ -783,7 +783,7 @@ export function PackageManagerPage() {
 	const [operationLogs, setOperationLogs] = useState<OperationLogEntry[]>([])
 	const [operationTitle, setOperationTitle] = useState('操作日志')
 
-	const errorMessage = query.$state.error?.message ?? null
+	const errorMessage = inlineError
 
 	const renderPackageTable = () => {
 		if (filteredRows.length === 0) {
@@ -1068,7 +1068,6 @@ export function PackageManagerPage() {
 						checked={showAllPackages}
 						onChange={(event) => {
 							setShowAllPackages(event.currentTarget.checked)
-							void refetch()
 						}}
 						size="sm"
 					/>

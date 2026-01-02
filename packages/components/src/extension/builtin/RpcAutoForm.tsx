@@ -5,7 +5,8 @@ import type { ObjectSchema } from 'valibot'
 import * as v from 'valibot'
 import * as f from 'valibot-form'
 import { AutoForm, useAutoFormCtx } from 'valibot-form/web'
-import type { BuiltinRpcArg, BuiltinRpcAutoFormBlock, ExtensionContext } from '../types'
+import type { BuiltinRpcArg, BuiltinRpcAutoFormBlock } from '../types'
+import { useExtensionContext } from '../types'
 import { isObject, resolveSseRef, useSseForValues } from './_shared'
 
 type SchemaCacheEntry = { schema: ObjectSchema<any, any>; defaults: Record<string, any> }
@@ -34,24 +35,17 @@ function safeStringify(input: unknown): string {
 	}
 }
 
-function requireHmr(ctx: ExtensionContext) {
-	const hmr = ctx.services.hmr
-	if (!hmr) throw new Error('rpcAutoForm requires ctx.services.hmr')
-	return hmr
-}
-
 type SchemaLoadState =
 	| { status: 'loading' }
 	| { status: 'error'; error: Error }
 	| { status: 'ready'; schema: ObjectSchema<any, any>; defaults: Record<string, any> }
 
 function useRpcAutoFormSchema(
-	ctx: ExtensionContext,
+	hmr: { withRpc: (runner: (client: any) => Promise<any>) => Promise<any> } | null,
 	pluginName: string,
 	schemaKey: string,
 ): SchemaLoadState {
 	const [state, setState] = useState<SchemaLoadState>({ status: 'loading' })
-	const hmr = ctx.services.hmr
 
 	useEffect(() => {
 		if (!schemaKey) {
@@ -269,7 +263,7 @@ function AutoSubmitSlot({
 }
 
 async function loadSchema(
-	hmr: ReturnType<typeof requireHmr>,
+	hmr: { withRpc: (runner: (client: any) => Promise<any>) => Promise<any> },
 	pluginName: string,
 	schemaKey: string,
 ): Promise<SchemaCacheEntry> {
@@ -298,14 +292,14 @@ async function loadSchema(
 }
 
 export function BuiltinRpcAutoForm({
-	ctx,
 	pluginName,
 	block,
 }: {
-	ctx: ExtensionContext
 	pluginName: string
 	block: BuiltinRpcAutoFormBlock
 }) {
+	const ctx = useExtensionContext()
+	const hmr = ctx.services.hmr
 	const isMountedRef = useRef(true)
 	useEffect(() => {
 		return () => {
@@ -329,7 +323,7 @@ export function BuiltinRpcAutoForm({
 	const lastSuccessAtRef = useRef(0)
 	const awaitingSseRef = useRef(false)
 
-	const state = useRpcAutoFormSchema(ctx, pluginName, schemaKey)
+	const state = useRpcAutoFormSchema(hmr, pluginName, schemaKey)
 
 	const notifySuccess = (titleFallback: string) => {
 		const notify = ctx.services.ui?.notify
@@ -359,7 +353,6 @@ export function BuiltinRpcAutoForm({
 	const [submitting, setSubmitting] = useState(false)
 
 	const sseStateByEvent = useSseForValues(
-		ctx,
 		pluginName,
 		shouldSyncFromSse ? [block.syncFromSse as any] : [],
 	)
@@ -400,11 +393,11 @@ export function BuiltinRpcAutoForm({
 					if (!ok) return
 				}
 
-				setSubmitting(true)
+					setSubmitting(true)
 				try {
 					if (!rpcMethod) throw new Error('Missing rpc.method')
-					const hmr = requireHmr(ctx)
-					const rpcNs = (hmr.rpc as any)?.[pluginName]
+					if (!hmr) throw new Error('rpcAutoForm requires ctx.services.hmr')
+					const rpcNs = (hmr.ui as any)?.[pluginName]
 					const fn = rpcNs?.[rpcMethod]
 					if (typeof fn !== 'function')
 						throw new Error(`RPC method not found: ${pluginName}.${rpcMethod}`)
@@ -430,6 +423,7 @@ export function BuiltinRpcAutoForm({
 		})
 	}, [
 		ctx.services,
+		hmr,
 		block.confirm,
 		block.feedback,
 		block.resetOnSuccess,

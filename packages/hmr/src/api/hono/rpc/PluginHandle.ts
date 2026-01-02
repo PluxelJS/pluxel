@@ -16,7 +16,6 @@ import {
 } from '@pluxel/core'
 import { RpcTarget } from 'capnweb'
 import * as v from 'valibot'
-import { readStatusSnapshot } from '../../features/pluginStatus/service'
 import {
 	EXTRA_BASE_PROVIDERS,
 	EXTRA_DEP_OVERRIDES,
@@ -213,11 +212,6 @@ export class PluginHandle extends RpcTarget {
 			desc: '插件示例描述',
 			dependencies: this.#ctx.loader.api.deps.list(ctor),
 		}
-	}
-
-	status() {
-		const ctor = this.resolveCtor()
-		return { name: this.name, ...readStatusSnapshot(this.#ctx, this.name, ctor) }
 	}
 
 	async updateStatus(action: PluginStatusAction) {

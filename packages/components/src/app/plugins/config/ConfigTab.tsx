@@ -5,7 +5,7 @@ import { useEffect, useMemo } from 'react'
 import type { ObjectSchema } from 'valibot'
 import { AutoForm, useAutoFormCtx } from 'valibot-form/web'
 import { useNotify } from '../../hooks'
-import { createRpcClient } from '../../rpc'
+import { useHmrWebClient } from '../../rpc'
 import { FormToc } from './components/FormToc'
 import { makeFieldAnchorPrefix, makeSectionAnchorPrefix } from './utils'
 
@@ -54,6 +54,7 @@ export function ConfigTabContent({
 	reportState?: (key: string, state: ConfigFormState) => void
 }) {
 	const notify = useNotify()
+	const hmr = useHmrWebClient()
 	const sectionAnchorPrefix = useMemo(
 		() => sectionIdPrefix ?? makeSectionAnchorPrefix(pluginName, tabKey),
 		[pluginName, sectionIdPrefix, tabKey],
@@ -70,8 +71,9 @@ export function ConfigTabContent({
 			formOptions({
 				defaultValues: initialValue,
 				onSubmit: async ({ value, formApi }) => {
-					using rpc = createRpcClient()
-					const result = await rpc.plugin(pluginName).saveConfig({ [tabKey]: value })
+					const result = await hmr.withRpc((rpc) =>
+						rpc.plugin(pluginName).saveConfig({ [tabKey]: value }),
+					)
 					if (result.ok === false) {
 						if (result.code === 'validation_failed' && result.errors) {
 							const fieldErrors = result.errors[tabKey]
@@ -103,7 +105,7 @@ export function ConfigTabContent({
 					notify({ title: '提交成功', message: `配置 ${tabKey} 已保存`, color: 'green' })
 				},
 			}),
-		[tabKey, initialValue, onSaved, notify, pluginName],
+		[hmr, tabKey, initialValue, onSaved, notify, pluginName],
 	)
 
 	const hotkeys = useMemo(

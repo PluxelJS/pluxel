@@ -3,4 +3,4 @@ export type {
 	ExtensionManifest,
 	ExtensionManifestEvent,
 	PluginExtensionConfig,
-} from '@pluxel/plugin-ui'
+} from '@pluxel/hmr-web'

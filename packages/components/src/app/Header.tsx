@@ -26,7 +26,7 @@ import { ExtensionSlot } from '../extension'
 import { PLUGIN_SEARCH_EVENT, PLUGIN_SEARCH_KEY } from './constants'
 import { useNotify } from './hooks'
 import { useNotificationCenter } from './notifications/NotificationCenterProvider'
-import { createRpcClient } from './rpc'
+import { useHmrWebClient } from './rpc'
 import { useCurrentPathname } from './router/useCurrentRoute'
 
 const timeFormatter = new Intl.DateTimeFormat('zh-CN', {
@@ -49,14 +49,14 @@ export function Header({ onMenu }: { onMenu: () => void }) {
 	const searchInputRef = useRef<HTMLInputElement | null>(null)
 	const [isBuildLoading, setIsBuildLoading] = useState(false)
 	const notify = useNotify()
+	const hmr = useHmrWebClient()
 	const router = useRouter()
 	const pathname = useCurrentPathname()
 
 	const handleBuild = async () => {
 		setIsBuildLoading(true)
 		try {
-			using rpc = createRpcClient()
-			const result = await rpc.buildSnapshot()
+			const result = await hmr.withRpc((rpc) => rpc.buildSnapshot())
 			if (result.ok === false) {
 				notify({
 					title: '生成快照失败',

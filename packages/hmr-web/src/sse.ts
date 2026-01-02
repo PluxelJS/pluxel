@@ -1,4 +1,4 @@
-import type { ExtensionManifestEvent } from '@pluxel/plugin-ui'
+import type { ExtensionManifestEvent } from './plugin-ui'
 import { defaultOnAuthBlocked, type OnAuthBlocked } from './auth'
 import type { UI } from './protocol'
 

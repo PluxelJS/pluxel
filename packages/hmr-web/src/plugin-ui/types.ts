@@ -1,7 +1,10 @@
-import type { ComponentType, ReactNode } from 'react'
+import { createContext, createElement, type ReactNode, useContext } from 'react'
 
 /**
- * 扩展点位置
+ * Built-in extension point ids.
+ *
+ * These are the stable “host-known” points that plugins can target without any extra setup.
+ * You can still add your own points by declaration-merging `ExtensionPointMap`.
  */
 export const ExtensionPoints = {
 	HeaderActions: 'header:actions',
@@ -15,11 +18,21 @@ export const ExtensionPoints = {
 } as const
 
 /**
- * 扩展上下文 - 传递给所有扩展组件
+ * Global extension context.
  *
- * 设计原则：
- * - 全局扩展与插件扩展使用不同 ctx 类型，组件无需写 kind guard
- * - 插件运行态由 runningPlugins 决定；不引入 isPluginRunning 这种易混淆字段
+ * This is the `ctx` passed to extensions rendered in global areas (header/sidebar/status bar).
+ *
+ * Design notes:
+ * - Global vs plugin contexts are different types, so extension components don’t need runtime guards.
+ * - Plugin runtime state is modeled by `runningPlugins` + `runningPluginsReady` (avoid ambiguous flags).
+ *
+ * @example
+ * function HeaderAction() {
+ *   const ctx = useExtensionContext('global')
+ *   const { hmr, i18n } = ctx.services
+ *   return <button onClick={() => void hmr.withRpc((rpc) => rpc.ping())}>{i18n?.t('ping')}</button>
+ * }
+ *
  */
 export interface GlobalExtensionContext {
 	pathname: string
@@ -29,17 +42,63 @@ export interface GlobalExtensionContext {
 	services: ExtensionServices
 }
 
+/**
+ * Plugin-scoped extension context.
+ *
+ * This is the `ctx` passed to extensions rendered inside a plugin detail page (tabs/info/actions)
+ * and to plugin route components.
+ */
 export interface PluginExtensionContext extends GlobalExtensionContext {
 	pluginName: string
 }
 
 export type ExtensionContext = GlobalExtensionContext | PluginExtensionContext
 
+/* ---------------------------- Extension Context IO ---------------------------- */
+
+const ExtensionCtx = createContext<ExtensionContext | null>(null)
+
+export interface ExtensionProviderProps {
+	value: ExtensionContext
+	children: ReactNode
+}
+
+/**
+ * Provide `ExtensionContext` for route components.
+ *
+ * Most extensions receive `ctx` via props from the host. Route components, however, are rendered
+ * by the host router and typically read the context via hooks.
+ */
+export function ExtensionProvider({ value, children }: ExtensionProviderProps) {
+	return createElement(ExtensionCtx.Provider, { value }, children)
+}
+
+/**
+ * Read the current `ExtensionContext`.
+ *
+ * Use this inside route components or deep trees where passing `ctx` props is inconvenient.
+ * Throws when used outside an `ExtensionProvider`.
+ */
+export function useExtensionContext(): ExtensionContext
+export function useExtensionContext(kind: 'global'): GlobalExtensionContext
+export function useExtensionContext(kind: 'plugin'): PluginExtensionContext
+export function useExtensionContext(kind?: 'global' | 'plugin'): ExtensionContext {
+	const ctx = useContext(ExtensionCtx)
+	if (!ctx) throw new Error('useExtensionContext must be used within ExtensionProvider')
+	if (kind === 'plugin') {
+		if (!('pluginName' in ctx))
+			throw new Error('useExtensionContext("plugin") requires PluginExtensionContext')
+		return ctx
+	}
+	if (kind === 'global') return 'pluginName' in ctx ? toGlobalExtensionContext(ctx) : ctx
+	return ctx
+}
+
 /**
  * Extension point contract map.
  *
  * - 这是外部可扩展的“协议表”：用户可通过 declaration merging 添加自定义 point。
- * - 每个 point 指定自己的 ctx 类型与 meta 结构；类型将自动推导到 Component/when/meta。
+ * - 每个 point 指定自己的 ctx 类型与 meta 结构；类型将自动推导到 render/meta。
  */
 export interface ExtensionPointMap {
 	'header:actions': { ctx: GlobalExtensionContext; meta: {}; metaRequired?: false }
@@ -102,11 +161,170 @@ export type ExtensionPoint = keyof ExtensionPointMap & string
 export type ExtensionPointCtx<P extends ExtensionPoint> = ExtensionPointMap[P]['ctx']
 export type ExtensionPointMeta<P extends ExtensionPoint> = ExtensionPointMap[P]['meta']
 
+/* ----------------------------------- i18n ----------------------------------- */
+
+export type I18nLocale = string
+export type I18nKey = string
+export type I18nParams = Record<string, string | number | boolean | null | undefined | Date>
+export type I18nMessageDict = Record<I18nKey, string>
+export type I18nResources = Record<I18nLocale, I18nMessageDict>
+
+/**
+ * Host-provided i18n service for plugin UI bundles.
+ *
+ * Goals:
+ * - Keep UI bundles small (don’t ship a full i18n runtime per plugin).
+ * - Use the host’s locale and formatting rules.
+ *
+ * Notes:
+ * - Keys are plain strings. Hosts may choose to namespace keys (recommended).
+ * - `t()` supports `{param}` interpolation.
+ */
+export interface I18nService {
+	/** Current UI locale (BCP-47, e.g. `en`, `zh-CN`). */
+	locale: I18nLocale
+	/** Optional fallback locale (e.g. `en`). */
+	fallbackLocale?: I18nLocale
+	/**
+	 * Translate a key with optional `{param}` interpolation.
+	 * - When missing, returns `options.defaultValue ?? key`.
+	 */
+	t: (key: I18nKey, params?: I18nParams, options?: { defaultValue?: string }) => string
+	has: (key: I18nKey, locale?: I18nLocale) => boolean
+	formatDate: (value: Date | number, options?: Intl.DateTimeFormatOptions) => string
+	formatNumber: (value: number, options?: Intl.NumberFormatOptions) => string
+}
+
+/**
+ * Create a minimal i18n service (host-side convenience).
+ *
+ * This is intentionally small and dependency-free; hosts can replace it with a more
+ * powerful implementation while keeping the same interface surface for plugins.
+ */
+export function createI18nService(input: {
+	locale: I18nLocale
+	resources?: I18nResources
+	fallbackLocale?: I18nLocale
+	defaultValue?: (key: I18nKey) => string
+}): I18nService {
+	const resources = input.resources ?? {}
+	const locale = input.locale
+	const fallbackLocale = input.fallbackLocale
+	const defaultValue = input.defaultValue
+
+	const dateCache = new Map<string, Intl.DateTimeFormat>()
+	const numberCache = new Map<string, Intl.NumberFormat>()
+
+	const getDateFormatter = (opts?: Intl.DateTimeFormatOptions) => {
+		const key = `${locale}::${opts ? safeJsonKey(opts) : ''}`
+		const cached = dateCache.get(key)
+		if (cached) return cached
+		try {
+			const fmt = new Intl.DateTimeFormat(locale, opts)
+			dateCache.set(key, fmt)
+			return fmt
+		} catch {
+			return null
+		}
+	}
+
+	const getNumberFormatter = (opts?: Intl.NumberFormatOptions) => {
+		const key = `${locale}::${opts ? safeJsonKey(opts) : ''}`
+		const cached = numberCache.get(key)
+		if (cached) return cached
+		try {
+			const fmt = new Intl.NumberFormat(locale, opts)
+			numberCache.set(key, fmt)
+			return fmt
+		} catch {
+			return null
+		}
+	}
+
+	const formatDate: I18nService['formatDate'] = (value, opts) => {
+		const date = typeof value === 'number' ? new Date(value) : value
+		const fmt = getDateFormatter(opts)
+		if (!fmt) return date.toISOString()
+		try {
+			return fmt.format(date)
+		} catch {
+			return date.toISOString()
+		}
+	}
+
+	const formatNumber: I18nService['formatNumber'] = (value, opts) => {
+		const fmt = getNumberFormatter(opts)
+		if (!fmt) return String(value)
+		try {
+			return fmt.format(value)
+		} catch {
+			return String(value)
+		}
+	}
+
+	const lookup = (key: I18nKey): string | undefined => {
+		const primary = resources?.[locale]?.[key]
+		if (typeof primary === 'string') return primary
+		if (fallbackLocale) {
+			const fb = resources?.[fallbackLocale]?.[key]
+			if (typeof fb === 'string') return fb
+		}
+		return undefined
+	}
+
+	const has: I18nService['has'] = (key, loc) => {
+		const useLocale = loc ?? locale
+		return typeof resources?.[useLocale]?.[key] === 'string'
+	}
+
+	const t: I18nService['t'] = (key, params, options) => {
+		const template = lookup(key) ?? options?.defaultValue ?? defaultValue?.(key) ?? key
+		if (!params) return template
+		return template.replace(/\{([a-zA-Z0-9_.-]+)\}/g, (_m, rawName) => {
+			const name = String(rawName)
+			const value = (params as any)[name] as unknown
+			if (value === undefined || value === null) return ''
+			if (value instanceof Date) return formatDate(value)
+			if (typeof value === 'number') return String(value)
+			if (typeof value === 'boolean') return value ? 'true' : 'false'
+			return String(value)
+		})
+	}
+
+	return { locale, fallbackLocale, t, has, formatDate, formatNumber }
+}
+
+function safeJsonKey(value: unknown): string {
+	try {
+		return JSON.stringify(value) ?? ''
+	} catch {
+		return ''
+	}
+}
+
+export interface PluginI18nBundle {
+	/**
+	 * Namespace used by the host to avoid key collisions.
+	 * - Default (recommended): pluginName.
+	 */
+	namespace?: string
+	/** Translation resources keyed by locale. */
+	resources: I18nResources
+}
+
 /**
  * Extension service bag.
  *
  * - 用于在 ctx 中注入宿主能力（RPC/SSE/导航等）
  * - 通过 declaration merging 扩展，避免 ctx 顶层不断膨胀
+ *
+ * @example
+ * // Host app or integration package:
+ * declare module '@pluxel/hmr-web' {
+ *   interface ExtensionServices {
+ *     myService: { hello: () => void }
+ *   }
+ * }
  */
 export interface ExtensionServices {
 	/**
@@ -117,21 +335,38 @@ export interface ExtensionServices {
 		notify?: (payload: UiNotifyPayload) => void
 		confirm?: (payload: UiConfirmPayload) => Promise<boolean>
 	}
+	/**
+	 * Optional i18n service provided by the host.
+	 *
+	 * Plugin UI should prefer this over bundling their own i18n runtime to keep
+	 * UI bundles small and consistent with host locale settings.
+	 */
+	i18n?: I18nService
 }
 
+/**
+ * Build a `GlobalExtensionContext` (host-side).
+ *
+ * Plugin code usually does not call this directly.
+ */
 export function createGlobalExtensionContext(input: {
 	pathname: string
 	colorScheme: 'light' | 'dark'
 	runningPlugins: ReadonlySet<string>
 	runningPluginsReady: boolean
-	services?: ExtensionServices
+	services: ExtensionServices
 }): GlobalExtensionContext {
 	return {
 		...input,
-		services: input.services ?? {},
+		services: input.services,
 	}
 }
 
+/**
+ * Convert a `GlobalExtensionContext` into a plugin-scoped one.
+ *
+ * Hosts typically call this when rendering plugin detail pages and plugin routes.
+ */
 export function createPluginExtensionContext(
 	base: GlobalExtensionContext,
 	input: { pluginName: string; pathname?: string },
@@ -169,7 +404,6 @@ export type ExtensionMeta<P extends ExtensionPoint = ExtensionPoint> = RuntimeMe
 export interface ExtensionItem<P extends ExtensionPoint = ExtensionPoint> {
 	meta: ExtensionMeta<P>
 	render: (ctx: ExtensionPointCtx<P>) => ReactNode
-	when?: (ctx: ExtensionPointCtx<P>) => boolean
 }
 
 export interface RouteExtensionDef {
@@ -201,8 +435,12 @@ export type ExtensionDef<P extends ExtensionPoint = ExtensionPoint> = {
 	priority?: number
 	/** 如果为 true，则要求对应插件处于 running 状态才展示 */
 	requireRunning?: boolean
-	when?: (ctx: ExtensionPointCtx<P>) => boolean
-	Component: ComponentType<{ ctx: ExtensionPointCtx<P> }>
+	/**
+	 * Extension renderer.
+	 *
+	 * Renderer receives the typed ctx; using hooks is optional.
+	 */
+	render: (ctx: ExtensionPointCtx<P>) => ReactNode
 } & MetaProp<P>
 
 /**
@@ -218,11 +456,30 @@ export interface PluginUIModule {
 	extensions?: AnyExtensionDef[]
 	routes?: Array<{
 		definition: RouteExtensionDef
-		Component: ComponentType
+		render: (ctx: PluginExtensionContext) => ReactNode
 	}>
+	/**
+	 * Optional i18n resources shipped with the UI module.
+	 * The host may merge these into its own i18n service.
+	 */
+	i18n?: PluginI18nBundle | PluginI18nBundle[]
+	/**
+	 * Optional lifecycle hook called after the UI module is loaded.
+	 * Return a cleanup function to run when unloaded (e.g. remove subscriptions).
+	 */
 	setup?: (ctx: { pluginName: string }) => void | (() => void) | Promise<void | (() => void)>
 }
 
+/**
+ * Define a plugin UI module with validation in dev.
+ *
+ * Recommended: default-export the result.
+ *
+ * @example
+ * export default definePluginUIModule({
+ *   extensions: [{ point: 'header:actions', id: 'hello', render: (ctx) => <Hello ctx={ctx} /> }],
+ * })
+ */
 export function definePluginUIModule<T extends PluginUIModule>(module: T): T {
 	if (isDevEnvironment()) {
 		validatePluginUIModule(module)
@@ -270,6 +527,9 @@ function validatePluginUIModule(module: PluginUIModule): void {
 					ext,
 				)
 			}
+			if (typeof (ext as any)?.render !== 'function') {
+				console.error('[plugin-ui] Extension render must be a function.', ext)
+			}
 			seen.add(id)
 		}
 	}
@@ -290,6 +550,9 @@ function validatePluginUIModule(module: PluginUIModule): void {
 					path,
 					route,
 				)
+			}
+			if (typeof (route as any)?.render !== 'function') {
+				console.error('[plugin-ui] Route render must be a function.', route)
 			}
 			seen.add(path)
 		}
@@ -474,26 +737,24 @@ export type BuiltinRpcAutoFormBlock = {
 
 export type BuiltinDocBlock = BuiltinInfoCardBlock | BuiltinRpcAutoFormBlock
 
-export type BuiltinDocExtensionDef<P extends ExtensionPoint = ExtensionPoint> = BuiltinExtensionBase<P> & {
-	kind: 'doc'
-	title?: string
-	description?: string
-	/** Markdown content with `::block[blockId]` placeholders. */
-	content?: string
-	/** Builtin blocks referenced by `::block[...]`. */
-	blocks?: Record<string, BuiltinDocBlock>
-	/** Ordering used when `content` is omitted. */
-	blockOrder?: string[]
-}
+export type BuiltinDocExtensionDef<P extends ExtensionPoint = ExtensionPoint> =
+	BuiltinExtensionBase<P> & {
+		kind: 'doc'
+		title?: string
+		description?: string
+		/** Markdown content with `::block[blockId]` placeholders. */
+		content?: string
+		/** Builtin blocks referenced by `::block[...]`. */
+		blocks?: Record<string, BuiltinDocBlock>
+		/** Ordering used when `content` is omitted. */
+		blockOrder?: string[]
+	}
 
 export type BuiltinRpcArg = unknown | { kind: 'field'; key: string }
 
 export const defineDocBlocks = <T extends Record<string, BuiltinDocBlock>>(blocks: T): T => blocks
 
-export function md(
-	strings: TemplateStringsArray,
-	...values: Array<string | number>
-): string {
+export function md(strings: TemplateStringsArray, ...values: Array<string | number>): string {
 	let out = ''
 	for (let i = 0; i < strings.length; i++) {
 		out += strings[i] ?? ''
@@ -520,8 +781,7 @@ export function blockRef<T extends Record<string, BuiltinDocBlock>>(
 	return `::block[${String(key)}]`
 }
 
-export type BuiltinExtensionDef =
-	| BuiltinDocExtensionDef
+export type BuiltinExtensionDef = BuiltinDocExtensionDef
 
 export interface CompiledExtensionModule {
 	pluginName: string

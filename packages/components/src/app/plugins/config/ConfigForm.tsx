@@ -4,7 +4,7 @@ import type { ObjectSchema } from 'valibot'
 import { getDefaults } from 'valibot'
 import { EmptyState } from '../../../components'
 import { useNotify } from '../../hooks'
-import { createRpcClient } from '../../rpc'
+import { useHmrWebClient } from '../../rpc'
 import { ConfigTabPanel, type ConfigFormBridge, type ConfigFormState } from './ConfigTab'
 import { ConfigActionDock } from './components/ConfigActionDock'
 import { makeFieldAnchorPrefix, makeSectionAnchorPrefix } from './utils'
@@ -33,6 +33,7 @@ export function ConfigForm({
 	activeKey: activeKeyProp,
 	onActiveKeyChange,
 }: ConfigFormProps) {
+	const hmr = useHmrWebClient()
 	const safeSchemas = schemas ?? {}
 	const keys = useMemo(() => Object.keys(safeSchemas), [safeSchemas])
 	const [activeKey, setActiveKey] = useState(keys[0] || '')
@@ -151,8 +152,7 @@ export function ConfigForm({
 
 		setSavingAll(true)
 		try {
-			using rpc = createRpcClient()
-			const result = await rpc.plugin(pluginName).saveConfig(patch)
+			const result = await hmr.withRpc((rpc) => rpc.plugin(pluginName).saveConfig(patch))
 			if (result.ok === false) {
 				if (result.code === 'validation_failed' && result.errors) {
 					for (const [tabKey, errors] of Object.entries(result.errors)) {
@@ -191,7 +191,7 @@ export function ConfigForm({
 		} finally {
 			setSavingAll(false)
 		}
-	}, [applyFieldErrors, hasMultipleSchemas, notify, pluginName, savingAll, schemaItems])
+	}, [applyFieldErrors, hasMultipleSchemas, hmr, notify, pluginName, savingAll, schemaItems])
 
 	const submitCurrent = useCallback(() => {
 		const bridge = formBridgeRef.current[resolvedActiveKey]

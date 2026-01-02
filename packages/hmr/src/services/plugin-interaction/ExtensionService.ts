@@ -10,8 +10,8 @@ import type {
 	ExtensionManifestEvent,
 	ExtensionPoint,
 	PluginExtensionConfig,
-} from '@pluxel/plugin-ui'
-import { extensionVendorPackages } from '@pluxel/plugin-ui'
+} from '@pluxel/hmr-web'
+import { extensionVendorPackages } from '@pluxel/hmr-web'
 import chokidar, { type FSWatcher } from 'chokidar'
 import { createDebug } from 'obug'
 import { dirname, isAbsolute, join, relative, resolve } from 'pathe'

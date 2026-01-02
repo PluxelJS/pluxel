@@ -11,10 +11,16 @@ import * as MantineHooks from '@mantine/hooks'
 import * as MantineModals from '@mantine/modals'
 import * as MantineNotifications from '@mantine/notifications'
 import * as Capnweb from 'capnweb'
-import * as HmrWeb from '@pluxel/hmr-web'
-import { ExtensionPoints, definePluginUIModule } from '@pluxel/plugin-ui'
-import { extensionVendorPackages } from '@pluxel/plugin-ui'
-import * as HmrWebReact from '@pluxel/hmr-web/react'
+import { rpcErrorMessage } from '@pluxel/hmr-web'
+import {
+	blockRef,
+	defineDocBlocks,
+	definePluginUIModule,
+	ExtensionPoints,
+	md,
+	useExtensionContext,
+	extensionVendorPackages,
+} from '@pluxel/hmr-web'
 
 function createJsxDevRuntimeVendor() {
 	const vendor: Record<string, unknown> = { ...ReactJSXDevRuntime }
@@ -59,18 +65,16 @@ export const vendors = {
 	capnweb: Capnweb,
 	// Extensions import from `@pluxel/hmr/web` (curated UI SDK surface).
 	'@pluxel/hmr/web': {
+		// plugin authoring + shared helpers
 		ExtensionPoints,
 		definePluginUIModule,
-		createClient: HmrWeb.createHmrWebClient,
-		createRpcClient: HmrWeb.createRpcClient,
-		invokeRpc: HmrWeb.invokeRpc,
-		rpcErrorMessage: HmrWeb.rpcErrorMessage,
-		sse: HmrWeb.sse,
-		HmrWebClientProvider: HmrWebReact.HmrWebClientProvider,
-		useHmrWebClient: HmrWebReact.useHmrWebClient,
-		useSseClient: HmrWebReact.useSseClient,
-		usePluginSse: HmrWebReact.usePluginSse,
-		useSharedSseClient: HmrWebReact.useSharedSseClient,
+		md,
+		defineDocBlocks,
+		blockRef,
+		useExtensionContext,
+
+		// web helpers
+		rpcErrorMessage,
 	},
 	'@pluxel/hmr/capnweb': Capnweb,
 }

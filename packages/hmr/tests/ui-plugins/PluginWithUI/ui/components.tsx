@@ -14,7 +14,8 @@ import {
 	TextInput,
 	Title,
 } from '@mantine/core'
-import { rpcErrorMessage, type PluginExtensionContext } from '@pluxel/hmr/web'
+import type { PluginExtensionContext } from '@pluxel/hmr/web'
+import { rpcErrorMessage, useExtensionContext } from '@pluxel/hmr/web'
 import {
 	IconActivity,
 	IconCirclePlus,
@@ -23,60 +24,31 @@ import {
 	IconServer,
 	IconWaveSine,
 } from '@tabler/icons-react'
-import {
-	createContext,
-	type ReactNode,
-	useCallback,
-	useContext,
-	useEffect,
-	useMemo,
-	useState,
-} from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 
-type PluginWithUIRpc = PluginExtensionContext['services']['hmr']['rpc']['PluginWithUI']
-type PluginWithUISse = PluginExtensionContext['services']['hmr']['sse']
-
-type Status = Awaited<ReturnType<PluginWithUIRpc['status']>>
-type DemoEvent = Awaited<ReturnType<PluginWithUIRpc['events']>>[number]
-
-type RuntimeApi = {
+type RuntimeApi = Readonly<{
 	pluginName: string
-	rpc: PluginWithUIRpc
-	sse: PluginWithUISse
-}
-
-const RuntimeContext = createContext<RuntimeApi | null>(null)
-
-export function PluginRuntimeProvider({
-	ctx,
-	children,
-}: {
-	ctx: PluginExtensionContext
-	children: ReactNode
-}) {
-	const pluginName = ctx.pluginName
-	const hmr = ctx.services.hmr
-	if (!hmr) {
-		throw new Error('PluginWithUI requires ctx.services.hmr')
-	}
-
-	const rpc = useMemo(() => hmr.rpc.PluginWithUI, [hmr])
-	// Important: use the shared host SSE connection to avoid exhausting browser connection limits.
-	const sse = useMemo(() => hmr.sse, [hmr])
-
-	const value = useMemo(
-		() => ({ pluginName, rpc, sse }),
-		[pluginName, rpc, sse],
-	)
-
-	return <RuntimeContext.Provider value={value}>{children}</RuntimeContext.Provider>
-}
+	ui: PluginExtensionContext['services']['hmr']['ui']['PluginWithUI']
+	sse: PluginExtensionContext['services']['hmr']['sse']
+}>
 
 function useRuntime(): RuntimeApi {
-	const ctx = useContext(RuntimeContext)
-	if (!ctx) throw new Error('useRuntime must be used within PluginRuntimeProvider')
-	return ctx
+	const ctx = useExtensionContext('plugin')
+	const pluginName = ctx.pluginName
+	const hmr = ctx.services.hmr
+	return useMemo(
+		() => ({
+			pluginName,
+			ui: hmr.ui.PluginWithUI,
+			// Use the shared host SSE connection to avoid exhausting browser connection limits.
+			sse: hmr.sse,
+		}),
+		[pluginName, hmr],
+	)
 }
+
+type PluginWithUISse = RuntimeApi['sse']
+type PluginWithUIRpc = RuntimeApi['ui']
 
 function useLiveConnectionState(sse: PluginWithUISse) {
 	const [connected, setConnected] = useState(false)
@@ -92,7 +64,8 @@ function useLiveConnectionState(sse: PluginWithUISse) {
 }
 
 export function OverviewPanel() {
-	const { pluginName, rpc, sse } = useRuntime()
+	const { pluginName, ui, sse } = useRuntime()
+	type Status = Awaited<ReturnType<PluginWithUIRpc['status']>>
 	const connected = useLiveConnectionState(sse)
 	const [status, setStatus] = useState<Status | null>(null)
 	const [tick, setTick] = useState<number | null>(null)
@@ -102,7 +75,7 @@ export function OverviewPanel() {
 	const refresh = useCallback(async () => {
 		setLoading(true)
 		try {
-			const res = await rpc.status()
+			const res = await ui.status()
 			setStatus(res)
 			setError(null)
 		} catch (e) {
@@ -110,37 +83,21 @@ export function OverviewPanel() {
 		} finally {
 			setLoading(false)
 		}
-	}, [rpc])
+	}, [ui])
 
 	useEffect(() => {
-		const timer = setTimeout(() => {
-			setLoading((prevLoading) => {
-				if (!prevLoading) return prevLoading
-				setError((prevError) => prevError ?? '等待 SSE 初始状态超时，可尝试手动刷新。')
-				return false
-			})
-		}, 3500)
-		return () => clearTimeout(timer)
-	}, [])
+		void refresh()
+	}, [refresh])
 
 	useEffect(() => {
 		const off = sse.PluginWithUI.on(
 			(msg) => {
-				const payload = msg.payload as any
-				if (payload?.type === 'tick' && typeof payload.now === 'number') {
-					setTick(payload.now)
-					return
-				}
-				if (
-					(payload?.type === 'ready' ||
-						payload?.type === 'snapshot' ||
-						payload?.type === 'event') &&
-					payload?.status
-				) {
-					setStatus(payload.status as Status)
+				const payload = msg.payload
+				if (payload.type === 'tick') return void setTick(payload.now)
+				if (payload.type === 'ready' || payload.type === 'snapshot' || payload.type === 'event') {
+					setStatus(payload.status)
 					setLoading(false)
 					setError(null)
-					return
 				}
 			},
 			['tick', 'ready', 'snapshot', 'event'],
@@ -207,7 +164,7 @@ export function OverviewPanel() {
 				<Button
 					leftSection={<IconCirclePlus size={16} />}
 					onClick={() =>
-						rpc
+						ui
 							.increment(1)
 							.then(() => setError(null))
 							.catch((e) => setError(rpcErrorMessage(e, '无法执行 +1')))
@@ -219,7 +176,7 @@ export function OverviewPanel() {
 					variant="light"
 					leftSection={<IconRestore size={16} />}
 					onClick={() =>
-						rpc
+						ui
 							.resetCounter()
 							.then(() => setError(null))
 							.catch((e) => setError(rpcErrorMessage(e, '无法重置计数器')))
@@ -233,7 +190,8 @@ export function OverviewPanel() {
 }
 
 export function EventsPanel() {
-	const { rpc, sse } = useRuntime()
+	const { ui, sse } = useRuntime()
+	type DemoEvent = Awaited<ReturnType<PluginWithUIRpc['events']>>[number]
 	const [events, setEvents] = useState<DemoEvent[]>([])
 	const [loading, setLoading] = useState(true)
 	const [error, setError] = useState<string | null>(null)
@@ -242,7 +200,7 @@ export function EventsPanel() {
 	const refresh = useCallback(async () => {
 		setLoading(true)
 		try {
-			const res = await rpc.events(50)
+			const res = await ui.events(50)
 			setEvents(res)
 			setError(null)
 		} catch (e) {
@@ -250,37 +208,27 @@ export function EventsPanel() {
 		} finally {
 			setLoading(false)
 		}
-	}, [rpc])
+	}, [ui])
 
 	useEffect(() => {
-		const timer = setTimeout(() => {
-			setLoading((prevLoading) => {
-				if (!prevLoading) return prevLoading
-				setError((prevError) => prevError ?? '等待 SSE 初始快照超时，可尝试手动刷新。')
-				return false
-			})
-		}, 3500)
-		return () => clearTimeout(timer)
-	}, [])
+		void refresh()
+	}, [refresh])
 
 	useEffect(() => {
 		const off = sse.PluginWithUI.on(
 			(msg) => {
-				const payload = msg.payload as any
-				if (payload?.type === 'snapshot' && Array.isArray(payload.events)) {
+				const payload = msg.payload
+				if (payload.type === 'snapshot') {
 					setEvents(payload.events)
 					setLoading(false)
 					setError(null)
 					return
 				}
-				if (payload?.type === 'event' && payload.event) {
-					setEvents((prev) => [payload.event as DemoEvent, ...prev].slice(0, 50))
+				if (payload.type === 'event') {
+					setEvents((prev) => [payload.event, ...prev].slice(0, 50))
 					return
 				}
-				if (payload?.type === 'cleared') {
-					setEvents([])
-					return
-				}
+				if (payload.type === 'cleared') return void setEvents([])
 			},
 			['snapshot', 'event', 'cleared'],
 		)
@@ -292,7 +240,7 @@ export function EventsPanel() {
 		if (!message) return
 		setText('')
 		try {
-			await rpc.addNote(message)
+			await ui.addNote(message)
 		} catch (e) {
 			setError(rpcErrorMessage(e, '无法添加事件'))
 		}
@@ -309,7 +257,11 @@ export function EventsPanel() {
 					<ActionIcon variant="light" onClick={() => void refresh()} aria-label="刷新事件列表">
 						<IconRefresh size={16} />
 					</ActionIcon>
-					<Button variant="light" color="red" onClick={() => rpc.clearEvents().catch(() => undefined)}>
+					<Button
+						variant="light"
+						color="red"
+						onClick={() => ui.clearEvents().catch(() => undefined)}
+					>
 						清空
 					</Button>
 				</Group>
@@ -381,18 +333,16 @@ export function StreamsPanel() {
 
 	useEffect(() => {
 		const off = sse.logs.onAny((msg) => {
-			const payload = msg.payload as any
-			const name = typeof payload?.name === 'string' ? payload.name : ''
+			const payload = msg.payload
+			const name = payload.name ?? ''
 			// best-effort client-side filtering; avoids extra SSE connections.
 			if (name && name !== pluginName) return
-			const text =
-				typeof payload?.msg === 'string'
-					? payload.msg
-					: typeof payload?.message === 'string'
-						? payload.message
-						: JSON.stringify(payload ?? {})
-			const time = typeof payload?.time === 'string' ? payload.time : new Date().toLocaleTimeString()
-			setLines((prev) => [{ key: `${Date.now()}-${prev.length}`, text: `${time} ${text}` }, ...prev].slice(0, 50))
+			setLines((prev) =>
+				[
+					{ key: `${Date.now()}-${prev.length}`, text: `${payload.time} ${payload.msg}` },
+					...prev,
+				].slice(0, 50),
+			)
 		})
 		return () => off()
 	}, [pluginName, sse])
@@ -422,7 +372,13 @@ export function StreamsPanel() {
 							</Text>
 						) : null}
 						{lines.map((l) => (
-							<Text key={l.key} size="xs" style={{ fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace' }}>
+							<Text
+								key={l.key}
+								size="xs"
+								style={{
+									fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
+								}}
+							>
 								{l.text}
 							</Text>
 						))}

@@ -139,9 +139,6 @@ importers:
       '@pluxel/hmr-web':
         specifier: workspace:*
         version: link:../hmr-web
-      '@pluxel/plugin-ui':
-        specifier: workspace:*
-        version: link:../plugin-ui
       '@tabler/icons-react':
         specifier: ^3.35.0
         version: 3.36.0(react@19.2.3)
@@ -375,9 +372,6 @@ importers:
       '@pluxel/market':
         specifier: ^0.1.0
         version: 0.1.0(ramda@0.32.0)(react-dom@19.2.3(react@19.2.3))(react@19.2.3)
-      '@pluxel/plugin-ui':
-        specifier: workspace:*
-        version: link:../plugin-ui
       '@pluxel/rolldown':
         specifier: workspace:*
         version: link:../rolldown
@@ -405,9 +399,6 @@ importers:
 
   packages/hmr-web:
     dependencies:
-      '@pluxel/plugin-ui':
-        specifier: workspace:*
-        version: link:../plugin-ui
       capnweb:
         specifier: ^0.3.0
         version: 0.3.0
@@ -424,16 +415,6 @@ importers:
       tsdown:
         specifier: ^0.18.4
         version: 0.18.4(typescript@5.9.3)
-
-  packages/plugin-ui:
-    dependencies:
-      react:
-        specifier: ^19.2.3
-        version: 19.2.3
-    devDependencies:
-      '@types/react':
-        specifier: ^19.2.7
-        version: 19.2.7
 
   packages/rolldown:
     dependencies:

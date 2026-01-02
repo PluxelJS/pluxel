@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
-import type { BuiltinSseRef, ExtensionContext } from '../types'
+import type { BuiltinSseRef } from '../types'
+import { useExtensionContext } from '../types'
 
 export function isObject(value: unknown): value is Record<string, unknown> {
 	return Boolean(value) && typeof value === 'object'
@@ -18,10 +19,10 @@ export function getByDotPath(obj: unknown, path: string | undefined): unknown {
 	return cur
 }
 
-export function useSseEventState(ctx: ExtensionContext, namespace: string, events: string[]) {
+export function useSseEventState(namespace: string, events: string[]) {
 	const [state, setState] = useState<Record<string, unknown>>({})
 
-	const client = (ctx.services as any)?.hmr?.sse ?? (ctx.services as any)?.sse
+	const client = useExtensionContext().services.hmr.sse
 	const key = `${namespace}::${events.slice().sort().join(',')}`
 
 	useEffect(() => {
@@ -76,7 +77,7 @@ export function neededSseEventsForValue(value: unknown): string[] {
 	return Array.from(events)
 }
 
-export function useSseForValues(ctx: ExtensionContext, namespace: string, values: unknown[]) {
+export function useSseForValues(namespace: string, values: unknown[]) {
 	const neededEvents = useMemo(() => {
 		const events = new Set<string>()
 		for (const v of values) {
@@ -85,5 +86,5 @@ export function useSseForValues(ctx: ExtensionContext, namespace: string, values
 		return Array.from(events)
 	}, [values])
 
-	return useSseEventState(ctx, namespace, neededEvents)
+	return useSseEventState(namespace, neededEvents)
 }

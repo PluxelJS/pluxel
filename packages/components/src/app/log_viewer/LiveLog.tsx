@@ -3,7 +3,7 @@
 import { useElementSize } from '@mantine/hooks'
 import { LazyLog, ScrollFollow } from '@melloware/react-logviewer'
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { createAuthAwareFetch, useSseClient } from '../rpc'
+import { createAuthAwareFetch, useHmrWebClient } from '../rpc'
 import { createPrettyPrinter } from './pretty'
 
 const prettyWithName = createPrettyPrinter({
@@ -171,7 +171,7 @@ export function LiveLog({ module, showName = true }: Props) {
 	const pretty = showName ? prettyWithName : prettyNoName
 	const { ref, height, width } = useElementSize()
 	const [text, setText] = useState('')
-	const stream = useSseClient({ namespaces: ['logs'] })
+	const stream = useHmrWebClient().sse
 
 	// —— 列数估算（与组件换行解耦） —— //
 	const [cols, setCols] = useState<number>(0)

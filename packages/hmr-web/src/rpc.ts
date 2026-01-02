@@ -95,9 +95,9 @@ export function rpcErrorMessage(error: unknown, fallback = 'RPC 调用失败'): 
 	return fallback
 }
 
-export function createRpcExtensionsView(raw: RpcClientFactory): UI.rpc {
+export function createUiRpcView(raw: RpcClientFactory): UI.rpc {
 	// Important: capnweb http-batch sessions are short-lived. If we return the raw
-	// stub object and users memoize it (e.g. `const rpc = hmr.rpc.MyPlugin`),
+	// stub object and users memoize it (e.g. `const ui = hmr.ui.MyPlugin`),
 	// the session may already be ended when the next interaction happens.
 	//
 	// To make this ergonomic and safe, we return a stable proxy where each method

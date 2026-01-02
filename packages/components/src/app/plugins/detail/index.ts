@@ -3,6 +3,7 @@ export { PluginLayout } from './PluginLayout'
 export {
 	PluginScopeProvider,
 	usePluginMeta,
+	usePluginStatus,
 	usePluginScope,
 	type PluginSourceKind,
 	type PluginSourceInfo,

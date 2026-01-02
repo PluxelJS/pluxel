@@ -1,7 +1,7 @@
 import type { RpcStub } from 'capnweb'
 import type { HmrRpcApi, UI } from './protocol'
 import { createAuthAwareFetch, defaultOnAuthBlocked, type AuthAwareFetchOptions } from './auth'
-import { createRpcClientFactory, createRpcExtensionsView, invokeRpc } from './rpc'
+import { createRpcClientFactory, createUiRpcView, invokeRpc } from './rpc'
 import { mergeNamespaces } from './utils'
 import { sse, type SseClientOptions, type SseClientWithNamespaces } from './sse'
 import { hc } from 'hono/client'
@@ -20,27 +20,26 @@ export type HmrWebClientOptions = {
 	auth?: AuthAwareFetchOptions & {
 		/** 是否启用 auth-aware fetch 包装（默认启用）。 */
 		enabled?: boolean
-		/**
-		 * 是否在 React Provider 中对 globalThis.fetch 打补丁（默认不启用）。
-		 * 建议仅在代码里大量直接用 `fetch()` 且希望统一重定向时启用。
-		 */
-		globalFetch?: boolean
 	}
 }
 
 export interface HmrWebClient {
 	api: ReturnType<typeof hc>
-	rpc: UI.rpc
+	/** UI extension RPC surface (declaration-merged via `@pluxel/hmr/services`). */
+	ui: UI.rpc
 	withRpc: <T>(runner: (client: RpcStub<HmrRpcApi>) => Promise<T>) => Promise<T>
 	createSse: (options?: SseClientOptions) => SseClientWithNamespaces
 	sse: SseClientWithNamespaces
-	streamLogs: (
-		options?: Omit<SseClientOptions, 'namespaces'> & { name?: string },
-	) => SseClientWithNamespaces
-	streamExtensions: (options?: Omit<SseClientOptions, 'namespaces'>) => SseClientWithNamespaces
 	dispose: () => void
 }
 
+/**
+ * Create a browser-side HMR client.
+ *
+ * - `withRpc()` creates a short-lived batch session per call.
+ * - `ui` is a stable proxy that also creates a fresh session per method call.
+ * - `sse` is memoized; call `dispose()` to close the shared connection.
+ */
 export function createHmrWebClient(options: HmrWebClientOptions = {}): HmrWebClient {
 	const apiBase = options.apiBase ?? '/api'
 	const rpcBase = options.rpcBase ?? '/api/rpc'
@@ -64,7 +63,7 @@ export function createHmrWebClient(options: HmrWebClientOptions = {}): HmrWebCli
 
 	const api = hc(apiBase, { fetch: authFetch })
 	const rawRpc = createRpcClientFactory(rpcBase)
-	const rpc = createRpcExtensionsView(rawRpc)
+	const ui = createUiRpcView(rawRpc)
 	const withRpc = <T,>(runner: (client: RpcStub<HmrRpcApi>) => Promise<T>) =>
 		invokeRpc(runner, { rpcBase })
 
@@ -106,45 +105,14 @@ export function createHmrWebClient(options: HmrWebClientOptions = {}): HmrWebCli
 		memoSse = null
 	}
 
-	const streamLogs = (opts?: Omit<SseClientOptions, 'namespaces'> & { name?: string }) => {
-		const params = { ...(baseSseOptions.params ?? {}), ...(opts?.params ?? {}) }
-		if (opts?.name) params.name = opts.name
-		return sse(buildSseOptions({ ...opts, params, namespaces: ['logs'] }, false))
-	}
-
-	const streamExtensions = (opts?: Omit<SseClientOptions, 'namespaces'>) => {
-		return sse(buildSseOptions({ ...opts, namespaces: ['extensions'] }, false))
-	}
-
 	return {
 		api,
-		rpc,
+		ui,
 		withRpc,
 		createSse,
 		get sse() {
 			return getSse()
 		},
-		streamLogs,
-		streamExtensions,
 		dispose,
 	}
-}
-
-let _defaultClient: HmrWebClient | null = null
-
-/**
- * Lazily create a shared default client (no side effects until first call).
- *
- * If you pass options, it always creates a new client (not memoized).
- */
-export function getHmrWebClient(options?: HmrWebClientOptions): HmrWebClient {
-	if (options) return createHmrWebClient(options)
-	if (!_defaultClient) _defaultClient = createHmrWebClient()
-	return _defaultClient
-}
-
-export function disposeHmrWebClient(): void {
-	if (!_defaultClient) return
-	_defaultClient.dispose()
-	_defaultClient = null
 }

@@ -31,6 +31,7 @@ export {
 	type ExtensionPointCtx,
 	type ExtensionPointMap,
 	type ExtensionPointMeta,
+	ExtensionProvider,
 	ExtensionPoints,
 	type GlobalExtensionContext,
 	isExtensionPluginRunning,
@@ -43,4 +44,6 @@ export {
 	type UiConfirmTone,
 	type UiNotifyPayload,
 	type UiNotifyTone,
-} from '@pluxel/plugin-ui'
+	type ExtensionProviderProps,
+	useExtensionContext,
+} from '@pluxel/hmr-web'

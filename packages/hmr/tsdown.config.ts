@@ -36,8 +36,6 @@ export default defineConfig({
 		'@pluxel/core/services',
 		'@pluxel/components',
 		'@pluxel/hmr-web',
-		'@pluxel/hmr-web/react',
-		'@pluxel/plugin-ui',
 		'react',
 		'react/jsx-runtime',
 		'react-dom',

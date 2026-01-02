@@ -108,12 +108,3 @@ export async function validateConfigPatch(schemaMap: ConfigSchemaMap, patch: Con
 }
 
 /** 格式化 valibot issues 为 ConfigValidationErrors */
-export function formatGroupIssues(issues: readonly any[]): ConfigValidationErrors {
-	const errors: ConfigValidationErrors = {}
-	for (const issue of issues) {
-		const path = (v.getDotPath(issue) ?? '').split('.').filter(Boolean)
-		const key = path[0] ?? '_root'
-		;(errors[key] ??= { _root: [] })._root.push({ message: issue.message, path })
-	}
-	return errors
-}

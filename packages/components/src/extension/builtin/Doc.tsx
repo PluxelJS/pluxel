@@ -9,8 +9,8 @@ import { visit } from 'unist-util-visit'
 import type {
 	BuiltinDocBlock,
 	BuiltinDocExtensionDef,
-	ExtensionContext,
 } from '../types'
+import { useExtensionContext } from '../types'
 import { FloatingToc } from '../../app/plugins/components/FloatingToc'
 import { findScrollableParent, toDomSlug } from '../../app/plugins/config/utils'
 import { BuiltinInfoCard } from './InfoCard'
@@ -187,12 +187,11 @@ const DocMarkdown = memo(function DocMarkdown({
 })
 
 export function BuiltinDoc({
-	ctx,
 	def,
 }: {
-	ctx: ExtensionContext
 	def: BuiltinDocExtensionDef
 }) {
+	useExtensionContext()
 	const content = typeof def.content === 'string' ? def.content.trim() : ''
 	const blocks = def.blocks && typeof def.blocks === 'object' ? def.blocks : {}
 	const contentRef = useRef<HTMLDivElement | null>(null)
@@ -238,14 +237,14 @@ export function BuiltinDoc({
 	const renderBlock = useCallback(
 		(block: BuiltinDocBlock) => {
 			if (block.kind === 'infoCard') {
-				return <BuiltinInfoCard ctx={ctx} pluginName={pluginName} block={block} />
+				return <BuiltinInfoCard pluginName={pluginName} block={block} />
 			}
 			if (block.kind === 'rpcAutoForm') {
-				return <BuiltinRpcAutoForm ctx={ctx} pluginName={pluginName} block={block} />
+				return <BuiltinRpcAutoForm pluginName={pluginName} block={block} />
 			}
 			return null
 		},
-		[ctx, pluginName],
+		[pluginName],
 	)
 
 	const hasHeader = Boolean(def.title || def.description)

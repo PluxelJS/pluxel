@@ -9,6 +9,7 @@ import {
 	type ExtensionContext,
 	ExtensionPoints,
 	ExtensionProvider,
+	getExtensionI18nService,
 	useExtensionSurface,
 } from '../../extension'
 import { LAST_ROUTE_KEY } from '../constants'
@@ -19,6 +20,7 @@ import { baseNavItems, buildExtensionNavItems } from '../navigation/navConfig'
 import { NotificationCenterProvider } from '../notifications/NotificationCenterProvider'
 import { notifyAndRecord } from '../notifications/notifyBridge'
 import { RouterLinkAdapter } from '../RouterLinkAdapter'
+import { PluginOverviewProvider } from '../plugins/data'
 import { useHmrWebClient } from '../rpc'
 import { useCurrentPathname } from '../router/useCurrentRoute'
 
@@ -61,6 +63,7 @@ function RootShellContent() {
 				runningPluginsReady: runningReady,
 				services: {
 					hmr,
+					i18n: getExtensionI18nService(),
 					ui: {
 						notify: (payload) => {
 							const tone = payload?.tone ?? 'info'
@@ -101,9 +104,11 @@ function RootShellContent() {
 	)
 
 	return (
-		<ExtensionProvider value={extensionContext}>
-			<RootShellApp pathname={pathname} onRunningPluginsChange={handleRunningPluginsChange} />
-		</ExtensionProvider>
+		<PluginOverviewProvider>
+			<ExtensionProvider value={extensionContext}>
+				<RootShellApp pathname={pathname} onRunningPluginsChange={handleRunningPluginsChange} />
+			</ExtensionProvider>
+		</PluginOverviewProvider>
 	)
 }
 

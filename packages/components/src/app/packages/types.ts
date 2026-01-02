@@ -1,4 +1,5 @@
-import type { PackageInventoryEntry, PackageLoadIssue, PluginStatusEntry } from '../gqty'
+import type { PluginStatusEntry } from '../gqty'
+import type { PackageInventoryEntry, PackageLoadIssue } from '../rpc'
 
 export type Maybe<T> = T | null | undefined
 
@@ -26,6 +27,7 @@ export type InstallLogEntry = {
 export const ISSUE_SOURCE_LABEL: Record<string, string> = {
 	load: '加载',
 	restore: '恢复',
+	retry: '重试',
 }
 
 export type { PackageLoadIssue, PackageInventoryEntry, PluginStatusEntry }

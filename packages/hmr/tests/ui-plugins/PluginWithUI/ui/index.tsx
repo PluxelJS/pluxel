@@ -1,7 +1,7 @@
 import { Badge, Button, Group, Stack, Text } from '@mantine/core'
+import { definePluginUIModule, ExtensionPoints, useExtensionContext } from '@pluxel/hmr/web'
 import { IconDashboard, IconExternalLink, IconRocket } from '@tabler/icons-react'
-import { definePluginUIModule, ExtensionPoints, type GlobalExtensionContext, type PluginExtensionContext } from '@pluxel/hmr/web'
-import { OverviewPanel, EventsPanel, PluginRuntimeProvider, RoutePage, StreamsPanel } from './components'
+import { EventsPanel, OverviewPanel, RoutePage, StreamsPanel } from './components'
 
 function HeaderAction() {
 	return (
@@ -11,7 +11,8 @@ function HeaderAction() {
 	)
 }
 
-function GlobalStatusBar({ ctx }: { ctx: GlobalExtensionContext }) {
+function GlobalStatusBar() {
+	const ctx = useExtensionContext('global')
 	return (
 		<Group gap="xs">
 			<Badge variant="dot" color="grape">
@@ -24,57 +25,24 @@ function GlobalStatusBar({ ctx }: { ctx: GlobalExtensionContext }) {
 	)
 }
 
-function TabOverview({ ctx }: { ctx: PluginExtensionContext }) {
+function PluginInfo() {
+	const ctx = useExtensionContext('plugin')
 	return (
-		<PluginRuntimeProvider ctx={ctx}>
-			<OverviewPanel />
-		</PluginRuntimeProvider>
-	)
-}
-
-function TabEvents({ ctx }: { ctx: PluginExtensionContext }) {
-	return (
-		<PluginRuntimeProvider ctx={ctx}>
-			<EventsPanel />
-		</PluginRuntimeProvider>
-	)
-}
-
-function TabStreams({ ctx }: { ctx: PluginExtensionContext }) {
-	return (
-		<PluginRuntimeProvider ctx={ctx}>
-			<StreamsPanel />
-		</PluginRuntimeProvider>
-	)
-}
-
-function PluginInfo({ ctx }: { ctx: PluginExtensionContext }) {
-	return (
-		<PluginRuntimeProvider ctx={ctx}>
-			<Stack gap="xs">
-				<Text fw={600}>PluginWithUI</Text>
-				<Text size="sm" c="dimmed">
-					演示扩展 UI：Tab、Route、SSE、RPC。
-				</Text>
-				<Button
-					variant="light"
-					size="xs"
-					leftSection={<IconExternalLink size={14} />}
-					component="a"
-					href={`/plugins/${encodeURIComponent(ctx.pluginName)}/dashboard`}
-				>
-					打开 Dashboard
-				</Button>
-			</Stack>
-		</PluginRuntimeProvider>
-	)
-}
-
-function RouteDashboard({ ctx }: { ctx: PluginExtensionContext }) {
-	return (
-		<PluginRuntimeProvider ctx={ctx}>
-			<RoutePage />
-		</PluginRuntimeProvider>
+		<Stack gap="xs">
+			<Text fw={600}>PluginWithUI</Text>
+			<Text size="sm" c="dimmed">
+				演示扩展 UI：Tab、Route、SSE、RPC。
+			</Text>
+			<Button
+				variant="light"
+				size="xs"
+				leftSection={<IconExternalLink size={14} />}
+				component="a"
+				href={`/plugins/${encodeURIComponent(ctx.pluginName)}/dashboard`}
+			>
+				打开 Dashboard
+			</Button>
+		</Stack>
 	)
 }
 
@@ -85,44 +53,41 @@ export default definePluginUIModule({
 			id: 'global-status',
 			priority: 50,
 			meta: { label: 'PluginWithUI' },
-			Component: GlobalStatusBar,
+			render: () => <GlobalStatusBar />,
 		},
 		{
 			point: ExtensionPoints.HeaderActions,
 			id: 'header-action',
 			priority: 100,
-			Component: HeaderAction,
+			render: () => <HeaderAction />,
 		},
 		{
 			point: ExtensionPoints.PluginTabs,
 			id: 'tab-overview',
 			priority: 20,
 			meta: { label: '概览' },
-			when: (ctx) => ctx.pluginName === 'PluginWithUI',
-			Component: TabOverview,
+			render: () => <OverviewPanel />,
 		},
 		{
 			point: ExtensionPoints.PluginTabs,
 			id: 'tab-events',
 			priority: 19,
 			meta: { label: '事件' },
-			when: (ctx) => ctx.pluginName === 'PluginWithUI',
-			Component: TabEvents,
+			render: () => <EventsPanel />,
 		},
 		{
 			point: ExtensionPoints.PluginTabs,
 			id: 'tab-streams',
 			priority: 18,
 			meta: { label: 'Streams' },
-			when: (ctx) => ctx.pluginName === 'PluginWithUI',
-			Component: TabStreams,
+			render: () => <StreamsPanel />,
 		},
 		{
 			point: ExtensionPoints.PluginInfo,
 			id: 'plugin-info',
 			priority: 10,
 			requireRunning: true,
-			Component: PluginInfo,
+			render: () => <PluginInfo />,
 		},
 	],
 	routes: [
@@ -134,11 +99,10 @@ export default definePluginUIModule({
 				addToNav: true,
 				navPriority: 50,
 			},
-			Component: RouteDashboard,
+			render: () => <RoutePage />,
 		},
 	],
 	setup({ pluginName }) {
 		console.log(`[${pluginName}] UI module loaded`)
 	},
 })
-
