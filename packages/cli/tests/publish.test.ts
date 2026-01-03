@@ -1,24 +1,27 @@
 import { describe, expect, it } from 'bun:test'
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
-import { join } from 'pathe'
+import { createFixture } from 'fs-fixture'
 import { publishPackage, resolveWebhookAudience } from '../src/publish'
 
-async function setupPackageFixture(name: string, version: string, options?: { private?: boolean }) {
-	const target = await mkdtemp(join(tmpdir(), `pluxel-cli-publish-${name}-`))
+function buildPackageTree(name: string, version: string, options?: { private?: boolean }) {
 	const pkg = {
 		name,
 		version,
 		...(options?.private ? { private: true } : {}),
 	}
-	await writeFile(join(target, 'package.json'), JSON.stringify(pkg, null, 2))
-	await mkdir(join(target, 'src'), { recursive: true })
-	await writeFile(join(target, 'src', 'index.ts'), 'export const hello = "world"')
-	return target
+	return {
+		'package.json': JSON.stringify(pkg, null, 2),
+		'src/index.ts': 'export const hello = "world"\n',
+	}
 }
 
-async function teardownFixture(dir: string) {
-	await rm(dir, { recursive: true, force: true })
+async function withPackageFixture<T>(
+	name: string,
+	version: string,
+	options: { private?: boolean } | undefined,
+	run: (dir: string) => Promise<T>,
+) {
+	await using fixture = await createFixture(buildPackageTree(name, version, options))
+	return await run(fixture.path)
 }
 
 function snapshotEnv(keys: string[]) {
@@ -42,8 +45,7 @@ describe('publish single package', () => {
 	it.skip('publishes when version is new (requires npm auth)', async () => {
 		// This test calls real npm publish and requires authentication
 		// Skip in CI/local testing unless specifically testing publish flow
-		const dir = await setupPackageFixture('example-pkg', '1.1.0')
-		try {
+		await withPackageFixture('example-pkg', '1.1.0', undefined, async (dir) => {
 			const result = await publishPackage({
 				cwd: dir,
 				log: noop,
@@ -58,15 +60,12 @@ describe('publish single package', () => {
 			// For now we just verify the structure
 			expect(result.packageName).toBe('example-pkg')
 			expect(result.version).toBe('1.1.0')
-		} finally {
-			await teardownFixture(dir)
-		}
+		})
 	})
 
 	it.skip('skips publishing when version already exists (requires npm)', async () => {
 		// This test calls real npm view and requires network access
-		const dir = await setupPackageFixture('example-pkg', '1.0.0')
-		try {
+		await withPackageFixture('example-pkg', '1.0.0', undefined, async (dir) => {
 			// Mock that version 1.0.0 is already published by returning it
 			const env = process.env
 			const result = await publishPackage({
@@ -80,28 +79,22 @@ describe('publish single package', () => {
 			// For now just verify structure
 			expect(result.packageName).toBe('example-pkg')
 			expect(result.version).toBe('1.0.0')
-		} finally {
-			await teardownFixture(dir)
-		}
+		})
 	})
 
 	it('throws error for private packages', async () => {
-		const dir = await setupPackageFixture('private-pkg', '1.0.0', { private: true })
-		try {
+		await withPackageFixture('private-pkg', '1.0.0', { private: true }, async (dir) => {
 			await expect(
 				publishPackage({
 					cwd: dir,
 					log: noop,
 				}),
 			).rejects.toThrow('private')
-		} finally {
-			await teardownFixture(dir)
-		}
+		})
 	})
 
 	it('respects dryRun flag', async () => {
-		const dir = await setupPackageFixture('example-pkg', '1.2.0')
-		try {
+		await withPackageFixture('example-pkg', '1.2.0', undefined, async (dir) => {
 			const result = await publishPackage({
 				cwd: dir,
 				dryRun: true,
@@ -111,90 +104,86 @@ describe('publish single package', () => {
 			expect(result.packageName).toBe('example-pkg')
 			expect(result.version).toBe('1.2.0')
 			expect(result.published).toBe(false)
-		} finally {
-			await teardownFixture(dir)
-		}
+		})
 	})
 })
 
 describe('publish with CI context', () => {
 	it('sends market notification with OIDC token in CI environment', async () => {
-		const dir = await setupPackageFixture('example-pkg', '2.0.0')
 		const savedEnv = snapshotEnv(['GITHUB_ACTIONS', 'GITHUB_REPOSITORY'])
+		await withPackageFixture('example-pkg', '2.0.0', undefined, async (dir) => {
+			try {
+				process.env.GITHUB_ACTIONS = 'true'
+				process.env.GITHUB_REPOSITORY = 'acme/example'
 
-		try {
-			process.env.GITHUB_ACTIONS = 'true'
-			process.env.GITHUB_REPOSITORY = 'acme/example'
+				const result = await publishPackage({
+					cwd: dir,
+					dryRun: true, // Don't actually publish in tests
+					log: noop,
+				})
 
-			const result = await publishPackage({
-				cwd: dir,
-				dryRun: true, // Don't actually publish in tests
-				log: noop,
-			})
-
-			// Verify structure - actual market notification would need mocking
-			expect(result.packageName).toBe('example-pkg')
-			expect(result.version).toBe('2.0.0')
-			expect(result.notified).toBe(false) // False because dryRun
-		} finally {
-			restoreEnv(savedEnv)
-			await teardownFixture(dir)
-		}
+				// Verify structure - actual market notification would need mocking
+				expect(result.packageName).toBe('example-pkg')
+				expect(result.version).toBe('2.0.0')
+				expect(result.notified).toBe(false) // False because dryRun
+			} finally {
+				restoreEnv(savedEnv)
+			}
+		})
 	})
 
 	it('skips market notification when not in CI', async () => {
-		const dir = await setupPackageFixture('example-pkg', '2.1.0')
 		const savedEnv = snapshotEnv(['GITHUB_ACTIONS', 'GITLAB_CI'])
 
-		try {
-			delete process.env.GITHUB_ACTIONS
-			delete process.env.GITLAB_CI
+		await withPackageFixture('example-pkg', '2.1.0', undefined, async (dir) => {
+			try {
+				delete process.env.GITHUB_ACTIONS
+				delete process.env.GITLAB_CI
 
-			const result = await publishPackage({
-				cwd: dir,
-				dryRun: true,
-				log: noop,
-			})
+				const result = await publishPackage({
+					cwd: dir,
+					dryRun: true,
+					log: noop,
+				})
 
-			expect(result.notified).toBe(false)
-		} finally {
-			restoreEnv(savedEnv)
-			await teardownFixture(dir)
-		}
+				expect(result.notified).toBe(false)
+			} finally {
+				restoreEnv(savedEnv)
+			}
+		})
 	})
 
 	it('does not add provenance for restricted/private packages in CI', async () => {
-		const dir = await setupPackageFixture('example-pkg', '3.0.0')
 		const savedEnv = snapshotEnv(['GITHUB_ACTIONS', 'GITHUB_REPOSITORY'])
 		const logs: string[] = []
 
-		try {
-			process.env.GITHUB_ACTIONS = 'true'
-			process.env.GITHUB_REPOSITORY = 'acme/example'
+		await withPackageFixture('example-pkg', '3.0.0', undefined, async (dir) => {
+			try {
+				process.env.GITHUB_ACTIONS = 'true'
+				process.env.GITHUB_REPOSITORY = 'acme/example'
 
-			await publishPackage({
-				cwd: dir,
-				access: 'restricted', // 私有包
-				dryRun: true,
-				skipVersionCheck: true, // 跳过版本检查以避免网络请求
-				debug: true,
-				log: (...args) => logs.push(args.join(' ')),
-			})
+				await publishPackage({
+					cwd: dir,
+					access: 'restricted', // 私有包
+					dryRun: true,
+					skipVersionCheck: true, // 跳过版本检查以避免网络请求
+					debug: true,
+					log: (...args) => logs.push(args.join(' ')),
+				})
 
-			const debugArgs = logs.find((log) => log.includes('debug: npm args'))
-			expect(debugArgs?.includes('--provenance')).toBe(false)
-			expect(debugArgs?.includes('--access restricted')).toBe(true)
-		} finally {
-			restoreEnv(savedEnv)
-			await teardownFixture(dir)
-		}
+				const debugArgs = logs.find((log) => log.includes('debug: npm args'))
+				expect(debugArgs?.includes('--provenance')).toBe(false)
+				expect(debugArgs?.includes('--access restricted')).toBe(true)
+			} finally {
+				restoreEnv(savedEnv)
+			}
+		})
 	})
 
 	it('skips version check in raw mode (mimics plain npm publish)', async () => {
-		const dir = await setupPackageFixture('example-pkg', '4.0.0')
 		const logs: string[] = []
 
-		try {
+		await withPackageFixture('example-pkg', '4.0.0', undefined, async (dir) => {
 			const result = await publishPackage({
 				cwd: dir,
 				dryRun: true, // avoid running npm
@@ -204,16 +193,13 @@ describe('publish with CI context', () => {
 
 			expect(result.packageName).toBe('example-pkg')
 			expect(logs.some((line) => line.includes('checking if'))).toBe(false)
-		} finally {
-			await teardownFixture(dir)
-		}
+		})
 	})
 
 	it('prints debug info when enabled', async () => {
-		const dir = await setupPackageFixture('example-pkg', '5.0.0')
 		const logs: string[] = []
 
-		try {
+		await withPackageFixture('example-pkg', '5.0.0', undefined, async (dir) => {
 			await publishPackage({
 				cwd: dir,
 				dryRun: true,
@@ -225,9 +211,7 @@ describe('publish with CI context', () => {
 
 			expect(logs.some((line) => line.includes('debug: npm args'))).toBe(true)
 			expect(logs.some((line) => line.includes('debug: npm env keys'))).toBe(true)
-		} finally {
-			await teardownFixture(dir)
-		}
+		})
 	})
 
 	it('computes webhook audience from env or base URL', () => {
@@ -245,7 +229,6 @@ describe('publish with CI context', () => {
 	})
 
 	it('can trigger webhook when publish is skipped (webhook flag)', async () => {
-		const dir = await setupPackageFixture('example-pkg', '6.0.0')
 		const savedFetch = global.fetch
 		const requests: string[] = []
 
@@ -262,30 +245,31 @@ describe('publish with CI context', () => {
 		}) as typeof fetch
 
 		try {
-			const result = await publishPackage({
-				cwd: dir,
-				dryRun: true,
-				skipVersionCheck: true,
-				webhook: true,
-				env: {
-					...process.env,
-					GITHUB_ACTIONS: 'true',
-					GITHUB_REPOSITORY: 'acme/example',
-					ACTIONS_ID_TOKEN_REQUEST_URL: 'https://oidc.example.com/token',
-					ACTIONS_ID_TOKEN_REQUEST_TOKEN: 'dummy',
-					PLUXEL_MARKET_AUDIENCE: 'https://market.test/webhook',
-				},
-				log: noop,
-			})
+			await withPackageFixture('example-pkg', '6.0.0', undefined, async (dir) => {
+				const result = await publishPackage({
+					cwd: dir,
+					dryRun: true,
+					skipVersionCheck: true,
+					webhook: true,
+					env: {
+						...process.env,
+						GITHUB_ACTIONS: 'true',
+						GITHUB_REPOSITORY: 'acme/example',
+						ACTIONS_ID_TOKEN_REQUEST_URL: 'https://oidc.example.com/token',
+						ACTIONS_ID_TOKEN_REQUEST_TOKEN: 'dummy',
+						PLUXEL_MARKET_AUDIENCE: 'https://market.test/webhook',
+					},
+					log: noop,
+				})
 
-			expect(result.notified).toBe(true)
-			expect(requests.some((url) => url.includes('oidc.example.com'))).toBe(true)
-			expect(
-				requests.some((url) => url.includes('market.pluxel.dev') || url.includes('market.test')),
-			).toBe(true)
+				expect(result.notified).toBe(true)
+				expect(requests.some((url) => url.includes('oidc.example.com'))).toBe(true)
+				expect(
+					requests.some((url) => url.includes('market.pluxel.dev') || url.includes('market.test')),
+				).toBe(true)
+			})
 		} finally {
 			global.fetch = savedFetch
-			await teardownFixture(dir)
 		}
 	})
 })

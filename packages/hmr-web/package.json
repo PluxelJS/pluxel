@@ -26,8 +26,8 @@
 		"build": "tsdown"
 	},
 	"dependencies": {
-		"capnweb": "^0.3.0",
-		"hono": "^4.11.1"
+		"capnweb": "^0.4.0",
+		"hono": "^4.11.3"
 	},
 	"peerDependencies": {
 		"react": "^19.2.3"

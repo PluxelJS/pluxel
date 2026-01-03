@@ -1,16 +1,46 @@
 import { describe, expect, it } from 'bun:test'
-import { fileURLToPath } from 'node:url'
 import type { Context } from '@pluxel/core'
+import { createFixture } from 'fs-fixture'
 import { normalize } from 'pathe'
 import { type EntryResolutionOk, ScanService } from '../src/services/market/ScanService'
 
-const fixtureRoot = normalize(fileURLToPath(new URL('./fixtures/scan/single/', import.meta.url)))
-const tsOnlyRoot = normalize(fileURLToPath(new URL('./fixtures/scan/ts-only/', import.meta.url)))
+const scanSingleFixture = {
+	'package.json': JSON.stringify(
+		{
+			name: 'scan-single-fixture',
+			version: '1.0.0',
+			main: 'lib/index.js',
+		},
+		null,
+		2,
+	),
+	'lib/index.js': "export const value = 'scan-single'\n",
+	'node_modules/pathe/package.json': JSON.stringify(
+		{
+			name: 'pathe',
+			version: '0.0.0',
+			type: 'module',
+			exports: {
+				'.': './index.js',
+			},
+		},
+		null,
+		2,
+	),
+	'node_modules/pathe/index.js': "export const join = (...parts) => parts.join('/')\n",
+} satisfies Record<string, string>
 
-function createService(overrides: Partial<ConstructorParameters<typeof ScanService>[1]> = {}) {
+const scanTsOnlyFixture = {
+	'index.ts': "export const hello = 'ts-only'\n",
+} satisfies Record<string, string>
+
+function createService(
+	root: string,
+	overrides: Partial<ConstructorParameters<typeof ScanService>[1]> = {},
+) {
 	return new ScanService({} as Context, {
-		roots: fixtureRoot,
-		installedBase: fixtureRoot,
+		roots: root,
+		installedBase: root,
 		...overrides,
 	})
 }
@@ -21,7 +51,8 @@ function asPosix(input: string) {
 
 describe('ScanService', () => {
 	it('resolves entry by package name inside workspace', async () => {
-		const service = createService()
+		await using fixture = await createFixture(scanSingleFixture)
+		const service = createService(normalize(fixture.path))
 		const resolution = await service.resolveEntryByName('scan-single-fixture')
 
 		expect(resolution.ok).toBe(true)
@@ -29,7 +60,8 @@ describe('ScanService', () => {
 	})
 
 	it('falls back to installed packages when not in workspace', async () => {
-		const service = createService()
+		await using fixture = await createFixture(scanSingleFixture)
+		const service = createService(normalize(fixture.path))
 		const resolution = await service.resolveEntry('pathe')
 
 		expect(resolution.ok).toBe(true)
@@ -37,14 +69,16 @@ describe('ScanService', () => {
 	})
 
 	it('can skip installed fallback when workspaceOnly is true', async () => {
-		const service = createService()
+		await using fixture = await createFixture(scanSingleFixture)
+		const service = createService(normalize(fixture.path))
 		const resolution = await service.resolveEntry('pathe', { workspaceOnly: true })
 
 		expect(resolution.ok).toBe(false)
 	})
 
 	it('directly resolves installed package entries', async () => {
-		const service = createService()
+		await using fixture = await createFixture(scanSingleFixture)
+		const service = createService(normalize(fixture.path))
 		const resolution = await service.resolveInstalledEntry('pathe')
 
 		expect(resolution.ok).toBe(true)
@@ -52,7 +86,9 @@ describe('ScanService', () => {
 	})
 
 	it('accepts directory selectors for workspace packages', async () => {
-		const service = createService()
+		await using fixture = await createFixture(scanSingleFixture)
+		const fixtureRoot = normalize(fixture.path)
+		const service = createService(fixtureRoot)
 		const resolution = await service.resolveEntry({ dir: fixtureRoot })
 
 		expect(resolution?.ok).toBe(true)
@@ -60,7 +96,9 @@ describe('ScanService', () => {
 	})
 
 	it('lists workspace entries scoped by roots', async () => {
-		const service = createService()
+		await using fixture = await createFixture(scanSingleFixture)
+		const fixtureRoot = normalize(fixture.path)
+		const service = createService(fixtureRoot)
 		const entries = await service.listWorkspaceEntries({ roots: fixtureRoot })
 
 		expect(entries.length).toBeGreaterThan(0)
@@ -69,22 +107,16 @@ describe('ScanService', () => {
 })
 
 describe('ScanService without package.json (ts-only)', () => {
-	function createTsOnlyService() {
-		return new ScanService({} as Context, {
-			roots: tsOnlyRoot,
-			installedBase: tsOnlyRoot,
-			options: {
-				fallbackTsOnSingle: true,
-			},
-		})
-	}
-
 	it('resolves index.ts as fallback entry', async () => {
-		const service = createTsOnlyService()
+		await using fixture = await createFixture(scanTsOnlyFixture)
+		const tsOnlyRoot = normalize(fixture.path)
+		const service = createService(tsOnlyRoot, {
+			options: { fallbackTsOnSingle: true },
+		})
 		const entry = await service.resolveEntry({ dir: tsOnlyRoot })
 		expect(entry.ok).toBe(true)
 		if (entry.ok) {
-			expect(asPosix(entry.entry)).toMatch(/\/ts-only\/index\.ts$/)
+			expect(asPosix(entry.entry)).toMatch(/\/index\.ts$/)
 		}
 	})
 })

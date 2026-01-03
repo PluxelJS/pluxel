@@ -54,6 +54,7 @@
 		"@pluxel/context": "workspace:*",
 		"@pluxel/rolldown": "workspace:*",
 		"diod": "workspace:*",
+		"fs-fixture": "^2.11.0",
 		"option-t": "^55.1.0",
 		"tinybench": "^6.0.0"
 	},

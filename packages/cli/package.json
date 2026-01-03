@@ -33,6 +33,7 @@
 	},
 	"devDependencies": {
 		"@pluxel/rolldown": "workspace:*",
-		"@types/picomatch": "^4.0.2"
+		"@types/picomatch": "^4.0.2",
+		"fs-fixture": "^2.11.0"
 	}
 }

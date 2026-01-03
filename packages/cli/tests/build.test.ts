@@ -1,33 +1,140 @@
 import { describe, expect, it } from 'bun:test'
-import { cp, mkdtemp, rm } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
+import { createFixture } from 'fs-fixture'
 import { createImportTracker } from '@pluxel/rolldown'
-import { join, resolve } from 'pathe'
+import { resolve } from 'pathe'
 import { readPackageJSON } from 'pkg-types'
 import { resolveBuildContext } from '../src/build_impl/config'
 import { BuildEnvKeys } from '../src/build_impl/env'
 import { createOptionalDependencyHook } from '../src/build_impl/plugin-tracker'
 import { runWithTsdown } from '../src/build_impl/tsdown-runner'
 
-const TEST_ROOT = new URL('.', import.meta.url)
+const buildFixtures = {
+	basic: {
+		'package.json': JSON.stringify(
+			{
+				name: 'pluxel-cli-build-fixture',
+				version: '1.0.0',
+				type: 'module',
+				dependencies: {
+					'pluxel-plugin-alpha': '^1.0.0',
+				},
+				devDependencies: {
+					'pluxel-plugin-beta': '^0.5.0',
+				},
+				peerDependencies: {},
+				optionalDependencies: {},
+			},
+			null,
+			2,
+		),
+		'tsconfig.json': JSON.stringify(
+			{
+				compilerOptions: {
+					target: 'ES2020',
+					module: 'ESNext',
+					moduleResolution: 'Bundler',
+					strict: false,
+					declaration: false,
+					allowSyntheticDefaultImports: true,
+					esModuleInterop: true,
+				},
+				include: ['src'],
+			},
+			null,
+			2,
+		),
+		'tsdown.config.ts': [
+			'export default {',
+			"\tentry: 'src/index.ts',",
+			"\tformat: ['esm'],",
+			'\tdts: false,',
+			"\texternal: ['pluxel-plugin-alpha'],",
+			'\tsourcemap: false,',
+			'\tclean: true,',
+			'}',
+			'',
+		].join('\n'),
+		'src/index.ts': [
+			"import 'pluxel-plugin-alpha'",
+			"import 'pluxel-plugin-beta'",
+			'',
+			'// @Plugin marker for import tracking',
+			'export const answer = 42',
+			'',
+		].join('\n'),
+	},
+	custom: {
+		'package.json': JSON.stringify(
+			{
+				name: 'pluxel-cli-build-fixture-custom',
+				version: '1.0.0',
+				type: 'module',
+				dependencies: {
+					'acme-plugin-alpha': '1.2.3',
+				},
+				devDependencies: {
+					'acme-plugin-beta': '~1.0.0',
+				},
+				peerDependencies: {
+					'acme-plugin-beta': '~1.0.0',
+				},
+				optionalDependencies: {},
+			},
+			null,
+			2,
+		),
+		'tsconfig.json': JSON.stringify(
+			{
+				compilerOptions: {
+					target: 'ES2020',
+					module: 'ESNext',
+					moduleResolution: 'Bundler',
+					strict: false,
+					declaration: false,
+					allowSyntheticDefaultImports: true,
+					esModuleInterop: true,
+				},
+				include: ['src'],
+			},
+			null,
+			2,
+		),
+		'tsdown.config.ts': [
+			'export default {',
+			"\tentry: 'src/index.ts',",
+			"\tformat: ['esm'],",
+			'\tdts: false,',
+			"\texternal: ['acme-plugin-alpha', 'acme-plugin-beta'],",
+			'\tsourcemap: false,',
+			'\tclean: true,',
+			'}',
+			'',
+		].join('\n'),
+		'src/index.ts': [
+			"import 'acme-plugin-alpha'",
+			"import 'acme-plugin-beta'",
+			'',
+			'// @Plugin marker for import tracking',
+			'export const answer = 24',
+			'',
+		].join('\n'),
+	},
+} satisfies Record<string, Record<string, string>>
 
-async function setupFixture(name: string) {
-	const base = resolve(TEST_ROOT.pathname, 'fixtures', name)
-	const target = await mkdtemp(join(tmpdir(), `pluxel-cli-${name}-`))
-	await cp(base, target, { recursive: true })
-	return target
-}
-
-async function teardownFixture(dir: string) {
-	await rm(dir, { recursive: true, force: true })
+async function withBuildFixture<T>(name: keyof typeof buildFixtures, run: (dir: string) => Promise<T>) {
+	await using fixture = await createFixture(buildFixtures[name])
+	const originalCwd = process.cwd()
+	try {
+		process.chdir(fixture.path)
+		return await run(fixture.path)
+	} finally {
+		process.chdir(originalCwd)
+	}
 }
 
 describe('build command', () => {
 	it('synchronizes detected pluxel imports into package.json metadata', async () => {
-		const fixtureDir = await setupFixture('basic')
-		const originalCwd = process.cwd()
-		try {
-			process.chdir(fixtureDir)
+		await withBuildFixture('basic', async (fixtureDir) => {
 			const runtime = await resolveBuildContext({})
 			expect(runtime.projectRoot).toBe(fixtureDir)
 			expect(runtime.packageJsonPath).toBe(resolve(fixtureDir, 'package.json'))
@@ -57,132 +164,120 @@ describe('build command', () => {
 			expect(pkg.devDependencies?.['pluxel-plugin-beta']).toBeUndefined()
 			expect(pkg.pluxel?.dependOn?.required).toEqual(['pluxel-plugin-alpha'])
 			expect(pkg.pluxel?.dependOn?.optional).toEqual(['pluxel-plugin-beta'])
-		} finally {
-			process.chdir(originalCwd)
-			await teardownFixture(fixtureDir)
-		}
+		})
 	})
 
 	it('respects custom env config for prefixes and manifest fields', async () => {
-		const fixtureDir = await setupFixture('custom')
-		const originalCwd = process.cwd()
 		const previousEnv: Record<string, string | undefined> = {
 			[BuildEnvKeys.pluginPrefix]: process.env[BuildEnvKeys.pluginPrefix],
 			[BuildEnvKeys.manifestField]: process.env[BuildEnvKeys.manifestField],
 		}
 		try {
-			process.chdir(fixtureDir)
-			process.env[BuildEnvKeys.pluginPrefix] = 'acme-plugin'
-			process.env[BuildEnvKeys.manifestField] = 'customField'
+			await withBuildFixture('custom', async (fixtureDir) => {
+				process.env[BuildEnvKeys.pluginPrefix] = 'acme-plugin'
+				process.env[BuildEnvKeys.manifestField] = 'customField'
 
-			const runtime = await resolveBuildContext({})
-			const tracker = createImportTracker({ prefixes: runtime.pluginPrefixes })
-			const hook = createOptionalDependencyHook({
-				packageJsonPath: runtime.packageJsonPath,
-				manifestField: runtime.manifestField,
-				log: () => {},
-				collectPlugins: () => tracker.flush(),
+				const runtime = await resolveBuildContext({})
+				const tracker = createImportTracker({ prefixes: runtime.pluginPrefixes })
+				const hook = createOptionalDependencyHook({
+					packageJsonPath: runtime.packageJsonPath,
+					manifestField: runtime.manifestField,
+					log: () => {},
+					collectPlugins: () => tracker.flush(),
+				})
+
+				await runWithTsdown({
+					context: runtime,
+					onSuccess: hook,
+					log: () => {},
+					extraConfig: {
+						plugins: [tracker.plugin],
+					},
+				})
+
+				const pkg = await readPackageJSON(runtime.packageJsonPath)
+				expect(pkg.optionalDependencies?.['acme-plugin-alpha']).toBeUndefined()
+				expect(pkg.optionalDependencies?.['acme-plugin-beta']).toBeUndefined()
+				expect(pkg.peerDependencies?.['acme-plugin-alpha']).toBe('1.2.3')
+				expect(pkg.peerDependencies?.['acme-plugin-beta']).toBe('~1.0.0')
+				expect(pkg.dependencies?.['acme-plugin-alpha']).toBeUndefined()
+				expect(pkg.devDependencies?.['acme-plugin-beta']).toBeUndefined()
+				expect(pkg.customField?.dependOn?.required).toEqual(['acme-plugin-alpha'])
+				expect(pkg.customField?.dependOn?.optional).toEqual(['acme-plugin-beta'])
 			})
-
-			await runWithTsdown({
-				context: runtime,
-				onSuccess: hook,
-				log: () => {},
-				extraConfig: {
-					plugins: [tracker.plugin],
-				},
-			})
-
-			const pkg = await readPackageJSON(runtime.packageJsonPath)
-			expect(pkg.optionalDependencies?.['acme-plugin-alpha']).toBeUndefined()
-			expect(pkg.optionalDependencies?.['acme-plugin-beta']).toBeUndefined()
-			expect(pkg.peerDependencies?.['acme-plugin-alpha']).toBe('1.2.3')
-			expect(pkg.peerDependencies?.['acme-plugin-beta']).toBe('~1.0.0')
-			expect(pkg.dependencies?.['acme-plugin-alpha']).toBeUndefined()
-			expect(pkg.devDependencies?.['acme-plugin-beta']).toBeUndefined()
-			expect(pkg.customField?.dependOn?.required).toEqual(['acme-plugin-alpha'])
-			expect(pkg.customField?.dependOn?.optional).toEqual(['acme-plugin-beta'])
 		} finally {
-			process.chdir(originalCwd)
 			restoreEnv(previousEnv)
-			await teardownFixture(fixtureDir)
 		}
 	})
 
 	it('fills repository metadata from GitHub env', async () => {
-		const fixtureDir = await setupFixture('basic')
-		const originalCwd = process.cwd()
 		const savedEnv = snapshotEnv(['GITHUB_ACTIONS', 'GITHUB_REPOSITORY'])
 		try {
-			process.chdir(fixtureDir)
-			process.env.GITHUB_ACTIONS = 'true'
-			process.env.GITHUB_REPOSITORY = 'pluxel/example'
+			await withBuildFixture('basic', async () => {
+				process.env.GITHUB_ACTIONS = 'true'
+				process.env.GITHUB_REPOSITORY = 'pluxel/example'
 
-			const runtime = await resolveBuildContext({})
-			const tracker = createImportTracker({ prefixes: runtime.pluginPrefixes })
-			const hook = createOptionalDependencyHook({
-				packageJsonPath: runtime.packageJsonPath,
-				manifestField: runtime.manifestField,
-				log: () => {},
-				collectPlugins: () => tracker.flush(),
+				const runtime = await resolveBuildContext({})
+				const tracker = createImportTracker({ prefixes: runtime.pluginPrefixes })
+				const hook = createOptionalDependencyHook({
+					packageJsonPath: runtime.packageJsonPath,
+					manifestField: runtime.manifestField,
+					log: () => {},
+					collectPlugins: () => tracker.flush(),
+				})
+
+				await runWithTsdown({
+					context: runtime,
+					onSuccess: hook,
+					log: () => {},
+					extraConfig: {
+						plugins: [tracker.plugin],
+					},
+				})
+
+				const pkg = await readPackageJSON(runtime.packageJsonPath)
+				expect(pkg.repository).toEqual({ type: 'git', url: 'https://github.com/pluxel/example.git' })
+				expect(pkg.homepage).toBe('https://github.com/pluxel/example')
+				expect(pkg.bugs).toEqual({ url: 'https://github.com/pluxel/example/issues' })
 			})
-
-			await runWithTsdown({
-				context: runtime,
-				onSuccess: hook,
-				log: () => {},
-				extraConfig: {
-					plugins: [tracker.plugin],
-				},
-			})
-
-			const pkg = await readPackageJSON(runtime.packageJsonPath)
-			expect(pkg.repository).toEqual({ type: 'git', url: 'https://github.com/pluxel/example.git' })
-			expect(pkg.homepage).toBe('https://github.com/pluxel/example')
-			expect(pkg.bugs).toEqual({ url: 'https://github.com/pluxel/example/issues' })
 		} finally {
-			process.chdir(originalCwd)
 			restoreEnv(savedEnv)
-			await teardownFixture(fixtureDir)
 		}
 	})
 
 	it('fills repository metadata from GitLab env', async () => {
-		const fixtureDir = await setupFixture('basic')
-		const originalCwd = process.cwd()
 		const savedEnv = snapshotEnv(['GITLAB_CI', 'CI_PROJECT_PATH', 'CI_SERVER_HOST'])
 		try {
-			process.chdir(fixtureDir)
-			process.env.GITLAB_CI = 'true'
-			process.env.CI_PROJECT_PATH = 'pluxel/example'
-			process.env.CI_SERVER_HOST = 'gitlab.com'
+			await withBuildFixture('basic', async () => {
+				process.env.GITLAB_CI = 'true'
+				process.env.CI_PROJECT_PATH = 'pluxel/example'
+				process.env.CI_SERVER_HOST = 'gitlab.com'
 
-			const runtime = await resolveBuildContext({})
-			const tracker = createImportTracker({ prefixes: runtime.pluginPrefixes })
-			const hook = createOptionalDependencyHook({
-				packageJsonPath: runtime.packageJsonPath,
-				manifestField: runtime.manifestField,
-				log: () => {},
-				collectPlugins: () => tracker.flush(),
+				const runtime = await resolveBuildContext({})
+				const tracker = createImportTracker({ prefixes: runtime.pluginPrefixes })
+				const hook = createOptionalDependencyHook({
+					packageJsonPath: runtime.packageJsonPath,
+					manifestField: runtime.manifestField,
+					log: () => {},
+					collectPlugins: () => tracker.flush(),
+				})
+
+				await runWithTsdown({
+					context: runtime,
+					onSuccess: hook,
+					log: () => {},
+					extraConfig: {
+						plugins: [tracker.plugin],
+					},
+				})
+
+				const pkg = await readPackageJSON(runtime.packageJsonPath)
+				expect(pkg.repository).toEqual({ type: 'git', url: 'https://gitlab.com/pluxel/example.git' })
+				expect(pkg.homepage).toBe('https://gitlab.com/pluxel/example')
+				expect(pkg.bugs).toEqual({ url: 'https://gitlab.com/pluxel/example/-/issues' })
 			})
-
-			await runWithTsdown({
-				context: runtime,
-				onSuccess: hook,
-				log: () => {},
-				extraConfig: {
-					plugins: [tracker.plugin],
-				},
-			})
-
-			const pkg = await readPackageJSON(runtime.packageJsonPath)
-			expect(pkg.repository).toEqual({ type: 'git', url: 'https://gitlab.com/pluxel/example.git' })
-			expect(pkg.homepage).toBe('https://gitlab.com/pluxel/example')
-			expect(pkg.bugs).toEqual({ url: 'https://gitlab.com/pluxel/example/-/issues' })
 		} finally {
-			process.chdir(originalCwd)
 			restoreEnv(savedEnv)
-			await teardownFixture(fixtureDir)
 		}
 	})
 })
