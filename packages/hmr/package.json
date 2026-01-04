@@ -73,26 +73,21 @@
 		"pkg-types": "^2.3.0",
 		"superjson": "^2.2.6",
 		"tinyglobby": "^0.2.15",
-		"tinypool": "^2.0.0",
+		"tinypool": "^2.1.0",
 		"unplugin-macros": "^0.18.6",
 		"valibot": "^1.2.0",
-		"vite": "8.0.0-beta.0",
-		"vite-node": "^5.2.0",
-		"youch": "4.1.0-beta.13"
+		"vite": "beta"
 	},
 	"peerDependencies": {
 		"@tabler/icons-react": "*"
 	},
 	"devDependencies": {
-		"@hono/react-renderer": "^1.0.1",
 		"@pluxel/components": "workspace:*",
 		"@pluxel/core": "workspace:*",
 		"@pluxel/hmr-web": "workspace:*",
 		"@pluxel/market": "^0.1.0",
 		"@pluxel/rolldown": "workspace:*",
-		"@tanstack/react-router": "^1.144.0",
 		"@types/react": "^19.2.7",
-		"@types/react-dom": "^19.2.3",
 		"fs-fixture": "^2.11.0",
 		"postcss": "^8.5.6",
 		"postcss-preset-mantine": "^1.18.0",
