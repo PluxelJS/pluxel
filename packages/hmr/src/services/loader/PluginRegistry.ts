@@ -275,9 +275,7 @@ export class PluginRegistry {
 			tx?.recordIdentity(ctor)
 			setPluginIdentity(ctor, { id: prefixedId, packageName: pkgName })
 			name = prefixedId
-			this.ctx.logger.info(
-				`[PluginRegistry] 插件 "${declaredName}" 来自包 ${pkgName}，已自动重命名为 "${prefixedId}"`,
-			)
+			this.ctx.logger.info`[PluginRegistry] 插件 "${declaredName}" 来自包 ${pkgName}，已自动重命名为 "${prefixedId}"`
 		}
 
 		const seen = this.enrolled.get(ctor) ?? new Set<ModuleId>()
@@ -335,10 +333,7 @@ export class PluginRegistry {
 			try {
 				await this.startPlugin(name, ctor)
 			} catch (err) {
-				this.ctx.logger.warn(
-					{ err, name, moduleId },
-					`[PluginRegistry] 启动失败：${name}`,
-				)
+				this.ctx.logger.warn('启动失败：{name}: {error}', { name, moduleId, error: err })
 			}
 		}
 		// 并行启动（registerPlugin 只是声明，依赖处理在 commit 时）
@@ -368,17 +363,18 @@ export class PluginRegistry {
 			for (const forkId of forkIds) {
 				const forkName = `${name}#${forkId}`
 				if (!this.ctx.configService.isEnabledInConfig(forkName)) continue
-				try {
-					const ForkCtor = this.ctx.registry.fork(ctor as any, forkId) as PluginConstructor
-					forkStarts.push(safeStart(forkName, ForkCtor))
-				} catch (err) {
-					this.ctx.logger.warn(
-						{ err, name, forkId },
-						`[PluginRegistry] 启动 fork 失败：${name}#${forkId}`,
-					)
+					try {
+						const ForkCtor = this.ctx.registry.fork(ctor as any, forkId) as PluginConstructor
+						forkStarts.push(safeStart(forkName, ForkCtor))
+					} catch (err) {
+						this.ctx.logger.warn('启动 fork 失败：{name}#{forkId}: {error}', {
+							name,
+							forkId,
+							error: err,
+						})
+					}
 				}
 			}
-		}
 		if (forkStarts.length > 0) await Promise.all(forkStarts)
 	}
 
@@ -570,7 +566,7 @@ export class PluginRegistry {
 		try {
 			fn()
 		} catch (err) {
-			this.ctx.logger.warn({ err, label }, `[PluginRegistry] 可恢复异常：${label}`)
+			this.ctx.logger.warn('可恢复异常：{label}: {error}', { label, error: err })
 		}
 	}
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test'
-import { makeErrSerializer } from '../src/services/logger/serialization'
+import { toPlainObject } from '../src/logger/serialization'
 
 class Chatbots {}
 class MemeTest {}
@@ -10,8 +10,7 @@ describe('logger serialization', () => {
 		err.errors = [{ kind: 'MissingDependency', chain: [Chatbots, MemeTest] }]
 		err.aggregateErrors = err.errors
 
-		const serializer = makeErrSerializer()
-		const out = serializer(err) as any
+		const out = toPlainObject(err) as any
 
 		expect(Array.isArray(out.errors)).toBe(true)
 		expect(Array.isArray(out.aggregateErrors)).toBe(true)

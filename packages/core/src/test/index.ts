@@ -15,10 +15,10 @@ export { Context } from '@pluxel/context'
 export { BasePlugin, ForkablePlugin } from '../plugins/BasePlugin'
 export {
 	Config,
-	Plugin,
 	checkPluginDecorator,
 	clearParamToken,
 	getPluginInfo,
+	Plugin,
 	setParamToken,
 	setParamTokens,
 } from '../plugins/PluginDecorator'
@@ -63,10 +63,7 @@ export type TestHost = {
 	 * - Use plugin ctor or plugin name (`pluginInfo.id`) as target.
 	 * - Takes effect on the next (re)start of that plugin.
 	 */
-	setConfig: (
-		target: PluginConstructor | string,
-		configRecord: Record<string, unknown>,
-	) => void
+	setConfig: (target: PluginConstructor | string, configRecord: Record<string, unknown>) => void
 	enablePlugins: (...names: string[]) => void
 	disablePlugins: (...names: string[]) => void
 	isEnabled: (name: string) => boolean

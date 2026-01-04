@@ -47,7 +47,7 @@ describe('EffectScopeService', () => {
 
 	it('logs and continues when disposer throws', () => {
 		return withTestContext((ctx) => {
-			const errorSpy = spyOn(console, 'error').mockImplementation(() => {})
+			const errorSpy = spyOn(ctx.logger, 'error').mockImplementation(() => {})
 			remember(() => errorSpy.mockRestore())
 
 			const err = new Error('dispose boom')
@@ -58,7 +58,7 @@ describe('EffectScopeService', () => {
 			ctx.scope.disposeAll()
 
 			expect(errorSpy).toHaveBeenCalledTimes(1)
-			expect(errorSpy.mock.calls[0]).toEqual(['[EffectScopeService] dispose error:', err])
+			expect(errorSpy.mock.calls[0]).toEqual(['dispose error: {error}', { error: err }])
 			expect(ctx.scope.disposables.size).toBe(0)
 		})
 	})

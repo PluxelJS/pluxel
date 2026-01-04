@@ -1,5 +1,5 @@
 import { Context } from '@pluxel/hmr'
-import { PinoLoggerService } from '@pluxel/hmr/services'
+import { LogtapeLoggerService } from '@pluxel/hmr/services'
 
 const ctx = new Context({
 	hmrService: {
@@ -10,10 +10,7 @@ const ctx = new Context({
 	},
 	registry: {
 		startStrategy: 'ready-queue',
-		pluginCTXIsolate: [PinoLoggerService],
-	},
-	logger: {
-		level: 'debug',
+		pluginCTXIsolate: [LogtapeLoggerService],
 	},
 	graphql: {
 		destination: './gqty/index.ts',

@@ -22,7 +22,7 @@ export class RpcService {
 	registerExtension<T extends RpcTarget>(factory: RpcExtensionFactory<T>): () => void {
 		const namespace = this.ctx.pluginInfo.id
 		if (namespace in this.extensions && this.extensions[namespace] !== null) {
-			this.ctx.logger.warn(`[RPC] Extension "${namespace}" already registered, overwriting`)
+			this.ctx.logger.warn('Extension "{namespace}" already registered, overwriting', { namespace })
 		}
 
 		this.extensions[namespace] = factory

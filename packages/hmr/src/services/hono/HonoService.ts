@@ -12,7 +12,6 @@ import type { Plugin } from 'vite'
 
 import api from '../../api/hono'
 import type { RenderHandler } from '../../server/types'
-import { logStore, matchesFilter } from '../logger/logStore'
 import type { SseChannel } from '../plugin-interaction'
 import type { ExtensionManifestEvent } from '../runtime-compile'
 import type { AuthGuardContext, AuthGuardKind, AuthGuardResult } from './AuthGuardService'
@@ -127,10 +126,9 @@ export class HonoService extends CoreHonoService {
 		if (this.sseBuiltinsReady) return
 		this.sseBuiltinsReady = true
 
-		const disposers = [
-			this.registerBuiltinSse('extensions', (channel) => this.streamManifestEvents(channel)),
-			this.registerBuiltinSse('logs', (channel) => this.streamLogs(channel)),
-		]
+			const disposers = [
+				this.registerBuiltinSse('extensions', (channel) => this.streamManifestEvents(channel)),
+			]
 
 		for (const dispose of disposers) this.ctx.scope.collectEffect(dispose)
 	}
@@ -155,24 +153,6 @@ export class HonoService extends CoreHonoService {
 
 		const send = (event: ExtensionManifestEvent) => channel.emit(event.type, event)
 		const unsubscribe = service.subscribeManifest(send)
-		channel.onAbort(unsubscribe)
-		return () => unsubscribe()
-	}
-
-	private streamLogs(channel: SseChannel) {
-		const filter = channel.query.get('name') ?? ''
-
-		channel.emit('ready', { type: 'ready', name: filter })
-		const send = (log: unknown) => channel.emit('log', log)
-
-		logStore
-			.snapshot()
-			.filter((l) => matchesFilter(l, filter))
-			.forEach(send)
-
-		const unsubscribe = logStore.subscribe((l) => {
-			if (matchesFilter(l, filter)) send(l)
-		})
 		channel.onAbort(unsubscribe)
 		return () => unsubscribe()
 	}
@@ -221,12 +201,7 @@ export class HonoService extends CoreHonoService {
 		const result = await service.check(input)
 		if (result.allow) return undefined
 
-		this.logger.warn('[AuthGuard] Blocked request', {
-			kind,
-			path,
-			method,
-			plugin: result.pluginName,
-		})
+		this.logger.warn('Blocked request', { kind, path, method, pluginName: result.pluginName })
 
 		return this.buildAuthDeniedResponse(c, kind, result)
 	}

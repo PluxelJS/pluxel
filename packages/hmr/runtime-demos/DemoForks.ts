@@ -10,7 +10,7 @@ import { BasePlugin, ForkablePlugin, Plugin } from '@pluxel/core'
 @Plugin({ name: 'DemoWorker', type: 'demo' })
 export class DemoWorker extends ForkablePlugin {
 	override init(): void {
-		this.ctx.logger.info({ id: this.ctx.pluginInfo.id }, '[DemoWorker] ready')
+		this.ctx.logger.info('ready', { id: this.ctx.pluginInfo.id })
 	}
 
 	ping(): string {
@@ -25,13 +25,10 @@ export class DemoWorkerConsumer extends BasePlugin {
 	}
 
 	override init(): void {
-		this.ctx.logger.info(
-			{
-				consumer: this.ctx.pluginInfo.id,
-				worker: this.worker.ctx.pluginInfo.id,
-				ping: this.worker.ping(),
-			},
-			'[DemoWorkerConsumer] injected worker',
-		)
+		this.ctx.logger.info('injected worker', {
+			consumer: this.ctx.pluginInfo.id,
+			worker: this.worker.ctx.pluginInfo.id,
+			ping: this.worker.ping(),
+		})
 	}
 }

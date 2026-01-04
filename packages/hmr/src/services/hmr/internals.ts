@@ -1,6 +1,8 @@
 import { existsSync } from 'node:fs'
 import { dirname, resolve } from 'pathe'
 import { normalizePath } from 'vite'
+import { getLogger } from '@logtape/logtape'
+import { pluxelCategories } from '@pluxel/core/logger'
 
 const nsToMs = (ns: bigint) => Number(ns) / 1e6
 
@@ -33,8 +35,9 @@ export function matchesSpecifierPattern(specifier: string, pattern: string) {
 }
 
 type BatchDebounceReason = 'debounce' | 'maxwait' | 'maxbatch'
+const batchDebouncerLogger = getLogger([...pluxelCategories.hmr, 'BatchDebouncer'])
 const defaultBatchDebounceErrorHandler = (error: unknown) => {
-	console.error('[BatchDebouncer] flush failed', error)
+	batchDebouncerLogger.error('flush failed: {error}', { error })
 }
 
 export class BatchDebouncer {

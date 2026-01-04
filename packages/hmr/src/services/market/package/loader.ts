@@ -174,11 +174,11 @@ export class PackageLoader {
 				this.state.registerRecord(record)
 				this.state.clearIssue(spec.name)
 				mutated = true
-			} catch (error) {
-				this.ctx.logger.warn({ error, spec }, '[PackageService] 恢复包失败，已跳过该条记录')
-				this.recordLoadIssue(spec, error, 'restore', entry.moduleId ?? entry.resolution.entry)
-				mutated = true
-			}
+				} catch (error) {
+					this.ctx.logger.warn('恢复包失败，已跳过该条记录: {error}', { spec, error })
+					this.recordLoadIssue(spec, error, 'restore', entry.moduleId ?? entry.resolution.entry)
+					mutated = true
+				}
 		}
 		return mutated
 	}
@@ -265,14 +265,14 @@ export class PackageLoader {
 		if (forceFresh) {
 			url.searchParams.set('_ts', `${Date.now()}-${Math.random().toString(36).slice(2)}`)
 		}
-		try {
-			return await import(url.href)
-		} catch (error) {
-			this.ctx.logger.error(error as Error, '[PackageService] 导入模块失败', { moduleId })
+			try {
+				return await import(url.href)
+			} catch (error) {
+				this.ctx.logger.error('导入模块失败 {moduleId}: {error}', { moduleId, error })
 
-			if (error instanceof Error) {
-				throw error
-			}
+				if (error instanceof Error) {
+					throw error
+				}
 			const message = typeof error === 'string' ? error : error != null ? String(error) : '未知错误'
 			const wrapped = new Error(message)
 			if (

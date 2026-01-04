@@ -177,7 +177,7 @@ export class UltraMachine {
 			this._s = from
 			if (nextAbort) nextAbort.abort()
 			if (this.abortOnStateChange) this._abort = prevAbort
-			this.logger.error(`Exception in ${step}`, e)
+			this.logger.error('Exception in', step, e)
 			throw e
 		}
 	}
@@ -305,7 +305,7 @@ export class UltraMachineSync {
 			this._s = from
 			if (nextAbort) nextAbort.abort()
 			if (this.abortOnStateChange) this._abort = prevAbort
-			this.logger.error(`Exception in ${step}`, e)
+			this.logger.error('Exception in', step, e)
 			throw e
 		}
 	}

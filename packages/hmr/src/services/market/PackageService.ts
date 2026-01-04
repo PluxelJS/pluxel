@@ -152,7 +152,7 @@ export class PackageService {
 		const stateOptions: PackageStateStoreOptions = {
 			file: stateFile,
 			onError: (error) => {
-				this.ctx.logger.warn({ error, stateFile }, '[PackageService] 持久化包状态失败')
+				this.ctx.logger.warn('持久化包状态失败: {error}', { error, stateFile })
 			},
 		}
 		if (config.state?.debounceMs !== undefined) {
@@ -599,7 +599,7 @@ export class PackageService {
 			try {
 				await this.load(name)
 			} catch (error) {
-				this.ctx.logger.warn({ name, error }, '[PackageService] 同步加载插件失败')
+				this.ctx.logger.warn('同步加载插件失败: {error}', { name, error })
 			}
 		}
 	}
@@ -628,7 +628,7 @@ export class PackageService {
 		try {
 			payload = await this.stateStore.read()
 		} catch (error) {
-			this.ctx.logger.warn({ error }, '[PackageService] 读取包状态失败')
+			this.ctx.logger.warn('读取包状态失败: {error}', { error })
 			throw error
 		}
 		const normalized = normalizeStatePayload(payload)
@@ -648,13 +648,13 @@ export class PackageService {
 		return this.ready
 	}
 
-	private onPackageInstalled(result: PackageInstallResult) {
-		this.installer.invalidateCache()
-		this.ctx.scanService.invalidateResolverCache()
-		this.ctx.logger.debug(
-			{ name: result.spec.name, target: result.target },
-			'[PackageService] 已清理解析缓存，等待重新扫描。',
-		)
+		private onPackageInstalled(result: PackageInstallResult) {
+			this.installer.invalidateCache()
+			this.ctx.scanService.invalidateResolverCache()
+			this.ctx.logger.debug('已清理解析缓存，等待重新扫描。', {
+				name: result.spec.name,
+				target: result.target,
+			})
 		this.logEvent('info', 'install:scan_cache_cleared', {
 			name: result.spec.name,
 			target: result.target,
@@ -787,14 +787,18 @@ export class PackageService {
 	) {
 		const logger = this.ctx.logger
 		if (!logger) return
-		const baseMessage = message ?? `[PackageService] ${event}`
+		const baseMessage =
+			message ??
+			(Object.prototype.hasOwnProperty.call(payload, 'error')
+				? 'PackageService {event}: {error}'
+				: 'PackageService {event}')
 		const record = { name: this.logName, event, ...payload }
 		if (level === 'info') {
-			logger.info(record, baseMessage)
+			logger.info(baseMessage, record)
 		} else if (level === 'warn') {
-			logger.warn(record, baseMessage)
+			logger.warn(baseMessage, record)
 		} else {
-			logger.error(record, baseMessage)
+			logger.error(baseMessage, record)
 		}
 	}
 

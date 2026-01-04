@@ -302,7 +302,7 @@ export class ExtensionService {
 			try {
 				listener(event)
 			} catch (error) {
-				console.error('[ExtensionService] manifest listener failed', error)
+				this.ctx.logger.error('manifest listener failed: {error}', { error })
 			}
 		}
 	}
@@ -381,7 +381,7 @@ export class ExtensionService {
 			this.dbg('compile done %s', pluginName)
 			return true
 		} catch (error) {
-			console.error('[ExtensionService] failed to compile', pluginName, error)
+			this.ctx.logger.error('failed to compile {pluginName}: {error}', { pluginName, error })
 			return false
 		}
 	}
@@ -645,7 +645,7 @@ export class ExtensionService {
 				modules: restored,
 			}
 		} catch (error) {
-			console.warn('[ExtensionService] failed to restore manifest', error)
+			this.ctx.logger.warn('failed to restore manifest: {error}', { error })
 		}
 	}
 
@@ -656,7 +656,7 @@ export class ExtensionService {
 				await mkdir(this.outDir, { recursive: true })
 				await writeFile(this.manifestPath, snapshot, 'utf-8')
 			} catch (error) {
-				console.warn('[ExtensionService] failed to persist manifest', error)
+				this.ctx.logger.warn('failed to persist manifest: {error}', { error })
 			}
 		})()
 	}

@@ -17,6 +17,11 @@
 			"require": "./dist/env.cjs",
 			"import": "./dist/env.mjs"
 		},
+		"./logger": {
+			"@pluxel/source": "./src/logger/index.ts",
+			"require": "./dist/logger.cjs",
+			"import": "./dist/logger.mjs"
+		},
 		"./services": {
 			"@pluxel/source": "./src/services/index.ts",
 			"require": "./dist/services.cjs",
@@ -46,8 +51,12 @@
 		"bench:dist": "pnpm --filter rolldown build && pnpm run build && bun run --tsconfig-override=\"./bench-tsconfig.json\" bench/pluginLifecycle.bench.ts"
 	},
 	"dependencies": {
+		"@logtape/file": "^1.3.5",
+		"@logtape/logtape": "^1.3.5",
+		"@logtape/pretty": "^1.3.5",
 		"eventure": "^0.4.2",
-		"std-env": "^3.10.0"
+		"std-env": "^3.10.0",
+		"youch": "4.1.0-beta.13"
 	},
 	"devDependencies": {
 		"@abraham/reflection": "^0.13.0",
@@ -67,6 +76,10 @@
 			"./env": {
 				"require": "./dist/env.cjs",
 				"import": "./dist/env.mjs"
+			},
+			"./logger": {
+				"require": "./dist/logger.cjs",
+				"import": "./dist/logger.mjs"
 			},
 			"./services": {
 				"require": "./dist/services.cjs",

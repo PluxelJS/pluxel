@@ -145,7 +145,7 @@ export class OptionalResolver {
 				opts.onError(error)
 			} else {
 				const name = (opts?.label ?? importer.name) || 'dynamic import'
-				callerCtx.logger.warn(error, `optional(${name}) 动态导入失败`)
+				callerCtx.logger.warn('optional({name}) 动态导入失败: {error}', { name, error })
 			}
 			return undefined
 		}
@@ -216,13 +216,13 @@ export class OptionalResolver {
 							availability: this.getAvailability(ids),
 						}
 
-						try {
-							if (cleanup) await cleanup()
-						} catch (error) {
-							callerCtx.logger.warn(error, `optional(${label}) 清理失败`)
-						}
-						cleanup = undefined
-						if (stopped) return
+							try {
+								if (cleanup) await cleanup()
+							} catch (error) {
+								callerCtx.logger.warn('optional({label}) 清理失败: {error}', { label, error })
+							}
+							cleanup = undefined
+							if (stopped) return
 
 						try {
 							const value = (multi ? current : current[0]) as any
@@ -230,13 +230,13 @@ export class OptionalResolver {
 							if (typeof ret === 'function') cleanup = ret as any
 						} catch (error) {
 							if (opts?.onError) opts.onError(error)
-							else callerCtx.logger.error(error, `optional(${label}) 执行失败`)
+							else callerCtx.logger.error('optional({label}) 执行失败: {error}', { label, error })
 						}
-					})
-					.catch((error) => {
-						callerCtx.logger.error(error, `optional(${label}) 内部异常`)
-					})
-			}
+						})
+						.catch((error) => {
+							callerCtx.logger.error('optional({label}) 内部异常: {error}', { label, error })
+						})
+				}
 
 			const offStart = watch ? callerCtx.events.on('afterStart', () => run(undefined)) : () => {}
 			const offCommit = watch ? callerCtx.events.on('afterCommit', (s) => run(s)) : () => {}
@@ -254,7 +254,7 @@ export class OptionalResolver {
 					try {
 						await cleanup?.()
 					} catch (error) {
-						callerCtx.logger.warn(error, `optional(${label}) 清理失败`)
+						callerCtx.logger.warn('optional({label}) 清理失败: {error}', { label, error })
 					}
 					cleanup = undefined
 				})
@@ -294,7 +294,10 @@ export class OptionalResolver {
 				const ids = this.normalizePluginIdentifiers(mod)
 				if (mod !== undefined && ids.length === 0) {
 					const err = new Error(`optional(${label}) 未找到 BasePlugin 导出`)
-					callerCtx.logger.warn(err)
+					callerCtx.logger.warn('optional({label}) 未找到 BasePlugin 导出: {error}', {
+						label,
+						error: err,
+					})
 					opts?.onError?.(err)
 				}
 				return attach(ids, label)
@@ -347,34 +350,32 @@ export class OptionalResolver {
 		return { state: 'idle', idle }
 	}
 
-	private logUnavailable(ids: PluginIdentifier[], label: string) {
-		const availability = this.getAvailability(ids)
-		switch (availability.state) {
-			case 'unregistered':
-				this.ctx.logger.warn(
-					{ plugins: availability.missingInContainer },
-					`optional(${label}) 未在容器中，可能尚未注册`,
-				)
-				return
-			case 'failed':
-				this.ctx.logger.info(
-					{
+		private logUnavailable(ids: PluginIdentifier[], label: string) {
+			const availability = this.getAvailability(ids)
+			switch (availability.state) {
+				case 'unregistered':
+					this.ctx.logger.warn('optional({label}) 未在容器中，可能尚未注册', {
+						label,
+						plugins: availability.missingInContainer,
+					})
+					return
+				case 'failed':
+					this.ctx.logger.info('optional({label}) 已注册但未运行（最近启动失败）', {
+						label,
 						failed: availability.failed.map((x) => ({
 							plugin: x.plugin,
 							message: x.error.message || String(x.error),
-						})),
-						idle: availability.idle.length ? availability.idle : undefined,
-					},
-					`optional(${label}) 已注册但未运行（最近启动失败）`,
-				)
-				return
-			case 'idle':
-				this.ctx.logger.info({ plugins: availability.idle }, `optional(${label}) 已注册但未运行`)
-				return
-			case 'running':
-				return
+					})),
+					idle: availability.idle.length ? availability.idle : undefined,
+					})
+					return
+				case 'idle':
+					this.ctx.logger.info('optional({label}) 已注册但未运行', { label, plugins: availability.idle })
+					return
+				case 'running':
+					return
+			}
 		}
-	}
 
 	private getRunningOptional<T extends PluginIdentifier>(
 		ctor: T,

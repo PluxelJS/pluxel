@@ -95,7 +95,7 @@ export class GraphQLService extends CoreGraphQLService {
 		try {
 			const cfg = this.config
 			if (!cfg.destination) return
-			this.logger.info('[GQty] Generating client…', { destination: cfg.destination })
+			this.logger.info('Generating GQty client…', { destination: cfg.destination })
 
 			// generateClient 支持从 schema 直接产出客户端；如需走远端 introspection，可只传 endpoint
 			await generateClient(this.schema, {
@@ -105,9 +105,9 @@ export class GraphQLService extends CoreGraphQLService {
 				scalarTypes: cfg.scalarTypes,
 			})
 
-			this.logger.info('[GQty] Client generated ✔', { destination: cfg.destination })
-		} catch (e) {
-			this.logger.error('[GQty] generateClient failed', e)
+			this.logger.info('GQty client generated', { destination: cfg.destination })
+		} catch (error) {
+			this.logger.error('generateClient failed: {error}', { error })
 		} finally {
 			this.codegenRunning = false
 		}

@@ -1,7 +1,7 @@
 import { newHttpBatchRpcResponse } from 'capnweb'
 import { Hono } from 'hono'
 
-import loggerApp from '../../services/logger/api'
+import logsApp from './logs'
 import debugApp from './debug'
 import type { AppEnv } from './env'
 import { HmrRpcApi, PluginHandle } from './rpc'
@@ -58,7 +58,7 @@ const app = new Hono<AppEnv>()
 			const api = new HmrRpcApi(c.var.plugin_ctx)
 			return await newHttpBatchRpcResponse(c.req.raw, api)
 		} catch (err) {
-			console.error('[RPC] Error handling request:', err)
+			c.var.plugin_ctx.logger.error('RPC request failed: {error}', { error: err })
 			return c.text('Internal RPC error', 500)
 		}
 	})
@@ -103,7 +103,7 @@ const app = new Hono<AppEnv>()
 	// 插件分组统一走 GraphQL（此处不再暴露 REST）
 	// ============ 调试路由 ============
 	.route('/debug', debugApp)
-	.route('/logs', loggerApp)
+	.route('/logs', logsApp)
 	.all('/graphql', (c) => c.var.plugin_ctx.internalGraphql.fetch(c.req.raw, { hono: c } as any))
 
 export default app

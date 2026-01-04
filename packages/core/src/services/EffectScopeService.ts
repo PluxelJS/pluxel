@@ -59,8 +59,7 @@ export class EffectScopeService {
 			try {
 				fn()
 			} catch (error) {
-				// 可根据项目日志方案替换下面一行
-				console.error('[EffectScopeService] dispose error:', error)
+				this.ctx.logger.error('dispose error: {error}', { error })
 			}
 		}
 	}

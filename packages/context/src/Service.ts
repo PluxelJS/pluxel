@@ -17,6 +17,7 @@ type InjectableCtor = new (ctx: Context, cfg: any) => ServiceWithCtx<Context>
 export type ServiceOptions<S extends InjectableCtor> = {
 	key?: string
 	methods?: readonly Extract<keyof ServiceInst<S>, string>[]
+	scope?: 'context' | 'root'
 }
 
 export const OVERRIDE_FLAG = Symbol('isOverride')
@@ -48,6 +49,7 @@ export function Injectable<S extends new (...args: any) => any>(ctorOrOpts: any)
 		} else {
 			if (opts.key) (ctor as any).key = opts.key
 			if (opts.methods) (ctor as any).methods = opts.methods
+			if (opts.scope) (ctor as any).scope = opts.scope
 			Context.registerService(ctor)
 		}
 	}
@@ -62,6 +64,9 @@ export function OverrideOf<S extends InjectableCtor>(original: ServiceClass<S>) 
 		// 打个标记，让 Injectable 跳过 registerService
 		;(overrideCtor as any)[OVERRIDE_FLAG] = true
 		;(overrideCtor as any).key = (original as any).key
+		if ((overrideCtor as any).scope === undefined) {
+			;(overrideCtor as any).scope = (original as any).scope
+		}
 		Context.overrideService(original, overrideCtor)
 	}
 }

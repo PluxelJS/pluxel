@@ -53,7 +53,10 @@ export class LifecycleManager {
 		ref.subscribe({
 			error: (err) => {
 				const label = typeof id === 'function' ? (id as Function).name : String(id)
-				this.ctx.logger.error(err, `[actor:${label}] unhandled error`)
+				this.ctx.logger.error('actor {actor} unhandled error: {error}', {
+					actor: label,
+					error: err,
+				})
 			},
 		})
 		ref.start()

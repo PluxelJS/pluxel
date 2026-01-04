@@ -82,15 +82,13 @@ export class AuthGuardService {
 			removeFromScope: () => {},
 		}
 
-		active.removeFromScope = this.ctx.scope.collectEffect(() => this.clearGuard(active))
-		this.guard = active
+			active.removeFromScope = this.ctx.scope.collectEffect(() => this.clearGuard(active))
+			this.guard = active
 
-		this.logger.info(existing ? '[AuthGuard] Guard updated' : '[AuthGuard] Guard registered', {
-			pluginName: pluginId,
-		})
+			this.logger.info(existing ? 'Guard updated' : 'Guard registered')
 
-		return () => this.clearGuard(active)
-	}
+			return () => this.clearGuard(active)
+		}
 
 	unregister(): void {
 		this.clearGuard()
@@ -121,11 +119,12 @@ export class AuthGuardService {
 				pluginName: active.pluginName,
 				redirectPath: active.redirectPath,
 			}
-		} catch (err: any) {
-			this.logger.error('[AuthGuard] Guard threw', {
-				pluginName: active.pluginName,
-				kind: input.kind,
-				path: input.path,
+			} catch (err: any) {
+				this.logger.error('Guard threw', {
+					error: err,
+					pluginId: active.pluginName,
+					kind: input.kind,
+					path: input.path,
 				method: input.method,
 				reason: err?.message ?? String(err),
 			})
@@ -146,8 +145,8 @@ export class AuthGuardService {
 		current.removeFromScope = () => {}
 		this.guard = undefined
 
-		if (!opts?.silent) {
-			this.logger.info('[AuthGuard] Guard unregistered', { pluginName: current.pluginName })
+			if (!opts?.silent) {
+				this.logger.info('Guard unregistered', { pluginId: current.pluginName })
+			}
 		}
 	}
-}

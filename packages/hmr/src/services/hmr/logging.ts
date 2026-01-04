@@ -1,4 +1,4 @@
-import { createDebug, type Debugger, type DebugOptions } from 'obug'
+import { getLogger, type Logger as LogtapeLogger } from '@logtape/logtape'
 import {
 	array,
 	type InferOutput,
@@ -47,7 +47,7 @@ export interface ResolvedHMRLogConfig {
 
 export const DEFAULT_LOG_CONFIG: ResolvedHMRLogConfig = {
 	useColors: true,
-	// 细粒度调试默认关闭；需要时设置 DEBUG=pluxel:hmr:* 或配置 debugNamespaces
+	// 细粒度调试默认关闭；需要时配置 debugNamespaces，并在宿主的 LogTape configure() 中将对应 category 的 lowestLevel 设为 debug。
 	debugNamespaces: [],
 }
 
@@ -66,100 +66,16 @@ export function resolveHmrLogConfig(input?: HMRLogConfig): ResolvedHMRLogConfig 
 	}
 }
 
-export function toDebugNamespaceString(list?: HMRDebugNamespace[]): string | undefined {
-	if (!list?.length) return undefined
-	return list.join(',')
+export type HmrDebugLogger = LogtapeLogger
+
+function namespaceToCategory(namespace: string): readonly [string, ...string[]] {
+	const parts = namespace.split(':').filter(Boolean)
+	if (parts.length === 0) return ['pluxel']
+	return parts as readonly [string, ...string[]]
 }
 
-/* -------------------------------- obug 工厂 -------------------------------- */
-
-// ANSI 颜色码
-const ANSI = {
-	reset: '\u001B[0m',
-	bold: '\u001B[1m',
-	dim: '\u001B[2m',
-	// 前景色
-	yellow: '\u001B[33m',
-	brightYellow: '\u001B[93m',
-	cyan: '\u001B[36m',
-	brightCyan: '\u001B[96m',
-	green: '\u001B[32m',
-	brightGreen: '\u001B[92m',
-	magenta: '\u001B[35m',
-	brightMagenta: '\u001B[95m',
-	gray: '\u001B[90m',
-} as const
-
-/**
- * 创建 HMR 专用的 debug 实例
- * - 自定义 formatters：%t（时间高亮）、%p（路径高亮）、%n（数字高亮）、%b（布尔高亮）
- * - 去掉末尾的 +diff 后缀（冗余）
- */
-export function createHmrDebug(namespace: string, useColors: boolean): Debugger {
-	const opts: DebugOptions = {
-		useColors,
-		formatters: {
-			// %t - 时间（毫秒），高亮黄色
-			t(v: number) {
-				const formatted = typeof v === 'number' ? v.toFixed(1) : String(v)
-				return this.useColors ? `${ANSI.brightYellow}${formatted}ms${ANSI.reset}` : `${formatted}ms`
-			},
-			// %T - 时间（毫秒），高亮但不带 ms 后缀
-			T(v: number) {
-				const formatted = typeof v === 'number' ? v.toFixed(3) : String(v)
-				return this.useColors ? `${ANSI.brightYellow}${formatted}${ANSI.reset}` : formatted
-			},
-			// %p - 路径，高亮青色
-			p(v: string) {
-				return this.useColors ? `${ANSI.cyan}${v}${ANSI.reset}` : v
-			},
-			// %n - 数字，高亮绿色
-			n(v: number) {
-				return this.useColors ? `${ANSI.brightGreen}${v}${ANSI.reset}` : String(v)
-			},
-			// %b - 布尔，高亮
-			b(v: boolean) {
-				if (!this.useColors) return String(v)
-				return v ? `${ANSI.green}true${ANSI.reset}` : `${ANSI.gray}false${ANSI.reset}`
-			},
-			// %l - 列表（数组），每项一行
-			l(v: string[]) {
-				if (!Array.isArray(v) || v.length === 0) return '(empty)'
-				const indent = '    '
-				const items = v.map((item) => {
-					return this.useColors ? `${indent}${ANSI.cyan}${item}${ANSI.reset}` : `${indent}${item}`
-				})
-				return `\n${items.join('\n')}`
-			},
-		},
-		formatArgs(this: Debugger, _diff: number, args: [string, ...unknown[]]) {
-			if (this.useColors) {
-				const c = this.color as number
-				const colorCode = `\u001B[3${c < 8 ? c : `8;5;${c}`}`
-				const prefix = `  ${colorCode};1m${this.namespace} ${ANSI.reset}`
-				args[0] = prefix + args[0].split('\n').join(`\n${prefix}`)
-				// 不添加 +diff 后缀
-			} else {
-				args[0] = `${this.namespace} ${args[0]}`
-			}
-		},
-	}
-
-	return createDebug(namespace, opts)
-}
-
-/**
- * 创建一组相关的 debug 实例
- */
-export function createHmrDebugGroup<T extends Record<string, string>>(
-	namespaces: T,
-	useColors: boolean,
-): { [K in keyof T]: Debugger } {
-	const result = {} as { [K in keyof T]: Debugger }
-	for (const [key, ns] of Object.entries(namespaces)) {
-		result[key as keyof T] = createHmrDebug(ns, useColors)
-	}
-	return result
+export function getHmrDebugLogger(namespace: string): HmrDebugLogger {
+	return getLogger(namespaceToCategory(namespace))
 }
 
 /* --------------------------- 计时与归因 --------------------------- */
@@ -171,7 +87,7 @@ const bump = (m: NumMap, k: string, v: number) => m.set(k, (m.get(k) ?? 0) + v)
 const nsToMs = (ns: bigint) => Number(ns) / 1e6
 
 export class TimingTracker {
-	private readonly debugEntry
+	private readonly debugEntry: HmrDebugLogger | null
 	private readonly buckets: Record<TimingBucket, NumMap> = {
 		transform: new Map<string, number>(),
 		evaluate: new Map<string, number>(),
@@ -180,11 +96,11 @@ export class TimingTracker {
 
 	constructor(
 		private readonly options: {
-			useColors: boolean
 			formatId: (id: string) => string
+			debugEntry?: HmrDebugLogger | null
 		},
 	) {
-		this.debugEntry = createHmrDebug('pluxel:hmr:time:entry', options.useColors)
+		this.debugEntry = options.debugEntry ?? null
 	}
 
 	clear() {
@@ -202,10 +118,12 @@ export class TimingTracker {
 
 	record(kind: TimingBucket, id: string, durationMs: number) {
 		bump(this.buckets[kind], id, durationMs)
-		if (this.debugEntry.enabled) {
-			const total = this.buckets[kind].get(id) ?? durationMs
-			this.debugEntry('%s %p %t (agg=%t)', kind, this.options.formatId(id), durationMs, total)
-		}
+		if (!this.debugEntry) return
+		const total = this.buckets[kind].get(id) ?? durationMs
+		this.debugEntry.debug(
+			(l) =>
+				l`${kind} ${this.options.formatId(id)} ${durationMs.toFixed(3)}ms (agg=${total.toFixed(3)}ms)`,
+		)
 	}
 
 	top(kind: TimingBucket, n = 5) {
@@ -227,15 +145,25 @@ const formatTopEntries = (
 	entries: Array<[string, number]>,
 	prettyId: PrettyIdFn,
 	marker?: (id: string) => string | undefined,
-): string => {
-	if (!entries.length) return '    (none)'
-	return entries
-		.map(([id, ms], i) => {
-			const tag = marker?.(id)
-			const suffix = tag ? ` [${tag}]` : ''
-			return `    ${i + 1}. ${prettyId(id)} ${ms.toFixed(1)}ms${suffix}`
-		})
-		.join('\n')
+): string[] => {
+	if (!entries.length) return ['    (none)']
+
+	const msStrings = entries.map(([, ms]) => ms.toFixed(1))
+	const msWidth = Math.max(...msStrings.map((s) => s.length))
+	const rankWidth = String(entries.length).length
+	const tagWidth = Math.max(
+		...entries.map(([id]) => (marker?.(id) ?? '').length),
+		0,
+	)
+
+	return entries.map(([id, ms], i) => {
+		const tag = marker?.(id)
+		const tagCol = tagWidth ? (tag ? tag.padEnd(tagWidth) : ''.padEnd(tagWidth)) : ''
+		const rank = String(i + 1).padStart(rankWidth)
+		const msStr = ms.toFixed(1).padStart(msWidth)
+		const tagSep = tagWidth ? `  ${tagCol}  ` : '  '
+		return `    ${rank}. ${msStr}ms${tagSep}${prettyId(id)}`
+	})
 }
 
 export const formatAttributionReport = (params: {
@@ -244,22 +172,46 @@ export const formatAttributionReport = (params: {
 	timing: TimingTracker
 	prettyId: PrettyIdFn
 }) => {
+	const lines = buildAttributionLines(params)
+	return lines.join('\n')
+}
+
+export function buildAttributionLines(params: {
+	changed: string
+	targets: string[]
+	timing: TimingTracker
+	prettyId: PrettyIdFn
+}): string[] {
 	const targetSet = new Set(params.targets)
 	const marker = (id: string) =>
 		targetSet.has(id) ? 'target' : id === params.changed ? 'changed' : undefined
 
 	const transformTop = params.timing.top('transform', 5)
-	const evaluateTop = params.timing.top('evaluate', 3)
-	const injectTop = params.timing.top('inject', 3)
+	const evaluateTop = params.timing.top('evaluate', 5)
+	const injectTop = params.timing.top('inject', 5)
 
-	const lines = [
+	return [
 		`[HMR] attribution: ${params.prettyId(params.changed)} → ${params.targets.length} targets`,
-		'  transform:',
-		formatTopEntries(transformTop, params.prettyId, marker),
-		'  evaluate:',
-		formatTopEntries(evaluateTop, params.prettyId),
-		'  inject:',
-		formatTopEntries(injectTop, params.prettyId),
+		'  transform (top 5):',
+		...formatTopEntries(transformTop, params.prettyId, marker),
+		'  evaluate (top 5):',
+		...formatTopEntries(evaluateTop, params.prettyId, marker),
+		'  inject (top 5):',
+		...formatTopEntries(injectTop, params.prettyId, marker),
 	]
-	return lines.join('\n')
+}
+
+export function logAttributionReport(
+	logger: Pick<
+		LogtapeLogger,
+		'trace' | 'debug' | 'info' | 'warn' | 'error' | 'fatal'
+	>,
+	params: Parameters<typeof buildAttributionLines>[0],
+	opts: { level?: 'trace' | 'debug' | 'info' | 'warn' | 'error' | 'fatal' } = {},
+) {
+	const level = opts.level ?? 'info'
+	const log = logger[level] as unknown as (message: string) => void
+	// Use the string overload so the message is printed as-is (no util.inspect quoting),
+	// while keeping it a single log record.
+	log.call(logger, formatAttributionReport(params))
 }

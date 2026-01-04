@@ -454,7 +454,7 @@ export class PluginService {
 				// ignore: events service may be overridden
 			}
 			failed.add(id)
-			this.ctx.logger.error(err, `解析 ${String(id)} 失败`)
+			this.ctx.logger.with({ error: err }).error`解析 ${String(id)} 失败`
 			return
 		}
 
@@ -467,14 +467,14 @@ export class PluginService {
 			this.injectConfig(instance)
 		} catch (error) {
 			const logger = pluginCtx.logger ?? this.ctx.logger
-			logger.warn(error, `注入配置到 ${String(id)} 失败`)
+			logger.with({ error }).warn`注入配置到 ${String(id)} 失败`
 		}
 
 		try {
 			await this.lifecycle.startLifecycle(id, instance, this.resolveStartTimeoutMs(instance))
 		} catch (error) {
 			const logger = pluginCtx.logger ?? this.ctx.logger
-			logger.error(error, `启动 ${String(id)} 失败`)
+			logger.with({ error }).error`启动 ${String(id)} 失败`
 			try {
 				await pluginCtx.scope.disposeAll()
 			} catch {
@@ -505,7 +505,7 @@ export class PluginService {
 		const next = this._commitLock
 			.then(() => this.executeCommit())
 			.catch((error) => {
-				this.ctx.logger.error(error, 'commit 内部异常')
+				this.ctx.logger.with({ error }).error`commit 内部异常`
 				return createErr(error)
 			})
 
@@ -518,7 +518,7 @@ export class PluginService {
 		if (!action.ok) {
 			action.err.ret.undo()
 			this.pruneDetachedSingletons()
-			this.ctx.logger.error(action.err.err, '插件在依赖项解析时失败')
+			this.ctx.logger.with({ error: action.err.err }).error`插件在依赖项解析时失败`
 			return createErr(action.err.err)
 		}
 
@@ -575,15 +575,12 @@ export class PluginService {
 				return createOk({ container, changes })
 			}
 
-			this.ctx.logger.info(
-				{
-					remove: [...removed].map(String),
-					replace: [...replaced].map(String),
-					add: [...added].map(String),
-					restart: restartRequested.size ? [...restartRequested].map(String) : undefined,
-				},
-				'插件变更',
-			)
+			this.ctx.logger.info('插件变更', () => ({
+				remove: [...removed].map(String),
+				replace: [...replaced].map(String),
+				add: [...added].map(String),
+				restart: restartRequested.size ? [...restartRequested].map(String) : undefined,
+			}))
 
 			await this.applyTeardown(oldContainer, toStop)
 
@@ -631,7 +628,7 @@ export class PluginService {
 			if (failed.size) {
 				for (const id of failed) this.builderSingletons.delete(id as any)
 				for (const id of failed) this.detachedSingletons.delete(id as any)
-				this.ctx.logger.warn({ failed: [...failed].map(String) }, '以下插件启动失败')
+				this.ctx.logger.warn('以下插件启动失败', { failed: [...failed].map(String) })
 				this.ctx.emit('commitFailed', failed)
 			}
 

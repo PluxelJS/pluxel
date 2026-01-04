@@ -1,127 +1,31 @@
-// src/components/LiveLog.tsx
-
 import { useElementSize } from '@mantine/hooks'
 import { LazyLog, ScrollFollow } from '@melloware/react-logviewer'
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { createAuthAwareFetch, useHmrWebClient } from '../rpc'
+import type { LogFilter, LogRecord as UiLogRecord } from '@pluxel/hmr-web'
+import { defaultOnAuthBlocked } from '@pluxel/hmr-web'
+import { createAuthAwareFetch } from '../rpc'
 import { createPrettyPrinter } from './pretty'
-
-const prettyWithName = createPrettyPrinter({
-	forceColor: true,
-	ignoreKeys: ['caller'],
-	withDate: true,
-	withMillis: true,
-	withIcons: false,
-	extrasStyle: 'kv',
-	extrasMaxLen: 120,
-	nameMax: 24,
-	showName: true,
-})
 
 interface Props {
 	module?: string
 	showName?: boolean
+	filter?: LogFilter
 }
 
 const SNAPSHOT_MAX = 1000 // 首屏最多加载多少行历史
-const RAW_RING_CAP = 4000 // 原始环容量（原始行）
-const VIEW_RING_CAP = 4000 // 展示环容量（wrap 后的行）
+const RAW_RING_CAP = 4000 // 原始环容量（原始记录）
+const VIEW_RING_CAP = 4000 // 展示环容量（格式化后的行）
 const FLUSH_MS = 80 // 合批最迟刷新间隔
-const SEEN_TTL_MS = 3000 // 去重时间窗：快照与首段 SSE 重叠
 
 const baseFetch =
 	typeof globalThis.fetch === 'function' ? globalThis.fetch.bind(globalThis) : undefined
 const authFetch = baseFetch ? createAuthAwareFetch(baseFetch) : undefined
 
-/* ================= 等宽字符宽度测量（更稳的平均法） ================= */
 const MONO_FONT = '13px ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace'
-const LOG_SIDE_PADDING = 32 // LazyLog 视图左右内边距（估算用于列数换算）
-const MIN_COLS = 8
-
-type IdleDeadlineLike = { didTimeout: boolean; timeRemaining: () => number }
-type IdleCallbackWindow = Window & {
-	requestIdleCallback?: (
-		cb: (deadline: IdleDeadlineLike) => void,
-		opts?: { timeout?: number },
-	) => number
-	cancelIdleCallback?: (handle: number) => void
-}
-
-function measureMonoCharWidth(): number {
-	if (typeof document === 'undefined') return 7
-	const canvas = document.createElement('canvas')
-	const ctx = canvas.getContext('2d')!
-	ctx.font = MONO_FONT
-	const sample = '00000000000000000000000000000000000000000000000000' // 50
-	return ctx.measureText(sample).width / sample.length
-}
-
-/* ================= ANSI 安全硬换行（CJK 宽字符适配） ================= */
-function isFullwidthCP(cp: number): boolean {
-	return (
-		(cp >= 0x1100 && cp <= 0x115f) ||
-		(cp >= 0x2e80 && cp <= 0xa4cf) ||
-		(cp >= 0xac00 && cp <= 0xd7a3) ||
-		(cp >= 0xf900 && cp <= 0xfaff) ||
-		(cp >= 0xfe10 && cp <= 0xfe6f) ||
-		(cp >= 0xff00 && cp <= 0xff60) ||
-		(cp >= 0xffe0 && cp <= 0xffe6)
-	)
-}
-function hardWrapAnsi(line: string, cols: number): string[] {
-	if (cols <= 0 || line.length === 0) return [line]
-	const out: string[] = []
-	let buf = ''
-	let col = 0
-	const len = line.length
-
-	for (let i = 0; i < len; ) {
-		const ch = line.charCodeAt(i)
-
-		// ANSI CSI: \x1b[ ... <final>
-		if (ch === 0x1b && i + 1 < len && line.charCodeAt(i + 1) === 0x5b) {
-			let j = i + 2
-			while (j < len) {
-				const c = line.charCodeAt(j)
-				if (c >= 0x40 && c <= 0x7e) {
-					j++
-					break
-				}
-				j++
-			}
-			buf += line.slice(i, j)
-			i = j
-			continue
-		}
-
-		// 普通字符（含代理对）
-		let cp = ch
-		let step = 1
-		if (ch >= 0xd800 && ch <= 0xdbff && i + 1 < len) {
-			const ch2 = line.charCodeAt(i + 1)
-			if (ch2 >= 0xdc00 && ch2 <= 0xdfff) {
-				cp = (ch - 0xd800) * 0x400 + (ch2 - 0xdc00) + 0x10000
-				step = 2
-			}
-		}
-		const char = line.substr(i, step)
-		const w = isFullwidthCP(cp) ? 2 : 1
-		if (col + w > cols) {
-			out.push(buf)
-			buf = ''
-			col = 0
-		}
-		buf += char
-		col += w
-		i += step
-	}
-	if (buf) out.push(buf)
-	return out
-}
 
 /* ================= 轻量环形缓冲（O(1) push + 有序遍历） ================= */
-function createRing(cap = 2000) {
-	const buf = new Array<string>(cap)
+function createRing<T>(cap = 2000) {
+	const buf = new Array<T>(cap)
 	let start = 0
 	let len = 0
 	return {
@@ -129,7 +33,7 @@ function createRing(cap = 2000) {
 			start = 0
 			len = 0
 		},
-		push(s: string) {
+		push(s: T) {
 			if (len < cap) {
 				buf[(start + len) % cap] = s
 				len++
@@ -138,61 +42,67 @@ function createRing(cap = 2000) {
 				start = (start + 1) % cap
 			}
 		},
-		toArray(): string[] {
+		toArray(): T[] {
 			if (len === 0) return []
 			if (start + len <= cap) return buf.slice(start, start + len)
 			return buf.slice(start).concat(buf.slice(0, (start + len) % cap))
 		},
+	}
+}
+
+function createStringRing(cap = 2000) {
+	const base = createRing<string>(cap)
+	return {
+		...base,
 		join(sep = '\n'): string {
-			if (len === 0) return ''
-			if (start + len <= cap) return buf.slice(start, start + len).join(sep)
-			return buf
-				.slice(start)
-				.concat(buf.slice(0, (start + len) % cap))
-				.join(sep)
+			return base.toArray().join(sep)
 		},
 	}
 }
 
 /* ================== LiveLog ================== */
-const prettyNoName = createPrettyPrinter({
-	forceColor: true,
-	ignoreKeys: ['caller'],
-	withDate: true,
-	withMillis: true,
-	withIcons: false,
-	extrasStyle: 'kv',
-	extrasMaxLen: 120,
-	nameMax: 24,
-	showName: false,
-})
-
-export function LiveLog({ module, showName = true }: Props) {
-	const pretty = showName ? prettyWithName : prettyNoName
-	const { ref, height, width } = useElementSize()
+export function LiveLog({ module, showName = true, filter }: Props) {
+	const { ref, height } = useElementSize()
 	const [text, setText] = useState('')
-	const stream = useHmrWebClient().sse
 
-	// —— 列数估算（与组件换行解耦） —— //
-	const [cols, setCols] = useState<number>(0)
-	const charWRef = useRef<number>(0)
-	useEffect(() => {
-		if (!charWRef.current) charWRef.current = measureMonoCharWidth()
-		const gutter = LOG_SIDE_PADDING
-		const cw = charWRef.current || 7
-		const nextCols = Math.max(MIN_COLS, Math.floor(Math.max(0, width - gutter) / cw))
-		setCols((prev) => (prev === nextCols ? prev : nextCols))
-	}, [width])
+	const filterQuery = useMemo(() => {
+		const params = new URLSearchParams()
+		const name = filter?.name ?? module
+		if (name) params.set('name', name)
+		if (filter?.pluginId) params.set('pluginId', filter.pluginId)
+		if (filter?.context) params.set('context', filter.context)
+		if (filter?.displayName) params.set('displayName', filter.displayName)
+		if (filter?.category) params.set('category', filter.category)
+		return params.toString()
+	}, [module, filter?.name, filter?.pluginId, filter?.context, filter?.displayName, filter?.category])
 
 	// —— 两层环：原始行（raw）与展示行（view） —— //
-	const rawRingRef = useRef(createRing(RAW_RING_CAP))
-	const viewRingRef = useRef(createRing(VIEW_RING_CAP))
+	const rawRingRef = useRef(createRing<UiLogRecord>(RAW_RING_CAP))
+	const viewRingRef = useRef(createStringRing(VIEW_RING_CAP))
+	const lastIdRef = useRef<number>(0)
+	const bootIdRef = useRef<string | null>(null)
 
-	// —— 去重 TTL（快照+首段 SSE 重叠；严格模式重复副作用） —— //
-	const seenRef = useRef(new Map<string, number>())
-	const sweepSeen = (now: number) => {
-		for (const [k, exp] of seenRef.current) if (exp <= now) seenRef.current.delete(k)
-	}
+	const mode = useMemo(() => {
+		const scoped =
+			Boolean(module) ||
+			Boolean(filter?.pluginId) ||
+			Boolean(filter?.context) ||
+			Boolean(filter?.displayName) ||
+			Boolean(filter?.name)
+		return scoped ? 'scoped' : 'global'
+	}, [module, filter?.pluginId, filter?.context, filter?.displayName, filter?.name])
+
+	const pretty = useMemo(() => {
+		return createPrettyPrinter({
+			mode,
+			// Scoped views (e.g. plugin detail) already provide context, so avoid repeating it.
+			showName: mode === 'global' ? showName : false,
+		})
+	}, [mode, showName])
+	const prettyRef = useRef(pretty)
+	useEffect(() => {
+		prettyRef.current = pretty
+	}, [pretty])
 
 	// —— 合批刷入（把“展示行”批量落入 viewRing，再 setText） —— //
 	const pendingViewRef = useRef<string[]>([])
@@ -208,7 +118,7 @@ export function LiveLog({ module, showName = true }: Props) {
 		const v = viewRingRef.current
 		for (let i = 0; i < pendingViewRef.current.length; i++) v.push(pendingViewRef.current[i])
 		pendingViewRef.current.length = 0
-		setText(v.join())
+		setText(v.join('\n'))
 	}
 	const scheduleFlush = () => {
 		if (rafRef.current == null) {
@@ -223,68 +133,45 @@ export function LiveLog({ module, showName = true }: Props) {
 	}
 
 	// —— 入口：接入一条“原始行” —— //
-	const pushRaw = (rawLine: string) => {
-		const now = Date.now()
-		sweepSeen(now)
-		if (seenRef.current.has(rawLine)) return
-		seenRef.current.set(rawLine, now + SEEN_TTL_MS)
+	const pushRecord = (rec: UiLogRecord) => {
+		if (typeof rec?.id === 'number' && rec.id > 0) {
+			if (rec.id <= lastIdRef.current) return
+			lastIdRef.current = rec.id
+		}
 
-		rawRingRef.current.push(rawLine)
+		rawRingRef.current.push(rec)
 
-		const prettyLine = pretty.formatLine(rawLine)
-		const lines = cols > 0 ? hardWrapAnsi(prettyLine, cols) : [prettyLine]
-		for (let i = 0; i < lines.length; i++) pendingViewRef.current.push(lines[i])
+		const prettyText = prettyRef.current.format(rec)
+		pendingViewRef.current.push(prettyText)
 		scheduleFlush()
 	}
 
-	// —— 列数变化时，仅“本地重排展示环”，不触发网络/重连 —— //
-	const rebuildIdleRef = useRef<number | null>(null)
+	// —— pretty 变化时，仅“本地重排展示环”，不触发网络/重连 —— //
 	useEffect(() => {
-		// 取消上一个重排
-		if (rebuildIdleRef.current != null) {
-			const w = window as IdleCallbackWindow
-			if (w.cancelIdleCallback) w.cancelIdleCallback(rebuildIdleRef.current)
-			else clearTimeout(rebuildIdleRef.current)
-			rebuildIdleRef.current = null
+		// 取消上一次 flush，避免旧行混入
+		if (rafRef.current != null) {
+			cancelAnimationFrame(rafRef.current)
+			rafRef.current = null
 		}
-		// 重新 wrap raw → view
-		const run = () => {
-			const raw = rawRingRef.current.toArray()
-			const view = viewRingRef.current
-			view.clear()
-			for (let i = 0; i < raw.length; i++) {
-				const prettyLine = pretty.formatLine(raw[i])
-				const lines = cols > 0 ? hardWrapAnsi(prettyLine, cols) : [prettyLine]
-				for (let j = 0; j < lines.length; j++) view.push(lines[j])
-			}
-			setText(view.join())
+		if (flushTimerRef.current) {
+			clearTimeout(flushTimerRef.current)
+			flushTimerRef.current = null
 		}
-		const w = window as IdleCallbackWindow
-		if (w.requestIdleCallback) {
-			rebuildIdleRef.current = w.requestIdleCallback(() => run(), { timeout: 200 })
-		} else {
-			rebuildIdleRef.current = window.setTimeout(run, 0)
-		}
-		return () => {
-			if (rebuildIdleRef.current != null) {
-				const w = window as IdleCallbackWindow
-				if (w.cancelIdleCallback) w.cancelIdleCallback(rebuildIdleRef.current)
-				else clearTimeout(rebuildIdleRef.current)
-				rebuildIdleRef.current = null
-			}
-		}
-	}, [cols, showName])
+		pendingViewRef.current.length = 0
 
-	// —— 快照 + SSE（仅跟随 module 变化；不受 cols 影响） —— //
+		const raw = rawRingRef.current.toArray()
+		const view = viewRingRef.current
+		view.clear()
+		for (let i = 0; i < raw.length; i++) view.push(prettyRef.current.format(raw[i] as any))
+		setText(view.join('\n'))
+	}, [pretty])
+
+	// —— 快照 + SSE（仅跟随 filterQuery 变化） —— //
 	const abortRef = useRef<AbortController | null>(null)
-	const didInitRef = useRef(false) // dev 下规避严格模式二次执行
+	const authProbeInFlightRef = useRef<Promise<boolean> | null>(null)
+	const lastAuthProbeAtRef = useRef<number>(0)
 
 	useEffect(() => {
-		if (process.env.NODE_ENV !== 'production') {
-			if (didInitRef.current) return
-			didInitRef.current = true
-		}
-
 		// reset state
 		if (abortRef.current) {
 			abortRef.current.abort()
@@ -293,67 +180,123 @@ export function LiveLog({ module, showName = true }: Props) {
 		rawRingRef.current.clear()
 		viewRingRef.current.clear()
 		pendingViewRef.current.length = 0
-		seenRef.current.clear()
+		lastIdRef.current = 0
+		bootIdRef.current = null
 		setText('')
 
 		// —— 拉快照 —— //
-		const params = new URLSearchParams()
-		if (module) params.set('name', module)
+		const params = new URLSearchParams(filterQuery)
+		params.set('limit', String(SNAPSHOT_MAX))
 		const ac = new AbortController()
 		abortRef.current = ac
 
-		if (authFetch) {
+		const probeAuthBlocked = async (url: string): Promise<boolean> => {
+			if (!baseFetch) return false
+			const now = Date.now()
+			if (now - lastAuthProbeAtRef.current < 1500) return false
+			lastAuthProbeAtRef.current = now
+			try {
+				const res = await baseFetch('/api/auth/meta', {
+					method: 'GET',
+					headers: { 'Cache-Control': 'no-store' },
+				})
+				if (!res.ok) return false
+				const payload = (await res.json()) as any
+				if (!payload || payload.enabled !== true) return false
+				if (payload.authenticated === true) return false
+				const redirectPath =
+					typeof payload.redirectPath === 'string' && payload.redirectPath ? payload.redirectPath : undefined
+				defaultOnAuthBlocked({ status: 401, url, redirectPath })
+				return true
+			} catch {
+				return false
+			}
+		}
+
+		const connectLogsStream = (afterId?: number) => {
+			const params = new URLSearchParams(filterQuery)
+			if (afterId && afterId > 0) params.set('afterId', String(afterId))
+			const url = `/api/logs/stream?${params.toString()}`
+			const es = new EventSource(url)
+
+			es.addEventListener('ready', (ev) => {
+				let payload: any
+				try {
+					payload = JSON.parse((ev as MessageEvent).data)
+				} catch {
+					return
+				}
+				const nextBootId = typeof payload?.bootId === 'string' ? payload.bootId : null
+				if (!nextBootId) return
+				if (bootIdRef.current && bootIdRef.current !== nextBootId) {
+					rawRingRef.current.clear()
+					viewRingRef.current.clear()
+					pendingViewRef.current.length = 0
+					lastIdRef.current = 0
+					setText('')
+				}
+				bootIdRef.current = nextBootId
+			})
+
+			es.addEventListener('log', (ev) => {
+				let payload: any
+				try {
+					payload = JSON.parse((ev as MessageEvent).data)
+				} catch {
+					return
+				}
+				if (!payload || typeof payload !== 'object') return
+				pushRecord(payload as UiLogRecord)
+			})
+
+			es.onerror = () => {
+				if (authProbeInFlightRef.current) return
+				authProbeInFlightRef.current = probeAuthBlocked(url).finally(() => {
+					authProbeInFlightRef.current = null
+				})
+				void authProbeInFlightRef.current.then((blocked) => {
+					if (blocked) es.close()
+				})
+			}
+
+			return es
+		}
+
+		let es: EventSource | null = null
+		if (!authFetch) {
+			abortRef.current = null
+			es = connectLogsStream()
+		} else {
+			// Connect after snapshot to minimize duplicates and allow server-side replay via afterId.
 			authFetch(`/api/logs/latest?${params.toString()}`, { signal: ac.signal })
-				.then((r) => (r.ok ? r.text() : Promise.reject(new Error(`HTTP ${r.status}`))))
-				.then((t) => {
-					const lines = t.split('\n').filter(Boolean)
-					const start = Math.max(0, lines.length - SNAPSHOT_MAX)
-					for (let i = start; i < lines.length; i++) pushRaw(lines[i])
+				.then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
+				.then((payload) => {
+					const bootId = (payload as any)?.bootId
+					if (typeof bootId === 'string') bootIdRef.current = bootId
+					const records = (payload as any)?.records
+					if (!Array.isArray(records)) return
+					const start = Math.max(0, records.length - SNAPSHOT_MAX)
+					for (let i = start; i < records.length; i++) {
+						const rec = records[i] as UiLogRecord
+						if (!rec || typeof rec !== 'object') continue
+						pushRecord(rec)
+					}
 				})
 				.catch(() => undefined)
 				.finally(() => {
 					abortRef.current = null
+					es = connectLogsStream(lastIdRef.current)
 				})
-		} else {
-			abortRef.current = null
 		}
-
-		// —— 连接 SSE —— //
-		const off = stream.logs.on((msg) => {
-			const payload = msg.payload
-			if (module && payload && typeof payload === 'object') {
-				const record = payload as Record<string, unknown>
-				const pluginId = typeof record.pluginId === 'string' ? record.pluginId : undefined
-				const context = typeof record.context === 'string' ? record.context : undefined
-				const name = typeof record.name === 'string' ? record.name : undefined
-				if (pluginId !== module && context !== module && name !== module) return
-			}
-			const enriched =
-				payload && typeof payload === 'object'
-					? {
-							level: 'info',
-							time: new Date().toISOString(),
-							...(payload as Record<string, unknown>),
-						}
-					: { level: 'info', time: new Date().toISOString(), msg: String(payload ?? '') }
-			try {
-				pushRaw(JSON.stringify(enriched))
-			} catch {
-				// ignore
-			}
-		}, 'log')
 
 		return () => {
 			if (abortRef.current) {
 				abortRef.current.abort()
 				abortRef.current = null
 			}
-			off()
-			if (process.env.NODE_ENV !== 'production') {
-				didInitRef.current = false
-			}
+			es?.close()
 		}
-	}, [module, showName, stream])
+	}, [filterQuery])
 
 	// —— 渲染 —— //
 	const logHeight = useMemo(() => Math.max(120, height || 0), [height])
@@ -375,15 +318,15 @@ export function LiveLog({ module, showName = true }: Props) {
 					startFollowing
 					render={({ follow, onScroll }) => (
 						<LazyLog
-							key={module ?? 'all'}
+							key={filterQuery || 'all'}
 							height={logHeight}
 							text={text}
 							external
 							follow={follow}
 							onScroll={onScroll}
 							selectableLines
-							wrapLines={false} // 自己做了硬换行
-							rowHeight={20}
+							wrapLines
+							rowHeight={19}
 							enableLineNumbers={false}
 							enableGutters={false}
 							style={{
@@ -394,7 +337,7 @@ export function LiveLog({ module, showName = true }: Props) {
 							containerStyle={{
 								width: '100%',
 								maxWidth: '100%',
-								overflowX: 'hidden',
+								overflowX: 'auto',
 							}}
 						/>
 					)}

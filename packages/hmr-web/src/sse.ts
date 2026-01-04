@@ -3,16 +3,32 @@ import { defaultOnAuthBlocked, type OnAuthBlocked } from './auth'
 import type { UI } from './protocol'
 
 export interface LogRecord {
-	time: string
-	level: number | string
-	name?: string
+	id: number
+	time: number
+	level: string
+	category: string[]
 	msg: string
-	[key: string]: unknown
+	name?: string
+	pluginId?: string
+	context?: string
+	props?: Record<string, unknown>
+}
+
+export interface LogFilter {
+	/**
+	 * Backward compatible single filter:
+	 * matches `pluginId` / `context` / `name` (exact match).
+	 */
+	name?: string
+	pluginId?: string
+	context?: string
+	displayName?: string
+	/** Category string, e.g. "pluxel.hmr" or "pluxel.plugins". Supports "prefix.*". */
+	category?: string
 }
 
 export interface BuiltinSseEvents {
-	extensions: ExtensionManifestEvent
-	logs: LogRecord
+	extensions: ExtensionManifestEvent | { type: 'ready' }
 }
 
 export type ResolvedSseEvents = BuiltinSseEvents & UI.sse
@@ -48,7 +64,6 @@ export interface SseClientOptions {
 	params?: Record<string, string | number | boolean | null | undefined>
 	/** 自定义 SSE 入口（默认 /api/sse） */
 	url?: string
-	retry?: { min?: number; max?: number }
 	/**
 	 * Optional auth integration: when SSE errors, we can probe auth state and redirect
 	 * instead of reconnecting forever.
@@ -68,33 +83,21 @@ class SseClient {
 		{ any: Set<AnyHandler>; events: Map<string, Set<AnyHandler>> }
 	>()
 	private readonly lastByNamespace = new Map<string, SseMessage<string>>()
-	private readonly lastByNamespaceEvent = new Map<string, Map<string, SseMessage<string>>>()
 	private readonly openHandlers = new Set<() => void>()
 	private readonly errorHandlers = new Set<() => void>()
 	private stopped = false
-	private reconnectTimer: number | null = null
-	private backoff: number
-	private readonly retryMin: number
-	private readonly retryMax: number
 	private readonly url: string
 	private readonly auth?: NonNullable<SseClientOptions['auth']>
 	private authProbeInFlight: Promise<boolean> | null = null
 	private lastAuthProbeAt = 0
 	private connected = false
 
-	private static readonly MAX_CACHED_EVENTS_PER_NAMESPACE = 64
 	private static asap(fn: () => void) {
 		if (typeof globalThis.queueMicrotask === 'function') globalThis.queueMicrotask(fn)
 		else Promise.resolve().then(fn)
 	}
 
 	constructor(options: SseClientOptions = {}) {
-		const min = options.retry?.min ?? 800
-		const max = options.retry?.max ?? 10_000
-		this.retryMin = min
-		this.retryMax = max
-		this.backoff = min
-
 		const url = new URL(options.url ?? '/api/sse', window.location.origin)
 		const namespaces = options.namespaces?.filter(Boolean)
 		if (namespaces?.length) url.searchParams.set('ns', namespaces.join(','))
@@ -146,52 +149,28 @@ class SseClient {
 		}
 	}
 
-	private scheduleReconnect() {
-		if (this.stopped) return
-		if (this.reconnectTimer) return
-		const delay = this.backoff
-		this.backoff = Math.min(this.retryMax, Math.max(this.retryMin, Math.floor(this.backoff * 1.35)))
-		this.reconnectTimer = window.setTimeout(() => {
-			this.reconnectTimer = null
-			this.connect()
-		}, delay)
-	}
-
 	private connect() {
 		if (this.stopped) return
 		this.connected = false
-		try {
-			this.source?.close()
-		} catch {
-			void 0
-		}
 		const src = new EventSource(this.url)
 		this.source = src
 
 		src.onopen = () => {
 			this.connected = true
-			this.backoff = this.retryMin
 			for (const fn of this.openHandlers) fn()
 		}
 		src.onerror = () => {
 			this.connected = false
 			for (const fn of this.errorHandlers) fn()
-			if (this.auth && typeof window !== 'undefined') {
-				if (!this.authProbeInFlight) {
-					this.authProbeInFlight = this.probeAuthBlocked().finally(() => {
-						this.authProbeInFlight = null
-					})
-				}
-				void this.authProbeInFlight.then((blocked) => {
-					if (blocked) {
-						this.close()
-						return
-					}
-					this.scheduleReconnect()
+			if (!this.auth) return
+			if (!this.authProbeInFlight) {
+				this.authProbeInFlight = this.probeAuthBlocked().finally(() => {
+					this.authProbeInFlight = null
 				})
-				return
 			}
-			this.scheduleReconnect()
+			void this.authProbeInFlight.then((blocked) => {
+				if (blocked) this.close()
+			})
 		}
 		src.onmessage = (ev) => {
 			let msg: { namespace?: unknown; event?: unknown; payload?: unknown } | null = null
@@ -221,20 +200,7 @@ class SseClient {
 
 	private cacheLast(msg: SseMessage<string>) {
 		const ns = msg.namespace
-		const ev = msg.event
-
 		this.lastByNamespace.set(ns, msg)
-
-		let byEvent = this.lastByNamespaceEvent.get(ns)
-		if (!byEvent) {
-			byEvent = new Map()
-			this.lastByNamespaceEvent.set(ns, byEvent)
-		}
-		if (!byEvent.has(ev) && byEvent.size >= SseClient.MAX_CACHED_EVENTS_PER_NAMESPACE) {
-			const oldest = byEvent.keys().next().value as string | undefined
-			if (oldest) byEvent.delete(oldest)
-		}
-		byEvent.set(ev, msg)
 	}
 
 	onOpen(handler: () => void): () => void {
@@ -267,7 +233,7 @@ class SseClient {
 		}
 	}
 
-	ns<Ns extends string>(name: Ns): NamespaceClient<Ns> {
+		ns<Ns extends string>(name: Ns): NamespaceClient<Ns> {
 		const namespace = String(name)
 		let bucket = this.nsHandlers.get(namespace)
 		if (!bucket) {
@@ -275,38 +241,32 @@ class SseClient {
 			this.nsHandlers.set(namespace, bucket)
 		}
 		return {
-			on: (handler, events) => {
-				const list = Array.isArray(events) ? events : events ? [events] : []
-				if (!list.length) {
-					const h = handler as unknown as AnyHandler
-					bucket!.any.add(h)
-					const last = this.lastByNamespace.get(namespace)
-					if (last) {
-						SseClient.asap(() => {
-							if (bucket!.any.has(h)) h(last)
-						})
+				on: (handler, events) => {
+					const list = Array.isArray(events) ? events : events ? [events] : []
+					if (!list.length) {
+						const h = handler as unknown as AnyHandler
+						bucket!.any.add(h)
+						const last = this.lastByNamespace.get(namespace)
+						if (last) {
+							SseClient.asap(() => {
+								if (bucket!.any.has(h)) h(last)
+							})
+						}
+						return () => bucket!.any.delete(h)
 					}
-					return () => bucket!.any.delete(h)
-				}
-				const unsubs: Array<() => void> = []
-				for (const ev of list) {
-					let set = bucket!.events.get(ev)
-					if (!set) {
-						set = new Set()
-						bucket!.events.set(ev, set)
+					const unsubs: Array<() => void> = []
+					for (const ev of list) {
+						let set = bucket!.events.get(ev)
+						if (!set) {
+							set = new Set()
+							bucket!.events.set(ev, set)
+						}
+						const h = handler as unknown as AnyHandler
+						set.add(h)
+						unsubs.push(() => set!.delete(h))
 					}
-					const h = handler as unknown as AnyHandler
-					set.add(h)
-					const last = this.lastByNamespaceEvent.get(namespace)?.get(ev)
-					if (last) {
-						SseClient.asap(() => {
-							if (set!.has(h)) h(last)
-						})
-					}
-					unsubs.push(() => set!.delete(h))
-				}
-				return () => {
-					for (const fn of unsubs) fn()
+					return () => {
+						for (const fn of unsubs) fn()
 				}
 			},
 			onAny: (handler) => {
@@ -327,11 +287,6 @@ class SseClient {
 		this.stopped = true
 		this.connected = false
 		this.lastByNamespace.clear()
-		this.lastByNamespaceEvent.clear()
-		if (this.reconnectTimer) {
-			clearTimeout(this.reconnectTimer)
-			this.reconnectTimer = null
-		}
 		try {
 			this.source?.close()
 		} catch {

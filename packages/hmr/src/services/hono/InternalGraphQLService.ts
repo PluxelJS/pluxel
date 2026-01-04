@@ -92,18 +92,19 @@ export class InternalGraphQLService {
 		if (process.env.NODE_ENV === 'production') return
 		if (this.codegenRunning) return
 		this.codegenRunning = true
+		const destination = '../components/src/app/gqty/index.ts'
 		try {
-			this.logger.info('[Internal-GQty] Generating client…')
+			this.logger.info('Generating GQty client…', { destination })
 
 			await generateClient(this.schema, {
 				endpoint: 'http://localhost:3000/api/graphql',
-				destination: '../components/src/app/gqty/index.ts',
+				destination,
 				react: true,
 			})
 
-			this.logger.info('[Internal-GQty] Client generated ✔')
-		} catch (e) {
-			this.logger.error('[Internal-GQty] generateClient failed', e)
+			this.logger.info('GQty client generated', { destination })
+		} catch (error) {
+			this.logger.error('generateClient failed: {error}', { error, destination })
 		} finally {
 			this.codegenRunning = false
 		}

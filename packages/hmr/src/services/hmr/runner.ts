@@ -6,6 +6,8 @@ import { existsSync } from 'node:fs'
 import { readFile, realpath } from 'node:fs/promises'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { dirname, resolve } from 'pathe'
+import { getLogger } from '@logtape/logtape'
+import { pluxelCategories } from '@pluxel/core/logger'
 import type { HmrPathApi } from './environment'
 import { findNearestPackageRoot, matchesSpecifierPattern } from './internals'
 
@@ -27,10 +29,11 @@ export type HmrRunnerInitOptions = {
 const HARD_BRIDGE_IDS = ['@pluxel/core', '@pluxel/hmr', '@pluxel/context'] as const
 const HARD_BRIDGE_PREFIXES = ['@pluxel/core/', '@pluxel/hmr/', '@pluxel/context/'] as const
 const DEBUG_FETCH = Boolean(process.env.PLUXEL_HMR_DEBUG_FETCH)
-const dbgFetch = (...args: any[]) => {
+const dbgLogger = getLogger([...pluxelCategories.hmr, 'runner'])
+const dbgFetch = (message: string, props?: Record<string, unknown>) => {
 	if (!DEBUG_FETCH) return
-	// eslint-disable-next-line no-console
-	console.warn('[HMR][fetchModule]', ...args)
+	if (props) dbgLogger.debug(message, props)
+	else dbgLogger.debug(message)
 }
 
 export class HmrRunner {
@@ -122,7 +125,7 @@ export class HmrRunner {
 	async bridgeHostModules(
 		specifiers: readonly string[],
 		path: HmrPathApi,
-		logger: { warn: (obj: any, msg: string) => void },
+		logger: { warn: (...args: any[]) => void },
 	) {
 		const env = this.env
 		await Promise.all(
@@ -154,11 +157,11 @@ export class HmrRunner {
 
 					this.primeModuleCacheEntry({ id: resolved.id, exports, aliases: urls })
 				} catch (error) {
-					logger.warn({ specifier, error }, '[HMR] failed to bridge host module')
+					logger.warn('failed to bridge host module {specifier}: {error}', { specifier, error })
 				}
-			}),
-		)
-	}
+				}),
+			)
+		}
 
 	async assertBridgedSingletons(specifiers: readonly string[]) {
 		for (const specifier of specifiers) {
@@ -200,7 +203,7 @@ export class HmrRunner {
 
 		const rawId = unwrapViteId(url)
 		if (DEBUG_FETCH && (rawId.includes('cjs') || rawId.includes('@napi-rs') || rawId.includes('napi-rs'))) {
-			dbgFetch({ url, rawId, importer, cjsExternal: this.cjsExternal_ })
+			dbgFetch('fetchModule {rawId}', { url, rawId, importer, cjsExternal: this.cjsExternal_ })
 		}
 
 		if (isBareSpecifier(rawId)) {
@@ -211,7 +214,7 @@ export class HmrRunner {
 
 			if (!this.isCjsExternal(rawId)) return null
 			if (DEBUG_FETCH && (rawId.includes('cjs') || rawId.includes('@napi-rs') || rawId.includes('napi-rs'))) {
-				dbgFetch('externalize bare as CJS', rawId)
+				dbgFetch('externalize bare as CJS {rawId}', { rawId })
 			}
 			return await this.externalizeBareId(rawId, importer, { typeHint: 'commonjs' })
 		}
@@ -224,7 +227,7 @@ export class HmrRunner {
 		if (!fsPath) return null
 		if (!(await this.isCjsExternalFile(fsPath))) return null
 		if (DEBUG_FETCH && (rawId.includes('cjs') || rawId.includes('@napi-rs') || rawId.includes('napi-rs'))) {
-			dbgFetch('externalize fsPath as CJS', fsPath)
+			dbgFetch('externalize fsPath as CJS {fsPath}', { fsPath })
 		}
 		return await this.externalizeFsPath(fsPath, { typeHint: 'commonjs' })
 	}

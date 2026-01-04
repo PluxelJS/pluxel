@@ -1,4 +1,5 @@
 import type { Context } from '@pluxel/core'
+import type { Logger as LogtapeLogger } from '@logtape/logtape'
 import { existsSync, readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -7,7 +8,7 @@ import { normalizePath, type DevEnvironment, type EnvironmentModuleNode as Modul
 import type { ScanService } from '../market/ScanService'
 import type { HmrPathApi, HmrToolkit } from './environment'
 import { startTimer } from './internals'
-import { formatAttributionReport, type TimingTracker } from './logging'
+import { logAttributionReport, type TimingTracker } from './logging'
 import { runWithRequireShims } from './runtime-shims'
 import type { HmrRunner } from './runner'
 
@@ -315,7 +316,7 @@ async function prefetchTransforms(params: {
 
 export type HmrExecutorConfig = {
 	useRequireShims: boolean
-	dbgModules: ((fmt: string, ...args: any[]) => void) | null
+	dbgModules: LogtapeLogger | null
 }
 
 export class HmrExecutor {
@@ -346,10 +347,10 @@ export class HmrExecutor {
 				// so users must explicitly externalize them via `hmrService.deps.cjsExternal`.
 				const cjsHint = buildCjsExternalizeHint(err)
 				if (cjsHint) {
-					this.ctx.logger.error({ file: id, err }, '[HMR] execute failed')
+					this.ctx.logger.error('execute failed for {file}: {error}', { file: id, error: err })
 					throw new Error(cjsHint, { cause: err as any })
 				}
-				this.ctx.logger.error({ file: id, err }, '[HMR] execute failed')
+				this.ctx.logger.error('execute failed for {file}: {error}', { file: id, error: err })
 				continue
 			}
 			const evaluateMs = endEvaluate()
@@ -359,20 +360,20 @@ export class HmrExecutor {
 			try {
 				hasPlugin = await batch.replaceModule(id, mod)
 			} catch (err) {
-				this.ctx.logger.error({ file: id, err }, '[HMR] replaceModule failed')
+				this.ctx.logger.error('replaceModule failed for {file}: {error}', { file: id, error: err })
 				batch.rollback()
 				this.ctx.registry.resetDraft()
 				return undefined
 			}
 			const injectMs = endInject()
 
-			this.cfg.dbgModules?.(
-				'execute %p: eval=%t inject=%t plugin=%b',
-				this.path.pretty(id),
-				evaluateMs,
-				injectMs,
-				hasPlugin,
-			)
+			const dbg = this.cfg.dbgModules
+			if (dbg) {
+				dbg.debug(
+					(l) =>
+						l`execute ${this.path.pretty(id)} eval=${evaluateMs.toFixed(3)}ms inject=${injectMs.toFixed(3)}ms plugin=${hasPlugin}`,
+				)
+			}
 		}
 
 		const endCommit = startTimer()
@@ -539,9 +540,9 @@ export class HmrBatchProcessor {
 		private readonly timing: TimingTracker,
 		private readonly cfg: HmrBatchConfig,
 		private readonly dbg: {
-			batch: ((fmt: string, ...args: any[]) => void) | null
-			cache: ((fmt: string, ...args: any[]) => void) | null
-			graph: ((fmt: string, ...args: any[]) => void) | null
+			batch: LogtapeLogger | null
+			cache: LogtapeLogger | null
+			graph: LogtapeLogger | null
 		},
 		private readonly getAnchorsClean: () => ReadonlySet<string>,
 	) {}
@@ -549,7 +550,7 @@ export class HmrBatchProcessor {
 	async process(files: readonly string[], epoch: number) {
 		const endBatch = startTimer()
 		this.timing.clear()
-		this.ctx.logger.info('[HMR#%d] begin: %d files', epoch, files.length)
+		this.ctx.logger.info`batch #${epoch} begin: ${files.length} files`
 
 		this.logBatchList('changed files', files)
 
@@ -592,31 +593,33 @@ export class HmrBatchProcessor {
 		}
 
 		const execOrder = buildOrderedList(new Set(targets), graph.distance, 'near', targets.length || 1)
-		const executed = await this.executor.runAndLoadAll(execOrder, true)
-		if (executed) this.ctx.logger.info('[HMR] commit: %sms', executed.commitMs.toFixed(1))
+			const executed = await this.executor.runAndLoadAll(execOrder, true)
+			if (executed) {
+				const commitMs = Math.round(executed.commitMs * 10) / 10
+				this.ctx.logger.info`commit: ${commitMs}ms`
+			}
 
-		this.ctx.logger.info(
-			formatAttributionReport({
+		logAttributionReport(
+			typeof (this.ctx.logger as any).with === 'function' ? (this.ctx.logger as any).with({}) : this.ctx.logger,
+			{
 				changed: files[0] ?? 'N/A',
 				targets: execOrder,
 				timing: this.timing,
 				prettyId: (id) => this.path.pretty(id),
-			}),
+			},
+			{ level: 'info' },
 		)
 
-		const activeServices = this.ctx.registry.container?.services.size ?? 0
-		this.ctx.logger.info('[HMR#%d] end: %d services, %sms', epoch, activeServices, endBatch().toFixed(1))
-	}
+			const activeServices = this.ctx.registry.container?.services.size ?? 0
+			const batchMs = Math.round(endBatch() * 10) / 10
+			this.ctx.logger.info`batch #${epoch} end: ${activeServices} services, ${batchMs}ms`
+		}
 
 	private logBatchList(label: string, files: readonly string[]) {
 		const dbg = this.dbg.batch
 		if (!dbg) return
-		dbg(
-			'%s (%n): %l',
-			label,
-			files.length,
-			files.map((f) => this.path.pretty(f)),
-		)
+		const list = files.map((f) => this.path.pretty(f))
+		dbg.debug((l) => l`${label} (${list.length})\n${list.map((f) => `    ${f}`).join('\n')}`)
 	}
 
 	private logGraphDebug(graph: BatchGraph) {
@@ -626,12 +629,9 @@ export class HmrBatchProcessor {
 			const d = graph.distance.get(id) ?? -1
 			return `${this.path.pretty(id)} (d=${d})`
 		})
-		dbg('affected (%n): %l', graph.affectedIds.size, affectedList)
-		dbg(
-			'roots (%n): %l',
-			graph.roots.length,
-			graph.roots.map((r) => this.path.pretty(r)),
-		)
+		const roots = graph.roots.map((r) => this.path.pretty(r))
+		dbg.debug((l) => l`affected (${affectedList.length})\n${affectedList.map((x) => `    ${x}`).join('\n')}`)
+		dbg.debug((l) => l`roots (${roots.length})\n${roots.map((x) => `    ${x}`).join('\n')}`)
 	}
 
 	private pruneMissingModules(files: readonly string[]) {
@@ -674,7 +674,10 @@ export class HmrBatchProcessor {
 
 		const dbg = this.dbg.cache
 		if (!dbg) return
-		dbg('invalidated: vite=%n runner=%n', viteInvalidated, runnerInvalidated)
-		if (invalidatedKeys.length) dbg('runner keys: %l', invalidatedKeys.map((k) => this.path.pretty(k)))
+		dbg.debug((l) => l`invalidated: vite=${viteInvalidated} runner=${runnerInvalidated}`)
+		if (invalidatedKeys.length) {
+			const keys = invalidatedKeys.map((k) => this.path.pretty(k))
+			dbg.debug((l) => l`runner keys (${keys.length})\n${keys.map((k) => `    ${k}`).join('\n')}`)
+		}
 	}
 }

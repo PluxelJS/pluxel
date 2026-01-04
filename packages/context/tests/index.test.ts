@@ -19,6 +19,7 @@ declare module '@pluxel/context' {
 		mathService: MathService
 		tapService: TapService
 		countService: CountService
+		rootTapService: RootTapService
 		/** 代理方法：自动转发到实例 */
 		add(a: number, b: number): number
 	}
@@ -75,6 +76,16 @@ class CountService {
 	}
 }
 Context.registerService(CountService as any)
+
+class RootTapService {
+	static key = 'rootTapService' as const
+	static scope = 'root' as const
+	constructor(public ctx: Context) {}
+	ping() {
+		return this.ctx.name
+	}
+}
+Context.registerService(RootTapService as any)
 
 /* -------------------------------------------------------------------------- */
 /* 3) 覆盖用的新实现们（链式覆盖、last-wins）                                  */
@@ -154,6 +165,16 @@ describe('extend / isolate / ctx 回灌', () => {
 		expect(child2.tapService).toBe(inst)
 		expect(inst.ping()).toBe('child-2')
 		expect(inst.visits).toEqual(['root', 'child-1', 'child-2'])
+	})
+
+	test('root scope：同一实例永远绑定 root ctx', () => {
+		const ctx = new Context({ name: 'root' })
+		const child = ctx.extend({ name: 'child' })
+		const inst = ctx.rootTapService
+		expect(inst.ping()).toBe('root')
+		expect(child.rootTapService).toBe(inst)
+		expect(inst.ctx.name).toBe('root')
+		expect(child.rootTapService.ping()).toBe('root')
 	})
 
 	test('config 合并（构造注入快照不变）', () => {

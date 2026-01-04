@@ -6,10 +6,10 @@ import { BasePlugin, Plugin } from '@pluxel/core'
 @Plugin({ name: 'MarketUI', type: 'event' })
 export class MarketUI extends BasePlugin {
 	override async init() {
-		this.ctx.logger.info('[MarketUI] Initializing...')
+		this.ctx.logger.info('Initializing…')
 		this.ctx.ext.ui.register({
 			entryPath: './MarketUI/ui/index.tsx',
 		})
-		this.ctx.logger.info('[MarketUI] UI extensions registered')
+		this.ctx.logger.info('UI extensions registered')
 	}
 }

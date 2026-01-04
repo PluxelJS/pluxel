@@ -8,6 +8,7 @@ export {
 
 export {
 	createAuthAwareFetch,
+	defaultOnAuthBlocked,
 	type AuthAwareFetchOptions,
 	type AuthBlockedInfo,
 	type OnAuthBlocked,
@@ -18,6 +19,7 @@ export type {
 	SseClientOptions,
 	SseClientWithNamespaces,
 	SseMessage,
+	LogFilter,
 	LogRecord,
 } from './sse'
 

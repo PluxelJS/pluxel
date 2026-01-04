@@ -43,9 +43,29 @@ export class Context {
 		Context.defaultMapping[sk] = sk
 
 		// 在原型上定义最简 getter，只 capture sk/ctor/key
+		const scope = (ctor as any).scope as undefined | 'context' | 'root'
 		Object.defineProperty(Context.prototype, key, {
 			configurable: true,
 			get(this: Context) {
+				if (scope === 'root') {
+					const root = this.root
+					let ik = root.mapping[sk]
+					if (ik === undefined) {
+						root.mapping[sk] = ik = sk
+					}
+
+					let inst = root.instances[ik] as ServiceInst<S>
+					if (inst) {
+						;(inst as unknown as ServiceWithCtx<Context>).ctx = root
+						return inst
+					}
+					const cfg = (root.config as any)[key] as ServiceCfg<S>
+					inst = new ctor(root as any, cfg) as ServiceInst<S>
+					;(inst as unknown as ServiceWithCtx<Context>).ctx = root
+					root.instances[ik] = inst
+					return inst
+				}
+
 				let ik = this.mapping[sk]
 				if (ik === undefined) {
 					this.mapping[sk] = ik = sk
@@ -99,9 +119,29 @@ export class Context {
 		;(overrideCtor as any).key = (original as any).key // 保险起见
 
 		// 3) 重新在原型上 define，一次性把 overrideCtor capture 进闭包
+		const scope = (overrideCtor as any).scope as undefined | 'context' | 'root'
 		Object.defineProperty(Context.prototype, key, {
 			configurable: true,
 			get(this: Context) {
+				if (scope === 'root') {
+					const root = this.root
+					let ik = root.mapping[sk]
+					if (ik === undefined) {
+						root.mapping[sk] = ik = sk
+					}
+
+					let inst = root.instances[ik] as ServiceInst<S>
+					if (inst) {
+						;(inst as unknown as ServiceWithCtx<Context>).ctx = root
+						return inst
+					}
+					const cfg = (root.config as any)[key] as ServiceCfg<S>
+					inst = new overrideCtor(root as any, cfg) as ServiceInst<S>
+					;(inst as unknown as ServiceWithCtx<Context>).ctx = root
+					root.instances[ik] = inst
+					return inst
+				}
+
 				let ik = this.mapping[sk]
 				if (ik === undefined) {
 					this.mapping[sk] = ik = sk

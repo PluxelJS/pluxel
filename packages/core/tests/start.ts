@@ -1,6 +1,28 @@
 // start.ts
+import { mkdir } from 'node:fs/promises'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
+import { configure } from '@logtape/logtape'
+import { createPluxelPrettyConsoleSink, getRotatingFileSink } from '@pluxel/core/logger'
 import { Context } from '@pluxel/core/test'
 import { PluginA, PluginB, PluginC } from './plugins'
+
+const logsDir = join(dirname(fileURLToPath(import.meta.url)), '../logs')
+await mkdir(logsDir, { recursive: true })
+
+await configure({
+	sinks: {
+		console: createPluxelPrettyConsoleSink({
+			pretty: { timestamp: 'time', prefix: 'context', includeCaller: true },
+			youch: { minLevel: 'error' },
+		}),
+		file: getRotatingFileSink(join(logsDir, 'core.log')),
+	},
+	loggers: [
+		{ category: ['pluxel'], sinks: ['console', 'file'], lowestLevel: process.env.PLUXEL_LOG_LEVEL ?? 'info' },
+		{ category: ['logtape', 'meta'], sinks: ['console'], lowestLevel: 'error' },
+	],
+})
 
 const ctx = new Context()
 

@@ -1,6 +1,5 @@
 import { fileURLToPath } from 'node:url'
 import { type Context, Injectable } from '@pluxel/core'
-import { enable as enableDebug } from 'obug'
 import { dirname, isAbsolute, resolve } from 'pathe'
 import {
 	createServer,
@@ -24,13 +23,12 @@ import {
 	startTimer,
 } from './internals'
 import {
-	createHmrDebug,
-	formatAttributionReport,
 	type HMRLogConfig,
 	type ResolvedHMRLogConfig,
+	getHmrDebugLogger,
+	logAttributionReport,
 	resolveHmrLogConfig,
 	TimingTracker,
-	toDebugNamespaceString,
 } from './logging'
 import { collectColdStartEntries, HmrBatchProcessor, HmrExecutor } from './pipeline'
 import { HmrRunner } from './runner'
@@ -114,7 +112,7 @@ declare module '@pluxel/core' {
 
 const unique = <T>(iter: Iterable<T>) => Array.from(new Set(iter))
 
-@Injectable({ key: serviceName })
+@Injectable({ key: serviceName, scope: 'root' })
 export class HMRService {
 	public vite!: ViteDevServer
 
@@ -144,11 +142,12 @@ export class HMRService {
 	private debouncer!: BatchDebouncer
 
 	private readonly dbg: {
-		modules: ReturnType<typeof createHmrDebug>
-		warmup: ReturnType<typeof createHmrDebug>
-		batch: ReturnType<typeof createHmrDebug>
-		cache: ReturnType<typeof createHmrDebug>
-		graph: ReturnType<typeof createHmrDebug>
+		modules: ReturnType<typeof getHmrDebugLogger> | null
+		warmup: ReturnType<typeof getHmrDebugLogger> | null
+		batch: ReturnType<typeof getHmrDebugLogger> | null
+		cache: ReturnType<typeof getHmrDebugLogger> | null
+		graph: ReturnType<typeof getHmrDebugLogger> | null
+		timeEntry: ReturnType<typeof getHmrDebugLogger> | null
 	}
 
 	private readonly plugin: Plugin
@@ -185,22 +184,22 @@ export class HMRService {
 			Object.keys(runtimeResolved.shims ?? {}).length > 0
 		if (this.useRequireShims) installRequireShims((id) => this.runtimeShims.require(id))
 
-		const useColors = this.logConfig.useColors
+		const enabled = new Set(this.logConfig.debugNamespaces ?? [])
 		this.dbg = {
-			modules: createHmrDebug('pluxel:hmr:modules', useColors),
-			warmup: createHmrDebug('pluxel:hmr:warmup', useColors),
-			batch: createHmrDebug('pluxel:hmr:batch', useColors),
-			cache: createHmrDebug('pluxel:hmr:cache', useColors),
-			graph: createHmrDebug('pluxel:hmr:graph', useColors),
+			modules: enabled.has('pluxel:hmr:modules') ? getHmrDebugLogger('pluxel:hmr:modules') : null,
+			warmup: enabled.has('pluxel:hmr:warmup') ? getHmrDebugLogger('pluxel:hmr:warmup') : null,
+			batch: enabled.has('pluxel:hmr:batch') ? getHmrDebugLogger('pluxel:hmr:batch') : null,
+			cache: enabled.has('pluxel:hmr:cache') ? getHmrDebugLogger('pluxel:hmr:cache') : null,
+			graph: enabled.has('pluxel:hmr:graph') ? getHmrDebugLogger('pluxel:hmr:graph') : null,
+			timeEntry: enabled.has('pluxel:hmr:time:entry')
+				? getHmrDebugLogger('pluxel:hmr:time:entry')
+				: null,
 		}
 
 		this.timing = new TimingTracker({
-			useColors,
 			formatId: (id) => this.path.pretty(id),
+			debugEntry: this.dbg.timeEntry,
 		})
-
-		const ns = toDebugNamespaceString(this.logConfig.debugNamespaces)
-		if (ns) enableDebug(ns)
 
 		this.plugin = this.createRunnerPlugin()
 	}
@@ -259,7 +258,7 @@ export class HMRService {
 		const server = await createServer(serverConfig)
 		await server.listen()
 		server.printUrls()
-		this.ctx.logger.info(`HMR 服务已启动，只监听：${this.config.dir.join(', ')}`)
+		this.ctx.logger.info`HMR 服务已启动，只监听：${this.config.dir.join(', ')}`
 	}
 
 	private createRunnerPlugin(): Plugin {
@@ -287,7 +286,7 @@ export class HMRService {
 				await this.runner.assertBridgedSingletons(this.deps.bridgeModules)
 
 				this.executor = new HmrExecutor(this.ctx, this.runner, this.path, this.timing, {
-					dbgModules: this.dbg.modules.enabled ? this.dbg.modules : null,
+					dbgModules: this.dbg.modules,
 					useRequireShims: this.useRequireShims,
 				})
 
@@ -307,9 +306,9 @@ export class HMRService {
 						prefetchConcurrency: PREFETCH_CONCURRENCY,
 					},
 					{
-						batch: this.dbg.batch.enabled ? this.dbg.batch : null,
-						cache: this.dbg.cache.enabled ? this.dbg.cache : null,
-						graph: this.dbg.graph.enabled ? this.dbg.graph : null,
+						batch: this.dbg.batch,
+						cache: this.dbg.cache,
+						graph: this.dbg.graph,
 					},
 					() => this.getAnchorsClean(),
 				)
@@ -364,7 +363,7 @@ export class HMRService {
 			bCfg.debounceMs,
 			bCfg.maxWaitMs,
 			bCfg.maxBatchFiles,
-			(error) => this.ctx.logger.error({ error }, '[HMR] batch flush failed'),
+			(error) => this.ctx.logger.error('batch flush failed: {error}', { error }),
 		)
 	}
 
@@ -391,31 +390,37 @@ export class HMRService {
 			scanService: this.ctx.scanService,
 			workspaceConditions: this.workspaceConditions,
 		})
-		this.ctx.logger.info('[HMR] scan: %d files in %sms', entries.length, endScan().toFixed(1))
+		const scanMs = Math.round(endScan() * 10) / 10
+		this.ctx.logger.info`scan: ${entries.length} files in ${scanMs}ms`
 
 		const endWarmup = startTimer()
 		const coldFiles = unique(entries.map((p) => this.path.toClean(p))).sort()
 
-		if (this.dbg.warmup.enabled) {
-			this.dbg.warmup(
-				'files (%n): %l',
-				coldFiles.length,
-				coldFiles.map((f) => this.path.pretty(f)),
+		if (this.dbg.warmup) {
+			const prettyFiles = coldFiles.map((f) => this.path.pretty(f))
+			this.dbg.warmup.debug(
+				(l) => l`files (${prettyFiles.length})\n${prettyFiles.map((f) => `    ${f}`).join('\n')}`,
 			)
 		}
 
 		const executed = await this.executor.runAndLoadAll(coldFiles, true)
-		if (executed) this.ctx.logger.info('[HMR] commit: %sms', executed.commitMs.toFixed(1))
+		if (executed) {
+			const commitMs = Math.round(executed.commitMs * 10) / 10
+			this.ctx.logger.info`commit: ${commitMs}ms`
+		}
 
-		this.ctx.logger.info('[HMR] warmup: %d files in %sms', coldFiles.length, endWarmup().toFixed(1))
+		const warmupMs = Math.round(endWarmup() * 10) / 10
+		this.ctx.logger.info`warmup: ${coldFiles.length} files in ${warmupMs}ms`
 
-		this.ctx.logger.info(
-			formatAttributionReport({
+		logAttributionReport(
+			typeof (this.ctx.logger as any).with === 'function' ? (this.ctx.logger as any).with({}) : this.ctx.logger,
+			{
 				changed: coldFiles[0] ?? 'N/A',
 				targets: coldFiles,
 				timing: this.timing,
 				prettyId: (id) => this.path.pretty(id),
-			}),
+			},
+			{ level: 'info' },
 		)
 	}
 

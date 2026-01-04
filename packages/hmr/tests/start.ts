@@ -1,26 +1,56 @@
+import { mkdir } from 'node:fs/promises'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
+import { configure } from '@logtape/logtape'
+import { createPluxelPrettyConsoleSink, getRotatingFileSink } from '@pluxel/core/logger'
 import { Context } from '@pluxel/hmr'
-import { PinoLoggerService } from '@pluxel/hmr/services'
+import { createLogStoreSink } from '@pluxel/hmr/logger'
+import { LogtapeLoggerService } from '@pluxel/hmr/services'
 
 if (process.env.PLUXEL_HMR_SSR === undefined) {
 	process.env.PLUXEL_HMR_SSR = 'true'
 }
 
+const debugNamespaces = [
+	'pluxel:hmr:modules',
+	'pluxel:hmr:time',
+	'pluxel:hmr:time:entry',
+	'pluxel:hmr:warmup',
+	'pluxel:hmr:batch',
+	'pluxel:hmr:cache',
+	'pluxel:hmr:graph',
+] as const
+
+const logsDir = join(dirname(fileURLToPath(import.meta.url)), '../logs')
+await mkdir(logsDir, { recursive: true })
+
+await configure({
+	sinks: {
+		console: createPluxelPrettyConsoleSink({
+			pretty: { timestamp: 'time', prefix: 'name', includeCaller: true },
+			youch: { minLevel: 'error' },
+		}),
+		file: getRotatingFileSink(join(logsDir, 'hmr.log')),
+		ui: createLogStoreSink({ minLevel: 'trace' }),
+	},
+	loggers: [
+		{ category: ['pluxel'], sinks: ['console', 'file'], lowestLevel: process.env.PLUXEL_LOG_LEVEL ?? 'info' },
+		{ category: ['pluxel', 'hmr'], sinks: ['ui'], lowestLevel: 'trace' },
+		{ category: ['pluxel', 'plugins'], sinks: ['ui'], lowestLevel: 'trace' },
+		...debugNamespaces.map((ns) => ({ category: ns.split(':'), lowestLevel: 'debug' as const })),
+		{ category: ['logtape', 'meta'], sinks: ['console'], lowestLevel: 'error' },
+	],
+})
+
 const ctx = new Context({
 	hmrService: {
 		dir: ['./tests/plugins', './tests/ui-demos', './runtime-demos'],
 		log: {
-			debugNamespaces: [
-				'pluxel:hmr:modules',
-				'pluxel:hmr:time',
-				'pluxel:hmr:time:entry',
-				'pluxel:hmr:warmup',
-				'pluxel:hmr:batch',
-				'pluxel:hmr:graph',
-			],
+			debugNamespaces: [...debugNamespaces],
 		},
 	},
 	registry: {
-		pluginCTXIsolate: [PinoLoggerService],
+		pluginCTXIsolate: [LogtapeLoggerService],
 	},
 })
 async function bootstrap() {
@@ -45,4 +75,4 @@ ctx.honoService.modifyApp((app) => {
 	})
 })
 
-ctx.logger.info({ mySet: new Set([1, 2, 3]), myMap: new Map([['a', 1]]) })
+ctx.logger.with({ mySet: new Set([1, 2, 3]), myMap: new Map([['a', 1]]) }).info`dev log example`

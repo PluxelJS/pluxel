@@ -26,4 +26,10 @@ export type ServiceClass<S extends new (ctx: any, cfg: any) => any> = ServiceCto
 	readonly key?: string
 	/** 要在 Context 原型上代理的方法名列表 */
 	readonly methods?: readonly Extract<keyof ServiceInst<S>, string>[]
+	/**
+	 * Service scope:
+	 * - `"context"` (default): service is shared but `ctx` is rebound on every access
+	 * - `"root"`: service is rooted at `ctx.root` and never sees child ctx
+	 */
+	readonly scope?: 'context' | 'root'
 }

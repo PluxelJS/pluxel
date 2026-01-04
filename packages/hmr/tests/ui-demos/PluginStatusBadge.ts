@@ -22,7 +22,7 @@ export class PluginStatusBadge extends BasePlugin {
 			clearInterval(timer)
 		})
 
-		this.ctx.logger.info('[PluginStatusBadge] Started')
+		this.ctx.logger.info('Started')
 	}
 
 	getCounter() {

@@ -44,12 +44,12 @@ export class PluginWithUI extends BasePlugin {
 
 		await this.initState()
 
-		this.ctx.ext.ui.register({ entryPath: './PluginWithUI/ui/index.tsx' })
-		this.ctx.ext.rpc.registerExtension(() => new PluginWithUIRpc(this))
-		this.ctx.ext.sse.registerExtension(() => this.attachSse())
+			this.ctx.ext.ui.register({ entryPath: './PluginWithUI/ui/index.tsx' })
+			this.ctx.ext.rpc.registerExtension(() => new PluginWithUIRpc(this))
+			this.ctx.ext.sse.registerExtension(() => this.attachSse())
 
-		this.ctx.logger.info('[PluginWithUI] ready')
-	}
+			this.ctx.logger.info('ready')
+		}
 
 	private attachSse() {
 		return (channel: SseChannel) => {
@@ -118,12 +118,9 @@ export class PluginWithUI extends BasePlugin {
 			const hasDuplicate = bucket.length > 1
 			const isNormalized = String(bucket[0]?.id ?? '') === id
 			if (!hasDuplicate && isNormalized) continue
-			if (hasDuplicate) {
-				this.ctx.logger.warn('[PluginWithUI] duplicate event id detected', {
-					id,
-					count: bucket.length,
-				})
-			}
+				if (hasDuplicate) {
+					this.ctx.logger.warn('duplicate event id detected', { id, count: bucket.length })
+				}
 			const keep = bucket.slice().sort((a, b) => b.at - a.at)[0]
 			const rawIds = new Set(bucket.map((item) => String(item.id)))
 			for (const rawId of rawIds) {
