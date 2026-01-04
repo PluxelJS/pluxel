@@ -1,29 +1,54 @@
-# LogTape Logging Rules (Best Practices) — Codex/Audit Spec
+# LogTape Logging Rules — Codex/Audit Spec (Performance-First + Audit Additions)
 
-This spec is optimized for automated review: it focuses on **correct LogTape call forms**, **when to use each**, and **high-signal mistakes with safe fixes**. (All LogTape-behavior claims are taken from official docs.) ([JSR][1])
+> This spec is optimized for automated review (Codex): correct call forms, performance-first decisions, and high-signal mistakes with safe fixes.
+> LogTape-behavior claims are based on official docs / JSR signatures.
 
 ---
 
-## 1) Canonical call forms (the only forms allowed in new code)
+## Scope & compatibility note (Pluxel)
 
-LogTape logging methods (`trace/debug/info/warn/error/fatal`) have four canonical overload shapes. ([JSR][1])
+**Pluxel note (compatibility):** our `LoggerService` / `callLogtape()` layer may accept some *legacy* argument orders for backward compatibility, but they are **not** best practice and must not be used in new code.
 
-**Pluxel note (compatibility):** our `LoggerService`/`callLogtape()` layer may accept a few *legacy* argument orders for backward compatibility, but they are not considered best practice and should not be used in new code.
+---
 
-### Form A — Tagged template (message only; *no structured fields*)
+## Allowed call forms (only these in new code)
+
+LogTape log methods (`trace/debug/info/warn/error/fatal`) have four canonical overload shapes. ([JSR][7])
+
+### Form A — Tagged template (message-only; no structured fields)
+
+Use for human-readable text when you do **not** need queryable fields.
+Template literals currently do **not** support structured data. ([LogTape][1])
 
 ```ts
 logger.info`Loaded plugin ${id} in ${ms}ms`;
+````
+
+### Form B — String message (optionally with structured properties)
+
+String message with **no** props is valid (and often the cheapest for static text). ([LogTape][3])
+
+```ts
+logger.info("ready");
+logger.info("Guard registered");
 ```
 
-### Form B — Method call with message + optional properties (structured)
+String message + properties is structured logging (recommended when fields matter). ([LogTape][1])
 
 ```ts
 logger.info("Loaded plugin {id} in {ms}ms", { id, ms });
-logger.debug("Stats {*}", () => ({ stats: expensiveStats() })); // lazy properties
 ```
 
-### Form C — Properties-only (structured; no message; **not lazy**)
+Lazy properties (only evaluated if the log level is enabled). ([LogTape][1])
+
+```ts
+logger.debug("Stats {*}", () => ({ stats: expensiveStats() }));
+```
+
+### Form C — Properties-only shorthand (structured; equivalent to `"{*}"`; NOT lazy)
+
+Logging an object as the first argument records those properties as structured data.
+`logger.info({ ... })` is explicitly equivalent to `logger.info("{*}", { ... })`. ([LogTape][1])
 
 ```ts
 logger.debug({ id, ms, status });
@@ -31,121 +56,213 @@ logger.debug({ id, ms, status });
 
 ### Form D — Lazy logging callback (defers expensive interpolation)
 
+Lazy callbacks are evaluated only when the log emits. ([JSR][7])
+
 ```ts
 logger.debug(l => l`Snapshot ${expensiveDump()}`);
 ```
 
-Lazy evaluation via callback and via properties function is documented in the Quick Start and Structured Logging docs. ([logtape.org][2])
-
 ---
 
-## 2) Default decision rule (what Codex should enforce)
+## Performance-first selection rule (Codex enforced)
 
-### Prefer structured logs for anything operational
+### LT-DECISION-001 — If you do not need structured fields, do not pass properties
 
-Use **Form B (message + properties)** when logs should be filterable/searchable/processable. Placeholders `{key}` are populated from properties, while properties remain structured. ([logtape.org][3])
+Passing `{ id, ms, meta }` constructs/transfers structured properties and may cause downstream formatters/sinks to process them (e.g., JSON output includes a `properties` object). ([LogTape][1])
 
-### Use tagged templates only for “human text”
+Use:
 
-Template literals currently **cannot include structured data**, so they must not be used when you need fields. ([logtape.org][3])
+* Static text → `logger.info("ready")` ([LogTape][3])
+* Text + cheap values → tagged template logger.info\`...\` ([LogTape][2])
+* Text + expensive values → lazy callback (Form D) ([JSR][7])
 
-### Anything expensive must be lazy
+### LT-DECISION-002 — If you need queryable fields, use structured logging
+
+Use **Form B** (message + properties) or **Form C** (properties-only) so fields remain available as structured data. ([LogTape][1])
+
+> Audit guidance (non-overriding): operational logs *often* want fields → bias toward Form B/C, but still keep only fields you actually need (and keep heavy ones lazy).
+
+### LT-DECISION-003 — Any expensive work must be expressed lazily
 
 * Expensive interpolation → **Form D**
-* Expensive properties building → **Form B with `() => ({...})`** ([logtape.org][2])
+* Expensive property construction → **Form B with `() => ({...})`**
+* Properties-only shorthand (Form C) is never lazy. ([JSR][7])
 
 ---
 
-## 3) Structured logging rules (Form B / Form C)
+## PLX Error Logging Rules (Formatter-Controlled)
 
-### LT-S001 — Use placeholders `{key}` for fields you want to preserve
+### PLX-ERR-001 — Do NOT render/interpolate errors in the log message
+The message must never include an error placeholder or any user-formatted error string. Error presentation is owned by our LoggerService / formatter layer.
+
+**Forbidden:**
+- `logger.error("failed: {error}", { error })`
+- `logger.error("failed: {err}", { err })`
+- ``logger.error`failed: ${error}``
+- `logger.error("failed: " + error)`
+- `logger.error("failed: " + String(error))`
+- `logger.error("failed: " + error.stack)`
+
+**Allowed:**
+- `logger.error("failed", { error })`
+- `logger.error("failed", { err })`
+- `logger.error("execute failed ({op})", { op, error })` *(message may include other non-error fields)*
+
+
+### PLX-ERR-002 — Errors must be passed as structured properties using ONLY `error` or `err`
+To keep sinks/formatters predictable, the error object must be provided as a structured property with the key **exactly** `error` or `err`.
+
+**Rules:**
+- Use **one** key only: either `error` or `err` (do not provide both).
+- Do not rename it (`exception`, `e`, `cause`, `stack`, etc. are not allowed as the primary error field).
+- Do not pre-stringify (`String(error)`, `error.message`, `error.stack`) in the call site; formatting is handled centrally.
+
+**Examples:**
+```ts
+logger.error("request failed", { error, reqId, url });
+logger.warn("cleanup failed", { err, label });
+````
+
+### PLX-ERR-003 — Any “heavy” error formatting belongs to the formatter (not call sites)
+
+Call sites must not compute expensive or sensitive error representations (stack trimming, serialization, deep inspection, cause-chain rendering, redaction). The formatter decides what to print and how.
+
+If extra diagnostics are needed, attach them as separate structured fields (and make them lazy if expensive), while still passing the raw `error/err` field:
 
 ```ts
-logger.info("Guard {action}", { action: existing ? "updated" : "registered" });
-logger.warn("User {username} (ID: {userId}) logged in", { username, userId });
+logger.error("execute failed", () => ({ error, debug: expensiveDebug() }));
 ```
-
-Placeholders pull from properties and keep the fields structured. ([logtape.org][3])
-
-### LT-S002 — Use `{*}` to render all properties while keeping them structured
-
-```ts
-logger.debug("ctx {*}", { pluginId, reqId, phase });
-```
-
-`{*}` includes all properties in the rendered message; properties remain available as structured data. ([logtape.org][3])
-
-### LT-S003 — Properties-only shorthand is equivalent to `{*}`, but is **not lazy**
-
-```ts
-logger.info({ userId, username, loginTime });
-// equivalent to:
-logger.info("{*}", { userId, username, loginTime });
-```
-
-This equivalence is explicit in the docs. ([logtape.org][3])
-
-**Codex check**: if any value in a properties-only call is expensive, require converting to lazy properties (Form B with function).
 
 ---
 
-## 4) Lazy evaluation rules (performance correctness)
+## Structured properties semantics (including “extra props” like `meta`)
 
-### LT-P001 — Expensive interpolation must not run when level is disabled
+### LT-PROPS-001 — Properties are always present in the log record; placeholders control what appears in the rendered message
 
-**Bad (eager execution):**
+When you pass structured data (as the second argument, or as the first object argument), LogTape includes those keys in the log record’s structured properties. Many sinks/formatters can emit those properties (e.g., JSON Lines includes a `properties` object). ([LogTape][1])
+
+#### Example: extra `meta` is structured, but not interpolated unless referenced
 
 ```ts
+logger.info("Loaded plugin {id} in {ms}ms", { id, ms, meta });
+```
+
+* The rendered message interpolates `{id}` and `{ms}`.
+* `meta` remains in `record.properties`; it won’t be inserted into the message unless you reference `{meta}` or `{*}`. ([LogTape][1])
+
+### LT-PROPS-002 — `{*}` renders all properties into the message while keeping them structured
+
+Use `{*}` when you want the message text to include a stringified view of the entire properties object. ([LogTape][1])
+
+```ts
+logger.debug("plugin ctx {*}", { id, ms, meta });
+```
+
+### LT-PROPS-003 — Properties-only shorthand is the `{*}` shorthand
+
+LogTape treats `logger.info({ ... })` as equivalent to `logger.info("{*}", { ... })`. ([LogTape][1])
+
+### LT-PROPS-004 — Avoid using the property key `"*"`
+
+`{*}` normally expands to a stringified form of `LogRecord.properties`,
+**unless** there is a property literally named `"*"`, which changes how `{*}` is resolved.
+Avoid using `"*"` as a key to keep `{*}` predictable. ([LogTape][4])
+
+---
+
+## `{*}` best-practice patterns (Codex guidance)
+
+### Good uses
+
+1. Debug/trace context dumps (especially during investigation):
+
+```ts
+logger.debug("ctx {*}", { pluginId, reqId, phase, meta });
+```
+
+2. Properties-only logs where a message is unnecessary:
+
+```ts
+logger.debug({ pluginId, reqId, phase, meta });
+```
+
+3. When you want “some text + all fields”:
+
+```ts
+logger.info("Loaded plugin, ctx {*}", { id, ms, meta });
+```
+
+### Avoid / caution
+
+* High-volume paths: `{*}` can stringify large objects; prefer targeted placeholders `{id}`, `{ms}` and keep heavy data behind lazy props. ([LogTape][1])
+* Never build heavy objects eagerly just to dump them with `{*}`; use lazy properties:
+
+```ts
+logger.debug("ctx {*}", () => ({ meta: expensiveMeta() }));
+```
+
+---
+
+## Common mistakes (with safe fixes)
+
+### LT-ANTI-001 — Using tagged templates when fields are required
+
+Template literals cannot carry structured fields. ([LogTape][1])
+
+Fix:
+
+```ts
+// before
+logger.info`Loaded plugin ${id} in ${ms}ms`;
+
+// after
+logger.info("Loaded plugin {id} in {ms}ms", { id, ms });
+```
+
+### LT-ANTI-002 — Eager expensive interpolation
+
+Fix:
+
+```ts
+// before
 logger.debug`Snapshot ${expensiveDump()}`;
-```
 
-**Good (lazy callback):**
-
-```ts
+// after
 logger.debug(l => l`Snapshot ${expensiveDump()}`);
 ```
 
-Lazy callback is documented as the intended pattern. ([logtape.org][2])
+### LT-ANTI-003 — Eager expensive properties (including in Form C)
 
-### LT-P002 — Expensive properties must be supplied by a function
-
-**Bad (eager execution):**
+Fix:
 
 ```ts
-logger.debug("Stats {*}", { stats: expensiveStats() });
+// before
+logger.debug({ meta: expensiveMeta() });
+
+// after
+logger.debug("ctx {*}", () => ({ meta: expensiveMeta() }));
 ```
 
-**Good (lazy properties):**
+### LT-ANTI-004 — Placeholder key contains spaces (avoid collisions)
 
-```ts
-logger.debug("Stats {*}", () => ({ stats: expensiveStats() }));
-```
+LogTape allows `{ username }` and it usually matches `"username"`, but an exact `" username "` key wins. ([LogTape][1])
 
-Lazy properties functions are explicitly supported and only called if the level is enabled. ([logtape.org][3])
-
-### LT-P003 — Never try to make properties-only shorthand lazy (it can’t be)
-
-If you need laziness, you must use Form B (message + `() => props`). This is enforced by the method signatures. ([JSR][1])
+Fix (style rule): normalize to `{username}`.
 
 ---
 
-## 5) Template literal rules (Form A) — correctness + constraints
+## Codex review checklist (fast pass)
 
-### LT-T001 — Tagged templates cannot carry structured data
-
-If you need fields, use a method call with an object (Form B / Form C). ([logtape.org][3])
-
-### LT-T002 — Use templates for simple, readable interpolation only
-
-```ts
-logger.info`Loaded plugin ${id} in ${ms}ms`;
-```
-
-**Audit note (style, not a LogTape constraint):** avoid putting an entire message inside one `${...}` expression; it reduces readability and makes review harder.
+1. If a log needs queryable fields → ensure Form B/Form C, not tagged template. ([LogTape][1])
+2. If properties are passed but fields aren’t needed → suggest removing props (or switching to Form A / `info("...")`). ([LogTape][3])
+3. If any expensive work appears inside `${...}` or inside a props object literal → require lazy callback or lazy props. ([LogTape][1], [JSR][7])
+4. If extra props like `meta` are passed → confirm the author intends them to be visible to sinks; remind that they won’t appear in message text unless referenced or `{*}` is used. ([LogTape][1])
+5. If `{*}` is used in hot paths → suggest narrowing fields or making props lazy. ([LogTape][1])
+6. If placeholders include spaces (`{ key }`) → normalize to `{key}` to avoid surprising collisions. ([LogTape][1])
 
 ---
 
-## 6) Placeholder semantics (audit footguns)
+## Placeholder semantics (audit footguns)
 
 ### LT-H001 — Escaping `{` uses double braces `{{`
 
@@ -153,30 +270,33 @@ logger.info`Loaded plugin ${id} in ${ms}ms`;
 logger.debug("This logs {{single}} curly braces.");
 ```
 
-Documented in Structured Logging. ([logtape.org][3])
+([LogTape][1])
 
-### LT-H002 — Placeholders may contain leading/trailing spaces
+### LT-H002 — Nested property access is supported in placeholders (LogTape 1.2.0+)
 
-`{ username }` matches `username` **unless** there is an exact `" username "` property; exact match wins. ([logtape.org][3])
+Supported patterns include: dot notation, array indexing, bracket notation for special keys, optional chaining, and combinations.
+Missing paths resolve to `undefined` (optional chaining avoids failures). ([LogTape][1])
 
-**Codex rule**: still prefer `{username}` (no spaces) to avoid surprising collisions.
+Examples:
 
-### LT-H003 — Nested property access is supported in placeholders (1.2.0+)
+```ts
+logger.info("User {user.name} logged in", { user: { name: "Alice" } });
+logger.info("Admin {users[0].name}", { users: [{ name: "Alice" }] });
+logger.info('Full name {user["full-name"]}', { user: { "full-name": "Alice" } });
+logger.info("Email {user?.profile?.email}", { user: { name: "Alice" } });
+```
 
-Supported patterns include:
+### LT-H003 — Prefer `{key}` (no spaces) even though `{ key }` is allowed
 
-* dot notation: `{user.name}`
-* array index: `{users[0]}`
-* bracket notation for special keys: `{user["full-name"]}`
-* optional chaining: `{user?.profile?.email}`
-
-Missing paths resolve to `undefined` (and optional chaining avoids failures). ([logtape.org][3])
+Spaces are allowed and have matching precedence rules; avoid them for predictability. ([LogTape][1])
 
 ---
 
-## 7) Contexts (correlation fields) — preferred patterns
+## Contexts (correlation fields) — preferred patterns
 
-### LT-C001 — Use explicit contexts for repeated fields
+### LT-C001 — Prefer explicit contexts (`logger.with(...)`) for repeated fields
+
+Explicit contexts are designed to reuse the same properties across multiple log messages. ([LogTape][5])
 
 ```ts
 const base = getLogger(["app", "module"]);
@@ -186,9 +306,9 @@ ctx.info("Start {op}", { op });
 ctx.info("Done {op}", { op });
 ```
 
-`with()` sets explicit context, and placeholders can read context values. ([logtape.org][4])
+> Performance note: context fields are structured properties too—only put fields in context if they’re actually useful downstream.
 
-### LT-C002 — Child loggers inherit context
+### LT-C002 — Child loggers inherit explicit context
 
 ```ts
 const parent = getLogger(["app"]).with({ reqId });
@@ -196,116 +316,41 @@ const child = parent.getChild(["module"]);
 child.debug("ctx {reqId}");
 ```
 
-Inheritance is documented. ([logtape.org][4])
+([LogTape][5])
 
-### LT-C003 — Implicit contexts require `contextLocalStorage` and are runtime-dependent
+### LT-C003 — Implicit contexts are runtime-dependent; browsers don’t support them (as of Nov 2025)
 
-* Without `contextLocalStorage`, implicit contexts are not applied and LogTape warns via meta logger.
-* In browsers, implicit contexts are typically not available; prefer explicit `with()` context. ([logtape.org][4])
+Implicit contexts require `contextLocalStorage` in `configure()`. Without it, LogTape won’t inject implicit context and will warn via meta logger. Web browsers do not support implicit contexts yet (as of November 2025). ([LogTape][5])
 
 ---
 
-## 8) Categories (module identity, not string prefixes)
+## Categories (module identity, not string prefixes)
 
-### LT-G001 — Use hierarchical categories; do not embed `[Module]` into messages
+### LT-G001 — Use hierarchical categories; dispatch is based on prefix matches
 
-Categories are hierarchical, and dispatch is based on prefix matches; this is the basis for configuration by category. ([logtape.org][5])
+A category is a list of strings (e.g., `["my-app","my-module"]`), and log dispatch targets loggers whose categories are prefixes. ([LogTape][3])
 
 ```ts
 const logger = getLogger(["my-app", "auth-guard"]);
 ```
 
+**Codex style rule:** do not embed `[Module]` into message text—use categories for identity and filtering.
+
 ---
 
-## 9) Library author rules (important for audits)
+## Library author rules (important for audits)
 
 ### LT-L001 — Libraries must not call `configure()`
 
-LogTape configuration is the application’s responsibility. ([logtape.org][6])
+Configuration is the application’s responsibility. ([LogTape][6], [LogTape][2])
 
 ### LT-L002 — Libraries should namespace their categories
 
-Start categories with the library name to avoid conflicts. ([logtape.org][7])
+Start categories with the library name to avoid conflicts. ([LogTape][6])
 
 ---
 
-## 10) Codex “Findings” and safe fixes
-
-### Finding A — Tagged template used where structured data is required
-
-**Symptom:** template literal logging, but the log should be filterable/aggregated.
-
-**Fix:** convert to Form B
-
-```ts
-// before
-logger.info`User ${username} logged in`;
-
-// after
-logger.info("User {username} logged in", { username });
-```
-
-Template literals cannot include structured fields. ([logtape.org][3])
-
----
-
-### Finding B — Expensive work inside interpolation or properties
-
-**Symptom:** function calls inside `${...}` or inside `{ ... }` at debug/trace.
-
-**Fix 1 (interpolation):**
-
-```ts
-logger.debug(l => l`Snapshot ${expensiveDump()}`);
-```
-
-**Fix 2 (properties):**
-
-```ts
-logger.debug("Snapshot {*}", () => ({ dump: expensiveDump() }));
-```
-
-Lazy evaluation patterns are documented. ([logtape.org][2])
-
----
-
-### Finding C — Properties-only shorthand contains expensive values
-
-**Symptom:** `logger.debug({ dump: expensiveDump() })`
-
-**Fix:** use lazy properties
-
-```ts
-logger.debug("{*}", () => ({ dump: expensiveDump() }));
-```
-
-Properties-only calls have no lazy overload. ([JSR][1])
-
----
-
-### Finding D — Placeholder key contains spaces
-
-**Symptom:** `"Hello { name }"` style placeholders.
-
-**Fix:** normalize to `{name}` (prevents collisions with `" name "` keys).
-Whitespace matching rules are documented. ([logtape.org][3])
-
----
-
-## 11) Pluxel conventions (repo best practices, beyond LogTape docs)
-
-### PLX-E001 — Errors: always pass `error`, and render `{error}`
-
-Prefer a stable template that includes `{error}` for readability, while keeping the actual error object structured for sinks/formatters:
-
-```ts
-logger.error("execute failed: {error}", { error });
-logger.warn("optional({label}) 清理失败: {error}", { label, error });
-```
-
----
-
-## 12) Suggested ripgrep searches (high-signal)
+## Suggested ripgrep searches (high-signal)
 
 ```bash
 # Tagged templates (review whether they should be structured)
@@ -323,17 +368,20 @@ rg -n "logger\.\w+\([^,]+,\s*\{[^}]*\b(JSON\.stringify|inspect|serialize|dump|fo
 # Placeholder whitespace style (prefer {key} over { key })
 rg -n "\{\s+\w+|\{\w+\s+\}" .
 
-# Legacy object-first signature (avoid in new code; may exist only for compatibility tests)
+# (Pluxel) Legacy object-first signature (avoid in new code; may exist only for compatibility tests)
 rg -n "logger\.\w+\(\s*\{[^}]*\}\s*,\s*['\"]" .
 ```
 
 ---
 
-## 13) Minimal “golden templates” (recommended to copy)
+## Minimal “golden templates” (recommended to copy)
 
 ```ts
-// Human-readable only
+// Human-readable only (no structured fields)
 logger.info`Loaded plugin ${id} in ${ms}ms`;
+
+// Cheapest static text
+logger.info("ready");
 
 // Structured, stable template
 logger.info("Loaded plugin {id} in {ms}ms", { id, ms });
@@ -341,11 +389,16 @@ logger.info("Loaded plugin {id} in {ms}ms", { id, ms });
 // Structured + all fields rendered
 logger.debug("ctx {*}", { reqId, pluginId, phase });
 
-// Lazy interpolation
+// Lazy interpolation (expensive)
 logger.debug(l => l`Snapshot ${expensiveDump()}`);
 
-// Lazy structured fields
+// Lazy structured fields (expensive)
 logger.debug("Snapshot {*}", () => ({ dump: expensiveDump() }));
+
+// Error handle
+logger.error("failed", { error })
+logger.error("failed", { err })
+logger.fatal("fatal err", { error })
 
 // Repeated correlation fields
 const ctx = getLogger(["app", "module"]).with({ reqId, userId });
@@ -354,10 +407,12 @@ ctx.info("Start {op}", { op });
 
 ---
 
-[1]: https://jsr.io/%40logtape/logtape/doc/~/LogMethod "LogMethod - @logtape/logtape - JSR"
+## References
+
+[1]: https://logtape.org/manual/struct "Structured logging | LogTape"
 [2]: https://logtape.org/manual/start "Quick start | LogTape"
-[3]: https://logtape.org/manual/struct "Structured logging | LogTape"
-[4]: https://logtape.org/manual/contexts "Contexts | LogTape"
-[5]: https://logtape.org/manual/categories "Categories | LogTape"
-[6]: https://logtape.org/manual/config "Configuration | LogTape"
-[7]: https://logtape.org/manual/library "Using in libraries | LogTape"
+[3]: https://logtape.org/manual/categories "Categories | LogTape"
+[4]: https://logtape.org/changelog "LogTape changelog"
+[5]: https://logtape.org/manual/contexts "Contexts | LogTape"
+[6]: https://logtape.org/manual/library "Using in libraries | LogTape"
+[7]: https://jsr.io/%40logtape/logtape/doc/~/LogMethod "LogMethod - @logtape/logtape - JSR"

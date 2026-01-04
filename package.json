@@ -9,6 +9,7 @@
 	"scripts": {
 		"test": "turbo run test",
 		"build": "turbo run build",
+		"audit:logs": "node scripts/audit-logs.mjs",
 		"update": "pnpm pncat migrate && pnpm up --latest && pnpm pncat revert",
 		"dev:core": "pnpm --filter core dev",
 		"dev:hmr": "pnpm --filter hmr hmr"

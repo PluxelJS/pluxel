@@ -58,7 +58,7 @@ describe('EffectScopeService', () => {
 			ctx.scope.disposeAll()
 
 			expect(errorSpy).toHaveBeenCalledTimes(1)
-			expect(errorSpy.mock.calls[0]).toEqual(['dispose error: {error}', { error: err }])
+			expect(errorSpy.mock.calls[0]).toEqual(['dispose error', { error: err }])
 			expect(ctx.scope.disposables.size).toBe(0)
 		})
 	})

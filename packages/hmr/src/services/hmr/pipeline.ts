@@ -345,26 +345,26 @@ export class HmrExecutor {
 			} catch (err) {
 				// Hard fail on CJS deps being evaluated as ESM (common for native wrappers),
 				// so users must explicitly externalize them via `hmrService.deps.cjsExternal`.
-				const cjsHint = buildCjsExternalizeHint(err)
-				if (cjsHint) {
-					this.ctx.logger.error('execute failed for {file}: {error}', { file: id, error: err })
-					throw new Error(cjsHint, { cause: err as any })
+					const cjsHint = buildCjsExternalizeHint(err)
+					if (cjsHint) {
+						this.ctx.logger.error('execute failed for {file}', { file: id, error: err })
+						throw new Error(cjsHint, { cause: err as any })
+					}
+					this.ctx.logger.error('execute failed for {file}', { file: id, error: err })
+					continue
 				}
-				this.ctx.logger.error('execute failed for {file}: {error}', { file: id, error: err })
-				continue
-			}
 			const evaluateMs = endEvaluate()
 
 			const endInject = this.timing.start('inject', id)
 			let hasPlugin = false
-			try {
-				hasPlugin = await batch.replaceModule(id, mod)
-			} catch (err) {
-				this.ctx.logger.error('replaceModule failed for {file}: {error}', { file: id, error: err })
-				batch.rollback()
-				this.ctx.registry.resetDraft()
-				return undefined
-			}
+				try {
+					hasPlugin = await batch.replaceModule(id, mod)
+				} catch (err) {
+					this.ctx.logger.error('replaceModule failed for {file}', { file: id, error: err })
+					batch.rollback()
+					this.ctx.registry.resetDraft()
+					return undefined
+				}
 			const injectMs = endInject()
 
 			const dbg = this.cfg.dbgModules

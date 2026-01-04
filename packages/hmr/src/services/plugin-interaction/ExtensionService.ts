@@ -299,13 +299,13 @@ export class ExtensionService {
 
 	private notifyManifest(event: ExtensionManifestEvent): void {
 		for (const listener of this.manifestListeners) {
-			try {
-				listener(event)
-			} catch (error) {
-				this.ctx.logger.error('manifest listener failed: {error}', { error })
+				try {
+					listener(event)
+				} catch (error) {
+					this.ctx.logger.error('manifest listener failed', { error })
+				}
 			}
 		}
-	}
 
 	private enqueueCompile(pluginName: string): void {
 		const entry = this.entries.get(pluginName)
@@ -377,14 +377,14 @@ export class ExtensionService {
 			entry.lastSourceHash = sourceHash
 			entry.modulePath = targetFile
 			entry.moduleUrl = moduleUrl
-			this.handleManifestUpdate(pluginName, entry)
-			this.dbg('compile done %s', pluginName)
-			return true
-		} catch (error) {
-			this.ctx.logger.error('failed to compile {pluginName}: {error}', { pluginName, error })
-			return false
+				this.handleManifestUpdate(pluginName, entry)
+				this.dbg('compile done %s', pluginName)
+				return true
+			} catch (error) {
+				this.ctx.logger.error('failed to compile {pluginName}', { pluginName, error })
+				return false
+			}
 		}
-	}
 
 	private async onAfterCommit(summary: import('@pluxel/core').CommitSummary) {
 		if (!this.pendingPlugins.size) return
@@ -644,10 +644,10 @@ export class ExtensionService {
 				version: this.manifestVersion,
 				modules: restored,
 			}
-		} catch (error) {
-			this.ctx.logger.warn('failed to restore manifest: {error}', { error })
+			} catch (error) {
+				this.ctx.logger.warn('failed to restore manifest', { error })
+			}
 		}
-	}
 
 	private persistManifest(): void {
 		const snapshot = JSON.stringify(this.manifest, null, 2)
@@ -655,11 +655,11 @@ export class ExtensionService {
 			try {
 				await mkdir(this.outDir, { recursive: true })
 				await writeFile(this.manifestPath, snapshot, 'utf-8')
-			} catch (error) {
-				this.ctx.logger.warn('failed to persist manifest: {error}', { error })
-			}
-		})()
-	}
+				} catch (error) {
+					this.ctx.logger.warn('failed to persist manifest', { error })
+				}
+			})()
+		}
 
 	private collectSourceFiles(pluginDir: string, entryPath: string): string[] {
 		const entryFile = this.resolvePluginFile(pluginDir, entryPath)

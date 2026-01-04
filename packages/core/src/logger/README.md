@@ -47,7 +47,7 @@ log.warn`module updated`
 错误日志：把 `error` 放进结构化属性（便于 pretty/youch/filters 识别）。
 
 ```ts
-ctx.logger.error("execute failed: {error}", { error })
+ctx.logger.error("execute failed", { error })
 ```
 
 昂贵计算：用 LogTape 的 lazy callback，让成本只在该 level 启用时发生。

@@ -17,7 +17,7 @@ export abstract class DemoClock extends BasePlugin {
 @Plugin(DemoClock, { name: 'DemoClock.System', type: 'demo' })
 export class DemoClockSystem extends DemoClock {
 	override init(): void {
-		this.ctx.logger.info('ready {id}', { id: this.ctx.pluginInfo.id })
+		this.ctx.logger.info`ready ${this.ctx.pluginInfo.id}`
 	}
 
 	now(): number {
@@ -31,10 +31,7 @@ export class DemoClockFixed extends DemoClock {
 
 	override init(): void {
 		this.fixed = Date.now()
-		this.ctx.logger.info('ready {id}', () => ({
-			id: this.ctx.pluginInfo.id,
-			fixed: this.format(this.fixed),
-		}))
+		this.ctx.logger.info(l => l`ready ${this.ctx.pluginInfo.id} (fixed=${this.format(this.fixed)})`)
 	}
 
 	now(): number {

@@ -149,12 +149,12 @@ export class PackageService {
 			this.defaults.scan = config.scan
 		}
 		const stateFile = resolveStateFilePath(config.state?.file)
-		const stateOptions: PackageStateStoreOptions = {
-			file: stateFile,
-			onError: (error) => {
-				this.ctx.logger.warn('持久化包状态失败: {error}', { error, stateFile })
-			},
-		}
+			const stateOptions: PackageStateStoreOptions = {
+				file: stateFile,
+				onError: (error) => {
+					this.ctx.logger.warn('持久化包状态失败', { error, stateFile })
+				},
+			}
 		if (config.state?.debounceMs !== undefined) {
 			stateOptions.debounceMs = config.state.debounceMs
 		}
@@ -595,14 +595,14 @@ export class PackageService {
 		}
 		if (!toLoad.length) return
 
-		for (const name of toLoad) {
-			try {
-				await this.load(name)
-			} catch (error) {
-				this.ctx.logger.warn('同步加载插件失败: {error}', { name, error })
+			for (const name of toLoad) {
+				try {
+					await this.load(name)
+				} catch (error) {
+					this.ctx.logger.warn('同步加载插件失败', { name, error })
+				}
 			}
 		}
-	}
 
 	private async initializeInstallDefaults(overrides?: InstallOptions) {
 		const workspaceRoot = await this.detectWorkspaceRoot(overrides?.cwd)
@@ -625,12 +625,12 @@ export class PackageService {
 
 	private async initializeFromState(): Promise<void> {
 		let payload: PackageStatePayload | LegacyPackageStatePayload | null = null
-		try {
-			payload = await this.stateStore.read()
-		} catch (error) {
-			this.ctx.logger.warn('读取包状态失败: {error}', { error })
-			throw error
-		}
+			try {
+				payload = await this.stateStore.read()
+			} catch (error) {
+				this.ctx.logger.warn('读取包状态失败', { error })
+				throw error
+			}
 		const normalized = normalizeStatePayload(payload)
 		if (!normalized) return
 
@@ -787,15 +787,12 @@ export class PackageService {
 	) {
 		const logger = this.ctx.logger
 		if (!logger) return
-		const baseMessage =
-			message ??
-			(Object.prototype.hasOwnProperty.call(payload, 'error')
-				? 'PackageService {event}: {error}'
-				: 'PackageService {event}')
-		const record = { name: this.logName, event, ...payload }
-		if (level === 'info') {
-			logger.info(baseMessage, record)
-		} else if (level === 'warn') {
+			const baseMessage =
+				message ?? 'PackageService {event}'
+			const record = { name: this.logName, event, ...payload }
+			if (level === 'info') {
+				logger.info(baseMessage, record)
+			} else if (level === 'warn') {
 			logger.warn(baseMessage, record)
 		} else {
 			logger.error(baseMessage, record)

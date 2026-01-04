@@ -330,12 +330,12 @@ export class PluginRegistry {
 	async syncRuntimeForModule(moduleId: ModuleId): Promise<void> {
 		const list = this.moduleMap.get(moduleId) ?? EMPTY
 		const safeStart = async (name: string, ctor: PluginConstructor) => {
-			try {
-				await this.startPlugin(name, ctor)
-			} catch (err) {
-				this.ctx.logger.warn('启动失败：{name}: {error}', { name, moduleId, error: err })
+				try {
+					await this.startPlugin(name, ctor)
+				} catch (err) {
+					this.ctx.logger.warn('启动失败：{name}', { name, moduleId, error: err })
+				}
 			}
-		}
 		// 并行启动（registerPlugin 只是声明，依赖处理在 commit 时）
 		const toStart = list.flatMap(({ ctor }) => {
 			const { id: name } = getPluginInfo(ctor)
@@ -363,16 +363,16 @@ export class PluginRegistry {
 			for (const forkId of forkIds) {
 				const forkName = `${name}#${forkId}`
 				if (!this.ctx.configService.isEnabledInConfig(forkName)) continue
-					try {
-						const ForkCtor = this.ctx.registry.fork(ctor as any, forkId) as PluginConstructor
-						forkStarts.push(safeStart(forkName, ForkCtor))
-					} catch (err) {
-						this.ctx.logger.warn('启动 fork 失败：{name}#{forkId}: {error}', {
-							name,
-							forkId,
-							error: err,
-						})
-					}
+						try {
+							const ForkCtor = this.ctx.registry.fork(ctor as any, forkId) as PluginConstructor
+							forkStarts.push(safeStart(forkName, ForkCtor))
+						} catch (err) {
+							this.ctx.logger.warn('启动 fork 失败：{name}#{forkId}', {
+								name,
+								forkId,
+								error: err,
+							})
+						}
 				}
 			}
 		if (forkStarts.length > 0) await Promise.all(forkStarts)
@@ -563,12 +563,12 @@ export class PluginRegistry {
 
 	// --------------- 工具 ---------------
 	private logGuard(label: string, fn: () => void) {
-		try {
-			fn()
-		} catch (err) {
-			this.ctx.logger.warn('可恢复异常：{label}: {error}', { label, error: err })
+			try {
+				fn()
+			} catch (err) {
+				this.ctx.logger.warn('可恢复异常：{label}', { label, error: err })
+			}
 		}
-	}
 
 	private isObjectSchema(schema: unknown): boolean {
 		return (schema as { type?: string })?.type === 'object'

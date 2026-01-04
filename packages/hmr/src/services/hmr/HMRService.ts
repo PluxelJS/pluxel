@@ -358,14 +358,14 @@ export class HMRService {
 			maxWaitMs: this.config.batch?.maxWaitMs ?? 120,
 			maxBatchFiles: this.config.batch?.maxBatchFiles ?? 2000,
 		}
-		this.debouncer = new BatchDebouncer(
-			(files, epoch) => this.batchProcessor.process(files, epoch),
-			bCfg.debounceMs,
-			bCfg.maxWaitMs,
-			bCfg.maxBatchFiles,
-			(error) => this.ctx.logger.error('batch flush failed: {error}', { error }),
-		)
-	}
+			this.debouncer = new BatchDebouncer(
+				(files, epoch) => this.batchProcessor.process(files, epoch),
+				bCfg.debounceMs,
+				bCfg.maxWaitMs,
+				bCfg.maxBatchFiles,
+				(error) => this.ctx.logger.error('batch flush failed', { error }),
+			)
+		}
 
 	private registerWatchers(server: ViteDevServer) {
 		server.watcher.on('change', (file) => this.enqueueFileChange(file))

@@ -59,7 +59,7 @@ export class EffectScopeService {
 			try {
 				fn()
 			} catch (error) {
-				this.ctx.logger.error('dispose error: {error}', { error })
+				this.ctx.logger.error('dispose error', { error })
 			}
 		}
 	}

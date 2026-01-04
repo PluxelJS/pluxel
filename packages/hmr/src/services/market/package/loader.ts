@@ -163,25 +163,25 @@ export class PackageLoader {
 					resolvedVersion: entry.resolvedVersion ?? entry.manifestVersion,
 					loadedAt: entry.loadedAt,
 				}
-				if (entry.install) {
-					record.install = {
-						spec,
-						target: spec.target,
-						status: entry.install.status,
-						installedAt: entry.install.at,
+					if (entry.install) {
+						record.install = {
+							spec,
+							target: spec.target,
+							status: entry.install.status,
+							installedAt: entry.install.at,
+						}
 					}
-				}
-				this.state.registerRecord(record)
-				this.state.clearIssue(spec.name)
-				mutated = true
+					this.state.registerRecord(record)
+					this.state.clearIssue(spec.name)
+					mutated = true
 				} catch (error) {
-					this.ctx.logger.warn('恢复包失败，已跳过该条记录: {error}', { spec, error })
+					this.ctx.logger.warn('恢复包失败，已跳过该条记录', { spec, error })
 					this.recordLoadIssue(spec, error, 'restore', entry.moduleId ?? entry.resolution.entry)
 					mutated = true
 				}
+			}
+			return mutated
 		}
-		return mutated
-	}
 
 	private async executeLoad(
 		spec: NormalizedPackageSpecifier,
@@ -263,29 +263,29 @@ export class PackageLoader {
 	): Promise<Record<string, unknown>> {
 		const url = pathToFileURL(moduleId)
 		if (forceFresh) {
-			url.searchParams.set('_ts', `${Date.now()}-${Math.random().toString(36).slice(2)}`)
-		}
+				url.searchParams.set('_ts', `${Date.now()}-${Math.random().toString(36).slice(2)}`)
+			}
 			try {
 				return await import(url.href)
 			} catch (error) {
-				this.ctx.logger.error('导入模块失败 {moduleId}: {error}', { moduleId, error })
+				this.ctx.logger.error('导入模块失败 {moduleId}', { moduleId, error })
 
 				if (error instanceof Error) {
 					throw error
 				}
-			const message = typeof error === 'string' ? error : error != null ? String(error) : '未知错误'
-			const wrapped = new Error(message)
-			if (
-				error &&
+				const message = typeof error === 'string' ? error : error != null ? String(error) : '未知错误'
+				const wrapped = new Error(message)
+				if (
+					error &&
 				typeof error === 'object' &&
 				'stack' in (error as any) &&
 				typeof (error as any).stack === 'string'
 			) {
-				wrapped.stack = (error as any).stack
+					wrapped.stack = (error as any).stack
+				}
+				throw wrapped
 			}
-			throw wrapped
 		}
-	}
 
 	private async readManifestMeta(dir: string): Promise<PackageManifestMeta> {
 		const manifestPath = resolvePath(dir, 'package.json')

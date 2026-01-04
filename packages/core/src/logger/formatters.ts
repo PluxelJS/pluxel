@@ -256,7 +256,7 @@ function collectExtraProps(record: LogRecord): ExtraPropEntry[] {
 	for (const [k, v] of Object.entries(props)) {
 		if (k === 'context' || k === 'pluginId' || k === 'name' || k === 'caller') continue
 		// Let Youch own the error rendering; keep error metadata minimal here.
-		if (k === 'error') continue
+		if (k === 'error' || k === 'err') continue
 		if (v === undefined) continue
 
 		if (Array.isArray(v) && v.every((x) => typeof x === 'string')) {

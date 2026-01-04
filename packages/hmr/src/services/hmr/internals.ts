@@ -37,7 +37,7 @@ export function matchesSpecifierPattern(specifier: string, pattern: string) {
 type BatchDebounceReason = 'debounce' | 'maxwait' | 'maxbatch'
 const batchDebouncerLogger = getLogger([...pluxelCategories.hmr, 'BatchDebouncer'])
 const defaultBatchDebounceErrorHandler = (error: unknown) => {
-	batchDebouncerLogger.error('flush failed: {error}', { error })
+	batchDebouncerLogger.error('flush failed', { error })
 }
 
 export class BatchDebouncer {

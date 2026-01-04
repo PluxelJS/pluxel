@@ -209,13 +209,13 @@ export class SseService {
 			if (!session.isConnected) return
 			const message = this.normalizePayload(namespace, payload)
 			if (!message) return
-			try {
-				const { data, event, id } = message
-				session.push(data, event, id)
-			} catch (err) {
-				this.ctx.logger.warn('push failed: {error}', { error: err })
+				try {
+					const { data, event, id } = message
+					session.push(data, event, id)
+				} catch (err) {
+					this.ctx.logger.warn('push failed', { error: err })
+				}
 			}
-		}
 
 		const emit = (
 			event: string,
@@ -267,10 +267,10 @@ export class SseService {
 			const handler = factory(this.ctx)
 			const maybeCleanup = await handler(channel)
 			return typeof maybeCleanup === 'function' ? maybeCleanup : undefined
-		} catch (err) {
-			this.ctx.logger.error('handler crashed: {error}', { error: err })
+			} catch (err) {
+				this.ctx.logger.error('handler crashed', { error: err })
+			}
 		}
-	}
 
 	private parseNamespaces(params: URLSearchParams): string[] {
 		const raw = params.get('ns') ?? params.get('namespace') ?? params.get('namespaces')
@@ -344,7 +344,7 @@ export class SseService {
 
 	private runCleanup(cleanup: () => void | Promise<void>, namespace: string) {
 		Promise.resolve(cleanup()).catch((err) => {
-			this.ctx.logger.warn('cleanup failed for "{namespace}": {error}', { namespace, error: err })
+			this.ctx.logger.warn('cleanup failed for "{namespace}"', { namespace, error: err })
 		})
 	}
 

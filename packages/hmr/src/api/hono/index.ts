@@ -57,11 +57,11 @@ const app = new Hono<AppEnv>()
 		try {
 			const api = new HmrRpcApi(c.var.plugin_ctx)
 			return await newHttpBatchRpcResponse(c.req.raw, api)
-		} catch (err) {
-			c.var.plugin_ctx.logger.error('RPC request failed: {error}', { error: err })
-			return c.text('Internal RPC error', 500)
-		}
-	})
+			} catch (err) {
+				c.var.plugin_ctx.logger.error('RPC request failed', { error: err })
+				return c.text('Internal RPC error', 500)
+			}
+		})
 	// ============ Extension API ============
 	// 获取扩展清单
 	.get('/extensions/manifest', (c) => {

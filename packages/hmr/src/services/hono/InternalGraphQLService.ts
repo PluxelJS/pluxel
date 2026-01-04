@@ -103,11 +103,11 @@ export class InternalGraphQLService {
 			})
 
 			this.logger.info('GQty client generated', { destination })
-		} catch (error) {
-			this.logger.error('generateClient failed: {error}', { error, destination })
-		} finally {
-			this.codegenRunning = false
+			} catch (error) {
+				this.logger.error('generateClient failed', { error, destination })
+			} finally {
+				this.codegenRunning = false
+			}
 		}
-	}
 	// #endif
 }

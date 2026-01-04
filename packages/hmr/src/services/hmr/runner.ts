@@ -156,12 +156,12 @@ export class HmrRunner {
 					if (abs.startsWith('/')) urls.add(`/@fs${abs}`)
 
 					this.primeModuleCacheEntry({ id: resolved.id, exports, aliases: urls })
-				} catch (error) {
-					logger.warn('failed to bridge host module {specifier}: {error}', { specifier, error })
-				}
-				}),
-			)
-		}
+					} catch (error) {
+						logger.warn('failed to bridge host module {specifier}', { specifier, error })
+					}
+					}),
+				)
+			}
 
 	async assertBridgedSingletons(specifiers: readonly string[]) {
 		for (const specifier of specifiers) {

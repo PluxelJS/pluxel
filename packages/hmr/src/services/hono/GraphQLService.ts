@@ -106,10 +106,10 @@ export class GraphQLService extends CoreGraphQLService {
 			})
 
 			this.logger.info('GQty client generated', { destination: cfg.destination })
-		} catch (error) {
-			this.logger.error('generateClient failed: {error}', { error })
-		} finally {
-			this.codegenRunning = false
+			} catch (error) {
+				this.logger.error('generateClient failed', { error })
+			} finally {
+				this.codegenRunning = false
+			}
 		}
-	}
 }

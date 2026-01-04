@@ -56,6 +56,7 @@ export type PluxelYouchSinkOptions = {
 
 function findErrorInRecord(record: LogRecord): unknown {
 	if (record.properties.error) return record.properties.error
+	if (record.properties.err) return record.properties.err
 	for (let i = 1; i < record.message.length; i += 2) {
 		const v = record.message[i]
 		if (v instanceof Error) return v

@@ -145,7 +145,7 @@ export class OptionalResolver {
 				opts.onError(error)
 			} else {
 				const name = (opts?.label ?? importer.name) || 'dynamic import'
-				callerCtx.logger.warn('optional({name}) 动态导入失败: {error}', { name, error })
+				callerCtx.logger.warn('optional({name}) 动态导入失败', { name, error })
 			}
 			return undefined
 		}
@@ -216,27 +216,27 @@ export class OptionalResolver {
 							availability: this.getAvailability(ids),
 						}
 
-							try {
-								if (cleanup) await cleanup()
-							} catch (error) {
-								callerCtx.logger.warn('optional({label}) 清理失败: {error}', { label, error })
-							}
-							cleanup = undefined
-							if (stopped) return
+								try {
+									if (cleanup) await cleanup()
+								} catch (error) {
+									callerCtx.logger.warn('optional({label}) 清理失败', { label, error })
+								}
+								cleanup = undefined
+								if (stopped) return
 
 						try {
 							const value = (multi ? current : current[0]) as any
 							const ret = await effect(value, info)
 							if (typeof ret === 'function') cleanup = ret as any
-						} catch (error) {
-							if (opts?.onError) opts.onError(error)
-							else callerCtx.logger.error('optional({label}) 执行失败: {error}', { label, error })
-						}
-						})
-						.catch((error) => {
-							callerCtx.logger.error('optional({label}) 内部异常: {error}', { label, error })
-						})
-				}
+							} catch (error) {
+								if (opts?.onError) opts.onError(error)
+								else callerCtx.logger.error('optional({label}) 执行失败', { label, error })
+							}
+							})
+							.catch((error) => {
+								callerCtx.logger.error('optional({label}) 内部异常', { label, error })
+							})
+					}
 
 			const offStart = watch ? callerCtx.events.on('afterStart', () => run(undefined)) : () => {}
 			const offCommit = watch ? callerCtx.events.on('afterCommit', (s) => run(s)) : () => {}
@@ -251,13 +251,13 @@ export class OptionalResolver {
 					/* ignore */
 				}
 				chain = chain.finally(async () => {
-					try {
-						await cleanup?.()
-					} catch (error) {
-						callerCtx.logger.warn('optional({label}) 清理失败: {error}', { label, error })
-					}
-					cleanup = undefined
-				})
+						try {
+							await cleanup?.()
+						} catch (error) {
+							callerCtx.logger.warn('optional({label}) 清理失败', { label, error })
+						}
+						cleanup = undefined
+					})
 			}
 
 			try {
@@ -290,16 +290,16 @@ export class OptionalResolver {
 		if (!isPluginIdentifier(target)) {
 			const importer = typeof target === 'function' ? target : () => target
 			const label = importer.name || 'dynamic import'
-			return this.optionalImport(importer, { onError: opts?.onError, label }).then((mod) => {
-				const ids = this.normalizePluginIdentifiers(mod)
-				if (mod !== undefined && ids.length === 0) {
-					const err = new Error(`optional(${label}) 未找到 BasePlugin 导出`)
-					callerCtx.logger.warn('optional({label}) 未找到 BasePlugin 导出: {error}', {
-						label,
-						error: err,
-					})
-					opts?.onError?.(err)
-				}
+				return this.optionalImport(importer, { onError: opts?.onError, label }).then((mod) => {
+					const ids = this.normalizePluginIdentifiers(mod)
+					if (mod !== undefined && ids.length === 0) {
+						const err = new Error(`optional(${label}) 未找到 BasePlugin 导出`)
+						callerCtx.logger.warn('optional({label}) 未找到 BasePlugin 导出', {
+							label,
+							error: err,
+						})
+						opts?.onError?.(err)
+					}
 				return attach(ids, label)
 			})
 		}
