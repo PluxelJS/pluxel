@@ -69,6 +69,13 @@ export interface HMRConfig {
 	deps?: HMRDependencyConfig
 	/** 日志与调试开关 */
 	log?: HMRLogConfig
+	/**
+	 * 额外的 Vite 插件（仅用于 HMR dev server）。
+	 *
+	 * 用途示例：
+	 * - 下游自己加宏：`import Macros from 'unplugin-macros/vite'; vitePlugins: [Macros()]`
+	 */
+	vitePlugins?: Plugin[]
 	/** 插件执行环境（Vite ModuleRunner）运行时行为 */
 	runtime?: {
 		/**
@@ -250,6 +257,7 @@ export class HMRService {
 			fsAllow: serverFsAllow,
 			scanDirs: this.config.dir,
 			deps: this.deps,
+			extraPlugins: this.config.vitePlugins,
 			runnerPlugin: this.plugin,
 			honoPlugin: this.ctx.honoService.viteHonoDevServer,
 			includeGlobs: this.includeGlobs,

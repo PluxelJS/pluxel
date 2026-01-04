@@ -6,6 +6,11 @@ export default defineConfig({
 		build: true,
 		sourcemap: true,
 	},
+	plugins: [
+		// 需要宏/transform 的话，下游自行添加：
+		// import Macros from 'unplugin-macros/rolldown'
+		// Macros(),
+	],
 	format: ['esm'],
 	env: {},
 	copy: [

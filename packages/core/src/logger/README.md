@@ -58,7 +58,7 @@ ctx.logger.debug((l) => l`cache keys:\n${keys.join('\n')}`)
 
 ## Sinks / Formatters
 
-- `createPluxelPrettyConsoleSink()`：单入口「pretty console」，默认 `@logtape/pretty`，可选叠加 Youch ANSI 错误增强。
+- `createPluxelPrettyConsoleSink()`：单入口「pretty console」，默认 `@logtape/pretty`，可选叠加 Youch ANSI 错误增强（支持按 category 精确启用，避免 async 插入错位）。
 - `createPluxelPrettyFormatter()`：仅 formatter（不含 Youch；Youch 是 async，只能在 sink 层做）。
 - `createPluxelYouchSink()`：独立 Youch sink（可组合）。
 - `getFileSink/getRotatingFileSink/getStreamFileSink`：官方 file sinks 透传再导出。
@@ -69,6 +69,7 @@ ctx.logger.debug((l) => l`cache keys:\n${keys.join('\n')}`)
 import { configure } from "@logtape/logtape";
 import {
   createPluxelPrettyConsoleSink,
+  pluxelCategories,
   getRotatingFileSink,
 } from "@pluxel/core/logger";
 
@@ -76,7 +77,13 @@ await configure({
   sinks: {
     console: createPluxelPrettyConsoleSink({
       pretty: { timestamp: "time", prefix: "context", includeCaller: true },
-      youch: { minLevel: "error" },
+      // Youch 是 async：建议只对插件系统/HMR 的错误启用，并使用 inline 模式避免错位插入。
+      // 其他错误会在 pretty 的 extra-props 中同步输出 error.stack（不依赖 Youch）。
+      youch: {
+        minLevel: "error",
+        mode: "inline",
+        categoryPrefixes: [pluxelCategories.hmr, pluxelCategories.plugins],
+      },
     }),
     file: getRotatingFileSink("./logs/app.log"),
   },

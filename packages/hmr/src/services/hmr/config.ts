@@ -1,7 +1,6 @@
 import { existsSync } from 'node:fs'
 import { configSourcePlugin, importTypeFixerPlugin } from '@pluxel/rolldown'
 import { resolve } from 'pathe'
-import Macros from 'unplugin-macros/vite'
 import {
 	createLogger,
 	type InlineConfig,
@@ -158,6 +157,7 @@ export interface HmrViteConfigOptions {
 	fsAllow: string[]
 	scanDirs: string[]
 	deps: ResolvedHMRDependencyConfig
+	extraPlugins?: Plugin[]
 	runnerPlugin: Plugin
 	honoPlugin: Plugin
 	port?: number
@@ -218,7 +218,7 @@ export function buildHmrViteConfig(opts: HmrViteConfigOptions): InlineConfig {
 		plugins: [
 			configSourcePlugin({ include: includePatterns, exclude: opts.excludeGlobs }),
 			importTypeFixerPlugin(),
-			Macros(),
+			...(opts.extraPlugins ?? []),
 			opts.runnerPlugin,
 			opts.honoPlugin,
 		],

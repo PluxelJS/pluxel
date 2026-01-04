@@ -2,7 +2,7 @@ import { mkdir } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { configure } from '@logtape/logtape'
-import { createPluxelPrettyConsoleSink, getRotatingFileSink } from '@pluxel/core/logger'
+import { createPluxelPrettyConsoleSink, getRotatingFileSink, pluxelCategories } from '@pluxel/core/logger'
 import { Context } from '@pluxel/hmr'
 import { createLogStoreSink } from '@pluxel/hmr/logger'
 import { LogtapeLoggerService } from '@pluxel/hmr/services'
@@ -28,7 +28,12 @@ await configure({
 	sinks: {
 		console: createPluxelPrettyConsoleSink({
 			pretty: { timestamp: 'time', prefix: 'name', includeCaller: true },
-			youch: { minLevel: 'error' },
+			// Only use Youch for loader/HMR/plugin-system errors to avoid async interleaving in general logs.
+			youch: {
+				minLevel: 'error',
+				mode: 'inline',
+				categoryPrefixes: [pluxelCategories.hmr, pluxelCategories.plugins],
+			},
 		}),
 		file: getRotatingFileSink(join(logsDir, 'hmr.log')),
 		ui: createLogStoreSink({ minLevel: 'trace' }),

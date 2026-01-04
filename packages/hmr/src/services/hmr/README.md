@@ -67,6 +67,13 @@ You can further isolate plugin HMR from frontend/UI changes by providing:
 The same include/exclude rules are forwarded to `configSourcePlugin`, so decorator source extraction stays in sync
 with the HMR scope (and avoids touching UI/TSX by default).
 
+## Extra Vite plugins
+
+`@pluxel/hmr` does not ship opinionated transforms (e.g. macros) by default.
+Downstream projects may inject additional Vite plugins via:
+
+- `hmrService.vitePlugins: Plugin[]`
+
 `deps.bridgeModules` lists specifiers that must share **singletons** between the host process and the runner (DI tokens, decorators, base classes).
 
 ### Required bridge modules

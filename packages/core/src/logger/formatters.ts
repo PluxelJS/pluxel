@@ -12,6 +12,17 @@ export type PluxelPrettyOptions = {
 	includeCaller?: boolean
 }
 
+function findErrorInProps(record: LogRecord): unknown {
+	if ((record.properties as any)?.error) return (record.properties as any).error
+	if ((record.properties as any)?.err) return (record.properties as any).err
+	return undefined
+}
+
+function formatErrorStack(error: Error): string {
+	if (typeof error.stack === 'string' && error.stack.length > 0) return error.stack
+	return `${error.name || 'Error'}: ${error.message || String(error)}`
+}
+
 function formatMessage(record: LogRecord): { fmt: string; values: unknown[] } {
 	let msg = ''
 	const values: unknown[] = []
@@ -64,7 +75,9 @@ export function createPluxelConsoleFormatter(
 				: undefined
 		const callerSuffix = caller ? ` ${callerMarker} ${caller}` : ''
 
-		return [`${time}${level} ${prefix} ${fmt}${callerSuffix}`, ...values]
+		const error = findErrorInProps(record)
+		const errorSuffix = error instanceof Error ? `\n${formatErrorStack(error)}` : ''
+		return [`${time}${level} ${prefix} ${fmt}${callerSuffix}${errorSuffix}`, ...values]
 	}
 }
 
@@ -247,7 +260,9 @@ function formatCompactValue(value: unknown): string {
 	}
 }
 
-type ExtraPropEntry = { key: string; value: string }
+type ExtraPropEntry =
+	| { kind: 'kv'; key: string; value: string }
+	| { kind: 'block'; key: string; lines: string[] }
 
 function collectExtraProps(record: LogRecord): ExtraPropEntry[] {
 	const props = record.properties as Record<string, unknown>
@@ -255,31 +270,39 @@ function collectExtraProps(record: LogRecord): ExtraPropEntry[] {
 	const entries: ExtraPropEntry[] = []
 	for (const [k, v] of Object.entries(props)) {
 		if (k === 'context' || k === 'pluginId' || k === 'name' || k === 'caller') continue
-		// Let Youch own the error rendering; keep error metadata minimal here.
-		if (k === 'error' || k === 'err') continue
 		if (v === undefined) continue
 
-		if (Array.isArray(v) && v.every((x) => typeof x === 'string')) {
-			const list = v as string[]
-			entries.push({ key: `${k}(${list.length})`, value: formatCompactValue(list) })
+		if ((k === 'error' || k === 'err') && v instanceof Error) {
+			entries.push({ kind: 'block', key: k, lines: formatErrorStack(v).split('\n') })
 			continue
 		}
 
-		entries.push({ key: k, value: formatCompactValue(v) })
+		if (Array.isArray(v) && v.every((x) => typeof x === 'string')) {
+			const list = v as string[]
+			entries.push({ kind: 'kv', key: `${k}(${list.length})`, value: formatCompactValue(list) })
+			continue
+		}
+
+		entries.push({ kind: 'kv', key: k, value: formatCompactValue(v) })
 	}
 
 	entries.sort((a, b) => a.key.localeCompare(b.key))
 	return entries
 }
 
-function colorizeExtraPair(pair: ExtraPropEntry, colorsOn: boolean): string {
-	const { key: k, value: v } = pair
-	if (!colorsOn) return `${k}=${v}`
+function colorizeExtraKey(keyText: string, colorsOn: boolean): string {
+	if (!colorsOn) return keyText
+	const reset = '\u001B[0m'
+	const key = '\u001B[38;2;125;211;252m' // sky-ish
+	return `${key}${keyText}${reset}`
+}
+
+function colorizeExtraPair(keyText: string, valueText: string, colorsOn: boolean): string {
+	if (!colorsOn) return `${keyText}=${valueText}`
 	const reset = '\u001B[0m'
 	const dim = '\u001B[2m'
-	const key = '\u001B[38;2;125;211;252m' // sky-ish
 	const val = '\u001B[38;2;253;224;71m' // amber-ish
-	return `${key}${k}${reset}${dim}=${reset}${val}${v}${reset}`
+	return `${colorizeExtraKey(keyText, true)}${dim}=${reset}${val}${valueText}${reset}`
 }
 
 function formatExtraPropsInline(record: LogRecord, colorsOn: boolean): string | undefined {
@@ -288,13 +311,16 @@ function formatExtraPropsInline(record: LogRecord, colorsOn: boolean): string | 
 
 	// Keep one-line logs dense: only inline when short and few keys.
 	if (entries.length > 2) return undefined
+	if (entries.some((e) => e.kind !== 'kv')) return undefined
 
 	const open = '⟪'
 	const close = '⟫'
 	const brace = colorsOn ? '\u001B[38;2;148;163;184m' : ''
 	const reset = colorsOn ? '\u001B[0m' : ''
 
-	const body = entries.map((e) => colorizeExtraPair(e, colorsOn)).join(colorsOn ? `${reset} ` : ' ')
+	const body = entries
+		.map((e) => colorizeExtraPair(e.key, e.value, colorsOn))
+		.join(colorsOn ? `${reset} ` : ' ')
 	const rendered = `${brace}${open}${reset}${body}${brace}${close}${reset}`
 	if (rendered.replace(/\u001B\[[0-9;]*m/g, '').length > 60) return undefined
 	return ` ${rendered}`
@@ -309,7 +335,21 @@ function formatExtraPropsBlock(record: LogRecord, colorsOn: boolean): string[] |
 	const brace = colorsOn ? '\u001B[38;2;148;163;184m' : ''
 	const reset = colorsOn ? '\u001B[0m' : ''
 
-	return entries.map((e) => `    ${brace}${open}${reset}${colorizeExtraPair(e, colorsOn)}${brace}${close}${reset}`)
+	const lines: string[] = []
+	for (const e of entries) {
+		if (e.kind === 'kv') {
+			lines.push(
+				`    ${brace}${open}${reset}${colorizeExtraPair(e.key, e.value, colorsOn)}${brace}${close}${reset}`,
+			)
+			continue
+		}
+
+		lines.push(`    ${brace}${open}${reset}${colorizeExtraKey(e.key, colorsOn)}${brace}${close}${reset}`)
+		for (const l of e.lines) {
+			lines.push(`      ${l}`)
+		}
+	}
+	return lines
 }
 
 function normalizeMessageForConsole(message: unknown[]): unknown[] {
