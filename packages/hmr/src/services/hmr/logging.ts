@@ -1,82 +1,65 @@
-import { getLogger, type Logger as LogtapeLogger } from '@logtape/logtape'
+import type { Logger as LogtapeLogger } from '@logtape/logtape'
+import { mergeDefaults } from '@pluxel/core/logger'
 import {
-	array,
 	type InferOutput,
 	object,
 	optional,
 	parse,
-	picklist,
 	union,
 	boolean as vBoolean,
+	literal as vLiteral,
+	string as vString,
 } from 'valibot'
-
-/**
- * 可启用的 debug namespace（细粒度调试，默认关闭）
- * - modules: 每模块执行详情（eval/inject 耗时）
- * - time: 计时汇总
- * - time:entry: 每条计时记录（最细粒度）
- * - warmup: 预热阶段文件列表
- * - batch: 批处理详情（受影响文件、targets）
- * - cache: 缓存失效详情
- * - graph: 依赖图遍历详情
- */
-export const HMR_DEBUG_NAMESPACES = [
-	'pluxel:hmr:modules',
-	'pluxel:hmr:time',
-	'pluxel:hmr:time:entry',
-	'pluxel:hmr:warmup',
-	'pluxel:hmr:batch',
-	'pluxel:hmr:cache',
-	'pluxel:hmr:graph',
-] as const
-
-export const HMRDebugNamespaceSchema = picklist(HMR_DEBUG_NAMESPACES)
-export type HMRDebugNamespace = InferOutput<typeof HMRDebugNamespaceSchema>
-export type HMRDebugNamespaceInput = HMRDebugNamespace | readonly HMRDebugNamespace[]
 
 export const HMRLogConfigSchema = object({
 	useColors: optional(vBoolean()),
-	debugNamespaces: optional(union([HMRDebugNamespaceSchema, array(HMRDebugNamespaceSchema)])),
+	logtape: optional(
+		object({
+			enabled: optional(vBoolean()),
+			file: optional(union([vString(), vLiteral(false)])),
+			ui: optional(vBoolean()),
+		}),
+	),
 })
 export type HMRLogConfig = InferOutput<typeof HMRLogConfigSchema>
 
 export interface ResolvedHMRLogConfig {
 	useColors: boolean
-	debugNamespaces?: HMRDebugNamespace[]
+	logtape: {
+		enabled: boolean
+		file: string | false
+		ui: boolean
+		uiMinLevel: 'trace'
+	}
 }
 
-export const DEFAULT_LOG_CONFIG: ResolvedHMRLogConfig = {
+/**
+ * HMR dev preset for `hmrService.log`.
+ *
+ * Host override examples:
+ * - only change file path: `{ logtape: { file: "/abs/path/hmr.log" } }`
+ * - disable file sink: `{ logtape: { file: false } }`
+ * - disable auto LogTape configure: `{ logtape: { enabled: false } }`
+ */
+export const HMR_LOG_PRESET: ResolvedHMRLogConfig = {
 	useColors: true,
-	// 细粒度调试默认关闭；需要时配置 debugNamespaces，并在宿主的 LogTape configure() 中将对应 category 的 lowestLevel 设为 debug。
-	debugNamespaces: [],
+	logtape: {
+		enabled: true,
+		file: './logs/hmr.log',
+		ui: true,
+		uiMinLevel: 'trace',
+	},
 }
 
 export function resolveHmrLogConfig(input?: HMRLogConfig): ResolvedHMRLogConfig {
 	const parsed = parse(HMRLogConfigSchema, input ?? {})
-	let debugNamespaces: HMRDebugNamespace[] | undefined
-	if (parsed.debugNamespaces) {
-		const list = Array.isArray(parsed.debugNamespaces)
-			? parsed.debugNamespaces
-			: [parsed.debugNamespaces]
-		debugNamespaces = Array.from(new Set(list))
-	}
 	return {
-		useColors: parsed.useColors ?? DEFAULT_LOG_CONFIG.useColors,
-		debugNamespaces: debugNamespaces ?? DEFAULT_LOG_CONFIG.debugNamespaces,
+		useColors: parsed.useColors ?? HMR_LOG_PRESET.useColors,
+		logtape: mergeDefaults(parsed.logtape, HMR_LOG_PRESET.logtape),
 	}
 }
 
 export type HmrDebugLogger = LogtapeLogger
-
-function namespaceToCategory(namespace: string): readonly [string, ...string[]] {
-	const parts = namespace.split(':').filter(Boolean)
-	if (parts.length === 0) return ['pluxel']
-	return parts as readonly [string, ...string[]]
-}
-
-export function getHmrDebugLogger(namespace: string): HmrDebugLogger {
-	return getLogger(namespaceToCategory(namespace))
-}
 
 /* --------------------------- 计时与归因 --------------------------- */
 
@@ -151,10 +134,7 @@ const formatTopEntries = (
 	const msStrings = entries.map(([, ms]) => ms.toFixed(1))
 	const msWidth = Math.max(...msStrings.map((s) => s.length))
 	const rankWidth = String(entries.length).length
-	const tagWidth = Math.max(
-		...entries.map(([id]) => (marker?.(id) ?? '').length),
-		0,
-	)
+	const tagWidth = Math.max(...entries.map(([id]) => (marker?.(id) ?? '').length), 0)
 
 	return entries.map(([id, ms], i) => {
 		const tag = marker?.(id)
@@ -202,10 +182,7 @@ export function buildAttributionLines(params: {
 }
 
 export function logAttributionReport(
-	logger: Pick<
-		LogtapeLogger,
-		'trace' | 'debug' | 'info' | 'warn' | 'error' | 'fatal'
-	>,
+	logger: Pick<LogtapeLogger, 'trace' | 'debug' | 'info' | 'warn' | 'error' | 'fatal'>,
 	params: Parameters<typeof buildAttributionLines>[0],
 	opts: { level?: 'trace' | 'debug' | 'info' | 'warn' | 'error' | 'fatal' } = {},
 ) {

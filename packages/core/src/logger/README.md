@@ -13,13 +13,17 @@
 
 ## Record Properties（约定字段）
 
-由 `LoggerService`/`LogtapeLoggerService` 注入：
+由 `LoggerService`/`LogtapeLoggerService` 注入（约定）：
 
 - `context`: 当前 Context 名称
 - `pluginId` (可选): 插件 id（用于 filter）
 - `name` (hmr 可选): UI 展示名（如 `plugin-a(pluginA)`）
-- `caller` (可选): 调用点（默认开启；可用 `PLUXEL_LOG_CALLER=0` 或 `PLUXEL_LOGGER_CALLER=0` 关闭）
-  - 输出格式：`⤷ relative/path.ts:line:col`（优先相对 `process.cwd()`）
+
+`caller`（调用点）不是约定字段：默认由 `createPluxelPrettyFormatter()` 在渲染时按需捕获并追加到输出。
+你也可以显式传入 `{ caller: "..." }` 来覆盖显示（例如跨线程/跨进程场景）。
+
+- 默认：开发/测试开启，生产环境关闭（可用 `PLUXEL_LOG_CALLER=0/1` 或 `PLUXEL_LOGGER_CALLER=0/1` 覆盖）
+- 输出格式：`⤷ relative/path.ts:line:col`（优先相对 `process.cwd()`）
 
 ## 推荐用法（最佳实践）
 
@@ -36,7 +40,7 @@ ctx.logger.info("module loaded", { pluginId, file })
 ctx.logger.with({ pluginId, file }).info`module loaded`
 ```
 
-多条日志共享结构化数据：用 `with()`（注意：`caller` 会在 `.with()` 调用点捕获）。
+多条日志共享结构化数据：用 `with()`。
 
 ```ts
 const log = ctx.logger.with({ pluginId, file })
@@ -56,9 +60,19 @@ ctx.logger.error("execute failed", { error })
 ctx.logger.debug((l) => l`cache keys:\n${keys.join('\n')}`)
 ```
 
+## Debug channel（推荐）
+
+调试日志统一走一个稳定的 channel：category 固定为 `["pluxel","debug"]`，topic 通过属性携带。
+
+```ts
+ctx.logger.getDebugChannel("pluxel:hmr:batch").debug("batch targets", { targets })
+```
+
+如何开启：在 LogTape 配置里指定 `debug: [...]`（支持 `: *` 前缀），pretty 输出会标注 `{dbg:...}`。
+
 ## Sinks / Formatters
 
-- `createPluxelPrettyConsoleSink()`：单入口「pretty console」，默认 `@logtape/pretty`，可选叠加 Youch ANSI 错误增强（支持按 category 精确启用，避免 async 插入错位）。
+- `createPluxelPrettyConsoleSink()`：单入口「pretty console」，默认 `@logtape/pretty` + **默认启用 Youch（inline）**，且只对 `pluxelCategories.hmr/plugins` 的 error+ 做增强，避免 async 插入导致“错位 log”。
 - `createPluxelPrettyFormatter()`：仅 formatter（不含 Youch；Youch 是 async，只能在 sink 层做）。
 - `createPluxelYouchSink()`：独立 Youch sink（可组合）。
 - `getFileSink/getRotatingFileSink/getStreamFileSink`：官方 file sinks 透传再导出。
@@ -68,28 +82,30 @@ ctx.logger.debug((l) => l`cache keys:\n${keys.join('\n')}`)
 ```ts
 import { configure } from "@logtape/logtape";
 import {
-  createPluxelPrettyConsoleSink,
-  pluxelCategories,
-  getRotatingFileSink,
+  createPluxelLogtapeConfig,
 } from "@pluxel/core/logger";
 
-await configure({
-  sinks: {
-    console: createPluxelPrettyConsoleSink({
-      pretty: { timestamp: "time", prefix: "context", includeCaller: true },
-      // Youch 是 async：建议只对插件系统/HMR 的错误启用，并使用 inline 模式避免错位插入。
-      // 其他错误会在 pretty 的 extra-props 中同步输出 error.stack（不依赖 Youch）。
-      youch: {
-        minLevel: "error",
-        mode: "inline",
-        categoryPrefixes: [pluxelCategories.hmr, pluxelCategories.plugins],
-      },
-    }),
-    file: getRotatingFileSink("./logs/app.log"),
-  },
-  loggers: [
-    { category: ["pluxel"], sinks: ["console", "file"], lowestLevel: "info" },
-    { category: ["logtape", "meta"], sinks: ["console"], lowestLevel: "error" },
-  ],
-});
+await configure(
+  createPluxelLogtapeConfig({
+    preset: "hmr", // or "core"
+    file: "./logs/app.log",
+  }),
+);
+```
+
+覆盖/追加（常见例子）：
+
+```ts
+await configure(
+  createPluxelLogtapeConfig({
+    preset: "hmr",
+    file: "./logs/app.log",
+    // 关闭 Youch（仅保留 pretty 的 error.stack 输出）
+    // console: { youch: false },
+    // 自定义 prefix（hmr 默认是 "name"；core 默认是 "context"）
+    // console: { pretty: { prefix: "context" } },
+    // 开启 debug（支持前缀；debug 会走统一 channel `pluxel:debug` 并标注 `{dbg:...}`）：
+    // debug: ["pluxel:hmr:*", "pluxel:ext:compile"],
+  }),
+);
 ```

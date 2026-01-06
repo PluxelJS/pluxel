@@ -48,7 +48,6 @@ export default defineConfig(({ mode }) => {
 				'@mantine/notifications',
 				// 你若用到再加：'@mantine/dates', 'dayjs'
 				'@tabler/icons-react',
-				'obug',
 			],
 		},
 

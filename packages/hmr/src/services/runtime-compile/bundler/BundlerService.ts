@@ -2,8 +2,9 @@ import { createHash } from 'node:crypto'
 import { existsSync } from 'node:fs'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { fileURLToPath, pathToFileURL } from 'node:url'
+import type { Logger as LogtapeLogger } from '@logtape/logtape'
 import { type Context, Injectable } from '@pluxel/core'
-import { createDebug } from 'obug'
+import { isDebugTopicEnabled } from '@pluxel/core/logger'
 import { dirname, isAbsolute, join, resolve } from 'pathe'
 import { collectModuleGraphFiles } from './moduleGraph'
 
@@ -49,7 +50,7 @@ export type BundleResult = {
  */
 @Injectable({ key: serviceName })
 export class BundlerService {
-	private readonly dbg = createDebug('pluxel:bundler')
+	private readonly dbg: LogtapeLogger | null
 	private readonly enabled: boolean
 	private readonly outDir: string
 
@@ -57,6 +58,10 @@ export class BundlerService {
 		public ctx: Context,
 		config?: BundlerServiceConfig,
 	) {
+		const rootConfig = (this.ctx.root?.config ?? this.ctx.config ?? {}) as unknown
+		this.dbg = isDebugTopicEnabled(rootConfig, 'pluxel:bundler')
+			? this.ctx.logger.getDebugChannel('pluxel:bundler')
+			: null
 		this.enabled = config?.enabled !== false
 		this.outDir = config?.outDir ?? resolve(process.cwd(), '.pluxel/bundles')
 	}
@@ -75,7 +80,7 @@ export class BundlerService {
 
 		const signature = cacheKey ? null : await this.computeSignature(job)
 		const pool = this.getPool()
-		this.dbg('bundle start %s', job.entry)
+		this.dbg?.debug('bundle start {entry}', { entry: job.entry })
 		const code = await pool.run({
 			entry: job.entry,
 			root: job.root,
@@ -86,7 +91,7 @@ export class BundlerService {
 			await mkdir(this.outDir, { recursive: true })
 			await writeFile(cachedFile, code, 'utf-8')
 		}
-		this.dbg('bundle done %s', job.entry)
+		this.dbg?.debug('bundle done {entry}', { entry: job.entry })
 		return { code, hash: cacheKey ?? signature! }
 	}
 
@@ -108,7 +113,9 @@ export class BundlerService {
 		// Workers are executed in Node (Tinypool), so use the SSR environment for resolution and dependency keys.
 		const ssrEnv = vite.environments?.ssr
 		if (!ssrEnv) {
-			throw new Error('ViteDevServer SSR environment not available (required for compileTinypoolWorker)')
+			throw new Error(
+				'ViteDevServer SSR environment not available (required for compileTinypoolWorker)',
+			)
 		}
 
 		const absoluteEntry = this.resolveEntryForContext(tsEntry)
@@ -140,11 +147,15 @@ export class BundlerService {
 		// resolve 里可能包含函数/循环引用；失败就跳过（仍然能靠 entry 内容变化触发更新）
 		try {
 			hash.update(JSON.stringify(job.resolve ?? null))
-		} catch {}
+		} catch {
+			// ignore non-serializable resolve options
+		}
 		try {
 			const content = await readFile(job.entry, 'utf-8')
 			hash.update(content)
-		} catch {}
+		} catch {
+			// ignore entry read errors; hash will still include entry path and other fields
+		}
 		return hash.digest('hex').slice(0, 16)
 	}
 
@@ -154,7 +165,7 @@ export class BundlerService {
 		// 延迟创建，避免未用时初始化线程
 		const { default: Tinypool } = require('tinypool') as typeof import('tinypool')
 		const worker = this.resolveWorkerPath()
-		const cpuSlack = Math.max(1, require('os').cpus().length - 1)
+		const cpuSlack = Math.max(1, require('node:os').cpus().length - 1)
 		this.pool = new Tinypool({
 			filename: worker,
 			// Default: keep 1 warm worker, burst to 1-2 workers, and shrink back to 1.
@@ -172,14 +183,17 @@ export class BundlerService {
 		const candidates = [
 			pathToFileURL(resolve(pkgRoot, 'dist/bundle-worker.mjs')).href, // copied by tsdown
 			pathToFileURL(join(currentDir, 'bundle-worker.mjs')).href, // same dir as compiled chunk
-			pathToFileURL(resolve(pkgRoot, 'src/services/runtime-compile/bundler/bundle-worker.mjs')).href, // source fallback
+			pathToFileURL(resolve(pkgRoot, 'src/services/runtime-compile/bundler/bundle-worker.mjs'))
+				.href, // source fallback
 		]
 		for (const href of candidates) {
 			try {
 				if (existsSync(fileURLToPath(href))) {
 					return href
 				}
-			} catch {}
+			} catch {
+				// ignore invalid file URLs
+			}
 		}
 		return candidates[candidates.length - 1]!
 	}
@@ -193,7 +207,9 @@ export class BundlerService {
 				if (registryPath) {
 					return resolve(dirname(registryPath), tsEntry)
 				}
-			} catch {}
+			} catch {
+				// ignore registry errors and fall back to cwd
+			}
 		}
 		return resolve(process.cwd(), tsEntry)
 	}
@@ -226,7 +242,9 @@ export class BundlerService {
 					hash.update(file)
 					try {
 						hash.update(await readFile(file, 'utf-8'))
-					} catch {}
+					} catch {
+						// ignore unreadable files; key still includes their paths
+					}
 				}
 			}
 		} catch {

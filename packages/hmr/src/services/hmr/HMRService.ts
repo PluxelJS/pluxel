@@ -1,5 +1,7 @@
 import { fileURLToPath } from 'node:url'
+import type { Logger as LogtapeLogger } from '@logtape/logtape'
 import { type Context, Injectable } from '@pluxel/core'
+import { isDebugTopicEnabled, resolveDebugTopics } from '@pluxel/core/logger'
 import { dirname, isAbsolute, resolve } from 'pathe'
 import {
 	createServer,
@@ -24,12 +26,12 @@ import {
 } from './internals'
 import {
 	type HMRLogConfig,
-	type ResolvedHMRLogConfig,
-	getHmrDebugLogger,
 	logAttributionReport,
+	type ResolvedHMRLogConfig,
 	resolveHmrLogConfig,
 	TimingTracker,
 } from './logging'
+import { ensureHmrLogtapeConfigured } from './logtape'
 import { collectColdStartEntries, HmrBatchProcessor, HmrExecutor } from './pipeline'
 import { HmrRunner } from './runner'
 import { installRequireShims, type RuntimeShimConfig, RuntimeShimRegistry } from './runtime-shims'
@@ -67,7 +69,7 @@ export interface HMRConfig {
 	}
 	/** 依赖相关配置（external / bridge / optimizeDeps 等） */
 	deps?: HMRDependencyConfig
-	/** 日志与调试开关 */
+	/** 日志与调试开关（含 LogTape 自动默认配置；可在此覆盖 file/ui 等） */
 	log?: HMRLogConfig
 	/**
 	 * 额外的 Vite 插件（仅用于 HMR dev server）。
@@ -149,12 +151,12 @@ export class HMRService {
 	private debouncer!: BatchDebouncer
 
 	private readonly dbg: {
-		modules: ReturnType<typeof getHmrDebugLogger> | null
-		warmup: ReturnType<typeof getHmrDebugLogger> | null
-		batch: ReturnType<typeof getHmrDebugLogger> | null
-		cache: ReturnType<typeof getHmrDebugLogger> | null
-		graph: ReturnType<typeof getHmrDebugLogger> | null
-		timeEntry: ReturnType<typeof getHmrDebugLogger> | null
+		modules: LogtapeLogger | null
+		warmup: LogtapeLogger | null
+		batch: LogtapeLogger | null
+		cache: LogtapeLogger | null
+		graph: LogtapeLogger | null
+		timeEntry: LogtapeLogger | null
 	}
 
 	private readonly plugin: Plugin
@@ -179,6 +181,8 @@ export class HMRService {
 
 		this.deps = resolveHMRDependencyConfig(this.config.deps)
 		this.logConfig = resolveHmrLogConfig(this.config.log)
+		const rootConfig = (this.ctx.root?.config ?? this.ctx.config ?? {}) as unknown
+		const debugOn = (topic: string) => isDebugTopicEnabled(rootConfig, topic)
 
 		const runtimeInput = this.config.runtime ?? {}
 		const runtimeResolved = {
@@ -191,15 +195,24 @@ export class HMRService {
 			Object.keys(runtimeResolved.shims ?? {}).length > 0
 		if (this.useRequireShims) installRequireShims((id) => this.runtimeShims.require(id))
 
-		const enabled = new Set(this.logConfig.debugNamespaces ?? [])
 		this.dbg = {
-			modules: enabled.has('pluxel:hmr:modules') ? getHmrDebugLogger('pluxel:hmr:modules') : null,
-			warmup: enabled.has('pluxel:hmr:warmup') ? getHmrDebugLogger('pluxel:hmr:warmup') : null,
-			batch: enabled.has('pluxel:hmr:batch') ? getHmrDebugLogger('pluxel:hmr:batch') : null,
-			cache: enabled.has('pluxel:hmr:cache') ? getHmrDebugLogger('pluxel:hmr:cache') : null,
-			graph: enabled.has('pluxel:hmr:graph') ? getHmrDebugLogger('pluxel:hmr:graph') : null,
-			timeEntry: enabled.has('pluxel:hmr:time:entry')
-				? getHmrDebugLogger('pluxel:hmr:time:entry')
+			modules: debugOn('pluxel:hmr:modules')
+				? this.ctx.logger.getDebugChannel('pluxel:hmr:modules')
+				: null,
+			warmup: debugOn('pluxel:hmr:warmup')
+				? this.ctx.logger.getDebugChannel('pluxel:hmr:warmup')
+				: null,
+			batch: debugOn('pluxel:hmr:batch')
+				? this.ctx.logger.getDebugChannel('pluxel:hmr:batch')
+				: null,
+			cache: debugOn('pluxel:hmr:cache')
+				? this.ctx.logger.getDebugChannel('pluxel:hmr:cache')
+				: null,
+			graph: debugOn('pluxel:hmr:graph')
+				? this.ctx.logger.getDebugChannel('pluxel:hmr:graph')
+				: null,
+			timeEntry: debugOn('pluxel:hmr:time:entry')
+				? this.ctx.logger.getDebugChannel('pluxel:hmr:time:entry')
 				: null,
 		}
 
@@ -223,7 +236,11 @@ export class HMRService {
 		this.env.setServerRoot(root)
 	}
 
-	public primeModuleCacheEntry(params: { id: string; exports: any; aliases?: Iterable<string> }) {
+	public primeModuleCacheEntry(params: {
+		id: string
+		exports: unknown
+		aliases?: Iterable<string>
+	}) {
 		this.runner.primeModuleCacheEntry(params)
 	}
 
@@ -245,6 +262,12 @@ export class HMRService {
 	}
 
 	public async start(): Promise<void> {
+		const rootConfig = (this.ctx.root?.config ?? this.ctx.config ?? {}) as unknown
+		await ensureHmrLogtapeConfigured({
+			...this.logConfig.logtape,
+			debug: resolveDebugTopics(rootConfig),
+		})
+
 		const serverFsAllow = resolveFsAllowList({
 			cwd: this.cwd,
 			cwdNormalized: this.env.paths.cwdNormalizedPath,
@@ -289,7 +312,7 @@ export class HMRService {
 				await this.runner.bridgeHostModules(
 					this.deps.bridgeModules,
 					this.path,
-					this.ctx.logger as any,
+					this.ctx.logger as unknown as { warn: (...args: unknown[]) => void },
 				)
 				await this.runner.assertBridgedSingletons(this.deps.bridgeModules)
 
@@ -366,14 +389,14 @@ export class HMRService {
 			maxWaitMs: this.config.batch?.maxWaitMs ?? 120,
 			maxBatchFiles: this.config.batch?.maxBatchFiles ?? 2000,
 		}
-			this.debouncer = new BatchDebouncer(
-				(files, epoch) => this.batchProcessor.process(files, epoch),
-				bCfg.debounceMs,
-				bCfg.maxWaitMs,
-				bCfg.maxBatchFiles,
-				(error) => this.ctx.logger.error('batch flush failed', { error }),
-			)
-		}
+		this.debouncer = new BatchDebouncer(
+			(files, epoch) => this.batchProcessor.process(files, epoch),
+			bCfg.debounceMs,
+			bCfg.maxWaitMs,
+			bCfg.maxBatchFiles,
+			(error) => this.ctx.logger.error('batch flush failed', { error }),
+		)
+	}
 
 	private registerWatchers(server: ViteDevServer) {
 		server.watcher.on('change', (file) => this.enqueueFileChange(file))
@@ -421,7 +444,7 @@ export class HMRService {
 		this.ctx.logger.info`warmup: ${coldFiles.length} files in ${warmupMs}ms`
 
 		logAttributionReport(
-			typeof (this.ctx.logger as any).with === 'function' ? (this.ctx.logger as any).with({}) : this.ctx.logger,
+			this.ctx.logger,
 			{
 				changed: coldFiles[0] ?? 'N/A',
 				targets: coldFiles,

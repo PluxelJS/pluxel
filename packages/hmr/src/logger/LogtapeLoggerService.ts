@@ -2,10 +2,10 @@ import { getLogger, type Logger as LogtapeLogger } from '@logtape/logtape'
 import { type Context, Injectable, OverrideOf } from '@pluxel/core'
 import {
 	callLogtape,
-	type PluxelLogMethod,
 	captureCaller,
 	findPluginId,
 	isCallerEnabled,
+	type PluxelLogMethod,
 	pluxelCategories,
 } from '@pluxel/core/logger'
 import { LoggerService } from '@pluxel/core/services'
@@ -15,6 +15,7 @@ import { formatLogName } from './logName'
 type ContextLoggerCacheEntry = {
 	hmr: LogtapeLogger
 	plugin?: { id: string; logger: LogtapeLogger }
+	debug?: { hmr: LogtapeLogger; plugin?: { id: string; logger: LogtapeLogger } }
 }
 
 const contextLoggerCache = new WeakMap<object, ContextLoggerCacheEntry>()
@@ -25,15 +26,17 @@ export class LogtapeLoggerService {
 	public readonly ctx: Context
 	private readonly hmrLogger: LogtapeLogger
 	private readonly pluginsLogger: LogtapeLogger
+	private readonly debugLogger: LogtapeLogger
 
 	constructor(ctx: Context) {
 		this.ctx = ctx
 		this.hmrLogger = getLogger(pluxelCategories.hmr)
 		this.pluginsLogger = getLogger(pluxelCategories.plugins)
+		this.debugLogger = getLogger(['pluxel', 'debug'])
 	}
 
 	private getBaseContextLogger(): LogtapeLogger {
-		const key = this.ctx as any as object
+		const key = this.ctx as unknown as object
 		let cached = contextLoggerCache.get(key)
 		if (!cached) {
 			cached = { hmr: this.hmrLogger.with({ context: this.ctx.name, name: this.ctx.name }) }
@@ -58,39 +61,81 @@ export class LogtapeLoggerService {
 		return cached.hmr
 	}
 
+	private getDebugBaseContextLogger(): LogtapeLogger {
+		const key = this.ctx as unknown as object
+		let cached = contextLoggerCache.get(key)
+		if (!cached) {
+			cached = { hmr: this.hmrLogger.with({ context: this.ctx.name, name: this.ctx.name }) }
+			contextLoggerCache.set(key, cached)
+		}
+
+		if (!cached.debug) {
+			cached.debug = {
+				hmr: this.debugLogger.with({ context: this.ctx.name, name: this.ctx.name }),
+			}
+		}
+		if (cached.debug.plugin) return cached.debug.plugin.logger
+
+		// Reuse cached plugin id if it already exists from normal logging.
+		const pluginId = cached.plugin?.id ?? findPluginId(this.ctx)
+		if (pluginId) {
+			cached.debug.plugin = {
+				id: pluginId,
+				logger: cached.debug.hmr.with({
+					pluginId,
+					name: formatLogName(this.ctx.name, pluginId),
+				}),
+			}
+			return cached.debug.plugin.logger
+		}
+
+		return cached.debug.hmr
+	}
+
 	private getContextLogger(
 		extra: Record<string, unknown> | undefined,
 		includeCaller: boolean,
-		exclude?: Function,
+		exclude?: (...args: never[]) => unknown,
 	) {
 		const base = this.getBaseContextLogger()
 		let props: Record<string, unknown> | undefined = extra
-		if (includeCaller && isCallerEnabled()) {
+		if (includeCaller) {
 			const caller = captureCaller({ exclude: exclude ?? this.log })
 			if (caller) props = props ? { ...props, caller } : { caller }
 		}
 		return props ? base.with(props) : base
 	}
 
-	private log(
-		level: PluxelLogMethod,
-		args: unknown[],
-	) {
-		const logger = this.getContextLogger(undefined, true, this.log)
+	private log(level: PluxelLogMethod, args: unknown[]) {
+		const logger = this.getContextLogger(undefined, isCallerEnabled(), this.log)
 		callLogtape(logger, level, args)
 	}
 
-	public trace: LogtapeLogger['trace'] = ((...args: any[]) => this.log('trace', args)) as any
-	public debug: LogtapeLogger['debug'] = ((...args: any[]) => this.log('debug', args)) as any
-	public info: LogtapeLogger['info'] = ((...args: any[]) => this.log('info', args)) as any
-	public warn: LogtapeLogger['warn'] = ((...args: any[]) => this.log('warn', args)) as any
-	public error: LogtapeLogger['error'] = ((...args: any[]) => this.log('error', args)) as any
-	public fatal: LogtapeLogger['fatal'] = ((...args: any[]) => this.log('fatal', args)) as any
+	private levelMethod(level: PluxelLogMethod) {
+		return (...args: unknown[]) => this.log(level, args)
+	}
+
+	public trace = this.levelMethod('trace') as unknown as LogtapeLogger['trace']
+	public debug = this.levelMethod('debug') as unknown as LogtapeLogger['debug']
+	public info = this.levelMethod('info') as unknown as LogtapeLogger['info']
+	public warn = this.levelMethod('warn') as unknown as LogtapeLogger['warn']
+	public error = this.levelMethod('error') as unknown as LogtapeLogger['error']
+	public fatal = this.levelMethod('fatal') as unknown as LogtapeLogger['fatal']
 
 	/** Create a LogTape logger that inherits pluxel context fields. */
 	public with(properties: Record<string, unknown>): LogtapeLogger {
 		// Capture caller at the `.with()` call-site so the returned logger keeps it
 		// even when used with LogTape's contextual logger pattern.
-		return this.getContextLogger(properties, true, this.with)
+		return this.getContextLogger(properties, isCallerEnabled(), this.with)
+	}
+
+	/**
+	 * Get a dedicated debug channel logger for a topic.
+	 *
+	 * - category: `["pluxel","debug"]`
+	 * - properties: `{ debugTopic, context, name, pluginId? }`
+	 */
+	public getDebugChannel(debugTopic: string): LogtapeLogger {
+		return this.getDebugBaseContextLogger().with({ debugTopic })
 	}
 }

@@ -1,85 +1,8 @@
-import {
-	type ConsoleFormatter,
-	type LogRecord,
-	type TextFormatter,
-} from '@logtape/logtape'
+import type { LogRecord, TextFormatter } from '@logtape/logtape'
 import { getPrettyFormatter, type PrettyFormatterOptions } from '@logtape/pretty'
-
+import { captureCaller, isCallerEnabled } from './caller'
 import { pluxelCategories } from './categories'
-
-export type PluxelPrettyOptions = {
-	includeTimestamp?: boolean
-	includeCaller?: boolean
-}
-
-function findErrorInProps(record: LogRecord): unknown {
-	if ((record.properties as any)?.error) return (record.properties as any).error
-	if ((record.properties as any)?.err) return (record.properties as any).err
-	return undefined
-}
-
-function formatErrorStack(error: Error): string {
-	if (typeof error.stack === 'string' && error.stack.length > 0) return error.stack
-	return `${error.name || 'Error'}: ${error.message || String(error)}`
-}
-
-function formatMessage(record: LogRecord): { fmt: string; values: unknown[] } {
-	let msg = ''
-	const values: unknown[] = []
-	for (let i = 0; i < record.message.length; i++) {
-		if (i % 2 === 0) msg += String(record.message[i] ?? '')
-		else {
-			const v = record.message[i]
-			// Avoid quoting strings (util.format(%o) would show "'text'").
-			if (typeof v === 'string') {
-				msg += '%s'
-				values.push(v)
-			} else {
-				msg += '%o'
-				values.push(v)
-			}
-		}
-	}
-	return { fmt: msg, values }
-}
-
-/**
- * Legacy console formatter (kept for compatibility).
- * Prefer {@link createPluxelPrettyFormatter} for local development.
- */
-export function createPluxelConsoleFormatter(
-	opts: PluxelPrettyOptions = {},
-): ConsoleFormatter {
-	const includeTimestamp = opts.includeTimestamp ?? true
-	const includeCaller = opts.includeCaller ?? true
-	const callerMarker = '⤷'
-
-	return (record) => {
-		const time = includeTimestamp ? `${new Date(record.timestamp).toISOString()} ` : ''
-		const level = record.level.toUpperCase()
-
-		const pluginId =
-			typeof record.properties.pluginId === 'string' ? (record.properties.pluginId as string) : ''
-		const context =
-			typeof record.properties.context === 'string' ? (record.properties.context as string) : ''
-		const prefix = pluginId
-			? `[${pluginId}:${context}]`
-			: context
-				? `[${context}]`
-				: `[${record.category.join(':')}]`
-
-		const { fmt, values } = formatMessage(record)
-		const caller =
-			includeCaller && typeof record.properties.caller === 'string'
-				? (record.properties.caller as string)
-				: undefined
-		const callerSuffix = caller ? ` ${callerMarker} ${caller}` : ''
-
-		const error = findErrorInProps(record)
-		const errorSuffix = error instanceof Error ? `\n${formatErrorStack(error)}` : ''
-		return [`${time}${level} ${prefix} ${fmt}${callerSuffix}${errorSuffix}`, ...values]
-	}
-}
+import { formatErrorStack } from './error'
 
 export type PluxelPrefixOptions = {
 	/**
@@ -89,7 +12,13 @@ export type PluxelPrefixOptions = {
 	 * - `"category"`: fall back to category display
 	 */
 	prefix?: 'name' | 'context' | 'category'
-	/** If true, append `record.properties.caller` when present. */
+	/**
+	 * If true, append caller info to the rendered message.
+	 *
+	 * Rules:
+	 * - If `record.properties.caller` is a string, use it.
+	 * - Otherwise (and when enabled via {@link isCallerEnabled}), capture a stack frame at render time.
+	 */
 	includeCaller?: boolean
 	/**
 	 * Suffix marker used for `caller` display (pretty only).
@@ -101,9 +30,13 @@ export type PluxelPrefixOptions = {
 
 function buildPrefix(record: LogRecord, mode: PluxelPrefixOptions['prefix']): string {
 	const pluginId =
-		typeof record.properties.pluginId === 'string' ? (record.properties.pluginId as string) : undefined
+		typeof record.properties.pluginId === 'string'
+			? (record.properties.pluginId as string)
+			: undefined
 	const context =
-		typeof record.properties.context === 'string' ? (record.properties.context as string) : undefined
+		typeof record.properties.context === 'string'
+			? (record.properties.context as string)
+			: undefined
 	const name =
 		typeof record.properties.name === 'string' ? (record.properties.name as string) : undefined
 
@@ -113,15 +46,9 @@ function buildPrefix(record: LogRecord, mode: PluxelPrefixOptions['prefix']): st
 	return `[${record.category.join(':')}]`
 }
 
-function appendSuffix(message: unknown[], suffix: string): unknown[] {
-	if (message.length === 0) return [suffix]
-	const last = message.length - 1
-	if (last % 2 === 0 && typeof message[last] === 'string') {
-		const next = message.slice()
-		next[last] = `${next[last]}${suffix}`
-		return next
-	}
-	return [...message, suffix]
+function formatDebugTag(debugTopic: string): string {
+	const t = debugTopic.startsWith('pluxel:') ? debugTopic.slice('pluxel:'.length) : debugTopic
+	return `{dbg:${t}}`
 }
 
 function formatCallerSuffix(marker: string, caller: string, colorsOn: boolean): string {
@@ -175,18 +102,23 @@ function toPlainValue(value: unknown, depth = 3, seen = new WeakSet<object>()): 
 	if (t === 'bigint') return `${value}n`
 	if (t === 'undefined') return undefined
 	if (t === 'symbol') return value.toString()
-	if (t === 'function') return `[Function ${(value as Function).name || 'anonymous'}]`
+	if (t === 'function') {
+		const name =
+			typeof (value as { name?: unknown }).name === 'string' ? (value as { name: string }).name : ''
+		return `[Function ${name || 'anonymous'}]`
+	}
 
 	if (value instanceof Error) {
+		const errorLike = value as unknown as Error & Record<string, unknown> & { cause?: unknown }
 		const extra: Record<string, unknown> = {}
-		for (const [k, v] of Object.entries(value as any)) {
+		for (const [k, v] of Object.entries(errorLike)) {
 			extra[k] = toPlainValue(v, depth - 1, seen)
 		}
 		return {
 			name: value.name,
 			message: value.message,
-			stack: value.stack,
-			cause: (value as any).cause ? toPlainValue((value as any).cause, depth - 1, seen) : undefined,
+			stack: toPlainValue(value.stack, depth - 1, seen),
+			cause: errorLike.cause ? toPlainValue(errorLike.cause, depth - 1, seen) : undefined,
 			...extra,
 		}
 	}
@@ -269,7 +201,8 @@ function collectExtraProps(record: LogRecord): ExtraPropEntry[] {
 
 	const entries: ExtraPropEntry[] = []
 	for (const [k, v] of Object.entries(props)) {
-		if (k === 'context' || k === 'pluginId' || k === 'name' || k === 'caller') continue
+		if (k === 'context' || k === 'pluginId' || k === 'name' || k === 'caller' || k === 'debugTopic')
+			continue
 		if (v === undefined) continue
 
 		if ((k === 'error' || k === 'err') && v instanceof Error) {
@@ -286,7 +219,10 @@ function collectExtraProps(record: LogRecord): ExtraPropEntry[] {
 		entries.push({ kind: 'kv', key: k, value: formatCompactValue(v) })
 	}
 
-	entries.sort((a, b) => a.key.localeCompare(b.key))
+	entries.sort((a, b) => {
+		if (a.kind !== b.kind) return a.kind === 'block' ? 1 : -1
+		return a.key.localeCompare(b.key)
+	})
 	return entries
 }
 
@@ -303,6 +239,31 @@ function colorizeExtraPair(keyText: string, valueText: string, colorsOn: boolean
 	const dim = '\u001B[2m'
 	const val = '\u001B[38;2;253;224;71m' // amber-ish
 	return `${colorizeExtraKey(keyText, true)}${dim}=${reset}${val}${valueText}${reset}`
+}
+
+function stripAnsi(text: string): string {
+	let out = ''
+	for (let i = 0; i < text.length; i++) {
+		if (text.charCodeAt(i) !== 0x1b || text[i + 1] !== '[') {
+			out += text[i]
+			continue
+		}
+
+		// Skip SGR codes: ESC [ ... m
+		i += 2
+		while (i < text.length) {
+			const c = text.charCodeAt(i)
+			if ((c >= 0x30 && c <= 0x39) || c === 0x3b) {
+				i += 1
+				continue
+			}
+			if (text[i] === 'm') {
+				break
+			}
+			break
+		}
+	}
+	return out
 }
 
 function formatExtraPropsInline(record: LogRecord, colorsOn: boolean): string | undefined {
@@ -322,7 +283,7 @@ function formatExtraPropsInline(record: LogRecord, colorsOn: boolean): string | 
 		.map((e) => colorizeExtraPair(e.key, e.value, colorsOn))
 		.join(colorsOn ? `${reset} ` : ' ')
 	const rendered = `${brace}${open}${reset}${body}${brace}${close}${reset}`
-	if (rendered.replace(/\u001B\[[0-9;]*m/g, '').length > 60) return undefined
+	if (stripAnsi(rendered).length > 60) return undefined
 	return ` ${rendered}`
 }
 
@@ -344,7 +305,9 @@ function formatExtraPropsBlock(record: LogRecord, colorsOn: boolean): string[] |
 			continue
 		}
 
-		lines.push(`    ${brace}${open}${reset}${colorizeExtraKey(e.key, colorsOn)}${brace}${close}${reset}`)
+		lines.push(
+			`    ${brace}${open}${reset}${colorizeExtraKey(e.key, colorsOn)}${brace}${close}${reset}`,
+		)
 		for (const l of e.lines) {
 			lines.push(`      ${l}`)
 		}
@@ -389,43 +352,52 @@ export function withPluxelMessagePrefix(
 	const includeCaller = opts.includeCaller ?? true
 	const callerMarker = opts.callerMarker ?? '⤷'
 
-	return (record) => {
+	const formatter: TextFormatter = (record) => {
 		const prefix = buildPrefix(record, mode)
 		// Do not mutate `record.message` in-place: LogTape fan-outs the same record to multiple sinks.
 		const normalized = normalizeMessageForConsole(record.message)
 		const message = normalized === record.message ? record.message.slice() : normalized
-		message[0] = `${prefix} ${String(message[0] ?? '')}`
+		const debugTopic =
+			record.level === 'debug' && typeof record.properties.debugTopic === 'string'
+				? (record.properties.debugTopic as string)
+				: undefined
+		const debugTag = debugTopic ? ` ${formatDebugTag(debugTopic)}` : ''
+		message[0] = `${prefix}${debugTag} ${String(message[0] ?? '')}`
 
 		const caller =
-			includeCaller && typeof record.properties.caller === 'string'
-				? (record.properties.caller as string)
+			includeCaller && isCallerEnabled()
+				? typeof record.properties.caller === 'string'
+					? (record.properties.caller as string)
+					: captureCaller({ exclude: formatter })
 				: undefined
 
 		const nextRecord = { ...record, message } as LogRecord
 
 		let out = stripTrailingNewlines(base(nextRecord))
 		const colorsOn = out.includes('\u001B[')
+		const multiline = out.includes('\n')
 		let usedBlock = false
-		if (!out.includes('\n')) {
-			const inline = formatExtraPropsInline(nextRecord, colorsOn)
-			if (inline) out = `${out}${inline}`
-			else {
-				const lines = formatExtraPropsBlock(nextRecord, colorsOn)
-				if (lines?.length) {
-					out = `${out}\n${lines.join('\n')}`
-					usedBlock = true
-				}
+		const inline = !multiline ? formatExtraPropsInline(nextRecord, colorsOn) : undefined
+		if (inline) out = `${out}${inline}`
+		else {
+			const lines = formatExtraPropsBlock(nextRecord, colorsOn)
+			if (lines?.length) {
+				out = `${out}\n${lines.join('\n')}`
+				usedBlock = true
 			}
 		}
 		if (caller) {
 			const callerSuffix = formatCallerSuffix(callerMarker, caller, colorsOn)
-			out = usedBlock ? `${out}\n    ${callerSuffix.trimStart()}` : `${out}${callerSuffix}`
+			out =
+				usedBlock || multiline ? `${out}\n    ${callerSuffix.trimStart()}` : `${out}${callerSuffix}`
 		}
 
 		// Only add extra styling when the base formatter already emits ANSI.
 		const styled = colorsOn ? colorizeHmrAttribution(out) : out
 		return styled
 	}
+
+	return formatter
 }
 
 export type PluxelPrettyFormatterOptions = PrettyFormatterOptions & PluxelPrefixOptions

@@ -4,11 +4,6 @@
 > LogTape-behavior claims are based on official docs / JSR signatures.
 
 ---
-
-## Scope & compatibility note (Pluxel)
-
-**Pluxel note (compatibility):** our `LoggerService` / `callLogtape()` layer may accept some *legacy* argument orders for backward compatibility, but they are **not** best practice and must not be used in new code.
-
 ---
 
 ## Allowed call forms (only these in new code)
@@ -126,6 +121,10 @@ logger.warn("cleanup failed", { err, label });
 ### PLX-ERR-003 — Any “heavy” error formatting belongs to the formatter (not call sites)
 
 Call sites must not compute expensive or sensitive error representations (stack trimming, serialization, deep inspection, cause-chain rendering, redaction). The formatter decides what to print and how.
+
+In console output:
+- `@pluxel/core/logger` pretty formatter renders `error/err` as a multiline stack block (synchronous, non-interleaving).
+- Youch (optional) can be enabled for selected categories (e.g. loader/HMR) when richer rendering is desired.
 
 If extra diagnostics are needed, attach them as separate structured fields (and make them lazy if expensive), while still passing the raw `error/err` field:
 
@@ -368,8 +367,6 @@ rg -n "logger\.\w+\([^,]+,\s*\{[^}]*\b(JSON\.stringify|inspect|serialize|dump|fo
 # Placeholder whitespace style (prefer {key} over { key })
 rg -n "\{\s+\w+|\{\w+\s+\}" .
 
-# (Pluxel) Legacy object-first signature (avoid in new code; may exist only for compatibility tests)
-rg -n "logger\.\w+\(\s*\{[^}]*\}\s*,\s*['\"]" .
 ```
 
 ---

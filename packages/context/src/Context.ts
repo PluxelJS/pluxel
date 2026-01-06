@@ -1,21 +1,29 @@
 // Context.ts
 
-import type { ServiceCfg, ServiceClass, ServiceContext, ServiceInst } from './service-types'
-import type { ServiceWithCtx } from './service-types'
+import type {
+	ServiceCfg,
+	ServiceClass,
+	ServiceContext,
+	ServiceInst,
+	ServiceWithCtx,
+} from './service-types'
 
 type SymMap = { [k in symbol]?: symbol }
+
+// biome-ignore lint/suspicious/noExplicitAny: type-level escape hatch for dynamic service registries.
+type AnyServiceClass = ServiceClass<new (ctx: any, cfg: any) => unknown>
 
 export class Context {
 	/** 全局 serviceKey → instKey 映射 */
 	private static defaultMapping: SymMap = Object.create(null)
 	/** ServiceClass → serviceKey 缓存 */
-	public static serviceKeyMap = new WeakMap<ServiceClass<any>, symbol>()
+	public static serviceKeyMap = new WeakMap<AnyServiceClass, symbol>()
 	private static registeredKeys = new Set<string>()
 
 	/** 本实例的映射（继承自 defaultMapping 或父 Context） */
 	public mapping: SymMap
 	/** 服务实例缓存，所有同 root 的 Context 共享，除 isolate 时另行克隆 */
-	private instances: Record<symbol, any> = Object.create(null)
+	private instances: Record<symbol, unknown> = Object.create(null)
 	public parent?: Context
 	public root: Context
 	public name: string
@@ -32,6 +40,7 @@ export class Context {
 		if (parent) this.instances = parent.instances
 	}
 
+	// biome-ignore lint/suspicious/noExplicitAny: we intentionally use `any` in ctor constraints to preserve inference/variance.
 	static registerService<S extends new (ctx: any, cfg: any) => object>(ctor: ServiceClass<S>) {
 		const sk = Symbol(ctor.name)
 		const key = (ctor.key as string) ?? ctor.name.replace(/Service$/, '')
@@ -43,7 +52,7 @@ export class Context {
 		Context.defaultMapping[sk] = sk
 
 		// 在原型上定义最简 getter，只 capture sk/ctor/key
-		const scope = (ctor as any).scope as undefined | 'context' | 'root'
+		const scope = (ctor as unknown as { scope?: 'context' | 'root' }).scope
 		Object.defineProperty(Context.prototype, key, {
 			configurable: true,
 			get(this: Context) {
@@ -59,8 +68,8 @@ export class Context {
 						;(inst as unknown as ServiceWithCtx<Context>).ctx = root
 						return inst
 					}
-					const cfg = (root.config as any)[key] as ServiceCfg<S>
-					inst = new ctor(root as any, cfg) as ServiceInst<S>
+					const cfg = (root.config as Record<string, unknown>)[key] as ServiceCfg<S>
+					inst = new ctor(root as ServiceContext<S>, cfg) as ServiceInst<S>
 					;(inst as unknown as ServiceWithCtx<Context>).ctx = root
 					root.instances[ik] = inst
 					return inst
@@ -78,8 +87,8 @@ export class Context {
 					;(inst as unknown as ServiceWithCtx<Context>).ctx = this
 					return inst
 				}
-				const cfg = (this.config as any)[key] as ServiceCfg<S>
-				inst = new ctor(this as any, cfg) as ServiceInst<S>
+				const cfg = (this.config as Record<string, unknown>)[key] as ServiceCfg<S>
+				inst = new ctor(this as ServiceContext<S>, cfg) as ServiceInst<S>
 				;(inst as unknown as ServiceWithCtx<Context>).ctx = this
 				store[ik] = inst
 				return inst
@@ -91,8 +100,13 @@ export class Context {
 			if (m in Context.prototype) continue
 			Object.defineProperty(Context.prototype, m, {
 				configurable: true,
-				value(this: Context, ...args: any[]) {
-					return (this as any)[key][m](...args)
+				value(this: Context, ...args: unknown[]) {
+					const svc = (this as unknown as Record<string, unknown>)[key] as Record<string, unknown>
+					const fn = svc[m] as unknown
+					if (typeof fn !== 'function') {
+						throw new Error(`[pluxel/context] Service method not found: ${key}.${m}`)
+					}
+					return (fn as (...a: unknown[]) => unknown).call(svc, ...args)
 				},
 			})
 		}
@@ -101,9 +115,11 @@ export class Context {
 	/** 提供 override —— 同步把原来的 getter 整块替换掉 */
 	static overrideService<
 		S extends new (
+			// biome-ignore lint/suspicious/noExplicitAny: we intentionally use `any` in ctor constraints to preserve inference/variance.
 			ctx: any,
+			// biome-ignore lint/suspicious/noExplicitAny: we intentionally use `any` in ctor constraints to preserve inference/variance.
 			cfg: any,
-		) => any,
+		) => unknown,
 		T extends new (
 			ctx: ServiceContext<S>,
 			cfg: ServiceCfg<S>,
@@ -116,10 +132,12 @@ export class Context {
 		Context.serviceKeyMap.set(overrideCtor, sk)
 		// 2) 确保新 ctor 有同样的 key（属性名）
 		const key = (original.key as string) ?? original.name.replace(/Service$/, '')
-		;(overrideCtor as any).key = (original as any).key // 保险起见
+		;(overrideCtor as unknown as { key?: string }).key = (
+			original as unknown as { key?: string }
+		).key // 保险起见
 
 		// 3) 重新在原型上 define，一次性把 overrideCtor capture 进闭包
-		const scope = (overrideCtor as any).scope as undefined | 'context' | 'root'
+		const scope = (overrideCtor as unknown as { scope?: 'context' | 'root' }).scope
 		Object.defineProperty(Context.prototype, key, {
 			configurable: true,
 			get(this: Context) {
@@ -135,8 +153,8 @@ export class Context {
 						;(inst as unknown as ServiceWithCtx<Context>).ctx = root
 						return inst
 					}
-					const cfg = (root.config as any)[key] as ServiceCfg<S>
-					inst = new overrideCtor(root as any, cfg) as ServiceInst<S>
+					const cfg = (root.config as Record<string, unknown>)[key] as ServiceCfg<S>
+					inst = new overrideCtor(root as ServiceContext<S>, cfg) as ServiceInst<S>
 					;(inst as unknown as ServiceWithCtx<Context>).ctx = root
 					root.instances[ik] = inst
 					return inst
@@ -154,8 +172,8 @@ export class Context {
 					;(inst as unknown as ServiceWithCtx<Context>).ctx = this
 					return inst
 				}
-				const cfg = (this.config as any)[key] as ServiceCfg<S>
-				inst = new overrideCtor(this as any, cfg) as ServiceInst<S>
+				const cfg = (this.config as Record<string, unknown>)[key] as ServiceCfg<S>
+				inst = new overrideCtor(this as ServiceContext<S>, cfg) as ServiceInst<S>
 				;(inst as unknown as ServiceWithCtx<Context>).ctx = this
 				store[ik] = inst
 				return inst
@@ -166,8 +184,13 @@ export class Context {
 		for (const m of overrideCtor.methods ?? []) {
 			Object.defineProperty(Context.prototype, m, {
 				configurable: true,
-				value(this: Context, ...args: any[]) {
-					return (this as any)[key][m](...args)
+				value(this: Context, ...args: unknown[]) {
+					const svc = (this as unknown as Record<string, unknown>)[key] as Record<string, unknown>
+					const fn = svc[m] as unknown
+					if (typeof fn !== 'function') {
+						throw new Error(`[pluxel/context] Service method not found: ${key}.${m}`)
+					}
+					return (fn as (...a: unknown[]) => unknown).call(svc, ...args)
 				},
 			})
 		}
@@ -180,8 +203,8 @@ export class Context {
 		const child = Object.create(this) as this
 
 		// 2) 规范化 name/config（config 合并、name 默认）
-		opts.name = (opts as any).name ?? `${this.name}.child`
-		opts.config = { ...this.config, ...((opts as any).config || {}) }
+		opts.name = opts.name ?? `${this.name}.child`
+		opts.config = { ...this.config, ...(opts.config ?? {}) }
 
 		// 3) 先把外部可覆写/新增的字段灌进去（相信外部用户，不做运行时判断）
 		Object.assign(child, opts)
@@ -198,7 +221,7 @@ export class Context {
 	 * 隔离指定服务：克隆 instances 池，并为这些 ctor 单独生成 instKey
 	 * @param ctors 可迭代的 ServiceClass 集合，重复项会被自动忽略
 	 */
-	isolate(ctors: Iterable<ServiceClass<any>>, opts: Context.ExtendOpts = {}): this {
+	isolate(ctors: Iterable<AnyServiceClass>, opts: Context.ExtendOpts = {}): this {
 		const child = this.extend(opts)
 		child.instances = Object.create(this.instances)
 
@@ -213,7 +236,9 @@ export class Context {
 }
 
 const CONTEXT_IMPL = Symbol.for('pluxel:context:impl')
-const existingContextImpl = (globalThis as any)[CONTEXT_IMPL] as typeof Context | undefined
+const existingContextImpl = (globalThis as unknown as Record<symbol, unknown>)[CONTEXT_IMPL] as
+	| typeof Context
+	| undefined
 if (existingContextImpl && existingContextImpl !== Context) {
 	throw new Error(
 		[
@@ -233,7 +258,7 @@ if (!existingContextImpl) {
 }
 
 export namespace Context {
-	type Fn = (...args: any[]) => any
+	type Fn = (...args: unknown[]) => unknown
 	type MethodKeys<T> = {
 		[K in keyof T]-?: T[K] extends Fn ? K : never
 	}[keyof T]
@@ -243,10 +268,41 @@ export namespace Context {
 	 *
 	 * `Context` instances will expose these services with `ctx` omitted from their public type.
 	 */
+	// biome-ignore lint/suspicious/noEmptyInterface: <>
 	export interface Services {}
 
-	export type PublicService<T> = T extends { ctx: any } ? Omit<T, 'ctx'> : T
+	export type PublicService<T> = T extends { ctx: unknown } ? Omit<T, 'ctx'> : T
 	export type PublicServices = { [K in keyof Services]: PublicService<Services[K]> }
+
+	type LiteralUnion<T extends U, U = string> = T | (U & Record<never, never>)
+
+	/**
+	 * Debug topic registry (type-level).
+	 *
+	 * Packages/apps can augment this interface to provide IntelliSense for
+	 * `Context.Config.debug` entries without restricting arbitrary strings.
+	 *
+	 * @example
+	 * ```ts
+	 * declare module "@pluxel/context" {
+	 *   namespace Context {
+	 *     interface DebugTopics {
+	 *       "pluxel:hmr:*": true
+	 *       "pluxel:bundler": true
+	 *     }
+	 *   }
+	 * }
+	 * ```
+	 */
+
+	// biome-ignore lint/suspicious/noEmptyInterface: <>
+	export interface DebugTopics {}
+
+	type DebugTopicKey = keyof DebugTopics & string
+	type DebugTopicKeyNoWildcard = Exclude<DebugTopicKey, `${string}*${string}`>
+	type DebugTopicPatternLiteral = DebugTopicKey | `${DebugTopicKeyNoWildcard}:*` | '*'
+
+	export type DebugTopicPattern = LiteralUnion<DebugTopicPatternLiteral, string>
 
 	// 这些键不允许通过 extend 覆写（内部或结构键）
 	type InternalKeys = 'parent' | 'root' | 'mapping' | 'instances' | 'constructor'
@@ -258,7 +314,20 @@ export namespace Context {
 
 	export interface Config {
 		name?: string
-		[key: string]: any
+		/**
+		 * Enable debug topics (pluxel convention).
+		 *
+		 * Values are `:`-separated category strings. Supported patterns:
+		 * - `pluxel:hmr:batch` → enables that exact category
+		 * - `pluxel:hmr:*` → enables the prefix category `["pluxel","hmr"]` (and thus its children)
+		 * - `*` → enables all debug topics (discouraged)
+		 *
+		 * Notes:
+		 * - Used by `@pluxel/hmr` to gate internal debug logs and to seed LogTape auto-config debug rules.
+		 * - Consumers can also pass these to `createPluxelLogtapeConfig({ debug })`.
+		 */
+		debug?: readonly DebugTopicPattern[]
+		[key: string]: unknown
 	}
 }
 

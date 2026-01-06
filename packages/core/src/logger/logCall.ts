@@ -6,7 +6,7 @@ export type PluxelLogMethod = keyof Pick<
 >
 
 function isTemplateStringsArray(value: unknown): value is TemplateStringsArray {
-	return Array.isArray(value) && Object.prototype.hasOwnProperty.call(value, 'raw')
+	return Array.isArray(value) && Object.hasOwn(value, 'raw')
 }
 
 function isPlainRecord(value: unknown): value is Record<string, unknown> {
@@ -22,16 +22,12 @@ function isPlainRecord(value: unknown): value is Record<string, unknown> {
  * Normalizes common call patterns into LogTape-friendly calls, while keeping
  * tagged template literals and lazy callbacks as-is.
  */
-export function callLogtape(
-	logger: LogtapeLogger,
-	level: PluxelLogMethod,
-	args: unknown[],
-): void {
-	const logFn = logger[level] as unknown as (...a: any[]) => void
+export function callLogtape(logger: LogtapeLogger, level: PluxelLogMethod, args: unknown[]): void {
+	const logFn = logger[level] as unknown as (...a: unknown[]) => void
 	const [a0, a1, a2] = args
 
 	if (typeof a0 === 'function' || isTemplateStringsArray(a0)) {
-		logFn.apply(logger, args as any)
+		logFn.call(logger, ...args)
 		return
 	}
 
@@ -56,21 +52,12 @@ export function callLogtape(
 			return
 		}
 		if (isPlainRecord(a1) || typeof a1 === 'function') {
-			logFn.call(logger, a0, a1 as any)
-			return
-		}
-		if (args.length > 1) {
-			logFn.call(logger, a0, { args: args.slice(1) })
+			logFn.call(logger, a0, a1)
 			return
 		}
 		logFn.call(logger, a0)
 		return
 	}
 
-	if (isPlainRecord(a0) && typeof a1 === 'string') {
-		logFn.call(logger, a1, a0)
-		return
-	}
-
-	logFn.apply(logger, args as any)
+	logFn.call(logger, ...args)
 }

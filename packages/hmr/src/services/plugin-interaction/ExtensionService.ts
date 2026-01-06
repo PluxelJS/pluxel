@@ -1,10 +1,12 @@
 import { createHash } from 'node:crypto'
 import { existsSync } from 'node:fs'
 import { mkdir, readdir, readFile, stat, unlink, writeFile } from 'node:fs/promises'
+import type { Logger as LogtapeLogger } from '@logtape/logtape'
 import { type Context, getPluginInfo } from '@pluxel/core'
+import { isDebugTopicEnabled } from '@pluxel/core/logger'
 import type {
-	BuiltinExtensionDef,
 	BuiltinDocExtensionDef,
+	BuiltinExtensionDef,
 	CompiledExtensionModule,
 	ExtensionManifest,
 	ExtensionManifestEvent,
@@ -13,8 +15,8 @@ import type {
 } from '@pluxel/hmr-web'
 import { extensionVendorPackages } from '@pluxel/hmr-web'
 import chokidar, { type FSWatcher } from 'chokidar'
-import { createDebug } from 'obug'
 import { dirname, isAbsolute, join, relative, resolve } from 'pathe'
+import type { ResolveOptions } from 'vite'
 import { collectModuleGraphFiles } from '../runtime-compile/bundler/moduleGraph'
 import {
 	looksLikeLegacyBrokenBundle,
@@ -22,7 +24,6 @@ import {
 	toBrowserBundleResolve,
 	transformVendorImports,
 } from './extensionBundleTransform'
-import type { ResolveOptions } from 'vite'
 
 export interface ExtensionServiceConfig {
 	outDir?: string
@@ -99,7 +100,7 @@ export class ExtensionService {
 	private readonly builtinByPlugin = new Map<string, Map<string, BuiltinExtensionDef>>()
 	private readonly outDir: string
 	private readonly manifestPath: string
-	private readonly dbg = createDebug('pluxel:ext:compile')
+	private readonly dbg: LogtapeLogger | null
 	private readonly enabled: boolean
 	private readonly vendorPackages: readonly string[]
 	private manifestVersion = 0
@@ -116,6 +117,10 @@ export class ExtensionService {
 		public ctx: Context,
 		config?: ExtensionServiceConfig,
 	) {
+		const rootConfig = (this.ctx.root?.config ?? this.ctx.config ?? {}) as unknown
+		this.dbg = isDebugTopicEnabled(rootConfig, 'pluxel:ext:compile')
+			? this.ctx.logger.getDebugChannel('pluxel:ext:compile')
+			: null
 		this.enabled = config?.enabled !== false
 		this.outDir = config?.outDir ?? resolve(process.cwd(), '.pluxel/extensions')
 		this.manifestPath = join(this.outDir, MANIFEST_FILENAME)
@@ -154,7 +159,7 @@ export class ExtensionService {
 				return code
 			}
 			// 老编译器产物可能存在非法语法（例如解构里出现 `as`），这里主动触发重新编译并让前端刷新 manifest
-			await unlink(file).catch(() => {})
+			await unlink(file).catch(() => undefined)
 		}
 
 		// 自愈：如果磁盘文件丢失，尝试重新编译，并在失败时清理掉陈旧清单
@@ -180,7 +185,7 @@ export class ExtensionService {
 	 * 注册插件 UI 扩展（自动从当前 Context 获取 pluginName）
 	 */
 	register(config: PluginExtensionConfig): () => void {
-		if (!this.enabled) return () => {}
+		if (!this.enabled) return () => undefined
 		const pluginName = this.ctx.pluginInfo.id
 
 		const existing = this.entries.get(pluginName)
@@ -223,18 +228,18 @@ export class ExtensionService {
 	 * Designed for markdown docs with builtin blocks that should not require `await import()`.
 	 */
 	registerBuiltin(def: Omit<BuiltinExtensionDef, 'pluginName'>): () => void {
-		if (!this.enabled) return () => {}
+		if (!this.enabled) return () => undefined
 		const pluginName = this.ctx.pluginInfo.id
-		const id = String((def as any).id ?? '').trim()
-		const point = String((def as any).point ?? '').trim()
-		const kind = String((def as any).kind ?? '').trim()
+		const id = String(def.id ?? '').trim()
+		const point = String(def.point ?? '').trim()
+		const kind = String(def.kind ?? '').trim()
 		if (!id) throw new Error('[ExtensionService] registerBuiltin: id required')
 		if (!point) throw new Error('[ExtensionService] registerBuiltin: point required')
 		if (!kind) throw new Error('[ExtensionService] registerBuiltin: kind required')
 		const key = `${point}:${id}`
 
 		const normalized: BuiltinExtensionDef = {
-			...(def as any),
+			...def,
 			id,
 			point: point as ExtensionPoint,
 			kind: kind as BuiltinExtensionDef['kind'],
@@ -244,7 +249,7 @@ export class ExtensionService {
 			// Builtins must be JSON-serializable so the manifest can be safely transported
 			// and remain frontend-implementation-agnostic.
 			JSON.stringify(normalized)
-		} catch (err) {
+		} catch (_err) {
 			throw new Error(
 				`[ExtensionService] registerBuiltin: def must be JSON-serializable (id=${id}, point=${point}, kind=${kind})`,
 			)
@@ -276,7 +281,7 @@ export class ExtensionService {
 		return this.registerBuiltin({
 			kind: 'doc',
 			point: (point ?? ('plugin:tabs' as P)) as P,
-			...(rest as any),
+			...(rest as unknown as Record<string, unknown>),
 		})
 	}
 
@@ -287,10 +292,9 @@ export class ExtensionService {
 		this.enqueueCompile(pluginName)
 	}
 
-	subscribe(cb: () => void): () => void {
-		return () => {
-			// no-op placeholder to preserve API compatibility
-		}
+	subscribe(_cb: () => void): () => void {
+		// no-op placeholder to preserve API compatibility
+		return () => undefined
 	}
 
 	hasPendingCompilation(): boolean {
@@ -299,13 +303,13 @@ export class ExtensionService {
 
 	private notifyManifest(event: ExtensionManifestEvent): void {
 		for (const listener of this.manifestListeners) {
-				try {
-					listener(event)
-				} catch (error) {
-					this.ctx.logger.error('manifest listener failed', { error })
-				}
+			try {
+				listener(event)
+			} catch (error) {
+				this.ctx.logger.error('manifest listener failed', { error })
 			}
 		}
+	}
 
 	private enqueueCompile(pluginName: string): void {
 		const entry = this.entries.get(pluginName)
@@ -350,7 +354,8 @@ export class ExtensionService {
 	private async compilePlugin(pluginName: string): Promise<boolean> {
 		const entry = this.entries.get(pluginName)
 		if (!entry) return false
-		this.dbg('compile start %s', pluginName)
+
+		this.dbg?.debug('compile start {pluginName}', { pluginName })
 		try {
 			await this.refreshWatchFiles(entry)
 			const sourceHash = await this.computeSourceHash(entry.sourceFiles, entry.pluginDir)
@@ -365,11 +370,11 @@ export class ExtensionService {
 				entry.moduleUrl = moduleUrl
 				void this.cleanupOldModuleFiles(pluginName, MODULE_RETENTION_COUNT)
 				this.handleManifestUpdate(pluginName, entry)
-				this.dbg('compile done %s (cached)', pluginName)
+				this.dbg?.debug('compile done {pluginName} (cached)', { pluginName })
 				return true
 			}
 
-			const code = await this.generateBundle(entry, entry.entryPath, sourceHash)
+			const code = await this.generateBundle(entry, entry.entryPath)
 			await mkdir(dirname(targetFile), { recursive: true })
 			await writeFile(targetFile, code, 'utf-8')
 			void this.cleanupOldModuleFiles(pluginName, MODULE_RETENTION_COUNT)
@@ -377,25 +382,27 @@ export class ExtensionService {
 			entry.lastSourceHash = sourceHash
 			entry.modulePath = targetFile
 			entry.moduleUrl = moduleUrl
-				this.handleManifestUpdate(pluginName, entry)
-				this.dbg('compile done %s', pluginName)
-				return true
-			} catch (error) {
-				this.ctx.logger.error('failed to compile {pluginName}', { pluginName, error })
-				return false
-			}
+			this.handleManifestUpdate(pluginName, entry)
+			this.dbg?.debug('compile done {pluginName}', { pluginName })
+			return true
+		} catch (error) {
+			this.ctx.logger.error('failed to compile {pluginName}', { pluginName, error })
+			return false
 		}
+	}
 
 	private async onAfterCommit(summary: import('@pluxel/core').CommitSummary) {
 		if (!this.pendingPlugins.size) return
 		const runningPlugins = new Set<string>()
 		for (const [id] of summary.container.services) {
 			try {
-				const info = getPluginInfo(id as Function)
+				const info = getPluginInfo(id as unknown as (...args: never[]) => unknown)
 				if (this.pendingPlugins.has(info.id)) {
 					runningPlugins.add(info.id)
 				}
-			} catch {}
+			} catch {
+				// ignore non-plugin service ids
+			}
 		}
 		if (!runningPlugins.size) return
 		await this.flushPending(runningPlugins)
@@ -425,23 +432,18 @@ export class ExtensionService {
 
 	private disposeWatcher(entry: PluginExtensionEntry): void {
 		if (entry.watcher) {
-			entry.watcher.close().catch(() => {})
+			entry.watcher.close().catch(() => undefined)
 			entry.watcher = null
 		}
 	}
 
-	private async generateBundle(
-		entry: PluginExtensionEntry,
-		entryPath: string,
-		sourceHash: string,
-	): Promise<string> {
-		return this.compileEntryModule(entry, entryPath, sourceHash)
+	private async generateBundle(entry: PluginExtensionEntry, entryPath: string): Promise<string> {
+		return this.compileEntryModule(entry, entryPath)
 	}
 
 	private async compileEntryModule(
 		entry: PluginExtensionEntry,
 		entryPath: string,
-		sourceHash: string,
 	): Promise<string> {
 		const hmr = this.ctx.hmrService
 		if (!hmr) {
@@ -493,7 +495,7 @@ export class ExtensionService {
 
 		modules.sort((a, b) => b.mtime - a.mtime)
 		for (const stale of modules.slice(keep)) {
-			await unlink(stale.path).catch(() => {})
+			await unlink(stale.path).catch(() => undefined)
 		}
 	}
 
@@ -527,7 +529,7 @@ export class ExtensionService {
 		return list
 	}
 
-	private bumpManifestVersion(reason: 'builtin'): void {
+	private bumpManifestVersion(_reason: 'builtin'): void {
 		// Builtins are runtime-only; we still bump the global manifest version to trigger a client sync.
 		this.manifestVersion += 1
 		this.manifest = { version: this.manifestVersion, modules: this.manifest.modules }
@@ -539,7 +541,7 @@ export class ExtensionService {
 		const previous = this.manifest.modules.find((mod) => mod.pluginName === pluginName)
 		const nextModules = this.manifest.modules.filter((mod) => mod.pluginName !== pluginName).slice()
 
-		if (entry && entry.moduleUrl && entry.lastSourceHash) {
+		if (entry?.moduleUrl && entry.lastSourceHash) {
 			const moduleRecord: CompiledExtensionModule = {
 				pluginName,
 				moduleUrl: entry.moduleUrl,
@@ -591,7 +593,7 @@ export class ExtensionService {
 		entry: PluginExtensionEntry | null,
 	): Promise<void> {
 		if (entry?.modulePath && existsSync(entry.modulePath)) {
-			await unlink(entry.modulePath).catch(() => {})
+			await unlink(entry.modulePath).catch(() => undefined)
 		}
 		this.handleManifestUpdate(pluginName, null)
 	}
@@ -644,10 +646,10 @@ export class ExtensionService {
 				version: this.manifestVersion,
 				modules: restored,
 			}
-			} catch (error) {
-				this.ctx.logger.warn('failed to restore manifest', { error })
-			}
+		} catch (error) {
+			this.ctx.logger.warn('failed to restore manifest', { error })
 		}
+	}
 
 	private persistManifest(): void {
 		const snapshot = JSON.stringify(this.manifest, null, 2)
@@ -655,11 +657,11 @@ export class ExtensionService {
 			try {
 				await mkdir(this.outDir, { recursive: true })
 				await writeFile(this.manifestPath, snapshot, 'utf-8')
-				} catch (error) {
-					this.ctx.logger.warn('failed to persist manifest', { error })
-				}
-			})()
-		}
+			} catch (error) {
+				this.ctx.logger.warn('failed to persist manifest', { error })
+			}
+		})()
+	}
 
 	private collectSourceFiles(pluginDir: string, entryPath: string): string[] {
 		const entryFile = this.resolvePluginFile(pluginDir, entryPath)
@@ -684,7 +686,9 @@ export class ExtensionService {
 					}
 					hash.update(content)
 				}
-			} catch {}
+			} catch {
+				// ignore transient fs errors while hashing
+			}
 		}
 
 		return hash.digest('hex').slice(0, 16)

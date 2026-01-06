@@ -1,7 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
-
+import { configureSync, type LogRecord, resetSync } from '@logtape/logtape'
 import { withTestContext } from '@pluxel/core/test'
-import { configureSync, resetSync, type LogRecord } from '@logtape/logtape'
 
 describe('LoggerService', () => {
 	let records: LogRecord[] = []
@@ -56,18 +55,6 @@ describe('LoggerService', () => {
 				expect(rec?.properties.pluginId).toBe('PluginX')
 			},
 			{ name: 'plugin-test' },
-		)
-	})
-
-	it('normalizes legacy signatures (object first, message second)', () => {
-		return withTestContext(
-			(ctx) => {
-				ctx.logger.warn({ answer: 42 }, 'legacy order')
-				const rec = records.find((r) => r.category.join(':') === 'pluxel:core')
-				expect(rec).toBeTruthy()
-				expect(rec?.properties.answer).toBe(42)
-			},
-			{ name: 'trace-fallback' },
 		)
 	})
 })

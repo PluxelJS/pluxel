@@ -1,3 +1,4 @@
+import { getFileSink, getRotatingFileSink, getStreamFileSink } from '@logtape/file'
 import {
 	compareLogLevel,
 	fromAsyncSink,
@@ -6,30 +7,12 @@ import {
 	type LogRecord,
 	type Sink,
 } from '@logtape/logtape'
-import { getFileSink, getRotatingFileSink, getStreamFileSink } from '@logtape/file'
 import { Youch } from 'youch'
-
-import {
-	createPluxelConsoleFormatter,
-	createPluxelPrettyFormatter,
-	type PluxelPrettyFormatterOptions,
-	type PluxelPrettyOptions,
-} from './formatters'
 import type { YouchANSIOptions } from 'youch/types'
-
-export type PluxelConsoleSinkOptions = {
-	/** Use the legacy console formatter instead of @logtape/pretty. */
-	legacyFormatter?: boolean
-	legacy?: PluxelPrettyOptions
-	pretty?: PluxelPrettyFormatterOptions
-}
-
-export function createPluxelConsoleSink(opts: PluxelConsoleSinkOptions = {}): Sink {
-	if (opts.legacyFormatter) {
-		return getConsoleSink({ formatter: createPluxelConsoleFormatter(opts.legacy) })
-	}
-	return getConsoleSink({ formatter: createPluxelPrettyFormatter(opts.pretty) })
-}
+import { pluxelCategories } from './categories'
+import { findErrorInProps, findErrorInRecord, formatErrorStack, omitErrorProps } from './error'
+import { createPluxelPrettyFormatter, type PluxelPrettyFormatterOptions } from './formatters'
+import { mergeDefaults } from './merge'
 
 /**
  * Single-entry "pretty" sink for local development:
@@ -39,17 +22,51 @@ export function createPluxelConsoleSink(opts: PluxelConsoleSinkOptions = {}): Si
  * This is intentionally a sink (not just a formatter) because Youch rendering is async.
  */
 export type PluxelPrettyConsoleSinkOptions = {
+	/**
+	 * Pretty formatter options.
+	 *
+	 * Defaults:
+	 * - `timestamp: "time"`
+	 * - `prefix: "name"`
+	 * - `includeCaller: true`
+	 */
 	pretty?: PluxelPrettyFormatterOptions
+	/**
+	 * Youch ANSI error rendering (async).
+	 *
+	 * Defaults (enabled):
+	 * - `minLevel: "error"`
+	 * - `mode: "inline"` (avoid async interleaving / "错位 log")
+	 * - `categoryPrefixes: [pluxelCategories.hmr, pluxelCategories.plugins]`
+	 *
+	 * Disable with `false`.
+	 */
 	youch?: PluxelYouchSinkOptions | false
 }
 
+const PLUXEL_PRETTY_DEFAULTS = {
+	timestamp: 'time',
+	prefix: 'name',
+	includeCaller: true,
+} as const satisfies PluxelPrettyFormatterOptions
+
+const PLUXEL_YOUCH_DEFAULTS = {
+	minLevel: 'error',
+	mode: 'inline',
+	categoryPrefixes: [pluxelCategories.hmr, pluxelCategories.plugins],
+} as const satisfies PluxelYouchSinkOptions
+
 export function createPluxelPrettyConsoleSink(opts: PluxelPrettyConsoleSinkOptions = {}): Sink {
-	const formatter = createPluxelPrettyFormatter(opts.pretty)
+	const pretty = mergeDefaults(opts.pretty, PLUXEL_PRETTY_DEFAULTS) as PluxelPrettyFormatterOptions
+	const formatter = createPluxelPrettyFormatter(pretty)
 	const baseConsoleSink = getConsoleSink({ formatter })
 	if (opts.youch === false) return baseConsoleSink
 
-	const youchOptions = opts.youch ?? {}
-	const youchMode = youchOptions.mode ?? 'sidecar'
+	const youchOptions =
+		opts.youch === undefined
+			? (PLUXEL_YOUCH_DEFAULTS as PluxelYouchSinkOptions)
+			: (mergeDefaults(opts.youch, PLUXEL_YOUCH_DEFAULTS) as PluxelYouchSinkOptions)
+	const youchMode = youchOptions.mode ?? PLUXEL_YOUCH_DEFAULTS.mode
 	const matcher = createYouchMatcher(youchOptions)
 
 	const consoleSink: Sink = (record) => {
@@ -76,12 +93,16 @@ export function createPluxelPrettyConsoleSink(opts: PluxelPrettyConsoleSinkOptio
 }
 
 export type PluxelYouchSinkOptions = {
+	/** @default "error" */
 	minLevel?: LogLevel
 	ansi?: YouchANSIOptions
 	/**
 	 * Rendering strategy:
 	 * - "sidecar": print the normal log line immediately, then render Youch async to stderr (may interleave).
 	 * - "inline": delay the whole log until Youch is ready, then print the log line + Youch output together.
+	 *
+	 * Note: {@link createPluxelPrettyConsoleSink} defaults this to `"inline"` to avoid interleaving.
+	 * @default "inline"
 	 */
 	mode?: 'sidecar' | 'inline'
 	/** Only render when record.category matches any of these prefixes. */
@@ -90,25 +111,11 @@ export type PluxelYouchSinkOptions = {
 	filter?: (record: LogRecord) => boolean
 }
 
-function findErrorInRecord(record: LogRecord): unknown {
-	if (record.properties.error) return record.properties.error
-	if (record.properties.err) return record.properties.err
-	for (let i = 1; i < record.message.length; i += 2) {
-		const v = record.message[i]
-		if (v instanceof Error) return v
-	}
-	return undefined
-}
-
-function findErrorInProps(record: LogRecord): unknown {
-	if ((record.properties as any)?.error) return (record.properties as any).error
-	if ((record.properties as any)?.err) return (record.properties as any).err
-	return undefined
-}
-
 function writeToStderr(text: string) {
 	const out = text.endsWith('\n') ? text : `${text}\n`
-	const p = (globalThis as any).process as undefined | { stderr?: { write?: (s: string) => void } }
+
+	const p = (globalThis as unknown as { process?: { stderr?: { write?: (s: string) => void } } })
+		.process
 	if (p?.stderr?.write) p.stderr.write(out)
 	else console.error(out)
 }
@@ -145,14 +152,15 @@ function createYouchMatcher(opts: PluxelYouchSinkOptions): (record: LogRecord) =
 }
 
 export function createPluxelYouchSink(opts: PluxelYouchSinkOptions = {}): Sink {
-	const youch = new Youch()
 	const matches = createYouchMatcher(opts)
+	let youch: Youch | undefined
+	const getYouch = () => (youch ??= new Youch())
 
 	return fromAsyncSink(async (record) => {
 		if (!matches(record)) return
 		const error = findErrorInRecord(record)
 		if (!(error instanceof Error)) return
-		const rendered = await youch.toANSI(error, opts.ansi)
+		const rendered = await getYouch().toANSI(error, opts.ansi)
 		writeToStderr(rendered)
 	})
 }
@@ -161,20 +169,13 @@ function stripTrailingNewlines(text: string): string {
 	return text.replace(/\n+$/g, '')
 }
 
-function omitErrorProps(record: LogRecord): LogRecord {
-	const props = record.properties as Record<string, unknown>
-	if (!props || typeof props !== 'object') return record
-	if (!('error' in props) && !('err' in props)) return record
-	const { error: _error, err: _err, ...rest } = props
-	return { ...record, properties: rest } as LogRecord
-}
-
 function createPluxelInlineYouchConsoleSink(
 	formatter: (record: LogRecord) => string,
 	opts: PluxelYouchSinkOptions,
 ) {
 	const matches = createYouchMatcher(opts)
-	const youch = new Youch()
+	let youch: Youch | undefined
+	const getYouch = () => (youch ??= new Youch())
 
 	const shouldHandle = (record: LogRecord) => {
 		if (!matches(record)) return false
@@ -188,9 +189,9 @@ function createPluxelInlineYouchConsoleSink(
 
 		let rendered = ''
 		try {
-			rendered = await youch.toANSI(error, opts.ansi)
+			rendered = await getYouch().toANSI(error, opts.ansi)
 		} catch {
-			rendered = typeof error.stack === 'string' && error.stack.length > 0 ? error.stack : String(error)
+			rendered = formatErrorStack(error)
 		}
 
 		const header = stripTrailingNewlines(formatter(omitErrorProps(record)))
@@ -210,41 +211,6 @@ export function composeSinks(...sinks: Sink[]): Sink {
 			}
 		}
 	}
-}
-
-export type PluxelDevConsoleSinkOptions = PluxelConsoleSinkOptions & {
-	youch?: PluxelYouchSinkOptions | false
-}
-
-export function createPluxelDevConsoleSink(opts: PluxelDevConsoleSinkOptions = {}): Sink {
-	const consoleSink = createPluxelConsoleSink(opts)
-	if (opts.youch === false) return consoleSink
-
-	const youchOptions = opts.youch ?? {}
-	const youchMode = youchOptions.mode ?? 'sidecar'
-	const matcher = createYouchMatcher(youchOptions)
-
-	const wrappedConsole: Sink = (record) => {
-		if (matcher(record) && findErrorInProps(record) instanceof Error) {
-			consoleSink(omitErrorProps(record))
-			return
-		}
-		consoleSink(record)
-	}
-
-	if (youchMode === 'inline' && !opts.legacyFormatter) {
-		const formatter = createPluxelPrettyFormatter(opts.pretty)
-		const inline = createPluxelInlineYouchConsoleSink(formatter, youchOptions)
-		return (record) => {
-			if (inline.shouldHandle(record)) {
-				inline.enqueue(record)
-				return
-			}
-			wrappedConsole(record)
-		}
-	}
-
-	return composeSinks(wrappedConsole, createPluxelYouchSink(youchOptions))
 }
 
 // Re-export official file sinks (apps configure these explicitly).

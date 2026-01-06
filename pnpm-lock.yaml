@@ -87,9 +87,6 @@ importers:
       tsdown:
         specifier: '*'
         version: 0.18.2(typescript@5.9.3)
-      unplugin-macros:
-        specifier: ^0.18.6
-        version: 0.18.6(@types/node@25.0.3)(jiti@2.6.1)(sugarss@5.0.1(postcss@8.5.6))(yaml@2.8.2)
       yaml:
         specifier: ^2.5.0
         version: 2.8.2
@@ -160,9 +157,6 @@ importers:
       graphql:
         specifier: ^16.12.0
         version: 16.12.0
-      obug:
-        specifier: ^2.1.1
-        version: 2.1.1
       react:
         specifier: ^19.2.3
         version: 19.2.3
@@ -226,6 +220,12 @@ importers:
       '@logtape/pretty':
         specifier: ^1.3.5
         version: 1.3.5(@logtape/logtape@1.3.5)
+      '@pluxel/context':
+        specifier: workspace:*
+        version: link:../context
+      defu:
+        specifier: ^6.1.4
+        version: 6.1.4
       eventure:
         specifier: ^0.4.2
         version: 0.4.2
@@ -239,9 +239,6 @@ importers:
       '@abraham/reflection':
         specifier: ^0.13.0
         version: 0.13.0
-      '@pluxel/context':
-        specifier: workspace:*
-        version: link:../context
       '@pluxel/rolldown':
         specifier: workspace:*
         version: link:../rolldown
@@ -290,6 +287,9 @@ importers:
       '@logtape/logtape':
         specifier: ^1.3.5
         version: 1.3.5
+      '@pluxel/core':
+        specifier: workspace:*
+        version: link:../core
       '@rolldown/pluginutils':
         specifier: 1.0.0-beta.58
         version: 1.0.0-beta.58
@@ -332,9 +332,6 @@ importers:
       nypm:
         specifier: ^0.6.2
         version: 0.6.2
-      obug:
-        specifier: ^2.1.1
-        version: 2.1.1
       pathe:
         specifier: ^2.0.3
         version: 2.0.3
@@ -350,9 +347,6 @@ importers:
       tinypool:
         specifier: ^2.1.0
         version: 2.1.0
-      unplugin-macros:
-        specifier: ^0.18.6
-        version: 0.18.6(@types/node@25.0.3)(jiti@2.6.1)(sugarss@5.0.1(postcss@8.5.6))(yaml@2.8.2)
       valibot:
         specifier: ^1.2.0
         version: 1.2.0(typescript@5.9.3)
@@ -363,9 +357,6 @@ importers:
       '@pluxel/components':
         specifier: workspace:*
         version: link:../components
-      '@pluxel/core':
-        specifier: workspace:*
-        version: link:../core
       '@pluxel/hmr-web':
         specifier: workspace:*
         version: link:../hmr-web
@@ -2723,10 +2714,6 @@ packages:
   lru-cache@5.1.1:
     resolution: {integrity: sha512-KpNARQA3Iwv+jTA0utUVVbrh+Jlrr1Fv0e56GGzAFOXN7dk/FviaDW8LHmK52DlcH4WP2n6gI8vN1aesBFgo9w==}
 
-  magic-string-ast@1.0.3:
-    resolution: {integrity: sha512-CvkkH1i81zl7mmb94DsRiFeG9V2fR2JeuK8yDgS8oiZSFa++wWLEgZ5ufEOyLHbvSbD1gTRKv9NdX69Rnvr9JA==}
-    engines: {node: '>=20.19.0'}
-
   magic-string@0.30.21:
     resolution: {integrity: sha512-vd2F4YUyEXKGcLHoq+TEyCjxueSeHnFxyyjNp80yg0XV4vUhnDer/lvvlqM/arB5bXQN5K2/3oinyCRyx8T2CQ==}
 
@@ -3301,10 +3288,6 @@ packages:
       vue-tsc:
         optional: true
 
-  rolldown-string@0.2.1:
-    resolution: {integrity: sha512-7H8oH5A8+L96pbBTPCt/rZrwayEhZY5/ejhdk9nRODH32H1v7+bfkaCr+kS15DcGQ7VC1HcWdQVNABFYgrMOzg==}
-    engines: {node: '>=20.19.0'}
-
   rolldown@1.0.0-beta.52:
     resolution: {integrity: sha512-Hbnpljue+JhMJrlOjQ1ixp9me7sUec7OjFvS+A1Qm8k8Xyxmw3ZhxFu7LlSXW1s9AX3POE9W9o2oqCEeR5uDmg==}
     engines: {node: ^20.19.0 || >=22.12.0}
@@ -3693,10 +3676,6 @@ packages:
   unist-util-visit@5.0.0:
     resolution: {integrity: sha512-MR04uvD+07cwl/yhVuVWAtw+3GOR/knlL55Nd/wAdblk27GCVt3lqpTivy/tkJcZoNPzTwS1Y+KMojlLDhoTzg==}
 
-  unplugin-macros@0.18.6:
-    resolution: {integrity: sha512-z739HHgxLvk8BD+KgdpxYaCBqHBYsICn1uwOjxya19fVn13Hk9Eqhg8nclknBDP0Rq8BhTY20Xw8sq7UDHv8yg==}
-    engines: {node: '>=20.19.0'}
-
   unplugin-preprocessor-directives@1.2.0:
     resolution: {integrity: sha512-X0dWu9xFSSizkRa1f/o7sREWWMV1fvEc2IeXiirt5dS5BOiaI+V6KV/Uc8HCRffBa7TdZnRJ0YWiIBjkHzueeA==}
     peerDependencies:
@@ -3857,11 +3836,6 @@ packages:
   vite-node@3.2.4:
     resolution: {integrity: sha512-EbKSKh+bh1E1IFxeO0pg1n4dvoOTt0UDiXMd/qn++r98+jPO1xtJilvXldeuQ8giIB5IkpjCgMleHMNEsGH6pg==}
     engines: {node: ^18.0.0 || ^20.0.0 || >=22.0.0}
-    hasBin: true
-
-  vite-node@5.2.0:
-    resolution: {integrity: sha512-7UT39YxUukIA97zWPXUGb0SGSiLexEGlavMwU3HDE6+d/HJhKLjLqu4eX2qv6SQiocdhKLRcusroDwXHQ6CnRQ==}
-    engines: {node: ^20.19.0 || >=22.12.0}
     hasBin: true
 
   vite@8.0.0-beta.5:
@@ -6138,10 +6112,6 @@ snapshots:
     dependencies:
       yallist: 3.1.1
 
-  magic-string-ast@1.0.3:
-    dependencies:
-      magic-string: 0.30.21
-
   magic-string@0.30.21:
     dependencies:
       '@jridgewell/sourcemap-codec': 1.5.5
@@ -6994,10 +6964,6 @@ snapshots:
     transitivePeerDependencies:
       - oxc-resolver
 
-  rolldown-string@0.2.1:
-    dependencies:
-      magic-string: 0.30.21
-
   rolldown@1.0.0-beta.52:
     dependencies:
       '@oxc-project/types': 0.99.0
@@ -7404,27 +7370,6 @@ snapshots:
       unist-util-is: 6.0.1
       unist-util-visit-parents: 6.0.2
 
-  unplugin-macros@0.18.6(@types/node@25.0.3)(jiti@2.6.1)(sugarss@5.0.1(postcss@8.5.6))(yaml@2.8.2):
-    dependencies:
-      ast-kit: 2.2.0
-      magic-string-ast: 1.0.3
-      rolldown-string: 0.2.1
-      unplugin: 2.3.11
-      vite: 8.0.0-beta.5(@types/node@25.0.3)(jiti@2.6.1)(sugarss@5.0.1(postcss@8.5.6))(yaml@2.8.2)
-      vite-node: 5.2.0(@types/node@25.0.3)(jiti@2.6.1)(sugarss@5.0.1(postcss@8.5.6))(yaml@2.8.2)
-    transitivePeerDependencies:
-      - '@types/node'
-      - esbuild
-      - jiti
-      - less
-      - sass
-      - sass-embedded
-      - stylus
-      - sugarss
-      - terser
-      - tsx
-      - yaml
-
   unplugin-preprocessor-directives@1.2.0:
     dependencies:
       '@jridgewell/remapping': 2.3.5
@@ -7540,26 +7485,6 @@ snapshots:
       - stylus
       - sugarss
       - supports-color
-      - terser
-      - tsx
-      - yaml
-
-  vite-node@5.2.0(@types/node@25.0.3)(jiti@2.6.1)(sugarss@5.0.1(postcss@8.5.6))(yaml@2.8.2):
-    dependencies:
-      cac: 6.7.14
-      es-module-lexer: 1.7.0
-      obug: 2.1.1
-      pathe: 2.0.3
-      vite: 8.0.0-beta.5(@types/node@25.0.3)(jiti@2.6.1)(sugarss@5.0.1(postcss@8.5.6))(yaml@2.8.2)
-    transitivePeerDependencies:
-      - '@types/node'
-      - esbuild
-      - jiti
-      - less
-      - sass
-      - sass-embedded
-      - stylus
-      - sugarss
       - terser
       - tsx
       - yaml

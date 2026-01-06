@@ -1,9 +1,10 @@
-import { relative, isAbsolute } from 'node:path'
+import { isAbsolute, relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { isProduction } from 'std-env'
 
 export type CallerCaptureOptions = {
 	/** Exclude frames up to and including this function (Node/Bun only). */
-	exclude?: Function
+	exclude?: (...args: never[]) => unknown
 	/** Additional skip markers applied on top of defaults. */
 	skipMarkers?: readonly string[]
 }
@@ -13,12 +14,32 @@ function parseBool(value: string | undefined): boolean | undefined {
 	return value !== '0'
 }
 
+let cachedCallerEnabled: boolean | undefined
+
+type ProcessLike = {
+	env?: Record<string, string | undefined>
+	cwd?: () => string
+}
+
+function getProcessLike(): ProcessLike | undefined {
+	return (globalThis as unknown as { process?: ProcessLike }).process
+}
+
 export function isCallerEnabled(): boolean {
-	return (
-		parseBool(process.env.PLUXEL_LOG_CALLER) ??
-		parseBool(process.env.PLUXEL_LOGGER_CALLER) ??
-		true
-	)
+	if (cachedCallerEnabled !== undefined) return cachedCallerEnabled
+
+	// Override: explicit env always wins (including in production).
+	const explicit =
+		parseBool(getProcessLike()?.env?.PLUXEL_LOG_CALLER) ??
+		parseBool(getProcessLike()?.env?.PLUXEL_LOGGER_CALLER)
+	if (explicit !== undefined) {
+		cachedCallerEnabled = explicit
+		return explicit
+	}
+
+	// Default: enable in dev/test, disable in production.
+	cachedCallerEnabled = !isProduction
+	return cachedCallerEnabled
 }
 
 const DEFAULT_SKIP_MARKERS = [
@@ -47,7 +68,7 @@ function tryFileUrlToPath(input: string): string {
 function relativizeToCwd(file: string): string {
 	const f = tryFileUrlToPath(file)
 	if (!isAbsolute(f)) return f
-	const cwd = (globalThis as any).process?.cwd?.() as string | undefined
+	const cwd = getProcessLike()?.cwd?.()
 	if (!cwd) return f
 	const rel = relative(cwd, f)
 	// Only use relative paths when they stay within cwd (avoid ../.. noise).
@@ -65,18 +86,25 @@ function normalizeFunctionName(fn: string): string {
 
 export function captureCaller(opts: CallerCaptureOptions = {}): string | undefined {
 	const error = {} as { stack?: string }
-	if (typeof Error.captureStackTrace === 'function') {
-		Error.captureStackTrace(error, opts.exclude ?? captureCaller)
+	const captureStackTrace = (
+		Error as unknown as {
+			captureStackTrace?: (
+				targetObject: object,
+				constructorOpt?: CallerCaptureOptions['exclude'],
+			) => void
+		}
+	).captureStackTrace
+	if (typeof captureStackTrace === 'function') {
+		captureStackTrace(error, opts.exclude ?? captureCaller)
 	} else {
 		error.stack = new Error().stack
 	}
 	const stack = error.stack
 	if (!stack) return undefined
 
-	const skipMarkers =
-		opts.skipMarkers && opts.skipMarkers.length
-			? [...DEFAULT_SKIP_MARKERS, ...opts.skipMarkers]
-			: DEFAULT_SKIP_MARKERS
+	const skipMarkers = opts.skipMarkers?.length
+		? [...DEFAULT_SKIP_MARKERS, ...opts.skipMarkers]
+		: DEFAULT_SKIP_MARKERS
 	const lines = stack.split('\n').slice(1)
 	for (const raw of lines) {
 		const line = raw.trim()
@@ -85,8 +113,7 @@ export function captureCaller(opts: CallerCaptureOptions = {}): string | undefin
 
 		// Node/Bun: "at fn (file:line:col)" or "at file:line:col"
 		const m =
-			line.match(/^at\s+(.*?)\s+\((.*?):(\d+):(\d+)\)$/) ??
-			line.match(/^at\s+(.*?):(\d+):(\d+)$/)
+			line.match(/^at\s+(.*?)\s+\((.*?):(\d+):(\d+)\)$/) ?? line.match(/^at\s+(.*?):(\d+):(\d+)$/)
 		if (!m) continue
 
 		if (m.length === 5) {

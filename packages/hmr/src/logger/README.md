@@ -7,7 +7,8 @@
 - `createLogStoreSink()`：把 LogTape `LogRecord` 写入内存 `logStore`，用于 UI 日志。
 - `toUiLogRecord()`：把 `LogRecord` 转成 UI 友好的结构（安全序列化 properties，并默认剔除 `caller`）。
 
-宿主侧通过 LogTape `configure()` 把 `["pluxel","hmr"]` / `["pluxel","plugins"]` 等 category 绑定到该 sink 即可。
+默认情况下，`HMRService.start()` 会在**宿主未调用 LogTape `configure()`**时自动注入一套开发友好的默认配置（包含 UI log store）。
+如果宿主希望完全自定义日志（或绑定更多 category 到 UI sink），依然可以手动 `configure()`。
 
 ## Transport
 
@@ -24,7 +25,25 @@
 - `displayName`：只匹配 `record.name`
 - `category`：形如 `pluxel.hmr` / `pluxel.plugins`，支持 `prefix.*`
 
-## Debug namespaces
+## Debug topics
 
-HMR 细粒度 debug 采用 category（如 `pluxel:hmr:batch` → `["pluxel","hmr","batch"]`）。
-开启方式：在宿主的 LogTape 配置里把对应 category 的 `lowestLevel` 设为 `"debug"`。
+HMR 细粒度 debug 采用 topic（例如 `pluxel:hmr:batch`），并通过一个统一的 debug channel 输出：
+- category 固定为 `["pluxel","debug"]`
+- topic 写在 `record.properties.debugTopic`，pretty 输出会标注 `{dbg:...}`
+
+开启方式（二选一）：
+- 宿主手动 `configure(createPluxelLogtapeConfig({ debug: [...] }))`
+- 或使用 HMR 默认自动配置时，在 root Context 配置 `debug: [...]`（例如 `debug: ["pluxel:hmr:*"]`）
+
+类型提示：`@pluxel/hmr` 会通过 module augmentation 为常见 topic 提供 IntelliSense；宿主也可以自行扩展：
+
+```ts
+declare module "@pluxel/core" {
+  namespace Context {
+    interface DebugTopics {
+      "pluxel:hmr:*": true
+      "pluxel:ext:compile": true
+    }
+  }
+}
+```
