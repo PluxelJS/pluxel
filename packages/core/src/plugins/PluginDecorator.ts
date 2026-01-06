@@ -3,6 +3,7 @@
 // All data here is immutable after decoration, and optimized for fast reads
 // during DI construction.
 import '../reflection'
+import { isProduction } from '../env'
 import { BasePlugin } from './BasePlugin'
 import type { Identifier, PluginIdentifier, SubclassOf } from './types'
 
@@ -24,8 +25,9 @@ export function getPluginDiKey(id: PluginIdentifier): PluginIdentifier {
   - 热路径 = 1× WeakMap.get → 固定 shape 的 State 属性访问。
 ───────────────────────────────────────────────────────────*/
 const __DEV__ =
-	(globalThis as any).__PLUXEL_DEV__ ??
-	(typeof process !== 'undefined' ? process.env?.NODE_ENV === 'dev' : true)
+	typeof (globalThis as unknown as { __PLUXEL_DEV__?: unknown }).__PLUXEL_DEV__ === 'boolean'
+		? (globalThis as unknown as { __PLUXEL_DEV__: boolean }).__PLUXEL_DEV__
+		: !isProduction
 const $freeze = <T>(x: T): T => (__DEV__ ? Object.freeze(x) : x)
 const EMPTY_ARR: readonly unknown[] = $freeze([])
 
@@ -86,9 +88,6 @@ export interface PluginInfo {
 	/** 由 Vite 插件注入的 @Config 源代码 map（fieldName -> source） */
 	readonly configSourceMap: Readonly<Record<string, string>> | null
 }
-
-/** @deprecated 使用 PluginInfo.id 代替 */
-export type { PluginInfo as PluginInfoLegacy }
 
 /*───────────────────────────────────────────────────────────
   Internal State（单 WM，固定 shape，JIT 友好）

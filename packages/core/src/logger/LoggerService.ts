@@ -1,5 +1,6 @@
 import { getLogger, type Logger as LogtapeLogger } from '@logtape/logtape'
 import { type Context, Injectable } from '@pluxel/context'
+import { captureCaller, isCallerEnabled } from './caller'
 import { pluxelCategories } from './categories'
 import { findPluginId } from './context'
 import { callLogtape, type PluxelLogMethod } from './logCall'
@@ -86,13 +87,24 @@ export class LoggerService {
 		return cached.debug.core
 	}
 
-	private getContextLogger(extra: Record<string, unknown> | undefined) {
+	private getContextLogger(
+		extra: Record<string, unknown> | undefined,
+		includeCaller: boolean,
+		exclude?: (...args: never[]) => unknown,
+	) {
 		const base = this.getBaseContextLogger()
-		return extra ? base.with(extra) : base
+		if (!includeCaller || !isCallerEnabled()) return extra ? base.with(extra) : base
+
+		let props: Record<string, unknown> | undefined = extra
+		if (!props || typeof props.caller !== 'string') {
+			const caller = captureCaller({ exclude: exclude ?? this.log })
+			if (caller) props = props ? { ...props, caller } : { caller }
+		}
+		return props ? base.with(props) : base
 	}
 
 	private log(level: PluxelLogMethod, args: unknown[]) {
-		const logger = this.getContextLogger(undefined)
+		const logger = this.getContextLogger(undefined, true, this.log)
 		callLogtape(logger, level, args)
 	}
 
@@ -109,7 +121,8 @@ export class LoggerService {
 
 	/** Create a LogTape logger that inherits pluxel context fields. */
 	public with(properties: Record<string, unknown>): LogtapeLogger {
-		return this.getContextLogger(properties)
+		// Don't capture `caller` here: it would freeze the call-site of `.with()` for all subsequent logs.
+		return this.getContextLogger(properties, false)
 	}
 
 	/**

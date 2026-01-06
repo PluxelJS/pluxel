@@ -1,9 +1,11 @@
 import type { LogRecord } from '@logtape/logtape'
 
 export function findErrorInProps(record: LogRecord): unknown {
-	const props = record.properties as any
-	if (props?.error) return props.error
-	if (props?.err) return props.err
+	const props = record.properties
+	if (!props || typeof props !== 'object') return undefined
+	const p = props as Record<string, unknown>
+	if ('error' in p) return p.error
+	if ('err' in p) return p.err
 	return undefined
 }
 
@@ -20,10 +22,11 @@ export function findErrorInRecord(record: LogRecord): unknown {
 }
 
 export function omitErrorProps(record: LogRecord): LogRecord {
-	const props = record.properties as Record<string, unknown>
+	const props = record.properties
 	if (!props || typeof props !== 'object') return record
-	if (!('error' in props) && !('err' in props)) return record
-	const { error: _error, err: _err, ...rest } = props
+	const p = props as Record<string, unknown>
+	if (!('error' in p) && !('err' in p)) return record
+	const { error: _error, err: _err, ...rest } = p
 	return { ...record, properties: rest } as LogRecord
 }
 

@@ -3,7 +3,7 @@ import { existsSync } from 'node:fs'
 import { mkdir, readdir, readFile, stat, unlink, writeFile } from 'node:fs/promises'
 import type { Logger as LogtapeLogger } from '@logtape/logtape'
 import { type Context, getPluginInfo } from '@pluxel/core'
-import { isDebugTopicEnabled } from '@pluxel/core/logger'
+import { getDebugLogger } from '@pluxel/core/logger'
 import type {
 	BuiltinDocExtensionDef,
 	BuiltinExtensionDef,
@@ -100,7 +100,7 @@ export class ExtensionService {
 	private readonly builtinByPlugin = new Map<string, Map<string, BuiltinExtensionDef>>()
 	private readonly outDir: string
 	private readonly manifestPath: string
-	private readonly dbg: LogtapeLogger | null
+	private readonly dbg: LogtapeLogger
 	private readonly enabled: boolean
 	private readonly vendorPackages: readonly string[]
 	private manifestVersion = 0
@@ -117,10 +117,18 @@ export class ExtensionService {
 		public ctx: Context,
 		config?: ExtensionServiceConfig,
 	) {
-		const rootConfig = (this.ctx.root?.config ?? this.ctx.config ?? {}) as unknown
-		this.dbg = isDebugTopicEnabled(rootConfig, 'pluxel:ext:compile')
-			? this.ctx.logger.getDebugChannel('pluxel:ext:compile')
-			: null
+		const logger = (this.ctx as unknown as { logger?: unknown }).logger
+		const fn =
+			logger && typeof logger === 'object'
+				? (logger as Record<string, unknown>).getDebugChannel
+				: undefined
+		this.dbg =
+			typeof fn === 'function'
+				? (fn as (t: string) => LogtapeLogger).call(logger, 'pluxel:ext:compile')
+				: getDebugLogger('pluxel:ext:compile').with({
+						name: 'extensions',
+						context: this.ctx?.name ?? 'hmr',
+					})
 		this.enabled = config?.enabled !== false
 		this.outDir = config?.outDir ?? resolve(process.cwd(), '.pluxel/extensions')
 		this.manifestPath = join(this.outDir, MANIFEST_FILENAME)
@@ -355,7 +363,7 @@ export class ExtensionService {
 		const entry = this.entries.get(pluginName)
 		if (!entry) return false
 
-		this.dbg?.debug('compile start {pluginName}', { pluginName })
+		this.dbg.debug('compile start {pluginName}', { pluginName })
 		try {
 			await this.refreshWatchFiles(entry)
 			const sourceHash = await this.computeSourceHash(entry.sourceFiles, entry.pluginDir)
@@ -370,7 +378,7 @@ export class ExtensionService {
 				entry.moduleUrl = moduleUrl
 				void this.cleanupOldModuleFiles(pluginName, MODULE_RETENTION_COUNT)
 				this.handleManifestUpdate(pluginName, entry)
-				this.dbg?.debug('compile done {pluginName} (cached)', { pluginName })
+				this.dbg.debug('compile done {pluginName} (cached)', { pluginName })
 				return true
 			}
 
@@ -383,7 +391,7 @@ export class ExtensionService {
 			entry.modulePath = targetFile
 			entry.moduleUrl = moduleUrl
 			this.handleManifestUpdate(pluginName, entry)
-			this.dbg?.debug('compile done {pluginName}', { pluginName })
+			this.dbg.debug('compile done {pluginName}', { pluginName })
 			return true
 		} catch (error) {
 			this.ctx.logger.error('failed to compile {pluginName}', { pluginName, error })

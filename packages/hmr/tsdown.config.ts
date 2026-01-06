@@ -35,6 +35,9 @@ export default defineConfig({
 	external: [
 		'@pluxel/core',
 		'@pluxel/core/services',
+		'@pluxel/core/logger',
+		'@pluxel/context',
+		'@pluxel/context/*',
 		'@pluxel/components',
 		'@pluxel/hmr-web',
 		'react',

@@ -1,7 +1,7 @@
 import { mkdir } from 'node:fs/promises'
 
 import { configure, getConfig, type LogLevel } from '@logtape/logtape'
-import type { Context } from '@pluxel/context'
+import type { Context } from '@pluxel/core'
 import { createPluxelLogtapeConfig } from '@pluxel/core/logger'
 import { dirname } from 'pathe'
 

@@ -24,7 +24,8 @@ export default defineConfig({
 	exports: {
 		devExports: '@pluxel/source',
 	},
-	noExternal: ['@abraham/reflection'],
+	noExternal: ['@abraham/reflection', '@pluxel/context', '@pluxel/context/*'],
+	external: [],
 	entry: {
 		env: 'src/env.ts',
 		index: 'src/index.ts',

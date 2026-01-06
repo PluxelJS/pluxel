@@ -11,6 +11,7 @@ import type { Context } from '@pluxel/context'
 
 import { pluxelCategories } from './categories'
 import { mergeDefaults } from './merge'
+import { readEnv } from './runtime'
 import {
 	createPluxelPrettyConsoleSink,
 	getRotatingFileSink,
@@ -106,7 +107,7 @@ export type PluxelLogtapeConfigOptions = {
 function resolveLowestLevel(explicit: LogLevel | null | undefined): LogLevel | null {
 	if (explicit === null) return null
 	if (explicit) return explicit
-	const raw = (globalThis as any).process?.env?.PLUXEL_LOG_LEVEL as string | undefined
+	const raw = readEnv('PLUXEL_LOG_LEVEL')
 	if (!raw) return 'info'
 	try {
 		return parseLogLevel(raw)
@@ -229,11 +230,12 @@ export function createPluxelLogtapeConfig(
 		const id = 'pluxelDebugTopics'
 		if (patterns.length) {
 			filters[id] = ((record: LogRecord) => {
+				const props = record.properties
 				const topic =
-					typeof (record as any)?.properties?.debugTopic === 'string'
-						? ((record as any).properties.debugTopic as string)
-						: null
-				if (!topic) return patterns.includes('*')
+					props && typeof props === 'object'
+						? (props as Record<string, unknown>).debugTopic
+						: undefined
+				if (typeof topic !== 'string' || !topic) return patterns.includes('*')
 				for (const p of patterns) {
 					if (matchesTopic(p, topic)) return true
 				}

@@ -1,19 +1,22 @@
-import { createServerModuleRunner, type DevEnvironment, type ViteDevServer } from 'vite'
-import { EvaluatedModules, type EvaluatedModuleNode, type ModuleRunner } from 'vite/module-runner'
-import { ESModulesEvaluator } from 'vite/module-runner'
-import type { Plugin } from 'vite'
 import { existsSync } from 'node:fs'
 import { readFile, realpath } from 'node:fs/promises'
 import { fileURLToPath, pathToFileURL } from 'node:url'
+import { getDebugLogger } from '@pluxel/core/logger'
 import { dirname, resolve } from 'pathe'
-import { getLogger } from '@logtape/logtape'
-import { pluxelCategories } from '@pluxel/core/logger'
+import type { Plugin } from 'vite'
+import { createServerModuleRunner, type DevEnvironment, type ViteDevServer } from 'vite'
+import {
+	ESModulesEvaluator,
+	type EvaluatedModuleNode,
+	EvaluatedModules,
+	type ModuleRunner,
+} from 'vite/module-runner'
 import type { HmrPathApi } from './environment'
 import { findNearestPackageRoot, matchesSpecifierPattern } from './internals'
 
 export type PrimeModuleCacheEntryParams = {
 	id: string
-	exports: any
+	exports: unknown
 	aliases?: Iterable<string>
 }
 
@@ -28,12 +31,12 @@ export type HmrRunnerInitOptions = {
 
 const HARD_BRIDGE_IDS = ['@pluxel/core', '@pluxel/hmr', '@pluxel/context'] as const
 const HARD_BRIDGE_PREFIXES = ['@pluxel/core/', '@pluxel/hmr/', '@pluxel/context/'] as const
-const DEBUG_FETCH = Boolean(process.env.PLUXEL_HMR_DEBUG_FETCH)
-const dbgLogger = getLogger([...pluxelCategories.hmr, 'runner'])
-const dbgFetch = (message: string, props?: Record<string, unknown>) => {
-	if (!DEBUG_FETCH) return
-	if (props) dbgLogger.debug(message, props)
-	else dbgLogger.debug(message)
+const HARD_BRIDGE_ID_SET = new Set<string>(HARD_BRIDGE_IDS)
+const dbgFetch = getDebugLogger('pluxel:hmr:fetch').with({ name: 'runner' })
+
+type ExternalizeHint = {
+	externalize: string
+	type: 'module' | 'commonjs'
 }
 
 export class HmrRunner {
@@ -47,7 +50,7 @@ export class HmrRunner {
 	private realpathCache = new Map<string, Promise<string>>()
 	private packageNameByPackageRoot = new Map<string, Promise<string | null>>()
 	private packageNameByFile = new Map<string, Promise<string | null>>()
-	private bridgedHostExports = new Map<string, any>()
+	private bridgedHostExports = new Map<string, unknown>()
 
 	init(server: ViteDevServer, opts: HmrRunnerInitOptions = {}) {
 		this.env_ = server.environments.ssr
@@ -125,7 +128,7 @@ export class HmrRunner {
 	async bridgeHostModules(
 		specifiers: readonly string[],
 		path: HmrPathApi,
-		logger: { warn: (...args: any[]) => void },
+		logger: { warn: (message: string, props?: Record<string, unknown>) => void },
 	) {
 		const env = this.env
 		await Promise.all(
@@ -156,12 +159,12 @@ export class HmrRunner {
 					if (abs.startsWith('/')) urls.add(`/@fs${abs}`)
 
 					this.primeModuleCacheEntry({ id: resolved.id, exports, aliases: urls })
-					} catch (error) {
-						logger.warn('failed to bridge host module {specifier}', { specifier, error })
-					}
-					}),
-				)
-			}
+				} catch (error) {
+					logger.warn('failed to bridge host module {specifier}', { specifier, error })
+				}
+			}),
+		)
+	}
 
 	async assertBridgedSingletons(specifiers: readonly string[]) {
 		for (const specifier of specifiers) {
@@ -182,28 +185,36 @@ export class HmrRunner {
 	}
 
 	private installFetchModuleInterceptor() {
-		const runnerAny: any = this.runner_
-		const transport = runnerAny?.transport
-		if (!transport || typeof transport.invoke !== 'function') return
+		const transport = (this.runner_ as unknown as { transport?: unknown })?.transport
+		if (!transport || typeof transport !== 'object') return
+		const invoke = (transport as Record<string, unknown>).invoke
+		if (typeof invoke !== 'function') return
 
-		const originalInvoke = transport.invoke.bind(transport)
-		transport.invoke = async (name: string, data: any) => {
+		const originalInvoke = (invoke as (name: string, data: unknown) => Promise<unknown>).bind(
+			transport,
+		)
+		;(transport as Record<string, unknown>).invoke = async (name: string, data: unknown) => {
 			if (name === 'fetchModule' && Array.isArray(data)) {
-				const intercepted = await this.tryInterceptFetchModule(data)
+				const intercepted = await this.tryInterceptFetchModule(data as unknown[])
 				if (intercepted) return intercepted
 			}
 			return originalInvoke(name, data)
 		}
 	}
 
-	private async tryInterceptFetchModule(data: any[]): Promise<any | null> {
+	private async tryInterceptFetchModule(data: unknown[]): Promise<ExternalizeHint | null> {
 		const url = typeof data[0] === 'string' ? data[0] : null
 		const importer = typeof data[1] === 'string' ? data[1] : undefined
 		if (!url) return null
 
 		const rawId = unwrapViteId(url)
-		if (DEBUG_FETCH && (rawId.includes('cjs') || rawId.includes('@napi-rs') || rawId.includes('napi-rs'))) {
-			dbgFetch('fetchModule {rawId}', { url, rawId, importer, cjsExternal: this.cjsExternal_ })
+		if (rawId.includes('cjs') || rawId.includes('@napi-rs') || rawId.includes('napi-rs')) {
+			dbgFetch.debug('fetchModule {rawId}', {
+				url,
+				rawId,
+				importer,
+				cjsExternal: this.cjsExternal_,
+			})
 		}
 
 		if (isBareSpecifier(rawId)) {
@@ -213,8 +224,8 @@ export class HmrRunner {
 			}
 
 			if (!this.isCjsExternal(rawId)) return null
-			if (DEBUG_FETCH && (rawId.includes('cjs') || rawId.includes('@napi-rs') || rawId.includes('napi-rs'))) {
-				dbgFetch('externalize bare as CJS {rawId}', { rawId })
+			if (rawId.includes('cjs') || rawId.includes('@napi-rs') || rawId.includes('napi-rs')) {
+				dbgFetch.debug('externalize bare as CJS {rawId}', { rawId })
 			}
 			return await this.externalizeBareId(rawId, importer, { typeHint: 'commonjs' })
 		}
@@ -226,8 +237,8 @@ export class HmrRunner {
 		const fsPath = urlToFsPath(this.env.config.root, rawId)
 		if (!fsPath) return null
 		if (!(await this.isCjsExternalFile(fsPath))) return null
-		if (DEBUG_FETCH && (rawId.includes('cjs') || rawId.includes('@napi-rs') || rawId.includes('napi-rs'))) {
-			dbgFetch('externalize fsPath as CJS {fsPath}', { fsPath })
+		if (rawId.includes('cjs') || rawId.includes('@napi-rs') || rawId.includes('napi-rs')) {
+			dbgFetch.debug('externalize fsPath as CJS {fsPath}', { fsPath })
 		}
 		return await this.externalizeFsPath(fsPath, { typeHint: 'commonjs' })
 	}
@@ -236,9 +247,9 @@ export class HmrRunner {
 		rawId: string,
 		importer: string | undefined,
 		opts: { typeHint: 'module' | 'commonjs' },
-	): Promise<any | null> {
+	): Promise<ExternalizeHint | null> {
 		const env = this.env
-		const options: any = {}
+		const options: { skip?: Set<Plugin> } = {}
 		if (this.skipPlugin_) options.skip = new Set([this.skipPlugin_])
 
 		const resolved = await env.pluginContainer.resolveId(rawId, importer, options)
@@ -249,7 +260,11 @@ export class HmrRunner {
 
 		const ext = canonical.toLowerCase()
 		const type =
-			ext.endsWith('.cjs') || ext.endsWith('.cts') ? 'commonjs' : opts.typeHint === 'commonjs' ? 'commonjs' : 'module'
+			ext.endsWith('.cjs') || ext.endsWith('.cts')
+				? 'commonjs'
+				: opts.typeHint === 'commonjs'
+					? 'commonjs'
+					: 'module'
 
 		return {
 			externalize: pathToFileURL(canonical).toString(),
@@ -260,7 +275,7 @@ export class HmrRunner {
 	private async externalizeFsPath(
 		fsPath: string,
 		opts: { typeHint: 'module' | 'commonjs' },
-	): Promise<any> {
+	): Promise<ExternalizeHint> {
 		const canonical = await this.realpathCached(fsPath)
 		const type = inferModuleTypeFromPath(canonical, opts.typeHint)
 		return {
@@ -325,7 +340,7 @@ export class HmrRunner {
 	}
 }
 
-function setEvaluatedModuleExports(node: EvaluatedModuleNode, exports: any) {
+function setEvaluatedModuleExports(node: EvaluatedModuleNode, exports: unknown) {
 	node.exports = exports
 	node.evaluated = true
 	node.promise = Promise.resolve(exports)
@@ -334,7 +349,7 @@ function setEvaluatedModuleExports(node: EvaluatedModuleNode, exports: any) {
 }
 
 function isHardBridgeSpecifier(id: string) {
-	if (HARD_BRIDGE_IDS.includes(id as any)) return true
+	if (HARD_BRIDGE_ID_SET.has(id)) return true
 	for (const prefix of HARD_BRIDGE_PREFIXES) {
 		if (id.startsWith(prefix)) return true
 	}

@@ -124,9 +124,8 @@ export class LogtapeLoggerService {
 
 	/** Create a LogTape logger that inherits pluxel context fields. */
 	public with(properties: Record<string, unknown>): LogtapeLogger {
-		// Capture caller at the `.with()` call-site so the returned logger keeps it
-		// even when used with LogTape's contextual logger pattern.
-		return this.getContextLogger(properties, isCallerEnabled(), this.with)
+		// Don't capture `caller` here: it would freeze the call-site of `.with()` for all subsequent logs.
+		return this.getContextLogger(properties, false)
 	}
 
 	/**

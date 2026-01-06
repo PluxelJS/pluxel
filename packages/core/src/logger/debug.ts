@@ -5,8 +5,13 @@ export type DebugTopic = string
 
 const DEBUG_CATEGORY = ['pluxel', 'debug'] as const
 
+function readDebugField(config: unknown): unknown {
+	if (!config || typeof config !== 'object') return undefined
+	return (config as Record<string, unknown>).debug
+}
+
 export function resolveDebugTopics(config: unknown): DebugTopic[] {
-	const raw = (config as any)?.debug as unknown
+	const raw = readDebugField(config)
 	const list = Array.isArray(raw) ? raw : raw ? [raw] : []
 	const out: string[] = []
 	for (const v of list) {

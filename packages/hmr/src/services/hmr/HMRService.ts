@@ -1,7 +1,7 @@
 import { fileURLToPath } from 'node:url'
 import type { Logger as LogtapeLogger } from '@logtape/logtape'
 import { type Context, Injectable } from '@pluxel/core'
-import { isDebugTopicEnabled, resolveDebugTopics } from '@pluxel/core/logger'
+import { getDebugLogger, resolveDebugTopics } from '@pluxel/core/logger'
 import { dirname, isAbsolute, resolve } from 'pathe'
 import {
 	createServer,
@@ -151,12 +151,12 @@ export class HMRService {
 	private debouncer!: BatchDebouncer
 
 	private readonly dbg: {
-		modules: LogtapeLogger | null
-		warmup: LogtapeLogger | null
-		batch: LogtapeLogger | null
-		cache: LogtapeLogger | null
-		graph: LogtapeLogger | null
-		timeEntry: LogtapeLogger | null
+		modules: LogtapeLogger
+		warmup: LogtapeLogger
+		batch: LogtapeLogger
+		cache: LogtapeLogger
+		graph: LogtapeLogger
+		timeEntry: LogtapeLogger
 	}
 
 	private readonly plugin: Plugin
@@ -181,8 +181,6 @@ export class HMRService {
 
 		this.deps = resolveHMRDependencyConfig(this.config.deps)
 		this.logConfig = resolveHmrLogConfig(this.config.log)
-		const rootConfig = (this.ctx.root?.config ?? this.ctx.config ?? {}) as unknown
-		const debugOn = (topic: string) => isDebugTopicEnabled(rootConfig, topic)
 
 		const runtimeInput = this.config.runtime ?? {}
 		const runtimeResolved = {
@@ -195,25 +193,26 @@ export class HMRService {
 			Object.keys(runtimeResolved.shims ?? {}).length > 0
 		if (this.useRequireShims) installRequireShims((id) => this.runtimeShims.require(id))
 
+		const getDebugChannel = (topic: string): LogtapeLogger => {
+			const logger = (this.ctx as unknown as { logger?: unknown }).logger
+			const fn =
+				logger && typeof logger === 'object'
+					? (logger as Record<string, unknown>).getDebugChannel
+					: undefined
+			if (typeof fn === 'function') {
+				return (fn as (t: string) => LogtapeLogger).call(logger, topic)
+			}
+			// Fallback for tests / mocked contexts: use the global debug channel logger.
+			return getDebugLogger(topic).with({ name: 'hmr', context: this.ctx?.name ?? 'hmr' })
+		}
+
 		this.dbg = {
-			modules: debugOn('pluxel:hmr:modules')
-				? this.ctx.logger.getDebugChannel('pluxel:hmr:modules')
-				: null,
-			warmup: debugOn('pluxel:hmr:warmup')
-				? this.ctx.logger.getDebugChannel('pluxel:hmr:warmup')
-				: null,
-			batch: debugOn('pluxel:hmr:batch')
-				? this.ctx.logger.getDebugChannel('pluxel:hmr:batch')
-				: null,
-			cache: debugOn('pluxel:hmr:cache')
-				? this.ctx.logger.getDebugChannel('pluxel:hmr:cache')
-				: null,
-			graph: debugOn('pluxel:hmr:graph')
-				? this.ctx.logger.getDebugChannel('pluxel:hmr:graph')
-				: null,
-			timeEntry: debugOn('pluxel:hmr:time:entry')
-				? this.ctx.logger.getDebugChannel('pluxel:hmr:time:entry')
-				: null,
+			modules: getDebugChannel('pluxel:hmr:modules'),
+			warmup: getDebugChannel('pluxel:hmr:warmup'),
+			batch: getDebugChannel('pluxel:hmr:batch'),
+			cache: getDebugChannel('pluxel:hmr:cache'),
+			graph: getDebugChannel('pluxel:hmr:graph'),
+			timeEntry: getDebugChannel('pluxel:hmr:time:entry'),
 		}
 
 		this.timing = new TimingTracker({
@@ -427,12 +426,10 @@ export class HMRService {
 		const endWarmup = startTimer()
 		const coldFiles = unique(entries.map((p) => this.path.toClean(p))).sort()
 
-		if (this.dbg.warmup) {
-			const prettyFiles = coldFiles.map((f) => this.path.pretty(f))
-			this.dbg.warmup.debug(
-				(l) => l`files (${prettyFiles.length})\n${prettyFiles.map((f) => `    ${f}`).join('\n')}`,
-			)
-		}
+		const prettyFiles = coldFiles.map((f) => this.path.pretty(f))
+		this.dbg.warmup.debug(
+			(l) => l`files (${prettyFiles.length})\n${prettyFiles.map((f) => `    ${f}`).join('\n')}`,
+		)
 
 		const executed = await this.executor.runAndLoadAll(coldFiles, true)
 		if (executed) {

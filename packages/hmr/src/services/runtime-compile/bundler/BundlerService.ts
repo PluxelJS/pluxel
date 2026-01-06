@@ -4,7 +4,7 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import type { Logger as LogtapeLogger } from '@logtape/logtape'
 import { type Context, Injectable } from '@pluxel/core'
-import { isDebugTopicEnabled } from '@pluxel/core/logger'
+import { getDebugLogger } from '@pluxel/core/logger'
 import { dirname, isAbsolute, join, resolve } from 'pathe'
 import { collectModuleGraphFiles } from './moduleGraph'
 
@@ -50,7 +50,7 @@ export type BundleResult = {
  */
 @Injectable({ key: serviceName })
 export class BundlerService {
-	private readonly dbg: LogtapeLogger | null
+	private readonly dbg: LogtapeLogger
 	private readonly enabled: boolean
 	private readonly outDir: string
 
@@ -58,10 +58,18 @@ export class BundlerService {
 		public ctx: Context,
 		config?: BundlerServiceConfig,
 	) {
-		const rootConfig = (this.ctx.root?.config ?? this.ctx.config ?? {}) as unknown
-		this.dbg = isDebugTopicEnabled(rootConfig, 'pluxel:bundler')
-			? this.ctx.logger.getDebugChannel('pluxel:bundler')
-			: null
+		const logger = (this.ctx as unknown as { logger?: unknown }).logger
+		const fn =
+			logger && typeof logger === 'object'
+				? (logger as Record<string, unknown>).getDebugChannel
+				: undefined
+		this.dbg =
+			typeof fn === 'function'
+				? (fn as (t: string) => LogtapeLogger).call(logger, 'pluxel:bundler')
+				: getDebugLogger('pluxel:bundler').with({
+						name: 'bundler',
+						context: this.ctx?.name ?? 'hmr',
+					})
 		this.enabled = config?.enabled !== false
 		this.outDir = config?.outDir ?? resolve(process.cwd(), '.pluxel/bundles')
 	}
@@ -80,7 +88,7 @@ export class BundlerService {
 
 		const signature = cacheKey ? null : await this.computeSignature(job)
 		const pool = this.getPool()
-		this.dbg?.debug('bundle start {entry}', { entry: job.entry })
+		this.dbg.debug('bundle start {entry}', { entry: job.entry })
 		const code = await pool.run({
 			entry: job.entry,
 			root: job.root,
@@ -91,7 +99,7 @@ export class BundlerService {
 			await mkdir(this.outDir, { recursive: true })
 			await writeFile(cachedFile, code, 'utf-8')
 		}
-		this.dbg?.debug('bundle done {entry}', { entry: job.entry })
+		this.dbg.debug('bundle done {entry}', { entry: job.entry })
 		return { code, hash: cacheKey ?? signature! }
 	}
 

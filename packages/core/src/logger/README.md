@@ -19,7 +19,11 @@
 - `pluginId` (可选): 插件 id（用于 filter）
 - `name` (hmr 可选): UI 展示名（如 `plugin-a(pluginA)`）
 
-`caller`（调用点）不是约定字段：默认由 `createPluxelPrettyFormatter()` 在渲染时按需捕获并追加到输出。
+`caller`（调用点）是可选字段：
+
+- 默认：当开启 caller 时，`LoggerService` / `LogtapeLoggerService` 会在 `ctx.logger.info/warn/...` 这类直接调用里注入 `caller`（更利于 file/json sink 保留调用点）
+- 兼容：对 `ctx.logger.with(...)` 返回的 LogTape logger、或非 pluxel logger，pretty formatter 会在渲染时发现 `caller` 缺失并按需捕获（不破坏外部 logger）
+
 你也可以显式传入 `{ caller: "..." }` 来覆盖显示（例如跨线程/跨进程场景）。
 
 - 默认：开发/测试开启，生产环境关闭（可用 `PLUXEL_LOG_CALLER=0/1` 或 `PLUXEL_LOGGER_CALLER=0/1` 覆盖）

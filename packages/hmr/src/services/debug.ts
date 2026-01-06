@@ -9,6 +9,7 @@ type PluxelHmrDebugTopics = {
 	'pluxel:hmr': true
 	'pluxel:hmr:*': true
 	'pluxel:hmr:modules': true
+	'pluxel:hmr:fetch': true
 	'pluxel:hmr:time': true
 	'pluxel:hmr:time:entry': true
 	'pluxel:hmr:warmup': true

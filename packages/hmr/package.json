@@ -77,11 +77,11 @@
 		"vite": "beta"
 	},
 	"peerDependencies": {
-		"@tabler/icons-react": "*"
+		"@tabler/icons-react": "*",
+		"@pluxel/core": "workspace:*"
 	},
 	"devDependencies": {
 		"@pluxel/components": "workspace:*",
-		"@pluxel/core": "workspace:*",
 		"@pluxel/hmr-web": "workspace:*",
 		"@pluxel/market": "^0.1.0",
 		"@pluxel/rolldown": "workspace:*",

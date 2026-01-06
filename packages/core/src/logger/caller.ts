@@ -2,6 +2,8 @@ import { isAbsolute, relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { isProduction } from 'std-env'
 
+import { readBoolEnv, tryGetCwd } from './runtime'
+
 export type CallerCaptureOptions = {
 	/** Exclude frames up to and including this function (Node/Bun only). */
 	exclude?: (...args: never[]) => unknown
@@ -9,29 +11,13 @@ export type CallerCaptureOptions = {
 	skipMarkers?: readonly string[]
 }
 
-function parseBool(value: string | undefined): boolean | undefined {
-	if (value === undefined) return undefined
-	return value !== '0'
-}
-
 let cachedCallerEnabled: boolean | undefined
-
-type ProcessLike = {
-	env?: Record<string, string | undefined>
-	cwd?: () => string
-}
-
-function getProcessLike(): ProcessLike | undefined {
-	return (globalThis as unknown as { process?: ProcessLike }).process
-}
 
 export function isCallerEnabled(): boolean {
 	if (cachedCallerEnabled !== undefined) return cachedCallerEnabled
 
 	// Override: explicit env always wins (including in production).
-	const explicit =
-		parseBool(getProcessLike()?.env?.PLUXEL_LOG_CALLER) ??
-		parseBool(getProcessLike()?.env?.PLUXEL_LOGGER_CALLER)
+	const explicit = readBoolEnv('PLUXEL_LOG_CALLER') ?? readBoolEnv('PLUXEL_LOGGER_CALLER')
 	if (explicit !== undefined) {
 		cachedCallerEnabled = explicit
 		return explicit
@@ -68,7 +54,7 @@ function tryFileUrlToPath(input: string): string {
 function relativizeToCwd(file: string): string {
 	const f = tryFileUrlToPath(file)
 	if (!isAbsolute(f)) return f
-	const cwd = getProcessLike()?.cwd?.()
+	const cwd = tryGetCwd()
 	if (!cwd) return f
 	const rel = relative(cwd, f)
 	// Only use relative paths when they stay within cwd (avoid ../.. noise).
