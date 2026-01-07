@@ -153,9 +153,108 @@ export class AliasConfigPlugin extends BasePlugin {
 	aliasConfig!: InferConfig<typeof aliasSchema>
 }
 `,
+	'plugin-with-config-valibot-namespace.ts': `// 测试 valibot namespace alias 的 schema 源码提取
+import * as valibot from 'valibot'
+
+// 模拟 @pluxel/core 的装饰器
+function Plugin(_meta?: any): ClassDecorator {
+	return () => {}
+}
+
+function Config(_schema: any): PropertyDecorator {
+	return () => {}
+}
+
+class BasePlugin {}
+
+const localSchema = valibot.object({
+	name: valibot.string(),
+	count: valibot.pipe(valibot.number(), valibot.integer()),
+})
+
+@Plugin({ name: 'ValibotNamespacePlugin' })
+export class ValibotNamespacePlugin extends BasePlugin {
+	@Config(localSchema)
+	private localConfig!: any
+}
+`,
+	'plugin-with-config-valibot-form-namespace.ts': `// 测试 valibot-form namespace alias 的 schema 源码提取
+	import * as v from 'valibot'
+	import * as valibotForm from 'valibot-form'
+
+// 模拟 @pluxel/core 的装饰器
+function Plugin(_meta?: any): ClassDecorator {
+	return () => {}
+}
+
+function Config(_schema: any): PropertyDecorator {
+	return () => {}
+}
+
+class BasePlugin {}
+
+const schema = v.object({
+	// meta 函数来自 valibot-form（runtime 只会提供 f，因此必须被重写）
+	name: v.pipe(v.string(), valibotForm.stringMeta({ label: 'Name' })),
+})
+
+@Plugin({ name: 'ValibotFormNamespacePlugin' })
+	export class ValibotFormNamespacePlugin extends BasePlugin {
+		@Config(schema)
+		private config!: any
+	}
+	`,
+	'plugin-with-config-valibot-named-import.ts': `// 测试 valibot named imports 的 schema 源码提取
+	import { object, string, number, integer, pipe } from 'valibot'
+
+	function Plugin(_meta?: any): ClassDecorator {
+		return () => {}
+	}
+
+	function Config(_schema: any): PropertyDecorator {
+		return () => {}
+	}
+
+	class BasePlugin {}
+
+	const localSchema = object({
+		name: string(),
+		count: pipe(number(), integer()),
+	})
+
+	@Plugin({ name: 'ValibotNamedImportPlugin' })
+	export class ValibotNamedImportPlugin extends BasePlugin {
+		@Config(localSchema)
+		private config!: any
+	}
+	`,
+	'plugin-with-config-valibot-form-named-import.ts': `// 测试 valibot-form named imports 的 schema 源码提取
+	import * as v from 'valibot'
+	import { stringMeta } from 'valibot-form'
+
+	function Plugin(_meta?: any): ClassDecorator {
+		return () => {}
+	}
+
+	function Config(_schema: any): PropertyDecorator {
+		return () => {}
+	}
+
+	class BasePlugin {}
+
+	const schema = v.object({
+		name: v.pipe(v.string(), stringMeta({ label: 'Name' })),
+	})
+
+	@Plugin({ name: 'ValibotFormNamedImportPlugin' })
+	export class ValibotFormNamedImportPlugin extends BasePlugin {
+		@Config(schema)
+		private config!: any
+	}
+	`,
 	'plugin-with-config.ts': `// 测试 @Config 源码提取的插件文件
-import * as v from 'valibot'
-import { externalSchema } from './schema'
+	import * as v from 'valibot'
+	import { externalSchema } from './schema'
 
 // 本地定义的 schema
 const localSchema = v.object({
@@ -325,6 +424,86 @@ describe('configSourcePlugin', () => {
 			expect(code).toContain('v.object({name:v.string()})')
 		})
 	})
+
+	it('rewrites valibot namespace imports to runtime "v"', async () => {
+		await withFixtures(async (fixturesDir) => {
+			const bundle = await rolldown({
+				input: resolve(fixturesDir, 'plugin-with-config-valibot-namespace.ts'),
+				plugins: [configSourcePlugin()],
+				external: ['valibot', '@pluxel/core'],
+			})
+
+			const { output } = await bundle.generate({ format: 'esm' })
+			const code = output[0].code
+
+			expect(code).toContain('__setConfigSource__')
+			expect(code).toContain(
+				'__setConfigSource__(ValibotNamespacePlugin, "localConfig", "v.object({name:v.string(),count:v.pipe(v.number(),v.integer())})")',
+			)
+		})
+	})
+
+		it('rewrites valibot-form namespace imports to runtime "f"', async () => {
+			await withFixtures(async (fixturesDir) => {
+				const bundle = await rolldown({
+					input: resolve(fixturesDir, 'plugin-with-config-valibot-form-namespace.ts'),
+				plugins: [configSourcePlugin()],
+				external: ['valibot', 'valibot-form', '@pluxel/core'],
+			})
+
+			const { output } = await bundle.generate({ format: 'esm' })
+			const code = output[0].code
+
+			expect(code).toContain('__setConfigSource__')
+			const match = /__setConfigSource__\(\s*ValibotFormNamespacePlugin\s*,\s*"config"\s*,\s*"([^"]*)"\s*\)/.exec(
+				code,
+			)
+			expect(match).toBeTruthy()
+			const injected = match?.[1] ?? ''
+			expect(injected).toContain('f.stringMeta')
+				expect(injected).not.toContain('valibotForm.stringMeta')
+			})
+		})
+
+		it('rewrites valibot named imports to runtime "v"', async () => {
+			await withFixtures(async (fixturesDir) => {
+				const bundle = await rolldown({
+					input: resolve(fixturesDir, 'plugin-with-config-valibot-named-import.ts'),
+					plugins: [configSourcePlugin()],
+					external: ['valibot', '@pluxel/core'],
+				})
+
+				const { output } = await bundle.generate({ format: 'esm' })
+				const code = output[0].code
+
+				expect(code).toContain('__setConfigSource__')
+				expect(code).toContain(
+					'__setConfigSource__(ValibotNamedImportPlugin, "config", "v.object({name:v.string(),count:v.pipe(v.number(),v.integer())})")',
+				)
+			})
+		})
+
+		it('rewrites valibot-form named imports to runtime "f"', async () => {
+			await withFixtures(async (fixturesDir) => {
+				const bundle = await rolldown({
+					input: resolve(fixturesDir, 'plugin-with-config-valibot-form-named-import.ts'),
+					plugins: [configSourcePlugin()],
+					external: ['valibot', 'valibot-form', '@pluxel/core'],
+				})
+
+				const { output } = await bundle.generate({ format: 'esm' })
+				const code = output[0].code
+
+				expect(code).toContain('__setConfigSource__')
+				const match = /__setConfigSource__\(\s*ValibotFormNamedImportPlugin\s*,\s*"config"\s*,\s*"([^"]*)"\s*\)/.exec(
+					code,
+				)
+				expect(match).toBeTruthy()
+				const injected = match?.[1] ?? ''
+				expect(injected).toContain('f.stringMeta')
+				expect(injected).not.toMatch(/(^|[^.])stringMeta\(/)
+			})
+		})
 
 	it('extracts local schema source', async () => {
 		await withFixtures(async (fixturesDir) => {

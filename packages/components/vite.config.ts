@@ -8,6 +8,9 @@ function fixRolldownUndefinedExports() {
 		name: 'fix-rolldown-undefined-exports',
 		enforce: 'post',
 		generateBundle(_options, bundle) {
+			// Workaround for a Vite 8 / Rolldown output bug where a chunk can re-export an
+			// identifier that was never declared (e.g. `server_browser_exports`), causing:
+			// `Uncaught SyntaxError: Export '...' is not defined in module`.
 			for (let entry of Object.values(bundle)) {
 				if (entry.type !== 'chunk') continue
 				if (!entry.code.includes('server_browser_exports')) continue

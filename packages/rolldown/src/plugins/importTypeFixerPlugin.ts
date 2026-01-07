@@ -6,6 +6,12 @@
  * TypeScript's emitDecoratorMetadata cannot emit runtime type information for DI.
  * This plugin converts such imports back to value imports for classes decorated with @Plugin.
  *
+ * Why there are TWO exports:
+ * - `importTypeFixerPlugin` is a native Rolldown plugin (uses `transform.filter` + `handler`).
+ * - `importTypeFixerVitePlugin` is a Vite/Rollup plugin wrapper for Vite dev server.
+ *
+ * Vite dev server does NOT execute Rolldown plugin objects, even when Vite internally uses Rolldown.
+ *
  * Features:
  * - Uses rolldown filter pattern for efficient JS-Rust communication
  * - Uses this.parse() with lang option for TypeScript-aware parsing
@@ -14,6 +20,7 @@
  */
 import type { ImportDeclaration, Program } from 'oxc-parser'
 import type { Plugin } from 'rolldown'
+import { normalizeViteId } from './viteNormalizeId'
 
 export interface ImportTypeFixerPluginOptions {
 	/** File patterns to include (default: *.ts, *.tsx) */
@@ -110,6 +117,100 @@ export function importTypeFixerPlugin(options: ImportTypeFixerPluginOptions = {}
 					}
 				} catch (err) {
 					this.warn(`Failed to fix import types in ${id}: ${err}`)
+					return null
+				}
+			},
+		},
+	}
+}
+
+export function importTypeFixerVitePlugin(options: ImportTypeFixerPluginOptions = {}): any {
+	const includePatterns = Array.isArray(options.include)
+		? options.include
+		: options.include
+			? [options.include]
+			: ['**/*.ts', '**/*.tsx']
+	const excludePatterns = Array.isArray(options.exclude)
+		? options.exclude
+		: options.exclude
+			? [options.exclude]
+			: ['**/node_modules/**', '**/*.d.ts']
+	const debugEnabled = process.env.PLUXEL_IMPORT_TYPE_FIXER_DEBUG === '1'
+	const debug = (...args: any[]) => {
+		if (!debugEnabled) return
+		// eslint-disable-next-line no-console
+		console.warn('[pluxel-import-type-fixer][debug]', ...args)
+	}
+
+	const parseWithLang = (ctx: any, code: string, id: string) => {
+		const parse = ctx?.parse
+		if (typeof parse !== 'function') return null
+		try {
+			return parse.call(ctx, code, { lang: getLangFromId(id) }) as Program
+		} catch {
+			try {
+				return parse.call(ctx, code) as Program
+			} catch {
+				return null
+			}
+		}
+	}
+
+	return {
+		name: 'pluxel-import-type-fixer',
+		enforce: 'pre',
+		transform: {
+			filter: {
+				id: {
+					include: includePatterns,
+					exclude: excludePatterns,
+				},
+			},
+			handler(code: string, id: string) {
+				if (typeof id !== 'string' || id.startsWith('\0')) return null
+				const normalizedId = normalizeViteId(id)
+				if (!code.includes('@Plugin')) return null
+
+				const ast = parseWithLang(this, code, id)
+				if (!ast) {
+					debug('skip(parse-failed)', normalizedId)
+					return null
+				}
+
+				try {
+					const typeOnlyImports = collectTypeOnlyImports(ast)
+					if (typeOnlyImports.size === 0) return null
+
+					const constructorParamTypes = collectConstructorParamTypes(code, ast)
+					if (constructorParamTypes.size === 0) return null
+
+					const importsToFix: ImportToFix[] = []
+					for (const [localName, importInfo] of typeOnlyImports) {
+						if (!constructorParamTypes.has(localName)) continue
+						const original = code.slice(importInfo.start, importInfo.end)
+						const fixed = convertTypeImportToValueImport(original, importInfo.node)
+						if (fixed && fixed !== original) {
+							importsToFix.push({
+								start: importInfo.start,
+								end: importInfo.end,
+								original,
+								fixed,
+							})
+						}
+					}
+
+					if (importsToFix.length === 0) return null
+
+					let result = code
+					importsToFix.sort((a, b) => b.start - a.start)
+					for (const fix of importsToFix) {
+						result = result.slice(0, fix.start) + fix.fixed + result.slice(fix.end)
+					}
+
+					debug('rewrite', normalizedId, 'count=', importsToFix.length)
+					return { code: result, map: null }
+				} catch (err) {
+					this.warn?.(`Failed to fix import types in ${id}: ${err}`)
 					return null
 				}
 			},

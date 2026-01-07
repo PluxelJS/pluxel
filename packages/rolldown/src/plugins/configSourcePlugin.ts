@@ -1,6 +1,13 @@
 /**
  * Rolldown plugin to extract @Config decorator source code at compile time.
  *
+ * Why there are TWO exports:
+ * - `configSourcePlugin` is a native Rolldown plugin (uses `transform.filter` + `handler`).
+ * - `configSourceVitePlugin` is a Vite/Rollup plugin wrapper for Vite dev server.
+ *
+ * Vite 8 may use Rolldown internally, but Vite's plugin container does NOT execute Rolldown plugin
+ * objects (it expects Rollup-compatible hooks). So we must provide a separate wrapper.
+ *
  * Features:
  * - Uses rolldown filter pattern for efficient JS-Rust communication
  * - Uses this.parse() with lang option for TypeScript-aware parsing
@@ -22,6 +29,7 @@ import type {
 import { normalize as normalizePath } from 'pathe'
 import type { Plugin } from 'rolldown'
 import { normalizeSchemaSource } from '../utils/configHandler'
+import { normalizeViteId } from './viteNormalizeId'
 
 export interface ConfigSourcePluginOptions {
 	/** File patterns to include (default: *.ts, *.tsx in plugin directories) */
@@ -57,6 +65,18 @@ interface ModuleInfo {
 	reExports: Map<string, ImportInfo>
 }
 
+interface ModuleInfoStore {
+	cache: Map<string, ModuleInfo>
+	promises: Map<string, Promise<ModuleInfo | undefined>>
+}
+
+function createModuleInfoStore(): ModuleInfoStore {
+	return {
+		cache: new Map(),
+		promises: new Map(),
+	}
+}
+
 /**
  * 解析上下文 - 用于缓存已解析的标识符值，避免重复解析
  */
@@ -64,15 +84,14 @@ interface ResolveContext {
 	moduleResolver: ModuleResolver
 	/** 解析代码为 AST（使用 rolldown 的 this.parse） */
 	parse: (code: string, moduleId: string) => Program
+	/** Module info cache for cross-file resolution */
+	moduleInfoStore: ModuleInfoStore
 	/** 已解析的标识符值缓存: key = "moduleId::name", value = resolved source */
 	resolvedValues: Map<string, string>
 	/** 正在解析的标识符（用于循环检测） */
 	pending: Set<string>
 }
 
-// 模块级 schema 信息缓存
-const moduleInfoCache = new Map<string, ModuleInfo>()
-const moduleInfoPromises = new Map<string, Promise<ModuleInfo | undefined>>()
 const DEFAULT_EXPORT = '__pluxel_default_export__'
 const CONFIG_DECORATOR_SOURCES = ['@pluxel/core', '@pluxel/hmr'] as const
 
@@ -87,11 +106,10 @@ function getLangFromId(id: string): 'ts' | 'tsx' | 'js' | 'jsx' {
 export function configSourcePlugin(options: ConfigSourcePluginOptions = {}): Plugin {
 	const includePatterns = options.include ?? ['**/*.ts']
 	const excludePatterns = options.exclude ?? ['**/node_modules/**', '**/*.d.ts']
+	const moduleInfoStore = createModuleInfoStore()
 
 	return {
 		name: 'pluxel-config-source',
-		// @ts-expect-error: "vite 存在这个字段，我们 rolldown 插件只是为了避免 rolldown 包引入 vite 却只为其类型"
-		enforce: 'pre',
 		// 使用 rolldown filter 模式减少 JS-Rust 通信开销
 		transform: {
 			filter: {
@@ -112,7 +130,7 @@ export function configSourcePlugin(options: ConfigSourcePluginOptions = {}): Plu
 				if (!code.includes('@Plugin')) {
 					try {
 						const ast = this.parse(code, { lang: getLangFromId(id) }) as Program
-						collectModuleInfo(code, normalizedId, ast)
+						collectModuleInfo(code, normalizedId, ast, moduleInfoStore)
 					} catch {
 						// 解析失败，忽略
 					}
@@ -130,7 +148,7 @@ export function configSourcePlugin(options: ConfigSourcePluginOptions = {}): Plu
 
 				try {
 					// 第一步：收集并缓存本模块的导出 schema 定义
-					const moduleInfo = collectModuleInfo(code, normalizedId, ast)
+					const moduleInfo = collectModuleInfo(code, normalizedId, ast, moduleInfoStore)
 
 					const resolveModuleId: ModuleResolver = async (sourceSpecifier, importer) => {
 						const resolved = await this.resolve(sourceSpecifier, importer)
@@ -144,6 +162,7 @@ export function configSourcePlugin(options: ConfigSourcePluginOptions = {}): Plu
 						moduleResolver: resolveModuleId,
 						parse: (source, moduleId) =>
 							this.parse(source, { lang: getLangFromId(moduleId) }) as Program,
+						moduleInfoStore,
 						resolvedValues: new Map(),
 						pending: new Set(),
 					}
@@ -166,10 +185,145 @@ export function configSourcePlugin(options: ConfigSourcePluginOptions = {}): Plu
 	}
 }
 
+export function configSourceVitePlugin(options: ConfigSourcePluginOptions = {}): any {
+	// Vite dev server runs Rollup-compatible hooks; it will NOT run Rolldown plugin objects
+	// (i.e. `transform: { filter, handler }` is ignored). Keep this wrapper minimal & explicit.
+
+	const includePatterns = Array.isArray(options.include)
+		? options.include
+		: options.include
+			? [options.include]
+			: ['**/*.ts']
+	const excludePatterns = Array.isArray(options.exclude)
+		? options.exclude
+		: options.exclude
+			? [options.exclude]
+			: ['**/node_modules/**', '**/*.d.ts']
+	const codeHint = /@Plugin|\bPlugin\s*\(|v\.|valibot\.|f\./
+	const moduleInfoStore = createModuleInfoStore()
+
+	const debugEnabled = process.env.PLUXEL_CONFIG_SOURCE_DEBUG === '1'
+	const debug = (...args: any[]) => {
+		if (!debugEnabled) return
+		// eslint-disable-next-line no-console
+		console.warn('[pluxel-config-source][debug]', ...args)
+	}
+
+	const parseWithLang = (ctx: any, code: string, id: string) => {
+		const parse = ctx?.parse
+		if (typeof parse !== 'function') return null
+		try {
+			return parse.call(ctx, code, { lang: getLangFromId(id) }) as Program
+		} catch {
+			try {
+				return parse.call(ctx, code) as Program
+			} catch {
+				return null
+			}
+		}
+	}
+
+	return {
+		name: 'pluxel-config-source',
+		enforce: 'pre',
+		buildStart() {
+			// Vite might reuse plugin instances in certain dev workflows (or tests).
+			// Keep the module cache scoped to the active graph.
+			moduleInfoStore.cache.clear()
+			moduleInfoStore.promises.clear()
+		},
+		handleHotUpdate() {
+			// We can't cheaply track transitive schema dependencies across files.
+			// Clearing the cache keeps extraction correct during HMR edits.
+			moduleInfoStore.cache.clear()
+			moduleInfoStore.promises.clear()
+		},
+		transform: {
+			filter: {
+				id: {
+					include: includePatterns,
+					exclude: excludePatterns,
+				},
+			},
+			async handler(code: string, id: string) {
+				if (typeof id !== 'string' || id.startsWith('\0')) return null
+				const normalizedId = normalizeViteId(id)
+
+				let sourceText = code
+				try {
+					// IMPORTANT:
+					// Vite's `code` here may already be downleveled (decorators -> __decorate, etc),
+					// which makes decorator-based extraction unreliable. Prefer the raw TS source.
+					sourceText = await readFile(normalizedId, 'utf-8')
+				} catch {
+					// ignore: not a real file or not readable; fall back to transformed code
+				}
+
+				if (!codeHint.test(sourceText)) {
+					debug('skip(codeHint)', normalizedId)
+					return null
+				}
+
+				// If no @Plugin, only collect schema declarations for cross-file resolution.
+				if (!sourceText.includes('@Plugin')) {
+					const ast = parseWithLang(this, sourceText, normalizedId)
+					if (ast) collectModuleInfo(sourceText, normalizedId, ast, moduleInfoStore)
+					else debug('collect-only(parse-failed)', normalizedId)
+					return null
+				}
+
+				const ast = parseWithLang(this, sourceText, normalizedId)
+				if (!ast) {
+					debug('skip(parse-failed)', normalizedId)
+					return null
+				}
+
+				try {
+					const moduleInfo = collectModuleInfo(sourceText, normalizedId, ast, moduleInfoStore)
+
+					const resolveModuleId: ModuleResolver = async (sourceSpecifier, importer) => {
+						const resolved = await this.resolve?.(sourceSpecifier, importer)
+						if (!resolved) return null
+						const cleaned = String(resolved.id).split('?')[0]
+						return normalizePath(cleaned)
+					}
+
+					const ctx: ResolveContext = {
+						moduleResolver: resolveModuleId,
+						parse: (source, moduleId) => {
+							const parsed = parseWithLang(this, source, moduleId)
+							if (!parsed) throw new Error(`Failed to parse module: ${moduleId}`)
+							return parsed
+						},
+						moduleInfoStore,
+						resolvedValues: new Map(),
+						pending: new Set(),
+					}
+
+					const extracted = await extractConfigSources(moduleInfo, ast, ctx)
+					if (extracted.length === 0) return null
+
+					const injection = generateInjection(extracted)
+					debug('inject', normalizedId, 'count=', extracted.length)
+					return { code: code + '\n' + injection, map: null }
+				} catch (err) {
+					this.warn?.(`Failed to extract @Config sources from ${id}: ${err}`)
+					return null
+				}
+			},
+		},
+	}
+}
+
 /**
  * 收集模块内的声明/导入/导出信息，缓存后返回
  */
-function collectModuleInfo(code: string, moduleId: string, ast: Program): ModuleInfo {
+function collectModuleInfo(
+	code: string,
+	moduleId: string,
+	ast: Program,
+	store: ModuleInfoStore,
+): ModuleInfo {
 	const info: ModuleInfo = {
 		id: moduleId,
 		code,
@@ -270,7 +424,7 @@ function collectModuleInfo(code: string, moduleId: string, ast: Program): Module
 		}
 	}
 
-	moduleInfoCache.set(moduleId, info)
+	store.cache.set(moduleId, info)
 	return info
 }
 
@@ -278,25 +432,25 @@ async function ensureModuleInfo(
 	moduleId: string,
 	ctx: ResolveContext,
 ): Promise<ModuleInfo | undefined> {
-	const cached = moduleInfoCache.get(moduleId)
+	const cached = ctx.moduleInfoStore.cache.get(moduleId)
 	if (cached) return cached
 
-	const pending = moduleInfoPromises.get(moduleId)
+	const pending = ctx.moduleInfoStore.promises.get(moduleId)
 	if (pending) return pending
 
 	const promise = (async () => {
 		try {
 			const source = await readFile(moduleId, 'utf-8')
 			const parsed = ctx.parse(source, moduleId)
-			return collectModuleInfo(source, moduleId, parsed)
+			return collectModuleInfo(source, moduleId, parsed, ctx.moduleInfoStore)
 		} catch {
 			return undefined
 		} finally {
-			moduleInfoPromises.delete(moduleId)
+			ctx.moduleInfoStore.promises.delete(moduleId)
 		}
 	})()
 
-	moduleInfoPromises.set(moduleId, promise)
+	ctx.moduleInfoStore.promises.set(moduleId, promise)
 	return promise
 }
 
@@ -307,6 +461,128 @@ function isConfigImportSource(source: string): boolean {
 		if (source === base || source.startsWith(`${base}/`)) return true
 	}
 	return false
+}
+
+function isValibotNamespaceImport(name: string, moduleInfo: ModuleInfo): boolean {
+	if (name === 'v') return true
+	const importInfo = moduleInfo.imports.get(name)
+	return Boolean(importInfo && importInfo.imported === '*' && importInfo.source === 'valibot')
+}
+
+function isValibotFormNamespaceImport(name: string, moduleInfo: ModuleInfo): boolean {
+	if (name === 'f') return true
+	const importInfo = moduleInfo.imports.get(name)
+	return Boolean(importInfo && importInfo.imported === '*' && importInfo.source === 'valibot-form')
+}
+
+function rewriteRuntimeNamespaces(source: string, moduleInfo: ModuleInfo): string {
+	// Replace `<valibotNs>.foo` => `v.foo`, `<valibotFormNs>.foo` => `f.foo`,
+	// but skip string literals so we don't mutate embedded strings.
+	const valibotAliases = new Set<string>()
+	const valibotFormAliases = new Set<string>()
+	for (const [local, info] of moduleInfo.imports) {
+		if (info.imported !== '*') continue
+		if (info.source === 'valibot') valibotAliases.add(local)
+		if (info.source === 'valibot-form') valibotFormAliases.add(local)
+	}
+	valibotAliases.delete('v')
+	valibotFormAliases.delete('f')
+	if (valibotAliases.size === 0 && valibotFormAliases.size === 0) return source
+
+	const isIdentStart = (ch: string) => /[A-Za-z_$]/.test(ch)
+	const isIdentPart = (ch: string) => /[A-Za-z0-9_$]/.test(ch)
+
+	let out = ''
+	let i = 0
+	let inSingle = false
+	let inDouble = false
+	let inTemplate = false
+	let escape = false
+
+	while (i < source.length) {
+		const ch = source[i]
+
+		if (escape) {
+			out += ch
+			escape = false
+			i++
+			continue
+		}
+		if (ch === '\\') {
+			out += ch
+			escape = true
+			i++
+			continue
+		}
+
+		if (inSingle) {
+			out += ch
+			if (ch === "'") inSingle = false
+			i++
+			continue
+		}
+		if (inDouble) {
+			out += ch
+			if (ch === '"') inDouble = false
+			i++
+			continue
+		}
+		if (inTemplate) {
+			out += ch
+			if (ch === '`') inTemplate = false
+			i++
+			continue
+		}
+
+		if (ch === "'") {
+			inSingle = true
+			out += ch
+			i++
+			continue
+		}
+		if (ch === '"') {
+			inDouble = true
+			out += ch
+			i++
+			continue
+		}
+		if (ch === '`') {
+			inTemplate = true
+			out += ch
+			i++
+			continue
+		}
+
+		if (!isIdentStart(ch)) {
+			out += ch
+			i++
+			continue
+		}
+
+		let j = i + 1
+		while (j < source.length && isIdentPart(source[j]!)) j++
+		const ident = source.slice(i, j)
+		const next = source[j]
+		const prev = i > 0 ? source[i - 1] : ''
+
+		if (next === '.' && !(prev && isIdentPart(prev))) {
+			if (valibotAliases.has(ident)) {
+				out += 'v'
+				i = j
+				continue
+			}
+			if (valibotFormAliases.has(ident)) {
+				out += 'f'
+				i = j
+				continue
+			}
+		}
+
+		out += ident
+		i = j
+	}
+
+	return out
 }
 
 function isConfigIdentifier(name: string, moduleInfo: ModuleInfo): boolean {
@@ -326,12 +602,19 @@ async function expandExpressionWithModule(
 		const resolved = await resolveIdentifierValue(moduleInfo, normalized.name, ctx)
 		return resolved ?? normalized.name
 	}
-	if (normalized.type === 'CallExpression' && isObjectSchemaCall(normalized.callee)) {
-		return expandObjectCallWithInlining(moduleInfo, normalized, ctx)
+	if (normalized.type === 'CallExpression' && isObjectSchemaCall(moduleInfo, normalized.callee)) {
+		return rewriteRuntimeNamespaces(await expandObjectCallWithInlining(moduleInfo, normalized, ctx), moduleInfo)
 	}
 	const replacements = await collectIdentifierReplacements(normalized, moduleInfo, ctx)
-	if (replacements.length === 0) return moduleInfo.code.slice(normalized.start, normalized.end)
-	return applyReplacements(moduleInfo.code, normalized.start, normalized.end, replacements)
+	if (replacements.length === 0)
+		return rewriteRuntimeNamespaces(
+			moduleInfo.code.slice(normalized.start, normalized.end),
+			moduleInfo,
+		)
+	return rewriteRuntimeNamespaces(
+		applyReplacements(moduleInfo.code, normalized.start, normalized.end, replacements),
+		moduleInfo,
+	)
 }
 
 async function resolveIdentifierValue(
@@ -358,6 +641,17 @@ async function resolveIdentifierValue(
 		} else {
 			const importInfo = moduleInfo.imports.get(name)
 			if (importInfo && importInfo.imported !== '*') {
+				// Runtime eval of schemaSource only injects `v` (valibot) and `f` (valibot-form).
+				// If users import named helpers (`import { object } from 'valibot'`), we rewrite the
+				// identifier to `v.object` so the expression remains evaluatable.
+				if (importInfo.imported !== 'default') {
+					if (importInfo.source === 'valibot') result = `v.${importInfo.imported}`
+					if (importInfo.source === 'valibot-form') result = `f.${importInfo.imported}`
+				}
+				if (result !== undefined) {
+					ctx.resolvedValues.set(key, result)
+					return result
+				}
 				const resolvedId = await ctx.moduleResolver(importInfo.source, moduleInfo.id)
 				if (resolvedId) {
 					const targetInfo = await ensureModuleInfo(resolvedId, ctx)
@@ -427,7 +721,7 @@ async function resolveExportedValue(
 	}
 }
 
-function isObjectSchemaCall(callee: Expression): boolean {
+function isObjectSchemaCall(moduleInfo: ModuleInfo, callee: Expression): boolean {
 	if (callee.type !== 'MemberExpression') return false
 	if (callee.computed) return false
 	if (callee.property.type !== 'Identifier') return false
@@ -435,7 +729,7 @@ function isObjectSchemaCall(callee: Expression): boolean {
 	if (propName !== 'object' && propName !== 'objectAsync') return false
 	if (callee.object.type !== 'Identifier') return false
 	const objName = (callee.object as IdentifierName).name
-	return objName === 'v' || objName === 'valibot'
+	return isValibotNamespaceImport(objName, moduleInfo)
 }
 
 async function expandObjectCallWithInlining(

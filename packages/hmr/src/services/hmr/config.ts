@@ -1,5 +1,5 @@
 import { existsSync } from 'node:fs'
-import { configSourcePlugin, importTypeFixerPlugin } from '@pluxel/rolldown'
+import { configSourceVitePlugin, importTypeFixerVitePlugin } from '@pluxel/rolldown'
 import { resolve } from 'pathe'
 import {
 	createLogger,
@@ -219,11 +219,15 @@ export function buildHmrViteConfig(opts: HmrViteConfigOptions): InlineConfig {
 		},
 		plugins: [
 			clientNodeImportGuardPlugin(),
+			// NOTE:
+			// Vite 8 may use Rolldown internally, but its dev server plugin container still consumes
+			// Rollup/Vite hooks. Do NOT register native Rolldown plugins here (they won't run).
+			// Use the explicit Vite wrappers from `@pluxel/rolldown` instead.
 			perEnvironmentPlugin('pluxel:ssr-transform', (environment) => {
 				if (environment.name !== 'ssr') return false
 				return [
-					configSourcePlugin({ include: includePatterns, exclude: opts.excludeGlobs }),
-					importTypeFixerPlugin(),
+					configSourceVitePlugin({ include: includePatterns, exclude: opts.excludeGlobs }),
+					importTypeFixerVitePlugin({ include: includePatterns, exclude: opts.excludeGlobs }),
 				]
 			}),
 			...(opts.extraPlugins ?? []),
