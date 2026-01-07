@@ -7,7 +7,6 @@ import {
 } from '@pluxel/core/services'
 import { Hono } from 'hono'
 import { createFactory, type Factory } from 'hono/factory'
-import type { ContentfulStatusCode } from 'hono/utils/http-status'
 import type { Plugin } from 'vite'
 
 import api from '../../api/hono'
@@ -75,6 +74,7 @@ export class HonoService extends CoreHonoService {
 				/^\/static\/.+/,
 				/\?t=\d+$/,
 			],
+			// biome-ignore lint/suspicious/noExplicitAny: @hono/vite-dev-server expects a module-like object shape.
 			loadModule: async () => ({ fetch: this.fetch }) as any,
 			handleHotUpdate: ({ server }) => {
 				if (this.shouldReload) {
@@ -126,16 +126,16 @@ export class HonoService extends CoreHonoService {
 		if (this.sseBuiltinsReady) return
 		this.sseBuiltinsReady = true
 
-			const disposers = [
-				this.registerBuiltinSse('extensions', (channel) => this.streamManifestEvents(channel)),
-			]
+		const disposers = [
+			this.registerBuiltinSse('extensions', (channel) => this.streamManifestEvents(channel)),
+		]
 
 		for (const dispose of disposers) this.ctx.scope.collectEffect(dispose)
 	}
 
 	private registerBuiltinSse(
 		namespace: string,
-		handler: (channel: SseChannel) => void | (() => void),
+		handler: (channel: SseChannel) => undefined | (() => void),
 	) {
 		return this.ctx.ext.sse.registerExtension(() => handler, { namespace })
 	}

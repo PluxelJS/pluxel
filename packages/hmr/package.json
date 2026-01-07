@@ -43,7 +43,7 @@
 	],
 	"scripts": {
 		"hmr": "bun --conditions=\"@pluxel/source\" tests/start.ts",
-		"mock": "node tests/start.js",
+		"mock": "node tests/start.ts",
 		"hot": "bun --hot tests/start.ts",
 		"test": "bun test --conditions=@pluxel/source",
 		"build": "vite build && tsdown",
@@ -74,7 +74,7 @@
 		"tinyglobby": "^0.2.15",
 		"tinypool": "^2.1.0",
 		"valibot": "^1.2.0",
-		"vite": "beta"
+		"vite": "^8"
 	},
 	"peerDependencies": {
 		"@tabler/icons-react": "*",

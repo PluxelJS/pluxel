@@ -7,14 +7,19 @@
  * - It intentionally avoids exposing low-level clients/hooks (plugins should use `ctx.services` instead).
  */
 
-// Type-only import: ensure @pluxel/hmr/services module augmentations are loaded
-// whenever users import from `@pluxel/hmr/web`.
-import type {} from '../services'
-// Type-only import: ensure `@pluxel/hmr-web` service augmentations are loaded
-// so `ctx.services.hmr` is typed for UI bundles.
-import type {} from '@pluxel/hmr-web'
-import type { ReactNode } from 'react'
+type ServicesRpc = import('../services/plugin-interaction').UI.rpc
+type ServicesSse = import('../services/plugin-interaction').UI.sse
+
+// Bridge UI namespaces: `@pluxel/hmr-web` should reflect what plugins declare on `@pluxel/hmr/services`.
+declare module '@pluxel/hmr-web' {
+	namespace UI {
+		interface rpc extends ServicesRpc {}
+		interface sse extends ServicesSse {}
+	}
+}
+
 import * as HmrWeb from '@pluxel/hmr-web'
+import type { ReactNode } from 'react'
 
 // UI module authoring (stable public surface)
 export const ExtensionPoints = HmrWeb.ExtensionPoints
@@ -76,7 +81,7 @@ export interface PluginUIModule {
 		render: (ctx: PluginExtensionContext) => ReactNode
 	}>
 	i18n?: PluginI18nBundle | PluginI18nBundle[]
-	setup?: (ctx: { pluginName: string }) => void | (() => void) | Promise<void | (() => void)>
+	setup?: (ctx: { pluginName: string }) => void | (() => void) | Promise<undefined | (() => void)>
 }
 
 export function definePluginUIModule<T extends PluginUIModule>(module: T): T {

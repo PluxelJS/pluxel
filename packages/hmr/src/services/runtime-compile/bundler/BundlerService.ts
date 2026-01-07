@@ -24,6 +24,10 @@ export interface BundlerServiceConfig {
 }
 
 export type BundleJob = {
+	/** Optional label to improve diagnostics (e.g. plugin name). */
+	label?: string
+	/** "browser" bundles are validated to not import Node-only modules. */
+	target?: 'browser' | 'node'
 	entry: string
 	root: string
 	resolve: unknown
@@ -90,6 +94,8 @@ export class BundlerService {
 		const pool = this.getPool()
 		this.dbg.debug('bundle start {entry}', { entry: job.entry })
 		const code = await pool.run({
+			label: job.label,
+			target: job.target,
 			entry: job.entry,
 			root: job.root,
 			resolve: job.resolve,
@@ -133,6 +139,7 @@ export class BundlerService {
 		})
 
 		const result = await this.bundle({
+			target: 'node',
 			entry: absoluteEntry,
 			root: ssrEnv.config.root,
 			resolve: ssrEnv.config.resolve,

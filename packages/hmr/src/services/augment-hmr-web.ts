@@ -1,4 +1,5 @@
-import type { UI as ServicesUI } from './plugin-interaction'
+type ServicesRpc = import('./plugin-interaction').UI.rpc
+type ServicesSse = import('./plugin-interaction').UI.sse
 
 /**
  * Bridge: 让 `@pluxel/hmr-web` 的 `UI.rpc`/`UI.sse` 自动包含
@@ -8,9 +9,10 @@ import type { UI as ServicesUI } from './plugin-interaction'
  */
 declare module '@pluxel/hmr-web' {
 	namespace UI {
-		// biome-ignore lint/suspicious/noEmptyInterface: declaration merging bridge
-		interface rpc extends ServicesUI.rpc {}
-		// biome-ignore lint/suspicious/noEmptyInterface: declaration merging bridge
-		interface sse extends ServicesUI.sse {}
+		interface rpc extends ServicesRpc {}
+		interface sse extends ServicesSse {}
 	}
 }
+
+// Keep a tiny runtime export so bundlers emit this module when imported for side effects.
+export const __hmrWebAugment = 0 as const

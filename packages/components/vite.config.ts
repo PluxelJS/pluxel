@@ -3,6 +3,21 @@
 import react from '@vitejs/plugin-react'
 import { defineConfig } from 'vite'
 
+function fixRolldownUndefinedExports() {
+	return {
+		name: 'fix-rolldown-undefined-exports',
+		enforce: 'post',
+		generateBundle(_options, bundle) {
+			for (let entry of Object.values(bundle)) {
+				if (entry.type !== 'chunk') continue
+				if (!entry.code.includes('server_browser_exports')) continue
+				if (/\b(?:var|let|const)\s+server_browser_exports\b/.test(entry.code)) continue
+				entry.code = `var server_browser_exports;\n${entry.code}`
+			}
+		},
+	}
+}
+
 export default defineConfig(({ mode }) => {
 	const isDev = mode !== 'production'
 
@@ -36,7 +51,7 @@ export default defineConfig(({ mode }) => {
 			},
 		},
 
-		plugins: [react()],
+		plugins: [react(), fixRolldownUndefinedExports()],
 
 		// 关键：把 Mantine/Emotion 相关预打包，减少 cold start + 提升 HMR 稳定
 		optimizeDeps: {

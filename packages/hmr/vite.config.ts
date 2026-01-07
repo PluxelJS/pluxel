@@ -2,10 +2,26 @@
 import path from 'node:path'
 import { defineConfig } from 'vite'
 
+function fixRolldownUndefinedExports() {
+	return {
+		name: 'fix-rolldown-undefined-exports',
+		enforce: 'post',
+		generateBundle(_options, bundle) {
+			for (const entry of Object.values(bundle)) {
+				if (entry.type !== 'chunk') continue
+				if (!entry.code.includes('server_browser_exports')) continue
+				if (/\b(?:var|let|const)\s+server_browser_exports\b/.test(entry.code)) continue
+				entry.code = `var server_browser_exports;\n${entry.code}`
+			}
+		},
+	}
+}
+
 export default defineConfig({
 	appType: 'custom',
 	// 输出目录与 public 相同，为了避免 Vite 拷贝 public -> public 产生警告，直接关闭 publicDir
 	publicDir: false,
+	plugins: [fixRolldownUndefinedExports()],
 	ssr: {
 		external: ['react', 'react-dom'],
 	},

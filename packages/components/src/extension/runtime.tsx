@@ -1,9 +1,9 @@
 import type { ReactNode } from 'react'
+import { extRuntime } from './debug'
 import { ExtensionErrorBoundary } from './ErrorBoundary'
-import { unregisterPluginI18n, registerPluginI18n } from './i18n'
+import { registerPluginI18n, unregisterPluginI18n } from './i18n'
 import { extensionRegistry } from './registry'
 import type { ExtensionMeta, PluginExtensionContext, PluginUIModule } from './types'
-import { extRuntime } from './debug'
 
 function normalizeExtensionRoutePath(path: string): string {
 	if (!path) return ''
@@ -138,7 +138,9 @@ class ExtensionRuntime {
 			for (const cleanup of cleanups) {
 				try {
 					cleanup()
-				} catch {}
+				} catch {
+					// ignore cleanup errors
+				}
 			}
 		}
 		this.pluginCleanups.delete(pluginName)
@@ -162,19 +164,44 @@ class ExtensionRuntime {
 		if (module.extensions) {
 			for (const ext of module.extensions) {
 				const extId = `${pluginName}:${ext.id}`
-				const meta: ExtensionMeta = {
-					...(ext.meta as any),
+				const extRender = (ext as unknown as { render?: unknown })?.render
+				const rawMeta = (ext as unknown as { meta?: unknown })?.meta
+				const extraMeta =
+					rawMeta && typeof rawMeta === 'object' ? (rawMeta as Record<string, unknown>) : {}
+				const meta = {
+					...extraMeta,
 					id: extId,
 					pluginName,
 					priority: ext.priority ?? 0,
 					// Default to hiding plugin-provided UI when the plugin is not running.
 					// Plugins can opt out per extension via `requireRunning: false`.
 					requireRunning: ext.requireRunning ?? true,
-				}
+				} as ExtensionMeta
 
 				const cleanup = extensionRegistry.register(ext.point, {
 					meta,
 					render: (ctx) => {
+						if (typeof extRender !== 'function') {
+							return (
+								<div
+									style={{
+										padding: 8,
+										borderRadius: 8,
+										border: '1px solid rgba(255, 0, 0, 0.25)',
+										background: 'rgba(255, 0, 0, 0.06)',
+										fontSize: 12,
+										lineHeight: 1.4,
+									}}
+								>
+									<div style={{ fontWeight: 600 }}>
+										Invalid extension: {pluginName} · {ext.point}
+									</div>
+									<div style={{ opacity: 0.85 }}>
+										Expected <code>render(ctx)</code> to be a function.
+									</div>
+								</div>
+							)
+						}
 						return (
 							<ExtensionErrorBoundary
 								key={meta.id}
@@ -205,7 +232,7 @@ class ExtensionRuntime {
 										: null
 								}
 							>
-								{ext.render(ctx as any)}
+								{(extRender as (ctx: unknown) => ReactNode)(ctx)}
 							</ExtensionErrorBoundary>
 						)
 					},

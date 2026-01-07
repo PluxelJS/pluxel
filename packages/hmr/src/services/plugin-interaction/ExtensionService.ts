@@ -477,6 +477,8 @@ export class ExtensionService {
 		const resolveForBrowserBundle = toBrowserBundleResolve(vite.config.resolve as ResolveOptions)
 		const bundled = (
 			await this.ctx.bundlerService.bundle({
+				label: entry.pluginName,
+				target: 'browser',
 				entry: absoluteEntry,
 				root: vite.config.root,
 				resolve: resolveForBrowserBundle,

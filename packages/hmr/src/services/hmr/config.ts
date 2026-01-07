@@ -7,9 +7,11 @@ import {
 	type Logger,
 	normalizePath,
 	type Plugin,
+	perEnvironmentPlugin,
 	searchForWorkspaceRoot,
 } from 'vite'
 import { findNearestPackageRoot } from './internals'
+import { clientNodeImportGuardPlugin } from './plugins/clientNodeImportGuard'
 
 export interface HMRDependencyConfig {
 	/** Reuse host exports for these specifiers so class singletons survive HMR. */
@@ -216,8 +218,14 @@ export function buildHmrViteConfig(opts: HmrViteConfigOptions): InlineConfig {
 			},
 		},
 		plugins: [
-			configSourcePlugin({ include: includePatterns, exclude: opts.excludeGlobs }),
-			importTypeFixerPlugin(),
+			clientNodeImportGuardPlugin(),
+			perEnvironmentPlugin('pluxel:ssr-transform', (environment) => {
+				if (environment.name !== 'ssr') return false
+				return [
+					configSourcePlugin({ include: includePatterns, exclude: opts.excludeGlobs }),
+					importTypeFixerPlugin(),
+				]
+			}),
 			...(opts.extraPlugins ?? []),
 			opts.runnerPlugin,
 			opts.honoPlugin,
