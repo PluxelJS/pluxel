@@ -5,7 +5,6 @@ import {
 	Button,
 	Group,
 	Indicator,
-	Menu,
 	Popover,
 	ScrollArea,
 	Stack,
@@ -13,21 +12,16 @@ import {
 	TextInput,
 	useComputedColorScheme,
 } from '@mantine/core'
-import {
-	IconArrowRight,
-	IconBell,
-	IconDotsVertical,
-	IconMenu2,
-	IconSearch,
-} from '@tabler/icons-react'
+import { IconArrowRight, IconBell, IconBolt, IconMenu2, IconSearch } from '@tabler/icons-react'
 import { useRouter } from '@tanstack/react-router'
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { ColorSchemeToggle } from '../components'
 import { ExtensionSlot } from '../extension'
 import { PLUGIN_SEARCH_EVENT, PLUGIN_SEARCH_KEY } from './constants'
 import { useNotify } from './hooks'
 import { useNotificationCenter } from './notifications/NotificationCenterProvider'
-import { useHmrWebClient } from './rpc'
 import { useCurrentPathname } from './router/useCurrentRoute'
+import { useHmrWebClient } from './rpc'
 
 const timeFormatter = new Intl.DateTimeFormat('zh-CN', {
 	month: '2-digit',
@@ -165,35 +159,20 @@ export function Header({ onMenu }: { onMenu: () => void }) {
 				{/* 扩展插槽：插件可以在这里添加按钮/徽章 */}
 				<ExtensionSlot point="header:actions" />
 
+				<ColorSchemeToggle />
+
 				<NotificationBell />
 
-				<Button onClick={handleBuild} loading={isBuildLoading} leftSection="⚡">
-					构建 SNAPSHOT
-				</Button>
-
-				<Menu withinPortal shadow="md">
-					<Menu.Target>
-						<ActionIcon variant="default" size="lg" radius="xl" aria-label="更多操作">
-							<IconDotsVertical size={18} />
-						</ActionIcon>
-					</Menu.Target>
-					<Menu.Dropdown>
-						<Menu.Label>快速操作</Menu.Label>
-						<Menu.Item onClick={handleBuild}>重新构建</Menu.Item>
-						<Menu.Item onClick={() => setSearch('')}>清空搜索</Menu.Item>
-						<Menu.Divider />
-						<Menu.Label>帮助</Menu.Label>
-						<Menu.Item
-							onClick={() => {
-								if (typeof window !== 'undefined') {
-									window.open('https://pluxel.dev', '_blank', 'noopener,noreferrer')
-								}
-							}}
-						>
-							查看文档
-						</Menu.Item>
-					</Menu.Dropdown>
-				</Menu>
+				<ActionIcon
+					variant="default"
+					size="lg"
+					radius="xl"
+					aria-label="构建 SNAPSHOT"
+					loading={isBuildLoading}
+					onClick={handleBuild}
+				>
+					<IconBolt size={18} />
+				</ActionIcon>
 			</Group>
 		</Group>
 	)

@@ -23,9 +23,7 @@ import type { ReactNode } from 'react'
 
 // UI module authoring (stable public surface)
 export const ExtensionPoints = HmrWeb.ExtensionPoints
-export const defineDocBlocks = HmrWeb.defineDocBlocks
-export const blockRef = HmrWeb.blockRef
-export const md = HmrWeb.md
+export const doc = HmrWeb.doc
 export const useExtensionContext = HmrWeb.useExtensionContext
 
 export type ExtensionContext = HmrWeb.ExtensionContext

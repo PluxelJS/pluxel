@@ -5,7 +5,9 @@ import {
 	Collapse,
 	Group,
 	Paper,
+	Popover,
 	rgba,
+	SegmentedControl,
 	ScrollArea,
 	Stack,
 	Text,
@@ -15,7 +17,7 @@ import {
 	useMantineTheme,
 } from '@mantine/core'
 import { useLocalStorage } from '@mantine/hooks'
-import { IconCheck, IconMoonStars, IconPalette, IconSun, IconSunMoon } from '@tabler/icons-react'
+import { IconCheck, IconPalette } from '@tabler/icons-react'
 import { useCallback, useState } from 'react'
 import {
 	COLOR_PRESETS,
@@ -31,9 +33,10 @@ export interface ThemeCustomizerProps {
 
 export function ThemeCustomizer({ compact = false }: ThemeCustomizerProps) {
 	const theme = useMantineTheme()
-	const { colorScheme, setColorScheme } = useMantineColorScheme()
 	const computed = useComputedColorScheme('light', { getInitialValueInEffect: true })
+	const { setColorScheme } = useMantineColorScheme()
 	const [expanded, setExpanded] = useState(false)
+	const [opened, setOpened] = useState(false)
 
 	const [accentColor, setAccentColor] = useLocalStorage<string>({
 		key: THEME_COLOR_STORAGE_KEY,
@@ -50,46 +53,96 @@ export function ThemeCustomizer({ compact = false }: ThemeCustomizerProps) {
 		[setAccentColor],
 	)
 
-	const handleSchemeChange = useCallback(
-		(scheme: 'light' | 'dark' | 'auto') => {
-			setColorScheme(scheme)
-		},
-		[setColorScheme],
-	)
-
 	const currentPreset = COLOR_PRESETS.find((p) => p.key === accentColor) ?? COLOR_PRESETS[0]
-
-	const schemeOptions = [
-		{ key: 'light', icon: <IconSun size={16} />, label: '浅色' },
-		{ key: 'dark', icon: <IconMoonStars size={16} />, label: '深色' },
-		{ key: 'auto', icon: <IconSunMoon size={16} />, label: '跟随系统' },
-	] as const
 
 	const borderColor =
 		computed === 'dark' ? rgba(theme.colors.dark[4], 0.35) : rgba(theme.colors.gray[3], 0.5)
 
 	if (compact) {
-		const schemeLabel =
-			colorScheme === 'light' ? '浅色' : colorScheme === 'dark' ? '深色' : '跟随系统'
-		const schemeIcon =
-			colorScheme === 'light' ? <IconSun size={18} stroke={1.8} /> : colorScheme === 'dark' ? <IconMoonStars size={18} stroke={1.8} /> : <IconSunMoon size={18} stroke={1.8} />
-		const cycleScheme = () => {
-			const next = colorScheme === 'auto' ? 'light' : colorScheme === 'light' ? 'dark' : 'auto'
-			handleSchemeChange(next)
-		}
 		return (
-			<Tooltip label={`外观模式：${schemeLabel}`} position="right" openDelay={300}>
-				<ActionIcon
-					variant="light"
-					size="lg"
-					radius="xl"
-					style={{ alignSelf: 'center' }}
-					aria-label="切换外观模式"
-					onClick={cycleScheme}
-				>
-					{schemeIcon}
-				</ActionIcon>
-			</Tooltip>
+			<Popover
+				withArrow
+				shadow="md"
+				position="right"
+				offset={10}
+				opened={opened}
+				onChange={setOpened}
+			>
+				<Popover.Target>
+					<Tooltip label="主题设置" position="right" openDelay={300}>
+						<ActionIcon
+							variant="light"
+							size="lg"
+							radius="xl"
+							style={{ alignSelf: 'center' }}
+							aria-label="主题设置"
+							onClick={() => setOpened((v) => !v)}
+						>
+							<IconPalette size={18} stroke={1.8} />
+						</ActionIcon>
+					</Tooltip>
+				</Popover.Target>
+				<Popover.Dropdown p="sm">
+					<Stack gap="sm">
+						<Group justify="space-between" align="center">
+							<Group gap="xs">
+								<IconPalette size={16} stroke={1.8} style={{ opacity: 0.7 }} />
+								<Text size="xs" fw={600}>
+									主题设置
+								</Text>
+							</Group>
+							<ColorSwatch color={currentPreset.color} size={16} />
+						</Group>
+
+						<Box>
+							<Text size="xs" c="dimmed" mb={6}>
+								明暗模式
+							</Text>
+							<SegmentedControl
+								fullWidth
+								size="xs"
+								value={computed}
+								onChange={(value) => setColorScheme(value as 'light' | 'dark')}
+								data={[
+									{ value: 'light', label: '浅色' },
+									{ value: 'dark', label: '深色' },
+								]}
+							/>
+						</Box>
+
+						<Box>
+							<ScrollArea.Autosize maw={260} type="never">
+								<Group gap={6} wrap="wrap">
+									{COLOR_PRESETS.map((preset) => (
+										<Tooltip key={preset.key} label={preset.name}>
+											<ActionIcon
+												variant="light"
+												size="md"
+												radius="md"
+												onClick={() => handleColorChange(preset.key)}
+												style={{
+													background:
+														accentColor === preset.key ? rgba(preset.color, 0.2) : undefined,
+													border:
+														accentColor === preset.key
+															? `2px solid ${preset.color}`
+															: '2px solid transparent',
+												}}
+											>
+												{accentColor === preset.key ? (
+													<IconCheck size={14} color={preset.color} />
+												) : (
+													<ColorSwatch color={preset.color} size={14} withShadow={false} />
+												)}
+											</ActionIcon>
+										</Tooltip>
+									))}
+								</Group>
+							</ScrollArea.Autosize>
+						</Box>
+					</Stack>
+				</Popover.Dropdown>
+			</Popover>
 		)
 	}
 
@@ -127,26 +180,20 @@ export function ThemeCustomizer({ compact = false }: ThemeCustomizerProps) {
 
 				<Collapse in={expanded}>
 					<Stack gap="sm" pt="xs">
-						{/* 颜色模式切换 */}
 						<Box>
 							<Text size="xs" c="dimmed" mb={6}>
-								外观模式
+								明暗模式
 							</Text>
-							<Group gap={6}>
-								{schemeOptions.map((option) => (
-									<Tooltip key={option.key} label={option.label}>
-										<ActionIcon
-											variant={colorScheme === option.key ? 'filled' : 'light'}
-											color={colorScheme === option.key ? 'brand' : 'gray'}
-											size="md"
-											radius="md"
-											onClick={() => handleSchemeChange(option.key)}
-										>
-											{option.icon}
-										</ActionIcon>
-									</Tooltip>
-								))}
-							</Group>
+							<SegmentedControl
+								fullWidth
+								size="xs"
+								value={computed}
+								onChange={(value) => setColorScheme(value as 'light' | 'dark')}
+								data={[
+									{ value: 'light', label: '浅色' },
+									{ value: 'dark', label: '深色' },
+								]}
+							/>
 						</Box>
 
 						{/* 主题色选择 */}

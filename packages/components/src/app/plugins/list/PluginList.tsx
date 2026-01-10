@@ -270,6 +270,30 @@ export const PluginList: React.FC<PluginListProps> = ({ pluginName }) => {
 	// 搜索过程中的过渡状态，用于降低视觉闪烁
 	const isTransitioning = search.trim() !== deferredSearch
 
+	const hasAnyMatch = useMemo(() => {
+		const q = filterQuery.trim().toLowerCase()
+		if (!q) return true
+		for (const group of groupsForView) {
+			if ((group.name || '').toLowerCase().includes(q)) return true
+		}
+		for (const [id, st] of Object.entries(overview.statuses)) {
+			const name = (st?.name || '').toLowerCase()
+			const pkg = (st?.packageName || '').toLowerCase()
+			const tag = (st?.tag || '').toLowerCase()
+			const version = (st?.version || '').toLowerCase()
+			if (
+				id.toLowerCase().includes(q) ||
+				name.includes(q) ||
+				pkg.includes(q) ||
+				tag.includes(q) ||
+				version.includes(q)
+			) {
+				return true
+			}
+		}
+		return false
+	}, [filterQuery, groupsForView, overview.statuses])
+
 	const clearBtn = useMemo(
 		() =>
 			search ? (
@@ -309,7 +333,7 @@ export const PluginList: React.FC<PluginListProps> = ({ pluginName }) => {
 				minHeight={160}
 			/>
 		)
-	} else if (filterQuery && groupsForView.every((g) => g.pluginIds.length === 0)) {
+	} else if (filterQuery && !hasAnyMatch) {
 		content = (
 			<EmptyState
 				icon={<IconSearchOff size={28} stroke={1.5} />}

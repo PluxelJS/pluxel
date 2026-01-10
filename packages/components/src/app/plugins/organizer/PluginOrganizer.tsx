@@ -652,7 +652,16 @@ export function PluginOrganizer({
 			if (!isFiltering) return true
 			const st = statuses[id]
 			const name = (st?.name || '').toLowerCase()
-			return name.includes(q) || id.toLowerCase().includes(q)
+			const pkg = (st?.packageName || '').toLowerCase()
+			const tag = (st?.tag || '').toLowerCase()
+			const version = (st?.version || '').toLowerCase()
+			return (
+				name.includes(q) ||
+				pkg.includes(q) ||
+				tag.includes(q) ||
+				version.includes(q) ||
+				id.toLowerCase().includes(q)
+			)
 		},
 		[isFiltering, q, statuses],
 	)
@@ -689,7 +698,7 @@ export function PluginOrganizer({
 			acc.push({ ...group, pluginIds })
 			return acc
 		}, [])
-	}, [groups, isFiltering, q, pluginMatch])
+	}, [groups, isFiltering, pluginMatch, q])
 
 	// —— 容器映射（复用给 Shift 选择 & 拖放） —— //
 	const buildContainers = useCallback((gs: GroupConfig[], un: string[]) => {

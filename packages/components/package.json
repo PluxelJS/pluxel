@@ -56,10 +56,7 @@
 		"capnweb": "^0.4.0",
 		"gqty": "^3.6.0",
 		"graphql": "^16.12.0",
-		"react-markdown": "^10.1.0",
-		"remark-directive": "^4.0.0",
-		"remark-gfm": "^4.0.1",
-		"unist-util-visit": "^5.0.0"
+		"markdown-exit": "^1.0.0-beta.7"
 	},
 	"devDependencies": {
 		"@types/react": "^19.2.7",

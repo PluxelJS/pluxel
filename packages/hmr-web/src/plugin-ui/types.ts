@@ -686,7 +686,6 @@ export type BuiltinDocBlockKind = 'infoCard' | 'rpcAutoForm'
 
 export type BuiltinInfoCardBlock = {
 	kind: 'infoCard'
-	title?: string
 	description?: string
 	rows?: BuiltinInfoCardRow[]
 	layout?: BuiltinInfoCardLayout
@@ -694,7 +693,6 @@ export type BuiltinInfoCardBlock = {
 
 export type BuiltinRpcAutoFormBlock = {
 	kind: 'rpcAutoForm'
-	title?: string
 	description?: string
 	submitLabel?: string
 	/**
@@ -742,25 +740,14 @@ export type BuiltinDocExtensionDef<P extends ExtensionPoint = ExtensionPoint> =
 		kind: 'doc'
 		title?: string
 		description?: string
-		/** Markdown content with `::block[blockId]` placeholders. */
-		content?: string
-		/** Builtin blocks referenced by `::block[...]`. */
-		blocks?: Record<string, BuiltinDocBlock>
-		/** Ordering used when `content` is omitted. */
-		blockOrder?: string[]
+		/** Structured doc content (markdown + inline builtin blocks). */
+		content: BuiltinDocContent
 	}
 
 export type BuiltinRpcArg = unknown | { kind: 'field'; key: string }
 
-export const defineDocBlocks = <T extends Record<string, BuiltinDocBlock>>(blocks: T): T => blocks
-
-export function md(strings: TemplateStringsArray, ...values: Array<string | number>): string {
-	let out = ''
-	for (let i = 0; i < strings.length; i++) {
-		out += strings[i] ?? ''
-		if (i < values.length) out += String(values[i])
-	}
-	const lines = out.replace(/\r\n/g, '\n').split('\n')
+function normalizeMarkdownTemplate(input: string): string {
+	const lines = input.replace(/\r\n/g, '\n').split('\n')
 	while (lines.length && lines[0].trim() === '') lines.shift()
 	while (lines.length && lines[lines.length - 1].trim() === '') lines.pop()
 	let minIndent = Number.POSITIVE_INFINITY
@@ -774,12 +761,111 @@ export function md(strings: TemplateStringsArray, ...values: Array<string | numb
 	return lines.map((line) => (line.trim() ? line.slice(minIndent) : '')).join('\n')
 }
 
-export function blockRef<T extends Record<string, BuiltinDocBlock>>(
-	_blocks: T,
-	key: keyof T,
-): string {
-	return `::block[${String(key)}]`
+/**
+ * Builtin doc content parts.
+ *
+ * - `md`: markdown content (rendered via markdown-exit).
+ * - `block`: inline builtin block (host-rendered widgets).
+ */
+export type BuiltinDocPart =
+	| { kind: 'md'; text: string }
+	| { kind: 'block'; title: string; block: BuiltinDocBlock }
+
+declare const __builtinDocContentBrand: unique symbol
+export type BuiltinDocContent = BuiltinDocPart[] & { readonly [__builtinDocContentBrand]: true }
+
+type BlockDocPart = Extract<BuiltinDocPart, { kind: 'block' }>
+type DocValue = BlockDocPart
+
+function isDocPart(value: unknown): value is BuiltinDocPart {
+	return (
+		!!value &&
+		typeof value === 'object' &&
+		((value as any).kind === 'md' || (value as any).kind === 'block')
+	)
 }
+
+function assertBlockDocPart(value: unknown): asserts value is BlockDocPart {
+	if (!isDocPart(value) || (value as any).kind !== 'block') {
+		throw new Error('[doc] invalid interpolation (expected doc.block(...))')
+	}
+}
+
+function mergeAdjacentMarkdown(parts: BuiltinDocPart[]): BuiltinDocPart[] {
+	const merged: BuiltinDocPart[] = []
+	for (const part of parts) {
+		const prev = merged[merged.length - 1]
+		if (part.kind === 'md' && prev?.kind === 'md') {
+			prev.text += part.text
+			continue
+		}
+		merged.push(part.kind === 'md' ? { ...part } : part)
+	}
+	return merged
+}
+
+function docBlock(title: string, block: BuiltinDocBlock): BlockDocPart {
+	const label = String(title ?? '').trim()
+	if (!label) throw new Error('[doc.block] title required')
+	if (!block || typeof block !== 'object') throw new Error('[doc.block] block required')
+	return { kind: 'block', title: label, block }
+}
+
+function docCard(input: Omit<BuiltinInfoCardBlock, 'kind'>): BuiltinInfoCardBlock {
+	return { kind: 'infoCard', ...(input as any) }
+}
+
+function docForm(input: Omit<BuiltinRpcAutoFormBlock, 'kind'>): BuiltinRpcAutoFormBlock {
+	return { kind: 'rpcAutoForm', ...(input as any) }
+}
+
+/**
+ * Single canonical authoring API for builtin docs: a tagged template that produces
+ * structured content (`md` parts + inline `block` parts).
+ *
+ * - Leading/trailing blank lines are trimmed and common indentation is stripped.
+ * - `${...}` interpolations are restricted to `doc.block(...)`.
+ */
+export const doc: {
+	(strings: TemplateStringsArray, ...values: DocValue[]): BuiltinDocContent
+	block: typeof docBlock
+	card: typeof docCard
+	form: typeof docForm
+} = Object.assign(
+	(strings: TemplateStringsArray, ...values: DocValue[]) => {
+		const marker = '\u0000__DOC_VAL__\u0000'
+		let raw = ''
+		for (let i = 0; i < strings.length; i++) {
+			raw += strings[i] ?? ''
+			if (i < values.length) raw += `${marker}${i}${marker}`
+		}
+		raw = normalizeMarkdownTemplate(raw)
+
+		const parts: BuiltinDocPart[] = []
+		const re = new RegExp(`${marker}(\\d+)${marker}`, 'g')
+		let last = 0
+		for (;;) {
+			const match = re.exec(raw)
+			if (!match) break
+			const start = match.index
+			const end = start + match[0].length
+			const chunk = raw.slice(last, start)
+			if (chunk) parts.push({ kind: 'md', text: chunk })
+			const idx = Number(match[1])
+			if (!Number.isInteger(idx) || idx < 0 || idx >= values.length) {
+				throw new Error('[doc] internal interpolation index out of range')
+			}
+			const inserted = values[idx]
+			assertBlockDocPart(inserted)
+			parts.push(inserted)
+			last = end
+		}
+		const tail = raw.slice(last)
+		if (tail) parts.push({ kind: 'md', text: tail })
+		return mergeAdjacentMarkdown(parts) as BuiltinDocContent
+		},
+		{ block: docBlock, card: docCard, form: docForm },
+	)
 
 export type BuiltinExtensionDef = BuiltinDocExtensionDef
 

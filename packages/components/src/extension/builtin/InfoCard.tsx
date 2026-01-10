@@ -99,33 +99,23 @@ export function BuiltinInfoCard({
 	const cardPadding = density === 'compact' ? 'xs' : 'sm'
 	const headerGap = density === 'compact' ? 2 : 4
 	const bodyGap = density === 'compact' ? 4 : 6
-	const titleSize = density === 'compact' ? 'sm' : 'sm'
 	const descSize = density === 'compact' ? 'xs' : 'xs'
 	const labelSize = density === 'compact' ? 'xs' : 'xs'
 
 	return (
 		<Paper withBorder radius="md" p={cardPadding} shadow="xs">
 			<Stack gap={density === 'compact' ? 6 : 8}>
-				{block.title || block.description ? (
+				{block.description ? (
 					<Stack gap={headerGap}>
-						{block.title ? (
-							<Group justify="space-between" align="center" wrap="nowrap">
-								<Text size={titleSize} fw={650} style={{ lineHeight: 1.2 }}>
-									{block.title}
-								</Text>
-							</Group>
-						) : null}
-						{block.description ? (
-							<Text size={descSize} c="dimmed" style={{ lineHeight: 1.35 }}>
-								{block.description}
-							</Text>
-						) : null}
+						<Text size={descSize} c="dimmed" style={{ lineHeight: 1.35 }}>
+							{block.description}
+						</Text>
 					</Stack>
 				) : null}
 
 				{resolvedRows.length ? (
 					<>
-						{block.title || block.description ? <Divider /> : null}
+						{block.description ? <Divider /> : null}
 						{variant === 'grid' || columns > 1 ? (
 							<Box
 								style={{

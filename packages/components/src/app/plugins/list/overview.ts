@@ -22,9 +22,13 @@ const toStatuses = (entries: Array<PluginStatusEntry | null | undefined> | undef
 	for (const entry of entries ?? []) {
 		const id = entry?.name
 		if (!id) continue
+		const source = entry?.source
 		snapshot[id] = {
 			id,
 			name: entry?.name ?? id,
+			packageName: source?.packageName ?? undefined,
+			version: source?.version ?? undefined,
+			tag: source?.tag ?? undefined,
 			isRunning: Boolean(entry?.isRunning),
 			isEnabled: entry?.isEnabled !== false,
 		}

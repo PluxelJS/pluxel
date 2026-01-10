@@ -293,9 +293,11 @@ async function loadSchema(
 
 export function BuiltinRpcAutoForm({
 	pluginName,
+	title,
 	block,
 }: {
 	pluginName: string
+	title: string
 	block: BuiltinRpcAutoFormBlock
 }) {
 	const ctx = useExtensionContext()
@@ -408,7 +410,7 @@ export function BuiltinRpcAutoForm({
 					lastSuccessSigRef.current = safeStringify(value)
 					lastSuccessAtRef.current = Date.now()
 					awaitingSseRef.current = shouldSyncFromSse
-					notifySuccess('提交成功')
+					notifySuccess(title || '提交成功')
 					if (block.resetOnSuccess) {
 						formApi.reset()
 					} else if (submitMode === 'onChange' && !shouldSyncFromSse) {
@@ -454,8 +456,13 @@ export function BuiltinRpcAutoForm({
 		return (
 			<Paper withBorder radius="md" p="sm" shadow="xs">
 				<Text size="sm" fw={650}>
-					{block.title ?? 'Form'}
+					{title || 'Form'}
 				</Text>
+				{block.description ? (
+					<Text size="xs" c="dimmed" mt={6}>
+						{block.description}
+					</Text>
+				) : null}
 				<Text size="xs" c="red" mt={6}>
 					{state.error.message}
 				</Text>
@@ -466,17 +473,10 @@ export function BuiltinRpcAutoForm({
 	return (
 		<Paper withBorder radius="md" p="sm" shadow="xs">
 			<Stack gap="sm">
-				{block.title ? (
-					<Box>
-						<Text size="sm" fw={650} style={{ lineHeight: 1.2 }}>
-							{block.title}
-						</Text>
-						{block.description ? (
-							<Text size="xs" c="dimmed" mt={4}>
-								{block.description}
-							</Text>
-						) : null}
-					</Box>
+				{block.description ? (
+					<Text size="xs" c="dimmed">
+						{block.description}
+					</Text>
 				) : null}
 
 				<AutoForm schema={state.schema as any} formOpts={formOpts as any}>

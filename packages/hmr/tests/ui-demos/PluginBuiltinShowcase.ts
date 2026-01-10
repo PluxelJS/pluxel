@@ -5,16 +5,23 @@ import { BasePlugin, Config, Plugin } from '@pluxel/hmr'
 import { RpcTarget } from '@pluxel/hmr/capnweb'
 import { f, v } from '@pluxel/hmr/config'
 import type { SseChannel } from '@pluxel/hmr/services'
-import { blockRef, defineDocBlocks, md } from '@pluxel/hmr/web'
+import { doc } from '@pluxel/hmr/web'
 
 const MIN_REFRESH_MS = 250
 const MAX_REFRESH_MS = 10_000
 
-type UptimeStyle = 'compact' | 'full'
-const UPTIME_STYLES: ReadonlyArray<UptimeStyle> = ['compact', 'full']
-const TIME_UNITS: [string, ...string[]] = ['auto', 's', 'ms']
-const SEPARATORS: [string, ...string[]] = ['space', 'colon', 'dot']
-const LABEL_STYLES: [string, ...string[]] = ['short', 'full', 'verbose']
+const UPTIME_STYLES = ['compact', 'full'] as const
+type UptimeStyle = (typeof UPTIME_STYLES)[number]
+
+const TIME_UNITS = ['auto', 's', 'ms'] as const
+type TimeUnit = (typeof TIME_UNITS)[number]
+
+const SEPARATORS = ['space', 'colon', 'dot'] as const
+type Separator = (typeof SEPARATORS)[number]
+
+const LABEL_STYLES = ['short', 'full', 'verbose'] as const
+type LabelStyle = (typeof LABEL_STYLES)[number]
+
 const SECTION_FORMAT = { id: 'format', title: '格式', description: '时间显示格式' }
 const SECTION_LABELS = { id: 'labels', title: '文案', description: '前后缀与展示文本' }
 const SECTION_ADVANCED = { id: 'advanced', title: '高级', description: '长表单测试' }
@@ -23,13 +30,13 @@ const DEFAULTS = {
 	display: { refreshMs: 1000 },
 	behavior: { tickStep: 1, maxTicks: 0, autoPauseAtMax: false },
 	format: {
-		uptimeStyle: 'compact',
+		uptimeStyle: 'compact' as UptimeStyle,
 		showMs: false,
-		timeUnit: 'auto',
-		separator: 'space',
+		timeUnit: 'auto' as TimeUnit,
+		separator: 'space' as Separator,
 		padZeros: false,
 		minDigits: 2,
-		labelStyle: 'short',
+		labelStyle: 'short' as LabelStyle,
 		prefix: '',
 		suffix: '',
 		uppercaseUnits: false,
@@ -55,11 +62,11 @@ const DEFAULTS = {
 type FormatSnapshot = {
 	uptimeStyle: UptimeStyle
 	showMs: boolean
-	timeUnit: string
-	separator: string
+	timeUnit: TimeUnit
+	separator: Separator
 	padZeros: boolean
 	minDigits: number
-	labelStyle: string
+	labelStyle: LabelStyle
 	prefix: string
 	suffix: string
 	uppercaseUnits: boolean
@@ -102,8 +109,8 @@ const clampNumber = (input: unknown, fallback: number, min: number, max: number)
 const isUptimeStyle = (value: unknown): value is UptimeStyle =>
 	UPTIME_STYLES.includes(value as UptimeStyle)
 
-const isPicklistValue = (values: readonly string[], value: unknown): value is string =>
-	typeof value === 'string' && values.includes(value)
+const isPicklistValue = <T extends readonly string[]>(values: T, value: unknown): value is T[number] =>
+	typeof value === 'string' && (values as readonly string[]).includes(value)
 
 const readBoolean = (value: unknown, fallback: boolean) =>
 	typeof value === 'boolean' ? value : fallback
@@ -120,7 +127,7 @@ const toStringRecord = (value: unknown): Record<string, string> => {
 	return out
 }
 
-const UNIT_LABELS: Record<string, Record<string, string>> = {
+const UNIT_LABELS: Record<LabelStyle, Record<string, string>> = {
 	short: { d: 'd', h: 'h', m: 'm', s: 's', ms: 'ms' },
 	full: { d: 'day', h: 'hour', m: 'minute', s: 'second', ms: 'ms' },
 	verbose: { d: 'days', h: 'hours', m: 'minutes', s: 'seconds', ms: 'milliseconds' },
@@ -130,8 +137,7 @@ const formatDuration = (ms: number, format: FormatSnapshot) => {
 	const safeMs = Math.max(0, Math.floor(ms))
 	const separator =
 		format.separator === 'colon' ? ':' : format.separator === 'dot' ? '.' : ' '
-	const labelStyle = UNIT_LABELS[format.labelStyle] ? format.labelStyle : 'short'
-	const labelTable = UNIT_LABELS[labelStyle]
+	const labelTable = UNIT_LABELS[format.labelStyle]
 
 	const formatValue = (value: number) => {
 		if (!format.padZeros) return String(value)
@@ -451,30 +457,29 @@ export class PluginBuiltinShowcase extends BasePlugin {
 	}
 
 	private registerOverviewDoc() {
-		const blocks = defineDocBlocks({
-			overview: {
-				kind: 'infoCard',
-				layout: { variant: 'grid', density: 'compact', columns: 3, labelPlacement: 'top' },
-				rows: [
-					{ label: 'Plugin', value: this.ctx.pluginInfo.id },
-					{ label: 'Uptime', value: this.sse('uptimeLabel', '0s') },
-					{ label: 'Ticks', value: this.sse('ticks', 0) },
-					{ label: 'Tick step', value: this.sse('tickStep', DEFAULTS.behavior.tickStep) },
-					{ label: 'Paused', value: this.sse('paused', false) },
-					{ label: 'Max ticks', value: this.sse('maxTicks', DEFAULTS.behavior.maxTicks) },
-					{ label: 'Refresh (ms)', value: this.sse('refreshMs', DEFAULTS.display.refreshMs) },
-				],
-			},
-		})
-
 		this.ctx.ext.ui.doc({
 			id: 'summary',
 			point: 'plugin:info',
 			title: 'Builtin Overview',
 			description: 'Host-rendered preset UI (no plugin UI module).',
 			requireRunning: false,
-			blocks,
-			blockOrder: ['overview'],
+			content: doc`
+				${doc.block(
+					'Overview',
+					doc.card({
+					layout: { variant: 'grid', density: 'compact', columns: 3, labelPlacement: 'top' },
+					rows: [
+						{ label: 'Plugin', value: this.ctx.pluginInfo.id },
+						{ label: 'Uptime', value: this.sse('uptimeLabel', '0s') },
+						{ label: 'Ticks', value: this.sse('ticks', 0) },
+						{ label: 'Tick step', value: this.sse('tickStep', DEFAULTS.behavior.tickStep) },
+						{ label: 'Paused', value: this.sse('paused', false) },
+						{ label: 'Max ticks', value: this.sse('maxTicks', DEFAULTS.behavior.maxTicks) },
+						{ label: 'Refresh (ms)', value: this.sse('refreshMs', DEFAULTS.display.refreshMs) },
+					],
+					}),
+				)}
+			`,
 		})
 	}
 
@@ -483,48 +488,38 @@ export class PluginBuiltinShowcase extends BasePlugin {
 		const metricsTab = { id: 'metrics', label: 'Metrics', icon: 'activity' }
 		const guideTab = { id: 'guide', label: 'Guide', icon: 'book' }
 
-		const controlBlocks = defineDocBlocks({
-			toggle: {
-				kind: 'rpcAutoForm',
-				title: 'Pause',
-				description: 'submitMode=onChange + SSE sync.',
-				submitMode: 'onChange',
-				autoSubmitDebounceMs: 120,
-				syncFromSse: { kind: 'sse' },
-				schemaKey: '_runtimeToggle',
-				rpc: { method: 'setPaused', args: [{ kind: 'field', key: 'paused' }] },
-			},
-			setTicks: {
-				kind: 'rpcAutoForm',
-				title: 'Set ticks',
-				description: 'Manual submit → RPC.',
-				submitLabel: 'Submit',
-				submitMode: 'manual',
-				schemaKey: '_runtime',
-				rpc: { method: 'setTicks', args: [{ kind: 'field', key: 'ticks' }] },
-				feedback: { success: { title: 'Submitted', tone: 'success' } },
-				resetOnSuccess: false,
-			},
-		})
-
 		this.ctx.ext.ui.doc({
 			id: 'controls-doc',
 			point: 'plugin:tabs',
 			requireRunning: false,
 			priority: 20,
 			meta: { label: 'Controls', icon: 'form', tab: controlTab },
-			blocks: controlBlocks,
-			blockOrder: ['toggle', 'setTicks'],
-		})
+			content: doc`
+				${doc.block(
+					'Pause',
+					doc.form({
+					description: 'submitMode=onChange + SSE sync.',
+					submitMode: 'onChange',
+					autoSubmitDebounceMs: 120,
+					syncFromSse: { kind: 'sse' },
+					schemaKey: '_runtimeToggle',
+					rpc: { method: 'setPaused', args: [{ kind: 'field', key: 'paused' }] },
+					}),
+				)}
 
-		const metricsBlocks = defineDocBlocks({
-			metrics: {
-				kind: 'infoCard',
-				title: 'Metrics Stream',
-				description: 'Compact status list (auto-updated).',
-				layout: { variant: 'list', density: 'compact', valueAlign: 'right' },
-				rows: this.buildMetricRows(),
-			},
+				${doc.block(
+					'Set ticks',
+					doc.form({
+					description: 'Manual submit → RPC.',
+					submitLabel: 'Submit',
+					submitMode: 'manual',
+					schemaKey: '_runtime',
+					rpc: { method: 'setTicks', args: [{ kind: 'field', key: 'ticks' }] },
+					feedback: { success: { title: 'Submitted', tone: 'success' } },
+					resetOnSuccess: false,
+					}),
+				)}
+			`,
 		})
 
 		this.ctx.ext.ui.doc({
@@ -533,14 +528,25 @@ export class PluginBuiltinShowcase extends BasePlugin {
 			requireRunning: false,
 			priority: 10,
 			meta: { label: 'Metrics', icon: 'list', tab: metricsTab },
-			blocks: metricsBlocks,
-			blockOrder: ['metrics'],
+			content: doc`
+				${doc.block(
+					'Metrics Stream',
+					doc.card({
+					description: 'Compact status list (auto-updated).',
+					layout: { variant: 'list', density: 'compact', valueAlign: 'right' },
+					rows: this.buildMetricRows(),
+					}),
+				)}
+			`,
 		})
 
-		const docBlocks = defineDocBlocks({
-			snapshot: {
-				kind: 'infoCard',
-				title: 'Live Snapshot',
+		const docContent = doc`
+			# Builtin Doc
+			基于 markdown 的内容区域，可以注入内置组件。
+
+			${doc.block(
+				'Snapshot',
+				doc.card({
 				description: 'Markdown + builtin blocks.',
 				layout: { variant: 'grid', density: 'compact', columns: 3, labelPlacement: 'top' },
 				rows: [
@@ -550,28 +556,20 @@ export class PluginBuiltinShowcase extends BasePlugin {
 					{ label: 'Tick step', value: this.sse('tickStep', DEFAULTS.behavior.tickStep) },
 					{ label: 'Refresh (ms)', value: this.sse('refreshMs', DEFAULTS.display.refreshMs) },
 				],
-			},
-			quickToggle: {
-				kind: 'rpcAutoForm',
-				title: 'Quick Pause',
+				}),
+			)}
+
+			${doc.block(
+				'Quick controls',
+				doc.form({
 				description: 'onChange + SSE sync.',
 				submitMode: 'onChange',
 				autoSubmitDebounceMs: 120,
 				syncFromSse: { kind: 'sse' },
 				schemaKey: '_runtimeToggle',
 				rpc: { method: 'setPaused', args: [{ kind: 'field', key: 'paused' }] },
-			},
-		})
-
-		const docContent = md`
-			# Builtin Doc
-			基于 markdown 的内容区域，可以注入内置组件。
-
-			## Snapshot
-			${blockRef(docBlocks, 'snapshot')}
-
-			## Quick controls
-			${blockRef(docBlocks, 'quickToggle')}
+				}),
+			)}
 
 			- 纯文段和 builtin 表单可以混合排布
 			- 适合在说明文档中加入可交互控件
@@ -612,7 +610,6 @@ export class PluginBuiltinShowcase extends BasePlugin {
 			priority: 0,
 			meta: { label: 'Guide', icon: 'book', tab: guideTab },
 			content: docContent,
-			blocks: docBlocks,
 		})
 	}
 
@@ -620,7 +617,7 @@ export class PluginBuiltinShowcase extends BasePlugin {
 		const rows = [
 			{
 				label: 'Stream',
-				value: { kind: 'badge', label: 'Live', color: 'green', variant: 'light' },
+				value: { kind: 'badge', label: 'Live', color: 'green', variant: 'light' } as const,
 			},
 			{ label: 'Uptime', value: this.sse('uptimeLabel', '0s') },
 			{ label: 'Uptime (ms)', value: this.sse('uptimeMs', 0) },

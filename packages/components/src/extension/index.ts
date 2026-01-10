@@ -38,7 +38,9 @@ export type {
 	BuiltinExtensionKind,
 	BuiltinDocBlock,
 	BuiltinDocBlockKind,
+	BuiltinDocContent,
 	BuiltinDocExtensionDef,
+	BuiltinDocPart,
 	BuiltinInfoCardBlock,
 	BuiltinInfoCardLayout,
 	BuiltinInfoCardRow,
@@ -69,11 +71,9 @@ export type {
 export {
 	createGlobalExtensionContext,
 	createPluginExtensionContext,
-	defineDocBlocks,
 	ExtensionPoints,
 	isExtensionPluginRunning,
-	md,
-	blockRef,
+	doc,
 	toGlobalExtensionContext,
 } from './types'
 

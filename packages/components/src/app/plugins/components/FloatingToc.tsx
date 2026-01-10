@@ -1,13 +1,30 @@
 import { ActionIcon, Affix, Box, Group, Paper, ScrollArea, Stack, Text } from '@mantine/core'
 import { IconChevronLeft, IconChevronRight, IconListDetails } from '@tabler/icons-react'
 import type React from 'react'
-import { useState } from 'react'
+import { createContext, useContext, useEffect, useMemo, useState } from 'react'
+
+const FloatingTocActiveContext = createContext<boolean | undefined>(undefined)
+
+export function FloatingTocScope({
+	active,
+	children,
+}: {
+	active: boolean
+	children: React.ReactNode
+}) {
+	return (
+		<FloatingTocActiveContext.Provider value={active}>
+			{children}
+		</FloatingTocActiveContext.Provider>
+	)
+}
 
 export function FloatingToc({
 	title,
 	hint,
 	meta,
 	controls,
+	enabled,
 	onExpandedChange,
 	viewportRef,
 	children,
@@ -16,19 +33,37 @@ export function FloatingToc({
 	hint: string
 	meta?: React.ReactNode
 	controls?: React.ReactNode
+	enabled?: boolean
 	onExpandedChange?: (expanded: boolean) => void
 	viewportRef?: (node: HTMLDivElement | null) => void
 	children: React.ReactNode
 }) {
 	const [expanded, setExpanded] = useState(false)
+	const scopeActive = useContext(FloatingTocActiveContext)
 	const railWidth = 44
 	const panelWidth = 300
 	const panelHeight = expanded ? '72vh' : 'auto'
 
+	const effectiveEnabled = useMemo(() => {
+		if (enabled === false) return false
+		if (scopeActive === false) return false
+		return true
+	}, [enabled, scopeActive])
+
+	useEffect(() => {
+		if (!effectiveEnabled && expanded) {
+			setExpanded(false)
+			onExpandedChange?.(false)
+		}
+	}, [effectiveEnabled, expanded, onExpandedChange])
+
 	const updateExpanded = (next: boolean) => {
+		if (!effectiveEnabled) return
 		setExpanded(next)
 		onExpandedChange?.(next)
 	}
+
+	if (!effectiveEnabled) return null
 
 	return (
 		<Affix position={{ top: 86, right: 16 }} zIndex={950} withinPortal>

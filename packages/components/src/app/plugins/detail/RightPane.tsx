@@ -26,6 +26,7 @@ import {
 import type { PluginConfigState } from '../../hooks'
 import { RouterLinkAdapter } from '../../RouterLinkAdapter'
 import { ConfigForm } from '../config'
+import { FloatingTocScope } from '../components/FloatingToc'
 import { PluginPanel } from './components'
 import { usePluginMeta } from './context'
 import { useCurrentPathname, useCurrentSearch } from '../../router/useCurrentRoute'
@@ -402,23 +403,27 @@ export function RightPane({ config }: RightPaneProps) {
 
 						{showRouteTab ? (
 							<Tabs.Panel value="route" style={COLUMN_STYLE}>
-								<RouteContent
-									pluginName={pluginName}
-									restPath={restPath}
-									routeRender={routeRender}
-								/>
+								<FloatingTocScope active={activeTab === 'route'}>
+									<RouteContent
+										pluginName={pluginName}
+										restPath={restPath}
+										routeRender={routeRender}
+									/>
+								</FloatingTocScope>
 							</Tabs.Panel>
 						) : null}
 
 						{showConfigTab ? (
 							<Tabs.Panel value="config" style={COLUMN_STYLE}>
-								<ConfigContent
-									config={config}
-									pluginName={pluginName}
-									active={activeTab === 'config'}
-									activeSchemaKey={activeSchemaKey}
-									onSchemaChange={handleSchemaChange}
-								/>
+								<FloatingTocScope active={activeTab === 'config'}>
+									<ConfigContent
+										config={config}
+										pluginName={pluginName}
+										active={activeTab === 'config'}
+										activeSchemaKey={activeSchemaKey}
+										onSchemaChange={handleSchemaChange}
+									/>
+								</FloatingTocScope>
 							</Tabs.Panel>
 						) : null}
 
@@ -426,20 +431,22 @@ export function RightPane({ config }: RightPaneProps) {
 							const id = tab.id
 							return (
 								<Tabs.Panel key={id} value={id} style={COLUMN_STYLE}>
-									<ScrollArea
-										type="auto"
-										scrollbarSize={10}
-										offsetScrollbars
-										style={COLUMN_STYLE}
-									>
-										<Box p="xs" style={{ minHeight: '100%' }}>
-											<Stack gap="sm">
-												{tab.nodes.map(({ key, node }) => (
-													<Fragment key={key}>{node}</Fragment>
-												))}
-											</Stack>
-										</Box>
-									</ScrollArea>
+									<FloatingTocScope active={activeTab === id}>
+										<ScrollArea
+											type="auto"
+											scrollbarSize={10}
+											offsetScrollbars
+											style={COLUMN_STYLE}
+										>
+											<Box p="xs" style={{ minHeight: '100%' }}>
+												<Stack gap="sm">
+													{tab.nodes.map(({ key, node }) => (
+														<Fragment key={key}>{node}</Fragment>
+													))}
+												</Stack>
+											</Box>
+										</ScrollArea>
+									</FloatingTocScope>
 								</Tabs.Panel>
 							)
 						})}

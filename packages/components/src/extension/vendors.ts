@@ -13,11 +13,9 @@ import * as MantineNotifications from '@mantine/notifications'
 import * as Capnweb from 'capnweb'
 import { rpcErrorMessage } from '@pluxel/hmr-web'
 import {
-	blockRef,
-	defineDocBlocks,
 	definePluginUIModule,
 	ExtensionPoints,
-	md,
+	doc,
 	useExtensionContext,
 	extensionVendorPackages,
 } from '@pluxel/hmr-web'
@@ -68,9 +66,7 @@ export const vendors = {
 		// plugin authoring + shared helpers
 		ExtensionPoints,
 		definePluginUIModule,
-		md,
-		defineDocBlocks,
-		blockRef,
+		doc,
 		useExtensionContext,
 
 		// web helpers

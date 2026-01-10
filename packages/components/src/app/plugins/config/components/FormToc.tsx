@@ -270,7 +270,9 @@ export function FormToc({
 						isActive ? 'var(--mantine-color-blue-outline)' : 'var(--mantine-color-default-border)'
 					}`,
 					backgroundColor: isActive ? 'var(--mantine-color-blue-light)' : 'transparent',
-					boxShadow: isActive ? 'var(--mantine-shadow-sm)' : 'none',
+					boxShadow: isActive
+						? 'inset 3px 0 0 var(--mantine-color-blue-filled), var(--mantine-shadow-sm)'
+						: 'none',
 					marginLeft: depth ? 8 : 0,
 					position: 'relative',
 				}}
