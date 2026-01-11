@@ -1,17 +1,17 @@
 import {
 	BasePlugin,
+	type Context,
 	checkPluginDecorator,
 	clearParamToken,
 	getClassParams,
 	getPluginInfo,
+	type PluginConstructor,
 	setParamToken,
 	setParamTokens,
-	type Context,
-	type PluginConstructor,
 } from '@pluxel/core'
 import type { PluginRegistry } from './PluginRegistry'
+import { type DepOverridesExtra, EXTRA_DEP_OVERRIDES } from './selection'
 import type { AnchorJournal } from './support'
-import { EXTRA_DEP_OVERRIDES, type DepOverridesExtra } from './selection'
 
 type PluginRegistryTx = ReturnType<PluginRegistry['beginTransaction']>
 
@@ -57,11 +57,25 @@ export class ModuleReplacer {
 			this.registry.declarePlugin(id, item.ctor, item.exportKey, options.tx)
 		}
 
-		// Apply persisted dependency overrides after all exports are declared
-		for (const item of exported) this.depOverrides.apply(item.ctor)
+		const config = getConfigReady(this.ctx)
+		const startEnabled = async () => {
+			// Apply persisted dependency overrides after all exports are declared.
+			for (const item of exported) this.depOverrides.apply(item.ctor)
+			// 运行层：根据持久启用位，自动启用需要启用的插件
+			await this.registry.syncRuntimeForModule(id)
+		}
 
-		// 运行层：根据持久启用位，自动启用需要启用的插件
-		await this.registry.syncRuntimeForModule(id)
+		// Do not block startup if config is still loading.
+		if (config.isReady) {
+			await startEnabled()
+		} else {
+			void config.ready.then(startEnabled).catch((error) => {
+				this.ctx.logger.warn('config ready failed; auto-start aborted for this module', {
+					moduleId: id,
+					error,
+				})
+			})
+		}
 		this.refreshDependents(oldItems)
 
 		const isAnchor = exported.length > 0
@@ -85,14 +99,17 @@ export class ModuleReplacer {
 	 */
 	private refreshDependents(oldItems: readonly { ctor: PluginConstructor }[]) {
 		if (oldItems.length === 0) return
-		const dependentsMap = this.ctx.registry.container?.dependents
-		if (!dependentsMap?.size) return
+		const dependents = this.ctx.registry.container?.dependents
+		if (!dependents?.size) return
+		const dependentsMap = dependents as unknown as Map<unknown, Set<unknown>>
 
 		const affected = new Set<PluginConstructor>()
 		for (const { ctor } of oldItems) {
-			const deps = dependentsMap.get(ctor as any)
+			const deps = dependentsMap.get(ctor)
 			if (!deps) continue
-			for (const dep of deps) affected.add(dep as PluginConstructor)
+			for (const dep of deps) {
+				if (typeof dep === 'function') affected.add(dep as PluginConstructor)
+			}
 		}
 		if (affected.size === 0) return
 
@@ -104,7 +121,8 @@ export class ModuleReplacer {
 			for (let i = 0; i < next.length; i++) {
 				const p = next[i]
 				if (typeof p !== 'function') continue
-				if (!((p as any)?.prototype instanceof BasePlugin)) continue
+				const proto = (p as { prototype?: unknown }).prototype
+				if (!proto || !(proto instanceof BasePlugin)) continue
 				let pid: string
 				try {
 					pid = getPluginInfo(p as PluginConstructor).id
@@ -117,9 +135,28 @@ export class ModuleReplacer {
 					mutated = true
 				}
 			}
-			if (mutated) setParamTokens(depCtor, next as any)
+			if (mutated) {
+				setParamTokens(depCtor, next as unknown as Parameters<typeof setParamTokens>[1])
+			}
 		}
 	}
+}
+
+function isPromiseLike(value: unknown): value is PromiseLike<unknown> {
+	if (!value) return false
+	if (typeof value !== 'object' && typeof value !== 'function') return false
+	const record = value as Record<string, unknown>
+	return typeof record.then === 'function'
+}
+
+function getConfigReady(ctx: Context): { isReady: boolean; ready: Promise<void> } {
+	const svc = ctx.configService as unknown
+	if (!svc || typeof svc !== 'object') return { isReady: true, ready: Promise.resolve() }
+	const record = svc as Record<string, unknown>
+	const ready = record.ready
+	const isReady = record.isReady === true
+	if (!isPromiseLike(ready)) return { isReady: true, ready: Promise.resolve() }
+	return { isReady, ready: ready as Promise<void> }
 }
 
 function collectPluginExports(mod: Record<string, unknown>): ExportedPlugin[] {
@@ -143,9 +180,9 @@ class DependencyOverrideApplier {
 	 * onto a freshly declared ctor (important across HMR reloads).
 	 */
 	apply(ctor: PluginConstructor) {
-		const getExtra = (this.ctx.configService as any)?.getExtra as
-			| ((key: string) => unknown)
-			| undefined
+		const configService = this.ctx.configService as unknown
+		if (!configService || typeof configService !== 'object') return
+		const getExtra = (configService as { getExtra?: unknown }).getExtra
 		if (typeof getExtra !== 'function') return
 
 		const name = getPluginInfo(ctor).id
@@ -166,7 +203,7 @@ class DependencyOverrideApplier {
 
 			const token = this.resolveRuntimeCtor(targetName)
 			if (!token) continue
-			setParamToken(ctor, index, token as any)
+			setParamToken(ctor, index, token as unknown as Parameters<typeof setParamToken>[2])
 		}
 	}
 }

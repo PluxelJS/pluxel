@@ -26,7 +26,6 @@ import type {
 	ListInstalledPackagesOptions,
 	LoadOptions,
 	PackageInstallResult,
-	PackageInstallStatus,
 	PackageInventoryEntry,
 	PackageLoadIssue,
 	PackageLoadIssueSource,
@@ -68,6 +67,12 @@ export type {
 	RetryOptions,
 } from './package/types'
 
+function getErrorCause(value: unknown): unknown {
+	if (!value || typeof value !== 'object') return undefined
+	if (!('cause' in value)) return undefined
+	return (value as { cause?: unknown }).cause
+}
+
 const serviceName = 'packageService' as const
 
 declare module '@pluxel/core' {
@@ -91,15 +96,8 @@ export class PackageServiceError extends Error {
 		public readonly detail?: unknown,
 	) {
 		super(message)
-		this.cause =
-			detail instanceof Error
-				? detail
-				: detail &&
-						typeof detail === 'object' &&
-						'cause' in detail &&
-						(detail as any).cause instanceof Error
-					? (detail as any).cause
-					: undefined
+		const cause = getErrorCause(detail)
+		this.cause = detail instanceof Error ? detail : cause instanceof Error ? cause : undefined
 	}
 }
 
@@ -149,12 +147,13 @@ export class PackageService {
 			this.defaults.scan = config.scan
 		}
 		const stateFile = resolveStateFilePath(config.state?.file)
-			const stateOptions: PackageStateStoreOptions = {
-				file: stateFile,
-				onError: (error) => {
-					this.ctx.logger.warn('持久化包状态失败', { error, stateFile })
-				},
-			}
+		const stateOptions: PackageStateStoreOptions = {
+			fs: this.ctx.fs,
+			file: stateFile,
+			onError: (error) => {
+				this.ctx.logger.warn('持久化包状态失败', { error, stateFile })
+			},
+		}
 		if (config.state?.debounceMs !== undefined) {
 			stateOptions.debounceMs = config.state.debounceMs
 		}
@@ -244,7 +243,9 @@ export class PackageService {
 		await this.ensureReady()
 		if (!inputs.length) return []
 		const specs = inputs.map((item) => this.normalizeSpecifier(item))
-		specs.forEach((spec) => this.unblockPackage(spec.name))
+		specs.forEach((spec) => {
+			this.unblockPackage(spec.name)
+		})
 		const key = this.buildMultiKey(specs)
 		const resolved = this.resolveInstallOptions(overrides)
 		this.logEvent('info', 'installMany:scheduled', {
@@ -595,14 +596,14 @@ export class PackageService {
 		}
 		if (!toLoad.length) return
 
-			for (const name of toLoad) {
-				try {
-					await this.load(name)
-				} catch (error) {
-					this.ctx.logger.warn('同步加载插件失败', { name, error })
-				}
+		for (const name of toLoad) {
+			try {
+				await this.load(name)
+			} catch (error) {
+				this.ctx.logger.warn('同步加载插件失败', { name, error })
 			}
 		}
+	}
 
 	private async initializeInstallDefaults(overrides?: InstallOptions) {
 		const workspaceRoot = await this.detectWorkspaceRoot(overrides?.cwd)
@@ -625,18 +626,20 @@ export class PackageService {
 
 	private async initializeFromState(): Promise<void> {
 		let payload: PackageStatePayload | LegacyPackageStatePayload | null = null
-			try {
-				payload = await this.stateStore.read()
-			} catch (error) {
-				this.ctx.logger.warn('读取包状态失败', { error })
-				throw error
-			}
+		try {
+			payload = await this.stateStore.read()
+		} catch (error) {
+			this.ctx.logger.warn('读取包状态失败', { error })
+			throw error
+		}
 		const normalized = normalizeStatePayload(payload)
 		if (!normalized) return
 
 		this.state.disablePersistence()
 		if (normalized.blocked?.length) {
-			normalized.blocked.forEach((name) => this.state.block(name))
+			normalized.blocked.forEach((name) => {
+				this.state.block(name)
+			})
 		}
 		this.loader.restorePersistedIssues(normalized)
 		const mutated = await this.loader.restorePersistedPackages(normalized.packages)
@@ -648,13 +651,13 @@ export class PackageService {
 		return this.ready
 	}
 
-		private onPackageInstalled(result: PackageInstallResult) {
-			this.installer.invalidateCache()
-			this.ctx.scanService.invalidateResolverCache()
-			this.ctx.logger.debug('已清理解析缓存，等待重新扫描。', {
-				name: result.spec.name,
-				target: result.target,
-			})
+	private onPackageInstalled(result: PackageInstallResult) {
+		this.installer.invalidateCache()
+		this.ctx.scanService.invalidateResolverCache()
+		this.ctx.logger.debug('已清理解析缓存，等待重新扫描。', {
+			name: result.spec.name,
+			target: result.target,
+		})
 		this.logEvent('info', 'install:scan_cache_cleared', {
 			name: result.spec.name,
 			target: result.target,
@@ -772,10 +775,8 @@ export class PackageService {
 
 	private unwrapError(error: unknown): unknown {
 		if (error instanceof PackageServiceError && error.cause) return error.cause
-		if (error && typeof error === 'object' && 'cause' in error) {
-			const cause = (error as any).cause
-			if (cause instanceof Error) return cause
-		}
+		const cause = getErrorCause(error)
+		if (cause instanceof Error) return cause
 		return error
 	}
 
@@ -787,12 +788,11 @@ export class PackageService {
 	) {
 		const logger = this.ctx.logger
 		if (!logger) return
-			const baseMessage =
-				message ?? 'PackageService {event}'
-			const record = { name: this.logName, event, ...payload }
-			if (level === 'info') {
-				logger.info(baseMessage, record)
-			} else if (level === 'warn') {
+		const baseMessage = message ?? 'PackageService {event}'
+		const record = { name: this.logName, event, ...payload }
+		if (level === 'info') {
+			logger.info(baseMessage, record)
+		} else if (level === 'warn') {
 			logger.warn(baseMessage, record)
 		} else {
 			logger.error(baseMessage, record)

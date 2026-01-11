@@ -55,10 +55,7 @@ export class ConfigService {
 	}
 
 	getConfig<T extends object = Record<string, unknown>>(name?: string): Readonly<T> {
-		const resolved =
-			name ??
-			(this.ctx as Context & { pluginInfo?: { id?: string } }).pluginInfo?.id ??
-			''
+		const resolved = name ?? this.ctx.pluginInfo?.id ?? ''
 		if (!resolved) return EMPTY_CONFIG as T
 		return (this.store.get(resolved) as T | undefined) ?? (EMPTY_CONFIG as T)
 	}

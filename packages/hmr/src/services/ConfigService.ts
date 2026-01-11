@@ -1,10 +1,8 @@
-import { readFileSync } from 'node:fs'
-import fs from 'node:fs/promises'
-import { join as joinPath, dirname, basename, resolve } from 'node:path'
 import { type Context, Injectable, OverrideOf } from '@pluxel/core'
 import { ConfigService as CoreConfigService } from '@pluxel/core/services'
 import { debounce } from '@tanstack/pacer'
-import chokidar, { type FSWatcher } from 'chokidar'
+import chokidar from 'chokidar'
+import { resolve } from 'pathe'
 import { SuperJSON } from 'superjson'
 
 // —— 3. 全局配置 ——
@@ -17,38 +15,54 @@ export interface ConfigShape {
 @Injectable
 @OverrideOf(CoreConfigService)
 export class ConfigService {
-	private static readonly EMPTY_CONFIG: Readonly<Record<string, unknown>> = Object.freeze(Object.create(null))
+	private static readonly EMPTY_CONFIG: Readonly<Record<string, unknown>> = Object.freeze(
+		Object.create(null),
+	)
+
+	/** Whether the initial on-disk config has been loaded (or initialized). */
+	public isReady = false
+
+	/**
+	 * Resolves after the initial config file has been loaded (or initialized).
+	 *
+	 * Note: constructors can't be async, so callers that require a fully-loaded
+	 * config should await this before doing "enable/disable auto-start" work.
+	 */
+	public readonly ready: Promise<void>
 
 	private readonly data: ConfigShape = {
 		enabled: new Set(),
 		plugins: Object.create(null),
 		extra: Object.create(null),
 	}
-	private watcher!: FSWatcher
-	private saveDebounced: () => void
+	private readonly saveDebounced: () => void
 
 	// 自写屏蔽：写盘到落盘结束这段时间内忽略变更事件
 	private writingNow = false
-	private filePath = 'default.json'
 	private batching = 0 // 事务计数
 
-	constructor(public ctx: Context, _cfg: unknown = undefined) {
+	constructor(
+		public ctx: Context,
+		_cfg: unknown = undefined,
+	) {
 		// 允许调用方把方法解构出来用（避免丢失 this 导致 this.data 为空）
 		this.getExtra = this.getExtra.bind(this)
 		this.setExtra = this.setExtra.bind(this)
 
-		const file = ctx.config.path ?? 'default.json'
+		const file = ctx.config.path ?? 'data/hmr/config.json'
 		const resolvedFile = resolve(file)
-		this.filePath = resolvedFile
-		this.loadFromDisk(resolvedFile)
+		this.ready = this.loadFromDisk(resolvedFile).finally(() => {
+			this.isReady = true
+		})
 		this.saveDebounced = debounce(() => this.saveToDisk(resolvedFile), { wait: 200 })
 
-		this.watcher = chokidar
+		chokidar
 			.watch(resolvedFile, {
 				ignoreInitial: true,
 				// 防止编辑器“分块写”引发多次触发
 				awaitWriteFinish: { stabilityThreshold: 100, pollInterval: 50 },
 			})
+			.on('add', () => this.onDiskChange(resolvedFile))
 			.on('change', () => this.onDiskChange(resolvedFile))
 	}
 
@@ -56,7 +70,7 @@ export class ConfigService {
 
 	private async loadFromDisk(file: string) {
 		try {
-			const txt = import.meta.hot ? await fs.readFile(file, 'utf-8') : readFileSync(file, 'utf-8')
+			const txt = await this.ctx.fs.readText(file)
 
 			const parsed = SuperJSON.parse(txt) as Partial<ConfigShape> & { enabled?: unknown }
 
@@ -82,30 +96,13 @@ export class ConfigService {
 		}
 	}
 
-	// 原子写：写入临时文件再 rename，配合 writingNow 屏蔽自触发
+	// 原子写：交给 ctx.fs.writeTextAtomic，配合 writingNow 屏蔽自触发
 	private async saveToDisk(file: string) {
 		if (this.batching > 0) return // 事务中，先不写；提交时会统一触发
 		this.writingNow = true
-		const targetDir = dirname(file)
-		const base = basename(file)
-		const tmp = joinPath(
-			targetDir,
-			`.${base}.${Date.now()}.${Math.random().toString(36).slice(2)}.tmp`,
-		)
 		try {
-			await fs.mkdir(targetDir, { recursive: true })
 			const content = SuperJSON.stringify(this.data)
-			await fs.writeFile(tmp, content, 'utf-8')
-			await fs.rename(tmp, file)
-		} catch (err) {
-			const code = (err as NodeJS.ErrnoException)?.code
-			if (code === 'EXDEV') {
-				await fs.copyFile(tmp, file)
-				await fs.rm(tmp, { force: true }).catch(() => {})
-			} else {
-				await fs.rm(tmp, { force: true }).catch(() => {})
-				throw err
-			}
+			await this.ctx.fs.writeTextAtomic(file, content)
 		} finally {
 			// 小幅延迟，给文件系统时间完成元数据刷新，避免极端条件下的回跳
 			setTimeout(() => {
@@ -124,7 +121,9 @@ export class ConfigService {
 	/**
 	 * 读取某插件的配置（不存在时返回只读“空视图”，避免误改未落盘）
 	 */
-	getConfig<T extends object = Record<string, unknown>>(name: string = this.ctx.pluginInfo.id): Readonly<T> {
+	getConfig<T extends object = Record<string, unknown>>(
+		name: string = this.ctx.pluginInfo?.id ?? 'default',
+	): Readonly<T> {
 		return (this.data.plugins[name] as T | undefined) ?? (ConfigService.EMPTY_CONFIG as T)
 	}
 
@@ -207,8 +206,8 @@ function coercePlugins(input: Record<string, unknown>): Record<string, Record<st
 	const out: Record<string, Record<string, unknown>> = Object.create(null)
 	for (const [name, raw] of Object.entries(input)) {
 		if (!raw || typeof raw !== 'object' || Array.isArray(raw)) continue
-		const maybe = raw as any
-		const record = maybe?.configRecord
+		const maybe = raw as Record<string, unknown>
+		const record = maybe.configRecord
 		if (record && typeof record === 'object' && !Array.isArray(record)) {
 			out[name] = record as Record<string, unknown>
 		} else {

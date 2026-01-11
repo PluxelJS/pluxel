@@ -1,32 +1,56 @@
-import { type FSWatcher, watch } from 'node:fs'
-import { mkdir, readFile, writeFile } from 'node:fs/promises'
-import { basename, dirname, resolve } from 'node:path'
 import { type Context, Injectable } from '@pluxel/core'
 import type { BaseItem, PersistenceAdapter } from '@signaldb/core'
-import createFilesystemAdapter from '@signaldb/fs'
+import chokidar, { type FSWatcher } from 'chokidar'
+import { basename, resolve } from 'pathe'
 import { SuperJSON } from 'superjson'
 
 const serviceName = 'pluginData' as const
 
 declare module '@pluxel/core' {
 	namespace Context {
+		interface Config {
+			pluginData?: PluginDataServiceConfig
+		}
 		interface Services {
 			pluginData: PluginDataService
 		}
 	}
 }
 
+export type PluginDataServiceConfig = {
+	/**
+	 * Base directory for plugin persistence data.
+	 *
+	 * @default "data/plugin-data"
+	 */
+	dir?: string
+}
+
 type MultiCollectionStore = { collections: Record<string, unknown> }
 type CollectionPersistenceMode = 'perCollection' | 'shared'
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+	return !!value && typeof value === 'object' && !Array.isArray(value)
+}
+
+function getRecordProp(value: Record<string, unknown>, key: string): unknown {
+	return value[key]
+}
+
+function isEnoent(err: unknown): boolean {
+	if (!err || typeof err !== 'object') return false
+	if (!('code' in err)) return false
+	return (err as { code?: unknown }).code === 'ENOENT'
+}
+
 @Injectable({ key: serviceName })
 export class PluginDataService {
-	private baseDir: string
-	private watchers = new Map<string, Set<FSWatcher>>()
+	private readonly baseDir: string
+	private readonly watchers = new Map<string, Set<FSWatcher>>()
 
 	constructor(public ctx: Context) {
-		const cfg = (ctx.config as any)?.pluginData ?? {}
-		const dir = cfg.dir ?? cfg.baseDir ?? '.pluxel/plugin-data'
+		const cfg = ctx.config.pluginData ?? {}
+		const dir = cfg.dir ?? 'data/plugin-data'
 		this.baseDir = resolve(dir)
 	}
 
@@ -38,20 +62,59 @@ export class PluginDataService {
 		serialize?: (items: T[]) => string
 		deserialize?: (txt: string) => T[]
 	}): Promise<PersistenceAdapter<T, string>> {
-		const ns = this.normalizeNamespace(this.ctx.pluginInfo.id)
+		const ns = this.normalizeNamespace(this.ctx.pluginInfo?.id ?? 'default')
 		const file = this.fileForNamespace(ns)
 
-		await mkdir(dirname(file), { recursive: true })
-		return createFilesystemAdapter<T, string>(file, {
-			serialize: options?.serialize ?? ((items) => SuperJSON.stringify(items)),
-			deserialize: (txt) => {
+		const serialize = options?.serialize ?? ((items: T[]) => SuperJSON.stringify(items))
+		const deserialize = (txt: string): T[] => {
+			try {
+				return (options?.deserialize?.(txt) ?? (SuperJSON.parse(txt) as T[]) ?? []) as T[]
+			} catch {
+				return []
+			}
+		}
+
+		const readItems = async (): Promise<T[]> => {
+			const txt = await this.readTextOptional(file)
+			if (!txt) return []
+			return deserialize(txt.trim())
+		}
+
+		let watcher: FSWatcher | null = null
+
+		return {
+			load: async () => ({ items: await readItems() }),
+			save: async (items, _changes) => {
+				await this.ctx.fs.writeTextAtomic(file, serialize(items))
+			},
+			register: async (onChange) => {
+				const notify = async () => {
+					await onChange({ items: await readItems() })
+				}
+				await notify()
 				try {
-					return (options?.deserialize?.(txt) ?? (SuperJSON.parse(txt) as T[]) ?? []) as T[]
+					watcher = chokidar
+						.watch(file, {
+							ignoreInitial: true,
+							awaitWriteFinish: { stabilityThreshold: 100, pollInterval: 50 },
+						})
+						.on('add', () => void notify())
+						.on('change', () => void notify())
+					if (!this.watchers.has(file)) this.watchers.set(file, new Set())
+					this.watchers.get(file)?.add(watcher)
 				} catch {
-					return []
+					// ignore watcher errors (e.g., unsupported runtime / missing file)
 				}
 			},
-		})
+			unregister: async () => {
+				if (!watcher) return
+				await Promise.resolve(watcher.close()).catch(() => undefined)
+				const set = this.watchers.get(file)
+				set?.delete(watcher)
+				if (set && set.size === 0) this.watchers.delete(file)
+				watcher = null
+			},
+		}
 	}
 
 	/**
@@ -66,67 +129,48 @@ export class PluginDataService {
 			mode?: CollectionPersistenceMode
 		},
 	): Promise<PersistenceAdapter<T, string>> {
-		const ns = this.normalizeNamespace(this.ctx.pluginInfo.id)
+		const ns = this.normalizeNamespace(this.ctx.pluginInfo?.id ?? 'default')
 		const mode: CollectionPersistenceMode = options?.mode ?? 'perCollection'
 
 		if (mode === 'perCollection') {
 			const file = this.fileForCollection(ns, collection)
 			const sharedFile = this.fileForNamespace(ns) // 读取时作为降级 fallback
-			await mkdir(dirname(file), { recursive: true })
 
 			const loadItems = async (): Promise<T[]> => {
 				// 优先读取独立文件
-				try {
-					const text = (await readFile(file, 'utf8')).trim()
-					if (text) {
-						try {
-							const parsed = JSON.parse(text)
-							if (Array.isArray(parsed)) return parsed as T[]
-							if (parsed && typeof parsed === 'object' && Array.isArray((parsed as any).items)) {
-								return (parsed as any).items as T[]
-							}
-						} catch {
-							// fallthrough
+				const raw = await this.readTextOptional(file)
+				const text = raw?.trim()
+				if (text?.length) {
+					try {
+						const parsed = JSON.parse(text)
+						if (Array.isArray(parsed)) return parsed as T[]
+						if (isRecord(parsed)) {
+							const items = getRecordProp(parsed, 'items')
+							if (Array.isArray(items)) return items as T[]
 						}
-						try {
-							return (options?.deserialize?.(text) ?? SuperJSON.parse(text) ?? []) as T[]
-						} catch {
-							// ignore parse error
-						}
+					} catch {
+						// fallthrough
 					}
-				} catch {
-					// file missing
+					try {
+						return (options?.deserialize?.(text) ?? SuperJSON.parse(text) ?? []) as T[]
+					} catch {
+						// ignore parse error
+					}
 				}
 
 				// 回退读取 shared 文件中的该 collection
-				try {
-					const text = (await readFile(sharedFile, 'utf8')).trim()
-					if (text) {
-						try {
-							const parsed = JSON.parse(text)
-							if (parsed && typeof parsed === 'object') {
-								if (Array.isArray(parsed[collection])) {
-									return parsed[collection] as T[]
-								}
-								if (parsed.collections && typeof parsed.collections === 'object') {
-									const raw = parsed.collections[collection]
-									if (Array.isArray(raw)) return raw as T[]
-									if (typeof raw === 'string') {
-										try {
-											return (options?.deserialize?.(raw) ?? JSON.parse(raw)) as T[]
-										} catch {
-											return []
-										}
-									}
-								}
-							}
-						} catch {
-							// ignore
-						}
-						try {
-							const parsed = SuperJSON.parse<any>(text)
-							if (parsed?.collections?.[collection]) {
-								const raw = parsed.collections[collection]
+				const sharedRawText = await this.readTextOptional(sharedFile)
+				const sharedText = sharedRawText?.trim()
+				if (sharedText?.length) {
+					try {
+						const parsed = JSON.parse(sharedText)
+						if (isRecord(parsed)) {
+							const direct = getRecordProp(parsed, collection)
+							if (Array.isArray(direct)) return direct as T[]
+
+							const collections = getRecordProp(parsed, 'collections')
+							if (isRecord(collections)) {
+								const raw = getRecordProp(collections, collection)
 								if (Array.isArray(raw)) return raw as T[]
 								if (typeof raw === 'string') {
 									try {
@@ -136,12 +180,29 @@ export class PluginDataService {
 									}
 								}
 							}
-						} catch {
-							// ignore
 						}
+					} catch {
+						// ignore
 					}
-				} catch {
-					// no shared file
+					try {
+						const parsed = SuperJSON.parse<unknown>(sharedText)
+						if (isRecord(parsed)) {
+							const collections = getRecordProp(parsed, 'collections')
+							if (isRecord(collections)) {
+								const raw = getRecordProp(collections, collection)
+								if (Array.isArray(raw)) return raw as T[]
+								if (typeof raw === 'string') {
+									try {
+										return (options?.deserialize?.(raw) ?? JSON.parse(raw)) as T[]
+									} catch {
+										return []
+									}
+								}
+							}
+						}
+					} catch {
+						// ignore
+					}
 				}
 
 				return []
@@ -151,12 +212,11 @@ export class PluginDataService {
 
 			return {
 				load: async () => ({ items: await loadItems() }),
-				save: async (items) => {
+				save: async (items, _changes) => {
 					const serialized = options?.serialize ? options.serialize(items) : items
-					await writeFile(
+					await this.ctx.fs.writeTextAtomic(
 						file,
 						typeof serialized === 'string' ? serialized : JSON.stringify(serialized, null, 2),
-						'utf8',
 					)
 				},
 				register: async (onChange) => {
@@ -165,9 +225,13 @@ export class PluginDataService {
 					}
 					await notify()
 					try {
-						watcher = watch(file, { persistent: false }, () => {
-							void notify()
-						})
+						watcher = chokidar
+							.watch(file, {
+								ignoreInitial: true,
+								awaitWriteFinish: { stabilityThreshold: 100, pollInterval: 50 },
+							})
+							.on('add', () => void notify())
+							.on('change', () => void notify())
 						if (!this.watchers.has(file)) this.watchers.set(file, new Set())
 						this.watchers.get(file)?.add(watcher)
 					} catch {
@@ -175,44 +239,41 @@ export class PluginDataService {
 					}
 				},
 				unregister: async () => {
-					if (watcher) {
-						try {
-							watcher.close()
-						} catch {}
-						const set = this.watchers.get(file)
-						set?.delete(watcher)
-						if (set && set.size === 0) this.watchers.delete(file)
-						watcher = null
-					}
+					if (!watcher) return
+					await Promise.resolve(watcher.close()).catch(() => undefined)
+					const set = this.watchers.get(file)
+					set?.delete(watcher)
+					if (set && set.size === 0) this.watchers.delete(file)
+					watcher = null
 				},
 			}
 		}
 
 		// shared 模式：单文件存放多个 Collection
 		const file = this.fileForNamespace(ns)
-		const legacyFile = this.fileForLegacyCollection(ns, collection)
-		await mkdir(dirname(file), { recursive: true })
-
 		const loadStore = async (): Promise<MultiCollectionStore> => {
+			const rawText = await this.readTextOptional(file)
+			const text = rawText?.trim()
+			if (!text?.length) return { collections: {} }
+
 			try {
-				const text = (await readFile(file, 'utf8')).trim()
-				if (!text) return { collections: {} }
-				try {
-					const parsed = JSON.parse(text)
-					if (Array.isArray(parsed)) {
-						return { collections: { [collection]: parsed } }
-					}
-					if (parsed && typeof parsed === 'object') {
-						const maybeCollections = (parsed as any).collections
-						if (maybeCollections && typeof maybeCollections === 'object') {
-							return { collections: maybeCollections as Record<string, unknown> }
-						}
-						// 旧格式：顶层就是各 collection
-						return { collections: parsed as Record<string, unknown> }
-					}
-				} catch {
-					// fall through
+				const parsed = JSON.parse(text)
+				if (Array.isArray(parsed)) {
+					return { collections: { [collection]: parsed } }
 				}
+				if (isRecord(parsed)) {
+					const maybeCollections = getRecordProp(parsed, 'collections')
+					if (isRecord(maybeCollections)) {
+						return { collections: maybeCollections }
+					}
+					// 旧格式：顶层就是各 collection
+					return { collections: parsed }
+				}
+			} catch {
+				// fall through
+			}
+
+			try {
 				const parsed = SuperJSON.parse<MultiCollectionStore>(text)
 				if (parsed && typeof parsed === 'object') {
 					if (parsed.collections && typeof parsed.collections === 'object') {
@@ -221,22 +282,7 @@ export class PluginDataService {
 					return { collections: parsed as unknown as Record<string, unknown> }
 				}
 			} catch {
-				// file not found or unreadable
-				// legacy fallback
-				try {
-					const legacyText = (await readFile(legacyFile, 'utf8')).trim()
-					if (legacyText) {
-						const parsed = JSON.parse(legacyText)
-						if (Array.isArray(parsed)) {
-							return { collections: { [collection]: parsed } }
-						}
-						if (parsed && typeof parsed === 'object') {
-							return { collections: parsed as Record<string, unknown> }
-						}
-					}
-				} catch {
-					// ignore legacy errors
-				}
+				// ignore parse error
 			}
 			return { collections: {} }
 		}
@@ -256,7 +302,7 @@ export class PluginDataService {
 
 		const saveStore = async (store: MultiCollectionStore) => {
 			const content = JSON.stringify(store, null, 2)
-			await writeFile(file, content, 'utf8')
+			await this.ctx.fs.writeTextAtomic(file, content)
 		}
 
 		let watcher: FSWatcher | null = null
@@ -266,7 +312,7 @@ export class PluginDataService {
 				const store = await loadStore()
 				return { items: extractItems(store) }
 			},
-			save: async (items) => {
+			save: async (items, _changes) => {
 				const store = await loadStore()
 				const serialized = options?.serialize ? options.serialize(items) : items
 				store.collections = store.collections ?? {}
@@ -280,9 +326,13 @@ export class PluginDataService {
 				}
 				await notify()
 				try {
-					watcher = watch(file, { persistent: false }, () => {
-						void notify()
-					})
+					watcher = chokidar
+						.watch(file, {
+							ignoreInitial: true,
+							awaitWriteFinish: { stabilityThreshold: 100, pollInterval: 50 },
+						})
+						.on('add', () => void notify())
+						.on('change', () => void notify())
 					if (!this.watchers.has(file)) this.watchers.set(file, new Set())
 					this.watchers.get(file)?.add(watcher)
 				} catch {
@@ -290,22 +340,19 @@ export class PluginDataService {
 				}
 			},
 			unregister: async () => {
-				if (watcher) {
-					try {
-						watcher.close()
-					} catch {}
-					const set = this.watchers.get(file)
-					set?.delete(watcher)
-					if (set && set.size === 0) this.watchers.delete(file)
-					watcher = null
-				}
+				if (!watcher) return
+				await Promise.resolve(watcher.close()).catch(() => undefined)
+				const set = this.watchers.get(file)
+				set?.delete(watcher)
+				if (set && set.size === 0) this.watchers.delete(file)
+				watcher = null
 			},
 		}
 	}
 
 	/** 获取对应 namespace 的默认存储文件路径（已规范化）。 */
 	getFilePath(): string {
-		return this.fileForNamespace(this.normalizeNamespace(this.ctx.pluginInfo.id))
+		return this.fileForNamespace(this.normalizeNamespace(this.ctx.pluginInfo?.id ?? 'default'))
 	}
 
 	private fileForNamespace(namespace: string): string {
@@ -319,10 +366,14 @@ export class PluginDataService {
 		return resolve(this.baseDir, `${safeNs}.${safeCol}.json`)
 	}
 
-	private fileForLegacyCollection(namespace: string, collection: string): string {
-		const safeNs = this.normalizeNamespace(namespace)
-		const safeCol = this.normalizeNamespace(collection)
-		return resolve(this.baseDir, `${safeNs}.${safeCol}.json`)
+	private async readTextOptional(path: string | null): Promise<string | null> {
+		if (!path) return null
+		try {
+			return await this.ctx.fs.readText(path)
+		} catch (err) {
+			if (isEnoent(err)) return null
+			throw err
+		}
 	}
 
 	private normalizeNamespace(ns: string): string {

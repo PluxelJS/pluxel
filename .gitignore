@@ -284,3 +284,8 @@ build/
 
 # Build cache manifests
 *.tsbuildinfo
+
+# Runtime data / caches
+.pluxel/
+data/
+packages/*/data/

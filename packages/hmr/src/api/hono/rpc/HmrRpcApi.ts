@@ -1,10 +1,9 @@
 // rpc/HmrRpcApi.ts - 主 RPC API
-import { writeFile } from 'node:fs/promises'
 import type { Context } from '@pluxel/core'
 import { RpcTarget } from 'capnweb'
 import { resolve } from 'pathe'
-import { writeGroups } from '../../features/groups/service'
 import type { UI } from '../../../services'
+import { writeGroups } from '../../features/groups/service'
 import { PackageHandle } from './PackageHandle'
 import { applyStatusActions, PluginHandle } from './PluginHandle'
 import type {
@@ -56,7 +55,7 @@ export class HmrRpcApi extends RpcTarget {
 		try {
 			const content = this.#ctx.loader.buildSnapshot()
 			const path = resolve(process.cwd(), 'snapshot.ts')
-			await writeFile(path, content, 'utf8')
+			await this.#ctx.fs.writeTextAtomic(path, content)
 			return { ok: true as const, path }
 		} catch (error) {
 			return { ok: false as const, error: (error as Error)?.message ?? 'Unknown error' }

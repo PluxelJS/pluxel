@@ -1,7 +1,6 @@
 import { normalize as normalizePath, resolve as resolvePath } from 'pathe'
 
 import type { NormalizedPackageSpecifier, PackageSpecifierSnapshot } from '../specifiers'
-import type { InstallOptions } from './types'
 import type { ResolvedInstallOptions } from './internal-types'
 import {
 	CURRENT_STATE_SCHEMA,
@@ -9,30 +8,32 @@ import {
 	type PackageStatePayload,
 	type PersistedPackageEntry,
 } from './state-store'
+import type { InstallOptions } from './types'
 
 export function resolveStateFilePath(file?: string): string {
 	if (file) return resolvePath(file)
-	return resolvePath(process.cwd(), '.pluxel', 'hmr', 'package-state.json')
+	return resolvePath(process.cwd(), 'data', 'hmr', 'package-state.json')
 }
 
 export function resolveInstallDefaults(
-	options: InstallOptions = {},
+	options: InstallOptions | undefined,
 	inWorkspace: boolean,
 	workspaceRoot: string | null,
 ): ResolvedInstallOptions {
-	const cwd = options.cwd ?? workspaceRoot ?? process.cwd()
+	const safe = options ?? {}
+	const cwd = safe.cwd ?? workspaceRoot ?? process.cwd()
 	const resolved: ResolvedInstallOptions = {
 		cwd,
-		dev: options.dev ?? false,
-		installPeerDependencies: options.installPeerDependencies ?? false,
-		force: options.force ?? false,
-		workspace: options.workspace ?? inWorkspace,
+		dev: safe.dev ?? false,
+		installPeerDependencies: safe.installPeerDependencies ?? false,
+		force: safe.force ?? false,
+		workspace: safe.workspace ?? inWorkspace,
 	}
-	if (options.env !== undefined) resolved.env = options.env
-	if (options.silent !== undefined) resolved.silent = options.silent
-	if (options.packageManager !== undefined) resolved.packageManager = options.packageManager
-	if (options.global !== undefined) resolved.global = options.global
-	if (options.dry !== undefined) resolved.dry = options.dry
+	if (safe.env !== undefined) resolved.env = safe.env
+	if (safe.silent !== undefined) resolved.silent = safe.silent
+	if (safe.packageManager !== undefined) resolved.packageManager = safe.packageManager
+	if (safe.global !== undefined) resolved.global = safe.global
+	if (safe.dry !== undefined) resolved.dry = safe.dry
 	if (!resolved.workspace && inWorkspace) {
 		resolved.env = {
 			...(resolved.env ?? {}),

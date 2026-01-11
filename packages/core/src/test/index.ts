@@ -128,7 +128,12 @@ export type PluginTestHost = TestHost
  * - All `register/unregister/restart/replace` operations are draft-only until you `commit()`.
  */
 export function createTestHost(config: Context.Config = {}): TestHost {
-	const ctx = new Context({ name: 'test', ...config })
+	const cfg: Context.Config = {
+		...config,
+		// Tests should be hermetic by default: avoid touching the real filesystem unless explicitly requested.
+		fs: { mode: 'memory', ...(config.fs ?? {}) },
+	}
+	const ctx = new Context({ name: 'test', ...cfg })
 	const registry = ctx.registry as PluginService
 
 	const configService = ctx.configService
@@ -279,7 +284,12 @@ export type TestContext = {
  * Prefer `withTestContext()` for automatic cleanup.
  */
 export function createTestContext(config: Context.Config = {}): TestContext {
-	const ctx = new Context({ name: 'test', ...config })
+	const cfg: Context.Config = {
+		...config,
+		// Tests should be hermetic by default: avoid touching the real filesystem unless explicitly requested.
+		fs: { mode: 'memory', ...(config.fs ?? {}) },
+	}
+	const ctx = new Context({ name: 'test', ...cfg })
 	return {
 		ctx,
 		dispose: () => {

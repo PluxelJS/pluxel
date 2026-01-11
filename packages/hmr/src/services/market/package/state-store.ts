@@ -1,9 +1,6 @@
-import { copyFile, mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
-import { basename, dirname, join } from 'pathe'
-
-import type { PackageInstallStatus, PackageLoadIssueSource } from './types'
 import type { EntryResolutionOk } from '../ScanService'
 import type { PackageSpecifierSnapshot } from '../specifiers'
+import type { PackageInstallStatus, PackageLoadIssueSource } from './types'
 
 export const CURRENT_STATE_SCHEMA = 3
 
@@ -58,24 +55,36 @@ export interface LegacyPackageStatePayload {
 }
 
 export interface PackageStateStoreOptions {
+	/**
+	 * Minimal text file I/O used by the store.
+	 * Usually `ctx.fs`.
+	 */
+	fs: TextFs
 	file: string
 	debounceMs?: number | undefined
 	onError?: ((error: unknown) => void) | undefined
 }
 
+export interface TextFs {
+	readText(path: string): Promise<string>
+	writeTextAtomic(path: string, data: string): Promise<void>
+}
+
 /**
  * Lightweight debounced writer for package state.
  * - Does not attempt to validate the payload; the caller owns shape conversion.
- * - Writes atomically via a temp file to avoid partial state.
+ * - Writes atomically via the provided fs implementation to avoid partial state.
  */
 export class PackageStateStore {
 	private timer: NodeJS.Timeout | undefined
 	private latest: PackageStatePayload | undefined
+	private readonly fs: TextFs
 	private readonly file: string
 	private readonly debounceMs: number
 	private readonly onError: ((error: unknown) => void) | undefined
 
 	constructor(options: PackageStateStoreOptions) {
+		this.fs = options.fs
 		this.file = options.file
 		this.debounceMs = Math.max(0, options.debounceMs ?? 120)
 		this.onError = options.onError
@@ -83,7 +92,7 @@ export class PackageStateStore {
 
 	async read(): Promise<PackageStatePayload | LegacyPackageStatePayload | null> {
 		try {
-			const raw = await readFile(this.file, 'utf-8')
+			const raw = await this.fs.readText(this.file)
 			return JSON.parse(raw) as PackageStatePayload | LegacyPackageStatePayload
 		} catch (error) {
 			if ((error as NodeJS.ErrnoException)?.code === 'ENOENT') {
@@ -109,7 +118,7 @@ export class PackageStateStore {
 		const snapshot = this.latest
 		this.latest = undefined
 		try {
-			await writeJsonAtomic(this.file, snapshot)
+			await writeJsonAtomic(this.fs, this.file, snapshot)
 		} catch (error) {
 			this.onError?.(error)
 			throw error
@@ -117,23 +126,7 @@ export class PackageStateStore {
 	}
 }
 
-async function writeJsonAtomic(file: string, payload: PackageStatePayload) {
-	const dir = dirname(file)
-	const base = basename(file)
-	const tmp = join(dir, `.${base}.${Date.now()}.${Math.random().toString(36).slice(2)}.tmp`)
-
-	await mkdir(dir, { recursive: true })
+async function writeJsonAtomic(fs: TextFs, file: string, payload: PackageStatePayload) {
 	const content = JSON.stringify(payload, null, 2)
-	try {
-		await writeFile(tmp, content, 'utf-8')
-		await rename(tmp, file)
-	} catch (error) {
-		if ((error as NodeJS.ErrnoException)?.code === 'EXDEV') {
-			await copyFile(tmp, file)
-			await rm(tmp, { force: true }).catch(() => {})
-			return
-		}
-		await rm(tmp, { force: true }).catch(() => {})
-		throw error
-	}
+	await fs.writeTextAtomic(file, content)
 }
