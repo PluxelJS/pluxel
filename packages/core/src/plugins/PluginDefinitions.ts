@@ -16,7 +16,7 @@ import { type DiodContainer, ExtendedContainerBuilder } from '../container'
 import type { LeanMapTracker } from '../container/LeanMapTracker'
 import { BasePlugin, FORK_CTX, PLUGIN_CTX } from './BasePlugin'
 import { getForkOf } from './fork'
-import { getClassParams, getPluginInfo } from './PluginDecorator'
+import { getClassParams, getPluginInfo, getRequiredPluginDependencies } from './PluginDecorator'
 import type { PluginConstructor, PluginIdentifier, PluginInstance } from './types'
 
 export type PluginDiContainer = DiodContainer<BasePlugin>
@@ -68,6 +68,27 @@ export class PluginDefinitions {
 		if (!info) throw new Error('缺少 @Plugin 装饰器元数据')
 
 		const paramTypes = getClassParams(Plugin) as PluginIdentifier[]
+		const required = getRequiredPluginDependencies(Plugin, { inherit: true })
+		if (required.length) {
+			const declared = new Set<PluginIdentifier>()
+			for (let i = 0; i < paramTypes.length; i++) declared.add(paramTypes[i]!)
+
+			const missing: PluginIdentifier[] = []
+			for (let i = 0; i < required.length; i++) {
+				const dep = required[i]!
+				if (!declared.has(dep)) missing.push(dep)
+			}
+
+			if (missing.length) {
+				throw new Error(
+					[
+						`Missing constructor dependencies for ${String(Plugin)}.`,
+						`This plugin uses decorators that require: ${missing.map(String).join(', ')}`,
+						'Declare them as constructor params (or use setParamToken) before registering.',
+					].join(' '),
+				)
+			}
+		}
 		const depsCount = paramTypes.length
 
 		const reg = this.builder

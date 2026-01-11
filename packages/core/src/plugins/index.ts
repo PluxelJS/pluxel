@@ -9,6 +9,7 @@
 export * from './BasePlugin'
 export * from './PluginDefinitions'
 export * from './PluginDecorator'
+export * from './decoratorRuntime'
 export * from './fork'
 export * from './service/PluginService'
 export * from './lifecycle/pluginActor'

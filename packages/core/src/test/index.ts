@@ -13,12 +13,15 @@ import type { ConfigService } from '../services/ConfigService'
 
 export { Context } from '@pluxel/context'
 export { BasePlugin, ForkablePlugin } from '../plugins/BasePlugin'
+export { pluginMethodDecorator, resolvePluginDependency } from '../plugins/decoratorRuntime'
 export {
 	Config,
 	checkPluginDecorator,
 	clearParamToken,
 	getPluginInfo,
+	getRequiredPluginDependencies,
 	Plugin,
+	requirePluginDependency,
 	setParamToken,
 	setParamTokens,
 } from '../plugins/PluginDecorator'

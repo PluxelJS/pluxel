@@ -113,6 +113,8 @@ interface State {
 	rtypes: readonly unknown[]
 	/** 插件类引用 */
 	ctor: PluginIdentifier | null
+	/** 由第三方 decorator 声明的“需要的插件依赖”（用于校验显式 ctor 依赖） */
+	requiredDeps: ReadonlyArray<PluginIdentifier> | null
 
 	// ═══════════════════════════════════════════════════════
 	// 可变身份数据（外部可 set，重建 snapshot 但不动 epoch）
@@ -158,6 +160,7 @@ const S = (ctor: Function): State => {
 		configSource: null,
 		rtypes: EMPTY_ARR,
 		ctor: null,
+		requiredDeps: null,
 
 		id: null,
 		displayName: null,
@@ -186,6 +189,13 @@ const isSubclassOf = (ctor: Function, base: Function): boolean => {
 	const cp = (ctor as { prototype?: object }).prototype
 	const bp = (base as { prototype?: object }).prototype
 	return !!(cp && bp && bp.isPrototypeOf(cp))
+}
+
+const resolveCtorFromDecoratorTarget = (target: object | Function): Function => {
+	if (typeof target === 'function') return target
+	const ctor = (target as any)?.constructor as Function | undefined
+	if (typeof ctor !== 'function') throw new Error('[PluginDecorator] 无法从 decorator target 解析 ctor')
+	return ctor
 }
 
 /** tokens 变更 → 仅失效构造参数缓存（与身份数据无关） */
@@ -500,6 +510,64 @@ export function getClassParams<T = unknown>(
 		s.paramCacheEpoch = s.epoch
 	}
 	return ro as readonly T[]
+}
+
+/*───────────────────────────────────────────────────────────
+  External Decorator Support: required plugin deps
+───────────────────────────────────────────────────────────*/
+
+/**
+ * Declare that a decorator requires the plugin to have an explicit constructor dependency.
+ *
+ * Intended usage (in other packages):
+ * - inside a method/property decorator implementation.
+ * - record required plugin tokens without coupling to the DI builder.
+ *
+ * Core will validate on registration that the plugin ctor declares these tokens
+ * as constructor dependencies (via design:paramtypes or setParamToken).
+ */
+export function requirePluginDependency(target: object | Function, dep: PluginIdentifier): void {
+	const ctor = resolveCtorFromDecoratorTarget(target)
+	if (ctor === (dep as any)) return
+
+	const s = S(ctor)
+	const cur = s.requiredDeps
+	if (cur && cur.includes(dep)) return
+	const next = cur ? cur.slice() : []
+	next.push(dep)
+	s.requiredDeps = next
+}
+
+export function getRequiredPluginDependencies(
+	ctor: Function,
+	opts?: { inherit?: boolean },
+): ReadonlyArray<PluginIdentifier> {
+	const inherit = !!opts?.inherit
+
+	const out: PluginIdentifier[] = []
+	const seen = new Set<PluginIdentifier>()
+	const visited = new Set<Function>()
+
+	let cur: Function | null = ctor
+	while (typeof cur === 'function' && cur && !visited.has(cur)) {
+		visited.add(cur)
+		const deps = STATE.get(cur)?.requiredDeps
+		if (deps && deps.length) {
+			for (let i = 0; i < deps.length; i++) {
+				const dep = deps[i]!
+				if (seen.has(dep)) continue
+				seen.add(dep)
+				out.push(dep)
+			}
+		}
+
+		if (!inherit) break
+		const proto = (cur as any)?.prototype ? Object.getPrototypeOf((cur as any).prototype) : null
+		if (!proto || proto === Object.prototype) break
+		cur = (proto as any).constructor as Function
+	}
+
+	return __DEV__ ? $freeze(out) : out
 }
 
 /*───────────────────────────────────────────────────────────
