@@ -2,7 +2,7 @@ import { basename, resolve } from 'pathe'
 import { type Context, Injectable } from '@pluxel/context'
 import { scrypt as nobleScrypt } from '@noble/hashes/scrypt.js'
 import { env as stdEnv } from 'std-env'
-import type { FsService } from '../FsService'
+import type { FsService } from '../fs/FsService'
 import type {
 	VaultFileV1,
 	VaultHandle,

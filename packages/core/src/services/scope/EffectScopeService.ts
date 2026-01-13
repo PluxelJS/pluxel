@@ -1,5 +1,5 @@
 import { type Context, Injectable } from '@pluxel/context'
-import type { PluginIdentifier } from '../plugins'
+import type { PluginIdentifier } from '../../plugins'
 
 const serviceName = 'scope' as const
 declare module '@pluxel/context' {
@@ -86,3 +86,4 @@ export class EffectScopeService {
 		this.ctx.registry.commit()
 	}
 }
+

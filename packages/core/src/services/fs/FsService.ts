@@ -261,20 +261,9 @@ export class FsService {
 		return this.backend.debugListFiles?.(prefix) ?? []
 	}
 
-	/**
-	 * Debug helper (stable enough for tests).
-	 *
-	 * - In memory mode: returns backend counters.
-	 * - In node mode: returns zeros.
-	 */
+	/** Debug helper for tests. */
 	debugStats(): FsServiceStats {
-		return (
-			this.backend.debugStats?.() ?? {
-				readText: 0,
-				writeTextAtomic: 0,
-				readBytes: 0,
-				writeBytesAtomic: 0,
-			}
-		)
+		return this.backend.debugStats?.() ?? { readText: 0, writeTextAtomic: 0, readBytes: 0, writeBytesAtomic: 0 }
 	}
 }
+

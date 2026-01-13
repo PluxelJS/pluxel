@@ -4,7 +4,7 @@ import { Context } from '@pluxel/context'
 import { checkPluginDecorator, getPluginInfo } from '../plugins/PluginDecorator'
 import type { CommitSummary, PluginService } from '../plugins/service/PluginService'
 import type { PluginConstructor, PluginIdentifier } from '../plugins/types'
-import type { ConfigService } from '../services/ConfigService'
+import type { ConfigService } from '../services/config/ConfigService'
 
 // ---------------------------------------------------------------------------
 // Stable public surface for @pluxel/core/test
@@ -25,8 +25,8 @@ export {
 	setParamToken,
 	setParamTokens,
 } from '../plugins/PluginDecorator'
-export { EffectScopeService } from '../services/EffectScopeService'
-export { EventsService } from '../services/EventsService'
+export { EffectScopeService } from '../services/scope/EffectScopeService'
+export { EventsService } from '../services/events/EventsService'
 export { LoggerService } from '../services/LoggerService'
 
 export type CommitAttempt = { ok: true; summary: CommitSummary } | { ok: false; error: any }

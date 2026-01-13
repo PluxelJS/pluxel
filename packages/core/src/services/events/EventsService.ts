@@ -10,7 +10,7 @@ import {
 	type OnOptions,
 	type Unsubscribe,
 } from 'eventure'
-import type { CommitSummary, PluginIdentifier, PluginInstance } from '../plugins'
+import type { CommitSummary, PluginIdentifier, PluginInstance } from '../../plugins'
 
 const serviceName = 'events' as const
 declare module '@pluxel/context' {
@@ -129,3 +129,4 @@ export interface Events {
 // biome-ignore lint/complexity/noBannedTypes: <explanation>
 type ThisType = Object | Function
 type FilterFunction = ((attachedCtx: Context) => boolean) | undefined
+
