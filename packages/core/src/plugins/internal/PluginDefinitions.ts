@@ -12,10 +12,10 @@
 
 import type { Context } from '@pluxel/context'
 import { createErr, createOk } from 'option-t/plain_result'
-import { type DiodContainer, ExtendedContainerBuilder } from '../container'
-import type { LeanMapTracker } from '../container/LeanMapTracker'
+import { type DiodContainer, ExtendedContainerBuilder } from '../../container'
+import type { LeanMapTracker } from '../../container/LeanMapTracker'
 import { BasePlugin, FORK_CTX, PLUGIN_CTX } from './BasePlugin'
-import { getForkOf } from './fork'
+import { getForkOf } from '../fork'
 import { getClassParams, getPluginInfo, getRequiredPluginDependencies } from './PluginDecorator'
 import type { PluginConstructor, PluginIdentifier, PluginInstance } from './types'
 

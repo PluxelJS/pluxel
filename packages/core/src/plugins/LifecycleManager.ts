@@ -4,13 +4,13 @@
 // identical runtime behavior.
 
 import type { Context } from '@pluxel/context'
-import { BasePlugin } from '../BasePlugin'
+import { BasePlugin } from './internal/BasePlugin'
 import {
 	type LifecycleSnapshot,
 	lifecycleSelectors,
 	PluginLifecycleActor,
-} from '../lifecycle/pluginActor'
-import type { PluginIdentifier } from '../types'
+} from './PluginActor'
+import type { PluginIdentifier } from './internal/types'
 
 const PLUGIN_LIFECYCLE = Symbol.for('pluxel:plugin:lifecycle')
 

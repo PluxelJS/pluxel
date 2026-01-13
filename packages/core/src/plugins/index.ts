@@ -2,15 +2,16 @@
 // Barrel exports for the core plugin system.
 //
 // Folder layout:
-// - BasePlugin / PluginDecorator / PluginDefinitions / types: definition & DI pieces
-// - lifecycle/: lifecycle FSM & selectors
-// - service/: runtime commit orchestrator and its pure helpers
+// - PluginService / PluginActor / LifecycleManager / fork: "main" runtime surface
+// - internal/: definition-time and infrastructure (BasePlugin, decorators, DI definitions, helpers)
 
-export * from './BasePlugin'
-export * from './PluginDefinitions'
-export * from './PluginDecorator'
-export * from './decoratorRuntime'
+export * from './PluginService'
+export * from './PluginActor'
+export * from './LifecycleManager'
 export * from './fork'
-export * from './service/PluginService'
-export * from './lifecycle/pluginActor'
-export * from './types'
+
+export * from './internal/BasePlugin'
+export * from './internal/PluginDefinitions'
+export * from './internal/PluginDecorator'
+export * from './internal/decoratorRuntime'
+export * from './internal/types'

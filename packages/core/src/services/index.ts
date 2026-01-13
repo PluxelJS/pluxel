@@ -1,6 +1,6 @@
 import '../reflection'
 
-export { type CommitSummary, PluginService } from '../plugins/service/PluginService'
+export { type CommitSummary, PluginService } from '../plugins/PluginService'
 export * from './config'
 export * from './scope'
 export * from './events'

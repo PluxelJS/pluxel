@@ -11,33 +11,35 @@
 import type { Context, ServiceClass } from '@pluxel/context'
 import { Injectable } from '@pluxel/context'
 import { createErr, createOk } from 'option-t/plain_result'
-import type { ServiceMap } from '../../container'
-import { LeanMapTracker } from '../../container/LeanMapTracker'
-import { EffectScopeService } from '../../services/scope/EffectScopeService'
-import type { BasePlugin } from '../BasePlugin'
-import { forkPlugin, getForkedCtor, listForks } from '../fork'
-import { PluginDefinitions, type PluginDiContainer } from '../PluginDefinitions'
-import type { PluginInfo } from '../PluginDecorator'
+import type { ServiceMap } from '../container'
+import { LeanMapTracker } from '../container/LeanMapTracker'
+import { EffectScopeService } from '../services/scope/EffectScopeService'
+import type { BasePlugin } from './internal/BasePlugin'
+import { forkPlugin, getForkedCtor, listForks } from './fork'
+import { PluginDefinitions, type PluginDiContainer } from './internal/PluginDefinitions'
+import type { PluginInfo } from './internal/PluginDecorator'
 import type {
 	ForkablePluginConstructor,
 	PluginConstructor,
 	PluginIdentifier,
 	PluginInstance,
-} from '../types'
-import { computeInitPlan, partitionChanges, type InitPlan } from './commitPlanner'
-import { LifecycleManager } from './lifecycleManager'
+} from './internal/types'
 import {
+	computeInitPlan,
+	partitionChanges,
+	type InitPlan,
 	type PluginStartStrategy,
 	startPluginsWithStrategy,
-} from './startupStrategy'
-import { stopPluginsTopo } from './teardownStrategy'
+	stopPluginsTopo,
+} from './internal/runtime/commit'
+import { LifecycleManager } from './LifecycleManager'
 import {
 	type InstancesOf,
 	type OptionalEffectHandler,
 	type OptionalEffectOptions as OptionalSubscriptionOptions,
 	type OptionalImporter,
 	OptionalResolver,
-} from './optionalResolver'
+} from './internal/runtime/optionalResolver'
 
 /* ─────────────────────────── Types ─────────────────────────── */
 

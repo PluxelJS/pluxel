@@ -1,0 +1,222 @@
+import { isProduction } from '../../../env'
+import type { Identifier, PluginIdentifier } from '../types'
+import type { ConfigSchemaList, DeclaredMetaView, ParamOverride, PluginInfo } from './types'
+
+/*───────────────────────────────────────────────────────────
+  Runtime Policy
+  - DEV: 冻结返回值/快照，尽早暴露"误改"。
+  - PROD: 不冻结，避免隐藏类固定/写屏障。
+  - 热路径 = 1× WeakMap.get → 固定 shape 的 State 属性访问。
+───────────────────────────────────────────────────────────*/
+export const __DEV__ =
+	typeof (globalThis as unknown as { __PLUXEL_DEV__?: unknown }).__PLUXEL_DEV__ === 'boolean'
+		? (globalThis as unknown as { __PLUXEL_DEV__: boolean }).__PLUXEL_DEV__
+		: !isProduction
+export const $freeze = <T>(x: T): T => (__DEV__ ? Object.freeze(x) : x)
+export const EMPTY_ARR: readonly unknown[] = $freeze([])
+
+/*───────────────────────────────────────────────────────────
+  Internal State（单 WM，固定 shape，JIT 友好）
+  所有字段使用 null 而非 undefined（V8 优化）
+───────────────────────────────────────────────────────────*/
+type Tokens = Array<Identifier<any> | undefined>
+
+export interface State {
+	// ═══════════════════════════════════════════════════════
+	// 冷数据（@Plugin 时一次性写入，热路径只读）
+	// ═══════════════════════════════════════════════════════
+	/** 声明期元数据（去掉 name 后） */
+	declaredMeta: DeclaredMetaView | null
+	/** 声明期原始名（不可变） */
+	declaredName: string | null
+	/** 抽象基类 */
+	base: PluginIdentifier | null
+	/** @Config 聚合结果 */
+	config: ConfigSchemaList | null
+	/** Vite 插件注入的 @Config 源代码 */
+	configSource: Record<string, string> | null
+	/** 预取的设计期构造参数类型（热路径不再触碰 Reflect） */
+	rtypes: readonly unknown[]
+	/** 插件类引用 */
+	ctor: PluginIdentifier | null
+	/** 由第三方 decorator 声明的“需要的插件依赖”（用于校验显式 ctor 依赖） */
+	requiredDeps: ReadonlyArray<PluginIdentifier> | null
+
+	// ═══════════════════════════════════════════════════════
+	// 可变身份数据（外部可 set，重建 snapshot 但不动 epoch）
+	// ═══════════════════════════════════════════════════════
+	/** 系统唯一标识符（loader 设置） */
+	id: string | null
+	/** 显示名（UI 用） */
+	displayName: string | null
+	/** 来源包名（loader 注入） */
+	packageName: string | null
+
+	// ═══════════════════════════════════════════════════════
+	// 热数据：参数 tokens + 缓存
+	// ═══════════════════════════════════════════════════════
+	tokens: Tokens | null
+	epoch: number
+	paramCacheEpoch: number
+	paramCache: readonly unknown[] | null
+
+	// ═══════════════════════════════════════════════════════
+	// 对外信息快照
+	// ═══════════════════════════════════════════════════════
+	infoSnap: PluginInfo | null
+
+	// ═══════════════════════════════════════════════════════
+	// 定义期暂存（@Plugin 聚合后清空）
+	// ═══════════════════════════════════════════════════════
+	pending: Record<string, unknown> | null
+}
+
+export const STATE = new WeakMap<Function, State>()
+
+/** 获取或创建 State（固定 shape，JIT 友好） */
+export const S = (ctor: Function): State => {
+	let s = STATE.get(ctor)
+	if (s) return s
+	// 所有字段显式初始化为 null，保持固定 shape
+	s = {
+		declaredMeta: null,
+		declaredName: null,
+		base: null,
+		config: null,
+		configSource: null,
+		rtypes: EMPTY_ARR,
+		ctor: null,
+		requiredDeps: null,
+
+		id: null,
+		displayName: null,
+		packageName: null,
+
+		tokens: null,
+		epoch: 0,
+		paramCacheEpoch: -1,
+		paramCache: null,
+
+		infoSnap: null,
+		pending: null,
+	}
+	STATE.set(ctor, s)
+	return s
+}
+
+/*───────────────────────────────────────────────────────────
+  Tiny Utils
+───────────────────────────────────────────────────────────*/
+export const nameOf = (fn: { name?: string } | null | undefined): string => fn?.name || '<anonymous>'
+
+export const isSubclassOf = (ctor: Function, base: Function): boolean => {
+	if (ctor === base) return true
+	if (typeof ctor !== 'function' || typeof base !== 'function') return false
+	const cp = (ctor as { prototype?: object }).prototype
+	const bp = (base as { prototype?: object }).prototype
+	return !!(cp && bp && bp.isPrototypeOf(cp))
+}
+
+export const resolveCtorFromDecoratorTarget = (target: object | Function): Function => {
+	if (typeof target === 'function') return target
+	const ctor = (target as any)?.constructor as Function | undefined
+	if (typeof ctor !== 'function') throw new Error('[PluginDecorator] 无法从 decorator target 解析 ctor')
+	return ctor
+}
+
+/** tokens 变更 → 仅失效构造参数缓存（与身份数据无关） */
+export const bumpTokens = (s: State): void => {
+	s.epoch++
+	s.paramCache = null
+	s.paramCacheEpoch = -1
+}
+
+/*───────────────────────────────────────────────────────────
+  Snapshot Builder
+───────────────────────────────────────────────────────────*/
+
+export const normalizeId = (raw: string | null | undefined, declaredName: string): string => {
+	// 空/空白 ID 都视为错误：插件必须拥有稳定的系统标识符
+	const id = (raw ?? declaredName).trim()
+	if (!id) {
+		throw new Error(`[PluginDecorator] 插件 "${declaredName}" 缺少有效 id`)
+	}
+	return id
+}
+
+export function normalizeConfigSourceMap(
+	source: Record<string, string> | null,
+): Readonly<Record<string, string>> | null {
+	if (!source || !Object.keys(source).length) return null
+	const proto = Object.getPrototypeOf(source)
+	if (!__DEV__ && proto === Object.prototype) {
+		return source as Readonly<Record<string, string>>
+	}
+	const plain = { ...source }
+	return __DEV__ ? $freeze(plain) : plain
+}
+
+/** 重建对外快照（不动 epoch） */
+export function rebuildInfoSnapshot(ctor: Function, s: State): void {
+	const declaredName = s.declaredName || nameOf(ctor)
+	const id = normalizeId(s.id, declaredName)
+	const displayName = s.displayName?.trim() || id
+
+	const configSourceMap =
+		s.configSource && Object.keys(s.configSource).length
+			? normalizeConfigSourceMap(s.configSource)
+			: null
+
+	const snap: PluginInfo = {
+		id,
+		displayName,
+		declaredName,
+		packageName: s.packageName,
+		class: (s.ctor || ctor) as PluginIdentifier,
+		base: s.base,
+		metadata: s.declaredMeta,
+		configMap: s.config,
+		configSourceMap,
+	}
+
+	s.infoSnap = __DEV__ ? $freeze(snap) : snap
+}
+
+/*───────────────────────────────────────────────────────────
+  Params helpers
+───────────────────────────────────────────────────────────*/
+
+export function applyOverride(dst: unknown[], override?: ParamOverride): void {
+	if (!override) return
+	if (Array.isArray(override)) {
+		for (let i = 0; i < override.length; i++) {
+			const v = override[i]
+			if (v !== undefined) dst[i] = v
+		}
+	} else {
+		const ks = Object.keys(override)
+		for (let i = 0; i < ks.length; i++) {
+			const idx = (ks[i] as unknown as number) | 0
+			const v = (override as unknown as Record<string, Identifier<any>>)[String(idx)]
+			if (v !== undefined) dst[idx] = v
+		}
+	}
+}
+
+export function sparseObjectToArray(
+	o: Readonly<Record<number, Identifier<any>>>,
+): Array<Identifier<any> | undefined> {
+	const ks = Object.keys(o)
+	if (!ks.length) return []
+	let max = -1
+	for (let i = 0; i < ks.length; i++) {
+		const idx = (ks[i] as unknown as number) | 0
+		if (idx > max) max = idx
+	}
+	const arr = new Array<Identifier<any> | undefined>(max + 1)
+	for (let i = 0; i < ks.length; i++) {
+		const idx = (ks[i] as unknown as number) | 0
+		arr[idx] = (o as unknown as Record<string, Identifier<any>>)[String(idx)]
+	}
+	return arr
+}

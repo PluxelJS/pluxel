@@ -1,14 +1,34 @@
 import type { Context } from '@pluxel/context'
-import type { Identifier } from '../container'
+import type { Identifier } from '../../container'
 import type { BasePlugin } from './BasePlugin'
+import { PLUGIN_CTX } from './BasePlugin'
 import { requirePluginDependency } from './PluginDecorator'
-import { withCaller } from './withCaller'
 
 type AnyFn = (...args: any[]) => any
 
 // Cache of caller-injected dependency views on each plugin instance.
 // Symbol.for so HMR and multi-bundle scenarios can share the same key safely.
 const DEP_CACHE = Symbol.for('pluxel:plugin:decorators:depCache')
+
+/**
+ * Create a "caller-injected" view of a dependency plugin instance.
+ *
+ * This mirrors the constructor-injection behavior in PluginDefinitions:
+ * the returned object delegates to `dep` but overrides `ctx` so that
+ * `dep.ctx.caller === callerCtx`.
+ */
+function withCaller<P extends BasePlugin>(dep: P, callerCtx: Context): P {
+	const view = Object.create((dep as any)[PLUGIN_CTX])
+	view.caller = callerCtx
+	return Object.create(dep, {
+		ctx: {
+			value: view,
+			writable: false,
+			enumerable: false,
+			configurable: false,
+		},
+	})
+}
 
 function getCallerCtx(self: any): Context {
 	const ctx = self?.ctx

@@ -1,9 +1,8 @@
 import './setup'
 
 import { Context } from '@pluxel/context'
-import { checkPluginDecorator, getPluginInfo } from '../plugins/PluginDecorator'
-import type { CommitSummary, PluginService } from '../plugins/service/PluginService'
-import type { PluginConstructor, PluginIdentifier } from '../plugins/types'
+import { checkPluginDecorator, getPluginInfo } from '../plugins'
+import type { CommitSummary, PluginService, PluginConstructor, PluginIdentifier } from '../plugins'
 import type { ConfigService } from '../services/config/ConfigService'
 
 // ---------------------------------------------------------------------------
@@ -12,8 +11,8 @@ import type { ConfigService } from '../services/config/ConfigService'
 // ---------------------------------------------------------------------------
 
 export { Context } from '@pluxel/context'
-export { BasePlugin, ForkablePlugin } from '../plugins/BasePlugin'
-export { pluginMethodDecorator, resolvePluginDependency } from '../plugins/decoratorRuntime'
+export { BasePlugin, ForkablePlugin } from '../plugins'
+export { pluginMethodDecorator, resolvePluginDependency } from '../plugins'
 export {
 	Config,
 	checkPluginDecorator,
@@ -24,7 +23,7 @@ export {
 	requirePluginDependency,
 	setParamToken,
 	setParamTokens,
-} from '../plugins/PluginDecorator'
+} from '../plugins'
 export { EffectScopeService } from '../services/scope/EffectScopeService'
 export { EventsService } from '../services/events/EventsService'
 export { LoggerService } from '../services/LoggerService'

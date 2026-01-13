@@ -13,7 +13,7 @@ import { BasePlugin } from '../BasePlugin'
 import type { PluginDiContainer } from '../PluginDefinitions'
 import { getPluginInfo } from '../PluginDecorator'
 import type { PluginIdentifier } from '../types'
-import type { CommitSummary } from './PluginService'
+import type { CommitSummary } from '../../PluginService'
 
 export type InstancesOf<T extends readonly PluginIdentifier[]> = {
 	[K in keyof T]: InstanceType<T[K]> | undefined
