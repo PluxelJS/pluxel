@@ -9,11 +9,11 @@
 // - Clear diagnostics: unregistered vs idle vs failed.
 
 import type { Context } from '@pluxel/context'
-import { BasePlugin } from '../BasePlugin'
-import type { PluginDiContainer } from '../PluginDefinitions'
-import { getPluginInfo } from '../PluginDecorator'
-import type { PluginIdentifier } from '../types'
 import type { CommitSummary } from '../../PluginService'
+import { BasePlugin } from '../BasePlugin'
+import { getPluginInfo } from '../PluginDecorator'
+import type { PluginDiContainer } from '../PluginDefinitions'
+import type { PluginIdentifier } from '../types'
 
 export type InstancesOf<T extends readonly PluginIdentifier[]> = {
 	[K in keyof T]: InstanceType<T[K]> | undefined
@@ -60,7 +60,16 @@ const isPluginIdentifier = (v: unknown): v is PluginIdentifier =>
 	typeof v === 'function' && v.prototype instanceof BasePlugin
 
 const describeIds = (ids: PluginIdentifier[]) =>
-	ids.map((id) => (typeof id === 'function' ? (id as Function).name : String(id))).join(', ')
+	ids
+		.map((id) =>
+			typeof id === 'function' ? ((id as unknown as { name?: string }).name ?? '') : String(id),
+		)
+		.map((s) => (s ? s : '<anonymous>'))
+		.join(', ')
+
+const noop = () => {
+	/* noop */
+}
 
 const arraysEqual = <T>(a: T[], b: T[]): boolean => {
 	if (a.length !== b.length) return false
@@ -177,7 +186,7 @@ export class OptionalResolver {
 		effect: OptionalEffectHandler<any>,
 		opts?: OptionalEffectOptions,
 	): any {
-		const callerCtx = this.ctx
+		const callerCtx = this.ctx.caller ?? this.ctx
 		const watch = opts?.watch ?? true
 		const multi = opts?.multi ?? false
 		const runOnInit = opts?.runOnInit ?? true
@@ -190,10 +199,11 @@ export class OptionalResolver {
 			let cleanup: (() => void | Promise<void>) | undefined
 			let chain: Promise<void> = Promise.resolve()
 
-			const run = (summary?: CommitSummary) => {
+			const scheduleRun = (summary?: CommitSummary) => {
 				chain = chain
 					.then(async () => {
 						if (stopped) return
+
 						const current = this.collectOptionals(ids, callerCtx, multi)
 						const same = arraysEqual(last, current)
 
@@ -207,7 +217,7 @@ export class OptionalResolver {
 						last = current
 
 						const allMissing = !current.length || current.every((item) => item === undefined)
-						if (allMissing && logUnavailable) this.logUnavailable(ids, label)
+						if (allMissing && logUnavailable) this.logUnavailable(callerCtx, ids, label)
 
 						const info: OptionalEffectInfo = {
 							label,
@@ -216,30 +226,37 @@ export class OptionalResolver {
 							availability: this.getAvailability(ids),
 						}
 
-								try {
-									if (cleanup) await cleanup()
-								} catch (error) {
-									callerCtx.logger.warn('optional({label}) 清理失败', { label, error })
-								}
+						// Ensure previous cleanup runs before the next effect.
+						if (cleanup) {
+							try {
+								await cleanup()
+							} catch (error) {
+								callerCtx.logger.warn('optional({label}) 清理失败', { label, error })
+							} finally {
 								cleanup = undefined
-								if (stopped) return
+							}
+						}
+
+						if (stopped) return
 
 						try {
 							const value = (multi ? current : current[0]) as any
 							const ret = await effect(value, info)
 							if (typeof ret === 'function') cleanup = ret as any
-							} catch (error) {
-								if (opts?.onError) opts.onError(error)
-								else callerCtx.logger.error('optional({label}) 执行失败', { label, error })
-							}
-							})
-							.catch((error) => {
-								callerCtx.logger.error('optional({label}) 内部异常', { label, error })
-							})
-					}
+						} catch (error) {
+							if (opts?.onError) opts.onError(error)
+							else callerCtx.logger.error('optional({label}) 执行失败', { label, error })
+						}
+					})
+					.catch((error) => {
+						callerCtx.logger.error('optional({label}) 内部异常', { label, error })
+					})
+			}
 
-			const offStart = watch ? callerCtx.events.on('afterStart', () => run(undefined)) : () => {}
-			const offCommit = watch ? callerCtx.events.on('afterCommit', (s) => run(s)) : () => {}
+			const offStart = watch
+				? callerCtx.events.on('afterStart', () => scheduleRun(undefined))
+				: noop
+			const offCommit = watch ? callerCtx.events.on('afterCommit', (s) => scheduleRun(s)) : noop
 
 			const dispose = () => {
 				if (stopped) return
@@ -251,13 +268,13 @@ export class OptionalResolver {
 					/* ignore */
 				}
 				chain = chain.finally(async () => {
-						try {
-							await cleanup?.()
-						} catch (error) {
-							callerCtx.logger.warn('optional({label}) 清理失败', { label, error })
-						}
-						cleanup = undefined
-					})
+					try {
+						await cleanup?.()
+					} catch (error) {
+						callerCtx.logger.warn('optional({label}) 清理失败', { label, error })
+					}
+					cleanup = undefined
+				})
 			}
 
 			try {
@@ -272,10 +289,10 @@ export class OptionalResolver {
 				if (this.isCommitting()) {
 					const off = callerCtx.events.on('afterCommit', (s) => {
 						off()
-						run(s)
+						scheduleRun(s)
 					})
 				} else {
-					run(this.getLastCommit())
+					scheduleRun(this.getLastCommit())
 				}
 			}
 
@@ -290,16 +307,16 @@ export class OptionalResolver {
 		if (!isPluginIdentifier(target)) {
 			const importer = typeof target === 'function' ? target : () => target
 			const label = importer.name || 'dynamic import'
-				return this.optionalImport(importer, { onError: opts?.onError, label }).then((mod) => {
-					const ids = this.normalizePluginIdentifiers(mod)
-					if (mod !== undefined && ids.length === 0) {
-						const err = new Error(`optional(${label}) 未找到 BasePlugin 导出`)
-						callerCtx.logger.warn('optional({label}) 未找到 BasePlugin 导出', {
-							label,
-							error: err,
-						})
-						opts?.onError?.(err)
-					}
+			return this.optionalImport(importer, { onError: opts?.onError, label }).then((mod) => {
+				const ids = this.normalizePluginIdentifiers(mod)
+				if (mod !== undefined && ids.length === 0) {
+					const err = new Error(`optional(${label}) 未找到 BasePlugin 导出`)
+					callerCtx.logger.warn('optional({label}) 未找到 BasePlugin 导出', {
+						label,
+						error: err,
+					})
+					opts?.onError?.(err)
+				}
 				return attach(ids, label)
 			})
 		}
@@ -350,32 +367,35 @@ export class OptionalResolver {
 		return { state: 'idle', idle }
 	}
 
-		private logUnavailable(ids: PluginIdentifier[], label: string) {
-			const availability = this.getAvailability(ids)
-			switch (availability.state) {
-				case 'unregistered':
-					this.ctx.logger.warn('optional({label}) 未在容器中，可能尚未注册', {
-						label,
-						plugins: availability.missingInContainer,
-					})
-					return
-				case 'failed':
-					this.ctx.logger.info('optional({label}) 已注册但未运行（最近启动失败）', {
-						label,
-						failed: availability.failed.map((x) => ({
-							plugin: x.plugin,
-							message: x.error.message || String(x.error),
+	private logUnavailable(callerCtx: Context, ids: PluginIdentifier[], label: string) {
+		const availability = this.getAvailability(ids)
+		switch (availability.state) {
+			case 'unregistered':
+				callerCtx.logger.warn('optional({label}) 未在容器中，可能尚未注册', {
+					label,
+					plugins: availability.missingInContainer,
+				})
+				return
+			case 'failed':
+				callerCtx.logger.info('optional({label}) 已注册但未运行（最近启动失败）', {
+					label,
+					failed: availability.failed.map((x) => ({
+						plugin: x.plugin,
+						message: x.error.message || String(x.error),
 					})),
 					idle: availability.idle.length ? availability.idle : undefined,
-					})
-					return
-				case 'idle':
-					this.ctx.logger.info('optional({label}) 已注册但未运行', { label, plugins: availability.idle })
-					return
-				case 'running':
-					return
-			}
+				})
+				return
+			case 'idle':
+				callerCtx.logger.info('optional({label}) 已注册但未运行', {
+					label,
+					plugins: availability.idle,
+				})
+				return
+			case 'running':
+				return
 		}
+	}
 
 	private getRunningOptional<T extends PluginIdentifier>(
 		ctor: T,

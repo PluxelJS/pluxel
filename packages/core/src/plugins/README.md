@@ -25,3 +25,4 @@
 
 - 对外 API 通过 `plugins/index.ts` 统一导出；内部实现尽量收敛到 `internal/`，减少主目录噪音。
 - 任何改动优先用 `packages/core/tests/` 的黑盒场景验证行为不变。
+- `registry.optional()` 的 effect 会绑定到 **caller ctx**（而不是被观察插件的 ctx），并通过 `callerCtx.collectEffect()` 跟随调用方插件的生命周期自动清理；若在 `commit()` 期间调用，会把首次执行推迟到 `afterCommit`，避免 init 阶段“早期 miss”。

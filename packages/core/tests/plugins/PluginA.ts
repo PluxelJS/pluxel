@@ -1,18 +1,14 @@
 import { BasePlugin, Plugin } from '@pluxel/core/test'
 // PluginA.ts
 // PluginA 依赖 PluginB 为必选依赖，依赖 PluginC 为可选依赖
-// biome-ignore lint/style/useImportType: <PluginSystem>
+// biome-ignore lint/style/useImportType: keep a runtime import so decorator metadata can reference PluginB
 import { PluginB } from './PluginB'
-// biome-ignore lint/style/useImportType: <explanation>
-import { PluginC } from './PluginC'
 
 @Plugin()
 export class PluginA extends BasePlugin {
 	constructor(public pluginB: PluginB) {
 		super()
 	}
-
-	private pluginC?: PluginC
 
 	init(): void {
 		this.ctx.registry.optional(
@@ -27,8 +23,6 @@ export class PluginA extends BasePlugin {
 		this.ctx.logger.info('PluginA initialized')
 		// 使用必需依赖 PluginB
 		this.pluginB.doSomething()
-
-		console.log(`当前情境 ${this.ctx.name}`)
 	}
 
 	doSomething(): void {
