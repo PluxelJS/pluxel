@@ -41,8 +41,9 @@ export class EventsService extends Eventure<Events> {
 		public ctx: Context,
 		config?: EventEmitterOptions,
 	) {
-		const cfg: any = config ?? {}
-		cfg.logger = ctx.logger
+		const cfg: EventEmitterOptions = config ? { ...config } : {}
+		// Use a stable LogTape logger instead of passing the ctx-bound LoggerService instance.
+		cfg.logger = ctx.logger.with({ service: 'eventure' })
 		super(cfg)
 	}
 
@@ -54,7 +55,8 @@ export class EventsService extends Eventure<Events> {
 	): Unsubscribe {
 		;(listener as unknown as { [symbols.ATTACH]?: Context })[symbols.ATTACH] = this.ctx
 		const ret = super._register(event, listener, opts, forcePrepend)
-		const collect = this.ctx.caller?.scope?.collectEffect ?? this.ctx.scope.collectEffect.bind(this.ctx.scope)
+		const collect =
+			this.ctx.caller?.scope?.collectEffect ?? this.ctx.scope.collectEffect.bind(this.ctx.scope)
 		collect(ret)
 		return ret
 	}
@@ -98,8 +100,8 @@ export class EvtChannel<D extends EventDescriptor> extends Channel<D> {
 		public ctx: Context,
 		config?: EventEmitterOptions,
 	) {
-		const cfg: any = config ?? {}
-		cfg.logger = ctx.logger
+		const cfg: EventEmitterOptions = config ? { ...config } : {}
+		cfg.logger = ctx.logger.with({ service: 'eventure' })
 		super(cfg)
 	}
 
@@ -110,7 +112,8 @@ export class EvtChannel<D extends EventDescriptor> extends Channel<D> {
 	): Unsubscribe {
 		;(listener as unknown as { [symbols.ATTACH]?: Context })[symbols.ATTACH] = this.ctx
 		const ret = super._register(listener, opts, prepend)
-		const collect = this.ctx.caller?.scope?.collectEffect ?? this.ctx.scope.collectEffect.bind(this.ctx.scope)
+		const collect =
+			this.ctx.caller?.scope?.collectEffect ?? this.ctx.scope.collectEffect.bind(this.ctx.scope)
 		collect(ret)
 		return ret
 	}
@@ -126,7 +129,4 @@ export interface Events {
 	resolveError: [PluginIdentifier, Error] // 构造/依赖解析失败（无 plugin ctx）
 }
 
-// biome-ignore lint/complexity/noBannedTypes: <explanation>
-type ThisType = Object | Function
 type FilterFunction = ((attachedCtx: Context) => boolean) | undefined
-

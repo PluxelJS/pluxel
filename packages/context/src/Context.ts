@@ -11,8 +11,9 @@ import type {
 type SymMap = { [k in symbol]?: symbol }
 
 // biome-ignore lint/suspicious/noExplicitAny: type-level escape hatch for dynamic service registries.
-type AnyServiceClass = ServiceClass<new (ctx: any, cfg: any) => unknown>
+type AnyServiceClass = ServiceClass<new (ctx: any, cfg: any) => any>
 
+// biome-ignore lint/suspicious/noUnsafeDeclarationMerging: this class is intentionally merged with an interface for service augmentation.
 export class Context {
 	/** 全局 serviceKey → instKey 映射 */
 	private static defaultMapping: SymMap = Object.create(null)
@@ -47,6 +48,11 @@ export class Context {
 		if (Context.registeredKeys.has(key)) {
 			throw new Error('如果你要覆盖已有服务，先 override。')
 		}
+		if (key in Context.prototype) {
+			throw new Error(
+				`[pluxel/context] Invalid service key "${key}": conflicts with Context.prototype.`,
+			)
+		}
 		Context.registeredKeys.add(key)
 		Context.serviceKeyMap.set(ctor, sk)
 		Context.defaultMapping[sk] = sk
@@ -65,7 +71,8 @@ export class Context {
 
 					let inst = root.instances[ik] as ServiceInst<S>
 					if (inst) {
-						;(inst as unknown as ServiceWithCtx<Context>).ctx = root
+						const withCtx = inst as unknown as ServiceWithCtx<Context>
+						if (withCtx.ctx !== root) withCtx.ctx = root
 						return inst
 					}
 					const cfg = (root.config as Record<string, unknown>)[key] as ServiceCfg<S>
@@ -84,7 +91,8 @@ export class Context {
 
 				let inst = store[ik] as ServiceInst<S>
 				if (inst) {
-					;(inst as unknown as ServiceWithCtx<Context>).ctx = this
+					const withCtx = inst as unknown as ServiceWithCtx<Context>
+					if (withCtx.ctx !== this) withCtx.ctx = this
 					return inst
 				}
 				const cfg = (this.config as Record<string, unknown>)[key] as ServiceCfg<S>
@@ -150,7 +158,8 @@ export class Context {
 
 					let inst = root.instances[ik] as ServiceInst<S>
 					if (inst) {
-						;(inst as unknown as ServiceWithCtx<Context>).ctx = root
+						const withCtx = inst as unknown as ServiceWithCtx<Context>
+						if (withCtx.ctx !== root) withCtx.ctx = root
 						return inst
 					}
 					const cfg = (root.config as Record<string, unknown>)[key] as ServiceCfg<S>
@@ -169,7 +178,8 @@ export class Context {
 
 				let inst = store[ik] as ServiceInst<S>
 				if (inst) {
-					;(inst as unknown as ServiceWithCtx<Context>).ctx = this
+					const withCtx = inst as unknown as ServiceWithCtx<Context>
+					if (withCtx.ctx !== this) withCtx.ctx = this
 					return inst
 				}
 				const cfg = (this.config as Record<string, unknown>)[key] as ServiceCfg<S>
@@ -180,8 +190,9 @@ export class Context {
 			},
 		})
 
-		// 4) 同步更新方法代理
+		// 4) 同步补齐方法代理（不覆盖既有 Context 方法/代理）
 		for (const m of overrideCtor.methods ?? []) {
+			if (m in Context.prototype) continue
 			Object.defineProperty(Context.prototype, m, {
 				configurable: true,
 				value(this: Context, ...args: unknown[]) {
@@ -227,7 +238,13 @@ export class Context {
 
 		// 用 Set 去重，虽然重复也无害，但这样更直观
 		for (const ctor of new Set(ctors)) {
-			const sk = Context.serviceKeyMap.get(ctor)!
+			const sk = Context.serviceKeyMap.get(ctor)
+			if (sk === undefined) {
+				const name = (ctor as unknown as { name?: string }).name
+				throw new Error(
+					`[pluxel/context] Cannot isolate an unregistered service: ${name || '<anonymous>'}`,
+				)
+			}
 			child.mapping[sk] = Symbol(ctor.name)
 		}
 
@@ -258,11 +275,6 @@ if (!existingContextImpl) {
 }
 
 export namespace Context {
-	type Fn = (...args: unknown[]) => unknown
-	type MethodKeys<T> = {
-		[K in keyof T]-?: T[K] extends Fn ? K : never
-	}[keyof T]
-
 	/**
 	 * Service registry (type-level). Packages should augment this interface.
 	 *
@@ -304,13 +316,16 @@ export namespace Context {
 
 	export type DebugTopicPattern = LiteralUnion<DebugTopicPatternLiteral, string>
 
-	// 这些键不允许通过 extend 覆写（内部或结构键）
-	type InternalKeys = 'parent' | 'root' | 'mapping' | 'instances' | 'constructor'
-
-	// 允许覆写/新增的一切（包含外部 declare 的扩展字段）
-	export type ExtendOpts = Partial<Omit<Context, InternalKeys | MethodKeys<Context>>> &
-		// 允许用户自定义新键（不在 Context 类型里也可）
-		Record<string | number | symbol, unknown>
+	/**
+	 * Options for {@link Context.extend}.
+	 *
+	 * Keep this type intentionally simple: `Context` instances are dynamic and
+	 * type-level self-references can easily create circular aliases under `strict`.
+	 */
+	export type ExtendOpts = {
+		name?: string
+		config?: Context.Config
+	} & Record<string | number | symbol, unknown>
 
 	export interface Config {
 		name?: string

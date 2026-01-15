@@ -12,6 +12,7 @@
 - 注册监听器时会把当前 `ctx` 写入 `listener[symbols.ATTACH]`，用于后续 `emitWithContext` 的过滤。
 - `ctx.on*()` 返回的 `unsubscribe` 会被自动 `collectEffect()`，插件卸载时会被清理。
 - `emitWithContext(thisArg, event, ...)` 支持通过 `thisArg[symbols.FILTER]` 对“被 attach 的 ctx”做过滤。
+- Eventure 内部使用的 `logger` 是在构造时生成的稳定 LogTape logger（不是 `LoggerService` 实例本身），避免 Context “回灌”导致日志上下文串扰。
 
 ## 典型用法
 
@@ -24,4 +25,3 @@
 
 - 在插件 `onStart`（或构造后）注册监听器
 - `host.unregister(Plugin)` + `commit()` 后确保监听器不会再收到事件
-
