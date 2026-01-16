@@ -57,17 +57,16 @@ export class Context {
 		Context.serviceKeyMap.set(ctor, sk)
 		Context.defaultMapping[sk] = sk
 
-		// 在原型上定义最简 getter，只 capture sk/ctor/key
+		// 在原型上定义最简 getter，只 capture sk/ctor/key。
+		// 注意：scope 分支看似是热路径开销，但现代 JS 引擎通常能很好地优化闭包常量；
+		// 同时把两条路径放在同一个 getter 里也更利于保持实现一致性与维护性。
 		const scope = (ctor as unknown as { scope?: 'context' | 'root' }).scope
 		Object.defineProperty(Context.prototype, key, {
 			configurable: true,
 			get(this: Context) {
 				if (scope === 'root') {
 					const root = this.root
-					let ik = root.mapping[sk]
-					if (ik === undefined) {
-						root.mapping[sk] = ik = sk
-					}
+					const ik = root.mapping[sk] as symbol
 
 					let inst = root.instances[ik] as ServiceInst<S>
 					if (inst) {
@@ -82,12 +81,12 @@ export class Context {
 					return inst
 				}
 
-				let ik = this.mapping[sk]
-				if (ik === undefined) {
-					this.mapping[sk] = ik = sk
-				}
+				const ik = this.mapping[sk] as symbol
 
-				const store = Object.hasOwn(this.mapping, sk) ? this.instances : this.root.instances
+				// `ik === sk` means "use the shared root instance space".
+				// Any override (`ik !== sk`) means we must use this context's instance store
+				// so isolate() remains effective for the whole subtree (extend descendants).
+				const store = ik === sk ? this.root.instances : this.instances
 
 				let inst = store[ik] as ServiceInst<S>
 				if (inst) {
@@ -151,10 +150,7 @@ export class Context {
 			get(this: Context) {
 				if (scope === 'root') {
 					const root = this.root
-					let ik = root.mapping[sk]
-					if (ik === undefined) {
-						root.mapping[sk] = ik = sk
-					}
+					const ik = root.mapping[sk] as symbol
 
 					let inst = root.instances[ik] as ServiceInst<S>
 					if (inst) {
@@ -169,12 +165,12 @@ export class Context {
 					return inst
 				}
 
-				let ik = this.mapping[sk]
-				if (ik === undefined) {
-					this.mapping[sk] = ik = sk
-				}
+				const ik = this.mapping[sk] as symbol
 
-				const store = Object.hasOwn(this.mapping, sk) ? this.instances : this.root.instances
+				// `ik === sk` means "use the shared root instance space".
+				// Any override (`ik !== sk`) means we must use this context's instance store
+				// so isolate() remains effective for the whole subtree (extend descendants).
+				const store = ik === sk ? this.root.instances : this.instances
 
 				let inst = store[ik] as ServiceInst<S>
 				if (inst) {
@@ -222,7 +218,9 @@ export class Context {
 
 		child.parent = this
 		child.root = this.root
-		child.mapping = Object.create(this.mapping) // 影子映射
+		// `mapping` is an override map (only isolate writes). Reuse it for extend() to
+		// avoid per-child objects and deep prototype chains.
+		child.mapping = this.mapping
 		child.instances = this.instances // 共享实例池
 
 		return child
@@ -235,6 +233,7 @@ export class Context {
 	isolate(ctors: Iterable<AnyServiceClass>, opts: Context.ExtendOpts = {}): this {
 		const child = this.extend(opts)
 		child.instances = Object.create(this.instances)
+		child.mapping = Object.create(this.mapping)
 
 		// 用 Set 去重，虽然重复也无害，但这样更直观
 		for (const ctor of new Set(ctors)) {

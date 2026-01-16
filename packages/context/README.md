@@ -47,6 +47,8 @@ ctx.logger.info("...")
 const child = ctx.isolate([SomeService], { name: "child" })
 ```
 
+`isolate()` 创建的是一个新的“实例空间”，并且**对该 Context 的 `extend()` 后代同样生效**（除非后代再次对同一服务调用 `isolate()` 生成新的实例空间）。
+
 注意：`isolate()` 解决的是“实例隔离”，不是“跨 await 自动绑定 ctx”。异步场景仍建议按上面的方式做 ctx 快照。
 
 ## Service key（属性名）注意事项
@@ -57,6 +59,12 @@ const child = ctx.isolate([SomeService], { name: "child" })
 - 不要使用危险/特殊 key（例如：`__proto__`、`prototype`、`constructor`）。
 
 实现上，`registerService()` 会在注册阶段拒绝与 `Context.prototype` 冲突的 key，以避免把核心方法“覆盖掉”造成难排查问题。
+
+## mapping（内部实现细节）
+
+`Context.mapping` 是内部的“实例空间映射”（serviceKey → instKey），用于 `isolate()`。`extend()` 不会创建新的 mapping：它会复用父 Context 的 mapping，以减少对象分配和原型链深度。
+
+因此，下游不应读取/修改 `mapping`；把它当作内部实现细节即可。
 
 ## 重复 key
 

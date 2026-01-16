@@ -166,6 +166,19 @@ describe('extend / isolate / ctx 回灌', () => {
 		expect(iso.mathService).toBe(inst2)
 	})
 
+	test('isolate 隔离空间应对 extend 后代生效', () => {
+		const ctx = new Context()
+		const rootInst = ctx.mathService
+
+		const iso = ctx.isolate([MathService], { name: 'iso' })
+		const isoInst = iso.mathService
+		expect(isoInst).not.toBe(rootInst)
+
+		const isoChild = iso.extend({ name: 'iso.child' })
+		expect(isoChild.mathService).toBe(isoInst)
+		expect(isoChild.mathService).not.toBe(rootInst)
+	})
+
 	test('共享实例 + ctx 回灌：同一实例在不同上下文访问时 ctx 指针会变', () => {
 		const ctx = new Context({ name: 'root' })
 		const child = ctx.extend({ name: 'child-1' })
