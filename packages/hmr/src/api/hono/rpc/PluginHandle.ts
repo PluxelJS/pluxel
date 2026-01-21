@@ -40,6 +40,7 @@ import type {
 	PluginStatusMutationResult,
 	SchemaResult,
 } from './types'
+import { readStatusSnapshot } from '../../features/pluginStatus/service'
 import { collectDefaults, validateConfigPatch } from './utils'
 
 function resolvePlugin(ctx: Context, name: string, hint?: PluginConstructor): PluginConstructor {

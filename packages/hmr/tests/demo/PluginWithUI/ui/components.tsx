@@ -1,3 +1,4 @@
+// packages/hmr/tests/demo/PluginWithUI/ui/components.tsx
 import {
 	ActionIcon,
 	Alert,
@@ -167,7 +168,7 @@ export function OverviewPanel() {
 						ui
 							.increment(1)
 							.then(() => setError(null))
-							.catch((e) => setError(rpcErrorMessage(e, '无法执行 +1')))
+							.catch((e: unknown) => setError(rpcErrorMessage(e, '无法执行 +1')))
 					}
 				>
 					+1
@@ -179,7 +180,7 @@ export function OverviewPanel() {
 						ui
 							.resetCounter()
 							.then(() => setError(null))
-							.catch((e) => setError(rpcErrorMessage(e, '无法重置计数器')))
+							.catch((e: unknown) => setError(rpcErrorMessage(e, '无法重置计数器')))
 					}
 				>
 					重置
@@ -260,7 +261,9 @@ export function EventsPanel() {
 					<Button
 						variant="light"
 						color="red"
-						onClick={() => ui.clearEvents().catch(() => undefined)}
+						onClick={(): void => {
+							void ui.clearEvents().catch((): void => {})
+						}}
 					>
 						清空
 					</Button>
@@ -327,25 +330,21 @@ export function EventsPanel() {
 }
 
 export function StreamsPanel() {
-	const { pluginName, sse } = useRuntime()
+	const { sse } = useRuntime()
 	const connected = useLiveConnectionState(sse)
 	const [lines, setLines] = useState<Array<{ key: string; text: string }>>([])
 
 	useEffect(() => {
-		const off = sse.logs.onAny((msg) => {
+		const off = sse.PluginWithUI.onAny((msg) => {
 			const payload = msg.payload
-			const name = payload.name ?? ''
-			// best-effort client-side filtering; avoids extra SSE connections.
-			if (name && name !== pluginName) return
-			setLines((prev) =>
-				[
-					{ key: `${Date.now()}-${prev.length}`, text: `${payload.time} ${payload.msg}` },
-					...prev,
-				].slice(0, 50),
-			)
+			const text =
+				typeof payload === 'object' && payload && 'type' in payload
+					? `${String((payload as any).type)}`
+					: msg.event
+			setLines((prev) => [{ key: `${Date.now()}-${prev.length}`, text }, ...prev].slice(0, 50))
 		})
 		return () => off()
-	}, [pluginName, sse])
+	}, [sse])
 
 	return (
 		<Stack gap="md">
@@ -359,9 +358,9 @@ export function StreamsPanel() {
 				</Badge>
 			</Group>
 
-			<Text size="sm" c="dimmed">
-				这里复用宿主的 `logs` SSE 命名空间，展示最近收到的日志消息（最多 50 条）。
-			</Text>
+				<Text size="sm" c="dimmed">
+					这里订阅本插件的 SSE 命名空间（`PluginWithUI`），展示最近收到的事件名（最多 50 条）。
+				</Text>
 
 			<Card withBorder radius="md" p={0}>
 				<ScrollArea h={320} type="auto" scrollbarSize={10} offsetScrollbars>
@@ -376,7 +375,8 @@ export function StreamsPanel() {
 								key={l.key}
 								size="xs"
 								style={{
-									fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
+									fontFamily:
+										'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
 								}}
 							>
 								{l.text}

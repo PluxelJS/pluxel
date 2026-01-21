@@ -54,4 +54,23 @@ describe('normalizeSchemaSource', () => {
 		'v.object({a:v.optionalAsync(v.string(), async () => {}),b:v.pipe(v.string(),v.check(()=>true))})',
 		'v.object({a:v.optional(v.string()),b:v.string()})',
 	)
+
+	// 9. strip TypeScript-only `as ...`
+	t(
+		'strip as const',
+		"v.picklist(['compact','full'] as const)",
+		"v.picklist(['compact','full'])",
+	)
+	t(
+		'strip as type',
+		'v.optional(v.string(), DEFAULT as string)',
+		'v.optional(v.string(), DEFAULT)',
+	)
+
+	// 10. strip TypeScript-only `satisfies ...`
+	t(
+		'strip satisfies',
+		'v.record(v.string(), v.any(), { a: 1 } satisfies Record<string, number>)',
+		'v.record(v.string(), v.any(), { a: 1 })',
+	)
 })

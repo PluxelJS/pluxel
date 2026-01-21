@@ -1,4 +1,9 @@
-import { BasePlugin, Plugin } from '@pluxel/core'
+// packages/hmr/tests/demo/PluginWithUI.ts
+// 展示型插件：自定义 UI 扩展 + RPC + SSE（带持久化 state）。
+//
+// 这是“完整链路”的参考实现：UI -> RPC -> 插件状态 -> SSE 实时推送。
+
+import { BasePlugin, Plugin } from '@pluxel/hmr'
 import { RpcTarget } from '@pluxel/hmr/capnweb'
 import type { SseChannel } from '@pluxel/hmr/services'
 import { Collection } from '@pluxel/hmr/signaldb'
@@ -28,7 +33,7 @@ export type PluginWithUISsePayload =
 	| { type: 'event'; event: DemoEvent; status: PluginWithUIStatus }
 	| { type: 'cleared' }
 
-@Plugin({ name: 'PluginWithUI', type: 'event' })
+@Plugin({ name: 'PluginWithUI' })
 export class PluginWithUI extends BasePlugin {
 	private startedAt = Date.now()
 
@@ -44,12 +49,12 @@ export class PluginWithUI extends BasePlugin {
 
 		await this.initState()
 
-			this.ctx.ext.ui.register({ entryPath: './PluginWithUI/ui/index.tsx' })
-			this.ctx.ext.rpc.registerExtension(() => new PluginWithUIRpc(this))
-			this.ctx.ext.sse.registerExtension(() => this.attachSse())
+		this.ctx.ext.ui.register({ entryPath: './PluginWithUI/ui/index.tsx' })
+		this.ctx.ext.rpc.registerExtension(() => new PluginWithUIRpc(this))
+		this.ctx.ext.sse.registerExtension(() => this.attachSse())
 
-			this.ctx.logger.info('ready')
-		}
+		this.ctx.logger.info('ready')
+	}
 
 	private attachSse() {
 		return (channel: SseChannel) => {
@@ -77,7 +82,6 @@ export class PluginWithUI extends BasePlugin {
 	private broadcast(payload: PluginWithUISsePayload) {
 		for (const ch of this.channels) {
 			try {
-				// `type` doubles as SSE event name here; keep them aligned for filtering.
 				ch.emit(payload.type, payload)
 			} catch {}
 		}
@@ -99,53 +103,21 @@ export class PluginWithUI extends BasePlugin {
 
 		const existingCounter = this.counter.findOne({ id: 'counter' })
 		if (!existingCounter) {
-			await this.counter.insert({ id: 'counter', value: 0, updatedAt: Date.now() })
+			this.counter.insert({ id: 'counter', value: 0, updatedAt: Date.now() })
 		}
 
-		const existingEvents = await this.events.find()
-		const existingList = existingEvents.map((e) => ({ ...e }))
-		const buckets = new Map<string, DemoEvent[]>()
-		for (const event of existingList) {
-			const id = String(event.id ?? '')
-			if (!id) continue
-			const bucket = buckets.get(id)
-			if (bucket) {
-				bucket.push(event)
-			} else {
-				buckets.set(id, [event])
-			}
-		}
-		for (const [id, bucket] of buckets) {
-			const hasDuplicate = bucket.length > 1
-			const isNormalized = String(bucket[0]?.id ?? '') === id
-			if (!hasDuplicate && isNormalized) continue
-				if (hasDuplicate) {
-					this.ctx.logger.warn('duplicate event id detected', { id, count: bucket.length })
-				}
-			const keep = bucket.slice().sort((a, b) => b.at - a.at)[0]
-			const rawIds = new Set(bucket.map((item) => String(item.id)))
-			for (const rawId of rawIds) {
-				this.events.removeMany({ id: rawId })
-			}
-			this.events.insert({ ...keep, id })
-		}
+		const existingEvents = this.events.find()
+		const existingList = existingEvents.fetch().map((e) => ({ ...e, id: String(e.id) }))
+		const maxId = existingList.reduce((acc, e) => Math.max(acc, Number(e.id) || 0), 0)
 
-		const maxId = Array.from(buckets.keys())
-			.map((id) => Number(id) || 0)
-			.reduce((acc, n) => Math.max(acc, n), 0)
 		const seqDoc = this.meta.findOne({ id: 'event-seq' })
-		const persisted = seqDoc?.value ?? 0
-		const last = Math.max(maxId, persisted)
+		const persisted = typeof seqDoc?.value === 'number' ? seqDoc.value : 0
+		const last = Math.max(maxId, persisted, 0)
 		this.eventSeq = last + 1
-		if (!seqDoc) {
-			await this.meta.insert({ id: 'event-seq', value: last })
-		} else if (seqDoc.value !== last) {
-			this.meta.updateOne({ id: 'event-seq' }, { $set: { value: last } })
-		}
+		if (!seqDoc) this.meta.insert({ id: 'event-seq', value: last })
+		else if (seqDoc.value !== last) this.meta.updateOne({ id: 'event-seq' }, { $set: { value: last } })
 
-		if (existingEvents.count() === 0) {
-			await this.appendEvent('system', 'UI 扩展已加载：RPC/SSE/Routes/Tabs 都已就绪。')
-		}
+		if (existingEvents.count() === 0) this.appendEvent('system', 'UI 扩展已加载：RPC/SSE/Routes/Tabs 都已就绪。')
 	}
 
 	getStatus() {
@@ -168,16 +140,16 @@ export class PluginWithUI extends BasePlugin {
 		return { status: this.getStatus(), events }
 	}
 
-	async listEvents(limit = 50): Promise<DemoEvent[]> {
+	listEvents(limit = 50): DemoEvent[] {
 		const capped = Math.max(0, Math.min(200, Math.floor(limit)))
-		const docs = await this.events.find()
+		const docs = this.events.find().fetch()
 		return docs
-			.map((e) => ({ ...e, id: String(e.id) }))
+			.map((e) => ({ ...e, id: String(e.id ?? '') }))
 			.sort((a, b) => b.at - a.at)
 			.slice(0, capped)
 	}
 
-	async appendEvent(kind: DemoEvent['kind'], message: string): Promise<DemoEvent> {
+	appendEvent(kind: DemoEvent['kind'], message: string): DemoEvent {
 		const trimmed = message.trim()
 		if (!trimmed) throw new Error('消息不能为空')
 
@@ -193,16 +165,15 @@ export class PluginWithUI extends BasePlugin {
 			at: Date.now(),
 		}
 
-		await this.events.insert(event)
+		this.events.insert(event)
 		this.meta.updateOne({ id: 'event-seq' }, { $set: { value: Number(event.id) || 0 } })
 
-		// Hard-cap to keep demo stable.
-		const all = await this.events.find()
+		const all = this.events.find()
 		if (all.count() > 80) {
 			const sorted = all
-				.map((e) => e)
+				.fetch()
 				.sort((a, b) => a.at - b.at)
-				.slice(0, all.count() - 50)
+				.slice(0, Math.max(0, all.count() - 50))
 			for (const old of sorted) {
 				this.events.removeOne({ id: old.id })
 			}
@@ -212,26 +183,26 @@ export class PluginWithUI extends BasePlugin {
 		return { ...event }
 	}
 
-	async increment(delta = 1) {
+	increment(delta = 1) {
 		const n = Number.isFinite(delta) ? Math.trunc(delta) : 1
 		const doc = this.counter.findOne({ id: 'counter' })
 		const next = (doc?.value ?? 0) + (n === 0 ? 1 : n)
 		this.counter.updateOne({ id: 'counter' }, { $set: { value: next, updatedAt: Date.now() } })
-		await this.appendEvent('counter', `计数器变更：${doc?.value ?? 0} → ${next}`)
+		this.appendEvent('counter', `计数器变更：${doc?.value ?? 0} → ${next}`)
 		return { counter: next }
 	}
 
-	async resetCounter() {
+	resetCounter() {
 		const doc = this.counter.findOne({ id: 'counter' })
 		this.counter.updateOne({ id: 'counter' }, { $set: { value: 0, updatedAt: Date.now() } })
-		await this.appendEvent('counter', `计数器重置：${doc?.value ?? 0} → 0`)
+		this.appendEvent('counter', `计数器重置：${doc?.value ?? 0} → 0`)
 		return { counter: 0 }
 	}
 
-	async clearEvents() {
+	clearEvents() {
 		this.events.removeMany({})
 		this.broadcast({ type: 'cleared' })
-		await this.appendEvent('system', '事件已清空')
+		this.appendEvent('system', '事件已清空')
 		return { ok: true }
 	}
 }
@@ -246,23 +217,23 @@ export class PluginWithUIRpc extends RpcTarget {
 	}
 
 	events(limit?: number) {
-		return this.plugin.listEvents(limit ?? 50)
+		return Promise.resolve(this.plugin.listEvents(limit ?? 50))
 	}
 
 	addNote(message: string) {
-		return this.plugin.appendEvent('note', message)
+		return Promise.resolve(this.plugin.appendEvent('note', message))
 	}
 
 	increment(delta?: number) {
-		return this.plugin.increment(typeof delta === 'number' ? delta : 1)
+		return Promise.resolve(this.plugin.increment(typeof delta === 'number' ? delta : 1))
 	}
 
 	resetCounter() {
-		return this.plugin.resetCounter()
+		return Promise.resolve(this.plugin.resetCounter())
 	}
 
 	clearEvents() {
-		return this.plugin.clearEvents()
+		return Promise.resolve(this.plugin.clearEvents())
 	}
 }
 

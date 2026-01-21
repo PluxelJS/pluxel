@@ -172,6 +172,8 @@ export function LiveLog({ module, showName = true, filter }: Props) {
 	const lastAuthProbeAtRef = useRef<number>(0)
 
 	useEffect(() => {
+		let disposed = false
+
 		// reset state
 		if (abortRef.current) {
 			abortRef.current.abort()
@@ -205,7 +207,9 @@ export function LiveLog({ module, showName = true, filter }: Props) {
 				if (!payload || payload.enabled !== true) return false
 				if (payload.authenticated === true) return false
 				const redirectPath =
-					typeof payload.redirectPath === 'string' && payload.redirectPath ? payload.redirectPath : undefined
+					typeof payload.redirectPath === 'string' && payload.redirectPath
+						? payload.redirectPath
+						: undefined
 				defaultOnAuthBlocked({ status: 401, url, redirectPath })
 				return true
 			} catch {
@@ -271,6 +275,7 @@ export function LiveLog({ module, showName = true, filter }: Props) {
 			authFetch(`/api/logs/latest?${params.toString()}`, { signal: ac.signal })
 				.then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
 				.then((payload) => {
+					if (disposed || ac.signal.aborted) return
 					const bootId = (payload as any)?.bootId
 					if (typeof bootId === 'string') bootIdRef.current = bootId
 					const records = (payload as any)?.records
@@ -285,11 +290,17 @@ export function LiveLog({ module, showName = true, filter }: Props) {
 				.catch(() => undefined)
 				.finally(() => {
 					abortRef.current = null
+					// IMPORTANT:
+					// This `finally()` may run after unmount / route switch. Never open a new
+					// SSE connection after disposal, otherwise we leak EventSource sockets and
+					// can exhaust the browser connection pool (everything becomes pending).
+					if (disposed || ac.signal.aborted) return
 					es = connectLogsStream(lastIdRef.current)
 				})
 		}
 
 		return () => {
+			disposed = true
 			if (abortRef.current) {
 				abortRef.current.abort()
 				abortRef.current = null

@@ -1,4 +1,4 @@
-// packages/hmr/tests/ui-demos/PluginBuiltinShowcase.ts
+// packages/hmr/tests/demo/PluginBuiltinShowcase.ts
 // 展示型插件：尽量不注册自定义组件，仅使用宿主内置能力（builtin UI + Config）
 
 import { BasePlugin, Config, Plugin } from '@pluxel/hmr'
@@ -153,7 +153,7 @@ const formatDuration = (ms: number, format: FormatSnapshot) => {
 	const assemble = (value: number, unit: string) => {
 		const numberText = formatValue(value)
 		const unitText = resolveLabel(unit)
-		const spacer = labelStyle === 'short' ? '' : ' '
+		const spacer = format.labelStyle === 'short' ? '' : ' '
 		return `${numberText}${spacer}${unitText}`
 	}
 
@@ -346,7 +346,7 @@ const RuntimeToggleSchema = v.object({
 	),
 })
 
-@Plugin({ name: 'PluginBuiltinShowcase', type: 'event' })
+@Plugin({ name: 'PluginBuiltinShowcase' })
 export class PluginBuiltinShowcase extends BasePlugin {
 	private startedAt = Date.now()
 	private tickTimer: ReturnType<typeof setTimeout> | null = null
@@ -375,15 +375,10 @@ export class PluginBuiltinShowcase extends BasePlugin {
 	}
 
 	private getConfigSnapshot(): ConfigSnapshot {
-		const id = this.ctx.pluginInfo.id
-		const raw = this.ctx.configService.getConfig(id)
-		const config = raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : {}
-		const displayFallback = (this.display ?? DEFAULTS.display) as Record<string, unknown>
-		const behaviorFallback = (this.behavior ?? DEFAULTS.behavior) as Record<string, unknown>
-		const formatFallback = (this.format ?? DEFAULTS.format) as Record<string, unknown>
-		const display = (config.display as Record<string, unknown> | undefined) ?? displayFallback
-		const behavior = (config.behavior as Record<string, unknown> | undefined) ?? behaviorFallback
-		const format = (config.format as Record<string, unknown> | undefined) ?? formatFallback
+		// 这里优先展示“@Config 注入”的最常规用法：启动时注入一次，后续用字段即可。
+		const display = (this.display ?? DEFAULTS.display) as Record<string, unknown>
+		const behavior = (this.behavior ?? DEFAULTS.behavior) as Record<string, unknown>
+		const format = (this.format ?? DEFAULTS.format) as Record<string, unknown>
 
 		return {
 			refreshMs: clampNumber(

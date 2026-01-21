@@ -1,7 +1,8 @@
+// packages/hmr/tests/demo/PluginWithUI/ui/index.tsx
 import { Badge, Button, Group, Stack, Text } from '@mantine/core'
-import { definePluginUIModule, ExtensionPoints, useExtensionContext } from '@pluxel/hmr/web'
 import { IconDashboard, IconExternalLink, IconRocket } from '@tabler/icons-react'
-import { EventsPanel, OverviewPanel, RoutePage, StreamsPanel } from './components'
+import { definePluginUIModule, ExtensionPoints, useExtensionContext } from '@pluxel/hmr/web'
+import { OverviewPanel, EventsPanel, RoutePage, StreamsPanel } from './components'
 
 function HeaderAction() {
 	return (

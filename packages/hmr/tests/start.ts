@@ -14,7 +14,7 @@ await mkdir(logsDir, { recursive: true })
 const ctx = new Context({
 	debug: ['pluxel:hmr:*'],
 	hmrService: {
-		dir: ['./tests/plugins', './tests/ui-demos', './runtime-demos'],
+		dir: ['./tests/demo', './tests/plugins'],
 		log: {
 			// HMR defaults will auto-configure LogTape on first `hmr.start()` if the host didn't call `configure()`.
 			logtape: { file: join(logsDir, 'hmr.log') },
