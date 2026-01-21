@@ -51,9 +51,9 @@
 		"bench:dist": "pnpm --filter rolldown build && pnpm run build && bun run --tsconfig-override=\"./bench-tsconfig.json\" bench/pluginLifecycle.bench.ts"
 	},
 	"dependencies": {
-		"@logtape/file": "^1.3.5",
-		"@logtape/logtape": "^1.3.5",
-		"@logtape/pretty": "^1.3.5",
+		"@logtape/file": "^2.0.1",
+		"@logtape/logtape": "^2.0.1",
+		"@logtape/pretty": "^2.0.1",
 		"@noble/hashes": "^2.0.1",
 		"eventure": "^0.4.2",
 		"pathe": "^2.0.3",

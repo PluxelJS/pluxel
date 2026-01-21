@@ -29,11 +29,11 @@ const createCtx = () => {
 describe('HMR runner bridge', () => {
 	it('reuses host @pluxel/core singletons in the runner', async () => {
 		const cwd = process.cwd()
-		const pluginFile = join(cwd, 'tests/ui-demos/PluginWithUI.ts')
+		const pluginFile = join(cwd, 'tests/demo/PluginWithUI.ts')
 
 		const ctx = createCtx()
 		const hmr = new HMRService(ctx, {
-			dir: [join(cwd, 'tests/plugins'), join(cwd, 'tests/ui-demos')],
+			dir: [join(cwd, 'tests/plugins'), join(cwd, 'tests/demo')],
 			log: { useColors: false },
 		})
 		hmr.setServerRoot(cwd)
@@ -42,14 +42,14 @@ describe('HMR runner bridge', () => {
 		const fsAllow = resolveFsAllowList({
 			cwd,
 			cwdNormalized: normalizePath(cwd),
-			scanRoots: [normalizePath(join(cwd, 'tests/plugins')), normalizePath(join(cwd, 'tests/ui-demos'))],
+			scanRoots: [normalizePath(join(cwd, 'tests/plugins')), normalizePath(join(cwd, 'tests/demo'))],
 		})
 
 		const server = await createServer({
 			...buildHmrViteConfig({
 				root: cwd,
 				fsAllow,
-				scanDirs: ['./tests/plugins', './tests/ui-demos'],
+				scanDirs: ['./tests/plugins', './tests/demo'],
 				deps,
 				runnerPlugin: { name: 'noop' },
 				honoPlugin: { name: 'noop' },

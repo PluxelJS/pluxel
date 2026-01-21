@@ -1,4 +1,4 @@
-import { getLogger, type Logger as LogtapeLogger } from '@logtape/logtape'
+import { getLogger, lazy, type Logger as LogtapeLogger } from '@logtape/logtape'
 import { type Context, Injectable } from '@pluxel/context'
 import { captureCaller, isCallerEnabled } from './caller'
 import { pluxelCategories } from './categories'
@@ -42,7 +42,13 @@ export class LoggerService {
 		const key = this.ctx as unknown as object
 		let cached = contextLoggerCache.get(key)
 		if (!cached) {
-			cached = { core: this.coreLogger.with({ context: this.ctx.name }) }
+			cached = {
+				core: this.coreLogger.with(
+					isCallerEnabled()
+						? { context: this.ctx.name, caller: lazy(() => captureCaller()) }
+						: { context: this.ctx.name },
+				),
+			}
 			contextLoggerCache.set(key, cached)
 		}
 
@@ -52,7 +58,11 @@ export class LoggerService {
 		if (pluginId) {
 			cached.plugin = {
 				id: pluginId,
-				logger: this.pluginsLogger.with({ context: this.ctx.name, pluginId }),
+				logger: this.pluginsLogger.with(
+					isCallerEnabled()
+						? { context: this.ctx.name, pluginId, caller: lazy(() => captureCaller()) }
+						: { context: this.ctx.name, pluginId },
+				),
 			}
 			return cached.plugin.logger
 		}
@@ -64,12 +74,24 @@ export class LoggerService {
 		const key = this.ctx as unknown as object
 		let cached = contextLoggerCache.get(key)
 		if (!cached) {
-			cached = { core: this.coreLogger.with({ context: this.ctx.name }) }
+			cached = {
+				core: this.coreLogger.with(
+					isCallerEnabled()
+						? { context: this.ctx.name, caller: lazy(() => captureCaller()) }
+						: { context: this.ctx.name },
+				),
+			}
 			contextLoggerCache.set(key, cached)
 		}
 
 		if (!cached.debug) {
-			cached.debug = { core: this.debugLogger.with({ context: this.ctx.name }) }
+			cached.debug = {
+				core: this.debugLogger.with(
+					isCallerEnabled()
+						? { context: this.ctx.name, caller: lazy(() => captureCaller()) }
+						: { context: this.ctx.name },
+				),
+			}
 		}
 
 		if (cached.debug.plugin) return cached.debug.plugin.logger
@@ -87,25 +109,8 @@ export class LoggerService {
 		return cached.debug.core
 	}
 
-	private getContextLogger(
-		extra: Record<string, unknown> | undefined,
-		includeCaller: boolean,
-		exclude?: (...args: never[]) => unknown,
-	) {
-		const base = this.getBaseContextLogger()
-		if (!includeCaller || !isCallerEnabled()) return extra ? base.with(extra) : base
-
-		let props: Record<string, unknown> | undefined = extra
-		if (!props || typeof props.caller !== 'string') {
-			const caller = captureCaller({ exclude: exclude ?? this.log })
-			if (caller) props = props ? { ...props, caller } : { caller }
-		}
-		return props ? base.with(props) : base
-	}
-
 	private log(level: PluxelLogMethod, args: unknown[]) {
-		const logger = this.getContextLogger(undefined, true, this.log)
-		callLogtape(logger, level, args)
+		callLogtape(this.getBaseContextLogger(), level, args)
 	}
 
 	private levelMethod(level: PluxelLogMethod) {
@@ -121,8 +126,7 @@ export class LoggerService {
 
 	/** Create a LogTape logger that inherits pluxel context fields. */
 	public with(properties: Record<string, unknown>): LogtapeLogger {
-		// Don't capture `caller` here: it would freeze the call-site of `.with()` for all subsequent logs.
-		return this.getContextLogger(properties, false)
+		return this.getBaseContextLogger().with(properties)
 	}
 
 	/**

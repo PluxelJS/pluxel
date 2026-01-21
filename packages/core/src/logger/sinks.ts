@@ -1,4 +1,11 @@
-import { getFileSink, getRotatingFileSink, getStreamFileSink } from '@logtape/file'
+import {
+	getFileSink,
+	getRotatingFileSink,
+	getStreamFileSink,
+	getTimeRotatingFileSink,
+	type TimeRotationInterval,
+	type TimeRotatingFileSinkOptions,
+} from '@logtape/file'
 import {
 	compareLogLevel,
 	fromAsyncSink,
@@ -214,4 +221,11 @@ export function composeSinks(...sinks: Sink[]): Sink {
 }
 
 // Re-export official file sinks (apps configure these explicitly).
-export { getFileSink, getRotatingFileSink, getStreamFileSink }
+export {
+	getFileSink,
+	getRotatingFileSink,
+	getStreamFileSink,
+	getTimeRotatingFileSink,
+	type TimeRotationInterval,
+	type TimeRotatingFileSinkOptions,
+}

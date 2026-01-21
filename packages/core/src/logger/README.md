@@ -21,8 +21,8 @@
 
 `caller`（调用点）是可选字段：
 
-- 默认：当开启 caller 时，`LoggerService` / `LogtapeLoggerService` 会在 `ctx.logger.info/warn/...` 这类直接调用里注入 `caller`（更利于 file/json sink 保留调用点）
-- 兼容：对 `ctx.logger.with(...)` 返回的 LogTape logger、或非 pluxel logger，pretty formatter 会在渲染时发现 `caller` 缺失并按需捕获（不破坏外部 logger）
+- 默认：当开启 caller 时，`LoggerService` / `LogtapeLoggerService` 会 **用 LogTape 的 lazy properties** 注入 `caller`（包括 `ctx.logger.info/warn/...` 直接调用，以及 `ctx.logger.with(...)` 返回的 logger），从而让 file/json sink 也能保留调用点，并避免在 log level 未启用时浪费堆栈捕获成本
+- 兼容：对非 pluxel logger（或调用方手动构造的 logger），pretty formatter 会在渲染时发现 `caller` 缺失并按需捕获（不破坏外部 logger）
 
 你也可以显式传入 `{ caller: "..." }` 来覆盖显示（例如跨线程/跨进程场景）。
 
@@ -64,6 +64,14 @@ ctx.logger.error("execute failed", { error })
 ctx.logger.debug((l) => l`cache keys:\n${keys.join('\n')}`)
 ```
 
+动态/惰性属性：用 LogTape `lazy()`，让属性只在该 level 启用时求值（也避免冻结动态上下文）。
+
+```ts
+import { lazy } from "@logtape/logtape";
+
+ctx.logger.with({ user: lazy(() => currentUserId()) }).info`request start`
+```
+
 ## Debug channel（推荐）
 
 调试日志统一走一个稳定的 channel：category 固定为 `["pluxel","debug"]`，topic 通过属性携带。
@@ -79,7 +87,7 @@ ctx.logger.getDebugChannel("pluxel:hmr:batch").debug("batch targets", { targets 
 - `createPluxelPrettyConsoleSink()`：单入口「pretty console」，默认 `@logtape/pretty` + **默认启用 Youch（inline）**，且只对 `pluxelCategories.hmr/plugins` 的 error+ 做增强，避免 async 插入导致“错位 log”。
 - `createPluxelPrettyFormatter()`：仅 formatter（不含 Youch；Youch 是 async，只能在 sink 层做）。
 - `createPluxelYouchSink()`：独立 Youch sink（可组合）。
-- `getFileSink/getRotatingFileSink/getStreamFileSink`：官方 file sinks 透传再导出。
+- `getFileSink/getRotatingFileSink/getTimeRotatingFileSink/getStreamFileSink`：官方 file sinks 透传再导出。
 
 ## 配置示例（宿主侧）
 
@@ -92,6 +100,7 @@ import {
 await configure(
   createPluxelLogtapeConfig({
     preset: "hmr", // or "core"
+    // 默认 daily rotation: ./logs/app-YYYY-MM-DD.log
     file: "./logs/app.log",
   }),
 );
