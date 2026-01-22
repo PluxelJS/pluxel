@@ -14,32 +14,32 @@ import { createErr, createOk } from 'option-t/plain_result'
 import type { ServiceMap } from '../container'
 import { LeanMapTracker } from '../container/LeanMapTracker'
 import { EffectScopeService } from '../services/scope/EffectScopeService'
-import type { BasePlugin } from './internal/BasePlugin'
 import { forkPlugin, getForkedCtor, listForks } from './fork'
-import { PluginDefinitions, type PluginDiContainer } from './internal/PluginDefinitions'
+import type { BasePlugin } from './internal/BasePlugin'
 import type { PluginInfo } from './internal/PluginDecorator'
+import { PluginDefinitions, type PluginDiContainer } from './internal/PluginDefinitions'
+import {
+	computeInitPlan,
+	type InitPlan,
+	type PluginStartStrategy,
+	partitionChanges,
+	startPluginsWithStrategy,
+	stopPluginsTopo,
+} from './internal/runtime/commit'
+import {
+	type InstancesOf,
+	type OptionalEffectHandler,
+	type OptionalImporter,
+	OptionalResolver,
+	type OptionalEffectOptions as OptionalSubscriptionOptions,
+} from './internal/runtime/optionalResolver'
 import type {
 	ForkablePluginConstructor,
 	PluginConstructor,
 	PluginIdentifier,
 	PluginInstance,
 } from './internal/types'
-import {
-	computeInitPlan,
-	partitionChanges,
-	type InitPlan,
-	type PluginStartStrategy,
-	startPluginsWithStrategy,
-	stopPluginsTopo,
-} from './internal/runtime/commit'
 import { LifecycleManager } from './LifecycleManager'
-import {
-	type InstancesOf,
-	type OptionalEffectHandler,
-	type OptionalEffectOptions as OptionalSubscriptionOptions,
-	type OptionalImporter,
-	OptionalResolver,
-} from './internal/runtime/optionalResolver'
 
 /* ─────────────────────────── Types ─────────────────────────── */
 
@@ -186,6 +186,11 @@ export class PluginService {
 		const key = container?.resolveIdentifier?.(id as any) ?? id
 		const instance = this.getRuntimeInstance(key as any)
 		return this.lifecycle.isRunning(instance)
+	}
+
+	/** Whether an identifier is registered in the current draft container. */
+	isRegistered(id: PluginIdentifier): boolean {
+		return this.definitions.isRegistered(id)
 	}
 
 	public get lastCommit(): CommitSummary | undefined {
@@ -520,7 +525,11 @@ export class PluginService {
 		if (!action.ok) {
 			action.err.ret.undo()
 			this.pruneDetachedSingletons()
-			this.ctx.logger.with({ error: action.err.err }).error`插件在依赖项解析时失败`
+			// Diod's ServiceVerificationAggregateError carries a detailed `.toString()` output;
+			// include it explicitly because some loggers only print `error.message`.
+				this.ctx.logger
+					.with({ error: action.err.err, detail: String(action.err.err) })
+					.error`插件在依赖项解析时失败`
 			return createErr(action.err.err)
 		}
 

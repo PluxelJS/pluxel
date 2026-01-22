@@ -60,7 +60,7 @@ export class ModuleReplacer {
 		const config = getConfigReady(this.ctx)
 		const startEnabled = async () => {
 			// Apply persisted dependency overrides after all exports are declared.
-			for (const item of exported) this.depOverrides.apply(item.ctor)
+			for (const item of exported) await this.depOverrides.apply(item.ctor, this.registry)
 			// 运行层：根据持久启用位，自动启用需要启用的插件
 			await this.registry.syncRuntimeForModule(id)
 		}
@@ -179,7 +179,7 @@ class DependencyOverrideApplier {
 	 * Apply persisted constructor parameter token overrides (fork selection, etc.)
 	 * onto a freshly declared ctor (important across HMR reloads).
 	 */
-	apply(ctor: PluginConstructor) {
+	async apply(ctor: PluginConstructor, registry: PluginRegistry) {
 		const configService = this.ctx.configService as unknown
 		if (!configService || typeof configService !== 'object') return
 		const getExtra = (configService as { getExtra?: unknown }).getExtra
@@ -191,6 +191,7 @@ class DependencyOverrideApplier {
 			| undefined
 		const overrides = all?.[name]
 		if (!overrides) return
+		const consumerEnabled = this.ctx.configService.isEnabledInConfig(name)
 
 		for (const [rawIndex, targetName] of Object.entries(overrides)) {
 			const index = Number(rawIndex)
@@ -201,9 +202,24 @@ class DependencyOverrideApplier {
 				continue
 			}
 
-			const token = this.resolveRuntimeCtor(targetName)
+			const normalized = targetName.trim()
+			const token = this.resolveRuntimeCtor(normalized)
 			if (!token) continue
 			setParamToken(ctor, index, token as unknown as Parameters<typeof setParamToken>[2])
+
+			// If the consumer is enabled, the selected dependency must be enabled/registered too;
+			// otherwise DI build will fail on the next commit (common for persisted fork selections).
+			if (consumerEnabled) {
+				try {
+					await registry.enable(normalized, token)
+				} catch (error) {
+					this.ctx.logger.warn('依赖注入目标启用失败：{target}（可能导致 commit 失败）', {
+						target: normalized,
+						consumer: name,
+						error,
+					})
+				}
+			}
 		}
 	}
 }

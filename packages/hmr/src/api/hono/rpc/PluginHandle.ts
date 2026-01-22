@@ -2,45 +2,45 @@
 import {
 	BasePlugin,
 	type Context,
-	ForkablePlugin,
 	checkPluginDecorator,
 	clearParamToken,
-	PARAM_TYPES,
+	ForkablePlugin,
 	getClassParams,
 	getDeclaredName,
 	getForkId,
 	getForkOf,
 	getPluginInfo,
+	PARAM_TYPES,
 	type PluginConstructor,
 	setParamToken,
 } from '@pluxel/core'
 import { RpcTarget } from 'capnweb'
 import * as v from 'valibot'
 import {
+	type BaseProvidersExtra,
+	type DepOverridesExtra,
 	EXTRA_BASE_PROVIDERS,
 	EXTRA_DEP_OVERRIDES,
 	EXTRA_FORKS,
-	type BaseProvidersExtra,
-	type DepOverridesExtra,
 	type ForksExtra,
 } from '../../../services/loader/selection'
+import { readStatusSnapshot } from '../../features/pluginStatus/service'
 import type {
+	BaseProvisionInfo,
 	ConfigPatch,
 	ConfigResult,
 	ConfigResultOk,
-	BaseProvisionInfo,
 	EnsureForkResult,
-	PluginStatusAction,
-	PluginStatusBatchAction,
-	PluginStatusBatchResult,
 	PluginDependencyKind,
 	PluginDependencyMutationResult,
 	PluginDependencyOption,
 	PluginDependencyState,
+	PluginStatusAction,
+	PluginStatusBatchAction,
+	PluginStatusBatchResult,
 	PluginStatusMutationResult,
 	SchemaResult,
 } from './types'
-import { readStatusSnapshot } from '../../features/pluginStatus/service'
 import { collectDefaults, validateConfigPatch } from './utils'
 
 function resolvePlugin(ctx: Context, name: string, hint?: PluginConstructor): PluginConstructor {
@@ -105,12 +105,35 @@ function addForkToCatalog(ctx: Context, originalName: string, forkId: string) {
 	setExtra.call(ctx.configService, EXTRA_FORKS, { ...all, [originalName]: [...prev, forkId] })
 }
 
+function maybeAddForkToCatalog(ctx: Context, name: string) {
+	const hash = typeof name === 'string' ? name.lastIndexOf('#') : -1
+	if (hash <= 0) return
+	const baseName = name.slice(0, hash)
+	const forkId = name.slice(hash + 1).trim()
+	if (!baseName || !forkId) return
+	try {
+		const baseCtor = ctx.loader.api.runtime.resolve(baseName)
+		if (!baseCtor) return
+		if (!(baseCtor as any).prototype || !((baseCtor as any).prototype instanceof ForkablePlugin))
+			return
+		addForkToCatalog(ctx, baseName, forkId)
+	} catch {
+		// ignore
+	}
+}
+
 async function runStatusAction(
 	ctx: Context,
 	name: string,
 	action: PluginStatusAction,
 ): Promise<PluginStatusMutationResult> {
 	try {
+		// If a fork is referred to directly (e.g. "DemoWorker#abc"), persist it so:
+		// - it appears in UI lists;
+		// - it can be restarted across reloads.
+		if (action === 'start' || action === 'restart' || action === 'enable') {
+			maybeAddForkToCatalog(ctx, name)
+		}
 		const ctor = resolvePlugin(ctx, name)
 
 		switch (action) {
@@ -617,15 +640,15 @@ export class PluginHandle extends RpcTarget {
 			}
 		}
 
-			return {
-				ok: true,
-				saved: false,
-				config: {
-					...this.#ctx.configService.getConfig(this.name),
-					...validation.output,
-				},
-				defaults,
-			}
+		return {
+			ok: true,
+			saved: false,
+			config: {
+				...this.#ctx.configService.getConfig(this.name),
+				...validation.output,
+			},
+			defaults,
+		}
 	}
 
 	async saveConfig(patch: ConfigPatch): Promise<ConfigResult> {
@@ -652,18 +675,18 @@ export class PluginHandle extends RpcTarget {
 			}
 		}
 
-			if (Object.keys(validation.output).length > 0) {
-				this.#ctx.configService.patchConfig(this.name, validation.output)
-			}
-
-			const config = this.#ctx.configService.getConfig(this.name)
-			return {
-				ok: true,
-				saved: true,
-				config: Object.assign({}, config as Record<string, unknown>),
-				defaults,
-			}
+		if (Object.keys(validation.output).length > 0) {
+			this.#ctx.configService.patchConfig(this.name, validation.output)
 		}
+
+		const config = this.#ctx.configService.getConfig(this.name)
+		return {
+			ok: true,
+			saved: true,
+			config: Object.assign({}, config as Record<string, unknown>),
+			defaults,
+		}
+	}
 
 	async resetConfig(keys?: string[]): Promise<ConfigResult> {
 		const schema = this.#ctx.loader.api.registry.getSchema(this.resolveCtor())

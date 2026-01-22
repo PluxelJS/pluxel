@@ -1,7 +1,11 @@
-import type { Context as PlxContext, PluginConstructor } from '@pluxel/core'
+import { getPluginInfo, type PluginConstructor, type Context as PlxContext } from '@pluxel/core'
 import type { InferOutput } from 'valibot'
-
-import type { PluginSourceInfo, PluginStatusEntryLifecycleStage, PluginStatusOverview } from './schema'
+import { EXTRA_FORKS, type ForksExtra } from '../../../services/loader/selection'
+import type {
+	PluginSourceInfo,
+	PluginStatusEntryLifecycleStage,
+	PluginStatusOverview,
+} from './schema'
 
 type LifecycleStage = InferOutput<typeof PluginStatusEntryLifecycleStage>
 type SourceOutput = InferOutput<typeof PluginSourceInfo>
@@ -65,24 +69,62 @@ export function readStatusSnapshot(
 }
 
 export function getStatusOverview(pCtx: PlxContext) {
-	const { statuses, summary } = pCtx.loader.api.status.snapshot()
 	const nameToCtor = pCtx.loader.api.registry.listRegistered()
-	return {
-		__typename: 'PluginStatusOverview' as const,
-		statuses: Object.keys(statuses).map((name) => ({
+
+	// Include fork plugins:
+	// - persisted forks from the fork catalog (so they can be toggled in UI);
+	// - runtime forks already created from loaded bases (even if not yet persisted).
+	const forkNames = new Set<string>()
+	const catalog = pCtx.configService.getExtra<ForksExtra>(EXTRA_FORKS) ?? {}
+	for (const [baseName, baseCtor] of nameToCtor) {
+		const forkIds = catalog?.[baseName]
+		if (Array.isArray(forkIds)) {
+			for (const raw of forkIds) {
+				const fid = typeof raw === 'string' ? raw.trim() : ''
+				if (fid) forkNames.add(`${baseName}#${fid}`)
+			}
+		}
+		for (const forkCtor of pCtx.registry.listForks(baseCtor as any)) {
+			try {
+				forkNames.add(getPluginInfo(forkCtor as any).id)
+			} catch {}
+		}
+	}
+
+	const allNames = [...new Set<string>([...nameToCtor.keys(), ...forkNames])].sort((a, b) =>
+		a.localeCompare(b),
+	)
+	const entries: Array<InferOutput<typeof PluginStatusOverview>['statuses'][number]> = []
+	for (const name of allNames) {
+		const ctor = pCtx.loader.api.runtime.resolve(name) ?? nameToCtor.get(name)
+		if (!ctor) continue
+		const snap = readStatusSnapshot(pCtx, name, ctor)
+		entries.push({
 			__typename: 'PluginStatusEntry' as const,
 			name,
-			isRunning: statuses[name].isRunning,
-			isEnabled: statuses[name].isEnabled,
-			lifecycleStage: statuses[name].lifecycleStage,
-			source: resolvePluginSource(pCtx, name, nameToCtor.get(name)),
-		})),
+			isRunning: snap.isRunning,
+			isEnabled: snap.isEnabled,
+			lifecycleStage: snap.lifecycleStage,
+			source: snap.source,
+		})
+	}
+
+	let running = 0
+	let disabled = 0
+	for (const e of entries) {
+		if (e.isRunning) running += 1
+		if (e.isEnabled === false) disabled += 1
+	}
+
+	return {
+		__typename: 'PluginStatusOverview' as const,
+		statuses: entries,
 		summary: {
 			__typename: 'PluginStatusSummary' as const,
-			total: summary.total,
-			running: summary.running,
-			stopped: summary.stopped,
-			disabled: summary.disabled,
+			total: entries.length,
+			running,
+			stopped: entries.length - running - disabled,
+			disabled,
 		},
 	} satisfies InferOutput<typeof PluginStatusOverview>
 }

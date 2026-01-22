@@ -2,6 +2,7 @@
 import {
 	type Context,
 	getDeclaredName,
+	getForkOf,
 	getPluginInfo,
 	type PluginConstructor,
 	setPluginIdentity,
@@ -10,9 +11,9 @@ import { dirname, normalize } from 'pathe'
 import * as v from 'valibot'
 import type { ConfigSchemaMap } from '../..'
 import {
+	type BaseProvidersExtra,
 	EXTRA_BASE_PROVIDERS,
 	EXTRA_FORKS,
-	type BaseProvidersExtra,
 	type ForksExtra,
 } from './selection'
 
@@ -275,7 +276,8 @@ export class PluginRegistry {
 			tx?.recordIdentity(ctor)
 			setPluginIdentity(ctor, { id: prefixedId, packageName: pkgName })
 			name = prefixedId
-			this.ctx.logger.info`[PluginRegistry] 插件 "${declaredName}" 来自包 ${pkgName}，已自动重命名为 "${prefixedId}"`
+			this.ctx.logger
+				.info`[PluginRegistry] 插件 "${declaredName}" 来自包 ${pkgName}，已自动重命名为 "${prefixedId}"`
 		}
 
 		const seen = this.enrolled.get(ctor) ?? new Set<ModuleId>()
@@ -330,12 +332,12 @@ export class PluginRegistry {
 	async syncRuntimeForModule(moduleId: ModuleId): Promise<void> {
 		const list = this.moduleMap.get(moduleId) ?? EMPTY
 		const safeStart = async (name: string, ctor: PluginConstructor) => {
-				try {
-					await this.startPlugin(name, ctor)
-				} catch (err) {
-					this.ctx.logger.warn('启动失败：{name}', { name, moduleId, error: err })
-				}
+			try {
+				await this.startPlugin(name, ctor)
+			} catch (err) {
+				this.ctx.logger.warn('启动失败：{name}', { name, moduleId, error: err })
 			}
+		}
 		// 并行启动（registerPlugin 只是声明，依赖处理在 commit 时）
 		const toStart = list.flatMap(({ ctor }) => {
 			const { id: name } = getPluginInfo(ctor)
@@ -363,18 +365,18 @@ export class PluginRegistry {
 			for (const forkId of forkIds) {
 				const forkName = `${name}#${forkId}`
 				if (!this.ctx.configService.isEnabledInConfig(forkName)) continue
-						try {
-							const ForkCtor = this.ctx.registry.fork(ctor as any, forkId) as PluginConstructor
-							forkStarts.push(safeStart(forkName, ForkCtor))
-						} catch (err) {
-							this.ctx.logger.warn('启动 fork 失败：{name}#{forkId}', {
-								name,
-								forkId,
-								error: err,
-							})
-						}
+				try {
+					const ForkCtor = this.ctx.registry.fork(ctor as any, forkId) as PluginConstructor
+					forkStarts.push(safeStart(forkName, ForkCtor))
+				} catch (err) {
+					this.ctx.logger.warn('启动 fork 失败：{name}#{forkId}', {
+						name,
+						forkId,
+						error: err,
+					})
 				}
 			}
+		}
 		if (forkStarts.length > 0) await Promise.all(forkStarts)
 	}
 
@@ -392,32 +394,86 @@ export class PluginRegistry {
 			const info = getPluginInfo(ctor)
 			const base = info.base as unknown as Function | null
 			if (base) {
-				const baseKey = getDeclaredName(base)
-				const getExtra = (this.ctx.configService as any)?.getExtra as
-					| ((key: string) => unknown)
-					| undefined
-				const setExtra = (this.ctx.configService as any)?.setExtra as
-					| ((key: string, value: unknown) => void)
-					| undefined
-
-				const map =
-					typeof getExtra === 'function'
-						? ((getExtra.call(this.ctx.configService, EXTRA_BASE_PROVIDERS) as
-								| BaseProvidersExtra
-								| undefined) ?? {})
-						: {}
-				const selected = map?.[baseKey]
-
-				if (typeof selected === 'string' && selected.length > 0) {
-					provideBase = selected === name
+				// Forks must never implicitly replace or claim base-provider aliases.
+				// They may run in parallel with the primary provider without touching base DI routing.
+				if (getForkOf(ctor as any)) {
+					provideBase = false
 				} else {
-					// No selection yet -> first started provider becomes default.
-					provideBase = true
-					if (typeof setExtra === 'function') {
-						setExtra.call(this.ctx.configService, EXTRA_BASE_PROVIDERS, {
-							...map,
-							[baseKey]: name,
-						})
+					const baseKey = getDeclaredName(base)
+					const getExtra = (this.ctx.configService as any)?.getExtra as
+						| ((key: string) => unknown)
+						| undefined
+					const setExtra = (this.ctx.configService as any)?.setExtra as
+						| ((key: string, value: unknown) => void)
+						| undefined
+
+					const map =
+						typeof getExtra === 'function'
+							? ((getExtra.call(this.ctx.configService, EXTRA_BASE_PROVIDERS) as
+									| BaseProvidersExtra
+									| undefined) ?? {})
+							: {}
+					const selectedRaw = map?.[baseKey]
+					const selected =
+						typeof selectedRaw === 'string' && selectedRaw.trim().length > 0
+							? selectedRaw.trim()
+							: null
+					const selectedIsForkName = selected ? selected.includes('#') : false
+					const selectedCtor =
+						selected && !selectedIsForkName ? this.nameMap.get(selected) : undefined
+					const selectedIsForkCtor = selectedCtor ? Boolean(getForkOf(selectedCtor as any)) : false
+					const selectedEnabled =
+						selectedCtor && selected && !selectedIsForkName
+							? this.ctx.configService.isEnabledInConfig(selected)
+							: false
+
+					const selectedValid = Boolean(
+						selected &&
+							!selectedIsForkName &&
+							selectedCtor &&
+							!selectedIsForkCtor &&
+							selectedEnabled,
+					)
+
+					const pickFallback = (): string | null => {
+						const candidates: string[] = []
+						for (const [candidateName, candidateCtor] of this.nameMap) {
+							// nameMap is declaration-only; still be defensive.
+							if (candidateName.includes('#')) continue
+							if (
+								candidateName !== name &&
+								!this.ctx.configService.isEnabledInConfig(candidateName)
+							)
+								continue
+
+							try {
+								if (getForkOf(candidateCtor as any)) continue
+								const cInfo = getPluginInfo(candidateCtor)
+								const cBase = cInfo.base as unknown as Function | null
+								if (!cBase) continue
+								if (getDeclaredName(cBase) !== baseKey) continue
+								candidates.push(candidateName)
+							} catch {}
+						}
+						candidates.sort((a, b) => a.localeCompare(b))
+						return candidates[0] ?? null
+					}
+
+					if (selectedValid) {
+						provideBase = selected === name
+					} else {
+						// Invalid selection (unknown provider / fork id / empty / disabled).
+						// Fall back deterministically to keep DI resolvable and avoid alias conflicts.
+						const fallback = pickFallback() ?? name
+						provideBase = fallback === name
+
+						// Persist the fallback so future commits stay deterministic.
+						if (typeof setExtra === 'function') {
+							setExtra.call(this.ctx.configService, EXTRA_BASE_PROVIDERS, {
+								...map,
+								[baseKey]: fallback,
+							})
+						}
 					}
 				}
 			}
@@ -483,7 +539,12 @@ export class PluginRegistry {
 				this.ctx.configService.enableInConfig(name)
 			}
 			enabled = true
-			this.ctx.registry.register(ctor, provideBase === undefined ? undefined : { provideBase })
+			// Idempotency: enable/start may be invoked multiple times (config ready races, user clicks, etc.).
+			// Avoid treating "already registered" as a failure, as the rollback would incorrectly unregister
+			// an otherwise healthy plugin registration and desync UI/runtime.
+			if (!this.ctx.registry.isRegistered(ctor as any)) {
+				this.ctx.registry.register(ctor, provideBase === undefined ? undefined : { provideBase })
+			}
 			if (provideBase) {
 				try {
 					const info = getPluginInfo(ctor)
@@ -563,12 +624,12 @@ export class PluginRegistry {
 
 	// --------------- 工具 ---------------
 	private logGuard(label: string, fn: () => void) {
-			try {
-				fn()
-			} catch (err) {
-				this.ctx.logger.warn('可恢复异常：{label}', { label, error: err })
-			}
+		try {
+			fn()
+		} catch (err) {
+			this.ctx.logger.warn('可恢复异常：{label}', { label, error: err })
 		}
+	}
 
 	private isObjectSchema(schema: unknown): boolean {
 		return (schema as { type?: string })?.type === 'object'

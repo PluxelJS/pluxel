@@ -1,7 +1,11 @@
-import { getClassParams, getPluginInfo, type Context, type PluginConstructor } from '@pluxel/core'
+import { type Context, getClassParams, getPluginInfo, type PluginConstructor } from '@pluxel/core'
 import type { ConfigSchemaMap } from '../..'
-import type { PluginLifecycleSnapshot, PluginLifecycleStage, PluginRegistry } from './PluginRegistry'
 import type { ModuleReplacer } from './module-replacer'
+import type {
+	PluginLifecycleSnapshot,
+	PluginLifecycleStage,
+	PluginRegistry,
+} from './PluginRegistry'
 
 export type RemovalScope = 'runtime' | 'persisted'
 
@@ -230,6 +234,12 @@ export class LoaderRegistryView {
 	findModuleId(name: string, ctor?: PluginConstructor): string | null {
 		const direct = this.registry.name2PathMap.get(name)
 		if (direct) return direct
+		const hash = name.lastIndexOf('#')
+		if (hash > 0) {
+			const baseName = name.slice(0, hash)
+			const base = this.registry.name2PathMap.get(baseName)
+			if (base) return base
+		}
 		if (!ctor) return null
 		for (const [moduleId, modules] of this.registry.modules) {
 			if (modules.some((item) => item.ctor === ctor)) {
