@@ -48,6 +48,8 @@ export class PluginDefinitions {
 	public resetDraft(): void {
 		this.builder.buildables.reset()
 		this.builderSingletons.reset()
+		// buildables.reset() bypasses ContainerBuilder's mutation hooks; keep caches honest.
+		this.builder.invalidateAll()
 	}
 
 	/** Whether a plugin ctor is currently registered in the draft builder. */
@@ -186,6 +188,8 @@ export class PluginDefinitions {
 			undo: () => {
 				builder.buildables.reset()
 				this.builderSingletons.reset()
+				// Same reason as resetDraft(): external bulk reset.
+				builder.invalidateAll()
 			},
 		}
 

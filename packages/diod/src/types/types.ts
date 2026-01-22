@@ -1,14 +1,14 @@
 // types.ts
 import type { ContainerAccessors } from '../container'
 /** 可 new 的类 */
-export type Newable<T> = new (...args: any[]) => T
+export type Newable<T> = new (...args: unknown[]) => T
 /** 抽象类 */
-export type Abstract<T> = abstract new (...args: any[]) => T
+export type Abstract<T> = abstract new (...args: unknown[]) => T
 /** 服务标识（具体类或抽象类） */
 export type Identifier<T> = Newable<T> | Abstract<T>
 
 /** Alias 键类型（支持 symbol，避免字符串冲突） */
-export type AliasKey = string | symbol | Abstract<any>
+export type AliasKey = string | symbol | Abstract<unknown>
 
 /** 别名冲突策略（构建期选择） */
 export type AliasConflictPolicy = 'error' | 'firstWins' | 'lastWins'
@@ -30,7 +30,7 @@ export type FactoryContext = ContainerAccessors & {
 export type Factory<T> = (ctx: FactoryContext) => T
 
 /** 实例可为任意对象 */
-export type Instance<T> = T & Object
+export type Instance<T> = T & object
 
 /* ----------------------------------------------------------------------------
  * Container interfaces（纯 Result/Maybe 风格）

@@ -19,13 +19,17 @@ export class ClassConfiguration<T>
 	/** 是否允许自动注入（局部开关，默认 true）。会与 BuildOptions.autowire 取交集得到“实际值”。 */
 	private autowire = true
 
-	private constructor(private readonly newable: Newable<T>) {
-		super()
+	private constructor(
+		private readonly newable: Newable<T>,
+		onMutate?: () => void,
+	) {
+		super(onMutate)
 	}
 
 	public withDependencies(dependencies: Identifier<unknown>[]): this {
-		this.dependencies = dependencies
+		this.dependencies = dependencies.slice()
 		this.autowire = false
+		this.onMutate?.()
 		return this
 	}
 
@@ -56,14 +60,20 @@ export class ClassConfiguration<T>
 		const effectiveAutowire = !!(options.autowire && this.autowire)
 		this.setDependencyInformationIfNotExist(effectiveAutowire)
 
+		const tags = this.tags.length ? this.tags.slice() : []
+		const aliases = this.alias.length ? this.alias.slice() : []
+		const dependencies = this.dependencies.length
+			? this.dependencies.slice()
+			: []
+
 		return {
-			tags: this.tags,
-			aliases: this.alias,
+			tags,
+			aliases,
 			isPrivate: this.isPrivate,
 			scope: this.scope,
 			type: RegistrationType.Class,
 			class: this.newable,
-			dependencies: this.dependencies,
+			dependencies,
 			// 写入“实际生效”的 autowire，供 verifier 做一致性判断
 			autowire: effectiveAutowire,
 		}
@@ -71,8 +81,9 @@ export class ClassConfiguration<T>
 
 	public static createBuildable<TIdentifier>(
 		newable: Newable<TIdentifier>,
+		onMutate?: () => void,
 	): Buildable<ClassConfiguration<TIdentifier>, TIdentifier> {
-		const use = new ClassConfiguration(newable)
+		const use = new ClassConfiguration(newable, onMutate)
 		return {
 			instance: use,
 			build: (options: BuildOptions): ServiceData<TIdentifier> =>

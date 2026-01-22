@@ -70,8 +70,9 @@ describe('service identifiers can be get based on tag', () => {
 
 		expect(serviceIdentifiersTaggedWithTag1.length).toBe(3)
 		expect(sayers.length).toBe(2)
-		expect(sayers[0]!.rand).not.toBeUndefined()
-		expect(sayers[1]!.rand).not.toBeUndefined()
+		const [s0, s1] = sayers
+		expect(s0.rand).not.toBeUndefined()
+		expect(s1.rand).not.toBeUndefined()
 		expect(agenda.now()).not.toBe('')
 	})
 })

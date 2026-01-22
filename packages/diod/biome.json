@@ -1,6 +1,6 @@
 {
 	"root": false,
-	"$schema": "https://biomejs.dev/schemas/2.2.2/schema.json",
+	"$schema": "https://biomejs.dev/schemas/2.3.11/schema.json",
 	"vcs": { "enabled": true, "clientKind": "git", "useIgnoreFile": true },
 	"files": { "ignoreUnknown": false, "includes": ["**"] },
 	"formatter": {
@@ -122,6 +122,10 @@
 					}
 				}
 			}
+		},
+		{
+			"includes": ["**/tsdown.config.ts"],
+			"linter": { "rules": { "style": { "noDefaultExport": "off" } } }
 		},
 		{
 			"includes": ["**/test/**/*.ts"],

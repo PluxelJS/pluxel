@@ -628,6 +628,35 @@ describe('PluginService commit()', () => {
 		})
 	})
 
+	it('recovers from DI build failures on the next commit', async () => {
+		await withTestHost(async (host) => {
+			@Plugin({ name: 'MissingDep-B' })
+			class B extends BasePlugin {}
+
+			@Plugin({ name: 'MissingDep-A' })
+			class A extends BasePlugin {
+				constructor(public b: B) {
+					super()
+				}
+			}
+			setParamToken(A, 0, B)
+
+			// Draft contains an invalid DI graph: A needs B but B is missing.
+			host.register(A)
+			const first = await host.tryCommit()
+			expect(first.ok).toBe(false)
+			expect(host.isRunning(A)).toBe(false)
+			expect(host.isRunning(B)).toBe(false)
+
+			// Next commit should succeed after registering the missing provider.
+			host.registerAll(B, A)
+			const second = await host.tryCommit()
+			expect(second.ok).toBe(true)
+			expect(host.isRunning(A)).toBe(true)
+			expect(host.isRunning(B)).toBe(true)
+		})
+	})
+
 	it('updates registered plugin set across commits', async () => {
 		await withTestHost(async (host) => {
 			const readPluginSet = () => new Set<any>(host.listPlugins())

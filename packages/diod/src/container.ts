@@ -49,8 +49,7 @@ export class DiodContainer<U = unknown> implements Container {
 		for (const [id, meta] of services) {
 			const tags = meta.tags
 			if (!tags || tags.length === 0) continue
-			for (let i = 0; i < tags.length; i++) {
-				const tag = tags[i]!
+			for (const tag of tags) {
 				const existed = this.tagIndex.get(tag)
 				if (existed) existed.push(id)
 				else this.tagIndex.set(tag, [id])
@@ -60,31 +59,104 @@ export class DiodContainer<U = unknown> implements Container {
 
 	/** Resolve an identifier through the alias index if applicable. */
 	public resolveIdentifier<T>(identifier: Identifier<T>): Identifier<T> {
+		// Prefer direct service identifiers over aliases (align with verifier semantics).
+		if (this.services.has(identifier as unknown as Identifier<U>))
+			return identifier
 		return (
-			(this.aliasIndex.get(identifier as any) as Identifier<T> | undefined) ??
-			identifier
+			(this.aliasIndex.get(identifier as unknown as AliasKey) as
+				| Identifier<T>
+				| undefined) ?? identifier
 		)
 	}
 
 	/* ------------------------------ Public API ------------------------------- */
 
 	public getResult<T>(identifier: Identifier<T>): Result<T, ResolveError> {
-		return this.newRootAccessors().getResult(identifier)
+		const resolved = this.resolveIdentifier(identifier)
+		const meta = this.lookupService(resolved, false)
+		if (!isOk(meta)) return meta as Result<T, ResolveError>
+
+		// Fast paths: avoid allocating per-request maps for cached/instance services.
+		if (meta.val.type === RegistrationType.Instance) {
+			return createOk(meta.val.instance as T)
+		}
+
+		switch (meta.val.scope) {
+			case ScopeType.Builder_Singleton: {
+				const cached = this.builderSingletons.get(resolved)
+				if (cached !== undefined) return createOk(cached as T)
+				break
+			}
+			case ScopeType.Singleton: {
+				const cached = this.singletons.get(resolved)
+				if (cached !== undefined) return createOk(cached as T)
+				break
+			}
+			default:
+				break
+		}
+
+		const perRequest = new Map<Identifier<unknown>, unknown>()
+		const visiting = new Set<Identifier<unknown>>()
+		const path: Identifier<unknown>[] = []
+		return this.resolveServiceResult(
+			resolved,
+			perRequest,
+			false,
+			visiting,
+			path,
+		)
 	}
 	public get<T>(identifier: Identifier<T>): Maybe<T> {
-		return this.newRootAccessors().get(identifier)
+		const r = this.getResult(identifier)
+		return isOk(r) ? (r.val as Maybe<T>) : (undefined as Maybe<T>)
 	}
 	public getMaybe<T>(identifier: Identifier<T>): Maybe<T> {
-		return this.newRootAccessors().getMaybe(identifier)
+		return this.get(identifier)
 	}
 
 	public getByAliasResult<T = unknown>(
 		alias: AliasKey,
 	): Result<T, ResolveError> {
-		return this.newRootAccessors().getByAliasResult(alias)
+		const id = this.aliasIndex.get(alias)
+		if (!id) return createErr({ kind: 'NotRegistered', id: alias })
+
+		const meta = this.lookupService(id as Identifier<T>, false)
+		if (!isOk(meta)) return meta as Result<T, ResolveError>
+
+		if (meta.val.type === RegistrationType.Instance) {
+			return createOk(meta.val.instance as T)
+		}
+
+		switch (meta.val.scope) {
+			case ScopeType.Builder_Singleton: {
+				const cached = this.builderSingletons.get(id)
+				if (cached !== undefined) return createOk(cached as T)
+				break
+			}
+			case ScopeType.Singleton: {
+				const cached = this.singletons.get(id)
+				if (cached !== undefined) return createOk(cached as T)
+				break
+			}
+			default:
+				break
+		}
+
+		const perRequest = new Map<Identifier<unknown>, unknown>()
+		const visiting = new Set<Identifier<unknown>>()
+		const path: Identifier<unknown>[] = []
+		return this.resolveServiceResult(
+			id as Identifier<T>,
+			perRequest,
+			false,
+			visiting,
+			path,
+		)
 	}
 	public getByAlias<T = unknown>(alias: AliasKey): Maybe<T> {
-		return this.newRootAccessors().getByAlias(alias)
+		const r = this.getByAliasResult<T>(alias)
+		return isOk(r) ? (r.val as Maybe<T>) : (undefined as Maybe<T>)
 	}
 
 	public findTaggedServiceIdentifiers<T = unknown>(
@@ -113,13 +185,6 @@ export class DiodContainer<U = unknown> implements Container {
 
 	/* ------------------------------- Internals -------------------------------- */
 
-	private newRootAccessors(): ContainerAccessors {
-		const perRequest = new Map<Identifier<unknown>, unknown>()
-		const visiting = new Set<Identifier<unknown>>()
-		const path: Identifier<unknown>[] = []
-		return this.makeAccessors(perRequest, visiting, path, false)
-	}
-
 	private makeAccessors(
 		perRequest: Map<Identifier<unknown>, unknown>,
 		visiting: Set<Identifier<unknown>>,
@@ -136,7 +201,7 @@ export class DiodContainer<U = unknown> implements Container {
 			alias: AliasKey,
 		): Result<T, ResolveError> => {
 			const id = this.aliasIndex.get(alias)
-			if (!id) return createErr({ kind: 'NotRegistered', id: alias as any })
+			if (!id) return createErr({ kind: 'NotRegistered', id: alias })
 			// 别名属于“直接获取”，应用 private 限制（isDependency=false）
 			return this.resolveServiceResult(
 				id as Identifier<T>,
@@ -164,28 +229,29 @@ export class DiodContainer<U = unknown> implements Container {
 		visiting: Set<Identifier<unknown>>,
 		path: Identifier<unknown>[],
 	): Result<T, ResolveError> {
-		const meta = this.lookupService(identifier, isDependency)
+		const resolved = this.resolveIdentifier(identifier)
+		const meta = this.lookupService(resolved, isDependency)
 		if (!isOk(meta)) return meta
 
 		const cached = this.tryGetCachedInstance(
-			identifier,
+			resolved,
 			meta.val.scope,
 			perRequestServices,
 		)
 		if (cached !== undefined) return createOk(cached as T)
 
-		if (visiting.has(identifier)) {
+		if (visiting.has(resolved)) {
 			return createErr({
 				kind: 'CircularDependency',
-				chain: [...path, identifier],
+				chain: [...path, resolved],
 			})
 		}
 
-		visiting.add(identifier)
-		path.push(identifier)
+		visiting.add(resolved)
+		path.push(resolved)
 
 		const created = this.createInstanceResult(
-			identifier,
+			resolved,
 			meta.val,
 			perRequestServices,
 			visiting,
@@ -193,11 +259,11 @@ export class DiodContainer<U = unknown> implements Container {
 		)
 
 		path.pop()
-		visiting.delete(identifier)
+		visiting.delete(resolved)
 
 		if (!isOk(created)) return created
 		this.cacheInstance(
-			identifier,
+			resolved,
 			created.val,
 			meta.val.scope,
 			perRequestServices,
@@ -234,10 +300,8 @@ export class DiodContainer<U = unknown> implements Container {
 				case RegistrationType.Instance:
 					return createOk(data.instance as T)
 				case RegistrationType.Class: {
-					const n = data.dependencies.length
-					const deps: unknown[] = new Array(n)
-					for (let i = 0; i < n; i++) {
-						const dep = data.dependencies[i]!
+					const deps: unknown[] = []
+					for (const dep of data.dependencies) {
 						const r = this.resolveServiceResult(
 							dep,
 							perRequestServices,
@@ -246,10 +310,9 @@ export class DiodContainer<U = unknown> implements Container {
 							path,
 						)
 						if (!isOk(r)) return r as Result<T, ResolveError>
-						deps[i] = r.val
+						deps.push(r.val)
 					}
-					// biome-ignore lint/suspicious/noExplicitAny: ctor newable
-					return createOk(new (data.class as any)(...deps))
+					return createOk(new data.class(...deps))
 				}
 				case RegistrationType.Factory: {
 					// Factory 内部解析视为依赖（isDependency=true）
@@ -316,13 +379,13 @@ export class DiodContainer<U = unknown> implements Container {
 		identifier: Identifier<T>,
 		isDependency: boolean,
 	): Result<ServiceData<T>, ResolveError> {
-		let svc = this.services.get(identifier as any)
+		let svc = this.services.get(identifier as unknown as Identifier<U>)
 		if (!svc) {
 			// Alias lookup: allow AliasKey to behave as a primary identifier for resolution.
 			// This enables patterns like "provide abstract base/interface" without registering
 			// duplicate services (which would otherwise appear in dependents graphs).
-			const aliased = this.aliasIndex.get(identifier as any)
-			if (aliased) svc = this.services.get(aliased as any)
+			const aliased = this.aliasIndex.get(identifier as unknown as AliasKey)
+			if (aliased) svc = this.services.get(aliased as unknown as Identifier<U>)
 		}
 		if (!svc) return createErr({ kind: 'NotRegistered', id: identifier })
 		if (!isDependency && svc.isPrivate)

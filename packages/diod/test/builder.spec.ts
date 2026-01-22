@@ -30,6 +30,13 @@ const expectBuildErr = (r: ReturnType<ContainerBuilder['build']>) => {
 	return e
 }
 
+const idName = (id: unknown): string => {
+	if (typeof id === 'function') return id.name || '(anonymous)'
+	if (typeof id === 'symbol') return id.description ?? '(symbol)'
+	if (typeof id === 'string') return id
+	return '(anonymous)'
+}
+
 describe('build-time validations and registry ops', () => {
 	it('throws error when there is not completed registration', () => {
 		// Arrange
@@ -136,7 +143,7 @@ describe('build-time validations and registry ops', () => {
 		expect(Boolean(cycle)).toBeTrue()
 		// 链名字应包含环
 		if (cycle) {
-			const names = cycle.chain.map((id) => (id as any).name ?? '(anonymous)')
+			const names = cycle.chain.map(idName)
 			expect(names.join(' -> ')).toContain('Circular1')
 			expect(names.join(' -> ')).toContain('Circular2')
 			expect(names.join(' -> ')).toContain('Circular3')
