@@ -23,6 +23,30 @@ async function waitUntil(cond: () => boolean, opts?: { timeoutMs?: number }) {
 }
 
 describe('PluginService commit()', () => {
+	it('preserves this-binding for container.resolveIdentifier', async () => {
+		await withTestHost(async (host) => {
+			@Plugin({ name: 'BIND-A' })
+			class A extends BasePlugin {}
+
+			await host.start(A)
+
+			const container = host.ctx.registry.container as unknown as {
+				resolveIdentifier?: (id: unknown) => unknown
+				__sentinel?: symbol
+			}
+
+			const sentinel = Symbol('sentinel')
+			container.__sentinel = sentinel
+			container.resolveIdentifier = function (this: { __sentinel?: symbol }, id: unknown) {
+				if (this.__sentinel !== sentinel) throw new Error('resolveIdentifier lost `this` binding')
+				return id
+			}
+
+			expect(host.isRunning(A)).toBe(true)
+			expect(() => host.unregister(A)).not.toThrow()
+		})
+	})
+
 	it('ready-queue starts dependents without batch barriers', async () => {
 		await withTestHost(
 			async (host) => {

@@ -163,6 +163,54 @@ describe('configSourceVitePlugin integration', () => {
 		expect(Object.keys(map ?? {})).toContain('foo')
 	})
 
+	it('supports config.use(schema) fields (alias of configs.use)', async () => {
+		const root = process.cwd()
+		const pluginEntry = join(root, 'tests', 'fixtures', 'plugins', 'PluginConfigUseAlias.ts')
+		const capture = { lastModule: null as any, beginBatchCalls: 0, replaceModuleCalls: 0 }
+		const errorLogs: ErrorLog[] = []
+		const deps = resolveHMRDependencyConfig(baseDeps as any)
+		const fsAllow = resolveFsAllowList({
+			cwd: root,
+			cwdNormalized: normalizePath(root),
+			scanRoots: [normalizePath(join(root, 'tests', 'fixtures', 'plugins'))],
+		})
+
+		const hmr = new HMRService(createContext(capture, errorLogs), {
+			dir: ['tests/fixtures/plugins'],
+			attribution: 'off',
+			deps: baseDeps as any,
+			log: { useColors: false },
+		})
+		hmr.setServerRoot(root)
+
+		const server = await createServer({
+			...buildHmrViteConfig({
+				root,
+				fsAllow,
+				scanDirs: ['tests/fixtures/plugins'],
+				deps,
+				runnerPlugin: (hmr as any).plugin,
+				honoPlugin: { name: 'noop' },
+				port: 0,
+			}),
+			server: { middlewareMode: true, fs: { allow: fsAllow } },
+		})
+
+		try {
+			await hmr.executeFiles([pluginEntry])
+		} finally {
+			await server.close()
+		}
+
+		expect(errorLogs).toEqual([])
+		expect(capture.lastModule).toBeTruthy()
+		const ctor = capture.lastModule?.PluginConfigUseAlias
+		expect(typeof ctor).toBe('function')
+		const map = getConfigSource(ctor as any)
+		expect(map).toBeTruthy()
+		expect(Object.keys(map ?? {})).toContain('foo')
+	})
+
 	it('supports features.use(FeatureCtor) without @UseFeature (dependency propagation)', async () => {
 		const root = process.cwd()
 		const pluginEntry = join(root, 'tests', 'fixtures', 'plugins', 'PluginFeatureUse.ts')

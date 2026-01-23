@@ -14,8 +14,8 @@ import type { Context } from '@pluxel/context'
 import { createErr, createOk } from 'option-t/plain_result'
 import { type DiodContainer, ExtendedContainerBuilder } from '../../container'
 import type { LeanMapTracker } from '../../container/LeanMapTracker'
-import { BasePlugin, FORK_CTX, PLUGIN_CTX } from './BasePlugin'
 import { getForkOf } from '../fork'
+import { BasePlugin, FORK_CTX, PLUGIN_CTX } from './BasePlugin'
 import { getClassParams, getPluginInfo, getRequiredPluginDependencies } from './PluginDecorator'
 import type { PluginConstructor, PluginIdentifier, PluginInstance } from './types'
 
@@ -165,7 +165,12 @@ export class PluginDefinitions {
 
 	/** Unregister a plugin ctor from the draft builder (no cascade). */
 	public unregister(id: PluginIdentifier): void {
-		const key = (this.lastContainer?.resolveIdentifier?.(id as any) ?? id) as PluginIdentifier
+		const resolver = (this.lastContainer as unknown as { resolveIdentifier?: unknown } | undefined)
+			?.resolveIdentifier
+		const key =
+			typeof resolver === 'function'
+				? ((resolver as (this: unknown, x: unknown) => unknown).call(this.lastContainer, id) ?? id)
+				: id
 		this.builder.tryUnregister(key as any)
 	}
 

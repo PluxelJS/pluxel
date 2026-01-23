@@ -269,10 +269,13 @@ export class HonoService extends CoreHonoService {
 	}
 
 	private createRenderer(): Promise<RenderHandler> {
+		// NOTE: `#if SOURCE_ONLY`/`#endif` blocks are stripped by tsdown for non-source builds.
+		// Do NOT remove them or rewrite this into runtime conditions.
 		// #if SOURCE_ONLY
 		return import('../../server/dev').then(({ createDevRenderer }) => createDevRenderer())
 		// #endif
 
+		// biome-ignore lint/correctness/noUnreachable: tsdown strips SOURCE_ONLY blocks in non-source builds.
 		return import('../../server/static').then(({ createStaticRenderer }) => createStaticRenderer())
 	}
 

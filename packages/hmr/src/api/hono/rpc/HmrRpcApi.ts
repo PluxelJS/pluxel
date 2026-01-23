@@ -14,13 +14,13 @@ import type {
 } from './types'
 
 export class HmrRpcApi extends RpcTarget {
-	#ctx: Context
-	#ext: UI.rpc
+	private readonly ctx: Context
+	private readonly extView: UI.rpc
 
 	constructor(ctx: Context) {
 		super()
-		this.#ctx = ctx
-		this.#ext = ctx.ext.rpc.createExtensionsView(ctx)
+		this.ctx = ctx
+		this.extView = ctx.ext.rpc.createExtensionsView(ctx)
 	}
 
 	ping() {
@@ -28,12 +28,12 @@ export class HmrRpcApi extends RpcTarget {
 	}
 
 	plugin(name: string) {
-		return new PluginHandle(this.#ctx, name)
+		return new PluginHandle(this.ctx, name)
 	}
 
 	/** 包管理操作 */
 	package() {
-		return new PackageHandle(this.#ctx)
+		return new PackageHandle(this.ctx)
 	}
 
 	/**
@@ -41,21 +41,21 @@ export class HmrRpcApi extends RpcTarget {
 	 * @example rpc.ext['my-plugin'].method()
 	 */
 	get ext(): UI.rpc {
-		return this.#ext
+		return this.extView
 	}
 
 	/**
 	 * 列出所有已注册的 RPC 扩展命名空间
 	 */
 	extensions(): string[] {
-		return this.#ctx.ext.rpc.getNamespaces()
+		return this.ctx.ext.rpc.getNamespaces()
 	}
 
 	async buildSnapshot() {
 		try {
-			const content = this.#ctx.loader.buildSnapshot()
+			const content = this.ctx.loader.buildSnapshot()
 			const path = resolve(process.cwd(), 'snapshot.ts')
-			await this.#ctx.fs.writeTextAtomic(path, content)
+			await this.ctx.fs.writeTextAtomic(path, content)
 			return { ok: true as const, path }
 		} catch (error) {
 			return { ok: false as const, error: (error as Error)?.message ?? 'Unknown error' }
@@ -63,11 +63,11 @@ export class HmrRpcApi extends RpcTarget {
 	}
 
 	updatePluginStatuses(actions: PluginStatusBatchAction[]): Promise<PluginStatusBatchResult> {
-		return applyStatusActions(this.#ctx, actions ?? [])
+		return applyStatusActions(this.ctx, actions ?? [])
 	}
 
 	updatePluginGroups(groups: PluginGroupInput[]): Promise<PluginGroup[]> {
 		const safe = Array.isArray(groups) ? groups : []
-		return Promise.resolve(writeGroups(this.#ctx, safe))
+		return Promise.resolve(writeGroups(this.ctx, safe))
 	}
 }

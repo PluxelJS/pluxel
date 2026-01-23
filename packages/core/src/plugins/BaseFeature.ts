@@ -60,6 +60,11 @@ export abstract class BaseFeature<C extends Context = Context> {
 		return host
 	}
 
+	/** Preferred alias for config declarations: `foo = this.config.use(schema)` */
+	public get config(): ConfigHost {
+		return this.configs
+	}
+
 	/**
 	 * Inject feature config values from the owning plugin's config panel.
 	 *

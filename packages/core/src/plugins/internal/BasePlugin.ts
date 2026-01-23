@@ -81,6 +81,14 @@ export abstract class BasePlugin<C extends Context = Context> {
 		return host
 	}
 
+	/**
+	 * Preferred alias for config declarations: `foo = this.config.use(schema)`.
+	 * Kept as a getter so `configSourcePlugin` can statically match `.config.use(...)`.
+	 */
+	public get config(): ConfigHost {
+		return this.configs
+	}
+
 	protected get caller() {
 		return this.ctx.caller
 	}

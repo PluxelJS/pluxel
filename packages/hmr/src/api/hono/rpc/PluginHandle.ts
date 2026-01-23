@@ -5,6 +5,7 @@ import {
 	checkPluginDecorator,
 	clearParamToken,
 	ForkablePlugin,
+	type ForkablePluginConstructor,
 	getClassParams,
 	getDeclaredName,
 	getForkId,
@@ -12,6 +13,7 @@ import {
 	getPluginInfo,
 	PARAM_TYPES,
 	type PluginConstructor,
+	type PluginIdentifier,
 	setParamToken,
 } from '@pluxel/core'
 import { RpcTarget } from 'capnweb'
@@ -67,6 +69,19 @@ function getErrorMessage(error: unknown): string {
 		if (typeof message === 'string') return message
 	}
 	return String(error)
+}
+
+function readParamTypes(ctor: PluginConstructor): unknown[] {
+	const r = Reflect as unknown
+	if (!r || typeof r !== 'object') return []
+	const getMetadata = (r as { getMetadata?: unknown }).getMetadata
+	if (typeof getMetadata !== 'function') return []
+	try {
+		const out = (getMetadata as (key: unknown, target: unknown) => unknown)(PARAM_TYPES, ctor)
+		return Array.isArray(out) ? out : []
+	} catch {
+		return []
+	}
 }
 
 function getExtraApi(ctx: Context): {
@@ -232,18 +247,18 @@ export async function applyStatusActions(
 
 export class PluginHandle extends RpcTarget {
 	readonly name: string
-	#ctx: Context
-	#hint: PluginConstructor
+	private readonly ctx: Context
+	private readonly hint: PluginConstructor
 
 	constructor(ctx: Context, name: string) {
 		super()
-		this.#ctx = ctx
+		this.ctx = ctx
 		this.name = name
-		this.#hint = resolvePlugin(ctx, name)
+		this.hint = resolvePlugin(ctx, name)
 	}
 
 	private resolveCtor(): PluginConstructor {
-		return resolvePlugin(this.#ctx, this.name, this.#hint)
+		return resolvePlugin(this.ctx, this.name, this.hint)
 	}
 
 	detail() {
@@ -251,12 +266,12 @@ export class PluginHandle extends RpcTarget {
 		return {
 			name: this.name,
 			desc: '插件示例描述',
-			dependencies: this.#ctx.loader.api.deps.list(ctor),
+			dependencies: this.ctx.loader.api.deps.list(ctor),
 		}
 	}
 
 	async updateStatus(action: PluginStatusAction) {
-		const batch = await applyStatusActions(this.#ctx, [{ name: this.name, action }])
+		const batch = await applyStatusActions(this.ctx, [{ name: this.name, action }])
 		const res = batch.results[0]
 		if (!res) {
 			return {
@@ -276,9 +291,9 @@ export class PluginHandle extends RpcTarget {
 
 	async dependencyState(): Promise<PluginDependencyState[]> {
 		const ctor = this.resolveCtor()
-		const rawParams = ((Reflect as any)?.getMetadata?.(PARAM_TYPES, ctor) as unknown[]) ?? []
+		const rawParams = readParamTypes(ctor)
 		const effectiveParams = getClassParams<unknown>(ctor)
-		const overrides = readDepOverrides(this.#ctx, this.name)
+		const overrides = readDepOverrides(this.ctx, this.name)
 
 		const out: PluginDependencyState[] = []
 		for (let i = 0; i < rawParams.length; i++) {
@@ -290,72 +305,87 @@ export class PluginHandle extends RpcTarget {
 			const selected = overrides?.[i] ?? null
 
 			const isDecorated = checkPluginDecorator(token)
-			const isBaseToken = !isDecorated && (token as any).prototype instanceof BasePlugin
+			const tokenProto = (token as { prototype?: unknown }).prototype
+			const isBaseToken = !isDecorated && tokenProto instanceof BasePlugin
 
-			const original = (getForkOf(token as any) as any) ?? token
-			const isForkable = (original as any).prototype instanceof ForkablePlugin
+			const original = getForkOf(token as unknown as PluginConstructor) ?? token
+			const originalProto = (original as { prototype?: unknown }).prototype
+			const isForkable = originalProto instanceof ForkablePlugin
 
 			let kind: PluginDependencyKind = 'plugin'
 			if (isBaseToken) kind = 'base'
 			else if (isForkable) kind = 'forkable'
 
-			const isRunning = this.#ctx.registry.isRunning(effectiveToken as any)
+			const isRunning = this.ctx.registry.isRunning(effectiveToken as unknown as PluginIdentifier)
 			let baseProvider: string | null = null
 			const options: PluginDependencyOption[] = []
 
 			if (kind === 'base') {
 				const baseToken = token
 				try {
-					const resolved = this.#ctx.registry.container?.resolveIdentifier?.(
-						baseToken as any,
-					) as any
+					const resolver = (this.ctx.registry.container as { resolveIdentifier?: unknown })
+						?.resolveIdentifier
+					const resolved =
+						typeof resolver === 'function'
+							? (resolver as (this: unknown, x: unknown) => unknown).call(
+									this.ctx.registry.container,
+									baseToken,
+								)
+							: undefined
 					if (typeof resolved === 'function') baseProvider = tokenName(resolved)
-				} catch {}
+				} catch {
+					// ignore: base providers may not be resolvable in all states.
+				}
 
-				for (const [name, pCtor] of this.#ctx.loader.api.registry.listRegistered()) {
+				for (const [name, pCtor] of this.ctx.loader.api.registry.listRegistered()) {
 					try {
 						const info = getPluginInfo(pCtor)
-						if (info.base !== (baseToken as any)) continue
+						if (info.base !== baseToken) continue
 						options.push({
 							name,
-							isEnabled: this.#ctx.configService.isEnabledInConfig(name),
-							isRunning: this.#ctx.loader.api.runtime.isRunning(pCtor),
+							isEnabled: this.ctx.configService.isEnabledInConfig(name),
+							isRunning: this.ctx.loader.api.runtime.isRunning(pCtor),
 						})
-					} catch {}
+					} catch {
+						// ignore: some entries may not have complete metadata.
+					}
 				}
 				options.sort((a, b) => a.name.localeCompare(b.name))
 			} else if (kind === 'forkable') {
 				let originalName: string
 				try {
-					originalName = getPluginInfo(original as any).id
+					originalName = getPluginInfo(original as PluginConstructor).id
 				} catch {
 					originalName = tokenName(original)
 				}
 
 				const forkIds: string[] = []
 				const fromCatalog =
-					this.#ctx.configService.getExtra<ForksExtra>(EXTRA_FORKS)?.[originalName] ?? []
+					this.ctx.configService.getExtra<ForksExtra>(EXTRA_FORKS)?.[originalName] ?? []
 				for (const id of fromCatalog) {
 					const fid = typeof id === 'string' ? id.trim() : ''
 					if (fid) forkIds.push(fid)
 				}
-				for (const forkCtor of this.#ctx.registry.listForks(original as any)) {
-					const fid = getForkId(forkCtor as any)
+				for (const forkCtor of this.ctx.registry.listForks(original as PluginConstructor)) {
+					const fid = getForkId(forkCtor)
 					if (fid && !forkIds.includes(fid)) forkIds.push(fid)
 				}
 
 				options.push({
 					name: originalName,
-					isEnabled: this.#ctx.configService.isEnabledInConfig(originalName),
-					isRunning: this.#ctx.loader.api.runtime.isRunning(original as any),
+					isEnabled: this.ctx.configService.isEnabledInConfig(originalName),
+					isRunning:
+						typeof original === 'function'
+							? this.ctx.loader.api.runtime.isRunning(original as PluginConstructor)
+							: false,
 				})
 				for (const fid of forkIds) {
 					const forkName = `${originalName}#${fid}`
-					const forkCtor = this.#ctx.loader.api.runtime.resolve(forkName)
+					const forkCtor = this.ctx.loader.api.runtime.resolve(forkName)
 					options.push({
 						name: forkName,
-						isEnabled: this.#ctx.configService.isEnabledInConfig(forkName),
-						isRunning: forkCtor ? this.#ctx.loader.api.runtime.isRunning(forkCtor) : false,
+						isEnabled: this.ctx.configService.isEnabledInConfig(forkName),
+						isRunning: forkCtor ? this.ctx.loader.api.runtime.isRunning(forkCtor) : false,
 					})
 				}
 				options.sort((a, b) => a.name.localeCompare(b.name))
@@ -389,28 +419,28 @@ export class PluginHandle extends RpcTarget {
 
 			const normalized =
 				typeof targetName === 'string' && targetName.trim() ? targetName.trim() : null
-			writeDepOverride(this.#ctx, this.name, index, normalized)
+			writeDepOverride(this.ctx, this.name, index, normalized)
 
 			if (!normalized) {
 				clearParamToken(ctor, index)
 			} else {
-				const token = resolvePlugin(this.#ctx, normalized)
-				setParamToken(ctor, index, token as any)
+				const token = resolvePlugin(this.ctx, normalized)
+				setParamToken(ctor, index, token)
 
 				const hash = normalized.lastIndexOf('#')
 				if (hash > 0) {
 					const baseName = normalized.slice(0, hash)
 					const forkId = normalized.slice(hash + 1)
-					if (baseName && forkId) addForkToCatalog(this.#ctx, baseName, forkId)
+					if (baseName && forkId) addForkToCatalog(this.ctx, baseName, forkId)
 				}
 
 				// Ensure the selected target is enabled & registered, otherwise DI will fail.
-				await this.#ctx.loader.api.control.enable(normalized, token)
+				await this.ctx.loader.api.control.enable(normalized, token)
 			}
 
-			this.#ctx.registry.restart(ctor)
+			this.ctx.registry.restart(ctor)
 
-			const commit = await this.#ctx.registry.commit()
+			const commit = await this.ctx.registry.commit()
 			if (commit.err) {
 				return { ok: false, code: 'commit_failed', error: String(commit.err) }
 			}
@@ -419,7 +449,7 @@ export class PluginHandle extends RpcTarget {
 			return {
 				ok: false,
 				code: 'set_dependency_failed',
-				error: (error as any)?.message ?? String(error),
+				error: getErrorMessage(error),
 			}
 		}
 	}
@@ -429,25 +459,26 @@ export class PluginHandle extends RpcTarget {
 		providerName: string | null,
 	): Promise<PluginDependencyMutationResult> {
 		try {
-			const getExtra = (this.#ctx.configService as any)?.getExtra as
-				| ((key: string) => unknown)
-				| undefined
-			const setExtra = (this.#ctx.configService as any)?.setExtra as
-				| ((key: string, value: unknown) => void)
-				| undefined
+			const { getExtra, setExtra } = getExtraApi(this.ctx)
 
 			const baseKey = typeof baseToken === 'string' ? baseToken.trim() : ''
 			if (!baseKey) return { ok: false, code: 'invalid_base', error: 'baseToken is required' }
 
-			const providers: Array<{ name: string; ctor: PluginConstructor; baseCtor: Function }> = []
-			for (const [name, pCtor] of this.#ctx.loader.api.registry.listRegistered()) {
+			const providers: Array<{
+				name: string
+				ctor: PluginConstructor
+				baseCtor: PluginIdentifier
+			}> = []
+			for (const [name, pCtor] of this.ctx.loader.api.registry.listRegistered()) {
 				try {
 					const info = getPluginInfo(pCtor)
-					const base = info.base as any as Function | null
-					if (!base) continue
+					const base = info.base
+					if (!base || typeof base !== 'function') continue
 					if (getDeclaredName(base) !== baseKey) continue
 					providers.push({ name, ctor: pCtor, baseCtor: base })
-				} catch {}
+				} catch {
+					// ignore: best-effort scan of registered plugins.
+				}
 			}
 			if (providers.length === 0) {
 				return { ok: false, code: 'base_not_found', error: `No providers for base: ${baseKey}` }
@@ -458,17 +489,12 @@ export class PluginHandle extends RpcTarget {
 
 			if (!normalizedProvider) {
 				// Clear mapping (does not change runtime immediately).
-				if (typeof setExtra === 'function') {
-					const prev =
-						(typeof getExtra === 'function'
-							? (getExtra.call(this.#ctx.configService, EXTRA_BASE_PROVIDERS) as
-									| BaseProvidersExtra
-									| undefined)
-							: undefined) ?? {}
+				if (typeof getExtra === 'function' && typeof setExtra === 'function') {
+					const prev = (getExtra(EXTRA_BASE_PROVIDERS) as BaseProvidersExtra | undefined) ?? {}
 					if (prev[baseKey]) {
 						const next = { ...prev }
 						delete next[baseKey]
-						setExtra.call(this.#ctx.configService, EXTRA_BASE_PROVIDERS, next)
+						setExtra(EXTRA_BASE_PROVIDERS, next)
 					}
 				}
 				return { ok: true }
@@ -484,35 +510,29 @@ export class PluginHandle extends RpcTarget {
 			}
 
 			// Persist global default mapping.
-			if (typeof setExtra === 'function') {
-				const prev =
-					typeof getExtra === 'function'
-						? ((getExtra.call(this.#ctx.configService, EXTRA_BASE_PROVIDERS) as
-								| BaseProvidersExtra
-								| undefined) ?? {})
-						: {}
-				setExtra.call(this.#ctx.configService, EXTRA_BASE_PROVIDERS, {
-					...prev,
-					[baseKey]: target.name,
-				})
+			if (typeof getExtra === 'function' && typeof setExtra === 'function') {
+				const prev = (getExtra(EXTRA_BASE_PROVIDERS) as BaseProvidersExtra | undefined) ?? {}
+				setExtra(EXTRA_BASE_PROVIDERS, { ...prev, [baseKey]: target.name })
 			}
 
 			// Reconcile runtime registrations so the selected provider binds the base alias.
-			const enabled = [...this.#ctx.loader.api.registry.listRegistered()].filter(([name]) =>
-				this.#ctx.configService.isEnabledInConfig(name),
+			const enabled = [...this.ctx.loader.api.registry.listRegistered()].filter(([name]) =>
+				this.ctx.configService.isEnabledInConfig(name),
 			)
-			for (const [name, ctor] of enabled) this.#ctx.loader.api.control.stop(name, ctor)
-			for (const [name, ctor] of enabled) await this.#ctx.loader.api.control.enable(name, ctor)
+			for (const [name, ctor] of enabled) this.ctx.loader.api.control.stop(name, ctor)
+			for (const [name, ctor] of enabled) await this.ctx.loader.api.control.enable(name, ctor)
 			// Ensure selected provider is enabled as well (in case it was disabled).
 			if (!enabled.some(([name]) => name === target.name)) {
-				await this.#ctx.loader.api.control.enable(target.name, target.ctor)
+				await this.ctx.loader.api.control.enable(target.name, target.ctor)
 			}
 
 			try {
-				this.#ctx.registry.restart(target.baseCtor as any)
-			} catch {}
+				this.ctx.registry.restart(target.baseCtor)
+			} catch {
+				// ignore: base token may not be restartable.
+			}
 
-			const commit = await this.#ctx.registry.commit()
+			const commit = await this.ctx.registry.commit()
 			if (commit.err) return { ok: false, code: 'commit_failed', error: String(commit.err) }
 			return { ok: true }
 		} catch (error) {
@@ -531,17 +551,20 @@ export class PluginHandle extends RpcTarget {
 			if (!base || !fid)
 				return { ok: false, code: 'invalid_fork', error: 'baseName/forkId required' }
 
-			const baseCtor = resolvePlugin(this.#ctx, base)
-			const forkCtor = this.#ctx.registry.fork(baseCtor as any, fid) as PluginConstructor
+			const baseCtor = resolvePlugin(this.ctx, base)
+			const forkCtor = this.ctx.registry.fork(
+				baseCtor as ForkablePluginConstructor,
+				fid,
+			) as PluginConstructor
 			const forkName = getPluginInfo(forkCtor).id
 
-			addForkToCatalog(this.#ctx, base, fid)
+			addForkToCatalog(this.ctx, base, fid)
 
 			if (options?.enable !== false) {
-				await this.#ctx.loader.api.control.enable(forkName, forkCtor)
+				await this.ctx.loader.api.control.enable(forkName, forkCtor)
 			}
 
-			const commit = await this.#ctx.registry.commit()
+			const commit = await this.ctx.registry.commit()
 			if (commit.err) return { ok: false, code: 'commit_failed', error: String(commit.err) }
 			return { ok: true, forkName }
 		} catch (error) {
@@ -556,32 +579,30 @@ export class PluginHandle extends RpcTarget {
 	async baseProvision(): Promise<BaseProvisionInfo | null> {
 		const ctor = this.resolveCtor()
 		const info = getPluginInfo(ctor)
-		const base = info.base as unknown as Function | null
-		if (!base) return null
+		const base = info.base
+		if (!base || typeof base !== 'function') return null
 
 		const baseToken = getDeclaredName(base)
-		const getExtra = (this.#ctx.configService as any)?.getExtra as
-			| ((key: string) => unknown)
-			| undefined
+		const { getExtra } = getExtraApi(this.ctx)
 		const map =
 			typeof getExtra === 'function'
-				? ((getExtra.call(this.#ctx.configService, EXTRA_BASE_PROVIDERS) as
-						| BaseProvidersExtra
-						| undefined) ?? {})
+				? ((getExtra(EXTRA_BASE_PROVIDERS) as BaseProvidersExtra | undefined) ?? {})
 				: {}
 		const currentDefault = (map?.[baseToken] as string | undefined) ?? null
 
 		const providers: PluginDependencyOption[] = []
-		for (const [name, pCtor] of this.#ctx.loader.api.registry.listRegistered()) {
+		for (const [name, pCtor] of this.ctx.loader.api.registry.listRegistered()) {
 			try {
 				const pInfo = getPluginInfo(pCtor)
-				if (pInfo.base !== (base as any)) continue
+				if (pInfo.base !== base) continue
 				providers.push({
 					name,
-					isEnabled: this.#ctx.configService.isEnabledInConfig(name),
-					isRunning: this.#ctx.loader.api.runtime.isRunning(pCtor),
+					isEnabled: this.ctx.configService.isEnabledInConfig(name),
+					isRunning: this.ctx.loader.api.runtime.isRunning(pCtor),
 				})
-			} catch {}
+			} catch {
+				// ignore: best-effort scan of registered plugins.
+			}
 		}
 		providers.sort((a, b) => a.name.localeCompare(b.name))
 
@@ -596,7 +617,7 @@ export class PluginHandle extends RpcTarget {
 	/** 获取插件 schema（源代码形式，用于前端动态构建表单） */
 	async schema(): Promise<SchemaResult> {
 		const ctor = this.resolveCtor()
-		const schemaMap = this.#ctx.loader.api.registry.getSchema(ctor)
+		const schemaMap = this.ctx.loader.api.registry.getSchema(ctor)
 		if (!schemaMap) {
 			return {
 				ok: false,
@@ -605,7 +626,7 @@ export class PluginHandle extends RpcTarget {
 			}
 		}
 
-		const schemaSource = this.#ctx.loader.api.registry.getSchemaSource(ctor)
+		const schemaSource = this.ctx.loader.api.registry.getSchemaSource(ctor)
 		if (!schemaSource || Object.keys(schemaSource).length === 0) {
 			// schemaSource 为空可能是因为 configSourcePlugin 没有正确注入
 			// 这通常发生在 Vite 没有提供 AST 的情况下
@@ -624,9 +645,9 @@ export class PluginHandle extends RpcTarget {
 	}
 
 	async config(): Promise<ConfigResultOk> {
-		const schema = this.#ctx.loader.api.registry.getSchema(this.resolveCtor())
+		const schema = this.ctx.loader.api.registry.getSchema(this.resolveCtor())
 		const defaults = await collectDefaults(schema)
-		const rawConfig = this.#ctx.configService.getConfig(this.name)
+		const rawConfig = this.ctx.configService.getConfig(this.name)
 		// ConfigService 内部为了安全会使用 null-prototype 的 record（Object.create(null)）。
 		// capnweb RPC pass-by-value 对象要求 prototype === Object.prototype，因此这里做一次浅拷贝“正则化”。
 		const config = Object.assign({}, rawConfig as Record<string, unknown>)
@@ -634,7 +655,7 @@ export class PluginHandle extends RpcTarget {
 	}
 
 	async validateConfig(patch: ConfigPatch): Promise<ConfigResult> {
-		const schema = this.#ctx.loader.api.registry.getSchema(this.resolveCtor())
+		const schema = this.ctx.loader.api.registry.getSchema(this.resolveCtor())
 		if (!schema)
 			return {
 				ok: false,
@@ -661,7 +682,7 @@ export class PluginHandle extends RpcTarget {
 			ok: true,
 			saved: false,
 			config: {
-				...this.#ctx.configService.getConfig(this.name),
+				...this.ctx.configService.getConfig(this.name),
 				...validation.output,
 			},
 			defaults,
@@ -669,7 +690,7 @@ export class PluginHandle extends RpcTarget {
 	}
 
 	async saveConfig(patch: ConfigPatch): Promise<ConfigResult> {
-		const schema = this.#ctx.loader.api.registry.getSchema(this.resolveCtor())
+		const schema = this.ctx.loader.api.registry.getSchema(this.resolveCtor())
 		if (!schema)
 			return {
 				ok: false,
@@ -693,10 +714,10 @@ export class PluginHandle extends RpcTarget {
 		}
 
 		if (Object.keys(validation.output).length > 0) {
-			this.#ctx.configService.patchConfig(this.name, validation.output)
+			this.ctx.configService.patchConfig(this.name, validation.output)
 		}
 
-		const config = this.#ctx.configService.getConfig(this.name)
+		const config = this.ctx.configService.getConfig(this.name)
 		return {
 			ok: true,
 			saved: true,
@@ -706,7 +727,7 @@ export class PluginHandle extends RpcTarget {
 	}
 
 	async resetConfig(keys?: string[]): Promise<ConfigResult> {
-		const schema = this.#ctx.loader.api.registry.getSchema(this.resolveCtor())
+		const schema = this.ctx.loader.api.registry.getSchema(this.resolveCtor())
 		if (!schema)
 			return {
 				ok: false,
@@ -721,7 +742,10 @@ export class PluginHandle extends RpcTarget {
 
 		// 获取默认值：getDefault 是同步的，只读取静态默认值
 		const patch: ConfigPatch = Object.fromEntries(
-			entries.map(([key, checker]) => [key, v.getDefault(checker as any) ?? {}]),
+			entries.map(([key, checker]) => [
+				key,
+				v.getDefault(checker as v.BaseSchema<unknown, unknown, v.BaseIssue<unknown>>) ?? {},
+			]),
 		)
 
 		// 并行执行 defaults 收集和验证
@@ -739,8 +763,8 @@ export class PluginHandle extends RpcTarget {
 			}
 		}
 
-		this.#ctx.configService.patchConfig(this.name, validation.output)
-		const config = this.#ctx.configService.getConfig(this.name)
+		this.ctx.configService.patchConfig(this.name, validation.output)
+		const config = this.ctx.configService.getConfig(this.name)
 		return {
 			ok: true,
 			saved: true,

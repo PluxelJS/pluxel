@@ -14,11 +14,11 @@
  * - Uses fs.readFile() for reliable cross-file schema resolution
  * - Extracts and injects:
  *   - `@Config(schema)` field decorator source (`__setConfigSource__`)
- *   - `this.configs.use(schema)` class-field initializer source + schema registration (`__setConfigSource__` + `__registerConfigSchema__`)
+ *   - `this.config.use(schema)` / `this.configs.use(schema)` class-field initializer source + schema registration (`__setConfigSource__` + `__registerConfigSchema__`)
  *   - `this.features.use(FeatureCtor)` class-field initializer (DI-required deps + feature config attribution) via `__registerUsedFeatures__(Ctor, FeatureCtor)`
  *
  * Important limitations:
- * - `configs.use(...)` on `#private` fields is rejected (runtime injection can't assign to `#private`).
+ * - `config(s).use(...)` on `#private` fields is rejected (runtime injection can't assign to `#private`).
  * - `features.use(...)` is only extracted from class-field initializers. If you call it dynamically in `init()`,
  *   use `@UseFeature(FeatureCtor)` (or call `__registerUsedFeatures__(PluginCtor, FeatureCtor)` at module eval time).
  */
@@ -134,7 +134,7 @@ export function configSourcePlugin(options: ConfigSourcePluginOptions = {}): Plu
 				// 同时匹配可能有 schema 定义的文件（v./valibot./f.）
 				code: {
 					include:
-						/@Plugin|@Config|\bConfig\s*\(|\.configs\.use\s*\(|\.features\.use\s*\(|v\.|valibot\.|f\./,
+						/@Plugin|@Config|\bConfig\s*\(|\.(?:config|configs)\.use\s*\(|\.features\.use\s*\(|v\.|valibot\.|f\./,
 				},
 			},
 			async handler(code, id) {
@@ -163,7 +163,7 @@ export function configSourcePlugin(options: ConfigSourcePluginOptions = {}): Plu
 					}
 
 					// NOTE: @Config may be imported under an alias; keep this check permissive.
-					const hasConfigHints = /\.configs\.use\s*\(|\bConfig\b/.test(code)
+					const hasConfigHints = /\.(?:config|configs)\.use\s*\(|\bConfig\b/.test(code)
 					const extracted = hasConfigHints
 						? await (async () => {
 								// 第二步：提取 @Config 装饰器源代码
@@ -211,7 +211,7 @@ export function configSourceVitePlugin(options: ConfigSourcePluginOptions = {}) 
 			? [options.exclude]
 			: ['**/node_modules/**', '**/*.d.ts']
 	const codeHint =
-		/@Plugin|\bPlugin\s*\(|@Config|\bConfig\s*\(|\.configs\.use\s*\(|\.features\.use\s*\(|v\.|valibot\.|f\./
+		/@Plugin|\bPlugin\s*\(|@Config|\bConfig\s*\(|\.(?:config|configs)\.use\s*\(|\.features\.use\s*\(|v\.|valibot\.|f\./
 	const moduleInfoStore = createModuleInfoStore()
 
 	const debugEnabled = process.env.PLUXEL_CONFIG_SOURCE_DEBUG === '1'
@@ -296,7 +296,7 @@ export function configSourceVitePlugin(options: ConfigSourcePluginOptions = {}) 
 					}
 
 					// NOTE: @Config may be imported under an alias; keep this check permissive.
-					const hasConfigHints = /\.configs\.use\s*\(|\bConfig\b/.test(sourceText)
+					const hasConfigHints = /\.(?:config|configs)\.use\s*\(|\bConfig\b/.test(sourceText)
 					const extracted = hasConfigHints
 						? await (async () => {
 								const ctx: ResolveContext = {
@@ -1045,12 +1045,12 @@ async function extractConfigSources(
 			if (useMatch) {
 				if (isHashPrivate) {
 					throw new Error(
-						`configs.use(...) is not supported on #private fields: ${className}.#${fieldName}. Use a normal (non-#) field so runtime injection can work.`,
+						`config(s).use(...) is not supported on #private fields: ${className}.#${fieldName}. Use a normal (non-#) field so runtime injection can work.`,
 					)
 				}
 				if (hasDecoratedConfig) {
 					throw new Error(
-						`Config conflict on ${className}.${fieldName}: cannot use both @Config(...) and configs.use(...)`,
+						`Config conflict on ${className}.${fieldName}: cannot use both @Config(...) and config(s).use(...)`,
 					)
 				}
 				const source = await expandExpressionWithModule(moduleInfo, useMatch.schemaExpr, ctx)
@@ -1117,14 +1117,15 @@ function extractConfigsUseCall(
 	const callee = normalized.callee
 	if (callee.type !== 'MemberExpression') return null
 
-	// Match: this.configs.use(...)
+	// Match: this.config.use(...) / this.configs.use(...)
 	const prop = callee.property
 	if (prop.type !== 'Identifier' || prop.name !== 'use') return null
 
 	const obj = callee.object
 	if (obj.type !== 'MemberExpression') return null
 	const objProp = obj.property
-	if (objProp.type !== 'Identifier' || objProp.name !== 'configs') return null
+	if (objProp.type !== 'Identifier' || (objProp.name !== 'configs' && objProp.name !== 'config'))
+		return null
 
 	const objObj = obj.object
 	if (objObj.type !== 'ThisExpression') return null

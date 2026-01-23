@@ -1,6 +1,5 @@
 import { query, type Resolver, resolver, weave } from '@gqloom/core'
 import { ValibotWeaver } from '@gqloom/valibot'
-import { generateClient } from '@gqty/cli'
 import { Injectable, type Context as PlxContext } from '@pluxel/core'
 import type { GraphQLSchema } from 'graphql'
 import { createYoga } from 'graphql-yoga'
@@ -18,7 +17,7 @@ declare module '@pluxel/core' {
 	}
 }
 
-type ServerCtx = {}
+type ServerCtx = Record<string, never>
 
 @Injectable({ key: serviceName })
 export class InternalGraphQLService {
@@ -56,8 +55,10 @@ export class InternalGraphQLService {
 		this.rebuildDirty = false
 		this.schema = this.weaveSchema()
 		this.pushFetch()
+		// NOTE: `#if SOURCE_ONLY`/`#endif` blocks are stripped by tsdown for non-source builds.
+		// Do NOT remove them or rewrite this into runtime conditions.
 		// #if SOURCE_ONLY
-		void this.codegenNow()
+		if (process.env.NODE_ENV !== 'production') void this.codegenNow()
 		// #endif
 	}
 
@@ -96,6 +97,7 @@ export class InternalGraphQLService {
 		try {
 			this.logger.info('Generating GQty client…', { destination })
 
+			const { generateClient } = await import('@gqty/cli')
 			await generateClient(this.schema, {
 				endpoint: 'http://localhost:3000/api/graphql',
 				destination,
@@ -103,11 +105,11 @@ export class InternalGraphQLService {
 			})
 
 			this.logger.info('GQty client generated', { destination })
-			} catch (error) {
-				this.logger.error('generateClient failed', { error, destination })
-			} finally {
-				this.codegenRunning = false
-			}
+		} catch (error) {
+			this.logger.error('generateClient failed', { error, destination })
+		} finally {
+			this.codegenRunning = false
 		}
+	}
 	// #endif
 }
