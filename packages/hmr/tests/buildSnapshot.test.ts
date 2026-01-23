@@ -3,11 +3,13 @@ import { join } from 'node:path'
 import type { Context } from '@pluxel/core'
 import { buildSnapshot } from '../src/services/loader/buildSnapshot'
 import type { PluginRegistry } from '../src/services/loader/PluginRegistry'
-import { PluginB, PluginC } from './plugins'
+import { PluginB, PluginC } from './fixtures/plugins'
 
-const pluginDir = join(process.cwd(), 'packages/hmr/tests/plugins')
+const pluginDir = join(process.cwd(), 'packages/hmr/tests/fixtures/plugins')
 
-const registryStub = new Map<string, Function>([
+type AnyCtor = abstract new (...args: unknown[]) => unknown
+
+const registryStub = new Map<string, AnyCtor>([
 	['PluginB', PluginB],
 	['PluginC', PluginC],
 ])
@@ -31,7 +33,7 @@ function createRegistryStub(): PluginRegistry {
 	return {
 		names: registryStub,
 		name2PathMap: pathMap,
-		getExportKeyByName(name: string) {
+		getExportKeyByName(_name: string) {
 			return 'default'
 		},
 	} as unknown as PluginRegistry

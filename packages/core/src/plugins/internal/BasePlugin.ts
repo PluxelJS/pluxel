@@ -9,18 +9,22 @@
 // This file sits on the construction hot‑path; keep it allocation‑light.
 
 import type { Context } from '@pluxel/context'
+import { ConfigHost } from '../ConfigHost'
+import { FeatureHost } from '../FeatureHost'
 import { getPluginInfo } from './PluginDecorator'
 
 // HMR 注意：必须使用 Symbol.for
 export const PLUGIN_CTX = Symbol.for('pluxel:plugin:ctx')
 export const FORK_CTX = Symbol.for('pluxel:plugin:ctx:fork')
+const FEATURE_HOST = Symbol.for('pluxel:plugin:featureHost')
+const CONFIG_HOST = Symbol.for('pluxel:plugin:configHost')
 
-export interface PluginLifecycleRuntime<C extends Context = Context> {
+export interface PluginLifecycleRuntime<_C extends Context = Context> {
 	beforeStart?: () => void
 	init?: (signal: AbortSignal) => void | Promise<void>
 	stop?: (signal: AbortSignal) => void | Promise<void>
 	dispose?: () => void | Promise<void>
-	subscribeErrors?: (cb: (err: unknown) => void) => void | (() => void)
+	subscribeErrors?: (cb: (err: unknown) => void) => undefined | (() => void)
 }
 
 export type PluginContextOf<P extends BasePlugin> = P extends BasePlugin<infer C> ? C : Context
@@ -41,6 +45,42 @@ export abstract class BasePlugin<C extends Context = Context> {
 		return this[PLUGIN_CTX]
 	}
 
+	/** Feature composition (plan A): one scoped host per effective ctx. */
+	public get features(): FeatureHost {
+		const self = this as unknown as { [FEATURE_HOST]?: FeatureHost }
+		const existing = self[FEATURE_HOST]
+		if (existing && existing.ctx === (this.ctx as unknown as Context)) return existing
+
+		const ctor = (this as unknown as { constructor?: unknown }).constructor
+		const host = new FeatureHost(
+			this.ctx as unknown as Context,
+			typeof ctor === 'function' ? ctor : undefined,
+		)
+		Object.defineProperty(this, FEATURE_HOST, {
+			value: host,
+			writable: false,
+			enumerable: false,
+			configurable: false,
+		})
+		return host
+	}
+
+	/** Config declaration helper: `foo = this.configs.use(schema)` */
+	public get configs(): ConfigHost {
+		const self = this as unknown as { [CONFIG_HOST]?: ConfigHost }
+		const existing = self[CONFIG_HOST]
+		if (existing && existing.ctx === (this.ctx as unknown as Context)) return existing
+
+		const host = new ConfigHost(this.ctx as unknown as Context)
+		Object.defineProperty(this, CONFIG_HOST, {
+			value: host,
+			writable: false,
+			enumerable: false,
+			configurable: false,
+		})
+		return host
+	}
+
 	protected get caller() {
 		return this.ctx.caller
 	}
@@ -50,13 +90,13 @@ export abstract class BasePlugin<C extends Context = Context> {
 		// decorated with @Plugin. Avoid throwing during logging/stringification.
 		let id: string
 		try {
-			// biome-ignore lint/complexity/noThisInStatic: <explanation>
+			// biome-ignore lint/complexity/noThisInStatic: safe for Symbol.toPrimitive formatting
 			id = getPluginInfo(this)?.id ?? this.name
 		} catch {
 			// undecorated base
 			id = BasePlugin.name
 		}
-		// biome-ignore lint/complexity/noThisInStatic: <explanation>
+		// biome-ignore lint/complexity/noThisInStatic: safe for Symbol.toPrimitive formatting
 		return `${id}(${this.name})`
 	}
 

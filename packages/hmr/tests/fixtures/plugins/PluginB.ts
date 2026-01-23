@@ -1,14 +1,8 @@
-import { BasePlugin, Config, Plugin } from '@pluxel/core'
-import { f, v } from '@pluxel/hmr/config'
+import { BasePlugin, Plugin } from '@pluxel/hmr'
+import { v } from '@pluxel/hmr/config'
 
 export const config = v.object({
-	name: v.optional(
-		v.pipe(
-			v.string(),
-			v.hexColor(),
-		),
-		'#000000',
-	),
+	name: v.optional(v.pipe(v.string(), v.hexColor()), '#000000'),
 })
 const CfgSchema = v.object({
 	driver: v.optional(v.picklist(['libsql']), 'libsql'),
@@ -21,13 +15,14 @@ const CfgSchema = v.object({
 
 @Plugin({ name: 'PluginB', type: 'hook' })
 export class PluginB extends BasePlugin {
-	@Config(config)
-	private a: Config<typeof config>
-	@Config(CfgSchema)
-	private ba: Config<typeof CfgSchema>
-	init(): void {
+	private a = this.configs.use(config)
+	private ba = this.configs.use(CfgSchema)
+	override init(): void {
+		void this.a
+		void this.ba
+
 		this.ctx.logger.info('PluginB initialized')
-		throw new Error("a")
+		throw new Error('a')
 	}
 
 	doSomething(): void {

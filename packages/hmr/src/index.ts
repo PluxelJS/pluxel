@@ -15,3 +15,11 @@ export function Config(configSchema: ConfigSchema): ReturnType<typeof OrigConfig
 	}
 	return OrigConfig(configSchema as any)
 }
+
+// ------------------------------ Type Ergonomics ------------------------------
+// HMR uses valibot schemas; we can enhance core's schema-agnostic helpers with better inference.
+declare module '@pluxel/core' {
+	interface ConfigHost {
+		use<T extends ConfigSchema>(schema: T): InferOutput<T>
+	}
+}

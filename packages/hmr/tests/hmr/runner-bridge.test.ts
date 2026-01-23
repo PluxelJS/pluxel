@@ -1,9 +1,13 @@
 import { describe, expect, it } from 'bun:test'
+import { BasePlugin, checkPluginDecorator } from '@pluxel/core'
 import { join } from 'pathe'
 import { createServer, normalizePath } from 'vite'
-import { BasePlugin, checkPluginDecorator } from '@pluxel/core'
+import {
+	buildHmrViteConfig,
+	resolveFsAllowList,
+	resolveHMRDependencyConfig,
+} from '../../src/services/hmr/config'
 import { HMRService } from '../../src/services/hmr/HMRService'
-import { buildHmrViteConfig, resolveFsAllowList, resolveHMRDependencyConfig } from '../../src/services/hmr/config'
 
 // Minimal ctx stub to construct HMRService without booting the whole app.
 const createCtx = () => {
@@ -33,7 +37,7 @@ describe('HMR runner bridge', () => {
 
 		const ctx = createCtx()
 		const hmr = new HMRService(ctx, {
-			dir: [join(cwd, 'tests/plugins'), join(cwd, 'tests/demo')],
+			dir: [join(cwd, 'tests/fixtures/plugins'), join(cwd, 'tests/demo')],
 			log: { useColors: false },
 		})
 		hmr.setServerRoot(cwd)
@@ -42,14 +46,17 @@ describe('HMR runner bridge', () => {
 		const fsAllow = resolveFsAllowList({
 			cwd,
 			cwdNormalized: normalizePath(cwd),
-			scanRoots: [normalizePath(join(cwd, 'tests/plugins')), normalizePath(join(cwd, 'tests/demo'))],
+			scanRoots: [
+				normalizePath(join(cwd, 'tests/fixtures/plugins')),
+				normalizePath(join(cwd, 'tests/demo')),
+			],
 		})
 
 		const server = await createServer({
 			...buildHmrViteConfig({
 				root: cwd,
 				fsAllow,
-				scanDirs: ['./tests/plugins', './tests/demo'],
+				scanDirs: ['./tests/fixtures/plugins', './tests/demo'],
 				deps,
 				runnerPlugin: { name: 'noop' },
 				honoPlugin: { name: 'noop' },

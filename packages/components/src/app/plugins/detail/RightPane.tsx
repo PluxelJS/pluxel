@@ -12,7 +12,8 @@ import {
 } from '@mantine/core'
 import { IconSettingsOff } from '@tabler/icons-react'
 import { useRouter } from '@tanstack/react-router'
-import { Fragment, type ReactNode, useCallback, useEffect, useMemo, useState } from 'react'
+import { Fragment, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import type { ObjectSchema } from 'valibot'
 import { EmptyState, ErrorState } from '../../../components'
 import {
 	ExtensionErrorBoundary,
@@ -25,11 +26,11 @@ import {
 } from '../../../extension'
 import type { PluginConfigState } from '../../hooks'
 import { RouterLinkAdapter } from '../../RouterLinkAdapter'
-import { ConfigForm } from '../config'
+import { useCurrentPathname, useCurrentSearch } from '../../router/useCurrentRoute'
 import { FloatingTocScope } from '../components/FloatingToc'
+import { ConfigForm, compareSchemaKeys, PLUGIN_SCHEMA_GROUP, splitSchemaKey } from '../config'
 import { PluginPanel } from './components'
 import { usePluginMeta } from './context'
-import { useCurrentPathname, useCurrentSearch } from '../../router/useCurrentRoute'
 
 interface RightPaneProps {
 	config: PluginConfigState
@@ -45,6 +46,37 @@ const COLUMN_STYLE = {
 type RightPaneState = {
 	tab?: string
 	schema?: string
+	/** per-tab schema selection (e.g. config vs cfg:cache) */
+	schemas?: Record<string, string>
+}
+
+const CONFIG_GROUP_TAB_PREFIX = 'cfg:'
+
+function isConfigTab(tab: string): boolean {
+	return tab === 'config' || tab.startsWith(CONFIG_GROUP_TAB_PREFIX)
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+	return Boolean(value && typeof value === 'object' && !Array.isArray(value))
+}
+
+function readStringProp(obj: Record<string, unknown>, key: string): string | undefined {
+	const value = obj[key]
+	return typeof value === 'string' ? value : undefined
+}
+
+function readNumberProp(obj: Record<string, unknown>, key: string): number | undefined {
+	const value = obj[key]
+	return typeof value === 'number' ? value : undefined
+}
+
+function readStringMap(value: unknown): Record<string, string> | undefined {
+	if (!isRecord(value)) return undefined
+	const out: Record<string, string> = {}
+	for (const [k, v] of Object.entries(value)) {
+		if (typeof v === 'string') out[k] = v
+	}
+	return out
 }
 
 function normalizeRestPath(raw?: string): string {
@@ -109,11 +141,7 @@ function toSearchParams(search: Record<string, unknown>): URLSearchParams {
 		}
 		if (Array.isArray(value)) {
 			for (const item of value) {
-				if (
-					typeof item === 'string' ||
-					typeof item === 'number' ||
-					typeof item === 'boolean'
-				) {
+				if (typeof item === 'string' || typeof item === 'number' || typeof item === 'boolean') {
 					params.append(key, String(item))
 				}
 			}
@@ -128,10 +156,11 @@ function readPaneState(key: string): RightPaneState {
 		const raw = window.localStorage.getItem(key)
 		if (!raw) return {}
 		const parsed = JSON.parse(raw)
-		if (!parsed || typeof parsed !== 'object') return {}
+		if (!isRecord(parsed)) return {}
 		return {
-			tab: typeof (parsed as any).tab === 'string' ? (parsed as any).tab : undefined,
-			schema: typeof (parsed as any).schema === 'string' ? (parsed as any).schema : undefined,
+			tab: readStringProp(parsed, 'tab'),
+			schema: readStringProp(parsed, 'schema'),
+			schemas: readStringMap(parsed.schemas),
 		}
 	} catch {
 		return {}
@@ -144,9 +173,12 @@ function writePaneState(key: string, state: RightPaneState) {
 		const payload = {
 			tab: typeof state.tab === 'string' ? state.tab : undefined,
 			schema: typeof state.schema === 'string' ? state.schema : undefined,
+			schemas: state.schemas,
 		}
 		window.localStorage.setItem(key, JSON.stringify(payload))
-	} catch {}
+	} catch {
+		// ignore
+	}
 }
 
 export function RightPane({ config }: RightPaneProps) {
@@ -155,38 +187,47 @@ export function RightPane({ config }: RightPaneProps) {
 	const router = useRouter()
 	const pathname = useCurrentPathname()
 	const search = useCurrentSearch()
-	const encodedPluginName = useMemo(() => encodeURIComponentSafe(pluginName), [pluginName])
-	const basePath = `/plugins/${encodedPluginName}`
 	const tabGroups = useMemo(() => {
-		const entries = tabItems.map((item, index) => ({
-			item,
-			node: tabNodes[index] as ReactNode,
-			nodeKey: item.meta.id,
-		}))
+		const entries = tabItems.map((item, index) => {
+			const meta = isRecord(item.meta) ? item.meta : {}
+			const nodeKey = readStringProp(meta, 'id') ?? `${pluginName}:tab:${index}`
+			return {
+				item,
+				meta,
+				node: tabNodes[index] as ReactNode,
+				nodeKey,
+			}
+		})
 		const byId = new Map<
 			string,
-			{ id: string; label: string; priority: number; nodes: Array<{ key: string; node: ReactNode }> }
+			{
+				id: string
+				label: string
+				priority: number
+				nodes: Array<{ key: string; node: ReactNode }>
+			}
 		>()
 
-		for (const { item, node, nodeKey } of entries) {
-			const tabMeta = (item.meta as any)?.tab as { id?: unknown; label?: unknown } | undefined
+		for (const { meta, node, nodeKey } of entries) {
+			const tabMeta = isRecord(meta.tab) ? meta.tab : undefined
 			const rawGroupId =
 				typeof tabMeta?.id === 'string' && tabMeta.id.trim().length > 0
 					? tabMeta.id.trim()
-					: typeof item.meta.id === 'string' && item.meta.id.length > 0
-						? item.meta.id
+					: readStringProp(meta, 'id') && (readStringProp(meta, 'id') ?? '').length > 0
+						? (readStringProp(meta, 'id') as string)
 						: `${pluginName}:tab:${byId.size}`
 			const groupId =
 				rawGroupId === 'config' || rawGroupId === 'route'
 					? `${pluginName}:tab:${rawGroupId}`
 					: rawGroupId
 
+			const itemLabel = readStringProp(meta, 'label')
+			const tabLabel = tabMeta ? readStringProp(tabMeta, 'label') : undefined
 			const groupLabel =
-				typeof tabMeta?.label === 'string' && tabMeta.label.trim().length > 0
-					? tabMeta.label.trim()
-					: typeof (item.meta as any)?.label === 'string' &&
-							String((item.meta as any).label).trim().length > 0
-						? String((item.meta as any).label).trim()
+				typeof tabLabel === 'string' && tabLabel.trim().length > 0
+					? tabLabel.trim()
+					: typeof itemLabel === 'string' && itemLabel.trim().length > 0
+						? itemLabel.trim()
 						: '扩展面板'
 
 			const existing = byId.get(groupId)
@@ -194,16 +235,13 @@ export function RightPane({ config }: RightPaneProps) {
 				byId.set(groupId, {
 					id: groupId,
 					label: groupLabel,
-					priority: typeof item.meta.priority === 'number' ? item.meta.priority : 0,
+					priority: readNumberProp(meta, 'priority') ?? 0,
 					nodes: node ? [{ key: nodeKey, node }] : [],
 				})
 				continue
 			}
 
-			existing.priority = Math.max(
-				existing.priority,
-				typeof item.meta.priority === 'number' ? item.meta.priority : 0,
-			)
+			existing.priority = Math.max(existing.priority, readNumberProp(meta, 'priority') ?? 0)
 			if (node) existing.nodes.push({ key: nodeKey, node })
 		}
 
@@ -216,10 +254,7 @@ export function RightPane({ config }: RightPaneProps) {
 	const [activeTab, setActiveTab] = useState('config')
 	// 配置表单需要与自定义 Tab 共存：即使没有 schema，也展示一个“暂无可配置项”的稳定入口。
 	const showConfigTab = true
-	const storageKey = useMemo(
-		() => `pluxel:plugin:${pluginName}:rightpane`,
-		[pluginName],
-	)
+	const storageKey = useMemo(() => `pluxel:plugin:${pluginName}:rightpane`, [pluginName])
 	const [storedState, setStoredState] = useState<RightPaneState>(() => readPaneState(storageKey))
 
 	const restPath = useMemo(() => {
@@ -243,6 +278,7 @@ export function RightPane({ config }: RightPaneProps) {
 		return getPluginRouteComponent(pluginName, restPath)
 	}, [pluginName, restPath, routeVersion])
 	const showRouteTab = Boolean(restPath)
+	const lastRestPathRef = useRef<string>('')
 
 	const updateSearch = useCallback(
 		(patch: Record<string, string | undefined>, target?: string) => {
@@ -277,19 +313,54 @@ export function RightPane({ config }: RightPaneProps) {
 	const tabFromSearch = useMemo(() => readSearchValue(search, 'tab'), [search])
 	const schemaFromSearch = useMemo(() => readSearchValue(search, 'schema'), [search])
 
+	const schemaKeys = useMemo(
+		() => Object.keys(config.data?.schemaMap ?? {}),
+		[config.data?.schemaMap],
+	)
+
+	const schemaKeysByConfigTab = useMemo(() => {
+		const map = new Map<string, string[]>()
+		const all = schemaKeys.slice().sort(compareSchemaKeys)
+
+		const pluginKeys = all.filter((key) => splitSchemaKey(key).group === PLUGIN_SCHEMA_GROUP)
+		map.set('config', pluginKeys)
+
+		const byGroup = new Map<string, string[]>()
+		for (const key of all) {
+			const group = splitSchemaKey(key).group
+			if (group === PLUGIN_SCHEMA_GROUP) continue
+			const list = byGroup.get(group)
+			if (list) list.push(key)
+			else byGroup.set(group, [key])
+		}
+		for (const [group, keys] of byGroup.entries()) {
+			map.set(`${CONFIG_GROUP_TAB_PREFIX}${group}`, keys)
+		}
+
+		return map
+	}, [schemaKeys])
+
+	const configGroupTabs = useMemo(() => {
+		const out: Array<{ id: string; label: string }> = []
+		for (const [id, keys] of schemaKeysByConfigTab.entries()) {
+			if (!id.startsWith(CONFIG_GROUP_TAB_PREFIX)) continue
+			if (!keys.length) continue
+			out.push({ id, label: id.slice(CONFIG_GROUP_TAB_PREFIX.length) })
+		}
+		return out.sort((a, b) => a.label.localeCompare(b.label))
+	}, [schemaKeysByConfigTab])
+
 	const resolveTab = useCallback(
 		(value: string | undefined) => {
 			if (!value) return undefined
 			if (value === 'config' && showConfigTab) return 'config'
 			if (value === 'route') return showRouteTab ? 'route' : undefined
+			if (value.startsWith(CONFIG_GROUP_TAB_PREFIX)) {
+				return schemaKeysByConfigTab.has(value) ? value : undefined
+			}
 			return tabGroups.some((tab) => tab.id === value) ? value : undefined
 		},
-		[showConfigTab, showRouteTab, tabGroups],
-	)
-
-	const schemaKeys = useMemo(
-		() => Object.keys(config.data?.schemaMap ?? {}),
-		[config.data?.schemaMap],
+		[schemaKeysByConfigTab, showConfigTab, showRouteTab, tabGroups],
 	)
 	const resolveSchema = useCallback(
 		(value: string | undefined) => (value && schemaKeys.includes(value) ? value : undefined),
@@ -303,29 +374,89 @@ export function RightPane({ config }: RightPaneProps) {
 	}, [storageKey])
 
 	useEffect(() => {
-		if (showRouteTab) {
-			if (activeTab !== 'route') setActiveTab('route')
-			return
-		}
 		const resolved = resolveTab(tabFromSearch)
-		const fallback = resolveTab(storedState.tab)
+		const fallback = showRouteTab ? undefined : resolveTab(storedState.tab)
 		const next =
 			resolved ??
-			fallback ??
-			(showConfigTab ? 'config' : tabGroups[0]?.id ?? 'config')
+			(showRouteTab
+				? 'route'
+				: (fallback ?? (showConfigTab ? 'config' : (tabGroups[0]?.id ?? 'config'))))
 		if (next && next !== activeTab) setActiveTab(next)
-	}, [activeTab, resolveTab, showConfigTab, showRouteTab, storedState.tab, tabFromSearch, tabGroups])
+	}, [
+		activeTab,
+		resolveTab,
+		showConfigTab,
+		showRouteTab,
+		storedState.tab,
+		tabFromSearch,
+		tabGroups,
+	])
 
 	const activeSchemaKey = useMemo(() => {
-		return resolveSchema(schemaFromSearch) ?? resolveSchema(storedState.schema) ?? schemaKeys[0] ?? ''
-	}, [resolveSchema, schemaFromSearch, schemaKeys, storedState.schema])
+		const tabKeys = schemaKeysByConfigTab.get(activeTab) ?? schemaKeys
+		if (!tabKeys.length) return ''
+
+		const fromSearch = resolveSchema(schemaFromSearch)
+		if (fromSearch && tabKeys.includes(fromSearch)) return fromSearch
+
+		const storedTabSchema =
+			storedState.schemas && typeof storedState.schemas === 'object'
+				? storedState.schemas[activeTab]
+				: undefined
+		if (storedTabSchema && tabKeys.includes(storedTabSchema)) return storedTabSchema
+
+		const fromState = resolveSchema(storedState.schema)
+		if (fromState && tabKeys.includes(fromState)) return fromState
+
+		return tabKeys[0] ?? ''
+	}, [
+		activeTab,
+		resolveSchema,
+		schemaFromSearch,
+		schemaKeys,
+		schemaKeysByConfigTab,
+		storedState.schema,
+		storedState.schemas,
+	])
 
 	useEffect(() => {
 		if (!schemaKeys.length) return
-		if (resolveSchema(schemaFromSearch)) return
-		if (activeTab !== 'config') return
+		const tabKeys = schemaKeysByConfigTab.get(activeTab) ?? schemaKeys
+		if (!tabKeys.length) return
+		if (!isConfigTab(activeTab)) return
+		const fromSearch = resolveSchema(schemaFromSearch)
+		if (fromSearch && tabKeys.includes(fromSearch)) return
 		if (activeSchemaKey) updateSearch({ schema: activeSchemaKey })
-	}, [activeSchemaKey, activeTab, resolveSchema, schemaFromSearch, schemaKeys, updateSearch])
+	}, [
+		activeSchemaKey,
+		activeTab,
+		resolveSchema,
+		schemaFromSearch,
+		schemaKeys,
+		schemaKeysByConfigTab,
+		updateSearch,
+	])
+
+	// If user navigates to a plugin sub-route (path changes), default the pane to "route".
+	// This runs after the schema-sync effect so we don't accidentally re-inject `schema=...`
+	// when switching from config -> route.
+	useEffect(() => {
+		if (!showRouteTab) {
+			lastRestPathRef.current = ''
+			return
+		}
+		if (!restPath) return
+		if (lastRestPathRef.current === restPath) return
+		lastRestPathRef.current = restPath
+		updateSearch({ tab: 'route', schema: undefined })
+	}, [restPath, showRouteTab, updateSearch])
+
+	// Keep `schema` out of the URL when user is on the route tab.
+	useEffect(() => {
+		if (resolveTab(tabFromSearch) !== 'route') return
+		if (!schemaFromSearch) return
+		updateSearch({ schema: undefined })
+	}, [resolveTab, schemaFromSearch, tabFromSearch, updateSearch])
 
 	useEffect(() => {
 		if (showRouteTab) return
@@ -337,57 +468,88 @@ export function RightPane({ config }: RightPaneProps) {
 
 	const persistState = useCallback(
 		(next: RightPaneState) => {
+			const schemas =
+				next.schemas && typeof next.schemas === 'object'
+					? { ...(storedState.schemas ?? {}), ...next.schemas }
+					: storedState.schemas
 			const merged = {
 				tab: typeof next.tab === 'string' ? next.tab : activeTab,
 				schema: typeof next.schema === 'string' ? next.schema : activeSchemaKey,
+				schemas,
 			}
 			writePaneState(storageKey, merged)
 			setStoredState(merged)
 		},
-		[activeSchemaKey, activeTab, storageKey],
+		[activeSchemaKey, activeTab, storageKey, storedState.schemas],
 	)
 
 	const handleTabChange = useCallback(
 		(value: string | null) => {
 			const next = String(value ?? 'config')
 			setActiveTab(next)
-			persistState({ tab: next })
-			if (next === 'route') return
+			const nextSchema = (() => {
+				if (!isConfigTab(next)) return undefined
+				const tabKeys = schemaKeysByConfigTab.get(next) ?? []
+				if (!tabKeys.length) return undefined
+				const stored = storedState.schemas?.[next]
+				if (stored && tabKeys.includes(stored)) return stored
+				return tabKeys[0] ?? undefined
+			})()
+
+			persistState(
+				nextSchema
+					? { tab: next, schema: nextSchema, schemas: { [next]: nextSchema } }
+					: { tab: next },
+			)
 			const patch: Record<string, string | undefined> = {
 				tab: next,
-				schema: activeSchemaKey || undefined,
+				schema: isConfigTab(next) ? nextSchema : undefined,
 			}
-			updateSearch(patch, restPath ? basePath : undefined)
+			updateSearch(patch)
 		},
-		[activeSchemaKey, basePath, persistState, restPath, updateSearch],
+		[persistState, schemaKeysByConfigTab, storedState.schemas, updateSearch],
 	)
 
-	const handleSchemaChange = useCallback(
-		(nextKey: string) => {
-			persistState({ schema: nextKey })
-			if (activeTab !== 'config') return
+	const handleSchemaChangeForTab = useCallback(
+		(tabId: string, nextKey: string) => {
+			// Avoid inactive panels fighting the global URL/schema.
+			if (activeTab !== tabId) return
+			persistState({ schema: nextKey, schemas: { [tabId]: nextKey } })
+			if (!isConfigTab(activeTab)) return
 			updateSearch({ schema: nextKey })
 		},
 		[activeTab, persistState, updateSearch],
 	)
 
+	const schemaKeyForTab = useCallback(
+		(tabId: string) => {
+			const tabKeys = schemaKeysByConfigTab.get(tabId) ?? []
+			if (!tabKeys.length) return ''
+
+			if (activeTab === tabId) return activeSchemaKey
+
+			const stored = storedState.schemas?.[tabId]
+			if (stored && tabKeys.includes(stored)) return stored
+
+			return tabKeys[0] ?? ''
+		},
+		[activeSchemaKey, activeTab, schemaKeysByConfigTab, storedState.schemas],
+	)
+
 	return (
-		<PluginPanel
-			padding="sm"
-			gap="sm"
-		>
+		<PluginPanel padding="sm" gap="sm">
 			<Box style={COLUMN_STYLE}>
 				{hasTabs ? (
-					<Tabs
-						value={activeTab}
-						onChange={handleTabChange}
-						keepMounted
-						style={COLUMN_STYLE}
-					>
+					<Tabs value={activeTab} onChange={handleTabChange} keepMounted style={COLUMN_STYLE}>
 						<Group gap="xs" align="center" justify="space-between" wrap="nowrap">
 							<Tabs.List style={{ flex: 1, minWidth: 0 }}>
 								{showRouteTab ? <Tabs.Tab value="route">页面</Tabs.Tab> : null}
 								{showConfigTab ? <Tabs.Tab value="config">配置</Tabs.Tab> : null}
+								{configGroupTabs.map((tab) => (
+									<Tabs.Tab key={tab.id} value={tab.id}>
+										{tab.label}
+									</Tabs.Tab>
+								))}
 								{tabGroups.map((tab) => (
 									<Tabs.Tab key={tab.id} value={tab.id}>
 										{tab.label}
@@ -419,13 +581,29 @@ export function RightPane({ config }: RightPaneProps) {
 									<ConfigContent
 										config={config}
 										pluginName={pluginName}
+										schemaGroup="__plugin__"
 										active={activeTab === 'config'}
-										activeSchemaKey={activeSchemaKey}
-										onSchemaChange={handleSchemaChange}
+										activeSchemaKey={schemaKeyForTab('config')}
+										onSchemaChange={(key) => handleSchemaChangeForTab('config', key)}
 									/>
 								</FloatingTocScope>
 							</Tabs.Panel>
 						) : null}
+
+						{configGroupTabs.map((tab) => (
+							<Tabs.Panel key={tab.id} value={tab.id} style={COLUMN_STYLE}>
+								<FloatingTocScope active={activeTab === tab.id}>
+									<ConfigContent
+										config={config}
+										pluginName={pluginName}
+										schemaGroup={tab.label}
+										active={activeTab === tab.id}
+										activeSchemaKey={schemaKeyForTab(tab.id)}
+										onSchemaChange={(key) => handleSchemaChangeForTab(tab.id, key)}
+									/>
+								</FloatingTocScope>
+							</Tabs.Panel>
+						))}
 
 						{tabGroups.map((tab) => {
 							const id = tab.id
@@ -457,7 +635,7 @@ export function RightPane({ config }: RightPaneProps) {
 						pluginName={pluginName}
 						active
 						activeSchemaKey={activeSchemaKey}
-						onSchemaChange={handleSchemaChange}
+						onSchemaChange={(key) => handleSchemaChangeForTab('config', key)}
 					/>
 				)}
 			</Box>
@@ -468,17 +646,56 @@ export function RightPane({ config }: RightPaneProps) {
 function ConfigContent({
 	config,
 	pluginName,
+	schemaGroup,
 	active,
 	activeSchemaKey,
 	onSchemaChange,
 }: {
 	config: PluginConfigState
 	pluginName: string
+	schemaGroup?: string
 	active: boolean
 	activeSchemaKey: string
 	onSchemaChange: (key: string) => void
 }) {
-	const hasSchema = Object.keys(config.data?.schemaMap ?? {}).length > 0
+	const schemaMapAll = (config.data?.schemaMap ?? {}) as Record<
+		string,
+		ObjectSchema<unknown, unknown>
+	>
+	const savedConfigAll = (config.data?.savedConfig ?? {}) as Record<string, unknown>
+	const defaultsAll = (config.data?.defaults ?? {}) as Record<string, unknown>
+
+	const schemaMap = useMemo(() => {
+		if (!schemaGroup) return schemaMapAll
+		const out: Record<string, ObjectSchema<unknown, unknown>> = {}
+		for (const [key, schema] of Object.entries(schemaMapAll)) {
+			if (splitSchemaKey(key).group !== schemaGroup) continue
+			out[key] = schema
+		}
+		return out
+	}, [schemaGroup, schemaMapAll])
+
+	const savedConfig = useMemo(() => {
+		if (!schemaGroup) return savedConfigAll
+		const out: Record<string, unknown> = {}
+		for (const [key, value] of Object.entries(savedConfigAll)) {
+			if (splitSchemaKey(key).group !== schemaGroup) continue
+			out[key] = value
+		}
+		return out
+	}, [savedConfigAll, schemaGroup])
+
+	const defaults = useMemo(() => {
+		if (!schemaGroup) return defaultsAll
+		const out: Record<string, unknown> = {}
+		for (const [key, value] of Object.entries(defaultsAll)) {
+			if (splitSchemaKey(key).group !== schemaGroup) continue
+			out[key] = value
+		}
+		return out
+	}, [defaultsAll, schemaGroup])
+
+	const hasSchema = Object.keys(schemaMap).length > 0
 	return (
 		<Box style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
 			{config.error ? (
@@ -495,11 +712,11 @@ function ConfigContent({
 				</Center>
 			) : hasSchema ? (
 				<ConfigForm
-					key={pluginName ?? 'config-form'}
+					key={`${pluginName ?? 'config-form'}:${schemaGroup ?? '__all__'}`}
 					pluginName={pluginName}
-					schemas={config.data.schemaMap}
-					savedConfig={config.data.savedConfig}
-					defaults={config.data.defaults}
+					schemas={schemaMap}
+					savedConfig={savedConfig}
+					defaults={defaults}
 					active={active}
 					activeKey={activeSchemaKey}
 					onActiveKeyChange={onSchemaChange}
@@ -534,6 +751,15 @@ function RouteContent({
 	const fullPath = useMemo(() => {
 		return `/plugins/${encodeURIComponentSafe(pluginName)}${restPath}`
 	}, [pluginName, restPath])
+
+	const pluginCtx = useMemo<PluginExtensionContext>(
+		() => ({
+			...ctx,
+			pathname: fullPath,
+			pluginName,
+		}),
+		[ctx, fullPath, pluginName],
+	)
 
 	if (!pluginRunning && runningPluginsReady) {
 		return (
@@ -585,15 +811,6 @@ function RouteContent({
 			</Center>
 		)
 	}
-
-	const pluginCtx = useMemo<PluginExtensionContext>(
-		() => ({
-			...ctx,
-			pathname: fullPath,
-			pluginName,
-		}),
-		[ctx, fullPath, pluginName],
-	)
 
 	return (
 		<ScrollArea type="auto" scrollbarSize={10} offsetScrollbars style={{ flex: 1, minHeight: 0 }}>

@@ -1,5 +1,5 @@
 /**
- * Rolldown plugin to extract @Config decorator source code at compile time.
+ * Rolldown plugin to extract config/feature metadata from plugin source code at compile time.
  *
  * Why there are TWO exports:
  * - `configSourcePlugin` is a native Rolldown plugin (uses `transform.filter` + `handler`).
@@ -12,7 +12,15 @@
  * - Uses rolldown filter pattern for efficient JS-Rust communication
  * - Uses this.parse() with lang option for TypeScript-aware parsing
  * - Uses fs.readFile() for reliable cross-file schema resolution
- * - Injects __setConfigSource__ calls with string literals into output
+ * - Extracts and injects:
+ *   - `@Config(schema)` field decorator source (`__setConfigSource__`)
+ *   - `this.configs.use(schema)` class-field initializer source + schema registration (`__setConfigSource__` + `__registerConfigSchema__`)
+ *   - `this.features.use(FeatureCtor)` class-field initializer (DI-required deps + feature config attribution) via `__registerUsedFeatures__(Ctor, FeatureCtor)`
+ *
+ * Important limitations:
+ * - `configs.use(...)` on `#private` fields is rejected (runtime injection can't assign to `#private`).
+ * - `features.use(...)` is only extracted from class-field initializers. If you call it dynamically in `init()`,
+ *   use `@UseFeature(FeatureCtor)` (or call `__registerUsedFeatures__(PluginCtor, FeatureCtor)` at module eval time).
  */
 
 import { readFile } from 'node:fs/promises'
@@ -21,7 +29,6 @@ import type {
 	Decorator,
 	Expression,
 	IdentifierName,
-	ObjectProperty,
 	Program,
 	PropertyDefinition,
 	SpreadElement,
@@ -42,6 +49,12 @@ interface ExtractedConfig {
 	className: string
 	fieldName: string
 	source: string
+	registerExpr?: string
+}
+
+interface ExtractedFeatureUse {
+	className: string
+	featureExpr: string
 }
 
 interface DeclarationInfo {
@@ -120,22 +133,12 @@ export function configSourcePlugin(options: ConfigSourcePluginOptions = {}): Plu
 				// 以 @Plugin 为标记（@Config 可能被重命名）
 				// 同时匹配可能有 schema 定义的文件（v./valibot./f.）
 				code: {
-					include: /@Plugin|v\.|valibot\.|f\./,
+					include:
+						/@Plugin|@Config|\bConfig\s*\(|\.configs\.use\s*\(|\.features\.use\s*\(|v\.|valibot\.|f\./,
 				},
 			},
 			async handler(code, id) {
 				const normalizedId = normalizePath(id)
-
-				// 如果没有 @Plugin，只收集 schema 定义（为跨文件引用做准备）
-				if (!code.includes('@Plugin')) {
-					try {
-						const ast = this.parse(code, { lang: getLangFromId(id) }) as Program
-						collectModuleInfo(code, normalizedId, ast, moduleInfoStore)
-					} catch {
-						// 解析失败，忽略
-					}
-					return null
-				}
 
 				let ast: Program
 				try {
@@ -147,8 +150,10 @@ export function configSourcePlugin(options: ConfigSourcePluginOptions = {}): Plu
 				}
 
 				try {
-					// 第一步：收集并缓存本模块的导出 schema 定义
+					// 第一步：收集并缓存本模块的导出 schema 定义（为跨文件引用做准备）
 					const moduleInfo = collectModuleInfo(code, normalizedId, ast, moduleInfoStore)
+
+					const extractedFeatures = extractFeatureUses(moduleInfo, ast)
 
 					const resolveModuleId: ModuleResolver = async (sourceSpecifier, importer) => {
 						const resolved = await this.resolve(sourceSpecifier, importer)
@@ -157,21 +162,27 @@ export function configSourcePlugin(options: ConfigSourcePluginOptions = {}): Plu
 						return normalizePath(cleaned)
 					}
 
-					// 第二步：提取 @Config 装饰器源代码
-					const ctx: ResolveContext = {
-						moduleResolver: resolveModuleId,
-						parse: (source, moduleId) =>
-							this.parse(source, { lang: getLangFromId(moduleId) }) as Program,
-						moduleInfoStore,
-						resolvedValues: new Map(),
-						pending: new Set(),
-					}
-					const extracted = await extractConfigSources(moduleInfo, ast, ctx)
+					// NOTE: @Config may be imported under an alias; keep this check permissive.
+					const hasConfigHints = /\.configs\.use\s*\(|\bConfig\b/.test(code)
+					const extracted = hasConfigHints
+						? await (async () => {
+								// 第二步：提取 @Config 装饰器源代码
+								const ctx: ResolveContext = {
+									moduleResolver: resolveModuleId,
+									parse: (source, moduleId) =>
+										this.parse(source, { lang: getLangFromId(moduleId) }) as Program,
+									moduleInfoStore,
+									resolvedValues: new Map(),
+									pending: new Set(),
+								}
+								return await extractConfigSources(moduleInfo, ast, ctx)
+							})()
+						: []
 
-					if (extracted.length === 0) return null
+					if (extracted.length === 0 && extractedFeatures.length === 0) return null
 
 					// 生成注入代码
-					const injection = generateInjection(extracted)
+					const injection = generateInjection(extracted, extractedFeatures)
 					return {
 						code: code + '\n' + injection,
 						map: null,
@@ -185,7 +196,7 @@ export function configSourcePlugin(options: ConfigSourcePluginOptions = {}): Plu
 	}
 }
 
-export function configSourceVitePlugin(options: ConfigSourcePluginOptions = {}): any {
+export function configSourceVitePlugin(options: ConfigSourcePluginOptions = {}) {
 	// Vite dev server runs Rollup-compatible hooks; it will NOT run Rolldown plugin objects
 	// (i.e. `transform: { filter, handler }` is ignored). Keep this wrapper minimal & explicit.
 
@@ -199,18 +210,19 @@ export function configSourceVitePlugin(options: ConfigSourcePluginOptions = {}):
 		: options.exclude
 			? [options.exclude]
 			: ['**/node_modules/**', '**/*.d.ts']
-	const codeHint = /@Plugin|\bPlugin\s*\(|v\.|valibot\.|f\./
+	const codeHint =
+		/@Plugin|\bPlugin\s*\(|@Config|\bConfig\s*\(|\.configs\.use\s*\(|\.features\.use\s*\(|v\.|valibot\.|f\./
 	const moduleInfoStore = createModuleInfoStore()
 
 	const debugEnabled = process.env.PLUXEL_CONFIG_SOURCE_DEBUG === '1'
-	const debug = (...args: any[]) => {
+	const debug = (...args: unknown[]) => {
 		if (!debugEnabled) return
 		// eslint-disable-next-line no-console
 		console.warn('[pluxel-config-source][debug]', ...args)
 	}
 
-	const parseWithLang = (ctx: any, code: string, id: string) => {
-		const parse = ctx?.parse
+	const parseWithLang = (ctx: unknown, code: string, id: string): Program | null => {
+		const parse = (ctx as { parse?: unknown } | null)?.parse
 		if (typeof parse !== 'function') return null
 		try {
 			return parse.call(ctx, code, { lang: getLangFromId(id) }) as Program
@@ -264,14 +276,6 @@ export function configSourceVitePlugin(options: ConfigSourcePluginOptions = {}):
 					return null
 				}
 
-				// If no @Plugin, only collect schema declarations for cross-file resolution.
-				if (!sourceText.includes('@Plugin')) {
-					const ast = parseWithLang(this, sourceText, normalizedId)
-					if (ast) collectModuleInfo(sourceText, normalizedId, ast, moduleInfoStore)
-					else debug('collect-only(parse-failed)', normalizedId)
-					return null
-				}
-
 				const ast = parseWithLang(this, sourceText, normalizedId)
 				if (!ast) {
 					debug('skip(parse-failed)', normalizedId)
@@ -279,7 +283,10 @@ export function configSourceVitePlugin(options: ConfigSourcePluginOptions = {}):
 				}
 
 				try {
+					// Always collect module info for cross-file resolution, even when no configs are extracted.
 					const moduleInfo = collectModuleInfo(sourceText, normalizedId, ast, moduleInfoStore)
+
+					const extractedFeatures = extractFeatureUses(moduleInfo, ast)
 
 					const resolveModuleId: ModuleResolver = async (sourceSpecifier, importer) => {
 						const resolved = await this.resolve?.(sourceSpecifier, importer)
@@ -288,23 +295,37 @@ export function configSourceVitePlugin(options: ConfigSourcePluginOptions = {}):
 						return normalizePath(cleaned)
 					}
 
-					const ctx: ResolveContext = {
-						moduleResolver: resolveModuleId,
-						parse: (source, moduleId) => {
-							const parsed = parseWithLang(this, source, moduleId)
-							if (!parsed) throw new Error(`Failed to parse module: ${moduleId}`)
-							return parsed
-						},
-						moduleInfoStore,
-						resolvedValues: new Map(),
-						pending: new Set(),
-					}
+					// NOTE: @Config may be imported under an alias; keep this check permissive.
+					const hasConfigHints = /\.configs\.use\s*\(|\bConfig\b/.test(sourceText)
+					const extracted = hasConfigHints
+						? await (async () => {
+								const ctx: ResolveContext = {
+									moduleResolver: resolveModuleId,
+									parse: (source, moduleId) => {
+										const parsed = parseWithLang(this, source, moduleId)
+										if (!parsed) throw new Error(`Failed to parse module: ${moduleId}`)
+										return parsed
+									},
+									moduleInfoStore,
+									resolvedValues: new Map(),
+									pending: new Set(),
+								}
 
-					const extracted = await extractConfigSources(moduleInfo, ast, ctx)
-					if (extracted.length === 0) return null
+								return await extractConfigSources(moduleInfo, ast, ctx)
+							})()
+						: []
 
-					const injection = generateInjection(extracted)
-					debug('inject', normalizedId, 'count=', extracted.length)
+					if (extracted.length === 0 && extractedFeatures.length === 0) return null
+
+					const injection = generateInjection(extracted, extractedFeatures)
+					debug(
+						'inject',
+						normalizedId,
+						'configs=',
+						extracted.length,
+						'features=',
+						extractedFeatures.length,
+					)
 					return { code: code + '\n' + injection, map: null }
 				} catch (err) {
 					this.warn?.(`Failed to extract @Config sources from ${id}: ${err}`)
@@ -469,12 +490,6 @@ function isValibotNamespaceImport(name: string, moduleInfo: ModuleInfo): boolean
 	return Boolean(importInfo && importInfo.imported === '*' && importInfo.source === 'valibot')
 }
 
-function isValibotFormNamespaceImport(name: string, moduleInfo: ModuleInfo): boolean {
-	if (name === 'f') return true
-	const importInfo = moduleInfo.imports.get(name)
-	return Boolean(importInfo && importInfo.imported === '*' && importInfo.source === 'valibot-form')
-}
-
 function rewriteRuntimeNamespaces(source: string, moduleInfo: ModuleInfo): string {
 	// Replace `<valibotNs>.foo` => `v.foo`, `<valibotFormNs>.foo` => `f.foo`,
 	// but skip string literals so we don't mutate embedded strings.
@@ -497,20 +512,20 @@ function rewriteRuntimeNamespaces(source: string, moduleInfo: ModuleInfo): strin
 	let inSingle = false
 	let inDouble = false
 	let inTemplate = false
-	let escape = false
+	let isEscaped = false
 
 	while (i < source.length) {
 		const ch = source[i]
 
-		if (escape) {
+		if (isEscaped) {
 			out += ch
-			escape = false
+			isEscaped = false
 			i++
 			continue
 		}
 		if (ch === '\\') {
 			out += ch
-			escape = true
+			isEscaped = true
 			i++
 			continue
 		}
@@ -603,7 +618,10 @@ async function expandExpressionWithModule(
 		return resolved ?? normalized.name
 	}
 	if (normalized.type === 'CallExpression' && isObjectSchemaCall(moduleInfo, normalized.callee)) {
-		return rewriteRuntimeNamespaces(await expandObjectCallWithInlining(moduleInfo, normalized, ctx), moduleInfo)
+		return rewriteRuntimeNamespaces(
+			await expandObjectCallWithInlining(moduleInfo, normalized, ctx),
+			moduleInfo,
+		)
 	}
 	const replacements = await collectIdentifierReplacements(normalized, moduleInfo, ctx)
 	if (replacements.length === 0)
@@ -966,8 +984,10 @@ async function collectIdentifierReplacements(
 	return replacements
 }
 
-function isSpreadElement(node: any): node is SpreadElement {
-	return node?.type === 'SpreadElement'
+function isSpreadElement(node: unknown): node is SpreadElement {
+	return Boolean(
+		node && typeof node === 'object' && (node as { type?: unknown }).type === 'SpreadElement',
+	)
 }
 
 /**
@@ -980,7 +1000,7 @@ async function extractConfigSources(
 ): Promise<ExtractedConfig[]> {
 	const extracted: ExtractedConfig[] = []
 
-	// 第二遍：查找带 @Plugin 的类（因为 @Config 和 @Plugin 必须一起出现）
+	// Find classes that have @Config-decorated fields (plugins and features).
 	for (const node of ast.body) {
 		const classDecl =
 			node.type === 'ClassDeclaration'
@@ -993,15 +1013,14 @@ async function extractConfigSources(
 
 		if (!classDecl) continue
 
-		// 检查类是否有 @Plugin 装饰器
-		if (!hasPluginDecorator(classDecl.decorators)) continue
-
-		const className = classDecl.id?.name ?? 'AnonymousClass'
+		const className = classDecl.id?.name
+		if (!className) continue
 
 		for (const member of classDecl.body.body) {
 			if (member.type !== 'PropertyDefinition') continue
 
 			const propDef = member as PropertyDefinition
+			const isHashPrivate = propDef.key.type === 'PrivateIdentifier'
 			const fieldName =
 				propDef.key.type === 'Identifier'
 					? propDef.key.name
@@ -1009,17 +1028,37 @@ async function extractConfigSources(
 						? propDef.key.name
 						: null
 
-			if (!fieldName || !propDef.decorators) continue
+			if (!fieldName) continue
 
-			for (const decorator of propDef.decorators) {
-				const source = await extractConfigDecoratorSource(decorator, moduleInfo, ctx)
-				if (source) {
-					extracted.push({
-						className,
-						fieldName,
-						source,
-					})
+			let hasDecoratedConfig = false
+			if (propDef.decorators) {
+				for (const decorator of propDef.decorators) {
+					const source = await extractConfigDecoratorSource(decorator, moduleInfo, ctx)
+					if (source) {
+						hasDecoratedConfig = true
+						extracted.push({ className, fieldName, source })
+					}
 				}
+			}
+
+			const useMatch = extractConfigsUseCall(propDef.value ?? null, moduleInfo)
+			if (useMatch) {
+				if (isHashPrivate) {
+					throw new Error(
+						`configs.use(...) is not supported on #private fields: ${className}.#${fieldName}. Use a normal (non-#) field so runtime injection can work.`,
+					)
+				}
+				if (hasDecoratedConfig) {
+					throw new Error(
+						`Config conflict on ${className}.${fieldName}: cannot use both @Config(...) and configs.use(...)`,
+					)
+				}
+				const source = await expandExpressionWithModule(moduleInfo, useMatch.schemaExpr, ctx)
+				const registerExpr =
+					useMatch.schemaExpr.type === 'Identifier'
+						? useMatch.schemaExpr.name
+						: moduleInfo.code.slice(useMatch.schemaExpr.start, useMatch.schemaExpr.end)
+				extracted.push({ className, fieldName, source, registerExpr })
 			}
 		}
 	}
@@ -1027,28 +1066,103 @@ async function extractConfigSources(
 	return extracted
 }
 
-/**
- * 检查装饰器列表是否包含 @Plugin
- */
-function hasPluginDecorator(decorators: Decorator[] | undefined | null): boolean {
-	if (!decorators) return false
-	for (const decorator of decorators) {
-		const expr = decorator.expression
-		// @Plugin() 或 @Plugin(...)
-		if (expr.type === 'CallExpression') {
-			const callee = expr.callee
-			if (callee.type === 'Identifier' && callee.name === 'Plugin') return true
-			if (
-				callee.type === 'MemberExpression' &&
-				callee.property.type === 'Identifier' &&
-				callee.property.name === 'Plugin'
+function extractFeatureUses(moduleInfo: ModuleInfo, ast: Program): ExtractedFeatureUse[] {
+	const extracted: ExtractedFeatureUse[] = []
+	const seen = new Set<string>()
+
+	for (const node of ast.body) {
+		const classDecl =
+			node.type === 'ClassDeclaration'
+				? node
+				: node.type === 'ExportNamedDeclaration' && node.declaration?.type === 'ClassDeclaration'
+					? node.declaration
+					: node.type === 'ExportDefaultDeclaration' && node.declaration.type === 'ClassDeclaration'
+						? node.declaration
+						: null
+
+		if (!classDecl) continue
+
+		const className = classDecl.id?.name
+		if (!className) continue
+
+		for (const member of classDecl.body.body) {
+			if (member.type !== 'PropertyDefinition') continue
+
+			const propDef = member as PropertyDefinition
+			const useMatch = extractFeaturesUseCall(propDef.value ?? null)
+			if (!useMatch) continue
+
+			const featureExpr = moduleInfo.code.slice(
+				useMatch.featureExpr.start,
+				useMatch.featureExpr.end,
 			)
-				return true
+			const key = `${className}::${featureExpr}`
+			if (seen.has(key)) continue
+			seen.add(key)
+			extracted.push({ className, featureExpr })
 		}
-		// @Plugin（无括号，理论上不应该出现但防御性处理）
-		if (expr.type === 'Identifier' && expr.name === 'Plugin') return true
 	}
-	return false
+
+	return extracted
+}
+
+function extractConfigsUseCall(
+	value: Expression | null | undefined,
+	_moduleInfo: ModuleInfo,
+): { schemaExpr: Expression } | null {
+	if (!value) return null
+	const normalized = unwrapExpression(value)
+
+	if (normalized.type !== 'CallExpression') return null
+	const callee = normalized.callee
+	if (callee.type !== 'MemberExpression') return null
+
+	// Match: this.configs.use(...)
+	const prop = callee.property
+	if (prop.type !== 'Identifier' || prop.name !== 'use') return null
+
+	const obj = callee.object
+	if (obj.type !== 'MemberExpression') return null
+	const objProp = obj.property
+	if (objProp.type !== 'Identifier' || objProp.name !== 'configs') return null
+
+	const objObj = obj.object
+	if (objObj.type !== 'ThisExpression') return null
+
+	if (normalized.arguments.length === 0) return null
+	const arg = normalized.arguments[0]
+	const resolved = arg.type === 'SpreadElement' ? arg.argument : arg
+	if (!resolved) return null
+	return { schemaExpr: resolved }
+}
+
+function extractFeaturesUseCall(
+	value: Expression | null | undefined,
+): { featureExpr: Expression } | null {
+	if (!value) return null
+	const normalized = unwrapExpression(value)
+
+	if (normalized.type !== 'CallExpression') return null
+	const callee = normalized.callee
+	if (callee.type !== 'MemberExpression') return null
+
+	// Match: this.features.use(...)
+	const prop = callee.property
+	if (prop.type !== 'Identifier' || prop.name !== 'use') return null
+
+	const obj = callee.object
+	if (obj.type !== 'MemberExpression') return null
+	const objProp = obj.property
+	if (objProp.type !== 'Identifier' || objProp.name !== 'features') return null
+
+	const objObj = obj.object
+	if (objObj.type !== 'ThisExpression') return null
+
+	if (normalized.arguments.length === 0) return null
+	const arg = normalized.arguments[0]
+	const resolved = arg.type === 'SpreadElement' ? arg.argument : arg
+	if (!resolved) return null
+	return { featureExpr: resolved }
 }
 
 /**
@@ -1089,31 +1203,67 @@ async function extractConfigDecoratorSource(
 /**
  * 生成注入代码 - 直接将 schema source 作为字符串字面量注入
  */
-function generateInjection(configs: ExtractedConfig[]): string {
-	if (configs.length === 0) return ''
+function generateInjection(configs: ExtractedConfig[], features: ExtractedFeatureUse[]): string {
+	if (configs.length === 0 && features.length === 0) return ''
 
-	const lines: string[] = [
-		'// [pluxel-config-source] Injected @Config source metadata',
-		'import { __setConfigSource__ } from "@pluxel/core";',
-	]
+	const needsRegister = configs.some(
+		(c) => typeof c.registerExpr === 'string' && c.registerExpr.length > 0,
+	)
 
-	for (const { className, fieldName, source } of configs) {
-		// 将 source 压缩（移除多余空白和尾随逗号）后作为字符串字面量注入
-		const compactSource = source
-			.replace(/\s+/g, ' ')
-			.replace(/\(\s+/g, '(')
-			.replace(/\s+\)/g, ')')
-			.replace(/{\s+/g, '{')
-			.replace(/\s+}/g, '}')
-			.replace(/,\s+/g, ',')
-			.replace(/:\s+/g, ':')
-			.replace(/,\)/g, ')') // 移除尾随逗号 ,) -> )
-			.replace(/,}/g, '}') // 移除尾随逗号 ,} -> }
-			.replace(/,]/g, ']') // 移除尾随逗号 ,] -> ]
-			.trim()
-		const final = normalizeSchemaSource(compactSource)
-		const escapedSource = JSON.stringify(final)
-		lines.push(`__setConfigSource__(${className}, ${JSON.stringify(fieldName)}, ${escapedSource});`)
+	const lines: string[] = ['// [pluxel-config-source] Injected metadata']
+
+	if (configs.length > 0 || features.length > 0) {
+		const imports: string[] = []
+		if (configs.length > 0) {
+			imports.push('__setConfigSource__')
+			if (needsRegister) imports.push('__registerConfigSchema__')
+		}
+		if (features.length > 0) imports.push('__registerUsedFeatures__')
+		// Keep import stable/deterministic for snapshots and caching.
+		imports.sort()
+		lines.push(`import { ${imports.join(', ')} } from "@pluxel/core";`)
+
+		for (const { className, fieldName, source } of configs) {
+			// 将 source 压缩（移除多余空白和尾随逗号）后作为字符串字面量注入
+			const compactSource = source
+				.replace(/\s+/g, ' ')
+				.replace(/\(\s+/g, '(')
+				.replace(/\s+\)/g, ')')
+				.replace(/{\s+/g, '{')
+				.replace(/\s+}/g, '}')
+				.replace(/,\s+/g, ',')
+				.replace(/:\s+/g, ':')
+				.replace(/,\)/g, ')') // 移除尾随逗号 ,) -> )
+				.replace(/,}/g, '}') // 移除尾随逗号 ,} -> }
+				.replace(/,]/g, ']') // 移除尾随逗号 ,] -> ]
+				.trim()
+			const final = normalizeSchemaSource(compactSource)
+			const escapedSource = JSON.stringify(final)
+			lines.push(
+				`__setConfigSource__(${className}, ${JSON.stringify(fieldName)}, ${escapedSource});`,
+			)
+		}
+	}
+
+	if (configs.length > 0 && needsRegister) {
+		for (const cfg of configs) {
+			if (!cfg.registerExpr) continue
+			lines.push(
+				`__registerConfigSchema__(${cfg.className}, ${JSON.stringify(cfg.fieldName)}, ${cfg.registerExpr});`,
+			)
+		}
+	}
+
+	if (features.length > 0) {
+		const groups = new Map<string, string[]>()
+		for (const { className, featureExpr } of features) {
+			const list = groups.get(className)
+			if (list) list.push(featureExpr)
+			else groups.set(className, [featureExpr])
+		}
+		for (const [className, featureExprs] of groups) {
+			lines.push(`__registerUsedFeatures__(${className}, ${featureExprs.join(', ')});`)
+		}
 	}
 
 	return lines.join('\n')

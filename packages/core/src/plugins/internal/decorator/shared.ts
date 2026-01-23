@@ -15,11 +15,13 @@ export const __DEV__ =
 export const $freeze = <T>(x: T): T => (__DEV__ ? Object.freeze(x) : x)
 export const EMPTY_ARR: readonly unknown[] = $freeze([])
 
+export type AnyCtor = abstract new (...args: unknown[]) => unknown
+
 /*───────────────────────────────────────────────────────────
   Internal State（单 WM，固定 shape，JIT 友好）
   所有字段使用 null 而非 undefined（V8 优化）
 ───────────────────────────────────────────────────────────*/
-type Tokens = Array<Identifier<any> | undefined>
+type Tokens = Array<Identifier<unknown> | undefined>
 
 export interface State {
 	// ═══════════════════════════════════════════════════════
@@ -41,6 +43,8 @@ export interface State {
 	ctor: PluginIdentifier | null
 	/** 由第三方 decorator 声明的“需要的插件依赖”（用于校验显式 ctor 依赖） */
 	requiredDeps: ReadonlyArray<PluginIdentifier> | null
+	/** Feature composition: feature ctors declared on this plugin. */
+	features: ReadonlyArray<AnyCtor> | null
 
 	// ═══════════════════════════════════════════════════════
 	// 可变身份数据（外部可 set，重建 snapshot 但不动 epoch）
@@ -71,10 +75,10 @@ export interface State {
 	pending: Record<string, unknown> | null
 }
 
-export const STATE = new WeakMap<Function, State>()
+export const STATE = new WeakMap<AnyCtor, State>()
 
 /** 获取或创建 State（固定 shape，JIT 友好） */
-export const S = (ctor: Function): State => {
+export const S = (ctor: AnyCtor): State => {
 	let s = STATE.get(ctor)
 	if (s) return s
 	// 所有字段显式初始化为 null，保持固定 shape
@@ -87,6 +91,7 @@ export const S = (ctor: Function): State => {
 		rtypes: EMPTY_ARR,
 		ctor: null,
 		requiredDeps: null,
+		features: null,
 
 		id: null,
 		displayName: null,
@@ -107,21 +112,23 @@ export const S = (ctor: Function): State => {
 /*───────────────────────────────────────────────────────────
   Tiny Utils
 ───────────────────────────────────────────────────────────*/
-export const nameOf = (fn: { name?: string } | null | undefined): string => fn?.name || '<anonymous>'
+export const nameOf = (fn: { name?: string } | null | undefined): string =>
+	fn?.name || '<anonymous>'
 
-export const isSubclassOf = (ctor: Function, base: Function): boolean => {
+export const isSubclassOf = (ctor: AnyCtor, base: AnyCtor): boolean => {
 	if (ctor === base) return true
 	if (typeof ctor !== 'function' || typeof base !== 'function') return false
 	const cp = (ctor as { prototype?: object }).prototype
 	const bp = (base as { prototype?: object }).prototype
-	return !!(cp && bp && bp.isPrototypeOf(cp))
+	return Boolean(cp && bp && Object.prototype.isPrototypeOf.call(bp, cp))
 }
 
-export const resolveCtorFromDecoratorTarget = (target: object | Function): Function => {
-	if (typeof target === 'function') return target
-	const ctor = (target as any)?.constructor as Function | undefined
-	if (typeof ctor !== 'function') throw new Error('[PluginDecorator] 无法从 decorator target 解析 ctor')
-	return ctor
+export const resolveCtorFromDecoratorTarget = (target: object | AnyCtor): AnyCtor => {
+	if (typeof target === 'function') return target as AnyCtor
+	const ctor = (target as { constructor?: unknown }).constructor
+	if (typeof ctor !== 'function')
+		throw new Error('[PluginDecorator] 无法从 decorator target 解析 ctor')
+	return ctor as AnyCtor
 }
 
 /** tokens 变更 → 仅失效构造参数缓存（与身份数据无关） */
@@ -157,7 +164,7 @@ export function normalizeConfigSourceMap(
 }
 
 /** 重建对外快照（不动 epoch） */
-export function rebuildInfoSnapshot(ctor: Function, s: State): void {
+export function rebuildInfoSnapshot(ctor: AnyCtor, s: State): void {
 	const declaredName = s.declaredName || nameOf(ctor)
 	const id = normalizeId(s.id, declaredName)
 	const displayName = s.displayName?.trim() || id
@@ -197,15 +204,15 @@ export function applyOverride(dst: unknown[], override?: ParamOverride): void {
 		const ks = Object.keys(override)
 		for (let i = 0; i < ks.length; i++) {
 			const idx = (ks[i] as unknown as number) | 0
-			const v = (override as unknown as Record<string, Identifier<any>>)[String(idx)]
+			const v = (override as unknown as Record<string, Identifier<unknown>>)[String(idx)]
 			if (v !== undefined) dst[idx] = v
 		}
 	}
 }
 
 export function sparseObjectToArray(
-	o: Readonly<Record<number, Identifier<any>>>,
-): Array<Identifier<any> | undefined> {
+	o: Readonly<Record<number, Identifier<unknown>>>,
+): Array<Identifier<unknown> | undefined> {
 	const ks = Object.keys(o)
 	if (!ks.length) return []
 	let max = -1
@@ -213,10 +220,10 @@ export function sparseObjectToArray(
 		const idx = (ks[i] as unknown as number) | 0
 		if (idx > max) max = idx
 	}
-	const arr = new Array<Identifier<any> | undefined>(max + 1)
+	const arr = new Array<Identifier<unknown> | undefined>(max + 1)
 	for (let i = 0; i < ks.length; i++) {
 		const idx = (ks[i] as unknown as number) | 0
-		arr[idx] = (o as unknown as Record<string, Identifier<any>>)[String(idx)]
+		arr[idx] = (o as unknown as Record<string, Identifier<unknown>>)[String(idx)]
 	}
 	return arr
 }

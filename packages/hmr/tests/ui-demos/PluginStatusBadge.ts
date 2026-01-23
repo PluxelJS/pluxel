@@ -1,4 +1,4 @@
-// packages/hmr/tests/plugins/ui-demos/PluginStatusBadge.ts
+// packages/hmr/tests/ui-demos/PluginStatusBadge.ts
 // 展示型插件：在宿主公共区域插入 UI（非插件详情页）
 
 import { BasePlugin, Plugin } from '@pluxel/core'

@@ -13,6 +13,7 @@ import { Injectable } from '@pluxel/context'
 import { createErr, createOk } from 'option-t/plain_result'
 import type { ServiceMap } from '../container'
 import { LeanMapTracker } from '../container/LeanMapTracker'
+import { isProduction } from '../env'
 import { EffectScopeService } from '../services/scope/EffectScopeService'
 import { forkPlugin, getForkedCtor, listForks } from './fork'
 import type { BasePlugin } from './internal/BasePlugin'
@@ -26,13 +27,7 @@ import {
 	startPluginsWithStrategy,
 	stopPluginsTopo,
 } from './internal/runtime/commit'
-import {
-	type InstancesOf,
-	type OptionalEffectHandler,
-	type OptionalImporter,
-	OptionalResolver,
-	type OptionalEffectOptions as OptionalSubscriptionOptions,
-} from './internal/runtime/optionalResolver'
+// Optional dependency API removed in favor of feature composition (BaseFeature).
 import type {
 	ForkablePluginConstructor,
 	PluginConstructor,
@@ -44,12 +39,13 @@ import { LifecycleManager } from './LifecycleManager'
 /* ─────────────────────────── Types ─────────────────────────── */
 
 type PluginServiceConfig = {
-	pluginCTXIsolate?: ServiceClass<any>[]
+	pluginCTXIsolate?: ServiceClass<unknown>[]
 	startTimeoutMs?: number
 	stopTimeoutMs?: number
 	startStrategy?: PluginStartStrategy
 	startConcurrency?: number
 	stopConcurrency?: number
+	featureDeclarationPolicy?: 'off' | 'warn' | 'error'
 }
 
 export interface CommitSummary {
@@ -110,10 +106,16 @@ export class PluginService {
 	/** Plugins that should be restarted (re-instantiated) on the next commit. */
 	private _pendingRestart = new Set<PluginIdentifier>()
 	private order = 0
+	private readonly featureDeclarationPolicyDefault: 'off' | 'warn' | 'error'
+	private readonly featureDeclarationPolicyExplicit: boolean
+	private nextCommitFeatureDeclarationPolicy: 'off' | 'warn' | 'error' | null = null
+
+	private static readonly FEATURE_DECLARATION_POLICY = Symbol.for(
+		'pluxel:feature:declarationPolicy',
+	)
 
 	// Internal helpers (single instances; no per‑commit allocations).
 	private readonly lifecycle: LifecycleManager
-	private readonly optionals: OptionalResolver
 
 	constructor(
 		public ctx: Context,
@@ -124,10 +126,23 @@ export class PluginService {
 		this.startStrategy = config?.startStrategy ?? 'ready-queue'
 		this.startConcurrency = config?.startConcurrency ?? 8
 		this.stopConcurrency = config?.stopConcurrency ?? 1
+		this.featureDeclarationPolicyExplicit = config?.featureDeclarationPolicy != null
+		this.featureDeclarationPolicyDefault =
+			config?.featureDeclarationPolicy ?? (isProduction ? 'off' : 'warn')
 
 		const isolated = [...new Set([...(config?.pluginCTXIsolate ?? []), EffectScopeService])]
 		this.definitions = new PluginDefinitions(() => {
 			const pluginCTX = this.ctx.root.isolate(isolated, { name: `${this.order++}` })
+			const override = this.nextCommitFeatureDeclarationPolicy
+			if (this.featureDeclarationPolicyExplicit || override != null) {
+				const policy = override ?? this.featureDeclarationPolicyDefault
+				Object.defineProperty(pluginCTX, PluginService.FEATURE_DECLARATION_POLICY, {
+					value: policy,
+					writable: false,
+					enumerable: false,
+					configurable: true,
+				})
+			}
 
 			// Scope is per‑plugin by design and used heavily for disposables.
 			// We eagerly instantiate it once and pin it as an own‑property to:
@@ -151,14 +166,6 @@ export class PluginService {
 		}, this.builderSingletons)
 
 		this.lifecycle = new LifecycleManager(this.ctx, this.startTimeoutMs, this.stopTimeoutMs)
-		this.optionals = new OptionalResolver(
-			() => this.ctx,
-			() => this.container,
-			(id) => this.getRuntimeInstance(id),
-			(id) => this.isRunning(id),
-			() => this._lastCommit,
-			() => this._activeContainer,
-		)
 	}
 
 	private injectConfig(plugin: PluginInstance): void {
@@ -170,21 +177,39 @@ export class PluginService {
 		const id = info.id
 
 		const record = pluginCtx.configService.getConfig(id)
-		const pluginAny = plugin as any
-		const recordAny = record as any
+		const pluginObj = plugin as unknown as Record<string, unknown>
+		const recordObj = record as unknown as Record<string, unknown>
 
 		for (const key in schemaMap) {
 			if (!Object.hasOwn(schemaMap, key)) continue
-			pluginAny[key] = recordAny[key]
+			// Feature configs are merged into the host plugin schema as namespaced keys (e.g. "cache.config").
+			// They belong to the host plugin *config panel*, but should not be injected onto the plugin instance.
+			if (key.includes('.')) continue
+			pluginObj[key] = recordObj[key]
 		}
+	}
+
+	private resolveIdentifier(
+		container: PluginDiContainer | undefined,
+		id: PluginIdentifier,
+	): PluginIdentifier {
+		const resolver = (container as unknown as { resolveIdentifier?: unknown })?.resolveIdentifier
+		if (typeof resolver !== 'function') return id
+		// Important: preserve `this` binding for container methods.
+		const out = (resolver as (this: PluginDiContainer, x: unknown) => unknown).call(container, id)
+		return (out ?? id) as PluginIdentifier
+	}
+
+	private services(container: PluginDiContainer): Map<unknown, unknown> {
+		return container.services as unknown as Map<unknown, unknown>
 	}
 
 	/* ─────────────────────────── State Query ─────────────────────────── */
 
 	isRunning(id: PluginIdentifier): boolean {
 		const container = this._activeContainer ?? this.container
-		const key = container?.resolveIdentifier?.(id as any) ?? id
-		const instance = this.getRuntimeInstance(key as any)
+		const key = this.resolveIdentifier(container, id)
+		const instance = this.getRuntimeInstance(key)
 		return this.lifecycle.isRunning(instance)
 	}
 
@@ -203,8 +228,8 @@ export class PluginService {
 	 */
 	public getInstance<T extends PluginIdentifier>(id: T): InstanceType<T> | undefined {
 		const container = this._activeContainer ?? this.container
-		const key = (container?.resolveIdentifier?.(id as any) ?? id) as PluginIdentifier
-		return this.getRuntimeInstance(key as any) as InstanceType<T> | undefined
+		const key = this.resolveIdentifier(container, id)
+		return this.getRuntimeInstance(key) as InstanceType<T> | undefined
 	}
 
 	/* ─────────────────────────── Forks ─────────────────────────── */
@@ -236,8 +261,8 @@ export class PluginService {
 		const ForkCtor = getForkedCtor(ctor, forkId)
 		if (!ForkCtor) return undefined
 		return (
-			(this.container?.get(ForkCtor as any) as InstanceType<T> | undefined) ??
-			(this.getRuntimeInstance(ForkCtor as any) as InstanceType<T> | undefined)
+			(this.container?.get(ForkCtor) as InstanceType<T> | undefined) ??
+			(this.getRuntimeInstance(ForkCtor) as InstanceType<T> | undefined)
 		)
 	}
 
@@ -269,8 +294,11 @@ export class PluginService {
 		roots: Iterable<PluginIdentifier>,
 	): Set<PluginIdentifier> {
 		if (!container) return new Set(roots)
-		const resolve = (id: PluginIdentifier) =>
-			(container.resolveIdentifier?.(id as any) ?? id) as PluginIdentifier
+		const resolve = (id: PluginIdentifier) => this.resolveIdentifier(container, id)
+		const dependents = container.dependents as unknown as ReadonlyMap<
+			PluginIdentifier,
+			Set<PluginIdentifier>
+		>
 
 		const affected = new Set<PluginIdentifier>()
 		const stack: PluginIdentifier[] = []
@@ -280,9 +308,9 @@ export class PluginService {
 			const current = stack.pop()!
 			if (affected.has(current)) continue
 			affected.add(current)
-			const children = container.dependents.get(current)
+			const children = dependents.get(current)
 			if (!children) continue
-			for (const dep of children) stack.push(resolve(dep as any))
+			for (const dep of children) stack.push(resolve(dep))
 		}
 		return affected
 	}
@@ -312,10 +340,13 @@ export class PluginService {
 		const container = this.container
 		const targets = cascade ? this.collectDependents(container, [id]) : new Set([id])
 		for (const t of targets) {
-			if (
-				container &&
-				!container.services.has((container.resolveIdentifier?.(t as any) ?? t) as any)
-			) {
+			if (container) {
+				const services = this.services(container)
+				const key = this.resolveIdentifier(container, t)
+				if (!services.has(key)) {
+					throw new Error(`You can not restart an unloaded Plugin: ${String(t)}`)
+				}
+			} else {
 				throw new Error(`You can not restart an unloaded Plugin: ${String(t)}`)
 			}
 			this._pendingRestart.add(t)
@@ -332,7 +363,7 @@ export class PluginService {
 		opts?: { cascadeDependents?: boolean; provideBase?: boolean },
 	): void {
 		const container = this.container
-		const canonical = (container?.resolveIdentifier?.(target as any) ?? target) as PluginIdentifier
+		const canonical = this.resolveIdentifier(container, target)
 		const targets =
 			(opts?.cascadeDependents ?? true)
 				? this.collectDependents(container, [canonical])
@@ -350,61 +381,44 @@ export class PluginService {
 		for (const t of targets) this._pendingRestart.add(t)
 	}
 
-	/* ─────────────────────────── Optional Dependencies ─────────────────────────── */
-
-	/**
-	 * The ONLY supported optional dependency API:
-	 * - returns a disposer (also collected into caller ctx.scope)
-	 * - effect is executed on "settled" state (afterCommit when called during commit())
-	 */
-	public optional<T extends PluginIdentifier>(
-		plugin: T,
-		effect: OptionalEffectHandler<InstanceType<T> | undefined>,
-		opts?: OptionalSubscriptionOptions & { multi?: false },
-	): () => void
-	public optional<T extends readonly PluginIdentifier[]>(
-		plugins: T,
-		effect: OptionalEffectHandler<InstancesOf<T>>,
-		opts: OptionalSubscriptionOptions & { multi: true },
-	): () => void
-	public optional<T extends PluginIdentifier>(
-		importer: OptionalImporter<T>,
-		effect: OptionalEffectHandler<InstanceType<T> | undefined>,
-		opts?: OptionalSubscriptionOptions & { multi?: false },
-	): Promise<() => void>
-	public optional<T extends PluginIdentifier>(
-		importer: OptionalImporter<T>,
-		effect: OptionalEffectHandler<Array<InstanceType<T> | undefined>>,
-		opts: OptionalSubscriptionOptions & { multi: true },
-	): Promise<() => void>
-	public optional(
-		target: PluginIdentifier | OptionalImporter<PluginIdentifier> | readonly PluginIdentifier[],
-		effect: OptionalEffectHandler<BasePlugin | Array<BasePlugin | undefined> | undefined>,
-		opts?: OptionalSubscriptionOptions,
-	) {
-		return (this.optionals as any).optional(target, effect, opts)
-	}
-
 	/* ─────────────────────────── Commit Internals ─────────────────────────── */
+
+	private enqueueCommit(policyOverride: 'off' | 'warn' | 'error' | null) {
+		const next = this._commitLock
+			.then(async () => {
+				const prev = this.nextCommitFeatureDeclarationPolicy
+				this.nextCommitFeatureDeclarationPolicy = policyOverride
+				try {
+					return await this.executeCommit()
+				} finally {
+					this.nextCommitFeatureDeclarationPolicy = prev
+				}
+			})
+			.catch((error) => {
+				this.ctx.logger.with({ error }).error`commit 内部异常`
+				return createErr(error)
+			})
+
+		this._commitLock = next
+		return next
+	}
 
 	private async stopPlugin(id: PluginIdentifier): Promise<void> {
 		// Important: don't call container.get() here; it may instantiate plugins just to stop them.
 		// Only stop plugins that were actually constructed (and thus may be running).
-		const plugin = this.getRuntimeInstance(id as any)
+		const plugin = this.getRuntimeInstance(id)
 		if (!plugin) return
 		await this.lifecycle.stopLifecycle(id, plugin, { timeoutMs: this.resolveStopTimeoutMs(plugin) })
 	}
 
 	private resolveStartTimeoutMs(plugin: BasePlugin): number | undefined {
 		const info = plugin.ctx.pluginInfo
-		const fromMeta = (info.metadata as any)?.startTimeoutMs
-		return isFinitePositiveMs(fromMeta) ? fromMeta : undefined
+		return readFinitePositiveMsFromMeta(info.metadata, 'startTimeoutMs')
 	}
 
 	private resolveStopTimeoutMs(plugin: BasePlugin): number | undefined {
 		const info = plugin.ctx.pluginInfo
-		const fromMeta = (info.metadata as any)?.stopTimeoutMs
-		return isFinitePositiveMs(fromMeta) ? fromMeta : undefined
+		return readFinitePositiveMsFromMeta(info.metadata, 'stopTimeoutMs')
 	}
 
 	private pruneDetachedSingletons(): void {
@@ -412,21 +426,21 @@ export class PluginService {
 		// Prune entries that became reachable again via builderSingletons (e.g. undo/resetDraft).
 		if (this.detachedSingletons.size === 0) return
 		for (const id of this.detachedSingletons.keys()) {
-			if (this.builderSingletons.has(id as any)) this.detachedSingletons.delete(id)
+			if (this.builderSingletons.has(id)) this.detachedSingletons.delete(id)
 		}
 	}
 
 	private getRuntimeInstance(id: PluginIdentifier): BasePlugin | undefined {
 		return (
-			(this.builderSingletons.get(id as any) as BasePlugin | undefined) ??
-			(this.detachedSingletons.get(id as any) as BasePlugin | undefined)
+			(this.builderSingletons.get(id) as BasePlugin | undefined) ??
+			(this.detachedSingletons.get(id) as BasePlugin | undefined)
 		)
 	}
 
 	private stashRuntimeInstance(id: PluginIdentifier): void {
 		const container = this._activeContainer ?? this.container
-		const key = (container?.resolveIdentifier?.(id as any) ?? id) as PluginIdentifier
-		const instance = this.builderSingletons.get(key as any) as PluginInstance | undefined
+		const key = this.resolveIdentifier(container, id)
+		const instance = this.builderSingletons.get(key)
 		if (instance) this.detachedSingletons.set(key, instance)
 	}
 
@@ -509,15 +523,24 @@ export class PluginService {
 	 * - 失败插件从 singletons 中清理（下次 commit 仍会尝试重启）
 	 */
 	async commit() {
-		const next = this._commitLock
-			.then(() => this.executeCommit())
-			.catch((error) => {
-				this.ctx.logger.with({ error }).error`commit 内部异常`
-				return createErr(error)
-			})
+		return this.enqueueCommit(null)
+	}
 
-		this._commitLock = next
-		return next
+	/**
+	 * Strict commit:
+	 * - runs a commit with feature declaration policy set to `error` for this cycle;
+	 * - if any plugins failed to start, returns an error result.
+	 */
+	async commitStrict() {
+		const res = await this.enqueueCommit('error')
+		if (!res.ok) return res
+		const summary = this._lastCommit
+		if (summary?.failed.length) {
+			return createErr(
+				new Error(`Some plugins failed to start: ${summary.failed.map(String).join(', ')}`),
+			)
+		}
+		return res
 	}
 
 	private async executeCommit() {
@@ -527,9 +550,8 @@ export class PluginService {
 			this.pruneDetachedSingletons()
 			// Diod's ServiceVerificationAggregateError carries a detailed `.toString()` output;
 			// include it explicitly because some loggers only print `error.message`.
-				this.ctx.logger
-					.with({ error: action.err.err, detail: String(action.err.err) })
-					.error`插件在依赖项解析时失败`
+			this.ctx.logger.with({ error: action.err.err, detail: String(action.err.err) })
+				.error`插件在依赖项解析时失败`
 			return createErr(action.err.err)
 		}
 
@@ -546,10 +568,10 @@ export class PluginService {
 			const restartStop = new Set<PluginIdentifier>()
 			const restartStart = new Set<PluginIdentifier>()
 			for (const id of restartRequested) {
-				const stopKey = (oldContainer?.resolveIdentifier?.(id as any) ?? id) as PluginIdentifier
-				if (oldContainer?.services.has(stopKey as any)) restartStop.add(stopKey)
-				const startKey = (container.resolveIdentifier?.(id as any) ?? id) as PluginIdentifier
-				if (container.services.has(startKey as any)) restartStart.add(startKey)
+				const stopKey = this.resolveIdentifier(oldContainer, id)
+				if (oldContainer && this.services(oldContainer).has(stopKey)) restartStop.add(stopKey)
+				const startKey = this.resolveIdentifier(container, id)
+				if (this.services(container).has(startKey)) restartStart.add(startKey)
 			}
 
 			const toStop = new Set<PluginIdentifier>()
@@ -565,8 +587,8 @@ export class PluginService {
 			// Retry previously failed plugins opportunistically on any commit.
 			for (const id of this._pendingStart) {
 				if (toStop.has(id)) continue
-				const key = container.resolveIdentifier?.(id as any) ?? id
-				if (container.services.has(key as any)) toStart.add(key as PluginIdentifier)
+				const key = this.resolveIdentifier(container, id)
+				if (this.services(container).has(key)) toStart.add(key)
 			}
 
 			// No-op commit: still report state (after applying pending restarts/retries).
@@ -596,27 +618,25 @@ export class PluginService {
 			await this.applyTeardown(oldContainer, toStop)
 
 			// Ensure fresh instances for restarts/replacements.
-			for (const id of toStop) this.builderSingletons.delete(id as any)
-			for (const id of toStop) this.detachedSingletons.delete(id as any)
-			for (const id of replaced) this.builderSingletons.delete(id as any)
-			for (const id of restartStart) this.builderSingletons.delete(id as any)
+			for (const id of toStop) this.builderSingletons.delete(id)
+			for (const id of toStop) this.detachedSingletons.delete(id)
+			for (const id of replaced) this.builderSingletons.delete(id)
+			for (const id of restartStart) this.builderSingletons.delete(id)
 
 			const toInitMap: ServiceMap<BasePlugin> = new Map()
 			if (toStart.size) {
+				const services = this.services(container) as Map<PluginIdentifier, BasePlugin>
 				// Perf: toStart is usually small (HMR / incremental enables),
 				// so index into the service map instead of scanning the whole container.
 				for (const serviceId of toStart) {
-					const value = container.services.get(serviceId as any)
-					if (value) toInitMap.set(serviceId as PluginIdentifier, value)
+					const value = services.get(serviceId)
+					if (value) toInitMap.set(serviceId, value)
 				}
 			}
 
 			let failed = new Set<PluginIdentifier>()
 			if (toInitMap.size) {
-				const plan = computeInitPlan(
-					toInitMap,
-					(id) => container.resolveIdentifier?.(id as any) ?? id,
-				)
+				const plan = computeInitPlan(toInitMap, (id) => this.resolveIdentifier(container, id))
 				failed = await this.startPlugins(container, plan)
 			}
 
@@ -637,8 +657,8 @@ export class PluginService {
 			for (const id of failed) this._pendingStart.add(id)
 
 			if (failed.size) {
-				for (const id of failed) this.builderSingletons.delete(id as any)
-				for (const id of failed) this.detachedSingletons.delete(id as any)
+				for (const id of failed) this.builderSingletons.delete(id)
+				for (const id of failed) this.detachedSingletons.delete(id)
 				this.ctx.logger.warn('以下插件启动失败', { failed: [...failed].map(String) })
 				this.ctx.emit('commitFailed', failed)
 			}
@@ -655,4 +675,10 @@ export class PluginService {
 
 function isFinitePositiveMs(value: unknown): value is number {
 	return typeof value === 'number' && Number.isFinite(value) && value > 0
+}
+
+function readFinitePositiveMsFromMeta(metadata: unknown, key: string): number | undefined {
+	if (!metadata || typeof metadata !== 'object') return undefined
+	const value = (metadata as Record<string, unknown>)[key]
+	return isFinitePositiveMs(value) ? value : undefined
 }

@@ -5,7 +5,7 @@ import '../../src/services'
 
 import { afterEach, describe, expect, it } from 'bun:test'
 import { createTestHost, type TestHost } from '@pluxel/core/test'
-import { AuthGuardTestPlugin } from '../plugins/AuthGuardTestPlugin'
+import { AuthGuardTestPlugin } from '../fixtures/plugins/AuthGuardTestPlugin'
 
 function req(url: string, init?: RequestInit) {
 	return new Request(url, init)

@@ -4,7 +4,7 @@
 // 目标（给未来的 LLM/开发者看的“最小但完整”范例）：
 // - HonoService：通过 ctx.honoService.modifyApp() 注册路由/中间件
 // - GraphQLService：通过 ctx.graphql.useModule() 注册 schema（resolver/query/mutation）
-// - @Config：给插件加“可被宿主 UI 渲染”的实用配置（valibot-form 元信息）
+// - configs.use(schema)：给插件加“可被宿主 UI 渲染”的实用配置（valibot-form 元信息）
 //
 // 试用方式（默认 dev 端口 3000）：
 // - 打开 HTML 导览页：GET  /demo
@@ -13,14 +13,18 @@
 //
 // 注意：
 // - modifyApp()/useModule() 都会返回 disposer，并且会自动绑定到插件的 scope 生命周期（通过 ctx.scope.collectEffect）。
-// - 配置建议以 `@Config` 注入为准（启动时注入一次）；如需热更新，推荐通过“重载插件”生效。
+// - 配置建议以 `configs.use(schema)` 注入为准（启动时注入一次）；如需热更新，推荐通过“重载插件”生效。
 
-import { BasePlugin, Config, Plugin } from '@pluxel/hmr'
+import { BasePlugin, Plugin } from '@pluxel/hmr'
 import { f, v } from '@pluxel/hmr/config'
 import type { HonoWithAppEnvType } from '@pluxel/hmr/services'
 
 const SECTION_ROUTES = { id: 'routes', title: 'Routes (Hono)', description: '插件注入的 HTTP 路由' }
-const SECTION_GRAPHQL = { id: 'graphql', title: 'GraphQL', description: '插件注入的 GraphQL schema' }
+const SECTION_GRAPHQL = {
+	id: 'graphql',
+	title: 'GraphQL',
+	description: '插件注入的 GraphQL schema',
+}
 
 const DEFAULT_ROUTE_PREFIX = '/demo'
 
@@ -85,11 +89,8 @@ export class PluginHonoGraphQLDemo extends BasePlugin {
 	// 1) 让宿主知道有哪些 config schema（用于 UI 表单渲染/默认值补齐/校验）
 	// 2) 作为“兜底默认值”的静态来源
 	//
-	@Config(RoutesConfig)
-	private routes!: Config<typeof RoutesConfig>
-
-	@Config(GraphQLDemoConfig)
-	private graphql!: Config<typeof GraphQLDemoConfig>
+	private routes = this.configs.use(RoutesConfig)
+	private graphql = this.configs.use(GraphQLDemoConfig)
 
 	override async init() {
 		// 1) GraphQL：把 resolver 注入到 /graphql 的 schema 中。
@@ -122,7 +123,9 @@ export class PluginHonoGraphQLDemo extends BasePlugin {
 				.resolve((args: { name?: string | null }) => {
 					const name = args.name
 					const who =
-						typeof name === 'string' && name.trim() ? name.trim() : (this.graphql.defaultName ?? 'World')
+						typeof name === 'string' && name.trim()
+							? name.trim()
+							: (this.graphql.defaultName ?? 'World')
 					return `${this.graphql.greetingPrefix ?? 'Hello'}, ${who}!`
 				}),
 		})
@@ -173,7 +176,7 @@ export class PluginHonoGraphQLDemo extends BasePlugin {
     <h2>GraphQL</h2>
     <p>endpoint: <code>${gqlEndpoint}</code></p>
     <pre>curl -s ${gqlEndpoint} -H 'content-type: application/json' \\
-  --data-binary '{\"query\":\"query($name:String){ demoHello(name:$name) demoPing }\",\"variables\":{\"name\":\"Pluxel\"}}'</pre>
+  --data-binary '{"query":"query($name:String){ demoHello(name:$name) demoPing }","variables":{"name":"Pluxel"}}'</pre>
     <p>提示：GraphiQL 是否开启由服务器环境控制（非本插件）；默认 dev 环境会开启。</p>
   </body>
 </html>`)

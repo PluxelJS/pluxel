@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'bun:test'
 
 import {
+	__registerUsedFeature__,
+	BaseFeature,
 	BasePlugin,
 	ForkablePlugin,
 	Plugin,
@@ -9,22 +11,28 @@ import {
 	withTestHost,
 } from '@pluxel/core/test'
 
-const UsePluginId = (token: any) =>
+type PluginToken<T extends BasePlugin = BasePlugin> = abstract new (...args: unknown[]) => T
+type KvLike = {
+	has: (key: string) => Promise<boolean>
+	get: (key: string) => Promise<unknown>
+	set: (key: string, value: unknown) => Promise<void>
+}
+
+const UsePluginId = <T extends BasePlugin>(token: PluginToken<T>) =>
 	// Small helper to validate "token -> resolved instance" behavior for decorators.
 	// - When token is a base (alias) token, we should resolve the base provider.
 	// - When token is a fork ctor, we should resolve that specific fork.
-	pluginMethodDecorator(token, async function (_original, dep) {
-		return dep.ctx.pluginInfo.id
-	})
+	pluginMethodDecorator(token, async (_original, dep) => dep.ctx.pluginInfo.id)
 
-const CachedWithToken = (token: any) =>
+const CachedWithToken = <T extends BasePlugin>(token: PluginToken<T>) =>
 	// Demo of a cross-plugin decorator that resolves its dependency by token,
 	// not by consumer-defined property names (e.g. no `this.kv` convention).
 	pluginMethodDecorator(token, async function (original, kv, key, ...args) {
+		const kvLike = kv as unknown as KvLike
 		const cacheKey = `${String(key)}:${JSON.stringify(args)}`
-		if (await (kv as any).has(cacheKey)) return await (kv as any).get(cacheKey)
+		if (await kvLike.has(cacheKey)) return await kvLike.get(cacheKey)
 		const value = await original.apply(this, args)
-		await (kv as any).set(cacheKey, value)
+		await kvLike.set(cacheKey, value)
 		return value
 	})
 
@@ -84,8 +92,8 @@ describe('Decorator-required plugin deps', () => {
 				}
 				async set(key: string, value: unknown) {
 					this.store.set(key, value)
-					}
 				}
+			}
 
 			// Simulate "a decorator exported by the dependency plugin package".
 			// Consumer does NOT pass token at usage sites; the plugin package binds it.
@@ -117,6 +125,64 @@ describe('Decorator-required plugin deps', () => {
 		})
 	})
 
+	it('propagates decorator-required deps from BaseFeature via features.use() (extraction equivalent)', async () => {
+		await withTestHost(async (host) => {
+			@Plugin({ name: 'KvPlugin' })
+			class KvPlugin extends BasePlugin {
+				private store = new Map<string, unknown>()
+				async has(key: string) {
+					return this.store.has(key)
+				}
+				async get(key: string) {
+					return this.store.get(key)
+				}
+				async set(key: string, value: unknown) {
+					this.store.set(key, value)
+				}
+			}
+
+			const Cached = () => CachedWithToken(KvPlugin)
+
+			class CacheFeature extends BaseFeature {
+				@Cached()
+				async compute(key: string) {
+					return { key }
+				}
+			}
+
+			@Plugin({ name: 'ConsumerMissing' })
+			class ConsumerMissing extends BasePlugin {
+				readonly cache = this.features.use(CacheFeature)
+				async run() {
+					return await this.cache.compute('x')
+				}
+			}
+			__registerUsedFeature__(ConsumerMissing, CacheFeature)
+
+			host.register(KvPlugin)
+			expect(() => host.register(ConsumerMissing)).toThrow(/Missing constructor dependencies/)
+
+			@Plugin({ name: 'ConsumerOk' })
+			class ConsumerOk extends BasePlugin {
+				readonly cache = this.features.use(CacheFeature)
+				constructor(public kv: KvPlugin) {
+					super()
+				}
+				async run() {
+					return await this.cache.compute('x')
+				}
+			}
+			__registerUsedFeature__(ConsumerOk, CacheFeature)
+			setParamToken(ConsumerOk, 0, KvPlugin)
+
+			host.registerAll(ConsumerOk)
+			await host.commitStrict()
+
+			const consumer = host.getOrThrow(ConsumerOk) as ConsumerOk
+			expect(await consumer.run()).toEqual({ key: 'x' })
+		})
+	})
+
 	it('resolves base vs fork tokens correctly', async () => {
 		await withTestHost(async (host) => {
 			abstract class KvBase extends ForkablePlugin {}
@@ -129,7 +195,7 @@ describe('Decorator-required plugin deps', () => {
 
 			// Simulate "plugin-side exports": pre-bound decorators, no token passed by consumers.
 			const UseBaseId = () => UsePluginId(KvBase)
-			const UseForkAId = () => UsePluginId(ForkA as any)
+			const UseForkAId = () => UsePluginId(ForkA as unknown as PluginToken<KvBase>)
 
 			@Plugin({ name: 'ConsumerForks' })
 			class ConsumerForks extends BasePlugin {
@@ -149,7 +215,7 @@ describe('Decorator-required plugin deps', () => {
 			}
 
 			setParamToken(ConsumerForks, 0, KvBase)
-			setParamToken(ConsumerForks, 1, ForkA as any)
+			setParamToken(ConsumerForks, 1, ForkA as unknown as PluginToken<KvBase>)
 
 			host.register(ConsumerForks)
 			await host.commitStrict()

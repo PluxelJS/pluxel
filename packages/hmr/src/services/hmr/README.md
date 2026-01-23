@@ -67,6 +67,34 @@ You can further isolate plugin HMR from frontend/UI changes by providing:
 The same include/exclude rules are forwarded to `configSourcePlugin`, so decorator source extraction stays in sync
 with the HMR scope (and avoids touching UI/TSX by default).
 
+## Config + Feature metadata extraction (pre-start)
+
+HMR uses `@pluxel/rolldown`'s `configSourceVitePlugin` to extract metadata from **raw TS source** (not downleveled JS):
+
+- `@Config(schema)` → injects `__setConfigSource__(Ctor, field, "...")` for UI schema source.
+- `field = this.configs.use(schema)` → injects both:
+  - `__setConfigSource__(Ctor, field, "...")` (UI schema source)
+  - `__registerConfigSchema__(Ctor, field, schema)` (so the schema is known before plugin start)
+- `field = this.features.use(FeatureCtor)` → injects:
+  - `__registerUsedFeatures__(Ctor, FeatureCtor)` to lift Feature decorator-required deps to the host plugin definition,
+    and to attribute Feature config schema into the host plugin config panel (namespaced keys).
+
+Notes / limitations:
+
+- `configs.use(...)` on `#private` fields is rejected (runtime injection cannot assign to `#private`).
+- `features.use(...)` extraction only works for class-field initializers. If you call it dynamically in `init()`,
+  use `@UseFeature(FeatureCtor)` / `@UseFeature(F1, F2, ...)` (or call `__registerUsedFeatures__(PluginCtor, FeatureCtor)` at module eval time).
+
+## Misuse checklist
+
+If something "runs" but UI/config/DI looks wrong, check:
+
+- You still need `@Plugin({ name })` on the plugin class (this is the runtime identity + registry entry point).
+- Do not read values returned by `this.configs.use(schema)` in the constructor; they are injected later (read in `init()`/methods).
+- If a Feature declares config (`@Config` / `configs.use`) or declares decorator-required deps (`pluginMethodDecorator()`),
+  make sure it is declared *before start* (`@UseFeature(...)` or a class-field `this.features.use(...)` so configSource can inject `__registerUsedFeatures__`).
+  In strict environments you can enable `featureDeclarationPolicy: "error"` to fail fast on this mistake.
+
 ## Extra Vite plugins
 
 `@pluxel/hmr` does not ship opinionated transforms (e.g. macros) by default.

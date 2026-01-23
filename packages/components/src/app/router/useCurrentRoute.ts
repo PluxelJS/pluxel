@@ -1,23 +1,13 @@
-import { useMatches } from '@tanstack/react-router'
-
-const EMPTY_SEARCH: Record<string, unknown> = {}
+import { useRouterState } from '@tanstack/react-router'
 
 export function useCurrentPathname() {
-	return useMatches({
-		select: (matches) => {
-			const last = matches[matches.length - 1]
-			return last?.pathname ?? '/'
-		},
-		structuralSharing: true,
+	return useRouterState({
+		select: (s) => s.location.pathname,
 	})
 }
 
 export function useCurrentSearch() {
-	return useMatches({
-		select: (matches) => {
-			const last = matches[matches.length - 1]
-			return last?.search ?? EMPTY_SEARCH
-		},
-		structuralSharing: true,
+	return useRouterState({
+		select: (s) => s.location.search,
 	})
 }

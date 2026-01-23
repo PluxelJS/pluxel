@@ -1,7 +1,7 @@
 // packages/hmr/tests/demo/PluginBuiltinShowcase.ts
-// 展示型插件：尽量不注册自定义组件，仅使用宿主内置能力（builtin UI + Config）
+// 展示型插件：尽量不注册自定义组件，仅使用宿主内置能力（builtin UI + config schemas）
 
-import { BasePlugin, Config, Plugin } from '@pluxel/hmr'
+import { BasePlugin, Plugin } from '@pluxel/hmr'
 import { RpcTarget } from '@pluxel/hmr/capnweb'
 import { f, v } from '@pluxel/hmr/config'
 import type { SseChannel } from '@pluxel/hmr/services'
@@ -109,8 +109,10 @@ const clampNumber = (input: unknown, fallback: number, min: number, max: number)
 const isUptimeStyle = (value: unknown): value is UptimeStyle =>
 	UPTIME_STYLES.includes(value as UptimeStyle)
 
-const isPicklistValue = <T extends readonly string[]>(values: T, value: unknown): value is T[number] =>
-	typeof value === 'string' && (values as readonly string[]).includes(value)
+const isPicklistValue = <T extends readonly string[]>(
+	values: T,
+	value: unknown,
+): value is T[number] => typeof value === 'string' && (values as readonly string[]).includes(value)
 
 const readBoolean = (value: unknown, fallback: boolean) =>
 	typeof value === 'boolean' ? value : fallback
@@ -135,8 +137,7 @@ const UNIT_LABELS: Record<LabelStyle, Record<string, string>> = {
 
 const formatDuration = (ms: number, format: FormatSnapshot) => {
 	const safeMs = Math.max(0, Math.floor(ms))
-	const separator =
-		format.separator === 'colon' ? ':' : format.separator === 'dot' ? '.' : ' '
+	const separator = format.separator === 'colon' ? ':' : format.separator === 'dot' ? '.' : ' '
 	const labelTable = UNIT_LABELS[format.labelStyle]
 
 	const formatValue = (value: number) => {
@@ -192,7 +193,9 @@ const formatDuration = (ms: number, format: FormatSnapshot) => {
 	if (template) {
 		const tokenPattern = /{{\s*(uptime|value)\s*}}/g
 		const hasToken = tokenPattern.test(template)
-		templated = hasToken ? template.replace(tokenPattern, body).trim() : `${template} ${body}`.trim()
+		templated = hasToken
+			? template.replace(tokenPattern, body).trim()
+			: `${template} ${body}`.trim()
 	}
 	return `${prefix}${templated}${suffix}`
 }
@@ -353,18 +356,16 @@ export class PluginBuiltinShowcase extends BasePlugin {
 	private ticks = 0
 	private paused = false
 
-	@Config(DisplayConfig)
-	private display!: Config<typeof DisplayConfig>
-	@Config(BehaviorConfig)
-	private behavior!: Config<typeof BehaviorConfig>
-	@Config(FormatConfig)
-	private format!: Config<typeof FormatConfig>
-	@Config(RuntimeFormSchema)
-	private _runtime!: Config<typeof RuntimeFormSchema>
-	@Config(RuntimeToggleSchema)
-	private _runtimeToggle!: Config<typeof RuntimeToggleSchema>
+	private display = this.configs.use(DisplayConfig)
+	private behavior = this.configs.use(BehaviorConfig)
+	private format = this.configs.use(FormatConfig)
+	private _runtime = this.configs.use(RuntimeFormSchema)
+	private _runtimeToggle = this.configs.use(RuntimeToggleSchema)
 
 	override async init() {
+		void this._runtime
+		void this._runtimeToggle
+
 		this.startedAt = Date.now()
 
 		this.ctx.ext.rpc.registerExtension(() => new PluginBuiltinShowcaseRpc(this))
@@ -375,7 +376,7 @@ export class PluginBuiltinShowcase extends BasePlugin {
 	}
 
 	private getConfigSnapshot(): ConfigSnapshot {
-		// 这里优先展示“@Config 注入”的最常规用法：启动时注入一次，后续用字段即可。
+		// 展示 configs.use(schema)：启动时注入一次，后续用字段即可。
 		const display = (this.display ?? DEFAULTS.display) as Record<string, unknown>
 		const behavior = (this.behavior ?? DEFAULTS.behavior) as Record<string, unknown>
 		const format = (this.format ?? DEFAULTS.format) as Record<string, unknown>
@@ -462,16 +463,16 @@ export class PluginBuiltinShowcase extends BasePlugin {
 				${doc.block(
 					'Overview',
 					doc.card({
-					layout: { variant: 'grid', density: 'compact', columns: 3, labelPlacement: 'top' },
-					rows: [
-						{ label: 'Plugin', value: this.ctx.pluginInfo.id },
-						{ label: 'Uptime', value: this.sse('uptimeLabel', '0s') },
-						{ label: 'Ticks', value: this.sse('ticks', 0) },
-						{ label: 'Tick step', value: this.sse('tickStep', DEFAULTS.behavior.tickStep) },
-						{ label: 'Paused', value: this.sse('paused', false) },
-						{ label: 'Max ticks', value: this.sse('maxTicks', DEFAULTS.behavior.maxTicks) },
-						{ label: 'Refresh (ms)', value: this.sse('refreshMs', DEFAULTS.display.refreshMs) },
-					],
+						layout: { variant: 'grid', density: 'compact', columns: 3, labelPlacement: 'top' },
+						rows: [
+							{ label: 'Plugin', value: this.ctx.pluginInfo.id },
+							{ label: 'Uptime', value: this.sse('uptimeLabel', '0s') },
+							{ label: 'Ticks', value: this.sse('ticks', 0) },
+							{ label: 'Tick step', value: this.sse('tickStep', DEFAULTS.behavior.tickStep) },
+							{ label: 'Paused', value: this.sse('paused', false) },
+							{ label: 'Max ticks', value: this.sse('maxTicks', DEFAULTS.behavior.maxTicks) },
+							{ label: 'Refresh (ms)', value: this.sse('refreshMs', DEFAULTS.display.refreshMs) },
+						],
 					}),
 				)}
 			`,
@@ -493,25 +494,25 @@ export class PluginBuiltinShowcase extends BasePlugin {
 				${doc.block(
 					'Pause',
 					doc.form({
-					description: 'submitMode=onChange + SSE sync.',
-					submitMode: 'onChange',
-					autoSubmitDebounceMs: 120,
-					syncFromSse: { kind: 'sse' },
-					schemaKey: '_runtimeToggle',
-					rpc: { method: 'setPaused', args: [{ kind: 'field', key: 'paused' }] },
+						description: 'submitMode=onChange + SSE sync.',
+						submitMode: 'onChange',
+						autoSubmitDebounceMs: 120,
+						syncFromSse: { kind: 'sse' },
+						schemaKey: '_runtimeToggle',
+						rpc: { method: 'setPaused', args: [{ kind: 'field', key: 'paused' }] },
 					}),
 				)}
 
 				${doc.block(
 					'Set ticks',
 					doc.form({
-					description: 'Manual submit → RPC.',
-					submitLabel: 'Submit',
-					submitMode: 'manual',
-					schemaKey: '_runtime',
-					rpc: { method: 'setTicks', args: [{ kind: 'field', key: 'ticks' }] },
-					feedback: { success: { title: 'Submitted', tone: 'success' } },
-					resetOnSuccess: false,
+						description: 'Manual submit → RPC.',
+						submitLabel: 'Submit',
+						submitMode: 'manual',
+						schemaKey: '_runtime',
+						rpc: { method: 'setTicks', args: [{ kind: 'field', key: 'ticks' }] },
+						feedback: { success: { title: 'Submitted', tone: 'success' } },
+						resetOnSuccess: false,
 					}),
 				)}
 			`,
@@ -527,9 +528,9 @@ export class PluginBuiltinShowcase extends BasePlugin {
 				${doc.block(
 					'Metrics Stream',
 					doc.card({
-					description: 'Compact status list (auto-updated).',
-					layout: { variant: 'list', density: 'compact', valueAlign: 'right' },
-					rows: this.buildMetricRows(),
+						description: 'Compact status list (auto-updated).',
+						layout: { variant: 'list', density: 'compact', valueAlign: 'right' },
+						rows: this.buildMetricRows(),
 					}),
 				)}
 			`,
@@ -542,27 +543,27 @@ export class PluginBuiltinShowcase extends BasePlugin {
 			${doc.block(
 				'Snapshot',
 				doc.card({
-				description: 'Markdown + builtin blocks.',
-				layout: { variant: 'grid', density: 'compact', columns: 3, labelPlacement: 'top' },
-				rows: [
-					{ label: 'Uptime', value: this.sse('uptimeLabel', '0s') },
-					{ label: 'Ticks', value: this.sse('ticks', 0) },
-					{ label: 'Paused', value: this.sse('paused', false) },
-					{ label: 'Tick step', value: this.sse('tickStep', DEFAULTS.behavior.tickStep) },
-					{ label: 'Refresh (ms)', value: this.sse('refreshMs', DEFAULTS.display.refreshMs) },
-				],
+					description: 'Markdown + builtin blocks.',
+					layout: { variant: 'grid', density: 'compact', columns: 3, labelPlacement: 'top' },
+					rows: [
+						{ label: 'Uptime', value: this.sse('uptimeLabel', '0s') },
+						{ label: 'Ticks', value: this.sse('ticks', 0) },
+						{ label: 'Paused', value: this.sse('paused', false) },
+						{ label: 'Tick step', value: this.sse('tickStep', DEFAULTS.behavior.tickStep) },
+						{ label: 'Refresh (ms)', value: this.sse('refreshMs', DEFAULTS.display.refreshMs) },
+					],
 				}),
 			)}
 
 			${doc.block(
 				'Quick controls',
 				doc.form({
-				description: 'onChange + SSE sync.',
-				submitMode: 'onChange',
-				autoSubmitDebounceMs: 120,
-				syncFromSse: { kind: 'sse' },
-				schemaKey: '_runtimeToggle',
-				rpc: { method: 'setPaused', args: [{ kind: 'field', key: 'paused' }] },
+					description: 'onChange + SSE sync.',
+					submitMode: 'onChange',
+					autoSubmitDebounceMs: 120,
+					syncFromSse: { kind: 'sse' },
+					schemaKey: '_runtimeToggle',
+					rpc: { method: 'setPaused', args: [{ kind: 'field', key: 'paused' }] },
 				}),
 			)}
 

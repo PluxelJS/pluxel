@@ -4,7 +4,9 @@ import type { BasePlugin } from './BasePlugin'
 import { PLUGIN_CTX } from './BasePlugin'
 import { requirePluginDependency } from './PluginDecorator'
 
-type AnyFn = (...args: any[]) => any
+type AnyFn = (...args: unknown[]) => unknown
+type Registry = { getInstance: <T>(id: Identifier<T>) => T | undefined }
+type AnyRecord = Record<PropertyKey, unknown>
 
 // Cache of caller-injected dependency views on each plugin instance.
 // Symbol.for so HMR and multi-bundle scenarios can share the same key safely.
@@ -18,7 +20,12 @@ const DEP_CACHE = Symbol.for('pluxel:plugin:decorators:depCache')
  * `dep.ctx.caller === callerCtx`.
  */
 function withCaller<P extends BasePlugin>(dep: P, callerCtx: Context): P {
-	const view = Object.create((dep as any)[PLUGIN_CTX])
+	const baseCtx = (dep as unknown as AnyRecord)[PLUGIN_CTX]
+	if (!baseCtx || typeof baseCtx !== 'object') {
+		throw new Error('[pluxel/core] BasePlugin instance missing internal ctx')
+	}
+
+	const view = Object.create(baseCtx as object) as Context
 	view.caller = callerCtx
 	return Object.create(dep, {
 		ctx: {
@@ -30,20 +37,27 @@ function withCaller<P extends BasePlugin>(dep: P, callerCtx: Context): P {
 	})
 }
 
-function getCallerCtx(self: any): Context {
-	const ctx = self?.ctx
+function getCallerCtx(self: unknown): Context {
+	if (!self || (typeof self !== 'object' && typeof self !== 'function')) {
+		throw new Error(
+			'[pluxel/core] Decorator runtime requires an instance with ctx (BasePlugin/BaseFeature)',
+		)
+	}
+	const ctx = (self as { ctx?: unknown }).ctx
 	if (!ctx || typeof ctx !== 'object') {
-		throw new Error('[pluxel/core] Decorator runtime requires a BasePlugin instance (missing ctx)')
+		throw new Error(
+			'[pluxel/core] Decorator runtime requires an instance with ctx (BasePlugin/BaseFeature)',
+		)
 	}
 	return ctx as Context
 }
 
-function getRegistry(ctx: any): any {
-	const registry = ctx?.registry
+function getRegistry(ctx: unknown): Registry {
+	const registry = (ctx as { registry?: unknown } | null)?.registry
 	if (!registry || typeof registry.getInstance !== 'function') {
 		throw new Error('[pluxel/core] Decorator runtime requires ctx.registry.getInstance')
 	}
-	return registry
+	return registry as Registry
 }
 
 /**
@@ -56,9 +70,12 @@ export function resolvePluginDependency<T extends BasePlugin>(
 	self: unknown,
 	token: Identifier<T>,
 ): T {
-	const plugin = self as any
+	if (!self || (typeof self !== 'object' && typeof self !== 'function')) {
+		throw new Error('[pluxel/core] Decorator runtime requires a plugin instance')
+	}
+	const plugin = self as AnyRecord
 	const ctx = getCallerCtx(plugin)
-	const registry = getRegistry(ctx as any)
+	const registry = getRegistry(ctx)
 
 	let cache = plugin[DEP_CACHE] as Map<unknown, unknown> | undefined
 	if (!cache) {
@@ -105,17 +122,19 @@ export function resolvePluginDependency<T extends BasePlugin>(
  */
 export function pluginMethodDecorator<T extends BasePlugin>(
 	depToken: Identifier<T>,
-	fn: (this: any, original: AnyFn, dep: T, key: string | symbol, ...args: any[]) => any,
+	fn: (this: unknown, original: AnyFn, dep: T, key: string | symbol, ...args: unknown[]) => unknown,
 ): MethodDecorator {
 	return (target, key, desc) => {
-		requirePluginDependency(target, depToken as any)
+		requirePluginDependency(target, depToken as unknown as Identifier<BasePlugin>)
 
 		const original = (desc as PropertyDescriptor | undefined)?.value
 		if (typeof original !== 'function') {
-			throw new Error(`pluginMethodDecorator(${String(depToken)}) can only decorate methods: ${String(key)}`)
+			throw new Error(
+				`pluginMethodDecorator(${String(depToken)}) can only decorate methods: ${String(key)}`,
+			)
 		}
 
-		;(desc as PropertyDescriptor).value = function (...args: any[]) {
+		;(desc as PropertyDescriptor).value = function (...args: unknown[]) {
 			const dep = resolvePluginDependency(this, depToken)
 			return fn.call(this, original, dep, key, ...args)
 		}

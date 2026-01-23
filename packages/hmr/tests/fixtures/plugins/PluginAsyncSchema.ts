@@ -1,4 +1,4 @@
-import { BasePlugin, Config, Plugin } from '@pluxel/core'
+import { BasePlugin, Plugin } from '@pluxel/hmr'
 import { f, v } from '@pluxel/hmr/config'
 
 const font = v.pipe(
@@ -28,9 +28,10 @@ const fontsSelectorSchema = v.objectAsync({
 		}),
 	),
 })
-@Plugin({ name: 'TestAsyncSchema', type: 'hook' })
-export class PluginC extends BasePlugin {
-	@Config(fontsSelectorSchema)
-	private test1!: Config<typeof fontsSelectorSchema>
-	init(): void {}
+@Plugin({ name: 'PluginAsyncSchema', type: 'hook' })
+export class PluginAsyncSchema extends BasePlugin {
+	private test1 = this.configs.use(fontsSelectorSchema)
+	override init(): void {
+		void this.test1
+	}
 }

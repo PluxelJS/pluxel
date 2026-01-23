@@ -1,4 +1,4 @@
-import { BasePlugin, Plugin } from '@pluxel/core'
+import { BasePlugin, Plugin } from '@pluxel/hmr'
 import type { HonoWithAppEnvType } from '../../src/services/hono/env'
 
 const COOKIE_NAME = 'pluxel-auth'
@@ -51,4 +51,3 @@ export class AuthGuardTestPlugin extends BasePlugin {
 		})
 	}
 }
-

@@ -1,8 +1,8 @@
 import './setup'
 
 import { Context } from '@pluxel/context'
+import type { CommitSummary, PluginConstructor, PluginIdentifier, PluginService } from '../plugins'
 import { checkPluginDecorator, getPluginInfo } from '../plugins'
-import type { CommitSummary, PluginService, PluginConstructor, PluginIdentifier } from '../plugins'
 import type { ConfigService } from '../services/config/ConfigService'
 
 // ---------------------------------------------------------------------------
@@ -11,24 +11,32 @@ import type { ConfigService } from '../services/config/ConfigService'
 // ---------------------------------------------------------------------------
 
 export { Context } from '@pluxel/context'
-export { BasePlugin, ForkablePlugin } from '../plugins'
-export { pluginMethodDecorator, resolvePluginDependency } from '../plugins'
 export {
+	__registerConfigSchema__,
+	__registerUsedFeature__,
+	__registerUsedFeatures__,
+	BaseFeature,
+	BasePlugin,
 	Config,
 	checkPluginDecorator,
 	clearParamToken,
+	FeatureHost,
+	ForkablePlugin,
 	getPluginInfo,
 	getRequiredPluginDependencies,
 	Plugin,
+	pluginMethodDecorator,
 	requirePluginDependency,
+	resolvePluginDependency,
 	setParamToken,
 	setParamTokens,
+	UseFeature,
 } from '../plugins'
-export { EffectScopeService } from '../services/scope/EffectScopeService'
 export { EventsService } from '../services/events/EventsService'
 export { LoggerService } from '../services/LoggerService'
+export { EffectScopeService } from '../services/scope/EffectScopeService'
 
-export type CommitAttempt = { ok: true; summary: CommitSummary } | { ok: false; error: any }
+export type CommitAttempt = { ok: true; summary: CommitSummary } | { ok: false; error: unknown }
 
 export type TestHost = {
 	/** Root context for this test. */
@@ -50,7 +58,6 @@ export type TestHost = {
 
 	/** Runtime state helpers. */
 	isRunning: PluginService['isRunning']
-	optional: PluginService['optional']
 	/**
 	 * Read the current in-memory instance cache.
 	 * Does not instantiate or start anything.
@@ -182,7 +189,6 @@ export function createTestHost(config: Context.Config = {}): TestHost {
 		listForks: registry.listForks.bind(registry),
 
 		isRunning: registry.isRunning.bind(registry),
-		optional: registry.optional.bind(registry) as TestHost['optional'],
 		get,
 		getOrThrow,
 		config: configService,
@@ -209,10 +215,12 @@ export function createTestHost(config: Context.Config = {}): TestHost {
 			return attempted.summary
 		},
 		commitStrict: async () => {
-			const summary = await host.commit()
-			if (summary.failed.length) {
-				throw new Error(`Some plugins failed to start: ${summary.failed.map(String).join(', ')}`)
+			const result = await registry.commitStrict()
+			if (!result.ok) {
+				throw result.err instanceof Error ? result.err : new Error(String(result.err))
 			}
+			const summary = registry.lastCommit
+			if (!summary) throw new Error('commitStrict succeeded but lastCommit is missing')
 			return summary
 		},
 		start: async (Plugin, opts) => {

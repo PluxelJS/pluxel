@@ -1,9 +1,9 @@
-// packages/hmr/tests/plugins/ui-demos/PluginStatusBadge/ui/StatusBadge.tsx
+// packages/hmr/tests/ui-demos/PluginStatusBadge/ui/StatusBadge.tsx
 // 简单的状态徽章组件
 
 import { Badge, Tooltip } from '@mantine/core'
-import { IconActivity } from '@tabler/icons-react'
 import { definePluginUIModule, ExtensionPoints, useExtensionContext } from '@pluxel/hmr/web'
+import { IconActivity } from '@tabler/icons-react'
 import { useEffect, useState } from 'react'
 
 function StatusBadge() {

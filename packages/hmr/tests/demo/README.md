@@ -6,12 +6,14 @@
 
 - 启动 HMR 测试宿主：`pnpm --filter @pluxel/hmr hmr`
 - 这些 demo 会通过 `packages/hmr/tests/start.ts` 的 `hmrService.dir` 自动被扫描/加载。
+- Demo 默认假设 HMR 侧启用了 `configSourcePlugin`：因此 `configs.use(...)` / `features.use(...)` 可以不写装饰器，也能在启动前注册 schema/依赖信息。
 
 ## 清单（建议阅读顺序）
 
 - `PluginEventsDemo.ts`：两种事件通信方式（EvtChannel + declare module 全局事件合同）。
 - `PluginHonoGraphQLDemo.ts`：插件里使用 `ctx.honoService.modifyApp()` + `ctx.graphql.useModule()`。
 - `PluginBuiltinShowcase.ts`：尽量只用 builtin UI/config 的“大而全”样例（表单 meta、SSE state、内置文档块等）。
+- `PluginFeatureConfigDemo.ts`：Feature 配置归因到父插件配置页（schema key 形如 `cache.config` / `cache.rules`，UI 会按 group 自动分组）。
 - `PluginVaultDemo.ts`：插件里使用 `ctx.vault.open()` 做加密持久化（token/secret/batch/lock）。
 - `PluginWithUI.ts` + `PluginWithUI/ui/*`：完整链路（UI + RPC + SSE + 持久化 state）。
 - `advanced/DemoBaseProviders.ts`：抽象基类 Token + 多实现（Provider 选择）。

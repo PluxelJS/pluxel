@@ -102,12 +102,7 @@ describe('LoaderService', () => {
 		}
 
 		expect(core.registry.isRunning(Abs)).toBe(true)
-		let dep1: Abs | undefined
-		core.registry.optional(Abs, (dep) => {
-			dep1 = dep
-		})
-		await Promise.resolve()
-		expect(dep1).toBeInstanceOf(Impl1)
+		expect(core.registry.getInstance(Abs)).toBeInstanceOf(Impl1)
 
 		// Hot update: load module B providing an enabled plugin with missing deps -> commit should fail.
 		{
@@ -125,12 +120,7 @@ describe('LoaderService', () => {
 
 		// Core should still be on the previous container: base resolves to Impl1 and remains running.
 		expect(core.registry.isRunning(Abs)).toBe(true)
-		let dep2: Abs | undefined
-		core.registry.optional(Abs, (dep) => {
-			dep2 = dep
-		})
-		await Promise.resolve()
-		expect(dep2).toBeInstanceOf(Impl1)
+		expect(core.registry.getInstance(Abs)).toBeInstanceOf(Impl1)
 	})
 
 	it('registry view exposes module ids and loaded names', async () => {

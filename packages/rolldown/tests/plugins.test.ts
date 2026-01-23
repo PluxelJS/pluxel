@@ -381,6 +381,20 @@ export class RegularImport {
 	}
 }
 `,
+	'plugin-with-feature-use.ts': `// Test extraction of features.use(...) class-field initializer
+import { BasePlugin, Plugin } from '@pluxel/core'
+
+function PluginDecorator(_meta?: any): ClassDecorator {
+	return () => {}
+}
+
+@PluginDecorator({ name: 'FeatureHostPlugin' })
+export class FeatureHostPlugin extends BasePlugin {
+	feature = this.features.use(CacheFeature)
+}
+
+export class CacheFeature {}
+`,
 } satisfies Record<string, string>
 
 async function withFixtures<T>(run: (fixturesDir: string) => Promise<T>) {
@@ -425,6 +439,22 @@ describe('configSourcePlugin', () => {
 		})
 	})
 
+	it('injects __registerUsedFeatures__ for features.use(...) class fields', async () => {
+		await withFixtures(async (fixturesDir) => {
+			const bundle = await rolldown({
+				input: resolve(fixturesDir, 'plugin-with-feature-use.ts'),
+				plugins: [configSourcePlugin()],
+				external: ['@pluxel/core'],
+			})
+
+			const { output } = await bundle.generate({ format: 'esm' })
+			const code = output[0].code
+
+			expect(code).toContain('__registerUsedFeatures__')
+			expect(code).toContain('__registerUsedFeatures__(FeatureHostPlugin, CacheFeature)')
+		})
+	})
+
 	it('rewrites valibot namespace imports to runtime "v"', async () => {
 		await withFixtures(async (fixturesDir) => {
 			const bundle = await rolldown({
@@ -443,10 +473,10 @@ describe('configSourcePlugin', () => {
 		})
 	})
 
-		it('rewrites valibot-form namespace imports to runtime "f"', async () => {
-			await withFixtures(async (fixturesDir) => {
-				const bundle = await rolldown({
-					input: resolve(fixturesDir, 'plugin-with-config-valibot-form-namespace.ts'),
+	it('rewrites valibot-form namespace imports to runtime "f"', async () => {
+		await withFixtures(async (fixturesDir) => {
+			const bundle = await rolldown({
+				input: resolve(fixturesDir, 'plugin-with-config-valibot-form-namespace.ts'),
 				plugins: [configSourcePlugin()],
 				external: ['valibot', 'valibot-form', '@pluxel/core'],
 			})
@@ -455,55 +485,57 @@ describe('configSourcePlugin', () => {
 			const code = output[0].code
 
 			expect(code).toContain('__setConfigSource__')
-			const match = /__setConfigSource__\(\s*ValibotFormNamespacePlugin\s*,\s*"config"\s*,\s*"([^"]*)"\s*\)/.exec(
-				code,
-			)
+			const match =
+				/__setConfigSource__\(\s*ValibotFormNamespacePlugin\s*,\s*"config"\s*,\s*"([^"]*)"\s*\)/.exec(
+					code,
+				)
 			expect(match).toBeTruthy()
 			const injected = match?.[1] ?? ''
 			expect(injected).toContain('f.stringMeta')
-				expect(injected).not.toContain('valibotForm.stringMeta')
-			})
+			expect(injected).not.toContain('valibotForm.stringMeta')
 		})
+	})
 
-		it('rewrites valibot named imports to runtime "v"', async () => {
-			await withFixtures(async (fixturesDir) => {
-				const bundle = await rolldown({
-					input: resolve(fixturesDir, 'plugin-with-config-valibot-named-import.ts'),
-					plugins: [configSourcePlugin()],
-					external: ['valibot', '@pluxel/core'],
-				})
-
-				const { output } = await bundle.generate({ format: 'esm' })
-				const code = output[0].code
-
-				expect(code).toContain('__setConfigSource__')
-				expect(code).toContain(
-					'__setConfigSource__(ValibotNamedImportPlugin, "config", "v.object({name:v.string(),count:v.pipe(v.number(),v.integer())})")',
-				)
+	it('rewrites valibot named imports to runtime "v"', async () => {
+		await withFixtures(async (fixturesDir) => {
+			const bundle = await rolldown({
+				input: resolve(fixturesDir, 'plugin-with-config-valibot-named-import.ts'),
+				plugins: [configSourcePlugin()],
+				external: ['valibot', '@pluxel/core'],
 			})
+
+			const { output } = await bundle.generate({ format: 'esm' })
+			const code = output[0].code
+
+			expect(code).toContain('__setConfigSource__')
+			expect(code).toContain(
+				'__setConfigSource__(ValibotNamedImportPlugin, "config", "v.object({name:v.string(),count:v.pipe(v.number(),v.integer())})")',
+			)
 		})
+	})
 
-		it('rewrites valibot-form named imports to runtime "f"', async () => {
-			await withFixtures(async (fixturesDir) => {
-				const bundle = await rolldown({
-					input: resolve(fixturesDir, 'plugin-with-config-valibot-form-named-import.ts'),
-					plugins: [configSourcePlugin()],
-					external: ['valibot', 'valibot-form', '@pluxel/core'],
-				})
+	it('rewrites valibot-form named imports to runtime "f"', async () => {
+		await withFixtures(async (fixturesDir) => {
+			const bundle = await rolldown({
+				input: resolve(fixturesDir, 'plugin-with-config-valibot-form-named-import.ts'),
+				plugins: [configSourcePlugin()],
+				external: ['valibot', 'valibot-form', '@pluxel/core'],
+			})
 
-				const { output } = await bundle.generate({ format: 'esm' })
-				const code = output[0].code
+			const { output } = await bundle.generate({ format: 'esm' })
+			const code = output[0].code
 
-				expect(code).toContain('__setConfigSource__')
-				const match = /__setConfigSource__\(\s*ValibotFormNamedImportPlugin\s*,\s*"config"\s*,\s*"([^"]*)"\s*\)/.exec(
+			expect(code).toContain('__setConfigSource__')
+			const match =
+				/__setConfigSource__\(\s*ValibotFormNamedImportPlugin\s*,\s*"config"\s*,\s*"([^"]*)"\s*\)/.exec(
 					code,
 				)
-				expect(match).toBeTruthy()
-				const injected = match?.[1] ?? ''
-				expect(injected).toContain('f.stringMeta')
-				expect(injected).not.toMatch(/(^|[^.])stringMeta\(/)
-			})
+			expect(match).toBeTruthy()
+			const injected = match?.[1] ?? ''
+			expect(injected).toContain('f.stringMeta')
+			expect(injected).not.toMatch(/(^|[^.])stringMeta\(/)
 		})
+	})
 
 	it('extracts local schema source', async () => {
 		await withFixtures(async (fixturesDir) => {
@@ -595,7 +627,9 @@ describe('configSourcePlugin', () => {
 			const code = output[0].code
 
 			expect(code).toContain('__setConfigSource__(NestedImportPlugin')
-			expect(code).toContain('v.object({apiKey:v.string(),endpoint:v.pipe(v.string(),v.url()),retryCount:v.optional(v.pipe(v.number(),v.integer(),v.minValue(0)),3)})')
+			expect(code).toContain(
+				'v.object({apiKey:v.string(),endpoint:v.pipe(v.string(),v.url()),retryCount:v.optional(v.pipe(v.number(),v.integer(),v.minValue(0)),3)})',
+			)
 		})
 	})
 

@@ -53,16 +53,40 @@ function resolvePlugin(ctx: Context, name: string, hint?: PluginConstructor): Pl
 function tokenName(token: unknown): string {
 	if (typeof token !== 'function') return String(token)
 	try {
-		return getPluginInfo(token as any).id
+		return getPluginInfo(token as unknown as never).id
 	} catch {
-		return (token as any)?.name ?? String(token)
+		const name = (token as { name?: unknown }).name
+		return typeof name === 'string' ? name : String(token)
+	}
+}
+
+function getErrorMessage(error: unknown): string {
+	if (error instanceof Error) return error.message
+	if (error && typeof error === 'object') {
+		const message = (error as { message?: unknown }).message
+		if (typeof message === 'string') return message
+	}
+	return String(error)
+}
+
+function getExtraApi(ctx: Context): {
+	getExtra?: (key: string) => unknown
+	setExtra?: (key: string, value: unknown) => void
+} {
+	const svc = ctx.configService as unknown
+	if (!svc || typeof svc !== 'object') return {}
+	const getExtra = (svc as { getExtra?: unknown }).getExtra
+	const setExtra = (svc as { setExtra?: unknown }).setExtra
+	return {
+		getExtra: typeof getExtra === 'function' ? getExtra.bind(svc) : undefined,
+		setExtra: typeof setExtra === 'function' ? setExtra.bind(svc) : undefined,
 	}
 }
 
 function readDepOverrides(ctx: Context, consumerName: string): Record<number, string> | undefined {
-	const getExtra = (ctx.configService as any)?.getExtra as ((key: string) => unknown) | undefined
+	const { getExtra } = getExtraApi(ctx)
 	if (typeof getExtra !== 'function') return undefined
-	const all = getExtra.call(ctx.configService, EXTRA_DEP_OVERRIDES) as DepOverridesExtra | undefined
+	const all = getExtra(EXTRA_DEP_OVERRIDES) as DepOverridesExtra | undefined
 	return all?.[consumerName]
 }
 
@@ -72,14 +96,10 @@ function writeDepOverride(
 	index: number,
 	targetName: string | null,
 ) {
-	const getExtra = (ctx.configService as any)?.getExtra as ((key: string) => unknown) | undefined
-	const setExtra = (ctx.configService as any)?.setExtra as
-		| ((key: string, value: unknown) => void)
-		| undefined
+	const { getExtra, setExtra } = getExtraApi(ctx)
 	if (typeof getExtra !== 'function' || typeof setExtra !== 'function') return
 
-	const all =
-		(getExtra.call(ctx.configService, EXTRA_DEP_OVERRIDES) as DepOverridesExtra | undefined) ?? {}
+	const all = (getExtra(EXTRA_DEP_OVERRIDES) as DepOverridesExtra | undefined) ?? {}
 	const existing = all[consumerName] ? { ...all[consumerName] } : {}
 	if (!targetName) {
 		delete existing[index]
@@ -89,20 +109,17 @@ function writeDepOverride(
 	const nextAll: DepOverridesExtra = { ...all }
 	if (Object.keys(existing).length === 0) delete nextAll[consumerName]
 	else nextAll[consumerName] = existing
-	setExtra.call(ctx.configService, EXTRA_DEP_OVERRIDES, nextAll)
+	setExtra(EXTRA_DEP_OVERRIDES, nextAll)
 }
 
 function addForkToCatalog(ctx: Context, originalName: string, forkId: string) {
-	const getExtra = (ctx.configService as any)?.getExtra as ((key: string) => unknown) | undefined
-	const setExtra = (ctx.configService as any)?.setExtra as
-		| ((key: string, value: unknown) => void)
-		| undefined
+	const { getExtra, setExtra } = getExtraApi(ctx)
 	if (typeof getExtra !== 'function' || typeof setExtra !== 'function') return
 
-	const all = (getExtra.call(ctx.configService, EXTRA_FORKS) as ForksExtra | undefined) ?? {}
+	const all = (getExtra(EXTRA_FORKS) as ForksExtra | undefined) ?? {}
 	const prev = Array.isArray(all[originalName]) ? all[originalName] : []
 	if (prev.includes(forkId)) return
-	setExtra.call(ctx.configService, EXTRA_FORKS, { ...all, [originalName]: [...prev, forkId] })
+	setExtra(EXTRA_FORKS, { ...all, [originalName]: [...prev, forkId] })
 }
 
 function maybeAddForkToCatalog(ctx: Context, name: string) {
@@ -114,8 +131,8 @@ function maybeAddForkToCatalog(ctx: Context, name: string) {
 	try {
 		const baseCtor = ctx.loader.api.runtime.resolve(baseName)
 		if (!baseCtor) return
-		if (!(baseCtor as any).prototype || !((baseCtor as any).prototype instanceof ForkablePlugin))
-			return
+		const proto = (baseCtor as { prototype?: unknown }).prototype
+		if (!proto || !(proto instanceof ForkablePlugin)) return
 		addForkToCatalog(ctx, baseName, forkId)
 	} catch {
 		// ignore
@@ -499,7 +516,7 @@ export class PluginHandle extends RpcTarget {
 			if (commit.err) return { ok: false, code: 'commit_failed', error: String(commit.err) }
 			return { ok: true }
 		} catch (error) {
-			return { ok: false, code: 'set_base_failed', error: (error as any)?.message ?? String(error) }
+			return { ok: false, code: 'set_base_failed', error: getErrorMessage(error) }
 		}
 	}
 
@@ -531,7 +548,7 @@ export class PluginHandle extends RpcTarget {
 			return {
 				ok: false,
 				code: 'ensure_fork_failed',
-				error: (error as any)?.message ?? String(error),
+				error: getErrorMessage(error),
 			}
 		}
 	}
@@ -595,7 +612,7 @@ export class PluginHandle extends RpcTarget {
 			return {
 				ok: false,
 				code: 'schema_not_found',
-				message: `Schema source not available for plugin "${this.name}". Ensure configSourcePlugin is correctly configured and the plugin has @Config decorators.`,
+				message: `Schema source not available for plugin "${this.name}". Ensure configSourcePlugin is correctly configured and the plugin declares config via @Config(schema) or field = this.configs.use(schema).`,
 			}
 		}
 

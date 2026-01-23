@@ -26,7 +26,7 @@ const createCtx = () => {
 }
 
 const pkgRoot = process.cwd()
-const pluginDir = join(pkgRoot, 'tests/plugins')
+const pluginDir = join(pkgRoot, 'tests/fixtures/plugins')
 const pluginFile = join(pluginDir, 'PluginA.ts')
 
 describe('HMRService file filter', () => {
@@ -40,7 +40,7 @@ describe('HMRService file filter', () => {
 		hmr.setServerRoot(pkgRoot)
 
 		const filter = hmr.toolkit.pathFilter
-		const relPath = normalize('tests/plugins/PluginA.ts')
+		const relPath = normalize('tests/fixtures/plugins/PluginA.ts')
 		const cleanRel = hmr.normalizeId(relPath)
 
 		expect(cleanRel).toBe(pluginFile)

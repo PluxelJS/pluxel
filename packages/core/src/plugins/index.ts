@@ -5,13 +5,15 @@
 // - PluginService / PluginActor / LifecycleManager / fork: "main" runtime surface
 // - internal/: definition-time and infrastructure (BasePlugin, decorators, DI definitions, helpers)
 
-export * from './PluginService'
-export * from './PluginActor'
-export * from './LifecycleManager'
+export * from './BaseFeature'
+export * from './ConfigHost'
+export * from './FeatureHost'
 export * from './fork'
-
 export * from './internal/BasePlugin'
-export * from './internal/PluginDefinitions'
-export * from './internal/PluginDecorator'
 export * from './internal/decoratorRuntime'
+export * from './internal/PluginDecorator'
+export * from './internal/PluginDefinitions'
 export * from './internal/types'
+export * from './LifecycleManager'
+export * from './PluginActor'
+export * from './PluginService'

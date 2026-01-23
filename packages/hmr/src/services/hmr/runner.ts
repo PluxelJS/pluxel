@@ -57,7 +57,12 @@ export class HmrRunner {
 		this.runner_ = createServerModuleRunner(this.env_, {
 			hmr: false,
 			evaluatedModules: this.evaluatedModules,
-			sourcemapInterceptor: 'prepareStackTrace',
+			// Prefer Node/Bun native sourcemap support when available; fall back to Vite's
+			// prepareStackTrace interceptor (older runtimes / edge environments).
+			sourcemapInterceptor:
+				typeof (globalThis as any)?.process?.setSourceMapsEnabled === 'function'
+					? 'node'
+					: 'prepareStackTrace',
 			// Ensure stack traces are aligned when running modules via AsyncFunction wrapper.
 			// (ESModulesEvaluator applies the appropriate `startOffset` for inlined sourcemaps.)
 			evaluator: new ESModulesEvaluator(),
