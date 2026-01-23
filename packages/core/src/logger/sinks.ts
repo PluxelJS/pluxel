@@ -20,6 +20,7 @@ import { pluxelCategories } from './categories'
 import { findErrorInProps, findErrorInRecord, formatErrorStack, omitErrorProps } from './error'
 import { createPluxelPrettyFormatter, type PluxelPrettyFormatterOptions } from './formatters'
 import { mergeDefaults } from './merge'
+import { createPluxelPrettyTimestampFormatter, resolvePluxelLogTimezone } from './timestamp'
 
 /**
  * Single-entry "pretty" sink for local development:
@@ -33,7 +34,7 @@ export type PluxelPrettyConsoleSinkOptions = {
 	 * Pretty formatter options.
 	 *
 	 * Defaults:
-	 * - `timestamp: "time"`
+	 * - `timestamp: local time (HH:MM:SS)` (see `PLUXEL_LOG_TZ`)
 	 * - `prefix: "name"`
 	 * - `includeCaller: true`
 	 */
@@ -51,11 +52,10 @@ export type PluxelPrettyConsoleSinkOptions = {
 	youch?: PluxelYouchSinkOptions | false
 }
 
-const PLUXEL_PRETTY_DEFAULTS = {
-	timestamp: 'time',
+const PLUXEL_PRETTY_DEFAULTS_BASE = {
 	prefix: 'name',
 	includeCaller: true,
-} as const satisfies PluxelPrettyFormatterOptions
+} as const satisfies Omit<PluxelPrettyFormatterOptions, 'timestamp'>
 
 const PLUXEL_YOUCH_DEFAULTS = {
 	minLevel: 'error',
@@ -64,7 +64,11 @@ const PLUXEL_YOUCH_DEFAULTS = {
 } as const satisfies PluxelYouchSinkOptions
 
 export function createPluxelPrettyConsoleSink(opts: PluxelPrettyConsoleSinkOptions = {}): Sink {
-	const pretty = mergeDefaults(opts.pretty, PLUXEL_PRETTY_DEFAULTS) as PluxelPrettyFormatterOptions
+	const prettyDefaults = {
+		...PLUXEL_PRETTY_DEFAULTS_BASE,
+		timestamp: createPluxelPrettyTimestampFormatter(resolvePluxelLogTimezone()),
+	} as const satisfies PluxelPrettyFormatterOptions
+	const pretty = mergeDefaults(opts.pretty, prettyDefaults) as PluxelPrettyFormatterOptions
 	const formatter = createPluxelPrettyFormatter(pretty)
 	const baseConsoleSink = getConsoleSink({ formatter })
 	if (opts.youch === false) return baseConsoleSink

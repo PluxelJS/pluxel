@@ -89,6 +89,13 @@ ctx.logger.getDebugChannel("pluxel:hmr:batch").debug("batch targets", { targets 
 - `createPluxelYouchSink()`：独立 Youch sink（可组合）。
 - `getFileSink/getRotatingFileSink/getTimeRotatingFileSink/getStreamFileSink`：官方 file sinks 透传再导出。
 
+## Timestamp（时区）
+
+`@logtape/pretty`/`@logtape/logtape` 默认时间戳格式基于 `Date#toISOString()`（UTC），本项目默认做了更符合使用场景的区分：
+
+- console pretty：默认 **本地时区**（与计算机时间一致），可用 `PLUXEL_LOG_TZ=utc|local`（或 `PLUXEL_LOG_TIMEZONE=...`）覆盖
+- file sink：默认 **UTC（+00:00）**，便于多机对齐/集中采集，可用 `PLUXEL_LOG_FILE_TZ=utc|local`（或 `PLUXEL_LOG_FILE_TIMEZONE=...`）覆盖
+
 ## 配置示例（宿主侧）
 
 ```ts

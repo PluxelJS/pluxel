@@ -9,11 +9,11 @@
 
 ## 清单（建议阅读顺序）
 
-- `PluginEventsChannel.ts`：插件 A 暴露 `EvtChannel`，插件 B 注入 A 并订阅。
-- `PluginEventsDeclared.ts`：`declare module '@pluxel/hmr'` 声明全局事件合同，然后用 `ctx.emit/on` 通信。
+- `PluginEventsDemo.ts`：两种事件通信方式（EvtChannel + declare module 全局事件合同）。
 - `PluginHonoGraphQLDemo.ts`：插件里使用 `ctx.honoService.modifyApp()` + `ctx.graphql.useModule()`。
+- `PluginBuiltinShowcase.ts`：尽量只用 builtin UI/config 的“大而全”样例（表单 meta、SSE state、内置文档块等）。
+- `PluginVaultDemo.ts`：插件里使用 `ctx.vault.open()` 做加密持久化（token/secret/batch/lock）。
 - `PluginWithUI.ts` + `PluginWithUI/ui/*`：完整链路（UI + RPC + SSE + 持久化 state）。
-- `PluginBuiltinShowcase.ts`：偏保守不注册新组件的 Config/UI Builtins 展示（表单 meta、SSE state、内置文档块等）。
 - `advanced/DemoBaseProviders.ts`：抽象基类 Token + 多实现（Provider 选择）。
 - `advanced/DemoForks.ts`：ForkablePlugin（同插件多实例 / fork）。
 

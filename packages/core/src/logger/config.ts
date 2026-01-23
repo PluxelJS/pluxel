@@ -1,6 +1,7 @@
 import {
 	type Config,
 	type FilterLike,
+	getTextFormatter,
 	type LoggerConfig,
 	type LogLevel,
 	type LogRecord,
@@ -20,6 +21,12 @@ import {
 	type PluxelPrettyConsoleSinkOptions,
 } from './sinks'
 import { matchesTopic, normalizeTopic } from './topic'
+import {
+	createPluxelPrettyTimestampFormatter,
+	createPluxelTextTimestampFormatter,
+	resolvePluxelLogFileTimezone,
+	resolvePluxelLogTimezone,
+} from './timestamp'
 
 export type PluxelLogtapeConfigPreset = 'core' | 'hmr'
 
@@ -74,9 +81,10 @@ export type PluxelLogtapeConfigOptions = {
 	file?:
 		| string
 		| { path?: string; sink?: Sink }
-		| (Pick<TimeRotatingFileSinkOptions, 'directory' | 'filename' | 'interval' | 'maxAgeMs'> & {
-				sink?: never
-		  })
+		| (Pick<
+				TimeRotatingFileSinkOptions,
+				'directory' | 'filename' | 'interval' | 'maxAgeMs' | 'formatter'
+		  > & { sink?: never })
 		| false
 
 	/**
@@ -136,17 +144,17 @@ function resolveLowestLevel(explicit: LogLevel | null | undefined): LogLevel | n
  * Notes:
  * - Youch defaults are owned by {@link createPluxelPrettyConsoleSink}; presets only set pretty defaults.
  */
-const PLUXEL_LOGTAPE_PRESETS: Record<PluxelLogtapeConfigPreset, PluxelPrettyConsoleSinkOptions> = {
+const PLUXEL_LOGTAPE_PRESETS: Record<PluxelLogtapeConfigPreset, Omit<PluxelPrettyConsoleSinkOptions, 'pretty'> & {
+	pretty: Omit<NonNullable<PluxelPrettyConsoleSinkOptions['pretty']>, 'timestamp'>
+}> = {
 	core: {
 		pretty: {
-			timestamp: 'time',
 			prefix: 'context',
 			includeCaller: true,
 		},
 	},
 	hmr: {
 		pretty: {
-			timestamp: 'time',
 			prefix: 'name',
 			includeCaller: true,
 		},
@@ -156,7 +164,14 @@ const PLUXEL_LOGTAPE_PRESETS: Record<PluxelLogtapeConfigPreset, PluxelPrettyCons
 function getPresetConsoleOptions(
 	preset: PluxelLogtapeConfigPreset,
 ): PluxelPrettyConsoleSinkOptions {
-	return PLUXEL_LOGTAPE_PRESETS[preset]
+	const base = PLUXEL_LOGTAPE_PRESETS[preset]
+	return {
+		...base,
+		pretty: {
+			...base.pretty,
+			timestamp: createPluxelPrettyTimestampFormatter(resolvePluxelLogTimezone()),
+		},
+	}
 }
 
 function resolveConsoleOptions(
@@ -196,12 +211,15 @@ function createDailyTimeRotatingFileSink(path: string, opts?: { maxAgeMs?: numbe
 		filename: prefix ? createDailyLogFilename(prefix, ext) : (d) => `${formatDate(d)}${ext}`,
 		interval: 'daily',
 		maxAgeMs: opts?.maxAgeMs,
+		formatter: getTextFormatter({
+			timestamp: createPluxelTextTimestampFormatter(resolvePluxelLogFileTimezone()),
+		}),
 	})
 }
 
 type TimeRotatingFileOption = Pick<
 	TimeRotatingFileSinkOptions,
-	'directory' | 'filename' | 'interval' | 'maxAgeMs'
+	'directory' | 'filename' | 'interval' | 'maxAgeMs' | 'formatter'
 >
 
 function isTimeRotatingFileOption(value: unknown): value is TimeRotatingFileOption {
@@ -234,7 +252,16 @@ export function createPluxelLogtapeConfig(
 	const file = opts.file
 	if (file !== false) {
 		if (typeof file === 'string') sinks.file = createDailyTimeRotatingFileSink(file)
-		else if (isTimeRotatingFileOption(file)) sinks.file = getTimeRotatingFileSink(file)
+		else if (isTimeRotatingFileOption(file)) {
+			sinks.file = getTimeRotatingFileSink({
+				formatter:
+					file.formatter ??
+					getTextFormatter({
+						timestamp: createPluxelTextTimestampFormatter(resolvePluxelLogFileTimezone()),
+					}),
+				...file,
+			})
+		}
 		else if (isFilePathOrSinkOption(file)) {
 			if (file.sink) sinks.file = file.sink
 			else if (file.path) sinks.file = createDailyTimeRotatingFileSink(file.path)
