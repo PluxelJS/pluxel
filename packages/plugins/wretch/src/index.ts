@@ -1,65 +1,56 @@
 import { Config, ForkablePlugin, Plugin } from '@pluxel/hmr'
-import * as v from 'valibot'
-import type { InferOutput } from 'valibot'
-import wretch, { type Wretch } from 'wretch'
 
-const Credentials = ['omit', 'same-origin', 'include'] as const
-
-const WretchConfig = v.object({
-	baseUrl: v.optional(v.string()),
-	headers: v.optional(v.record(v.string(), v.string()), {}),
-	credentials: v.optional(v.picklist(Credentials)),
-})
-
-export type WretchPluginConfig = InferOutput<typeof WretchConfig>
+import { buildClientEntry, type ClientEntry, type WretchClient } from './client'
+import { normalizeWretchConfig, parseWretchConfig } from './config'
+import { WretchConfig, type WretchPluginConfig } from './schema'
 
 @Plugin({ name: 'Wretch' })
 export class WretchPlugin extends ForkablePlugin {
 	@Config(WretchConfig) wretch!: WretchPluginConfig
 
-	private base: string | undefined
-	private client: Wretch = wretch()
+	private defaultClientName: string = 'default'
+	private readonly clients = new Map<string, ClientEntry>()
 
 	override init(): void {
-		const cfg =
-			this.wretch && typeof this.wretch === 'object' ? (this.wretch as WretchPluginConfig) : null
+		const cfg = parseWretchConfig(this.wretch, this.ctx.logger)
+		const normalized = normalizeWretchConfig(cfg)
 
-		this.base = cfg?.baseUrl?.trim() || undefined
+		this.clients.clear()
+		this.defaultClientName = normalized.defaultClientName
 
-		let client = wretch()
-		const headers = cfg?.headers
-		if (headers && Object.keys(headers).length > 0) {
-			client = client.headers(headers)
+		for (const [name, clientCfg] of Object.entries(normalized.clients)) {
+			this.clients.set(name, buildClientEntry(clientCfg))
 		}
-		const credentials = cfg?.credentials
-		if (credentials) {
-			client = client.options({ credentials })
+
+		// Normalize: ensure at least one safe fallback exists.
+		if (!this.clients.has('default')) {
+			this.clients.set(
+				'default',
+				buildClientEntry({ headers: Object.create(null) as Record<string, string> }),
+			)
 		}
-		this.client = client
+		if (!this.clients.has(this.defaultClientName)) this.defaultClientName = 'default'
 	}
 
 	/**
-	 * Low-level accessor for advanced use cases (addons/middlewares/etc).
-	 * Prefer `url()`/`getJson()` for normal usage.
+	 * Get a configured wretch instance.
+	 *
+	 * This plugin intentionally follows wretch's philosophy:
+	 * - no extra "fetch wrapper" APIs;
+	 * - you decide how to build chains, addons, catchers, etc.
 	 */
-	clientRaw(): Wretch {
-		return this.client
+	client(name?: string): WretchClient {
+		return this.getClientEntry(name).client
 	}
 
-	/**
-	 * Create a request builder for a path (joined with baseUrl if provided).
-	 * `path` can be absolute; absolute always wins over baseUrl.
-	 */
-	url(path: string): Wretch {
-		const trimmed = path?.trim?.() ?? ''
-		const resolved =
-			this.base && trimmed && !/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(trimmed)
-				? new URL(trimmed, this.base).toString()
-				: trimmed
-		return this.client.url(resolved)
+	private resolveClientName(name?: string): string {
+		const trimmed = name?.trim?.()
+		if (trimmed && this.clients.has(trimmed)) return trimmed
+		return this.defaultClientName
 	}
 
-	async getJson<T = unknown>(path: string): Promise<T> {
-		return this.url(path).get().json<T>()
+	private getClientEntry(name?: string): ClientEntry {
+		const resolved = this.resolveClientName(name)
+		return this.clients.get(resolved) ?? this.clients.get('default')!
 	}
 }
