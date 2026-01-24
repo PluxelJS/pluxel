@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'bun:test'
-import { normalize, resolve } from 'pathe'
 import type { Context } from '@pluxel/core'
 import { createFixture } from 'fs-fixture'
+import { normalize, resolve } from 'pathe'
 import { resolveBareImport } from '../src/services/hmr/workspace-resolver'
 import { ScanService, type ScanServiceConfig } from '../src/services/market/ScanService'
 
@@ -81,7 +81,8 @@ const workspaceFixture = {
 		null,
 		2,
 	),
-	'node_modules/pluxel-plugin-wretch/src/wretch.ts': "export const wretchPlugin = 'wretch-fixture'\n",
+	'node_modules/pluxel-plugin-wretch/src/wretch.ts':
+		"export const wretchPlugin = 'wretch-fixture'\n",
 } satisfies Record<string, string>
 
 function createScanService(root: string, overrides: ScanServiceConfig = {}) {
@@ -136,7 +137,9 @@ describe('workspace resolver', () => {
 			conditions: HMR_CONDITIONS,
 			fallbackBaseDirs: [fixtureRoot],
 		})
-		expect(result?.replace(/\\/g, '/')).toMatch(/node_modules\/pluxel-plugin-wretch\/src\/wretch\.ts$/)
+		expect(result?.replace(/\\/g, '/')).toMatch(
+			/node_modules\/pluxel-plugin-wretch\/src\/wretch\.ts$/,
+		)
 	})
 
 	it('ignores non-bare specifiers', async () => {

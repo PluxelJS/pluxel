@@ -1,4 +1,4 @@
-// packages/hmr/tests/ui-demos/MarketUI/ui/index.tsx
+// packages/plugins/market/src/ui/index.tsx
 
 import {
 	Anchor,
@@ -113,6 +113,19 @@ function resolveMessage(error: unknown, fallback: string) {
 	return fallback
 }
 
+type UiNotifyLike = {
+	title?: string
+	message?: string
+	tone?: string
+}
+
+type UiConfirmLike = {
+	title?: string
+	message?: string
+	confirmLabel?: string
+	cancelLabel?: string
+}
+
 function MarketPage() {
 	const hmr = useExtensionContext('plugin').services.hmr
 	const scheme = useComputedColorScheme('light', { getInitialValueInEffect: true })
@@ -122,7 +135,7 @@ function MarketPage() {
 	const [installedPackages, setInstalledPackages] = useState<Record<string, string>>({})
 	const [installing, setInstalling] = useState(false)
 
-	const notify = useCallback((payload: { title?: string; message?: string; tone?: string }) => {
+	const notify = useCallback((payload: UiNotifyLike) => {
 		if (!payload.message) return
 		const prefix = payload.title ? `[${payload.title}]` : '[market]'
 		if (payload.tone === 'error') {
@@ -132,7 +145,7 @@ function MarketPage() {
 		}
 	}, [])
 
-	const confirm = useCallback((payload: { title?: string; message?: string }) => {
+	const confirm = useCallback((payload: UiConfirmLike) => {
 		const msg = [payload.title, payload.message].filter(Boolean).join('\n') || '确认继续？'
 		return Promise.resolve(typeof window !== 'undefined' ? window.confirm(msg) : false)
 	}, [])
@@ -388,7 +401,7 @@ function MarketPage() {
 			) : null}
 
 			<Box style={{ flex: 1, minHeight: 0, width: '100%', overflow: 'hidden' }}>
-								<SnapshotDashboard
+				<SnapshotDashboard
 					appearance={appearance}
 					locale="zh-CN"
 					client={marketClient}

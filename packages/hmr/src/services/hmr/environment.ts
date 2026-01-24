@@ -47,14 +47,26 @@ export class HmrPathResolver {
 		}
 
 		if (this.serverRoot && normalized.startsWith('/') && !normalized.startsWith(this.serverRoot)) {
-			normalized = normalizePath(resolve(this.serverRoot, normalized.slice(1)))
+			// `normalized` can be:
+			// - a real filesystem absolute path: `/home/.../file.ts`
+			// - a Vite virtual id: `/@id/...`, `/@vite/...`
+			// - a Vite URL path under root: `/src/...`
+			//
+			// Only rebase URL paths like `/src/*` to the Vite root. Never rebase real FS paths.
+			const isKnownFsPath =
+				normalized.startsWith(this.cwdNormalized) ||
+				this.scanRootsAbs.some((root) => normalized.startsWith(root))
+			if (!isKnownFsPath && !normalized.startsWith('/@')) {
+				normalized = normalizePath(resolve(this.serverRoot, normalized.slice(1)))
+			}
 		}
 		return normalized
 	}
 
 	prettyId(pOrId: string) {
 		const clean = this.toCleanId(pOrId)
-		if (clean.startsWith(this.cwdNormalized)) return clean.slice(this.cwdNormalized.length).replace(/^\/+/, '')
+		if (clean.startsWith(this.cwdNormalized))
+			return clean.slice(this.cwdNormalized.length).replace(/^\/+/, '')
 		return clean
 	}
 
@@ -181,7 +193,9 @@ export class HmrEnvironment {
 
 	private createFilters(): HmrFilterFactory {
 		const includeGlobs = makeIdFiltersToMatchWithQuery(
-			this.includeGlobs?.length ? this.includeGlobs : this.scanRootsAbs.flatMap((dir) => [`${dir}/**/*.ts`]),
+			this.includeGlobs?.length
+				? this.includeGlobs
+				: this.scanRootsAbs.flatMap((dir) => [`${dir}/**/*.ts`]),
 		)
 		const excludePatterns = this.scanRootsAbs.flatMap((dir) => [`${dir}/**/*.d.ts`])
 		const excludeGlobs = makeIdFiltersToMatchWithQuery([

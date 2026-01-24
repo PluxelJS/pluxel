@@ -11,6 +11,8 @@ function createHmrCtx(core: Context) {
 	const enabled = new Set<string>()
 	const extra: Record<string, unknown> = Object.create(null)
 	const configService = {
+		isReady: true,
+		ready: Promise.resolve(),
 		isEnabledInConfig(name: string) {
 			return enabled.has(name)
 		},
@@ -33,6 +35,9 @@ function createHmrCtx(core: Context) {
 		},
 		setExtra(key: string, value: unknown) {
 			extra[key] = value
+		},
+		batch(run: () => void) {
+			run()
 		},
 	}
 

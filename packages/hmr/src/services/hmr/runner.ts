@@ -161,7 +161,8 @@ export class HmrRunner {
 
 					const abs = path.toClean(resolved.id)
 					urls.add(abs)
-					if (abs.startsWith('/')) urls.add(`/@fs${abs}`)
+					// Only add `/@fs` for real filesystem paths (skip Vite virtual ids like `/@id/*`).
+					if (abs.startsWith('/') && !abs.startsWith('/@')) urls.add(`/@fs${abs}`)
 
 					this.primeModuleCacheEntry({ id: resolved.id, exports, aliases: urls })
 				} catch (error) {

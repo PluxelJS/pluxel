@@ -1,4 +1,3 @@
-// packages/hmr/tests/demo/PluginHonoGraphQLDemo.ts
 // 演示型插件：如何在插件里使用 HonoService + GraphQLService。
 //
 // 目标（给未来的 LLM/开发者看的“最小但完整”范例）：

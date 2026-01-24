@@ -1,15 +1,4 @@
 // packages/hmr/tests/ui-demos/MarketUI.ts
-// Demo plugin that provides the market UI via extension points.
+// Back-compat re-export for the MarketUI builtin plugin package.
 
-import { BasePlugin, Plugin } from '@pluxel/core'
-
-@Plugin({ name: 'MarketUI', type: 'event' })
-export class MarketUI extends BasePlugin {
-	override async init() {
-		this.ctx.logger.info('Initializing…')
-		this.ctx.ext.ui.register({
-			entryPath: './MarketUI/ui/index.tsx',
-		})
-		this.ctx.logger.info('UI extensions registered')
-	}
-}
+export { MarketUI } from 'pluxel-plugin-market-ui'

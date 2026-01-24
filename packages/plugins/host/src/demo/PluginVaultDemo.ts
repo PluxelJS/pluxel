@@ -1,4 +1,3 @@
-// packages/hmr/tests/demo/PluginVaultDemo.ts
 // 演示：在插件中使用 `ctx.vault` 做加密持久化（Portable Vault v1）。
 //
 // 目标：
@@ -24,7 +23,9 @@ export class PluginVaultDemo extends BasePlugin {
 		}
 
 		// JSON secret：适合存插件偏好、缓存元信息等（不要存大对象）。
-		const existingPrefs = await vault.getSecret<{ enabled: boolean; lastSeenAt: number }>('demo.prefs')
+		const existingPrefs = await vault.getSecret<{ enabled: boolean; lastSeenAt: number }>(
+			'demo.prefs',
+		)
 		await vault.setSecret('demo.prefs', {
 			enabled: existingPrefs?.enabled ?? true,
 			lastSeenAt: Date.now(),
@@ -48,4 +49,3 @@ export class PluginVaultDemo extends BasePlugin {
 		vault.lock()
 	}
 }
-

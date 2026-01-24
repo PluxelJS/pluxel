@@ -40,9 +40,9 @@
 		"dist"
 	],
 	"scripts": {
-		"hmr": "bun --conditions=\"@pluxel/source\" tests/start.ts",
-		"mock": "node tests/start.ts",
-		"hot": "bun --hot tests/start.ts",
+		"hmr": "pnpm --filter @pluxel/plugins-host hmr",
+		"mock": "pnpm --filter @pluxel/plugins-host hmr",
+		"hot": "pnpm --filter @pluxel/plugins-host hot",
 		"test": "bun test --conditions=@pluxel/source",
 		"build": "vite build && tsdown",
 		"web": "vite build"

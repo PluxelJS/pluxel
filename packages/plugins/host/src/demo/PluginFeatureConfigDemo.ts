@@ -16,7 +16,10 @@ class CacheFeature extends BaseFeature {
 		v.object({
 			enabled: v.pipe(
 				v.optional(v.boolean(), true),
-				f.formMeta({ label: '启用缓存', description: '用于演示 feature.config（归因到父插件配置页）' }),
+				f.formMeta({
+					label: '启用缓存',
+					description: '用于演示 feature.config（归因到父插件配置页）',
+				}),
 				f.booleanMeta({ variant: 'switch' }),
 			),
 			ttlMs: v.pipe(
@@ -30,7 +33,7 @@ class CacheFeature extends BaseFeature {
 		v.object({
 			maxKeys: v.pipe(
 				v.optional(v.number(), 1_000),
-				f.formMeta({ label: '最大键数', description: '用于演示 `${feature}.rules` tab' }),
+				f.formMeta({ label: '最大键数', description: '用于演示 `feature.rules` tab' }),
 				f.numberMeta({ min: 0, max: 100_000, step: 100 }),
 			),
 		}),

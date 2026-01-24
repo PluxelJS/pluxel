@@ -6,6 +6,7 @@ export default defineConfig({
 	},
 	entry: {
 		index: 'src/index.ts',
+		vendors: 'src/vendors.ts',
 		react: 'src/react.tsx',
 	},
 	dts: {

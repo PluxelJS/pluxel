@@ -1,0 +1,43 @@
+{
+	"name": "pluxel-plugin-wretch",
+	"version": "0.1.0",
+	"description": "Pluxel builtin forkable HTTP client plugin powered by wretch",
+	"type": "module",
+	"types": "./dist/index.d.mts",
+	"exports": {
+		".": {
+			"@pluxel/hmr": "./src/index.ts",
+			"default": "./dist/index.mjs"
+		},
+		"./package.json": "./package.json"
+	},
+	"files": [
+		"!**/*.map",
+		"dist"
+	],
+	"scripts": {
+		"build:plugin": "pluxel build",
+		"test": "bun test --conditions=@pluxel/source"
+	},
+	"dependencies": {
+		"valibot": "^1.2.0",
+		"wretch": "^3.0.6"
+	},
+	"peerDependencies": {
+		"@pluxel/core": "workspace:*"
+	},
+	"devDependencies": {
+		"@pluxel/hmr": "workspace:*",
+		"@pluxel/rolldown": "workspace:*",
+		"tsdown": "0.20.0-beta.4",
+		"typescript": "^5.9.3"
+	},
+	"publishConfig": {
+		"exports": {
+			".": "./dist/index.mjs",
+			"./package.json": "./package.json"
+		}
+	},
+	"main": "./dist/index.mjs",
+	"module": "./dist/index.mjs"
+}

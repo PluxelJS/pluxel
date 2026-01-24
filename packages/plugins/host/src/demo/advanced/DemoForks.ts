@@ -1,4 +1,3 @@
-// packages/hmr/tests/demo/advanced/DemoForks.ts
 // 演示：ForkablePlugin（同一个插件可创建多个实例 / fork）
 //
 // 玩法（在 UI → 插件 → 依赖注入）：
@@ -33,4 +32,3 @@ export class DemoWorkerConsumer extends BasePlugin {
 		})
 	}
 }
-

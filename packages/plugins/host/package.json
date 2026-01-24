@@ -1,0 +1,26 @@
+{
+	"name": "@pluxel/plugins-host",
+	"private": true,
+	"type": "module",
+	"scripts": {
+		"prehmr": "pnpm -w turbo run build:plugin",
+		"hmr": "bun --conditions=@pluxel/source src/start.ts",
+		"prehot": "pnpm -w turbo run build:plugin",
+		"hot": "bun --hot --conditions=@pluxel/source src/start.ts"
+	},
+	"dependencies": {
+		"@pluxel/core": "workspace:*",
+		"@pluxel/hmr": "workspace:*",
+		"pluxel-plugin-market-ui": "workspace:*",
+		"pluxel-plugin-wretch": "workspace:*"
+	},
+	"devDependencies": {
+		"@mantine/core": "^8.3.13",
+		"@mantine/hooks": "^8.3.13",
+		"@tabler/icons-react": "^3.35.0",
+		"@types/react": "^19.2.7",
+		"@types/react-dom": "^19.2.3",
+		"react": "^19.2.3",
+		"react-dom": "^19.2.3"
+	}
+}

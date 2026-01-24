@@ -55,11 +55,14 @@ export class InternalGraphQLService {
 		this.rebuildDirty = false
 		this.schema = this.weaveSchema()
 		this.pushFetch()
-		// NOTE: `#if SOURCE_ONLY`/`#endif` blocks are stripped by tsdown for non-source builds.
+		// NOTE: SOURCE_ONLY preprocessor blocks are stripped by tsdown for non-source builds.
 		// Do NOT remove them or rewrite this into runtime conditions.
-		// #if SOURCE_ONLY
-		if (process.env.NODE_ENV !== 'production') void this.codegenNow()
-		// #endif
+		//#if SOURCE_ONLY
+		// Codegen is intentionally opt-in: it writes files into the workspace and is high-churn.
+		if (process.env.PLUXEL_HMR_GQL_CODEGEN === '1' && process.env.NODE_ENV !== 'production') {
+			void this.codegenNow()
+		}
+		//#endif
 	}
 
 	private weaveSchema(): GraphQLSchema {
@@ -88,8 +91,9 @@ export class InternalGraphQLService {
 		this.fetcher = async (req: Request, ctx: ServerCtx) => yoga.fetch(req, ctx)
 	}
 
-	// #if SOURCE_ONLY
+	//#if SOURCE_ONLY
 	private async codegenNow() {
+		if (process.env.PLUXEL_HMR_GQL_CODEGEN !== '1') return
 		if (process.env.NODE_ENV === 'production') return
 		if (this.codegenRunning) return
 		this.codegenRunning = true
@@ -111,5 +115,5 @@ export class InternalGraphQLService {
 			this.codegenRunning = false
 		}
 	}
-	// #endif
+	//#endif
 }

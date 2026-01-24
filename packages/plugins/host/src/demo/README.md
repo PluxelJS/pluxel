@@ -1,11 +1,11 @@
 # Demo Plugins
 
-`packages/hmr/tests/demo` 放的是“演示/参考实现”插件：目标是让人（以及未来的 LLM）只靠读这些文件，就能写出同风格的高质量插件。
+`packages/plugins/host/src/demo` 放的是“演示/参考实现”插件：目标是让人（以及未来的 LLM）只靠读这些文件，就能写出同风格的高质量插件。
 
 ## 运行
 
-- 启动 HMR 测试宿主：`pnpm --filter @pluxel/hmr hmr`
-- 这些 demo 会通过 `packages/hmr/tests/start.ts` 的 `hmrService.dir` 自动被扫描/加载。
+- 启动 HMR 测试宿主：`pnpm --filter @pluxel/plugins-host hmr`
+- 这些 demo 会通过 `packages/plugins/host/src/start.ts` 的 `hmrService.dir` 自动被扫描/加载。
 - Demo 默认假设 HMR 侧启用了 `configSourcePlugin`：因此 `configs.use(...)` / `features.use(...)` 可以不写装饰器，也能在启动前注册 schema/依赖信息。
 
 ## 清单（建议阅读顺序）
@@ -23,8 +23,8 @@
 
 如果你只想检查 demo 相关的 TS 类型（不牵扯整个 workspace 的 build），用：
 
-- `pnpm exec tsc -p packages/hmr/tests/demo/tsconfig.json`
+- `pnpm exec tsc -p packages/plugins/host/src/demo/tsconfig.json`
 
 ## 非 demo（功能性示例）
 
-- `packages/hmr/tests/ui-demos/MarketUI.ts`：market UI（默认不在 `tests/start.ts` 扫描列表中）
+- `packages/plugins/market/src/index.ts`：market UI（默认不在 `hmrService.dir` 扫描列表中，而是通过宿主 `hmrService.builtins` 预载）

@@ -1,4 +1,3 @@
-// packages/hmr/tests/demo/advanced/DemoBaseProviders.ts
 // 演示：抽象基类 Token + 多实现（Provider 选择）
 //
 // 适用场景：
@@ -57,4 +56,3 @@ export class DemoClockConsumer extends BasePlugin {
 		})
 	}
 }
-

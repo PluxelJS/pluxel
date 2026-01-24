@@ -2,8 +2,12 @@ import { describe, expect, it } from 'bun:test'
 import { createFixture } from 'fs-fixture'
 import { join } from 'pathe'
 import { createServer, normalizePath } from 'vite'
+import {
+	buildHmrViteConfig,
+	resolveFsAllowList,
+	resolveHMRDependencyConfig,
+} from '../../src/services/hmr/config'
 import { HMRService } from '../../src/services/hmr/HMRService'
-import { buildHmrViteConfig, resolveFsAllowList, resolveHMRDependencyConfig } from '../../src/services/hmr/config'
 
 const baseDeps = {
 	bridgeModules: [],

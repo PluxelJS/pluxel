@@ -1,0 +1,44 @@
+{
+	"name": "pluxel-plugin-market-ui",
+	"version": "0.1.0",
+	"description": "Pluxel builtin plugin: Market UI",
+	"type": "module",
+	"types": "./dist/index.d.mts",
+	"exports": {
+		".": {
+			"@pluxel/hmr": "./src/index.ts",
+			"default": "./dist/index.mjs"
+		},
+		"./package.json": "./package.json"
+	},
+	"files": [
+		"!**/*.map",
+		"dist"
+	],
+	"scripts": {
+		"build:plugin": "pluxel build",
+		"test": "bun test --conditions=@pluxel/source"
+	},
+	"peerDependencies": {
+		"@pluxel/core": "workspace:*",
+		"@pluxel/hmr": "workspace:*",
+		"@pluxel/market": "^0.1.0",
+		"@mantine/core": "^8.3.13",
+		"@mantine/hooks": "^8.3.13",
+		"@tabler/icons-react": "^3.35.0",
+		"react": "^19.2.3",
+		"react-dom": "^19.2.3"
+	},
+	"devDependencies": {
+		"tsdown": "0.20.0-beta.4",
+		"typescript": "^5.9.3"
+	},
+	"publishConfig": {
+		"exports": {
+			".": "./dist/index.mjs",
+			"./package.json": "./package.json"
+		}
+	},
+	"main": "./dist/index.mjs",
+	"module": "./dist/index.mjs"
+}

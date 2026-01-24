@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
-import { configureSync, resetSync, type LogRecord } from '@logtape/logtape'
+import { configureSync, type LogRecord, resetSync } from '@logtape/logtape'
 import { Context } from '@pluxel/core'
 import { LogtapeLoggerService } from '../src/logger/LogtapeLoggerService'
 

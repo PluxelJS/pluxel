@@ -1,7 +1,7 @@
+import { afterEach, describe, expect, test } from 'bun:test'
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { resolve } from 'pathe'
-import { afterEach, describe, expect, test } from 'bun:test'
 import { EntryResolver } from '../../src/services/market/scan/entry-resolver'
 import { ModuleResolveCache } from '../../src/services/market/scan/resolve-cache'
 import type { ResolvedScanOptions } from '../../src/services/market/scan/types'

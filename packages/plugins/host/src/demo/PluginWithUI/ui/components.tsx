@@ -1,4 +1,3 @@
-// packages/hmr/tests/demo/PluginWithUI/ui/components.tsx
 import {
 	ActionIcon,
 	Alert,
@@ -358,9 +357,9 @@ export function StreamsPanel() {
 				</Badge>
 			</Group>
 
-				<Text size="sm" c="dimmed">
-					这里订阅本插件的 SSE 命名空间（`PluginWithUI`），展示最近收到的事件名（最多 50 条）。
-				</Text>
+			<Text size="sm" c="dimmed">
+				这里订阅本插件的 SSE 命名空间（`PluginWithUI`），展示最近收到的事件名（最多 50 条）。
+			</Text>
 
 			<Card withBorder radius="md" p={0}>
 				<ScrollArea h={320} type="auto" scrollbarSize={10} offsetScrollbars>
@@ -375,8 +374,7 @@ export function StreamsPanel() {
 								key={l.key}
 								size="xs"
 								style={{
-									fontFamily:
-										'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
+									fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
 								}}
 							>
 								{l.text}

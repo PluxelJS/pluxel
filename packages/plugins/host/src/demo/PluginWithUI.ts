@@ -1,4 +1,3 @@
-// packages/hmr/tests/demo/PluginWithUI.ts
 // 展示型插件：自定义 UI 扩展 + RPC + SSE（带持久化 state）。
 //
 // 这是“完整链路”的参考实现：UI -> RPC -> 插件状态 -> SSE 实时推送。
@@ -115,9 +114,11 @@ export class PluginWithUI extends BasePlugin {
 		const last = Math.max(maxId, persisted, 0)
 		this.eventSeq = last + 1
 		if (!seqDoc) this.meta.insert({ id: 'event-seq', value: last })
-		else if (seqDoc.value !== last) this.meta.updateOne({ id: 'event-seq' }, { $set: { value: last } })
+		else if (seqDoc.value !== last)
+			this.meta.updateOne({ id: 'event-seq' }, { $set: { value: last } })
 
-		if (existingEvents.count() === 0) this.appendEvent('system', 'UI 扩展已加载：RPC/SSE/Routes/Tabs 都已就绪。')
+		if (existingEvents.count() === 0)
+			this.appendEvent('system', 'UI 扩展已加载：RPC/SSE/Routes/Tabs 都已就绪。')
 	}
 
 	getStatus() {

@@ -14,6 +14,10 @@
 			"@pluxel/source": "./src/react.tsx",
 			"default": "./dist/react.mjs"
 		},
+		"./vendors": {
+			"@pluxel/source": "./src/vendors.ts",
+			"default": "./dist/vendors.mjs"
+		},
 		"./package.json": "./package.json"
 	},
 	"files": [
@@ -38,6 +42,7 @@
 		"exports": {
 			".": "./dist/index.mjs",
 			"./react": "./dist/react.mjs",
+			"./vendors": "./dist/vendors.mjs",
 			"./package.json": "./package.json"
 		}
 	}

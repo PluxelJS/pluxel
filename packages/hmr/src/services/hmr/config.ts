@@ -86,8 +86,11 @@ const DEFAULT_OPTIMIZE_DEPS_INCLUDE = [
 ] as const
 const DEFAULT_OPTIMIZE_DEPS_INTEROP = ['react', 'react-dom'] as const
 
-export const BASE_HMR_RESOLVE_CONDITIONS = ['@pluxel/hmr'] as const
-const DEFAULT_RESOLVE_CONDITIONS = ['module', 'browser', 'development', 'production', 'default']
+// Prefer workspace TS sources for SSR runner (monorepo/dev).
+// NOTE: We must exclude these conditions from the client environment to avoid resolving Node-only sources.
+export const BASE_HMR_RESOLVE_CONDITIONS = ['@pluxel/hmr', '@pluxel/source'] as const
+// Keep `import` explicitly: Vite's exports resolution depends on it for packages that only expose `import`/`require`.
+const DEFAULT_RESOLVE_CONDITIONS = ['import', 'module', 'browser', 'development', 'production', 'default']
 
 export const DEFAULT_HMR_DEPENDENCY_CONFIG: ResolvedHMRDependencyConfig = {
 	bridgeModules: REQUIRED_BRIDGE_MODULES,
@@ -177,9 +180,24 @@ export function buildHmrViteConfig(opts: HmrViteConfigOptions): InlineConfig {
 	// If we forward it into the client environment, Vite may resolve packages like
 	// `pluxel-plugin-wretch` to `./src/...` and then try to analyze/optimize Node-only imports
 	// (e.g. `undici`) as if they were browser deps.
-	const clientConditions = ssrConditions.filter((c) => c !== '@pluxel/hmr')
+	const clientConditions = ssrConditions.filter((c) => c !== '@pluxel/hmr' && c !== '@pluxel/source')
 	const includePatterns = opts.includeGlobs ?? opts.scanDirs.map((d) => `${d}/**/*.ts`)
 	const forceOptimizeDeps = process.env.PLUXEL_HMR_FORCE_OPTIMIZE_DEPS === '1'
+	// Vite 8 beta dep optimizer can be flaky; keep knobs explicit and default to performance.
+	// - Set `PLUXEL_HMR_OPTIMIZE_DEPS_NO_DISCOVERY=1` to disable crawling (only `include` is optimized).
+	// - Set `PLUXEL_HMR_FORCE_OPTIMIZE_DEPS=1` to force a full re-opt on startup.
+	const optimizeDepsNoDiscovery = process.env.PLUXEL_HMR_OPTIMIZE_DEPS_NO_DISCOVERY === '1'
+	// SSR dep optimization can be unexpectedly expensive for our runner (and may trigger Vite 8 beta flakiness).
+	// Default to disabling it for dev; enable explicitly if needed.
+	const ssrOptimizeDepsEnabled = process.env.PLUXEL_HMR_SSR_OPTIMIZE_DEPS === '1'
+	const defaultOptimizeDepsEntries = (() => {
+		const clientEntry = resolve(opts.root, 'src/client.tsx')
+		return existsSync(clientEntry) ? ['src/client.tsx'] : undefined
+	})()
+	// Prefer Vite's default cacheDir (`<root>/node_modules/.vite`) because sharing a single cache
+	// across different hosts/roots can cause "update deps" metadata mismatches in Vite 8 beta.
+	// If callers want a shared cache, they can still opt-in explicitly via env.
+	const cacheDir = process.env.PLUXEL_HMR_CACHE_DIR
 
 	const baseLogger = createLogger(undefined, { prefix: '[pluxel-hmr]' })
 	// Avoid `{...baseLogger}` here: Vite mutates `logger.hasWarned`, and spreading would copy a stale boolean.
@@ -187,15 +205,18 @@ export function buildHmrViteConfig(opts: HmrViteConfigOptions): InlineConfig {
 	const customLogger = Object.create(baseLogger) as Logger
 	customLogger.warn = (msg, options) => {
 		if (shouldSilenceDynamicImportWarning(msg)) return
+		if (shouldSilenceSourcemapMissingWarning(msg)) return
 		baseLogger.warn(msg, options)
 	}
 	customLogger.warnOnce = (msg, options) => {
 		if (shouldSilenceDynamicImportWarning(msg)) return
+		if (shouldSilenceSourcemapMissingWarning(msg)) return
 		baseLogger.warnOnce(msg, options)
 	}
 
 	return {
 		root: opts.root,
+		cacheDir,
 		customLogger,
 		server: {
 			port: opts.port ?? 3000,
@@ -235,9 +256,24 @@ export function buildHmrViteConfig(opts: HmrViteConfigOptions): InlineConfig {
 			opts.honoPlugin,
 		],
 		optimizeDeps: {
+			entries: defaultOptimizeDepsEntries,
 			force: forceOptimizeDeps,
 			// This dev server is used to power plugin UI bundling/runtime evaluation.
-			noDiscovery: false,
+			noDiscovery: optimizeDepsNoDiscovery,
+			// Work around rare Vite 8 beta "update deps" edge cases by tolerating outdated requests.
+			ignoreOutdatedRequests: true,
+			holdUntilCrawlEnd: true,
+			// These deps are ESM already and have triggered flaky Vite 8 beta update paths in our dev host.
+			// Excluding them keeps the optimizer focused on core runtime deps (React) and avoids crashes.
+			exclude: [
+				'@mantine/core',
+				'@mantine/hooks',
+				'@mantine/notifications',
+				'@tabler/icons-react',
+				'@pluxel/market',
+				'hono/client',
+				'capnweb',
+			],
 			include: Array.from(opts.deps.optimizeDepsInclude),
 			needsInterop: Array.from(opts.deps.optimizeDepsInterop),
 			// Vite 8 uses rolldown for dependency optimization. Some packages ship optional
@@ -251,14 +287,16 @@ export function buildHmrViteConfig(opts: HmrViteConfigOptions): InlineConfig {
 		ssr: {
 			noExternal: Array.from(opts.deps.ssrNoExternal),
 			external: Array.from(opts.deps.ssrExternal),
-			// Make CJS-only dependencies safer to consume from TS/ESM plugin sources:
-			// Vite can pre-bundle & interop CJS deps for SSR when they are not externalized.
-			// (externalized deps are handled by Vite/Node runtime, including require-only exports in many cases.)
-			optimizeDeps: {
-				noDiscovery: true,
-				include: Array.from(opts.deps.optimizeDepsInclude),
-				needsInterop: Array.from(opts.deps.optimizeDepsInterop),
-			},
+			optimizeDeps: ssrOptimizeDepsEnabled
+				? {
+						// Make CJS-only dependencies safer to consume from TS/ESM plugin sources:
+						// Vite can pre-bundle & interop CJS deps for SSR when they are not externalized.
+						// (externalized deps are handled by Vite/Node runtime, including require-only exports in many cases.)
+						noDiscovery: true,
+						include: Array.from(opts.deps.optimizeDepsInclude),
+						needsInterop: Array.from(opts.deps.optimizeDepsInterop),
+					}
+				: { noDiscovery: true, include: [], needsInterop: [] },
 			resolve: {
 				conditions: ssrConditions,
 			},
@@ -286,4 +324,10 @@ function shouldSilenceDynamicImportWarning(msg: string): boolean {
 		msg.includes('/node_modules/@pluxel/hmr/') ||
 		msg.includes('\\node_modules\\@pluxel\\hmr\\')
 	)
+}
+
+function shouldSilenceSourcemapMissingWarning(msg: string): boolean {
+	// Vite emits this when a dependency ships sourcemap references to unpublished sources.
+	// It's noisy and does not affect runtime.
+	return msg.includes('Sourcemap for "') && msg.includes('points to missing source files')
 }

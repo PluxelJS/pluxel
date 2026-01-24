@@ -1,12 +1,16 @@
 import '@pluxel/core/test/setup'
 
 import { describe, expect, it } from 'bun:test'
-import { BasePlugin, Context, Plugin, setParamToken } from '@pluxel/core'
+import { BasePlugin, Context, ForkablePlugin, Plugin, setParamToken } from '@pluxel/core'
 import { LoaderService } from '../../src/services/loader/LoaderService'
+import { EXTRA_FORKS, type ForksExtra } from '../../src/services/loader/selection'
 
 function createHmrCtx(core: Context) {
 	const enabled = new Set<string>()
+	const extra: Record<string, unknown> = Object.create(null)
 	const configService = {
+		isReady: true,
+		ready: Promise.resolve(),
 		isEnabledInConfig(name: string) {
 			return enabled.has(name)
 		},
@@ -24,10 +28,15 @@ function createHmrCtx(core: Context) {
 			return {}
 		},
 		patchConfig() {},
-		getExtra(): undefined {
-			return undefined
+		getExtra(key: string) {
+			return extra[key]
 		},
-		setExtra() {},
+		setExtra(key: string, value: unknown) {
+			extra[key] = value
+		},
+		batch(run: () => void) {
+			run()
+		},
 	}
 
 	// Context from @pluxel/core exposes many services as readonly getters.
@@ -44,6 +53,91 @@ function createHmrCtx(core: Context) {
 }
 
 describe('LoaderService', () => {
+	it('preloadPlugins supports forkable builtins (including enabled forks)', async () => {
+		const core = new Context()
+		const ctx = createHmrCtx(core)
+		const loader = new LoaderService(ctx)
+
+		@Plugin({ name: 'Forky' })
+		class Forky extends ForkablePlugin {}
+
+		await loader.preloadPlugins([
+			{
+				plugin: Forky,
+				enable: false,
+				forks: ['a', { id: 'b', enable: true }, { id: 'c', enable: false }],
+			},
+		])
+
+		expect(ctx.configService.isEnabledInConfig('Forky')).toBe(false)
+		expect(ctx.configService.isEnabledInConfig('Forky#a')).toBe(true)
+		expect(ctx.configService.isEnabledInConfig('Forky#b')).toBe(true)
+		expect(ctx.configService.isEnabledInConfig('Forky#c')).toBe(false)
+
+		const catalog = ctx.configService.getExtra(EXTRA_FORKS) as ForksExtra | undefined
+		expect(catalog?.Forky?.slice().sort()).toEqual(['a', 'b', 'c'])
+
+		const ForkA = core.registry.fork(Forky as any, 'a') as any
+		const ForkB = core.registry.fork(Forky as any, 'b') as any
+		expect(core.registry.isRunning(Forky as any)).toBe(false)
+		expect(core.registry.isRunning(ForkA)).toBe(true)
+		expect(core.registry.isRunning(ForkB)).toBe(true)
+
+		// Fork source should resolve to the base plugin module id.
+		expect(loader.api.registry.findModuleId('Forky#a')).toBe('pluxel:builtins')
+	})
+
+	it('preloadPlugins enables and commits builtins', async () => {
+		const core = new Context()
+		const ctx = createHmrCtx(core)
+		const loader = new LoaderService(ctx)
+
+		@Plugin({ name: 'Builtin' })
+		class Builtin extends BasePlugin {}
+
+		const names = await loader.preloadPlugins([Builtin])
+		expect(names).toEqual(['Builtin'])
+		expect(ctx.configService.isEnabledInConfig('Builtin')).toBe(true)
+		expect(loader.api.registry.getCtor('Builtin')).toBe(Builtin)
+		expect(loader.api.registry.findModuleId('Builtin')).toBe('pluxel:builtins')
+		expect(core.registry.isRunning(Builtin)).toBe(true)
+	})
+
+	it('preloaded builtin baseline survives later failed batch rollback', async () => {
+		const core = new Context()
+		const ctx = createHmrCtx(core)
+		const loader = new LoaderService(ctx)
+
+		@Plugin({ name: 'Builtin' })
+		class Builtin extends BasePlugin {}
+
+		await loader.preloadPlugins([Builtin])
+		expect(core.registry.isRunning(Builtin)).toBe(true)
+
+		abstract class MissingBase extends BasePlugin {}
+
+		@Plugin({ name: 'Bad' })
+		class Bad extends BasePlugin {
+			constructor(_dep: MissingBase) {
+				super()
+			}
+		}
+		setParamToken(Bad, 0, MissingBase)
+
+		ctx.configService.enableInConfig('Bad')
+		{
+			const batch = loader.beginBatch()
+			await batch.replaceModule('Bad.ts', { Bad })
+			const res = await core.registry.commit()
+			expect(res.ok).toBe(false)
+			batch.rollback()
+			core.registry.resetDraft()
+		}
+
+		expect(core.registry.isRunning(Builtin)).toBe(true)
+		expect(loader.api.registry.getCtor('Builtin')).toBe(Builtin)
+	})
+
 	it('dependency inspector tolerates abstract/base tokens', async () => {
 		const core = new Context()
 		const ctx = createHmrCtx(core)

@@ -89,7 +89,11 @@ export class RuntimeShimRegistry {
 }
 
 function buildShimRules(input: RuntimeShimRegistryInput | undefined): ShimRule[] {
-	const rawRules: Array<{ kind: ShimKind; match: string; config: Exclude<RuntimeShimConfig, false> }> = []
+	const rawRules: Array<{
+		kind: ShimKind
+		match: string
+		config: Exclude<RuntimeShimConfig, false>
+	}> = []
 
 	const shims = input?.shims ?? {}
 	for (const [rawKey, cfg] of Object.entries(shims)) {

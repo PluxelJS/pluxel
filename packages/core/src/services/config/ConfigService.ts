@@ -17,6 +17,10 @@ declare module '@pluxel/context' {
  * - Core owns "when/how @Config is injected".
  * - Apps/HMR own persistence, validation, defaults, and enablement policies by overriding this service.
  *
+ * Readiness contract:
+ * - `isReady/ready` exist on the core service so orchestrators can reliably wait for config-backed policies
+ *   (HMR loads from disk asynchronously; core resolves immediately).
+ *
  * Note on enablement:
  * - This service stores enablement preference in config state.
  * - Core does not interpret it; orchestrators/loaders may use it to decide whether a plugin should be started.
@@ -24,6 +28,10 @@ declare module '@pluxel/context' {
 @Injectable({ key: serviceName })
 export class ConfigService {
 	public ctx: Context
+	/** Core is always "ready"; overridden implementations (e.g. HMR) may load from disk asynchronously. */
+	public isReady = true
+	/** Resolves when initial config is ready; core resolves immediately. */
+	public readonly ready: Promise<void> = Promise.resolve()
 	private enabledInConfig = new Set<string>()
 	private store = new Map<string, Record<string, unknown>>()
 	private extra: Record<string, unknown> = Object.create(null)
@@ -84,4 +92,3 @@ export class ConfigService {
 		run()
 	}
 }
-

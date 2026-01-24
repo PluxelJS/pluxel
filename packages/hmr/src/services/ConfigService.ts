@@ -40,6 +40,7 @@ export class ConfigService {
 	// 自写屏蔽：写盘到落盘结束这段时间内忽略变更事件
 	private writingNow = false
 	private batching = 0 // 事务计数
+	private pendingSave = false
 
 	constructor(
 		public ctx: Context,
@@ -64,6 +65,15 @@ export class ConfigService {
 			})
 			.on('add', () => this.onDiskChange(resolvedFile))
 			.on('change', () => this.onDiskChange(resolvedFile))
+	}
+
+	private requestSave() {
+		// Avoid scheduling disk writes mid-batch; the outer batch() will trigger once on commit.
+		if (this.batching > 0) {
+			this.pendingSave = true
+			return
+		}
+		this.saveDebounced()
 	}
 
 	// —— I/O 层 —— //
@@ -146,7 +156,10 @@ export class ConfigService {
 			run()
 		} finally {
 			this.batching--
-			if (this.batching === 0) this.saveDebounced()
+			if (this.batching === 0 && this.pendingSave) {
+				this.pendingSave = false
+				this.saveDebounced()
+			}
 		}
 	}
 
@@ -155,29 +168,47 @@ export class ConfigService {
 	 */
 	patchConfig<T extends object = Record<string, unknown>>(name: string, partial: Partial<T>) {
 		const entry = (this.data.plugins[name] ??= Object.create(null))
-		Object.assign(entry, partial)
-		this.saveDebounced()
+		let changed = false
+		for (const [k, v] of Object.entries(partial as Record<string, unknown>)) {
+			if (entry[k] !== v) {
+				entry[k] = v
+				changed = true
+			}
+		}
+		if (changed) this.requestSave()
 	}
 
 	setExtra(key: string, value: unknown) {
+		if (this.data.extra[key] === value) return
 		this.data.extra[key] = value
-		this.saveDebounced()
+		this.requestSave()
 	}
 
 	/**
 	 * 批量启用：ConfigService.enableInConfig('a', 'b', 'c')
 	 */
 	enableInConfig(...names: readonly string[]) {
-		for (let i = 0; i < names.length; i++) this.data.enabled.add(names[i])
-		this.saveDebounced()
+		let changed = false
+		for (let i = 0; i < names.length; i++) {
+			const n = names[i]
+			if (!this.data.enabled.has(n)) {
+				this.data.enabled.add(n)
+				changed = true
+			}
+		}
+		if (changed) this.requestSave()
 	}
 
 	/**
 	 * 批量禁用：ConfigService.disableInConfig('a', 'b')
 	 */
 	disableInConfig(...names: readonly string[]) {
-		for (let i = 0; i < names.length; i++) this.data.enabled.delete(names[i])
-		this.saveDebounced()
+		let changed = false
+		for (let i = 0; i < names.length; i++) {
+			const n = names[i]
+			if (this.data.enabled.delete(n)) changed = true
+		}
+		if (changed) this.requestSave()
 	}
 
 	/**
@@ -192,9 +223,23 @@ export class ConfigService {
 	 * 一次性覆盖启用集合（常用于 UI “全选/重置”）
 	 */
 	replaceEnabledInConfigSet(names: Iterable<string>) {
+		const next = new Set<string>()
+		for (const n of names) next.add(n)
+
+		let same = next.size === this.data.enabled.size
+		if (same) {
+			for (const n of next) {
+				if (!this.data.enabled.has(n)) {
+					same = false
+					break
+				}
+			}
+		}
+		if (same) return
+
 		this.data.enabled.clear()
-		for (const n of names) this.data.enabled.add(n)
-		this.saveDebounced()
+		for (const n of next) this.data.enabled.add(n)
+		this.requestSave()
 	}
 }
 

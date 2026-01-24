@@ -1,16 +1,16 @@
-import type { Context } from '@pluxel/core'
-import type { Logger as LogtapeLogger } from '@logtape/logtape'
 import { existsSync, readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import type { Logger as LogtapeLogger } from '@logtape/logtape'
+import type { Context } from '@pluxel/core'
 import { glob } from 'tinyglobby'
-import { normalizePath, type DevEnvironment, type EnvironmentModuleNode as ModuleNode } from 'vite'
+import { type DevEnvironment, type EnvironmentModuleNode as ModuleNode, normalizePath } from 'vite'
 import type { ScanService } from '../market/ScanService'
 import type { HmrPathApi, HmrToolkit } from './environment'
 import { startTimer } from './internals'
 import { logAttributionReport, type TimingTracker } from './logging'
-import { runWithRequireShims } from './runtime-shims'
 import type { HmrRunner } from './runner'
+import { runWithRequireShims } from './runtime-shims'
 
 const unique = <T>(iter: Iterable<T>) => Array.from(new Set(iter))
 
@@ -345,26 +345,26 @@ export class HmrExecutor {
 			} catch (err) {
 				// Hard fail on CJS deps being evaluated as ESM (common for native wrappers),
 				// so users must explicitly externalize them via `hmrService.deps.cjsExternal`.
-					const cjsHint = buildCjsExternalizeHint(err)
-					if (cjsHint) {
-						this.ctx.logger.error('execute failed for {file}', { file: id, error: err })
-						throw new Error(cjsHint, { cause: err as any })
-					}
+				const cjsHint = buildCjsExternalizeHint(err)
+				if (cjsHint) {
 					this.ctx.logger.error('execute failed for {file}', { file: id, error: err })
-					continue
+					throw new Error(cjsHint, { cause: err as any })
 				}
+				this.ctx.logger.error('execute failed for {file}', { file: id, error: err })
+				continue
+			}
 			const evaluateMs = endEvaluate()
 
 			const endInject = this.timing.start('inject', id)
 			let hasPlugin = false
-				try {
-					hasPlugin = await batch.replaceModule(id, mod)
-				} catch (err) {
-					this.ctx.logger.error('replaceModule failed for {file}', { file: id, error: err })
-					batch.rollback()
-					this.ctx.registry.resetDraft()
-					return undefined
-				}
+			try {
+				hasPlugin = await batch.replaceModule(id, mod)
+			} catch (err) {
+				this.ctx.logger.error('replaceModule failed for {file}', { file: id, error: err })
+				batch.rollback()
+				this.ctx.registry.resetDraft()
+				return undefined
+			}
 			const injectMs = endInject()
 
 			const dbg = this.cfg.dbgModules
@@ -592,15 +592,22 @@ export class HmrBatchProcessor {
 			}
 		}
 
-		const execOrder = buildOrderedList(new Set(targets), graph.distance, 'near', targets.length || 1)
-			const executed = await this.executor.runAndLoadAll(execOrder, true)
-			if (executed) {
-				const commitMs = Math.round(executed.commitMs * 10) / 10
-				this.ctx.logger.info`commit: ${commitMs}ms`
-			}
+		const execOrder = buildOrderedList(
+			new Set(targets),
+			graph.distance,
+			'near',
+			targets.length || 1,
+		)
+		const executed = await this.executor.runAndLoadAll(execOrder, true)
+		if (executed) {
+			const commitMs = Math.round(executed.commitMs * 10) / 10
+			this.ctx.logger.info`commit: ${commitMs}ms`
+		}
 
 		logAttributionReport(
-			typeof (this.ctx.logger as any).with === 'function' ? (this.ctx.logger as any).with({}) : this.ctx.logger,
+			typeof (this.ctx.logger as any).with === 'function'
+				? (this.ctx.logger as any).with({})
+				: this.ctx.logger,
 			{
 				changed: files[0] ?? 'N/A',
 				targets: execOrder,
@@ -610,10 +617,10 @@ export class HmrBatchProcessor {
 			{ level: 'info' },
 		)
 
-			const activeServices = this.ctx.registry.container?.services.size ?? 0
-			const batchMs = Math.round(endBatch() * 10) / 10
-			this.ctx.logger.info`batch #${epoch} end: ${activeServices} services, ${batchMs}ms`
-		}
+		const activeServices = this.ctx.registry.container?.services.size ?? 0
+		const batchMs = Math.round(endBatch() * 10) / 10
+		this.ctx.logger.info`batch #${epoch} end: ${activeServices} services, ${batchMs}ms`
+	}
 
 	private logBatchList(label: string, files: readonly string[]) {
 		const dbg = this.dbg.batch
@@ -630,7 +637,10 @@ export class HmrBatchProcessor {
 			return `${this.path.pretty(id)} (d=${d})`
 		})
 		const roots = graph.roots.map((r) => this.path.pretty(r))
-		dbg.debug((l) => l`affected (${affectedList.length})\n${affectedList.map((x) => `    ${x}`).join('\n')}`)
+		dbg.debug(
+			(l) =>
+				l`affected (${affectedList.length})\n${affectedList.map((x) => `    ${x}`).join('\n')}`,
+		)
 		dbg.debug((l) => l`roots (${roots.length})\n${roots.map((x) => `    ${x}`).join('\n')}`)
 	}
 

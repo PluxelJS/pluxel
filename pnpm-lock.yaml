@@ -33,6 +33,9 @@ importers:
       '@biomejs/biome':
         specifier: ^2.3.11
         version: 2.3.11
+      '@pluxel/cli':
+        specifier: workspace:*
+        version: link:packages/cli
       '@repobuddy/biome':
         specifier: ^2.3.0
         version: 2.3.0(@biomejs/biome@2.3.11)
@@ -394,6 +397,102 @@ importers:
       tsdown:
         specifier: 0.20.0-beta.4
         version: 0.20.0-beta.4(typescript@5.9.3)
+
+  packages/plugins/host:
+    dependencies:
+      '@pluxel/core':
+        specifier: workspace:*
+        version: link:../../core
+      '@pluxel/hmr':
+        specifier: workspace:*
+        version: link:../../hmr
+      pluxel-plugin-market-ui:
+        specifier: workspace:*
+        version: link:../market
+      pluxel-plugin-wretch:
+        specifier: workspace:*
+        version: link:../wretch
+    devDependencies:
+      '@mantine/core':
+        specifier: ^8.3.13
+        version: 8.3.13(@mantine/hooks@8.3.13(react@19.2.3))(@types/react@19.2.9)(react-dom@19.2.3(react@19.2.3))(react@19.2.3)
+      '@mantine/hooks':
+        specifier: ^8.3.13
+        version: 8.3.13(react@19.2.3)
+      '@tabler/icons-react':
+        specifier: ^3.35.0
+        version: 3.36.1(react@19.2.3)
+      '@types/react':
+        specifier: ^19.2.7
+        version: 19.2.9
+      '@types/react-dom':
+        specifier: ^19.2.3
+        version: 19.2.3(@types/react@19.2.9)
+      react:
+        specifier: ^19.2.3
+        version: 19.2.3
+      react-dom:
+        specifier: ^19.2.3
+        version: 19.2.3(react@19.2.3)
+
+  packages/plugins/market:
+    dependencies:
+      '@mantine/core':
+        specifier: ^8.3.13
+        version: 8.3.13(@mantine/hooks@8.3.13(react@19.2.3))(@types/react@19.2.9)(react-dom@19.2.3(react@19.2.3))(react@19.2.3)
+      '@mantine/hooks':
+        specifier: ^8.3.13
+        version: 8.3.13(react@19.2.3)
+      '@pluxel/core':
+        specifier: workspace:*
+        version: link:../../core
+      '@pluxel/hmr':
+        specifier: workspace:*
+        version: link:../../hmr
+      '@pluxel/market':
+        specifier: ^0.1.0
+        version: 0.1.0(ramda@0.32.0)(react-dom@19.2.3(react@19.2.3))(react@19.2.3)
+      '@tabler/icons-react':
+        specifier: ^3.35.0
+        version: 3.36.1(react@19.2.3)
+      react:
+        specifier: ^19.2.3
+        version: 19.2.3
+      react-dom:
+        specifier: ^19.2.3
+        version: 19.2.3(react@19.2.3)
+    devDependencies:
+      tsdown:
+        specifier: 0.20.0-beta.4
+        version: 0.20.0-beta.4(typescript@5.9.3)
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+
+  packages/plugins/wretch:
+    dependencies:
+      '@pluxel/core':
+        specifier: workspace:*
+        version: link:../../core
+      valibot:
+        specifier: ^1.2.0
+        version: 1.2.0(typescript@5.9.3)
+      wretch:
+        specifier: ^3.0.6
+        version: 3.0.6
+    devDependencies:
+      '@pluxel/hmr':
+        specifier: workspace:*
+        version: link:../../hmr
+      '@pluxel/rolldown':
+        specifier: workspace:*
+        version: link:../../rolldown
+      tsdown:
+        specifier: 0.20.0-beta.4
+        version: 0.20.0-beta.4(typescript@5.9.3)
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
 
   packages/rolldown:
     dependencies:
@@ -3624,6 +3723,10 @@ packages:
     resolution: {integrity: sha512-r6lPcBGxZXlIcymEu7InxDMhdW0KDxpLgoFLcguasxCaJ/SOIZwINatK9KY/tf+ZrlywOKU0UDj3ATXUBfxJXA==}
     engines: {node: '>=8'}
 
+  wretch@3.0.6:
+    resolution: {integrity: sha512-qshuQ0s5973Mu9mL5PG6QYG/bD0jihX9bovq7jgGE8r6ndH+JPOzzxihh/gaanKKsrFvvIdZ+KN4BoFyTj4PWg==}
+    engines: {node: '>=22'}
+
   ws@8.19.0:
     resolution: {integrity: sha512-blAT2mjOEIi0ZzruJfIhb3nps74PRWTCz1IjglWEEpQl5XS/UNama6u2/rjFkDDouqr4L67ry+1aGIALViWjDg==}
     engines: {node: '>=10.0.0'}
@@ -6673,6 +6776,8 @@ snapshots:
       ansi-styles: 4.3.0
       string-width: 4.2.3
       strip-ansi: 6.0.1
+
+  wretch@3.0.6: {}
 
   ws@8.19.0: {}
 

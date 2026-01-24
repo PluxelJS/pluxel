@@ -10,6 +10,7 @@ import {
 	type Plugin,
 	type ViteDevServer,
 } from 'vite'
+import type { BuiltinPluginSpec } from '../loader/LoaderService'
 import {
 	buildHmrViteConfig,
 	type HMRDependencyConfig,
@@ -52,6 +53,13 @@ export interface HMRConfig {
 	exclude?: string[]
 	/** 额外允许 Vite Dev Server 访问的目录（绝对路径或会基于 cwd 解析的相对路径） */
 	fsAllow?: string[]
+	/**
+	 * 冷启动策略（HMRService.start 阶段）。
+	 * - blocking: 启动时同步跑一遍 cold start（默认，保证启动后插件列表已就绪）
+	 * - background: 先启动服务，后台执行 cold start（更快返回，首次 UI/插件状态可能稍后才完整）
+	 * - off: 不执行 cold start（仅监听文件变更 + 手动 executeFiles）
+	 */
+	coldStart?: 'blocking' | 'background' | 'off'
 	/** 计时归因策略：'off' 关闭预取归因，仅保留 evaluate/inject；'prefetch' 预取受影响文件做 transform 计时（默认） */
 	attribution?: 'off' | 'prefetch'
 	/** 预取上限：避免超大变更范围引发 storm（默认 200） */
@@ -92,6 +100,15 @@ export interface HMRConfig {
 		 */
 		shims?: Record<string, RuntimeShimConfig>
 	}
+
+	/**
+	 * Preloaded plugin constructors that ship with `@pluxel/hmr` (or other libraries) and should be enabled
+	 * without needing a scanned entry file.
+	 *
+	 * This is intentionally constructor-based (not string names) so callers can pass imports directly when
+	 * creating a `Context` in TS/JS.
+	 */
+	builtins?: readonly (BuiltinPluginSpec)[]
 }
 
 const DEFAULT_PREFETCH_LIMIT = 200
@@ -147,6 +164,7 @@ export class HMRService {
 
 	private readonly workspaceEntryResolveCache = new Map<string, Promise<string | null>>()
 	private readonly anchorsCleanCache = new Set<string>()
+	private didPreloadBuiltins = false
 
 	private debouncer!: BatchDebouncer
 
@@ -275,7 +293,9 @@ export class HMRService {
 			hmrPackageRoot,
 		})
 		const serverConfig = buildHmrViteConfig({
-			root: this.cwd,
+			// Vite root should point at the HMR package UI, not the host cwd.
+			// Otherwise dep optimization may not crawl the correct entries and will try to update deps at runtime.
+			root: hmrPackageRoot ?? this.cwd,
 			fsAllow: serverFsAllow,
 			scanDirs: this.config.dir,
 			deps: this.deps,
@@ -345,6 +365,15 @@ export class HMRService {
 
 				this.setupBatching()
 				this.registerWatchers(server)
+				await this.preloadBuiltins()
+				const mode = this.config.coldStart ?? 'blocking'
+				if (mode === 'off') return
+				if (mode === 'background') {
+					void this.performColdStart().catch((error) => {
+						this.ctx.logger.error('cold start failed', { error })
+					})
+					return
+				}
 				await this.performColdStart()
 			},
 
@@ -380,6 +409,21 @@ export class HMRService {
 			},
 		}
 		return plugin
+	}
+
+	private async preloadBuiltins(): Promise<void> {
+		if (this.didPreloadBuiltins) return
+		this.didPreloadBuiltins = true
+
+		const builtins = this.config.builtins
+		if (!builtins?.length) return
+
+		const config = this.ctx.configService
+		if (!config.isReady) await config.ready
+
+		// Commit builtins as a baseline so later loader batch rollbacks revert back to a container
+		// that already includes the built-in plugins.
+		await this.ctx.loader.preloadPlugins(builtins, { commit: true })
 	}
 
 	private setupBatching() {

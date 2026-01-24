@@ -1,4 +1,3 @@
-// packages/hmr/tests/demo/PluginEventsDemo.ts
 // 演示：两种插件间通信方式（都保持最小实现，便于复制改写）。
 //
 // 1) EvtChannel（DI 依赖明确、事件更局部）：
@@ -92,4 +91,3 @@ export class PluginEventsDeclaredConsumer extends BasePlugin {
 		})
 	}
 }
-

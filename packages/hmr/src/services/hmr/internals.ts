@@ -1,8 +1,8 @@
 import { existsSync } from 'node:fs'
-import { dirname, resolve } from 'pathe'
-import { normalizePath } from 'vite'
 import { getLogger } from '@logtape/logtape'
 import { pluxelCategories } from '@pluxel/core/logger'
+import { dirname, resolve } from 'pathe'
+import { normalizePath } from 'vite'
 
 const nsToMs = (ns: bigint) => Number(ns) / 1e6
 

@@ -1,11 +1,10 @@
-// packages/hmr/tests/demo/PluginBuiltinShowcase.ts
 // 展示型插件：尽量不注册自定义组件，仅使用宿主内置能力（builtin UI + config schemas）
 
 import { BasePlugin, Plugin } from '@pluxel/hmr'
 import { RpcTarget } from '@pluxel/hmr/capnweb'
 import { f, v } from '@pluxel/hmr/config'
 import type { SseChannel } from '@pluxel/hmr/services'
-import { doc } from '@pluxel/hmr/web'
+import { doc } from '@pluxel/hmr/services'
 
 const MIN_REFRESH_MS = 250
 const MAX_REFRESH_MS = 10_000

@@ -13,7 +13,7 @@ import type {
 	ExtensionPoint,
 	PluginExtensionConfig,
 } from '@pluxel/hmr-web'
-import { extensionVendorPackages } from '@pluxel/hmr-web'
+import { extensionVendorPackages } from '@pluxel/hmr-web/vendors'
 import chokidar, { type FSWatcher } from 'chokidar'
 import { dirname, isAbsolute, join, relative, resolve } from 'pathe'
 import type { ResolveOptions } from 'vite'
@@ -201,10 +201,12 @@ export class ExtensionService {
 			this.disposeWatcher(existing)
 		}
 
-		const pluginDir = this.findPluginDir(pluginName)
-		if (!pluginDir) {
-			throw new Error(`无法定位插件目录: ${pluginName}`)
+		let pluginDir = this.findPluginDir(pluginName)
+		// Builtins may not have a resolvable module id. Allow plugins to provide an absolute entryPath.
+		if (!pluginDir && isAbsolute(config.entryPath)) {
+			pluginDir = dirname(config.entryPath)
 		}
+		if (!pluginDir) throw new Error(`无法定位插件目录: ${pluginName}`)
 		const sourceFiles = this.collectSourceFiles(pluginDir, config.entryPath)
 		const entry: PluginExtensionEntry = {
 			pluginName,

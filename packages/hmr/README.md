@@ -13,8 +13,8 @@
 - **冲突语义（确定性）**：同一个 base token 出现多个 provider 时，冲突在 build/commit（DI 验证）阶段被检测并报错；不是在 `registerPlugin()` 时“隐式覆盖”。
 
 相关实现入口：
-- `packages/core/src/plugins/PluginDefinitions.ts`：声明层（register/unregister/build）。
-- `packages/core/src/plugins/service/PluginService.ts`：`commit()` 负责构建新容器、拓扑启动、失败收集与重试。
+- `packages/core/src/plugins/internal/PluginDefinitions.ts`：声明层（register/unregister/build）。
+- `packages/core/src/plugins/PluginService.ts`：`commit()` 负责构建新容器、拓扑启动、失败收集与重试。
 
 ### 1.2 Commit 语义（非事务化启动，但 build 可回滚）
 - commit 分为两段：
@@ -58,6 +58,33 @@ diod 默认按“构造函数引用”做依赖键：引用不一致即视为缺
 - **DI build/verify 失败**：回滚（因为容器没切换，本次变更“无效”）。
 - **插件生命周期启动失败**：不回滚（容器已切换，属于非事务化 commit 的部分失败），插件作者会立即得到失败反馈；后续 commit 会自动重试。
 
+### 2.4 Builtins：不经扫描即可预载/默认启用的插件
+有些插件并不来自 HMR 扫描目录（例如你希望在 `new Context()` 时“引用 ctor 即可默认启用”的插件），但仍希望它们参与 HMR 的基线容器与启用位。
+
+实现方式：
+- `hmrService.builtins` 接受插件 ctor 列表（或带选项的对象），会在冷启动扫描前执行 `declare + enable + commit`，作为 baseline 容器；
+- 这样后续 HMR 批量注入如果发生 **DI build/verify 失败回滚**，也会回滚到“包含 builtins 的 baseline 容器”，不会把 builtins 一起丢掉。
+
+使用方式（builtin 插件通常来自独立包，直接导入 ctor 即可）：
+```ts
+import { Context } from '@pluxel/hmr'
+import { MarketUI } from 'pluxel-plugin-market-ui'
+import { WretchPlugin } from 'pluxel-plugin-wretch'
+
+const ctx = new Context({
+  hmrService: {
+    builtins: [
+      MarketUI,
+      { plugin: WretchPlugin, forks: ['prod', { id: 'staging', enable: false }] },
+    ],
+  },
+})
+```
+
+Fork 支持：
+- Forkable 插件（继承 `ForkablePlugin`）可以作为 builtin；
+- 可在 builtin 配置里直接声明 `forks`，并选择是否启用某些 fork。
+
 ## 3) Optional / 动态导入与 HMR
 `@pluxel/core` 的 `optional()` 设计目标是：可选依赖永远不阻塞构造；在 commit 之后如果依赖变为可用可以执行回调。
 
@@ -70,8 +97,8 @@ diod 默认按“构造函数引用”做依赖键：引用不一致即视为缺
 - HMR 批量执行入口：`packages/hmr/src/services/hmr/HMRService.ts`（`runAndLoadAll()`）
 - Loader 注入与 dependents 重绑：`packages/hmr/src/services/loader/LoaderService.ts`
 - Loader 声明层与 config/runtime 协调：`packages/hmr/src/services/loader/PluginRegistry.ts`
-- Core 插件容器与草稿/确认：`packages/core/src/plugins/PluginDefinitions.ts`
-- Core commit 编排与失败语义：`packages/core/src/plugins/service/PluginService.ts`
+- Core 插件容器与草稿/确认：`packages/core/src/plugins/internal/PluginDefinitions.ts`
+- Core commit 编排与失败语义：`packages/core/src/plugins/PluginService.ts`
 
 ## 5) 注意事项（避免误解）
 - “回滚”只针对 **DI build/verify 失败**（本次容器未切换）。生命周期失败不会回滚，这是刻意的：你需要看到即时失败与依赖链影响。

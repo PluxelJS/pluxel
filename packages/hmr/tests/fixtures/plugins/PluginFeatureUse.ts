@@ -3,10 +3,7 @@ import { BaseFeature, BasePlugin, Plugin, pluginMethodDecorator } from '@pluxel/
 @Plugin({ name: 'KvPlugin' })
 export class KvPlugin extends BasePlugin {}
 
-const UseKvId = () =>
-	pluginMethodDecorator(KvPlugin, async function (_original, kv) {
-		return kv.ctx.pluginInfo.id
-	})
+const UseKvId = () => pluginMethodDecorator(KvPlugin, async (_original, kv) => kv.ctx.pluginInfo.id)
 
 class CacheFeature extends BaseFeature {
 	@UseKvId()

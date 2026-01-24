@@ -1,4 +1,4 @@
-import { extensionVendorPackages } from '@pluxel/hmr-web'
+import { extensionVendorPackages } from '@pluxel/hmr-web/vendors'
 import type { ResolveOptions } from 'vite'
 
 export function toBrowserBundleResolve(resolve: ResolveOptions): ResolveOptions {

@@ -57,7 +57,7 @@ export class ModuleReplacer {
 			this.registry.declarePlugin(id, item.ctor, item.exportKey, options.tx)
 		}
 
-		const config = getConfigReady(this.ctx)
+		const config = this.ctx.configService
 		const startEnabled = async () => {
 			// Apply persisted dependency overrides after all exports are declared.
 			for (const item of exported) await this.depOverrides.apply(item.ctor, this.registry)
@@ -142,23 +142,6 @@ export class ModuleReplacer {
 	}
 }
 
-function isPromiseLike(value: unknown): value is PromiseLike<unknown> {
-	if (!value) return false
-	if (typeof value !== 'object' && typeof value !== 'function') return false
-	const record = value as Record<string, unknown>
-	return typeof record.then === 'function'
-}
-
-function getConfigReady(ctx: Context): { isReady: boolean; ready: Promise<void> } {
-	const svc = ctx.configService as unknown
-	if (!svc || typeof svc !== 'object') return { isReady: true, ready: Promise.resolve() }
-	const record = svc as Record<string, unknown>
-	const ready = record.ready
-	const isReady = record.isReady === true
-	if (!isPromiseLike(ready)) return { isReady: true, ready: Promise.resolve() }
-	return { isReady, ready: ready as Promise<void> }
-}
-
 function collectPluginExports(mod: Record<string, unknown>): ExportedPlugin[] {
 	const exported: ExportedPlugin[] = []
 	for (const [exportKey, exp] of Object.entries(mod)) {
@@ -180,15 +163,8 @@ class DependencyOverrideApplier {
 	 * onto a freshly declared ctor (important across HMR reloads).
 	 */
 	async apply(ctor: PluginConstructor, registry: PluginRegistry) {
-		const configService = this.ctx.configService as unknown
-		if (!configService || typeof configService !== 'object') return
-		const getExtra = (configService as { getExtra?: unknown }).getExtra
-		if (typeof getExtra !== 'function') return
-
 		const name = getPluginInfo(ctor).id
-		const all = getExtra.call(this.ctx.configService, EXTRA_DEP_OVERRIDES) as
-			| DepOverridesExtra
-			| undefined
+		const all = this.ctx.configService.getExtra<DepOverridesExtra>(EXTRA_DEP_OVERRIDES)
 		const overrides = all?.[name]
 		if (!overrides) return
 		const consumerEnabled = this.ctx.configService.isEnabledInConfig(name)
