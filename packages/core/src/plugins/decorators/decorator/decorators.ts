@@ -1,14 +1,23 @@
-import { BasePlugin } from '../BasePlugin'
-import type { PluginIdentifier, SubclassOf } from '../types'
+import { BasePlugin } from '../../composition/BasePlugin'
+import type { PluginIdentifier, SubclassOf } from '../../types'
 import type { ConfigSchemaList, DeclaredMetaView, PluginMetadata } from './types'
 import { PARAM_TYPES } from './types'
-import { EMPTY_ARR, S, $freeze, __DEV__, isSubclassOf, nameOf, rebuildInfoSnapshot } from './shared'
+import {
+	EMPTY_ARR,
+	S,
+	$freeze,
+	__DEV__,
+	isSubclassOf,
+	nameOf,
+	rebuildInfoSnapshot,
+	type AnyCtor,
+} from './shared'
 
 /** 收集实例字段配置（@Plugin 统一聚合） */
 export function Config<S extends ConfigSchemaList>(schema: S): PropertyDecorator {
 	return (target: object, key: string | symbol) => {
 		if (typeof target === 'function') throw new Error('@Config 只能用于实例字段(非 static)')
-		const ctor = (target as any).constructor as Function
+		const ctor = (target as any).constructor as AnyCtor
 		const s = S(ctor)
 		const bucket = s.pending ?? Object.create(null)
 		bucket[String(key)] = schema
@@ -35,15 +44,16 @@ export function Plugin(a?: PluginMetadata | PluginIdentifier, b?: PluginMetadata
 		withBase ? ((b as PluginMetadata) ?? {}) : ((a as PluginMetadata) ?? {})
 	) as PluginMetadata
 
-	return (ctor: Function) => {
-		if (base) {
-			if (!isSubclassOf(base as Function, BasePlugin)) {
-				throw new Error(`@Plugin(${nameOf(base)}) 失败：抽象基类未继承 BasePlugin`)
+		return (ctor: AnyCtor) => {
+			if (base) {
+				const baseLabel = typeof base === 'function' ? nameOf(base as unknown as AnyCtor) : String(base)
+				if (!isSubclassOf(base as unknown as AnyCtor, BasePlugin as unknown as AnyCtor)) {
+					throw new Error(`@Plugin(${baseLabel}) 失败：抽象基类未继承 BasePlugin`)
+				}
+				if (!isSubclassOf(ctor, base as unknown as AnyCtor)) {
+					throw new Error(`@Plugin(${baseLabel}) 失败：${nameOf(ctor)} 未继承 ${baseLabel}`)
+				}
 			}
-			if (!isSubclassOf(ctor, base as Function)) {
-				throw new Error(`@Plugin(${nameOf(base)}) 失败：${nameOf(ctor)} 未继承 ${nameOf(base)}`)
-			}
-		}
 
 		const s = S(ctor)
 

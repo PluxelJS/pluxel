@@ -4,17 +4,7 @@ Forkable HTTP client plugin powered by `wretch` (v3).
 
 ## Configuration
 
-The config key is `wretch` (same as before). Legacy keys are still supported.
-
-```ts
-host.setConfig(WretchPlugin, {
-  wretch: {
-    baseUrl: 'https://api.example.com/',
-    headers: { 'x-api-key': '...' },
-    credentials: 'include',
-  },
-})
-```
+The config key is `wretch`.
 
 ```ts
 host.setConfig(WretchPlugin, {

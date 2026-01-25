@@ -3,26 +3,29 @@ import * as v from 'valibot'
 import {
 	type NormalizedWretchClientConfig,
 	type NormalizedWretchPluginConfig,
+	WretchConfigRuntime,
 	type WretchPluginClientConfig,
 	type WretchPluginConfig,
-	WretchConfigRuntime,
 } from './schema'
 import { normalizeBaseUrl } from './url'
 
-export function parseWretchConfig(raw: unknown, logger?: { warn?: (...args: any[]) => void }): WretchPluginConfig {
+export function parseWretchConfig(
+	raw: unknown,
+	logger?: { warn?: (...args: unknown[]) => void },
+): WretchPluginConfig {
 	const parsed = v.safeParse(WretchConfigRuntime, raw && typeof raw === 'object' ? raw : {})
-	if (!parsed.success) logger?.warn?.('Invalid wretch config; falling back to defaults', parsed.issues)
+	if (!parsed.success)
+		logger?.warn?.('Invalid wretch config; falling back to defaults', parsed.issues)
 	return parsed.success ? parsed.output : ({} as WretchPluginConfig)
 }
 
 export function normalizeWretchConfig(cfg: WretchPluginConfig): NormalizedWretchPluginConfig {
 	const defaults: NormalizedWretchClientConfig = {
-		baseUrl: normalizeBaseUrl(cfg.defaults?.baseUrl ?? cfg.baseUrl),
+		baseUrl: normalizeBaseUrl(cfg.defaults?.baseUrl),
 		headers: {
-			...(cfg.headers ?? {}),
 			...(cfg.defaults?.headers ?? {}),
 		},
-		credentials: cfg.defaults?.credentials ?? cfg.credentials,
+		credentials: cfg.defaults?.credentials,
 		options: cfg.defaults?.options as Record<string, unknown> | undefined,
 	}
 

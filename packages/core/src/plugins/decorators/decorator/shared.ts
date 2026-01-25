@@ -1,5 +1,6 @@
 import { isProduction } from '../../../env'
-import type { Identifier, PluginIdentifier } from '../types'
+import type { Identifier } from '../../../container'
+import type { PluginIdentifier } from '../../types'
 import type { ConfigSchemaList, DeclaredMetaView, ParamOverride, PluginInfo } from './types'
 
 /*───────────────────────────────────────────────────────────
@@ -15,7 +16,7 @@ export const __DEV__ =
 export const $freeze = <T>(x: T): T => (__DEV__ ? Object.freeze(x) : x)
 export const EMPTY_ARR: readonly unknown[] = $freeze([])
 
-export type AnyCtor = abstract new (...args: unknown[]) => unknown
+export type AnyCtor = Function & (abstract new (...args: any[]) => any)
 
 /*───────────────────────────────────────────────────────────
   Internal State（单 WM，固定 shape，JIT 友好）

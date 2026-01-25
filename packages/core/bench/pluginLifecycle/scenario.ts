@@ -1,4 +1,4 @@
-import { BasePlugin, Config, Context, Plugin, setParamTokens } from '@pluxel/core'
+import { __registerConfigSchema__, BasePlugin, Context, Plugin, setParamTokens } from '@pluxel/core'
 
 export type Ctx = InstanceType<typeof Context>
 type CommitResult = Awaited<ReturnType<Ctx['registry']['commit']>>
@@ -68,10 +68,9 @@ function createStar(leaves: number) {
 
 function createConfigHeavy(keys: number) {
 	class P extends BasePlugin {}
-	const proto = P.prototype as any
 
-	// Important: apply @Config before @Plugin so Plugin decorator can collect pending configMap.
-	for (let i = 0; i < keys; i++) Config({} as any)(proto, `k${i}`)
+	// Register schemas before @Plugin so the decorator can collect pending configMap in one pass.
+	for (let i = 0; i < keys; i++) __registerConfigSchema__(P, `k${i}`, {} as any)
 	Plugin({ name: 'BenchConfigHeavy' })(P)
 
 	const record: Record<string, unknown> = Object.create(null)
@@ -145,4 +144,3 @@ export function createScenario(sizes: ScenarioSizes) {
 		setupBigStarBaseline,
 	}
 }
-

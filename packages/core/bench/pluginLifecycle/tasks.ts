@@ -7,7 +7,7 @@ type Area =
 	| 'dependency planning'
 	| 'dependents traversal'
 	| 'lifecycle restart'
-	| '@Config injection'
+	| 'config injection'
 	| 'noop/overhead'
 
 export const TASK_MEANING: Record<string, { goal: string; area: Area; notes?: string }> = {
@@ -71,8 +71,8 @@ export const TASK_MEANING: Record<string, { goal: string; area: Area; notes?: st
 		area: 'dependents traversal',
 	},
 	'config: inject-heavy restart': {
-		goal: 'Restart a plugin with many @Config fields and a large config record.',
-		area: '@Config injection',
+		goal: 'Restart a plugin with many config keys and a large config record.',
+		area: 'config injection',
 	},
 	'big: noop commit (independent + star)': {
 		goal: 'No-op commit with a large baseline present.',
@@ -340,4 +340,3 @@ export function registerPluginLifecycleBenchmarks(bench: Bench, scenario: Scenar
 		while (cleanups.length) cleanups.pop()?.()
 	}
 }
-

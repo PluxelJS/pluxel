@@ -4,7 +4,8 @@
 
 `ConfigService` 的职责是给 **插件侧** 提供一个稳定、极小的“读取配置快照”的契约，并且提供一个“是否启用”的偏好存储。
 
-- Core 只负责：`@Config` 注入的时机/规则、在插件 Context 下按插件名取配置。
+- Core 只负责：已声明配置字段的注入时机/规则、在插件 Context 下按插件名取配置。
+- 更推荐的用法：插件用 `field = this.configs.use(schema)` 声明字段；schema/source 由上层工具链（如 configSourcePlugin）注册。
 - 上层（App/HMR/Loader）负责：持久化、校验、默认值、合并策略、启用策略的解释。
 
 ## 关键语义
@@ -29,5 +30,4 @@
 优先用 `@pluxel/core/test` 的 `withTestHost()` 走真实插件启动流程：
 
 - 通过 `host.setConfig(pluginCtor, record)` 构造注入快照
-- 在插件里调用 `ctx.configService.getConfig()` 或 `@Config` 读取并断言
-
+- 在插件里调用 `ctx.configService.getConfig()` 或读取 `this.configs.use(...)` 声明的字段并断言

@@ -14,10 +14,14 @@ import type { Context } from '@pluxel/context'
 import { createErr, createOk } from 'option-t/plain_result'
 import { type DiodContainer, ExtendedContainerBuilder } from '../../container'
 import type { LeanMapTracker } from '../../container/LeanMapTracker'
-import { getForkOf } from '../fork'
-import { BasePlugin, FORK_CTX, PLUGIN_CTX } from './BasePlugin'
-import { getClassParams, getPluginInfo, getRequiredPluginDependencies } from './PluginDecorator'
-import type { PluginConstructor, PluginIdentifier, PluginInstance } from './types'
+import { getForkOf } from './fork'
+import { BasePlugin, FORK_CTX, PLUGIN_CTX } from '../composition/BasePlugin'
+import {
+	getClassParams,
+	getPluginInfo,
+	getRequiredPluginDependencies,
+} from '../decorators/PluginDecorator'
+import type { PluginConstructor, PluginIdentifier, PluginInstance } from '../types'
 
 export type PluginDiContainer = DiodContainer<BasePlugin>
 export type createCTX = () => Context

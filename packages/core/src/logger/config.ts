@@ -36,7 +36,7 @@ export type PluxelUiLoggerOptions = {
 	/** The sink instance (e.g. `createLogStoreSink(...)`). */
 	sink: Sink
 	/** Categories that should write to this sink. */
-	categories?: ReadonlyArray<string | string[]>
+	categories?: ReadonlyArray<string | readonly string[]>
 	/** Lowest level for these categories. */
 	lowestLevel?: LogLevel
 	/** Whether to inherit parent sinks (default: LogTape default). */
@@ -269,7 +269,7 @@ export function createPluxelLogtapeConfig(
 	}
 
 	const uiInput = opts.ui
-	if (uiInput && uiInput !== false) {
+	if (uiInput) {
 		const ui = normalizeUi(uiInput)
 		const id = ui.id ?? 'ui'
 		sinks[id] = ui.sink
@@ -277,7 +277,8 @@ export function createPluxelLogtapeConfig(
 		const lowestLevel = ui.lowestLevel ?? 'trace'
 		for (const category of categories) {
 			loggers.push({
-				category,
+				category:
+					typeof category === 'string' ? category : Array.from(category as readonly string[]),
 				sinks: [id],
 				lowestLevel,
 				parentSinks: ui.parentSinks,

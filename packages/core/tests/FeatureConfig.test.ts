@@ -11,7 +11,7 @@ import {
 } from '@pluxel/core/test'
 
 describe('BaseFeature config composition', () => {
-	it('namespaces feature @Config into host plugin configMap and injects values into the feature instance', async () => {
+	it('namespaces feature config into host plugin configMap and injects values into the feature instance', async () => {
 		await withTestHost(async (host) => {
 			const FeatureSchema = { any: 'schema' } as any
 			const TelemetrySchema = { any: 'telemetry' } as any

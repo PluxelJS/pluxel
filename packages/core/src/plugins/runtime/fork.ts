@@ -8,9 +8,9 @@
 //
 // Forking is **strict opt‑in**: only ctors extending ForkablePlugin can be forked.
 
-import { ForkablePlugin } from './internal/BasePlugin'
-import { clonePluginDefinition, getPluginInfo } from './internal/PluginDecorator'
-import type { ForkablePluginConstructor, PluginConstructor, PluginIdentifier } from './internal/types'
+import { ForkablePlugin } from '../composition/BasePlugin'
+import { clonePluginDefinition, getPluginInfo } from '../decorators/PluginDecorator'
+import type { ForkablePluginConstructor, PluginConstructor, PluginIdentifier } from '../types'
 
 const FORK_ID = Symbol.for('pluxel:plugin:forkId')
 const FORK_OF = Symbol.for('pluxel:plugin:forkOf')

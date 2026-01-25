@@ -1,5 +1,5 @@
-import * as v from 'valibot'
 import type { InferOutput } from 'valibot'
+import * as v from 'valibot'
 
 const Credentials = ['omit', 'same-origin', 'include'] as const
 
@@ -16,12 +16,6 @@ const ClientConfig = v.object({
 })
 
 export const WretchConfig = v.object({
-	// Legacy fields (kept for backward compatibility; mapped onto `defaults` at runtime).
-	baseUrl: v.optional(v.string()),
-	headers: v.optional(v.record(v.string(), v.string()), {}),
-	credentials: v.optional(v.picklist(Credentials)),
-
-	// New configuration.
 	defaults: v.optional(ClientConfig),
 	clients: v.optional(v.record(v.string(), ClientConfig)),
 	defaultClient: v.optional(v.string()),

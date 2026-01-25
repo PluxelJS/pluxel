@@ -390,6 +390,6 @@ export class DiodContainer<U = unknown> implements Container {
 		if (!svc) return createErr({ kind: 'NotRegistered', id: identifier })
 		if (!isDependency && svc.isPrivate)
 			return createErr({ kind: 'PrivateService', id: identifier })
-		return createOk(svc as ServiceData<T>)
+		return createOk(svc as unknown as ServiceData<T>)
 	}
 }

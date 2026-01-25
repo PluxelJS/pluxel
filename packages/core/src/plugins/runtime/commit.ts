@@ -4,8 +4,8 @@
 // Goal: keep PluginService readable while avoiding scattering across many tiny files.
 // Everything here is intentionally side-effect free.
 
-import type { ServiceMap } from '../../../container'
-import type { BasePlugin } from '../BasePlugin'
+import type { ServiceMap } from '../../container'
+import type { BasePlugin } from '../composition/BasePlugin'
 import type { PluginIdentifier } from '../types'
 
 /* ─────────────────────────── Init Plan ─────────────────────────── */

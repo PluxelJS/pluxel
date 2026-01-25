@@ -1,12 +1,12 @@
-import { Config, ForkablePlugin, Plugin } from '@pluxel/hmr'
+import { ForkablePlugin, Plugin } from '@pluxel/hmr'
 
 import { buildClientEntry, type ClientEntry, type WretchClient } from './client'
 import { normalizeWretchConfig, parseWretchConfig } from './config'
-import { WretchConfig, type WretchPluginConfig } from './schema'
+import { WretchConfig } from './schema'
 
 @Plugin({ name: 'Wretch' })
 export class WretchPlugin extends ForkablePlugin {
-	@Config(WretchConfig) wretch!: WretchPluginConfig
+	wretch = this.configs.use(WretchConfig)
 
 	private defaultClientName: string = 'default'
 	private readonly clients = new Map<string, ClientEntry>()

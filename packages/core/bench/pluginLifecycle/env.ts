@@ -29,11 +29,10 @@ export const scenarioSizes = {
 	bigIndependent: numberFromEnvInt('PLUXEL_BENCH_BIG_INDEPENDENT', 800),
 	// How many incremental ops per task invocation (higher = more "steady-state" realism).
 	loops: numberFromEnvInt('PLUXEL_BENCH_LOOPS', 6),
-	// Keys injected via @Config (measures config injection cost on restart).
+	// Keys injected via declared config fields (measures config injection cost on restart).
 	configKeys: numberFromEnvInt('PLUXEL_BENCH_CONFIG_KEYS', 200),
 }
 
 export const writeBaseline = process.env.PLUXEL_BENCH_WRITE_BASELINE === '1'
 
 export const baselineEnvPath = process.env.PLUXEL_BENCH_BASELINE
-

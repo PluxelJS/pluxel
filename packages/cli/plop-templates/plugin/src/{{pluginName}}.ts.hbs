@@ -1,4 +1,4 @@
-import { BasePlugin, Config, Plugin } from '@pluxel/hmr'
+import { BasePlugin, Plugin } from '@pluxel/hmr'
 import { v } from '@pluxel/hmr/config'
 
 const CfgSchema = v.object({
@@ -7,8 +7,7 @@ const CfgSchema = v.object({
 
 @Plugin({ name: '{{packageName}}' })
 export class {{className}} extends BasePlugin {
-  @Config(CfgSchema)
-  private config!: Config<typeof CfgSchema>
+  config = this.configs.use(CfgSchema)
 
   async init(_abort: AbortSignal): Promise<void> {
     this.ctx.logger.info('{{className}} initialized')

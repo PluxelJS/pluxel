@@ -11,14 +11,14 @@
 import type { Context, ServiceClass } from '@pluxel/context'
 import { Injectable } from '@pluxel/context'
 import { createErr, createOk } from 'option-t/plain_result'
-import type { ServiceMap } from '../container'
-import { LeanMapTracker } from '../container/LeanMapTracker'
-import { isProduction } from '../env'
-import { EffectScopeService } from '../services/scope/EffectScopeService'
+import type { ServiceMap } from '../../container'
+import { LeanMapTracker } from '../../container/LeanMapTracker'
+import { isProduction } from '../../env'
+import { EffectScopeService } from '../../services/scope/EffectScopeService'
 import { forkPlugin, getForkedCtor, listForks } from './fork'
-import type { BasePlugin } from './internal/BasePlugin'
-import type { PluginInfo } from './internal/PluginDecorator'
-import { PluginDefinitions, type PluginDiContainer } from './internal/PluginDefinitions'
+import type { BasePlugin } from '../composition/BasePlugin'
+import type { PluginInfo } from '../decorators/PluginDecorator'
+import { PluginDefinitions, type PluginDiContainer } from './PluginDefinitions'
 import {
 	computeInitPlan,
 	type InitPlan,
@@ -26,20 +26,20 @@ import {
 	partitionChanges,
 	startPluginsWithStrategy,
 	stopPluginsTopo,
-} from './internal/runtime/commit'
+} from './commit'
 // Optional dependency API removed in favor of feature composition (BaseFeature).
 import type {
 	ForkablePluginConstructor,
 	PluginConstructor,
 	PluginIdentifier,
 	PluginInstance,
-} from './internal/types'
+} from '../types'
 import { LifecycleManager } from './LifecycleManager'
 
 /* ─────────────────────────── Types ─────────────────────────── */
 
 type PluginServiceConfig = {
-	pluginCTXIsolate?: ServiceClass<unknown>[]
+	pluginCTXIsolate?: ServiceClass<any>[]
 	startTimeoutMs?: number
 	stopTimeoutMs?: number
 	startStrategy?: PluginStartStrategy
@@ -48,12 +48,29 @@ type PluginServiceConfig = {
 	featureDeclarationPolicy?: 'off' | 'warn' | 'error'
 }
 
+type AnyServiceClass = ServiceClass<new (ctx: any, cfg: any) => any>
+
 export interface CommitSummary {
 	container: PluginDiContainer
 	added: PluginIdentifier[]
 	replaced: PluginIdentifier[]
 	removed: PluginIdentifier[]
 	failed: PluginIdentifier[]
+	/**
+	 * Plugins whose runtime availability may have changed in this commit.
+	 *
+	 * This includes anything that was stopped or (re)started (adds, replaces, restarts, retries).
+	 * Useful for efficient optional-dependency watchers (e.g. FeatureHost.dep).
+	 */
+	touched: PluginIdentifier[]
+}
+
+type InstanceWatcher = {
+	token: PluginIdentifier
+	resolved: PluginIdentifier
+	lastRaw: BasePlugin | undefined
+	lastNotifiedSeq: number
+	cb: (instance: BasePlugin | undefined) => void
 }
 
 /* ─────────────────────────── Module Augmentation ─────────────────────────── */
@@ -109,6 +126,8 @@ export class PluginService {
 	private readonly featureDeclarationPolicyDefault: 'off' | 'warn' | 'error'
 	private readonly featureDeclarationPolicyExplicit: boolean
 	private nextCommitFeatureDeclarationPolicy: 'off' | 'warn' | 'error' | null = null
+	private readonly instanceWatchersByResolved = new Map<PluginIdentifier, Set<InstanceWatcher>>()
+	private commitSeq = 0
 
 	private static readonly FEATURE_DECLARATION_POLICY = Symbol.for(
 		'pluxel:feature:declarationPolicy',
@@ -130,7 +149,19 @@ export class PluginService {
 		this.featureDeclarationPolicyDefault =
 			config?.featureDeclarationPolicy ?? (isProduction ? 'off' : 'warn')
 
-		const isolated = [...new Set([...(config?.pluginCTXIsolate ?? []), EffectScopeService])]
+		const isolated: AnyServiceClass[] = []
+		const seen = new Set<AnyServiceClass>()
+		for (const svc of config?.pluginCTXIsolate ?? []) {
+			const s = svc as unknown as AnyServiceClass
+			if (seen.has(s)) continue
+			seen.add(s)
+			isolated.push(s)
+		}
+		const scopeSvc = EffectScopeService as unknown as AnyServiceClass
+		if (!seen.has(scopeSvc)) {
+			seen.add(scopeSvc)
+			isolated.push(scopeSvc)
+		}
 		this.definitions = new PluginDefinitions(() => {
 			const pluginCTX = this.ctx.root.isolate(isolated, { name: `${this.order++}` })
 			const override = this.nextCommitFeatureDeclarationPolicy
@@ -200,8 +231,8 @@ export class PluginService {
 		return (out ?? id) as PluginIdentifier
 	}
 
-	private services(container: PluginDiContainer): Map<unknown, unknown> {
-		return container.services as unknown as Map<unknown, unknown>
+	private services(container: PluginDiContainer): ServiceMap<BasePlugin> {
+		return container.services as unknown as ServiceMap<BasePlugin>
 	}
 
 	/* ─────────────────────────── State Query ─────────────────────────── */
@@ -223,13 +254,112 @@ export class PluginService {
 	}
 
 	/**
-	 * Get the current singleton instance for an identifier if it was constructed.
-	 * This does not instantiate or start anything; it only reads the runtime cache.
+	 * Get the current singleton instance for an identifier if it is running.
+	 * This does not instantiate or start anything; it only reads the runtime cache + running state.
 	 */
 	public getInstance<T extends PluginIdentifier>(id: T): InstanceType<T> | undefined {
 		const container = this._activeContainer ?? this.container
 		const key = this.resolveIdentifier(container, id)
-		return this.getRuntimeInstance(key) as InstanceType<T> | undefined
+		return this.getRunningRuntimeInstance(key) as InstanceType<T> | undefined
+	}
+
+	/**
+	 * Watch the runtime instance behind a plugin identifier.
+	 *
+	 * - The callback is invoked immediately with the current *running* instance (or `undefined`).
+	 * - On commits, it is only re-evaluated when the *resolved* target is touched (start/stop/restart/replace).
+	 * - If identifier resolution changes across commits (aliases/replacements), the watcher auto-rebinds.
+	 */
+	public watchInstance<T extends PluginIdentifier>(
+		id: T,
+		cb: (instance: InstanceType<T> | undefined) => void,
+	): () => void {
+		const container = this._activeContainer ?? this.container
+		const resolved = this.resolveIdentifier(container, id)
+		const entry: InstanceWatcher = {
+			token: id,
+			resolved,
+			lastRaw: this.getRunningRuntimeInstance(resolved),
+			lastNotifiedSeq: this.commitSeq,
+			cb: cb as unknown as (instance: BasePlugin | undefined) => void,
+		}
+
+		let set = this.instanceWatchersByResolved.get(resolved)
+		if (!set) {
+			set = new Set()
+			this.instanceWatchersByResolved.set(resolved, set)
+		}
+		set.add(entry)
+
+		// Immediate notification.
+		try {
+			entry.cb(entry.lastRaw as BasePlugin | undefined)
+		} catch (error) {
+			this.ctx.logger.error('instance watcher error', { error })
+		}
+
+		let active = true
+		return () => {
+			if (!active) return
+			active = false
+			const cur = this.instanceWatchersByResolved.get(entry.resolved)
+			cur?.delete(entry)
+			if (cur && cur.size === 0) this.instanceWatchersByResolved.delete(entry.resolved)
+		}
+	}
+
+	private notifyInstanceWatchers(summary: CommitSummary, seq: number): void {
+		if (this.instanceWatchersByResolved.size === 0) return
+		const touched = summary.touched
+		if (!touched.length) return
+
+		const resolver = (summary.container as unknown as { resolveIdentifier?: unknown }).resolveIdentifier
+		const resolveIdentifier =
+			typeof resolver === 'function'
+				? (resolver as (this: PluginDiContainer, id: unknown) => unknown)
+				: undefined
+
+		for (let i = 0; i < touched.length; i++) {
+			const touchedKey = touched[i]!
+			const set = this.instanceWatchersByResolved.get(touchedKey)
+			if (!set || set.size === 0) continue
+
+			// Iterate the Set directly to avoid per-commit allocations.
+			// Mutations are expected (callbacks may add/remove watchers); we allow them.
+			for (const entry of set) {
+				// If a callback registers watchers during the current notification cycle,
+				// watchInstance() invokes them immediately. Don't notify them again here.
+				if (entry.lastNotifiedSeq === seq) continue
+				entry.lastNotifiedSeq = seq
+
+				const nextResolved = resolveIdentifier
+					? (resolveIdentifier.call(summary.container, entry.token) ?? entry.token)
+					: entry.token
+
+				if (nextResolved !== entry.resolved) {
+					const prevSet = this.instanceWatchersByResolved.get(entry.resolved)
+					prevSet?.delete(entry)
+					if (prevSet && prevSet.size === 0) this.instanceWatchersByResolved.delete(entry.resolved)
+
+					entry.resolved = nextResolved as PluginIdentifier
+					let nextSet = this.instanceWatchersByResolved.get(entry.resolved)
+					if (!nextSet) {
+						nextSet = new Set()
+						this.instanceWatchersByResolved.set(entry.resolved, nextSet)
+					}
+					nextSet.add(entry)
+				}
+
+				const raw = this.getRunningRuntimeInstance(entry.resolved)
+				if (raw === entry.lastRaw) continue
+				entry.lastRaw = raw
+				try {
+					entry.cb(raw)
+				} catch (error) {
+					this.ctx.logger.error('instance watcher error', { error })
+				}
+			}
+		}
 	}
 
 	/* ─────────────────────────── Forks ─────────────────────────── */
@@ -260,10 +390,7 @@ export class PluginService {
 	public getFork<T extends PluginIdentifier>(ctor: T, forkId: string): InstanceType<T> | undefined {
 		const ForkCtor = getForkedCtor(ctor, forkId)
 		if (!ForkCtor) return undefined
-		return (
-			(this.container?.get(ForkCtor) as InstanceType<T> | undefined) ??
-			(this.getRuntimeInstance(ForkCtor) as InstanceType<T> | undefined)
-		)
+		return this.getRunningRuntimeInstance(ForkCtor) as InstanceType<T> | undefined
 	}
 
 	/** List all fork ctors created for a given original ctor. */
@@ -437,6 +564,11 @@ export class PluginService {
 		)
 	}
 
+	private getRunningRuntimeInstance(id: PluginIdentifier): BasePlugin | undefined {
+		const instance = this.getRuntimeInstance(id)
+		return instance && this.lifecycle.isRunning(instance) ? instance : undefined
+	}
+
 	private stashRuntimeInstance(id: PluginIdentifier): void {
 		const container = this._activeContainer ?? this.container
 		const key = this.resolveIdentifier(container, id)
@@ -482,7 +614,7 @@ export class PluginService {
 		const instance: PluginInstance = resolution.val
 		const pluginCtx = instance.ctx
 
-		// Core responsibility: inject @Config fields before plugin init().
+		// Core responsibility: inject declared config fields before plugin init().
 		// Doing it directly avoids an extra event hop on every plugin start.
 		try {
 			this.injectConfig(instance)
@@ -599,8 +731,11 @@ export class PluginService {
 					replaced: [],
 					removed: [],
 					failed: [],
+					touched: [],
 				}
 				this._lastCommit = summary
+				this.commitSeq += 1
+				this.notifyInstanceWatchers(summary, this.commitSeq)
 				this.ctx.emit('afterCommit', summary)
 				this.builderSingletons.seal()
 				// Keep detached instances: draft mutations may have happened during this commit.
@@ -625,7 +760,7 @@ export class PluginService {
 
 			const toInitMap: ServiceMap<BasePlugin> = new Map()
 			if (toStart.size) {
-				const services = this.services(container) as Map<PluginIdentifier, BasePlugin>
+				const services = this.services(container)
 				// Perf: toStart is usually small (HMR / incremental enables),
 				// so index into the service map instead of scanning the whole container.
 				for (const serviceId of toStart) {
@@ -642,14 +777,24 @@ export class PluginService {
 
 			confirm()
 
+			// Ensure failed plugins are not observable as "available" for this commit.
+			// (They may have been instantiated but not successfully started.)
+			if (failed.size) {
+				for (const id of failed) this.builderSingletons.delete(id)
+				for (const id of failed) this.detachedSingletons.delete(id)
+			}
+
 			const summary: CommitSummary = {
 				container: this.container!,
 				added: [...added],
 				replaced: [...replaced],
 				removed: [...removed],
 				failed: [...failed],
+				touched: [...new Set<PluginIdentifier>([...toStop, ...toStart])],
 			}
 			this._lastCommit = summary
+			this.commitSeq += 1
+			this.notifyInstanceWatchers(summary, this.commitSeq)
 			this.ctx.emit('afterCommit', summary)
 
 			// update pending retry set
@@ -657,8 +802,6 @@ export class PluginService {
 			for (const id of failed) this._pendingStart.add(id)
 
 			if (failed.size) {
-				for (const id of failed) this.builderSingletons.delete(id)
-				for (const id of failed) this.detachedSingletons.delete(id)
 				this.ctx.logger.warn('以下插件启动失败', { failed: [...failed].map(String) })
 				this.ctx.emit('commitFailed', failed)
 			}

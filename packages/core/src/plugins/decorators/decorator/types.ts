@@ -1,4 +1,5 @@
-import type { Identifier, PluginIdentifier } from '../types'
+import type { Identifier } from '../../../container'
+import type { PluginIdentifier } from '../../types'
 
 /**
  * Canonical DI key for a plugin.

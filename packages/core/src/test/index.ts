@@ -59,16 +59,16 @@ export type TestHost = {
 	/** Runtime state helpers. */
 	isRunning: PluginService['isRunning']
 	/**
-	 * Read the current in-memory instance cache.
+	 * Read the current *running* in-memory instance cache.
 	 * Does not instantiate or start anything.
 	 */
 	get: <T extends PluginIdentifier>(id: T) => InstanceType<T> | undefined
 	/** Like `get()`, but throws with a helpful message when missing. */
 	getOrThrow: <T extends PluginIdentifier>(id: T) => InstanceType<T>
 	/** Config injection helpers (LoaderService-like). */
-	config: ConfigService
+	config: Context.PublicService<ConfigService>
 	/**
-	 * Patch the config snapshot used by `@Config` injection.
+	 * Patch the config snapshot used by config field injection.
 	 * - Use plugin ctor or plugin name (`pluginInfo.id`) as target.
 	 * - Takes effect on the next (re)start of that plugin.
 	 */
@@ -160,7 +160,7 @@ export function createTestHost(config: Context.Config = {}): TestHost {
 		const instance = get(id)
 		if (!instance) {
 			throw new Error(
-				`Plugin instance not found (did you forget to register+commit?): ${String(id)}`,
+				`Plugin instance not running (did you forget to register+commit/commitStrict, or did it fail to start?): ${String(id)}`,
 			)
 		}
 		return instance

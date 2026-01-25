@@ -1,9 +1,9 @@
 // types.ts
 import type { ContainerAccessors } from '../container'
 /** 可 new 的类 */
-export type Newable<T> = new (...args: unknown[]) => T
+export type Newable<T> = new (...args: any[]) => T
 /** 抽象类 */
-export type Abstract<T> = abstract new (...args: unknown[]) => T
+export type Abstract<T> = abstract new (...args: any[]) => T
 /** 服务标识（具体类或抽象类） */
 export type Identifier<T> = Newable<T> | Abstract<T>
 

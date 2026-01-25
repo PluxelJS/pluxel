@@ -14,6 +14,7 @@
 - `PluginHonoGraphQLDemo.ts`：插件里使用 `ctx.honoService.modifyApp()` + `ctx.graphql.useModule()`。
 - `PluginBuiltinShowcase.ts`：尽量只用 builtin UI/config 的“大而全”样例（表单 meta、SSE state、内置文档块等）。
 - `PluginFeatureConfigDemo.ts`：Feature 配置归因到父插件配置页（schema key 形如 `cache.config` / `cache.rules`，UI 会按 group 自动分组）。
+- `PluginFeatureDepsDemo.ts`：FeatureHost 的“唯一推荐 API”（`use()` / `dep()` / BridgePlugin）。
 - `PluginVaultDemo.ts`：插件里使用 `ctx.vault.open()` 做加密持久化（token/secret/batch/lock）。
 - `PluginWithUI.ts` + `PluginWithUI/ui/*`：完整链路（UI + RPC + SSE + 持久化 state）。
 - `advanced/DemoBaseProviders.ts`：抽象基类 Token + 多实现（Provider 选择）。

@@ -96,13 +96,12 @@ function stripTrailingNewlines(text: string): string {
 function toPlainValue(value: unknown, depth = 3, seen = new WeakSet<object>()): unknown {
 	if (depth < 0) return '[MaxDepth]'
 	if (value === null) return null
-	const t = typeof value
-	if (t === 'string') return value.length > 2000 ? `${value.slice(0, 2000)}…` : value
-	if (t === 'number' || t === 'boolean') return value
-	if (t === 'bigint') return `${value}n`
-	if (t === 'undefined') return undefined
-	if (t === 'symbol') return value.toString()
-	if (t === 'function') {
+	if (typeof value === 'string') return value.length > 2000 ? `${value.slice(0, 2000)}…` : value
+	if (typeof value === 'number' || typeof value === 'boolean') return value
+	if (typeof value === 'bigint') return `${value}n`
+	if (typeof value === 'undefined') return undefined
+	if (typeof value === 'symbol') return value.toString()
+	if (typeof value === 'function') {
 		const name =
 			typeof (value as { name?: unknown }).name === 'string' ? (value as { name: string }).name : ''
 		return `[Function ${name || 'anonymous'}]`
@@ -271,15 +270,16 @@ function formatExtraPropsInline(record: LogRecord, colorsOn: boolean): string | 
 	if (!entries.length) return undefined
 
 	// Keep one-line logs dense: only inline when short and few keys.
-	if (entries.length > 2) return undefined
-	if (entries.some((e) => e.kind !== 'kv')) return undefined
+	const kvEntries = entries.filter((e): e is Extract<ExtraPropEntry, { kind: 'kv' }> => e.kind === 'kv')
+	if (kvEntries.length !== entries.length) return undefined
+	if (kvEntries.length > 2) return undefined
 
 	const open = '⟪'
 	const close = '⟫'
 	const brace = colorsOn ? '\u001B[38;2;148;163;184m' : ''
 	const reset = colorsOn ? '\u001B[0m' : ''
 
-	const body = entries
+	const body = kvEntries
 		.map((e) => colorizeExtraPair(e.key, e.value, colorsOn))
 		.join(colorsOn ? `${reset} ` : ' ')
 	const rendered = `${brace}${open}${reset}${body}${brace}${close}${reset}`
@@ -315,13 +315,12 @@ function formatExtraPropsBlock(record: LogRecord, colorsOn: boolean): string[] |
 	return lines
 }
 
-function normalizeMessageForConsole(message: unknown[]): unknown[] {
+function normalizeMessageForConsole(message: readonly unknown[]): unknown[] {
 	// Runtime-agnostic fix for quoted string values:
 	// LogTape represents template messages as [str, val, str, val, ...].
 	// If `val` is a string, merge it into the surrounding string parts so it
 	// becomes part of the message text (instead of going through value rendering).
-	const parts = message.slice()
-	let changed = false
+	const parts = Array.from(message)
 
 	for (let i = 1; i < parts.length; i += 2) {
 		const v = parts[i]
@@ -334,10 +333,9 @@ function normalizeMessageForConsole(message: unknown[]): unknown[] {
 		parts[i - 1] = `${prev}${v}${next}`
 		parts.splice(i, 2) // remove value + following string
 		i -= 2
-		changed = true
 	}
 
-	return changed ? parts : message
+	return parts
 }
 
 /**
@@ -355,8 +353,7 @@ export function withPluxelMessagePrefix(
 	const formatter: TextFormatter = (record) => {
 		const prefix = buildPrefix(record, mode)
 		// Do not mutate `record.message` in-place: LogTape fan-outs the same record to multiple sinks.
-		const normalized = normalizeMessageForConsole(record.message)
-		const message = normalized === record.message ? record.message.slice() : normalized
+		const message = normalizeMessageForConsole(record.message)
 		const debugTopic =
 			record.level === 'debug' && typeof record.properties.debugTopic === 'string'
 				? (record.properties.debugTopic as string)
@@ -409,14 +406,18 @@ export function createPluxelPrettyFormatter(
 
 	// Better defaults for dark terminals:
 	// - Avoid "dim gray" for timestamps/category/message which is unreadable on many themes.
-	const categoryColorMap =
+	type CategoryColorMap = NonNullable<PrettyFormatterOptions['categoryColorMap']>
+	type CategoryColorKey = CategoryColorMap extends Map<infer K, any> ? K : never
+	type CategoryColorValue = CategoryColorMap extends Map<any, infer V> ? V : never
+
+	const categoryColorMap: CategoryColorMap =
 		prettyOpts.categoryColorMap ??
-		(new Map([
-			[pluxelCategories.core, 'cyan'],
-			[pluxelCategories.hmr, 'magenta'],
-			[pluxelCategories.plugins, 'yellow'],
-			[['pluxel'], 'blue'],
-		]) as NonNullable<PrettyFormatterOptions['categoryColorMap']>)
+		new Map<CategoryColorKey, CategoryColorValue>([
+			[pluxelCategories.core as unknown as CategoryColorKey, 'cyan' as CategoryColorValue],
+			[pluxelCategories.hmr as unknown as CategoryColorKey, 'magenta' as CategoryColorValue],
+			[pluxelCategories.plugins as unknown as CategoryColorKey, 'yellow' as CategoryColorValue],
+			[['pluxel'] as unknown as CategoryColorKey, 'blue' as CategoryColorValue],
+		])
 
 	const normalized: PrettyFormatterOptions = {
 		...prettyOpts,

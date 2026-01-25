@@ -6,7 +6,7 @@
 
 - **不再提供** `registry.optional` / `.optional()` 这类“双入口”API；
 - **插件内组合**用 `BaseFeature/FeatureHost`（方案 A）：子模块作为 Feature 在宿主插件 `ctx` 下运行与回收；
-- “可选依赖”在运行时直接用 `ctx.registry.getInstance(Token)` 读取即可（不存在就返回 `undefined`），保持入口单一且可预测。
+- “可选依赖”用 `this.features.dep(DepPlugin, cb?)`（不存在/未运行就视为 `undefined`），保持语义单一且可预测；`ctx.registry.getInstance(Token)` 作为底层读接口，只返回“已运行”的实例。
 
 补充：为了让 HMR/UI 能在“插件启动前”拿到 schema/source，我们引入了类型优先写法与编译期注入约定：
 

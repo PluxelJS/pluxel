@@ -1,4 +1,4 @@
-import { ContainerBuilder, Newable } from '../../src/diod'
+import { ContainerBuilder, type Newable } from '../../src'
 
 const autoregisteredClasses: Newable<unknown>[] = []
 

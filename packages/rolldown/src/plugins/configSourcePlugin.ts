@@ -14,7 +14,7 @@
  * - Uses fs.readFile() for reliable cross-file schema resolution
  * - Extracts and injects:
  *   - `@Config(schema)` field decorator source (`__setConfigSource__`)
- *   - `this.config.use(schema)` / `this.configs.use(schema)` class-field initializer source + schema registration (`__setConfigSource__` + `__registerConfigSchema__`)
+ *   - `this.configs.use(schema)` class-field initializer source + schema registration (`__setConfigSource__` + `__registerConfigSchema__`)
  *   - `this.features.use(FeatureCtor)` class-field initializer (DI-required deps + feature config attribution) via `__registerUsedFeatures__(Ctor, FeatureCtor)`
  *
  * Important limitations:
@@ -1041,7 +1041,7 @@ async function extractConfigSources(
 				}
 			}
 
-			const useMatch = extractConfigsUseCall(propDef.value ?? null, moduleInfo)
+			const useMatch = extractConfigsUseCall(propDef.value ?? null)
 			if (useMatch) {
 				if (isHashPrivate) {
 					throw new Error(
@@ -1108,7 +1108,6 @@ function extractFeatureUses(moduleInfo: ModuleInfo, ast: Program): ExtractedFeat
 
 function extractConfigsUseCall(
 	value: Expression | null | undefined,
-	_moduleInfo: ModuleInfo,
 ): { schemaExpr: Expression } | null {
 	if (!value) return null
 	const normalized = unwrapExpression(value)
@@ -1117,15 +1116,14 @@ function extractConfigsUseCall(
 	const callee = normalized.callee
 	if (callee.type !== 'MemberExpression') return null
 
-	// Match: this.config.use(...) / this.configs.use(...)
+	// Match: this.configs.use(...)
 	const prop = callee.property
 	if (prop.type !== 'Identifier' || prop.name !== 'use') return null
 
 	const obj = callee.object
 	if (obj.type !== 'MemberExpression') return null
 	const objProp = obj.property
-	if (objProp.type !== 'Identifier' || (objProp.name !== 'configs' && objProp.name !== 'config'))
-		return null
+	if (objProp.type !== 'Identifier' || objProp.name !== 'configs') return null
 
 	const objObj = obj.object
 	if (objObj.type !== 'ThisExpression') return null

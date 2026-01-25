@@ -1,8 +1,13 @@
 import '@pluxel/core/test/setup'
 
 import { describe, expect, it } from 'bun:test'
+import { __registerConfigSchema__ } from '@pluxel/core'
 import { withTestHost } from '@pluxel/core/test'
 import { WretchPlugin } from './index'
+import { WretchConfig } from './schema'
+
+// In production this is injected by configSourcePlugin.
+__registerConfigSchema__(WretchPlugin, 'wretch', WretchConfig)
 
 type FetchCapture = {
 	url: string | null
@@ -55,16 +60,6 @@ async function withWretchPlugin<T>(
 }
 
 describe('pluxel-plugin-wretch', () => {
-	it('builds requests using legacy baseUrl from config', async () => {
-		await withStubFetch(async (cap) => {
-			await withWretchPlugin({ baseUrl: 'https://api.example.com/' }, async (instance) => {
-				expect((instance as any).wretch).toEqual({ baseUrl: 'https://api.example.com/' })
-				await instance.client().get('/ping').json()
-			})
-			expect(cap.url).toBe('https://api.example.com/ping')
-		})
-	})
-
 	it('supports named clients + defaultClient selection', async () => {
 		await withStubFetch(async (cap) => {
 			await withWretchPlugin(

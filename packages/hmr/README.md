@@ -13,8 +13,8 @@
 - **冲突语义（确定性）**：同一个 base token 出现多个 provider 时，冲突在 build/commit（DI 验证）阶段被检测并报错；不是在 `registerPlugin()` 时“隐式覆盖”。
 
 相关实现入口：
-- `packages/core/src/plugins/internal/PluginDefinitions.ts`：声明层（register/unregister/build）。
-- `packages/core/src/plugins/PluginService.ts`：`commit()` 负责构建新容器、拓扑启动、失败收集与重试。
+- `packages/core/src/plugins/runtime/PluginDefinitions.ts`：声明层（register/unregister/build）。
+- `packages/core/src/plugins/runtime/PluginService.ts`：`commit()` 负责构建新容器、拓扑启动、失败收集与重试。
 
 ### 1.2 Commit 语义（非事务化启动，但 build 可回滚）
 - commit 分为两段：
@@ -97,8 +97,8 @@ Fork 支持：
 - HMR 批量执行入口：`packages/hmr/src/services/hmr/HMRService.ts`（`runAndLoadAll()`）
 - Loader 注入与 dependents 重绑：`packages/hmr/src/services/loader/LoaderService.ts`
 - Loader 声明层与 config/runtime 协调：`packages/hmr/src/services/loader/PluginRegistry.ts`
-- Core 插件容器与草稿/确认：`packages/core/src/plugins/internal/PluginDefinitions.ts`
-- Core commit 编排与失败语义：`packages/core/src/plugins/PluginService.ts`
+- Core 插件容器与草稿/确认：`packages/core/src/plugins/runtime/PluginDefinitions.ts`
+- Core commit 编排与失败语义：`packages/core/src/plugins/runtime/PluginService.ts`
 
 ## 5) 注意事项（避免误解）
 - “回滚”只针对 **DI build/verify 失败**（本次容器未切换）。生命周期失败不会回滚，这是刻意的：你需要看到即时失败与依赖链影响。

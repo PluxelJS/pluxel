@@ -52,31 +52,31 @@ export type PluxelPrettyConsoleSinkOptions = {
 	youch?: PluxelYouchSinkOptions | false
 }
 
-const PLUXEL_PRETTY_DEFAULTS_BASE = {
+const PLUXEL_PRETTY_DEFAULTS_BASE: Omit<PluxelPrettyFormatterOptions, 'timestamp'> = {
 	prefix: 'name',
 	includeCaller: true,
-} as const satisfies Omit<PluxelPrettyFormatterOptions, 'timestamp'>
+}
 
-const PLUXEL_YOUCH_DEFAULTS = {
+const PLUXEL_YOUCH_DEFAULTS: PluxelYouchSinkOptions = {
 	minLevel: 'error',
 	mode: 'inline',
 	categoryPrefixes: [pluxelCategories.hmr, pluxelCategories.plugins],
-} as const satisfies PluxelYouchSinkOptions
+}
 
 export function createPluxelPrettyConsoleSink(opts: PluxelPrettyConsoleSinkOptions = {}): Sink {
-	const prettyDefaults = {
+	const prettyDefaults: PluxelPrettyFormatterOptions = {
 		...PLUXEL_PRETTY_DEFAULTS_BASE,
 		timestamp: createPluxelPrettyTimestampFormatter(resolvePluxelLogTimezone()),
-	} as const satisfies PluxelPrettyFormatterOptions
-	const pretty = mergeDefaults(opts.pretty, prettyDefaults) as PluxelPrettyFormatterOptions
+	}
+	const pretty = mergeDefaults<PluxelPrettyFormatterOptions>(opts.pretty, prettyDefaults)
 	const formatter = createPluxelPrettyFormatter(pretty)
 	const baseConsoleSink = getConsoleSink({ formatter })
 	if (opts.youch === false) return baseConsoleSink
 
 	const youchOptions =
 		opts.youch === undefined
-			? (PLUXEL_YOUCH_DEFAULTS as PluxelYouchSinkOptions)
-			: (mergeDefaults(opts.youch, PLUXEL_YOUCH_DEFAULTS) as PluxelYouchSinkOptions)
+			? PLUXEL_YOUCH_DEFAULTS
+			: mergeDefaults<PluxelYouchSinkOptions>(opts.youch, PLUXEL_YOUCH_DEFAULTS)
 	const youchMode = youchOptions.mode ?? PLUXEL_YOUCH_DEFAULTS.mode
 	const matcher = createYouchMatcher(youchOptions)
 

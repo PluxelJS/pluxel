@@ -4,7 +4,7 @@
  * - `undefined` / `null` values in `overrides` are ignored
  * - arrays in `overrides` replace defaults
  */
-export function mergeDefaults<T extends Record<PropertyKey, unknown>>(
+export function mergeDefaults<T extends object>(
 	overrides: Partial<T> | undefined,
 	defaults: T,
 ): T {

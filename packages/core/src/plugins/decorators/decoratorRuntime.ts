@@ -1,7 +1,7 @@
 import type { Context } from '@pluxel/context'
 import type { Identifier } from '../../container'
-import type { BasePlugin } from './BasePlugin'
-import { PLUGIN_CTX } from './BasePlugin'
+import type { BasePlugin } from '../composition/BasePlugin'
+import { PLUGIN_CTX } from '../composition/BasePlugin'
 import { requirePluginDependency } from './PluginDecorator'
 
 type AnyFn = (...args: unknown[]) => unknown
@@ -54,7 +54,7 @@ function getCallerCtx(self: unknown): Context {
 
 function getRegistry(ctx: unknown): Registry {
 	const registry = (ctx as { registry?: unknown } | null)?.registry
-	if (!registry || typeof registry.getInstance !== 'function') {
+	if (!registry || typeof (registry as { getInstance?: unknown }).getInstance !== 'function') {
 		throw new Error('[pluxel/core] Decorator runtime requires ctx.registry.getInstance')
 	}
 	return registry as Registry

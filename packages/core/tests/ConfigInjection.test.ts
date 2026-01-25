@@ -1,21 +1,30 @@
 import { describe, expect, it } from 'bun:test'
 
-import { BasePlugin, Config, ForkablePlugin, Plugin, withTestHost } from '@pluxel/core/test'
+import {
+	__registerConfigSchema__,
+	BasePlugin,
+	ForkablePlugin,
+	Plugin,
+	withTestHost,
+} from '@pluxel/core/test'
 
 describe('TestHost config injection', () => {
-	it('injects @Config fields before init()', async () => {
+	it('injects declared config fields before init()', async () => {
 		await withTestHost(async (host) => {
 			const seen: Array<{ foo: unknown; count: unknown }> = []
 
 			@Plugin({ name: 'Cfg' })
 			class CfgPlugin extends BasePlugin {
-				@Config({}) foo!: string
-				@Config({}) count!: number
+				foo = this.configs.use({})
+				count = this.configs.use({})
 
 				override init(): void {
 					seen.push({ foo: this.foo, count: this.count })
 				}
 			}
+
+			__registerConfigSchema__(CfgPlugin, 'foo', {})
+			__registerConfigSchema__(CfgPlugin, 'count', {})
 
 			host.setConfig(CfgPlugin, { foo: 'hello', count: 42 })
 			await host.start(CfgPlugin)
@@ -31,8 +40,10 @@ describe('TestHost config injection', () => {
 		await withTestHost(async (host) => {
 			@Plugin({ name: 'ForkCfg' })
 			class ForkCfg extends ForkablePlugin {
-				@Config({}) v!: string
+				v = this.configs.use({})
 			}
+
+			__registerConfigSchema__(ForkCfg, 'v', {})
 
 			host.register(ForkCfg)
 			host.registerFork(ForkCfg, 'a')
