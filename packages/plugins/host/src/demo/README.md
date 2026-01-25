@@ -11,7 +11,7 @@
 ## 清单（建议阅读顺序）
 
 - `PluginEventsDemo.ts`：两种事件通信方式（EvtChannel + declare module 全局事件合同）。
-- `PluginHonoGraphQLDemo.ts`：插件里使用 `ctx.honoService.modifyApp()` + `ctx.graphql.useModule()`。
+- `PluginHonoGraphQLDemo.ts`：插件里使用 `ctx.honoService.modifyApp()` + `features.dep(GraphQLPlugin).useModule()`。
 - `PluginBuiltinShowcase.ts`：尽量只用 builtin UI/config 的“大而全”样例（表单 meta、SSE state、内置文档块等）。
 - `PluginFeatureConfigDemo.ts`：Feature 配置归因到父插件配置页（schema key 形如 `cache.config` / `cache.rules`，UI 会按 group 自动分组）。
 - `PluginFeatureDepsDemo.ts`：FeatureHost 的“唯一推荐 API”（`use()` / `dep()` / BridgePlugin）。

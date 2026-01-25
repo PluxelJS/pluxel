@@ -1,5 +1,4 @@
 import { BasePlugin, Plugin } from '@pluxel/hmr'
-import * as v from 'valibot'
 // biome-ignore lint/correctness/noUnusedImports: fixture import edge for extraction tests
 import { demoBookModule } from './demo-parent'
 import { test1 } from './testconfig'
@@ -11,13 +10,5 @@ export class PluginC extends BasePlugin {
 		void this.test1
 
 		this.ctx.logger.info('PluginC initialized')
-
-		const graphService = this.ctx.graphql
-		const { resolver, query } = graphService.factory
-		const _helloResolver = resolver({
-			hello: query(v.string())
-				.input({ name: v.nullish(v.string(), 'World') })
-				.resolve(({ name }) => `Hello, ${name}!`),
-		})
 	}
 }

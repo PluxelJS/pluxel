@@ -3,6 +3,7 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { Context } from '@pluxel/hmr'
 import { LogtapeLoggerService } from '@pluxel/hmr/services'
+import { GraphQLPlugin } from 'pluxel-plugin-graphql'
 import { MarketUI } from 'pluxel-plugin-market-ui'
 import { WretchPlugin } from 'pluxel-plugin-wretch'
 
@@ -18,7 +19,7 @@ const ctx = new Context({
 	hmrService: {
 		dir: [demoDir],
 		coldStart: 'background',
-		builtins: [MarketUI, WretchPlugin],
+		builtins: [GraphQLPlugin, MarketUI, WretchPlugin],
 		log: {
 			logtape: { file: join(logsDir, 'hmr.log') },
 		},

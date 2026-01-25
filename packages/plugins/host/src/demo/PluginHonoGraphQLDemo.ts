@@ -1,8 +1,8 @@
-// 演示型插件：如何在插件里使用 HonoService + GraphQLService。
+// 演示型插件：如何在插件里使用 HonoService + GraphQL builtin plugin。
 //
 // 目标（给未来的 LLM/开发者看的“最小但完整”范例）：
 // - HonoService：通过 ctx.honoService.modifyApp() 注册路由/中间件
-// - GraphQLService：通过 ctx.graphql.useModule() 注册 schema（resolver/query/mutation）
+// - GraphQLPlugin：通过 features.dep(GraphQLPlugin) 注册 schema（resolver/query/mutation）
 // - configs.use(schema)：给插件加“可被宿主 UI 渲染”的实用配置（valibot-form 元信息）
 //
 // 试用方式（默认 dev 端口 3000）：
@@ -17,6 +17,7 @@
 import { BasePlugin, Plugin } from '@pluxel/hmr'
 import { f, v } from '@pluxel/hmr/config'
 import type { HonoWithAppEnvType } from '@pluxel/hmr/services'
+import { GraphQLPlugin } from 'pluxel-plugin-graphql'
 
 const SECTION_ROUTES = { id: 'routes', title: 'Routes (Hono)', description: '插件注入的 HTTP 路由' }
 const SECTION_GRAPHQL = {
@@ -102,35 +103,37 @@ export class PluginHonoGraphQLDemo extends BasePlugin {
 	}
 
 	private registerGraphQLModule() {
-		// GraphQLService 在 HMR 环境里默认使用 @gqloom/core + valibot。
+		// GraphQL 是一个 builtin 插件（不是 core service）：通过 dep() 可选集成。
 		// 这里从 factory 里取 resolver/query/mutation，避免直接依赖底层实现细节。
-		const { resolver, query } = this.ctx.graphql.factory
+		this.features.dep(GraphQLPlugin, (gql) => {
+			const { resolver, query } = gql.factory
 
-		// 用 closure 捕获 plugin ctx，这样 resolver 执行时能读到“最新配置”。
-		const moduleResolver = resolver({
-			// query demoPing: String!
-			demoPing: query(v.string()).resolve(() => 'pong'),
+			// 用 closure 捕获 plugin ctx，这样 resolver 执行时能读到“最新配置”。
+			const moduleResolver = resolver({
+				// query demoPing: String!
+				demoPing: query(v.string()).resolve(() => 'pong'),
 
-			// query demoEcho(message: String!): String!
-			demoEcho: query(v.string())
-				.input({ message: v.string() })
-				.resolve((args: { message: string }) => args.message),
+				// query demoEcho(message: String!): String!
+				demoEcho: query(v.string())
+					.input({ message: v.string() })
+					.resolve((args: { message: string }) => args.message),
 
-			// query demoHello(name: String): String!
-			demoHello: query(v.string())
-				.input({ name: v.nullish(v.string()) })
-				.resolve((args: { name?: string | null }) => {
-					const name = args.name
-					const who =
-						typeof name === 'string' && name.trim()
-							? name.trim()
-							: (this.graphql.defaultName ?? 'World')
-					return `${this.graphql.greetingPrefix ?? 'Hello'}, ${who}!`
-				}),
+				// query demoHello(name: String): String!
+				demoHello: query(v.string())
+					.input({ name: v.nullish(v.string()) })
+					.resolve((args: { name?: string | null }) => {
+						const name = args.name
+						const who =
+							typeof name === 'string' && name.trim()
+								? name.trim()
+								: (this.graphql.defaultName ?? 'World')
+						return `${this.graphql.greetingPrefix ?? 'Hello'}, ${who}!`
+					}),
+			})
+
+			// 用稳定 key，方便 HMR/重复启动时可替换/清理。
+			gql.useModule(moduleResolver, Symbol.for('pluxel:demo:PluginHonoGraphQLDemo:gql'))
 		})
-
-		// 用稳定 key，方便 HMR/重复启动时可替换/清理。
-		this.ctx.graphql.useModule(moduleResolver, Symbol.for('pluxel:demo:PluginHonoGraphQLDemo:gql'))
 	}
 
 	private readPrefix(): string {

@@ -104,7 +104,11 @@ const app = new Hono<AppEnv>()
 	// ============ 调试路由 ============
 	.route('/debug', debugApp)
 	.route('/logs', logsApp)
+	// NOTE: SOURCE_ONLY preprocessor blocks are stripped by tsdown for non-source builds.
+	// Do NOT remove them or rewrite this into runtime conditions.
+	//#if SOURCE_ONLY
 	.all('/graphql', (c) => c.var.plugin_ctx.internalGraphql.fetch(c.req.raw, { hono: c } as any))
+	//#endif
 
 export default app
 

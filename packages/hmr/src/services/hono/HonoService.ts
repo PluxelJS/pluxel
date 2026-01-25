@@ -35,9 +35,6 @@ export class HonoService extends CoreHonoService {
 		this.renderer = this.createRenderer()
 		this.rebuildApp()
 		this.registerSseBuiltins()
-
-		// GraphQL 初次装配在其它服务就绪后由其通知；这里只是确保会触发一次重织
-		ctx.graphql.scheduleRebuild()
 	}
 
 	/** 将 plugin_ctx 暴露给下游（Hono 工厂） */
@@ -51,7 +48,7 @@ export class HonoService extends CoreHonoService {
 		return super.modifyApp(mod)
 	}
 
-	/** GraphQLService 重织：仅替换函数指针 */
+	/** GraphQL runtime uses this hook to update fetch pointer (no restart). */
 	override setGraphQLFetch(fn: GraphQLFetch) {
 		this.gqlFetch = fn
 		this.requestFullReload()
