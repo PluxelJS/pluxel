@@ -19,7 +19,7 @@ import { EvtChannel } from '@pluxel/hmr/services'
 // 1) HostBoundFeature + use()
 // -------------------------
 
-class HostLoggerFeature extends HostBoundFeature<PluginFeatureDepsConsumer> {
+class HostLoggerFeature extends HostBoundFeature<BasePlugin> {
 	info(message: string, extra?: Record<string, unknown>) {
 		this.ctx.logger.info(message, {
 			host: this.host.ctx.pluginInfo.id,
@@ -55,7 +55,7 @@ export class PluginFeatureDepsProvider extends BasePlugin {
 
 @Plugin({ name: 'PluginFeatureDepsConsumer' })
 export class PluginFeatureDepsConsumer extends BasePlugin {
-	readonly log = this.features.use(HostLoggerFeature) // 自动注入 host：不需要传 this
+	readonly log: HostLoggerFeature = this.features.use(HostLoggerFeature) // 自动注入 host：不需要传 this
 
 	override init(): void {
 		this.log.info('consumer init')

@@ -9,10 +9,10 @@
 // This file sits on the construction hot‑path; keep it allocation‑light.
 
 import type { Context } from '@pluxel/context'
+import type { AnyCtor } from '../decorators/decorator/shared'
+import { getPluginInfo } from '../decorators/PluginDecorator'
 import { ConfigHost } from './ConfigHost'
 import { FeatureHost } from './FeatureHost'
-import { getPluginInfo } from '../decorators/PluginDecorator'
-import type { AnyCtor } from '../decorators/decorator/shared'
 
 // HMR 注意：必须使用 Symbol.for
 export const PLUGIN_CTX = Symbol.for('pluxel:plugin:ctx')
@@ -47,18 +47,14 @@ export abstract class BasePlugin<C extends Context = Context> {
 	}
 
 	/** Feature composition (plan A): one scoped host per effective ctx. */
-	public get features(): FeatureHost {
-		const self = this as unknown as { [FEATURE_HOST]?: FeatureHost }
+	public get features(): FeatureHost<BasePlugin<C>> {
+		const self = this as unknown as { [FEATURE_HOST]?: FeatureHost<BasePlugin<C>> }
 		const existing = self[FEATURE_HOST]
 		if (existing && existing.ctx === (this.ctx as unknown as Context)) return existing
 
 		const ctor = (this as unknown as { constructor?: unknown }).constructor
 		const ownerCtor = typeof ctor === 'function' ? (ctor as unknown as AnyCtor) : undefined
-		const host = new FeatureHost(
-			this.ctx as unknown as Context,
-			ownerCtor,
-			this,
-		)
+		const host = new FeatureHost<BasePlugin<C>>(this.ctx as unknown as Context, ownerCtor, this)
 		Object.defineProperty(this, FEATURE_HOST, {
 			value: host,
 			writable: false,
@@ -123,24 +119,24 @@ export abstract class BasePlugin<C extends Context = Context> {
 		const emitWithContext = extended.emitWithContext
 		const onError = extended.onError
 
-			return {
+		return {
 			beforeStart:
 				typeof emitWithContext === 'function'
 					? () => emitWithContext.call(ctx, plugin, 'beforeStart', plugin)
 					: undefined,
 			init: typeof plugin.init === 'function' ? plugin.init.bind(plugin) : undefined,
 			stop: typeof plugin.stop === 'function' ? plugin.stop.bind(plugin) : undefined,
-				dispose: typeof scope?.disposeAll === 'function' ? scope.disposeAll.bind(scope) : undefined,
-				subscribeErrors:
-					typeof onError === 'function'
-						? (cb: (err: unknown) => void) => {
-								const off = onError.call(ctx, cb)
-								return typeof off === 'function' ? (off as () => void) : undefined
-							}
-						: undefined,
-			}
+			dispose: typeof scope?.disposeAll === 'function' ? scope.disposeAll.bind(scope) : undefined,
+			subscribeErrors:
+				typeof onError === 'function'
+					? (cb: (err: unknown) => void) => {
+							const off = onError.call(ctx, cb)
+							return typeof off === 'function' ? (off as () => void) : undefined
+						}
+					: undefined,
 		}
 	}
+}
 
 /**
  * ForkablePlugin

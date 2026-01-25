@@ -9,6 +9,10 @@ import {
 	type PluginIdentifier,
 	setPluginIdentity,
 } from '@pluxel/core'
+import {
+	type ConfigSchemaMap as CoreConfigSchemaMap,
+	isStandardSchemaV1,
+} from '@pluxel/core/services'
 import { dirname, normalize } from 'pathe'
 import * as v from 'valibot'
 import type { ConfigSchemaMap } from '../..'
@@ -29,17 +33,6 @@ const isIndexFile = (p: string) => /(?:^|[\\/])index\.[cm]?[tj]sx?$/.test(p)
 const sameDir = (a: string, b: string) => dirname(normalize(a)) === dirname(normalize(b))
 export const LIFECYCLE_STATES = ['running', 'stopped', 'disabled'] as const
 export type PluginLifecycleStage = (typeof LIFECYCLE_STATES)[number]
-
-type AnyVSchema =
-	| v.BaseSchema<unknown, unknown, v.BaseIssue<unknown>>
-	| v.BaseSchemaAsync<unknown, unknown, v.BaseIssue<unknown>>
-type SyncVSchema = v.BaseSchema<unknown, unknown, v.BaseIssue<unknown>>
-
-function isAsyncSchema(
-	schema: AnyVSchema,
-): schema is v.BaseSchemaAsync<unknown, unknown, v.BaseIssue<unknown>> {
-	return (schema as { async?: boolean }).async === true
-}
 
 /**
  * 从模块路径提取包名
@@ -215,7 +208,7 @@ export class PluginRegistry {
 		if (!map) return undefined
 
 		for (const [key, schema] of Object.entries(map)) {
-			if (!schema || !v.isOfType('object', schema as any)) {
+			if (!isStandardSchemaV1(schema) || !v.isOfType('object', schema)) {
 				throw new Error(
 					`Invalid config schema: "${info.id}.${key}" must be a valibot ObjectSchema (use v.object(...) / v.objectAsync(...)).`,
 				)
@@ -401,7 +394,12 @@ export class PluginRegistry {
 
 	async startPlugin(name: PluginName, ctor: PluginConstructor): Promise<void> {
 		const provideBase = this.resolveProvideBase(name, ctor)
-		await this.ensureConfigValidAndPatchDefaults(name, ctor)
+		const schema = this.getSchema(ctor)
+		if (schema) {
+			await this.ctx.configService.ensureValidated(name, schema as unknown as CoreConfigSchemaMap, {
+				missingObjectDefault: {},
+			})
+		}
 
 		// 进入运行层（两段式，失败回滚）
 		let enabled = false
@@ -574,76 +572,11 @@ export class PluginRegistry {
 		return provideBase
 	}
 
-	private async ensureConfigValidAndPatchDefaults(
-		name: PluginName,
-		ctor: PluginConstructor,
-	): Promise<void> {
-		// Config validation + default filling (idempotent).
-		const schema = this.getSchema(ctor) as Record<string, AnyVSchema> | undefined
-		if (!schema) return
-
-		const configRecord = this.ctx.configService.getConfig(name)
-		const entries = Object.entries(schema) as Array<[string, AnyVSchema]>
-		const hasAsync = entries.some(([, s]) => isAsyncSchema(s))
-		const configObj = configRecord as unknown as Record<string, unknown>
-
-		const patch: Record<string, unknown> = Object.create(null)
-		const handleResult = (k: string, cur: unknown, res: v.SafeParseResult<AnyVSchema>) => {
-			if (!res.success) {
-				const issue = res.issues[0]
-				const where =
-					issue?.path
-						?.map((p) => {
-							const item = p as { key?: unknown; index?: unknown }
-							return String(item.key ?? item.index ?? '')
-						})
-						.filter(Boolean)
-						.join('.') || k
-				throw new Error(`插件 ${name} 配置无效：${where} -> ${issue?.message ?? 'unknown'}`)
-			}
-			if (cur === undefined && res.output !== undefined) patch[k] = res.output
-		}
-
-		if (!hasAsync) {
-			for (const [k, vSchema] of entries) {
-				const cur = configObj[k]
-				const candidate =
-					cur === undefined
-						? (v.getDefault(vSchema as SyncVSchema) ??
-							(this.isObjectSchema(vSchema) ? {} : undefined))
-						: cur
-				handleResult(k, cur, v.safeParse(vSchema as SyncVSchema, candidate))
-			}
-		} else {
-			const results = await Promise.all(
-				entries.map(async ([k, vSchema]) => {
-					const cur = configObj[k]
-					const defaultVal = v.getDefault(vSchema)
-					const candidate =
-						cur === undefined
-							? (defaultVal ?? (this.isObjectSchema(vSchema) ? {} : undefined))
-							: cur
-					const res = isAsyncSchema(vSchema)
-						? await v.safeParseAsync(vSchema, candidate)
-						: v.safeParse(vSchema as SyncVSchema, candidate)
-					return { k, cur, res }
-				}),
-			)
-			for (const { k, cur, res } of results) handleResult(k, cur, res)
-		}
-
-		if (Object.keys(patch).length > 0) this.ctx.configService.patchConfig(name, patch)
-	}
-
 	private logGuard(label: string, fn: () => void) {
 		try {
 			fn()
 		} catch (err) {
 			this.ctx.logger.warn('可恢复异常：{label}', { label, error: err })
 		}
-	}
-
-	private isObjectSchema(schema: unknown): boolean {
-		return (schema as { type?: string })?.type === 'object'
 	}
 }

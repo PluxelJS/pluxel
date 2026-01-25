@@ -1,7 +1,14 @@
 import '@pluxel/core/test/setup'
 
 import { describe, expect, it } from 'bun:test'
-import { BasePlugin, Context, ForkablePlugin, Plugin, setParamToken } from '@pluxel/core'
+import {
+	BasePlugin,
+	Context,
+	ForkablePlugin,
+	type ForkablePluginConstructor,
+	Plugin,
+	setParamToken,
+} from '@pluxel/core'
 import { LoaderService } from '../../src/services/loader/LoaderService'
 import { EXTRA_FORKS, type ForksExtra } from '../../src/services/loader/selection'
 
@@ -24,10 +31,16 @@ function createHmrCtx(core: Context) {
 		disableInConfig(...names: string[]) {
 			for (const n of names) enabled.delete(n)
 		},
-		getConfig(_name: string) {
+		getRawConfig(_name: string) {
 			return {}
 		},
-		patchConfig() {},
+		getConfigRevision() {
+			return 0
+		},
+		ensureValidated() {
+			return Promise.resolve({})
+		},
+		patchConfig: () => undefined,
 		getExtra(key: string) {
 			return extra[key]
 		},
@@ -42,14 +55,18 @@ function createHmrCtx(core: Context) {
 	// Context from @pluxel/core exposes many services as readonly getters.
 	// For loader/HMR unit tests we provide a minimal shim context that delegates
 	// event wiring to the real core context but keeps stubs writable.
+	const coreAny = core as unknown as { events?: unknown; emit?: unknown }
 	return {
 		registry: core.registry,
-		events: (core as any).events,
+		events: coreAny.events,
 		on: core.on.bind(core),
-		emit: (core as any).emit?.bind(core),
-		logger: { info() {}, warn() {}, error() {} },
+		emit:
+			typeof coreAny.emit === 'function'
+				? (coreAny.emit as (...args: unknown[]) => unknown).bind(core)
+				: undefined,
+		logger: { info: () => undefined, warn: () => undefined, error: () => undefined },
 		configService,
-	} as any
+	} as unknown as Context
 }
 
 describe('LoaderService', () => {
@@ -77,9 +94,9 @@ describe('LoaderService', () => {
 		const catalog = ctx.configService.getExtra(EXTRA_FORKS) as ForksExtra | undefined
 		expect(catalog?.Forky?.slice().sort()).toEqual(['a', 'b', 'c'])
 
-		const ForkA = core.registry.fork(Forky as any, 'a') as any
-		const ForkB = core.registry.fork(Forky as any, 'b') as any
-		expect(core.registry.isRunning(Forky as any)).toBe(false)
+		const ForkA = core.registry.fork(Forky as unknown as ForkablePluginConstructor, 'a')
+		const ForkB = core.registry.fork(Forky as unknown as ForkablePluginConstructor, 'b')
+		expect(core.registry.isRunning(Forky)).toBe(false)
 		expect(core.registry.isRunning(ForkA)).toBe(true)
 		expect(core.registry.isRunning(ForkB)).toBe(true)
 
@@ -243,7 +260,7 @@ describe('LoaderService', () => {
 	it('anchors remove normalizes module ids via hmrService', () => {
 		const core = new Context()
 		const ctx = createHmrCtx(core)
-		;(ctx as any).hmrService = {
+		;(ctx as unknown as { hmrService?: { normalizeId: (id: string) => string } }).hmrService = {
 			normalizeId: (id: string) => id.replace('/@fs', ''),
 		}
 		const loader = new LoaderService(ctx)

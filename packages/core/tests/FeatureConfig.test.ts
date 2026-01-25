@@ -9,28 +9,34 @@ import {
 	UseFeature,
 	withTestHost,
 } from '@pluxel/core/test'
+import type { StandardSchemaV1 } from '@standard-schema/spec'
+
+const PassthroughSchema: StandardSchemaV1 = {
+	'~standard': {
+		version: 1,
+		vendor: 'pluxel:test',
+		validate: (value: unknown) => ({ value }),
+	},
+}
 
 describe('BaseFeature config composition', () => {
 	it('namespaces feature config into host plugin configMap and injects values into the feature instance', async () => {
 		await withTestHost(async (host) => {
-			const FeatureSchema = { any: 'schema' } as any
-			const TelemetrySchema = { any: 'telemetry' } as any
-
 			class CacheFeature extends BaseFeature {
 				static featureKey = 'cache'
 
-				cfg = this.configs.use(FeatureSchema)
+				cfg = this.configs.use(PassthroughSchema)
 			}
 
 			class TelemetryFeature extends BaseFeature {
 				static featureKey = 'telemetry'
 
-				cfg = this.configs.use(TelemetrySchema)
+				cfg = this.configs.use(PassthroughSchema)
 			}
 
 			// In production/HMR, this is injected by configSourcePlugin.
-			__registerConfigSchema__(CacheFeature, 'cfg', FeatureSchema)
-			__registerConfigSchema__(TelemetryFeature, 'cfg', TelemetrySchema)
+			__registerConfigSchema__(CacheFeature, 'cfg', PassthroughSchema)
+			__registerConfigSchema__(TelemetryFeature, 'cfg', PassthroughSchema)
 
 			@UseFeature(CacheFeature, TelemetryFeature)
 			@Plugin({ name: 'Host' })
@@ -50,12 +56,12 @@ describe('BaseFeature config composition', () => {
 
 			const instance = host.getOrThrow(Host) as Host
 			const feature = instance.features.get(CacheFeature)
-			expect(feature).toBeTruthy()
-			expect((feature as any).cfg).toEqual({ ok: true })
+			expect(feature).toBeDefined()
+			expect(feature?.cfg).toEqual({ ok: true })
 
 			const telemetry = instance.features.get(TelemetryFeature)
-			expect(telemetry).toBeTruthy()
-			expect((telemetry as any).cfg).toEqual({ ok: false })
+			expect(telemetry).toBeDefined()
+			expect(telemetry?.cfg).toEqual({ ok: false })
 		})
 	})
 })

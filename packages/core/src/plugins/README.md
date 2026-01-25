@@ -56,12 +56,12 @@
 ### 1) `this.features.use(FeatureCtor)`（插件内模块化）
 
 - 一个插件实例里，同一个 FeatureCtor 只会构造一次（缓存）。
-- 若 Feature 继承 `HostBoundFeature<HostPlugin>`，则在插件里使用时会自动把宿主实例注入进去：
+- 若 Feature 继承 `HostBoundFeature<BasePlugin>`，则在插件里使用时会自动把宿主实例注入进去：
 
 ```ts
 import { BasePlugin, HostBoundFeature, Plugin } from '@pluxel/core'
 
-class CacheFeature extends HostBoundFeature<MyPlugin> {
+class CacheFeature extends HostBoundFeature<BasePlugin> {
   // constructor(ctx, host) 由 HostBoundFeature 提供；host 自动注入
   hit() {
     this.ctx.logger.info('cache hit', { host: this.host.ctx.pluginInfo.id })

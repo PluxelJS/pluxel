@@ -22,7 +22,7 @@ const pathMap = new Map<string, string>([
 function createContextStub(config: Record<string, object>): Context {
 	return {
 		configService: {
-			getConfig(name: string) {
+			getRawConfig(name: string) {
 				return config[name] ?? {}
 			},
 		},

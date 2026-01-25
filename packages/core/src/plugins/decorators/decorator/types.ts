@@ -1,3 +1,4 @@
+import type { StandardSchemaV1 } from '@standard-schema/spec'
 import type { Identifier } from '../../../container'
 import type { PluginIdentifier } from '../../types'
 
@@ -21,21 +22,21 @@ export interface PluginMetadata {
 	 */
 	startTimeoutMs?: number
 	stopTimeoutMs?: number
-	[key: string]: any
+	[key: string]: unknown
 }
 
 /** "对外快照"里 meta 字段改名为 metadata，避免与 id/name 冲突 */
 export type DeclaredMetaView = Omit<PluginMetadata, 'name'>
 
-export type ConfigSchemaList<T = any> = Record<string, T>
+export type ConfigSchemaList<T = StandardSchemaV1> = Record<string, T>
 
 /** TS emitDecoratorMetadata 的 key（构造参数类型） */
 export const PARAM_TYPES = 'design:paramtypes' as const
 
 /** 稀疏覆盖（数组/对象） */
 export type ParamOverride =
-	| ReadonlyArray<Identifier<any> | undefined>
-	| Readonly<Partial<Record<number, Identifier<any>>>>
+	| ReadonlyArray<Identifier<unknown> | undefined>
+	| Readonly<Partial<Record<number, Identifier<unknown>>>>
 
 /**
  * 对外快照：PluginInfo
@@ -61,8 +62,8 @@ export interface PluginInfo {
 	readonly base: PluginIdentifier | null
 	/** 声明期元信息（去掉 name 后的剩余字段） */
 	readonly metadata: DeclaredMetaView | null
-	/** 由 @Config 聚合出的 schema map（null-proto 对象） */
-	readonly configMap: ConfigSchemaList | null
+	/** 由 @Config/configs.use 聚合出的 schema map（null-proto 对象；Standard Schema v1） */
+	readonly configMap: ConfigSchemaList<StandardSchemaV1> | null
 	/** 由 Vite 插件注入的 @Config 源代码 map（fieldName -> source） */
 	readonly configSourceMap: Readonly<Record<string, string>> | null
 }

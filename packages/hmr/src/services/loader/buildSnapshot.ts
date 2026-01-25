@@ -93,7 +93,7 @@ export function buildSnapshot({ ctx, registry, isRunning }: SnapshotDeps): strin
 	}
 
 	const entries: [string, string][] = rows.map((r) => {
-		const configRecord = ctx.configService.getConfig(r.name)
+		const configRecord = ctx.configService.getRawConfig(r.name)
 		const cfg = genObjectFromValues(stripUndef(configRecord))
 		const valCode = `{ ctor: ${r.alias}, config: ${cfg} }`
 		return [r.name, valCode]
@@ -128,9 +128,9 @@ function stripUndef<T>(obj: T): T {
 	if (obj == null || typeof obj !== 'object') return obj
 	if (Array.isArray(obj)) return obj.map(stripUndef) as unknown as T
 	const out: Record<string, unknown> = {}
-	for (const [k, v] of Object.entries(obj as any)) {
+	for (const [k, v] of Object.entries(obj as Record<string, unknown>)) {
 		if (v === undefined) continue
-		out[k] = stripUndef(v as any)
+		out[k] = stripUndef(v)
 	}
 	return out as T
 }

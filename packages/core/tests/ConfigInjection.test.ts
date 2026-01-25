@@ -7,6 +7,15 @@ import {
 	Plugin,
 	withTestHost,
 } from '@pluxel/core/test'
+import type { StandardSchemaV1 } from '@standard-schema/spec'
+
+const PassthroughSchema: StandardSchemaV1 = {
+	'~standard': {
+		version: 1,
+		vendor: 'pluxel:test',
+		validate: (value: unknown) => ({ value }),
+	},
+}
 
 describe('TestHost config injection', () => {
 	it('injects declared config fields before init()', async () => {
@@ -15,16 +24,16 @@ describe('TestHost config injection', () => {
 
 			@Plugin({ name: 'Cfg' })
 			class CfgPlugin extends BasePlugin {
-				foo = this.configs.use({})
-				count = this.configs.use({})
+				foo = this.configs.use(PassthroughSchema)
+				count = this.configs.use(PassthroughSchema)
 
 				override init(): void {
 					seen.push({ foo: this.foo, count: this.count })
 				}
 			}
 
-			__registerConfigSchema__(CfgPlugin, 'foo', {})
-			__registerConfigSchema__(CfgPlugin, 'count', {})
+			__registerConfigSchema__(CfgPlugin, 'foo', PassthroughSchema)
+			__registerConfigSchema__(CfgPlugin, 'count', PassthroughSchema)
 
 			host.setConfig(CfgPlugin, { foo: 'hello', count: 42 })
 			await host.start(CfgPlugin)
@@ -40,10 +49,10 @@ describe('TestHost config injection', () => {
 		await withTestHost(async (host) => {
 			@Plugin({ name: 'ForkCfg' })
 			class ForkCfg extends ForkablePlugin {
-				v = this.configs.use({})
+				v = this.configs.use(PassthroughSchema)
 			}
 
-			__registerConfigSchema__(ForkCfg, 'v', {})
+			__registerConfigSchema__(ForkCfg, 'v', PassthroughSchema)
 
 			host.register(ForkCfg)
 			host.registerFork(ForkCfg, 'a')

@@ -17,4 +17,3 @@ export type {
 	SchemaResultErr,
 	SchemaResultOk,
 } from './types'
-export { collectDefaults, validateConfigPatch } from './utils'

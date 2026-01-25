@@ -15,10 +15,15 @@ import type { ServiceMap } from '../../container'
 import { LeanMapTracker } from '../../container/LeanMapTracker'
 import { isProduction } from '../../env'
 import { EffectScopeService } from '../../services/scope/EffectScopeService'
-import { forkPlugin, getForkedCtor, listForks } from './fork'
 import type { BasePlugin } from '../composition/BasePlugin'
 import type { PluginInfo } from '../decorators/PluginDecorator'
-import { PluginDefinitions, type PluginDiContainer } from './PluginDefinitions'
+// Optional dependency API removed in favor of feature composition (BaseFeature).
+import type {
+	ForkablePluginConstructor,
+	PluginConstructor,
+	PluginIdentifier,
+	PluginInstance,
+} from '../types'
 import {
 	computeInitPlan,
 	type InitPlan,
@@ -27,19 +32,14 @@ import {
 	startPluginsWithStrategy,
 	stopPluginsTopo,
 } from './commit'
-// Optional dependency API removed in favor of feature composition (BaseFeature).
-import type {
-	ForkablePluginConstructor,
-	PluginConstructor,
-	PluginIdentifier,
-	PluginInstance,
-} from '../types'
+import { forkPlugin, getForkedCtor, listForks } from './fork'
 import { LifecycleManager } from './LifecycleManager'
+import { PluginDefinitions, type PluginDiContainer } from './PluginDefinitions'
 
 /* ─────────────────────────── Types ─────────────────────────── */
 
 type PluginServiceConfig = {
-	pluginCTXIsolate?: ServiceClass<any>[]
+	pluginCTXIsolate?: AnyServiceClass[]
 	startTimeoutMs?: number
 	stopTimeoutMs?: number
 	startStrategy?: PluginStartStrategy
@@ -48,7 +48,7 @@ type PluginServiceConfig = {
 	featureDeclarationPolicy?: 'off' | 'warn' | 'error'
 }
 
-type AnyServiceClass = ServiceClass<new (ctx: any, cfg: any) => any>
+type AnyServiceClass = ServiceClass<new (ctx: unknown, cfg: unknown) => unknown>
 
 export interface CommitSummary {
 	container: PluginDiContainer
@@ -199,15 +199,19 @@ export class PluginService {
 		this.lifecycle = new LifecycleManager(this.ctx, this.startTimeoutMs, this.stopTimeoutMs)
 	}
 
-	private injectConfig(plugin: PluginInstance): void {
+	private async injectConfig(plugin: PluginInstance): Promise<void> {
 		const pluginCtx = plugin.ctx
 		const info: PluginInfo = pluginCtx.pluginInfo
-		const schemaMap = info.configMap as Record<string, unknown> | null | undefined
+		const schemaMap = info.configMap ?? undefined
 		if (!schemaMap) return
 
 		const id = info.id
 
-		const record = pluginCtx.configService.getConfig(id)
+		// Validate + fill defaults before injection (HMR already does this in the loader).
+		// Surface any error as a start failure; plugins should not start with invalid config.
+		await pluginCtx.configService.ensureValidated(id, schemaMap, { missingObjectDefault: {} })
+
+		const record = pluginCtx.configService.getValidatedConfig(id)
 		const pluginObj = plugin as unknown as Record<string, unknown>
 		const recordObj = record as unknown as Record<string, unknown>
 
@@ -217,6 +221,17 @@ export class PluginService {
 			// They belong to the host plugin *config panel*, but should not be injected onto the plugin instance.
 			if (key.includes('.')) continue
 			pluginObj[key] = recordObj[key]
+		}
+
+		// Feature instances may be constructed during plugin field initialization (before config injection).
+		// After validation + plugin injection, re-run feature config injection so feature fields are updated
+		// from the validated snapshot (never from raw).
+		try {
+			const host = plugin.features as unknown as { __injectConfigsFromHostPlugin?: () => void }
+			host.__injectConfigsFromHostPlugin?.()
+		} catch (error) {
+			const logger = pluginCtx.logger ?? this.ctx.logger
+			logger.error('feature config inject error', { error })
 		}
 	}
 
@@ -313,7 +328,8 @@ export class PluginService {
 		const touched = summary.touched
 		if (!touched.length) return
 
-		const resolver = (summary.container as unknown as { resolveIdentifier?: unknown }).resolveIdentifier
+		const resolver = (summary.container as unknown as { resolveIdentifier?: unknown })
+			.resolveIdentifier
 		const resolveIdentifier =
 			typeof resolver === 'function'
 				? (resolver as (this: PluginDiContainer, id: unknown) => unknown)
@@ -617,10 +633,17 @@ export class PluginService {
 		// Core responsibility: inject declared config fields before plugin init().
 		// Doing it directly avoids an extra event hop on every plugin start.
 		try {
-			this.injectConfig(instance)
+			await this.injectConfig(instance)
 		} catch (error) {
 			const logger = pluginCtx.logger ?? this.ctx.logger
-			logger.with({ error }).warn`注入配置到 ${String(id)} 失败`
+			logger.with({ error }).error`注入/校验配置到 ${String(id)} 失败`
+			try {
+				await pluginCtx.scope.disposeAll()
+			} catch {
+				/* ignored */
+			}
+			failed.add(id)
+			return
 		}
 
 		try {

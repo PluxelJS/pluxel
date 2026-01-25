@@ -1,23 +1,34 @@
+import type { StandardSchemaV1 } from '@standard-schema/spec'
+import { isStandardSchemaV1 } from '../../../services/config/standardSchema'
 import { BasePlugin } from '../../composition/BasePlugin'
 import type { PluginIdentifier, SubclassOf } from '../../types'
-import type { ConfigSchemaList, DeclaredMetaView, PluginMetadata } from './types'
-import { PARAM_TYPES } from './types'
 import {
-	EMPTY_ARR,
-	S,
-	$freeze,
 	__DEV__,
+	$freeze,
+	type AnyCtor,
+	EMPTY_ARR,
 	isSubclassOf,
 	nameOf,
 	rebuildInfoSnapshot,
-	type AnyCtor,
+	S,
 } from './shared'
+import {
+	type ConfigSchemaList,
+	type DeclaredMetaView,
+	PARAM_TYPES,
+	type PluginMetadata,
+} from './types'
 
 /** 收集实例字段配置（@Plugin 统一聚合） */
-export function Config<S extends ConfigSchemaList>(schema: S): PropertyDecorator {
+export function Config(schema: StandardSchemaV1): PropertyDecorator {
+	if (!isStandardSchemaV1(schema)) {
+		throw new Error(
+			'Invalid @Config schema: must implement Standard Schema v1 (~standard.validate).',
+		)
+	}
 	return (target: object, key: string | symbol) => {
 		if (typeof target === 'function') throw new Error('@Config 只能用于实例字段(非 static)')
-		const ctor = (target as any).constructor as AnyCtor
+		const ctor = (target as { constructor: AnyCtor }).constructor
 		const s = S(ctor)
 		const bucket = s.pending ?? Object.create(null)
 		bucket[String(key)] = schema
@@ -44,16 +55,17 @@ export function Plugin(a?: PluginMetadata | PluginIdentifier, b?: PluginMetadata
 		withBase ? ((b as PluginMetadata) ?? {}) : ((a as PluginMetadata) ?? {})
 	) as PluginMetadata
 
-		return (ctor: AnyCtor) => {
-			if (base) {
-				const baseLabel = typeof base === 'function' ? nameOf(base as unknown as AnyCtor) : String(base)
-				if (!isSubclassOf(base as unknown as AnyCtor, BasePlugin as unknown as AnyCtor)) {
-					throw new Error(`@Plugin(${baseLabel}) 失败：抽象基类未继承 BasePlugin`)
-				}
-				if (!isSubclassOf(ctor, base as unknown as AnyCtor)) {
-					throw new Error(`@Plugin(${baseLabel}) 失败：${nameOf(ctor)} 未继承 ${baseLabel}`)
-				}
+	return (ctor: AnyCtor) => {
+		if (base) {
+			const baseLabel =
+				typeof base === 'function' ? nameOf(base as unknown as AnyCtor) : String(base)
+			if (!isSubclassOf(base as unknown as AnyCtor, BasePlugin as unknown as AnyCtor)) {
+				throw new Error(`@Plugin(${baseLabel}) 失败：抽象基类未继承 BasePlugin`)
 			}
+			if (!isSubclassOf(ctor, base as unknown as AnyCtor)) {
+				throw new Error(`@Plugin(${baseLabel}) 失败：${nameOf(ctor)} 未继承 ${baseLabel}`)
+			}
+		}
 
 		const s = S(ctor)
 

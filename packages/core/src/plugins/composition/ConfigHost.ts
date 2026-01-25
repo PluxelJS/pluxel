@@ -1,6 +1,7 @@
 import type { Context } from '@pluxel/context'
+import type { StandardSchemaV1 } from '@standard-schema/spec'
 
-const CONFIG_SENTINEL: unique symbol = Symbol.for('pluxel:config:sentinel') as any
+const CONFIG_SENTINEL = Symbol.for('pluxel:config:sentinel')
 
 function createSentinel(): unknown {
 	const base = Object.create(null) as Record<string | symbol, unknown>
@@ -36,11 +37,13 @@ export class ConfigHost {
 	 * - At runtime this returns a sentinel value. Real values are injected later by the registry.
 	 * - Schema registration must happen at module evaluation time (e.g. via configSource plugin injection).
 	 */
-	use<TSchema>(_schema: TSchema): unknown {
-		return SENTINEL
+	use<TSchema extends StandardSchemaV1>(_schema: TSchema): StandardSchemaV1.InferOutput<TSchema> {
+		return SENTINEL as unknown as StandardSchemaV1.InferOutput<TSchema>
 	}
 }
 
 export function isConfigSentinel(value: unknown): boolean {
-	return Boolean((value as any)?.[CONFIG_SENTINEL])
+	if (!value) return false
+	if (typeof value !== 'object' && typeof value !== 'function') return false
+	return Boolean((value as Record<PropertyKey, unknown>)[CONFIG_SENTINEL])
 }

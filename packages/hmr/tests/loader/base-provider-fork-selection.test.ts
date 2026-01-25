@@ -20,8 +20,14 @@ function createHmrCtx(core: Context) {
 		disableInConfig(...names: string[]) {
 			for (const n of names) enabled.delete(n)
 		},
-		getConfig(_name: string) {
+		getRawConfig(_name: string) {
 			return {}
+		},
+		getConfigRevision() {
+			return 0
+		},
+		ensureValidated() {
+			return Promise.resolve({})
 		},
 		patchConfig: () => undefined,
 		getExtra<T = unknown>(key: string): T | undefined {

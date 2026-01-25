@@ -55,6 +55,7 @@
 		"@logtape/logtape": "^2.0.1",
 		"@logtape/pretty": "^2.0.1",
 		"@noble/hashes": "^2.0.1",
+		"@standard-schema/spec": "^1.1.0",
 		"eventure": "^0.4.2",
 		"pathe": "^2.0.3",
 		"std-env": "^3.10.0",

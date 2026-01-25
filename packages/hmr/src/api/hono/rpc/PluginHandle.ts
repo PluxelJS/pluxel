@@ -16,8 +16,13 @@ import {
 	type PluginIdentifier,
 	setParamToken,
 } from '@pluxel/core'
+import {
+	type ConfigSchemaMap,
+	ConfigValidationError,
+	collectConfigDefaults,
+	validateConfigPatch,
+} from '@pluxel/core/services'
 import { RpcTarget } from 'capnweb'
-import * as v from 'valibot'
 import {
 	type BaseProvidersExtra,
 	type DepOverridesExtra,
@@ -43,7 +48,6 @@ import type {
 	PluginStatusMutationResult,
 	SchemaResult,
 } from './types'
-import { collectDefaults, validateConfigPatch } from './utils'
 
 function resolvePlugin(ctx: Context, name: string, hint?: PluginConstructor): PluginConstructor {
 	const ctor =
@@ -640,14 +644,20 @@ export class PluginHandle extends RpcTarget {
 		return {
 			ok: true,
 			schemaSource,
-			defaults: await collectDefaults(schemaMap),
+			defaults: await collectConfigDefaults(schemaMap as unknown as ConfigSchemaMap, {
+				missingObjectDefault: {},
+			}),
 		}
 	}
 
 	async config(): Promise<ConfigResultOk> {
 		const schema = this.ctx.loader.api.registry.getSchema(this.resolveCtor())
-		const defaults = await collectDefaults(schema)
-		const rawConfig = this.ctx.configService.getConfig(this.name)
+		const defaults = schema
+			? await collectConfigDefaults(schema as unknown as ConfigSchemaMap, {
+					missingObjectDefault: {},
+				})
+			: {}
+		const rawConfig = this.ctx.configService.getRawConfig(this.name)
 		// ConfigService 内部为了安全会使用 null-prototype 的 record（Object.create(null)）。
 		// capnweb RPC pass-by-value 对象要求 prototype === Object.prototype，因此这里做一次浅拷贝“正则化”。
 		const config = Object.assign({}, rawConfig as Record<string, unknown>)
@@ -665,8 +675,8 @@ export class PluginHandle extends RpcTarget {
 
 		// 并行执行 defaults 收集和验证
 		const [defaults, validation] = await Promise.all([
-			collectDefaults(schema),
-			validateConfigPatch(schema, patch),
+			collectConfigDefaults(schema as unknown as ConfigSchemaMap, { missingObjectDefault: {} }),
+			validateConfigPatch(schema as unknown as ConfigSchemaMap, patch as Record<string, unknown>),
 		])
 
 		if (!validation.ok) {
@@ -682,7 +692,7 @@ export class PluginHandle extends RpcTarget {
 			ok: true,
 			saved: false,
 			config: {
-				...this.ctx.configService.getConfig(this.name),
+				...this.ctx.configService.getRawConfig(this.name),
 				...validation.output,
 			},
 			defaults,
@@ -700,8 +710,8 @@ export class PluginHandle extends RpcTarget {
 
 		// 并行执行 defaults 收集和验证
 		const [defaults, validation] = await Promise.all([
-			collectDefaults(schema),
-			validateConfigPatch(schema, patch),
+			collectConfigDefaults(schema as unknown as ConfigSchemaMap, { missingObjectDefault: {} }),
+			validateConfigPatch(schema as unknown as ConfigSchemaMap, patch as Record<string, unknown>),
 		])
 
 		if (!validation.ok) {
@@ -717,7 +727,26 @@ export class PluginHandle extends RpcTarget {
 			this.ctx.configService.patchConfig(this.name, validation.output)
 		}
 
-		const config = this.ctx.configService.getConfig(this.name)
+		try {
+			await this.ctx.configService.ensureValidated(
+				this.name,
+				schema as unknown as ConfigSchemaMap,
+				{
+					missingObjectDefault: {},
+				},
+			)
+		} catch (error) {
+			if (error instanceof ConfigValidationError) {
+				return {
+					ok: false,
+					code: 'validation_failed',
+					errors: error.errors,
+					defaults,
+				}
+			}
+			throw error
+		}
+		const config = this.ctx.configService.getRawConfig(this.name)
 		return {
 			ok: true,
 			saved: true,
@@ -736,35 +765,31 @@ export class PluginHandle extends RpcTarget {
 			}
 
 		const targetKeys = keys?.length ? keys : Object.keys(schema)
-		const entries = targetKeys
-			.map((key) => [key, schema[key]] as const)
-			.filter((e): e is [string, NonNullable<(typeof e)[1]>] => e[1] != null)
+		this.ctx.configService.unsetConfigKeys(this.name, targetKeys)
 
-		// 获取默认值：getDefault 是同步的，只读取静态默认值
-		const patch: ConfigPatch = Object.fromEntries(
-			entries.map(([key, checker]) => [
-				key,
-				v.getDefault(checker as v.BaseSchema<unknown, unknown, v.BaseIssue<unknown>>) ?? {},
-			]),
-		)
-
-		// 并行执行 defaults 收集和验证
-		const [defaults, validation] = await Promise.all([
-			collectDefaults(schema),
-			validateConfigPatch(schema, patch),
-		])
-
-		if (!validation.ok) {
-			return {
-				ok: false,
-				code: 'validation_failed',
-				errors: validation.errors,
-				defaults,
+		const defaults = await collectConfigDefaults(schema as unknown as ConfigSchemaMap, {
+			missingObjectDefault: {},
+		})
+		try {
+			await this.ctx.configService.ensureValidated(
+				this.name,
+				schema as unknown as ConfigSchemaMap,
+				{
+					missingObjectDefault: {},
+				},
+			)
+		} catch (error) {
+			if (error instanceof ConfigValidationError) {
+				return {
+					ok: false,
+					code: 'validation_failed',
+					errors: error.errors,
+					defaults,
+				}
 			}
+			throw error
 		}
-
-		this.ctx.configService.patchConfig(this.name, validation.output)
-		const config = this.ctx.configService.getConfig(this.name)
+		const config = this.ctx.configService.getRawConfig(this.name)
 		return {
 			ok: true,
 			saved: true,

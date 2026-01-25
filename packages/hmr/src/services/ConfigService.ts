@@ -1,5 +1,11 @@
 import { type Context, Injectable, OverrideOf } from '@pluxel/core'
-import { ConfigService as CoreConfigService } from '@pluxel/core/services'
+import {
+	type ConfigSchemaMap,
+	ConfigValidationError,
+	ConfigService as CoreConfigService,
+	normalizeConfigRecord,
+} from '@pluxel/core/services'
+import type { StandardSchemaV1 } from '@standard-schema/spec'
 import { debounce } from '@tanstack/pacer'
 import chokidar from 'chokidar'
 import { resolve } from 'pathe'
@@ -36,6 +42,12 @@ export class ConfigService {
 		extra: Object.create(null),
 	}
 	private readonly saveDebounced: () => void
+	private configSeq = 0
+	private configRevByPlugin = new Map<string, number>()
+	private readonly validated = new Map<
+		string,
+		{ rev: number; snapshot: Readonly<Record<string, unknown>> }
+	>()
 
 	// 自写屏蔽：写盘到落盘结束这段时间内忽略变更事件
 	private writingNow = false
@@ -97,11 +109,22 @@ export class ConfigService {
 
 			clearRecord(this.data.extra)
 			if (parsed.extra) Object.assign(this.data.extra, parsed.extra)
+
+			// Invalidate all per-plugin validated views; on-disk state is the new source of truth.
+			this.configSeq++
+			this.configRevByPlugin.clear()
+			this.validated.clear()
+			for (const name of Object.keys(this.data.plugins)) {
+				this.configRevByPlugin.set(name, this.configSeq)
+			}
 		} catch {
 			// 首次无文件：落一个干净默认
 			this.data.enabled.clear()
 			clearRecord(this.data.plugins)
 			clearRecord(this.data.extra)
+			this.configSeq++
+			this.configRevByPlugin.clear()
+			this.validated.clear()
 			await this.saveToDisk(file)
 		}
 	}
@@ -131,10 +154,76 @@ export class ConfigService {
 	/**
 	 * 读取某插件的配置（不存在时返回只读“空视图”，避免误改未落盘）
 	 */
-	getConfig<T extends object = Record<string, unknown>>(
+	getRawConfig<T extends object = Record<string, unknown>>(
 		name: string = this.ctx.pluginInfo?.id ?? 'default',
 	): Readonly<T> {
 		return (this.data.plugins[name] as T | undefined) ?? (ConfigService.EMPTY_CONFIG as T)
+	}
+
+	getConfigRevision(name: string): number {
+		return this.configRevByPlugin.get(name) ?? 0
+	}
+
+	getValidatedConfig<T extends object = Record<string, unknown>>(
+		name: string = this.ctx.pluginInfo?.id ?? 'default',
+	): Readonly<T> {
+		const rev = this.getConfigRevision(name)
+		const cached = this.validated.get(name)
+		if (!cached || cached.rev !== rev) {
+			throw new Error(
+				`[ConfigService] Validated config not ready for "${name}". Call configService.ensureValidated(...) before reading validated config.`,
+			)
+		}
+		return cached.snapshot as T
+	}
+
+	tryGetValidatedConfig<T extends object = Record<string, unknown>>(
+		name: string = this.ctx.pluginInfo?.id ?? 'default',
+	): Readonly<T> | undefined {
+		const rev = this.getConfigRevision(name)
+		const cached = this.validated.get(name)
+		if (!cached || cached.rev !== rev) return undefined
+		return cached.snapshot as T
+	}
+
+	async ensureValidated(
+		pluginName: string,
+		schemaMap: Record<string, StandardSchemaV1>,
+		options: { missingObjectDefault?: unknown } = {},
+	): Promise<Readonly<Record<string, unknown>>> {
+		await this.ready
+
+		const raw = this.getRawConfig<Record<string, unknown>>(pluginName)
+		const res = await normalizeConfigRecord(schemaMap as ConfigSchemaMap, raw, options)
+		if (res.ok === false) {
+			const errors = res.errors
+			let where = '_root'
+			let message = 'unknown'
+
+			outer: for (const configKey in errors) {
+				const fields = errors[configKey]
+				if (!fields) continue
+				for (const fieldKey in fields) {
+					const issues = fields[fieldKey]
+					const first = issues?.[0]
+					where = first?.path?.length
+						? first.path.map(String).join('.')
+						: `${configKey}.${fieldKey}`
+					message = first?.message ?? 'unknown'
+					break outer
+				}
+			}
+
+			throw new ConfigValidationError(`插件 ${pluginName} 配置无效：${where} -> ${message}`, errors)
+		}
+
+		if (Object.keys(res.patch).length > 0) {
+			this.patchConfig(pluginName, res.patch)
+		}
+
+		const rev = this.getConfigRevision(pluginName)
+		this.validated.set(pluginName, { rev, snapshot: res.snapshot })
+		return res.snapshot
 	}
 
 	getExtra<T = unknown>(key: string): T | undefined {
@@ -175,7 +264,29 @@ export class ConfigService {
 				changed = true
 			}
 		}
-		if (changed) this.requestSave()
+		if (changed) {
+			this.configRevByPlugin.set(name, ++this.configSeq)
+			this.validated.delete(name)
+			this.requestSave()
+		}
+	}
+
+	unsetConfigKeys(name: string, keys: readonly string[]) {
+		const entry = this.data.plugins[name]
+		if (!entry) return
+		let changed = false
+		for (let i = 0; i < keys.length; i++) {
+			const k = keys[i]!
+			if (k in entry) {
+				delete entry[k]
+				changed = true
+			}
+		}
+		if (changed) {
+			this.configRevByPlugin.set(name, ++this.configSeq)
+			this.validated.delete(name)
+			this.requestSave()
+		}
 	}
 
 	setExtra(key: string, value: unknown) {

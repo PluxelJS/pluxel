@@ -1,4 +1,5 @@
 import type { Identifier } from '../../../container'
+import { isStandardSchemaV1 } from '../../../services/config/standardSchema'
 import type { PluginIdentifier, SubclassOf } from '../../types'
 import {
 	__DEV__,
@@ -221,13 +222,13 @@ export function getRequiredPluginDependencies(
 				? Object.getPrototypeOf((cur as { prototype?: unknown }).prototype)
 				: null
 		if (!proto || proto === Object.prototype) break
-			const nextCtor = (proto as { constructor?: unknown }).constructor
-			if (typeof nextCtor !== 'function') break
-			cur = nextCtor as unknown as AnyCtor
-		}
-
-		return __DEV__ ? $freeze(out) : out
+		const nextCtor = (proto as { constructor?: unknown }).constructor
+		if (typeof nextCtor !== 'function') break
+		cur = nextCtor as unknown as AnyCtor
 	}
+
+	return __DEV__ ? $freeze(out) : out
+}
 
 /*───────────────────────────────────────────────────────────
   Feature composition metadata (plan A)
@@ -242,9 +243,9 @@ export function useFeature(target: AnyCtor, feature: AnyCtor): void {
 	s.features = __DEV__ ? $freeze(next) : next
 }
 
-	export function getUsedFeatures(ctor: AnyCtor): ReadonlyArray<AnyCtor> {
-		return (STATE.get(ctor)?.features ?? EMPTY_ARR) as ReadonlyArray<AnyCtor>
-	}
+export function getUsedFeatures(ctor: AnyCtor): ReadonlyArray<AnyCtor> {
+	return (STATE.get(ctor)?.features ?? EMPTY_ARR) as ReadonlyArray<AnyCtor>
+}
 
 export function getDeclaredConfigKeys(ctor: AnyCtor): string[] {
 	const s = STATE.get(ctor)
@@ -421,6 +422,11 @@ export function __setConfigSource__(ctor: AnyCtor, fieldName: string, source: st
 
 export function __registerConfigSchema__(ctor: AnyCtor, fieldName: string, schema: unknown): void {
 	const s = S(ctor)
+	if (!isStandardSchemaV1(schema)) {
+		throw new Error(
+			`Invalid config schema: "${ctor.name}.${fieldName}" must implement Standard Schema v1 (~standard.validate).`,
+		)
+	}
 
 	// Feature classes are not decorated with @Plugin; keep their schemas in `pending`.
 	if (!s.infoSnap) {
@@ -448,19 +454,19 @@ export function getConfigSource(ctor: AnyCtor): Readonly<Record<string, string>>
   Fork Support
 ───────────────────────────────────────────────────────────*/
 
-	export function clonePluginDefinition(
-		from: PluginIdentifier,
-		to: PluginIdentifier,
-		identity?: { id?: string | null; displayName?: string | null; packageName?: string | null },
-	): void {
-		const src = typeof from === 'function' ? STATE.get(from as unknown as AnyCtor) : undefined
-		if (!src || !src.infoSnap) {
-			throw new Error(`clonePluginDefinition(${String(from)}) 失败：源类未装饰 @Plugin`)
-		}
-		if (typeof to !== 'function') {
-			throw new Error(`clonePluginDefinition(${String(from)}) 失败：目标不是可装饰的类`)
-		}
-		const dst = S(to as unknown as AnyCtor)
+export function clonePluginDefinition(
+	from: PluginIdentifier,
+	to: PluginIdentifier,
+	identity?: { id?: string | null; displayName?: string | null; packageName?: string | null },
+): void {
+	const src = typeof from === 'function' ? STATE.get(from as unknown as AnyCtor) : undefined
+	if (!src || !src.infoSnap) {
+		throw new Error(`clonePluginDefinition(${String(from)}) 失败：源类未装饰 @Plugin`)
+	}
+	if (typeof to !== 'function') {
+		throw new Error(`clonePluginDefinition(${String(from)}) 失败：目标不是可装饰的类`)
+	}
+	const dst = S(to as unknown as AnyCtor)
 
 	// cold/immutable data
 	dst.declaredMeta = src.declaredMeta

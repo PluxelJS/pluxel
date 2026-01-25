@@ -1,7 +1,4 @@
 import type { Context } from '@pluxel/context'
-import type { BaseFeature, FeatureCtor } from './BaseFeature'
-import { isHostBoundFeature } from './BaseFeature'
-import { PLUGIN_CTX } from './BasePlugin'
 import {
 	getDeclaredConfigKeys,
 	getRequiredPluginDependencies,
@@ -9,6 +6,9 @@ import {
 } from '../decorators/decorator/api'
 import { __DEV__, type AnyCtor } from '../decorators/decorator/shared'
 import type { PluginIdentifier } from '../types'
+import type { BaseFeature, FeatureCtor, HostBoundFeature } from './BaseFeature'
+import { isHostBoundFeature } from './BaseFeature'
+import { PLUGIN_CTX } from './BasePlugin'
 
 const FEATURE_DECLARATION_POLICY = Symbol.for('pluxel:feature:declarationPolicy')
 type FeatureDeclarationPolicy = 'off' | 'warn' | 'error'
@@ -19,7 +19,13 @@ type DepWatcher = {
 	unsub?: () => void
 }
 
-export class FeatureHost {
+type HostBoundFeatureCtor<T extends BaseFeature, Host> = new (
+	ctx: Context,
+	host: Host,
+	...args: unknown[]
+) => T
+
+export class FeatureHost<Host = unknown> {
 	private readonly instances = new Map<FeatureCtor<BaseFeature>, BaseFeature>()
 	private readonly warned = new Set<FeatureCtor<BaseFeature>>()
 	private readonly depWatchers = new Map<PluginIdentifier, DepWatcher>()
@@ -28,22 +34,41 @@ export class FeatureHost {
 	constructor(
 		public readonly ctx: Context,
 		private readonly ownerCtor?: AnyCtor,
-		private readonly ownerInstance?: unknown,
+		private readonly ownerInstance?: Host,
 	) {
 		// Ensure all features are disposed with the owning plugin scope.
 		this.ctx.collectEffect(() => this.disposeAll())
 	}
 
-	use<T extends BaseFeature>(Ctor: FeatureCtor<T>, ...args: unknown[]): T {
-		const existing = this.instances.get(Ctor)
+	use<T extends BaseFeature>(Ctor: FeatureCtor<T>, ...args: unknown[]): T
+	use<T extends HostBoundFeature<Host>>(Ctor: HostBoundFeatureCtor<T, Host>, ...args: unknown[]): T
+	use<T extends BaseFeature>(
+		Ctor: FeatureCtor<T> | HostBoundFeatureCtor<T, Host>,
+		...args: unknown[]
+	): T {
+		const key = Ctor as unknown as FeatureCtor<BaseFeature>
+		const existing = this.instances.get(key)
 		if (existing) return existing as T
 
-		this.warnIfUndeclared(Ctor)
+		this.warnIfUndeclared(key)
 
 		const finalArgs =
 			this.ownerInstance && isHostBoundFeature(Ctor) ? [this.ownerInstance, ...args] : args
 
-		const instance = new Ctor(this.ctx, ...finalArgs)
+		const AnyCtor = Ctor as unknown as new (ctx: Context, ...args: unknown[]) => T
+		const instance = new AnyCtor(this.ctx, ...finalArgs)
+		this.tryInjectConfigsIntoFeature(instance)
+		this.instances.set(key, instance)
+		return instance
+	}
+
+	/** @internal Called by the registry after config validation/injection. */
+	__injectConfigsFromHostPlugin(): void {
+		if (this.instances.size === 0) return
+		for (const feature of this.instances.values()) this.tryInjectConfigsIntoFeature(feature)
+	}
+
+	private tryInjectConfigsIntoFeature(instance: BaseFeature): void {
 		try {
 			const maybe = instance as unknown as { __injectConfigsFromHostPlugin?: () => void }
 			if (typeof maybe.__injectConfigsFromHostPlugin === 'function') {
@@ -52,8 +77,6 @@ export class FeatureHost {
 		} catch (error) {
 			this.ctx.logger.error('feature config inject error', { error })
 		}
-		this.instances.set(Ctor, instance)
-		return instance
 	}
 
 	/**
@@ -66,13 +89,11 @@ export class FeatureHost {
 	 * This is meant for optional integrations without requiring authors to reason about commit timing.
 	 */
 	dep<T extends PluginIdentifier>(id: T): InstanceType<T> | undefined
+	dep<T extends PluginIdentifier>(id: T, cb: (dep: InstanceType<T>) => void): () => void
+	dep<T extends PluginIdentifier>(id: T, cb: (dep: InstanceType<T>) => () => void): () => void
 	dep<T extends PluginIdentifier>(
 		id: T,
-		cb: (dep: InstanceType<T>) => void | (() => void),
-	): () => void
-	dep<T extends PluginIdentifier>(
-		id: T,
-		cb?: (dep: InstanceType<T>) => void | (() => void),
+		cb?: (dep: InstanceType<T>) => unknown,
 	): InstanceType<T> | undefined | (() => void) {
 		if (!cb) return this.maybeDep(id)
 
@@ -82,17 +103,14 @@ export class FeatureHost {
 			this.depWatchers.set(id, watcher)
 		}
 
-		const cbAny = cb as unknown as (dep: unknown) => void
+		const cbAny = cb as unknown as (dep: unknown) => unknown
 		watcher.cbs.set(cbAny, {})
 
 		const hadSub = Boolean(watcher.unsub)
 		if (!hadSub) {
 			const registry = (this.ctx as unknown as { registry?: unknown })?.registry as
 				| {
-						watchInstance?: (
-							id: PluginIdentifier,
-							cb: (instance: unknown) => void,
-						) => () => void
+						watchInstance?: (id: PluginIdentifier, cb: (instance: unknown) => void) => () => void
 				  }
 				| undefined
 			if (!registry || typeof registry.watchInstance !== 'function') {
@@ -181,10 +199,9 @@ export class FeatureHost {
 
 	private warnIfUndeclared<T extends BaseFeature>(Ctor: FeatureCtor<T>): void {
 		const policy =
-			((this.ctx as unknown as Record<symbol, unknown>)?.[
-				FEATURE_DECLARATION_POLICY
-			] as FeatureDeclarationPolicy | undefined) ??
-			(__DEV__ ? 'warn' : 'off')
+			((this.ctx as unknown as Record<symbol, unknown>)?.[FEATURE_DECLARATION_POLICY] as
+				| FeatureDeclarationPolicy
+				| undefined) ?? (__DEV__ ? 'warn' : 'off')
 		if (policy === 'off') return
 
 		// If we don't know the owning plugin ctor, we can't validate declaration-time metadata.
@@ -240,13 +257,13 @@ export class FeatureHost {
 	private invokeDepCb(watcher: DepWatcher, cb: (dep: unknown) => unknown, depView: unknown): void {
 		const entry = watcher.cbs.get(cb)
 		if (!entry) return
-			try {
-				const cleanup = cb(depView)
-				entry.cleanup = typeof cleanup === 'function' ? (cleanup as () => void) : undefined
-			} catch (error) {
-				this.ctx.logger.error('feature dep callback error', { error })
-			}
+		try {
+			const cleanup = cb(depView)
+			entry.cleanup = typeof cleanup === 'function' ? (cleanup as () => void) : undefined
+		} catch (error) {
+			this.ctx.logger.error('feature dep callback error', { error })
 		}
+	}
 
 	private maybeDep<T extends PluginIdentifier>(id: T): InstanceType<T> | undefined {
 		const raw = this.getRawDep(id)

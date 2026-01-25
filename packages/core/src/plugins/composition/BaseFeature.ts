@@ -1,7 +1,7 @@
 import type { Context } from '@pluxel/context'
-import { ConfigHost } from './ConfigHost'
 import { getDeclaredConfigKeys, getFeatureNamespace } from '../decorators/decorator/api'
 import type { AnyCtor } from '../decorators/decorator/shared'
+import { ConfigHost } from './ConfigHost'
 
 export type FeatureCtor<T> = new (ctx: Context, ...args: unknown[]) => T
 
@@ -81,12 +81,7 @@ export abstract class BaseFeature<C extends Context = Context> {
 
 		const ns = getFeatureNamespace(ctor as unknown as AnyCtor)
 
-		const configService = (this.ctx as unknown as { configService?: unknown })?.configService as
-			| { getConfig?: (name?: string) => unknown }
-			| undefined
-		if (!configService || typeof configService.getConfig !== 'function') return
-
-		const record = configService.getConfig()
+		const record = this.ctx.configService.tryGetValidatedConfig()
 		if (!record || typeof record !== 'object') return
 
 		for (let i = 0; i < keys.length; i++) {

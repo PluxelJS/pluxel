@@ -217,6 +217,9 @@ importers:
       '@noble/hashes':
         specifier: ^2.0.1
         version: 2.0.1
+      '@standard-schema/spec':
+        specifier: ^1.1.0
+        version: 1.1.0
       eventure:
         specifier: ^0.4.2
         version: 0.4.4
@@ -398,6 +401,43 @@ importers:
         specifier: 0.20.0-beta.4
         version: 0.20.0-beta.4(typescript@5.9.3)
 
+  packages/plugins/graphql:
+    dependencies:
+      '@gqloom/core':
+        specifier: ^0.15.0
+        version: 0.15.1(graphql@16.12.0)
+      '@gqloom/valibot':
+        specifier: ^0.15.0
+        version: 0.15.1(@gqloom/core@0.15.1(graphql@16.12.0))(graphql@16.12.0)(valibot@1.2.0(typescript@5.9.3))
+      '@gqty/cli':
+        specifier: ^5.0.0
+        version: 5.0.0(@types/node@25.0.9)(typescript@5.9.3)
+      '@pluxel/core':
+        specifier: workspace:*
+        version: link:../../core
+      '@pluxel/hmr':
+        specifier: workspace:*
+        version: link:../../hmr
+      graphql:
+        specifier: ^16.12.0
+        version: 16.12.0
+      graphql-yoga:
+        specifier: ^5.18.0
+        version: 5.18.0(graphql@16.12.0)
+      valibot:
+        specifier: ^1.2.0
+        version: 1.2.0(typescript@5.9.3)
+    devDependencies:
+      '@pluxel/rolldown':
+        specifier: workspace:*
+        version: link:../../rolldown
+      tsdown:
+        specifier: 0.20.0-beta.4
+        version: 0.20.0-beta.4(typescript@5.9.3)
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+
   packages/plugins/host:
     dependencies:
       '@pluxel/core':
@@ -406,6 +446,9 @@ importers:
       '@pluxel/hmr':
         specifier: workspace:*
         version: link:../../hmr
+      pluxel-plugin-graphql:
+        specifier: workspace:*
+        version: link:../graphql
       pluxel-plugin-market-ui:
         specifier: workspace:*
         version: link:../market
@@ -1670,6 +1713,9 @@ packages:
 
   '@speed-highlight/core@1.2.14':
     resolution: {integrity: sha512-G4ewlBNhUtlLvrJTb88d2mdy2KRijzs4UhnlrOSRT4bmjh/IqNElZa3zkrZ+TC47TwtlDWzVLFADljF1Ijp5hA==}
+
+  '@standard-schema/spec@1.1.0':
+    resolution: {integrity: sha512-l2aFy5jALhniG5HgqrD6jXLi/rUWrKvqN/qJx6yoJsgKhblVd+iqqU4RCXavm/jPityDo5TCvKMnpjKnOriy0w==}
 
   '@tabler/icons-react@3.36.0':
     resolution: {integrity: sha512-sSZ00bEjTdTTskVFykq294RJq+9cFatwy4uYa78HcYBCXU1kSD1DIp5yoFsQXmybkIOKCjp18OnhAYk553UIfQ==}
@@ -4803,6 +4849,8 @@ snapshots:
   '@sindresorhus/is@7.2.0': {}
 
   '@speed-highlight/core@1.2.14': {}
+
+  '@standard-schema/spec@1.1.0': {}
 
   '@tabler/icons-react@3.36.0(react@19.2.3)':
     dependencies:
