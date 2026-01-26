@@ -8,6 +8,7 @@ import {
 import type { StandardSchemaV1 } from '@standard-schema/spec'
 import { debounce } from '@tanstack/pacer'
 import chokidar from 'chokidar'
+import { hash as ohash } from 'ohash'
 import { resolve } from 'pathe'
 import { SuperJSON } from 'superjson'
 
@@ -44,9 +45,14 @@ export class ConfigService {
 	private readonly saveDebounced: () => void
 	private configSeq = 0
 	private configRevByPlugin = new Map<string, number>()
+	private configDigestByPlugin = new Map<string, string>()
 	private readonly validated = new Map<
 		string,
-		{ rev: number; snapshot: Readonly<Record<string, unknown>> }
+		{
+			rev: number
+			schemaMap: Record<string, StandardSchemaV1>
+			snapshot: Readonly<Record<string, unknown>>
+		}
 	>()
 
 	// 自写屏蔽：写盘到落盘结束这段时间内忽略变更事件
@@ -104,29 +110,66 @@ export class ConfigService {
 					: []
 			for (let i = 0; i < enabledList.length; i++) this.data.enabled.add(enabledList[i])
 
-			clearRecord(this.data.plugins)
-			if (parsed.plugins) Object.assign(this.data.plugins, coercePlugins(parsed.plugins))
+			const nextPlugins = parsed.plugins ? coercePlugins(parsed.plugins) : Object.create(null)
+			this.reconcilePluginsFromDisk(nextPlugins)
 
 			clearRecord(this.data.extra)
 			if (parsed.extra) Object.assign(this.data.extra, parsed.extra)
-
-			// Invalidate all per-plugin validated views; on-disk state is the new source of truth.
-			this.configSeq++
-			this.configRevByPlugin.clear()
-			this.validated.clear()
-			for (const name of Object.keys(this.data.plugins)) {
-				this.configRevByPlugin.set(name, this.configSeq)
-			}
 		} catch {
 			// 首次无文件：落一个干净默认
 			this.data.enabled.clear()
 			clearRecord(this.data.plugins)
 			clearRecord(this.data.extra)
-			this.configSeq++
 			this.configRevByPlugin.clear()
+			this.configDigestByPlugin.clear()
 			this.validated.clear()
 			await this.saveToDisk(file)
 		}
+	}
+
+	private reconcilePluginsFromDisk(next: Record<string, Record<string, unknown>>) {
+		const prev = this.data.plugins
+		const removed = new Set(Object.keys(prev))
+
+		for (const [name, nextRecord] of Object.entries(next)) {
+			removed.delete(name)
+
+			const prevRecord = prev[name]
+			if (!prevRecord) prev[name] = nextRecord
+			else {
+				// Preserve object identity for callers holding onto the raw snapshot reference.
+				clearRecord(prevRecord)
+				Object.assign(prevRecord, nextRecord)
+			}
+
+			// Hashing is not free. Only hash/bump revisions for plugins that can currently benefit:
+			// - plugins with a cached validated snapshot (keep correctness / avoid stale reads);
+			// - plugins we've already started tracking previously (e.g. edited via patchConfig()).
+			//
+			// Note: "enabled in config" alone is not enough reason to hash during disk reload; it doesn't
+			// affect correctness until the plugin actually validates/starts.
+			const shouldTrack = this.validated.has(name) || this.configDigestByPlugin.has(name)
+			if (!shouldTrack) continue
+
+			const nextDigest = digest(prev[name] ?? nextRecord)
+			const prevDigest = this.configDigestByPlugin.get(name)
+			if (prevDigest === nextDigest) continue
+
+			this.configDigestByPlugin.set(name, nextDigest)
+			this.bumpPluginRevision(name)
+		}
+
+		for (const name of removed) {
+			delete prev[name]
+			this.configRevByPlugin.delete(name)
+			this.configDigestByPlugin.delete(name)
+			this.validated.delete(name)
+		}
+	}
+
+	private bumpPluginRevision(name: string) {
+		this.configRevByPlugin.set(name, ++this.configSeq)
+		this.validated.delete(name)
 	}
 
 	// 原子写：交给 ctx.fs.writeTextAtomic，配合 writingNow 屏蔽自触发
@@ -193,6 +236,12 @@ export class ConfigService {
 	): Promise<Readonly<Record<string, unknown>>> {
 		await this.ready
 
+		// Fast-path: if on-disk/in-memory revision didn't change AND schema object is identical,
+		// return the cached validated snapshot.
+		const curRev = this.getConfigRevision(pluginName)
+		const cached = this.validated.get(pluginName)
+		if (cached && cached.rev === curRev && cached.schemaMap === schemaMap) return cached.snapshot
+
 		const raw = this.getRawConfig<Record<string, unknown>>(pluginName)
 		const res = await normalizeConfigRecord(schemaMap as ConfigSchemaMap, raw, options)
 		if (res.ok === false) {
@@ -222,7 +271,13 @@ export class ConfigService {
 		}
 
 		const rev = this.getConfigRevision(pluginName)
-		this.validated.set(pluginName, { rev, snapshot: res.snapshot })
+		// Establish a baseline digest for future on-disk reload comparisons, without forcing a revision bump.
+		// If `patchConfig()` ran above, it already recorded the digest.
+		if (!this.configDigestByPlugin.has(pluginName)) {
+			const entry = this.data.plugins[pluginName]
+			if (entry) this.configDigestByPlugin.set(pluginName, digest(entry))
+		}
+		this.validated.set(pluginName, { rev, schemaMap, snapshot: res.snapshot })
 		return res.snapshot
 	}
 
@@ -265,8 +320,8 @@ export class ConfigService {
 			}
 		}
 		if (changed) {
-			this.configRevByPlugin.set(name, ++this.configSeq)
-			this.validated.delete(name)
+			this.configDigestByPlugin.set(name, digest(entry))
+			this.bumpPluginRevision(name)
 			this.requestSave()
 		}
 	}
@@ -283,8 +338,8 @@ export class ConfigService {
 			}
 		}
 		if (changed) {
-			this.configRevByPlugin.set(name, ++this.configSeq)
-			this.validated.delete(name)
+			this.configDigestByPlugin.set(name, digest(entry))
+			this.bumpPluginRevision(name)
 			this.requestSave()
 		}
 	}
@@ -365,10 +420,16 @@ function coercePlugins(input: Record<string, unknown>): Record<string, Record<st
 		const maybe = raw as Record<string, unknown>
 		const record = maybe.configRecord
 		if (record && typeof record === 'object' && !Array.isArray(record)) {
-			out[name] = record as Record<string, unknown>
+			out[name] = Object.assign(Object.create(null), record as Record<string, unknown>)
 		} else {
-			out[name] = raw as Record<string, unknown>
+			out[name] = Object.assign(Object.create(null), raw as Record<string, unknown>)
 		}
 	}
 	return out
+}
+
+function digest(value: unknown): string {
+	// Hash-only change detection (no large intermediate strings like SuperJSON.stringify()).
+	// This is intentionally independent from the on-disk encoding; it only drives in-memory invalidation.
+	return ohash(value)
 }

@@ -36,6 +36,7 @@ UI/RPC 往往需要：
 
 - `getValidatedConfig()` 默认用 `ctx.pluginInfo?.id` 作为 key：**只有在插件 Context 里调用才有意义**。它不会隐式回退 raw：若未 `ensureValidated(...)`，会抛错（避免静默读取未校验配置）。
 - `getRawConfig(name)` 永远返回持久层原始快照（可能包含未知 key/未填充默认值），用于调试/迁移/底层实现。
+- `ensureValidated(pluginName, schemaMap)` **是幂等的**：当 raw revision 未变化且 schema 稳定（同一对象引用；或 schemaMap 仅被重新创建但复用同一批 schema 引用）时，会直接返回缓存的 validated 快照（避免 loader/runtime 重复校验）。
 - `patchConfig(name, patch)` 是“对某个插件名的配置快照打补丁”，用于测试/加载器模拟/持久化写入。
 - `unsetConfigKeys(name, keys)` 用于“重置到默认值”的语义：先删除 key，再由 `ConfigService.ensureValidated(...)` 回填。
 - `enabledInConfig` 是偏好集合：Core 不解释它，上层可用它决定是否启动插件。

@@ -1,5 +1,12 @@
-import { type Context, getClassParams, getPluginInfo, type PluginConstructor } from '@pluxel/core'
-import type { ConfigSchemaMap } from '../..'
+import {
+	type Context,
+	type ForkablePluginConstructor,
+	getClassParams,
+	getPluginInfo,
+	type PluginConstructor,
+	type PluginIdentifier,
+} from '@pluxel/core'
+import type { ConfigSchemaMap } from '@pluxel/core/services'
 import type { ModuleReplacer } from './module-replacer'
 import type {
 	PluginLifecycleSnapshot,
@@ -86,7 +93,10 @@ export class RuntimeResolver {
 				const baseCtor = this.registry.getPluginByName(baseName)
 				if (baseCtor && forkId) {
 					try {
-						return this.ctx.registry.fork(baseCtor as any, forkId) as PluginConstructor
+						return this.ctx.registry.fork(
+							baseCtor as unknown as ForkablePluginConstructor,
+							forkId,
+						) as PluginConstructor
 					} catch {
 						// fall through
 					}
@@ -106,7 +116,9 @@ export class RuntimeResolver {
 
 	normalizeId(moduleId: string) {
 		// HMRService is optional in unit tests and some non-HMR runtimes.
-		return (this.ctx as any)?.hmrService?.normalizeId?.(moduleId) ?? moduleId
+		const hmr = (this.ctx as unknown as { hmrService?: { normalizeId?: (x: string) => string } })
+			.hmrService
+		return hmr?.normalizeId?.(moduleId) ?? moduleId
 	}
 }
 
@@ -157,10 +169,10 @@ export class PluginDependencyInspector {
 				try {
 					name = getPluginInfo(dep).id
 				} catch {
-					name = (dep as any)?.name ?? String(dep)
+					name = (dep as { name?: string }).name ?? String(dep)
 				}
 				// Core registry can resolve abstract/base tokens via DI aliases.
-				const isRunning = this.ctx.registry.isRunning(dep as any)
+				const isRunning = this.ctx.registry.isRunning(dep as unknown as PluginIdentifier)
 				return { name, isRunning }
 			})
 			.filter(Boolean) as Array<{ name: string; isRunning: boolean }>

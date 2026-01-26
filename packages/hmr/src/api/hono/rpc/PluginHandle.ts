@@ -17,7 +17,6 @@ import {
 	setParamToken,
 } from '@pluxel/core'
 import {
-	type ConfigSchemaMap,
 	ConfigValidationError,
 	collectConfigDefaults,
 	validateConfigPatch,
@@ -644,7 +643,7 @@ export class PluginHandle extends RpcTarget {
 		return {
 			ok: true,
 			schemaSource,
-			defaults: await collectConfigDefaults(schemaMap as unknown as ConfigSchemaMap, {
+			defaults: await collectConfigDefaults(schemaMap, {
 				missingObjectDefault: {},
 			}),
 		}
@@ -653,7 +652,7 @@ export class PluginHandle extends RpcTarget {
 	async config(): Promise<ConfigResultOk> {
 		const schema = this.ctx.loader.api.registry.getSchema(this.resolveCtor())
 		const defaults = schema
-			? await collectConfigDefaults(schema as unknown as ConfigSchemaMap, {
+			? await collectConfigDefaults(schema, {
 					missingObjectDefault: {},
 				})
 			: {}
@@ -675,8 +674,8 @@ export class PluginHandle extends RpcTarget {
 
 		// 并行执行 defaults 收集和验证
 		const [defaults, validation] = await Promise.all([
-			collectConfigDefaults(schema as unknown as ConfigSchemaMap, { missingObjectDefault: {} }),
-			validateConfigPatch(schema as unknown as ConfigSchemaMap, patch as Record<string, unknown>),
+			collectConfigDefaults(schema, { missingObjectDefault: {} }),
+			validateConfigPatch(schema, patch as Record<string, unknown>),
 		])
 
 		if (!validation.ok) {
@@ -710,8 +709,8 @@ export class PluginHandle extends RpcTarget {
 
 		// 并行执行 defaults 收集和验证
 		const [defaults, validation] = await Promise.all([
-			collectConfigDefaults(schema as unknown as ConfigSchemaMap, { missingObjectDefault: {} }),
-			validateConfigPatch(schema as unknown as ConfigSchemaMap, patch as Record<string, unknown>),
+			collectConfigDefaults(schema, { missingObjectDefault: {} }),
+			validateConfigPatch(schema, patch as Record<string, unknown>),
 		])
 
 		if (!validation.ok) {
@@ -728,13 +727,9 @@ export class PluginHandle extends RpcTarget {
 		}
 
 		try {
-			await this.ctx.configService.ensureValidated(
-				this.name,
-				schema as unknown as ConfigSchemaMap,
-				{
-					missingObjectDefault: {},
-				},
-			)
+			await this.ctx.configService.ensureValidated(this.name, schema, {
+				missingObjectDefault: {},
+			})
 		} catch (error) {
 			if (error instanceof ConfigValidationError) {
 				return {
@@ -767,17 +762,13 @@ export class PluginHandle extends RpcTarget {
 		const targetKeys = keys?.length ? keys : Object.keys(schema)
 		this.ctx.configService.unsetConfigKeys(this.name, targetKeys)
 
-		const defaults = await collectConfigDefaults(schema as unknown as ConfigSchemaMap, {
+		const defaults = await collectConfigDefaults(schema, {
 			missingObjectDefault: {},
 		})
 		try {
-			await this.ctx.configService.ensureValidated(
-				this.name,
-				schema as unknown as ConfigSchemaMap,
-				{
-					missingObjectDefault: {},
-				},
-			)
+			await this.ctx.configService.ensureValidated(this.name, schema, {
+				missingObjectDefault: {},
+			})
 		} catch (error) {
 			if (error instanceof ConfigValidationError) {
 				return {

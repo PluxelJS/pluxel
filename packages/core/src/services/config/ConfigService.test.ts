@@ -28,6 +28,33 @@ describe('ConfigService', () => {
 		})
 	})
 
+	it('reuses the cached validated snapshot across schemaMap recreation', async () => {
+		await withTestHost(async (host) => {
+			host.config.patchConfig('P', { answer: 1 })
+
+			const first = await host.config.ensureValidated('P', { answer: PassthroughSchema })
+			const second = await host.config.ensureValidated('P', { answer: PassthroughSchema })
+
+			expect(second).toBe(first)
+		})
+	})
+
+	it('does not bump revision for no-op patches/unsets', async () => {
+		await withTestHost(async (host) => {
+			host.config.patchConfig('P', { answer: 1 })
+			const rev1 = host.config.getConfigRevision('P')
+
+			host.config.patchConfig('P', { answer: 1 })
+			expect(host.config.getConfigRevision('P')).toBe(rev1)
+
+			host.config.unsetConfigKeys('P', ['_missing'])
+			expect(host.config.getConfigRevision('P')).toBe(rev1)
+
+			host.config.unsetConfigKeys('P', ['answer'])
+			expect(host.config.getConfigRevision('P')).toBeGreaterThan(rev1)
+		})
+	})
+
 	it('stores enable/disable preferences without interpreting them', async () => {
 		await withTestHost(async (host) => {
 			expect(host.isEnabled('P')).toBe(false)

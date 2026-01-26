@@ -1,11 +1,12 @@
 import type { Context } from '@pluxel/context'
 import { getDeclaredConfigKeys, getFeatureNamespace } from '../decorators/decorator/api'
 import type { AnyCtor } from '../decorators/decorator/shared'
-import { ConfigHost } from './ConfigHost'
+import { CONFIGS, type ConfigHost } from './ConfigHost'
 
 export type FeatureCtor<T> = new (ctx: Context, ...args: unknown[]) => T
 
 const HOST_BOUND_FEATURE = Symbol.for('pluxel:feature:hostBound')
+const INJECT_PLAN = new WeakMap<AnyCtor, { keys: readonly string[]; prefix: string }>()
 
 export function isHostBoundFeature(ctor: unknown): boolean {
 	if (!ctor) return false
@@ -41,7 +42,6 @@ class FeatureScope {
 
 export abstract class BaseFeature<C extends Context = Context> {
 	public readonly scope: { collectEffect: (fn: () => void) => () => void; disposeAll: () => void }
-	private static readonly CONFIG_HOST = Symbol.for('pluxel:feature:configHost')
 
 	constructor(public readonly ctx: C) {
 		const scope = new FeatureScope(ctx)
@@ -52,18 +52,7 @@ export abstract class BaseFeature<C extends Context = Context> {
 
 	/** Config declaration helper: `foo = this.configs.use(schema)` */
 	public get configs(): ConfigHost {
-		const self = this as unknown as { [BaseFeature.CONFIG_HOST]?: ConfigHost }
-		const existing = self[BaseFeature.CONFIG_HOST]
-		if (existing && existing.ctx === (this.ctx as unknown as Context)) return existing
-
-		const host = new ConfigHost(this.ctx as unknown as Context)
-		Object.defineProperty(this, BaseFeature.CONFIG_HOST, {
-			value: host,
-			writable: false,
-			enumerable: false,
-			configurable: false,
-		})
-		return host
+		return CONFIGS
 	}
 
 	/**
@@ -76,19 +65,23 @@ export abstract class BaseFeature<C extends Context = Context> {
 		const ctor = (this as { constructor?: unknown }).constructor
 		if (typeof ctor !== 'function') return
 
-		const keys = getDeclaredConfigKeys(ctor as unknown as AnyCtor)
-		if (keys.length === 0) return
-
-		const ns = getFeatureNamespace(ctor as unknown as AnyCtor)
+		let plan = INJECT_PLAN.get(ctor as unknown as AnyCtor)
+		if (!plan) {
+			const keys = getDeclaredConfigKeys(ctor as unknown as AnyCtor)
+			if (keys.length === 0) return
+			const ns = getFeatureNamespace(ctor as unknown as AnyCtor)
+			plan = { keys, prefix: `${ns}.` }
+			INJECT_PLAN.set(ctor as unknown as AnyCtor, plan)
+		}
 
 		const record = this.ctx.configService.tryGetValidatedConfig()
 		if (!record || typeof record !== 'object') return
 
-		for (let i = 0; i < keys.length; i++) {
-			const fieldName = keys[i]!
+		for (let i = 0; i < plan.keys.length; i++) {
+			const fieldName = plan.keys[i]!
 			;(this as unknown as Record<string, unknown>)[fieldName] = (
 				record as Record<string, unknown>
-			)[`${ns}.${fieldName}`]
+			)[plan.prefix + fieldName]
 		}
 	}
 

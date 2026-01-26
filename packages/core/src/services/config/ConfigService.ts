@@ -36,9 +36,16 @@ export class ConfigService {
 	public isReady = true
 	/** Resolves when initial config is ready; core resolves immediately. */
 	public readonly ready: Promise<void> = Promise.resolve()
+	private schemaObjectSeq = 0
+	private readonly schemaObjectIds = new WeakMap<object, number>()
 	private readonly validated = new Map<
 		string,
-		{ rev: number; snapshot: Readonly<Record<string, unknown>> }
+		{
+			rev: number
+			schemaMap: Record<string, StandardSchemaV1>
+			schemaSig?: string
+			snapshot: Readonly<Record<string, unknown>>
+		}
 	>()
 	private enabledInConfig = new Set<string>()
 	private store = new Map<string, Record<string, unknown>>()
@@ -48,6 +55,28 @@ export class ConfigService {
 
 	constructor(ctx: Context, _config: unknown = undefined) {
 		this.ctx = ctx
+	}
+
+	private schemaMapSignature(schemaMap: Record<string, StandardSchemaV1>): string {
+		const keys = Object.keys(schemaMap)
+		if (keys.length === 0) return 'empty'
+		keys.sort()
+		let sig = ''
+		for (let i = 0; i < keys.length; i++) {
+			const key = keys[i]!
+			const schema = schemaMap[key]
+			if (!schema || (typeof schema !== 'object' && typeof schema !== 'function')) {
+				throw new Error(`[ConfigService] Invalid schemaMap: missing schema for "${key}".`)
+			}
+			const schemaObj = schema as unknown as object
+			let id = this.schemaObjectIds.get(schemaObj)
+			if (!id) {
+				id = ++this.schemaObjectSeq
+				this.schemaObjectIds.set(schemaObj, id)
+			}
+			sig += `${key.length}:${key}#${id};`
+		}
+		return sig
 	}
 
 	isEnabledInConfig(name: string): boolean {
@@ -68,8 +97,22 @@ export class ConfigService {
 	}
 
 	replaceEnabledInConfigSet(names: Iterable<string>) {
+		const next = new Set<string>()
+		for (const n of names) next.add(n)
+
+		let same = next.size === this.enabledInConfig.size
+		if (same) {
+			for (const n of next) {
+				if (!this.enabledInConfig.has(n)) {
+					same = false
+					break
+				}
+			}
+		}
+		if (same) return
+
 		this.enabledInConfig.clear()
-		for (const n of names) this.enabledInConfig.add(n)
+		for (const n of next) this.enabledInConfig.add(n)
 	}
 
 	/**
@@ -133,6 +176,22 @@ export class ConfigService {
 	): Promise<Readonly<Record<string, unknown>>> {
 		await this.ready
 
+		// Fast-path: if raw config revision didn't change AND schema is stable, return cached snapshot.
+		//
+		// Schema stability is usually "same object reference" (best case).
+		// If callers recreate the schemaMap object, we lazily compute a signature derived from schema
+		// *references* to avoid revalidation; this keeps ohash overhead off the hot path.
+		const curRev = this.getConfigRevision(pluginName)
+		const cached = this.validated.get(pluginName)
+		let nextSchemaSig: string | undefined
+		if (cached && cached.rev === curRev) {
+			if (cached.schemaMap === schemaMap) return cached.snapshot
+			const cachedSig =
+				cached.schemaSig ?? (cached.schemaSig = this.schemaMapSignature(cached.schemaMap))
+			nextSchemaSig = this.schemaMapSignature(schemaMap)
+			if (cachedSig === nextSchemaSig) return cached.snapshot
+		}
+
 		const raw = this.getRawConfig<Record<string, unknown>>(pluginName)
 		const res = await normalizeConfigRecord(schemaMap as ConfigSchemaMap, raw, options)
 		if (res.ok === false) {
@@ -160,7 +219,12 @@ export class ConfigService {
 		if (Object.keys(res.patch).length > 0) this.patchConfig(pluginName, res.patch)
 
 		const rev = this.getConfigRevision(pluginName)
-		this.validated.set(pluginName, { rev, snapshot: res.snapshot })
+		this.validated.set(pluginName, {
+			rev,
+			schemaMap,
+			schemaSig: nextSchemaSig,
+			snapshot: res.snapshot,
+		})
 		return res.snapshot
 	}
 
@@ -170,7 +234,14 @@ export class ConfigService {
 			entry = Object.create(null)
 			this.store.set(name, entry)
 		}
-		Object.assign(entry, patch)
+		let changed = false
+		for (const [k, v] of Object.entries(patch as Record<string, unknown>)) {
+			if (entry[k] !== v) {
+				entry[k] = v
+				changed = true
+			}
+		}
+		if (!changed) return
 		this.configRevByPlugin.set(name, ++this.configSeq)
 		this.validated.delete(name)
 	}
@@ -178,7 +249,15 @@ export class ConfigService {
 	unsetConfigKeys(name: string, keys: readonly string[]) {
 		const entry = this.store.get(name)
 		if (!entry) return
-		for (let i = 0; i < keys.length; i++) delete entry[keys[i]!]
+		let changed = false
+		for (let i = 0; i < keys.length; i++) {
+			const k = keys[i]!
+			if (k in entry) {
+				delete entry[k]
+				changed = true
+			}
+		}
+		if (!changed) return
 		this.configRevByPlugin.set(name, ++this.configSeq)
 		this.validated.delete(name)
 	}

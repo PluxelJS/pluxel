@@ -1,4 +1,3 @@
-import type { Context } from '@pluxel/context'
 import type { StandardSchemaV1 } from '@standard-schema/spec'
 
 const CONFIG_SENTINEL = Symbol.for('pluxel:config:sentinel')
@@ -24,9 +23,13 @@ function createSentinel(): unknown {
 
 const SENTINEL = createSentinel()
 
+/**
+ * Declaration-time config accessor.
+ *
+ * This is intentionally stateless: it only returns a sentinel value so the runtime
+ * injector can replace class-field values later.
+ */
 export class ConfigHost {
-	constructor(public readonly ctx: Context) {}
-
 	/**
 	 * Type-first config declaration helper.
 	 *
@@ -41,6 +44,9 @@ export class ConfigHost {
 		return SENTINEL as unknown as StandardSchemaV1.InferOutput<TSchema>
 	}
 }
+
+/** Shared singleton instance used by BasePlugin/BaseFeature. */
+export const CONFIGS = new ConfigHost()
 
 export function isConfigSentinel(value: unknown): boolean {
 	if (!value) return false

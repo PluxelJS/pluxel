@@ -15,7 +15,7 @@ type FeatureDeclarationPolicy = 'off' | 'warn' | 'error'
 
 type DepWatcher = {
 	lastRaw?: unknown
-	cbs: Map<(dep: unknown) => unknown, { cleanup?: () => void }>
+	cbs: Map<(dep: unknown) => unknown, (() => void) | undefined>
 	unsub?: () => void
 }
 
@@ -25,11 +25,23 @@ type HostBoundFeatureCtor<T extends BaseFeature, Host> = new (
 	...args: unknown[]
 ) => T
 
+type PluginRegistryLike = {
+	getInstance?: (id: unknown) => unknown
+	watchInstance?: (id: PluginIdentifier, cb: (instance: unknown) => void) => () => void
+}
+
 export class FeatureHost<Host = unknown> {
 	private readonly instances = new Map<FeatureCtor<BaseFeature>, BaseFeature>()
 	private readonly warned = new Set<FeatureCtor<BaseFeature>>()
 	private readonly depWatchers = new Map<PluginIdentifier, DepWatcher>()
 	private readonly depViewCache = new WeakMap<object, unknown>()
+	private readonly depCtxDesc: PropertyDescriptor = {
+		value: null,
+		writable: false,
+		enumerable: false,
+		configurable: false,
+	}
+	private registry?: PluginRegistryLike
 
 	constructor(
 		public readonly ctx: Context,
@@ -38,6 +50,16 @@ export class FeatureHost<Host = unknown> {
 	) {
 		// Ensure all features are disposed with the owning plugin scope.
 		this.ctx.collectEffect(() => this.disposeAll())
+	}
+
+	private getRegistry(): PluginRegistryLike | undefined {
+		if (this.registry) return this.registry
+		const reg = (this.ctx as unknown as { registry?: unknown })?.registry as
+			| PluginRegistryLike
+			| undefined
+		// Don't cache "missing": some hosts attach registry after ctx creation.
+		if (reg && (typeof reg === 'object' || typeof reg === 'function')) this.registry = reg
+		return this.registry
 	}
 
 	use<T extends BaseFeature>(Ctor: FeatureCtor<T>, ...args: unknown[]): T
@@ -104,15 +126,11 @@ export class FeatureHost<Host = unknown> {
 		}
 
 		const cbAny = cb as unknown as (dep: unknown) => unknown
-		watcher.cbs.set(cbAny, {})
+		watcher.cbs.set(cbAny, undefined)
 
 		const hadSub = Boolean(watcher.unsub)
 		if (!hadSub) {
-			const registry = (this.ctx as unknown as { registry?: unknown })?.registry as
-				| {
-						watchInstance?: (id: PluginIdentifier, cb: (instance: unknown) => void) => () => void
-				  }
-				| undefined
+			const registry = this.getRegistry()
 			if (!registry || typeof registry.watchInstance !== 'function') {
 				throw new Error('[pluxel/core] FeatureHost.dep requires PluginService.watchInstance')
 			}
@@ -120,11 +138,8 @@ export class FeatureHost<Host = unknown> {
 				this.flushDepWatcherRaw(watcher, instance),
 			)
 		} else if (watcher.lastRaw !== undefined) {
-			this.invokeDepCb(
-				watcher,
-				cbAny,
-				this.withCaller(watcher.lastRaw as InstanceType<PluginIdentifier>),
-			)
+			const view = this.withCaller(watcher.lastRaw as InstanceType<PluginIdentifier>)
+			this.invokeDepCb(watcher, cbAny, view)
 		}
 
 		let active = true
@@ -132,26 +147,28 @@ export class FeatureHost<Host = unknown> {
 			if (!active) return
 			active = false
 			const current = this.depWatchers.get(id)
-			if (!current) return
-			const entry = current.cbs.get(cbAny)
-			if (entry?.cleanup) {
+
+			const live = current ?? watcher
+			const cleanup = live.cbs.get(cbAny)
+			if (cleanup) {
 				try {
-					entry.cleanup()
+					cleanup()
 				} catch (error) {
 					this.ctx.logger.error('feature dep cleanup error', { error })
 				}
 			}
+
+			if (!current) return
 			current.cbs.delete(cbAny)
-			if (current.cbs.size === 0) {
-				if (current.unsub) {
-					try {
-						current.unsub()
-					} catch {
-						// ignore
-					}
+			if (current.cbs.size !== 0) return
+			if (current.unsub) {
+				try {
+					current.unsub()
+				} catch {
+					// ignore
 				}
-				this.depWatchers.delete(id)
 			}
+			this.depWatchers.delete(id)
 		}
 
 		// Auto-collect: plugin authors usually don't want to track unsubs manually.
@@ -255,11 +272,9 @@ export class FeatureHost<Host = unknown> {
 	}
 
 	private invokeDepCb(watcher: DepWatcher, cb: (dep: unknown) => unknown, depView: unknown): void {
-		const entry = watcher.cbs.get(cb)
-		if (!entry) return
 		try {
 			const cleanup = cb(depView)
-			entry.cleanup = typeof cleanup === 'function' ? (cleanup as () => void) : undefined
+			watcher.cbs.set(cb, typeof cleanup === 'function' ? (cleanup as () => void) : undefined)
 		} catch (error) {
 			this.ctx.logger.error('feature dep callback error', { error })
 		}
@@ -272,9 +287,7 @@ export class FeatureHost<Host = unknown> {
 	}
 
 	private getRawDep<T extends PluginIdentifier>(id: T): InstanceType<T> | undefined {
-		const registry = (this.ctx as unknown as { registry?: unknown })?.registry as
-			| { getInstance?: (x: unknown) => unknown }
-			| undefined
+		const registry = this.getRegistry()
 		return (registry?.getInstance?.(id) as InstanceType<T> | undefined) ?? undefined
 	}
 
@@ -292,14 +305,9 @@ export class FeatureHost<Host = unknown> {
 
 		const view = Object.create(baseCtx as object) as Context
 		view.caller = this.ctx
-		const wrapped = Object.create(raw as object, {
-			ctx: {
-				value: view,
-				writable: false,
-				enumerable: false,
-				configurable: false,
-			},
-		}) as InstanceType<T>
+		this.depCtxDesc.value = view
+		const wrapped = Object.create(raw as object, { ctx: this.depCtxDesc }) as InstanceType<T>
+		this.depCtxDesc.value = null
 
 		if (raw && (typeof raw === 'object' || typeof raw === 'function')) {
 			this.depViewCache.set(raw as unknown as object, wrapped)
@@ -309,14 +317,14 @@ export class FeatureHost<Host = unknown> {
 	}
 
 	private disposeWatcherCbs(watcher: DepWatcher): void {
-		for (const entry of watcher.cbs.values()) {
-			if (!entry.cleanup) continue
+		for (const [cb, cleanup] of watcher.cbs) {
+			if (!cleanup) continue
 			try {
-				entry.cleanup()
+				cleanup()
 			} catch (error) {
 				this.ctx.logger.error('feature dep cleanup error', { error })
 			} finally {
-				entry.cleanup = undefined
+				watcher.cbs.set(cb, undefined)
 			}
 		}
 	}

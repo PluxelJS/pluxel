@@ -234,6 +234,43 @@ describe('FeatureHost.dep', () => {
 		})
 	})
 
+	it('does not run cleanup twice when dep disappears then unsubscribe is called', async () => {
+		await withTestHost(async (host) => {
+			@Plugin({ name: 'DepGone' })
+			class DepGone extends BasePlugin {}
+
+			@Plugin({ name: 'HostGone' })
+			class HostGone extends BasePlugin {
+				seen = 0
+				cleaned = 0
+				off?: () => void
+
+				override init(): void {
+					this.off = this.features.dep(DepGone, () => {
+						this.seen++
+						return () => {
+							this.cleaned++
+						}
+					})
+				}
+			}
+
+			host.registerAll(HostGone, DepGone)
+			await host.commitStrict()
+
+			const h = host.getOrThrow(HostGone) as HostGone
+			expect(h.seen).toBe(1)
+			expect(h.cleaned).toBe(0)
+
+			host.unregister(DepGone)
+			await host.commit()
+			expect(h.cleaned).toBe(1)
+
+			h.off?.()
+			expect(h.cleaned).toBe(1)
+		})
+	})
+
 	it('auto-disposes dep subscriptions on plugin unload', async () => {
 		await withTestHost(async (host) => {
 			@Plugin({ name: 'DepDispose' })

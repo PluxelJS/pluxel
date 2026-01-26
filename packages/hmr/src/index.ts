@@ -1,5 +1,4 @@
 import { type ConfigSchemaList, Config as OrigConfig, setPluxelRuntime } from '@pluxel/core'
-import type { StandardSchemaV1 } from '@standard-schema/spec'
 import {
 	type ErrorMessage,
 	type InferOutput,
@@ -25,5 +24,5 @@ export function Config(configSchema: ConfigSchema): ReturnType<typeof OrigConfig
 	if (!isOfType('object', configSchema)) {
 		throw new Error('传入 Config 装饰器的必须是 valibot ObjectSchema')
 	}
-	return OrigConfig(configSchema as unknown as StandardSchemaV1)
+	return OrigConfig(configSchema)
 }

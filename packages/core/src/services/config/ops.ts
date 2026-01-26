@@ -4,6 +4,17 @@ import type { ConfigIssue, ConfigValidationErrors } from './types'
 
 export type ConfigSchemaMap = Readonly<Record<string, StandardSchemaV1>>
 
+const EMPTY_OBJECT_DEFAULT = Object.freeze({})
+const defaultsCache = new WeakMap<ConfigSchemaMap, Map<unknown, Promise<Record<string, unknown>>>>()
+
+function normalizeMissingObjectDefault(value: unknown): unknown {
+	if (!value || typeof value !== 'object' || Array.isArray(value)) return value
+	const proto = Object.getPrototypeOf(value)
+	if (proto !== Object.prototype && proto !== null) return value
+	if (Object.keys(value as Record<string, unknown>).length !== 0) return value
+	return EMPTY_OBJECT_DEFAULT
+}
+
 function normalizeErrors(
 	_configKey: string,
 	issues: ConfigIssue[],
@@ -24,30 +35,49 @@ export async function collectConfigDefaults(
 	const entries = Object.entries(schemaMap)
 	if (entries.length === 0) return {}
 
-	const missingObjectDefault = options.missingObjectDefault
-	const jobs: Array<Promise<[string, unknown]>> = []
+	const missingObjectDefault = normalizeMissingObjectDefault(options.missingObjectDefault)
 
-	for (const [key, schema] of entries) {
-		jobs.push(
-			(async () => {
-				const first = await safeParseStandardSchema(schema, undefined)
-				if (first.success) return [key, first.output]
-				if (missingObjectDefault !== undefined) {
-					const second = await safeParseStandardSchema(schema, missingObjectDefault)
-					return [key, second.success ? second.output : missingObjectDefault]
-				}
-				return [key, undefined]
-			})(),
-		)
+	let perSchema = defaultsCache.get(schemaMap)
+	if (!perSchema) {
+		perSchema = new Map()
+		defaultsCache.set(schemaMap, perSchema)
 	}
+	const cached = perSchema.get(missingObjectDefault)
+	if (cached) return await cached
 
-	const resolved = await Promise.all(jobs)
-	const out: Record<string, unknown> = {}
-	for (let i = 0; i < resolved.length; i++) {
-		const [key, value] = resolved[i]!
-		out[key] = value
+	const compute = (async () => {
+		const jobs: Array<Promise<[string, unknown]>> = []
+
+		for (const [key, schema] of entries) {
+			jobs.push(
+				(async () => {
+					const first = await safeParseStandardSchema(schema, undefined)
+					if (first.success) return [key, first.output]
+					if (missingObjectDefault !== undefined) {
+						const second = await safeParseStandardSchema(schema, missingObjectDefault)
+						return [key, second.success ? second.output : missingObjectDefault]
+					}
+					return [key, undefined]
+				})(),
+			)
+		}
+
+		const resolved = await Promise.all(jobs)
+		const out: Record<string, unknown> = {}
+		for (let i = 0; i < resolved.length; i++) {
+			const [key, value] = resolved[i]!
+			out[key] = value
+		}
+		return out
+	})()
+
+	perSchema.set(missingObjectDefault, compute)
+	try {
+		return await compute
+	} catch (error) {
+		perSchema.delete(missingObjectDefault)
+		throw error
 	}
-	return out
 }
 
 export async function validateConfigPatch(

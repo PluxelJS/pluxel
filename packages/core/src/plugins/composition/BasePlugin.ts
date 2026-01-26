@@ -11,14 +11,13 @@
 import type { Context } from '@pluxel/context'
 import type { AnyCtor } from '../decorators/decorator/shared'
 import { getPluginInfo } from '../decorators/PluginDecorator'
-import { ConfigHost } from './ConfigHost'
+import { CONFIGS, type ConfigHost } from './ConfigHost'
 import { FeatureHost } from './FeatureHost'
 
 // HMR 注意：必须使用 Symbol.for
 export const PLUGIN_CTX = Symbol.for('pluxel:plugin:ctx')
 export const FORK_CTX = Symbol.for('pluxel:plugin:ctx:fork')
 const FEATURE_HOST = Symbol.for('pluxel:plugin:featureHost')
-const CONFIG_HOST = Symbol.for('pluxel:plugin:configHost')
 
 export interface PluginLifecycleRuntime<_C extends Context = Context> {
 	beforeStart?: () => void
@@ -66,18 +65,7 @@ export abstract class BasePlugin<C extends Context = Context> {
 
 	/** Config declaration helper: `foo = this.configs.use(schema)` */
 	public get configs(): ConfigHost {
-		const self = this as unknown as { [CONFIG_HOST]?: ConfigHost }
-		const existing = self[CONFIG_HOST]
-		if (existing && existing.ctx === (this.ctx as unknown as Context)) return existing
-
-		const host = new ConfigHost(this.ctx as unknown as Context)
-		Object.defineProperty(this, CONFIG_HOST, {
-			value: host,
-			writable: false,
-			enumerable: false,
-			configurable: false,
-		})
-		return host
+		return CONFIGS
 	}
 
 	protected get caller() {

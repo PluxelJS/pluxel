@@ -15,7 +15,6 @@ import {
 } from '@pluxel/core/services'
 import { dirname, normalize } from 'pathe'
 import * as v from 'valibot'
-import type { ConfigSchemaMap } from '../..'
 import {
 	type BaseProvidersExtra,
 	EXTRA_BASE_PROVIDERS,
@@ -202,7 +201,7 @@ export class PluginRegistry {
 	getPluginByName(name: string): PluginConstructor | undefined {
 		return this.nameMap.get(name)
 	}
-	getSchema(ctor: PluginConstructor): ConfigSchemaMap | undefined {
+	getSchema(ctor: PluginConstructor): CoreConfigSchemaMap | undefined {
 		const info = getPluginInfo(ctor)
 		const map = info?.configMap as Record<string, unknown> | null | undefined
 		if (!map) return undefined
@@ -215,7 +214,7 @@ export class PluginRegistry {
 			}
 		}
 
-		return map as unknown as ConfigSchemaMap
+		return map as unknown as CoreConfigSchemaMap
 	}
 	getSchemaSource(ctor: PluginConstructor): Readonly<Record<string, string>> | undefined {
 		return getPluginInfo(ctor)?.configSourceMap
@@ -396,7 +395,7 @@ export class PluginRegistry {
 		const provideBase = this.resolveProvideBase(name, ctor)
 		const schema = this.getSchema(ctor)
 		if (schema) {
-			await this.ctx.configService.ensureValidated(name, schema as unknown as CoreConfigSchemaMap, {
+			await this.ctx.configService.ensureValidated(name, schema, {
 				missingObjectDefault: {},
 			})
 		}
