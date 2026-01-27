@@ -14,10 +14,10 @@
 // - modifyApp()/useModule() 都会返回 disposer，并且会自动绑定到插件的 scope 生命周期（通过 ctx.scope.collectEffect）。
 // - 配置建议以 `configs.use(schema)` 注入为准（启动时注入一次）；如需热更新，推荐通过“重载插件”生效。
 
+import { GraphQLPlugin } from '@pluxel/graphql'
 import { BasePlugin, Plugin } from '@pluxel/hmr'
 import { f, v } from '@pluxel/hmr/config'
 import type { HonoWithAppEnvType } from '@pluxel/hmr/services'
-import { GraphQLPlugin } from 'pluxel-plugin-graphql'
 
 const SECTION_ROUTES = { id: 'routes', title: 'Routes (Hono)', description: '插件注入的 HTTP 路由' }
 const SECTION_GRAPHQL = {

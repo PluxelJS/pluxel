@@ -1,11 +1,14 @@
 import { mkdir } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { configure, getConfig } from '@logtape/logtape'
+import { createPluxelLogtapeConfig } from '@pluxel/core/logger'
+import GraphQL from '@pluxel/graphql'
 import { Context } from '@pluxel/hmr'
+import { createLogStoreSink } from '@pluxel/hmr/logger'
 import { LogtapeLoggerService } from '@pluxel/hmr/services'
-import { GraphQLPlugin } from 'pluxel-plugin-graphql'
+import Wretch from '@pluxel/wretch'
 import { MarketUI } from 'pluxel-plugin-market-ui'
-import { WretchPlugin } from 'pluxel-plugin-wretch'
 
 if (process.env.PLUXEL_HMR_SSR === undefined) process.env.PLUXEL_HMR_SSR = 'true'
 
@@ -14,15 +17,21 @@ const logsDir = join(here, '../logs')
 const demoDir = join(here, './demo')
 await mkdir(logsDir, { recursive: true })
 
+if (!getConfig()) {
+	await configure(
+		createPluxelLogtapeConfig({
+			preset: 'hmr',
+			file: join(logsDir, 'hmr.log'),
+			ui: createLogStoreSink({ minLevel: 'trace' }),
+		}),
+	)
+}
+
 const ctx = new Context({
-	debug: ['pluxel:hmr:*'],
 	hmrService: {
-		dir: [demoDir],
-		coldStart: 'background',
-		builtins: [GraphQLPlugin, MarketUI, WretchPlugin],
-		log: {
-			logtape: { file: join(logsDir, 'hmr.log') },
-		},
+		roots: [demoDir],
+		// Builtins are plain ctors so TypeScript can validate them.
+		builtins: [GraphQL, MarketUI, Wretch],
 	},
 	registry: {
 		pluginCTXIsolate: [LogtapeLoggerService],

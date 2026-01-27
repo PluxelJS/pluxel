@@ -48,7 +48,7 @@ type PluginServiceConfig = {
 	featureDeclarationPolicy?: 'off' | 'warn' | 'error'
 }
 
-type AnyServiceClass = ServiceClass<new (ctx: unknown, cfg: unknown) => unknown>
+type AnyServiceClass = ServiceClass<new (ctx: Context, cfg?: unknown) => unknown>
 
 export interface CommitSummary {
 	container: PluginDiContainer

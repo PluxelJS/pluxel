@@ -1,15 +1,9 @@
 // Service.ts
 
 import { Context } from './Context'
-import type {
-	ServiceCfg,
-	ServiceClass,
-	ServiceContext,
-	ServiceInst,
-	ServiceWithCtx,
-} from './service-types'
+import type { ServiceCfg, ServiceClass, ServiceInst, ServiceWithCtx } from './service-types'
 
-type InjectableCtor = new (ctx: Context, cfg: unknown) => ServiceWithCtx<Context>
+type InjectableCtor = new (ctx: Context, cfg?: unknown) => ServiceWithCtx<Context>
 
 /**
  * 装饰器可选项
@@ -60,19 +54,17 @@ export function Injectable<S extends new (...args: unknown[]) => object>(
 	const opts = ctorOrOpts as AnyServiceOptions
 	return <T extends InjectableCtor>(ctor: ServiceClass<T>) => {
 		const meta = ctor as unknown as MutableServiceMeta
-		if (meta[OVERRIDE_FLAG]) {
-			// override 的也跳过
-		} else {
-			if (opts.key) meta.key = opts.key
-			if (opts.methods) meta.methods = opts.methods
-			if (opts.scope) meta.scope = opts.scope
-			Context.registerService(ctor)
-		}
+		// If this ctor is already marked as an override, `OverrideOf()` is responsible for registration.
+		if (meta[OVERRIDE_FLAG]) return
+		if (opts.key) meta.key = opts.key
+		if (opts.methods) meta.methods = opts.methods
+		if (opts.scope) meta.scope = opts.scope
+		Context.registerService(ctor)
 	}
 }
 
 export function OverrideOf<S extends InjectableCtor>(original: ServiceClass<S>) {
-	return <T extends new (ctx: ServiceContext<S>, cfg: ServiceCfg<S>) => ServiceInst<S>>(
+	return <T extends new (ctx: Context, cfg?: ServiceCfg<S>) => ServiceInst<S>>(
 		overrideCtor: ServiceClass<T>,
 	) => {
 		// 打个标记，让 Injectable 跳过 registerService

@@ -1,5 +1,6 @@
 {
-	"name": "pluxel-plugin-graphql",
+	"$schema": "https://market.pluxel.dev/schema/package.json",
+	"name": "@pluxel/graphql",
 	"version": "0.1.0",
 	"description": "Pluxel builtin plugin: GraphQL runtime + codegen",
 	"type": "module",
@@ -16,6 +17,7 @@
 		"dist"
 	],
 	"scripts": {
+		"build": "pluxel build",
 		"build:plugin": "pluxel build",
 		"test": "bun test --conditions=@pluxel/source"
 	},
@@ -32,7 +34,6 @@
 		"@pluxel/hmr": "workspace:*"
 	},
 	"devDependencies": {
-		"@pluxel/rolldown": "workspace:*",
 		"tsdown": "0.20.1",
 		"typescript": "^5.9.3"
 	},

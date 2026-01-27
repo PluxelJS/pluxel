@@ -54,15 +54,15 @@ export class HmrRunner {
 
 	init(server: ViteDevServer, opts: HmrRunnerInitOptions = {}) {
 		this.env_ = server.environments.ssr
+		const hasNativeSourcemapSupport =
+			typeof (globalThis as unknown as { process?: { setSourceMapsEnabled?: unknown } })?.process
+				?.setSourceMapsEnabled === 'function'
 		this.runner_ = createServerModuleRunner(this.env_, {
 			hmr: false,
 			evaluatedModules: this.evaluatedModules,
 			// Prefer Node/Bun native sourcemap support when available; fall back to Vite's
 			// prepareStackTrace interceptor (older runtimes / edge environments).
-			sourcemapInterceptor:
-				typeof (globalThis as any)?.process?.setSourceMapsEnabled === 'function'
-					? 'node'
-					: 'prepareStackTrace',
+			sourcemapInterceptor: hasNativeSourcemapSupport ? 'node' : 'prepareStackTrace',
 			// Ensure stack traces are aligned when running modules via AsyncFunction wrapper.
 			// (ESModulesEvaluator applies the appropriate `startOffset` for inlined sourcemaps.)
 			evaluator: new ESModulesEvaluator(),
@@ -354,7 +354,7 @@ function setEvaluatedModuleExports(node: EvaluatedModuleNode, exports: unknown) 
 	node.importers.clear()
 }
 
-function isHardBridgeSpecifier(id: string) {
+export function isHardBridgeSpecifier(id: string) {
 	if (HARD_BRIDGE_ID_SET.has(id)) return true
 	for (const prefix of HARD_BRIDGE_PREFIXES) {
 		if (id.startsWith(prefix)) return true

@@ -8,7 +8,7 @@ export type GraphQLResolver = unknown
 export type GraphQLMiddleware = unknown
 
 export type FullCtx = YogaInitialContext & ServerCtx
-type ServerCtx = {}
+type ServerCtx = Record<string, never>
 
 export type GraphQLModule = {
 	resolvers: readonly GraphQLResolver[]
@@ -33,7 +33,7 @@ export const GraphQLValibot = v
 
 export function normalizeModule(mod: GraphQLModuleInput): GraphQLModule {
 	if (Array.isArray(mod)) return { resolvers: mod }
-	if (mod && typeof mod === 'object' && 'resolvers' in (mod as any)) {
+	if (mod && typeof mod === 'object' && 'resolvers' in mod) {
 		const m = mod as GraphQLModule
 		return { resolvers: m.resolvers ?? [], middlewares: m.middlewares ?? [] }
 	}
@@ -58,7 +58,7 @@ export function weaveSchema(input: {
 	}
 
 	// gqloom's weave accepts a mixed list of middlewares/resolvers; keep a stable order.
-	return weave(ValibotWeaver, ...(middlewares as any[]), ...resolvers)
+	return weave(ValibotWeaver, ...(middlewares as unknown[]), ...resolvers)
 }
 
 export function createGraphQLFetch(schema: GraphQLSchema) {
@@ -75,5 +75,5 @@ export function createGraphQLFetch(schema: GraphQLSchema) {
 		},
 	})
 
-	return (req: Request, ctx: ServerCtx) => yoga.fetch(req, ctx)
+	return (req: Request, ctx: unknown) => yoga.fetch(req, ctx as ServerCtx)
 }

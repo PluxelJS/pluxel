@@ -90,7 +90,14 @@ const DEFAULT_OPTIMIZE_DEPS_INTEROP = ['react', 'react-dom'] as const
 // NOTE: We must exclude these conditions from the client environment to avoid resolving Node-only sources.
 export const BASE_HMR_RESOLVE_CONDITIONS = ['@pluxel/hmr', '@pluxel/source'] as const
 // Keep `import` explicitly: Vite's exports resolution depends on it for packages that only expose `import`/`require`.
-const DEFAULT_RESOLVE_CONDITIONS = ['import', 'module', 'browser', 'development', 'production', 'default']
+const DEFAULT_RESOLVE_CONDITIONS = [
+	'import',
+	'module',
+	'browser',
+	'development',
+	'production',
+	'default',
+]
 
 export const DEFAULT_HMR_DEPENDENCY_CONFIG: ResolvedHMRDependencyConfig = {
 	bridgeModules: REQUIRED_BRIDGE_MODULES,
@@ -160,7 +167,7 @@ export function resolveFsAllowList(opts: FsAllowOptions): string[] {
 export interface HmrViteConfigOptions {
 	root: string
 	fsAllow: string[]
-	scanDirs: string[]
+	scanRoots: string[]
 	deps: ResolvedHMRDependencyConfig
 	extraPlugins?: Plugin[]
 	runnerPlugin: Plugin
@@ -178,22 +185,16 @@ export function buildHmrViteConfig(opts: HmrViteConfigOptions): InlineConfig {
 	//
 	// `@pluxel/hmr` is a *server-only* export condition (workspace TS sources, Node-only deps).
 	// If we forward it into the client environment, Vite may resolve packages like
-	// `pluxel-plugin-wretch` to `./src/...` and then try to analyze/optimize Node-only imports
+	// `@pluxel/wretch` (or any runner-only plugin) to `./src/...` and then try to analyze/optimize Node-only imports
 	// (e.g. `undici`) as if they were browser deps.
-	const clientConditions = ssrConditions.filter((c) => c !== '@pluxel/hmr' && c !== '@pluxel/source')
-	const includePatterns = opts.includeGlobs ?? opts.scanDirs.map((d) => `${d}/**/*.ts`)
-	const forceOptimizeDeps = process.env.PLUXEL_HMR_FORCE_OPTIMIZE_DEPS === '1'
-	// Vite 8 beta dep optimizer can be flaky; keep knobs explicit and default to performance.
-	// - Set `PLUXEL_HMR_OPTIMIZE_DEPS_NO_DISCOVERY=1` to disable crawling (only `include` is optimized).
-	// - Set `PLUXEL_HMR_FORCE_OPTIMIZE_DEPS=1` to force a full re-opt on startup.
-	const optimizeDepsNoDiscovery = process.env.PLUXEL_HMR_OPTIMIZE_DEPS_NO_DISCOVERY === '1'
-	// SSR dep optimization can be unexpectedly expensive for our runner (and may trigger Vite 8 beta flakiness).
-	// Default to disabling it for dev; enable explicitly if needed.
+	const clientConditions = ssrConditions.filter(
+		(c) => c !== '@pluxel/hmr' && c !== '@pluxel/source',
+	)
+	const includePatterns = opts.includeGlobs ?? opts.scanRoots.map((d) => `${d}/**/*.ts`)
+	// Default: avoid dep optimization churn in Vite 8 beta.
+	// Opt-in via env vars when you want "fastest steady-state" for the UI/runner.
+	const optimizeDepsEnabled = process.env.PLUXEL_HMR_OPTIMIZE_DEPS === '1'
 	const ssrOptimizeDepsEnabled = process.env.PLUXEL_HMR_SSR_OPTIMIZE_DEPS === '1'
-	const defaultOptimizeDepsEntries = (() => {
-		const clientEntry = resolve(opts.root, 'src/client.tsx')
-		return existsSync(clientEntry) ? ['src/client.tsx'] : undefined
-	})()
 	// Prefer Vite's default cacheDir (`<root>/node_modules/.vite`) because sharing a single cache
 	// across different hosts/roots can cause "update deps" metadata mismatches in Vite 8 beta.
 	// If callers want a shared cache, they can still opt-in explicitly via env.
@@ -203,6 +204,14 @@ export function buildHmrViteConfig(opts: HmrViteConfigOptions): InlineConfig {
 	// Avoid `{...baseLogger}` here: Vite mutates `logger.hasWarned`, and spreading would copy a stale boolean.
 	// We only override warning output to silence known-noisy Vite import-analysis warnings.
 	const customLogger = Object.create(baseLogger) as Logger
+	customLogger.info = (msg, options) => {
+		if (shouldSilenceOptimizeDepsInfo(msg)) return
+		baseLogger.info(msg, options)
+	}
+	customLogger.infoOnce = (msg, options) => {
+		if (shouldSilenceOptimizeDepsInfo(msg)) return
+		baseLogger.infoOnce(msg, options)
+	}
 	customLogger.warn = (msg, options) => {
 		if (shouldSilenceDynamicImportWarning(msg)) return
 		if (shouldSilenceSourcemapMissingWarning(msg)) return
@@ -221,6 +230,7 @@ export function buildHmrViteConfig(opts: HmrViteConfigOptions): InlineConfig {
 		server: {
 			port: opts.port ?? 3000,
 			middlewareMode: false,
+			preTransformRequests: false,
 			fs: {
 				allow: opts.fsAllow,
 			},
@@ -255,35 +265,17 @@ export function buildHmrViteConfig(opts: HmrViteConfigOptions): InlineConfig {
 			opts.runnerPlugin,
 			opts.honoPlugin,
 		],
-		optimizeDeps: {
-			entries: defaultOptimizeDepsEntries,
-			force: forceOptimizeDeps,
-			// This dev server is used to power plugin UI bundling/runtime evaluation.
-			noDiscovery: optimizeDepsNoDiscovery,
-			// Work around rare Vite 8 beta "update deps" edge cases by tolerating outdated requests.
-			ignoreOutdatedRequests: true,
-			holdUntilCrawlEnd: true,
-			// These deps are ESM already and have triggered flaky Vite 8 beta update paths in our dev host.
-			// Excluding them keeps the optimizer focused on core runtime deps (React) and avoids crashes.
-			exclude: [
-				'@mantine/core',
-				'@mantine/hooks',
-				'@mantine/notifications',
-				'@tabler/icons-react',
-				'@pluxel/market',
-				'hono/client',
-				'capnweb',
-			],
-			include: Array.from(opts.deps.optimizeDepsInclude),
-			needsInterop: Array.from(opts.deps.optimizeDepsInterop),
-			// Vite 8 uses rolldown for dependency optimization. Some packages ship optional
-			// Node wrappers with conditional requires that rolldown may try to resolve eagerly
-			// (e.g. `lightningcss`'s `require('../pkg')` branch where `pkg/` isn't published).
-			// Externalize these optional paths to avoid optimizer crashes during dev.
-			rolldownOptions: {
-				external: externalizeOptionalLightningCssPkg,
-			},
-		},
+		// Performance-first dev host: keep optimizer effectively off by default.
+		// Vite 8: `optimizeDeps.disabled` is deprecated; use noDiscovery + empty include instead.
+		optimizeDeps: optimizeDepsEnabled
+			? {}
+			: {
+					noDiscovery: true,
+					include: [],
+					needsInterop: [],
+					ignoreOutdatedRequests: true,
+					holdUntilCrawlEnd: false,
+				},
 		ssr: {
 			noExternal: Array.from(opts.deps.ssrNoExternal),
 			external: Array.from(opts.deps.ssrExternal),
@@ -304,16 +296,6 @@ export function buildHmrViteConfig(opts: HmrViteConfigOptions): InlineConfig {
 	}
 }
 
-function externalizeOptionalLightningCssPkg(id: string, importer?: string): boolean {
-	if (id !== '../pkg') return false
-	if (!importer) return false
-	const cleaned = importer.split('?')[0]
-	return (
-		cleaned.includes('lightningcss/node/index.js') ||
-		cleaned.includes('lightningcss\\node\\index.js')
-	)
-}
-
 function shouldSilenceDynamicImportWarning(msg: string): boolean {
 	// Vite import-analysis warns on dynamic import patterns it can't statically analyze.
 	// We intentionally use them in a few server-only places (runner/market loader).
@@ -324,6 +306,12 @@ function shouldSilenceDynamicImportWarning(msg: string): boolean {
 		msg.includes('/node_modules/@pluxel/hmr/') ||
 		msg.includes('\\node_modules\\@pluxel\\hmr\\')
 	)
+}
+
+function shouldSilenceOptimizeDepsInfo(msg: string): boolean {
+	// Vite emits this when it thinks config/lockfile changed between runs.
+	// In our HMR host, dep optimization is typically disabled or empty, so this is mostly noise.
+	return msg.includes('Re-optimizing dependencies because vite config has changed')
 }
 
 function shouldSilenceSourcemapMissingWarning(msg: string): boolean {

@@ -338,7 +338,7 @@ export class HmrExecutor {
 
 		for (const id of ordered) {
 			const endEvaluate = this.timing.start('evaluate', id)
-			let mod: any
+			let mod: unknown
 			try {
 				const evaluate = () => this.runner.import(id)
 				mod = this.cfg.useRequireShims ? await runWithRequireShims(evaluate) : await evaluate()
@@ -348,7 +348,7 @@ export class HmrExecutor {
 				const cjsHint = buildCjsExternalizeHint(err)
 				if (cjsHint) {
 					this.ctx.logger.error('execute failed for {file}', { file: id, error: err })
-					throw new Error(cjsHint, { cause: err as any })
+					throw new Error(cjsHint, { cause: err })
 				}
 				this.ctx.logger.error('execute failed for {file}', { file: id, error: err })
 				continue
@@ -412,12 +412,14 @@ function buildCjsExternalizeHint(error: unknown): string | null {
 		.join('\n')
 }
 
-function findRequireNotDefinedError(error: unknown): any | null {
-	const e: any = error
-	for (const candidate of [e, e?.cause]) {
-		const name = typeof candidate?.name === 'string' ? candidate.name : ''
-		const message = typeof candidate?.message === 'string' ? candidate.message : ''
-		if (name === 'ReferenceError' && message.includes('require is not defined')) return candidate
+function findRequireNotDefinedError(error: unknown): { stack?: unknown } | null {
+	const root = error as { cause?: unknown } | null
+	for (const candidate of [error, root?.cause]) {
+		if (!candidate || typeof candidate !== 'object') continue
+		const c = candidate as { name?: unknown; message?: unknown; stack?: unknown }
+		const name = typeof c.name === 'string' ? c.name : ''
+		const message = typeof c.message === 'string' ? c.message : ''
+		if (name === 'ReferenceError' && message.includes('require is not defined')) return c
 	}
 	return null
 }
@@ -550,7 +552,8 @@ export class HmrBatchProcessor {
 	async process(files: readonly string[], epoch: number) {
 		const endBatch = startTimer()
 		this.timing.clear()
-		this.ctx.logger.info`batch #${epoch} begin: ${files.length} files`
+		const dbg = this.dbg.batch
+		dbg?.debug((l) => l`batch #${epoch} begin: ${files.length} files`)
 
 		this.logBatchList('changed files', files)
 
@@ -599,27 +602,31 @@ export class HmrBatchProcessor {
 			targets.length || 1,
 		)
 		const executed = await this.executor.runAndLoadAll(execOrder, true)
-		if (executed) {
-			const commitMs = Math.round(executed.commitMs * 10) / 10
-			this.ctx.logger.info`commit: ${commitMs}ms`
-		}
+		const commitMs = executed ? Math.round(executed.commitMs * 10) / 10 : null
 
-		logAttributionReport(
-			typeof (this.ctx.logger as any).with === 'function'
-				? (this.ctx.logger as any).with({})
-				: this.ctx.logger,
-			{
-				changed: files[0] ?? 'N/A',
-				targets: execOrder,
-				timing: this.timing,
-				prettyId: (id) => this.path.pretty(id),
-			},
-			{ level: 'info' },
-		)
+		if (this.cfg.attribution === 'prefetch') {
+			logAttributionReport(
+				this.ctx.logger,
+				{
+					changed: files[0] ?? 'N/A',
+					targets: execOrder,
+					timing: this.timing,
+					prettyId: (id) => this.path.pretty(id),
+				},
+				{ level: 'debug' },
+			)
+		}
 
 		const activeServices = this.ctx.registry.container?.services.size ?? 0
 		const batchMs = Math.round(endBatch() * 10) / 10
-		this.ctx.logger.info`batch #${epoch} end: ${activeServices} services, ${batchMs}ms`
+		this.ctx.logger.info('HMR updated', {
+			epoch,
+			changedFiles: files.length,
+			targets: execOrder.length,
+			activeServices,
+			commitMs,
+			batchMs,
+		})
 	}
 
 	private logBatchList(label: string, files: readonly string[]) {
@@ -646,9 +653,9 @@ export class HmrBatchProcessor {
 
 	private pruneMissingModules(files: readonly string[]) {
 		for (const file of files) {
-			const mods = this.env.moduleGraph.getModulesByFile(file)
-			const exists = mods?.size || this.env.moduleGraph.getModuleById(file)
-			if (exists) continue
+			// Only prune for actual deletions. New files may not exist in the module graph yet.
+			// The watcher reports real filesystem paths here (normalized to `toClean` upstream).
+			if (existsSync(file)) continue
 
 			for (const a of this.ctx.loader.api.anchors.list()) {
 				if (this.path.toClean(a) === file) this.ctx.loader.api.anchors.remove(a)

@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'bun:test'
+import type { Context } from '@pluxel/core'
 import { join, normalize } from 'pathe'
 import { HMRService } from '../../src/services/hmr/HMRService'
 
@@ -6,7 +7,7 @@ import { HMRService } from '../../src/services/hmr/HMRService'
 const createCtx = () => {
 	const anchors = new Set<string>()
 	return {
-		logger: { info() {}, error() {}, warn() {} },
+		logger: { info: () => undefined, error: () => undefined, warn: () => undefined },
 		loader: {
 			api: {
 				anchors: {
@@ -15,14 +16,16 @@ const createCtx = () => {
 				},
 			},
 			replaceModule: async () => true,
-			pruneModule() {},
+			pruneModule: () => undefined,
 		},
 		registry: {
 			commit: async () => ({}),
 			container: { services: new Map() },
 		},
-		honoService: { viteHonoDevServer: { name: 'noop', apply: 'serve', configureServer() {} } },
-	} as any
+		honoService: {
+			viteHonoDevServer: { name: 'noop', apply: 'serve', configureServer: () => undefined },
+		},
+	} as unknown as Context
 }
 
 const pkgRoot = process.cwd()
@@ -33,8 +36,7 @@ describe('HMRService file filter', () => {
 	it('accepts relative, absolute and /@fs watcher paths inside scan roots', () => {
 		const ctx = createCtx()
 		const hmr = new HMRService(ctx, {
-			dir: [pluginDir],
-			log: { useColors: false },
+			roots: [pluginDir],
 		})
 		// Simulate Vite configuring server root to packages/hmr (matches real dev script)
 		hmr.setServerRoot(pkgRoot)

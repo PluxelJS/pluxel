@@ -65,17 +65,19 @@ diod 默认按“构造函数引用”做依赖键：引用不一致即视为缺
 - `hmrService.builtins` 接受插件 ctor 列表（或带选项的对象），会在冷启动扫描前执行 `declare + enable + commit`，作为 baseline 容器；
 - 这样后续 HMR 批量注入如果发生 **DI build/verify 失败回滚**，也会回滚到“包含 builtins 的 baseline 容器”，不会把 builtins 一起丢掉。
 
-使用方式（builtin 插件通常来自独立包，直接导入 ctor 即可）：
+使用方式（推荐：宿主显式 import ctor，类型/跳转都更友好）：
 ```ts
 import { Context } from '@pluxel/hmr'
+import GraphQL from '@pluxel/graphql'
+import Wretch from '@pluxel/wretch'
 import { MarketUI } from 'pluxel-plugin-market-ui'
-import { WretchPlugin } from 'pluxel-plugin-wretch'
 
 const ctx = new Context({
   hmrService: {
     builtins: [
+      GraphQL,
       MarketUI,
-      { plugin: WretchPlugin, forks: ['prod', { id: 'staging', enable: false }] },
+      { plugin: Wretch, forks: ['prod', { id: 'staging', enable: false }] },
     ],
   },
 })

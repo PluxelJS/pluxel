@@ -5,7 +5,7 @@
 ## 运行
 
 - 启动 HMR 测试宿主：`pnpm --filter @pluxel/plugins-host hmr`
-- 这些 demo 会通过 `packages/plugins/host/src/start.ts` 的 `hmrService.dir` 自动被扫描/加载。
+- 这些 demo 会通过 `packages/plugins/host/src/start.ts` 的 `hmrService.roots` 自动被扫描/加载。
 - Demo 默认假设 HMR 侧启用了 `configSourcePlugin`：因此 `configs.use(...)` / `features.use(...)` 可以不写装饰器，也能在启动前注册 schema/依赖信息。
 
 ## 清单（建议阅读顺序）
@@ -28,4 +28,4 @@
 
 ## 非 demo（功能性示例）
 
-- `packages/plugins/market/src/index.ts`：market UI（默认不在 `hmrService.dir` 扫描列表中，而是通过宿主 `hmrService.builtins` 预载）
+- `packages/plugins/market/src/index.ts`：market UI（默认不在 `hmrService.roots` 扫描列表中，而是通过宿主 `hmrService.builtins` 预载）

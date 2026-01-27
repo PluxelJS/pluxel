@@ -59,7 +59,7 @@ async function withWretchPlugin<T>(
 	})
 }
 
-describe('pluxel-plugin-wretch', () => {
+describe('@pluxel/wretch', () => {
 	it('supports named clients + defaultClient selection', async () => {
 		await withStubFetch(async (cap) => {
 			await withWretchPlugin(

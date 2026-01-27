@@ -1,17 +1,10 @@
 // Context.ts
 
-import type {
-	ServiceCfg,
-	ServiceClass,
-	ServiceContext,
-	ServiceInst,
-	ServiceWithCtx,
-} from './service-types'
+import type { ServiceCfg, ServiceClass, ServiceInst, ServiceWithCtx } from './service-types'
 
 type SymMap = { [k in symbol]?: symbol }
 
-// biome-ignore lint/suspicious/noExplicitAny: type-level escape hatch for dynamic service registries.
-type AnyServiceClass = ServiceClass<new (ctx: any, cfg: any) => any>
+type AnyServiceClass = ServiceClass<new (ctx: Context, cfg?: unknown) => unknown>
 
 // biome-ignore lint/suspicious/noUnsafeDeclarationMerging: this class is intentionally merged with an interface for service augmentation.
 export class Context {
@@ -41,8 +34,9 @@ export class Context {
 		if (parent) this.instances = parent.instances
 	}
 
-	// biome-ignore lint/suspicious/noExplicitAny: we intentionally use `any` in ctor constraints to preserve inference/variance.
-	static registerService<S extends new (ctx: any, cfg: any) => object>(ctor: ServiceClass<S>) {
+	static registerService<S extends new (ctx: Context, cfg?: unknown) => object>(
+		ctor: ServiceClass<S>,
+	) {
 		const sk = Symbol(ctor.name)
 		const key = (ctor.key as string) ?? ctor.name.replace(/Service$/, '')
 		if (Context.registeredKeys.has(key)) {
@@ -75,7 +69,7 @@ export class Context {
 						return inst
 					}
 					const cfg = (root.config as Record<string, unknown>)[key] as ServiceCfg<S>
-					inst = new ctor(root as ServiceContext<S>, cfg) as ServiceInst<S>
+					inst = new ctor(root, cfg) as ServiceInst<S>
 					;(inst as unknown as ServiceWithCtx<Context>).ctx = root
 					root.instances[ik] = inst
 					return inst
@@ -95,7 +89,7 @@ export class Context {
 					return inst
 				}
 				const cfg = (this.config as Record<string, unknown>)[key] as ServiceCfg<S>
-				inst = new ctor(this as ServiceContext<S>, cfg) as ServiceInst<S>
+				inst = new ctor(this, cfg) as ServiceInst<S>
 				;(inst as unknown as ServiceWithCtx<Context>).ctx = this
 				store[ik] = inst
 				return inst
@@ -122,14 +116,12 @@ export class Context {
 	/** 提供 override —— 同步把原来的 getter 整块替换掉 */
 	static overrideService<
 		S extends new (
-			// biome-ignore lint/suspicious/noExplicitAny: we intentionally use `any` in ctor constraints to preserve inference/variance.
-			ctx: any,
-			// biome-ignore lint/suspicious/noExplicitAny: we intentionally use `any` in ctor constraints to preserve inference/variance.
-			cfg: any,
+			ctx: Context,
+			cfg?: unknown,
 		) => unknown,
 		T extends new (
-			ctx: ServiceContext<S>,
-			cfg: ServiceCfg<S>,
+			ctx: Context,
+			cfg?: ServiceCfg<S>,
 		) => ServiceInst<S>,
 	>(original: ServiceClass<S>, overrideCtor: ServiceClass<T>) {
 		// 1) 拿到同一个 sk
@@ -159,7 +151,7 @@ export class Context {
 						return inst
 					}
 					const cfg = (root.config as Record<string, unknown>)[key] as ServiceCfg<S>
-					inst = new overrideCtor(root as ServiceContext<S>, cfg) as ServiceInst<S>
+					inst = new overrideCtor(root, cfg) as ServiceInst<S>
 					;(inst as unknown as ServiceWithCtx<Context>).ctx = root
 					root.instances[ik] = inst
 					return inst
@@ -179,7 +171,7 @@ export class Context {
 					return inst
 				}
 				const cfg = (this.config as Record<string, unknown>)[key] as ServiceCfg<S>
-				inst = new overrideCtor(this as ServiceContext<S>, cfg) as ServiceInst<S>
+				inst = new overrideCtor(this, cfg) as ServiceInst<S>
 				;(inst as unknown as ServiceWithCtx<Context>).ctx = this
 				store[ik] = inst
 				return inst

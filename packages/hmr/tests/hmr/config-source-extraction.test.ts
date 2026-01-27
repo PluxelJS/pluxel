@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'bun:test'
+import type { Context } from '@pluxel/core'
 import { getConfigSource, getRequiredPluginDependencies, getUsedFeatures } from '@pluxel/core'
 import { join } from 'pathe'
 import { createServer, normalizePath, type Plugin as VitePlugin } from 'vite'
@@ -63,8 +64,7 @@ function createContext(
 		honoService: {
 			viteHonoDevServer: { name: 'noop', apply: 'serve', configureServer: () => undefined },
 		},
-		// biome-ignore lint/suspicious/noExplicitAny: test stub uses a minimal context surface.
-	} as any
+	} as unknown as Context
 }
 
 describe('configSourceVitePlugin integration', () => {
@@ -81,10 +81,8 @@ describe('configSourceVitePlugin integration', () => {
 		})
 
 		const hmr = new HMRService(createContext(capture, errorLogs), {
-			dir: ['tests/fixtures/plugins'],
-			attribution: 'off',
+			roots: ['tests/fixtures/plugins'],
 			deps: baseDeps,
-			log: { useColors: false },
 		})
 		hmr.setServerRoot(root)
 		const runnerPlugin = (hmr as unknown as { plugin: VitePlugin }).plugin
@@ -93,7 +91,7 @@ describe('configSourceVitePlugin integration', () => {
 			...buildHmrViteConfig({
 				root,
 				fsAllow,
-				scanDirs: ['tests/fixtures/plugins'],
+				scanRoots: ['tests/fixtures/plugins'],
 				deps,
 				runnerPlugin,
 				honoPlugin: { name: 'noop' },
@@ -133,10 +131,8 @@ describe('configSourceVitePlugin integration', () => {
 		})
 
 		const hmr = new HMRService(createContext(capture, errorLogs), {
-			dir: ['tests/fixtures/plugins'],
-			attribution: 'off',
+			roots: ['tests/fixtures/plugins'],
 			deps: baseDeps,
-			log: { useColors: false },
 		})
 		hmr.setServerRoot(root)
 		const runnerPlugin = (hmr as unknown as { plugin: VitePlugin }).plugin
@@ -145,7 +141,7 @@ describe('configSourceVitePlugin integration', () => {
 			...buildHmrViteConfig({
 				root,
 				fsAllow,
-				scanDirs: ['tests/fixtures/plugins'],
+				scanRoots: ['tests/fixtures/plugins'],
 				deps,
 				runnerPlugin,
 				honoPlugin: { name: 'noop' },
@@ -182,10 +178,8 @@ describe('configSourceVitePlugin integration', () => {
 		})
 
 		const hmr = new HMRService(createContext(capture, errorLogs), {
-			dir: ['tests/fixtures/plugins'],
-			attribution: 'off',
+			roots: ['tests/fixtures/plugins'],
 			deps: baseDeps,
-			log: { useColors: false },
 		})
 		hmr.setServerRoot(root)
 		const runnerPlugin = (hmr as unknown as { plugin: VitePlugin }).plugin
@@ -194,7 +188,7 @@ describe('configSourceVitePlugin integration', () => {
 			...buildHmrViteConfig({
 				root,
 				fsAllow,
-				scanDirs: ['tests/fixtures/plugins'],
+				scanRoots: ['tests/fixtures/plugins'],
 				deps,
 				runnerPlugin,
 				honoPlugin: { name: 'noop' },

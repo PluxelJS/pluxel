@@ -1,11 +1,10 @@
-import { configSourceVitePlugin } from '@pluxel/rolldown'
 import { defineConfig } from 'tsdown'
 
+// biome-ignore lint/style/noDefaultExport: tsdown config expects a default export.
 export default defineConfig({
 	exports: {
 		devExports: '@pluxel/source',
 	},
-	plugins: [],
 	entry: {
 		index: 'src/index.ts',
 	},
@@ -17,8 +16,6 @@ export default defineConfig({
 	clean: true,
 	minify: true,
 	treeshake: true,
-	// Never bundle core: plugins must share the host's singleton decorator/runtime state.
-	external: ['@pluxel/core', '@pluxel/core/*', '@pluxel/context', '@pluxel/context/*'],
 	inputOptions: {
 		transform: {
 			assumptions: {

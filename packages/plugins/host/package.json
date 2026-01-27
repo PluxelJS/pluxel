@@ -3,17 +3,17 @@
 	"private": true,
 	"type": "module",
 	"scripts": {
-		"prehmr": "pnpm -w turbo run build:plugin",
 		"hmr": "bun --conditions=@pluxel/source src/start.ts",
-		"prehot": "pnpm -w turbo run build:plugin",
-		"hot": "bun --hot --conditions=@pluxel/source src/start.ts"
+		"hot": "bun --hot --conditions=@pluxel/source src/start.ts",
+		"hmr:smoke": "timeout 25s bun --conditions=@pluxel/source src/start.ts"
 	},
 	"dependencies": {
+		"@logtape/logtape": "^2.0.1",
 		"@pluxel/core": "workspace:*",
 		"@pluxel/hmr": "workspace:*",
-		"pluxel-plugin-graphql": "workspace:*",
 		"pluxel-plugin-market-ui": "workspace:*",
-		"pluxel-plugin-wretch": "workspace:*"
+		"@pluxel/graphql": "workspace:*",
+		"@pluxel/wretch": "workspace:*"
 	},
 	"devDependencies": {
 		"@mantine/core": "^8.3.13",

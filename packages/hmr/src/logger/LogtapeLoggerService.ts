@@ -1,4 +1,4 @@
-import { getLogger, lazy, type Logger as LogtapeLogger } from '@logtape/logtape'
+import { getLogger, type Logger as LogtapeLogger, lazy } from '@logtape/logtape'
 import { type Context, Injectable, OverrideOf } from '@pluxel/core'
 import {
 	callLogtape,
@@ -22,17 +22,16 @@ const contextLoggerCache = new WeakMap<object, ContextLoggerCacheEntry>()
 
 @Injectable
 @OverrideOf(LoggerService)
-export class LogtapeLoggerService {
-	public readonly ctx: Context
+export class LogtapeLoggerService extends LoggerService {
 	private readonly hmrLogger: LogtapeLogger
-	private readonly pluginsLogger: LogtapeLogger
-	private readonly debugLogger: LogtapeLogger
+	private readonly pluginsCategoryLogger: LogtapeLogger
+	private readonly debugCategoryLogger: LogtapeLogger
 
 	constructor(ctx: Context) {
-		this.ctx = ctx
+		super(ctx)
 		this.hmrLogger = getLogger(pluxelCategories.hmr)
-		this.pluginsLogger = getLogger(pluxelCategories.plugins)
-		this.debugLogger = getLogger(['pluxel', 'debug'])
+		this.pluginsCategoryLogger = getLogger(pluxelCategories.plugins)
+		this.debugCategoryLogger = getLogger(['pluxel', 'debug'])
 	}
 
 	private getBaseContextLogger(): LogtapeLogger {
@@ -55,19 +54,19 @@ export class LogtapeLoggerService {
 		if (pluginId) {
 			cached.plugin = {
 				id: pluginId,
-				logger: this.pluginsLogger.with(
+				logger: this.pluginsCategoryLogger.with(
 					isCallerEnabled()
 						? {
 								context: this.ctx.name,
 								pluginId,
 								name: formatLogName(this.ctx.name, pluginId),
 								caller: lazy(() => captureCaller()),
-						  }
+							}
 						: {
 								context: this.ctx.name,
 								pluginId,
 								name: formatLogName(this.ctx.name, pluginId),
-						  },
+							},
 				),
 			}
 			return cached.plugin.logger
@@ -92,7 +91,7 @@ export class LogtapeLoggerService {
 
 		if (!cached.debug) {
 			cached.debug = {
-				hmr: this.debugLogger.with(
+				hmr: this.debugCategoryLogger.with(
 					isCallerEnabled()
 						? { context: this.ctx.name, name: this.ctx.name, caller: lazy(() => captureCaller()) }
 						: { context: this.ctx.name, name: this.ctx.name },
@@ -117,23 +116,23 @@ export class LogtapeLoggerService {
 		return cached.debug.hmr
 	}
 
-	private log(level: PluxelLogMethod, args: unknown[]) {
+	private logHmr(level: PluxelLogMethod, args: unknown[]) {
 		callLogtape(this.getBaseContextLogger(), level, args)
 	}
 
-	private levelMethod(level: PluxelLogMethod) {
-		return (...args: unknown[]) => this.log(level, args)
+	private makeLevelMethod(level: PluxelLogMethod) {
+		return (...args: unknown[]) => this.logHmr(level, args)
 	}
 
-	public trace = this.levelMethod('trace') as unknown as LogtapeLogger['trace']
-	public debug = this.levelMethod('debug') as unknown as LogtapeLogger['debug']
-	public info = this.levelMethod('info') as unknown as LogtapeLogger['info']
-	public warn = this.levelMethod('warn') as unknown as LogtapeLogger['warn']
-	public error = this.levelMethod('error') as unknown as LogtapeLogger['error']
-	public fatal = this.levelMethod('fatal') as unknown as LogtapeLogger['fatal']
+	public override trace = this.makeLevelMethod('trace') as unknown as LogtapeLogger['trace']
+	public override debug = this.makeLevelMethod('debug') as unknown as LogtapeLogger['debug']
+	public override info = this.makeLevelMethod('info') as unknown as LogtapeLogger['info']
+	public override warn = this.makeLevelMethod('warn') as unknown as LogtapeLogger['warn']
+	public override error = this.makeLevelMethod('error') as unknown as LogtapeLogger['error']
+	public override fatal = this.makeLevelMethod('fatal') as unknown as LogtapeLogger['fatal']
 
 	/** Create a LogTape logger that inherits pluxel context fields. */
-	public with(properties: Record<string, unknown>): LogtapeLogger {
+	public override with(properties: Record<string, unknown>): LogtapeLogger {
 		return this.getBaseContextLogger().with(properties)
 	}
 
@@ -143,7 +142,7 @@ export class LogtapeLoggerService {
 	 * - category: `["pluxel","debug"]`
 	 * - properties: `{ debugTopic, context, name, pluginId? }`
 	 */
-	public getDebugChannel(debugTopic: string): LogtapeLogger {
+	public override getDebugChannel(debugTopic: string): LogtapeLogger {
 		return this.getDebugBaseContextLogger().with({ debugTopic })
 	}
 }

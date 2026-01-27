@@ -431,9 +431,6 @@ importers:
         specifier: ^1.2.0
         version: 1.2.0(typescript@5.9.3)
     devDependencies:
-      '@pluxel/rolldown':
-        specifier: workspace:*
-        version: link:../../rolldown
       tsdown:
         specifier: 0.20.1
         version: 0.20.1(typescript@5.9.3)
@@ -443,21 +440,24 @@ importers:
 
   packages/plugins/host:
     dependencies:
+      '@logtape/logtape':
+        specifier: ^2.0.1
+        version: 2.0.2
       '@pluxel/core':
         specifier: workspace:*
         version: link:../../core
+      '@pluxel/graphql':
+        specifier: workspace:*
+        version: link:../graphql
       '@pluxel/hmr':
         specifier: workspace:*
         version: link:../../hmr
-      pluxel-plugin-graphql:
+      '@pluxel/wretch':
         specifier: workspace:*
-        version: link:../graphql
+        version: link:../wretch
       pluxel-plugin-market-ui:
         specifier: workspace:*
         version: link:../market
-      pluxel-plugin-wretch:
-        specifier: workspace:*
-        version: link:../wretch
     devDependencies:
       '@mantine/core':
         specifier: ^8.3.13
@@ -520,6 +520,9 @@ importers:
       '@pluxel/core':
         specifier: workspace:*
         version: link:../../core
+      '@pluxel/hmr':
+        specifier: workspace:*
+        version: link:../../hmr
       valibot:
         specifier: ^1.2.0
         version: 1.2.0(typescript@5.9.3)
@@ -527,12 +530,6 @@ importers:
         specifier: ^3.0.6
         version: 3.0.6
     devDependencies:
-      '@pluxel/hmr':
-        specifier: workspace:*
-        version: link:../../hmr
-      '@pluxel/rolldown':
-        specifier: workspace:*
-        version: link:../../rolldown
       tsdown:
         specifier: 0.20.1
         version: 0.20.1(typescript@5.9.3)

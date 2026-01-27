@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'bun:test'
+import type { Context } from '@pluxel/core'
 import { BasePlugin, checkPluginDecorator } from '@pluxel/core'
 import { join } from 'pathe'
 import { createServer, normalizePath } from 'vite'
@@ -8,12 +9,13 @@ import {
 	resolveHMRDependencyConfig,
 } from '../../src/services/hmr/config'
 import { HMRService } from '../../src/services/hmr/HMRService'
+import { HmrRunner } from '../../src/services/hmr/runner'
 
 // Minimal ctx stub to construct HMRService without booting the whole app.
 const createCtx = () => {
 	const anchors = new Set<string>()
 	return {
-		logger: { info() {}, error() {}, warn() {} },
+		logger: { info: () => undefined, error: () => undefined, warn: () => undefined },
 		loader: {
 			api: {
 				anchors: {
@@ -26,8 +28,10 @@ const createCtx = () => {
 			commit: async () => ({ ok: true }),
 			container: { services: new Map() },
 		},
-		honoService: { viteHonoDevServer: { name: 'noop', apply: 'serve', configureServer() {} } },
-	} as any
+		honoService: {
+			viteHonoDevServer: { name: 'noop', apply: 'serve', configureServer: () => undefined },
+		},
+	} as unknown as Context
 }
 
 describe('HMR runner bridge', () => {
@@ -38,8 +42,7 @@ describe('HMR runner bridge', () => {
 
 		const ctx = createCtx()
 		const hmr = new HMRService(ctx, {
-			dir: [join(cwd, 'tests/fixtures/plugins'), demoDir],
-			log: { useColors: false },
+			roots: [join(cwd, 'tests/fixtures/plugins'), demoDir],
 		})
 		hmr.setServerRoot(cwd)
 
@@ -54,7 +57,7 @@ describe('HMR runner bridge', () => {
 			...buildHmrViteConfig({
 				root: cwd,
 				fsAllow,
-				scanDirs: ['./tests/fixtures/plugins', '../plugins/host/src/demo'],
+				scanRoots: ['./tests/fixtures/plugins', '../plugins/host/src/demo'],
 				deps,
 				runnerPlugin: { name: 'noop' },
 				honoPlugin: { name: 'noop' },
@@ -66,13 +69,18 @@ describe('HMR runner bridge', () => {
 			},
 		})
 		try {
-			;(hmr as any).runner.init(server)
-			await (hmr as any).runner.bridgeHostModules(deps.bridgeModules, hmr.path, ctx.logger)
+			const runner = new HmrRunner()
+			runner.init(server)
+			await runner.bridgeHostModules(deps.bridgeModules, hmr.path, { warn: () => undefined })
+			await runner.assertBridgedSingletons(deps.bridgeModules)
 
-			const mod = await (hmr as any).runner.import(pluginFile)
-			expect(typeof mod?.PluginWithUI).toBe('function')
-			expect(Object.getPrototypeOf(mod.PluginWithUI)).toBe(BasePlugin)
-			expect(checkPluginDecorator(mod.PluginWithUI)).toBe(true)
+			const mod = (await runner.import(pluginFile)) as Record<string, unknown>
+			const ctor = mod.PluginWithUI as unknown
+			expect(typeof ctor).toBe('function')
+
+			const pluginCtor = ctor as unknown as typeof BasePlugin
+			expect(Object.getPrototypeOf(pluginCtor)).toBe(BasePlugin)
+			expect(checkPluginDecorator(pluginCtor)).toBe(true)
 		} finally {
 			await server.close()
 		}

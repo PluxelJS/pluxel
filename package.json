@@ -13,7 +13,8 @@
 		"audit:logs": "node scripts/audit-logs.mjs",
 		"update": "pnpm pncat migrate && pnpm up --latest && pnpm pncat revert",
 		"dev:core": "pnpm --filter core dev",
-		"dev:hmr": "pnpm --filter @pluxel/plugins-host hmr"
+		"dev:hmr": "pnpm --filter @pluxel/plugins-host hmr",
+		"dev:hmr:smoke": "pnpm --filter @pluxel/plugins-host hmr:smoke"
 	},
 	"devDependencies": {
 		"@biomejs/biome": "^2.3.12",

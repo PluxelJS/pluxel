@@ -54,14 +54,12 @@ To make CJS externals reliable (including workspace subpath exports like `pkg/su
 
 This forces the runner to execute it through the host CJS loader and also avoids duplicate instances by canonicalizing symlinks (`realpath`).
 
-## Bridge modules
-
 ## Scope filtering
 
-By default, the HMR scope is `dir/**/*.ts` (plus anchors), with `node_modules`/`.d.ts`/`.tsx`/`.jsx` excluded.
+By default, the HMR scope is `roots/**/*.ts` (plus anchors), with `node_modules`/`.d.ts`/`.tsx`/`.jsx` excluded.
 You can further isolate plugin HMR from frontend/UI changes by providing:
 
-- `hmrService.include`: explicit glob list (overrides the default `dir/**/*.ts`)
+- `hmrService.include`: explicit glob list (overrides the default `roots/**/*.ts`)
 - `hmrService.exclude`: extra glob list appended to defaults
 
 The same include/exclude rules are forwarded to `configSourcePlugin`, so decorator source extraction stays in sync
@@ -102,6 +100,19 @@ Downstream projects may inject additional Vite plugins via:
 
 - `hmrService.vitePlugins: Plugin[]`
 
+## Warmup
+
+Cold-start warmup (scan + eager evaluate a small set of likely entries) is **opt-in**.
+
+- Set `PLUXEL_HMR_WARMUP=1` (or `true`) to enable.
+
+## Dependency optimization
+
+Dep optimization is **disabled by default** (to reduce churn + disk IO in Vite 8 beta).
+
+- Set `PLUXEL_HMR_OPTIMIZE_DEPS=1` to enable the client optimizer (UI).
+- Set `PLUXEL_HMR_SSR_OPTIMIZE_DEPS=1` to enable the SSR optimizer (runner).
+
 `deps.bridgeModules` lists specifiers that must share **singletons** between the host process and the runner (DI tokens, decorators, base classes).
 
 ### Required bridge modules
@@ -127,6 +138,8 @@ Implementation notes:
 - `environment.ts`: path normalization, id variants, scan-root filtering, workspace-only bare resolution helper.
 - `workspace-resolver.ts`: resolves bare imports to workspace entries / installed packages.
 - `config.ts`: Vite config builder + dependency config (`bridgeModules`, `cjsExternal`, SSR options).
+- `globs.ts`: `include`/`exclude` glob normalization helpers.
 - `runtime-shims.ts`: runtime shims (e.g. `reflect-metadata`) + scoped `require` shims for those shims.
 - `logging.ts`: debug namespaces + timing attribution helpers.
+- `async-serial-lock.ts`: minimal async mutex for batches/executor.
 - `internals.ts`: small utilities (debouncer/timer/etc).

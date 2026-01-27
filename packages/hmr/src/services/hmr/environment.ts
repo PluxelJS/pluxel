@@ -11,7 +11,7 @@ export class HmrPathResolver {
 	private readonly cwdNormalized: string
 
 	constructor(
-		private readonly cwd: string,
+		cwd: string,
 		private scanRootsAbs: string[],
 	) {
 		this.cwdNormalized = normalizePath(cwd)
@@ -88,7 +88,7 @@ export class HmrPathResolver {
 
 	computeFallbackResolveDirs(importer?: string | null): string[] {
 		const bases = new Set<string>(this.resolveBaseDirs)
-		if (importer && importer.startsWith('/')) {
+		if (importer?.startsWith('/')) {
 			const importerDir = dirname(importer)
 			bases.add(importerDir)
 			const pkgRoot = findNearestPackageRoot(importerDir)

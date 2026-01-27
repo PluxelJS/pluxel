@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'bun:test'
+import type { Context } from '@pluxel/core'
 import { createFixture } from 'fs-fixture'
 import { join } from 'pathe'
-import { createServer, normalizePath } from 'vite'
+import { createServer, normalizePath, type Plugin as VitePlugin } from 'vite'
 import {
 	buildHmrViteConfig,
 	resolveFsAllowList,
@@ -17,19 +18,19 @@ const baseDeps = {
 	optimizeDepsInterop: [],
 }
 
-type ErrorLog = { msg: string; obj: any }
+type ErrorLog = { msg: string; obj: unknown }
 
 function buildDeps(cjsExternal: string[]) {
 	return { ...baseDeps, cjsExternal }
 }
 
-function createContext(errorLogs?: ErrorLog[], scanService?: any) {
+function createContext(errorLogs?: ErrorLog[], scanService?: unknown) {
 	const anchors = new Set<string>()
 	return {
 		logger: {
-			info() {},
-			warn() {},
-			error(obj: any, msg: string) {
+			info: () => undefined,
+			warn: () => undefined,
+			error(obj: unknown, msg: string) {
 				if (errorLogs) errorLogs.push({ msg, obj })
 			},
 		},
@@ -44,19 +45,21 @@ function createContext(errorLogs?: ErrorLog[], scanService?: any) {
 			beginBatch() {
 				return {
 					replaceModule: async () => false,
-					rollback() {},
-					commit() {},
+					rollback: () => undefined,
+					commit: () => undefined,
 				}
 			},
-			pruneModule() {},
+			pruneModule: () => undefined,
 		},
 		registry: {
 			commit: async () => ({ ok: true }),
-			resetDraft() {},
+			resetDraft: () => undefined,
 			container: { services: new Map() },
 		},
-		honoService: { viteHonoDevServer: { name: 'noop', apply: 'serve', configureServer() {} } },
-	} as any
+		honoService: {
+			viteHonoDevServer: { name: 'noop', apply: 'serve', configureServer: () => undefined },
+		},
+	} as unknown as Context
 }
 
 async function runHmr(root: string, hmr: HMRService, depsInput: ReturnType<typeof buildDeps>) {
@@ -71,9 +74,9 @@ async function runHmr(root: string, hmr: HMRService, depsInput: ReturnType<typeo
 		...buildHmrViteConfig({
 			root,
 			fsAllow,
-			scanDirs: [root],
+			scanRoots: [root],
 			deps,
-			runnerPlugin: (hmr as any).plugin,
+			runnerPlugin: (hmr as unknown as { plugin: VitePlugin }).plugin,
 			honoPlugin: { name: 'noop' },
 			port: 0,
 		}),
@@ -103,10 +106,8 @@ describe('HMR CJS dependency handling', () => {
 		const errorLogs: ErrorLog[] = []
 		const depsInput = buildDeps(['cjs-pkg'])
 		const hmr = new HMRService(createContext(errorLogs), {
-			dir: [root],
-			attribution: 'off',
+			roots: [root],
 			deps: depsInput,
-			log: { useColors: false },
 		})
 		hmr.setServerRoot(root)
 
@@ -138,10 +139,8 @@ describe('HMR CJS dependency handling', () => {
 		const errorLogs: ErrorLog[] = []
 		const depsInput = buildDeps(['pluxel-plugin-napi-rs/*'])
 		const hmr = new HMRService(createContext(errorLogs), {
-			dir: [root],
-			attribution: 'off',
+			roots: [root],
 			deps: depsInput,
-			log: { useColors: false },
 		})
 		hmr.setServerRoot(root)
 
@@ -170,16 +169,14 @@ describe('HMR CJS dependency handling', () => {
 		const errorLogs: ErrorLog[] = []
 		const depsInput = buildDeps(['cjs-pkg'])
 		const ctx = createContext(errorLogs, {
-			resolveEntry: async ({ name }: any) => {
+			resolveEntry: async ({ name }: { name: string }) => {
 				if (name !== 'cjs-pkg') return { ok: false }
 				return { ok: true, entry: join(root, 'cjs-pkg', 'index.cjs') }
 			},
 		})
 		const hmr = new HMRService(ctx, {
-			dir: [root],
-			attribution: 'off',
+			roots: [root],
 			deps: depsInput,
-			log: { useColors: false },
 		})
 		hmr.setServerRoot(root)
 
@@ -213,14 +210,12 @@ describe('HMR CJS dependency handling', () => {
 		const root = fixture.path
 		const depsInput = buildDeps([])
 		const hmr = new HMRService(createContext(), {
-			dir: [root],
-			attribution: 'off',
+			roots: [root],
 			deps: depsInput,
-			log: { useColors: false },
 		})
 		hmr.setServerRoot(root)
 
-		let thrown: any = null
+		let thrown: unknown = null
 		try {
 			await runHmr(root, hmr, depsInput)
 		} catch (e) {
@@ -256,10 +251,8 @@ describe('HMR CJS dependency handling', () => {
 		const errorLogs: ErrorLog[] = []
 		const depsInput = buildDeps(['cjs-pkg'])
 		const hmr = new HMRService(createContext(errorLogs), {
-			dir: [root],
-			attribution: 'off',
+			roots: [root],
 			deps: depsInput,
-			log: { useColors: false },
 		})
 		hmr.setServerRoot(root)
 

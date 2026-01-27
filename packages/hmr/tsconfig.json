@@ -3,11 +3,19 @@
 	"extends": "../../tsconfig.workspace.json",
 	"include": [
 		"src",
-		"tests",
 		// 显式收编 manifest；或改成 "public/**/*.json"
 		"public/.vite/manifest.json"
 	],
+	"exclude": [
+		// Client UI entry is type-checked/built by Vite; excluding it keeps Bun/server typings from
+		// leaking into the UI graph (and avoids pulling workspace UI packages into this TS program).
+		"src/client.tsx"
+	],
 	"compilerOptions": {
+		// Typecheck against published (dist) types for workspace deps, instead of following `@pluxel/source`
+		// into their raw TS sources. This keeps the HMR package's Bun typings from leaking into UI deps and
+		// avoids "file is not listed within the file list" errors from composite builds.
+		"customConditions": [],
 		"outDir": "dist",
 		"jsx": "react-jsx",
 		"lib": ["ES2023", "DOM"],

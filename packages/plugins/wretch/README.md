@@ -1,4 +1,4 @@
-# pluxel-plugin-wretch
+# @pluxel/wretch
 
 Forkable HTTP client plugin powered by `wretch` (v3).
 

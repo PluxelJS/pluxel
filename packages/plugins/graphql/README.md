@@ -1,4 +1,4 @@
-# pluxel-plugin-graphql
+# @pluxel/graphql
 
 Builtin GraphQL runtime + optional GQty codegen.
 

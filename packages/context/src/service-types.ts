@@ -3,9 +3,13 @@
 /**
  * 从构造函数签名中提取 Context、实例、配置三要素
  */
-export type ServiceContext<S> = S extends new (ctx: infer C, cfg: any) => any ? C : never
-export type ServiceInst<S> = S extends new (ctx: any, cfg: any) => infer I ? I : never
-export type ServiceCfg<S> = S extends new (ctx: any, cfg: infer C) => any ? C : undefined
+import type { Context } from './Context'
+
+type CtorParams<S> = S extends new (...args: infer P) => unknown ? P : never
+
+export type ServiceContext<S> = CtorParams<S> extends [infer C, ...unknown[]] ? C : never
+export type ServiceInst<S> = S extends new (...args: unknown[]) => infer I ? I : never
+export type ServiceCfg<S> = CtorParams<S> extends [Context, infer C, ...unknown[]] ? C : undefined
 
 /**
  * Services are expected to expose a writable `ctx` property so `Context` can
@@ -14,14 +18,24 @@ export type ServiceCfg<S> = S extends new (ctx: any, cfg: infer C) => any ? C : 
 export type ServiceWithCtx<C> = { ctx: C }
 
 /**
- * 强约束：任意可注入 ctor 必须符合 new(ctx, cfg) => inst
+ * Service ctor signature:
+ * - `cfg` is optional (many services don't need config).
+ * - `ctx` is always the runtime `Context` instance (or a supertype of it).
  */
-export type ServiceCtor<S extends new (ctx: any, cfg: any) => any> = S
+export type ServiceCtor<S extends new (ctx: Context, cfg?: unknown) => unknown> = S
 
 /**
  * 给 ServiceCtor 增加可选的 metadata：key、methods
  */
-export type ServiceClass<S extends new (ctx: any, cfg: any) => any> = ServiceCtor<S> & {
+export type ServiceClass<
+	S extends new (
+		ctx: Context,
+		cfg?: unknown,
+	) => unknown = new (
+		ctx: Context,
+		cfg?: unknown,
+	) => unknown,
+> = ServiceCtor<S> & {
 	/** 在 Context 上的访问名，默认由类名剥 “Service” 得到 */
 	readonly key?: string
 	/** 要在 Context 原型上代理的方法名列表 */

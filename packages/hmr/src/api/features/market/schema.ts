@@ -5,8 +5,8 @@ export const PackageIssueSource = v.picklist(['load', 'restore', 'retry'])
 export const PackageIssueSpec = v.object({
 	__typename: v.literal('PackageIssueSpec'),
 	name: v.string(),
-	version: v.nullish(v.string()),
-	tag: v.nullish(v.string()),
+	version: v.nullable(v.string()),
+	tag: v.nullable(v.string()),
 	target: v.string(),
 	raw: v.string(),
 })
@@ -16,8 +16,8 @@ export const PackageLoadIssueEntry = v.object({
 	spec: PackageIssueSpec,
 	source: PackageIssueSource,
 	message: v.string(),
-	error: v.nullish(v.string()),
-	moduleId: v.nullish(v.string()),
+	error: v.nullable(v.string()),
+	moduleId: v.nullable(v.string()),
 	recordedAt: v.number(),
 })
 
@@ -36,26 +36,26 @@ export const PackageMutationResult = v.object({
 	__typename: v.literal('PackageMutationResult'),
 	ok: v.boolean(),
 	code: v.string(),
-	spec: v.nullish(PackageIssueSpec),
-	installStatus: v.nullish(PackageInstallStatus),
-	error: v.nullish(v.string()),
+	spec: v.nullable(PackageIssueSpec),
+	installStatus: v.nullable(PackageInstallStatus),
+	error: v.nullable(v.string()),
 })
 
 export const PackageBatchMutationResult = v.object({
 	__typename: v.literal('PackageBatchMutationResult'),
 	ok: v.boolean(),
 	results: v.array(PackageMutationResult),
-	error: v.nullish(v.string()),
+	error: v.nullable(v.string()),
 })
 
 export const PackageInventoryEntry = v.object({
 	__typename: v.literal('PackageInventoryEntry'),
 	spec: PackageIssueSpec,
-	installedVersion: v.nullish(v.string()),
-	requestedVersion: v.nullish(v.string()),
+	installedVersion: v.nullable(v.string()),
+	requestedVersion: v.nullable(v.string()),
 	loaded: v.boolean(),
-	moduleId: v.nullish(v.string()),
-	issues: v.nullish(v.array(PackageLoadIssueEntry)),
+	moduleId: v.nullable(v.string()),
+	issues: v.nullable(v.array(PackageLoadIssueEntry)),
 })
 
 export const PackageInventoryFilter = v.object({

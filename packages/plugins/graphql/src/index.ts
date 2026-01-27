@@ -8,7 +8,6 @@ import {
 	type GraphQLModule,
 	type GraphQLModuleInput,
 	type GraphQLPluginConfig,
-	type GraphQLResolver,
 	normalizeModule,
 	weaveSchema,
 } from './service'
@@ -16,54 +15,68 @@ import {
 const SECTION_CODEGEN = { id: 'codegen', title: 'Codegen', description: 'GQty client generation' }
 const SECTION_RUNTIME = { id: 'runtime', title: 'Runtime', description: 'GraphQL server settings' }
 
-const GraphQLPluginConfig = v.object({
-	codegen: v.object({
-		enabled: v.pipe(
-			v.optional(v.boolean(), false),
-			f.formMeta({
-				label: 'Enable codegen',
-				description: 'Generate GQty client on schema rebuild (dev only).',
-				section: SECTION_CODEGEN,
-			}),
-			f.booleanMeta({ variant: 'switch' }),
-		),
-		destination: v.pipe(
-			v.optional(v.string(), ''),
-			f.formMeta({
-				label: 'Destination',
-				description: 'Output file path for generated client (workspace-relative).',
-				section: SECTION_CODEGEN,
-			}),
-		),
-		endpoint: v.pipe(
-			v.optional(v.string(), 'http://localhost:3000/graphql'),
-			f.formMeta({
-				label: 'Endpoint',
-				description: 'HTTP endpoint used by codegen (introspection).',
-				section: SECTION_CODEGEN,
-			}),
-		),
-	}),
+const CodegenConfig = v.object({
+	enabled: v.pipe(
+		v.optional(v.boolean(), false),
+		f.formMeta({
+			label: 'Enable codegen',
+			description: 'Generate GQty client on schema rebuild (dev only).',
+			section: SECTION_CODEGEN,
+		}),
+		f.booleanMeta({ variant: 'switch' }),
+	),
+	destination: v.pipe(
+		v.optional(v.string(), ''),
+		f.formMeta({
+			label: 'Destination',
+			description: 'Output file path for generated client (workspace-relative).',
+			section: SECTION_CODEGEN,
+		}),
+	),
+	endpoint: v.pipe(
+		v.optional(v.string(), 'http://localhost:3000/graphql'),
+		f.formMeta({
+			label: 'Endpoint',
+			description: 'HTTP endpoint used by codegen (introspection).',
+			section: SECTION_CODEGEN,
+		}),
+	),
+})
+
+const DEFAULT_CODEGEN_CONFIG = {
+	enabled: false,
+	destination: '',
+	endpoint: 'http://localhost:3000/graphql',
+} as const
+
+const GraphQLConfigSchema = v.object({
+	// NOTE: PluginRegistry passes `missingObjectDefault: {}` when a plugin is enabled but has no saved config.
+	// Make `codegen` resilient to `{ graphql: {} }` so the builtin can start with an empty config file.
+	codegen: v.optional(CodegenConfig, DEFAULT_CODEGEN_CONFIG),
 	react: v.pipe(
 		v.optional(v.boolean(), true),
-		f.formMeta({ label: 'React', description: 'Generate React bindings', section: SECTION_CODEGEN }),
+		f.formMeta({
+			label: 'React',
+			description: 'Generate React bindings',
+			section: SECTION_CODEGEN,
+		}),
 		f.booleanMeta({ variant: 'switch' }),
 	),
 	scalarTypes: v.pipe(
 		v.optional(v.record(v.string(), v.string()), {}),
 		f.formMeta({
 			label: 'Scalar types',
-			description: 'Scalar mapping for codegen (e.g. { Number: \"number\" }).',
+			description: 'Scalar mapping for codegen (e.g. { Number: "number" }).',
 			section: SECTION_RUNTIME,
 		}),
 	),
 })
 
-type GraphQLPluginConfigShape = v.InferOutput<typeof GraphQLPluginConfig>
+type GraphQLPluginConfigShape = v.InferOutput<typeof GraphQLConfigSchema>
 
 @Plugin({ name: 'GraphQL' })
 export class GraphQLPlugin extends BasePlugin {
-	graphql = this.configs.use(GraphQLPluginConfig)
+	graphql = this.configs.use(GraphQLConfigSchema)
 
 	readonly factory = GraphQLFactory
 
@@ -85,11 +98,12 @@ export class GraphQLPlugin extends BasePlugin {
 	}
 
 	private applyConfig(cfg: GraphQLPluginConfigShape) {
-		const destination = cfg.codegen.destination?.trim() ? cfg.codegen.destination.trim() : undefined
-		const endpoint = cfg.codegen.endpoint?.trim() ? cfg.codegen.endpoint.trim() : undefined
+		const codegen = cfg.codegen ?? DEFAULT_CODEGEN_CONFIG
+		const destination = codegen.destination?.trim() ? codegen.destination.trim() : undefined
+		const endpoint = codegen.endpoint?.trim() ? codegen.endpoint.trim() : undefined
 
 		this.configure({
-			codegen: { enabled: cfg.codegen.enabled },
+			codegen: { enabled: Boolean(codegen.enabled) },
 			destination,
 			endpoint,
 			react: cfg.react,
@@ -135,7 +149,9 @@ export class GraphQLPlugin extends BasePlugin {
 		return this.config
 	}
 
-	configure(next: GraphQLPluginConfig | ((prev: Readonly<GraphQLPluginConfig>) => GraphQLPluginConfig)) {
+	configure(
+		next: GraphQLPluginConfig | ((prev: Readonly<GraphQLPluginConfig>) => GraphQLPluginConfig),
+	) {
 		const updated = typeof next === 'function' ? next(this.config) : next
 		this.config = {
 			...(this.config ?? {}),
@@ -164,7 +180,7 @@ export class GraphQLPlugin extends BasePlugin {
 		this.schema = weaveSchema({ modules: this.modules.values(), globals: this.globals })
 
 		const fetcher = createGraphQLFetch(this.schema)
-		this.ctx.honoService.setGraphQLFetch(fetcher as any)
+		this.ctx.honoService.setGraphQLFetch(fetcher)
 
 		void this.codegenNow()
 	}
@@ -198,4 +214,12 @@ export class GraphQLPlugin extends BasePlugin {
 	}
 }
 
-export type { GraphQLResolver, GraphQLMiddleware, GraphQLModule, GraphQLModuleInput } from './service'
+export type {
+	GraphQLMiddleware,
+	GraphQLModule,
+	GraphQLModuleInput,
+	GraphQLResolver,
+} from './service'
+
+// biome-ignore lint/style/noDefaultExport: plugin ctors are intentionally default-exported for ergonomic host imports.
+export default GraphQLPlugin
