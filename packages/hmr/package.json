@@ -17,6 +17,10 @@
 			"@pluxel/source": "./src/config.ts",
 			"default": "./dist/config.mjs"
 		},
+		"./host": {
+			"@pluxel/source": "./src/host/index.ts",
+			"default": "./dist/host.mjs"
+		},
 		"./logger": {
 			"@pluxel/source": "./src/logger/index.ts",
 			"default": "./dist/logger.mjs"
@@ -95,6 +99,7 @@
 			".": "./dist/index.mjs",
 			"./capnweb": "./dist/capnweb.mjs",
 			"./config": "./dist/config.mjs",
+			"./host": "./dist/host.mjs",
 			"./logger": "./dist/logger.mjs",
 			"./services": "./dist/services.mjs",
 			"./signaldb": "./dist/signaldb.mjs",

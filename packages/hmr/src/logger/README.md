@@ -7,8 +7,10 @@
 - `createLogStoreSink()`：把 LogTape `LogRecord` 写入内存 `logStore`，用于 UI 日志。
 - `toUiLogRecord()`：把 `LogRecord` 转成 UI 友好的结构（安全序列化 properties，并默认剔除 `caller`）。
 
-默认情况下，`HMRService.start()` 会在**宿主未调用 LogTape `configure()`**时自动注入一套开发友好的默认配置（包含 UI log store）。
-如果宿主希望完全自定义日志（或绑定更多 category 到 UI sink），依然可以手动 `configure()`。
+推荐做法：宿主在启动入口显式配置 LogTape。
+
+- 如果你想“无痛开箱”，用 `ensurePluxelLogging()`：它会在未配置时执行一次 `configure(...)`（包含 UI log store）。
+- 如果你希望完全自定义日志（或绑定更多 category 到 UI sink），就自行调用 LogTape 的 `configure(...)`，并不要调用 `ensurePluxelLogging()`。
 
 ## Transport
 
