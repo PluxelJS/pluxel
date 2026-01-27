@@ -1,3 +1,4 @@
+import { existsSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import type { Logger as LogtapeLogger } from '@logtape/logtape'
 import { type Context, Injectable } from '@pluxel/core'
@@ -130,6 +131,7 @@ export class HMRService {
 	>()
 	private workspaceEntryResolveCacheSize = 0
 	private didPreloadBuiltins = false
+	private warnedBuiltinOverlap = false
 	private baseline?: Promise<void>
 	private readonly execLock = new AsyncSerialLock()
 	private warmupStarted = false
@@ -452,6 +454,8 @@ export class HMRService {
 		const builtins = this.config.builtins
 		if (!builtins?.length) return
 
+		this.maybeWarnBuiltinOverlap()
+
 		const config = this.ctx.configService
 		if (!config.isReady) await config.ready
 
@@ -465,6 +469,36 @@ export class HMRService {
 			this.didPreloadBuiltins = false
 			throw error
 		}
+	}
+
+	private maybeWarnBuiltinOverlap() {
+		if (this.warnedBuiltinOverlap) return
+		const builtins = this.config.builtins
+		if (!builtins?.length) return
+
+		const isUnder = (child: string, root: string) =>
+			child === root || child.startsWith(root.endsWith('/') ? root : `${root}/`)
+
+		// Common monorepo layout: built-in plugin sources live under `packages/plugins/*`.
+		// If users set scan roots to the workspace root (pnpm workspace), those sources get picked up
+		// by path-based scanning and can conflict with the synthetic builtin module id.
+		const candidates = ['packages/plugins', 'packages/plugin', 'packages/builtins']
+		const overlaps: string[] = []
+		for (const rel of candidates) {
+			const abs = normalizePath(resolve(this.cwd, rel))
+			if (!existsSync(abs)) continue
+			if (this.scanRootsAbs.some((root) => isUnder(abs, root))) overlaps.push(rel)
+		}
+		if (!overlaps.length) return
+
+		this.warnedBuiltinOverlap = true
+		this.ctx.logger.warn(
+			'hmrService.builtins 与 hmrService.roots/include 可能发生“重复加载”冲突（检测到扫描范围覆盖 {dirs}）。' +
+				' builtins 会以合成 moduleId（如 "pluxel:builtins"）建立 baseline；若同一插件源码又被按文件路径扫描执行，可能触发插件名冲突或双注册。' +
+				' 建议：1) 从扫描范围排除这些 builtin 插件目录（hmrService.exclude）；或 2) 移除 builtins，让它们由扫描/HMR 管理；' +
+				' 注意 deps.bridgeModules 仅影响“按 specifier 导入”的单例，不会阻止按路径扫描。',
+			{ dirs: overlaps.join(', ') },
+		)
 	}
 
 	private setupBatching() {
@@ -498,7 +532,12 @@ export class HMRService {
 	}
 
 	private isAnchorClean(clean: string): boolean {
-		for (const a of this.ctx.loader.api.anchors.list()) {
+		const anchors = this.ctx.loader.api.anchors.list()
+		// Fast-path: in HMR runtime, anchors are stored as clean ids already.
+		if (anchors.has(clean)) return true
+
+		// Fallback: tolerate non-normalized anchors inserted by tests/tooling.
+		for (const a of anchors) {
 			const id = this.path.toClean(a)
 			if (id.startsWith('\0')) continue
 			if (id.includes('/node_modules/')) continue
@@ -625,7 +664,7 @@ export class HMRService {
 	private getAnchorsCleanSnapshot(): ReadonlySet<string> {
 		const out = new Set<string>()
 		for (const a of this.ctx.loader.api.anchors.list()) {
-			const clean = this.path.toClean(a)
+			const clean = isProbablyCleanId(a) ? a : this.path.toClean(a)
 			if (clean.startsWith('\0')) continue
 			if (clean.includes('/node_modules/')) continue
 			out.add(clean)
@@ -643,4 +682,13 @@ export class HMRService {
 	private isHardBridgeModule(specifier: string) {
 		return isHardBridgeSpecifier(specifier)
 	}
+}
+
+function isProbablyCleanId(id: string) {
+	if (!id) return false
+	if (id.includes('?')) return false
+	if (id.includes('\\')) return false
+	if (id.startsWith('/@')) return false
+	if (id.startsWith('\0')) return true
+	return id.startsWith('/')
 }

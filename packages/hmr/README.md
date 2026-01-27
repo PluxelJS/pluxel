@@ -87,6 +87,19 @@ Fork 支持：
 - Forkable 插件（继承 `ForkablePlugin`）可以作为 builtin；
 - 可在 builtin 配置里直接声明 `forks`，并选择是否启用某些 fork。
 
+常见坑（pnpm workspace / 扫描 roots 设为工作区根目录时）：
+- `builtins` 会以合成 moduleId（例如 `"pluxel:builtins"`）建立 baseline；如果同一插件源码又被按文件路径扫描执行，可能触发插件名冲突或双注册。
+- 处理方式二选一即可：
+  - 想让插件走扫描/HMR：把它从 `builtins` 移除；
+  - 想让插件只作为 builtin：用 `hmrService.exclude` 把该插件源码目录排除出扫描范围（注意：`deps.bridgeModules` 仅影响按 specifier 导入的单例，不会阻止按路径扫描）。
+  ```ts
+  hmrService: {
+    roots: ['.'],
+    builtins: [GraphQL],
+    exclude: ['packages/plugins/graphql/**'],
+  }
+  ```
+
 ## 3) Optional / 动态导入与 HMR
 `@pluxel/core` 的 `optional()` 设计目标是：可选依赖永远不阻塞构造；在 commit 之后如果依赖变为可用可以执行回调。
 

@@ -270,7 +270,13 @@ export class PluginRegistry {
 			// 尝试自动解决：给后来者添加包名前缀
 			const pkgName = extractPackageName(moduleId)
 			if (pkgName === null) {
-				throw new Error(`插件名冲突：${name} 已由 ${existedPath} 提供，拒绝来自 ${moduleId}`)
+				const extra =
+					existedPath === 'pluxel:builtins'
+						? '（提示：你启用了 builtins 且扫描范围可能包含同一插件源码；请用 hmrService.exclude 排除该插件目录，或移除 builtins 配置以避免重复加载）'
+						: ''
+				throw new Error(
+					`插件名冲突：${name} 已由 ${existedPath} 提供，拒绝来自 ${moduleId}${extra}`,
+				)
 			}
 			const prefixedId = `${pkgName}/${declaredName}`
 			// 检查前缀后是否仍然冲突

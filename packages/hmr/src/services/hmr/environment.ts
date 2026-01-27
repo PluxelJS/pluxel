@@ -187,8 +187,19 @@ export class HmrEnvironment {
 	}
 
 	pathFilter(raw: string) {
+		if (this.isProbablyCleanId(raw)) return this.pathFilterImpl(raw)
 		const clean = this.normalizeId(raw)
 		return this.pathFilterImpl(clean)
+	}
+
+	private isProbablyCleanId(id: string) {
+		if (!id) return false
+		if (id.includes('?')) return false
+		if (id.startsWith('/@')) return false
+		if (id.startsWith('\0')) return true
+		if (!id.startsWith('/')) return false
+		if (id.startsWith(this.paths.cwdNormalizedPath)) return true
+		return this.scanRootsAbs.some((root) => id.startsWith(root))
 	}
 
 	private createFilters(): HmrFilterFactory {

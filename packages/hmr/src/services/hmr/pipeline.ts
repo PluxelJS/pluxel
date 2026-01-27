@@ -657,8 +657,18 @@ export class HmrBatchProcessor {
 			// The watcher reports real filesystem paths here (normalized to `toClean` upstream).
 			if (existsSync(file)) continue
 
-			for (const a of this.ctx.loader.api.anchors.list()) {
-				if (this.path.toClean(a) === file) this.ctx.loader.api.anchors.remove(a)
+			const anchors = this.ctx.loader.api.anchors.list()
+			// Fast-path: anchors are usually stored as clean ids already.
+			if (anchors.has(file)) {
+				this.ctx.loader.api.anchors.remove(file)
+			} else {
+				// Fallback: tolerate non-normalized anchors (tests/tooling).
+				for (const a of anchors) {
+					if (this.path.toClean(a) === file) {
+						this.ctx.loader.api.anchors.remove(a)
+						break
+					}
+				}
 			}
 			this.ctx.loader.pruneModule(file)
 		}
