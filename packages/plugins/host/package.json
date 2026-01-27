@@ -5,7 +5,7 @@
 	"scripts": {
 		"hmr": "bun --conditions=@pluxel/source src/start.ts",
 		"hot": "bun --hot --conditions=@pluxel/source src/start.ts",
-		"hmr:smoke": "timeout 25s bun --conditions=@pluxel/source src/start.ts"
+		"hmr:smoke": "timeout 25s bun --conditions=@pluxel/source src/start.ts; test $? -eq 124"
 	},
 	"dependencies": {
 		"@logtape/logtape": "^2.0.1",
@@ -21,7 +21,7 @@
 		"@tabler/icons-react": "^3.35.0",
 		"@types/react": "^19.2.7",
 		"@types/react-dom": "^19.2.3",
-		"react": "^19.2.3",
-		"react-dom": "^19.2.3"
+		"react": "^19.2.4",
+		"react-dom": "^19.2.4"
 	}
 }

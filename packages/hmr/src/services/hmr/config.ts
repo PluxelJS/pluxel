@@ -195,6 +195,7 @@ export function buildHmrViteConfig(opts: HmrViteConfigOptions): InlineConfig {
 	// Opt-in via env vars when you want "fastest steady-state" for the UI/runner.
 	const optimizeDepsEnabled = process.env.PLUXEL_HMR_OPTIMIZE_DEPS === '1'
 	const ssrOptimizeDepsEnabled = process.env.PLUXEL_HMR_SSR_OPTIMIZE_DEPS === '1'
+	const isUiRoot = existsSync(resolve(opts.root, 'src/client.tsx'))
 	// Prefer Vite's default cacheDir (`<root>/node_modules/.vite`) because sharing a single cache
 	// across different hosts/roots can cause "update deps" metadata mismatches in Vite 8 beta.
 	// If callers want a shared cache, they can still opt-in explicitly via env.
@@ -265,17 +266,27 @@ export function buildHmrViteConfig(opts: HmrViteConfigOptions): InlineConfig {
 			opts.runnerPlugin,
 			opts.honoPlugin,
 		],
-		// Performance-first dev host: keep optimizer effectively off by default.
-		// Vite 8: `optimizeDeps.disabled` is deprecated; use noDiscovery + empty include instead.
+		// Performance-first dev host: keep optimizer mostly off by default.
+		// Vite 8: `optimizeDeps.disabled` is deprecated.
+		//
+		// For the HMR UI (`src/client.tsx` exists), enable minimal crawling from the UI entry.
+		// This avoids first-load races where Vite emits optimized dep URLs before they exist on disk.
 		optimizeDeps: optimizeDepsEnabled
 			? {}
-			: {
-					noDiscovery: true,
-					include: [],
-					needsInterop: [],
-					ignoreOutdatedRequests: true,
-					holdUntilCrawlEnd: false,
-				},
+			: isUiRoot
+				? {
+						entries: ['src/client.tsx'],
+						ignoreOutdatedRequests: true,
+						// Avoid a first-load race where Vite emits optimized dep URLs before they exist on disk.
+						holdUntilCrawlEnd: true,
+					}
+				: {
+						noDiscovery: true,
+						include: [],
+						needsInterop: [],
+						ignoreOutdatedRequests: true,
+						holdUntilCrawlEnd: false,
+					},
 		ssr: {
 			noExternal: Array.from(opts.deps.ssrNoExternal),
 			external: Array.from(opts.deps.ssrExternal),
