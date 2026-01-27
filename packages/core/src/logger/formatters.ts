@@ -265,12 +265,253 @@ function stripAnsi(text: string): string {
 	return out
 }
 
+function isCategoryPrefixed(category: readonly string[], prefix: readonly string[]): boolean {
+	if (prefix.length > category.length) return false
+	for (let i = 0; i < prefix.length; i++) {
+		if (category[i] !== prefix[i]) return false
+	}
+	return true
+}
+
+function formatMs(ms: unknown): string | undefined {
+	if (typeof ms !== 'number' || !Number.isFinite(ms)) return undefined
+	return `${ms.toFixed(1).replace(/\.0$/, '')}ms`
+}
+
+function formatHmrHotspots(value: unknown): string[] | undefined {
+	if (!Array.isArray(value) || value.length === 0) return undefined
+
+	const lines: string[] = []
+	lines.push('    hotspots:')
+	for (const item of value) {
+		if (!item || typeof item !== 'object') continue
+		const id =
+			typeof (item as { id?: unknown }).id === 'string'
+				? ((item as { id: string }).id as string)
+				: null
+		const msText = formatMs((item as { ms?: unknown }).ms)
+		if (!id || !msText) continue
+		lines.push(`      - ${id} ${msText}`)
+	}
+
+	return lines.length > 1 ? lines : undefined
+}
+
+function formatHmrWarmupDetails(record: LogRecord): string[] | undefined {
+	const props = record.properties as Record<string, unknown>
+
+	const files = typeof props.files === 'number' ? props.files : undefined
+	const scanMs = formatMs(props.scanMs)
+	const warmupMs = formatMs(props.warmupMs)
+	const commitMs = formatMs(props.commitMs)
+	const totalMs = formatMs(props.totalMs)
+
+	const lines: string[] = []
+
+	const summaryParts: string[] = []
+	if (files !== undefined) summaryParts.push(`files=${files}`)
+	if (summaryParts.length) lines.push(`    ${summaryParts.join(' ')}`)
+
+	const timeParts: string[] = []
+	if (scanMs) timeParts.push(`scan=${scanMs}`)
+	if (warmupMs) timeParts.push(`warmup=${warmupMs}`)
+	if (commitMs) timeParts.push(`commit=${commitMs}`)
+	if (totalMs) timeParts.push(`total=${totalMs}`)
+	if (timeParts.length) lines.push(`    time: ${timeParts.join(' ')}`)
+
+	const hotspots = formatHmrHotspots(props.hotspots)
+	if (hotspots?.length) lines.push(...hotspots)
+
+	return lines.length ? lines : undefined
+}
+
+function formatHmrUpdatedDetails(record: LogRecord): string[] | undefined {
+	const props = record.properties as Record<string, unknown>
+
+	const epoch = typeof props.epoch === 'number' ? props.epoch : undefined
+	const changedFiles = typeof props.changedFiles === 'number' ? props.changedFiles : undefined
+	const targets = typeof props.targets === 'number' ? props.targets : undefined
+	const affected = typeof props.affected === 'number' ? props.affected : undefined
+	const fallbackRoots = typeof props.fallbackRoots === 'number' ? props.fallbackRoots : undefined
+	const activeServices = typeof props.activeServices === 'number' ? props.activeServices : undefined
+
+	const batchMs = formatMs(props.batchMs)
+	const commitMs = formatMs(props.commitMs)
+
+	const plugins = props.plugins as unknown
+	const pluginsLoaded =
+		plugins &&
+		typeof plugins === 'object' &&
+		typeof (plugins as { loaded?: unknown }).loaded === 'number'
+			? ((plugins as { loaded: number }).loaded as number)
+			: undefined
+	const pluginsEnabled =
+		plugins &&
+		typeof plugins === 'object' &&
+		typeof (plugins as { enabled?: unknown }).enabled === 'number'
+			? ((plugins as { enabled: number }).enabled as number)
+			: undefined
+	const pluginsRunning =
+		plugins &&
+		typeof plugins === 'object' &&
+		typeof (plugins as { running?: unknown }).running === 'number'
+			? ((plugins as { running: number }).running as number)
+			: undefined
+
+	const invalidated = props.invalidated as unknown
+	const viteInvalidated =
+		invalidated &&
+		typeof invalidated === 'object' &&
+		typeof (invalidated as { vite?: unknown }).vite === 'number'
+			? ((invalidated as { vite: number }).vite as number)
+			: undefined
+	const runnerInvalidated =
+		invalidated &&
+		typeof invalidated === 'object' &&
+		typeof (invalidated as { runner?: unknown }).runner === 'number'
+			? ((invalidated as { runner: number }).runner as number)
+			: undefined
+
+	const lines: string[] = []
+
+	const summaryParts: string[] = []
+	if (epoch !== undefined) summaryParts.push(`epoch=${epoch}`)
+	if (changedFiles !== undefined) summaryParts.push(`changed=${changedFiles}`)
+	if (targets !== undefined) summaryParts.push(`targets=${targets}`)
+	if (affected !== undefined) summaryParts.push(`affected=${affected}`)
+	if (activeServices !== undefined) summaryParts.push(`services=${activeServices}`)
+	if (fallbackRoots !== undefined) summaryParts.push(`roots=${fallbackRoots}`)
+	if (summaryParts.length) lines.push(`    ${summaryParts.join(' ')}`)
+
+	const timeParts: string[] = []
+	if (batchMs) timeParts.push(`batch=${batchMs}`)
+	if (commitMs) timeParts.push(`commit=${commitMs}`)
+	if (timeParts.length) lines.push(`    time: ${timeParts.join(' ')}`)
+
+	const pluginParts: string[] = []
+	if (pluginsLoaded !== undefined) pluginParts.push(`loaded=${pluginsLoaded}`)
+	if (pluginsEnabled !== undefined) pluginParts.push(`enabled=${pluginsEnabled}`)
+	if (pluginsRunning !== undefined) pluginParts.push(`running=${pluginsRunning}`)
+	if (pluginParts.length) lines.push(`    plugins: ${pluginParts.join(' ')}`)
+
+	const invParts: string[] = []
+	if (viteInvalidated !== undefined) invParts.push(`vite=${viteInvalidated}`)
+	if (runnerInvalidated !== undefined) invParts.push(`runner=${runnerInvalidated}`)
+	if (invParts.length) lines.push(`    invalidated: ${invParts.join(' ')}`)
+
+	const hotspots = formatHmrHotspots(props.hotspots)
+	if (hotspots?.length) lines.push(...hotspots)
+
+	return lines.length ? lines : undefined
+}
+
+function formatHmrReportDetails(record: LogRecord): string[] | undefined {
+	const props = record.properties as Record<string, unknown>
+
+	const reason = typeof props.reason === 'string' ? props.reason : undefined
+	const entries = typeof props.entries === 'number' ? props.entries : undefined
+	const anchors = typeof props.anchors === 'number' ? props.anchors : undefined
+
+	const builtins = props.builtins as unknown
+	const builtinsLoaded =
+		builtins &&
+		typeof builtins === 'object' &&
+		typeof (builtins as { loaded?: unknown }).loaded === 'number'
+			? ((builtins as { loaded: number }).loaded as number)
+			: undefined
+	const builtinsEnabled =
+		builtins &&
+		typeof builtins === 'object' &&
+		typeof (builtins as { enabled?: unknown }).enabled === 'number'
+			? ((builtins as { enabled: number }).enabled as number)
+			: undefined
+	const builtinsRunning =
+		builtins &&
+		typeof builtins === 'object' &&
+		typeof (builtins as { running?: unknown }).running === 'number'
+			? ((builtins as { running: number }).running as number)
+			: undefined
+
+	const roots = props.roots as unknown
+	const rootsList = Array.isArray(roots) ? roots : null
+
+	const lines: string[] = []
+
+	const headParts: string[] = []
+	if (reason) headParts.push(`reason=${reason}`)
+	if (rootsList) headParts.push(`roots=${rootsList.length}`)
+	if (entries !== undefined) headParts.push(`entries=${entries}`)
+	if (anchors !== undefined) headParts.push(`anchors=${anchors}`)
+	if (
+		builtinsLoaded !== undefined ||
+		builtinsEnabled !== undefined ||
+		builtinsRunning !== undefined
+	) {
+		headParts.push(
+			`builtins=${builtinsLoaded ?? '?'}:${builtinsEnabled ?? '?'}:${builtinsRunning ?? '?'}`,
+		)
+	}
+	if (headParts.length) lines.push(`    ${headParts.join(' ')}`)
+
+	if (rootsList?.length) {
+		lines.push('    roots:')
+		for (const r of rootsList) {
+			if (!r || typeof r !== 'object') continue
+			const root =
+				typeof (r as { root?: unknown }).root === 'string'
+					? ((r as { root: string }).root as string)
+					: null
+			const rEntries =
+				typeof (r as { entries?: unknown }).entries === 'number'
+					? ((r as { entries: number }).entries as number)
+					: undefined
+			const loaded =
+				typeof (r as { loaded?: unknown }).loaded === 'number'
+					? ((r as { loaded: number }).loaded as number)
+					: undefined
+			const enabled =
+				typeof (r as { enabled?: unknown }).enabled === 'number'
+					? ((r as { enabled: number }).enabled as number)
+					: undefined
+			const running =
+				typeof (r as { running?: unknown }).running === 'number'
+					? ((r as { running: number }).running as number)
+					: undefined
+
+			if (!root) continue
+			const parts: string[] = []
+			if (rEntries !== undefined) parts.push(`entries=${rEntries}`)
+			if (loaded !== undefined || enabled !== undefined || running !== undefined) {
+				parts.push(`plugins=${loaded ?? '?'}:${enabled ?? '?'}:${running ?? '?'}`)
+			}
+			lines.push(`      - ${root}${parts.length ? ` ${parts.join(' ')}` : ''}`)
+		}
+	}
+
+	const hotspots = formatHmrHotspots(props.hotspots)
+	if (hotspots?.length) lines.push(...hotspots)
+
+	return lines.length ? lines : undefined
+}
+
+function formatHmrPrettyDetails(record: LogRecord): string[] | undefined {
+	if (!isCategoryPrefixed(record.category, pluxelCategories.hmr)) return undefined
+
+	const head = String(record.message[0] ?? '')
+	if (head.includes('HMR warmup done')) return formatHmrWarmupDetails(record)
+	if (head.includes('HMR updated')) return formatHmrUpdatedDetails(record)
+	if (head.includes('HMR report')) return formatHmrReportDetails(record)
+	return undefined
+}
+
 function formatExtraPropsInline(record: LogRecord, colorsOn: boolean): string | undefined {
 	const entries = collectExtraProps(record)
 	if (!entries.length) return undefined
 
 	// Keep one-line logs dense: only inline when short and few keys.
-	const kvEntries = entries.filter((e): e is Extract<ExtraPropEntry, { kind: 'kv' }> => e.kind === 'kv')
+	const kvEntries = entries.filter(
+		(e): e is Extract<ExtraPropEntry, { kind: 'kv' }> => e.kind === 'kv',
+	)
 	if (kvEntries.length !== entries.length) return undefined
 	if (kvEntries.length > 2) return undefined
 
@@ -374,13 +615,19 @@ export function withPluxelMessagePrefix(
 		const colorsOn = out.includes('\u001B[')
 		const multiline = out.includes('\n')
 		let usedBlock = false
-		const inline = !multiline ? formatExtraPropsInline(nextRecord, colorsOn) : undefined
-		if (inline) out = `${out}${inline}`
-		else {
-			const lines = formatExtraPropsBlock(nextRecord, colorsOn)
-			if (lines?.length) {
-				out = `${out}\n${lines.join('\n')}`
-				usedBlock = true
+		const hmrLines = !multiline ? formatHmrPrettyDetails(nextRecord) : undefined
+		if (hmrLines?.length) {
+			out = `${out}\n${hmrLines.join('\n')}`
+			usedBlock = true
+		} else {
+			const inline = !multiline ? formatExtraPropsInline(nextRecord, colorsOn) : undefined
+			if (inline) out = `${out}${inline}`
+			else {
+				const lines = formatExtraPropsBlock(nextRecord, colorsOn)
+				if (lines?.length) {
+					out = `${out}\n${lines.join('\n')}`
+					usedBlock = true
+				}
 			}
 		}
 		if (caller) {
@@ -407,8 +654,8 @@ export function createPluxelPrettyFormatter(
 	// Better defaults for dark terminals:
 	// - Avoid "dim gray" for timestamps/category/message which is unreadable on many themes.
 	type CategoryColorMap = NonNullable<PrettyFormatterOptions['categoryColorMap']>
-	type CategoryColorKey = CategoryColorMap extends Map<infer K, any> ? K : never
-	type CategoryColorValue = CategoryColorMap extends Map<any, infer V> ? V : never
+	type CategoryColorKey = CategoryColorMap extends Map<infer K, unknown> ? K : never
+	type CategoryColorValue = CategoryColorMap extends Map<unknown, infer V> ? V : never
 
 	const categoryColorMap: CategoryColorMap =
 		prettyOpts.categoryColorMap ??

@@ -1,7 +1,7 @@
 import { existsSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import type { Logger as LogtapeLogger } from '@logtape/logtape'
-import { type Context, Injectable } from '@pluxel/core'
+import { type Context, Injectable, type PluginConstructor } from '@pluxel/core'
 import { getDebugLogger } from '@pluxel/core/logger'
 import { dirname, resolve } from 'pathe'
 import {
@@ -36,6 +36,16 @@ import { installRequireShims, type RuntimeShimConfig, RuntimeShimRegistry } from
 export interface HMRConfig {
 	/** 业务扫描边界：默认仅这些目录下的 `.ts` 会被纳入 HMR 入口挑选（`.tsx`/`.jsx` 默认排除） */
 	roots: string[]
+	/** Vite dev server port (use `0` to pick a random free port). */
+	port?: number
+	/**
+	 * Cold-start warmup (best-effort).
+	 *
+	 * When enabled, `start()` will kick off warmup in background:
+	 * - scan roots to collect likely entry modules
+	 * - execute them once to register plugins and populate runner caches
+	 */
+	warmup?: boolean
 	/**
 	 * 额外的 HMR include glob（优先级高于默认的 `roots/**` + `.ts`）。
 	 * - 需要完整路径或相对 cwd 的 glob
@@ -133,8 +143,16 @@ export class HMRService {
 	private didPreloadBuiltins = false
 	private warnedBuiltinOverlap = false
 	private baseline?: Promise<void>
+	private startupScope?: Promise<{
+		rootsAbs: readonly string[]
+		rootsPretty: readonly string[]
+		anchors: number
+		entries: number
+		entriesByRoot: readonly number[]
+	}>
 	private readonly execLock = new AsyncSerialLock()
 	private warmupStarted = false
+	private warmupPromise?: Promise<void>
 
 	private debouncer!: BatchDebouncer
 
@@ -254,6 +272,34 @@ export class HMRService {
 		await this.execLock.run(async () => {
 			await this.executor.runAndLoadAll(filesPath, keepOrder)
 		})
+		void this.logOperationalReport('executeFiles').catch((error) => {
+			this.ctx.logger.warn('HMR report failed', { error })
+		})
+	}
+
+	/**
+	 * Warm up by collecting entries from configured roots and executing them once.
+	 *
+	 * This uses the same "cold start entry" logic as internal startup tooling:
+	 * - prefer workspace entries when roots map to packages
+	 * - fall back to `roots/**\/*.ts` otherwise
+	 */
+	public async warmup(opts?: { bestEffort?: boolean }): Promise<void> {
+		const bestEffort = opts?.bestEffort ?? true
+		if (!this.executor) {
+			throw new Error('HMRService not initialized (Vite server not configured yet)')
+		}
+		await this.ensureBaseline()
+		const p = (this.warmupPromise ??= this.performWarmup())
+		try {
+			await p
+		} catch (error) {
+			// Allow retry after failure.
+			this.warmupPromise = undefined
+			this.warmupStarted = false
+			if (!bestEffort) throw error
+			this.ctx.logger.error('warmup failed', { error })
+		}
 	}
 
 	public start(): Promise<void> {
@@ -280,6 +326,7 @@ export class HMRService {
 			root: hmrPackageRoot ?? this.cwd,
 			fsAllow: serverFsAllow,
 			scanRoots: this.config.roots,
+			port: this.config.port,
 			deps: this.deps,
 			extraPlugins: this.config.vitePlugins,
 			runnerPlugin: this.plugin,
@@ -297,10 +344,6 @@ export class HMRService {
 				// the host process should crash rather than limping along with a broken HMR runtime.
 				this.ensureBaseline(),
 			])
-
-			// Warmup is opt-in: keep default startup as fast and quiet as possible.
-			const warmupFlag = process.env.PLUXEL_HMR_WARMUP
-			if (warmupFlag === '1' || warmupFlag === 'true') this.startWarmup()
 		} catch (error) {
 			await server.close().catch(() => undefined)
 			throw error
@@ -308,6 +351,19 @@ export class HMRService {
 
 		server.printUrls()
 		this.ctx.logger.info`HMR 服务已启动，只监听：${this.config.roots.join(', ')}`
+		// Default operational report: info-level, counts only.
+		// Best-effort and must never block startup.
+		void this.logOperationalReport('startup').catch((error) => {
+			this.ctx.logger.warn('HMR report failed', { error })
+		})
+
+		if (this.shouldAutoWarmup()) this.startWarmup()
+	}
+
+	private shouldAutoWarmup(): boolean {
+		if (this.config.warmup === true) return true
+		const env = process.env.PLUXEL_HMR_WARMUP
+		return env === '1' || env === 'true'
 	}
 
 	private createRunnerPlugin(): Plugin {
@@ -431,6 +487,15 @@ export class HMRService {
 	}
 
 	private async bootstrapBaseline(): Promise<void> {
+		// Ensure on-disk config is loaded before any "enabled in config" decisions happen.
+		// (warmup/executeFiles/batches rely on it).
+		//
+		// Note: some tests construct a partial/mock context without ConfigService; tolerate that.
+		const configService = (
+			this.ctx as unknown as { configService?: { isReady?: boolean; ready?: Promise<void> } }
+		).configService
+		if (configService?.ready && configService.isReady !== true) await configService.ready
+
 		// 1) Bridge host modules (singleton identity).
 		await this.bridgeHostModules()
 
@@ -442,8 +507,12 @@ export class HMRService {
 		if (this.warmupStarted) return
 		this.warmupStarted = true
 		// Warmup is best-effort: it must never prevent the host from running once baseline is correct.
-		void this.performWarmup().catch((error) => {
+		const p = (this.warmupPromise ??= this.performWarmup())
+		void p.catch((error) => {
 			this.ctx.logger.error('warmup failed', { error })
+			// Allow retry after failure in dev environments.
+			this.warmupPromise = undefined
+			this.warmupStarted = false
 		})
 	}
 
@@ -577,12 +646,31 @@ export class HMRService {
 
 			const warmupMs = Math.round(endWarmup() * 10) / 10
 			const totalMs = Math.round(endAll() * 10) / 10
+
+			const hotspots = (() => {
+				const snap = this.timing.snapshot()
+				if (snap.evalMs.size === 0 && snap.injectMs.size === 0) return []
+				const totals = new Map<string, number>()
+				for (const [id, ms] of snap.evalMs) totals.set(id, (totals.get(id) ?? 0) + ms)
+				for (const [id, ms] of snap.injectMs) totals.set(id, (totals.get(id) ?? 0) + ms)
+				return [...totals.entries()]
+					.sort((a, b) => b[1] - a[1])
+					.slice(0, 5)
+					.map(([id, ms]) => ({ id: this.path.pretty(id), ms: Math.round(ms * 10) / 10 }))
+			})()
+
 			this.ctx.logger.info('HMR warmup done', {
 				files: coldFiles.length,
 				scanMs,
 				warmupMs,
 				commitMs,
 				totalMs,
+				hotspots: hotspots.length ? hotspots : undefined,
+			})
+
+			// Post-warmup operational report (counts + hotspots) is helpful for demo hosts and profiling.
+			void this.logOperationalReport('warmup').catch((error) => {
+				this.ctx.logger.warn('HMR report failed', { error })
 			})
 
 			// Full attribution output is debug-only (opt-in for profiling).
@@ -681,6 +769,135 @@ export class HMRService {
 
 	private isHardBridgeModule(specifier: string) {
 		return isHardBridgeSpecifier(specifier)
+	}
+
+	private shouldLogOperationalReport() {
+		const raw = process.env.PLUXEL_HMR_REPORT
+		if (raw === '0' || raw === 'false') return false
+		return true
+	}
+
+	private async ensureStartupScope() {
+		if (this.startupScope) return await this.startupScope
+		this.startupScope = (async () => {
+			const anchorsClean = this.getAnchorsCleanSnapshot()
+			const rootEntries = await collectColdStartEntries({
+				rootsAbs: this.scanRootsAbs,
+				anchors: anchorsClean,
+				path: this.path,
+				scanService: this.ctx.scanService,
+				workspaceConditions: this.workspaceConditions,
+			})
+			const entries = unique(rootEntries.map((p) => this.path.toClean(p))).filter(
+				(id) => anchorsClean.has(id) || this.toolkit.pathFilter(id),
+			)
+
+			const rootsAbs = this.scanRootsAbs.slice().sort()
+			const rootsPretty = rootsAbs.map((root) => this.path.pretty(root))
+			const entriesByRoot = new Array<number>(rootsAbs.length).fill(0)
+			const isUnder = (child: string, root: string) =>
+				child === root || child.startsWith(root.endsWith('/') ? root : `${root}/`)
+
+			for (const id of entries) {
+				for (let i = 0; i < rootsAbs.length; i++) {
+					if (isUnder(id, rootsAbs[i]!)) {
+						entriesByRoot[i] = (entriesByRoot[i] ?? 0) + 1
+						break
+					}
+				}
+			}
+
+			return {
+				rootsAbs,
+				rootsPretty,
+				anchors: anchorsClean.size,
+				entries: entries.length,
+				entriesByRoot,
+			} as const
+		})()
+		return await this.startupScope
+	}
+
+	private async logOperationalReport(reason: 'startup' | 'executeFiles' | 'warmup') {
+		if (!this.shouldLogOperationalReport()) return
+
+		type RegistryViewLike = {
+			listRegistered: () => ReadonlyMap<string, PluginConstructor>
+			findModuleIdByName: (name: string) => string | null
+		}
+		type LoaderApiLike = { registry: RegistryViewLike }
+		type CtxWithLoaderApi = { loader?: { api?: LoaderApiLike } }
+
+		const registryView = (this.ctx as unknown as CtxWithLoaderApi).loader?.api?.registry
+		if (!registryView) return
+
+		const scope = await this.ensureStartupScope()
+		const rootsAbs = scope.rootsAbs
+		const rootsPretty = scope.rootsPretty
+		const isUnder = (child: string, root: string) =>
+			child === root || child.startsWith(root.endsWith('/') ? root : `${root}/`)
+
+		const loadedByRoot = new Array<number>(rootsAbs.length).fill(0)
+		const enabledByRoot = new Array<number>(rootsAbs.length).fill(0)
+		const runningByRoot = new Array<number>(rootsAbs.length).fill(0)
+		let builtinsLoaded = 0
+		let builtinsEnabled = 0
+		let builtinsRunning = 0
+
+		for (const [name, ctor] of registryView.listRegistered()) {
+			const moduleId = registryView.findModuleIdByName(name)
+			const enabled = this.ctx.configService.isEnabledInConfig(name)
+			const running = this.ctx.registry.isRunning(ctor)
+
+			if (moduleId === 'pluxel:builtins') {
+				builtinsLoaded++
+				if (enabled) builtinsEnabled++
+				if (running) builtinsRunning++
+				continue
+			}
+			if (!moduleId) continue
+
+			const clean = this.path.toClean(moduleId)
+			for (let i = 0; i < rootsAbs.length; i++) {
+				if (!isUnder(clean, rootsAbs[i]!)) continue
+				loadedByRoot[i] = (loadedByRoot[i] ?? 0) + 1
+				if (enabled) enabledByRoot[i] = (enabledByRoot[i] ?? 0) + 1
+				if (running) runningByRoot[i] = (runningByRoot[i] ?? 0) + 1
+				break
+			}
+		}
+
+		const roots = rootsPretty.map((root, i) => ({
+			root,
+			entries: scope.entriesByRoot[i] ?? 0,
+			loaded: loadedByRoot[i] ?? 0,
+			enabled: enabledByRoot[i] ?? 0,
+			running: runningByRoot[i] ?? 0,
+		}))
+
+		const hotspots =
+			reason === 'executeFiles' || reason === 'warmup'
+				? (() => {
+						const snap = this.timing.snapshot()
+						if (snap.evalMs.size === 0 && snap.injectMs.size === 0) return []
+						const totals = new Map<string, number>()
+						for (const [id, ms] of snap.evalMs) totals.set(id, (totals.get(id) ?? 0) + ms)
+						for (const [id, ms] of snap.injectMs) totals.set(id, (totals.get(id) ?? 0) + ms)
+						return [...totals.entries()]
+							.sort((a, b) => b[1] - a[1])
+							.slice(0, 5)
+							.map(([id, ms]) => ({ id: this.path.pretty(id), ms: Math.round(ms * 10) / 10 }))
+					})()
+				: []
+
+		this.ctx.logger.info('HMR report', {
+			reason,
+			roots,
+			anchors: scope.anchors,
+			entries: scope.entries,
+			builtins: { loaded: builtinsLoaded, enabled: builtinsEnabled, running: builtinsRunning },
+			hotspots: hotspots.length ? hotspots : undefined,
+		})
 	}
 }
 

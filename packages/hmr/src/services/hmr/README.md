@@ -104,7 +104,9 @@ Downstream projects may inject additional Vite plugins via:
 
 Cold-start warmup (scan + eager evaluate a small set of likely entries) is **opt-in**.
 
-- Set `PLUXEL_HMR_WARMUP=1` (or `true`) to enable.
+- Host config: `hmrService.warmup: true` → background warmup (best-effort)
+- Env: `PLUXEL_HMR_WARMUP=1` (or `true`) → background warmup (best-effort)
+- Manual: call `ctx.hmrService.warmup()` when you want to await it
 
 ## Dependency optimization
 

@@ -9,13 +9,15 @@
 
 declare module '@pluxel/hmr' {
 	export namespace Context {
-		// biome-ignore lint/suspicious/noEmptyInterface: plugin/app will augment
 		interface Events {}
 	}
 }
 
 declare module '@pluxel/core/services' {
 	// Merge all `@pluxel/hmr` event declarations into the canonical registry.
-	type HmrEvents = import('@pluxel/hmr').Context.Events
+	// NOTE:
+	// Do not self-import `@pluxel/hmr` here: depending on `customConditions`, TS may resolve it to `dist`
+	// and include both source + dist module augmentations in the same program, causing declaration conflicts.
+	type HmrEvents = import('./index').Context.Events
 	interface Events extends HmrEvents {}
 }

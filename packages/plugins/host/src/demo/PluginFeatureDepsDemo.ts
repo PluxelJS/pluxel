@@ -26,6 +26,13 @@ class HostLoggerFeature extends HostBoundFeature<BasePlugin> {
 			...extra,
 		})
 	}
+
+	debug(message: string, extra?: Record<string, unknown>) {
+		this.ctx.logger.debug(message, {
+			host: this.host.ctx.pluginInfo.id,
+			...extra,
+		})
+	}
 }
 
 // -------------------------
@@ -64,7 +71,8 @@ export class PluginFeatureDepsConsumer extends BasePlugin {
 			this.log.info('provider available', { dep: dep.ctx.pluginInfo.id })
 
 			const off = dep.channel.on(({ from, seq }) => {
-				this.log.info('tick', { from, seq })
+				// Avoid spamming info logs in the demo host; enable debug to observe the stream.
+				this.log.debug('tick', { from, seq })
 			})
 
 			return () => {
@@ -109,7 +117,8 @@ export class PluginFeatureBridgeConsumer extends BasePlugin {
 		})
 
 		const off = provider.channel.on(({ from, text }) => {
-			this.ctx.logger.info('bridge message', { from, text })
+			// Avoid spamming info logs in the demo host; enable debug to observe the stream.
+			this.ctx.logger.debug('bridge message', { from, text })
 		})
 
 		return () => off()

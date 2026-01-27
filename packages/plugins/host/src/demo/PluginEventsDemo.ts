@@ -46,7 +46,8 @@ export class PluginEventsChannelConsumer extends BasePlugin {
 
 	override async init() {
 		this.producer.channel.on(({ from, seq }) => {
-			this.ctx.logger.info('EvtChannel tick', { from, seq })
+			// Avoid spamming info logs in the demo host; enable debug to observe the stream.
+			this.ctx.logger.debug('EvtChannel tick', { from, seq })
 		})
 	}
 }
@@ -87,7 +88,8 @@ export class PluginEventsDeclaredProducer extends BasePlugin {
 export class PluginEventsDeclaredConsumer extends BasePlugin {
 	override async init() {
 		this.ctx.on(EVENT_TICK, ({ from, seq }) => {
-			this.ctx.logger.info('Declared Events tick', { from, seq })
+			// Avoid spamming info logs in the demo host; enable debug to observe the stream.
+			this.ctx.logger.debug('Declared Events tick', { from, seq })
 		})
 	}
 }

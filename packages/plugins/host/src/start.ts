@@ -29,7 +29,13 @@ if (!getConfig()) {
 
 const ctx = new Context({
 	hmrService: {
+		// Under Bun, Vite's "port in use → try another one" path can hang in some environments.
+		// Use port=0 so the OS picks a free port deterministically.
+		port: 0,
+		// Load demo plugins eagerly, but keep `start()` fast: warmup runs best-effort in background.
+		warmup: true,
 		roots: [demoDir],
+		exclude: [join(demoDir, '**/ui/**'), join(demoDir, 'env.ts')],
 		// Builtins are plain ctors so TypeScript can validate them.
 		builtins: [GraphQL, MarketUI, Wretch],
 	},

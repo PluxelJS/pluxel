@@ -566,7 +566,7 @@ export class HmrBatchProcessor {
 
 		const graph = graphTools.collectBatchGraph(files)
 		this.logGraphDebug(graph)
-		this.invalidateCaches(graph.affectedIds)
+		const invalidated = this.invalidateCaches(graph.affectedIds)
 
 		const targets = pickTargetsByAnchors({
 			affectedIds: graph.affectedIds,
@@ -618,12 +618,39 @@ export class HmrBatchProcessor {
 		}
 
 		const activeServices = this.ctx.registry.container?.services.size ?? 0
+		const pluginTotals = (() => {
+			let loaded = 0
+			let enabled = 0
+			let running = 0
+			for (const [name, ctor] of this.ctx.loader.api.registry.listRegistered()) {
+				loaded++
+				if (this.ctx.configService.isEnabledInConfig(name)) enabled++
+				if (this.ctx.registry.isRunning(ctor)) running++
+			}
+			return { loaded, enabled, running }
+		})()
+		const hotspots = (() => {
+			const snap = this.timing.snapshot()
+			if (snap.evalMs.size === 0 && snap.injectMs.size === 0) return []
+			const totals = new Map<string, number>()
+			for (const [id, ms] of snap.evalMs) totals.set(id, (totals.get(id) ?? 0) + ms)
+			for (const [id, ms] of snap.injectMs) totals.set(id, (totals.get(id) ?? 0) + ms)
+			return [...totals.entries()]
+				.sort((a, b) => b[1] - a[1])
+				.slice(0, 5)
+				.map(([id, ms]) => ({ id: this.path.pretty(id), ms: Math.round(ms * 10) / 10 }))
+		})()
 		const batchMs = Math.round(endBatch() * 10) / 10
 		this.ctx.logger.info('HMR updated', {
 			epoch,
 			changedFiles: files.length,
 			targets: execOrder.length,
+			affected: graph.affectedIds.size,
+			fallbackRoots: graph.roots.length,
 			activeServices,
+			plugins: pluginTotals,
+			hotspots: hotspots.length ? hotspots : undefined,
+			invalidated,
 			commitMs,
 			batchMs,
 		})
@@ -700,11 +727,13 @@ export class HmrBatchProcessor {
 			this.runner.invalidateRunnerCacheByFiles(affectedIds)
 
 		const dbg = this.dbg.cache
-		if (!dbg) return
-		dbg.debug((l) => l`invalidated: vite=${viteInvalidated} runner=${runnerInvalidated}`)
-		if (invalidatedKeys.length) {
-			const keys = invalidatedKeys.map((k) => this.path.pretty(k))
-			dbg.debug((l) => l`runner keys (${keys.length})\n${keys.map((k) => `    ${k}`).join('\n')}`)
+		if (dbg) {
+			dbg.debug((l) => l`invalidated: vite=${viteInvalidated} runner=${runnerInvalidated}`)
+			if (invalidatedKeys.length) {
+				const keys = invalidatedKeys.map((k) => this.path.pretty(k))
+				dbg.debug((l) => l`runner keys (${keys.length})\n${keys.map((k) => `    ${k}`).join('\n')}`)
+			}
 		}
+		return { vite: viteInvalidated, runner: runnerInvalidated }
 	}
 }
