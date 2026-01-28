@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url'
 import { configure, getConfig } from '@logtape/logtape'
 import { createPluxelLogtapeConfig } from '@pluxel/core/logger'
 import GraphQL from '@pluxel/graphql'
+import Snapshot from '@pluxel/snapshot'
 import { Context } from '@pluxel/hmr'
 import { applyHmrEnvOverrides } from '@pluxel/hmr/host'
 import { createLogStoreSink } from '@pluxel/hmr/logger'
@@ -34,7 +35,12 @@ const ctx = new Context({
 		roots: [demoDir],
 		exclude: [join(demoDir, '**/ui/**'), join(demoDir, 'env.ts')],
 		// Builtins are plain ctors so TypeScript can validate them.
-		builtins: [GraphQL, MarketUI, Wretch],
+		builtins: [
+			{ plugin: GraphQL, moduleId: '@pluxel/graphql', exportKey: 'default' },
+			{ plugin: Snapshot, moduleId: '@pluxel/snapshot', exportKey: 'default' },
+			{ plugin: MarketUI, moduleId: 'pluxel-plugin-market-ui', exportKey: 'MarketUI' },
+			{ plugin: Wretch, moduleId: '@pluxel/wretch', exportKey: 'default' },
+		],
 	}),
 	registry: {
 		pluginCTXIsolate: [LogtapeLoggerService],

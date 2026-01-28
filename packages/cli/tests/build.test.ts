@@ -1,12 +1,14 @@
 import { describe, expect, it } from 'bun:test'
 import { createFixture } from 'fs-fixture'
-import { createImportTracker } from '@pluxel/rolldown'
+import { createImportTracker } from '@pluxel/cli/rolldown'
 import { resolve } from 'pathe'
 import { readPackageJSON } from 'pkg-types'
-import { resolveBuildContext } from '../src/build_impl/config'
-import { BuildEnvKeys } from '../src/build_impl/env'
-import { createOptionalDependencyHook } from '../src/build_impl/plugin-tracker'
-import { runWithTsdown } from '../src/build_impl/tsdown-runner'
+import {
+	BuildEnvKeys,
+	createOptionalDependencyHook,
+	resolveBuildContext,
+	runWithTsdown,
+} from '@pluxel/cli/build/cli'
 
 const buildFixtures = {
 	basic: {

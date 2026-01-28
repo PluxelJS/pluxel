@@ -1,7 +1,6 @@
 // loader/index.ts
 import type { ForkablePluginConstructor } from '@pluxel/core'
 import { type Context, getPluginInfo, Injectable, type PluginConstructor } from '@pluxel/core'
-import { buildSnapshot as buildSnapshotSource } from './buildSnapshot'
 import { ModuleReplacer } from './module-replacer'
 import { PluginRegistry } from './PluginRegistry'
 import { EXTRA_FORKS, type ForksExtra } from './selection'
@@ -30,6 +29,14 @@ export type BuiltinPluginSpec =
 	| {
 			plugin: PluginConstructor
 			enable?: boolean
+			/**
+			 * Source module specifier for this builtin.
+			 *
+			 * Recommended: set this to the package entry (e.g. "@pluxel/graphql") so snapshot/build
+			 * tooling can generate runnable imports (instead of the synthetic "pluxel:builtins").
+			 */
+			moduleId?: string
+			/** Export key within `moduleId` (e.g. "default" or "MyPlugin"). */
 			exportKey?: string
 			forks?: readonly BuiltinForkSpec[]
 	  }
@@ -107,7 +114,7 @@ export class LoaderService {
 		options: { moduleId?: string; commit?: boolean } = {},
 	): Promise<string[]> {
 		if (!plugins.length) return []
-		const moduleId = options.moduleId ?? BUILTIN_MODULE_ID_DEFAULT
+		const defaultModuleId = options.moduleId ?? BUILTIN_MODULE_ID_DEFAULT
 		const shouldCommit = options.commit !== false
 
 		const tx = this.registry.beginTransaction()
@@ -125,7 +132,9 @@ export class LoaderService {
 				if (seen.has(ctor)) continue
 				seen.add(ctor)
 				const enable = typeof spec === 'function' ? true : spec.enable !== false
-				const exportKey = typeof spec === 'function' ? 'builtin' : (spec.exportKey ?? 'builtin')
+				const moduleId =
+					typeof spec === 'function' ? defaultModuleId : (spec.moduleId ?? defaultModuleId)
+				const exportKey = typeof spec === 'function' ? 'default' : (spec.exportKey ?? 'default')
 
 				const declaredName = this.registry.declarePlugin(moduleId, ctor, exportKey, tx)
 				declared.push({ name: declaredName, ctor, enable })
@@ -233,16 +242,5 @@ export class LoaderService {
 	/** 按插件名清理运行态（找不到路径也能尽量关闭/禁用） */
 	prunePluginByName(name: string, scope: RemovalScope = 'runtime') {
 		this.pruner.prunePluginByName(name, scope)
-	}
-
-	// ----------------------- 只读/工具 -----------------------
-	// 公开只读 API 统一挂在 `loader.api`
-
-	buildSnapshot(): string {
-		return buildSnapshotSource({
-			ctx: this.ctx,
-			registry: this.registry,
-			isRunning: (target) => this.runtime.isRunning(target),
-		})
 	}
 }

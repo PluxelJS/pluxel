@@ -48,7 +48,7 @@
 		"build": "tsdown",
 		"dev": "bun --conditions=@pluxel/source --watch run tests/start.ts",
 		"bench": "bun --conditions=@pluxel/source run bench/pluginLifecycle.bench.ts",
-		"bench:dist": "pnpm --filter rolldown build && pnpm run build && bun run --tsconfig-override=\"./bench-tsconfig.json\" bench/pluginLifecycle.bench.ts"
+		"bench:dist": "pnpm --filter @pluxel/build build && pnpm run build && bun run --tsconfig-override=\"./bench-tsconfig.json\" bench/pluginLifecycle.bench.ts"
 	},
 	"dependencies": {
 		"@logtape/file": "^2.0.1",
@@ -63,8 +63,9 @@
 	},
 	"devDependencies": {
 		"@abraham/reflection": "^0.13.0",
+		"@pluxel/cli": "workspace:*",
 		"@pluxel/context": "workspace:*",
-		"@pluxel/rolldown": "workspace:*",
+		"@pluxel/build": "workspace:*",
 		"diod": "workspace:*",
 		"fs-fixture": "^2.11.0",
 		"option-t": "^55.1.0",

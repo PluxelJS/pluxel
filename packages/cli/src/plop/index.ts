@@ -4,7 +4,7 @@ import { cancel, intro, isCancel, note, outro, text } from '@clack/prompts'
 import { type ArgValues, define } from 'gunshi'
 import nodePlop, { type NodePlopAPI } from 'node-plop'
 import { dirname, isAbsolute, join, resolve } from 'pathe'
-import { resolvePluginEnv } from '../build_impl/env'
+import { resolvePluginEnv } from '@pluxel/build/cli'
 import { detectPm, type PM, runPackageManager } from '../utils/pm'
 import { resolveTemplatesDir } from './utils'
 

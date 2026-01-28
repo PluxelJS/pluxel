@@ -79,14 +79,15 @@
 		"vite": "beta"
 	},
 	"peerDependencies": {
+		"@pluxel/cli": "workspace:*",
 		"@pluxel/core": "workspace:*",
 		"@tabler/icons-react": "*"
 	},
 	"devDependencies": {
 		"@pluxel/components": "workspace:*",
+		"@pluxel/cli": "workspace:*",
 		"@pluxel/hmr-web": "workspace:*",
 		"@pluxel/market": "^0.1.0",
-		"@pluxel/rolldown": "workspace:*",
 		"@types/react": "^19.2.7",
 		"fs-fixture": "^2.11.0",
 		"postcss": "^8.5.6",

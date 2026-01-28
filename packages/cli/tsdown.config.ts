@@ -1,7 +1,14 @@
 import { defineConfig } from 'tsdown'
 
 export default defineConfig({
-	entry: './src/cli.ts',
+	entry: {
+		cli: './src/cli.ts',
+		build: './src/build.ts',
+		'build/cli': './src/build/cli.ts',
+		rolldown: './src/rolldown.ts',
+	},
+	// Inline internal build helpers so published CLI doesn't depend on @pluxel/build at runtime.
+	noExternal: ['@pluxel/build', '@pluxel/build/*'],
 	dts: {
 		sourcemap: true,
 	},

@@ -12,7 +12,7 @@ import {
 	TextInput,
 	useComputedColorScheme,
 } from '@mantine/core'
-import { IconArrowRight, IconBell, IconBolt, IconMenu2, IconSearch } from '@tabler/icons-react'
+import { IconArrowRight, IconBell, IconMenu2, IconSearch } from '@tabler/icons-react'
 import { useRouter } from '@tanstack/react-router'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { ColorSchemeToggle } from '../components'
@@ -21,7 +21,6 @@ import { PLUGIN_SEARCH_EVENT, PLUGIN_SEARCH_KEY } from './constants'
 import { useNotify } from './hooks'
 import { useNotificationCenter } from './notifications/NotificationCenterProvider'
 import { useCurrentPathname } from './router/useCurrentRoute'
-import { useHmrWebClient } from './rpc'
 
 const timeFormatter = new Intl.DateTimeFormat('zh-CN', {
 	month: '2-digit',
@@ -41,39 +40,9 @@ function formatTime(ts: number) {
 export function Header({ onMenu }: { onMenu: () => void }) {
 	const [search, setSearch] = useState('')
 	const searchInputRef = useRef<HTMLInputElement | null>(null)
-	const [isBuildLoading, setIsBuildLoading] = useState(false)
 	const notify = useNotify()
-	const hmr = useHmrWebClient()
 	const router = useRouter()
 	const pathname = useCurrentPathname()
-
-	const handleBuild = async () => {
-		setIsBuildLoading(true)
-		try {
-			const result = await hmr.withRpc((rpc) => rpc.buildSnapshot())
-			if (result.ok === false) {
-				notify({
-					title: '生成快照失败',
-					message: result.error || '未知错误',
-					color: 'red',
-				})
-				return
-			}
-			notify({
-				title: '已生成快照',
-				message: result.path ? `保存于：${result.path}` : '在运行目录查看文件。',
-				color: 'green',
-			})
-		} catch (error: any) {
-			notify({
-				title: '生成快照失败',
-				message: error?.message || '操作失败，请稍后再试',
-				color: 'red',
-			})
-		} finally {
-			setIsBuildLoading(false)
-		}
-	}
 
 	const handleSearchSubmit = useCallback(() => {
 		const value = search.trim()
@@ -162,17 +131,6 @@ export function Header({ onMenu }: { onMenu: () => void }) {
 				<ColorSchemeToggle />
 
 				<NotificationBell />
-
-				<ActionIcon
-					variant="default"
-					size="lg"
-					radius="xl"
-					aria-label="构建 SNAPSHOT"
-					loading={isBuildLoading}
-					onClick={handleBuild}
-				>
-					<IconBolt size={18} />
-				</ActionIcon>
 			</Group>
 		</Group>
 	)

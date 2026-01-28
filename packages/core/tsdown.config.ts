@@ -1,4 +1,4 @@
-import { rewriteDtsModuleAugmentations } from '@pluxel/rolldown'
+import { rewriteDtsModuleAugmentations } from '@pluxel/cli/rolldown'
 import { defineConfig } from 'tsdown'
 
 const moduleAugmentationMap = {

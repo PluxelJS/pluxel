@@ -1,0 +1,52 @@
+{
+	"$schema": "https://market.pluxel.dev/schema/package.json",
+	"name": "@pluxel/snapshot",
+	"version": "0.1.0",
+	"description": "Pluxel builtin plugin: snapshot builder (generate snapshot.ts from running plugins + configs)",
+	"type": "module",
+	"types": "./dist/index.d.mts",
+	"exports": {
+		".": {
+			"@pluxel/source": "./src/index.ts",
+			"@pluxel/hmr": "./src/index.ts",
+			"default": "./dist/index.mjs"
+		},
+		"./package.json": "./package.json"
+	},
+	"files": [
+		"!**/*.map",
+		"dist"
+	],
+	"scripts": {
+		"build": "pluxel build",
+		"build:plugin": "pluxel build",
+		"test": "bun test --conditions=@pluxel/source"
+	},
+	"dependencies": {
+		"knitwork": "^1.3.0",
+		"nf3": "^0.3.6"
+	},
+	"peerDependencies": {
+		"@pluxel/cli": "workspace:*",
+		"@pluxel/core": "workspace:*",
+		"@pluxel/hmr": "workspace:*",
+		"@mantine/core": "^8.3.13",
+		"@tabler/icons-react": "*",
+		"react": "^19.2.4",
+		"react-dom": "^19.2.4",
+		"tsdown": "^0.20.1"
+	},
+	"devDependencies": {
+		"@pluxel/cli": "workspace:*",
+		"tsdown": "0.20.1",
+		"typescript": "^5.9.3"
+	},
+	"publishConfig": {
+		"exports": {
+			".": "./dist/index.mjs",
+			"./package.json": "./package.json"
+		}
+	},
+	"main": "./dist/index.mjs",
+	"module": "./dist/index.mjs"
+}

@@ -1,5 +1,5 @@
 import { fileURLToPath } from 'node:url'
-import { appendDtsImport } from '@pluxel/rolldown'
+import { appendDtsImport } from '@pluxel/cli/rolldown'
 import { defineConfig } from 'tsdown'
 import PreprocessorDirectives from 'unplugin-preprocessor-directives/rollup'
 

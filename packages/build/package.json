@@ -1,0 +1,51 @@
+{
+	"private": true,
+	"name": "@pluxel/build",
+	"version": "0.1.0",
+	"description": "Pluxel build helpers (tsdown runner + rolldown plugins)",
+	"main": "./dist/index.cjs",
+	"module": "./dist/index.mjs",
+	"types": "./dist/index.d.cts",
+	"type": "module",
+	"exports": {
+		".": {
+			"@pluxel/source": "./src/index.ts",
+			"require": "./dist/index.cjs",
+			"import": "./dist/index.mjs"
+		},
+		"./cli": {
+			"@pluxel/source": "./src/cli/index.ts",
+			"require": "./dist/cli.cjs",
+			"import": "./dist/cli.mjs"
+		},
+		"./rolldown": {
+			"@pluxel/source": "./src/rolldown/index.ts",
+			"require": "./dist/rolldown.cjs",
+			"import": "./dist/rolldown.mjs"
+		},
+		"./package.json": "./package.json"
+	},
+	"files": [
+		"dist",
+		"!**/*.map"
+	],
+	"scripts": {
+		"build": "tsdown",
+		"test": "bun test --conditions=@pluxel/source"
+	},
+	"peerDependencies": {
+		"oxc-parser": "^0.99.0",
+		"pathe": "^2.0.3",
+		"pkg-types": "^2.3.0",
+		"tsdown": "^0.20.1"
+	},
+	"devDependencies": {
+		"fs-fixture": "^2.11.0",
+		"oxc-parser": "^0.99.0",
+		"pathe": "^2.0.3",
+		"pkg-types": "^2.3.0",
+		"rolldown": "1.0.0-beta.52",
+		"tsdown": "0.20.1",
+		"typescript": "^5.9.3"
+	}
+}

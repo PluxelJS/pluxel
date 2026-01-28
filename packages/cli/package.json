@@ -5,6 +5,24 @@
 	"bin": {
 		"pluxel": "dist/cli.mjs"
 	},
+	"exports": {
+		"./build": {
+			"@pluxel/source": "./src/build.ts",
+			"import": "./dist/build.mjs",
+			"default": "./dist/build.mjs"
+		},
+		"./build/cli": {
+			"@pluxel/source": "./src/build/cli.ts",
+			"import": "./dist/build/cli.mjs",
+			"default": "./dist/build/cli.mjs"
+		},
+		"./rolldown": {
+			"@pluxel/source": "./src/rolldown.ts",
+			"import": "./dist/rolldown.mjs",
+			"default": "./dist/rolldown.mjs"
+		},
+		"./package.json": "./package.json"
+	},
 	"files": [
 		"dist",
 		"!**/*.map"
@@ -31,7 +49,7 @@
 		"yaml": "^2.5.0"
 	},
 	"devDependencies": {
-		"@pluxel/rolldown": "workspace:*",
+		"@pluxel/build": "workspace:*",
 		"@types/picomatch": "^4.0.2",
 		"fs-fixture": "^2.11.0"
 	}

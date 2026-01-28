@@ -13,6 +13,7 @@
 		"@pluxel/hmr": "workspace:*",
 		"pluxel-plugin-market-ui": "workspace:*",
 		"@pluxel/graphql": "workspace:*",
+		"@pluxel/snapshot": "workspace:*",
 		"@pluxel/wretch": "workspace:*"
 	},
 	"devDependencies": {

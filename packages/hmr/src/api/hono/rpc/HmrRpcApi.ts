@@ -1,7 +1,6 @@
 // rpc/HmrRpcApi.ts - 主 RPC API
 import type { Context } from '@pluxel/core'
 import { RpcTarget } from 'capnweb'
-import { resolve } from 'pathe'
 import type { UI } from '../../../services'
 import { writeGroups } from '../../features/groups/service'
 import { PackageHandle } from './PackageHandle'
@@ -53,10 +52,24 @@ export class HmrRpcApi extends RpcTarget {
 
 	async buildSnapshot() {
 		try {
-			const content = this.ctx.loader.buildSnapshot()
-			const path = resolve(process.cwd(), 'snapshot.ts')
-			await this.ctx.fs.writeTextAtomic(path, content)
-			return { ok: true as const, path }
+			const ctor = this.ctx.loader.api.registry.getCtor('Snapshot')
+			if (!ctor) {
+				return {
+					ok: false as const,
+					error: 'Snapshot plugin is not loaded (enable builtin @pluxel/snapshot).',
+				}
+			}
+
+			const instance = this.ctx.registry.getInstance(ctor as any) as any
+			if (!instance || typeof instance.generateSnapshotFiles !== 'function') {
+				return {
+					ok: false as const,
+					error: 'Snapshot plugin is not running (enable it in config).',
+				}
+			}
+
+			const res = await instance.generateSnapshotFiles()
+			return { ok: true as const, path: res?.configPath ?? '' }
 		} catch (error) {
 			return { ok: false as const, error: (error as Error)?.message ?? 'Unknown error' }
 		}

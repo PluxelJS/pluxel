@@ -310,6 +310,10 @@ export class LoaderRegistryView {
 		return this.registry.getPluginByName(name)
 	}
 
+	getExportKey(name: string): string | undefined {
+		return this.registry.getExportKeyByName(name)
+	}
+
 	getSchema(target: PluginConstructor | string): ConfigSchemaMap | undefined {
 		const ctor = this.runtime.resolve(target)
 		if (!ctor) return undefined

@@ -281,6 +281,10 @@ dist
 .turbo
 
 build/
+!packages/build/
+!packages/build/**
+packages/build/dist/
+packages/build/node_modules/
 
 # Build cache manifests
 *.tsbuildinfo
