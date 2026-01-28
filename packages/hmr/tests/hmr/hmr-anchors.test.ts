@@ -12,7 +12,9 @@ const createCtx = () => {
 		loader: {
 			api: {
 				anchors: {
-					list: () => anchors,
+					has: (id: string) => anchors.has(id),
+					list: () => anchors.values(),
+					snapshot: () => new Set(anchors),
 					remove: (id: string) => anchors.delete(id),
 				},
 			},

@@ -6,6 +6,7 @@ import { ModuleReplacer } from './module-replacer'
 import { PluginRegistry } from './PluginRegistry'
 import { EXTRA_FORKS, type ForksExtra } from './selection'
 import {
+	AnchorStore,
 	LoaderAnchors,
 	type LoaderApi,
 	LoaderBatchSession,
@@ -44,7 +45,7 @@ declare module '@pluxel/core' {
 @Injectable({ key: serviceName })
 export class LoaderService {
 	/** 仅记录“当前是插件锚点”的文件，供外部(HMR)过滤 */
-	private readonly anchors = new Set<string>()
+	private readonly anchors = new AnchorStore()
 	/** 声明层 + 运行层 + 配置层的统一封装 */
 	private readonly registry: PluginRegistry
 
@@ -67,17 +68,14 @@ export class LoaderService {
 			this.registry,
 			this.anchors,
 			(name) => this.runtime.resolve(name),
-			(moduleId) => this.runtime.normalizeId(moduleId),
 		)
-		this.pruner = new PluginPruner(this.ctx, this.registry, this.anchors, (moduleId) =>
-			this.runtime.normalizeId(moduleId),
-		)
+		this.pruner = new PluginPruner(this.ctx, this.registry, this.anchors)
 		this.statusReporter = new PluginStatusReporter(this.registry, this.runtime, (name) =>
 			this.ctx.configService.isEnabledInConfig(name),
 		)
 		this.dependencyInspector = new PluginDependencyInspector(this.ctx)
 		this.registryView = new LoaderRegistryView(this.registry, this.runtime)
-		this.anchorsView = new LoaderAnchors(this.anchors, this.runtime)
+		this.anchorsView = new LoaderAnchors(this.anchors)
 		this.control = new LoaderControl(this.registry)
 		this.api = {
 			runtime: this.runtime,

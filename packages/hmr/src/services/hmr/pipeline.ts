@@ -8,28 +8,56 @@ import { type DevEnvironment, type EnvironmentModuleNode as ModuleNode, normaliz
 import type { ScanService } from '../market/ScanService'
 import type { HmrPathApi, HmrToolkit } from './environment'
 import { startTimer } from './internals'
-import { logAttributionReport, type TimingTracker } from './logging'
+import { collectHotspots, isLogEnabled, logAttributionReport, type TimingTracker } from './logging'
+import { collectPluginTotals } from './operational-report'
 import type { HmrRunner } from './runner'
 import { runWithRequireShims } from './runtime-shims'
 
-const unique = <T>(iter: Iterable<T>) => Array.from(new Set(iter))
-
 export type PrefetchOrder = 'near' | 'all'
+
+function dedupeCleanIds(ids: readonly string[], toClean: (id: string) => string) {
+	const seen = new Set<string>()
+	const out: string[] = []
+	for (let i = 0; i < ids.length; i++) {
+		const id = toClean(ids[i]!)
+		if (seen.has(id)) continue
+		seen.add(id)
+		out.push(id)
+	}
+	return out
+}
+
+function dedupeIds(ids: readonly string[]) {
+	const seen = new Set<string>()
+	const out: string[] = []
+	for (let i = 0; i < ids.length; i++) {
+		const id = ids[i]!
+		if (seen.has(id)) continue
+		seen.add(id)
+		out.push(id)
+	}
+	return out
+}
 
 export async function collectColdStartEntries(params: {
 	rootsAbs: readonly string[]
+	/** Must be clean ids (output of HMRService.getAnchorsCleanSnapshot). */
 	anchors: ReadonlySet<string>
 	path: HmrPathApi
+	/** Optional fast filter for non-anchor entries (clean ids). */
+	pathFilter?: (cleanId: string) => boolean
 	scanService?: ScanService
 	workspaceConditions: readonly string[]
 }) {
 	const entries = new Set<string>()
-	for (const anchor of params.anchors) entries.add(params.path.toClean(anchor))
+	for (const anchor of params.anchors) entries.add(anchor)
+	const pathFilter = params.pathFilter
 
 	const rootInfos = params.rootsAbs.map((raw) => ({ raw, normalized: normalizePath(raw) }))
 	const workspace = await tryCollectWorkspaceEntries({
 		rootInfos,
 		path: params.path,
+		pathFilter,
 		scanService: params.scanService,
 		workspaceConditions: params.workspaceConditions,
 	})
@@ -41,7 +69,11 @@ export async function collectColdStartEntries(params: {
 		: rootInfos.map((info) => info.raw)
 
 	if (uncovered.length) {
-		const fallbackEntries = await collectDirectoryFallbackEntries(uncovered, params.path)
+		const fallbackEntries = await collectDirectoryFallbackEntries(
+			uncovered,
+			params.path,
+			pathFilter,
+		)
 		for (const entry of fallbackEntries) entries.add(entry)
 	}
 
@@ -51,6 +83,7 @@ export async function collectColdStartEntries(params: {
 async function tryCollectWorkspaceEntries(params: {
 	rootInfos: Array<{ raw: string; normalized: string }>
 	path: HmrPathApi
+	pathFilter?: (cleanId: string) => boolean
 	scanService?: ScanService
 	workspaceConditions: readonly string[]
 }) {
@@ -68,8 +101,10 @@ async function tryCollectWorkspaceEntries(params: {
 
 		const covered = new Set<string>()
 		const entries: string[] = []
+		const shouldInclude = params.pathFilter
 		for (const pkg of workspaceEntries) {
-			entries.push(params.path.toClean(pkg.entry))
+			const clean = params.path.toClean(pkg.entry)
+			if (!shouldInclude || shouldInclude(clean)) entries.push(clean)
 			const dirNorm = normalizePath(pkg.dir)
 			for (const info of params.rootInfos) {
 				if (!covered.has(info.normalized) && dirNorm.startsWith(info.normalized)) {
@@ -85,14 +120,29 @@ async function tryCollectWorkspaceEntries(params: {
 	}
 }
 
-async function collectDirectoryFallbackEntries(roots: readonly string[], path: HmrPathApi) {
+async function collectDirectoryFallbackEntries(
+	roots: readonly string[],
+	path: HmrPathApi,
+	pathFilter?: (cleanId: string) => boolean,
+) {
 	const patterns = roots.flatMap((root) => [`${root}/**/*.ts`])
 	const files = await glob(patterns, {
 		absolute: true,
 		onlyFiles: true,
 		ignore: ['**/*.d.ts', '**/node_modules/**'],
 	})
-	return Array.from(new Set(files.map((file) => path.toClean(file))))
+	const seen = new Set<string>()
+	const out: string[] = []
+	const toClean = path.toClean
+	const shouldInclude = pathFilter
+	for (let i = 0; i < files.length; i++) {
+		const clean = toClean(files[i]!)
+		if (shouldInclude && !shouldInclude(clean)) continue
+		if (seen.has(clean)) continue
+		seen.add(clean)
+		out.push(clean)
+	}
+	return out
 }
 
 type BatchGraph = {
@@ -104,43 +154,83 @@ type BatchGraph = {
 type ScopeFilter = (cleanId: string) => boolean
 
 class GraphTools {
+	private readonly visited = new Set<string>()
+	private readonly affectedIds = new Set<string>()
+	private readonly idToNode = new Map<string, ModuleNode>()
+	private readonly distance = new Map<string, number>()
+	private readonly roots: string[] = []
+	private readonly queue: ModuleNode[] = []
+	private readonly queueDist: number[] = []
+	private readonly tmpModules: ModuleNode[] = []
+	private readonly moduleGraph: DevEnvironment['moduleGraph']
+	private readonly toClean: (id: string) => string
+	private readonly variantsAny: (id: string) => string[]
+	private readonly variantsClean: (id: string) => string[]
+
 	constructor(
 		private readonly env: DevEnvironment,
 		private readonly path: HmrPathApi,
 		private readonly inScope: ScopeFilter,
-	) {}
+	) {
+		this.moduleGraph = env.moduleGraph
+		this.toClean = path.toClean
+		this.variantsAny = path.variants
+		this.variantsClean = path.variantsClean ?? path.variants
+	}
 
-	getModulesByFile(fileOrId: string): ModuleNode[] {
-		const variants = this.path.variants(fileOrId)
+	collectModulesByFile(fileOrId: string, out: ModuleNode[]): number {
+		out.length = 0
+		const first = fileOrId.charCodeAt(0)
+		const variants =
+			first === 47 || first === 0
+				? this.variantsClean(fileOrId)
+				: this.variantsAny(fileOrId)
+		const moduleGraph = this.moduleGraph
 		for (const variant of variants) {
-			const byFile = this.env.moduleGraph.getModulesByFile(variant)
-			if (byFile?.size) return [...byFile]
+			const byFile = moduleGraph.getModulesByFile(variant)
+			if (byFile?.size) {
+				for (const m of byFile) out.push(m)
+				return out.length
+			}
+			const single = moduleGraph.getModuleById(variant)
+			if (single) {
+				out.push(single)
+				return 1
+			}
 		}
-		for (const variant of variants) {
-			const single = this.env.moduleGraph.getModuleById(variant)
-			if (single) return [single]
-		}
-		return []
+		return 0
 	}
 
 	collectBatchGraph(files: readonly string[]): BatchGraph {
-		const visited = new Set<string>()
-		const affectedIds = new Set<string>()
-		const idToNode = new Map<string, ModuleNode>()
-		const distance = new Map<string, number>()
+		this.visited.clear()
+		this.affectedIds.clear()
+		this.idToNode.clear()
+		this.distance.clear()
+		this.roots.length = 0
+		this.queue.length = 0
+		this.queueDist.length = 0
 
-		const queue: ModuleNode[] = []
-		const queueDist: number[] = []
+		const visited = this.visited
+		const affectedIds = this.affectedIds
+		const idToNode = this.idToNode
+		const distance = this.distance
+		const toClean = this.toClean
+		const inScope = this.inScope
+
+		const queue = this.queue
+		const queueDist = this.queueDist
+		const tmpModules = this.tmpModules
 
 		for (const file of files) {
-			const mods = this.getModulesByFile(file)
-			for (const m of mods) {
+			const modCount = this.collectModulesByFile(file, tmpModules)
+			for (let i = 0; i < modCount; i++) {
+				const m = tmpModules[i]!
 				queue.push(m)
 				queueDist.push(0)
 			}
 
-			const clean = this.path.toClean(file)
-			if (mods.length === 0 && this.inScope(clean) && !visited.has(clean)) {
+			const clean = file
+			if (modCount === 0 && inScope(clean) && !visited.has(clean)) {
 				visited.add(clean)
 				affectedIds.add(clean)
 				distance.set(clean, 0)
@@ -149,12 +239,12 @@ class GraphTools {
 
 		for (let cursor = 0; cursor < queue.length; cursor++) {
 			const m = queue[cursor]
+			if (!m || !m.id) continue
 			const d = queueDist[cursor] ?? 0
-			if (!m?.id) continue
 
-			const id = this.path.toClean(m.id)
+			const id = toClean(m.id)
 			if (id.startsWith('\0')) continue
-			if (!this.inScope(id)) continue
+			if (!inScope(id)) continue
 			if (visited.has(id)) continue
 
 			visited.add(id)
@@ -163,13 +253,13 @@ class GraphTools {
 			distance.set(id, d)
 
 			for (const importer of m.importers) {
-				if (!importer?.id) continue
+				if (!importer || !importer.id) continue
 				queue.push(importer)
 				queueDist.push(d + 1)
 			}
 		}
 
-		const roots: string[] = []
+		const roots = this.roots
 		for (const id of affectedIds) {
 			const m = idToNode.get(id)
 			if (!m) {
@@ -178,8 +268,8 @@ class GraphTools {
 			}
 			let hasImporterInside = false
 			for (const importer of m.importers) {
-				if (!importer?.id) continue
-				const importerId = this.path.toClean(importer.id)
+				if (!importer || !importer.id) continue
+				const importerId = toClean(importer.id)
 				if (affectedIds.has(importerId)) {
 					hasImporterInside = true
 					break
@@ -194,6 +284,9 @@ class GraphTools {
 
 class NearestAnchorFinder {
 	private readonly cache = new Map<string, string | null>()
+	private readonly visited = new Set<string>()
+	private readonly queue: ModuleNode[] = []
+	private readonly tmpModules: ModuleNode[] = []
 
 	constructor(
 		private readonly graph: GraphTools,
@@ -208,13 +301,18 @@ class NearestAnchorFinder {
 		const cached = this.cache.get(startCleanId)
 		if (cached !== undefined) return cached
 
-		const visited = new Set<string>()
-		const queue: ModuleNode[] = this.graph.getModulesByFile(startCleanId)
+		this.visited.clear()
+		this.queue.length = 0
+		const modCount = this.graph.collectModulesByFile(startCleanId, this.tmpModules)
+		for (let i = 0; i < modCount; i++) this.queue.push(this.tmpModules[i]!)
+		const visited = this.visited
+		const queue = this.queue
+		const toClean = this.path.toClean
 
 		for (let cursor = 0; cursor < queue.length; cursor++) {
 			const m = queue[cursor]
-			if (!m?.id) continue
-			const id = this.path.toClean(m.id)
+			if (!m || !m.id) continue
+			const id = toClean(m.id)
 			if (visited.has(id)) continue
 			visited.add(id)
 
@@ -225,7 +323,10 @@ class NearestAnchorFinder {
 				return id
 			}
 
-			for (const importer of m.importers) if (importer?.id) queue.push(importer)
+			for (const importer of m.importers) {
+				if (!importer || !importer.id) continue
+				queue.push(importer)
+			}
 		}
 
 		this.cache.set(startCleanId, null)
@@ -239,11 +340,21 @@ function pickTargetsByAnchors(params: {
 	anchors: ReadonlySet<string>
 	toClean: (id: string) => string
 	findNearestAnchor: (startCleanId: string, anchors: ReadonlySet<string>) => string | null
-}): string[] {
+}): Set<string> {
+	if (params.anchors.size === 0) {
+		const targets = new Set<string>()
+		for (const r of params.fallbackRoots) targets.add(params.toClean(r))
+		return targets
+	}
+
 	const targets = new Set<string>()
 	let needFallbackRoots = false
 
 	for (const id of params.affectedIds) {
+		if (params.anchors.has(id)) {
+			targets.add(id)
+			continue
+		}
 		const anchor = params.findNearestAnchor(id, params.anchors)
 		if (anchor) targets.add(anchor)
 		else needFallbackRoots = true
@@ -253,7 +364,7 @@ function pickTargetsByAnchors(params: {
 		for (const r of params.fallbackRoots) targets.add(params.toClean(r))
 	}
 
-	return [...targets]
+	return targets
 }
 
 function buildOrderedList(
@@ -275,10 +386,9 @@ function buildOrderedList(
 	return items.slice(0, Math.max(1, limit))
 }
 
-async function prefetchTransforms(params: {
+export async function prefetchTransforms(params: {
 	env: DevEnvironment
 	ids: Iterable<string>
-	path: HmrPathApi
 	timing: TimingTracker
 	concurrency: number
 }) {
@@ -286,7 +396,7 @@ async function prefetchTransforms(params: {
 	const queue: string[] = []
 
 	for (const raw of params.ids) {
-		const id = params.path.toClean(raw)
+		const id = raw
 		if (seen.has(id)) continue
 		seen.add(id)
 		queue.push(id)
@@ -328,23 +438,24 @@ export class HmrExecutor {
 		private readonly cfg: HmrExecutorConfig,
 	) {}
 
-	async runAndLoadAll(filesPath: readonly string[], keepOrder = true) {
-		if (!filesPath.length) return undefined
+	async runAndLoadAllClean(cleanIds: readonly string[], _keepOrder = true) {
+		if (!cleanIds.length) return undefined
 
-		const dedup = unique(filesPath.map((p) => this.path.toClean(p)))
-		const ordered = keepOrder ? dedup : [...dedup]
+		// Historically `keepOrder=false` did not change ordering; preserve that behavior.
+		const ordered = dedupeIds(cleanIds)
 
 		const batch = this.ctx.loader.beginBatch()
+		const dbg = this.cfg.dbgModules
+		const debugModules = dbg ? isLogEnabled(dbg, 'debug') : false
 
-		for (const id of ordered) {
+		for (let i = 0; i < ordered.length; i++) {
+			const id = ordered[i]!
 			const endEvaluate = this.timing.start('evaluate', id)
 			let mod: unknown
 			try {
 				const evaluate = () => this.runner.import(id)
 				mod = this.cfg.useRequireShims ? await runWithRequireShims(evaluate) : await evaluate()
 			} catch (err) {
-				// Hard fail on CJS deps being evaluated as ESM (common for native wrappers),
-				// so users must explicitly externalize them via `hmrService.deps.cjsExternal`.
 				const cjsHint = buildCjsExternalizeHint(err)
 				if (cjsHint) {
 					this.ctx.logger.error('execute failed for {file}', { file: id, error: err })
@@ -367,9 +478,8 @@ export class HmrExecutor {
 			}
 			const injectMs = endInject()
 
-			const dbg = this.cfg.dbgModules
-			if (dbg) {
-				dbg.debug(
+			if (debugModules) {
+				dbg!.debug(
 					(l) =>
 						l`execute ${this.path.pretty(id)} eval=${evaluateMs.toFixed(3)}ms inject=${injectMs.toFixed(3)}ms plugin=${hasPlugin}`,
 				)
@@ -388,6 +498,15 @@ export class HmrExecutor {
 		}
 
 		return { res, commitMs }
+	}
+
+	async runAndLoadAll(filesPath: readonly string[], keepOrder = true) {
+		if (!filesPath.length) return undefined
+
+		// Always normalize+dedupe in a single pass (avoid allocating an intermediate array).
+		// `keepOrder=false` historically did not change ordering; preserve that behavior.
+		const ordered = dedupeCleanIds(filesPath, (p) => this.path.toClean(p))
+		return await this.runAndLoadAllClean(ordered, keepOrder)
 	}
 }
 
@@ -532,6 +651,13 @@ export type HmrBatchConfig = {
 }
 
 export class HmrBatchProcessor {
+	private anchorsClean: ReadonlySet<string> = new Set<string>()
+	private readonly pathFilter: (id: string) => boolean
+	private readonly inScope: ScopeFilter
+	private readonly graphTools: GraphTools
+	private readonly anchorFinder: NearestAnchorFinder
+	private readonly variantsClean: (id: string) => string[]
+
 	constructor(
 		private readonly ctx: Context,
 		private readonly env: DevEnvironment,
@@ -547,24 +673,31 @@ export class HmrBatchProcessor {
 			graph: LogtapeLogger | null
 		},
 		private readonly getAnchorsClean: () => ReadonlySet<string>,
-	) {}
+	) {
+		this.pathFilter = this.toolkit.pathFilter
+		this.inScope = (id) => this.anchorsClean.has(id) || this.pathFilter(id)
+		this.graphTools = new GraphTools(this.env, this.path, this.inScope)
+		this.anchorFinder = new NearestAnchorFinder(this.graphTools, this.path)
+		this.variantsClean = this.path.variantsClean ?? this.path.variants
+	}
 
 	async process(files: readonly string[], epoch: number) {
+		const changed = dedupeIds(files)
+		if (changed.length === 0) return
+
 		const endBatch = startTimer()
 		this.timing.clear()
 		const dbg = this.dbg.batch
-		dbg?.debug((l) => l`batch #${epoch} begin: ${files.length} files`)
+		dbg?.debug((l) => l`batch #${epoch} begin: ${changed.length} files`)
 
-		this.logBatchList('changed files', files)
+		this.logBatchList('changed files', changed)
 
-		this.pruneMissingModules(files)
-		const anchorsClean = this.getAnchorsClean()
+		this.pruneMissingModules(changed)
+		this.anchorsClean = this.getAnchorsClean()
+		this.anchorFinder.clear()
+		const anchorsClean = this.anchorsClean
 
-		const inScope = (id: string) => anchorsClean.has(id) || this.toolkit.pathFilter(id)
-		const graphTools = new GraphTools(this.env, this.path, inScope)
-		const anchorFinder = new NearestAnchorFinder(graphTools, this.path)
-
-		const graph = graphTools.collectBatchGraph(files)
+		const graph = this.graphTools.collectBatchGraph(changed)
 		this.logGraphDebug(graph)
 		const invalidated = this.invalidateCaches(graph.affectedIds)
 
@@ -572,14 +705,14 @@ export class HmrBatchProcessor {
 			affectedIds: graph.affectedIds,
 			fallbackRoots: graph.roots,
 			anchors: anchorsClean,
-			toClean: (id) => this.path.toClean(id),
-			findNearestAnchor: (startCleanId, anchors) => anchorFinder.find(startCleanId, anchors),
+			toClean: (id) => id,
+			findNearestAnchor: (startCleanId, anchors) => this.anchorFinder.find(startCleanId, anchors),
 		})
-		this.logBatchList('targets', targets)
+		this.logBatchList('targets', [...targets])
 
 		if (this.cfg.attribution === 'prefetch') {
 			const prefetchList = buildOrderedList(
-				targets.length ? new Set(targets) : graph.affectedIds,
+				targets.size ? targets : graph.affectedIds,
 				graph.distance,
 				this.cfg.prefetchOrder,
 				this.cfg.prefetchLimit,
@@ -588,27 +721,21 @@ export class HmrBatchProcessor {
 				await prefetchTransforms({
 					env: this.env,
 					ids: prefetchList,
-					path: this.path,
 					timing: this.timing,
 					concurrency: this.cfg.prefetchConcurrency,
 				})
 			}
 		}
 
-		const execOrder = buildOrderedList(
-			new Set(targets),
-			graph.distance,
-			'near',
-			targets.length || 1,
-		)
-		const executed = await this.executor.runAndLoadAll(execOrder, true)
+		const execOrder = buildOrderedList(targets, graph.distance, 'near', targets.size || 1)
+		const executed = await this.executor.runAndLoadAllClean(execOrder, true)
 		const commitMs = executed ? Math.round(executed.commitMs * 10) / 10 : null
 
 		if (this.cfg.attribution === 'prefetch') {
 			logAttributionReport(
 				this.ctx.logger,
 				{
-					changed: files[0] ?? 'N/A',
+					changed: changed[0] ?? 'N/A',
 					targets: execOrder,
 					timing: this.timing,
 					prettyId: (id) => this.path.pretty(id),
@@ -618,32 +745,16 @@ export class HmrBatchProcessor {
 		}
 
 		const activeServices = this.ctx.registry.container?.services.size ?? 0
-		const pluginTotals = (() => {
-			let loaded = 0
-			let enabled = 0
-			let running = 0
-			for (const [name, ctor] of this.ctx.loader.api.registry.listRegistered()) {
-				loaded++
-				if (this.ctx.configService.isEnabledInConfig(name)) enabled++
-				if (this.ctx.registry.isRunning(ctor)) running++
-			}
-			return { loaded, enabled, running }
-		})()
-		const hotspots = (() => {
-			const snap = this.timing.snapshot()
-			if (snap.evalMs.size === 0 && snap.injectMs.size === 0) return []
-			const totals = new Map<string, number>()
-			for (const [id, ms] of snap.evalMs) totals.set(id, (totals.get(id) ?? 0) + ms)
-			for (const [id, ms] of snap.injectMs) totals.set(id, (totals.get(id) ?? 0) + ms)
-			return [...totals.entries()]
-				.sort((a, b) => b[1] - a[1])
-				.slice(0, 5)
-				.map(([id, ms]) => ({ id: this.path.pretty(id), ms: Math.round(ms * 10) / 10 }))
-		})()
+		const { plugins: pluginTotals } = collectPluginTotals({
+			registryView: this.ctx.loader.api.registry,
+			isEnabledInConfig: (name) => this.ctx.configService.isEnabledInConfig(name),
+			isRunning: (ctor) => this.ctx.registry.isRunning(ctor),
+		})
+		const hotspots = collectHotspots(this.timing, (id) => this.path.pretty(id))
 		const batchMs = Math.round(endBatch() * 10) / 10
 		this.ctx.logger.info('HMR updated', {
 			epoch,
-			changedFiles: files.length,
+			changedFiles: changed.length,
 			targets: execOrder.length,
 			affected: graph.affectedIds.size,
 			fallbackRoots: graph.roots.length,
@@ -658,24 +769,27 @@ export class HmrBatchProcessor {
 
 	private logBatchList(label: string, files: readonly string[]) {
 		const dbg = this.dbg.batch
-		if (!dbg) return
-		const list = files.map((f) => this.path.pretty(f))
-		dbg.debug((l) => l`${label} (${list.length})\n${list.map((f) => `    ${f}`).join('\n')}`)
+		if (!isLogEnabled(dbg, 'debug')) return
+		dbg.debug((l) => {
+			const list = files.map((f) => this.path.pretty(f))
+			return l`${label} (${list.length})\n${list.map((f) => `    ${f}`).join('\n')}`
+		})
 	}
 
 	private logGraphDebug(graph: BatchGraph) {
 		const dbg = this.dbg.graph
-		if (!dbg) return
-		const affectedList = [...graph.affectedIds].map((id) => {
-			const d = graph.distance.get(id) ?? -1
-			return `${this.path.pretty(id)} (d=${d})`
+		if (!isLogEnabled(dbg, 'debug')) return
+		dbg.debug((l) => {
+			const affectedList = [...graph.affectedIds].map((id) => {
+				const d = graph.distance.get(id) ?? -1
+				return `${this.path.pretty(id)} (d=${d})`
+			})
+			return l`affected (${affectedList.length})\n${affectedList.map((x) => `    ${x}`).join('\n')}`
 		})
-		const roots = graph.roots.map((r) => this.path.pretty(r))
-		dbg.debug(
-			(l) =>
-				l`affected (${affectedList.length})\n${affectedList.map((x) => `    ${x}`).join('\n')}`,
-		)
-		dbg.debug((l) => l`roots (${roots.length})\n${roots.map((x) => `    ${x}`).join('\n')}`)
+		dbg.debug((l) => {
+			const roots = graph.roots.map((r) => this.path.pretty(r))
+			return l`roots (${roots.length})\n${roots.map((x) => `    ${x}`).join('\n')}`
+		})
 	}
 
 	private pruneMissingModules(files: readonly string[]) {
@@ -684,19 +798,7 @@ export class HmrBatchProcessor {
 			// The watcher reports real filesystem paths here (normalized to `toClean` upstream).
 			if (existsSync(file)) continue
 
-			const anchors = this.ctx.loader.api.anchors.list()
-			// Fast-path: anchors are usually stored as clean ids already.
-			if (anchors.has(file)) {
-				this.ctx.loader.api.anchors.remove(file)
-			} else {
-				// Fallback: tolerate non-normalized anchors (tests/tooling).
-				for (const a of anchors) {
-					if (this.path.toClean(a) === file) {
-						this.ctx.loader.api.anchors.remove(a)
-						break
-					}
-				}
-			}
+			if (this.ctx.loader.api.anchors.has(file)) this.ctx.loader.api.anchors.remove(file)
 			this.ctx.loader.pruneModule(file)
 		}
 	}
@@ -704,18 +806,23 @@ export class HmrBatchProcessor {
 	private invalidateCaches(affectedIds: ReadonlySet<string>) {
 		const g = this.env.moduleGraph
 		let viteInvalidated = 0
+		const invalidatedModules = new Set<ModuleNode>()
 
 		for (const id of affectedIds) {
-			for (const variant of this.path.variants(id)) {
+			const variants = this.variantsClean(id)
+			for (const variant of variants) {
 				const mods = g.getModulesByFile(variant)
 				if (mods?.size) {
 					for (const m of mods) {
+						if (invalidatedModules.has(m)) continue
+						invalidatedModules.add(m)
 						g.invalidateModule(m)
 						viteInvalidated++
 					}
 				} else {
 					const m = g.getModuleById(variant)
-					if (m) {
+					if (m && !invalidatedModules.has(m)) {
+						invalidatedModules.add(m)
 						g.invalidateModule(m)
 						viteInvalidated++
 					}
@@ -727,11 +834,13 @@ export class HmrBatchProcessor {
 			this.runner.invalidateRunnerCacheByFiles(affectedIds)
 
 		const dbg = this.dbg.cache
-		if (dbg) {
+		if (isLogEnabled(dbg, 'debug')) {
 			dbg.debug((l) => l`invalidated: vite=${viteInvalidated} runner=${runnerInvalidated}`)
 			if (invalidatedKeys.length) {
-				const keys = invalidatedKeys.map((k) => this.path.pretty(k))
-				dbg.debug((l) => l`runner keys (${keys.length})\n${keys.map((k) => `    ${k}`).join('\n')}`)
+				dbg.debug((l) => {
+					const keys = invalidatedKeys.map((k) => this.path.pretty(k))
+					return l`runner keys (${keys.length})\n${keys.map((k) => `    ${k}`).join('\n')}`
+				})
 			}
 		}
 		return { vite: viteInvalidated, runner: runnerInvalidated }

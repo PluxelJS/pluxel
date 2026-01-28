@@ -36,7 +36,7 @@
   - `status`: `snapshot`
   - `deps`: `list`
   - `registry`: `listLoadedNames`, `listRegistered`, `findModuleId`, `findModuleIdByName`, `getCtor`, `getSchema`, `getSchemaSource`
-  - `anchors`: `list`, `remove`
+  - `anchors`: `has`, `list`, `snapshot`, `remove` (`list()` returns an iterator; use `has()` for membership; `snapshot()` returns a filtered read-only Set; `remove()` expects a clean id)
   - `control`: `enable`, `enablePersisted`, `deactivate`, `stop`
 
 ## Invariants

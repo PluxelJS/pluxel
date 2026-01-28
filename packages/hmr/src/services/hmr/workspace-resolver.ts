@@ -7,6 +7,8 @@ import type { ScanService } from '../market/ScanService'
 
 const DEFAULT_CONDITIONS = ['@pluxel/hmr', 'import', 'module', 'default']
 const DRIVE_PATH_RE = /^[a-zA-Z]:[\\/]/
+const CANONICALIZE_CACHE_LIMIT = 2_000
+const canonicalizeCache = new Map<string, Promise<string>>()
 
 interface ResolveBareImportArgs {
 	specifier: string
@@ -114,10 +116,23 @@ function ensureDirectoryURL(input: string): URL {
 }
 
 async function canonicalizePath(input: string): Promise<string> {
-	try {
-		const real = await realpath(input)
-		return normalizePath(real)
-	} catch {
-		return normalizePath(input)
+	const cached = canonicalizeCache.get(input)
+	if (cached) return await cached
+
+	const p = (async () => {
+		try {
+			const real = await realpath(input)
+			return normalizePath(real)
+		} catch {
+			return normalizePath(input)
+		}
+	})()
+
+	canonicalizeCache.set(input, p)
+	if (canonicalizeCache.size > CANONICALIZE_CACHE_LIMIT) {
+		const first = canonicalizeCache.keys().next().value as string
+		canonicalizeCache.delete(first)
 	}
+
+	return await p
 }

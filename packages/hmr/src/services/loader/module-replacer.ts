@@ -11,9 +11,11 @@ import {
 } from '@pluxel/core'
 import type { PluginRegistry } from './PluginRegistry'
 import { type DepOverridesExtra, EXTRA_DEP_OVERRIDES } from './selection'
-import type { AnchorJournal } from './support'
+import type { AnchorJournal, AnchorStore } from './support'
 
 type PluginRegistryTx = ReturnType<PluginRegistry['beginTransaction']>
+const TOKEN_NORMALIZED_WARN =
+	'依赖注入 token 已归一化：检测到同 id 不同 ctor 引用（建议检查 bridge/导入路径）'
 
 type ReplaceModuleOptions = {
 	tx?: PluginRegistryTx
@@ -31,9 +33,8 @@ export class ModuleReplacer {
 	constructor(
 		private readonly ctx: Context,
 		private readonly registry: PluginRegistry,
-		private readonly anchors: Set<string>,
+		private readonly anchors: AnchorStore,
 		resolveRuntimeCtor: (name: string) => PluginConstructor | undefined,
-		private readonly normalizeModuleId: (moduleId: string) => string,
 	) {
 		this.depOverrides = new DependencyOverrideApplier(this.ctx, resolveRuntimeCtor)
 	}
@@ -43,7 +44,7 @@ export class ModuleReplacer {
 		mod: Record<string, unknown>,
 		options: ReplaceModuleOptions = {},
 	): Promise<boolean> {
-		const id = options.tx ? moduleId : this.normalizeModuleId(moduleId)
+		const id = moduleId
 		options.anchors?.record(id)
 		const oldItems = this.registry.modules.get(id) ?? []
 		// 停旧（只影响运行层，保留声明关系以便冲突判断更清晰）
@@ -56,6 +57,18 @@ export class ModuleReplacer {
 		for (const item of exported) {
 			this.registry.declarePlugin(id, item.ctor, item.exportKey, options.tx)
 		}
+		/**
+		 * 构造参数 token 归一化（关键背景：DI token 是 ctor“引用”，不是插件 id 字符串）。
+		 *
+		 * 在 HMR/多入口/不同 exports condition 下，极易出现：
+		 * - 依赖插件（尤其是 builtin）已经在 runtime 注册并运行；
+		 * - 但新加载模块里的 Consumer 在评估时拿到的是“同一个插件 id”的另一个 ctor 引用；
+		 * 此时按 ctor 引用匹配依赖会失败，表现为 MissingDependency / commit 失败。
+		 *
+		 * 这里把“新加载插件 ctor 上记录的参数 token”按 plugin id 映射到当前 runtime 的 ctor，
+		 * 让依赖解析收敛到 `registry.names` 的事实来源，避免引用漂移造成的假缺依赖。
+		 */
+		for (const item of exported) this.normalizeCtorParams(id, item.ctor, 'replaceModule')
 
 		const config = this.ctx.configService
 		const startEnabled = async () => {
@@ -76,12 +89,79 @@ export class ModuleReplacer {
 				})
 			})
 		}
-		this.refreshDependents(oldItems)
+		this.refreshDependents(id, oldItems)
 
 		const isAnchor = exported.length > 0
 		this.updateAnchors(id, isAnchor, options.anchors)
 
 		return isAnchor
+	}
+
+	private normalizeCtorParams(
+		moduleId: string,
+		ctor: PluginConstructor,
+		source: 'replaceModule' | 'refreshDependents',
+	) {
+		// 只对 “BasePlugin 子类 ctor token” 做归一化；非插件 token 一律跳过。
+		// 注意：我们不改变“依赖目标的 id”，只是在同 id 的前提下，把 token 引用替换到 runtime ctor。
+		const params = getClassParams(ctor)
+		if (params.length === 0) return
+
+		let next: unknown[] | undefined
+		let replacements:
+			| Array<{
+					index: number
+					depId: string
+					fromCtor: string
+					toCtor: string
+			  }>
+			| undefined
+
+		const nameMap = this.registry.names
+		for (let i = 0; i < params.length; i++) {
+			const p = params[i]
+			if (typeof p !== 'function') continue
+			const proto = (p as { prototype?: unknown }).prototype
+			if (!proto || !(proto instanceof BasePlugin)) continue
+
+			let pid: string
+			try {
+				pid = getPluginInfo(p as PluginConstructor).id
+			} catch {
+				continue
+			}
+
+			const current = nameMap.get(pid)
+			if (current && current !== p) {
+				if (!next) {
+					next = params.slice()
+					replacements = []
+				}
+				next[i] = current
+				replacements!.push({
+					index: i,
+					depId: pid,
+					fromCtor: (p as { name?: unknown }).name?.toString?.() ?? '<anonymous>',
+					toCtor: (current as { name?: unknown }).name?.toString?.() ?? '<anonymous>',
+				})
+			}
+		}
+
+		if (next) {
+			setParamTokens(ctor, next as unknown as Parameters<typeof setParamTokens>[1])
+			let consumerId = '<unknown>'
+			try {
+				consumerId = getPluginInfo(ctor).id
+			} catch {
+				// ignore
+			}
+			this.ctx.logger.warn(TOKEN_NORMALIZED_WARN, {
+				moduleId,
+				source,
+				consumer: consumerId,
+				replacements: replacements ?? [],
+			})
+		}
 	}
 
 	private updateAnchors(id: string, isAnchor: boolean, anchors?: AnchorJournal) {
@@ -97,7 +177,7 @@ export class ModuleReplacer {
 	 * 热更后，用当前 name -> ctor 映射重绑依赖者的构造参数引用，避免旧引用导致 MissingDependency。
 	 * 只处理受影响插件的直接依赖者，开销低。
 	 */
-	private refreshDependents(oldItems: readonly { ctor: PluginConstructor }[]) {
+	private refreshDependents(moduleId: string, oldItems: readonly { ctor: PluginConstructor }[]) {
 		if (oldItems.length === 0) return
 		const dependents = this.ctx.registry.container?.dependents
 		if (!dependents?.size) return
@@ -113,38 +193,17 @@ export class ModuleReplacer {
 		}
 		if (affected.size === 0) return
 
-		const nameMap = this.registry.names
 		for (const depCtor of affected) {
-			const params = getClassParams(depCtor)
-			const next = params.slice()
-			let mutated = false
-			for (let i = 0; i < next.length; i++) {
-				const p = next[i]
-				if (typeof p !== 'function') continue
-				const proto = (p as { prototype?: unknown }).prototype
-				if (!proto || !(proto instanceof BasePlugin)) continue
-				let pid: string
-				try {
-					pid = getPluginInfo(p as PluginConstructor).id
-				} catch {
-					continue
-				}
-				const current = nameMap.get(pid)
-				if (current && current !== p) {
-					next[i] = current
-					mutated = true
-				}
-			}
-			if (mutated) {
-				setParamTokens(depCtor, next as unknown as Parameters<typeof setParamTokens>[1])
-			}
+			this.normalizeCtorParams(moduleId, depCtor, 'refreshDependents')
 		}
 	}
 }
 
 function collectPluginExports(mod: Record<string, unknown>): ExportedPlugin[] {
 	const exported: ExportedPlugin[] = []
-	for (const [exportKey, exp] of Object.entries(mod)) {
+	for (const exportKey in mod) {
+		if (!Object.prototype.hasOwnProperty.call(mod, exportKey)) continue
+		const exp = mod[exportKey]
 		if (typeof exp !== 'function') continue
 		if (!checkPluginDecorator(exp)) continue
 		exported.push({ ctor: exp as PluginConstructor, exportKey })

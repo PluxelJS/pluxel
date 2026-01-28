@@ -273,14 +273,23 @@ function isCategoryPrefixed(category: readonly string[], prefix: readonly string
 	return true
 }
 
-function formatMs(ms: unknown): string | undefined {
-	if (typeof ms !== 'number' || !Number.isFinite(ms)) return undefined
-	return `${ms.toFixed(1).replace(/\.0$/, '')}ms`
+function colorizeValue(text: string, colorsOn: boolean, color: string): string {
+	if (!colorsOn) return text
+	const reset = '\u001B[0m'
+	return `${color}${text}${reset}`
 }
 
-function formatHmrHotspots(value: unknown): string[] | undefined {
+function formatMs(ms: unknown, colorsOn: boolean): string | undefined {
+	if (typeof ms !== 'number' || !Number.isFinite(ms)) return undefined
+	const raw = `${ms.toFixed(1).replace(/\.0$/, '')}ms`
+	const cyan = '\u001B[36m'
+	return colorizeValue(raw, colorsOn, cyan)
+}
+
+function formatHmrHotspots(value: unknown, colorsOn: boolean): string[] | undefined {
 	if (!Array.isArray(value) || value.length === 0) return undefined
 
+	const blue = '\u001B[34m'
 	const lines: string[] = []
 	lines.push('    hotspots:')
 	for (const item of value) {
@@ -289,43 +298,50 @@ function formatHmrHotspots(value: unknown): string[] | undefined {
 			typeof (item as { id?: unknown }).id === 'string'
 				? ((item as { id: string }).id as string)
 				: null
-		const msText = formatMs((item as { ms?: unknown }).ms)
+		const msText = formatMs((item as { ms?: unknown }).ms, colorsOn)
 		if (!id || !msText) continue
-		lines.push(`      - ${id} ${msText}`)
+		const idText = colorizeValue(id, colorsOn, blue)
+		lines.push(`      - ${idText} ${msText}`)
 	}
 
 	return lines.length > 1 ? lines : undefined
 }
 
-function formatHmrWarmupDetails(record: LogRecord): string[] | undefined {
+function formatHmrWarmupDetails(record: LogRecord, colorsOn: boolean): string[] | undefined {
 	const props = record.properties as Record<string, unknown>
 
 	const files = typeof props.files === 'number' ? props.files : undefined
-	const scanMs = formatMs(props.scanMs)
-	const warmupMs = formatMs(props.warmupMs)
-	const commitMs = formatMs(props.commitMs)
-	const totalMs = formatMs(props.totalMs)
+	const scanMs = formatMs(props.scanMs, colorsOn)
+	const prefetchMs = formatMs(props.prefetchMs, colorsOn)
+	const warmupMs = formatMs(props.warmupMs, colorsOn)
+	const commitMs = formatMs(props.commitMs, colorsOn)
+	const totalMs = formatMs(props.totalMs, colorsOn)
 
 	const lines: string[] = []
 
 	const summaryParts: string[] = []
-	if (files !== undefined) summaryParts.push(`files=${files}`)
+	if (files !== undefined) {
+		const amber = '\u001B[38;2;253;224;71m'
+		const v = colorizeValue(String(files), colorsOn, amber)
+		summaryParts.push(`files=${v}`)
+	}
 	if (summaryParts.length) lines.push(`    ${summaryParts.join(' ')}`)
 
 	const timeParts: string[] = []
 	if (scanMs) timeParts.push(`scan=${scanMs}`)
+	if (prefetchMs) timeParts.push(`prefetch=${prefetchMs}`)
 	if (warmupMs) timeParts.push(`warmup=${warmupMs}`)
 	if (commitMs) timeParts.push(`commit=${commitMs}`)
 	if (totalMs) timeParts.push(`total=${totalMs}`)
 	if (timeParts.length) lines.push(`    time: ${timeParts.join(' ')}`)
 
-	const hotspots = formatHmrHotspots(props.hotspots)
+	const hotspots = formatHmrHotspots(props.hotspots, colorsOn)
 	if (hotspots?.length) lines.push(...hotspots)
 
 	return lines.length ? lines : undefined
 }
 
-function formatHmrUpdatedDetails(record: LogRecord): string[] | undefined {
+function formatHmrUpdatedDetails(record: LogRecord, colorsOn: boolean): string[] | undefined {
 	const props = record.properties as Record<string, unknown>
 
 	const epoch = typeof props.epoch === 'number' ? props.epoch : undefined
@@ -335,8 +351,8 @@ function formatHmrUpdatedDetails(record: LogRecord): string[] | undefined {
 	const fallbackRoots = typeof props.fallbackRoots === 'number' ? props.fallbackRoots : undefined
 	const activeServices = typeof props.activeServices === 'number' ? props.activeServices : undefined
 
-	const batchMs = formatMs(props.batchMs)
-	const commitMs = formatMs(props.commitMs)
+	const batchMs = formatMs(props.batchMs, colorsOn)
+	const commitMs = formatMs(props.commitMs, colorsOn)
 
 	const plugins = props.plugins as unknown
 	const pluginsLoaded =
@@ -375,12 +391,14 @@ function formatHmrUpdatedDetails(record: LogRecord): string[] | undefined {
 	const lines: string[] = []
 
 	const summaryParts: string[] = []
-	if (epoch !== undefined) summaryParts.push(`epoch=${epoch}`)
-	if (changedFiles !== undefined) summaryParts.push(`changed=${changedFiles}`)
-	if (targets !== undefined) summaryParts.push(`targets=${targets}`)
-	if (affected !== undefined) summaryParts.push(`affected=${affected}`)
-	if (activeServices !== undefined) summaryParts.push(`services=${activeServices}`)
-	if (fallbackRoots !== undefined) summaryParts.push(`roots=${fallbackRoots}`)
+	const amber = '\u001B[38;2;253;224;71m'
+	const fmtCount = (n: number) => colorizeValue(String(n), colorsOn, amber)
+	if (epoch !== undefined) summaryParts.push(`epoch=${fmtCount(epoch)}`)
+	if (changedFiles !== undefined) summaryParts.push(`changed=${fmtCount(changedFiles)}`)
+	if (targets !== undefined) summaryParts.push(`targets=${fmtCount(targets)}`)
+	if (affected !== undefined) summaryParts.push(`affected=${fmtCount(affected)}`)
+	if (activeServices !== undefined) summaryParts.push(`services=${fmtCount(activeServices)}`)
+	if (fallbackRoots !== undefined) summaryParts.push(`roots=${fmtCount(fallbackRoots)}`)
 	if (summaryParts.length) lines.push(`    ${summaryParts.join(' ')}`)
 
 	const timeParts: string[] = []
@@ -389,28 +407,65 @@ function formatHmrUpdatedDetails(record: LogRecord): string[] | undefined {
 	if (timeParts.length) lines.push(`    time: ${timeParts.join(' ')}`)
 
 	const pluginParts: string[] = []
-	if (pluginsLoaded !== undefined) pluginParts.push(`loaded=${pluginsLoaded}`)
-	if (pluginsEnabled !== undefined) pluginParts.push(`enabled=${pluginsEnabled}`)
-	if (pluginsRunning !== undefined) pluginParts.push(`running=${pluginsRunning}`)
+	if (pluginsLoaded !== undefined) pluginParts.push(`loaded=${fmtCount(pluginsLoaded)}`)
+	if (pluginsEnabled !== undefined) pluginParts.push(`enabled=${fmtCount(pluginsEnabled)}`)
+	if (pluginsRunning !== undefined) pluginParts.push(`running=${fmtCount(pluginsRunning)}`)
 	if (pluginParts.length) lines.push(`    plugins: ${pluginParts.join(' ')}`)
 
 	const invParts: string[] = []
-	if (viteInvalidated !== undefined) invParts.push(`vite=${viteInvalidated}`)
-	if (runnerInvalidated !== undefined) invParts.push(`runner=${runnerInvalidated}`)
+	if (viteInvalidated !== undefined) invParts.push(`vite=${fmtCount(viteInvalidated)}`)
+	if (runnerInvalidated !== undefined) invParts.push(`runner=${fmtCount(runnerInvalidated)}`)
 	if (invParts.length) lines.push(`    invalidated: ${invParts.join(' ')}`)
 
-	const hotspots = formatHmrHotspots(props.hotspots)
+	const hotspots = formatHmrHotspots(props.hotspots, colorsOn)
 	if (hotspots?.length) lines.push(...hotspots)
 
 	return lines.length ? lines : undefined
 }
 
-function formatHmrReportDetails(record: LogRecord): string[] | undefined {
+function formatHmrReportDetails(record: LogRecord, colorsOn: boolean): string[] | undefined {
 	const props = record.properties as Record<string, unknown>
 
 	const reason = typeof props.reason === 'string' ? props.reason : undefined
-	const entries = typeof props.entries === 'number' ? props.entries : undefined
-	const anchors = typeof props.anchors === 'number' ? props.anchors : undefined
+	const scope = props.scope as unknown
+	const rootsCount =
+		scope &&
+		typeof scope === 'object' &&
+		typeof (scope as { roots?: unknown }).roots === 'number'
+			? ((scope as { roots: number }).roots as number)
+			: undefined
+	const entries =
+		scope &&
+		typeof scope === 'object' &&
+		typeof (scope as { entries?: unknown }).entries === 'number'
+			? ((scope as { entries: number }).entries as number)
+			: undefined
+	const anchors =
+		scope &&
+		typeof scope === 'object' &&
+		typeof (scope as { anchors?: unknown }).anchors === 'number'
+			? ((scope as { anchors: number }).anchors as number)
+			: undefined
+
+	const plugins = props.plugins as unknown
+	const pluginsLoaded =
+		plugins &&
+		typeof plugins === 'object' &&
+		typeof (plugins as { loaded?: unknown }).loaded === 'number'
+			? ((plugins as { loaded: number }).loaded as number)
+			: undefined
+	const pluginsEnabled =
+		plugins &&
+		typeof plugins === 'object' &&
+		typeof (plugins as { enabled?: unknown }).enabled === 'number'
+			? ((plugins as { enabled: number }).enabled as number)
+			: undefined
+	const pluginsRunning =
+		plugins &&
+		typeof plugins === 'object' &&
+		typeof (plugins as { running?: unknown }).running === 'number'
+			? ((plugins as { running: number }).running as number)
+			: undefined
 
 	const builtins = props.builtins as unknown
 	const builtinsLoaded =
@@ -432,24 +487,85 @@ function formatHmrReportDetails(record: LogRecord): string[] | undefined {
 			? ((builtins as { running: number }).running as number)
 			: undefined
 
+	const pluginsByRoot = props.pluginsByRoot as unknown
+	const pluginsByRootMode =
+		pluginsByRoot &&
+		typeof pluginsByRoot === 'object' &&
+		typeof (pluginsByRoot as { mode?: unknown }).mode === 'string'
+			? ((pluginsByRoot as { mode: string }).mode as string)
+			: undefined
+	const pluginsByRootReasons =
+		pluginsByRoot &&
+		typeof pluginsByRoot === 'object' &&
+		Array.isArray((pluginsByRoot as { reasons?: unknown }).reasons)
+			? (((pluginsByRoot as { reasons: unknown[] }).reasons as unknown[])
+					.filter((x) => typeof x === 'string') as string[])
+			: undefined
+	const pluginsByRootUnresolved =
+		pluginsByRoot &&
+		typeof pluginsByRoot === 'object' &&
+		typeof (pluginsByRoot as { unresolved?: unknown }).unresolved === 'number'
+			? ((pluginsByRoot as { unresolved: number }).unresolved as number)
+			: undefined
+	const pluginsByRootUnmapped =
+		pluginsByRoot &&
+		typeof pluginsByRoot === 'object' &&
+		typeof (pluginsByRoot as { unmapped?: unknown }).unmapped === 'number'
+			? ((pluginsByRoot as { unmapped: number }).unmapped as number)
+			: undefined
+	const pluginsByRootResolveAttempts =
+		pluginsByRoot &&
+		typeof pluginsByRoot === 'object' &&
+		typeof (pluginsByRoot as { resolveAttempts?: unknown }).resolveAttempts === 'number'
+			? ((pluginsByRoot as { resolveAttempts: number }).resolveAttempts as number)
+			: undefined
+	const pluginsByRootResolveLimit =
+		pluginsByRoot &&
+		typeof pluginsByRoot === 'object' &&
+		typeof (pluginsByRoot as { resolveLimit?: unknown }).resolveLimit === 'number'
+			? ((pluginsByRoot as { resolveLimit: number }).resolveLimit as number)
+			: undefined
+
 	const roots = props.roots as unknown
 	const rootsList = Array.isArray(roots) ? roots : null
 
 	const lines: string[] = []
 
 	const headParts: string[] = []
+	const amber = '\u001B[38;2;253;224;71m'
+	const fmtCount = (n: number) => colorizeValue(String(n), colorsOn, amber)
+	const fmtTriple = (a?: number, b?: number, c?: number) => {
+		const raw = `${a ?? '?'}:${b ?? '?'}:${c ?? '?'}`
+		return colorizeValue(raw, colorsOn, amber)
+	}
+
 	if (reason) headParts.push(`reason=${reason}`)
-	if (rootsList) headParts.push(`roots=${rootsList.length}`)
-	if (entries !== undefined) headParts.push(`entries=${entries}`)
-	if (anchors !== undefined) headParts.push(`anchors=${anchors}`)
+	if (rootsCount !== undefined) headParts.push(`roots=${fmtCount(rootsCount)}`)
+	if (entries !== undefined) headParts.push(`entries=${fmtCount(entries)}`)
+	if (anchors !== undefined) headParts.push(`anchors=${fmtCount(anchors)}`)
+	if (pluginsLoaded !== undefined || pluginsEnabled !== undefined || pluginsRunning !== undefined) {
+		headParts.push(`plugins=${fmtTriple(pluginsLoaded, pluginsEnabled, pluginsRunning)}`)
+	}
 	if (
 		builtinsLoaded !== undefined ||
 		builtinsEnabled !== undefined ||
 		builtinsRunning !== undefined
 	) {
-		headParts.push(
-			`builtins=${builtinsLoaded ?? '?'}:${builtinsEnabled ?? '?'}:${builtinsRunning ?? '?'}`,
-		)
+		headParts.push(`builtins=${fmtTriple(builtinsLoaded, builtinsEnabled, builtinsRunning)}`)
+	}
+	if (pluginsByRootMode && pluginsByRootMode !== 'byRoot') {
+		headParts.push(`pluginsByRoot=${pluginsByRootMode}`)
+		if (pluginsByRootReasons?.length)
+			headParts.push(`reasons=${pluginsByRootReasons.join(',')}`)
+		if (pluginsByRootUnresolved !== undefined)
+			headParts.push(`unresolved=${fmtCount(pluginsByRootUnresolved)}`)
+		if (pluginsByRootUnmapped !== undefined)
+			headParts.push(`unmapped=${fmtCount(pluginsByRootUnmapped)}`)
+		if (pluginsByRootResolveAttempts !== undefined && pluginsByRootResolveLimit !== undefined) {
+			headParts.push(
+				`resolves=${fmtCount(pluginsByRootResolveAttempts)}/${fmtCount(pluginsByRootResolveLimit)}`,
+			)
+		}
 	}
 	if (headParts.length) lines.push(`    ${headParts.join(' ')}`)
 
@@ -465,42 +581,49 @@ function formatHmrReportDetails(record: LogRecord): string[] | undefined {
 				typeof (r as { entries?: unknown }).entries === 'number'
 					? ((r as { entries: number }).entries as number)
 					: undefined
+			const rPlugins = (r as { plugins?: unknown }).plugins as unknown
 			const loaded =
-				typeof (r as { loaded?: unknown }).loaded === 'number'
-					? ((r as { loaded: number }).loaded as number)
+				rPlugins &&
+				typeof rPlugins === 'object' &&
+				typeof (rPlugins as { loaded?: unknown }).loaded === 'number'
+					? ((rPlugins as { loaded: number }).loaded as number)
 					: undefined
 			const enabled =
-				typeof (r as { enabled?: unknown }).enabled === 'number'
-					? ((r as { enabled: number }).enabled as number)
+				rPlugins &&
+				typeof rPlugins === 'object' &&
+				typeof (rPlugins as { enabled?: unknown }).enabled === 'number'
+					? ((rPlugins as { enabled: number }).enabled as number)
 					: undefined
 			const running =
-				typeof (r as { running?: unknown }).running === 'number'
-					? ((r as { running: number }).running as number)
+				rPlugins &&
+				typeof rPlugins === 'object' &&
+				typeof (rPlugins as { running?: unknown }).running === 'number'
+					? ((rPlugins as { running: number }).running as number)
 					: undefined
 
 			if (!root) continue
 			const parts: string[] = []
-			if (rEntries !== undefined) parts.push(`entries=${rEntries}`)
+			if (rEntries !== undefined) parts.push(`entries=${fmtCount(rEntries)}`)
 			if (loaded !== undefined || enabled !== undefined || running !== undefined) {
-				parts.push(`plugins=${loaded ?? '?'}:${enabled ?? '?'}:${running ?? '?'}`)
+				parts.push(`plugins=${fmtTriple(loaded, enabled, running)}`)
 			}
 			lines.push(`      - ${root}${parts.length ? ` ${parts.join(' ')}` : ''}`)
 		}
 	}
 
-	const hotspots = formatHmrHotspots(props.hotspots)
+	const hotspots = formatHmrHotspots(props.hotspots, colorsOn)
 	if (hotspots?.length) lines.push(...hotspots)
 
 	return lines.length ? lines : undefined
 }
 
-function formatHmrPrettyDetails(record: LogRecord): string[] | undefined {
+function formatHmrPrettyDetails(record: LogRecord, colorsOn: boolean): string[] | undefined {
 	if (!isCategoryPrefixed(record.category, pluxelCategories.hmr)) return undefined
 
 	const head = String(record.message[0] ?? '')
-	if (head.includes('HMR warmup done')) return formatHmrWarmupDetails(record)
-	if (head.includes('HMR updated')) return formatHmrUpdatedDetails(record)
-	if (head.includes('HMR report')) return formatHmrReportDetails(record)
+	if (head.includes('HMR warmup done')) return formatHmrWarmupDetails(record, colorsOn)
+	if (head.includes('HMR updated')) return formatHmrUpdatedDetails(record, colorsOn)
+	if (head.includes('HMR report')) return formatHmrReportDetails(record, colorsOn)
 	return undefined
 }
 
@@ -615,7 +738,7 @@ export function withPluxelMessagePrefix(
 		const colorsOn = out.includes('\u001B[')
 		const multiline = out.includes('\n')
 		let usedBlock = false
-		const hmrLines = !multiline ? formatHmrPrettyDetails(nextRecord) : undefined
+		const hmrLines = !multiline ? formatHmrPrettyDetails(nextRecord, colorsOn) : undefined
 		if (hmrLines?.length) {
 			out = `${out}\n${hmrLines.join('\n')}`
 			usedBlock = true

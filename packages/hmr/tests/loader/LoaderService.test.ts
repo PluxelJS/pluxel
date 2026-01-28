@@ -227,11 +227,60 @@ describe('LoaderService', () => {
 
 		// After rollback, loader should not claim Consumer is loaded.
 		expect(loader.api.registry.getCtor('Consumer')).toBeUndefined()
-		expect(loader.api.anchors.list().has('B.ts')).toBe(false)
+		expect(loader.api.anchors.has('B.ts')).toBe(false)
 
 		// Core should still be on the previous container: base resolves to Impl1 and remains running.
 		expect(core.registry.isRunning(Abs)).toBe(true)
 		expect(core.registry.getInstance(Abs)).toBeInstanceOf(Impl1)
+	})
+
+	it('replaceModule normalizes ctor-param tokens by plugin id (builtin/HMR ctor identity mismatch)', async () => {
+		const core = new Context()
+		const ctx = createHmrCtx(core)
+		const warns: unknown[] = []
+		;(ctx as unknown as { logger: { warn: (...args: unknown[]) => void } }).logger.warn = (
+			...args: unknown[]
+		) => warns.push(args)
+		ctx.configService.enableInConfig('Dep', 'Consumer')
+		const loader = new LoaderService(ctx)
+
+		@Plugin({ name: 'Dep' })
+		class Dep extends BasePlugin {}
+
+		// 模拟 HMR 插件模块里“拿到了另一个 ctor 引用”，但插件 id 相同。
+		// 真实场景常见于：builtin 预载已注册/运行，而 HMR 模块因为不同入口/打包产物/热更新重复评估
+		// 导致导入到一个“同 id 的 ctor”，如果不归一化就会 MissingDependency。
+		@Plugin({ name: 'Dep' })
+		class DepShadow extends BasePlugin {}
+
+		@Plugin({ name: 'Consumer' })
+		class Consumer extends BasePlugin {
+			constructor(_dep: DepShadow) {
+				super()
+			}
+		}
+		setParamToken(Consumer, 0, DepShadow)
+
+		await loader.preloadPlugins([Dep])
+		expect(core.registry.isRunning(Dep)).toBe(true)
+
+		{
+			const batch = loader.beginBatch()
+			await batch.replaceModule('Consumer.ts', { Consumer })
+			const res = await core.registry.commit()
+			expect(res.ok).toBe(true)
+			batch.commit()
+		}
+
+		expect(core.registry.isRunning(Consumer)).toBe(true)
+		expect(warns.length).toBe(1)
+		expect((warns[0] as unknown[])[0]).toBe(
+			'依赖注入 token 已归一化：检测到同 id 不同 ctor 引用（建议检查 bridge/导入路径）',
+		)
+		expect((warns[0] as unknown[])[1]).toMatchObject({
+			moduleId: 'Consumer.ts',
+			consumer: 'Consumer',
+		})
 	})
 
 	it('registry view exposes module ids and loaded names', async () => {
@@ -257,17 +306,19 @@ describe('LoaderService', () => {
 		expect(loader.api.registry.listLoadedNames()).toEqual(['Alpha', 'Beta'])
 	})
 
-	it('anchors remove normalizes module ids via hmrService', () => {
+	it('anchors remove expects clean ids', async () => {
 		const core = new Context()
 		const ctx = createHmrCtx(core)
-		;(ctx as unknown as { hmrService?: { normalizeId: (id: string) => string } }).hmrService = {
-			normalizeId: (id: string) => id.replace('/@fs', ''),
-		}
 		const loader = new LoaderService(ctx)
-		const anchors = loader.api.anchors.list() as Set<string>
-		anchors.add('/abs/Plugin.ts')
 
-		loader.api.anchors.remove('/@fs/abs/Plugin.ts')
-		expect(anchors.has('/abs/Plugin.ts')).toBe(false)
+		@Plugin({ name: 'Anchor' })
+		class Anchor extends BasePlugin {}
+
+		const batch = loader.beginBatch()
+		await batch.replaceModule('/abs/Plugin.ts', { Anchor })
+
+		expect(loader.api.anchors.has('/abs/Plugin.ts')).toBe(true)
+		loader.api.anchors.remove('/abs/Plugin.ts')
+		expect(loader.api.anchors.has('/abs/Plugin.ts')).toBe(false)
 	})
 })

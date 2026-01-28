@@ -12,7 +12,6 @@ import {
 	type ViteDevServer,
 } from 'vite'
 import type { BuiltinPluginSpec } from '../loader/LoaderService'
-import { AsyncSerialLock } from './async-serial-lock'
 import {
 	buildHmrViteConfig,
 	type HMRDependencyConfig,
@@ -21,15 +20,17 @@ import {
 	resolveHMRDependencyConfig,
 } from './config'
 import { HmrEnvironment, type HmrPathApi, type HmrToolkit } from './environment'
-import { resolveGlobPatterns } from './globs'
 import {
+	AsyncSerialLock,
 	BatchDebouncer,
 	findNearestPackageRoot,
 	matchesSpecifierPattern,
+	resolveGlobPatterns,
 	startTimer,
 } from './internals'
-import { logAttributionReport, TimingTracker } from './logging'
-import { collectColdStartEntries, HmrBatchProcessor, HmrExecutor } from './pipeline'
+import { collectHotspots, isLogEnabled, logAttributionReport, TimingTracker } from './logging'
+import { buildHmrOperationalReport, type RegistryViewLike } from './operational-report'
+import { collectColdStartEntries, HmrBatchProcessor, HmrExecutor, prefetchTransforms } from './pipeline'
 import { HmrRunner, isHardBridgeSpecifier } from './runner'
 import { installRequireShims, type RuntimeShimConfig, RuntimeShimRegistry } from './runtime-shims'
 
@@ -148,6 +149,7 @@ export class HMRService {
 		rootsPretty: readonly string[]
 		anchors: number
 		entries: number
+		entryList: readonly string[]
 		entriesByRoot: readonly number[]
 	}>
 	private readonly execLock = new AsyncSerialLock()
@@ -270,6 +272,7 @@ export class HMRService {
 		}
 		await this.ensureBaseline()
 		await this.execLock.run(async () => {
+			this.timing.clear()
 			await this.executor.runAndLoadAll(filesPath, keepOrder)
 		})
 		void this.logOperationalReport('executeFiles').catch((error) => {
@@ -601,67 +604,56 @@ export class HMRService {
 	}
 
 	private isAnchorClean(clean: string): boolean {
-		const anchors = this.ctx.loader.api.anchors.list()
-		// Fast-path: in HMR runtime, anchors are stored as clean ids already.
-		if (anchors.has(clean)) return true
-
-		// Fallback: tolerate non-normalized anchors inserted by tests/tooling.
-		for (const a of anchors) {
-			const id = this.path.toClean(a)
-			if (id.startsWith('\0')) continue
-			if (id.includes('/node_modules/')) continue
-			if (id === clean) return true
-		}
-		return false
+		return this.ctx.loader.api.anchors.has(clean)
 	}
 
 	private async performWarmup() {
 		await this.execLock.run(async () => {
+			this.timing.clear()
 			const endAll = startTimer()
 			const endScan = startTimer()
-			const anchors = this.getAnchorsCleanSnapshot()
-			const entries = await collectColdStartEntries({
-				rootsAbs: this.scanRootsAbs,
-				anchors,
-				path: this.path,
-				scanService: this.ctx.scanService,
-				workspaceConditions: this.workspaceConditions,
-			})
+			const scope = await this.ensureStartupScope()
 			const scanMs = Math.round(endScan() * 10) / 10
-			const coldFiles = unique(entries.map((p) => this.path.toClean(p)))
-				.filter((id) => anchors.has(id) || this.toolkit.pathFilter(id))
-				.sort()
+			const coldFiles = scope.entryList.slice().sort()
 			const dbgWarmup = this.dbg.warmup
-			dbgWarmup.debug((l) => l`scan: ${coldFiles.length} files in ${scanMs}ms`)
+			const debugWarmup = isLogEnabled(dbgWarmup, 'debug')
+			if (debugWarmup) {
+				dbgWarmup.debug((l) => l`scan: ${coldFiles.length} files in ${scanMs}ms`)
+			}
 
 			const endWarmup = startTimer()
+			let prefetchMs: number | undefined
 
-			const prettyFiles = coldFiles.map((f) => this.path.pretty(f))
-			dbgWarmup.debug(
-				(l) => l`files (${prettyFiles.length})\n${prettyFiles.map((f) => `    ${f}`).join('\n')}`,
-			)
+			if (this.shouldWarmupPrefetch(coldFiles.length)) {
+				const endPrefetch = startTimer()
+				await prefetchTransforms({
+					env: this.ssrEnv,
+					ids: coldFiles,
+					timing: this.timing,
+					concurrency: this.resolveWarmupPrefetchConcurrency(coldFiles.length),
+				})
+				prefetchMs = Math.round(endPrefetch() * 10) / 10
+			}
 
-			const executed = await this.executor.runAndLoadAll(coldFiles, true)
+			if (debugWarmup) {
+				dbgWarmup.debug((l) => {
+					const prettyFiles = coldFiles.map((f) => this.path.pretty(f))
+					return l`files (${prettyFiles.length})\n${prettyFiles.map((f) => `    ${f}`).join('\n')}`
+				})
+			}
+
+			const executed = await this.executor.runAndLoadAllClean(coldFiles, true)
 			const commitMs = executed ? Math.round(executed.commitMs * 10) / 10 : null
 
 			const warmupMs = Math.round(endWarmup() * 10) / 10
 			const totalMs = Math.round(endAll() * 10) / 10
 
-			const hotspots = (() => {
-				const snap = this.timing.snapshot()
-				if (snap.evalMs.size === 0 && snap.injectMs.size === 0) return []
-				const totals = new Map<string, number>()
-				for (const [id, ms] of snap.evalMs) totals.set(id, (totals.get(id) ?? 0) + ms)
-				for (const [id, ms] of snap.injectMs) totals.set(id, (totals.get(id) ?? 0) + ms)
-				return [...totals.entries()]
-					.sort((a, b) => b[1] - a[1])
-					.slice(0, 5)
-					.map(([id, ms]) => ({ id: this.path.pretty(id), ms: Math.round(ms * 10) / 10 }))
-			})()
+			const hotspots = collectHotspots(this.timing, (id) => this.path.pretty(id))
 
 			this.ctx.logger.info('HMR warmup done', {
 				files: coldFiles.length,
 				scanMs,
+				prefetchMs,
 				warmupMs,
 				commitMs,
 				totalMs,
@@ -673,8 +665,22 @@ export class HMRService {
 				this.ctx.logger.warn('HMR report failed', { error })
 			})
 
-			// Full attribution output is debug-only (opt-in for profiling).
-			if (process.env.PLUXEL_HMR_ATTRIBUTION === '1') {
+			// Attribution output is opt-in for profiling.
+			const attr = process.env.PLUXEL_HMR_ATTRIBUTION
+			if (attr && attr !== '0' && attr !== 'false') {
+				const level = ((): 'trace' | 'debug' | 'info' | 'warn' | 'error' | 'fatal' => {
+					if (attr === '1' || attr === 'true') return 'info'
+					if (
+						attr === 'trace' ||
+						attr === 'debug' ||
+						attr === 'info' ||
+						attr === 'warn' ||
+						attr === 'error' ||
+						attr === 'fatal'
+					)
+						return attr
+					return 'info'
+				})()
 				logAttributionReport(
 					this.ctx.logger,
 					{
@@ -683,10 +689,24 @@ export class HMRService {
 						timing: this.timing,
 						prettyId: (id) => this.path.pretty(id),
 					},
-					{ level: 'debug' },
+					{ level },
 				)
 			}
 		})
+	}
+
+	private shouldWarmupPrefetch(fileCount: number) {
+		if (fileCount <= 1) return false
+		const raw = process.env.PLUXEL_HMR_WARMUP_PREFETCH
+		if (raw === '1' || raw === 'true') return true
+		return false
+	}
+
+	private resolveWarmupPrefetchConcurrency(fileCount: number) {
+		const raw = process.env.PLUXEL_HMR_WARMUP_PREFETCH_CONCURRENCY
+		const parsed = raw ? Number.parseInt(raw, 10) : NaN
+		if (Number.isFinite(parsed) && parsed > 0) return Math.min(fileCount, parsed)
+		return Math.min(fileCount, 8)
 	}
 
 	private resolveBareWorkspaceEntry(specifier: string, importer: string | null) {
@@ -707,11 +727,7 @@ export class HMRService {
 
 		const importerKey = importer ? this.path.toClean(importer) : ''
 		let byImporter = this.workspaceEntryResolveCache.get(specifier)
-		if (byImporter) {
-			// LRU-ish: keep hot specifiers near the end so eviction stays cheap.
-			this.workspaceEntryResolveCache.delete(specifier)
-			this.workspaceEntryResolveCache.set(specifier, byImporter)
-		} else {
+		if (!byImporter) {
 			byImporter = new Map()
 			this.workspaceEntryResolveCache.set(specifier, byImporter)
 		}
@@ -736,7 +752,7 @@ export class HMRService {
 		this.workspaceEntryResolveCacheSize++
 
 		// Best-effort eviction to avoid unbounded growth under a large, churny dependency graph.
-		// Evict by specifier (LRU order), which is cheap and keeps hot deps stable.
+		// Evict by specifier insertion order (FIFO) to keep per-hit overhead minimal.
 		if (this.workspaceEntryResolveCacheSize > WORKSPACE_ENTRY_CACHE_LIMIT) {
 			const targetSize = Math.floor(WORKSPACE_ENTRY_CACHE_LIMIT * 0.8)
 			for (const [spec, map] of this.workspaceEntryResolveCache) {
@@ -750,14 +766,7 @@ export class HMRService {
 	}
 
 	private getAnchorsCleanSnapshot(): ReadonlySet<string> {
-		const out = new Set<string>()
-		for (const a of this.ctx.loader.api.anchors.list()) {
-			const clean = isProbablyCleanId(a) ? a : this.path.toClean(a)
-			if (clean.startsWith('\0')) continue
-			if (clean.includes('/node_modules/')) continue
-			out.add(clean)
-		}
-		return out
+		return this.ctx.loader.api.anchors.snapshot()
 	}
 
 	private isBridgeModule(specifier: string) {
@@ -781,16 +790,16 @@ export class HMRService {
 		if (this.startupScope) return await this.startupScope
 		this.startupScope = (async () => {
 			const anchorsClean = this.getAnchorsCleanSnapshot()
-			const rootEntries = await collectColdStartEntries({
+			const entries = await collectColdStartEntries({
 				rootsAbs: this.scanRootsAbs,
 				anchors: anchorsClean,
 				path: this.path,
+				pathFilter: (id) => this.toolkit.pathFilter(id),
 				scanService: this.ctx.scanService,
 				workspaceConditions: this.workspaceConditions,
 			})
-			const entries = unique(rootEntries.map((p) => this.path.toClean(p))).filter(
-				(id) => anchorsClean.has(id) || this.toolkit.pathFilter(id),
-			)
+			// `collectColdStartEntries()` already returns clean, de-duplicated ids
+			// and applies the same pathFilter for non-anchor entries.
 
 			const rootsAbs = this.scanRootsAbs.slice().sort()
 			const rootsPretty = rootsAbs.map((root) => this.path.pretty(root))
@@ -812,6 +821,7 @@ export class HMRService {
 				rootsPretty,
 				anchors: anchorsClean.size,
 				entries: entries.length,
+				entryList: entries,
 				entriesByRoot,
 			} as const
 		})()
@@ -821,10 +831,6 @@ export class HMRService {
 	private async logOperationalReport(reason: 'startup' | 'executeFiles' | 'warmup') {
 		if (!this.shouldLogOperationalReport()) return
 
-		type RegistryViewLike = {
-			listRegistered: () => ReadonlyMap<string, PluginConstructor>
-			findModuleIdByName: (name: string) => string | null
-		}
 		type LoaderApiLike = { registry: RegistryViewLike }
 		type CtxWithLoaderApi = { loader?: { api?: LoaderApiLike } }
 
@@ -832,80 +838,26 @@ export class HMRService {
 		if (!registryView) return
 
 		const scope = await this.ensureStartupScope()
-		const rootsAbs = scope.rootsAbs
-		const rootsPretty = scope.rootsPretty
-		const isUnder = (child: string, root: string) =>
-			child === root || child.startsWith(root.endsWith('/') ? root : `${root}/`)
-
-		const loadedByRoot = new Array<number>(rootsAbs.length).fill(0)
-		const enabledByRoot = new Array<number>(rootsAbs.length).fill(0)
-		const runningByRoot = new Array<number>(rootsAbs.length).fill(0)
-		let builtinsLoaded = 0
-		let builtinsEnabled = 0
-		let builtinsRunning = 0
-
-		for (const [name, ctor] of registryView.listRegistered()) {
-			const moduleId = registryView.findModuleIdByName(name)
-			const enabled = this.ctx.configService.isEnabledInConfig(name)
-			const running = this.ctx.registry.isRunning(ctor)
-
-			if (moduleId === 'pluxel:builtins') {
-				builtinsLoaded++
-				if (enabled) builtinsEnabled++
-				if (running) builtinsRunning++
-				continue
-			}
-			if (!moduleId) continue
-
-			const clean = this.path.toClean(moduleId)
-			for (let i = 0; i < rootsAbs.length; i++) {
-				if (!isUnder(clean, rootsAbs[i]!)) continue
-				loadedByRoot[i] = (loadedByRoot[i] ?? 0) + 1
-				if (enabled) enabledByRoot[i] = (enabledByRoot[i] ?? 0) + 1
-				if (running) runningByRoot[i] = (runningByRoot[i] ?? 0) + 1
-				break
-			}
-		}
-
-		const roots = rootsPretty.map((root, i) => ({
-			root,
-			entries: scope.entriesByRoot[i] ?? 0,
-			loaded: loadedByRoot[i] ?? 0,
-			enabled: enabledByRoot[i] ?? 0,
-			running: runningByRoot[i] ?? 0,
-		}))
-
 		const hotspots =
-			reason === 'executeFiles' || reason === 'warmup'
-				? (() => {
-						const snap = this.timing.snapshot()
-						if (snap.evalMs.size === 0 && snap.injectMs.size === 0) return []
-						const totals = new Map<string, number>()
-						for (const [id, ms] of snap.evalMs) totals.set(id, (totals.get(id) ?? 0) + ms)
-						for (const [id, ms] of snap.injectMs) totals.set(id, (totals.get(id) ?? 0) + ms)
-						return [...totals.entries()]
-							.sort((a, b) => b[1] - a[1])
-							.slice(0, 5)
-							.map(([id, ms]) => ({ id: this.path.pretty(id), ms: Math.round(ms * 10) / 10 }))
-					})()
-				: []
+			reason === 'executeFiles' ? collectHotspots(this.timing, (id) => this.path.pretty(id)) : []
 
-		this.ctx.logger.info('HMR report', {
+		const resolveLimitEnv = process.env.PLUXEL_HMR_REPORT_RESOLVE_LIMIT
+		const report = await buildHmrOperationalReport({
 			reason,
-			roots,
+			cwd: this.cwd,
 			anchors: scope.anchors,
 			entries: scope.entries,
-			builtins: { loaded: builtinsLoaded, enabled: builtinsEnabled, running: builtinsRunning },
+			rootsAbs: scope.rootsAbs,
+			rootsPretty: scope.rootsPretty,
+			entriesByRoot: scope.entriesByRoot,
+			registryView,
+			isEnabledInConfig: (name) => this.ctx.configService.isEnabledInConfig(name),
+			isRunning: (ctor) => this.ctx.registry.isRunning(ctor),
+			resolveBareWorkspaceEntry: (specifier) => this.resolveBareWorkspaceEntry(specifier, null),
+			resolveLimit: resolveLimitEnv,
 			hotspots: hotspots.length ? hotspots : undefined,
 		})
-	}
-}
 
-function isProbablyCleanId(id: string) {
-	if (!id) return false
-	if (id.includes('?')) return false
-	if (id.includes('\\')) return false
-	if (id.startsWith('/@')) return false
-	if (id.startsWith('\0')) return true
-	return id.startsWith('/')
+		this.ctx.logger.info('HMR report', report)
+	}
 }

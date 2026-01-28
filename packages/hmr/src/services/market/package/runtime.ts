@@ -1,4 +1,4 @@
-import { pathToFileURL } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 
 import type { Context } from '@pluxel/core'
 import { normalize as normalizePath } from 'pathe'
@@ -10,15 +10,39 @@ interface CachedModule {
 	module: Record<string, unknown>
 }
 
+const FS_PREFIX = '/@fs/'
+
+function normalizeModuleIdFallback(moduleId: string): string {
+	if (!moduleId) return moduleId
+	if (moduleId.startsWith('\0')) return moduleId
+	if (moduleId.startsWith('file://')) {
+		try {
+			return normalizePath(fileURLToPath(moduleId))
+		} catch {
+			return moduleId
+		}
+	}
+	if (moduleId.startsWith(FS_PREFIX)) return normalizePath(moduleId.slice(FS_PREFIX.length))
+	if (moduleId.startsWith('/@')) return moduleId
+	return normalizePath(moduleId)
+}
+
 export class PackageRuntime {
 	private readonly moduleCache = new Map<string, CachedModule>()
 	private readonly moduleIds = new Map<string, string>()
+	private readonly normalizeModuleIdImpl: (moduleId: string) => string
 
-	constructor(private readonly ctx: Context) {}
+	constructor(private readonly ctx: Context) {
+		const hmr = (this.ctx as unknown as { hmrService?: { normalizeId?: (x: string) => string } })
+			.hmrService
+		this.normalizeModuleIdImpl =
+			typeof hmr?.normalizeId === 'function'
+				? hmr.normalizeId.bind(hmr)
+				: normalizeModuleIdFallback
+	}
 
 	normalizeModuleId(moduleId: string): string {
-		const hmr = (this.ctx as any)?.hmrService
-		return typeof hmr?.normalizeId === 'function' ? hmr.normalizeId(moduleId) : moduleId
+		return this.normalizeModuleIdImpl(moduleId)
 	}
 
 	getModuleId(name: string): string | undefined {

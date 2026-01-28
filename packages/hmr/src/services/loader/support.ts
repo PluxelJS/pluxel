@@ -25,10 +25,47 @@ type StatusSummary = {
 
 type PluginRegistryTx = ReturnType<PluginRegistry['beginTransaction']>
 
+export class AnchorStore {
+	private readonly anchors = new Set<string>()
+	private readonly hmrAnchors = new Set<string>()
+	private version = 0
+	private snapshotVersion = -1
+	private snapshotCache: ReadonlySet<string> = new Set<string>()
+
+	has(id: string) {
+		return this.anchors.has(id)
+	}
+
+	values(): IterableIterator<string> {
+		return this.anchors.values()
+	}
+
+	snapshot(): ReadonlySet<string> {
+		if (this.snapshotVersion === this.version) return this.snapshotCache
+		const snap = new Set(this.hmrAnchors)
+		this.snapshotCache = snap
+		this.snapshotVersion = this.version
+		return snap
+	}
+
+	add(id: string) {
+		if (this.anchors.has(id)) return
+		this.anchors.add(id)
+		if (!id.includes('/node_modules/')) this.hmrAnchors.add(id)
+		this.version++
+	}
+
+	delete(id: string) {
+		if (!this.anchors.delete(id)) return
+		this.hmrAnchors.delete(id)
+		this.version++
+	}
+}
+
 export class AnchorJournal {
 	private readonly snapshot = new Map<string, boolean>()
 
-	constructor(private readonly anchors: Set<string>) {}
+	constructor(private readonly anchors: AnchorStore) {}
 
 	record(id: string) {
 		if (this.snapshot.has(id)) return
@@ -58,7 +95,7 @@ export class LoaderBatchSession {
 	constructor(
 		private readonly moduleReplacer: ModuleReplacer,
 		private readonly tx: PluginRegistryTx,
-		anchors: Set<string>,
+		anchors: AnchorStore,
 	) {
 		this.anchors = new AnchorJournal(anchors)
 	}
@@ -79,10 +116,18 @@ export class LoaderBatchSession {
 }
 
 export class RuntimeResolver {
+	private readonly normalizeIdFn: (moduleId: string) => string
+
 	constructor(
 		private readonly ctx: Context,
 		private readonly registry: PluginRegistry,
-	) {}
+	) {
+		// HMRService is optional in unit tests and some non-HMR runtimes.
+		const hmr = (this.ctx as unknown as { hmrService?: { normalizeId?: (x: string) => string } })
+			.hmrService
+		this.normalizeIdFn =
+			typeof hmr?.normalizeId === 'function' ? hmr.normalizeId.bind(hmr) : (id) => id
+	}
 
 	resolve(target: PluginConstructor | string): PluginConstructor | undefined {
 		if (typeof target === 'string') {
@@ -115,10 +160,7 @@ export class RuntimeResolver {
 	}
 
 	normalizeId(moduleId: string) {
-		// HMRService is optional in unit tests and some non-HMR runtimes.
-		const hmr = (this.ctx as unknown as { hmrService?: { normalizeId?: (x: string) => string } })
-			.hmrService
-		return hmr?.normalizeId?.(moduleId) ?? moduleId
+		return this.normalizeIdFn(moduleId)
 	}
 }
 
@@ -183,12 +225,11 @@ export class PluginPruner {
 	constructor(
 		private readonly ctx: Context,
 		private readonly registry: PluginRegistry,
-		private readonly anchors: Set<string>,
-		private readonly normalizeModuleId: (moduleId: string) => string,
+		private readonly anchors: AnchorStore,
 	) {}
 
 	pruneModule(moduleId: string, scope: RemovalScope = 'runtime') {
-		const id = this.normalizeModuleId(moduleId)
+		const id = moduleId
 		if (scope === 'persisted') this.registry.disablePersistedByModule(id)
 		this.registry.stopModule(id)
 		this.registry.undeclareModule(id)
@@ -286,16 +327,26 @@ export class LoaderRegistryView {
 
 export class LoaderAnchors {
 	constructor(
-		private readonly anchors: Set<string>,
-		private readonly runtime: RuntimeResolver,
+		private readonly anchors: AnchorStore,
 	) {}
 
-	list(): ReadonlySet<string> {
-		return this.anchors
+	has(moduleId: string): boolean {
+		return this.anchors.has(moduleId)
+	}
+
+	/**
+	 * List anchor module ids without exposing the underlying Set (prevents accidental mutation).
+	 */
+	list(): IterableIterator<string> {
+		return this.anchors.values()
+	}
+
+	snapshot(): ReadonlySet<string> {
+		return this.anchors.snapshot()
 	}
 
 	remove(moduleId: string) {
-		this.anchors.delete(this.runtime.normalizeId(moduleId))
+		this.anchors.delete(moduleId)
 	}
 }
 

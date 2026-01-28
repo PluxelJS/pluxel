@@ -1,18 +1,61 @@
 import { existsSync } from 'node:fs'
 import { getLogger } from '@logtape/logtape'
 import { pluxelCategories } from '@pluxel/core/logger'
-import { dirname, resolve } from 'pathe'
+import { dirname, isAbsolute, resolve } from 'pathe'
 import { normalizePath } from 'vite'
 
 const nsToMs = (ns: bigint) => Number(ns) / 1e6
 
+function resolveCacheLimit(raw: unknown, fallback: number) {
+	if (typeof raw === 'number' && Number.isFinite(raw)) return Math.max(0, Math.floor(raw))
+	if (typeof raw === 'string') {
+		const n = Number.parseInt(raw, 10)
+		if (Number.isFinite(n)) return Math.max(0, n)
+	}
+	return fallback
+}
+
+function boundedSet<K, V>(map: Map<K, V>, key: K, value: V, limit: number) {
+	if (limit <= 0) return
+	map.set(key, value)
+	if (map.size <= limit) return
+	const first = map.keys().next().value as K
+	map.delete(first)
+}
+
+const PKGROOT_CACHE_LIMIT = resolveCacheLimit(process.env.PLUXEL_HMR_PKGROOT_CACHE_LIMIT, 2_000)
+const pkgRootCache = new Map<string, string | null>()
+
 export const findNearestPackageRoot = (start: string): string | null => {
 	try {
 		let current = normalizePath(start)
+		if (PKGROOT_CACHE_LIMIT > 0) {
+			const cached = pkgRootCache.get(current)
+			if (cached !== undefined) return cached
+		}
+
+		const visited: string[] = []
 		while (true) {
-			if (existsSync(resolve(current, 'package.json'))) return normalizePath(current)
+			visited.push(current)
+
+			if (PKGROOT_CACHE_LIMIT > 0) {
+				const cached = pkgRootCache.get(current)
+				if (cached !== undefined) {
+					for (const dir of visited) boundedSet(pkgRootCache, dir, cached, PKGROOT_CACHE_LIMIT)
+					return cached
+				}
+			}
+
+			if (existsSync(resolve(current, 'package.json'))) {
+				const root = normalizePath(current)
+				for (const dir of visited) boundedSet(pkgRootCache, dir, root, PKGROOT_CACHE_LIMIT)
+				return root
+			}
 			const parent = dirname(current)
-			if (parent === current) return null
+			if (parent === current) {
+				for (const dir of visited) boundedSet(pkgRootCache, dir, null, PKGROOT_CACHE_LIMIT)
+				return null
+			}
 			current = parent
 		}
 	} catch {
@@ -32,6 +75,19 @@ export function matchesSpecifierPattern(specifier: string, pattern: string) {
 		return specifier.startsWith(prefix)
 	}
 	return specifier === pattern || specifier.startsWith(`${pattern}/`)
+}
+
+export function resolveGlobPatterns(
+	patterns: readonly string[] | undefined,
+	cwd: string,
+): string[] | undefined {
+	if (!patterns?.length) return undefined
+	return patterns.map((pattern) => {
+		const negated = pattern.startsWith('!')
+		const raw = negated ? pattern.slice(1) : pattern
+		const normalized = isAbsolute(raw) ? normalizePath(raw) : normalizePath(resolve(cwd, raw))
+		return negated ? `!${normalized}` : normalized
+	})
 }
 
 type BatchDebounceReason = 'debounce' | 'maxwait' | 'maxbatch'
@@ -81,5 +137,23 @@ export class BatchDebouncer {
 		this.inFlight = this.inFlight
 			.then(() => this.flushFn(files, epoch))
 			.catch((error) => this.onError(error))
+	}
+}
+
+export class AsyncSerialLock {
+	private tail: Promise<void> = Promise.resolve()
+
+	async run<T>(fn: () => Promise<T>): Promise<T> {
+		const prev = this.tail
+		let release: (() => void) | undefined
+		this.tail = new Promise<void>((r) => {
+			release = r
+		})
+		await prev
+		try {
+			return await fn()
+		} finally {
+			release?.()
+		}
 	}
 }

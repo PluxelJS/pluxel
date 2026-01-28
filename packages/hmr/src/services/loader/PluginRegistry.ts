@@ -13,7 +13,6 @@ import {
 	type ConfigSchemaMap as CoreConfigSchemaMap,
 	isStandardSchemaV1,
 } from '@pluxel/core/services'
-import { dirname, normalize } from 'pathe'
 import * as v from 'valibot'
 import {
 	type BaseProvidersExtra,
@@ -27,9 +26,24 @@ type PluginName = string
 type ExportKey = string
 type ModuleItem = Readonly<{ ctor: PluginConstructor; exportKey: ExportKey }>
 
-const EMPTY: readonly ModuleItem[] = Object.freeze([])
+const EMPTY: readonly ModuleItem[] = []
 const isIndexFile = (p: string) => /(?:^|[\\/])index\.[cm]?[tj]sx?$/.test(p)
-const sameDir = (a: string, b: string) => dirname(normalize(a)) === dirname(normalize(b))
+const sameDir = (a: string, b: string) => {
+	// Hot path: HMR-normalized ids are posix paths without traversal segments.
+	// Avoid `pathe.normalize/dirname` in the common case.
+	const ai = a.lastIndexOf('/')
+	const bi = b.lastIndexOf('/')
+	if (ai > 0 && bi > 0 && a.indexOf('\\') === -1 && b.indexOf('\\') === -1) {
+		return a.slice(0, ai) === b.slice(0, bi)
+	}
+
+	const na = a.includes('\\') ? a.replace(/\\/g, '/') : a
+	const nb = b.includes('\\') ? b.replace(/\\/g, '/') : b
+	const nai = na.lastIndexOf('/')
+	const nbi = nb.lastIndexOf('/')
+	if (nai < 0 || nbi < 0) return false
+	return na.slice(0, nai) === nb.slice(0, nbi)
+}
 export const LIFECYCLE_STATES = ['running', 'stopped', 'disabled'] as const
 export type PluginLifecycleStage = (typeof LIFECYCLE_STATES)[number]
 
@@ -295,15 +309,30 @@ export class PluginRegistry {
 				.info`[PluginRegistry] 插件 "${declaredName}" 来自包 ${pkgName}，已自动重命名为 "${prefixedId}"`
 		}
 
-		const seen = this.enrolled.get(ctor) ?? new Set<ModuleId>()
-		if (seen.has(moduleId)) return name
-		tx?.recordEnrolled(ctor)
-		seen.add(moduleId)
-		this.enrolled.set(ctor, seen)
+		const prevSeen = this.enrolled.get(ctor)
+		if (prevSeen?.has(moduleId)) return name
+		if (tx) {
+			tx.recordEnrolled(ctor)
+			const next = prevSeen ? new Set(prevSeen) : new Set<ModuleId>()
+			next.add(moduleId)
+			this.enrolled.set(ctor, next)
+		} else {
+			const seen = prevSeen ?? new Set<ModuleId>()
+			seen.add(moduleId)
+			this.enrolled.set(ctor, seen)
+		}
 
 		const prev = this.moduleMap.get(moduleId) ?? EMPTY
-		if (!prev.some((i) => i.ctor === ctor)) {
-			this.moduleMap.set(moduleId, Object.freeze([...prev, Object.freeze({ ctor, exportKey })]))
+		let alreadyDeclared = false
+		for (let i = 0; i < prev.length; i++) {
+			if (prev[i]!.ctor === ctor) {
+				alreadyDeclared = true
+				break
+			}
+		}
+		if (!alreadyDeclared) {
+			const next = prev.length === 0 ? [{ ctor, exportKey }] : [...prev, { ctor, exportKey }]
+			this.moduleMap.set(moduleId, next)
 		}
 
 		this.nameMap.set(name, ctor)
@@ -333,12 +362,18 @@ export class PluginRegistry {
 				this.name2Path.delete(name)
 				this.name2ExportKey.delete(name)
 			}
-			const seen = this.enrolled.get(ctor)
-			if (seen) {
-				tx?.recordEnrolled(ctor)
-				seen.delete(moduleId)
-				if (seen.size === 0) this.enrolled.delete(ctor)
+			const prevSeen = this.enrolled.get(ctor)
+			if (!prevSeen) continue
+			if (tx) {
+				tx.recordEnrolled(ctor)
+				const next = new Set(prevSeen)
+				next.delete(moduleId)
+				if (next.size === 0) this.enrolled.delete(ctor)
+				else this.enrolled.set(ctor, next)
+				continue
 			}
+			prevSeen.delete(moduleId)
+			if (prevSeen.size === 0) this.enrolled.delete(ctor)
 		}
 		this.moduleMap.delete(moduleId)
 	}

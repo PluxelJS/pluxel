@@ -1,4 +1,4 @@
-import type { Logger as LogtapeLogger } from '@logtape/logtape'
+import type { Logger as LogtapeLogger, LogLevel } from '@logtape/logtape'
 
 export type HmrDebugLogger = LogtapeLogger
 
@@ -61,6 +61,28 @@ export class TimingTracker {
 			injectMs: this.buckets.inject,
 		}
 	}
+}
+
+export function collectHotspots(
+	timing: TimingTracker,
+	prettyId: (id: string) => string,
+	limit = 5,
+): Array<{ id: string; ms: number }> {
+	const snap = timing.snapshot()
+	if (snap.evalMs.size === 0 && snap.injectMs.size === 0) return []
+	const totals = new Map<string, number>()
+	for (const [id, ms] of snap.evalMs) totals.set(id, (totals.get(id) ?? 0) + ms)
+	for (const [id, ms] of snap.injectMs) totals.set(id, (totals.get(id) ?? 0) + ms)
+	return [...totals.entries()]
+		.sort((a, b) => b[1] - a[1])
+		.slice(0, limit)
+		.map(([id, ms]) => ({ id: prettyId(id), ms: Math.round(ms * 10) / 10 }))
+}
+
+export function isLogEnabled(logger: LogtapeLogger | null | undefined, level: LogLevel): boolean {
+	if (!logger) return false
+	const fn = (logger as { isEnabledFor?: (level: LogLevel) => boolean }).isEnabledFor
+	return typeof fn === 'function' ? fn.call(logger, level) : true
 }
 
 type PrettyIdFn = (id: string) => string

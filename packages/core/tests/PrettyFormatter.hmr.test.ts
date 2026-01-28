@@ -60,12 +60,13 @@ describe('createPluxelPrettyFormatter (hmr)', () => {
 			properties: {
 				context: 'root',
 				reason: 'executeFiles',
-				entries: 9,
-				anchors: 3,
+				scope: { roots: 2, entries: 9, anchors: 3 },
+				plugins: { loaded: 22, enabled: 22, running: 21 },
+				pluginsByRoot: { mode: 'byRoot', reasons: ['ok'] },
 				builtins: { loaded: 3, enabled: 3, running: 3 },
 				roots: [
-					{ root: '/repo/demo', entries: 9, loaded: 22, enabled: 22, running: 21 },
-					{ root: '/repo/extra', entries: 0, loaded: 0, enabled: 0, running: 0 },
+					{ root: '/repo/demo', entries: 9, plugins: { loaded: 22, enabled: 22, running: 21 } },
+					{ root: '/repo/extra', entries: 0, plugins: { loaded: 0, enabled: 0, running: 0 } },
 				],
 			},
 		}
@@ -73,8 +74,55 @@ describe('createPluxelPrettyFormatter (hmr)', () => {
 		const out = formatter(record)
 		expect(out).toContain('HMR report')
 		expect(out).toContain('reason=executeFiles')
+		expect(out).toContain('roots=2')
+		expect(out).toContain('plugins=22:22:21')
 		expect(out).toContain('roots:')
 		expect(out).toContain('- /repo/demo entries=9 plugins=22:22:21')
+		expect(out).not.toContain('⟪')
+	})
+
+	it('renders "HMR report" with monorepo-safe pluginStats (no misleading 0:0:0 roots)', () => {
+		const formatter = createPluxelPrettyFormatter({
+			colors: false,
+			icons: false,
+			includeCaller: false,
+			prefix: 'context',
+			timestamp: () => 'T',
+		})
+
+		const record: LogRecord = {
+			category: ['pluxel', 'hmr'],
+			level: 'info',
+			timestamp: Date.now(),
+			message: ['HMR report'],
+			properties: {
+				context: 'root',
+				reason: 'warmup',
+				scope: { roots: 2, entries: 21, anchors: 0 },
+				plugins: { loaded: 12, enabled: 10, running: 9 },
+				pluginsByRoot: {
+					mode: 'off',
+					reasons: ['all-unresolved', 'unresolved-moduleIds', 'resolve-capped'],
+					unresolved: 12,
+					unmapped: 0,
+					resolvedSpecifiers: 0,
+					resolveAttempts: 50,
+					resolveLimit: 50,
+				},
+				builtins: { loaded: 2, enabled: 2, running: 2 },
+				roots: [
+					{ root: 'chatbots', entries: 0 },
+					{ root: 'plugins', entries: 0 },
+				],
+			},
+		}
+
+		const out = formatter(record)
+		expect(out).toContain('HMR report')
+		expect(out).toContain('plugins=12:10:9')
+		expect(out).toContain('pluginsByRoot=off')
+		expect(out).toContain('- chatbots entries=0')
+		expect(out).not.toContain('chatbots entries=0 plugins=')
 		expect(out).not.toContain('⟪')
 	})
 

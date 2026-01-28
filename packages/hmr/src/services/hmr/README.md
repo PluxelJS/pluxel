@@ -108,6 +108,17 @@ Cold-start warmup (scan + eager evaluate a small set of likely entries) is **opt
 - Env: `PLUXEL_HMR_WARMUP=1` (or `true`) → background warmup (best-effort)
 - Manual: call `ctx.hmrService.warmup()` when you want to await it
 
+Implementation notes:
+
+- Warmup reuses the same entry collection as the startup report (`startupScope`) to avoid double scans.
+- Entry collection applies the same `pathFilter` for non-anchor files; anchors are always included.
+- Warmup transform prefetch (via `ssrEnv.fetchModule`) is opt-in to prime Vite caches:
+  - enable: `PLUXEL_HMR_WARMUP_PREFETCH=1`
+  - concurrency: `PLUXEL_HMR_WARMUP_PREFETCH_CONCURRENCY=8` (default: `8`, capped to file count)
+- Attribution report (top transform/evaluate/inject) is opt-in via `PLUXEL_HMR_ATTRIBUTION`:
+  - `PLUXEL_HMR_ATTRIBUTION=1` / `true` → log at `info`
+  - or set to a specific level: `trace|debug|info|warn|error|fatal`
+
 ## Dependency optimization
 
 Dep optimization is **disabled by default** (to reduce churn + disk IO in Vite 8 beta).
@@ -140,8 +151,8 @@ Implementation notes:
 - `environment.ts`: path normalization, id variants, scan-root filtering, workspace-only bare resolution helper.
 - `workspace-resolver.ts`: resolves bare imports to workspace entries / installed packages.
 - `config.ts`: Vite config builder + dependency config (`bridgeModules`, `cjsExternal`, SSR options).
-- `globs.ts`: `include`/`exclude` glob normalization helpers.
+- `operational-report.ts`: aggregates operational metrics (entries/plugins/hotspots).
+- `internals.ts`: small utilities (debouncer/timer/glob resolution/serial lock/etc).
 - `runtime-shims.ts`: runtime shims (e.g. `reflect-metadata`) + scoped `require` shims for those shims.
 - `logging.ts`: debug namespaces + timing attribution helpers.
-- `async-serial-lock.ts`: minimal async mutex for batches/executor.
-- `internals.ts`: small utilities (debouncer/timer/etc).
+- `plugins/*`: HMR plugins and small guards used by the runner/loader.
