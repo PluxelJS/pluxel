@@ -1,6 +1,6 @@
+import { fileURLToPath } from 'node:url'
 import type { Context } from '@pluxel/core'
 import { makeIdFiltersToMatchWithQuery } from '@rolldown/pluginutils'
-import { fileURLToPath } from 'node:url'
 import { dirname, isAbsolute, resolve } from 'pathe'
 import { createFilter, normalizePath } from 'vite'
 import { findNearestPackageRoot } from './internals'
@@ -36,9 +36,10 @@ export class HmrPathResolver {
 	constructor(
 		cwd: string,
 		private scanRootsAbs: string[],
+		opts?: { cacheLimit?: number },
 	) {
 		this.cwdNormalized = normalizePath(cwd)
-		this.cacheLimit = resolveCacheLimit(process.env.PLUXEL_HMR_PATH_CACHE_LIMIT, 10_000)
+		this.cacheLimit = resolveCacheLimit(opts?.cacheLimit, 10_000)
 		this.resolveBaseDirs = this.buildResolveBaseDirs()
 	}
 
@@ -278,13 +279,16 @@ export class HmrEnvironment {
 			workspaceConditions: readonly string[]
 			includeGlobs?: string[]
 			excludeGlobs?: string[]
+			pathCacheLimit?: number
 		},
 	) {
 		this.workspaceConditions = [...opts.workspaceConditions]
 		this.scanRootsAbs = [...opts.scanRootsAbs]
 		this.includeGlobs = opts.includeGlobs
 		this.excludeGlobs = opts.excludeGlobs
-		this.paths = new HmrPathResolver(opts.cwd, this.scanRootsAbs)
+		this.paths = new HmrPathResolver(opts.cwd, this.scanRootsAbs, {
+			cacheLimit: opts.pathCacheLimit,
+		})
 		this.pathFilterImpl = this.createFilters()
 		this.toolkit = {
 			path: {
@@ -330,12 +334,7 @@ export class HmrEnvironment {
 		if (id.startsWith('\0')) return true
 		if (!id.startsWith('/')) return false
 		// If there are traversal segments, always normalize to avoid subtle module id mismatches.
-		if (
-			id.includes('/./') ||
-			id.includes('/../') ||
-			id.endsWith('/.') ||
-			id.endsWith('/..')
-		)
+		if (id.includes('/./') || id.includes('/../') || id.endsWith('/.') || id.endsWith('/..'))
 			return false
 		if (id.startsWith(this.paths.cwdNormalizedPath)) return true
 		const roots = this.scanRootsAbs

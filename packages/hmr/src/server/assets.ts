@@ -15,14 +15,14 @@ type ManifestEntry = {
 
 type Manifest = Record<string, ManifestEntry>
 
-const PUBLIC_BASE = process.env.CLIENT_DIST ?? '/node_modules/@pluxel/hmr/dist/public'
+export const DEFAULT_PUBLIC_BASE = '/node_modules/@pluxel/hmr/dist/public'
 
 const pickEntry = (manifest: Manifest, entry = 'src/client.tsx') =>
 	entry in manifest
 		? entry
 		: (Object.keys(manifest).find((key) => manifest[key]?.isEntry) ?? Object.keys(manifest)[0])
 
-export function resolveAssets(isProd: boolean): Assets {
+export function resolveAssets(isProd: boolean, publicBase = DEFAULT_PUBLIC_BASE): Assets {
 	if (!isProd) {
 		return {
 			js: '/src/client.tsx',
@@ -51,13 +51,15 @@ export function resolveAssets(isProd: boolean): Assets {
 		const item = manifest[key]
 		if (!item) return
 		push(item.file)
-		item.css?.forEach((css) => cssSet.add(css))
+		item.css?.forEach((css) => {
+			cssSet.add(css)
+		})
 		item.imports?.forEach(visit)
 	}
 
 	visit(entryKey)
 
-	const toUrl = (file: string) => `${PUBLIC_BASE}/${file}`
+	const toUrl = (file: string) => `${publicBase}/${file}`
 	const [main, ...rest] = files
 
 	return {
@@ -66,5 +68,3 @@ export function resolveAssets(isProd: boolean): Assets {
 		preload: rest.map(toUrl),
 	}
 }
-
-export { PUBLIC_BASE }

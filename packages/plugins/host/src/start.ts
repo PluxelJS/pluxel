@@ -5,12 +5,11 @@ import { configure, getConfig } from '@logtape/logtape'
 import { createPluxelLogtapeConfig } from '@pluxel/core/logger'
 import GraphQL from '@pluxel/graphql'
 import { Context } from '@pluxel/hmr'
+import { applyHmrEnvOverrides } from '@pluxel/hmr/host'
 import { createLogStoreSink } from '@pluxel/hmr/logger'
 import { LogtapeLoggerService } from '@pluxel/hmr/services'
 import Wretch from '@pluxel/wretch'
 import { MarketUI } from 'pluxel-plugin-market-ui'
-
-if (process.env.PLUXEL_HMR_SSR === undefined) process.env.PLUXEL_HMR_SSR = 'true'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const logsDir = join(here, '../logs')
@@ -28,7 +27,7 @@ if (!getConfig()) {
 }
 
 const ctx = new Context({
-	hmrService: {
+	hmrService: applyHmrEnvOverrides({
 		port: 3000,
 		// Load demo plugins eagerly, but keep `start()` fast: warmup runs best-effort in background.
 		warmup: true,
@@ -36,7 +35,7 @@ const ctx = new Context({
 		exclude: [join(demoDir, '**/ui/**'), join(demoDir, 'env.ts')],
 		// Builtins are plain ctors so TypeScript can validate them.
 		builtins: [GraphQL, MarketUI, Wretch],
-	},
+	}),
 	registry: {
 		pluginCTXIsolate: [LogtapeLoggerService],
 	},

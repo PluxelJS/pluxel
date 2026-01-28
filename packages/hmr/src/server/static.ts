@@ -1,7 +1,6 @@
-import { resolveAssets } from './assets'
+import { DEFAULT_PUBLIC_BASE, resolveAssets } from './assets'
 import type { RenderHandler } from './types'
 
-const assets = resolveAssets(true)
 const colorSchemeScript = `<script>
 ;(() => {
   try {
@@ -16,7 +15,14 @@ const colorSchemeScript = `<script>
 })();
 </script>`
 
-const staticHtml = `<!DOCTYPE html>
+const htmlCache = new Map<string, string>()
+
+function buildStaticHtml(publicBase: string) {
+	const cached = htmlCache.get(publicBase)
+	if (cached) return cached
+
+	const assets = resolveAssets(true, publicBase)
+	const out = `<!DOCTYPE html>
 <html lang="zh">
   <head>
     <meta charset="utf-8" />
@@ -31,7 +37,12 @@ const staticHtml = `<!DOCTYPE html>
     <div id="root"></div>
   </body>
 </html>`
+	htmlCache.set(publicBase, out)
+	return out
+}
 
-export function createStaticRenderer(): RenderHandler {
+export function createStaticRenderer(opts?: { publicBase?: string }): RenderHandler {
+	const publicBase = opts?.publicBase ?? DEFAULT_PUBLIC_BASE
+	const staticHtml = buildStaticHtml(publicBase)
 	return (ctx) => ctx.html(staticHtml)
 }

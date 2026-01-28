@@ -273,7 +273,10 @@ export class HonoService extends CoreHonoService {
 		//#endif
 
 		// biome-ignore lint/correctness/noUnreachable: tsdown strips SOURCE_ONLY blocks in non-source builds.
-		return import('../../server/static').then(({ createStaticRenderer }) => createStaticRenderer())
+		return import('../../server/static').then(({ createStaticRenderer }) => {
+			const publicBase = this.ctx.config.hmrService.publicBase
+			return createStaticRenderer({ publicBase })
+		})
 	}
 
 	private async render(c: import('hono').Context<AppEnv>) {

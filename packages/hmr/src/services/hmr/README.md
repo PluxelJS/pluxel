@@ -105,7 +105,6 @@ Downstream projects may inject additional Vite plugins via:
 Cold-start warmup (scan + eager evaluate a small set of likely entries) is **opt-in**.
 
 - Host config: `hmrService.warmup: true` → background warmup (best-effort)
-- Env: `PLUXEL_HMR_WARMUP=1` (or `true`) → background warmup (best-effort)
 - Manual: call `ctx.hmrService.warmup()` when you want to await it
 
 Implementation notes:
@@ -114,19 +113,39 @@ Implementation notes:
 - Entry collection applies the same `pathFilter` for non-anchor files; anchors are always included.
 - Warmup transform prefetch (via `ssrEnv.fetchModule`) primes Vite caches to reduce warmup wall time:
   - default: enabled for small warmups (<= 32 files)
-  - force enable: `PLUXEL_HMR_WARMUP_PREFETCH=1`
-  - force disable: `PLUXEL_HMR_WARMUP_PREFETCH=0`
-  - concurrency: `PLUXEL_HMR_WARMUP_PREFETCH_CONCURRENCY=8` (default: `8`, capped to file count)
-- Attribution report (top transform/evaluate/inject) is opt-in via `PLUXEL_HMR_ATTRIBUTION`:
-  - `PLUXEL_HMR_ATTRIBUTION=1` / `true` → log at `info`
+  - config: `hmrService.warmupPrefetch: boolean`
+  - concurrency: `hmrService.warmupPrefetchConcurrency` (default: `min(fileCount, 8, cpuCores)`)
+- Attribution report (top transform/evaluate/inject) is opt-in via `hmrService.attribution`:
+  - `true` → log at `info`
   - or set to a specific level: `trace|debug|info|warn|error|fatal`
+
+## Operational report
+
+The operational report is enabled by default (info-level, counts + optional hotspots).
+
+- `hmrService.report: false` disables it entirely.
+- `hmrService.reportResolveLimit` bounds best-effort bare-specifier resolution attempts when grouping plugins by root.
 
 ## Dependency optimization
 
 Dep optimization is **disabled by default** (to reduce churn + disk IO in Vite 8 beta).
 
-- Set `PLUXEL_HMR_OPTIMIZE_DEPS=1` to enable the client optimizer (UI).
-- Set `PLUXEL_HMR_SSR_OPTIMIZE_DEPS=1` to enable the SSR optimizer (runner).
+- Set `hmrService.optimizeDeps: true` to enable the client optimizer (UI).
+- Set `hmrService.ssrOptimizeDeps: true` to enable the SSR optimizer (runner).
+
+## Caching knobs
+
+These are primarily for large monorepos / high-churn graphs:
+
+- `hmrService.pathCacheLimit` controls path normalization cache size.
+- `hmrService.pkgrootCacheLimit` controls package-root discovery cache size.
+
+## Production UI assets
+
+When serving the production UI via the static renderer, `hmrService.publicBase` controls the base URL used
+to reference built assets (default is `"/node_modules/@pluxel/hmr/dist/public"`).
+
+If you use the host helper `createHmrHost()`, `CLIENT_DIST` is mapped to `hmrService.publicBase`.
 
 `deps.bridgeModules` lists specifiers that must share **singletons** between the host process and the runner (DI tokens, decorators, base classes).
 

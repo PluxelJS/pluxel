@@ -1,7 +1,8 @@
 import { existsSync } from 'node:fs'
+import { availableParallelism, cpus } from 'node:os'
 import { fileURLToPath } from 'node:url'
 import type { Logger as LogtapeLogger } from '@logtape/logtape'
-import { type Context, Injectable, type PluginConstructor } from '@pluxel/core'
+import { type Context, Injectable } from '@pluxel/core'
 import { getDebugLogger } from '@pluxel/core/logger'
 import { dirname, resolve } from 'pathe'
 import {
@@ -26,17 +27,27 @@ import {
 	findNearestPackageRoot,
 	matchesSpecifierPattern,
 	resolveGlobPatterns,
+	setPkgrootCacheLimit,
 	startTimer,
 } from './internals'
 import { collectHotspots, isLogEnabled, logAttributionReport, TimingTracker } from './logging'
 import { buildHmrOperationalReport, type RegistryViewLike } from './operational-report'
-import { collectColdStartEntries, HmrBatchProcessor, HmrExecutor, prefetchTransforms } from './pipeline'
+import {
+	collectColdStartEntries,
+	HmrBatchProcessor,
+	HmrExecutor,
+	prefetchTransforms,
+} from './pipeline'
 import { HmrRunner, isHardBridgeSpecifier } from './runner'
 import { installRequireShims, type RuntimeShimConfig, RuntimeShimRegistry } from './runtime-shims'
 
 export interface HMRConfig {
 	/** 业务扫描边界：默认仅这些目录下的 `.ts` 会被纳入 HMR 入口挑选（`.tsx`/`.jsx` 默认排除） */
 	roots: string[]
+	/** Enable operational report output. Defaults to `true`. */
+	report?: boolean
+	/** Limits workspace-specifier resolution attempts when building the operational report. */
+	reportResolveLimit?: number
 	/** Vite dev server port (use `0` to pick a random free port). */
 	port?: number
 	/**
@@ -47,6 +58,33 @@ export interface HMRConfig {
 	 * - execute them once to register plugins and populate runner caches
 	 */
 	warmup?: boolean
+	/**
+	 * Warmup transform prefetch (via `ssrEnv.fetchModule`) primes Vite caches.
+	 *
+	 * Defaults to `true` for small warmups (<= 32 files).
+	 */
+	warmupPrefetch?: boolean
+	/** Prefetch concurrency cap. Defaults to `min(fileCount, 8, cpuCores)`. */
+	warmupPrefetchConcurrency?: number
+	/**
+	 * Attribution output (transform/evaluate/inject breakdown).
+	 *
+	 * - `true`: log at `info`
+	 * - level string: `trace|debug|info|warn|error|fatal`
+	 */
+	attribution?: boolean | 'trace' | 'debug' | 'info' | 'warn' | 'error' | 'fatal'
+	/** HMR path normalization cache size. Defaults to `10_000`. */
+	pathCacheLimit?: number
+	/** Nearest package root cache size. Defaults to `2_000`. */
+	pkgrootCacheLimit?: number
+	/** Enable Vite dep optimization for the UI (client env). Defaults to `false`. */
+	optimizeDeps?: boolean
+	/** Enable Vite dep optimization for the SSR runner env. Defaults to `false`. */
+	ssrOptimizeDeps?: boolean
+	/** Custom Vite cacheDir (advanced). Defaults to Vite's own cacheDir. */
+	viteCacheDir?: string
+	/** Base URL for production UI assets (static renderer). */
+	publicBase?: string
 	/**
 	 * 额外的 HMR include glob（优先级高于默认的 `roots/**` + `.ts`）。
 	 * - 需要完整路径或相对 cwd 的 glob
@@ -174,6 +212,7 @@ export class HMRService {
 		public ctx: Context,
 		private readonly config: HMRConfig,
 	) {
+		setPkgrootCacheLimit(this.config.pkgrootCacheLimit)
 		this.serverConfigured = new Promise<void>((resolve, reject) => {
 			this.serverConfiguredResolve = resolve
 			this.serverConfiguredReject = reject
@@ -190,6 +229,7 @@ export class HMRService {
 			workspaceConditions: this.workspaceConditions,
 			includeGlobs: this.includeGlobs,
 			excludeGlobs: this.excludeGlobs,
+			pathCacheLimit: this.config.pathCacheLimit,
 		})
 		this.toolkit = this.env.toolkit
 		this.path = this.toolkit.path
@@ -336,6 +376,9 @@ export class HMRService {
 			honoPlugin: this.ctx.honoService.viteHonoDevServer,
 			includeGlobs: this.includeGlobs,
 			excludeGlobs: this.excludeGlobs,
+			optimizeDepsEnabled: this.config.optimizeDeps === true,
+			ssrOptimizeDepsEnabled: this.config.ssrOptimizeDeps === true,
+			cacheDir: this.config.viteCacheDir,
 		})
 		const server = await createServer(serverConfig)
 		try {
@@ -364,9 +407,7 @@ export class HMRService {
 	}
 
 	private shouldAutoWarmup(): boolean {
-		if (this.config.warmup === true) return true
-		const env = process.env.PLUXEL_HMR_WARMUP
-		return env === '1' || env === 'true'
+		return this.config.warmup === true
 	}
 
 	private createRunnerPlugin(): Plugin {
@@ -623,16 +664,16 @@ export class HMRService {
 
 			const endWarmup = startTimer()
 			let prefetchMs: number | undefined
-
+			let prefetchPromise: Promise<void> | undefined
+			let endPrefetch: (() => number) | undefined
 			if (this.shouldWarmupPrefetch(coldFiles.length)) {
-				const endPrefetch = startTimer()
-				await prefetchTransforms({
+				endPrefetch = startTimer()
+				prefetchPromise = prefetchTransforms({
 					env: this.ssrEnv,
 					ids: coldFiles,
 					timing: this.timing,
 					concurrency: this.resolveWarmupPrefetchConcurrency(coldFiles.length),
 				})
-				prefetchMs = Math.round(endPrefetch() * 10) / 10
 			}
 
 			if (debugWarmup) {
@@ -643,6 +684,12 @@ export class HMRService {
 			}
 
 			const executed = await this.executor.runAndLoadAllClean(coldFiles, true)
+			if (prefetchPromise) {
+				// Overlap transform prefetch with evaluation to reduce warmup wall time.
+				// Await it after evaluation so we don't leave background work behind.
+				await prefetchPromise.catch(() => undefined)
+				prefetchMs = Math.round((endPrefetch?.() ?? 0) * 10) / 10
+			}
 			const commitMs = executed ? Math.round(executed.commitMs * 10) / 10 : null
 
 			const warmupMs = Math.round(endWarmup() * 10) / 10
@@ -666,21 +713,10 @@ export class HMRService {
 			})
 
 			// Attribution output is opt-in for profiling.
-			const attr = process.env.PLUXEL_HMR_ATTRIBUTION
-			if (attr && attr !== '0' && attr !== 'false') {
-				const level = ((): 'trace' | 'debug' | 'info' | 'warn' | 'error' | 'fatal' => {
-					if (attr === '1' || attr === 'true') return 'info'
-					if (
-						attr === 'trace' ||
-						attr === 'debug' ||
-						attr === 'info' ||
-						attr === 'warn' ||
-						attr === 'error' ||
-						attr === 'fatal'
-					)
-						return attr
-					return 'info'
-				})()
+			const attr = this.config.attribution
+			if (attr) {
+				const level: 'trace' | 'debug' | 'info' | 'warn' | 'error' | 'fatal' =
+					attr === true ? 'info' : attr
 				logAttributionReport(
 					this.ctx.logger,
 					{
@@ -697,16 +733,19 @@ export class HMRService {
 
 	private shouldWarmupPrefetch(fileCount: number) {
 		if (fileCount <= 1) return false
-		const raw = process.env.PLUXEL_HMR_WARMUP_PREFETCH
-		if (raw === '1' || raw === 'true') return true
-		return false
+		if (this.config.warmupPrefetch !== undefined) return this.config.warmupPrefetch
+		// Default: enable prefetch for small warmups to reduce wall time.
+		return fileCount <= 32
 	}
 
 	private resolveWarmupPrefetchConcurrency(fileCount: number) {
-		const raw = process.env.PLUXEL_HMR_WARMUP_PREFETCH_CONCURRENCY
-		const parsed = raw ? Number.parseInt(raw, 10) : NaN
-		if (Number.isFinite(parsed) && parsed > 0) return Math.min(fileCount, parsed)
-		return Math.min(fileCount, 8)
+		const parsed = this.config.warmupPrefetchConcurrency
+		if (typeof parsed === 'number' && Number.isFinite(parsed) && parsed > 0) {
+			return Math.min(fileCount, Math.floor(parsed))
+		}
+		const cores =
+			(typeof availableParallelism === 'function' ? availableParallelism() : cpus().length) || 1
+		return Math.min(fileCount, 8, Math.max(1, cores))
 	}
 
 	private resolveBareWorkspaceEntry(specifier: string, importer: string | null) {
@@ -781,9 +820,7 @@ export class HMRService {
 	}
 
 	private shouldLogOperationalReport() {
-		const raw = process.env.PLUXEL_HMR_REPORT
-		if (raw === '0' || raw === 'false') return false
-		return true
+		return this.config.report !== false
 	}
 
 	private async ensureStartupScope() {
@@ -841,7 +878,6 @@ export class HMRService {
 		const hotspots =
 			reason === 'executeFiles' ? collectHotspots(this.timing, (id) => this.path.pretty(id)) : []
 
-		const resolveLimitEnv = process.env.PLUXEL_HMR_REPORT_RESOLVE_LIMIT
 		const report = await buildHmrOperationalReport({
 			reason,
 			cwd: this.cwd,
@@ -854,7 +890,7 @@ export class HMRService {
 			isEnabledInConfig: (name) => this.ctx.configService.isEnabledInConfig(name),
 			isRunning: (ctor) => this.ctx.registry.isRunning(ctor),
 			resolveBareWorkspaceEntry: (specifier) => this.resolveBareWorkspaceEntry(specifier, null),
-			resolveLimit: resolveLimitEnv,
+			resolveLimit: this.config.reportResolveLimit,
 			hotspots: hotspots.length ? hotspots : undefined,
 		})
 

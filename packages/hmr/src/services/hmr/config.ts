@@ -175,6 +175,9 @@ export interface HmrViteConfigOptions {
 	port?: number
 	includeGlobs?: string[]
 	excludeGlobs?: string[]
+	optimizeDepsEnabled?: boolean
+	ssrOptimizeDepsEnabled?: boolean
+	cacheDir?: string
 }
 
 export function buildHmrViteConfig(opts: HmrViteConfigOptions): InlineConfig {
@@ -192,14 +195,14 @@ export function buildHmrViteConfig(opts: HmrViteConfigOptions): InlineConfig {
 	)
 	const includePatterns = opts.includeGlobs ?? opts.scanRoots.map((d) => `${d}/**/*.ts`)
 	// Default: avoid dep optimization churn in Vite 8 beta.
-	// Opt-in via env vars when you want "fastest steady-state" for the UI/runner.
-	const optimizeDepsEnabled = process.env.PLUXEL_HMR_OPTIMIZE_DEPS === '1'
-	const ssrOptimizeDepsEnabled = process.env.PLUXEL_HMR_SSR_OPTIMIZE_DEPS === '1'
+	// Opt-in via config when you want "fastest steady-state" for the UI/runner.
+	const optimizeDepsEnabled = opts.optimizeDepsEnabled === true
+	const ssrOptimizeDepsEnabled = opts.ssrOptimizeDepsEnabled === true
 	const isUiRoot = existsSync(resolve(opts.root, 'src/client.tsx'))
 	// Prefer Vite's default cacheDir (`<root>/node_modules/.vite`) because sharing a single cache
 	// across different hosts/roots can cause "update deps" metadata mismatches in Vite 8 beta.
-	// If callers want a shared cache, they can still opt-in explicitly via env.
-	const cacheDir = process.env.PLUXEL_HMR_CACHE_DIR
+	// If callers want a shared cache, they can still opt-in explicitly via config.
+	const cacheDir = opts.cacheDir
 
 	const baseLogger = createLogger(undefined, { prefix: '[pluxel-hmr]' })
 	// Avoid `{...baseLogger}` here: Vite mutates `logger.hasWarned`, and spreading would copy a stale boolean.

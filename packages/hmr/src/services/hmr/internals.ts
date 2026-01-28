@@ -23,13 +23,18 @@ function boundedSet<K, V>(map: Map<K, V>, key: K, value: V, limit: number) {
 	map.delete(first)
 }
 
-const PKGROOT_CACHE_LIMIT = resolveCacheLimit(process.env.PLUXEL_HMR_PKGROOT_CACHE_LIMIT, 2_000)
+let pkgrootCacheLimit = 2_000
 const pkgRootCache = new Map<string, string | null>()
+
+export function setPkgrootCacheLimit(raw: unknown) {
+	pkgrootCacheLimit = resolveCacheLimit(raw, 2_000)
+	if (pkgrootCacheLimit <= 0) pkgRootCache.clear()
+}
 
 export const findNearestPackageRoot = (start: string): string | null => {
 	try {
 		let current = normalizePath(start)
-		if (PKGROOT_CACHE_LIMIT > 0) {
+		if (pkgrootCacheLimit > 0) {
 			const cached = pkgRootCache.get(current)
 			if (cached !== undefined) return cached
 		}
@@ -38,22 +43,22 @@ export const findNearestPackageRoot = (start: string): string | null => {
 		while (true) {
 			visited.push(current)
 
-			if (PKGROOT_CACHE_LIMIT > 0) {
+			if (pkgrootCacheLimit > 0) {
 				const cached = pkgRootCache.get(current)
 				if (cached !== undefined) {
-					for (const dir of visited) boundedSet(pkgRootCache, dir, cached, PKGROOT_CACHE_LIMIT)
+					for (const dir of visited) boundedSet(pkgRootCache, dir, cached, pkgrootCacheLimit)
 					return cached
 				}
 			}
 
 			if (existsSync(resolve(current, 'package.json'))) {
 				const root = normalizePath(current)
-				for (const dir of visited) boundedSet(pkgRootCache, dir, root, PKGROOT_CACHE_LIMIT)
+				for (const dir of visited) boundedSet(pkgRootCache, dir, root, pkgrootCacheLimit)
 				return root
 			}
 			const parent = dirname(current)
 			if (parent === current) {
-				for (const dir of visited) boundedSet(pkgRootCache, dir, null, PKGROOT_CACHE_LIMIT)
+				for (const dir of visited) boundedSet(pkgRootCache, dir, null, pkgrootCacheLimit)
 				return null
 			}
 			current = parent

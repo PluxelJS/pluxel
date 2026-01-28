@@ -57,7 +57,7 @@ export type CreateHmrHostOptions = {
 	/**
 	 * Extra Vite plugins for the HMR dev server (macros, transforms, etc.).
 	 */
-	vitePlugins?: readonly VitePlugin[]
+	vitePlugins?: VitePlugin[]
 	/**
 	 * Dependency rules (CJS externals / bridge modules / optimizeDeps).
 	 */
@@ -129,15 +129,48 @@ export type CreateHmrHostResult = {
 	ctx: Context
 }
 
+/**
+ * Map a small set of env vars into `hmrService` config.
+ *
+ * Intentionally minimal:
+ * - Deployment: `CLIENT_DIST` → `hmrService.publicBase`
+ * - Profiling: `PLUXEL_HMR_ATTRIBUTION` → `hmrService.attribution`
+ *
+ * Everything else should be configured explicitly in code to avoid "invisible" behavior changes.
+ */
+export function applyHmrEnvOverrides(base: HMRConfig, env = process.env): HMRConfig {
+	const out: HMRConfig = { ...base }
+
+	// Keep env overrides intentionally minimal: only allow "generic" deployment/profiling flags.
+	if (env.CLIENT_DIST) out.publicBase = env.CLIENT_DIST
+
+	const attributionRaw = env.PLUXEL_HMR_ATTRIBUTION
+	if (attributionRaw !== undefined) {
+		if (attributionRaw === '0' || attributionRaw === 'false') out.attribution = false
+		else if (attributionRaw === '1' || attributionRaw === 'true') out.attribution = true
+		else if (
+			attributionRaw === 'trace' ||
+			attributionRaw === 'debug' ||
+			attributionRaw === 'info' ||
+			attributionRaw === 'warn' ||
+			attributionRaw === 'error' ||
+			attributionRaw === 'fatal'
+		) {
+			out.attribution = attributionRaw
+		} else {
+			out.attribution = true
+		}
+	}
+
+	return out
+}
+
 function defaultScanRoots(root: string): string[] {
 	const candidates = ['chatbots', 'render-plugins', 'plugins', '.']
 	return candidates.filter((dir) => existsSync(join(root, dir)))
 }
 
 export async function createHmrHost(opts: CreateHmrHostOptions = {}): Promise<CreateHmrHostResult> {
-	// Align with upstream host defaults: enable SSR runner unless explicitly disabled.
-	if (process.env.PLUXEL_HMR_SSR === undefined) process.env.PLUXEL_HMR_SSR = 'true'
-
 	const root = resolve(opts.root ?? process.cwd())
 	if (opts.chdir !== false) process.chdir(root)
 
@@ -158,13 +191,12 @@ export async function createHmrHost(opts: CreateHmrHostOptions = {}): Promise<Cr
 		})
 	}
 
-	const deps: HMRDependencyConfig | undefined =
-		opts.cjsExternal?.length
-			? { ...(opts.deps ?? {}), cjsExternal: opts.cjsExternal }
-			: opts.deps
+	const deps: HMRDependencyConfig | undefined = opts.cjsExternal?.length
+		? { ...(opts.deps ?? {}), cjsExternal: opts.cjsExternal }
+		: opts.deps
 
 	const roots = opts.roots ?? defaultScanRoots(root)
-	const hmrService: HMRConfig = {
+	const hmrServiceBase: HMRConfig = {
 		roots,
 		warmup: opts.warmup ?? true,
 		exclude: opts.exclude ?? ['builtin-plugins/**'],
@@ -172,6 +204,7 @@ export async function createHmrHost(opts: CreateHmrHostOptions = {}): Promise<Cr
 		vitePlugins: opts.vitePlugins,
 		deps,
 	}
+	const hmrService = applyHmrEnvOverrides(hmrServiceBase)
 
 	const contextExtra: Record<string, unknown> = { ...(opts.context ?? {}) }
 
@@ -194,12 +227,14 @@ export async function createHmrHost(opts: CreateHmrHostOptions = {}): Promise<Cr
 		contextExtra.pluginData = { ...pluginData, dir: resolve(root, pluginDataDir) }
 	}
 
-	const ctx = new Context({
+	const ctxConfig = {
 		debug,
 		hmrService,
 		registry: opts.registry,
 		...contextExtra,
-	} as any)
+	} satisfies Context.Config
+
+	const ctx = new Context(ctxConfig)
 
 	return { root, logsDir, ctx }
 }

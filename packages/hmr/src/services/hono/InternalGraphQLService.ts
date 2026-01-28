@@ -14,14 +14,27 @@ declare module '@pluxel/core' {
 		interface Services {
 			[serviceName]: InternalGraphQLService
 		}
+		interface Config {
+			[serviceName]?: InternalGraphQLConfig
+		}
 	}
 }
 
 type ServerCtx = Record<string, never>
 
+export type InternalGraphQLConfig = {
+	/**
+	 * Generate GQty client into the workspace (high churn, writes files).
+	 *
+	 * NOTE: Only effective in SOURCE_ONLY builds.
+	 */
+	codegen?: boolean
+}
+
 @Injectable({ key: serviceName })
 export class InternalGraphQLService {
 	private readonly logger: NonNullable<PlxContext['logger']>
+	private readonly config: InternalGraphQLConfig | undefined
 
 	private schema: GraphQLSchema = this.weaveSchema()
 	private fetcher: (req: Request, ctx: ServerCtx) => Promise<Response>
@@ -30,8 +43,12 @@ export class InternalGraphQLService {
 	private rebuildDirty = false
 	private codegenRunning = false
 
-	constructor(public ctx: PlxContext) {
+	constructor(
+		public ctx: PlxContext,
+		cfg?: InternalGraphQLConfig,
+	) {
 		this.logger = ctx.logger!
+		this.config = cfg
 		this.fetcher = async () => new Response('Internal GraphQL not ready', { status: 503 })
 		this.scheduleRebuild()
 	}
@@ -59,7 +76,7 @@ export class InternalGraphQLService {
 		// Do NOT remove them or rewrite this into runtime conditions.
 		//#if SOURCE_ONLY
 		// Codegen is intentionally opt-in: it writes files into the workspace and is high-churn.
-		if (process.env.PLUXEL_HMR_GQL_CODEGEN === '1' && process.env.NODE_ENV !== 'production') {
+		if (this.config?.codegen === true && process.env.NODE_ENV !== 'production') {
 			void this.codegenNow()
 		}
 		//#endif
@@ -93,7 +110,7 @@ export class InternalGraphQLService {
 
 	//#if SOURCE_ONLY
 	private async codegenNow() {
-		if (process.env.PLUXEL_HMR_GQL_CODEGEN !== '1') return
+		if (this.config?.codegen !== true) return
 		if (process.env.NODE_ENV === 'production') return
 		if (this.codegenRunning) return
 		this.codegenRunning = true
