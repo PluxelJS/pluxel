@@ -3,7 +3,7 @@
 import { Context } from './Context'
 import type { ServiceCfg, ServiceClass, ServiceInst, ServiceWithCtx } from './service-types'
 
-type InjectableCtor = new (ctx: Context, cfg?: unknown) => ServiceWithCtx<Context>
+type InjectableCtor = new (ctx: Context, cfg: any) => ServiceWithCtx<Context>
 
 /**
  * 装饰器可选项

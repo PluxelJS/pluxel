@@ -1,10 +1,16 @@
 // Context.ts
 
-import type { ServiceCfg, ServiceClass, ServiceInst, ServiceWithCtx } from './service-types'
+import type {
+	ServiceCfg,
+	ServiceClass,
+	ServiceCtor,
+	ServiceInst,
+	ServiceWithCtx,
+} from './service-types'
 
 type SymMap = { [k in symbol]?: symbol }
 
-type AnyServiceClass = ServiceClass<new (ctx: Context, cfg?: unknown) => unknown>
+type AnyServiceClass = ServiceClass
 
 // biome-ignore lint/suspicious/noUnsafeDeclarationMerging: this class is intentionally merged with an interface for service augmentation.
 export class Context {
@@ -34,9 +40,7 @@ export class Context {
 		if (parent) this.instances = parent.instances
 	}
 
-	static registerService<S extends new (ctx: Context, cfg?: unknown) => object>(
-		ctor: ServiceClass<S>,
-	) {
+	static registerService<S extends ServiceCtor>(ctor: ServiceClass<S>) {
 		const sk = Symbol(ctor.name)
 		const key = (ctor.key as string) ?? ctor.name.replace(/Service$/, '')
 		if (Context.registeredKeys.has(key)) {
@@ -115,13 +119,10 @@ export class Context {
 
 	/** 提供 override —— 同步把原来的 getter 整块替换掉 */
 	static overrideService<
-		S extends new (
-			ctx: Context,
-			cfg?: unknown,
-		) => unknown,
+		S extends ServiceCtor,
 		T extends new (
 			ctx: Context,
-			cfg?: ServiceCfg<S>,
+			cfg: ServiceCfg<S>,
 		) => ServiceInst<S>,
 	>(original: ServiceClass<S>, overrideCtor: ServiceClass<T>) {
 		// 1) 拿到同一个 sk

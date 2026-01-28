@@ -112,8 +112,10 @@ Implementation notes:
 
 - Warmup reuses the same entry collection as the startup report (`startupScope`) to avoid double scans.
 - Entry collection applies the same `pathFilter` for non-anchor files; anchors are always included.
-- Warmup transform prefetch (via `ssrEnv.fetchModule`) is opt-in to prime Vite caches:
-  - enable: `PLUXEL_HMR_WARMUP_PREFETCH=1`
+- Warmup transform prefetch (via `ssrEnv.fetchModule`) primes Vite caches to reduce warmup wall time:
+  - default: enabled for small warmups (<= 32 files)
+  - force enable: `PLUXEL_HMR_WARMUP_PREFETCH=1`
+  - force disable: `PLUXEL_HMR_WARMUP_PREFETCH=0`
   - concurrency: `PLUXEL_HMR_WARMUP_PREFETCH_CONCURRENCY=8` (default: `8`, capped to file count)
 - Attribution report (top transform/evaluate/inject) is opt-in via `PLUXEL_HMR_ATTRIBUTION`:
   - `PLUXEL_HMR_ATTRIBUTION=1` / `true` → log at `info`
