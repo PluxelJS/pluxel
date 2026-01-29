@@ -49,7 +49,6 @@ import {
 	MeasuringStrategy,
 	PointerSensor,
 	type UniqueIdentifier,
-	useDroppable,
 	useSensor,
 	useSensors,
 } from '@dnd-kit/core'
@@ -58,38 +57,22 @@ import {
 	arrayMove,
 	SortableContext,
 	sortableKeyboardCoordinates,
-	useSortable,
 	verticalListSortingStrategy,
 } from '@dnd-kit/sortable'
 import {
 	ActionIcon,
-	Anchor,
 	Badge,
 	Box,
 	Card,
-	Collapse,
-	Flex,
 	Group,
-	Menu,
 	ScrollArea,
 	Stack,
 	Text,
 	Tooltip,
-	useMantineTheme,
-	useComputedColorScheme,
-	rgba,
 } from '@mantine/core'
-import {
-	IconChevronDown,
-	IconChevronRight,
-	IconDotsVertical,
-	IconFolderPlus,
-	IconGripVertical,
-	IconPencil,
-	IconTrash,
-} from '@tabler/icons-react'
+import { IconFolderPlus } from '@tabler/icons-react'
 import type React from 'react'
-import { memo, startTransition, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { startTransition, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { GroupConfig, PluginStatuses } from './types'
 import {
 	COLLAPSE_STORAGE_KEY,
@@ -100,73 +83,15 @@ import {
 	sanitize,
 	unique,
 } from './utils'
+import { parseSearchTokens } from '../shared/search'
+import { DroppableContainer } from './components/DroppableContainer'
+import { GroupCard } from './components/GroupCard'
+import { SortableRow } from './components/SortableRow'
+import { DENSITY, UNGROUPED_SCROLL_MAX_HEIGHT, type Density } from './constants'
+import { deriveRootLabel } from './utils/roots'
 
 export type { GroupConfig, PluginStatus, PluginStatuses } from './types'
 
-type Density = 'comfortable' | 'compact' | 'ultra'
-const DENSITY: Record<Density, { rowH: number; px: number; py: number; font: 'xs' | 'sm' }> = {
-	comfortable: { rowH: 38, px: 10, py: 8, font: 'sm' },
-	compact: { rowH: 30, px: 8, py: 4, font: 'xs' },
-	ultra: { rowH: 22, px: 6, py: 1, font: 'xs' },
-}
-const UNGROUPED_SCROLL_MAX_HEIGHT = 'clamp(160px, 32vh, 360px)'
-
-type SearchTokens = {
-	plain: string[]
-	pkg: string[]
-	tag: string[]
-	version: string[]
-	id: string[]
-}
-
-function parseSearchTokens(input: string): SearchTokens {
-	const tokens = input
-		.trim()
-		.split(/\s+/)
-		.map((t) => t.trim())
-		.filter(Boolean)
-	const result: SearchTokens = { plain: [], pkg: [], tag: [], version: [], id: [] }
-	for (const token of tokens) {
-		if (token.startsWith('@') && token.length > 1) {
-			result.pkg.push(token.slice(1).toLowerCase())
-		} else if (token.startsWith('#') && token.length > 1) {
-			result.tag.push(token.slice(1).toLowerCase())
-		} else if (token.startsWith('v:') && token.length > 2) {
-			result.version.push(token.slice(2).toLowerCase())
-		} else if (token.startsWith('id:') && token.length > 3) {
-			result.id.push(token.slice(3).toLowerCase())
-		} else {
-			result.plain.push(token.toLowerCase())
-		}
-	}
-	return result
-}
-
-function deriveRootLabel(moduleId: string | null | undefined, statusName: string) {
-	if (!moduleId) return '本地插件'
-	const normalized = moduleId.replace(/\\/g, '/')
-	const parts = normalized.split('/').filter(Boolean)
-	if (parts.length === 0) return '本地插件'
-	const last = parts[parts.length - 1] ?? ''
-	if (/\.[a-z0-9]+$/i.test(last)) parts.pop()
-	const skip = new Set(['src', 'lib', 'dist', 'build'])
-	let candidate = parts[parts.length - 1] ?? ''
-	while (candidate && skip.has(candidate) && parts.length > 1) {
-		parts.pop()
-		candidate = parts[parts.length - 1] ?? ''
-	}
-	const normalizedCandidate = candidate.toLowerCase()
-	const normalizedName = statusName.toLowerCase()
-	if (normalizedCandidate === normalizedName && parts.length > 1) {
-		parts.pop()
-		candidate = parts[parts.length - 1] ?? candidate
-		while (candidate && skip.has(candidate) && parts.length > 1) {
-			parts.pop()
-			candidate = parts[parts.length - 1] ?? candidate
-		}
-	}
-	return candidate || '本地插件'
-}
 
 export type StatusFilter = {
 	running: boolean
@@ -208,486 +133,6 @@ const fromIid = (id: string) => id.slice(2)
 const gid = (g: string) => `g:${g}`
 const isGid = (id: UniqueIdentifier) => typeof id === 'string' && id.startsWith('g:')
 const fromGid = (id: string) => id.slice(2)
-
-// ---------- Droppable（空容器也能投放） ----------
-function DroppableContainer({
-	id,
-	children,
-	disabled,
-	minDropHeight = 0,
-	style,
-}: {
-	id: UniqueIdentifier
-	children: React.ReactNode
-	disabled?: boolean
-	minDropHeight?: number
-	style?: React.CSSProperties
-}) {
-	const { setNodeRef, isOver } = useDroppable({ id, disabled })
-	return (
-		<Box
-			ref={setNodeRef}
-			data-droppable-id={String(id)}
-			style={{
-				outline: isOver ? '1px dashed var(--mantine-color-blue-6)' : undefined,
-				minHeight: minDropHeight,
-				...style,
-			}}
-			role="group"
-			aria-roledescription="droppable container"
-		>
-			{children}
-		</Box>
-	)
-}
-
-// ---------- 行（插件）：一行式，极简 ----------
-const SortableRow = memo(function SortableRow({
-	pid,
-	name,
-	running,
-	enabled,
-	selected,
-	active,
-	onSelect,
-	LinkComp,
-	disabled,
-	dh,
-	meta,
-}: {
-	pid: string
-	name: string
-	running?: boolean
-	enabled?: boolean
-	selected: boolean
-	active: boolean
-	onSelect: (e: React.MouseEvent, pid: string, mode?: 'click' | 'context') => void
-	LinkComp?: React.ComponentType<{ to: string; children: React.ReactNode }>
-	disabled: boolean
-	dh: { rowH: number; px: number; py: number; font: 'xs' | 'sm' }
-	meta?: { tag?: string; version?: string }
-}) {
-	const theme = useMantineTheme()
-	const scheme = useComputedColorScheme('light', { getInitialValueInEffect: true })
-	const isDark = scheme === 'dark'
-	const rowRef = useRef<HTMLAnchorElement | HTMLSpanElement | null>(null)
-	const brand = theme.colors.brand ?? theme.colors.indigo
-	const accent = theme.colors.blue
-	const showStatusLabel = dh.rowH >= 30
-	const rowGap = dh.rowH <= 26 ? 4 : 6
-	const handleSize = dh.rowH <= 26 ? 16 : 20
-	const handleIconSize = dh.rowH <= 26 ? 14 : 16
-
-	// 优化后的配色方案：提升背景可见度，保持文字清晰
-	const activeBg = active
-		? isDark
-			? rgba(brand[5], 0.28) // 提升背景可见度到 0.28
-			: rgba(brand[1], 0.45)
-		: undefined
-	const selectedBg = selected
-		? isDark
-			? rgba(accent[5], 0.22) // 提升选中态可见度到 0.22
-			: rgba(accent[1], 0.35)
-		: undefined
-	const rowBackground = active ? activeBg : selected ? selectedBg : undefined
-	const baseColorValue = isDark ? theme.colors.gray[2] : theme.colors.gray[8]
-	const rowColorValue =
-		active || selected
-			? isDark
-				? theme.colors.gray[0] // 使用 gray[0] 确保文字清晰
-				: theme.colors.gray[9]
-			: baseColorValue
-	const separatorColor = isDark ? rgba(theme.colors.dark[4], 0.3) : rgba(theme.colors.gray[2], 0.5)
-
-	const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
-		id: iid(pid),
-		disabled,
-		animateLayoutChanges: () => false,
-	})
-
-	const href = `/plugins/${encodeURIComponent(pid)}`
-
-	const metaLabel = useMemo(() => {
-		const tag = meta?.tag?.trim()
-		const version = meta?.version?.trim()
-		if (tag && version) return `${tag}@${version}`
-		if (tag) return tag
-		if (version) return version
-		return ''
-	}, [meta?.tag, meta?.version])
-	return (
-		<Box
-			ref={setNodeRef}
-			onDoubleClick={() => (rowRef.current as HTMLAnchorElement | null)?.click?.()}
-			onClick={(e) => {
-				if (disabled) return
-				if (e.shiftKey || e.metaKey || e.ctrlKey) e.preventDefault()
-				onSelect(e, pid, 'click')
-			}}
-			onContextMenu={(e) => {
-				e.preventDefault()
-				e.stopPropagation()
-				if (disabled) return
-				onSelect(e, pid, 'context')
-			}}
-			data-plugin-row="true"
-			style={{
-				transform: transform ? `translate3d(${transform.x}px, ${transform.y}px, 0)` : undefined,
-				transition: transition ?? 'opacity 120ms ease-out, background 120ms ease-out',
-				opacity: isDragging ? 0.9 : 1,
-				height: dh.rowH,
-				padding: `${dh.py}px ${dh.px}px`,
-				display: 'flex',
-				alignItems: 'center',
-				gap: rowGap,
-				borderRadius: 6,
-				cursor: disabled ? 'default' : 'pointer',
-				userSelect: 'none',
-				background: rowBackground,
-				color: rowColorValue,
-				borderBottom: `1px solid ${separatorColor}`,
-				boxSizing: 'border-box',
-			}}
-			data-po-row="1"
-			data-selected={selected || undefined}
-			data-active={active || undefined}
-			role="listitem"
-			aria-roledescription="draggable plugin row"
-		>
-			{active && (
-				<Box
-					aria-hidden
-					style={{
-						width: 2,
-						alignSelf: 'stretch',
-						background: isDark ? rgba(brand[3], 0.8) : brand[5], // 深色模式用更柔和的 brand[3]，浅色用 brand[5]
-						borderTopLeftRadius: 6,
-						borderBottomLeftRadius: 6,
-					}}
-				/>
-			)}
-
-			<ActionIcon
-				variant="subtle"
-				title="拖拽排序"
-				aria-label="拖拽排序"
-				data-drag-handle
-				style={{
-					width: handleSize,
-					height: handleSize,
-					flex: `0 0 ${handleSize}px`,
-					touchAction: 'none',
-					cursor: isDragging ? 'grabbing' : 'grab',
-				}}
-				{...listeners}
-				{...attributes}
-			>
-				<IconGripVertical size={handleIconSize} />
-			</ActionIcon>
-
-			<Box style={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', gap: 6 }}>
-				{LinkComp ? (
-					<LinkComp
-						to={href}
-						style={{ textDecoration: 'none', display: 'block', color: rowColorValue, minWidth: 0 }}
-						onClick={(e: any) => {
-							if (disabled) return
-							e.stopPropagation()
-							if (e.shiftKey || e.metaKey || e.ctrlKey) e.preventDefault()
-							onSelect(e, pid, 'click')
-						}}
-					>
-						<Tooltip label={name} withinPortal withArrow openDelay={200}>
-							<Text
-								ref={rowRef as any}
-								size={dh.font}
-								style={{
-									whiteSpace: 'nowrap',
-									overflow: 'hidden',
-									textOverflow: 'ellipsis',
-									color: rowColorValue,
-								}}
-								aria-current={active ? 'page' : undefined}
-							>
-								{name}
-							</Text>
-						</Tooltip>
-					</LinkComp>
-				) : (
-					<Tooltip label={name} withinPortal withArrow openDelay={200}>
-						<Anchor
-							ref={rowRef as any}
-							size={dh.font}
-							href={href}
-							underline="never"
-							style={{
-								whiteSpace: 'nowrap',
-								overflow: 'hidden',
-								textOverflow: 'ellipsis',
-								color: rowColorValue,
-							}}
-							aria-current={active ? 'page' : undefined}
-							onClick={(e) => {
-								if (disabled) return
-								e.stopPropagation()
-								if (e.shiftKey || e.metaKey || e.ctrlKey) e.preventDefault()
-								onSelect(e, pid, 'click')
-							}}
-						>
-							{name}
-						</Anchor>
-					</Tooltip>
-				)}
-				{metaLabel && (
-					<Text
-						size="xs"
-						style={{
-							fontSize: 10,
-							opacity: 0.7,
-							whiteSpace: 'nowrap',
-							flexShrink: 0,
-							maxWidth: 120,
-							overflow: 'hidden',
-							textOverflow: 'ellipsis',
-							color: rowColorValue,
-						}}
-					>
-						{metaLabel}
-					</Text>
-				)}
-			</Box>
-
-			{typeof running === 'boolean' && (
-				<Group
-					gap={showStatusLabel ? 6 : 4}
-					wrap="nowrap"
-					aria-label={running ? '运行' : enabled === false ? '禁用' : '停止'}
-				>
-					<Tooltip
-						label={running ? '运行' : enabled === false ? '禁用' : '停止'}
-						withinPortal
-						withArrow
-						disabled={showStatusLabel}
-						openDelay={200}
-					>
-						<Box
-							component="span"
-							aria-hidden
-							style={{
-								width: 6,
-								height: 6,
-								borderRadius: 6,
-								background: running
-									? isDark
-										? rgba(theme.colors.teal[4], 0.85) // 使用 teal 代替 green，更柔和
-										: rgba(theme.colors.teal[6], 0.8)
-									: isDark
-										? rgba(theme.colors.gray[6], 0.5) // 降低停止状态的视觉权重
-										: rgba(theme.colors.gray[5], 0.6),
-							}}
-						/>
-					</Tooltip>
-					{showStatusLabel && (
-						<Text size="xs" style={{ color: rowColorValue }}>
-							{running ? '运行' : enabled === false ? '禁用' : '停止'}
-						</Text>
-					)}
-				</Group>
-			)}
-		</Box>
-	)
-})
-
-// ---------- 组卡片：单行组头 + 极简列表 ----------
-const GroupCard = memo(function GroupCard(props: {
-	g: GroupConfig
-	visibleIds: string[]
-	runningSet: Set<string>
-	enabledSet: Set<string>
-	selectedSet: Set<string>
-	activeSet: Set<string>
-	onSelect: (e: React.MouseEvent, id: string, mode?: 'click' | 'context') => void
-	LinkComp?: React.ComponentType<{ to: string; children: React.ReactNode }>
-	sortableId: UniqueIdentifier
-	isFiltering: boolean
-	isCollapsed: boolean
-	toggleCollapse: () => void
-	getName: (id: string) => string
-	getMeta: (id: string) => { tag?: string; version?: string }
-	dh: { rowH: number; px: number; py: number; font: 'xs' | 'sm' }
-	onRename: (gid: string) => void
-	onDelete: (gid: string) => void
-	locked: boolean
-}) {
-	const {
-		g,
-		visibleIds,
-		runningSet,
-		enabledSet,
-		selectedSet,
-		activeSet,
-		onSelect,
-		LinkComp,
-		sortableId,
-		isFiltering,
-		isCollapsed,
-		toggleCollapse,
-		getName,
-		getMeta,
-		dh,
-		onRename,
-		onDelete,
-		locked,
-	} = props
-
-	const { attributes, listeners, setNodeRef, transform, transition } = useSortable({
-		id: sortableId,
-		disabled: isFiltering || locked,
-		animateLayoutChanges: () => false,
-	})
-
-	const stat = {
-		total: visibleIds.length,
-		running: visibleIds.filter((id) => runningSet.has(id)).length,
-	}
-	const collapseLabel = isCollapsed ? '展开分组' : '折叠分组'
-
-	return (
-		<Box
-			ref={setNodeRef}
-			style={{
-				transform: transform ? `translate3d(${transform.x}px, ${transform.y}px, 0)` : undefined,
-				transition: transition ?? 'opacity 120ms ease-out',
-				minWidth: 0,
-				padding: 4,
-				borderBottom: '1px solid var(--mantine-color-default-border)',
-			}}
-			role="group"
-			aria-label={`分组 ${g.name || '未命名'}`}
-		>
-			<Flex align="center" gap={2} justify="space-between" style={{ minWidth: 0 }}>
-				<Group gap={4} align="center" wrap="nowrap" style={{ minWidth: 0, flex: 1 }}>
-					<Box style={{ minWidth: 0, flex: 1 }}>
-						<Tooltip label={g.name || '未命名分组'} withinPortal withArrow>
-							<Text
-								fw={600}
-								size="xs"
-								style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
-							>
-								{g.name || '未命名分组'}
-							</Text>
-						</Tooltip>
-					</Box>
-					<Text size="xs" c="dimmed" style={{ flexShrink: 0, whiteSpace: 'nowrap' }}>
-						{stat.running}/{stat.total}
-					</Text>
-				</Group>
-
-				<Group gap={2} align="center" wrap="nowrap" style={{ flexShrink: 0 }}>
-					<Tooltip label={collapseLabel} withinPortal openDelay={200} withArrow>
-						<ActionIcon
-							size="xs"
-							variant="subtle"
-							aria-label={collapseLabel}
-							onClick={toggleCollapse}
-							style={{ flexShrink: 0 }}
-						>
-							{isCollapsed ? <IconChevronRight size={14} /> : <IconChevronDown size={14} />}
-						</ActionIcon>
-					</Tooltip>
-
-					<Menu withinPortal position="bottom-end">
-						<Menu.Target>
-							<ActionIcon
-								size="xs"
-								variant="subtle"
-								aria-label="更多操作"
-								style={{ flexShrink: 0 }}
-							>
-								<IconDotsVertical size={14} />
-							</ActionIcon>
-						</Menu.Target>
-						<Menu.Dropdown>
-							<Menu.Item
-								leftSection={<IconPencil size={14} />}
-								onClick={() => onRename(g.groupId)}
-								disabled={locked}
-							>
-								重命名
-							</Menu.Item>
-							<Menu.Item
-								leftSection={<IconTrash size={14} />}
-								color="red"
-								onClick={() => onDelete(g.groupId)}
-								disabled={locked}
-							>
-								删除分组
-							</Menu.Item>
-						</Menu.Dropdown>
-					</Menu>
-
-					<Tooltip
-						label={locked ? '云端同步中' : '拖拽分组'}
-						withinPortal
-						openDelay={200}
-						withArrow
-					>
-						<ActionIcon
-							size="xs"
-							variant="subtle"
-							aria-label="拖拽分组"
-							data-drag-handle
-							style={{
-								width: 22,
-								height: 22,
-								touchAction: 'none',
-								cursor: locked ? 'not-allowed' : 'grab',
-								flexShrink: 0,
-							}}
-							{...listeners}
-							{...attributes}
-							disabled={locked}
-						>
-							<IconGripVertical size={16} />
-						</ActionIcon>
-					</Tooltip>
-				</Group>
-			</Flex>
-
-			<DroppableContainer
-				id={cid(g.groupId)}
-				disabled={isFiltering || locked}
-				minDropHeight={isCollapsed ? 10 : dh.rowH}
-			>
-				<Collapse in={!isCollapsed}>
-					<SortableContext
-						items={visibleIds.map((id) => iid(id))}
-						strategy={verticalListSortingStrategy}
-					>
-						<Stack gap={0} mt={4} align="stretch" role="list" aria-label="插件列表">
-							{visibleIds.map((id) => (
-								<SortableRow
-									key={id}
-									pid={id}
-									name={getName(id)}
-									running={runningSet.has(id)}
-									enabled={enabledSet.has(id)}
-									selected={selectedSet.has(id)}
-									active={activeSet.has(id)}
-									onSelect={onSelect}
-									LinkComp={LinkComp}
-									disabled={isFiltering || locked}
-									meta={getMeta(id)}
-									dh={dh}
-								/>
-							))}
-						</Stack>
-					</SortableContext>
-				</Collapse>
-			</DroppableContainer>
-		</Box>
-	)
-})
 
 // ---------- 主组件 ----------
 export function PluginOrganizer({
@@ -1340,6 +785,7 @@ export function PluginOrganizer({
 												disabled={isFiltering || locked}
 												meta={getMeta(id)}
 												dh={dh}
+												sortableId={iid(id)}
 											/>
 										))}
 									</Box>
@@ -1365,6 +811,7 @@ export function PluginOrganizer({
 												disabled={isFiltering || locked}
 												meta={getMeta(id)}
 												dh={dh}
+												sortableId={iid(id)}
 											/>
 										))}
 									</Box>
@@ -1417,11 +864,13 @@ export function PluginOrganizer({
 													onSelect={handleRowSelect}
 													LinkComp={LinkComp}
 													sortableId={gid(g.groupId)}
+													droppableId={cid(g.groupId)}
 													isFiltering={isFiltering}
 													isCollapsed={isCollapsed}
 													toggleCollapse={() => toggleGroupCollapse(g.groupId)}
 													getName={getName}
 													getMeta={getMeta}
+													getItemSortableId={(id) => iid(id)}
 													dh={dh}
 													onRename={renameGroup}
 													onDelete={deleteGroup}

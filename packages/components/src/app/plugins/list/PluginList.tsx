@@ -26,24 +26,16 @@
 
 import {
 	ActionIcon,
-	Badge,
 	Box,
 	Group,
 	Paper,
 	Skeleton,
 	Stack,
-	TextInput,
 } from '@mantine/core'
 import {
-	IconBan,
 	IconCornerUpLeft,
 	IconPlugConnected,
-	IconPlayerPlay,
-	IconPlayerStop,
-	IconPower,
-	IconSearch,
 	IconSearchOff,
-	IconX,
 } from '@tabler/icons-react'
 import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react'
 import type { JSX } from 'react/jsx-runtime'
@@ -63,7 +55,10 @@ import {
 	buildOverview,
 	cloneGroups,
 	type OverviewSnapshot,
-} from './overview'
+} from './state/overview'
+import { parseSearchTokens } from '../shared/search'
+import { BulkActionsBar, type BulkAction } from './components/BulkActionsBar'
+import { SearchBar, type StatusFilterState } from './components/SearchBar'
 
 interface PluginListProps {
 	pluginName?: string
@@ -77,43 +72,7 @@ const ACTION_LABEL: Record<PluginStatusAction, string> = {
 	enable: '启用',
 	disable: '禁用',
 }
-type StatusFilterState = {
-	running: boolean
-	stopped: boolean
-	disabled: boolean
-}
 const STATUS_FILTER_KEY = 'pluxel:plugin-status-filter'
-type SearchTokens = {
-	plain: string[]
-	pkg: string[]
-	tag: string[]
-	version: string[]
-	id: string[]
-}
-
-function parseSearchTokens(input: string): SearchTokens {
-	const tokens = input
-		.trim()
-		.split(/\s+/)
-		.map((t) => t.trim())
-		.filter(Boolean)
-	const result: SearchTokens = { plain: [], pkg: [], tag: [], version: [], id: [] }
-	for (const token of tokens) {
-		if (token.startsWith('@') && token.length > 1) {
-			result.pkg.push(token.slice(1).toLowerCase())
-		} else if (token.startsWith('#') && token.length > 1) {
-			result.tag.push(token.slice(1).toLowerCase())
-		} else if (token.startsWith('v:') && token.length > 2) {
-			result.version.push(token.slice(2).toLowerCase())
-		} else if (token.startsWith('id:') && token.length > 3) {
-			result.id.push(token.slice(3).toLowerCase())
-		} else {
-			result.plain.push(token.toLowerCase())
-		}
-	}
-	return result
-}
-
 
 export const PluginList: React.FC<PluginListProps> = ({ pluginName }) => {
 	const hmr = useHmrWebClient()
@@ -386,6 +345,17 @@ export const PluginList: React.FC<PluginListProps> = ({ pluginName }) => {
 		[selectedIds, notify],
 	)
 
+	const handleBulkAction = useCallback(
+		(action: BulkAction) => {
+			if (action === 'clear') {
+				setSelectedIds([])
+				return
+			}
+			void handleBulkStatus(action)
+		},
+		[handleBulkStatus],
+	)
+
 	// —— 视图渲染 —— //
 	const loading = !hasLoadedOnce && overviewState.isLoading
 	const syncing = hasLoadedOnce && overviewState.isLoading
@@ -443,61 +413,9 @@ export const PluginList: React.FC<PluginListProps> = ({ pluginName }) => {
 		return false
 	}, [groupsForView, hasStatusFilter, overview.statuses, searchTokens, statusFilter])
 
-	const clearBtn = useMemo(
-		() =>
-			search ? (
-				<ActionIcon size="sm" variant="subtle" onClick={() => handleSearchChange('')}>
-					<IconX size={14} />
-				</ActionIcon>
-			) : undefined,
-		[search, handleSearchChange],
-	)
-
 	const toggleStatusFilter = useCallback((key: keyof StatusFilterState) => {
 		setStatusFilter((prev) => ({ ...prev, [key]: !prev[key] }))
 	}, [])
-
-	const rightSection = useMemo(
-		() => (
-			<Group gap={2} wrap="nowrap">
-				{clearBtn}
-				<ActionIcon
-					size="sm"
-					variant={statusFilter.running ? 'filled' : 'subtle'}
-					color={statusFilter.running ? 'green' : undefined}
-					onClick={() => toggleStatusFilter('running')}
-					title="只看运行中"
-					aria-label="运行中"
-					aria-pressed={statusFilter.running}
-				>
-					<IconPlayerPlay size={12} />
-				</ActionIcon>
-				<ActionIcon
-					size="sm"
-					variant={statusFilter.stopped ? 'filled' : 'subtle'}
-					color={statusFilter.stopped ? 'gray' : undefined}
-					onClick={() => toggleStatusFilter('stopped')}
-					title="只看停止"
-					aria-label="停止"
-					aria-pressed={statusFilter.stopped}
-				>
-					<IconPlayerStop size={12} />
-				</ActionIcon>
-				<ActionIcon
-					size="sm"
-					variant={statusFilter.disabled ? 'filled' : 'subtle'}
-					color={statusFilter.disabled ? 'red' : undefined}
-					onClick={() => toggleStatusFilter('disabled')}
-					title="只看禁用"
-					aria-label="禁用"
-					aria-pressed={statusFilter.disabled}
-				>
-					<IconBan size={12} />
-				</ActionIcon>
-			</Group>
-		),
-		[clearBtn, statusFilter.disabled, statusFilter.running, statusFilter.stopped, toggleStatusFilter],
-	)
 
 	let content: JSX.Element | null = null
 	if (loading) {
@@ -566,71 +484,17 @@ export const PluginList: React.FC<PluginListProps> = ({ pluginName }) => {
 			style={{ minWidth: 0, minHeight: '100%', height: '100%', flex: 1, overflow: 'hidden' }}
 		>
 			<Paper withBorder radius="xs" p={4}>
-				<TextInput
-					ref={inputRef}
-					placeholder="搜索（名称/ID，@包 #tag v:版本）"
+				<SearchBar
 					value={search}
-					onChange={(e) => handleSearchChange(e.currentTarget.value)}
-					leftSection={<IconSearch size={14} />}
-					rightSection={rightSection}
-					rightSectionWidth={clearBtn ? 120 : 96}
-					rightSectionPointerEvents="auto"
-					size="xs"
-					variant="filled"
-					radius="sm"
+					onChange={handleSearchChange}
+					inputRef={inputRef}
+					statusFilter={statusFilter}
+					onToggleStatus={toggleStatusFilter}
 				/>
 			</Paper>
 
 			{selectedIds.length > 0 ? (
-				<Paper withBorder radius="xs" p={4} shadow="xs">
-					<Group justify="space-between" align="center" gap={6} wrap="nowrap">
-						<Badge variant="light" color="blue" size="xs">
-							已选 {selectedIds.length}
-						</Badge>
-						<Group gap={4} wrap="nowrap">
-							<ActionIcon
-								size="sm"
-								variant="subtle"
-								disabled={bulkBusy}
-								onClick={() => void handleBulkStatus('stop')}
-								title="停止"
-								aria-label="停止"
-							>
-								<IconPlayerStop size={14} />
-							</ActionIcon>
-							<ActionIcon
-								size="sm"
-								variant="subtle"
-								disabled={bulkBusy}
-								onClick={() => void handleBulkStatus('disable')}
-								title="禁用"
-								aria-label="禁用"
-							>
-								<IconBan size={14} />
-							</ActionIcon>
-							<ActionIcon
-								size="sm"
-								variant="subtle"
-								disabled={bulkBusy}
-								onClick={() => void handleBulkStatus('enable')}
-								title="启用"
-								aria-label="启用"
-							>
-								<IconPower size={14} />
-							</ActionIcon>
-							<ActionIcon
-								size="sm"
-								variant="subtle"
-								disabled={bulkBusy}
-								onClick={() => setSelectedIds([])}
-								title="清空选择"
-								aria-label="清空选择"
-							>
-								<IconX size={14} />
-							</ActionIcon>
-						</Group>
-					</Group>
-				</Paper>
+				<BulkActionsBar count={selectedIds.length} busy={bulkBusy} onAction={handleBulkAction} />
 			) : null}
 
 			<Box

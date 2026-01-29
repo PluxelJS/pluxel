@@ -2,7 +2,7 @@ import { Box, useMantineTheme } from '@mantine/core'
 import { useMediaQuery } from '@mantine/hooks'
 import { LeftPane } from './LeftPane'
 import { RightPane } from './RightPane'
-import type { PluginConfigState } from '../../hooks'
+import type { PluginConfigState } from '../../../hooks'
 
 interface PluginLayoutProps {
 	config: PluginConfigState

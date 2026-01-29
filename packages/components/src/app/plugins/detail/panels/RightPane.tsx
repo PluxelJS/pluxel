@@ -14,7 +14,7 @@ import { IconSettingsOff } from '@tabler/icons-react'
 import { useRouter } from '@tanstack/react-router'
 import { Fragment, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ObjectSchema } from 'valibot'
-import { EmptyState, ErrorState } from '../../../components'
+import { EmptyState, ErrorState } from '../../../../components'
 import {
 	ExtensionErrorBoundary,
 	ExtensionProvider,
@@ -23,14 +23,14 @@ import {
 	useExtensionContext,
 	useExtensionRuntimeVersion,
 	useExtensions,
-} from '../../../extension'
-import type { PluginConfigState } from '../../hooks'
-import { RouterLinkAdapter } from '../../RouterLinkAdapter'
-import { useCurrentPathname, useCurrentSearch } from '../../router/useCurrentRoute'
-import { FloatingTocScope } from '../components/FloatingToc'
-import { ConfigForm, compareSchemaKeys, PLUGIN_SCHEMA_GROUP, splitSchemaKey } from '../config'
-import { PluginPanel } from './components'
-import { usePluginMeta } from './context'
+} from '../../../../extension'
+import type { PluginConfigState } from '../../../hooks'
+import { RouterLinkAdapter } from '../../../RouterLinkAdapter'
+import { useCurrentPathname, useCurrentSearch } from '../../../router/useCurrentRoute'
+import { FloatingTocScope } from '../../components/FloatingToc'
+import { ConfigForm, compareSchemaKeys, PLUGIN_SCHEMA_GROUP, splitSchemaKey } from '../../config'
+import { PluginPanel } from '../components'
+import { usePluginMeta } from '../context'
 
 interface RightPaneProps {
 	config: PluginConfigState
@@ -540,9 +540,24 @@ export function RightPane({ config }: RightPaneProps) {
 		<PluginPanel padding="sm" gap="sm">
 			<Box style={COLUMN_STYLE}>
 				{hasTabs ? (
-					<Tabs value={activeTab} onChange={handleTabChange} keepMounted style={COLUMN_STYLE}>
+					<Tabs
+						value={activeTab}
+						onChange={handleTabChange}
+						keepMounted
+						size="sm"
+						radius="sm"
+						style={COLUMN_STYLE}
+					>
 						<Group gap="xs" align="center" justify="space-between" wrap="nowrap">
-							<Tabs.List style={{ flex: 1, minWidth: 0 }}>
+							<Tabs.List
+								style={{
+									flex: 1,
+									minWidth: 0,
+									overflowX: 'auto',
+									overflowY: 'hidden',
+									flexWrap: 'nowrap',
+								}}
+							>
 								{showRouteTab ? <Tabs.Tab value="route">页面</Tabs.Tab> : null}
 								{showConfigTab ? <Tabs.Tab value="config">配置</Tabs.Tab> : null}
 								{configGroupTabs.map((tab) => (

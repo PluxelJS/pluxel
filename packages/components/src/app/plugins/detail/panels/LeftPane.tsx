@@ -12,12 +12,12 @@ import {
 	Tooltip,
 } from '@mantine/core'
 import { IconChevronDown, IconChevronUp } from '@tabler/icons-react'
-import { memo, useCallback, useEffect, useMemo, useState } from 'react'
-import { LiveLog as LiveLogRaw } from '../../log_viewer/LiveLog'
-import { RouterLinkAdapter } from '../../RouterLinkAdapter'
-import { ExtensionSlot } from '../../../extension'
-import { usePluginMeta } from './context'
-import { ActionBar, PluginPanel, PluginSourceCard } from './components'
+import { memo, type ReactNode, useCallback, useEffect, useMemo, useState } from 'react'
+import { LiveLog as LiveLogRaw } from '../../../log_viewer/LiveLog'
+import { RouterLinkAdapter } from '../../../RouterLinkAdapter'
+import { ExtensionSlot } from '../../../../extension'
+import { usePluginMeta } from '../context'
+import { ActionBar, PluginPanel, PluginSourceCard } from '../components'
 
 const LiveLog = memo(LiveLogRaw)
 
@@ -67,8 +67,8 @@ function SectionToggle({
 	onClick: () => void
 	open: boolean
 	ariaLabel: string
-	children: React.ReactNode
-	right?: React.ReactNode
+	children: ReactNode
+	right?: ReactNode
 }) {
 	return (
 		<Box
@@ -140,6 +140,8 @@ export function LeftPane({ compact = false }: LeftPaneProps) {
 
 	return (
 		<PluginPanel
+			padding="sm"
+			gap="sm"
 			title={
 				<Text fw={600} size="lg" lineClamp={1}>
 					{pluginName}
@@ -147,7 +149,7 @@ export function LeftPane({ compact = false }: LeftPaneProps) {
 			}
 			rightSection={<ActionBar />}
 		>
-			<Stack gap="md" style={{ flex: 1, minHeight: 0 }}>
+			<Stack gap="sm" style={{ flex: 1, minHeight: 0 }}>
 				<Paper withBorder radius="md" p="sm" shadow="xs" style={{ overflow: 'hidden' }}>
 					<Group justify="space-between" align="center">
 						<SectionToggle
