@@ -29,6 +29,8 @@ const toStatuses = (entries: Array<PluginStatusEntry | null | undefined> | undef
 			packageName: source?.packageName ?? undefined,
 			version: source?.version ?? undefined,
 			tag: source?.tag ?? undefined,
+			sourceKind: source?.kind ?? 'unknown',
+			moduleId: source?.moduleId ?? null,
 			isRunning: Boolean(entry?.isRunning),
 			isEnabled: entry?.isEnabled !== false,
 		}

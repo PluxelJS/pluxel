@@ -28,16 +28,23 @@ import {
 	ActionIcon,
 	Badge,
 	Box,
-	Button,
 	Group,
 	Paper,
 	Skeleton,
 	Stack,
-	Text,
 	TextInput,
-	Title,
 } from '@mantine/core'
-import { IconPlugConnected, IconSearch, IconSearchOff, IconX } from '@tabler/icons-react'
+import {
+	IconBan,
+	IconCornerUpLeft,
+	IconPlugConnected,
+	IconPlayerPlay,
+	IconPlayerStop,
+	IconPower,
+	IconSearch,
+	IconSearchOff,
+	IconX,
+} from '@tabler/icons-react'
 import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react'
 import type { JSX } from 'react/jsx-runtime'
 import { type GroupConfig, PluginOrganizer } from '../organizer'
@@ -70,9 +77,63 @@ const ACTION_LABEL: Record<PluginStatusAction, string> = {
 	enable: '启用',
 	disable: '禁用',
 }
+type StatusFilterState = {
+	running: boolean
+	stopped: boolean
+	disabled: boolean
+}
+const STATUS_FILTER_KEY = 'pluxel:plugin-status-filter'
+type SearchTokens = {
+	plain: string[]
+	pkg: string[]
+	tag: string[]
+	version: string[]
+	id: string[]
+}
+
+function parseSearchTokens(input: string): SearchTokens {
+	const tokens = input
+		.trim()
+		.split(/\s+/)
+		.map((t) => t.trim())
+		.filter(Boolean)
+	const result: SearchTokens = { plain: [], pkg: [], tag: [], version: [], id: [] }
+	for (const token of tokens) {
+		if (token.startsWith('@') && token.length > 1) {
+			result.pkg.push(token.slice(1).toLowerCase())
+		} else if (token.startsWith('#') && token.length > 1) {
+			result.tag.push(token.slice(1).toLowerCase())
+		} else if (token.startsWith('v:') && token.length > 2) {
+			result.version.push(token.slice(2).toLowerCase())
+		} else if (token.startsWith('id:') && token.length > 3) {
+			result.id.push(token.slice(3).toLowerCase())
+		} else {
+			result.plain.push(token.toLowerCase())
+		}
+	}
+	return result
+}
+
 
 export const PluginList: React.FC<PluginListProps> = ({ pluginName }) => {
 	const hmr = useHmrWebClient()
+	const [statusFilter, setStatusFilter] = useState<StatusFilterState>(() => {
+		if (typeof window === 'undefined') {
+			return { running: true, stopped: true, disabled: true }
+		}
+		try {
+			const raw = localStorage.getItem(STATUS_FILTER_KEY)
+			if (!raw) return { running: true, stopped: true, disabled: true }
+			const parsed = JSON.parse(raw) as Partial<StatusFilterState>
+			return {
+				running: parsed.running !== false,
+				stopped: parsed.stopped !== false,
+				disabled: parsed.disabled !== false,
+			}
+		} catch {
+			return { running: true, stopped: true, disabled: true }
+		}
+	})
 	// —— 混合搜索（持久化 + 降压 + 无闪烁） —— //
 	const [search, setSearch] = useState(() => {
 		if (typeof window === 'undefined') return ''
@@ -97,6 +158,13 @@ export const PluginList: React.FC<PluginListProps> = ({ pluginName }) => {
 		}, 200)
 		return () => clearTimeout(t)
 	}, [search])
+
+	useEffect(() => {
+		if (typeof window === 'undefined') return
+		try {
+			localStorage.setItem(STATUS_FILTER_KEY, JSON.stringify(statusFilter))
+		} catch {}
+	}, [statusFilter])
 
 	const inputRef = useRef<HTMLInputElement>(null)
 	useEffect(() => {
@@ -169,6 +237,7 @@ export const PluginList: React.FC<PluginListProps> = ({ pluginName }) => {
 		}
 	}, [overviewState.error, overviewState.isLoading])
 
+
 	const commitTimerRef = useRef<number | null>(null)
 	const inflightCommitRef = useRef<Promise<void> | null>(null)
 	const pendingCommitRef = useRef<GroupConfig[] | null>(null)
@@ -229,9 +298,10 @@ export const PluginList: React.FC<PluginListProps> = ({ pluginName }) => {
 	const handleBulkStatus = useCallback(
 		async (action: Exclude<PluginStatusAction, 'start' | 'restart'>) => {
 			if (selectedIds.length === 0) return
+			const batch = [...selectedIds]
 			setBulkBusy(true)
 			try {
-				const results = await updatePluginStatuses(selectedIds.map((name) => ({ name, action })))
+				const results = await updatePluginStatuses(batch.map((name) => ({ name, action })))
 				const failed = results.filter((r) => !r.ok)
 				if (failed.length > 0) {
 					notify({
@@ -240,11 +310,67 @@ export const PluginList: React.FC<PluginListProps> = ({ pluginName }) => {
 						color: 'red',
 					})
 				} else {
-					notify({
-						title: '批量操作成功',
-						message: `${selectedIds.length} 个插件已 ${ACTION_LABEL[action]}`,
-						color: 'green',
-					})
+					if (action === 'disable' || action === 'stop') {
+						const undoAction: PluginStatusAction = action === 'disable' ? 'enable' : 'start'
+						notify({
+							title: '批量操作成功',
+							message: (
+								<Group gap={6} align="center" wrap="nowrap">
+									<Box component="span">
+										{batch.length} 个插件已 {ACTION_LABEL[action]}
+									</Box>
+									<ActionIcon
+										size="sm"
+										variant="subtle"
+										title="撤销"
+										aria-label="撤销"
+										onClick={() => {
+											void (async () => {
+												setBulkBusy(true)
+												try {
+													const undoResults = await updatePluginStatuses(
+														batch.map((name) => ({ name, action: undoAction })),
+													)
+													const undoFailed = undoResults.filter((r) => !r.ok)
+													if (undoFailed.length > 0) {
+														notify({
+															title: '撤销失败',
+															message: undoFailed.map((f) => f.name).join('，') || '撤销失败',
+															color: 'red',
+														})
+													} else {
+														notify({
+															title: '已撤销',
+															message: `${batch.length} 个插件已 ${ACTION_LABEL[undoAction]}`,
+															color: 'green',
+														})
+													}
+												} catch (error: any) {
+													notify({
+														title: '撤销失败',
+														message: error?.message ?? '撤销失败，请稍后重试。',
+														color: 'red',
+													})
+												} finally {
+													setBulkBusy(false)
+												}
+											})()
+										}}
+									>
+										<IconCornerUpLeft size={14} />
+									</ActionIcon>
+								</Group>
+							),
+							color: 'green',
+							autoClose: 4000,
+						})
+					} else {
+						notify({
+							title: '批量操作成功',
+							message: `${batch.length} 个插件已 ${ACTION_LABEL[action]}`,
+							color: 'green',
+						})
+					}
 					if (action === 'disable' || action === 'stop') setSelectedIds([])
 				}
 			} catch (error: any) {
@@ -266,33 +392,56 @@ export const PluginList: React.FC<PluginListProps> = ({ pluginName }) => {
 	const errorMessage = !overviewState.hasSnapshot ? overviewState.error : undefined
 	const filterQuery = deferredSearch
 	const groupsForView = draftGroups ?? overview.groups
+	const searchTokens = useMemo(() => parseSearchTokens(filterQuery), [filterQuery])
+	const hasStatusFilter =
+		!statusFilter.running || !statusFilter.stopped || !statusFilter.disabled
 
 	// 搜索过程中的过渡状态，用于降低视觉闪烁
 	const isTransitioning = search.trim() !== deferredSearch
 
 	const hasAnyMatch = useMemo(() => {
-		const q = filterQuery.trim().toLowerCase()
-		if (!q) return true
+		const { plain, pkg, tag, version, id: idTokens } = searchTokens
+		const hasQuery =
+			plain.length > 0 || pkg.length > 0 || tag.length > 0 || version.length > 0 || idTokens.length > 0
+		if (!hasQuery && !hasStatusFilter) return true
+
+		const groupNameMatches = (name: string) =>
+			plain.length > 0 && plain.every((term) => name.toLowerCase().includes(term))
+
 		for (const group of groupsForView) {
-			if ((group.name || '').toLowerCase().includes(q)) return true
+			if (group.name && groupNameMatches(group.name)) return true
 		}
-		for (const [id, st] of Object.entries(overview.statuses)) {
+
+		for (const [pid, st] of Object.entries(overview.statuses)) {
 			const name = (st?.name || '').toLowerCase()
-			const pkg = (st?.packageName || '').toLowerCase()
-			const tag = (st?.tag || '').toLowerCase()
-			const version = (st?.version || '').toLowerCase()
-			if (
-				id.toLowerCase().includes(q) ||
-				name.includes(q) ||
-				pkg.includes(q) ||
-				tag.includes(q) ||
-				version.includes(q)
-			) {
-				return true
-			}
+			const pkgName = (st?.packageName || '').toLowerCase()
+			const tagValue = (st?.tag || '').toLowerCase()
+			const versionValue = (st?.version || '').toLowerCase()
+			const idValue = pid.toLowerCase()
+
+			const running = !!st?.isRunning
+			const enabled = st?.isEnabled !== false
+			const disabled = !enabled
+			const stopped = enabled && !running
+			const statusOk =
+				(statusFilter.running && running) ||
+				(statusFilter.stopped && stopped) ||
+				(statusFilter.disabled && disabled)
+
+			if (!statusOk) continue
+
+			const plainOk = plain.every((term) =>
+				[name, pkgName, tagValue, versionValue, idValue].some((field) => field.includes(term)),
+			)
+			const pkgOk = pkg.every((term) => pkgName.includes(term))
+			const tagOk = tag.every((term) => tagValue.includes(term))
+			const versionOk = version.every((term) => versionValue.includes(term))
+			const idOk = idTokens.every((term) => idValue.includes(term))
+
+			if (plainOk && pkgOk && tagOk && versionOk && idOk) return true
 		}
 		return false
-	}, [filterQuery, groupsForView, overview.statuses])
+	}, [groupsForView, hasStatusFilter, overview.statuses, searchTokens, statusFilter])
 
 	const clearBtn = useMemo(
 		() =>
@@ -302,6 +451,52 @@ export const PluginList: React.FC<PluginListProps> = ({ pluginName }) => {
 				</ActionIcon>
 			) : undefined,
 		[search, handleSearchChange],
+	)
+
+	const toggleStatusFilter = useCallback((key: keyof StatusFilterState) => {
+		setStatusFilter((prev) => ({ ...prev, [key]: !prev[key] }))
+	}, [])
+
+	const rightSection = useMemo(
+		() => (
+			<Group gap={2} wrap="nowrap">
+				{clearBtn}
+				<ActionIcon
+					size="sm"
+					variant={statusFilter.running ? 'filled' : 'subtle'}
+					color={statusFilter.running ? 'green' : undefined}
+					onClick={() => toggleStatusFilter('running')}
+					title="只看运行中"
+					aria-label="运行中"
+					aria-pressed={statusFilter.running}
+				>
+					<IconPlayerPlay size={12} />
+				</ActionIcon>
+				<ActionIcon
+					size="sm"
+					variant={statusFilter.stopped ? 'filled' : 'subtle'}
+					color={statusFilter.stopped ? 'gray' : undefined}
+					onClick={() => toggleStatusFilter('stopped')}
+					title="只看停止"
+					aria-label="停止"
+					aria-pressed={statusFilter.stopped}
+				>
+					<IconPlayerStop size={12} />
+				</ActionIcon>
+				<ActionIcon
+					size="sm"
+					variant={statusFilter.disabled ? 'filled' : 'subtle'}
+					color={statusFilter.disabled ? 'red' : undefined}
+					onClick={() => toggleStatusFilter('disabled')}
+					title="只看禁用"
+					aria-label="禁用"
+					aria-pressed={statusFilter.disabled}
+				>
+					<IconBan size={12} />
+				</ActionIcon>
+			</Group>
+		),
+		[clearBtn, statusFilter.disabled, statusFilter.running, statusFilter.stopped, toggleStatusFilter],
 	)
 
 	let content: JSX.Element | null = null
@@ -333,73 +528,53 @@ export const PluginList: React.FC<PluginListProps> = ({ pluginName }) => {
 				minHeight={160}
 			/>
 		)
-	} else if (filterQuery && !hasAnyMatch) {
+	} else if ((filterQuery || hasStatusFilter) && !hasAnyMatch) {
+		const emptyTitle = filterQuery
+			? `没有匹配"${filterQuery}"的结果`
+			: '没有符合筛选条件的插件'
 		content = (
 			<EmptyState
 				icon={<IconSearchOff size={28} stroke={1.5} />}
-				title={`没有匹配"${filterQuery}"的结果`}
+				title={emptyTitle}
 				description="尝试其他关键词搜索。"
 				minHeight={160}
 			/>
 		)
 	} else {
 		content = (
-			<PluginOrganizer
-				key={organizerResetToken}
-				statuses={overview.statuses}
-				initialGroups={groupsForView}
-				activeId={pluginName}
-				onGroupsChange={handleGroupsChange}
-				selectedIds={selectedIds}
-				onSelectedIdsChange={setSelectedIds}
-				filterQuery={filterQuery}
-				LinkComponent={RouterLinkAdapter}
-				locked={syncing || bulkBusy}
-			/>
-		)
+				<PluginOrganizer
+					key={organizerResetToken}
+					statuses={overview.statuses}
+					initialGroups={groupsForView}
+					activeId={pluginName}
+					onGroupsChange={handleGroupsChange}
+					selectedIds={selectedIds}
+					onSelectedIdsChange={setSelectedIds}
+					filterQuery={filterQuery}
+					statusFilter={statusFilter}
+					LinkComponent={RouterLinkAdapter}
+					density="ultra"
+					locked={syncing || bulkBusy}
+				/>
+			)
 	}
 
 	return (
 		<Stack
-			gap="sm"
+			gap={4}
 			w="100%"
 			style={{ minWidth: 0, minHeight: '100%', height: '100%', flex: 1, overflow: 'hidden' }}
 		>
-			<Paper withBorder radius="md" p="sm">
-				<Group justify="space-between" align="center" gap="sm" wrap="wrap">
-					<Title order={6}>插件工作台</Title>
-					{!loading && !errorMessage && (
-						<Group gap={6}>
-							<Badge variant="light" size="xs" suppressHydrationWarning>
-								共 {overview.total}
-							</Badge>
-							<Badge variant="light" size="xs" color="green" suppressHydrationWarning>
-								运行中 {overview.running}
-							</Badge>
-							{overview.disabled > 0 && (
-								<Badge variant="light" size="xs" color="gray" suppressHydrationWarning>
-									禁用 {overview.disabled}
-								</Badge>
-							)}
-							{syncing && (
-								<Badge variant="light" size="xs" color="blue">
-									同步…
-								</Badge>
-							)}
-						</Group>
-					)}
-				</Group>
-				<Text c="dimmed" size="xs" mt={4}>
-					按 / 或 Ctrl/⌘ + F 快速搜索
-				</Text>
+			<Paper withBorder radius="xs" p={4}>
 				<TextInput
 					ref={inputRef}
-					mt="xs"
-					placeholder="搜索（组名 / 插件名称 / 插件ID）"
+					placeholder="搜索（名称/ID，@包 #tag v:版本）"
 					value={search}
 					onChange={(e) => handleSearchChange(e.currentTarget.value)}
 					leftSection={<IconSearch size={14} />}
-					rightSection={clearBtn}
+					rightSection={rightSection}
+					rightSectionWidth={clearBtn ? 120 : 96}
+					rightSectionPointerEvents="auto"
 					size="xs"
 					variant="filled"
 					radius="sm"
@@ -407,49 +582,52 @@ export const PluginList: React.FC<PluginListProps> = ({ pluginName }) => {
 			</Paper>
 
 			{selectedIds.length > 0 ? (
-				<Paper withBorder radius="md" p="sm" shadow="xs">
-					<Group justify="space-between" align="center" gap="sm" wrap="wrap">
-						<Group gap="xs" align="center">
-							<Badge variant="light" color="blue" size="sm">
-								已选 {selectedIds.length}
-							</Badge>
-							<Text size="xs" c="dimmed">
-								右键/多选后可批量操作（仅停用/启用/停止）。
-							</Text>
-						</Group>
-						<Group gap="xs" wrap="wrap">
-							<Button
-								size="xs"
+				<Paper withBorder radius="xs" p={4} shadow="xs">
+					<Group justify="space-between" align="center" gap={6} wrap="nowrap">
+						<Badge variant="light" color="blue" size="xs">
+							已选 {selectedIds.length}
+						</Badge>
+						<Group gap={4} wrap="nowrap">
+							<ActionIcon
+								size="sm"
 								variant="subtle"
 								disabled={bulkBusy}
 								onClick={() => void handleBulkStatus('stop')}
+								title="停止"
+								aria-label="停止"
 							>
-								停止
-							</Button>
-							<Button
-								size="xs"
+								<IconPlayerStop size={14} />
+							</ActionIcon>
+							<ActionIcon
+								size="sm"
 								variant="subtle"
 								disabled={bulkBusy}
 								onClick={() => void handleBulkStatus('disable')}
+								title="禁用"
+								aria-label="禁用"
 							>
-								禁用
-							</Button>
-							<Button
-								size="xs"
+								<IconBan size={14} />
+							</ActionIcon>
+							<ActionIcon
+								size="sm"
 								variant="subtle"
 								disabled={bulkBusy}
 								onClick={() => void handleBulkStatus('enable')}
+								title="启用"
+								aria-label="启用"
 							>
-								启用
-							</Button>
-							<Button
-								size="xs"
-								variant="default"
+								<IconPower size={14} />
+							</ActionIcon>
+							<ActionIcon
+								size="sm"
+								variant="subtle"
 								disabled={bulkBusy}
 								onClick={() => setSelectedIds([])}
+								title="清空选择"
+								aria-label="清空选择"
 							>
-								清空选择
-							</Button>
+								<IconX size={14} />
+							</ActionIcon>
 						</Group>
 					</Group>
 				</Paper>
@@ -460,9 +638,9 @@ export const PluginList: React.FC<PluginListProps> = ({ pluginName }) => {
 					flex: 1,
 					minHeight: 0,
 					minWidth: 0,
-					padding: 'var(--mantine-spacing-xs)',
+					padding: 2,
 					background: 'var(--mantine-color-body)',
-					borderRadius: 12,
+					borderRadius: 6,
 					display: 'flex',
 					flexDirection: 'column',
 				}}

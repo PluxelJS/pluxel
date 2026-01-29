@@ -6,6 +6,8 @@ export interface PluginStatus {
 	packageName?: string
 	version?: string
 	tag?: string
+	sourceKind?: 'hmr' | 'package' | 'unknown'
+	moduleId?: string | null
 	isRunning: boolean
 	isEnabled?: boolean
 }

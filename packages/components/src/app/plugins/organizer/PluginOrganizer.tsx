@@ -66,7 +66,6 @@ import {
 	Anchor,
 	Badge,
 	Box,
-	Button,
 	Card,
 	Collapse,
 	Flex,
@@ -108,7 +107,71 @@ type Density = 'comfortable' | 'compact' | 'ultra'
 const DENSITY: Record<Density, { rowH: number; px: number; py: number; font: 'xs' | 'sm' }> = {
 	comfortable: { rowH: 38, px: 10, py: 8, font: 'sm' },
 	compact: { rowH: 30, px: 8, py: 4, font: 'xs' },
-	ultra: { rowH: 26, px: 6, py: 2, font: 'xs' },
+	ultra: { rowH: 22, px: 6, py: 1, font: 'xs' },
+}
+const UNGROUPED_SCROLL_MAX_HEIGHT = 'clamp(160px, 32vh, 360px)'
+
+type SearchTokens = {
+	plain: string[]
+	pkg: string[]
+	tag: string[]
+	version: string[]
+	id: string[]
+}
+
+function parseSearchTokens(input: string): SearchTokens {
+	const tokens = input
+		.trim()
+		.split(/\s+/)
+		.map((t) => t.trim())
+		.filter(Boolean)
+	const result: SearchTokens = { plain: [], pkg: [], tag: [], version: [], id: [] }
+	for (const token of tokens) {
+		if (token.startsWith('@') && token.length > 1) {
+			result.pkg.push(token.slice(1).toLowerCase())
+		} else if (token.startsWith('#') && token.length > 1) {
+			result.tag.push(token.slice(1).toLowerCase())
+		} else if (token.startsWith('v:') && token.length > 2) {
+			result.version.push(token.slice(2).toLowerCase())
+		} else if (token.startsWith('id:') && token.length > 3) {
+			result.id.push(token.slice(3).toLowerCase())
+		} else {
+			result.plain.push(token.toLowerCase())
+		}
+	}
+	return result
+}
+
+function deriveRootLabel(moduleId: string | null | undefined, statusName: string) {
+	if (!moduleId) return '本地插件'
+	const normalized = moduleId.replace(/\\/g, '/')
+	const parts = normalized.split('/').filter(Boolean)
+	if (parts.length === 0) return '本地插件'
+	const last = parts[parts.length - 1] ?? ''
+	if (/\.[a-z0-9]+$/i.test(last)) parts.pop()
+	const skip = new Set(['src', 'lib', 'dist', 'build'])
+	let candidate = parts[parts.length - 1] ?? ''
+	while (candidate && skip.has(candidate) && parts.length > 1) {
+		parts.pop()
+		candidate = parts[parts.length - 1] ?? ''
+	}
+	const normalizedCandidate = candidate.toLowerCase()
+	const normalizedName = statusName.toLowerCase()
+	if (normalizedCandidate === normalizedName && parts.length > 1) {
+		parts.pop()
+		candidate = parts[parts.length - 1] ?? candidate
+		while (candidate && skip.has(candidate) && parts.length > 1) {
+			parts.pop()
+			candidate = parts[parts.length - 1] ?? candidate
+		}
+	}
+	return candidate || '本地插件'
+}
+
+export type StatusFilter = {
+	running: boolean
+	stopped: boolean
+	disabled: boolean
 }
 
 type Props = {
@@ -116,6 +179,7 @@ type Props = {
 	initialGroups: GroupConfig[]
 	onGroupsChange: (groups: GroupConfig[]) => void
 	filterQuery?: string
+	statusFilter?: StatusFilter
 	LinkComponent?: React.ComponentType<{ to: string; children: React.ReactNode }>
 	activeId?: string | null
 	activeIds?: string[]
@@ -151,11 +215,13 @@ function DroppableContainer({
 	children,
 	disabled,
 	minDropHeight = 0,
+	style,
 }: {
 	id: UniqueIdentifier
 	children: React.ReactNode
 	disabled?: boolean
 	minDropHeight?: number
+	style?: React.CSSProperties
 }) {
 	const { setNodeRef, isOver } = useDroppable({ id, disabled })
 	return (
@@ -165,6 +231,7 @@ function DroppableContainer({
 			style={{
 				outline: isOver ? '1px dashed var(--mantine-color-blue-6)' : undefined,
 				minHeight: minDropHeight,
+				...style,
 			}}
 			role="group"
 			aria-roledescription="droppable container"
@@ -182,10 +249,11 @@ const SortableRow = memo(function SortableRow({
 	enabled,
 	selected,
 	active,
-	onRightSelect,
+	onSelect,
 	LinkComp,
 	disabled,
 	dh,
+	meta,
 }: {
 	pid: string
 	name: string
@@ -193,10 +261,11 @@ const SortableRow = memo(function SortableRow({
 	enabled?: boolean
 	selected: boolean
 	active: boolean
-	onRightSelect: (e: React.MouseEvent, pid: string) => void
+	onSelect: (e: React.MouseEvent, pid: string, mode?: 'click' | 'context') => void
 	LinkComp?: React.ComponentType<{ to: string; children: React.ReactNode }>
 	disabled: boolean
 	dh: { rowH: number; px: number; py: number; font: 'xs' | 'sm' }
+	meta?: { tag?: string; version?: string }
 }) {
 	const theme = useMantineTheme()
 	const scheme = useComputedColorScheme('light', { getInitialValueInEffect: true })
@@ -204,6 +273,10 @@ const SortableRow = memo(function SortableRow({
 	const rowRef = useRef<HTMLAnchorElement | HTMLSpanElement | null>(null)
 	const brand = theme.colors.brand ?? theme.colors.indigo
 	const accent = theme.colors.blue
+	const showStatusLabel = dh.rowH >= 30
+	const rowGap = dh.rowH <= 26 ? 4 : 6
+	const handleSize = dh.rowH <= 26 ? 16 : 20
+	const handleIconSize = dh.rowH <= 26 ? 14 : 16
 
 	// 优化后的配色方案：提升背景可见度，保持文字清晰
 	const activeBg = active
@@ -234,14 +307,28 @@ const SortableRow = memo(function SortableRow({
 
 	const href = `/plugins/${encodeURIComponent(pid)}`
 
+	const metaLabel = useMemo(() => {
+		const tag = meta?.tag?.trim()
+		const version = meta?.version?.trim()
+		if (tag && version) return `${tag}@${version}`
+		if (tag) return tag
+		if (version) return version
+		return ''
+	}, [meta?.tag, meta?.version])
 	return (
 		<Box
 			ref={setNodeRef}
 			onDoubleClick={() => (rowRef.current as HTMLAnchorElement | null)?.click?.()}
+			onClick={(e) => {
+				if (disabled) return
+				if (e.shiftKey || e.metaKey || e.ctrlKey) e.preventDefault()
+				onSelect(e, pid, 'click')
+			}}
 			onContextMenu={(e) => {
 				e.preventDefault()
 				e.stopPropagation()
-				onRightSelect(e, pid)
+				if (disabled) return
+				onSelect(e, pid, 'context')
 			}}
 			data-plugin-row="true"
 			style={{
@@ -252,7 +339,7 @@ const SortableRow = memo(function SortableRow({
 				padding: `${dh.py}px ${dh.px}px`,
 				display: 'flex',
 				alignItems: 'center',
-				gap: 6,
+				gap: rowGap,
 				borderRadius: 6,
 				cursor: disabled ? 'default' : 'pointer',
 				userSelect: 'none',
@@ -286,23 +373,29 @@ const SortableRow = memo(function SortableRow({
 				aria-label="拖拽排序"
 				data-drag-handle
 				style={{
-					width: 20,
-					height: 20,
-					flex: '0 0 20px',
+					width: handleSize,
+					height: handleSize,
+					flex: `0 0 ${handleSize}px`,
 					touchAction: 'none',
 					cursor: isDragging ? 'grabbing' : 'grab',
 				}}
 				{...listeners}
 				{...attributes}
 			>
-				<IconGripVertical size={16} />
+				<IconGripVertical size={handleIconSize} />
 			</ActionIcon>
 
-			<Box style={{ flex: 1, minWidth: 0 }}>
+			<Box style={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', gap: 6 }}>
 				{LinkComp ? (
 					<LinkComp
 						to={href}
-						style={{ textDecoration: 'none', display: 'block', color: rowColorValue }}
+						style={{ textDecoration: 'none', display: 'block', color: rowColorValue, minWidth: 0 }}
+						onClick={(e: any) => {
+							if (disabled) return
+							e.stopPropagation()
+							if (e.shiftKey || e.metaKey || e.ctrlKey) e.preventDefault()
+							onSelect(e, pid, 'click')
+						}}
 					>
 						<Tooltip label={name} withinPortal withArrow openDelay={200}>
 							<Text
@@ -334,34 +427,71 @@ const SortableRow = memo(function SortableRow({
 								color: rowColorValue,
 							}}
 							aria-current={active ? 'page' : undefined}
+							onClick={(e) => {
+								if (disabled) return
+								e.stopPropagation()
+								if (e.shiftKey || e.metaKey || e.ctrlKey) e.preventDefault()
+								onSelect(e, pid, 'click')
+							}}
 						>
 							{name}
 						</Anchor>
 					</Tooltip>
 				)}
+				{metaLabel && (
+					<Text
+						size="xs"
+						style={{
+							fontSize: 10,
+							opacity: 0.7,
+							whiteSpace: 'nowrap',
+							flexShrink: 0,
+							maxWidth: 120,
+							overflow: 'hidden',
+							textOverflow: 'ellipsis',
+							color: rowColorValue,
+						}}
+					>
+						{metaLabel}
+					</Text>
+				)}
 			</Box>
 
 			{typeof running === 'boolean' && (
-				<Group gap={6} wrap="nowrap">
-					<Box
-						component="span"
-						aria-hidden
-						style={{
-							width: 6,
-							height: 6,
-							borderRadius: 6,
-							background: running
-								? isDark
-									? rgba(theme.colors.teal[4], 0.85) // 使用 teal 代替 green，更柔和
-									: rgba(theme.colors.teal[6], 0.8)
-								: isDark
-									? rgba(theme.colors.gray[6], 0.5) // 降低停止状态的视觉权重
-									: rgba(theme.colors.gray[5], 0.6),
-						}}
-					/>
-					<Text size="xs" style={{ color: rowColorValue }}>
-						{running ? '运行' : enabled === false ? '禁用' : '停止'}
-					</Text>
+				<Group
+					gap={showStatusLabel ? 6 : 4}
+					wrap="nowrap"
+					aria-label={running ? '运行' : enabled === false ? '禁用' : '停止'}
+				>
+					<Tooltip
+						label={running ? '运行' : enabled === false ? '禁用' : '停止'}
+						withinPortal
+						withArrow
+						disabled={showStatusLabel}
+						openDelay={200}
+					>
+						<Box
+							component="span"
+							aria-hidden
+							style={{
+								width: 6,
+								height: 6,
+								borderRadius: 6,
+								background: running
+									? isDark
+										? rgba(theme.colors.teal[4], 0.85) // 使用 teal 代替 green，更柔和
+										: rgba(theme.colors.teal[6], 0.8)
+									: isDark
+										? rgba(theme.colors.gray[6], 0.5) // 降低停止状态的视觉权重
+										: rgba(theme.colors.gray[5], 0.6),
+							}}
+						/>
+					</Tooltip>
+					{showStatusLabel && (
+						<Text size="xs" style={{ color: rowColorValue }}>
+							{running ? '运行' : enabled === false ? '禁用' : '停止'}
+						</Text>
+					)}
 				</Group>
 			)}
 		</Box>
@@ -376,13 +506,14 @@ const GroupCard = memo(function GroupCard(props: {
 	enabledSet: Set<string>
 	selectedSet: Set<string>
 	activeSet: Set<string>
-	onRightSelect: (e: React.MouseEvent, id: string) => void
+	onSelect: (e: React.MouseEvent, id: string, mode?: 'click' | 'context') => void
 	LinkComp?: React.ComponentType<{ to: string; children: React.ReactNode }>
 	sortableId: UniqueIdentifier
 	isFiltering: boolean
 	isCollapsed: boolean
 	toggleCollapse: () => void
 	getName: (id: string) => string
+	getMeta: (id: string) => { tag?: string; version?: string }
 	dh: { rowH: number; px: number; py: number; font: 'xs' | 'sm' }
 	onRename: (gid: string) => void
 	onDelete: (gid: string) => void
@@ -395,13 +526,14 @@ const GroupCard = memo(function GroupCard(props: {
 		enabledSet,
 		selectedSet,
 		activeSet,
-		onRightSelect,
+		onSelect,
 		LinkComp,
 		sortableId,
 		isFiltering,
 		isCollapsed,
 		toggleCollapse,
 		getName,
+		getMeta,
 		dh,
 		onRename,
 		onDelete,
@@ -421,26 +553,25 @@ const GroupCard = memo(function GroupCard(props: {
 	const collapseLabel = isCollapsed ? '展开分组' : '折叠分组'
 
 	return (
-		<Card
+		<Box
 			ref={setNodeRef}
-			withBorder
-			radius="md"
-			p="xs"
 			style={{
 				transform: transform ? `translate3d(${transform.x}px, ${transform.y}px, 0)` : undefined,
 				transition: transition ?? 'opacity 120ms ease-out',
 				minWidth: 0,
+				padding: 4,
+				borderBottom: '1px solid var(--mantine-color-default-border)',
 			}}
 			role="group"
 			aria-label={`分组 ${g.name || '未命名'}`}
 		>
-			<Flex align="center" gap="xs" justify="space-between" style={{ minWidth: 0 }}>
-				<Group gap={6} align="center" wrap="nowrap" style={{ minWidth: 0, flex: 1 }}>
+			<Flex align="center" gap={2} justify="space-between" style={{ minWidth: 0 }}>
+				<Group gap={4} align="center" wrap="nowrap" style={{ minWidth: 0, flex: 1 }}>
 					<Box style={{ minWidth: 0, flex: 1 }}>
 						<Tooltip label={g.name || '未命名分组'} withinPortal withArrow>
 							<Text
 								fw={600}
-								size="sm"
+								size="xs"
 								style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
 							>
 								{g.name || '未命名分组'}
@@ -452,10 +583,10 @@ const GroupCard = memo(function GroupCard(props: {
 					</Text>
 				</Group>
 
-				<Group gap={4} align="center" wrap="nowrap" style={{ flexShrink: 0 }}>
+				<Group gap={2} align="center" wrap="nowrap" style={{ flexShrink: 0 }}>
 					<Tooltip label={collapseLabel} withinPortal openDelay={200} withArrow>
 						<ActionIcon
-							size="sm"
+							size="xs"
 							variant="subtle"
 							aria-label={collapseLabel}
 							onClick={toggleCollapse}
@@ -468,7 +599,7 @@ const GroupCard = memo(function GroupCard(props: {
 					<Menu withinPortal position="bottom-end">
 						<Menu.Target>
 							<ActionIcon
-								size="sm"
+								size="xs"
 								variant="subtle"
 								aria-label="更多操作"
 								style={{ flexShrink: 0 }}
@@ -502,13 +633,13 @@ const GroupCard = memo(function GroupCard(props: {
 						withArrow
 					>
 						<ActionIcon
-							size="sm"
+							size="xs"
 							variant="subtle"
 							aria-label="拖拽分组"
 							data-drag-handle
 							style={{
-								width: 26,
-								height: 26,
+								width: 22,
+								height: 22,
 								touchAction: 'none',
 								cursor: locked ? 'not-allowed' : 'grab',
 								flexShrink: 0,
@@ -533,7 +664,7 @@ const GroupCard = memo(function GroupCard(props: {
 						items={visibleIds.map((id) => iid(id))}
 						strategy={verticalListSortingStrategy}
 					>
-						<Stack gap={0} mt="xs" align="stretch" role="list" aria-label="插件列表">
+						<Stack gap={0} mt={4} align="stretch" role="list" aria-label="插件列表">
 							{visibleIds.map((id) => (
 								<SortableRow
 									key={id}
@@ -543,9 +674,10 @@ const GroupCard = memo(function GroupCard(props: {
 									enabled={enabledSet.has(id)}
 									selected={selectedSet.has(id)}
 									active={activeSet.has(id)}
-									onRightSelect={onRightSelect}
+									onSelect={onSelect}
 									LinkComp={LinkComp}
 									disabled={isFiltering || locked}
+									meta={getMeta(id)}
 									dh={dh}
 								/>
 							))}
@@ -553,7 +685,7 @@ const GroupCard = memo(function GroupCard(props: {
 					</SortableContext>
 				</Collapse>
 			</DroppableContainer>
-		</Card>
+		</Box>
 	)
 })
 
@@ -563,6 +695,7 @@ export function PluginOrganizer({
 	initialGroups,
 	onGroupsChange,
 	filterQuery = '',
+	statusFilter,
 	LinkComponent,
 	activeId: propActiveId = null,
 	activeIds,
@@ -574,6 +707,12 @@ export function PluginOrganizer({
 	style,
 }: Props) {
 	const dh = DENSITY[density]
+	const effectiveStatusFilter = statusFilter ?? { running: true, stopped: true, disabled: true }
+	const searchTokens = useMemo(() => parseSearchTokens(filterQuery), [filterQuery])
+	const hasStatusFilter =
+		!effectiveStatusFilter.running ||
+		!effectiveStatusFilter.stopped ||
+		!effectiveStatusFilter.disabled
 
 	// 基础映射
 	const runningSet = useMemo(() => {
@@ -587,6 +726,10 @@ export function PluginOrganizer({
 		return s
 	}, [statuses])
 	const getName = useCallback((id: string) => statuses[id]?.name ?? id, [statuses])
+	const getMeta = useCallback(
+		(id: string) => ({ tag: statuses[id]?.tag, version: statuses[id]?.version }),
+		[statuses],
+	)
 
 	const allIds = useMemo(() => Object.keys(statuses), [statuses])
 	const { groups: saneGroups, ungrouped: saneUngrouped } = useMemo(
@@ -629,7 +772,6 @@ export function PluginOrganizer({
 		if (activeIds?.length) return new Set(activeIds)
 		return new Set<string>()
 	}, [propActiveId, activeIds])
-
 	// Refs for stable, local-first updates
 	const onGroupsChangeRef = useRef(onGroupsChange)
 	useEffect(() => {
@@ -644,26 +786,45 @@ export function PluginOrganizer({
 		ungroupedRef.current = ungroupedOrder
 	}, [ungroupedOrder])
 
-	// 过滤（混合：组名 or 插件 name/ID）
-	const q = filterQuery.trim().toLowerCase()
-	const isFiltering = q.length > 0
+	// 过滤（混合：组名 or 插件 name/ID + 语法）
+	const isFiltering =
+		searchTokens.plain.length > 0 ||
+		searchTokens.pkg.length > 0 ||
+		searchTokens.tag.length > 0 ||
+		searchTokens.version.length > 0 ||
+		searchTokens.id.length > 0 ||
+		hasStatusFilter
 	const pluginMatch = useCallback(
 		(id: string) => {
-			if (!isFiltering) return true
 			const st = statuses[id]
 			const name = (st?.name || '').toLowerCase()
 			const pkg = (st?.packageName || '').toLowerCase()
 			const tag = (st?.tag || '').toLowerCase()
 			const version = (st?.version || '').toLowerCase()
-			return (
-				name.includes(q) ||
-				pkg.includes(q) ||
-				tag.includes(q) ||
-				version.includes(q) ||
-				id.toLowerCase().includes(q)
+			const idValue = id.toLowerCase()
+
+			const running = !!st?.isRunning
+			const enabled = st?.isEnabled !== false
+			const disabled = !enabled
+			const stopped = enabled && !running
+			const statusOk =
+				(effectiveStatusFilter.running && running) ||
+				(effectiveStatusFilter.stopped && stopped) ||
+				(effectiveStatusFilter.disabled && disabled)
+
+			if (!statusOk) return false
+
+			const plainOk = searchTokens.plain.every((term) =>
+				[name, pkg, tag, version, idValue].some((field) => field.includes(term)),
 			)
+			const pkgOk = searchTokens.pkg.every((term) => pkg.includes(term))
+			const tagOk = searchTokens.tag.every((term) => tag.includes(term))
+			const versionOk = searchTokens.version.every((term) => version.includes(term))
+			const idOk = searchTokens.id.every((term) => idValue.includes(term))
+
+			return plainOk && pkgOk && tagOk && versionOk && idOk
 		},
-		[isFiltering, q, statuses],
+		[effectiveStatusFilter, searchTokens, statuses],
 	)
 
 	const handleBackgroundClick = useCallback(
@@ -672,6 +833,7 @@ export function PluginOrganizer({
 			const target = e.target as HTMLElement | null
 			if (target?.closest('[data-plugin-row]')) return
 			setSelectedIds([])
+			lastSelectedRef.current = null
 		},
 		[setSelectedIds],
 	)
@@ -688,17 +850,48 @@ export function PluginOrganizer({
 		[ungroupedOrder, assignedSet, pluginMatch],
 	)
 
+	const hmrUngrouped = useMemo(
+		() => visibleUngrouped.filter((id) => statuses[id]?.sourceKind === 'hmr'),
+		[statuses, visibleUngrouped],
+	)
+	const packageUngrouped = useMemo(
+		() => visibleUngrouped.filter((id) => statuses[id]?.sourceKind !== 'hmr'),
+		[statuses, visibleUngrouped],
+	)
+
+	const hmrVirtualGroups = useMemo(() => {
+		const map = new Map<string, { label: string; pluginIds: string[] }>()
+		for (const id of hmrUngrouped) {
+			const st = statuses[id]
+			const label = deriveRootLabel(st?.moduleId ?? null, st?.name ?? id)
+			const key = label || '本地插件'
+			const group = map.get(key) ?? { label: key, pluginIds: [] }
+			group.pluginIds.push(id)
+			map.set(key, group)
+		}
+		return [...map.values()]
+	}, [hmrUngrouped, statuses])
+
+	const ungroupedDisplayOrder = useMemo(() => {
+		const ordered: string[] = []
+		for (const group of hmrVirtualGroups) ordered.push(...group.pluginIds)
+		ordered.push(...packageUngrouped)
+		return ordered
+	}, [hmrVirtualGroups, packageUngrouped])
+
 	// 混合搜索：组名命中 -> 展示完整组；否则裁剪到命中插件子集
 	const visibleGroups = useMemo(() => {
 		if (!isFiltering) return groups.map((g) => ({ ...g }))
 		return groups.reduce<GroupConfig[]>((acc, group) => {
-			const nameMatch = (group.name || '').toLowerCase().includes(q)
+			const nameMatch =
+				searchTokens.plain.length > 0 &&
+				searchTokens.plain.every((term) => (group.name || '').toLowerCase().includes(term))
 			const pluginIds = nameMatch ? [...group.pluginIds] : group.pluginIds.filter(pluginMatch)
 			if (!nameMatch && pluginIds.length === 0) return acc
 			acc.push({ ...group, pluginIds })
 			return acc
 		}, [])
-	}, [groups, isFiltering, pluginMatch, q])
+	}, [groups, isFiltering, pluginMatch, searchTokens.plain])
 
 	// —— 容器映射（复用给 Shift 选择 & 拖放） —— //
 	const buildContainers = useCallback((gs: GroupConfig[], un: string[]) => {
@@ -713,12 +906,17 @@ export function PluginOrganizer({
 		return { containerToItems, itemToContainer }
 	}, [])
 
-	// —— 选择：右键触发；Ctrl/Cmd 多选，Shift 区间 —— //
-	const handleRightSelect = useCallback(
-		(e: React.MouseEvent, id: string) => {
+	const selectionContainers = useMemo(
+		() => buildContainers(visibleGroups, ungroupedDisplayOrder),
+		[buildContainers, visibleGroups, ungroupedDisplayOrder],
+	)
+
+	// —— 选择：左键主选；Ctrl/Cmd 多选，Shift 区间；右键不打断已选 —— //
+	const handleRowSelect = useCallback(
+		(e: React.MouseEvent, id: string, mode: 'click' | 'context' = 'click') => {
 			startTransition(() => {
 				setSelectedIds((prev) => {
-					const containers = buildContainers(groupsRef.current, ungroupedRef.current)
+					const containers = selectionContainers
 					const itemContainer = containers.itemToContainer.get(id)
 
 					const toggle = e.ctrlKey || e.metaKey
@@ -734,18 +932,20 @@ export function PluginOrganizer({
 							const b = list.indexOf(anchor)
 							if (a >= 0 && b >= 0) {
 								const [lo, hi] = a < b ? [a, b] : [b, a]
-								const merged = new Set(prev)
-								for (const pid of list.slice(lo, hi + 1)) merged.add(pid)
-								next = Array.from(merged)
+								const slice = list.slice(lo, hi + 1)
+								next = toggle ? Array.from(new Set([...prev, ...slice])) : slice
+							} else {
+								next = [id]
 							}
 						} else {
 							next = [id]
 						}
 					} else if (toggle) {
 						next = prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
-					} else {
-						// 右键默认保持现有选择，未选中则单选
+					} else if (mode === 'context') {
 						next = prev.includes(id) ? prev : [id]
+					} else {
+						next = [id]
 					}
 
 					lastSelectedRef.current = next.includes(id) ? id : lastSelectedRef.current
@@ -753,7 +953,7 @@ export function PluginOrganizer({
 				})
 			})
 		},
-		[buildContainers, setSelectedIds],
+		[selectionContainers, setSelectedIds],
 	)
 
 	// —— 外界状态变化（新增/删除插件 id）下的本地对齐 —— //
@@ -937,10 +1137,10 @@ export function PluginOrganizer({
 			setDragActiveId(active.id)
 			if (isIid(active.id)) {
 				const pid = fromIid(String(active.id))
-				if (!selectedSet.has(pid))
-					startTransition(() =>
-						setSelectedIds((prev) => (prev.includes(pid) ? prev : [...prev, pid])),
-					)
+				if (!selectedSet.has(pid)) {
+					startTransition(() => setSelectedIds([pid]))
+					lastSelectedRef.current = pid
+				}
 			}
 			document.body.style.userSelect = 'none'
 		},
@@ -1081,10 +1281,10 @@ export function PluginOrganizer({
 				onClick={handleBackgroundClick}
 			>
 				{/* 未分组：固定在顶部，不参与主滚动区 */}
-				<Card withBorder radius="md" p="xs" style={{ minWidth: 0 }}>
-					<Group justify="space-between" align="center" mb={4} wrap="nowrap">
-						<Group gap={6} align="center">
-							<Text fw={600} size="sm">
+				<Card withBorder radius="xs" p={4} style={{ minWidth: 0 }}>
+					<Group justify="space-between" align="center" mb={2} wrap="nowrap">
+						<Group gap={4} align="center">
+							<Text fw={600} size="xs">
 								未分组
 							</Text>
 							<Text size="xs" c="dimmed">
@@ -1092,52 +1292,93 @@ export function PluginOrganizer({
 								{visibleUngrouped.length}
 							</Text>
 						</Group>
-						<Button
-							size="compact-xs"
-							variant="light"
-							leftSection={<IconFolderPlus size={16} />}
-							onClick={createGroup}
-							disabled={locked}
-						>
-							新建分组
-						</Button>
+						<Tooltip label="新建分组" withinPortal withArrow openDelay={200}>
+							<ActionIcon
+								size="sm"
+								variant="light"
+								onClick={createGroup}
+								disabled={locked}
+								aria-label="新建分组"
+							>
+								<IconFolderPlus size={14} />
+							</ActionIcon>
+						</Tooltip>
 					</Group>
 
 					<DroppableContainer
 						id={cid('ROOT_UNGROUPED')}
 						disabled={isFiltering || locked}
 						minDropHeight={visibleUngrouped.length ? 0 : dh.rowH}
+						style={{
+							maxHeight: UNGROUPED_SCROLL_MAX_HEIGHT,
+							overflowY: 'auto',
+							overflowX: 'hidden',
+							paddingRight: 4,
+						}}
 					>
 						<SortableContext
-							items={visibleUngrouped.map((id) => iid(id))}
+							items={ungroupedDisplayOrder.map((id) => iid(id))}
 							strategy={verticalListSortingStrategy}
 						>
 							<Stack gap={0} align="stretch" role="list" aria-label="未分组插件">
-								{visibleUngrouped.map((id) => (
-									<SortableRow
-										key={id}
-										pid={id}
-										name={getName(id)}
-										running={runningSet.has(id)}
-										enabled={enabledSet.has(id)}
-										selected={selectedSet.has(id)}
-										active={activeSet.has(id)}
-										onRightSelect={handleRightSelect}
-										LinkComp={LinkComp}
-										disabled={isFiltering || locked}
-										dh={dh}
-									/>
+								{hmrVirtualGroups.map((group) => (
+									<Box key={`hmr-group-${group.label}`} style={{ marginTop: 4 }}>
+										<Text size="xs" c="dimmed" fw={600} style={{ padding: '2px 2px' }}>
+											{group.label}
+										</Text>
+										{group.pluginIds.map((id) => (
+											<SortableRow
+												key={id}
+												pid={id}
+												name={getName(id)}
+												running={runningSet.has(id)}
+												enabled={enabledSet.has(id)}
+												selected={selectedSet.has(id)}
+												active={activeSet.has(id)}
+												onSelect={handleRowSelect}
+												LinkComp={LinkComp}
+												disabled={isFiltering || locked}
+												meta={getMeta(id)}
+												dh={dh}
+											/>
+										))}
+									</Box>
 								))}
+								{packageUngrouped.length > 0 && (
+									<Box style={{ marginTop: hmrVirtualGroups.length ? 6 : 0 }}>
+										{hmrVirtualGroups.length > 0 && (
+											<Text size="xs" c="dimmed" fw={600} style={{ padding: '2px 2px' }}>
+												包管理安装
+											</Text>
+										)}
+										{packageUngrouped.map((id) => (
+											<SortableRow
+												key={id}
+												pid={id}
+												name={getName(id)}
+												running={runningSet.has(id)}
+												enabled={enabledSet.has(id)}
+												selected={selectedSet.has(id)}
+												active={activeSet.has(id)}
+												onSelect={handleRowSelect}
+												LinkComp={LinkComp}
+												disabled={isFiltering || locked}
+												meta={getMeta(id)}
+												dh={dh}
+											/>
+										))}
+									</Box>
+								)}
 							</Stack>
 						</SortableContext>
 					</DroppableContainer>
 				</Card>
 
 				{/* 我的分组：唯一滚动区，永远占用剩余高度 */}
-				<Stack gap="xs" style={{ minHeight: 0, minWidth: 0, overflow: 'hidden', paddingTop: 8 }}>
+				<Stack gap={2} style={{ minHeight: 0, minWidth: 0, overflow: 'hidden', paddingTop: 2 }}>
 					<Group justify="space-between" align="center">
-						<Group gap={6} align="center">
-							<Text fw={600} size="sm">
+						<Group gap={4} align="center">
+							<Text fw={600} size="xs">
 								我的分组
 							</Text>
 							<Text size="xs" c="dimmed">
@@ -1149,13 +1390,13 @@ export function PluginOrganizer({
 					<ScrollArea
 						type="auto"
 						offsetScrollbars
-						scrollbarSize={6}
+						scrollbarSize={4}
 						style={{ flex: 1, minHeight: 0, maxHeight: '100%' }}
-						viewportProps={{ style: { paddingRight: 4, paddingBottom: 4 } }}
+						viewportProps={{ style: { paddingRight: 2, paddingBottom: 2 } }}
 					>
 						<Box style={{ minWidth: 0 }}>
 							<SortableContext items={groupIdsSortable} strategy={verticalListSortingStrategy}>
-								<Stack gap="xs" align="stretch" py={4}>
+								<Stack gap={2} align="stretch" py={2}>
 									{visibleGroups.length === 0 ? (
 										<Text c="dimmed" size="xs" pl="xs">
 											暂无分组，可在上方创建。
@@ -1173,13 +1414,14 @@ export function PluginOrganizer({
 													enabledSet={enabledSet}
 													selectedSet={selectedSet}
 													activeSet={activeSet}
-													onRightSelect={handleRightSelect}
+													onSelect={handleRowSelect}
 													LinkComp={LinkComp}
 													sortableId={gid(g.groupId)}
 													isFiltering={isFiltering}
 													isCollapsed={isCollapsed}
 													toggleCollapse={() => toggleGroupCollapse(g.groupId)}
 													getName={getName}
+													getMeta={getMeta}
 													dh={dh}
 													onRename={renameGroup}
 													onDelete={deleteGroup}
