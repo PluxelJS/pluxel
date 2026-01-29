@@ -12,11 +12,11 @@
 [34mℹ[39m [33m[CJS][39m [2mdist/[22m[1mindex.cjs[22m                  [2m  0.58 kB[22m [2m│ gzip:  0.32 kB[22m
 [34mℹ[39m [33m[CJS][39m [2mdist/[22m[1mcli.cjs[22m                    [2m  0.30 kB[22m [2m│ gzip:  0.22 kB[22m
 [34mℹ[39m [33m[CJS][39m [2mdist/[22m[1mrolldown.cjs[22m               [2m  0.28 kB[22m [2m│ gzip:  0.18 kB[22m
-[34mℹ[39m [33m[CJS][39m [2mdist/[22mrolldown-C9Hy6_wN.cjs.map  [2m104.03 kB[22m [2m│ gzip: 25.40 kB[22m
+[34mℹ[39m [33m[CJS][39m [2mdist/[22mrolldown--qgF-xV6.cjs.map  [2m105.97 kB[22m [2m│ gzip: 25.25 kB[22m
 [34mℹ[39m [33m[CJS][39m [2mdist/[22mcli-CtFQqttU.cjs.map       [2m 45.28 kB[22m [2m│ gzip: 12.16 kB[22m
-[34mℹ[39m [33m[CJS][39m [2mdist/[22mrolldown-C9Hy6_wN.cjs      [2m 25.16 kB[22m [2m│ gzip:  7.37 kB[22m
+[34mℹ[39m [33m[CJS][39m [2mdist/[22mrolldown--qgF-xV6.cjs      [2m 27.09 kB[22m [2m│ gzip:  7.76 kB[22m
 [34mℹ[39m [33m[CJS][39m [2mdist/[22mcli-CtFQqttU.cjs           [2m 11.96 kB[22m [2m│ gzip:  4.22 kB[22m
-[34mℹ[39m [33m[CJS][39m 7 files, total: 187.60 kB
+[34mℹ[39m [33m[CJS][39m 7 files, total: 191.48 kB
 
 [43m WARN [49m Consider adding [34minlineOnly[39m option to avoid unintended bundling of dependencies, or set [34minlineOnly: false[39m to disable this warning.
 Detected dependencies in bundle:
@@ -39,14 +39,19 @@ Detected dependencies in bundle:
 [34mℹ[39m [33m[CJS][39m [2mdist/[22m[32mindex-iSkrq6kF.d.cts[39m      [2m122.01 kB[22m [2m│ gzip: 28.19 kB[22m
 [34mℹ[39m [33m[CJS][39m [2mdist/[22m[32mindex-BkYzZkdD.d.cts[39m      [2m  2.98 kB[22m [2m│ gzip:  1.06 kB[22m
 [34mℹ[39m [33m[CJS][39m 7 files, total: 209.80 kB
-[32m✔[39m Build complete in [32m2061ms[39m
+[33m[PLUGIN_TIMINGS] Warning:[0m Your build spent significant time in plugins. Here is a breakdown:
+  - rolldown-plugin-dts:generate (56%)
+  - rolldown-plugin-dts:resolver (36%)
+See https://rolldown.rs/options/checks#plugintimings for more details.
+
+[32m✔[39m Build complete in [32m3212ms[39m
 [34mℹ[39m [34m[ESM][39m [2mdist/[22m[1mindex.mjs[22m                  [2m  0.58 kB[22m [2m│ gzip:  0.34 kB[22m
 [34mℹ[39m [34m[ESM][39m [2mdist/[22m[1mcli.mjs[22m                    [2m  0.30 kB[22m [2m│ gzip:  0.23 kB[22m
 [34mℹ[39m [34m[ESM][39m [2mdist/[22m[1mrolldown.mjs[22m               [2m  0.28 kB[22m [2m│ gzip:  0.19 kB[22m
-[34mℹ[39m [34m[ESM][39m [2mdist/[22mrolldown-BWQvaqt6.mjs.map  [2m103.97 kB[22m [2m│ gzip: 25.40 kB[22m
+[34mℹ[39m [34m[ESM][39m [2mdist/[22mrolldown--lwTNt_h.mjs.map  [2m105.91 kB[22m [2m│ gzip: 25.24 kB[22m
 [34mℹ[39m [34m[ESM][39m [2mdist/[22mindex-SLhUsFDW.d.mts.map   [2m 80.47 kB[22m [2m│ gzip: 20.89 kB[22m
 [34mℹ[39m [34m[ESM][39m [2mdist/[22mcli-ZSv50ha-.mjs.map       [2m 45.15 kB[22m [2m│ gzip: 12.13 kB[22m
-[34mℹ[39m [34m[ESM][39m [2mdist/[22mrolldown-BWQvaqt6.mjs      [2m 24.59 kB[22m [2m│ gzip:  7.31 kB[22m
+[34mℹ[39m [34m[ESM][39m [2mdist/[22mrolldown--lwTNt_h.mjs      [2m 26.53 kB[22m [2m│ gzip:  7.71 kB[22m
 [34mℹ[39m [34m[ESM][39m [2mdist/[22mcli-ZSv50ha-.mjs           [2m 11.33 kB[22m [2m│ gzip:  4.18 kB[22m
 [34mℹ[39m [34m[ESM][39m [2mdist/[22mindex-DueSIeGq.d.mts.map   [2m  1.43 kB[22m [2m│ gzip:  0.57 kB[22m
 [34mℹ[39m [34m[ESM][39m [2mdist/[22m[32m[1mindex.d.mts[22m[39m                [2m  1.45 kB[22m [2m│ gzip:  0.51 kB[22m
@@ -54,5 +59,10 @@ Detected dependencies in bundle:
 [34mℹ[39m [34m[ESM][39m [2mdist/[22m[32m[1mrolldown.d.mts[22m[39m             [2m  0.68 kB[22m [2m│ gzip:  0.25 kB[22m
 [34mℹ[39m [34m[ESM][39m [2mdist/[22m[32mindex-SLhUsFDW.d.mts[39m       [2m122.01 kB[22m [2m│ gzip: 28.19 kB[22m
 [34mℹ[39m [34m[ESM][39m [2mdist/[22m[32mindex-DueSIeGq.d.mts[39m       [2m  2.98 kB[22m [2m│ gzip:  1.06 kB[22m
-[34mℹ[39m [34m[ESM][39m 14 files, total: 395.99 kB
-[32m✔[39m Build complete in [32m2068ms[39m
+[34mℹ[39m [34m[ESM][39m 14 files, total: 399.87 kB
+[33m[PLUGIN_TIMINGS] Warning:[0m Your build spent significant time in plugins. Here is a breakdown:
+  - rolldown-plugin-dts:generate (66%)
+  - rolldown-plugin-dts:resolver (19%)
+See https://rolldown.rs/options/checks#plugintimings for more details.
+
+[32m✔[39m Build complete in [32m3229ms[39m

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'bun:test'
 import { resolve } from 'node:path'
 import { createFixture } from 'fs-fixture'
+import type { Plugin as RolldownPlugin } from 'rolldown'
 import { rolldown } from 'rolldown'
 import { configSourcePlugin } from '../../src/rolldown/plugins/configSourcePlugin'
 import { importTypeFixerPlugin } from '../../src/rolldown/plugins/importTypeFixerPlugin'
@@ -288,6 +289,27 @@ export class TestPlugin extends BasePlugin {
 	private externalConfig!: any
 }
 `,
+	'plugin-with-computed-config.ts': `// 测试 computed key 的 schema
+import * as v from 'valibot'
+
+function Plugin(_meta?: any): ClassDecorator {
+	return () => {}
+}
+
+function Config(_schema: any): PropertyDecorator {
+	return () => {}
+}
+
+class BasePlugin {}
+
+const key = 'dynamic'
+
+@Plugin({ name: 'ComputedKeyPlugin' })
+export class ComputedKeyPlugin extends BasePlugin {
+	@Config(v.object({ [key]: v.string(), ['static']: v.number() }))
+	private config!: any
+}
+`,
 	'plugin-with-nested-import.ts': `// 测试直接跨文件导入 schema 的插件（不通过中间模块）
 import * as v from 'valibot'
 import { nestedSchema } from './nested-schema'
@@ -332,6 +354,22 @@ export class TypeImportPlugin extends BasePlugin {
 		private anotherService: AnotherService,
 		private regular: RegularImport,
 	) {
+		super()
+	}
+}
+`,
+	'plugin-with-type-import-alias.ts': `// 测试 import type + alias 修复
+import { type SomeService as ServiceAlias } from './services'
+
+function Plugin(_meta?: any): ClassDecorator {
+	return () => {}
+}
+
+class BasePlugin {}
+
+@Plugin({ name: 'TypeImportAliasPlugin' })
+export class TypeImportAliasPlugin extends BasePlugin {
+	constructor(private service: ServiceAlias) {
 		super()
 	}
 }
@@ -537,10 +575,10 @@ describe('configSourcePlugin', () => {
 		})
 	})
 
-	it('extracts local schema source', async () => {
+	it('handles computed keys inside schema objects', async () => {
 		await withFixtures(async (fixturesDir) => {
 			const bundle = await rolldown({
-				input: resolve(fixturesDir, 'plugin-with-config.ts'),
+				input: resolve(fixturesDir, 'plugin-with-computed-config.ts'),
 				plugins: [configSourcePlugin()],
 				external: ['valibot', '@pluxel/core'],
 			})
@@ -548,10 +586,9 @@ describe('configSourcePlugin', () => {
 			const { output } = await bundle.generate({ format: 'esm' })
 			const code = output[0].code
 
-			// 应该包含本地 schema 的源码（注意末尾可能有逗号）
-			expect(code).toMatch(
-				/v\.object\(\{name:v\.string\(\),count:v\.pipe\(v\.number\(\),v\.integer\(\)\),?\}\)/,
-			)
+			expect(code).toContain('__setConfigSource__(ComputedKeyPlugin')
+			expect(code).toContain('[key]:v.string()')
+			expect(code).toContain("['static']:v.number()")
 		})
 	})
 
@@ -685,6 +722,35 @@ describe('importTypeFixerPlugin', () => {
 			expect(code).not.toContain('import type')
 			expect(code).toContain('TypeImportPlugin')
 			expect(code).toContain('constructor')
+		})
+	})
+
+	it('fixes type-only imports with alias specifiers', async () => {
+		await withFixtures(async (fixturesDir) => {
+			let transformed = ''
+			const capturePlugin: RolldownPlugin = {
+				name: 'capture-transform',
+				transform: {
+					filter: {
+						id: {
+							include: ['**/plugin-with-type-import-alias.ts'],
+						},
+					},
+					handler(code) {
+						transformed = code
+						return null
+					},
+				},
+			}
+			const bundle = await rolldown({
+				input: resolve(fixturesDir, 'plugin-with-type-import-alias.ts'),
+				plugins: [importTypeFixerPlugin(), capturePlugin],
+			})
+
+			await bundle.generate({ format: 'esm' })
+
+			expect(transformed).not.toMatch(/^import\\s+type\\b/m)
+			expect(transformed).toContain('SomeService as ServiceAlias')
 		})
 	})
 

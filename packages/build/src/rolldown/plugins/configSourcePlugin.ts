@@ -30,6 +30,7 @@ import type {
 	Expression,
 	IdentifierName,
 	Program,
+	PrivateIdentifier,
 	PropertyDefinition,
 	SpreadElement,
 } from 'oxc-parser'
@@ -37,6 +38,7 @@ import { normalize as normalizePath } from 'pathe'
 import type { Plugin } from 'rolldown'
 import { normalizeSchemaSource } from '../utils/configHandler'
 import { normalizeViteId } from './viteNormalizeId'
+import { createDebug, normalizePatterns, parseWithLang } from './pluginUtils'
 
 export interface ConfigSourcePluginOptions {
 	/** File patterns to include (default: *.ts, *.tsx in plugin directories) */
@@ -90,6 +92,15 @@ function createModuleInfoStore(): ModuleInfoStore {
 	}
 }
 
+function isExpressionNode(node: { type?: unknown } | null | undefined): node is Expression {
+	if (!node || typeof node.type !== 'string') return false
+	const type = node.type
+	if (type === 'Identifier' || type === 'Literal' || type === 'TemplateLiteral') return true
+	if (type === 'MetaProperty' || type === 'Super' || type === 'ThisExpression') return true
+	if (type === 'ObjectExpression' || type === 'ArrayExpression') return true
+	return type.endsWith('Expression')
+}
+
 /**
  * 解析上下文 - 用于缓存已解析的标识符值，避免重复解析
  */
@@ -108,17 +119,9 @@ interface ResolveContext {
 const DEFAULT_EXPORT = '__pluxel_default_export__'
 const CONFIG_DECORATOR_SOURCES = ['@pluxel/core', '@pluxel/hmr'] as const
 
-/** 根据文件扩展名获取 parser lang 选项 */
-function getLangFromId(id: string): 'ts' | 'tsx' | 'js' | 'jsx' {
-	if (id.endsWith('.tsx')) return 'tsx'
-	if (id.endsWith('.ts')) return 'ts'
-	if (id.endsWith('.jsx')) return 'jsx'
-	return 'js'
-}
-
 export function configSourcePlugin(options: ConfigSourcePluginOptions = {}): Plugin {
-	const includePatterns = options.include ?? ['**/*.ts']
-	const excludePatterns = options.exclude ?? ['**/node_modules/**', '**/*.d.ts']
+	const includePatterns = normalizePatterns(options.include, ['**/*.ts'])
+	const excludePatterns = normalizePatterns(options.exclude, ['**/node_modules/**', '**/*.d.ts'])
 	const moduleInfoStore = createModuleInfoStore()
 
 	return {
@@ -137,15 +140,11 @@ export function configSourcePlugin(options: ConfigSourcePluginOptions = {}): Plu
 						/@Plugin|@Config|\bConfig\s*\(|\.(?:config|configs)\.use\s*\(|\.features\.use\s*\(|v\.|valibot\.|f\./,
 				},
 			},
-			async handler(code, id) {
+			async handler(this: any, code, id) {
 				const normalizedId = normalizePath(id)
-
-				let ast: Program
-				try {
-					// 使用 this.parse() 的 lang 选项支持 TypeScript
-					ast = this.parse(code, { lang: getLangFromId(id) }) as Program
-				} catch (err) {
-					this.warn(`Failed to parse ${id}: ${err}`)
+				const ast = parseWithLang(this, code, id)
+				if (!ast) {
+					this.warn(`Failed to parse ${id}`)
 					return null
 				}
 
@@ -154,6 +153,11 @@ export function configSourcePlugin(options: ConfigSourcePluginOptions = {}): Plu
 					const moduleInfo = collectModuleInfo(code, normalizedId, ast, moduleInfoStore)
 
 					const extractedFeatures = extractFeatureUses(moduleInfo, ast)
+					const parseProgram = (source: string, filename: string) => {
+						const parsed = parseWithLang(this, source, filename)
+						if (!parsed) throw new Error(`Failed to parse module: ${filename}`)
+						return parsed
+					}
 
 					const resolveModuleId: ModuleResolver = async (sourceSpecifier, importer) => {
 						const resolved = await this.resolve(sourceSpecifier, importer)
@@ -169,8 +173,11 @@ export function configSourcePlugin(options: ConfigSourcePluginOptions = {}): Plu
 								// 第二步：提取 @Config 装饰器源代码
 								const ctx: ResolveContext = {
 									moduleResolver: resolveModuleId,
-									parse: (source, moduleId) =>
-										this.parse(source, { lang: getLangFromId(moduleId) }) as Program,
+									parse: (source, moduleId) => {
+										const parsed = parseWithLang(this, source, moduleId)
+										if (!parsed) throw new Error(`Failed to parse module: ${moduleId}`)
+										return parsed
+									},
 									moduleInfoStore,
 									resolvedValues: new Map(),
 									pending: new Set(),
@@ -182,10 +189,10 @@ export function configSourcePlugin(options: ConfigSourcePluginOptions = {}): Plu
 					if (extracted.length === 0 && extractedFeatures.length === 0) return null
 
 					// 生成注入代码
-					const injection = generateInjection(extracted, extractedFeatures)
+					const injection = generateInjection(extracted, extractedFeatures, parseProgram)
 					return {
 						code: code + '\n' + injection,
-						map: null,
+						map: null as null,
 					}
 				} catch (err) {
 					this.warn(`Failed to extract @Config sources from ${id}: ${err}`)
@@ -200,40 +207,13 @@ export function configSourceVitePlugin(options: ConfigSourcePluginOptions = {}) 
 	// Vite dev server runs Rollup-compatible hooks; it will NOT run Rolldown plugin objects
 	// (i.e. `transform: { filter, handler }` is ignored). Keep this wrapper minimal & explicit.
 
-	const includePatterns = Array.isArray(options.include)
-		? options.include
-		: options.include
-			? [options.include]
-			: ['**/*.ts']
-	const excludePatterns = Array.isArray(options.exclude)
-		? options.exclude
-		: options.exclude
-			? [options.exclude]
-			: ['**/node_modules/**', '**/*.d.ts']
+	const includePatterns = normalizePatterns(options.include, ['**/*.ts'])
+	const excludePatterns = normalizePatterns(options.exclude, ['**/node_modules/**', '**/*.d.ts'])
 	const codeHint =
 		/@Plugin|\bPlugin\s*\(|@Config|\bConfig\s*\(|\.(?:config|configs)\.use\s*\(|\.features\.use\s*\(|v\.|valibot\.|f\./
 	const moduleInfoStore = createModuleInfoStore()
 
-	const debugEnabled = process.env.PLUXEL_CONFIG_SOURCE_DEBUG === '1'
-	const debug = (...args: unknown[]) => {
-		if (!debugEnabled) return
-		// eslint-disable-next-line no-console
-		console.warn('[pluxel-config-source][debug]', ...args)
-	}
-
-	const parseWithLang = (ctx: unknown, code: string, id: string): Program | null => {
-		const parse = (ctx as { parse?: unknown } | null)?.parse
-		if (typeof parse !== 'function') return null
-		try {
-			return parse.call(ctx, code, { lang: getLangFromId(id) }) as Program
-		} catch {
-			try {
-				return parse.call(ctx, code) as Program
-			} catch {
-				return null
-			}
-		}
-	}
+	const debug = createDebug('PLUXEL_CONFIG_SOURCE_DEBUG', 'pluxel-config-source')
 
 	return {
 		name: 'pluxel-config-source',
@@ -257,7 +237,7 @@ export function configSourceVitePlugin(options: ConfigSourcePluginOptions = {}) 
 					exclude: excludePatterns,
 				},
 			},
-			async handler(code: string, id: string) {
+			async handler(this: any, code: string, id: string) {
 				if (typeof id !== 'string' || id.startsWith('\0')) return null
 				const normalizedId = normalizeViteId(id)
 
@@ -317,7 +297,12 @@ export function configSourceVitePlugin(options: ConfigSourcePluginOptions = {}) 
 
 					if (extracted.length === 0 && extractedFeatures.length === 0) return null
 
-					const injection = generateInjection(extracted, extractedFeatures)
+					const parseProgram = (source: string, filename: string) => {
+						const parsed = parseWithLang(this, source, filename)
+						if (!parsed) throw new Error(`Failed to parse module: ${filename}`)
+						return parsed
+					}
+					const injection = generateInjection(extracted, extractedFeatures, parseProgram)
 					debug(
 						'inject',
 						normalizedId,
@@ -326,7 +311,7 @@ export function configSourceVitePlugin(options: ConfigSourcePluginOptions = {}) 
 						'features=',
 						extractedFeatures.length,
 					)
-					return { code: code + '\n' + injection, map: null }
+					return { code: code + '\n' + injection, map: null as null }
 				} catch (err) {
 					this.warn?.(`Failed to extract @Config sources from ${id}: ${err}`)
 					return null
@@ -419,7 +404,11 @@ function collectModuleInfo(
 					decl.id
 				) {
 					info.exports.set('default', decl.id.name)
-				} else if (decl.type !== 'FunctionDeclaration' && decl.type !== 'ClassDeclaration') {
+				} else if (
+					decl.type !== 'FunctionDeclaration' &&
+					decl.type !== 'ClassDeclaration' &&
+					isExpressionNode(decl)
+				) {
 					const key = DEFAULT_EXPORT
 					info.declarations.set(key, {
 						node: decl,
@@ -855,8 +844,9 @@ async function collectIdentifierReplacements(
 	const normalized = unwrapExpression(node)
 	const replacements: Replacement[] = []
 
-	const visit = async (child: Expression | null | undefined) => {
+	const visit = async (child: Expression | PrivateIdentifier | null | undefined) => {
 		if (!child) return
+		if (child.type === 'PrivateIdentifier') return
 		replacements.push(...(await collectIdentifierReplacements(child, moduleInfo, ctx)))
 	}
 
@@ -912,8 +902,8 @@ async function collectIdentifierReplacements(
 						continue
 					}
 				}
-				if (prop.computed && prop.key.type !== 'Identifier') {
-					await visit(prop.key as Expression)
+				if (prop.computed && isExpressionNode(prop.key)) {
+					await visit(prop.key)
 				}
 				await visit(prop.value)
 			}
@@ -1202,7 +1192,11 @@ async function extractConfigDecoratorSource(
 /**
  * 生成注入代码 - 直接将 schema source 作为字符串字面量注入
  */
-function generateInjection(configs: ExtractedConfig[], features: ExtractedFeatureUse[]): string {
+function generateInjection(
+	configs: ExtractedConfig[],
+	features: ExtractedFeatureUse[],
+	parseProgram: (code: string, filename: string) => Program,
+): string {
 	if (configs.length === 0 && features.length === 0) return ''
 
 	const needsRegister = configs.some(
@@ -1223,20 +1217,7 @@ function generateInjection(configs: ExtractedConfig[], features: ExtractedFeatur
 		lines.push(`import { ${imports.join(', ')} } from "@pluxel/core";`)
 
 		for (const { className, fieldName, source } of configs) {
-			// 将 source 压缩（移除多余空白和尾随逗号）后作为字符串字面量注入
-			const compactSource = source
-				.replace(/\s+/g, ' ')
-				.replace(/\(\s+/g, '(')
-				.replace(/\s+\)/g, ')')
-				.replace(/{\s+/g, '{')
-				.replace(/\s+}/g, '}')
-				.replace(/,\s+/g, ',')
-				.replace(/:\s+/g, ':')
-				.replace(/,\)/g, ')') // 移除尾随逗号 ,) -> )
-				.replace(/,}/g, '}') // 移除尾随逗号 ,} -> }
-				.replace(/,]/g, ']') // 移除尾随逗号 ,] -> ]
-				.trim()
-			const final = normalizeSchemaSource(compactSource)
+			const final = normalizeSchemaSource(source, parseProgram)
 			const escapedSource = JSON.stringify(final)
 			lines.push(
 				`__setConfigSource__(${className}, ${JSON.stringify(fieldName)}, ${escapedSource});`,

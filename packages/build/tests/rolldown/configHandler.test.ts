@@ -1,12 +1,16 @@
 // tests/normalizeValibot.test.ts
 
 import { describe, expect, it } from 'bun:test'
-import { normalizeSchemaSource } from '../../src/rolldown/utils/configHandler'
+import { parseSync } from 'oxc-parser'
+import { normalizeSchemaSource, type ParseProgram } from '../../src/rolldown/utils/configHandler'
 
 describe('normalizeSchemaSource', () => {
+	const parseProgram: ParseProgram = (code, filename) =>
+		parseSync(filename, code, { sourceType: 'module', lang: 'ts' }).program
+
 	const t = (name: string, input: string, expected: string) => {
 		it(name, () => {
-			const actual = normalizeSchemaSource(input)
+			const actual = normalizeSchemaSource(input, parseProgram)
 			expect(actual).toBe(expected)
 		})
 	}
@@ -64,13 +68,27 @@ describe('normalizeSchemaSource', () => {
 	t(
 		'strip as type',
 		'v.optional(v.string(), DEFAULT as string)',
-		'v.optional(v.string(), DEFAULT)',
+		'v.optional(v.string(),DEFAULT)',
 	)
 
 	// 10. strip TypeScript-only `satisfies ...`
 	t(
 		'strip satisfies',
 		'v.record(v.string(), v.any(), { a: 1 } satisfies Record<string, number>)',
-		'v.record(v.string(), v.any(), { a: 1 })',
+		'v.record(v.string(),v.any(),{a:1})',
+	)
+
+	// 11. strip comments safely (including `as` inside comments)
+	t(
+		'strip comments with as keyword',
+		'v.object({a:v.string(),/** as comment */b:v.string()})',
+		'v.object({a:v.string(),b:v.string()})',
+	)
+
+	// 12. computed keys stay valid after normalization
+	t(
+		'computed key',
+		"v.object({['dynamic']:v.string()})",
+		"v.object({['dynamic']:v.string()})",
 	)
 })

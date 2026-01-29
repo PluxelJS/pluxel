@@ -34,7 +34,6 @@
 		"test": "bun test --conditions=@pluxel/source"
 	},
 	"peerDependencies": {
-		"oxc-parser": "^0.99.0",
 		"pathe": "^2.0.3",
 		"pkg-types": "^2.3.0",
 		"tsdown": "^0.20.1"

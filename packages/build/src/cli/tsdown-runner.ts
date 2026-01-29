@@ -154,24 +154,22 @@ const SPECIAL_KEYS = new Set(['plugins', 'external', 'inlineOnly'])
 function mergeInlineConfigs(user: InlineConfig, overlay: InlineConfig | undefined) {
 	if (!overlay) return { ...user }
 	const merged: InlineConfig = { ...user }
-	applyOverlay(merged, overlay)
+	applyOverlay(merged as Record<string, unknown>, overlay as Record<string, unknown>)
 	merged.plugins = mergePlugins(user.plugins, overlay.plugins)
 	merged.external = mergeExternal(user.external, overlay.external)
 	merged.inlineOnly = mergeInlineOnly(user.inlineOnly, overlay.inlineOnly)
 	return merged
 }
 
-function applyOverlay(target: InlineConfig, overlay: InlineConfig) {
+function applyOverlay(target: Record<string, unknown>, overlay: Record<string, unknown>) {
 	for (const [key, value] of Object.entries(overlay)) {
 		if (value === undefined || SPECIAL_KEYS.has(key)) continue
-		const current = target[key as keyof InlineConfig]
+		const current = target[key]
 		if (isPlainObject(current) && isPlainObject(value)) {
-			target[key as keyof InlineConfig] = {
-				...(current as Record<string, unknown>),
-			} as InlineConfig[keyof InlineConfig]
-			applyOverlay(target[key as keyof InlineConfig] as InlineConfig, value as InlineConfig)
+			target[key] = { ...(current as Record<string, unknown>) }
+			applyOverlay(target[key] as Record<string, unknown>, value as Record<string, unknown>)
 		} else {
-			target[key as keyof InlineConfig] = value as InlineConfig[keyof InlineConfig]
+			target[key] = value
 		}
 	}
 }
@@ -195,16 +193,16 @@ function mergeExternal(
 	if (!overlayExternal) return userExternal
 	if (!userExternal) return overlayExternal
 
-	const overlayIsFn = typeof overlayExternal === 'function'
-	const userIsFn = typeof userExternal === 'function'
+	const overlayIsFn = isExternalFn(overlayExternal)
+	const userIsFn = isExternalFn(userExternal)
 	if (!overlayIsFn && !userIsFn) {
 		return [...toPatternArray(userExternal), ...toPatternArray(overlayExternal)]
 	}
 
-	const overlayFn = overlayIsFn ? overlayExternal : createMatcher(overlayExternal)
-	const userFn = userIsFn ? userExternal : createMatcher(userExternal)
-	return (...args: any[]) =>
-		Boolean((overlayFn?.(...args) ?? false) || (userFn?.(...args) ?? false))
+	const overlayFn = overlayIsFn ? overlayExternal : createExternalMatcher(overlayExternal)
+	const userFn = userIsFn ? userExternal : createExternalMatcher(userExternal)
+	return (id: string, importer: string | undefined, isResolved: boolean) =>
+		Boolean((overlayFn?.(id, importer, isResolved) ?? false) || userFn?.(id, importer, isResolved))
 }
 
 function mergeInlineOnly(
@@ -213,16 +211,19 @@ function mergeInlineOnly(
 ): InlineConfig['inlineOnly'] | undefined {
 	if (!overlayValue) return userValue
 	if (!userValue) return overlayValue
-	return [...toArray(userValue), ...toArray(overlayValue)]
+	return [...toInlineOnlyArray(userValue), ...toInlineOnlyArray(overlayValue)]
 }
 
-function createMatcher(patterns: InlineConfig['external']) {
-	if (!patterns || typeof patterns === 'function') return patterns
+function createExternalMatcher(
+	patterns: Exclude<InlineConfig['external'], ExternalMatcher | undefined>,
+): ExternalMatcher {
 	const normalized = toPatternArray(patterns)
 	return (id: string) => normalized.some((pattern) => matchExternalPattern(pattern, id))
 }
 
-function toPatternArray(patterns: Exclude<InlineConfig['external'], Function | undefined>) {
+function toPatternArray(
+	patterns: Exclude<InlineConfig['external'], ExternalMatcher | undefined>,
+): Array<string | RegExp> {
 	return Array.isArray(patterns) ? patterns : [patterns]
 }
 
@@ -230,8 +231,15 @@ function matchExternalPattern(pattern: string | RegExp, id: string) {
 	return pattern instanceof RegExp ? pattern.test(id) : pattern === id
 }
 
-function toArray<T>(value: InlineConfig['inlineOnly']) {
-	return Array.isArray(value) ? (value as T[]) : [value as T]
+function toInlineOnlyArray(value: InlineConfig['inlineOnly']): Array<string | RegExp> {
+	if (!value) return []
+	return Array.isArray(value) ? value : [value]
+}
+
+type ExternalMatcher = (id: string, importer: string | undefined, isResolved: boolean) => boolean | null | undefined | void
+
+function isExternalFn(value: InlineConfig['external']): value is ExternalMatcher {
+	return typeof value === 'function'
 }
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {

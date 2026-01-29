@@ -8,6 +8,7 @@
  */
 
 import type { Plugin } from 'rolldown'
+import { normalizePatterns } from './pluginUtils'
 
 export interface TrackedPluginUsage {
 	hasStaticImport: boolean
@@ -30,8 +31,8 @@ export interface ImportTrackerPluginOptions {
 
 export function createImportTracker(options: ImportTrackerPluginOptions): ImportTracker {
 	const { prefixes, include, exclude } = options
-	const includePatterns = include ?? ['**/*.ts', '**/*.tsx']
-	const excludePatterns = exclude ?? ['**/node_modules/**', '**/*.d.ts']
+	const includePatterns = normalizePatterns(include, ['**/*.ts', '**/*.tsx'])
+	const excludePatterns = normalizePatterns(exclude, ['**/node_modules/**', '**/*.d.ts'])
 
 	const collected = new Map<string, TrackedPluginUsage>()
 
