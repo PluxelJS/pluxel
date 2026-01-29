@@ -34,7 +34,8 @@
 		"@pluxel/hmr": "workspace:*"
 	},
 	"devDependencies": {
-		"tsdown": "0.20.1",
+		"@pluxel/cli": "workspace:*",
+		"tsdown": "^0.20.1",
 		"typescript": "^5.9.3"
 	},
 	"publishConfig": {

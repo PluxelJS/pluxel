@@ -45,7 +45,24 @@
 		"pathe": "^2.0.3",
 		"pkg-types": "^2.3.0",
 		"rolldown": "1.0.0-beta.52",
-		"tsdown": "0.20.1",
+		"tsdown": "^0.20.1",
 		"typescript": "^5.9.3"
+	},
+	"publishConfig": {
+		"exports": {
+			".": {
+				"require": "./dist/index.cjs",
+				"import": "./dist/index.mjs"
+			},
+			"./cli": {
+				"require": "./dist/cli.cjs",
+				"import": "./dist/cli.mjs"
+			},
+			"./rolldown": {
+				"require": "./dist/rolldown.cjs",
+				"import": "./dist/rolldown.mjs"
+			},
+			"./package.json": "./package.json"
+		}
 	}
 }
