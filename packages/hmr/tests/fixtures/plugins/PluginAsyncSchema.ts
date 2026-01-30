@@ -2,19 +2,22 @@ import { BasePlugin, Plugin } from '@pluxel/hmr'
 import { f, v } from '@pluxel/hmr/config'
 
 const font = v.pipe(
-	v.array(v.string()),
+	v.array(
+		v.pipe(
+			v.picklist(['SourceHans', 'Inter', 'Maple Mono NF CN'] as const),
+			f.picklistMeta({
+				searchable: true,
+				clearable: true,
+				labels: {
+					SourceHans: '思源黑体',
+					Inter: 'Inter字体',
+					'Maple Mono NF CN': '等宽字体',
+				},
+			}),
+		),
+	),
 	f.arrayMeta({
-		valueMode: 'defaults-picker',
-		pickerMode: 'picker',
-		picklist: {
-			searchable: true,
-			clearable: true,
-			labels: {
-				SourceHans: '思源黑体',
-				Inter: 'Inter字体',
-				'Maple Mono NF CN': '等宽字体',
-			},
-		},
+		layout: 'picker',
 		emptyHint: '选项来自 defaultValues',
 	}),
 )

@@ -3,7 +3,7 @@
 	"type": "module",
 	"name": "valibot-form",
 	"version": "0.1.0",
-	"description": "Demo example that imports a local package",
+	"description": "Valibot schema-driven form renderer",
 	"types": "./dist/index.d.mts",
 	"files": [
 		"dist"

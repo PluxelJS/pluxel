@@ -44,7 +44,7 @@ const RoutesConfig = v.object({
 			description: 'GET {prefix} 返回一个可点击的说明页',
 			section: SECTION_ROUTES,
 		}),
-		f.booleanMeta({ variant: 'switch' }),
+		f.booleanMeta({}),
 	),
 	enablePing: v.pipe(
 		v.optional(v.boolean(), true),
@@ -53,7 +53,7 @@ const RoutesConfig = v.object({
 			description: 'GET {prefix}/ping 返回 JSON',
 			section: SECTION_ROUTES,
 		}),
-		f.booleanMeta({ variant: 'switch' }),
+		f.booleanMeta({}),
 	),
 })
 

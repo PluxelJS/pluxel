@@ -23,7 +23,7 @@ const CodegenConfig = v.object({
 			description: 'Generate GQty client on schema rebuild (dev only).',
 			section: SECTION_CODEGEN,
 		}),
-		f.booleanMeta({ variant: 'switch' }),
+		f.booleanMeta({}),
 	),
 	destination: v.pipe(
 		v.optional(v.string(), ''),
@@ -60,7 +60,7 @@ const GraphQLConfigSchema = v.object({
 			description: 'Generate React bindings',
 			section: SECTION_CODEGEN,
 		}),
-		f.booleanMeta({ variant: 'switch' }),
+		f.booleanMeta({}),
 	),
 	scalarTypes: v.pipe(
 		v.optional(v.record(v.string(), v.string()), {}),

@@ -39,7 +39,7 @@ const WebhookConfigSchema = v.object({
 	secretToken: v.pipe(
 		v.optional(v.string()),
 		f.formMeta({ label: '密钥 Token', description: '用于验证 Webhook 请求' }),
-		f.stringMeta({ mode: 'password', placeholder: '可选' }),
+		f.stringMeta({ control: 'password', placeholder: '可选' }),
 	),
 	maxConnections: v.pipe(
 		v.optional(v.number(), 40),
@@ -49,7 +49,7 @@ const WebhookConfigSchema = v.object({
 	dropPendingUpdates: v.pipe(
 		v.optional(v.boolean(), false),
 		f.formMeta({ label: '丢弃待处理更新', description: '设置 Webhook 时是否丢弃所有待处理更新' }),
-		f.booleanMeta({ variant: 'switch' }),
+		f.booleanMeta({}),
 	),
 	allowedUpdates: v.pipe(
 		v.optional(
@@ -69,7 +69,7 @@ const PollingBotSchema = v.object({
 		v.string(),
 		v.minLength(1),
 		f.formMeta({ label: 'Bot Token', description: 'Telegram Bot Token' }),
-		f.stringMeta({ mode: 'password', placeholder: '123456789:ABCdefGHIjklMNOpqrsTUVwxyz' }),
+		f.stringMeta({ control: 'password', placeholder: '123456789:ABCdefGHIjklMNOpqrsTUVwxyz' }),
 	),
 	polling: v.optional(PollingConfigSchema, {}),
 })
@@ -81,7 +81,7 @@ const WebhookBotSchema = v.object({
 		v.string(),
 		v.minLength(1),
 		f.formMeta({ label: 'Bot Token', description: 'Telegram Bot Token' }),
-		f.stringMeta({ mode: 'password', placeholder: '123456789:ABCdefGHIjklMNOpqrsTUVwxyz' }),
+		f.stringMeta({ control: 'password', placeholder: '123456789:ABCdefGHIjklMNOpqrsTUVwxyz' }),
 	),
 	webhook: WebhookConfigSchema,
 })
@@ -92,7 +92,7 @@ const ApiBotSchema = v.object({
 		v.string(),
 		v.minLength(1),
 		f.formMeta({ label: 'Bot Token', description: 'Telegram Bot Token（仅 API）' }),
-		f.stringMeta({ mode: 'password', placeholder: '123456789:ABCdefGHIjklMNOpqrsTUVwxyz' }),
+		f.stringMeta({ control: 'password', placeholder: '123456789:ABCdefGHIjklMNOpqrsTUVwxyz' }),
 	),
 })
 
@@ -102,13 +102,13 @@ export const SingleBotConfig = v.pipe(
 	f.formMeta({ label: '机器人配置' }),
 	f.unionMeta({
 		discriminator: 'mode',
-		branchLabels: { polling: '轮询模式', webhook: 'Webhook 模式', api: '仅 API' },
-		branchDescriptions: {
+		labels: { polling: '轮询模式', webhook: 'Webhook 模式', api: '仅 API' },
+		descriptions: {
 			polling: '主动拉取更新，适合开发和测试',
 			webhook: '被动接收更新，需要 HTTPS 服务器',
 			api: '仅调用 HTTP API，不接收更新',
 		},
-		variant: 'segmented',
+		control: 'segmented',
 	}),
 )
 
@@ -122,7 +122,7 @@ export const TelegramConfig = v.object({
 	syncCommands: v.pipe(
 		v.optional(v.boolean(), true),
 		f.formMeta({ label: '自动同步指令', description: '启动时自动将注册的指令同步到 Telegram' }),
-		f.booleanMeta({ variant: 'switch' }),
+		f.booleanMeta({}),
 	),
 	bots: v.pipe(
 		v.optional(v.record(v.string(), SingleBotConfig), {}),
@@ -130,9 +130,8 @@ export const TelegramConfig = v.object({
 		f.recordMeta({
 			layout: 'list',
 			addLabel: '添加机器人',
-			keyLabel: '机器人名称',
-			keyPlaceholder: '如 main-bot',
-			valueLabel: '机器人配置',
+			key: { label: '机器人名称', placeholder: '如 main-bot' },
+			value: { label: '机器人配置' },
 		}),
 	),
 })

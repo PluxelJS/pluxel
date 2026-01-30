@@ -1,54 +1,49 @@
-import { Text } from '@mantine/core'
-import type { CommonProps } from '~/core/registry'
-import { registerRenderer, triggerFormEvents } from '~/core/registry'
-import { META_MAP } from '~/core/utils'
+import type { PicklistFieldNode } from '../../../core/fields'
 import { FieldChrome } from '../shared'
+import { cleanProps } from '../../utils/propHelpers'
 import { PicklistControl } from './controls/PicklistControl'
+import { normalizeErrorMessages, type RendererProps, triggerFormBlur, triggerFormEvents } from './types'
 
-type RendererProps = CommonProps<typeof META_MAP.PICKLIST> & { value?: unknown }
-
-function PicklistField(props: RendererProps) {
-	const { formBaseInfo, errors, extractedPropsInfo, inputProps, value } = props
-	const ep = extractedPropsInfo ?? {}
+export function PicklistField(props: RendererProps) {
+	const { node, errors, inputProps, value } = props
+	const info = node as PicklistFieldNode
+	const baseErrors = normalizeErrorMessages(errors)
 
 	return (
 		<FieldChrome
-			label={formBaseInfo.label}
-			required={formBaseInfo.required}
-			description={formBaseInfo.description}
-			helperText={formBaseInfo.helperText}
-			hint={formBaseInfo.hint}
-			tooltip={formBaseInfo.tooltip}
-			badge={formBaseInfo.badge}
-			errors={(errors ?? []).map((err) => err.message)}
+			{...cleanProps({
+				label: node.meta.label,
+				required: node.required,
+				description: node.meta.description,
+				help: node.meta.help,
+				hint: node.meta.hint,
+				badge: node.meta.badge,
+				errors: baseErrors,
+				hideLabel: node.meta.hideLabel,
+				hideRequired: node.meta.hideRequired,
+			})}
 		>
 			<PicklistControl
 				meta={{
-					options: ep.options,
-					entries: ep.entries,
-					labels: ep.labels,
-					disabled: ep.disabled,
-					placeholder: ep.placeholder,
-					searchable: ep.searchable,
-					clearable: ep.clearable ?? !formBaseInfo.required,
-					maxSelections: ep.maxSelections,
-					allowCreate: ep.allowCreate,
-					variant: ep.variant,
-					multiple: ep.multiple,
-					nothingFoundLabel: ep.nothingFoundLabel,
+					options: info.options,
+					entries: info.entries,
+					labels: info.labels,
+					disabled: info.disabled,
+					placeholder: info.placeholder,
+					searchable: info.searchable,
+					clearable: info.clearable,
+					max: info.max,
+					create: info.create,
+					control: info.control ?? 'select',
+					multiple: false,
+					emptyLabel: info.emptyLabel,
 				}}
-				required={formBaseInfo.required}
 				value={value}
 				onChange={(next) => triggerFormEvents(inputProps, next)}
-				disabled={inputProps.disabled}
+				onBlur={() => triggerFormBlur(inputProps)}
+				disabled={inputProps.disabled || inputProps.readOnly}
+				required={node.required}
 			/>
-			{ep.multiple && ep.maxSelections ? (
-				<Text size="xs" c="dimmed" mt={4}>
-					最多可选择 {ep.maxSelections} 项
-				</Text>
-			) : null}
 		</FieldChrome>
 	)
 }
-
-registerRenderer(META_MAP.PICKLIST, (props) => <PicklistField {...(props as RendererProps)} />)

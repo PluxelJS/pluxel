@@ -1,8 +1,9 @@
-import type { ObjectSchema } from 'valibot'
+import type { IntersectSchema, ObjectSchema } from 'valibot'
 
-export * from './actions'
-export * from './extract'
-export * from './registry'
-export * from './utils'
+export * from './constants'
+export * from './meta'
+export * from './schema'
+export * from './fields'
+export * from './utils/objectEntries'
 
-export type ObjectLikeSchema = ObjectSchema<any, any>
+export type ObjectLikeSchema = ObjectSchema<any, any> | IntersectSchema<any, any>

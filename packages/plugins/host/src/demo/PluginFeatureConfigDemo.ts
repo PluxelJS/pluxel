@@ -5,7 +5,7 @@ const PluginConfig = v.object({
 	enabled: v.pipe(
 		v.optional(v.boolean(), true),
 		f.formMeta({ label: '启用插件', description: '用于演示插件级配置' }),
-		f.booleanMeta({ variant: 'switch' }),
+		f.booleanMeta({}),
 	),
 })
 
@@ -20,7 +20,7 @@ class CacheFeature extends BaseFeature {
 					label: '启用缓存',
 					description: '用于演示 feature.config（归因到父插件配置页）',
 				}),
-				f.booleanMeta({ variant: 'switch' }),
+				f.booleanMeta({}),
 			),
 			ttlMs: v.pipe(
 				v.optional(v.number(), 5_000),
@@ -48,7 +48,7 @@ class TelemetryFeature extends BaseFeature {
 			enabled: v.pipe(
 				v.optional(v.boolean(), false),
 				f.formMeta({ label: '启用 Telemetry', description: '用于演示 feature.config' }),
-				f.booleanMeta({ variant: 'switch' }),
+				f.booleanMeta({}),
 			),
 			sampleRate: v.pipe(
 				v.optional(v.number(), 1),

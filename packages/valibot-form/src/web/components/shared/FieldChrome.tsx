@@ -6,15 +6,13 @@ export interface FieldChromeProps {
 	label: string
 	required?: boolean
 	description?: string
-	helperText?: string
+	help?: string
 	hint?: string
-	tooltip?: string
 	badge?: string | { label: string; color?: string }
 	errors?: string[]
 	children: ReactNode
 	hideLabel?: boolean
 	hideRequired?: boolean
-	inlineLabel?: boolean
 }
 
 function BadgeNode({ badge }: { badge?: FieldChromeProps['badge'] }) {
@@ -37,15 +35,13 @@ export function FieldChrome({
 	label,
 	required,
 	description,
-	helperText,
+	help,
 	hint,
-	tooltip,
 	badge,
 	errors,
 	children,
 	hideLabel,
 	hideRequired,
-	inlineLabel,
 }: FieldChromeProps) {
 	const errorText = (errors ?? [])
 		.map((e) => e?.trim())
@@ -65,9 +61,15 @@ export function FieldChrome({
 				) : null}
 			</Text>
 			<BadgeNode badge={badge} />
-			{tooltip ? (
-				<Tooltip label={tooltip}>
-					<ActionIcon size="sm" variant="subtle" color="gray" aria-label="字段提示">
+			{hint ? (
+				<Tooltip label={hint}>
+					<ActionIcon
+						size="sm"
+						variant="subtle"
+						color="gray"
+						aria-label="字段提示"
+						type="button"
+					>
 						<IconInfoCircle size={14} />
 					</ActionIcon>
 				</Tooltip>
@@ -75,37 +77,23 @@ export function FieldChrome({
 		</Group>
 	)
 
-	const control = inlineLabel ? (
-		<Group gap="sm" align="flex-end" mih={36}>
-			{labelContent}
-			<div style={{ flex: 1 }}>{children}</div>
-		</Group>
-	) : (
-		children
-	)
-
 	return (
 		<Stack gap="xs" style={{ width: '100%' }}>
-			{inlineLabel ? null : labelContent}
+			{labelContent}
 			{description ? (
 				<Text size="sm" c="dimmed">
 					{description}
 				</Text>
 			) : null}
-			{control}
+			{children}
 			{errorText ? (
-				<Text size="sm" c="red.6">
+				<Text size="sm" c="red.6" style={{ whiteSpace: 'pre-line' }}>
 					{errorText}
 				</Text>
 			) : null}
-			{helperText ? (
+			{help ? (
 				<Text size="sm" c="dimmed">
-					{helperText}
-				</Text>
-			) : null}
-			{hint ? (
-				<Text size="xs" c="dimmed">
-					{hint}
+					{help}
 				</Text>
 			) : null}
 		</Stack>

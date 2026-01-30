@@ -1,4 +1,4 @@
-import type { Schema } from './getMetaData'
+import type { Schema } from '../schema'
 
 export interface ObjectEntry {
 	name: string

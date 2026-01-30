@@ -49,7 +49,7 @@ interface ArrayItemLayoutInfo {
 | `picklist` | 3 | Select 适中 |
 | `string` (default) | 2 | TextInput 需要宽度 |
 | `string` (textarea/code) | 1 | 多行文本必须全宽 |
-| `object/array/union` | 1 | 复杂类型单列 |
+| `object/array/union/record` | 1 | 复杂类型单列 |
 
 ### 3. 列数计算规则
 ```typescript
@@ -119,7 +119,8 @@ export const DEFAULT_GRID_COLUMNS = 2   // Object 默认列数
 ```typescript
 f.objectMeta({
   columns: 3,      // 显式指定列数
-  variant: 'stack' // 使用 stack 变体（无卡片边框）
+  variant: 'stack', // 使用 stack 变体（无卡片边框）
+  collapsible: true // 允许折叠
 })
 ```
 
@@ -128,6 +129,7 @@ f.objectMeta({
 f.arrayMeta({
   layout: 'list',       // 强制单列
   layout: 'grid',       // 强制多列
+  layout: 'picker',     // picklist 数组的多选控件
   columns: 3,           // 指定列数（受 maxColumns 限制）
   disableAutoGrid: true // 禁用自动多列（用于嵌套场景）
 })
@@ -137,7 +139,7 @@ f.arrayMeta({
 ```typescript
 f.formMeta({
   layout: {
-    fullWidth: true,  // 占满整行
+    full: true,       // 占满整行
     span: 2,          // 占指定列数
     align: 'center'   // 垂直对齐方式
   }

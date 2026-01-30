@@ -1,13 +1,13 @@
 import { Divider, Stack, Text } from '@mantine/core'
 import { useElementSize, useMediaQuery } from '@mantine/hooks'
-import React, { createContext, memo, Suspense, useCallback, useContext, useMemo } from 'react'
-import type { ObjectLikeSchema } from '~/core'
-import { DEFAULT_SECTION_ID, DEFAULT_TEXTS } from '~/core/constants'
-import { MetaRenderer } from '~/core/registry'
-import { type PlannedField, planSchemaFields, type SectionPlan } from './fieldPlanner'
-import { useAppForm } from './formContext'
-import { alignToCss, resolveFieldSpan } from './layout'
-import { renderersRegistered } from './registerRenderers'
+import React, { createContext, memo, Suspense, useCallback, useContext, useEffect, useMemo } from 'react'
+import { getDefaults } from 'valibot'
+import type { ObjectLikeSchema } from '../../core'
+import { DEFAULT_SECTION_ID, DEFAULT_TEXTS } from '../../core/constants'
+import { type PlannedField, planSchemaFields, type SectionPlan } from './internal/fieldPlanner'
+import { useAppForm } from './internal/formContext'
+import { alignToCss, resolveFieldSpan } from './internal/layout'
+import { FieldRenderer } from './internal/FieldRenderer'
 
 // -------- Context（暴露同一表单实例与渲染数据） ----------
 interface Ctx<S extends ObjectLikeSchema> {
@@ -34,17 +34,24 @@ export interface AutoFormProps<S extends ObjectLikeSchema> {
 	formOpts?: Parameters<typeof useAppForm<S>>[1]
 	/** 你自由摆放内容：标题/按钮/字段/调试等 */
 	children: React.ReactNode
+	/** 外部决定何时重置表单（比如 schema 切换） */
+	resetKey?: string | number
+	/** 传入 form 标签的自定义属性 */
+	formProps?: Omit<React.ComponentPropsWithoutRef<'form'>, 'onSubmit'>
 }
 
 export function AutoForm<S extends ObjectLikeSchema>({
 	schema,
 	formOpts,
 	children,
+	resetKey,
+	formProps,
 }: AutoFormProps<S>) {
-	// Force registerRenderers module to stay in the bundle
-	void renderersRegistered
-
 	const form = useAppForm(schema, formOpts)
+	const defaultValues = useMemo(
+		() => (formOpts?.defaultValues ?? getDefaults(schema)) as Record<string, unknown>,
+		[schema, formOpts?.defaultValues],
+	)
 
 	const fieldPlan = useMemo(() => planSchemaFields(schema), [schema])
 
@@ -53,12 +60,17 @@ export function AutoForm<S extends ObjectLikeSchema>({
 			form,
 			sections: fieldPlan.sections,
 			hiddenFields: fieldPlan.hiddenFields,
-			defaultValues: (form.options.defaultValues ?? {}) as Record<string, unknown>,
+			defaultValues,
 			submit: () => form.handleSubmit(),
 			reset: (values?: Record<string, any>) => form.reset(values as any),
 		}),
-		[form, fieldPlan],
+		[form, fieldPlan, defaultValues],
 	)
+
+	useEffect(() => {
+		if (resetKey === undefined) return
+		form.reset(defaultValues as any)
+	}, [form, resetKey, defaultValues])
 
 	const onSubmit = useCallback(
 		(e: React.FormEvent) => {
@@ -70,7 +82,7 @@ export function AutoForm<S extends ObjectLikeSchema>({
 
 	// 用 <form> 包住所有插槽（标题/按钮/字段），确保是同一个实例
 	return (
-		<form onSubmit={onSubmit}>
+		<form {...formProps} onSubmit={onSubmit}>
 			<AutoFormCtx.Provider value={ctx}>{children}</AutoFormCtx.Provider>
 		</form>
 	)
@@ -185,41 +197,39 @@ function SectionBlock({
 					gap: 'var(--mantine-spacing-lg)',
 				}}
 			>
-				{section.fields.map(({ name, info }) => {
-					const span = resolveFieldSpan(responsiveColumns, info.formInfo.layout, info.type)
+				{section.fields.map(({ name, node }) => {
+					const span = resolveFieldSpan(responsiveColumns, node.meta.layout, node.kind)
 					const fieldDomId = fieldIdPrefix ? `${fieldIdPrefix}${toDomSlug(name)}` : undefined
 					return (
 						<div
 							key={name}
 							style={{
 								gridColumn: `span ${Math.min(span, responsiveColumns)}`,
-								alignSelf: alignToCss(info.formInfo.layout?.align),
+								alignSelf: alignToCss(node.meta.layout?.align),
 								scrollMarginTop: '72px',
 							}}
 							id={fieldDomId}
 							data-config-anchor
 							data-config-anchor-depth={2}
-							data-config-anchor-label={info.formInfo.label ?? name}
+							data-config-anchor-label={node.meta.label ?? name}
 							data-config-anchor-field-id={fieldDomId}
 						>
 							<form.Field name={name}>
 								{(field) => (
-									<MetaRenderer
-										type={info.type}
-										formBaseInfo={info.formInfo}
-										extractedPropsInfo={info.props}
-										errors={field.state.meta.errors as any}
+									<FieldRenderer
+										node={node}
 										value={field.state.value as any}
+										errors={field.state.meta.errors as any}
 										defaultValue={defaultValues[name]}
 										inputProps={{
 											name,
 											onChange: field.handleChange,
 											onBlur: field.handleBlur,
-											...(info.formInfo.disabled !== undefined && {
-												disabled: info.formInfo.disabled,
+											...(node.meta.disabled !== undefined && {
+												disabled: node.meta.disabled,
 											}),
-											...(info.formInfo.readOnly !== undefined && {
-												readOnly: info.formInfo.readOnly,
+											...(node.meta.readOnly !== undefined && {
+												readOnly: node.meta.readOnly,
 											}),
 										}}
 									/>
@@ -282,7 +292,7 @@ if (process.env.NODE_ENV !== 'production') {
 
 /* ───────── 子组件：调试（懒加载 + 类型稳） ───────── */
 const DebugValues = React.lazy(() =>
-	import('./DebugValues').then((m) => ({ default: m.DebugValues })),
+	import('./internal/DebugValues').then((m) => ({ default: m.DebugValues })),
 )
 function DebugPanelImpl() {
 	const { form } = useAutoFormCtx<any>()
@@ -311,4 +321,10 @@ function DebugPanelImpl() {
 			)}
 		</form.Subscribe>
 	)
+}
+
+export interface DebugPanelProps {}
+AutoForm.DebugPanel = DebugPanelImpl as React.FC<DebugPanelProps>
+if (process.env.NODE_ENV !== 'production') {
+	AutoForm.DebugPanel.displayName = 'AutoForm.DebugPanel'
 }

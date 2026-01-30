@@ -221,7 +221,7 @@ const BehaviorConfig = v.object({
 	autoPauseAtMax: v.pipe(
 		v.optional(v.boolean(), DEFAULTS.behavior.autoPauseAtMax),
 		f.formMeta({ label: '达到上限自动暂停', description: 'ticks >= Max 时自动暂停' }),
-		f.booleanMeta({ variant: 'switch' }),
+		f.booleanMeta({}),
 	),
 })
 
@@ -234,20 +234,20 @@ const FormatConfig = v.object({
 			section: SECTION_FORMAT,
 		}),
 		f.picklistMeta({
-			variant: 'segmented',
+			control: 'segmented',
 			labels: { compact: '紧凑', full: '完整' },
 		}),
 	),
 	showMs: v.pipe(
 		v.optional(v.boolean(), DEFAULTS.format.showMs),
 		f.formMeta({ label: '显示毫秒', description: 'Uptime 末尾追加 ms', section: SECTION_FORMAT }),
-		f.booleanMeta({ variant: 'switch' }),
+		f.booleanMeta({}),
 	),
 	timeUnit: v.pipe(
 		v.optional(v.picklist(TIME_UNITS), DEFAULTS.format.timeUnit),
 		f.formMeta({ label: '单位策略', description: '用于视觉测试', section: SECTION_FORMAT }),
 		f.picklistMeta({
-			variant: 'segmented',
+			control: 'segmented',
 			labels: { auto: '自动', s: '秒', ms: '毫秒' },
 		}),
 	),
@@ -261,7 +261,7 @@ const FormatConfig = v.object({
 	padZeros: v.pipe(
 		v.optional(v.boolean(), DEFAULTS.format.padZeros),
 		f.formMeta({ label: '补零', description: '位数不足时补零', section: SECTION_FORMAT }),
-		f.booleanMeta({ variant: 'switch' }),
+		f.booleanMeta({}),
 	),
 	minDigits: v.pipe(
 		v.optional(v.number(), DEFAULTS.format.minDigits),
@@ -272,7 +272,7 @@ const FormatConfig = v.object({
 		v.optional(v.picklist(LABEL_STYLES), DEFAULTS.format.labelStyle),
 		f.formMeta({ label: '文案风格', description: '用于视觉测试', section: SECTION_LABELS }),
 		f.picklistMeta({
-			variant: 'segmented',
+			control: 'segmented',
 			labels: { short: '简洁', full: '完整', verbose: '详细' },
 		}),
 	),
@@ -289,7 +289,7 @@ const FormatConfig = v.object({
 	uppercaseUnits: v.pipe(
 		v.optional(v.boolean(), DEFAULTS.format.uppercaseUnits),
 		f.formMeta({ label: '单位大写', description: '用于视觉测试', section: SECTION_LABELS }),
-		f.booleanMeta({ variant: 'switch' }),
+		f.booleanMeta({}),
 	),
 	template: v.pipe(
 		v.optional(v.string(), DEFAULTS.format.template),
@@ -297,10 +297,10 @@ const FormatConfig = v.object({
 			label: '模板说明',
 			description: '支持 {{uptime}} / {{value}} 占位符',
 			section: SECTION_LABELS,
-			layout: { fullWidth: true },
+			layout: { full: true },
 		}),
 		f.stringMeta({
-			mode: 'textarea',
+			control: 'textarea',
 			rows: 4,
 			placeholder: '例：已运行 {{uptime}}，保持在线。',
 		}),
@@ -311,13 +311,13 @@ const FormatConfig = v.object({
 			label: '单位别名',
 			description: '键值表测试',
 			section: SECTION_ADVANCED,
-			layout: { fullWidth: true },
+			layout: { full: true },
 		}),
 		f.recordMeta({
 			layout: 'list',
 			addLabel: '添加别名',
-			keyLabel: '原单位',
-			valueLabel: '别名',
+			key: { label: '原单位' },
+			value: { label: '别名' },
 		}),
 	),
 	exampleLines: v.pipe(
@@ -326,7 +326,7 @@ const FormatConfig = v.object({
 			label: '示例行',
 			description: '列表字段测试',
 			section: SECTION_ADVANCED,
-			layout: { fullWidth: true },
+			layout: { full: true },
 		}),
 		f.arrayMeta({ layout: 'list', addLabel: '添加示例', itemLabel: '内容' }),
 	),
@@ -344,7 +344,7 @@ const RuntimeToggleSchema = v.object({
 	paused: v.pipe(
 		v.optional(v.boolean(), false),
 		f.formMeta({ label: 'paused', description: '演示：submitMode=onChange' }),
-		f.booleanMeta({ variant: 'switch' }),
+		f.booleanMeta({}),
 	),
 })
 

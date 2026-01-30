@@ -1,5 +1,4 @@
 
-
 > @pluxel/build@0.1.0 build /home/ahdg/code/pluxel/packages/build
 > tsdown
 
@@ -8,21 +7,16 @@
 [34mℹ[39m entry: [34msrc/index.ts, src/cli/index.ts, src/rolldown/index.ts[39m
 [34mℹ[39m tsconfig: [34mtsconfig.json[39m
 [34mℹ[39m Build start
-[34mℹ[39m Cleaning 28 files
+[34mℹ[39m Cleaning 29 files
 [34mℹ[39m [33m[CJS][39m [2mdist/[22m[1mindex.cjs[22m                  [2m  0.58 kB[22m [2m│ gzip:  0.32 kB[22m
 [34mℹ[39m [33m[CJS][39m [2mdist/[22m[1mcli.cjs[22m                    [2m  0.30 kB[22m [2m│ gzip:  0.22 kB[22m
 [34mℹ[39m [33m[CJS][39m [2mdist/[22m[1mrolldown.cjs[22m               [2m  0.28 kB[22m [2m│ gzip:  0.18 kB[22m
-[34mℹ[39m [33m[CJS][39m [2mdist/[22mrolldown--qgF-xV6.cjs.map  [2m105.97 kB[22m [2m│ gzip: 25.25 kB[22m
-[34mℹ[39m [33m[CJS][39m [2mdist/[22mcli-CtFQqttU.cjs.map       [2m 45.28 kB[22m [2m│ gzip: 12.16 kB[22m
-[34mℹ[39m [33m[CJS][39m [2mdist/[22mrolldown--qgF-xV6.cjs      [2m 27.09 kB[22m [2m│ gzip:  7.76 kB[22m
-[34mℹ[39m [33m[CJS][39m [2mdist/[22mcli-CtFQqttU.cjs           [2m 11.96 kB[22m [2m│ gzip:  4.22 kB[22m
-[34mℹ[39m [33m[CJS][39m 7 files, total: 191.48 kB
-
-[43m WARN [49m Consider adding [34minlineOnly[39m option to avoid unintended bundling of dependencies, or set [34minlineOnly: false[39m to disable this warning.
-Detected dependencies in bundle:
-- [33m@oxc-project/types[39m
-- [33mrolldown[39m
-- [33m@rolldown/pluginutils[39m
+[34mℹ[39m [33m[CJS][39m [2mdist/[22mrolldown-BBNnjbWn.cjs.map  [2m109.74 kB[22m [2m│ gzip: 26.02 kB[22m
+[34mℹ[39m [33m[CJS][39m [2mdist/[22mcli-Di9iFD8I.cjs.map       [2m 45.66 kB[22m [2m│ gzip: 12.20 kB[22m
+[34mℹ[39m [33m[CJS][39m [2mdist/[22mrolldown-BBNnjbWn.cjs      [2m 28.07 kB[22m [2m│ gzip:  7.93 kB[22m
+[34mℹ[39m [33m[CJS][39m [2mdist/[22mcli-Di9iFD8I.cjs           [2m 11.94 kB[22m [2m│ gzip:  4.22 kB[22m
+[34mℹ[39m [33m[CJS][39m 7 files, total: 196.58 kB
+[33m[PLUGIN_TIMINGS] Warning:[0m Your build spent significant time in plugin `tsdown:external`. See https://rolldown.rs/options/checks#plugintimings for more details.
 
 
 [43m WARN [49m Consider adding [34minlineOnly[39m option to avoid unintended bundling of dependencies, or set [34minlineOnly: false[39m to disable this warning.
@@ -31,38 +25,45 @@ Detected dependencies in bundle:
 - [33mrolldown[39m
 - [33m@rolldown/pluginutils[39m
 
-[34mℹ[39m [33m[CJS][39m [2mdist/[22mindex-iSkrq6kF.d.cts.map  [2m 80.47 kB[22m [2m│ gzip: 20.89 kB[22m
-[34mℹ[39m [33m[CJS][39m [2mdist/[22mindex-BkYzZkdD.d.cts.map  [2m  1.43 kB[22m [2m│ gzip:  0.57 kB[22m
+
+[43m WARN [49m Consider adding [34minlineOnly[39m option to avoid unintended bundling of dependencies, or set [34minlineOnly: false[39m to disable this warning.
+Detected dependencies in bundle:
+- [33m@oxc-project/types[39m
+- [33mrolldown[39m
+- [33m@rolldown/pluginutils[39m
+
+[34mℹ[39m [33m[CJS][39m [2mdist/[22mindex-CsGOExgv.d.cts.map  [2m 80.48 kB[22m [2m│ gzip: 20.90 kB[22m
+[34mℹ[39m [33m[CJS][39m [2mdist/[22mindex-CJYygrb8.d.cts.map  [2m  1.43 kB[22m [2m│ gzip:  0.58 kB[22m
 [34mℹ[39m [33m[CJS][39m [2mdist/[22m[32m[1mindex.d.cts[22m[39m               [2m  1.45 kB[22m [2m│ gzip:  0.51 kB[22m
 [34mℹ[39m [33m[CJS][39m [2mdist/[22m[32m[1mcli.d.cts[22m[39m                 [2m  0.78 kB[22m [2m│ gzip:  0.35 kB[22m
 [34mℹ[39m [33m[CJS][39m [2mdist/[22m[32m[1mrolldown.d.cts[22m[39m            [2m  0.68 kB[22m [2m│ gzip:  0.25 kB[22m
-[34mℹ[39m [33m[CJS][39m [2mdist/[22m[32mindex-iSkrq6kF.d.cts[39m      [2m122.01 kB[22m [2m│ gzip: 28.19 kB[22m
-[34mℹ[39m [33m[CJS][39m [2mdist/[22m[32mindex-BkYzZkdD.d.cts[39m      [2m  2.98 kB[22m [2m│ gzip:  1.06 kB[22m
-[34mℹ[39m [33m[CJS][39m 7 files, total: 209.80 kB
+[34mℹ[39m [33m[CJS][39m [2mdist/[22m[32mindex-CsGOExgv.d.cts[39m      [2m122.03 kB[22m [2m│ gzip: 28.19 kB[22m
+[34mℹ[39m [33m[CJS][39m [2mdist/[22m[32mindex-CJYygrb8.d.cts[39m      [2m  2.98 kB[22m [2m│ gzip:  1.06 kB[22m
+[34mℹ[39m [33m[CJS][39m 7 files, total: 209.82 kB
 [33m[PLUGIN_TIMINGS] Warning:[0m Your build spent significant time in plugins. Here is a breakdown:
-  - rolldown-plugin-dts:generate (56%)
-  - rolldown-plugin-dts:resolver (36%)
+  - rolldown-plugin-dts:generate (63%)
+  - rolldown-plugin-dts:resolver (31%)
 See https://rolldown.rs/options/checks#plugintimings for more details.
 
-[32m✔[39m Build complete in [32m3212ms[39m
+[32m✔[39m Build complete in [32m4057ms[39m
 [34mℹ[39m [34m[ESM][39m [2mdist/[22m[1mindex.mjs[22m                  [2m  0.58 kB[22m [2m│ gzip:  0.34 kB[22m
 [34mℹ[39m [34m[ESM][39m [2mdist/[22m[1mcli.mjs[22m                    [2m  0.30 kB[22m [2m│ gzip:  0.23 kB[22m
 [34mℹ[39m [34m[ESM][39m [2mdist/[22m[1mrolldown.mjs[22m               [2m  0.28 kB[22m [2m│ gzip:  0.19 kB[22m
-[34mℹ[39m [34m[ESM][39m [2mdist/[22mrolldown--lwTNt_h.mjs.map  [2m105.91 kB[22m [2m│ gzip: 25.24 kB[22m
-[34mℹ[39m [34m[ESM][39m [2mdist/[22mindex-SLhUsFDW.d.mts.map   [2m 80.47 kB[22m [2m│ gzip: 20.89 kB[22m
-[34mℹ[39m [34m[ESM][39m [2mdist/[22mcli-ZSv50ha-.mjs.map       [2m 45.15 kB[22m [2m│ gzip: 12.13 kB[22m
-[34mℹ[39m [34m[ESM][39m [2mdist/[22mrolldown--lwTNt_h.mjs      [2m 26.53 kB[22m [2m│ gzip:  7.71 kB[22m
-[34mℹ[39m [34m[ESM][39m [2mdist/[22mcli-ZSv50ha-.mjs           [2m 11.33 kB[22m [2m│ gzip:  4.18 kB[22m
-[34mℹ[39m [34m[ESM][39m [2mdist/[22mindex-DueSIeGq.d.mts.map   [2m  1.43 kB[22m [2m│ gzip:  0.57 kB[22m
+[34mℹ[39m [34m[ESM][39m [2mdist/[22mrolldown-nxC8gl5R.mjs.map  [2m109.67 kB[22m [2m│ gzip: 26.01 kB[22m
+[34mℹ[39m [34m[ESM][39m [2mdist/[22mindex-uNEg1cSh.d.mts.map   [2m 80.48 kB[22m [2m│ gzip: 20.90 kB[22m
+[34mℹ[39m [34m[ESM][39m [2mdist/[22mcli-D1mjhGZp.mjs.map       [2m 45.53 kB[22m [2m│ gzip: 12.17 kB[22m
+[34mℹ[39m [34m[ESM][39m [2mdist/[22mrolldown-nxC8gl5R.mjs      [2m 27.51 kB[22m [2m│ gzip:  7.88 kB[22m
+[34mℹ[39m [34m[ESM][39m [2mdist/[22mcli-D1mjhGZp.mjs           [2m 11.31 kB[22m [2m│ gzip:  4.18 kB[22m
+[34mℹ[39m [34m[ESM][39m [2mdist/[22mindex-D-pBjmd0.d.mts.map   [2m  1.43 kB[22m [2m│ gzip:  0.57 kB[22m
 [34mℹ[39m [34m[ESM][39m [2mdist/[22m[32m[1mindex.d.mts[22m[39m                [2m  1.45 kB[22m [2m│ gzip:  0.51 kB[22m
 [34mℹ[39m [34m[ESM][39m [2mdist/[22m[32m[1mcli.d.mts[22m[39m                  [2m  0.78 kB[22m [2m│ gzip:  0.35 kB[22m
 [34mℹ[39m [34m[ESM][39m [2mdist/[22m[32m[1mrolldown.d.mts[22m[39m             [2m  0.68 kB[22m [2m│ gzip:  0.25 kB[22m
-[34mℹ[39m [34m[ESM][39m [2mdist/[22m[32mindex-SLhUsFDW.d.mts[39m       [2m122.01 kB[22m [2m│ gzip: 28.19 kB[22m
-[34mℹ[39m [34m[ESM][39m [2mdist/[22m[32mindex-DueSIeGq.d.mts[39m       [2m  2.98 kB[22m [2m│ gzip:  1.06 kB[22m
-[34mℹ[39m [34m[ESM][39m 14 files, total: 399.87 kB
+[34mℹ[39m [34m[ESM][39m [2mdist/[22m[32mindex-uNEg1cSh.d.mts[39m       [2m122.03 kB[22m [2m│ gzip: 28.20 kB[22m
+[34mℹ[39m [34m[ESM][39m [2mdist/[22m[32mindex-D-pBjmd0.d.mts[39m       [2m  2.98 kB[22m [2m│ gzip:  1.06 kB[22m
+[34mℹ[39m [34m[ESM][39m 14 files, total: 404.99 kB
 [33m[PLUGIN_TIMINGS] Warning:[0m Your build spent significant time in plugins. Here is a breakdown:
-  - rolldown-plugin-dts:generate (66%)
-  - rolldown-plugin-dts:resolver (19%)
+  - rolldown-plugin-dts:generate (68%)
+  - rolldown-plugin-dts:fake-js (19%)
 See https://rolldown.rs/options/checks#plugintimings for more details.
 
-[32m✔[39m Build complete in [32m3229ms[39m
+[32m✔[39m Build complete in [32m4079ms[39m

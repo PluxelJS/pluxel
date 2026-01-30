@@ -8,11 +8,7 @@
 		"outDir": "dist", // 输出目录
 		"rootDir": "src", // 源码根目录
 
-		// 路径映射（alias）
-		"baseUrl": ".", // 相对路径基准
-		"paths": {
-			"~/*": ["src/*"]
-		}
+		// 路径映射（alias）已移除，统一使用相对路径
 	},
 	"include": ["src/**/*.ts", "src/**/*.tsx"]
 }

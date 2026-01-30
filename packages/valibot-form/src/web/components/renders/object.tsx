@@ -1,250 +1,173 @@
-import {
-	ActionIcon,
-	Badge,
-	Card,
-	Collapse,
-	Group,
-	Stack,
-	Text,
-	useMantineTheme,
-} from '@mantine/core'
+import { ActionIcon, Card, Collapse, Group, Stack, Text } from '@mantine/core'
 import { IconChevronDown, IconChevronRight } from '@tabler/icons-react'
-import { useCallback, useMemo, useState } from 'react'
-import { DEFAULT_GRID_COLUMNS, GRID_COLUMN_THRESHOLD } from '~/core/constants'
-import type { CommonProps } from '~/core/registry'
-import { MetaRenderer, registerRenderer } from '~/core/registry'
-import { META_MAP } from '~/core/utils'
-import { FieldChrome } from '../shared'
-import { cleanProps } from '../../utils/propHelpers'
-import { cachedExtractInfo } from '../schemaCache'
-import { alignToCss, countCompactFields, resolveFieldSpan } from '../layout'
+import { useMemo, useState } from 'react'
+import type { FieldNode, ObjectFieldNode } from '../../../core/fields'
+import { FieldRenderer } from '../internal/FieldRenderer'
+import { alignToCss, resolveFieldSpan } from '../internal/layout'
+import { planFieldSections } from '../internal/fieldPlanner'
+import {
+	isErrorWithPath,
+	joinErrorMessages,
+	normalizeErrorMessages,
+	type FieldError,
+	type RendererProps,
+	triggerFormEvents,
+} from './types'
 
-type RendererProps = CommonProps<typeof META_MAP.object>
+const isObjectValue = (value: unknown): value is Record<string, unknown> =>
+	Boolean(value) && typeof value === 'object'
 
-interface ChildInfo {
-	name: string
-	info: NonNullable<ReturnType<typeof cachedExtractInfo>>
-}
-
-function ObjectField(props: RendererProps) {
-	const { formBaseInfo, extractedPropsInfo, errors, value, inputProps } = props
-	const theme = useMantineTheme()
-	const [collapsed, setCollapsed] = useState(extractedPropsInfo.collapse === true)
-
-	// 规范化 value
-	const objectValue = useMemo(() => (value && typeof value === 'object' ? value : {}), [value])
-
-	// 提取子字段信息（带缓存）
-	const childInfos = useMemo<ChildInfo[]>(() => {
-		return extractedPropsInfo.fields
-			.map((field) => {
-				const info = cachedExtractInfo(field.schema as any, field.name)
-				if (!info || info.formInfo.hidden) return null
-				return { name: field.name, info }
-			})
-			.filter((item): item is ChildInfo => item !== null)
-	}, [extractedPropsInfo.fields])
-
-	// 分离基础错误和子字段错误
-	const baseErrors = useMemo(
-		() => (errors ?? []).filter((err) => err.dotPath.length <= 1).map((err) => err.message),
-		[errors],
+export function ObjectField(props: RendererProps) {
+	const { node, errors, inputProps, value } = props
+	const info = node as ObjectFieldNode
+	const baseErrors = normalizeErrorMessages(
+		errors?.filter((err) => typeof err !== 'object' || (err as any)?.dotPath?.length <= 1),
 	)
 
-	const childErrors = useMemo(() => {
-		const map = new Map<string, RendererProps['errors']>()
+	const fieldErrorsMap = useMemo(() => {
+		const map = new Map<string, FieldError[]>()
 		for (const err of errors ?? []) {
-			if (err.dotPath.length <= 1) continue
-			const [, childKey, ...rest] = err.dotPath
-			if (!childKey) continue
-			const nextPath = rest.length ? [childKey, ...rest] : [childKey]
-			map.set(childKey, [...(map.get(childKey) ?? []), { ...err, dotPath: nextPath }])
+			if (!isErrorWithPath(err)) continue
+			if ((err.dotPath?.length ?? 0) <= 1) continue
+			const key = String(err.dotPath?.[1])
+			if (!map.has(key)) map.set(key, [])
+			map.get(key)!.push({ ...err, dotPath: err.dotPath?.slice(1) })
 		}
 		return map
 	}, [errors])
 
-	// 布局配置
-	const variant = extractedPropsInfo.variant ?? 'card'
-	const compactCount = countCompactFields(childInfos.map((c) => ({ type: c.info.type })))
-	const columns = Math.max(
-		1,
-		Math.min(
-			extractedPropsInfo.columns ??
-				(compactCount >= GRID_COLUMN_THRESHOLD ? DEFAULT_GRID_COLUMNS : 1),
-			4,
-		),
-	)
-	const gapValue = extractedPropsInfo.gap ?? theme.spacing.lg
+	const sections = useMemo(() => planFieldSections(info.fields), [info.fields])
+	const [collapsed, setCollapsed] = useState(Boolean(info.collapsible && info.collapsed))
 
-	// 性能优化：使用 useCallback 缓存构建子字段 props 的函数
-	const buildChildInputProps = useCallback(
-		(fieldName: string) => {
-			const nestedName = inputProps.name ? `${inputProps.name}.${fieldName}` : fieldName
-			return {
-				name: nestedName,
-				onChange: (nextValue: unknown) => {
-					if (inputProps.disabled) return
-					inputProps.onChange?.({ ...objectValue, [fieldName]: nextValue })
-				},
-				onBlur: () => {
-					if (inputProps.disabled) return
-					inputProps.onBlur?.({ target: { name: nestedName } } as any)
-				},
-				disabled: inputProps.disabled,
-				readOnly: inputProps.readOnly,
-			}
-		},
-		[inputProps, objectValue],
-	)
-
-	// 渲染子字段
-	const renderedChildren = useMemo(
-		() =>
-			childInfos.map((child) => {
-				const errorsForChild = childErrors.get(child.name) ?? []
-				const childDisabled = Boolean(inputProps.disabled || child.info.formInfo.disabled)
-				const childReadOnly = Boolean(inputProps.readOnly || child.info.formInfo.readOnly)
-
-				const childInput = buildChildInputProps(child.name)
-				childInput.disabled = childDisabled
-				childInput.readOnly = childReadOnly
-
-				const span = resolveFieldSpan(columns, child.info.formInfo.layout, child.info.type)
-				const align = alignToCss(child.info.formInfo.layout?.align)
-
-				return (
-					<div key={child.name} style={{ gridColumn: `span ${span}`, alignSelf: align }}>
-						<MetaRenderer
-							type={child.info.type}
-							formBaseInfo={
-								{ ...child.info.formInfo, disabled: childDisabled, readOnly: childReadOnly } as any
-							}
-							extractedPropsInfo={child.info.props}
-							errors={errorsForChild}
-							value={objectValue[child.name]}
-							inputProps={childInput as any}
-						/>
-					</div>
-				)
-			}),
-		[
-			childInfos,
-			childErrors,
-			inputProps.disabled,
-			inputProps.readOnly,
-			buildChildInputProps,
-			columns,
-			objectValue,
-		],
-	)
-
-	// 构建内容
-	const content = renderedChildren.length ? (
-		columns === 1 ? (
-			<Stack gap={gapValue}>{renderedChildren}</Stack>
-		) : (
-			<div
-				style={{
-					display: 'grid',
-					gap: gapValue,
-					gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))`,
-					alignItems: 'end', // 底部对齐，让不同高度的字段视觉上更协调
+	const renderField = (field: FieldNode) => {
+		if (!field.name) return null
+		const fieldValue = isObjectValue(value) ? value[field.name] : undefined
+		const fieldErrors = fieldErrorsMap.get(field.name) ?? []
+		const nestedName = inputProps.name ? `${inputProps.name}.${field.name}` : field.name
+		return (
+			<FieldRenderer
+				key={field.name}
+				node={field}
+				value={fieldValue}
+				errors={fieldErrors}
+				inputProps={{
+					name: nestedName,
+					onChange: (nextValue: unknown) => {
+						const current = isObjectValue(value) ? value : {}
+						const next = { ...current, [field.name!]: nextValue }
+						triggerFormEvents(inputProps, next)
+					},
+					onBlur: () => inputProps.onBlur?.({ target: { name: nestedName } } as any),
+					disabled: inputProps.disabled || field.meta.disabled,
+					readOnly: inputProps.readOnly || field.meta.readOnly,
 				}}
-			>
-				{renderedChildren}
-			</div>
+			/>
 		)
-	) : (
-		<Text size="sm" c="dimmed">
-			暂无子字段
-		</Text>
+	}
+
+	const content = (
+		<Stack gap={info.gap ?? 'md'}>
+			{sections.hiddenFields.map((field) => (
+				<div key={`hidden-${field.name}`} style={{ display: 'none' }}>
+					{renderField(field.node)}
+				</div>
+			))}
+			{sections.sections.map((section) => (
+				<Stack key={section.id} gap="sm">
+					{section.title || section.description ? (
+						<Stack gap={4}>
+							{section.title ? <Text fw={600}>{section.title}</Text> : null}
+							{section.description ? (
+								<Text size="sm" c="dimmed">
+									{section.description}
+								</Text>
+							) : null}
+						</Stack>
+					) : null}
+					<div
+						style={{
+							display: 'grid',
+							gridTemplateColumns: `repeat(${section.columns}, minmax(0, 1fr))`,
+							gap: 'var(--mantine-spacing-md)',
+						}}
+					>
+						{section.fields.map(({ name, node: field }) => {
+							const span = resolveFieldSpan(section.columns, field.meta.layout, field.kind)
+							return (
+								<div
+									key={name}
+									style={{
+										gridColumn: `span ${Math.min(span, section.columns)}`,
+										alignSelf: alignToCss(field.meta.layout?.align),
+									}}
+								>
+									{renderField(field)}
+								</div>
+							)
+						})}
+					</div>
+				</Stack>
+			))}
+		</Stack>
 	)
 
-	// Card 变体的标题和折叠功能
-	const headerLabel = formBaseInfo.label ?? '字段组'
-	const headerNode = (
-		<Group justify="space-between" align="center" mb="sm">
-			<Group gap={6}>
-				<Text fw={600}>
-					{headerLabel}
-					{formBaseInfo.required && (
-						<Text span c="red">
-							{' '}
-							*
-						</Text>
-					)}
-				</Text>
-				{formBaseInfo.badge && (
-					<Badge
-						variant="light"
-						size="sm"
-						color={typeof formBaseInfo.badge === 'string' ? undefined : formBaseInfo.badge.color}
+	const header = node.meta.hideLabel ? null : (
+		<Group justify="space-between" align="center" wrap="nowrap">
+			<Group gap={8} align="center">
+				<Text fw={600}>{node.meta.label}</Text>
+				{info.collapsible ? (
+					<ActionIcon
+						variant="subtle"
+						onClick={() => setCollapsed((prev) => !prev)}
+						aria-label={collapsed ? '展开' : '折叠'}
+						type="button"
 					>
-						{typeof formBaseInfo.badge === 'string' ? formBaseInfo.badge : formBaseInfo.badge.label}
-					</Badge>
-				)}
+						{collapsed ? <IconChevronRight size={16} /> : <IconChevronDown size={16} />}
+					</ActionIcon>
+				) : null}
 			</Group>
-			{extractedPropsInfo.collapse !== undefined && (
-				<ActionIcon
-					variant="subtle"
-					size="sm"
-					onClick={() => setCollapsed(!collapsed)}
-					aria-label={collapsed ? '展开' : '折叠'}
-				>
-					{collapsed ? <IconChevronRight size={16} /> : <IconChevronDown size={16} />}
-				</ActionIcon>
-			)}
+			{node.meta.badge ? (
+				<Text size="sm" c="dimmed">
+					{typeof node.meta.badge === 'string' ? node.meta.badge : node.meta.badge.label}
+				</Text>
+			) : null}
 		</Group>
 	)
 
-	// stack 变体：不渲染 Card，直接输出内容
-	if (variant === 'stack') {
+	if (info.variant === 'stack') {
 		return (
-			<FieldChrome
-				{...cleanProps({
-					label: formBaseInfo.label,
-					required: formBaseInfo.required,
-					description: formBaseInfo.description,
-					helperText: formBaseInfo.helperText,
-					hint: formBaseInfo.hint,
-					tooltip: formBaseInfo.tooltip,
-					badge: formBaseInfo.badge,
-					errors: baseErrors,
-					hideLabel: formBaseInfo.hideLabel,
-					hideRequired: formBaseInfo.hideRequired,
-				})}
-			>
-				{content}
-			</FieldChrome>
+			<Stack gap="sm">
+				{node.meta.description ? (
+					<Text size="sm" c="dimmed">
+						{node.meta.description}
+					</Text>
+				) : null}
+				{info.collapsible ? <Collapse in={!collapsed}>{content}</Collapse> : content}
+			</Stack>
 		)
 	}
 
 	return (
-		<FieldChrome
-			{...cleanProps({
-				label: formBaseInfo.label,
-				required: formBaseInfo.required,
-				description: formBaseInfo.description,
-				helperText: formBaseInfo.helperText,
-				hint: formBaseInfo.hint,
-				tooltip: formBaseInfo.tooltip,
-				badge: formBaseInfo.badge,
-				errors: baseErrors,
-				hideLabel: true,
-				hideRequired: formBaseInfo.hideRequired,
-			})}
-		>
-			<Card withBorder radius="md" p="md">
-				{headerNode}
-				{formBaseInfo.description && (
-					<Text size="sm" c="dimmed" mb="sm">
-						{formBaseInfo.description}
+		<Card withBorder shadow="xs" p="md">
+			<Stack gap="sm">
+				{header}
+				{node.meta.description ? (
+					<Text size="sm" c="dimmed">
+						{node.meta.description}
 					</Text>
-				)}
-				<Collapse in={!collapsed}>{content}</Collapse>
-			</Card>
-		</FieldChrome>
+				) : null}
+				{baseErrors.length ? (
+					<Text size="sm" c="red.6" style={{ whiteSpace: 'pre-line' }}>
+						{joinErrorMessages(baseErrors)}
+					</Text>
+				) : null}
+				{info.collapsible ? <Collapse in={!collapsed}>{content}</Collapse> : content}
+				{node.meta.help ? (
+					<Text size="sm" c="dimmed">
+						{node.meta.help}
+					</Text>
+				) : null}
+			</Stack>
+		</Card>
 	)
 }
-
-registerRenderer(META_MAP.object, (props: any) => <ObjectField {...props} />)
