@@ -1,10 +1,18 @@
 import { mkdir } from 'node:fs/promises'
 import { dirname } from 'node:path'
 
-import { configure, getConfig } from '@logtape/logtape'
-import { createPluxelLogtapeConfig } from '@pluxel/core/logger'
+import { configure, getConfig, type LogLevel } from '@logtape/logtape'
+import { createPluxelLogtapeConfig, createPluxelPluginLevelState } from '@pluxel/core/logger'
 
 import { createLogStoreSink } from './sinks'
+
+/**
+ * Mutable per-plugin level map for HMR hosts.
+ *
+ * This is a convenience: hosts (or UI) can tweak levels at runtime without
+ * re-running `configure()`, because the LogTape filter reads this state per record.
+ */
+export const hmrPluginLevels = createPluxelPluginLevelState()
 
 export type EnsurePluxelLoggingOptions = {
 	/**
@@ -22,7 +30,7 @@ export type EnsurePluxelLoggingOptions = {
 	 * - object forwards to `createLogStoreSink`
 	 * - `false` disables it
 	 */
-	ui?: boolean | { minLevel?: string; includeCaller?: boolean }
+	ui?: boolean | { minLevel?: LogLevel; includeCaller?: boolean }
 	/**
 	 * Debug topic patterns (e.g. `pluxel:hmr:*`).
 	 *
@@ -51,9 +59,7 @@ export async function ensurePluxelLogging(opts: EnsurePluxelLoggingOptions = {})
 	const ui =
 		opts.ui === false
 			? undefined
-			: createLogStoreSink(
-					typeof opts.ui === 'object' ? { ...opts.ui } : { minLevel: 'trace' },
-				)
+			: createLogStoreSink(typeof opts.ui === 'object' ? { ...opts.ui } : { minLevel: 'trace' })
 
 	await configure(
 		createPluxelLogtapeConfig({
@@ -61,9 +67,9 @@ export async function ensurePluxelLogging(opts: EnsurePluxelLoggingOptions = {})
 			file,
 			ui: ui ? { sink: ui } : undefined,
 			debug: opts.debug,
+			pluginLevels: hmrPluginLevels.lookup,
 		}),
 	)
 
 	return true
 }
-

@@ -70,7 +70,11 @@ function levelColor(level: string): string {
 	}
 }
 
-function shouldShowProps(level: string, mode: PrettyMode, show: PrettyOptions['showProps']): boolean {
+function shouldShowProps(
+	level: string,
+	mode: PrettyMode,
+	show: PrettyOptions['showProps'],
+): boolean {
 	if (show === true) return true
 	if (show === false) return false
 	if (mode === 'scoped') return false
@@ -84,26 +88,36 @@ function formatPrimitive(v: unknown): string {
 	if (v === null) return 'null'
 	if (v === undefined) return 'undefined'
 	try {
-		return JSON.stringify(v)
+		const s = JSON.stringify(v)
+		// Keep the log viewer snappy even when props contain large structures.
+		return s.length > 400 ? `${s.slice(0, 400)}…` : s
 	} catch {
 		return String(v)
 	}
 }
 
 function formatPropsInline(props: Record<string, unknown>): string {
-	const entries = Object.entries(props).filter(([, v]) => v !== undefined)
-	if (!entries.length) return ''
+	const maxKeys = 4
+	const entries: Array<[string, unknown]> = []
+	let total = 0
+	for (const k in props) {
+		if (!Object.hasOwn(props, k)) continue
+		const v = props[k]
+		if (v === undefined) continue
+		total++
+		if (entries.length < maxKeys) entries.push([k, v])
+	}
+	if (!total) return ''
 
+	// Keep output stable without sorting potentially-large props objects.
 	entries.sort(([a], [b]) => a.localeCompare(b))
 
-	const maxKeys = 4
-	const sliced = entries.slice(0, maxKeys)
-	const parts = sliced.map(([k, v]) => {
+	const parts = entries.map(([k, v]) => {
 		const key = color(ANSI.cyan, k)
 		const val = color(ANSI.yellow, formatPrimitive(v))
 		return `${key}${color(ANSI.grey, '=')}${val}`
 	})
-	const more = entries.length > maxKeys ? color(ANSI.grey, ` …(+${entries.length - maxKeys})`) : ''
+	const more = total > maxKeys ? color(ANSI.grey, ` …(+${total - maxKeys})`) : ''
 	return `${color(ANSI.grey, '⟪')}${parts.join(color(ANSI.grey, ' '))}${more}${color(ANSI.grey, '⟫')}`
 }
 
@@ -119,10 +133,59 @@ function stripNamePrefix(message: string, name?: string): string {
 	return message
 }
 
+function messageToText(record: UiLogRecord): string {
+	// Prefer structured parts when present; fall back to legacy msg.
+	const parts = record.message
+	if (Array.isArray(parts) && parts.length) {
+		const limit = 12000
+		let out = ''
+
+		const previewObject = (obj: object): string => {
+			const rec = obj as Record<string, unknown>
+			let total = 0
+			let picked = 0
+			let s = '{'
+			for (const k in rec) {
+				if (!Object.hasOwn(rec, k)) continue
+				total++
+				if (picked < 4) {
+					const v = rec[k]
+					if (picked) s += ', '
+					s += `${k}=${formatPrimitive(v)}`
+					picked++
+				}
+			}
+			if (total > 4) s += ', …'
+			s += '}'
+			return s
+		}
+
+		const formatPart = (part: unknown): string => {
+			if (typeof part === 'string') return part
+			if (typeof part === 'number' || typeof part === 'boolean' || typeof part === 'bigint')
+				return String(part)
+			if (part === null || part === undefined) return String(part)
+			if (typeof part === 'object') return previewObject(part as object)
+			return String(part)
+		}
+
+		for (let i = 0; i < parts.length; i++) {
+			out += formatPart(parts[i])
+			if (out.length >= limit) {
+				out = `${out.slice(0, limit)}…`
+				break
+			}
+		}
+
+		return out
+	}
+	return record.msg
+}
+
 export function createPrettyPrinter(options: PrettyOptions = {}): PrettyPrinter {
 	const mode: PrettyMode = options.mode ?? 'global'
-	const showCategory = options.showCategory ?? (mode === 'global')
-	const showName = options.showName ?? (mode === 'global')
+	const showCategory = options.showCategory ?? mode === 'global'
+	const showName = options.showName ?? mode === 'global'
 	const showProps = options.showProps ?? 'auto'
 
 	const format = (record: UiLogRecord): string => {
@@ -131,15 +194,12 @@ export function createPrettyPrinter(options: PrettyOptions = {}): PrettyPrinter 
 		const levelText = color(`${ANSI.bold}${levelColor(lvl)}`, lvl.padEnd(7))
 
 		const categoryText =
-			showCategory && record.category?.length
-				? color(ANSI.cyan, record.category.join('·'))
-				: ''
+			showCategory && record.category?.length ? color(ANSI.cyan, record.category.join('·')) : ''
 
-		const nameText =
-			showName && record.name ? color(ANSI.grey, `[${record.name}]`) : ''
+		const nameText = showName && record.name ? color(ANSI.grey, `[${record.name}]`) : ''
 
 		const msg = stripNamePrefix(
-			String(record.msg ?? '').trim(),
+			messageToText(record).trim(),
 			showName || mode === 'scoped' ? record.name : undefined,
 		)
 		const propsText =

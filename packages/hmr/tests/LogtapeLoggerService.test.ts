@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
 import { configureSync, type LogRecord, resetSync } from '@logtape/logtape'
-import { Context } from '@pluxel/core'
+import { Context } from '@pluxel/hmr'
 import { LogtapeLoggerService } from '../src/logger/LogtapeLoggerService'
 
 function createPluginContext(root: Context, name: string, id: string): Context {

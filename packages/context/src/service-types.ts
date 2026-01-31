@@ -12,6 +12,15 @@ export type ServiceContext<S extends AnyCtor> =
 export type ServiceInst<S extends AnyCtor> = InstanceType<S>
 export type ServiceCfg<S extends AnyCtor> =
 	ConstructorParameters<S> extends [Context, infer C, ...any[]] ? C : undefined
+export type ServiceOverrideCtor<S extends ServiceCtor> =
+	ServiceCfg<S> extends undefined
+		? new (
+				ctx: Context,
+			) => ServiceInst<S>
+		: new (
+				ctx: Context,
+				cfg?: ServiceCfg<S>,
+			) => ServiceInst<S>
 
 /**
  * Services are expected to expose a writable `ctx` property so `Context` can
@@ -24,14 +33,12 @@ export type ServiceWithCtx<C> = { ctx: C }
  * - `cfg` is always passed by `Context` (can be `undefined`).
  * - `ctx` is always the runtime `Context` instance (or a supertype of it).
  */
-export type ServiceCtor = new (ctx: Context, cfg: any) => unknown
+export type ServiceCtor = new (ctx: Context, cfg?: any) => unknown
 
 /**
  * 给 Service ctor 增加可选的 metadata：key、methods
  */
-export type ServiceClass<
-	S extends ServiceCtor = ServiceCtor,
-> = S & {
+export type ServiceClass<S extends ServiceCtor = ServiceCtor> = S & {
 	/** 在 Context 上的访问名，默认由类名剥 “Service” 得到 */
 	readonly key?: string
 	/** 要在 Context 原型上代理的方法名列表 */

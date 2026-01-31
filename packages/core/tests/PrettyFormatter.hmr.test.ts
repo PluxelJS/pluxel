@@ -17,6 +17,7 @@ describe('createPluxelPrettyFormatter (hmr)', () => {
 			level: 'info',
 			timestamp: Date.now(),
 			message: ['HMR updated'],
+			rawMessage: 'HMR updated',
 			properties: {
 				context: 'root',
 				epoch: 1,
@@ -57,6 +58,7 @@ describe('createPluxelPrettyFormatter (hmr)', () => {
 			level: 'info',
 			timestamp: Date.now(),
 			message: ['HMR report'],
+			rawMessage: 'HMR report',
 			properties: {
 				context: 'root',
 				reason: 'executeFiles',
@@ -95,6 +97,7 @@ describe('createPluxelPrettyFormatter (hmr)', () => {
 			level: 'info',
 			timestamp: Date.now(),
 			message: ['HMR report'],
+			rawMessage: 'HMR report',
 			properties: {
 				context: 'root',
 				reason: 'warmup',
@@ -140,6 +143,7 @@ describe('createPluxelPrettyFormatter (hmr)', () => {
 			level: 'info',
 			timestamp: Date.now(),
 			message: ['HMR warmup done'],
+			rawMessage: 'HMR warmup done',
 			properties: {
 				context: 'root',
 				files: 42,

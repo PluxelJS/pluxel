@@ -1,13 +1,25 @@
 import EventEmitter from 'node:events'
+import type { LogLevel } from '@logtape/logtape'
 
 export type UiLogRecord = {
 	/** Monotonic id (process-local). Used for cursors/dedup. */
 	id: number
 	/** Epoch milliseconds. */
 	time: number
-	level: string
+	level: LogLevel
 	category: string[]
+	/**
+	 * Legacy plain-text message (kept for compatibility).
+	 *
+	 * Prefer `message` for new UI rendering.
+	 */
 	msg: string
+	/**
+	 * Structured message parts (already sanitized for JSON transport).
+	 *
+	 * This is intentionally close to LogTape `record.message`, but safe to send over JSON/SSE.
+	 */
+	message?: unknown[]
 	name?: string
 	pluginId?: string
 	context?: string
@@ -54,7 +66,7 @@ export const matchesFilter = (record: UiLogRecord, filter: LogFilter): boolean =
 const LOG_EVENT = 'new_log'
 
 const randomBootId = (): string => {
-	const c = (globalThis as any).crypto as undefined | { randomUUID?: () => string }
+	const c = (globalThis as { crypto?: { randomUUID?: () => string } }).crypto
 	if (c?.randomUUID) return c.randomUUID()
 	return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`
 }

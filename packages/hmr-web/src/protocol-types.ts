@@ -148,7 +148,13 @@ export type PackageInventoryFilter = {
 	includeUntracked?: boolean
 }
 
-export type PackageMutationAction = 'install' | 'uninstall' | 'remove' | 'reinstall' | 'reload' | 'retry'
+export type PackageMutationAction =
+	| 'install'
+	| 'uninstall'
+	| 'remove'
+	| 'reinstall'
+	| 'reload'
+	| 'retry'
 
 export type PackageMutationOptions = {
 	force?: boolean
@@ -216,10 +222,28 @@ export interface BuildSnapshotResult {
 	error?: string
 }
 
+export type LogLevel = 'trace' | 'debug' | 'info' | 'warning' | 'error' | 'fatal'
+export type PluginLogLevel = LogLevel | null
+
+export type PluginLevelsSnapshot = {
+	/** Includes `'*'` for the default when set. */
+	levels: Record<string, PluginLogLevel>
+}
+
+export type LoggingHandleApi = {
+	getPluginLevels: () => Promise<PluginLevelsSnapshot>
+	setPluginLevel: (pluginId: string, level: PluginLogLevel) => Promise<{ ok: true }>
+	deletePluginLevel: (pluginId: string) => Promise<{ ok: true }>
+	setPluginLevelDefault: (level: PluginLogLevel) => Promise<{ ok: true }>
+	deletePluginLevelDefault: () => Promise<{ ok: true }>
+	clearPluginLevels: () => Promise<{ ok: true }>
+}
+
 export type HmrRpcApi<ExtRpc = Record<string, unknown>> = {
 	ping: () => string
 	plugin: (name: string) => PluginHandleApi
 	package: () => PackageHandleApi
+	logging: () => LoggingHandleApi
 	ext: ExtRpc
 	extensions: () => string[]
 	buildSnapshot: () => Promise<BuildSnapshotResult>

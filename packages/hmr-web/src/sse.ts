@@ -1,13 +1,21 @@
-import type { ExtensionManifestEvent } from './plugin-ui'
 import { defaultOnAuthBlocked, type OnAuthBlocked } from './auth'
+import type { ExtensionManifestEvent } from './plugin-ui'
 import type { UI } from './protocol'
+import type { LogLevel } from './protocol-types'
 
 export interface LogRecord {
 	id: number
 	time: number
-	level: string
+	level: LogLevel
 	category: string[]
+	/**
+	 * Legacy plain-text message (kept for compatibility).
+	 *
+	 * Prefer `message` for new UI rendering.
+	 */
 	msg: string
+	/** Structured message parts (already sanitized for JSON transport). */
+	message?: unknown[]
 	name?: string
 	pluginId?: string
 	context?: string
@@ -233,7 +241,7 @@ class SseClient {
 		}
 	}
 
-		ns<Ns extends string>(name: Ns): NamespaceClient<Ns> {
+	ns<Ns extends string>(name: Ns): NamespaceClient<Ns> {
 		const namespace = String(name)
 		let bucket = this.nsHandlers.get(namespace)
 		if (!bucket) {
@@ -241,32 +249,32 @@ class SseClient {
 			this.nsHandlers.set(namespace, bucket)
 		}
 		return {
-				on: (handler, events) => {
-					const list = Array.isArray(events) ? events : events ? [events] : []
-					if (!list.length) {
-						const h = handler as unknown as AnyHandler
-						bucket!.any.add(h)
-						const last = this.lastByNamespace.get(namespace)
-						if (last) {
-							SseClient.asap(() => {
-								if (bucket!.any.has(h)) h(last)
-							})
-						}
-						return () => bucket!.any.delete(h)
+			on: (handler, events) => {
+				const list = Array.isArray(events) ? events : events ? [events] : []
+				if (!list.length) {
+					const h = handler as unknown as AnyHandler
+					bucket!.any.add(h)
+					const last = this.lastByNamespace.get(namespace)
+					if (last) {
+						SseClient.asap(() => {
+							if (bucket!.any.has(h)) h(last)
+						})
 					}
-					const unsubs: Array<() => void> = []
-					for (const ev of list) {
-						let set = bucket!.events.get(ev)
-						if (!set) {
-							set = new Set()
-							bucket!.events.set(ev, set)
-						}
-						const h = handler as unknown as AnyHandler
-						set.add(h)
-						unsubs.push(() => set!.delete(h))
+					return () => bucket!.any.delete(h)
+				}
+				const unsubs: Array<() => void> = []
+				for (const ev of list) {
+					let set = bucket!.events.get(ev)
+					if (!set) {
+						set = new Set()
+						bucket!.events.set(ev, set)
 					}
-					return () => {
-						for (const fn of unsubs) fn()
+					const h = handler as unknown as AnyHandler
+					set.add(h)
+					unsubs.push(() => set!.delete(h))
+				}
+				return () => {
+					for (const fn of unsubs) fn()
 				}
 			},
 			onAny: (handler) => {

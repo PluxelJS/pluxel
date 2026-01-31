@@ -29,7 +29,7 @@ import { RouterLinkAdapter } from '../../../RouterLinkAdapter'
 import { useCurrentPathname, useCurrentSearch } from '../../../router/useCurrentRoute'
 import { FloatingTocScope } from '../../components/FloatingToc'
 import { ConfigForm, compareSchemaKeys, PLUGIN_SCHEMA_GROUP, splitSchemaKey } from '../../config'
-import { PluginPanel } from '../components'
+import { LogLevelsCard, PluginPanel } from '../components'
 import { usePluginMeta } from '../context'
 
 interface RightPaneProps {
@@ -353,6 +353,7 @@ export function RightPane({ config }: RightPaneProps) {
 	const resolveTab = useCallback(
 		(value: string | undefined) => {
 			if (!value) return undefined
+			if (value === 'logging') return 'logging'
 			if (value === 'config' && showConfigTab) return 'config'
 			if (value === 'route') return showRouteTab ? 'route' : undefined
 			if (value.startsWith(CONFIG_GROUP_TAB_PREFIX)) {
@@ -367,7 +368,7 @@ export function RightPane({ config }: RightPaneProps) {
 		[schemaKeys],
 	)
 
-	const hasTabs = showConfigTab || tabGroups.length > 0 || showRouteTab
+	const hasTabs = true
 
 	useEffect(() => {
 		setStoredState(readPaneState(storageKey))
@@ -380,7 +381,7 @@ export function RightPane({ config }: RightPaneProps) {
 			resolved ??
 			(showRouteTab
 				? 'route'
-				: (fallback ?? (showConfigTab ? 'config' : (tabGroups[0]?.id ?? 'config'))))
+				: (fallback ?? (showConfigTab ? 'config' : (tabGroups[0]?.id ?? 'logging'))))
 		if (next && next !== activeTab) setActiveTab(next)
 	}, [
 		activeTab,
@@ -393,6 +394,7 @@ export function RightPane({ config }: RightPaneProps) {
 	])
 
 	const activeSchemaKey = useMemo(() => {
+		if (!isConfigTab(activeTab)) return ''
 		const tabKeys = schemaKeysByConfigTab.get(activeTab) ?? schemaKeys
 		if (!tabKeys.length) return ''
 
@@ -560,6 +562,7 @@ export function RightPane({ config }: RightPaneProps) {
 							>
 								{showRouteTab ? <Tabs.Tab value="route">页面</Tabs.Tab> : null}
 								{showConfigTab ? <Tabs.Tab value="config">配置</Tabs.Tab> : null}
+								<Tabs.Tab value="logging">日志</Tabs.Tab>
 								{configGroupTabs.map((tab) => (
 									<Tabs.Tab key={tab.id} value={tab.id}>
 										{tab.label}
@@ -604,6 +607,16 @@ export function RightPane({ config }: RightPaneProps) {
 								</FloatingTocScope>
 							</Tabs.Panel>
 						) : null}
+
+						<Tabs.Panel value="logging" style={COLUMN_STYLE}>
+							<FloatingTocScope active={activeTab === 'logging'}>
+								<ScrollArea type="auto" scrollbarSize={10} offsetScrollbars style={COLUMN_STYLE}>
+									<Box p="xs" style={{ minHeight: '100%' }}>
+										<LogLevelsCard pluginId={pluginName} />
+									</Box>
+								</ScrollArea>
+							</FloatingTocScope>
+						</Tabs.Panel>
 
 						{configGroupTabs.map((tab) => (
 							<Tabs.Panel key={tab.id} value={tab.id} style={COLUMN_STYLE}>

@@ -20,12 +20,13 @@
 
 - `context`: 当前 Context 名称
 - `pluginId` (可选): 插件 id（用于 filter）
-- `name` (hmr 可选): UI 展示名（如 `plugin-a(pluginA)`）
+- `name` (可选): UI 展示名（如 `plugin-a(pluginA)`；在 `hmr` runtime / `LoggerServiceConfig.preset="hmr"` 时默认注入）
 
 `caller`（调用点）是可选字段：
 
-- 默认：当开启 caller 时，`LoggerService` / `LogtapeLoggerService` 会 **用 LogTape 的 lazy properties** 注入 `caller`（包括 `ctx.logger.info/warn/...` 直接调用，以及 `ctx.logger.with(...)` 返回的 logger），从而让 file/json sink 也能保留调用点，并避免在 log level 未启用时浪费堆栈捕获成本
-- 兼容：对非 pluxel logger（或调用方手动构造的 logger），pretty formatter 会在渲染时发现 `caller` 缺失并按需捕获（不破坏外部 logger）
+- 默认：`LoggerService` 不再自动注入 `caller`（避免让 filters/sinks 读 properties 时意外触发堆栈捕获开销）。
+- 控制台输出：pretty formatter 在 `includeCaller` 开启且 `caller` 缺失时，会按需 `captureCaller()`。
+- 兼容：对非 pluxel logger（或调用方手动构造的 logger）同样适用。
 
 你也可以显式传入 `{ caller: "..." }` 来覆盖显示（例如跨线程/跨进程场景）。
 
@@ -84,6 +85,28 @@ ctx.logger.getDebugChannel("pluxel:hmr:batch").debug("batch targets", { targets 
 ```
 
 如何开启：在 LogTape 配置里指定 `debug: [...]`（支持 `: *` 前缀），pretty 输出会标注 `{dbg:...}`。
+
+## Per-plugin levels（可选）
+
+插件日志按 `record.properties.pluginId` 匹配，可在宿主侧配置不同最低等级：
+
+```ts
+await configure(
+  createPluxelLogtapeConfig({
+    preset: "hmr",
+    pluginLevels: {
+      "*": "info",        // 默认
+      "plugin-a": "debug",
+      "plugin-b": null,   // 禁用
+    },
+  }),
+);
+```
+
+如需动态调整，可传函数（自行读取你的 map/配置源）。
+
+另外，`@pluxel/hmr/logger` 提供了一个可变的 `hmrPluginLevels`（`createPluxelPluginLevelState()`）
+方便在运行时直接调级（无需重新 configure）。
 
 ## Sinks / Formatters
 

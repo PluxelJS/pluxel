@@ -4,11 +4,10 @@ import { fileURLToPath } from 'node:url'
 import { configure, getConfig } from '@logtape/logtape'
 import { createPluxelLogtapeConfig } from '@pluxel/core/logger'
 import GraphQL from '@pluxel/graphql'
-import Snapshot from '@pluxel/snapshot'
 import { Context } from '@pluxel/hmr'
 import { applyHmrEnvOverrides } from '@pluxel/hmr/host'
 import { createLogStoreSink } from '@pluxel/hmr/logger'
-import { LogtapeLoggerService } from '@pluxel/hmr/services'
+import Snapshot from '@pluxel/snapshot'
 import Wretch from '@pluxel/wretch'
 import { MarketUI } from 'pluxel-plugin-market-ui'
 
@@ -43,7 +42,7 @@ const ctx = new Context({
 		],
 	}),
 	registry: {
-		pluginCTXIsolate: [LogtapeLoggerService],
+		// LoggerService is runtime-aware (core vs hmr) and no longer needs a dedicated override.
 	},
 })
 

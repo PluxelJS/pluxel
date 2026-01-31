@@ -10,6 +10,7 @@ import { createFactory, type Factory } from 'hono/factory'
 import type { Plugin } from 'vite'
 
 import api from '../../api/hono'
+import { ensureHmrPluginLevelsLoaded } from '../../logger/levels'
 import type { RenderHandler } from '../../server/types'
 import type { SseChannel } from '../plugin-interaction'
 import type { ExtensionManifestEvent } from '../runtime-compile'
@@ -35,6 +36,11 @@ export class HonoService extends CoreHonoService {
 		this.renderer = this.createRenderer()
 		this.rebuildApp()
 		this.registerSseBuiltins()
+
+		// Load persisted per-plugin log levels once config is ready (host-level setting).
+		void ensureHmrPluginLevelsLoaded(ctx).catch((error) => {
+			this.logger.warn('Failed to load persisted plugin log levels', { error })
+		})
 	}
 
 	/** 将 plugin_ctx 暴露给下游（Hono 工厂） */

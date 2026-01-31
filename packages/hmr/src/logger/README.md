@@ -7,6 +7,10 @@
 - `createLogStoreSink()`：把 LogTape `LogRecord` 写入内存 `logStore`，用于 UI 日志。
 - `toUiLogRecord()`：把 `LogRecord` 转成 UI 友好的结构（安全序列化 properties，并默认剔除 `caller`）。
 
+说明：
+- UI 日志记录优先携带 `message: unknown[]`（结构化 message parts，已做 JSON 安全处理）。
+- `msg: string` 仅作为兼容字段：为性能考虑，不再把对象 message 在服务端 JSON.stringify；对象会显示成占位符（如 `[Object]`）。
+
 推荐做法：宿主在启动入口显式配置 LogTape。
 
 - 如果你想“无痛开箱”，用 `ensurePluxelLogging()`：它会在未配置时执行一次 `configure(...)`（包含 UI log store）。
@@ -49,3 +53,13 @@ declare module "@pluxel/core" {
   }
 }
 ```
+
+## Per-plugin log levels (HMR)
+
+不建议在宿主入口/配置文件里手写每个 `pluginId -> level`：
+- 手写容易错（fork id / 实际 loaded id / 大基数维护）
+- 会诱导把规则散落到多个入口，不利于排查
+
+推荐做法：把 per-plugin level 当作 **HMR 面板管理的“运行时规则”**：
+- RPC 修改规则（持久化到 ConfigService extra）
+- LogTape 过滤器只做一次 `pluginId` lookup（不创建 per-plugin category/logger config）

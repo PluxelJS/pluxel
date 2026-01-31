@@ -1,9 +1,14 @@
 // Service.ts
 
 import { Context } from './Context'
-import type { ServiceCfg, ServiceClass, ServiceInst, ServiceWithCtx } from './service-types'
+import type {
+	ServiceClass,
+	ServiceInst,
+	ServiceOverrideCtor,
+	ServiceWithCtx,
+} from './service-types'
 
-type InjectableCtor = new (ctx: Context, cfg: any) => ServiceWithCtx<Context>
+type InjectableCtor = new (ctx: Context, cfg?: any) => ServiceWithCtx<Context>
 
 /**
  * 装饰器可选项
@@ -64,9 +69,7 @@ export function Injectable<S extends new (...args: unknown[]) => object>(
 }
 
 export function OverrideOf<S extends InjectableCtor>(original: ServiceClass<S>) {
-	return <T extends new (ctx: Context, cfg?: ServiceCfg<S>) => ServiceInst<S>>(
-		overrideCtor: ServiceClass<T>,
-	) => {
+	return <T extends ServiceOverrideCtor<S>>(overrideCtor: ServiceClass<T>) => {
 		// 打个标记，让 Injectable 跳过 registerService
 		const overrideMeta = overrideCtor as unknown as MutableServiceMeta
 		const originalMeta = original as unknown as MutableServiceMeta

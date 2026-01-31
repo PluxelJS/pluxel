@@ -2,7 +2,7 @@
 import { describe, expect, test } from 'bun:test'
 import { Context, type ServiceClass } from '@pluxel/context'
 
-type TestServiceCtor = new (ctx: unknown, cfg: unknown) => object
+type TestServiceCtor = new (ctx: unknown, cfg?: unknown) => object
 type TestServiceClass = ServiceClass<TestServiceCtor>
 const asTestServiceClass = (ctor: unknown) => ctor as TestServiceClass
 

@@ -2,27 +2,33 @@ function isErrorLike(value: unknown): value is Error {
 	return value instanceof Error
 }
 
-export function toPlainObject(value: unknown, depth = 4, seen = new WeakSet<object>()): unknown {
+export function toPlainObject(value: unknown, depth = 4, seen?: WeakSet<object>): unknown {
 	if (depth < 0) return '[MaxDepth]'
 	if (value === null) return null
-	const t = typeof value
-	if (t === 'string') return value.length > 4000 ? `${value.slice(0, 4000)}…` : value
-	if (t === 'number' || t === 'boolean') return value
-	if (t === 'bigint') return `${value}n`
-	if (t === 'undefined') return undefined
-	if (t === 'symbol') return value.toString()
-	if (t === 'function') return `[Function ${(value as Function).name || 'anonymous'}]`
+	if (typeof value === 'string') return value.length > 4000 ? `${value.slice(0, 4000)}…` : value
+	if (typeof value === 'number' || typeof value === 'boolean') return value
+	if (typeof value === 'bigint') return `${value}n`
+	if (typeof value === 'undefined') return undefined
+	if (typeof value === 'symbol') return value.toString()
+	if (typeof value === 'function') {
+		const name = (value as { name?: unknown }).name
+		return `[Function ${typeof name === 'string' && name ? name : 'anonymous'}]`
+	}
 
 	if (isErrorLike(value)) {
+		seen ??= new WeakSet<object>()
+		const errorRecord = value as unknown as Record<string, unknown>
 		const extra: Record<string, unknown> = {}
-		for (const [k, v] of Object.entries(value as any)) {
-			extra[k] = toPlainObject(v, depth - 1, seen)
+		for (const k in errorRecord) {
+			if (!Object.hasOwn(errorRecord, k)) continue
+			extra[k] = toPlainObject(errorRecord[k], depth - 1, seen)
 		}
+		const cause = (value as { cause?: unknown }).cause
 		return {
 			name: value.name,
 			message: value.message,
 			stack: value.stack,
-			cause: (value as any).cause ? toPlainObject((value as any).cause, depth - 1, seen) : undefined,
+			cause: cause ? toPlainObject(cause, depth - 1, seen) : undefined,
 			...extra,
 		}
 	}
@@ -56,36 +62,20 @@ export function toPlainObject(value: unknown, depth = 4, seen = new WeakSet<obje
 	}
 
 	if (typeof value === 'object') {
+		seen ??= new WeakSet<object>()
 		const obj = value as object
 		if (seen.has(obj)) return '[Circular]'
 		seen.add(obj)
 
 		const out: Record<string, unknown> = {}
 		let count = 0
-		for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+		for (const k in value as Record<string, unknown>) {
+			if (!Object.hasOwn(value as Record<string, unknown>, k)) continue
 			if (count++ >= 200) break
-			out[k] = toPlainObject(v, depth - 1, seen)
+			out[k] = toPlainObject((value as Record<string, unknown>)[k], depth - 1, seen)
 		}
 		return out
 	}
 
 	return String(value)
-}
-
-export function messageToString(message: readonly unknown[]): string {
-	let out = ''
-	for (const part of message) {
-		if (typeof part === 'string') out += part
-		else if (typeof part === 'number' || typeof part === 'boolean' || typeof part === 'bigint')
-			out += String(part)
-		else if (isErrorLike(part)) out += part.message || part.name
-		else {
-			try {
-				out += JSON.stringify(toPlainObject(part), null, 0)
-			} catch {
-				out += String(part)
-			}
-		}
-	}
-	return out
 }

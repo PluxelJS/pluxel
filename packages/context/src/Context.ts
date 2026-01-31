@@ -5,12 +5,16 @@ import type {
 	ServiceClass,
 	ServiceCtor,
 	ServiceInst,
+	ServiceOverrideCtor,
 	ServiceWithCtx,
 } from './service-types'
 
 type SymMap = { [k in symbol]?: symbol }
 
-type AnyServiceClass = ServiceClass
+// "Any service" should allow arbitrary instance types and method proxy lists.
+// Using the default `ServiceClass<ServiceCtor>` would make `methods` resolve to `never[]`
+// because `InstanceType<ServiceCtor>` is `unknown`.
+type AnyServiceClass = ServiceClass<new (ctx: Context, cfg?: any) => any>
 
 // biome-ignore lint/suspicious/noUnsafeDeclarationMerging: this class is intentionally merged with an interface for service augmentation.
 export class Context {
@@ -118,13 +122,10 @@ export class Context {
 	}
 
 	/** 提供 override —— 同步把原来的 getter 整块替换掉 */
-	static overrideService<
-		S extends ServiceCtor,
-		T extends new (
-			ctx: Context,
-			cfg: ServiceCfg<S>,
-		) => ServiceInst<S>,
-	>(original: ServiceClass<S>, overrideCtor: ServiceClass<T>) {
+	static overrideService<S extends ServiceCtor, T extends ServiceOverrideCtor<S>>(
+		original: ServiceClass<S>,
+		overrideCtor: ServiceClass<T>,
+	) {
 		// 1) 拿到同一个 sk
 		const sk = Context.serviceKeyMap.get(original)
 		if (sk === undefined) throw new Error('该服务从未被注册')

@@ -1,25 +1,56 @@
-import { getLogger, lazy, type Logger as LogtapeLogger } from '@logtape/logtape'
+import { getLogger, type Logger as LogtapeLogger } from '@logtape/logtape'
 import { type Context, Injectable } from '@pluxel/context'
-import { captureCaller, isCallerEnabled } from './caller'
+import { getPluxelRuntime } from '../env'
 import { pluxelCategories } from './categories'
 import { findPluginId } from './context'
 import { callLogtape, type PluxelLogMethod } from './logCall'
+import { formatLogName } from './name'
 
 type ContextLoggerCacheEntry = {
-	core: LogtapeLogger
+	base: LogtapeLogger
 	plugin?: { id: string; logger: LogtapeLogger }
-	debug?: { core: LogtapeLogger; plugin?: { id: string; logger: LogtapeLogger } }
+	debug?: { base: LogtapeLogger; plugin?: { id: string; logger: LogtapeLogger } }
 }
-
-const contextLoggerCache = new WeakMap<object, ContextLoggerCacheEntry>()
 
 const serviceName = 'logger' as const
 declare module '@pluxel/context' {
 	namespace Context {
+		interface Config {
+			[serviceName]?: LoggerServiceConfig
+		}
 		interface Services {
 			[serviceName]: LoggerService
 		}
 	}
+}
+
+export type LoggerServicePreset = 'core' | 'hmr'
+
+export type LoggerServiceConfig = {
+	/**
+	 * Logging preset:
+	 * - `core`: `pluxelCategories.core`, no `name` field by default
+	 * - `hmr`: `pluxelCategories.hmr`, inject `name` by default (for pretty prefix)
+	 *
+	 * Default: inferred from `getPluxelRuntime()` (set by `@pluxel/hmr` entry).
+	 */
+	preset?: LoggerServicePreset
+
+	/** Override the base category (non-plugin contexts). */
+	baseCategory?: readonly string[]
+	/** Override the plugins category. */
+	pluginCategory?: readonly string[]
+	/** Override the debug channel category. */
+	debugCategory?: readonly string[]
+
+	/**
+	 * Inject `record.properties.name`.
+	 *
+	 * - `false`: disabled (default for `core` preset)
+	 * - `true`: enabled (default for `hmr` preset; uses `formatLogName()`)
+	 * - function: custom naming (called with `ctxName` and optional `pluginId`)
+	 */
+	name?: boolean | ((ctxName: string, pluginId?: string) => string)
 }
 
 @Injectable({
@@ -27,70 +58,85 @@ declare module '@pluxel/context' {
 })
 export class LoggerService {
 	public readonly ctx: Context
-	private readonly coreLogger: LogtapeLogger
-	private readonly pluginsLogger: LogtapeLogger
-	private readonly debugLogger: LogtapeLogger
+	private readonly baseCategoryLogger: LogtapeLogger
+	private readonly pluginsCategoryLogger: LogtapeLogger
+	private readonly debugCategoryLogger: LogtapeLogger
+	private readonly nameFn: ((ctxName: string, pluginId?: string) => string) | null
+	private readonly cache = new WeakMap<object, ContextLoggerCacheEntry>()
+	private readonly debugChannelCache = new Map<string, LogtapeLogger>()
 
-	constructor(ctx: Context) {
+	constructor(ctx: Context, cfg?: LoggerServiceConfig) {
 		this.ctx = ctx
-		this.coreLogger = getLogger(pluxelCategories.core)
-		this.pluginsLogger = getLogger(pluxelCategories.plugins)
-		this.debugLogger = getLogger(['pluxel', 'debug'])
+
+		const preset: LoggerServicePreset =
+			cfg?.preset ?? (getPluxelRuntime() === 'hmr' ? 'hmr' : 'core')
+
+		const baseCategory =
+			cfg?.baseCategory ?? (preset === 'hmr' ? pluxelCategories.hmr : pluxelCategories.core)
+		const pluginCategory = cfg?.pluginCategory ?? pluxelCategories.plugins
+		const debugCategory = cfg?.debugCategory ?? (['pluxel', 'debug'] as const)
+
+		// Avoid per-service allocations; LogTape does not mutate category arrays.
+		this.baseCategoryLogger = getLogger(baseCategory as unknown as string[])
+		this.pluginsCategoryLogger = getLogger(pluginCategory as unknown as string[])
+		this.debugCategoryLogger = getLogger(debugCategory as unknown as string[])
+
+		const nameOpt = cfg?.name ?? preset === 'hmr'
+		if (nameOpt === false) this.nameFn = null
+		else if (typeof nameOpt === 'function') this.nameFn = nameOpt
+		else if (nameOpt === true) this.nameFn = formatLogName
+		else this.nameFn = null
 	}
 
 	private getBaseContextLogger(): LogtapeLogger {
 		const key = this.ctx as unknown as object
-		let cached = contextLoggerCache.get(key)
+		let cached = this.cache.get(key)
 		if (!cached) {
+			const baseProps: Record<string, unknown> = { context: this.ctx.name }
+			if (this.nameFn) baseProps.name = this.nameFn(this.ctx.name)
+
 			cached = {
-				core: this.coreLogger.with(
-					isCallerEnabled()
-						? { context: this.ctx.name, caller: lazy(() => captureCaller()) }
-						: { context: this.ctx.name },
-				),
+				base: this.baseCategoryLogger.with(baseProps),
 			}
-			contextLoggerCache.set(key, cached)
+			this.cache.set(key, cached)
 		}
 
 		if (cached.plugin) return cached.plugin.logger
 
 		const pluginId = findPluginId(this.ctx)
 		if (pluginId) {
+			const pluginProps: Record<string, unknown> = { context: this.ctx.name, pluginId }
+			if (this.nameFn) pluginProps.name = this.nameFn(this.ctx.name, pluginId)
+
 			cached.plugin = {
 				id: pluginId,
-				logger: this.pluginsLogger.with(
-					isCallerEnabled()
-						? { context: this.ctx.name, pluginId, caller: lazy(() => captureCaller()) }
-						: { context: this.ctx.name, pluginId },
-				),
+				logger: this.pluginsCategoryLogger.with(pluginProps),
 			}
 			return cached.plugin.logger
 		}
 
-		return cached.core
+		return cached.base
 	}
 
 	private getDebugBaseLogger(): LogtapeLogger {
 		const key = this.ctx as unknown as object
-		let cached = contextLoggerCache.get(key)
+		let cached = this.cache.get(key)
 		if (!cached) {
+			const baseProps: Record<string, unknown> = { context: this.ctx.name }
+			if (this.nameFn) baseProps.name = this.nameFn(this.ctx.name)
+
 			cached = {
-				core: this.coreLogger.with(
-					isCallerEnabled()
-						? { context: this.ctx.name, caller: lazy(() => captureCaller()) }
-						: { context: this.ctx.name },
-				),
+				base: this.baseCategoryLogger.with(baseProps),
 			}
-			contextLoggerCache.set(key, cached)
+			this.cache.set(key, cached)
 		}
 
 		if (!cached.debug) {
+			const baseProps: Record<string, unknown> = { context: this.ctx.name }
+			if (this.nameFn) baseProps.name = this.nameFn(this.ctx.name)
+
 			cached.debug = {
-				core: this.debugLogger.with(
-					isCallerEnabled()
-						? { context: this.ctx.name, caller: lazy(() => captureCaller()) }
-						: { context: this.ctx.name },
-				),
+				base: this.debugCategoryLogger.with(baseProps),
 			}
 		}
 
@@ -99,14 +145,17 @@ export class LoggerService {
 		// Reuse cached plugin id if it already exists from normal logging.
 		const pluginId = cached.plugin?.id ?? findPluginId(this.ctx)
 		if (pluginId) {
+			const pluginProps: Record<string, unknown> = { pluginId }
+			if (this.nameFn) pluginProps.name = this.nameFn(this.ctx.name, pluginId)
+
 			cached.debug.plugin = {
 				id: pluginId,
-				logger: cached.debug.core.with({ pluginId }),
+				logger: cached.debug.base.with(pluginProps),
 			}
 			return cached.debug.plugin.logger
 		}
 
-		return cached.debug.core
+		return cached.debug.base
 	}
 
 	private log(level: PluxelLogMethod, args: unknown[]) {
@@ -138,7 +187,11 @@ export class LoggerService {
 	 * This is intended to replace scattered `getLogger([...])` debug usage in services.
 	 */
 	public getDebugChannel(debugTopic: string): LogtapeLogger {
-		// Note: prefer caching the base debug logger to avoid repeated `.with({context,...})` wrapping.
-		return this.getDebugBaseLogger().with({ debugTopic })
+		// Note: cache per-topic `.with({debugTopic})` wrappers to keep debug-heavy loops cheap.
+		const cached = this.debugChannelCache.get(debugTopic)
+		if (cached) return cached
+		const next = this.getDebugBaseLogger().with({ debugTopic })
+		this.debugChannelCache.set(debugTopic, next)
+		return next
 	}
 }

@@ -11,11 +11,45 @@ logsApp.get('/latest', (c) => {
 	const url = new URL(c.req.url)
 	const filter = parseLogFilter(url.searchParams)
 	const afterId = parseAfterId(url.searchParams)
-	const limit = Math.min(Math.max(1, Number(url.searchParams.get('limit') ?? 200)), logStore.capacity)
+	const limit = Math.min(
+		Math.max(1, Number(url.searchParams.get('limit') ?? 200)),
+		logStore.capacity,
+	)
 	const format = url.searchParams.get('format') ?? 'json'
 
-	const filtered = logStore.snapshot(logStore.capacity, afterId).filter((l) => matchesFilter(l, filter))
-	const records = afterId ? filtered.slice(0, limit) : filtered.slice(-limit)
+	let records: UiLogRecord[] = []
+	if (afterId !== undefined) {
+		// After-id queries are naturally forward-only; stop early once we collected enough.
+		const snap = logStore.snapshot(logStore.capacity, afterId)
+		for (let i = 0; i < snap.length; i++) {
+			const l = snap[i]!
+			if (!matchesFilter(l, filter)) continue
+			records.push(l)
+			if (records.length >= limit) break
+		}
+	} else {
+		// For "latest", we want the last N matching records without allocating/filtering the full buffer.
+		const snap = logStore.snapshot(logStore.capacity)
+		const buf = new Array<UiLogRecord>(limit)
+		let start = 0
+		let len = 0
+		for (let i = 0; i < snap.length; i++) {
+			const l = snap[i]!
+			if (!matchesFilter(l, filter)) continue
+			if (len < limit) {
+				buf[(start + len) % limit] = l
+				len++
+			} else {
+				buf[start] = l
+				start = (start + 1) % limit
+			}
+		}
+		if (len < limit) {
+			records = buf.slice(0, len)
+		} else {
+			records = buf.slice(start).concat(buf.slice(0, start))
+		}
+	}
 
 	if (format === 'jsonl' || format === 'ndjson') {
 		const lines = records.map((l) => JSON.stringify(l)).join('\n') + '\n'
@@ -34,7 +68,12 @@ logsApp.get('/stream', (c) => {
 	return streamSSE(c, async (sse) => {
 		sse.writeSSE({
 			event: 'ready',
-			data: JSON.stringify({ type: 'ready', filter, lastId: logStore.lastId, bootId: logStore.bootId }),
+			data: JSON.stringify({
+				type: 'ready',
+				filter,
+				lastId: logStore.lastId,
+				bootId: logStore.bootId,
+			}),
 		})
 
 		if (afterId !== undefined) {
