@@ -3,18 +3,13 @@
 	"version": "0.2.12",
 	"description": "Demo example that imports a local package",
 	"bin": {
-		"pluxel": "dist/cli.mjs"
+		"pluxel": "bin/pluxel.mjs"
 	},
 	"exports": {
 		"./build": {
 			"@pluxel/source": "./src/build.ts",
 			"import": "./dist/build.mjs",
 			"default": "./dist/build.mjs"
-		},
-		"./build/cli": {
-			"@pluxel/source": "./src/build/cli.ts",
-			"import": "./dist/build/cli.mjs",
-			"default": "./dist/build/cli.mjs"
 		},
 		"./rolldown": {
 			"@pluxel/source": "./src/rolldown.ts",
@@ -24,6 +19,7 @@
 		"./package.json": "./package.json"
 	},
 	"files": [
+		"bin",
 		"dist",
 		"!**/*.map"
 	],

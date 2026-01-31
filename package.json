@@ -8,8 +8,8 @@
 	},
 	"scripts": {
 		"test": "turbo run test",
-		"build": "turbo run build",
-		"build:plugin": "turbo run build:plugin",
+		"build": "pnpm --filter @pluxel/cli build && turbo run build --filter=!@pluxel/cli",
+		"build:plugin": "pnpm --filter @pluxel/cli build && turbo run build:plugin --filter=!@pluxel/cli",
 		"audit:logs": "node scripts/audit-logs.mjs",
 		"update": "pnpm pncat migrate && pnpm up --latest && pnpm pncat revert",
 		"dev:core": "pnpm --filter core dev",

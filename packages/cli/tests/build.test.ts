@@ -8,7 +8,7 @@ import {
 	createOptionalDependencyHook,
 	resolveBuildContext,
 	runWithTsdown,
-} from '@pluxel/cli/build/cli'
+} from '@pluxel/cli/build'
 
 const buildFixtures = {
 	basic: {
