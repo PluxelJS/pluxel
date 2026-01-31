@@ -24,15 +24,13 @@ export default defineConfig({
 	exports: {
 		devExports: '@pluxel/source',
 	},
-	noExternal: ['@abraham/reflection', '@pluxel/context', '@pluxel/context/*'],
+	noExternal: ['@pluxel/context', '@pluxel/context/*'],
 	external: [],
 	entry: {
 		env: 'src/env.ts',
 		index: 'src/index.ts',
 		services: 'src/services/index.ts',
 		logger: 'src/logger/index.ts',
-		test: 'src/test/index.ts',
-		'test/setup': 'src/test/setup.ts',
 	},
 	dts: {
 		sourcemap: true,

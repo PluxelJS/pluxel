@@ -263,15 +263,26 @@ export function getFeatureNamespace(feature: AnyCtor): string {
 	return ns
 }
 
+const FEATURE_USERS = new WeakMap<AnyCtor, Set<AnyCtor>>()
+
+function trackFeatureUser(plugin: AnyCtor, feature: AnyCtor): void {
+	const cur = FEATURE_USERS.get(feature)
+	if (cur) {
+		cur.add(plugin)
+		return
+	}
+	FEATURE_USERS.set(feature, new Set([plugin]))
+}
+
 function applyFeatureComposition(
 	ctor: AnyCtor,
 	feature: AnyCtor,
 	opts?: { rebuild?: boolean },
 ): void {
 	const s = S(ctor)
-	if (s.features?.includes(feature)) return
 
 	useFeature(ctor, feature)
+	trackFeatureUser(ctor, feature)
 	const deps = getRequiredPluginDependencies(feature, { inherit: true })
 	for (let i = 0; i < deps.length; i++) requirePluginDependency(ctor, deps[i]!)
 
@@ -291,6 +302,7 @@ function applyFeatureComposition(
 		for (const fieldName of Object.keys(featureConfig)) {
 			const key = `${ns}.${fieldName}`
 			if (key in next) {
+				if (next[key] === featureConfig[fieldName]) continue
 				throw new Error(
 					`[UseFeature] config key collision on ${nameOf(ctor)}: ${key} (from feature ${nameOf(
 						feature,
@@ -311,6 +323,7 @@ function applyFeatureComposition(
 		for (const fieldName of Object.keys(featureSource)) {
 			const key = `${ns}.${fieldName}`
 			if (key in next) {
+				if (next[key] === featureSource[fieldName]) continue
 				throw new Error(
 					`[UseFeature] configSource key collision on ${nameOf(ctor)}: ${key} (from feature ${nameOf(
 						feature,
@@ -433,6 +446,10 @@ export function __registerConfigSchema__(ctor: AnyCtor, fieldName: string, schem
 		const bucket = (s.pending ?? Object.create(null)) as Record<string, unknown>
 		bucket[fieldName] = schema
 		s.pending = bucket
+		const users = FEATURE_USERS.get(ctor)
+		if (users) {
+			for (const host of users) applyFeatureComposition(host, ctor)
+		}
 		return
 	}
 
@@ -443,6 +460,11 @@ export function __registerConfigSchema__(ctor: AnyCtor, fieldName: string, schem
 	next[fieldName] = schema
 	s.config = __DEV__ ? $freeze(next) : next
 	rebuildInfoSnapshot(ctor, s)
+
+	const users = FEATURE_USERS.get(ctor)
+	if (users) {
+		for (const host of users) applyFeatureComposition(host, ctor)
+	}
 }
 
 export function getConfigSource(ctor: AnyCtor): Readonly<Record<string, string>> | null {

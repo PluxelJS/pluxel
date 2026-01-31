@@ -6,22 +6,22 @@
  * TypeScript's emitDecoratorMetadata cannot emit runtime type information for DI.
  * This plugin converts such imports back to value imports for classes decorated with @Plugin.
  *
- * Why there are TWO exports:
- * - `importTypeFixerPlugin` is a native Rolldown plugin (uses `transform.filter` + `handler`).
- * - `importTypeFixerVitePlugin` is a Vite/Rollup plugin wrapper for Vite dev server.
- *
- * Vite dev server does NOT execute Rolldown plugin objects, even when Vite internally uses Rolldown.
+ * Vite 8+ plugins are Rolldown plugins and support hook filters, so a single plugin works for both:
+ * - Vite/Vitest (dev + test pipeline)
+ * - Rolldown (CLI build pipeline)
  *
  * Features:
- * - Uses rolldown filter pattern for efficient JS-Rust communication
+ * - Uses hook filters to avoid per-module JS filtering in userland
  * - Uses this.parse() with lang option for TypeScript-aware parsing
  * - Only affects imports used as constructor parameter types in @Plugin classes
  * - Preserves other type-only imports that aren't needed at runtime
  */
 import type { ImportDeclaration, Program } from 'oxc-parser'
-import type { Plugin } from 'rolldown'
+import type { TransformPluginContext } from 'rolldown'
+import type { ViteCompatPlugin } from './compat'
+import { allowOptionalQuerySuffix } from './compat'
 import { normalizeViteId } from './viteNormalizeId'
-import { createDebug, normalizePatterns, parseWithLang } from './pluginUtils'
+import { normalizePatterns, parseWithLang } from './pluginUtils'
 
 export interface ImportTypeFixerPluginOptions {
 	/** File patterns to include (default: *.ts, *.tsx) */
@@ -41,12 +41,19 @@ interface ImportToFix {
 	fixed: string
 }
 
-export function importTypeFixerPlugin(options: ImportTypeFixerPluginOptions = {}): Plugin {
-	const includePatterns = normalizePatterns(options.include, ['**/*.ts', '**/*.tsx'])
-	const excludePatterns = normalizePatterns(options.exclude, ['**/node_modules/**', '**/*.d.ts'])
+const CODE_HINT = /@Plugin|\bPlugin\s*\(|__decorate\s*\(/
+
+export function importTypeFixerPlugin(options: ImportTypeFixerPluginOptions = {}): ViteCompatPlugin {
+	const includePatterns = normalizePatterns(options.include, ['**/*.ts', '**/*.tsx']).map(
+		allowOptionalQuerySuffix,
+	)
+	const excludePatterns = normalizePatterns(options.exclude, ['**/node_modules/**', '**/*.d.ts']).map(
+		allowOptionalQuerySuffix,
+	)
 
 	return {
 		name: 'pluxel-import-type-fixer',
+		enforce: 'pre',
 
 		transform: {
 			filter: {
@@ -56,11 +63,12 @@ export function importTypeFixerPlugin(options: ImportTypeFixerPluginOptions = {}
 				},
 				// 只处理包含 @Plugin 的文件
 				code: {
-					include: /@Plugin/,
+					include: CODE_HINT,
 				},
 			},
-			handler(this: any, code, id) {
-				const ast = parseWithLang(this, code, id)
+			handler(this: TransformPluginContext, code, id) {
+				const normalizedId = normalizeViteId(id)
+				const ast = parseWithLang(this, code, normalizedId)
 				if (!ast) {
 					this.warn(`Failed to parse ${id}`)
 					return null
@@ -71,45 +79,6 @@ export function importTypeFixerPlugin(options: ImportTypeFixerPluginOptions = {}
 					return { code: fixed, map: null as null }
 				} catch (err) {
 					this.warn(`Failed to fix import types in ${id}: ${err}`)
-					return null
-				}
-			},
-		},
-	}
-}
-
-export function importTypeFixerVitePlugin(options: ImportTypeFixerPluginOptions = {}): any {
-	const includePatterns = normalizePatterns(options.include, ['**/*.ts', '**/*.tsx'])
-	const excludePatterns = normalizePatterns(options.exclude, ['**/node_modules/**', '**/*.d.ts'])
-	const debug = createDebug('PLUXEL_IMPORT_TYPE_FIXER_DEBUG', 'pluxel-import-type-fixer')
-
-	return {
-		name: 'pluxel-import-type-fixer',
-		enforce: 'pre',
-		transform: {
-			filter: {
-				id: {
-					include: includePatterns,
-					exclude: excludePatterns,
-				},
-			},
-			handler(this: any, code: string, id: string) {
-				if (typeof id !== 'string' || id.startsWith('\0')) return null
-				const normalizedId = normalizeViteId(id)
-				if (!code.includes('@Plugin')) return null
-
-				const ast = parseWithLang(this, code, id)
-				if (!ast) {
-					debug('skip(parse-failed)', normalizedId)
-					return null
-				}
-				try {
-					const fixed = rewriteTypeOnlyImports(code, ast)
-					if (!fixed) return null
-					debug('rewrite', normalizedId)
-					return { code: fixed, map: null as null }
-				} catch (err) {
-					this.warn?.(`Failed to fix import types in ${id}: ${err}`)
 					return null
 				}
 			},

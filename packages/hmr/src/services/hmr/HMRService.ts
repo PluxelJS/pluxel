@@ -39,7 +39,11 @@ import {
 	prefetchTransforms,
 } from './pipeline'
 import { HmrRunner, isHardBridgeSpecifier } from './runner'
-import { installRequireShims, type RuntimeShimConfig, RuntimeShimRegistry } from './runtime-shims'
+import {
+	installRequireShims,
+	type RuntimeShimConfig,
+	RuntimeShimRegistry,
+} from './runtime-shims'
 
 export interface HMRConfig {
 	/** 业务扫描边界：默认仅这些目录下的 `.ts` 会被纳入 HMR 入口挑选（`.tsx`/`.jsx` 默认排除） */
@@ -115,6 +119,16 @@ export interface HMRConfig {
 	 * - `{ plugin, forks }` for forkable builtins
 	 */
 	builtins?: readonly BuiltinPluginSpec[]
+	/**
+	 * SSR runner-only runtime shims (Vite pipeline).
+	 *
+	 * Defaults to `{}` (no shims). Use this only if you need to isolate side-effect-only modules
+	 * in the SSR runner.
+	 *
+	 * Example (isolate `reflect-metadata` side effects in the runner):
+	 * `runtimeShims: { 'reflect-metadata': true, 'reflect-metadata/*': true }`.
+	 */
+	runtimeShims?: Record<string, RuntimeShimConfig>
 }
 
 const BATCH_DEBOUNCE_MS = 30
@@ -236,14 +250,9 @@ export class HMRService {
 
 		this.deps = resolveHMRDependencyConfig(this.config.deps)
 
-		// For correctness and consistency, always isolate reflect-metadata from the host runtime.
-		// This keeps decorator metadata behavior deterministic and avoids polluting global Reflect.
-		const runtimeResolved = { shimReflectMetadata: true, shims: {} } satisfies {
-			shimReflectMetadata: boolean
-			shims: Record<string, RuntimeShimConfig>
-		}
-		this.runtimeShims = new RuntimeShimRegistry(runtimeResolved)
-		this.useRequireShims = true
+		const runtimeResolved: Record<string, RuntimeShimConfig> = this.config.runtimeShims ?? {}
+		this.runtimeShims = new RuntimeShimRegistry({ shims: runtimeResolved })
+		this.useRequireShims = this.runtimeShims.hasAny()
 		if (this.useRequireShims) installRequireShims((id) => this.runtimeShims.require(id))
 
 		const getDebugChannel = (topic: string): LogtapeLogger => {

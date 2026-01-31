@@ -18,15 +18,6 @@ export function normalizePatterns(
 	return fallback
 }
 
-export function createDebug(envKey: string, scope: string) {
-	const enabled = process.env[envKey] === '1'
-	return (...args: unknown[]) => {
-		if (!enabled) return
-		// eslint-disable-next-line no-console
-		console.warn(`[${scope}][debug]`, ...args)
-	}
-}
-
 export function parseWithLang(ctx: unknown, code: string, id: string): Program | null {
 	const parse = (ctx as { parse?: (code: string, opts?: unknown) => Program } | null)?.parse
 	if (typeof parse !== 'function') return null

@@ -8,11 +8,11 @@ Internal build helpers for the Pluxel monorepo. This package is not meant for ex
 
 All plugins are exported from `@pluxel/build/rolldown`.
 
-- `configSourcePlugin` / `configSourceVitePlugin`
+- `configSourcePlugin`
   - Extracts `@Config(...)` schema source and `configs.use(...)` schema usage at build time.
   - Injects `__setConfigSource__` / `__registerConfigSchema__` / `__registerUsedFeatures__`.
   - Uses the bundler’s parser (`this.parse`) and normalizes schema source via AST (no comment/TS syntax leakage).
-- `importTypeFixerPlugin` / `importTypeFixerVitePlugin`
+- `importTypeFixerPlugin`
   - Converts type-only imports to runtime imports for constructor parameter DI in `@Plugin` classes.
   - Uses AST spans to safely remove `type` modifiers.
 - `createImportTracker`

@@ -2,7 +2,7 @@
  * Rolldown plugin to track plugin imports at compile time.
  *
  * Features:
- * - Uses rolldown filter pattern for efficient JS-Rust communication
+ * - Uses hook filters to avoid per-module JS filtering in userland
  * - Only processes files containing @Plugin decorator
  * - Tracks both static and dynamic imports of plugin packages
  */
@@ -82,7 +82,7 @@ export function createImportTracker(options: ImportTrackerPluginOptions): Import
 				},
 				// 只处理包含 @Plugin 的文件
 				code: {
-					include: /@Plugin/,
+					include: /@Plugin|\bPlugin\s*\(|__decorate\s*\(/,
 				},
 			},
 			handler(code, _id) {

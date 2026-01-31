@@ -10,7 +10,7 @@ exposes a plugin-to-plugin API (`features.dep(GraphQLPlugin)`) for registering m
 Config key: `graphql` (plugin config).
 
 ```ts
-host.setConfig(GraphQLPlugin, {
+host.cfg(GraphQLPlugin).set({
   graphql: {
     codegen: {
       enabled: true,

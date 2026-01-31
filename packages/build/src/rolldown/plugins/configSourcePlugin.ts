@@ -1,15 +1,12 @@
 /**
  * Rolldown plugin to extract config/feature metadata from plugin source code at compile time.
  *
- * Why there are TWO exports:
- * - `configSourcePlugin` is a native Rolldown plugin (uses `transform.filter` + `handler`).
- * - `configSourceVitePlugin` is a Vite/Rollup plugin wrapper for Vite dev server.
- *
- * Vite 8 may use Rolldown internally, but Vite's plugin container does NOT execute Rolldown plugin
- * objects (it expects Rollup-compatible hooks). So we must provide a separate wrapper.
+ * Vite 8+ plugins are Rolldown plugins and support hook filters, so a single plugin works for both:
+ * - Vite/Vitest (dev + test pipeline)
+ * - Rolldown (CLI build pipeline)
  *
  * Features:
- * - Uses rolldown filter pattern for efficient JS-Rust communication
+ * - Uses hook filters to avoid per-module JS filtering in userland
  * - Uses this.parse() with lang option for TypeScript-aware parsing
  * - Uses fs.readFile() for reliable cross-file schema resolution
  * - Extracts and injects:
@@ -35,10 +32,12 @@ import type {
 	SpreadElement,
 } from 'oxc-parser'
 import { normalize as normalizePath } from 'pathe'
-import type { Plugin } from 'rolldown'
+import type { TransformPluginContext } from 'rolldown'
 import { normalizeSchemaSource } from '../utils/configHandler'
+import type { ViteCompatPlugin } from './compat'
+import { allowOptionalQuerySuffix } from './compat'
 import { normalizeViteId } from './viteNormalizeId'
-import { createDebug, normalizePatterns, parseWithLang } from './pluginUtils'
+import { normalizePatterns, parseWithLang } from './pluginUtils'
 
 export interface ConfigSourcePluginOptions {
 	/** File patterns to include (default: *.ts, *.tsx in plugin directories) */
@@ -119,30 +118,63 @@ interface ResolveContext {
 const DEFAULT_EXPORT = '__pluxel_default_export__'
 const CONFIG_DECORATOR_SOURCES = ['@pluxel/core', '@pluxel/hmr'] as const
 
-export function configSourcePlugin(options: ConfigSourcePluginOptions = {}): Plugin {
-	const includePatterns = normalizePatterns(options.include, ['**/*.ts'])
-	const excludePatterns = normalizePatterns(options.exclude, ['**/node_modules/**', '**/*.d.ts'])
+const CODE_HINT =
+	/@Plugin|\bPlugin\s*\(|@Config|\bConfig\s*\(|\.(?:config|configs)\.use\s*\(|\.features\.use\s*\(|__decorate\s*\(|v\.|valibot\.|f\./
+
+export function configSourcePlugin(options: ConfigSourcePluginOptions = {}): ViteCompatPlugin {
+	const includePatterns = normalizePatterns(options.include, ['**/*.ts', '**/*.tsx']).map(
+		allowOptionalQuerySuffix,
+	)
+	const excludePatterns = normalizePatterns(options.exclude, ['**/node_modules/**', '**/*.d.ts']).map(
+		allowOptionalQuerySuffix,
+	)
 	const moduleInfoStore = createModuleInfoStore()
 
 	return {
 		name: 'pluxel-config-source',
-		// 使用 rolldown filter 模式减少 JS-Rust 通信开销
+		enforce: 'pre',
+		buildStart() {
+			// Vite can reuse plugin instances during dev; keep caches tied to the active graph.
+			moduleInfoStore.cache.clear()
+			moduleInfoStore.promises.clear()
+		},
+		hotUpdate() {
+			// We can't cheaply track transitive schema dependencies across files.
+			// Clearing the cache keeps extraction correct during HMR edits.
+			moduleInfoStore.cache.clear()
+			moduleInfoStore.promises.clear()
+		},
 		transform: {
 			filter: {
 				id: {
 					include: includePatterns,
 					exclude: excludePatterns,
 				},
-				// 以 @Plugin 为标记（@Config 可能被重命名）
-				// 同时匹配可能有 schema 定义的文件（v./valibot./f.）
-				code: {
-					include:
-						/@Plugin|@Config|\bConfig\s*\(|\.(?:config|configs)\.use\s*\(|\.features\.use\s*\(|v\.|valibot\.|f\./,
-				},
+				code: { include: CODE_HINT },
 			},
-			async handler(this: any, code, id) {
-				const normalizedId = normalizePath(id)
-				const ast = parseWithLang(this, code, id)
+			async handler(this: TransformPluginContext, code, id) {
+				const normalizedId = normalizeViteId(id)
+
+				let sourceText = code
+				// If a previous transform downleveled decorators, prefer extracting from raw TS source.
+				// We keep the output based on the incoming `code` to avoid undoing other transforms.
+				if (typeof code === 'string') {
+					const looksDownleveledDecorators =
+						code.includes('__decorate') ||
+						(code.includes('Plugin(') && !code.includes('@Plugin') && !code.includes('@Config'))
+
+					if (looksDownleveledDecorators) {
+						try {
+							sourceText = await readFile(normalizedId, 'utf-8')
+						} catch {
+							// ignore: not a real file or not readable; fall back to provided code
+						}
+					}
+				}
+
+				if (!CODE_HINT.test(sourceText)) return null
+
+				const ast = parseWithLang(this, sourceText, normalizedId)
 				if (!ast) {
 					this.warn(`Failed to parse ${id}`)
 					return null
@@ -150,7 +182,7 @@ export function configSourcePlugin(options: ConfigSourcePluginOptions = {}): Plu
 
 				try {
 					// 第一步：收集并缓存本模块的导出 schema 定义（为跨文件引用做准备）
-					const moduleInfo = collectModuleInfo(code, normalizedId, ast, moduleInfoStore)
+					const moduleInfo = collectModuleInfo(sourceText, normalizedId, ast, moduleInfoStore)
 
 					const extractedFeatures = extractFeatureUses(moduleInfo, ast)
 					const parseProgram = (source: string, filename: string) => {
@@ -167,7 +199,7 @@ export function configSourcePlugin(options: ConfigSourcePluginOptions = {}): Plu
 					}
 
 					// NOTE: @Config may be imported under an alias; keep this check permissive.
-					const hasConfigHints = /\.(?:config|configs)\.use\s*\(|\bConfig\b/.test(code)
+					const hasConfigHints = /\.(?:config|configs)\.use\s*\(|\bConfig\b/.test(sourceText)
 					const extracted = hasConfigHints
 						? await (async () => {
 								// 第二步：提取 @Config 装饰器源代码
@@ -196,124 +228,6 @@ export function configSourcePlugin(options: ConfigSourcePluginOptions = {}): Plu
 					}
 				} catch (err) {
 					this.warn(`Failed to extract @Config sources from ${id}: ${err}`)
-					return null
-				}
-			},
-		},
-	}
-}
-
-export function configSourceVitePlugin(options: ConfigSourcePluginOptions = {}) {
-	// Vite dev server runs Rollup-compatible hooks; it will NOT run Rolldown plugin objects
-	// (i.e. `transform: { filter, handler }` is ignored). Keep this wrapper minimal & explicit.
-
-	const includePatterns = normalizePatterns(options.include, ['**/*.ts'])
-	const excludePatterns = normalizePatterns(options.exclude, ['**/node_modules/**', '**/*.d.ts'])
-	const codeHint =
-		/@Plugin|\bPlugin\s*\(|@Config|\bConfig\s*\(|\.(?:config|configs)\.use\s*\(|\.features\.use\s*\(|v\.|valibot\.|f\./
-	const moduleInfoStore = createModuleInfoStore()
-
-	const debug = createDebug('PLUXEL_CONFIG_SOURCE_DEBUG', 'pluxel-config-source')
-
-	return {
-		name: 'pluxel-config-source',
-		enforce: 'pre',
-		buildStart() {
-			// Vite might reuse plugin instances in certain dev workflows (or tests).
-			// Keep the module cache scoped to the active graph.
-			moduleInfoStore.cache.clear()
-			moduleInfoStore.promises.clear()
-		},
-		handleHotUpdate() {
-			// We can't cheaply track transitive schema dependencies across files.
-			// Clearing the cache keeps extraction correct during HMR edits.
-			moduleInfoStore.cache.clear()
-			moduleInfoStore.promises.clear()
-		},
-		transform: {
-			filter: {
-				id: {
-					include: includePatterns,
-					exclude: excludePatterns,
-				},
-			},
-			async handler(this: any, code: string, id: string) {
-				if (typeof id !== 'string' || id.startsWith('\0')) return null
-				const normalizedId = normalizeViteId(id)
-
-				let sourceText = code
-				try {
-					// IMPORTANT:
-					// Vite's `code` here may already be downleveled (decorators -> __decorate, etc),
-					// which makes decorator-based extraction unreliable. Prefer the raw TS source.
-					sourceText = await readFile(normalizedId, 'utf-8')
-				} catch {
-					// ignore: not a real file or not readable; fall back to transformed code
-				}
-
-				if (!codeHint.test(sourceText)) {
-					debug('skip(codeHint)', normalizedId)
-					return null
-				}
-
-				const ast = parseWithLang(this, sourceText, normalizedId)
-				if (!ast) {
-					debug('skip(parse-failed)', normalizedId)
-					return null
-				}
-
-				try {
-					// Always collect module info for cross-file resolution, even when no configs are extracted.
-					const moduleInfo = collectModuleInfo(sourceText, normalizedId, ast, moduleInfoStore)
-
-					const extractedFeatures = extractFeatureUses(moduleInfo, ast)
-
-					const resolveModuleId: ModuleResolver = async (sourceSpecifier, importer) => {
-						const resolved = await this.resolve?.(sourceSpecifier, importer)
-						if (!resolved) return null
-						const cleaned = String(resolved.id).split('?')[0]
-						return normalizePath(cleaned)
-					}
-
-					// NOTE: @Config may be imported under an alias; keep this check permissive.
-					const hasConfigHints = /\.(?:config|configs)\.use\s*\(|\bConfig\b/.test(sourceText)
-					const extracted = hasConfigHints
-						? await (async () => {
-								const ctx: ResolveContext = {
-									moduleResolver: resolveModuleId,
-									parse: (source, moduleId) => {
-										const parsed = parseWithLang(this, source, moduleId)
-										if (!parsed) throw new Error(`Failed to parse module: ${moduleId}`)
-										return parsed
-									},
-									moduleInfoStore,
-									resolvedValues: new Map(),
-									pending: new Set(),
-								}
-
-								return await extractConfigSources(moduleInfo, ast, ctx)
-							})()
-						: []
-
-					if (extracted.length === 0 && extractedFeatures.length === 0) return null
-
-					const parseProgram = (source: string, filename: string) => {
-						const parsed = parseWithLang(this, source, filename)
-						if (!parsed) throw new Error(`Failed to parse module: ${filename}`)
-						return parsed
-					}
-					const injection = generateInjection(extracted, extractedFeatures, parseProgram)
-					debug(
-						'inject',
-						normalizedId,
-						'configs=',
-						extracted.length,
-						'features=',
-						extractedFeatures.length,
-					)
-					return { code: code + '\n' + injection, map: null as null }
-				} catch (err) {
-					this.warn?.(`Failed to extract @Config sources from ${id}: ${err}`)
 					return null
 				}
 			},

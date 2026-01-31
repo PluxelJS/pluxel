@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test'
-import { __registerConfigSchema__, BasePlugin, Plugin } from '@pluxel/core'
+import { BasePlugin, Plugin } from '@pluxel/core'
+import { __registerConfigSchema__ } from '@pluxel/test/unsafe'
 import * as v from 'valibot'
 import { PluginRegistry } from '../../src/services/loader/PluginRegistry'
 

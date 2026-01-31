@@ -87,6 +87,7 @@
 		"@pluxel/components": "workspace:*",
 		"@pluxel/cli": "workspace:*",
 		"@pluxel/hmr-web": "workspace:*",
+		"@pluxel/test": "workspace:*",
 		"@pluxel/market": "^0.1.0",
 		"@types/react": "^19.2.7",
 		"fs-fixture": "^2.11.0",

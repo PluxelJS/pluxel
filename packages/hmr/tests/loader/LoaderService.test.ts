@@ -1,4 +1,4 @@
-import '@pluxel/core/test/setup'
+import '@pluxel/test/setup'
 
 import { describe, expect, it } from 'bun:test'
 import {

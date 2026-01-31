@@ -24,18 +24,18 @@ export type RuntimeShimConfig =
 
 export interface RuntimeShimRegistryInput {
 	/**
-	 * Sugar for:
-	 * - `reflect-metadata` -> empty module
-	 * - `reflect-metadata/*` -> empty module
-	 */
-	shimReflectMetadata?: boolean
-	/**
 	 * Map specifier to shim config.
 	 * - exact match: `reflect-metadata`
 	 * - prefix match: `reflect-metadata/*` matches `reflect-metadata/anything`
 	 */
 	shims?: Record<string, RuntimeShimConfig>
 }
+
+/** Common shims for isolating `reflect-metadata` side effects. */
+export const SHIM_REFLECT_METADATA: Readonly<Record<string, RuntimeShimConfig>> = Object.freeze({
+	'reflect-metadata': true,
+	'reflect-metadata/*': true,
+})
 
 type ShimKind = 'exact' | 'prefix'
 type ShimRule = {
@@ -58,6 +58,10 @@ export class RuntimeShimRegistry {
 		this.byVirtualId = new Map(this.rules.map((r) => [r.virtualId, r]))
 		this.exact = new Map(this.rules.filter((r) => r.kind === 'exact').map((r) => [r.match, r]))
 		this.prefix = this.rules.filter((r) => r.kind === 'prefix')
+	}
+
+	hasAny(): boolean {
+		return this.rules.length > 0
 	}
 
 	resolveId(id: string) {
@@ -103,11 +107,6 @@ function buildShimRules(input: RuntimeShimRegistryInput | undefined): ShimRule[]
 		} else {
 			rawRules.push({ kind: 'exact', match: rawKey, config: cfg })
 		}
-	}
-
-	if (input?.shimReflectMetadata) {
-		rawRules.push({ kind: 'exact', match: 'reflect-metadata', config: true })
-		rawRules.push({ kind: 'prefix', match: 'reflect-metadata/', config: true })
 	}
 
 	const rules: ShimRule[] = []

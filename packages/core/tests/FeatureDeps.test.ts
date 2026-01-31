@@ -1,10 +1,10 @@
-import { describe, expect, it } from 'bun:test'
+import { describe, expect, it } from 'vitest'
 
-import { BasePlugin, Plugin, withTestHost } from '@pluxel/core/test'
+import { BasePlugin, Plugin, withHost } from '@pluxel/test'
 
 describe('FeatureHost.dep', () => {
 	it('returns undefined when missing and injects caller when present', async () => {
-		await withTestHost(async (host) => {
+		await withHost(async (host) => {
 			@Plugin({ name: 'Dep0' })
 			class Dep0 extends BasePlugin {}
 
@@ -24,16 +24,16 @@ describe('FeatureHost.dep', () => {
 				}
 			}
 
-			host.register(Host0)
-			await host.commitStrict()
+			host.add(Host0)
+			await host.commit()
 
-			const h0 = host.getOrThrow(Host0) as Host0
+			const h0 = host.require(Host0) as Host0
 			h0.read()
 			expect(h0.missing).toBe(true)
 			expect(h0.callerId).toBeNull()
 
-			host.register(Dep0)
-			await host.commitStrict()
+			host.add(Dep0)
+			await host.commit()
 
 			h0.read()
 			expect(h0.missing).toBe(false)
@@ -42,7 +42,7 @@ describe('FeatureHost.dep', () => {
 	})
 
 	it('invokes callbacks when dep appears and runs cleanup when dep disappears', async () => {
-		await withTestHost(async (host) => {
+		await withHost(async (host) => {
 			@Plugin({ name: 'Dep' })
 			class Dep extends BasePlugin {}
 
@@ -61,19 +61,19 @@ describe('FeatureHost.dep', () => {
 				}
 			}
 
-			host.register(Host)
-			await host.commitStrict()
+			host.add(Host)
+			await host.commit()
 
-			const h = host.getOrThrow(Host) as Host
+			const h = host.require(Host) as Host
 			expect(h.seen).toBe(0)
 			expect(h.cleaned).toBe(0)
 
-			host.register(Dep)
-			await host.commitStrict()
+			host.add(Dep)
+			await host.commit()
 			expect(h.seen).toBe(1)
 			expect(h.cleaned).toBe(0)
 
-			host.unregister(Dep)
+			host.remove(Dep)
 			await host.commit()
 			expect(h.seen).toBe(1)
 			expect(h.cleaned).toBe(1)
@@ -81,7 +81,7 @@ describe('FeatureHost.dep', () => {
 	})
 
 	it('supports multiple callbacks for the same dep', async () => {
-		await withTestHost(async (host) => {
+		await withHost(async (host) => {
 			@Plugin({ name: 'DepMany' })
 			class DepMany extends BasePlugin {}
 
@@ -108,19 +108,19 @@ describe('FeatureHost.dep', () => {
 				}
 			}
 
-			host.register(HostMany)
-			await host.commitStrict()
+			host.add(HostMany)
+			await host.commit()
 
-			const h = host.getOrThrow(HostMany) as HostMany
+			const h = host.require(HostMany) as HostMany
 			expect(h.aSeen).toBe(0)
 			expect(h.bSeen).toBe(0)
 
-			host.register(DepMany)
-			await host.commitStrict()
+			host.add(DepMany)
+			await host.commit()
 			expect(h.aSeen).toBe(1)
 			expect(h.bSeen).toBe(1)
 
-			host.unregister(DepMany)
+			host.remove(DepMany)
 			await host.commit()
 			expect(h.aCleaned).toBe(1)
 			expect(h.bCleaned).toBe(1)
@@ -128,7 +128,7 @@ describe('FeatureHost.dep', () => {
 	})
 
 	it('invokes callbacks immediately when subscribing after dep is already running', async () => {
-		await withTestHost(async (host) => {
+		await withHost(async (host) => {
 			@Plugin({ name: 'DepLate' })
 			class DepLate extends BasePlugin {}
 
@@ -160,10 +160,10 @@ describe('FeatureHost.dep', () => {
 				}
 			}
 
-			host.registerAll(HostLate, DepLate)
-			await host.commitStrict()
+			host.add([HostLate, DepLate])
+			await host.commit()
 
-			const h = host.getOrThrow(HostLate) as HostLate
+			const h = host.require(HostLate) as HostLate
 			expect(h.aSeen).toBe(0)
 			expect(h.bSeen).toBe(0)
 			expect(h.cleaned).toBe(0)
@@ -183,7 +183,7 @@ describe('FeatureHost.dep', () => {
 			expect(h.cleaned).toBe(2)
 
 			host.restart(DepLate)
-			await host.commitStrict()
+			await host.commit()
 			expect(h.aSeen).toBe(1)
 			expect(h.bSeen).toBe(1)
 			expect(h.cleaned).toBe(2)
@@ -191,7 +191,7 @@ describe('FeatureHost.dep', () => {
 	})
 
 	it('returned unsubscribe stops future callbacks and runs cleanup once', async () => {
-		await withTestHost(async (host) => {
+		await withHost(async (host) => {
 			@Plugin({ name: 'DepOff' })
 			class DepOff extends BasePlugin {}
 
@@ -211,10 +211,10 @@ describe('FeatureHost.dep', () => {
 				}
 			}
 
-			host.registerAll(HostOff, DepOff)
-			await host.commitStrict()
+			host.add([HostOff, DepOff])
+			await host.commit()
 
-			const h = host.getOrThrow(HostOff) as HostOff
+			const h = host.require(HostOff) as HostOff
 			expect(h.seen).toBe(1)
 			expect(h.cleaned).toBe(0)
 
@@ -223,11 +223,11 @@ describe('FeatureHost.dep', () => {
 			expect(h.cleaned).toBe(1)
 
 			host.restart(DepOff)
-			await host.commitStrict()
+			await host.commit()
 			expect(h.seen).toBe(1)
 			expect(h.cleaned).toBe(1)
 
-			host.unregister(DepOff)
+			host.remove(DepOff)
 			await host.commit()
 			expect(h.seen).toBe(1)
 			expect(h.cleaned).toBe(1)
@@ -235,7 +235,7 @@ describe('FeatureHost.dep', () => {
 	})
 
 	it('does not run cleanup twice when dep disappears then unsubscribe is called', async () => {
-		await withTestHost(async (host) => {
+		await withHost(async (host) => {
 			@Plugin({ name: 'DepGone' })
 			class DepGone extends BasePlugin {}
 
@@ -255,14 +255,14 @@ describe('FeatureHost.dep', () => {
 				}
 			}
 
-			host.registerAll(HostGone, DepGone)
-			await host.commitStrict()
+			host.add([HostGone, DepGone])
+			await host.commit()
 
-			const h = host.getOrThrow(HostGone) as HostGone
+			const h = host.require(HostGone) as HostGone
 			expect(h.seen).toBe(1)
 			expect(h.cleaned).toBe(0)
 
-			host.unregister(DepGone)
+			host.remove(DepGone)
 			await host.commit()
 			expect(h.cleaned).toBe(1)
 
@@ -272,7 +272,7 @@ describe('FeatureHost.dep', () => {
 	})
 
 	it('auto-disposes dep subscriptions on plugin unload', async () => {
-		await withTestHost(async (host) => {
+		await withHost(async (host) => {
 			@Plugin({ name: 'DepDispose' })
 			class DepDispose extends BasePlugin {}
 
@@ -289,18 +289,18 @@ describe('FeatureHost.dep', () => {
 				}
 			}
 
-			host.registerAll(HostDispose, DepDispose)
-			await host.commitStrict()
+			host.add([HostDispose, DepDispose])
+			await host.commit()
 			expect(cleaned).toBe(0)
 
-			host.unregister(HostDispose)
+			host.remove(HostDispose)
 			await host.commit()
 			expect(cleaned).toBe(1)
 		})
 	})
 
 	it('re-invokes callback when dep instance changes', async () => {
-		await withTestHost(async (host) => {
+		await withHost(async (host) => {
 			@Plugin({ name: 'Dep2' })
 			class Dep2 extends BasePlugin {}
 
@@ -321,16 +321,16 @@ describe('FeatureHost.dep', () => {
 				}
 			}
 
-			host.registerAll(Host2, Dep2)
-			await host.commitStrict()
+			host.add([Host2, Dep2])
+			await host.commit()
 
-			const h = host.getOrThrow(Host2) as Host2
+			const h = host.require(Host2) as Host2
 			expect(h.seen).toBe(1)
 			expect(h.cleaned).toBe(0)
 			expect(h.lastCallerId).toBe('Host2')
 
 			host.restart(Dep2)
-			await host.commitStrict()
+			await host.commit()
 
 			expect(h.seen).toBe(2)
 			expect(h.cleaned).toBe(1)
@@ -339,7 +339,7 @@ describe('FeatureHost.dep', () => {
 	})
 
 	it('does not expose deps that failed to start', async () => {
-		await withTestHost(async (host) => {
+		await withHost(async (host) => {
 			@Plugin({ name: 'DepFail' })
 			class DepFail extends BasePlugin {
 				override init(): void {
@@ -363,16 +363,17 @@ describe('FeatureHost.dep', () => {
 				}
 			}
 
-			host.register(HostFail)
-			await host.commitStrict()
+			host.add(HostFail)
+			await host.commit()
 
-			const h = host.getOrThrow(HostFail) as HostFail
+			const h = host.require(HostFail) as HostFail
 			expect(h.seen).toBe(0)
 			h.read()
 			expect(h.hasDep).toBe(false)
 
-			host.register(DepFail)
-			await host.commit()
+			host.add(DepFail)
+			const summary = await host.commitAllowFail()
+			expect(summary.failed).toContain(DepFail)
 
 			expect(h.seen).toBe(0)
 			h.read()

@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'bun:test'
+import { describe, expect, test } from 'vitest'
 import { defineMachine } from '../defineMachine.macro'
 
 describe('defineMachine validation', () => {

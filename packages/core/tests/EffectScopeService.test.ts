@@ -1,6 +1,6 @@
-import { afterEach, describe, expect, it, spyOn } from 'bun:test'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { withTestContext } from '@pluxel/core/test'
+import { withContext } from '@pluxel/test'
 
 describe('EffectScopeService', () => {
 	const restores: Array<() => void> = []
@@ -18,7 +18,7 @@ describe('EffectScopeService', () => {
 	})
 
 	it('collectEffect disposes registered callbacks exactly once', () => {
-		return withTestContext((ctx) => {
+		return withContext((ctx) => {
 			let primary = 0
 			let secondary = 0
 
@@ -46,8 +46,8 @@ describe('EffectScopeService', () => {
 	})
 
 	it('logs and continues when disposer throws', () => {
-		return withTestContext((ctx) => {
-			const errorSpy = spyOn(ctx.logger as any, 'error').mockImplementation(
+		return withContext((ctx) => {
+			const errorSpy = vi.spyOn(ctx.logger as any, 'error').mockImplementation(
 				(..._args: any[]) => {},
 			)
 			remember(() => errorSpy.mockRestore())

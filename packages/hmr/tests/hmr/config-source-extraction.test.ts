@@ -67,7 +67,7 @@ function createContext(
 	} as unknown as Context
 }
 
-describe('configSourceVitePlugin integration', () => {
+describe('configSourcePlugin integration', () => {
 	it('injects __setConfigSource__ so getConfigSource returns schemaSource', async () => {
 		const root = process.cwd()
 		const pluginEntry = join(root, 'tests', 'fixtures', 'plugins', 'PluginB.ts')

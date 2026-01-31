@@ -1,15 +1,14 @@
-import { describe, expect, it } from 'bun:test'
+import { describe, expect, it } from 'vitest'
 
 import {
-	__registerUsedFeature__,
 	BaseFeature,
 	BasePlugin,
 	ForkablePlugin,
 	Plugin,
-	pluginMethodDecorator,
 	setParamToken,
-	withTestHost,
-} from '@pluxel/core/test'
+	withHost,
+} from '@pluxel/test'
+import { __registerUsedFeature__, pluginMethodDecorator } from '@pluxel/test/unsafe'
 
 type PluginToken<T extends BasePlugin = BasePlugin> = abstract new (...args: unknown[]) => T
 type KvLike = {
@@ -38,7 +37,7 @@ const CachedWithToken = <T extends BasePlugin>(token: PluginToken<T>) =>
 
 describe('Decorator-required plugin deps', () => {
 	it('throws when a plugin uses a decorator but has no ctor dependency', async () => {
-		await withTestHost(async (host) => {
+		await withHost(async (host) => {
 			@Plugin({ name: 'KvPlugin' })
 			class KvPlugin extends BasePlugin {}
 
@@ -52,13 +51,13 @@ describe('Decorator-required plugin deps', () => {
 				}
 			}
 
-			host.register(KvPlugin)
-			expect(() => host.register(ConsumerMissing)).toThrow(/Missing constructor dependencies/)
+			host.add(KvPlugin)
+			expect(() => host.add(ConsumerMissing)).toThrow(/Missing constructor dependencies/)
 		})
 	})
 
 	it('inherits required deps from base classes', async () => {
-		await withTestHost(async (host) => {
+		await withHost(async (host) => {
 			@Plugin({ name: 'KvPlugin' })
 			class KvPlugin extends BasePlugin {}
 
@@ -74,13 +73,13 @@ describe('Decorator-required plugin deps', () => {
 			@Plugin({ name: 'ChildMissing' })
 			class ChildMissing extends Base {}
 
-			host.register(KvPlugin)
-			expect(() => host.register(ChildMissing)).toThrow(/Missing constructor dependencies/)
+			host.add(KvPlugin)
+			expect(() => host.add(ChildMissing)).toThrow(/Missing constructor dependencies/)
 		})
 	})
 
 	it('demonstrates a realistic Cached() usage (cross-plugin decorator)', async () => {
-		await withTestHost(async (host) => {
+		await withHost(async (host) => {
 			@Plugin({ name: 'KvPlugin' })
 			class KvPlugin extends BasePlugin {
 				private store = new Map<string, unknown>()
@@ -115,10 +114,10 @@ describe('Decorator-required plugin deps', () => {
 			}
 			setParamToken(Foo, 0, KvPlugin)
 
-			host.registerAll(KvPlugin, Foo)
-			await host.commitStrict()
+			host.add([KvPlugin, Foo])
+			await host.commit()
 
-			const foo = host.getOrThrow(Foo) as Foo
+			const foo = host.require(Foo) as Foo
 			expect(await foo.getUser('u1')).toEqual({ id: 'u1' })
 			expect(await foo.getUser('u1')).toEqual({ id: 'u1' })
 			expect(fetchCalls).toBe(1)
@@ -126,7 +125,7 @@ describe('Decorator-required plugin deps', () => {
 	})
 
 	it('propagates decorator-required deps from BaseFeature via features.use() (extraction equivalent)', async () => {
-		await withTestHost(async (host) => {
+		await withHost(async (host) => {
 			@Plugin({ name: 'KvPlugin' })
 			class KvPlugin extends BasePlugin {
 				private store = new Map<string, unknown>()
@@ -159,8 +158,8 @@ describe('Decorator-required plugin deps', () => {
 			}
 			__registerUsedFeature__(ConsumerMissing, CacheFeature)
 
-			host.register(KvPlugin)
-			expect(() => host.register(ConsumerMissing)).toThrow(/Missing constructor dependencies/)
+			host.add(KvPlugin)
+			expect(() => host.add(ConsumerMissing)).toThrow(/Missing constructor dependencies/)
 
 			@Plugin({ name: 'ConsumerOk' })
 			class ConsumerOk extends BasePlugin {
@@ -175,23 +174,23 @@ describe('Decorator-required plugin deps', () => {
 			__registerUsedFeature__(ConsumerOk, CacheFeature)
 			setParamToken(ConsumerOk, 0, KvPlugin)
 
-			host.registerAll(ConsumerOk)
-			await host.commitStrict()
+			host.add(ConsumerOk)
+			await host.commit()
 
-			const consumer = host.getOrThrow(ConsumerOk) as ConsumerOk
+			const consumer = host.require(ConsumerOk) as ConsumerOk
 			expect(await consumer.run()).toEqual({ key: 'x' })
 		})
 	})
 
 	it('resolves base vs fork tokens correctly', async () => {
-		await withTestHost(async (host) => {
+		await withHost(async (host) => {
 			abstract class KvBase extends ForkablePlugin {}
 
 			@Plugin(KvBase, { name: 'Kv' })
 			class Kv extends KvBase {}
 
-			host.register(Kv)
-			const ForkA = host.registerFork(Kv, 'a')
+			host.add(Kv)
+			const ForkA = host.fork(Kv, 'a')
 
 			// Simulate "plugin-side exports": pre-bound decorators, no token passed by consumers.
 			const UseBaseId = () => UsePluginId(KvBase)
@@ -217,10 +216,10 @@ describe('Decorator-required plugin deps', () => {
 			setParamToken(ConsumerForks, 0, KvBase)
 			setParamToken(ConsumerForks, 1, ForkA as unknown as PluginToken<KvBase>)
 
-			host.register(ConsumerForks)
-			await host.commitStrict()
+			host.add(ConsumerForks)
+			await host.commit()
 
-			const c = host.getOrThrow(ConsumerForks) as ConsumerForks
+			const c = host.require(ConsumerForks) as ConsumerForks
 			expect(await c.baseId()).toBe('Kv')
 			expect(await c.forkId()).toBe('Kv#a')
 		})

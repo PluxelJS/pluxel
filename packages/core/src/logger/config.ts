@@ -431,12 +431,12 @@ function renderTextFormatterValue(value: unknown): string {
 	}
 }
 
-function createPluxelSafeTextFormatter(timestamp: (date: Date) => string) {
-	return getTextFormatter({
-		timestamp,
-		value: (v) => renderTextFormatterValue(v),
-	})
-}
+	function createPluxelSafeTextFormatter(timestamp: (ts: number) => string) {
+		return getTextFormatter({
+			timestamp,
+			value: (v) => renderTextFormatterValue(v),
+		})
+	}
 
 function createDailyTimeRotatingFileSink(path: string, opts?: { maxAgeMs?: number }): Sink {
 	const directory = dirname(path)

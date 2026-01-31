@@ -1,0 +1,69 @@
+{
+	"name": "@pluxel/test",
+	"version": "0.1.0",
+	"description": "Test utilities for Pluxel packages (host/context helpers + Vitest preset).",
+	"type": "module",
+	"main": "./dist/index.cjs",
+	"module": "./dist/index.mjs",
+	"types": "./dist/index.d.cts",
+	"exports": {
+		".": {
+			"@pluxel/source": "./src/index.ts",
+			"require": "./dist/index.cjs",
+			"import": "./dist/index.mjs"
+		},
+		"./setup": {
+			"@pluxel/source": "./src/setup.ts",
+			"require": "./dist/setup.cjs",
+			"import": "./dist/setup.mjs"
+		},
+		"./unsafe": {
+			"@pluxel/source": "./src/unsafe.ts",
+			"require": "./dist/unsafe.cjs",
+			"import": "./dist/unsafe.mjs"
+		},
+		"./vitest": {
+			"@pluxel/source": "./src/vitest.ts",
+			"require": "./dist/vitest.cjs",
+			"import": "./dist/vitest.mjs"
+		},
+		"./package.json": "./package.json"
+	},
+	"files": [
+		"dist",
+		"!**/*.map"
+	],
+	"scripts": {
+		"build": "tsdown",
+		"typecheck": "tsc -p tsconfig.json --noEmit"
+	},
+	"peerDependencies": {
+		"@pluxel/core": "workspace:*",
+		"vitest": "*"
+	},
+	"dependencies": {},
+	"devDependencies": {
+		"@pluxel/build": "workspace:*"
+	},
+	"publishConfig": {
+		"exports": {
+			".": {
+				"require": "./dist/index.cjs",
+				"import": "./dist/index.mjs"
+			},
+			"./setup": {
+				"require": "./dist/setup.cjs",
+				"import": "./dist/setup.mjs"
+			},
+			"./unsafe": {
+				"require": "./dist/unsafe.cjs",
+				"import": "./dist/unsafe.mjs"
+			},
+			"./vitest": {
+				"require": "./dist/vitest.cjs",
+				"import": "./dist/vitest.mjs"
+			},
+			"./package.json": "./package.json"
+		}
+	}
+}

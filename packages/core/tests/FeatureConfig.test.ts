@@ -1,14 +1,13 @@
-import { describe, expect, it } from 'bun:test'
+import { describe, expect, it } from 'vitest'
 
 import {
-	__registerConfigSchema__,
 	BaseFeature,
 	BasePlugin,
 	getPluginInfo,
 	Plugin,
 	UseFeature,
-	withTestHost,
-} from '@pluxel/core/test'
+	withHost,
+} from '@pluxel/test'
 import type { StandardSchemaV1 } from '@standard-schema/spec'
 
 const PassthroughSchema: StandardSchemaV1 = {
@@ -19,42 +18,38 @@ const PassthroughSchema: StandardSchemaV1 = {
 	},
 }
 
+class CacheFeature extends BaseFeature {
+	static featureKey = 'cache'
+
+	cfg = this.configs.use(PassthroughSchema)
+}
+
+class TelemetryFeature extends BaseFeature {
+	static featureKey = 'telemetry'
+
+	cfg = this.configs.use(PassthroughSchema)
+}
+
+@UseFeature(CacheFeature, TelemetryFeature)
+@Plugin({ name: 'Host' })
+class Host extends BasePlugin {
+	feature = this.features.use(CacheFeature)
+	telemetry = this.features.use(TelemetryFeature)
+}
+
 describe('BaseFeature config composition', () => {
 	it('namespaces feature config into host plugin configMap and injects values into the feature instance', async () => {
-		await withTestHost(async (host) => {
-			class CacheFeature extends BaseFeature {
-				static featureKey = 'cache'
-
-				cfg = this.configs.use(PassthroughSchema)
-			}
-
-			class TelemetryFeature extends BaseFeature {
-				static featureKey = 'telemetry'
-
-				cfg = this.configs.use(PassthroughSchema)
-			}
-
-			// In production/HMR, this is injected by configSourcePlugin.
-			__registerConfigSchema__(CacheFeature, 'cfg', PassthroughSchema)
-			__registerConfigSchema__(TelemetryFeature, 'cfg', PassthroughSchema)
-
-			@UseFeature(CacheFeature, TelemetryFeature)
-			@Plugin({ name: 'Host' })
-			class Host extends BasePlugin {
-				feature = this.features.use(CacheFeature)
-				telemetry = this.features.use(TelemetryFeature)
-			}
-
+		await withHost(async (host) => {
 			const info = getPluginInfo(Host)
 			expect(info.configMap).not.toBeNull()
 			expect(Object.keys(info.configMap ?? {})).toContain('cache.cfg')
 			expect(Object.keys(info.configMap ?? {})).toContain('telemetry.cfg')
 
-			host.setConfig(Host, { 'cache.cfg': { ok: true }, 'telemetry.cfg': { ok: false } })
-			host.register(Host)
-			await host.commitStrict()
+			host.cfg(Host).set({ 'cache.cfg': { ok: true }, 'telemetry.cfg': { ok: false } })
+			host.add(Host)
+			await host.commit()
 
-			const instance = host.getOrThrow(Host) as Host
+			const instance = host.require(Host) as Host
 			const feature = instance.features.get(CacheFeature)
 			expect(feature).toBeDefined()
 			expect(feature?.cfg).toEqual({ ok: true })

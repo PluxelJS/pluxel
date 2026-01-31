@@ -1,6 +1,6 @@
-import { describe, expect, it } from 'bun:test'
+import { describe, expect, it } from 'vitest'
 
-import { BasePlugin, Plugin, setParamToken, withTestHost } from '@pluxel/core/test'
+import { BasePlugin, Plugin, setParamToken, withHost } from '@pluxel/test'
 import { PluginA, PluginB, PluginC } from './plugins'
 
 function createDeferred() {
@@ -24,7 +24,7 @@ async function waitUntil(cond: () => boolean, opts?: { timeoutMs?: number }) {
 
 describe('PluginService commit()', () => {
 	it('preserves this-binding for container.resolveIdentifier', async () => {
-		await withTestHost(async (host) => {
+		await withHost(async (host) => {
 			@Plugin({ name: 'BIND-A' })
 			class A extends BasePlugin {}
 
@@ -43,12 +43,12 @@ describe('PluginService commit()', () => {
 			}
 
 			expect(host.isRunning(A)).toBe(true)
-			expect(() => host.unregister(A)).not.toThrow()
+			expect(() => host.remove(A)).not.toThrow()
 		})
 	})
 
 	it('ready-queue starts dependents without batch barriers', async () => {
-		await withTestHost(
+		await withHost(
 			async (host) => {
 				const events: string[] = []
 
@@ -92,8 +92,8 @@ describe('PluginService commit()', () => {
 				}
 				setParamToken(B, 0, A)
 
-				host.registerAll(A, C, B)
-				const attemptPromise = host.tryCommit()
+				host.add([A, C, B])
+				const commitPromise = host.commit()
 
 				await waitUntil(() => aStarted && cStarted)
 
@@ -102,15 +102,14 @@ describe('PluginService commit()', () => {
 				expect(events).not.toContain('C:done')
 
 				cGate.resolve()
-				const attempt = await attemptPromise
-				expect(attempt.ok).toBe(true)
+				await commitPromise
 			},
 			{ registry: { startStrategy: 'ready-queue', startConcurrency: 2 } },
 		)
 	})
 
 	it('batch strategy keeps depth barriers', async () => {
-		await withTestHost(
+		await withHost(
 			async (host) => {
 				const events: string[] = []
 
@@ -154,8 +153,8 @@ describe('PluginService commit()', () => {
 				}
 				setParamToken(B, 0, A)
 
-				host.registerAll(A, C, B)
-				const attemptPromise = host.tryCommit()
+				host.add([A, C, B])
+				const commitPromise = host.commit()
 
 				await waitUntil(() => aStarted && cStarted)
 
@@ -167,15 +166,14 @@ describe('PluginService commit()', () => {
 				cGate.resolve()
 				await waitUntil(() => bStarted)
 
-				const attempt = await attemptPromise
-				expect(attempt.ok).toBe(true)
+				await commitPromise
 			},
 			{ registry: { startStrategy: 'batch' } },
 		)
 	})
 
 	it('ready-queue enforces bounded concurrency', async () => {
-		await withTestHost(
+		await withHost(
 			async (host) => {
 				let active = 0
 				let maxActive = 0
@@ -203,8 +201,8 @@ describe('PluginService commit()', () => {
 				const S2 = makeSlow('S2')
 				const S3 = makeSlow('S3')
 
-				host.registerAll(S1, S2, S3)
-				const attemptPromise = host.tryCommit()
+				host.add([S1, S2, S3])
+				const commitPromise = host.commit()
 
 				await waitUntil(() => active === 2 && unblockers.length === 2)
 				expect(maxActive).toBe(2)
@@ -216,15 +214,14 @@ describe('PluginService commit()', () => {
 
 				// Finish remaining.
 				for (const u of unblockers) u()
-				const attempt = await attemptPromise
-				expect(attempt.ok).toBe(true)
+				await commitPromise
 			},
 			{ registry: { startStrategy: 'ready-queue', startConcurrency: 2 } },
 		)
 	})
 
 	it('ready-queue fails fast on dependency chain', async () => {
-		await withTestHost(
+		await withHost(
 			async (host) => {
 				let bInit = false
 				let cInit = false
@@ -258,8 +255,8 @@ describe('PluginService commit()', () => {
 				}
 				setParamToken(C, 0, B)
 
-				host.registerAll(A, B, C)
-				const summary = await host.commit()
+				host.add([A, B, C])
+				const summary = await host.commitAllowFail()
 
 				expect(summary.failed).toContain(A)
 				expect(summary.failed).toContain(B)
@@ -274,7 +271,7 @@ describe('PluginService commit()', () => {
 	})
 
 	it('respects global startTimeoutMs when no override is provided', async () => {
-		await withTestHost(
+		await withHost(
 			async (host) => {
 				@Plugin({ name: 'TO-global' })
 				class Slow extends BasePlugin {
@@ -293,8 +290,8 @@ describe('PluginService commit()', () => {
 					}
 				}
 
-				host.register(Slow)
-				const summary = await host.commit()
+				host.add(Slow)
+				const summary = await host.commitAllowFail()
 				expect(summary.failed).toContain(Slow)
 				expect(host.isRunning(Slow)).toBe(false)
 			},
@@ -303,7 +300,7 @@ describe('PluginService commit()', () => {
 	})
 
 	it('allows per-plugin startTimeoutMs via @Plugin metadata', async () => {
-		await withTestHost(
+		await withHost(
 			async (host) => {
 				@Plugin({ name: 'TO-meta', startTimeoutMs: 200 })
 				class Slow extends BasePlugin {
@@ -322,8 +319,8 @@ describe('PluginService commit()', () => {
 					}
 				}
 
-				host.register(Slow)
-				await host.commitStrict()
+				host.add(Slow)
+				await host.commit()
 				expect(host.isRunning(Slow)).toBe(true)
 			},
 			{ registry: { startTimeoutMs: 10 } },
@@ -331,7 +328,7 @@ describe('PluginService commit()', () => {
 	})
 
 	it('teardown stops dependents before parents', async () => {
-		await withTestHost(
+		await withHost(
 			async (host) => {
 				const events: string[] = []
 
@@ -356,23 +353,22 @@ describe('PluginService commit()', () => {
 				}
 				setParamToken(B, 0, A)
 
-				host.registerAll(A, B)
-				await host.commitStrict()
+				host.add([A, B])
+				await host.commit()
 				expect(host.get(A)).toBeDefined()
 				expect(host.get(B)).toBeDefined()
 				expect(host.isRunning(A)).toBe(true)
 				expect(host.isRunning(B)).toBe(true)
 
 				events.length = 0
-				host.unregister(A) // cascades to dependents, so A and B are both stopped
-				const attemptPromise = host.tryCommit()
+				host.remove(A) // cascades to dependents, so A and B are both stopped
+				const commitPromise = host.commit()
 
 				await waitUntil(() => events.includes('B:stop'))
 				expect(events.includes('A:stop')).toBe(false)
 
 				bStopGate.resolve()
-				const attempt = await attemptPromise
-				expect(attempt.ok).toBe(true)
+				await commitPromise
 				expect(events).toEqual(['B:stop', 'A:stop'])
 			},
 			{ registry: { stopConcurrency: 2 } },
@@ -380,7 +376,7 @@ describe('PluginService commit()', () => {
 	})
 
 	it('can unregister during an active commit and still stop on the next commit', async () => {
-		await withTestHost(async (host) => {
+			await withHost(async (host) => {
 			const summaries: any[] = []
 			host.ctx.on('afterCommit', (summary) => {
 				summaries.push(summary)
@@ -400,9 +396,8 @@ describe('PluginService commit()', () => {
 				}
 			}
 
-			host.register(SelfUnloader)
-			const first = await host.tryCommit()
-			expect(first.ok).toBe(true)
+			host.add(SelfUnloader)
+			await host.commit()
 
 			await waitUntil(() => summaries.length >= 2)
 
@@ -413,7 +408,7 @@ describe('PluginService commit()', () => {
 	})
 
 	it('serializes overlapping commits and preserves plugin state', async () => {
-		await withTestHost(async (host) => {
+		await withHost(async (host) => {
 			const summaries: any[] = []
 			host.ctx.on('afterCommit', (summary) => {
 				summaries.push(summary)
@@ -433,8 +428,8 @@ describe('PluginService commit()', () => {
 			let firstResolved = false
 			let secondResolved = false
 
-			host.register(SlowPlugin)
-			const first = host.tryCommit().then((result) => {
+			host.add(SlowPlugin)
+			const first = host.commit().then((result) => {
 				firstResolved = true
 				return result
 			})
@@ -443,8 +438,8 @@ describe('PluginService commit()', () => {
 				await new Promise((resolve) => setTimeout(resolve, 0))
 			}
 
-			host.register(PluginB)
-			const second = host.tryCommit().then((result) => {
+			host.add(PluginB)
+			const second = host.commit().then((result) => {
 				secondResolved = true
 				return result
 			})
@@ -459,14 +454,14 @@ describe('PluginService commit()', () => {
 
 			expect(firstResolved).toBe(true)
 			expect(secondResolved).toBe(true)
-			expect(firstResult.ok).toBe(true)
-			expect(secondResult.ok).toBe(true)
+			expect(firstResult.failed).toEqual([])
+			expect(secondResult.failed).toEqual([])
 
 			expect(summaries.length).toBe(2)
 			expect(summaries[0]?.added).toEqual([SlowPlugin])
 			expect(new Set(summaries[1]?.added)).toEqual(new Set([PluginB]))
 
-			const lastContainer = host.lastCommit()?.container
+			const lastContainer = host.last()?.container
 			expect(lastContainer).toBeDefined()
 			expect(lastContainer!.services.has(SlowPlugin)).toBe(true)
 			expect(lastContainer!.services.has(PluginB)).toBe(true)
@@ -474,7 +469,7 @@ describe('PluginService commit()', () => {
 	})
 
 	it('captures failing plugins and clears singletons for retries', async () => {
-		await withTestHost(async (host) => {
+		await withHost(async (host) => {
 			@Plugin({ name: 'ThrowPlugin' })
 			class ThrowPlugin extends BasePlugin {
 				override init(): void {
@@ -482,8 +477,8 @@ describe('PluginService commit()', () => {
 				}
 			}
 
-			host.register(ThrowPlugin)
-			const summary = await host.commit()
+			host.add(ThrowPlugin)
+			const summary = await host.commitAllowFail()
 
 			expect(summary?.failed).toContain(ThrowPlugin)
 			expect(summary?.added).toContain(ThrowPlugin)
@@ -492,7 +487,7 @@ describe('PluginService commit()', () => {
 	})
 
 	it('retries failed plugins on later commits even without container changes', async () => {
-		await withTestHost(async (host) => {
+		await withHost(async (host) => {
 			let attempt = 0
 			const events: string[] = []
 
@@ -505,23 +500,21 @@ describe('PluginService commit()', () => {
 				}
 			}
 
-			host.register(Flaky)
+			host.add(Flaky)
 
-			const first = await host.tryCommit()
-			expect(first.ok).toBe(true)
-			expect(host.lastCommit()?.failed).toContain(Flaky)
+			await host.commitAllowFail()
+			expect(host.last()?.failed).toContain(Flaky)
 			expect(host.isRunning(Flaky)).toBe(false)
 
 			// No container changes, but Flaky should be retried.
-			const second = await host.tryCommit()
-			expect(second.ok).toBe(true)
+			await host.commit()
 			expect(host.isRunning(Flaky)).toBe(true)
 			expect(events).toEqual(['ok'])
 		})
 	})
 
 	it('recovers from DI build failures on the next commit', async () => {
-		await withTestHost(async (host) => {
+		await withHost(async (host) => {
 			@Plugin({ name: 'MissingDep-B' })
 			class B extends BasePlugin {}
 
@@ -534,46 +527,44 @@ describe('PluginService commit()', () => {
 			setParamToken(A, 0, B)
 
 			// Draft contains an invalid DI graph: A needs B but B is missing.
-			host.register(A)
-			const first = await host.tryCommit()
-			expect(first.ok).toBe(false)
+			host.add(A)
+			await expect(host.commit()).rejects.toThrow()
 			expect(host.isRunning(A)).toBe(false)
 			expect(host.isRunning(B)).toBe(false)
 
 			// Next commit should succeed after registering the missing provider.
-			host.registerAll(B, A)
-			const second = await host.tryCommit()
-			expect(second.ok).toBe(true)
+			host.add([B, A])
+			await host.commit()
 			expect(host.isRunning(A)).toBe(true)
 			expect(host.isRunning(B)).toBe(true)
 		})
 	})
 
 	it('updates registered plugin set across commits', async () => {
-		await withTestHost(async (host) => {
-			const readPluginSet = () => new Set<any>(host.listPlugins())
+		await withHost(async (host) => {
+			const readPluginSet = () => new Set<any>(host.plugins())
 
 			// Bun's TS transpilation may not emit `design:paramtypes` metadata;
 			// set tokens explicitly to keep DI behavior deterministic in tests.
 			setParamToken(PluginA, 0, PluginB)
 
-			host.registerAll(PluginB, PluginC, PluginA)
-			await host.commitStrict()
+			host.add([PluginB, PluginC, PluginA])
+			await host.commit()
 
 			expect(readPluginSet()).toEqual(new Set([PluginB, PluginC, PluginA]))
 
 			host.restart(PluginA)
-			host.unregister(PluginA)
-			await host.commitStrict()
+			host.remove(PluginA)
+			await host.commit()
 			expect(readPluginSet()).toEqual(new Set([PluginB, PluginC]))
 
-			host.register(PluginA)
-			await host.commitStrict()
+			host.add(PluginA)
+			await host.commit()
 			expect(readPluginSet()).toEqual(new Set([PluginB, PluginC, PluginA]))
 			expect(host.isRunning(PluginA)).toBe(true)
 
-			host.unregister(PluginA)
-			await host.commitStrict()
+			host.remove(PluginA)
+			await host.commit()
 			expect(readPluginSet()).toEqual(new Set([PluginB, PluginC]))
 			expect(host.isRunning(PluginA)).toBe(false)
 		})

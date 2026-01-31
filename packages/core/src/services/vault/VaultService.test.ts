@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'bun:test'
-import { BasePlugin, Plugin, withTestHost } from '@pluxel/core/test'
+import { describe, expect, it } from 'vitest'
+import { BasePlugin, Plugin, withHost } from '@pluxel/test'
 import { resolve } from 'pathe'
 import { env as stdEnv } from 'std-env'
 
@@ -33,15 +33,15 @@ describe('VaultService', () => {
 	it('getToken/listKeys do not create files when vault is missing', async () => {
 		const dir = `/vault/${randomHex(8)}`
 
-		await withTestHost(
+		await withHost(
 			async (host) => {
 				@Plugin({ name: 'P' })
 				class P extends BasePlugin {}
 
-				host.register(P)
-				await host.commitStrict()
+				host.add(P)
+				await host.commit()
 
-				const p = host.getOrThrow(P)
+				const p = host.require(P)
 				const vault = p.ctx.vault.open()
 
 				expect(await vault.getToken('missing')).toBeUndefined()
@@ -55,15 +55,15 @@ describe('VaultService', () => {
 	it('batch() does not create files when there are no mutations', async () => {
 		const dir = `/vault/${randomHex(8)}`
 
-		await withTestHost(
+		await withHost(
 			async (host) => {
 				@Plugin({ name: 'P' })
 				class P extends BasePlugin {}
 
-				host.register(P)
-				await host.commitStrict()
+				host.add(P)
+				await host.commit()
 
-				const p = host.getOrThrow(P)
+				const p = host.require(P)
 				const vault = p.ctx.vault.open()
 
 				await vault.batch((tx) => {
@@ -80,15 +80,15 @@ describe('VaultService', () => {
 	it('setToken creates vault.json and vault.key; lock() forces re-unlock from fs', async () => {
 		const dir = `/vault/${randomHex(8)}`
 
-		await withTestHost(
+		await withHost(
 			async (host) => {
 				@Plugin({ name: 'P' })
 				class P extends BasePlugin {}
 
-				host.register(P)
-				await host.commitStrict()
+				host.add(P)
+				await host.commit()
 
-				const p = host.getOrThrow(P)
+				const p = host.require(P)
 				const vault = p.ctx.vault.open()
 
 				await vault.setToken('github', 'ghp_test')
@@ -108,15 +108,15 @@ describe('VaultService', () => {
 	it('batch persists once for multiple mutations (fs stats)', async () => {
 		const dir = `/vault/${randomHex(8)}`
 
-		await withTestHost(
+		await withHost(
 			async (host) => {
 				@Plugin({ name: 'P' })
 				class P extends BasePlugin {}
 
-				host.register(P)
-				await host.commitStrict()
+				host.add(P)
+				await host.commit()
 
-				const p = host.getOrThrow(P)
+				const p = host.require(P)
 				const vault = p.ctx.vault.open()
 
 				await vault.setToken('a', '0')
@@ -140,15 +140,15 @@ describe('VaultService', () => {
 	it('rejects tampered ciphertext and enforces AAD binding', async () => {
 		const dir = `/vault/${randomHex(8)}`
 
-		await withTestHost(
+		await withHost(
 			async (host) => {
 				@Plugin({ name: 'P' })
 				class P extends BasePlugin {}
 
-				host.register(P)
-				await host.commitStrict()
+				host.add(P)
+				await host.commit()
 
-				const p = host.getOrThrow(P)
+				const p = host.require(P)
 				const vault = p.ctx.vault.open()
 
 				await vault.setToken('openai', 'sk-test')
@@ -191,15 +191,15 @@ describe('VaultService', () => {
 		const keyBytes = new Uint8Array(32).fill(7)
 		stdEnv[envName] = bytesToHex(keyBytes)
 
-		await withTestHost(
+		await withHost(
 			async (host) => {
 				@Plugin({ name: 'P' })
 				class P extends BasePlugin {}
 
-				host.register(P)
-				await host.commitStrict()
+				host.add(P)
+				await host.commit()
 
-				const p = host.getOrThrow(P)
+				const p = host.require(P)
 				const vault = p.ctx.vault.open({ key: { env: envName, encoding: 'hex' } })
 
 				await vault.setToken('t', 'v')

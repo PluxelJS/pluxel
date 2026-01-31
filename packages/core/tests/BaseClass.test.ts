@@ -1,10 +1,10 @@
-import { describe, expect, it } from 'bun:test'
+import { describe, expect, it } from 'vitest'
 
-import { BasePlugin, ForkablePlugin, Plugin, setParamToken, withTestHost } from '@pluxel/core/test'
+import { BasePlugin, ForkablePlugin, Plugin, setParamToken, withHost } from '@pluxel/test'
 
 describe('Abstract base and canonical ids', () => {
 	it('injects abstract base and resolves by impl ctor', async () => {
-		await withTestHost(async (host) => {
+		await withHost(async (host) => {
 			abstract class Abs extends BasePlugin {
 				abstract ping(): string
 			}
@@ -26,10 +26,10 @@ describe('Abstract base and canonical ids', () => {
 			}
 			setParamToken(Consumer, 0, Abs)
 
-			host.registerAll(Impl, Consumer)
-			await host.commitStrict()
+			host.add([Impl, Consumer])
+			await host.commit()
 
-			const consumer = host.getOrThrow(Consumer) as Consumer
+			const consumer = host.require(Consumer) as Consumer
 			expect(consumer.dep).toBeInstanceOf(Impl)
 			expect(consumer.dep.ping()).toBe('ok')
 
@@ -42,15 +42,15 @@ describe('Abstract base and canonical ids', () => {
 			expect(host.get(Abs)).toBeInstanceOf(Impl)
 
 			// unloading by base should remove provider + dependents
-			host.unregister(Abs)
-			await host.commitStrict()
+			host.remove(Abs)
+			await host.commit()
 			expect(host.isRunning(Impl)).toBe(false)
 			expect(host.isRunning(Abs)).toBe(false)
 		})
 	})
 
 	it('starts base provider before consumer in the same commit', async () => {
-		await withTestHost(async (host) => {
+		await withHost(async (host) => {
 			const events: string[] = []
 			let providerReady = false
 
@@ -78,14 +78,14 @@ describe('Abstract base and canonical ids', () => {
 			}
 			setParamToken(Consumer, 0, Abs)
 
-			host.registerAll(Provider, Consumer)
-			await host.commitStrict()
+			host.add([Provider, Consumer])
+			await host.commit()
 			expect(events).toEqual(['provider', 'consumer'])
 		})
 	})
 
 	it('throws on multiple providers for the same base', async () => {
-		await withTestHost(async (host) => {
+		await withHost(async (host) => {
 			abstract class Abs extends BasePlugin {}
 
 			@Plugin(Abs, { name: 'Impl1' })
@@ -93,15 +93,13 @@ describe('Abstract base and canonical ids', () => {
 			@Plugin(Abs, { name: 'Impl2' })
 			class Impl2 extends Abs {}
 
-			host.registerAll(Impl1, Impl2)
-			// alias conflict is detected at build/commit time (deterministic error)
-			const res = await host.tryCommit()
-			expect(res.ok).toBe(false)
+			host.add([Impl1, Impl2])
+			await expect(host.commit()).rejects.toThrow(/service verification failed/i)
 		})
 	})
 
 	it('forks of a base plugin do not replace the base provider', async () => {
-		await withTestHost(async (host) => {
+		await withHost(async (host) => {
 			abstract class Abs extends ForkablePlugin {}
 
 			@Plugin(Abs, { name: 'Impl' })
@@ -115,36 +113,35 @@ describe('Abstract base and canonical ids', () => {
 			}
 			setParamToken(Consumer, 0, Abs)
 
-			host.register(Impl)
-			host.registerFork(Impl, 'a')
-			host.registerFork(Impl, 'b')
-			host.register(Consumer)
-			await host.commitStrict()
+			host.add(Impl)
+			const A = host.fork(Impl, 'a')
+			const B = host.fork(Impl, 'b')
+			host.add(Consumer)
+			await host.commit()
 
-			const consumer = host.getOrThrow(Consumer) as Consumer
+			const consumer = host.require(Consumer) as Consumer
 			expect(consumer.dep.ctx.pluginInfo.id).toBe('Impl')
 
 			// base token resolves to the primary provider, not forks
 			const base = host.get(Abs) as Abs | undefined
 			expect(base?.ctx.pluginInfo.id).toBe('Impl')
 
-			expect(host.getFork(Impl, 'a')!.ctx.pluginInfo.id).toBe('Impl#a')
-			expect(host.getFork(Impl, 'b')!.ctx.pluginInfo.id).toBe('Impl#b')
+			expect(host.require(A).ctx.pluginInfo.id).toBe('Impl#a')
+			expect(host.require(B).ctx.pluginInfo.id).toBe('Impl#b')
 		})
 	})
 
 	it('can opt a fork into providing base (and conflicts)', async () => {
-		await withTestHost(async (host) => {
+		await withHost(async (host) => {
 			abstract class Abs extends ForkablePlugin {}
 
 			@Plugin(Abs, { name: 'Impl' })
 			class Impl extends Abs {}
 
-			host.register(Impl)
-			host.registerFork(Impl, 'a', { provideBase: true })
+			host.add(Impl)
+			host.fork(Impl, 'a', { provideBase: true })
 
-			const res = await host.tryCommit()
-			expect(res.ok).toBe(false)
+			await expect(host.commit()).rejects.toThrow(/service verification failed/i)
 		})
 	})
 })

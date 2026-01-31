@@ -67,7 +67,7 @@ with the HMR scope (and avoids touching UI/TSX by default).
 
 ## Config + Feature metadata extraction (pre-start)
 
-HMR uses `@pluxel/cli/rolldown`'s `configSourceVitePlugin` to extract metadata from **raw TS source** (not downleveled JS).
+HMR uses `@pluxel/cli/rolldown`'s `configSourcePlugin` to extract metadata from TypeScript plugin source.
 `@pluxel/cli` is the public facade that re-exports internal build plugins from `@pluxel/build/rolldown`.
 
 - `@Config(schema)` → injects `__setConfigSource__(Ctor, field, "...")` for UI schema source.
@@ -178,3 +178,13 @@ Implementation notes:
 - `runtime-shims.ts`: runtime shims (e.g. `reflect-metadata`) + scoped `require` shims for those shims.
 - `logging.ts`: debug namespaces + timing attribution helpers.
 - `plugins/*`: HMR plugins and small guards used by the runner/loader.
+
+### Runtime shims
+
+HMR can apply **SSR runner-only** runtime shims to isolate modules that should not run with side effects
+in the runner.
+
+Defaults to no shims.
+
+Configure via `HMRConfig.runtimeShims`, e.g.:
+- isolate `reflect-metadata` (and `reflect-metadata/*`): `{ 'reflect-metadata': true, 'reflect-metadata/*': true }` (or `SHIM_REFLECT_METADATA`)

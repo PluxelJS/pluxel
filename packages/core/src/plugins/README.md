@@ -2,7 +2,7 @@
 
 这套目录承载的是 **核心插件系统**：装饰器/元数据、DI 定义层（draft/build/commit）、运行时 registry（commit/restart/unregister/fork），以及插件生命周期 actor；并提供“插件内组合”的 Feature 基础设施（BaseFeature/FeatureHost）。
 
-插件系统的测试更适合集中放在 `packages/core/tests/`（黑盒/集成式，用 `@pluxel/core/test` 跑真实插件行为），这里主要放实现与约定说明。
+插件系统的测试更适合集中放在 `packages/core/tests/`（黑盒/集成式，用 `@pluxel/test` 跑真实插件行为），这里主要放实现与约定说明。
 
 ## 目录结构（按职责分层）
 
@@ -47,7 +47,7 @@
   - 如果 Feature 既没有 `@Config/configs.use` 字段，也没有 `pluginMethodDecorator()` 声明 deps，则可以纯运行时组合，无需声明。
 
 另外：core 在 DEV 模式会对“有 config/requiredDeps 但未声明的 Feature”打 warn，帮助尽早发现“能跑但 UI/DI 不对”的误用。
-如需更强约束，可在 registry 配置里设置 `featureDeclarationPolicy: "error"`（或在测试中用 `commitStrict()`）让这类误用直接失败。
+如需更强约束，可在 registry 配置里设置 `featureDeclarationPolicy: "error"`（或在测试中用 `await host.commit()`）让这类误用直接失败。
 
 ## Feature 的“唯一推荐 API”：`use()` + `dep()`
 

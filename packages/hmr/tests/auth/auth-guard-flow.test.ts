@@ -1,10 +1,10 @@
-import '@pluxel/core/test/setup'
+import '@pluxel/test/setup'
 
 // Ensure @pluxel/hmr services (HonoService/AuthGuardService/ExtService) are registered.
 import '../../src/services'
 
 import { afterEach, describe, expect, it } from 'bun:test'
-import { createTestHost, type TestHost } from '@pluxel/core/test'
+import { createHost, type Host } from '@pluxel/test'
 import { AuthGuardTestPlugin } from '../fixtures/plugins/AuthGuardTestPlugin'
 
 function req(url: string, init?: RequestInit) {
@@ -17,7 +17,7 @@ function pickCookie(setCookie: string | null): string {
 }
 
 describe('AuthGuard end-to-end (HonoService)', () => {
-	let host: TestHost | null = null
+	let host: Host | null = null
 
 	afterEach(async () => {
 		if (!host) return
@@ -26,7 +26,7 @@ describe('AuthGuard end-to-end (HonoService)', () => {
 	})
 
 	it('guards /api and HTML navigation; /auth verify unblocks; unload removes guard', async () => {
-		host = createTestHost()
+		host = createHost()
 
 		// Force service construction.
 		void host.ctx.honoService
@@ -40,9 +40,9 @@ describe('AuthGuard end-to-end (HonoService)', () => {
 		}
 
 		// Start the test plugin which registers a guard and mounts /auth + /auth/verify.
-		host.register(AuthGuardTestPlugin)
-		host.enablePlugins('AuthGuardTest')
-		await host.commitStrict()
+		host.add(AuthGuardTestPlugin)
+		host.cfg('AuthGuardTest').enable()
+		await host.commit()
 
 		expect(host.ctx.authGuard.isActive()).toBe(true)
 
@@ -105,8 +105,8 @@ describe('AuthGuard end-to-end (HonoService)', () => {
 		}
 
 		// Unload plugin -> guard is removed -> /api is accessible again without cookie.
-		host.unregister(AuthGuardTestPlugin)
-		await host.commitStrict()
+		host.remove(AuthGuardTestPlugin)
+		await host.commit()
 
 		expect(host.ctx.authGuard.isActive()).toBe(false)
 

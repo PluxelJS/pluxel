@@ -18,7 +18,7 @@
 
 ## 测试策略
 
-用 `withTestHost()`：
+用 `withHost()`：
 
 - 插件里 `collectEffect()` 注册标记函数
 - 卸载插件后断言清理函数被调用、事件订阅被取消等（EventsService 也依赖这个机制）

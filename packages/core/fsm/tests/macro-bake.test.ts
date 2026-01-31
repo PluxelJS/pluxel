@@ -1,8 +1,9 @@
 // file: test/macro-bake.test.ts
-import { describe, expect, test } from 'bun:test'
+import { describe, expect, test } from 'vitest'
 import { existsSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
+import { spawn } from 'node:child_process'
 import { createFixture } from 'fs-fixture'
 
 const macroEntrySource = [
@@ -59,16 +60,26 @@ describe('macro baked fsm', () => {
 		const entry = fixture.getPath('fsm', 'tests', 'fixtures', 'macro-entry.ts')
 		const outdir = fixture.getPath('.tmp', 'macro-test')
 
-		const result = await Bun.build({
-			entrypoints: [entry],
-			outdir,
-			target: 'bun',
-			format: 'esm',
-			sourcemap: 'none',
-			minify: false,
+		const ok = await new Promise<boolean>((resolveOk, reject) => {
+			const child = spawn(
+				'bun',
+				[
+					'build',
+					entry,
+					'--outdir',
+					outdir,
+					'--target',
+					'bun',
+					'--format',
+					'esm',
+					'--sourcemap=none',
+				],
+				{ stdio: 'inherit' },
+			)
+			child.on('error', reject)
+			child.on('exit', (code) => resolveOk(code === 0))
 		})
-
-		expect(result.success).toBe(true)
+		expect(ok).toBe(true)
 
 		// Bun.build API is official and returns BuildOutput with status. :contentReference[oaicite:2]{index=2}
 		// We assume the output file name follows entry base name.

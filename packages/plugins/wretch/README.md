@@ -7,7 +7,7 @@ Forkable HTTP client plugin powered by `wretch` (v3).
 The config key is `wretch`.
 
 ```ts
-host.setConfig(WretchPlugin, {
+host.cfg(WretchPlugin).set({
   wretch: {
     defaults: {
       baseUrl: 'https://api.example.com/',
@@ -28,11 +28,11 @@ host.setConfig(WretchPlugin, {
 Only API: `client(name?) => wretch instance`.
 
 ```ts
-const w = host.getOrThrow(WretchPlugin).client() // default client
+const w = host.require(WretchPlugin).client() // default client
 const data = await w.get('/v1/ping').json<{ ok: boolean }>()
 ```
 
 ```ts
-const w = host.getOrThrow(WretchPlugin).client('staging')
+const w = host.require(WretchPlugin).client('staging')
 await w.json({ name: 'hello' }).post('/v1/items').res()
 ```

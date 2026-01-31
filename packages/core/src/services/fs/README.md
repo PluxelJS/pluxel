@@ -20,7 +20,7 @@
 
 ## 测试策略
 
-优先通过 `@pluxel/core/test`（默认 `fs.mode = "memory"`）：
+优先通过 `@pluxel/test`（默认 `fs.mode = "memory"`）：
 
 - 用插件真实调用 `ctx.fs.*`
 - 通过 `debugStats()` 验证“批量写入只落盘一次”之类的行为（Vault 就是这种测试方式）

@@ -1,0 +1,12 @@
+{
+	"extends": "../../tsconfig.src.json",
+	"include": ["src"],
+	"compilerOptions": {
+		"customConditions": [],
+		"baseUrl": ".",
+		"paths": {
+			"@pluxel/test": ["./src"],
+			"@pluxel/test/*": ["./src/*"]
+		}
+	}
+}

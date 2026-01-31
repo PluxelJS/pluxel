@@ -54,7 +54,7 @@ UI/RPC 往往需要：
 
 ## 测试策略
 
-优先用 `@pluxel/core/test` 的 `withTestHost()` 走真实插件启动流程：
+优先用 `@pluxel/test` 的 `withHost()` 走真实插件启动流程：
 
-- 通过 `host.setConfig(pluginCtor, record)` 构造注入快照
+- 通过 `host.cfg(pluginCtor).set(record)` 构造注入快照
 - 在插件里调用 `ctx.configService.getValidatedConfig()` 或读取 `this.configs.use(...)` 声明的字段并断言

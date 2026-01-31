@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'bun:test'
-import { BasePlugin, Plugin, withTestHost } from '@pluxel/core/test'
+import { describe, expect, it } from 'vitest'
+import { BasePlugin, Plugin, withHost } from '@pluxel/test'
 
 function randomHex(bytes: number): string {
 	const c = (
@@ -18,7 +18,7 @@ describe('FsService', () => {
 		const dir = `/fs/${randomHex(6)}`
 		const path = `${dir}/a.txt`
 
-		await withTestHost(
+		await withHost(
 			async (host) => {
 				@Plugin({ name: 'P' })
 				class P extends BasePlugin {}

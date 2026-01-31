@@ -1,8 +1,8 @@
-import '@pluxel/core/test/setup'
+import '@pluxel/test/setup'
 
 import { describe, expect, it } from 'bun:test'
-import { __registerConfigSchema__ } from '@pluxel/core'
-import { withTestHost } from '@pluxel/core/test'
+import { withHost } from '@pluxel/test'
+import { __registerConfigSchema__ } from '@pluxel/test/unsafe'
 import { WretchPlugin } from './index'
 import { WretchConfig } from './schema'
 
@@ -51,11 +51,11 @@ async function withWretchPlugin<T>(
 	config: Record<string, unknown>,
 	run: (instance: WretchPlugin) => Promise<T>,
 ): Promise<T> {
-	return withTestHost(async (host) => {
+	return withHost(async (host) => {
 		await host.ctx.configService.ready
-		host.setConfig(WretchPlugin, { wretch: config })
+		host.cfg(WretchPlugin).set({ wretch: config })
 		await host.start(WretchPlugin)
-		return run(host.getOrThrow(WretchPlugin) as WretchPlugin)
+		return run(host.require(WretchPlugin) as WretchPlugin)
 	})
 }
 

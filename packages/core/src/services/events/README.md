@@ -21,7 +21,7 @@
 
 ## 测试策略
 
-用 `withTestHost()`：
+用 `withHost()`：
 
 - 在插件 `onStart`（或构造后）注册监听器
-- `host.unregister(Plugin)` + `commit()` 后确保监听器不会再收到事件
+- `host.remove(Plugin)` + `commit()` 后确保监听器不会再收到事件
