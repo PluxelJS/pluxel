@@ -3,7 +3,7 @@ import { extRuntime } from './debug'
 import { ExtensionErrorBoundary } from './ErrorBoundary'
 import { registerPluginI18n, unregisterPluginI18n } from './i18n'
 import { extensionRegistry } from './registry'
-import type { ExtensionMeta, PluginExtensionContext, PluginUIModule } from './types'
+import type { ExtensionItem, ExtensionMeta, PluginExtensionContext, PluginUIModule } from './types'
 
 function normalizeExtensionRoutePath(path: string): string {
 	if (!path) return ''
@@ -18,8 +18,13 @@ function normalizeExtensionRoutePath(path: string): string {
 }
 
 const EXTENSION_ROUTE_PREFIX = '/ext/'
+const EXTENSION_STANDALONE_ROUTE_PREFIX = '/ext-standalone/'
 
-function buildExtensionHref(pluginName: string, path: string): string {
+function buildExtensionHref(
+	pluginName: string,
+	path: string,
+	frame: 'shell' | 'standalone' = 'shell',
+): string {
 	const normalizedPath = normalizeExtensionRoutePath(path)
 	const encodedName = (() => {
 		try {
@@ -28,8 +33,10 @@ function buildExtensionHref(pluginName: string, path: string): string {
 			return pluginName
 		}
 	})()
-	if (!normalizedPath) return `${EXTENSION_ROUTE_PREFIX}${encodedName}`
-	return `${EXTENSION_ROUTE_PREFIX}${encodedName}${normalizedPath}`
+	const prefix =
+		frame === 'standalone' ? EXTENSION_STANDALONE_ROUTE_PREFIX : EXTENSION_ROUTE_PREFIX
+	if (!normalizedPath) return `${prefix}${encodedName}`
+	return `${prefix}${encodedName}${normalizedPath}`
 }
 
 type RouteComponent = (ctx: PluginExtensionContext) => ReactNode
@@ -162,6 +169,7 @@ class ExtensionRuntime {
 		}
 
 		if (module.extensions) {
+			const registrations: Array<{ point: string; item: ExtensionItem<any> }> = []
 			for (const ext of module.extensions) {
 				const extId = `${pluginName}:${ext.id}`
 				const extRender = (ext as unknown as { render?: unknown })?.render
@@ -178,66 +186,71 @@ class ExtensionRuntime {
 					requireRunning: ext.requireRunning ?? true,
 				} as ExtensionMeta
 
-				const cleanup = extensionRegistry.register(ext.point, {
-					meta,
-					render: (ctx) => {
-						if (typeof extRender !== 'function') {
+				registrations.push({
+					point: ext.point,
+					item: {
+						meta,
+						render: (ctx) => {
+							if (typeof extRender !== 'function') {
+								return (
+									<div
+										style={{
+											padding: 8,
+											borderRadius: 8,
+											border: '1px solid rgba(255, 0, 0, 0.25)',
+											background: 'rgba(255, 0, 0, 0.06)',
+											fontSize: 12,
+											lineHeight: 1.4,
+										}}
+									>
+										<div style={{ fontWeight: 600 }}>
+											Invalid extension: {pluginName} · {ext.point}
+										</div>
+										<div style={{ opacity: 0.85 }}>
+											Expected <code>render(ctx)</code> to be a function.
+										</div>
+									</div>
+								)
+							}
 							return (
-								<div
-									style={{
-										padding: 8,
-										borderRadius: 8,
-										border: '1px solid rgba(255, 0, 0, 0.25)',
-										background: 'rgba(255, 0, 0, 0.06)',
-										fontSize: 12,
-										lineHeight: 1.4,
-									}}
+								<ExtensionErrorBoundary
+									key={meta.id}
+									pluginName={pluginName}
+									extensionId={meta.id}
+									point={ext.point}
+									fallback={
+										process.env.NODE_ENV !== 'production'
+											? ({ error }) => (
+													<div
+														style={{
+															padding: 8,
+															borderRadius: 8,
+															border: '1px solid rgba(255, 0, 0, 0.25)',
+															background: 'rgba(255, 0, 0, 0.06)',
+															fontSize: 12,
+															lineHeight: 1.4,
+														}}
+													>
+														<div style={{ fontWeight: 600 }}>
+															Extension render failed: {pluginName} · {ext.point}
+														</div>
+														<div style={{ opacity: 0.85 }}>
+															{error?.message ?? String(error ?? 'unknown error')}
+														</div>
+													</div>
+												)
+											: null
+									}
 								>
-									<div style={{ fontWeight: 600 }}>
-										Invalid extension: {pluginName} · {ext.point}
-									</div>
-									<div style={{ opacity: 0.85 }}>
-										Expected <code>render(ctx)</code> to be a function.
-									</div>
-								</div>
+									{(extRender as (ctx: unknown) => ReactNode)(ctx)}
+								</ExtensionErrorBoundary>
 							)
-						}
-						return (
-							<ExtensionErrorBoundary
-								key={meta.id}
-								pluginName={pluginName}
-								extensionId={meta.id}
-								point={ext.point}
-								fallback={
-									process.env.NODE_ENV !== 'production'
-										? ({ error }) => (
-												<div
-													style={{
-														padding: 8,
-														borderRadius: 8,
-														border: '1px solid rgba(255, 0, 0, 0.25)',
-														background: 'rgba(255, 0, 0, 0.06)',
-														fontSize: 12,
-														lineHeight: 1.4,
-													}}
-												>
-													<div style={{ fontWeight: 600 }}>
-														Extension render failed: {pluginName} · {ext.point}
-													</div>
-													<div style={{ opacity: 0.85 }}>
-														{error?.message ?? String(error ?? 'unknown error')}
-													</div>
-												</div>
-											)
-										: null
-								}
-							>
-								{(extRender as (ctx: unknown) => ReactNode)(ctx)}
-							</ExtensionErrorBoundary>
-						)
+						},
 					},
 				})
-				cleanups.push(cleanup)
+			}
+			if (registrations.length > 0) {
+				cleanups.push(extensionRegistry.registerMany(registrations))
 			}
 		}
 
@@ -250,27 +263,34 @@ class ExtensionRuntime {
 				routeMap.clear()
 			}
 
+			const navRegistrations: Array<{ point: string; item: ExtensionItem<any> }> = []
 			for (const route of module.routes) {
 				const normalizedPath = normalizeExtensionRoutePath(route.definition.path)
 				routeMap.set(normalizedPath, route.render)
 
 				if (route.definition.addToNav) {
-					const meta: ExtensionMeta = {
+					const frame = route.definition.frame === 'standalone' ? 'standalone' : 'shell'
+					const meta: ExtensionMeta<'navbar:items'> = {
 						id: `${pluginName}:route:${normalizedPath || '/'}`,
 						pluginName,
 						priority: route.definition.navPriority ?? 0,
 						requireRunning: false,
 						label: route.definition.title,
-						href: buildExtensionHref(pluginName, normalizedPath),
+						href: buildExtensionHref(pluginName, normalizedPath, frame),
 						icon: route.definition.icon,
 					}
 
-					const cleanup = extensionRegistry.register('navbar:items', {
-						meta,
-						render: () => null,
+					navRegistrations.push({
+						point: 'navbar:items',
+						item: {
+							meta,
+							render: () => null,
+						},
 					})
-					cleanups.push(cleanup)
 				}
+			}
+			if (navRegistrations.length > 0) {
+				cleanups.push(extensionRegistry.registerMany(navRegistrations))
 			}
 		}
 

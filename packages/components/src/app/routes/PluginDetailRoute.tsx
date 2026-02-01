@@ -2,7 +2,7 @@ import { Outlet, useParams } from '@tanstack/react-router'
 import { Plugin } from '../plugins/Plugin'
 
 export function PluginDetailRoute() {
-	const { name: rawName } = useParams({ from: '/plugins/$name' })
+	const { name: rawName } = useParams({})
 	let pluginName = rawName
 	try {
 		pluginName = decodeURIComponent(rawName)

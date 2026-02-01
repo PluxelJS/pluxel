@@ -412,6 +412,13 @@ export interface RouteExtensionDef {
 	icon?: string | ReactNode
 	addToNav?: boolean
 	navPriority?: number
+	/**
+	 * Host page frame preference.
+	 *
+	 * - `shell` (default): render within the host AppShell (navbar/header/etc).
+	 * - `standalone`: render as a full page without host chrome.
+	 */
+	frame?: 'shell' | 'standalone'
 }
 
 /**
@@ -543,6 +550,16 @@ function validatePluginUIModule(module: PluginUIModule): void {
 			if (!path) {
 				console.error('[plugin-ui] Route path must be a non-empty string.', route)
 				continue
+			}
+			const frame = (route as any)?.definition?.frame
+			if (frame != null && frame !== 'shell' && frame !== 'standalone') {
+				console.error('[plugin-ui] Route frame must be "shell" or "standalone".', route)
+			}
+			if ((route as any)?.definition?.addToNav === true && frame === 'standalone') {
+				console.warn(
+					'[plugin-ui] Route with frame="standalone" is added to nav; navigating will hide host chrome.',
+					route,
+				)
 			}
 			if (seen.has(path)) {
 				console.error(

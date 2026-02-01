@@ -13,17 +13,17 @@ import {
 import { useCurrentPathname } from '../router/useCurrentRoute'
 import { decodeURIComponentSafe, normalizeExtensionRestPath, readRestPathFromLocation } from './extensionRouteUtils'
 
-export function ExtensionRoute() {
+export function ExtensionStandaloneRoute() {
 	const { pluginName: rawName, path: rawRest } = useParams({})
 	const locationPath = useCurrentPathname()
 	const pluginName = decodeURIComponentSafe(rawName)
 
 	const restPathFromParams = normalizeExtensionRestPath(rawRest)
 	const restPathFromLocation = useMemo(() => {
-		return readRestPathFromLocation({ locationPath, rawName, prefix: '/ext' })
+		return readRestPathFromLocation({ locationPath, rawName, prefix: '/ext-standalone' })
 	}, [locationPath, rawName])
 	const restPath = restPathFromParams || restPathFromLocation
-	const fullPath = `/ext/${pluginName}${restPath}`
+	const fullPath = `/ext-standalone/${pluginName}${restPath}`
 	const routeVersion = useExtensionRuntimeVersion(pluginName)
 
 	const routeRender = useMemo(() => {

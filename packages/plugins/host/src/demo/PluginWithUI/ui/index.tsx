@@ -101,6 +101,13 @@ export default definePluginUIModule({
 			},
 			render: () => <RoutePage />,
 		},
+		{
+			definition: {
+				path: '/standalone',
+				title: 'PluginWithUI Standalone',
+			},
+			render: () => <RoutePage />,
+		},
 	],
 	setup({ pluginName }) {
 		console.log(`[${pluginName}] UI module loaded`)

@@ -2,7 +2,7 @@
 
 export { ExtensionProvider, useExtensionContext } from './types'
 
-import { useMemo, useSyncExternalStore } from 'react'
+import { useCallback, useMemo, useSyncExternalStore } from 'react'
 import {
 	ExtensionProvider,
 	isExtensionPluginRunning,
@@ -10,7 +10,6 @@ import {
 	type ExtensionContext,
 	useExtensionContext,
 	type ExtensionItem,
-	type ExtensionMeta,
 	type ExtensionPoint,
 	type ExtensionPointCtx,
 	type PluginExtensionContext,
@@ -26,8 +25,11 @@ const EMPTY_ITEMS: ExtensionItem[] = []
 class ExtensionRegistry {
 	private extensions = new Map<ExtensionPoint, Map<string, ExtensionItem<any>>>()
 	private listeners = new Set<() => void>()
+	private pointListeners = new Map<ExtensionPoint, Set<() => void>>()
 	private version = 0
 	private snapshotCache = new Map<ExtensionPoint, ExtensionItem<any>[]>()
+	private batchDepth = 0
+	private batchedPoints = new Set<ExtensionPoint>()
 
 	/**
 	 * 注册扩展
@@ -39,17 +41,21 @@ class ExtensionRegistry {
 			this.extensions.set(point, bucket)
 		}
 
-		bucket.set(item.meta.id, item)
+		const id = item.meta.id
+		bucket.set(id, item)
 		this.invalidateCache(point)
-		this.notify()
+		this.queueNotifyPoints(new Set([point]))
 
 		return () => {
-			bucket?.delete(item.meta.id)
+			// Only delete if we're still the active registration for this id
+			if (bucket?.get(id) === item) {
+				bucket.delete(id)
+			}
 			if (bucket?.size === 0) {
 				this.extensions.delete(point)
 			}
 			this.invalidateCache(point)
-			this.notify()
+			this.queueNotifyPoints(new Set([point]))
 		}
 	}
 
@@ -57,11 +63,47 @@ class ExtensionRegistry {
 	 * 批量注册
 	 */
 	registerMany(items: Array<{ point: ExtensionPoint; item: ExtensionItem<any> }>): () => void {
-		const cleanups: Array<() => void> = []
+		if (!items.length) return () => {}
+
+		const touched = new Set<ExtensionPoint>()
+		const inserted: Array<{ point: ExtensionPoint; id: string; item: ExtensionItem<any> }> = []
+
 		for (const { point, item } of items) {
-			cleanups.push(this.register(point as any, item as any))
+			if (!point || !item) continue
+			let bucket = this.extensions.get(point)
+			if (!bucket) {
+				bucket = new Map()
+				this.extensions.set(point, bucket)
+			}
+			const id = item.meta.id
+			bucket.set(id, item)
+			touched.add(point)
+			inserted.push({ point, id, item })
 		}
-		return () => cleanups.forEach((fn) => fn())
+
+		for (const point of touched) {
+			this.invalidateCache(point)
+		}
+		if (touched.size > 0) this.queueNotifyPoints(touched)
+
+		return () => {
+			const cleanupTouched = new Set<ExtensionPoint>()
+			for (const { point, id, item } of inserted) {
+				const bucket = this.extensions.get(point)
+				if (!bucket) continue
+				// Only delete if we're still the active registration for this id
+				if (bucket.get(id) === item && bucket.delete(id)) {
+					cleanupTouched.add(point)
+					if (bucket.size === 0) {
+						this.extensions.delete(point)
+					}
+				}
+			}
+			for (const point of cleanupTouched) {
+				this.invalidateCache(point)
+			}
+			if (cleanupTouched.size > 0) this.queueNotifyPoints(cleanupTouched)
+		}
 	}
 
 	/**
@@ -99,12 +141,54 @@ class ExtensionRegistry {
 	}
 
 	/**
+	 * 订阅某个扩展点的变化（更细粒度，减少无关重渲染）
+	 */
+	subscribePoint = (point: ExtensionPoint, cb: () => void): (() => void) => {
+		let bucket = this.pointListeners.get(point)
+		if (!bucket) {
+			bucket = new Set()
+			this.pointListeners.set(point, bucket)
+		}
+		bucket.add(cb)
+		return () => {
+			const current = this.pointListeners.get(point)
+			if (!current) return
+			current.delete(cb)
+			if (current.size === 0) {
+				this.pointListeners.delete(point)
+			}
+		}
+	}
+
+	/**
 	 * 清空所有扩展
 	 */
 	clear(): void {
+		const touched = new Set<ExtensionPoint>()
+		for (const key of this.extensions.keys()) touched.add(key)
+		for (const key of this.pointListeners.keys()) touched.add(key)
 		this.extensions.clear()
 		this.snapshotCache.clear()
-		this.notify()
+		this.queueNotifyPoints(touched)
+	}
+
+	/**
+	 * Batch registry updates to emit at most one notification.
+	 *
+	 * Useful when applying many register/unregister operations in a single tick.
+	 */
+	batch<T>(fn: () => T): T {
+		this.batchDepth++
+		try {
+			return fn()
+		} finally {
+			this.batchDepth--
+			if (this.batchDepth === 0 && this.batchedPoints.size > 0) {
+				const points = new Set(this.batchedPoints)
+				this.batchedPoints.clear()
+				this.notifyPoints(points)
+			}
+		}
 	}
 
 	/**
@@ -118,13 +202,30 @@ class ExtensionRegistry {
 		this.snapshotCache.delete(point)
 	}
 
-	private notify(): void {
+	private queueNotifyPoints(points: Set<ExtensionPoint>): void {
+		if (this.batchDepth > 0) {
+			for (const p of points) this.batchedPoints.add(p)
+			return
+		}
+		this.notifyPoints(points)
+	}
+
+	private notifyPoints(points: Set<ExtensionPoint>): void {
 		this.version++
-		this.listeners.forEach((cb) => {
+		for (const cb of this.listeners) {
 			try {
 				cb()
 			} catch {}
-		})
+		}
+		for (const point of points) {
+			const bucket = this.pointListeners.get(point)
+			if (!bucket) continue
+			for (const cb of bucket) {
+				try {
+					cb()
+				} catch {}
+			}
+		}
 	}
 }
 
@@ -136,21 +237,28 @@ export const extensionRegistry = new ExtensionRegistry()
  */
 export function useExtensions<P extends ExtensionPoint>(point: P) {
 	const ctx = useExtensionContext()
+	const isPluginPoint = point.startsWith('plugin:')
+
+	const subscribe = useCallback(
+		(listener: () => void) => extensionRegistry.subscribePoint(point, listener),
+		[point],
+	)
+	const getSnapshot = useCallback(() => extensionRegistry.getSnapshot(point), [point])
 
 	// 订阅 registry 变化
 	const items = useSyncExternalStore(
-		extensionRegistry.subscribe,
-		() => extensionRegistry.getSnapshot(point),
-		() => extensionRegistry.getSnapshot(point),
+		subscribe,
+		getSnapshot,
+		getSnapshot,
 	)
 
 	const ctxForPoint = useMemo<ExtensionPointCtx<P> | null>(() => {
-		if (point.startsWith('plugin:')) {
+		if (isPluginPoint) {
 			if (!('pluginName' in ctx)) return null
 			return ctx as PluginExtensionContext as ExtensionPointCtx<P>
 		}
 		return toGlobalExtensionContext(ctx) as GlobalExtensionContext as ExtensionPointCtx<P>
-	}, [ctx, point])
+	}, [ctx, isPluginPoint])
 
 	// 对于 plugin:* 扩展点，如果当前不是 plugin ctx，则不渲染（安全降级）。
 	const visible = useMemo(() => {
@@ -167,7 +275,7 @@ export function useExtensions<P extends ExtensionPoint>(point: P) {
 			}
 
 			// 插件名匹配（plugin:* 扩展点需要匹配当前插件）
-			if (point.startsWith('plugin:')) {
+			if (isPluginPoint) {
 				const pluginCtx = ctxForPoint as unknown as PluginExtensionContext
 				const extPluginName = item.meta.pluginName
 				if (
@@ -181,7 +289,7 @@ export function useExtensions<P extends ExtensionPoint>(point: P) {
 
 			return true
 		})
-	}, [items, ctxForPoint, point])
+	}, [items, ctxForPoint, isPluginPoint])
 
 	// 渲染节点
 	const nodes = useMemo(() => {

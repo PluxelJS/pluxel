@@ -17,6 +17,7 @@
 - `PluginFeatureDepsDemo.ts`：FeatureHost 的“唯一推荐 API”（`use()` / `dep()` / BridgePlugin）。
 - `PluginVaultDemo.ts`：插件里使用 `ctx.vault.open()` 做加密持久化（token/secret/batch/lock）。
 - `PluginWithUI.ts` + `PluginWithUI/ui/*`：完整链路（UI + RPC + SSE + 持久化 state）。
+- `PluginStandaloneFrameDemo.ts` + `PluginStandaloneFrameDemo/ui/*`：演示插件 routes 的 `frame: 'standalone'`（无 navbar/sidebar，但仍在同一 App/鉴权策略下运行）。
 - `advanced/DemoBaseProviders.ts`：抽象基类 Token + 多实现（Provider 选择）。
 - `advanced/DemoForks.ts`：ForkablePlugin（同插件多实例 / fork）。
 

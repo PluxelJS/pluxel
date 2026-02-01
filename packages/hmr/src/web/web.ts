@@ -70,6 +70,13 @@ export interface RouteExtensionDef {
 	icon?: string | ReactNode
 	addToNav?: boolean
 	navPriority?: number
+	/**
+	 * Host page frame preference.
+	 *
+	 * - `shell` (default): render within the host AppShell (navbar/header/etc).
+	 * - `standalone`: render as a full page without host chrome.
+	 */
+	frame?: 'shell' | 'standalone'
 }
 
 export interface PluginUIModule {

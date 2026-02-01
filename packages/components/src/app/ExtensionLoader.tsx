@@ -170,99 +170,101 @@ export function ExtensionLoader({
 	const recomputeManifestSignature = useCallback(recomputeLoaderSignature, [])
 
 	const syncBuiltins = useCallback((builtins?: BuiltinExtensionDef[]) => {
-		const next = Array.isArray(builtins) ? builtins : []
-		const seen = new Set<string>()
-		const fallbackSig = (
-			def: BuiltinExtensionDef,
-			meta: { kind: string; pluginName: string; point: string; id: string },
-		) => {
-			try {
-				return JSON.stringify(def)
-			} catch {
-				return `${meta.kind}:${meta.pluginName}:${meta.point}:${meta.id}`
+		extensionRegistry.batch(() => {
+			const next = Array.isArray(builtins) ? builtins : []
+			const seen = new Set<string>()
+			const fallbackSig = (
+				def: BuiltinExtensionDef,
+				meta: { kind: string; pluginName: string; point: string; id: string },
+			) => {
+				try {
+					return JSON.stringify(def)
+				} catch {
+					return `${meta.kind}:${meta.pluginName}:${meta.point}:${meta.id}`
+				}
 			}
-		}
 
-		for (const def of next) {
-			if (!def || typeof def !== 'object') continue
-			const pluginName = typeof (def as any).pluginName === 'string' ? (def as any).pluginName : ''
-			const point = typeof (def as any).point === 'string' ? (def as any).point : ''
-			const id = typeof (def as any).id === 'string' ? (def as any).id : ''
-			const kind = typeof (def as any).kind === 'string' ? (def as any).kind : ''
-			if (!pluginName || !point || !id || !kind) continue
+			for (const def of next) {
+				if (!def || typeof def !== 'object') continue
+				const pluginName = typeof (def as any).pluginName === 'string' ? (def as any).pluginName : ''
+				const point = typeof (def as any).point === 'string' ? (def as any).point : ''
+				const id = typeof (def as any).id === 'string' ? (def as any).id : ''
+				const kind = typeof (def as any).kind === 'string' ? (def as any).kind : ''
+				if (!pluginName || !point || !id || !kind) continue
 
-			const runtimeId = `${pluginName}:builtin:${point}:${id}`
-			seen.add(runtimeId)
+				const runtimeId = `${pluginName}:builtin:${point}:${id}`
+				seen.add(runtimeId)
 
-			const sig = fallbackSig(def, { kind, pluginName, point, id })
+				const sig = fallbackSig(def, { kind, pluginName, point, id })
 
-			const cached = loaderState.builtinCache.get(runtimeId)
-			if (cached && cached.sig === sig) continue
-			if (cached) {
+				const cached = loaderState.builtinCache.get(runtimeId)
+				if (cached && cached.sig === sig) continue
+				if (cached) {
+					try {
+						cached.cleanup()
+					} catch {}
+					loaderState.builtinCache.delete(runtimeId)
+				}
+
+				const meta: ExtensionMeta = {
+					...((def as any).meta ?? {}),
+					id: runtimeId,
+					pluginName,
+					priority: typeof (def as any).priority === 'number' ? (def as any).priority : 0,
+					requireRunning: (def as any).requireRunning ?? true,
+				}
+
+				const Component = builtinComponents[kind as BuiltinExtensionKind]
+				if (!Component) {
+					extLog('skip builtin kind=%s (id=%s)', kind, runtimeId)
+					continue
+				}
+
+				const render = () => (
+					<ExtensionErrorBoundary
+						pluginName={pluginName}
+						extensionId={runtimeId}
+						point={point}
+						fallback={
+							process.env.NODE_ENV !== 'production'
+								? ({ error }) => (
+										<div
+											style={{
+												padding: 8,
+												borderRadius: 8,
+												border: '1px solid rgba(255, 0, 0, 0.25)',
+												background: 'rgba(255, 0, 0, 0.06)',
+												fontSize: 12,
+												lineHeight: 1.4,
+											}}
+										>
+											<div style={{ fontWeight: 600 }}>
+												Builtin render failed: {pluginName} · {point}
+											</div>
+											<div style={{ opacity: 0.85 }}>
+												{error?.message ?? String(error ?? 'unknown error')}
+											</div>
+										</div>
+									)
+								: null
+						}
+					>
+						<Component def={def as any} />
+					</ExtensionErrorBoundary>
+				)
+
+				const cleanup = extensionRegistry.register(point as any, { meta, render })
+				loaderState.builtinCache.set(runtimeId, { sig, cleanup })
+			}
+
+			for (const [key, cached] of Array.from(loaderState.builtinCache.entries())) {
+				if (seen.has(key)) continue
 				try {
 					cached.cleanup()
 				} catch {}
-				loaderState.builtinCache.delete(runtimeId)
+				loaderState.builtinCache.delete(key)
 			}
-
-			const meta: ExtensionMeta = {
-				...((def as any).meta ?? {}),
-				id: runtimeId,
-				pluginName,
-				priority: typeof (def as any).priority === 'number' ? (def as any).priority : 0,
-				requireRunning: (def as any).requireRunning ?? true,
-			}
-
-			const Component = builtinComponents[kind as BuiltinExtensionKind]
-			if (!Component) {
-				extLog('skip builtin kind=%s (id=%s)', kind, runtimeId)
-				continue
-			}
-
-			const render = () => (
-				<ExtensionErrorBoundary
-					pluginName={pluginName}
-					extensionId={runtimeId}
-					point={point}
-					fallback={
-						process.env.NODE_ENV !== 'production'
-							? ({ error }) => (
-									<div
-										style={{
-											padding: 8,
-											borderRadius: 8,
-											border: '1px solid rgba(255, 0, 0, 0.25)',
-											background: 'rgba(255, 0, 0, 0.06)',
-											fontSize: 12,
-											lineHeight: 1.4,
-										}}
-									>
-										<div style={{ fontWeight: 600 }}>
-											Builtin render failed: {pluginName} · {point}
-										</div>
-										<div style={{ opacity: 0.85 }}>
-											{error?.message ?? String(error ?? 'unknown error')}
-										</div>
-									</div>
-								)
-							: null
-					}
-				>
-					<Component def={def as any} />
-				</ExtensionErrorBoundary>
-			)
-
-			const cleanup = extensionRegistry.register(point as any, { meta, render })
-			loaderState.builtinCache.set(runtimeId, { sig, cleanup })
-		}
-
-		for (const [key, cached] of Array.from(loaderState.builtinCache.entries())) {
-			if (seen.has(key)) continue
-			try {
-				cached.cleanup()
-			} catch {}
-			loaderState.builtinCache.delete(key)
-		}
+		})
 	}, [])
 
 	// 插件停止后是否卸载扩展模块（避免频繁加载/卸载可延迟执行）

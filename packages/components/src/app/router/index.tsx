@@ -7,9 +7,12 @@ import {
 	type RouterHistory,
 } from '@tanstack/react-router'
 import { AppErrorBoundary } from '../AppErrorBoundary'
+import { AppProviders } from '../layout/AppProviders'
 import { RootShell } from '../layout/RootShell'
+import { StandaloneShell } from '../layout/StandaloneShell'
 import { LiveLog } from '../log_viewer/LiveLog'
 import { ExtensionRoute } from '../routes/ExtensionRoute'
+import { ExtensionStandaloneRoute } from '../routes/ExtensionStandaloneRoute'
 import { HomeRoute } from '../routes/HomeRoute'
 import { NotFoundRoute } from '../routes/NotFoundRoute'
 import { PackagesRoute } from '../routes/PackagesRoute'
@@ -20,32 +23,44 @@ import { RouteError } from '../routes/RouteError'
 const rootRoute = createRootRoute({
 	component: () => (
 		<AppErrorBoundary>
-			<RootShell />
+			<AppProviders />
 		</AppErrorBoundary>
 	),
 })
 
-const homeRoute = createRoute({
+const shellRoute = createRoute({
 	getParentRoute: () => rootRoute,
+	id: 'shell',
+	component: RootShell,
+})
+
+const standaloneRoute = createRoute({
+	getParentRoute: () => rootRoute,
+	id: 'standalone',
+	component: StandaloneShell,
+})
+
+const homeRoute = createRoute({
+	getParentRoute: () => shellRoute,
 	path: '/',
 	component: HomeRoute,
 })
 
 const logsRoute = createRoute({
-	getParentRoute: () => rootRoute,
+	getParentRoute: () => shellRoute,
 	path: 'logs',
 	component: () => <LiveLog />,
 })
 
 const packagesRoute = createRoute({
-	getParentRoute: () => rootRoute,
+	getParentRoute: () => shellRoute,
 	path: 'packages',
 	component: PackagesRoute,
 })
 
 
 const pluginsRoute = createRoute({
-	getParentRoute: () => rootRoute,
+	getParentRoute: () => shellRoute,
 	path: 'plugins',
 	component: PluginsRoute,
 })
@@ -76,20 +91,29 @@ const pluginDetailPathRoute = createRoute({
 })
 
 const extensionRoute = createRoute({
-	getParentRoute: () => rootRoute,
+	getParentRoute: () => shellRoute,
 	path: 'ext/$pluginName/$path*',
 	component: ExtensionRoute,
 })
 
+const extensionStandaloneRoute = createRoute({
+	getParentRoute: () => standaloneRoute,
+	path: 'ext-standalone/$pluginName/$path*',
+	component: ExtensionStandaloneRoute,
+})
+
 const routeTree = rootRoute.addChildren([
-	homeRoute,
-	logsRoute,
-	packagesRoute,
-	extensionRoute,
-	pluginsRoute.addChildren([
-		pluginsIndexRoute,
-		pluginDetailRoute.addChildren([pluginDetailIndexRoute, pluginDetailPathRoute]),
+	shellRoute.addChildren([
+		homeRoute,
+		logsRoute,
+		packagesRoute,
+		extensionRoute,
+		pluginsRoute.addChildren([
+			pluginsIndexRoute,
+			pluginDetailRoute.addChildren([pluginDetailIndexRoute, pluginDetailPathRoute]),
+		]),
 	]),
+	standaloneRoute.addChildren([extensionStandaloneRoute]),
 ])
 
 export interface CreateRouterOptions {

@@ -1,4 +1,4 @@
-import { useEffect, useState, useSyncExternalStore } from 'react'
+import { useSyncExternalStore } from 'react'
 import { extensionRegistry } from './registry'
 import {
 	getExtensionRuntimeRevision,
@@ -11,15 +11,11 @@ import {
  * 获取扩展 Registry 版本（用于触发重渲染）
  */
 export function useExtensionVersion(): number {
-	const [version, setVersion] = useState(() => extensionRegistry.getVersion())
-
-	useEffect(() => {
-		return extensionRegistry.subscribe(() => {
-			setVersion(extensionRegistry.getVersion())
-		})
-	}, [])
-
-	return version
+	return useSyncExternalStore(
+		extensionRegistry.subscribe,
+		() => extensionRegistry.getVersion(),
+		() => extensionRegistry.getVersion(),
+	)
 }
 
 /**
