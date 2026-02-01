@@ -27,8 +27,8 @@
 		"tsdown": "^0.20.1",
 		"turbo": "^2.8.1",
 		"typescript": "^5.9.3",
-		"vitest": "*",
-		"unplugin-preprocessor-directives": "^1.2.0"
+		"unplugin-preprocessor-directives": "^1.2.0",
+		"vitest": "^4.0.18"
 	},
 	"pre-commit": "lint-staged",
 	"lint-staged": {

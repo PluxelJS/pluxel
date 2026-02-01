@@ -41,7 +41,6 @@
 		"@pluxel/core": "workspace:*",
 		"vitest": "*"
 	},
-	"dependencies": {},
 	"devDependencies": {
 		"@pluxel/build": "workspace:*"
 	},
