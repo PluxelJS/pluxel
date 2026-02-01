@@ -2,16 +2,13 @@ import { Stack } from '@mantine/core'
 import { Outlet } from '@tanstack/react-router'
 import { useEffect, useMemo } from 'react'
 import { Layout, type NavItem } from '../../components'
-import {
-	ExtensionPoints,
-	useExtensionSurface,
-} from '../../extension'
+import { ExtensionPoints, useExtensionSurface } from '../../extension'
 import { LAST_ROUTE_KEY } from '../constants'
 import { Header } from '../Header'
-import { NavbarFooterActions } from './NavbarFooterActions'
 import { baseNavItems, buildExtensionNavItems } from '../navigation/navConfig'
 import { RouterLinkAdapter } from '../RouterLinkAdapter'
 import { useCurrentPathname } from '../router/useCurrentRoute'
+import { NavbarFooterActions } from '../layout/NavbarFooterActions'
 
 export function RootShell() {
 	const pathname = useCurrentPathname()
@@ -82,3 +79,4 @@ export function RootShell() {
 		</Layout>
 	)
 }
+

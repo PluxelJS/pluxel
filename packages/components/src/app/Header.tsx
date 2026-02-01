@@ -13,7 +13,7 @@ import {
 	useComputedColorScheme,
 } from '@mantine/core'
 import { IconArrowRight, IconBell, IconMenu2, IconSearch } from '@tabler/icons-react'
-import { useRouter } from '@tanstack/react-router'
+import { useNavigate } from '@tanstack/react-router'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { ColorSchemeToggle } from '../components'
 import { ExtensionSlot } from '../extension'
@@ -41,7 +41,7 @@ export function Header({ onMenu }: { onMenu: () => void }) {
 	const [search, setSearch] = useState('')
 	const searchInputRef = useRef<HTMLInputElement | null>(null)
 	const notify = useNotify()
-	const router = useRouter()
+	const navigate = useNavigate()
 	const pathname = useCurrentPathname()
 
 	const handleSearchSubmit = useCallback(() => {
@@ -60,8 +60,8 @@ export function Header({ onMenu }: { onMenu: () => void }) {
 			} catch {}
 			window.dispatchEvent(new CustomEvent<string>(PLUGIN_SEARCH_EVENT, { detail: value }))
 		}
-		router.history.push('/plugins')
-	}, [notify, router.history, search])
+		navigate({ to: '/plugins' })
+	}, [navigate, notify, search])
 
 	useEffect(() => {
 		const handler = (event: KeyboardEvent) => {

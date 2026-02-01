@@ -4,14 +4,15 @@ import { useParams } from '@tanstack/react-router'
 import {
 	ExtensionErrorBoundary,
 	ExtensionProvider,
+	EXTENSION_STANDALONE_ROUTE_PREFIX,
 	getPluginRouteComponent,
 	type ExtensionContext,
 	type PluginExtensionContext,
 	useExtensionContext,
 	useExtensionRuntimeVersion,
-} from '../../extension'
-import { useCurrentPathname } from '../router/useCurrentRoute'
-import { decodeURIComponentSafe, normalizeExtensionRestPath, readRestPathFromLocation } from './extensionRouteUtils'
+} from '../../../extension'
+import { useCurrentPathname } from '../../router/useCurrentRoute'
+import { decodeURIComponentSafe, normalizeExtensionRestPath, readRestPathFromLocation } from './utils'
 
 export function ExtensionStandaloneRoute() {
 	const { pluginName: rawName, path: rawRest } = useParams({})
@@ -20,10 +21,18 @@ export function ExtensionStandaloneRoute() {
 
 	const restPathFromParams = normalizeExtensionRestPath(rawRest)
 	const restPathFromLocation = useMemo(() => {
-		return readRestPathFromLocation({ locationPath, rawName, prefix: '/ext-standalone' })
+		return readRestPathFromLocation({
+			locationPath,
+			rawName,
+			prefix: EXTENSION_STANDALONE_ROUTE_PREFIX,
+		})
 	}, [locationPath, rawName])
 	const restPath = restPathFromParams || restPathFromLocation
-	const fullPath = `/ext-standalone/${pluginName}${restPath}`
+	const displayPath = `${EXTENSION_STANDALONE_ROUTE_PREFIX}/${pluginName}${restPath}`
+	const ctxPathname =
+		locationPath && locationPath.startsWith(`${EXTENSION_STANDALONE_ROUTE_PREFIX}/`)
+			? locationPath
+			: displayPath
 	const routeVersion = useExtensionRuntimeVersion(pluginName)
 
 	const routeRender = useMemo(() => {
@@ -38,10 +47,10 @@ export function ExtensionStandaloneRoute() {
 	const extensionCtx = useMemo<ExtensionContext>(
 		() => ({
 			...parentCtx,
-			pathname: fullPath,
+			pathname: ctxPathname,
 			pluginName,
 		}),
-		[parentCtx, fullPath, pluginName],
+		[parentCtx, ctxPathname, pluginName],
 	)
 
 	if (!pluginRunning && runningPluginsReady) {
@@ -50,7 +59,7 @@ export function ExtensionStandaloneRoute() {
 				<Stack gap="xs" align="center">
 					<Text fw={600}>插件未运行</Text>
 					<Text c="dimmed" size="sm">
-						请先启动插件 {pluginName}，才能访问 {fullPath}
+						请先启动插件 {pluginName}，才能访问 {displayPath}
 					</Text>
 				</Stack>
 			</Center>
@@ -77,7 +86,7 @@ export function ExtensionStandaloneRoute() {
 				<Stack gap="xs" align="center">
 					<Text fw={600}>找不到扩展页面</Text>
 					<Text c="dimmed" size="sm">
-						该插件尚未注册页面：{fullPath}
+						该插件尚未注册页面：{displayPath}
 					</Text>
 				</Stack>
 			</Center>
@@ -90,8 +99,8 @@ export function ExtensionStandaloneRoute() {
 		<ExtensionProvider value={pluginCtx}>
 			<ExtensionErrorBoundary
 				pluginName={pluginName}
-				extensionId={`${pluginName}:${fullPath}`}
-				point={`route:${fullPath}`}
+				extensionId={`${pluginName}:${ctxPathname}`}
+				point={`route:${ctxPathname}`}
 			>
 				{routeRender(pluginCtx)}
 			</ExtensionErrorBoundary>

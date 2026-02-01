@@ -2,16 +2,25 @@
 
 export { ExtensionErrorBoundary } from './ErrorBoundary'
 // i18n (optional host service used by plugin ctx)
-export { getExtensionI18nService, setExtensionLocale } from './i18n'
+export { getExtensionI18nService, setExtensionLocale } from './internal/i18n'
 // Hooks
 export { useExtensionRuntimeVersion, useExtensionVersion } from './hooks'
+// Paths (host routing conventions)
+export {
+	EXTENSION_ROUTE_PREFIX,
+	EXTENSION_STANDALONE_ROUTE_PREFIX,
+	type ExtensionFrame,
+	type ExtensionRoutePrefix,
+	buildExtensionHref,
+	normalizeExtensionRouteSubPath,
+} from './paths'
 // Registry
 export {
 	ExtensionProvider,
 	extensionRegistry,
 	useExtensionContext,
 	useExtensions,
-} from './registry'
+} from './internal/registry'
 // Runtime
 export {
 	getExtensionRuntimeRevision,
@@ -19,7 +28,7 @@ export {
 	loadExtensionModule,
 	subscribeExtensionRuntimeChanges,
 	unloadExtensionModule,
-} from './runtime'
+} from './internal/runtime'
 
 // 组件 & Slot helpers
 export { ExtensionSlot } from './slots/ExtensionSlot'

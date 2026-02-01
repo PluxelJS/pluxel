@@ -215,21 +215,27 @@ function createBrowserImportGuardPlugin(opts) {
 		name: 'pluxel:browser-import-guard',
 		enforce: 'pre',
 		async resolveId(source, importer) {
-			const unwrapped = unwrapViteBrowserExternalId(source)
-			const check = unwrapped ?? source
-			if (typeof check === 'string' && forbidden.has(check)) {
-				throwNodeImport(
-					check,
-					importer,
-					unwrapped ? 'static-resolve(browser-external)' : 'static-resolve',
-				)
-			}
-
 			const importerId = importer && typeof importer === 'string' ? cleanId(importer) : null
 			if (importerId && !parent.has(importerId)) parent.set(importerId, null)
 			if (!importer || typeof importer !== 'string' || typeof source !== 'string') return null
 
 			const resolved = await this.resolve(source, importer, { skipSelf: true })
+			const unwrapped = unwrapViteBrowserExternalId(source)
+			const check = unwrapped ?? source
+			if (typeof check === 'string' && forbidden.has(check)) {
+				const resolvedId = resolved?.id ? cleanId(resolved.id) : null
+				const resolvedUnwrapped = resolvedId ? unwrapViteBrowserExternalId(resolvedId) : null
+				const importerIsDep = importer.includes('/node_modules/') || importer.includes('\\node_modules\\')
+				// Allow dependencies to reference Node builtins when Vite already externalizes them for browsers
+				// (common in "isNode" branches that are dead in browsers).
+				if (!(importerIsDep && resolvedUnwrapped === check)) {
+					throwNodeImport(
+						check,
+						importer,
+						unwrapped || resolvedUnwrapped ? 'static-resolve(browser-external)' : 'static-resolve',
+					)
+				}
+			}
 			if (!resolved && isBare(source) && !externalSet.has(source)) {
 				throwUnresolved(source, importerId ?? importer, 'static-resolve')
 			}
@@ -249,7 +255,13 @@ function createBrowserImportGuardPlugin(opts) {
 				if (!spec) continue
 				const unwrapped = unwrapViteBrowserExternalId(spec)
 				const check = unwrapped ?? spec
-				if (forbidden.has(check)) throwNodeImport(check, id, 'dynamic-import')
+				if (forbidden.has(check)) {
+					const resolved = await this.resolve(spec, id, { skipSelf: true })
+					const resolvedId = resolved?.id ? cleanId(resolved.id) : null
+					const resolvedUnwrapped = resolvedId ? unwrapViteBrowserExternalId(resolvedId) : null
+					const importerIsDep = id.includes('/node_modules/') || id.includes('\\node_modules\\')
+					if (!(importerIsDep && resolvedUnwrapped === check)) throwNodeImport(check, id, 'dynamic-import')
+				}
 
 				if (isBare(spec) && !externalSet.has(spec)) {
 					const resolved = await this.resolve(spec, id, { skipSelf: true })

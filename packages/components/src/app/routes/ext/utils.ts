@@ -1,3 +1,6 @@
+import type { ExtensionRoutePrefix } from '../../../extension/paths'
+import { EXTENSION_ROUTE_PREFIX, EXTENSION_STANDALONE_ROUTE_PREFIX } from '../../../extension/paths'
+
 export function decodeURIComponentSafe(input: string): string {
 	try {
 		return decodeURIComponent(input)
@@ -20,16 +23,15 @@ export function normalizeExtensionRestPath(raw?: string): string {
 export function readRestPathFromLocation(opts: {
 	locationPath: string | null | undefined
 	rawName: string
-	prefix: '/ext' | '/ext-standalone'
+	prefix: ExtensionRoutePrefix
 }): string {
 	const { locationPath, rawName, prefix } = opts
 	if (!locationPath) return ''
 	const match = locationPath.match(
-		prefix === '/ext' ? /^\/ext\/([^/]+)(.*)$/ : /^\/ext-standalone\/([^/]+)(.*)$/,
+		prefix === EXTENSION_ROUTE_PREFIX ? /^\/ext\/([^/]+)(.*)$/ : /^\/ext-standalone\/([^/]+)(.*)$/,
 	)
 	if (!match) return ''
 	const [, segment, rest] = match
 	if (segment !== rawName) return ''
 	return normalizeExtensionRestPath(rest)
 }
-

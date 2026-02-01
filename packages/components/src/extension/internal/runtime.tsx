@@ -1,43 +1,16 @@
 import type { ReactNode } from 'react'
-import { extRuntime } from './debug'
-import { ExtensionErrorBoundary } from './ErrorBoundary'
+import { extRuntime } from '../debug'
+import { ExtensionErrorBoundary } from '../ErrorBoundary'
 import { registerPluginI18n, unregisterPluginI18n } from './i18n'
 import { extensionRegistry } from './registry'
-import type { ExtensionItem, ExtensionMeta, PluginExtensionContext, PluginUIModule } from './types'
-
-function normalizeExtensionRoutePath(path: string): string {
-	if (!path) return ''
-	const trimmed = path.trim()
-	if (!trimmed || trimmed === '/') return ''
-	const segments = trimmed
-		.split('/')
-		.map((segment) => segment.trim())
-		.filter((segment) => segment.length > 0 && segment !== '.' && segment !== '..')
-	if (segments.length === 0) return ''
-	return `/${segments.join('/')}`
-}
-
-const EXTENSION_ROUTE_PREFIX = '/ext/'
-const EXTENSION_STANDALONE_ROUTE_PREFIX = '/ext-standalone/'
-
-function buildExtensionHref(
-	pluginName: string,
-	path: string,
-	frame: 'shell' | 'standalone' = 'shell',
-): string {
-	const normalizedPath = normalizeExtensionRoutePath(path)
-	const encodedName = (() => {
-		try {
-			return encodeURIComponent(pluginName)
-		} catch {
-			return pluginName
-		}
-	})()
-	const prefix =
-		frame === 'standalone' ? EXTENSION_STANDALONE_ROUTE_PREFIX : EXTENSION_ROUTE_PREFIX
-	if (!normalizedPath) return `${prefix}${encodedName}`
-	return `${prefix}${encodedName}${normalizedPath}`
-}
+import type {
+	ExtensionItem,
+	ExtensionMeta,
+	ExtensionPoint,
+	PluginExtensionContext,
+	PluginUIModule,
+} from '../types'
+import { buildExtensionHref, normalizeExtensionRouteSubPath } from '../paths'
 
 type RouteComponent = (ctx: PluginExtensionContext) => ReactNode
 
@@ -169,7 +142,7 @@ class ExtensionRuntime {
 		}
 
 		if (module.extensions) {
-			const registrations: Array<{ point: string; item: ExtensionItem<any> }> = []
+			const registrations: Array<{ point: ExtensionPoint; item: ExtensionItem<any> }> = []
 			for (const ext of module.extensions) {
 				const extId = `${pluginName}:${ext.id}`
 				const extRender = (ext as unknown as { render?: unknown })?.render
@@ -263,9 +236,9 @@ class ExtensionRuntime {
 				routeMap.clear()
 			}
 
-			const navRegistrations: Array<{ point: string; item: ExtensionItem<any> }> = []
+			const navRegistrations: Array<{ point: ExtensionPoint; item: ExtensionItem<any> }> = []
 			for (const route of module.routes) {
-				const normalizedPath = normalizeExtensionRoutePath(route.definition.path)
+				const normalizedPath = normalizeExtensionRouteSubPath(route.definition.path)
 				routeMap.set(normalizedPath, route.render)
 
 				if (route.definition.addToNav) {
@@ -281,7 +254,7 @@ class ExtensionRuntime {
 					}
 
 					navRegistrations.push({
-						point: 'navbar:items',
+						point: 'navbar:items' satisfies ExtensionPoint,
 						item: {
 							meta,
 							render: () => null,
@@ -310,7 +283,7 @@ class ExtensionRuntime {
 	getRouteComponent(pluginName: string, restPath: string): RouteComponent | undefined {
 		const routeMap = this.routeComponents.get(pluginName)
 		if (!routeMap) return undefined
-		const normalized = normalizeExtensionRoutePath(restPath)
+		const normalized = normalizeExtensionRouteSubPath(restPath)
 		return routeMap.get(normalized)
 	}
 }

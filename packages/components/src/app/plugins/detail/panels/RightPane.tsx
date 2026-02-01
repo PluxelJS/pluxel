@@ -11,7 +11,7 @@ import {
 	Text,
 } from '@mantine/core'
 import { IconSettingsOff } from '@tabler/icons-react'
-import { useRouter } from '@tanstack/react-router'
+import { useNavigate } from '@tanstack/react-router'
 import { Fragment, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ObjectSchema } from 'valibot'
 import { EmptyState, ErrorState } from '../../../../components'
@@ -131,25 +131,6 @@ function readSearchValue(search: unknown, key: string): string | undefined {
 	return undefined
 }
 
-function toSearchParams(search: Record<string, unknown>): URLSearchParams {
-	const params = new URLSearchParams()
-	for (const [key, value] of Object.entries(search)) {
-		if (value == null) continue
-		if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
-			params.set(key, String(value))
-			continue
-		}
-		if (Array.isArray(value)) {
-			for (const item of value) {
-				if (typeof item === 'string' || typeof item === 'number' || typeof item === 'boolean') {
-					params.append(key, String(item))
-				}
-			}
-		}
-	}
-	return params
-}
-
 function readPaneState(key: string): RightPaneState {
 	if (typeof window === 'undefined') return {}
 	try {
@@ -184,7 +165,7 @@ function writePaneState(key: string, state: RightPaneState) {
 export function RightPane({ config }: RightPaneProps) {
 	const { pluginName, isSyncing } = usePluginMeta()
 	const { nodes: tabNodes, items: tabItems } = useExtensions('plugin:tabs')
-	const router = useRouter()
+	const navigate = useNavigate()
 	const pathname = useCurrentPathname()
 	const search = useCurrentSearch()
 	const tabGroups = useMemo(() => {
@@ -304,10 +285,14 @@ export function RightPane({ config }: RightPaneProps) {
 			if (!changed && !shouldNavigate) return
 
 			const to = target ?? pathname
-			const qs = toSearchParams(next).toString()
-			router.history.replace(qs ? `${to}?${qs}` : to)
+			if (!to) return
+			navigate({
+				to,
+				replace: true,
+				search: next,
+			})
 		},
-		[pathname, router.history, search],
+		[navigate, pathname, search],
 	)
 
 	const tabFromSearch = useMemo(() => readSearchValue(search, 'tab'), [search])

@@ -1,6 +1,6 @@
 import type React from 'react'
 import { forwardRef, useCallback } from 'react'
-import { useRouter } from '@tanstack/react-router'
+import { useNavigate, useRouter } from '@tanstack/react-router'
 
 export type RouterLinkAdapterProps = {
 	to: string
@@ -10,6 +10,7 @@ export type RouterLinkAdapterProps = {
 export const RouterLinkAdapter = forwardRef<HTMLAnchorElement, RouterLinkAdapterProps>(
 	({ to, children, onClick, target, rel, ...rest }, ref) => {
 		const router = useRouter()
+		const navigate = useNavigate()
 
 		let href = to
 		try {
@@ -36,12 +37,15 @@ export const RouterLinkAdapter = forwardRef<HTMLAnchorElement, RouterLinkAdapter
 				event.preventDefault()
 				if (to === '/') {
 					// 主动点击首页链接时，通过 state 传递 manual 标记
-					router.history.push(to, { manual: true })
+					navigate({
+						to,
+						state: (prev) => ({ ...(prev as any), manual: true }) as any,
+					})
 				} else {
-					router.history.push(to)
+					navigate({ to })
 				}
 			},
-			[onClick, router.history, target, to],
+			[navigate, onClick, target, to],
 		)
 
 		return (

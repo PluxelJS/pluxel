@@ -1,4 +1,4 @@
-import type { I18nLocale, I18nMessageDict, I18nResources, I18nService, PluginI18nBundle } from './types'
+import type { I18nLocale, I18nMessageDict, I18nResources, I18nService, PluginI18nBundle } from '../types'
 
 const resources: I18nResources = Object.create(null)
 const keysByPlugin = new Map<string, Map<I18nLocale, Set<string>>>()
@@ -166,3 +166,4 @@ const extensionI18nService: I18nService = {
 export function getExtensionI18nService(): I18nService {
 	return extensionI18nService
 }
+

@@ -1,6 +1,6 @@
-// packages/components/src/extension/registry.ts
+// packages/components/src/extension/internal/registry.ts
 
-export { ExtensionProvider, useExtensionContext } from './types'
+export { ExtensionProvider, useExtensionContext } from '../types'
 
 import { useCallback, useMemo, useSyncExternalStore } from 'react'
 import {
@@ -14,7 +14,7 @@ import {
 	type ExtensionPointCtx,
 	type PluginExtensionContext,
 	type GlobalExtensionContext,
-} from './types'
+} from '../types'
 
 // 稳定的空数组引用，避免 useSyncExternalStore 无限循环
 const EMPTY_ITEMS: ExtensionItem[] = []
@@ -246,11 +246,7 @@ export function useExtensions<P extends ExtensionPoint>(point: P) {
 	const getSnapshot = useCallback(() => extensionRegistry.getSnapshot(point), [point])
 
 	// 订阅 registry 变化
-	const items = useSyncExternalStore(
-		subscribe,
-		getSnapshot,
-		getSnapshot,
-	)
+	const items = useSyncExternalStore(subscribe, getSnapshot, getSnapshot)
 
 	const ctxForPoint = useMemo<ExtensionPointCtx<P> | null>(() => {
 		if (isPluginPoint) {
@@ -309,3 +305,4 @@ export function useExtensions<P extends ExtensionPoint>(point: P) {
 
 	return { items: visible as ExtensionItem<P>[], nodes, context: ctxForPoint }
 }
+

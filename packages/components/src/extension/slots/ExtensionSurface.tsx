@@ -1,5 +1,5 @@
 import { useCallback, useMemo, type ReactNode } from 'react'
-import { useExtensions } from '../registry'
+import { useExtensions } from '../internal/registry'
 import type { ExtensionPoint, ExtensionItem, ExtensionPointCtx } from '../types'
 
 export interface ExtensionSurfaceOptions<

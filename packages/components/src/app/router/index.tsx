@@ -7,12 +7,12 @@ import {
 	type RouterHistory,
 } from '@tanstack/react-router'
 import { AppErrorBoundary } from '../AppErrorBoundary'
-import { AppProviders } from '../layout/AppProviders'
-import { RootShell } from '../layout/RootShell'
-import { StandaloneShell } from '../layout/StandaloneShell'
+import { AppProviders } from '../frames/AppProviders'
+import { RootShell } from '../frames/RootShell'
+import { StandaloneShell } from '../frames/StandaloneShell'
 import { LiveLog } from '../log_viewer/LiveLog'
-import { ExtensionRoute } from '../routes/ExtensionRoute'
-import { ExtensionStandaloneRoute } from '../routes/ExtensionStandaloneRoute'
+import { ExtensionRoute } from '../routes/ext/ExtensionRoute'
+import { ExtensionStandaloneRoute } from '../routes/ext/ExtensionStandaloneRoute'
 import { HomeRoute } from '../routes/HomeRoute'
 import { NotFoundRoute } from '../routes/NotFoundRoute'
 import { PackagesRoute } from '../routes/PackagesRoute'
@@ -57,7 +57,6 @@ const packagesRoute = createRoute({
 	path: 'packages',
 	component: PackagesRoute,
 })
-
 
 const pluginsRoute = createRoute({
 	getParentRoute: () => shellRoute,

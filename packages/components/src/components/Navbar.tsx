@@ -103,11 +103,12 @@ const Navbar = memo(function Navbar({
 				{ to, children, ...others },
 				ref,
 			) {
-				const rest = others as Omit<React.ComponentPropsWithoutRef<typeof LinkComponent>, 'to'>
+				const Comp = LinkComponent as any
+				const rest = others as any
 				return (
-					<LinkComponent to={to} {...rest}>
+					<Comp ref={ref} to={to} {...rest}>
 						{children}
-					</LinkComponent>
+					</Comp>
 				)
 			}),
 		[LinkComponent],

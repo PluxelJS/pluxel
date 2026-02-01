@@ -1,11 +1,11 @@
 import { useSyncExternalStore } from 'react'
-import { extensionRegistry } from './registry'
+import { extensionRegistry } from './internal/registry'
 import {
 	getExtensionRuntimeRevision,
 	getPluginExtensionRuntimeRevision,
 	subscribeExtensionRuntimeChanges,
 	subscribePluginExtensionRuntimeChanges,
-} from './runtime'
+} from './internal/runtime'
 
 /**
  * 获取扩展 Registry 版本（用于触发重渲染）

@@ -1,11 +1,11 @@
 import { Center, Text } from '@mantine/core'
-import { useRouter, useRouterState } from '@tanstack/react-router'
+import { useNavigate, useRouterState } from '@tanstack/react-router'
 import { useEffect, useRef, useState } from 'react'
 import { LAST_ROUTE_KEY } from '../constants'
 import { HomeIntro } from '../home/HomeIntro'
 
 export function HomeRoute() {
-	const router = useRouter()
+	const navigate = useNavigate()
 	// 使用 useRouterState + select 精确订阅，减少不必要的重渲染
 	// https://github.com/TanStack/router/issues/3110
 	const isManual = useRouterState({
@@ -29,12 +29,12 @@ export function HomeRoute() {
 		// 非主动访问首页时，尝试恢复上次路由
 		if (last && last !== '/') {
 			hasNavigatedRef.current = true
-			router.history.replace(last)
+			navigate({ to: last, replace: true })
 			return
 		}
 
 		setShowIntro(true)
-	}, [isManual, router.history])
+	}, [isManual, navigate])
 
 	if (!showIntro) {
 		return (
