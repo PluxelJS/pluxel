@@ -2,7 +2,7 @@ import { existsSync } from 'node:fs'
 import { availableParallelism, cpus } from 'node:os'
 import { fileURLToPath } from 'node:url'
 import type { Logger as LogtapeLogger } from '@logtape/logtape'
-import { type Context, Injectable } from '@pluxel/core'
+import { type CommitSummary, type Context, getPluginInfo, Injectable } from '@pluxel/core'
 import { getDebugLogger } from '@pluxel/core/logger'
 import { dirname, resolve } from 'pathe'
 import {
@@ -34,15 +34,12 @@ import { collectHotspots, isLogEnabled, logAttributionReport, TimingTracker } fr
 import { buildHmrOperationalReport, type RegistryViewLike } from './operational-report'
 import {
 	HmrBatchProcessor,
+	type HmrBatchSummary,
 	HmrExecutor,
 	prefetchTransforms,
 } from './pipeline'
 import { HmrRunner, isHardBridgeSpecifier } from './runner'
-import {
-	installRequireShims,
-	type RuntimeShimConfig,
-	RuntimeShimRegistry,
-} from './runtime-shims'
+import { installRequireShims, type RuntimeShimConfig, RuntimeShimRegistry } from './runtime-shims'
 
 export interface HMRConfig {
 	/** 业务扫描边界：HMR 只监听这些 roots（用于过滤 watcher 事件、分组报告等）。 */
@@ -166,6 +163,44 @@ const unique = <T>(iter: Iterable<T>) => Array.from(new Set(iter))
 
 const WORKSPACE_ENTRY_CACHE_LIMIT = 2000
 
+export type HmrWaitForBatchOptions = {
+	/**
+	 * Wait for a batch with `epoch > afterEpoch`.
+	 *
+	 * Defaults to the current `lastBatch.epoch` (i.e. "wait for the next batch").
+	 */
+	afterEpoch?: number
+	/** Timeout in milliseconds. Defaults to 30_000. */
+	timeoutMs?: number
+	/** Optional abort signal. */
+	signal?: AbortSignal
+}
+
+export type HmrWaitForStableOptions = HmrWaitForBatchOptions & {
+	/**
+	 * Quiet window in milliseconds.
+	 *
+	 * After observing a batch, `waitForStable()` will keep waiting until no newer batch arrives for `quietMs`,
+	 * then return the most recent batch summary.
+	 *
+	 * Defaults to `250`.
+	 */
+	quietMs?: number
+}
+
+export type HmrRuntimeApi = {
+	lastBatch(): HmrBatchSummary | null
+	waitForBatch(options?: HmrWaitForBatchOptions): Promise<HmrBatchSummary>
+	waitForStable(options?: HmrWaitForStableOptions): Promise<HmrBatchSummary>
+}
+
+type HmrBatchWaiter = {
+	afterEpoch: number
+	resolve: (summary: HmrBatchSummary) => void
+	reject: (error: unknown) => void
+	cleanup: () => void
+}
+
 @Injectable({ key: serviceName, scope: 'root' })
 export class HMRService {
 	public vite!: ViteDevServer
@@ -193,10 +228,7 @@ export class HMRService {
 
 	private readonly timing: TimingTracker
 
-	private readonly workspaceEntryResolveCache = new Map<
-		string,
-		Promise<string | null>
-	>()
+	private readonly workspaceEntryResolveCache = new Map<string, Promise<string | null>>()
 	private workspaceEntryResolveCacheSize = 0
 	private didPreloadBuiltins = false
 	private warnedBuiltinOverlap = false
@@ -226,6 +258,17 @@ export class HMRService {
 
 	private readonly plugin: Plugin
 	private readonly workspaceConditions = [...HMR_EXPORT_CONDITIONS]
+
+	/**
+	 * Stable, minimal surface for external callers (UI/RPC/MCP/tooling).
+	 *
+	 * This intentionally avoids exposing the Vite server directly.
+	 */
+	public readonly api: HmrRuntimeApi
+	private lastBatchSummary: HmrBatchSummary | null = null
+	private readonly batchWaiters = new Set<HmrBatchWaiter>()
+	private inFlightBatchEpoch: number | null = null
+	private readonly commitByBatchEpoch = new Map<number, CommitSummary>()
 
 	constructor(
 		public ctx: Context,
@@ -299,6 +342,14 @@ export class HMRService {
 		})
 
 		this.plugin = this.createRunnerPlugin()
+
+		this.api = {
+			lastBatch: () => this.lastBatchSummary,
+			waitForBatch: (options) => this.waitForBatch(options),
+			waitForStable: (options) => this.waitForStable(options),
+		}
+
+		this.attachCommitTracker()
 	}
 
 	public normalizeId(id: string): string {
@@ -617,7 +668,12 @@ export class HMRService {
 		// Common monorepo layout: built-in plugin sources live under `packages/plugins/*`.
 		// If users set scan roots to the workspace root (pnpm workspace), those sources get picked up
 		// by path-based scanning and can conflict with the synthetic builtin module id.
-		const candidates = ['packages/plugins', 'packages/plugin', 'packages/builtins', 'builtin-plugins']
+		const candidates = [
+			'packages/plugins',
+			'packages/plugin',
+			'packages/builtins',
+			'builtin-plugins',
+		]
 		const overlaps: string[] = []
 		for (const rel of candidates) {
 			const abs = normalizePath(resolve(this.cwd, rel))
@@ -640,7 +696,16 @@ export class HMRService {
 		this.debouncer = new BatchDebouncer(
 			async (files, epoch) => {
 				await this.ensureBaseline()
-				return await this.execLock.run(() => this.batchProcessor.process(files, epoch))
+				this.inFlightBatchEpoch = epoch
+				try {
+					const summary = await this.execLock.run(() => this.batchProcessor.process(files, epoch))
+					if (!summary) return
+					const enriched = this.enrichBatchSummary(summary, epoch)
+					this.onBatchSummary(enriched)
+				} finally {
+					this.inFlightBatchEpoch = null
+					this.commitByBatchEpoch.delete(epoch)
+				}
 			},
 			BATCH_DEBOUNCE_MS,
 			BATCH_MAX_WAIT_MS,
@@ -671,7 +736,9 @@ export class HMRService {
 		const env = this.ssrEnv
 		const graph = env?.moduleGraph
 		if (graph) {
-			const variants = this.path.variantsClean ? this.path.variantsClean(clean) : this.path.variants(clean)
+			const variants = this.path.variantsClean
+				? this.path.variantsClean(clean)
+				: this.path.variants(clean)
 			for (const variant of variants) {
 				const mods = graph.getModulesByFile(variant)
 				if (mods?.size) {
@@ -685,6 +752,163 @@ export class HMRService {
 
 	private isAnchorClean(clean: string): boolean {
 		return this.ctx.loader.api.anchors.has(clean)
+	}
+
+	private attachCommitTracker() {
+		const on = (this.ctx as unknown as { on?: unknown }).on
+		if (typeof on !== 'function') return
+
+		;(on as (event: string, listener: (...args: any[]) => void) => unknown).call(
+			this.ctx,
+			'afterCommit',
+			(summary: CommitSummary) => {
+				const epoch = this.inFlightBatchEpoch
+				if (epoch !== null) {
+					this.commitByBatchEpoch.set(epoch, summary)
+				}
+			},
+		)
+	}
+
+	private formatIdentifier(id: unknown): string {
+		if (typeof id === 'string') return id
+		if (typeof id === 'function') {
+			try {
+				return getPluginInfo(id as never).id
+			} catch {
+				const name = (id as unknown as { name?: unknown }).name
+				return typeof name === 'string' && name ? name : 'Function'
+			}
+		}
+		return String(id)
+	}
+
+	private enrichBatchSummary(summary: HmrBatchSummary, epoch: number): HmrBatchSummary {
+		const commit = this.commitByBatchEpoch.get(epoch)
+		if (!commit) return summary
+
+		const added = commit.added.map((id) => this.formatIdentifier(id))
+		const replaced = commit.replaced.map((id) => this.formatIdentifier(id))
+		const removed = commit.removed.map((id) => this.formatIdentifier(id))
+		const failed = commit.failed.map((id) => this.formatIdentifier(id))
+		const touched = commit.touched.map((id) => this.formatIdentifier(id))
+
+		return {
+			...summary,
+			lifecycleOk: failed.length === 0,
+			commit: { added, replaced, removed, failed, touched },
+		}
+	}
+
+	private onBatchSummary(summary: HmrBatchSummary) {
+		this.lastBatchSummary = summary
+		if (!this.batchWaiters.size) return
+
+		for (const w of [...this.batchWaiters]) {
+			if (summary.epoch <= w.afterEpoch) continue
+			w.cleanup()
+			w.resolve(summary)
+		}
+	}
+
+	private waitForBatch(options: HmrWaitForBatchOptions = {}): Promise<HmrBatchSummary> {
+		const afterEpoch =
+			typeof options.afterEpoch === 'number'
+				? options.afterEpoch
+				: (this.lastBatchSummary?.epoch ?? 0)
+		const timeoutMs =
+			typeof options.timeoutMs === 'number' && Number.isFinite(options.timeoutMs)
+				? Math.max(0, Math.floor(options.timeoutMs))
+				: 30_000
+
+		const current = this.lastBatchSummary
+		if (current && current.epoch > afterEpoch) return Promise.resolve(current)
+
+		return new Promise<HmrBatchSummary>((resolve, reject) => {
+			let timeout: NodeJS.Timeout | undefined
+			let waiter: HmrBatchWaiter | null = null
+
+			const cleanup = () => {
+				if (timeout) clearTimeout(timeout)
+				timeout = undefined
+				if (waiter) this.batchWaiters.delete(waiter)
+				waiter = null
+				if (typeof options.signal?.removeEventListener === 'function' && onAbort) {
+					options.signal.removeEventListener('abort', onAbort)
+				}
+			}
+
+			const onAbort =
+				options.signal && typeof options.signal === 'object'
+					? () => {
+							cleanup()
+							reject(Object.assign(new Error('Aborted'), { name: 'AbortError' }))
+						}
+					: null
+
+			if (options.signal?.aborted) {
+				cleanup()
+				reject(Object.assign(new Error('Aborted'), { name: 'AbortError' }))
+				return
+			}
+			if (onAbort) options.signal.addEventListener('abort', onAbort, { once: true })
+
+			if (timeoutMs > 0) {
+				timeout = setTimeout(() => {
+					cleanup()
+					reject(
+						Object.assign(new Error(`Timed out waiting for HMR batch (afterEpoch=${afterEpoch})`), {
+							name: 'HmrBatchTimeoutError',
+							afterEpoch,
+						}),
+					)
+				}, timeoutMs)
+			}
+
+			waiter = { afterEpoch, resolve, reject, cleanup }
+			this.batchWaiters.add(waiter)
+		})
+	}
+
+	private async waitForStable(options: HmrWaitForStableOptions = {}): Promise<HmrBatchSummary> {
+		const afterEpoch =
+			typeof options.afterEpoch === 'number'
+				? options.afterEpoch
+				: (this.lastBatchSummary?.epoch ?? 0)
+		const timeoutMs =
+			typeof options.timeoutMs === 'number' && Number.isFinite(options.timeoutMs)
+				? Math.max(0, Math.floor(options.timeoutMs))
+				: 30_000
+		const quietMsRaw =
+			typeof options.quietMs === 'number' && Number.isFinite(options.quietMs)
+				? Math.max(0, Math.floor(options.quietMs))
+				: 250
+
+		const hasDeadline = timeoutMs > 0
+		const started = hasDeadline ? Date.now() : 0
+		let last = await this.waitForBatch({ afterEpoch, timeoutMs, signal: options.signal })
+		if (quietMsRaw === 0) return last
+
+		for (;;) {
+			const remaining = hasDeadline ? timeoutMs - (Date.now() - started) : Number.POSITIVE_INFINITY
+			if (hasDeadline && remaining <= 0) return last
+
+			const probeTimeout = hasDeadline ? Math.min(quietMsRaw, Math.max(0, remaining)) : quietMsRaw
+			if (hasDeadline && probeTimeout <= 0) return last
+			try {
+				const next = await this.waitForBatch({
+					afterEpoch: last.epoch,
+					timeoutMs: probeTimeout,
+					signal: options.signal,
+				})
+				last = next
+			} catch (error) {
+				if (error instanceof Error && error.name === 'HmrBatchTimeoutError') {
+					return last
+				}
+				throw error
+			}
+		}
 	}
 
 	private async performWarmup() {
@@ -828,7 +1052,8 @@ export class HMRService {
 			.then((resolved) => {
 				// Avoid caching negative results forever: workspace state can change during dev.
 				if (!resolved) {
-					if (this.workspaceEntryResolveCache.delete(specifier)) this.workspaceEntryResolveCacheSize--
+					if (this.workspaceEntryResolveCache.delete(specifier))
+						this.workspaceEntryResolveCacheSize--
 				}
 				return resolved
 			})

@@ -1,9 +1,9 @@
 import { existsSync, readFileSync } from 'node:fs'
-import { dirname, join, resolve } from 'node:path'
+import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { Logger as LogtapeLogger } from '@logtape/logtape'
 import type { Context } from '@pluxel/core'
-import { type DevEnvironment, type EnvironmentModuleNode as ModuleNode, normalizePath } from 'vite'
+import type { DevEnvironment, EnvironmentModuleNode as ModuleNode } from 'vite'
 import type { HmrPathApi, HmrToolkit } from './environment'
 import { startTimer } from './internals'
 import { collectHotspots, isLogEnabled, logAttributionReport, type TimingTracker } from './logging'
@@ -58,25 +58,21 @@ class GraphTools {
 	private readonly toClean: (id: string) => string
 	private readonly variantsAny: (id: string) => string[]
 	private readonly variantsClean: (id: string) => string[]
+	private readonly inScope: ScopeFilter
 
-	constructor(
-		private readonly env: DevEnvironment,
-		private readonly path: HmrPathApi,
-		private readonly inScope: ScopeFilter,
-	) {
+	constructor(env: DevEnvironment, path: HmrPathApi, inScope: ScopeFilter) {
 		this.moduleGraph = env.moduleGraph
 		this.toClean = path.toClean
 		this.variantsAny = path.variants
 		this.variantsClean = path.variantsClean ?? path.variants
+		this.inScope = inScope
 	}
 
 	collectModulesByFile(fileOrId: string, out: ModuleNode[]): number {
 		out.length = 0
 		const first = fileOrId.charCodeAt(0)
 		const variants =
-			first === 47 || first === 0
-				? this.variantsClean(fileOrId)
-				: this.variantsAny(fileOrId)
+			first === 47 || first === 0 ? this.variantsClean(fileOrId) : this.variantsAny(fileOrId)
 		const moduleGraph = this.moduleGraph
 		for (const variant of variants) {
 			const byFile = moduleGraph.getModulesByFile(variant)
@@ -331,7 +327,9 @@ export class HmrExecutor {
 	) {}
 
 	private pickRunnerImportId(cleanId: string): string {
-		const variants = this.path.variantsClean ? this.path.variantsClean(cleanId) : this.path.variants(cleanId)
+		const variants = this.path.variantsClean
+			? this.path.variantsClean(cleanId)
+			: this.path.variants(cleanId)
 
 		// Prefer Vite's `/@fs` form for filesystem ids (more reliable across runner implementations).
 		for (const v of variants) {
@@ -357,9 +355,9 @@ export class HmrExecutor {
 			try {
 				const importId = this.pickRunnerImportId(id)
 				const evaluate = () => this.runner.import(importId)
-				mod = (this.cfg.useRequireShims
-					? await runWithRequireShims(evaluate)
-					: await evaluate()) as Record<string, unknown>
+				mod = (
+					this.cfg.useRequireShims ? await runWithRequireShims(evaluate) : await evaluate()
+				) as Record<string, unknown>
 			} catch (err) {
 				const cjsHint = buildCjsExternalizeHint(err)
 				if (cjsHint) {
@@ -555,6 +553,48 @@ export type HmrBatchConfig = {
 	prefetchConcurrency: number
 }
 
+export type HmrBatchSummary = {
+	epoch: number
+	changed: readonly string[]
+	targets: readonly string[]
+	affected: number
+	fallbackRoots: number
+	invalidated: { vite: number; runner: number }
+	activeServices: number
+	plugins: ReturnType<typeof collectPluginTotals>['plugins']
+	commitMs: number | null
+	batchMs: number
+	/**
+	 * Batch-level success flag (HMR pipeline semantics).
+	 *
+	 * This reflects whether the HMR batch itself ran successfully (build/evaluate/inject/commit orchestration),
+	 * not whether every plugin lifecycle started successfully.
+	 */
+	ok: boolean
+	commitError?: string
+	/**
+	 * Lifecycle-level success flag (core plugin system semantics), when available.
+	 *
+	 * Core commit is non-transactional; the container can switch even if some plugins fail to start.
+	 * When present, this is derived from `commit.failed.length === 0`.
+	 */
+	lifecycleOk?: boolean
+	/**
+	 * Commit summary from the core plugin system (when available).
+	 *
+	 * Note: core commit is non-transactional; the container can switch even if some plugins fail to start.
+	 * When `commit` is present, callers should treat `commit.failed` as the source of truth for lifecycle
+	 * failures (and `lifecycleOk` may be derived from it by the caller).
+	 */
+	commit?: {
+		added: readonly string[]
+		replaced: readonly string[]
+		removed: readonly string[]
+		failed: readonly string[]
+		touched: readonly string[]
+	}
+}
+
 export class HmrBatchProcessor {
 	private anchorsClean: ReadonlySet<string> = new Set<string>()
 	private readonly pathFilter: (id: string) => boolean
@@ -586,9 +626,9 @@ export class HmrBatchProcessor {
 		this.variantsClean = this.path.variantsClean ?? this.path.variants
 	}
 
-	async process(files: readonly string[], epoch: number) {
+	async process(files: readonly string[], epoch: number): Promise<HmrBatchSummary | null> {
 		const changed = dedupeIds(files)
-		if (changed.length === 0) return
+		if (changed.length === 0) return null
 
 		const endBatch = startTimer()
 		this.timing.clear()
@@ -657,6 +697,11 @@ export class HmrBatchProcessor {
 		})
 		const hotspots = collectHotspots(this.timing, (id) => this.path.pretty(id))
 		const batchMs = Math.round(endBatch() * 10) / 10
+		const commitOk = Boolean(executed && executed.res.ok)
+		const commitError =
+			executed && executed.res.ok === false
+				? String(executed.res.err ?? 'commit failed')
+				: undefined
 		this.ctx.logger.info('HMR updated', {
 			epoch,
 			changedFiles: changed.length,
@@ -670,6 +715,21 @@ export class HmrBatchProcessor {
 			commitMs,
 			batchMs,
 		})
+
+		return {
+			epoch,
+			changed,
+			targets: execOrder,
+			affected: graph.affectedIds.size,
+			fallbackRoots: graph.roots.length,
+			activeServices,
+			plugins: pluginTotals,
+			invalidated,
+			commitMs,
+			batchMs,
+			ok: commitOk,
+			...(commitError ? { commitError } : {}),
+		}
 	}
 
 	private logBatchList(label: string, files: readonly string[]) {

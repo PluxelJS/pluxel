@@ -118,3 +118,14 @@ Fork 支持：
 ## 5) 注意事项（避免误解）
 - “回滚”只针对 **DI build/verify 失败**（本次容器未切换）。生命周期失败不会回滚，这是刻意的：你需要看到即时失败与依赖链影响。
 - 依赖重绑只处理“直接 dependents”，如果你引入了自定义 token/非 BasePlugin 的构造参数依赖，需自行保证 token 稳定或扩展重绑策略。
+
+## 6) MCP（面向 code agent 的最小控制面）
+
+Pluxel 的“内部 API”现在额外挂载了一个 MCP（Model Context Protocol）端点，用于让外部 agent 以**统一工具调用**的方式驱动插件开发闭环（无需再解析日志文本或自定义一套 RPC 协议）。
+
+- 端点：`/api/mcp`（与 `/api/rpc` 同级，受 AuthGuard 的 `api` 守卫策略保护）
+- Tool 子集（最小）：`hmr.waitForStable`（推荐）/ `hmr.waitForBatch`、`logs.latestText` / `logs.waitForText`（可选）`plugin.start` / `plugin.stop` / `plugin.restart`
+- Logs “流式 tail”：MCP 侧提供 `logs.waitFor`（等待直到出现匹配日志或超时），可用于 agent 侧循环调用实现可靠的 tail/follow（无需额外 SSE 连接管理）。
+- Logs “LLM 友善文本视图”：MCP 侧提供 `logs.latestText` / `logs.waitForText`（去噪 + 稳定截断 + 少字段），优先给 agent 使用。
+- Dev loop 辅助：`plugins.list` / `plugin.status` / `plugin.waitForStage` / `plugin.schema` / `plugin.config.*` / `workspace.resolveEntry` / `workspace.listEntries` / `hmr.lastBatch` / `hmr.executeFiles`
+- HMR 完成信号：由 `ctx.hmrService.api.waitForBatch()` / `waitForStable()` 提供（返回 batch 摘要；`ok` 表示 batch 成功与否，`lifecycleOk`/`commit.failed` 表示插件生命周期启动是否失败）

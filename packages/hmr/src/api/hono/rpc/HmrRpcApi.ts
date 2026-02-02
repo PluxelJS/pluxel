@@ -3,9 +3,10 @@ import type { Context } from '@pluxel/core'
 import { RpcTarget } from 'capnweb'
 import type { UI } from '../../../services'
 import { writeGroups } from '../../features/groups/service'
+import { applyStatusActions } from '../../usecases/pluginStatus'
 import { LoggingHandle } from './LoggingHandle'
 import { PackageHandle } from './PackageHandle'
-import { applyStatusActions, PluginHandle } from './PluginHandle'
+import { PluginHandle } from './PluginHandle'
 import type {
 	PluginGroup,
 	PluginGroupInput,

@@ -16,11 +16,6 @@ import {
 	type PluginIdentifier,
 	setParamToken,
 } from '@pluxel/core'
-import {
-	ConfigValidationError,
-	collectConfigDefaults,
-	validateConfigPatch,
-} from '@pluxel/core/services'
 import { RpcTarget } from 'capnweb'
 import {
 	type BaseProvidersExtra,
@@ -30,7 +25,15 @@ import {
 	EXTRA_FORKS,
 	type ForksExtra,
 } from '../../../services/runtime/loader/selection'
-import { readStatusSnapshot } from '../../features/pluginStatus/service'
+import { addForkToCatalog } from '../../usecases/forksCatalog'
+import {
+	pluginConfigGet,
+	pluginConfigPatch,
+	pluginConfigReset,
+	pluginConfigValidate,
+	pluginSchema,
+} from '../../usecases/pluginConfig'
+import { applyStatusActions } from '../../usecases/pluginStatus'
 import type {
 	BaseProvisionInfo,
 	ConfigPatch,
@@ -42,9 +45,6 @@ import type {
 	PluginDependencyOption,
 	PluginDependencyState,
 	PluginStatusAction,
-	PluginStatusBatchAction,
-	PluginStatusBatchResult,
-	PluginStatusMutationResult,
 	SchemaResult,
 } from './types'
 
@@ -130,124 +130,6 @@ function writeDepOverride(
 	setExtra(EXTRA_DEP_OVERRIDES, nextAll)
 }
 
-function addForkToCatalog(ctx: Context, originalName: string, forkId: string) {
-	const { getExtra, setExtra } = getExtraApi(ctx)
-	if (typeof getExtra !== 'function' || typeof setExtra !== 'function') return
-
-	const all = (getExtra(EXTRA_FORKS) as ForksExtra | undefined) ?? {}
-	const prev = Array.isArray(all[originalName]) ? all[originalName] : []
-	if (prev.includes(forkId)) return
-	setExtra(EXTRA_FORKS, { ...all, [originalName]: [...prev, forkId] })
-}
-
-function maybeAddForkToCatalog(ctx: Context, name: string) {
-	const hash = typeof name === 'string' ? name.lastIndexOf('#') : -1
-	if (hash <= 0) return
-	const baseName = name.slice(0, hash)
-	const forkId = name.slice(hash + 1).trim()
-	if (!baseName || !forkId) return
-	try {
-		const baseCtor = ctx.loader.api.runtime.resolve(baseName)
-		if (!baseCtor) return
-		const proto = (baseCtor as { prototype?: unknown }).prototype
-		if (!proto || !(proto instanceof ForkablePlugin)) return
-		addForkToCatalog(ctx, baseName, forkId)
-	} catch {
-		// ignore
-	}
-}
-
-async function runStatusAction(
-	ctx: Context,
-	name: string,
-	action: PluginStatusAction,
-): Promise<PluginStatusMutationResult> {
-	try {
-		// If a fork is referred to directly (e.g. "DemoWorker#abc"), persist it so:
-		// - it appears in UI lists;
-		// - it can be restarted across reloads.
-		if (action === 'start' || action === 'restart' || action === 'enable') {
-			maybeAddForkToCatalog(ctx, name)
-		}
-		const ctor = resolvePlugin(ctx, name)
-
-		switch (action) {
-			case 'start':
-				await ctx.loader.api.control.enable(name, ctor)
-				break
-			case 'stop':
-				ctx.loader.api.control.deactivate(name, ctor, { runtimeOnly: true })
-				break
-			case 'restart':
-				ctx.loader.api.control.deactivate(name, ctor, { runtimeOnly: true })
-				await ctx.loader.api.control.enable(name, ctor)
-				break
-			case 'disable':
-				ctx.loader.api.control.deactivate(name, ctor, { runtimeOnly: false })
-				break
-			case 'enable':
-				ctx.loader.api.control.enablePersisted(name)
-				break
-			default:
-				return { name, ok: false, code: 'invalid_status', error: `Unsupported: ${action}` }
-		}
-		return { name, ok: true }
-	} catch (error) {
-		const isStart = action === 'start' || action === 'restart'
-		const message = (error as Error)?.message ?? 'Unknown error'
-		const code = message.includes('Plugin not found')
-			? 'plugin_not_found'
-			: isStart
-				? 'plugin_start_failed'
-				: 'plugin_operation_failed'
-		return {
-			name,
-			ok: false,
-			code,
-			error: message,
-		}
-	}
-}
-
-export async function applyStatusActions(
-	ctx: Context,
-	actions: PluginStatusBatchAction[],
-): Promise<PluginStatusBatchResult> {
-	if (!actions.length) return { ok: true, results: [] }
-
-	const interim: PluginStatusMutationResult[] = []
-	const touched = new Set<string>()
-
-	for (const { name, action } of actions) {
-		const res = await runStatusAction(ctx, name, action)
-		interim.push(res)
-		if (res.ok) touched.add(name)
-	}
-
-	const commitResult = await ctx.registry.commit()
-	if (commitResult.err) {
-		const commitError = String(commitResult.err)
-		return {
-			ok: false,
-			commitError,
-			results: interim.map((r) =>
-				r.ok ? { ...r, ok: false, code: 'commit_failed', error: commitError } : r,
-			),
-		}
-	}
-
-	const snapshots = Array.from(touched).map((name) => {
-		const ctor = resolvePlugin(ctx, name)
-		return { name, ...readStatusSnapshot(ctx, name, ctor) }
-	})
-	const snapMap = new Map(snapshots.map((s) => [s.name, s]))
-
-	return {
-		ok: interim.every((r) => r.ok),
-		results: interim.map((r) => (r.ok ? { ...r, ...snapMap.get(r.name) } : r)),
-	}
-}
-
 export class PluginHandle extends RpcTarget {
 	readonly name: string
 	private readonly ctx: Context
@@ -307,7 +189,7 @@ export class PluginHandle extends RpcTarget {
 			const effective = tokenName(effectiveToken)
 			const selected = overrides?.[i] ?? null
 
-			const isDecorated = checkPluginDecorator(token)
+			const isDecorated = checkPluginDecorator(token as unknown as PluginConstructor)
 			const tokenProto = (token as { prototype?: unknown }).prototype
 			const isBaseToken = !isDecorated && tokenProto instanceof BasePlugin
 
@@ -619,173 +501,29 @@ export class PluginHandle extends RpcTarget {
 
 	/** 获取插件 schema（源代码形式，用于前端动态构建表单） */
 	async schema(): Promise<SchemaResult> {
-		const ctor = this.resolveCtor()
-		const schemaMap = this.ctx.loader.api.registry.getSchema(ctor)
-		if (!schemaMap) {
-			return {
-				ok: false,
-				code: 'schema_not_found',
-				message: 'No config schema registered for this plugin.',
-			}
+		const res = await pluginSchema(this.ctx, this.name)
+		if (res.ok === false) {
+			return { ok: false, code: 'schema_not_found', message: res.message }
 		}
-
-		const schemaSource = this.ctx.loader.api.registry.getSchemaSource(ctor)
-		if (!schemaSource || Object.keys(schemaSource).length === 0) {
-			// schemaSource 为空可能是因为 configSourcePlugin 没有正确注入
-			// 这通常发生在 Vite 没有提供 AST 的情况下
-			return {
-				ok: false,
-				code: 'schema_not_found',
-				message: `Schema source not available for plugin "${this.name}". Ensure configSourcePlugin is correctly configured and the plugin declares config via @Config(schema) or field = this.configs.use(schema).`,
-			}
-		}
-
-		return {
-			ok: true,
-			schemaSource,
-			defaults: await collectConfigDefaults(schemaMap, {
-				missingObjectDefault: {},
-			}),
-		}
+		return { ok: true, schemaSource: res.schemaSource, defaults: res.defaults }
 	}
 
 	async config(): Promise<ConfigResultOk> {
-		const schema = this.ctx.loader.api.registry.getSchema(this.resolveCtor())
-		const defaults = schema
-			? await collectConfigDefaults(schema, {
-					missingObjectDefault: {},
-				})
-			: {}
-		const rawConfig = this.ctx.configService.getRawConfig(this.name)
-		// ConfigService 内部为了安全会使用 null-prototype 的 record（Object.create(null)）。
-		// capnweb RPC pass-by-value 对象要求 prototype === Object.prototype，因此这里做一次浅拷贝“正则化”。
-		const config = Object.assign({}, rawConfig as Record<string, unknown>)
-		return { ok: true, saved: false, config, defaults }
+		const res = await pluginConfigGet(this.ctx, this.name)
+		// `config()` is guaranteed-ok; tolerate unexpected failures by returning empty config.
+		if (!res.ok) return { ok: true, saved: false, config: {}, defaults: res.defaults ?? {} }
+		return { ok: true, saved: false, config: res.config, defaults: res.defaults }
 	}
 
 	async validateConfig(patch: ConfigPatch): Promise<ConfigResult> {
-		const schema = this.ctx.loader.api.registry.getSchema(this.resolveCtor())
-		if (!schema)
-			return {
-				ok: false,
-				code: 'config_not_found',
-				message: 'No config schema registered for this plugin.',
-			}
-
-		// 并行执行 defaults 收集和验证
-		const [defaults, validation] = await Promise.all([
-			collectConfigDefaults(schema, { missingObjectDefault: {} }),
-			validateConfigPatch(schema, patch as Record<string, unknown>),
-		])
-
-		if (!validation.ok) {
-			return {
-				ok: false,
-				code: 'validation_failed',
-				errors: validation.errors,
-				defaults,
-			}
-		}
-
-		return {
-			ok: true,
-			saved: false,
-			config: {
-				...this.ctx.configService.getRawConfig(this.name),
-				...validation.output,
-			},
-			defaults,
-		}
+		return (await pluginConfigValidate(this.ctx, this.name, (patch ?? {}) as any)) as any
 	}
 
 	async saveConfig(patch: ConfigPatch): Promise<ConfigResult> {
-		const schema = this.ctx.loader.api.registry.getSchema(this.resolveCtor())
-		if (!schema)
-			return {
-				ok: false,
-				code: 'config_not_found',
-				message: 'No config schema registered for this plugin.',
-			}
-
-		// 并行执行 defaults 收集和验证
-		const [defaults, validation] = await Promise.all([
-			collectConfigDefaults(schema, { missingObjectDefault: {} }),
-			validateConfigPatch(schema, patch as Record<string, unknown>),
-		])
-
-		if (!validation.ok) {
-			return {
-				ok: false,
-				code: 'validation_failed',
-				errors: validation.errors,
-				defaults,
-			}
-		}
-
-		if (Object.keys(validation.output).length > 0) {
-			this.ctx.configService.patchConfig(this.name, validation.output)
-		}
-
-		try {
-			await this.ctx.configService.ensureValidated(this.name, schema, {
-				missingObjectDefault: {},
-			})
-		} catch (error) {
-			if (error instanceof ConfigValidationError) {
-				return {
-					ok: false,
-					code: 'validation_failed',
-					errors: error.errors,
-					defaults,
-				}
-			}
-			throw error
-		}
-		const config = this.ctx.configService.getRawConfig(this.name)
-		return {
-			ok: true,
-			saved: true,
-			config: Object.assign({}, config as Record<string, unknown>),
-			defaults,
-		}
+		return (await pluginConfigPatch(this.ctx, this.name, (patch ?? {}) as any)) as any
 	}
 
 	async resetConfig(keys?: string[]): Promise<ConfigResult> {
-		const schema = this.ctx.loader.api.registry.getSchema(this.resolveCtor())
-		if (!schema)
-			return {
-				ok: false,
-				code: 'config_not_found',
-				message: 'No config schema registered for this plugin.',
-			}
-
-		const targetKeys = keys?.length ? keys : Object.keys(schema)
-		this.ctx.configService.unsetConfigKeys(this.name, targetKeys)
-
-		const defaults = await collectConfigDefaults(schema, {
-			missingObjectDefault: {},
-		})
-		try {
-			await this.ctx.configService.ensureValidated(this.name, schema, {
-				missingObjectDefault: {},
-			})
-		} catch (error) {
-			if (error instanceof ConfigValidationError) {
-				return {
-					ok: false,
-					code: 'validation_failed',
-					errors: error.errors,
-					defaults,
-				}
-			}
-			throw error
-		}
-		const config = this.ctx.configService.getRawConfig(this.name)
-		return {
-			ok: true,
-			saved: true,
-			config: Object.assign({}, config as Record<string, unknown>),
-			defaults,
-		}
+		return (await pluginConfigReset(this.ctx, this.name, keys)) as any
 	}
 }

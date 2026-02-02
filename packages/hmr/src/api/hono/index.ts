@@ -1,9 +1,9 @@
 import { newHttpBatchRpcResponse } from 'capnweb'
 import { Hono } from 'hono'
-
-import logsApp from './logs'
 import debugApp from './debug'
 import type { AppEnv } from './env'
+import logsApp from './logs'
+import mcpApp from './mcp'
 import { HmrRpcApi, PluginHandle } from './rpc'
 
 const app = new Hono<AppEnv>()
@@ -28,7 +28,8 @@ const app = new Hono<AppEnv>()
 		}
 
 		const request = c.req.raw
-		const headers = request.headers instanceof Headers ? request.headers : new Headers(request.headers)
+		const headers =
+			request.headers instanceof Headers ? request.headers : new Headers(request.headers)
 
 		const result = await authGuard.check({
 			kind: 'api',
@@ -57,11 +58,11 @@ const app = new Hono<AppEnv>()
 		try {
 			const api = new HmrRpcApi(c.var.plugin_ctx)
 			return await newHttpBatchRpcResponse(c.req.raw, api)
-			} catch (err) {
-				c.var.plugin_ctx.logger.error('RPC request failed', { error: err })
-				return c.text('Internal RPC error', 500)
-			}
-		})
+		} catch (err) {
+			c.var.plugin_ctx.logger.error('RPC request failed', { error: err })
+			return c.text('Internal RPC error', 500)
+		}
+	})
 	// ============ Extension API ============
 	// 获取扩展清单
 	.get('/extensions/manifest', (c) => {
@@ -104,11 +105,12 @@ const app = new Hono<AppEnv>()
 	// ============ 调试路由 ============
 	.route('/debug', debugApp)
 	.route('/logs', logsApp)
+	.route('/mcp', mcpApp)
 	// NOTE: SOURCE_ONLY preprocessor blocks are stripped by tsdown for non-source builds.
 	// Do NOT remove them or rewrite this into runtime conditions.
 	//#if SOURCE_ONLY
 	.all('/graphql', (c) => c.var.plugin_ctx.internalGraphql.fetch(c.req.raw, { hono: c } as any))
-	//#endif
+//#endif
 
 export default app
 

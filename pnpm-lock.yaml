@@ -344,6 +344,9 @@ importers:
       '@tanstack/pacer':
         specifier: ^0.17.0
         version: 0.17.3
+      '@valibot/to-json-schema':
+        specifier: ^1.5.0
+        version: 1.5.0(valibot@1.2.0(typescript@5.9.3))
       better-sse:
         specifier: ^0.16.1
         version: 0.16.1
@@ -368,6 +371,9 @@ importers:
       knitwork:
         specifier: ^1.3.0
         version: 1.3.0
+      mcp-lite:
+        specifier: ^0.10.0
+        version: 0.10.0
       nypm:
         specifier: ^0.6.2
         version: 0.6.4
@@ -482,12 +488,6 @@ importers:
 
   packages/plugins/host:
     dependencies:
-      '@logtape/logtape':
-        specifier: ^2.0.1
-        version: 2.0.2
-      '@pluxel/core':
-        specifier: workspace:*
-        version: link:../../core
       '@pluxel/graphql':
         specifier: workspace:*
         version: link:../graphql
@@ -2133,6 +2133,11 @@ packages:
   '@types/through@0.0.33':
     resolution: {integrity: sha512-HsJ+z3QuETzP3cswwtzt2vEIiHBk/dCcHGhbmG5X3ecnwFD/lPrMpliGXxSCg03L9AhrdwA4Oz/qfspkDW+xGQ==}
 
+  '@valibot/to-json-schema@1.5.0':
+    resolution: {integrity: sha512-GE7DmSr1C2UCWPiV0upRH6mv0cCPsqYGs819fb6srCS1tWhyXrkGGe+zxUiwzn/L1BOfADH4sNjY/YHCuP8phQ==}
+    peerDependencies:
+      valibot: ^1.2.0
+
   '@vitejs/plugin-react@5.1.2':
     resolution: {integrity: sha512-EcA07pHJouywpzsoTUqNh5NwGayl2PPVEJKUSinGGSxFGYn+shYbqMGBg6FXDqgXum9Ou/ecb+411ssw8HImJQ==}
     engines: {node: ^20.19.0 || >=22.12.0}
@@ -3081,6 +3086,9 @@ packages:
   math-intrinsics@1.1.0:
     resolution: {integrity: sha512-/IXtbwEk5HTPyEwyKX6hGkYXxM9nbj64B+ilVJnC/R6B0pH5G4V3b0pVbL7DBj4tkhBAppbQUlf6F6Xl9LHu1g==}
     engines: {node: '>= 0.4'}
+
+  mcp-lite@0.10.0:
+    resolution: {integrity: sha512-ts1PgXO5+MER3W77YjYUMqngF45l6eyh2V4Vc0O4S+oKU55ghvd3Q+/XpA4kqtMISqI9v5s1E8pChDICudxwXQ==}
 
   mdurl@2.0.0:
     resolution: {integrity: sha512-Lf+9+2r+Tdp5wXDXC4PcIBjTDtq4UKjCPMQhKIuzpJNW0b96kVqSwW0bT7FhRSfmAiFYgP+SCRvdrDozfh0U5w==}
@@ -5517,6 +5525,10 @@ snapshots:
     dependencies:
       '@types/node': 25.1.0
 
+  '@valibot/to-json-schema@1.5.0(valibot@1.2.0(typescript@5.9.3))':
+    dependencies:
+      valibot: 1.2.0(typescript@5.9.3)
+
   '@vitejs/plugin-react@5.1.2(vite@8.0.0-beta.8(@types/node@25.1.0)(jiti@2.6.1)(sugarss@5.0.1(postcss@8.5.6))(yaml@2.8.2))':
     dependencies:
       '@babel/core': 7.29.0
@@ -6442,6 +6454,10 @@ snapshots:
       uc.micro: 2.1.0
 
   math-intrinsics@1.1.0: {}
+
+  mcp-lite@0.10.0:
+    dependencies:
+      '@standard-schema/spec': 1.1.0
 
   mdurl@2.0.0: {}
 
