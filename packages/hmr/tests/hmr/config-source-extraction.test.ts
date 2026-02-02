@@ -8,8 +8,8 @@ import {
 	type HMRDependencyConfig,
 	resolveFsAllowList,
 	resolveHMRDependencyConfig,
-} from '../../src/services/hmr/config'
-import { HMRService } from '../../src/services/hmr/HMRService'
+} from '../../src/services/runtime/hmr/config'
+import { HMRService } from '../../src/services/runtime/hmr/HMRService'
 
 const baseDeps: HMRDependencyConfig = {
 	bridgeModules: [],
@@ -35,6 +35,7 @@ function createContext(
 				errorLogs.push({ msg, obj })
 			},
 		},
+		scanService: { resolveEntry: async () => ({ ok: false }) },
 		loader: {
 			api: {
 				anchors: {
@@ -82,6 +83,7 @@ describe('configSourcePlugin integration', () => {
 
 		const hmr = new HMRService(createContext(capture, errorLogs), {
 			roots: ['tests/fixtures/plugins'],
+			entries: [],
 			deps: baseDeps,
 		})
 		hmr.setServerRoot(root)
@@ -132,6 +134,7 @@ describe('configSourcePlugin integration', () => {
 
 		const hmr = new HMRService(createContext(capture, errorLogs), {
 			roots: ['tests/fixtures/plugins'],
+			entries: [],
 			deps: baseDeps,
 		})
 		hmr.setServerRoot(root)
@@ -179,6 +182,7 @@ describe('configSourcePlugin integration', () => {
 
 		const hmr = new HMRService(createContext(capture, errorLogs), {
 			roots: ['tests/fixtures/plugins'],
+			entries: [],
 			deps: baseDeps,
 		})
 		hmr.setServerRoot(root)

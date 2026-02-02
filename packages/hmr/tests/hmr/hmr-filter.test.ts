@@ -1,13 +1,14 @@
 import { describe, expect, it } from 'bun:test'
 import type { Context } from '@pluxel/core'
 import { join, normalize } from 'pathe'
-import { HMRService } from '../../src/services/hmr/HMRService'
+import { HMRService } from '../../src/services/runtime/hmr/HMRService'
 
 // Minimal ctx stub to construct HMRService without booting Vite.
 const createCtx = () => {
 	const anchors = new Set<string>()
 	return {
 		logger: { info: () => undefined, error: () => undefined, warn: () => undefined },
+		scanService: { resolveEntry: async () => ({ ok: false }) },
 		loader: {
 			api: {
 				anchors: {
@@ -37,6 +38,7 @@ describe('HMRService file filter', () => {
 		const ctx = createCtx()
 		const hmr = new HMRService(ctx, {
 			roots: [pluginDir],
+			entries: [],
 		})
 		// Simulate Vite configuring server root to packages/hmr (matches real dev script)
 		hmr.setServerRoot(pkgRoot)

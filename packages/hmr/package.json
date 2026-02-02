@@ -3,6 +3,9 @@
 	"version": "0.3.0",
 	"description": "Demo example that imports a local package",
 	"type": "module",
+	"bin": {
+		"pluxel-hmr": "bin/pluxel-hmr.mjs"
+	},
 	"types": "./dist/index.d.mts",
 	"exports": {
 		".": {
@@ -12,6 +15,10 @@
 		"./capnweb": {
 			"@pluxel/source": "./src/web/capnweb.ts",
 			"default": "./dist/capnweb.mjs"
+		},
+		"./cli": {
+			"@pluxel/source": "./src/cli.ts",
+			"default": "./dist/cli.mjs"
 		},
 		"./config": {
 			"@pluxel/source": "./src/config.ts",
@@ -41,6 +48,7 @@
 	},
 	"files": [
 		"!**/*.map",
+		"bin",
 		"dist"
 	],
 	"scripts": {
@@ -52,6 +60,7 @@
 		"web": "vite build"
 	},
 	"dependencies": {
+		"@pluxel/cli": "workspace:*",
 		"@gqloom/core": "^0.15.0",
 		"@gqloom/valibot": "^0.15.0",
 		"@gqty/cli": "^5.0.0",
@@ -73,19 +82,16 @@
 		"pathe": "^2.0.3",
 		"pkg-types": "^2.3.0",
 		"superjson": "^2.2.6",
-		"tinyglobby": "^0.2.15",
 		"tinypool": "^2.1.0",
 		"valibot": "^1.2.0",
 		"vite": "beta"
 	},
 	"peerDependencies": {
-		"@pluxel/cli": "workspace:*",
 		"@pluxel/core": "workspace:*",
 		"@tabler/icons-react": "*"
 	},
 	"devDependencies": {
 		"@pluxel/components": "workspace:*",
-		"@pluxel/cli": "workspace:*",
 		"@pluxel/hmr-web": "workspace:*",
 		"@pluxel/test": "workspace:*",
 		"@pluxel/market": "^0.1.0",
@@ -100,6 +106,7 @@
 		"exports": {
 			".": "./dist/index.mjs",
 			"./capnweb": "./dist/capnweb.mjs",
+			"./cli": "./dist/cli.mjs",
 			"./config": "./dist/config.mjs",
 			"./host": "./dist/host.mjs",
 			"./logger": "./dist/logger.mjs",

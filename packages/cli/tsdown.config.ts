@@ -10,6 +10,8 @@ export default defineConfig({
 		cli: './src/cli.ts',
 		build: './src/build.ts',
 		rolldown: './src/rolldown.ts',
+		hmr: './src/hmr/index.ts',
+		workspace: './src/workspace/index.ts',
 	},
 	// Inline internal build helpers so published CLI doesn't depend on @pluxel/build at runtime.
 	noExternal: ['@pluxel/build', '@pluxel/build/*'],

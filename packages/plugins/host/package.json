@@ -4,12 +4,11 @@
 	"type": "module",
 	"scripts": {
 		"hmr": "bun --conditions=@pluxel/source src/start.ts",
-		"hot": "bun --hot --conditions=@pluxel/source src/start.ts",
-		"hmr:smoke": "timeout 25s bun --conditions=@pluxel/source src/start.ts; test $? -eq 124"
+		"hmr:prompt": "PLUXEL_CLI_SOURCE=1 PLUXEL_HMR_CLI_SOURCE=1 pnpm -w exec pluxel hmr --root ../../.. --profile plugins-host --start-cmd \"pnpm --filter @pluxel/plugins-host hmr\"",
+		"hmr:doctor": "PLUXEL_CLI_SOURCE=1 PLUXEL_HMR_CLI_SOURCE=1 pnpm -w exec pluxel hmr doctor --root ../../.. --profile plugins-host",
+		"hmr:smoke": "timeout -k 2s 25s bun --conditions=@pluxel/source src/start.ts; test $? -eq 124"
 	},
 	"dependencies": {
-		"@logtape/logtape": "^2.0.1",
-		"@pluxel/core": "workspace:*",
 		"@pluxel/hmr": "workspace:*",
 		"pluxel-plugin-market-ui": "workspace:*",
 		"@pluxel/graphql": "workspace:*",
@@ -17,6 +16,7 @@
 		"@pluxel/wretch": "workspace:*"
 	},
 	"devDependencies": {
+		"@pluxel/cli": "workspace:*",
 		"@mantine/core": "^8.3.13",
 		"@mantine/hooks": "^8.3.13",
 		"@tabler/icons-react": "^3.35.0",

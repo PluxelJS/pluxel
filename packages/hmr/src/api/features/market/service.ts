@@ -6,13 +6,13 @@ import type {
 	PackageInstallStatus,
 	PackageLoadIssue as ServiceIssue,
 	PackageReloadResult,
-} from '../../../services/market/PackageService'
-import { PackageServiceError } from '../../../services/market/PackageService'
+} from '../../../services/runtime/package/PackageService'
+import { PackageServiceError } from '../../../services/runtime/package/PackageService'
 import {
 	normalizeSpecifier,
 	type NormalizedPackageSpecifier,
 	type PackageSpecifierInput as ServiceSpecifierInput,
-} from '../../../services/market/specifiers'
+} from '../../../services/runtime/package/specifiers'
 import type {
 	PackageLoadIssueEntry,
 	PackageInventoryEntry,

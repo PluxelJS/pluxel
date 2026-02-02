@@ -9,8 +9,8 @@ import {
 	Plugin,
 	setParamToken,
 } from '@pluxel/core'
-import { LoaderService } from '../../src/services/loader/LoaderService'
-import { EXTRA_FORKS, type ForksExtra } from '../../src/services/loader/selection'
+import { LoaderService } from '../../src/services/runtime/loader/LoaderService'
+import { EXTRA_FORKS, type ForksExtra } from '../../src/services/runtime/loader/selection'
 
 function createHmrCtx(core: Context) {
 	const enabled = new Set<string>()

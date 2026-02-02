@@ -1,5 +1,6 @@
 import { builtinModules } from 'node:module'
-import { relative } from 'node:path'
+import { existsSync, readFileSync } from 'node:fs'
+import { dirname, join, relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { build } from 'vite'
 
@@ -93,7 +94,45 @@ export default async function runBundle(job) {
 	if (!chunk?.code) {
 		throw new Error('Failed to produce bundled code (worker)')
 	}
-	return chunk.code
+
+	// Vite lib mode extracts CSS as assets. Extension bundles are loaded as a single JS module,
+	// so we inline CSS by injecting a <style> tag at module evaluation time.
+	const cssText = outputs
+		.filter((item) => item.type === 'asset' && typeof item.fileName === 'string')
+		.filter((item) => item.fileName.endsWith('.css'))
+		.map((item) => {
+			if (typeof item.source === 'string') return item.source
+			if (item.source && typeof item.source === 'object') {
+				try {
+					return Buffer.from(item.source).toString('utf8')
+				} catch {
+					return ''
+				}
+			}
+			return ''
+		})
+		.filter(Boolean)
+		.join('\n')
+
+	if (!cssText) return chunk.code
+
+	const styleId = `pluxel-ext-style:${label ?? entry}`
+	const cssEscaped = JSON.stringify(cssText)
+	const styleIdEscaped = JSON.stringify(styleId)
+
+	return [
+		chunk.code,
+		'',
+		`;(() => {`,
+		`  if (typeof document === 'undefined') return;`,
+		`  const id = ${styleIdEscaped};`,
+		`  if (document.getElementById(id)) return;`,
+		`  const el = document.createElement('style');`,
+		`  el.id = id;`,
+		`  el.textContent = ${cssEscaped};`,
+		`  document.head.appendChild(el);`,
+		`})();`,
+	].join('\n')
 }
 
 function createBrowserImportGuardPlugin(opts) {
@@ -148,6 +187,47 @@ function createBrowserImportGuardPlugin(opts) {
 		} catch {
 			return v
 		}
+	}
+
+	const browserFieldCache = new Map()
+
+	function findNearestPackageJsonDir(filePath) {
+		let dir = dirname(filePath)
+		let guard = 0
+		while (dir && guard++ < 25) {
+			const pkgPath = join(dir, 'package.json')
+			if (existsSync(pkgPath)) return dir
+			const next = dirname(dir)
+			if (!next || next === dir) break
+			dir = next
+		}
+		return null
+	}
+
+	function hasBrowserFieldBlockedBuiltin(importer, builtinId) {
+		if (typeof importer !== 'string' || typeof builtinId !== 'string') return false
+		const importerPath = prettifyId(importer)
+		if (typeof importerPath !== 'string') return false
+		if (!importerPath.includes('/node_modules/') && !importerPath.includes('\\node_modules\\')) return false
+
+		const id = builtinId.startsWith('node:') ? builtinId.slice('node:'.length) : builtinId
+		const pkgDir = findNearestPackageJsonDir(importerPath)
+		if (!pkgDir) return false
+
+		let browserField = browserFieldCache.get(pkgDir)
+		if (browserField === undefined) {
+			try {
+				const pkgJsonPath = join(pkgDir, 'package.json')
+				const json = JSON.parse(readFileSync(pkgJsonPath, 'utf8'))
+				browserField = json?.browser ?? null
+			} catch {
+				browserField = null
+			}
+			browserFieldCache.set(pkgDir, browserField)
+		}
+
+		if (!browserField || typeof browserField !== 'object' || Array.isArray(browserField)) return false
+		return browserField[id] === false || browserField[`node:${id}`] === false
 	}
 
 	function isBare(id) {
@@ -226,9 +306,12 @@ function createBrowserImportGuardPlugin(opts) {
 				const resolvedId = resolved?.id ? cleanId(resolved.id) : null
 				const resolvedUnwrapped = resolvedId ? unwrapViteBrowserExternalId(resolvedId) : null
 				const importerIsDep = importer.includes('/node_modules/') || importer.includes('\\node_modules\\')
-				// Allow dependencies to reference Node builtins when Vite already externalizes them for browsers
-				// (common in "isNode" branches that are dead in browsers).
-				if (!(importerIsDep && resolvedUnwrapped === check)) {
+				// Allow dependencies to reference Node builtins when:
+				// - Vite externalizes them for browsers, or
+				// - the dep declares a `package.json#browser` mapping that blocks the builtin (e.g. `"fs": false`).
+				const allowedInDep =
+					importerIsDep && (resolvedUnwrapped === check || hasBrowserFieldBlockedBuiltin(importer, check))
+				if (!allowedInDep) {
 					throwNodeImport(
 						check,
 						importer,
@@ -236,7 +319,12 @@ function createBrowserImportGuardPlugin(opts) {
 					)
 				}
 			}
-			if (!resolved && isBare(source) && !externalSet.has(source)) {
+			if (
+				!resolved &&
+				isBare(source) &&
+				!externalSet.has(source) &&
+				!(forbidden.has(source) && hasBrowserFieldBlockedBuiltin(importer, source))
+			) {
 				throwUnresolved(source, importerId ?? importer, 'static-resolve')
 			}
 			const child = resolved?.id ? cleanId(resolved.id) : null
@@ -260,10 +348,13 @@ function createBrowserImportGuardPlugin(opts) {
 					const resolvedId = resolved?.id ? cleanId(resolved.id) : null
 					const resolvedUnwrapped = resolvedId ? unwrapViteBrowserExternalId(resolvedId) : null
 					const importerIsDep = id.includes('/node_modules/') || id.includes('\\node_modules\\')
-					if (!(importerIsDep && resolvedUnwrapped === check)) throwNodeImport(check, id, 'dynamic-import')
+					const allowedInDep =
+						importerIsDep && (resolvedUnwrapped === check || hasBrowserFieldBlockedBuiltin(id, check))
+					if (!allowedInDep) throwNodeImport(check, id, 'dynamic-import')
 				}
 
 				if (isBare(spec) && !externalSet.has(spec)) {
+					if (forbidden.has(spec) && hasBrowserFieldBlockedBuiltin(id, spec)) continue
 					const resolved = await this.resolve(spec, id, { skipSelf: true })
 					if (!resolved) throwUnresolved(spec, id, 'dynamic-import')
 				}

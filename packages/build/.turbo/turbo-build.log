@@ -42,11 +42,11 @@ Detected dependencies in bundle:
 [34mℹ[39m [33m[CJS][39m [2mdist/[22m[32mindex-BrAklHns.d.cts[39m      [2m  2.98 kB[22m [2m│ gzip:  1.06 kB[22m
 [34mℹ[39m [33m[CJS][39m 7 files, total: 209.50 kB
 [33m[PLUGIN_TIMINGS] Warning:[0m Your build spent significant time in plugins. Here is a breakdown:
-  - rolldown-plugin-dts:generate (59%)
-  - rolldown-plugin-dts:resolver (38%)
+  - rolldown-plugin-dts:generate (67%)
+  - rolldown-plugin-dts:resolver (28%)
 See https://rolldown.rs/options/checks#plugintimings for more details.
 
-[32m✔[39m Build complete in [32m3369ms[39m
+[32m✔[39m Build complete in [32m6820ms[39m
 [34mℹ[39m [34m[ESM][39m [2mdist/[22m[1mindex.mjs[22m                  [2m  0.51 kB[22m [2m│ gzip:  0.32 kB[22m
 [34mℹ[39m [34m[ESM][39m [2mdist/[22m[1mcli.mjs[22m                    [2m  0.30 kB[22m [2m│ gzip:  0.23 kB[22m
 [34mℹ[39m [34m[ESM][39m [2mdist/[22m[1mrolldown.mjs[22m               [2m  0.20 kB[22m [2m│ gzip:  0.17 kB[22m
@@ -62,9 +62,6 @@ See https://rolldown.rs/options/checks#plugintimings for more details.
 [34mℹ[39m [34m[ESM][39m [2mdist/[22m[32mindex-BiDEsDgh.d.mts[39m       [2m121.94 kB[22m [2m│ gzip: 28.22 kB[22m
 [34mℹ[39m [34m[ESM][39m [2mdist/[22m[32mindex-CML2KRhU.d.mts[39m       [2m  2.98 kB[22m [2m│ gzip:  1.06 kB[22m
 [34mℹ[39m [34m[ESM][39m 14 files, total: 397.45 kB
-[33m[PLUGIN_TIMINGS] Warning:[0m Your build spent significant time in plugins. Here is a breakdown:
-  - rolldown-plugin-dts:generate (66%)
-  - rolldown-plugin-dts:resolver (20%)
-See https://rolldown.rs/options/checks#plugintimings for more details.
+[33m[PLUGIN_TIMINGS] Warning:[0m Your build spent significant time in plugin `rolldown-plugin-dts:generate`. See https://rolldown.rs/options/checks#plugintimings for more details.
 
-[32m✔[39m Build complete in [32m3380ms[39m
+[32m✔[39m Build complete in [32m6851ms[39m

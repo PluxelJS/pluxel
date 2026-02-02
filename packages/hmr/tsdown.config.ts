@@ -16,6 +16,7 @@ export default defineConfig({
 	env: {},
 	entry: {
 		index: 'src/index.ts',
+		cli: 'src/cli.ts',
 		logger: 'src/logger/index.ts',
 		host: 'src/host/index.ts',
 		services: 'src/services/index.ts',

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'bun:test'
 import type { Context } from '@pluxel/core'
 import { createFixture } from 'fs-fixture'
 import { normalize } from 'pathe'
-import { type EntryResolutionOk, ScanService } from '../src/services/market/ScanService'
+import { type EntryResolutionOk, ScanService } from '../src/services/runtime/scan/ScanService'
 
 const scanSingleFixture = {
 	'package.json': JSON.stringify(

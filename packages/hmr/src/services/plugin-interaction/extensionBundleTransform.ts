@@ -65,10 +65,11 @@ export function transformVendorImports(
 
 		const patterns = [
 			new RegExp(`import\\s*\\{([^}]+)\\}\\s*from\\s*["']${escapeRegex(pkg)}["'];?`, 'g'),
-			new RegExp(`import\\s*\\*\\s*as\\s+(\\w+)\\s*from\\s*["']${escapeRegex(pkg)}["'];?`, 'g'),
-			new RegExp(`import\\s+(\\w+)\\s*from\\s*["']${escapeRegex(pkg)}["'];?`, 'g'),
+			// Bundle outputs often generate identifiers with `$` (e.g. `m$5`), so we must match `$` too.
+			new RegExp(`import\\s*\\*\\s*as\\s+([\\w$]+)\\s*from\\s*["']${escapeRegex(pkg)}["'];?`, 'g'),
+			new RegExp(`import\\s+([\\w$]+)\\s*from\\s*["']${escapeRegex(pkg)}["'];?`, 'g'),
 			new RegExp(
-				`import\\s+(\\w+)\\s*,\\s*\\{([^}]+)\\}\\s*from\\s*["']${escapeRegex(pkg)}["'];?`,
+				`import\\s+([\\w$]+)\\s*,\\s*\\{([^}]+)\\}\\s*from\\s*["']${escapeRegex(pkg)}["'];?`,
 				'g',
 			),
 		]

@@ -109,9 +109,9 @@ Fork 支持：
 为避免 commit 期间误报，core optional 会优先查看“active draft container”（commit 尚未 confirm 时）。
 
 ## 4) 文件/入口索引（给 LLM 的导航）
-- HMR 批量执行入口：`packages/hmr/src/services/hmr/HMRService.ts`（`runAndLoadAll()`）
-- Loader 注入与 dependents 重绑：`packages/hmr/src/services/loader/LoaderService.ts`
-- Loader 声明层与 config/runtime 协调：`packages/hmr/src/services/loader/PluginRegistry.ts`
+- HMR 批量执行入口：`packages/hmr/src/services/runtime/hmr/HMRService.ts`（`runAndLoadAll()`）
+- Loader 注入与 dependents 重绑：`packages/hmr/src/services/runtime/loader/LoaderService.ts`
+- Loader 声明层与 config/runtime 协调：`packages/hmr/src/services/runtime/loader/PluginRegistry.ts`
 - Core 插件容器与草稿/确认：`packages/core/src/plugins/runtime/PluginDefinitions.ts`
 - Core commit 编排与失败语义：`packages/core/src/plugins/runtime/PluginService.ts`
 

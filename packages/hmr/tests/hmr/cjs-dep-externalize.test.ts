@@ -7,8 +7,8 @@ import {
 	buildHmrViteConfig,
 	resolveFsAllowList,
 	resolveHMRDependencyConfig,
-} from '../../src/services/hmr/config'
-import { HMRService } from '../../src/services/hmr/HMRService'
+} from '../../src/services/runtime/hmr/config'
+import { HMRService } from '../../src/services/runtime/hmr/HMRService'
 
 const baseDeps = {
 	bridgeModules: [],
@@ -34,7 +34,7 @@ function createContext(errorLogs?: ErrorLog[], scanService?: unknown) {
 				if (errorLogs) errorLogs.push({ msg, obj })
 			},
 		},
-		scanService,
+		scanService: scanService ?? { resolveEntry: async () => ({ ok: false }) },
 		loader: {
 			api: {
 				anchors: {
@@ -107,6 +107,7 @@ describe('HMR CJS dependency handling', () => {
 		const depsInput = buildDeps(['cjs-pkg'])
 		const hmr = new HMRService(createContext(errorLogs), {
 			roots: [root],
+			entries: [],
 			deps: depsInput,
 		})
 		hmr.setServerRoot(root)
@@ -140,6 +141,7 @@ describe('HMR CJS dependency handling', () => {
 		const depsInput = buildDeps(['pluxel-plugin-napi-rs/*'])
 		const hmr = new HMRService(createContext(errorLogs), {
 			roots: [root],
+			entries: [],
 			deps: depsInput,
 		})
 		hmr.setServerRoot(root)
@@ -176,6 +178,7 @@ describe('HMR CJS dependency handling', () => {
 		})
 		const hmr = new HMRService(ctx, {
 			roots: [root],
+			entries: [],
 			deps: depsInput,
 		})
 		hmr.setServerRoot(root)
@@ -211,6 +214,7 @@ describe('HMR CJS dependency handling', () => {
 		const depsInput = buildDeps([])
 		const hmr = new HMRService(createContext(), {
 			roots: [root],
+			entries: [],
 			deps: depsInput,
 		})
 		hmr.setServerRoot(root)
@@ -252,6 +256,7 @@ describe('HMR CJS dependency handling', () => {
 		const depsInput = buildDeps(['cjs-pkg'])
 		const hmr = new HMRService(createContext(errorLogs), {
 			roots: [root],
+			entries: [],
 			deps: depsInput,
 		})
 		hmr.setServerRoot(root)

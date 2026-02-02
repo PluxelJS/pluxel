@@ -2,8 +2,8 @@
 
 ## 目标
 - 启动时总能拿到工作区最新插件入口（不引入 `sync`/索引产物）。
-- 只有 `enabled` 插件进入 watch/compile/replace；未启用插件不承担成本。
-- 配置只暴露：`roots / enabled / exclude / profiles`；**禁止** `include`（schema 不提供，解析严格拒绝）。
+- 只有 **profile 选中的插件包** 进入 watch/compile/replace；未选中者不承担成本。
+- 配置只暴露：`roots / enabled / include / exclude / profiles`；解析必须 strict（未知字段直接报错）。
 - 发现逻辑只实现一次：`@pluxel/cli` 提供运行时库，`@pluxel/hmr` 复用；用 `profiles` 切换策略。
 
 ## 兼容性约束（必须保持 @pluxel/hmr 既有正确性）
@@ -15,6 +15,36 @@
 - **@pluxel/hmr 在找不到配置文件时必须直接报错并拒绝启动**
   - `pluxel hmr` prompt 入口负责缺失时创建，再启动 `@pluxel/hmr`。
 
+## 概念澄清：profile 的 “enabled” ≠ 插件运行时启用
+
+这里容易混淆两层“启用”：
+
+1) **Workspace profile 选包（pluxel.hmr.jsonc）**
+- `profiles[profile].enabled: string[]` 指的是：**哪些工作区插件包要作为 HMR 冷启动入口被执行**（即把这些包的 `exports["."]["@pluxel/hmr"]` entry 加入 `hmrService.entries`）。
+- 它决定的是：
+  - HMR 会执行哪些 entry 模块（从而 Loader 能看到哪些插件 ctor 导出并建立声明）
+  - HMR watcher 的 roots/include 的最小集合（节省成本）
+- 它 **不等价于** “这些插件一定会运行/进入 DI container”。
+
+2) **运行时插件启用位（ConfigService / 持久化配置）**
+- Loader 在 `replaceModule()` 时只负责“声明插件 ctor”，并且 **仅对 `configService` 判定为 enabled 的插件**执行 register/start。
+- `ctx.registry.commit()` 的依赖校验针对的是“当前参与运行（注册/启用）的 ctor 图”。
+
+因此，从正确性上有一个硬约束：
+- 如果你在运行时启用了插件 A（`configService` enabled），并且 A 的 ctor 依赖插件 B（DI token 是 B 的 ctor / base token），那么 B 必须同时满足：
+  - B 的 entry 模块已被执行并声明（通常意味着：B 所在插件包被 profile 选中或通过 include 加入 entries）；以及
+  - B 在运行时也处于 enabled/可提供状态（否则 commit 可能 MissingDependency）。
+
+> 这也是为什么我们在 `pluxel hmr` prompt/doctor 里会对“profile 选中的插件包”做依赖提示：它本质是在帮你补齐 “entry 可见性”，避免未来你启用某些插件时 commit 才发现依赖根本没被加载进来。
+
+### 依赖提示的边界（重要）
+- `doctor`/prompt 的“缺少 profile packages”提示是 **best-effort**：
+  - 目前仅基于 `package.json` 的依赖字段（deps/devDeps/peerDeps/optionalDeps）做工作区包名交叉检查；
+  - 不会解析 TS 源码 import 图（例如：通过 tsconfig paths / 相对路径导入另一个 workspace 包源码但 package.json 未声明依赖，这里无法静态发现）。
+- 因此：
+  - 该提示用于“尽早发现典型配置错误（少选包）”；
+  - 最终正确性仍由运行时 `commit()` 的 DI 校验兜底（失败即明确报错）。
+
 ## 配置文件格式与修复策略（必须澄清）
 - 默认生成 **JSONC/JSON5**（可注释/尾逗号），便于可读与机器生成。
 - 允许手改，但生成文件头部必须注释提示：**推荐用 `pluxel hmr` prompt 修改**（避免语义/格式漂移）。
@@ -23,7 +53,7 @@
   - prompt：用户确认后备份为 `pluxel.hmr.jsonc.bak.<timestamp>` → 重新生成 → 继续交互/启动。
 
 ## Schema（v1）
-> 解析必须 `strict`：未知字段直接报错（重点是拒绝 `include`）。
+> 解析必须 `strict`：未知字段直接报错。
 
 ```ts
 export type PluxelHmrConfigV1 = {
@@ -31,6 +61,7 @@ export type PluxelHmrConfigV1 = {
   profile: string
   defaults?: {
     roots?: "auto" | string[]
+    include?: string[]  // 额外入口/扫描范围（例如 demo 文件）
     exclude?: string[]
   }
   profiles: Record<
@@ -38,6 +69,7 @@ export type PluxelHmrConfigV1 = {
     {
       roots?: "auto" | string[]
       enabled: string[]
+      include?: string[]
       exclude?: string[]
     }
   >
@@ -100,13 +132,19 @@ export type DiagnoseWorkspaceInput = {
   rootDir: string
   configPath: string
   env?: Record<string, string | undefined>
+  // Optional: omit packages that are provided by host builtins (avoid double-load conflicts).
+  omitPackages?: string[]
 }
 
 export type WorkspaceSnapshot = {
   activeProfile: string
   roots: string[]                 // 已展开
   enabled: string[]               // 包名
-  enabledEntries: string[]        // 入口文件列表（稳定顺序）
+  enabledEntries: string[]        // 启动入口（稳定顺序：enabled entries + include entries）
+  includedEntries: string[]       // include 展开得到的额外入口
+  watchRoots: string[]            // HMR roots（仅：enabled 包 + include 所在包/目录；依赖变更由 HMR 动态追踪）
+  includeGlobs: string[]          // 传给 HMRService.include
+  excludeGlobs: string[]          // 传给 HMRService.exclude
   discovered: DiscoveredPlugin[]  // 供 UI/提示复用
 }
 
@@ -135,12 +173,16 @@ export async function diagnoseWorkspace(
 3. 合并配置：
    - `roots = profile.roots ?? defaults.roots ?? "auto"` → 展开为实际 roots
    - `enabled = profile.enabled`（必填）
+   - `include = [...(defaults.include ?? []), ...(profile.include ?? [])]`
    - `exclude = [...(defaults.exclude ?? []), ...(profile.exclude ?? [])]`
 4. 调用 `@pluxel/cli` 的发现 API，得到 `name -> entry` 映射（实时扫描 roots）。
 5. 解析 `enabled` 为 entry 列表：
    - 任一包名未发现或 entry 文件不存在：报错退出（提示用户运行 `doctor` 查看可用列表/修复）。
-6. 启动 HMR：
-   - 实际进入加载/watch/compile 的入口集合 **仅** 为 `enabled` 对应的 entries。
+6. 解析 `include`：
+   - 将 include globs 展开为额外入口文件列表（例如 `packages/plugins/host/src/demo/PluginEventsDemo.ts` 这类“非包插件入口”）。
+   - include 匹配不到任何文件时：建议 warning（不强制失败）。
+7. 启动 HMR：
+   - 实际进入加载/watch/compile 的入口集合 **仅** 为 “profile 选中的插件包 entries” + `include` 展开的入口文件。
    - `exclude` 按既有语义继续生效（用于手动排除）。
 
 ## 最优路径：`pluxel hmr start` 单次扫描启动（避免重复扫描）
@@ -185,7 +227,8 @@ export async function startHmrFromSnapshot(
 - profile 选择：`autocomplete`（按 profile 名称过滤）或 `select`（profile 少时）。
 - 启用集编辑：
   - `autocomplete`（按包名过滤候选）
-  - `multiselect`（勾选 enabled 列表；显示已选数量）
+  - `groupMultiselect`（按目录分组；支持一键批量开关某个文件夹下的一批插件包，尽量减少键盘操作）
+  - `multiselect`（无分组时的兜底）
 - 写入确认：`confirm`（确认写回 `pluxel.hmr.jsonc`）
 - 输出信息：`note`/`outro`（总结 active profile、启用数量、roots 展开结果、错误提示）
 

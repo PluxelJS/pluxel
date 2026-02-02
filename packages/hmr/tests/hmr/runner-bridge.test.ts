@@ -7,15 +7,16 @@ import {
 	buildHmrViteConfig,
 	resolveFsAllowList,
 	resolveHMRDependencyConfig,
-} from '../../src/services/hmr/config'
-import { HMRService } from '../../src/services/hmr/HMRService'
-import { HmrRunner } from '../../src/services/hmr/runner'
+} from '../../src/services/runtime/hmr/config'
+import { HMRService } from '../../src/services/runtime/hmr/HMRService'
+import { HmrRunner } from '../../src/services/runtime/hmr/runner'
 
 // Minimal ctx stub to construct HMRService without booting the whole app.
 const createCtx = () => {
 	const anchors = new Set<string>()
 	return {
 		logger: { info: () => undefined, error: () => undefined, warn: () => undefined },
+		scanService: { resolveEntry: async () => ({ ok: false }) },
 		loader: {
 			api: {
 				anchors: {
@@ -43,6 +44,7 @@ describe('HMR runner bridge', () => {
 		const ctx = createCtx()
 		const hmr = new HMRService(ctx, {
 			roots: [join(cwd, 'tests/fixtures/plugins'), demoDir],
+			entries: [],
 		})
 		hmr.setServerRoot(cwd)
 

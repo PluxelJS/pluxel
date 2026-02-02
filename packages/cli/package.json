@@ -6,6 +6,16 @@
 		"pluxel": "bin/pluxel.mjs"
 	},
 	"exports": {
+		"./hmr": {
+			"@pluxel/source": "./src/hmr/index.ts",
+			"import": "./dist/hmr.mjs",
+			"default": "./dist/hmr.mjs"
+		},
+		"./workspace": {
+			"@pluxel/source": "./src/workspace/index.ts",
+			"import": "./dist/workspace.mjs",
+			"default": "./dist/workspace.mjs"
+		},
 		"./build": {
 			"@pluxel/source": "./src/build.ts",
 			"import": "./dist/build.mjs",
@@ -37,6 +47,7 @@
 		"@clack/prompts": "^0.11.0",
 		"fdir": "^6.5.0",
 		"gunshi": "^0.26.3",
+		"jsonc-parser": "^3.3.1",
 		"node-plop": "^0.32.3",
 		"package-manager-detector": "^1.5.0",
 		"pathe": "^2.0.3",

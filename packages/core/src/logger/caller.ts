@@ -33,7 +33,7 @@ const DEFAULT_SKIP_MARKERS = [
 	'\\node_modules\\@logtape\\',
 	'/packages/core/src/logger/',
 	'/packages/hmr/src/logger/',
-	'/packages/hmr/src/services/hmr/logging.',
+	'/packages/hmr/src/services/runtime/hmr/logging.',
 	'/packages/core/dist/',
 	'/packages/hmr/dist/',
 	'/dist/',

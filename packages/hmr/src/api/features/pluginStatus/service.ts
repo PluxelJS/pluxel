@@ -1,6 +1,6 @@
 import { getPluginInfo, type PluginConstructor, type Context as PlxContext } from '@pluxel/core'
 import type { InferOutput } from 'valibot'
-import { EXTRA_FORKS, type ForksExtra } from '../../../services/loader/selection'
+import { EXTRA_FORKS, type ForksExtra } from '../../../services/runtime/loader/selection'
 import type {
 	PluginSourceInfo,
 	PluginStatusEntryLifecycleStage,

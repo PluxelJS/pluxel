@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import { BasePlugin, Plugin } from '@pluxel/core'
 import { __registerConfigSchema__ } from '@pluxel/test/unsafe'
 import * as v from 'valibot'
-import { PluginRegistry } from '../../src/services/loader/PluginRegistry'
+import { PluginRegistry } from '../../src/services/runtime/loader/PluginRegistry'
 
 describe('PluginRegistry config schema enforcement', () => {
 	test('throws when a plugin declares non-object config schema', () => {

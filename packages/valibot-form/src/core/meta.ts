@@ -1,3 +1,4 @@
+import type { BaseMetadata } from 'valibot'
 import type { Schema } from './schema'
 
 export type BadgeMeta = string | { label: string; color?: string }
@@ -160,32 +161,67 @@ export interface MetaValueMap {
 	union: UnionMeta
 }
 
-export type MetadataAction<TType extends MetaType, TInput = unknown> = {
-	kind: 'metadata'
-	type: TType
-	metadata: MetaValueMap[TType]
-	reference: (metadata: MetaValueMap[TType]) => MetadataAction<TType, TInput>
+/**
+ * A lightweight metadata action carried inside `v.pipe(...)`.
+ *
+ * Valibot v1.2 tightened type constraints around `pipe()` items, requiring metadata
+ * actions to expose `~types.issue = never` (via `BaseMetadata`) so they don't pollute
+ * schema issue inference.
+ *
+ * Runtime-wise this is still a plain object; Valibot does not execute metadata items.
+ */
+export type MetadataAction<TType extends MetaType, TInput = unknown> = Omit<
+	BaseMetadata<TInput>,
+	'type' | 'reference'
+> & {
+	readonly type: TType
+	readonly metadata: MetaValueMap[TType]
+	readonly reference: (...args: any[]) => MetadataAction<TType, TInput>
 }
 
-export function createMetaFactory<TType extends MetaType, TInput = unknown>(type: TType) {
-	const factory = (metadata: MetaValueMap[TType]): MetadataAction<TType, TInput> => ({
+export function createMetaFactory<TType extends MetaType>(type: TType) {
+	// Use a variadic signature to stay assignable to Valibot's `BaseMetadata["reference"]`,
+	// which is typed as `(...args: any[]) => BaseMetadata<any>`.
+	const factory = <TInput = any>(...args: [metadata: MetaValueMap[TType]]): MetadataAction<TType, TInput> => ({
 		kind: 'metadata',
 		type,
-		metadata,
-		reference: factory,
+		metadata: args[0],
+		reference: factory as unknown as (...args: any[]) => MetadataAction<TType, TInput>,
 	})
 	return factory
 }
 
 export const formMeta = createMetaFactory<'form'>('form')
-export const stringMeta = createMetaFactory<'string', string>('string')
-export const numberMeta = createMetaFactory<'number', number>('number')
-export const booleanMeta = createMetaFactory<'boolean', boolean>('boolean')
-export const picklistMeta = createMetaFactory<'picklist', string | number>('picklist')
-export const arrayMeta = createMetaFactory<'array', unknown[]>('array')
-export const recordMeta = createMetaFactory<'record', Record<string, unknown>>('record')
-export const objectMeta = createMetaFactory<'object', object>('object')
-export const unionMeta = createMetaFactory<'union', unknown>('union')
+export const stringMeta = createMetaFactory<'string'>('string') as <
+	TInput extends string = string,
+>(
+	metadata: StringMeta,
+) => MetadataAction<'string', TInput>
+export const numberMeta = createMetaFactory<'number'>('number') as <TInput extends number = number>(
+	metadata: NumberMeta,
+) => MetadataAction<'number', TInput>
+export const booleanMeta = createMetaFactory<'boolean'>('boolean') as <
+	TInput extends boolean = boolean,
+>(
+	metadata: BooleanMeta,
+) => MetadataAction<'boolean', TInput>
+export const picklistMeta = createMetaFactory<'picklist'>('picklist') as <
+	TInput extends string | number = string | number,
+>(
+	metadata: PicklistMeta,
+) => MetadataAction<'picklist', TInput>
+export const arrayMeta = createMetaFactory<'array'>('array') as <TInput extends unknown[] = unknown[]>(
+	metadata: ArrayMeta,
+) => MetadataAction<'array', TInput>
+export const recordMeta = createMetaFactory<'record'>('record') as <
+	TInput extends Record<string, unknown> = Record<string, unknown>,
+>(
+	metadata: RecordMeta,
+) => MetadataAction<'record', TInput>
+export const objectMeta = createMetaFactory<'object'>('object') as <TInput extends object = object>(
+	metadata: ObjectMeta,
+) => MetadataAction<'object', TInput>
+export const unionMeta = createMetaFactory<'union'>('union')
 
 export const f = {
 	formMeta,

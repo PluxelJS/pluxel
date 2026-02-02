@@ -93,7 +93,7 @@ const MODULE_ENDPOINT_PREFIX = '/api/extensions/modules'
 const MANIFEST_FILENAME = 'manifest.json'
 
 // Bump this when the bundling/rewriting logic changes, so clients don't reuse stale cached modules.
-const EXTENSION_COMPILER_VERSION = 8
+const EXTENSION_COMPILER_VERSION = 10
 
 export class ExtensionService {
 	private readonly entries = new Map<string, PluginExtensionEntry>()

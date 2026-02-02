@@ -102,6 +102,9 @@ importers:
       gunshi:
         specifier: ^0.26.3
         version: 0.26.3
+      jsonc-parser:
+        specifier: ^3.3.1
+        version: 3.3.1
       node-plop:
         specifier: ^0.32.3
         version: 0.32.3(@types/node@25.1.0)
@@ -323,6 +326,9 @@ importers:
       '@logtape/logtape':
         specifier: ^2.0.1
         version: 2.0.2
+      '@pluxel/cli':
+        specifier: workspace:*
+        version: link:../cli
       '@pluxel/core':
         specifier: workspace:*
         version: link:../core
@@ -377,9 +383,6 @@ importers:
       superjson:
         specifier: ^2.2.6
         version: 2.2.6
-      tinyglobby:
-        specifier: ^0.2.15
-        version: 0.2.15
       tinypool:
         specifier: ^2.1.0
         version: 2.1.0
@@ -390,9 +393,6 @@ importers:
         specifier: beta
         version: 8.0.0-beta.8(@types/node@25.1.0)(jiti@2.6.1)(sugarss@5.0.1(postcss@8.5.6))(yaml@2.8.2)
     devDependencies:
-      '@pluxel/cli':
-        specifier: workspace:*
-        version: link:../cli
       '@pluxel/components':
         specifier: workspace:*
         version: link:../components
@@ -510,6 +510,9 @@ importers:
       '@mantine/hooks':
         specifier: ^8.3.13
         version: 8.3.13(react@19.2.4)
+      '@pluxel/cli':
+        specifier: workspace:*
+        version: link:../../cli
       '@tabler/icons-react':
         specifier: ^3.35.0
         version: 3.36.1(react@19.2.4)
@@ -2930,6 +2933,9 @@ packages:
     resolution: {integrity: sha512-XmOWe7eyHYH14cLdVPoyg+GOH3rYX++KpzrylJwSW98t3Nk+U8XOl8FWKOgwtzdb8lXGf6zYwDUzeHMWfxasyg==}
     engines: {node: '>=6'}
     hasBin: true
+
+  jsonc-parser@3.3.1:
+    resolution: {integrity: sha512-HUgH65KyejrUFPvHFPbqOY0rsFip3Bo5wb4ngvdi1EpCYWUQDC5V+Y7mZws+DLkr4M//zQJoanu1SP+87Dv1oQ==}
 
   just-extend@6.2.0:
     resolution: {integrity: sha512-cYofQu2Xpom82S6qD778jBDpwvvy39s1l/hrYij2u9AMdQcGRpaBu6kY4mVhuno5kJVi1DAz4aiphA2WI1/OAw==}
@@ -6320,6 +6326,8 @@ snapshots:
   json-parse-even-better-errors@2.3.1: {}
 
   json5@2.2.3: {}
+
+  jsonc-parser@3.3.1: {}
 
   just-extend@6.2.0: {}
 

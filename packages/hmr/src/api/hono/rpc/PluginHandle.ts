@@ -29,7 +29,7 @@ import {
 	EXTRA_DEP_OVERRIDES,
 	EXTRA_FORKS,
 	type ForksExtra,
-} from '../../../services/loader/selection'
+} from '../../../services/runtime/loader/selection'
 import { readStatusSnapshot } from '../../features/pluginStatus/service'
 import type {
 	BaseProvisionInfo,

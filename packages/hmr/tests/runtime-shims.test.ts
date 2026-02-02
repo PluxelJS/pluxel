@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test'
-import { RuntimeShimRegistry, SHIM_REFLECT_METADATA } from '../src/services/hmr/runtime-shims'
+import { RuntimeShimRegistry, SHIM_REFLECT_METADATA } from '../src/services/runtime/hmr/runtime-shims'
 
 describe('runtime shims', () => {
 	it('shims reflect-metadata (exact + prefix)', () => {

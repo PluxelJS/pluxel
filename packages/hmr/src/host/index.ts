@@ -4,12 +4,17 @@ import { dirname, join, resolve } from 'node:path'
 
 import type { Plugin as VitePlugin } from 'vite'
 
+import {
+	DEFAULT_HMR_CONFIG_BASENAME,
+	diagnoseWorkspace,
+	type WorkspaceSnapshot,
+} from '@pluxel/cli/hmr'
 import { Context } from '..'
 import type { EnsurePluxelLoggingOptions } from '../logger/ensure'
 import { ensurePluxelLogging } from '../logger/ensure'
-import type { HMRDependencyConfig } from '../services/hmr/config'
-import type { HMRConfig } from '../services/hmr/HMRService'
-import type { BuiltinPluginSpec } from '../services/loader/LoaderService'
+import type { HMRDependencyConfig } from '../services/runtime/hmr/config'
+import type { HMRConfig } from '../services/runtime/hmr/HMRService'
+import type { BuiltinPluginSpec } from '../services/runtime/loader/LoaderService'
 
 export type CreateHmrHostOptions = {
 	/**
@@ -33,13 +38,43 @@ export type CreateHmrHostOptions = {
 	/**
 	 * Plugin scan roots (workspace-relative).
 	 *
-	 * Defaults to `['chatbots','render-plugins','plugins','.']`, filtered by existence.
+	 * When omitted, this is resolved from `pluxel.hmr.jsonc` via workspace profiles.
 	 */
 	roots?: string[]
 	/**
+	 * Workspace profiles config file path.
+	 *
+	 * Defaults to `pluxel.hmr.jsonc` under `root`.
+	 */
+	configPath?: string
+	/**
+	 * Profile override for this run.
+	 *
+	 * Equivalent to setting `PLUXEL_HMR_PROFILE` for discovery.
+	 */
+	profile?: string
+	/**
+	 * Workspace snapshot (preferred): skips discovery.
+	 *
+	 * When absent and `entries` is not provided, `createHmrHost()` resolves it from config.
+	 */
+	workspaceSnapshot?: WorkspaceSnapshot
+	/**
+	 * Override HMR include globs (absolute or workspace-relative).
+	 *
+	 * When provided, HMR will only treat matching files as in-scope (plus anchors).
+	 */
+	include?: string[]
+	/**
+	 * Override cold-start entry modules.
+	 *
+	 * Use this when an outer layer already resolved enabled plugins + include entries to a stable list.
+	 */
+	entries?: string[]
+	/**
 	 * Extra exclude globs for HMR scanning (workspace-relative or absolute).
 	 *
-	 * Defaults to `['builtin-plugins/**']`.
+	 * When workspace profiles are used, this is appended to profile exclude globs.
 	 */
 	exclude?: string[]
 	/**
@@ -165,9 +200,45 @@ export function applyHmrEnvOverrides(base: HMRConfig, env = process.env): HMRCon
 	return out
 }
 
-function defaultScanRoots(root: string): string[] {
-	const candidates = ['chatbots', 'render-plugins', 'plugins', '.']
-	return candidates.filter((dir) => existsSync(join(root, dir)))
+function uniqSorted(list: readonly string[]) {
+	return [...new Set(list)].sort((a, b) => a.localeCompare(b))
+}
+
+async function resolveSnapshotFromConfig(params: {
+	root: string
+	configPath?: string
+	profile?: string
+	omitPackages?: string[]
+}): Promise<WorkspaceSnapshot> {
+	const configPathAbs = resolve(params.root, params.configPath ?? DEFAULT_HMR_CONFIG_BASENAME)
+	const env = params.profile ? { ...process.env, PLUXEL_HMR_PROFILE: params.profile } : process.env
+	const res = await diagnoseWorkspace({
+		rootDir: params.root,
+		configPath: configPathAbs,
+		env,
+		omitPackages: params.omitPackages,
+	})
+	if (!res.ok) {
+		const hint = `Hint: run \`pluxel hmr\` (interactive) to generate/edit ${configPathAbs}.`
+		throw new Error([...res.errors, hint].join('\n'))
+	}
+	return res.snapshot
+}
+
+function extractBuiltinPackageNames(builtins: readonly BuiltinPluginSpec[]): string[] {
+	const out: string[] = []
+	for (const spec of builtins) {
+		if (typeof spec === 'function') continue
+		const pkg = typeof spec.packageName === 'string' ? spec.packageName.trim() : ''
+		if (pkg) {
+			out.push(pkg)
+			continue
+		}
+		// Back-compat: some call sites used `moduleId` as the workspace package name.
+		const moduleId = typeof spec.moduleId === 'string' ? spec.moduleId.trim() : ''
+		if (moduleId && !moduleId.includes(':')) out.push(moduleId)
+	}
+	return uniqSorted(out)
 }
 
 export async function createHmrHost(opts: CreateHmrHostOptions = {}): Promise<CreateHmrHostResult> {
@@ -195,12 +266,43 @@ export async function createHmrHost(opts: CreateHmrHostOptions = {}): Promise<Cr
 		? { ...(opts.deps ?? {}), cjsExternal: opts.cjsExternal }
 		: opts.deps
 
-	const roots = opts.roots ?? defaultScanRoots(root)
+	const builtins = opts.builtins ?? []
+	const omitPackages = builtins.length ? extractBuiltinPackageNames(builtins) : undefined
+
+	const snapshot =
+		opts.workspaceSnapshot ??
+		(!opts.entries
+			? await resolveSnapshotFromConfig({
+					root,
+					configPath: opts.configPath,
+					profile: opts.profile,
+					omitPackages,
+				})
+			: null)
+
+	let roots = opts.roots ?? snapshot?.watchRoots
+	if (!roots || roots.length === 0) {
+		throw new Error(
+			`[hmr-host] Missing roots: provide opts.roots, or add workspace profiles config at ${resolve(root, opts.configPath ?? DEFAULT_HMR_CONFIG_BASENAME)}.`,
+		)
+	}
+
+	let include = snapshot ? uniqSorted([...(snapshot.includeGlobs ?? []), ...(opts.include ?? [])]) : opts.include
+	let exclude = snapshot ? uniqSorted([...(snapshot.excludeGlobs ?? []), ...(opts.exclude ?? [])]) : (opts.exclude ?? [])
+	const entries = opts.entries ?? snapshot?.enabledEntries
+	if (!entries) {
+		throw new Error(
+			`[hmr-host] Missing entries: provide opts.entries or configure workspace profiles at ${resolve(root, opts.configPath ?? DEFAULT_HMR_CONFIG_BASENAME)}.`,
+		)
+	}
+
 	const hmrServiceBase: HMRConfig = {
 		roots,
 		warmup: opts.warmup ?? true,
-		exclude: opts.exclude ?? ['builtin-plugins/**'],
-		builtins: opts.builtins ?? [],
+		include,
+		entries,
+		exclude,
+		builtins,
 		vitePlugins: opts.vitePlugins,
 		deps,
 	}

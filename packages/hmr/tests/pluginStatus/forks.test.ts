@@ -4,8 +4,8 @@ import { describe, expect, it } from 'bun:test'
 import type { Context as PlxContext } from '@pluxel/core'
 import { BasePlugin, Context, ForkablePlugin, Plugin } from '@pluxel/core'
 import { getStatusOverview } from '../../src/api/features/pluginStatus/service'
-import { LoaderService } from '../../src/services/loader/LoaderService'
-import { EXTRA_FORKS } from '../../src/services/loader/selection'
+import { LoaderService } from '../../src/services/runtime/loader/LoaderService'
+import { EXTRA_FORKS } from '../../src/services/runtime/loader/selection'
 
 function createHmrCtx(core: Context) {
 	const enabled = new Set<string>()

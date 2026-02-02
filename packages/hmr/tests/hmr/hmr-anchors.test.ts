@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'bun:test'
 import { createFixture } from 'fs-fixture'
 import { join } from 'pathe'
-import { HMRService } from '../../src/services/hmr/HMRService'
+import { HMRService } from '../../src/services/runtime/hmr/HMRService'
 
 const noop = () => undefined
 
@@ -9,6 +9,7 @@ const createCtx = () => {
 	const anchors = new Set<string>()
 	const ctx = {
 		logger: { info: noop, error: noop, warn: noop },
+		scanService: { resolveEntry: async () => ({ ok: false }) },
 		loader: {
 			api: {
 				anchors: {
@@ -39,7 +40,7 @@ describe('HMRService anchors', () => {
 		const { ctx, anchors } = createCtx()
 		anchors.add(entry)
 
-		const hmr = new HMRService(ctx, { roots: [root] })
+		const hmr = new HMRService(ctx, { roots: [root], entries: [], exclude: [`${root}/**/*.tsx`] })
 		;(hmr as unknown as { debouncer: { push: (id: string) => void } }).debouncer = { push: noop }
 
 		const accepted = (
@@ -61,7 +62,7 @@ describe('HMRService anchors', () => {
 		const b = join(root, 'B.ts')
 		anchors.add(a)
 
-		const hmr = new HMRService(ctx, { roots: [root] })
+		const hmr = new HMRService(ctx, { roots: [root], entries: [] })
 
 		const snapshot1: ReadonlySet<string> = (
 			hmr as unknown as { getAnchorsCleanSnapshot: () => ReadonlySet<string> }

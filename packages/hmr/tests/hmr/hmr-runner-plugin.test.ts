@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'bun:test'
 import { join } from 'pathe'
-import { HMRService } from '../../src/services/hmr/HMRService'
+import { HMRService } from '../../src/services/runtime/hmr/HMRService'
 
 const noop = () => undefined
 
@@ -9,6 +9,7 @@ const createCtx = () => {
 	const anchors = new Set<string>()
 	return {
 		logger: { info: noop, error: noop, warn: noop },
+		scanService: { resolveEntry: async () => ({ ok: false }) },
 		loader: {
 			api: {
 				anchors: {
@@ -30,6 +31,7 @@ describe('HMRService runner plugin', () => {
 		const cwd = process.cwd()
 		const hmr = new HMRService(createCtx(), {
 			roots: [join(cwd, 'tests/fixtures/plugins')],
+			entries: [],
 		})
 
 		const plugin = (hmr as unknown as { plugin: { handleHotUpdate?: unknown } }).plugin
