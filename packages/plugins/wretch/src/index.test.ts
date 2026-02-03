@@ -1,6 +1,6 @@
 import '@pluxel/test/setup'
 
-import { describe, expect, it } from 'bun:test'
+import { describe, expect, it } from 'vitest'
 import { withHost } from '@pluxel/test'
 import { __registerConfigSchema__ } from '@pluxel/test/unsafe'
 import { WretchPlugin } from './index'

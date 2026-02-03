@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'bun:test'
+import { describe, expect, it } from 'vitest'
 import { createFixture } from 'fs-fixture'
 import { createImportTracker } from '@pluxel/cli/rolldown'
 import { resolve } from 'pathe'

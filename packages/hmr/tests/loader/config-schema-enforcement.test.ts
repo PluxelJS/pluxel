@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'bun:test'
+import { describe, expect, test } from 'vitest'
 import { BasePlugin, Plugin } from '@pluxel/core'
 import { __registerConfigSchema__ } from '@pluxel/test/unsafe'
 import * as v from 'valibot'

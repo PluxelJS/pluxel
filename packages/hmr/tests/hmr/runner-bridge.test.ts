@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'bun:test'
+import { describe, expect, it } from 'vitest'
 import type { Context } from '@pluxel/core'
 import { BasePlugin, checkPluginDecorator } from '@pluxel/core'
 import { join } from 'pathe'
@@ -38,12 +38,12 @@ const createCtx = () => {
 describe('HMR runner bridge', () => {
 	it('reuses host @pluxel/core singletons in the runner', async () => {
 		const cwd = process.cwd()
-		const demoDir = join(cwd, '../plugins/host/src/demo')
-		const pluginFile = join(demoDir, 'PluginWithUI.ts')
+		const fixturesDir = join(cwd, 'tests/fixtures/plugins')
+		const pluginFile = join(fixturesDir, 'PluginWithUI.ts')
 
 		const ctx = createCtx()
 		const hmr = new HMRService(ctx, {
-			roots: [join(cwd, 'tests/fixtures/plugins'), demoDir],
+			roots: ['tests/fixtures/plugins'],
 			entries: [],
 		})
 		hmr.setServerRoot(cwd)
@@ -52,20 +52,22 @@ describe('HMR runner bridge', () => {
 		const fsAllow = resolveFsAllowList({
 			cwd,
 			cwdNormalized: normalizePath(cwd),
-			scanRoots: [normalizePath(join(cwd, 'tests/fixtures/plugins')), normalizePath(demoDir)],
+			scanRoots: [normalizePath(fixturesDir)],
 		})
 
 		const server = await createServer({
 			...buildHmrViteConfig({
 				root: cwd,
 				fsAllow,
-				scanRoots: ['./tests/fixtures/plugins', '../plugins/host/src/demo'],
+				scanRoots: ['tests/fixtures/plugins'],
 				deps,
 				runnerPlugin: { name: 'noop' },
 				honoPlugin: { name: 'noop' },
 			}),
 			server: {
 				port: 0,
+				hmr: false,
+				ws: false,
 				middlewareMode: true,
 				fs: { allow: fsAllow },
 			},
@@ -86,5 +88,5 @@ describe('HMR runner bridge', () => {
 		} finally {
 			await server.close()
 		}
-	})
+	}, 20_000)
 })

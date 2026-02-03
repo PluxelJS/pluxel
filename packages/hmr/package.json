@@ -55,7 +55,7 @@
 		"hmr": "pnpm --filter @pluxel/plugins-host hmr",
 		"mock": "pnpm --filter @pluxel/plugins-host hmr",
 		"hot": "pnpm --filter @pluxel/plugins-host hot",
-		"test": "bun test --conditions=@pluxel/source",
+		"test": "pnpm exec vitest run -c vitest.config.ts",
 		"build": "vite build && tsdown",
 		"web": "vite build"
 	},

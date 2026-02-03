@@ -19,7 +19,7 @@
 	"scripts": {
 		"build": "pluxel build",
 		"build:plugin": "pluxel build",
-		"test": "bun test --conditions=@pluxel/source"
+		"test": "pnpm exec vitest run -c vitest.config.ts"
 	},
 	"peerDependencies": {
 		"@pluxel/core": "workspace:*",
@@ -33,6 +33,7 @@
 	},
 	"devDependencies": {
 		"@pluxel/cli": "workspace:*",
+		"@pluxel/test": "workspace:*",
 		"tsdown": "^0.20.1",
 		"typescript": "^5.9.3"
 	},

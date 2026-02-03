@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'bun:test'
+import { describe, expect, it } from 'vitest'
 import { createUiRpcView } from '../../../hmr-web/src/rpc'
 
 describe('hmr-web createUiRpcView', () => {

@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'bun:test'
+import { describe, expect, it } from 'vitest'
 import { resolve } from 'node:path'
 import { createFixture } from 'fs-fixture'
 import type { Plugin as RolldownPlugin } from 'rolldown'

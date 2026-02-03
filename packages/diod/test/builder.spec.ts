@@ -1,6 +1,6 @@
 // tests/builder.spec.ts
 import 'reflect-metadata'
-import { describe, expect, it } from 'bun:test'
+import { describe, expect, it } from 'vitest'
 import { ContainerBuilder } from '../src'
 import {
 	ServiceVerificationAggregateError,
@@ -68,7 +68,7 @@ describe('build-time validations and registry ops', () => {
 		const e = expectBuildErr(builder.build())
 		// 缺失依赖属于 MissingDependency
 		const hasMissing = e.errors.some((x) => x.kind === 'MissingDependency')
-		expect(hasMissing).toBeTrue()
+		expect(hasMissing).toBe(true)
 		// 人类可读信息包含目标类名
 		expect(e.format()).toContain('Agenda')
 	})
@@ -80,7 +80,7 @@ describe('build-time validations and registry ops', () => {
 
 		const e = expectBuildErr(builder.build())
 		const hasMissing = e.errors.some((x) => x.kind === 'MissingDependency')
-		expect(hasMissing).toBeTrue()
+		expect(hasMissing).toBe(true)
 		expect(e.format()).toContain('Agenda')
 	})
 
@@ -124,7 +124,7 @@ describe('build-time validations and registry ops', () => {
 			// && x.id === (BankUser as unknown as Identifier<unknown>)
 		)
 
-		expect(hasMissing || hasInsufficient).toBeTrue()
+		expect(hasMissing || hasInsufficient).toBe(true)
 		expect(e.format()).toContain('BankUser') // 保持可读断言
 	})
 
@@ -140,7 +140,7 @@ describe('build-time validations and registry ops', () => {
 			(x): x is Extract<VerificationError, { kind: 'CircularDependency' }> =>
 				x.kind === 'CircularDependency',
 		)
-		expect(Boolean(cycle)).toBeTrue()
+		expect(Boolean(cycle)).toBe(true)
 		// 链名字应包含环
 		if (cycle) {
 			const names = cycle.chain.map(idName)
@@ -194,7 +194,7 @@ describe('build-time validations and registry ops', () => {
 		expectOk(builder.tryRegisterAndUse(Clock))
 
 		expectOk(builder.tryUnregister(Clock))
-		expect(builder.isRegistered(Clock)).toBeFalse()
+		expect(builder.isRegistered(Clock)).toBe(false)
 	})
 
 	it('can query if a service is registe red', () => {
@@ -204,7 +204,7 @@ describe('build-time validations and registry ops', () => {
 		const isClockRegistered = builder.isRegistered(Clock)
 		const isCircular1Registered = builder.isRegistered(Circular1)
 
-		expect(isClockRegistered).toBeTrue()
-		expect(isCircular1Registered).toBeFalse()
+		expect(isClockRegistered).toBe(true)
+		expect(isCircular1Registered).toBe(false)
 	})
 })

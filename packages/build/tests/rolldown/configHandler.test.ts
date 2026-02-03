@@ -1,6 +1,6 @@
 // tests/normalizeValibot.test.ts
 
-import { describe, expect, it } from 'bun:test'
+import { describe, expect, it } from 'vitest'
 import { parseSync } from 'oxc-parser'
 import { normalizeSchemaSource, type ParseProgram } from '../../src/rolldown/utils/configHandler'
 

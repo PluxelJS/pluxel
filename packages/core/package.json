@@ -34,7 +34,7 @@
 		"!**/*.map"
 	],
 	"scripts": {
-		"test": "vitest run",
+		"test": "pnpm exec vitest run -c vitest.config.ts",
 		"build": "tsdown",
 		"dev": "bun --conditions=@pluxel/source --watch run tests/start.ts",
 		"bench": "bun --conditions=@pluxel/source run bench/pluginLifecycle.bench.ts",

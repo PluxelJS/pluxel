@@ -1,6 +1,6 @@
 // tests/alias.spec.ts
 import 'reflect-metadata'
-import { describe, expect, it } from 'bun:test'
+import { describe, expect, it } from 'vitest'
 import { ContainerBuilder } from '../src'
 import type { VerificationError } from '../src/verifier'
 import { ServiceVerificationAggregateError } from '../src/verifier'
@@ -113,7 +113,7 @@ describe('alias index & resolution', () => {
 			(x): x is Extract<VerificationError, { kind: 'AliasConflict' }> =>
 				x.kind === 'AliasConflict',
 		)
-		expect(hasAliasConflict).toBeTrue()
+		expect(hasAliasConflict).toBe(true)
 		expect(err.format()).toContain('AliasConflict')
 		expect(err.format()).toContain('dup')
 	})

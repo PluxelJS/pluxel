@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'bun:test'
+import { describe, expect, test } from 'vitest'
 import type { Context, PluginConstructor } from '@pluxel/core'
 import { buildSnapshotSource } from './buildSnapshot'
 

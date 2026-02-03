@@ -3,7 +3,7 @@ import '@pluxel/test/setup'
 // Ensure @pluxel/hmr services (HonoService/AuthGuardService/ExtService) are registered.
 import '../../src/services'
 
-import { afterEach, describe, expect, it } from 'bun:test'
+import { afterEach, describe, expect, it } from 'vitest'
 import { createHost, type Host } from '@pluxel/test'
 import { AuthGuardTestPlugin } from '../fixtures/plugins/AuthGuardTestPlugin'
 

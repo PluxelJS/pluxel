@@ -1,4 +1,4 @@
-import { describe, expect, test, vi } from 'bun:test'
+import { describe, expect, test, vi } from 'vitest'
 import { applyMarketMutation } from '../../../src/api/features/market/service'
 
 const specInput: { name: string; raw: string | null; version: string | null; tag: string | null } =

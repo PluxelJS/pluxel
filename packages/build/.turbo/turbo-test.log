@@ -1,45 +1,15 @@
 
-
 > @pluxel/build@0.1.0 test /home/ahdg/code/pluxel/packages/build
-> bun test --conditions=@pluxel/source
+> pnpm exec vitest run -c vitest.config.ts
 
-[0m[1mbun test [0m[2mv1.3.4 (5eb2145b)[0m
-[0m
-tests/rolldown/configHandler.test.ts:
-[0m[32m✓[0m [0mnormalizeSchemaSource[2m >[0m[1m optionalAsync basic[0m [0m[2m[3.00ms[0m[2m][0m
-[0m[32m✓[0m [0mnormalizeSchemaSource[2m >[0m[1m optionalAsync with pipe[0m
-[0m[32m✓[0m [0mnormalizeSchemaSource[2m >[0m[1m pipe with transform[0m
-[0m[32m✓[0m [0mnormalizeSchemaSource[2m >[0m[1m pipe with check[0m
-[0m[32m✓[0m [0mnormalizeSchemaSource[2m >[0m[1m pipe with check + transform[0m
-[0m[32m✓[0m [0mnormalizeSchemaSource[2m >[0m[1m pipeAsync with transform + checkAsync[0m [0m[2m[1.00ms[0m[2m][0m
-[0m[32m✓[0m [0mnormalizeSchemaSource[2m >[0m[1m pipe with nested optionalAsync[0m
-[0m[32m✓[0m [0mnormalizeSchemaSource[2m >[0m[1m object with optionalAsync + pipe + check[0m
-[0m[32m✓[0m [0mnormalizeSchemaSource[2m >[0m[1m strip as const[0m [0m[2m[1.00ms[0m[2m][0m
-[0m[32m✓[0m [0mnormalizeSchemaSource[2m >[0m[1m strip as type[0m
-[0m[32m✓[0m [0mnormalizeSchemaSource[2m >[0m[1m strip satisfies[0m
-[0m[32m✓[0m [0mnormalizeSchemaSource[2m >[0m[1m strip comments with as keyword[0m
-[0m[32m✓[0m [0mnormalizeSchemaSource[2m >[0m[1m computed key[0m
-[0m
-tests/rolldown/plugins.test.ts:
-[0m[32m✓[0m [0mconfigSourcePlugin[2m >[0m[1m extracts inline @Config schema source[0m [0m[2m[[1m36.00ms[0m[2m][0m
-[0m[32m✓[0m [0mconfigSourcePlugin[2m >[0m[1m extracts aliased @Config decorator imports[0m [0m[2m[7.00ms[0m[2m][0m
-[0m[32m✓[0m [0mconfigSourcePlugin[2m >[0m[1m injects __registerUsedFeatures__ for features.use(...) class fields[0m [0m[2m[6.00ms[0m[2m][0m
-[0m[32m✓[0m [0mconfigSourcePlugin[2m >[0m[1m rewrites valibot namespace imports to runtime "v"[0m [0m[2m[[1m10.00ms[0m[2m][0m
-[0m[32m✓[0m [0mconfigSourcePlugin[2m >[0m[1m rewrites valibot-form namespace imports to runtime "f"[0m [0m[2m[[1m16.00ms[0m[2m][0m
-[0m[32m✓[0m [0mconfigSourcePlugin[2m >[0m[1m rewrites valibot named imports to runtime "v"[0m [0m[2m[[1m12.00ms[0m[2m][0m
-[0m[32m✓[0m [0mconfigSourcePlugin[2m >[0m[1m rewrites valibot-form named imports to runtime "f"[0m [0m[2m[9.00ms[0m[2m][0m
-[0m[32m✓[0m [0mconfigSourcePlugin[2m >[0m[1m handles computed keys inside schema objects[0m [0m[2m[[1m11.00ms[0m[2m][0m
-[0m[32m✓[0m [0mconfigSourcePlugin[2m >[0m[1m extracts cross-file imported schema source[0m [0m[2m[[1m13.00ms[0m[2m][0m
-[0m[32m✓[0m [0mconfigSourcePlugin[2m >[0m[1m generates correct __setConfigSource__ calls[0m [0m[2m[6.00ms[0m[2m][0m
-[0m[32m✓[0m [0mconfigSourcePlugin[2m >[0m[1m respects include/exclude patterns[0m [0m[2m[5.00ms[0m[2m][0m
-[0m[32m✓[0m [0mconfigSourcePlugin[2m >[0m[1m extracts schema from another cross-file import[0m [0m[2m[[1m12.00ms[0m[2m][0m
-[0m[32m✓[0m [0mconfigSourcePlugin[2m >[0m[1m extracts composed schema pieces[0m [0m[2m[[1m12.00ms[0m[2m][0m
-[0m[32m✓[0m [0mimportTypeFixerPlugin[2m >[0m[1m emits runtime-safe output for type-only imports[0m [0m[2m[[1m12.00ms[0m[2m][0m
-[0m[32m✓[0m [0mimportTypeFixerPlugin[2m >[0m[1m fixes type-only imports with alias specifiers[0m [0m[2m[5.00ms[0m[2m][0m
-[0m[32m✓[0m [0mimportTypeFixerPlugin[2m >[0m[1m keeps constructor params for type-only imports[0m [0m[2m[5.00ms[0m[2m][0m
-[0m[32m✓[0m [0mplugins integration[2m >[0m[1m composes importTypeFixer with configSourcePlugin[0m [0m[2m[9.00ms[0m[2m][0m
 
-[0m[32m 30 pass[0m
-[0m[2m 0 fail[0m
- 64 expect() calls
-Ran 30 tests across 2 files. [0m[2m[[1m286.00ms[0m[2m][0m
+[1m[46m RUN [49m[22m [36mv4.0.18 [39m[90m/home/ahdg/code/pluxel/packages/build[39m
+
+ [32m✓[39m tests/rolldown/configHandler.test.ts [2m([22m[2m13 tests[22m[2m)[22m[32m 10[2mms[22m[39m
+ [32m✓[39m tests/rolldown/plugins.test.ts [2m([22m[2m17 tests[22m[2m)[22m[32m 178[2mms[22m[39m
+
+[2m Test Files [22m [1m[32m2 passed[39m[22m[90m (2)[39m
+[2m      Tests [22m [1m[32m30 passed[39m[22m[90m (30)[39m
+[2m   Start at [22m 22:41:19
+[2m   Duration [22m 605ms[2m (transform 201ms, setup 0ms, import 303ms, tests 188ms, environment 0ms)[22m
+

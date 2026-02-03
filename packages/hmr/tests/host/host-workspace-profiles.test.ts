@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'bun:test'
+import { describe, expect, it } from 'vitest'
 import { createFixture } from 'fs-fixture'
 import { resolve } from 'pathe'
 import { createHmrHost } from '@pluxel/hmr/host'

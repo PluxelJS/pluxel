@@ -1,5 +1,5 @@
 import 'reflect-metadata'
-import { describe, expect, it } from 'bun:test'
+import { describe, expect, it } from 'vitest'
 import { ContainerBuilder } from '../src'
 import { ServiceVerificationAggregateError } from '../src/verifier'
 import { expectErr, expectExist, expectOk } from './_helpers'
@@ -80,7 +80,7 @@ describe('incremental build & cache invalidation', () => {
 			(err as ServiceVerificationAggregateError).errors.some(
 				(e) => e.kind === 'MissingDependency',
 			),
-		).toBeTrue()
+		).toBe(true)
 	})
 
 	it('detects alias conflicts introduced after a successful build', () => {
@@ -100,6 +100,6 @@ describe('incremental build & cache invalidation', () => {
 			(err as ServiceVerificationAggregateError).errors.some(
 				(e) => e.kind === 'AliasConflict',
 			),
-		).toBeTrue()
+		).toBe(true)
 	})
 })

@@ -1,6 +1,6 @@
 import '@pluxel/test/setup'
 
-import { describe, expect, it } from 'bun:test'
+import { describe, expect, it } from 'vitest'
 import { Context, ForkablePlugin, Plugin } from '@pluxel/core'
 import { LoaderService } from '../../src/services/runtime/loader/LoaderService'
 import { EXTRA_BASE_PROVIDERS, EXTRA_FORKS } from '../../src/services/runtime/loader/selection'

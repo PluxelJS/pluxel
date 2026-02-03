@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'bun:test'
+import { describe, expect, it } from 'vitest'
 import { createFixture } from 'fs-fixture'
 import { resolve } from 'pathe'
 import { diagnoseWorkspace, readHmrConfigV1, writeHmrConfigV1, type PluxelHmrConfigV1 } from '@pluxel/cli/hmr'

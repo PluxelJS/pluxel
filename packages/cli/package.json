@@ -37,7 +37,7 @@
 	"scripts": {
 		"dev": "bun src/cli.ts new plugin",
 		"build": "tsdown",
-		"test": "bun test --conditions=@pluxel/source"
+		"test": "pnpm exec vitest run -c vitest.config.ts"
 	},
 	"peerDependencies": {
 		"@pluxel/market": "*",
@@ -57,6 +57,7 @@
 	},
 	"devDependencies": {
 		"@pluxel/build": "workspace:*",
+		"@pluxel/test": "workspace:*",
 		"@types/picomatch": "^4.0.2",
 		"fs-fixture": "^2.11.0"
 	}

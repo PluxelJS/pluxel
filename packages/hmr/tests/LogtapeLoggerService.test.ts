@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { configureSync, type LogRecord, resetSync } from '@logtape/logtape'
 import { Context } from '@pluxel/hmr'
 import { LogtapeLoggerService } from '../src/logger/LogtapeLoggerService'

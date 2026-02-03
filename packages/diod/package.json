@@ -23,7 +23,7 @@
 	],
 	"scripts": {
 		"build": "tsdown",
-		"test": "bun test",
+		"test": "pnpm exec vitest run -c vitest.config.ts",
 		"docs": "rimraf docs/api && typedoc --plugin typedoc-plugin-markdown",
 		"lint": "biome check",
 		"qa": "pnpm run lint && pnpm run type-check && pnpm run test",
@@ -37,6 +37,7 @@
 		}
 	],
 	"devDependencies": {
+		"@pluxel/test": "workspace:*",
 		"tsdown": "^0.20.1",
 		"typescript": "^5.9.3",
 		"option-t": "^55.1.0",

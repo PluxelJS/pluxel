@@ -1,5 +1,5 @@
 // tests/context.spec.ts
-import { describe, expect, test } from 'bun:test'
+import { describe, expect, test } from 'vitest'
 import { Context, type ServiceClass } from '@pluxel/context'
 
 type TestServiceCtor = new (ctx: unknown, cfg?: unknown) => object

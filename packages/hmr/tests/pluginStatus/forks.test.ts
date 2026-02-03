@@ -1,6 +1,6 @@
 import '@pluxel/test/setup'
 
-import { describe, expect, it } from 'bun:test'
+import { describe, expect, it } from 'vitest'
 import type { Context as PlxContext } from '@pluxel/core'
 import { BasePlugin, Context, ForkablePlugin, Plugin } from '@pluxel/core'
 import { getStatusOverview } from '../../src/api/features/pluginStatus/service'

@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, test } from 'bun:test'
+import { afterEach, describe, expect, test } from 'vitest'
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { resolve } from 'pathe'
@@ -54,9 +54,9 @@ describe('EntryResolver preferHmrExports', () => {
 		writeFixture()
 		const options: ResolvedScanOptions = { ...baseOptions, preferHmrExports: true }
 		const result = await resolver.resolve(workdir, options)
-		expect(result.ok).toBeTrue()
+		expect(result.ok).toBe(true)
 		if (result.ok) {
-			expect(result.entry.replace(/\\/g, '/').endsWith('/src/wretch.ts')).toBeTrue()
+			expect(result.entry.replace(/\\/g, '/').endsWith('/src/wretch.ts')).toBe(true)
 		}
 	})
 
@@ -64,9 +64,9 @@ describe('EntryResolver preferHmrExports', () => {
 		writeFixture()
 		const options: ResolvedScanOptions = { ...baseOptions, preferHmrExports: false }
 		const result = await resolver.resolve(workdir, options)
-		expect(result.ok).toBeTrue()
+		expect(result.ok).toBe(true)
 		if (result.ok) {
-			expect(result.entry.replace(/\\/g, '/').endsWith('/dist/wretch.mjs')).toBeTrue()
+			expect(result.entry.replace(/\\/g, '/').endsWith('/dist/wretch.mjs')).toBe(true)
 		}
 	})
 })

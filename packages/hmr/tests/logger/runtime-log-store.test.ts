@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'bun:test'
+import { describe, expect, it } from 'vitest'
 import { RuntimeLogStore } from '../../src/logger/store'
 
 function lineInput(i: number, extra?: Partial<any>) {

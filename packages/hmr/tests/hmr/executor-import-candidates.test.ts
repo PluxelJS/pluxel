@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'bun:test'
+import { describe, expect, it } from 'vitest'
 import { HmrExecutor } from '../../src/services/runtime/hmr/pipeline'
 
 describe('HmrExecutor import candidates', () => {

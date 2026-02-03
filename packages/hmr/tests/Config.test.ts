@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'bun:test'
+import { describe, expect, it } from 'vitest'
 import { BasePlugin, getPluginInfo, Plugin } from '@pluxel/core'
 import { v } from '../src/config'
 import { Config } from '../src/index'

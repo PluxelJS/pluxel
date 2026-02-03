@@ -1,6 +1,6 @@
 // tests/autowire-off.ts
 import 'reflect-metadata'
-import { describe, expect, it } from 'bun:test'
+import { describe, expect, it } from 'vitest'
 import { ContainerBuilder } from '../src'
 import { expectOk } from './_helpers'
 import {

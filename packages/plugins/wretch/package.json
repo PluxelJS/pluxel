@@ -19,7 +19,7 @@
 	"scripts": {
 		"build": "pluxel build",
 		"build:plugin": "pluxel build",
-		"test": "bun test --conditions=@pluxel/source"
+		"test": "pnpm exec vitest run -c vitest.config.ts"
 	},
 	"dependencies": {
 		"valibot": "^1.2.0",

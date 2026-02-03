@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'bun:test'
+import { describe, expect, it } from 'vitest'
 import { getHmrMcpHttpHandler } from '../../../src/api/mcp'
 
 describe('MCP (mcp-lite) endpoint', () => {

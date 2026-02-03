@@ -16,10 +16,12 @@
 		"./package.json": "./package.json"
 	},
 	"scripts": {
-		"test": "bun test --conditions=@pluxel/source",
+		"test": "pnpm exec vitest run -c vitest.config.ts",
 		"build": "tsdown"
 	},
-	"devDependencies": {},
+	"devDependencies": {
+		"@pluxel/test": "workspace:*"
+	},
 	"publishConfig": {
 		"exports": {
 			".": {

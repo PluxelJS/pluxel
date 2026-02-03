@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'bun:test'
+import { describe, expect, it } from 'vitest'
 import type { Context } from '@pluxel/core'
 import { BasePlugin, Plugin } from '@pluxel/hmr'
 import { ModuleReplacer } from '../../src/services/runtime/loader/module-replacer'

@@ -3,7 +3,7 @@ import { describe, expect, test } from 'vitest'
 import { existsSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
-import { spawn } from 'node:child_process'
+import { execFileSync, spawn } from 'node:child_process'
 import { createFixture } from 'fs-fixture'
 
 const macroEntrySource = [
@@ -50,9 +50,18 @@ const macroEntrySource = [
 ].join('\n')
 
 const macroSourcePath = fileURLToPath(new URL('../defineMachine.macro.ts', import.meta.url))
+const hasBun = (() => {
+	try {
+		execFileSync('bun', ['--version'], { stdio: 'ignore' })
+		return true
+	} catch {
+		return false
+	}
+})()
 
 describe('macro baked fsm', () => {
-	test('bun build should execute macros and output usable factory', async () => {
+	const bunTest = hasBun ? test : test.skip
+	bunTest('bun build should execute macros and output usable factory', async () => {
 		await using fixture = await createFixture({
 			'fsm/tests/fixtures/macro-entry.ts': macroEntrySource,
 			'fsm/defineMachine.macro.ts': ({ symlink }) => symlink(macroSourcePath),

@@ -1,6 +1,6 @@
 // tests/visibility.spec.ts
 import 'reflect-metadata'
-import { describe, expect, it } from 'bun:test'
+import { describe, expect, it } from 'vitest'
 import { ContainerBuilder } from '../src'
 import { expectErr, expectExist, expectOk } from './_helpers'
 import { Agenda } from './fixtures/agenda'

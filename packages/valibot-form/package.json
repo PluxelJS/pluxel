@@ -23,7 +23,7 @@
 		"build": "tsdown",
 		"dev": "vite",
 		"preview": "vite preview",
-		"test": "vitest run"
+		"test": "pnpm exec vitest run -c vitest.config.ts"
 	},
 	"dependencies": {
 		"valibot": "^1.2.0"
@@ -41,6 +41,7 @@
 		"react-dom": "^19.2.4"
 	},
 	"devDependencies": {
+		"@pluxel/test": "workspace:*",
 		"@mantine/core": "^8.3.13",
 		"@mantine/hooks": "^8.3.13",
 		"@tabler/icons-react": "^3.35.0",
@@ -53,8 +54,7 @@
 		"react-dom": "^19.2.4",
 		"tsdown": "^0.20.1",
 		"typescript": "^5.9.3",
-		"vite": "beta",
-		"vitest": "^3.2.4"
+		"vite": "beta"
 	},
 	"publishConfig": {
 		"exports": {
