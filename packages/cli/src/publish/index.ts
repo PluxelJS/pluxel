@@ -1,7 +1,7 @@
 import { resolve } from 'pathe'
 import type { PackageJson } from 'pkg-types'
 import { readPackageJSON } from 'pkg-types'
-import { detectCiContext, isCi } from '../ci/context'
+import { detectCiContext } from '../ci/context'
 import { resolveOidcToken } from '../ci/oidc'
 import { CLI_DEFAULTS } from '../config'
 import { runCommand } from '../utils/exec'

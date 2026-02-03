@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { createFixture } from 'fs-fixture'
 import { createImportTracker } from '@pluxel/cli/rolldown'
 import { resolve } from 'pathe'
@@ -170,14 +170,10 @@ describe('build command', () => {
 	})
 
 	it('respects custom env config for prefixes and manifest fields', async () => {
-		const previousEnv: Record<string, string | undefined> = {
-			[BuildEnvKeys.pluginPrefix]: process.env[BuildEnvKeys.pluginPrefix],
-			[BuildEnvKeys.manifestField]: process.env[BuildEnvKeys.manifestField],
-		}
 		try {
 			await withBuildFixture('custom', async (fixtureDir) => {
-				process.env[BuildEnvKeys.pluginPrefix] = 'acme-plugin'
-				process.env[BuildEnvKeys.manifestField] = 'customField'
+				vi.stubEnv(BuildEnvKeys.pluginPrefix, 'acme-plugin')
+				vi.stubEnv(BuildEnvKeys.manifestField, 'customField')
 
 				const runtime = await resolveBuildContext({})
 				const tracker = createImportTracker({ prefixes: runtime.pluginPrefixes })
@@ -208,16 +204,15 @@ describe('build command', () => {
 				expect(pkg.customField?.dependOn?.optional).toEqual(['acme-plugin-beta'])
 			})
 		} finally {
-			restoreEnv(previousEnv)
+			vi.unstubAllEnvs()
 		}
 	})
 
 	it('fills repository metadata from GitHub env', async () => {
-		const savedEnv = snapshotEnv(['GITHUB_ACTIONS', 'GITHUB_REPOSITORY'])
 		try {
 			await withBuildFixture('basic', async () => {
-				process.env.GITHUB_ACTIONS = 'true'
-				process.env.GITHUB_REPOSITORY = 'pluxel/example'
+				vi.stubEnv('GITHUB_ACTIONS', 'true')
+				vi.stubEnv('GITHUB_REPOSITORY', 'pluxel/example')
 
 				const runtime = await resolveBuildContext({})
 				const tracker = createImportTracker({ prefixes: runtime.pluginPrefixes })
@@ -243,17 +238,16 @@ describe('build command', () => {
 				expect(pkg.bugs).toEqual({ url: 'https://github.com/pluxel/example/issues' })
 			})
 		} finally {
-			restoreEnv(savedEnv)
+			vi.unstubAllEnvs()
 		}
 	})
 
 	it('fills repository metadata from GitLab env', async () => {
-		const savedEnv = snapshotEnv(['GITLAB_CI', 'CI_PROJECT_PATH', 'CI_SERVER_HOST'])
 		try {
 			await withBuildFixture('basic', async () => {
-				process.env.GITLAB_CI = 'true'
-				process.env.CI_PROJECT_PATH = 'pluxel/example'
-				process.env.CI_SERVER_HOST = 'gitlab.com'
+				vi.stubEnv('GITLAB_CI', 'true')
+				vi.stubEnv('CI_PROJECT_PATH', 'pluxel/example')
+				vi.stubEnv('CI_SERVER_HOST', 'gitlab.com')
 
 				const runtime = await resolveBuildContext({})
 				const tracker = createImportTracker({ prefixes: runtime.pluginPrefixes })
@@ -279,22 +273,7 @@ describe('build command', () => {
 				expect(pkg.bugs).toEqual({ url: 'https://gitlab.com/pluxel/example/-/issues' })
 			})
 		} finally {
-			restoreEnv(savedEnv)
+			vi.unstubAllEnvs()
 		}
 	})
 })
-
-function restoreEnv(state: Record<string, string | undefined>) {
-	for (const [key, value] of Object.entries(state)) {
-		if (typeof value === 'undefined') delete process.env[key]
-		else process.env[key] = value
-	}
-}
-
-function snapshotEnv(keys: string[]) {
-	const state: Record<string, string | undefined> = {}
-	for (const key of keys) {
-		state[key] = process.env[key]
-	}
-	return state
-}
