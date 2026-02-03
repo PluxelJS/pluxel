@@ -14,13 +14,10 @@ const transformOptions = {
 	typescript: {
 		removeClassFieldsWithoutInitializer: true,
 	},
-	decorator: {
-		legacy: true,
-		emitDecoratorMetadata: true,
-	},
 }
 
 export default defineConfig({
+	inlineOnly: ['@abraham/reflection', /^option-t(\/.*)?$/],
 	exports: {
 		devExports: '@pluxel/source',
 	},

@@ -72,13 +72,13 @@ export default defineConfig(({ mode }) => {
 		// 更合理的生产分包：react/mantine/emotion/tabler 独立缓存
 		build: {
 			sourcemap: isDev ? true : 'hidden',
-			rollupOptions: {
-				output: {
-					advancedChunks: {
-						groups: [
-							{
-								name: 'react',
-								test: /[\\/]node_modules[\\/](react|react-dom)[\\/]/,
+				rollupOptions: {
+					output: {
+						codeSplitting: {
+							groups: [
+								{
+									name: 'react',
+									test: /[\\/]node_modules[\\/](react|react-dom)[\\/]/,
 								priority: 50,
 							},
 							{

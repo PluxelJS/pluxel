@@ -32,6 +32,7 @@ export default defineConfig({
 	tsconfig: './tsconfig.json',
 	dts: {
 		resolver: 'oxc',
+		eager: true,
 	},
 	// 不要内联 core / react 相关，避免重复 vendor。
 	external: [
@@ -58,10 +59,6 @@ export default defineConfig({
 			},
 			typescript: {
 				removeClassFieldsWithoutInitializer: true,
-			},
-			decorator: {
-				legacy: true,
-				emitDecoratorMetadata: true,
 			},
 		},
 	},

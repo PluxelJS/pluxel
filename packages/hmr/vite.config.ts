@@ -66,7 +66,7 @@ export default defineConfig({
 			},
 			output: {
 				// 更合理的生产分包：react/mantine/emotion/tabler 独立缓存
-				advancedChunks: {
+				codeSplitting: {
 					groups: [
 						{
 							name: 'react',

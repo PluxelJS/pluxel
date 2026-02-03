@@ -5,6 +5,7 @@ const buildRoot = fileURLToPath(new URL('../build/src', import.meta.url))
 const buildRolldown = fileURLToPath(new URL('../build/src/rolldown/index.ts', import.meta.url))
 
 export default defineConfig({
+	inlineOnly: [/^pathe(\/.*)?$/],
 	exports: {
 		devExports: '@pluxel/source',
 	},
@@ -16,6 +17,7 @@ export default defineConfig({
 	},
 	dts: {
 		sourcemap: true,
+		eager: true,
 	},
 	format: ['esm', 'cjs'],
 	sourcemap: true,
@@ -35,10 +37,6 @@ export default defineConfig({
 			},
 			typescript: {
 				removeClassFieldsWithoutInitializer: true,
-			},
-			decorator: {
-				legacy: true,
-				emitDecoratorMetadata: true,
 			},
 		},
 	},

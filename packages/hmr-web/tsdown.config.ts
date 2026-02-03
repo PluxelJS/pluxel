@@ -11,6 +11,7 @@ export default defineConfig({
 	},
 	dts: {
 		sourcemap: true,
+		eager: true,
 	},
 	format: ['esm'],
 	sourcemap: true,
@@ -24,10 +25,6 @@ export default defineConfig({
 			},
 			typescript: {
 				removeClassFieldsWithoutInitializer: true,
-			},
-			decorator: {
-				legacy: true,
-				emitDecoratorMetadata: true,
 			},
 		},
 	},

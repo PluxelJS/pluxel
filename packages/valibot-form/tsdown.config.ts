@@ -11,6 +11,7 @@ export default defineConfig({
 	alias: {},
 	dts: {
 		sourcemap: true,
+		eager: true,
 	},
 	format: ['esm'],
 	sourcemap: true,
@@ -24,6 +25,7 @@ export default defineConfig({
 		'react-dom',
 		'@tanstack/react-form',
 		'@mantine/core',
+		'@mantine/hooks',
 		'@dnd-kit/core',
 		'@dnd-kit/modifiers',
 		'@dnd-kit/sortable',

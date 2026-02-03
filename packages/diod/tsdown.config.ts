@@ -1,12 +1,14 @@
 import { defineConfig } from 'tsdown'
 
 export default defineConfig({
+	inlineOnly: [/^option-t(\/.*)?$/],
 	exports: {
 		devExports: '@pluxel/source',
 	},
 	entry: './src/index.ts',
 	dts: {
 		sourcemap: true,
+		eager: true,
 	},
 	format: ['esm', 'cjs'],
 	sourcemap: true,
@@ -20,10 +22,6 @@ export default defineConfig({
 			},
 			typescript: {
 				removeClassFieldsWithoutInitializer: true,
-			},
-			decorator: {
-				legacy: true,
-				emitDecoratorMetadata: true,
 			},
 		},
 	},

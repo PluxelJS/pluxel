@@ -22,6 +22,7 @@ export default defineConfig({
 	},
 	dts: {
 		sourcemap: true,
+		eager: true,
 	},
 	env: {
 		BUILD: 'true',
