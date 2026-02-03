@@ -1,37 +1,95 @@
-import { useElementSize } from '@mantine/hooks'
-import { LazyLog, ScrollFollow } from '@melloware/react-logviewer'
-import { useEffect, useMemo, useRef, useState } from 'react'
-import type { LogFilter, LogRecord as UiLogRecord } from '@pluxel/hmr-web'
+import type {
+	LogFilter,
+	LogRangeOk,
+	LogSseEvent,
+	LogStreamMeta,
+	RuntimeLogLine,
+} from '@pluxel/hmr-web'
 import { defaultOnAuthBlocked } from '@pluxel/hmr-web'
+import { useVirtualizer } from '@tanstack/react-virtual'
+import {
+	memo,
+	type ReactNode,
+	useCallback,
+	useEffect,
+	useId,
+	useMemo,
+	useRef,
+	useState,
+	useSyncExternalStore,
+} from 'react'
 import { createAuthAwareFetch } from '../rpc'
-import { createPrettyPrinter } from './pretty'
 
 interface Props {
 	module?: string
 	showName?: boolean
 	filter?: LogFilter
+	/**
+	 * - `full`: standalone logs page (controls live in right panel)
+	 * - `embedded`: plugin/detail modal (minimal header; no filter controls)
+	 */
+	variant?: 'full' | 'embedded'
 }
 
-const SNAPSHOT_MAX = 1000 // 首屏最多加载多少行历史
-const RAW_RING_CAP = 4000 // 原始环容量（原始记录）
-const VIEW_RING_CAP = 4000 // 展示环容量（格式化后的行）
-const FLUSH_MS = 80 // 合批最迟刷新间隔
+const DEFAULT_STREAM_ID = 'default'
+const SNAPSHOT_MAX = 1500 // 首屏最多加载多少行历史
+const CLIENT_RING_CAP = 50_000 // 客户端缓存窗口（行）
+const RANGE_LIMIT = 2000 // /range 每次最多拉多少行（服务端也会 clamp）
+const ROW_H = 20
+const STICK_THRESHOLD_PX = ROW_H * 30
 
 const baseFetch =
 	typeof globalThis.fetch === 'function' ? globalThis.fetch.bind(globalThis) : undefined
 const authFetch = baseFetch ? createAuthAwareFetch(baseFetch) : undefined
 
-const MONO_FONT = '13px ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace'
+const MONO_FONT =
+	'12.5px ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace'
+const PANEL_BG = 'rgba(2, 6, 23, 0.55)'
+const LIST_BG = 'rgba(2, 6, 23, 0.45)'
+const BORDER = '1px solid rgba(148,163,184,0.20)'
 
-/* ================= 轻量环形缓冲（O(1) push + 有序遍历） ================= */
-function createRing<T>(cap = 2000) {
+function normalizeFilter(filter: LogFilter | undefined): LogFilter {
+	const trimOrUndef = (v: unknown) => {
+		if (typeof v !== 'string') return undefined
+		const s = v.trim()
+		return s ? s : undefined
+	}
+	return {
+		name: trimOrUndef(filter?.name),
+		pluginId: trimOrUndef(filter?.pluginId),
+		context: trimOrUndef(filter?.context),
+		displayName: trimOrUndef(filter?.displayName),
+		category: trimOrUndef(filter?.category),
+	}
+}
+
+function sameFilter(a: LogFilter, b: LogFilter): boolean {
+	return (
+		(a.name ?? '') === (b.name ?? '') &&
+		(a.pluginId ?? '') === (b.pluginId ?? '') &&
+		(a.context ?? '') === (b.context ?? '') &&
+		(a.displayName ?? '') === (b.displayName ?? '') &&
+		(a.category ?? '') === (b.category ?? '')
+	)
+}
+
+/* ================= 轻量环形缓冲 + 外部订阅（避免 setState 全量重渲染） ================= */
+function createRingStore<T>(cap = 2000) {
 	const buf = new Array<T>(cap)
 	let start = 0
 	let len = 0
+	let version = 0
+	const listeners = new Set<() => void>()
+
+	const notify = () => {
+		version++
+		for (const fn of listeners) fn()
+	}
 	return {
 		clear() {
 			start = 0
 			len = 0
+			notify()
 		},
 		push(s: T) {
 			if (len < cap) {
@@ -42,134 +100,689 @@ function createRing<T>(cap = 2000) {
 				start = (start + 1) % cap
 			}
 		},
+		pushMany(items: readonly T[]) {
+			if (!items.length) return
+			for (let i = 0; i < items.length; i++) this.push(items[i]!)
+			notify()
+		},
+		get(i: number): T | undefined {
+			if (i < 0 || i >= len) return undefined
+			return buf[(start + i) % cap]
+		},
 		toArray(): T[] {
 			if (len === 0) return []
 			if (start + len <= cap) return buf.slice(start, start + len)
 			return buf.slice(start).concat(buf.slice(0, (start + len) % cap))
 		},
-	}
-}
-
-function createStringRing(cap = 2000) {
-	const base = createRing<string>(cap)
-	return {
-		...base,
-		join(sep = '\n'): string {
-			return base.toArray().join(sep)
+		subscribe(fn: () => void) {
+			listeners.add(fn)
+			return () => listeners.delete(fn)
+		},
+		getVersion() {
+			return version
+		},
+		get length() {
+			return len
 		},
 	}
 }
 
-/* ================== LiveLog ================== */
-export function LiveLog({ module, showName = true, filter }: Props) {
-	const { ref, height } = useElementSize()
-	const [text, setText] = useState('')
+function pad2(n: number): string {
+	return n < 10 ? `0${n}` : String(n)
+}
+function pad3(n: number): string {
+	if (n < 10) return `00${n}`
+	if (n < 100) return `0${n}`
+	return String(n)
+}
 
-	const filterQuery = useMemo(() => {
-		const params = new URLSearchParams()
-		const name = filter?.name ?? module
-		if (name) params.set('name', name)
-		if (filter?.pluginId) params.set('pluginId', filter.pluginId)
-		if (filter?.context) params.set('context', filter.context)
-		if (filter?.displayName) params.set('displayName', filter.displayName)
-		if (filter?.category) params.set('category', filter.category)
-		return params.toString()
-	}, [module, filter?.name, filter?.pluginId, filter?.context, filter?.displayName, filter?.category])
+function formatTime(epochMs: number): string {
+	const d = new Date(epochMs)
+	return `${pad2(d.getHours())}:${pad2(d.getMinutes())}:${pad2(d.getSeconds())}.${pad3(d.getMilliseconds())}`
+}
 
-	// —— 两层环：原始行（raw）与展示行（view） —— //
-	const rawRingRef = useRef(createRing<UiLogRecord>(RAW_RING_CAP))
-	const viewRingRef = useRef(createStringRing(VIEW_RING_CAP))
-	const lastIdRef = useRef<number>(0)
-	const bootIdRef = useRef<string | null>(null)
-
-	const mode = useMemo(() => {
-		const scoped =
-			Boolean(module) ||
-			Boolean(filter?.pluginId) ||
-			Boolean(filter?.context) ||
-			Boolean(filter?.displayName) ||
-			Boolean(filter?.name)
-		return scoped ? 'scoped' : 'global'
-	}, [module, filter?.pluginId, filter?.context, filter?.displayName, filter?.name])
-
-	const pretty = useMemo(() => {
-		return createPrettyPrinter({
-			mode,
-			// Scoped views (e.g. plugin detail) already provide context, so avoid repeating it.
-			showName: mode === 'global' ? showName : false,
-		})
-	}, [mode, showName])
-	const prettyRef = useRef(pretty)
-	useEffect(() => {
-		prettyRef.current = pretty
-	}, [pretty])
-
-	// —— 合批刷入（把“展示行”批量落入 viewRing，再 setText） —— //
-	const pendingViewRef = useRef<string[]>([])
-	const rafRef = useRef<number | null>(null)
-	const flushTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-	const flush = () => {
-		rafRef.current = null
-		if (flushTimerRef.current) {
-			clearTimeout(flushTimerRef.current)
-			flushTimerRef.current = null
-		}
-		if (pendingViewRef.current.length === 0) return
-		const v = viewRingRef.current
-		for (let i = 0; i < pendingViewRef.current.length; i++) v.push(pendingViewRef.current[i])
-		pendingViewRef.current.length = 0
-		setText(v.join('\n'))
+function levelColor(level: string): string {
+	switch (level) {
+		case 'trace':
+			return '#94a3b8'
+		case 'debug':
+			return '#60a5fa'
+		case 'info':
+			return '#34d399'
+		case 'warning':
+			return '#fbbf24'
+		case 'error':
+			return '#fb7185'
+		case 'fatal':
+			return '#c084fc'
+		default:
+			return '#cbd5e1'
 	}
-	const scheduleFlush = () => {
-		if (rafRef.current == null) {
-			rafRef.current = requestAnimationFrame(flush)
-			if (!flushTimerRef.current) {
-				flushTimerRef.current = setTimeout(() => {
-					if (rafRef.current != null) cancelAnimationFrame(rafRef.current)
-					flush()
-				}, FLUSH_MS)
+}
+
+function formatCategory(category?: string[]): string {
+	if (!Array.isArray(category) || category.length === 0) return ''
+	return category.join('·')
+}
+
+function oneLine(s: string): string {
+	if (!s) return ''
+	return s.replace(/\r\n|\r|\n/g, '⏎').replace(/\t/g, '⇥')
+}
+
+const ANSI_16_FG = [
+	'#000000',
+	'#b91c1c',
+	'#15803d',
+	'#a16207',
+	'#1d4ed8',
+	'#7c3aed',
+	'#0e7490',
+	'#e2e8f0',
+	'#64748b',
+	'#ef4444',
+	'#22c55e',
+	'#eab308',
+	'#3b82f6',
+	'#a855f7',
+	'#06b6d4',
+	'#f8fafc',
+] as const
+
+async function copyToClipboard(text: string): Promise<boolean> {
+	const v = text ?? ''
+	try {
+		if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+			await navigator.clipboard.writeText(v)
+			return true
+		}
+	} catch {
+		// fall through
+	}
+	try {
+		if (typeof document === 'undefined') return false
+		const el = document.createElement('textarea')
+		el.value = v
+		el.setAttribute('readonly', 'true')
+		el.style.position = 'fixed'
+		el.style.left = '-9999px'
+		el.style.top = '0'
+		document.body.appendChild(el)
+		el.select()
+		const ok = document.execCommand('copy')
+		document.body.removeChild(el)
+		return ok
+	} catch {
+		return false
+	}
+}
+
+function xterm256(n: number): string | undefined {
+	if (!Number.isFinite(n) || n < 0 || n > 255) return undefined
+	if (n < 16) return ANSI_16_FG[n]!
+	if (n >= 232) {
+		const v = 8 + (n - 232) * 10
+		return `rgb(${v},${v},${v})`
+	}
+	const idx = n - 16
+	const r = Math.floor(idx / 36)
+	const g = Math.floor((idx % 36) / 6)
+	const b = idx % 6
+	const cv = (x: number) => (x === 0 ? 0 : 55 + x * 40)
+	return `rgb(${cv(r)},${cv(g)},${cv(b)})`
+}
+
+function stripAnsi(s: string): string {
+	if (!s) return ''
+	// Best-effort: strip CSI sequences (incl. SGR) and OSC hyperlinks.
+	return s.replace(/\u001b\[[0-9;]*[A-Za-z]/g, '').replace(/\u001b\][^\u0007]*\u0007/g, '')
+}
+
+type AnsiStyle = {
+	color?: string
+	backgroundColor?: string
+	fontWeight?: number
+	fontStyle?: 'italic'
+	textDecoration?: string
+}
+
+function renderAnsi(text: string): ReactNode {
+	if (!text || !text.includes('\u001b[')) return text
+
+	const parts: Array<{ text: string; style: AnsiStyle | null }> = []
+	let style: AnsiStyle = {}
+
+	const push = (chunk: string) => {
+		if (!chunk) return
+		const st = Object.keys(style).length ? { ...style } : null
+		parts.push({ text: chunk, style: st })
+	}
+
+	const sgr = /\u001b\[([0-9;]*)m/g
+	let last = 0
+	for (;;) {
+		const m = sgr.exec(text)
+		if (!m) break
+		const idx = m.index
+		push(text.slice(last, idx))
+		last = idx + m[0].length
+
+		const raw = m[1] ?? ''
+		const codes = raw ? raw.split(';') : ['0']
+		const nums = codes.map((c) => (c ? Number(c) : 0)).filter((n) => Number.isFinite(n)) as number[]
+		if (nums.length === 0) nums.push(0)
+
+		for (let i = 0; i < nums.length; i++) {
+			const code = nums[i]!
+			if (code === 0) {
+				style = {}
+				continue
+			}
+			if (code === 1) {
+				style.fontWeight = 700
+				continue
+			}
+			if (code === 22) {
+				delete style.fontWeight
+				continue
+			}
+			if (code === 3) {
+				style.fontStyle = 'italic'
+				continue
+			}
+			if (code === 23) {
+				delete style.fontStyle
+				continue
+			}
+			if (code === 4) {
+				style.textDecoration = 'underline'
+				continue
+			}
+			if (code === 24) {
+				delete style.textDecoration
+				continue
+			}
+
+			// 16-color
+			if (code >= 30 && code <= 37) {
+				style.color = ANSI_16_FG[code - 30]!
+				continue
+			}
+			if (code >= 90 && code <= 97) {
+				style.color = ANSI_16_FG[8 + (code - 90)]!
+				continue
+			}
+			if (code === 39) {
+				delete style.color
+				continue
+			}
+
+			if (code >= 40 && code <= 47) {
+				style.backgroundColor = ANSI_16_FG[code - 40]!
+				continue
+			}
+			if (code >= 100 && code <= 107) {
+				style.backgroundColor = ANSI_16_FG[8 + (code - 100)]!
+				continue
+			}
+			if (code === 49) {
+				delete style.backgroundColor
+				continue
+			}
+
+			// Extended colors: 38/48;5;n or 38/48;2;r;g;b
+			if (code === 38 || code === 48) {
+				const isBg = code === 48
+				const mode = nums[i + 1]
+				if (mode === 5) {
+					const n = nums[i + 2]
+					const c = typeof n === 'number' ? xterm256(n) : undefined
+					if (c) {
+						if (isBg) style.backgroundColor = c
+						else style.color = c
+					}
+					i += 2
+					continue
+				}
+				if (mode === 2) {
+					const r = nums[i + 2]
+					const g = nums[i + 3]
+					const b = nums[i + 4]
+					if (
+						typeof r === 'number' &&
+						typeof g === 'number' &&
+						typeof b === 'number' &&
+						r >= 0 &&
+						r <= 255 &&
+						g >= 0 &&
+						g <= 255 &&
+						b >= 0 &&
+						b <= 255
+					) {
+						const c = `rgb(${r},${g},${b})`
+						if (isBg) style.backgroundColor = c
+						else style.color = c
+					}
+					i += 4
+				}
 			}
 		}
 	}
+	push(text.slice(last))
 
-	// —— 入口：接入一条“原始行” —— //
-	const pushRecord = (rec: UiLogRecord) => {
-		if (typeof rec?.id === 'number' && rec.id > 0) {
-			if (rec.id <= lastIdRef.current) return
-			lastIdRef.current = rec.id
+	if (parts.length === 0) return ''
+	let hasStyle = false
+	for (let i = 0; i < parts.length; i++) {
+		if (parts[i]!.style) {
+			hasStyle = true
+			break
 		}
+	}
+	if (!hasStyle) return parts.map((p) => p.text).join('')
 
-		rawRingRef.current.push(rec)
+	return parts.map((p, i) =>
+		p.style ? (
+			<span key={i} style={p.style}>
+				{p.text}
+			</span>
+		) : (
+			<span key={i}>{p.text}</span>
+		),
+	)
+}
 
-		const prettyText = prettyRef.current.format(rec)
-		pendingViewRef.current.push(prettyText)
-		scheduleFlush()
+function formatLineForCopy(line: RuntimeLogLine, opts: { showCategory: boolean; showName: boolean }): string {
+	const time = formatTime(line.ts)
+	const level = String(line.level).toUpperCase()
+	const category = opts.showCategory ? formatCategory(line.category) : ''
+	const name = opts.showName && line.name ? `[${line.name}]` : ''
+	const msg = stripAnsi(oneLine(messageToText(line)))
+	return `${time} ${level}${category ? ` ${category}` : ''}${name ? ` ${name}` : ''} ${msg}`.trim()
+}
+
+function messageToText(record: RuntimeLogLine): string {
+	if (record.msg) return record.msg
+	const parts = record.message
+	if (!Array.isArray(parts) || parts.length === 0) return ''
+
+	const limit = 12_000
+	let out = ''
+
+	const previewObject = (obj: object): string => {
+		const rec = obj as Record<string, unknown>
+		let total = 0
+		let picked = 0
+		let s = '{'
+		for (const k in rec) {
+			if (!Object.hasOwn(rec, k)) continue
+			total++
+			if (picked < 4) {
+				const v = rec[k]
+				if (picked) s += ', '
+				s += `${k}=${typeof v === 'string' ? v : JSON.stringify(v)}`
+				picked++
+			}
+		}
+		if (total > 4) s += ', …'
+		s += '}'
+		return s
 	}
 
-	// —— pretty 变化时，仅“本地重排展示环”，不触发网络/重连 —— //
-	useEffect(() => {
-		// 取消上一次 flush，避免旧行混入
-		if (rafRef.current != null) {
-			cancelAnimationFrame(rafRef.current)
-			rafRef.current = null
-		}
-		if (flushTimerRef.current) {
-			clearTimeout(flushTimerRef.current)
-			flushTimerRef.current = null
-		}
-		pendingViewRef.current.length = 0
+	const formatPart = (part: unknown): string => {
+		if (typeof part === 'string') return part
+		if (typeof part === 'number' || typeof part === 'boolean' || typeof part === 'bigint')
+			return String(part)
+		if (part === null || part === undefined) return String(part)
+		if (typeof part === 'object') return previewObject(part as object)
+		return String(part)
+	}
 
-		const raw = rawRingRef.current.toArray()
-		const view = viewRingRef.current
-		view.clear()
-		for (let i = 0; i < raw.length; i++) view.push(prettyRef.current.format(raw[i] as any))
-		setText(view.join('\n'))
-	}, [pretty])
+	for (let i = 0; i < parts.length; i++) {
+		out += formatPart(parts[i])
+		if (out.length >= limit) {
+			out = `${out.slice(0, limit)}…`
+			break
+		}
+	}
+	return out
+}
+
+function seqToBigint(seq: string): bigint | null {
+	try {
+		if (!seq || !/^\d+$/.test(seq)) return null
+		return BigInt(seq)
+	} catch {
+		return null
+	}
+}
+
+function addSeq(seq: string, delta: bigint): string | null {
+	const n = seqToBigint(seq)
+	if (n === null) return null
+	return (n + delta).toString(10)
+}
+
+/* ================== LiveLog ================== */
+type RingStore<T> = {
+	clear: () => void
+	pushMany: (items: readonly T[]) => void
+	get: (index: number) => T | undefined
+	toArray: () => T[]
+	subscribe: (fn: () => void) => () => void
+	getVersion: () => number
+	readonly length: number
+}
+
+type LogListApi = {
+	scrollToTail: () => void
+}
+
+const LogList = memo(function LogList(props: {
+	store: RingStore<RuntimeLogLine>
+	showCategory: boolean
+	showName: boolean
+	ansi: boolean
+	selectedSeq: string | null
+	setSelectedSeq: (v: string | null) => void
+	setSelectedLine: (v: RuntimeLogLine | null) => void
+	follow: boolean
+	followRef: { current: boolean }
+	followWantedRef: { current: boolean }
+	setFollow: (v: boolean) => void
+	setNewSincePause: (v: number | ((n: number) => number)) => void
+	apiRef: { current: LogListApi | null }
+	metaCount?: number
+}) {
+	const {
+		store,
+		showCategory,
+		showName,
+		ansi,
+		selectedSeq,
+		setSelectedSeq,
+		setSelectedLine,
+		follow,
+		followRef,
+		followWantedRef,
+		setFollow,
+		setNewSincePause,
+		apiRef,
+		metaCount,
+	} = props
+
+	const _version = useSyncExternalStore(store.subscribe, store.getVersion, store.getVersion)
+	const listLen = store.length
+
+	const scrollRef = useRef<HTMLDivElement | null>(null)
+	const virtualizer = useVirtualizer({
+		count: listLen,
+		getScrollElement: () => scrollRef.current,
+		estimateSize: () => ROW_H,
+		overscan: 20,
+	})
+
+	const scrollToTail = useCallback(() => {
+		if (store.length > 0) virtualizer.scrollToIndex(store.length - 1, { align: 'end' })
+	}, [store, virtualizer])
+
+	useEffect(() => {
+		apiRef.current = { scrollToTail }
+		return () => {
+			if (apiRef.current?.scrollToTail === scrollToTail) apiRef.current = null
+		}
+	}, [apiRef, scrollToTail])
+
+	const onScroll = () => {
+		const el = scrollRef.current
+		if (!el) return
+		const total = virtualizer.getTotalSize()
+		const bottom = total - (el.scrollTop + el.clientHeight)
+		const atBottom = bottom <= STICK_THRESHOLD_PX
+		followRef.current = followWantedRef.current ? atBottom : false
+		if (followWantedRef.current) setFollow(atBottom)
+		if (atBottom) setNewSincePause(0)
+	}
+
+	useEffect(() => {
+		if (!follow) return
+		scrollToTail()
+	}, [follow, _version, scrollToTail])
+
+	return (
+		<div
+			ref={scrollRef}
+			onScroll={onScroll}
+			style={{
+				flex: 1,
+				minHeight: 0,
+				minWidth: 0,
+				overflow: 'auto',
+				fontFamily: MONO_FONT,
+				fontSize: 12,
+				lineHeight: `${ROW_H}px`,
+				whiteSpace: 'pre',
+				backgroundColor: LIST_BG,
+				backgroundImage: `repeating-linear-gradient(
+					180deg,
+					rgba(148,163,184,0.028) 0px,
+					rgba(148,163,184,0.028) ${ROW_H}px,
+					rgba(0,0,0,0) ${ROW_H}px,
+					rgba(0,0,0,0) ${ROW_H * 2}px
+				)`,
+				border: BORDER,
+				borderRadius: 8,
+				backdropFilter: 'blur(10px)',
+			}}
+		>
+			<div
+				style={{
+					height: virtualizer.getTotalSize(),
+					position: 'relative',
+					width: '100%',
+					minWidth: '100%',
+				}}
+			>
+				{virtualizer.getVirtualItems().map((v) => {
+					const line = store.get(v.index)
+					if (!line) return null
+					const isSelected = selectedSeq === line.seq
+					const categoryText = showCategory ? formatCategory(line.category) : ''
+					const msgText = oneLine(messageToText(line))
+					const msgNode = ansi ? renderAnsi(msgText) : stripAnsi(msgText)
+					return (
+						<div
+							key={`${line.epoch}:${line.seq}`}
+							onClick={(e) => {
+								// If user is selecting text inside this row, do not toggle details.
+								try {
+									const sel = typeof window !== 'undefined' ? window.getSelection?.() : null
+									if (
+										sel &&
+										!sel.isCollapsed &&
+										sel.anchorNode &&
+										e.currentTarget.contains(sel.anchorNode)
+									)
+										return
+								} catch {
+									// ignore
+								}
+								if (selectedSeq === line.seq) {
+									setSelectedSeq(null)
+									setSelectedLine(null)
+									return
+								}
+								setSelectedSeq(line.seq)
+								setSelectedLine(line)
+							}}
+							style={{
+								position: 'absolute',
+								top: 0,
+								left: 0,
+								width: '100%',
+								height: v.size,
+								transform: `translateY(${v.start}px)`,
+								display: 'flex',
+								alignItems: 'center',
+								gap: 8,
+								padding: '0 10px',
+								cursor: 'default',
+								userSelect: 'text',
+								background: isSelected
+									? 'rgba(59,130,246,0.14)'
+									: 'transparent',
+								borderLeft: `3px solid ${levelColor(line.level)}`,
+							}}
+						>
+							<span style={{ color: '#94a3b8', flex: '0 0 auto' }}>{formatTime(line.ts)}</span>
+							<span
+								style={{
+									color: levelColor(line.level),
+									fontWeight: 700,
+									flex: '0 0 auto',
+									width: 56,
+								}}
+							>
+								{String(line.level).toUpperCase().padEnd(7)}
+							</span>
+							{categoryText ? (
+								<span style={{ color: '#60a5fa', flex: '0 0 auto' }}>{categoryText}</span>
+							) : null}
+							{showName && line.name ? (
+								<span style={{ color: '#94a3b8', flex: '0 0 auto' }}>[{line.name}]</span>
+							) : null}
+							<span style={{ color: '#e2e8f0', flex: '1 1 auto' }}>{msgNode}</span>
+						</div>
+					)
+				})}
+				{listLen === 0 ? (
+					<div
+						style={{
+							position: 'absolute',
+							inset: 0,
+							display: 'flex',
+							alignItems: 'center',
+							justifyContent: 'center',
+							color: '#94a3b8',
+							padding: 16,
+						}}
+					>
+						{metaCount ? '暂无可见日志（可能在加载/被过滤）' : '暂无日志'}
+					</div>
+				) : null}
+			</div>
+		</div>
+	)
+})
+
+export function LiveLog({ module, showName = true, filter, variant = 'full' }: Props) {
+	const [meta, setMeta] = useState<LogStreamMeta | null>(null)
+	const [connected, setConnected] = useState(false)
+	const [follow, setFollow] = useState(true)
+	const [newSincePause, setNewSincePause] = useState(0)
+	const [selectedSeq, setSelectedSeq] = useState<string | null>(null)
+	const [selectedLine, setSelectedLine] = useState<RuntimeLogLine | null>(null)
+	const [showCategory, setShowCategory] = useState(true)
+	const [ansi, setAnsi] = useState(true)
+	const [copied, setCopied] = useState<null | 'line' | 'json'>(null)
+	const [streamIdInput, setStreamIdInput] = useState(DEFAULT_STREAM_ID)
+	const [streams, setStreams] = useState<string[]>([DEFAULT_STREAM_ID])
+	const streamDatalistId = useId()
+
+	const streamId = useMemo(
+		() => (streamIdInput.trim() ? streamIdInput.trim() : DEFAULT_STREAM_ID),
+		[streamIdInput],
+	)
+
+	const defaultsFilter = useMemo(
+		() =>
+			normalizeFilter({
+				name: filter?.name ?? module,
+				pluginId: filter?.pluginId,
+				context: filter?.context,
+				displayName: filter?.displayName,
+				category: filter?.category,
+			}),
+		[module, filter?.name, filter?.pluginId, filter?.context, filter?.displayName, filter?.category],
+	)
+
+	const [draftFilter, setDraftFilter] = useState<LogFilter>(() => defaultsFilter)
+	const [activeFilter, setActiveFilter] = useState<LogFilter>(() => defaultsFilter)
+
+	useEffect(() => {
+		setDraftFilter(defaultsFilter)
+		setActiveFilter(defaultsFilter)
+	}, [
+		defaultsFilter.name,
+		defaultsFilter.pluginId,
+		defaultsFilter.context,
+		defaultsFilter.displayName,
+		defaultsFilter.category,
+	])
+
+	const dirty = useMemo(
+		() => !sameFilter(normalizeFilter(draftFilter), activeFilter),
+		[draftFilter, activeFilter],
+	)
+
+	const applyNow = useCallback(() => {
+		setActiveFilter(normalizeFilter(draftFilter))
+	}, [draftFilter])
+
+	useEffect(() => {
+		if (!dirty) return
+		const t = setTimeout(() => {
+			setActiveFilter(normalizeFilter(draftFilter))
+		}, 350)
+		return () => clearTimeout(t)
+	}, [dirty, draftFilter])
+
+	const filterQuery = useMemo(() => {
+		const params = new URLSearchParams()
+		if (activeFilter.name) params.set('name', activeFilter.name)
+		if (activeFilter.pluginId) params.set('pluginId', activeFilter.pluginId)
+		if (activeFilter.context) params.set('context', activeFilter.context)
+		if (activeFilter.displayName) params.set('displayName', activeFilter.displayName)
+		if (activeFilter.category) params.set('category', activeFilter.category)
+		return params.toString()
+	}, [activeFilter])
+
+	const ringRef = useRef(createRingStore<RuntimeLogLine>(CLIENT_RING_CAP))
+	const listApiRef = useRef<LogListApi | null>(null)
+	const followRef = useRef(true)
+	const followWantedRef = useRef(true)
+	const rafRef = useRef<number | null>(null)
+	const pendingLinesRef = useRef<RuntimeLogLine[]>([])
 
 	// —— 快照 + SSE（仅跟随 filterQuery 变化） —— //
 	const abortRef = useRef<AbortController | null>(null)
 	const authProbeInFlightRef = useRef<Promise<boolean> | null>(null)
 	const lastAuthProbeAtRef = useRef<number>(0)
+
+	const refreshStreams = useCallback(async () => {
+		const fetchImpl = authFetch ?? baseFetch
+		if (!fetchImpl) return
+		try {
+			const res = await fetchImpl('/api/logs/v1/streams', {
+				method: 'GET',
+				headers: { 'Cache-Control': 'no-store' },
+			})
+			if (!res.ok) return
+			const payload = (await res.json()) as any
+			const list = Array.isArray(payload?.streams) ? payload.streams : []
+			const ids = list
+				.map((s: any) => (typeof s?.streamId === 'string' ? s.streamId : ''))
+				.filter((s: string) => !!s)
+			ids.sort((a: string, b: string) => a.localeCompare(b))
+			if (ids.length) setStreams(ids)
+		} catch {
+			// ignore
+		}
+	}, [])
+
+	useEffect(() => {
+		if (variant !== 'full') return
+		void refreshStreams()
+	}, [refreshStreams, variant])
 
 	useEffect(() => {
 		let disposed = false
@@ -179,16 +792,17 @@ export function LiveLog({ module, showName = true, filter }: Props) {
 			abortRef.current.abort()
 			abortRef.current = null
 		}
-		rawRingRef.current.clear()
-		viewRingRef.current.clear()
-		pendingViewRef.current.length = 0
-		lastIdRef.current = 0
-		bootIdRef.current = null
-		setText('')
+		if (rafRef.current != null) cancelAnimationFrame(rafRef.current)
+		rafRef.current = null
+		pendingLinesRef.current.length = 0
+		ringRef.current.clear()
+		setMeta(null)
+		setConnected(false)
+		setNewSincePause(0)
+		setSelectedSeq(null)
+		setSelectedLine(null)
 
 		// —— 拉快照 —— //
-		const params = new URLSearchParams(filterQuery)
-		params.set('limit', String(SNAPSHOT_MAX))
 		const ac = new AbortController()
 		abortRef.current = ac
 
@@ -217,43 +831,121 @@ export function LiveLog({ module, showName = true, filter }: Props) {
 			}
 		}
 
-		const connectLogsStream = (afterId?: number) => {
+		const fetchImpl = authFetch ?? baseFetch
+		if (!fetchImpl) return () => {}
+
+		const fetchMeta = async (): Promise<LogStreamMeta> => {
+			const res = await fetchImpl(`/api/logs/v1/streams/${encodeURIComponent(streamId)}/meta`, {
+				signal: ac.signal,
+			})
+			if (!res.ok) throw new Error(`HTTP ${res.status}`)
+			return (await res.json()) as LogStreamMeta
+		}
+
+		const fetchRange = async (
+			m: LogStreamMeta,
+			fromSeq: string,
+			limit: number,
+		): Promise<LogRangeOk> => {
 			const params = new URLSearchParams(filterQuery)
-			if (afterId && afterId > 0) params.set('afterId', String(afterId))
-			const url = `/api/logs/stream?${params.toString()}`
+			params.set('epoch', String(m.epoch))
+			params.set('from', fromSeq)
+			params.set('limit', String(limit))
+			const res = await fetchImpl(
+				`/api/logs/v1/streams/${encodeURIComponent(streamId)}/range?${params.toString()}`,
+				{ signal: ac.signal },
+			)
+			if (!res.ok) {
+				const text = await res.text().catch(() => '')
+				throw new Error(`HTTP ${res.status}${text ? `: ${text}` : ''}`)
+			}
+			const payload = (await res.json()) as any
+			if (!payload || payload.ok !== true) throw new Error('Invalid range response')
+			return payload as LogRangeOk
+		}
+
+		const flush = () => {
+			rafRef.current = null
+			if (pendingLinesRef.current.length === 0) return
+			const added = pendingLinesRef.current.length
+			ringRef.current.pushMany(pendingLinesRef.current)
+			pendingLinesRef.current.length = 0
+			if (!followRef.current) setNewSincePause((n) => n + added)
+		}
+		const scheduleFlush = () => {
+			if (rafRef.current != null) return
+			rafRef.current = requestAnimationFrame(flush)
+		}
+
+		const onAppendLines = (lines: RuntimeLogLine[]) => {
+			if (disposed || ac.signal.aborted) return
+			if (!lines.length) return
+			pendingLinesRef.current.push(...lines)
+			scheduleFlush()
+		}
+
+		const connectFollow = (m: LogStreamMeta, fromSeq: string) => {
+			const params = new URLSearchParams(filterQuery)
+			params.set('epoch', String(m.epoch))
+			params.set('from', fromSeq)
+			const url = `/api/logs/v1/streams/${encodeURIComponent(streamId)}/follow?${params.toString()}`
 			const es = new EventSource(url)
 
-			es.addEventListener('ready', (ev) => {
-				let payload: any
-				try {
-					payload = JSON.parse((ev as MessageEvent).data)
-				} catch {
-					return
-				}
-				const nextBootId = typeof payload?.bootId === 'string' ? payload.bootId : null
-				if (!nextBootId) return
-				if (bootIdRef.current && bootIdRef.current !== nextBootId) {
-					rawRingRef.current.clear()
-					viewRingRef.current.clear()
-					pendingViewRef.current.length = 0
-					lastIdRef.current = 0
-					setText('')
-				}
-				bootIdRef.current = nextBootId
-			})
+			es.onopen = () => setConnected(true)
 
-			es.addEventListener('log', (ev) => {
-				let payload: any
+			const onMsg = (ev: MessageEvent) => {
+				let msg: LogSseEvent | null = null
 				try {
-					payload = JSON.parse((ev as MessageEvent).data)
+					msg = JSON.parse(ev.data) as LogSseEvent
 				} catch {
 					return
 				}
-				if (!payload || typeof payload !== 'object') return
-				pushRecord(payload as UiLogRecord)
-			})
+				if (!msg || typeof msg !== 'object') return
+
+				if (msg.type === 'reset') {
+					setMeta(msg)
+					ringRef.current.clear()
+					pendingLinesRef.current.length = 0
+					setNewSincePause(0)
+					setSelectedSeq(null)
+					setSelectedLine(null)
+					return
+				}
+
+				if (msg.type === 'append') {
+					onAppendLines(msg.lines ?? [])
+					return
+				}
+
+				if (msg.type === 'gap') {
+					const stop = addSeq(msg.missingTo, 1n)
+					if (!stop) return
+
+					let cursor = msg.missingFrom
+					const loop = async () => {
+						if (disposed || ac.signal.aborted) return
+						try {
+							const mm = (await fetchMeta()) as LogStreamMeta
+							setMeta(mm)
+							while (cursor !== stop && !disposed && !ac.signal.aborted) {
+								const out = await fetchRange(mm, cursor, RANGE_LIMIT)
+								cursor = out.nextSeq
+								onAppendLines(out.lines)
+							}
+						} catch {
+							// ignore
+						}
+					}
+					void loop()
+				}
+			}
+
+			es.addEventListener('reset', (ev) => onMsg(ev as any))
+			es.addEventListener('append', (ev) => onMsg(ev as any))
+			es.addEventListener('gap', (ev) => onMsg(ev as any))
 
 			es.onerror = () => {
+				setConnected(false)
 				if (authProbeInFlightRef.current) return
 				authProbeInFlightRef.current = probeAuthBlocked(url).finally(() => {
 					authProbeInFlightRef.current = null
@@ -267,37 +959,24 @@ export function LiveLog({ module, showName = true, filter }: Props) {
 		}
 
 		let es: EventSource | null = null
-		if (!authFetch) {
-			abortRef.current = null
-			es = connectLogsStream()
-		} else {
-			// Connect after snapshot to minimize duplicates and allow server-side replay via afterId.
-			authFetch(`/api/logs/latest?${params.toString()}`, { signal: ac.signal })
-				.then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
-				.then((payload) => {
-					if (disposed || ac.signal.aborted) return
-					const bootId = (payload as any)?.bootId
-					if (typeof bootId === 'string') bootIdRef.current = bootId
-					const records = (payload as any)?.records
-					if (!Array.isArray(records)) return
-					const start = Math.max(0, records.length - SNAPSHOT_MAX)
-					for (let i = start; i < records.length; i++) {
-						const rec = records[i] as UiLogRecord
-						if (!rec || typeof rec !== 'object') continue
-						pushRecord(rec)
-					}
-				})
-				.catch(() => undefined)
-				.finally(() => {
-					abortRef.current = null
-					// IMPORTANT:
-					// This `finally()` may run after unmount / route switch. Never open a new
-					// SSE connection after disposal, otherwise we leak EventSource sockets and
-					// can exhaust the browser connection pool (everything becomes pending).
-					if (disposed || ac.signal.aborted) return
-					es = connectLogsStream(lastIdRef.current)
-				})
-		}
+		;(async () => {
+			try {
+				const m = await fetchMeta()
+				if (disposed || ac.signal.aborted) return
+				setMeta(m)
+
+				const tail = seqToBigint(m.tailSeq) ?? 0n
+				const head = seqToBigint(m.headSeq) ?? 1n
+				const start = tail > 0n ? tail - BigInt(Math.max(1, SNAPSHOT_MAX - 1)) + 1n : head
+				const from = (start < head ? head : start).toString(10)
+				// Single source of truth: follow SSE (it will send reset + catch-up appends).
+				es = connectFollow(m, from)
+			} catch {
+				// ignore
+			} finally {
+				abortRef.current = null
+			}
+		})()
 
 		return () => {
 			disposed = true
@@ -305,54 +984,590 @@ export function LiveLog({ module, showName = true, filter }: Props) {
 				abortRef.current.abort()
 				abortRef.current = null
 			}
+			if (rafRef.current != null) cancelAnimationFrame(rafRef.current)
+			rafRef.current = null
 			es?.close()
 		}
-	}, [filterQuery])
+	}, [filterQuery, streamId])
 
-	// —— 渲染 —— //
-	const logHeight = useMemo(() => Math.max(120, height || 0), [height])
+	useEffect(() => {
+		followRef.current = follow
+	}, [follow])
+
+	useEffect(() => {
+		if (!follow) return
+		setNewSincePause(0)
+		listApiRef.current?.scrollToTail()
+	}, [follow])
+
+	useEffect(() => {
+		if (!copied) return
+		const t = setTimeout(() => setCopied(null), 900)
+		return () => clearTimeout(t)
+	}, [copied])
+
+	const isFull = variant === 'full'
+	const showSidePanel = isFull || !!selectedLine
+
+	const clearLogs = useCallback(() => {
+		ringRef.current.clear()
+		pendingLinesRef.current.length = 0
+		setSelectedSeq(null)
+		setSelectedLine(null)
+		setNewSincePause(0)
+	}, [])
+
+	const scrollToTail = useCallback(() => {
+		listApiRef.current?.scrollToTail()
+	}, [])
 
 	return (
 		<div
-			ref={ref}
 			style={{
+				flex: 1,
 				height: '100%',
 				minHeight: 0,
 				width: '100%',
 				minWidth: 0,
 				display: 'flex',
 				flexDirection: 'column',
+				gap: 8,
+				overflow: 'hidden',
 			}}
 		>
-			<div style={{ flex: 1, minHeight: 0, minWidth: 0 }}>
-				<ScrollFollow
-					startFollowing
-					render={({ follow, onScroll }) => (
-						<LazyLog
-							key={filterQuery || 'all'}
-							height={logHeight}
-							text={text}
-							external
-							follow={follow}
-							onScroll={onScroll}
-							selectableLines
-							wrapLines
-							rowHeight={19}
-							enableLineNumbers={false}
-							enableGutters={false}
-							style={{
-								fontFamily: MONO_FONT,
-								width: '100%',
-								maxWidth: '100%',
-							}}
-							containerStyle={{
-								width: '100%',
-								maxWidth: '100%',
-								overflowX: 'auto',
+			{/* Minimal header (embedded pages stay clean) */}
+			<div
+				style={{
+					display: 'flex',
+					alignItems: 'center',
+					flexWrap: 'wrap',
+					gap: 10,
+					rowGap: 8,
+					flex: '0 0 auto',
+					fontFamily: MONO_FONT,
+					fontSize: 12,
+					color: '#94a3b8',
+					background: PANEL_BG,
+					border: BORDER,
+					borderRadius: 10,
+					padding: '8px 10px',
+					backdropFilter: 'blur(8px)',
+				}}
+			>
+				<div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+					<label style={{ cursor: 'pointer', userSelect: 'none', display: 'flex', gap: 6 }}>
+						<input
+							type="checkbox"
+							checked={follow}
+							onChange={(e) => {
+								const next = e.currentTarget.checked
+								followWantedRef.current = next
+								setFollow(next)
 							}}
 						/>
-					)}
+						<span>follow</span>
+					</label>
+					{!follow && newSincePause > 0 ? (
+						<button
+							type="button"
+							onClick={() => {
+								followWantedRef.current = true
+								setFollow(true)
+							}}
+							style={{
+								fontFamily: MONO_FONT,
+								fontSize: 12,
+								cursor: 'pointer',
+								background: 'rgba(59,130,246,0.18)',
+								border: BORDER,
+								borderRadius: 8,
+								color: '#e2e8f0',
+								padding: '2px 8px',
+							}}
+						>
+							+{newSincePause} new
+						</button>
+					) : null}
+				</div>
+
+				<label style={{ cursor: 'pointer', userSelect: 'none', display: 'flex', gap: 6 }}>
+					<input
+						type="checkbox"
+						checked={showCategory}
+						onChange={(e) => setShowCategory(e.currentTarget.checked)}
+					/>
+					<span>category</span>
+				</label>
+				<label style={{ cursor: 'pointer', userSelect: 'none', display: 'flex', gap: 6 }}>
+					<input type="checkbox" checked={ansi} onChange={(e) => setAnsi(e.currentTarget.checked)} />
+					<span>ansi</span>
+				</label>
+
+				<div style={{ opacity: 0.8 }}>
+					{connected ? 'connected' : 'disconnected'}
+					{meta ? ` · epoch=${meta.epoch} · tail=${meta.tailSeq}` : ''}
+				</div>
+
+				{!isFull && activeFilter.name ? (
+					<div style={{ opacity: 0.8 }}>· filter={activeFilter.name}</div>
+				) : null}
+
+				<div style={{ flex: 1 }} />
+
+				{/* Embedded pages: keep essential actions here */}
+				{!isFull ? (
+					<>
+						<button
+							type="button"
+							onClick={clearLogs}
+							style={{
+								fontFamily: MONO_FONT,
+								fontSize: 12,
+								cursor: 'pointer',
+								background: 'rgba(148,163,184,0.12)',
+								border: BORDER,
+								borderRadius: 8,
+								color: '#e2e8f0',
+								padding: '2px 8px',
+							}}
+						>
+							clear
+						</button>
+						<button
+							type="button"
+							onClick={scrollToTail}
+							style={{
+								fontFamily: MONO_FONT,
+								fontSize: 12,
+								cursor: 'pointer',
+								background: 'rgba(148,163,184,0.12)',
+								border: BORDER,
+								borderRadius: 8,
+								color: '#e2e8f0',
+								padding: '2px 8px',
+							}}
+						>
+							tail
+						</button>
+					</>
+				) : null}
+			</div>
+
+			<div style={{ display: 'flex', flex: 1, minHeight: 0, minWidth: 0, gap: 10 }}>
+				<LogList
+					store={ringRef.current}
+					showCategory={showCategory}
+					showName={showName}
+					ansi={ansi}
+					selectedSeq={selectedSeq}
+					setSelectedSeq={setSelectedSeq}
+					setSelectedLine={setSelectedLine}
+					follow={follow}
+					followRef={followRef}
+					followWantedRef={followWantedRef}
+					setFollow={setFollow}
+					setNewSincePause={setNewSincePause}
+					apiRef={listApiRef}
+					metaCount={meta?.count}
 				/>
+
+				{showSidePanel ? (
+					<div
+						style={{
+							width: 420,
+							flex: '0 0 auto',
+							minHeight: 0,
+							overflow: 'hidden',
+							display: 'flex',
+							flexDirection: 'column',
+							fontFamily: MONO_FONT,
+							fontSize: 12,
+							background: PANEL_BG,
+							border: BORDER,
+							borderRadius: 8,
+							backdropFilter: 'blur(10px)',
+						}}
+					>
+						<div
+							style={{
+								flex: '0 0 auto',
+								padding: 10,
+								background: 'rgba(2, 6, 23, 0.78)',
+								borderBottom: BORDER,
+								backdropFilter: 'blur(10px)',
+							}}
+						>
+							{isFull ? (
+								<>
+									<div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+										<div style={{ color: '#e2e8f0' }}>query</div>
+										<div style={{ flex: 1 }} />
+										<button
+											type="button"
+											onClick={clearLogs}
+											style={{
+												fontFamily: MONO_FONT,
+												fontSize: 12,
+												cursor: 'pointer',
+												background: 'rgba(148,163,184,0.12)',
+												border: BORDER,
+												borderRadius: 8,
+												color: '#e2e8f0',
+												padding: '2px 8px',
+											}}
+										>
+											clear
+										</button>
+										<button
+											type="button"
+											onClick={scrollToTail}
+											style={{
+												fontFamily: MONO_FONT,
+												fontSize: 12,
+												cursor: 'pointer',
+												background: 'rgba(148,163,184,0.12)',
+												border: BORDER,
+												borderRadius: 8,
+												color: '#e2e8f0',
+												padding: '2px 8px',
+											}}
+										>
+											tail
+										</button>
+									</div>
+
+									<div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+										<span style={{ opacity: 0.8 }}>stream</span>
+										<input
+											value={streamIdInput}
+											onChange={(e) => setStreamIdInput(e.currentTarget.value)}
+											list={streamDatalistId}
+											spellCheck={false}
+											style={{
+												fontFamily: MONO_FONT,
+												fontSize: 12,
+												padding: '2px 8px',
+												borderRadius: 8,
+												border: BORDER,
+												color: '#e2e8f0',
+												background: 'rgba(15,23,42,0.55)',
+												width: 220,
+											}}
+										/>
+										<button
+											type="button"
+											onClick={() => void refreshStreams()}
+											style={{
+												fontFamily: MONO_FONT,
+												fontSize: 12,
+												cursor: 'pointer',
+												background: 'rgba(148,163,184,0.12)',
+												border: BORDER,
+												borderRadius: 8,
+												color: '#e2e8f0',
+												padding: '2px 8px',
+											}}
+										>
+											refresh
+										</button>
+										<datalist id={streamDatalistId}>
+											{streams.map((s) => (
+												<option key={s} value={s} />
+											))}
+										</datalist>
+									</div>
+
+									<div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 8 }}>
+										<div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+											<span style={{ opacity: 0.8 }}>filter</span>
+											<input
+												value={draftFilter.name ?? ''}
+												onChange={(e) =>
+													setDraftFilter((f) => ({
+														...f,
+														name: e.currentTarget.value || undefined,
+													}))
+												}
+												onKeyDown={(e) => {
+													if (e.key === 'Enter') applyNow()
+												}}
+												spellCheck={false}
+												placeholder="name / pluginId / context"
+												style={{
+													fontFamily: MONO_FONT,
+													fontSize: 12,
+													padding: '2px 8px',
+													borderRadius: 8,
+													border: BORDER,
+													color: '#e2e8f0',
+													background: 'rgba(15,23,42,0.55)',
+													width: 260,
+												}}
+											/>
+											<input
+												value={draftFilter.pluginId ?? ''}
+												onChange={(e) =>
+													setDraftFilter((f) => ({
+														...f,
+														pluginId: e.currentTarget.value || undefined,
+													}))
+												}
+												onKeyDown={(e) => {
+													if (e.key === 'Enter') applyNow()
+												}}
+												spellCheck={false}
+												placeholder="pluginId"
+												style={{
+													fontFamily: MONO_FONT,
+													fontSize: 12,
+													padding: '2px 8px',
+													borderRadius: 8,
+													border: BORDER,
+													color: '#e2e8f0',
+													background: 'rgba(15,23,42,0.55)',
+													width: 180,
+												}}
+											/>
+											<input
+												value={draftFilter.context ?? ''}
+												onChange={(e) =>
+													setDraftFilter((f) => ({
+														...f,
+														context: e.currentTarget.value || undefined,
+													}))
+												}
+												onKeyDown={(e) => {
+													if (e.key === 'Enter') applyNow()
+												}}
+												spellCheck={false}
+												placeholder="context"
+												style={{
+													fontFamily: MONO_FONT,
+													fontSize: 12,
+													padding: '2px 8px',
+													borderRadius: 8,
+													border: BORDER,
+													color: '#e2e8f0',
+													background: 'rgba(15,23,42,0.55)',
+													width: 180,
+												}}
+											/>
+											<input
+												value={draftFilter.category ?? ''}
+												onChange={(e) =>
+													setDraftFilter((f) => ({
+														...f,
+														category: e.currentTarget.value || undefined,
+													}))
+												}
+												onKeyDown={(e) => {
+													if (e.key === 'Enter') applyNow()
+												}}
+												spellCheck={false}
+												placeholder="category (a.b.*)"
+												style={{
+													fontFamily: MONO_FONT,
+													fontSize: 12,
+													padding: '2px 8px',
+													borderRadius: 8,
+													border: BORDER,
+													color: '#e2e8f0',
+													background: 'rgba(15,23,42,0.55)',
+													width: 260,
+												}}
+											/>
+										</div>
+
+										<div
+											style={{
+												display: 'flex',
+												alignItems: 'center',
+												gap: 8,
+												flexWrap: 'wrap',
+											}}
+										>
+											{dirty ? (
+												<button
+													type="button"
+													onClick={applyNow}
+													style={{
+														fontFamily: MONO_FONT,
+														fontSize: 12,
+														cursor: 'pointer',
+														background: 'rgba(59,130,246,0.18)',
+														border: BORDER,
+														borderRadius: 8,
+														color: '#e2e8f0',
+														padding: '2px 8px',
+													}}
+												>
+													apply
+												</button>
+											) : null}
+											<button
+												type="button"
+												onClick={() => {
+													setDraftFilter(defaultsFilter)
+													setActiveFilter(defaultsFilter)
+												}}
+												style={{
+													fontFamily: MONO_FONT,
+													fontSize: 12,
+													cursor: 'pointer',
+													background: 'rgba(148,163,184,0.12)',
+													border: BORDER,
+													borderRadius: 8,
+													color: '#e2e8f0',
+													padding: '2px 8px',
+												}}
+											>
+												reset
+											</button>
+											<button
+												type="button"
+												onClick={() => {
+													setDraftFilter({})
+													setActiveFilter({})
+												}}
+												style={{
+													fontFamily: MONO_FONT,
+													fontSize: 12,
+													cursor: 'pointer',
+													background: 'rgba(148,163,184,0.12)',
+													border: BORDER,
+													borderRadius: 8,
+													color: '#e2e8f0',
+													padding: '2px 8px',
+												}}
+											>
+												all
+											</button>
+											<div style={{ flex: 1 }} />
+											<div style={{ opacity: 0.75 }}>
+												{activeFilter.name ||
+												activeFilter.pluginId ||
+												activeFilter.context ||
+												activeFilter.category
+													? 'live'
+													: 'no filter'}
+												{dirty ? ' · (pending)' : ''}
+											</div>
+										</div>
+									</div>
+								</>
+							) : null}
+
+							{selectedLine ? (
+								<div
+									style={{
+										display: 'flex',
+										alignItems: 'center',
+										gap: 8,
+										marginTop: isFull ? 10 : 0,
+									}}
+								>
+									<div style={{ color: '#e2e8f0' }}>details</div>
+									<div style={{ color: '#94a3b8' }}>
+										seq={selectedLine.seq} · level={selectedLine.level}
+									</div>
+									<div style={{ flex: 1 }} />
+									{copied ? (
+										<div style={{ color: '#94a3b8', opacity: 0.9 }}>
+											{copied === 'line' ? 'copied line' : 'copied json'}
+										</div>
+									) : null}
+									<button
+										type="button"
+										onClick={() => {
+											void copyToClipboard(formatLineForCopy(selectedLine, { showCategory, showName })).then(
+												(ok) => {
+													if (ok) setCopied('line')
+												},
+											)
+										}}
+										style={{
+											fontFamily: MONO_FONT,
+											fontSize: 12,
+											cursor: 'pointer',
+											background: 'rgba(148,163,184,0.12)',
+											border: BORDER,
+											borderRadius: 8,
+											color: '#e2e8f0',
+											padding: '2px 8px',
+										}}
+									>
+										copy
+									</button>
+									<button
+										type="button"
+										onClick={() => {
+											void copyToClipboard(JSON.stringify(selectedLine, null, 2)).then((ok) => {
+												if (ok) setCopied('json')
+											})
+										}}
+										style={{
+											fontFamily: MONO_FONT,
+											fontSize: 12,
+											cursor: 'pointer',
+											background: 'rgba(148,163,184,0.12)',
+											border: BORDER,
+											borderRadius: 8,
+											color: '#e2e8f0',
+											padding: '2px 8px',
+										}}
+									>
+										json
+									</button>
+									<button
+										type="button"
+										onClick={() => {
+											setSelectedSeq(null)
+											setSelectedLine(null)
+										}}
+										style={{
+											fontFamily: MONO_FONT,
+											fontSize: 12,
+											cursor: 'pointer',
+											background: 'rgba(148,163,184,0.12)',
+											border: BORDER,
+											borderRadius: 8,
+											color: '#e2e8f0',
+											padding: '2px 8px',
+										}}
+									>
+										close
+									</button>
+								</div>
+							) : isFull ? (
+								<div style={{ color: '#94a3b8', marginTop: 10 }}>(select a line to inspect props)</div>
+							) : null}
+						</div>
+
+						<div style={{ flex: 1, minHeight: 0, overflow: 'auto', padding: 10 }}>
+							{selectedLine ? (
+								<>
+									{selectedLine.error ? (
+										<pre style={{ margin: 0, padding: 0, color: '#fb7185' }}>
+											{JSON.stringify(selectedLine.error, null, 2)}
+										</pre>
+									) : null}
+									{selectedLine.props ? (
+										<pre style={{ margin: 0, padding: 0, color: '#e2e8f0' }}>
+											{JSON.stringify(selectedLine.props, null, 2)}
+										</pre>
+									) : (
+										<div style={{ color: '#94a3b8' }}>(no props)</div>
+									)}
+									{selectedLine.raw ? (
+										<pre style={{ marginTop: 10, padding: 0, color: '#94a3b8' }}>
+											{JSON.stringify(selectedLine.raw, null, 2)}
+										</pre>
+									) : null}
+								</>
+							) : null}
+						</div>
+					</div>
+				) : null}
 			</div>
 		</div>
 	)

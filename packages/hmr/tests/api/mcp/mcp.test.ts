@@ -106,7 +106,8 @@ describe('MCP (mcp-lite) endpoint', () => {
 			method: 'tools/call',
 			params: { name: 'logs.latest', arguments: { limit: 1 } },
 		})
-		expect(logs.result.structuredContent).toHaveProperty('records')
+		expect(logs.result.structuredContent).toHaveProperty('lines')
+		expect(logs.result.structuredContent).toHaveProperty('meta')
 
 		const batch = await call({
 			jsonrpc: '2.0',
@@ -130,7 +131,8 @@ describe('MCP (mcp-lite) endpoint', () => {
 			method: 'tools/call',
 			params: { name: 'logs.waitFor', arguments: { timeoutMs: 1, limit: 10 } },
 		})
-		expect(waitFor.result.structuredContent).toHaveProperty('records')
+		expect(waitFor.result.structuredContent).toHaveProperty('lines')
+		expect(waitFor.result.structuredContent).toHaveProperty('meta')
 
 		const waitForText = await call({
 			jsonrpc: '2.0',

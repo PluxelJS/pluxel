@@ -84,7 +84,7 @@ export function OperationLogModal({
 					display: 'flex',
 				}}
 			>
-				<LiveLog module={logModule} />
+				<LiveLog module={logModule} variant="embedded" />
 			</Box>
 		</Modal>
 	)

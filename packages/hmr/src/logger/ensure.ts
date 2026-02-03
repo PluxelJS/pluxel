@@ -4,7 +4,7 @@ import { dirname } from 'node:path'
 import { configure, getConfig, type LogLevel } from '@logtape/logtape'
 import { createPluxelLogtapeConfig, createPluxelPluginLevelState } from '@pluxel/core/logger'
 
-import { createLogStoreSink } from './sinks'
+import { createRuntimeLogSink, type RuntimeLogSinkOptions } from './sink'
 
 /**
  * Mutable per-plugin level map for HMR hosts.
@@ -27,10 +27,10 @@ export type EnsurePluxelLoggingOptions = {
 	 * Enable the UI log-store sink (SSE/inspector UI).
 	 *
 	 * - `true` uses defaults (`minLevel=trace`)
-	 * - object forwards to `createLogStoreSink`
+	 * - object forwards to `createRuntimeLogSink`
 	 * - `false` disables it
 	 */
-	ui?: boolean | { minLevel?: LogLevel; includeCaller?: boolean }
+	ui?: boolean | RuntimeLogSinkOptions
 	/**
 	 * Debug topic patterns (e.g. `pluxel:hmr:*`).
 	 *
@@ -59,7 +59,7 @@ export async function ensurePluxelLogging(opts: EnsurePluxelLoggingOptions = {})
 	const ui =
 		opts.ui === false
 			? undefined
-			: createLogStoreSink(typeof opts.ui === 'object' ? { ...opts.ui } : { minLevel: 'trace' })
+			: createRuntimeLogSink(typeof opts.ui === 'object' ? { ...opts.ui } : { minLevel: 'trace' })
 
 	await configure(
 		createPluxelLogtapeConfig({

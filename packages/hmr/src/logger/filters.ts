@@ -1,4 +1,4 @@
-import type { LogFilter } from './logStore'
+import type { LogFilter } from './protocol'
 
 export function parseLogFilter(search: URLSearchParams): LogFilter {
 	return {
@@ -11,23 +11,44 @@ export function parseLogFilter(search: URLSearchParams): LogFilter {
 	}
 }
 
-export function parseAfterId(search: URLSearchParams): number | undefined {
-	const raw = search.get('after') ?? search.get('afterId') ?? undefined
+function parseSeq(raw: string | null | undefined): string | undefined {
 	if (!raw) return undefined
-	const n = Number(raw)
-	return Number.isFinite(n) && n > 0 ? n : undefined
+	const s = raw.trim()
+	return /^\d+$/.test(s) ? s : undefined
 }
 
-export function parseLastEventId(raw: string | undefined | null): number | undefined {
+export function parseEpoch(search: URLSearchParams): number | undefined {
+	const raw = search.get('epoch') ?? undefined
 	if (!raw) return undefined
 	const n = Number(raw)
-	return Number.isFinite(n) && n > 0 ? n : undefined
+	return Number.isFinite(n) && n > 0 ? Math.floor(n) : undefined
 }
 
-export function resolveAfterId(
+export function parseFromSeq(search: URLSearchParams): string | undefined {
+	return (
+		parseSeq(search.get('from')) ??
+		parseSeq(search.get('cursor')) ??
+		parseSeq(search.get('after')) ??
+		parseSeq(search.get('afterId')) ??
+		undefined
+	)
+}
+
+export function parseLastEventId(raw: string | undefined | null): string | undefined {
+	return parseSeq(raw)
+}
+
+export function resolveFromSeq(
 	search: URLSearchParams,
 	lastEventId: string | undefined | null,
-): number | undefined {
-	return parseAfterId(search) ?? parseLastEventId(lastEventId)
+): string | undefined {
+	const from = parseFromSeq(search)
+	if (from) return from
+	const last = parseLastEventId(lastEventId)
+	if (!last) return undefined
+	try {
+		return (BigInt(last) + 1n).toString(10)
+	} catch {
+		return undefined
+	}
 }
-

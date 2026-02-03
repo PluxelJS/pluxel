@@ -5,9 +5,9 @@ const BUILD_PACKAGES: (string | RegExp)[] = ['@hono/vite-dev-server', '@rolldown
 const FRONTEND_PACKAGES: (string | RegExp)[] = [
   /^@mantine\//,
   /^@dnd-kit\//,
-  '@melloware/react-logviewer',
   '@tanstack/react-form',
   '@tanstack/react-router',
+  '@tanstack/react-virtual',
 ]
 const BACKEND_PACKAGES: (string | RegExp)[] = ['hono', '@hono/node-server', '@hono/valibot-validator']
 const GRAPHQL_PACKAGES: (string | RegExp)[] = [

@@ -1,4 +1,4 @@
-import type { UiLogRecord } from './logStore'
+import type { RuntimeLogLine } from './protocol'
 
 export type LlmLogFormatOptions = {
 	/** Maximum total characters for the formatted output. Defaults to 6000. */
@@ -49,7 +49,9 @@ function truncate(s: string, max: number) {
 	return `${s.slice(0, Math.max(0, max - 1))}…`
 }
 
-function isErrorLike(v: unknown): v is { name?: unknown; message?: unknown; stack?: unknown; cause?: unknown } {
+function isErrorLike(
+	v: unknown,
+): v is { name?: unknown; message?: unknown; stack?: unknown; cause?: unknown } {
 	return !!v && typeof v === 'object'
 }
 
@@ -60,13 +62,16 @@ function formatErrorLike(v: unknown, maxStackLines: number) {
 	const head = message ? `${name}: ${message}` : name
 	const stackRaw = typeof v.stack === 'string' ? v.stack : ''
 	if (!stackRaw) return head
-	const lines = stackRaw.split('\n').map((l) => l.trim()).filter(Boolean)
+	const lines = stackRaw
+		.split('\n')
+		.map((l) => l.trim())
+		.filter(Boolean)
 	if (!lines.length) return head
 	const limited = lines.slice(0, Math.max(1, maxStackLines)).join('\n')
 	return `${head}\n${limited}`
 }
 
-function formatMessageParts(record: UiLogRecord, maxPartChars: number) {
+function formatMessageParts(record: RuntimeLogLine, maxPartChars: number) {
 	const parts = Array.isArray(record.message) ? record.message : null
 	if (!parts || parts.length === 0) return truncate(record.msg ?? '', maxPartChars)
 
@@ -101,7 +106,7 @@ function formatMessageParts(record: UiLogRecord, maxPartChars: number) {
 	return truncate(out.join(''), maxPartChars)
 }
 
-function formatSelectedProps(record: UiLogRecord, maxStackLines: number) {
+function formatSelectedProps(record: RuntimeLogLine, maxStackLines: number) {
 	const props = record.props
 	if (!props || typeof props !== 'object') return null
 
@@ -127,7 +132,10 @@ function formatSelectedProps(record: UiLogRecord, maxStackLines: number) {
 	return out.join('\n')
 }
 
-export function formatUiLogRecordForLlm(record: UiLogRecord, options: LlmLogFormatOptions = {}): string {
+export function formatUiLogRecordForLlm(
+	record: RuntimeLogLine,
+	options: LlmLogFormatOptions = {},
+): string {
 	const cfg: Required<LlmLogFormatOptions> = {
 		...DEFAULTS,
 		...options,
@@ -136,7 +144,7 @@ export function formatUiLogRecordForLlm(record: UiLogRecord, options: LlmLogForm
 		maxStackLines: clampInt(options.maxStackLines, DEFAULTS.maxStackLines, 1, 50),
 	}
 
-	const time = typeof record.time === 'number' ? toIsoTime(record.time) : 'time?'
+	const time = typeof record.ts === 'number' ? toIsoTime(record.ts) : 'time?'
 	const level = typeof record.level === 'string' ? record.level : 'info'
 
 	const pieces: string[] = []
@@ -166,7 +174,10 @@ export function formatUiLogRecordForLlm(record: UiLogRecord, options: LlmLogForm
 	return truncate(line, cfg.maxLineChars)
 }
 
-export function formatUiLogRecordsForLlm(records: readonly UiLogRecord[], options: LlmLogFormatOptions = {}): LlmLogsText {
+export function formatUiLogRecordsForLlm(
+	records: readonly RuntimeLogLine[],
+	options: LlmLogFormatOptions = {},
+): LlmLogsText {
 	const cfg: Required<LlmLogFormatOptions> = {
 		...DEFAULTS,
 		...options,
@@ -225,4 +236,3 @@ export function formatUiLogRecordsForLlm(records: readonly UiLogRecord[], option
 
 	return { text: lines.join('\n'), count: lines.length, truncated }
 }
-

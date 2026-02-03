@@ -32,8 +32,10 @@ const textResult = <T>(text: string, structuredContent: T): ToolCallResult<T> =>
 })
 
 const UiLogRecordSchema = v.object({
-	id: v.number(),
-	time: v.number(),
+	streamId: v.string(),
+	epoch: v.number(),
+	seq: v.string(),
+	ts: v.number(),
 	level: v.string(),
 	category: v.array(v.string()),
 	msg: v.string(),
@@ -42,6 +44,8 @@ const UiLogRecordSchema = v.object({
 	pluginId: v.optional(v.string()),
 	context: v.optional(v.string()),
 	props: v.optional(v.record(v.string(), v.unknown())),
+	error: v.optional(v.record(v.string(), v.unknown())),
+	raw: v.optional(v.unknown()),
 })
 
 const LogFilterSchema = v.optional(
@@ -55,15 +59,28 @@ const LogFilterSchema = v.optional(
 )
 
 const LogsLatestInputSchema = v.object({
+	streamId: v.optional(v.string()),
 	limit: v.optional(v.number()),
+	afterSeq: v.optional(v.string()),
+	// Back-compat for old clients (unsafe beyond JS integer range).
 	afterId: v.optional(v.number()),
 	filter: LogFilterSchema,
 })
 
 const LogsLatestOutputSchema = v.object({
-	records: v.array(UiLogRecordSchema),
-	lastId: v.number(),
-	bootId: v.string(),
+	meta: v.object({
+		streamId: v.string(),
+		bootId: v.string(),
+		epoch: v.number(),
+		headSeq: v.string(),
+		tailSeq: v.string(),
+		nextSeq: v.string(),
+		count: v.number(),
+		retention: v.object({
+			windowLines: v.number(),
+		}),
+	}),
+	lines: v.array(UiLogRecordSchema),
 })
 
 const LogsTextFormatSchema = v.optional(
@@ -78,21 +95,27 @@ const LogsTextFormatSchema = v.optional(
 )
 
 const LogsWaitForInputSchema = v.object({
+	streamId: v.optional(v.string()),
 	limit: v.optional(v.number()),
+	afterSeq: v.optional(v.string()),
 	afterId: v.optional(v.number()),
 	timeoutMs: v.optional(v.number()),
 	filter: LogFilterSchema,
 })
 
 const LogsLatestTextInputSchema = v.object({
+	streamId: v.optional(v.string()),
 	limit: v.optional(v.number()),
+	afterSeq: v.optional(v.string()),
 	afterId: v.optional(v.number()),
 	filter: LogFilterSchema,
 	format: LogsTextFormatSchema,
 })
 
 const LogsWaitForTextInputSchema = v.object({
+	streamId: v.optional(v.string()),
 	limit: v.optional(v.number()),
+	afterSeq: v.optional(v.string()),
 	afterId: v.optional(v.number()),
 	timeoutMs: v.optional(v.number()),
 	filter: LogFilterSchema,
@@ -101,8 +124,10 @@ const LogsWaitForTextInputSchema = v.object({
 
 const LogsTextOutputSchema = v.object({
 	text: v.string(),
-	lastId: v.number(),
+	streamId: v.string(),
 	bootId: v.string(),
+	epoch: v.number(),
+	tailSeq: v.string(),
 	count: v.number(),
 	truncated: v.boolean(),
 })
@@ -349,12 +374,19 @@ function createPluxelMcpServer(ctx: Context) {
 		inputSchema: LogsLatestInputSchema,
 		outputSchema: LogsLatestOutputSchema,
 		handler: (args) => {
+			const afterSeq =
+				typeof args.afterSeq === 'string' && args.afterSeq
+					? args.afterSeq
+					: args.afterId
+						? String(args.afterId)
+						: undefined
 			const out = logsLatest({
+				streamId: args.streamId,
 				limit: args.limit,
-				afterId: args.afterId,
+				afterSeq,
 				filter: args.filter,
 			})
-			return textResult(`logs: ${out.records.length} records (lastId=${out.lastId})`, out)
+			return textResult(`logs: ${out.lines.length} lines (tailSeq=${out.meta.tailSeq})`, out)
 		},
 	})
 
@@ -364,9 +396,16 @@ function createPluxelMcpServer(ctx: Context) {
 		inputSchema: LogsLatestTextInputSchema,
 		outputSchema: LogsTextOutputSchema,
 		handler: (args) => {
+			const afterSeq =
+				typeof args.afterSeq === 'string' && args.afterSeq
+					? args.afterSeq
+					: args.afterId
+						? String(args.afterId)
+						: undefined
 			const out = logsLatestText({
+				streamId: args.streamId,
 				limit: args.limit,
-				afterId: args.afterId,
+				afterSeq,
 				filter: args.filter,
 				format: args.format,
 			})
@@ -380,13 +419,20 @@ function createPluxelMcpServer(ctx: Context) {
 		inputSchema: LogsWaitForInputSchema,
 		outputSchema: LogsLatestOutputSchema,
 		handler: async (args) => {
+			const afterSeq =
+				typeof args.afterSeq === 'string' && args.afterSeq
+					? args.afterSeq
+					: args.afterId
+						? String(args.afterId)
+						: undefined
 			const out = await logsWaitFor({
+				streamId: args.streamId,
 				limit: args.limit,
-				afterId: args.afterId,
+				afterSeq,
 				timeoutMs: args.timeoutMs,
 				filter: args.filter,
 			})
-			return textResult(`logs: ${out.records.length} records (lastId=${out.lastId})`, out)
+			return textResult(`logs: ${out.lines.length} lines (tailSeq=${out.meta.tailSeq})`, out)
 		},
 	})
 
@@ -396,9 +442,16 @@ function createPluxelMcpServer(ctx: Context) {
 		inputSchema: LogsWaitForTextInputSchema,
 		outputSchema: LogsTextOutputSchema,
 		handler: async (args) => {
+			const afterSeq =
+				typeof args.afterSeq === 'string' && args.afterSeq
+					? args.afterSeq
+					: args.afterId
+						? String(args.afterId)
+						: undefined
 			const out = await logsWaitForText({
+				streamId: args.streamId,
 				limit: args.limit,
-				afterId: args.afterId,
+				afterSeq,
 				timeoutMs: args.timeoutMs,
 				filter: args.filter,
 				format: args.format,

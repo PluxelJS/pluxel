@@ -1,32 +1,40 @@
-export * from './protocol'
+export {
+	type AuthAwareFetchOptions,
+	type AuthBlockedInfo,
+	createAuthAwareFetch,
+	defaultOnAuthBlocked,
+	type OnAuthBlocked,
+} from './auth'
 
 export {
 	createHmrWebClient,
 	type HmrWebClient,
 	type HmrWebClientOptions,
 } from './client'
+export type {
+	LogFilter,
+	LogRangeErr,
+	LogRangeOk,
+	LogRangeResult,
+	LogSseAppend,
+	LogSseEvent,
+	LogSseGap,
+	LogSseReset,
+	LogStreamMeta,
+	RuntimeLogError,
+	RuntimeLogLine,
+} from './logs'
+// Plugin UI authoring + shared helpers
+export * from './plugin-ui'
+export * from './protocol'
 
-export {
-	createAuthAwareFetch,
-	defaultOnAuthBlocked,
-	type AuthAwareFetchOptions,
-	type AuthBlockedInfo,
-	type OnAuthBlocked,
-} from './auth'
-
+export { invokeRpc, rpcErrorMessage } from './rpc'
 export type {
 	ResolvedSseEvents,
 	SseClientOptions,
 	SseClientWithNamespaces,
 	SseMessage,
-	LogFilter,
-	LogRecord,
 } from './sse'
-
-export { invokeRpc, rpcErrorMessage } from './rpc'
-
-// Plugin UI authoring + shared helpers
-export * from './plugin-ui'
 
 // Ensure ctx.services.hmr is typed when @pluxel/hmr-web is in the TS program.
 import './plugin-ui-augment'

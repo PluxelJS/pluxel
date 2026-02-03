@@ -1,39 +1,6 @@
 import { defaultOnAuthBlocked, type OnAuthBlocked } from './auth'
 import type { ExtensionManifestEvent } from './plugin-ui'
 import type { UI } from './protocol'
-import type { LogLevel } from './protocol-types'
-
-export interface LogRecord {
-	id: number
-	time: number
-	level: LogLevel
-	category: string[]
-	/**
-	 * Legacy plain-text message (kept for compatibility).
-	 *
-	 * Prefer `message` for new UI rendering.
-	 */
-	msg: string
-	/** Structured message parts (already sanitized for JSON transport). */
-	message?: unknown[]
-	name?: string
-	pluginId?: string
-	context?: string
-	props?: Record<string, unknown>
-}
-
-export interface LogFilter {
-	/**
-	 * Backward compatible single filter:
-	 * matches `pluginId` / `context` / `name` (exact match).
-	 */
-	name?: string
-	pluginId?: string
-	context?: string
-	displayName?: string
-	/** Category string, e.g. "pluxel.hmr" or "pluxel.plugins". Supports "prefix.*". */
-	category?: string
-}
 
 export interface BuiltinSseEvents {
 	extensions: ExtensionManifestEvent | { type: 'ready' }
