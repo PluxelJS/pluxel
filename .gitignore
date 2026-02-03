@@ -283,6 +283,7 @@ dist
 build/
 !packages/build/
 !packages/build/**
+packages/build/.turbo/
 packages/build/dist/
 packages/build/node_modules/
 
