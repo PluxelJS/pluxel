@@ -98,6 +98,7 @@ describe('publish single package', () => {
 			const result = await publishPackage({
 				cwd: dir,
 				dryRun: true,
+				skipVersionCheck: true,
 				log: noop,
 			})
 

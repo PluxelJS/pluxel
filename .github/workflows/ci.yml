@@ -24,6 +24,8 @@ defaults:
 
 env:
   CI: "true"
+  NODE_OPTIONS: "--max-old-space-size=4096"
+  PLUXEL_FAST_BUILD: "true"
 
 jobs:
   test:

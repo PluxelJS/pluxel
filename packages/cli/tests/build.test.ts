@@ -50,7 +50,7 @@ const buildFixtures = {
 			"\tentry: 'src/index.ts',",
 			"\tformat: ['esm'],",
 			'\tdts: false,',
-			"\texternal: ['pluxel-plugin-alpha'],",
+			"\texternal: ['pluxel-plugin-alpha', 'pluxel-plugin-beta'],",
 			'\tsourcemap: false,',
 			'\tclean: true,',
 			'}',

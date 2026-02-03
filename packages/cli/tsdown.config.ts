@@ -5,6 +5,8 @@ const buildRoot = fileURLToPath(new URL('../build/src', import.meta.url))
 const buildCli = fileURLToPath(new URL('../build/src/cli/index.ts', import.meta.url))
 const buildRolldown = fileURLToPath(new URL('../build/src/rolldown/index.ts', import.meta.url))
 
+const fastBuild = process.env.PLUXEL_FAST_BUILD === 'true'
+
 export default defineConfig({
 	entry: {
 		cli: './src/cli.ts',
@@ -21,7 +23,7 @@ export default defineConfig({
 		'@pluxel/build/rolldown': buildRolldown,
 	},
 	dts: {
-		sourcemap: true,
+		sourcemap: !fastBuild,
 		eager: true,
 	},
 	env: {
@@ -31,6 +33,7 @@ export default defineConfig({
 	plugins: [],
 	format: ['esm'],
 	clean: true,
+	sourcemap: !fastBuild,
 	minify: true,
 	treeshake: true,
 })
