@@ -100,9 +100,7 @@ export async function publishPackage(options: PublishOptions): Promise<PublishRe
 	// 检测 CI 环境，在 CI 中使用 --provenance 启用 OIDC
 	// 但只对公开包使用，私有包不支持 provenance
 	const ciContext = detectCiContext(env)
-	const inCi = isCi(env)
-	const isPublicPackage = access === 'public'
-	const shouldNotify = forceWebhook || Boolean(ciContext)
+	const shouldNotify = forceWebhook || (Boolean(ciContext) && options.dryRun !== true && !skipPublish)
 	const publishArgs = ['publish']
 	if (access) {
 		publishArgs.push('--access', access)

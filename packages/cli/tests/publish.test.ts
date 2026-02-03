@@ -110,26 +110,23 @@ describe('publish single package', () => {
 })
 
 describe('publish with CI context', () => {
-	it('sends market notification with OIDC token in CI environment', async () => {
-		const savedEnv = snapshotEnv(['GITHUB_ACTIONS', 'GITHUB_REPOSITORY'])
+	it('does not notify market during dry-run even in CI', async () => {
 		await withPackageFixture('example-pkg', '2.0.0', undefined, async (dir) => {
-			try {
-				process.env.GITHUB_ACTIONS = 'true'
-				process.env.GITHUB_REPOSITORY = 'acme/example'
+			const result = await publishPackage({
+				cwd: dir,
+				dryRun: true,
+				skipVersionCheck: true,
+				env: {
+					...process.env,
+					GITHUB_ACTIONS: 'true',
+					GITHUB_REPOSITORY: 'acme/example',
+				},
+				log: noop,
+			})
 
-				const result = await publishPackage({
-					cwd: dir,
-					dryRun: true, // Don't actually publish in tests
-					log: noop,
-				})
-
-				// Verify structure - actual market notification would need mocking
-				expect(result.packageName).toBe('example-pkg')
-				expect(result.version).toBe('2.0.0')
-				expect(result.notified).toBe(false) // False because dryRun
-			} finally {
-				restoreEnv(savedEnv)
-			}
+			expect(result.packageName).toBe('example-pkg')
+			expect(result.version).toBe('2.0.0')
+			expect(result.notified).toBe(false)
 		})
 	})
 
