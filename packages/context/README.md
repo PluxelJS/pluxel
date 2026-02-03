@@ -44,12 +44,17 @@ ctx.logger.info("...")
 如果某个服务确实需要在某个子树里拥有独立实例（避免与其它 Context 共享），可以用：
 
 ```ts
+// ✅ 推荐：按 ctor（更严格；能更早暴露 HMR/重复加载导致的 ctor 身份不一致）
 const child = ctx.isolate([SomeService], { name: "child" })
+
+// ✅ 可选：按 service key（更方便；但可能“看不出你导入的是哪份 ctor”）
+const child2 = ctx.isolateKeys(["someService"], { name: "child2" })
 ```
 
 `isolate()` 创建的是一个新的“实例空间”，并且**对该 Context 的 `extend()` 后代同样生效**（除非后代再次对同一服务调用 `isolate()` 生成新的实例空间）。
 
 注意：`isolate()` 解决的是“实例隔离”，不是“跨 await 自动绑定 ctx”。异步场景仍建议按上面的方式做 ctx 快照。
+另外：root scope 服务（通过 `ctx.root.<key>` 访问）不允许 isolate；它们永远绑定 root ctx。
 
 ## Service key（属性名）注意事项
 
@@ -59,6 +64,15 @@ const child = ctx.isolate([SomeService], { name: "child" })
 - 不要使用危险/特殊 key（例如：`__proto__`、`prototype`、`constructor`）。
 
 实现上，`registerService()` 会在注册阶段拒绝与 `Context.prototype` 冲突的 key，以避免把核心方法“覆盖掉”造成难排查问题。
+
+## Root services（root scope）
+
+如果某个服务天然应该“只绑定 root ctx”（例如：HMR runtime、文件系统、全局缓存），推荐把它声明为 root service：
+
+- 装饰器：用 `@RootService()`（或 `@Injectable({ scope: "root" })`）
+- 类型层：把它放到 `Context.RootServices`，并通过 `ctx.root.<key>` 访问
+
+这样可以在类型上避免误用（例如把 root service 当作普通 service 存在 `ctx.<key>` 上），并且表达上更清晰：你在显式使用“root 级别的能力”。
 
 ## mapping（内部实现细节）
 

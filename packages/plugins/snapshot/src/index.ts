@@ -1,10 +1,9 @@
-import { fileURLToPath } from 'node:url'
 import { resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { BasePlugin, Plugin } from '@pluxel/hmr'
 import { buildNodeDist } from './buildDist'
-
-import { buildSnapshotSource } from './buildSnapshot'
 import { buildSnapshotMainSource } from './buildMain'
+import { buildSnapshotSource } from './buildSnapshot'
 import { SnapshotRpc } from './rpc'
 
 @Plugin({ name: 'Snapshot' })
@@ -46,8 +45,8 @@ export class SnapshotPlugin extends BasePlugin {
 			configImportPath: './snapshot.config',
 		})
 
-		await this.ctx.fs.writeTextAtomic(configPath, configSource)
-		await this.ctx.fs.writeTextAtomic(mainPath, mainSource)
+		await this.ctx.root.fs.writeTextAtomic(configPath, configSource)
+		await this.ctx.root.fs.writeTextAtomic(mainPath, mainSource)
 
 		return { dir, configPath, mainPath }
 	}
@@ -55,7 +54,7 @@ export class SnapshotPlugin extends BasePlugin {
 	async buildDist(): Promise<{ dir: string; entry: string }> {
 		const { mainPath, configPath } = await this.generateSnapshotFiles()
 		{
-			const configSource = await this.ctx.fs.readText(configPath)
+			const configSource = await this.ctx.root.fs.readText(configPath)
 			if (configSource.includes(JSON.stringify('pluxel:builtins'))) {
 				throw new Error(
 					'Cannot build dist: snapshot imports "pluxel:builtins". ' +

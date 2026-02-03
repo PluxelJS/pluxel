@@ -455,7 +455,7 @@ export class ExtensionService {
 		entry: PluginExtensionEntry,
 		entryPath: string,
 	): Promise<string> {
-		const hmr = this.ctx.hmrService
+		const hmr = this.ctx.root.hmrService
 		if (!hmr) {
 			throw new Error('HMRService not available')
 		}
@@ -759,7 +759,7 @@ export class ExtensionService {
 	}
 
 	private async refreshWatchFiles(entry: PluginExtensionEntry): Promise<void> {
-		const hmr = this.ctx.hmrService
+		const hmr = this.ctx.root.hmrService
 		// @ts-expect-error accessing private
 		const vite = hmr?.vite as import('vite').ViteDevServer | undefined
 		if (!vite) return

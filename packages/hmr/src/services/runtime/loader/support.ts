@@ -123,8 +123,8 @@ export class RuntimeResolver {
 		private readonly registry: PluginRegistry,
 	) {
 		// HMRService is optional in unit tests and some non-HMR runtimes.
-		const hmr = (this.ctx as unknown as { hmrService?: { normalizeId?: (x: string) => string } })
-			.hmrService
+		const root = ((this.ctx as unknown as { root?: unknown }).root ?? this.ctx) as unknown
+		const hmr = (root as { hmrService?: { normalizeId?: (x: string) => string } }).hmrService
 		this.normalizeIdFn =
 			typeof hmr?.normalizeId === 'function' ? hmr.normalizeId.bind(hmr) : (id) => id
 	}
@@ -330,9 +330,7 @@ export class LoaderRegistryView {
 }
 
 export class LoaderAnchors {
-	constructor(
-		private readonly anchors: AnchorStore,
-	) {}
+	constructor(private readonly anchors: AnchorStore) {}
 
 	has(moduleId: string): boolean {
 		return this.anchors.has(moduleId)

@@ -1,4 +1,7 @@
+import { loadWorkspaceInfo } from '@pluxel/cli/workspace'
 import { type Context, Injectable } from '@pluxel/core'
+import type { EntryResolution, EntryResolutionOk, ScanTaskOptions } from '../scan/ScanService'
+import { isEntryOk } from '../scan/ScanService'
 import {
 	dedupeByName,
 	isManagedPackageName,
@@ -14,6 +17,11 @@ import { type LoadIntentConfig, PackageLoader } from './loader'
 import { KeyedLock } from './locks'
 import { PackageRemovalFlow } from './removal-flow'
 import { PackageRuntime } from './runtime'
+import {
+	type NormalizedPackageSpecifier,
+	normalizeSpecifier,
+	type PackageSpecifierInput,
+} from './specifiers'
 import { PackageState } from './state'
 import {
 	type LegacyPackageStatePayload,
@@ -37,14 +45,6 @@ import type {
 	PackageUninstallResult,
 	RetryOptions,
 } from './types'
-import type { EntryResolution, EntryResolutionOk, ScanTaskOptions } from '../scan/ScanService'
-import { isEntryOk } from '../scan/ScanService'
-import { loadWorkspaceInfo } from '@pluxel/cli/workspace'
-import {
-	type NormalizedPackageSpecifier,
-	normalizeSpecifier,
-	type PackageSpecifierInput,
-} from './specifiers'
 import { createDebouncedTrigger } from './util/debounce'
 import { collectDeclaredPlugins } from './util/plugins'
 
@@ -148,7 +148,7 @@ export class PackageService {
 		}
 		const stateFile = resolveStateFilePath(config.state?.file)
 		const stateOptions: PackageStateStoreOptions = {
-			fs: this.ctx.fs,
+			fs: this.ctx.root.fs,
 			file: stateFile,
 			onError: (error) => {
 				this.ctx.logger.warn('持久化包状态失败', { error, stateFile })

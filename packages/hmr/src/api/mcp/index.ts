@@ -318,10 +318,24 @@ const EnsureForkOutputSchema = v.union([
 ])
 
 function createPluxelMcpServer(ctx: Context) {
+	// In unit tests, callers sometimes pass a lightweight Context-like object.
+	// Treat missing `root` as "this ctx is the root".
+	const root = ((ctx as unknown as { root?: unknown }).root ?? ctx) as {
+		hmrService: {
+			api: {
+				waitForBatch: (options?: unknown) => Promise<HmrBatchSummary>
+				waitForStable: (options?: unknown) => Promise<HmrBatchSummary>
+				lastBatch: () => HmrBatchSummary | null
+			}
+			executeFiles: (files: readonly string[], keepOrder?: boolean) => Promise<unknown>
+		}
+	}
+
 	const server = new McpServer({
 		name: 'pluxel-hmr',
 		version: 'dev',
-		schemaAdapter: (schema) => toJsonSchema(schema as any) as any,
+		// biome-ignore lint/suspicious/noExplicitAny: upstream schema adapter surface is intentionally flexible.
+		schemaAdapter: (schema) => toJsonSchema(schema as any) as Record<string, unknown>,
 	})
 
 	const toBatchPublic = (summary: HmrBatchSummary) => ({
@@ -344,7 +358,7 @@ function createPluxelMcpServer(ctx: Context) {
 		inputSchema: WaitForBatchInputSchema,
 		outputSchema: WaitForBatchOutputSchema,
 		handler: async (args) => {
-			const summary = await ctx.hmrService.api.waitForBatch({
+			const summary = await root.hmrService.api.waitForBatch({
 				afterEpoch: args.afterEpoch,
 				timeoutMs: args.timeoutMs,
 			})
@@ -359,7 +373,7 @@ function createPluxelMcpServer(ctx: Context) {
 		inputSchema: WaitForStableInputSchema,
 		outputSchema: WaitForBatchOutputSchema,
 		handler: async (args) => {
-			const summary = await ctx.hmrService.api.waitForStable({
+			const summary = await root.hmrService.api.waitForStable({
 				afterEpoch: args.afterEpoch,
 				timeoutMs: args.timeoutMs,
 				quietMs: args.quietMs,
@@ -463,7 +477,7 @@ function createPluxelMcpServer(ctx: Context) {
 	const pluginAction = async (
 		name: string,
 		action: 'start' | 'stop' | 'restart' | 'enable' | 'disable',
-	): Promise<ToolCallResult<any>> => {
+	): Promise<ToolCallResult<unknown>> => {
 		const batch = await applyStatusActions(ctx, [{ name, action }])
 		if (!batch.ok) {
 			const msg = batch.commitError ? `commit failed: ${batch.commitError}` : 'plugin action failed'
@@ -474,11 +488,11 @@ function createPluxelMcpServer(ctx: Context) {
 				...(batch.commitError ? { commitError: batch.commitError } : {}),
 			})
 		}
-		const first = batch.results[0]
+		const first = batch.results[0] as { ok?: boolean; error?: unknown } | undefined
 		const err =
-			first && typeof (first as any).error === 'string'
-				? String((first as any).error)
-				: first && (first as any).ok === false
+			typeof first?.error === 'string'
+				? first.error
+				: first?.ok === false
 					? 'plugin action failed'
 					: undefined
 		return textResult(`${action} ${name}: ${first?.ok ? 'ok' : 'failed'}`, {
@@ -530,7 +544,7 @@ function createPluxelMcpServer(ctx: Context) {
 		handler: async (args) => {
 			const out = await ensureFork(ctx, args.baseName, args.forkId, { enable: args.enable })
 			const msg = out.ok === true ? out.forkName : out.error
-			return textResult(msg, out as any)
+			return textResult(msg, out)
 		},
 	})
 
@@ -540,10 +554,7 @@ function createPluxelMcpServer(ctx: Context) {
 		outputSchema: PluginsListOutputSchema,
 		handler: () => {
 			const out = pluginsList(ctx)
-			return textResult(
-				`plugins: ${out.summary.total} (running=${out.summary.running})`,
-				out as any,
-			)
+			return textResult(`plugins: ${out.summary.total} (running=${out.summary.running})`, out)
 		},
 	})
 
@@ -563,7 +574,7 @@ function createPluxelMcpServer(ctx: Context) {
 			return textResult(`${args.name}: ${status.lifecycleStage}`, {
 				ok: true as const,
 				status,
-			} as any)
+			})
 		},
 	})
 
@@ -579,7 +590,7 @@ function createPluxelMcpServer(ctx: Context) {
 				pollMs: args.pollMs,
 			})
 			const msg = out.ok ? `${out.name}: ${out.status.lifecycleStage}` : out.message
-			return textResult(msg, out as any)
+			return textResult(msg, out)
 		},
 	})
 
@@ -595,7 +606,7 @@ function createPluxelMcpServer(ctx: Context) {
 			} else {
 				msg = `schema: ${out.code}`
 			}
-			return textResult(msg, out as any)
+			return textResult(msg, out)
 		},
 	})
 
@@ -606,7 +617,7 @@ function createPluxelMcpServer(ctx: Context) {
 		handler: async (args) => {
 			const out = await pluginConfigGet(ctx, args.name)
 			const msg = out.ok === true ? 'ok' : out.message
-			return textResult(msg, out as any)
+			return textResult(msg, out)
 		},
 	})
 
@@ -617,7 +628,7 @@ function createPluxelMcpServer(ctx: Context) {
 		handler: async (args) => {
 			const out = await pluginConfigValidate(ctx, args.name, args.patch)
 			const msg = out.ok === true ? 'ok' : out.message
-			return textResult(msg, out as any)
+			return textResult(msg, out)
 		},
 	})
 
@@ -628,7 +639,7 @@ function createPluxelMcpServer(ctx: Context) {
 		handler: async (args) => {
 			const out = await pluginConfigPatch(ctx, args.name, args.patch)
 			const msg = out.ok === true ? 'saved' : out.message
-			return textResult(msg, out as any)
+			return textResult(msg, out)
 		},
 	})
 
@@ -639,7 +650,7 @@ function createPluxelMcpServer(ctx: Context) {
 		handler: async (args) => {
 			const out = await pluginConfigReset(ctx, args.name, args.keys)
 			const msg = out.ok === true ? 'reset' : out.message
-			return textResult(msg, out as any)
+			return textResult(msg, out)
 		},
 	})
 
@@ -650,7 +661,7 @@ function createPluxelMcpServer(ctx: Context) {
 		handler: async (args) => {
 			const out = await workspaceResolveEntry(ctx, args)
 			const msg = out.ok === true ? out.entry : out.message
-			return textResult(msg, out as any)
+			return textResult(msg, out)
 		},
 	})
 
@@ -660,7 +671,7 @@ function createPluxelMcpServer(ctx: Context) {
 		outputSchema: WorkspaceListEntriesOutputSchema,
 		handler: async () => {
 			const out = await workspaceListEntries(ctx)
-			return textResult(`entries: ${out.length}`, out as any)
+			return textResult(`entries: ${out.length}`, out)
 		},
 	})
 
@@ -669,7 +680,7 @@ function createPluxelMcpServer(ctx: Context) {
 		inputSchema: v.object({}),
 		outputSchema: HmrLastBatchOutputSchema,
 		handler: () => {
-			const raw = ctx.hmrService.api.lastBatch()
+			const raw = root.hmrService.api.lastBatch()
 			const batch = raw ? toBatchPublic(raw) : null
 			return textResult(batch ? `batch #${batch.epoch}` : 'no batch yet', { batch })
 		},
@@ -681,7 +692,7 @@ function createPluxelMcpServer(ctx: Context) {
 		inputSchema: HmrExecuteFilesInputSchema,
 		outputSchema: HmrExecuteFilesOutputSchema,
 		handler: async (args) => {
-			await ctx.hmrService.executeFiles(args.files, args.keepOrder !== false)
+			await root.hmrService.executeFiles(args.files, args.keepOrder !== false)
 			return textResult('ok', { ok: true as const })
 		},
 	})

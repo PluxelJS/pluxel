@@ -1,6 +1,6 @@
-import { basename, resolve } from 'pathe'
-import { type Context, Injectable } from '@pluxel/context'
 import { scrypt as nobleScrypt } from '@noble/hashes/scrypt.js'
+import { type Context, Injectable } from '@pluxel/context'
+import { basename, resolve } from 'pathe'
 import { env as stdEnv } from 'std-env'
 import type { FsService } from '../fs/FsService'
 import type {
@@ -43,11 +43,7 @@ export class VaultError extends Error {
 		| 'MISSING_MATERIAL'
 		| 'UNSUPPORTED'
 		| 'IO'
-	constructor(
-		code: VaultError['code'],
-		message: string,
-		options?: { cause?: unknown },
-	) {
+	constructor(code: VaultError['code'], message: string, options?: { cause?: unknown }) {
 		super(message)
 		this.name = 'VaultError'
 		this.code = code
@@ -171,7 +167,8 @@ function base64ToBytes(input: string): Uint8Array {
 		const b = B64_DECODE_TABLE[s[i + 1]!] ?? -1
 		const c = B64_DECODE_TABLE[s[i + 2]!] ?? -1
 		const d = B64_DECODE_TABLE[s[i + 3]!] ?? -1
-		if (a < 0 || b < 0 || c < 0 || d < 0) throw new VaultError('INVALID_FORMAT', 'Invalid base64 char')
+		if (a < 0 || b < 0 || c < 0 || d < 0)
+			throw new VaultError('INVALID_FORMAT', 'Invalid base64 char')
 
 		const n = (a << 18) | (b << 12) | (c << 6) | d
 		out[o++] = (n >>> 16) & 0xff
@@ -248,10 +245,10 @@ function textDecode(bytes: Uint8Array): string {
 
 type WebCryptoLike = {
 	subtle: {
-		importKey: (...args: any[]) => Promise<any>
-		encrypt: (...args: any[]) => Promise<ArrayBuffer>
-		decrypt: (...args: any[]) => Promise<ArrayBuffer>
-		deriveBits: (...args: any[]) => Promise<ArrayBuffer>
+		importKey: (...args: unknown[]) => Promise<unknown>
+		encrypt: (...args: unknown[]) => Promise<ArrayBuffer>
+		decrypt: (...args: unknown[]) => Promise<ArrayBuffer>
+		deriveBits: (...args: unknown[]) => Promise<ArrayBuffer>
 	}
 	getRandomValues: <T extends ArrayBufferView>(array: T) => T
 }
@@ -277,8 +274,12 @@ function resolveAadBytes(
 	const fileAad = fileAadB64Url ? b64urlDecode(fileAadB64Url) : new Uint8Array()
 	if (runtimeAadString === undefined) return { aadBytes: fileAad, aadB64Url: fileAadB64Url }
 	const runtimeAad = runtimeAadString === null ? new Uint8Array() : textEncode(runtimeAadString)
-	if (fileAadB64Url && !bytesEqual(fileAad, runtimeAad)) throw new VaultError('AAD_MISMATCH', 'Vault AAD mismatch')
-	return { aadBytes: runtimeAad, aadB64Url: runtimeAad.length ? b64urlEncode(runtimeAad) : undefined }
+	if (fileAadB64Url && !bytesEqual(fileAad, runtimeAad))
+		throw new VaultError('AAD_MISMATCH', 'Vault AAD mismatch')
+	return {
+		aadBytes: runtimeAad,
+		aadB64Url: runtimeAad.length ? b64urlEncode(runtimeAad) : undefined,
+	}
 }
 
 async function aeadEncrypt(
@@ -289,7 +290,8 @@ async function aeadEncrypt(
 ): Promise<Uint8Array> {
 	const subtle = getWebCrypto().subtle
 	const key = await subtle.importKey('raw', key32, { name: 'AES-GCM' }, false, ['encrypt'])
-	const algo: any = { name: 'AES-GCM', iv: nonce, tagLength: 128 }
+	const algo: { name: 'AES-GCM'; iv: Uint8Array; tagLength: number; additionalData?: Uint8Array } =
+		{ name: 'AES-GCM', iv: nonce, tagLength: 128 }
 	if (aad.length) algo.additionalData = aad
 	const out = await subtle.encrypt(algo, key, plaintext)
 	return new Uint8Array(out)
@@ -305,7 +307,12 @@ async function aeadDecrypt(
 	try {
 		const subtle = getWebCrypto().subtle
 		const key = await subtle.importKey('raw', key32, { name: 'AES-GCM' }, false, ['decrypt'])
-		const algo: any = { name: 'AES-GCM', iv: nonce, tagLength: 128 }
+		const algo: {
+			name: 'AES-GCM'
+			iv: Uint8Array
+			tagLength: number
+			additionalData?: Uint8Array
+		} = { name: 'AES-GCM', iv: nonce, tagLength: 128 }
 		if (aad.length) algo.additionalData = aad
 		const out = await subtle.decrypt(algo, key, ciphertextWithTag)
 		return new Uint8Array(out)
@@ -330,7 +337,13 @@ async function hkdfSha256(
 	return new Uint8Array(bits)
 }
 
-function scryptKek(passphrase: string, salt: Uint8Array, N: number, r: number, p: number): Uint8Array {
+function scryptKek(
+	passphrase: string,
+	salt: Uint8Array,
+	N: number,
+	r: number,
+	p: number,
+): Uint8Array {
 	return nobleScrypt(passphrase, salt, { N, r, p, dkLen: 32, maxmem: DEFAULT_SCRYPT_MAXMEM })
 }
 
@@ -356,16 +369,18 @@ async function writeVaultJson(fs: FsLike, path: string, file: VaultFileV1): Prom
 }
 
 function parseVaultPayload(bytes: Uint8Array): VaultPayloadV1 {
-	let parsed: any
+	let parsed: unknown
 	try {
 		parsed = JSON.parse(textDecode(bytes))
 	} catch (cause) {
 		throw new VaultError('INVALID_FORMAT', 'Invalid payload JSON', { cause })
 	}
-	if (!parsed || typeof parsed !== 'object') throw new VaultError('INVALID_FORMAT', 'Invalid payload')
-	if (parsed.magic !== 'PV1') throw new VaultError('INVALID_FORMAT', 'Invalid vault magic')
-	if (!parsed.tokens || typeof parsed.tokens !== 'object') parsed.tokens = {}
-	return parsed as VaultPayloadV1
+	if (!parsed || typeof parsed !== 'object')
+		throw new VaultError('INVALID_FORMAT', 'Invalid payload')
+	const obj = parsed as Record<string, unknown>
+	if (obj.magic !== 'PV1') throw new VaultError('INVALID_FORMAT', 'Invalid vault magic')
+	if (!obj.tokens || typeof obj.tokens !== 'object') obj.tokens = {}
+	return obj as unknown as VaultPayloadV1
 }
 
 function createInitialPayload(): VaultPayloadV1 {
@@ -375,10 +390,13 @@ function createInitialPayload(): VaultPayloadV1 {
 function validateVaultFile(vault: VaultFileV1): void {
 	if (!vault || vault.v !== 1) throw new VaultError('INVALID_FORMAT', 'Unsupported vault version')
 	if (!vault.payload) throw new VaultError('INVALID_FORMAT', 'Missing payload')
-	if (!Array.isArray(vault.slots) || vault.slots.length === 0) throw new VaultError('INVALID_FORMAT', 'Missing slots')
-	if (vault.payload.alg !== 'aes-256-gcm') throw new VaultError('UNSUPPORTED', `Unsupported payload alg: ${vault.payload.alg}`)
+	if (!Array.isArray(vault.slots) || vault.slots.length === 0)
+		throw new VaultError('INVALID_FORMAT', 'Missing slots')
+	if (vault.payload.alg !== 'aes-256-gcm')
+		throw new VaultError('UNSUPPORTED', `Unsupported payload alg: ${vault.payload.alg}`)
 	for (const slot of vault.slots) {
-		if (slot.wrap.alg !== 'aes-256-gcm') throw new VaultError('UNSUPPORTED', `Unsupported wrap alg: ${slot.wrap.alg}`)
+		if (slot.wrap.alg !== 'aes-256-gcm')
+			throw new VaultError('UNSUPPORTED', `Unsupported wrap alg: ${slot.wrap.alg}`)
 		if (slot.type !== 'passphrase') continue
 		const kdfAlg = (slot as unknown as { kdf?: { alg?: unknown } }).kdf?.alg
 		if (kdfAlg !== 'scrypt' && kdfAlg !== 'argon2id') {
@@ -391,7 +409,11 @@ function getVaultConfig(ctx: Context): VaultServiceConfig {
 	return ctx.config.vault ?? {}
 }
 
-function runtimePaths(ctx: Context, namespace: string, opts?: { dir?: string; keyfilePath?: string }): VaultRuntime {
+function runtimePaths(
+	ctx: Context,
+	namespace: string,
+	opts?: { dir?: string; keyfilePath?: string },
+): VaultRuntime {
 	const cfg = getVaultConfig(ctx)
 	const base = resolve(opts?.dir ?? cfg.dir ?? DEFAULT_DIR)
 	const safe = normalizeNamespace(namespace)
@@ -410,7 +432,10 @@ function resolveDefaultAadString(ctx: Context, ns: string): string | null {
 	return `pluxel|plugin:${ns}`
 }
 
-function resolveEnvString(mapping: VaultServiceConfig['keyEnv'] | VaultServiceConfig['passphraseEnv'], namespace: string): string | undefined {
+function resolveEnvString(
+	mapping: VaultServiceConfig['keyEnv'] | VaultServiceConfig['passphraseEnv'],
+	namespace: string,
+): string | undefined {
 	if (!mapping) return undefined
 	if (typeof mapping === 'string') return mapping
 	return mapping[namespace]
@@ -506,13 +531,23 @@ async function initVaultWithPayload(
 		policy: 'ANY',
 		createdAt,
 		updatedAt: createdAt,
-		payload: { alg: 'aes-256-gcm', nonce: b64urlEncode(payloadNonce), aad: aadB64Url, ct: b64urlEncode(payloadCt) },
+		payload: {
+			alg: 'aes-256-gcm',
+			nonce: b64urlEncode(payloadNonce),
+			aad: aadB64Url,
+			ct: b64urlEncode(payloadCt),
+		},
 		slots: [
 			{
 				type: 'keyfile',
 				id: 'kf-1',
 				hkdf: { salt: b64urlEncode(hkdfSalt), info: DEFAULT_HKDF_INFO },
-				wrap: { alg: 'aes-256-gcm', nonce: b64urlEncode(wrapNonce), aad: aadB64Url, ct: b64urlEncode(wrappedDek) },
+				wrap: {
+					alg: 'aes-256-gcm',
+					nonce: b64urlEncode(wrapNonce),
+					aad: aadB64Url,
+					ct: b64urlEncode(wrappedDek),
+				},
 			},
 		],
 	}
@@ -521,12 +556,20 @@ async function initVaultWithPayload(
 	return { file, dek, payload, aadBytes }
 }
 
-async function initVault(fs: FsLike, runtime: VaultRuntime, material: VaultMaterial): Promise<VaultFileV1> {
+async function initVault(
+	fs: FsLike,
+	runtime: VaultRuntime,
+	material: VaultMaterial,
+): Promise<VaultFileV1> {
 	const { file } = await initVaultWithPayload(fs, runtime, material, createInitialPayload())
 	return file
 }
 
-async function readOrInitVault(fs: FsLike, runtime: VaultRuntime, material: VaultMaterial): Promise<VaultFileV1> {
+async function readOrInitVault(
+	fs: FsLike,
+	runtime: VaultRuntime,
+	material: VaultMaterial,
+): Promise<VaultFileV1> {
 	if (!fs.exists(runtime.vaultPath)) return await initVault(fs, runtime, material)
 	return await readJsonFile<VaultFileV1>(fs, runtime.vaultPath)
 }
@@ -541,7 +584,8 @@ async function deriveKekFromKeyfile(
 }
 
 function deriveKekFromPassphrase(slot: VaultPassphraseSlotV1, passphrase: string): Uint8Array {
-	if (slot.kdf.alg === 'argon2id') throw new VaultError('UNSUPPORTED', 'argon2id KDF is not available in core build (use scrypt)')
+	if (slot.kdf.alg === 'argon2id')
+		throw new VaultError('UNSUPPORTED', 'argon2id KDF is not available in core build (use scrypt)')
 	const salt = b64urlDecode(slot.kdf.salt)
 	return scryptKek(passphrase, salt, slot.kdf.N, slot.kdf.r, slot.kdf.p)
 }
@@ -555,31 +599,49 @@ async function decryptWrappedDek(
 		if (slot.type === 'keyfile') {
 			if (!material.keyfileBytes) return null
 			const kek = await deriveKekFromKeyfile(slot, material.keyfileBytes)
-			return await aeadDecrypt(kek, b64urlDecode(slot.wrap.nonce), aadBytes, b64urlDecode(slot.wrap.ct))
+			return await aeadDecrypt(
+				kek,
+				b64urlDecode(slot.wrap.nonce),
+				aadBytes,
+				b64urlDecode(slot.wrap.ct),
+			)
 		}
 		if (!material.passphrase) return null
 		const kek = deriveKekFromPassphrase(slot, material.passphrase)
-		return await aeadDecrypt(kek, b64urlDecode(slot.wrap.nonce), aadBytes, b64urlDecode(slot.wrap.ct))
+		return await aeadDecrypt(
+			kek,
+			b64urlDecode(slot.wrap.nonce),
+			aadBytes,
+			b64urlDecode(slot.wrap.ct),
+		)
 	} catch {
 		return null
 	}
 }
 
-async function unlockVault(fs: FsLike, runtime: VaultRuntime, file: VaultFileV1, material: VaultMaterial): Promise<{ dek: Uint8Array; payload: VaultPayloadV1; aadBytes: Uint8Array }> {
+async function unlockVault(
+	fs: FsLike,
+	runtime: VaultRuntime,
+	file: VaultFileV1,
+	material: VaultMaterial,
+): Promise<{ dek: Uint8Array; payload: VaultPayloadV1; aadBytes: Uint8Array }> {
 	validateVaultFile(file)
 	const { aadBytes } = resolveAadBytes(file.payload.aad, material.aadString)
 
 	if (!material.keyfileBytes && fs.exists(runtime.keyfilePath)) {
 		try {
 			material.keyfileBytes = await fs.readBytes(runtime.keyfilePath)
-		} catch {}
+		} catch {
+			// Best-effort: treat unreadable keyfiles as absent (decrypt will fail later if required by policy).
+		}
 	}
 
 	let dek: Uint8Array | null = null
 	if (file.policy === '2OF2') {
 		const keySlot = file.slots.find((s) => s.type === 'keyfile')
 		const passSlot = file.slots.find((s) => s.type === 'passphrase')
-		if (!keySlot || !passSlot) throw new VaultError('INVALID_FORMAT', '2OF2 policy requires keyfile + passphrase slots')
+		if (!keySlot || !passSlot)
+			throw new VaultError('INVALID_FORMAT', '2OF2 policy requires keyfile + passphrase slots')
 		const dekA = await decryptWrappedDek(keySlot, aadBytes, material)
 		const dekB = await decryptWrappedDek(passSlot, aadBytes, material)
 		if (!dekA || !dekB) throw new VaultError('DECRYPT_FAILED', 'Decrypt failed')
@@ -608,7 +670,14 @@ async function unlockVault(fs: FsLike, runtime: VaultRuntime, file: VaultFileV1,
 	return { dek, payload, aadBytes }
 }
 
-async function savePayload(fs: FsLike, runtime: VaultRuntime, file: VaultFileV1, dek: Uint8Array, aadBytes: Uint8Array, nextPayload: VaultPayloadV1): Promise<VaultFileV1> {
+async function savePayload(
+	fs: FsLike,
+	runtime: VaultRuntime,
+	file: VaultFileV1,
+	dek: Uint8Array,
+	aadBytes: Uint8Array,
+	nextPayload: VaultPayloadV1,
+): Promise<VaultFileV1> {
 	const payloadNonce = randomBytes(24)
 	const payloadBytes = textEncode(JSON.stringify(nextPayload))
 	const payloadCt = await aeadEncrypt(dek, payloadNonce, aadBytes, payloadBytes)
@@ -623,7 +692,15 @@ async function savePayload(fs: FsLike, runtime: VaultRuntime, file: VaultFileV1,
 	return next
 }
 
-async function addPassphraseSlot(fs: FsLike, runtime: VaultRuntime, file: VaultFileV1, dek: Uint8Array, aadBytes: Uint8Array, passphrase: string, mode: 'keepAny' | 'requirePassphrase' | 'twoFactor' = 'keepAny'): Promise<VaultFileV1> {
+async function addPassphraseSlot(
+	fs: FsLike,
+	runtime: VaultRuntime,
+	file: VaultFileV1,
+	dek: Uint8Array,
+	aadBytes: Uint8Array,
+	passphrase: string,
+	mode: 'keepAny' | 'requirePassphrase' | 'twoFactor' = 'keepAny',
+): Promise<VaultFileV1> {
 	const salt = randomBytes(16)
 	const kek = scryptKek(passphrase, salt, DEFAULT_SCRYPT.N, DEFAULT_SCRYPT.r, DEFAULT_SCRYPT.p)
 	const wrapNonce = randomBytes(24)
@@ -642,7 +719,12 @@ async function addPassphraseSlot(fs: FsLike, runtime: VaultRuntime, file: VaultF
 				type: 'passphrase',
 				id: 'pw-1',
 				kdf: { alg: 'scrypt', ...DEFAULT_SCRYPT, salt: b64urlEncode(salt) },
-				wrap: { alg: 'aes-256-gcm', nonce: b64urlEncode(wrapNonce), aad: file.payload.aad, ct: b64urlEncode(wrappedDek) },
+				wrap: {
+					alg: 'aes-256-gcm',
+					nonce: b64urlEncode(wrapNonce),
+					aad: file.payload.aad,
+					ct: b64urlEncode(wrappedDek),
+				},
 			},
 		],
 	}
@@ -683,14 +765,14 @@ export class VaultService {
 	 */
 	open(options: VaultOpenOptions = {}): VaultHandle {
 		const ctx = this.ctx
-		const fs: FsLike = ctx.fs
-		const ns =
-			options.namespace ?? ctx.pluginInfo?.id ?? 'default'
+		const fs: FsLike = ctx.root.fs
+		const ns = options.namespace ?? ctx.pluginInfo?.id ?? 'default'
 
 		const namespace = normalizeNamespace(ns)
 		const runtime = runtimePaths(ctx, namespace, {
 			dir: options.dir,
-			keyfilePath: options.key && 'keyfilePath' in options.key ? options.key.keyfilePath : undefined,
+			keyfilePath:
+				options.key && 'keyfilePath' in options.key ? options.key.keyfilePath : undefined,
 		})
 
 		const entry = getOrCreateCacheEntry(runtime.vaultPath)
@@ -735,7 +817,12 @@ export class VaultService {
 					if (!fs.exists(runtime.vaultPath)) {
 						const payload = createInitialPayload()
 						mutate(payload)
-						const { file, dek, aadBytes } = await initVaultWithPayload(fs, runtime, material, payload)
+						const { file, dek, aadBytes } = await initVaultWithPayload(
+							fs,
+							runtime,
+							material,
+							payload,
+						)
 						entry.state = { status: 'unlocked', dek, payload, aadBytes, file }
 						return
 					}
@@ -750,7 +837,14 @@ export class VaultService {
 
 				const nextPayload = clonePayload(state.payload)
 				mutate(nextPayload)
-				const nextFile = await savePayload(fs, runtime, state.file, state.dek, state.aadBytes, nextPayload)
+				const nextFile = await savePayload(
+					fs,
+					runtime,
+					state.file,
+					state.dek,
+					state.aadBytes,
+					nextPayload,
+				)
 				entry.state = { ...state, payload: nextPayload, file: nextFile }
 			})
 		}
@@ -777,11 +871,11 @@ export class VaultService {
 					delete p.tokens[name]
 				})
 			},
-			getSecret: async <T,>(name: string) =>
-				((await withUnlocked(
+			getSecret: async <T>(name: string) =>
+				(await withUnlocked(
 					false,
 					async (state) => state.payload.secrets?.[name] as T | undefined,
-				)) ?? undefined),
+				)) ?? undefined,
 			setSecret: async (name, value) => {
 				await persistPayload((p) => {
 					p.secrets = p.secrets ?? {}
@@ -810,7 +904,15 @@ export class VaultService {
 				})) ?? [],
 			addPassphrase: async (passphrase, mode = 'keepAny') => {
 				await withUnlocked(true, async (state) => {
-					const nextFile = await addPassphraseSlot(fs, runtime, state.file, state.dek, state.aadBytes, passphrase, mode)
+					const nextFile = await addPassphraseSlot(
+						fs,
+						runtime,
+						state.file,
+						state.dek,
+						state.aadBytes,
+						passphrase,
+						mode,
+					)
 					entry.state = { ...state, file: nextFile }
 				})
 			},
@@ -830,7 +932,7 @@ export class VaultService {
 								dirty = true
 								delete draft.tokens[name]
 							},
-							getSecret: <T = unknown,>(name: string) => draft.secrets?.[name] as T | undefined,
+							getSecret: <T = unknown>(name: string) => draft.secrets?.[name] as T | undefined,
 							setSecret: (name: string, value: unknown) => {
 								dirty = true
 								draft.secrets = draft.secrets ?? {}
@@ -853,7 +955,14 @@ export class VaultService {
 						const { dirty, result } = await runTx(draft)
 						if (!dirty) return result
 
-						const nextFile = await savePayload(fs, runtime, state.file, state.dek, state.aadBytes, draft)
+						const nextFile = await savePayload(
+							fs,
+							runtime,
+							state.file,
+							state.dek,
+							state.aadBytes,
+							draft,
+						)
 						entry.state = { ...state, payload: draft, file: nextFile }
 						return result
 					}
@@ -883,7 +992,14 @@ export class VaultService {
 					const { dirty, result } = await runTx(draft)
 					if (!dirty) return result
 
-					const nextFile = await savePayload(fs, runtime, state.file, state.dek, state.aadBytes, draft)
+					const nextFile = await savePayload(
+						fs,
+						runtime,
+						state.file,
+						state.dek,
+						state.aadBytes,
+						draft,
+					)
 					entry.state = { ...state, payload: draft, file: nextFile }
 					return result
 				})

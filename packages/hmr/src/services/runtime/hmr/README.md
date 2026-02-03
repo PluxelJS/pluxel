@@ -106,7 +106,7 @@ Downstream projects may inject additional Vite plugins via:
 Cold-start warmup (eager evaluate startup entries) is **opt-in**.
 
 - Host config: `hmrService.warmup: true` → background warmup (best-effort)
-- Manual: call `ctx.hmrService.warmup()` when you want to await it
+- Manual: call `ctx.root.hmrService.warmup()` when you want to await it
 
 Implementation notes:
 

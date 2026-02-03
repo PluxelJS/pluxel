@@ -1,6 +1,6 @@
 import { existsSync } from 'node:fs'
 import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
-import { type Context, Injectable } from '@pluxel/context'
+import { type Context, RootService } from '@pluxel/context'
 import { basename, dirname, resolve } from 'pathe'
 
 const serviceName = 'fs' as const
@@ -10,7 +10,7 @@ declare module '@pluxel/context' {
 		interface Config {
 			[serviceName]?: FsServiceConfig
 		}
-		interface Services {
+		interface RootServices {
 			[serviceName]: FsService
 		}
 	}
@@ -214,7 +214,7 @@ function createMemoryBackend(): FsBackend {
  * - `write*Atomic` aims to be "atomic enough" on supported platforms (tmp + rename; with Windows replace fallback).
  * - In `memory` mode, `readBytes()` returns a copy to match "read from disk" immutability expectations.
  */
-@Injectable({ key: serviceName, scope: 'root' })
+@RootService({ key: serviceName })
 export class FsService {
 	private backend: FsBackend
 
@@ -263,7 +263,13 @@ export class FsService {
 
 	/** Debug helper for tests. */
 	debugStats(): FsServiceStats {
-		return this.backend.debugStats?.() ?? { readText: 0, writeTextAtomic: 0, readBytes: 0, writeBytesAtomic: 0 }
+		return (
+			this.backend.debugStats?.() ?? {
+				readText: 0,
+				writeTextAtomic: 0,
+				readBytes: 0,
+				writeBytesAtomic: 0,
+			}
+		)
 	}
 }
-

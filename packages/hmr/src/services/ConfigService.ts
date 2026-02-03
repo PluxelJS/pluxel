@@ -98,7 +98,7 @@ export class ConfigService {
 
 	private async loadFromDisk(file: string) {
 		try {
-			const txt = await this.ctx.fs.readText(file)
+			const txt = await this.ctx.root.fs.readText(file)
 
 			const parsed = SuperJSON.parse(txt) as Partial<ConfigShape> & { enabled?: unknown }
 
@@ -172,13 +172,13 @@ export class ConfigService {
 		this.validated.delete(name)
 	}
 
-	// 原子写：交给 ctx.fs.writeTextAtomic，配合 writingNow 屏蔽自触发
+	// 原子写：交给 ctx.root.fs.writeTextAtomic，配合 writingNow 屏蔽自触发
 	private async saveToDisk(file: string) {
 		if (this.batching > 0) return // 事务中，先不写；提交时会统一触发
 		this.writingNow = true
 		try {
 			const content = SuperJSON.stringify(this.data)
-			await this.ctx.fs.writeTextAtomic(file, content)
+			await this.ctx.root.fs.writeTextAtomic(file, content)
 		} finally {
 			// 小幅延迟，给文件系统时间完成元数据刷新，避免极端条件下的回跳
 			setTimeout(() => {

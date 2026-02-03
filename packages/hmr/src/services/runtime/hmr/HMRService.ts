@@ -2,7 +2,7 @@ import { existsSync } from 'node:fs'
 import { availableParallelism, cpus } from 'node:os'
 import { fileURLToPath } from 'node:url'
 import type { Logger as LogtapeLogger } from '@logtape/logtape'
-import { type CommitSummary, type Context, getPluginInfo, Injectable } from '@pluxel/core'
+import { type CommitSummary, type Context, getPluginInfo, RootService } from '@pluxel/core'
 import { getDebugLogger } from '@pluxel/core/logger'
 import { dirname, resolve } from 'pathe'
 import {
@@ -150,7 +150,7 @@ const HMR_EXPORT_CONDITIONS = ['@pluxel/hmr', 'import', 'module', 'default'] as 
 
 declare module '@pluxel/core' {
 	namespace Context {
-		interface Services {
+		interface RootServices {
 			[serviceName]: HMRService
 		}
 		interface Config {
@@ -201,7 +201,7 @@ type HmrBatchWaiter = {
 	cleanup: () => void
 }
 
-@Injectable({ key: serviceName, scope: 'root' })
+@RootService({ key: serviceName })
 export class HMRService {
 	public vite!: ViteDevServer
 	private startPromise?: Promise<void>
@@ -493,7 +493,7 @@ export class HMRService {
 
 			configureServer: async (server) => this.configureServer(server),
 
-			resolveId: async (id, importer, options) => {
+			resolveId: async (id, _importer, options) => {
 				// Hard isolation: runner-only resolution must never affect the client environment
 				// (the dev server also serves a browser UI + extension compilation).
 				if (!options?.ssr) return null
@@ -758,7 +758,7 @@ export class HMRService {
 		const on = (this.ctx as unknown as { on?: unknown }).on
 		if (typeof on !== 'function') return
 
-		;(on as (event: string, listener: (...args: any[]) => void) => unknown).call(
+		;(on as (event: 'afterCommit', listener: (summary: CommitSummary) => void) => unknown).call(
 			this.ctx,
 			'afterCommit',
 			(summary: CommitSummary) => {

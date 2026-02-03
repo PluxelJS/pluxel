@@ -119,7 +119,7 @@ export class BundlerService {
 	 *   invalidate the cached file.
 	 */
 	async compileTinypoolWorker(tsEntry: string, opts?: { external?: string[] }): Promise<string> {
-		const vite = this.ctx.hmrService.vite
+		const vite = this.ctx.root.hmrService.vite
 		if (!vite) {
 			throw new Error('ViteDevServer not available (required for compileTinypoolWorker)')
 		}

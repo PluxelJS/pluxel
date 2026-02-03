@@ -338,7 +338,10 @@ export class HmrExecutor {
 		return cleanId
 	}
 
-	async runAndLoadAllClean(cleanIds: readonly string[], _keepOrder = true) {
+	async runAndLoadAllClean(
+		cleanIds: readonly string[],
+		_keepOrder = true,
+	): Promise<{ res: { ok: boolean }; commitMs: number } | undefined> {
 		if (!cleanIds.length) return undefined
 
 		// Historically `keepOrder=false` did not change ordering; preserve that behavior.
@@ -403,7 +406,10 @@ export class HmrExecutor {
 		return { res, commitMs }
 	}
 
-	async runAndLoadAll(filesPath: readonly string[], keepOrder = true) {
+	async runAndLoadAll(
+		filesPath: readonly string[],
+		keepOrder = true,
+	): Promise<{ res: { ok: boolean }; commitMs: number } | undefined> {
 		if (!filesPath.length) return undefined
 
 		// Always normalize+dedupe in a single pass (avoid allocating an intermediate array).
@@ -697,11 +703,9 @@ export class HmrBatchProcessor {
 		})
 		const hotspots = collectHotspots(this.timing, (id) => this.path.pretty(id))
 		const batchMs = Math.round(endBatch() * 10) / 10
-		const commitOk = Boolean(executed && executed.res.ok)
+		const commitOk = Boolean(executed?.res.ok)
 		const commitError =
-			executed && executed.res.ok === false
-				? String(executed.res.err ?? 'commit failed')
-				: undefined
+			executed?.res.ok === false ? String(executed.res.err ?? 'commit failed') : undefined
 		this.ctx.logger.info('HMR updated', {
 			epoch,
 			changedFiles: changed.length,

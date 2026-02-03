@@ -57,7 +57,7 @@ export interface LegacyPackageStatePayload {
 export interface PackageStateStoreOptions {
 	/**
 	 * Minimal text file I/O used by the store.
-	 * Usually `ctx.fs`.
+	 * Usually `ctx.root.fs`.
 	 */
 	fs: TextFs
 	file: string

@@ -1,14 +1,12 @@
 import { existsSync } from 'node:fs'
 import { copyFile, mkdir } from 'node:fs/promises'
 import { dirname, join, resolve } from 'node:path'
-
-import type { Plugin as VitePlugin } from 'vite'
-
 import {
 	DEFAULT_HMR_CONFIG_BASENAME,
 	diagnoseWorkspace,
 	type WorkspaceSnapshot,
 } from '@pluxel/cli/hmr'
+import type { Plugin as VitePlugin } from 'vite'
 import { Context } from '..'
 import type { EnsurePluxelLoggingOptions } from '../logger/ensure'
 import { ensurePluxelLogging } from '../logger/ensure'
@@ -280,15 +278,19 @@ export async function createHmrHost(opts: CreateHmrHostOptions = {}): Promise<Cr
 				})
 			: null)
 
-	let roots = opts.roots ?? snapshot?.watchRoots
+	const roots = opts.roots ?? snapshot?.watchRoots
 	if (!roots || roots.length === 0) {
 		throw new Error(
 			`[hmr-host] Missing roots: provide opts.roots, or add workspace profiles config at ${resolve(root, opts.configPath ?? DEFAULT_HMR_CONFIG_BASENAME)}.`,
 		)
 	}
 
-	let include = snapshot ? uniqSorted([...(snapshot.includeGlobs ?? []), ...(opts.include ?? [])]) : opts.include
-	let exclude = snapshot ? uniqSorted([...(snapshot.excludeGlobs ?? []), ...(opts.exclude ?? [])]) : (opts.exclude ?? [])
+	const include = snapshot
+		? uniqSorted([...(snapshot.includeGlobs ?? []), ...(opts.include ?? [])])
+		: opts.include
+	const exclude = snapshot
+		? uniqSorted([...(snapshot.excludeGlobs ?? []), ...(opts.exclude ?? [])])
+		: (opts.exclude ?? [])
 	const entries = opts.entries ?? snapshot?.enabledEntries
 	if (!entries) {
 		throw new Error(
@@ -345,6 +347,6 @@ export async function startHmrHost(
 	opts: CreateHmrHostOptions = {},
 ): Promise<CreateHmrHostResult & { started: true }> {
 	const res = await createHmrHost(opts)
-	await res.ctx.hmrService.start()
+	await res.ctx.root.hmrService.start()
 	return { ...res, started: true }
 }

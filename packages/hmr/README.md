@@ -128,4 +128,4 @@ Pluxel 的“内部 API”现在额外挂载了一个 MCP（Model Context Protoc
 - Logs “流式 tail”：MCP 侧提供 `logs.waitFor`（等待直到出现匹配日志或超时），可用于 agent 侧循环调用实现可靠的 tail/follow（无需额外 SSE 连接管理）。
 - Logs “LLM 友善文本视图”：MCP 侧提供 `logs.latestText` / `logs.waitForText`（去噪 + 稳定截断 + 少字段），优先给 agent 使用。
 - Dev loop 辅助：`plugins.list` / `plugin.status` / `plugin.waitForStage` / `plugin.schema` / `plugin.config.*` / `workspace.resolveEntry` / `workspace.listEntries` / `hmr.lastBatch` / `hmr.executeFiles`
-- HMR 完成信号：由 `ctx.hmrService.api.waitForBatch()` / `waitForStable()` 提供（返回 batch 摘要；`ok` 表示 batch 成功与否，`lifecycleOk`/`commit.failed` 表示插件生命周期启动是否失败）
+- HMR 完成信号：由 `ctx.root.hmrService.api.waitForBatch()` / `waitForStable()` 提供（返回 batch 摘要；`ok` 表示 batch 成功与否，`lifecycleOk`/`commit.failed` 表示插件生命周期启动是否失败）

@@ -85,7 +85,7 @@ export class PluginDataService {
 		return {
 			load: async () => ({ items: await readItems() }),
 			save: async (items, _changes) => {
-				await this.ctx.fs.writeTextAtomic(file, serialize(items))
+				await this.ctx.root.fs.writeTextAtomic(file, serialize(items))
 			},
 			register: async (onChange) => {
 				const notify = async () => {
@@ -214,7 +214,7 @@ export class PluginDataService {
 				load: async () => ({ items: await loadItems() }),
 				save: async (items, _changes) => {
 					const serialized = options?.serialize ? options.serialize(items) : items
-					await this.ctx.fs.writeTextAtomic(
+					await this.ctx.root.fs.writeTextAtomic(
 						file,
 						typeof serialized === 'string' ? serialized : JSON.stringify(serialized, null, 2),
 					)
@@ -302,7 +302,7 @@ export class PluginDataService {
 
 		const saveStore = async (store: MultiCollectionStore) => {
 			const content = JSON.stringify(store, null, 2)
-			await this.ctx.fs.writeTextAtomic(file, content)
+			await this.ctx.root.fs.writeTextAtomic(file, content)
 		}
 
 		let watcher: FSWatcher | null = null
@@ -369,7 +369,7 @@ export class PluginDataService {
 	private async readTextOptional(path: string | null): Promise<string | null> {
 		if (!path) return null
 		try {
-			return await this.ctx.fs.readText(path)
+			return await this.ctx.root.fs.readText(path)
 		} catch (err) {
 			if (isEnoent(err)) return null
 			throw err

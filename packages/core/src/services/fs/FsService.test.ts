@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest'
 import { BasePlugin, Plugin, withHost } from '@pluxel/test'
+import { describe, expect, it } from 'vitest'
 
 function randomHex(bytes: number): string {
 	const c = (
@@ -25,21 +25,20 @@ describe('FsService', () => {
 
 				await host.start(P)
 
-				const before = host.ctx.fs.debugStats()
-				await host.ctx.fs.writeTextAtomic(path, 'hello')
-				const after = host.ctx.fs.debugStats()
+				const before = host.ctx.root.fs.debugStats()
+				await host.ctx.root.fs.writeTextAtomic(path, 'hello')
+				const after = host.ctx.root.fs.debugStats()
 				expect(after.writeTextAtomic - before.writeTextAtomic).toBe(1)
 
-				expect(host.ctx.fs.debugListFiles(dir)).toEqual([path])
+				expect(host.ctx.root.fs.debugListFiles(dir)).toEqual([path])
 
-				const bytes1 = await host.ctx.fs.readBytes(path)
+				const bytes1 = await host.ctx.root.fs.readBytes(path)
 				const orig0 = bytes1[0]
 				bytes1[0] = (orig0 ^ 0xff) & 0xff
-				const bytes2 = await host.ctx.fs.readBytes(path)
+				const bytes2 = await host.ctx.root.fs.readBytes(path)
 				expect(bytes2[0]).toBe(orig0)
 			},
 			{ fs: { mode: 'memory' } },
 		)
 	})
 })
-

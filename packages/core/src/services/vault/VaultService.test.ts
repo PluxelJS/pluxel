@@ -1,7 +1,7 @@
-import { describe, expect, it } from 'vitest'
 import { BasePlugin, Plugin, withHost } from '@pluxel/test'
 import { resolve } from 'pathe'
 import { env as stdEnv } from 'std-env'
+import { describe, expect, it } from 'vitest'
 
 function bytesToHex(bytes: Uint8Array): string {
 	let out = ''
@@ -46,7 +46,7 @@ describe('VaultService', () => {
 
 				expect(await vault.getToken('missing')).toBeUndefined()
 				expect(await vault.listKeys()).toEqual([])
-				expect(host.ctx.fs.debugListFiles(dir)).toEqual([])
+				expect(host.ctx.root.fs.debugListFiles(dir)).toEqual([])
 			},
 			{ fs: { mode: 'memory' }, vault: { dir } },
 		)
@@ -71,7 +71,7 @@ describe('VaultService', () => {
 					tx.getSecret('y')
 				})
 
-				expect(host.ctx.fs.debugListFiles(dir)).toEqual([])
+				expect(host.ctx.root.fs.debugListFiles(dir)).toEqual([])
 			},
 			{ fs: { mode: 'memory' }, vault: { dir } },
 		)
@@ -99,7 +99,7 @@ describe('VaultService', () => {
 
 				const vaultPath = resolve(dir, 'P', 'vault.json')
 				const keyPath = resolve(dir, 'P', 'vault.key')
-				expect(host.ctx.fs.debugListFiles(dir)).toEqual([vaultPath, keyPath])
+				expect(host.ctx.root.fs.debugListFiles(dir)).toEqual([vaultPath, keyPath])
 			},
 			{ fs: { mode: 'memory' }, vault: { dir } },
 		)
@@ -120,7 +120,7 @@ describe('VaultService', () => {
 				const vault = p.ctx.vault.open()
 
 				await vault.setToken('a', '0')
-				const before = host.ctx.fs.debugStats()
+				const before = host.ctx.root.fs.debugStats()
 
 				await vault.batch((tx) => {
 					tx.setToken('a', '1')
@@ -128,7 +128,7 @@ describe('VaultService', () => {
 					tx.setSecret('json', { ok: true })
 				})
 
-				const after = host.ctx.fs.debugStats()
+				const after = host.ctx.root.fs.debugStats()
 				expect(after.writeTextAtomic - before.writeTextAtomic).toBe(1)
 				expect(await vault.getToken('a')).toBe('1')
 				expect(await vault.getToken('b')).toBe('2')
@@ -155,7 +155,7 @@ describe('VaultService', () => {
 				vault.lock()
 
 				const vaultPath = resolve(dir, 'P', 'vault.json')
-				const raw = await host.ctx.fs.readText(vaultPath)
+				const raw = await host.ctx.root.fs.readText(vaultPath)
 				const goodRaw = raw
 				const file = JSON.parse(raw)
 
@@ -163,7 +163,7 @@ describe('VaultService', () => {
 				const ct = b64urlDecode(file.payload.ct)
 				ct[0] = (ct[0] ^ 0x01) & 0xff
 				file.payload.ct = b64urlEncode(ct)
-				await host.ctx.fs.writeTextAtomic(vaultPath, JSON.stringify(file, null, 2))
+				await host.ctx.root.fs.writeTextAtomic(vaultPath, JSON.stringify(file, null, 2))
 
 				await expect(vault.getToken('openai')).rejects.toMatchObject({
 					name: 'VaultError',
@@ -171,7 +171,7 @@ describe('VaultService', () => {
 				})
 
 				// Restore the original file for the next assertion.
-				await host.ctx.fs.writeTextAtomic(vaultPath, goodRaw)
+				await host.ctx.root.fs.writeTextAtomic(vaultPath, goodRaw)
 				vault.lock()
 
 				const mismatched = p.ctx.vault.open({ aadString: 'different-aad' })
@@ -207,8 +207,8 @@ describe('VaultService', () => {
 
 				const vaultPath = resolve(dir, 'P', 'vault.json')
 				const keyPath = resolve(dir, 'P', 'vault.key')
-				expect(host.ctx.fs.exists(vaultPath)).toBe(true)
-				expect(host.ctx.fs.exists(keyPath)).toBe(false)
+				expect(host.ctx.root.fs.exists(vaultPath)).toBe(true)
+				expect(host.ctx.root.fs.exists(keyPath)).toBe(false)
 
 				const again = p.ctx.vault.open({ key: { env: envName, encoding: 'hex' } })
 				expect(await again.getToken('t')).toBe('v')

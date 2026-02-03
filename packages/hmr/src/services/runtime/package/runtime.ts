@@ -10,6 +10,22 @@ interface CachedModule {
 	module: Record<string, unknown>
 }
 
+type HmrServiceLike = {
+	normalizeId?: (x: string) => string
+	primeModuleCacheEntry?: (args: {
+		id: string
+		exports: Record<string, unknown>
+		aliases: string[]
+	}) => void
+	dropModuleCacheEntries?: (ids: Set<string>) => void
+	moduleIdAliases?: (normalized: string) => Iterable<string>
+}
+
+type RootLike = {
+	root?: unknown
+	hmrService?: HmrServiceLike
+}
+
 const FS_PREFIX = '/@fs/'
 
 function normalizeModuleIdFallback(moduleId: string): string {
@@ -33,12 +49,10 @@ export class PackageRuntime {
 	private readonly normalizeModuleIdImpl: (moduleId: string) => string
 
 	constructor(private readonly ctx: Context) {
-		const hmr = (this.ctx as unknown as { hmrService?: { normalizeId?: (x: string) => string } })
-			.hmrService
+		const root = ((this.ctx as unknown as RootLike).root ?? this.ctx) as RootLike
+		const hmr = root.hmrService
 		this.normalizeModuleIdImpl =
-			typeof hmr?.normalizeId === 'function'
-				? hmr.normalizeId.bind(hmr)
-				: normalizeModuleIdFallback
+			typeof hmr?.normalizeId === 'function' ? hmr.normalizeId.bind(hmr) : normalizeModuleIdFallback
 	}
 
 	normalizeModuleId(moduleId: string): string {
@@ -82,7 +96,8 @@ export class PackageRuntime {
 		moduleId: string,
 		module: Record<string, unknown>,
 	) {
-		const hmr = (this.ctx as any)?.hmrService
+		const root = ((this.ctx as unknown as RootLike).root ?? this.ctx) as RootLike
+		const hmr = root.hmrService
 		if (!hmr?.primeModuleCacheEntry) return
 		const normalized = this.normalizeModuleId(moduleId)
 		const ids = this.collectHmrModuleCacheIds(normalized, spec)
@@ -91,14 +106,16 @@ export class PackageRuntime {
 	}
 
 	dropHmrCacheForRecord(record: PackageLoadResult) {
-		const hmr = (this.ctx as any)?.hmrService
+		const root = ((this.ctx as unknown as RootLike).root ?? this.ctx) as RootLike
+		const hmr = root.hmrService
 		if (!hmr?.dropModuleCacheEntries) return
 		const ids = this.collectHmrModuleCacheIds(record.moduleId, record.spec)
 		hmr.dropModuleCacheEntries(ids)
 	}
 
 	dropHmrCacheById(moduleId: string, alias?: string) {
-		const hmr = (this.ctx as any)?.hmrService
+		const root = ((this.ctx as unknown as RootLike).root ?? this.ctx) as RootLike
+		const hmr = root.hmrService
 		if (!hmr?.dropModuleCacheEntries) return
 		const normalized = this.normalizeModuleId(moduleId)
 		const ids = new Set<string>([normalized])
@@ -112,7 +129,8 @@ export class PackageRuntime {
 	): Set<string> {
 		const normalized = this.normalizeModuleId(moduleId)
 		const ids = new Set<string>()
-		const hmr = (this.ctx as any)?.hmrService
+		const root = ((this.ctx as unknown as RootLike).root ?? this.ctx) as RootLike
+		const hmr = root.hmrService
 		if (hmr?.moduleIdAliases) {
 			for (const id of hmr.moduleIdAliases(normalized)) ids.add(id)
 		} else {

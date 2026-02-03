@@ -8,6 +8,7 @@ import type {
 	ServiceWithCtx,
 } from './service-types'
 
+// biome-ignore lint/suspicious/noExplicitAny: services may accept arbitrary configs; ctx always passes `cfg` (possibly undefined).
 type InjectableCtor = new (ctx: Context, cfg?: any) => ServiceWithCtx<Context>
 
 /**
@@ -18,6 +19,8 @@ export type ServiceOptions<S extends InjectableCtor> = {
 	methods?: readonly Extract<keyof ServiceInst<S>, string>[]
 	scope?: 'context' | 'root'
 }
+
+export type RootServiceOptions<S extends InjectableCtor> = Omit<ServiceOptions<S>, 'scope'>
 
 type AnyServiceOptions = {
 	key?: string
@@ -64,6 +67,40 @@ export function Injectable<S extends new (...args: unknown[]) => object>(
 		if (opts.key) meta.key = opts.key
 		if (opts.methods) meta.methods = opts.methods
 		if (opts.scope) meta.scope = opts.scope
+		Context.registerService(ctor)
+	}
+}
+
+/**
+ * Root-scoped service decorator.
+ *
+ * Type-level best practice:
+ * - Put the service in `Context.RootServices` (instead of `Context.Services`)
+ * - Access it via `ctx.root.<key>`
+ */
+export function RootService<S extends InjectableCtor>(ctor: ServiceClass<S>): void
+export function RootService<S extends InjectableCtor>(
+	options: RootServiceOptions<S>,
+): (ctor: ServiceClass<S>) => void
+export function RootService<S extends new (...args: unknown[]) => object>(
+	ctorOrOpts: unknown,
+): unknown {
+	// Direct @RootService
+	if (typeof ctorOrOpts === 'function') {
+		const ctor = ctorOrOpts as ServiceClass<S>
+		if ((ctor as unknown as MutableServiceMeta)[OVERRIDE_FLAG]) return undefined
+		;(ctor as unknown as MutableServiceMeta).scope = 'root'
+		Context.registerService(ctor)
+		return undefined
+	}
+
+	const opts = ctorOrOpts as Omit<AnyServiceOptions, 'scope'>
+	return <T extends InjectableCtor>(ctor: ServiceClass<T>) => {
+		const meta = ctor as unknown as MutableServiceMeta
+		if (meta[OVERRIDE_FLAG]) return
+		if (opts.key) meta.key = opts.key
+		if (opts.methods) meta.methods = opts.methods
+		meta.scope = 'root'
 		Context.registerService(ctor)
 	}
 }
