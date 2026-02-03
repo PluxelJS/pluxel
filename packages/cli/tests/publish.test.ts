@@ -1,6 +1,18 @@
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createFixture } from 'fs-fixture'
-import { publishPackage, resolveWebhookAudience } from '../src/publish'
+
+vi.mock('../src/utils/exec', () => ({
+	runCommand: vi.fn(),
+}))
+
+async function getPublish() {
+	return await import('../src/publish')
+}
+
+async function getRunCommand() {
+	const { runCommand } = await import('../src/utils/exec')
+	return vi.mocked(runCommand)
+}
 
 function buildPackageTree(name: string, version: string, options?: { private?: boolean }) {
 	const pkg = {
@@ -28,49 +40,71 @@ const noop = () => {
 	// Empty function for log parameter
 }
 
+beforeEach(() => {
+	vi.clearAllMocks()
+})
+
+function cleanCiEnv(env: NodeJS.ProcessEnv = process.env) {
+	const next = { ...env }
+	delete next.CI
+	delete next.GITHUB_ACTIONS
+	delete next.GITHUB_REPOSITORY
+	delete next.ACTIONS_ID_TOKEN_REQUEST_URL
+	delete next.ACTIONS_ID_TOKEN_REQUEST_TOKEN
+	delete next.GITLAB_CI
+	delete next.CI_PROJECT_PATH
+	delete next.CI_SERVER_HOST
+	return next
+}
+
 describe('publish single package', () => {
-	it.skip('publishes when version is new (requires npm auth)', async () => {
-		// This test calls real npm publish and requires authentication
-		// Skip in CI/local testing unless specifically testing publish flow
+	it('publishes when version is new', async () => {
 		await withPackageFixture('example-pkg', '1.1.0', undefined, async (dir) => {
+			const { publishPackage } = await getPublish()
+			const rc = await getRunCommand()
+			rc.mockImplementation(async (_command, args) => {
+				if (args[0] === 'view') return { code: 1, stdout: '', stderr: 'E404' }
+				if (args[0] === 'publish') return { code: 0, stdout: '', stderr: '' }
+				return { code: 1, stdout: '', stderr: `unexpected npm args: ${args.join(' ')}` }
+			})
+
 			const result = await publishPackage({
 				cwd: dir,
 				log: noop,
-				env: {
-					...process.env,
-					// Mock npm commands to avoid actual publishing
-					npm_config_registry: 'https://registry.npmjs.org/',
-				},
+				env: cleanCiEnv(process.env),
 			})
 
-			// In a real scenario this would call npm publish
-			// For now we just verify the structure
 			expect(result.packageName).toBe('example-pkg')
 			expect(result.version).toBe('1.1.0')
+			expect(result.published).toBe(true)
+			expect(rc).toHaveBeenCalledTimes(2)
 		})
 	})
 
-	it.skip('skips publishing when version already exists (requires npm)', async () => {
-		// This test calls real npm view and requires network access
+	it('skips publishing when version already exists', async () => {
 		await withPackageFixture('example-pkg', '1.0.0', undefined, async (dir) => {
-			// Mock that version 1.0.0 is already published by returning it
-			const env = process.env
+			const { publishPackage } = await getPublish()
+			const rc = await getRunCommand()
+			rc.mockResolvedValue({ code: 0, stdout: JSON.stringify('1.0.0'), stderr: '' })
+
 			const result = await publishPackage({
 				cwd: dir,
 				skipVersionCheck: false,
 				log: noop,
-				env,
+				env: cleanCiEnv(process.env),
 			})
 
-			// This test would need actual npm mocking to work properly
-			// For now just verify structure
 			expect(result.packageName).toBe('example-pkg')
 			expect(result.version).toBe('1.0.0')
+			expect(result.published).toBe(false)
+			expect(result.alreadyPublished).toBe(true)
+			expect(rc).toHaveBeenCalledTimes(1)
 		})
 	})
 
 	it('throws error for private packages', async () => {
 		await withPackageFixture('private-pkg', '1.0.0', { private: true }, async (dir) => {
+			const { publishPackage } = await getPublish()
 			await expect(
 				publishPackage({
 					cwd: dir,
@@ -82,6 +116,7 @@ describe('publish single package', () => {
 
 	it('respects dryRun flag', async () => {
 		await withPackageFixture('example-pkg', '1.2.0', undefined, async (dir) => {
+			const { publishPackage } = await getPublish()
 			const result = await publishPackage({
 				cwd: dir,
 				dryRun: true,
@@ -99,6 +134,7 @@ describe('publish single package', () => {
 describe('publish with CI context', () => {
 	it('does not notify market during dry-run even in CI', async () => {
 		await withPackageFixture('example-pkg', '2.0.0', undefined, async (dir) => {
+			const { publishPackage } = await getPublish()
 			const result = await publishPackage({
 				cwd: dir,
 				dryRun: true,
@@ -119,6 +155,7 @@ describe('publish with CI context', () => {
 
 	it('skips market notification when not in CI', async () => {
 		await withPackageFixture('example-pkg', '2.1.0', undefined, async (dir) => {
+			const { publishPackage } = await getPublish()
 			const env = { ...process.env }
 			delete env.GITHUB_ACTIONS
 			delete env.GITHUB_REPOSITORY
@@ -141,6 +178,7 @@ describe('publish with CI context', () => {
 		const logs: string[] = []
 
 		await withPackageFixture('example-pkg', '3.0.0', undefined, async (dir) => {
+			const { publishPackage } = await getPublish()
 			await publishPackage({
 				cwd: dir,
 				access: 'restricted', // 私有包
@@ -165,6 +203,7 @@ describe('publish with CI context', () => {
 		const logs: string[] = []
 
 		await withPackageFixture('example-pkg', '4.0.0', undefined, async (dir) => {
+			const { publishPackage } = await getPublish()
 			const result = await publishPackage({
 				cwd: dir,
 				dryRun: true, // avoid running npm
@@ -181,6 +220,7 @@ describe('publish with CI context', () => {
 		const logs: string[] = []
 
 		await withPackageFixture('example-pkg', '5.0.0', undefined, async (dir) => {
+			const { publishPackage } = await getPublish()
 			await publishPackage({
 				cwd: dir,
 				dryRun: true,
@@ -195,7 +235,8 @@ describe('publish with CI context', () => {
 		})
 	})
 
-	it('computes webhook audience from env or base URL', () => {
+	it('computes webhook audience from env or base URL', async () => {
+		const { resolveWebhookAudience } = await getPublish()
 		expect(resolveWebhookAudience('https://market.pluxel.dev', {} as NodeJS.ProcessEnv)).toBe(
 			'https://market.pluxel.dev/webhook',
 		)
@@ -229,6 +270,7 @@ describe('publish with CI context', () => {
 
 		try {
 			await withPackageFixture('example-pkg', '6.0.0', undefined, async (dir) => {
+				const { publishPackage } = await getPublish()
 				const result = await publishPackage({
 					cwd: dir,
 					dryRun: true,

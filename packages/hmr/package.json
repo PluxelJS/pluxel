@@ -93,6 +93,7 @@
 		"@tabler/icons-react": "*"
 	},
 	"devDependencies": {
+		"@pluxel/build": "workspace:*",
 		"@pluxel/components": "workspace:*",
 		"@pluxel/hmr-web": "workspace:*",
 		"@pluxel/market": "^0.1.0",

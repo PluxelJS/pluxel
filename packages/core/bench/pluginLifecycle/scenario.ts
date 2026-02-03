@@ -3,6 +3,13 @@ import { __registerConfigSchema__, BasePlugin, Context, Plugin, setParamTokens }
 export type Ctx = InstanceType<typeof Context>
 type CommitResult = Awaited<ReturnType<Ctx['registry']['commit']>>
 
+const passthroughSchema = {
+	'~standard': {
+		version: 1,
+		validate: (input: unknown) => ({ value: input }),
+	},
+} as const
+
 export const ensureOk = (result: CommitResult) => {
 	if (!result.ok) {
 		throw (result as any).err ?? new Error('Commit failed')
@@ -70,7 +77,7 @@ function createConfigHeavy(keys: number) {
 	class P extends BasePlugin {}
 
 	// Register schemas before @Plugin so the decorator can collect pending configMap in one pass.
-	for (let i = 0; i < keys; i++) __registerConfigSchema__(P, `k${i}`, {} as any)
+	for (let i = 0; i < keys; i++) __registerConfigSchema__(P, `k${i}`, passthroughSchema)
 	Plugin({ name: 'BenchConfigHeavy' })(P)
 
 	const record: Record<string, unknown> = Object.create(null)
