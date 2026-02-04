@@ -91,12 +91,12 @@ export class Context {
 				: function (this: Context) {
 						const ik = this.mapping[sk] as symbol
 
-						// `ik === sk` means "use the shared root instance space".
-						// Any override (`ik !== sk`) means we must use this context's instance store
-						// so isolate() remains effective for the whole subtree (extend descendants).
-						const store = ik === sk ? this.root.instances : this.instances
-
-						let inst = store[ik] as ServiceInst<S>
+						// Fast path: read from `this.instances` first.
+						// - For non-isolated services, `ik === sk` and the instance lives in `root.instances`.
+						//   `this.instances` either *is* `root.instances` (normal) or prototypically inherits it
+						//   (after isolate() via Object.create), so lookups still hit.
+						// - For isolated services, `ik !== sk` and the instance lives in `this.instances[ik]`.
+						let inst = this.instances[ik] as ServiceInst<S>
 						if (inst) {
 							const withCtx = inst as unknown as ServiceWithCtx<Context>
 							if (withCtx.ctx !== this) withCtx.ctx = this
@@ -105,7 +105,10 @@ export class Context {
 						const cfg = (this.config as Record<string, unknown>)[key] as ServiceCfg<S>
 						inst = new ctor(this, cfg) as ServiceInst<S>
 						;(inst as unknown as ServiceWithCtx<Context>).ctx = this
-						store[ik] = inst
+						// Only decide where to store on miss:
+						// - `ik === sk` → shared root space (avoid accidental isolation)
+						// - `ik !== sk` → this context's isolated space
+						;(ik === sk ? this.root.instances : this.instances)[ik] = inst
 						return inst
 					}
 		Object.defineProperty(Context.prototype, key, {
@@ -169,10 +172,7 @@ export class Context {
 					}
 				: function (this: Context) {
 						const ik = this.mapping[sk] as symbol
-
-						const store = ik === sk ? this.root.instances : this.instances
-
-						let inst = store[ik] as ServiceInst<S>
+						let inst = this.instances[ik] as ServiceInst<S>
 						if (inst) {
 							const withCtx = inst as unknown as ServiceWithCtx<Context>
 							if (withCtx.ctx !== this) withCtx.ctx = this
@@ -181,7 +181,7 @@ export class Context {
 						const cfg = (this.config as Record<string, unknown>)[key] as ServiceCfg<S>
 						inst = new overrideCtor(this, cfg) as ServiceInst<S>
 						;(inst as unknown as ServiceWithCtx<Context>).ctx = this
-						store[ik] = inst
+						;(ik === sk ? this.root.instances : this.instances)[ik] = inst
 						return inst
 					}
 		Object.defineProperty(Context.prototype, key, {
