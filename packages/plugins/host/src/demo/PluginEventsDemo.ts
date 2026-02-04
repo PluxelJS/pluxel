@@ -34,7 +34,7 @@ export class PluginEventsChannelProducer extends BasePlugin {
 			})
 		}, 1000)
 
-		this.ctx.scope.collectEffect(() => clearInterval(timer))
+		this.ctx.effects.defer(() => clearInterval(timer))
 	}
 }
 
@@ -80,7 +80,7 @@ export class PluginEventsDeclaredProducer extends BasePlugin {
 			})
 		}, 1000)
 
-		this.ctx.scope.collectEffect(() => clearInterval(timer))
+		this.ctx.effects.defer(() => clearInterval(timer))
 	}
 }
 

@@ -387,8 +387,7 @@ describe('PluginService commit()', () => {
 			@Plugin({ name: 'SelfUnloader' })
 			class SelfUnloader extends BasePlugin {
 				override init(): void {
-					this.ctx.registry.unregister(SelfUnloader)
-					void this.ctx.registry.commit()
+					void this.ctx.registry.shutdownSelf()
 				}
 
 				override stop(): void {
@@ -404,6 +403,12 @@ describe('PluginService commit()', () => {
 			expect(stopped).toBe(1)
 			expect(host.isRunning(SelfUnloader)).toBe(false)
 			expect(host.get(SelfUnloader)).toBeUndefined()
+		})
+	})
+
+	it('shutdownSelf() throws outside plugin context', async () => {
+		await withHost(async (host) => {
+			expect(() => host.ctx.registry.shutdownSelf()).toThrow('not in a plugin context')
 		})
 	})
 

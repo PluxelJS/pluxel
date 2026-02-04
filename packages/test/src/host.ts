@@ -226,7 +226,7 @@ export function createHost(config: Context.Config = {}): Host {
 				}
 			} finally {
 				registry.resetDraft()
-				ctx.disposeAll()
+				await ctx.effects.dispose()
 			}
 		},
 	}
@@ -248,7 +248,7 @@ export async function withHost<T>(
 
 export type TestContext = {
 	readonly ctx: Context
-	dispose: () => void
+	dispose: () => Promise<void>
 }
 
 export function createContext(config: Context.Config = {}): TestContext {
@@ -260,10 +260,10 @@ export function createContext(config: Context.Config = {}): TestContext {
 	const ctx = new Context({ name: 'test', ...cfg })
 	return {
 		ctx,
-		dispose: () => {
+		dispose: async () => {
 			try {
 				ctx.registry.resetDraft()
-				ctx.disposeAll()
+				await ctx.effects.dispose()
 				ctx.registry.resetDraft()
 			} catch {
 				/* ignore */
@@ -280,6 +280,6 @@ export async function withContext<T>(
 	try {
 		return await fn(t.ctx)
 	} finally {
-		t.dispose()
+		await t.dispose()
 	}
 }

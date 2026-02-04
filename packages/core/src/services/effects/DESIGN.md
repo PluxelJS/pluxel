@@ -1,4 +1,4 @@
-# Pluxel `effects` — 最终设计（Codex-ready，优雅 & 高性能）
+# EffectsService — 最终设计（Codex-ready，优雅 & 高性能）
 
 > 前提：你已经通过 `Context` isolate 实现 **每插件独立 Context/DI 容器**。  
 > 本设计只负责 **单个 Context 内**的副作用/资源生命周期管理：注册、事务回滚、卸载清理。  
@@ -279,7 +279,7 @@ Guard 只保存：
 3. `await ctx.effects.dispose()`（drain）
 4. registry.unregister(plugin) + commit（真正卸载）
 
-插件自毁（shutdown）只是触发上述流程的入口，不属于 effects 核心。
+插件自毁（例如 `await ctx.registry.shutdownSelf()`）只是触发上述流程的入口，不属于 effects 核心。
 
 ---
 
@@ -345,4 +345,3 @@ Guard 只保存：
 - transaction checkpoint unwind 使成功路径 commit=no-op，失败路径自动回滚且 await 安全
 - Context isolate 无需全局映射；内部结构极简、局部性好
 - phase 可选且零映射；不用时几乎零成本，用时也不破坏 drain 语义
-

@@ -125,9 +125,9 @@ export class GraphQLPlugin extends BasePlugin {
 			if (this.modules.delete(key)) this.scheduleRebuild()
 		}
 
-		const collect =
-			this.ctx.caller?.scope?.collectEffect ?? this.ctx.scope.collectEffect.bind(this.ctx.scope)
-		return collect(dispose)
+		const effects = this.ctx.caller?.effects ?? this.ctx.effects
+		const guard = effects.defer(dispose)
+		return () => guard.dispose()
 	}
 
 	useGlobal(mw: GraphQLMiddleware): () => void {
@@ -138,9 +138,9 @@ export class GraphQLPlugin extends BasePlugin {
 			if (this.globals.delete(mw)) this.scheduleRebuild()
 		}
 
-		const collect =
-			this.ctx.caller?.scope?.collectEffect ?? this.ctx.scope.collectEffect.bind(this.ctx.scope)
-		return collect(dispose)
+		const effects = this.ctx.caller?.effects ?? this.ctx.effects
+		const guard = effects.defer(dispose)
+		return () => guard.dispose()
 	}
 
 	private config: GraphQLPluginConfig = {}

@@ -18,7 +18,7 @@ export {
 	UseFeature,
 } from '@pluxel/core'
 
-export { EventsService, LoggerService, EffectScopeService } from '@pluxel/core/services'
+export { EffectsService, EventsService, LoggerService } from '@pluxel/core/services'
 
 export { createContext, createHost, withContext, withHost } from './host'
 export type {

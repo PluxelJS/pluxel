@@ -93,7 +93,9 @@ export const TASK_MEANING: Record<string, { goal: string; area: Area; notes?: st
 }
 
 const isContext = (value: unknown): value is Ctx =>
-	typeof value === 'object' && value != null && typeof (value as any).disposeAll === 'function'
+	typeof value === 'object' &&
+	value != null &&
+	typeof (value as any).effects?.dispose === 'function'
 
 function stableTask<T>(
 	bench: Bench,
@@ -108,7 +110,11 @@ function stableTask<T>(
 		if (!state) state = await setup()
 		if (!registeredCleanup && isContext(state)) {
 			registeredCleanup = true
-			cleanups.push(() => state.disposeAll())
+			cleanups.push(() => {
+				void state.effects.dispose().catch(() => {
+					/* best-effort bench cleanup */
+				})
+			})
 		}
 		await run(state)
 	})
@@ -130,20 +136,20 @@ export function registerPluginLifecycleBenchmarks(bench: Bench, scenario: Scenar
 			const ctx = new Context({ name: 'bench-cold-star' })
 			scenario.registerStar(ctx)
 			ensureOk(await ctx.registry.commit())
-			ctx.disposeAll()
+			await ctx.effects.dispose()
 		})
 		.add('cold: build chain baseline', async () => {
 			const ctx = new Context({ name: 'bench-cold-chain' })
 			scenario.registerChain(ctx)
 			ensureOk(await ctx.registry.commit())
-			ctx.disposeAll()
+			await ctx.effects.dispose()
 		})
 		.add('cold: build big baseline (independent + star)', async () => {
 			const ctx = new Context({ name: 'bench-cold-big' })
 			scenario.registerBigIndependent(ctx)
 			scenario.registerStar(ctx)
 			ensureOk(await ctx.registry.commit())
-			ctx.disposeAll()
+			await ctx.effects.dispose()
 		})
 
 	// ---------------------------------------------------------------------------

@@ -99,11 +99,11 @@ export abstract class BasePlugin<C extends Context = Context> {
 	): PluginLifecycleRuntime<PluginContextOf<P>> {
 		const ctx = plugin[PLUGIN_CTX] as PluginContextOf<P>
 		const extended = ctx as unknown as {
-			scope?: { disposeAll?: () => void | Promise<void> }
+			effects?: { dispose?: () => void | Promise<void> }
 			emitWithContext?: (thisArg: unknown, event: string, ...args: unknown[]) => unknown
 			onError?: (cb: (err: unknown) => void) => unknown
 		}
-		const scope = extended.scope
+		const effects = extended.effects
 		const emitWithContext = extended.emitWithContext
 		const onError = extended.onError
 
@@ -114,7 +114,8 @@ export abstract class BasePlugin<C extends Context = Context> {
 					: undefined,
 			init: typeof plugin.init === 'function' ? plugin.init.bind(plugin) : undefined,
 			stop: typeof plugin.stop === 'function' ? plugin.stop.bind(plugin) : undefined,
-			dispose: typeof scope?.disposeAll === 'function' ? scope.disposeAll.bind(scope) : undefined,
+			dispose:
+				typeof effects?.dispose === 'function' ? effects.dispose.bind(effects) : undefined,
 			subscribeErrors:
 				typeof onError === 'function'
 					? (cb: (err: unknown) => void) => {

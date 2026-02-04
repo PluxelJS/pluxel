@@ -82,13 +82,14 @@ export class AuthGuardService {
 			removeFromScope: () => {},
 		}
 
-			active.removeFromScope = this.ctx.scope.collectEffect(() => this.clearGuard(active))
-			this.guard = active
+		const guard = this.ctx.effects.defer(() => this.clearGuard(active))
+		active.removeFromScope = () => guard.cancel()
+		this.guard = active
 
-			this.logger.info(existing ? 'Guard updated' : 'Guard registered')
+		this.logger.info(existing ? 'Guard updated' : 'Guard registered')
 
-			return () => this.clearGuard(active)
-		}
+		return () => this.clearGuard(active)
+	}
 
 	unregister(): void {
 		this.clearGuard()

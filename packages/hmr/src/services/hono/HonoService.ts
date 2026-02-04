@@ -133,7 +133,7 @@ export class HonoService extends CoreHonoService {
 			this.registerBuiltinSse('extensions', (channel) => this.streamManifestEvents(channel)),
 		]
 
-		for (const dispose of disposers) this.ctx.scope.collectEffect(dispose)
+		for (const dispose of disposers) this.ctx.effects.defer(dispose)
 	}
 
 	private registerBuiltinSse(

@@ -647,7 +647,7 @@ export class PluginBuiltinShowcase extends BasePlugin {
 			this.tickTimer = setTimeout(tick, refreshMs)
 		}
 		tick()
-		this.ctx.scope.collectEffect(() => {
+		this.ctx.effects.defer(() => {
 			if (this.tickTimer) clearTimeout(this.tickTimer)
 			this.tickTimer = null
 		})

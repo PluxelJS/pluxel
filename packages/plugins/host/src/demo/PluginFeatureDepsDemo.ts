@@ -56,7 +56,7 @@ export class PluginFeatureDepsProvider extends BasePlugin {
 			})
 		}, 750)
 
-		this.ctx.scope.collectEffect(() => clearInterval(timer))
+		this.ctx.effects.defer(() => clearInterval(timer))
 	}
 }
 
@@ -104,7 +104,7 @@ export class PluginFeatureBridgeProvider extends BasePlugin {
 			})
 		}, 1200)
 
-		this.ctx.scope.collectEffect(() => clearInterval(timer))
+		this.ctx.effects.defer(() => clearInterval(timer))
 	}
 }
 

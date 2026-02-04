@@ -79,11 +79,12 @@ export class SseService {
 		this.rebindNamespace(namespace)
 		this.tryAttachPending(namespace)
 
-		return this.ctx.scope.collectEffect(() => {
+		const guard = this.ctx.effects.defer(() => {
 			if (this.extensions.get(namespace) !== factory) return
 			this.extensions.delete(namespace)
 			this.detachNamespace(namespace)
 		})
+		return () => guard.dispose()
 	}
 
 	stream(c: import('hono').Context<AppEnv>, namespaces?: string[]) {

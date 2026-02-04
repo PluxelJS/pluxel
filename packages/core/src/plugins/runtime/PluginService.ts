@@ -14,7 +14,7 @@ import { createErr, createOk } from 'option-t/plain_result'
 import type { ServiceMap } from '../../container'
 import { LeanMapTracker } from '../../container/LeanMapTracker'
 import { isProduction } from '../../env'
-import { EffectScopeService } from '../../services/scope/EffectScopeService'
+import { EffectsService } from '../../services/effects/EffectsService'
 import type { BasePlugin } from '../composition/BasePlugin'
 import type { PluginInfo } from '../decorators/PluginDecorator'
 // Optional dependency API removed in favor of feature composition (BaseFeature).
@@ -157,10 +157,10 @@ export class PluginService {
 			seen.add(s)
 			isolated.push(s)
 		}
-		const scopeSvc = EffectScopeService as unknown as AnyServiceClass
-		if (!seen.has(scopeSvc)) {
-			seen.add(scopeSvc)
-			isolated.push(scopeSvc)
+		const effectsSvc = EffectsService as unknown as AnyServiceClass
+		if (!seen.has(effectsSvc)) {
+			seen.add(effectsSvc)
+			isolated.push(effectsSvc)
 		}
 		this.definitions = new PluginDefinitions(() => {
 			const pluginCTX = this.ctx.root.isolate(isolated, { name: `${this.order++}` })
@@ -175,22 +175,22 @@ export class PluginService {
 				})
 			}
 
-			// Scope is per‑plugin by design and used heavily for disposables.
-			// We eagerly instantiate it once and pin it as an own‑property to:
-			// 1) avoid repeated Context service‑getter overhead on hot collectEffect calls;
-			// 2) keep scope identity stable for this plugin context.
+			// Effects are per‑plugin by design and used heavily for lifecycle cleanups.
+			// Pin the instance to:
+			// 1) avoid Context service‑getter overhead on hot paths;
+			// 2) keep identity stable for this plugin context.
 			try {
-				const scope = pluginCTX.scope
-				if (scope) {
-					Object.defineProperty(pluginCTX, 'scope', {
-						value: scope,
+				const effects = pluginCTX.effects
+				if (effects) {
+					Object.defineProperty(pluginCTX, 'effects', {
+						value: effects,
 						writable: false,
 						enumerable: false,
 						configurable: true,
 					})
 				}
 			} catch {
-				// If scope service was overridden/removed, fall back silently.
+				// If effects service was overridden/removed, fall back silently.
 			}
 
 			return pluginCTX
@@ -475,6 +475,21 @@ export class PluginService {
 	}
 
 	/**
+	 * Shutdown (unload) the current plugin (and optionally its dependents) from within a plugin context.
+	 *
+	 * This is an orchestration-layer operation and intentionally lives on PluginService (registry),
+	 * not on `effects`.
+	 */
+	public shutdownSelf(opts?: { cascadeDependents?: boolean }) {
+		const pluginInfo = (this.ctx as unknown as { pluginInfo?: { class?: unknown } }).pluginInfo
+		if (!pluginInfo?.class) {
+			throw new Error('Cannot shutdown: not in a plugin context')
+		}
+		this.unregister(pluginInfo.class as PluginIdentifier, opts)
+		return this.commit()
+	}
+
+	/**
 	 * Restart a registered plugin (and optionally its dependents) on next commit.
 	 * This does not change registrations; it only re-instantiates instances.
 	 */
@@ -638,7 +653,7 @@ export class PluginService {
 			const logger = pluginCtx.logger ?? this.ctx.logger
 			logger.with({ error }).error`注入/校验配置到 ${String(id)} 失败`
 			try {
-				await pluginCtx.scope.disposeAll()
+				await pluginCtx.effects.dispose()
 			} catch {
 				/* ignored */
 			}
@@ -652,7 +667,7 @@ export class PluginService {
 			const logger = pluginCtx.logger ?? this.ctx.logger
 			logger.with({ error }).error`启动 ${String(id)} 失败`
 			try {
-				await pluginCtx.scope.disposeAll()
+				await pluginCtx.effects.dispose()
 			} catch {
 				/* ignored */
 			}

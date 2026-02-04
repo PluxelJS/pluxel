@@ -49,7 +49,7 @@ export class FeatureHost<Host = unknown> {
 		private readonly ownerInstance?: Host,
 	) {
 		// Ensure all features are disposed with the owning plugin scope.
-		this.ctx.collectEffect(() => this.disposeAll())
+		this.ctx.effects.defer(() => this.disposeAll())
 	}
 
 	private getRegistry(): PluginRegistryLike | undefined {
@@ -172,7 +172,7 @@ export class FeatureHost<Host = unknown> {
 		}
 
 		// Auto-collect: plugin authors usually don't want to track unsubs manually.
-		this.ctx.scope.collectEffect(off)
+		this.ctx.effects.defer(off)
 
 		return off
 	}

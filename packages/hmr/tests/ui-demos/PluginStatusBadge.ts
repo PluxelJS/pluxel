@@ -18,7 +18,7 @@ export class PluginStatusBadge extends BasePlugin {
 			this.counter++
 		}, 1000)
 
-		this.ctx.scope.collectEffect(() => {
+		this.ctx.effects.defer(() => {
 			clearInterval(timer)
 		})
 

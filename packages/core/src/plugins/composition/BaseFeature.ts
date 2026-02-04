@@ -1,4 +1,5 @@
 import type { Context } from '@pluxel/context'
+import type { Cleanup, EffectsScope } from '../../services/effects/EffectsService'
 import { getDeclaredConfigKeys, getFeatureNamespace } from '../decorators/decorator/api'
 import type { AnyCtor } from '../decorators/decorator/shared'
 import { CONFIGS, type ConfigHost } from './ConfigHost'
@@ -14,40 +15,36 @@ export function isHostBoundFeature(ctor: unknown): boolean {
 	return Boolean((ctor as Record<symbol, unknown>)[HOST_BOUND_FEATURE])
 }
 
-class FeatureScope {
-	private disposables = new Set<() => void>()
-
-	constructor(private readonly ctx: Context) {}
-
-	collectEffect(fn: () => void): () => void {
-		this.disposables.add(fn)
-		return () => {
-			this.disposables.delete(fn)
-		}
-	}
-
-	disposeAll(): void {
-		if (this.disposables.size === 0) return
-		const current = this.disposables
-		this.disposables = new Set()
-		for (const fn of current) {
-			try {
-				fn()
-			} catch (error) {
-				this.ctx.logger.error('feature dispose error', { error })
-			}
-		}
-	}
-}
-
 export abstract class BaseFeature<C extends Context = Context> {
-	public readonly scope: { collectEffect: (fn: () => void) => () => void; disposeAll: () => void }
+	public readonly effects: EffectsScope
+	public readonly scope: {
+		collectEffect: (fn: Cleanup) => () => void
+		disposeAll: () => void
+	}
 
 	constructor(public readonly ctx: C) {
-		const scope = new FeatureScope(ctx)
-		this.scope = scope
-		// Ensure feature cleanups run with the owning plugin scope.
-		this.ctx.collectEffect(() => scope.disposeAll())
+		const tag = (() => {
+			const ctor = (this as { constructor?: unknown }).constructor
+			const name = typeof ctor === 'function' ? ctor.name : 'Feature'
+			return name ? `feature:${name}` : 'feature'
+		})()
+
+		const effects = this.ctx.effects.scope({ tag })
+		this.effects = effects
+
+		const disposeAll = () => {
+			void effects.dispose().catch((error) => {
+				this.ctx.logger.error('feature dispose error', { error })
+			})
+		}
+
+		this.scope = {
+			collectEffect: (fn) => {
+				const guard = effects.defer(fn)
+				return () => guard.cancel()
+			},
+			disposeAll,
+		}
 	}
 
 	/** Config declaration helper: `foo = this.configs.use(schema)` */

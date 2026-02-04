@@ -50,8 +50,8 @@ export class HonoService {
 		const dispose = () => {
 			if (this.mods.delete(m)) this.scheduleRebuild()
 		}
-		const collect = this.ctx.collectEffect
-		return collect ? collect.call(this.ctx, dispose) : dispose
+		const guard = this.ctx.effects.defer(dispose)
+		return () => guard.dispose()
 	}
 
 	applyMods<App = unknown>(app: App) {

@@ -2,7 +2,7 @@ import '../reflection'
 
 export { type CommitSummary, PluginService } from '../plugins'
 export * from './config'
-export * from './scope'
+export * from './effects'
 export * from './events'
 export * from './fs'
 export * from './HonoService'

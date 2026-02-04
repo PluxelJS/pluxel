@@ -221,7 +221,7 @@ export class ExtensionService {
 		this.setupWatcher(pluginName, entry)
 		this.enqueueCompile(pluginName)
 
-		return this.ctx.scope.collectEffect(() => {
+		const guard = this.ctx.effects.defer(() => {
 			const stored = this.entries.get(pluginName)
 			if (!stored) return
 			stored.active = false
@@ -230,6 +230,7 @@ export class ExtensionService {
 			this.entries.delete(pluginName)
 			void this.handlePluginRemoval(pluginName, stored)
 		})
+		return () => guard.dispose()
 	}
 
 	/**
@@ -273,7 +274,7 @@ export class ExtensionService {
 		bucket.set(key, normalized)
 		this.bumpManifestVersion('builtin')
 
-		return this.ctx.scope.collectEffect(() => {
+		const guard = this.ctx.effects.defer(() => {
 			const current = this.builtinByPlugin.get(pluginName)
 			if (!current) return
 			const existing = current.get(key)
@@ -282,6 +283,7 @@ export class ExtensionService {
 			if (current.size === 0) this.builtinByPlugin.delete(pluginName)
 			this.bumpManifestVersion('builtin')
 		})
+		return () => guard.dispose()
 	}
 
 	doc<P extends ExtensionPoint = 'plugin:tabs'>(

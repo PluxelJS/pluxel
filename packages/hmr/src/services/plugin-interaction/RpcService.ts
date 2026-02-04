@@ -27,13 +27,14 @@ export class RpcService {
 
 		this.extensions[namespace] = factory
 
-		return this.ctx.scope.collectEffect(() => {
+		const guard = this.ctx.effects.defer(() => {
 			if (this.extensions[namespace] === factory) {
 				this.extensions[namespace] = null
 				this.deadKeys++
 				this.maybeCompact()
 			}
 		})
+		return () => guard.dispose()
 	}
 
 	/** 懒清理：达到阈值时重建对象 */
