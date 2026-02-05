@@ -1,17 +1,40 @@
 #!/usr/bin/env node
-import { type Command, cli, type LazyCommand } from 'gunshi'
+import { type Command, cli, type LazyCommand, lazy } from 'gunshi'
 import pkg from '../package.json'
-import { buildCommand, hmrCommand, publishCommand, workspaceCommand } from './commands'
 import { newCommand } from './plop'
 
-type AnyCommand = Command<any> | LazyCommand<any>
+type AnyCommand = Command<unknown> | LazyCommand<unknown>
 
 const commands = new Map<string, AnyCommand>([
 	['new', newCommand],
-	['build', buildCommand],
-	['publish', publishCommand],
-	['hmr', hmrCommand],
-	['workspace', workspaceCommand],
+	[
+		'build',
+		lazy(() => import('./commands/build').then((m) => m.buildCommand), {
+			name: 'build',
+			description: 'Build current project',
+		}),
+	],
+	[
+		'publish',
+		lazy(() => import('./commands/publish').then((m) => m.publishCommand), {
+			name: 'publish',
+			description: 'Publish plugin packages',
+		}),
+	],
+	[
+		'hmr',
+		lazy(() => import('./commands/hmr').then((m) => m.hmrCommand), {
+			name: 'hmr',
+			description: 'Manage HMR workspace profiles and start HMR',
+		}),
+	],
+	[
+		'workspace',
+		lazy(() => import('./commands/workspace').then((m) => m.workspaceCommand), {
+			name: 'workspace',
+			description: 'Manage workspaces (pnpm / yarn)',
+		}),
+	],
 ])
 
 async function main() {

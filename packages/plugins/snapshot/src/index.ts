@@ -1,7 +1,6 @@
 import { resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { BasePlugin, Plugin } from '@pluxel/hmr'
-import { buildNodeDist } from './buildDist'
 import { buildSnapshotMainSource } from './buildMain'
 import { buildSnapshotSource } from './buildSnapshot'
 import { SnapshotRpc } from './rpc'
@@ -64,6 +63,9 @@ export class SnapshotPlugin extends BasePlugin {
 		}
 
 		const distDir = resolve(process.cwd(), '.pluxel/dist')
+		// Keep heavy bundling deps out of the builtin baseline.
+		// (They may be CJS-heavy and slow; only load when the action is invoked.)
+		const { buildNodeDist } = await import('./buildDist')
 		const res = await buildNodeDist({
 			entry: mainPath,
 			outDir: distDir,

@@ -1,8 +1,8 @@
-import type { PluginConstructor } from '@pluxel/core'
-import type { Logger as LogtapeLogger } from '@logtape/logtape'
 import { fileURLToPath } from 'node:url'
-import { normalizePath } from 'vite'
+import type { Logger as LogtapeLogger } from '@logtape/logtape'
+import type { PluginConstructor } from '@pluxel/core'
 import { resolve } from 'pathe'
+import { normalizePath } from 'vite'
 
 export type RegistryViewLike = {
 	listRegistered: () => ReadonlyMap<string, PluginConstructor>
@@ -99,8 +99,13 @@ export function collectPluginTotals(params: {
 	isEnabledInConfig: (name: string) => boolean
 	isRunning: (ctor: PluginConstructor) => boolean
 	builtinsModuleId?: string
+	builtinsModuleIds?: readonly string[]
 }): { plugins: PluginTotals; builtins: BuiltinsTotals } {
 	const builtinsModuleId = params.builtinsModuleId ?? 'pluxel:builtins'
+	const builtinsSet = new Set<string>([
+		builtinsModuleId,
+		...((params.builtinsModuleIds ?? []).map((s) => String(s).trim()).filter(Boolean) as string[]),
+	])
 
 	const plugins: PluginTotals = { loaded: 0, enabled: 0, running: 0 }
 	const builtins: BuiltinsTotals = { loaded: 0, enabled: 0, running: 0 }
@@ -110,7 +115,7 @@ export function collectPluginTotals(params: {
 		const enabled = params.isEnabledInConfig(name)
 		const running = params.isRunning(ctor)
 
-		if (moduleId === builtinsModuleId) {
+		if (moduleId && builtinsSet.has(moduleId)) {
 			builtins.loaded++
 			if (enabled) builtins.enabled++
 			if (running) builtins.running++
@@ -139,10 +144,15 @@ export async function buildHmrOperationalReport(params: {
 	resolveBareWorkspaceEntry: (specifier: string) => Promise<string | null>
 	resolveLimit?: number
 	builtinsModuleId?: string
+	builtinsModuleIds?: readonly string[]
 	hotspots?: Array<{ id: string; ms: number }>
 	dbg?: LogtapeLogger
 }): Promise<HmrOperationalReportProps> {
 	const builtinsModuleId = params.builtinsModuleId ?? 'pluxel:builtins'
+	const builtinsSet = new Set<string>([
+		builtinsModuleId,
+		...((params.builtinsModuleIds ?? []).map((s) => String(s).trim()).filter(Boolean) as string[]),
+	])
 	const resolveLimit = computeResolveLimit(params.resolveLimit)
 
 	const rootsAbs = params.rootsAbs
@@ -160,6 +170,7 @@ export async function buildHmrOperationalReport(params: {
 		isEnabledInConfig: params.isEnabledInConfig,
 		isRunning: params.isRunning,
 		builtinsModuleId,
+		builtinsModuleIds: params.builtinsModuleIds,
 	})
 
 	const stats = {
@@ -196,7 +207,7 @@ export async function buildHmrOperationalReport(params: {
 
 	for (const [name, ctor] of params.registryView.listRegistered()) {
 		const moduleId = params.registryView.findModuleIdByName(name)
-		if (moduleId === builtinsModuleId || !moduleId) continue
+		if (!moduleId || builtinsSet.has(moduleId)) continue
 
 		const enabled = params.isEnabledInConfig(name)
 		const running = params.isRunning(ctor)
@@ -220,7 +231,8 @@ export async function buildHmrOperationalReport(params: {
 	}
 
 	const reasons: PluginsByRootReason[] = []
-	if (stats.resolveAttempts >= stats.resolveLimit && stats.unresolved > 0) reasons.push('resolve-capped')
+	if (stats.resolveAttempts >= stats.resolveLimit && stats.unresolved > 0)
+		reasons.push('resolve-capped')
 	if (stats.unresolved > 0) reasons.push('unresolved-moduleIds')
 	if (stats.unmapped > 0) reasons.push('unmapped-moduleIds')
 

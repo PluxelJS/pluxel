@@ -1,4 +1,4 @@
-import './reflection'
+import './reflection.ts'
 
 export * from '@pluxel/context'
 export * from './container'

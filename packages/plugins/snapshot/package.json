@@ -29,7 +29,7 @@
 		"@pluxel/cli": "workspace:*",
 		"@pluxel/core": "workspace:*",
 		"@pluxel/hmr": "workspace:*",
-		"@mantine/core": "^8.3.13",
+		"@mantine/core": "^8.3.14",
 		"@tabler/icons-react": "*",
 		"react": "^19.2.4",
 		"react-dom": "^19.2.4",

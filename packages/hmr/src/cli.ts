@@ -27,7 +27,8 @@ function parseArgs(argv: string[]): Args {
 		if (a === '--root') rootDir = argv[++i] ?? rootDir
 		else if (a === '--config') configPath = argv[++i] ?? configPath
 		else if (a === '--snapshot-stdin') snapshotStdin = true
-		else if (a === '--help' || a === '-h') return { command: 'help', rootDir, configPath, snapshotStdin }
+		else if (a === '--help' || a === '-h')
+			return { command: 'help', rootDir, configPath, snapshotStdin }
 	}
 
 	return {
@@ -65,12 +66,22 @@ async function readStdin(): Promise<string> {
 	})
 }
 
-function assertSnapshotShape(snapshot: any): asserts snapshot is WorkspaceSnapshot {
-	if (!snapshot || typeof snapshot !== 'object') throw new Error('Invalid snapshot: expected object')
-	if (!Array.isArray(snapshot.enabledEntries)) throw new Error('Invalid snapshot: enabledEntries missing')
-	if (!Array.isArray(snapshot.watchRoots)) throw new Error('Invalid snapshot: watchRoots missing')
-	if (!Array.isArray(snapshot.includeGlobs)) throw new Error('Invalid snapshot: includeGlobs missing')
-	if (!Array.isArray(snapshot.excludeGlobs)) throw new Error('Invalid snapshot: excludeGlobs missing')
+function assertSnapshotShape(snapshot: unknown): asserts snapshot is WorkspaceSnapshot {
+	if (!snapshot || typeof snapshot !== 'object')
+		throw new Error('Invalid snapshot: expected object')
+	const s = snapshot as Record<string, unknown>
+	if (!Array.isArray(s.enabledEntries)) throw new Error('Invalid snapshot: enabledEntries missing')
+	if (!Array.isArray(s.watchRoots)) throw new Error('Invalid snapshot: watchRoots missing')
+	if (!Array.isArray(s.includeGlobs)) throw new Error('Invalid snapshot: includeGlobs missing')
+	if (!Array.isArray(s.excludeGlobs)) throw new Error('Invalid snapshot: excludeGlobs missing')
+	if (s.builtinPackages !== undefined) {
+		if (
+			!Array.isArray(s.builtinPackages) ||
+			(s.builtinPackages as unknown[]).some((x) => typeof x !== 'string')
+		) {
+			throw new Error('Invalid snapshot: builtinPackages must be string[]')
+		}
+	}
 }
 
 async function resolveSnapshot(args: Args): Promise<WorkspaceSnapshot> {
@@ -127,10 +138,7 @@ async function main() {
 	await startHmrHost({
 		root: args.rootDir,
 		chdir: true,
-		roots: snapshot.watchRoots,
-		include: snapshot.includeGlobs,
-		exclude: snapshot.excludeGlobs,
-		entries: snapshot.enabledEntries,
+		workspaceSnapshot: snapshot,
 	})
 }
 
@@ -138,4 +146,7 @@ void main().catch((error) => {
 	const msg = error instanceof Error ? error.message : String(error)
 	process.stderr.write(`${msg}\n`)
 	process.exitCode = 1
+	// Force exit: Vite may leave open handles (watchers/servers) after startup failures.
+	// This is a CLI entrypoint, so a hard exit is preferable to hanging indefinitely.
+	setTimeout(() => process.exit(1), 200).unref()
 })

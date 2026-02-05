@@ -1,7 +1,7 @@
 import { existsSync } from 'node:fs'
 // Use the public CLI facade; it re-exports internal build plugins without exposing @pluxel/build directly.
 import { configSourcePlugin, importTypeFixerPlugin } from '@pluxel/cli/rolldown'
-import { resolve } from 'pathe'
+import { isAbsolute, resolve } from 'pathe'
 import {
 	createLogger,
 	type InlineConfig,
@@ -134,7 +134,8 @@ export function resolveHMRDependencyConfig(
 	return {
 		bridgeModules: mergeRequired(REQUIRED_BRIDGE_MODULES, overrides.bridgeModules),
 		ssrExternal: overrides.ssrExternal ?? DEFAULT_SSR_EXTERNAL,
-		ssrNoExternal: overrides.ssrNoExternal ?? DEFAULT_SSR_NO_EXTERNAL,
+		// Required singleton modules must never be removable; they are part of HMR invariants.
+		ssrNoExternal: mergeRequired(DEFAULT_SSR_NO_EXTERNAL, overrides.ssrNoExternal),
 		cjsExternal: overrides.cjsExternal ?? DEFAULT_CJS_EXTERNAL,
 		optimizeDepsInclude: overrides.optimizeDepsInclude ?? DEFAULT_OPTIMIZE_DEPS_INCLUDE,
 		optimizeDepsInterop: overrides.optimizeDepsInterop ?? DEFAULT_OPTIMIZE_DEPS_INTEROP,
@@ -216,6 +217,12 @@ export function buildHmrViteConfig(opts: HmrViteConfigOptions): InlineConfig {
 			`${d}/**/*.mts`,
 			`${d}/**/*.cts`,
 		])
+	const includePatternsAbs = includePatterns.map((p) =>
+		isAbsolute(p) ? normalizePath(p) : normalizePath(resolve(opts.root, p)),
+	)
+	const excludeGlobsAbs = opts.excludeGlobs?.map((p) =>
+		isAbsolute(p) ? normalizePath(p) : normalizePath(resolve(opts.root, p)),
+	)
 	// Default: avoid dep optimization churn in Vite 8 beta.
 	// Opt-in via config when you want "fastest steady-state" for the UI/runner.
 	const optimizeDepsEnabled = opts.optimizeDepsEnabled === true
@@ -281,8 +288,8 @@ export function buildHmrViteConfig(opts: HmrViteConfigOptions): InlineConfig {
 			perEnvironmentPlugin('pluxel:ssr-transform', (environment) => {
 				if (environment.name !== 'ssr') return false
 				return [
-					importTypeFixerPlugin({ include: includePatterns, exclude: opts.excludeGlobs }),
-					configSourcePlugin({ include: includePatterns, exclude: opts.excludeGlobs }),
+					importTypeFixerPlugin({ include: includePatternsAbs, exclude: excludeGlobsAbs }),
+					configSourcePlugin({ include: includePatternsAbs, exclude: excludeGlobsAbs }),
 				]
 			}),
 			...(opts.extraPlugins ?? []),

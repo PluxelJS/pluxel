@@ -2,9 +2,13 @@ import { existsSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
 import { resolve } from 'pathe'
 import picomatch from 'picomatch'
-import { type PluxelHmrConfigV1, readHmrConfigV1, resolveDefaultHmrConfigPath } from './config'
-import { discoverPluginsFromPackages, scanWorkspacePackages, type DiscoveredPlugin } from './discover'
 import { crawlFilesAbs, DEFAULT_IGNORED_DIR_NAMES, loadWorkspaceInfo } from '../workspace'
+import { type PluxelHmrConfigV1, readHmrConfigV1, resolveDefaultHmrConfigPath } from './config'
+import {
+	type DiscoveredPlugin,
+	discoverPluginsFromPackages,
+	scanWorkspacePackages,
+} from './discover'
 import { toPosix, toRootRelative, uniqPreserveOrder, uniqSorted } from './utils'
 
 export type DiagnoseWorkspaceInput = {
@@ -25,6 +29,12 @@ export type WorkspaceSnapshot = {
 	activeProfile: string
 	roots: string[] // expanded roots, root-relative
 	enabled: string[] // effective enabled package names
+	/**
+	 * Workspace plugin packages that are provided by the host as builtins (baseline).
+	 *
+	 * These packages are omitted from discovery/entries resolution to prevent double-loading.
+	 */
+	builtinPackages: string[]
 	/**
 	 * Startup entry list (stable order):
 	 * - enabled plugin package entries (config order)
@@ -54,6 +64,7 @@ type MergedProfile = {
 	activeProfile: string
 	roots: 'auto' | string[]
 	enabled: string[]
+	builtinPackages: string[]
 	includeGlobs: string[]
 	excludeGlobs: string[]
 }
@@ -64,11 +75,13 @@ function isManagedPluginPackageName(name: string) {
 	return MANAGED_PLUGIN_PKG_RE.test(name)
 }
 
-function collectManifestDeps(manifest: any): Set<string> {
+function collectManifestDeps(manifest: unknown): Set<string> {
 	const out = new Set<string>()
+	if (!manifest || typeof manifest !== 'object' || Array.isArray(manifest)) return out
+	const m = manifest as Record<string, unknown>
 	for (const field of ['dependencies', 'optionalDependencies', 'peerDependencies'] as const) {
-		const rec = manifest?.[field]
-		if (!rec || typeof rec !== 'object') continue
+		const rec = m[field]
+		if (!rec || typeof rec !== 'object' || Array.isArray(rec)) continue
 		for (const k of Object.keys(rec)) out.add(k)
 	}
 	return out
@@ -77,7 +90,7 @@ function collectManifestDeps(manifest: any): Set<string> {
 async function readWorkspaceRootDeclaredPluginDeps(rootDirAbs: string): Promise<Set<string>> {
 	try {
 		const raw = await readFile(resolve(rootDirAbs, 'package.json'), 'utf8')
-		const json = JSON.parse(raw) as any
+		const json = JSON.parse(raw) as unknown
 		return collectManifestDeps(json)
 	} catch {
 		return new Set<string>()
@@ -98,13 +111,17 @@ export function mergeHmrProfile(
 
 	const roots = profile.roots ?? cfg.defaults?.roots ?? 'auto'
 	const enabled = profile.enabled
+	const builtinPackages = profile.builtin ?? []
 	const includeGlobs = [...(cfg.defaults?.include ?? []), ...(profile.include ?? [])]
 	const excludeGlobs = [...(cfg.defaults?.exclude ?? []), ...(profile.exclude ?? [])]
 
-	return { activeProfile, roots, enabled, includeGlobs, excludeGlobs }
+	return { activeProfile, roots, enabled, builtinPackages, includeGlobs, excludeGlobs }
 }
 
-export async function resolveHmrRootsExpanded(rootDir: string, roots: 'auto' | string[]): Promise<string[]> {
+export async function resolveHmrRootsExpanded(
+	rootDir: string,
+	roots: 'auto' | string[],
+): Promise<string[]> {
 	const base = resolve(rootDir)
 	if (roots !== 'auto') return uniqSorted(roots.map((r) => toPosix(resolve(base, r))))
 
@@ -172,7 +189,7 @@ async function resolveIncludeEntryFilesAbs(params: {
 
 		for (const abs of files) {
 			if (!isIncluded(abs)) continue
-			if (isExcluded && isExcluded(abs)) continue
+			if (isExcluded?.(abs)) continue
 			out.add(abs)
 		}
 	}
@@ -315,7 +332,9 @@ export async function buildWorkspaceSnapshotFromScan(params: {
 				)
 			}
 			if (missingEdges.length > maxEdges) {
-				warnings.push(`[hmr] …and ${missingEdges.length - maxEdges} more missing managed-deps edge(s).`)
+				warnings.push(
+					`[hmr] …and ${missingEdges.length - maxEdges} more missing managed-deps edge(s).`,
+				)
 			}
 		}
 	}
@@ -351,7 +370,10 @@ export async function buildWorkspaceSnapshotFromScan(params: {
 	const roots = params.rootsExpandedAbs.map((abs) => toRootRelative(rootDirAbs, abs))
 	const watchRoots = watchRootsAbs.map((abs) => toRootRelative(rootDirAbs, abs))
 
-	const enabledEntriesAbs = uniqPreserveOrder([...enabledPackageEntriesAbs, ...includeEntryFilesAbs])
+	const enabledEntriesAbs = uniqPreserveOrder([
+		...enabledPackageEntriesAbs,
+		...includeEntryFilesAbs,
+	])
 	const enabledEntries = enabledEntriesAbs.map((abs) => toRootRelative(rootDirAbs, abs))
 
 	const watchExts = ['ts', 'tsx', 'mts', 'cts'] as const
@@ -366,7 +388,9 @@ export async function buildWorkspaceSnapshotFromScan(params: {
 		const isExcluded = picomatch(excludeAbs, { dot: true })
 		for (const entry of enabledEntriesAbs) {
 			if (isExcluded(entry))
-				warnings.push(`[hmr] Startup entry is excluded by exclude globs: ${toRootRelative(rootDirAbs, entry)}`)
+				warnings.push(
+					`[hmr] Startup entry is excluded by exclude globs: ${toRootRelative(rootDirAbs, entry)}`,
+				)
 		}
 	}
 
@@ -374,6 +398,7 @@ export async function buildWorkspaceSnapshotFromScan(params: {
 		activeProfile: params.merged.activeProfile,
 		roots,
 		enabled: effectiveEnabled,
+		builtinPackages: uniqSorted(params.merged.builtinPackages),
 		enabledEntries,
 		includedEntries,
 		discovered: params.discovered,
@@ -385,11 +410,14 @@ export async function buildWorkspaceSnapshotFromScan(params: {
 	return { ok: true, snapshot, warnings }
 }
 
-export async function diagnoseWorkspace(input: DiagnoseWorkspaceInput): Promise<DiagnoseWorkspaceResult> {
+export async function diagnoseWorkspace(
+	input: DiagnoseWorkspaceInput,
+): Promise<DiagnoseWorkspaceResult> {
 	const rootDirAbs = resolve(input.rootDir)
 	const configPathAbs = resolve(rootDirAbs, input.configPath)
 
-	if (!existsSync(configPathAbs)) return { ok: false, errors: [`Missing config file: ${configPathAbs}`] }
+	if (!existsSync(configPathAbs))
+		return { ok: false, errors: [`Missing config file: ${configPathAbs}`] }
 
 	let cfg: PluxelHmrConfigV1
 	try {
@@ -419,13 +447,18 @@ export async function diagnoseWorkspace(input: DiagnoseWorkspaceInput): Promise<
 	})
 	const discovered = discoverPluginsFromPackages(rootDirAbs, packages)
 
+	const omitPackages = uniqSorted([
+		...(input.omitPackages ?? []),
+		...(merged.builtinPackages ?? []),
+	])
+
 	return await buildWorkspaceSnapshotFromScan({
 		rootDir: rootDirAbs,
 		merged,
 		rootsExpandedAbs,
 		packages: packages.map((p) => ({ name: p.name, deps: p.deps, pkgDirAbs: p.pkgDirAbs })),
 		discovered,
-		omitPackages: input.omitPackages,
+		omitPackages: omitPackages.length ? omitPackages : undefined,
 	})
 }
 

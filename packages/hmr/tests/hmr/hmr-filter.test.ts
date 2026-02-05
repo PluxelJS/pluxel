@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import type { Context } from '@pluxel/core'
-import { join, normalize } from 'pathe'
+import { join, normalize, relative } from 'pathe'
 import { HMRService } from '../../src/services/runtime/hmr/HMRService'
+import { fixturesPluginsDir, workspaceRoot } from './_paths'
 
 // Minimal ctx stub to construct HMRService without booting Vite.
 const createCtx = () => {
@@ -12,6 +13,7 @@ const createCtx = () => {
 		loader: {
 			api: {
 				anchors: {
+					has: (id: string) => anchors.has(id),
 					list: () => anchors,
 					remove: (id: string) => anchors.delete(id),
 				},
@@ -29,8 +31,8 @@ const createCtx = () => {
 	} as unknown as Context
 }
 
-const pkgRoot = process.cwd()
-const pluginDir = join(pkgRoot, 'tests/fixtures/plugins')
+const pkgRoot = workspaceRoot
+const pluginDir = fixturesPluginsDir
 const pluginFile = join(pluginDir, 'PluginA.ts')
 
 describe('HMRService file filter', () => {
@@ -44,7 +46,9 @@ describe('HMRService file filter', () => {
 		hmr.setServerRoot(pkgRoot)
 
 		const filter = hmr.toolkit.pathFilter
-		const relPath = normalize('tests/fixtures/plugins/PluginA.ts')
+		// Relative watcher paths are resolved against HMRService cwd (process.cwd()).
+		// This test suite can be executed from either workspace root or package root, so compute it dynamically.
+		const relPath = normalize(relative(process.cwd(), pluginFile))
 		const cleanRel = hmr.normalizeId(relPath)
 
 		expect(cleanRel).toBe(pluginFile)

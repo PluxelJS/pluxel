@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import type { Context } from '@pluxel/core'
-import { getConfigSource, getRequiredPluginDependencies, getUsedFeatures } from '@pluxel/core'
 import { join } from 'pathe'
 import { createServer, normalizePath, type Plugin as VitePlugin } from 'vite'
+import { fixturesPluginsDir, fixturesPluginsRelFromWorkspace, workspaceRoot } from './_paths'
 import {
 	buildHmrViteConfig,
 	type HMRDependencyConfig,
@@ -21,22 +21,27 @@ const baseDeps: HMRDependencyConfig = {
 }
 
 type ErrorLog = { msg: string; obj: unknown }
+type CoreApi = {
+	getConfigSource: (ctor: unknown) => Record<string, unknown> | null
+	getRequiredPluginDependencies: (ctor: unknown) => unknown[]
+	getUsedFeatures: (ctor: unknown) => Array<{ name: string }>
+}
 
 async function executePluginEntryAndCapture(
 	pluginEntry: string,
-): Promise<{ capture: { lastModule: unknown | null }; errorLogs: ErrorLog[] }> {
-	const root = process.cwd()
+): Promise<{ capture: { lastModule: unknown | null }; errorLogs: ErrorLog[]; core: CoreApi }> {
+	const root = workspaceRoot
 	const capture = { lastModule: null as unknown, beginBatchCalls: 0, replaceModuleCalls: 0 }
 	const errorLogs: ErrorLog[] = []
 	const deps = resolveHMRDependencyConfig(baseDeps)
 	const fsAllow = resolveFsAllowList({
 		cwd: root,
 		cwdNormalized: normalizePath(root),
-		scanRoots: [normalizePath(join(root, 'tests', 'fixtures', 'plugins'))],
+		scanRoots: [normalizePath(fixturesPluginsDir)],
 	})
 
 	const hmr = new HMRService(createContext(capture, errorLogs), {
-		roots: ['tests/fixtures/plugins'],
+		roots: [fixturesPluginsRelFromWorkspace],
 		entries: [],
 		deps: baseDeps,
 	})
@@ -47,7 +52,7 @@ async function executePluginEntryAndCapture(
 		...buildHmrViteConfig({
 			root,
 			fsAllow,
-			scanRoots: ['tests/fixtures/plugins'],
+			scanRoots: [fixturesPluginsRelFromWorkspace],
 			deps,
 			runnerPlugin,
 			honoPlugin: { name: 'noop' },
@@ -58,11 +63,11 @@ async function executePluginEntryAndCapture(
 
 	try {
 		await hmr.executeFiles([pluginEntry])
+		const core = (await (hmr as any).runner.import('@pluxel/core')) as CoreApi
+		return { capture, errorLogs, core }
 	} finally {
 		await server.close()
 	}
-
-	return { capture, errorLogs }
 }
 
 function createContext(
@@ -82,6 +87,7 @@ function createContext(
 		loader: {
 			api: {
 				anchors: {
+					has: (id: string) => anchors.has(id),
 					list: () => anchors,
 					remove: (id: string) => anchors.delete(id),
 				},
@@ -113,38 +119,38 @@ function createContext(
 
 describe('configSourcePlugin integration', () => {
 	it('injects __setConfigSource__ so getConfigSource returns schemaSource', async () => {
-		const root = process.cwd()
-		const pluginEntry = join(root, 'tests', 'fixtures', 'plugins', 'PluginB.ts')
-		const { capture, errorLogs } = await executePluginEntryAndCapture(pluginEntry)
+		const root = workspaceRoot
+		const pluginEntry = join(root, fixturesPluginsRelFromWorkspace, 'PluginB.ts')
+		const { capture, errorLogs, core } = await executePluginEntryAndCapture(pluginEntry)
 
 		expect(errorLogs).toEqual([])
 		expect(capture.lastModule).toBeTruthy()
 		const ctor = (capture.lastModule as { PluginB?: unknown } | null)?.PluginB
 		expect(typeof ctor).toBe('function')
-		const map = getConfigSource(ctor as Parameters<typeof getConfigSource>[0])
+		const map = core.getConfigSource(ctor)
 		expect(map).toBeTruthy()
 		expect(Object.keys(map ?? {})).toContain('a')
 		expect(Object.keys(map ?? {})).toContain('ba')
 	}, 20_000)
 
 	it('supports configs.use(schema) fields (no @Config decorator)', async () => {
-		const root = process.cwd()
-		const pluginEntry = join(root, 'tests', 'fixtures', 'plugins', 'PluginConfigUse.ts')
-		const { capture, errorLogs } = await executePluginEntryAndCapture(pluginEntry)
+		const root = workspaceRoot
+		const pluginEntry = join(root, fixturesPluginsRelFromWorkspace, 'PluginConfigUse.ts')
+		const { capture, errorLogs, core } = await executePluginEntryAndCapture(pluginEntry)
 
 		expect(errorLogs).toEqual([])
 		expect(capture.lastModule).toBeTruthy()
 		const ctor = (capture.lastModule as { PluginConfigUse?: unknown } | null)?.PluginConfigUse
 		expect(typeof ctor).toBe('function')
-		const map = getConfigSource(ctor as Parameters<typeof getConfigSource>[0])
+		const map = core.getConfigSource(ctor)
 		expect(map).toBeTruthy()
 		expect(Object.keys(map ?? {})).toContain('foo')
 	}, 20_000)
 
 	it('supports features.use(FeatureCtor) without @UseFeature (dependency propagation)', async () => {
-		const root = process.cwd()
-		const pluginEntry = join(root, 'tests', 'fixtures', 'plugins', 'PluginFeatureUse.ts')
-		const { capture, errorLogs } = await executePluginEntryAndCapture(pluginEntry)
+		const root = workspaceRoot
+		const pluginEntry = join(root, fixturesPluginsRelFromWorkspace, 'PluginFeatureUse.ts')
+		const { capture, errorLogs, core } = await executePluginEntryAndCapture(pluginEntry)
 
 		expect(errorLogs).toEqual([])
 		expect(capture.lastModule).toBeTruthy()
@@ -153,10 +159,10 @@ describe('configSourcePlugin integration', () => {
 		const kv = (capture.lastModule as { KvPlugin?: unknown } | null)?.KvPlugin
 		expect(typeof kv).toBe('function')
 		expect(
-			getRequiredPluginDependencies(ctor as Parameters<typeof getRequiredPluginDependencies>[0]),
-		).toContain(kv as Parameters<typeof getRequiredPluginDependencies>[0])
+			core.getRequiredPluginDependencies(ctor),
+		).toContain(kv)
 		expect(
-			getUsedFeatures(ctor as Parameters<typeof getUsedFeatures>[0]).map((x) => x.name),
+			core.getUsedFeatures(ctor).map((x) => x.name),
 		).toContain('CacheFeature')
 	}, 20_000)
 })

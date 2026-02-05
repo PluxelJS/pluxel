@@ -293,6 +293,7 @@ packages/build/node_modules/
 # Runtime data / caches
 .pluxel/
 pluxel.hmr.jsonc
+pluxel.hmr.discovered.jsonc
 pluxel.hmr.jsonc.bak.*
 data/
 packages/*/data/

@@ -3,10 +3,11 @@
 	"private": true,
 	"type": "module",
 	"scripts": {
-		"hmr": "bun --conditions=@pluxel/source src/start.ts",
-		"hmr:prompt": "PLUXEL_CLI_SOURCE=1 PLUXEL_HMR_CLI_SOURCE=1 pnpm -w exec pluxel hmr --root ../../.. --profile plugins-host --start-cmd \"pnpm --filter @pluxel/plugins-host hmr\"",
-		"hmr:doctor": "PLUXEL_CLI_SOURCE=1 PLUXEL_HMR_CLI_SOURCE=1 pnpm -w exec pluxel hmr doctor --root ../../.. --profile plugins-host",
-		"hmr:smoke": "timeout -k 2s 25s bun --conditions=@pluxel/source src/start.ts; test $? -eq 124"
+		"hmr": "PLUXEL_CLI_SOURCE=1 PLUXEL_HMR_CLI_SOURCE=1 pnpm exec pluxel hmr start --root ../../.. --profile plugins-host",
+		"hmr:prompt": "PLUXEL_CLI_SOURCE=1 PLUXEL_HMR_CLI_SOURCE=1 pnpm exec pluxel hmr --root ../../.. --profile plugins-host --start-cmd \"pnpm --filter @pluxel/plugins-host hmr\"",
+		"hmr:doctor": "PLUXEL_CLI_SOURCE=1 PLUXEL_HMR_CLI_SOURCE=1 pnpm exec pluxel hmr doctor --root ../../.. --profile plugins-host",
+		"hmr:builtin": "PLUXEL_CLI_SOURCE=1 PLUXEL_HMR_CLI_SOURCE=1 pnpm exec pluxel hmr builtin --root ../../.. --profile plugins-host",
+		"hmr:smoke": "timeout -k 2s 25s pnpm --filter @pluxel/plugins-host hmr; test $? -eq 124"
 	},
 	"dependencies": {
 		"@pluxel/graphql": "workspace:*",

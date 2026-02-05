@@ -9,3 +9,6 @@ export class MarketUI extends BasePlugin {
 		this.ctx.ext.ui.register({ entryPath: uiEntryPath })
 	}
 }
+
+// biome-ignore lint/style/noDefaultExport: plugin ctors are intentionally default-exported for ergonomic host imports.
+export default MarketUI

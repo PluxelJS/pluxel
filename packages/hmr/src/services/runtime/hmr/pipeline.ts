@@ -706,9 +706,16 @@ export class HmrBatchProcessor {
 		const commitOk = Boolean(executed?.res.ok)
 		const commitError =
 			executed?.res.ok === false ? String(executed.res.err ?? 'commit failed') : undefined
+
+		const CHANGED_PREVIEW_LIMIT = 3
+		const changedPretty = [...new Set(changed.map((id) => this.path.pretty(id)))].sort()
+		const changedPreview = changedPretty.slice(0, CHANGED_PREVIEW_LIMIT)
+		const changedPreviewOmitted = Math.max(0, changedPretty.length - changedPreview.length)
 		this.ctx.logger.info('HMR updated', {
 			epoch,
 			changedFiles: changed.length,
+			changedPreview: changedPreview.length ? changedPreview : undefined,
+			changedPreviewOmitted: changedPreviewOmitted || undefined,
 			targets: execOrder.length,
 			affected: graph.affectedIds.size,
 			fallbackRoots: graph.roots.length,

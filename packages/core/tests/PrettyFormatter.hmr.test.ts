@@ -1,6 +1,6 @@
-import { describe, expect, it } from 'vitest'
 import type { LogRecord } from '@logtape/logtape'
 import { createPluxelPrettyFormatter } from '@pluxel/core/logger'
+import { describe, expect, it } from 'vitest'
 
 describe('createPluxelPrettyFormatter (hmr)', () => {
 	it('renders "HMR updated" as a readable text block (no ⟪k=v⟫ spam)', () => {
@@ -22,6 +22,7 @@ describe('createPluxelPrettyFormatter (hmr)', () => {
 				context: 'root',
 				epoch: 1,
 				changedFiles: 1,
+				changedPreview: ['packages/cmd/src/exec.ts'],
 				targets: 1,
 				affected: 2,
 				fallbackRoots: 1,
@@ -40,6 +41,8 @@ describe('createPluxelPrettyFormatter (hmr)', () => {
 		expect(out).toContain('time: batch=30.6ms commit=12.3ms')
 		expect(out).toContain('plugins: loaded=22 enabled=22 running=21')
 		expect(out).toContain('invalidated: vite=1 runner=1')
+		expect(out).toContain('changed:')
+		expect(out).toContain('- packages/cmd/src/exec.ts')
 		expect(out).toContain('hotspots:')
 		expect(out).not.toContain('⟪')
 	})

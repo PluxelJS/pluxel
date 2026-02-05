@@ -2,7 +2,13 @@ import { existsSync } from 'node:fs'
 import { availableParallelism, cpus } from 'node:os'
 import { fileURLToPath } from 'node:url'
 import type { Logger as LogtapeLogger } from '@logtape/logtape'
-import { type CommitSummary, type Context, getPluginInfo, RootService } from '@pluxel/core'
+import {
+	type CommitSummary,
+	type Context,
+	checkPluginDecorator,
+	getPluginInfo,
+	RootService,
+} from '@pluxel/core'
 import { getDebugLogger } from '@pluxel/core/logger'
 import { dirname, resolve } from 'pathe'
 import {
@@ -122,6 +128,31 @@ export interface HMRConfig {
 	 */
 	builtins?: readonly BuiltinPluginSpec[]
 	/**
+	 * Builtin plugins loaded from workspace package dist entries (named exports).
+	 *
+	 * This form is designed for monorepos where `@pluxel/hmr` should not directly depend on builtin packages,
+	 * while still preserving **constructor identity** inside the SSR runner (so `features.dep(BuiltinCtor)`
+	 * works reliably).
+	 *
+	 * The host resolves each `entry` path (from `exports["."]`, e.g. `dist/index.mjs`) and HMR evaluates
+	 * it via the runner, then commits all detected plugin ctors via `LoaderService.preloadPlugins()`.
+	 */
+	builtinsFromDist?: ReadonlyArray<{
+		/** Workspace package name (also used as Loader moduleId). */
+		packageName: string
+		/** Dist entry file path (absolute or workspace-relative). Prefer `.mjs`. */
+		entry: string
+		/**
+		 * Optional export key.
+		 *
+		 * Note: when omitted, HMR auto-detects all `@Plugin`-decorated constructors from the module's
+		 * **named exports** (fail-fast; does not rely on default export).
+		 */
+		exportKey?: string
+		/** Whether to enable this builtin in config. Defaults to `true`. */
+		enable?: boolean
+	}>
+	/**
 	 * SSR runner-only runtime shims (Vite pipeline).
 	 *
 	 * Defaults to `{}` (no shims). Use this only if you need to isolate side-effect-only modules
@@ -221,6 +252,7 @@ export class HMRService {
 	public readonly path: HmrPathApi
 	private readonly includeGlobs?: string[]
 	private readonly excludeGlobs?: string[]
+	private readonly builtinDistDirsClean: readonly string[]
 
 	private readonly deps: ResolvedHMRDependencyConfig
 	private readonly runtimeShims: RuntimeShimRegistry
@@ -306,6 +338,7 @@ export class HMRService {
 		})
 		this.toolkit = this.env.toolkit
 		this.path = this.toolkit.path
+		this.builtinDistDirsClean = this.resolveBuiltinDistDirsClean()
 
 		this.deps = resolveHMRDependencyConfig(this.config.deps)
 
@@ -486,6 +519,15 @@ export class HMRService {
 	}
 
 	private createRunnerPlugin(): Plugin {
+		const builtinsFromDist = this.config.builtinsFromDist?.length
+			? new Map(
+					this.config.builtinsFromDist.map((b) => [
+						String(b.packageName ?? '').trim(),
+						String(b.entry ?? '').trim(),
+					]),
+				)
+			: null
+
 		const plugin: Plugin = {
 			name: 'pluxel-runner',
 			enforce: 'pre',
@@ -505,6 +547,15 @@ export class HMRService {
 				// evaluating a second copy (e.g. workspace TS sources) in the runner.
 				if (this.isHardBridgeModule(id) || this.isBridgeModule(id)) {
 					return null
+				}
+
+				// Builtins from dist: keep them stable and consistent across the runner cache.
+				// This avoids rewriting them to `exports["."].["@pluxel/hmr"]` TS sources which would
+				// produce a different ctor identity and break `features.dep(BuiltinCtor)` integrations.
+				const builtinEntry = builtinsFromDist?.get(id)
+				if (builtinEntry) {
+					const clean = this.path.toClean(builtinEntry)
+					return clean ? { id: clean } : null
 				}
 
 				const resolved = await this.resolveBareWorkspaceEntry(id)
@@ -637,8 +688,9 @@ export class HMRService {
 		if (this.didPreloadBuiltins) return
 		this.didPreloadBuiltins = true
 
-		const builtins = this.config.builtins
-		if (!builtins?.length) return
+		const builtins = this.config.builtins ?? []
+		const builtinsFromDist = this.config.builtinsFromDist ?? []
+		if (!builtins.length && !builtinsFromDist.length) return
 
 		this.maybeWarnBuiltinOverlap()
 
@@ -646,10 +698,124 @@ export class HMRService {
 		if (!config.isReady) await config.ready
 
 		try {
-			const resolved = [...builtins]
+			const resolved: BuiltinPluginSpec[] = []
+			const builtinsByPackage: Record<string, string[]> = {}
+			const builtinPlugins: string[] = []
+			const builtinPluginSet = new Set<string>()
+
+			if (builtinsFromDist.length) {
+				const specs = builtinsFromDist
+					.map((b) => ({
+						packageName: String(b.packageName ?? '').trim(),
+						exportKey: String(b.exportKey ?? '').trim(),
+						enable: b.enable !== false,
+						entry: String(b.entry ?? '').trim(),
+					}))
+					.filter((b) => b.packageName)
+
+				const exportsList = await Promise.all(
+					specs.map(async (b) => {
+						try {
+							return await this.runner.import(b.packageName)
+						} catch (error) {
+							throw new Error(
+								`[hmr] Failed to evaluate builtin "${b.packageName}" via runner import (entry=${b.entry || 'unknown'}).`,
+								{ cause: error },
+							)
+						}
+					}),
+				)
+
+				for (let i = 0; i < specs.length; i++) {
+					const b = specs[i]!
+					const exports = exportsList[i] as any
+					if (!exports || typeof exports !== 'object') {
+						throw new Error(
+							`[hmr] Builtin "${b.packageName}" did not evaluate to an ESM exports object.`,
+						)
+					}
+
+					// Governance (fail-fast): do not rely on default export.
+					// Builtin packages may export multiple plugins; we auto-detect all decorated plugin ctors
+					// from *named* exports.
+					const keys = Object.keys(exports)
+					const pluginKeys: string[] = []
+					const pushIfPlugin = (k: string) => {
+						if (!k || k === 'default') return
+						const maybe = exports[k]
+						if (typeof maybe !== 'function') return
+						if (!checkPluginDecorator(maybe)) return
+						pluginKeys.push(k)
+					}
+
+					if (b.exportKey) {
+						if (b.exportKey === 'default') {
+							throw new Error(
+								`[hmr] Builtin "${b.packageName}" cannot use exportKey="default". Export the plugin ctor as a named export.`,
+							)
+						}
+						pushIfPlugin(b.exportKey)
+						if (pluginKeys.length === 0) {
+							throw new Error(
+								`[hmr] Builtin "${b.packageName}" export "${b.exportKey}" is not an @Plugin ctor.` +
+									(keys.length ? ` Available keys: ${keys.slice(0, 16).join(', ')}` : ''),
+							)
+						}
+					} else {
+						for (const k of keys) pushIfPlugin(k)
+						pluginKeys.sort((a, b) => a.localeCompare(b))
+						if (pluginKeys.length === 0) {
+							throw new Error(
+								`[hmr] Builtin "${b.packageName}" exports no @Plugin ctors as named exports.` +
+									' Export at least one plugin ctor as a named export (do not rely on default).' +
+									(keys.length ? ` Available keys: ${keys.slice(0, 16).join(', ')}` : ''),
+							)
+						}
+					}
+
+					const ids: string[] = []
+					for (const exportKey of pluginKeys) {
+						const ctor = exports[exportKey]
+						try {
+							const id = getPluginInfo(ctor as never).id
+							ids.push(id)
+							if (!builtinPluginSet.has(id)) {
+								builtinPluginSet.add(id)
+								builtinPlugins.push(id)
+							}
+						} catch {
+							// Should not happen: pluginKeys only includes decorated ctors.
+							ids.push(exportKey)
+						}
+						resolved.push({
+							plugin: ctor,
+							enable: b.enable,
+							// Use the workspace package name so snapshots can be generated as runnable imports.
+							moduleId: b.packageName,
+							packageName: b.packageName,
+							exportKey,
+						})
+					}
+					builtinsByPackage[b.packageName] = ids
+				}
+			}
+
+			if (builtins.length) resolved.push(...builtins)
 			// Commit builtins as a baseline so later loader batch rollbacks revert back to a container
 			// that already includes the built-in plugins.
-			await this.ctx.loader.preloadPlugins(resolved, { commit: true })
+			const declared = await this.ctx.loader.preloadPlugins(resolved, { commit: true })
+
+			if (builtinsFromDist.length) {
+				this.ctx.logger.info('Builtin baseline ready (from dist)', {
+					packages: builtinsFromDist.length,
+					plugins: builtinPlugins.length,
+					builtins: builtinsByPackage,
+					builtinPlugins,
+				})
+			}
+			if (builtins.length && !builtinsFromDist.length) {
+				this.ctx.logger.info(`Builtin baseline ready: ${declared.length} plugin(s)`)
+			}
 		} catch (error) {
 			// Allow a retry on the next start cycle (or in tests) when configuration changes.
 			this.didPreloadBuiltins = false
@@ -659,8 +825,9 @@ export class HMRService {
 
 	private maybeWarnBuiltinOverlap() {
 		if (this.warnedBuiltinOverlap) return
-		const builtins = this.config.builtins
-		if (!builtins?.length) return
+		const builtins = this.config.builtins ?? []
+		const builtinsFromDist = this.config.builtinsFromDist ?? []
+		if (!builtins.length && !builtinsFromDist.length) return
 
 		const isUnder = (child: string, root: string) =>
 			child === root || child.startsWith(root.endsWith('/') ? root : `${root}/`)
@@ -684,8 +851,8 @@ export class HMRService {
 
 		this.warnedBuiltinOverlap = true
 		this.ctx.logger.warn(
-			'hmrService.builtins 与 hmrService.roots/include 可能发生“重复加载”冲突（检测到扫描范围覆盖 {dirs}）。' +
-				' builtins 会以合成 moduleId（如 "pluxel:builtins"）建立 baseline；若同一插件源码又被按文件路径扫描执行，可能触发插件名冲突或双注册。' +
+			'hmrService.builtins/builtinsFromDist 与 hmrService.roots/include 可能发生“重复加载”冲突（检测到扫描范围覆盖 {dirs}）。' +
+				' builtins 会以 moduleId（builtins: "pluxel:builtins"；builtinsFromDist: packageName）建立 baseline；若同一插件源码又被按文件路径扫描执行，可能触发插件名冲突或双注册。' +
 				' 建议：1) 从扫描范围排除这些 builtin 插件目录（hmrService.exclude）；或 2) 移除 builtins，让它们由扫描/HMR 管理；' +
 				' 注意 deps.bridgeModules 仅影响“按 specifier 导入”的单例，不会阻止按路径扫描。',
 			{ dirs: overlaps.join(', ') },
@@ -722,6 +889,9 @@ export class HMRService {
 
 	private enqueueFileChange(file: string) {
 		const clean = this.path.toClean(file)
+		// Governance: builtinsFromDist establish a baseline container and are intentionally not managed
+		// by the HMR pipeline. Ignore any changes under builtin dist dirs to avoid double-registration.
+		if (clean && this.isInBuiltinDist(clean)) return false
 		if (this.toolkit.pathFilter(clean)) {
 			this.debouncer.push(clean)
 			return true
@@ -746,6 +916,29 @@ export class HMRService {
 					return true
 				}
 			}
+		}
+		return false
+	}
+
+	private resolveBuiltinDistDirsClean(): readonly string[] {
+		const list = this.config.builtinsFromDist ?? []
+		if (!list.length) return []
+		const out: string[] = []
+		for (const b of list) {
+			const entry = typeof b?.entry === 'string' ? b.entry.trim() : ''
+			if (!entry) continue
+			const clean = this.path.toClean(entry)
+			if (!clean) continue
+			out.push(dirname(clean))
+		}
+		return unique(out).sort((a, b) => a.localeCompare(b))
+	}
+
+	private isInBuiltinDist(clean: string): boolean {
+		for (const dir of this.builtinDistDirsClean) {
+			if (clean === dir) return true
+			const prefix = dir.endsWith('/') ? dir : `${dir}/`
+			if (clean.startsWith(prefix)) return true
 		}
 		return false
 	}
@@ -1170,6 +1363,7 @@ export class HMRService {
 			isRunning: (ctor) => this.ctx.registry.isRunning(ctor),
 			resolveBareWorkspaceEntry: (specifier) => this.resolveBareWorkspaceEntry(specifier),
 			resolveLimit: this.config.reportResolveLimit,
+			builtinsModuleIds: this.config.builtinsFromDist?.map((b) => b.packageName) ?? [],
 			hotspots: hotspots.length ? hotspots : undefined,
 		})
 

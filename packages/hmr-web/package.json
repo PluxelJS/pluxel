@@ -35,7 +35,7 @@
 		"react": "^19.2.4"
 	},
 	"devDependencies": {
-		"@types/react": "^19.2.7",
+		"@types/react": "^19.2.10",
 		"tsdown": "^0.20.1"
 	},
 	"publishConfig": {

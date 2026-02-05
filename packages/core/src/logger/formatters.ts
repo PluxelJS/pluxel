@@ -346,6 +346,11 @@ function formatHmrUpdatedDetails(record: LogRecord, colorsOn: boolean): string[]
 
 	const epoch = typeof props.epoch === 'number' ? props.epoch : undefined
 	const changedFiles = typeof props.changedFiles === 'number' ? props.changedFiles : undefined
+	const changedPreview = Array.isArray(props.changedPreview)
+		? (props.changedPreview.filter((x) => typeof x === 'string') as string[])
+		: undefined
+	const changedPreviewOmitted =
+		typeof props.changedPreviewOmitted === 'number' ? props.changedPreviewOmitted : undefined
 	const targets = typeof props.targets === 'number' ? props.targets : undefined
 	const affected = typeof props.affected === 'number' ? props.affected : undefined
 	const fallbackRoots = typeof props.fallbackRoots === 'number' ? props.fallbackRoots : undefined
@@ -416,6 +421,15 @@ function formatHmrUpdatedDetails(record: LogRecord, colorsOn: boolean): string[]
 	if (viteInvalidated !== undefined) invParts.push(`vite=${fmtCount(viteInvalidated)}`)
 	if (runnerInvalidated !== undefined) invParts.push(`runner=${fmtCount(runnerInvalidated)}`)
 	if (invParts.length) lines.push(`    invalidated: ${invParts.join(' ')}`)
+
+	if (changedPreview?.length) {
+		const blue = '\u001B[34m'
+		lines.push('    changed:')
+		for (const id of changedPreview) {
+			lines.push(`      - ${colorizeValue(id, colorsOn, blue)}`)
+		}
+		if (changedPreviewOmitted) lines.push(`      … +${fmtCount(changedPreviewOmitted)} more`)
+	}
 
 	const hotspots = formatHmrHotspots(props.hotspots, colorsOn)
 	if (hotspots?.length) lines.push(...hotspots)

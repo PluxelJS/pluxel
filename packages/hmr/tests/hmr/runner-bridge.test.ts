@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import type { Context } from '@pluxel/core'
-import { BasePlugin, checkPluginDecorator } from '@pluxel/core'
 import { join } from 'pathe'
 import { createServer, normalizePath } from 'vite'
+import { fixturesPluginsDir, fixturesPluginsRelFromWorkspace, workspaceRoot } from './_paths'
 import {
 	buildHmrViteConfig,
 	resolveFsAllowList,
@@ -20,6 +20,7 @@ const createCtx = () => {
 		loader: {
 			api: {
 				anchors: {
+					has: (id: string) => anchors.has(id),
 					list: () => anchors,
 					remove: (id: string) => anchors.delete(id),
 				},
@@ -37,13 +38,13 @@ const createCtx = () => {
 
 describe('HMR runner bridge', () => {
 	it('reuses host @pluxel/core singletons in the runner', async () => {
-		const cwd = process.cwd()
-		const fixturesDir = join(cwd, 'tests/fixtures/plugins')
+		const cwd = workspaceRoot
+		const fixturesDir = fixturesPluginsDir
 		const pluginFile = join(fixturesDir, 'PluginWithUI.ts')
 
 		const ctx = createCtx()
 		const hmr = new HMRService(ctx, {
-			roots: ['tests/fixtures/plugins'],
+			roots: [fixturesPluginsRelFromWorkspace],
 			entries: [],
 		})
 		hmr.setServerRoot(cwd)
@@ -59,7 +60,7 @@ describe('HMR runner bridge', () => {
 			...buildHmrViteConfig({
 				root: cwd,
 				fsAllow,
-				scanRoots: ['tests/fixtures/plugins'],
+				scanRoots: [fixturesPluginsRelFromWorkspace],
 				deps,
 				runnerPlugin: { name: 'noop' },
 				honoPlugin: { name: 'noop' },
@@ -75,16 +76,29 @@ describe('HMR runner bridge', () => {
 		try {
 			const runner = new HmrRunner()
 			runner.init(server)
-			await runner.bridgeHostModules(deps.bridgeModules, hmr.path, { warn: () => undefined })
+			await runner.bridgeHostModules(deps.bridgeModules, hmr.path, {
+				warn: () => undefined,
+			})
+			expect((runner as any).bridgedRunnerUrls?.has?.('/packages/context/src/index.ts')).toBe(true)
 			await runner.assertBridgedSingletons(deps.bridgeModules)
+
+			const hostCore = (runner as any).bridgedHostExports?.get?.('@pluxel/core') as
+				| { BasePlugin?: unknown; checkPluginDecorator?: unknown }
+				| undefined
+			expect(hostCore).toBeTruthy()
 
 			const mod = (await runner.import(pluginFile)) as Record<string, unknown>
 			const ctor = mod.PluginWithUI as unknown
 			expect(typeof ctor).toBe('function')
 
-			const pluginCtor = ctor as unknown as typeof BasePlugin
+			const BasePlugin = hostCore?.BasePlugin as unknown
+			const checkPluginDecorator = hostCore?.checkPluginDecorator as unknown
+			expect(typeof BasePlugin).toBe('function')
+			expect(typeof checkPluginDecorator).toBe('function')
+
+			const pluginCtor = ctor as unknown as { prototype?: unknown }
 			expect(Object.getPrototypeOf(pluginCtor)).toBe(BasePlugin)
-			expect(checkPluginDecorator(pluginCtor)).toBe(true)
+			expect((checkPluginDecorator as (c: unknown) => boolean)(pluginCtor)).toBe(true)
 		} finally {
 			await server.close()
 		}

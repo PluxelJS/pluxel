@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { join } from 'pathe'
 import { HMRService } from '../../src/services/runtime/hmr/HMRService'
+import { fixturesPluginsRelFromWorkspace, workspaceRoot } from './_paths'
 
 const noop = () => undefined
 
@@ -28,9 +29,9 @@ const createCtx = () => {
 
 describe('HMRService runner plugin', () => {
 	it('does not suppress Vite hot updates for the client UI', () => {
-		const cwd = process.cwd()
+		const cwd = workspaceRoot
 		const hmr = new HMRService(createCtx(), {
-			roots: [join(cwd, 'tests/fixtures/plugins')],
+			roots: [join(cwd, fixturesPluginsRelFromWorkspace)],
 			entries: [],
 		})
 

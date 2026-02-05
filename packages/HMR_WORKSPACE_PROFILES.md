@@ -3,7 +3,7 @@
 ## 目标
 - 启动时总能拿到工作区最新插件入口（不引入 `sync`/索引产物）。
 - 只有 **profile 选中的插件包** 进入 watch/compile/replace；未选中者不承担成本。
-- 配置只暴露：`roots / enabled / include / exclude / profiles`；解析必须 strict（未知字段直接报错）。
+- 配置只暴露：`roots / enabled / builtin / include / exclude / profiles`；解析必须 strict（未知字段直接报错）。
 - 发现逻辑只实现一次：`@pluxel/cli` 提供运行时库，`@pluxel/hmr` 复用；用 `profiles` 切换策略。
 
 ## 兼容性约束（必须保持 @pluxel/hmr 既有正确性）
@@ -14,6 +14,12 @@
 - 默认路径：`pluxel.hmr.jsonc`（位于 `process.cwd()`）
 - **@pluxel/hmr 在找不到配置文件时必须直接报错并拒绝启动**
   - `pluxel hmr` prompt 入口负责缺失时创建，再启动 `@pluxel/hmr`。
+
+## 生成的“可用包”索引（给人/LLM 用）
+为避免编辑 `pluxel.hmr.jsonc` 时“猜包名”，`pluxel hmr` 会在扫描后生成：
+- `pluxel.hmr.discovered.jsonc`：列出本次扫描发现到的插件包（name/pkgDir/entry）与可用于 `profiles[*].enabled/builtin` 的候选包名。
+
+该文件只用于**参考**（不参与运行时解析/启动），适合给 LLM 作为“允许填写的包名清单”。
 
 ## 概念澄清：profile 的 “enabled” ≠ 插件运行时启用
 
@@ -36,6 +42,19 @@
   - B 在运行时也处于 enabled/可提供状态（否则 commit 可能 MissingDependency）。
 
 > 这也是为什么我们在 `pluxel hmr` prompt/doctor 里会对“profile 选中的插件包”做依赖提示：它本质是在帮你补齐 “entry 可见性”，避免未来你启用某些插件时 commit 才发现依赖根本没被加载进来。
+
+### Builtins（profile.builtin）
+
+- `profiles[profile].builtin: string[]` 指的是：**哪些工作区插件包由 host 作为 builtins 预加载（baseline）提供**。
+- 语义：这些包会被 discovery/entries 解析 **自动 omit**，避免同一包既作为 builtin baseline 又作为 `@pluxel/hmr` entry 被执行，导致插件名冲突/双注册。
+- 约束（fail-fast）：builtin 包必须满足：
+  - `exports["."]` 下存在 **`.mjs`** 的 dist 入口（推荐 `exports["."].import` / `exports["."].default` → `./dist/index.mjs`）；
+  - dist 模块至少导出一个带 `@Plugin` 装饰的 plugin ctor，且 **必须是 named export**（不依赖 `default`）。
+  - HMR 启动期只校验 `.mjs` dist 入口是否存在；不负责“是否最新构建”的治理（由用户自行保证）。
+  - host 只负责解析 dist entry；实际求值发生在 SSR runner 内，以保证 ctor identity 一致，避免 `features.dep(BuiltinCtor)` 因双实例失效。
+- CLI：`pluxel hmr builtin` 用于编辑该字段（打开 picker；仅写入配置；构建由用户显式执行）。
+- 非交互：`pluxel hmr builtin --builtinSet "<pkg1>, <pkg2>"` 或 `pluxel hmr builtin --builtin-set "<pkg1>, <pkg2>"`（同样只写入配置）。
+- 对称能力：`pluxel hmr enabled` 用于编辑 `profiles[profile].enabled`（picker）；非交互：`pluxel hmr enabled --enabled-set "<pkg1>, <pkg2>"`。
 
 ### 依赖提示的边界（重要）
 - `doctor`/prompt 的“缺少 profile packages”提示是 **best-effort**：
@@ -69,6 +88,7 @@ export type PluxelHmrConfigV1 = {
     {
       roots?: "auto" | string[]
       enabled: string[]
+      builtin?: string[]
       include?: string[]
       exclude?: string[]
     }
@@ -219,24 +239,34 @@ export async function startHmrFromSnapshot(
   - 展开 roots 后的发现结果（可用插件包：name + entry）
   - enabled 中是否存在未发现包名 / entry 不存在
 
-## prompt 入口（推荐使用 @clack/prompts）
-你定义的 `pluxel hmr` prompt 入口建议用 `@clack/prompts` 实现交互体验（尤其适合“每次启动前扫描一次”的场景）。
+## prompt 入口（Ink TUI）
+`pluxel hmr` 的交互入口是一个全屏 Ink TUI（固定视口、避免滚动），所有操作都在同一套交互里完成（不混用 prompt 库）。
 
-### 推荐组件映射
-- 扫描阶段：`spinner`（或 `progress`，若你选择的版本提供该组件）展示“正在扫描 roots / 发现插件包 / 校验 enabled”的阶段进度。
-- profile 选择：`autocomplete`（按 profile 名称过滤）或 `select`（profile 少时）。
-- 启用集编辑：
-  - `autocomplete`（按包名过滤候选）
-  - `groupMultiselect`（按目录分组；支持一键批量开关某个文件夹下的一批插件包，尽量减少键盘操作）
-  - `multiselect`（无分组时的兜底）
-- 写入确认：`confirm`（确认写回 `pluxel.hmr.jsonc`）
-- 输出信息：`note`/`outro`（总结 active profile、启用数量、roots 展开结果、错误提示）
+### Tabs（核心功能拆分）
+- Packages：统一编辑 `profiles[profile].enabled` 与 `profiles[profile].builtin`（同一浏览器；互斥）。
+- Start：显示当前 profile 状态与启动就绪性；Enter 启动。
+- Doctor：展示 discovery/校验信息与 warnings/errors（可滚动）。
+- Roots / Include / Exclude：编辑 roots/include/exclude（列表编辑器）。
+- Profiles：管理 profiles（新建/重命名/克隆/删除/切换 active）。
+
+### 快捷键（默认）
+- `Ctrl+←/→` 或 `1-9`：切换 Tab
+- `Ctrl+R`：重新扫描（roots/exclude 变更后刷新）
+- `w`（或 `Ctrl+S`）：写入 `pluxel.hmr.jsonc`
+- `q`/`Ctrl+C`：退出（dirty 时会提示确认）
+- Doctor 内：`↑/↓` 滚动，`PgUp/PgDn`（或 `Ctrl+U/D`）翻页，`g/G` 顶/底
+- Packages（内联浏览器，不需要 Enter 进入/退出）：
+  - `e/b` 切换“操作模式”（Enabled/Builtin，互斥）
+  - `x` 对当前 folder/可见列表执行 E↔B 交换（批量切换）
+  - `Space`（在 folder pane 聚焦时）将整个 folder 设为当前模式
+  - `/` 聚焦 filter（`Esc` 退出 filter 聚焦），`Tab` 切换 focus，`Ctrl+U` 清空 filter
+  - 修改即时生效，使用 `w`/`Ctrl+S` 写入配置文件
 
 ### 交互原则
 - 配置缺失：先创建默认 `pluxel.hmr.jsonc`（最小可用），再进入选择流程。
 - 配置解析失败：按“配置文件格式与修复策略”处理（提示 + 备份 `.bak.<timestamp>` + 重新生成）。
 - 扫描始终实时：每次进入 prompt 都按 roots 扫一次（只读 package.json），不维护索引产物。
-- 启动推荐走 `pluxel hmr start`：prompt 扫描完成后直接把 snapshot 传给 `@pluxel/hmr`，避免重复扫描。
+- 启动推荐走 snapshot 启动：prompt 扫描完成后直接把 snapshot 传给 `@pluxel/hmr`，避免重复扫描。
 - 写入尽量少：仅当用户变更了 profile/启用集/roots/exclude 才写回文件。
 
 ### 生成文件头部注释（建议）

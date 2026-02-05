@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import type { Context } from '@pluxel/core'
 import { join } from 'pathe'
 import { HMRService } from '../../src/services/runtime/hmr/HMRService'
+import { fixturesDepsRelFromWorkspace, fixturesPluginsRelFromWorkspace, workspaceRoot } from './_paths'
 
 const noop = () => undefined
 
@@ -29,9 +30,9 @@ const createCtx = () => {
 describe('HMRService dynamic moduleGraph tracking', () => {
 	it('accepts changes outside scan roots if the file exists in the runner moduleGraph', async () => {
 		const ctx = createCtx()
-		const pkgRoot = process.cwd()
-		const root = join(pkgRoot, 'tests/fixtures/plugins')
-		const outside = join(pkgRoot, 'tests/fixtures/deps/Dep.ts')
+		const pkgRoot = workspaceRoot
+		const root = join(pkgRoot, fixturesPluginsRelFromWorkspace)
+		const outside = join(pkgRoot, fixturesDepsRelFromWorkspace, 'Dep.ts')
 
 		const hmr = new HMRService(ctx, { roots: [root], entries: [] })
 		hmr.setServerRoot(pkgRoot)

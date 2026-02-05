@@ -1,5 +1,5 @@
 import { existsSync } from 'node:fs'
-import { copyFile, mkdir } from 'node:fs/promises'
+import { copyFile, mkdir, readFile } from 'node:fs/promises'
 import { dirname, join, resolve } from 'node:path'
 import {
 	DEFAULT_HMR_CONFIG_BASENAME,
@@ -162,6 +162,95 @@ export type CreateHmrHostResult = {
 	ctx: Context
 }
 
+async function resolveDefaultExportEntryAbs(pkgDirAbs: string): Promise<string | null> {
+	const manifestPath = resolve(pkgDirAbs, 'package.json')
+	if (!existsSync(manifestPath)) return null
+
+	let json: unknown
+	try {
+		const raw = await readFile(manifestPath, 'utf8')
+		json = JSON.parse(raw)
+	} catch {
+		return null
+	}
+
+	const exportsField =
+		json && typeof json === 'object' && !Array.isArray(json)
+			? (json as Record<string, unknown>).exports
+			: undefined
+	const dot =
+		exportsField && typeof exportsField === 'object' && !Array.isArray(exportsField)
+			? (exportsField as Record<string, unknown>)['.']
+			: undefined
+	if (!dot) return null
+
+	const candidates: string[] = []
+	const seen = new Set<unknown>()
+	const preferKeys = ['import', 'module', 'default', 'browser', 'require'] as const
+
+	const visit = (node: unknown, depth: number) => {
+		if (depth > 6) return
+		if (typeof node === 'string') {
+			const s = node.trim()
+			if (s) candidates.push(s)
+			return
+		}
+		if (!node || typeof node !== 'object') return
+		if (seen.has(node)) return
+		seen.add(node)
+		const obj = node as Record<string, unknown>
+		for (const k of preferKeys) {
+			if (!(k in obj)) continue
+			visit(obj[k], depth + 1)
+		}
+	}
+
+	visit(dot, 0)
+	const unique = [...new Set(candidates)]
+	if (!unique.length) return null
+
+	// Fail-fast: builtinsFromDist must be a Node ESM dist entry to keep runner evaluation stable.
+	// Require `.mjs` so we don't silently fall back to CJS/ambiguous `.js` in mixed toolchains.
+	const picked = unique.find((p) => p.endsWith('.mjs'))
+	if (!picked) return null
+
+	return resolve(pkgDirAbs, picked)
+}
+
+async function resolveBuiltinsFromDist(params: {
+	rootDir: string
+	snapshot: WorkspaceSnapshot
+}): Promise<Array<{ packageName: string; entry: string }>> {
+	const list = (params.snapshot.builtinPackages ?? []).map((s) => String(s).trim()).filter(Boolean)
+	const unique = uniqSorted([...new Set(list)])
+	if (!unique.length) return []
+
+	const discoveredByName = new Map(params.snapshot.discovered.map((p) => [p.name, p]))
+	const out: Array<{ packageName: string; entry: string }> = []
+
+	for (const pkgName of unique) {
+		const discovered = discoveredByName.get(pkgName)
+		if (!discovered) {
+			throw new Error(`[hmr-host] Builtin package not found in workspace discovery: ${pkgName}`)
+		}
+
+		const pkgDirAbs = resolve(params.rootDir, discovered.pkgDir)
+		const entryAbs = await resolveDefaultExportEntryAbs(pkgDirAbs)
+		if (!entryAbs) {
+			throw new Error(
+				`[hmr-host] Builtin package missing dist .mjs export entry (check package.json exports): ${pkgName}`,
+			)
+		}
+		if (!existsSync(entryAbs)) {
+			throw new Error(`[hmr-host] Builtin dist entry missing on disk for ${pkgName}: ${entryAbs}`)
+		}
+
+		out.push({ packageName: pkgName, entry: entryAbs })
+	}
+
+	return out
+}
+
 /**
  * Map a small set of env vars into `hmrService` config.
  *
@@ -217,8 +306,7 @@ async function resolveSnapshotFromConfig(params: {
 		omitPackages: params.omitPackages,
 	})
 	if (!res.ok) {
-		const hint = `Hint: run \`pluxel hmr\` (interactive) to generate/edit ${configPathAbs}.`
-		throw new Error([...res.errors, hint].join('\n'))
+		throw new Error(res.errors.join('\n'))
 	}
 	return res.snapshot
 }
@@ -264,8 +352,11 @@ export async function createHmrHost(opts: CreateHmrHostOptions = {}): Promise<Cr
 		? { ...(opts.deps ?? {}), cjsExternal: opts.cjsExternal }
 		: opts.deps
 
-	const builtins = opts.builtins ?? []
-	const omitPackages = builtins.length ? extractBuiltinPackageNames(builtins) : undefined
+	const builtinsFromOpts = opts.builtins
+	const omitPackages =
+		builtinsFromOpts && builtinsFromOpts.length
+			? extractBuiltinPackageNames(builtinsFromOpts)
+			: undefined
 
 	const snapshot =
 		opts.workspaceSnapshot ??
@@ -277,6 +368,14 @@ export async function createHmrHost(opts: CreateHmrHostOptions = {}): Promise<Cr
 					omitPackages,
 				})
 			: null)
+
+	const builtins = builtinsFromOpts ?? []
+	const builtinsFromDist =
+		builtinsFromOpts !== undefined
+			? undefined
+			: snapshot?.builtinPackages?.length
+				? await resolveBuiltinsFromDist({ rootDir: root, snapshot })
+				: undefined
 
 	const roots = opts.roots ?? snapshot?.watchRoots
 	if (!roots || roots.length === 0) {
@@ -305,6 +404,7 @@ export async function createHmrHost(opts: CreateHmrHostOptions = {}): Promise<Cr
 		entries,
 		exclude,
 		builtins,
+		...(builtinsFromDist?.length ? { builtinsFromDist } : {}),
 		vitePlugins: opts.vitePlugins,
 		deps,
 	}
