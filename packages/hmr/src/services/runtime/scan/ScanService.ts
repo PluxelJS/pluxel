@@ -99,6 +99,16 @@ export class ScanService {
 	}
 
 	/**
+	 * Exposes the underlying exsolve resolve cache map for advanced integrations (e.g. HMR runner).
+	 *
+	 * Sharing this cache across long-lived services reduces duplicate work and keeps cache invalidation
+	 * behavior consistent (`invalidateResolverCache()` clears this map).
+	 */
+	get resolverCache(): Map<string, unknown> {
+		return this.resolveCache.map
+	}
+
+	/**
 	 * 返回当前默认扫描根目录（已归一化且去重）。
 	 */
 	get defaultRoots(): string[] {

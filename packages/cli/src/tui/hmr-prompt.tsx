@@ -34,6 +34,8 @@ type PromptResult = { action: 'exit' } | { action: 'start'; snapshotJson: string
 
 type ConfigScope = 'profile' | 'defaults'
 
+type Overlay = 'profiles' | 'help' | null
+
 function clamp(n: number, min: number, max: number) {
 	return Math.max(min, Math.min(max, n))
 }
@@ -359,6 +361,9 @@ function ProfilesPanel(props: {
 	active: string
 	profiles: string[]
 	height: number
+	disabled?: boolean
+	showHeader?: boolean
+	bordered?: boolean
 	onAction: (
 		result:
 			| { type: 'activate'; name: string }
@@ -368,11 +373,13 @@ function ProfilesPanel(props: {
 			| { type: 'delete'; name: string },
 	) => void
 }) {
+	const showHeader = props.showHeader ?? true
+	const bordered = props.bordered ?? true
+
 	const rows = Math.max(props.height, 10)
-	const headerRows = 4
-	const footerRows = 2
-	const bodyRows = Math.max(rows - headerRows - footerRows, 6)
-	const windowRows = Math.max(bodyRows - 2, 4)
+	const headerRows = showHeader ? 2 : 0
+	const bodyRows = Math.max(rows - headerRows, 6)
+	const windowRows = Math.max(bodyRows - (bordered ? 2 : 0), 4)
 
 	const [index, setIndex] = useState(0)
 	const [offset, setOffset] = useState(0)
@@ -390,6 +397,7 @@ function ProfilesPanel(props: {
 	}
 
 	useInput((input, key) => {
+		if (props.disabled) return
 		const count = props.profiles.length
 		if (key.upArrow) {
 			const next = clamp(index - 1, 0, Math.max(count - 1, 0))
@@ -434,11 +442,17 @@ function ProfilesPanel(props: {
 
 	return (
 		<Box flexDirection="column" width="100%">
-			<Text>Profiles</Text>
-			<Text color="gray">↑/↓ move • Enter activate • n new • r rename • c clone • x delete</Text>
+			{showHeader ? (
+				<>
+					<Text>Profiles</Text>
+					<Text color="gray">
+						↑/↓ move • Enter activate • n new • r rename • c clone • x delete
+					</Text>
+				</>
+			) : null}
 			<Box
-				borderStyle="round"
-				borderColor="gray"
+				borderStyle={bordered ? 'round' : undefined}
+				borderColor={bordered ? 'gray' : undefined}
 				flexDirection="column"
 				flexGrow={1}
 				height={bodyRows}
@@ -504,6 +518,7 @@ function HmrPromptApp(props: {
 	const [dirty, setDirty] = useState(props.initialDirty)
 	const [toast, setToast] = useState<string>('')
 	const [modal, setModal] = useState<Modal>(null)
+	const [overlay, setOverlay] = useState<Overlay>(null)
 	const [initialOpen, setInitialOpen] = useState<InitialOpen | null>(props.initialOpen ?? null)
 	const [typing, setTyping] = useState(false)
 	const [packagesInitialMode] = useState<'enabled' | 'builtin' | undefined>(() => {
@@ -516,6 +531,10 @@ function HmrPromptApp(props: {
 	const [doctorOffset, setDoctorOffset] = useState(0)
 	const [scanNonce, setScanNonce] = useState(0)
 	const scanKeyRef = useRef<string | null>(null)
+	const profileNames = useMemo(
+		() => Object.keys(cfg.profiles).sort((a, b) => a.localeCompare(b)),
+		[cfg.profiles],
+	)
 
 	const rememberedRootsRef = useRef<{ profile: string[]; defaults: string[] }>({
 		profile: [],
@@ -767,9 +786,84 @@ function HmrPromptApp(props: {
 	useInput((input, key) => {
 		if (doneRef.current) return
 		if (modal) return
+		const isTab = key.tab || input === '\t'
+		const isShiftTab = (key.shift && key.tab) || input === '\x1b[Z'
+
+		const toggleProfilesOverlay = () => {
+			setOverlay((prev) => (prev === 'profiles' ? null : 'profiles'))
+		}
+
+		const toggleHelpOverlay = () => {
+			setOverlay((prev) => (prev === 'help' ? null : 'help'))
+		}
+
+		const cycleProfile = (dir: 1 | -1) => {
+			if (profileNames.length <= 1) return
+			const idx = Math.max(profileNames.indexOf(activeProfile), 0)
+			const next = profileNames[(idx + dir + profileNames.length) % profileNames.length]
+			if (!next || next === activeProfile) return
+			setActiveProfile(next)
+			setCfg((prev) => ({ ...prev, profile: next }))
+			setDirty(true)
+			setToast(`Active profile: ${next}`)
+		}
+
+		// Overlay open: keep only safe global shortcuts.
+		if (overlay) {
+			if (input === '?' && !key.ctrl && !key.meta) {
+				toggleHelpOverlay()
+				return
+			}
+			if (key.ctrl && input.toLowerCase() === 'p') {
+				setTab('packages')
+				setOverlay('profiles')
+				return
+			}
+			if (key.ctrl && key.leftArrow) {
+				const all = tabs()
+				const idx = all.indexOf(tab)
+				setTab(all[(idx - 1 + all.length) % all.length]!)
+				setOverlay(null)
+				return
+			}
+			if (key.ctrl && key.rightArrow) {
+				const all = tabs()
+				const idx = all.indexOf(tab)
+				setTab(all[(idx + 1) % all.length]!)
+				setOverlay(null)
+				return
+			}
+			if (key.ctrl && input.toLowerCase() === 'r') {
+				scanKeyRef.current = null
+				setScanNonce((n) => n + 1)
+				setToast('Rescanning…')
+				return
+			}
+			if (key.ctrl && input.toLowerCase() === 's') {
+				saveConfig()
+				return
+			}
+			return
+		}
 
 		// While typing (e.g. filter/input), avoid global single-key actions.
 		if (typing) {
+			// Fast profile switching in Packages tab.
+			if (tab === 'packages' && !key.ctrl && !key.meta && (isTab || isShiftTab)) {
+				cycleProfile(isShiftTab ? -1 : 1)
+				return
+			}
+			// Profiles overlay
+			if (tab === 'packages' && key.ctrl && input.toLowerCase() === 'p') {
+				toggleProfilesOverlay()
+				return
+			}
+			// Help overlay
+			if (input === '?' && !key.ctrl && !key.meta) {
+				toggleHelpOverlay()
+				return
+			}
+
 			// Quit
 			if (key.ctrl && input.toLowerCase() === 'c') {
 				if (!dirty) {
@@ -818,6 +912,28 @@ function HmrPromptApp(props: {
 			return
 		}
 
+		// Profiles overlay (quick CRUD) from Packages tab.
+		if (tab === 'packages' && (input === 'p' || input === 'P') && !key.ctrl && !key.meta) {
+			toggleProfilesOverlay()
+			return
+		}
+		if (tab === 'packages' && key.ctrl && input.toLowerCase() === 'p') {
+			toggleProfilesOverlay()
+			return
+		}
+		// Profiles overlay from anywhere (jump to Packages).
+		if (key.ctrl && input.toLowerCase() === 'p') {
+			setTab('packages')
+			setOverlay('profiles')
+			return
+		}
+
+		// Fast profile switching in Packages tab.
+		if (tab === 'packages' && !key.ctrl && !key.meta && (isTab || isShiftTab)) {
+			cycleProfile(isShiftTab ? -1 : 1)
+			return
+		}
+
 		// Quit
 		if (input === 'q' || (key.ctrl && input.toLowerCase() === 'c')) {
 			if (!dirty) {
@@ -860,7 +976,11 @@ function HmrPromptApp(props: {
 		}
 
 		// Help
-		if (input === '?' || input.toLowerCase() === 'h') {
+		if (input === '?' && !key.ctrl && !key.meta) {
+			toggleHelpOverlay()
+			return
+		}
+		if (input.toLowerCase() === 'h' && !key.ctrl && !key.meta) {
 			setTab('help')
 			return
 		}
@@ -1038,7 +1158,8 @@ function HmrPromptApp(props: {
 			return
 		}
 		if (initialOpen.kind === 'profiles') {
-			setTab('profiles')
+			setTab('packages')
+			setOverlay('profiles')
 			setInitialOpen(null)
 			return
 		}
@@ -1106,7 +1227,7 @@ function HmrPromptApp(props: {
 		| { type: 'delete'; name: string }
 
 	function handleProfileAction(act: ProfileAction) {
-		const names = Object.keys(cfg.profiles).sort((a, b) => a.localeCompare(b))
+		const names = profileNames
 
 		if (act.type === 'activate') {
 			setActiveProfile(act.name)
@@ -1199,6 +1320,8 @@ function HmrPromptApp(props: {
 				setToast('Cannot delete the last profile.')
 				return
 			}
+			const remaining = names.filter((n) => n !== act.name)
+			const nextActive = remaining[0] ?? activeProfile
 			setModal({
 				kind: 'confirm',
 				title: 'Delete profile',
@@ -1211,20 +1334,34 @@ function HmrPromptApp(props: {
 						const next = { ...prev.profiles }
 						delete next[act.name]
 						const remaining = Object.keys(next).sort((a, b) => a.localeCompare(b))
-						const nextActive = remaining[0]!
+						const nextActive = remaining[0] ?? prev.profile
 						return {
 							...prev,
 							profiles: next,
 							profile: prev.profile === act.name ? nextActive : prev.profile,
 						}
 					})
-					setActiveProfile((p) => (p === act.name ? (names.find((n) => n !== act.name) ?? p) : p))
+					setActiveProfile((p) => (p === act.name ? nextActive : p))
 					setDirty(true)
 				},
 				onCancel: () => setModal(null),
 			})
 		}
 	}
+
+	const profilePos = Math.max(profileNames.indexOf(activeProfile), 0) + 1
+	const profileBadge = profileNames.length
+		? `${activeProfile} (${profilePos}/${profileNames.length})`
+		: activeProfile
+	const profileIndex = Math.max(profileNames.indexOf(activeProfile), 0)
+	const prevProfile =
+		profileNames.length > 1
+			? profileNames[(profileIndex - 1 + profileNames.length) % profileNames.length]
+			: null
+	const nextProfile =
+		profileNames.length > 1 ? profileNames[(profileIndex + 1) % profileNames.length] : null
+	const enabledCount = (profile.enabled ?? []).length
+	const builtinCount = (profile.builtin ?? []).length
 
 	const statusLine =
 		scan.status === 'scanning'
@@ -1255,8 +1392,9 @@ function HmrPromptApp(props: {
 					.join(' | ')}
 			</Text>
 			<Text color="gray">
-				profile={activeProfile} • scope={scope} • dirty={dirty ? 'yes' : 'no'} • {statusLine} •{' '}
-				{snapshotLine}
+				profile={profileBadge} • E{enabledCount} B{builtinCount} • scope={scope} • dirty=
+				{dirty ? 'yes' : 'no'} • {statusLine} • {snapshotLine}
+				{overlay ? ` • overlay=${overlay}` : ''}
 			</Text>
 
 			<Box flexDirection="column" flexGrow={1} height={bodyRows}>
@@ -1268,6 +1406,7 @@ function HmrPromptApp(props: {
 							builtin={profile.builtin ?? []}
 							initialMode={packagesInitialMode}
 							height={bodyRows}
+							disabled={Boolean(modal) || Boolean(overlay)}
 							onTypingChange={setTyping}
 							onChange={setPackagesValue}
 						/>
@@ -1379,7 +1518,7 @@ function HmrPromptApp(props: {
 				{tab === 'profiles' ? (
 					<ProfilesPanel
 						active={activeProfile}
-						profiles={Object.keys(cfg.profiles).sort((a, b) => a.localeCompare(b))}
+						profiles={profileNames}
 						height={bodyRows}
 						onAction={handleProfileAction}
 					/>
@@ -1393,8 +1532,8 @@ function HmrPromptApp(props: {
 							• q/Ctrl+C exit
 						</Text>
 						<Text color="gray">
-							Packages: inline browser (no Enter). e/b mode; x swap; Space(on folder) apply mode; /
-							filter (Esc leaves filter).
+							Packages: Tab/Shift+Tab switch profile • p manage profiles • e/b mode • x swap •
+							Space(on folder) apply mode • / filter (Esc leaves filter).
 						</Text>
 						<Text color="gray">Roots/Include/Exclude: s switches scope(profile/defaults)</Text>
 					</Box>
@@ -1405,10 +1544,118 @@ function HmrPromptApp(props: {
 				{toast || `Tab ${tabIndex + 1}/${tabList.length} • press ? for help`}
 			</Text>
 			<Text color="gray" wrap="truncate">
-				Keys: Ctrl+←/→ tabs • 1-9 jump • Ctrl+R rescan • w/Ctrl+S save • ? help • q/Ctrl+C quit
+				Keys: Ctrl+←/→ tabs • 1-9 jump • Ctrl+R rescan • w/Ctrl+S save
+				{tab === 'packages'
+					? ` • Tab/Shift+Tab profile${nextProfile ? ` (prev=${prevProfile} next=${nextProfile})` : ''} • p profiles`
+					: ''}{' '}
+				• Ctrl+P profiles • ? help • q/Ctrl+C quit
 			</Text>
 
+			{overlay === 'profiles' ? (
+				<ProfilesOverlay
+					active={activeProfile}
+					profiles={profileNames}
+					disabled={Boolean(modal)}
+					onClose={() => setOverlay(null)}
+					onAction={handleProfileAction}
+				/>
+			) : null}
+			{overlay === 'help' ? <HelpOverlay tab={tab} onClose={() => setOverlay(null)} /> : null}
 			{modal ? <ModalOverlay modal={modal} /> : null}
+		</Box>
+	)
+}
+
+function ProfilesOverlay(props: {
+	active: string
+	profiles: string[]
+	disabled: boolean
+	onClose: () => void
+	onAction: Parameters<typeof ProfilesPanel>[0]['onAction']
+}) {
+	const { stdout } = useStdout()
+	const rows = stdout?.rows ?? 24
+	const height = Math.max(Math.min(rows - 4, 16), 10)
+
+	useInput((input, key) => {
+		if (props.disabled) return
+		if (
+			key.escape ||
+			(key.ctrl && input.toLowerCase() === 'c') ||
+			input === 'p' ||
+			(key.ctrl && input.toLowerCase() === 'p')
+		) {
+			props.onClose()
+		}
+	})
+
+	return (
+		<Box
+			position="absolute"
+			top={1}
+			left={2}
+			right={2}
+			height={height}
+			borderStyle="round"
+			borderColor="cyan"
+			paddingX={1}
+			flexDirection="column"
+		>
+			<Text color="cyan" wrap="truncate">
+				Profiles • Enter activate • n new • r rename • c clone • x delete • p/Esc close
+			</Text>
+			<ProfilesPanel
+				active={props.active}
+				profiles={props.profiles}
+				height={height - 1}
+				disabled={props.disabled}
+				showHeader={false}
+				bordered={false}
+				onAction={props.onAction}
+			/>
+		</Box>
+	)
+}
+
+function HelpOverlay(props: { tab: TabKey; onClose: () => void }) {
+	const { stdout } = useStdout()
+	const rows = stdout?.rows ?? 24
+	const height = Math.max(Math.min(rows - 4, 14), 10)
+
+	useInput((input, key) => {
+		if (key.escape || (key.ctrl && input.toLowerCase() === 'c') || input === '?') {
+			props.onClose()
+		}
+	})
+
+	const lines = [
+		'Global: Ctrl+←/→ tabs • 1-9 jump • Ctrl+R rescan • w/Ctrl+S save • Ctrl+P profiles • q quit',
+		'Packages: Tab/Shift+Tab profile • p profiles • / or Ctrl+F filter • e/b mode • x swap • E/B apply on folder',
+		'Doctor: ↑/↓ scroll • PgUp/PgDn or Ctrl+U/D • g/G top/bottom',
+		'Roots/Include/Exclude: Enter/e edit • a add • d delete • Esc cancel input • s scope(profile/defaults)',
+		'Start: Enter start (blocked → check Doctor)',
+	].map((s) => s.replace(/\s+/g, ' ').trim())
+
+	return (
+		<Box
+			position="absolute"
+			top={1}
+			left={2}
+			right={2}
+			height={height}
+			borderStyle="round"
+			borderColor="magenta"
+			paddingX={1}
+			flexDirection="column"
+		>
+			<Text color="magenta" wrap="truncate">
+				Help ({props.tab}) • ?/Esc to close
+			</Text>
+			{lines.map((l) => (
+				<Text key={l} color="gray" wrap="truncate">
+					{l}
+				</Text>
+			))}
 		</Box>
 	)
 }

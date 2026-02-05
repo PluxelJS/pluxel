@@ -36,6 +36,13 @@ export type WorkspaceSnapshot = {
 	 */
 	builtinPackages: string[]
 	/**
+	 * Builtin plugins loaded from workspace package dist entries (root-relative).
+	 *
+	 * This is computed from `builtinPackages` (profile.builtin) and is intended to be passed into
+	 * `@pluxel/hmr` as `hmrService.builtinsFromDist`.
+	 */
+	builtinsFromDist?: ReadonlyArray<{ packageName: string; entry: string }>
+	/**
 	 * Startup entry list (stable order):
 	 * - enabled plugin package entries (config order)
 	 * - plus resolved include entry files (sorted)
@@ -73,6 +80,24 @@ const MANAGED_PLUGIN_PKG_RE = /^(?:@[^/]+\/)?pluxel-plugin-/i
 
 function isManagedPluginPackageName(name: string) {
 	return MANAGED_PLUGIN_PKG_RE.test(name)
+}
+
+function resolveDefaultDistEntryFromManifest(manifest: unknown): string | null {
+	if (!manifest || typeof manifest !== 'object' || Array.isArray(manifest)) return null
+	const exportsField = (manifest as Record<string, unknown>).exports
+	const dot =
+		exportsField && typeof exportsField === 'object' && !Array.isArray(exportsField)
+			? (exportsField as Record<string, unknown>)['.']
+			: undefined
+	if (!dot) return null
+
+	// Intentional simplification (no compat burden): builtin packages must provide a direct dist ESM entry.
+	// We only accept a string `.mjs` at `exports["."].import|default|module` or `exports["."]` itself.
+	const pick = (v: unknown) => (typeof v === 'string' && v.trim().endsWith('.mjs') ? v.trim() : null)
+	if (typeof dot === 'string') return pick(dot)
+	if (typeof dot !== 'object' || Array.isArray(dot)) return null
+	const obj = dot as Record<string, unknown>
+	return pick(obj.import) ?? pick(obj.default) ?? pick(obj.module)
 }
 
 function collectManifestDeps(manifest: unknown): Set<string> {
@@ -452,7 +477,7 @@ export async function diagnoseWorkspace(
 		...(merged.builtinPackages ?? []),
 	])
 
-	return await buildWorkspaceSnapshotFromScan({
+	const base = await buildWorkspaceSnapshotFromScan({
 		rootDir: rootDirAbs,
 		merged,
 		rootsExpandedAbs,
@@ -460,6 +485,51 @@ export async function diagnoseWorkspace(
 		discovered,
 		omitPackages: omitPackages.length ? omitPackages : undefined,
 	})
+
+	if (!base.ok) return base
+
+	const builtinPkgs = base.snapshot.builtinPackages
+	if (!builtinPkgs.length) return base
+
+	const byName = new Map(packages.map((p) => [p.name, p]))
+	const builtinsFromDist: Array<{ packageName: string; entry: string }> = []
+	for (const pkgName of builtinPkgs) {
+		const pkg = byName.get(pkgName)
+		if (!pkg)
+			return {
+				ok: false,
+				errors: [`[hmr] Builtin package not found in workspace: ${pkgName}`],
+				discovered: base.snapshot.discovered,
+			}
+
+		const rel = resolveDefaultDistEntryFromManifest(pkg.manifest)
+		if (!rel) {
+			return {
+				ok: false,
+				errors: [
+					`[hmr] Builtin package missing dist .mjs export entry (check package.json exports): ${pkgName}`,
+				],
+				discovered: base.snapshot.discovered,
+			}
+		}
+
+		const entryAbs = resolve(pkg.pkgDirAbs, rel)
+		if (!existsSync(entryAbs)) {
+			return {
+				ok: false,
+				errors: [`[hmr] Builtin dist entry missing on disk for ${pkgName}: ${entryAbs}`],
+				discovered: base.snapshot.discovered,
+			}
+		}
+
+		builtinsFromDist.push({ packageName: pkgName, entry: toRootRelative(rootDirAbs, entryAbs) })
+	}
+
+	return {
+		ok: true,
+		snapshot: { ...base.snapshot, builtinsFromDist },
+		warnings: base.warnings,
+	}
 }
 
 export function resolveHmrConfigPathFromCwd(cwd = process.cwd()) {

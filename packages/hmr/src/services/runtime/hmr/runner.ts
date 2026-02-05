@@ -14,6 +14,10 @@ import {
 } from 'vite/module-runner'
 import type { HmrPathApi } from './environment'
 import { findNearestPackageRoot, matchesSpecifierPattern } from './internals'
+import {
+	PLUXEL_DIST_EXPORT_CONDITIONS,
+	PLUXEL_HMR_WORKSPACE_CONDITIONS_WITH_SOURCE,
+} from '../scan/hmr-conditions'
 
 export type PrimeModuleCacheEntryParams = {
 	id: string
@@ -28,6 +32,10 @@ export type HmrRunnerInitOptions = {
 	skipPlugin?: Plugin
 	/** Modules that must be shared as host singletons (loaded by host and runner). */
 	bridgeModules?: readonly string[]
+	/** Optional shared exsolve cache map (recommended: share with ScanService). */
+	resolveCache?: Map<string, unknown>
+	/** Export conditions used when resolving workspace entries (source preference). */
+	workspaceConditions?: readonly string[]
 }
 
 const HARD_BRIDGE_IDS = ['@pluxel/core', '@pluxel/hmr', '@pluxel/context'] as const
@@ -43,32 +51,42 @@ type ExternalizeHint = {
 export class HmrRunner {
 	public readonly evaluatedModules = new EvaluatedModules()
 
-	private env_: DevEnvironment | null = null
-	private runner_: ModuleRunner | null = null
-	private workspaceRoot_ = ''
-	private resolver_!: ReturnType<typeof createResolver>
-	private cjsExternal_: readonly string[] = []
-	private skipPlugin_: Plugin | null = null
-	private bridgeModules_: readonly string[] = []
+	private _env: DevEnvironment | null = null
+	private _runner: ModuleRunner | null = null
+	private _resolver!: ReturnType<typeof createResolver>
+	private _cjsExternal: readonly string[] = []
+	private _skipPlugin: Plugin | null = null
+	private _bridgeModules: readonly string[] = []
+	private _workspaceSourceConditions: string[] = []
+	private _workspaceDistConditions: string[] = []
 	private realpathCache = new Map<string, Promise<string>>()
 	private packageNameByPackageRoot = new Map<string, Promise<string | null>>()
 	private packageNameByFile = new Map<string, Promise<string | null>>()
 	private bridgedHostExports = new Map<string, unknown>()
 	private bridgedRunnerUrls = new Set<string>()
-	private workspaceExportEntryBySpecifier = new Map<string, Promise<string | null>>()
-	private workspaceDistEntryBySpecifier = new Map<string, Promise<string | null>>()
+	private workspaceEntryByKey = new Map<string, Promise<string | null>>()
 
 	init(server: ViteDevServer, opts: HmrRunnerInitOptions = {}) {
-		this.env_ = server.environments.ssr
-		this.workspaceRoot_ = server.config.root
-		// Use the workspace root as the resolution base for package.json/export lookups.
-		// (This avoids relying on `node:module` / createRequire in ESM.)
-		const fromDirUrl = pathToFileURL(`${resolve(this.workspaceRoot_)}/`).toString()
-		this.resolver_ = createResolver({ from: fromDirUrl, cache: new Map() })
+		this._env = server.environments.ssr
+		const workspaceRoot = server.config.root
+		// Resolution base:
+		// - Workspace root: resolve deps installed in the host workspace (root node_modules).
+		// - This module: resolve deps installed alongside @pluxel/hmr itself (pnpm workspace symlinks).
+		//
+		// Using both makes resolution robust across pnpm hoisting layouts.
+		const workspaceRootUrl = pathToFileURL(`${resolve(workspaceRoot)}/`).toString()
+		this._resolver = createResolver({
+			from: [workspaceRootUrl, import.meta.url],
+			cache: opts.resolveCache ?? new Map(),
+		})
+		this._workspaceSourceConditions = opts.workspaceConditions?.length
+			? [...opts.workspaceConditions]
+			: [...PLUXEL_HMR_WORKSPACE_CONDITIONS_WITH_SOURCE]
+		this._workspaceDistConditions = [...PLUXEL_DIST_EXPORT_CONDITIONS]
 		const hasNativeSourcemapSupport =
 			typeof (globalThis as unknown as { process?: { setSourceMapsEnabled?: unknown } })?.process
 				?.setSourceMapsEnabled === 'function'
-		this.runner_ = createServerModuleRunner(this.env_, {
+		this._runner = createServerModuleRunner(this.env, {
 			hmr: false,
 			evaluatedModules: this.evaluatedModules,
 			// Prefer Node/Bun native sourcemap support when available; fall back to Vite's
@@ -79,20 +97,20 @@ export class HmrRunner {
 			evaluator: new ESModulesEvaluator(),
 		})
 
-		this.cjsExternal_ = opts.cjsExternal ?? []
-		this.skipPlugin_ = opts.skipPlugin ?? null
-		this.bridgeModules_ = opts.bridgeModules ?? []
+		this._cjsExternal = opts.cjsExternal ?? []
+		this._skipPlugin = opts.skipPlugin ?? null
+		this._bridgeModules = opts.bridgeModules ?? []
 		this.installFetchModuleInterceptor()
 	}
 
 	get env(): DevEnvironment {
-		if (!this.env_) throw new Error('HmrRunner not initialized')
-		return this.env_
+		if (!this._env) throw new Error('HmrRunner not initialized')
+		return this._env
 	}
 
 	get runner(): ModuleRunner {
-		if (!this.runner_) throw new Error('HmrRunner not initialized')
-		return this.runner_
+		if (!this._runner) throw new Error('HmrRunner not initialized')
+		return this._runner
 	}
 
 	import(id: string) {
@@ -195,7 +213,7 @@ export class HmrRunner {
 				addUrl(fetchedId)
 				addUrl(fetchedUrl)
 
-				const workspaceEntry = await this.resolveWorkspaceExportEntry(specifier)
+				const workspaceEntry = await this.resolveWorkspaceEntry(specifier, 'source')
 				const candidates = [resolvedId, fetchedId, fetchedUrl, workspaceEntry].filter(
 					(v): v is string => typeof v === 'string' && v.length > 0,
 				)
@@ -245,7 +263,7 @@ export class HmrRunner {
 	}
 
 	private installFetchModuleInterceptor() {
-		const transport = (this.runner_ as unknown as { transport?: unknown })?.transport
+		const transport = (this._runner as unknown as { transport?: unknown })?.transport
 		if (!transport || typeof transport !== 'object') return
 		const invoke = (transport as Record<string, unknown>).invoke
 		if (typeof invoke !== 'function') return
@@ -328,13 +346,13 @@ export class HmrRunner {
 			canonicalId.includes('@napi-rs') ||
 			canonicalId.includes('napi-rs')
 		) {
-			dbgFetch.debug('fetchModule {rawId}', {
-				url,
-				rawId: canonicalId,
-				importer,
-				cjsExternal: this.cjsExternal_,
-			})
-		}
+				dbgFetch.debug('fetchModule {rawId}', {
+					url,
+					rawId: canonicalId,
+					importer,
+					cjsExternal: this._cjsExternal,
+				})
+			}
 
 		if (isBareSpecifier(canonicalId)) {
 			if (!this.isCjsExternal(canonicalId)) return null
@@ -354,7 +372,7 @@ export class HmrRunner {
 		const fsPath = urlToFsPath(this.env.config.root, canonicalId)
 		if (!fsPath) return null
 
-		if (this.cjsExternal_.length === 0) return null
+		if (this._cjsExternal.length === 0) return null
 		if (!(await this.isCjsExternalFile(fsPath))) return null
 		if (rawId.includes('cjs') || rawId.includes('@napi-rs') || rawId.includes('napi-rs')) {
 			dbgFetch.debug('externalize fsPath as CJS {fsPath}', { fsPath })
@@ -369,7 +387,7 @@ export class HmrRunner {
 	): Promise<ExternalizeHint | null> {
 		const env = this.env
 		const options: { skip?: Set<Plugin> } = {}
-		if (this.skipPlugin_) options.skip = new Set([this.skipPlugin_])
+		if (this._skipPlugin) options.skip = new Set([this._skipPlugin])
 
 		const resolved = await env.pluginContainer.resolveId(rawId, importer, options)
 		const fsPath = resolved?.id ? idToFsPath(resolved.id) : null
@@ -404,7 +422,7 @@ export class HmrRunner {
 	}
 
 	private isCjsExternal(specifier: string) {
-		for (const pattern of this.cjsExternal_) {
+		for (const pattern of this._cjsExternal) {
 			if (matchesSpecifierPattern(specifier, pattern)) return true
 		}
 		return false
@@ -453,7 +471,7 @@ export class HmrRunner {
 	}
 
 	private isBridgeModule(specifier: string) {
-		for (const pattern of this.bridgeModules_) {
+		for (const pattern of this._bridgeModules) {
 			if (matchesSpecifierPattern(specifier, pattern)) return true
 		}
 		return false
@@ -467,83 +485,38 @@ export class HmrRunner {
 		return promise
 	}
 
-	private resolveWorkspaceExportEntry(specifier: string): Promise<string | null> {
-		const cached = this.workspaceExportEntryBySpecifier.get(specifier)
+	private resolveWorkspaceEntry(specifier: string, kind: 'source' | 'dist'): Promise<string | null> {
+		const key = `${kind}:${specifier}`
+		const cached = this.workspaceEntryByKey.get(key)
 		if (cached) return cached
-		const promise = this.resolveWorkspaceExportEntryImpl(specifier)
-		this.workspaceExportEntryBySpecifier.set(specifier, promise)
+		const promise = this.resolveWorkspaceEntryImpl(specifier, kind).then((resolved) => {
+			// Avoid caching negative results forever: workspace state can change during dev.
+			if (!resolved) this.workspaceEntryByKey.delete(key)
+			return resolved
+		})
+		this.workspaceEntryByKey.set(key, promise)
 		return promise
 	}
 
-	private async resolveWorkspaceExportEntryImpl(specifier: string): Promise<string | null> {
-		return await this.resolveWorkspaceExportImpl(specifier, [
-			'@pluxel/hmr',
-			'@pluxel/source',
-			'import',
-			'default',
-		])
-	}
-
-	private resolveWorkspaceDistEntry(specifier: string): Promise<string | null> {
-		const cached = this.workspaceDistEntryBySpecifier.get(specifier)
-		if (cached) return cached
-		const promise = this.resolveWorkspaceDistEntryImpl(specifier)
-		this.workspaceDistEntryBySpecifier.set(specifier, promise)
-		return promise
-	}
-
-	private async resolveWorkspaceDistEntryImpl(specifier: string): Promise<string | null> {
-		return await this.resolveWorkspaceExportImpl(specifier, ['import', 'default', 'require'])
-	}
-
-	private async resolveWorkspaceExportImpl(
+	private async resolveWorkspaceEntryImpl(
 		specifier: string,
-		conditions: readonly string[],
+		kind: 'source' | 'dist',
 	): Promise<string | null> {
-		const parsed = splitPackageSpecifier(specifier)
-		if (!parsed) return null
-		const { pkgName, exportKey } = parsed
+		const conditions = kind === 'source' ? this._workspaceSourceConditions : this._workspaceDistConditions
+
 		try {
-			const pkgJsonPath =
-				this.resolver_.resolveModulePath(`${pkgName}/package.json`, { try: true }) ??
-				this.tryResolveWorkspacePackageJson(pkgName)
-			if (!pkgJsonPath) return null
-			const pkgRoot = dirname(pkgJsonPath)
-			const json = await readFile(pkgJsonPath, 'utf8')
-			const pkg = JSON.parse(json) as { exports?: unknown }
-			const exportsField = pkg.exports
-			const entry = resolveExportTarget(exportsField, exportKey)
-			if (!entry) return null
-			const picked = pickConditionalExport(entry, conditions)
-			if (!picked) return null
-			if (picked.startsWith('./')) return resolve(pkgRoot, picked)
-			if (picked.startsWith('../') || picked.startsWith('/')) return resolve(pkgRoot, picked)
-			// Unhandled (non-path) export targets (e.g. "node:" or "http:") are ignored.
-			return null
+			const resolved = this._resolver.resolveModulePath(specifier, { try: true, conditions })
+			return typeof resolved === 'string' && resolved.length > 0 ? resolved : null
 		} catch {
 			return null
 		}
-	}
-
-	private tryResolveWorkspacePackageJson(pkgName: string): string | null {
-		if (!this.workspaceRoot_) return null
-		const short = pkgName.startsWith('@') ? pkgName.split('/')[1] : pkgName
-		if (!short) return null
-		const candidates = [
-			resolve(this.workspaceRoot_, 'packages', short, 'package.json'),
-			resolve(this.workspaceRoot_, 'packages', 'plugins', short, 'package.json'),
-		]
-		for (const p of candidates) {
-			if (existsSync(p)) return p
-		}
-		return null
 	}
 
 	private async importHostExports(specifier: string): Promise<unknown> {
 		try {
 			return await import(specifier)
 		} catch {
-			const dist = await this.resolveWorkspaceDistEntry(specifier)
+			const dist = await this.resolveWorkspaceEntry(specifier, 'dist')
 			if (!dist) throw new Error(`[hmr] Cannot resolve host export for "${specifier}".`)
 			try {
 				return await import(pathToFileURL(dist).toString())
@@ -584,45 +557,6 @@ function isBareSpecifier(id: string | undefined) {
 function unwrapViteId(url: string) {
 	if (url.startsWith('/@id/')) return decodeURIComponent(url.slice('/@id/'.length))
 	return url
-}
-
-function splitPackageSpecifier(specifier: string): { pkgName: string; exportKey: string } | null {
-	if (!specifier) return null
-	if (specifier.startsWith('@')) {
-		const parts = specifier.split('/')
-		if (parts.length < 2) return null
-		const pkgName = `${parts[0]}/${parts[1]}`
-		if (parts.length === 2) return { pkgName, exportKey: '.' }
-		return { pkgName, exportKey: `./${parts.slice(2).join('/')}` }
-	}
-	const parts = specifier.split('/')
-	const pkgName = parts[0]!
-	if (parts.length === 1) return { pkgName, exportKey: '.' }
-	return { pkgName, exportKey: `./${parts.slice(1).join('/')}` }
-}
-
-function resolveExportTarget(exportsField: unknown, exportKey: string): unknown {
-	if (!exportsField) return null
-	if (typeof exportsField === 'string') return exportKey === '.' ? exportsField : null
-	if (typeof exportsField !== 'object') return null
-	const exp = exportsField as Record<string, unknown>
-	// Some packages use "exports": { ".": {...}, "./sub": {...} }
-	if (exportKey in exp) return exp[exportKey]
-	// Some packages use "exports": { "@pluxel/source": "...", "default": "..." } (root only)
-	if (exportKey === '.') return exp
-	return null
-}
-
-function pickConditionalExport(target: unknown, conditions: readonly string[]): string | null {
-	if (!target) return null
-	if (typeof target === 'string') return target
-	if (typeof target !== 'object') return null
-	const obj = target as Record<string, unknown>
-	for (const c of conditions) {
-		if (c in obj) return pickConditionalExport(obj[c], conditions)
-	}
-	if ('default' in obj) return pickConditionalExport(obj.default, conditions)
-	return null
 }
 
 function cleanUrl(id: string) {

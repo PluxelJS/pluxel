@@ -1,6 +1,6 @@
 import { builtinModules } from 'node:module'
 import { existsSync, readFileSync } from 'node:fs'
-import { dirname, join, relative } from 'node:path'
+import { dirname, join, relative } from 'pathe'
 import { fileURLToPath } from 'node:url'
 import { build } from 'vite'
 

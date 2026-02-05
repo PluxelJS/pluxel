@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { resolve } from 'node:path'
+import { resolve } from 'pathe'
 import { stdin } from 'node:process'
 import { diagnoseWorkspace, type WorkspaceSnapshot } from '@pluxel/cli/hmr'
 import { startHmrHost } from './host'
@@ -80,6 +80,17 @@ function assertSnapshotShape(snapshot: unknown): asserts snapshot is WorkspaceSn
 			(s.builtinPackages as unknown[]).some((x) => typeof x !== 'string')
 		) {
 			throw new Error('Invalid snapshot: builtinPackages must be string[]')
+		}
+	}
+	if (s.builtinsFromDist !== undefined) {
+		if (!Array.isArray(s.builtinsFromDist))
+			throw new Error('Invalid snapshot: builtinsFromDist must be array')
+		for (const raw of s.builtinsFromDist as unknown[]) {
+			if (!raw || typeof raw !== 'object' || Array.isArray(raw))
+				throw new Error('Invalid snapshot: builtinsFromDist[] must be object')
+			const o = raw as Record<string, unknown>
+			if (typeof o.packageName !== 'string' || typeof o.entry !== 'string')
+				throw new Error('Invalid snapshot: builtinsFromDist[] must have packageName/entry strings')
 		}
 	}
 }

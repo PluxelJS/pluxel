@@ -1,11 +1,7 @@
 import { existsSync } from 'node:fs'
-import { copyFile, mkdir, readFile } from 'node:fs/promises'
-import { dirname, join, resolve } from 'node:path'
-import {
-	DEFAULT_HMR_CONFIG_BASENAME,
-	diagnoseWorkspace,
-	type WorkspaceSnapshot,
-} from '@pluxel/cli/hmr'
+import { copyFile, mkdir } from 'node:fs/promises'
+import { dirname, isAbsolute, join, resolve } from 'pathe'
+import type { WorkspaceSnapshot } from '@pluxel/cli/hmr'
 import type { Plugin as VitePlugin } from 'vite'
 import { Context } from '..'
 import type { EnsurePluxelLoggingOptions } from '../logger/ensure'
@@ -34,11 +30,15 @@ export type CreateHmrHostOptions = {
 	 */
 	debug?: readonly string[]
 	/**
-	 * Plugin scan roots (workspace-relative).
-	 *
-	 * When omitted, this is resolved from `pluxel.hmr.jsonc` via workspace profiles.
+	 * Workspace snapshot (preferred): skips discovery.
 	 */
-	roots?: string[]
+	workspaceSnapshot?: WorkspaceSnapshot
+	/**
+	 * Optional snapshot post-processor.
+	 *
+	 * Useful for callers that want to tweak include/exclude/entries without duplicating discovery.
+	 */
+	snapshotPatch?: (snapshot: WorkspaceSnapshot) => WorkspaceSnapshot
 	/**
 	 * Workspace profiles config file path.
 	 *
@@ -52,35 +52,19 @@ export type CreateHmrHostOptions = {
 	 */
 	profile?: string
 	/**
-	 * Workspace snapshot (preferred): skips discovery.
-	 *
-	 * When absent and `entries` is not provided, `createHmrHost()` resolves it from config.
-	 */
-	workspaceSnapshot?: WorkspaceSnapshot
-	/**
-	 * Override HMR include globs (absolute or workspace-relative).
-	 *
-	 * When provided, HMR will only treat matching files as in-scope (plus anchors).
-	 */
-	include?: string[]
-	/**
-	 * Override cold-start entry modules.
-	 *
-	 * Use this when an outer layer already resolved enabled plugins + include entries to a stable list.
-	 */
-	entries?: string[]
-	/**
-	 * Extra exclude globs for HMR scanning (workspace-relative or absolute).
-	 *
-	 * When workspace profiles are used, this is appended to profile exclude globs.
-	 */
-	exclude?: string[]
-	/**
 	 * Builtin plugin constructors (preloaded baseline).
 	 *
 	 * Defaults to `[]`.
 	 */
 	builtins?: readonly BuiltinPluginSpec[]
+	/**
+	 * Builtin plugins loaded from workspace package dist entries.
+	 *
+	 * When omitted, `createHmrHost()` derives this from `workspaceSnapshot.builtinsFromDist`
+	 * (computed by `@pluxel/cli/hmr` during workspace diagnosis).
+	 * Set to `[]` to explicitly disable loading builtins-from-dist.
+	 */
+	builtinsFromDist?: HMRConfig['builtinsFromDist']
 	/**
 	 * Enable warmup (best-effort background).
 	 *
@@ -162,93 +146,66 @@ export type CreateHmrHostResult = {
 	ctx: Context
 }
 
-async function resolveDefaultExportEntryAbs(pkgDirAbs: string): Promise<string | null> {
-	const manifestPath = resolve(pkgDirAbs, 'package.json')
-	if (!existsSync(manifestPath)) return null
-
-	let json: unknown
-	try {
-		const raw = await readFile(manifestPath, 'utf8')
-		json = JSON.parse(raw)
-	} catch {
-		return null
-	}
-
-	const exportsField =
-		json && typeof json === 'object' && !Array.isArray(json)
-			? (json as Record<string, unknown>).exports
-			: undefined
-	const dot =
-		exportsField && typeof exportsField === 'object' && !Array.isArray(exportsField)
-			? (exportsField as Record<string, unknown>)['.']
-			: undefined
-	if (!dot) return null
-
-	const candidates: string[] = []
-	const seen = new Set<unknown>()
-	const preferKeys = ['import', 'module', 'default', 'browser', 'require'] as const
-
-	const visit = (node: unknown, depth: number) => {
-		if (depth > 6) return
-		if (typeof node === 'string') {
-			const s = node.trim()
-			if (s) candidates.push(s)
-			return
-		}
-		if (!node || typeof node !== 'object') return
-		if (seen.has(node)) return
-		seen.add(node)
-		const obj = node as Record<string, unknown>
-		for (const k of preferKeys) {
-			if (!(k in obj)) continue
-			visit(obj[k], depth + 1)
+function assertSnapshotShape(snapshot: WorkspaceSnapshot) {
+	// Fast, minimal structural validation for callers that may bypass workspace discovery.
+	const assertStringArray = (value: unknown, label: string) => {
+		if (!Array.isArray(value)) throw new Error(`[hmr-host] Invalid workspaceSnapshot: ${label} missing.`)
+		if (value.some((x) => typeof x !== 'string')) {
+			throw new Error(`[hmr-host] Invalid workspaceSnapshot: ${label} must be string[].`)
 		}
 	}
 
-	visit(dot, 0)
-	const unique = [...new Set(candidates)]
-	if (!unique.length) return null
-
-	// Fail-fast: builtinsFromDist must be a Node ESM dist entry to keep runner evaluation stable.
-	// Require `.mjs` so we don't silently fall back to CJS/ambiguous `.js` in mixed toolchains.
-	const picked = unique.find((p) => p.endsWith('.mjs'))
-	if (!picked) return null
-
-	return resolve(pkgDirAbs, picked)
+	assertStringArray(snapshot.enabledEntries, 'enabledEntries')
+	assertStringArray(snapshot.watchRoots, 'watchRoots')
+	assertStringArray(snapshot.includeGlobs, 'includeGlobs')
+	assertStringArray(snapshot.excludeGlobs, 'excludeGlobs')
+	if (!Array.isArray(snapshot.discovered)) {
+		throw new Error('[hmr-host] Invalid workspaceSnapshot: discovered missing.')
+	}
+	if (snapshot.builtinPackages !== undefined) assertStringArray(snapshot.builtinPackages, 'builtinPackages')
+	if (snapshot.builtinsFromDist !== undefined) {
+		if (!Array.isArray(snapshot.builtinsFromDist))
+			throw new Error('[hmr-host] Invalid workspaceSnapshot: builtinsFromDist must be an array.')
+		for (const raw of snapshot.builtinsFromDist as unknown[]) {
+			if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+				throw new Error(
+					'[hmr-host] Invalid workspaceSnapshot: builtinsFromDist must contain objects.',
+				)
+			}
+			const o = raw as Record<string, unknown>
+			if (typeof o.packageName !== 'string' || !o.packageName.trim()) {
+				throw new Error(
+					'[hmr-host] Invalid workspaceSnapshot: builtinsFromDist[].packageName must be a string.',
+				)
+			}
+			if (typeof o.entry !== 'string' || !o.entry.trim()) {
+				throw new Error(
+					'[hmr-host] Invalid workspaceSnapshot: builtinsFromDist[].entry must be a string.',
+				)
+			}
+		}
+	}
 }
 
-async function resolveBuiltinsFromDist(params: {
-	rootDir: string
-	snapshot: WorkspaceSnapshot
-}): Promise<Array<{ packageName: string; entry: string }>> {
-	const list = (params.snapshot.builtinPackages ?? []).map((s) => String(s).trim()).filter(Boolean)
-	const unique = uniqSorted([...new Set(list)])
-	if (!unique.length) return []
-
-	const discoveredByName = new Map(params.snapshot.discovered.map((p) => [p.name, p]))
-	const out: Array<{ packageName: string; entry: string }> = []
-
-	for (const pkgName of unique) {
-		const discovered = discoveredByName.get(pkgName)
-		if (!discovered) {
-			throw new Error(`[hmr-host] Builtin package not found in workspace discovery: ${pkgName}`)
-		}
-
-		const pkgDirAbs = resolve(params.rootDir, discovered.pkgDir)
-		const entryAbs = await resolveDefaultExportEntryAbs(pkgDirAbs)
-		if (!entryAbs) {
-			throw new Error(
-				`[hmr-host] Builtin package missing dist .mjs export entry (check package.json exports): ${pkgName}`,
-			)
-		}
-		if (!existsSync(entryAbs)) {
-			throw new Error(`[hmr-host] Builtin dist entry missing on disk for ${pkgName}: ${entryAbs}`)
-		}
-
-		out.push({ packageName: pkgName, entry: entryAbs })
+async function resolveSnapshotFromConfig(params: {
+	root: string
+	configPath?: string
+	profile?: string
+	omitPackages?: string[]
+}): Promise<WorkspaceSnapshot> {
+	const { DEFAULT_HMR_CONFIG_BASENAME, diagnoseWorkspace } = await import('@pluxel/cli/hmr')
+	const configPathAbs = resolve(params.root, params.configPath ?? DEFAULT_HMR_CONFIG_BASENAME)
+	const env = params.profile ? { ...process.env, PLUXEL_HMR_PROFILE: params.profile } : process.env
+	const res = await diagnoseWorkspace({
+		rootDir: params.root,
+		configPath: configPathAbs,
+		env,
+		omitPackages: params.omitPackages,
+	})
+	if (!res.ok) {
+		throw new Error(res.errors.join('\n'))
 	}
-
-	return out
+	return res.snapshot
 }
 
 /**
@@ -291,24 +248,22 @@ function uniqSorted(list: readonly string[]) {
 	return [...new Set(list)].sort((a, b) => a.localeCompare(b))
 }
 
-async function resolveSnapshotFromConfig(params: {
-	root: string
-	configPath?: string
-	profile?: string
-	omitPackages?: string[]
-}): Promise<WorkspaceSnapshot> {
-	const configPathAbs = resolve(params.root, params.configPath ?? DEFAULT_HMR_CONFIG_BASENAME)
-	const env = params.profile ? { ...process.env, PLUXEL_HMR_PROFILE: params.profile } : process.env
-	const res = await diagnoseWorkspace({
-		rootDir: params.root,
-		configPath: configPathAbs,
-		env,
-		omitPackages: params.omitPackages,
-	})
-	if (!res.ok) {
-		throw new Error(res.errors.join('\n'))
-	}
-	return res.snapshot
+function resolveBuiltinsFromDistEntries(
+	rootDirAbs: string,
+	list: ReadonlyArray<{ packageName: string; entry: string; exportKey?: string; enable?: boolean }>,
+) {
+	// Keep entries robust: accept root-relative/relative and normalize to absolute paths.
+	return list
+		.map((b) => ({
+			...b,
+			packageName: String(b.packageName ?? '').trim(),
+			entry: (() => {
+				const raw = String(b.entry ?? '').trim()
+				if (!raw) return raw
+				return isAbsolute(raw) ? raw : resolve(rootDirAbs, raw)
+			})(),
+		}))
+		.filter((b) => b.packageName && b.entry)
 }
 
 function extractBuiltinPackageNames(builtins: readonly BuiltinPluginSpec[]): string[] {
@@ -316,11 +271,7 @@ function extractBuiltinPackageNames(builtins: readonly BuiltinPluginSpec[]): str
 	for (const spec of builtins) {
 		if (typeof spec === 'function') continue
 		const pkg = typeof spec.packageName === 'string' ? spec.packageName.trim() : ''
-		if (pkg) {
-			out.push(pkg)
-			continue
-		}
-		// Back-compat: some call sites used `moduleId` as the workspace package name.
+		if (pkg) out.push(pkg)
 		const moduleId = typeof spec.moduleId === 'string' ? spec.moduleId.trim() : ''
 		if (moduleId && !moduleId.includes(':')) out.push(moduleId)
 	}
@@ -332,12 +283,11 @@ export async function createHmrHost(opts: CreateHmrHostOptions = {}): Promise<Cr
 	if (opts.chdir !== false) process.chdir(root)
 
 	const logsDir = resolve(root, opts.logsDir ?? 'logs')
-	await mkdir(logsDir, { recursive: true })
-
 	const debug = opts.debug ?? ['pluxel:hmr:*']
 
 	const logging = opts.logging ?? true
 	if (logging) {
+		await mkdir(logsDir, { recursive: true })
 		const base: EnsurePluxelLoggingOptions =
 			typeof logging === 'object' ? { ...logging } : { preset: 'hmr' }
 		await ensurePluxelLogging({
@@ -352,59 +302,42 @@ export async function createHmrHost(opts: CreateHmrHostOptions = {}): Promise<Cr
 		? { ...(opts.deps ?? {}), cjsExternal: opts.cjsExternal }
 		: opts.deps
 
-	const builtinsFromOpts = opts.builtins
-	const omitPackages =
-		builtinsFromOpts && builtinsFromOpts.length
-			? extractBuiltinPackageNames(builtinsFromOpts)
-			: undefined
-
-	const snapshot =
+	const builtins = opts.builtins ?? []
+	let snapshot =
 		opts.workspaceSnapshot ??
-		(!opts.entries
-			? await resolveSnapshotFromConfig({
-					root,
-					configPath: opts.configPath,
-					profile: opts.profile,
-					omitPackages,
-				})
-			: null)
+		(await resolveSnapshotFromConfig({
+			root,
+			configPath: opts.configPath,
+			profile: opts.profile,
+			omitPackages: builtins.length ? extractBuiltinPackageNames(builtins) : undefined,
+		}))
+	if (opts.snapshotPatch) snapshot = opts.snapshotPatch(snapshot)
+	assertSnapshotShape(snapshot)
 
-	const builtins = builtinsFromOpts ?? []
+	const roots = snapshot.watchRoots
+	const entries = snapshot.enabledEntries
+	const include = snapshot.includeGlobs
+	const exclude = snapshot.excludeGlobs
+
 	const builtinsFromDist =
-		builtinsFromOpts !== undefined
-			? undefined
-			: snapshot?.builtinPackages?.length
-				? await resolveBuiltinsFromDist({ rootDir: root, snapshot })
-				: undefined
-
-	const roots = opts.roots ?? snapshot?.watchRoots
-	if (!roots || roots.length === 0) {
-		throw new Error(
-			`[hmr-host] Missing roots: provide opts.roots, or add workspace profiles config at ${resolve(root, opts.configPath ?? DEFAULT_HMR_CONFIG_BASENAME)}.`,
-		)
-	}
-
-	const include = snapshot
-		? uniqSorted([...(snapshot.includeGlobs ?? []), ...(opts.include ?? [])])
-		: opts.include
-	const exclude = snapshot
-		? uniqSorted([...(snapshot.excludeGlobs ?? []), ...(opts.exclude ?? [])])
-		: (opts.exclude ?? [])
-	const entries = opts.entries ?? snapshot?.enabledEntries
-	if (!entries) {
-		throw new Error(
-			`[hmr-host] Missing entries: provide opts.entries or configure workspace profiles at ${resolve(root, opts.configPath ?? DEFAULT_HMR_CONFIG_BASENAME)}.`,
-		)
-	}
+		opts.builtinsFromDist !== undefined
+			? opts.builtinsFromDist
+			: opts.builtins !== undefined
+				? undefined
+				: snapshot.builtinsFromDist?.length
+					? snapshot.builtinsFromDist
+					: undefined
+	const builtinsFromDistResolved =
+		builtinsFromDist?.length ? resolveBuiltinsFromDistEntries(root, builtinsFromDist) : undefined
 
 	const hmrServiceBase: HMRConfig = {
 		roots,
 		warmup: opts.warmup ?? true,
-		include,
+		include: include?.length ? uniqSorted(include) : undefined,
 		entries,
-		exclude,
+		exclude: exclude?.length ? uniqSorted(exclude) : undefined,
 		builtins,
-		...(builtinsFromDist?.length ? { builtinsFromDist } : {}),
+		...(builtinsFromDistResolved?.length ? { builtinsFromDist: builtinsFromDistResolved } : {}),
 		vitePlugins: opts.vitePlugins,
 		deps,
 	}

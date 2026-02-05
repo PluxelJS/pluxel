@@ -19,6 +19,7 @@ import {
 	type ViteDevServer,
 } from 'vite'
 import type { BuiltinPluginSpec } from '../loader/LoaderService'
+import { PLUXEL_HMR_WORKSPACE_CONDITIONS_WITH_SOURCE } from '../scan/hmr-conditions'
 import {
 	buildHmrViteConfig,
 	type HMRDependencyConfig,
@@ -177,7 +178,6 @@ const hmrPackageRoot = (() => {
 })()
 
 const serviceName = 'hmrService' as const
-const HMR_EXPORT_CONDITIONS = ['@pluxel/hmr', 'import', 'module', 'default'] as const
 
 declare module '@pluxel/core' {
 	namespace Context {
@@ -289,7 +289,9 @@ export class HMRService {
 	}
 
 	private readonly plugin: Plugin
-	private readonly workspaceConditions = [...HMR_EXPORT_CONDITIONS]
+	private readonly workspaceConditions: string[] = Object.freeze([
+		...PLUXEL_HMR_WORKSPACE_CONDITIONS_WITH_SOURCE,
+	])
 
 	/**
 	 * Stable, minimal surface for external callers (UI/RPC/MCP/tooling).
@@ -331,7 +333,6 @@ export class HMRService {
 		this.env = new HmrEnvironment(this.ctx, {
 			cwd: this.cwd,
 			scanRootsAbs: this.scanRootsAbs,
-			workspaceConditions: this.workspaceConditions,
 			includeGlobs: this.includeGlobs,
 			excludeGlobs: this.excludeGlobs,
 			pathCacheLimit: this.config.pathCacheLimit,
@@ -595,6 +596,8 @@ export class HMRService {
 			cjsExternal: this.deps.cjsExternal,
 			bridgeModules: this.deps.bridgeModules,
 			skipPlugin: this.plugin,
+			resolveCache: this.ctx.scanService.resolverCache,
+			workspaceConditions: this.workspaceConditions,
 		})
 		this.ssrEnv = this.runner.env
 	}
@@ -1228,15 +1231,14 @@ export class HMRService {
 
 		// Internal contract: we only rewrite workspace packages to their `@pluxel/hmr` TS source entries.
 		// Installed (node_modules) resolution is intentionally NOT handled here.
-		const preferHmrExports = this.workspaceConditions.includes('@pluxel/hmr')
 		const p = this.ctx.scanService
 			.resolveEntry(
 				{ name: specifier },
 				{
 					workspaceOnly: true,
 					scan: {
-						conditions: [...this.workspaceConditions],
-						...(preferHmrExports ? { preferHmrExports: true } : {}),
+						conditions: this.workspaceConditions,
+						preferHmrExports: true,
 					},
 				},
 			)

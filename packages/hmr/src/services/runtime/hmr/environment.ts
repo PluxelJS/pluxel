@@ -265,7 +265,6 @@ type HmrFilterFactory = (raw: string) => boolean
  */
 export class HmrEnvironment {
 	private pathFilterImpl: HmrFilterFactory
-	private readonly workspaceConditions: readonly string[]
 	private scanRootsAbs: string[]
 	private readonly includeGlobs?: string[]
 	private readonly excludeGlobs?: string[]
@@ -278,13 +277,11 @@ export class HmrEnvironment {
 		opts: {
 			cwd: string
 			scanRootsAbs: string[]
-			workspaceConditions: readonly string[]
 			includeGlobs?: string[]
 			excludeGlobs?: string[]
 			pathCacheLimit?: number
 		},
 	) {
-		this.workspaceConditions = [...opts.workspaceConditions]
 		this.scanRootsAbs = [...opts.scanRootsAbs]
 		this.includeGlobs = opts.includeGlobs
 		this.excludeGlobs = opts.excludeGlobs

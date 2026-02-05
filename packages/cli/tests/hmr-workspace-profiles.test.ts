@@ -33,12 +33,13 @@ describe('@pluxel/cli/hmr workspace profiles', () => {
 					name: 'pluxel-plugin-builtin',
 					version: '0.0.0',
 					type: 'module',
-					exports: { '.': { '@pluxel/hmr': './src/index.ts' } },
+					exports: { '.': { import: './dist/index.mjs', '@pluxel/hmr': './src/index.ts' } },
 				},
 				null,
 				2,
 			),
 			'packages/plugin-builtin/src/index.ts': 'export const pluginBuiltin = 1\n',
+			'packages/plugin-builtin/dist/index.mjs': 'export const pluginBuiltinDist = 1\n',
 			'packages/plugins-host/package.json': JSON.stringify({ name: '@pluxel/plugins-host', version: '0.0.0' }, null, 2),
 			'packages/plugins-host/src/demo/PluginEventsDemo.ts': 'export const demo = 1\n',
 		})
@@ -70,6 +71,9 @@ describe('@pluxel/cli/hmr workspace profiles', () => {
 		expect(res.snapshot.activeProfile).toBe('dev')
 		expect(res.snapshot.enabled).toEqual(['pluxel-plugin-a'])
 		expect(res.snapshot.builtinPackages).toEqual(['pluxel-plugin-builtin'])
+		expect(res.snapshot.builtinsFromDist).toEqual([
+			{ packageName: 'pluxel-plugin-builtin', entry: 'packages/plugin-builtin/dist/index.mjs' },
+		])
 
 		expect(res.snapshot.enabledEntries[0]).toBe('packages/plugin-a/src/index.ts')
 		expect(res.snapshot.enabledEntries).toContain('packages/plugins-host/src/demo/PluginEventsDemo.ts')

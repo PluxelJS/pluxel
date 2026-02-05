@@ -3,6 +3,11 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 
 export type PickPackagesDiscoveredPlugin = { name: string; entry: string; pkgDir: string }
 
+type IndexedDiscoveredPlugin = PickPackagesDiscoveredPlugin & {
+	groupKey: string
+	search: string
+}
+
 function normalizePath(p: string) {
 	return p.replace(/\\/g, '/')
 }
@@ -30,14 +35,27 @@ function parseFilterQuery(raw: string) {
 	return { include, exclude }
 }
 
-function filterDiscovered(discovered: PickPackagesDiscoveredPlugin[], query: string) {
+function indexDiscovered(discovered: PickPackagesDiscoveredPlugin[]) {
+	return discovered.map((p): IndexedDiscoveredPlugin => {
+		const pkgDir = normalizePath(p.pkgDir)
+		const entry = normalizePath(p.entry)
+		return {
+			...p,
+			pkgDir,
+			entry,
+			groupKey: groupKeyForPkgDir(pkgDir),
+			search: `${p.name}\n${pkgDir}\n${entry}`.toLowerCase(),
+		}
+	})
+}
+
+function filterDiscovered(discovered: IndexedDiscoveredPlugin[], query: string) {
 	const { include, exclude } = parseFilterQuery(query)
 	if (!include.length && !exclude.length) return discovered
 
 	return discovered.filter((p) => {
-		const hay = `${p.name}\n${p.pkgDir}\n${p.entry}`.toLowerCase()
-		for (const ex of exclude) if (hay.includes(ex)) return false
-		for (const inc of include) if (!hay.includes(inc)) return false
+		for (const ex of exclude) if (p.search.includes(ex)) return false
+		for (const inc of include) if (!p.search.includes(inc)) return false
 		return true
 	})
 }
@@ -58,98 +76,128 @@ type GroupInfo = {
 	previewNames: string[]
 }
 
-function buildGroups(discovered: PickPackagesDiscoveredPlugin[], selected: Set<string>) {
-	const byGroup = new Map<string, PickPackagesDiscoveredPlugin[]>()
-	for (const p of discovered) {
-		const key = groupKeyForPkgDir(p.pkgDir)
-		const list = byGroup.get(key)
-		if (list) list.push(p)
-		else byGroup.set(key, [p])
+type PickPackagesMode = 'enabled' | 'builtin'
+
+type GroupedDiscoveredIndex<T extends { name: string }> = {
+	keys: string[]
+	itemsByKey: Map<string, T[]>
+	namesByKey: Map<string, string[]>
+	allItems: T[]
+	allNames: string[]
+}
+
+function buildGroupedIndex<T extends { name: string; groupKey: string }>(
+	items: readonly T[],
+): GroupedDiscoveredIndex<T> {
+	const itemsByKey = new Map<string, T[]>()
+	for (const it of items) {
+		const list = itemsByKey.get(it.groupKey)
+		if (list) list.push(it)
+		else itemsByKey.set(it.groupKey, [it])
 	}
 
-	const keys = [...byGroup.keys()].sort((a, b) => a.localeCompare(b))
-	const groups: GroupInfo[] = keys.map((key) => {
-		const items = (byGroup.get(key) ?? []).slice().sort((a, b) => a.name.localeCompare(b.name))
+	const keys = [...itemsByKey.keys()].sort((a, b) => a.localeCompare(b))
+	const namesByKey = new Map<string, string[]>()
+	for (const key of keys) {
+		const list = itemsByKey.get(key) ?? []
+		list.sort((a, b) => a.name.localeCompare(b.name))
+		namesByKey.set(
+			key,
+			list.map((p) => p.name),
+		)
+	}
+
+	const allItems = [...items].sort((a, b) => a.name.localeCompare(b.name))
+	const allNames = allItems.map((p) => p.name)
+
+	return { keys, itemsByKey, namesByKey, allItems, allNames }
+}
+
+function countSelectedIn(items: readonly { name: string }[], selected: Set<string>) {
+	let n = 0
+	for (const it of items) if (selected.has(it.name)) n++
+	return n
+}
+
+const ALL_GROUP_KEY = '__ALL__' as const
+
+function buildGroupKeyIndex(groups: readonly { key: string }[]) {
+	const map = new Map<string, number>()
+	for (let i = 0; i < groups.length; i++) map.set(groups[i]!.key, i)
+	return map
+}
+
+function buildGroupInfosSingle<T extends { name: string }>(
+	grouped: GroupedDiscoveredIndex<T>,
+	selected: Set<string>,
+): GroupInfo[] {
+	const allTotal = grouped.allItems.length
+	const allSelected = countSelectedIn(grouped.allItems, selected)
+	const list: GroupInfo[] = [
+		{
+			key: ALL_GROUP_KEY,
+			label: `(all) (${allSelected}/${allTotal})`,
+			total: allTotal,
+			selectedCount: allSelected,
+			previewNames: grouped.allNames,
+		},
+	]
+
+	for (const key of grouped.keys) {
+		const items = grouped.itemsByKey.get(key) ?? []
 		const total = items.length
-		const selectedCount = items.reduce((n, it) => n + (selected.has(it.name) ? 1 : 0), 0)
+		const selectedCount = countSelectedIn(items, selected)
 		const labelBase = key === '.' ? '(root)' : key
-		const previewNames = items.map((it) => it.name)
-		return {
+		list.push({
 			key,
 			label: `${labelBase} (${selectedCount}/${total})`,
 			total,
 			selectedCount,
-			previewNames,
-		}
-	})
-
-	const allTotal = discovered.length
-	const allSelected = discovered.reduce((n, it) => n + (selected.has(it.name) ? 1 : 0), 0)
-	const allPreviewNames = discovered.map((it) => it.name).sort((a, b) => a.localeCompare(b))
-	return [
-		{
-			key: '__ALL__',
-			label: `(all) (${allSelected}/${allTotal})`,
-			total: allTotal,
-			selectedCount: allSelected,
-			previewNames: allPreviewNames,
-		},
-		...groups,
-	]
-}
-
-type PickPackagesMode = 'enabled' | 'builtin'
-
-function buildGroupsDual(
-	discovered: PickPackagesDiscoveredPlugin[],
-	enabled: Set<string>,
-	builtin: Set<string>,
-) {
-	const byGroup = new Map<string, PickPackagesDiscoveredPlugin[]>()
-	for (const p of discovered) {
-		const key = groupKeyForPkgDir(p.pkgDir)
-		const list = byGroup.get(key)
-		if (list) list.push(p)
-		else byGroup.set(key, [p])
+			previewNames: grouped.namesByKey.get(key) ?? [],
+		})
 	}
 
-	const keys = [...byGroup.keys()].sort((a, b) => a.localeCompare(b))
-	const groups: GroupInfo[] = keys.map((key) => {
-		const items = (byGroup.get(key) ?? []).slice().sort((a, b) => a.name.localeCompare(b.name))
+	return list
+}
+
+function buildGroupInfosDual<T extends { name: string }>(
+	grouped: GroupedDiscoveredIndex<T>,
+	enabled: Set<string>,
+	builtin: Set<string>,
+): GroupInfo[] {
+	const allTotal = grouped.allItems.length
+	const allEnabled = countSelectedIn(grouped.allItems, enabled)
+	const allBuiltin = countSelectedIn(grouped.allItems, builtin)
+	const list: GroupInfo[] = [
+		{
+			key: ALL_GROUP_KEY,
+			label: `(all) (E${allEnabled} B${allBuiltin} / ${allTotal})`,
+			total: allTotal,
+			selectedCount: allEnabled + allBuiltin,
+			enabledCount: allEnabled,
+			builtinCount: allBuiltin,
+			previewNames: grouped.allNames,
+		},
+	]
+
+	for (const key of grouped.keys) {
+		const items = grouped.itemsByKey.get(key) ?? []
 		const total = items.length
-		const enabledCount = items.reduce((n, it) => n + (enabled.has(it.name) ? 1 : 0), 0)
-		const builtinCount = items.reduce((n, it) => n + (builtin.has(it.name) ? 1 : 0), 0)
-		const selectedCount = enabledCount + builtinCount
+		const enabledCount = countSelectedIn(items, enabled)
+		const builtinCount = countSelectedIn(items, builtin)
 		const labelBase = key === '.' ? '(root)' : key
-		const previewNames = items.map((it) => it.name)
-		return {
+		list.push({
 			key,
 			label: `${labelBase} (E${enabledCount} B${builtinCount} / ${total})`,
 			total,
-			selectedCount,
+			selectedCount: enabledCount + builtinCount,
 			enabledCount,
 			builtinCount,
-			previewNames,
-		}
-	})
+			previewNames: grouped.namesByKey.get(key) ?? [],
+		})
+	}
 
-	const allTotal = discovered.length
-	const allEnabled = discovered.reduce((n, it) => n + (enabled.has(it.name) ? 1 : 0), 0)
-	const allBuiltin = discovered.reduce((n, it) => n + (builtin.has(it.name) ? 1 : 0), 0)
-	const allSelected = allEnabled + allBuiltin
-	const allPreviewNames = discovered.map((it) => it.name).sort((a, b) => a.localeCompare(b))
-	return [
-		{
-			key: '__ALL__',
-			label: `(all) (E${allEnabled} B${allBuiltin} / ${allTotal})`,
-			total: allTotal,
-			selectedCount: allSelected,
-			enabledCount: allEnabled,
-			builtinCount: allBuiltin,
-			previewNames: allPreviewNames,
-		},
-		...groups,
-	]
+	return list
 }
 
 function clamp(n: number, min: number, max: number) {
@@ -191,17 +239,19 @@ export function PickPackagesPicker(props: {
 }) {
 	const { stdout } = useStdout()
 
-	const discoveredSorted = useMemo(
+	const discoveredIndexed = useMemo(
 		() =>
-			props.params.discovered
-				.slice()
-				.sort((a, b) => a.pkgDir.localeCompare(b.pkgDir) || a.name.localeCompare(b.name)),
+			indexDiscovered(
+				props.params.discovered
+					.slice()
+					.sort((a, b) => a.pkgDir.localeCompare(b.pkgDir) || a.name.localeCompare(b.name)),
+			),
 		[props.params.discovered],
 	)
 
 	const discoveredSet = useMemo(
-		() => new Set(discoveredSorted.map((p) => p.name)),
-		[discoveredSorted],
+		() => new Set(discoveredIndexed.map((p) => p.name)),
+		[discoveredIndexed],
 	)
 	const [selected, setSelected] = useState<Set<string>>(
 		() => new Set(props.params.initialSelected.filter((n) => discoveredSet.has(n))),
@@ -209,35 +259,35 @@ export function PickPackagesPicker(props: {
 
 	const [filter, setFilter] = useState('')
 	const filtered = useMemo(
-		() => filterDiscovered(discoveredSorted, filter),
-		[discoveredSorted, filter],
+		() => filterDiscovered(discoveredIndexed, filter),
+		[discoveredIndexed, filter],
 	)
 
-	const [activeGroupKey, setActiveGroupKey] = useState<string>('__ALL__')
+	const [activeGroupKey, setActiveGroupKey] = useState<string>(ALL_GROUP_KEY)
 	const [focus, setFocus] = useState<Focus>('packages')
 
-	// Indices & scroll offsets.
-	const groups = useMemo(() => buildGroups(filtered, selected), [filtered, selected])
-	const [groupIndex, setGroupIndex] = useState(0)
+	const grouped = useMemo(() => buildGroupedIndex(filtered), [filtered])
+
+	const groups = useMemo(() => buildGroupInfosSingle(grouped, selected), [grouped, selected])
+
+	const groupKeyToIndex = useMemo(() => buildGroupKeyIndex(groups), [groups])
+
+	const groupIndex = groupKeyToIndex.get(activeGroupKey) ?? 0
+
+	useEffect(() => {
+		if (!groupKeyToIndex.has(activeGroupKey)) setActiveGroupKey(ALL_GROUP_KEY)
+	}, [groupKeyToIndex, activeGroupKey])
+
+	const activeKey = groups[groupIndex]?.key ?? ALL_GROUP_KEY
+
 	const [groupOffset, setGroupOffset] = useState(0)
 	const [pkgIndex, setPkgIndex] = useState(0)
 	const [pkgOffset, setPkgOffset] = useState(0)
 
-	// Keep groupIndex/activeGroupKey consistent across filter changes.
-	useEffect(() => {
-		const foundIdx = groups.findIndex((g) => g.key === activeGroupKey)
-		const nextIdx = foundIdx >= 0 ? foundIdx : 0
-		setGroupIndex(nextIdx)
-		setActiveGroupKey(groups[nextIdx]?.key ?? '__ALL__')
-	}, [groups, activeGroupKey])
-
-	const packagesInGroup = useMemo(() => {
-		const list =
-			activeGroupKey === '__ALL__'
-				? filtered
-				: filtered.filter((p) => groupKeyForPkgDir(p.pkgDir) === activeGroupKey)
-		return list.slice().sort((a, b) => a.name.localeCompare(b.name))
-	}, [filtered, activeGroupKey])
+	const packagesInGroup =
+		activeKey === ALL_GROUP_KEY ? grouped.allItems : (grouped.itemsByKey.get(activeKey) ?? [])
+	const visibleNames =
+		activeKey === ALL_GROUP_KEY ? grouped.allNames : (grouped.namesByKey.get(activeKey) ?? [])
 
 	// Clamp package index when switching groups / filter.
 	useEffect(() => {
@@ -309,6 +359,10 @@ export function PickPackagesPicker(props: {
 
 	useInput((input, key) => {
 		if (doneRef.current) return
+		if (key.escape && focus === 'filter') {
+			setFocus('packages')
+			return
+		}
 		// Cancel / Confirm
 		if (key.escape || (key.ctrl && input === 'c')) {
 			finish(null)
@@ -318,8 +372,16 @@ export function PickPackagesPicker(props: {
 			finish([...selected].sort((a, b) => a.localeCompare(b)))
 			return
 		}
+		if (key.ctrl && input.toLowerCase() === 'u') {
+			setFilter('')
+			return
+		}
 
 		// Focus shortcuts
+		if (key.ctrl && input.toLowerCase() === 'f') {
+			setFocus('filter')
+			return
+		}
 		if (input === '\t') {
 			setFocus((f) => (f === 'filter' ? 'groups' : f === 'groups' ? 'packages' : 'filter'))
 			return
@@ -360,7 +422,6 @@ export function PickPackagesPicker(props: {
 		}
 
 		// Helpers (apply to visible group list)
-		const visibleNames = packagesInGroup.map((p) => p.name)
 		if (input === 'c' && !key.ctrl && !key.meta) {
 			setSelected(new Set())
 			return
@@ -383,16 +444,36 @@ export function PickPackagesPicker(props: {
 		// Group navigation
 		if (focus === 'groups') {
 			if (key.upArrow) {
-				setGroupIndex((i) => clamp(i - 1, 0, Math.max(groups.length - 1, 0)))
+				const next = clamp(groupIndex - 1, 0, Math.max(groups.length - 1, 0))
+				setActiveGroupKey(groups[next]?.key ?? ALL_GROUP_KEY)
 				return
 			}
 			if (key.downArrow) {
-				setGroupIndex((i) => clamp(i + 1, 0, Math.max(groups.length - 1, 0)))
+				const next = clamp(groupIndex + 1, 0, Math.max(groups.length - 1, 0))
+				setActiveGroupKey(groups[next]?.key ?? ALL_GROUP_KEY)
+				return
+			}
+			if (key.home) {
+				setActiveGroupKey(groups[0]?.key ?? ALL_GROUP_KEY)
+				return
+			}
+			if (key.end) {
+				setActiveGroupKey(groups[Math.max(groups.length - 1, 0)]?.key ?? ALL_GROUP_KEY)
+				return
+			}
+			if (key.pageUp) {
+				const page = Math.max(listRows - 1, 1)
+				const next = clamp(groupIndex - page, 0, Math.max(groups.length - 1, 0))
+				setActiveGroupKey(groups[next]?.key ?? ALL_GROUP_KEY)
+				return
+			}
+			if (key.pageDown) {
+				const page = Math.max(listRows - 1, 1)
+				const next = clamp(groupIndex + page, 0, Math.max(groups.length - 1, 0))
+				setActiveGroupKey(groups[next]?.key ?? ALL_GROUP_KEY)
 				return
 			}
 			if (key.return) {
-				const g = groups[groupIndex]
-				if (g) setActiveGroupKey(g.key)
 				setFocus('packages')
 				return
 			}
@@ -409,6 +490,24 @@ export function PickPackagesPicker(props: {
 				setPkgIndex((i) => clamp(i + 1, 0, Math.max(packagesInGroup.length - 1, 0)))
 				return
 			}
+			if (key.home) {
+				setPkgIndex(0)
+				return
+			}
+			if (key.end) {
+				setPkgIndex(Math.max(packagesInGroup.length - 1, 0))
+				return
+			}
+			if (key.pageUp) {
+				const page = Math.max(listRows - 1, 1)
+				setPkgIndex((i) => clamp(i - page, 0, Math.max(packagesInGroup.length - 1, 0)))
+				return
+			}
+			if (key.pageDown) {
+				const page = Math.max(listRows - 1, 1)
+				setPkgIndex((i) => clamp(i + page, 0, Math.max(packagesInGroup.length - 1, 0)))
+				return
+			}
 			if (key.return || input === ' ') {
 				const p = packagesInGroup[pkgIndex]
 				if (!p) return
@@ -418,18 +517,8 @@ export function PickPackagesPicker(props: {
 		}
 	})
 
-	// Apply selected group index → active group key (when focus is groups and user moves).
-	useEffect(() => {
-		const g = groups[groupIndex]
-		if (!g) return
-		setActiveGroupKey(g.key)
-	}, [groupIndex, groups])
-
-	const groupCount = useMemo(
-		() => new Set(filtered.map((p) => groupKeyForPkgDir(p.pkgDir))).size,
-		[filtered],
-	)
-	const groupLabel = activeGroupKey === '__ALL__' ? '(all)' : activeGroupKey || '(none)'
+	const groupCount = grouped.keys.length
+	const groupLabel = activeKey === ALL_GROUP_KEY ? '(all)' : activeKey || '(none)'
 	const filterLabel = filter ? `filter="${filter}"` : 'filter=(none)'
 
 	const groupWindow = groups.slice(groupOffset, groupOffset + listRows)
@@ -440,6 +529,17 @@ export function PickPackagesPicker(props: {
 	const currentPkgDesc = currentPkg ? currentPkg.entry : ''
 
 	const focusTag = (tag: Focus) => (focus === tag ? '*' : ' ')
+	const rowPrefix = (active: boolean, pane: Focus) => {
+		if (!active) return ' '
+		return focus === pane ? '›' : '·'
+	}
+	const globalHint = 'global: a all • i invert • g group • c clear • Ctrl+U clear filter'
+	const focusHint =
+		focus === 'filter'
+			? 'filter: type • Enter apply • Esc leave • Ctrl+U clear'
+			: focus === 'groups'
+				? 'folders: ↑/↓/PgUp/PgDn/Home/End • → packages • Enter open'
+				: 'packages: ↑/↓/PgUp/PgDn/Home/End • ← folders • Enter/Space toggle'
 
 	return (
 		<Box flexDirection="column" width="100%">
@@ -458,14 +558,23 @@ export function PickPackagesPicker(props: {
 			</Text>
 
 			<Box flexDirection="row" width="100%" height={bodyRows}>
-				<Box flexDirection="column" width="35%" borderStyle="round" borderColor="gray">
+				<Box
+					flexDirection="column"
+					width="35%"
+					borderStyle="round"
+					borderColor={focus === 'groups' ? 'cyan' : 'gray'}
+				>
 					<Text>{focusTag('groups')} Folders</Text>
 					{groupWindow.map((g, i) => {
 						const idx = groupOffset + i
 						const active = idx === groupIndex
-						const line = `${active ? '›' : ' '} ${g.label}`
+						const line = `${rowPrefix(active, 'groups')} ${g.label}`
 						return (
-							<Text key={g.key} color={active ? 'cyan' : undefined} wrap="truncate">
+							<Text
+								key={g.key}
+								color={focus === 'groups' ? (active ? 'cyan' : undefined) : 'gray'}
+								wrap="truncate"
+							>
 								{line}
 								{'  '}
 								<Text color="gray">{formatPreviewNames(g.previewNames, previewMax)}</Text>
@@ -479,16 +588,20 @@ export function PickPackagesPicker(props: {
 					flexGrow={1}
 					marginLeft={1}
 					borderStyle="round"
-					borderColor="gray"
+					borderColor={focus === 'packages' ? 'cyan' : 'gray'}
 				>
 					<Text>{focusTag('packages')} Packages</Text>
 					{pkgWindow.map((p, i) => {
 						const idx = pkgOffset + i
 						const active = idx === pkgIndex
 						const checked = selected.has(p.name)
-						const line = `${active ? '›' : ' '} ${checked ? '[x]' : '[ ]'} ${p.name}`
+						const line = `${rowPrefix(active, 'packages')} ${checked ? '[x]' : '[ ]'} ${p.name}`
 						return (
-							<Text key={p.name} color={active ? 'cyan' : undefined} wrap="truncate">
+							<Text
+								key={p.name}
+								color={focus === 'packages' ? (active ? 'cyan' : undefined) : 'gray'}
+								wrap="truncate"
+							>
 								{line}
 							</Text>
 						)
@@ -500,8 +613,8 @@ export function PickPackagesPicker(props: {
 				{currentPkgDesc}
 			</Text>
 			<Text color="gray" wrap="truncate">
-				Tab focus • / filter • ←/→ pane • ↑/↓ move • Enter/Space toggle • g group • a all • i invert
-				• c clear • Ctrl+S confirm • Esc/Ctrl+C cancel • Ctrl+U clear filter
+				Tab focus • / or Ctrl+F filter • ←/→ pane • {globalHint} • {focusHint} • Ctrl+S confirm •
+				Esc/Ctrl+C cancel
 			</Text>
 		</Box>
 	)
@@ -550,17 +663,19 @@ export function PickPackagesDualPicker(props: {
 }) {
 	const { stdout } = useStdout()
 
-	const discoveredSorted = useMemo(
+	const discoveredIndexed = useMemo(
 		() =>
-			props.params.discovered
-				.slice()
-				.sort((a, b) => a.pkgDir.localeCompare(b.pkgDir) || a.name.localeCompare(b.name)),
+			indexDiscovered(
+				props.params.discovered
+					.slice()
+					.sort((a, b) => a.pkgDir.localeCompare(b.pkgDir) || a.name.localeCompare(b.name)),
+			),
 		[props.params.discovered],
 	)
 
 	const discoveredSet = useMemo(
-		() => new Set(discoveredSorted.map((p) => p.name)),
-		[discoveredSorted],
+		() => new Set(discoveredIndexed.map((p) => p.name)),
+		[discoveredIndexed],
 	)
 
 	type Selection = { enabled: Set<string>; builtin: Set<string> }
@@ -578,38 +693,35 @@ export function PickPackagesDualPicker(props: {
 	const [mode, setMode] = useState<PickPackagesMode>(props.params.initialMode ?? 'enabled')
 	const [filter, setFilter] = useState('')
 	const filtered = useMemo(
-		() => filterDiscovered(discoveredSorted, filter),
-		[discoveredSorted, filter],
+		() => filterDiscovered(discoveredIndexed, filter),
+		[discoveredIndexed, filter],
 	)
 
-	const [activeGroupKey, setActiveGroupKey] = useState<string>('__ALL__')
+	const [activeGroupKey, setActiveGroupKey] = useState<string>(ALL_GROUP_KEY)
 	const [focus, setFocus] = useState<Focus>('packages')
 
-	// Indices & scroll offsets.
-	const groups = useMemo(
-		() => buildGroupsDual(filtered, enabled, builtin),
-		[filtered, enabled, builtin],
-	)
-	const [groupIndex, setGroupIndex] = useState(0)
+	const grouped = useMemo(() => buildGroupedIndex(filtered), [filtered])
+
+	const groups = useMemo(() => buildGroupInfosDual(grouped, enabled, builtin), [grouped, enabled, builtin])
+
+	const groupKeyToIndex = useMemo(() => buildGroupKeyIndex(groups), [groups])
+
+	const groupIndex = groupKeyToIndex.get(activeGroupKey) ?? 0
+
+	useEffect(() => {
+		if (!groupKeyToIndex.has(activeGroupKey)) setActiveGroupKey(ALL_GROUP_KEY)
+	}, [groupKeyToIndex, activeGroupKey])
+
+	const activeKey = groups[groupIndex]?.key ?? ALL_GROUP_KEY
+
 	const [groupOffset, setGroupOffset] = useState(0)
 	const [pkgIndex, setPkgIndex] = useState(0)
 	const [pkgOffset, setPkgOffset] = useState(0)
 
-	// Keep groupIndex/activeGroupKey consistent across filter changes.
-	useEffect(() => {
-		const foundIdx = groups.findIndex((g) => g.key === activeGroupKey)
-		const nextIdx = foundIdx >= 0 ? foundIdx : 0
-		setGroupIndex(nextIdx)
-		setActiveGroupKey(groups[nextIdx]?.key ?? '__ALL__')
-	}, [groups, activeGroupKey])
-
-	const packagesInGroup = useMemo(() => {
-		const list =
-			activeGroupKey === '__ALL__'
-				? filtered
-				: filtered.filter((p) => groupKeyForPkgDir(p.pkgDir) === activeGroupKey)
-		return list.slice().sort((a, b) => a.name.localeCompare(b.name))
-	}, [filtered, activeGroupKey])
+	const packagesInGroup =
+		activeKey === ALL_GROUP_KEY ? grouped.allItems : (grouped.itemsByKey.get(activeKey) ?? [])
+	const visibleNames =
+		activeKey === ALL_GROUP_KEY ? grouped.allNames : (grouped.namesByKey.get(activeKey) ?? [])
 
 	// Clamp package index when switching groups / filter.
 	useEffect(() => {
@@ -739,6 +851,10 @@ export function PickPackagesDualPicker(props: {
 
 	useInput((input, key) => {
 		if (doneRef.current) return
+		if (key.escape && focus === 'filter') {
+			setFocus('packages')
+			return
+		}
 
 		// Cancel / Confirm
 		if (key.escape || (key.ctrl && input === 'c')) {
@@ -764,6 +880,14 @@ export function PickPackagesDualPicker(props: {
 		}
 
 		// Focus shortcuts
+		if (key.ctrl && input.toLowerCase() === 'f') {
+			setFocus('filter')
+			return
+		}
+		if (key.ctrl && input.toLowerCase() === 'u') {
+			setFilter('')
+			return
+		}
 		if (input === '\t') {
 			setFocus((f) => (f === 'filter' ? 'groups' : f === 'groups' ? 'packages' : 'filter'))
 			return
@@ -804,7 +928,6 @@ export function PickPackagesDualPicker(props: {
 		}
 
 		// Helpers (apply to visible group list)
-		const visibleNames = packagesInGroup.map((p) => p.name)
 		if (!key.ctrl && !key.meta && input === 'x') {
 			applyMany(visibleNames, 'swap')
 			return
@@ -829,15 +952,37 @@ export function PickPackagesDualPicker(props: {
 		// Group navigation
 		if (focus === 'groups') {
 			if (key.upArrow) {
-				setGroupIndex((i) => clamp(i - 1, 0, Math.max(groups.length - 1, 0)))
+				const next = clamp(groupIndex - 1, 0, Math.max(groups.length - 1, 0))
+				setActiveGroupKey(groups[next]?.key ?? ALL_GROUP_KEY)
 				return
 			}
 			if (key.downArrow) {
-				setGroupIndex((i) => clamp(i + 1, 0, Math.max(groups.length - 1, 0)))
+				const next = clamp(groupIndex + 1, 0, Math.max(groups.length - 1, 0))
+				setActiveGroupKey(groups[next]?.key ?? ALL_GROUP_KEY)
+				return
+			}
+			if (key.home) {
+				setActiveGroupKey(groups[0]?.key ?? ALL_GROUP_KEY)
+				return
+			}
+			if (key.end) {
+				setActiveGroupKey(groups[Math.max(groups.length - 1, 0)]?.key ?? ALL_GROUP_KEY)
+				return
+			}
+			if (key.pageUp) {
+				const page = Math.max(listRows - 1, 1)
+				const next = clamp(groupIndex - page, 0, Math.max(groups.length - 1, 0))
+				setActiveGroupKey(groups[next]?.key ?? ALL_GROUP_KEY)
+				return
+			}
+			if (key.pageDown) {
+				const page = Math.max(listRows - 1, 1)
+				const next = clamp(groupIndex + page, 0, Math.max(groups.length - 1, 0))
+				setActiveGroupKey(groups[next]?.key ?? ALL_GROUP_KEY)
 				return
 			}
 			if (!key.ctrl && !key.meta && input === ' ') {
-				applyMany(visibleNames, 'enableAll')
+				applyMany(visibleNames, 'toggle')
 				return
 			}
 			if (!key.ctrl && !key.meta && input === 'E') {
@@ -851,8 +996,6 @@ export function PickPackagesDualPicker(props: {
 				return
 			}
 			if (key.return) {
-				const g = groups[groupIndex]
-				if (g) setActiveGroupKey(g.key)
 				setFocus('packages')
 				return
 			}
@@ -869,6 +1012,24 @@ export function PickPackagesDualPicker(props: {
 				setPkgIndex((i) => clamp(i + 1, 0, Math.max(packagesInGroup.length - 1, 0)))
 				return
 			}
+			if (key.home) {
+				setPkgIndex(0)
+				return
+			}
+			if (key.end) {
+				setPkgIndex(Math.max(packagesInGroup.length - 1, 0))
+				return
+			}
+			if (key.pageUp) {
+				const page = Math.max(listRows - 1, 1)
+				setPkgIndex((i) => clamp(i - page, 0, Math.max(packagesInGroup.length - 1, 0)))
+				return
+			}
+			if (key.pageDown) {
+				const page = Math.max(listRows - 1, 1)
+				setPkgIndex((i) => clamp(i + page, 0, Math.max(packagesInGroup.length - 1, 0)))
+				return
+			}
 			if (key.return || input === ' ') {
 				const p = packagesInGroup[pkgIndex]
 				if (!p) return
@@ -878,18 +1039,8 @@ export function PickPackagesDualPicker(props: {
 		}
 	})
 
-	// Apply selected group index → active group key (when focus is groups and user moves).
-	useEffect(() => {
-		const g = groups[groupIndex]
-		if (!g) return
-		setActiveGroupKey(g.key)
-	}, [groupIndex, groups])
-
-	const groupCount = useMemo(
-		() => new Set(filtered.map((p) => groupKeyForPkgDir(p.pkgDir))).size,
-		[filtered],
-	)
-	const groupLabel = activeGroupKey === '__ALL__' ? '(all)' : activeGroupKey || '(none)'
+	const groupCount = grouped.keys.length
+	const groupLabel = activeKey === ALL_GROUP_KEY ? '(all)' : activeKey || '(none)'
 	const filterLabel = filter ? `filter="${filter}"` : 'filter=(none)'
 
 	const groupWindow = groups.slice(groupOffset, groupOffset + listRows)
@@ -903,6 +1054,19 @@ export function PickPackagesDualPicker(props: {
 	const modeTag = mode === 'enabled' ? 'MODE=enabled (e)' : 'MODE=builtin (b)'
 	const focusTagLabel =
 		focus === 'filter' ? 'FOCUS=filter' : focus === 'groups' ? 'FOCUS=folders' : 'FOCUS=packages'
+	const globalHint =
+		'global: e/b mode • x swap • a all • i invert • g group • c clear • Ctrl+U clear filter'
+	const focusHint =
+		focus === 'filter'
+			? 'filter: type • Enter apply • Esc leave • Ctrl+U clear'
+			: focus === 'groups'
+				? 'folders: ↑/↓/PgUp/PgDn/Home/End • → packages • Space toggle • E/B apply'
+				: 'packages: ↑/↓/PgUp/PgDn/Home/End • ← folders • Enter/Space toggle'
+
+	const rowPrefix = (active: boolean, pane: Focus) => {
+		if (!active) return ' '
+		return focus === pane ? '›' : '·'
+	}
 
 	return (
 		<Box flexDirection="column" width="100%">
@@ -931,13 +1095,11 @@ export function PickPackagesDualPicker(props: {
 					{groupWindow.map((g, i) => {
 						const idx = groupOffset + i
 						const active = idx === groupIndex
-						const line = `${active ? '›' : ' '} ${g.label}`
+						const line = `${rowPrefix(active, 'groups')} ${g.label}`
 						return (
 							<Text
 								key={g.key}
-								color={
-									focus === 'groups' ? (active ? 'cyan' : undefined) : active ? undefined : 'gray'
-								}
+								color={focus === 'groups' ? (active ? 'cyan' : undefined) : 'gray'}
 								wrap="truncate"
 							>
 								{line}
@@ -960,13 +1122,11 @@ export function PickPackagesDualPicker(props: {
 						const idx = pkgOffset + i
 						const active = idx === pkgIndex
 						const tag = enabled.has(p.name) ? '[E]' : builtin.has(p.name) ? '[B]' : '[ ]'
-						const line = `${active ? '›' : ' '} ${tag} ${p.name}`
+						const line = `${rowPrefix(active, 'packages')} ${tag} ${p.name}`
 						return (
 							<Text
 								key={p.name}
-								color={
-									focus === 'packages' ? (active ? 'cyan' : undefined) : active ? undefined : 'gray'
-								}
+								color={focus === 'packages' ? (active ? 'cyan' : undefined) : 'gray'}
 								wrap="truncate"
 							>
 								{line}
@@ -980,9 +1140,8 @@ export function PickPackagesDualPicker(props: {
 				{currentPkgDesc}
 			</Text>
 			<Text color="gray" wrap="truncate">
-				e/b mode • x swap E↔B • Tab focus • / filter • ←/→ pane • ↑/↓ move • Enter/Space toggle • g
-				group • a all • i invert • c clear • Ctrl+S confirm • Esc/Ctrl+C cancel • Ctrl+U clear
-				filter
+				Tab focus • / or Ctrl+F filter • ←/→ pane • {globalHint} • {focusHint} • Ctrl+S confirm •
+				Esc/Ctrl+C cancel
 			</Text>
 		</Box>
 	)
@@ -1025,43 +1184,42 @@ export function PickPackagesDualBrowser(props: {
 	enabled: string[]
 	builtin: string[]
 	initialMode?: PickPackagesMode
+	disabled?: boolean
 	height?: number
 	onTypingChange?: (typing: boolean) => void
 	onChange: (next: PickPackagesDualBrowserValue) => void
 }) {
 	const { stdout } = useStdout()
 
-	const discoveredSorted = useMemo(
+	const discoveredIndexed = useMemo(
 		() =>
-			props.discovered
-				.slice()
-				.sort((a, b) => a.pkgDir.localeCompare(b.pkgDir) || a.name.localeCompare(b.name)),
+			indexDiscovered(
+				props.discovered
+					.slice()
+					.sort((a, b) => a.pkgDir.localeCompare(b.pkgDir) || a.name.localeCompare(b.name)),
+			),
 		[props.discovered],
 	)
 	const discoveredSet = useMemo(
-		() => new Set(discoveredSorted.map((p) => p.name)),
-		[discoveredSorted],
+		() => new Set(discoveredIndexed.map((p) => p.name)),
+		[discoveredIndexed],
 	)
 
 	type Selection = { enabled: Set<string>; builtin: Set<string> }
-	const [selection, setSelection] = useState<Selection>(() => {
-		const initialBuiltin = props.builtin.filter((n) => discoveredSet.has(n))
+	const normalizeSelection = (enabledRaw: string[], builtinRaw: string[]) => {
+		const initialBuiltin = builtinRaw.filter((n) => discoveredSet.has(n))
 		const builtinSet = new Set(initialBuiltin)
-		const initialEnabled = props.enabled
-			.filter((n) => discoveredSet.has(n))
-			.filter((n) => !builtinSet.has(n))
+		const initialEnabled = enabledRaw.filter((n) => discoveredSet.has(n)).filter((n) => !builtinSet.has(n))
 		return { enabled: new Set(initialEnabled), builtin: new Set(initialBuiltin) }
+	}
+	const [selection, setSelection] = useState<Selection>(() => {
+		return normalizeSelection(props.enabled, props.builtin)
 	})
 
 	const suppressEmitRef = useRef(false)
 	useEffect(() => {
 		suppressEmitRef.current = true
-		const initialBuiltin = props.builtin.filter((n) => discoveredSet.has(n))
-		const builtinSet = new Set(initialBuiltin)
-		const initialEnabled = props.enabled
-			.filter((n) => discoveredSet.has(n))
-			.filter((n) => !builtinSet.has(n))
-		setSelection({ enabled: new Set(initialEnabled), builtin: new Set(initialBuiltin) })
+		setSelection(normalizeSelection(props.enabled, props.builtin))
 		const t = setTimeout(() => {
 			suppressEmitRef.current = false
 		}, 0)
@@ -1074,36 +1232,38 @@ export function PickPackagesDualBrowser(props: {
 	const [mode, setMode] = useState<PickPackagesMode>(props.initialMode ?? 'enabled')
 	const [filter, setFilter] = useState('')
 	const filtered = useMemo(
-		() => filterDiscovered(discoveredSorted, filter),
-		[discoveredSorted, filter],
+		() => filterDiscovered(discoveredIndexed, filter),
+		[discoveredIndexed, filter],
 	)
 
-	const [activeGroupKey, setActiveGroupKey] = useState<string>('__ALL__')
+	const [activeGroupKey, setActiveGroupKey] = useState<string>(ALL_GROUP_KEY)
 	const [focus, setFocus] = useState<Focus>('packages')
 
-	const groups = useMemo(
-		() => buildGroupsDual(filtered, enabled, builtin),
-		[filtered, enabled, builtin],
-	)
-	const [groupIndex, setGroupIndex] = useState(0)
+	const grouped = useMemo(() => buildGroupedIndex(filtered), [filtered])
+
+		const groups = useMemo(
+			() => buildGroupInfosDual(grouped, enabled, builtin),
+			[grouped, enabled, builtin],
+		)
+
+		const groupKeyToIndex = useMemo(() => buildGroupKeyIndex(groups), [groups])
+
+	const groupIndex = groupKeyToIndex.get(activeGroupKey) ?? 0
+
+		useEffect(() => {
+			if (!groupKeyToIndex.has(activeGroupKey)) setActiveGroupKey(ALL_GROUP_KEY)
+		}, [groupKeyToIndex, activeGroupKey])
+
+		const activeKey = groups[groupIndex]?.key ?? ALL_GROUP_KEY
+
 	const [groupOffset, setGroupOffset] = useState(0)
 	const [pkgIndex, setPkgIndex] = useState(0)
 	const [pkgOffset, setPkgOffset] = useState(0)
 
-	useEffect(() => {
-		const foundIdx = groups.findIndex((g) => g.key === activeGroupKey)
-		const nextIdx = foundIdx >= 0 ? foundIdx : 0
-		setGroupIndex(nextIdx)
-		setActiveGroupKey(groups[nextIdx]?.key ?? '__ALL__')
-	}, [groups, activeGroupKey])
-
-	const packagesInGroup = useMemo(() => {
-		const list =
-			activeGroupKey === '__ALL__'
-				? filtered
-				: filtered.filter((p) => groupKeyForPkgDir(p.pkgDir) === activeGroupKey)
-		return list.slice().sort((a, b) => a.name.localeCompare(b.name))
-	}, [filtered, activeGroupKey])
+		const packagesInGroup =
+			activeKey === ALL_GROUP_KEY ? grouped.allItems : (grouped.itemsByKey.get(activeKey) ?? [])
+		const visibleNames =
+			activeKey === ALL_GROUP_KEY ? grouped.allNames : (grouped.namesByKey.get(activeKey) ?? [])
 
 	useEffect(() => {
 		setPkgIndex((idx) => clamp(idx, 0, Math.max(packagesInGroup.length - 1, 0)))
@@ -1242,8 +1402,19 @@ export function PickPackagesDualBrowser(props: {
 	}
 
 	useInput((input, key) => {
+		if (props.disabled) return
 		if (key.escape && focus === 'filter') {
 			setFocus('packages')
+			return
+		}
+
+		// Fast focus: filter
+		if (key.ctrl && input.toLowerCase() === 'f') {
+			setFocus('filter')
+			return
+		}
+		if (key.ctrl && input.toLowerCase() === 'u') {
+			setFilter('')
 			return
 		}
 
@@ -1258,10 +1429,6 @@ export function PickPackagesDualBrowser(props: {
 		}
 
 		// Focus shortcuts
-		if (input === '\t') {
-			setFocus((f) => (f === 'filter' ? 'groups' : f === 'groups' ? 'packages' : 'filter'))
-			return
-		}
 		if (input === '/' && !key.ctrl && !key.meta) {
 			setFocus('filter')
 			return
@@ -1293,7 +1460,6 @@ export function PickPackagesDualBrowser(props: {
 			return
 		}
 
-		const visibleNames = packagesInGroup.map((p) => p.name)
 		if (!key.ctrl && !key.meta && input === 'x') {
 			applyMany(visibleNames, 'swap')
 			return
@@ -1317,11 +1483,33 @@ export function PickPackagesDualBrowser(props: {
 
 		if (focus === 'groups') {
 			if (key.upArrow) {
-				setGroupIndex((i) => clamp(i - 1, 0, Math.max(groups.length - 1, 0)))
+				const next = clamp(groupIndex - 1, 0, Math.max(groups.length - 1, 0))
+				setActiveGroupKey(groups[next]?.key ?? ALL_GROUP_KEY)
 				return
 			}
 			if (key.downArrow) {
-				setGroupIndex((i) => clamp(i + 1, 0, Math.max(groups.length - 1, 0)))
+				const next = clamp(groupIndex + 1, 0, Math.max(groups.length - 1, 0))
+				setActiveGroupKey(groups[next]?.key ?? ALL_GROUP_KEY)
+				return
+			}
+			if (key.home) {
+				setActiveGroupKey(groups[0]?.key ?? ALL_GROUP_KEY)
+				return
+			}
+			if (key.end) {
+				setActiveGroupKey(groups[Math.max(groups.length - 1, 0)]?.key ?? ALL_GROUP_KEY)
+				return
+			}
+			if (key.pageUp) {
+				const page = Math.max(listRows - 1, 1)
+				const next = clamp(groupIndex - page, 0, Math.max(groups.length - 1, 0))
+				setActiveGroupKey(groups[next]?.key ?? ALL_GROUP_KEY)
+				return
+			}
+			if (key.pageDown) {
+				const page = Math.max(listRows - 1, 1)
+				const next = clamp(groupIndex + page, 0, Math.max(groups.length - 1, 0))
+				setActiveGroupKey(groups[next]?.key ?? ALL_GROUP_KEY)
 				return
 			}
 			if (key.return) {
@@ -1329,7 +1517,7 @@ export function PickPackagesDualBrowser(props: {
 				return
 			}
 			if (!key.ctrl && !key.meta && input === ' ') {
-				applyMany(visibleNames, 'enableAll')
+				applyMany(visibleNames, 'toggle')
 				return
 			}
 			if (!key.ctrl && !key.meta && input === 'E') {
@@ -1354,6 +1542,24 @@ export function PickPackagesDualBrowser(props: {
 				setPkgIndex((i) => clamp(i + 1, 0, Math.max(packagesInGroup.length - 1, 0)))
 				return
 			}
+			if (key.home) {
+				setPkgIndex(0)
+				return
+			}
+			if (key.end) {
+				setPkgIndex(Math.max(packagesInGroup.length - 1, 0))
+				return
+			}
+			if (key.pageUp) {
+				const page = Math.max(listRows - 1, 1)
+				setPkgIndex((i) => clamp(i - page, 0, Math.max(packagesInGroup.length - 1, 0)))
+				return
+			}
+			if (key.pageDown) {
+				const page = Math.max(listRows - 1, 1)
+				setPkgIndex((i) => clamp(i + page, 0, Math.max(packagesInGroup.length - 1, 0)))
+				return
+			}
 			if (key.return || input === ' ') {
 				const p = packagesInGroup[pkgIndex]
 				if (!p) return
@@ -1363,20 +1569,11 @@ export function PickPackagesDualBrowser(props: {
 	})
 
 	useEffect(() => {
-		props.onTypingChange?.(focus === 'filter')
+		props.onTypingChange?.(!props.disabled && focus === 'filter')
 		return () => props.onTypingChange?.(false)
-	}, [focus])
+	}, [focus, props.disabled])
 
-	useEffect(() => {
-		const g = groups[groupIndex]
-		if (!g) return
-		setActiveGroupKey(g.key)
-	}, [groupIndex, groups])
-
-	const groupCount = useMemo(
-		() => new Set(filtered.map((p) => groupKeyForPkgDir(p.pkgDir))).size,
-		[filtered],
-	)
+	const groupCount = grouped.keys.length
 
 	const groupWindow = groups.slice(groupOffset, groupOffset + listRows)
 	const pkgWindow = packagesInGroup.slice(pkgOffset, pkgOffset + listRows)
@@ -1387,9 +1584,22 @@ export function PickPackagesDualBrowser(props: {
 	const modeTag = mode === 'enabled' ? 'MODE=enabled (e)' : 'MODE=builtin (b)'
 	const focusLabel =
 		focus === 'filter' ? 'focus=filter' : focus === 'groups' ? 'focus=folders' : 'focus=packages'
-	const groupLabel = activeGroupKey === '__ALL__' ? '(all)' : activeGroupKey || '(none)'
+	const groupLabel = activeKey === ALL_GROUP_KEY ? '(all)' : activeKey || '(none)'
 	const filterLabel = filter ? `filter="${filter}"` : 'filter=(none)'
 	const previewMax = groups.length <= listRows ? 8 : 2
+	const globalHint =
+		'global: e/b mode • x swap • a all • i invert • g group • c clear • Ctrl+U clear filter'
+	const focusHint =
+		focus === 'filter'
+			? 'filter: type • Enter apply • Esc leave • Ctrl+U clear'
+			: focus === 'groups'
+				? 'folders: ↑/↓/PgUp/PgDn/Home/End • → packages • Space toggle • E/B apply'
+				: 'packages: ↑/↓/PgUp/PgDn/Home/End • ← folders • Enter/Space toggle'
+
+	const rowPrefix = (active: boolean, pane: Focus) => {
+		if (!active) return ' '
+		return focus === pane ? '›' : '·'
+	}
 
 	return (
 		<Box flexDirection="column" width="100%">
@@ -1413,13 +1623,11 @@ export function PickPackagesDualBrowser(props: {
 					{groupWindow.map((g, i) => {
 						const idx = groupOffset + i
 						const active = idx === groupIndex
-						const line = `${active ? '›' : ' '} ${g.label}`
+						const line = `${rowPrefix(active, 'groups')} ${g.label}`
 						return (
 							<Text
 								key={g.key}
-								color={
-									focus === 'groups' ? (active ? 'cyan' : undefined) : active ? undefined : 'gray'
-								}
+								color={focus === 'groups' ? (active ? 'cyan' : undefined) : 'gray'}
 								wrap="truncate"
 							>
 								{line}
@@ -1442,13 +1650,11 @@ export function PickPackagesDualBrowser(props: {
 						const idx = pkgOffset + i
 						const active = idx === pkgIndex
 						const tag = enabled.has(p.name) ? '[E]' : builtin.has(p.name) ? '[B]' : '[ ]'
-						const line = `${active ? '›' : ' '} ${tag} ${p.name}`
+						const line = `${rowPrefix(active, 'packages')} ${tag} ${p.name}`
 						return (
 							<Text
 								key={p.name}
-								color={
-									focus === 'packages' ? (active ? 'cyan' : undefined) : active ? undefined : 'gray'
-								}
+								color={focus === 'packages' ? (active ? 'cyan' : undefined) : 'gray'}
 								wrap="truncate"
 							>
 								{line}
@@ -1462,9 +1668,7 @@ export function PickPackagesDualBrowser(props: {
 				{currentPkgDesc}
 			</Text>
 			<Text color="gray" wrap="truncate">
-				e/b mode • x swap E↔B • Tab focus • / filter • ←/→ pane • ↑/↓ move • Enter/Space toggle • g
-				group • a all • i invert • c clear • Space(on folder) apply mode • E/B(on folder) apply •
-				Ctrl+U clear filter
+				/ or Ctrl+F filter • ←/→ pane • {globalHint} • {focusHint}
 			</Text>
 		</Box>
 	)

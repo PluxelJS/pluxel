@@ -1,5 +1,5 @@
 // vite.config.ts
-import path from 'node:path'
+import { resolve } from 'pathe'
 import { defineConfig } from 'vite'
 
 function fixRolldownUndefinedExports() {
@@ -59,7 +59,7 @@ export default defineConfig({
 		manifest: true,
 		emptyOutDir: true,
 		rollupOptions: {
-			input: path.resolve(__dirname, 'src/client.tsx'),
+			input: resolve(__dirname, 'src/client.tsx'),
 			treeshake: {
 				// 关键4：对 immutable 保留副作用标记，避免把内部 runtime 标记摇没
 				moduleSideEffects: (id) => (/immutable/.test(id) ? true : undefined),

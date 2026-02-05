@@ -1,5 +1,5 @@
 import { mkdir } from 'node:fs/promises'
-import { dirname } from 'node:path'
+import { dirname } from 'pathe'
 
 import { configure, getConfig, type LogLevel } from '@logtape/logtape'
 import { createPluxelLogtapeConfig, createPluxelPluginLevelState } from '@pluxel/core/logger'

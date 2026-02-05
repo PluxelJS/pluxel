@@ -1,6 +1,5 @@
 import type { Context } from '@pluxel/core'
-
-const DEFAULT_CONDITIONS = ['@pluxel/hmr', 'import', 'module', 'default'] as const
+import { PLUXEL_HMR_WORKSPACE_CONDITIONS_WITH_SOURCE } from '../../services/runtime/scan/hmr-conditions'
 
 export type WorkspaceResolveEntryInput = {
 	name: string
@@ -18,20 +17,16 @@ export async function workspaceResolveEntry(ctx: Context, input: WorkspaceResolv
 	const preferHmrExports = input.preferHmrExports !== false
 	const conditions = Array.isArray(input.conditions) && input.conditions.length
 		? input.conditions
-		: [...DEFAULT_CONDITIONS]
+		: [...PLUXEL_HMR_WORKSPACE_CONDITIONS_WITH_SOURCE]
 
-	return await ctx.scanService.resolveEntry(
-		{ name },
-		{
-			workspaceOnly: input.workspaceOnly === true,
-			scan: { conditions, ...(preferHmrExports ? { preferHmrExports: true } : {}) },
-		},
-	)
+	return await ctx.scanService.resolveEntryByName(name, {
+		workspaceOnly: input.workspaceOnly === true,
+		scan: { conditions, ...(preferHmrExports ? { preferHmrExports: true } : {}) },
+	})
 }
 
 export async function workspaceListEntries(ctx: Context) {
 	return await ctx.scanService.listWorkspaceEntries({
-		scan: { conditions: [...DEFAULT_CONDITIONS], preferHmrExports: true },
+		scan: { conditions: [...PLUXEL_HMR_WORKSPACE_CONDITIONS_WITH_SOURCE], preferHmrExports: true },
 	})
 }
-
