@@ -1,28 +1,12 @@
+import { existsSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
-import type { Context } from '@pluxel/core'
 import { makeIdFiltersToMatchWithQuery } from '@rolldown/pluginutils'
 import { dirname, isAbsolute, resolve } from 'pathe'
 import { createFilter, normalizePath } from 'vite'
+import { boundedSet, resolveCacheLimit } from '../shared/cache'
 import { findNearestPackageRoot } from './internals'
 
 const DRIVE_PATH_RE = /^[a-zA-Z]:[\\/]/
-
-function resolveCacheLimit(raw: unknown, fallback: number) {
-	if (typeof raw === 'number' && Number.isFinite(raw)) return Math.max(0, Math.floor(raw))
-	if (typeof raw === 'string') {
-		const n = Number.parseInt(raw, 10)
-		if (Number.isFinite(n)) return Math.max(0, n)
-	}
-	return fallback
-}
-
-function boundedSet<K, V>(map: Map<K, V>, key: K, value: V, limit: number) {
-	if (limit <= 0) return
-	map.set(key, value)
-	if (map.size <= limit) return
-	const first = map.keys().next().value as K
-	map.delete(first)
-}
 
 export class HmrPathResolver {
 	private serverRoot = ''
@@ -131,6 +115,17 @@ export class HmrPathResolver {
 
 			if (this.serverRoot && !raw.startsWith(this.serverRoot) && !isKnownFsPath) {
 				const rebased = normalizePath(resolve(this.serverRoot, raw.slice(1)))
+				// Prefer server-root rebasing when that file exists (typical Vite root-relative URLs like `/src/*`).
+				// Otherwise preserve real absolute filesystem paths even if they are outside cwd/scanRoots
+				// (linked workspaces/monorepos).
+				if (existsSync(rebased)) {
+					boundedSet(this.cleanIdCache, raw, rebased, this.cacheLimit)
+					return rebased
+				}
+				if (existsSync(raw)) {
+					boundedSet(this.cleanIdCache, raw, raw, this.cacheLimit)
+					return raw
+				}
 				boundedSet(this.cleanIdCache, raw, rebased, this.cacheLimit)
 				return rebased
 			}
@@ -169,7 +164,19 @@ export class HmrPathResolver {
 				}
 			}
 			if (!isKnownFsPath && !normalized.startsWith('/@')) {
-				normalized = normalizePath(resolve(this.serverRoot, normalized.slice(1)))
+				const rebased = normalizePath(resolve(this.serverRoot, normalized.slice(1)))
+				// Prefer server-root rebasing when that file exists (typical Vite root-relative URLs like `/src/*`).
+				// Otherwise preserve real absolute filesystem paths even if they are outside scan roots
+				// (linked workspaces/monorepos).
+				if (existsSync(rebased)) {
+					boundedSet(this.cleanIdCache, raw, rebased, this.cacheLimit)
+					return rebased
+				}
+				if (existsSync(normalized)) {
+					boundedSet(this.cleanIdCache, raw, normalized, this.cacheLimit)
+					return normalized
+				}
+				normalized = rebased
 			}
 		}
 		boundedSet(this.cleanIdCache, raw, normalized, this.cacheLimit)
@@ -272,16 +279,13 @@ export class HmrEnvironment {
 	public readonly paths: HmrPathResolver
 	public readonly toolkit: HmrToolkit
 
-	constructor(
-		private readonly ctx: Context,
-		opts: {
-			cwd: string
-			scanRootsAbs: string[]
-			includeGlobs?: string[]
-			excludeGlobs?: string[]
-			pathCacheLimit?: number
-		},
-	) {
+	constructor(opts: {
+		cwd: string
+		scanRootsAbs: string[]
+		includeGlobs?: string[]
+		excludeGlobs?: string[]
+		pathCacheLimit?: number
+	}) {
 		this.scanRootsAbs = [...opts.scanRootsAbs]
 		this.includeGlobs = opts.includeGlobs
 		this.excludeGlobs = opts.excludeGlobs

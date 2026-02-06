@@ -1,8 +1,8 @@
-import { describe, expect, it } from 'vitest'
 import type { Context } from '@pluxel/core'
 import { createFixture } from 'fs-fixture'
 import { join } from 'pathe'
 import { createServer, normalizePath, type Plugin as VitePlugin } from 'vite'
+import { describe, expect, it } from 'vitest'
 import {
 	buildHmrViteConfig,
 	resolveFsAllowList,
@@ -80,7 +80,9 @@ async function runHmr(root: string, hmr: HMRService, depsInput: ReturnType<typeo
 			honoPlugin: { name: 'noop' },
 			port: 0,
 		}),
-		server: { middlewareMode: true, fs: { allow: fsAllow } },
+		// Tests use the SSR module runner only; disable the HMR websocket server to avoid
+		// flakiness from a fixed default port (24678) being in use by other dev servers.
+		server: { middlewareMode: true, hmr: false, fs: { allow: fsAllow } },
 	})
 
 	try {

@@ -1,7 +1,7 @@
-import { pathToFileURL } from 'node:url'
 import { type Context, Injectable } from '@pluxel/core'
-import { type ResolveOptions, resolveModulePath } from 'exsolve'
+import { createResolver, type ResolveOptions } from 'exsolve'
 import { dirname, normalize } from 'pathe'
+import { getCachedExsolveResolver, toDirectoryURLString } from '../shared/exsolve'
 import { EntryResolver } from './entry-resolver'
 import { DEFAULT_SCAN_OPTIONS, resolveScanOptions } from './options'
 import { ModuleResolveCache } from './resolve-cache'
@@ -266,13 +266,20 @@ export const isPackageEntryOk = (
 ): pkg is PackageNode & { entry: EntryResolutionOk } => pkg.entry.ok
 
 class InstalledPackageResolver {
-	private readonly from: URL
+	private readonly resolver: ReturnType<typeof createResolver>
 
 	constructor(
 		private readonly cache: ModuleResolveCache,
 		baseDir: string = process.cwd(),
 	) {
-		this.from = ensureDirectoryURL(baseDir)
+		const fromStr = toDirectoryURLString(baseDir)
+		this.resolver = getCachedExsolveResolver(
+			this.cache.map,
+			'scan:installed-resolver',
+			fromStr,
+			() => createResolver({ from: [fromStr], cache: this.cache.map }),
+			{ limit: 8 },
+		)
 	}
 
 	resolve(bareName: string, conditions?: string[]): EntryResolutionOk | undefined {
@@ -299,14 +306,12 @@ class InstalledPackageResolver {
 
 	private resolveWithConditions(id: string, conditions?: string[]): string | undefined {
 		const options: ResolveOptions = {
-			from: this.from,
 			try: true,
-			cache: this.cache.map,
 		}
 		if (conditions && conditions.length > 0) {
 			options.conditions = [...conditions]
 		}
-		return resolveModulePath(id, options)
+		return this.resolver.resolveModulePath(id, options)
 	}
 
 	private resolutionPlan(conditions?: string[]): Array<string[] | undefined> {
@@ -315,10 +320,4 @@ class InstalledPackageResolver {
 		}
 		return [undefined]
 	}
-}
-
-function ensureDirectoryURL(input: string): URL {
-	const normalized = normalize(input)
-	const asDir = normalized.endsWith('/') ? normalized : `${normalized}/`
-	return pathToFileURL(asDir)
 }

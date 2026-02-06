@@ -4,7 +4,7 @@ HMRService 负责启动 Vite Dev Server（含 UI/扩展编译）、监听文件�
 
 ## 治理边界（Ownership）
 
-- HMR **拥有**：Vite server + watcher、变更批处理（debounce）、执行/注入流水线（runner → loader batch）、桥接单例模块（bridgeModules）、HMR 报告。
+- HMR **拥有**：Vite server + watcher、变更批处理（debounce）、执行/注入流水线（runner → loader batch）、桥接单例模块（bridgeModules/bridgeProviders）、HMR 报告。
 - HMR **不拥有**：工作区发现（哪些包是入口）、profiles 管理、包安装/卸载、插件声明与启用策略。
 - 治理规则（核心）：
   - `hmrService.entries` 是 **唯一冷启动入口列表**，必须由上层（workspace profiles / CLI / host）显式生成并传入。
@@ -16,7 +16,7 @@ HMRService 负责启动 Vite Dev Server（含 UI/扩展编译）、监听文件�
 - `entries: string[]`：冷启动入口（稳定顺序，root-relative 或绝对路径均可；会被归一化为 clean fs path）。
 - `include/exclude: string[]`：额外过滤器（主要控制“哪些文件变化触发 HMR 批处理”）。
 - `builtins?: BuiltinPluginSpec[]`：启动时 preload 到 Loader 的 baseline（避免后续批次失败回滚时丢失 builtins）。
-- `deps`: bridgeModules / cjsExternal 等 runner 依赖规则。
+- `deps`: bridgeModules / bridgeProviders / cjsExternal 等 runner 依赖规则。
 
 ## moduleId 规范（约定）
 
@@ -24,6 +24,15 @@ HMRService 负责启动 Vite Dev Server（含 UI/扩展编译）、监听文件�
   - Unix：`/abs/path/to/file.ts`
   - Windows：`C:/abs/path/...`
 - runner import 优先使用 `/@fs` 形式（更稳定），但 **记录到 Loader 的 moduleId 始终是 clean fs path**。
+
+## 关键不变量（Singleton / Path）
+
+HMR 能否稳定，取决于两个不变量：
+
+1) **单例不变量**：同一个 runtime singleton（例如 DI tokens / decorators / Context 实现）在 host 与 runner 中必须是同一实例（===）。
+2) **路径不变量**：同一个模块在整个流水线中必须有“唯一且稳定”的 canonical id（否则会出现 prime cache 命中失败、重复评估、或 moduleGraph 追溯错误）。
+
+下面的设计都围绕这两点展开。
 
 ## 生命周期与主流程
 
@@ -65,6 +74,71 @@ runner 的 `resolveId` 会对 **bare specifier** 做 workspace-only rewrite：
 
 实现依赖 ScanService：
 - `scanService.resolveEntry({ name }, { workspaceOnly: true, scan: { conditions, preferHmrExports } })`
+
+## 单例桥接：`bridgeModules` / `bridgeProviders`
+
+### `bridgeModules`（“必须共享实例”的 specifier 列表）
+
+用途：把这些模块的 host exports“注入/复用”到 runner 的 `evaluatedModules` 缓存里，避免 runner 再评估一份实现。
+
+- 典型场景：`@pluxel/core`、`@pluxel/hmr`、`@pluxel/context` 等核心包（包含 decorators、基类、DI tokens）。
+- 注意：桥接只适用于 TS/ESM 的 singleton；CommonJS-only 包不要放到这里（应走 `cjsExternal` externalize）。
+
+### `bridgeProviders`（“逻辑 specifier → 实际提供者”）
+
+用途：解决“逻辑模块被内联/打包进另一个模块”的场景（例如 `@pluxel/context` 被内联到 `@pluxel/core`）。
+
+如果 runner/host 同时把 `@pluxel/context` 当成独立包去 import，就会评估出 **两份** Context 实现并触发 guard：
+
+- host: `@pluxel/core` 内部带了一份 Context
+- runner: 又从某个路径解析出一份 `@pluxel/context`
+
+解决办法是把逻辑 specifier 映射到提供者模块：
+
+- `bridgeProviders: { '@pluxel/context': '@pluxel/core' }`
+
+语义（重要）：
+
+- runner 会从 host runtime import “provider” 的 exports；
+- 但会把 runner cache prime 在“原 specifier”（`@pluxel/context`）上；
+- 同时 `runner.import('@pluxel/context')` 会被透明重定向到 `runner.import('@pluxel/core')`。
+
+这样既能保持 `import '@pluxel/context'` 的调用点不变，又能确保运行时只有一个实现。
+
+### 自动探测（best-effort）
+
+当 host workspace **未安装** `@pluxel/context`，但安装了 `@pluxel/core` 时，HMR 会自动假定 context 由 core 提供并生成映射。
+这能覆盖 pnpm workspace link/monorepo 下“context 不作为独立依赖存在”的常见开发形态。
+
+## 路径归一化：`HmrPathResolver`
+
+Vite dev server 的 root 是 HMR UI 包，而不是 host cwd，所以 runner 在运行时会同时看到两类 id：
+
+- **Vite root-relative URL path**：例如 `/src/client.tsx`（应 rebase 到 serverRoot 才是实际文件）
+- **真实绝对 FS path**：例如 `/home/.../packages/foo/src/index.ts`（尤其是 scanRoots 外的 linked workspace）
+
+如果把真实绝对路径错误地 rebase 到 serverRoot，会导致：
+
+- bridge prime 失败（runner 认为这是另一个模块 id）
+- runner 重复评估（触发 singleton guard，例如 `@pluxel/context`）
+
+因此归一化规则是：
+
+- 若 rebase 到 serverRoot 后的路径在磁盘上存在 → 这是 Vite root-relative URL path，返回 rebased
+- 否则若原始绝对路径在磁盘上存在 → 这是真实 FS path，保持不变
+
+同时保留以下约定：
+
+- `file:` / `/@fs/` 会被统一为 clean fs path
+- `/@id/*`、`\0virtual` 等虚拟 id 不会被错误重写
+
+## 统一解析器/缓存：exsolve + 共享 cache map
+
+解析与 cache 统一遵循以下原则：
+
+- 使用 `exsolve` 作为“稳定、可缓存、可控制 export conditions”的 resolver（Scan/HMR/Installer 共用）
+- 复用 `ctx.scanService.resolverCache` 作为全局 resolve cache map（避免重复解析，并与 `invalidateResolverCache()` 的语义一致）
+- resolver 实例按“group + baseKey”做小 LRU（避免无限增长但又保留热点 base）
 
 ## 失败语义（commit 与回滚）
 

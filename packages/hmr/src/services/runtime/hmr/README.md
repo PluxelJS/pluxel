@@ -160,10 +160,39 @@ Some core runtime packages are **always** bridged and cannot be disabled via con
 
 User config can only append extra bridge modules via `deps.bridgeModules`.
 
+### `bridgeProviders` (logical specifier → provider)
+
+Some workspaces intentionally bundle/inline a module (e.g. `@pluxel/context`) into another package (e.g. `@pluxel/core`).
+In that setup, importing/bridging `@pluxel/context` as a separate host module would evaluate a second implementation
+and trip singleton guards.
+
+Use `deps.bridgeProviders` to map the logical specifier to the host module that actually provides it:
+
+- `{ '@pluxel/context': '@pluxel/core' }`
+
+Notes:
+
+- The runner imports the provider module from the host runtime, but primes the runner cache under the original specifier.
+- `runner.import('@pluxel/context')` is transparently redirected to `runner.import('@pluxel/core')`.
+- Auto-detection: if the host workspace has no direct `node_modules/@pluxel/context` but has `@pluxel/core`,
+  HMR assumes context is provided by core and applies this mapping (best-effort).
+- The provider module must expose the same runtime API expected by the logical specifier.
+
 Implementation notes:
 
-- `HmrRunner.bridgeHostModules()` imports these specifiers via native Node import and primes `evaluatedModules` so subsequent runner imports reuse the same exports.
+- `HmrRunner.bridgeHostModules()` imports these specifiers (or their providers) via native Node import and primes `evaluatedModules` so subsequent runner imports reuse the same exports.
 - Do not put CJS-only packages here; bridge is for TS/ESM runtime singletons.
+
+## Resolution + cache sharing (exsolve)
+
+HMR uses `exsolve` for module resolution in multiple places (ScanService entry resolution, host-installed checks, runner workspace-entry fallback, package installer checks).
+
+To keep resolution behavior consistent and avoid duplicate work, HMR prefers sharing a single resolve cache map:
+
+- `ctx.scanService.resolverCache` is passed into `resolveHMRDependencyConfig()` and `HmrRunner.init()`
+- `scanService.invalidateResolverCache()` clears this map, so all consumers observe the same “cache reset”
+
+Internally, resolver instances are also grouped and bounded (tiny LRU) to avoid unbounded growth when many base dirs are involved.
 
 ## File structure
 
@@ -177,6 +206,7 @@ Implementation notes:
 - `runtime-shims.ts`: runtime shims (e.g. `reflect-metadata`) + scoped `require` shims for those shims.
 - `logging.ts`: debug namespaces + timing attribution helpers.
 - `plugins/*`: HMR plugins and small guards used by the runner/loader.
+- `../shared/*`: shared cache + exsolve resolver utilities (Scan/HMR/Package).
 
 ### Runtime shims
 

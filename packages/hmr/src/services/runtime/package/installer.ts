@@ -1,14 +1,27 @@
-import { createRequire } from 'node:module'
+import { existsSync } from 'node:fs'
 
 import type { Context } from '@pluxel/core'
-import { addDependency, removeDependency } from 'nypm'
+import { createResolver } from 'exsolve'
 import type { OperationOptions } from 'nypm'
-import { normalize as normalizePath } from 'pathe'
-import { readPackageJSON } from 'pkg-types'
+import { addDependency, removeDependency } from 'nypm'
+import { resolve } from 'pathe'
+import { type PackageJson, readPackageJSON } from 'pkg-types'
 
+import { getCachedExsolveResolver, getExsolveCache, toDirectoryURLString } from '../shared/exsolve'
+import type { ResolvedInstallOptions } from './internal-types'
 import type { NormalizedPackageSpecifier, PackageSpecifierInput } from './specifiers'
 import type { PackageInstallResult } from './types'
-import type { ResolvedInstallOptions } from './internal-types'
+
+const RESOLVE_CHECK_CONDITIONS = ['node', 'import', 'require', 'default'] as const
+
+function hasDirectNodeModulesEntry(nodeModulesDir: string, packageName: string): boolean {
+	if (packageName.startsWith('@')) {
+		const [scope, name] = packageName.split('/')
+		if (!scope || !name) return false
+		return existsSync(resolve(nodeModulesDir, scope, name, 'package.json'))
+	}
+	return existsSync(resolve(nodeModulesDir, packageName, 'package.json'))
+}
 
 export type PackageLogFn = (
 	level: 'info' | 'warn' | 'error',
@@ -22,7 +35,14 @@ export type NormalizeSpecFn = (input: PackageSpecifierInput) => NormalizedPackag
 export class PackageInstaller {
 	private readonly installedCache = new Map<
 		string,
-		{ at: number; entries: Array<{ spec: NormalizedPackageSpecifier; installedVersion?: string; requestedVersion?: string }> }
+		{
+			at: number
+			entries: Array<{
+				spec: NormalizedPackageSpecifier
+				installedVersion?: string
+				requestedVersion?: string
+			}>
+		}
 	>()
 	private readonly cacheTtlMs = 1000
 
@@ -35,10 +55,36 @@ export class PackageInstaller {
 
 	async dependencyExists(name: string, options: ResolvedInstallOptions): Promise<boolean> {
 		const cwd = options.cwd ?? process.cwd()
-		const resolver = createRequire(cwd.endsWith('/') ? cwd : `${cwd}/`)
+		const cwdAbs = resolve(cwd)
+		const nodeModulesDir = resolve(cwdAbs, 'node_modules')
+		if (existsSync(nodeModulesDir)) return hasDirectNodeModulesEntry(nodeModulesDir, name)
+
+		let sharedResolveCache: Map<string, unknown> | undefined
 		try {
-			const resolved = resolver.resolve(name)
-			return normalizePath(resolved).startsWith(normalizePath(cwd))
+			sharedResolveCache = this.ctx.scanService.resolverCache
+		} catch {
+			sharedResolveCache = undefined
+		}
+		const cache = getExsolveCache(sharedResolveCache)
+		const base = toDirectoryURLString(cwdAbs)
+		const resolver = getCachedExsolveResolver(
+			cache,
+			'package:installer-resolver',
+			base,
+			() =>
+				createResolver({
+					from: [base],
+					cache,
+				}),
+			{ limit: 16 },
+		)
+
+		try {
+			const resolved = resolver.resolveModulePath(name, {
+				try: true,
+				conditions: [...RESOLVE_CHECK_CONDITIONS],
+			})
+			return typeof resolved === 'string' && resolved.length > 0
 		} catch {
 			return false
 		}
@@ -56,7 +102,7 @@ export class PackageInstaller {
 		if (!specs.length) return []
 		const targets = specs.map((s) => s.target)
 		const opOptions: OperationOptions = { ...options, silent: options.silent ?? false }
-		const opResult = await addDependency(targets as any, opOptions)
+		const opResult = await addDependency(targets, opOptions)
 		if (opResult?.exec) {
 			this.logEvent('info', 'install:pm_command', {
 				targets,
@@ -90,7 +136,7 @@ export class PackageInstaller {
 		const targets = Array.from(new Set(specs.map((s) => s.name)))
 		const opOptions: OperationOptions = { ...options, silent: options.silent ?? false }
 		try {
-			const opResult = await removeDependency(targets as any, opOptions)
+			const opResult = await removeDependency(targets, opOptions)
 			if (opResult?.exec) {
 				this.logEvent('info', 'remove:pm_command', {
 					targets,
@@ -114,9 +160,7 @@ export class PackageInstaller {
 		}
 	}
 
-	async readInstalledDependencies(params: {
-		options: ResolvedInstallOptions
-	}): Promise<
+	async readInstalledDependencies(params: { options: ResolvedInstallOptions }): Promise<
 		Array<{
 			spec: NormalizedPackageSpecifier
 			installedVersion?: string
@@ -201,7 +245,9 @@ export class PackageInstaller {
 				dev,
 				installPeerDependencies: false,
 			})
-			installed.forEach((r) => this.onPackageInstalled(r))
+			installed.forEach((r) => {
+				this.onPackageInstalled(r)
+			})
 		}
 
 		if (peerDeps.length) {
@@ -212,7 +258,7 @@ export class PackageInstaller {
 		}
 	}
 
-	private async readPackageJsonSafe(pathOrName: string, cwd?: string): Promise<any> {
+	private async readPackageJsonSafe(pathOrName: string, cwd?: string): Promise<PackageJson> {
 		try {
 			return await readPackageJSON(pathOrName, cwd ? { url: cwd } : undefined)
 		} catch {

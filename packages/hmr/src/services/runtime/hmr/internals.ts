@@ -3,25 +3,9 @@ import { getLogger } from '@logtape/logtape'
 import { pluxelCategories } from '@pluxel/core/logger'
 import { dirname, isAbsolute, resolve } from 'pathe'
 import { normalizePath } from 'vite'
+import { boundedSet, resolveCacheLimit } from '../shared/cache'
 
 const nsToMs = (ns: bigint) => Number(ns) / 1e6
-
-function resolveCacheLimit(raw: unknown, fallback: number) {
-	if (typeof raw === 'number' && Number.isFinite(raw)) return Math.max(0, Math.floor(raw))
-	if (typeof raw === 'string') {
-		const n = Number.parseInt(raw, 10)
-		if (Number.isFinite(n)) return Math.max(0, n)
-	}
-	return fallback
-}
-
-function boundedSet<K, V>(map: Map<K, V>, key: K, value: V, limit: number) {
-	if (limit <= 0) return
-	map.set(key, value)
-	if (map.size <= limit) return
-	const first = map.keys().next().value as K
-	map.delete(first)
-}
 
 let pkgrootCacheLimit = 2_000
 const pkgRootCache = new Map<string, string | null>()

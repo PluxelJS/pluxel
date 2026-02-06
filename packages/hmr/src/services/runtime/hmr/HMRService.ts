@@ -20,6 +20,7 @@ import {
 } from 'vite'
 import type { BuiltinPluginSpec } from '../loader/LoaderService'
 import { PLUXEL_HMR_WORKSPACE_CONDITIONS_WITH_SOURCE } from '../scan/hmr-conditions'
+import type { ScanService } from '../scan/ScanService'
 import {
 	buildHmrViteConfig,
 	type HMRDependencyConfig,
@@ -81,6 +82,8 @@ export interface HMRConfig {
 	attribution?: boolean | 'trace' | 'debug' | 'info' | 'warn' | 'error' | 'fatal'
 	/** HMR path normalization cache size. Defaults to `10_000`. */
 	pathCacheLimit?: number
+	/** HMR runner internal cache size. Defaults to `10_000`. */
+	runnerCacheLimit?: number
 	/** Nearest package root cache size. Defaults to `2_000`. */
 	pkgrootCacheLimit?: number
 	/** Enable Vite dep optimization for the UI (client env). Defaults to `false`. */
@@ -242,6 +245,7 @@ export class HMRService {
 
 	private ssrEnv!: DevEnvironment
 	private readonly runner = new HmrRunner()
+	private readonly scanService: ScanService
 	private executor!: HmrExecutor
 	private batchProcessor!: HmrBatchProcessor
 
@@ -310,11 +314,18 @@ export class HMRService {
 	) {
 		// Governance: HMR is a runtime service and assumes core dependencies exist.
 		// Fail fast so "resolution" behavior never silently degrades.
-		if (!(this.ctx as unknown as { scanService?: unknown }).scanService) {
+		let scanService: ScanService | undefined
+		try {
+			scanService = this.ctx.scanService
+		} catch {
+			scanService = undefined
+		}
+		if (!scanService) {
 			throw new Error(
 				'[hmr] Missing scanService in Context. Ensure ScanService is registered (or create the host via @pluxel/hmr/host).',
 			)
 		}
+		this.scanService = scanService
 		if (!Array.isArray(this.config.entries)) {
 			throw new Error('[hmr] hmrService.entries must be string[] (explicit cold-start entry list)')
 		}
@@ -330,7 +341,7 @@ export class HMRService {
 		)
 		this.includeGlobs = resolveGlobPatterns(this.config.include, this.cwd)
 		this.excludeGlobs = resolveGlobPatterns(this.config.exclude, this.cwd)
-		this.env = new HmrEnvironment(this.ctx, {
+		this.env = new HmrEnvironment({
 			cwd: this.cwd,
 			scanRootsAbs: this.scanRootsAbs,
 			includeGlobs: this.includeGlobs,
@@ -341,7 +352,10 @@ export class HMRService {
 		this.path = this.toolkit.path
 		this.builtinDistDirsClean = this.resolveBuiltinDistDirsClean()
 
-		this.deps = resolveHMRDependencyConfig(this.config.deps)
+		this.deps = resolveHMRDependencyConfig(this.config.deps, {
+			cwd: this.cwd,
+			resolveCache: this.scanService.resolverCache,
+		})
 
 		const runtimeResolved: Record<string, RuntimeShimConfig> = this.config.runtimeShims ?? {}
 		this.runtimeShims = new RuntimeShimRegistry({ shims: runtimeResolved })
@@ -593,10 +607,13 @@ export class HMRService {
 
 	private configureRunner(server: ViteDevServer) {
 		this.runner.init(server, {
+			cacheLimit: this.config.runnerCacheLimit,
+			hostCwd: this.cwd,
 			cjsExternal: this.deps.cjsExternal,
 			bridgeModules: this.deps.bridgeModules,
+			bridgeProviders: this.deps.bridgeProviders,
 			skipPlugin: this.plugin,
-			resolveCache: this.ctx.scanService.resolverCache,
+			resolveCache: this.scanService.resolverCache,
 			workspaceConditions: this.workspaceConditions,
 		})
 		this.ssrEnv = this.runner.env
@@ -731,12 +748,13 @@ export class HMRService {
 
 				for (let i = 0; i < specs.length; i++) {
 					const b = specs[i]!
-					const exports = exportsList[i] as any
-					if (!exports || typeof exports !== 'object') {
+					const exportsNamespace = exportsList[i]
+					if (!exportsNamespace || typeof exportsNamespace !== 'object') {
 						throw new Error(
 							`[hmr] Builtin "${b.packageName}" did not evaluate to an ESM exports object.`,
 						)
 					}
+					const exports = exportsNamespace as Record<string, unknown>
 
 					// Governance (fail-fast): do not rely on default export.
 					// Builtin packages may export multiple plugins; we auto-detect all decorated plugin ctors
@@ -1231,7 +1249,7 @@ export class HMRService {
 
 		// Internal contract: we only rewrite workspace packages to their `@pluxel/hmr` TS source entries.
 		// Installed (node_modules) resolution is intentionally NOT handled here.
-		const p = this.ctx.scanService
+		const p = this.scanService
 			.resolveEntry(
 				{ name: specifier },
 				{

@@ -1,12 +1,11 @@
 import { existsSync } from 'node:fs'
-import { resolveModulePath } from 'exsolve'
+import { createResolver, type ResolveOptions } from 'exsolve'
 import { normalize, resolve as r } from 'pathe'
-import { pathToFileURL } from 'node:url'
 import type { PackageJson } from 'pkg-types'
+import { getCachedExsolveResolver, toDirectoryURLString } from '../shared/exsolve'
 import { safeReadManifest } from './package'
-import type { EntryResolution, EntryResolutionOk, ResolvedScanOptions } from './types'
-import type { ResolveOptions } from 'exsolve'
 import type { ModuleResolveCache } from './resolve-cache'
+import type { EntryResolution, EntryResolutionOk, ResolvedScanOptions } from './types'
 
 export class EntryResolver {
 	private readonly cache = new Map<string, Promise<EntryResolution>>()
@@ -77,14 +76,22 @@ export class EntryResolver {
 			}
 		}
 
-		const resolveOptions = resolveOptionsFor(dir, options.conditions, this.moduleResolveCache)
+		const resolveOptions = resolveOptionsFor(options.conditions)
+		const base = toDirectoryURLString(dir)
+		const resolver = getCachedExsolveResolver(
+			this.moduleResolveCache.map,
+			'scan:pkg-resolver',
+			base,
+			() => createResolver({ from: [base], cache: this.moduleResolveCache.map }),
+			{ limit: 256 },
+		)
 
 		let exportsEntry: string | undefined
 		if (pkgJson?.name) {
-			exportsEntry = resolveModulePath(pkgJson.name, resolveOptions)
+			exportsEntry = resolver.resolveModulePath(pkgJson.name, resolveOptions)
 		}
 		if (!exportsEntry) {
-			exportsEntry = resolveModulePath('.', resolveOptions)
+			exportsEntry = resolver.resolveModulePath('.', resolveOptions)
 		}
 		if (exportsEntry) {
 			return entryOk(dir, normalize(exportsEntry), 'exports', [])
@@ -134,26 +141,12 @@ export class EntryResolver {
 	}
 }
 
-function resolveOptionsFor(
-	dir: string,
-	conditions: string[] | undefined,
-	cache: ModuleResolveCache,
-): ResolveOptions {
-	const options: ResolveOptions = {
-		from: packageBaseURL(dir),
-		try: true,
-		cache: cache.map,
-	}
+function resolveOptionsFor(conditions: string[] | undefined): ResolveOptions {
+	const options: ResolveOptions = { try: true }
 	if (conditions && conditions.length > 0) {
 		options.conditions = [...conditions]
 	}
 	return options
-}
-
-function packageBaseURL(dir: string): URL {
-	const normalized = normalize(dir)
-	const asDir = normalized.endsWith('/') ? normalized : `${normalized}/`
-	return pathToFileURL(asDir)
 }
 
 function entryOk(

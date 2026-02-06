@@ -1,6 +1,7 @@
 import { existsSync } from 'node:fs'
 // Use the public CLI facade; it re-exports internal build plugins without exposing @pluxel/build directly.
 import { configSourcePlugin, importTypeFixerPlugin } from '@pluxel/cli/rolldown'
+import { createResolver } from 'exsolve'
 import { isAbsolute, resolve } from 'pathe'
 import {
 	createLogger,
@@ -11,12 +12,27 @@ import {
 	perEnvironmentPlugin,
 	searchForWorkspaceRoot,
 } from 'vite'
+import { getCachedExsolveResolver, getExsolveCache, toDirectoryURLString } from '../shared/exsolve'
 import { findNearestPackageRoot } from './internals'
 import { clientNodeImportGuardPlugin } from './plugins/clientNodeImportGuard'
 
 export interface HMRDependencyConfig {
 	/** Reuse host exports for these specifiers so class singletons survive HMR. */
 	bridgeModules?: readonly string[]
+	/**
+	 * Map a "logical" bridge module specifier to the host module that actually provides it.
+	 *
+	 * Motivation:
+	 * Some workspaces intentionally bundle/inline modules like `@pluxel/context` into `@pluxel/core`.
+	 * In that setup, importing `@pluxel/context` as a separate host module would evaluate a second
+	 * implementation and trip singleton guards.
+	 *
+	 * When present, the runner:
+	 * - imports the provider module from the host runtime,
+	 * - primes the runner cache under the original specifier,
+	 * - and maps `runner.import(<specifier>)` → `runner.import(<provider>)`.
+	 */
+	bridgeProviders?: Record<string, string>
 	/** Forwarded to Vite's ssr.external to keep core runtime modules untouched. */
 	ssrExternal?: readonly string[]
 	/** Forwarded to Vite's ssr.noExternal to make sure React stack stays bundled. */
@@ -38,6 +54,7 @@ export interface HMRDependencyConfig {
 
 export interface ResolvedHMRDependencyConfig {
 	bridgeModules: readonly string[]
+	bridgeProviders: Readonly<Record<string, string>>
 	ssrExternal: readonly string[]
 	ssrNoExternal: readonly string[]
 	cjsExternal: readonly string[]
@@ -116,6 +133,7 @@ const DEFAULT_RESOLVE_CONDITIONS = [
 
 export const DEFAULT_HMR_DEPENDENCY_CONFIG: ResolvedHMRDependencyConfig = {
 	bridgeModules: REQUIRED_BRIDGE_MODULES,
+	bridgeProviders: Object.freeze({}),
 	ssrExternal: DEFAULT_SSR_EXTERNAL,
 	ssrNoExternal: DEFAULT_SSR_NO_EXTERNAL,
 	cjsExternal: DEFAULT_CJS_EXTERNAL,
@@ -126,13 +144,44 @@ export const DEFAULT_HMR_DEPENDENCY_CONFIG: ResolvedHMRDependencyConfig = {
 const mergeRequired = (required: readonly string[], extra?: readonly string[]) =>
 	extra ? [...new Set([...required, ...extra])] : [...required]
 
+const RESOLVE_CHECK_CONDITIONS = ['node', 'import', 'require', 'default'] as const
+
 export function resolveHMRDependencyConfig(
 	overrides?: HMRDependencyConfig,
+	opts?: { cwd?: string; resolveCache?: Map<string, unknown> },
 ): ResolvedHMRDependencyConfig {
-	if (!overrides) return DEFAULT_HMR_DEPENDENCY_CONFIG
+	const cwd = opts?.cwd ?? process.cwd()
+	const resolveCache = getExsolveCache(opts?.resolveCache)
+
+	if (!overrides) {
+		const bridgeProviders = autoDetectBridgeProviders(cwd, REQUIRED_BRIDGE_MODULES, resolveCache)
+		return {
+			...DEFAULT_HMR_DEPENDENCY_CONFIG,
+			bridgeModules: mergeRequired(
+				REQUIRED_BRIDGE_MODULES,
+				Object.values(bridgeProviders).filter(
+					(v): v is string => typeof v === 'string' && v.length > 0,
+				),
+			),
+			bridgeProviders: Object.freeze(bridgeProviders),
+		}
+	}
+
+	const bridgeModules = mergeRequired(REQUIRED_BRIDGE_MODULES, overrides.bridgeModules)
+	const bridgeProviders = mergeBridgeProviders(
+		autoDetectBridgeProviders(cwd, bridgeModules, resolveCache),
+		overrides.bridgeProviders,
+	)
+	const bridgeModulesWithProviders = mergeRequired(
+		bridgeModules,
+		Object.values(bridgeProviders).filter(
+			(v): v is string => typeof v === 'string' && v.length > 0,
+		),
+	)
 
 	return {
-		bridgeModules: mergeRequired(REQUIRED_BRIDGE_MODULES, overrides.bridgeModules),
+		bridgeModules: bridgeModulesWithProviders,
+		bridgeProviders: Object.freeze(bridgeProviders),
 		ssrExternal: overrides.ssrExternal ?? DEFAULT_SSR_EXTERNAL,
 		// Required singleton modules must never be removable; they are part of HMR invariants.
 		ssrNoExternal: mergeRequired(DEFAULT_SSR_NO_EXTERNAL, overrides.ssrNoExternal),
@@ -145,6 +194,80 @@ export function resolveHMRDependencyConfig(
 export function buildHmrResolveConditions(env = process.env.NODE_ENV): string[] {
 	const extras = env && !DEFAULT_RESOLVE_CONDITIONS.includes(env) ? [env] : []
 	return [...new Set([...BASE_HMR_RESOLVE_CONDITIONS, ...DEFAULT_RESOLVE_CONDITIONS, ...extras])]
+}
+
+function mergeBridgeProviders(
+	autoDetected: Record<string, string>,
+	overrides: HMRDependencyConfig['bridgeProviders'],
+): Record<string, string> {
+	const out: Record<string, string> = { ...autoDetected }
+	if (overrides && typeof overrides === 'object') {
+		for (const [k, v] of Object.entries(overrides)) {
+			if (!k || typeof k !== 'string') continue
+			if (!v || typeof v !== 'string') continue
+			out[k] = v
+		}
+	}
+	return out
+}
+
+function canResolveFromCwd(
+	cwd: string,
+	specifier: string,
+	resolveCache: Map<string, unknown>,
+): boolean {
+	const baseSpecifier = toBasePackage(specifier)
+	const cwdAbs = resolve(cwd)
+	const nodeModulesDir = resolve(cwdAbs, 'node_modules')
+
+	// If the workspace has a node_modules, treat a direct entry (dir or symlink) as "installed in host".
+	// This is important for pnpm workspace links where resolution returns the real path outside node_modules.
+	if (existsSync(nodeModulesDir)) {
+		if (baseSpecifier.startsWith('@')) {
+			const [scope, name] = baseSpecifier.split('/')
+			if (!scope || !name) return false
+			return existsSync(resolve(nodeModulesDir, scope, name, 'package.json'))
+		}
+		return existsSync(resolve(nodeModulesDir, baseSpecifier, 'package.json'))
+	}
+
+	const resolver = getCachedExsolveResolver(
+		resolveCache,
+		'hmr:host-resolver',
+		cwdAbs,
+		() => {
+			const cwdUrl = toDirectoryURLString(cwdAbs)
+			return createResolver({ from: [cwdUrl], cache: resolveCache })
+		},
+		{ limit: 32 },
+	)
+
+	try {
+		const resolved = resolver.resolveModulePath(baseSpecifier, {
+			try: true,
+			conditions: [...RESOLVE_CHECK_CONDITIONS],
+		})
+		if (!resolved) return false
+		// Without a node_modules, accept any resolution from this cwd (PnP / custom resolvers).
+		return true
+	} catch {
+		return false
+	}
+}
+
+function autoDetectBridgeProviders(
+	cwd: string,
+	bridgeModules: readonly string[],
+	resolveCache: Map<string, unknown>,
+): Record<string, string> {
+	// If the host workspace does not install `@pluxel/context`, but HMR still treats it as a bridge module,
+	// we assume it is provided by `@pluxel/core` (bundled/embedded) and bridge via core.
+	//
+	// This avoids accidentally importing a second `@pluxel/context` implementation via HMR's own node_modules.
+	if (!bridgeModules.includes('@pluxel/context')) return {}
+	if (canResolveFromCwd(cwd, '@pluxel/context', resolveCache)) return {}
+	if (!canResolveFromCwd(cwd, '@pluxel/core', resolveCache)) return {}
+	return { '@pluxel/context': '@pluxel/core' }
 }
 
 export interface FsAllowOptions {
