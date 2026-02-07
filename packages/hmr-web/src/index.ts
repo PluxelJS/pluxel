@@ -11,6 +11,11 @@ export {
 	type HmrWebClient,
 	type HmrWebClientOptions,
 } from './client'
+export {
+	HmrWebClientProvider,
+	type HmrWebClientProviderProps,
+	useHmrWebClient,
+} from './react'
 export type {
 	LogFilter,
 	LogRangeErr,

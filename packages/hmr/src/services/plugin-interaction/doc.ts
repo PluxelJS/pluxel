@@ -69,7 +69,7 @@ function docForm(input: Omit<BuiltinRpcAutoFormBlock, 'kind'>): BuiltinRpcAutoFo
 /**
  * Builtin doc authoring API (server-safe).
  *
- * This helper mirrors `@pluxel/hmr-web`'s `doc` tagged template but intentionally avoids
+ * This helper mirrors `@pluxel/hmr/web`'s `doc` tagged template but intentionally avoids
  * importing React-heavy UI helpers at runtime so plugin server modules can register builtin docs
  * without paying the browser bundle cost.
  */
@@ -113,4 +113,3 @@ export const doc: {
 	},
 	{ block: docBlock, card: docCard, form: docForm },
 )
-

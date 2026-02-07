@@ -15,4 +15,4 @@ export type {
 	PluginGroupInput,
 } from '@pluxel/hmr-web'
 
-export { HmrWebClientProvider, useHmrWebClient } from '@pluxel/hmr-web/react'
+export { HmrWebClientProvider, useHmrWebClient } from '@pluxel/hmr-web'

@@ -12,13 +12,15 @@ export type RpcClientCreateOptions = {
 
 export function createRpcClient(rpcBase = '/api/rpc', options: RpcClientCreateOptions = {}): HmrRpcStub {
 	const signal = options.signal
+	const credentials = options.credentials
+
 	// When passing a Request, capnweb will reuse its signal/headers/credentials.
 	// It still overrides method/body in its internal fetch() call.
 	const urlOrRequest =
-		signal
+		signal || credentials !== undefined
 			? new Request(rpcBase, {
 					signal,
-					credentials: options.credentials ?? 'same-origin',
+					credentials: credentials ?? 'same-origin',
 					headers: {
 						// Helps servers/proxies treat this as a non-JSON RPC payload.
 						'Content-Type': 'text/plain; charset=utf-8',
@@ -73,11 +75,11 @@ function createTimeout(timeoutMs: number) {
 
 export async function invokeRpc<T>(
 	runner: (client: HmrRpcStub) => Promise<T>,
-	options?: { rpcBase?: string; timeoutMs?: number },
+	options?: { rpcBase?: string; timeoutMs?: number; credentials?: RequestCredentials },
 ): Promise<T> {
 	const base = options?.rpcBase ?? '/api/rpc'
 	const { signal, clear } = createTimeout(options?.timeoutMs ?? DEFAULT_RPC_TIMEOUT_MS)
-	const client = createRpcClient(base, { signal })
+	const client = createRpcClient(base, { signal, credentials: options?.credentials })
 	try {
 		return await runner(client)
 	} catch (error) {
@@ -95,7 +97,7 @@ export function rpcErrorMessage(error: unknown, fallback = 'RPC 调用失败'): 
 	return fallback
 }
 
-export function createUiRpcView(raw: RpcClientFactory): UI.rpc {
+export function createUiRpcView(raw: RpcClientFactory, defaults: RpcClientCreateOptions = {}): UI.rpc {
 	// Important: capnweb http-batch sessions are short-lived. If we return the raw
 	// stub object and users memoize it (e.g. `const ui = hmr.ui.MyPlugin`),
 	// the session may already be ended when the next interaction happens.
@@ -120,7 +122,7 @@ export function createUiRpcView(raw: RpcClientFactory): UI.rpc {
 
 					const fn = (...args: any[]) => {
 						const { signal, clear } = createTimeout(DEFAULT_RPC_TIMEOUT_MS)
-						const client = raw({ signal })
+						const client = raw({ ...defaults, signal })
 						// IMPORTANT: preserve `this` binding for capnweb stubs.
 						// Optional-chaining call like `obj?.[method]?.()` can lose the receiver,
 						// which may break capnweb's dynamic dispatch.

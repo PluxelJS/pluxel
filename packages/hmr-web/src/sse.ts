@@ -39,6 +39,8 @@ export interface SseClientOptions {
 	params?: Record<string, string | number | boolean | null | undefined>
 	/** 自定义 SSE 入口（默认 /api/sse） */
 	url?: string
+	/** Whether to send cookies/credentials for cross-origin SSE. */
+	withCredentials?: boolean
 	/**
 	 * Optional auth integration: when SSE errors, we can probe auth state and redirect
 	 * instead of reconnecting forever.
@@ -63,6 +65,7 @@ class SseClient {
 	private stopped = false
 	private readonly url: string
 	private readonly auth?: NonNullable<SseClientOptions['auth']>
+	private readonly withCredentials?: boolean
 	private authProbeInFlight: Promise<boolean> | null = null
 	private lastAuthProbeAt = 0
 	private connected = false
@@ -84,6 +87,7 @@ class SseClient {
 		}
 		this.url = url.toString()
 		this.auth = options.auth
+		this.withCredentials = options.withCredentials
 
 		this.connect()
 	}
@@ -127,7 +131,10 @@ class SseClient {
 	private connect() {
 		if (this.stopped) return
 		this.connected = false
-		const src = new EventSource(this.url)
+		const src =
+			typeof this.withCredentials === 'boolean'
+				? new EventSource(this.url, { withCredentials: this.withCredentials })
+				: new EventSource(this.url)
 		this.source = src
 
 		src.onopen = () => {

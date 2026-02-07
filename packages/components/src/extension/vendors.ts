@@ -11,14 +11,7 @@ import * as MantineHooks from '@mantine/hooks'
 import * as MantineModals from '@mantine/modals'
 import * as MantineNotifications from '@mantine/notifications'
 import * as Capnweb from 'capnweb'
-import { rpcErrorMessage } from '@pluxel/hmr-web'
-import {
-	definePluginUIModule,
-	ExtensionPoints,
-	doc,
-	useExtensionContext,
-	extensionVendorPackages,
-} from '@pluxel/hmr-web'
+import * as HmrWeb from '@pluxel/hmr-web'
 
 function createJsxDevRuntimeVendor() {
 	const vendor: Record<string, unknown> = { ...ReactJSXDevRuntime }
@@ -61,17 +54,8 @@ export const vendors = {
 	'@mantine/modals': MantineModals,
 	'@mantine/notifications': MantineNotifications,
 	capnweb: Capnweb,
-	// Extensions import from `@pluxel/hmr/web` (curated UI SDK surface).
-	'@pluxel/hmr/web': {
-		// plugin authoring + shared helpers
-		ExtensionPoints,
-		definePluginUIModule,
-		doc,
-		useExtensionContext,
-
-		// web helpers
-		rpcErrorMessage,
-	},
+	// Extensions import from `@pluxel/hmr/web` (host-provided vendor module).
+	'@pluxel/hmr/web': HmrWeb,
 	'@pluxel/hmr/capnweb': Capnweb,
 }
 
@@ -110,6 +94,6 @@ export function getVendor(name: string): unknown {
 /**
  * 所有可用的 vendor 包名
  */
-export const vendorPackages = extensionVendorPackages
+export const vendorPackages = HmrWeb.extensionVendorPackages
 
 export type VendorPackage = (typeof vendorPackages)[number]

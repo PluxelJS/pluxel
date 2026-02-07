@@ -5,6 +5,24 @@
 - HMR 的“批量执行 + 批量注入 + 单次 commit”如何保持一致性与性能
 - Loader 侧如何处理“依赖 ctor 引用失配”（Vite HMR 热更最常见问题）
 
+## 0) 包边界（对外 only: core / hmr / cli）
+
+对外（发布/建议依赖）的包只有三个：
+- `@pluxel/core`
+- `@pluxel/hmr`
+- `@pluxel/cli`
+
+仓库里的其他包（例如 `@pluxel/components`、`@pluxel/hmr-web`）都是内部实现：`private: true`，不保证 API 稳定。
+
+为什么需要 `@pluxel/hmr-web`（internal）：
+- `@pluxel/hmr` 需要 `@pluxel/components` 来构建/打包 HMR UI（Vite client bundle）。
+- `@pluxel/components` 又需要浏览器侧的 RPC/SSE client + UI 插件 authoring API。
+- 若 `components` 直接依赖 `hmr` 会产生 workspace 级双向依赖（build graph cycle）。
+- 因此把浏览器 SDK 放在 `@pluxel/hmr-web`（internal, private）给内部宿主使用；对外通过 `@pluxel/hmr/web`（public 子路径导出）提供同等能力。
+- UI 扩展的 RPC/SSE 命名空间类型以 `@pluxel/hmr/web` 作为 declaration merging 目标：
+  - 源码实现仍在 internal `@pluxel/hmr-web`；
+  - `@pluxel/hmr` build 时通过 tsdown `noExternal` vendor 进 `@pluxel/hmr/web`，并在生成 `.d.ts` 时自动重写模块名，保证发布物不泄露 `@pluxel/hmr-web`。
+
 ## 1) Core 插件系统（@pluxel/core）核心语义
 
 ### 1.1 标识与注入（性能优先、强约定）

@@ -1,17 +1,25 @@
 import { fileURLToPath } from 'node:url'
-import { appendDtsImport } from '@pluxel/build/rolldown'
+import { appendDtsImport, assertBundleNoText, rewriteDtsText } from '@pluxel/build/rolldown'
 import { defineConfig } from 'tsdown'
 import PreprocessorDirectives from 'unplugin-preprocessor-directives/rollup'
 
 const valibotFormSrc = fileURLToPath(new URL('../valibot-form/src', import.meta.url))
+const dtsRewriteMap = {
+	'@pluxel/hmr-web/react': '@pluxel/hmr/web',
+	'@pluxel/hmr-web/vendors': '@pluxel/hmr/web',
+	'@pluxel/hmr-web': '@pluxel/hmr/web',
+} as const
 
 export default defineConfig({
 	exports: {
 		devExports: '@pluxel/source',
 	},
+	noExternal: ['@pluxel/hmr-web', '@pluxel/hmr-web/*'],
 	plugins: [
 		PreprocessorDirectives(),
 		appendDtsImport('import type {} from "./services.d.mts"', ['index.d.mts']),
+		rewriteDtsText(dtsRewriteMap, { assertNotContains: ['@pluxel/hmr-web'] }),
+		assertBundleNoText(['@pluxel/hmr-web']),
 	],
 	env: {},
 	entry: {
@@ -42,7 +50,6 @@ export default defineConfig({
 		'@pluxel/context',
 		'@pluxel/context/*',
 		'@pluxel/components',
-		'@pluxel/hmr-web',
 		'react',
 		'react/jsx-runtime',
 		'react-dom',

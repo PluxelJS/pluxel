@@ -238,7 +238,7 @@ export class PluginWithUIRpc extends RpcTarget {
 	}
 }
 
-declare module '@pluxel/hmr/services' {
+declare module '@pluxel/hmr/web' {
 	namespace UI {
 		interface rpc {
 			PluginWithUI: PluginWithUIRpc

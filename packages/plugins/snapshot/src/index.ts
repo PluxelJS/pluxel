@@ -80,7 +80,7 @@ export default SnapshotPlugin
 
 const uiEntryPath = fileURLToPath(new URL('./ui/index.tsx', import.meta.url))
 
-declare module '@pluxel/hmr/services' {
+declare module '@pluxel/hmr/web' {
 	namespace UI {
 		interface rpc {
 			Snapshot: SnapshotRpc

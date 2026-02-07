@@ -6,11 +6,21 @@ import { mergeNamespaces } from './utils'
 import { sse, type SseClientOptions, type SseClientWithNamespaces } from './sse'
 import { hc } from 'hono/client'
 
+function joinPath(base: string, path: string): string {
+	const safeBase = base.replace(/\/+$/, '')
+	const safePath = path.startsWith('/') ? path : `/${path}`
+	return `${safeBase}${safePath}`
+}
+
 export type HmrWebClientOptions = {
+	/** Backend origin, e.g. `http://localhost:8787`. */
+	origin?: string
 	apiBase?: string
 	rpcBase?: string
 	sse?: SseClientOptions
 	defaultNamespace?: string
+	/** Default credentials for API fetch/RPC; defaults to `same-origin`. */
+	credentials?: RequestCredentials
 	/**
 	 * Custom fetch implementation (defaults to global fetch).
 	 * If `auth` is enabled, this fetch will be wrapped.
@@ -25,7 +35,7 @@ export type HmrWebClientOptions = {
 
 export interface HmrWebClient {
 	api: ReturnType<typeof hc>
-	/** UI extension RPC surface (declaration-merged via `@pluxel/hmr/services`). */
+	/** UI extension RPC surface (declaration-merged via `@pluxel/hmr-web`). */
 	ui: UI.rpc
 	withRpc: <T>(runner: (client: RpcStub<HmrRpcApi>) => Promise<T>) => Promise<T>
 	createSse: (options?: SseClientOptions) => SseClientWithNamespaces
@@ -41,10 +51,13 @@ export interface HmrWebClient {
  * - `sse` is memoized; call `dispose()` to close the shared connection.
  */
 export function createHmrWebClient(options: HmrWebClientOptions = {}): HmrWebClient {
-	const apiBase = options.apiBase ?? '/api'
-	const rpcBase = options.rpcBase ?? '/api/rpc'
+	const apiBase =
+		options.apiBase ??
+		(typeof options.origin === 'string' && options.origin ? joinPath(options.origin, '/api') : '/api')
+	const rpcBase = options.rpcBase ?? joinPath(apiBase, '/rpc')
 	const baseSseOptions = options.sse ?? {}
 	const defaultNamespaces = options.defaultNamespace ? [options.defaultNamespace] : undefined
+	const credentials: RequestCredentials = options.credentials ?? 'same-origin'
 
 	const baseFetch =
 		options.fetch ??
@@ -53,19 +66,27 @@ export function createHmrWebClient(options: HmrWebClientOptions = {}): HmrWebCli
 		throw new Error('[hmr-web] global fetch is unavailable; pass `options.fetch` explicitly.')
 	}
 
+	const credentialedFetch: typeof fetch = (input: RequestInfo | URL, init?: RequestInit) => {
+		if (init?.credentials !== undefined) return baseFetch(input as any, init as any)
+		// Avoid overriding Request's own credentials when no init is provided.
+		const isRequest = typeof Request === 'function' && input instanceof Request
+		if (!init && isRequest) return baseFetch(input as any, init as any)
+		return baseFetch(input as any, { ...(init ?? {}), credentials } as any)
+	}
+
 	const authEnabled = options.auth?.enabled !== false
 	const authFetch = authEnabled
-		? createAuthAwareFetch(baseFetch, {
+		? createAuthAwareFetch(credentialedFetch, {
 				onBlocked: options.auth?.onBlocked ?? defaultOnAuthBlocked,
 				requireMarkerHeader: options.auth?.requireMarkerHeader,
 			})
-		: baseFetch
+		: credentialedFetch
 
 	const api = hc(apiBase, { fetch: authFetch })
 	const rawRpc = createRpcClientFactory(rpcBase)
-	const ui = createUiRpcView(rawRpc)
+	const ui = createUiRpcView(rawRpc, { credentials })
 	const withRpc = <T,>(runner: (client: RpcStub<HmrRpcApi>) => Promise<T>) =>
-		invokeRpc(runner, { rpcBase })
+		invokeRpc(runner, { rpcBase, credentials })
 
 	const baseNamespaces = mergeNamespaces(baseSseOptions.namespaces, defaultNamespaces)
 
@@ -74,14 +95,17 @@ export function createHmrWebClient(options: HmrWebClientOptions = {}): HmrWebCli
 		const namespaces = inheritNamespaces
 			? mergeNamespaces(baseNamespaces, opts?.namespaces)
 			: mergeNamespaces(opts?.namespaces)
+		const withCredentials =
+			opts?.withCredentials ?? baseSseOptions.withCredentials ?? (credentials === 'include' ? true : undefined)
 
 		return {
 			...baseSseOptions,
 			...opts,
-			url: opts?.url ?? baseSseOptions.url ?? '/api/sse',
+			url: opts?.url ?? baseSseOptions.url ?? joinPath(apiBase, '/sse'),
+			withCredentials,
 			auth: authEnabled
 				? {
-						metaUrl: `${apiBase}/auth/meta`,
+						metaUrl: joinPath(apiBase, '/auth/meta'),
 						fetch: authFetch,
 						onBlocked: options.auth?.onBlocked ?? defaultOnAuthBlocked,
 					}

@@ -1,3 +1,4 @@
+import { createServer as createNetServer } from 'node:net'
 import type { Context } from '@pluxel/core'
 import { createFixture } from 'fs-fixture'
 import { join } from 'pathe'
@@ -89,6 +90,23 @@ function createContext(errorLogs?: ErrorLog[], scanService?: unknown) {
 	} as unknown as Context
 }
 
+async function getFreePort(host = '127.0.0.1'): Promise<number> {
+	return await new Promise((resolve, reject) => {
+		const server = createNetServer()
+		server.unref()
+		server.on('error', reject)
+		server.listen(0, host, () => {
+			const address = server.address()
+			if (!address || typeof address === 'string') {
+				server.close(() => reject(new Error('Failed to allocate a TCP port')))
+				return
+			}
+			const port = address.port
+			server.close(() => resolve(port))
+		})
+	})
+}
+
 async function runHmr(root: string, hmr: HMRService, depsInput: ReturnType<typeof buildDeps>) {
 	const deps = resolveHMRDependencyConfig(depsInput)
 	const fsAllow = resolveFsAllowList({
@@ -97,6 +115,7 @@ async function runHmr(root: string, hmr: HMRService, depsInput: ReturnType<typeo
 		scanRoots: [normalizePath(root)],
 	})
 
+	const hmrPort = await getFreePort()
 	const server = await createServer({
 		...buildHmrViteConfig({
 			root,
@@ -107,9 +126,10 @@ async function runHmr(root: string, hmr: HMRService, depsInput: ReturnType<typeo
 			honoPlugin: { name: 'noop' },
 			port: 0,
 		}),
-		// Tests use the SSR module runner only; disable the HMR websocket server to avoid
-		// flakiness from a fixed default port (24678) being in use by other dev servers.
-		server: { middlewareMode: true, hmr: false, fs: { allow: fsAllow } },
+		// Tests use the SSR module runner only; avoid flakiness from Vite's default HMR ws port (24678).
+		// Some Vite versions still attempt to spin up the ws server even in middleware mode, so we always
+		// allocate a unique free port to prevent cross-test / local dev conflicts.
+		server: { middlewareMode: true, hmr: { port: hmrPort }, fs: { allow: fsAllow } },
 	})
 
 	try {

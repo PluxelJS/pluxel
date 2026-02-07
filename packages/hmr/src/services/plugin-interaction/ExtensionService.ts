@@ -13,7 +13,7 @@ import type {
 	ExtensionPoint,
 	PluginExtensionConfig,
 } from '@pluxel/hmr-web'
-import { extensionVendorPackages } from '@pluxel/hmr-web/vendors'
+import { extensionVendorPackages } from '@pluxel/hmr-web'
 import chokidar, { type FSWatcher } from 'chokidar'
 import { dirname, isAbsolute, join, relative, resolve } from 'pathe'
 import type { ResolveOptions } from 'vite'

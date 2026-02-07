@@ -8,7 +8,7 @@
  * UI extensibility surface.
  *
  * @example
- * declare module '@pluxel/hmr/services' {
+ * declare module '@pluxel/hmr-web' {
  *   namespace UI {
  *     interface rpc {
  *       MyPlugin: MyPluginRpc
@@ -21,9 +21,9 @@
  * }
  */
 export declare namespace UI {
-	// biome-ignore lint/suspicious/noEmptyInterface: declaration merging target (bridged from @pluxel/hmr/services)
+	// biome-ignore lint/suspicious/noEmptyInterface: declaration merging target
 	interface rpc {}
-	// biome-ignore lint/suspicious/noEmptyInterface: declaration merging target (bridged from @pluxel/hmr/services)
+	// biome-ignore lint/suspicious/noEmptyInterface: declaration merging target
 	interface sse {}
 }
 

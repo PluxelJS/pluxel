@@ -1,7 +1,7 @@
 {
 	"name": "@pluxel/hmr",
 	"version": "0.3.0",
-	"description": "Demo example that imports a local package",
+	"description": "Pluxel HMR host/runtime (includes public Web SDK at @pluxel/hmr/web)",
 	"type": "module",
 	"bin": {
 		"pluxel-hmr": "bin/pluxel-hmr.mjs"

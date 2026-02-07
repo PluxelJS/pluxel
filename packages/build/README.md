@@ -21,6 +21,10 @@ All plugins are exported from `@pluxel/build/rolldown`.
   - Appends a snippet to generated `.d.ts` assets.
 - `rewriteDtsModuleAugmentations`
   - Rewrites `declare module 'x' {}` names inside `.d.ts` outputs.
+- `rewriteDtsText`
+  - Rewrites plain text inside generated `.d.ts` outputs (useful to prevent private module specifiers leaking).
+- `assertBundleNoText`
+  - Fails the build if forbidden text is found in generated outputs (excluding sourcemaps by default).
 
 ### CLI helpers
 

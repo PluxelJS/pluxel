@@ -77,7 +77,6 @@ const REQUIRED_BRIDGE_MODULES = [
 	'@pluxel/hmr',
 	'@pluxel/hmr/services',
 	'@pluxel/hmr/config',
-	'@pluxel/hmr-web',
 	'@pluxel/hmr/web',
 	'@pluxel/hmr/capnweb',
 ] as const

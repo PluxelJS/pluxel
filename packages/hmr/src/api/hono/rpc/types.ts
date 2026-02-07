@@ -1,2 +1,2 @@
-// rpc/types.ts - re-export from @pluxel/hmr-web to avoid cycles
-export * from '@pluxel/hmr-web'
+// rpc/types.ts - shared RPC protocol types
+export type * from '@pluxel/hmr-web'
