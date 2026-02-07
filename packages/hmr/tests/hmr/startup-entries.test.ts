@@ -5,6 +5,22 @@ import { HMRService } from '../../src/services/runtime/hmr/HMRService'
 
 const noop = () => undefined
 
+function createNoopLogger() {
+	const self: any = {
+		trace: noop,
+		debug: noop,
+		info: noop,
+		warn: noop,
+		error: noop,
+		fatal: noop,
+		with: () => self,
+	}
+	return {
+		...self,
+		getDebugChannel: () => self,
+	}
+}
+
 const createCtx = () => {
 	const anchors = new Set<string>()
 	const scanService = {
@@ -17,7 +33,8 @@ const createCtx = () => {
 	} as unknown
 
 	const ctx = {
-		logger: { info: noop, error: noop, warn: noop },
+		logger: createNoopLogger(),
+		on: () => noop,
 		loader: {
 			api: {
 				anchors: {

@@ -78,11 +78,8 @@ export class LoaderService {
 	constructor(public ctx: Context) {
 		this.registry = new PluginRegistry(this.ctx)
 		this.runtime = new RuntimeResolver(this.ctx, this.registry)
-		this.moduleReplacer = new ModuleReplacer(
-			this.ctx,
-			this.registry,
-			this.anchors,
-			(name) => this.runtime.resolve(name),
+		this.moduleReplacer = new ModuleReplacer(this.ctx, this.registry, this.anchors, (name) =>
+			this.runtime.resolve(name),
 		)
 		this.pruner = new PluginPruner(this.ctx, this.registry, this.anchors)
 		this.statusReporter = new PluginStatusReporter(this.registry, this.runtime, (name) =>

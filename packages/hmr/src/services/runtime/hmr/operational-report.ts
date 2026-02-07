@@ -3,6 +3,8 @@ import type { Logger as LogtapeLogger } from '@logtape/logtape'
 import type { PluginConstructor } from '@pluxel/core'
 import { resolve } from 'pathe'
 import { normalizePath } from 'vite'
+import { resolveCacheLimit } from '../shared/cache'
+import { DRIVE_PATH_RE, fsPathFromViteFsId } from '../shared/vite-id'
 
 export type RegistryViewLike = {
 	listRegistered: () => ReadonlyMap<string, PluginConstructor>
@@ -54,16 +56,6 @@ export type HmrOperationalReportProps = {
 }
 
 const FILE_EXT_RE = /\.(?:ts|tsx|js|jsx|mjs|cjs|mts|cts|json)$/i
-const DRIVE_PATH_RE = /^[a-zA-Z]:[\\/]/
-
-function computeResolveLimit(raw: unknown): number {
-	if (typeof raw === 'number' && Number.isFinite(raw)) return Math.max(0, Math.floor(raw))
-	if (typeof raw === 'string') {
-		const n = Number.parseInt(raw, 10)
-		if (Number.isFinite(n)) return Math.max(0, n)
-	}
-	return 50
-}
 
 function isLikelyFileModuleId(moduleId: string) {
 	if (!moduleId) return false
@@ -87,7 +79,10 @@ function normalizeModuleIdToFsPath(cwd: string, moduleId: string) {
 			// fall through
 		}
 	}
-	if (moduleId.startsWith('/@fs/')) return normalizePath(moduleId.slice('/@fs'.length))
+	if (moduleId.startsWith('/@fs/')) {
+		const fsPath = fsPathFromViteFsId(moduleId)
+		return fsPath ? normalizePath(fsPath) : normalizePath(moduleId.slice('/@fs'.length))
+	}
 	if (DRIVE_PATH_RE.test(moduleId)) return normalizePath(moduleId)
 	if (moduleId.startsWith('/')) return normalizePath(moduleId)
 	// Host-relative (do NOT resolve against Vite server root).
@@ -153,7 +148,7 @@ export async function buildHmrOperationalReport(params: {
 		builtinsModuleId,
 		...((params.builtinsModuleIds ?? []).map((s) => String(s).trim()).filter(Boolean) as string[]),
 	])
-	const resolveLimit = computeResolveLimit(params.resolveLimit)
+	const resolveLimit = resolveCacheLimit(params.resolveLimit, 50)
 
 	const rootsAbs = params.rootsAbs
 	const rootsPretty = params.rootsPretty

@@ -18,4 +18,5 @@ export * from './runtime/scan/ScanService'
 export * from './runtime-compile'
 
 // Ensure module augmentations are part of the program when importing `@pluxel/hmr/services`.
+import '../events'
 import './augment-hmr-web'

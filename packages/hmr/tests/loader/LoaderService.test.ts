@@ -15,6 +15,8 @@ import { EXTRA_FORKS, type ForksExtra } from '../../src/services/runtime/loader/
 function createHmrCtx(core: Context) {
 	const enabled = new Set<string>()
 	const extra: Record<string, unknown> = Object.create(null)
+	const hmrService = { normalizeId: (id: string) => id }
+	const root = { hmrService }
 	const configService = {
 		isReady: true,
 		ready: Promise.resolve(),
@@ -57,6 +59,7 @@ function createHmrCtx(core: Context) {
 	// event wiring to the real core context but keeps stubs writable.
 	const coreAny = core as unknown as { events?: unknown; emit?: unknown }
 	return {
+		root,
 		registry: core.registry,
 		events: coreAny.events,
 		on: core.on.bind(core),

@@ -1,4 +1,4 @@
-import type { Logger as LogtapeLogger, LogLevel } from '@logtape/logtape'
+import type { LogLevel, Logger as LogtapeLogger } from '@logtape/logtape'
 
 export type HmrDebugLogger = LogtapeLogger
 

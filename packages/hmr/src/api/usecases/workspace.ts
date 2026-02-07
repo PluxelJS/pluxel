@@ -1,5 +1,5 @@
 import type { Context } from '@pluxel/core'
-import { PLUXEL_HMR_WORKSPACE_CONDITIONS_WITH_SOURCE } from '../../services/runtime/scan/hmr-conditions'
+import { PLUXEL_HMR_WORKSPACE_CONDITIONS_WITH_SOURCE } from '../../services/runtime/shared/conditions'
 
 export type WorkspaceResolveEntryInput = {
 	name: string

@@ -1,7 +1,6 @@
 import { existsSync } from 'node:fs'
 // Use the public CLI facade; it re-exports internal build plugins without exposing @pluxel/build directly.
 import { configSourcePlugin, importTypeFixerPlugin } from '@pluxel/cli/rolldown'
-import { createResolver } from 'exsolve'
 import { isAbsolute, resolve } from 'pathe'
 import {
 	createLogger,
@@ -12,7 +11,9 @@ import {
 	perEnvironmentPlugin,
 	searchForWorkspaceRoot,
 } from 'vite'
-import { getCachedExsolveResolver, getExsolveCache, toDirectoryURLString } from '../shared/exsolve'
+import { PLUXEL_CONDITION_HMR, PLUXEL_CONDITION_SOURCE } from '../shared/conditions'
+import { getExsolveCache } from '../shared/exsolve'
+import { canResolveFromCwd, toBasePackage } from '../shared/resolution'
 import { findNearestPackageRoot } from './internals'
 import { clientNodeImportGuardPlugin } from './plugins/clientNodeImportGuard'
 
@@ -81,16 +82,6 @@ const REQUIRED_BRIDGE_MODULES = [
 	'@pluxel/hmr/capnweb',
 ] as const
 
-function toBasePackage(specifier: string) {
-	if (specifier.startsWith('@')) {
-		const parts = specifier.split('/')
-		if (parts.length >= 2) return `${parts[0]}/${parts[1]}`
-		return specifier
-	}
-	const parts = specifier.split('/')
-	return parts[0] ?? specifier
-}
-
 const REQUIRED_DEDUPE_PACKAGES = [
 	...new Set([...REQUIRED_BRIDGE_MODULES.map(toBasePackage), '@pluxel/cli']),
 ] as const
@@ -120,7 +111,7 @@ const DEFAULT_OPTIMIZE_DEPS_INTEROP = ['react', 'react-dom'] as const
 
 // Prefer workspace TS sources for SSR runner (monorepo/dev).
 // NOTE: We must exclude these conditions from the client environment to avoid resolving Node-only sources.
-export const BASE_HMR_RESOLVE_CONDITIONS = ['@pluxel/hmr', '@pluxel/source'] as const
+export const BASE_HMR_RESOLVE_CONDITIONS = [PLUXEL_CONDITION_HMR, PLUXEL_CONDITION_SOURCE] as const
 // Keep `import` explicitly: Vite's exports resolution depends on it for packages that only expose `import`/`require`.
 const DEFAULT_RESOLVE_CONDITIONS = [
 	'import',
@@ -143,8 +134,6 @@ export const DEFAULT_HMR_DEPENDENCY_CONFIG: ResolvedHMRDependencyConfig = {
 
 const mergeRequired = (required: readonly string[], extra?: readonly string[]) =>
 	extra ? [...new Set([...required, ...extra])] : [...required]
-
-const RESOLVE_CHECK_CONDITIONS = ['node', 'import', 'require', 'default'] as const
 
 export function resolveHMRDependencyConfig(
 	overrides?: HMRDependencyConfig,
@@ -211,50 +200,6 @@ function mergeBridgeProviders(
 	return out
 }
 
-function canResolveFromCwd(
-	cwd: string,
-	specifier: string,
-	resolveCache: Map<string, unknown>,
-): boolean {
-	const baseSpecifier = toBasePackage(specifier)
-	const cwdAbs = resolve(cwd)
-	const nodeModulesDir = resolve(cwdAbs, 'node_modules')
-
-	// If the workspace has a node_modules, treat a direct entry (dir or symlink) as "installed in host".
-	// This is important for pnpm workspace links where resolution returns the real path outside node_modules.
-	if (existsSync(nodeModulesDir)) {
-		if (baseSpecifier.startsWith('@')) {
-			const [scope, name] = baseSpecifier.split('/')
-			if (!scope || !name) return false
-			return existsSync(resolve(nodeModulesDir, scope, name, 'package.json'))
-		}
-		return existsSync(resolve(nodeModulesDir, baseSpecifier, 'package.json'))
-	}
-
-	const resolver = getCachedExsolveResolver(
-		resolveCache,
-		'hmr:host-resolver',
-		cwdAbs,
-		() => {
-			const cwdUrl = toDirectoryURLString(cwdAbs)
-			return createResolver({ from: [cwdUrl], cache: resolveCache })
-		},
-		{ limit: 32 },
-	)
-
-	try {
-		const resolved = resolver.resolveModulePath(baseSpecifier, {
-			try: true,
-			conditions: [...RESOLVE_CHECK_CONDITIONS],
-		})
-		if (!resolved) return false
-		// Without a node_modules, accept any resolution from this cwd (PnP / custom resolvers).
-		return true
-	} catch {
-		return false
-	}
-}
-
 function autoDetectBridgeProviders(
 	cwd: string,
 	bridgeModules: readonly string[],
@@ -265,8 +210,10 @@ function autoDetectBridgeProviders(
 	//
 	// This avoids accidentally importing a second `@pluxel/context` implementation via HMR's own node_modules.
 	if (!bridgeModules.includes('@pluxel/context')) return {}
-	if (canResolveFromCwd(cwd, '@pluxel/context', resolveCache)) return {}
-	if (!canResolveFromCwd(cwd, '@pluxel/core', resolveCache)) return {}
+	if (canResolveFromCwd(cwd, '@pluxel/context', resolveCache, { group: 'hmr:host-resolver' }))
+		return {}
+	if (!canResolveFromCwd(cwd, '@pluxel/core', resolveCache, { group: 'hmr:host-resolver' }))
+		return {}
 	return { '@pluxel/context': '@pluxel/core' }
 }
 
@@ -330,7 +277,7 @@ export function buildHmrViteConfig(opts: HmrViteConfigOptions): InlineConfig {
 	// `@pluxel/wretch` (or any runner-only plugin) to `./src/...` and then try to analyze/optimize Node-only imports
 	// (e.g. `undici`) as if they were browser deps.
 	const clientConditions = ssrConditions.filter(
-		(c) => c !== '@pluxel/hmr' && c !== '@pluxel/source',
+		(c) => c !== PLUXEL_CONDITION_HMR && c !== PLUXEL_CONDITION_SOURCE,
 	)
 	const includePatterns =
 		opts.includeGlobs ??

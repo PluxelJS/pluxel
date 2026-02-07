@@ -10,10 +10,11 @@ export async function collectDeclaredPlugins(roots: string[]): Promise<Set<strin
 			try {
 				const pkgPath = resolve(root, 'package.json')
 				const content = await readFile(pkgPath, 'utf8')
-				const json = JSON.parse(content) as any
-				collectDeps(json?.dependencies, result)
-				collectDeps(json?.optionalDependencies, result)
-				collectDeps(json?.peerDependencies, result)
+				const json: unknown = JSON.parse(content)
+				const rootManifest = asRecord(json)
+				collectDeps(asRecord(rootManifest?.dependencies), result)
+				collectDeps(asRecord(rootManifest?.optionalDependencies), result)
+				collectDeps(asRecord(rootManifest?.peerDependencies), result)
 			} catch {
 				// ignore unreadable roots
 			}
@@ -22,7 +23,12 @@ export async function collectDeclaredPlugins(roots: string[]): Promise<Set<strin
 	return result
 }
 
-function collectDeps(deps: Record<string, string> | undefined, out: Set<string>) {
+function asRecord(value: unknown): Record<string, unknown> | undefined {
+	if (!value || typeof value !== 'object') return undefined
+	return value as Record<string, unknown>
+}
+
+function collectDeps(deps: Record<string, unknown> | undefined, out: Set<string>) {
 	if (!deps) return
 	for (const name of Object.keys(deps)) {
 		if (PATTERN.test(name)) out.add(name)

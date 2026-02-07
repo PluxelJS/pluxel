@@ -44,7 +44,21 @@ ScanService 的职责是：在 **给定 roots 与导出条件（conditions）** 
 
 - `ScanSnapshotCache`：以 `(roots, resolvedOptions)` 作为 key，缓存扫描图与入口解析结果。
 - `invalidateResolverCache()`：只清理“模块解析缓存”（适合 install/remove 后调用）。
+  - 同时会触发 Context 事件：`runtime:resolverCacheInvalidated`（让 HMR runner、工具等清理其派生解析缓存）。
 - `clearCaches()`：清空所有缓存（下次重新扫描磁盘）。
+
+### 解析缓存共享（exsolve）
+
+ScanService 内部使用 `exsolve` 做条件导出解析，并维护一份 `resolverCache`（exsolve resolve cache map）。
+
+这份 cache 暴露为：
+
+- `scanService.resolverCache`
+
+用于高级集成（推荐）：
+
+- HMR runner：复用同一个 resolve cache，避免重复解析并与 `invalidateResolverCache()` 的语义保持一致。
+- PackageInstaller：在没有 `node_modules` 的场景（PnP / 自定义 resolver）做 best-effort “是否已安装”判断。
 
 ## 与其他服务的契约
 

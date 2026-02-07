@@ -6,12 +6,12 @@ import { resolve as resolvePath } from 'pathe'
 
 import type { EntryResolutionOk, ScanTaskOptions } from '../scan/ScanService'
 import { isEntryOk } from '../scan/ScanService'
-import { fromSnapshot as specFromSnapshot, type NormalizedPackageSpecifier } from './specifiers'
 import { parseDependOn } from './helpers'
-import type { PackageStatePayload, PersistedPackageEntry } from './state-store'
 import type { ResolvedInstallOptions } from './internal-types'
 import type { PackageRuntime } from './runtime'
+import { type NormalizedPackageSpecifier, fromSnapshot as specFromSnapshot } from './specifiers'
 import type { PackageState } from './state'
+import type { PackageStatePayload, PersistedPackageEntry } from './state-store'
 import type {
 	InstallOptions,
 	PackageInstallResult,
@@ -75,7 +75,11 @@ export class PackageLoader {
 
 	async loadWithIntent(
 		spec: NormalizedPackageSpecifier,
-		options: { scan?: ScanTaskOptions; resolvedEntry?: EntryResolutionOk; install?: InstallOptions },
+		options: {
+			scan?: ScanTaskOptions
+			resolvedEntry?: EntryResolutionOk
+			install?: InstallOptions
+		},
 		intent: LoadIntentConfig,
 		installResult?: PackageInstallResult,
 	): Promise<PackageLoadResult> {
@@ -151,37 +155,37 @@ export class PackageLoader {
 				if (entry.isAnchor) {
 					await this.ctx.loader.replaceModule(moduleId, module)
 				}
-					const record: PackageLoadResult = {
-						spec,
-						resolution: entry.resolution,
-						module,
-						moduleId,
-						isAnchor: entry.isAnchor,
-						dependOn: entry.dependOn ?? [],
-						manifestPath: entry.manifestPath,
-						manifestVersion: entry.manifestVersion,
-						resolvedVersion: entry.resolvedVersion ?? entry.manifestVersion,
-						loadedAt: entry.loadedAt,
-					}
-					if (entry.install) {
-						record.install = {
-							spec,
-							target: spec.target,
-							status: entry.install.status,
-							installedAt: entry.install.at,
-						}
-					}
-					this.state.registerRecord(record)
-					this.state.clearIssue(spec.name)
-					mutated = true
-				} catch (error) {
-					this.ctx.logger.warn('恢复包失败，已跳过该条记录', { spec, error })
-					this.recordLoadIssue(spec, error, 'restore', entry.moduleId ?? entry.resolution.entry)
-					mutated = true
+				const record: PackageLoadResult = {
+					spec,
+					resolution: entry.resolution,
+					module,
+					moduleId,
+					isAnchor: entry.isAnchor,
+					dependOn: entry.dependOn ?? [],
+					manifestPath: entry.manifestPath,
+					manifestVersion: entry.manifestVersion,
+					resolvedVersion: entry.resolvedVersion ?? entry.manifestVersion,
+					loadedAt: entry.loadedAt,
 				}
+				if (entry.install) {
+					record.install = {
+						spec,
+						target: spec.target,
+						status: entry.install.status,
+						installedAt: entry.install.at,
+					}
+				}
+				this.state.registerRecord(record)
+				this.state.clearIssue(spec.name)
+				mutated = true
+			} catch (error) {
+				this.ctx.logger.warn('恢复包失败，已跳过该条记录', { spec, error })
+				this.recordLoadIssue(spec, error, 'restore', entry.moduleId ?? entry.resolution.entry)
+				mutated = true
 			}
-			return mutated
 		}
+		return mutated
+	}
 
 	private async executeLoad(
 		spec: NormalizedPackageSpecifier,
@@ -263,37 +267,41 @@ export class PackageLoader {
 	): Promise<Record<string, unknown>> {
 		const url = pathToFileURL(moduleId)
 		if (forceFresh) {
-				url.searchParams.set('_ts', `${Date.now()}-${Math.random().toString(36).slice(2)}`)
-			}
-			try {
-				return await import(url.href)
-			} catch (error) {
-				this.ctx.logger.error('导入模块失败 {moduleId}', { moduleId, error })
-
-				if (error instanceof Error) {
-					throw error
-				}
-				const message = typeof error === 'string' ? error : error != null ? String(error) : '未知错误'
-				const wrapped = new Error(message)
-				if (
-					error &&
-				typeof error === 'object' &&
-				'stack' in (error as any) &&
-				typeof (error as any).stack === 'string'
-			) {
-					wrapped.stack = (error as any).stack
-				}
-				throw wrapped
-			}
+			url.searchParams.set('_ts', `${Date.now()}-${Math.random().toString(36).slice(2)}`)
 		}
+		try {
+			return await import(url.href)
+		} catch (error) {
+			this.ctx.logger.error('导入模块失败 {moduleId}', { moduleId, error })
+
+			if (error instanceof Error) {
+				throw error
+			}
+			const message = typeof error === 'string' ? error : error != null ? String(error) : '未知错误'
+			const wrapped = new Error(message)
+			if (error && typeof error === 'object' && 'stack' in error) {
+				const stack = (error as { stack?: unknown }).stack
+				if (typeof stack === 'string') {
+					wrapped.stack = stack
+				}
+			}
+			throw wrapped
+		}
+	}
 
 	private async readManifestMeta(dir: string): Promise<PackageManifestMeta> {
 		const manifestPath = resolvePath(dir, 'package.json')
 		try {
 			const raw = await readFile(manifestPath, 'utf-8')
-			const json = JSON.parse(raw) as any
-			const version = typeof json?.version === 'string' ? json.version : undefined
-			const dependOn = parseDependOn(json?.pluxel?.dependOn)
+			const json: unknown = JSON.parse(raw)
+			const root = json && typeof json === 'object' ? (json as Record<string, unknown>) : undefined
+			const version = typeof root?.version === 'string' ? root.version : undefined
+			const pluxelValue = root?.pluxel
+			const pluxel =
+				pluxelValue && typeof pluxelValue === 'object'
+					? (pluxelValue as Record<string, unknown>)
+					: undefined
+			const dependOn = parseDependOn(pluxel?.dependOn)
 			return {
 				manifestPath,
 				manifestVersion: version,
@@ -305,5 +313,4 @@ export class PackageLoader {
 			return { manifestPath, dependOn: [] }
 		}
 	}
-
 }

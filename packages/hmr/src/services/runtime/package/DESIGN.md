@@ -9,7 +9,7 @@ PackageService 管理“插件包（node_modules / market）”的安装、加�
 - Package **依赖**：
   - ScanService：解析包入口（workspace/installed）
   - LoaderService：把模块导出注入为插件声明/运行
-  - HMRService（可选）：加速/一致化 runner 模块缓存（prime/drop）
+  - HMRService：加速/一致化 runner 模块缓存（prime/drop）
 
 ## 关键数据模型
 
@@ -23,21 +23,27 @@ PackageService 管理“插件包（node_modules / market）”的安装、加�
 
 1. `scanService.resolveEntry({ name })` 得到入口文件（可传 overrides 控制 conditions / workspaceOnly 等）。
 2. `runtime.normalizeModuleId(entry)` → 得到用于缓存/对比的 moduleId。
-3. import 模块（可选 fresh），写入本地缓存，并 `primeHmrModuleCache`（若存在 hmrService）。
+3. import 模块（可选 fresh），写入本地缓存，并 `primeHmrModuleCache`。
 4. `loader.replaceModule(moduleId, moduleNamespace)`：把模块导出解析成插件声明，并按持久启用位启动。
 5. 写入 `PackageState` 记录（用于恢复/展示/卸载）。
 
 ### install(spec) / installMany(specs)
 
 - 统一由 Installer 执行包管理器 IO（支持批量），完成后：
-  - `scanService.invalidateResolverCache()`（让新的入口解析生效）
+  - `scanService.invalidateResolverCache()`（让新的入口解析生效；并 emit `runtime:resolverCacheInvalidated` 让 HMR 清理派生解析缓存）
   - 记录 install 结果到 state（用于可观测性与恢复）
+
+### removePackages(specs)
+
+- 删除依赖（编辑 package.json/lockfile）完成后同样需要：
+  - `scanService.invalidateResolverCache()`（避免 exsolve 缓存残留导致“已删除包仍可解析”；并触发 `runtime:resolverCacheInvalidated`）
+  - 同步 tracked plugins（触发 resync）
 
 ### invalidate/unload/remove
 
 - 移除/卸载时，必须同时收敛三层状态：
   - Loader：`pruneModule(moduleId)` / `prunePluginByName(...)`
-  - HMR：drop runner/module cache（若启用）
+  - HMR：drop runner/module cache
   - State：清理 records / issues / 依赖索引
 
 ### restore（启动恢复）

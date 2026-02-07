@@ -25,10 +25,9 @@ export function resolveScanOptions(
 	overrides: ScanOptionsInput = {},
 ): ResolvedScanOptions {
 	const focus = overrides.focusPackages ?? defaults.focusPackages
-	const focusNormalized =
-		focus && focus.length
-			? Array.from(new Set(focus.map((f) => f.trim().toLowerCase()).filter(Boolean)))
-			: undefined
+	const focusNormalized = focus?.length
+		? Array.from(new Set(focus.map((f) => f.trim().toLowerCase()).filter(Boolean)))
+		: undefined
 
 	return {
 		conditions: overrides.conditions ?? defaults.conditions,

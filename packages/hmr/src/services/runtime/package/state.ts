@@ -1,11 +1,11 @@
+import { toSnapshot as specToSnapshot } from './specifiers'
 import {
 	CURRENT_STATE_SCHEMA,
-	type PackageStateStore,
 	type PackageStatePayload,
+	type PackageStateStore,
 	type PersistedLoadIssue,
 	type PersistedPackageEntry,
 } from './state-store'
-import { toSnapshot as specToSnapshot } from './specifiers'
 import type { PackageLoadIssue, PackageLoadResult, PackageMetadata } from './types'
 
 export class PackageState {

@@ -11,11 +11,30 @@ import {
 import { HMRService } from '../../src/services/runtime/hmr/HMRService'
 import { HmrRunner } from '../../src/services/runtime/hmr/runner'
 
+const noop = () => undefined
+
+function createNoopLogger() {
+	const self: any = {
+		trace: noop,
+		debug: noop,
+		info: noop,
+		warn: noop,
+		error: noop,
+		fatal: noop,
+		with: () => self,
+	}
+	return {
+		...self,
+		getDebugChannel: () => self,
+	}
+}
+
 // Minimal ctx stub to construct HMRService without booting the whole app.
 const createCtx = () => {
 	const anchors = new Set<string>()
 	return {
-		logger: { info: () => undefined, error: () => undefined, warn: () => undefined },
+		logger: createNoopLogger(),
+		on: () => noop,
 		scanService: { resolveEntry: async () => ({ ok: false }) },
 		loader: {
 			api: {

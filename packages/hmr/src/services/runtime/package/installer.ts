@@ -1,27 +1,13 @@
-import { existsSync } from 'node:fs'
-
 import type { Context } from '@pluxel/core'
-import { createResolver } from 'exsolve'
 import type { OperationOptions } from 'nypm'
 import { addDependency, removeDependency } from 'nypm'
-import { resolve } from 'pathe'
 import { type PackageJson, readPackageJSON } from 'pkg-types'
 
-import { getCachedExsolveResolver, getExsolveCache, toDirectoryURLString } from '../shared/exsolve'
+import { getExsolveCache } from '../shared/exsolve'
+import { canResolveFromCwd } from '../shared/resolution'
 import type { ResolvedInstallOptions } from './internal-types'
 import type { NormalizedPackageSpecifier, PackageSpecifierInput } from './specifiers'
 import type { PackageInstallResult } from './types'
-
-const RESOLVE_CHECK_CONDITIONS = ['node', 'import', 'require', 'default'] as const
-
-function hasDirectNodeModulesEntry(nodeModulesDir: string, packageName: string): boolean {
-	if (packageName.startsWith('@')) {
-		const [scope, name] = packageName.split('/')
-		if (!scope || !name) return false
-		return existsSync(resolve(nodeModulesDir, scope, name, 'package.json'))
-	}
-	return existsSync(resolve(nodeModulesDir, packageName, 'package.json'))
-}
 
 export type PackageLogFn = (
 	level: 'info' | 'warn' | 'error',
@@ -55,9 +41,6 @@ export class PackageInstaller {
 
 	async dependencyExists(name: string, options: ResolvedInstallOptions): Promise<boolean> {
 		const cwd = options.cwd ?? process.cwd()
-		const cwdAbs = resolve(cwd)
-		const nodeModulesDir = resolve(cwdAbs, 'node_modules')
-		if (existsSync(nodeModulesDir)) return hasDirectNodeModulesEntry(nodeModulesDir, name)
 
 		let sharedResolveCache: Map<string, unknown> | undefined
 		try {
@@ -66,28 +49,7 @@ export class PackageInstaller {
 			sharedResolveCache = undefined
 		}
 		const cache = getExsolveCache(sharedResolveCache)
-		const base = toDirectoryURLString(cwdAbs)
-		const resolver = getCachedExsolveResolver(
-			cache,
-			'package:installer-resolver',
-			base,
-			() =>
-				createResolver({
-					from: [base],
-					cache,
-				}),
-			{ limit: 16 },
-		)
-
-		try {
-			const resolved = resolver.resolveModulePath(name, {
-				try: true,
-				conditions: [...RESOLVE_CHECK_CONDITIONS],
-			})
-			return typeof resolved === 'string' && resolved.length > 0
-		} catch {
-			return false
-		}
+		return canResolveFromCwd(cwd, name, cache, { group: 'package:installer-resolver', limit: 16 })
 	}
 
 	invalidateCache(cwd?: string) {

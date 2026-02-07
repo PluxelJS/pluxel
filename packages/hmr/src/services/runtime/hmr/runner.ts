@@ -2,7 +2,6 @@ import { existsSync } from 'node:fs'
 import { readFile, realpath } from 'node:fs/promises'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { getDebugLogger } from '@pluxel/core/logger'
-import { createResolver } from 'exsolve'
 import { dirname, resolve } from 'pathe'
 import type { Plugin } from 'vite'
 import { createServerModuleRunner, type DevEnvironment, type ViteDevServer } from 'vite'
@@ -12,12 +11,20 @@ import {
 	EvaluatedModules,
 	type ModuleRunner,
 } from 'vite/module-runner'
+import { clearSieveState, getOrCreatePromise, resolveCacheLimit } from '../shared/cache'
 import {
 	PLUXEL_DIST_EXPORT_CONDITIONS,
 	PLUXEL_HMR_WORKSPACE_CONDITIONS_WITH_SOURCE,
-} from '../scan/hmr-conditions'
-import { boundedSet, resolveCacheLimit } from '../shared/cache'
-import { getCachedExsolveResolver, getExsolveCache, toDirectoryURLString } from '../shared/exsolve'
+} from '../shared/conditions'
+import { type ExsolveResolver, getExsolveCache, toDirectoryURLString } from '../shared/exsolve'
+import { getCachedResolver, resolveModulePath } from '../shared/resolution'
+import {
+	cleanViteUrl as cleanUrl,
+	DRIVE_PATH_RE,
+	fsPathFromViteFsId,
+	isBarePackageSpecifier,
+	unwrapViteId,
+} from '../shared/vite-id'
 import type { HmrPathApi } from './environment'
 import { findNearestPackageRoot, matchesSpecifierPattern } from './internals'
 
@@ -66,7 +73,7 @@ export class HmrRunner {
 
 	private _env: DevEnvironment | null = null
 	private _runner: ModuleRunner | null = null
-	private _resolver!: ReturnType<typeof createResolver>
+	private _hostResolver!: ExsolveResolver
 	private _hostCwdAbs: string | null = null
 	private _cjsExternal: readonly string[] = []
 	private _skipPlugin: Plugin | null = null
@@ -96,18 +103,9 @@ export class HmrRunner {
 		const hostCwdUrl = toDirectoryURLString(this._hostCwdAbs)
 		const viteRootUrl = toDirectoryURLString(viteRootAbs)
 		const resolverFrom = [...new Set([hostCwdUrl, viteRootUrl, import.meta.url])]
-		const resolverKey = resolverFrom.join('|')
-		this._resolver = getCachedExsolveResolver(
-			resolveCache,
-			'hmr:runner-resolver',
-			resolverKey,
-			() =>
-				createResolver({
-					from: resolverFrom,
-					cache: resolveCache,
-				}),
-			{ limit: 8 },
-		)
+		this._hostResolver = getCachedResolver(resolveCache, 'hmr:runner-resolver', resolverFrom, {
+			limit: 8,
+		})
 		this._workspaceSourceConditions = opts.workspaceConditions?.length
 			? [...opts.workspaceConditions]
 			: [...PLUXEL_HMR_WORKSPACE_CONDITIONS_WITH_SOURCE]
@@ -197,6 +195,17 @@ export class HmrRunner {
 		return { invalidated, invalidatedKeys }
 	}
 
+	clearResolutionCaches() {
+		this.workspaceEntryByKey.clear()
+		clearSieveState(this.workspaceEntryByKey)
+		this.realpathCache.clear()
+		clearSieveState(this.realpathCache)
+		this.packageNameByPackageRoot.clear()
+		clearSieveState(this.packageNameByPackageRoot)
+		this.packageNameByFile.clear()
+		clearSieveState(this.packageNameByFile)
+	}
+
 	async bridgeHostModules(
 		specifiers: readonly string[],
 		path: HmrPathApi,
@@ -218,10 +227,9 @@ export class HmrRunner {
 				let fetchedId: string | null = null
 				try {
 					const fetched = await env.fetchModule(specifier, importerHint)
-					fetchedUrl =
-						typeof (fetched as { url?: unknown } | null)?.url === 'string' ? fetched.url : null
-					fetchedId =
-						typeof (fetched as { id?: unknown } | null)?.id === 'string' ? fetched.id : null
+					const meta = fetched as { url?: unknown; id?: unknown } | null
+					fetchedUrl = typeof meta?.url === 'string' ? meta.url : null
+					fetchedId = typeof meta?.id === 'string' ? meta.id : null
 				} catch {
 					// ignore: some specifiers may be external/virtual and not fetchable here
 				}
@@ -265,7 +273,7 @@ export class HmrRunner {
 					addUrl(clean)
 					for (const v of path.variantsClean ? path.variantsClean(clean) : path.variants(clean))
 						addUrl(v)
-					if (clean.startsWith('/') && !clean.startsWith('/@'))
+					if ((clean.startsWith('/') || DRIVE_PATH_RE.test(clean)) && !clean.startsWith('/@'))
 						addUrl(pathToFileURL(clean).toString())
 				}
 
@@ -276,8 +284,11 @@ export class HmrRunner {
 				const primaryId =
 					candidates
 						.map((c) => path.toClean(c))
-						.find((c) => c.startsWith('/') && !c.startsWith('/@') && existsSync(c)) ??
-					(candidates.length ? path.toClean(candidates[0]!) : specifier)
+						.find(
+							(c) =>
+								((c.startsWith('/') && !c.startsWith('/@')) || DRIVE_PATH_RE.test(c)) &&
+								existsSync(c),
+						) ?? (candidates.length ? path.toClean(candidates[0]!) : specifier)
 
 				this.primeModuleCacheEntry({ id: primaryId, exports, aliases: urls })
 			}),
@@ -351,8 +362,21 @@ export class HmrRunner {
 		const id = (result as Record<string, unknown>).id
 		if (typeof id !== 'string') return result
 
+		const rawId = unwrapViteId(id)
+		const canonicalId = cleanUrl(rawId)
+		if (
+			this.bridgedRunnerUrls.has(id) ||
+			this.bridgedRunnerUrls.has(rawId) ||
+			this.bridgedRunnerUrls.has(canonicalId)
+		) {
+			;(result as Record<string, unknown>).invalidate = false
+			return result
+		}
+
 		const fsPath = urlToFsPath(this.env.config.root, id)
 		if (!fsPath) return result
+		// Be conservative: only patch invalidate when we can confidently map the module to a real file.
+		if (!existsSync(fsPath)) return result
 
 		const pkgName = await this.packageNameForFsPath(fsPath)
 		if (!pkgName) return result
@@ -394,7 +418,7 @@ export class HmrRunner {
 			})
 		}
 
-		if (isBareSpecifier(canonicalId)) {
+		if (isBarePackageSpecifier(canonicalId)) {
 			if (!this.isCjsExternal(canonicalId)) return null
 			if (
 				canonicalId.includes('cjs') ||
@@ -430,7 +454,8 @@ export class HmrRunner {
 		if (this._skipPlugin) options.skip = new Set([this._skipPlugin])
 
 		const resolved = await env.pluginContainer.resolveId(rawId, importer, options)
-		const fsPath = resolved?.id ? idToFsPath(resolved.id) : null
+		const fsPath =
+			typeof resolved?.id === 'string' ? urlToFsPath(env.config.root, resolved.id) : null
 		if (!fsPath) return null
 
 		const canonical = await this.realpathCached(fsPath)
@@ -468,34 +493,21 @@ export class HmrRunner {
 		return false
 	}
 
-	private getOrCreatePromise<K, V>(
+	private cachedPromise<K, V>(
 		map: Map<K, Promise<V>>,
 		key: K,
 		create: () => Promise<V>,
 		opts?: { evictIf?: (value: V) => boolean },
 	): Promise<V> {
-		if (this._cacheLimit > 0) {
-			const cached = map.get(key)
-			if (cached) return cached
-		}
-
-		const promise = create()
-			.then((value) => {
-				if (opts?.evictIf?.(value)) map.delete(key)
-				return value
-			})
-			.catch((error) => {
-				map.delete(key)
-				throw error
-			})
-
-		if (this._cacheLimit > 0) boundedSet(map, key, promise, this._cacheLimit)
-		return promise
+		return getOrCreatePromise(map, key, create, {
+			limit: this._cacheLimit,
+			evictIf: opts?.evictIf,
+		})
 	}
 
 	private async packageNameForFsPath(fsPath: string): Promise<string | null> {
 		const canonical = await this.realpathCached(fsPath)
-		return await this.getOrCreatePromise(
+		return await this.cachedPromise(
 			this.packageNameByFile,
 			canonical,
 			() => this.resolvePackageNameForFile(canonical),
@@ -505,7 +517,7 @@ export class HmrRunner {
 
 	private async isCjsExternalFile(fsPath: string) {
 		const canonical = await this.realpathCached(fsPath)
-		const name = await this.getOrCreatePromise(
+		const name = await this.cachedPromise(
 			this.packageNameByFile,
 			canonical,
 			() => this.resolvePackageNameForFile(canonical),
@@ -517,7 +529,7 @@ export class HmrRunner {
 	private resolvePackageNameForFile(fsPath: string): Promise<string | null> {
 		const pkgRoot = findNearestPackageRoot(dirname(fsPath))
 		if (!pkgRoot) return Promise.resolve(null)
-		return this.getOrCreatePromise(
+		return this.cachedPromise(
 			this.packageNameByPackageRoot,
 			pkgRoot,
 			() => this.readPackageName(pkgRoot),
@@ -543,7 +555,7 @@ export class HmrRunner {
 	}
 
 	private realpathCached(p: string) {
-		return this.getOrCreatePromise(this.realpathCache, p, async () => realpath(p).catch(() => p))
+		return this.cachedPromise(this.realpathCache, p, async () => realpath(p).catch(() => p))
 	}
 
 	private resolveWorkspaceEntry(
@@ -551,7 +563,7 @@ export class HmrRunner {
 		kind: 'source' | 'dist',
 	): Promise<string | null> {
 		const key = `${kind}:${specifier}`
-		return this.getOrCreatePromise(
+		return this.cachedPromise(
 			this.workspaceEntryByKey,
 			key,
 			() => this.resolveWorkspaceEntryImpl(specifier, kind),
@@ -570,30 +582,14 @@ export class HmrRunner {
 			kind === 'source' ? this._workspaceSourceConditions : this._workspaceDistConditions
 
 		try {
-			const resolveWith = (conds: readonly string[]) => {
-				const resolved = this._resolver.resolveModulePath(specifier, {
-					try: true,
-					conditions: [...conds],
-				})
-				return typeof resolved === 'string' && resolved.length > 0 ? resolved : null
-			}
-
 			if (kind === 'dist') {
-				// exsolve applies export conditions as a set (no ordering). When both `import` and `require`
-				// are present, picking `require` for an ESM host can load the CJS build and trip singleton
-				// guards (e.g. @pluxel/context) due to double evaluation.
-				//
-				// Resolve deterministically:
-				// - Prefer ESM (`import`) when available.
-				// - Fall back to CJS (`require`) only if needed.
-				const esm = resolveWith(['node', ...conditions.filter((c) => c !== 'require')])
-				if (esm) return esm
-				const cjs = resolveWith(['node', ...conditions.filter((c) => c !== 'import')])
-				if (cjs) return cjs
-				return null
+				return resolveModulePath(this._hostResolver, specifier, {
+					mode: 'distPreferEsm',
+					conditions: ['node', ...conditions],
+				})
 			}
 
-			return resolveWith(conditions)
+			return resolveModulePath(this._hostResolver, specifier, { conditions })
 		} catch {
 			return null
 		}
@@ -648,31 +644,6 @@ export function isHardBridgeSpecifier(id: string) {
 	return false
 }
 
-function isBareSpecifier(id: string | undefined) {
-	if (!id) return false
-	if (id.startsWith('.') || id.startsWith('/') || id.startsWith('\0')) return false
-	// Schemed ids are not bare package specifiers.
-	// (We still handle `node:` builtins elsewhere via Vite's own logic.)
-	if (id.startsWith('file:')) return false
-	return true
-}
-
-function unwrapViteId(url: string) {
-	if (url.startsWith('/@id/')) return decodeURIComponent(url.slice('/@id/'.length))
-	return url
-}
-
-function cleanUrl(id: string) {
-	const i = id.indexOf('?')
-	return i >= 0 ? id.slice(0, i) : id
-}
-
-function idToFsPath(id: string): string | null {
-	const cleaned = cleanUrl(id)
-	if (cleaned.startsWith('/@fs/')) return cleaned.slice('/@fs'.length)
-	return null
-}
-
 function urlToFsPath(serverRoot: string, idOrUrl: string): string | null {
 	if (idOrUrl.startsWith('file://')) {
 		try {
@@ -681,10 +652,12 @@ function urlToFsPath(serverRoot: string, idOrUrl: string): string | null {
 			return null
 		}
 	}
-	const asFs = idToFsPath(idOrUrl)
+	const asFs = fsPathFromViteFsId(idOrUrl)
 	if (asFs) return asFs
 
 	const cleaned = cleanUrl(idOrUrl)
+	if (DRIVE_PATH_RE.test(cleaned)) return cleaned
+	if (cleaned.startsWith('/@')) return null
 	if (!cleaned.startsWith('/')) return null
 
 	// `/abs/path` may be a real filesystem path, but it can also be a Vite URL path (root-relative).

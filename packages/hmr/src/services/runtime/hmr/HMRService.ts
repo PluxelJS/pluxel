@@ -9,7 +9,6 @@ import {
 	getPluginInfo,
 	RootService,
 } from '@pluxel/core'
-import { getDebugLogger } from '@pluxel/core/logger'
 import { dirname, resolve } from 'pathe'
 import {
 	createServer,
@@ -19,8 +18,8 @@ import {
 	type ViteDevServer,
 } from 'vite'
 import type { BuiltinPluginSpec } from '../loader/LoaderService'
-import { PLUXEL_HMR_WORKSPACE_CONDITIONS_WITH_SOURCE } from '../scan/hmr-conditions'
 import type { ScanService } from '../scan/ScanService'
+import { PLUXEL_HMR_WORKSPACE_CONDITIONS_WITH_SOURCE } from '../shared/conditions'
 import {
 	buildHmrViteConfig,
 	type HMRDependencyConfig,
@@ -39,7 +38,7 @@ import {
 	startTimer,
 } from './internals'
 import { collectHotspots, isLogEnabled, logAttributionReport, TimingTracker } from './logging'
-import { buildHmrOperationalReport, type RegistryViewLike } from './operational-report'
+import { buildHmrOperationalReport } from './operational-report'
 import {
 	HmrBatchProcessor,
 	type HmrBatchSummary,
@@ -48,6 +47,7 @@ import {
 } from './pipeline'
 import { HmrRunner, isHardBridgeSpecifier } from './runner'
 import { installRequireShims, type RuntimeShimConfig, RuntimeShimRegistry } from './runtime-shims'
+import { WorkspaceEntryResolver } from './workspace-entry-resolver'
 
 export interface HMRConfig {
 	/** 业务扫描边界：HMR 只监听这些 roots（用于过滤 watcher 事件、分组报告等）。 */
@@ -195,8 +195,6 @@ declare module '@pluxel/core' {
 
 const unique = <T>(iter: Iterable<T>) => Array.from(new Set(iter))
 
-const WORKSPACE_ENTRY_CACHE_LIMIT = 2000
-
 export type HmrWaitForBatchOptions = {
 	/**
 	 * Wait for a batch with `epoch > afterEpoch`.
@@ -264,8 +262,7 @@ export class HMRService {
 
 	private readonly timing: TimingTracker
 
-	private readonly workspaceEntryResolveCache = new Map<string, Promise<string | null>>()
-	private workspaceEntryResolveCacheSize = 0
+	private readonly workspaceEntryResolver: WorkspaceEntryResolver
 	private didPreloadBuiltins = false
 	private warnedBuiltinOverlap = false
 	private baseline?: Promise<void>
@@ -293,7 +290,7 @@ export class HMRService {
 	}
 
 	private readonly plugin: Plugin
-	private readonly workspaceConditions: string[] = Object.freeze([
+	private readonly workspaceConditions: readonly string[] = Object.freeze([
 		...PLUXEL_HMR_WORKSPACE_CONDITIONS_WITH_SOURCE,
 	])
 
@@ -312,20 +309,7 @@ export class HMRService {
 		public ctx: Context,
 		private readonly config: HMRConfig,
 	) {
-		// Governance: HMR is a runtime service and assumes core dependencies exist.
-		// Fail fast so "resolution" behavior never silently degrades.
-		let scanService: ScanService | undefined
-		try {
-			scanService = this.ctx.scanService
-		} catch {
-			scanService = undefined
-		}
-		if (!scanService) {
-			throw new Error(
-				'[hmr] Missing scanService in Context. Ensure ScanService is registered (or create the host via @pluxel/hmr/host).',
-			)
-		}
-		this.scanService = scanService
+		this.scanService = this.ctx.scanService
 		if (!Array.isArray(this.config.entries)) {
 			throw new Error('[hmr] hmrService.entries must be string[] (explicit cold-start entry list)')
 		}
@@ -351,6 +335,11 @@ export class HMRService {
 		this.toolkit = this.env.toolkit
 		this.path = this.toolkit.path
 		this.builtinDistDirsClean = this.resolveBuiltinDistDirsClean()
+		this.workspaceEntryResolver = new WorkspaceEntryResolver(
+			this.scanService,
+			this.path,
+			this.workspaceConditions,
+		)
 
 		this.deps = resolveHMRDependencyConfig(this.config.deps, {
 			cwd: this.cwd,
@@ -362,18 +351,7 @@ export class HMRService {
 		this.useRequireShims = this.runtimeShims.hasAny()
 		if (this.useRequireShims) installRequireShims((id) => this.runtimeShims.require(id))
 
-		const getDebugChannel = (topic: string): LogtapeLogger => {
-			const logger = (this.ctx as unknown as { logger?: unknown }).logger
-			const fn =
-				logger && typeof logger === 'object'
-					? (logger as Record<string, unknown>).getDebugChannel
-					: undefined
-			if (typeof fn === 'function') {
-				return (fn as (t: string) => LogtapeLogger).call(logger, topic)
-			}
-			// Fallback for tests / mocked contexts: use the global debug channel logger.
-			return getDebugLogger(topic).with({ name: 'hmr', context: this.ctx?.name ?? 'hmr' })
-		}
+		const getDebugChannel = (topic: string): LogtapeLogger => this.ctx.logger.getDebugChannel(topic)
 
 		this.dbg = {
 			modules: getDebugChannel('pluxel:hmr:modules'),
@@ -398,6 +376,7 @@ export class HMRService {
 		}
 
 		this.attachCommitTracker()
+		this.attachResolverCacheInvalidation()
 	}
 
 	public normalizeId(id: string): string {
@@ -573,7 +552,7 @@ export class HMRService {
 					return clean ? { id: clean } : null
 				}
 
-				const resolved = await this.resolveBareWorkspaceEntry(id)
+				const resolved = await this.workspaceEntryResolver.resolveBareWorkspaceEntry(id)
 				if (resolved) return { id: resolved }
 				return null
 			},
@@ -620,11 +599,8 @@ export class HMRService {
 	}
 
 	private async bridgeHostModules() {
-		const logger = this.ctx.logger as unknown as {
-			warn?: (message: string, props?: Record<string, unknown>) => void
-		}
 		await this.runner.bridgeHostModules(this.deps.bridgeModules, this.path, {
-			warn: (message, props) => logger.warn?.(message, props),
+			warn: (message, props) => this.ctx.logger.warn(message, props),
 		})
 		await this.runner.assertBridgedSingletons(this.deps.bridgeModules)
 	}
@@ -677,12 +653,8 @@ export class HMRService {
 	private async bootstrapBaseline(): Promise<void> {
 		// Ensure on-disk config is loaded before any "enabled in config" decisions happen.
 		// (warmup/executeFiles/batches rely on it).
-		//
-		// Note: some tests construct a partial/mock context without ConfigService; tolerate that.
-		const configService = (
-			this.ctx as unknown as { configService?: { isReady?: boolean; ready?: Promise<void> } }
-		).configService
-		if (configService?.ready && configService.isReady !== true) await configService.ready
+		const configService = this.ctx.configService
+		if (!configService.isReady) await configService.ready
 
 		// 1) Bridge host modules (singleton identity).
 		await this.bridgeHostModules()
@@ -969,19 +941,23 @@ export class HMRService {
 	}
 
 	private attachCommitTracker() {
-		const on = (this.ctx as unknown as { on?: unknown }).on
-		if (typeof on !== 'function') return
+		this.ctx.on('afterCommit', (summary: CommitSummary) => {
+			const epoch = this.inFlightBatchEpoch
+			if (epoch !== null) {
+				this.commitByBatchEpoch.set(epoch, summary)
+			}
+		})
+	}
 
-		;(on as (event: 'afterCommit', listener: (summary: CommitSummary) => void) => unknown).call(
-			this.ctx,
-			'afterCommit',
-			(summary: CommitSummary) => {
-				const epoch = this.inFlightBatchEpoch
-				if (epoch !== null) {
-					this.commitByBatchEpoch.set(epoch, summary)
-				}
-			},
-		)
+	private attachResolverCacheInvalidation() {
+		this.ctx.on('runtime:resolverCacheInvalidated', (detail) => {
+			// When ScanService clears its resolver cache, our derived caches may become stale:
+			// - workspace entry rewrite (bare → fs entry)
+			// - runner host-entry fallbacks and package-name lookups
+			this.workspaceEntryResolver.clear()
+			this.runner.clearResolutionCaches()
+			this.dbg.cache.debug('resolution caches cleared', { detail })
+		})
 	}
 
 	private formatIdentifier(id: unknown): string {
@@ -1228,66 +1204,6 @@ export class HMRService {
 		return Math.min(fileCount, 8, Math.max(1, cores))
 	}
 
-	private resolveBareWorkspaceEntry(specifier: string) {
-		// Fast-path: only bare specifiers can be rewritten to workspace entries.
-		// Avoid allocating cache entries for relative, absolute, or virtual ids.
-		if (
-			!specifier ||
-			specifier.startsWith('.') ||
-			specifier.startsWith('/') ||
-			specifier.startsWith('\0') ||
-			// Windows absolute paths.
-			/^[a-zA-Z]:[\\/]/.test(specifier) ||
-			// Schemed ids: node:, file:, data:, virtual:, etc.
-			specifier.includes(':')
-		) {
-			return Promise.resolve(null)
-		}
-
-		const cached = this.workspaceEntryResolveCache.get(specifier)
-		if (cached) return cached
-
-		// Internal contract: we only rewrite workspace packages to their `@pluxel/hmr` TS source entries.
-		// Installed (node_modules) resolution is intentionally NOT handled here.
-		const p = this.scanService
-			.resolveEntry(
-				{ name: specifier },
-				{
-					workspaceOnly: true,
-					scan: {
-						conditions: this.workspaceConditions,
-						preferHmrExports: true,
-					},
-				},
-			)
-			.then((res) => (res.ok ? this.path.toClean(res.entry) : null))
-			.catch(() => null)
-			.then((resolved) => {
-				// Avoid caching negative results forever: workspace state can change during dev.
-				if (!resolved) {
-					if (this.workspaceEntryResolveCache.delete(specifier))
-						this.workspaceEntryResolveCacheSize--
-				}
-				return resolved
-			})
-
-		this.workspaceEntryResolveCache.set(specifier, p)
-		this.workspaceEntryResolveCacheSize++
-
-		// Best-effort eviction to avoid unbounded growth under a large, churny dependency graph.
-		// Evict by specifier insertion order (FIFO) to keep per-hit overhead minimal.
-		if (this.workspaceEntryResolveCacheSize > WORKSPACE_ENTRY_CACHE_LIMIT) {
-			const targetSize = Math.floor(WORKSPACE_ENTRY_CACHE_LIMIT * 0.8)
-			for (const spec of this.workspaceEntryResolveCache.keys()) {
-				this.workspaceEntryResolveCache.delete(spec)
-				this.workspaceEntryResolveCacheSize--
-				if (this.workspaceEntryResolveCacheSize <= targetSize) break
-			}
-		}
-
-		return p
-	}
-
 	private getAnchorsCleanSnapshot(): ReadonlySet<string> {
 		return this.ctx.loader.api.anchors.snapshot()
 	}
@@ -1360,11 +1276,7 @@ export class HMRService {
 	private async logOperationalReport(reason: 'startup' | 'executeFiles' | 'warmup') {
 		if (!this.shouldLogOperationalReport()) return
 
-		type LoaderApiLike = { registry: RegistryViewLike }
-		type CtxWithLoaderApi = { loader?: { api?: LoaderApiLike } }
-
-		const registryView = (this.ctx as unknown as CtxWithLoaderApi).loader?.api?.registry
-		if (!registryView) return
+		const registryView = this.ctx.loader.api.registry
 
 		const scope = await this.ensureStartupScope()
 		const hotspots =
@@ -1381,7 +1293,8 @@ export class HMRService {
 			registryView,
 			isEnabledInConfig: (name) => this.ctx.configService.isEnabledInConfig(name),
 			isRunning: (ctor) => this.ctx.registry.isRunning(ctor),
-			resolveBareWorkspaceEntry: (specifier) => this.resolveBareWorkspaceEntry(specifier),
+			resolveBareWorkspaceEntry: (specifier) =>
+				this.workspaceEntryResolver.resolveBareWorkspaceEntry(specifier),
 			resolveLimit: this.config.reportResolveLimit,
 			builtinsModuleIds: this.config.builtinsFromDist?.map((b) => b.packageName) ?? [],
 			hotspots: hotspots.length ? hotspots : undefined,

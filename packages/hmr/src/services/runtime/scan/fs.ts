@@ -1,7 +1,7 @@
 import fs from 'node:fs/promises'
 import os from 'node:os'
-import { extname, isAbsolute, normalize, resolve } from 'pathe'
 import { crawlFilesAbs, DEFAULT_IGNORED_DIR_NAMES } from '@pluxel/cli/workspace'
+import { extname, isAbsolute, normalize, resolve } from 'pathe'
 import { createLimiter } from './limit'
 
 export interface TsScanOptions {
@@ -62,7 +62,7 @@ function toAbsolute(input: string): string {
 }
 
 function normalizeExtensions(exts?: string[]): Set<string> {
-	const list = exts && exts.length ? exts : ['.ts']
+	const list = exts?.length ? exts : ['.ts']
 	return new Set(
 		list.map((ext) => (ext.startsWith('.') ? ext.toLowerCase() : `.${ext.toLowerCase()}`)),
 	)

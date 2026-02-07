@@ -1,7 +1,7 @@
 import { existsSync } from 'node:fs'
-import { readPackageJSON } from 'pkg-types'
 import { resolve as r } from 'pathe'
 import type { PackageJson } from 'pkg-types'
+import { readPackageJSON } from 'pkg-types'
 
 export async function safeReadManifest(dir: string): Promise<PackageJson | undefined> {
 	const manifestPath = r(dir, 'package.json')

@@ -8,7 +8,13 @@ This folder exists to keep cross-cutting concerns (caching + resolution) consist
 
 - `resolveCacheLimit(raw, fallback)`: normalizes a config/env input into a non-negative integer.
 - `boundedSet(map, key, value, limit)`: a tiny FIFO-ish eviction helper for `Map`.
-  - Preserves insertion order so callers can build small “refresh-on-hit” LRU patterns by delete+set.
+  - Preserves insertion order; removes the oldest entry when the limit is exceeded.
+- `getOrCreateCachedValue(map, key, create, { limit?, evictIf? })`: caches computed values with bounded eviction
+  using a small SIEVE / second-chance policy.
+- `getOrCreatePromise(map, key, create, { limit?, evictIf? })`: caches in-flight/resolved promises with bounded
+  eviction using the same SIEVE / second-chance policy.
+  - `evictIf` can be used to avoid caching “negative” results forever (e.g. `null`).
+- `clearSieveState(map)`: clears internal per-map SIEVE state (call this when you call `map.clear()`).
 
 ## `exsolve.ts`
 
@@ -26,7 +32,7 @@ There are two layers:
    - Prefer sharing a single long-lived map (e.g. `ctx.scanService.resolverCache`) so cache invalidation is consistent.
 2) **resolver-instance cache** (grouped + bounded): stores `createResolver()` instances by `(group, key)`.
    - Groups prevent unrelated subsystems from evicting each other’s hot resolvers.
-   - Each group is bounded by a small LRU to avoid unbounded memory growth when many base dirs are involved.
+   - Each group is bounded by a small SIEVE / second-chance policy to avoid unbounded memory growth when many base dirs are involved.
 
 ### API
 
@@ -41,5 +47,37 @@ There are two layers:
 If you pass `ctx.scanService.resolverCache` as the `cache`:
 
 - `scanService.invalidateResolverCache()` clears the underlying `Map`, effectively clearing exsolve’s resolve results.
+- It also emits `runtime:resolverCacheInvalidated` so other long-lived services can drop derived resolution caches.
 - Resolver instances may still be reused, but their internal cache reads/writes go through the cleared map.
 
+## `conditions.ts`
+
+Shared export conditions for runtime resolution:
+
+- `PLUXEL_HMR_WORKSPACE_CONDITIONS_WITH_SOURCE`: prefer workspace TS sources (`@pluxel/hmr`, `@pluxel/source`, ...).
+- `PLUXEL_DIST_EXPORT_CONDITIONS`: prefer published/built outputs (`import`, `default`, `require`).
+
+## `node-modules.ts`
+
+- `hasNodeModulesPackageJson(nodeModulesDir, packageName)`: checks whether a package has a direct
+  `node_modules/<pkg>/package.json` entry (supports scoped packages).
+  - Used as a fast-path “host-installed” check when `node_modules` exists (important for pnpm workspace links).
+
+## `vite-id.ts`
+
+Small helpers for normalizing Vite ids/urls:
+
+- `cleanViteUrl(id)`: strips `?query` from a Vite id/url.
+- `unwrapViteId(id)`: decodes `/@id/<encoded>` back to the original specifier.
+- `fsPathFromViteFsId(id)`: converts `/@fs/` ids into filesystem paths (POSIX + Windows drive paths).
+- `isBarePackageSpecifier(specifier)`: shared “is this a bare package specifier?” fast-path for workspace rewrite.
+
+## `resolution.ts`
+
+- `toBasePackage(specifier)`: trims a specifier to its package root (e.g. `@scope/name/subpath` → `@scope/name`).
+- `canResolveFromCwd(cwd, specifier, cache, opts?)`: best-effort “is this package available from this cwd?” check.
+  - Uses `node_modules/<pkg>/package.json` as a fast path when `node_modules` exists.
+  - Falls back to exsolve when `node_modules` is absent (PnP / custom resolvers).
+- `getCachedResolver(cache, group, from, opts?)`: returns a cached `exsolve` resolver instance for the given `from` chain.
+- `resolveModulePath(resolver, id, { mode?, conditions? })`: resolves a specifier using a consistent policy.
+  - `mode: "distPreferEsm"` is deterministic when both `import` and `require` exist.

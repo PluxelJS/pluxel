@@ -329,7 +329,21 @@ export class PackageService {
 		const specs = this.normalizeUniqueByName(inputs)
 		const key = this.buildMultiKey(specs)
 		const options = this.resolveInstallOptions(overrides)
-		return this.removeManyLock.run(key, () => this.removalFlow.removeMany(specs, options))
+		return this.removeManyLock.run(key, async () => {
+			const result = await this.removalFlow.removeMany(specs, options)
+			this.ctx.scanService.invalidateResolverCache({
+				by: 'packageService',
+				reason: 'remove',
+				targets: specs.map((s) => s.target),
+			})
+			this.ctx.logger.debug('已清理解析缓存，等待重新扫描。', {
+				targets: specs.map((s) => s.target),
+			})
+			this.logEvent('info', 'remove:scan_cache_cleared', {
+				targets: specs.map((s) => s.target),
+			})
+			return result
+		})
 	}
 
 	/** Force reload with fresh import. */
@@ -653,7 +667,11 @@ export class PackageService {
 
 	private onPackageInstalled(result: PackageInstallResult) {
 		this.installer.invalidateCache()
-		this.ctx.scanService.invalidateResolverCache()
+		this.ctx.scanService.invalidateResolverCache({
+			by: 'packageService',
+			reason: 'install',
+			targets: [result.target],
+		})
 		this.ctx.logger.debug('已清理解析缓存，等待重新扫描。', {
 			name: result.spec.name,
 			target: result.target,

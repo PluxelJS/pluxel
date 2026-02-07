@@ -1,6 +1,7 @@
 import { pathToFileURL } from 'node:url'
 import type { createResolver } from 'exsolve'
 import { normalizePath } from 'vite'
+import { getOrCreateCachedValue } from './cache'
 
 export type ExsolveCache = Map<string, unknown>
 export type ExsolveResolver = ReturnType<typeof createResolver>
@@ -41,22 +42,5 @@ export function getCachedExsolveResolver(
 	opts?: { limit?: number },
 ): ExsolveResolver {
 	const store = getResolverGroup(cache, group)
-	const cached = store.get(key)
-	if (cached) {
-		// Refresh insertion order so eviction behaves like a tiny LRU.
-		store.delete(key)
-		store.set(key, cached)
-		return cached
-	}
-
-	const resolver = create()
-	store.set(key, resolver)
-
-	const limit = opts?.limit ?? 32
-	if (limit > 0 && store.size > limit) {
-		const first = store.keys().next()
-		if (!first.done) store.delete(first.value)
-	}
-
-	return resolver
+	return getOrCreateCachedValue(store, key, create, { limit: opts?.limit ?? 32 })
 }

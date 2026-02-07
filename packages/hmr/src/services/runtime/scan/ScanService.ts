@@ -1,7 +1,7 @@
 import { type Context, Injectable } from '@pluxel/core'
-import { createResolver, type ResolveOptions } from 'exsolve'
 import { dirname, normalize } from 'pathe'
-import { getCachedExsolveResolver, toDirectoryURLString } from '../shared/exsolve'
+import { type ExsolveResolver, toDirectoryURLString } from '../shared/exsolve'
+import { getCachedResolver, resolveModulePath } from '../shared/resolution'
 import { EntryResolver } from './entry-resolver'
 import { DEFAULT_SCAN_OPTIONS, resolveScanOptions } from './options'
 import { ModuleResolveCache } from './resolve-cache'
@@ -151,15 +151,19 @@ export class ScanService {
 	 */
 	clearCaches() {
 		this.snapshotCache.clear()
-		this.invalidateResolverCache()
+		this.invalidateResolverCache({ by: 'scanService', reason: 'clearCaches' })
 	}
 
 	/**
 	 * 仅清空模块解析缓存，适合在依赖安装/升级后调用。
 	 */
-	invalidateResolverCache() {
+	invalidateResolverCache(detail?: { by?: string; reason?: string; targets?: readonly string[] }) {
 		this.entryResolver.clear()
 		this.resolveCache.clear()
+
+		// Notify long-lived runtime services (HMR runner, package loaders, tooling) so they can drop any
+		// derived resolution caches.
+		this.ctx.emit('runtime:resolverCacheInvalidated', detail)
 	}
 
 	private async snapshot(request: ScanTaskOptions = {}): Promise<ScanSnapshot> {
@@ -266,20 +270,16 @@ export const isPackageEntryOk = (
 ): pkg is PackageNode & { entry: EntryResolutionOk } => pkg.entry.ok
 
 class InstalledPackageResolver {
-	private readonly resolver: ReturnType<typeof createResolver>
+	private readonly resolver: ExsolveResolver
 
 	constructor(
 		private readonly cache: ModuleResolveCache,
 		baseDir: string = process.cwd(),
 	) {
 		const fromStr = toDirectoryURLString(baseDir)
-		this.resolver = getCachedExsolveResolver(
-			this.cache.map,
-			'scan:installed-resolver',
-			fromStr,
-			() => createResolver({ from: [fromStr], cache: this.cache.map }),
-			{ limit: 8 },
-		)
+		this.resolver = getCachedResolver(this.cache.map, 'scan:installed-resolver', [fromStr], {
+			limit: 8,
+		})
 	}
 
 	resolve(bareName: string, conditions?: string[]): EntryResolutionOk | undefined {
@@ -305,13 +305,7 @@ class InstalledPackageResolver {
 	}
 
 	private resolveWithConditions(id: string, conditions?: string[]): string | undefined {
-		const options: ResolveOptions = {
-			try: true,
-		}
-		if (conditions && conditions.length > 0) {
-			options.conditions = [...conditions]
-		}
-		return this.resolver.resolveModulePath(id, options)
+		return resolveModulePath(this.resolver, id, { conditions }) ?? undefined
 	}
 
 	private resolutionPlan(conditions?: string[]): Array<string[] | undefined> {

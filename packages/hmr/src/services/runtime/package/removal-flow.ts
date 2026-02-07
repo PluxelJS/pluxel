@@ -1,7 +1,7 @@
-import type { NormalizedPackageSpecifier } from './specifiers'
-import type { ResolvedInstallOptions } from './internal-types'
-import type { PackageRemovalResult, PackageUninstallResult } from './types'
 import type { PackageInstaller, PackageLogFn } from './installer'
+import type { ResolvedInstallOptions } from './internal-types'
+import type { NormalizedPackageSpecifier } from './specifiers'
+import type { PackageRemovalResult, PackageUninstallResult } from './types'
 
 type BlockPackage = (name: string) => void
 

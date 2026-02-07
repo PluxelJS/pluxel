@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import type { Context } from '@pluxel/core'
 import { createFixture } from 'fs-fixture'
 import { normalize } from 'pathe'
@@ -38,7 +38,7 @@ function createService(
 	root: string,
 	overrides: Partial<ConstructorParameters<typeof ScanService>[1]> = {},
 ) {
-	return new ScanService({} as Context, {
+	return new ScanService({ emit: () => undefined } as unknown as Context, {
 		roots: root,
 		installedBase: root,
 		...overrides,
@@ -50,6 +50,21 @@ function asPosix(input: string) {
 }
 
 describe('ScanService', () => {
+	it('emits runtime:resolverCacheInvalidated when events are available', () => {
+		const emit = vi.fn()
+		const service = new ScanService({ emit } as unknown as Context, {
+			roots: '/tmp',
+			installedBase: '/tmp',
+		})
+
+		service.invalidateResolverCache({ by: 'test', reason: 'unit', targets: ['x'] })
+		expect(emit).toHaveBeenCalledWith('runtime:resolverCacheInvalidated', {
+			by: 'test',
+			reason: 'unit',
+			targets: ['x'],
+		})
+	})
+
 	it('resolves entry by package name inside workspace', async () => {
 		await using fixture = await createFixture(scanSingleFixture)
 		const service = createService(normalize(fixture.path))

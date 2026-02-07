@@ -1,7 +1,6 @@
 import { normalize as normalizePath, resolve as resolvePath } from 'pathe'
-
-import type { NormalizedPackageSpecifier, PackageSpecifierSnapshot } from './specifiers'
 import type { ResolvedInstallOptions } from './internal-types'
+import type { NormalizedPackageSpecifier, PackageSpecifierSnapshot } from './specifiers'
 import {
 	CURRENT_STATE_SCHEMA,
 	type LegacyPackageStatePayload,

@@ -27,6 +27,34 @@ type CoreApi = {
 	getUsedFeatures: (ctor: unknown) => Array<{ name: string }>
 }
 
+const noop = () => undefined
+
+function createNoopLogger(errorLogs: ErrorLog[]) {
+	const channel: any = {
+		trace: noop,
+		debug: noop,
+		info: noop,
+		warn: noop,
+		error: noop,
+		fatal: noop,
+		with: () => channel,
+	}
+
+	return {
+		...channel,
+		getDebugChannel: () => channel,
+		error(messageOrObj: unknown, maybeProps?: unknown) {
+			if (typeof messageOrObj === 'string') {
+				errorLogs.push({ msg: messageOrObj, obj: maybeProps })
+				return
+			}
+			if (typeof maybeProps === 'string') {
+				errorLogs.push({ msg: maybeProps, obj: messageOrObj })
+			}
+		},
+	}
+}
+
 async function executePluginEntryAndCapture(
 	pluginEntry: string,
 ): Promise<{ capture: { lastModule: unknown | null }; errorLogs: ErrorLog[]; core: CoreApi }> {
@@ -43,6 +71,7 @@ async function executePluginEntryAndCapture(
 	const hmr = new HMRService(createContext(capture, errorLogs), {
 		roots: [fixturesPluginsRelFromWorkspace],
 		entries: [],
+		report: false,
 		deps: baseDeps,
 	})
 	hmr.setServerRoot(root)
@@ -76,19 +105,16 @@ function createContext(
 ) {
 	const anchors = new Set<string>()
 	return {
-		logger: {
-			info: () => undefined,
-			warn: () => undefined,
-			error(obj: unknown, msg: string) {
-				errorLogs.push({ msg, obj })
-			},
-		},
+		logger: createNoopLogger(errorLogs),
+		on: () => noop,
+		configService: { isReady: true, ready: Promise.resolve() },
 		scanService: { resolveEntry: async () => ({ ok: false }) },
 		loader: {
 			api: {
 				anchors: {
 					has: (id: string) => anchors.has(id),
 					list: () => anchors,
+					snapshot: () => new Set(anchors),
 					remove: (id: string) => anchors.delete(id),
 				},
 			},

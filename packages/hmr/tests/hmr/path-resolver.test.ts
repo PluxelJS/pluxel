@@ -23,4 +23,18 @@ describe('HmrPathResolver', () => {
 
 		expect(paths.toCleanId(outsideFile)).toBe(outsideFile)
 	})
+
+	it('normalizes /@fs/ Windows drive paths and emits variants', () => {
+		const paths = new HmrPathResolver('C:/workspace', ['C:/workspace/packages'])
+		paths.setServerRoot('C:/workspace/hmr-ui')
+
+		const clean = paths.toCleanId('/@fs/C:/workspace/hmr-ui/src/client.tsx')
+		expect(clean).toBe('C:/workspace/hmr-ui/src/client.tsx')
+
+		expect(paths.moduleIdVariantsClean(clean)).toEqual([
+			'C:/workspace/hmr-ui/src/client.tsx',
+			'/@fs/C:/workspace/hmr-ui/src/client.tsx',
+			'/src/client.tsx',
+		])
+	})
 })

@@ -1,8 +1,8 @@
 import { existsSync } from 'node:fs'
-import { createResolver, type ResolveOptions } from 'exsolve'
 import { normalize, resolve as r } from 'pathe'
 import type { PackageJson } from 'pkg-types'
-import { getCachedExsolveResolver, toDirectoryURLString } from '../shared/exsolve'
+import { toDirectoryURLString } from '../shared/exsolve'
+import { getCachedResolver, resolveModulePath } from '../shared/resolution'
 import { safeReadManifest } from './package'
 import type { ModuleResolveCache } from './resolve-cache'
 import type { EntryResolution, EntryResolutionOk, ResolvedScanOptions } from './types'
@@ -76,22 +76,17 @@ export class EntryResolver {
 			}
 		}
 
-		const resolveOptions = resolveOptionsFor(options.conditions)
 		const base = toDirectoryURLString(dir)
-		const resolver = getCachedExsolveResolver(
-			this.moduleResolveCache.map,
-			'scan:pkg-resolver',
-			base,
-			() => createResolver({ from: [base], cache: this.moduleResolveCache.map }),
-			{ limit: 256 },
-		)
+		const resolver = getCachedResolver(this.moduleResolveCache.map, 'scan:pkg-resolver', [base], {
+			limit: 256,
+		})
 
-		let exportsEntry: string | undefined
+		let exportsEntry: string | null = null
 		if (pkgJson?.name) {
-			exportsEntry = resolver.resolveModulePath(pkgJson.name, resolveOptions)
+			exportsEntry = resolveModulePath(resolver, pkgJson.name, { conditions: options.conditions })
 		}
 		if (!exportsEntry) {
-			exportsEntry = resolver.resolveModulePath('.', resolveOptions)
+			exportsEntry = resolveModulePath(resolver, '.', { conditions: options.conditions })
 		}
 		if (exportsEntry) {
 			return entryOk(dir, normalize(exportsEntry), 'exports', [])
@@ -139,14 +134,6 @@ export class EntryResolver {
 			tried,
 		}
 	}
-}
-
-function resolveOptionsFor(conditions: string[] | undefined): ResolveOptions {
-	const options: ResolveOptions = { try: true }
-	if (conditions && conditions.length > 0) {
-		options.conditions = [...conditions]
-	}
-	return options
 }
 
 function entryOk(

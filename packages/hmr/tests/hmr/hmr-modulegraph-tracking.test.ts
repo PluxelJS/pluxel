@@ -6,10 +6,27 @@ import { fixturesDepsRelFromWorkspace, fixturesPluginsRelFromWorkspace, workspac
 
 const noop = () => undefined
 
+function createNoopLogger() {
+	const self: any = {
+		trace: noop,
+		debug: noop,
+		info: noop,
+		warn: noop,
+		error: noop,
+		fatal: noop,
+		with: () => self,
+	}
+	return {
+		...self,
+		getDebugChannel: () => self,
+	}
+}
+
 const createCtx = () => {
 	const anchors = new Set<string>()
 	return {
-		logger: { info: noop, error: noop, warn: noop },
+		logger: createNoopLogger(),
+		on: () => noop,
 		scanService: { resolveEntry: async () => ({ ok: false }) },
 		loader: {
 			api: {

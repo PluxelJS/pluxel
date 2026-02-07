@@ -1,7 +1,7 @@
-import type { NormalizedPackageSpecifier } from './specifiers'
-import type { ResolvedInstallOptions } from './internal-types'
-import type { PackageInstallResult } from './types'
 import type { PackageInstaller, PackageLogFn } from './installer'
+import type { ResolvedInstallOptions } from './internal-types'
+import type { NormalizedPackageSpecifier } from './specifiers'
+import type { PackageInstallResult } from './types'
 
 export class PackageInstallFlow {
 	constructor(

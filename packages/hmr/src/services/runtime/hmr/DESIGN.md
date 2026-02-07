@@ -138,7 +138,8 @@ Vite dev server 的 root 是 HMR UI 包，而不是 host cwd，所以 runner 在
 
 - 使用 `exsolve` 作为“稳定、可缓存、可控制 export conditions”的 resolver（Scan/HMR/Installer 共用）
 - 复用 `ctx.scanService.resolverCache` 作为全局 resolve cache map（避免重复解析，并与 `invalidateResolverCache()` 的语义一致）
-- resolver 实例按“group + baseKey”做小 LRU（避免无限增长但又保留热点 base）
+- resolver 实例按“group + baseKey”做小型 SIEVE/second-chance 缓存（避免无限增长但又保留热点 base）
+- 当 ScanService 调用 `invalidateResolverCache()` 时，会 emit `runtime:resolverCacheInvalidated`，HMR 会清理自身派生缓存（workspace entry rewrite、runner host-entry fallback 等）。
 
 ## 失败语义（commit 与回滚）
 
@@ -149,5 +150,5 @@ Vite dev server 的 root 是 HMR UI 包，而不是 host cwd，所以 runner 在
 ## 性能要点
 
 - 批处理 debounce（小窗口合并变更）+ moduleGraph 最小追溯。
-- workspace entry rewrite 有 FIFO 缓存与上限（避免依赖图 churn 时无界增长）。
+- workspace entry rewrite 有小型 SIEVE/second-chance 缓存与上限（避免依赖图 churn 时无界增长）。
 - warmup 可选 transform prefetch（减少 wall time，但不会阻塞启动）。

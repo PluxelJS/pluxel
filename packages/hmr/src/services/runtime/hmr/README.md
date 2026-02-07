@@ -190,9 +190,9 @@ HMR uses `exsolve` for module resolution in multiple places (ScanService entry r
 To keep resolution behavior consistent and avoid duplicate work, HMR prefers sharing a single resolve cache map:
 
 - `ctx.scanService.resolverCache` is passed into `resolveHMRDependencyConfig()` and `HmrRunner.init()`
-- `scanService.invalidateResolverCache()` clears this map, so all consumers observe the same “cache reset”
+- `scanService.invalidateResolverCache()` clears this map and emits `runtime:resolverCacheInvalidated`, so all consumers observe the same “cache reset”
 
-Internally, resolver instances are also grouped and bounded (tiny LRU) to avoid unbounded growth when many base dirs are involved.
+Internally, resolver instances are also grouped and bounded (tiny SIEVE / second-chance) to avoid unbounded growth when many base dirs are involved.
 
 ## File structure
 

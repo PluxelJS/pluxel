@@ -1,5 +1,7 @@
 import os from 'node:os'
+import { loadWorkspaceInfo } from '@pluxel/cli/workspace'
 import { isAbsolute, normalize, resolve as r } from 'pathe'
+import type { PackageJson } from 'pkg-types'
 import type { EntryResolver } from './entry-resolver'
 import { getAllTsFiles } from './fs'
 import { createLimiter } from './limit'
@@ -13,7 +15,6 @@ import type {
 	ScanRoot,
 	ScanStats,
 } from './types'
-import { loadWorkspaceInfo } from '@pluxel/cli/workspace'
 
 export async function buildScanGraph(
 	input: string[],
@@ -23,10 +24,7 @@ export async function buildScanGraph(
 	const startedAt = Date.now()
 	const inputs = normalizeInputs(input)
 	const limit = createLimiter(Math.max(1, options.batchSize))
-	const focusSet =
-		options.focusPackages && options.focusPackages.length
-			? new Set(options.focusPackages)
-			: undefined
+	const focusSet = options.focusPackages?.length ? new Set(options.focusPackages) : undefined
 	const matchedFocus = new Set<string>()
 
 	const roots: ScanRoot[] = []
@@ -166,7 +164,7 @@ export async function buildScanGraph(
 async function processPackageDir(params: {
 	pkgDir: string
 	workspaceRoot: string
-	workspaceManifest?: any
+	workspaceManifest?: PackageJson
 	isExplicitInput: boolean
 	ctx: BuildContext
 }): Promise<PackageNode | null> {

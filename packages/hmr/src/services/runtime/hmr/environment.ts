@@ -4,9 +4,8 @@ import { makeIdFiltersToMatchWithQuery } from '@rolldown/pluginutils'
 import { dirname, isAbsolute, resolve } from 'pathe'
 import { createFilter, normalizePath } from 'vite'
 import { boundedSet, resolveCacheLimit } from '../shared/cache'
+import { DRIVE_PATH_RE, fsPathFromViteFsId } from '../shared/vite-id'
 import { findNearestPackageRoot } from './internals'
-
-const DRIVE_PATH_RE = /^[a-zA-Z]:[\\/]/
 
 export class HmrPathResolver {
 	private serverRoot = ''
@@ -80,7 +79,7 @@ export class HmrPathResolver {
 		}
 
 		if (raw.startsWith('/@fs/')) {
-			const out = raw.slice('/@fs'.length)
+			const out = fsPathFromViteFsId(raw) ?? raw.slice('/@fs'.length)
 			boundedSet(this.cleanIdCache, raw, out, this.cacheLimit)
 			return out
 		}
@@ -196,14 +195,22 @@ export class HmrPathResolver {
 	}
 
 	moduleIdVariantsClean(cleanId: string): string[] {
-		if (!cleanId.startsWith('/')) return [cleanId]
-		const fs = `/@fs${cleanId}`
+		const fs = cleanId.startsWith('/')
+			? `/@fs${cleanId}`
+			: DRIVE_PATH_RE.test(cleanId)
+				? `/@fs/${cleanId}`
+				: null
+
+		const out: string[] = [cleanId]
+		if (fs && fs !== cleanId) out.push(fs)
+
 		if (this.serverRoot && cleanId.startsWith(this.serverRoot)) {
 			const rel = cleanId.slice(this.serverRoot.length)
 			const relId = rel.startsWith('/') ? rel : `/${rel}`
-			if (relId !== cleanId && relId !== fs) return [cleanId, fs, relId]
+			if (relId !== cleanId && relId !== fs) out.push(relId)
 		}
-		return [cleanId, fs]
+
+		return out
 	}
 
 	computeFallbackResolveDirs(importer?: string | null): string[] {

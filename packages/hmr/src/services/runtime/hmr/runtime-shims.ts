@@ -18,7 +18,7 @@ export type RuntimeShimConfig =
 			 * Exports returned when the module is loaded via CommonJS `require()`.
 			 * Defaults to `{}`.
 			 */
-			exports?: any
+			exports?: unknown
 	  }
 	| false
 
@@ -44,7 +44,7 @@ type ShimRule = {
 	virtualId: string
 	code: string
 	moduleSideEffects: boolean
-	cjsExports: any
+	cjsExports: unknown
 }
 
 export class RuntimeShimRegistry {
@@ -146,7 +146,7 @@ function sanitizeIdSegment(input: string) {
 
 /* ------------------------------ CJS require shims ------------------------------ */
 
-type RequireShimResolver = (id: string) => any | null
+type RequireShimResolver = (id: string) => unknown | null
 
 const requireScope = new AsyncLocalStorage<boolean>()
 let requireShimsInstalled = false
@@ -157,15 +157,17 @@ export function installRequireShims(resolver: RequireShimResolver) {
 	if (requireShimsInstalled) return
 	requireShimsInstalled = true
 
-	const modAny = NodeModule as any
-	const originalLoad = modAny._load as Function
+	type ModuleLoadFn = (request: unknown, parent: unknown, isMain: boolean) => unknown
+	type ModuleWithPrivateLoad = typeof NodeModule & { _load: ModuleLoadFn }
+	const mod = NodeModule as unknown as ModuleWithPrivateLoad
+	const originalLoad = mod._load
 
-	modAny._load = function (request: unknown, parent: unknown, isMain: boolean) {
+	mod._load = (request: unknown, parent: unknown, isMain: boolean) => {
 		if (requireScope.getStore() === true && typeof request === 'string') {
 			const shim = requireShimResolver?.(request)
 			if (shim != null) return shim
 		}
-		return originalLoad.apply(this, [request, parent, isMain])
+		return originalLoad(request, parent, isMain)
 	}
 }
 

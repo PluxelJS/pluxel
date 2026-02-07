@@ -24,21 +24,48 @@ function buildDeps(cjsExternal: string[]) {
 	return { ...baseDeps, cjsExternal }
 }
 
+const noop = () => undefined
+
+function createNoopLogger(errorLogs?: ErrorLog[]) {
+	const channel: any = {
+		trace: noop,
+		debug: noop,
+		info: noop,
+		warn: noop,
+		error: noop,
+		fatal: noop,
+		with: () => channel,
+	}
+
+	return {
+		...channel,
+		getDebugChannel: () => channel,
+		error(messageOrObj: unknown, maybeProps?: unknown) {
+			if (!errorLogs) return
+			if (typeof messageOrObj === 'string') {
+				errorLogs.push({ msg: messageOrObj, obj: maybeProps })
+				return
+			}
+			if (typeof maybeProps === 'string') {
+				errorLogs.push({ msg: maybeProps, obj: messageOrObj })
+			}
+		},
+	}
+}
+
 function createContext(errorLogs?: ErrorLog[], scanService?: unknown) {
 	const anchors = new Set<string>()
 	return {
-		logger: {
-			info: () => undefined,
-			warn: () => undefined,
-			error(obj: unknown, msg: string) {
-				if (errorLogs) errorLogs.push({ msg, obj })
-			},
-		},
+		logger: createNoopLogger(errorLogs),
+		on: () => noop,
+		configService: { isReady: true, ready: Promise.resolve() },
 		scanService: scanService ?? { resolveEntry: async () => ({ ok: false }) },
 		loader: {
 			api: {
 				anchors: {
+					has: (id: string) => anchors.has(id),
 					list: () => anchors,
+					snapshot: () => new Set(anchors),
 					remove: (id: string) => anchors.delete(id),
 				},
 			},
@@ -110,6 +137,7 @@ describe('HMR CJS dependency handling', () => {
 		const hmr = new HMRService(createContext(errorLogs), {
 			roots: [root],
 			entries: [],
+			report: false,
 			deps: depsInput,
 		})
 		hmr.setServerRoot(root)
@@ -144,6 +172,7 @@ describe('HMR CJS dependency handling', () => {
 		const hmr = new HMRService(createContext(errorLogs), {
 			roots: [root],
 			entries: [],
+			report: false,
 			deps: depsInput,
 		})
 		hmr.setServerRoot(root)
@@ -181,6 +210,7 @@ describe('HMR CJS dependency handling', () => {
 		const hmr = new HMRService(ctx, {
 			roots: [root],
 			entries: [],
+			report: false,
 			deps: depsInput,
 		})
 		hmr.setServerRoot(root)
@@ -217,6 +247,7 @@ describe('HMR CJS dependency handling', () => {
 		const hmr = new HMRService(createContext(), {
 			roots: [root],
 			entries: [],
+			report: false,
 			deps: depsInput,
 		})
 		hmr.setServerRoot(root)
@@ -259,6 +290,7 @@ describe('HMR CJS dependency handling', () => {
 		const hmr = new HMRService(createContext(errorLogs), {
 			roots: [root],
 			entries: [],
+			report: false,
 			deps: depsInput,
 		})
 		hmr.setServerRoot(root)

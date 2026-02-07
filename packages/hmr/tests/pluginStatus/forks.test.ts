@@ -10,6 +10,8 @@ import { EXTRA_FORKS } from '../../src/services/runtime/loader/selection'
 function createHmrCtx(core: Context) {
 	const enabled = new Set<string>()
 	const extra: Record<string, unknown> = Object.create(null)
+	const hmrService = { normalizeId: (id: string) => id }
+	const root = { hmrService }
 	const configService = {
 		isReady: true,
 		ready: Promise.resolve(),
@@ -51,6 +53,7 @@ function createHmrCtx(core: Context) {
 	const coreEmit = (core as unknown as { emit?: (...args: unknown[]) => unknown }).emit
 
 	return {
+		root,
 		registry: core.registry,
 		events: coreEvents,
 		on: core.on.bind(core),
