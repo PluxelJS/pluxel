@@ -22,13 +22,9 @@ import { type PickPackagesDiscoveredPlugin, PickPackagesDualBrowser } from './pi
 
 type TabKey =
 	| 'packages'
-	| 'start'
+	| 'paths'
 	| 'doctor'
-	| 'roots'
-	| 'include'
-	| 'exclude'
-	| 'profiles'
-	| 'help'
+	| 'start'
 
 type PromptResult = { action: 'exit' } | { action: 'start'; snapshotJson: string }
 
@@ -40,10 +36,12 @@ function clamp(n: number, min: number, max: number) {
 	return Math.max(min, Math.min(max, n))
 }
 
+type PathsFocus = 'roots' | 'include' | 'exclude'
+
 type InitialOpen =
 	| { kind: 'packages'; mode?: 'enabled' | 'builtin' }
 	| { kind: 'profiles' }
-	| { kind: 'editList'; target: 'roots' | 'include' | 'exclude' }
+	| { kind: 'paths'; focus?: PathsFocus }
 
 function formatListInline(items: string[], max = 6) {
 	if (!items.length) return '(none)'
@@ -56,25 +54,39 @@ function tabLabel(tab: TabKey) {
 	switch (tab) {
 		case 'packages':
 			return 'Packages'
-		case 'start':
-			return 'Start'
+		case 'paths':
+			return 'Paths'
 		case 'doctor':
 			return 'Doctor'
-		case 'roots':
-			return 'Roots'
-		case 'include':
-			return 'Include'
-		case 'exclude':
-			return 'Exclude'
-		case 'profiles':
-			return 'Profiles'
-		case 'help':
-			return 'Help'
+		case 'start':
+			return 'Start'
 	}
 }
 
 function tabs(): TabKey[] {
-	return ['packages', 'start', 'doctor', 'roots', 'include', 'exclude', 'profiles', 'help']
+	return ['packages', 'paths', 'doctor', 'start']
+}
+
+function TabBar(props: { tabs: TabKey[]; active: TabKey }) {
+	return (
+		<Text>
+			{props.tabs.map((t, i) => {
+				const active = t === props.active
+				const label = `${i + 1}:${tabLabel(t)}`
+				return (
+					<Text key={t}>
+						<Text
+							color={active ? 'black' : 'gray'}
+							backgroundColor={active ? 'cyan' : undefined}
+						>
+							{` ${label} `}
+						</Text>
+						{i < props.tabs.length - 1 ? <Text color="gray"> </Text> : null}
+					</Text>
+				)
+			})}
+		</Text>
+	)
 }
 
 type Modal =
@@ -85,6 +97,7 @@ type Modal =
 			message: string
 			confirmLabel: string
 			cancelLabel: string
+			defaultFocus?: 'confirm' | 'cancel'
 			onConfirm: () => void
 			onCancel: () => void
 	  }
@@ -108,19 +121,29 @@ function ModalOverlay(props: { modal: Exclude<Modal, null> }) {
 		props.modal.kind === 'input' ? (props.modal.initial ?? '') : '',
 	)
 	const [error, setError] = useState<string | null>(null)
+	const [confirmFocus, setConfirmFocus] = useState<'confirm' | 'cancel'>('confirm')
 
 	useEffect(() => {
 		if (props.modal.kind === 'input') {
 			setValue(props.modal.initial ?? '')
 			setError(null)
 		}
+		if (props.modal.kind === 'confirm') {
+			setConfirmFocus(props.modal.defaultFocus ?? 'confirm')
+		}
 	}, [props.modal])
 
 	useInput((input, key) => {
 		if (props.modal.kind === 'confirm') {
 			if (key.escape || (key.ctrl && input.toLowerCase() === 'c')) props.modal.onCancel()
-			else if (key.return) props.modal.onConfirm()
-			else if (input.toLowerCase() === 'y') props.modal.onConfirm()
+			else if (key.leftArrow || (key.shift && key.tab) || input.toLowerCase() === 'h')
+				setConfirmFocus('cancel')
+			else if (key.rightArrow || key.tab || input.toLowerCase() === 'l')
+				setConfirmFocus('confirm')
+			else if (key.return) {
+				if (confirmFocus === 'confirm') props.modal.onConfirm()
+				else props.modal.onCancel()
+			} else if (input.toLowerCase() === 'y') props.modal.onConfirm()
 			else if (input.toLowerCase() === 'n') props.modal.onCancel()
 			return
 		}
@@ -169,11 +192,16 @@ function ModalOverlay(props: { modal: Exclude<Modal, null> }) {
 			height={height}
 			borderStyle="round"
 			borderColor="yellow"
+			backgroundColor="black"
 			flexDirection="column"
 			paddingX={1}
 		>
-			<Text color="yellow">{title}</Text>
-			<Text wrap="truncate">{message}</Text>
+			<Box width="100%" justifyContent="center">
+				<Text color="yellow">{title}</Text>
+			</Box>
+			<Box width="100%" justifyContent="center">
+				<Text wrap="truncate">{message}</Text>
+			</Box>
 			<Box flexGrow={1} />
 			{props.modal.kind === 'input' ? (
 				<>
@@ -187,10 +215,40 @@ function ModalOverlay(props: { modal: Exclude<Modal, null> }) {
 					</Text>
 				</>
 			) : (
-				<Text color="gray">
-					Enter/{props.modal.confirmLabel} • Esc/Ctrl+C/{props.modal.cancelLabel} • y/n
-				</Text>
+				<>
+					<Box width="100%" justifyContent="space-between">
+						<Text
+							color={confirmFocus === 'cancel' ? 'black' : 'gray'}
+							backgroundColor={confirmFocus === 'cancel' ? 'yellow' : undefined}
+						>
+							{`[N] ${props.modal.cancelLabel}`}
+						</Text>
+						<Text
+							color={confirmFocus === 'confirm' ? 'black' : 'green'}
+							backgroundColor={confirmFocus === 'confirm' ? 'green' : undefined}
+						>
+							{`[Y] ${props.modal.confirmLabel}`}
+						</Text>
+					</Box>
+					<Text color="gray">←/→ focus • Enter confirm • Esc cancel</Text>
+				</>
 			)}
+		</Box>
+	)
+}
+
+function ScreenMask(props: { visible: boolean }) {
+	const { stdout } = useStdout()
+	if (!props.visible) return null
+	const rows = stdout?.rows ?? 24
+	const cols = stdout?.columns ?? 80
+	const fill = useMemo(() => {
+		const line = ' '.repeat(Math.max(cols, 1))
+		return Array.from({ length: Math.max(rows, 1) }, () => line).join('\n')
+	}, [rows, cols])
+	return (
+		<Box position="absolute" top={0} left={0} width={cols} height={rows} backgroundColor="black">
+			<Text>{fill}</Text>
 		</Box>
 	)
 }
@@ -200,6 +258,7 @@ function StringListPanel(props: {
 	items: string[]
 	placeholder: string
 	height: number
+	disabled?: boolean
 	onTypingChange?: (typing: boolean) => void
 	onChange: (next: string[]) => void
 }) {
@@ -233,6 +292,7 @@ function StringListPanel(props: {
 	}
 
 	useInput((input, key) => {
+		if (props.disabled) return
 		if (key.escape) {
 			if (inputMode) {
 				setInputMode(null)
@@ -364,6 +424,8 @@ function ProfilesPanel(props: {
 	disabled?: boolean
 	showHeader?: boolean
 	bordered?: boolean
+	autoActivate?: boolean
+	hotkeysDisabled?: boolean
 	onAction: (
 		result:
 			| { type: 'activate'; name: string }
@@ -388,6 +450,20 @@ function ProfilesPanel(props: {
 		setIndex((i) => clamp(i, 0, Math.max(props.profiles.length - 1, 0)))
 	}, [props.profiles.length])
 
+	useEffect(() => {
+		const idx = Math.max(props.profiles.indexOf(props.active), 0)
+		setIndex(idx)
+		const count = props.profiles.length
+		setOffset((prevOffset) => {
+			if (!count) return 0
+			const maxOffset = Math.max(count - windowRows, 0)
+			let nextOffset = clamp(prevOffset, 0, maxOffset)
+			if (idx < nextOffset) nextOffset = idx
+			else if (idx >= nextOffset + windowRows) nextOffset = idx - windowRows + 1
+			return clamp(nextOffset, 0, maxOffset)
+		})
+	}, [props.active, props.profiles.join('\n'), windowRows])
+
 	function ensureVisible(nextIndex: number, count: number) {
 		const maxOffset = Math.max(count - windowRows, 0)
 		let nextOffset = clamp(offset, 0, maxOffset)
@@ -403,12 +479,40 @@ function ProfilesPanel(props: {
 			const next = clamp(index - 1, 0, Math.max(count - 1, 0))
 			setIndex(next)
 			ensureVisible(next, count)
+			const nextName = props.profiles[next]
+			if (props.autoActivate && nextName && nextName !== props.active) {
+				props.onAction({ type: 'activate', name: nextName })
+			}
 			return
 		}
 		if (key.downArrow) {
 			const next = clamp(index + 1, 0, Math.max(count - 1, 0))
 			setIndex(next)
 			ensureVisible(next, count)
+			const nextName = props.profiles[next]
+			if (props.autoActivate && nextName && nextName !== props.active) {
+				props.onAction({ type: 'activate', name: nextName })
+			}
+			return
+		}
+		if (!key.ctrl && !key.meta && input === 'k') {
+			const next = clamp(index - 1, 0, Math.max(count - 1, 0))
+			setIndex(next)
+			ensureVisible(next, count)
+			const nextName = props.profiles[next]
+			if (props.autoActivate && nextName && nextName !== props.active) {
+				props.onAction({ type: 'activate', name: nextName })
+			}
+			return
+		}
+		if (!key.ctrl && !key.meta && input === 'j') {
+			const next = clamp(index + 1, 0, Math.max(count - 1, 0))
+			setIndex(next)
+			ensureVisible(next, count)
+			const nextName = props.profiles[next]
+			if (props.autoActivate && nextName && nextName !== props.active) {
+				props.onAction({ type: 'activate', name: nextName })
+			}
 			return
 		}
 
@@ -416,9 +520,12 @@ function ProfilesPanel(props: {
 		if (!current) return
 
 		if (key.return) {
+			if (props.autoActivate) return
+			if (props.hotkeysDisabled) return
 			props.onAction({ type: 'activate', name: current })
 			return
 		}
+		if (props.hotkeysDisabled) return
 		if (input === 'n') {
 			props.onAction({ type: 'create' })
 			return
@@ -437,7 +544,12 @@ function ProfilesPanel(props: {
 		}
 	})
 
-	const items = props.profiles.map((p) => (p === props.active ? `${p} (active)` : p))
+	const items = props.profiles.map((p, i) => {
+		const n = i < 9 ? `${i + 1}` : i === 9 ? '0' : ''
+		const num = n ? `${n}) ` : '   '
+		const active = p === props.active ? '● ' : '  '
+		return `${num}${active}${p}`
+	})
 	const window = items.slice(offset, offset + windowRows)
 
 	return (
@@ -460,8 +572,10 @@ function ProfilesPanel(props: {
 				{window.map((it, i) => {
 					const idx = offset + i
 					const active = idx === index
+					const isActiveProfile = props.profiles[idx] === props.active
+					const color = active ? 'cyan' : isActiveProfile ? 'yellow' : undefined
 					return (
-						<Text key={`${idx}:${it}`} color={active ? 'cyan' : undefined} wrap="truncate">
+						<Text key={`${idx}:${it}`} color={color} wrap="truncate">
 							{active ? '› ' : '  '}
 							{it}
 						</Text>
@@ -512,6 +626,10 @@ function HmrPromptApp(props: {
 	const rows = stdout?.rows ?? 24
 
 	const [tab, setTab] = useState<TabKey>(props.initialTab ?? 'packages')
+	const [pathsFocus, setPathsFocus] = useState<PathsFocus>(() => {
+		if (props.initialOpen?.kind === 'paths') return props.initialOpen.focus ?? 'roots'
+		return 'roots'
+	})
 	const [scope, setScope] = useState<ConfigScope>('profile')
 	const [cfg, setCfg] = useState<PluxelHmrConfigV1>(props.initialCfg)
 	const [activeProfile, setActiveProfile] = useState(props.initialProfile)
@@ -529,6 +647,7 @@ function HmrPromptApp(props: {
 	const [scan, setScan] = useState<ScanState>({ status: 'idle' })
 	const [snapshot, setSnapshot] = useState<SnapshotState>({ status: 'idle' })
 	const [doctorOffset, setDoctorOffset] = useState(0)
+	const [doctorDetails, setDoctorDetails] = useState(false)
 	const [scanNonce, setScanNonce] = useState(0)
 	const scanKeyRef = useRef<string | null>(null)
 	const profileNames = useMemo(
@@ -542,6 +661,7 @@ function HmrPromptApp(props: {
 	})
 
 	const doneRef = useRef(false)
+	const tabHoldRef = useRef<{ lastAt: number; count: number }>({ lastAt: 0, count: 0 })
 	function finish(result: PromptResult) {
 		if (doneRef.current) return
 		doneRef.current = true
@@ -566,19 +686,20 @@ function HmrPromptApp(props: {
 	}, [cfg.profiles, activeProfile])
 
 	// Initial parse error flow is handled as a modal (fail fast).
-	useEffect(() => {
-		if (!props.initialParseError) return
-		setModal({
-			kind: 'confirm',
-			title: 'Config parse failed',
-			message: props.initialParseError,
-			confirmLabel: 'Regenerate',
-			cancelLabel: 'Exit',
-			onConfirm: () => {
-				try {
-					const repaired = createDefaultHmrConfigV1()
-					backupAndRewriteHmrConfigV1(props.configPath, repaired)
-					setCfg(repaired)
+		useEffect(() => {
+			if (!props.initialParseError) return
+			setModal({
+				kind: 'confirm',
+				title: 'Config parse failed',
+				message: props.initialParseError,
+				confirmLabel: 'Regenerate',
+				cancelLabel: 'Exit',
+				defaultFocus: 'confirm',
+				onConfirm: () => {
+					try {
+						const repaired = createDefaultHmrConfigV1()
+						backupAndRewriteHmrConfigV1(props.configPath, repaired)
+						setCfg(repaired)
 					setActiveProfile(repaired.profile)
 					setDirty(false)
 					setToast('Config regenerated.')
@@ -774,6 +895,7 @@ function HmrPromptApp(props: {
 			message: dirty ? 'Config is dirty. Start with current (unsaved) config state?' : 'Start now?',
 			confirmLabel: 'Start',
 			cancelLabel: 'Cancel',
+			defaultFocus: dirty ? 'cancel' : 'confirm',
 			onConfirm: () => {
 				setModal(null)
 				finish({ action: 'start', snapshotJson: JSON.stringify(snapshot.snapshot) })
@@ -786,37 +908,54 @@ function HmrPromptApp(props: {
 	useInput((input, key) => {
 		if (doneRef.current) return
 		if (modal) return
+
 		const isTab = key.tab || input === '\t'
 		const isShiftTab = (key.shift && key.tab) || input === '\x1b[Z'
-
-		const toggleProfilesOverlay = () => {
-			setOverlay((prev) => (prev === 'profiles' ? null : 'profiles'))
-		}
 
 		const toggleHelpOverlay = () => {
 			setOverlay((prev) => (prev === 'help' ? null : 'help'))
 		}
 
-		const cycleProfile = (dir: 1 | -1) => {
-			if (profileNames.length <= 1) return
-			const idx = Math.max(profileNames.indexOf(activeProfile), 0)
-			const next = profileNames[(idx + dir + profileNames.length) % profileNames.length]
-			if (!next || next === activeProfile) return
-			setActiveProfile(next)
-			setCfg((prev) => ({ ...prev, profile: next }))
-			setDirty(true)
-			setToast(`Active profile: ${next}`)
+		const openProfilesOverlay = () => {
+			setTab('packages')
+			setOverlay('profiles')
+		}
+
+		const maybeOpenProfilesByTabHold = () => {
+			if (tab === 'paths') return false
+			const now = Date.now()
+			const prev = tabHoldRef.current
+			const nextCount = now - prev.lastAt < 240 ? prev.count + 1 : 1
+			tabHoldRef.current = { lastAt: now, count: nextCount }
+			// Require several repeats to avoid accidental double-tap.
+			if (nextCount >= 4) {
+				tabHoldRef.current = { lastAt: 0, count: 0 }
+				openProfilesOverlay()
+				return true
+			}
+			return false
+		}
+
+		const cyclePathsFocus = (dir: 1 | -1) => {
+			const order: PathsFocus[] = ['roots', 'include', 'exclude']
+			const idx = Math.max(order.indexOf(pathsFocus), 0)
+			const next = order[(idx + dir + order.length) % order.length]
+			if (next === pathsFocus) return
+			setPathsFocus(next)
 		}
 
 		// Overlay open: keep only safe global shortcuts.
 		if (overlay) {
+			if (isTab && !isShiftTab) {
+				maybeOpenProfilesByTabHold()
+				return
+			}
 			if (input === '?' && !key.ctrl && !key.meta) {
 				toggleHelpOverlay()
 				return
 			}
 			if (key.ctrl && input.toLowerCase() === 'p') {
-				setTab('packages')
-				setOverlay('profiles')
+				openProfilesOverlay()
 				return
 			}
 			if (key.ctrl && key.leftArrow) {
@@ -848,23 +987,17 @@ function HmrPromptApp(props: {
 
 		// While typing (e.g. filter/input), avoid global single-key actions.
 		if (typing) {
-			// Fast profile switching in Packages tab.
-			if (tab === 'packages' && !key.ctrl && !key.meta && (isTab || isShiftTab)) {
-				cycleProfile(isShiftTab ? -1 : 1)
+			if (isTab && !isShiftTab) {
+				if (maybeOpenProfilesByTabHold()) return
+			}
+			if (key.ctrl && input.toLowerCase() === 'p') {
+				openProfilesOverlay()
 				return
 			}
-			// Profiles overlay
-			if (tab === 'packages' && key.ctrl && input.toLowerCase() === 'p') {
-				toggleProfilesOverlay()
-				return
-			}
-			// Help overlay
 			if (input === '?' && !key.ctrl && !key.meta) {
 				toggleHelpOverlay()
 				return
 			}
-
-			// Quit
 			if (key.ctrl && input.toLowerCase() === 'c') {
 				if (!dirty) {
 					finish({ action: 'exit' })
@@ -876,6 +1009,7 @@ function HmrPromptApp(props: {
 					message: 'Exit without saving?',
 					confirmLabel: 'Exit',
 					cancelLabel: 'Cancel',
+					defaultFocus: 'cancel',
 					onConfirm: () => {
 						setModal(null)
 						finish({ action: 'exit' })
@@ -884,8 +1018,6 @@ function HmrPromptApp(props: {
 				})
 				return
 			}
-
-			// Tabs (keep available)
 			if (key.ctrl && key.leftArrow) {
 				const all = tabs()
 				const idx = all.indexOf(tab)
@@ -898,8 +1030,6 @@ function HmrPromptApp(props: {
 				setTab(all[(idx + 1) % all.length]!)
 				return
 			}
-
-			// Refresh / Save (ctrl-only)
 			if (key.ctrl && input.toLowerCase() === 'r') {
 				scanKeyRef.current = null
 				setScanNonce((n) => n + 1)
@@ -908,30 +1038,41 @@ function HmrPromptApp(props: {
 			}
 			if (key.ctrl && input.toLowerCase() === 's') {
 				saveConfig()
+				return
 			}
 			return
 		}
 
-		// Profiles overlay (quick CRUD) from Packages tab.
-		if (tab === 'packages' && (input === 'p' || input === 'P') && !key.ctrl && !key.meta) {
-			toggleProfilesOverlay()
-			return
+		// Long-press Tab (repeat) opens profile picker.
+		if (isTab && !isShiftTab) {
+			if (maybeOpenProfilesByTabHold()) return
 		}
-		if (tab === 'packages' && key.ctrl && input.toLowerCase() === 'p') {
-			toggleProfilesOverlay()
-			return
-		}
+
 		// Profiles overlay from anywhere (jump to Packages).
 		if (key.ctrl && input.toLowerCase() === 'p') {
-			setTab('packages')
-			setOverlay('profiles')
+			openProfilesOverlay()
 			return
 		}
 
-		// Fast profile switching in Packages tab.
-		if (tab === 'packages' && !key.ctrl && !key.meta && (isTab || isShiftTab)) {
-			cycleProfile(isShiftTab ? -1 : 1)
+		// Paths focus switching.
+		if (tab === 'paths' && !key.ctrl && !key.meta && (isTab || isShiftTab)) {
+			cyclePathsFocus(isShiftTab ? -1 : 1)
 			return
+		}
+		if (tab === 'paths' && !key.ctrl && !key.meta) {
+			const lower = input.toLowerCase()
+			if (lower === 'r') {
+				setPathsFocus('roots')
+				return
+			}
+			if (lower === 'i') {
+				setPathsFocus('include')
+				return
+			}
+			if (lower === 'x') {
+				setPathsFocus('exclude')
+				return
+			}
 		}
 
 		// Quit
@@ -946,6 +1087,7 @@ function HmrPromptApp(props: {
 				message: 'Exit without saving?',
 				confirmLabel: 'Exit',
 				cancelLabel: 'Cancel',
+				defaultFocus: 'cancel',
 				onConfirm: () => {
 					setModal(null)
 					finish({ action: 'exit' })
@@ -980,10 +1122,6 @@ function HmrPromptApp(props: {
 			toggleHelpOverlay()
 			return
 		}
-		if (input.toLowerCase() === 'h' && !key.ctrl && !key.meta) {
-			setTab('help')
-			return
-		}
 
 		// Refresh
 		if (key.ctrl && input.toLowerCase() === 'r') {
@@ -1004,13 +1142,13 @@ function HmrPromptApp(props: {
 
 		// Scope switch (roots/include/exclude)
 		if (input.toLowerCase() === 's' && !key.ctrl && !key.meta) {
-			if (tab === 'roots' || tab === 'include' || tab === 'exclude') {
+			if (tab === 'paths') {
 				setScope((p) => (p === 'profile' ? 'defaults' : 'profile'))
 			}
 		}
 
 		// Roots mode toggle
-		if (tab === 'roots' && input.toLowerCase() === 't' && !key.ctrl && !key.meta) {
+		if (tab === 'paths' && pathsFocus === 'roots' && input.toLowerCase() === 't' && !key.ctrl && !key.meta) {
 			toggleRootsAuto()
 			return
 		}
@@ -1033,6 +1171,8 @@ function HmrPromptApp(props: {
 				setDoctorOffset((o) => clamp(o + page, 0, maxOffset))
 			else if (!key.ctrl && !key.meta && input === 'g') setDoctorOffset(0)
 			else if (!key.ctrl && !key.meta && input === 'G') setDoctorOffset(maxOffset)
+			else if (!key.ctrl && !key.meta && input.toLowerCase() === 'd')
+				setDoctorDetails((v) => !v)
 		}
 	})
 
@@ -1163,8 +1303,9 @@ function HmrPromptApp(props: {
 			setInitialOpen(null)
 			return
 		}
-		if (initialOpen.kind === 'editList') {
-			setTab(initialOpen.target)
+		if (initialOpen.kind === 'paths') {
+			setTab('paths')
+			setPathsFocus(initialOpen.focus ?? 'roots')
 			setInitialOpen(null)
 		}
 	}, [initialOpen, modal])
@@ -1172,6 +1313,10 @@ function HmrPromptApp(props: {
 	const headerRows = 2
 	const footerRows = 2
 	const bodyRows = Math.max(rows - headerRows - footerRows, 10)
+	const packagesHeaderRows = 2
+	const packagesBodyRows = Math.max(bodyRows - packagesHeaderRows, 8)
+	const pathsHeaderRows = 2
+	const pathsBodyRows = Math.max(bodyRows - pathsHeaderRows, 8)
 	const doctorWindowRows = Math.max(bodyRows - 2, 6)
 
 	const doctorLines = useMemo(() => {
@@ -1180,25 +1325,23 @@ function HmrPromptApp(props: {
 		const s = snapshot.snapshot
 		const lines: string[] = []
 		lines.push(`profile: ${s.activeProfile}`)
-		lines.push(`enabled: ${s.enabled.length}`)
-		lines.push(`builtin: ${s.builtinPackages.length}`)
-		lines.push(`discovered: ${s.discovered.length}`)
-		lines.push(`startup entries: ${s.enabledEntries.length}`)
-		lines.push(`include entries: ${s.includedEntries.length}`)
+		lines.push(`enabled: ${s.enabled.length} • builtin: ${s.builtinPackages.length}`)
+		lines.push(`entries: ${s.enabledEntries.length} (+include ${s.includedEntries.length})`)
 		lines.push(`watch roots: ${s.watchRoots.length}`)
+		lines.push(`discovered: ${s.discovered.length}${doctorDetails ? '' : ' (d details)'}`)
 		lines.push('')
 		if (snapshot.warnings.length) {
 			lines.push('Warnings:')
 			for (const w of snapshot.warnings) lines.push(w)
 			lines.push('')
 		}
-		if (s.discovered.length) {
+		if (doctorDetails && s.discovered.length) {
 			lines.push('Discovered:')
 			for (const p of s.discovered.slice(0, 200)) lines.push(`${p.name} -> ${p.entry}`)
 			if (s.discovered.length > 200) lines.push(`…and ${s.discovered.length - 200} more`)
 		}
 		return lines
-	}, [snapshot])
+	}, [snapshot, doctorDetails])
 
 	useEffect(() => {
 		const maxOffset = Math.max(doctorLines.length - doctorWindowRows, 0)
@@ -1215,9 +1358,26 @@ function HmrPromptApp(props: {
 		scope === 'defaults' ? (cfg.defaults?.include ?? []) : (profile.include ?? [])
 	const excludeValue =
 		scope === 'defaults' ? (cfg.defaults?.exclude ?? []) : (profile.exclude ?? [])
+	const rootsCount = rootsValue === 'auto' ? 0 : rootsValue.length
+	const includeCount = (includeValue ?? []).length
+	const excludeCount = (excludeValue ?? []).length
 
 	const enabledPreview = formatListInline(profile.enabled ?? [], 6)
 	const builtinPreview = formatListInline(profile.builtin ?? [], 6)
+	const pathsTabs: Array<{ key: PathsFocus; label: string }> = [
+		{
+			key: 'roots',
+			label: rootsValue === 'auto' ? 'Roots:auto' : `Roots:${rootsCount}`,
+		},
+		{
+			key: 'include',
+			label: `Include:${includeCount}`,
+		},
+		{
+			key: 'exclude',
+			label: `Exclude:${excludeCount}`,
+		},
+	]
 
 	type ProfileAction =
 		| { type: 'activate'; name: string }
@@ -1231,8 +1391,6 @@ function HmrPromptApp(props: {
 
 		if (act.type === 'activate') {
 			setActiveProfile(act.name)
-			setCfg((prev) => ({ ...prev, profile: act.name }))
-			setDirty(true)
 			return
 		}
 
@@ -1322,17 +1480,18 @@ function HmrPromptApp(props: {
 			}
 			const remaining = names.filter((n) => n !== act.name)
 			const nextActive = remaining[0] ?? activeProfile
-			setModal({
-				kind: 'confirm',
-				title: 'Delete profile',
-				message: `Delete "${act.name}"?`,
-				confirmLabel: 'Delete',
-				cancelLabel: 'Cancel',
-				onConfirm: () => {
-					setModal(null)
-					setCfg((prev) => {
-						const next = { ...prev.profiles }
-						delete next[act.name]
+				setModal({
+					kind: 'confirm',
+					title: 'Delete profile',
+					message: `Delete "${act.name}"?`,
+					confirmLabel: 'Delete',
+					cancelLabel: 'Cancel',
+					defaultFocus: 'cancel',
+					onConfirm: () => {
+						setModal(null)
+						setCfg((prev) => {
+							const next = { ...prev.profiles }
+							delete next[act.name]
 						const remaining = Object.keys(next).sort((a, b) => a.localeCompare(b))
 						const nextActive = remaining[0] ?? prev.profile
 						return {
@@ -1353,85 +1512,167 @@ function HmrPromptApp(props: {
 	const profileBadge = profileNames.length
 		? `${activeProfile} (${profilePos}/${profileNames.length})`
 		: activeProfile
-	const profileIndex = Math.max(profileNames.indexOf(activeProfile), 0)
-	const prevProfile =
-		profileNames.length > 1
-			? profileNames[(profileIndex - 1 + profileNames.length) % profileNames.length]
-			: null
-	const nextProfile =
-		profileNames.length > 1 ? profileNames[(profileIndex + 1) % profileNames.length] : null
 	const enabledCount = (profile.enabled ?? []).length
 	const builtinCount = (profile.builtin ?? []).length
+	const scanInfo =
+		scan.status === 'ready'
+			? {
+					total: scan.discovered.length,
+					visible: scan.discoveredForUi.length,
+					roots: scan.rootsExpandedAbs.length,
+				}
+			: null
+	const scanSummary = scanInfo
+		? `scan: visible ${scanInfo.visible}${
+				scanInfo.visible !== scanInfo.total
+					? ` / total ${scanInfo.total} • hidden ${scanInfo.total - scanInfo.visible}`
+					: ''
+			} • roots ${scanInfo.roots}`
+		: null
 
-	const statusLine =
-		scan.status === 'scanning'
-			? `scanning: ${scan.phase}`
-			: scan.status === 'error'
-				? `scan error: ${scan.error}`
+	const scanPart =
+		scan.status === 'error'
+			? { text: 'scan error', color: 'red' as const }
+			: scan.status === 'scanning'
+				? { text: `scan ${scan.phase}`, color: 'yellow' as const }
 				: scan.status === 'ready'
-					? `discovered=${scan.discoveredForUi.length} roots=${scan.rootsExpandedAbs.length}`
-					: 'idle'
-
-	const snapshotLine =
-		snapshot.status === 'ok'
-			? `entries=${snapshot.snapshot.enabledEntries.length} watchRoots=${snapshot.snapshot.watchRoots.length} warnings=${snapshot.warnings.length}`
-			: snapshot.status === 'error'
-				? `errors=${snapshot.errors.length}`
-				: snapshot.status
+					? { text: 'scan ok', color: 'gray' as const }
+					: { text: 'scan idle', color: 'gray' as const }
+	const snapshotPart =
+		snapshot.status === 'error'
+			? { text: `snapshot blocked (${snapshot.errors.length})`, color: 'red' as const }
+			: snapshot.status === 'building'
+				? { text: 'snapshot building', color: 'yellow' as const }
+				: snapshot.status === 'ok'
+					? { text: 'snapshot ok', color: 'gray' as const }
+					: { text: 'snapshot idle', color: 'gray' as const }
+	const statusParts = [scanPart, snapshotPart]
 	const doctorWindow = doctorLines.slice(doctorOffset, doctorOffset + doctorWindowRows)
 
 	return (
 		<Box flexDirection="column" width="100%">
+			<TabBar tabs={tabList} active={tab} />
 			<Text>
-				{tabList
-					.map((t, i) => {
-						const active = t === tab
-						const label = `${i + 1}:${tabLabel(t)}`
-						return active ? `[${label}]` : ` ${label} `
-					})
-					.join(' | ')}
-			</Text>
-			<Text color="gray">
-				profile={profileBadge} • E{enabledCount} B{builtinCount} • scope={scope} • dirty=
-				{dirty ? 'yes' : 'no'} • {statusLine} • {snapshotLine}
-				{overlay ? ` • overlay=${overlay}` : ''}
+				<Text color="gray">Profile </Text>
+				<Text color="cyan">{` ${profileBadge} `}</Text>
+				{dirty ? (
+					<Text color="yellow">{' unsaved '}</Text>
+				) : (
+					<Text color="gray"> </Text>
+				)}
+				{tab !== 'packages' ? (
+					<Text color="gray">{` enabled ${enabledCount} • builtin ${builtinCount}`}</Text>
+				) : null}
+				<Text color="gray"> • </Text>
+				{statusParts.map((part, i) => {
+					return (
+						<Text key={`${part.text}:${i}`}>
+							<Text color={part.color}>{part.text}</Text>
+							{i < statusParts.length - 1 ? <Text color="gray"> • </Text> : null}
+						</Text>
+					)
+				})}
 			</Text>
 
 			<Box flexDirection="column" flexGrow={1} height={bodyRows}>
 				{tab === 'packages' ? (
-					scan.status === 'ready' ? (
-						<PickPackagesDualBrowser
-							discovered={scan.discoveredForUi}
-							enabled={profile.enabled ?? []}
-							builtin={profile.builtin ?? []}
-							initialMode={packagesInitialMode}
-							height={bodyRows}
-							disabled={Boolean(modal) || Boolean(overlay)}
-							onTypingChange={setTyping}
-							onChange={setPackagesValue}
-						/>
-					) : (
+					<Box flexDirection="column" width="100%">
 						<Text color="gray">
-							{scan.status === 'scanning' ? `Scanning… ${scan.phase}` : 'Waiting for scan…'}
+							Enter/Space toggle • / filter • e mode • Tab(hold) profiles
 						</Text>
-					)
+						{scanSummary ? <Text color="gray">{scanSummary}</Text> : null}
+						{scan.status === 'ready' ? (
+							<PickPackagesDualBrowser
+								discovered={scan.discoveredForUi}
+								enabled={profile.enabled ?? []}
+								builtin={profile.builtin ?? []}
+								initialMode={packagesInitialMode}
+								height={packagesBodyRows}
+								disabled={Boolean(modal) || Boolean(overlay)}
+								onTypingChange={setTyping}
+								onChange={setPackagesValue}
+							/>
+						) : (
+							<Text color="gray">
+								{scan.status === 'scanning' ? `Scanning… ${scan.phase}` : 'Waiting for scan…'}
+							</Text>
+						)}
+					</Box>
+				) : null}
+
+				{tab === 'paths' ? (
+					<Box flexDirection="column" width="100%">
+						<Text>
+							{pathsTabs.map((p, i) => {
+								const active = p.key === pathsFocus
+								return (
+									<Text key={p.key}>
+										<Text
+											color={active ? 'black' : 'gray'}
+											backgroundColor={active ? 'cyan' : undefined}
+										>
+											{` ${p.label} `}
+										</Text>
+										{i < pathsTabs.length - 1 ? <Text color="gray"> </Text> : null}
+									</Text>
+								)
+							})}
+						</Text>
+						<Text color="gray">
+							scope={scope} • Tab/Shift+Tab switch • r/i/x focus • s scope toggle
+							{pathsFocus === 'roots' ? ' • t roots auto' : ''}
+						</Text>
+						{pathsFocus === 'roots' ? (
+							<StringListPanel
+								title={`Roots (${scope}) • mode=${rootsValue === 'auto' ? 'auto' : 'custom'}`}
+								height={pathsBodyRows}
+								placeholder="root folder"
+								items={editableRootsList()}
+								disabled={Boolean(modal) || Boolean(overlay)}
+								onTypingChange={setTyping}
+								onChange={(next) => {
+									setListForScope('roots', next)
+									setToast(next.length ? 'Roots: custom' : 'Roots: auto')
+								}}
+							/>
+						) : pathsFocus === 'include' ? (
+							<StringListPanel
+								title={`Include (${scope})`}
+								height={pathsBodyRows}
+								placeholder="glob"
+								items={listForScope('include')}
+								disabled={Boolean(modal) || Boolean(overlay)}
+								onTypingChange={setTyping}
+								onChange={(next) => setListForScope('include', next)}
+							/>
+						) : (
+							<StringListPanel
+								title={`Exclude (${scope})`}
+								height={pathsBodyRows}
+								placeholder="glob"
+								items={listForScope('exclude')}
+								disabled={Boolean(modal) || Boolean(overlay)}
+								onTypingChange={setTyping}
+								onChange={(next) => setListForScope('exclude', next)}
+							/>
+						)}
+					</Box>
 				) : null}
 
 				{tab === 'start' ? (
 					<Box flexDirection="column" width="100%">
 						<Text>Start</Text>
 						<Text color="gray">
-							Enter start • w/Ctrl+S save • Ctrl+R rescan • Ctrl+←/→ or 1-9 tabs • q/Ctrl+C exit
+							Enter start • Ctrl+S save • Ctrl+R rescan • Ctrl+←/→ tabs • q/Ctrl+C exit
 						</Text>
 						<Text>enabled: {enabledPreview}</Text>
 						<Text>builtin: {builtinPreview}</Text>
 						<Text>
 							roots({scope}):{' '}
-							{rootsValue === 'auto' ? 'auto' : `${(rootsValue ?? []).length} item(s)`}
+							{rootsValue === 'auto' ? 'auto' : `${rootsCount} item(s)`}
 						</Text>
 						<Text>
-							include({scope}): {(includeValue ?? []).length} • exclude({scope}):{' '}
-							{(excludeValue ?? []).length}
+							include({scope}): {includeCount} • exclude({scope}): {excludeCount}
 						</Text>
 						<Box marginTop={1} borderStyle="round" borderColor="gray" paddingX={1}>
 							<Text
@@ -1466,9 +1707,7 @@ function HmrPromptApp(props: {
 				{tab === 'doctor' ? (
 					<Box flexDirection="column" width="100%">
 						<Text>Doctor</Text>
-						<Text color="gray">
-							↑/↓ scroll • PgUp/PgDn (or Ctrl+U/D) • g/G top/bottom • Ctrl+R rescan • Ctrl+←/→ tabs
-						</Text>
+						<Text color="gray">↑/↓ scroll • d details • Ctrl+R rescan • Ctrl+←/→ tabs</Text>
 						<Box borderStyle="round" borderColor="gray" flexDirection="column" flexGrow={1}>
 							{doctorWindow.map((line, i) => (
 								<Text key={`${doctorOffset + i}:${line}`} wrap="truncate">
@@ -1479,78 +1718,16 @@ function HmrPromptApp(props: {
 					</Box>
 				) : null}
 
-				{tab === 'roots' ? (
-					<StringListPanel
-						title={`Roots (${scope}) • mode=${rootsValue === 'auto' ? 'auto' : 'custom'} (t toggle)`}
-						height={bodyRows}
-						placeholder="root folder"
-						items={editableRootsList()}
-						onTypingChange={setTyping}
-						onChange={(next) => {
-							setListForScope('roots', next)
-							setToast(next.length ? 'Roots: custom' : 'Roots: auto')
-						}}
-					/>
-				) : null}
-
-				{tab === 'include' ? (
-					<StringListPanel
-						title={`Include (${scope})`}
-						height={bodyRows}
-						placeholder="glob"
-						items={listForScope('include')}
-						onTypingChange={setTyping}
-						onChange={(next) => setListForScope('include', next)}
-					/>
-				) : null}
-
-				{tab === 'exclude' ? (
-					<StringListPanel
-						title={`Exclude (${scope})`}
-						height={bodyRows}
-						placeholder="glob"
-						items={listForScope('exclude')}
-						onTypingChange={setTyping}
-						onChange={(next) => setListForScope('exclude', next)}
-					/>
-				) : null}
-
-				{tab === 'profiles' ? (
-					<ProfilesPanel
-						active={activeProfile}
-						profiles={profileNames}
-						height={bodyRows}
-						onAction={handleProfileAction}
-					/>
-				) : null}
-
-				{tab === 'help' ? (
-					<Box flexDirection="column" width="100%">
-						<Text>Help</Text>
-						<Text color="gray">
-							Ctrl+←/→ or 1-9 switch tabs • Ctrl+R rescan • w/Ctrl+S save • Enter start (Start tab)
-							• q/Ctrl+C exit
-						</Text>
-						<Text color="gray">
-							Packages: Tab/Shift+Tab switch profile • p manage profiles • e/b mode • x swap •
-							Space(on folder) apply mode • / filter (Esc leaves filter).
-						</Text>
-						<Text color="gray">Roots/Include/Exclude: s switches scope(profile/defaults)</Text>
-					</Box>
-				) : null}
 			</Box>
 
-			<Text color={toast ? 'yellow' : 'gray'} wrap="truncate">
-				{toast || `Tab ${tabIndex + 1}/${tabList.length} • press ? for help`}
-			</Text>
-			<Text color="gray" wrap="truncate">
-				Keys: Ctrl+←/→ tabs • 1-9 jump • Ctrl+R rescan • w/Ctrl+S save
-				{tab === 'packages'
-					? ` • Tab/Shift+Tab profile${nextProfile ? ` (prev=${prevProfile} next=${nextProfile})` : ''} • p profiles`
-					: ''}{' '}
-				• Ctrl+P profiles • ? help • q/Ctrl+C quit
-			</Text>
+				<Text color={toast ? 'yellow' : 'gray'} wrap="truncate">
+					{toast || `Tab ${tabIndex + 1}/${tabList.length} • ? help`}
+				</Text>
+				<Text color="gray" wrap="truncate">
+					{`Keys: Ctrl+S save • Ctrl+R rescan • Ctrl+←/→ tabs • Ctrl+P profiles • Tab(hold) profiles • ? help • q quit`}
+				</Text>
 
+			<ScreenMask visible={Boolean(overlay) || Boolean(modal)} />
 			{overlay === 'profiles' ? (
 				<ProfilesOverlay
 					active={activeProfile}
@@ -1577,15 +1754,70 @@ function ProfilesOverlay(props: {
 	const rows = stdout?.rows ?? 24
 	const height = Math.max(Math.min(rows - 4, 16), 10)
 
+	const [query, setQuery] = useState('')
+	const [searching, setSearching] = useState(false)
+
+	const filteredProfiles = useMemo(() => {
+		const q = query.trim().toLowerCase()
+		if (!q) return props.profiles
+		return props.profiles.filter((p) => p.toLowerCase().includes(q))
+	}, [props.profiles, query])
+
+	const quickPick = (idx: number) => {
+		const name = filteredProfiles[idx]
+		if (!name) return
+		props.onAction({ type: 'activate', name })
+		props.onClose()
+	}
+
 	useInput((input, key) => {
 		if (props.disabled) return
-		if (
-			key.escape ||
-			(key.ctrl && input.toLowerCase() === 'c') ||
-			input === 'p' ||
-			(key.ctrl && input.toLowerCase() === 'p')
-		) {
+		if (key.ctrl && input.toLowerCase() === 'p') {
 			props.onClose()
+			return
+		}
+		if (key.escape || (key.ctrl && input.toLowerCase() === 'c')) {
+			props.onClose()
+			return
+		}
+
+		if (searching) {
+			if (key.return) {
+				setSearching(false)
+				return
+			}
+			if (key.backspace || key.delete) {
+				setQuery((s) => s.slice(0, -1))
+				return
+			}
+			if (key.ctrl && input.toLowerCase() === 'u') {
+				setQuery('')
+				return
+			}
+			if (key.ctrl || key.meta) return
+			if (input && input.length === 1) {
+				setQuery((s) => s + input)
+			}
+			return
+		}
+
+		if (!key.ctrl && !key.meta && input === '/') {
+			setSearching(true)
+			return
+		}
+
+		if (!key.ctrl && !key.meta && /^[1-9]$/.test(input)) {
+			quickPick(Number(input) - 1)
+			return
+		}
+		if (!key.ctrl && !key.meta && input === '0') {
+			quickPick(9)
+			return
+		}
+
+		if (key.return) {
+			props.onClose()
+			return
 		}
 	})
 
@@ -1598,17 +1830,35 @@ function ProfilesOverlay(props: {
 			height={height}
 			borderStyle="round"
 			borderColor="cyan"
+			backgroundColor="black"
 			paddingX={1}
 			flexDirection="column"
 		>
 			<Text color="cyan" wrap="truncate">
-				Profiles • Enter activate • n new • r rename • c clone • x delete • p/Esc close
+				Profiles{' '}
+				<Text color="black" backgroundColor="cyan">
+					{` ${props.active} `}
+				</Text>
+				<Text color="gray">
+					{' '}• 1-9/0 pick • / search • ↑/↓ activate • n new • r rename • c clone • x delete • Enter/Esc
+					close
+				</Text>
+			</Text>
+			<Text color="gray" wrap="truncate">
+				<Text color={searching ? 'black' : 'gray'} backgroundColor={searching ? 'cyan' : undefined}>
+					{' Search '}
+				</Text>
+				<Text color="gray">{`: ${query}`}</Text>
+				{searching ? '▊' : query ? '' : ' (press / to search)'}
+				<Text color="gray">{` • ${filteredProfiles.length}/${props.profiles.length}`}</Text>
 			</Text>
 			<ProfilesPanel
 				active={props.active}
-				profiles={props.profiles}
-				height={height - 1}
+				profiles={filteredProfiles}
+				height={height - 2}
 				disabled={props.disabled}
+				autoActivate
+				hotkeysDisabled={searching}
 				showHeader={false}
 				bordered={false}
 				onAction={props.onAction}
@@ -1628,13 +1878,33 @@ function HelpOverlay(props: { tab: TabKey; onClose: () => void }) {
 		}
 	})
 
-	const lines = [
-		'Global: Ctrl+←/→ tabs • 1-9 jump • Ctrl+R rescan • w/Ctrl+S save • Ctrl+P profiles • q quit',
-		'Packages: Tab/Shift+Tab profile • p profiles • / or Ctrl+F filter • e/b mode • x swap • E/B apply on folder',
-		'Doctor: ↑/↓ scroll • PgUp/PgDn or Ctrl+U/D • g/G top/bottom',
-		'Roots/Include/Exclude: Enter/e edit • a add • d delete • Esc cancel input • s scope(profile/defaults)',
-		'Start: Enter start (blocked → check Doctor)',
-	].map((s) => s.replace(/\s+/g, ' ').trim())
+	const Key = (props: { children: string }) => (
+		<Text color="black" backgroundColor="cyan">
+			{` ${props.children} `}
+		</Text>
+	)
+
+	const tabName = tabLabel(props.tab)
+	const tabLine =
+		props.tab === 'packages' ? (
+				<Text color="gray">
+					<Key>Enter/Space</Key> toggle • <Key>j/k</Key> move • <Key>/</Key> filter • <Key>e</Key>{' '}
+					mode • <Key>Tab(hold)</Key> profiles • <Key>Ctrl+P</Key> profiles
+				</Text>
+		) : props.tab === 'paths' ? (
+			<Text color="gray">
+				<Key>Tab/Shift+Tab</Key> section • <Key>r/i/x</Key> focus • <Key>s</Key> scope •{' '}
+				<Key>t</Key> roots auto • <Key>Enter</Key> edit
+			</Text>
+		) : props.tab === 'doctor' ? (
+			<Text color="gray">
+				<Key>↑/↓</Key> scroll • <Key>d</Key> details
+			</Text>
+		) : (
+			<Text color="gray">
+				<Key>Enter</Key> start • blocked → check Doctor
+			</Text>
+		)
 
 	return (
 		<Box
@@ -1645,17 +1915,20 @@ function HelpOverlay(props: { tab: TabKey; onClose: () => void }) {
 			height={height}
 			borderStyle="round"
 			borderColor="magenta"
+			backgroundColor="black"
 			paddingX={1}
 			flexDirection="column"
 		>
 			<Text color="magenta" wrap="truncate">
-				Help ({props.tab}) • ?/Esc to close
+				Help ({tabName}) • ?/Esc to close
 			</Text>
-			{lines.map((l) => (
-				<Text key={l} color="gray" wrap="truncate">
-					{l}
+			<Text color="cyan">Global</Text>
+				<Text color="gray">
+					<Key>Ctrl+←/→</Key> tabs • <Key>Ctrl+S</Key> save • <Key>Ctrl+R</Key> rescan •{' '}
+					<Key>Ctrl+P</Key> profiles • <Key>Tab(hold)</Key> profiles • <Key>q</Key> quit
 				</Text>
-			))}
+			<Text color="cyan">{tabName}</Text>
+			{tabLine}
 		</Box>
 	)
 }

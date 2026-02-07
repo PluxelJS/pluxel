@@ -421,26 +421,6 @@ export function PickPackagesPicker(props: {
 			return
 		}
 
-		// Helpers (apply to visible group list)
-		if (input === 'c' && !key.ctrl && !key.meta) {
-			setSelected(new Set())
-			return
-		}
-		if (input === 'a' && !key.ctrl && !key.meta) {
-			if (visibleNames.length) toggleMany(visibleNames, true)
-			return
-		}
-		if (input === 'i' && !key.ctrl && !key.meta) {
-			if (visibleNames.length) invertMany(visibleNames)
-			return
-		}
-		if (input === 'g' && !key.ctrl && !key.meta) {
-			if (!visibleNames.length) return
-			const any = setHasAnyInList(visibleNames, selected)
-			toggleMany(visibleNames, !any)
-			return
-		}
-
 		// Group navigation
 		if (focus === 'groups') {
 			if (key.upArrow) {
@@ -449,6 +429,16 @@ export function PickPackagesPicker(props: {
 				return
 			}
 			if (key.downArrow) {
+				const next = clamp(groupIndex + 1, 0, Math.max(groups.length - 1, 0))
+				setActiveGroupKey(groups[next]?.key ?? ALL_GROUP_KEY)
+				return
+			}
+			if (!key.ctrl && !key.meta && input === 'k') {
+				const next = clamp(groupIndex - 1, 0, Math.max(groups.length - 1, 0))
+				setActiveGroupKey(groups[next]?.key ?? ALL_GROUP_KEY)
+				return
+			}
+			if (!key.ctrl && !key.meta && input === 'j') {
 				const next = clamp(groupIndex + 1, 0, Math.max(groups.length - 1, 0))
 				setActiveGroupKey(groups[next]?.key ?? ALL_GROUP_KEY)
 				return
@@ -473,6 +463,24 @@ export function PickPackagesPicker(props: {
 				setActiveGroupKey(groups[next]?.key ?? ALL_GROUP_KEY)
 				return
 			}
+			if (!key.ctrl && !key.meta && input === ' ') {
+				if (!visibleNames.length) return
+				const any = setHasAnyInList(visibleNames, selected)
+				toggleMany(visibleNames, !any)
+				return
+			}
+			if (input === 'a' && !key.ctrl && !key.meta) {
+				if (visibleNames.length) toggleMany(visibleNames, true)
+				return
+			}
+			if (input === 'c' && !key.ctrl && !key.meta) {
+				setSelected(new Set())
+				return
+			}
+			if (input === 'i' && !key.ctrl && !key.meta) {
+				if (visibleNames.length) invertMany(visibleNames)
+				return
+			}
 			if (key.return) {
 				setFocus('packages')
 				return
@@ -487,6 +495,14 @@ export function PickPackagesPicker(props: {
 				return
 			}
 			if (key.downArrow) {
+				setPkgIndex((i) => clamp(i + 1, 0, Math.max(packagesInGroup.length - 1, 0)))
+				return
+			}
+			if (!key.ctrl && !key.meta && input === 'k') {
+				setPkgIndex((i) => clamp(i - 1, 0, Math.max(packagesInGroup.length - 1, 0)))
+				return
+			}
+			if (!key.ctrl && !key.meta && input === 'j') {
 				setPkgIndex((i) => clamp(i + 1, 0, Math.max(packagesInGroup.length - 1, 0)))
 				return
 			}
@@ -533,13 +549,12 @@ export function PickPackagesPicker(props: {
 		if (!active) return ' '
 		return focus === pane ? '›' : '·'
 	}
-	const globalHint = 'global: a all • i invert • g group • c clear • Ctrl+U clear filter'
 	const focusHint =
 		focus === 'filter'
-			? 'filter: type • Enter apply • Esc leave • Ctrl+U clear'
+			? 'filter: type • Enter apply • Esc back'
 			: focus === 'groups'
-				? 'folders: ↑/↓/PgUp/PgDn/Home/End • → packages • Enter open'
-				: 'packages: ↑/↓/PgUp/PgDn/Home/End • ← folders • Enter/Space toggle'
+				? 'folders: ↑/↓ or j/k • → packages • Space toggle • a all • c clear • i invert'
+				: 'packages: ↑/↓ or j/k • ← folders • Enter/Space toggle'
 
 	return (
 		<Box flexDirection="column" width="100%">
@@ -613,8 +628,7 @@ export function PickPackagesPicker(props: {
 				{currentPkgDesc}
 			</Text>
 			<Text color="gray" wrap="truncate">
-				Tab focus • / or Ctrl+F filter • ←/→ pane • {globalHint} • {focusHint} • Ctrl+S confirm •
-				Esc/Ctrl+C cancel
+				/ filter • ←/→ pane • {focusHint} • Ctrl+S confirm • Esc/Ctrl+C cancel
 			</Text>
 		</Box>
 	)
@@ -781,23 +795,17 @@ export function PickPackagesDualPicker(props: {
 		})
 	}
 
-	function applyMany(
-		names: string[],
-		op: 'toggle' | 'enableAll' | 'invert' | 'clear' | 'swap',
-		modeOverride?: PickPackagesMode,
-	) {
+	function applyMany(names: string[], op: 'toggle' | 'enableAll' | 'invert' | 'clear') {
 		setSelection((prev) => {
-			const activeMode = modeOverride ?? mode
 			const nextEnabled = new Set(prev.enabled)
 			const nextBuiltin = new Set(prev.builtin)
-			const isActive = (n: string) =>
-				activeMode === 'enabled' ? prev.enabled.has(n) : prev.builtin.has(n)
+			const isActive = (n: string) => (mode === 'enabled' ? prev.enabled.has(n) : prev.builtin.has(n))
 			const clear = (n: string) => {
 				nextEnabled.delete(n)
 				nextBuiltin.delete(n)
 			}
 			const setToMode = (n: string) => {
-				if (activeMode === 'enabled') {
+				if (mode === 'enabled') {
 					nextEnabled.add(n)
 					nextBuiltin.delete(n)
 				} else {
@@ -805,18 +813,6 @@ export function PickPackagesDualPicker(props: {
 					nextEnabled.delete(n)
 				}
 			}
-			const swap = (n: string) => {
-				if (prev.enabled.has(n)) {
-					nextEnabled.delete(n)
-					nextBuiltin.add(n)
-					return
-				}
-				if (prev.builtin.has(n)) {
-					nextBuiltin.delete(n)
-					nextEnabled.add(n)
-				}
-			}
-
 			if (op === 'clear') {
 				for (const n of names) clear(n)
 				return { enabled: nextEnabled, builtin: nextBuiltin }
@@ -824,11 +820,6 @@ export function PickPackagesDualPicker(props: {
 
 			if (op === 'enableAll') {
 				for (const n of names) setToMode(n)
-				return { enabled: nextEnabled, builtin: nextBuiltin }
-			}
-
-			if (op === 'swap') {
-				for (const n of names) swap(n)
 				return { enabled: nextEnabled, builtin: nextBuiltin }
 			}
 
@@ -869,13 +860,31 @@ export function PickPackagesDualPicker(props: {
 			return
 		}
 
-		// Mode
-		if (!key.ctrl && !key.meta && input === 'e') {
-			setMode('enabled')
+		// While typing in filter, ignore other single-key actions.
+		if (focus === 'filter') {
+			if (key.return) {
+				setFocus('packages')
+				return
+			}
+			if (key.backspace || key.delete) {
+				setFilter((s) => s.slice(0, -1))
+				return
+			}
+			if (key.ctrl && input.toLowerCase() === 'u') {
+				setFilter('')
+				return
+			}
+			// Ignore control sequences.
+			if (key.ctrl || key.meta) return
+			if (input && input.length === 1) {
+				setFilter((s) => s + input)
+			}
 			return
 		}
-		if (!key.ctrl && !key.meta && input === 'b') {
-			setMode('builtin')
+
+		// Mode
+		if (!key.ctrl && !key.meta && input === 'e') {
+			setMode((m) => (m === 'enabled' ? 'builtin' : 'enabled'))
 			return
 		}
 
@@ -905,50 +914,6 @@ export function PickPackagesDualPicker(props: {
 			return
 		}
 
-		// Filter editing
-		if (focus === 'filter') {
-			if (key.return) {
-				setFocus('packages')
-				return
-			}
-			if (key.backspace || key.delete) {
-				setFilter((s) => s.slice(0, -1))
-				return
-			}
-			if (key.ctrl && input.toLowerCase() === 'u') {
-				setFilter('')
-				return
-			}
-			// Ignore control sequences.
-			if (key.ctrl || key.meta) return
-			if (input && input.length === 1) {
-				setFilter((s) => s + input)
-			}
-			return
-		}
-
-		// Helpers (apply to visible group list)
-		if (!key.ctrl && !key.meta && input === 'x') {
-			applyMany(visibleNames, 'swap')
-			return
-		}
-		if (input === 'c' && !key.ctrl && !key.meta) {
-			applyMany(visibleNames, 'clear')
-			return
-		}
-		if (input === 'a' && !key.ctrl && !key.meta) {
-			applyMany(visibleNames, 'enableAll')
-			return
-		}
-		if (input === 'i' && !key.ctrl && !key.meta) {
-			applyMany(visibleNames, 'invert')
-			return
-		}
-		if (input === 'g' && !key.ctrl && !key.meta) {
-			applyMany(visibleNames, 'toggle')
-			return
-		}
-
 		// Group navigation
 		if (focus === 'groups') {
 			if (key.upArrow) {
@@ -957,6 +922,16 @@ export function PickPackagesDualPicker(props: {
 				return
 			}
 			if (key.downArrow) {
+				const next = clamp(groupIndex + 1, 0, Math.max(groups.length - 1, 0))
+				setActiveGroupKey(groups[next]?.key ?? ALL_GROUP_KEY)
+				return
+			}
+			if (!key.ctrl && !key.meta && input === 'k') {
+				const next = clamp(groupIndex - 1, 0, Math.max(groups.length - 1, 0))
+				setActiveGroupKey(groups[next]?.key ?? ALL_GROUP_KEY)
+				return
+			}
+			if (!key.ctrl && !key.meta && input === 'j') {
 				const next = clamp(groupIndex + 1, 0, Math.max(groups.length - 1, 0))
 				setActiveGroupKey(groups[next]?.key ?? ALL_GROUP_KEY)
 				return
@@ -985,14 +960,16 @@ export function PickPackagesDualPicker(props: {
 				applyMany(visibleNames, 'toggle')
 				return
 			}
-			if (!key.ctrl && !key.meta && input === 'E') {
-				setMode('enabled')
+			if (!key.ctrl && !key.meta && input === 'a') {
 				applyMany(visibleNames, 'enableAll')
 				return
 			}
-			if (!key.ctrl && !key.meta && input === 'B') {
-				setMode('builtin')
-				applyMany(visibleNames, 'enableAll')
+			if (!key.ctrl && !key.meta && input === 'c') {
+				applyMany(visibleNames, 'clear')
+				return
+			}
+			if (!key.ctrl && !key.meta && input === 'i') {
+				applyMany(visibleNames, 'invert')
 				return
 			}
 			if (key.return) {
@@ -1009,6 +986,14 @@ export function PickPackagesDualPicker(props: {
 				return
 			}
 			if (key.downArrow) {
+				setPkgIndex((i) => clamp(i + 1, 0, Math.max(packagesInGroup.length - 1, 0)))
+				return
+			}
+			if (!key.ctrl && !key.meta && input === 'k') {
+				setPkgIndex((i) => clamp(i - 1, 0, Math.max(packagesInGroup.length - 1, 0)))
+				return
+			}
+			if (!key.ctrl && !key.meta && input === 'j') {
 				setPkgIndex((i) => clamp(i + 1, 0, Math.max(packagesInGroup.length - 1, 0)))
 				return
 			}
@@ -1051,17 +1036,15 @@ export function PickPackagesDualPicker(props: {
 	const currentPkgDesc = currentPkg ? currentPkg.entry : ''
 
 	const focusTag = (tag: Focus) => (focus === tag ? '*' : ' ')
-	const modeTag = mode === 'enabled' ? 'MODE=enabled (e)' : 'MODE=builtin (b)'
+	const modeTag = mode === 'enabled' ? 'MODE=enabled (e)' : 'MODE=builtin (e)'
 	const focusTagLabel =
 		focus === 'filter' ? 'FOCUS=filter' : focus === 'groups' ? 'FOCUS=folders' : 'FOCUS=packages'
-	const globalHint =
-		'global: e/b mode • x swap • a all • i invert • g group • c clear • Ctrl+U clear filter'
 	const focusHint =
 		focus === 'filter'
-			? 'filter: type • Enter apply • Esc leave • Ctrl+U clear'
+			? 'filter: type • Enter apply • Esc back'
 			: focus === 'groups'
-				? 'folders: ↑/↓/PgUp/PgDn/Home/End • → packages • Space toggle • E/B apply'
-				: 'packages: ↑/↓/PgUp/PgDn/Home/End • ← folders • Enter/Space toggle'
+				? 'folders: ↑/↓ or j/k • → packages • Space toggle • a all • c clear • i invert'
+				: 'packages: ↑/↓ or j/k • ← folders • Enter/Space toggle'
 
 	const rowPrefix = (active: boolean, pane: Focus) => {
 		if (!active) return ' '
@@ -1140,8 +1123,7 @@ export function PickPackagesDualPicker(props: {
 				{currentPkgDesc}
 			</Text>
 			<Text color="gray" wrap="truncate">
-				Tab focus • / or Ctrl+F filter • ←/→ pane • {globalHint} • {focusHint} • Ctrl+S confirm •
-				Esc/Ctrl+C cancel
+				/ filter • ←/→ pane • e mode • {focusHint} • Ctrl+S confirm • Esc/Ctrl+C cancel
 			</Text>
 		</Box>
 	)
@@ -1326,23 +1308,17 @@ export function PickPackagesDualBrowser(props: {
 		})
 	}
 
-	function applyMany(
-		names: string[],
-		op: 'toggle' | 'enableAll' | 'invert' | 'clear' | 'swap',
-		modeOverride?: PickPackagesMode,
-	) {
+	function applyMany(names: string[], op: 'toggle' | 'enableAll' | 'invert' | 'clear') {
 		setSelection((prev) => {
-			const activeMode = modeOverride ?? mode
 			const nextEnabled = new Set(prev.enabled)
 			const nextBuiltin = new Set(prev.builtin)
-			const isActive = (n: string) =>
-				activeMode === 'enabled' ? prev.enabled.has(n) : prev.builtin.has(n)
+			const isActive = (n: string) => (mode === 'enabled' ? prev.enabled.has(n) : prev.builtin.has(n))
 			const clear = (n: string) => {
 				nextEnabled.delete(n)
 				nextBuiltin.delete(n)
 			}
 			const setToMode = (n: string) => {
-				if (activeMode === 'enabled') {
+				if (mode === 'enabled') {
 					nextEnabled.add(n)
 					nextBuiltin.delete(n)
 				} else {
@@ -1350,18 +1326,6 @@ export function PickPackagesDualBrowser(props: {
 					nextEnabled.delete(n)
 				}
 			}
-			const swap = (n: string) => {
-				if (prev.enabled.has(n)) {
-					nextEnabled.delete(n)
-					nextBuiltin.add(n)
-					return
-				}
-				if (prev.builtin.has(n)) {
-					nextBuiltin.delete(n)
-					nextEnabled.add(n)
-				}
-			}
-
 			if (op === 'clear') {
 				for (const n of names) clear(n)
 				const next = { enabled: nextEnabled, builtin: nextBuiltin }
@@ -1370,12 +1334,6 @@ export function PickPackagesDualBrowser(props: {
 			}
 			if (op === 'enableAll') {
 				for (const n of names) setToMode(n)
-				const next = { enabled: nextEnabled, builtin: nextBuiltin }
-				emit(next)
-				return next
-			}
-			if (op === 'swap') {
-				for (const n of names) swap(n)
 				const next = { enabled: nextEnabled, builtin: nextBuiltin }
 				emit(next)
 				return next
@@ -1408,40 +1366,7 @@ export function PickPackagesDualBrowser(props: {
 			return
 		}
 
-		// Fast focus: filter
-		if (key.ctrl && input.toLowerCase() === 'f') {
-			setFocus('filter')
-			return
-		}
-		if (key.ctrl && input.toLowerCase() === 'u') {
-			setFilter('')
-			return
-		}
-
-		// Mode
-		if (!key.ctrl && !key.meta && input === 'e') {
-			setMode('enabled')
-			return
-		}
-		if (!key.ctrl && !key.meta && input === 'b') {
-			setMode('builtin')
-			return
-		}
-
-		// Focus shortcuts
-		if (input === '/' && !key.ctrl && !key.meta) {
-			setFocus('filter')
-			return
-		}
-		if (!key.ctrl && !key.meta && focus !== 'filter' && key.leftArrow) {
-			setFocus('groups')
-			return
-		}
-		if (!key.ctrl && !key.meta && focus !== 'filter' && key.rightArrow) {
-			setFocus('packages')
-			return
-		}
-
+		// While typing in filter, ignore other single-key actions.
 		if (focus === 'filter') {
 			if (key.return) {
 				setFocus('packages')
@@ -1460,24 +1385,33 @@ export function PickPackagesDualBrowser(props: {
 			return
 		}
 
-		if (!key.ctrl && !key.meta && input === 'x') {
-			applyMany(visibleNames, 'swap')
+		// Mode
+		if (!key.ctrl && !key.meta && input === 'e') {
+			setMode((m) => (m === 'enabled' ? 'builtin' : 'enabled'))
 			return
 		}
-		if (input === 'c' && !key.ctrl && !key.meta) {
-			applyMany(visibleNames, 'clear')
+
+		// Fast focus: filter
+		if (key.ctrl && input.toLowerCase() === 'f') {
+			setFocus('filter')
 			return
 		}
-		if (input === 'a' && !key.ctrl && !key.meta) {
-			applyMany(visibleNames, 'enableAll')
+		if (key.ctrl && input.toLowerCase() === 'u') {
+			setFilter('')
 			return
 		}
-		if (input === 'i' && !key.ctrl && !key.meta) {
-			applyMany(visibleNames, 'invert')
+
+		// Focus shortcuts
+		if (input === '/' && !key.ctrl && !key.meta) {
+			setFocus('filter')
 			return
 		}
-		if (input === 'g' && !key.ctrl && !key.meta) {
-			applyMany(visibleNames, 'toggle')
+		if (!key.ctrl && !key.meta && focus !== 'filter' && key.leftArrow) {
+			setFocus('groups')
+			return
+		}
+		if (!key.ctrl && !key.meta && focus !== 'filter' && key.rightArrow) {
+			setFocus('packages')
 			return
 		}
 
@@ -1488,6 +1422,16 @@ export function PickPackagesDualBrowser(props: {
 				return
 			}
 			if (key.downArrow) {
+				const next = clamp(groupIndex + 1, 0, Math.max(groups.length - 1, 0))
+				setActiveGroupKey(groups[next]?.key ?? ALL_GROUP_KEY)
+				return
+			}
+			if (!key.ctrl && !key.meta && input === 'k') {
+				const next = clamp(groupIndex - 1, 0, Math.max(groups.length - 1, 0))
+				setActiveGroupKey(groups[next]?.key ?? ALL_GROUP_KEY)
+				return
+			}
+			if (!key.ctrl && !key.meta && input === 'j') {
 				const next = clamp(groupIndex + 1, 0, Math.max(groups.length - 1, 0))
 				setActiveGroupKey(groups[next]?.key ?? ALL_GROUP_KEY)
 				return
@@ -1520,14 +1464,16 @@ export function PickPackagesDualBrowser(props: {
 				applyMany(visibleNames, 'toggle')
 				return
 			}
-			if (!key.ctrl && !key.meta && input === 'E') {
-				setMode('enabled')
-				applyMany(visibleNames, 'enableAll', 'enabled')
+			if (!key.ctrl && !key.meta && input === 'a') {
+				applyMany(visibleNames, 'enableAll')
 				return
 			}
-			if (!key.ctrl && !key.meta && input === 'B') {
-				setMode('builtin')
-				applyMany(visibleNames, 'enableAll', 'builtin')
+			if (!key.ctrl && !key.meta && input === 'c') {
+				applyMany(visibleNames, 'clear')
+				return
+			}
+			if (!key.ctrl && !key.meta && input === 'i') {
+				applyMany(visibleNames, 'invert')
 				return
 			}
 			return
@@ -1539,6 +1485,14 @@ export function PickPackagesDualBrowser(props: {
 				return
 			}
 			if (key.downArrow) {
+				setPkgIndex((i) => clamp(i + 1, 0, Math.max(packagesInGroup.length - 1, 0)))
+				return
+			}
+			if (!key.ctrl && !key.meta && input === 'k') {
+				setPkgIndex((i) => clamp(i - 1, 0, Math.max(packagesInGroup.length - 1, 0)))
+				return
+			}
+			if (!key.ctrl && !key.meta && input === 'j') {
 				setPkgIndex((i) => clamp(i + 1, 0, Math.max(packagesInGroup.length - 1, 0)))
 				return
 			}
@@ -1573,28 +1527,20 @@ export function PickPackagesDualBrowser(props: {
 		return () => props.onTypingChange?.(false)
 	}, [focus, props.disabled])
 
-	const groupCount = grouped.keys.length
-
 	const groupWindow = groups.slice(groupOffset, groupOffset + listRows)
 	const pkgWindow = packagesInGroup.slice(pkgOffset, pkgOffset + listRows)
 	const currentPkg = packagesInGroup[pkgIndex]
 	const currentPkgDesc = currentPkg ? currentPkg.entry : ''
 
 	const focusTag = (tag: Focus) => (focus === tag ? '*' : ' ')
-	const modeTag = mode === 'enabled' ? 'MODE=enabled (e)' : 'MODE=builtin (b)'
-	const focusLabel =
-		focus === 'filter' ? 'focus=filter' : focus === 'groups' ? 'focus=folders' : 'focus=packages'
-	const groupLabel = activeKey === ALL_GROUP_KEY ? '(all)' : activeKey || '(none)'
-	const filterLabel = filter ? `filter="${filter}"` : 'filter=(none)'
 	const previewMax = groups.length <= listRows ? 8 : 2
-	const globalHint =
-		'global: e/b mode • x swap • a all • i invert • g group • c clear • Ctrl+U clear filter'
+	const matchLabel = filter ? `matches ${filtered.length}` : `total ${filtered.length}`
 	const focusHint =
 		focus === 'filter'
-			? 'filter: type • Enter apply • Esc leave • Ctrl+U clear'
+			? 'filter: type • Enter apply • Esc back'
 			: focus === 'groups'
-				? 'folders: ↑/↓/PgUp/PgDn/Home/End • → packages • Space toggle • E/B apply'
-				: 'packages: ↑/↓/PgUp/PgDn/Home/End • ← folders • Enter/Space toggle'
+				? 'folders: ↑/↓ or j/k • → packages • Space toggle • a all • c clear • i invert'
+				: 'packages: ↑/↓ or j/k • ← folders • Enter/Space toggle'
 
 	const rowPrefix = (active: boolean, pane: Focus) => {
 		if (!active) return ' '
@@ -1603,13 +1549,28 @@ export function PickPackagesDualBrowser(props: {
 
 	return (
 		<Box flexDirection="column" width="100%">
-			<Text color="gray">
-				enabled={enabled.size} • builtin={builtin.size} • visible={filtered.length} • groups=
-				{groupCount} • group={groupLabel} • {filterLabel} • {modeTag} • {focusLabel}
-			</Text>
 			<Text>
-				{focusTag('filter')} Filter: {filter}
-				{focus === 'filter' ? '▊' : filter ? '' : ' (type to filter; use !token to exclude)'}
+				<Text color="gray">Mode </Text>
+				<Text color={mode === 'enabled' ? 'green' : 'gray'}>{' enabled '}</Text>
+				<Text color="gray"> </Text>
+				<Text color={mode === 'builtin' ? 'yellow' : 'gray'}>{' builtin '}</Text>
+				<Text color="gray">
+					{` • selected enabled ${enabled.size} • builtin ${builtin.size} • ${matchLabel}`}
+				</Text>
+			</Text>
+			<Text color="gray">
+				<Text
+					color={focus === 'filter' ? 'black' : 'gray'}
+					backgroundColor={focus === 'filter' ? 'cyan' : undefined}
+				>
+					{' Filter '}
+				</Text>
+				<Text color="gray">{`: ${filter}`}</Text>
+				{focus === 'filter'
+					? '▊'
+					: filter
+						? ''
+						: ' (type to filter; use !token to exclude)'}
 			</Text>
 
 			<Box flexDirection="row" width="100%" height={bodyRows}>
@@ -1650,14 +1611,18 @@ export function PickPackagesDualBrowser(props: {
 						const idx = pkgOffset + i
 						const active = idx === pkgIndex
 						const tag = enabled.has(p.name) ? '[E]' : builtin.has(p.name) ? '[B]' : '[ ]'
-						const line = `${rowPrefix(active, 'packages')} ${tag} ${p.name}`
+						const tagColor = enabled.has(p.name) ? 'green' : builtin.has(p.name) ? 'yellow' : 'gray'
+						const prefix = `${rowPrefix(active, 'packages')} `
 						return (
 							<Text
 								key={p.name}
 								color={focus === 'packages' ? (active ? 'cyan' : undefined) : 'gray'}
 								wrap="truncate"
 							>
-								{line}
+								{prefix}
+								<Text color={tagColor}>{tag}</Text>
+								{' '}
+								{p.name}
 							</Text>
 						)
 					})}
@@ -1668,7 +1633,7 @@ export function PickPackagesDualBrowser(props: {
 				{currentPkgDesc}
 			</Text>
 			<Text color="gray" wrap="truncate">
-				/ or Ctrl+F filter • ←/→ pane • {globalHint} • {focusHint}
+				/ filter • ←/→ pane • e mode • {focusHint}
 			</Text>
 		</Box>
 	)
