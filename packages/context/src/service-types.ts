@@ -10,17 +10,22 @@ type AnyCtor = abstract new (...args: any[]) => any
 export type ServiceContext<S extends AnyCtor> =
 	ConstructorParameters<S> extends [infer C, ...any[]] ? C : never
 export type ServiceInst<S extends AnyCtor> = InstanceType<S>
+
+// Public (structural) contract for a service instance.
+// - `keyof` on class instances excludes private/protected members, so this drops nominal typing.
+// - Still includes public methods/properties, which is what callers actually rely on.
+export type ServiceContractInst<S extends AnyCtor> = Pick<ServiceInst<S>, keyof ServiceInst<S>>
 export type ServiceCfg<S extends AnyCtor> =
 	ConstructorParameters<S> extends [Context, infer C, ...any[]] ? C : undefined
 export type ServiceOverrideCtor<S extends ServiceCtor> =
 	ServiceCfg<S> extends undefined
 		? new (
 				ctx: Context,
-			) => ServiceInst<S>
+			) => ServiceContractInst<S>
 		: new (
 				ctx: Context,
 				cfg?: ServiceCfg<S>,
-			) => ServiceInst<S>
+			) => ServiceContractInst<S>
 
 /**
  * Services are expected to expose a writable `ctx` property so `Context` can

@@ -3,6 +3,7 @@ import { type Context, Injectable, OverrideOf } from '@pluxel/core'
 import {
 	type AppMod,
 	HonoService as CoreHonoService,
+	type HonoFetch,
 	type GraphQLFetch,
 } from '@pluxel/core/services'
 import { Hono } from 'hono'
@@ -19,19 +20,28 @@ import type { AppEnv, HonoWithAppEnvType } from './env'
 
 @Injectable
 @OverrideOf(CoreHonoService)
-export class HonoService extends CoreHonoService {
+export class HonoService {
 	// 活跃 Hono 实例
 	private app!: HonoWithAppEnvType
 
 	// 合批重建/全量刷新
 	private shouldReload = false
 
+	// Keep the override implementation structurally compatible with CoreHonoService
+	// without inheriting from it (avoids protected/private coupling).
+	private readonly mods = new Set<AppMod<any>>()
+	private pendingRebuild = false
+	private fetchPtr: HonoFetch = async () =>
+		new Response('Hono runtime unavailable', { status: 503 })
+	private gqlFetch: GraphQLFetch = async () =>
+		new Response('GraphQL not ready', { status: 503 })
+
 	private readonly logger: NonNullable<Context['logger']>
 	private readonly renderer: Promise<RenderHandler>
 	private sseBuiltinsReady = false
 
 	constructor(ctx: Context) {
-		super(ctx)
+		this.ctx = ctx
 		this.logger = ctx.logger!
 		this.renderer = this.createRenderer()
 		this.rebuildApp()
@@ -43,31 +53,53 @@ export class HonoService extends CoreHonoService {
 		})
 	}
 
+	public ctx: Context
+
+	public get fetch() {
+		return this.fetchPtr
+	}
+
 	/** 将 plugin_ctx 暴露给下游（Hono 工厂） */
-	public override createFactory(): Factory<AppEnv, string> {
+	public createFactory(): Factory<AppEnv, string> {
 		return createFactory<AppEnv>({
 			initApp: (app) => this.attachPluginContext(app),
 		})
 	}
 
-	override modifyApp<App = HonoWithAppEnvType>(mod: AppMod<App>): () => void {
-		return super.modifyApp(mod)
+	public modifyApp<App = HonoWithAppEnvType>(mod: AppMod<App>): () => void {
+		const m = mod as AppMod<any>
+		this.mods.add(m)
+		this.scheduleRebuild()
+
+		const dispose = () => {
+			if (this.mods.delete(m)) this.scheduleRebuild()
+		}
+		const guard = this.ctx.effects.defer(dispose)
+		return () => guard.dispose()
+	}
+
+	public applyMods<App = unknown>(app: App) {
+		for (const mod of this.mods) (mod as AppMod<App>)(app)
 	}
 
 	/** GraphQL runtime uses this hook to update fetch pointer (no restart). */
-	override setGraphQLFetch(fn: GraphQLFetch) {
+	public setGraphQLFetch(fn: GraphQLFetch) {
 		this.gqlFetch = fn
 		this.requestFullReload()
 	}
 
+	public getGraphQLFetch() {
+		return this.gqlFetch
+	}
+
 	/** AuthGuardService 通知：是否启用 /api/* 守卫 */
-	override switchAuthGuard(toggle: boolean) {
+	public switchAuthGuard(toggle: boolean) {
 		// 旧接口保留：当前实现按请求动态读取 AuthGuardService 状态，不需要重建 app。
 		void toggle
 	}
 
 	// —— Vite Dev Server 插件：仅负责 full-reload 信号 —— //
-	override get viteHonoDevServer(): Plugin {
+	public get viteHonoDevServer(): Plugin {
 		return devServer({
 			exclude: [
 				/^\/@.+$/,
@@ -261,9 +293,18 @@ export class HonoService extends CoreHonoService {
 	}
 
 	/** 合批重建，避免抖动 */
-	protected override rebuildNow() {
+	protected rebuildNow() {
 		this.rebuildApp()
 		this.requestFullReload()
+	}
+
+	protected scheduleRebuild() {
+		if (this.pendingRebuild) return
+		this.pendingRebuild = true
+		queueMicrotask(() => {
+			this.pendingRebuild = false
+			this.rebuildNow()
+		})
 	}
 
 	/** 仅做标记，由 Vite 插件感知并下发 full-reload */

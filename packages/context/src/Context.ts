@@ -3,6 +3,7 @@
 import type {
 	ServiceCfg,
 	ServiceClass,
+	ServiceContractInst,
 	ServiceCtor,
 	ServiceInst,
 	ServiceOverrideCtor,
@@ -154,32 +155,32 @@ export class Context {
 			meta.scope) as 'context' | 'root'
 		meta.scope = scope
 		const sk = meta.sk
-		const getter: (this: Context) => ServiceInst<S> =
+		const getter: (this: Context) => ServiceContractInst<S> =
 			scope === 'root'
 				? function (this: Context) {
 						const root = this.root
-						let inst = root.instances[sk] as ServiceInst<S>
+						let inst = root.instances[sk] as ServiceContractInst<S>
 						if (inst) {
 							const withCtx = inst as unknown as ServiceWithCtx<Context>
 							if (withCtx.ctx !== root) withCtx.ctx = root
 							return inst
 						}
 						const cfg = (root.config as Record<string, unknown>)[key] as ServiceCfg<S>
-						inst = new overrideCtor(root, cfg) as ServiceInst<S>
+						inst = new overrideCtor(root, cfg) as ServiceContractInst<S>
 						;(inst as unknown as ServiceWithCtx<Context>).ctx = root
 						root.instances[sk] = inst
 						return inst
 					}
 				: function (this: Context) {
 						const ik = this.mapping[sk] as symbol
-						let inst = this.instances[ik] as ServiceInst<S>
+						let inst = this.instances[ik] as ServiceContractInst<S>
 						if (inst) {
 							const withCtx = inst as unknown as ServiceWithCtx<Context>
 							if (withCtx.ctx !== this) withCtx.ctx = this
 							return inst
 						}
 						const cfg = (this.config as Record<string, unknown>)[key] as ServiceCfg<S>
-						inst = new overrideCtor(this, cfg) as ServiceInst<S>
+						inst = new overrideCtor(this, cfg) as ServiceContractInst<S>
 						;(inst as unknown as ServiceWithCtx<Context>).ctx = this
 						;(ik === sk ? this.root.instances : this.instances)[ik] = inst
 						return inst

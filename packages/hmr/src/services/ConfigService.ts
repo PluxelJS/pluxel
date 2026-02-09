@@ -5,11 +5,9 @@ import {
 	ConfigService as CoreConfigService,
 	normalizeConfigRecord,
 } from '@pluxel/core/services'
-import type { StandardSchemaV1 } from '@standard-schema/spec'
-import { debounce } from '@tanstack/pacer'
-import chokidar from 'chokidar'
+import chokidar, { type FSWatcher } from 'chokidar'
 import { hash as ohash } from 'ohash'
-import { resolve } from 'pathe'
+import { join, parse, resolve } from 'pathe'
 import { SuperJSON } from 'superjson'
 
 // —— 3. 全局配置 ——
@@ -26,15 +24,12 @@ export class ConfigService {
 		Object.create(null),
 	)
 
+	public ctx: Context
+
 	/** Whether the initial on-disk config has been loaded (or initialized). */
 	public isReady = false
 
-	/**
-	 * Resolves after the initial config file has been loaded (or initialized).
-	 *
-	 * Note: constructors can't be async, so callers that require a fully-loaded
-	 * config should await this before doing "enable/disable auto-start" work.
-	 */
+	/** Resolves after the initial config file has been loaded (or initialized). */
 	public readonly ready: Promise<void>
 
 	private readonly data: ConfigShape = {
@@ -42,88 +37,191 @@ export class ConfigService {
 		plugins: Object.create(null),
 		extra: Object.create(null),
 	}
-	private readonly saveDebounced: () => void
+	private readonly file: string
+	private readonly saveDelayMs = 200
+	private saveTimer: ReturnType<typeof setTimeout> | null = null
+	private saveScheduled = false
+	private saveInFlight: Promise<void> | null = null
+	private saveAgain = false
+	private pendingWriteDigest: string | undefined
+	private lastWrittenDigest: string | undefined
+	private watcher: FSWatcher | undefined
+	private disposed = false
 	private configSeq = 0
 	private configRevByPlugin = new Map<string, number>()
 	private configDigestByPlugin = new Map<string, string>()
+	private schemaObjectSeq = 0
+	private readonly schemaObjectIds = new WeakMap<object, number>()
+	private readonly rawViews = new Map<string, Readonly<Record<string, unknown>>>()
 	private readonly validated = new Map<
 		string,
 		{
 			rev: number
-			schemaMap: Record<string, StandardSchemaV1>
+			schemaMap: Record<string, unknown>
+			schemaSig?: string
 			snapshot: Readonly<Record<string, unknown>>
 		}
 	>()
 
-	// 自写屏蔽：写盘到落盘结束这段时间内忽略变更事件
-	private writingNow = false
 	private batching = 0 // 事务计数
 	private pendingSave = false
 
 	constructor(
-		public ctx: Context,
+		ctx: Context,
 		_cfg: unknown = undefined,
 	) {
+		this.ctx = ctx
 		// 允许调用方把方法解构出来用（避免丢失 this 导致 this.data 为空）
 		this.getExtra = this.getExtra.bind(this)
 		this.setExtra = this.setExtra.bind(this)
 
-		const file = ctx.config.path ?? 'data/hmr/config.json'
-		const resolvedFile = resolve(file)
-		this.ready = this.loadFromDisk(resolvedFile).finally(() => {
+		const profile = normalizeProfileName(ctx.config.hmrProfile ?? ctx.config.profile)
+		const resolved = resolveConfigPath(ctx.config.path ?? 'data/hmr/config.json', profile)
+		this.file = resolved.path
+		this.ready = this.loadFromDisk(this.file, resolved.fallbackPath).finally(() => {
 			this.isReady = true
 		})
-		this.saveDebounced = debounce(() => this.saveToDisk(resolvedFile), { wait: 200 })
 
-		chokidar
-			.watch(resolvedFile, {
+		this.watcher = chokidar
+			.watch(this.file, {
 				ignoreInitial: true,
 				// 防止编辑器“分块写”引发多次触发
 				awaitWriteFinish: { stabilityThreshold: 100, pollInterval: 50 },
 			})
-			.on('add', () => this.onDiskChange(resolvedFile))
-			.on('change', () => this.onDiskChange(resolvedFile))
+			.on('add', () => this.onDiskChange(this.file))
+			.on('change', () => this.onDiskChange(this.file))
+
+		// Ensure watcher + pending writes are cleaned up on context disposal (HMR reloads/shutdown).
+		this.ctx.effects.defer(() => this.dispose(), { tag: 'ConfigService' })
 	}
 
 	private requestSave() {
+		if (this.disposed) return
 		// Avoid scheduling disk writes mid-batch; the outer batch() will trigger once on commit.
 		if (this.batching > 0) {
 			this.pendingSave = true
 			return
 		}
-		this.saveDebounced()
+		this.scheduleSave()
+	}
+
+	private scheduleSave() {
+		if (this.disposed) return
+		this.saveScheduled = true
+		if (this.saveTimer) return
+		this.saveTimer = setTimeout(() => {
+			this.saveTimer = null
+			if (!this.saveScheduled) return
+			this.saveScheduled = false
+			void this.saveToDisk(this.file)
+		}, this.saveDelayMs)
+	}
+
+	private cancelScheduledSave() {
+		this.saveScheduled = false
+		if (this.saveTimer) {
+			clearTimeout(this.saveTimer)
+			this.saveTimer = null
+		}
+	}
+
+	/** Flush pending disk writes. Use `force` to flush even if a batch() is in progress. */
+	async flush(options: { force?: boolean } = {}): Promise<void> {
+		const force = options.force ?? false
+		const hadScheduled = this.saveScheduled || !!this.saveTimer
+		this.cancelScheduledSave()
+		if (this.saveInFlight) await this.saveInFlight.catch((): void => undefined)
+		if (hadScheduled || this.pendingSave) {
+			this.saveScheduled = false
+			this.pendingSave = false
+			await this.saveToDisk(this.file, { force }).catch((): void => undefined)
+		}
 	}
 
 	// —— I/O 层 —— //
 
-	private async loadFromDisk(file: string) {
+	private async loadFromDisk(file: string, fallbackFile?: string) {
+		const fs = this.ctx.root.fs
+		let txt: string
+		let readFromFallback = false
 		try {
-			const txt = await this.ctx.root.fs.readText(file)
+			const hasPrimary = fs.exists(file)
+			const shouldSeed = !hasPrimary && !!fallbackFile && fs.exists(fallbackFile)
+			if (shouldSeed) {
+				txt = await fs.readText(fallbackFile!)
+				readFromFallback = true
+			} else {
+				txt = await fs.readText(file)
+			}
+		} catch (error) {
+			// Missing file is expected on first run: initialize a clean default.
+			if (isMissingFileError(error)) {
+				this.resetToDefault()
+				this.configRevByPlugin.clear()
+				this.configDigestByPlugin.clear()
+				this.rawViews.clear()
+				this.validated.clear()
+				await this.saveToDisk(file)
+				return
+			}
 
-			const parsed = SuperJSON.parse(txt) as Partial<ConfigShape> & { enabled?: unknown }
+			this.ctx.logger.warn('ConfigService read failed (fallback to defaults)', { file, error })
+			this.resetToDefault()
+			await this.saveToDisk(file)
+			return
+		}
 
-			this.data.enabled.clear()
-			const enabledList = Array.isArray(parsed.enabled)
-				? (parsed.enabled as string[])
-				: parsed?.enabled instanceof Set
-					? Array.from(parsed.enabled as Set<string>)
-					: []
-			for (let i = 0; i < enabledList.length; i++) this.data.enabled.add(enabledList[i])
+		// Ignore self-write events deterministically (content hash), no timing heuristics.
+		const txtDigest = ohash(txt)
+		if (txtDigest === this.pendingWriteDigest || txtDigest === this.lastWrittenDigest) return
 
-			const nextPlugins = parsed.plugins ? coercePlugins(parsed.plugins) : Object.create(null)
-			this.reconcilePluginsFromDisk(nextPlugins)
-
-			clearRecord(this.data.extra)
-			if (parsed.extra) Object.assign(this.data.extra, parsed.extra)
-		} catch {
-			// 首次无文件：落一个干净默认
-			this.data.enabled.clear()
-			clearRecord(this.data.plugins)
-			clearRecord(this.data.extra)
+		let parsed: Partial<ConfigShape> & { enabled?: unknown }
+		try {
+			parsed = SuperJSON.parse(txt) as Partial<ConfigShape> & { enabled?: unknown }
+		} catch (error) {
+			this.ctx.logger.warn('ConfigService parse failed; isolating broken config', { file, error })
+			await this.isolateBrokenConfigFile(file, txt)
+			this.resetToDefault()
 			this.configRevByPlugin.clear()
 			this.configDigestByPlugin.clear()
+			this.rawViews.clear()
 			this.validated.clear()
 			await this.saveToDisk(file)
+			return
+		}
+
+		this.data.enabled.clear()
+		const enabledList = Array.isArray(parsed.enabled)
+			? (parsed.enabled as string[])
+			: parsed?.enabled instanceof Set
+				? Array.from(parsed.enabled as Set<string>)
+				: []
+		for (let i = 0; i < enabledList.length; i++) this.data.enabled.add(enabledList[i])
+
+		const nextPlugins = parsed.plugins ? coercePlugins(parsed.plugins) : Object.create(null)
+		this.reconcilePluginsFromDisk(nextPlugins)
+
+		clearRecord(this.data.extra)
+		if (parsed.extra) Object.assign(this.data.extra, parsed.extra)
+
+		if (readFromFallback) {
+			await this.saveToDisk(file)
+		}
+	}
+
+	private resetToDefault() {
+		this.data.enabled.clear()
+		clearRecord(this.data.plugins)
+		clearRecord(this.data.extra)
+	}
+
+	private async isolateBrokenConfigFile(file: string, content: string) {
+		const safeTs = new Date().toISOString().replace(/[:.]/g, '-')
+		const brokenFile = `${file}.broken.${safeTs}`
+		try {
+			await this.ctx.root.fs.writeTextAtomic(brokenFile, content)
+		} catch (error) {
+			this.ctx.logger.warn('failed to isolate broken config file', { file, brokenFile, error })
 		}
 	}
 
@@ -163,6 +261,7 @@ export class ConfigService {
 			delete prev[name]
 			this.configRevByPlugin.delete(name)
 			this.configDigestByPlugin.delete(name)
+			this.rawViews.delete(name)
 			this.validated.delete(name)
 		}
 	}
@@ -172,24 +271,58 @@ export class ConfigService {
 		this.validated.delete(name)
 	}
 
-	// 原子写：交给 ctx.root.fs.writeTextAtomic，配合 writingNow 屏蔽自触发
-	private async saveToDisk(file: string) {
-		if (this.batching > 0) return // 事务中，先不写；提交时会统一触发
-		this.writingNow = true
-		try {
-			const content = SuperJSON.stringify(this.data)
-			await this.ctx.root.fs.writeTextAtomic(file, content)
-		} finally {
-			// 小幅延迟，给文件系统时间完成元数据刷新，避免极端条件下的回跳
-			setTimeout(() => {
-				this.writingNow = false
-			}, 60)
+	// 原子写：交给 ctx.root.fs.writeTextAtomic（tmp + rename）
+	private async saveToDisk(file: string, options: { force?: boolean } = {}): Promise<void> {
+		const force = options.force ?? false
+		if (!force && this.batching > 0) return // 事务中，先不写；提交时会统一触发
+
+		// Coalesce concurrent save requests: never write multiple times in parallel.
+		if (this.saveInFlight) {
+			this.saveAgain = true
+			await this.saveInFlight.catch((): void => undefined)
+			if (this.saveAgain) {
+				this.saveAgain = false
+				await this.saveToDisk(file, options)
+			}
+			return
+		}
+
+		const content = SuperJSON.stringify(this.data)
+		const nextDigest = ohash(content)
+		if (nextDigest === this.lastWrittenDigest && this.ctx.root.fs.exists(file)) return
+
+		this.pendingWriteDigest = nextDigest
+		const task = this.ctx.root.fs
+			.writeTextAtomic(file, content)
+			.then(() => {
+				this.lastWrittenDigest = nextDigest
+			})
+			.finally(() => {
+				if (this.pendingWriteDigest === nextDigest) this.pendingWriteDigest = undefined
+			})
+		this.saveInFlight = task.finally(() => {
+			this.saveInFlight = null
+		})
+		await this.saveInFlight
+
+		if (this.saveAgain) {
+			this.saveAgain = false
+			await this.saveToDisk(file, options)
 		}
 	}
 
 	private async onDiskChange(file: string) {
-		if (this.writingNow) return
+		if (this.disposed) return
 		await this.loadFromDisk(file)
+	}
+
+	async dispose(): Promise<void> {
+		if (this.disposed) return
+		this.disposed = true
+		this.cancelScheduledSave()
+		await this.flush({ force: true }).catch((): void => undefined)
+		await Promise.resolve(this.watcher?.close()).catch((): void => undefined)
+		this.watcher = undefined
 	}
 
 	// —— 读接口 —— //
@@ -200,7 +333,13 @@ export class ConfigService {
 	getRawConfig<T extends object = Record<string, unknown>>(
 		name: string = this.ctx.pluginInfo?.id ?? 'default',
 	): Readonly<T> {
-		return (this.data.plugins[name] as T | undefined) ?? (ConfigService.EMPTY_CONFIG as T)
+		const entry = this.data.plugins[name] as Record<string, unknown> | undefined
+		if (!entry) return ConfigService.EMPTY_CONFIG as T
+		const existing = this.rawViews.get(name)
+		if (existing) return existing as T
+		const view = createReadonlyView(entry)
+		this.rawViews.set(name, view)
+		return view as T
 	}
 
 	getConfigRevision(name: string): number {
@@ -231,16 +370,27 @@ export class ConfigService {
 
 	async ensureValidated(
 		pluginName: string,
-		schemaMap: Record<string, StandardSchemaV1>,
+		schemaMap: Record<string, unknown>,
 		options: { missingObjectDefault?: unknown } = {},
 	): Promise<Readonly<Record<string, unknown>>> {
 		await this.ready
 
-		// Fast-path: if on-disk/in-memory revision didn't change AND schema object is identical,
-		// return the cached validated snapshot.
+		// Fast-path: if raw config revision didn't change AND schema is stable, return cached snapshot.
+		//
+		// Schema stability is usually "same object reference" (best case).
+		// If callers recreate the schemaMap object, we lazily compute a signature derived from schema
+		// *references* to avoid revalidation; this keeps hashing/normalization off the hot path.
 		const curRev = this.getConfigRevision(pluginName)
 		const cached = this.validated.get(pluginName)
-		if (cached && cached.rev === curRev && cached.schemaMap === schemaMap) return cached.snapshot
+		let nextSchemaSig: string | undefined
+		if (cached && cached.rev === curRev) {
+			if (cached.schemaMap === schemaMap) return cached.snapshot
+			const cachedSig =
+				cached.schemaSig ??
+				(cached.schemaSig = this.schemaMapSignature(cached.schemaMap))
+			nextSchemaSig = this.schemaMapSignature(schemaMap)
+			if (cachedSig === nextSchemaSig) return cached.snapshot
+		}
 
 		const raw = this.getRawConfig<Record<string, unknown>>(pluginName)
 		const res = await normalizeConfigRecord(schemaMap as ConfigSchemaMap, raw, options)
@@ -277,8 +427,35 @@ export class ConfigService {
 			const entry = this.data.plugins[pluginName]
 			if (entry) this.configDigestByPlugin.set(pluginName, digest(entry))
 		}
-		this.validated.set(pluginName, { rev, schemaMap, snapshot: res.snapshot })
+		this.validated.set(pluginName, {
+			rev,
+			schemaMap,
+			schemaSig: nextSchemaSig,
+			snapshot: res.snapshot,
+		})
 		return res.snapshot
+	}
+
+	private schemaMapSignature(schemaMap: Record<string, unknown>): string {
+		const keys = Object.keys(schemaMap)
+		if (keys.length === 0) return 'empty'
+		keys.sort()
+		let sig = ''
+		for (let i = 0; i < keys.length; i++) {
+			const key = keys[i]!
+			const schema = schemaMap[key]
+			if (!schema || (typeof schema !== 'object' && typeof schema !== 'function')) {
+				throw new Error(`[ConfigService] Invalid schemaMap: missing schema for "${key}".`)
+			}
+			const schemaObj = schema as unknown as object
+			let id = this.schemaObjectIds.get(schemaObj)
+			if (!id) {
+				id = ++this.schemaObjectSeq
+				this.schemaObjectIds.set(schemaObj, id)
+			}
+			sig += `${key.length}:${key}#${id};`
+		}
+		return sig
 	}
 
 	getExtra<T = unknown>(key: string): T | undefined {
@@ -302,7 +479,7 @@ export class ConfigService {
 			this.batching--
 			if (this.batching === 0 && this.pendingSave) {
 				this.pendingSave = false
-				this.saveDebounced()
+				this.scheduleSave()
 			}
 		}
 	}
@@ -411,6 +588,71 @@ export class ConfigService {
 
 function clearRecord(record: Record<string, unknown>) {
 	for (const k in record) delete record[k]
+}
+
+// Optional placeholder: allows callers to control where the profile lands.
+const PROFILE_TOKEN = '{profile}'
+
+function isMissingFileError(error: unknown): boolean {
+	if (!error || typeof error !== 'object') return false
+	if ('code' in error && (error as { code?: unknown }).code === 'ENOENT') return true
+	if ('name' in error && (error as { name?: unknown }).name === 'FsError') {
+		return 'code' in error && (error as { code?: unknown }).code === 'ENOENT'
+	}
+	return false
+}
+
+function createReadonlyView<T extends Record<string, unknown>>(target: T): Readonly<T> {
+	return new Proxy(target, {
+		set(): boolean {
+			throw new Error('[ConfigService] Raw config is read-only; use patchConfig()/unsetConfigKeys().')
+		},
+		defineProperty(): boolean {
+			throw new Error('[ConfigService] Raw config is read-only; use patchConfig()/unsetConfigKeys().')
+		},
+		deleteProperty(): boolean {
+			throw new Error('[ConfigService] Raw config is read-only; use patchConfig()/unsetConfigKeys().')
+		},
+	}) as Readonly<T>
+}
+
+function normalizeProfileName(raw: unknown): string | undefined {
+	if (typeof raw !== 'string') return undefined
+	const trimmed = raw.trim()
+	if (!trimmed) return undefined
+	// Keep profile names safe for filesystem usage across platforms.
+	const safe = trimmed
+		.replace(/[<>:"/\\|?*\u0000-\u001F]/g, '-')
+		.replace(/\s+/g, '-')
+		.replace(/-+/g, '-')
+		.replace(/^[-.]+/, '')
+		.replace(/[-.]+$/, '')
+	return safe || undefined
+}
+
+function resolveConfigPath(
+	basePath: string,
+	profile?: string,
+): { path: string; fallbackPath?: string } {
+	if (!profile) return { path: resolve(basePath) }
+
+	if (basePath.includes(PROFILE_TOKEN)) {
+		return { path: resolve(basePath.replaceAll(PROFILE_TOKEN, profile)) }
+	}
+
+	const parsed = parse(basePath)
+	const name = parsed.name
+	if (
+		name.endsWith(`.${profile}`) ||
+		name.endsWith(`-${profile}`) ||
+		name.endsWith(`_${profile}`)
+	) {
+		return { path: resolve(basePath) }
+	}
+
+	const nextBase = `${name}.${profile}${parsed.ext}`
+	const nextPath = parsed.dir ? join(parsed.dir, nextBase) : nextBase
+	return { path: resolve(nextPath), fallbackPath: resolve(basePath) }
 }
 
 function coercePlugins(input: Record<string, unknown>): Record<string, Record<string, unknown>> {

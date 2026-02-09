@@ -28,15 +28,9 @@ export function looksLikeLegacyBrokenBundle(code: string): boolean {
 	if (!/\bexport\s+/.test(code) && !/\bexport\{/.test(code)) {
 		return true
 	}
-	// Legacy: older UI bundles imported the internal package `@pluxel/hmr-web`. These bare specifiers
-	// do not work in browsers without an import map; treat them as broken so ExtensionService can
-	// recompile with the current vendor rewrite pipeline.
-	if (
-		/['"]@pluxel\/hmr-web(?:\/[^'"]+)?['"]/.test(head) ||
-		/['"]@pluxel\/hmr\/ui['"]/.test(head)
-	) {
-		return true
-	}
+	// Legacy: older UI bundles imported deprecated web entry `@pluxel/hmr/ui`.
+	// Treat them as broken so ExtensionService can recompile with the current vendor rewrite pipeline.
+	if (/['"]@pluxel\/hmr\/ui['"]/.test(head)) return true
 	// 兼容之前遇到的 node-only / side-effect import 输出
 	if (/from\s+["']node:module["']/.test(head) || /createRequire\(/.test(head)) return true
 	if (/import\s+["']react\/jsx-runtime["'];?/.test(head)) return true
@@ -51,12 +45,7 @@ export function transformVendorImports(
 ): string {
 	let result = code
 
-	// Back-compat: rewrite old internal/public specifiers into the single supported vendor module.
-	// This allows old plugin UI sources to keep working after `@pluxel/hmr/web` became the only
-	// public web entry and `@pluxel/hmr-web` stayed internal/private.
-	result = result.replaceAll('@pluxel/hmr-web/react', '@pluxel/hmr/web')
-	result = result.replaceAll('@pluxel/hmr-web/vendors', '@pluxel/hmr/web')
-	result = result.replaceAll('@pluxel/hmr-web', '@pluxel/hmr/web')
+	// Back-compat: rewrite deprecated `@pluxel/hmr/ui` into the supported web entry.
 	result = result.replaceAll('@pluxel/hmr/ui', '@pluxel/hmr/web')
 
 	// Defensive: strip Node-only createRequire helpers that may appear in SSR-oriented outputs.

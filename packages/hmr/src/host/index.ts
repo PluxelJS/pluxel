@@ -3,6 +3,7 @@ import { copyFile, mkdir } from 'node:fs/promises'
 import { dirname, isAbsolute, join, resolve } from 'pathe'
 import type { WorkspaceSnapshot } from '@pluxel/cli/hmr'
 import type { Plugin as VitePlugin } from 'vite'
+import '../context-augment'
 import { Context } from '..'
 import type { EnsurePluxelLoggingOptions } from '../logger/ensure'
 import { ensurePluxelLogging } from '../logger/ensure'
@@ -107,12 +108,15 @@ export type CreateHmrHostOptions = {
 	 * When provided, this keeps runtime state out of git-tracked `data/`.
 	 */
 	store?: {
-		/**
-		 * ConfigService storage file (workspace-relative unless absolute).
-		 *
-		 * Defaults to `.pluxel/hmr/config.json` when `store` is present.
-		 */
-		configFile?: string
+			/**
+			 * ConfigService storage file (workspace-relative unless absolute).
+			 *
+			 * Defaults to `.pluxel/hmr/config.json` when `store` is present.
+			 *
+			 * Tip: use `{profile}` to control where the active profile lands, e.g.
+			 * `.pluxel/hmr/config.{profile}.json` or `.pluxel/hmr/{profile}/config.json`.
+			 */
+			configFile?: string
 		/**
 		 * Seed config file copied into `configFile` when the target doesn't exist.
 		 *
@@ -344,10 +348,16 @@ export async function createHmrHost(opts: CreateHmrHostOptions = {}): Promise<Cr
 	const hmrService = applyHmrEnvOverrides(hmrServiceBase)
 
 	const contextExtra: Record<string, unknown> = { ...(opts.context ?? {}) }
+	if (!('hmrProfile' in contextExtra)) contextExtra.hmrProfile = snapshot.activeProfile
 
 	if (opts.store) {
 		const configFile = opts.store.configFile ?? '.pluxel/hmr/config.json'
-		const resolvedConfigPath = resolve(root, configFile)
+		// For filesystem operations (mkdir/seed), use the resolved *effective* path.
+		// For Context, keep the template so ConfigService can apply `{profile}` itself.
+		const configFileEffective = configFile.includes('{profile}')
+			? configFile.replaceAll('{profile}', snapshot.activeProfile)
+			: configFile
+		const resolvedConfigPath = resolve(root, configFileEffective)
 		await mkdir(dirname(resolvedConfigPath), { recursive: true })
 		const seed = opts.store.seedConfig
 		if (seed !== false && !existsSync(resolvedConfigPath)) {
@@ -355,7 +365,7 @@ export async function createHmrHost(opts: CreateHmrHostOptions = {}): Promise<Cr
 			if (existsSync(seedPath)) await copyFile(seedPath, resolvedConfigPath)
 		}
 		// ConfigService reads `ctx.config.path` (top-level), not `ctx.config.config.path`.
-		contextExtra.path = resolvedConfigPath
+		contextExtra.path = resolve(root, configFile)
 	}
 
 	if (opts.store) {

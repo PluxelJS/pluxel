@@ -21,8 +21,6 @@ export type GraphQLFetch = (req: Request, ctx: unknown) => Response | Promise<Re
 
 @Injectable({ key: serviceName })
 export class HonoService {
-	protected readonly mods = new Set<AppMod<any>>()
-	protected pendingRebuild = false
 	protected fetchPtr: HonoFetch = async () =>
 		new Response('Hono runtime unavailable', { status: 503 })
 	protected gqlFetch: GraphQLFetch = async () =>
@@ -35,32 +33,30 @@ export class HonoService {
 	}
 
 	createFactory(): unknown {
-		throw new Error('Hono factory not configured')
+		throw new Error('Hono runtime not configured')
 	}
 
 	get viteHonoDevServer(): any {
 		return undefined
 	}
 
-	modifyApp<App = unknown>(mod: AppMod<App>) {
-		const m = mod as AppMod<any>
-		this.mods.add(m)
-		this.scheduleRebuild()
-
-		const dispose = () => {
-			if (this.mods.delete(m)) this.scheduleRebuild()
-		}
-		const guard = this.ctx.effects.defer(dispose)
-		return () => guard.dispose()
+	/**
+	 * Register an app modifier (routes/middlewares).
+	 *
+	 * Core does not ship a real Hono runtime; environments that support HTTP should override this
+	 * service and implement `modifyApp()` (and typically `fetch`).
+	 */
+	modifyApp<App = unknown>(_mod: AppMod<App>): () => void {
+		throw new Error('Hono runtime not configured')
 	}
 
-	applyMods<App = unknown>(app: App) {
-		for (const mod of this.mods) (mod as AppMod<App>)(app)
+	/** Optional hook for implementations that keep a mods registry. */
+	applyMods<App = unknown>(_app: App) {
+		// no-op in core
 	}
 
 	setGraphQLFetch(fn: GraphQLFetch) {
 		this.gqlFetch = fn
-		this.scheduleRebuild()
 	}
 
 	getGraphQLFetch() {
@@ -68,15 +64,4 @@ export class HonoService {
 	}
 
 	switchAuthGuard(_toggle: boolean) {}
-
-	protected scheduleRebuild() {
-		if (this.pendingRebuild) return
-		this.pendingRebuild = true
-		queueMicrotask(() => {
-			this.pendingRebuild = false
-			this.rebuildNow()
-		})
-	}
-
-	protected rebuildNow(): void {}
 }
