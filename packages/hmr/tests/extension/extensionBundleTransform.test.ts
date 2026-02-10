@@ -26,17 +26,4 @@ describe('extension bundle vendor transform', () => {
 		expect(out).not.toContain('import { Button')
 		expect(out).not.toContain('import "react/jsx-runtime"')
 	})
-
-	it('rewrites legacy @pluxel/hmr-web imports to the public @pluxel/hmr/web vendor', () => {
-		const input = [
-			'import { definePluginUIModule } from "@pluxel/hmr-web";',
-			'import { HmrWebClientProvider } from "@pluxel/hmr-web/react";',
-			'import { extensionVendorPackages } from "@pluxel/hmr-web/vendors";',
-			'export const ok = Boolean(definePluginUIModule && HmrWebClientProvider && extensionVendorPackages);',
-		].join('\n')
-
-		const out = normalizeJsxRuntime(transformVendorImports(input))
-		expect(out).toContain('window.__PLUXEL_VENDORS__["@pluxel/hmr/web"]')
-		expect(out).not.toContain('@pluxel/hmr-web')
-	})
 })

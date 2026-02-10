@@ -3,10 +3,8 @@ import { copyFile, mkdir } from 'node:fs/promises'
 import { dirname, isAbsolute, join, resolve } from 'pathe'
 import type { WorkspaceSnapshot } from '@pluxel/cli/hmr'
 import type { Plugin as VitePlugin } from 'vite'
-import '../context-augment'
-import { Context } from '..'
+import type { Context as PluxelContext } from '..'
 import type { EnsurePluxelLoggingOptions } from '../logger/ensure'
-import { ensurePluxelLogging } from '../logger/ensure'
 import type { HMRDependencyConfig } from '../services/runtime/hmr/config'
 import type { HMRConfig } from '../services/runtime/hmr/HMRService'
 import type { BuiltinPluginSpec } from '../services/runtime/loader/LoaderService'
@@ -147,7 +145,7 @@ export type CreateHmrHostOptions = {
 export type CreateHmrHostResult = {
 	root: string
 	logsDir: string
-	ctx: Context
+	ctx: PluxelContext
 }
 
 function assertSnapshotShape(snapshot: WorkspaceSnapshot) {
@@ -197,19 +195,13 @@ async function resolveSnapshotFromConfig(params: {
 	profile?: string
 	omitPackages?: string[]
 }): Promise<WorkspaceSnapshot> {
-	const { DEFAULT_HMR_CONFIG_BASENAME, diagnoseWorkspace } = await import('@pluxel/cli/hmr')
-	const configPathAbs = resolve(params.root, params.configPath ?? DEFAULT_HMR_CONFIG_BASENAME)
-	const env = params.profile ? { ...process.env, PLUXEL_HMR_PROFILE: params.profile } : process.env
-	const res = await diagnoseWorkspace({
+	const { resolveHmrWorkspaceSnapshot } = await import('@pluxel/cli/hmr')
+	return resolveHmrWorkspaceSnapshot({
 		rootDir: params.root,
-		configPath: configPathAbs,
-		env,
+		configPath: params.configPath,
+		profile: params.profile,
 		omitPackages: params.omitPackages,
 	})
-	if (!res.ok) {
-		throw new Error(res.errors.join('\n'))
-	}
-	return res.snapshot
 }
 
 /**
@@ -294,6 +286,7 @@ export async function createHmrHost(opts: CreateHmrHostOptions = {}): Promise<Cr
 		await mkdir(logsDir, { recursive: true })
 		const base: EnsurePluxelLoggingOptions =
 			typeof logging === 'object' ? { ...logging } : { preset: 'hmr' }
+		const { ensurePluxelLogging } = await import('../logger/ensure')
 		await ensurePluxelLogging({
 			preset: base.preset ?? 'hmr',
 			file: base.file ?? opts.logFile ?? join(logsDir, 'hmr.log'),
@@ -379,8 +372,11 @@ export async function createHmrHost(opts: CreateHmrHostOptions = {}): Promise<Cr
 		hmrService,
 		registry: opts.registry,
 		...contextExtra,
-	} satisfies Context.Config
+	} satisfies PluxelContext.Config
 
+	// Only load `@pluxel/hmr` runtime (and its side effects) when we actually start a host.
+	await import('../context-augment')
+	const { Context } = await import('..')
 	const ctx = new Context(ctxConfig)
 
 	return { root, logsDir, ctx }

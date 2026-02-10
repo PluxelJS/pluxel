@@ -194,11 +194,7 @@ export class HonoService {
 
 	/** 仅对“内部 API”应用守卫 */
 	private mountInternalAPI(app: HonoWithAppEnvType) {
-		app.use('/api', async (c, next) => {
-			const denied = await this.guardInternalRequest(c, 'api')
-			if (denied) return denied
-			return next()
-		})
+		// NOTE: In Hono, `/api/*` also matches `/api`, so a single middleware is enough.
 		app.use('/api/*', async (c, next) => {
 			const denied = await this.guardInternalRequest(c, 'api')
 			if (denied) return denied

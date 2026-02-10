@@ -3,11 +3,11 @@
 	"tasks": {
 		"build": {
 			"dependsOn": ["^build"],
-			"outputs": ["dist/**"]
+			"outputs": ["dist/**", "public/**"]
 		},
 		"build:plugin": {
 			"dependsOn": ["^build"],
-			"outputs": ["dist/**"]
+			"outputs": ["dist/**", "public/**"]
 		},
 		"test": {
 			"dependsOn": ["build"],

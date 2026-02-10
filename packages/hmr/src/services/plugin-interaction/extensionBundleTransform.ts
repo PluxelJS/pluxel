@@ -28,9 +28,6 @@ export function looksLikeLegacyBrokenBundle(code: string): boolean {
 	if (!/\bexport\s+/.test(code) && !/\bexport\{/.test(code)) {
 		return true
 	}
-	// Legacy: older UI bundles imported deprecated web entry `@pluxel/hmr/ui`.
-	// Treat them as broken so ExtensionService can recompile with the current vendor rewrite pipeline.
-	if (/['"]@pluxel\/hmr\/ui['"]/.test(head)) return true
 	// 兼容之前遇到的 node-only / side-effect import 输出
 	if (/from\s+["']node:module["']/.test(head) || /createRequire\(/.test(head)) return true
 	if (/import\s+["']react\/jsx-runtime["'];?/.test(head)) return true
@@ -44,9 +41,6 @@ export function transformVendorImports(
 	vendorPackages: readonly string[] = extensionVendorPackages,
 ): string {
 	let result = code
-
-	// Back-compat: rewrite deprecated `@pluxel/hmr/ui` into the supported web entry.
-	result = result.replaceAll('@pluxel/hmr/ui', '@pluxel/hmr/web')
 
 	// Defensive: strip Node-only createRequire helpers that may appear in SSR-oriented outputs.
 	// These modules are executed in the browser.
