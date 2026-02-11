@@ -1,0 +1,42 @@
+{
+  "$schema": "https://market.pluxel.dev/schema/package.json",
+  "name": "{{packageName}}",
+	"description": "{{description}}",
+  "version": "0.1.0",
+  "type": "module",
+  "types": "./dist/index.d.mts",
+  "exports": {
+    ".": {
+      "@pluxel/hmr": "./src/{{pluginName}}.ts",
+      "default": "./dist/index.mjs"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "!**/*.map",
+    "dist"
+  ],
+  "scripts": {
+    "build": "pluxel build",
+    "build:plugin": "pluxel build",
+    "test": "vitest run -c vitest.config.ts",
+    "test:watch": "vitest -c vitest.config.ts",
+    "typecheck": "tsc -p tsconfig.test.json --noEmit"
+  },
+  "peerDependencies": {
+    "@pluxel/core": "workspace:*",
+    "@pluxel/hmr": "workspace:*"
+  },
+  "devDependencies": {
+    "@pluxel/cli": "workspace:*",
+    "@pluxel/test": "workspace:*",
+    "typescript": "^5.9.3",
+    "vitest": "^4.0.18"
+  },
+  "publishConfig": {
+    "exports": {
+      ".": "./dist/index.mjs",
+      "./package.json": "./package.json"
+    }
+  }
+}

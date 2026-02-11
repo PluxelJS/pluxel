@@ -4,6 +4,9 @@ import { defineConfig } from 'tsdown'
 const buildRoot = fileURLToPath(new URL('../build/src', import.meta.url))
 const buildCli = fileURLToPath(new URL('../build/src/cli/index.ts', import.meta.url))
 const buildRolldown = fileURLToPath(new URL('../build/src/rolldown/index.ts', import.meta.url))
+const reactDevtoolsCoreStub = fileURLToPath(
+	new URL('./src/vendor/react-devtools-core.ts', import.meta.url),
+)
 
 const fastBuild = process.env.PLUXEL_FAST_BUILD === 'true'
 
@@ -15,12 +18,24 @@ export default defineConfig({
 		hmr: './src/hmr/index.ts',
 		workspace: './src/workspace/index.ts',
 	},
-	// Inline internal build helpers so published CLI doesn't depend on @pluxel/build at runtime.
-	noExternal: ['@pluxel/build', '@pluxel/build/*'],
+	// This CLI intentionally ships as a bundled artifact with minimal runtime deps.
+	// `inlineOnly` would require us to enumerate (and maintain) the entire transitive dependency
+	// set pulled in by bundled deps (e.g. Ink), so we suppress the warning.
+	inlineOnly: false,
+	// Inline internal build helpers + CLI-only deps so published CLI stays light on runtime deps.
+	noExternal: [
+		'@pluxel/build',
+		'@pluxel/build/*',
+		'react',
+		'react/*',
+		'ink',
+		'ink/*',
+	],
 	alias: {
 		'@pluxel/build': buildRoot,
 		'@pluxel/build/cli': buildCli,
 		'@pluxel/build/rolldown': buildRolldown,
+		'react-devtools-core': reactDevtoolsCoreStub,
 	},
 	dts: {
 		sourcemap: !fastBuild,
@@ -28,12 +43,24 @@ export default defineConfig({
 	},
 	env: {
 		BUILD: 'true',
+		DEV: 'false',
+		NODE_ENV: 'production',
 	},
-	copy: ['plop-templates'],
+	copy: ['templates'],
 	plugins: [],
 	format: ['esm'],
 	clean: true,
 	sourcemap: !fastBuild,
 	minify: true,
 	treeshake: true,
+	inputOptions: {
+		transform: {
+			assumptions: {
+				setPublicClassFields: true,
+			},
+			typescript: {
+				removeClassFieldsWithoutInitializer: true,
+			},
+		},
+	},
 })

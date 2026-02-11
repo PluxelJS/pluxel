@@ -1,0 +1,22 @@
+import { BasePlugin, Plugin } from '@pluxel/hmr'
+import { v } from '@pluxel/hmr/config'
+
+const {{className}}Config = v.object({
+	enabled: v.optional(v.boolean(), true),
+})
+
+@Plugin({ name: '{{className}}' })
+export class {{className}} extends BasePlugin {
+	config = this.configs.use({{className}}Config)
+
+	override init(): void {
+		this.ctx.logger.info('{{className}} ready')
+	}
+
+	override stop(): void {
+		this.ctx.logger.info('{{className}} stopped')
+	}
+}
+
+// biome-ignore lint/style/noDefaultExport: plugin ctors are intentionally default-exported for ergonomic host imports.
+export default {{className}}

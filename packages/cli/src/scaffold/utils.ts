@@ -6,9 +6,13 @@ const __dirname = dirname(fileURLToPath(import.meta.url))
 
 export function resolveTemplatesDir(...segments: string[]) {
 	const candidates = [
-		// Bundled CLI: dist/./plop-templates
+		// Bundled CLI (new): dist/./templates
+		resolve(__dirname, './templates', ...segments),
+		// Source layout (new): src/scaffold/../../templates
+		resolve(__dirname, '../../templates', ...segments),
+		// Back-compat (old): dist/./plop-templates
 		resolve(__dirname, './plop-templates', ...segments),
-		// Source layout: src/plop/../../plop-templates
+		// Back-compat (old): src/plop/../../plop-templates
 		resolve(__dirname, '../../plop-templates', ...segments),
 	]
 

@@ -1,7 +1,7 @@
 {
 	"name": "@pluxel/cli",
 	"version": "0.3.0",
-	"description": "Demo example that imports a local package",
+	"description": "Pluxel CLI",
 	"bin": {
 		"pluxel": "bin/pluxel.mjs"
 	},
@@ -35,7 +35,7 @@
 	],
 	"type": "module",
 	"scripts": {
-		"dev": "bun src/cli.ts new plugin",
+		"dev": "bun src/cli.ts new --dry-run --no-install",
 		"build": "tsdown",
 		"test": "pnpm exec vitest run -c vitest.config.ts"
 	},
@@ -47,19 +47,18 @@
 		"@clack/prompts": "^0.11.0",
 		"fdir": "^6.5.0",
 		"gunshi": "^0.26.3",
-		"ink": "^6.6.0",
 		"jsonc-parser": "^3.3.1",
-		"node-plop": "^0.32.3",
 		"package-manager-detector": "^1.5.0",
 		"pathe": "^2.0.3",
 		"picomatch": "^4.0.2",
 		"pkg-types": "^2.3.0",
-		"react": "^19.2.4",
 		"yaml": "^2.5.0"
 	},
 	"devDependencies": {
 		"@pluxel/build": "workspace:*",
 		"@pluxel/test": "workspace:*",
+		"ink": "^6.6.0",
+		"react": "^19.2.4",
 		"@types/react": "^19.2.0",
 		"@types/picomatch": "^4.0.2",
 		"fs-fixture": "^2.11.0",

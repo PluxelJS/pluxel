@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { type Command, cli, type LazyCommand, lazy } from 'gunshi'
 import pkg from '../package.json'
-import { newCommand } from './plop'
+import { newCommand } from './scaffold'
 
 type AnyCommand = Command<unknown> | LazyCommand<unknown>
 
