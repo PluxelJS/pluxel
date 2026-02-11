@@ -9,23 +9,23 @@
 	"exports": {
 		".": {
 			"@pluxel/source": "./src/index.ts",
-			"require": "./dist/index.cjs",
-			"import": "./dist/index.mjs"
+			"import": "./dist/index.mjs",
+			"require": "./dist/index.cjs"
 		},
 		"./env": {
 			"@pluxel/source": "./src/env.ts",
-			"require": "./dist/env.cjs",
-			"import": "./dist/env.mjs"
+			"import": "./dist/env.mjs",
+			"require": "./dist/env.cjs"
 		},
 		"./logger": {
 			"@pluxel/source": "./src/logger/index.ts",
-			"require": "./dist/logger.cjs",
-			"import": "./dist/logger.mjs"
+			"import": "./dist/logger.mjs",
+			"require": "./dist/logger.cjs"
 		},
 		"./services": {
 			"@pluxel/source": "./src/services/index.ts",
-			"require": "./dist/services.cjs",
-			"import": "./dist/services.mjs"
+			"import": "./dist/services.mjs",
+			"require": "./dist/services.cjs"
 		},
 		"./package.json": "./package.json"
 	},
@@ -64,20 +64,20 @@
 	"publishConfig": {
 		"exports": {
 			".": {
-				"require": "./dist/index.cjs",
-				"import": "./dist/index.mjs"
+				"import": "./dist/index.mjs",
+				"require": "./dist/index.cjs"
 			},
 			"./env": {
-				"require": "./dist/env.cjs",
-				"import": "./dist/env.mjs"
+				"import": "./dist/env.mjs",
+				"require": "./dist/env.cjs"
 			},
 			"./logger": {
-				"require": "./dist/logger.cjs",
-				"import": "./dist/logger.mjs"
+				"import": "./dist/logger.mjs",
+				"require": "./dist/logger.cjs"
 			},
 			"./services": {
-				"require": "./dist/services.cjs",
-				"import": "./dist/services.mjs"
+				"import": "./dist/services.mjs",
+				"require": "./dist/services.cjs"
 			},
 			"./package.json": "./package.json"
 		}

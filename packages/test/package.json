@@ -9,23 +9,23 @@
 	"exports": {
 		".": {
 			"@pluxel/source": "./src/index.ts",
-			"require": "./dist/index.cjs",
-			"import": "./dist/index.mjs"
+			"import": "./dist/index.mjs",
+			"require": "./dist/index.cjs"
 		},
 		"./setup": {
 			"@pluxel/source": "./src/setup.ts",
-			"require": "./dist/setup.cjs",
-			"import": "./dist/setup.mjs"
+			"import": "./dist/setup.mjs",
+			"require": "./dist/setup.cjs"
 		},
 		"./unsafe": {
 			"@pluxel/source": "./src/unsafe.ts",
-			"require": "./dist/unsafe.cjs",
-			"import": "./dist/unsafe.mjs"
+			"import": "./dist/unsafe.mjs",
+			"require": "./dist/unsafe.cjs"
 		},
 		"./vitest": {
 			"@pluxel/source": "./src/vitest.ts",
-			"require": "./dist/vitest.cjs",
-			"import": "./dist/vitest.mjs"
+			"import": "./dist/vitest.mjs",
+			"require": "./dist/vitest.cjs"
 		},
 		"./package.json": "./package.json"
 	},
@@ -48,20 +48,20 @@
 	"publishConfig": {
 		"exports": {
 			".": {
-				"require": "./dist/index.cjs",
-				"import": "./dist/index.mjs"
+				"import": "./dist/index.mjs",
+				"require": "./dist/index.cjs"
 			},
 			"./setup": {
-				"require": "./dist/setup.cjs",
-				"import": "./dist/setup.mjs"
+				"import": "./dist/setup.mjs",
+				"require": "./dist/setup.cjs"
 			},
 			"./unsafe": {
-				"require": "./dist/unsafe.cjs",
-				"import": "./dist/unsafe.mjs"
+				"import": "./dist/unsafe.mjs",
+				"require": "./dist/unsafe.cjs"
 			},
 			"./vitest": {
-				"require": "./dist/vitest.cjs",
-				"import": "./dist/vitest.mjs"
+				"import": "./dist/vitest.mjs",
+				"require": "./dist/vitest.cjs"
 			},
 			"./package.json": "./package.json"
 		}

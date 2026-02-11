@@ -10,18 +10,18 @@
 	"exports": {
 		".": {
 			"@pluxel/source": "./src/index.ts",
-			"require": "./dist/index.cjs",
-			"import": "./dist/index.mjs"
+			"import": "./dist/index.mjs",
+			"require": "./dist/index.cjs"
 		},
 		"./cli": {
 			"@pluxel/source": "./src/cli/index.ts",
-			"require": "./dist/cli.cjs",
-			"import": "./dist/cli.mjs"
+			"import": "./dist/cli.mjs",
+			"require": "./dist/cli.cjs"
 		},
 		"./rolldown": {
 			"@pluxel/source": "./src/rolldown/index.ts",
-			"require": "./dist/rolldown.cjs",
-			"import": "./dist/rolldown.mjs"
+			"import": "./dist/rolldown.mjs",
+			"require": "./dist/rolldown.cjs"
 		},
 		"./package.json": "./package.json"
 	},
@@ -50,16 +50,16 @@
 	"publishConfig": {
 		"exports": {
 			".": {
-				"require": "./dist/index.cjs",
-				"import": "./dist/index.mjs"
+				"import": "./dist/index.mjs",
+				"require": "./dist/index.cjs"
 			},
 			"./cli": {
-				"require": "./dist/cli.cjs",
-				"import": "./dist/cli.mjs"
+				"import": "./dist/cli.mjs",
+				"require": "./dist/cli.cjs"
 			},
 			"./rolldown": {
-				"require": "./dist/rolldown.cjs",
-				"import": "./dist/rolldown.mjs"
+				"import": "./dist/rolldown.mjs",
+				"require": "./dist/rolldown.cjs"
 			},
 			"./package.json": "./package.json"
 		}

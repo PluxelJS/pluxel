@@ -134,6 +134,19 @@ const gid = (g: string) => `g:${g}`
 const isGid = (id: UniqueIdentifier) => typeof id === 'string' && id.startsWith('g:')
 const fromGid = (id: string) => id.slice(2)
 
+const groupsEqual = (a: GroupConfig[], b: GroupConfig[]) => {
+	if (a === b) return true
+	if (a.length !== b.length) return false
+	for (let i = 0; i < a.length; i += 1) {
+		const ga = a[i]
+		const gb = b[i]
+		if (!gb) return false
+		if (ga.groupId !== gb.groupId || ga.name !== gb.name) return false
+		if (!arraysEqual(ga.pluginIds, gb.pluginIds)) return false
+	}
+	return true
+}
+
 // ---------- 主组件 ----------
 export function PluginOrganizer({
 	statuses,
@@ -231,6 +244,31 @@ export function PluginOrganizer({
 		ungroupedRef.current = ungroupedOrder
 	}, [ungroupedOrder])
 
+	const lastInitialGroupsRef = useRef<GroupConfig[]>(saneGroups)
+	useEffect(() => {
+		const lastInitial = lastInitialGroupsRef.current
+		if (groupsEqual(lastInitial, saneGroups)) return
+
+		const localGroups = groupsRef.current
+		const localMatchesLast = groupsEqual(localGroups, lastInitial)
+		const localMatchesNext = groupsEqual(localGroups, saneGroups)
+
+		if (localMatchesLast && !localMatchesNext) {
+			setGroups(saneGroups)
+			setUngroupedOrder((prevUngrouped) => {
+				const allow = new Set(allIds)
+				const assigned = new Set<string>()
+				for (const group of saneGroups) for (const id of group.pluginIds) assigned.add(id)
+				const cleaned = prevUngrouped.filter((id) => allow.has(id) && !assigned.has(id))
+				const existing = new Set(cleaned)
+				const missing = allIds.filter((id) => !assigned.has(id) && !existing.has(id))
+				return [...cleaned, ...missing]
+			})
+		}
+
+		lastInitialGroupsRef.current = saneGroups
+	}, [allIds, saneGroups])
+
 	// 过滤（混合：组名 or 插件 name/ID + 语法）
 	const isFiltering =
 		searchTokens.plain.length > 0 ||
@@ -294,6 +332,11 @@ export function PluginOrganizer({
 		() => ungroupedOrder.filter((id) => !assignedSet.has(id)).filter(pluginMatch),
 		[ungroupedOrder, assignedSet, pluginMatch],
 	)
+	const visibleUngroupedRunning = useMemo(() => {
+		let count = 0
+		for (const id of visibleUngrouped) if (runningSet.has(id)) count += 1
+		return count
+	}, [runningSet, visibleUngrouped])
 
 	const hmrUngrouped = useMemo(
 		() => visibleUngrouped.filter((id) => statuses[id]?.sourceKind === 'hmr'),
@@ -326,7 +369,7 @@ export function PluginOrganizer({
 
 	// 混合搜索：组名命中 -> 展示完整组；否则裁剪到命中插件子集
 	const visibleGroups = useMemo(() => {
-		if (!isFiltering) return groups.map((g) => ({ ...g }))
+		if (!isFiltering) return groups
 		return groups.reduce<GroupConfig[]>((acc, group) => {
 			const nameMatch =
 				searchTokens.plain.length > 0 &&
@@ -733,8 +776,7 @@ export function PluginOrganizer({
 								未分组
 							</Text>
 							<Text size="xs" c="dimmed">
-								{visibleUngrouped.filter((id) => runningSet.has(id)).length}/
-								{visibleUngrouped.length}
+								{visibleUngroupedRunning}/{visibleUngrouped.length}
 							</Text>
 						</Group>
 						<Tooltip label="新建分组" withinPortal withArrow openDelay={200}>

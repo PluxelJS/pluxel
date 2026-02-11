@@ -20,7 +20,7 @@ import {
 } from '@tabler/icons-react'
 import type { UniqueIdentifier } from '@dnd-kit/core'
 import type React from 'react'
-import { memo } from 'react'
+import { memo, useMemo } from 'react'
 import type { GroupConfig } from '../types'
 import type { RowDensity } from '../constants'
 import { DroppableContainer } from './DroppableContainer'
@@ -79,10 +79,13 @@ export const GroupCard = memo(function GroupCard(props: Props) {
 		animateLayoutChanges: () => false,
 	})
 
-	const stat = {
-		total: visibleIds.length,
-		running: visibleIds.filter((id) => runningSet.has(id)).length,
-	}
+	const stat = useMemo(
+		() => ({
+			total: visibleIds.length,
+			running: visibleIds.filter((id) => runningSet.has(id)).length,
+		}),
+		[visibleIds, runningSet],
+	)
 	const collapseLabel = isCollapsed ? '展开分组' : '折叠分组'
 
 	return (

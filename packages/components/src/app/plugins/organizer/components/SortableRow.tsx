@@ -13,7 +13,7 @@ import {
 import { IconGripVertical } from '@tabler/icons-react'
 import type { UniqueIdentifier } from '@dnd-kit/core'
 import type React from 'react'
-import { useMemo, useRef } from 'react'
+import { memo, useMemo } from 'react'
 import type { RowDensity } from '../constants'
 
 type RowMeta = { tag?: string; version?: string }
@@ -33,7 +33,7 @@ export type SortableRowProps = {
 	sortableId: UniqueIdentifier
 }
 
-export function SortableRow({
+const SortableRowComponent = ({
 	pid,
 	name,
 	running,
@@ -46,11 +46,10 @@ export function SortableRow({
 	dh,
 	meta,
 	sortableId,
-}: SortableRowProps) {
+}: SortableRowProps) => {
 	const theme = useMantineTheme()
 	const scheme = useComputedColorScheme('light', { getInitialValueInEffect: true })
 	const isDark = scheme === 'dark'
-	const rowRef = useRef<HTMLAnchorElement | HTMLSpanElement | null>(null)
 	const brand = theme.colors.brand ?? theme.colors.indigo
 	const accent = theme.colors.blue
 	const showStatusLabel = dh.rowH >= 30
@@ -99,11 +98,26 @@ export function SortableRow({
 	return (
 		<Box
 			ref={setNodeRef}
-			onDoubleClick={() => (rowRef.current as HTMLAnchorElement | null)?.click?.()}
+			onDoubleClick={(e) => {
+				const link = (e.currentTarget as HTMLElement).querySelector(
+					'[data-plugin-link]',
+				) as HTMLElement | null
+				link?.click?.()
+			}}
 			onClick={(e) => {
 				if (disabled) return
-				if (e.shiftKey || e.metaKey || e.ctrlKey) e.preventDefault()
-				onSelect(e, pid, 'click')
+				const isModified = e.shiftKey || e.metaKey || e.ctrlKey
+				if (isModified) {
+					e.preventDefault()
+					onSelect(e, pid, 'click')
+					return
+				}
+				const target = e.target as HTMLElement | null
+				if (target?.closest('[data-drag-handle]')) return
+				const link = (e.currentTarget as HTMLElement).querySelector(
+					'[data-plugin-link]',
+				) as HTMLElement | null
+				link?.click?.()
 			}}
 			onContextMenu={(e) => {
 				e.preventDefault()
@@ -170,17 +184,19 @@ export function SortableRow({
 				{LinkComp ? (
 					<LinkComp
 						to={href}
+						data-plugin-link="true"
 						style={{ textDecoration: 'none', display: 'block', color: rowColorValue, minWidth: 0 }}
 						onClick={(e: any) => {
 							if (disabled) return
 							e.stopPropagation()
-							if (e.shiftKey || e.metaKey || e.ctrlKey) e.preventDefault()
-							onSelect(e, pid, 'click')
+							if (e.shiftKey || e.metaKey || e.ctrlKey) {
+								e.preventDefault()
+								onSelect(e, pid, 'click')
+							}
 						}}
 					>
 						<Tooltip label={name} withinPortal withArrow openDelay={200}>
 							<Text
-								ref={rowRef as any}
 								size={dh.font}
 								style={{
 									whiteSpace: 'nowrap',
@@ -197,10 +213,10 @@ export function SortableRow({
 				) : (
 					<Tooltip label={name} withinPortal withArrow openDelay={200}>
 						<Anchor
-							ref={rowRef as any}
 							size={dh.font}
 							href={href}
 							underline="never"
+							data-plugin-link="true"
 							style={{
 								whiteSpace: 'nowrap',
 								overflow: 'hidden',
@@ -211,8 +227,10 @@ export function SortableRow({
 							onClick={(e) => {
 								if (disabled) return
 								e.stopPropagation()
-								if (e.shiftKey || e.metaKey || e.ctrlKey) e.preventDefault()
-								onSelect(e, pid, 'click')
+								if (e.shiftKey || e.metaKey || e.ctrlKey) {
+									e.preventDefault()
+									onSelect(e, pid, 'click')
+								}
 							}}
 						>
 							{name}
@@ -278,3 +296,25 @@ export function SortableRow({
 		</Box>
 	)
 }
+
+const areRowPropsEqual = (prev: SortableRowProps, next: SortableRowProps) => {
+	if (prev.pid !== next.pid) return false
+	if (prev.name !== next.name) return false
+	if (prev.running !== next.running) return false
+	if (prev.enabled !== next.enabled) return false
+	if (prev.selected !== next.selected) return false
+	if (prev.active !== next.active) return false
+	if (prev.disabled !== next.disabled) return false
+	if (prev.sortableId !== next.sortableId) return false
+	if (prev.LinkComp !== next.LinkComp) return false
+	if (prev.onSelect !== next.onSelect) return false
+	if (prev.dh.rowH !== next.dh.rowH) return false
+	if (prev.dh.px !== next.dh.px) return false
+	if (prev.dh.py !== next.dh.py) return false
+	if (prev.dh.font !== next.dh.font) return false
+	if (prev.meta?.tag !== next.meta?.tag) return false
+	if (prev.meta?.version !== next.meta?.version) return false
+	return true
+}
+
+export const SortableRow = memo(SortableRowComponent, areRowPropsEqual)
