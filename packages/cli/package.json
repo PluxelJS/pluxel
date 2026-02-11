@@ -1,6 +1,6 @@
 {
 	"name": "@pluxel/cli",
-	"version": "0.2.12",
+	"version": "0.3.0",
 	"description": "Demo example that imports a local package",
 	"bin": {
 		"pluxel": "bin/pluxel.mjs"
@@ -65,5 +65,14 @@
 		"fs-fixture": "^2.11.0",
 		"tsdown": "^0.20.1",
 		"typescript": "^5.9.3"
+	},
+	"publishConfig": {
+		"exports": {
+			"./hmr": "./dist/hmr.mjs",
+			"./workspace": "./dist/workspace.mjs",
+			"./build": "./dist/build.mjs",
+			"./rolldown": "./dist/rolldown.mjs",
+			"./package.json": "./package.json"
+		}
 	}
 }

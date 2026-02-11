@@ -14,7 +14,7 @@ export default defineConfig({
 	exports: {
 		devExports: '@pluxel/source',
 	},
-	noExternal: ['@pluxel/hmr-web', '@pluxel/hmr-web/*'],
+	noExternal: ['@pluxel/hmr-web', '@pluxel/hmr-web/*', 'valibot-form', 'valibot-form/*'],
 	plugins: [
 		PreprocessorDirectives(),
 		appendDtsImport('import type {} from "./services.d.mts"', ['index.d.mts']),
@@ -47,8 +47,6 @@ export default defineConfig({
 		'@pluxel/core',
 		'@pluxel/core/services',
 		'@pluxel/core/logger',
-		'@pluxel/context',
-		'@pluxel/context/*',
 		'@pluxel/components',
 		'react',
 		'react/jsx-runtime',

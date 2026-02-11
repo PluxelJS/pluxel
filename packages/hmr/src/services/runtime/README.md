@@ -47,7 +47,7 @@ HMR 的 runner 会在独立的模块评估环境里执行 TS/ESM。
 机制：
 
 - `deps.bridgeModules`：把这些 specifier 的 host exports bridge/prime 到 runner cache。
-- `deps.bridgeProviders`：当某个“逻辑模块”被内联到另一个包时，把逻辑 specifier 映射到实际提供者（例如 `@pluxel/context` → `@pluxel/core`）。
+- `deps.bridgeProviders`：当某个“逻辑模块”被内联到另一个包时，把逻辑 specifier 映射到实际提供者（例如 legacy 的 `@pluxel/context` → `@pluxel/core`）。
 
 ## 统一解析与缓存（exsolve + shared cache）
 

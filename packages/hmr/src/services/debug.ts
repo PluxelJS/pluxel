@@ -25,9 +25,3 @@ declare module '@pluxel/core' {
 		interface DebugTopics extends PluxelHmrDebugTopics {}
 	}
 }
-
-declare module '@pluxel/context' {
-	namespace Context {
-		interface DebugTopics extends PluxelHmrDebugTopics {}
-	}
-}

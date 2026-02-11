@@ -81,7 +81,8 @@ runner 的 `resolveId` 会对 **bare specifier** 做 workspace-only rewrite：
 
 用途：把这些模块的 host exports“注入/复用”到 runner 的 `evaluatedModules` 缓存里，避免 runner 再评估一份实现。
 
-- 典型场景：`@pluxel/core`、`@pluxel/hmr`、`@pluxel/context` 等核心包（包含 decorators、基类、DI tokens）。
+- 典型场景：`@pluxel/core`、`@pluxel/hmr` 等核心包（包含 decorators、基类、DI tokens）。
+  - `@pluxel/context` 属于 legacy/可选桥接，只有在工作区仍引用该包时才需要加入 `bridgeModules`。
 - 注意：桥接只适用于 TS/ESM 的 singleton；CommonJS-only 包不要放到这里（应走 `cjsExternal` externalize）。
 
 ### `bridgeProviders`（“逻辑 specifier → 实际提供者”）
@@ -108,6 +109,7 @@ runner 的 `resolveId` 会对 **bare specifier** 做 workspace-only rewrite：
 ### 自动探测（best-effort）
 
 当 host workspace **未安装** `@pluxel/context`，但安装了 `@pluxel/core` 时，HMR 会自动假定 context 由 core 提供并生成映射。
+前提：`@pluxel/context` 被加入 `bridgeModules`（用于兼容 legacy 模块）。
 这能覆盖 pnpm workspace link/monorepo 下“context 不作为独立依赖存在”的常见开发形态。
 
 ## 路径归一化：`HmrPathResolver`

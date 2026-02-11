@@ -6,6 +6,11 @@ import { describe, expect, it } from 'vitest'
 import { resolveHMRDependencyConfig } from '../../src/services/runtime/hmr/config'
 
 describe('HMR bridgeProviders', () => {
+	it('does not include @pluxel/context by default', () => {
+		const deps = resolveHMRDependencyConfig()
+		expect(deps.bridgeModules.includes('@pluxel/context')).toBe(false)
+	})
+
 	it('auto-maps @pluxel/context -> @pluxel/core when context is not installed', async () => {
 		const root = await mkdtemp(join(tmpdir(), 'pluxel-hmr-bridge-providers-'))
 		try {
@@ -20,7 +25,10 @@ describe('HMR bridgeProviders', () => {
 			expect(existsSync(join(root, 'node_modules/@pluxel/core/package.json'))).toBe(true)
 			expect(existsSync(join(root, 'node_modules/@pluxel/context/package.json'))).toBe(false)
 
-			const deps = resolveHMRDependencyConfig(undefined, { cwd: root })
+			const deps = resolveHMRDependencyConfig(
+				{ bridgeModules: ['@pluxel/context'] },
+				{ cwd: root },
+			)
 			expect(deps.bridgeProviders['@pluxel/context']).toBe('@pluxel/core')
 			expect(deps.bridgeModules.includes('@pluxel/context')).toBe(true)
 			expect(deps.bridgeModules.includes('@pluxel/core')).toBe(true)
@@ -50,7 +58,10 @@ describe('HMR bridgeProviders', () => {
 
 			expect(existsSync(join(root, 'node_modules/@pluxel/context/package.json'))).toBe(true)
 
-			const deps = resolveHMRDependencyConfig(undefined, { cwd: root })
+			const deps = resolveHMRDependencyConfig(
+				{ bridgeModules: ['@pluxel/context'] },
+				{ cwd: root },
+			)
 			expect(deps.bridgeProviders['@pluxel/context']).toBeUndefined()
 			expect(deps.bridgeModules.includes('@pluxel/context')).toBe(true)
 		} finally {

@@ -66,7 +66,6 @@
 		"@hono/vite-dev-server": "^0.24.0",
 		"@logtape/logtape": "^2.0.1",
 		"@pluxel/cli": "workspace:*",
-		"@pluxel/context": "workspace:*",
 		"@rolldown/pluginutils": "1.0.0-beta.58",
 		"@signaldb/core": "^1.7.1",
 		"@tanstack/pacer": "^0.17.0",

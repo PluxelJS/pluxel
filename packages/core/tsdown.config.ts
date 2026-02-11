@@ -21,7 +21,7 @@ export default defineConfig({
 	exports: {
 		devExports: '@pluxel/source',
 	},
-	noExternal: ['@pluxel/context', '@pluxel/context/*'],
+	noExternal: ['@pluxel/context', '@pluxel/context/*', 'diod', 'diod/*'],
 	external: [],
 	entry: {
 		env: 'src/env.ts',

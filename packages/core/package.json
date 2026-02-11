@@ -45,7 +45,6 @@
 		"@logtape/logtape": "^2.0.1",
 		"@logtape/pretty": "^2.0.1",
 		"@noble/hashes": "^2.0.1",
-		"@pluxel/context": "workspace:*",
 		"@standard-schema/spec": "^1.1.0",
 		"eventure": "^0.4.2",
 		"pathe": "^2.0.3",
@@ -55,6 +54,7 @@
 	"devDependencies": {
 		"@abraham/reflection": "^0.13.0",
 		"@pluxel/build": "workspace:*",
+		"@pluxel/context": "workspace:*",
 		"@pluxel/test": "workspace:*",
 		"diod": "workspace:*",
 		"fs-fixture": "^2.11.0",

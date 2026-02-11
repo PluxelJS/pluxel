@@ -155,10 +155,9 @@ If you use the host helper `createHmrHost()`, `CLIENT_DIST` is mapped to `hmrSer
 Some core runtime packages are **always** bridged and cannot be disabled via config:
 
 - `@pluxel/core` (and `@pluxel/core/*`)
-- `@pluxel/context` (and `@pluxel/context/*`)
 - `@pluxel/hmr` (and `@pluxel/hmr/*`)
 
-User config can only append extra bridge modules via `deps.bridgeModules`.
+User config can only append extra bridge modules via `deps.bridgeModules` (for legacy/embedded modules such as `@pluxel/context`).
 
 ### `bridgeProviders` (logical specifier → provider)
 
@@ -174,8 +173,9 @@ Notes:
 
 - The runner imports the provider module from the host runtime, but primes the runner cache under the original specifier.
 - `runner.import('@pluxel/context')` is transparently redirected to `runner.import('@pluxel/core')`.
-- Auto-detection: if the host workspace has no direct `node_modules/@pluxel/context` but has `@pluxel/core`,
-  HMR assumes context is provided by core and applies this mapping (best-effort).
+- Auto-detection runs only when the logical specifier is listed in `deps.bridgeModules`. For example, if you
+  opt into bridging `@pluxel/context` and the host workspace has no direct `node_modules/@pluxel/context` but
+  has `@pluxel/core`, HMR assumes context is provided by core and applies this mapping (best-effort).
 - The provider module must expose the same runtime API expected by the logical specifier.
 
 Implementation notes:

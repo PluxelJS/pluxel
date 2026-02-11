@@ -58,8 +58,8 @@ export type HmrRunnerInitOptions = {
 	workspaceConditions?: readonly string[]
 }
 
-const HARD_BRIDGE_IDS = ['@pluxel/core', '@pluxel/hmr', '@pluxel/context'] as const
-const HARD_BRIDGE_PREFIXES = ['@pluxel/core/', '@pluxel/hmr/', '@pluxel/context/'] as const
+const HARD_BRIDGE_IDS = ['@pluxel/core', '@pluxel/hmr'] as const
+const HARD_BRIDGE_PREFIXES = ['@pluxel/core/', '@pluxel/hmr/'] as const
 const HARD_BRIDGE_ID_SET = new Set<string>(HARD_BRIDGE_IDS)
 const dbgFetch = getDebugLogger('pluxel:hmr:fetch').with({ name: 'runner' })
 

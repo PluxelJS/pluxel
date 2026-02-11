@@ -73,7 +73,6 @@ export interface ResolvedHMRDependencyConfig {
 const REQUIRED_BRIDGE_MODULES = [
 	'@pluxel/core',
 	'@pluxel/core/services',
-	'@pluxel/context',
 	'@pluxel/hmr',
 	'@pluxel/hmr/services',
 	'@pluxel/hmr/config',
@@ -301,6 +300,9 @@ export function buildHmrViteConfig(opts: HmrViteConfigOptions): InlineConfig {
 	// across different hosts/roots can cause "update deps" metadata mismatches in Vite 8 beta.
 	// If callers want a shared cache, they can still opt-in explicitly via config.
 	const cacheDir = opts.cacheDir
+	const dedupePackages = Array.from(
+		new Set([...REQUIRED_DEDUPE_PACKAGES, ...opts.deps.bridgeModules.map(toBasePackage)]),
+	)
 
 	const baseLogger = createLogger(undefined, { prefix: '[pluxel-hmr]' })
 	// Avoid `{...baseLogger}` here: Vite mutates `logger.hasWarned`, and spreading would copy a stale boolean.
@@ -339,7 +341,7 @@ export function buildHmrViteConfig(opts: HmrViteConfigOptions): InlineConfig {
 		},
 		resolve: {
 			conditions: clientConditions,
-			dedupe: Array.from(REQUIRED_DEDUPE_PACKAGES),
+			dedupe: dedupePackages,
 			// Vite 8: built-in tsconfig paths support.
 			// (We intentionally avoid `vite-tsconfig-paths` to keep behavior consistent across environments.)
 			tsconfigPaths: true,
@@ -348,7 +350,7 @@ export function buildHmrViteConfig(opts: HmrViteConfigOptions): InlineConfig {
 			ssr: {
 				resolve: {
 					conditions: ssrConditions,
-					dedupe: Array.from(REQUIRED_DEDUPE_PACKAGES),
+					dedupe: dedupePackages,
 				},
 			},
 		},
@@ -401,7 +403,7 @@ export function buildHmrViteConfig(opts: HmrViteConfigOptions): InlineConfig {
 				: { noDiscovery: true, include: [], needsInterop: [] },
 			resolve: {
 				conditions: ssrConditions,
-				dedupe: Array.from(REQUIRED_DEDUPE_PACKAGES),
+				dedupe: dedupePackages,
 			},
 		},
 	}
