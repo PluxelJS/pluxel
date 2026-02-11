@@ -44,25 +44,25 @@
 		"tsdown": "*"
 	},
 	"dependencies": {
-		"@clack/prompts": "^0.11.0",
+		"@clack/prompts": "^1.0.0",
 		"fdir": "^6.5.0",
-		"gunshi": "^0.26.3",
+		"gunshi": "^0.28.0",
 		"jsonc-parser": "^3.3.1",
-		"package-manager-detector": "^1.5.0",
+		"package-manager-detector": "^1.6.0",
 		"pathe": "^2.0.3",
-		"picomatch": "^4.0.2",
+		"picomatch": "^4.0.3",
 		"pkg-types": "^2.3.0",
-		"yaml": "^2.5.0"
+		"yaml": "^2.8.2"
 	},
 	"devDependencies": {
 		"@pluxel/build": "workspace:*",
 		"@pluxel/test": "workspace:*",
-		"ink": "^6.6.0",
-		"react": "^19.2.4",
-		"@types/react": "^19.2.0",
 		"@types/picomatch": "^4.0.2",
+		"@types/react": "^19.2.13",
 		"fs-fixture": "^2.11.0",
-		"tsdown": "^0.20.1",
+		"ink": "^6.7.0",
+		"react": "^19.2.4",
+		"tsdown": "^0.20.3",
 		"typescript": "^5.9.3"
 	},
 	"publishConfig": {

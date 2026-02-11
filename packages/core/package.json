@@ -41,12 +41,12 @@
 		"bench:dist": "pnpm --filter @pluxel/build build && pnpm run build && bun run --tsconfig-override=\"./bench-tsconfig.json\" bench/pluginLifecycle.bench.ts"
 	},
 	"dependencies": {
-		"@logtape/file": "^2.0.1",
-		"@logtape/logtape": "^2.0.1",
-		"@logtape/pretty": "^2.0.1",
+		"@logtape/file": "^2.0.2",
+		"@logtape/logtape": "^2.0.2",
+		"@logtape/pretty": "^2.0.2",
 		"@noble/hashes": "^2.0.1",
 		"@standard-schema/spec": "^1.1.0",
-		"eventure": "^0.4.2",
+		"eventure": "^0.4.4",
 		"pathe": "^2.0.3",
 		"std-env": "^3.10.0",
 		"youch": "4.1.0-beta.13"
@@ -58,7 +58,7 @@
 		"@pluxel/test": "workspace:*",
 		"diod": "workspace:*",
 		"fs-fixture": "^2.11.0",
-		"option-t": "^55.1.0",
+		"option-t": "^55.1.1",
 		"tinybench": "^6.0.0"
 	},
 	"publishConfig": {

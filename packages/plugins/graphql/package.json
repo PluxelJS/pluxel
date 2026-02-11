@@ -22,8 +22,8 @@
 		"test": "pnpm exec vitest run -c vitest.config.ts"
 	},
 	"dependencies": {
-		"@gqloom/core": "^0.15.0",
-		"@gqloom/valibot": "^0.15.0",
+		"@gqloom/core": "^0.16.1",
+		"@gqloom/valibot": "^0.15.1",
 		"@gqty/cli": "^5.0.0",
 		"graphql": "^16.12.0",
 		"graphql-yoga": "^5.18.0",
@@ -36,7 +36,7 @@
 	"devDependencies": {
 		"@pluxel/cli": "workspace:*",
 		"@pluxel/test": "workspace:*",
-		"tsdown": "^0.20.1",
+		"tsdown": "^0.20.3",
 		"typescript": "^5.9.3"
 	},
 	"publishConfig": {

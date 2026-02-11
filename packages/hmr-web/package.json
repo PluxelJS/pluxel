@@ -29,14 +29,14 @@
 	},
 	"dependencies": {
 		"capnweb": "^0.4.0",
-		"hono": "^4.11.3"
+		"hono": "^4.11.9"
 	},
 	"peerDependencies": {
 		"react": "^19.2.4"
 	},
 	"devDependencies": {
-		"@types/react": "^19.2.10",
-		"tsdown": "^0.20.1"
+		"@types/react": "^19.2.13",
+		"tsdown": "^0.20.3"
 	},
 	"publishConfig": {
 		"exports": {

@@ -22,11 +22,11 @@
 		"test": "pnpm exec vitest run -c vitest.config.ts"
 	},
 	"peerDependencies": {
+		"@mantine/core": "^8.3.14",
+		"@mantine/hooks": "^8.3.14",
 		"@pluxel/core": "workspace:*",
 		"@pluxel/hmr": "workspace:*",
 		"@pluxel/market": "^0.1.0",
-		"@mantine/core": "^8.3.14",
-		"@mantine/hooks": "^8.3.14",
 		"@tabler/icons-react": "^3.36.1",
 		"react": "^19.2.4",
 		"react-dom": "^19.2.4"
@@ -34,7 +34,7 @@
 	"devDependencies": {
 		"@pluxel/cli": "workspace:*",
 		"@pluxel/test": "workspace:*",
-		"tsdown": "^0.20.1",
+		"tsdown": "^0.20.3",
 		"typescript": "^5.9.3"
 	},
 	"publishConfig": {

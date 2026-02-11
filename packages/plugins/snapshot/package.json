@@ -23,13 +23,13 @@
 	},
 	"dependencies": {
 		"knitwork": "^1.3.0",
-		"nf3": "^0.3.6"
+		"nf3": "^0.3.10"
 	},
 	"peerDependencies": {
+		"@mantine/core": "^8.3.14",
 		"@pluxel/cli": "workspace:*",
 		"@pluxel/core": "workspace:*",
 		"@pluxel/hmr": "workspace:*",
-		"@mantine/core": "^8.3.14",
 		"@tabler/icons-react": "*",
 		"react": "^19.2.4",
 		"react-dom": "^19.2.4",
@@ -38,7 +38,7 @@
 	"devDependencies": {
 		"@pluxel/cli": "workspace:*",
 		"@pluxel/test": "workspace:*",
-		"tsdown": "^0.20.1",
+		"tsdown": "^0.20.3",
 		"typescript": "^5.9.3"
 	},
 	"publishConfig": {

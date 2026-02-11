@@ -21,7 +21,7 @@
 		"@mantine/hooks": "^8.3.14",
 		"@pluxel/cli": "workspace:*",
 		"@tabler/icons-react": "^3.36.1",
-		"@types/react": "^19.2.10",
+		"@types/react": "^19.2.13",
 		"@types/react-dom": "^19.2.3",
 		"pathe": "^2.0.3",
 		"react": "^19.2.4",
