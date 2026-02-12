@@ -4,6 +4,7 @@ import {
 	type Context,
 	checkPluginDecorator,
 	clearParamToken,
+	formatForkPluginId,
 	ForkablePlugin,
 	type ForkablePluginConstructor,
 	getClassParams,
@@ -11,6 +12,7 @@ import {
 	getForkId,
 	getForkOf,
 	getPluginInfo,
+	parseForkPluginId,
 	PARAM_TYPES,
 	type PluginConstructor,
 	type PluginIdentifier,
@@ -265,7 +267,12 @@ export class PluginHandle extends RpcTarget {
 							: false,
 				})
 				for (const fid of forkIds) {
-					const forkName = `${originalName}#${fid}`
+					let forkName: string
+					try {
+						forkName = formatForkPluginId(originalName, fid)
+					} catch {
+						continue
+					}
 					const forkCtor = this.ctx.loader.api.runtime.resolve(forkName)
 					options.push({
 						name: forkName,
@@ -312,11 +319,9 @@ export class PluginHandle extends RpcTarget {
 				const token = resolvePlugin(this.ctx, normalized)
 				setParamToken(ctor, index, token)
 
-				const hash = normalized.lastIndexOf('#')
-				if (hash > 0) {
-					const baseName = normalized.slice(0, hash)
-					const forkId = normalized.slice(hash + 1)
-					if (baseName && forkId) addForkToCatalog(this.ctx, baseName, forkId)
+				const fork = parseForkPluginId(normalized)
+				if (fork) {
+					addForkToCatalog(this.ctx, fork.baseId, fork.forkId)
 				}
 
 				// Ensure the selected target is enabled & registered, otherwise DI will fail.

@@ -3,6 +3,7 @@ import {
 	type ForkablePluginConstructor,
 	getClassParams,
 	getPluginInfo,
+	parseForkPluginId,
 	type PluginConstructor,
 	type PluginIdentifier,
 } from '@pluxel/core'
@@ -128,16 +129,14 @@ export class RuntimeResolver {
 
 	resolve(target: PluginConstructor | string): PluginConstructor | undefined {
 		if (typeof target === 'string') {
-			const hash = target.lastIndexOf('#')
-			if (hash > 0) {
-				const baseName = target.slice(0, hash)
-				const forkId = target.slice(hash + 1)
-				const baseCtor = this.registry.getPluginByName(baseName)
-				if (baseCtor && forkId) {
+			const fork = parseForkPluginId(target)
+			if (fork) {
+				const baseCtor = this.registry.getPluginByName(fork.baseId)
+				if (baseCtor) {
 					try {
 						return this.ctx.registry.fork(
 							baseCtor as unknown as ForkablePluginConstructor,
-							forkId,
+							fork.forkId,
 						) as PluginConstructor
 					} catch {
 						// fall through
@@ -284,10 +283,9 @@ export class LoaderRegistryView {
 	findModuleId(name: string, ctor?: PluginConstructor): string | null {
 		const direct = this.registry.name2PathMap.get(name)
 		if (direct) return direct
-		const hash = name.lastIndexOf('#')
-		if (hash > 0) {
-			const baseName = name.slice(0, hash)
-			const base = this.registry.name2PathMap.get(baseName)
+		const fork = parseForkPluginId(name)
+		if (fork) {
+			const base = this.registry.name2PathMap.get(fork.baseId)
 			if (base) return base
 		}
 		if (!ctor) return null

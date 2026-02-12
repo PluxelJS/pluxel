@@ -1,6 +1,7 @@
 import type { Identifier } from '../../../container'
 import { isStandardSchemaV1 } from '../../../services/config/standardSchema'
 import type { PluginIdentifier, SubclassOf } from '../../types'
+import { assertValidBasePluginId } from '../../runtime/pluginId'
 import {
 	__DEV__,
 	$freeze,
@@ -52,6 +53,7 @@ export function getPackageName(ctor: AnyCtor): string | null {
 
 /** 设置系统 ID（通常由 loader 调用） */
 export function setPluginId(ctor: AnyCtor, id: string): void {
+	assertValidBasePluginId(id)
 	const s = S(ctor)
 	s.id = normalizeId(id, s.declaredName || nameOf(ctor))
 	if (s.infoSnap) rebuildInfoSnapshot(ctor, s)
@@ -79,7 +81,10 @@ export function setPluginIdentity(
 	identity: { id?: string; displayName?: string | null; packageName?: string | null },
 ): void {
 	const s = S(ctor)
-	if (identity.id !== undefined) s.id = normalizeId(identity.id, s.declaredName || nameOf(ctor))
+	if (identity.id !== undefined) {
+		assertValidBasePluginId(identity.id)
+		s.id = normalizeId(identity.id, s.declaredName || nameOf(ctor))
+	}
 	if (identity.displayName !== undefined) s.displayName = identity.displayName
 	if (identity.packageName !== undefined) s.packageName = identity.packageName
 	if (s.infoSnap) rebuildInfoSnapshot(ctor, s)

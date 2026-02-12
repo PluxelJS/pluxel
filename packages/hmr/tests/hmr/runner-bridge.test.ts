@@ -98,7 +98,7 @@ describe('HMR runner bridge', () => {
 			await runner.bridgeHostModules(deps.bridgeModules, hmr.path, {
 				warn: () => undefined,
 			})
-			expect((runner as any).bridgedRunnerUrls?.has?.('/packages/context/src/index.ts')).toBe(true)
+			expect((runner as any).bridgedRunnerUrls?.has?.('/packages/core/src/index.ts')).toBe(true)
 			await runner.assertBridgedSingletons(deps.bridgeModules)
 
 			const hostCore = (runner as any).bridgedHostExports?.get?.('@pluxel/core') as

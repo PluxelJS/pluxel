@@ -1,6 +1,7 @@
 import { isProduction } from '../../../env'
 import type { Identifier } from '../../../container'
 import type { PluginIdentifier } from '../../types'
+import { assertValidBasePluginId, assertValidPluginId } from '../../runtime/pluginId'
 import type { ConfigSchemaList, DeclaredMetaView, ParamOverride, PluginInfo } from './types'
 
 /*───────────────────────────────────────────────────────────
@@ -149,6 +150,10 @@ export const normalizeId = (raw: string | null | undefined, declaredName: string
 	if (!id) {
 		throw new Error(`[PluginDecorator] 插件 "${declaredName}" 缺少有效 id`)
 	}
+	// Keep id semantics centralized (fork ids, base ids, ASCII rules).
+	// This intentionally enforces a strict naming policy across host implementations.
+	if (raw == null) assertValidBasePluginId(id)
+	else assertValidPluginId(id)
 	return id
 }
 

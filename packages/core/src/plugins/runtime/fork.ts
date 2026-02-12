@@ -11,6 +11,7 @@
 import { ForkablePlugin } from '../composition/BasePlugin'
 import { clonePluginDefinition, getPluginInfo } from '../decorators/PluginDecorator'
 import type { ForkablePluginConstructor, PluginConstructor, PluginIdentifier } from '../types'
+import { formatForkPluginId } from './pluginId'
 
 const FORK_ID = Symbol.for('pluxel:plugin:forkId')
 const FORK_OF = Symbol.for('pluxel:plugin:forkOf')
@@ -48,7 +49,7 @@ export function forkPlugin<T extends ForkablePluginConstructor>(
 	const ForkCtor = class extends Base {} as unknown as PluginConstructor
 
 	const info = getPluginInfo(ctor)
-	const id = `${info.id}#${forkId}`
+	const id = formatForkPluginId(info.id, forkId)
 	clonePluginDefinition(ctor, ForkCtor, { id, displayName: id, packageName: info.packageName })
 
 	Object.defineProperty(ForkCtor, FORK_ID, { value: forkId, enumerable: false })

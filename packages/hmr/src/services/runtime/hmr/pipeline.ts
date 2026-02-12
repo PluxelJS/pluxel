@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import type { Logger as LogtapeLogger } from '@logtape/logtape'
-import type { Context } from '@pluxel/core'
+import type { Context, PluginConstructor } from '@pluxel/core'
 import { dirname, join } from 'pathe'
 import type { DevEnvironment, EnvironmentModuleNode as ModuleNode } from 'vite'
 import type { HmrPathApi, HmrToolkit } from './environment'
@@ -10,6 +10,10 @@ import { collectHotspots, isLogEnabled, logAttributionReport, type TimingTracker
 import { collectPluginTotals } from './operational-report'
 import type { HmrRunner } from './runner'
 import { runWithRequireShims } from './runtime-shims'
+import {
+	disablePluginsOnMissingDependencyError,
+	type MissingDepsCandidate,
+} from '../shared/missing-deps'
 
 export type PrefetchOrder = 'near' | 'all'
 
@@ -315,6 +319,19 @@ export async function prefetchTransforms(params: {
 export type HmrExecutorConfig = {
 	useRequireShims: boolean
 	dbgModules: LogtapeLogger | null
+	/**
+	 * When commit fails due to missing dependencies, automatically disable the offending plugins
+	 * (persisted) and retry commit so the rest of the batch can still load.
+	 *
+	 * @default true
+	 */
+	autoDisableMissingDependencies?: boolean
+	/**
+	 * Safety cap for auto-disable retries.
+	 *
+	 * @default 8
+	 */
+	autoDisableMaxPasses?: number
 }
 
 export class HmrExecutor {
@@ -393,12 +410,30 @@ export class HmrExecutor {
 		}
 
 		const endCommit = startTimer()
-		const res = await this.ctx.registry.commit()
+		let res = await this.ctx.registry.commit()
 		const commitMs = endCommit()
 
 		if (!res.ok) {
-			batch.rollback()
-			this.ctx.registry.resetDraft()
+			const autoDisableMissingDependencies = this.cfg.autoDisableMissingDependencies ?? true
+			const autoDisableMaxPasses = this.cfg.autoDisableMaxPasses ?? 8
+
+			if (autoDisableMissingDependencies && autoDisableMaxPasses > 0) {
+				let pass = 0
+				while (!res.ok && pass < autoDisableMaxPasses) {
+					const disabled = disablePluginsOnMissingDepsFromCommitError(this.ctx, res.err)
+					if (disabled.size === 0) break
+					await syncModulesToCoreDraft(this.ctx, ordered)
+					res = await this.ctx.registry.commit()
+					pass++
+				}
+			}
+
+			if (!res.ok) {
+				batch.rollback()
+				this.ctx.registry.resetDraft()
+			} else {
+				batch.commit()
+			}
 		} else {
 			batch.commit()
 		}
@@ -416,6 +451,40 @@ export class HmrExecutor {
 		// `keepOrder=false` historically did not change ordering; preserve that behavior.
 		const ordered = dedupeCleanIds(filesPath, (p) => this.path.toClean(p))
 		return await this.runAndLoadAllClean(ordered, keepOrder)
+	}
+}
+
+function disablePluginsOnMissingDepsFromCommitError(ctx: Context, error: unknown): Set<string> {
+	const loaded = ctx.loader?.api?.registry?.listRegistered?.()
+	if (!loaded || typeof (loaded as Map<string, PluginConstructor>).entries !== 'function') return new Set()
+	const loadedMap = loaded as ReadonlyMap<string, PluginConstructor>
+
+	const candidates: MissingDepsCandidate[] = []
+	for (const [name, ctor] of loadedMap) {
+		candidates.push({ name, ctorName: ctor?.name })
+	}
+
+	return disablePluginsOnMissingDependencyError({
+		error,
+		candidates,
+		isEnabled: (name) => ctx.configService.isEnabledInConfig(name),
+		disable: (name) => ctx.configService.disableInConfig(name),
+		batch: (run) => ctx.configService.batch(run),
+		logger: ctx.logger,
+		stage: 'hmr batch commit',
+	})
+}
+
+async function syncModulesToCoreDraft(ctx: Context, moduleIds: readonly string[]): Promise<void> {
+	// LoaderService manages moduleId → exported ctors mapping; re-sync is the lowest-overhead way
+	// to re-register enabled plugins after core rolls back draft mutations on failed verification.
+	for (let i = 0; i < moduleIds.length; i++) {
+		const id = moduleIds[i]!
+		try {
+			await ctx.loader.syncRuntimeForModule(id)
+		} catch (error) {
+			ctx.logger.warn('syncRuntimeForModule failed during commit retry', { moduleId: id, error })
+		}
 	}
 }
 

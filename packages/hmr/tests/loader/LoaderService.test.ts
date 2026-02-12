@@ -10,11 +10,19 @@ import {
 	setParamToken,
 } from '@pluxel/core'
 import { LoaderService } from '../../src/services/runtime/loader/LoaderService'
-import { EXTRA_FORKS, type ForksExtra } from '../../src/services/runtime/loader/selection'
+import {
+	EXTRA_BUILTINS_KNOWN,
+	EXTRA_FORKS,
+	type BuiltinsKnownExtra,
+	type ForksExtra,
+} from '../../src/services/runtime/loader/selection'
 
-function createHmrCtx(core: Context) {
-	const enabled = new Set<string>()
-	const extra: Record<string, unknown> = Object.create(null)
+function createHmrCtx(
+	core: Context,
+	state: { enabled?: Set<string>; extra?: Record<string, unknown> } = {},
+) {
+	const enabled = state.enabled ?? new Set<string>()
+	const extra: Record<string, unknown> = state.extra ?? Object.create(null)
 	const hmrService = { normalizeId: (id: string) => id }
 	const root = { hmrService }
 	const configService = {
@@ -105,6 +113,110 @@ describe('LoaderService', () => {
 
 		// Fork source should resolve to the base plugin module id.
 		expect(loader.api.registry.findModuleId('Forky#a')).toBe('pluxel:builtins')
+	})
+
+	it('preloadPlugins auto-disables missing-dependency builtins and commits the rest', async () => {
+		const core = new Context()
+		const ctx = createHmrCtx(core)
+		const loader = new LoaderService(ctx)
+
+		@Plugin({ name: 'Good' })
+		class Good extends BasePlugin {}
+
+		abstract class MissingBase extends BasePlugin {}
+
+		@Plugin({ name: 'Bad' })
+		class Bad extends BasePlugin {
+			constructor(_dep: MissingBase) {
+				super()
+			}
+		}
+		setParamToken(Bad, 0, MissingBase)
+
+		const names = await loader.preloadPlugins([Good, Bad])
+		expect(names.slice().sort()).toEqual(['Bad', 'Good'])
+
+		expect(ctx.configService.isEnabledInConfig('Good')).toBe(true)
+		expect(ctx.configService.isEnabledInConfig('Bad')).toBe(false)
+		expect(core.registry.isRunning(Good)).toBe(true)
+		expect(core.registry.isRunning(Bad)).toBe(false)
+	})
+
+	it('preloadPlugins does not re-enable disabled builtins on subsequent startups', async () => {
+		const state = { enabled: new Set<string>(), extra: Object.create(null) as Record<string, unknown> }
+
+		@Plugin({ name: 'Good' })
+		class Good extends BasePlugin {}
+
+		abstract class MissingBase extends BasePlugin {}
+
+		@Plugin({ name: 'Bad' })
+		class Bad extends BasePlugin {
+			constructor(_dep: MissingBase) {
+				super()
+			}
+		}
+		setParamToken(Bad, 0, MissingBase)
+
+		{
+			const core = new Context()
+			const ctx = createHmrCtx(core, state)
+			const loader = new LoaderService(ctx)
+
+			await loader.preloadPlugins([Good, Bad])
+			expect(ctx.configService.isEnabledInConfig('Good')).toBe(true)
+			expect(ctx.configService.isEnabledInConfig('Bad')).toBe(false)
+			expect(core.registry.isRunning(Good)).toBe(true)
+			expect(core.registry.isRunning(Bad)).toBe(false)
+
+			// Simulate user disabling the healthy plugin as well.
+			ctx.configService.disableInConfig('Good')
+		}
+
+		// New startup: should respect disabled bits and should not "seed enable" again.
+		{
+			const core = new Context()
+			const ctx = createHmrCtx(core, state)
+			const loader = new LoaderService(ctx)
+
+			await loader.preloadPlugins([Good, Bad])
+			expect(ctx.configService.isEnabledInConfig('Good')).toBe(false)
+			expect(ctx.configService.isEnabledInConfig('Bad')).toBe(false)
+			expect(core.registry.isRunning(Good)).toBe(false)
+			expect(core.registry.isRunning(Bad)).toBe(false)
+
+			const known = ctx.configService.getExtra(EXTRA_BUILTINS_KNOWN) as
+				| BuiltinsKnownExtra
+				| undefined
+			expect(known?.Good).toBe(1)
+			expect(known?.Bad).toBe(1)
+		}
+	})
+
+	it('preloadPlugins strict mode throws on missing dependency', async () => {
+		const core = new Context()
+		const ctx = createHmrCtx(core)
+		const loader = new LoaderService(ctx)
+
+		@Plugin({ name: 'Good' })
+		class Good extends BasePlugin {}
+
+		abstract class MissingBase extends BasePlugin {}
+
+		@Plugin({ name: 'Bad' })
+		class Bad extends BasePlugin {
+			constructor(_dep: MissingBase) {
+				super()
+			}
+		}
+		setParamToken(Bad, 0, MissingBase)
+
+		await expect(loader.preloadPlugins([Good, Bad], { strict: true })).rejects.toThrow(
+			/builtin preload commit failed/i,
+		)
+		// rollback should revert enable bits introduced by this call
+		expect(ctx.configService.isEnabledInConfig('Good')).toBe(false)
+		expect(ctx.configService.isEnabledInConfig('Bad')).toBe(false)
 	})
 
 	it('preloadPlugins enables and commits builtins', async () => {

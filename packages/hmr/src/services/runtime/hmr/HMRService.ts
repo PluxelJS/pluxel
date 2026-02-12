@@ -117,6 +117,19 @@ export interface HMRConfig {
 	/** 依赖相关配置（external / bridge / optimizeDeps 等） */
 	deps?: HMRDependencyConfig
 	/**
+	 * When commit fails due to missing dependencies, automatically disable the offending plugins
+	 * (persisted) and retry commit so the rest of the batch can still load.
+	 *
+	 * @default true
+	 */
+	commitAutoDisableMissingDependencies?: boolean
+	/**
+	 * Safety cap for commit auto-disable retries.
+	 *
+	 * @default 8
+	 */
+	commitAutoDisableMaxPasses?: number
+	/**
 	 * 额外的 Vite 插件（仅用于 HMR dev server）。
 	 *
 	 * 用途示例：
@@ -156,6 +169,27 @@ export interface HMRConfig {
 		/** Whether to enable this builtin in config. Defaults to `true`. */
 		enable?: boolean
 	}>
+	/**
+	 * Builtins preload policy:
+	 * - `true`: fail-fast if builtin preload commit fails (host startup crashes).
+	 * - `false`: best-effort; commit failures are logged and ignored (UI remains available).
+	 *
+	 * @default false
+	 */
+	builtinsPreloadStrict?: boolean
+	/**
+	 * When `builtinsPreloadStrict=false`, automatically disable plugins that fail DI verification
+	 * due to missing dependencies, then retry preload with remaining enabled plugins.
+	 *
+	 * @default true
+	 */
+	builtinsAutoDisableMissingDependencies?: boolean
+	/**
+	 * Safety cap for builtins auto-disable retries.
+	 *
+	 * @default 8
+	 */
+	builtinsAutoDisableMaxPasses?: number
 	/**
 	 * SSR runner-only runtime shims (Vite pipeline).
 	 *
@@ -609,6 +643,8 @@ export class HMRService {
 		this.executor = new HmrExecutor(this.ctx, this.runner, this.path, this.timing, {
 			dbgModules: this.dbg.modules,
 			useRequireShims: this.useRequireShims,
+			autoDisableMissingDependencies: this.config.commitAutoDisableMissingDependencies ?? true,
+			autoDisableMaxPasses: this.config.commitAutoDisableMaxPasses ?? 8,
 		})
 
 		this.batchProcessor = new HmrBatchProcessor(
@@ -796,7 +832,13 @@ export class HMRService {
 			if (builtins.length) resolved.push(...builtins)
 			// Commit builtins as a baseline so later loader batch rollbacks revert back to a container
 			// that already includes the built-in plugins.
-			const declared = await this.ctx.loader.preloadPlugins(resolved, { commit: true })
+			const declared = await this.ctx.loader.preloadPlugins(resolved, {
+				commit: true,
+				strict: this.config.builtinsPreloadStrict ?? false,
+				autoDisableMissingDependencies:
+					this.config.builtinsAutoDisableMissingDependencies ?? true,
+				autoDisableMaxPasses: this.config.builtinsAutoDisableMaxPasses ?? 8,
+			})
 
 			if (builtinsFromDist.length) {
 				this.ctx.logger.info('Builtin baseline ready (from dist)', {

@@ -17,7 +17,13 @@ import {
 import { Youch } from 'youch'
 import type { YouchANSIOptions } from 'youch/types'
 import { pluxelCategories } from './categories'
-import { findErrorInProps, findErrorInRecord, formatErrorStack, omitErrorProps } from './error'
+import {
+	findErrorInMessage,
+	findErrorInProps,
+	findErrorInRecord,
+	formatErrorStack,
+	omitErrorProps,
+} from './error'
 import { createPluxelPrettyFormatter, type PluxelPrettyFormatterOptions } from './formatters'
 import { mergeDefaults } from './merge'
 import { createPluxelPrettyTimestampFormatter, resolvePluxelLogTimezone } from './timestamp'
@@ -158,8 +164,20 @@ function createYouchMatcher(opts: PluxelYouchSinkOptions): (record: LogRecord) =
 			if (!ok) return false
 		}
 		if (filter && !filter(record)) return false
+
+		// Perf: check structured props first (most errors are logged via { error } / { err }).
+		// Only scan message interpolation if necessary.
+		const propError = findErrorInProps(record)
+		if (propError instanceof Error) return !isMjsError(propError)
+		const msgError = findErrorInMessage(record)
+		if (msgError instanceof Error) return !isMjsError(msgError)
 		return true
 	}
+}
+
+function isMjsError(error: Error): boolean {
+	const stack = typeof error.stack === 'string' ? error.stack : ''
+	return stack.includes('.mjs')
 }
 
 export function createPluxelYouchSink(opts: PluxelYouchSinkOptions = {}): Sink {

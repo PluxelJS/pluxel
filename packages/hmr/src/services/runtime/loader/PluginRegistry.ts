@@ -2,8 +2,10 @@
 import {
 	type Context,
 	type ForkablePluginConstructor,
+	formatForkPluginId,
 	getDeclaredName,
 	getForkOf,
+	isForkPluginId,
 	getPluginInfo,
 	type PluginConstructor,
 	type PluginIdentifier,
@@ -408,7 +410,12 @@ export class PluginRegistry {
 			if (forkIds.length === 0) continue
 
 			for (const forkId of forkIds) {
-				const forkName = `${name}#${forkId}`
+				let forkName: string
+				try {
+					forkName = formatForkPluginId(name, forkId)
+				} catch {
+					continue
+				}
 				if (!this.ctx.configService.isEnabledInConfig(forkName)) continue
 				try {
 					const ForkCtor = this.ctx.registry.fork(
@@ -532,7 +539,13 @@ export class PluginRegistry {
 				this.ctx.configService.disableInConfig(name)
 
 				const forkIds = this.getForkIds(name)
-				for (const forkId of forkIds) this.ctx.configService.disableInConfig(`${name}#${forkId}`)
+				for (const forkId of forkIds) {
+					try {
+						this.ctx.configService.disableInConfig(formatForkPluginId(name, forkId))
+					} catch {
+						// ignore invalid persisted fork ids
+					}
+				}
 			}
 		})
 	}
@@ -558,7 +571,7 @@ export class PluginRegistry {
 			const selectedRaw = map?.[baseKey]
 			const selected =
 				typeof selectedRaw === 'string' && selectedRaw.trim().length > 0 ? selectedRaw.trim() : null
-			const selectedIsForkName = selected ? selected.includes('#') : false
+			const selectedIsForkName = selected ? isForkPluginId(selected) : false
 			const selectedCtor = selected && !selectedIsForkName ? this.nameMap.get(selected) : undefined
 			const selectedIsForkCtor = selectedCtor ? Boolean(getForkOf(selectedCtor)) : false
 			const selectedEnabled =
@@ -574,7 +587,7 @@ export class PluginRegistry {
 				const candidates: string[] = []
 				for (const [candidateName, candidateCtor] of this.nameMap) {
 					// nameMap is declaration-only; still be defensive.
-					if (candidateName.includes('#')) continue
+					if (isForkPluginId(candidateName)) continue
 					if (candidateName !== name && !this.ctx.configService.isEnabledInConfig(candidateName))
 						continue
 

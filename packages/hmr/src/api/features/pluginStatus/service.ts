@@ -1,4 +1,9 @@
-import { getPluginInfo, type PluginConstructor, type Context as PlxContext } from '@pluxel/core'
+import {
+	formatForkPluginId,
+	getPluginInfo,
+	type PluginConstructor,
+	type Context as PlxContext,
+} from '@pluxel/core'
 import type { InferOutput } from 'valibot'
 import { EXTRA_FORKS, type ForksExtra } from '../../../services/runtime/loader/selection'
 import type {
@@ -81,7 +86,10 @@ export function getStatusOverview(pCtx: PlxContext) {
 		if (Array.isArray(forkIds)) {
 			for (const raw of forkIds) {
 				const fid = typeof raw === 'string' ? raw.trim() : ''
-				if (fid) forkNames.add(`${baseName}#${fid}`)
+				if (!fid) continue
+				try {
+					forkNames.add(formatForkPluginId(baseName, fid))
+				} catch {}
 			}
 		}
 		for (const forkCtor of pCtx.registry.listForks(baseCtor as any)) {

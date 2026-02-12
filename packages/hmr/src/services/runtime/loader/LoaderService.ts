@@ -1,9 +1,20 @@
 // loader/index.ts
 import type { ForkablePluginConstructor } from '@pluxel/core'
-import { type Context, getPluginInfo, Injectable, type PluginConstructor } from '@pluxel/core'
+import {
+	type Context,
+	formatForkPluginId,
+	getPluginInfo,
+	Injectable,
+	type PluginConstructor,
+} from '@pluxel/core'
 import { ModuleReplacer } from './module-replacer'
 import { PluginRegistry } from './PluginRegistry'
-import { EXTRA_FORKS, type ForksExtra } from './selection'
+import {
+	EXTRA_BUILTINS_KNOWN,
+	EXTRA_FORKS,
+	type BuiltinsKnownExtra,
+	type ForksExtra,
+} from './selection'
 import {
 	AnchorStore,
 	LoaderAnchors,
@@ -17,6 +28,10 @@ import {
 	type RemovalScope,
 	RuntimeResolver,
 } from './support'
+import {
+	disablePluginsOnMissingDependencyError,
+	type MissingDepsCandidate,
+} from '../shared/missing-deps'
 
 export type { LoaderApi, RemovalScope } from './support'
 
@@ -24,6 +39,38 @@ const serviceName = 'loader' as const
 const BUILTIN_MODULE_ID_DEFAULT = 'pluxel:builtins'
 
 export type BuiltinForkSpec = string | { id: string; enable?: boolean }
+export type PreloadBuiltinsOptions = {
+	moduleId?: string
+	/**
+	 * Whether to commit immediately after enabling builtins.
+	 *
+	 * @default true
+	 */
+	commit?: boolean
+	/**
+	 * Strict mode:
+	 * - `true`: commit failures throw (fail-fast).
+	 * - `false`: commit failures are logged and ignored (best-effort; UI remains available).
+	 *
+	 * @default false
+	 */
+	strict?: boolean
+	/**
+	 * When `strict=false`, automatically disable plugins that fail DI verification due to missing dependencies
+	 * (then retry preload/commit with the remaining enabled plugins).
+	 *
+	 * This keeps the host usable even when a plugin is temporarily broken or its dependency is not installed.
+	 *
+	 * @default true
+	 */
+	autoDisableMissingDependencies?: boolean
+	/**
+	 * Safety cap for auto-disable retries (avoid infinite loops on unexpected errors).
+	 *
+	 * @default 8
+	 */
+	autoDisableMaxPasses?: number
+}
 export type BuiltinPluginSpec =
 	| PluginConstructor
 	| {
@@ -116,20 +163,33 @@ export class LoaderService {
 	 */
 	async preloadPlugins(
 		plugins: readonly BuiltinPluginSpec[],
-		options: { moduleId?: string; commit?: boolean } = {},
+		options: PreloadBuiltinsOptions = {},
 	): Promise<string[]> {
 		if (!plugins.length) return []
 		const defaultModuleId = options.moduleId ?? BUILTIN_MODULE_ID_DEFAULT
 		const shouldCommit = options.commit !== false
+		const strict = options.strict ?? false
+		const autoDisableMissingDependencies =
+			options.autoDisableMissingDependencies ?? (strict ? false : true)
+		const autoDisableMaxPasses = options.autoDisableMaxPasses ?? 8
 
 		const tx = this.registry.beginTransaction()
 		const seen = new Set<PluginConstructor>()
-		const declared: Array<{ name: string; ctor: PluginConstructor; enable: boolean }> = []
-		const forksToEnable: Array<{ name: string; ctor: PluginConstructor }> = []
+		const declared: Array<{ name: string; ctor: PluginConstructor; defaultEnable: boolean }> = []
+		const declaredForks: Array<{
+			name: string
+			ctor: PluginConstructor
+			defaultEnable: boolean
+		}> = []
 		let touchedCoreDraft = false
 		const prevForksExtra = this.ctx.configService.getExtra<ForksExtra>(EXTRA_FORKS) ?? {}
 		let forksExtraDirty = false
 		const forkSets = new Map<string, Set<string>>()
+		const prevKnownExtra =
+			this.ctx.configService.getExtra<BuiltinsKnownExtra>(EXTRA_BUILTINS_KNOWN) ?? {}
+		let knownDirty = false
+		let nextKnownExtra: BuiltinsKnownExtra | undefined
+		const enabledByUs: string[] = []
 
 		try {
 			for (const spec of plugins) {
@@ -142,7 +202,7 @@ export class LoaderService {
 				const exportKey = typeof spec === 'function' ? 'default' : (spec.exportKey ?? 'default')
 
 				const declaredName = this.registry.declarePlugin(moduleId, ctor, exportKey, tx)
-				declared.push({ name: declaredName, ctor, enable })
+				declared.push({ name: declaredName, ctor, defaultEnable: enable })
 
 				const forks = typeof spec === 'function' ? undefined : spec.forks
 				if (forks?.length) {
@@ -163,56 +223,143 @@ export class LoaderService {
 						if (set.size !== before) forksExtraDirty = true
 
 						const forkEnable = typeof forkSpec === 'string' ? true : forkSpec.enable !== false
-						if (!forkEnable) continue
-						const forkName = `${declaredName}#${forkId}`
+						const forkName = formatForkPluginId(declaredName, forkId)
 						const forkCtor = this.ctx.registry.fork(
 							ctor as unknown as ForkablePluginConstructor,
 							forkId,
 						) as PluginConstructor
-						forksToEnable.push({ name: forkName, ctor: forkCtor })
+						declaredForks.push({ name: forkName, ctor: forkCtor, defaultEnable: forkEnable })
 					}
 				}
 			}
 
-			if (forksExtraDirty) {
-				const next: ForksExtra = { ...prevForksExtra }
-				for (const [baseName, set] of forkSets) next[baseName] = [...set]
+			const enableTargets: Array<{
+				name: string
+				ctor: PluginConstructor
+				defaultEnable: boolean
+				knownBefore: boolean
+			}> = []
+
+			const ensureKnown = (name: string) => {
+				if (prevKnownExtra[name] === 1) return
+				if (!nextKnownExtra) nextKnownExtra = { ...prevKnownExtra }
+				if (nextKnownExtra[name] === 1) return
+				nextKnownExtra[name] = 1
+				knownDirty = true
+			}
+
+			for (const item of declared) {
+				const knownBefore = prevKnownExtra[item.name] === 1
+				enableTargets.push({
+					name: item.name,
+					ctor: item.ctor,
+					defaultEnable: item.defaultEnable,
+					knownBefore,
+				})
+				if (!knownBefore) ensureKnown(item.name)
+			}
+			for (const fork of declaredForks) {
+				const knownBefore = prevKnownExtra[fork.name] === 1
+				enableTargets.push({
+					name: fork.name,
+					ctor: fork.ctor,
+					defaultEnable: fork.defaultEnable,
+					knownBefore,
+				})
+				if (!knownBefore) ensureKnown(fork.name)
+			}
+
+			if (forksExtraDirty || knownDirty) {
 				this.ctx.configService.batch(() => {
-					this.ctx.configService.setExtra(EXTRA_FORKS, next)
+					if (forksExtraDirty) {
+						const next: ForksExtra = { ...prevForksExtra }
+						for (const [baseName, set] of forkSets) next[baseName] = [...set]
+						this.ctx.configService.setExtra(EXTRA_FORKS, next)
+					}
+					if (knownDirty) {
+						this.ctx.configService.setExtra(EXTRA_BUILTINS_KNOWN, nextKnownExtra!)
+					}
 				})
 			}
 
-			const enabledByUs: string[] = []
-			for (const item of declared) {
-				if (!item.enable) continue
-				const wasEnabled = this.ctx.configService.isEnabledInConfig(item.name)
-				await this.registry.enable(item.name, item.ctor)
-				touchedCoreDraft = true
-				if (!wasEnabled) enabledByUs.push(item.name)
-			}
-			for (const fork of forksToEnable) {
-				const wasEnabled = this.ctx.configService.isEnabledInConfig(fork.name)
-				await this.registry.enable(fork.name, fork.ctor)
-				touchedCoreDraft = true
-				if (!wasEnabled) enabledByUs.push(fork.name)
+			const startTargetsWithSeeding = async () => {
+				for (const t of enableTargets) {
+					const wasEnabled = this.ctx.configService.isEnabledInConfig(t.name)
+					const shouldSeed = t.defaultEnable && !t.knownBefore
+					if (!wasEnabled && !shouldSeed) continue
+					await this.registry.enable(t.name, t.ctor)
+					touchedCoreDraft = true
+					if (!wasEnabled) enabledByUs.push(t.name)
+				}
 			}
 
+			const enableTargetsIfEnabledInConfig = async () => {
+				for (const t of enableTargets) {
+					if (!this.ctx.configService.isEnabledInConfig(t.name)) continue
+					await this.registry.enable(t.name, t.ctor)
+					touchedCoreDraft = true
+				}
+			}
+
+			await startTargetsWithSeeding()
+
 			if (shouldCommit) {
-				const res = await this.ctx.registry.commit()
+				const candidates: MissingDepsCandidate[] = enableTargets.map((t) => {
+					let pluginId: string | undefined
+					try {
+						pluginId = getPluginInfo(t.ctor).id
+					} catch {
+						pluginId = undefined
+					}
+					return { name: t.name, ctorName: t.ctor?.name, pluginId }
+				})
+
+				let pass = 0
+				let res = await this.ctx.registry.commit()
+				while (
+					!res.ok &&
+					!strict &&
+					autoDisableMissingDependencies &&
+					pass < autoDisableMaxPasses
+				) {
+					const disabled = disablePluginsOnMissingDependencyError({
+						error: res.err,
+						candidates,
+						isEnabled: (name) => this.ctx.configService.isEnabledInConfig(name),
+						disable: (name) => this.ctx.configService.disableInConfig(name),
+						batch: (run) => this.ctx.configService.batch(run),
+						logger: this.ctx.logger,
+						stage: 'builtins preload',
+					})
+					if (disabled.size === 0) break
+
+					// Commit failure rolls core draft back internally; enable remaining plugins again and retry.
+					await enableTargetsIfEnabledInConfig()
+					res = await this.ctx.registry.commit()
+					pass++
+				}
+
 				if (!res.ok) {
 					// Keep persisted state consistent: revert enable bits that were introduced by this call.
 					for (const n of enabledByUs) this.ctx.configService.disableInConfig(n)
 					if (forksExtraDirty) this.ctx.configService.setExtra(EXTRA_FORKS, prevForksExtra)
+					if (knownDirty) this.ctx.configService.setExtra(EXTRA_BUILTINS_KNOWN, prevKnownExtra)
 					tx.rollback()
 					this.ctx.registry.resetDraft()
-					throw new Error('builtin preload commit failed', { cause: res.err })
+
+					if (strict) throw new Error('builtin preload commit failed', { cause: res.err })
+					this.ctx.logger.error('builtin preload commit failed', { error: res.err })
+					return []
 				}
 			}
 
 			tx.commit()
 			return declared.map((d) => d.name)
 		} catch (error) {
+			// Keep persisted state consistent: revert enable bits introduced by this call.
+			for (const n of enabledByUs) this.ctx.configService.disableInConfig(n)
 			if (forksExtraDirty) this.ctx.configService.setExtra(EXTRA_FORKS, prevForksExtra)
+			if (knownDirty) this.ctx.configService.setExtra(EXTRA_BUILTINS_KNOWN, prevKnownExtra)
 			tx.rollback()
 			if (touchedCoreDraft) this.ctx.registry.resetDraft()
 			throw error
@@ -247,5 +394,15 @@ export class LoaderService {
 	/** 按插件名清理运行态（找不到路径也能尽量关闭/禁用） */
 	prunePluginByName(name: string, scope: RemovalScope = 'runtime') {
 		this.pruner.prunePluginByName(name, scope)
+	}
+
+	/**
+	 * Re-apply config enablement for a module into core draft.
+	 *
+	 * Used by the HMR pipeline when commit retries are needed (e.g. MissingDependency auto-disable),
+	 * because core rolls draft changes back internally on verification failure.
+	 */
+	async syncRuntimeForModule(moduleId: string): Promise<void> {
+		await this.registry.syncRuntimeForModule(moduleId)
 	}
 }

@@ -1,4 +1,4 @@
-import { ForkablePlugin, type Context } from '@pluxel/core'
+import { ForkablePlugin, parseForkPluginId, type Context } from '@pluxel/core'
 
 import { EXTRA_FORKS, type ForksExtra } from '../../services/runtime/loader/selection'
 
@@ -27,19 +27,15 @@ export function addForkToCatalog(ctx: Context, originalName: string, forkId: str
 }
 
 export function maybeAddForkToCatalog(ctx: Context, name: string) {
-	const hash = typeof name === 'string' ? name.lastIndexOf('#') : -1
-	if (hash <= 0) return
-	const baseName = name.slice(0, hash)
-	const forkId = name.slice(hash + 1).trim()
-	if (!baseName || !forkId) return
+	const fork = parseForkPluginId(name)
+	if (!fork) return
 	try {
-		const baseCtor = ctx.loader.api.runtime.resolve(baseName)
+		const baseCtor = ctx.loader.api.runtime.resolve(fork.baseId)
 		if (!baseCtor) return
 		const proto = (baseCtor as { prototype?: unknown }).prototype
 		if (!proto || !(proto instanceof ForkablePlugin)) return
-		addForkToCatalog(ctx, baseName, forkId)
+		addForkToCatalog(ctx, fork.baseId, fork.forkId)
 	} catch {
 		// ignore
 	}
 }
-
