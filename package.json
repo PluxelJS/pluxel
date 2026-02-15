@@ -8,7 +8,8 @@
 	},
 	"scripts": {
 		"test": "turbo run test",
-		"test:vitest": "vitest run -c vitest.config.ts",
+		"test:affected": "turbo run test --filter=...[origin/main]",
+		"test:watch": "vitest",
 		"build": "turbo run build",
 		"build:plugin": "turbo run build:plugin",
 		"audit:logs": "node scripts/audit-logs.mjs",

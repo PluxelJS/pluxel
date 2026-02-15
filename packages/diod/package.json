@@ -23,7 +23,7 @@
 	],
 	"scripts": {
 		"build": "tsdown",
-		"test": "pnpm exec vitest run -c vitest.config.ts",
+		"test": "pnpm exec vitest run",
 		"docs": "rimraf docs/api && typedoc --plugin typedoc-plugin-markdown",
 		"lint": "biome check",
 		"qa": "pnpm run lint && pnpm run type-check && pnpm run test",

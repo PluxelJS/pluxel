@@ -31,7 +31,7 @@
 	],
 	"scripts": {
 		"build": "tsdown",
-		"test": "pnpm exec vitest run -c vitest.config.ts"
+		"test": "pnpm exec vitest run"
 	},
 	"peerDependencies": {
 		"pathe": "^2.0.3",

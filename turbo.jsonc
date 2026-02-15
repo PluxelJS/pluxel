@@ -1,5 +1,12 @@
 {
 	"$schema": "https://turborepo.com/schema.json",
+	"globalDependencies": [
+		// Many packages extend root TS configs; changing them must invalidate caches.
+		"tsconfig*.json",
+		// Workspace-level Vitest entry (used by `pnpm exec vitest` at repo root).
+		"vitest.config.ts",
+		"pnpm-workspace.yaml"
+	],
 	"tasks": {
 		"build": {
 			"dependsOn": ["^build"],
@@ -11,7 +18,7 @@
 		},
 		"test": {
 			"dependsOn": ["build"],
-			"outputs": ["dist/**"]
+			"outputs": []
 		},
 		"web": {
 			"outputs": ["public/**"],

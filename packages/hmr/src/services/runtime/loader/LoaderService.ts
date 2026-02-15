@@ -7,12 +7,16 @@ import {
 	Injectable,
 	type PluginConstructor,
 } from '@pluxel/core'
+import {
+	disablePluginsOnMissingDependencyError,
+	type MissingDepsCandidate,
+} from '../shared/missing-deps'
 import { ModuleReplacer } from './module-replacer'
 import { PluginRegistry } from './PluginRegistry'
 import {
+	type BuiltinsKnownExtra,
 	EXTRA_BUILTINS_KNOWN,
 	EXTRA_FORKS,
-	type BuiltinsKnownExtra,
 	type ForksExtra,
 } from './selection'
 import {
@@ -28,10 +32,6 @@ import {
 	type RemovalScope,
 	RuntimeResolver,
 } from './support'
-import {
-	disablePluginsOnMissingDependencyError,
-	type MissingDepsCandidate,
-} from '../shared/missing-deps'
 
 export type { LoaderApi, RemovalScope } from './support'
 
@@ -169,8 +169,7 @@ export class LoaderService {
 		const defaultModuleId = options.moduleId ?? BUILTIN_MODULE_ID_DEFAULT
 		const shouldCommit = options.commit !== false
 		const strict = options.strict ?? false
-		const autoDisableMissingDependencies =
-			options.autoDisableMissingDependencies ?? (strict ? false : true)
+		const autoDisableMissingDependencies = options.autoDisableMissingDependencies ?? !strict
 		const autoDisableMaxPasses = options.autoDisableMaxPasses ?? 8
 
 		const tx = this.registry.beginTransaction()

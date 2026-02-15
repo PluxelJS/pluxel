@@ -66,6 +66,24 @@ import `reflect-metadata` explicitly in *your* app/test entry **before** any dec
 If you have many workspace packages and want a single root `vitest.config.ts`:
 
 ```ts
+import { defineConfig } from 'vitest/config'
+
+export default defineConfig({
+  test: {
+    // Vitest Projects: treat each package config as a separate project.
+    projects: ['packages/**/vitest.config.ts'],
+  },
+})
+```
+
+Each package can keep its own `vitest.config.ts` (typically `export { default } from '@pluxel/test/vitest'`).
+
+By default, `@pluxel/test/vitest` sets `passWithNoTests: !process.env.CI` to avoid breaking local workspace runs
+when some packages have no tests.
+
+If you prefer automatic discovery instead of maintaining globs:
+
+```ts
 import { definePluxelVitestWorkspaceConfig } from '@pluxel/test/vitest'
 
 export default definePluxelVitestWorkspaceConfig({

@@ -92,6 +92,9 @@ export function definePluxelVitestConfig(
 		test: {
 			environment: 'node',
 			setupFiles: ['@pluxel/test/setup'],
+			// Monorepos commonly have packages without tests. Keep local runs friendly,
+			// but still allow CI to fail if a project unexpectedly has no tests.
+			passWithNoTests: !process.env.CI,
 			// Avoid Vite deps optimizer OOMs in large monorepos (node tests don't need it).
 			deps: {
 				optimizer: {

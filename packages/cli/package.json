@@ -37,7 +37,7 @@
 	"scripts": {
 		"dev": "bun src/cli.ts new --dry-run --no-install",
 		"build": "tsdown",
-		"test": "pnpm exec vitest run -c vitest.config.ts"
+		"test": "pnpm exec vitest run"
 	},
 	"peerDependencies": {
 		"@pluxel/market": "*",

@@ -19,7 +19,7 @@
 	"scripts": {
 		"build": "pluxel build",
 		"build:plugin": "pluxel build",
-		"test": "pnpm exec vitest run -c vitest.config.ts"
+		"test": "pnpm exec vitest run"
 	},
 	"peerDependencies": {
 		"@mantine/core": "^8.3.14",

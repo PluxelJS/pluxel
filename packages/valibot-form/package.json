@@ -23,7 +23,7 @@
 		"build": "tsdown",
 		"dev": "vite",
 		"preview": "vite preview",
-		"test": "pnpm exec vitest run -c vitest.config.ts"
+		"test": "pnpm exec vitest run"
 	},
 	"dependencies": {
 		"valibot": "^1.2.0"

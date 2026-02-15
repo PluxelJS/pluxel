@@ -16,8 +16,8 @@
 		"./package.json": "./package.json"
 	},
 	"scripts": {
-		"test": "pnpm exec vitest run -c vitest.config.ts",
-		"bench": "pnpm exec vitest bench -c vitest.config.ts bench/context-getter.bench.ts",
+		"test": "pnpm exec vitest run",
+		"bench": "pnpm exec vitest bench bench/context-getter.bench.ts",
 		"build": "tsdown"
 	},
 	"devDependencies": {
