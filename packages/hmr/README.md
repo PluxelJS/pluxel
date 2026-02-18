@@ -147,3 +147,55 @@ Pluxel 的“内部 API”现在额外挂载了一个 MCP（Model Context Protoc
 - Logs “LLM 友善文本视图”：MCP 侧提供 `logs.latestText` / `logs.waitForText`（去噪 + 稳定截断 + 少字段），优先给 agent 使用。
 - Dev loop 辅助：`plugins.list` / `plugin.status` / `plugin.waitForStage` / `plugin.schema` / `plugin.config.*` / `workspace.resolveEntry` / `workspace.listEntries` / `hmr.lastBatch` / `hmr.executeFiles`
 - HMR 完成信号：由 `ctx.root.hmrService.api.waitForBatch()` / `waitForStable()` 提供（返回 batch 摘要；`ok` 表示 batch 成功与否，`lifecycleOk`/`commit.failed` 表示插件生命周期启动是否失败）
+
+## 7) CLI：一次性 agent 入口（不常驻）
+
+Pluxel 的 HMR host 默认是“常驻监听”（dev server + watcher）。对 code agent / CI 来说更需要“一次跑完就退出，并产出可读日志”。
+
+`pluxel-hmr agent` 的默认策略是 **state-based**：
+- `warmup()` 冷启动执行入口（注册/注入/commit）
+- `waitForIdle()` drain 内部 batch 队列（不靠时间判断稳定）
+- best-effort shutdown（带超时兜底，避免卡死）
+- 导出 LLM 友好日志与结构化摘要
+
+### 产物
+- `logs/hmr.llm.txt`：LLM 友好精简日志（用于阅读/贴到 prompt）
+- `logs/hmr.agent.summary.json`：结构化摘要（ok / errors / timedOut flags）
+  - `ok=false` 当出现：`warmupError` / `agentError` / `idleTimedOut` / `stableTimedOut` / `shutdownTimedOut`
+
+### 退出码
+- `ok=true` → `0`；否则 `1`
+
+### 常用命令
+```bash
+# 工作目录下使用（默认 root = cwd）
+pluxel-hmr agent --clean --json
+
+# 可选：如果你需要“安静窗口”语义（时间语义），再加 quiet-ms
+pluxel-hmr agent --clean --json --quiet-ms 250
+
+# 可选：重项目/慢环境可提高兜底超时（默认 10000ms）
+pluxel-hmr agent --clean --json --timeout-ms 30000
+```
+
+### 注意：`--json` 输出是可机器解析的纯 JSON
+agent 模式会抑制运行期间的 stdout 噪声（例如 Vite `printUrls()`），避免污染 JSON；详细信息看 `logs/*`。
+
+如果你是通过 pnpm script 运行，为避免 pnpm 自己的脚本前缀污染 stdout，建议用：
+- `pnpm -s exec pluxel-hmr agent --clean --json` 或
+- `pnpm -s run hmr:agent`
+
+另外，agent 模式默认把运行时 state（config/plugin-data）写到 `.pluxel/`，避免落到 git-tracked 的 `data/` 目录。
+
+### 注意：本地开发（workspace link）需要更新 dist
+`pluxel-hmr` bin 默认优先加载 `dist/cli.mjs`。如果你在 monorepo 里修改了 `src/cli.ts`，请先：
+```bash
+# 在 @pluxel/hmr 包目录执行（或从 repo root 用 -C 指向它）
+pnpm build
+# 或：pnpm -C packages/hmr build
+```
+
+也可以在安装了 bun 的情况下使用：
+```bash
+PLUXEL_HMR_CLI_SOURCE=1 pluxel-hmr agent --clean --json
+```

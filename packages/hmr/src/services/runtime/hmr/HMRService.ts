@@ -52,6 +52,8 @@ import { WorkspaceEntryResolver } from './workspace-entry-resolver'
 export interface HMRConfig {
 	/** 业务扫描边界：HMR 只监听这些 roots（用于过滤 watcher 事件、分组报告等）。 */
 	roots: string[]
+	/** Whether to print Vite dev server URLs on startup. Defaults to `true`. */
+	printUrls?: boolean
 	/** Enable operational report output. Defaults to `true`. */
 	report?: boolean
 	/** Limits workspace-specifier resolution attempts when building the operational report. */
@@ -254,10 +256,18 @@ export type HmrWaitForStableOptions = HmrWaitForBatchOptions & {
 	quietMs?: number
 }
 
+export type HmrWaitForIdleOptions = {
+	/** Timeout in milliseconds. Defaults to 30_000. */
+	timeoutMs?: number
+	/** Optional abort signal. */
+	signal?: AbortSignal
+}
+
 export type HmrRuntimeApi = {
 	lastBatch(): HmrBatchSummary | null
 	waitForBatch(options?: HmrWaitForBatchOptions): Promise<HmrBatchSummary>
 	waitForStable(options?: HmrWaitForStableOptions): Promise<HmrBatchSummary>
+	waitForIdle(options?: HmrWaitForIdleOptions): Promise<void>
 }
 
 type HmrBatchWaiter = {
@@ -271,9 +281,9 @@ type HmrBatchWaiter = {
 export class HMRService {
 	public vite!: ViteDevServer
 	private startPromise?: Promise<void>
-	private serverConfiguredResolve?: () => void
-	private serverConfiguredReject?: (error: unknown) => void
 	private readonly serverConfigured: Promise<void>
+	private serverConfiguredResolve: () => void = () => undefined
+	private serverConfiguredReject: (error: unknown) => void = () => undefined
 
 	private ssrEnv!: DevEnvironment
 	private readonly runner = new HmrRunner()
@@ -350,8 +360,16 @@ export class HMRService {
 
 		setPkgrootCacheLimit(this.config.pkgrootCacheLimit)
 		this.serverConfigured = new Promise<void>((resolve, reject) => {
-			this.serverConfiguredResolve = resolve
-			this.serverConfiguredReject = reject
+			this.serverConfiguredResolve = () => {
+				this.serverConfiguredResolve = () => undefined
+				this.serverConfiguredReject = () => undefined
+				resolve()
+			}
+			this.serverConfiguredReject = (error) => {
+				this.serverConfiguredResolve = () => undefined
+				this.serverConfiguredReject = () => undefined
+				reject(error)
+			}
 		})
 
 		this.scanRootsAbs = unique(
@@ -407,6 +425,7 @@ export class HMRService {
 			lastBatch: () => this.lastBatchSummary,
 			waitForBatch: (options) => this.waitForBatch(options),
 			waitForStable: (options) => this.waitForStable(options),
+			waitForIdle: (options) => this.waitForIdle(options),
 		}
 
 		this.attachCommitTracker()
@@ -517,6 +536,11 @@ export class HMRService {
 			cacheDir: this.config.viteCacheDir,
 		})
 		const server = await createServer(serverConfig)
+		// Bind server shutdown to host lifetime (CLI agent runs call `ctx.effects.dispose()`).
+		this.ctx.effects.defer(() => server.close().catch(() => undefined), {
+			tag: 'HMRService.viteServer',
+			phase: 'shutdown',
+		})
 		try {
 			// Parallelize "listen" (Vite server boot) and "baseline" (bridge + builtins),
 			// so overall startup latency is closer to the slower of the two.
@@ -531,7 +555,7 @@ export class HMRService {
 			throw error
 		}
 
-		server.printUrls()
+		if (this.config.printUrls !== false) server.printUrls()
 		this.ctx.logger.info`HMR 服务已启动，只监听：${this.config.roots.join(', ')}`
 		// Default operational report: info-level, counts only.
 		// Best-effort and must never block startup.
@@ -608,13 +632,10 @@ export class HMRService {
 			this.configurePipeline()
 			this.setupBatching()
 			this.registerWatchers(server)
-			this.serverConfiguredResolve?.()
+			this.serverConfiguredResolve()
 		} catch (error) {
-			this.serverConfiguredReject?.(error)
+			this.serverConfiguredReject(error)
 			throw error
-		} finally {
-			this.serverConfiguredResolve = undefined
-			this.serverConfiguredReject = undefined
 		}
 	}
 
@@ -835,8 +856,7 @@ export class HMRService {
 			const declared = await this.ctx.loader.preloadPlugins(resolved, {
 				commit: true,
 				strict: this.config.builtinsPreloadStrict ?? false,
-				autoDisableMissingDependencies:
-					this.config.builtinsAutoDisableMissingDependencies ?? true,
+				autoDisableMissingDependencies: this.config.builtinsAutoDisableMissingDependencies ?? true,
 				autoDisableMaxPasses: this.config.builtinsAutoDisableMaxPasses ?? 8,
 			})
 
@@ -1008,7 +1028,7 @@ export class HMRService {
 			try {
 				return getPluginInfo(id as never).id
 			} catch {
-				const name = (id as unknown as { name?: unknown }).name
+				const name = (id as { name?: unknown }).name
 				return typeof name === 'string' && name ? name : 'Function'
 			}
 		}
@@ -1141,6 +1161,13 @@ export class HMRService {
 				throw error
 			}
 		}
+	}
+
+	private waitForIdle(options: HmrWaitForIdleOptions = {}): Promise<void> {
+		if (!this.debouncer) {
+			throw new Error('HMRService not initialized (batching not configured yet)')
+		}
+		return this.debouncer.waitForIdle(options)
 	}
 
 	private async performWarmup() {

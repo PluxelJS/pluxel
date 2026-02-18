@@ -1,8 +1,11 @@
 import { mkdir } from 'node:fs/promises'
+import { configure, getConfig } from '@logtape/logtape'
+import {
+	createPluxelLogtapeConfig,
+	createPluxelPluginLevelState,
+	type PluxelLogtapeConfigOptions,
+} from '@pluxel/core/logger'
 import { dirname } from 'pathe'
-
-import { configure, getConfig, type LogLevel } from '@logtape/logtape'
-import { createPluxelLogtapeConfig, createPluxelPluginLevelState } from '@pluxel/core/logger'
 
 import { createRuntimeLogSink, type RuntimeLogSinkOptions } from './sink'
 
@@ -21,6 +24,12 @@ export type EnsurePluxelLoggingOptions = {
 	 * Defaults to `hmr` because this helper is mainly for HMR hosts.
 	 */
 	preset?: 'hmr' | 'core'
+	/**
+	 * Console sink:
+	 * - `undefined` / `true`: enabled with preset defaults
+	 * - `false`: disabled
+	 */
+	console?: PluxelLogtapeConfigOptions['console']
 	/** File path passed to `createPluxelLogtapeConfig({ file })`. */
 	file?: string | false
 	/**
@@ -64,6 +73,7 @@ export async function ensurePluxelLogging(opts: EnsurePluxelLoggingOptions = {})
 	await configure(
 		createPluxelLogtapeConfig({
 			preset,
+			console: opts.console,
 			file,
 			ui: ui ? { sink: ui } : undefined,
 			debug: opts.debug,

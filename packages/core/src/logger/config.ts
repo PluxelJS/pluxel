@@ -431,12 +431,12 @@ function renderTextFormatterValue(value: unknown): string {
 	}
 }
 
-	function createPluxelSafeTextFormatter(timestamp: (ts: number) => string) {
-		return getTextFormatter({
-			timestamp,
-			value: (v) => renderTextFormatterValue(v),
-		})
-	}
+function createPluxelSafeTextFormatter(timestamp: (ts: number) => string) {
+	return getTextFormatter({
+		timestamp,
+		value: (v) => renderTextFormatterValue(v),
+	})
+}
 
 function createDailyTimeRotatingFileSink(path: string, opts?: { maxAgeMs?: number }): Sink {
 	const directory = dirname(path)
@@ -581,12 +581,28 @@ export function createPluxelLogtapeConfig(
 		baseLogger.filters = baseLogger.filters ? [...baseLogger.filters, id] : [id]
 	}
 
-	const includeMeta = opts.includeMeta ?? Boolean(sinks.console)
-	if (includeMeta && sinks.console) {
+	// Always configure LogTape meta logger:
+	// - avoids LogTape's default "auto configured" info message
+	// - optionally routes internal logging errors to console/file when enabled
+	{
+		const includeMeta = opts.includeMeta ?? Boolean(sinks.console)
+		const metaLowestLevel = opts.metaLowestLevel ?? 'error'
+		const fallbackSinkId = 'logtapeMeta'
+
+		const metaSinks: string[] = []
+		if (includeMeta) {
+			if (sinks.console) metaSinks.push('console')
+			else if (sinks.file) metaSinks.push('file')
+		}
+		if (!metaSinks.length) {
+			if (!(fallbackSinkId in sinks)) sinks[fallbackSinkId] = () => undefined
+			metaSinks.push(fallbackSinkId)
+		}
+
 		loggers.push({
 			category: ['logtape', 'meta'],
-			sinks: ['console'],
-			lowestLevel: opts.metaLowestLevel ?? 'error',
+			sinks: metaSinks,
+			lowestLevel: metaLowestLevel,
 		})
 	}
 

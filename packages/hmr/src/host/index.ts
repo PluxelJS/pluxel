@@ -1,7 +1,7 @@
 import { existsSync } from 'node:fs'
 import { copyFile, mkdir } from 'node:fs/promises'
-import { dirname, isAbsolute, join, resolve } from 'pathe'
 import type { WorkspaceSnapshot } from '@pluxel/cli/hmr'
+import { dirname, isAbsolute, join, resolve } from 'pathe'
 import type { Plugin as VitePlugin } from 'vite'
 import type { Context as PluxelContext } from '..'
 import type { EnsurePluxelLoggingOptions } from '../logger/ensure'
@@ -71,6 +71,12 @@ export type CreateHmrHostOptions = {
 	 */
 	warmup?: boolean
 	/**
+	 * Whether to print Vite dev server URLs on startup.
+	 *
+	 * Defaults to `true`.
+	 */
+	printUrls?: boolean
+	/**
 	 * Extra Vite plugins for the HMR dev server (macros, transforms, etc.).
 	 */
 	vitePlugins?: VitePlugin[]
@@ -106,15 +112,15 @@ export type CreateHmrHostOptions = {
 	 * When provided, this keeps runtime state out of git-tracked `data/`.
 	 */
 	store?: {
-			/**
-			 * ConfigService storage file (workspace-relative unless absolute).
-			 *
-			 * Defaults to `.pluxel/hmr/config.json` when `store` is present.
-			 *
-			 * Tip: use `{profile}` to control where the active profile lands, e.g.
-			 * `.pluxel/hmr/config.{profile}.json` or `.pluxel/hmr/{profile}/config.json`.
-			 */
-			configFile?: string
+		/**
+		 * ConfigService storage file (workspace-relative unless absolute).
+		 *
+		 * Defaults to `.pluxel/hmr/config.json` when `store` is present.
+		 *
+		 * Tip: use `{profile}` to control where the active profile lands, e.g.
+		 * `.pluxel/hmr/config.{profile}.json` or `.pluxel/hmr/{profile}/config.json`.
+		 */
+		configFile?: string
 		/**
 		 * Seed config file copied into `configFile` when the target doesn't exist.
 		 *
@@ -151,7 +157,8 @@ export type CreateHmrHostResult = {
 function assertSnapshotShape(snapshot: WorkspaceSnapshot) {
 	// Fast, minimal structural validation for callers that may bypass workspace discovery.
 	const assertStringArray = (value: unknown, label: string) => {
-		if (!Array.isArray(value)) throw new Error(`[hmr-host] Invalid workspaceSnapshot: ${label} missing.`)
+		if (!Array.isArray(value))
+			throw new Error(`[hmr-host] Invalid workspaceSnapshot: ${label} missing.`)
 		if (value.some((x) => typeof x !== 'string')) {
 			throw new Error(`[hmr-host] Invalid workspaceSnapshot: ${label} must be string[].`)
 		}
@@ -164,11 +171,12 @@ function assertSnapshotShape(snapshot: WorkspaceSnapshot) {
 	if (!Array.isArray(snapshot.discovered)) {
 		throw new Error('[hmr-host] Invalid workspaceSnapshot: discovered missing.')
 	}
-	if (snapshot.builtinPackages !== undefined) assertStringArray(snapshot.builtinPackages, 'builtinPackages')
+	if (snapshot.builtinPackages !== undefined)
+		assertStringArray(snapshot.builtinPackages, 'builtinPackages')
 	if (snapshot.builtinsFromDist !== undefined) {
 		if (!Array.isArray(snapshot.builtinsFromDist))
 			throw new Error('[hmr-host] Invalid workspaceSnapshot: builtinsFromDist must be an array.')
-		for (const raw of snapshot.builtinsFromDist as unknown[]) {
+		for (const raw of snapshot.builtinsFromDist) {
 			if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
 				throw new Error(
 					'[hmr-host] Invalid workspaceSnapshot: builtinsFromDist must contain objects.',
@@ -245,8 +253,11 @@ export function applyHmrEnvOverrides(base: HMRConfig, env = process.env): HMRCon
 	}
 	const autoDisableRaw = env.PLUXEL_HMR_BUILTINS_AUTO_DISABLE_MISSING_DEPS
 	if (autoDisableRaw !== undefined) {
-		out.builtinsAutoDisableMissingDependencies =
-			!(autoDisableRaw === '0' || autoDisableRaw === 'false' || autoDisableRaw === 'no')
+		out.builtinsAutoDisableMissingDependencies = !(
+			autoDisableRaw === '0' ||
+			autoDisableRaw === 'false' ||
+			autoDisableRaw === 'no'
+		)
 	}
 	const maxPassesRaw = env.PLUXEL_HMR_BUILTINS_AUTO_DISABLE_MAX_PASSES
 	if (maxPassesRaw !== undefined) {
@@ -301,11 +312,11 @@ export async function createHmrHost(opts: CreateHmrHostOptions = {}): Promise<Cr
 	const logging = opts.logging ?? true
 	if (logging) {
 		await mkdir(logsDir, { recursive: true })
-		const base: EnsurePluxelLoggingOptions =
-			typeof logging === 'object' ? { ...logging } : { preset: 'hmr' }
+		const base: EnsurePluxelLoggingOptions = typeof logging === 'object' ? { ...logging } : {}
 		const { ensurePluxelLogging } = await import('../logger/ensure')
 		await ensurePluxelLogging({
 			preset: base.preset ?? 'hmr',
+			console: base.console,
 			file: base.file ?? opts.logFile ?? join(logsDir, 'hmr.log'),
 			ui: base.ui ?? true,
 			debug: base.debug ?? debug,
@@ -333,19 +344,17 @@ export async function createHmrHost(opts: CreateHmrHostOptions = {}): Promise<Cr
 	const include = snapshot.includeGlobs
 	const exclude = snapshot.excludeGlobs
 
-	const builtinsFromDist =
-		opts.builtinsFromDist !== undefined
-			? opts.builtinsFromDist
-			: opts.builtins !== undefined
-				? undefined
-				: snapshot.builtinsFromDist?.length
-					? snapshot.builtinsFromDist
-					: undefined
-	const builtinsFromDistResolved =
-		builtinsFromDist?.length ? resolveBuiltinsFromDistEntries(root, builtinsFromDist) : undefined
+	let builtinsFromDist = opts.builtinsFromDist
+	if (builtinsFromDist === undefined && opts.builtins === undefined) {
+		builtinsFromDist = snapshot.builtinsFromDist?.length ? snapshot.builtinsFromDist : undefined
+	}
+	const builtinsFromDistResolved = builtinsFromDist?.length
+		? resolveBuiltinsFromDistEntries(root, builtinsFromDist)
+		: undefined
 
 	const hmrServiceBase: HMRConfig = {
 		roots,
+		printUrls: opts.printUrls ?? true,
 		warmup: opts.warmup ?? true,
 		include: include?.length ? uniqSorted(include) : undefined,
 		entries,
