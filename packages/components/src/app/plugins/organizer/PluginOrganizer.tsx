@@ -3,9 +3,9 @@
  * PluginOrganizer
  * -----------------------------------------------------------------------------
  * 设计目标
- * 1) 布局：上（未分组）固定高度，下（我的分组）占满剩余空间，并且仅“我的分组”区域竖向滚动
- *    - 根容器使用 CSS Grid：grid-template-rows: 'auto 1fr'
- *    - 下半区使用 Mantine ScrollArea，保持唯一滚动源，避免页面级滚动抖动
+ * 1) 布局：上（未分组）与下（我的分组）弹性分配
+ *    - 无分组时：未分组尽可能占满竖向空间；我的分组仅展示提示
+ *    - 有分组时：未分组:我的分组 ≈ 1:2 分配空间，二者各自可滚动
  *
  * 2) 状态流转（本地优先）
  *    - 仅在首次挂载时读取 external initialGroups；之后完全本地化
@@ -73,25 +73,24 @@ import {
 import { IconFolderPlus } from '@tabler/icons-react'
 import type React from 'react'
 import { startTransition, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { parseSearchTokens } from '../shared/search'
+import { DroppableContainer } from './components/DroppableContainer'
+import { GroupCard } from './components/GroupCard'
+import { SortableRow } from './components/SortableRow'
+import { DENSITY, type Density } from './constants'
 import type { GroupConfig, PluginStatuses } from './types'
 import {
-	COLLAPSE_STORAGE_KEY,
 	arraysEqual,
 	assertNoDup,
+	COLLAPSE_STORAGE_KEY,
 	genGroupId,
 	readCollapsedState,
 	sanitize,
 	unique,
 } from './utils'
-import { parseSearchTokens } from '../shared/search'
-import { DroppableContainer } from './components/DroppableContainer'
-import { GroupCard } from './components/GroupCard'
-import { SortableRow } from './components/SortableRow'
-import { DENSITY, UNGROUPED_SCROLL_MAX_HEIGHT, type Density } from './constants'
 import { deriveRootLabel } from './utils/roots'
 
 export type { GroupConfig, PluginStatus, PluginStatuses } from './types'
-
 
 export type StatusFilter = {
 	running: boolean
@@ -756,20 +755,32 @@ export function PluginOrganizer({
 			onDragStart={handleDragStart}
 			onDragEnd={handleDragEnd}
 		>
-			{/* 根：Grid 强制 “上 auto + 下 1fr”，下区占满剩余并滚动 */}
+			{/* 根：Grid 分配上下区高度；无分组时让未分组占满 */}
 			<Box
 				className={className}
 				style={{
 					display: 'grid',
-					gridTemplateRows: 'auto 1fr',
+					gridTemplateRows:
+						groups.length > 0 ? 'minmax(0, 1fr) minmax(0, 2fr)' : 'minmax(0, 1fr) auto',
 					minHeight: 0,
 					height: '100%',
 					...style,
 				}}
 				onClick={handleBackgroundClick}
 			>
-				{/* 未分组：固定在顶部，不参与主滚动区 */}
-				<Card withBorder radius="xs" p={4} style={{ minWidth: 0 }}>
+				{/* 未分组：占用上半区；内部滚动 */}
+				<Card
+					withBorder
+					radius="xs"
+					p={4}
+					style={{
+						minWidth: 0,
+						minHeight: 0,
+						display: 'flex',
+						flexDirection: 'column',
+						overflow: 'hidden',
+					}}
+				>
 					<Group justify="space-between" align="center" mb={2} wrap="nowrap">
 						<Group gap={4} align="center">
 							<Text fw={600} size="xs">
@@ -797,7 +808,8 @@ export function PluginOrganizer({
 						disabled={isFiltering || locked}
 						minDropHeight={visibleUngrouped.length ? 0 : dh.rowH}
 						style={{
-							maxHeight: UNGROUPED_SCROLL_MAX_HEIGHT,
+							flex: 1,
+							minHeight: 0,
 							overflowY: 'auto',
 							overflowX: 'hidden',
 							paddingRight: 4,
@@ -863,69 +875,87 @@ export function PluginOrganizer({
 					</DroppableContainer>
 				</Card>
 
-				{/* 我的分组：唯一滚动区，永远占用剩余高度 */}
-				<Stack gap={2} style={{ minHeight: 0, minWidth: 0, overflow: 'hidden', paddingTop: 2 }}>
-					<Group justify="space-between" align="center">
-						<Group gap={4} align="center">
-							<Text fw={600} size="xs">
-								我的分组
-							</Text>
-							<Text size="xs" c="dimmed">
-								{visibleGroups.length} 个
-							</Text>
+				{/* 我的分组：有分组时占下半区并可滚动；无分组时收缩为提示行 */}
+				{groups.length > 0 ? (
+					<Stack gap={2} style={{ minHeight: 0, minWidth: 0, overflow: 'hidden', paddingTop: 2 }}>
+						<Group justify="space-between" align="center">
+							<Group gap={4} align="center">
+								<Text fw={600} size="xs">
+									我的分组
+								</Text>
+								<Text size="xs" c="dimmed">
+									{visibleGroups.length} 个
+								</Text>
+							</Group>
 						</Group>
-					</Group>
 
-					<ScrollArea
-						type="auto"
-						offsetScrollbars
-						scrollbarSize={4}
-						style={{ flex: 1, minHeight: 0, maxHeight: '100%' }}
-						viewportProps={{ style: { paddingRight: 2, paddingBottom: 2 } }}
-					>
-						<Box style={{ minWidth: 0 }}>
-							<SortableContext items={groupIdsSortable} strategy={verticalListSortingStrategy}>
-								<Stack gap={2} align="stretch" py={2}>
-									{visibleGroups.length === 0 ? (
-										<Text c="dimmed" size="xs" pl="xs">
-											暂无分组，可在上方创建。
-										</Text>
-									) : (
-										visibleGroups.map((g) => {
-											const vis = g.pluginIds
-											const isCollapsed = !!collapsed[g.groupId]
-											return (
-												<GroupCard
-													key={g.groupId}
-													g={g}
-													visibleIds={vis}
-													runningSet={runningSet}
-													enabledSet={enabledSet}
-													selectedSet={selectedSet}
-													activeSet={activeSet}
-													onSelect={handleRowSelect}
-													LinkComp={LinkComp}
-													sortableId={gid(g.groupId)}
-													droppableId={cid(g.groupId)}
-													isFiltering={isFiltering}
-													isCollapsed={isCollapsed}
-													toggleCollapse={() => toggleGroupCollapse(g.groupId)}
-													getName={getName}
-													getMeta={getMeta}
-													getItemSortableId={(id) => iid(id)}
-													dh={dh}
-													onRename={renameGroup}
-													onDelete={deleteGroup}
-													locked={locked}
-												/>
-											)
-										})
-									)}
-								</Stack>
-							</SortableContext>
-						</Box>
-					</ScrollArea>
-				</Stack>
+						<ScrollArea
+							type="auto"
+							offsetScrollbars
+							scrollbarSize={4}
+							style={{ flex: 1, minHeight: 0, maxHeight: '100%' }}
+							viewportProps={{ style: { paddingRight: 2, paddingBottom: 2 } }}
+						>
+							<Box style={{ minWidth: 0 }}>
+								<SortableContext items={groupIdsSortable} strategy={verticalListSortingStrategy}>
+									<Stack gap={2} align="stretch" py={2}>
+										{visibleGroups.length === 0 ? (
+											<Text c="dimmed" size="xs" pl="xs">
+												暂无分组，可在上方创建。
+											</Text>
+										) : (
+											visibleGroups.map((g) => {
+												const vis = g.pluginIds
+												const isCollapsed = !!collapsed[g.groupId]
+												return (
+													<GroupCard
+														key={g.groupId}
+														g={g}
+														visibleIds={vis}
+														runningSet={runningSet}
+														enabledSet={enabledSet}
+														selectedSet={selectedSet}
+														activeSet={activeSet}
+														onSelect={handleRowSelect}
+														LinkComp={LinkComp}
+														sortableId={gid(g.groupId)}
+														droppableId={cid(g.groupId)}
+														isFiltering={isFiltering}
+														isCollapsed={isCollapsed}
+														toggleCollapse={() => toggleGroupCollapse(g.groupId)}
+														getName={getName}
+														getMeta={getMeta}
+														getItemSortableId={(id) => iid(id)}
+														dh={dh}
+														onRename={renameGroup}
+														onDelete={deleteGroup}
+														locked={locked}
+													/>
+												)
+											})
+										)}
+									</Stack>
+								</SortableContext>
+							</Box>
+						</ScrollArea>
+					</Stack>
+				) : (
+					<Box style={{ paddingTop: 2, minWidth: 0 }}>
+						<Group justify="space-between" align="center">
+							<Group gap={4} align="center">
+								<Text fw={600} size="xs">
+									我的分组
+								</Text>
+								<Text size="xs" c="dimmed">
+									0 个
+								</Text>
+							</Group>
+						</Group>
+						<Text c="dimmed" size="xs" pl="xs">
+							暂无分组，可在上方创建。
+						</Text>
+					</Box>
+				)}
 			</Box>
 
 			{/* 小芯片 Overlay：不挡视线 */}

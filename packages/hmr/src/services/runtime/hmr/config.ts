@@ -1,4 +1,4 @@
-import { existsSync } from 'node:fs'
+import { existsSync, realpathSync } from 'node:fs'
 // Use the public CLI facade; it re-exports internal build plugins without exposing @pluxel/build directly.
 import { configSourcePlugin, importTypeFixerPlugin } from '@pluxel/cli/rolldown'
 import { isAbsolute, resolve } from 'pathe'
@@ -223,6 +223,18 @@ export interface FsAllowOptions {
 	hmrPackageRoot?: string | null
 }
 
+function tryRealpath(p: string): string {
+	try {
+		const fn: (p: string) => string =
+			typeof (realpathSync as unknown as { native?: unknown })?.native === 'function'
+				? (realpathSync as unknown as { native: (p: string) => string }).native
+				: realpathSync
+		return fn(p)
+	} catch {
+		return p
+	}
+}
+
 export function resolveFsAllowList(opts: FsAllowOptions): string[] {
 	const allow = new Set<string>()
 	const workspaceRoot = searchForWorkspaceRoot(opts.cwd)
@@ -232,17 +244,21 @@ export function resolveFsAllowList(opts: FsAllowOptions): string[] {
 	const packageRoots = new Set<string>()
 	for (const dir of opts.scanRoots) {
 		allow.add(dir)
+		allow.add(normalizePath(tryRealpath(dir)))
 		const pkgRoot = findNearestPackageRoot(dir)
 		if (pkgRoot) packageRoots.add(pkgRoot)
 	}
 	for (const pkgRoot of packageRoots) {
 		allow.add(pkgRoot)
+		allow.add(normalizePath(tryRealpath(pkgRoot)))
 		const pkgNodeModules = normalizePath(resolve(pkgRoot, 'node_modules'))
 		if (existsSync(pkgNodeModules)) allow.add(pkgNodeModules)
 	}
 	if (Array.isArray(opts.configFsAllow)) {
 		for (const extra of opts.configFsAllow) {
-			allow.add(normalizePath(resolve(opts.cwd, extra)))
+			const resolved = normalizePath(resolve(opts.cwd, extra))
+			allow.add(resolved)
+			allow.add(normalizePath(tryRealpath(resolved)))
 		}
 	}
 	return [...allow]
@@ -342,6 +358,9 @@ export function buildHmrViteConfig(opts: HmrViteConfigOptions): InlineConfig {
 		resolve: {
 			conditions: clientConditions,
 			dedupe: dedupePackages,
+			// Ensure linked workspaces resolve to real filesystem paths so the runner does not
+			// evaluate the same physical file under both symlink and realpath ids.
+			preserveSymlinks: false,
 			// Vite 8: built-in tsconfig paths support.
 			// (We intentionally avoid `vite-tsconfig-paths` to keep behavior consistent across environments.)
 			tsconfigPaths: true,
@@ -351,6 +370,7 @@ export function buildHmrViteConfig(opts: HmrViteConfigOptions): InlineConfig {
 				resolve: {
 					conditions: ssrConditions,
 					dedupe: dedupePackages,
+					preserveSymlinks: false,
 				},
 			},
 		},
@@ -404,10 +424,11 @@ export function buildHmrViteConfig(opts: HmrViteConfigOptions): InlineConfig {
 			resolve: {
 				conditions: ssrConditions,
 				dedupe: dedupePackages,
+				preserveSymlinks: false,
 			},
 		},
 	}
-}
+	}
 
 function shouldSilenceDynamicImportWarning(msg: string): boolean {
 	// Vite import-analysis warns on dynamic import patterns it can't statically analyze.

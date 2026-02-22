@@ -523,7 +523,9 @@ export class HMRService {
 			// Otherwise dep optimization may not crawl the correct entries and will try to update deps at runtime.
 			root: hmrPackageRoot ?? this.cwd,
 			fsAllow: serverFsAllow,
-			scanRoots: this.config.roots,
+			// Pass absolute scan roots so Vite-side plugins (importTypeFixer/configSource) match correctly,
+			// even when the host workspace uses symlinked vendor mounts.
+			scanRoots: this.scanRootsAbs,
 			port: this.config.port,
 			deps: this.deps,
 			extraPlugins: this.config.vitePlugins,

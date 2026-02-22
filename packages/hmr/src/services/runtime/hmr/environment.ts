@@ -1,4 +1,4 @@
-import { existsSync } from 'node:fs'
+import { existsSync, realpathSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { makeIdFiltersToMatchWithQuery } from '@rolldown/pluginutils'
 import { dirname, isAbsolute, resolve } from 'pathe'
@@ -7,6 +7,20 @@ import { boundedSet, resolveCacheLimit } from '../shared/cache'
 import { DRIVE_PATH_RE, fsPathFromViteFsId } from '../shared/vite-id'
 import { findNearestPackageRoot } from './internals'
 
+type RootAlias = { from: string; to: string }
+
+function tryRealpath(p: string): string {
+	try {
+		const fn: (p: string) => string =
+			typeof (realpathSync as unknown as { native?: unknown })?.native === 'function'
+				? (realpathSync as unknown as { native: (p: string) => string }).native
+				: realpathSync
+		return fn(p)
+	} catch {
+		return p
+	}
+}
+
 export class HmrPathResolver {
 	private serverRoot = ''
 	private resolveBaseDirs: string[]
@@ -14,16 +28,22 @@ export class HmrPathResolver {
 	private readonly cacheLimit: number
 	private readonly cleanIdCache = new Map<string, string>()
 	private readonly fallbackDirsCache = new Map<string, string[]>()
+	private readonly realpathCache = new Map<string, string>()
+	private rootAliases: RootAlias[] = []
 
 	constructor(
 		cwd: string,
-		private scanRootsAbs: string[],
+		scanRootsAbs: string[],
 		opts?: { cacheLimit?: number },
 	) {
-		this.cwdNormalized = normalizePath(cwd)
+		this.cwdNormalized = normalizePath(tryRealpath(cwd))
 		this.cacheLimit = resolveCacheLimit(opts?.cacheLimit, 10_000)
+		this.scanRootsAbs = []
+		this.setScanRoots(scanRootsAbs)
 		this.resolveBaseDirs = this.buildResolveBaseDirs()
 	}
+
+	private scanRootsAbs: string[]
 
 	setServerRoot(root: string) {
 		this.serverRoot = this.toViteId(root)
@@ -32,9 +52,19 @@ export class HmrPathResolver {
 	}
 
 	updateScanRoots(roots: string[]) {
-		this.scanRootsAbs = roots
+		this.setScanRoots(roots)
 		this.resolveBaseDirs = this.buildResolveBaseDirs()
 		this.clearCaches()
+	}
+
+	get scanRootsCanonical() {
+		return this.scanRootsAbs
+	}
+
+	canonicalizeCleanId(id: string) {
+		if (!id || !id.startsWith('/')) return id
+		if (id.startsWith('/@') || id.startsWith('\0')) return id
+		return this.canonicalizeFsPath(id)
 	}
 
 	toViteId(p: string) {
@@ -63,8 +93,9 @@ export class HmrPathResolver {
 		if (raw.startsWith('file:')) {
 			try {
 				const asPath = normalizePath(fileURLToPath(raw))
-				boundedSet(this.cleanIdCache, raw, asPath, this.cacheLimit)
-				return asPath
+				const canonical = this.canonicalizeFsPath(asPath)
+				boundedSet(this.cleanIdCache, raw, canonical, this.cacheLimit)
+				return canonical
 			} catch {
 				// fall through
 			}
@@ -80,8 +111,9 @@ export class HmrPathResolver {
 
 		if (raw.startsWith('/@fs/')) {
 			const out = fsPathFromViteFsId(raw) ?? raw.slice('/@fs'.length)
-			boundedSet(this.cleanIdCache, raw, out, this.cacheLimit)
-			return out
+			const canonical = this.canonicalizeFsPath(out)
+			boundedSet(this.cleanIdCache, raw, canonical, this.cacheLimit)
+			return canonical
 		}
 		if (raw.startsWith('/@')) {
 			// /@id, /@vite, etc — keep as-is (already normalized).
@@ -118,16 +150,25 @@ export class HmrPathResolver {
 				// Otherwise preserve real absolute filesystem paths even if they are outside cwd/scanRoots
 				// (linked workspaces/monorepos).
 				if (existsSync(rebased)) {
-					boundedSet(this.cleanIdCache, raw, rebased, this.cacheLimit)
-					return rebased
+					const canonical = this.canonicalizeFsPath(rebased)
+					boundedSet(this.cleanIdCache, raw, canonical, this.cacheLimit)
+					return canonical
 				}
 				if (existsSync(raw)) {
-					boundedSet(this.cleanIdCache, raw, raw, this.cacheLimit)
-					return raw
+					const canonical = this.canonicalizeFsPath(raw)
+					boundedSet(this.cleanIdCache, raw, canonical, this.cacheLimit)
+					return canonical
 				}
-				boundedSet(this.cleanIdCache, raw, rebased, this.cacheLimit)
-				return rebased
+				const canonical = this.canonicalizeFsPath(rebased)
+				boundedSet(this.cleanIdCache, raw, canonical, this.cacheLimit)
+				return canonical
 			}
+			if (existsSync(raw)) {
+				const canonical = this.canonicalizeFsPath(raw)
+				boundedSet(this.cleanIdCache, raw, canonical, this.cacheLimit)
+				return canonical
+			}
+			// Likely a Vite root-relative URL path (e.g. `/src/*`); preserve as-is.
 			boundedSet(this.cleanIdCache, raw, raw, this.cacheLimit)
 			return raw
 		}
@@ -177,6 +218,11 @@ export class HmrPathResolver {
 				}
 				normalized = rebased
 			}
+		}
+		if (normalized.startsWith('/') || DRIVE_PATH_RE.test(normalized)) {
+			const canonical = this.canonicalizeFsPath(normalized)
+			boundedSet(this.cleanIdCache, raw, canonical, this.cacheLimit)
+			return canonical
 		}
 		boundedSet(this.cleanIdCache, raw, normalized, this.cacheLimit)
 		return normalized
@@ -242,6 +288,50 @@ export class HmrPathResolver {
 		return this.serverRoot
 	}
 
+	private setScanRoots(roots: string[]) {
+		const canonicalRoots: string[] = []
+		const aliases: RootAlias[] = []
+		for (const r of roots) {
+			if (!r) continue
+			const abs = normalizePath(isAbsolute(r) ? r : resolve(this.cwdNormalized, r))
+			const canonical = normalizePath(tryRealpath(abs))
+			canonicalRoots.push(canonical)
+			if (canonical !== abs) aliases.push({ from: abs, to: canonical })
+		}
+		// De-dupe while keeping order stable.
+		this.scanRootsAbs = [...new Set(canonicalRoots)]
+		// Prefer the longest-prefix match to avoid partial rewrites when roots nest.
+		this.rootAliases = aliases.sort((a, b) => b.from.length - a.from.length)
+	}
+
+	private applyRootAliases(fsPath: string) {
+		for (const alias of this.rootAliases) {
+			if (fsPath === alias.from) return alias.to
+			if (fsPath.startsWith(`${alias.from}/`)) {
+				return `${alias.to}${fsPath.slice(alias.from.length)}`
+			}
+		}
+		return fsPath
+	}
+
+	private realpathCached(fsPath: string) {
+		const cached = this.realpathCache.get(fsPath)
+		if (cached !== undefined) return cached
+		const resolved = normalizePath(tryRealpath(fsPath))
+		boundedSet(this.realpathCache, fsPath, resolved, Math.min(this.cacheLimit, 10_000))
+		return resolved
+	}
+
+	private canonicalizeFsPath(fsPath: string) {
+		let out = normalizePath(fsPath)
+		out = this.applyRootAliases(out)
+		// Node/Vite resolution for linked packages frequently goes through `node_modules` symlinks.
+		// Canonicalize those paths to avoid duplicate evaluations of the same physical file.
+		if (out.includes('/node_modules/')) out = this.realpathCached(out)
+		out = this.applyRootAliases(out)
+		return out
+	}
+
 	private buildResolveBaseDirs(): string[] {
 		const bases = new Set<string>([this.cwdNormalized])
 		for (const dir of this.scanRootsAbs) bases.add(dir)
@@ -252,6 +342,7 @@ export class HmrPathResolver {
 	private clearCaches() {
 		this.cleanIdCache.clear()
 		this.fallbackDirsCache.clear()
+		this.realpathCache.clear()
 	}
 }
 
@@ -293,12 +384,13 @@ export class HmrEnvironment {
 		excludeGlobs?: string[]
 		pathCacheLimit?: number
 	}) {
-		this.scanRootsAbs = [...opts.scanRootsAbs]
+		this.scanRootsAbs = []
 		this.includeGlobs = opts.includeGlobs
 		this.excludeGlobs = opts.excludeGlobs
-		this.paths = new HmrPathResolver(opts.cwd, this.scanRootsAbs, {
+		this.paths = new HmrPathResolver(opts.cwd, opts.scanRootsAbs, {
 			cacheLimit: opts.pathCacheLimit,
 		})
+		this.scanRootsAbs = [...this.paths.scanRootsCanonical]
 		this.pathFilterImpl = this.createFilters()
 		this.toolkit = {
 			path: {
@@ -318,15 +410,15 @@ export class HmrEnvironment {
 	}
 
 	updateScanRoots(roots: string[]) {
-		this.scanRootsAbs = [...roots]
-		this.paths.updateScanRoots(this.scanRootsAbs)
+		this.paths.updateScanRoots(roots)
+		this.scanRootsAbs = [...this.paths.scanRootsCanonical]
 		this.pathFilterImpl = this.createFilters()
 	}
 
 	normalizeId(id: string) {
 		// Hot path: once ids have been normalized to filesystem-clean ids (scan roots / cwd),
 		// avoid re-normalizing (query stripping, cache lookups, rebasing).
-		if (this.isProbablyCleanId(id)) return id
+		if (this.isProbablyCleanId(id)) return this.paths.canonicalizeCleanId(id)
 		return this.paths.toCleanId(id)
 	}
 
