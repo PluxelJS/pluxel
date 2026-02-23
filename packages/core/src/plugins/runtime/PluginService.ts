@@ -202,6 +202,7 @@ export class PluginService {
 	private async injectConfig(plugin: PluginInstance): Promise<void> {
 		const pluginCtx = plugin.ctx
 		const info: PluginInfo = pluginCtx.pluginInfo
+		// Fast path: normal toolchain injection (configSourcePlugin) produced a configMap at decoration time.
 		const schemaMap = info.configMap ?? undefined
 		if (!schemaMap) return
 

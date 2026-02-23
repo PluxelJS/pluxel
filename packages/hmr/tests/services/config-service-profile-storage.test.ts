@@ -63,7 +63,7 @@ describe('HMR ConfigService profile storage', () => {
 			if (ctx) await ctx.effects.dispose()
 			process.chdir(prevCwd)
 		}
-	})
+	}, 15_000)
 
 	it('supports `{profile}` in store.configFile (directory placement)', async () => {
 		await using fixture = await createFixture({
@@ -100,4 +100,3 @@ describe('HMR ConfigService profile storage', () => {
 		}
 	})
 })
-

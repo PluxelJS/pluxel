@@ -12,6 +12,7 @@ import type { Plugin } from 'vite'
 
 import api from '../../api/hono'
 import { ensureHmrPluginLevelsLoaded } from '../../logger/levels'
+import { UI_PUBLIC_MOUNT_RE } from '../../server/ui-public'
 import type { RenderHandler } from '../../server/types'
 import type { SseChannel } from '../plugin-interaction'
 import type { ExtensionManifestEvent } from '../runtime-compile'
@@ -37,13 +38,12 @@ export class HonoService {
 		new Response('GraphQL not ready', { status: 503 })
 
 	private readonly logger: NonNullable<Context['logger']>
-	private readonly renderer: Promise<RenderHandler>
+	private renderer: Promise<RenderHandler> | null = null
 	private sseBuiltinsReady = false
 
 	constructor(ctx: Context) {
 		this.ctx = ctx
 		this.logger = ctx.logger!
-		this.renderer = this.createRenderer()
 		this.rebuildApp()
 		this.registerSseBuiltins()
 
@@ -104,6 +104,7 @@ export class HonoService {
 			exclude: [
 				/^\/@.+$/,
 				/^\/node_modules\/.*/,
+				UI_PUBLIC_MOUNT_RE,
 				/(\.ts|\.tsx)(\?.*)?$/,
 				/^\/favicon\.ico$/,
 				/^\/static\/.+/,
@@ -132,12 +133,23 @@ export class HonoService {
 		// 1) 内部 API：可选守卫，仅作用于 /api/*，不影响外部注入
 		this.mountInternalAPI(app as HonoWithAppEnvType)
 
-		// 2) GraphQL：只挂一次路由，内部转发到函数指针
-		app.all('/graphql', async (c) => {
-			const denied = await this.guardInternalRequest(c, 'graphql')
-			if (denied) return denied
-			return this.gqlFetch(c.req.raw, { hono: c })
-		})
+			// 2) GraphQL：只挂一次路由，内部转发到函数指针
+			app.all('/graphql', async (c) => {
+				const denied = await this.guardInternalRequest(c, 'graphql')
+				if (denied) return denied
+				// InternalGraphQLService is configured with `graphqlEndpoint: '/api/graphql'`.
+				// Keep `/graphql` as a guarded alias by rewriting the request URL before forwarding.
+				const raw = c.req.raw
+				const nextUrl = new URL(raw.url)
+				nextUrl.pathname = '/api/graphql'
+				const init: RequestInit = {
+					method: raw.method,
+					headers: raw.headers,
+					body: raw.body,
+				}
+				if (raw.body && raw.method !== 'GET' && raw.method !== 'HEAD') (init as any).duplex = 'half'
+				return this.gqlFetch(new Request(nextUrl, init), { hono: c })
+			})
 
 		// 3) 插件追加的外部路由/中间件（不被守卫包裹）
 		for (const m of this.mods) m(app as HonoWithAppEnvType)
@@ -311,19 +323,17 @@ export class HonoService {
 	private createRenderer(): Promise<RenderHandler> {
 		// NOTE: SOURCE_ONLY preprocessor blocks are stripped by tsdown for non-source builds.
 		// Do NOT remove them or rewrite this into runtime conditions.
-		//#if SOURCE_ONLY
+		// #if SOURCE_ONLY
 		return import('../../server/dev').then(({ createDevRenderer }) => createDevRenderer())
-		//#endif
-
-		// biome-ignore lint/correctness/noUnreachable: tsdown strips SOURCE_ONLY blocks in non-source builds.
+		// #else
 		return import('../../server/static').then(({ createStaticRenderer }) => {
-			const publicBase = this.ctx.config.hmrService.publicBase
-			return createStaticRenderer({ publicBase })
+			return createStaticRenderer()
 		})
+		// #endif
 	}
 
 	private async render(c: import('hono').Context<AppEnv>) {
-		const handler = await this.renderer
+		const handler = await (this.renderer ??= this.createRenderer())
 		return handler(c)
 	}
 

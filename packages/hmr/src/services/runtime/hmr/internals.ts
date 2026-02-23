@@ -1,4 +1,4 @@
-import { existsSync } from 'node:fs'
+import { existsSync, realpathSync } from 'node:fs'
 import { getLogger } from '@logtape/logtape'
 import { pluxelCategories } from '@pluxel/core/logger'
 import { dirname, isAbsolute, resolve } from 'pathe'
@@ -57,6 +57,24 @@ export const startTimer = () => {
 	return () => nsToMs(process.hrtime.bigint() - t0)
 }
 
+export function tryRealpathSync(p: string): string {
+	try {
+		const fn: (p: string) => string =
+			typeof (realpathSync as unknown as { native?: unknown })?.native === 'function'
+				? (realpathSync as unknown as { native: (p: string) => string }).native
+				: realpathSync
+		return fn(p)
+	} catch {
+		return p
+	}
+}
+
+export function pathVariantsAbs(absNormalizedPath: string): string[] {
+	const abs = normalizePath(absNormalizedPath)
+	const real = normalizePath(tryRealpathSync(abs))
+	return real && real !== abs ? [abs, real] : [abs]
+}
+
 export function matchesSpecifierPattern(specifier: string, pattern: string) {
 	if (!pattern) return false
 	if (pattern.endsWith('/*')) {
@@ -71,12 +89,64 @@ export function resolveGlobPatterns(
 	cwd: string,
 ): string[] | undefined {
 	if (!patterns?.length) return undefined
-	return patterns.map((pattern) => {
+	const out: string[] = []
+	const seen = new Set<string>()
+
+	const push = (p: string) => {
+		if (!p) return
+		// Keep order stable; avoid duplicates.
+		if (seen.has(p)) return
+		seen.add(p)
+		out.push(p)
+	}
+
+	const firstGlobIndex = (p: string) => {
+		// Minimal "glob syntax" detection for our usage (Vite/Rolldown hook filters).
+		// We only need a stable filesystem prefix we can realpath.
+		for (let i = 0; i < p.length; i++) {
+			const ch = p.charCodeAt(i)
+			// *, ?, [, ], {, }, ( extglobs often start with these
+			if (
+				ch === 42 || // *
+				ch === 63 || // ?
+				ch === 91 || // [
+				ch === 93 || // ]
+				ch === 123 || // {
+				ch === 125 || // }
+				ch === 40 || // (
+				ch === 41 // )
+			) {
+				return i
+			}
+		}
+		return -1
+	}
+
+	const expandRealpathVariant = (absPattern: string): string[] => {
+		const idx = firstGlobIndex(absPattern)
+		const prefix = idx >= 0 ? absPattern.slice(0, idx) : absPattern
+		const suffix = idx >= 0 ? absPattern.slice(idx) : ''
+
+		const hasTrailingSlash = prefix.endsWith('/')
+		const prefixPath = hasTrailingSlash ? prefix.slice(0, -1) : prefix
+		const canonical = normalizePath(tryRealpathSync(prefixPath))
+		const canonicalPrefix = hasTrailingSlash ? `${canonical}/` : canonical
+
+		if (canonicalPrefix && canonicalPrefix !== prefix) return [absPattern, `${canonicalPrefix}${suffix}`]
+		return [absPattern]
+	}
+
+	for (const pattern of patterns) {
 		const negated = pattern.startsWith('!')
 		const raw = negated ? pattern.slice(1) : pattern
-		const normalized = isAbsolute(raw) ? normalizePath(raw) : normalizePath(resolve(cwd, raw))
-		return negated ? `!${normalized}` : normalized
-	})
+		const absPattern = isAbsolute(raw) ? normalizePath(raw) : normalizePath(resolve(cwd, raw))
+
+		for (const variant of expandRealpathVariant(absPattern)) {
+			push(negated ? `!${variant}` : variant)
+		}
+	}
+
+	return out
 }
 
 type BatchDebounceReason = 'debounce' | 'maxwait' | 'maxbatch'

@@ -7,9 +7,7 @@ export type { ConfigShape } from './ConfigService'
 export * from './debug'
 export * from './hono/AuthGuardService'
 export * from './hono/env'
-//#if SOURCE_ONLY
 export * from './hono/InternalGraphQLService'
-//#endif
 export * from './PluginDataService'
 // Plugin extensibility surface (types only)
 export type { UI } from './plugin-interaction'

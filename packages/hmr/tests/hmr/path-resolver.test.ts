@@ -1,5 +1,6 @@
 import { createFixture } from 'fs-fixture'
 import { join } from 'pathe'
+import { symlinkSync } from 'node:fs'
 import { normalizePath } from 'vite'
 import { describe, expect, it } from 'vitest'
 import { HmrPathResolver } from '../../src/services/runtime/hmr/environment'
@@ -36,5 +37,23 @@ describe('HmrPathResolver', () => {
 			'/@fs/C:/workspace/hmr-ui/src/client.tsx',
 			'/src/client.tsx',
 		])
+	})
+
+	it('realpaths symlinked workspace files back into scan roots', async () => {
+		await using host = await createFixture({
+			'scan/entry.ts': 'export const x = 1\n',
+			'links/.keep': '',
+		})
+
+		const cwd = normalizePath(host.path)
+		const scanRoot = normalizePath(join(host.path, 'scan'))
+		const linkDir = join(host.path, 'links/s')
+		symlinkSync(join(host.path, 'scan'), linkDir, 'dir')
+
+		const fileViaSymlink = normalizePath(join(linkDir, 'entry.ts'))
+		const expected = normalizePath(join(scanRoot, 'entry.ts'))
+
+		const paths = new HmrPathResolver(cwd, [scanRoot])
+		expect(paths.toCleanId(fileViaSymlink)).toBe(expected)
 	})
 })

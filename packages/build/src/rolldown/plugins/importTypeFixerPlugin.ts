@@ -44,12 +44,20 @@ interface ImportToFix {
 const CODE_HINT = /@Plugin|\bPlugin\s*\(|__decorate\s*\(/
 
 export function importTypeFixerPlugin(options: ImportTypeFixerPluginOptions = {}): ViteCompatPlugin {
-	const includePatterns = normalizePatterns(options.include, ['**/*.ts', '**/*.tsx']).map(
+	const includePatterns = normalizePatterns(options.include, [
+		'**/*.ts',
+		'**/*.tsx',
+		'**/*.mts',
+		'**/*.cts',
+	]).map(
 		allowOptionalQuerySuffix,
 	)
-	const excludePatterns = normalizePatterns(options.exclude, ['**/node_modules/**', '**/*.d.ts']).map(
-		allowOptionalQuerySuffix,
-	)
+	const excludePatterns = normalizePatterns(options.exclude, [
+		'**/node_modules/**',
+		'**/*.d.ts',
+		'**/*.d.mts',
+		'**/*.d.cts',
+	]).map(allowOptionalQuerySuffix)
 
 	return {
 		name: 'pluxel-import-type-fixer',

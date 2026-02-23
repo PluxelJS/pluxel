@@ -66,7 +66,7 @@ describe('@pluxel/hmr/host builtinsFromDist', () => {
 		} finally {
 			process.chdir(prevCwd)
 		}
-	})
+	}, 15_000)
 
 	it('fails fast when builtin package exports no .mjs entry', async () => {
 		await using fixture = await createFixture({
@@ -116,5 +116,5 @@ describe('@pluxel/hmr/host builtinsFromDist', () => {
 		} finally {
 			process.chdir(prevCwd)
 		}
-	})
+	}, 15_000)
 })

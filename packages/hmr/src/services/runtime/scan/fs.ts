@@ -62,7 +62,7 @@ function toAbsolute(input: string): string {
 }
 
 function normalizeExtensions(exts?: string[]): Set<string> {
-	const list = exts?.length ? exts : ['.ts']
+	const list = exts?.length ? exts : ['.ts', '.tsx', '.mts', '.cts']
 	return new Set(
 		list.map((ext) => (ext.startsWith('.') ? ext.toLowerCase() : `.${ext.toLowerCase()}`)),
 	)
@@ -71,6 +71,9 @@ function normalizeExtensions(exts?: string[]): Set<string> {
 function shouldInclude(filePath: string, exts: Set<string>, includeDts: boolean): boolean {
 	const ext = extname(filePath).toLowerCase()
 	if (!exts.has(ext)) return false
-	if (!includeDts && filePath.toLowerCase().endsWith('.d.ts')) return false
+	if (!includeDts) {
+		const lower = filePath.toLowerCase()
+		if (lower.endsWith('.d.ts') || lower.endsWith('.d.mts') || lower.endsWith('.d.cts')) return false
+	}
 	return true
 }

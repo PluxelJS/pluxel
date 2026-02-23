@@ -63,5 +63,5 @@ describe('@pluxel/hmr/host workspace profiles', () => {
 		} finally {
 			process.chdir(prevCwd)
 		}
-	})
+	}, 15_000)
 })

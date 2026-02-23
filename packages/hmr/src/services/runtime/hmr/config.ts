@@ -1,7 +1,7 @@
-import { existsSync, realpathSync } from 'node:fs'
+import { existsSync } from 'node:fs'
 // Use the public CLI facade; it re-exports internal build plugins without exposing @pluxel/build directly.
 import { configSourcePlugin, importTypeFixerPlugin } from '@pluxel/cli/rolldown'
-import { isAbsolute, resolve } from 'pathe'
+import { resolve } from 'pathe'
 import {
 	createLogger,
 	type InlineConfig,
@@ -14,7 +14,7 @@ import {
 import { PLUXEL_CONDITION_HMR, PLUXEL_CONDITION_SOURCE } from '../shared/conditions'
 import { getExsolveCache } from '../shared/exsolve'
 import { canResolveFromCwd, toBasePackage } from '../shared/resolution'
-import { findNearestPackageRoot } from './internals'
+import { findNearestPackageRoot, pathVariantsAbs } from './internals'
 import { clientNodeImportGuardPlugin } from './plugins/clientNodeImportGuard'
 
 export interface HMRDependencyConfig {
@@ -223,18 +223,6 @@ export interface FsAllowOptions {
 	hmrPackageRoot?: string | null
 }
 
-function tryRealpath(p: string): string {
-	try {
-		const fn: (p: string) => string =
-			typeof (realpathSync as unknown as { native?: unknown })?.native === 'function'
-				? (realpathSync as unknown as { native: (p: string) => string }).native
-				: realpathSync
-		return fn(p)
-	} catch {
-		return p
-	}
-}
-
 export function resolveFsAllowList(opts: FsAllowOptions): string[] {
 	const allow = new Set<string>()
 	const workspaceRoot = searchForWorkspaceRoot(opts.cwd)
@@ -243,22 +231,19 @@ export function resolveFsAllowList(opts: FsAllowOptions): string[] {
 	if (opts.hmrPackageRoot) allow.add(opts.hmrPackageRoot)
 	const packageRoots = new Set<string>()
 	for (const dir of opts.scanRoots) {
-		allow.add(dir)
-		allow.add(normalizePath(tryRealpath(dir)))
+		for (const v of pathVariantsAbs(dir)) allow.add(v)
 		const pkgRoot = findNearestPackageRoot(dir)
 		if (pkgRoot) packageRoots.add(pkgRoot)
 	}
 	for (const pkgRoot of packageRoots) {
-		allow.add(pkgRoot)
-		allow.add(normalizePath(tryRealpath(pkgRoot)))
+		for (const v of pathVariantsAbs(pkgRoot)) allow.add(v)
 		const pkgNodeModules = normalizePath(resolve(pkgRoot, 'node_modules'))
 		if (existsSync(pkgNodeModules)) allow.add(pkgNodeModules)
 	}
 	if (Array.isArray(opts.configFsAllow)) {
 		for (const extra of opts.configFsAllow) {
 			const resolved = normalizePath(resolve(opts.cwd, extra))
-			allow.add(resolved)
-			allow.add(normalizePath(tryRealpath(resolved)))
+			for (const v of pathVariantsAbs(resolved)) allow.add(v)
 		}
 	}
 	return [...allow]
@@ -267,14 +252,11 @@ export function resolveFsAllowList(opts: FsAllowOptions): string[] {
 export interface HmrViteConfigOptions {
 	root: string
 	fsAllow: string[]
-	scanRoots: string[]
 	deps: ResolvedHMRDependencyConfig
 	extraPlugins?: Plugin[]
 	runnerPlugin: Plugin
 	honoPlugin: Plugin
 	port?: number
-	includeGlobs?: string[]
-	excludeGlobs?: string[]
 	optimizeDepsEnabled?: boolean
 	ssrOptimizeDepsEnabled?: boolean
 	cacheDir?: string
@@ -292,20 +274,6 @@ export function buildHmrViteConfig(opts: HmrViteConfigOptions): InlineConfig {
 	// (e.g. `undici`) as if they were browser deps.
 	const clientConditions = ssrConditions.filter(
 		(c) => c !== PLUXEL_CONDITION_HMR && c !== PLUXEL_CONDITION_SOURCE,
-	)
-	const includePatterns =
-		opts.includeGlobs ??
-		opts.scanRoots.flatMap((d) => [
-			`${d}/**/*.ts`,
-			`${d}/**/*.tsx`,
-			`${d}/**/*.mts`,
-			`${d}/**/*.cts`,
-		])
-	const includePatternsAbs = includePatterns.map((p) =>
-		isAbsolute(p) ? normalizePath(p) : normalizePath(resolve(opts.root, p)),
-	)
-	const excludeGlobsAbs = opts.excludeGlobs?.map((p) =>
-		isAbsolute(p) ? normalizePath(p) : normalizePath(resolve(opts.root, p)),
 	)
 	// Default: avoid dep optimization churn in Vite 8 beta.
 	// Opt-in via config when you want "fastest steady-state" for the UI/runner.
@@ -379,8 +347,13 @@ export function buildHmrViteConfig(opts: HmrViteConfigOptions): InlineConfig {
 			perEnvironmentPlugin('pluxel:ssr-transform', (environment) => {
 				if (environment.name !== 'ssr') return false
 				return [
-					importTypeFixerPlugin({ include: includePatternsAbs, exclude: excludeGlobsAbs }),
-					configSourcePlugin({ include: includePatternsAbs, exclude: excludeGlobsAbs }),
+					// Keep semantics plugins unscoped:
+					// - `preserveSymlinks: false` makes Vite normalize module ids to realpaths.
+					// - root-based include globs are brittle under symlinks and can skip schema injection.
+					// These plugins are already cheap (CODE_HINT + AST parse only when needed) and are only
+					// invoked for modules Vite actually loads/evaluates.
+					importTypeFixerPlugin(),
+					configSourcePlugin(),
 				]
 			}),
 			...(opts.extraPlugins ?? []),

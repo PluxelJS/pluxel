@@ -1,25 +1,13 @@
-import { existsSync, realpathSync } from 'node:fs'
+import { existsSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { makeIdFiltersToMatchWithQuery } from '@rolldown/pluginutils'
 import { dirname, isAbsolute, resolve } from 'pathe'
 import { createFilter, normalizePath } from 'vite'
 import { boundedSet, resolveCacheLimit } from '../shared/cache'
-import { DRIVE_PATH_RE, fsPathFromViteFsId } from '../shared/vite-id'
-import { findNearestPackageRoot } from './internals'
+import { DRIVE_PATH_RE, fsPathFromViteFsId, toViteFsIdVariants } from '../shared/vite-id'
+import { findNearestPackageRoot, tryRealpathSync } from './internals'
 
 type RootAlias = { from: string; to: string }
-
-function tryRealpath(p: string): string {
-	try {
-		const fn: (p: string) => string =
-			typeof (realpathSync as unknown as { native?: unknown })?.native === 'function'
-				? (realpathSync as unknown as { native: (p: string) => string }).native
-				: realpathSync
-		return fn(p)
-	} catch {
-		return p
-	}
-}
 
 export class HmrPathResolver {
 	private serverRoot = ''
@@ -36,7 +24,7 @@ export class HmrPathResolver {
 		scanRootsAbs: string[],
 		opts?: { cacheLimit?: number },
 	) {
-		this.cwdNormalized = normalizePath(tryRealpath(cwd))
+		this.cwdNormalized = normalizePath(tryRealpathSync(cwd))
 		this.cacheLimit = resolveCacheLimit(opts?.cacheLimit, 10_000)
 		this.scanRootsAbs = []
 		this.setScanRoots(scanRootsAbs)
@@ -241,19 +229,22 @@ export class HmrPathResolver {
 	}
 
 	moduleIdVariantsClean(cleanId: string): string[] {
-		const fs = cleanId.startsWith('/')
-			? `/@fs${cleanId}`
-			: DRIVE_PATH_RE.test(cleanId)
-				? `/@fs/${cleanId}`
-				: null
-
 		const out: string[] = [cleanId]
-		if (fs && fs !== cleanId) out.push(fs)
+		// Only add `/@fs/` aliases for real filesystem paths.
+		// (Never produce nonsense aliases for Vite virtual ids like `/@id/...`.)
+		if (
+			(cleanId.startsWith('/') && !cleanId.startsWith('/@')) ||
+			(DRIVE_PATH_RE.test(cleanId) && !cleanId.startsWith('/'))
+		) {
+			for (const v of toViteFsIdVariants(cleanId)) {
+				if (v !== cleanId) out.push(v)
+			}
+		}
 
 		if (this.serverRoot && cleanId.startsWith(this.serverRoot)) {
 			const rel = cleanId.slice(this.serverRoot.length)
 			const relId = rel.startsWith('/') ? rel : `/${rel}`
-			if (relId !== cleanId && relId !== fs) out.push(relId)
+			if (relId !== cleanId) out.push(relId)
 		}
 
 		return out
@@ -294,7 +285,7 @@ export class HmrPathResolver {
 		for (const r of roots) {
 			if (!r) continue
 			const abs = normalizePath(isAbsolute(r) ? r : resolve(this.cwdNormalized, r))
-			const canonical = normalizePath(tryRealpath(abs))
+			const canonical = normalizePath(tryRealpathSync(abs))
 			canonicalRoots.push(canonical)
 			if (canonical !== abs) aliases.push({ from: abs, to: canonical })
 		}
@@ -317,7 +308,7 @@ export class HmrPathResolver {
 	private realpathCached(fsPath: string) {
 		const cached = this.realpathCache.get(fsPath)
 		if (cached !== undefined) return cached
-		const resolved = normalizePath(tryRealpath(fsPath))
+		const resolved = normalizePath(tryRealpathSync(fsPath))
 		boundedSet(this.realpathCache, fsPath, resolved, Math.min(this.cacheLimit, 10_000))
 		return resolved
 	}
@@ -325,9 +316,9 @@ export class HmrPathResolver {
 	private canonicalizeFsPath(fsPath: string) {
 		let out = normalizePath(fsPath)
 		out = this.applyRootAliases(out)
-		// Node/Vite resolution for linked packages frequently goes through `node_modules` symlinks.
-		// Canonicalize those paths to avoid duplicate evaluations of the same physical file.
-		if (out.includes('/node_modules/')) out = this.realpathCached(out)
+		// Canonicalize to physical filesystem paths to avoid evaluating the same file under
+		// both symlink and realpath ids (Vite config uses `preserveSymlinks: false`).
+		out = this.realpathCached(out)
 		out = this.applyRootAliases(out)
 		return out
 	}
@@ -454,7 +445,11 @@ export class HmrEnvironment {
 				? this.includeGlobs
 				: this.scanRootsAbs.flatMap((dir) => exts.map((ext) => `${dir}/**/*.${ext}`)),
 		)
-		const excludePatterns = this.scanRootsAbs.flatMap((dir) => [`${dir}/**/*.d.ts`])
+		const excludePatterns = this.scanRootsAbs.flatMap((dir) => [
+			`${dir}/**/*.d.ts`,
+			`${dir}/**/*.d.mts`,
+			`${dir}/**/*.d.cts`,
+		])
 		const excludeGlobs = makeIdFiltersToMatchWithQuery([
 			...excludePatterns,
 			...(this.excludeGlobs ?? []),

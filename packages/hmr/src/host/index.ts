@@ -216,7 +216,6 @@ async function resolveSnapshotFromConfig(params: {
  * Map a small set of env vars into `hmrService` config.
  *
  * Intentionally minimal:
- * - Deployment: `CLIENT_DIST` → `hmrService.publicBase`
  * - Profiling: `PLUXEL_HMR_ATTRIBUTION` → `hmrService.attribution`
  * - Resilience: `PLUXEL_HMR_BUILTINS_PRELOAD_STRICT` / `PLUXEL_HMR_BUILTINS_AUTO_DISABLE_MISSING_DEPS`
  *
@@ -224,9 +223,6 @@ async function resolveSnapshotFromConfig(params: {
  */
 export function applyHmrEnvOverrides(base: HMRConfig, env = process.env): HMRConfig {
 	const out: HMRConfig = { ...base }
-
-	// Keep env overrides intentionally minimal: only allow "generic" deployment/profiling flags.
-	if (env.CLIENT_DIST) out.publicBase = env.CLIENT_DIST
 
 	const attributionRaw = env.PLUXEL_HMR_ATTRIBUTION
 	if (attributionRaw !== undefined) {

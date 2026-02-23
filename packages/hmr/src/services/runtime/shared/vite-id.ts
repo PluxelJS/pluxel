@@ -1,5 +1,24 @@
 export const DRIVE_PATH_RE = /^[a-zA-Z]:[\\/]/ as const
 
+/**
+ * Build Vite `/@fs/` id variants for a filesystem absolute path.
+ *
+ * Why variants?
+ * - POSIX paths sometimes appear as `/@fs${abs}` (single slash) or `/@fs/${abs}` (double slash).
+ * - Windows drive paths always need `/@fs/${drivePath}` (drive path is absolute without a leading slash).
+ *
+ * Callers should pass a normalized absolute path (forward slashes preferred).
+ */
+export function toViteFsIdVariants(absPath: string): string[] {
+	if (!absPath) return []
+	// Windows: `C:/a/b` (no leading slash) or `C:\\a\\b` in some edge cases.
+	if (DRIVE_PATH_RE.test(absPath)) return [`/@fs/${absPath}`]
+	// POSIX: `/a/b`
+	if (absPath.startsWith('/')) return [`/@fs${absPath}`, `/@fs/${absPath}`]
+	// Unknown form (shouldn't happen): fall back to the canonical Vite form.
+	return [`/@fs/${absPath}`]
+}
+
 export function cleanViteUrl(id: string): string {
 	const i = id.indexOf('?')
 	return i >= 0 ? id.slice(0, i) : id

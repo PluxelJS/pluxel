@@ -4,7 +4,7 @@ export type Lang = 'ts' | 'tsx' | 'js' | 'jsx'
 
 export function getLangFromId(id: string): Lang {
 	if (id.endsWith('.tsx')) return 'tsx'
-	if (id.endsWith('.ts')) return 'ts'
+	if (id.endsWith('.ts') || id.endsWith('.mts') || id.endsWith('.cts')) return 'ts'
 	if (id.endsWith('.jsx')) return 'jsx'
 	return 'js'
 }

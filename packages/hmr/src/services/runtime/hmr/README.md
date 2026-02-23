@@ -143,10 +143,7 @@ These are primarily for large monorepos / high-churn graphs:
 
 ## Production UI assets
 
-When serving the production UI via the static renderer, `hmrService.publicBase` controls the base URL used
-to reference built assets (default is `"/node_modules/@pluxel/hmr/dist/public"`).
-
-If you use the host helper `createHmrHost()`, `CLIENT_DIST` is mapped to `hmrService.publicBase`.
+When serving the production UI via the static renderer, built UI assets are always served under `"/dist/public"`.
 
 `deps.bridgeModules` lists specifiers that must share **singletons** between the host process and the runner (DI tokens, decorators, base classes).
 

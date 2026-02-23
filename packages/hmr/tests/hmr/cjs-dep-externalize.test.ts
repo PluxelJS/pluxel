@@ -120,7 +120,6 @@ async function runHmr(root: string, hmr: HMRService, depsInput: ReturnType<typeo
 		...buildHmrViteConfig({
 			root,
 			fsAllow,
-			scanRoots: [root],
 			deps,
 			runnerPlugin: (hmr as unknown as { plugin: VitePlugin }).plugin,
 			honoPlugin: { name: 'noop' },

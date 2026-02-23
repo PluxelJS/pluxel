@@ -31,8 +31,18 @@ export interface ImportTrackerPluginOptions {
 
 export function createImportTracker(options: ImportTrackerPluginOptions): ImportTracker {
 	const { prefixes, include, exclude } = options
-	const includePatterns = normalizePatterns(include, ['**/*.ts', '**/*.tsx'])
-	const excludePatterns = normalizePatterns(exclude, ['**/node_modules/**', '**/*.d.ts'])
+	const includePatterns = normalizePatterns(include, [
+		'**/*.ts',
+		'**/*.tsx',
+		'**/*.mts',
+		'**/*.cts',
+	])
+	const excludePatterns = normalizePatterns(exclude, [
+		'**/node_modules/**',
+		'**/*.d.ts',
+		'**/*.d.mts',
+		'**/*.d.cts',
+	])
 
 	const collected = new Map<string, TrackedPluginUsage>()
 

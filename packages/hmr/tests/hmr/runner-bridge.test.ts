@@ -79,7 +79,6 @@ describe('HMR runner bridge', () => {
 			...buildHmrViteConfig({
 				root: cwd,
 				fsAllow,
-				scanRoots: [fixturesPluginsRelFromWorkspace],
 				deps,
 				runnerPlugin: { name: 'noop' },
 				honoPlugin: { name: 'noop' },

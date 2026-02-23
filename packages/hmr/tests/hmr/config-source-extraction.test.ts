@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { Context } from '@pluxel/core'
 import { join } from 'pathe'
+import { rmSync, symlinkSync } from 'node:fs'
 import { createServer, normalizePath, type Plugin as VitePlugin } from 'vite'
 import { fixturesPluginsDir, fixturesPluginsRelFromWorkspace, workspaceRoot } from './_paths'
 import {
@@ -57,22 +58,32 @@ function createNoopLogger(errorLogs: ErrorLog[]) {
 
 async function executePluginEntryAndCapture(
 	pluginEntry: string,
+	opts?: {
+		rootsRelFromWorkspace?: string
+		scanRootsAbs?: string[]
+		include?: string[]
+		exclude?: string[]
+	},
 ): Promise<{ capture: { lastModule: unknown | null }; errorLogs: ErrorLog[]; core: CoreApi }> {
 	const root = workspaceRoot
 	const capture = { lastModule: null as unknown, beginBatchCalls: 0, replaceModuleCalls: 0 }
 	const errorLogs: ErrorLog[] = []
 	const deps = resolveHMRDependencyConfig(baseDeps)
+	const rootsRel = opts?.rootsRelFromWorkspace ?? fixturesPluginsRelFromWorkspace
+	const scanRootsAbs = opts?.scanRootsAbs ?? [normalizePath(fixturesPluginsDir)]
 	const fsAllow = resolveFsAllowList({
 		cwd: root,
 		cwdNormalized: normalizePath(root),
-		scanRoots: [normalizePath(fixturesPluginsDir)],
+		scanRoots: scanRootsAbs,
 	})
 
 	const hmr = new HMRService(createContext(capture, errorLogs), {
-		roots: [fixturesPluginsRelFromWorkspace],
+		roots: [rootsRel],
 		entries: [],
 		report: false,
 		deps: baseDeps,
+		include: opts?.include,
+		exclude: opts?.exclude,
 	})
 	hmr.setServerRoot(root)
 	const runnerPlugin = (hmr as unknown as { plugin: VitePlugin }).plugin
@@ -81,7 +92,6 @@ async function executePluginEntryAndCapture(
 		...buildHmrViteConfig({
 			root,
 			fsAllow,
-			scanRoots: [fixturesPluginsRelFromWorkspace],
 			deps,
 			runnerPlugin,
 			honoPlugin: { name: 'noop' },
@@ -171,6 +181,34 @@ describe('configSourcePlugin integration', () => {
 		const map = core.getConfigSource(ctor)
 		expect(map).toBeTruthy()
 		expect(Object.keys(map ?? {})).toContain('foo')
+	}, 20_000)
+
+	it('supports configs.use(schema) when scanRoot is a symlink (realpath module ids)', async () => {
+		const root = workspaceRoot
+		// Keep the symlinked root under `packages/hmr/**` so Vite picks up the package tsconfig
+		// (decorators transform). Otherwise the file may execute as raw TS and crash with a SyntaxError.
+		const rootsRel = 'packages/hmr/.tmp-pluxel-configSource-symlink'
+		const linkAbs = join(root, rootsRel)
+		rmSync(linkAbs, { recursive: true, force: true })
+		symlinkSync(fixturesPluginsDir, linkAbs, 'dir')
+
+		try {
+			const pluginEntry = join(root, rootsRel, 'PluginConfigUse.ts')
+			const { capture, errorLogs, core } = await executePluginEntryAndCapture(pluginEntry, {
+				rootsRelFromWorkspace: rootsRel,
+				scanRootsAbs: [normalizePath(linkAbs)],
+			})
+
+			expect(errorLogs).toEqual([])
+			expect(capture.lastModule).toBeTruthy()
+			const ctor = (capture.lastModule as { PluginConfigUse?: unknown } | null)?.PluginConfigUse
+			expect(typeof ctor).toBe('function')
+			const map = core.getConfigSource(ctor)
+			expect(map).toBeTruthy()
+			expect(Object.keys(map ?? {})).toContain('foo')
+		} finally {
+			rmSync(linkAbs, { recursive: true, force: true })
+		}
 	}, 20_000)
 
 	it('supports features.use(FeatureCtor) without @UseFeature (dependency propagation)', async () => {

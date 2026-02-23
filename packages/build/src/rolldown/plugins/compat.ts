@@ -16,10 +16,21 @@ export function allowOptionalQuerySuffix(pattern: string): string {
 	if (!pattern) return pattern
 	if (pattern.startsWith('!')) return `!${allowOptionalQuerySuffix(pattern.slice(1))}`
 
-	const fileLikeSuffixes = ['.d.ts', '.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs'] as const
+	const fileLikeSuffixes = [
+		'.d.ts',
+		'.d.mts',
+		'.d.cts',
+		'.ts',
+		'.tsx',
+		'.mts',
+		'.cts',
+		'.js',
+		'.jsx',
+		'.mjs',
+		'.cjs',
+	] as const
 	for (const suffix of fileLikeSuffixes) {
 		if (pattern.endsWith(suffix)) return `${pattern}*`
 	}
 	return pattern
 }
-

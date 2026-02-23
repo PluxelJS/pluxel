@@ -48,6 +48,7 @@ import {
 import { HmrRunner, isHardBridgeSpecifier } from './runner'
 import { installRequireShims, type RuntimeShimConfig, RuntimeShimRegistry } from './runtime-shims'
 import { WorkspaceEntryResolver } from './workspace-entry-resolver'
+import { createUiPublicStaticMiddleware, UI_PUBLIC_BASE } from '../../../server/ui-public'
 
 export interface HMRConfig {
 	/** 业务扫描边界：HMR 只监听这些 roots（用于过滤 watcher 事件、分组报告等）。 */
@@ -94,8 +95,6 @@ export interface HMRConfig {
 	ssrOptimizeDeps?: boolean
 	/** Custom Vite cacheDir (advanced). Defaults to Vite's own cacheDir. */
 	viteCacheDir?: string
-	/** Base URL for production UI assets (static renderer). */
-	publicBase?: string
 	/**
 	 * 额外的 HMR include glob（优先级高于默认的 `roots/**` + `.ts`）。
 	 * - 需要完整路径或相对 cwd 的 glob
@@ -372,9 +371,7 @@ export class HMRService {
 			}
 		})
 
-		this.scanRootsAbs = unique(
-			this.config.roots.map((dir) => normalizePath(resolve(this.cwd, dir))),
-		)
+		this.scanRootsAbs = unique(this.config.roots.map((dir) => normalizePath(resolve(this.cwd, dir))))
 		this.includeGlobs = resolveGlobPatterns(this.config.include, this.cwd)
 		this.excludeGlobs = resolveGlobPatterns(this.config.exclude, this.cwd)
 		this.env = new HmrEnvironment({
@@ -523,16 +520,11 @@ export class HMRService {
 			// Otherwise dep optimization may not crawl the correct entries and will try to update deps at runtime.
 			root: hmrPackageRoot ?? this.cwd,
 			fsAllow: serverFsAllow,
-			// Pass absolute scan roots so Vite-side plugins (importTypeFixer/configSource) match correctly,
-			// even when the host workspace uses symlinked vendor mounts.
-			scanRoots: this.scanRootsAbs,
 			port: this.config.port,
 			deps: this.deps,
 			extraPlugins: this.config.vitePlugins,
 			runnerPlugin: this.plugin,
 			honoPlugin: this.ctx.honoService.viteHonoDevServer,
-			includeGlobs: this.includeGlobs,
-			excludeGlobs: this.excludeGlobs,
 			optimizeDepsEnabled: this.config.optimizeDeps === true,
 			ssrOptimizeDepsEnabled: this.config.ssrOptimizeDeps === true,
 			cacheDir: this.config.viteCacheDir,
@@ -628,6 +620,7 @@ export class HMRService {
 	private async configureServer(server: ViteDevServer): Promise<void> {
 		this.vite = server
 		this.setServerRoot(server.config.root)
+		this.installUiPublicMiddleware(server)
 
 		try {
 			this.configureRunner(server)
@@ -639,6 +632,17 @@ export class HMRService {
 			this.serverConfiguredReject(error)
 			throw error
 		}
+	}
+
+	private installUiPublicMiddleware(server: ViteDevServer) {
+		if (!hmrPackageRoot) return
+		const publicDir = resolve(hmrPackageRoot, 'dist/public')
+		const middleware = createUiPublicStaticMiddleware(publicDir)
+		if (!middleware) return
+
+		// Use connect's mount semantics: it strips the mount prefix from `req.url`
+		// so the middleware can resolve files relative to `dist/public`.
+		server.middlewares.use(UI_PUBLIC_BASE, middleware as any)
 	}
 
 	private configureRunner(server: ViteDevServer) {

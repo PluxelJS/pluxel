@@ -50,6 +50,7 @@ export class InternalGraphQLService {
 		this.logger = ctx.logger!
 		this.config = cfg
 		this.fetcher = async () => new Response('Internal GraphQL not ready', { status: 503 })
+		this.pushFetch()
 		this.scheduleRebuild()
 	}
 
@@ -74,12 +75,12 @@ export class InternalGraphQLService {
 		this.pushFetch()
 		// NOTE: SOURCE_ONLY preprocessor blocks are stripped by tsdown for non-source builds.
 		// Do NOT remove them or rewrite this into runtime conditions.
-		//#if SOURCE_ONLY
+		// #if SOURCE_ONLY
 		// Codegen is intentionally opt-in: it writes files into the workspace and is high-churn.
 		if (this.config?.codegen === true && process.env.NODE_ENV !== 'production') {
 			void this.codegenNow()
 		}
-		//#endif
+		// #endif
 	}
 
 	private weaveSchema(): GraphQLSchema {
@@ -108,7 +109,7 @@ export class InternalGraphQLService {
 		this.fetcher = async (req: Request, ctx: ServerCtx) => yoga.fetch(req, ctx)
 	}
 
-	//#if SOURCE_ONLY
+	// #if SOURCE_ONLY
 	private async codegenNow() {
 		if (this.config?.codegen !== true) return
 		if (process.env.NODE_ENV === 'production') return
@@ -132,5 +133,5 @@ export class InternalGraphQLService {
 			this.codegenRunning = false
 		}
 	}
-	//#endif
+	// #endif
 }

@@ -122,12 +122,20 @@ const CODE_HINT =
 	/@Plugin|\bPlugin\s*\(|@Config|\bConfig\s*\(|\.(?:config|configs)\.use\s*\(|\.features\.use\s*\(|__decorate\s*\(|v\.|valibot\.|f\./
 
 export function configSourcePlugin(options: ConfigSourcePluginOptions = {}): ViteCompatPlugin {
-	const includePatterns = normalizePatterns(options.include, ['**/*.ts', '**/*.tsx']).map(
+	const includePatterns = normalizePatterns(options.include, [
+		'**/*.ts',
+		'**/*.tsx',
+		'**/*.mts',
+		'**/*.cts',
+	]).map(
 		allowOptionalQuerySuffix,
 	)
-	const excludePatterns = normalizePatterns(options.exclude, ['**/node_modules/**', '**/*.d.ts']).map(
-		allowOptionalQuerySuffix,
-	)
+	const excludePatterns = normalizePatterns(options.exclude, [
+		'**/node_modules/**',
+		'**/*.d.ts',
+		'**/*.d.mts',
+		'**/*.d.cts',
+	]).map(allowOptionalQuerySuffix)
 	const moduleInfoStore = createModuleInfoStore()
 
 	return {
@@ -194,8 +202,7 @@ export function configSourcePlugin(options: ConfigSourcePluginOptions = {}): Vit
 					const resolveModuleId: ModuleResolver = async (sourceSpecifier, importer) => {
 						const resolved = await this.resolve(sourceSpecifier, importer)
 						if (!resolved) return null
-						const cleaned = resolved.id.split('?')[0]
-						return normalizePath(cleaned)
+						return normalizeViteId(resolved.id)
 					}
 
 					// NOTE: @Config may be imported under an alias; keep this check permissive.

@@ -17,11 +17,11 @@ const colorSchemeScript = `<script>
 
 const htmlCache = new Map<string, string>()
 
-function buildStaticHtml(publicBase: string) {
-	const cached = htmlCache.get(publicBase)
+function buildStaticHtml() {
+	const cached = htmlCache.get(DEFAULT_PUBLIC_BASE)
 	if (cached) return cached
 
-	const assets = resolveAssets(true, publicBase)
+	const assets = resolveAssets(true)
 	const out = `<!DOCTYPE html>
 <html lang="zh">
   <head>
@@ -37,12 +37,11 @@ function buildStaticHtml(publicBase: string) {
     <div id="root"></div>
   </body>
 </html>`
-	htmlCache.set(publicBase, out)
+	htmlCache.set(DEFAULT_PUBLIC_BASE, out)
 	return out
 }
 
-export function createStaticRenderer(opts?: { publicBase?: string }): RenderHandler {
-	const publicBase = opts?.publicBase ?? DEFAULT_PUBLIC_BASE
-	const staticHtml = buildStaticHtml(publicBase)
+export function createStaticRenderer(): RenderHandler {
+	const staticHtml = buildStaticHtml()
 	return (ctx) => ctx.html(staticHtml)
 }

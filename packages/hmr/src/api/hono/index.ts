@@ -106,11 +106,8 @@ const app = new Hono<AppEnv>()
 	.route('/debug', debugApp)
 	.route('/logs', logsApp)
 	.route('/mcp', mcpApp)
-	// NOTE: SOURCE_ONLY preprocessor blocks are stripped by tsdown for non-source builds.
-	// Do NOT remove them or rewrite this into runtime conditions.
-	//#if SOURCE_ONLY
+	// Internal GraphQL endpoint used by the HMR UI (GQty client).
 	.all('/graphql', (c) => c.var.plugin_ctx.internalGraphql.fetch(c.req.raw, { hono: c } as any))
-//#endif
 
 export default app
 

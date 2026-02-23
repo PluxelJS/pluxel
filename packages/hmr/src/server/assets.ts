@@ -1,4 +1,5 @@
 import manifestJson from '../../public/.vite/manifest.json'
+import { UI_PUBLIC_BASE } from './ui-public'
 
 export interface Assets {
 	js: string
@@ -15,14 +16,19 @@ type ManifestEntry = {
 
 type Manifest = Record<string, ManifestEntry>
 
-export const DEFAULT_PUBLIC_BASE = '/node_modules/@pluxel/hmr/dist/public'
+// Base URL for serving built UI assets.
+//
+// Notes:
+// - In dist builds, `HMRService` mounts `dist/public` at this URL via `createUiPublicStaticMiddleware`.
+// - In source/dev mode, the dev renderer serves UI from `/src/*` instead.
+export const DEFAULT_PUBLIC_BASE = UI_PUBLIC_BASE
 
 const pickEntry = (manifest: Manifest, entry = 'src/client.tsx') =>
 	entry in manifest
 		? entry
 		: (Object.keys(manifest).find((key) => manifest[key]?.isEntry) ?? Object.keys(manifest)[0])
 
-export function resolveAssets(isProd: boolean, publicBase = DEFAULT_PUBLIC_BASE): Assets {
+export function resolveAssets(isProd: boolean): Assets {
 	if (!isProd) {
 		return {
 			js: '/src/client.tsx',
@@ -59,7 +65,7 @@ export function resolveAssets(isProd: boolean, publicBase = DEFAULT_PUBLIC_BASE)
 
 	visit(entryKey)
 
-	const toUrl = (file: string) => `${publicBase}/${file}`
+	const toUrl = (file: string) => `${DEFAULT_PUBLIC_BASE}/${file}`
 	const [main, ...rest] = files
 
 	return {
