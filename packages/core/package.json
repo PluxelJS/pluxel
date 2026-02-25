@@ -49,7 +49,7 @@
 		"eventure": "^0.4.4",
 		"pathe": "^2.0.3",
 		"std-env": "^3.10.0",
-		"youch": "4.1.0-beta.13"
+		"youch": "4.1.0"
 	},
 	"devDependencies": {
 		"@abraham/reflection": "^0.13.0",

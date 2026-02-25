@@ -180,17 +180,28 @@ function isMjsError(error: Error): boolean {
 	return stack.includes('.mjs')
 }
 
-export function createPluxelYouchSink(opts: PluxelYouchSinkOptions = {}): Sink {
-	const matches = createYouchMatcher(opts)
+function createCachedYouchAnsiRenderer(ansi: YouchANSIOptions | undefined) {
 	let youch: Youch | undefined
 	const getYouch = () => (youch ??= new Youch())
+
+	return async (error: Error): Promise<string> => {
+		try {
+			return await getYouch().toANSI(error, ansi)
+		} catch {
+			return formatErrorStack(error)
+		}
+	}
+}
+
+export function createPluxelYouchSink(opts: PluxelYouchSinkOptions = {}): Sink {
+	const matches = createYouchMatcher(opts)
+	const render = createCachedYouchAnsiRenderer(opts.ansi)
 
 	return fromAsyncSink(async (record) => {
 		if (!matches(record)) return
 		const error = findErrorInRecord(record)
 		if (!(error instanceof Error)) return
-		const rendered = await getYouch().toANSI(error, opts.ansi)
-		writeToStderr(rendered)
+		writeToStderr(await render(error))
 	})
 }
 
@@ -203,8 +214,7 @@ function createPluxelInlineYouchConsoleSink(
 	opts: PluxelYouchSinkOptions,
 ) {
 	const matches = createYouchMatcher(opts)
-	let youch: Youch | undefined
-	const getYouch = () => (youch ??= new Youch())
+	const render = createCachedYouchAnsiRenderer(opts.ansi)
 
 	const shouldHandle = (record: LogRecord) => {
 		if (!matches(record)) return false
@@ -216,12 +226,7 @@ function createPluxelInlineYouchConsoleSink(
 		const error = findErrorInRecord(record)
 		if (!(error instanceof Error)) return
 
-		let rendered = ''
-		try {
-			rendered = await getYouch().toANSI(error, opts.ansi)
-		} catch {
-			rendered = formatErrorStack(error)
-		}
+		const rendered = await render(error)
 
 		const header = stripTrailingNewlines(formatter(omitErrorProps(record)))
 		writeToStderr(`${header}\n${rendered}`)
