@@ -3,8 +3,8 @@
  */
 
 import { createReactClient } from '@gqty/react'
+import { createAuthAwareFetch, HMR_INTERNAL_API_BASE } from '@pluxel/hmr-web'
 import { Cache, createClient, defaultResponseHandler, type QueryFetcher } from 'gqty'
-import { createAuthAwareFetch } from '@pluxel/hmr-web'
 import { type GeneratedSchema, generatedSchema, scalarsEnumsHash } from './schema.generated'
 
 const baseFetch =
@@ -13,7 +13,11 @@ const authFetch = baseFetch ? createAuthAwareFetch(baseFetch) : undefined
 
 const inflightGraphql = new Map<string, Promise<any>>()
 
-function graphqlKey(input: { query?: unknown; variables?: unknown; operationName?: unknown }): string {
+function graphqlKey(input: {
+	query?: unknown
+	variables?: unknown
+	operationName?: unknown
+}): string {
 	try {
 		return JSON.stringify(input) ?? ''
 	} catch {
@@ -24,7 +28,7 @@ function graphqlKey(input: { query?: unknown; variables?: unknown; operationName
 
 const queryFetcher: QueryFetcher = async ({ query, variables, operationName }, fetchOptions) => {
 	// 浏览器走相对路径；SSR 端需要绝对 URL
-	const endpoint = '/api/graphql'
+	const endpoint = `${HMR_INTERNAL_API_BASE}/graphql`
 	if (!authFetch) throw new Error('[gqty] global fetch is unavailable')
 
 	const key = graphqlKey({ query, variables, operationName })

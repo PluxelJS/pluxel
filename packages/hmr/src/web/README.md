@@ -36,14 +36,14 @@ const hmr = createHmrWebClient({
 
 从 `origin` 推导的默认值：
 
-- `apiBase`: `${origin}/api`
+- `apiBase`: `${origin}/__pluxel/hmr`
 - `rpcBase`: `${apiBase}/rpc`
 - `sse.url`: `${apiBase}/sse`
 
 同源时可以不传任何配置：
 
 ```ts
-const hmr = createHmrWebClient() // /api, /api/rpc, /api/sse
+const hmr = createHmrWebClient() // /__pluxel/hmr, /__pluxel/hmr/rpc, /__pluxel/hmr/sse
 ```
 
 ## RPC

@@ -1,8 +1,11 @@
+import { HMR_INTERNAL_API_BASE } from '@pluxel/hmr-web'
 import { Hono } from 'hono'
 import { html, raw } from 'hono/html'
 
 import type { AppEnv } from './env'
 import { PluginHandle } from './rpc'
+
+const DEBUG_BASE = `${HMR_INTERNAL_API_BASE}/debug`
 
 interface PluginSchemaInfo {
 	name: string
@@ -37,36 +40,7 @@ function escapeHtml(str: string): string {
 		.replace(/</g, '&lt;')
 		.replace(/>/g, '&gt;')
 		.replace(/"/g, '&quot;')
-}
-
-// 格式化 schema source 代码（添加缩进和换行）
-function formatSchemaCode(code: string): string {
-	let depth = 0
-	let result = ''
-	let i = 0
-
-	while (i < code.length) {
-		const ch = code[i]
-
-		if (ch === '(' || ch === '{' || ch === '[') {
-			result += ch + '\n'
-			depth++
-			result += '  '.repeat(depth)
-		} else if (ch === ')' || ch === '}' || ch === ']') {
-			result += '\n'
-			depth = Math.max(0, depth - 1)
-			result += '  '.repeat(depth) + ch
-		} else if (ch === ',') {
-			result += ',\n' + '  '.repeat(depth)
-		} else if (ch === ':') {
-			result += ': '
-		} else {
-			result += ch
-		}
-		i++
-	}
-
-	return result.trim()
+		.replace(/'/g, '&#39;')
 }
 
 const STYLES = `
@@ -279,8 +253,8 @@ function copyCode(btn, fieldId) {
 
 function layout(title: string, content: string, activeNav?: string) {
 	const navItems = [
-		{ href: '/api/debug', label: 'Overview', key: 'overview' },
-		{ href: '/api/debug/schema-source', label: 'Schema Source', key: 'schema-source' },
+		{ href: `${DEBUG_BASE}`, label: 'Overview', key: 'overview' },
+		{ href: `${DEBUG_BASE}/schema-source`, label: 'Schema Source', key: 'schema-source' },
 	]
 
 	return html`<!DOCTYPE html>
@@ -311,7 +285,7 @@ function layout(title: string, content: string, activeNav?: string) {
 
 function renderSchemaField(pluginName: string, fieldName: string, source: string, index: number) {
 	const fieldId = `code-${pluginName}-${fieldName}-${index}`
-	const formatted = escapeHtml(formatSchemaCode(source))
+	const formatted = escapeHtml(source)
 
 	return `
 		<div class="schema-field">
@@ -379,37 +353,37 @@ const debugApp = new Hono<AppEnv>()
 				</div>
 			</div>
 
-			<h2>Quick Links</h2>
-			<div class="quick-links">
-				<a href="/api/debug/schema-source" class="quick-link">
-					<h3>Schema Source Inspector</h3>
-					<p>View and verify extracted schema source code for all plugins</p>
-				</a>
-				<a href="/api/debug/schema-source?filter=source" class="quick-link">
-					<h3>Plugins with Source</h3>
-					<p>Filter to show only plugins with extracted schema source</p>
-				</a>
-				<a href="/api/debug/json/schemas" class="quick-link">
-					<h3>JSON API</h3>
-					<p>Get raw schema data as JSON for debugging</p>
-				</a>
-			</div>
+				<h2>Quick Links</h2>
+				<div class="quick-links">
+					<a href="${DEBUG_BASE}/schema-source" class="quick-link">
+						<h3>Schema Source Inspector</h3>
+						<p>View and verify extracted schema source code for all plugins</p>
+					</a>
+					<a href="${DEBUG_BASE}/schema-source?filter=source" class="quick-link">
+						<h3>Plugins with Source</h3>
+						<p>Filter to show only plugins with extracted schema source</p>
+					</a>
+					<a href="${DEBUG_BASE}/json/schemas" class="quick-link">
+						<h3>JSON API</h3>
+						<p>Get raw schema data as JSON for debugging</p>
+					</a>
+				</div>
 
 			${
 				plugins.length > 0
 					? `
 				<h2>All Plugins</h2>
 				<div class="quick-links">
-					${plugins
-						.map(
-							(p) => `
-						<a href="/api/debug/schema-source/${encodeURIComponent(p.name)}" class="quick-link">
-							<h3>${escapeHtml(p.name)}</h3>
-							<p>${p.hasSchemaSource ? `${Object.keys(p.schemaSource || {}).length} config fields` : 'No schema source'}</p>
-						</a>
-					`,
-						)
-						.join('')}
+						${plugins
+							.map(
+								(p) => `
+							<a href="${DEBUG_BASE}/schema-source/${encodeURIComponent(p.name)}" class="quick-link">
+								<h3>${escapeHtml(p.name)}</h3>
+								<p>${p.hasSchemaSource ? `${Object.keys(p.schemaSource || {}).length} config fields` : 'No schema source'}</p>
+							</a>
+						`,
+							)
+							.join('')}
 				</div>
 			`
 					: ''
@@ -490,9 +464,9 @@ const debugApp = new Hono<AppEnv>()
 		const fields = result.schemaSource ? Object.entries(result.schemaSource) : []
 
 		const content = `
-			<div style="margin-bottom: 16px;">
-				<a href="/api/debug/schema-source" style="color: var(--accent); text-decoration: none;">&larr; Back to all plugins</a>
-			</div>
+				<div style="margin-bottom: 16px;">
+					<a href="${DEBUG_BASE}/schema-source" style="color: var(--accent); text-decoration: none;">&larr; Back to all plugins</a>
+				</div>
 
 			<div class="card">
 				<div class="card-header" style="cursor: default;">
@@ -532,4 +506,5 @@ const debugApp = new Hono<AppEnv>()
 		return c.json(result)
 	})
 
+// biome-ignore lint/style/noDefaultExport: Hono sub-app is intentionally default-exported for ergonomic route mounting.
 export default debugApp

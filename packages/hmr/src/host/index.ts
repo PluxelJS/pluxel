@@ -4,6 +4,7 @@ import type { WorkspaceSnapshot } from '@pluxel/cli/hmr'
 import { dirname, isAbsolute, join, resolve } from 'pathe'
 import type { Plugin as VitePlugin } from 'vite'
 import type { Context as PluxelContext } from '..'
+import { BasicAuthBuiltinPlugin } from '../builtins/BasicAuthBuiltinPlugin'
 import type { EnsurePluxelLoggingOptions } from '../logger/ensure'
 import type { HMRDependencyConfig } from '../services/runtime/hmr/config'
 import type { HMRConfig } from '../services/runtime/hmr/HMRService'
@@ -323,14 +324,22 @@ export async function createHmrHost(opts: CreateHmrHostOptions = {}): Promise<Cr
 		? { ...(opts.deps ?? {}), cjsExternal: opts.cjsExternal }
 		: opts.deps
 
-	const builtins = opts.builtins ?? []
+	const userBuiltins = opts.builtins ?? []
+	const builtins: readonly BuiltinPluginSpec[] = [
+		{ plugin: BasicAuthBuiltinPlugin, enable: false },
+		...userBuiltins,
+	]
+	const omitPackages = (() => {
+		const list = extractBuiltinPackageNames(builtins)
+		return list.length ? list : undefined
+	})()
 	let snapshot =
 		opts.workspaceSnapshot ??
 		(await resolveSnapshotFromConfig({
 			root,
 			configPath: opts.configPath,
 			profile: opts.profile,
-			omitPackages: builtins.length ? extractBuiltinPackageNames(builtins) : undefined,
+			omitPackages,
 		}))
 	if (opts.snapshotPatch) snapshot = opts.snapshotPatch(snapshot)
 	assertSnapshotShape(snapshot)

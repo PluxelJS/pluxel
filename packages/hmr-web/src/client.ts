@@ -1,16 +1,11 @@
 import type { RpcStub } from 'capnweb'
-import type { HmrRpcApi, UI } from './protocol'
-import { createAuthAwareFetch, defaultOnAuthBlocked, type AuthAwareFetchOptions } from './auth'
-import { createRpcClientFactory, createUiRpcView, invokeRpc } from './rpc'
-import { mergeNamespaces } from './utils'
-import { sse, type SseClientOptions, type SseClientWithNamespaces } from './sse'
 import { hc } from 'hono/client'
-
-function joinPath(base: string, path: string): string {
-	const safeBase = base.replace(/\/+$/, '')
-	const safePath = path.startsWith('/') ? path : `/${path}`
-	return `${safeBase}${safePath}`
-}
+import { type AuthAwareFetchOptions, createAuthAwareFetch, defaultOnAuthBlocked } from './auth'
+import { HMR_INTERNAL_API_BASE, joinPath } from './paths'
+import type { HmrRpcApi, UI } from './protocol'
+import { createRpcClientFactory, createUiRpcView, invokeRpc } from './rpc'
+import { type SseClientOptions, type SseClientWithNamespaces, sse } from './sse'
+import { mergeNamespaces } from './utils'
 
 export type HmrWebClientOptions = {
 	/** Backend origin, e.g. `http://localhost:8787`. */
@@ -53,7 +48,9 @@ export interface HmrWebClient {
 export function createHmrWebClient(options: HmrWebClientOptions = {}): HmrWebClient {
 	const apiBase =
 		options.apiBase ??
-		(typeof options.origin === 'string' && options.origin ? joinPath(options.origin, '/api') : '/api')
+		(typeof options.origin === 'string' && options.origin
+			? joinPath(options.origin, HMR_INTERNAL_API_BASE)
+			: HMR_INTERNAL_API_BASE)
 	const rpcBase = options.rpcBase ?? joinPath(apiBase, '/rpc')
 	const baseSseOptions = options.sse ?? {}
 	const defaultNamespaces = options.defaultNamespace ? [options.defaultNamespace] : undefined
@@ -85,7 +82,7 @@ export function createHmrWebClient(options: HmrWebClientOptions = {}): HmrWebCli
 	const api = hc(apiBase, { fetch: authFetch })
 	const rawRpc = createRpcClientFactory(rpcBase)
 	const ui = createUiRpcView(rawRpc, { credentials })
-	const withRpc = <T,>(runner: (client: RpcStub<HmrRpcApi>) => Promise<T>) =>
+	const withRpc = <T>(runner: (client: RpcStub<HmrRpcApi>) => Promise<T>) =>
 		invokeRpc(runner, { rpcBase, credentials })
 
 	const baseNamespaces = mergeNamespaces(baseSseOptions.namespaces, defaultNamespaces)
@@ -96,7 +93,9 @@ export function createHmrWebClient(options: HmrWebClientOptions = {}): HmrWebCli
 			? mergeNamespaces(baseNamespaces, opts?.namespaces)
 			: mergeNamespaces(opts?.namespaces)
 		const withCredentials =
-			opts?.withCredentials ?? baseSseOptions.withCredentials ?? (credentials === 'include' ? true : undefined)
+			opts?.withCredentials ??
+			baseSseOptions.withCredentials ??
+			(credentials === 'include' ? true : undefined)
 
 		return {
 			...baseSseOptions,

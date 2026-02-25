@@ -1,7 +1,7 @@
+import { createAuthAwareFetch, HMR_INTERNAL_API_BASE } from '@pluxel/hmr-web'
 import type { ExtensionManifest } from '../types'
-import { createAuthAwareFetch } from '@pluxel/hmr-web'
 
-export const EXTENSION_MANIFEST_ENDPOINT = '/api/extensions/manifest'
+export const EXTENSION_MANIFEST_ENDPOINT = `${HMR_INTERNAL_API_BASE}/extensions/manifest`
 
 const baseFetch =
 	typeof globalThis.fetch === 'function' ? globalThis.fetch.bind(globalThis) : undefined

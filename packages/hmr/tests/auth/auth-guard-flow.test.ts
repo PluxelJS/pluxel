@@ -3,8 +3,8 @@ import '@pluxel/test/setup'
 // Ensure @pluxel/hmr services (HonoService/AuthGuardService/ExtService) are registered.
 import '../../src/services'
 
-import { afterEach, describe, expect, it } from 'vitest'
 import { createHost, type Host } from '@pluxel/test'
+import { afterEach, describe, expect, it } from 'vitest'
 import { AuthGuardTestPlugin } from '../fixtures/plugins/AuthGuardTestPlugin'
 
 function req(url: string, init?: RequestInit) {
@@ -25,16 +25,16 @@ describe('AuthGuard end-to-end (HonoService)', () => {
 		host = null
 	})
 
-	it('guards /api and HTML navigation; /auth verify unblocks; unload removes guard', async () => {
+	it('guards /__pluxel/hmr and HTML navigation; /auth verify unblocks; unload removes guard', async () => {
 		host = createHost()
 
 		// Force service construction.
 		void host.ctx.honoService
 		void host.ctx.authGuard
 
-		// Baseline: no guard -> /api is accessible without cookie.
+		// Baseline: no guard -> internal API is accessible without cookie.
 		{
-			const res = await host.ctx.honoService.fetch(req('http://local/api'))
+			const res = await host.ctx.honoService.fetch(req('http://local/__pluxel/hmr'))
 			expect(res.status).toBe(200)
 			expect(await res.text()).toContain('Pluxel HMR RPC ready')
 		}
@@ -46,10 +46,10 @@ describe('AuthGuard end-to-end (HonoService)', () => {
 
 		expect(host.ctx.authGuard.isActive()).toBe(true)
 
-		// /api is blocked without cookie (marker header + redirectPath).
+		// internal API is blocked without cookie (marker header + redirectPath).
 		{
 			const res = await host.ctx.honoService.fetch(
-				req('http://local/api', {
+				req('http://local/__pluxel/hmr', {
 					headers: { accept: 'application/json' },
 				}),
 			)
@@ -86,7 +86,7 @@ describe('AuthGuard end-to-end (HonoService)', () => {
 			expect(await res.text()).toContain('id="verify"')
 		}
 
-		// "Click verify": POST /auth/verify gives a cookie that allows /api.
+		// "Click verify": POST /auth/verify gives a cookie that allows internal API.
 		const cookie = await (async () => {
 			const res = await host!.ctx.honoService.fetch(
 				req('http://local/auth/verify', { method: 'POST' }),
@@ -97,21 +97,21 @@ describe('AuthGuard end-to-end (HonoService)', () => {
 
 		{
 			const res = await host.ctx.honoService.fetch(
-				req('http://local/api', {
+				req('http://local/__pluxel/hmr', {
 					headers: { cookie },
 				}),
 			)
 			expect(res.status).toBe(200)
 		}
 
-		// Unload plugin -> guard is removed -> /api is accessible again without cookie.
+		// Unload plugin -> guard is removed -> internal API is accessible again without cookie.
 		host.remove(AuthGuardTestPlugin)
 		await host.commit()
 
 		expect(host.ctx.authGuard.isActive()).toBe(false)
 
 		{
-			const res = await host.ctx.honoService.fetch(req('http://local/api'))
+			const res = await host.ctx.honoService.fetch(req('http://local/__pluxel/hmr'))
 			expect(res.status).toBe(200)
 		}
 	})

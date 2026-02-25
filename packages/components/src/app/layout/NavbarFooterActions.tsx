@@ -18,16 +18,15 @@ export function NavbarFooterActions({ compact }: { compact: boolean }) {
 		void (async () => {
 			try {
 				const res = await client.api.auth.meta.$get()
-				if (!res.ok) {
-					window.location.assign('/auth')
-					return
-				}
+				if (!res.ok) return
 				const data = (await res.json()) as any
-				const redirectPath = typeof data?.redirectPath === 'string' ? data.redirectPath : '/auth'
+				if (data?.enabled !== true) return
+				const redirectPath = typeof data?.redirectPath === 'string' ? data.redirectPath : ''
+				if (!redirectPath) return
 				redirectPathRef.current = redirectPath
 				window.location.assign(redirectPath)
 			} catch {
-				window.location.assign('/auth')
+				// ignore
 			}
 		})()
 	}, [client.api.auth])

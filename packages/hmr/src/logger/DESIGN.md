@@ -32,7 +32,7 @@
 
 - 全文检索/复杂查询语言/正则查询。
 - 持久化到磁盘/外部系统。
-- 与其它 SSE 通道强行合并（目前 logs 独立 `/api/logs/v1/.../follow`）。
+- 与其它 SSE 通道强行合并（目前 logs 独立 `/__pluxel/hmr/logs/v1/.../follow`）。
 
 ---
 
@@ -115,11 +115,11 @@
 
 端点：
 
-- `GET /api/logs/v1/streams`
-- `GET /api/logs/v1/streams/:id/meta`
-- `GET /api/logs/v1/streams/:id/stats`
-- `GET /api/logs/v1/streams/:id/range`
-- `GET /api/logs/v1/streams/:id/follow`
+- `GET /__pluxel/hmr/logs/v1/streams`
+- `GET /__pluxel/hmr/logs/v1/streams/:id/meta`
+- `GET /__pluxel/hmr/logs/v1/streams/:id/stats`
+- `GET /__pluxel/hmr/logs/v1/streams/:id/range`
+- `GET /__pluxel/hmr/logs/v1/streams/:id/follow`
 
 follow 的实现要点：
 

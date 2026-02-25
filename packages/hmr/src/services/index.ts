@@ -2,11 +2,12 @@
 export * from '@pluxel/core/services'
 export * from '../logger/LogtapeLoggerService'
 export * from '../logger/sink'
-export { ConfigService as HmrConfigService } from './ConfigService'
 export type { ConfigShape } from './ConfigService'
+export { ConfigService as HmrConfigService } from './ConfigService'
 export * from './debug'
 export * from './hono/AuthGuardService'
 export * from './hono/env'
+export * from './hono/InternalApiValidationService'
 export * from './hono/InternalGraphQLService'
 export * from './PluginDataService'
 // Plugin extensibility surface (types only)

@@ -11,7 +11,7 @@ function fixRolldownUndefinedExports() {
 			// Workaround for a Vite 8 / Rolldown output bug where a chunk can re-export an
 			// identifier that was never declared (e.g. `server_browser_exports`), causing:
 			// `Uncaught SyntaxError: Export '...' is not defined in module`.
-			for (let entry of Object.values(bundle)) {
+			for (const entry of Object.values(bundle)) {
 				if (entry.type !== 'chunk') continue
 				if (!entry.code.includes('server_browser_exports')) continue
 				if (/\b(?:var|let|const)\s+server_browser_exports\b/.test(entry.code)) continue
@@ -21,25 +21,21 @@ function fixRolldownUndefinedExports() {
 	}
 }
 
+// biome-ignore lint/style/noDefaultExport: Vite config expects a default export.
 export default defineConfig(({ mode }) => {
 	const isDev = mode !== 'production'
 
 	return {
 		server: {
 			proxy: {
-				// API + GraphQL 走后端 3000，方便本地联调
-				'/api': {
-					target: 'http://localhost:3000',
-					changeOrigin: true,
-				},
-				'/graphql': {
+				// Pluxel HMR internal API 走后端 3000，方便本地联调
+				'/__pluxel/hmr': {
 					target: 'http://localhost:3000',
 					changeOrigin: true,
 				},
 			},
 		},
 		resolve: {
-			tsconfigPaths: true,
 			dedupe: [
 				'react',
 				'react-dom',
@@ -49,14 +45,14 @@ export default defineConfig(({ mode }) => {
 				'@mantine/dates',
 			],
 			alias: {
-				// 你的设置：避免为每个图标单独切 chunk
+				// Avoid splitting each icon into a separate chunk.
 				'@tabler/icons-react': '@tabler/icons-react/dist/esm/icons/index.mjs',
 			},
 		},
 
 		plugins: [react(), fixRolldownUndefinedExports()],
 
-		// 关键：把 Mantine/Emotion 相关预打包，减少 cold start + 提升 HMR 稳定
+		// Pre-bundle common deps for faster cold start and more stable HMR.
 		optimizeDeps: {
 			include: [
 				'react',
@@ -64,21 +60,21 @@ export default defineConfig(({ mode }) => {
 				'@mantine/core',
 				'@mantine/hooks',
 				'@mantine/notifications',
-				// 你若用到再加：'@mantine/dates', 'dayjs'
+				// Add when needed: '@mantine/dates', 'dayjs'
 				'@tabler/icons-react',
 			],
 		},
 
-		// 更合理的生产分包：react/mantine/emotion/tabler 独立缓存
+		// Production chunking: keep common libraries cache-friendly.
 		build: {
 			sourcemap: isDev ? true : 'hidden',
-				rollupOptions: {
-					output: {
-						codeSplitting: {
-							groups: [
-								{
-									name: 'react',
-									test: /[\\/]node_modules[\\/](react|react-dom)[\\/]/,
+			rollupOptions: {
+				output: {
+					codeSplitting: {
+						groups: [
+							{
+								name: 'react',
+								test: /[\\/]node_modules[\\/](react|react-dom)[\\/]/,
 								priority: 50,
 							},
 							{

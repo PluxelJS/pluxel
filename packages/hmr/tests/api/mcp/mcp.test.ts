@@ -48,7 +48,7 @@ describe('MCP (mcp-lite) endpoint', () => {
 			if ((body as any)?.method !== 'initialize') headers['mcp-protocol-version'] = protocolVersion
 
 			const res = await handler(
-				new Request('http://localhost/api/mcp', {
+				new Request('http://localhost/__pluxel/hmr/mcp', {
 					method: 'POST',
 					headers,
 					body: JSON.stringify(body),

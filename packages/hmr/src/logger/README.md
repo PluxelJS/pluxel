@@ -106,13 +106,13 @@ store 内部维护 chunk 级 meta（`pluginId/context/name/category` 计数）�
 
 ## 6) HTTP API（V1）
 
-挂载路径：`/api/logs`
+挂载路径：`/__pluxel/hmr/logs`
 
 ### 6.1 Streams
 
-- `GET /api/logs/v1/streams`：列出当前进程已存在的 streams（调试用）。
-- `GET /api/logs/v1/streams/:streamId/meta`：返回 `LogStreamMeta`。
-- `GET /api/logs/v1/streams/:streamId/stats`：返回 `{ meta, subscribers }`（确认是否有人在消费）。
+- `GET /__pluxel/hmr/logs/v1/streams`：列出当前进程已存在的 streams（调试用）。
+- `GET /__pluxel/hmr/logs/v1/streams/:streamId/meta`：返回 `LogStreamMeta`。
+- `GET /__pluxel/hmr/logs/v1/streams/:streamId/stats`：返回 `{ meta, subscribers }`（确认是否有人在消费）。
 
 注意：
 
@@ -122,7 +122,7 @@ store 内部维护 chunk 级 meta（`pluginId/context/name/category` 计数）�
 
 ### 6.2 Range
 
-`GET /api/logs/v1/streams/:streamId/range`
+`GET /__pluxel/hmr/logs/v1/streams/:streamId/range`
 
 参数：
 
@@ -143,7 +143,7 @@ store 内部维护 chunk 级 meta（`pluginId/context/name/category` 计数）�
 
 ### 6.3 Follow（SSE）
 
-`GET /api/logs/v1/streams/:streamId/follow`
+`GET /__pluxel/hmr/logs/v1/streams/:streamId/follow`
 
 行为：
 
@@ -186,7 +186,7 @@ store 内部维护 chunk 级 meta（`pluginId/context/name/category` 计数）�
 
 ## 9) 迁移提示（Breaking）
 
-- 旧的 logs 端点/协议已不再兼容；以 `/api/logs/v1/...` 为准。
+- 旧的 logs 端点/协议已不再兼容；以 `/__pluxel/hmr/logs/v1/...` 为准。
 - 工具（MCP）返回结构也已切到 `{ meta, lines }`（见 `packages/hmr/src/api/mcp/index.ts`）。
 
 ---

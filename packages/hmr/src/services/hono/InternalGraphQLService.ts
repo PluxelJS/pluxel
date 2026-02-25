@@ -1,6 +1,7 @@
 import { query, type Resolver, resolver, weave } from '@gqloom/core'
 import { ValibotWeaver } from '@gqloom/valibot'
 import { Injectable, type Context as PlxContext } from '@pluxel/core'
+import { HMR_INTERNAL_API_BASE } from '@pluxel/hmr-web'
 import type { GraphQLSchema } from 'graphql'
 import { createYoga } from 'graphql-yoga'
 import * as v from 'valibot'
@@ -95,7 +96,7 @@ export class InternalGraphQLService {
 	private pushFetch() {
 		const yoga = createYoga<ServerCtx>({
 			landingPage: false,
-			graphqlEndpoint: '/api/graphql',
+			graphqlEndpoint: `${HMR_INTERNAL_API_BASE}/graphql`,
 			maskedErrors: process.env.NODE_ENV === 'production',
 			graphiql: process.env.NODE_ENV !== 'production',
 			schema: this.schema,
@@ -121,7 +122,7 @@ export class InternalGraphQLService {
 
 			const { generateClient } = await import('@gqty/cli')
 			await generateClient(this.schema, {
-				endpoint: 'http://localhost:3000/api/graphql',
+				endpoint: `http://localhost:3000${HMR_INTERNAL_API_BASE}/graphql`,
 				destination,
 				react: true,
 			})

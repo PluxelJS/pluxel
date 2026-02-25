@@ -2,6 +2,7 @@ import type { HonoService } from './HonoService'
 
 export * from './env'
 export * from './HonoService'
+export * from './InternalApiValidationService'
 export * from './InternalGraphQLService'
 
 const honoName = 'honoService' as const

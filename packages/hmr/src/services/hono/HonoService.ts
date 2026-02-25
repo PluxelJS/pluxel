@@ -3,17 +3,18 @@ import { type Context, Injectable, OverrideOf } from '@pluxel/core'
 import {
 	type AppMod,
 	HonoService as CoreHonoService,
-	type HonoFetch,
 	type GraphQLFetch,
+	type HonoFetch,
 } from '@pluxel/core/services'
+import { HMR_INTERNAL_API_BASE } from '@pluxel/hmr-web'
 import { Hono } from 'hono'
 import { createFactory, type Factory } from 'hono/factory'
 import type { Plugin } from 'vite'
 
 import api from '../../api/hono'
 import { ensureHmrPluginLevelsLoaded } from '../../logger/levels'
-import { UI_PUBLIC_MOUNT_RE } from '../../server/ui-public'
 import type { RenderHandler } from '../../server/types'
+import { UI_PUBLIC_MOUNT_RE } from '../../server/ui-public'
 import type { SseChannel } from '../plugin-interaction'
 import type { ExtensionManifestEvent } from '../runtime-compile'
 import type { AuthGuardContext, AuthGuardKind, AuthGuardResult } from './AuthGuardService'
@@ -30,12 +31,11 @@ export class HonoService {
 
 	// Keep the override implementation structurally compatible with CoreHonoService
 	// without inheriting from it (avoids protected/private coupling).
-	private readonly mods = new Set<AppMod<any>>()
+	private readonly mods = new Set<AppMod<unknown>>()
 	private pendingRebuild = false
 	private fetchPtr: HonoFetch = async () =>
 		new Response('Hono runtime unavailable', { status: 503 })
-	private gqlFetch: GraphQLFetch = async () =>
-		new Response('GraphQL not ready', { status: 503 })
+	private gqlFetch: GraphQLFetch = async () => new Response('GraphQL not ready', { status: 503 })
 
 	private readonly logger: NonNullable<Context['logger']>
 	private renderer: Promise<RenderHandler> | null = null
@@ -67,9 +67,27 @@ export class HonoService {
 	}
 
 	public modifyApp<App = HonoWithAppEnvType>(mod: AppMod<App>): () => void {
-		const m = mod as AppMod<any>
+		const m = mod as AppMod<unknown>
 		this.mods.add(m)
 		this.scheduleRebuild()
+
+		const dispose = () => {
+			if (this.mods.delete(m)) this.scheduleRebuild()
+		}
+		const guard = this.ctx.effects.defer(dispose)
+		return () => guard.dispose()
+	}
+
+	/**
+	 * Register an app modifier and rebuild synchronously.
+	 *
+	 * Use this when callers need the new route to exist immediately (e.g. auth redirect targets),
+	 * without relying on the next microtask rebuild.
+	 */
+	public modifyAppNow<App = HonoWithAppEnvType>(mod: AppMod<App>): () => void {
+		const m = mod as AppMod<unknown>
+		this.mods.add(m)
+		this.rebuildNow()
 
 		const dispose = () => {
 			if (this.mods.delete(m)) this.scheduleRebuild()
@@ -92,7 +110,7 @@ export class HonoService {
 		return this.gqlFetch
 	}
 
-	/** AuthGuardService 通知：是否启用 /api/* 守卫 */
+	/** AuthGuardService 通知：是否启用内部 API 守卫 */
 	public switchAuthGuard(toggle: boolean) {
 		// 旧接口保留：当前实现按请求动态读取 AuthGuardService 状态，不需要重建 app。
 		void toggle
@@ -130,26 +148,8 @@ export class HonoService {
 		// 注入 plugin_ctx
 		this.attachPluginContext(app)
 
-		// 1) 内部 API：可选守卫，仅作用于 /api/*，不影响外部注入
+		// 1) 内部 API：可选守卫，仅作用于内部基路径，不影响外部注入
 		this.mountInternalAPI(app as HonoWithAppEnvType)
-
-			// 2) GraphQL：只挂一次路由，内部转发到函数指针
-			app.all('/graphql', async (c) => {
-				const denied = await this.guardInternalRequest(c, 'graphql')
-				if (denied) return denied
-				// InternalGraphQLService is configured with `graphqlEndpoint: '/api/graphql'`.
-				// Keep `/graphql` as a guarded alias by rewriting the request URL before forwarding.
-				const raw = c.req.raw
-				const nextUrl = new URL(raw.url)
-				nextUrl.pathname = '/api/graphql'
-				const init: RequestInit = {
-					method: raw.method,
-					headers: raw.headers,
-					body: raw.body,
-				}
-				if (raw.body && raw.method !== 'GET' && raw.method !== 'HEAD') (init as any).duplex = 'half'
-				return this.gqlFetch(new Request(nextUrl, init), { hono: c })
-			})
 
 		// 3) 插件追加的外部路由/中间件（不被守卫包裹）
 		for (const m of this.mods) m(app as HonoWithAppEnvType)
@@ -206,13 +206,60 @@ export class HonoService {
 
 	/** 仅对“内部 API”应用守卫 */
 	private mountInternalAPI(app: HonoWithAppEnvType) {
-		// NOTE: In Hono, `/api/*` also matches `/api`, so a single middleware is enough.
-		app.use('/api/*', async (c, next) => {
+		const base = HMR_INTERNAL_API_BASE
+		// NOTE: In Hono, `${base}/*` also matches `${base}`, so a single middleware is enough.
+		app.use(`${base}/*`, async (c, next) => {
+			const deniedByValidation = await this.guardInternalApiValidation(c)
+			if (deniedByValidation) return deniedByValidation
 			const denied = await this.guardInternalRequest(c, 'api')
 			if (denied) return denied
 			return next()
 		})
-		app.route('/api', api)
+		app.route(base, api)
+	}
+
+	private async guardInternalApiValidation(
+		c: import('hono').Context<AppEnv>,
+	): Promise<Response | undefined> {
+		const service = this.ctx.internalApiValidation
+		if (!service?.hasValidators()) return undefined
+
+		const request = c.req.raw
+		const headers =
+			request.headers instanceof Headers ? request.headers : new Headers(request.headers)
+		const url = c.req.url
+		const path = c.req.path
+		const method = (request.method ?? c.req.method).toUpperCase()
+
+		const result = await service.check({
+			path,
+			method,
+			url,
+			headers,
+			request,
+		})
+		if (result.allow) return undefined
+
+		this.logger.warn('Blocked internal API request (validation)', {
+			path,
+			method,
+			pluginName: result.pluginName,
+		})
+
+		return c.json(
+			{
+				allow: false,
+				code: 'internal_api_blocked',
+				path,
+				method,
+				pluginName: result.pluginName,
+			},
+			403,
+			{
+				'Cache-Control': 'no-store',
+				'X-Pluxel-Internal-Blocked': '1',
+			},
+		)
 	}
 
 	private async guardInternalRequest(
@@ -230,7 +277,7 @@ export class HonoService {
 		const method = (request.method ?? c.req.method).toUpperCase()
 
 		// 认证元信息必须可达：用于前端在不打全局补丁的前提下获取登录入口 redirectPath 等信息。
-		if (kind === 'api' && path === '/api/auth/meta') return undefined
+		if (kind === 'api' && path === `${HMR_INTERNAL_API_BASE}/auth/meta`) return undefined
 
 		const input: AuthGuardContext = {
 			kind,
@@ -326,6 +373,7 @@ export class HonoService {
 		// #if SOURCE_ONLY
 		return import('../../server/dev').then(({ createDevRenderer }) => createDevRenderer())
 		// #else
+		// biome-ignore lint/correctness/noUnreachable: SOURCE_ONLY preprocessor strips this branch at build time.
 		return import('../../server/static').then(({ createStaticRenderer }) => {
 			return createStaticRenderer()
 		})

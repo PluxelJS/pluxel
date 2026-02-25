@@ -13,7 +13,7 @@ import type {
 	ExtensionPoint,
 	PluginExtensionConfig,
 } from '@pluxel/hmr-web'
-import { extensionVendorPackages } from '@pluxel/hmr-web'
+import { extensionVendorPackages, HMR_INTERNAL_API_BASE } from '@pluxel/hmr-web'
 import chokidar, { type FSWatcher } from 'chokidar'
 import { dirname, isAbsolute, join, relative, resolve } from 'pathe'
 import type { ResolveOptions } from 'vite'
@@ -89,7 +89,7 @@ const HASH_ALLOWED_EXTENSIONS = [
 ] as const
 const MODULE_FILE_EXTENSION = '.mjs'
 const MODULE_RETENTION_COUNT = 2
-const MODULE_ENDPOINT_PREFIX = '/api/extensions/modules'
+const MODULE_ENDPOINT_PREFIX = `${HMR_INTERNAL_API_BASE}/extensions/modules`
 const MANIFEST_FILENAME = 'manifest.json'
 
 // Bump this when the bundling/rewriting logic changes, so clients don't reuse stale cached modules.
@@ -744,31 +744,31 @@ export class ExtensionService {
 						// Only hash relevant source-ish files.
 						// Avoid spurious rebuilds from unrelated files.
 						const lower = entry.toLowerCase()
-							if (
-								lower.endsWith('.d.ts') ||
-								lower.endsWith('.d.mts') ||
-								lower.endsWith('.d.cts') ||
-								lower.endsWith('.map')
-							) {
-								continue
-							}
-							if (!HASH_ALLOWED_EXTENSIONS.some((ext) => lower.endsWith(ext))) continue
-							collected.push(fullPath)
+						if (
+							lower.endsWith('.d.ts') ||
+							lower.endsWith('.d.mts') ||
+							lower.endsWith('.d.cts') ||
+							lower.endsWith('.map')
+						) {
+							continue
 						}
+						if (!HASH_ALLOWED_EXTENSIONS.some((ext) => lower.endsWith(ext))) continue
+						collected.push(fullPath)
 					}
-				} else {
-					const lower = target.toLowerCase()
-					if (
-						lower.endsWith('.d.ts') ||
-						lower.endsWith('.d.mts') ||
-						lower.endsWith('.d.cts') ||
-						lower.endsWith('.map')
-					) {
-						continue
-					}
-					if (!HASH_ALLOWED_EXTENSIONS.some((ext) => lower.endsWith(ext))) continue
-					collected.push(target)
 				}
+			} else {
+				const lower = target.toLowerCase()
+				if (
+					lower.endsWith('.d.ts') ||
+					lower.endsWith('.d.mts') ||
+					lower.endsWith('.d.cts') ||
+					lower.endsWith('.map')
+				) {
+					continue
+				}
+				if (!HASH_ALLOWED_EXTENSIONS.some((ext) => lower.endsWith(ext))) continue
+				collected.push(target)
+			}
 		}
 
 		return collected
@@ -813,19 +813,19 @@ export class ExtensionService {
 		}
 	}
 
-		private isHashableSourceFile(filePath: string): boolean {
-			const lower = filePath.toLowerCase()
-			if (HASH_IGNORED_SEGMENTS.some((segment) => lower.includes(segment))) return false
-			if (
-				lower.endsWith('.d.ts') ||
-				lower.endsWith('.d.mts') ||
-				lower.endsWith('.d.cts') ||
-				lower.endsWith('.map')
-			) {
-				return false
-			}
-			return HASH_ALLOWED_EXTENSIONS.some((ext) => lower.endsWith(ext))
+	private isHashableSourceFile(filePath: string): boolean {
+		const lower = filePath.toLowerCase()
+		if (HASH_IGNORED_SEGMENTS.some((segment) => lower.includes(segment))) return false
+		if (
+			lower.endsWith('.d.ts') ||
+			lower.endsWith('.d.mts') ||
+			lower.endsWith('.d.cts') ||
+			lower.endsWith('.map')
+		) {
+			return false
 		}
+		return HASH_ALLOWED_EXTENSIONS.some((ext) => lower.endsWith(ext))
+	}
 
 	private resolvePluginFile(
 		pluginDir: string,

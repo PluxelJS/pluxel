@@ -141,7 +141,7 @@ Fork 支持：
 
 Pluxel 的“内部 API”现在额外挂载了一个 MCP（Model Context Protocol）端点，用于让外部 agent 以**统一工具调用**的方式驱动插件开发闭环（无需再解析日志文本或自定义一套 RPC 协议）。
 
-- 端点：`/api/mcp`（与 `/api/rpc` 同级，受 AuthGuard 的 `api` 守卫策略保护）
+- 端点：`/__pluxel/hmr/mcp`（与 `/__pluxel/hmr/rpc` 同级，受 AuthGuard 的 `api` 守卫策略保护）
 - Tool 子集（最小）：`hmr.waitForStable`（推荐）/ `hmr.waitForBatch`、`logs.latestText` / `logs.waitForText`（可选）`plugin.start` / `plugin.stop` / `plugin.restart`
 - Logs “流式 tail”：MCP 侧提供 `logs.waitFor`（等待直到出现匹配日志或超时），可用于 agent 侧循环调用实现可靠的 tail/follow（无需额外 SSE 连接管理）。
 - Logs “LLM 友善文本视图”：MCP 侧提供 `logs.latestText` / `logs.waitForText`（去噪 + 稳定截断 + 少字段），优先给 agent 使用。

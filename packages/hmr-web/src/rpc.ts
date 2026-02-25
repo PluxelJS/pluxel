@@ -1,5 +1,6 @@
 import type { RpcStub } from 'capnweb'
 import { newHttpBatchRpcSession } from 'capnweb'
+import { HMR_INTERNAL_API_BASE } from './paths'
 import type { HmrRpcApi, UI } from './protocol'
 
 export type HmrRpcStub = RpcStub<HmrRpcApi>
@@ -10,7 +11,10 @@ export type RpcClientCreateOptions = {
 	credentials?: RequestCredentials
 }
 
-export function createRpcClient(rpcBase = '/api/rpc', options: RpcClientCreateOptions = {}): HmrRpcStub {
+export function createRpcClient(
+	rpcBase = `${HMR_INTERNAL_API_BASE}/rpc`,
+	options: RpcClientCreateOptions = {},
+): HmrRpcStub {
 	const signal = options.signal
 	const credentials = options.credentials
 
@@ -32,7 +36,7 @@ export function createRpcClient(rpcBase = '/api/rpc', options: RpcClientCreateOp
 
 export type RpcClientFactory = (options?: RpcClientCreateOptions) => HmrRpcStub
 
-export function createRpcClientFactory(rpcBase = '/api/rpc'): RpcClientFactory {
+export function createRpcClientFactory(rpcBase = `${HMR_INTERNAL_API_BASE}/rpc`): RpcClientFactory {
 	// Capnweb batch RPC sessions must be short-lived per call; reusing a closed
 	// session will surface "Batch RPC request ended." errors in consumers.
 	return (options) => createRpcClient(rpcBase, options)
@@ -54,7 +58,8 @@ const DEFAULT_RPC_TIMEOUT_MS = 20_000
 
 function createTimeout(timeoutMs: number) {
 	if (timeoutMs <= 0) return { signal: undefined as AbortSignal | undefined, clear: () => {} }
-	if (typeof AbortController === 'undefined') return { signal: undefined as AbortSignal | undefined, clear: () => {} }
+	if (typeof AbortController === 'undefined')
+		return { signal: undefined as AbortSignal | undefined, clear: () => {} }
 
 	const ctrl = new AbortController()
 	const timer = setTimeout(() => {
@@ -77,7 +82,7 @@ export async function invokeRpc<T>(
 	runner: (client: HmrRpcStub) => Promise<T>,
 	options?: { rpcBase?: string; timeoutMs?: number; credentials?: RequestCredentials },
 ): Promise<T> {
-	const base = options?.rpcBase ?? '/api/rpc'
+	const base = options?.rpcBase ?? `${HMR_INTERNAL_API_BASE}/rpc`
 	const { signal, clear } = createTimeout(options?.timeoutMs ?? DEFAULT_RPC_TIMEOUT_MS)
 	const client = createRpcClient(base, { signal, credentials: options?.credentials })
 	try {
@@ -97,7 +102,10 @@ export function rpcErrorMessage(error: unknown, fallback = 'RPC 调用失败'): 
 	return fallback
 }
 
-export function createUiRpcView(raw: RpcClientFactory, defaults: RpcClientCreateOptions = {}): UI.rpc {
+export function createUiRpcView(
+	raw: RpcClientFactory,
+	defaults: RpcClientCreateOptions = {},
+): UI.rpc {
 	// Important: capnweb http-batch sessions are short-lived. If we return the raw
 	// stub object and users memoize it (e.g. `const ui = hmr.ui.MyPlugin`),
 	// the session may already be ended when the next interaction happens.

@@ -1,11 +1,12 @@
-import type {
-	LogFilter,
-	LogRangeOk,
-	LogSseEvent,
-	LogStreamMeta,
-	RuntimeLogLine,
+import {
+	defaultOnAuthBlocked,
+	HMR_INTERNAL_API_BASE,
+	type LogFilter,
+	type LogRangeOk,
+	type LogSseEvent,
+	type LogStreamMeta,
+	type RuntimeLogLine,
 } from '@pluxel/hmr-web'
-import { defaultOnAuthBlocked } from '@pluxel/hmr-web'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import {
 	memo,
@@ -41,6 +42,23 @@ const STICK_THRESHOLD_PX = ROW_H * 30
 const baseFetch =
 	typeof globalThis.fetch === 'function' ? globalThis.fetch.bind(globalThis) : undefined
 const authFetch = baseFetch ? createAuthAwareFetch(baseFetch) : undefined
+
+function apiPath(path: string): string {
+	const safePath = path.startsWith('/') ? path : `/${path}`
+	return `${HMR_INTERNAL_API_BASE}${safePath}`
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+	if (!value || typeof value !== 'object') return false
+	if (Array.isArray(value)) return false
+	const proto = Object.getPrototypeOf(value)
+	return proto === Object.prototype || proto === null
+}
+
+const ANSI_ESC = '\u001b'
+const ANSI_CSI_RE = new RegExp(`${ANSI_ESC}\\[[0-9;]*[A-Za-z]`, 'g')
+const ANSI_OSC_RE = new RegExp(`${ANSI_ESC}\\][^\\u0007]*\\u0007`, 'g')
+const ANSI_SGR_RE = new RegExp(`${ANSI_ESC}\\[([0-9;]*)m`, 'g')
 
 const MONO_FONT =
 	'12.5px ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace'
@@ -235,7 +253,7 @@ function xterm256(n: number): string | undefined {
 function stripAnsi(s: string): string {
 	if (!s) return ''
 	// Best-effort: strip CSI sequences (incl. SGR) and OSC hyperlinks.
-	return s.replace(/\u001b\[[0-9;]*[A-Za-z]/g, '').replace(/\u001b\][^\u0007]*\u0007/g, '')
+	return s.replace(ANSI_CSI_RE, '').replace(ANSI_OSC_RE, '')
 }
 
 type AnsiStyle = {
@@ -249,22 +267,22 @@ type AnsiStyle = {
 function renderAnsi(text: string): ReactNode {
 	if (!text || !text.includes('\u001b[')) return text
 
-	const parts: Array<{ text: string; style: AnsiStyle | null }> = []
+	const parts: Array<{ key: string; text: string; style: AnsiStyle | null }> = []
 	let style: AnsiStyle = {}
 
-	const push = (chunk: string) => {
+	const push = (chunk: string, start: number, end: number) => {
 		if (!chunk) return
 		const st = Object.keys(style).length ? { ...style } : null
-		parts.push({ text: chunk, style: st })
+		parts.push({ key: `${start}:${end}`, text: chunk, style: st })
 	}
 
-	const sgr = /\u001b\[([0-9;]*)m/g
+	const sgr = new RegExp(ANSI_SGR_RE)
 	let last = 0
 	for (;;) {
 		const m = sgr.exec(text)
 		if (!m) break
 		const idx = m.index
-		push(text.slice(last, idx))
+		push(text.slice(last, idx), last, idx)
 		last = idx + m[0].length
 
 		const raw = m[1] ?? ''
@@ -368,7 +386,7 @@ function renderAnsi(text: string): ReactNode {
 			}
 		}
 	}
-	push(text.slice(last))
+	push(text.slice(last), last, text.length)
 
 	if (parts.length === 0) return ''
 	let hasStyle = false
@@ -380,18 +398,21 @@ function renderAnsi(text: string): ReactNode {
 	}
 	if (!hasStyle) return parts.map((p) => p.text).join('')
 
-	return parts.map((p, i) =>
+	return parts.map((p) =>
 		p.style ? (
-			<span key={i} style={p.style}>
+			<span key={p.key} style={p.style}>
 				{p.text}
 			</span>
 		) : (
-			<span key={i}>{p.text}</span>
+			<span key={p.key}>{p.text}</span>
 		),
 	)
 }
 
-function formatLineForCopy(line: RuntimeLogLine, opts: { showCategory: boolean; showName: boolean }): string {
+function formatLineForCopy(
+	line: RuntimeLogLine,
+	opts: { showCategory: boolean; showName: boolean },
+): string {
 	const time = formatTime(line.ts)
 	const level = String(line.level).toUpperCase()
 	const category = opts.showCategory ? formatCategory(line.category) : ''
@@ -513,6 +534,16 @@ const LogList = memo(function LogList(props: {
 	const _version = useSyncExternalStore(store.subscribe, store.getVersion, store.getVersion)
 	const listLen = store.length
 
+	const toggleSelected = (line: RuntimeLogLine) => {
+		if (selectedSeq === line.seq) {
+			setSelectedSeq(null)
+			setSelectedLine(null)
+			return
+		}
+		setSelectedSeq(line.seq)
+		setSelectedLine(line)
+	}
+
 	const scrollRef = useRef<HTMLDivElement | null>(null)
 	const virtualizer = useVirtualizer({
 		count: listLen,
@@ -590,8 +621,15 @@ const LogList = memo(function LogList(props: {
 					const msgText = oneLine(messageToText(line))
 					const msgNode = ansi ? renderAnsi(msgText) : stripAnsi(msgText)
 					return (
-						<div
+						<button
 							key={`${line.epoch}:${line.seq}`}
+							type="button"
+							tabIndex={0}
+							onKeyDown={(e) => {
+								if (e.key !== 'Enter' && e.key !== ' ') return
+								e.preventDefault()
+								toggleSelected(line)
+							}}
 							onClick={(e) => {
 								// If user is selecting text inside this row, do not toggle details.
 								try {
@@ -606,15 +644,10 @@ const LogList = memo(function LogList(props: {
 								} catch {
 									// ignore
 								}
-								if (selectedSeq === line.seq) {
-									setSelectedSeq(null)
-									setSelectedLine(null)
-									return
-								}
-								setSelectedSeq(line.seq)
-								setSelectedLine(line)
+								toggleSelected(line)
 							}}
 							style={{
+								appearance: 'none',
 								position: 'absolute',
 								top: 0,
 								left: 0,
@@ -625,11 +658,13 @@ const LogList = memo(function LogList(props: {
 								alignItems: 'center',
 								gap: 8,
 								padding: '0 10px',
+								border: 'none',
+								textAlign: 'left',
+								font: 'inherit',
+								color: 'inherit',
 								cursor: 'default',
 								userSelect: 'text',
-								background: isSelected
-									? 'rgba(59,130,246,0.14)'
-									: 'transparent',
+								background: isSelected ? 'rgba(59,130,246,0.14)' : 'transparent',
 								borderLeft: `3px solid ${levelColor(line.level)}`,
 							}}
 						>
@@ -651,7 +686,7 @@ const LogList = memo(function LogList(props: {
 								<span style={{ color: '#94a3b8', flex: '0 0 auto' }}>[{line.name}]</span>
 							) : null}
 							<span style={{ color: '#e2e8f0', flex: '1 1 auto' }}>{msgNode}</span>
-						</div>
+						</button>
 					)
 				})}
 				{listLen === 0 ? (
@@ -702,7 +737,14 @@ export function LiveLog({ module, showName = true, filter, variant = 'full' }: P
 				displayName: filter?.displayName,
 				category: filter?.category,
 			}),
-		[module, filter?.name, filter?.pluginId, filter?.context, filter?.displayName, filter?.category],
+		[
+			module,
+			filter?.name,
+			filter?.pluginId,
+			filter?.context,
+			filter?.displayName,
+			filter?.category,
+		],
 	)
 
 	const [draftFilter, setDraftFilter] = useState<LogFilter>(() => defaultsFilter)
@@ -762,15 +804,19 @@ export function LiveLog({ module, showName = true, filter, variant = 'full' }: P
 		const fetchImpl = authFetch ?? baseFetch
 		if (!fetchImpl) return
 		try {
-			const res = await fetchImpl('/api/logs/v1/streams', {
+			const res = await fetchImpl(apiPath('/logs/v1/streams'), {
 				method: 'GET',
 				headers: { 'Cache-Control': 'no-store' },
 			})
 			if (!res.ok) return
-			const payload = (await res.json()) as any
-			const list = Array.isArray(payload?.streams) ? payload.streams : []
+			const payload = (await res.json()) as unknown
+			if (!isRecord(payload)) return
+			const list = Array.isArray(payload.streams) ? payload.streams : []
 			const ids = list
-				.map((s: any) => (typeof s?.streamId === 'string' ? s.streamId : ''))
+				.map((s) => {
+					if (!isRecord(s)) return ''
+					return typeof s.streamId === 'string' ? s.streamId : ''
+				})
 				.filter((s: string) => !!s)
 			ids.sort((a: string, b: string) => a.localeCompare(b))
 			if (ids.length) setStreams(ids)
@@ -812,13 +858,13 @@ export function LiveLog({ module, showName = true, filter, variant = 'full' }: P
 			if (now - lastAuthProbeAtRef.current < 1500) return false
 			lastAuthProbeAtRef.current = now
 			try {
-				const res = await baseFetch('/api/auth/meta', {
+				const res = await baseFetch(apiPath('/auth/meta'), {
 					method: 'GET',
 					headers: { 'Cache-Control': 'no-store' },
 				})
 				if (!res.ok) return false
-				const payload = (await res.json()) as any
-				if (!payload || payload.enabled !== true) return false
+				const payload = (await res.json()) as unknown
+				if (!isRecord(payload) || payload.enabled !== true) return false
 				if (payload.authenticated === true) return false
 				const redirectPath =
 					typeof payload.redirectPath === 'string' && payload.redirectPath
@@ -832,12 +878,15 @@ export function LiveLog({ module, showName = true, filter, variant = 'full' }: P
 		}
 
 		const fetchImpl = authFetch ?? baseFetch
-		if (!fetchImpl) return () => {}
+		if (!fetchImpl) return () => undefined
 
 		const fetchMeta = async (): Promise<LogStreamMeta> => {
-			const res = await fetchImpl(`/api/logs/v1/streams/${encodeURIComponent(streamId)}/meta`, {
-				signal: ac.signal,
-			})
+			const res = await fetchImpl(
+				apiPath(`/logs/v1/streams/${encodeURIComponent(streamId)}/meta`),
+				{
+					signal: ac.signal,
+				},
+			)
 			if (!res.ok) throw new Error(`HTTP ${res.status}`)
 			return (await res.json()) as LogStreamMeta
 		}
@@ -852,15 +901,15 @@ export function LiveLog({ module, showName = true, filter, variant = 'full' }: P
 			params.set('from', fromSeq)
 			params.set('limit', String(limit))
 			const res = await fetchImpl(
-				`/api/logs/v1/streams/${encodeURIComponent(streamId)}/range?${params.toString()}`,
+				apiPath(`/logs/v1/streams/${encodeURIComponent(streamId)}/range?${params.toString()}`),
 				{ signal: ac.signal },
 			)
 			if (!res.ok) {
 				const text = await res.text().catch(() => '')
 				throw new Error(`HTTP ${res.status}${text ? `: ${text}` : ''}`)
 			}
-			const payload = (await res.json()) as any
-			if (!payload || payload.ok !== true) throw new Error('Invalid range response')
+			const payload = (await res.json()) as unknown
+			if (!isRecord(payload) || payload.ok !== true) throw new Error('Invalid range response')
 			return payload as LogRangeOk
 		}
 
@@ -888,7 +937,9 @@ export function LiveLog({ module, showName = true, filter, variant = 'full' }: P
 			const params = new URLSearchParams(filterQuery)
 			params.set('epoch', String(m.epoch))
 			params.set('from', fromSeq)
-			const url = `/api/logs/v1/streams/${encodeURIComponent(streamId)}/follow?${params.toString()}`
+			const url = apiPath(
+				`/logs/v1/streams/${encodeURIComponent(streamId)}/follow?${params.toString()}`,
+			)
 			const es = new EventSource(url)
 
 			es.onopen = () => setConnected(true)
@@ -940,9 +991,9 @@ export function LiveLog({ module, showName = true, filter, variant = 'full' }: P
 				}
 			}
 
-			es.addEventListener('reset', (ev) => onMsg(ev as any))
-			es.addEventListener('append', (ev) => onMsg(ev as any))
-			es.addEventListener('gap', (ev) => onMsg(ev as any))
+			es.addEventListener('reset', (ev) => onMsg(ev as MessageEvent))
+			es.addEventListener('append', (ev) => onMsg(ev as MessageEvent))
+			es.addEventListener('gap', (ev) => onMsg(ev as MessageEvent))
 
 			es.onerror = () => {
 				setConnected(false)
@@ -1099,7 +1150,11 @@ export function LiveLog({ module, showName = true, filter, variant = 'full' }: P
 					<span>category</span>
 				</label>
 				<label style={{ cursor: 'pointer', userSelect: 'none', display: 'flex', gap: 6 }}>
-					<input type="checkbox" checked={ansi} onChange={(e) => setAnsi(e.currentTarget.checked)} />
+					<input
+						type="checkbox"
+						checked={ansi}
+						onChange={(e) => setAnsi(e.currentTarget.checked)}
+					/>
 					<span>ansi</span>
 				</label>
 
@@ -1278,7 +1333,9 @@ export function LiveLog({ module, showName = true, filter, variant = 'full' }: P
 									</div>
 
 									<div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 8 }}>
-										<div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+										<div
+											style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}
+										>
 											<span style={{ opacity: 0.8 }}>filter</span>
 											<input
 												value={draftFilter.name ?? ''}
@@ -1479,11 +1536,11 @@ export function LiveLog({ module, showName = true, filter, variant = 'full' }: P
 									<button
 										type="button"
 										onClick={() => {
-											void copyToClipboard(formatLineForCopy(selectedLine, { showCategory, showName })).then(
-												(ok) => {
-													if (ok) setCopied('line')
-												},
-											)
+											void copyToClipboard(
+												formatLineForCopy(selectedLine, { showCategory, showName }),
+											).then((ok) => {
+												if (ok) setCopied('line')
+											})
 										}}
 										style={{
 											fontFamily: MONO_FONT,
@@ -1539,7 +1596,9 @@ export function LiveLog({ module, showName = true, filter, variant = 'full' }: P
 									</button>
 								</div>
 							) : isFull ? (
-								<div style={{ color: '#94a3b8', marginTop: 10 }}>(select a line to inspect props)</div>
+								<div style={{ color: '#94a3b8', marginTop: 10 }}>
+									(select a line to inspect props)
+								</div>
 							) : null}
 						</div>
 

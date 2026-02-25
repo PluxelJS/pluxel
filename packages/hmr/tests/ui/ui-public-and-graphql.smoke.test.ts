@@ -1,11 +1,14 @@
 import { createServer } from 'node:http'
-import { describe, expect, it } from 'vitest'
+import { createHmrHost } from '@pluxel/hmr/host'
 import { createFixture } from 'fs-fixture'
 import { resolve } from 'pathe'
-import { createHmrHost } from '@pluxel/hmr/host'
+import { describe, expect, it } from 'vitest'
 import { createUiPublicStaticMiddleware } from '../../src/server/ui-public'
 
-function mount(base: string, handler: (req: any, res: any, next: (err?: unknown) => void) => unknown) {
+function mount(
+	base: string,
+	handler: (req: any, res: any, next: (err?: unknown) => void) => unknown,
+) {
 	return (req: any, res: any, next: (err?: unknown) => void) => {
 		const rawUrl = typeof req?.url === 'string' ? req.url : '/'
 		const { pathname } = new URL(rawUrl, 'http://localhost')
@@ -29,7 +32,9 @@ function htmlFallback() {
 	}
 }
 
-async function startHttpServer(middlewares: Array<(req: any, res: any, next: (err?: unknown) => void) => unknown>) {
+async function startHttpServer(
+	middlewares: Array<(req: any, res: any, next: (err?: unknown) => void) => unknown>,
+) {
 	const server = createServer((req, res) => {
 		let i = 0
 		const next = (err?: unknown) => {
@@ -55,7 +60,8 @@ async function startHttpServer(middlewares: Array<(req: any, res: any, next: (er
 
 	return {
 		baseUrl: `http://127.0.0.1:${addr.port}`,
-		close: async () => new Promise<void>((resolve, reject) => server.close((e) => (e ? reject(e) : resolve()))),
+		close: async () =>
+			new Promise<void>((resolve, reject) => server.close((e) => (e ? reject(e) : resolve()))),
 	}
 }
 
@@ -89,7 +95,7 @@ describe('HMR UI smoke', () => {
 		}
 	})
 
-	it('exposes /api/graphql (used by the UI)', async () => {
+	it('exposes /__pluxel/hmr/graphql (used by the UI)', async () => {
 		await using fixture = await createFixture({
 			'pnpm-workspace.yaml': ['packages:', '  - packages/*', ''].join('\n'),
 			'pluxel.hmr.jsonc': [
@@ -122,7 +128,7 @@ describe('HMR UI smoke', () => {
 			const host = await createHmrHost({ root: fixture.path, logging: false })
 
 			const res = await host.ctx.honoService.fetch(
-				new Request('http://local/api/graphql', {
+				new Request('http://local/__pluxel/hmr/graphql', {
 					method: 'POST',
 					headers: { 'content-type': 'application/json' },
 					body: JSON.stringify({ query: '{ _empty }' }),

@@ -62,7 +62,7 @@ export class AuthGuardService {
 			throw new Error('[AuthGuardService] register({ redirectPath }) is required.')
 		}
 
-		const pluginId = this.ctx.pluginInfo.id
+		const pluginId = this.ctx.pluginInfo?.id ?? 'unknown'
 		const existing = this.guard
 
 		if (existing && existing.pluginName !== pluginId) {
@@ -82,8 +82,8 @@ export class AuthGuardService {
 			removeFromScope: () => {},
 		}
 
-		const guard = this.ctx.effects.defer(() => this.clearGuard(active))
-		active.removeFromScope = () => guard.cancel()
+		const scope = this.ctx.effects.defer(() => this.clearGuard(active))
+		active.removeFromScope = () => scope.cancel()
 		this.guard = active
 
 		this.logger.info(existing ? 'Guard updated' : 'Guard registered')
@@ -120,14 +120,14 @@ export class AuthGuardService {
 				pluginName: active.pluginName,
 				redirectPath: active.redirectPath,
 			}
-			} catch (err: any) {
-				this.logger.error('Guard threw', {
-					error: err,
-					pluginId: active.pluginName,
-					kind: input.kind,
-					path: input.path,
+		} catch (error) {
+			this.logger.error('Guard threw', {
+				error,
+				pluginId: active.pluginName,
+				kind: input.kind,
+				path: input.path,
 				method: input.method,
-				reason: err?.message ?? String(err),
+				reason: error instanceof Error ? error.message : String(error),
 			})
 			return {
 				allow: false,
@@ -146,8 +146,8 @@ export class AuthGuardService {
 		current.removeFromScope = () => {}
 		this.guard = undefined
 
-			if (!opts?.silent) {
-				this.logger.info('Guard unregistered', { pluginId: current.pluginName })
-			}
+		if (!opts?.silent) {
+			this.logger.info('Guard unregistered', { pluginId: current.pluginName })
 		}
 	}
+}

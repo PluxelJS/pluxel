@@ -11,11 +11,6 @@ export {
 	type HmrWebClient,
 	type HmrWebClientOptions,
 } from './client'
-export {
-	HmrWebClientProvider,
-	type HmrWebClientProviderProps,
-	useHmrWebClient,
-} from './react'
 export type {
 	LogFilter,
 	LogRangeErr,
@@ -29,9 +24,15 @@ export type {
 	RuntimeLogError,
 	RuntimeLogLine,
 } from './logs'
+export { HMR_INTERNAL_API_BASE, joinPath } from './paths'
 // Plugin UI authoring + shared helpers
 export * from './plugin-ui'
 export * from './protocol'
+export {
+	HmrWebClientProvider,
+	type HmrWebClientProviderProps,
+	useHmrWebClient,
+} from './react'
 
 export { invokeRpc, rpcErrorMessage } from './rpc'
 export type {
