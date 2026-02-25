@@ -44,9 +44,9 @@
 		"tsdown": "*"
 	},
 	"dependencies": {
-		"@clack/prompts": "^1.0.0",
+		"@clack/prompts": "^1.0.1",
 		"fdir": "^6.5.0",
-		"gunshi": "^0.28.0",
+		"gunshi": "^0.29.2",
 		"jsonc-parser": "^3.3.1",
 		"package-manager-detector": "^1.6.0",
 		"pathe": "^2.0.3",
@@ -58,9 +58,9 @@
 		"@pluxel/build": "workspace:*",
 		"@pluxel/test": "workspace:*",
 		"@types/picomatch": "^4.0.2",
-		"@types/react": "^19.2.13",
+		"@types/react": "^19.2.14",
 		"fs-fixture": "^2.11.0",
-		"ink": "^6.7.0",
+		"ink": "^6.8.0",
 		"react": "^19.2.4",
 		"tsdown": "^0.20.3",
 		"typescript": "^5.9.3"

@@ -33,13 +33,13 @@
 		"preview": "vite preview"
 	},
 	"peerDependencies": {
-		"@mantine/core": "^8.3.14",
+		"@mantine/core": "^8.3.15",
 		"@mantine/dates": "^8.3.7",
-		"@mantine/hooks": "^8.3.14",
+		"@mantine/hooks": "^8.3.15",
 		"@mantine/modals": "^8.3.7",
-		"@mantine/notifications": "^8.3.14",
-		"@tabler/icons-react": "^3.36.1",
-		"@tanstack/react-form": "^1.23.8",
+		"@mantine/notifications": "^8.3.15",
+		"@tabler/icons-react": "^3.37.1",
+		"@tanstack/react-form": "^1.28.3",
 		"react": "^19.2.4",
 		"react-dom": "^19.2.4",
 		"valibot": "^1.2.0"
@@ -51,15 +51,15 @@
 		"@dnd-kit/utilities": "^3.2.2",
 		"@gqty/react": "^3.1.1",
 		"@pluxel/hmr-web": "workspace:*",
-		"@tanstack/react-router": "^1.159.5",
-		"@tanstack/react-virtual": "^3.13.18",
-		"capnweb": "^0.4.0",
+		"@tanstack/react-router": "^1.163.2",
+		"@tanstack/react-virtual": "^3.13.19",
+		"capnweb": "^0.5.0",
 		"gqty": "^3.6.0",
-		"graphql": "^16.12.0",
-		"markdown-exit": "1.0.0-beta.7"
+		"graphql": "^16.13.0",
+		"markdown-exit": "1.0.0-beta.8"
 	},
 	"devDependencies": {
-		"@types/react": "^19.2.13",
+		"@types/react": "^19.2.14",
 		"@types/react-dom": "^19.2.3",
 		"@vitejs/plugin-react": "^5.1.4",
 		"postcss": "^8.5.6",

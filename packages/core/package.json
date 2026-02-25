@@ -48,7 +48,7 @@
 		"@standard-schema/spec": "^1.1.0",
 		"eventure": "^0.4.4",
 		"pathe": "^2.0.3",
-		"std-env": "^3.10.0",
+		"std-env": "4.0.0-rc.1",
 		"youch": "4.1.0"
 	},
 	"devDependencies": {
@@ -58,7 +58,7 @@
 		"@pluxel/test": "workspace:*",
 		"diod": "workspace:*",
 		"fs-fixture": "^2.11.0",
-		"option-t": "^55.1.1",
+		"option-t": "^55.1.2",
 		"tinybench": "^6.0.0"
 	},
 	"publishConfig": {

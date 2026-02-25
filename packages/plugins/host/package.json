@@ -10,18 +10,16 @@
 		"hmr:smoke": "timeout -k 2s 25s pnpm --filter @pluxel/plugins-host hmr; test $? -eq 124"
 	},
 	"dependencies": {
-		"@pluxel/graphql": "workspace:*",
 		"@pluxel/hmr": "workspace:*",
 		"@pluxel/snapshot": "workspace:*",
-		"@pluxel/wretch": "workspace:*",
 		"pluxel-plugin-market-ui": "workspace:*"
 	},
 	"devDependencies": {
-		"@mantine/core": "^8.3.14",
-		"@mantine/hooks": "^8.3.14",
+		"@mantine/core": "^8.3.15",
+		"@mantine/hooks": "^8.3.15",
 		"@pluxel/cli": "workspace:*",
-		"@tabler/icons-react": "^3.36.1",
-		"@types/react": "^19.2.13",
+		"@tabler/icons-react": "^3.37.1",
+		"@types/react": "^19.2.14",
 		"@types/react-dom": "^19.2.3",
 		"pathe": "^2.0.3",
 		"react": "^19.2.4",
