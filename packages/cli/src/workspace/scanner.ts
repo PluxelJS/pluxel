@@ -1,5 +1,5 @@
+import { crawlFilesAbs, DEFAULT_IGNORED_DIR_NAMES } from '@pluxel/workspace'
 import { dirname, relative, resolve } from 'pathe'
-import { crawlFilesAbs, DEFAULT_IGNORED_DIR_NAMES } from './fswalk'
 
 export async function scanWorkspaceDirs(root: string, base?: string) {
 	const target = base ? resolve(root, base) : root
@@ -9,9 +9,7 @@ export async function scanWorkspaceDirs(root: string, base?: string) {
 		fileFilter: (p) => p.endsWith('package.json'),
 	})
 	return dedupe(
-		files
-			.map((file) => relative(root, dirname(file)).replace(/\\/g, '/'))
-			.filter(Boolean),
+		files.map((file) => relative(root, dirname(file)).replace(/\\/g, '/')).filter(Boolean),
 	)
 }
 

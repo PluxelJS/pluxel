@@ -3,7 +3,7 @@ import { readFile } from 'node:fs/promises'
 import { dirname, resolve } from 'pathe'
 import type { PackageJson } from 'pkg-types'
 import picomatch from 'picomatch'
-import { crawlFilesAbs, DEFAULT_IGNORED_DIR_NAMES } from '../workspace'
+import { crawlFilesAbs, DEFAULT_IGNORED_DIR_NAMES } from '@pluxel/workspace'
 import { toPosix, toRootRelative, uniqSorted } from './utils'
 
 export type DiscoverWorkspacePluginsInput = {
@@ -71,10 +71,9 @@ function resolvePluginEntryAbs(pkgDirAbs: string, manifest: PackageJson): string
 	return resolve(pkgDirAbs, hmr)
 }
 
-export async function scanWorkspacePackages(input: DiscoverWorkspacePluginsInput): Promise<{
-	packages: WorkspacePackage[]
-	packageJsonPathsAbs: string[]
-}> {
+export async function scanWorkspacePackages(
+	input: DiscoverWorkspacePluginsInput,
+): Promise<{ packages: WorkspacePackage[]; packageJsonPathsAbs: string[] }> {
 	const rootDirAbs = resolve(input.rootDir)
 	const isExcluded = normalizeMatchers(rootDirAbs, input.excludeGlobs)
 
@@ -152,3 +151,4 @@ export async function discoverWorkspacePlugins(
 	const { packages } = await scanWorkspacePackages(input)
 	return discoverPluginsFromPackages(input.rootDir, packages)
 }
+

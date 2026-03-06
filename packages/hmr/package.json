@@ -3,9 +3,6 @@
 	"version": "0.3.0",
 	"description": "Pluxel HMR host/runtime (includes public Web SDK at @pluxel/hmr/web)",
 	"type": "module",
-	"bin": {
-		"pluxel-hmr": "bin/pluxel-hmr.mjs"
-	},
 	"types": "./dist/index.d.mts",
 	"exports": {
 		".": {
@@ -16,13 +13,13 @@
 			"@pluxel/source": "./src/web/capnweb.ts",
 			"default": "./dist/capnweb.mjs"
 		},
-		"./cli": {
-			"@pluxel/source": "./src/cli.ts",
-			"default": "./dist/cli.mjs"
-		},
 		"./config": {
 			"@pluxel/source": "./src/config.ts",
 			"default": "./dist/config.mjs"
+		},
+		"./diagnose": {
+			"@pluxel/source": "./src/diagnose/index.ts",
+			"default": "./dist/diagnose.mjs"
 		},
 		"./host": {
 			"@pluxel/source": "./src/host/index.ts",
@@ -40,6 +37,10 @@
 			"@pluxel/source": "./src/web/signaldb.ts",
 			"default": "./dist/signaldb.mjs"
 		},
+		"./snapshot": {
+			"@pluxel/source": "./src/snapshot.ts",
+			"default": "./dist/snapshot.mjs"
+		},
 		"./web": {
 			"@pluxel/source": "./src/web/web.ts",
 			"default": "./dist/web.mjs"
@@ -48,7 +49,6 @@
 	},
 	"files": [
 		"!**/*.map",
-		"bin",
 		"dist"
 	],
 	"scripts": {
@@ -65,7 +65,6 @@
 		"@gqty/cli": "^5.0.0",
 		"@hono/vite-dev-server": "^0.25.0",
 		"@logtape/logtape": "^2.0.2",
-		"@pluxel/cli": "workspace:*",
 		"@rolldown/pluginutils": "1.0.0-rc.5",
 		"@signaldb/core": "^1.7.2",
 		"@tanstack/pacer": "^0.19.0",
@@ -74,13 +73,16 @@
 		"capnweb": "^0.5.0",
 		"chokidar": "^5.0.0",
 		"exsolve": "^1.0.8",
+		"fdir": "^6.5.0",
 		"graphql": "^16.13.0",
 		"graphql-yoga": "^5.18.0",
 		"hono": "^4.12.2",
+		"jsonc-parser": "^3.3.1",
 		"mcp-lite": "^0.10.0",
 		"nypm": "^0.6.5",
 		"ohash": "^2.0.11",
 		"pathe": "^2.0.3",
+		"picomatch": "^4.0.3",
 		"pkg-types": "^2.3.0",
 		"superjson": "^2.2.6",
 		"tinypool": "^2.1.0",
@@ -96,6 +98,7 @@
 		"@pluxel/components": "workspace:*",
 		"@pluxel/hmr-web": "workspace:*",
 		"@pluxel/test": "workspace:*",
+		"@pluxel/workspace": "workspace:*",
 		"@types/react": "^19.2.14",
 		"fs-fixture": "^2.11.0",
 		"postcss": "^8.5.6",
@@ -107,12 +110,13 @@
 		"exports": {
 			".": "./dist/index.mjs",
 			"./capnweb": "./dist/capnweb.mjs",
-			"./cli": "./dist/cli.mjs",
 			"./config": "./dist/config.mjs",
+			"./diagnose": "./dist/diagnose.mjs",
 			"./host": "./dist/host.mjs",
 			"./logger": "./dist/logger.mjs",
 			"./services": "./dist/services.mjs",
 			"./signaldb": "./dist/signaldb.mjs",
+			"./snapshot": "./dist/snapshot.mjs",
 			"./web": "./dist/web.mjs",
 			"./package.json": "./package.json"
 		}

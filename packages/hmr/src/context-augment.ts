@@ -18,4 +18,3 @@ declare module '@pluxel/core' {
 }
 
 export {}
-

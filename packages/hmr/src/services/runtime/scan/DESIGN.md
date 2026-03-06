@@ -68,4 +68,4 @@ ScanService 内部使用 `exsolve` 做条件导出解析，并维护一份 `reso
 ## 性能要点
 
 - 尽量使用增量缓存与聚焦扫描（focusPackages）减少全图扫描。
-- 文件系统遍历统一复用 `@pluxel/cli/workspace` 的 crawler（避免两套 IO 实现）。
+- 文件系统遍历统一复用 `@pluxel/workspace` 的 crawler（避免两套 IO 实现）。

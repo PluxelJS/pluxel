@@ -1,5 +1,5 @@
 import os from 'node:os'
-import { loadWorkspaceInfo } from '@pluxel/cli/workspace'
+import { loadWorkspaceInfo } from '@pluxel/workspace'
 import { isAbsolute, normalize, resolve as r } from 'pathe'
 import type { PackageJson } from 'pkg-types'
 import type { EntryResolver } from './entry-resolver'

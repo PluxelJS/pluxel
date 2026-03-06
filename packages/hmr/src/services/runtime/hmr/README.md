@@ -67,8 +67,7 @@ with the HMR scope (and avoids touching UI/TSX by default).
 
 ## Config + Feature metadata extraction (pre-start)
 
-HMR uses `@pluxel/cli/rolldown`'s `configSourcePlugin` to extract metadata from TypeScript plugin source.
-`@pluxel/cli` is the public facade that re-exports internal build plugins from `@pluxel/build/rolldown`.
+HMR uses `@pluxel/build/rolldown`'s `configSourcePlugin` to extract metadata from TypeScript plugin source.
 
 - `@Config(schema)` → injects `__setConfigSource__(Ctor, field, "...")` for UI schema source.
 - `field = this.configs.use(schema)` → injects both:

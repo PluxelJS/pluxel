@@ -28,3 +28,4 @@ export function toRootRelative(rootDirAbs: string, absPath: string) {
 	if (abs.startsWith(prefix)) return abs.slice(prefix.length)
 	return abs
 }
+

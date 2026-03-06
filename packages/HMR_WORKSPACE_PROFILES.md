@@ -4,7 +4,7 @@
 - 启动时总能拿到工作区最新插件入口（不引入 `sync`/索引产物）。
 - 只有 **profile 选中的插件包** 进入 watch/compile/replace；未选中者不承担成本。
 - 配置只暴露：`roots / enabled / builtin / include / exclude / profiles`；解析必须 strict（未知字段直接报错）。
-- 发现逻辑只实现一次：`@pluxel/cli` 提供运行时库，`@pluxel/hmr` 复用；用 `profiles` 切换策略。
+- 发现逻辑只实现一次：`@pluxel/hmr/diagnose` 提供运行时库；CLI 只是交互/编排层（可选择再导出一份）。
 
 ## 兼容性约束（必须保持 @pluxel/hmr 既有正确性）
 - 外置 discovery 只负责把 `enabled` 映射为“入口文件列表”，不得改变 `@pluxel/hmr` 的 loader/pipeline 语义。
@@ -12,8 +12,8 @@
 
 ## 配置文件（放在运行目录）
 - 默认路径：`pluxel.hmr.jsonc`（位于 `process.cwd()`）
-- **@pluxel/hmr 在找不到配置文件时必须直接报错并拒绝启动**
-  - `pluxel hmr` prompt 入口负责缺失时创建，再启动 `@pluxel/hmr`。
+- **@pluxel/hmr/diagnose 在找不到配置文件时必须直接报错并拒绝生成 snapshot**
+  - `pluxel hmr` prompt 入口负责缺失时创建；host 核心 API 只接受 snapshot 输入（需要配置驱动时用 `startHmrHostFromConfig`）。
 
 ## 生成的“可用包”索引（给人/LLM 用）
 为避免编辑 `pluxel.hmr.jsonc` 时“猜包名”，`pluxel hmr` 会在扫描后生成：
@@ -53,8 +53,8 @@
   - HMR 启动期只校验 `.mjs` dist 入口是否存在；不负责“是否最新构建”的治理（由用户自行保证）。
   - CLI 在 `diagnoseWorkspace()` 阶段解析 dist entry 并写入 snapshot；host 直接透传；实际求值发生在 SSR runner 内，以保证 ctor identity 一致，避免 `features.dep(BuiltinCtor)` 因双实例失效。
 - CLI：`pluxel hmr builtin` 用于编辑该字段（打开 picker；仅写入配置；构建由用户显式执行）。
-- 非交互：`pluxel hmr builtin --builtinSet "<pkg1>, <pkg2>"` 或 `pluxel hmr builtin --builtin-set "<pkg1>, <pkg2>"`（同样只写入配置）。
-- 对称能力：`pluxel hmr enabled` 用于编辑 `profiles[profile].enabled`（picker）；非交互：`pluxel hmr enabled --enabled-set "<pkg1>, <pkg2>"`。
+- 非交互：`pluxel hmr builtin --set "<pkg1>, <pkg2>"`（同样只写入配置）。
+- 对称能力：`pluxel hmr enabled` 用于编辑 `profiles[profile].enabled`（picker）；非交互：`pluxel hmr enabled --set "<pkg1>, <pkg2>"`。
 
 ### 依赖提示的边界（重要）
 - `doctor`/prompt 的“缺少 profile packages”提示是 **best-effort**：
@@ -117,7 +117,7 @@ export type PluxelHmrConfigV1 = {
 }
 ```
 
-## 工作区插件发现（统一由 @pluxel/cli 提供运行时库）
+## 工作区插件发现（统一由 @pluxel/hmr/diagnose 提供运行时库）
 ### 识别规则（最小且稳定）
 将一个工作区包视为“可被 HMR 加载的插件包”，当且仅当：
 - `package.json.name` 存在
@@ -145,7 +145,7 @@ export async function discoverWorkspacePlugins(
 ```
 
 ### 建议的 doctor-core（可复用扫描结果，避免重复扫描）
-为实现“prompt 入口扫描一次即可启动 HMR”的最优路径，建议 `@pluxel/cli` 同时提供一个纯函数的 `doctor-core`：
+为实现“prompt 入口扫描一次即可启动 HMR”的最优路径，`@pluxel/hmr/diagnose` 提供一个纯函数的 `doctor-core`：
 
 ```ts
 export type DiagnoseWorkspaceInput = {
@@ -180,12 +180,12 @@ export async function diagnoseWorkspace(
 ```
 
 ### “借鉴现有 @pluxel/hmr workspace 逻辑”的建议
-`@pluxel/hmr` 当前已有若干与 workspace 相关的默认逻辑（例如默认 roots、默认 exclude 等）。建议把这些规则迁移/抽出到 `@pluxel/cli` 的发现模块中（或由 `@pluxel/cli` 再导出一份），从而做到：
+`@pluxel/hmr` 当前已有若干与 workspace 相关的默认逻辑（例如默认 roots、默认 exclude 等）。建议把这些规则迁移/抽出到 `@pluxel/hmr/diagnose` 中（并由 CLI 复用/再导出），从而做到：
 - prompt 入口的发现结果与 `@pluxel/hmr` 启动时发现结果完全一致；
 - roots `"auto"` 的展开规则只有一处实现；
 - 默认 exclude 规则只有一处实现。
 
-## @pluxel/hmr 启动流程（规范）
+## @pluxel/hmr/diagnose 诊断与 snapshot 生成流程（规范）
 1. 读取并严格解析配置文件：
    - `pluxel.hmr.jsonc`
    - 缺失或解析失败：报错退出
@@ -197,7 +197,7 @@ export async function diagnoseWorkspace(
    - `enabled = profile.enabled`（必填）
    - `include = [...(defaults.include ?? []), ...(profile.include ?? [])]`
    - `exclude = [...(defaults.exclude ?? []), ...(profile.exclude ?? [])]`
-4. 调用 `@pluxel/cli` 的发现 API，得到 `name -> entry` 映射（实时扫描 roots）。
+4. 调用 `@pluxel/hmr/diagnose` 的发现 API，得到 `name -> entry` 映射（实时扫描 roots）。
 5. 解析 `enabled` 为 entry 列表：
    - 任一包名未发现或 entry 文件不存在：报错退出（提示用户运行 `doctor` 查看可用列表/修复）。
 6. 解析 `include`：
@@ -208,22 +208,22 @@ export async function diagnoseWorkspace(
    - `exclude` 按既有语义继续生效（用于手动排除）。
 
 ## 最优路径：`pluxel hmr start` 单次扫描启动（避免重复扫描）
-`@pluxel/hmr/host` 支持两种启动方式，并且两者复用同一套 workspace profiles 逻辑：
-- 传入 `workspaceSnapshot`：跳过 discovery（避免重复扫描，推荐）。
-- 不传 `workspaceSnapshot`：读取 `pluxel.hmr.jsonc` 并通过 `@pluxel/cli/hmr` 执行 discovery。
+`@pluxel/hmr` 的 host 核心启动层只接受稳定的 `workspaceSnapshot` 输入（确定性、不隐藏行为），不要求读取 `pluxel.hmr.jsonc` 或做 workspace discovery。
+
+同时提供一个“配置驱动的一键启动”便捷入口（仍不依赖 CLI，只是组合调用）：
+- `@pluxel/hmr/host` 的 `startHmrHostFromConfig(...)`：内部调用 `@pluxel/hmr/diagnose` 读取 `pluxel.hmr.jsonc` 并生成 snapshot，然后启动 host。
+- 需要在启动前做少量预处理时（例如 seed 一些 config），用 `createHmrHostFromConfig(...)` 创建 Context 后再手动 `await ctx.root.hmrService.start()`。
 
 推荐由 `pluxel hmr start` 在同进程内完成（避免重复扫描）：
-1. 调用 `@pluxel/cli` 的 `diagnoseWorkspace(...)` 得到 `WorkspaceSnapshot`（扫描 + 校验一次完成）。
-2. 将 `snapshot` 传入 `@pluxel/hmr/host` 启动（见下）。
+1. 调用 `@pluxel/hmr/diagnose` 的 `diagnoseWorkspace(...)` 得到 `WorkspaceSnapshot`（扫描 + 校验一次完成）。
+2. 将 `snapshot` 传入 `@pluxel/hmr` 启动（见下）。
 
-### @pluxel/hmr start API（建议）
-推荐把 host API 保持为“纯启动层”（优先吃 snapshot；否则走 config discovery），例如：
+### @pluxel/hmr host start API（建议）
+推荐把 host API 保持为“纯启动层”（只吃 snapshot），例如：
 ```ts
 export type CreateHmrHostOptions = {
   root?: string
-  workspaceSnapshot?: WorkspaceSnapshot
-  configPath?: string
-  profile?: string
+  workspaceSnapshot: WorkspaceSnapshot
 }
 
 export async function startHmrHost(
@@ -232,8 +232,8 @@ export async function startHmrHost(
 ```
 
 行为约束：
-- `workspaceSnapshot` 存在时：host 不得再次 discovery 扫描，只做最小校验后进入 HMR pipeline。
-- `workspaceSnapshot` 不存在时：host 必须使用同一套 workspace profiles 逻辑读取/扫描（与 CLI 的 `doctor/prompt` 保持一致）。
+- `startHmrHost` 不得再次 discovery 扫描，只做最小校验后进入 HMR pipeline（配置驱动扫描应走 `@pluxel/hmr/diagnose`，或 `startHmrHostFromConfig` 组合调用）。
+- `workspaceSnapshot` 缺失时：直接报错（由 CLI 负责读取/解析 config 并生成 snapshot）。
 
 ## `doctor`（唯一标准化能力）
 `doctor` 只需要围绕配置文件 + 实时发现给出可执行诊断信息，不规定其余 CLI 形态。

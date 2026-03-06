@@ -1,14 +1,15 @@
 import { existsSync } from 'node:fs'
 import { copyFile, mkdir } from 'node:fs/promises'
-import type { WorkspaceSnapshot } from '@pluxel/cli/hmr'
 import { dirname, isAbsolute, join, resolve } from 'pathe'
 import type { Plugin as VitePlugin } from 'vite'
 import type { Context as PluxelContext } from '..'
 import { BasicAuthBuiltinPlugin } from '../builtins/BasicAuthBuiltinPlugin'
+import { diagnoseWorkspace, resolveDefaultHmrConfigPath } from '../diagnose'
 import type { EnsurePluxelLoggingOptions } from '../logger/ensure'
 import type { HMRDependencyConfig } from '../services/runtime/hmr/config'
 import type { HMRConfig } from '../services/runtime/hmr/HMRService'
 import type { BuiltinPluginSpec } from '../services/runtime/loader/LoaderService'
+import { assertHmrWorkspaceSnapshot, type HmrWorkspaceSnapshot } from '../snapshot'
 
 export type CreateHmrHostOptions = {
 	/**
@@ -30,27 +31,15 @@ export type CreateHmrHostOptions = {
 	 */
 	debug?: readonly string[]
 	/**
-	 * Workspace snapshot (preferred): skips discovery.
+	 * Workspace snapshot (required): the host does not perform discovery.
 	 */
-	workspaceSnapshot?: WorkspaceSnapshot
+	workspaceSnapshot: HmrWorkspaceSnapshot
 	/**
 	 * Optional snapshot post-processor.
 	 *
 	 * Useful for callers that want to tweak include/exclude/entries without duplicating discovery.
 	 */
-	snapshotPatch?: (snapshot: WorkspaceSnapshot) => WorkspaceSnapshot
-	/**
-	 * Workspace profiles config file path.
-	 *
-	 * Defaults to `pluxel.hmr.jsonc` under `root`.
-	 */
-	configPath?: string
-	/**
-	 * Profile override for this run.
-	 *
-	 * Equivalent to setting `PLUXEL_HMR_PROFILE` for discovery.
-	 */
-	profile?: string
+	snapshotPatch?: (snapshot: HmrWorkspaceSnapshot) => HmrWorkspaceSnapshot
 	/**
 	 * Builtin plugin constructors (preloaded baseline).
 	 *
@@ -61,7 +50,7 @@ export type CreateHmrHostOptions = {
 	 * Builtin plugins loaded from workspace package dist entries.
 	 *
 	 * When omitted, `createHmrHost()` derives this from `workspaceSnapshot.builtinsFromDist`
-	 * (computed by `@pluxel/cli/hmr` during workspace diagnosis).
+	 * (typically computed by the caller during workspace diagnosis).
 	 * Set to `[]` to explicitly disable loading builtins-from-dist.
 	 */
 	builtinsFromDist?: HMRConfig['builtinsFromDist']
@@ -155,68 +144,90 @@ export type CreateHmrHostResult = {
 	ctx: PluxelContext
 }
 
-function assertSnapshotShape(snapshot: WorkspaceSnapshot) {
-	// Fast, minimal structural validation for callers that may bypass workspace discovery.
-	const assertStringArray = (value: unknown, label: string) => {
-		if (!Array.isArray(value))
-			throw new Error(`[hmr-host] Invalid workspaceSnapshot: ${label} missing.`)
-		if (value.some((x) => typeof x !== 'string')) {
-			throw new Error(`[hmr-host] Invalid workspaceSnapshot: ${label} must be string[].`)
-		}
-	}
-
-	assertStringArray(snapshot.enabledEntries, 'enabledEntries')
-	assertStringArray(snapshot.watchRoots, 'watchRoots')
-	assertStringArray(snapshot.includeGlobs, 'includeGlobs')
-	assertStringArray(snapshot.excludeGlobs, 'excludeGlobs')
-	if (!Array.isArray(snapshot.discovered)) {
-		throw new Error('[hmr-host] Invalid workspaceSnapshot: discovered missing.')
-	}
-	if (snapshot.builtinPackages !== undefined)
-		assertStringArray(snapshot.builtinPackages, 'builtinPackages')
-	if (snapshot.builtinsFromDist !== undefined) {
-		if (!Array.isArray(snapshot.builtinsFromDist))
-			throw new Error('[hmr-host] Invalid workspaceSnapshot: builtinsFromDist must be an array.')
-		for (const raw of snapshot.builtinsFromDist) {
-			if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
-				throw new Error(
-					'[hmr-host] Invalid workspaceSnapshot: builtinsFromDist must contain objects.',
-				)
-			}
-			const o = raw as Record<string, unknown>
-			if (typeof o.packageName !== 'string' || !o.packageName.trim()) {
-				throw new Error(
-					'[hmr-host] Invalid workspaceSnapshot: builtinsFromDist[].packageName must be a string.',
-				)
-			}
-			if (typeof o.entry !== 'string' || !o.entry.trim()) {
-				throw new Error(
-					'[hmr-host] Invalid workspaceSnapshot: builtinsFromDist[].entry must be a string.',
-				)
-			}
-		}
-	}
+export type StartHmrHostFromConfigOptions = Omit<CreateHmrHostOptions, 'workspaceSnapshot'> & {
+	/**
+	 * HMR config file path.
+	 *
+	 * - When absolute: used as-is.
+	 * - When relative: resolved against `root`.
+	 * - When omitted: defaults to `<root>/pluxel.hmr.jsonc`.
+	 */
+	configPath?: string
+	/**
+	 * Override profile selection without mutating `process.env`.
+	 *
+	 * Equivalent to setting `env.PLUXEL_HMR_PROFILE`.
+	 */
+	profile?: string
+	/**
+	 * Extra environment variables forwarded to `diagnoseWorkspace()`.
+	 *
+	 * These are merged on top of `process.env` and `profile`.
+	 */
+	env?: Record<string, string | undefined>
+	/** Forwarded to `diagnoseWorkspace()` as `omitPackages`. */
+	omitPackages?: string[]
 }
 
-async function resolveSnapshotFromConfig(params: {
-	root: string
-	configPath?: string
-	profile?: string
-	omitPackages?: string[]
-}): Promise<WorkspaceSnapshot> {
-	const { resolveHmrWorkspaceSnapshot } = await import('@pluxel/cli/hmr')
-	return resolveHmrWorkspaceSnapshot({
-		rootDir: params.root,
-		configPath: params.configPath,
-		profile: params.profile,
-		omitPackages: params.omitPackages,
+export type StartHmrHostFromConfigResult = CreateHmrHostResult & {
+	started: true
+	snapshot: HmrWorkspaceSnapshot
+	warnings: string[]
+}
+
+export type CreateHmrHostFromConfigResult = CreateHmrHostResult & {
+	snapshot: HmrWorkspaceSnapshot
+	warnings: string[]
+}
+
+export async function createHmrHostFromConfig(
+	opts: StartHmrHostFromConfigOptions,
+): Promise<CreateHmrHostFromConfigResult> {
+	const { configPath, profile, env: envOverrides, omitPackages, ...hostOpts } = opts
+
+	const rootDir = resolve(process.cwd(), hostOpts.root ?? '.')
+	const configPathAbs = (() => {
+		if (configPath) return isAbsolute(configPath) ? configPath : resolve(rootDir, configPath)
+		return resolveDefaultHmrConfigPath(rootDir)
+	})()
+	const env: Record<string, string | undefined> = {
+		...process.env,
+		...(profile ? { PLUXEL_HMR_PROFILE: profile } : {}),
+		...(envOverrides ?? {}),
+	}
+
+	const res = await diagnoseWorkspace({
+		rootDir,
+		configPath: configPathAbs,
+		env,
+		omitPackages,
 	})
+	if (!res.ok) {
+		throw new Error(res.errors.join('\n'))
+	}
+
+	const host = await createHmrHost({
+		...hostOpts,
+		root: rootDir,
+		workspaceSnapshot: res.snapshot,
+	})
+
+	return { ...host, snapshot: res.snapshot, warnings: res.warnings }
+}
+
+export async function startHmrHostFromConfig(
+	opts: StartHmrHostFromConfigOptions,
+): Promise<StartHmrHostFromConfigResult> {
+	const res = await createHmrHostFromConfig(opts)
+	await res.ctx.root.hmrService.start()
+	return { ...res, started: true }
 }
 
 /**
  * Map a small set of env vars into `hmrService` config.
  *
  * Intentionally minimal:
+ * - Port: `PLUXEL_HMR_PORT` → `hmrService.port`
  * - Profiling: `PLUXEL_HMR_ATTRIBUTION` → `hmrService.attribution`
  * - Resilience: `PLUXEL_HMR_BUILTINS_PRELOAD_STRICT` / `PLUXEL_HMR_BUILTINS_AUTO_DISABLE_MISSING_DEPS`
  *
@@ -224,6 +235,12 @@ async function resolveSnapshotFromConfig(params: {
  */
 export function applyHmrEnvOverrides(base: HMRConfig, env = process.env): HMRConfig {
 	const out: HMRConfig = { ...base }
+
+	const portRaw = env.PLUXEL_HMR_PORT
+	if (portRaw !== undefined) {
+		const n = Number(String(portRaw).trim())
+		if (Number.isFinite(n) && n >= 0) out.port = Math.floor(n)
+	}
 
 	const attributionRaw = env.PLUXEL_HMR_ATTRIBUTION
 	if (attributionRaw !== undefined) {
@@ -287,19 +304,7 @@ function resolveBuiltinsFromDistEntries(
 		.filter((b) => b.packageName && b.entry)
 }
 
-function extractBuiltinPackageNames(builtins: readonly BuiltinPluginSpec[]): string[] {
-	const out: string[] = []
-	for (const spec of builtins) {
-		if (typeof spec === 'function') continue
-		const pkg = typeof spec.packageName === 'string' ? spec.packageName.trim() : ''
-		if (pkg) out.push(pkg)
-		const moduleId = typeof spec.moduleId === 'string' ? spec.moduleId.trim() : ''
-		if (moduleId && !moduleId.includes(':')) out.push(moduleId)
-	}
-	return uniqSorted(out)
-}
-
-export async function createHmrHost(opts: CreateHmrHostOptions = {}): Promise<CreateHmrHostResult> {
+export async function createHmrHost(opts: CreateHmrHostOptions): Promise<CreateHmrHostResult> {
 	const root = resolve(opts.root ?? process.cwd())
 	if (opts.chdir !== false) process.chdir(root)
 
@@ -329,20 +334,14 @@ export async function createHmrHost(opts: CreateHmrHostOptions = {}): Promise<Cr
 		{ plugin: BasicAuthBuiltinPlugin, enable: false },
 		...userBuiltins,
 	]
-	const omitPackages = (() => {
-		const list = extractBuiltinPackageNames(builtins)
-		return list.length ? list : undefined
-	})()
-	let snapshot =
-		opts.workspaceSnapshot ??
-		(await resolveSnapshotFromConfig({
-			root,
-			configPath: opts.configPath,
-			profile: opts.profile,
-			omitPackages,
-		}))
+	let snapshot = opts.workspaceSnapshot
+	// Runtime guard for JS callers / `any` escapes.
+	if (!snapshot)
+		throw new Error(
+			'[hmr-host] workspaceSnapshot is required (compute it in your caller, e.g. via @pluxel/hmr/diagnose)',
+		)
 	if (opts.snapshotPatch) snapshot = opts.snapshotPatch(snapshot)
-	assertSnapshotShape(snapshot)
+	assertHmrWorkspaceSnapshot(snapshot)
 
 	const roots = snapshot.watchRoots
 	const entries = snapshot.enabledEntries
@@ -414,7 +413,7 @@ export async function createHmrHost(opts: CreateHmrHostOptions = {}): Promise<Cr
 }
 
 export async function startHmrHost(
-	opts: CreateHmrHostOptions = {},
+	opts: CreateHmrHostOptions,
 ): Promise<CreateHmrHostResult & { started: true }> {
 	const res = await createHmrHost(opts)
 	await res.ctx.root.hmrService.start()

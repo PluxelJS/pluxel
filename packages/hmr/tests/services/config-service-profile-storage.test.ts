@@ -1,10 +1,11 @@
 import { existsSync } from 'node:fs'
 import { mkdir, writeFile } from 'node:fs/promises'
+import { createHmrHost } from '@pluxel/hmr/host'
+import type { HmrWorkspaceSnapshot } from '@pluxel/hmr/snapshot'
 import { createFixture } from 'fs-fixture'
 import { dirname, resolve } from 'pathe'
 import { SuperJSON } from 'superjson'
 import { describe, expect, it } from 'vitest'
-import { createHmrHost } from '@pluxel/hmr/host'
 
 describe('HMR ConfigService profile storage', () => {
 	it('writes a per-profile config file (and can seed from the base file)', async () => {
@@ -38,7 +39,23 @@ describe('HMR ConfigService profile storage', () => {
 		const prevCwd = process.cwd()
 		let ctx: Awaited<ReturnType<typeof createHmrHost>>['ctx'] | undefined
 		try {
-			const host = await createHmrHost({ root: fixture.path, logging: false, store: {} })
+			const snapshot: HmrWorkspaceSnapshot = {
+				activeProfile: 'dev',
+				roots: ['packages/a'],
+				enabled: ['pluxel-plugin-a'],
+				builtinPackages: [],
+				enabledEntries: ['packages/a/src/index.ts'],
+				includedEntries: [],
+				watchRoots: ['packages/a'],
+				includeGlobs: [],
+				excludeGlobs: [],
+			}
+			const host = await createHmrHost({
+				root: fixture.path,
+				logging: false,
+				store: {},
+				workspaceSnapshot: snapshot,
+			})
 			ctx = host.ctx
 
 			// Seed the base config file (shared name). The HMR ConfigService should read it as a fallback
@@ -83,10 +100,22 @@ describe('HMR ConfigService profile storage', () => {
 		const prevCwd = process.cwd()
 		let ctx: Awaited<ReturnType<typeof createHmrHost>>['ctx'] | undefined
 		try {
+			const snapshot: HmrWorkspaceSnapshot = {
+				activeProfile: 'dev',
+				roots: [],
+				enabled: [],
+				builtinPackages: [],
+				enabledEntries: [],
+				includedEntries: [],
+				watchRoots: [],
+				includeGlobs: [],
+				excludeGlobs: [],
+			}
 			const host = await createHmrHost({
 				root: fixture.path,
 				logging: false,
 				store: { configFile: '.pluxel/hmr/{profile}/config.json', seedConfig: false },
+				workspaceSnapshot: snapshot,
 			})
 			ctx = host.ctx
 

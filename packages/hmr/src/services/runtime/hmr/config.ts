@@ -1,6 +1,5 @@
 import { existsSync } from 'node:fs'
-// Use the public CLI facade; it re-exports internal build plugins without exposing @pluxel/build directly.
-import { configSourcePlugin, importTypeFixerPlugin } from '@pluxel/cli/rolldown'
+import { configSourcePlugin, importTypeFixerPlugin } from '@pluxel/build/rolldown'
 import { resolve } from 'pathe'
 import {
 	createLogger,
@@ -81,7 +80,7 @@ const REQUIRED_BRIDGE_MODULES = [
 ] as const
 
 const REQUIRED_DEDUPE_PACKAGES = [
-	...new Set([...REQUIRED_BRIDGE_MODULES.map(toBasePackage), '@pluxel/cli']),
+	...new Set([...REQUIRED_BRIDGE_MODULES.map(toBasePackage), '@pluxel/build']),
 ] as const
 
 const DEFAULT_SSR_NO_EXTERNAL_BASE = ['react', 'react-dom'] as const
@@ -401,7 +400,7 @@ export function buildHmrViteConfig(opts: HmrViteConfigOptions): InlineConfig {
 			},
 		},
 	}
-	}
+}
 
 function shouldSilenceDynamicImportWarning(msg: string): boolean {
 	// Vite import-analysis warns on dynamic import patterns it can't statically analyze.

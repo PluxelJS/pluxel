@@ -11,11 +11,6 @@
 			"import": "./dist/hmr.mjs",
 			"default": "./dist/hmr.mjs"
 		},
-		"./workspace": {
-			"@pluxel/source": "./src/workspace/index.ts",
-			"import": "./dist/workspace.mjs",
-			"default": "./dist/workspace.mjs"
-		},
 		"./build": {
 			"@pluxel/source": "./src/build.ts",
 			"import": "./dist/build.mjs",
@@ -45,6 +40,7 @@
 	},
 	"dependencies": {
 		"@clack/prompts": "^1.0.1",
+		"@pluxel/hmr": "workspace:*",
 		"fdir": "^6.5.0",
 		"gunshi": "^0.29.2",
 		"jsonc-parser": "^3.3.1",
@@ -56,6 +52,7 @@
 	},
 	"devDependencies": {
 		"@pluxel/build": "workspace:*",
+		"@pluxel/workspace": "workspace:*",
 		"@pluxel/test": "workspace:*",
 		"@types/picomatch": "^4.0.2",
 		"@types/react": "^19.2.14",
@@ -68,7 +65,6 @@
 	"publishConfig": {
 		"exports": {
 			"./hmr": "./dist/hmr.mjs",
-			"./workspace": "./dist/workspace.mjs",
 			"./build": "./dist/build.mjs",
 			"./rolldown": "./dist/rolldown.mjs",
 			"./package.json": "./package.json"

@@ -1,15 +1,19 @@
-import { createServer } from 'node:http'
+import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
 import { createHmrHost } from '@pluxel/hmr/host'
+import type { HmrWorkspaceSnapshot } from '@pluxel/hmr/snapshot'
 import { createFixture } from 'fs-fixture'
 import { resolve } from 'pathe'
 import { describe, expect, it } from 'vitest'
 import { createUiPublicStaticMiddleware } from '../../src/server/ui-public'
 
-function mount(
-	base: string,
-	handler: (req: any, res: any, next: (err?: unknown) => void) => unknown,
-) {
-	return (req: any, res: any, next: (err?: unknown) => void) => {
+type Middleware = (
+	req: IncomingMessage,
+	res: ServerResponse,
+	next: (err?: unknown) => void,
+) => unknown
+
+function mount(base: string, handler: Middleware) {
+	return (req: IncomingMessage, res: ServerResponse, next: (err?: unknown) => void) => {
 		const rawUrl = typeof req?.url === 'string' ? req.url : '/'
 		const { pathname } = new URL(rawUrl, 'http://localhost')
 		if (pathname !== base && !pathname.startsWith(`${base}/`)) return next()
@@ -25,16 +29,14 @@ function mount(
 }
 
 function htmlFallback() {
-	return (_req: any, res: any) => {
+	return (_req: IncomingMessage, res: ServerResponse) => {
 		res.statusCode = 200
 		res.setHeader('Content-Type', 'text/html; charset=utf-8')
 		res.end('<!doctype html><html><body>fallback</body></html>')
 	}
 }
 
-async function startHttpServer(
-	middlewares: Array<(req: any, res: any, next: (err?: unknown) => void) => unknown>,
-) {
+async function startHttpServer(middlewares: Middleware[]) {
 	const server = createServer((req, res) => {
 		let i = 0
 		const next = (err?: unknown) => {
@@ -98,15 +100,6 @@ describe('HMR UI smoke', () => {
 	it('exposes /__pluxel/hmr/graphql (used by the UI)', async () => {
 		await using fixture = await createFixture({
 			'pnpm-workspace.yaml': ['packages:', '  - packages/*', ''].join('\n'),
-			'pluxel.hmr.jsonc': [
-				'{',
-				'  "version": 1,',
-				'  "profile": "dev",',
-				'  "defaults": { "roots": "auto" },',
-				'  "profiles": { "dev": { "enabled": ["pluxel-plugin-a"] } }',
-				'}',
-				'',
-			].join('\n'),
 			// HMR may persist runtime config under `data/`; pre-create so fixture cleanup is stable.
 			'data/hmr/config.dev.json': '{}\n',
 			'packages/a/package.json': JSON.stringify(
@@ -125,7 +118,22 @@ describe('HMR UI smoke', () => {
 
 		const prevCwd = process.cwd()
 		try {
-			const host = await createHmrHost({ root: fixture.path, logging: false })
+			const snapshot: HmrWorkspaceSnapshot = {
+				activeProfile: 'dev',
+				roots: ['packages/a'],
+				enabled: ['pluxel-plugin-a'],
+				builtinPackages: [],
+				enabledEntries: ['packages/a/src/index.ts'],
+				includedEntries: [],
+				watchRoots: ['packages/a'],
+				includeGlobs: [],
+				excludeGlobs: [],
+			}
+			const host = await createHmrHost({
+				root: fixture.path,
+				logging: false,
+				workspaceSnapshot: snapshot,
+			})
 
 			const res = await host.ctx.honoService.fetch(
 				new Request('http://local/__pluxel/hmr/graphql', {
@@ -136,8 +144,8 @@ describe('HMR UI smoke', () => {
 			)
 
 			expect(res.status).toBe(200)
-			const json = (await res.json()) as any
-			expect(json?.data?._empty).toBe('ok')
+			const json = (await res.json()) as { data?: { _empty?: string } }
+			expect(json.data?._empty).toBe('ok')
 			await host.ctx.effects.dispose()
 		} finally {
 			process.chdir(prevCwd)

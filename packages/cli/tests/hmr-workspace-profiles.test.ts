@@ -1,20 +1,50 @@
-import { describe, expect, it } from 'vitest'
+import {
+	diagnoseWorkspace,
+	type PluxelHmrConfigV1,
+	readHmrConfigV1,
+	writeHmrConfigV1,
+} from '@pluxel/cli/hmr'
 import { createFixture } from 'fs-fixture'
 import { resolve } from 'pathe'
-import { diagnoseWorkspace, readHmrConfigV1, writeHmrConfigV1, type PluxelHmrConfigV1 } from '@pluxel/cli/hmr'
+import { describe, expect, it } from 'vitest'
 
 describe('@pluxel/cli/hmr workspace profiles', () => {
 	it('parses config strictly (unknown fields rejected)', async () => {
 		await using fixture = await createFixture({
-			'pluxel.hmr.jsonc': '{ "version": 1, "profile": "dev", "profiles": { "dev": { "enabled": [] } }, "foo": 1 }',
+			'pluxel.hmr.jsonc':
+				'{ "version": 1, "profile": "dev", "profiles": { "dev": { "enabled": [] } }, "foo": 1 }',
 		})
 		expect(() => readHmrConfigV1(resolve(fixture.path, 'pluxel.hmr.jsonc'))).toThrow()
+	})
+
+	it('returns a friendly error when config file is missing', async () => {
+		await using fixture = await createFixture({
+			'pnpm-workspace.yaml': ['packages:', "  - 'packages/*'", ''].join('\n'),
+			'packages/a/package.json': JSON.stringify(
+				{ name: 'pluxel-plugin-a', version: '0.0.0' },
+				null,
+				2,
+			),
+			'packages/a/src/index.ts': 'export const a = 1\n',
+		})
+
+		const rootDir = fixture.path
+		const configPath = resolve(rootDir, 'pluxel.hmr.jsonc')
+		const res = await diagnoseWorkspace({ rootDir, configPath, env: {} })
+		expect(res.ok).toBe(false)
+		if (res.ok) return
+		expect(res.errors[0]).toContain('Missing config file')
+		expect(res.errors[0]).toContain('pluxel.hmr.jsonc')
 	})
 
 	it('diagnoseWorkspace resolves enabledEntries, include entries, and watchRoots', async () => {
 		await using fixture = await createFixture({
 			'pnpm-workspace.yaml': ['packages:', "  - 'packages/*'", ''].join('\n'),
-			'packages/shared/package.json': JSON.stringify({ name: 'pluxel-shared', version: '0.0.0' }, null, 2),
+			'packages/shared/package.json': JSON.stringify(
+				{ name: 'pluxel-shared', version: '0.0.0' },
+				null,
+				2,
+			),
 			'packages/shared/src/index.ts': 'export const shared = 1\n',
 			'packages/plugin-a/package.json': JSON.stringify(
 				{
@@ -40,7 +70,11 @@ describe('@pluxel/cli/hmr workspace profiles', () => {
 			),
 			'packages/plugin-builtin/src/index.ts': 'export const pluginBuiltin = 1\n',
 			'packages/plugin-builtin/dist/index.mjs': 'export const pluginBuiltinDist = 1\n',
-			'packages/plugins-host/package.json': JSON.stringify({ name: '@pluxel/plugins-host', version: '0.0.0' }, null, 2),
+			'packages/plugins-host/package.json': JSON.stringify(
+				{ name: '@pluxel/plugins-host', version: '0.0.0' },
+				null,
+				2,
+			),
 			'packages/plugins-host/src/demo/PluginEventsDemo.ts': 'export const demo = 1\n',
 		})
 
@@ -76,14 +110,122 @@ describe('@pluxel/cli/hmr workspace profiles', () => {
 		])
 
 		expect(res.snapshot.enabledEntries[0]).toBe('packages/plugin-a/src/index.ts')
-		expect(res.snapshot.enabledEntries).toContain('packages/plugins-host/src/demo/PluginEventsDemo.ts')
-		expect(res.snapshot.includedEntries).toEqual(['packages/plugins-host/src/demo/PluginEventsDemo.ts'])
+		expect(res.snapshot.enabledEntries).toContain(
+			'packages/plugins-host/src/demo/PluginEventsDemo.ts',
+		)
+		expect(res.snapshot.includedEntries).toEqual([
+			'packages/plugins-host/src/demo/PluginEventsDemo.ts',
+		])
 
 		// watchRoots includes the enabled plugin package + its workspace deps closure + include-containing package
 		expect(res.snapshot.watchRoots).toContain('packages/plugin-a')
 		expect(res.snapshot.watchRoots).toContain('packages/plugins-host')
 
 		expect(res.snapshot.includeGlobs.length).toBeGreaterThan(0)
-		expect(res.snapshot.excludeGlobs).toEqual(['**/dist/**', '**/node_modules/**'])
+		expect(res.snapshot.excludeGlobs).toEqual(['**/node_modules/**', '**/dist/**'])
+	})
+
+	it('supports omitPackages to prevent double-loading builtins', async () => {
+		await using fixture = await createFixture({
+			'pnpm-workspace.yaml': ['packages:', '  - builtin-plugins/*', '  - chatbots/*', ''].join(
+				'\n',
+			),
+			'builtin-plugins/graphql/package.json': JSON.stringify(
+				{
+					name: '@pluxel/graphql',
+					version: '0.0.0',
+					type: 'module',
+					exports: { '.': { '@pluxel/hmr': './src/index.ts' } },
+				},
+				null,
+				2,
+			),
+			'builtin-plugins/graphql/src/index.ts': 'export const plugins = []\n',
+			'chatbots/bot-suite/package.json': JSON.stringify(
+				{
+					name: 'pluxel-plugin-bot-suite',
+					version: '0.0.0',
+					type: 'module',
+					exports: { '.': { '@pluxel/hmr': './src/index.ts' } },
+				},
+				null,
+				2,
+			),
+			'chatbots/bot-suite/src/index.ts': 'export const plugins = []\n',
+		})
+
+		const rootDir = fixture.path
+		const configPath = resolve(rootDir, 'pluxel.hmr.jsonc')
+		writeHmrConfigV1(
+			configPath,
+			{
+				version: 1,
+				profile: 'dev',
+				defaults: { roots: 'auto' },
+				profiles: { dev: { enabled: ['@pluxel/graphql', 'pluxel-plugin-bot-suite'] } },
+			},
+			{ headerComment: '' },
+		)
+
+		const res = await diagnoseWorkspace({
+			rootDir,
+			configPath,
+			env: {},
+			omitPackages: ['@pluxel/graphql'],
+		})
+		expect(res.ok).toBe(true)
+		if (!res.ok) return
+
+		expect(res.snapshot.enabled).toEqual(['pluxel-plugin-bot-suite'])
+		expect(res.snapshot.enabledEntries).toEqual(['chatbots/bot-suite/src/index.ts'])
+		expect(res.snapshot.watchRoots).toEqual(['chatbots/bot-suite'])
+		expect(res.warnings.join('\n')).toMatch(/Skipped 1 enabled package/i)
+	})
+
+	it('fails fast when a builtin package exports no dist .mjs entry', async () => {
+		await using fixture = await createFixture({
+			'pnpm-workspace.yaml': ['packages:', '  - builtin-plugins/*', '  - apps/*', ''].join('\n'),
+			'builtin-plugins/graphql/package.json': JSON.stringify(
+				{
+					name: '@pluxel/graphql',
+					version: '0.0.0',
+					type: 'module',
+					exports: { '.': { '@pluxel/hmr': './src/index.ts', default: './dist/index.js' } },
+				},
+				null,
+				2,
+			),
+			'builtin-plugins/graphql/src/index.ts': 'export const plugins = []\n',
+			'builtin-plugins/graphql/dist/index.js': 'export default class GraphQL {}\n',
+			'apps/app/package.json': JSON.stringify(
+				{
+					name: 'pluxel-plugin-app',
+					version: '0.0.0',
+					type: 'module',
+					exports: { '.': { '@pluxel/hmr': './src/index.ts' } },
+				},
+				null,
+				2,
+			),
+			'apps/app/src/index.ts': 'export const plugins = []\n',
+		})
+
+		const rootDir = fixture.path
+		const configPath = resolve(rootDir, 'pluxel.hmr.jsonc')
+		writeHmrConfigV1(
+			configPath,
+			{
+				version: 1,
+				profile: 'dev',
+				defaults: { roots: 'auto' },
+				profiles: { dev: { enabled: ['pluxel-plugin-app'], builtin: ['@pluxel/graphql'] } },
+			},
+			{ headerComment: '' },
+		)
+
+		const res = await diagnoseWorkspace({ rootDir, configPath, env: {} })
+		expect(res.ok).toBe(false)
+		if (res.ok) return
+		expect(res.errors.join('\n')).toMatch(/missing dist \.mjs export entry/i)
 	})
 })

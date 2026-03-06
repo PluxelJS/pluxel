@@ -4,17 +4,30 @@ import { defineConfig } from 'tsdown'
 import PreprocessorDirectives from 'unplugin-preprocessor-directives/rollup'
 
 const valibotFormSrc = fileURLToPath(new URL('../valibot-form/src', import.meta.url))
+const buildRoot = fileURLToPath(new URL('../build/src', import.meta.url))
+const buildRolldown = fileURLToPath(new URL('../build/src/rolldown/index.ts', import.meta.url))
+const workspaceIndex = fileURLToPath(new URL('../workspace/src/index.ts', import.meta.url))
 const dtsRewriteMap = {
 	'@pluxel/hmr-web/react': '@pluxel/hmr/web',
 	'@pluxel/hmr-web/vendors': '@pluxel/hmr/web',
 	'@pluxel/hmr-web': '@pluxel/hmr/web',
 } as const
 
+// biome-ignore lint/style/noDefaultExport: tsdown config loader expects a default export.
 export default defineConfig({
 	exports: {
 		devExports: '@pluxel/source',
 	},
-	noExternal: ['@pluxel/hmr-web', '@pluxel/hmr-web/*', 'valibot-form', 'valibot-form/*'],
+	noExternal: [
+		'@pluxel/build',
+		'@pluxel/build/*',
+		'@pluxel/workspace',
+		'@pluxel/workspace/*',
+		'@pluxel/hmr-web',
+		'@pluxel/hmr-web/*',
+		'valibot-form',
+		'valibot-form/*',
+	],
 	plugins: [
 		PreprocessorDirectives(),
 		appendDtsImport('import type {} from "./services.d.mts"', ['index.d.mts']),
@@ -24,11 +37,12 @@ export default defineConfig({
 	env: {},
 	entry: {
 		index: 'src/index.ts',
-		cli: 'src/cli.ts',
 		logger: 'src/logger/index.ts',
 		host: 'src/host/index.ts',
 		services: 'src/services/index.ts',
 		config: 'src/config.ts',
+		snapshot: 'src/snapshot.ts',
+		diagnose: 'src/diagnose/index.ts',
 		web: 'src/web/web.ts',
 		capnweb: 'src/web/capnweb.ts',
 		signaldb: 'src/web/signaldb.ts',
@@ -36,6 +50,9 @@ export default defineConfig({
 	copy: ['public', 'src/services/runtime-compile/bundler/bundle-worker.mjs'],
 	alias: {
 		'~': valibotFormSrc,
+		'@pluxel/build': buildRoot,
+		'@pluxel/build/rolldown': buildRolldown,
+		'@pluxel/workspace': workspaceIndex,
 	},
 	tsconfig: './tsconfig.json',
 	dts: {

@@ -29,7 +29,7 @@ export type PluxelHmrConfigV1 = {
 			 * These package names are omitted from workspace discovery/entries resolution to prevent
 			 * double-loading the same package (plugin name conflicts).
 			 *
-			 * Note: builtins are preloaded by the host (via @pluxel/hmr/host). This field only
+			 * Note: builtins are preloaded by the host (via `@pluxel/hmr/host`). This field only
 			 * declares *which packages* should be treated as builtins for discovery purposes.
 			 */
 			builtin?: string[]
@@ -145,15 +145,10 @@ function assertRoots(value: unknown, ctx: string): asserts value is 'auto' | str
 	assertStringArray(value, ctx)
 }
 
-function assertNoUnknownKeys(
-	obj: Record<string, unknown>,
-	allowed: readonly string[],
-	ctx: string,
-) {
+function assertNoUnknownKeys(obj: Record<string, unknown>, allowed: readonly string[], ctx: string) {
 	const allow = new Set(allowed)
 	const unknown = Object.keys(obj).filter((k) => !allow.has(k))
-	if (unknown.length)
-		throw new Error(`[hmr-config] Unknown field(s) in ${ctx}: ${unknown.join(', ')}`)
+	if (unknown.length) throw new Error(`[hmr-config] Unknown field(s) in ${ctx}: ${unknown.join(', ')}`)
 }
 
 export function validateHmrConfigV1Strict(

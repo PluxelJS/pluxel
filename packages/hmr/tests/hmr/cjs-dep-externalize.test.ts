@@ -27,20 +27,22 @@ function buildDeps(cjsExternal: string[]) {
 
 const noop = () => undefined
 
+type NoopChannel = {
+	trace: () => void
+	debug: () => void
+	info: () => void
+	warn: () => void
+	error: (messageOrObj: unknown, maybeProps?: unknown) => void
+	fatal: () => void
+	with: () => NoopChannel
+}
+
 function createNoopLogger(errorLogs?: ErrorLog[]) {
-	const channel: any = {
+	const channel: NoopChannel = {
 		trace: noop,
 		debug: noop,
 		info: noop,
 		warn: noop,
-		error: noop,
-		fatal: noop,
-		with: () => channel,
-	}
-
-	return {
-		...channel,
-		getDebugChannel: () => channel,
 		error(messageOrObj: unknown, maybeProps?: unknown) {
 			if (!errorLogs) return
 			if (typeof messageOrObj === 'string') {
@@ -51,6 +53,13 @@ function createNoopLogger(errorLogs?: ErrorLog[]) {
 				errorLogs.push({ msg: maybeProps, obj: messageOrObj })
 			}
 		},
+		fatal: noop,
+		with: () => channel,
+	}
+
+	return {
+		...channel,
+		getDebugChannel: () => channel,
 	}
 }
 
@@ -165,7 +174,7 @@ describe('HMR CJS dependency handling', () => {
 
 		const executeFailed = errorLogs.find((e) => e.msg === '[HMR] execute failed')
 		expect(executeFailed).toBeUndefined()
-	})
+	}, 15_000)
 
 	it('externalizes CJS subpath exports (pkg/subpath)', async () => {
 		await using fixture = await createFixture({

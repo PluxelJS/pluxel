@@ -5,7 +5,8 @@ export default defineConfig({
 	exports: {
 		devExports: '@pluxel/source',
 	},
-	copy: ["src/ui"],
+	noExternal: ['@pluxel/build', '@pluxel/build/*'],
+	copy: ['src/ui'],
 	entry: {
 		index: 'src/index.ts',
 	},

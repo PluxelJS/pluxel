@@ -1,5 +1,1 @@
-export * from './config'
-export * from './discover'
-export * from './diagnose'
-export * from './profile'
-export * from './utils'
+export * from '@pluxel/hmr/diagnose'

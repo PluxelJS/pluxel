@@ -1,45 +1,36 @@
 #!/usr/bin/env node
-import { type Command, cli, type LazyCommand, lazy } from 'gunshi'
+import { type Command, cli, define } from 'gunshi'
 import pkg from '../package.json'
+import { buildCommand } from './commands/build'
+import { hmrCommand } from './commands/hmr'
+import { publishCommand } from './commands/publish'
+import { workspaceCommand } from './commands/workspace'
 import { newCommand } from './scaffold'
 
-type AnyCommand = Command<unknown> | LazyCommand<unknown>
+type AnyCommand = Command
 
 const commands = new Map<string, AnyCommand>([
 	['new', newCommand],
-	[
-		'build',
-		lazy(() => import('./commands/build').then((m) => m.buildCommand), {
-			name: 'build',
-			description: 'Build current project',
-		}),
-	],
-	[
-		'publish',
-		lazy(() => import('./commands/publish').then((m) => m.publishCommand), {
-			name: 'publish',
-			description: 'Publish plugin packages',
-		}),
-	],
-	[
-		'hmr',
-		lazy(() => import('./commands/hmr').then((m) => m.hmrCommand), {
-			name: 'hmr',
-			description: 'Manage HMR workspace profiles and start HMR',
-		}),
-	],
-	[
-		'workspace',
-		lazy(() => import('./commands/workspace').then((m) => m.workspaceCommand), {
-			name: 'workspace',
-			description: 'Manage workspaces (pnpm / yarn)',
-		}),
-	],
+	['build', buildCommand],
+	['publish', publishCommand],
+	['hmr', hmrCommand],
+	['workspace', workspaceCommand],
 ])
+
+const rootCommand = define({
+	name: pkg.name ?? 'pluxel',
+	description: 'Pluxel CLI',
+	args: {},
+	async run() {
+		// Keep root command empty; actual behavior lives in subcommands.
+	},
+})
 
 async function main() {
 	try {
-		await cli(process.argv.slice(2), newCommand, {
+		const argv = process.argv.slice(2)
+		const nextArgv = argv.length === 0 ? ['--help'] : argv
+		await cli(nextArgv, rootCommand, {
 			name: pkg.name ?? 'pluxel',
 			version: pkg.version,
 			subCommands: commands,

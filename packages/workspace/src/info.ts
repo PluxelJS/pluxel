@@ -96,7 +96,7 @@ export function parsePnpmWorkspace(contents: string): string[] {
 			}
 			continue
 		}
-		if (line.trim() && line.match(new RegExp(`^\\s{0,${indent}}\\S`))) break
+		if (line.trim() && line.match(new RegExp(`^\\\\s{0,${indent}}\\\\S`))) break
 		const match = line.match(/^\s*-\s*['"]?([^'"]+)['"]?\s*$/)
 		if (match) res.push(match[1])
 	}

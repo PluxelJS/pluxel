@@ -5,13 +5,12 @@
 ## 运行
 
 - 启动 HMR 测试宿主：`pnpm --filter @pluxel/plugins-host hmr`
-- Demo 入口由 `pluxel.hmr.jsonc` 的 `include` 负责（例如 `packages/plugins/host/src/demo/**/*.ts`），不再依赖自定义宿主脚本。
+- Demo 入口由 `packages/plugins/host/pluxel.hmr.jsonc` 的 `include` 负责（例如 `packages/plugins/host/src/demo/**/*.ts`），不再依赖自定义宿主脚本。
 - Demo 默认假设 HMR 侧启用了 `configSourcePlugin`：因此 `configs.use(...)` / `features.use(...)` 可以不写装饰器，也能在启动前注册 schema/依赖信息。
 
 ## 清单（建议阅读顺序）
 
 - `PluginEventsDemo.ts`：两种事件通信方式（EvtChannel + declare module 全局事件合同）。
-- `PluginHonoGraphQLDemo.ts`：插件里使用 `ctx.honoService.modifyApp()` + `features.dep(GraphQLPlugin).useModule()`。
 - `PluginBuiltinShowcase.ts`：尽量只用 builtin UI/config 的“大而全”样例（表单 meta、SSE state、内置文档块等）。
 - `PluginFeatureConfigDemo.ts`：Feature 配置归因到父插件配置页（schema key 形如 `cache.config` / `cache.rules`，UI 会按 group 自动分组）。
 - `PluginFeatureDepsDemo.ts`：FeatureHost 的“唯一推荐 API”（`use()` / `dep()` / BridgePlugin）。

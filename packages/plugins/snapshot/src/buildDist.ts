@@ -1,9 +1,9 @@
+import { cp, mkdir, rm } from 'node:fs/promises'
 import { createRequire } from 'node:module'
 import { dirname, join, resolve } from 'node:path'
-import { cp, mkdir, rm } from 'node:fs/promises'
+import { configSourcePlugin, importTypeFixerPlugin } from '@pluxel/build/rolldown'
 import { getDebugLogger } from '@pluxel/core/logger'
-import { configSourcePlugin, importTypeFixerPlugin } from '@pluxel/cli/rolldown'
-import { build as runTsdown, defineConfig, type InlineConfig } from 'tsdown'
+import { defineConfig, type InlineConfig, build as runTsdown } from 'tsdown'
 
 export interface DistBuildConfig {
 	outDir?: string
@@ -124,7 +124,12 @@ function assertSafeCleanDir(outDir: string): void {
 function isBareImport(id: string): boolean {
 	if (!id) return false
 	if (id[0] === '.' || id[0] === '/' || id[0] === '\\') return false
-	if (id.startsWith('file:') || id.startsWith('data:') || id.startsWith('http:') || id.startsWith('https:'))
+	if (
+		id.startsWith('file:') ||
+		id.startsWith('data:') ||
+		id.startsWith('http:') ||
+		id.startsWith('https:')
+	)
 		return false
 	return true
 }

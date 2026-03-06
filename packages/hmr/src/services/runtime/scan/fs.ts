@@ -1,6 +1,6 @@
 import fs from 'node:fs/promises'
 import os from 'node:os'
-import { crawlFilesAbs, DEFAULT_IGNORED_DIR_NAMES } from '@pluxel/cli/workspace'
+import { crawlFilesAbs, DEFAULT_IGNORED_DIR_NAMES } from '@pluxel/workspace'
 import { extname, isAbsolute, normalize, resolve } from 'pathe'
 import { createLimiter } from './limit'
 
@@ -73,7 +73,8 @@ function shouldInclude(filePath: string, exts: Set<string>, includeDts: boolean)
 	if (!exts.has(ext)) return false
 	if (!includeDts) {
 		const lower = filePath.toLowerCase()
-		if (lower.endsWith('.d.ts') || lower.endsWith('.d.mts') || lower.endsWith('.d.cts')) return false
+		if (lower.endsWith('.d.ts') || lower.endsWith('.d.mts') || lower.endsWith('.d.cts'))
+			return false
 	}
 	return true
 }

@@ -27,7 +27,6 @@
 	},
 	"peerDependencies": {
 		"@mantine/core": "^8.3.15",
-		"@pluxel/cli": "workspace:*",
 		"@pluxel/core": "workspace:*",
 		"@pluxel/hmr": "workspace:*",
 		"@tabler/icons-react": "*",
@@ -37,6 +36,7 @@
 	},
 	"devDependencies": {
 		"@pluxel/cli": "workspace:*",
+		"@pluxel/build": "workspace:*",
 		"@pluxel/test": "workspace:*",
 		"tsdown": "^0.20.3",
 		"typescript": "^5.9.3"

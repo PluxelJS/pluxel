@@ -1,30 +1,26 @@
 import { existsSync } from 'node:fs'
+import {
+	backupAndRewriteHmrConfigV1,
+	buildWorkspaceSnapshotFromScan,
+	createDefaultHmrConfigV1,
+	discoverPluginsFromPackages,
+	mergeHmrProfile,
+	type PluxelHmrConfigV1,
+	readHmrConfigV1,
+	resolveHmrRootsExpanded,
+	scanWorkspacePackages,
+	uniqPreserveOrder,
+	uniqSorted,
+	type WorkspaceSnapshot,
+	writeHmrConfigV1,
+} from '@pluxel/hmr/diagnose'
 import { Box, render, Text, useInput, useStdout } from 'ink'
 import { resolve } from 'pathe'
 import { useEffect, useMemo, useRef, useState } from 'react'
-import {
-	backupAndRewriteHmrConfigV1,
-	createDefaultHmrConfigV1,
-	type PluxelHmrConfigV1,
-	readHmrConfigV1,
-	writeHmrConfigV1,
-} from '../hmr/config'
-import {
-	buildWorkspaceSnapshotFromScan,
-	mergeHmrProfile,
-	resolveHmrRootsExpanded,
-	type WorkspaceSnapshot,
-} from '../hmr/diagnose'
-import { discoverPluginsFromPackages, scanWorkspacePackages } from '../hmr/discover'
 import { writeHmrDiscoveredIndex } from '../hmr/discovered-index'
-import { uniqPreserveOrder, uniqSorted } from '../hmr/utils'
 import { type PickPackagesDiscoveredPlugin, PickPackagesDualBrowser } from './pick-packages'
 
-type TabKey =
-	| 'packages'
-	| 'paths'
-	| 'doctor'
-	| 'start'
+type TabKey = 'packages' | 'paths' | 'doctor' | 'start'
 
 type PromptResult = { action: 'exit' } | { action: 'start'; snapshotJson: string }
 
@@ -75,10 +71,7 @@ function TabBar(props: { tabs: TabKey[]; active: TabKey }) {
 				const label = `${i + 1}:${tabLabel(t)}`
 				return (
 					<Text key={t}>
-						<Text
-							color={active ? 'black' : 'gray'}
-							backgroundColor={active ? 'cyan' : undefined}
-						>
+						<Text color={active ? 'black' : 'gray'} backgroundColor={active ? 'cyan' : undefined}>
 							{` ${label} `}
 						</Text>
 						{i < props.tabs.length - 1 ? <Text color="gray"> </Text> : null}
@@ -138,8 +131,7 @@ function ModalOverlay(props: { modal: Exclude<Modal, null> }) {
 			if (key.escape || (key.ctrl && input.toLowerCase() === 'c')) props.modal.onCancel()
 			else if (key.leftArrow || (key.shift && key.tab) || input.toLowerCase() === 'h')
 				setConfirmFocus('cancel')
-			else if (key.rightArrow || key.tab || input.toLowerCase() === 'l')
-				setConfirmFocus('confirm')
+			else if (key.rightArrow || key.tab || input.toLowerCase() === 'l') setConfirmFocus('confirm')
 			else if (key.return) {
 				if (confirmFocus === 'confirm') props.modal.onConfirm()
 				else props.modal.onCancel()
@@ -239,13 +231,14 @@ function ModalOverlay(props: { modal: Exclude<Modal, null> }) {
 
 function ScreenMask(props: { visible: boolean }) {
 	const { stdout } = useStdout()
-	if (!props.visible) return null
 	const rows = stdout?.rows ?? 24
 	const cols = stdout?.columns ?? 80
 	const fill = useMemo(() => {
+		if (!props.visible) return ''
 		const line = ' '.repeat(Math.max(cols, 1))
 		return Array.from({ length: Math.max(rows, 1) }, () => line).join('\n')
-	}, [rows, cols])
+	}, [props.visible, rows, cols])
+	if (!props.visible) return null
 	return (
 		<Box position="absolute" top={0} left={0} width={cols} height={rows} backgroundColor="black">
 			<Text>{fill}</Text>
@@ -686,20 +679,20 @@ function HmrPromptApp(props: {
 	}, [cfg.profiles, activeProfile])
 
 	// Initial parse error flow is handled as a modal (fail fast).
-		useEffect(() => {
-			if (!props.initialParseError) return
-			setModal({
-				kind: 'confirm',
-				title: 'Config parse failed',
-				message: props.initialParseError,
-				confirmLabel: 'Regenerate',
-				cancelLabel: 'Exit',
-				defaultFocus: 'confirm',
-				onConfirm: () => {
-					try {
-						const repaired = createDefaultHmrConfigV1()
-						backupAndRewriteHmrConfigV1(props.configPath, repaired)
-						setCfg(repaired)
+	useEffect(() => {
+		if (!props.initialParseError) return
+		setModal({
+			kind: 'confirm',
+			title: 'Config parse failed',
+			message: props.initialParseError,
+			confirmLabel: 'Regenerate',
+			cancelLabel: 'Exit',
+			defaultFocus: 'confirm',
+			onConfirm: () => {
+				try {
+					const repaired = createDefaultHmrConfigV1()
+					backupAndRewriteHmrConfigV1(props.configPath, repaired)
+					setCfg(repaired)
 					setActiveProfile(repaired.profile)
 					setDirty(false)
 					setToast('Config regenerated.')
@@ -1148,7 +1141,13 @@ function HmrPromptApp(props: {
 		}
 
 		// Roots mode toggle
-		if (tab === 'paths' && pathsFocus === 'roots' && input.toLowerCase() === 't' && !key.ctrl && !key.meta) {
+		if (
+			tab === 'paths' &&
+			pathsFocus === 'roots' &&
+			input.toLowerCase() === 't' &&
+			!key.ctrl &&
+			!key.meta
+		) {
 			toggleRootsAuto()
 			return
 		}
@@ -1171,8 +1170,7 @@ function HmrPromptApp(props: {
 				setDoctorOffset((o) => clamp(o + page, 0, maxOffset))
 			else if (!key.ctrl && !key.meta && input === 'g') setDoctorOffset(0)
 			else if (!key.ctrl && !key.meta && input === 'G') setDoctorOffset(maxOffset)
-			else if (!key.ctrl && !key.meta && input.toLowerCase() === 'd')
-				setDoctorDetails((v) => !v)
+			else if (!key.ctrl && !key.meta && input.toLowerCase() === 'd') setDoctorDetails((v) => !v)
 		}
 	})
 
@@ -1480,18 +1478,18 @@ function HmrPromptApp(props: {
 			}
 			const remaining = names.filter((n) => n !== act.name)
 			const nextActive = remaining[0] ?? activeProfile
-				setModal({
-					kind: 'confirm',
-					title: 'Delete profile',
-					message: `Delete "${act.name}"?`,
-					confirmLabel: 'Delete',
-					cancelLabel: 'Cancel',
-					defaultFocus: 'cancel',
-					onConfirm: () => {
-						setModal(null)
-						setCfg((prev) => {
-							const next = { ...prev.profiles }
-							delete next[act.name]
+			setModal({
+				kind: 'confirm',
+				title: 'Delete profile',
+				message: `Delete "${act.name}"?`,
+				confirmLabel: 'Delete',
+				cancelLabel: 'Cancel',
+				defaultFocus: 'cancel',
+				onConfirm: () => {
+					setModal(null)
+					setCfg((prev) => {
+						const next = { ...prev.profiles }
+						delete next[act.name]
 						const remaining = Object.keys(next).sort((a, b) => a.localeCompare(b))
 						const nextActive = remaining[0] ?? prev.profile
 						return {
@@ -1555,11 +1553,7 @@ function HmrPromptApp(props: {
 			<Text>
 				<Text color="gray">Profile </Text>
 				<Text color="cyan">{` ${profileBadge} `}</Text>
-				{dirty ? (
-					<Text color="yellow">{' unsaved '}</Text>
-				) : (
-					<Text color="gray"> </Text>
-				)}
+				{dirty ? <Text color="yellow">{' unsaved '}</Text> : <Text color="gray"> </Text>}
 				{tab !== 'packages' ? (
 					<Text color="gray">{` enabled ${enabledCount} • builtin ${builtinCount}`}</Text>
 				) : null}
@@ -1577,9 +1571,7 @@ function HmrPromptApp(props: {
 			<Box flexDirection="column" flexGrow={1} height={bodyRows}>
 				{tab === 'packages' ? (
 					<Box flexDirection="column" width="100%">
-						<Text color="gray">
-							Enter/Space toggle • / filter • e mode • Tab(hold) profiles
-						</Text>
+						<Text color="gray">Enter/Space toggle • / filter • e mode • Tab(hold) profiles</Text>
 						{scanSummary ? <Text color="gray">{scanSummary}</Text> : null}
 						{scan.status === 'ready' ? (
 							<PickPackagesDualBrowser
@@ -1668,8 +1660,7 @@ function HmrPromptApp(props: {
 						<Text>enabled: {enabledPreview}</Text>
 						<Text>builtin: {builtinPreview}</Text>
 						<Text>
-							roots({scope}):{' '}
-							{rootsValue === 'auto' ? 'auto' : `${rootsCount} item(s)`}
+							roots({scope}): {rootsValue === 'auto' ? 'auto' : `${rootsCount} item(s)`}
 						</Text>
 						<Text>
 							include({scope}): {includeCount} • exclude({scope}): {excludeCount}
@@ -1717,15 +1708,16 @@ function HmrPromptApp(props: {
 						</Box>
 					</Box>
 				) : null}
-
 			</Box>
 
-				<Text color={toast ? 'yellow' : 'gray'} wrap="truncate">
-					{toast || `Tab ${tabIndex + 1}/${tabList.length} • ? help`}
-				</Text>
-				<Text color="gray" wrap="truncate">
-					{`Keys: Ctrl+S save • Ctrl+R rescan • Ctrl+←/→ tabs • Ctrl+P profiles • Tab(hold) profiles • ? help • q quit`}
-				</Text>
+			<Text color={toast ? 'yellow' : 'gray'} wrap="truncate">
+				{toast || `Tab ${tabIndex + 1}/${tabList.length} • ? help`}
+			</Text>
+			<Text color="gray" wrap="truncate">
+				{
+					'Keys: Ctrl+S save • Ctrl+R rescan • Ctrl+←/→ tabs • Ctrl+P profiles • Tab(hold) profiles • ? help • q quit'
+				}
+			</Text>
 
 			<ScreenMask visible={Boolean(overlay) || Boolean(modal)} />
 			{overlay === 'profiles' ? (
@@ -1840,7 +1832,8 @@ function ProfilesOverlay(props: {
 					{` ${props.active} `}
 				</Text>
 				<Text color="gray">
-					{' '}• 1-9/0 pick • / search • ↑/↓ activate • n new • r rename • c clone • x delete • Enter/Esc
+					{' '}
+					• 1-9/0 pick • / search • ↑/↓ activate • n new • r rename • c clone • x delete • Enter/Esc
 					close
 				</Text>
 			</Text>
@@ -1887,10 +1880,10 @@ function HelpOverlay(props: { tab: TabKey; onClose: () => void }) {
 	const tabName = tabLabel(props.tab)
 	const tabLine =
 		props.tab === 'packages' ? (
-				<Text color="gray">
-					<Key>Enter/Space</Key> toggle • <Key>j/k</Key> move • <Key>/</Key> filter • <Key>e</Key>{' '}
-					mode • <Key>Tab(hold)</Key> profiles • <Key>Ctrl+P</Key> profiles
-				</Text>
+			<Text color="gray">
+				<Key>Enter/Space</Key> toggle • <Key>j/k</Key> move • <Key>/</Key> filter • <Key>e</Key>{' '}
+				mode • <Key>Tab(hold)</Key> profiles • <Key>Ctrl+P</Key> profiles
+			</Text>
 		) : props.tab === 'paths' ? (
 			<Text color="gray">
 				<Key>Tab/Shift+Tab</Key> section • <Key>r/i/x</Key> focus • <Key>s</Key> scope •{' '}
@@ -1923,10 +1916,10 @@ function HelpOverlay(props: { tab: TabKey; onClose: () => void }) {
 				Help ({tabName}) • ?/Esc to close
 			</Text>
 			<Text color="cyan">Global</Text>
-				<Text color="gray">
-					<Key>Ctrl+←/→</Key> tabs • <Key>Ctrl+S</Key> save • <Key>Ctrl+R</Key> rescan •{' '}
-					<Key>Ctrl+P</Key> profiles • <Key>Tab(hold)</Key> profiles • <Key>q</Key> quit
-				</Text>
+			<Text color="gray">
+				<Key>Ctrl+←/→</Key> tabs • <Key>Ctrl+S</Key> save • <Key>Ctrl+R</Key> rescan •{' '}
+				<Key>Ctrl+P</Key> profiles • <Key>Tab(hold)</Key> profiles • <Key>q</Key> quit
+			</Text>
 			<Text color="cyan">{tabName}</Text>
 			{tabLine}
 		</Box>

@@ -1,5 +1,5 @@
-import { loadWorkspaceInfo } from '@pluxel/cli/workspace'
 import { type Context, Injectable } from '@pluxel/core'
+import { loadWorkspaceInfo } from '@pluxel/workspace'
 import type { EntryResolution, EntryResolutionOk, ScanTaskOptions } from '../scan/ScanService'
 import { isEntryOk } from '../scan/ScanService'
 import {

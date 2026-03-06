@@ -1,7 +1,7 @@
 import { writeFileSync } from 'node:fs'
+import type { DiscoveredPlugin } from '@pluxel/hmr/diagnose'
+import { toRootRelative, uniqSorted } from '@pluxel/hmr/diagnose'
 import { dirname, resolve } from 'pathe'
-import type { DiscoveredPlugin } from './discover'
-import { toRootRelative, uniqSorted } from './utils'
 
 export const DEFAULT_HMR_DISCOVERED_BASENAME = 'pluxel.hmr.discovered.jsonc' as const
 
@@ -41,10 +41,9 @@ export function writeHmrDiscoveredIndex(params: {
 	const discoveredNames = uniqSorted(discoveredSorted.map((p) => p.name))
 	const enabledCandidates = discoveredNames.filter((n) => !builtinPackages.includes(n))
 
-	const rootsExpanded =
-		params.rootsExpandedAbs?.length
-			? params.rootsExpandedAbs.map((abs) => toRootRelative(rootDirAbs, abs))
-			: undefined
+	const rootsExpanded = params.rootsExpandedAbs?.length
+		? params.rootsExpandedAbs.map((abs) => toRootRelative(rootDirAbs, abs))
+		: undefined
 
 	const payload = {
 		generatedAt: new Date().toISOString(),
@@ -78,4 +77,3 @@ export function writeHmrDiscoveredIndex(params: {
 	const json = JSON.stringify(payload, null, '\t')
 	writeFileSync(outPath, `${header}${json}\n`, 'utf8')
 }
-

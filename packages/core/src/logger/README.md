@@ -1,7 +1,7 @@
 # @pluxel/core/logger (LogTape)
 
 `@pluxel/core` 是 **logger 封装与约定**，不是 logger runtime：不会在库内部调用 `configure()`。
-宿主（app / CLI / 各类启动入口，例如 `pluxel hmr` / `pluxel-hmr`）必须显式配置 LogTape。
+宿主（app / CLI / 各类启动入口，例如 `pluxel hmr`）必须显式配置 LogTape。
 
 补充：如果你在使用 `@pluxel/hmr`，也建议宿主在启动入口统一 `configure(createPluxelLogtapeConfig(...))`，
 避免分散的“自动配置”导致行为隐式且难以追踪。

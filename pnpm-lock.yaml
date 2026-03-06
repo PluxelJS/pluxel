@@ -93,6 +93,9 @@ importers:
       '@clack/prompts':
         specifier: ^1.0.1
         version: 1.0.1
+      '@pluxel/hmr':
+        specifier: workspace:*
+        version: link:../hmr
       '@pluxel/market':
         specifier: '*'
         version: 0.1.0(ramda@0.32.0)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
@@ -127,6 +130,9 @@ importers:
       '@pluxel/test':
         specifier: workspace:*
         version: link:../test
+      '@pluxel/workspace':
+        specifier: workspace:*
+        version: link:../workspace
       '@types/picomatch':
         specifier: ^4.0.2
         version: 4.0.2
@@ -339,9 +345,6 @@ importers:
       '@logtape/logtape':
         specifier: ^2.0.2
         version: 2.0.2
-      '@pluxel/cli':
-        specifier: workspace:*
-        version: link:../cli
       '@pluxel/core':
         specifier: workspace:*
         version: link:../core
@@ -372,6 +375,9 @@ importers:
       exsolve:
         specifier: ^1.0.8
         version: 1.0.8
+      fdir:
+        specifier: ^6.5.0
+        version: 6.5.0(picomatch@4.0.3)
       graphql:
         specifier: ^16.13.0
         version: 16.13.0
@@ -381,6 +387,9 @@ importers:
       hono:
         specifier: ^4.12.2
         version: 4.12.2
+      jsonc-parser:
+        specifier: ^3.3.1
+        version: 3.3.1
       mcp-lite:
         specifier: ^0.10.0
         version: 0.10.0
@@ -393,6 +402,9 @@ importers:
       pathe:
         specifier: ^2.0.3
         version: 2.0.3
+      picomatch:
+        specifier: ^4.0.3
+        version: 4.0.3
       pkg-types:
         specifier: ^2.3.0
         version: 2.3.0
@@ -421,6 +433,9 @@ importers:
       '@pluxel/test':
         specifier: workspace:*
         version: link:../test
+      '@pluxel/workspace':
+        specifier: workspace:*
+        version: link:../workspace
       '@types/react':
         specifier: ^19.2.14
         version: 19.2.14
@@ -566,6 +581,9 @@ importers:
         specifier: ^19.2.4
         version: 19.2.4(react@19.2.4)
     devDependencies:
+      '@pluxel/build':
+        specifier: workspace:*
+        version: link:../../build
       '@pluxel/cli':
         specifier: workspace:*
         version: link:../../cli
@@ -654,6 +672,25 @@ importers:
       vite:
         specifier: beta
         version: 8.0.0-beta.15(@types/node@25.3.0)(jiti@2.6.1)(sugarss@5.0.1(postcss@8.5.6))(yaml@2.8.2)
+
+  packages/workspace:
+    dependencies:
+      fdir:
+        specifier: ^6.5.0
+        version: 6.5.0(picomatch@4.0.3)
+      pathe:
+        specifier: ^2.0.3
+        version: 2.0.3
+      pkg-types:
+        specifier: ^2.3.0
+        version: 2.3.0
+    devDependencies:
+      tsdown:
+        specifier: ^0.20.3
+        version: 0.20.3(typescript@5.9.3)
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
 
 packages:
 

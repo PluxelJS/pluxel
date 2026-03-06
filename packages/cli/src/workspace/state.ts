@@ -1,20 +1,22 @@
 import { existsSync } from 'node:fs'
-import { resolve, relative, isAbsolute, normalize } from 'pathe'
+import { extractPackageWorkspaces, loadWorkspaceInfo } from '@pluxel/workspace'
+import { isAbsolute, normalize, relative, resolve } from 'pathe'
 import type { PackageJson } from 'pkg-types'
 import { CLI_DEFAULTS } from '../config'
 import { detectPm, type PM } from '../utils/pm'
-import { loadWorkspaceInfo, extractPackageWorkspaces } from './info'
 import { manifestPathFor, readRawManifest, writeManifest } from './manifest'
 import { type PnpmWorkspace, readPnpmWorkspace, writePnpmWorkspace } from './pnpm'
 
 export type WorkspaceTarget = 'manifest' | 'pnpm'
+
+type WorkspacesObject = Exclude<NonNullable<PackageJson['workspaces']>, string[]>
 
 export interface ManifestSource {
 	path: string
 	raw: string
 	data: PackageJson
 	mode: 'array' | 'object' | null
-	objectSource?: Record<string, unknown>
+	objectSource?: WorkspacesObject
 	patterns: string[]
 }
 
@@ -169,43 +171,42 @@ function resolveTargets(state: WorkspaceState): WorkspaceTarget[] {
 }
 
 function readManifestPatterns(manifest: PackageJson) {
-	const raw = (manifest as any).workspaces
+	const raw = manifest.workspaces
 	if (!raw) {
 		return {
 			mode: null as const,
 			patterns: [] as string[],
-			objectSource: undefined as Record<string, unknown> | undefined,
+			objectSource: undefined as WorkspacesObject | undefined,
 		}
 	}
 	if (Array.isArray(raw)) {
 		return { mode: 'array' as const, patterns: [...raw], objectSource: undefined }
 	}
-	if (typeof raw === 'object' && raw) {
-		const objectSource = { ...(raw as Record<string, unknown>) }
-		const packages = Array.isArray((raw as any).packages) ? [...(raw as any).packages] : []
-		return { mode: 'object' as const, patterns: packages, objectSource }
-	}
-	return { mode: null as const, patterns: [], objectSource: undefined }
+	const objectSource: WorkspacesObject = { ...raw }
+	const packages = Array.isArray(raw.packages) ? [...raw.packages] : []
+	return { mode: 'object' as const, patterns: packages, objectSource }
 }
 
 function applyManifestPatterns(source: ManifestSource, patterns: string[]) {
 	if (patterns.length === 0) {
-		delete (source.data as any).workspaces
+		delete source.data.workspaces
 		return
 	}
 	if (source.mode === 'array') {
-		;(source.data as any).workspaces = [...patterns]
+		source.data.workspaces = [...patterns]
 		return
 	}
-	const base =
+
+	const current = source.data.workspaces
+	const base: WorkspacesObject =
 		source.mode === 'object'
-			? { ...(source.objectSource || {}) }
-			: typeof (source.data as any).workspaces === 'object' &&
-					!Array.isArray((source.data as any).workspaces)
-				? { ...(source.data as any).workspaces }
+			? { ...(source.objectSource ?? {}) }
+			: current && !Array.isArray(current)
+				? { ...current }
 				: {}
-	;(base as any).packages = [...patterns]
-	;(source.data as any).workspaces = base
+
+	base.packages = [...patterns]
+	source.data.workspaces = base
 	source.mode = 'object'
 	source.objectSource = base
 }
