@@ -45,7 +45,7 @@ describe('Forkable plugins', () => {
 			@Plugin({ name: 'Dep' })
 			class Dep extends ForkablePlugin {}
 
-			const DepA = host.fork(Dep, 'a')
+			const _DepA = host.fork(Dep, 'a')
 			const DepB = host.fork(Dep, 'b')
 
 			@Plugin({ name: 'Consumer' })

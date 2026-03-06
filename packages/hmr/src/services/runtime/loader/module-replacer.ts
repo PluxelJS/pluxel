@@ -206,7 +206,7 @@ function collectPluginExports(mod: Record<string, unknown>): ExportedPlugin[] {
 	for (const exportKey of Object.getOwnPropertyNames(mod)) {
 		const exp = (mod as Record<string, unknown>)[exportKey]
 		if (typeof exp !== 'function') continue
-		if (!checkPluginDecorator(exp)) continue
+		if (!checkPluginDecorator(exp as any)) continue
 		exported.push({ ctor: exp as PluginConstructor, exportKey })
 	}
 	return exported

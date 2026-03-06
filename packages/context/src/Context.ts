@@ -15,7 +15,6 @@ type SymMap = { [k in symbol]?: symbol }
 // "Any service" should allow arbitrary instance types and method proxy lists.
 // Using the default `ServiceClass<ServiceCtor>` would make `methods` resolve to `never[]`
 // because `InstanceType<ServiceCtor>` is `unknown`.
-// biome-ignore lint/suspicious/noExplicitAny: this is intentionally wide so WeakMap lookups accept any service ctor shape.
 type AnyServiceClass = ServiceClass<new (ctx: Context, cfg?: any) => any>
 
 type ServiceMeta = {
@@ -323,9 +322,7 @@ export namespace Context {
 	 *
 	 * `Context` instances will expose these services with `ctx` omitted from their public type.
 	 */
-	// biome-ignore lint/suspicious/noEmptyInterface: <>
 	export interface Services {}
-	// biome-ignore lint/suspicious/noEmptyInterface: <>
 	export interface RootServices {}
 
 	export type PublicService<T> = T extends { ctx: unknown } ? Omit<T, 'ctx'> : T
@@ -354,7 +351,6 @@ export namespace Context {
 	 * ```
 	 */
 
-	// biome-ignore lint/suspicious/noEmptyInterface: <>
 	export interface DebugTopics {}
 
 	type DebugTopicKey = keyof DebugTopics & string

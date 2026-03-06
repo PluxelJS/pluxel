@@ -21,6 +21,10 @@
 			"@pluxel/source": "./src/diagnose/index.ts",
 			"default": "./dist/diagnose.mjs"
 		},
+		"./events": {
+			"@pluxel/source": "./src/events.ts",
+			"default": "./dist/events.mjs"
+		},
 		"./host": {
 			"@pluxel/source": "./src/host/index.ts",
 			"default": "./dist/host.mjs"
@@ -99,6 +103,7 @@
 		"@pluxel/hmr-web": "workspace:*",
 		"@pluxel/test": "workspace:*",
 		"@pluxel/workspace": "workspace:*",
+		"@types/picomatch": "^4.0.2",
 		"@types/react": "^19.2.14",
 		"fs-fixture": "^2.11.0",
 		"postcss": "^8.5.6",
@@ -112,6 +117,7 @@
 			"./capnweb": "./dist/capnweb.mjs",
 			"./config": "./dist/config.mjs",
 			"./diagnose": "./dist/diagnose.mjs",
+			"./events": "./dist/events.mjs",
 			"./host": "./dist/host.mjs",
 			"./logger": "./dist/logger.mjs",
 			"./services": "./dist/services.mjs",

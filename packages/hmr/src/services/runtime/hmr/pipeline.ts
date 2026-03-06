@@ -4,18 +4,20 @@ import type { Logger as LogtapeLogger } from '@logtape/logtape'
 import type { Context, PluginConstructor } from '@pluxel/core'
 import { dirname, join } from 'pathe'
 import type { DevEnvironment, EnvironmentModuleNode as ModuleNode } from 'vite'
+import {
+	disablePluginsOnMissingDependencyError,
+	type MissingDepsCandidate,
+} from '../shared/missing-deps'
 import type { HmrPathApi, HmrToolkit } from './environment'
 import { startTimer } from './internals'
 import { collectHotspots, isLogEnabled, logAttributionReport, type TimingTracker } from './logging'
 import { collectPluginTotals } from './operational-report'
 import type { HmrRunner } from './runner'
 import { runWithRequireShims } from './runtime-shims'
-import {
-	disablePluginsOnMissingDependencyError,
-	type MissingDepsCandidate,
-} from '../shared/missing-deps'
 
 export type PrefetchOrder = 'near' | 'all'
+
+type CommitResult = Awaited<ReturnType<Context['registry']['commit']>>
 
 function dedupeCleanIds(ids: readonly string[], toClean: (id: string) => string) {
 	const seen = new Set<string>()
@@ -358,7 +360,7 @@ export class HmrExecutor {
 	async runAndLoadAllClean(
 		cleanIds: readonly string[],
 		_keepOrder = true,
-	): Promise<{ res: { ok: boolean }; commitMs: number } | undefined> {
+	): Promise<{ res: CommitResult; commitMs: number } | undefined> {
 		if (!cleanIds.length) return undefined
 
 		// Historically `keepOrder=false` did not change ordering; preserve that behavior.
@@ -410,7 +412,7 @@ export class HmrExecutor {
 		}
 
 		const endCommit = startTimer()
-		let res = await this.ctx.registry.commit()
+		let res: CommitResult = await this.ctx.registry.commit()
 		const commitMs = endCommit()
 
 		if (!res.ok) {
@@ -444,7 +446,7 @@ export class HmrExecutor {
 	async runAndLoadAll(
 		filesPath: readonly string[],
 		keepOrder = true,
-	): Promise<{ res: { ok: boolean }; commitMs: number } | undefined> {
+	): Promise<{ res: CommitResult; commitMs: number } | undefined> {
 		if (!filesPath.length) return undefined
 
 		// Always normalize+dedupe in a single pass (avoid allocating an intermediate array).
@@ -456,7 +458,8 @@ export class HmrExecutor {
 
 function disablePluginsOnMissingDepsFromCommitError(ctx: Context, error: unknown): Set<string> {
 	const loaded = ctx.loader?.api?.registry?.listRegistered?.()
-	if (!loaded || typeof (loaded as Map<string, PluginConstructor>).entries !== 'function') return new Set()
+	if (!loaded || typeof (loaded as Map<string, PluginConstructor>).entries !== 'function')
+		return new Set()
 	const loadedMap = loaded as ReadonlyMap<string, PluginConstructor>
 
 	const candidates: MissingDepsCandidate[] = []

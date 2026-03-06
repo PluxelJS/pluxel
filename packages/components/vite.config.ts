@@ -21,7 +21,6 @@ function fixRolldownUndefinedExports() {
 	}
 }
 
-// biome-ignore lint/style/noDefaultExport: Vite config expects a default export.
 export default defineConfig(({ mode }) => {
 	const isDev = mode !== 'production'
 

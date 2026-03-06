@@ -75,7 +75,6 @@ export class SnapshotPlugin extends BasePlugin {
 	}
 }
 
-// biome-ignore lint/style/noDefaultExport: plugin ctors are intentionally default-exported for ergonomic host imports.
 export default SnapshotPlugin
 
 const uiEntryPath = fileURLToPath(new URL('./ui/index.tsx', import.meta.url))

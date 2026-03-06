@@ -33,7 +33,7 @@ abstract class User {
 }
 
 export class BankUser extends User {
-	declare public name: string
+	public declare name: string
 	public money!: string
 }
 
@@ -45,7 +45,7 @@ export class ShopUser extends User {
 		super(sessionManager)
 	}
 
-	declare public name: string
+	public declare name: string
 	public add(): string {
 		return this.shoppingCart.add()
 	}

@@ -21,7 +21,7 @@ export class LoggingHandle extends RpcTarget {
 
 	async getPluginLevels(): Promise<PluginLevelsSnapshot> {
 		await ensureHmrPluginLevelsLoaded(this.ctx)
-		const levels = hmrPluginLevels.toRecord()
+		const levels = hmrPluginLevels.toRecord() as Record<string, PluginLogLevel>
 		return { levels }
 	}
 

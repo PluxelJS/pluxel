@@ -10,5 +10,4 @@ export class MarketUI extends BasePlugin {
 	}
 }
 
-// biome-ignore lint/style/noDefaultExport: plugin ctors are intentionally default-exported for ergonomic host imports.
 export default MarketUI

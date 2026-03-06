@@ -70,15 +70,9 @@ export interface WithDependencies {
 }
 
 export interface Registration<T> {
-	useClass(
-		newable: Newable<T>,
-	): ConfigurableRegistration & WithScopeChange & WithDependencies
+	useClass(newable: Newable<T>): ConfigurableRegistration & WithScopeChange & WithDependencies
 	/** 等价别名 */
-	use(
-		newable: Newable<T>,
-	): ConfigurableRegistration & WithScopeChange & WithDependencies
+	use(newable: Newable<T>): ConfigurableRegistration & WithScopeChange & WithDependencies
 	useInstance(instance: Instance<T>): ConfigurableRegistration
-	useFactory(
-		factory: Factory<T>,
-	): ConfigurableRegistration & WithScopeChange & WithDependencies
+	useFactory(factory: Factory<T>): ConfigurableRegistration & WithScopeChange & WithDependencies
 }

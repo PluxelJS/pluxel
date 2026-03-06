@@ -7,7 +7,7 @@ export class WorkspaceEntryResolver {
 	private readonly cache = new Map<string, Promise<string | null>>()
 
 	constructor(
-		private readonly scanService: ScanService,
+		private readonly scanService: Pick<ScanService, 'resolveEntry'>,
 		private readonly path: HmrPathApi,
 		private readonly workspaceConditions: readonly string[],
 		private readonly cacheLimit = 2000,

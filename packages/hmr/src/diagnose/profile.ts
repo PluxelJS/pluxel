@@ -121,7 +121,6 @@ export async function resolveHmrWorkspaceSnapshot(
 		env,
 		omitPackages: ref.omitPackages,
 	})
-	if (!res.ok) throw new Error(res.errors.join('\n'))
+	if (res.ok === false) throw new Error(res.errors.join('\n'))
 	return res.snapshot
 }
-

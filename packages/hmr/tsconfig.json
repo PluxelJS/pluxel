@@ -16,6 +16,12 @@
 		// into their raw TS sources. This keeps the HMR package's Bun typings from leaking into UI deps and
 		// avoids "file is not listed within the file list" errors from composite builds.
 		"customConditions": [],
+		// Prevent self-importing the published `@pluxel/hmr` types while typechecking this package's sources.
+		// (Otherwise TS may load both src + dist declarations and report duplicate module augmentation errors.)
+		"paths": {
+			"@pluxel/hmr": ["packages/hmr/src/index.ts"],
+			"@pluxel/hmr/*": ["packages/hmr/src/*"]
+		},
 		"outDir": "dist",
 		"jsx": "react-jsx",
 		"lib": ["ES2023", "DOM"],

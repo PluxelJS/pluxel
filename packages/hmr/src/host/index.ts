@@ -202,7 +202,7 @@ export async function createHmrHostFromConfig(
 		env,
 		omitPackages,
 	})
-	if (!res.ok) {
+	if (res.ok === false) {
 		throw new Error(res.errors.join('\n'))
 	}
 

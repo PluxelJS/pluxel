@@ -1,6 +1,5 @@
 import { defineConfig } from 'tsdown'
 
-// biome-ignore lint/style/noDefaultExport: tsdown config expects a default export.
 export default defineConfig({
 	exports: {
 		devExports: '@pluxel/source',

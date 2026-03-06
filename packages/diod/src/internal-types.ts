@@ -1,13 +1,6 @@
 // internal-types.ts
 import type { CheckRegistrationType, CheckScopeType, ScopeType } from './types'
-import type {
-	AliasKey,
-	BuildOptions,
-	Factory,
-	Identifier,
-	Instance,
-	Newable,
-} from './types/types'
+import type { AliasKey, BuildOptions, Factory, Identifier, Instance, Newable } from './types/types'
 
 type ConfigurationServiceData = {
 	isPrivate: boolean
@@ -37,10 +30,7 @@ export type InstanceServiceData<T> = {
 	dependencies: readonly []
 } & ConfigurationServiceData
 
-export type ServiceData<T> =
-	| ClassServiceData<T>
-	| FactoryServiceData<T>
-	| InstanceServiceData<T>
+export type ServiceData<T> = ClassServiceData<T> | FactoryServiceData<T> | InstanceServiceData<T>
 
 export type ServiceListMetadata = Map<Identifier<unknown>, ServiceData<unknown>>
 

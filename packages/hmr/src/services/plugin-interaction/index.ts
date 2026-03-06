@@ -1,7 +1,4 @@
-import { ExtensionService } from './ExtensionService'
 import type { ExtService } from './ExtService'
-import { RpcService } from './RpcService'
-import { SseService } from './SseService'
 export { doc } from './doc'
 export type { UI } from './ui'
 

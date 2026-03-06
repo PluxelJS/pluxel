@@ -16,8 +16,7 @@ describe('returns instances created with factories', () => {
 		// Act: 注册工厂
 		expectOk(builder.tryRegister(Clock)).useFactory(() => new Clock())
 		expectOk(builder.tryRegister(Agenda)).useFactory(
-			(c) =>
-				new Agenda(expectExist(c.get(Clock)), expectExist(c.get(Calendar))),
+			(c) => new Agenda(expectExist(c.get(Clock)), expectExist(c.get(Calendar))),
 		)
 
 		const container = expectOk(builder.build())

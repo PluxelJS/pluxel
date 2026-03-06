@@ -19,9 +19,7 @@ describe('service identifiers can be get based on tag', () => {
 		const builder = new ContainerBuilder()
 
 		// Act (registrations + tags)
-		expectOk(builder.tryRegisterAndUse(Calendar))
-			.addTag('tag1')
-			.addTag('calendar')
+		expectOk(builder.tryRegisterAndUse(Calendar)).addTag('tag1').addTag('calendar')
 
 		expectOk(builder.tryRegister(Clock))
 			.useFactory(() => new Clock())
@@ -43,10 +41,7 @@ describe('service identifiers can be get based on tag', () => {
 				const clockIds = c.findTaggedServiceIdentifiers<Clock>('clock')
 				const calendarIds = c.findTaggedServiceIdentifiers<Calendar>('calendar')
 
-				const clock = expectExist(
-					c.get(clockIds[0] as Identifier<Clock>),
-					'clock should exist',
-				)
+				const clock = expectExist(c.get(clockIds[0] as Identifier<Clock>), 'clock should exist')
 				const calendar = expectExist(
 					c.get(calendarIds[0] as Identifier<Calendar>),
 					'calendar should exist',
@@ -60,10 +55,8 @@ describe('service identifiers can be get based on tag', () => {
 		const container = expectOk(builder.build())
 
 		// Assert
-		const serviceIdentifiersTaggedWithTag1 =
-			container.findTaggedServiceIdentifiers('tag1')
-		const sayerIdentifiers =
-			container.findTaggedServiceIdentifiers<Sayer>('sayer')
+		const serviceIdentifiersTaggedWithTag1 = container.findTaggedServiceIdentifiers('tag1')
+		const sayerIdentifiers = container.findTaggedServiceIdentifiers<Sayer>('sayer')
 
 		const sayers = sayerIdentifiers.map((id) => expectExist(container.get(id)))
 		const agenda = expectExist(container.get(Agenda))

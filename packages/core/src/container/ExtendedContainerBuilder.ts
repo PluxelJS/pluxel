@@ -1,11 +1,4 @@
-import {
-	type BuildableKV,
-	type BuildOptions,
-	ContainerBuilder,
-	DiodRegistration,
-	type Identifier,
-	type Registration,
-} from 'diod'
+import { type BuildableKV, ContainerBuilder, type Identifier } from 'diod'
 import { LeanMapTracker } from './LeanMapTracker'
 
 export type SingletonMap = Map<Identifier<unknown>, unknown>

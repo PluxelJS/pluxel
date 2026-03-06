@@ -142,7 +142,8 @@ export function reorderList<T>(list: readonly T[], fromIndex: number, toIndex: n
 	) {
 		return [...list]
 	}
-	return arrayMove(list, fromIndex, toIndex)
+	// `arrayMove` expects a mutable array; keep `list` readonly-friendly.
+	return arrayMove([...list], fromIndex, toIndex)
 }
 
 type SortableCardProps = {
@@ -169,7 +170,105 @@ function SortableCard(props: SortableCardProps) {
 	)
 }
 
+type ArrayFieldPicklistProps = {
+	node: RendererProps['node']
+	items: unknown[]
+	itemNode: PicklistFieldNode
+	baseErrors: FieldError[]
+	updateItems: (next: unknown[], options?: TriggerOptions) => void
+	handleBlur: () => void
+	isLocked: boolean
+}
+
+function ArrayFieldPicklist(props: ArrayFieldPicklistProps) {
+	const { node, items, itemNode, baseErrors, updateItems, handleBlur, isLocked } = props
+
+	return (
+		<FieldChrome
+			{...cleanProps({
+				label: node.meta.label,
+				required: node.required,
+				description: node.meta.description,
+				help: node.meta.help,
+				hint: node.meta.hint,
+				badge: node.meta.badge,
+				errors: baseErrors,
+				hideLabel: node.meta.hideLabel,
+				hideRequired: node.meta.hideRequired,
+			})}
+		>
+			<PicklistControl
+				meta={{
+					options: itemNode.options,
+					entries: itemNode.entries,
+					labels: itemNode.labels,
+					disabled: itemNode.disabled,
+					placeholder: itemNode.placeholder,
+					searchable: itemNode.searchable,
+					clearable: itemNode.clearable ?? true,
+					max: itemNode.max,
+					create: itemNode.create ?? false,
+					control: itemNode.control ?? 'select',
+					multiple: true,
+					emptyLabel: itemNode.emptyLabel,
+				}}
+				value={items}
+				onChange={(next) => {
+					if (Array.isArray(next)) updateItems(next)
+					else if (next == null) updateItems([])
+					else updateItems([next])
+				}}
+				onBlur={handleBlur}
+				disabled={isLocked}
+				required={false}
+			/>
+		</FieldChrome>
+	)
+}
+
 export function ArrayField(props: RendererProps) {
+	const { node, errors, inputProps, value } = props
+	const info = node as ArrayFieldNode
+	const items = Array.isArray(value) ? (value as unknown[]) : []
+	const itemNode = info.item ?? null
+
+	const layoutInfo = analyzeArrayItemLayout(itemNode)
+	const columns = resolveArrayColumns(layoutInfo, items.length, info.columns, info.disableAutoGrid)
+	const preferredLayout = info.layout ?? (columns > 1 ? 'grid' : 'list')
+	const layout =
+		preferredLayout === 'picker' && itemNode?.kind !== 'picklist'
+			? columns > 1
+				? 'grid'
+				: 'list'
+			: preferredLayout
+	const isLocked = Boolean(inputProps.disabled || inputProps.readOnly)
+
+	if (layout === 'picker' && itemNode?.kind === 'picklist') {
+		const baseErrors = normalizeErrorMessages(
+			errors?.filter((err) => !isErrorWithPath(err) || (err.dotPath?.length ?? 0) <= 1),
+		)
+
+		const updateItems = (next: unknown[], options?: TriggerOptions) =>
+			triggerFormEvents(inputProps, next, options)
+		const handleBlur = () => triggerFormBlur(inputProps)
+
+		return (
+			<ArrayFieldPicklist
+				node={node}
+				items={items}
+				itemNode={itemNode as PicklistFieldNode}
+				baseErrors={baseErrors}
+				updateItems={updateItems}
+				handleBlur={handleBlur}
+				isLocked={isLocked}
+			/>
+		)
+	}
+
+	return <ArrayFieldMain {...props} />
+}
+
+function ArrayFieldMain(props: RendererProps) {
 	const { node, errors, inputProps, value } = props
 	const info = node as ArrayFieldNode
 	const items = Array.isArray(value) ? (value as unknown[]) : []
@@ -192,9 +291,7 @@ export function ArrayField(props: RendererProps) {
 	const canRemove = info.removable !== false
 	const canReorder = info.reorderable !== false && items.length > 1
 	const itemLabel = info.itemLabel ?? node.meta.label ?? DEFAULT_TEXTS.array.itemLabel
-	const addLabel =
-		info.addLabel ??
-		(itemLabel ? `添加${itemLabel}` : DEFAULT_TEXTS.array.addItem)
+	const addLabel = info.addLabel ?? (itemLabel ? `添加${itemLabel}` : DEFAULT_TEXTS.array.addItem)
 
 	const baseErrors = normalizeErrorMessages(
 		errors?.filter((err) => !isErrorWithPath(err) || (err.dotPath?.length ?? 0) <= 1),
@@ -222,51 +319,6 @@ export function ArrayField(props: RendererProps) {
 	const updateItems = (next: unknown[], options?: TriggerOptions) =>
 		triggerFormEvents(inputProps, next, options)
 	const handleBlur = () => triggerFormBlur(inputProps)
-
-	if (layout === 'picker' && itemNode?.kind === 'picklist') {
-		const meta = itemNode as PicklistFieldNode
-		return (
-			<FieldChrome
-				{...cleanProps({
-					label: node.meta.label,
-					required: node.required,
-					description: node.meta.description,
-					help: node.meta.help,
-					hint: node.meta.hint,
-					badge: node.meta.badge,
-					errors: baseErrors,
-					hideLabel: node.meta.hideLabel,
-					hideRequired: node.meta.hideRequired,
-				})}
-			>
-				<PicklistControl
-					meta={{
-						options: meta.options,
-						entries: meta.entries,
-						labels: meta.labels,
-						disabled: meta.disabled,
-						placeholder: meta.placeholder,
-						searchable: meta.searchable,
-						clearable: meta.clearable ?? true,
-						max: meta.max,
-						create: meta.create ?? false,
-						control: meta.control ?? 'select',
-						multiple: true,
-						emptyLabel: meta.emptyLabel,
-					}}
-					value={items}
-					onChange={(next) => {
-						if (Array.isArray(next)) updateItems(next)
-						else if (next == null) updateItems([])
-						else updateItems([next])
-					}}
-					onBlur={handleBlur}
-					disabled={isLocked}
-					required={false}
-				/>
-			</FieldChrome>
-		)
-	}
 
 	const handleAdd = () => {
 		const template = info.defaultItem ?? defaultItemForNode(itemNode)
@@ -320,7 +372,7 @@ export function ArrayField(props: RendererProps) {
 		!(compactKind === 'string' && isLongText)
 	const inlineAddEnabled = isCompactList && canAdd && !isLocked
 	const [draftValue, setDraftValue] = useState<unknown>(undefined)
-	const draftFocusRef = useRef<HTMLInputElement | HTMLTextAreaElement | null>(null)
+	const draftFocusRef = useRef<HTMLInputElement | null>(null)
 	const draftPicklistRef = useRef<HTMLDivElement | null>(null)
 
 	useEffect(() => {
@@ -329,7 +381,7 @@ export function ArrayField(props: RendererProps) {
 
 	useEffect(() => {
 		if (!inlineAddEnabled) return
-		setDraftValue((prev) => {
+		setDraftValue((prev: unknown) => {
 			if (prev !== undefined) return prev
 			const template = info.defaultItem ?? defaultItemForNode(itemNode)
 			return cloneValue(template)
@@ -473,11 +525,7 @@ export function ArrayField(props: RendererProps) {
 						node: (
 							<Textarea
 								value={
-									typeof current === 'string'
-										? current
-										: current == null
-											? ''
-											: String(current)
+									typeof current === 'string' ? current : current == null ? '' : String(current)
 								}
 								onChange={(event) =>
 									handleChange(index, (event.currentTarget as HTMLTextAreaElement).value)
@@ -502,13 +550,7 @@ export function ArrayField(props: RendererProps) {
 				return {
 					node: (
 						<TextInput
-							value={
-								typeof current === 'string'
-									? current
-									: current == null
-										? ''
-										: String(current)
-							}
+							value={typeof current === 'string' ? current : current == null ? '' : String(current)}
 							onChange={(event) => {
 								handleChange(index, (event.currentTarget as HTMLInputElement).value)
 							}}
@@ -555,13 +597,7 @@ export function ArrayField(props: RendererProps) {
 				return {
 					node: (
 						<TextInput
-							value={
-								typeof current === 'string'
-									? current
-									: current == null
-										? ''
-										: String(current)
-							}
+							value={typeof current === 'string' ? current : current == null ? '' : String(current)}
 							onChange={(event) => {
 								handleChange(index, (event.currentTarget as HTMLInputElement).value)
 							}}
@@ -630,7 +666,9 @@ export function ArrayField(props: RendererProps) {
 	const handleInlineAdd = () => {
 		const template = info.defaultItem ?? defaultItemForNode(itemNode)
 		const valueToAdd =
-			draftValue === undefined || draftValue === null || (typeof draftValue === 'number' && Number.isNaN(draftValue))
+			draftValue === undefined ||
+			draftValue === null ||
+			(typeof draftValue === 'number' && Number.isNaN(draftValue))
 				? template
 				: draftValue
 		updateItems([...items, cloneValue(valueToAdd)], { blur: true })
@@ -647,7 +685,13 @@ export function ArrayField(props: RendererProps) {
 			<td>
 				{compactKind === 'number' ? (
 					<NumberInput
-						value={typeof draftValue === 'number' ? draftValue : draftValue == null ? '' : Number(draftValue)}
+						value={
+							typeof draftValue === 'number'
+								? draftValue
+								: draftValue == null
+									? ''
+									: Number(draftValue)
+						}
 						onChange={(val) => {
 							const parsed = val === '' || val === undefined ? undefined : Number(val)
 							const safe = Number.isNaN(parsed) ? undefined : parsed
@@ -699,7 +743,13 @@ export function ArrayField(props: RendererProps) {
 					</div>
 				) : (
 					<TextInput
-						value={typeof draftValue === 'string' ? draftValue : draftValue == null ? '' : String(draftValue)}
+						value={
+							typeof draftValue === 'string'
+								? draftValue
+								: draftValue == null
+									? ''
+									: String(draftValue)
+						}
 						onChange={(event) => setDraftValue(event.currentTarget.value)}
 						ref={draftFocusRef}
 						onKeyDown={(event) => {
@@ -751,7 +801,13 @@ export function ArrayField(props: RendererProps) {
 			return {
 				inline: true,
 				element: (
-					<Card key={`${idx}-${layout}`} withBorder shadow="xs" p="md" style={{ flex: '0 1 280px' }}>
+					<Card
+						key={`${idx}-${layout}`}
+						withBorder
+						shadow="xs"
+						p="md"
+						style={{ flex: '0 1 280px' }}
+					>
 						<Group justify="space-between" align="center">
 							{control.node}
 							{actionsNode}
@@ -841,7 +897,10 @@ export function ArrayField(props: RendererProps) {
 				}}
 				onDragCancel={() => setActiveId(null)}
 			>
-				<SortableContext items={renderedCards.map((item) => item.id)} strategy={rectSortingStrategy}>
+				<SortableContext
+					items={renderedCards.map((item) => item.id)}
+					strategy={rectSortingStrategy}
+				>
 					{content}
 				</SortableContext>
 				{dragOverlay}

@@ -11,6 +11,9 @@ import {
 } from 'valibot'
 // 必须为值导入，让 @Injectable 装饰器执行以注册服务到 Context
 import './services'
+// Type-level bridge for `Context.Events` (module augmentation).
+import type {} from './events'
+
 setPluxelRuntime('hmr')
 
 export * from '@pluxel/core'

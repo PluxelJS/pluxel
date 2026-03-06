@@ -31,7 +31,6 @@ import type {
 	PropertyDefinition,
 	SpreadElement,
 } from 'oxc-parser'
-import { normalize as normalizePath } from 'pathe'
 import type { TransformPluginContext } from 'rolldown'
 import { normalizeSchemaSource } from '../utils/configHandler'
 import type { ViteCompatPlugin } from './compat'
@@ -127,9 +126,7 @@ export function configSourcePlugin(options: ConfigSourcePluginOptions = {}): Vit
 		'**/*.tsx',
 		'**/*.mts',
 		'**/*.cts',
-	]).map(
-		allowOptionalQuerySuffix,
-	)
+	]).map(allowOptionalQuerySuffix)
 	const excludePatterns = normalizePatterns(options.exclude, [
 		'**/node_modules/**',
 		'**/*.d.ts',

@@ -45,9 +45,6 @@ export interface LifecycleSnapshot {
 
 type Observer<T> = { next?: (value: T) => void; error?: (err: unknown) => void }
 
-const errNoTran = (from: LifecycleState, event: string) =>
-	`No transition: from ${from} event ${event}`
-
 /** 循环安全的 JSON 序列化（尽量给出可读 message） */
 function safeStringify(x: unknown): string {
 	if (typeof x !== 'object' || x === null) {

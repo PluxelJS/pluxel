@@ -1,11 +1,6 @@
 import type { Buildable, ServiceData } from '../internal-types'
 import { RegistrationType, ScopeType } from '../types'
-import type {
-	Factory,
-	Identifier,
-	WithDependencies,
-	WithScopeChange,
-} from '../types/types'
+import type { Factory, Identifier, WithDependencies, WithScopeChange } from '../types/types'
 import { ServiceConfiguration } from './service-configuration'
 
 export class FactoryConfiguration<T>
@@ -47,9 +42,7 @@ export class FactoryConfiguration<T>
 	protected build(): ServiceData<T> {
 		const tags = this.tags.length ? this.tags.slice() : []
 		const aliases = this.alias.length ? this.alias.slice() : []
-		const dependencies = this.dependencies.length
-			? this.dependencies.slice()
-			: []
+		const dependencies = this.dependencies.length ? this.dependencies.slice() : []
 
 		return {
 			tags,

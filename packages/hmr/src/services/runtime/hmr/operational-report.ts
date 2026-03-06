@@ -190,7 +190,7 @@ export async function buildHmrOperationalReport(params: {
 		stats.resolveAttempts++
 		const p = params
 			.resolveBareWorkspaceEntry(moduleId)
-			.catch(() => null)
+			.catch((): null => null)
 			.then((resolved) => {
 				if (!resolved) return null
 				stats.resolvedSpecifiers++

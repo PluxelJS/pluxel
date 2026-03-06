@@ -506,5 +506,4 @@ const debugApp = new Hono<AppEnv>()
 		return c.json(result)
 	})
 
-// biome-ignore lint/style/noDefaultExport: Hono sub-app is intentionally default-exported for ergonomic route mounting.
 export default debugApp

@@ -123,10 +123,11 @@ export function PackageManagerPage() {
 				if (hasSnapshot) setInlineError(message)
 				else setPageError(error instanceof Error ? error : new Error(message))
 			} finally {
-				if (requestId !== requestIdRef.current) return
-				setRefreshing(false)
-				inflightRef.current = null
-				inflightKeyRef.current = null
+				if (requestId === requestIdRef.current) {
+					setRefreshing(false)
+					inflightRef.current = null
+					inflightKeyRef.current = null
+				}
 			}
 		})()
 		inflightRef.current = task
@@ -282,21 +283,13 @@ export function PackageManagerPage() {
 		reinstallBatchLoading ||
 		uninstallBatchLoading ||
 		removeBatchLoading
-	// 顶层错误：不再继续渲染复杂 UI（会触发更多懒读取/请求），直接给稳定错误态 + 手动重试。
-	if (pageError) {
-		return (
-			<ErrorState
-				title="加载失败"
-				message={pageError.message || '无法加载包管理数据'}
-				onRetry={() => void refetch()}
-				withPattern
-				minHeight="100%"
-			/>
-		)
-	}
 
 	const summarizeBatchResult = useCallback(
-		(result: PackageBatchResult | null | undefined, successTitle: string, fallbackError: string) => {
+		(
+			result: PackageBatchResult | null | undefined,
+			successTitle: string,
+			fallbackError: string,
+		) => {
 			if (!result) {
 				throw new Error(fallbackError)
 			}
@@ -1031,6 +1024,19 @@ export function PackageManagerPage() {
 					</Table>
 				</ScrollArea>
 			</Stack>
+		)
+	}
+
+	// 顶层错误：不再继续渲染复杂 UI（会触发更多懒读取/请求），直接给稳定错误态 + 手动重试。
+	if (pageError) {
+		return (
+			<ErrorState
+				title="加载失败"
+				message={pageError.message || '无法加载包管理数据'}
+				onRetry={() => void refetch()}
+				withPattern
+				minHeight="100%"
+			/>
 		)
 	}
 

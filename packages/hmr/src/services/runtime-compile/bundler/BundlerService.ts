@@ -252,7 +252,7 @@ export class BundlerService {
 			await env.transformRequest(url)
 			const rootModule = await env.moduleGraph.getModuleByUrl(url)
 			if (rootModule) {
-				const files = collectModuleGraphFiles(rootModule)
+				const files = collectModuleGraphFiles(rootModule as any)
 				for (const file of files) {
 					hash.update(file)
 					try {

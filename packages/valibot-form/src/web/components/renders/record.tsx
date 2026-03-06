@@ -29,7 +29,6 @@ import {
 	isErrorWithPath,
 	joinErrorMessages,
 	normalizeErrorMessages,
-	type FieldError,
 	type RendererProps,
 	type TriggerOptions,
 	triggerFormBlur,
@@ -73,7 +72,10 @@ function resolveDefaultValueForNode(node?: FieldNode | null): unknown {
 	}
 }
 
-function resolveDefaultValueForKind(kind: ValueKind, picklistMeta?: PicklistFieldNode | null): unknown {
+function resolveDefaultValueForKind(
+	kind: ValueKind,
+	picklistMeta?: PicklistFieldNode | null,
+): unknown {
 	switch (kind) {
 		case 'string':
 			return ''
@@ -116,10 +118,7 @@ export function RecordField(props: RendererProps) {
 		value: rowValue,
 	})
 
-	const entries = useMemo(
-		() => Object.entries((value as Record<string, unknown>) ?? {}),
-		[value],
-	)
+	const entries = useMemo(() => Object.entries((value as Record<string, unknown>) ?? {}), [value])
 
 	const [rows, setRows] = useState<RecordRow[]>(() =>
 		Object.entries((value as Record<string, unknown>) ?? {}).map(([key, rowValue]) =>
@@ -151,9 +150,7 @@ export function RecordField(props: RendererProps) {
 				next.length === prev.length &&
 				next.every(
 					(row, idx) =>
-						row.id === prev[idx].id &&
-						row.key === prev[idx].key &&
-						row.value === prev[idx].value,
+						row.id === prev[idx].id && row.key === prev[idx].key && row.value === prev[idx].value,
 				)
 			) {
 				return prev
@@ -248,11 +245,7 @@ export function RecordField(props: RendererProps) {
 	const existingKeySet = useMemo(() => new Set(rows.map((row) => row.key)), [rows])
 	const draftKeyTrimmed = draftKey.trim()
 	const draftKeyError =
-		draftKeyTrimmed.length === 0
-			? null
-			: existingKeySet.has(draftKeyTrimmed)
-				? 'Key 已存在'
-				: null
+		draftKeyTrimmed.length === 0 ? null : existingKeySet.has(draftKeyTrimmed) ? 'Key 已存在' : null
 	const draftKeyValid = draftKeyTrimmed.length > 0 && !draftKeyError
 
 	useEffect(() => {
@@ -273,9 +266,12 @@ export function RecordField(props: RendererProps) {
 	const handleInlineAdd = () => {
 		if (!draftKeyValid) return
 		const valueToAdd = resolveDraftValue()
-		commitRows([...rows, { id: `row_${rowIdRef.current++}`, key: draftKeyTrimmed, value: valueToAdd }], {
-			blur: true,
-		})
+		commitRows(
+			[...rows, { id: `row_${rowIdRef.current++}`, key: draftKeyTrimmed, value: valueToAdd }],
+			{
+				blur: true,
+			},
+		)
 		setDraftKey('')
 		setDraftValue(undefined)
 	}
@@ -284,9 +280,7 @@ export function RecordField(props: RendererProps) {
 		const current = rows[index]
 		if (!current) return
 		if (nextKey !== current.key && existingKeySet.has(nextKey)) return
-		const next = rows.map((row, idx) =>
-			idx === index ? { ...row, key: nextKey } : row,
-		)
+		const next = rows.map((row, idx) => (idx === index ? { ...row, key: nextKey } : row))
 		setRows(next)
 		commitRows(next)
 	}
@@ -294,9 +288,7 @@ export function RecordField(props: RendererProps) {
 	const handleValueChange = (index: number, nextValue: unknown) => {
 		const current = rows[index]
 		if (!current) return
-		const next = rows.map((row, idx) =>
-			idx === index ? { ...row, value: nextValue } : row,
-		)
+		const next = rows.map((row, idx) => (idx === index ? { ...row, value: nextValue } : row))
 		setRows(next)
 		commitRows(next)
 	}

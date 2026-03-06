@@ -148,7 +148,6 @@ export function ExtensionLoader({
 	}, [derivedPlugins, hasError, signature, isLoading])
 
 	const effectivePlugins = isLoading || hasError ? cachedRef.current.plugins : stablePlugins
-	const effectiveSignature = isLoading || hasError ? cachedRef.current.key : signature
 
 	useEffect(() => {
 		if (!onRunningPluginsChange) return
@@ -186,7 +185,8 @@ export function ExtensionLoader({
 
 			for (const def of next) {
 				if (!def || typeof def !== 'object') continue
-				const pluginName = typeof (def as any).pluginName === 'string' ? (def as any).pluginName : ''
+				const pluginName =
+					typeof (def as any).pluginName === 'string' ? (def as any).pluginName : ''
 				const point = typeof (def as any).point === 'string' ? (def as any).point : ''
 				const id = typeof (def as any).id === 'string' ? (def as any).id : ''
 				const kind = typeof (def as any).kind === 'string' ? (def as any).kind : ''
@@ -389,7 +389,12 @@ export function ExtensionLoader({
 				const applyManifest = async (
 					payload: typeof manifest,
 					allowRetry: boolean,
-				): Promise<{ signature: string; version: number; moduleCount: number; skipped: boolean }> => {
+				): Promise<{
+					signature: string
+					version: number
+					moduleCount: number
+					skipped: boolean
+				}> => {
 					const nextSignature = computeSignature(payload)
 					if (
 						!force &&
@@ -424,10 +429,7 @@ export function ExtensionLoader({
 					if (allowRetry && failedPlugins.length) {
 						const retryManifest = await fetchExtensionManifest()
 						const retrySignature = computeSignature(retryManifest)
-						if (
-							retryManifest.version !== payload.version ||
-							retrySignature !== nextSignature
-						) {
+						if (retryManifest.version !== payload.version || retrySignature !== nextSignature) {
 							return applyManifest(retryManifest, false)
 						}
 					}

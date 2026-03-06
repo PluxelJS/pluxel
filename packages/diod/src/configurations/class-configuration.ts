@@ -62,9 +62,7 @@ export class ClassConfiguration<T>
 
 		const tags = this.tags.length ? this.tags.slice() : []
 		const aliases = this.alias.length ? this.alias.slice() : []
-		const dependencies = this.dependencies.length
-			? this.dependencies.slice()
-			: []
+		const dependencies = this.dependencies.length ? this.dependencies.slice() : []
 
 		return {
 			tags,
@@ -86,8 +84,7 @@ export class ClassConfiguration<T>
 		const use = new ClassConfiguration(newable, onMutate)
 		return {
 			instance: use,
-			build: (options: BuildOptions): ServiceData<TIdentifier> =>
-				use.build(options),
+			build: (options: BuildOptions): ServiceData<TIdentifier> => use.build(options),
 		}
 	}
 }

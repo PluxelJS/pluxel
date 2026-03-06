@@ -7,14 +7,8 @@
 // - Idempotent unregister()
 
 import { createErr, createOk, isOk, type Result } from 'option-t/plain_result'
-import {
-	computeAliasIndex,
-	computeAliasIndexErrorIncremental,
-} from './builder/alias-index'
-import {
-	applyDependentsDelta,
-	computeAffectedDependents,
-} from './builder/dependents-delta'
+import { computeAliasIndex, computeAliasIndexErrorIncremental } from './builder/alias-index'
+import { applyDependentsDelta, computeAffectedDependents } from './builder/dependents-delta'
 import { DiodContainer } from './container'
 import type { Buildable, ServiceData } from './internal-types'
 import { DiodRegistration } from './registration'
@@ -111,25 +105,19 @@ export class ContainerBuilder {
 
 	/* ------------------------------ Result 内核 ------------------------------ */
 
-	private _tryRegisterCore<T>(
-		identifier: Identifier<T>,
-	): Result<Registration<T>, RegistryError> {
+	private _tryRegisterCore<T>(identifier: Identifier<T>): Result<Registration<T>, RegistryError> {
 		if (this._frozen) return createErr({ kind: 'Frozen' })
 		if (this.buildables.has(identifier)) {
 			return createErr({ kind: 'AlreadyRegistered', id: identifier })
 		}
-		const buildable = DiodRegistration.createBuildable(identifier, (id) =>
-			this.markDirty(id),
-		)
+		const buildable = DiodRegistration.createBuildable(identifier, (id) => this.markDirty(id))
 		this.buildables.set(identifier, buildable)
 		this._forceFullRebuild = false
 		this.markDirty(identifier as Identifier<unknown>)
 		return createOk(buildable.instance as Registration<T>)
 	}
 
-	private _tryUnregisterCore<T>(
-		identifier: Identifier<T>,
-	): Result<boolean, RegistryError> {
+	private _tryUnregisterCore<T>(identifier: Identifier<T>): Result<boolean, RegistryError> {
 		if (this._frozen) return createErr({ kind: 'Frozen' })
 		const existed = this.buildables.delete(identifier)
 		this.builderSingletons.delete(identifier)
@@ -148,15 +136,12 @@ export class ContainerBuilder {
 		const r = this._tryRegisterCore(identifier)
 		if (isOk(r)) return r.val
 		if (r.err.kind === 'Frozen') throw new Error('Builder is frozen')
-		if (r.err.kind === 'AlreadyRegistered')
-			throw new Error('Already registered')
+		if (r.err.kind === 'AlreadyRegistered') throw new Error('Already registered')
 		throw new Error('Unknown registration error')
 	}
 
 	/** 安全路径：无异常。 */
-	public tryRegister<T>(
-		identifier: Identifier<T>,
-	): Result<Registration<T>, RegistryError> {
+	public tryRegister<T>(identifier: Identifier<T>): Result<Registration<T>, RegistryError> {
 		return this._tryRegisterCore(identifier)
 	}
 
@@ -167,9 +152,7 @@ export class ContainerBuilder {
 		throw new Error('Builder is frozen')
 	}
 
-	public tryUnregister<T>(
-		identifier: Identifier<T>,
-	): Result<boolean, RegistryError> {
+	public tryUnregister<T>(identifier: Identifier<T>): Result<boolean, RegistryError> {
 		return this._tryUnregisterCore(identifier)
 	}
 
@@ -185,10 +168,7 @@ export class ContainerBuilder {
 
 	public tryRegisterAndUse<T>(
 		newable: Newable<T>,
-	): Result<
-		ConfigurableRegistration & WithScopeChange & WithDependencies,
-		RegistryError
-	> {
+	): Result<ConfigurableRegistration & WithScopeChange & WithDependencies, RegistryError> {
 		const r = this._tryRegisterCore(newable)
 		if (!isOk(r)) return r
 		return createOk(r.val.use(newable))
@@ -204,10 +184,7 @@ export class ContainerBuilder {
 	/* --------------------------- Build & Verification -------------------------- */
 	// helper logic extracted to ./builder/*
 
-	public buildServices({
-		autowire = true,
-		aliasPolicy = 'error',
-	}: BuildOptions = {}): Result<
+	public buildServices({ autowire = true, aliasPolicy = 'error' }: BuildOptions = {}): Result<
 		{
 			services: ServiceMap
 			dependents: Map<Identifier<unknown>, Set<Identifier<unknown>>>
@@ -303,12 +280,7 @@ export class ContainerBuilder {
 			prevServices
 
 		const alias = canIncrementalAlias
-			? computeAliasIndexErrorIncremental(
-					prevAliasIndex,
-					prevServices,
-					services,
-					this._dirtyIds,
-				)
+			? computeAliasIndexErrorIncremental(prevAliasIndex, prevServices, services, this._dirtyIds)
 			: computeAliasIndex(built.services, aliasPolicy)
 
 		this._aliasIndexCache = alias.aliasIndex
@@ -324,15 +296,8 @@ export class ContainerBuilder {
 		const incremental =
 			canIncrementalVerify && prevDependents
 				? (() => {
-						const affected = computeAffectedDependents(
-							this._dirtyIds,
-							prevDependents,
-						)
-						const errs = validateServicesSubset(
-							services,
-							alias.aliasIndex,
-							affected,
-						)
+						const affected = computeAffectedDependents(this._dirtyIds, prevDependents)
+						const errs = validateServicesSubset(services, alias.aliasIndex, affected)
 						return { affected, errors: errs }
 					})()
 				: undefined
@@ -385,10 +350,7 @@ export class ContainerBuilder {
 	public build({
 		autowire = true,
 		aliasPolicy = 'error',
-	}: BuildOptions = {}): Result<
-		DiodContainer,
-		ServiceVerificationAggregateError
-	> {
+	}: BuildOptions = {}): Result<DiodContainer, ServiceVerificationAggregateError> {
 		const r = this.buildServices({ autowire, aliasPolicy })
 		if (!isOk(r)) return r
 		const { services, dependents, aliasIndex } = r.val

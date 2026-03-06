@@ -108,7 +108,7 @@ export class PluginDataService {
 			},
 			unregister: async () => {
 				if (!watcher) return
-				await Promise.resolve(watcher.close()).catch(() => undefined)
+				await Promise.resolve(watcher.close()).catch((): undefined => undefined)
 				const set = this.watchers.get(file)
 				set?.delete(watcher)
 				if (set && set.size === 0) this.watchers.delete(file)
@@ -240,7 +240,7 @@ export class PluginDataService {
 				},
 				unregister: async () => {
 					if (!watcher) return
-					await Promise.resolve(watcher.close()).catch(() => undefined)
+					await Promise.resolve(watcher.close()).catch((): undefined => undefined)
 					const set = this.watchers.get(file)
 					set?.delete(watcher)
 					if (set && set.size === 0) this.watchers.delete(file)
@@ -341,7 +341,7 @@ export class PluginDataService {
 			},
 			unregister: async () => {
 				if (!watcher) return
-				await Promise.resolve(watcher.close()).catch(() => undefined)
+				await Promise.resolve(watcher.close()).catch((): undefined => undefined)
 				const set = this.watchers.get(file)
 				set?.delete(watcher)
 				if (set && set.size === 0) this.watchers.delete(file)

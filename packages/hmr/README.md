@@ -5,6 +5,8 @@
 - HMR 的“批量执行 + 批量注入 + 单次 commit”如何保持一致性与性能
 - Loader 侧如何处理“依赖 ctor 引用失配”（Vite HMR 热更最常见问题）
 
+另见（更偏“行为边界/配置驱动启动”）：`packages/hmr/HMR_BEHAVIOR.md`。
+
 ## 0) 包边界（对外 only: core / hmr / cli）
 
 对外（发布/建议依赖）的包只有三个：

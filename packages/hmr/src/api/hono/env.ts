@@ -1,5 +1,3 @@
-import type { Env as HonoEnv } from 'hono'
-
 export type { AppEnv } from '../../services/hono/env'
 
 type Simplify<T> = { [K in keyof T]: T[K] } & {}

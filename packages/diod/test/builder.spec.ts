@@ -2,19 +2,10 @@
 import 'reflect-metadata'
 import { describe, expect, it } from 'vitest'
 import { ContainerBuilder } from '../src'
-import {
-	ServiceVerificationAggregateError,
-	type VerificationError,
-} from '../src/verifier'
+import { ServiceVerificationAggregateError, type VerificationError } from '../src/verifier'
 import { expectErr, expectExist, expectOk } from './_helpers'
 import { Agenda, Schedule } from './fixtures/agenda'
-import {
-	Circular1,
-	Circular2,
-	Circular3,
-	circular1,
-	circular2,
-} from './fixtures/circular'
+import { Circular1, Circular2, Circular3, circular1, circular2 } from './fixtures/circular'
 import { Clock } from './fixtures/clock'
 import { Routes } from './fixtures/extended-classes'
 import { NotDecorated } from './fixtures/not-decorated'
@@ -114,12 +105,8 @@ describe('build-time validations and registry ops', () => {
 		const hasMissing = e.errors.some((x) => x.kind === 'MissingDependency')
 
 		const hasInsufficient = e.errors.some(
-			(
-				x,
-			): x is Extract<
-				VerificationError,
-				{ kind: 'InsufficientExplicitDependencies' }
-			> => x.kind === 'InsufficientExplicitDependencies',
+			(x): x is Extract<VerificationError, { kind: 'InsufficientExplicitDependencies' }> =>
+				x.kind === 'InsufficientExplicitDependencies',
 			// 可选：进一步限定就是 BankUser
 			// && x.id === (BankUser as unknown as Identifier<unknown>)
 		)
@@ -153,12 +140,8 @@ describe('build-time validations and registry ops', () => {
 	it('does not throw circular dependency error when different classes with the same name are used', () => {
 		const builder = new ContainerBuilder()
 		expectOk(builder.tryRegisterAndUse(circular1.Circular1))
-		expectOk(builder.tryRegisterAndUse(circular2.Circular1)).withDependencies([
-			circular2.Circular2,
-		])
-		expectOk(builder.tryRegisterAndUse(circular2.Circular2)).withDependencies([
-			circular1.Circular1,
-		])
+		expectOk(builder.tryRegisterAndUse(circular2.Circular1)).withDependencies([circular2.Circular2])
+		expectOk(builder.tryRegisterAndUse(circular2.Circular2)).withDependencies([circular1.Circular1])
 
 		// 成功构建
 		expectOk(builder.build({ autowire: false }))
@@ -181,10 +164,7 @@ describe('build-time validations and registry ops', () => {
 		expectOk(builder.tryRegisterAndUse(Clock))
 
 		const r = builder.tryUnregister(Circular1)
-		const success = expectOk(
-			r,
-			'no NotRegistered any more when unregistering unknown id',
-		)
+		const success = expectOk(r, 'no NotRegistered any more when unregistering unknown id')
 		expect(success).toBe(false)
 		// expect(unregErr.id).toBe(Circular1)
 	})

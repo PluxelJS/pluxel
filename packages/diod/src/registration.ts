@@ -47,9 +47,7 @@ export class DiodRegistration<T> implements Registration<T> {
 	}
 
 	/** alias of useClass */
-	public use(
-		newable: Newable<T>,
-	): ConfigurableRegistration & WithScopeChange & WithDependencies {
+	public use(newable: Newable<T>): ConfigurableRegistration & WithScopeChange & WithDependencies {
 		return this.useClass(newable)
 	}
 
@@ -91,8 +89,7 @@ export class DiodRegistration<T> implements Registration<T> {
 		const registration = new DiodRegistration(identifier, onMutate)
 		return {
 			instance: registration,
-			build: (options: BuildOptions): ServiceData<TIdentifier> =>
-				registration.build(options),
+			build: (options: BuildOptions): ServiceData<TIdentifier> => registration.build(options),
 		}
 	}
 }

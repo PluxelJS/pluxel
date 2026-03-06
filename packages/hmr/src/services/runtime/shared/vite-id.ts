@@ -1,4 +1,4 @@
-export const DRIVE_PATH_RE = /^[a-zA-Z]:[\\/]/ as const
+export const DRIVE_PATH_RE = /^[a-zA-Z]:[\\/]/
 
 /**
  * Build Vite `/@fs/` id variants for a filesystem absolute path.

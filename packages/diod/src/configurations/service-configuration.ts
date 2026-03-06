@@ -1,14 +1,8 @@
 import type { ServiceData } from '../internal-types'
 import { ScopeType } from '../types'
-import type {
-	AliasKey,
-	BuildOptions,
-	ConfigurableRegistration,
-} from '../types/types'
+import type { AliasKey, BuildOptions, ConfigurableRegistration } from '../types/types'
 
-export abstract class ServiceConfiguration<T>
-	implements ConfigurableRegistration
-{
+export abstract class ServiceConfiguration<T> implements ConfigurableRegistration {
 	protected abstract scope: ScopeType
 	protected isPrivate = false
 	protected tags: string[] = []

@@ -57,7 +57,7 @@ export class PluginEventsChannelConsumer extends BasePlugin {
 // -------------------------
 
 declare module '@pluxel/hmr' {
-	namespace Context {
+	export namespace Context {
 		interface Events {
 			'pluxel:demo:bus:tick': [payload: { from: string; seq: number; at: number }]
 		}

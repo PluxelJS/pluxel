@@ -1,4 +1,4 @@
-import { type Context } from '@pluxel/core'
+import type { Context } from '@pluxel/core'
 import { createResponse, type Session } from 'better-sse'
 
 import type { AppEnv } from '../hono/env'
@@ -63,7 +63,10 @@ export class SseService {
 	private static readonly KEEPALIVE_MS = 25_000
 	private static readonly RETRY_MS = 2_000
 
-	constructor(public ctx: Context, _cfg: unknown = undefined) {}
+	constructor(
+		public ctx: Context,
+		_cfg: unknown = undefined,
+	) {}
 
 	registerExtension(factory: SseExtensionFactory, options: RegisterOptions = {}): () => void {
 		const namespace = options.namespace ?? this.ctx.pluginInfo.id
@@ -210,13 +213,13 @@ export class SseService {
 			if (!session.isConnected) return
 			const message = this.normalizePayload(namespace, payload)
 			if (!message) return
-				try {
-					const { data, event, id } = message
-					session.push(data, event, id)
-				} catch (err) {
-					this.ctx.logger.warn('push failed', { error: err })
-				}
+			try {
+				const { data, event, id } = message
+				session.push(data, event, id)
+			} catch (err) {
+				this.ctx.logger.warn('push failed', { error: err })
 			}
+		}
 
 		const emit = (
 			event: string,
@@ -263,15 +266,19 @@ export class SseService {
 		}
 	}
 
-	private async runHandler(factory: SseExtensionFactory, channel: SseChannel) {
+	private async runHandler(
+		factory: SseExtensionFactory,
+		channel: SseChannel,
+	): Promise<(() => void) | undefined> {
 		try {
 			const handler = factory(this.ctx)
 			const maybeCleanup = await handler(channel)
 			return typeof maybeCleanup === 'function' ? maybeCleanup : undefined
-			} catch (err) {
-				this.ctx.logger.error('handler crashed', { error: err })
-			}
+		} catch (err) {
+			this.ctx.logger.error('handler crashed', { error: err })
+			return undefined
 		}
+	}
 
 	private parseNamespaces(params: URLSearchParams): string[] {
 		const raw = params.get('ns') ?? params.get('namespace') ?? params.get('namespaces')

@@ -1,7 +1,6 @@
 import { BasePlugin, Plugin } from '@pluxel/test'
 // PluginA.ts
 // PluginA 依赖 PluginB 为必选依赖，依赖 PluginC 为可选依赖
-// biome-ignore lint/style/useImportType: keep a runtime import so decorator metadata can reference PluginB
 import { PluginB } from './PluginB'
 import { PluginC, PluginD } from './PluginC'
 

@@ -66,10 +66,7 @@ export class ConfigService {
 	private batching = 0 // 事务计数
 	private pendingSave = false
 
-	constructor(
-		ctx: Context,
-		_cfg: unknown = undefined,
-	) {
+	constructor(ctx: Context, _cfg: unknown = undefined) {
 		this.ctx = ctx
 		// 允许调用方把方法解构出来用（避免丢失 this 导致 this.data 为空）
 		this.getExtra = this.getExtra.bind(this)
@@ -386,8 +383,7 @@ export class ConfigService {
 		if (cached && cached.rev === curRev) {
 			if (cached.schemaMap === schemaMap) return cached.snapshot
 			const cachedSig =
-				cached.schemaSig ??
-				(cached.schemaSig = this.schemaMapSignature(cached.schemaMap))
+				cached.schemaSig ?? (cached.schemaSig = this.schemaMapSignature(cached.schemaMap))
 			nextSchemaSig = this.schemaMapSignature(schemaMap)
 			if (cachedSig === nextSchemaSig) return cached.snapshot
 		}
@@ -605,13 +601,19 @@ function isMissingFileError(error: unknown): boolean {
 function createReadonlyView<T extends Record<string, unknown>>(target: T): Readonly<T> {
 	return new Proxy(target, {
 		set(): boolean {
-			throw new Error('[ConfigService] Raw config is read-only; use patchConfig()/unsetConfigKeys().')
+			throw new Error(
+				'[ConfigService] Raw config is read-only; use patchConfig()/unsetConfigKeys().',
+			)
 		},
 		defineProperty(): boolean {
-			throw new Error('[ConfigService] Raw config is read-only; use patchConfig()/unsetConfigKeys().')
+			throw new Error(
+				'[ConfigService] Raw config is read-only; use patchConfig()/unsetConfigKeys().',
+			)
 		},
 		deleteProperty(): boolean {
-			throw new Error('[ConfigService] Raw config is read-only; use patchConfig()/unsetConfigKeys().')
+			throw new Error(
+				'[ConfigService] Raw config is read-only; use patchConfig()/unsetConfigKeys().',
+			)
 		},
 	}) as Readonly<T>
 }
@@ -622,6 +624,7 @@ function normalizeProfileName(raw: unknown): string | undefined {
 	if (!trimmed) return undefined
 	// Keep profile names safe for filesystem usage across platforms.
 	const safe = trimmed
+		// biome-ignore lint/suspicious/noControlCharactersInRegex: intentionally strips ASCII control characters for safe filenames.
 		.replace(/[<>:"/\\|?*\u0000-\u001F]/g, '-')
 		.replace(/\s+/g, '-')
 		.replace(/-+/g, '-')

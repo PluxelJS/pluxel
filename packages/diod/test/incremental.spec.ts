@@ -77,9 +77,7 @@ describe('incremental build & cache invalidation', () => {
 		const err = expectErr(builder.build({ autowire: false }))
 		expect(err).toBeInstanceOf(ServiceVerificationAggregateError)
 		expect(
-			(err as ServiceVerificationAggregateError).errors.some(
-				(e) => e.kind === 'MissingDependency',
-			),
+			(err as ServiceVerificationAggregateError).errors.some((e) => e.kind === 'MissingDependency'),
 		).toBe(true)
 	})
 
@@ -92,14 +90,10 @@ describe('incremental build & cache invalidation', () => {
 		expectOk(builder.build({ autowire: false, aliasPolicy: 'error' }))
 
 		expectOk(builder.tryRegisterAndUse(B)).addAlias('dup')
-		const err = expectErr(
-			builder.build({ autowire: false, aliasPolicy: 'error' }),
-		)
+		const err = expectErr(builder.build({ autowire: false, aliasPolicy: 'error' }))
 		expect(err).toBeInstanceOf(ServiceVerificationAggregateError)
 		expect(
-			(err as ServiceVerificationAggregateError).errors.some(
-				(e) => e.kind === 'AliasConflict',
-			),
+			(err as ServiceVerificationAggregateError).errors.some((e) => e.kind === 'AliasConflict'),
 		).toBe(true)
 	})
 })

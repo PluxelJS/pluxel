@@ -38,9 +38,7 @@ export function applyDependentsDelta(
 	nextAliasIndex: ReadonlyMap<AliasKey, Identifier<unknown>>,
 	affected: ReadonlySet<Identifier<unknown>>,
 ): Map<Identifier<unknown>, Set<Identifier<unknown>>> {
-	const next = new Map<Identifier<unknown>, Set<Identifier<unknown>>>(
-		prevDependents,
-	)
+	const next = new Map<Identifier<unknown>, Set<Identifier<unknown>>>(prevDependents)
 	const touched = new Set<Identifier<unknown>>()
 
 	const getWritable = (key: Identifier<unknown>): Set<Identifier<unknown>> => {
@@ -58,10 +56,7 @@ export function applyDependentsDelta(
 		return cloned
 	}
 
-	const removeEdge = (
-		dep: Identifier<unknown>,
-		dependent: Identifier<unknown>,
-	): void => {
+	const removeEdge = (dep: Identifier<unknown>, dependent: Identifier<unknown>): void => {
 		const set = next.get(dep)
 		if (!set) return
 		const writable = touched.has(dep) ? set : new Set(set)
@@ -71,10 +66,7 @@ export function applyDependentsDelta(
 		touched.add(dep)
 	}
 
-	const addEdge = (
-		dep: Identifier<unknown>,
-		dependent: Identifier<unknown>,
-	): void => {
+	const addEdge = (dep: Identifier<unknown>, dependent: Identifier<unknown>): void => {
 		const set = getWritable(dep)
 		set.add(dependent)
 	}
@@ -83,11 +75,7 @@ export function applyDependentsDelta(
 		const oldMeta = prevServices.get(id)
 		if (oldMeta) {
 			for (const depToken of oldMeta.dependencies) {
-				const resolved = resolveDependencyToken(
-					prevServices,
-					prevAliasIndex,
-					depToken,
-				)
+				const resolved = resolveDependencyToken(prevServices, prevAliasIndex, depToken)
 				removeEdge(resolved, id)
 			}
 		}
@@ -97,11 +85,7 @@ export function applyDependentsDelta(
 		const newMeta = nextServices.get(id)
 		if (newMeta) {
 			for (const depToken of newMeta.dependencies) {
-				const resolved = resolveDependencyToken(
-					nextServices,
-					nextAliasIndex,
-					depToken,
-				)
+				const resolved = resolveDependencyToken(nextServices, nextAliasIndex, depToken)
 				addEdge(resolved, id)
 			}
 		}

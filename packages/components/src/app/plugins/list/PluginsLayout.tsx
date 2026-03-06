@@ -36,7 +36,7 @@ export const PluginsLayout: React.FC = () => {
 	const isSmall = useMediaQuery(`(max-width: ${theme.breakpoints.md})`, undefined, {
 		getInitialValueInEffect: true,
 	})
-	const [opened, { open, close, toggle }] = useDisclosure(false)
+	const [opened, { close, toggle }] = useDisclosure(false)
 
 	useEffect(() => {
 		if (isSmall && pluginName) close()

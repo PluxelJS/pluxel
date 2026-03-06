@@ -334,7 +334,6 @@ function createPluxelMcpServer(ctx: Context) {
 	const server = new McpServer({
 		name: 'pluxel-hmr',
 		version: 'dev',
-		// biome-ignore lint/suspicious/noExplicitAny: upstream schema adapter surface is intentionally flexible.
 		schemaAdapter: (schema) => toJsonSchema(schema as any) as Record<string, unknown>,
 	})
 
@@ -589,7 +588,8 @@ function createPluxelMcpServer(ctx: Context) {
 				timeoutMs: args.timeoutMs,
 				pollMs: args.pollMs,
 			})
-			const msg = out.ok ? `${out.name}: ${out.status.lifecycleStage}` : out.message
+			const msg =
+				out.ok === true ? `${out.name}: ${out.status.lifecycleStage}` : (out as any).message
 			return textResult(msg, out)
 		},
 	})

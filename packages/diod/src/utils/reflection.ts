@@ -42,9 +42,7 @@ const getDependenciesFromDecoratedServiceOrThrow = <T>(
 		getMetadata?: (key: string, target: unknown) => unknown
 	}
 	const dependencies: Abstract<unknown>[] =
-		(reflect.getMetadata?.(PARAM_TYPES, target) as
-			| Abstract<unknown>[]
-			| undefined) ?? []
+		(reflect.getMetadata?.(PARAM_TYPES, target) as Abstract<unknown>[] | undefined) ?? []
 
 	// 若 ctor 形参个数 > 已读依赖数，说明未启用 reflect-metadata / 未加装饰器
 	if (dependencies.length < target.length) {
@@ -61,9 +59,7 @@ const getDependenciesFromDecoratedServiceOrThrow = <T>(
 }
 
 /** 获取直接基类（到 Object 为止） */
-const getBaseClass = <T extends B, B>(
-	target: Abstract<T>,
-): Abstract<B> | undefined => {
+const getBaseClass = <T extends B, B>(target: Abstract<T>): Abstract<B> | undefined => {
 	const baseClass = Object.getPrototypeOf(target.prototype)?.constructor
 	if (baseClass === Object) return undefined
 	return baseClass

@@ -39,8 +39,9 @@ export function BaseProviderCard() {
 					color: 'red',
 				})
 			} finally {
-				if (!mountedRef.current) return
-				setLoading(false)
+				if (mountedRef.current) {
+					setLoading(false)
+				}
 			}
 		},
 		[hmr, notify, pluginName],

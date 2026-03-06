@@ -156,7 +156,8 @@ export class HmrRunner {
 		const urls = new Set<string>([params.id, ...(params.aliases ?? [])])
 		for (const url of urls) {
 			const node = this.evaluatedModules.ensureModule(params.id, url)
-			if (!node.meta) node.meta = { id: node.id, url }
+			if (!node.meta)
+				node.meta = { id: node.id, url } as unknown as NonNullable<EvaluatedModuleNode['meta']>
 			setEvaluatedModuleExports(node, params.exports)
 		}
 	}
@@ -234,7 +235,10 @@ export class HmrRunner {
 					// ignore: some specifiers may be external/virtual and not fetchable here
 				}
 
-				const resolved = await env.pluginContainer.resolveId(specifier, importerHint, { ssr: true })
+				type ResolveIdOptions = Parameters<typeof env.pluginContainer.resolveId>[2]
+				const resolved = await env.pluginContainer.resolveId(specifier, importerHint, {
+					ssr: true,
+				} as unknown as ResolveIdOptions)
 				const resolvedId = typeof resolved?.id === 'string' ? resolved.id : null
 
 				const hostImportSpecifier = this._bridgeProviders[specifier] ?? specifier

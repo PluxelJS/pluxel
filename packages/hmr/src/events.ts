@@ -31,11 +31,14 @@ declare module '@pluxel/hmr' {
 	}
 }
 
-declare module '@pluxel/core/services' {
-	// Merge all `@pluxel/hmr` event declarations into the canonical registry.
+declare module '@pluxel/core' {
+	// Merge all `@pluxel/hmr` event declarations into the canonical registry (`@pluxel/core`).
+	//
 	// NOTE:
-	// Do not self-import `@pluxel/hmr` here: depending on `customConditions`, TS may resolve it to `dist`
-	// and include both source + dist module augmentations in the same program, causing declaration conflicts.
-	type HmrEvents = import('./index').Context.Events
-	interface Events extends HmrEvents {}
+	// We intentionally reference the package specifier here (instead of `./index`) because the `.d.ts` bundler
+	// may rewrite relative type imports in a way that breaks namespace access.
+	type __PluxelHmrEvents = import('@pluxel/hmr').Context.Events
+	interface Events extends __PluxelHmrEvents {}
 }
+
+export {}

@@ -115,13 +115,14 @@ logsApp.get('/v1/streams/:streamId/range', (c) => {
 	const url = new URL(c.req.url)
 	const filterRaw = parseLogFilter(url.searchParams)
 	const filter = mergeFilters(filterRaw, resolved.derivedFilter)
-	if (filter === null) return c.json({ ok: false, code: 'invalid', message: 'Conflicting filters' }, 416)
+	if (filter === null)
+		return c.json({ ok: false, code: 'invalid', message: 'Conflicting filters' }, 416)
 	const epoch = parseEpoch(url.searchParams) ?? store.meta().epoch
 	const fromSeq = parseFromSeq(url.searchParams) ?? store.meta().headSeq
 	const limit = parseLimit(url.searchParams, 2000, 20_000)
 
 	const out = store.range({ epoch, fromSeq, limit, filter })
-	if (out.ok) {
+	if (out.ok === true) {
 		if (resolved.virtual) {
 			return c.json({
 				...out,
@@ -132,9 +133,13 @@ logsApp.get('/v1/streams/:streamId/range', (c) => {
 		return c.json(out)
 	}
 
-	const err = resolved.virtual && out.streamId ? { ...out, streamId: resolved.streamId } : out
-	if (out.code === 'epoch_mismatch') return c.json(err, 409)
-	if (out.code === 'from_too_old') return c.json(err, 410)
+	const errOut = out as Extract<typeof out, { ok: false }>
+	const err =
+		resolved.virtual && (errOut as unknown as { streamId?: unknown }).streamId
+			? { ...errOut, streamId: resolved.streamId }
+			: errOut
+	if (errOut.code === 'epoch_mismatch') return c.json(err, 409)
+	if (errOut.code === 'from_too_old') return c.json(err, 410)
 	return c.json(err, 416)
 })
 
@@ -317,9 +322,7 @@ logsApp.get('/v1/streams/:streamId/follow', (c) => {
 				epoch: m.epoch,
 				fromSeq: effectiveFromN.toString(10),
 				nextSeq,
-				lines: resolved.virtual
-					? filtered.map((l) => ({ ...l, streamId: outStreamId }))
-					: filtered,
+				lines: resolved.virtual ? filtered.map((l) => ({ ...l, streamId: outStreamId })) : filtered,
 			}
 			const json = JSON.stringify(payload)
 			const bytes = json.length

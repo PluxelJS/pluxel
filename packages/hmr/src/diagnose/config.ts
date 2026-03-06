@@ -73,7 +73,7 @@ export function resolveDefaultHmrConfigPath(rootDir: string) {
 
 export function parseHmrConfigV1Jsonc(
 	contents: string,
-	label = DEFAULT_HMR_CONFIG_BASENAME,
+	label: string = DEFAULT_HMR_CONFIG_BASENAME,
 ): PluxelHmrConfigV1 {
 	const errors: ParseError[] = []
 	const data = parse(contents, errors, {
@@ -145,15 +145,20 @@ function assertRoots(value: unknown, ctx: string): asserts value is 'auto' | str
 	assertStringArray(value, ctx)
 }
 
-function assertNoUnknownKeys(obj: Record<string, unknown>, allowed: readonly string[], ctx: string) {
+function assertNoUnknownKeys(
+	obj: Record<string, unknown>,
+	allowed: readonly string[],
+	ctx: string,
+) {
 	const allow = new Set(allowed)
 	const unknown = Object.keys(obj).filter((k) => !allow.has(k))
-	if (unknown.length) throw new Error(`[hmr-config] Unknown field(s) in ${ctx}: ${unknown.join(', ')}`)
+	if (unknown.length)
+		throw new Error(`[hmr-config] Unknown field(s) in ${ctx}: ${unknown.join(', ')}`)
 }
 
 export function validateHmrConfigV1Strict(
 	raw: unknown,
-	label = DEFAULT_HMR_CONFIG_BASENAME,
+	label: string = DEFAULT_HMR_CONFIG_BASENAME,
 ): PluxelHmrConfigV1 {
 	assertPlainObject(raw, label)
 	assertNoUnknownKeys(raw, ['version', 'profile', 'defaults', 'profiles'], label)

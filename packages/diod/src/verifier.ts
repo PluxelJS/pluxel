@@ -300,11 +300,7 @@ export const verifyAsResult = (
 	Map<Identifier<unknown>, Set<Identifier<unknown>>>,
 	ServiceVerificationAggregateError
 > => {
-	const { dependentsMap, errors } = verifyAndComputeDependents(
-		services,
-		aliasIndex,
-	)
-	if (errors.length > 0)
-		return createErr(new ServiceVerificationAggregateError(errors))
+	const { dependentsMap, errors } = verifyAndComputeDependents(services, aliasIndex)
+	if (errors.length > 0) return createErr(new ServiceVerificationAggregateError(errors))
 	return createOk(dependentsMap)
 }

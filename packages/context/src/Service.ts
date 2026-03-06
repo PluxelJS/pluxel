@@ -8,7 +8,6 @@ import type {
 	ServiceWithCtx,
 } from './service-types'
 
-// biome-ignore lint/suspicious/noExplicitAny: services may accept arbitrary configs; ctx always passes `cfg` (possibly undefined).
 type InjectableCtor = new (ctx: Context, cfg?: any) => ServiceWithCtx<Context>
 
 /**

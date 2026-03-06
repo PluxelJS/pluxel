@@ -25,7 +25,7 @@ export async function getAllTsFiles(inputs: string[], opts: TsScanOptions = {}):
 
 	for (const input of inputs) {
 		const abs = toAbsolute(input)
-		const st = await fs.stat(abs).catch(() => null)
+		const st = await fs.stat(abs).catch((): null => null)
 		if (!st) continue
 
 		if (st.isDirectory()) {

@@ -128,7 +128,6 @@ export class HonoService {
 				/^\/static\/.+/,
 				/\?t=\d+$/,
 			],
-			// biome-ignore lint/suspicious/noExplicitAny: @hono/vite-dev-server expects a module-like object shape.
 			loadModule: async () => ({ fetch: this.fetch }) as any,
 			handleHotUpdate: ({ server }) => {
 				if (this.shouldReload) {
@@ -187,11 +186,11 @@ export class HonoService {
 		return this.ctx.ext.sse.registerExtension(() => handler, { namespace })
 	}
 
-	private streamManifestEvents(channel: SseChannel) {
+	private streamManifestEvents(channel: SseChannel): undefined | (() => void) {
 		const service = this.ctx.ext.ui
 		if (!service) {
 			channel.emit('error', { reason: 'Extension service unavailable' })
-			return
+			return undefined
 		}
 
 		channel.emit('ready', { type: 'ready' })
@@ -238,12 +237,13 @@ export class HonoService {
 			headers,
 			request,
 		})
-		if (result.allow) return undefined
+		if (result.allow === true) return undefined
+		const denied = result as Extract<typeof result, { allow: false }>
 
 		this.logger.warn('Blocked internal API request (validation)', {
 			path,
 			method,
-			pluginName: result.pluginName,
+			pluginName: denied.pluginName,
 		})
 
 		return c.json(
@@ -252,7 +252,7 @@ export class HonoService {
 				code: 'internal_api_blocked',
 				path,
 				method,
-				pluginName: result.pluginName,
+				pluginName: denied.pluginName,
 			},
 			403,
 			{
@@ -289,11 +289,12 @@ export class HonoService {
 		}
 
 		const result = await service.check(input)
-		if (result.allow) return undefined
+		if (result.allow === true) return undefined
+		const denied = result as Extract<AuthGuardResult, { allow: false }>
 
-		this.logger.warn('Blocked request', { kind, path, method, pluginName: result.pluginName })
+		this.logger.warn('Blocked request', { kind, path, method, pluginName: denied.pluginName })
 
-		return this.buildAuthDeniedResponse(c, kind, result)
+		return this.buildAuthDeniedResponse(c, kind, denied)
 	}
 
 	private buildAuthDeniedResponse(
@@ -343,7 +344,7 @@ export class HonoService {
 	}
 
 	private updateFetchPtr() {
-		const f = this.app.fetch.bind(this.app)
+		const f = this.app.fetch.bind(this.app) as unknown as HonoFetch
 		this.fetchPtr = (req, env, ctx) => f(req, env, ctx)
 	}
 

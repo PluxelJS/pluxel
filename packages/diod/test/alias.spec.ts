@@ -107,11 +107,8 @@ describe('alias index & resolution', () => {
 
 		const err = expectErr(builder.build())
 		expect(err).toBeInstanceOf(ServiceVerificationAggregateError)
-		const hasAliasConflict = (
-			err as ServiceVerificationAggregateError
-		).errors.some(
-			(x): x is Extract<VerificationError, { kind: 'AliasConflict' }> =>
-				x.kind === 'AliasConflict',
+		const hasAliasConflict = (err as ServiceVerificationAggregateError).errors.some(
+			(x): x is Extract<VerificationError, { kind: 'AliasConflict' }> => x.kind === 'AliasConflict',
 		)
 		expect(hasAliasConflict).toBe(true)
 		expect(err.format()).toContain('AliasConflict')
@@ -146,10 +143,7 @@ describe('alias index & resolution', () => {
 		class Multi {}
 		const ALPHA = Symbol('alpha')
 		const builder = new ContainerBuilder()
-		expectOk(builder.tryRegisterAndUse(Multi))
-			.addAlias('m1')
-			.addAlias(ALPHA)
-			.asSingleton()
+		expectOk(builder.tryRegisterAndUse(Multi)).addAlias('m1').addAlias(ALPHA).asSingleton()
 
 		const container = expectOk(builder.build())
 		const byStr = expectExist(container.getByAlias('m1'))

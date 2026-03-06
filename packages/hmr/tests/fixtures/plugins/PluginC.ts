@@ -1,6 +1,4 @@
 import { BasePlugin, Plugin } from '@pluxel/hmr'
-// biome-ignore lint/correctness/noUnusedImports: fixture import edge for extraction tests
-import { demoBookModule } from './demo-parent'
 import { test1 } from './testconfig'
 
 @Plugin({ name: 'PluginC', type: 'hook' })

@@ -13,7 +13,6 @@ const dtsRewriteMap = {
 	'@pluxel/hmr-web': '@pluxel/hmr/web',
 } as const
 
-// biome-ignore lint/style/noDefaultExport: tsdown config loader expects a default export.
 export default defineConfig({
 	exports: {
 		devExports: '@pluxel/source',
@@ -30,6 +29,7 @@ export default defineConfig({
 	],
 	plugins: [
 		PreprocessorDirectives(),
+		appendDtsImport('import type {} from "./events.d.mts"', ['index.d.mts']),
 		appendDtsImport('import type {} from "./services.d.mts"', ['index.d.mts']),
 		rewriteDtsText(dtsRewriteMap, { assertNotContains: ['@pluxel/hmr-web'] }),
 		assertBundleNoText(['@pluxel/hmr-web']),
@@ -37,6 +37,8 @@ export default defineConfig({
 	env: {},
 	entry: {
 		index: 'src/index.ts',
+		// Type-only module augmentation bridge (stable .d.mts file for TS consumers).
+		events: 'src/events.ts',
 		logger: 'src/logger/index.ts',
 		host: 'src/host/index.ts',
 		services: 'src/services/index.ts',

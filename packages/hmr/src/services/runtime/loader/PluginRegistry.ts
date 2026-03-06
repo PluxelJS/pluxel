@@ -223,7 +223,7 @@ export class PluginRegistry {
 		if (!map) return undefined
 
 		for (const [key, schema] of Object.entries(map)) {
-			if (!isStandardSchemaV1(schema) || !v.isOfType('object', schema)) {
+			if (!isStandardSchemaV1(schema) || !v.isOfType('object', schema as any)) {
 				throw new Error(
 					`Invalid config schema: "${info.id}.${key}" must be a valibot ObjectSchema (use v.object(...) / v.objectAsync(...)).`,
 				)

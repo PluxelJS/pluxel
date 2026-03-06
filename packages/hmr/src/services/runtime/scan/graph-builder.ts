@@ -16,6 +16,16 @@ import type {
 	ScanStats,
 } from './types'
 
+type BuildContext = {
+	entryResolver: EntryResolver
+	options: ResolvedScanOptions
+	entriesSet: Set<string>
+	fallbackSet: Set<string>
+	focusSet?: Set<string>
+	matchedFocus: Set<string>
+	diagnostics: ScanDiagnostic[]
+}
+
 export async function buildScanGraph(
 	input: string[],
 	options: ResolvedScanOptions,
@@ -223,7 +233,7 @@ async function processPackageDir(params: {
 
 	if (focusSet) markFocusMatches(focusSet, ctx.matchedFocus, node)
 
-	if (entry?.ok) {
+	if (entry && entry.ok === true) {
 		ctx.entriesSet.add(entry.entry)
 		return node
 	}
@@ -231,7 +241,7 @@ async function processPackageDir(params: {
 	ctx.diagnostics.push({
 		severity: 'error',
 		code: 'UNREADABLE_DIR',
-		detail: entry?.message ?? 'Entry not resolved.',
+		detail: entry && entry.ok === false ? entry.message : 'Entry not resolved.',
 		context: { dir: normalizedDir },
 	})
 	return node

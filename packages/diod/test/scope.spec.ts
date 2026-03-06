@@ -19,10 +19,7 @@ describe('scopes', () => {
 			.useFactory(() => new Clock())
 			.asTransient()
 		expectOk(builder.tryRegister(Agenda))
-			.useFactory(
-				(c) =>
-					new Agenda(expectExist(c.get(Clock)), expectExist(c.get(Calendar))),
-			)
+			.useFactory((c) => new Agenda(expectExist(c.get(Clock)), expectExist(c.get(Calendar))))
 			.asTransient()
 		expectOk(builder.tryRegisterAndUse(MultiAgenda)).asTransient()
 
@@ -39,9 +36,7 @@ describe('scopes', () => {
 		expect(clock.rand).not.toBe(agenda.clock.rand)
 		expect(agenda.rand).not.toBe(agenda2.rand)
 		expect(multiAgenda.agenda1.rand).not.toBe(multiAgenda.agenda2.rand)
-		expect(multiAgenda.agenda1.clock.rand).not.toBe(
-			multiAgenda.agenda2.clock.rand,
-		)
+		expect(multiAgenda.agenda1.clock.rand).not.toBe(multiAgenda.agenda2.clock.rand)
 		expect(multiAgenda.agenda1.clock.rand).not.toBe(clock.rand)
 	})
 
@@ -55,10 +50,7 @@ describe('scopes', () => {
 			.useFactory(() => new Clock())
 			.asSingleton()
 		expectOk(builder.tryRegister(Agenda))
-			.useFactory(
-				(c) =>
-					new Agenda(expectExist(c.get(Clock)), expectExist(c.get(Calendar))),
-			)
+			.useFactory((c) => new Agenda(expectExist(c.get(Clock)), expectExist(c.get(Calendar))))
 			.asSingleton()
 		expectOk(builder.tryRegisterAndUse(MultiAgenda)).asSingleton()
 
@@ -90,10 +82,7 @@ describe('scopes', () => {
 			.useFactory(() => new Clock())
 			.asInstancePerRequest()
 		expectOk(builder.tryRegister(Agenda))
-			.useFactory(
-				(c) =>
-					new Agenda(expectExist(c.get(Clock)), expectExist(c.get(Calendar))),
-			)
+			.useFactory((c) => new Agenda(expectExist(c.get(Clock)), expectExist(c.get(Calendar))))
 			.asInstancePerRequest()
 		expectOk(builder.tryRegisterAndUse(MultiAgenda)).asInstancePerRequest()
 

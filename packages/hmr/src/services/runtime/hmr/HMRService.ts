@@ -18,7 +18,6 @@ import {
 	type ViteDevServer,
 } from 'vite'
 import type { BuiltinPluginSpec } from '../loader/LoaderService'
-import type { ScanService } from '../scan/ScanService'
 import { PLUXEL_HMR_WORKSPACE_CONDITIONS_WITH_SOURCE } from '../shared/conditions'
 import {
 	buildHmrViteConfig,
@@ -286,7 +285,7 @@ export class HMRService {
 
 	private ssrEnv!: DevEnvironment
 	private readonly runner = new HmrRunner()
-	private readonly scanService: ScanService
+	private readonly scanService: Context['scanService']
 	private executor!: HmrExecutor
 	private batchProcessor!: HmrBatchProcessor
 
@@ -371,7 +370,9 @@ export class HMRService {
 			}
 		})
 
-		this.scanRootsAbs = unique(this.config.roots.map((dir) => normalizePath(resolve(this.cwd, dir))))
+		this.scanRootsAbs = unique(
+			this.config.roots.map((dir) => normalizePath(resolve(this.cwd, dir))),
+		)
 		this.includeGlobs = resolveGlobPatterns(this.config.include, this.cwd)
 		this.excludeGlobs = resolveGlobPatterns(this.config.exclude, this.cwd)
 		this.env = new HmrEnvironment({
@@ -531,7 +532,7 @@ export class HMRService {
 		})
 		const server = await createServer(serverConfig)
 		// Bind server shutdown to host lifetime (CLI agent runs call `ctx.effects.dispose()`).
-		this.ctx.effects.defer(() => server.close().catch(() => undefined), {
+		this.ctx.effects.defer(() => server.close().catch((): undefined => undefined), {
 			tag: 'HMRService.viteServer',
 			phase: 'shutdown',
 		})
@@ -545,7 +546,7 @@ export class HMRService {
 				this.ensureBaseline(),
 			])
 		} catch (error) {
-			await server.close().catch(() => undefined)
+			await server.close().catch((): undefined => undefined)
 			throw error
 		}
 
@@ -800,7 +801,7 @@ export class HMRService {
 						if (!k || k === 'default') return
 						const maybe = exports[k]
 						if (typeof maybe !== 'function') return
-						if (!checkPluginDecorator(maybe)) return
+						if (!checkPluginDecorator(maybe as any)) return
 						pluginKeys.push(k)
 					}
 
@@ -831,7 +832,7 @@ export class HMRService {
 
 					const ids: string[] = []
 					for (const exportKey of pluginKeys) {
-						const ctor = exports[exportKey]
+						const ctor = exports[exportKey] as any
 						try {
 							const id = getPluginInfo(ctor as never).id
 							ids.push(id)
@@ -844,7 +845,7 @@ export class HMRService {
 							ids.push(exportKey)
 						}
 						resolved.push({
-							plugin: ctor,
+							plugin: ctor as any,
 							enable: b.enable,
 							// Use the workspace package name so snapshots can be generated as runnable imports.
 							moduleId: b.packageName,
@@ -1218,7 +1219,7 @@ export class HMRService {
 			if (prefetchPromise) {
 				// Overlap transform prefetch with evaluation to reduce warmup wall time.
 				// Await it after evaluation so we don't leave background work behind.
-				await prefetchPromise.catch(() => undefined)
+				await prefetchPromise.catch((): undefined => undefined)
 				prefetchMs = Math.round((endPrefetch?.() ?? 0) * 10) / 10
 			}
 			const commitMs = executed ? Math.round(executed.commitMs * 10) / 10 : null

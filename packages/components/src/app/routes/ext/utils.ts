@@ -1,5 +1,5 @@
 import type { ExtensionRoutePrefix } from '../../../extension/paths'
-import { EXTENSION_ROUTE_PREFIX, EXTENSION_STANDALONE_ROUTE_PREFIX } from '../../../extension/paths'
+import { EXTENSION_ROUTE_PREFIX } from '../../../extension/paths'
 
 export function decodeURIComponentSafe(input: string): string {
 	try {

@@ -11,7 +11,6 @@ const reactDevtoolsCoreStub = fileURLToPath(
 
 const fastBuild = process.env.PLUXEL_FAST_BUILD === 'true'
 
-// biome-ignore lint/style/noDefaultExport: tsdown config loader expects a default export.
 export default defineConfig({
 	entry: {
 		cli: './src/cli.ts',

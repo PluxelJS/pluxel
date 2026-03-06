@@ -287,27 +287,32 @@ export function buildHmrViteConfig(opts: HmrViteConfigOptions): InlineConfig {
 		new Set([...REQUIRED_DEDUPE_PACKAGES, ...opts.deps.bridgeModules.map(toBasePackage)]),
 	)
 
-	const baseLogger = createLogger(undefined, { prefix: '[pluxel-hmr]' })
+	type LoggerWithOnce = Logger & {
+		infoOnce: (msg: string, options?: unknown) => void
+		warnOnce: (msg: string, options?: unknown) => void
+	}
+
+	const baseLogger = createLogger(undefined, { prefix: '[pluxel-hmr]' }) as LoggerWithOnce
 	// Avoid `{...baseLogger}` here: Vite mutates `logger.hasWarned`, and spreading would copy a stale boolean.
 	// We only override warning output to silence known-noisy Vite import-analysis warnings.
-	const customLogger = Object.create(baseLogger) as Logger
-	customLogger.info = (msg, options) => {
+	const customLogger = Object.create(baseLogger) as LoggerWithOnce
+	customLogger.info = (msg: string, options?: unknown) => {
 		if (shouldSilenceOptimizeDepsInfo(msg)) return
 		baseLogger.info(msg, options)
 	}
-	customLogger.infoOnce = (msg, options) => {
+	customLogger.infoOnce = (msg: string, options?: unknown) => {
 		if (shouldSilenceOptimizeDepsInfo(msg)) return
-		baseLogger.infoOnce(msg, options)
+		baseLogger.infoOnce?.(msg, options) ?? baseLogger.info(msg, options)
 	}
-	customLogger.warn = (msg, options) => {
+	customLogger.warn = (msg: string, options?: unknown) => {
 		if (shouldSilenceDynamicImportWarning(msg)) return
 		if (shouldSilenceSourcemapMissingWarning(msg)) return
 		baseLogger.warn(msg, options)
 	}
-	customLogger.warnOnce = (msg, options) => {
+	customLogger.warnOnce = (msg: string, options?: unknown) => {
 		if (shouldSilenceDynamicImportWarning(msg)) return
 		if (shouldSilenceSourcemapMissingWarning(msg)) return
-		baseLogger.warnOnce(msg, options)
+		baseLogger.warnOnce?.(msg, options) ?? baseLogger.warn(msg, options)
 	}
 
 	return {
@@ -331,14 +336,14 @@ export function buildHmrViteConfig(opts: HmrViteConfigOptions): InlineConfig {
 			// Vite 8: built-in tsconfig paths support.
 			// (We intentionally avoid `vite-tsconfig-paths` to keep behavior consistent across environments.)
 			tsconfigPaths: true,
-		},
+		} as unknown as InlineConfig['resolve'],
 		environments: {
 			ssr: {
 				resolve: {
 					conditions: ssrConditions,
 					dedupe: dedupePackages,
 					preserveSymlinks: false,
-				},
+				} as unknown as InlineConfig['resolve'],
 			},
 		},
 		plugins: [
@@ -397,7 +402,7 @@ export function buildHmrViteConfig(opts: HmrViteConfigOptions): InlineConfig {
 				conditions: ssrConditions,
 				dedupe: dedupePackages,
 				preserveSymlinks: false,
-			},
+			} as unknown as InlineConfig['resolve'],
 		},
 	}
 }

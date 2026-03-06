@@ -21,9 +21,7 @@
  * }
  */
 export declare namespace UI {
-	// biome-ignore lint/suspicious/noEmptyInterface: declaration merging target
 	interface rpc {}
-	// biome-ignore lint/suspicious/noEmptyInterface: declaration merging target
 	interface sse {}
 }
 

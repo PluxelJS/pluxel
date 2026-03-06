@@ -6,6 +6,27 @@ import { normalizePath } from 'vite'
 export const UI_PUBLIC_BASE = '/dist/public'
 export const UI_PUBLIC_MOUNT_RE = /^\/dist\/public(?:\/.*)?$/
 
+type UiPublicRequest = {
+	method?: unknown
+	url?: unknown
+	headers?: Record<string, unknown> | undefined
+}
+
+type UiPublicResponse = NodeJS.WritableStream & {
+	statusCode: number
+	headersSent?: boolean
+	setHeader: (name: string, value: string) => void
+	end: (chunk?: unknown) => void
+}
+
+type UiPublicNext = (err?: unknown) => void
+
+export type UiPublicStaticMiddleware = (
+	req: UiPublicRequest,
+	res: UiPublicResponse,
+	next: UiPublicNext,
+) => void | Promise<void>
+
 function stripTrailingSlashes(pathname: string): string {
 	return pathname.length > 1 ? pathname.replace(/\/+$/, '') : pathname
 }
@@ -49,7 +70,7 @@ function getCacheControl(pathname: string): string {
 	return 'public, max-age=31536000, immutable'
 }
 
-function sendText(res: any, status: number, message: string) {
+function sendText(res: UiPublicResponse, status: number, message: string) {
 	res.statusCode = status
 	res.setHeader('Content-Type', 'text/plain; charset=utf-8')
 	res.end(message)
@@ -61,11 +82,13 @@ function sendText(res: any, status: number, message: string) {
  * Intended to be mounted via Connect/Vite middlewares, so `req.url` is expected to be
  * relative to the mount root (e.g. `/assets/app.js`).
  */
-export function createUiPublicStaticMiddleware(publicDirAbs: string) {
+export function createUiPublicStaticMiddleware(
+	publicDirAbs: string,
+): UiPublicStaticMiddleware | null {
 	const publicDirNorm = stripTrailingSlashes(normalizePath(publicDirAbs))
 	if (!existsSync(publicDirAbs)) return null
 
-	return async (req: any, res: any, next: any) => {
+	return async (req: UiPublicRequest, res: UiPublicResponse, next: UiPublicNext) => {
 		try {
 			const method = String(req?.method ?? 'GET').toUpperCase()
 			if (method !== 'GET' && method !== 'HEAD') {
@@ -87,7 +110,7 @@ export function createUiPublicStaticMiddleware(publicDirAbs: string) {
 			const absNorm = normalizePath(abs)
 			if (!absNorm.startsWith(`${publicDirNorm}/`)) return sendText(res, 404, 'Not Found')
 
-			const st = await stat(abs).catch(() => null)
+			const st = await stat(abs).catch((): null => null)
 			if (!st?.isFile()) return sendText(res, 404, 'Not Found')
 
 			const type = contentTypeByExt(extname(absNorm).toLowerCase()) ?? 'application/octet-stream'
@@ -98,7 +121,7 @@ export function createUiPublicStaticMiddleware(publicDirAbs: string) {
 			const etag = `W/"${st.size}-${Math.floor(st.mtimeMs)}"`
 			res.setHeader('ETag', etag)
 
-			const ifNoneMatch = String(req?.headers?.['if-none-match'] ?? '')
+			const ifNoneMatch = String(req.headers?.['if-none-match'] ?? '')
 			if (ifNoneMatch && ifNoneMatch === etag) {
 				res.statusCode = 304
 				res.end()

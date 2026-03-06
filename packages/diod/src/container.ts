@@ -60,12 +60,10 @@ export class DiodContainer<U = unknown> implements Container {
 	/** Resolve an identifier through the alias index if applicable. */
 	public resolveIdentifier<T>(identifier: Identifier<T>): Identifier<T> {
 		// Prefer direct service identifiers over aliases (align with verifier semantics).
-		if (this.services.has(identifier as unknown as Identifier<U>))
-			return identifier
+		if (this.services.has(identifier as unknown as Identifier<U>)) return identifier
 		return (
-			(this.aliasIndex.get(identifier as unknown as AliasKey) as
-				| Identifier<T>
-				| undefined) ?? identifier
+			(this.aliasIndex.get(identifier as unknown as AliasKey) as Identifier<T> | undefined) ??
+			identifier
 		)
 	}
 
@@ -99,13 +97,7 @@ export class DiodContainer<U = unknown> implements Container {
 		const perRequest = new Map<Identifier<unknown>, unknown>()
 		const visiting = new Set<Identifier<unknown>>()
 		const path: Identifier<unknown>[] = []
-		return this.resolveServiceResult(
-			resolved,
-			perRequest,
-			false,
-			visiting,
-			path,
-		)
+		return this.resolveServiceResult(resolved, perRequest, false, visiting, path)
 	}
 	public get<T>(identifier: Identifier<T>): Maybe<T> {
 		const r = this.getResult(identifier)
@@ -115,9 +107,7 @@ export class DiodContainer<U = unknown> implements Container {
 		return this.get(identifier)
 	}
 
-	public getByAliasResult<T = unknown>(
-		alias: AliasKey,
-	): Result<T, ResolveError> {
+	public getByAliasResult<T = unknown>(alias: AliasKey): Result<T, ResolveError> {
 		const id = this.aliasIndex.get(alias)
 		if (!id) return createErr({ kind: 'NotRegistered', id: alias })
 
@@ -146,22 +136,14 @@ export class DiodContainer<U = unknown> implements Container {
 		const perRequest = new Map<Identifier<unknown>, unknown>()
 		const visiting = new Set<Identifier<unknown>>()
 		const path: Identifier<unknown>[] = []
-		return this.resolveServiceResult(
-			id as Identifier<T>,
-			perRequest,
-			false,
-			visiting,
-			path,
-		)
+		return this.resolveServiceResult(id as Identifier<T>, perRequest, false, visiting, path)
 	}
 	public getByAlias<T = unknown>(alias: AliasKey): Maybe<T> {
 		const r = this.getByAliasResult<T>(alias)
 		return isOk(r) ? (r.val as Maybe<T>) : (undefined as Maybe<T>)
 	}
 
-	public findTaggedServiceIdentifiers<T = unknown>(
-		tag: string,
-	): Identifier<T>[] {
+	public findTaggedServiceIdentifiers<T = unknown>(tag: string): Identifier<T>[] {
 		return (this.tagIndex.get(tag) ?? []) as Identifier<T>[]
 	}
 
@@ -197,19 +179,11 @@ export class DiodContainer<U = unknown> implements Container {
 		const toMaybe = <T>(r: Result<T, ResolveError>): Maybe<T> =>
 			isOk(r) ? (r.val as Maybe<T>) : (undefined as Maybe<T>)
 
-		const getByAliasResult = <T = unknown>(
-			alias: AliasKey,
-		): Result<T, ResolveError> => {
+		const getByAliasResult = <T = unknown>(alias: AliasKey): Result<T, ResolveError> => {
 			const id = this.aliasIndex.get(alias)
 			if (!id) return createErr({ kind: 'NotRegistered', id: alias })
 			// 别名属于“直接获取”，应用 private 限制（isDependency=false）
-			return this.resolveServiceResult(
-				id as Identifier<T>,
-				perRequest,
-				false,
-				visiting,
-				path,
-			)
+			return this.resolveServiceResult(id as Identifier<T>, perRequest, false, visiting, path)
 		}
 
 		return {
@@ -217,8 +191,7 @@ export class DiodContainer<U = unknown> implements Container {
 			getMaybe: <T>(id: Identifier<T>) => toMaybe(getResult(id)),
 			get: <T>(id: Identifier<T>) => toMaybe(getResult(id)),
 			getByAliasResult,
-			getByAlias: <T = unknown>(alias: AliasKey) =>
-				toMaybe(getByAliasResult<T>(alias)),
+			getByAlias: <T = unknown>(alias: AliasKey) => toMaybe(getByAliasResult<T>(alias)),
 		}
 	}
 
@@ -233,11 +206,7 @@ export class DiodContainer<U = unknown> implements Container {
 		const meta = this.lookupService(resolved, isDependency)
 		if (!isOk(meta)) return meta
 
-		const cached = this.tryGetCachedInstance(
-			resolved,
-			meta.val.scope,
-			perRequestServices,
-		)
+		const cached = this.tryGetCachedInstance(resolved, meta.val.scope, perRequestServices)
 		if (cached !== undefined) return createOk(cached as T)
 
 		if (visiting.has(resolved)) {
@@ -262,12 +231,7 @@ export class DiodContainer<U = unknown> implements Container {
 		visiting.delete(resolved)
 
 		if (!isOk(created)) return created
-		this.cacheInstance(
-			resolved,
-			created.val,
-			meta.val.scope,
-			perRequestServices,
-		)
+		this.cacheInstance(resolved, created.val, meta.val.scope, perRequestServices)
 		return created
 	}
 
@@ -302,13 +266,7 @@ export class DiodContainer<U = unknown> implements Container {
 				case RegistrationType.Class: {
 					const deps: unknown[] = []
 					for (const dep of data.dependencies) {
-						const r = this.resolveServiceResult(
-							dep,
-							perRequestServices,
-							true,
-							visiting,
-							path,
-						)
+						const r = this.resolveServiceResult(dep, perRequestServices, true, visiting, path)
 						if (!isOk(r)) return r as Result<T, ResolveError>
 						deps.push(r.val)
 					}
@@ -316,12 +274,7 @@ export class DiodContainer<U = unknown> implements Container {
 				}
 				case RegistrationType.Factory: {
 					// Factory 内部解析视为依赖（isDependency=true）
-					const accDep = this.makeAccessors(
-						perRequestServices,
-						visiting,
-						path,
-						true,
-					)
+					const accDep = this.makeAccessors(perRequestServices, visiting, path, true)
 					const ctx = {
 						...accDep,
 						findTaggedServiceIdentifiers: <U = unknown>(tag: string) =>
@@ -388,8 +341,7 @@ export class DiodContainer<U = unknown> implements Container {
 			if (aliased) svc = this.services.get(aliased as unknown as Identifier<U>)
 		}
 		if (!svc) return createErr({ kind: 'NotRegistered', id: identifier })
-		if (!isDependency && svc.isPrivate)
-			return createErr({ kind: 'PrivateService', id: identifier })
+		if (!isDependency && svc.isPrivate) return createErr({ kind: 'PrivateService', id: identifier })
 		return createOk(svc as unknown as ServiceData<T>)
 	}
 }

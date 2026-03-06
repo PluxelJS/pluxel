@@ -49,7 +49,7 @@ interface PluginExtensionEntry {
 	watcher?: FSWatcher | null
 }
 
-const WATCHER_IGNORED_GLOBS = [
+const WATCHER_IGNORED_GLOBS: string[] = [
 	'**/node_modules/**',
 	'**/.git/**',
 	'**/.turbo/**',
@@ -62,7 +62,7 @@ const WATCHER_IGNORED_GLOBS = [
 	'**/*.swo',
 	'**/*.tmp',
 	'**/*~',
-] as const
+]
 
 const HASH_IGNORED_SEGMENTS = [
 	'node_modules',
@@ -162,12 +162,12 @@ export class ExtensionService {
 		if (!this.enabled) return null
 		const file = this.getModuleFilePath(pluginName, sourceHash)
 		if (existsSync(file)) {
-			const code = await readFile(file, 'utf-8').catch(() => null)
+			const code = await readFile(file, 'utf-8').catch((): null => null)
 			if (code && !looksLikeLegacyBrokenBundle(code)) {
 				return code
 			}
 			// 老编译器产物可能存在非法语法（例如解构里出现 `as`），这里主动触发重新编译并让前端刷新 manifest
-			await unlink(file).catch(() => undefined)
+			await unlink(file).catch((): undefined => undefined)
 		}
 
 		// 自愈：如果磁盘文件丢失，尝试重新编译，并在失败时清理掉陈旧清单
@@ -290,11 +290,12 @@ export class ExtensionService {
 		input: Omit<BuiltinDocExtensionDef<P>, 'kind' | 'pluginName' | 'point'> & { point?: P },
 	): () => void {
 		const { point, ...rest } = input
-		return this.registerBuiltin({
+		const def: Omit<BuiltinExtensionDef, 'pluginName'> = {
+			...(rest as unknown as Omit<BuiltinExtensionDef, 'pluginName'>),
 			kind: 'doc',
 			point: (point ?? ('plugin:tabs' as P)) as P,
-			...(rest as unknown as Record<string, unknown>),
-		})
+		}
+		return this.registerBuiltin(def)
 	}
 
 	invalidate(pluginName: string): void {
@@ -375,7 +376,7 @@ export class ExtensionService {
 			const moduleUrl = this.getModuleUrl(pluginName, sourceHash)
 
 			if (existsSync(targetFile)) {
-				const stats = await stat(targetFile).catch(() => null)
+				const stats = await stat(targetFile).catch((): null => null)
 				entry.lastCompiledAt = stats ? Math.floor(stats.mtimeMs) : Date.now()
 				entry.lastSourceHash = sourceHash
 				entry.modulePath = targetFile
@@ -408,7 +409,7 @@ export class ExtensionService {
 		const runningPlugins = new Set<string>()
 		for (const [id] of summary.container.services) {
 			try {
-				const info = getPluginInfo(id as unknown as (...args: never[]) => unknown)
+				const info = getPluginInfo(id as unknown as abstract new (...args: unknown[]) => unknown)
 				if (this.pendingPlugins.has(info.id)) {
 					runningPlugins.add(info.id)
 				}
@@ -444,7 +445,7 @@ export class ExtensionService {
 
 	private disposeWatcher(entry: PluginExtensionEntry): void {
 		if (entry.watcher) {
-			entry.watcher.close().catch(() => undefined)
+			entry.watcher.close().catch((): undefined => undefined)
 			entry.watcher = null
 		}
 	}
@@ -462,8 +463,7 @@ export class ExtensionService {
 			throw new Error('HMRService not available')
 		}
 
-		// @ts-expect-error accessing private
-		const vite = hmr.vite as import('vite').ViteDevServer
+		const vite = (hmr as unknown as { vite?: import('vite').ViteDevServer }).vite
 		if (!vite) {
 			throw new Error('ViteDevServer not initialized')
 		}
@@ -495,21 +495,21 @@ export class ExtensionService {
 	private async cleanupOldModuleFiles(pluginName: string, keep: number): Promise<void> {
 		if (keep <= 0) return
 		const dir = this.getPluginOutDir(pluginName)
-		const entries = await readdir(dir).catch(() => [])
+		const entries = await readdir(dir).catch((): string[] => [])
 		if (!entries.length) return
 
 		const modules: Array<{ path: string; mtime: number }> = []
 		for (const name of entries) {
 			if (!name.endsWith(MODULE_FILE_EXTENSION)) continue
 			const fullPath = join(dir, name)
-			const stats = await stat(fullPath).catch(() => null)
+			const stats = await stat(fullPath).catch((): null => null)
 			if (!stats?.isFile()) continue
 			modules.push({ path: fullPath, mtime: stats.mtimeMs })
 		}
 
 		modules.sort((a, b) => b.mtime - a.mtime)
 		for (const stale of modules.slice(keep)) {
-			await unlink(stale.path).catch(() => undefined)
+			await unlink(stale.path).catch((): undefined => undefined)
 		}
 	}
 
@@ -607,7 +607,7 @@ export class ExtensionService {
 		entry: PluginExtensionEntry | null,
 	): Promise<void> {
 		if (entry?.modulePath && existsSync(entry.modulePath)) {
-			await unlink(entry.modulePath).catch(() => undefined)
+			await unlink(entry.modulePath).catch((): undefined => undefined)
 		}
 		this.handleManifestUpdate(pluginName, null)
 	}
@@ -647,7 +647,7 @@ export class ExtensionService {
 				if (!existsSync(filePath)) {
 					continue
 				}
-				const stats = await stat(filePath).catch(() => null)
+				const stats = await stat(filePath).catch((): null => null)
 				restored.push({
 					pluginName: module.pluginName,
 					moduleUrl: module.moduleUrl,
@@ -717,7 +717,7 @@ export class ExtensionService {
 			if (!target) continue
 			if (visited.has(target)) continue
 			visited.add(target)
-			const stats = await stat(target).catch(() => null)
+			const stats = await stat(target).catch((): null => null)
 			if (!stats) continue
 			if (stats.isDirectory()) {
 				const entries = await readdir(target)
@@ -736,7 +736,7 @@ export class ExtensionService {
 					if (HASH_IGNORED_SEGMENTS.some((segment) => fullPath.includes(segment))) {
 						continue
 					}
-					const nestedStats = await stat(fullPath).catch(() => null)
+					const nestedStats = await stat(fullPath).catch((): null => null)
 					if (!nestedStats) continue
 					if (nestedStats.isDirectory()) {
 						queue.push(fullPath)
@@ -776,8 +776,8 @@ export class ExtensionService {
 
 	private async refreshWatchFiles(entry: PluginExtensionEntry): Promise<void> {
 		const hmr = this.ctx.root.hmrService
-		// @ts-expect-error accessing private
-		const vite = hmr?.vite as import('vite').ViteDevServer | undefined
+		const vite = (hmr as unknown as { vite?: import('vite').ViteDevServer } | null | undefined)
+			?.vite
 		if (!vite) return
 
 		const absoluteEntry = this.resolvePluginFile(entry.pluginDir, entry.entryPath)

@@ -3,7 +3,12 @@ import { IconSearch } from '@tabler/icons-react'
 import { MarkdownExit } from 'markdown-exit'
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode, RefObject } from 'react'
-import type { BuiltinDocBlock, BuiltinDocContent, BuiltinDocExtensionDef, BuiltinDocPart } from '../types'
+import type {
+	BuiltinDocBlock,
+	BuiltinDocContent,
+	BuiltinDocExtensionDef,
+	BuiltinDocPart,
+} from '../types'
 import { useExtensionContext } from '../types'
 import { FloatingToc } from '../../app/plugins/components/FloatingToc'
 import { findScrollableParent, toDomSlug } from '../../app/plugins/config/utils'
@@ -28,10 +33,10 @@ function extractInlineText(token: any): string {
 		.join('')
 }
 
-function compileDoc(input: {
-	content: BuiltinDocContent
-	docPrefix: string
-}): { items: CompiledItem[]; anchors: DocAnchor[] } {
+function compileDoc(input: { content: BuiltinDocContent; docPrefix: string }): {
+	items: CompiledItem[]
+	anchors: DocAnchor[]
+} {
 	const { content, docPrefix } = input
 	const engine = new MarkdownExit({ html: false, linkify: true })
 	const env: Record<string, unknown> = {}
@@ -110,18 +115,19 @@ const DocBody = memo(function DocBody({
 			}}
 		>
 			<TypographyStylesProvider>
-					{items.map((item) => {
-						if (item.kind === 'block')
-							return (
-								<Box key={item.key} my="sm">
-									<Box component="h2" id={item.id} style={{ scrollMarginTop: 72 }}>
-										{item.title}
-									</Box>
-									{renderBlock(item.title, item.block)}
+				{items.map((item) => {
+					if (item.kind === 'block')
+						return (
+							<Box key={item.key} my="sm">
+								<Box component="h2" id={item.id} style={{ scrollMarginTop: 72 }}>
+									{item.title}
 								</Box>
-							)
-						return <Box key={item.key} dangerouslySetInnerHTML={{ __html: item.html }} />
-					})}
+								{renderBlock(item.title, item.block)}
+							</Box>
+						)
+					// biome-ignore lint/security/noDangerouslySetInnerHtml: HTML comes from our markdown renderer for trusted builtin docs.
+					return <Box key={item.key} dangerouslySetInnerHTML={{ __html: item.html }} />
+				})}
 			</TypographyStylesProvider>
 		</Box>
 	)
@@ -145,7 +151,8 @@ export function BuiltinDoc({ def }: { def: BuiltinDocExtensionDef }) {
 	const pluginName = def.pluginName
 	const renderBlock = useCallback(
 		(title: string, block: BuiltinDocBlock) => {
-			if (block.kind === 'infoCard') return <BuiltinInfoCard pluginName={pluginName} block={block} />
+			if (block.kind === 'infoCard')
+				return <BuiltinInfoCard pluginName={pluginName} block={block} />
 			if (block.kind === 'rpcAutoForm')
 				return <BuiltinRpcAutoForm pluginName={pluginName} title={title} block={block} />
 			return null
@@ -162,13 +169,18 @@ export function BuiltinDoc({ def }: { def: BuiltinDocExtensionDef }) {
 	const hasToc = headingAnchors.length > 1
 
 	const hasHeader = Boolean(def.title || def.description)
-	if (compiled.items.length === 0 && !hasHeader) return null
+	const shouldRender = compiled.items.length > 0 || hasHeader
 
 	const buildTree = useCallback((list: DocAnchor[]) => {
 		const roots: Array<{ id: string; label: string; depth: number; children: any[] }> = []
 		const stack: Array<{ id: string; label: string; depth: number; children: any[] }> = []
 		for (const anchor of list) {
-			const node = { id: anchor.id, label: anchor.label, depth: anchor.depth, children: [] as any[] }
+			const node = {
+				id: anchor.id,
+				label: anchor.label,
+				depth: anchor.depth,
+				children: [] as any[],
+			}
 			while (stack.length && stack[stack.length - 1].depth >= node.depth) stack.pop()
 			if (stack.length) stack[stack.length - 1].children.push(node)
 			else roots.push(node)
@@ -185,7 +197,8 @@ export function BuiltinDoc({ def }: { def: BuiltinDocExtensionDef }) {
 				target.closest<HTMLElement>('[data-scroll-area-viewport]') ??
 				findScrollableParent(target)
 			if (!candidate) return null
-			if (candidate === document.scrollingElement || candidate === document.documentElement) return null
+			if (candidate === document.scrollingElement || candidate === document.documentElement)
+				return null
 			return candidate
 		},
 		[scrollHost],
@@ -228,7 +241,9 @@ export function BuiltinDoc({ def }: { def: BuiltinDocExtensionDef }) {
 			return
 		}
 
-		const firstAnchorEl = headingAnchors[0]?.id ? document.getElementById(headingAnchors[0].id) : null
+		const firstAnchorEl = headingAnchors[0]?.id
+			? document.getElementById(headingAnchors[0].id)
+			: null
 		const base = firstAnchorEl ?? root
 		const host =
 			base.closest<HTMLElement>('[data-scroll-area-viewport]') ?? findScrollableParent(base)
@@ -242,7 +257,9 @@ export function BuiltinDoc({ def }: { def: BuiltinDocExtensionDef }) {
 		const fallbackHost = findScrollableParent(root)
 		const host =
 			scrollHost ??
-			(fallbackHost === document.scrollingElement || fallbackHost === document.documentElement ? null : fallbackHost)
+			(fallbackHost === document.scrollingElement || fallbackHost === document.documentElement
+				? null
+				: fallbackHost)
 		const primary = host ?? window
 
 		let frame = 0
@@ -279,7 +296,10 @@ export function BuiltinDoc({ def }: { def: BuiltinDocExtensionDef }) {
 		const activeBox = active.getBoundingClientRect()
 		const viewportBox = viewport.getBoundingClientRect()
 		const padding = 16
-		if (activeBox.top < viewportBox.top + padding || activeBox.bottom > viewportBox.bottom - padding) {
+		if (
+			activeBox.top < viewportBox.top + padding ||
+			activeBox.bottom > viewportBox.bottom - padding
+		) {
 			active.scrollIntoView({ block: 'center' })
 		}
 	}, [tocExpanded, activeId, query])
@@ -289,7 +309,8 @@ export function BuiltinDoc({ def }: { def: BuiltinDocExtensionDef }) {
 			if (!id) return
 			const target = document.getElementById(id)
 			if (!target) return
-			const scrollMarginTop = Number.parseFloat(getComputedStyle(target).scrollMarginTop || '0') || 0
+			const scrollMarginTop =
+				Number.parseFloat(getComputedStyle(target).scrollMarginTop || '0') || 0
 			const container = resolveScrollContainer(target)
 			if (container) {
 				const targetBox = target.getBoundingClientRect()
@@ -324,12 +345,14 @@ export function BuiltinDoc({ def }: { def: BuiltinDocExtensionDef }) {
 		return {
 			items: tocItems
 				.map((node) => filterNode(node))
-				.filter(
-					(node): node is { id: string; label: string; depth: number; children: any[] } => Boolean(node),
+				.filter((node): node is { id: string; label: string; depth: number; children: any[] } =>
+					Boolean(node),
 				),
 			matchCount,
 		}
 	}, [headingAnchors.length, normalizedQuery, tocItems])
+
+	if (!shouldRender) return null
 
 	return (
 		<Box>
@@ -360,7 +383,9 @@ export function BuiltinDoc({ def }: { def: BuiltinDocExtensionDef }) {
 					hint="悬停展开，搜索或点击跳转到对应章节。"
 					meta={
 						<Badge size="xs" variant="light" color="blue">
-							{normalizedQuery ? `${filtered.matchCount}/${headingAnchors.length}` : headingAnchors.length}
+							{normalizedQuery
+								? `${filtered.matchCount}/${headingAnchors.length}`
+								: headingAnchors.length}
 						</Badge>
 					}
 					controls={
@@ -380,7 +405,10 @@ export function BuiltinDoc({ def }: { def: BuiltinDocExtensionDef }) {
 					{(normalizedQuery ? filtered.items : tocItems).length ? (
 						<Stack gap="xs">
 							{(normalizedQuery ? filtered.items : tocItems).map((node) => {
-								const renderNode = (item: { id: string; label: string; children: any[] }, depth = 0) => {
+								const renderNode = (
+									item: { id: string; label: string; children: any[] },
+									depth = 0,
+								) => {
 									const isActive = item.id === activeId
 									return (
 										<Box
@@ -408,7 +436,9 @@ export function BuiltinDoc({ def }: { def: BuiltinDocExtensionDef }) {
 														? 'var(--mantine-color-blue-outline)'
 														: 'var(--mantine-color-default-border)'
 												}`,
-												backgroundColor: isActive ? 'var(--mantine-color-blue-light)' : 'transparent',
+												backgroundColor: isActive
+													? 'var(--mantine-color-blue-light)'
+													: 'transparent',
 												boxShadow: isActive
 													? 'inset 3px 0 0 var(--mantine-color-blue-filled), var(--mantine-shadow-sm)'
 													: 'none',
@@ -435,7 +465,9 @@ export function BuiltinDoc({ def }: { def: BuiltinDocExtensionDef }) {
 															? 'var(--mantine-color-blue-filled)'
 															: 'var(--mantine-color-gray-5)',
 														flexShrink: 0,
-														boxShadow: isActive ? '0 0 0 3px var(--mantine-color-blue-light)' : 'none',
+														boxShadow: isActive
+															? '0 0 0 3px var(--mantine-color-blue-light)'
+															: 'none',
 													}}
 												/>
 												<Text
