@@ -135,7 +135,7 @@ describe('HMR UI smoke', () => {
 				workspaceSnapshot: snapshot,
 			})
 
-			const res = await host.ctx.honoService.fetch(
+			const res = await host.ctx.http.fetch(
 				new Request('http://local/__pluxel/hmr/graphql', {
 					method: 'POST',
 					headers: { 'content-type': 'application/json' },

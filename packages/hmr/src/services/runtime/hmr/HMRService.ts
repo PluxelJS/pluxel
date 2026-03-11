@@ -525,7 +525,7 @@ export class HMRService {
 			deps: this.deps,
 			extraPlugins: this.config.vitePlugins,
 			runnerPlugin: this.plugin,
-			honoPlugin: this.ctx.honoService.viteHonoDevServer,
+			honoPlugin: this.ctx.http.vitePlugin,
 			optimizeDepsEnabled: this.config.optimizeDeps === true,
 			ssrOptimizeDepsEnabled: this.config.ssrOptimizeDeps === true,
 			cacheDir: this.config.viteCacheDir,

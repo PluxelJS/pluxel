@@ -42,9 +42,6 @@ export class InternalApiValidationService {
 
 	constructor(public ctx: Context) {
 		this.logger = ctx.logger!
-
-		// Default builtin validator (always-on): block clearly unsafe cross-site browser requests.
-		// This protects internal APIs from accidental exposure when plugins mount public routes.
 		this.validators.add({
 			pluginName: 'hmr:internalApiValidation',
 			removeFromScope: () => {},

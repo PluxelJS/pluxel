@@ -5,10 +5,8 @@ export * from '../logger/sink'
 export type { ConfigShape } from './ConfigService'
 export { ConfigService as HmrConfigService } from './ConfigService'
 export * from './debug'
-export * from './hono/AuthGuardService'
-export * from './hono/env'
-export * from './hono/InternalApiValidationService'
-export * from './hono/InternalGraphQLService'
+export * from './http'
+export * from './routing/pluginGatedRoutes'
 export * from './PluginDataService'
 // Plugin extensibility surface (types only)
 export type { UI } from './plugin-interaction'
@@ -22,7 +20,5 @@ export * from './runtime-compile'
 
 // Ensure consumers of `@pluxel/hmr/services` see HMR-specific `Context.Config` keys.
 import '../context-augment'
-// Ensure HonoService is registered and its module augmentations are in the program.
-import './hono/index'
 // Ensure module augmentations are part of the program when importing `@pluxel/hmr/services`.
 import '../events'

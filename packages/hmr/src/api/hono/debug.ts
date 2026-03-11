@@ -2,7 +2,7 @@ import { HMR_INTERNAL_API_BASE } from '@pluxel/hmr-web'
 import { Hono } from 'hono'
 import { html, raw } from 'hono/html'
 
-import type { AppEnv } from './env'
+import type { AppEnv } from '../../services/http/hono-env'
 import { PluginHandle } from './rpc'
 
 const DEBUG_BASE = `${HMR_INTERNAL_API_BASE}/debug`

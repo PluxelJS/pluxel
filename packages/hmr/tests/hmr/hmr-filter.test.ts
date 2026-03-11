@@ -44,8 +44,8 @@ const createCtx = () => {
 			commit: async () => ({}),
 			container: { services: new Map() },
 		},
-		honoService: {
-			viteHonoDevServer: { name: 'noop', apply: 'serve', configureServer: () => undefined },
+		http: {
+			vitePlugin: { name: 'noop', apply: 'serve', configureServer: () => undefined },
 		},
 	} as unknown as Context
 }

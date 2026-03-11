@@ -1,7 +1,7 @@
 import type { Context } from '@pluxel/core'
 import { createResponse, type Session } from 'better-sse'
 
-import type { AppEnv } from '../hono/env'
+import type { AppEnv } from '../http/hono-env'
 
 export interface SseEventPayload {
 	event?: string

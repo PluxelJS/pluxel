@@ -6,7 +6,6 @@ import {
 	Plugin,
 } from '@pluxel/core'
 import { f, v } from '../config'
-import type { HonoWithAppEnvType } from '../services/hono/env'
 import {
 	b64url,
 	b64urlDecode,
@@ -113,9 +112,10 @@ export class BasicAuthBuiltinPlugin extends BasePlugin {
 			)
 		}
 
-		// Must be sync: guard redirects to /auth; avoid a race with async/microtask rebuild.
-		this.ctx.honoService.modifyAppNow((app: HonoWithAppEnvType) => {
-			app.get('/auth', (c) => {
+		// Mount into a stable slot so route updates can be remounted independently from the root app.
+		const authApp = this.ctx.http.hono.app()
+		authApp
+			.get('/', (c) => {
 				const html = `<!doctype html>
 	<html lang="zh">
 	  <head>
@@ -155,7 +155,7 @@ export class BasicAuthBuiltinPlugin extends BasePlugin {
 				return c.html(html, 200, { 'Cache-Control': 'no-store' })
 			})
 
-			app.post('/auth/login', async (c) => {
+			.post('/login', async (c) => {
 				const isSecure = isSecureRequest(c.req.url, c.req.raw.headers)
 
 				let username = ''
@@ -189,7 +189,7 @@ export class BasicAuthBuiltinPlugin extends BasePlugin {
 				return new Response(null, { status: 302, headers })
 			})
 
-			app.post('/auth/logout', (c) => {
+			.post('/logout', (c) => {
 				const isSecure = isSecureRequest(c.req.url, c.req.raw.headers)
 
 				const headers = new Headers({
@@ -202,6 +202,10 @@ export class BasicAuthBuiltinPlugin extends BasePlugin {
 				headers.set('location', '/')
 				return new Response(null, { status: 302, headers })
 			})
+		this.ctx.http.mountBoundary({
+			id: `${pluginId}:auth`,
+			base: '/auth',
+			boundary: authApp,
 		})
 
 		this.ctx.authGuard.register({

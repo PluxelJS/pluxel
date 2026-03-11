@@ -4,25 +4,29 @@
 	"description": "Demo example that imports a local package",
 	"main": "./dist/index.cjs",
 	"module": "./dist/index.mjs",
-	"types": "./dist/index.d.cts",
+	"types": "./dist/index.d.mts",
 	"type": "module",
 	"exports": {
 		".": {
+			"types": "./dist/index.d.mts",
 			"@pluxel/source": "./src/index.ts",
 			"import": "./dist/index.mjs",
 			"require": "./dist/index.cjs"
 		},
 		"./env": {
+			"types": "./dist/env.d.mts",
 			"@pluxel/source": "./src/env.ts",
 			"import": "./dist/env.mjs",
 			"require": "./dist/env.cjs"
 		},
 		"./logger": {
+			"types": "./dist/logger.d.mts",
 			"@pluxel/source": "./src/logger/index.ts",
 			"import": "./dist/logger.mjs",
 			"require": "./dist/logger.cjs"
 		},
 		"./services": {
+			"types": "./dist/services.d.mts",
 			"@pluxel/source": "./src/services/index.ts",
 			"import": "./dist/services.mjs",
 			"require": "./dist/services.cjs"
@@ -64,18 +68,22 @@
 	"publishConfig": {
 		"exports": {
 			".": {
+				"types": "./dist/index.d.mts",
 				"import": "./dist/index.mjs",
 				"require": "./dist/index.cjs"
 			},
 			"./env": {
+				"types": "./dist/env.d.mts",
 				"import": "./dist/env.mjs",
 				"require": "./dist/env.cjs"
 			},
 			"./logger": {
+				"types": "./dist/logger.d.mts",
 				"import": "./dist/logger.mjs",
 				"require": "./dist/logger.cjs"
 			},
 			"./services": {
+				"types": "./dist/services.d.mts",
 				"import": "./dist/services.mjs",
 				"require": "./dist/services.cjs"
 			},

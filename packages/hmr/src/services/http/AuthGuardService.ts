@@ -22,13 +22,7 @@ export interface AuthGuardContext {
 }
 
 export interface AuthGuardRegistration {
-	/**
-	 * 未登录/未通过验证时的跳转路径（例如 /login）。
-	 * - UI 请求会 302
-	 * - API/GraphQL 会返回 401 + redirectPath 供客户端处理
-	 */
 	redirectPath: string
-	/** 同步或异步鉴权：true 放行，false 拒绝 */
 	authorize: (ctx: AuthGuardContext) => Promise<boolean> | boolean
 }
 
@@ -107,7 +101,6 @@ export class AuthGuardService {
 		return this.guard?.redirectPath
 	}
 
-	/** 统一入口：插件抛错视为拒绝（更安全）。 */
 	async check(input: AuthGuardContext): Promise<AuthGuardResult> {
 		const active = this.guard
 		if (!active) return { allow: true }

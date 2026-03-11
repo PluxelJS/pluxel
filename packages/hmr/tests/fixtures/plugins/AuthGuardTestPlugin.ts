@@ -1,5 +1,4 @@
 import { BasePlugin, Plugin } from '@pluxel/hmr'
-import type { HonoWithAppEnvType } from '../../src/services/hono/env'
 
 const COOKIE_NAME = 'pluxel-auth'
 
@@ -19,8 +18,9 @@ export class AuthGuardTestPlugin extends BasePlugin {
 			authorize: ({ headers }) => hasAuthCookie(headers.get('cookie')),
 		})
 
-		this.ctx.honoService.modifyApp((app: HonoWithAppEnvType) => {
-			app.get('/auth', (c) => {
+		const authApp = this.ctx.http.hono.app()
+		authApp
+			.get('/', (c) => {
 				return c.html(`<!DOCTYPE html>
 <html lang="en">
   <head>
@@ -41,13 +41,17 @@ export class AuthGuardTestPlugin extends BasePlugin {
 </html>`)
 			})
 
-			app.post('/auth/verify', (c) => {
+			.post('/verify', (c) => {
 				return c.text('verified', 200, {
 					// Stateless "verification": just drop a cookie that authorize() checks.
 					'Set-Cookie': `${COOKIE_NAME}=1; Path=/; SameSite=Lax`,
 					'Cache-Control': 'no-store',
 				})
 			})
+		this.ctx.http.mountBoundary({
+			id: 'AuthGuardTest:auth',
+			base: '/auth',
+			boundary: authApp,
 		})
 	}
 }

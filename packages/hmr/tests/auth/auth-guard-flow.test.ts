@@ -1,6 +1,6 @@
 import '@pluxel/test/setup'
 
-// Ensure @pluxel/hmr services (HonoService/AuthGuardService/ExtService) are registered.
+// Ensure @pluxel/hmr services (http/AuthGuardService/ExtService) are registered.
 import '../../src/services'
 
 import { createHost, type Host } from '@pluxel/test'
@@ -16,7 +16,7 @@ function pickCookie(setCookie: string | null): string {
 	return setCookie.split(';')[0]!.trim()
 }
 
-describe('AuthGuard end-to-end (HonoService)', () => {
+describe('AuthGuard end-to-end (http)', () => {
 	let host: Host | null = null
 
 	afterEach(async () => {
@@ -29,12 +29,12 @@ describe('AuthGuard end-to-end (HonoService)', () => {
 		host = createHost()
 
 		// Force service construction.
-		void host.ctx.honoService
+		void host.ctx.http
 		void host.ctx.authGuard
 
 		// Baseline: no guard -> internal API is accessible without cookie.
 		{
-			const res = await host.ctx.honoService.fetch(req('http://local/__pluxel/hmr'))
+			const res = await host.ctx.http.fetch(req('http://local/__pluxel/hmr'))
 			expect(res.status).toBe(200)
 			expect(await res.text()).toContain('Pluxel HMR RPC ready')
 		}
@@ -48,7 +48,7 @@ describe('AuthGuard end-to-end (HonoService)', () => {
 
 		// internal API is blocked without cookie (marker header + redirectPath).
 		{
-			const res = await host.ctx.honoService.fetch(
+			const res = await host.ctx.http.fetch(
 				req('http://local/__pluxel/hmr', {
 					headers: { accept: 'application/json' },
 				}),
@@ -64,7 +64,7 @@ describe('AuthGuard end-to-end (HonoService)', () => {
 
 		// HTML navigation is redirected to /auth.
 		{
-			const res = await host.ctx.honoService.fetch(
+			const res = await host.ctx.http.fetch(
 				req('http://local/', {
 					headers: {
 						accept: 'text/html',
@@ -79,7 +79,7 @@ describe('AuthGuard end-to-end (HonoService)', () => {
 
 		// /auth page exists (plugin route, not guarded).
 		{
-			const res = await host.ctx.honoService.fetch(
+			const res = await host.ctx.http.fetch(
 				req('http://local/auth', { headers: { accept: 'text/html' } }),
 			)
 			expect(res.status).toBe(200)
@@ -88,7 +88,7 @@ describe('AuthGuard end-to-end (HonoService)', () => {
 
 		// "Click verify": POST /auth/verify gives a cookie that allows internal API.
 		const cookie = await (async () => {
-			const res = await host!.ctx.honoService.fetch(
+			const res = await host!.ctx.http.fetch(
 				req('http://local/auth/verify', { method: 'POST' }),
 			)
 			expect(res.status).toBe(200)
@@ -96,7 +96,7 @@ describe('AuthGuard end-to-end (HonoService)', () => {
 		})()
 
 		{
-			const res = await host.ctx.honoService.fetch(
+			const res = await host.ctx.http.fetch(
 				req('http://local/__pluxel/hmr', {
 					headers: { cookie },
 				}),
@@ -111,7 +111,7 @@ describe('AuthGuard end-to-end (HonoService)', () => {
 		expect(host.ctx.authGuard.isActive()).toBe(false)
 
 		{
-			const res = await host.ctx.honoService.fetch(req('http://local/__pluxel/hmr'))
+			const res = await host.ctx.http.fetch(req('http://local/__pluxel/hmr'))
 			expect(res.status).toBe(200)
 		}
 	})

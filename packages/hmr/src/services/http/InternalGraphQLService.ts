@@ -24,11 +24,6 @@ declare module '@pluxel/core' {
 type ServerCtx = Record<string, never>
 
 export type InternalGraphQLConfig = {
-	/**
-	 * Generate GQty client into the workspace (high churn, writes files).
-	 *
-	 * NOTE: Only effective in SOURCE_ONLY builds.
-	 */
 	codegen?: boolean
 }
 
@@ -77,7 +72,6 @@ export class InternalGraphQLService {
 		// NOTE: SOURCE_ONLY preprocessor blocks are stripped by tsdown for non-source builds.
 		// Do NOT remove them or rewrite this into runtime conditions.
 		// #if SOURCE_ONLY
-		// Codegen is intentionally opt-in: it writes files into the workspace and is high-churn.
 		if (this.config?.codegen === true && process.env.NODE_ENV !== 'production') {
 			void this.codegenNow()
 		}

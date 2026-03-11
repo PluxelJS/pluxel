@@ -21,11 +21,12 @@ export class PluginA extends BasePlugin {
 		const pluginC = this.ctx.registry.getInstance(PluginC)
 		this.ctx.logger.info('PluginA optional dep', { pluginC: Boolean(pluginC) })
 
-		// this.ctx.honoService.mountStatic('/bbb', { root: 'public/assets', index: 'test.txt' })
-		this.ctx.honoService.modifyApp((app) => {
-			app.get('/a', (c) => {
-				return c.html('text')
-			})
+		const app = this.ctx.http.hono.app()
+		app.get('/', (c) => c.html('text'))
+		this.ctx.http.mountBoundary({
+			id: 'PluginA:page',
+			base: '/a',
+			boundary: app,
 		})
 	}
 	doSomething(): void {
