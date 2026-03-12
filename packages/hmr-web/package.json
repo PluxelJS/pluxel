@@ -28,14 +28,15 @@
 		"build": "tsdown"
 	},
 	"dependencies": {
-		"capnweb": "^0.5.0",
-		"hono": "^4.12.2"
+		"@elysiajs/eden": "^1.4.1",
+		"capnweb": "^0.5.0"
 	},
 	"peerDependencies": {
 		"react": "^19.2.4"
 	},
 	"devDependencies": {
 		"@types/react": "^19.2.14",
+		"elysia": "^1.4.27",
 		"tsdown": "^0.20.3"
 	},
 	"publishConfig": {

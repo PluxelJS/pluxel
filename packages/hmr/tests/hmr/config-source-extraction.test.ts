@@ -9,8 +9,8 @@ import {
 	type HMRDependencyConfig,
 	resolveFsAllowList,
 	resolveHMRDependencyConfig,
-} from '../../src/services/runtime/hmr/config'
-import { HMRService } from '../../src/services/runtime/hmr/HMRService'
+} from '@pluxel/hmr/services/runtime/hmr/config'
+import { HMRService } from '@pluxel/hmr/services/runtime/hmr/HMRService'
 
 const baseDeps: HMRDependencyConfig = {
 	bridgeModules: [],
@@ -94,7 +94,7 @@ async function executePluginEntryAndCapture(
 			fsAllow,
 			deps,
 			runnerPlugin,
-			honoPlugin: { name: 'noop' },
+			httpPlugin: { name: 'noop' },
 			port: 0,
 		}),
 		server: { middlewareMode: true, fs: { allow: fsAllow }, hmr: false, ws: false },

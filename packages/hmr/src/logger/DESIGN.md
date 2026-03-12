@@ -7,7 +7,7 @@
 - 协议：`packages/hmr/src/logger/protocol.ts`
 - Sink：`packages/hmr/src/logger/sink.ts`
 - Store：`packages/hmr/src/logger/store.ts`
-- HTTP/SSE：`packages/hmr/src/api/hono/logs.ts`
+- HTTP/SSE：`packages/hmr/src/api/http/logs.ts`
 - 前端参考：`packages/components/src/app/log_viewer/LiveLog.tsx`
 
 ---

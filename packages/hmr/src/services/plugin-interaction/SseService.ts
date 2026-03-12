@@ -1,7 +1,10 @@
 import type { Context } from '@pluxel/core'
 import { createResponse, type Session } from 'better-sse'
+import type { InferContext } from 'elysia'
 
-import type { AppEnv } from '../http/hono-env'
+import { createElysiaApp } from '../http/elysia'
+
+type SseHttpContext = InferContext<ReturnType<typeof createElysiaApp>>
 
 export interface SseEventPayload {
 	event?: string
@@ -26,8 +29,10 @@ export interface SseChannel {
 	namespace: string
 	/** 请求对应的 URLSearchParams，便于按需过滤 */
 	query: URLSearchParams
-	/** Hono 请求上下文 */
-	hono: import('hono').Context<AppEnv>
+	/** Elysia 请求上下文 */
+	elysia: SseHttpContext
+	/** Framework-agnostic alias for the current request context. */
+	http: SseHttpContext
 	/** 插件上下文（动态回灌） */
 	ctx: Context
 	/** 主动推送事件；默认 event=namespace，data 自动 JSON 化 */
@@ -53,7 +58,7 @@ type SessionState = {
 	requested: Set<string>
 	handlers: Map<string, () => void | Promise<void>>
 	query?: URLSearchParams
-	honoCtx?: import('hono').Context<AppEnv>
+	httpCtx?: SseHttpContext
 }
 
 export class SseService {
@@ -90,8 +95,8 @@ export class SseService {
 		return () => guard.dispose()
 	}
 
-	stream(c: import('hono').Context<AppEnv>, namespaces?: string[]) {
-		const params = new URL(c.req.url).searchParams
+	stream(c: SseHttpContext, namespaces?: string[]): unknown {
+		const params = new URL(c.request.url).searchParams
 		const requestedRaw = this.normalizeNamespaces(namespaces ?? this.parseNamespaces(params))
 		const available: string[] = []
 		const missing: string[] = []
@@ -101,15 +106,15 @@ export class SseService {
 		}
 
 		if (available.length === 0 && missing.length === 0) {
-			return c.text('No SSE extensions registered', 404)
+			return c.status(404, 'No SSE extensions registered')
 		}
 
 		if (missing.length) {
-			c.var.plugin_ctx.logger.warn('namespaces missing, fallback', { missing })
+			c.pluginCtx.logger.warn('namespaces missing, fallback', { missing })
 		}
 
 		return createResponse<SessionState>(
-			c.req.raw,
+			c.request,
 			{
 				keepAlive: SseService.KEEPALIVE_MS,
 				retry: SseService.RETRY_MS,
@@ -133,7 +138,7 @@ export class SseService {
 
 	private attachSession(
 		session: Session<SessionState>,
-		honoCtx: import('hono').Context<AppEnv>,
+		httpCtx: SseHttpContext,
 		query: URLSearchParams,
 		available: string[],
 		missing: string[],
@@ -142,7 +147,7 @@ export class SseService {
 		const clean = () => this.cleanupSession(session)
 		session.once('disconnected', clean)
 
-		session.state.honoCtx = honoCtx
+		session.state.httpCtx = httpCtx
 		session.state.query = query
 
 		for (const ns of available) {
@@ -157,12 +162,13 @@ export class SseService {
 
 	private createChannelBase(
 		session: Session<SessionState>,
-		honoCtx: import('hono').Context<AppEnv>,
+		httpCtx: SseHttpContext,
 		query: URLSearchParams,
 	): Omit<SseChannel, 'namespace' | 'send' | 'emit'> {
 		return {
 			query,
-			hono: honoCtx,
+			elysia: httpCtx,
+			http: httpCtx,
 			ctx: this.ctx,
 			get closed() {
 				return !session.isConnected
@@ -188,15 +194,15 @@ export class SseService {
 
 		this.unmarkPending(namespace, session)
 
-		const honoCtx = state.honoCtx
-		if (!honoCtx) {
-			this.ctx.logger.warn('missing Hono context for session, skip attach')
+		const httpCtx = state.httpCtx
+		if (!httpCtx) {
+			this.ctx.logger.warn('missing HTTP context for session, skip attach')
 			return
 		}
 
 		const base = this.createChannelBase(
 			session,
-			honoCtx,
+			httpCtx,
 			state.query ?? new URL(session.getRequest().url).searchParams,
 		)
 		const channel = this.createChannel(namespace, session, base)

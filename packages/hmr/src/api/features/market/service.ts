@@ -25,7 +25,7 @@ import type {
 	PackageMutationInput,
 	PackageMutationOptions,
 	PackageMutationResult,
-} from '../../hono/rpc/types'
+} from '../../http/rpc/types'
 
 type IssueOutput = InferOutput<typeof PackageLoadIssueEntry>
 type SpecInputValue = InferInput<typeof PackageSpecifierInputSchema>

@@ -13,7 +13,11 @@ import type {
 	ExtensionPoint,
 	PluginExtensionConfig,
 } from '@pluxel/hmr-web'
-import { extensionVendorPackages, HMR_INTERNAL_API_BASE } from '@pluxel/hmr-web'
+import {
+	extensionVendorPackages,
+	HMR_INTERNAL_API_BASE,
+	hmrExtensionModulePath,
+} from '@pluxel/hmr-web'
 import chokidar, { type FSWatcher } from 'chokidar'
 import { dirname, isAbsolute, join, relative, resolve } from 'pathe'
 import type { ResolveOptions } from 'vite'
@@ -89,7 +93,6 @@ const HASH_ALLOWED_EXTENSIONS = [
 ] as const
 const MODULE_FILE_EXTENSION = '.mjs'
 const MODULE_RETENTION_COUNT = 2
-const MODULE_ENDPOINT_PREFIX = `${HMR_INTERNAL_API_BASE}/extensions/modules`
 const MANIFEST_FILENAME = 'manifest.json'
 
 // Bump this when the bundling/rewriting logic changes, so clients don't reuse stale cached modules.
@@ -621,8 +624,10 @@ export class ExtensionService {
 	}
 
 	private getModuleUrl(pluginName: string, sourceHash: string): string {
-		const encodedName = encodeURIComponent(pluginName)
-		return `${MODULE_ENDPOINT_PREFIX}/${encodedName}/${sourceHash}${MODULE_FILE_EXTENSION}`
+		return `${HMR_INTERNAL_API_BASE}${hmrExtensionModulePath(
+			pluginName,
+			`${sourceHash}${MODULE_FILE_EXTENSION}`,
+		)}`
 	}
 
 	private async restorePersistedManifest(): Promise<void> {

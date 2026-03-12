@@ -43,5 +43,10 @@ function buildStaticHtml() {
 
 export function createStaticRenderer(): RenderHandler {
 	const staticHtml = buildStaticHtml()
-	return (ctx) => ctx.html(staticHtml)
+	return () =>
+		new Response(staticHtml, {
+			headers: {
+				'content-type': 'text/html; charset=utf-8',
+			},
+		})
 }

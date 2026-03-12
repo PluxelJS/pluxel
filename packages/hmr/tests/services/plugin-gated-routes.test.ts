@@ -1,15 +1,14 @@
 import '@pluxel/test/setup'
 
 import { describe, expect, it, vi } from 'vitest'
-import { Hono } from 'hono'
 
 import type { Context } from '@pluxel/core'
-import type { AppEnv } from '../../src/services/http/hono-env'
+import { createElysiaApp } from '@pluxel/hmr/services/http/elysia'
 import {
 	createPluginGatedRouter,
-	type PluginGatedRoute,
-} from '../../src/services/http/hono-routing'
-import { getPluginRoutingSnapshot } from '../../src/services/routing/pluginGatedRoutes'
+	type PluginGatedModuleDef,
+} from '@pluxel/hmr/services/http/elysia-routing'
+import { getPluginRoutingSnapshot } from '@pluxel/hmr/services/routing/pluginGatedRoutes'
 
 function createCtx(enabled: Set<string>): Context {
 	const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn() }
@@ -21,20 +20,16 @@ function createCtx(enabled: Set<string>): Context {
 	} as any
 }
 
-const routes: PluginGatedRoute[] = [
+const routes: PluginGatedModuleDef[] = [
 	{
 		id: 'a.hello',
 		plugin: 'PluginA',
-		method: 'GET',
-		path: '/hello',
-		handler: (_ctx) => (c) => c.json({ ok: true, plugin: 'A' }),
+		build: (app) => app.get('/hello', () => ({ ok: true, plugin: 'A' })),
 	},
 	{
 		id: 'b.ok',
 		plugin: 'PluginB',
-		method: 'GET',
-		path: '/ok',
-		handler: (_ctx) => (c) => c.text('ok'),
+		build: (app) => app.get('/ok', () => 'ok'),
 	},
 ]
 
@@ -42,8 +37,8 @@ describe('plugin gated routes', () => {
 	it('returns 404 when plugin is disabled', async () => {
 		const ctx = createCtx(new Set(['PluginA']))
 		const api = createPluginGatedRouter(ctx, routes)
-		const app = new Hono<AppEnv>()
-		app.route('/api', api)
+		const app = createElysiaApp(ctx, { aot: true })
+		app.mount('/api', api)
 
 		const res = await app.fetch(new Request('http://test/api/ok'))
 		expect(res.status).toBe(404)
@@ -52,8 +47,8 @@ describe('plugin gated routes', () => {
 	it('handles request when plugin is enabled', async () => {
 		const ctx = createCtx(new Set(['PluginB']))
 		const api = createPluginGatedRouter(ctx, routes)
-		const app = new Hono<AppEnv>()
-		app.route('/api', api)
+		const app = createElysiaApp(ctx, { aot: true })
+		app.mount('/api', api)
 
 		const res = await app.fetch(new Request('http://test/api/ok'))
 		expect(res.status).toBe(200)

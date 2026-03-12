@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { createUiRpcView } from '../../../hmr-web/src/rpc'
+import { createUiRpcView } from '@pluxel/hmr-web/rpc'
 
 describe('hmr-web createUiRpcView', () => {
 	it('caches namespace and method wrappers', async () => {

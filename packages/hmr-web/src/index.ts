@@ -1,13 +1,23 @@
 export {
 	type AuthAwareFetchOptions,
 	type AuthBlockedInfo,
+	type HmrFetch,
 	createAuthAwareFetch,
 	defaultOnAuthBlocked,
 	type OnAuthBlocked,
 } from './auth'
 
 export {
+	createHmrFetch,
+	createHmrTransport,
 	createHmrWebClient,
+	expectData,
+	type HmrAuthMeta,
+	type HmrHttpApi,
+	type HmrInternalMeta,
+	type HmrLogRangeQuery,
+	type HmrStreamIndex,
+	type HmrTransportLinks,
 	type HmrWebClient,
 	type HmrWebClientOptions,
 } from './client'
@@ -24,7 +34,22 @@ export type {
 	RuntimeLogError,
 	RuntimeLogLine,
 } from './logs'
-export { HMR_INTERNAL_API_BASE, joinPath } from './paths'
+export {
+	HMR_EXTENSIONS_BASE,
+	HMR_EXTENSIONS_EVENTS_PATH,
+	HMR_EXTENSIONS_MANIFEST_PATH,
+	HMR_EXTENSIONS_MODULES_BASE,
+	HMR_INTERNAL_API_BASE,
+	HMR_LOG_STREAMS_BASE,
+	HMR_META_AUTH_PATH,
+	HMR_META_BASE,
+	HMR_META_INFO_PATH,
+	HMR_META_SSE_PATH,
+	HMR_TRANSPORT_PATHS,
+	hmrExtensionModulePath,
+	hmrLogStreamPath,
+	joinPath,
+} from './paths'
 // Plugin UI authoring + shared helpers
 export * from './plugin-ui'
 export * from './protocol'

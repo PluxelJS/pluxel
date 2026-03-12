@@ -2,15 +2,6 @@ import type { Context } from '@pluxel/core'
 
 export type PluginId = string
 export type RouteId = string
-export type HttpMethod =
-	| 'GET'
-	| 'POST'
-	| 'PUT'
-	| 'PATCH'
-	| 'DELETE'
-	| 'OPTIONS'
-	| 'HEAD'
-	| 'ALL'
 
 export interface PluginGatedRouteMeta {
 	/**
@@ -21,20 +12,9 @@ export interface PluginGatedRouteMeta {
 	auth?: 'public' | 'authenticated' | 'admin' | { permissions: readonly string[] }
 }
 
-export type RouteHandlerFactory<H> = (ctx: Context) => H
-
-/**
- * Router-agnostic route definition.
- *
- * Adapter layers (Hono / Fastify / Express / etc.) decide how to mount `handler`.
- */
-export interface PluginGatedRouteDef<H> {
+export interface PluginGatedDef {
 	id: RouteId
 	plugin: PluginId
-	method: HttpMethod
-	/** Path relative to the mount base (e.g. `/users/:id`). */
-	path: string
-	handler: RouteHandlerFactory<H>
 	meta?: PluginGatedRouteMeta
 }
 
@@ -66,9 +46,9 @@ export function resolveIsPluginEnabled(options: PluginGatedOptions | undefined):
 	return options?.isPluginEnabled ?? defaultIsPluginEnabled
 }
 
-export function getPluginRoutingSnapshot<H>(
+export function getPluginRoutingSnapshot<T extends PluginGatedDef>(
 	ctx: Context,
-	routes: readonly PluginGatedRouteDef<H>[],
+	routes: readonly T[],
 	options: PluginGatedOptions = {},
 ): PluginRoutingSnapshot {
 	const isPluginEnabled = resolveIsPluginEnabled(options)

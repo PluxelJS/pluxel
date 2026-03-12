@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { getHmrMcpHttpHandler } from '../../../src/api/mcp'
+import { getHmrMcpHttpHandler } from '@pluxel/hmr/api/mcp'
 
 describe('MCP (mcp-lite) endpoint', () => {
 	it('supports initialize, tools/list, tools/call', async () => {

@@ -4,7 +4,7 @@ import {
 	fsPathFromViteFsId,
 	isBarePackageSpecifier,
 	unwrapViteId,
-} from '../../src/services/runtime/shared/vite-id'
+} from '@pluxel/hmr/services/runtime/shared/vite-id'
 
 describe('runtime/shared vite-id', () => {
 	it('cleanViteUrl strips query strings', () => {
@@ -44,4 +44,3 @@ describe('runtime/shared vite-id', () => {
 		expect(isBarePackageSpecifier('C:\\\\x.ts')).toBe(false)
 	})
 })
-

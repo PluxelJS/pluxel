@@ -60,11 +60,6 @@ function parseCookie(header: string | null | undefined, key: string): string | u
 	return undefined
 }
 
-function setCookie(resHeaders: Headers, cookie: string) {
-	// `Set-Cookie` must not be combined with commas. Use append.
-	resHeaders.append('set-cookie', cookie)
-}
-
 function isSecureRequest(url: string, headers: Headers): boolean {
 	const forwarded = headers.get('x-forwarded-proto')
 	if (forwarded) {
@@ -113,10 +108,11 @@ export class BasicAuthBuiltinPlugin extends BasePlugin {
 		}
 
 		// Mount into a stable slot so route updates can be remounted independently from the root app.
-		const authApp = this.ctx.http.hono.app()
-		authApp
-			.get('/', (c) => {
-				const html = `<!doctype html>
+		this.ctx.http.host.routes(
+			(app) =>
+				app
+					.get('/', ({ set }) => {
+						const html = `<!doctype html>
 	<html lang="zh">
 	  <head>
     <meta charset="utf-8" />
@@ -152,61 +148,52 @@ export class BasicAuthBuiltinPlugin extends BasePlugin {
   </body>
 </html>`
 
-				return c.html(html, 200, { 'Cache-Control': 'no-store' })
-			})
+						set.headers['cache-control'] = 'no-store'
+						set.headers['content-type'] = 'text/html; charset=utf-8'
+						return html
+					})
 
-			.post('/login', async (c) => {
-				const isSecure = isSecureRequest(c.req.url, c.req.raw.headers)
+					.post('/login', async (c) => {
+						const isSecure = isSecureRequest(c.request.url, c.request.headers)
 
-				let username = ''
-				let password = ''
-				try {
-					const form = await c.req.raw.formData()
-					username = String(form.get('username') ?? '')
-					password = String(form.get('password') ?? '')
-				} catch {
-					return c.text('Bad Request', 400)
-				}
+						let username = ''
+						let password = ''
+						try {
+							const form = await c.request.formData()
+							username = String(form.get('username') ?? '')
+							password = String(form.get('password') ?? '')
+						} catch {
+							return c.status(400, 'Bad Request')
+						}
 
-				const ok = username === storedUsername && verifyPasswordScrypt(password, storedPasswordHash)
-				if (!ok) return c.text('Unauthorized', 401)
+						const ok =
+							username === storedUsername && verifyPasswordScrypt(password, storedPasswordHash)
+						if (!ok) return c.status(401, 'Unauthorized')
 
-				const exp = Date.now() + this.tokenTtlMs
-				const payload = b64url(JSON.stringify({ u: username, exp }))
-				const sig = sign(this.secret, payload)
-				const token = `${payload}.${sig}`
+						const exp = Date.now() + this.tokenTtlMs
+						const payload = b64url(JSON.stringify({ u: username, exp }))
+						const sig = sign(this.secret, payload)
+						const token = `${payload}.${sig}`
 
-				const headers = new Headers({
-					'Cache-Control': 'no-store',
-				})
-				setCookie(
-					headers,
-					`${this.cookieName}=${token}; Path=/; Max-Age=${Math.floor(
-						this.tokenTtlMs / 1000,
-					)}; HttpOnly; SameSite=Lax${isSecure ? '; Secure' : ''}`,
-				)
-				headers.set('location', '/')
-				return new Response(null, { status: 302, headers })
-			})
+						c.set.headers['cache-control'] = 'no-store'
+						c.set.headers['set-cookie'] = `${this.cookieName}=${token}; Path=/; Max-Age=${Math.floor(
+							this.tokenTtlMs / 1000,
+						)}; HttpOnly; SameSite=Lax${isSecure ? '; Secure' : ''}`
+						return c.redirect('/', 302)
+					})
 
-			.post('/logout', (c) => {
-				const isSecure = isSecureRequest(c.req.url, c.req.raw.headers)
+					.post('/logout', (c) => {
+						const isSecure = isSecureRequest(c.request.url, c.request.headers)
 
-				const headers = new Headers({
-					'Cache-Control': 'no-store',
-				})
-				setCookie(
-					headers,
-					`${this.cookieName}=; Path=/; Max-Age=0; Expires=Thu, 01 Jan 1970 00:00:00 GMT; HttpOnly; SameSite=Lax${isSecure ? '; Secure' : ''}`,
-				)
-				headers.set('location', '/')
-				return new Response(null, { status: 302, headers })
-			})
-		this.ctx.http.mountBoundary({
-			id: `${pluginId}:auth`,
-			base: '/auth',
-			boundary: authApp,
-		})
+						c.set.headers['cache-control'] = 'no-store'
+						c.set.headers['set-cookie'] = `${this.cookieName}=; Path=/; Max-Age=0; Expires=Thu, 01 Jan 1970 00:00:00 GMT; HttpOnly; SameSite=Lax${isSecure ? '; Secure' : ''}`
+						return c.redirect('/', 302)
+					}),
+			{
+				id: `${pluginId}:auth`,
+				path: '/auth',
+			},
+		)
 
 		this.ctx.authGuard.register({
 			redirectPath: '/auth',

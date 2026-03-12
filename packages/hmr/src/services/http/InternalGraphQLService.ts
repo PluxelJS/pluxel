@@ -1,12 +1,13 @@
 import { query, type Resolver, resolver, weave } from '@gqloom/core'
 import { ValibotWeaver } from '@gqloom/valibot'
 import { Injectable, type Context as PlxContext } from '@pluxel/core'
-import { HMR_INTERNAL_API_BASE } from '@pluxel/hmr-web'
+import { HMR_INTERNAL_API_BASE, HMR_TRANSPORT_PATHS } from '@pluxel/hmr-web'
 import type { GraphQLSchema } from 'graphql'
 import { createYoga } from 'graphql-yoga'
 import * as v from 'valibot'
 
 import { getAPISchema } from '../../api'
+import { createElysiaApp } from './elysia'
 
 const serviceName = 'internalGraphql' as const
 
@@ -21,8 +22,6 @@ declare module '@pluxel/core' {
 	}
 }
 
-type ServerCtx = Record<string, never>
-
 export type InternalGraphQLConfig = {
 	codegen?: boolean
 }
@@ -33,7 +32,7 @@ export class InternalGraphQLService {
 	private readonly config: InternalGraphQLConfig | undefined
 
 	private schema: GraphQLSchema = this.weaveSchema()
-	private fetcher: (req: Request, ctx: ServerCtx) => Promise<Response>
+	private fetcher: (req: Request) => Promise<Response>
 
 	private rebuildPending = false
 	private rebuildDirty = false
@@ -50,8 +49,19 @@ export class InternalGraphQLService {
 		this.scheduleRebuild()
 	}
 
-	get fetch() {
-		return this.fetcher
+	fetch(req: Request) {
+		return this.fetcher(req)
+	}
+
+	plugin() {
+		return createElysiaApp(this.ctx, {
+			aot: true,
+			name: 'pluxel.http.internal.graphql',
+		}).all(
+			HMR_TRANSPORT_PATHS.graphql,
+			({ pluginCtx, request }) => pluginCtx.internalGraphql.fetch(request),
+			{ parse: 'none' },
+		)
 	}
 
 	scheduleRebuild() {
@@ -88,9 +98,9 @@ export class InternalGraphQLService {
 	}
 
 	private pushFetch() {
-		const yoga = createYoga<ServerCtx>({
+		const yoga = createYoga({
 			landingPage: false,
-			graphqlEndpoint: `${HMR_INTERNAL_API_BASE}/graphql`,
+			graphqlEndpoint: HMR_TRANSPORT_PATHS.graphql,
 			maskedErrors: process.env.NODE_ENV === 'production',
 			graphiql: process.env.NODE_ENV !== 'production',
 			schema: this.schema,
@@ -101,7 +111,7 @@ export class InternalGraphQLService {
 			},
 		})
 
-		this.fetcher = async (req: Request, ctx: ServerCtx) => yoga.fetch(req, ctx)
+		this.fetcher = async (req: Request) => yoga.fetch(req)
 	}
 
 	// #if SOURCE_ONLY

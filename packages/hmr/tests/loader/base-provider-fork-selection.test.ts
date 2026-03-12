@@ -2,8 +2,11 @@ import '@pluxel/test/setup'
 
 import { describe, expect, it } from 'vitest'
 import { Context, ForkablePlugin, Plugin } from '@pluxel/core'
-import { LoaderService } from '../../src/services/runtime/loader/LoaderService'
-import { EXTRA_BASE_PROVIDERS, EXTRA_FORKS } from '../../src/services/runtime/loader/selection'
+import { LoaderService } from '@pluxel/hmr/services/runtime/loader/LoaderService'
+import {
+	EXTRA_BASE_PROVIDERS,
+	EXTRA_FORKS,
+} from '@pluxel/hmr/services/runtime/loader/selection'
 
 function createHmrCtx(core: Context) {
 	const enabled = new Set<string>()

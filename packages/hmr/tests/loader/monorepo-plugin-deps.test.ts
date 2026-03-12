@@ -2,7 +2,7 @@ import '@pluxel/test/setup'
 
 import { describe, expect, it } from 'vitest'
 import { BasePlugin, Context, Plugin, setParamToken } from '@pluxel/core'
-import { LoaderService } from '../../src/services/runtime/loader/LoaderService'
+import { LoaderService } from '@pluxel/hmr/services/runtime/loader/LoaderService'
 
 function createHmrCtx(core: Context) {
 	const enabled = new Set<string>()

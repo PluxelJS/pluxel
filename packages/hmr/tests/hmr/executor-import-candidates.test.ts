@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { HmrExecutor } from '../../src/services/runtime/hmr/pipeline'
+import { HmrExecutor } from '@pluxel/hmr/services/runtime/hmr/pipeline'
 
 describe('HmrExecutor import candidates', () => {
 	it('prefers /@fs for filesystem ids but records canonical moduleId', async () => {

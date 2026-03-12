@@ -32,5 +32,10 @@ export function createDevRenderer(): RenderHandler {
   </body>
 </html>`
 
-	return (ctx) => ctx.html(staticHtml)
+	return () =>
+		new Response(staticHtml, {
+			headers: {
+				'content-type': 'text/html; charset=utf-8',
+			},
+		})
 }

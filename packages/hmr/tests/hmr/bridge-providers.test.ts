@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'pathe'
 import { describe, expect, it } from 'vitest'
-import { resolveHMRDependencyConfig } from '../../src/services/runtime/hmr/config'
+import { resolveHMRDependencyConfig } from '@pluxel/hmr/services/runtime/hmr/config'
 
 describe('HMR bridgeProviders', () => {
 	it('does not include @pluxel/context by default', () => {

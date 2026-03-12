@@ -3,7 +3,7 @@ import { join } from 'pathe'
 import { symlinkSync } from 'node:fs'
 import { normalizePath } from 'vite'
 import { describe, expect, it } from 'vitest'
-import { HmrPathResolver } from '../../src/services/runtime/hmr/environment'
+import { HmrPathResolver } from '@pluxel/hmr/services/runtime/hmr/environment'
 
 describe('HmrPathResolver', () => {
 	it('keeps existing absolute FS paths outside scan roots', async () => {

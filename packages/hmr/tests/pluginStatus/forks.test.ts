@@ -3,9 +3,9 @@ import '@pluxel/test/setup'
 import { describe, expect, it } from 'vitest'
 import type { Context as PlxContext } from '@pluxel/core'
 import { BasePlugin, Context, ForkablePlugin, Plugin } from '@pluxel/core'
-import { getStatusOverview } from '../../src/api/features/pluginStatus/service'
-import { LoaderService } from '../../src/services/runtime/loader/LoaderService'
-import { EXTRA_FORKS } from '../../src/services/runtime/loader/selection'
+import { getStatusOverview } from '@pluxel/hmr/api/features/pluginStatus/service'
+import { LoaderService } from '@pluxel/hmr/services/runtime/loader/LoaderService'
+import { EXTRA_FORKS } from '@pluxel/hmr/services/runtime/loader/selection'
 
 function createHmrCtx(core: Context) {
 	const enabled = new Set<string>()

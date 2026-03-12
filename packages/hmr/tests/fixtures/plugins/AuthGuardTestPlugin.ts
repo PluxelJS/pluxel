@@ -18,10 +18,12 @@ export class AuthGuardTestPlugin extends BasePlugin {
 			authorize: ({ headers }) => hasAuthCookie(headers.get('cookie')),
 		})
 
-		const authApp = this.ctx.http.hono.app()
-		authApp
-			.get('/', (c) => {
-				return c.html(`<!DOCTYPE html>
+		this.ctx.http.host.routes(
+			(app) =>
+				app
+					.get('/', ({ set }) => {
+						set.headers['content-type'] = 'text/html; charset=utf-8'
+						return `<!DOCTYPE html>
 <html lang="en">
   <head>
     <meta charset="utf-8" />
@@ -38,20 +40,17 @@ export class AuthGuardTestPlugin extends BasePlugin {
       });
     </script>
   </body>
-</html>`)
-			})
-
-			.post('/verify', (c) => {
-				return c.text('verified', 200, {
-					// Stateless "verification": just drop a cookie that authorize() checks.
-					'Set-Cookie': `${COOKIE_NAME}=1; Path=/; SameSite=Lax`,
-					'Cache-Control': 'no-store',
-				})
-			})
-		this.ctx.http.mountBoundary({
-			id: 'AuthGuardTest:auth',
-			base: '/auth',
-			boundary: authApp,
-		})
+</html>`
+					})
+					.post('/verify', ({ set }) => {
+						set.headers['set-cookie'] = `${COOKIE_NAME}=1; Path=/; SameSite=Lax`
+						set.headers['cache-control'] = 'no-store'
+						return 'verified'
+					}),
+			{
+				id: 'AuthGuardTest:auth',
+				path: '/auth',
+			},
+		)
 	}
 }

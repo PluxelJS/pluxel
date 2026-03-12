@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
 	normalizeJsxRuntime,
 	transformVendorImports,
-} from '../../src/services/plugin-interaction/extensionBundleTransform'
+} from '@pluxel/hmr/services/plugin-interaction/extensionBundleTransform'
 
 describe('extension bundle vendor transform', () => {
 	it('rewrites host-provided vendor imports to window globals', () => {

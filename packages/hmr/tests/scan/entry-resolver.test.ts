@@ -2,9 +2,9 @@ import { afterEach, describe, expect, test } from 'vitest'
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { resolve } from 'pathe'
-import { EntryResolver } from '../../src/services/runtime/scan/entry-resolver'
-import { ModuleResolveCache } from '../../src/services/runtime/scan/resolve-cache'
-import type { ResolvedScanOptions } from '../../src/services/runtime/scan/types'
+import { EntryResolver } from '@pluxel/hmr/services/runtime/scan/entry-resolver'
+import { ModuleResolveCache } from '@pluxel/hmr/services/runtime/scan/resolve-cache'
+import type { ResolvedScanOptions } from '@pluxel/hmr/services/runtime/scan/types'
 
 const baseOptions: ResolvedScanOptions = {
 	conditions: ['node', 'import'],

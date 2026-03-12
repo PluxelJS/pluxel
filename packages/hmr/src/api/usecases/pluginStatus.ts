@@ -7,7 +7,7 @@ import type {
 	PluginStatusBatchAction,
 	PluginStatusBatchResult,
 	PluginStatusMutationResult,
-} from '../hono/rpc/types'
+} from '../http/rpc/types'
 
 function resolvePlugin(ctx: Context, name: string) {
 	const ctor = ctx.loader.api.runtime.resolve(name)

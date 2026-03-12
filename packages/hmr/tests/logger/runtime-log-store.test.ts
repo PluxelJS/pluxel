@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { RuntimeLogStore } from '../../src/logger/store'
+import { RuntimeLogStore } from '@pluxel/hmr/logger/store'
 
 function lineInput(i: number, extra?: Partial<any>) {
 	return {
@@ -81,4 +81,3 @@ describe('RuntimeLogStore', () => {
 		expect(out.nextSeq).toBe('1102')
 	})
 })
-

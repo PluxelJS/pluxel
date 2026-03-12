@@ -20,7 +20,11 @@
 		// (Otherwise TS may load both src + dist declarations and report duplicate module augmentation errors.)
 		"paths": {
 			"@pluxel/hmr": ["packages/hmr/src/index.ts"],
-			"@pluxel/hmr/*": ["packages/hmr/src/*"]
+			"@pluxel/hmr/*": ["packages/hmr/src/*"],
+			"@pluxel/hmr-web": ["packages/hmr-web/dist/index.d.mts"],
+			"@pluxel/hmr-web/*": ["packages/hmr-web/src/*"],
+			"@pluxel/hmr-web/react": ["packages/hmr-web/dist/react.d.mts"],
+			"@pluxel/hmr-web/vendors": ["packages/hmr-web/dist/vendors.d.mts"]
 		},
 		"outDir": "dist",
 		"jsx": "react-jsx",

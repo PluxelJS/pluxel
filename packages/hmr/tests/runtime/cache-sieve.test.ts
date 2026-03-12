@@ -3,7 +3,7 @@ import {
 	clearSieveState,
 	getOrCreateCachedValue,
 	getOrCreatePromise,
-} from '../../src/services/runtime/shared/cache'
+} from '@pluxel/hmr/services/runtime/shared/cache'
 
 describe('runtime/shared cache (sieve)', () => {
 	it('evicts unreferenced entries first (cached value)', () => {

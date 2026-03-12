@@ -1,4 +1,4 @@
-import { defaultOnAuthBlocked, type OnAuthBlocked } from './auth'
+import { defaultOnAuthBlocked, type HmrFetch, type OnAuthBlocked } from './auth'
 import { HMR_INTERNAL_API_BASE } from './paths'
 import type { ExtensionManifestEvent } from './plugin-ui'
 import type { UI } from './protocol'
@@ -48,7 +48,7 @@ export interface SseClientOptions {
 	 */
 	auth?: {
 		metaUrl: string
-		fetch?: typeof fetch
+		fetch?: HmrFetch
 		onBlocked?: OnAuthBlocked
 	}
 }

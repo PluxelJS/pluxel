@@ -1,9 +1,9 @@
+import type { Context as PluginContext } from '@pluxel/core'
 import { HMR_INTERNAL_API_BASE } from '@pluxel/hmr-web'
-import { Hono } from 'hono'
-import { html, raw } from 'hono/html'
 
-import type { AppEnv } from '../../services/http/hono-env'
+import { type AnyElysiaApp } from '../../services/http/elysia'
 import { PluginHandle } from './rpc'
+import { debugSchemaSourceQuery, pluginNameParams } from './models'
 
 const DEBUG_BASE = `${HMR_INTERNAL_API_BASE}/debug`
 
@@ -14,7 +14,7 @@ interface PluginSchemaInfo {
 	schemaSource?: Record<string, string>
 }
 
-function getPluginSchemaInfos(ctx: AppEnv['Variables']['plugin_ctx']): PluginSchemaInfo[] {
+function getPluginSchemaInfos(ctx: PluginContext): PluginSchemaInfo[] {
 	const names = ctx.loader.api.registry.listLoadedNames()
 	const result: PluginSchemaInfo[] = []
 
@@ -257,28 +257,30 @@ function layout(title: string, content: string, activeNav?: string) {
 		{ href: `${DEBUG_BASE}/schema-source`, label: 'Schema Source', key: 'schema-source' },
 	]
 
-	return html`<!DOCTYPE html>
+	return `<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
 	<meta charset="UTF-8">
 	<meta name="viewport" content="width=device-width, initial-scale=1.0">
 	<title>${title} - Pluxel Debug</title>
-	<style>${raw(STYLES)}</style>
+	<style>${STYLES}</style>
 </head>
 <body>
 	<div class="container">
 		<header>
 			<h1>Pluxel Debug</h1>
 			<nav class="nav">
-				${navItems.map(
-					(item) =>
-						html`<a href="${item.href}" class="${activeNav === item.key ? 'active' : ''}">${item.label}</a>`,
-				)}
+				${navItems
+					.map(
+						(item) =>
+							`<a href="${item.href}" class="${activeNav === item.key ? 'active' : ''}">${item.label}</a>`,
+					)
+					.join('')}
 			</nav>
 		</header>
-		${raw(content)}
+		${content}
 	</div>
-	<script>${raw(SCRIPTS)}</script>
+	<script>${SCRIPTS}</script>
 </body>
 </html>`
 }
@@ -330,14 +332,15 @@ function renderPluginCard(plugin: PluginSchemaInfo, expanded = false) {
 	`
 }
 
-const debugApp = new Hono<AppEnv>()
-	// Overview
-	.get('/', (c) => {
-		const plugins = getPluginSchemaInfos(c.var.plugin_ctx)
-		const withSchema = plugins.filter((p) => p.hasSchema).length
-		const withSource = plugins.filter((p) => p.hasSchemaSource).length
+export const debugRoutes = (app: AnyElysiaApp) =>
+	app.group('/debug', (debug) =>
+		debug
+			.get('', ({ pluginCtx, set }) => {
+				const plugins = getPluginSchemaInfos(pluginCtx)
+				const withSchema = plugins.filter((p) => p.hasSchema).length
+				const withSource = plugins.filter((p) => p.hasSchemaSource).length
 
-		const content = `
+				const content = `
 			<div class="stats">
 				<div class="stat">
 					<div class="stat-value">${plugins.length}</div>
@@ -389,29 +392,30 @@ const debugApp = new Hono<AppEnv>()
 					: ''
 			}
 		`
-		return c.html(layout('Overview', content, 'overview'))
-	})
+				set.headers['content-type'] = 'text/html; charset=utf-8'
+				return layout('Overview', content, 'overview')
+			})
+			.get(
+				'/schema-source',
+				({ pluginCtx, query, set }) => {
+					const plugins = getPluginSchemaInfos(pluginCtx)
+					const filter = query.filter
+					const search = query.q || ''
 
-	// Schema Source 主页面（支持过滤）
-	.get('/schema-source', (c) => {
-		const plugins = getPluginSchemaInfos(c.var.plugin_ctx)
-		const filter = c.req.query('filter')
-		const search = c.req.query('q') || ''
+					let filtered = plugins
+					if (filter === 'source') {
+						filtered = plugins.filter((p) => p.hasSchemaSource)
+					} else if (filter === 'schema') {
+						filtered = plugins.filter((p) => p.hasSchema)
+					}
+					if (search) {
+						const q = search.toLowerCase()
+						filtered = filtered.filter((p) => p.name.toLowerCase().includes(q))
+					}
 
-		let filtered = plugins
-		if (filter === 'source') {
-			filtered = plugins.filter((p) => p.hasSchemaSource)
-		} else if (filter === 'schema') {
-			filtered = plugins.filter((p) => p.hasSchema)
-		}
-		if (search) {
-			const q = search.toLowerCase()
-			filtered = filtered.filter((p) => p.name.toLowerCase().includes(q))
-		}
+					const withSource = plugins.filter((p) => p.hasSchemaSource).length
 
-		const withSource = plugins.filter((p) => p.hasSchemaSource).length
-
-		const content = `
+					const content = `
 			<div class="stats">
 				<div class="stat">
 					<div class="stat-value">${plugins.length}</div>
@@ -437,17 +441,22 @@ const debugApp = new Hono<AppEnv>()
 
 			${filtered.length === 0 ? '<div class="empty">No plugins match the current filter</div>' : filtered.map((p) => renderPluginCard(p, filtered.length === 1)).join('')}
 		`
-		return c.html(layout('Schema Source', content, 'schema-source'))
-	})
+					set.headers['content-type'] = 'text/html; charset=utf-8'
+					return layout('Schema Source', content, 'schema-source')
+				},
+				{
+					query: debugSchemaSourceQuery,
+				},
+			)
+			.get(
+				'/schema-source/:name',
+				async ({ params, pluginCtx, set, status }) => {
+					const name = params.name
+					const handle = new PluginHandle(pluginCtx, name)
+					const result = await handle.schema()
 
-	// 单个插件详情
-	.get('/schema-source/:name', async (c) => {
-		const name = c.req.param('name')
-		const handle = new PluginHandle(c.var.plugin_ctx, name)
-		const result = await handle.schema()
-
-		if (result.ok === false) {
-			const content = `
+					if (result.ok === false) {
+						const content = `
 				<div class="card">
 					<div class="card-header">
 						<span class="card-title">${escapeHtml(name)}</span>
@@ -458,12 +467,13 @@ const debugApp = new Hono<AppEnv>()
 					</div>
 				</div>
 			`
-			return c.html(layout(`${name} - Schema Source`, content, 'schema-source'), 404)
-		}
+						set.headers['content-type'] = 'text/html; charset=utf-8'
+						return status(404, layout(`${name} - Schema Source`, content, 'schema-source'))
+					}
 
-		const fields = result.schemaSource ? Object.entries(result.schemaSource) : []
+					const fields = result.schemaSource ? Object.entries(result.schemaSource) : []
 
-		const content = `
+					const content = `
 				<div style="margin-bottom: 16px;">
 					<a href="${DEBUG_BASE}/schema-source" style="color: var(--accent); text-decoration: none;">&larr; Back to all plugins</a>
 				</div>
@@ -493,17 +503,19 @@ const debugApp = new Hono<AppEnv>()
 				</div>
 			</div>
 		`
-		return c.html(layout(`${name} - Schema Source`, content, 'schema-source'))
-	})
-
-	// JSON API
-	.get('/json/schemas', (c) => {
-		const plugins = getPluginSchemaInfos(c.var.plugin_ctx)
-		const result: Record<string, PluginSchemaInfo> = {}
-		for (const p of plugins) {
-			result[p.name] = p
-		}
-		return c.json(result)
-	})
-
-export default debugApp
+					set.headers['content-type'] = 'text/html; charset=utf-8'
+					return layout(`${name} - Schema Source`, content, 'schema-source')
+				},
+				{
+					params: pluginNameParams,
+				},
+			)
+			.get('/json/schemas', ({ pluginCtx }) => {
+				const plugins = getPluginSchemaInfos(pluginCtx)
+				const result: Record<string, PluginSchemaInfo> = {}
+				for (const plugin of plugins) {
+					result[plugin.name] = plugin
+				}
+				return result
+			}),
+	)

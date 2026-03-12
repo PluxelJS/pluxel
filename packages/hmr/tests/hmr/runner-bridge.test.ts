@@ -7,9 +7,9 @@ import {
 	buildHmrViteConfig,
 	resolveFsAllowList,
 	resolveHMRDependencyConfig,
-} from '../../src/services/runtime/hmr/config'
-import { HMRService } from '../../src/services/runtime/hmr/HMRService'
-import { HmrRunner } from '../../src/services/runtime/hmr/runner'
+} from '@pluxel/hmr/services/runtime/hmr/config'
+import { HMRService } from '@pluxel/hmr/services/runtime/hmr/HMRService'
+import { HmrRunner } from '@pluxel/hmr/services/runtime/hmr/runner'
 
 const noop = () => undefined
 
@@ -81,7 +81,7 @@ describe('HMR runner bridge', () => {
 				fsAllow,
 				deps,
 				runnerPlugin: { name: 'noop' },
-				honoPlugin: { name: 'noop' },
+				httpPlugin: { name: 'noop' },
 			}),
 			server: {
 				port: 0,

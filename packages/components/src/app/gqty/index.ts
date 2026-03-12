@@ -3,13 +3,11 @@
  */
 
 import { createReactClient } from '@gqty/react'
-import { createAuthAwareFetch, HMR_INTERNAL_API_BASE } from '@pluxel/hmr-web'
 import { Cache, createClient, defaultResponseHandler, type QueryFetcher } from 'gqty'
+import { getHmrWebClient } from '../../hmr/client'
 import { type GeneratedSchema, generatedSchema, scalarsEnumsHash } from './schema.generated'
 
-const baseFetch =
-	typeof globalThis.fetch === 'function' ? globalThis.fetch.bind(globalThis) : undefined
-const authFetch = baseFetch ? createAuthAwareFetch(baseFetch) : undefined
+const hmr = getHmrWebClient()
 
 const inflightGraphql = new Map<string, Promise<any>>()
 
@@ -27,16 +25,14 @@ function graphqlKey(input: {
 }
 
 const queryFetcher: QueryFetcher = async ({ query, variables, operationName }, fetchOptions) => {
-	// 浏览器走相对路径；SSR 端需要绝对 URL
-	const endpoint = `${HMR_INTERNAL_API_BASE}/graphql`
-	if (!authFetch) throw new Error('[gqty] global fetch is unavailable')
+	const endpoint = hmr.transport.graphql
 
 	const key = graphqlKey({ query, variables, operationName })
 	const existing = inflightGraphql.get(key)
 	if (existing) return existing
 
 	const task = (async () => {
-		const response = await authFetch(endpoint, {
+		const response = await hmr.fetch(endpoint, {
 			method: 'POST',
 			headers: {
 				'Content-Type': 'application/json',

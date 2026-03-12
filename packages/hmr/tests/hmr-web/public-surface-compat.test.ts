@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
-import * as PublicWeb from '../../src/web/web'
-import * as InternalWeb from '../../../hmr-web/src/index'
+import * as PublicWeb from '@pluxel/hmr/web'
+import * as InternalWeb from '@pluxel/hmr-web'
 
 describe('hmr/web surface compatibility', () => {
 	it('public runtime exports are provided by the internal vendor module', () => {
@@ -11,4 +11,3 @@ describe('hmr/web surface compatibility', () => {
 		expect(missing).toEqual([])
 	})
 })
-

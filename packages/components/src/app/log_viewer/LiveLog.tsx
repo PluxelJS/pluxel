@@ -1,6 +1,4 @@
 import {
-	defaultOnAuthBlocked,
-	HMR_INTERNAL_API_BASE,
 	type LogFilter,
 	type LogRangeOk,
 	type LogSseEvent,
@@ -19,7 +17,7 @@ import {
 	useState,
 	useSyncExternalStore,
 } from 'react'
-import { createAuthAwareFetch } from '../rpc'
+import { useHmrWebClient } from '../rpc'
 
 interface Props {
 	module?: string
@@ -38,15 +36,6 @@ const CLIENT_RING_CAP = 50_000 // 客户端缓存窗口（行）
 const RANGE_LIMIT = 2000 // /range 每次最多拉多少行（服务端也会 clamp）
 const ROW_H = 20
 const STICK_THRESHOLD_PX = ROW_H * 30
-
-const baseFetch =
-	typeof globalThis.fetch === 'function' ? globalThis.fetch.bind(globalThis) : undefined
-const authFetch = baseFetch ? createAuthAwareFetch(baseFetch) : undefined
-
-function apiPath(path: string): string {
-	const safePath = path.startsWith('/') ? path : `/${path}`
-	return `${HMR_INTERNAL_API_BASE}${safePath}`
-}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
 	if (!value || typeof value !== 'object') return false
@@ -710,6 +699,7 @@ const LogList = memo(function LogList(props: {
 })
 
 export function LiveLog({ module, showName = true, filter, variant = 'full' }: Props) {
+	const hmr = useHmrWebClient()
 	const [meta, setMeta] = useState<LogStreamMeta | null>(null)
 	const [connected, setConnected] = useState(false)
 	const [follow, setFollow] = useState(true)
@@ -801,29 +791,15 @@ export function LiveLog({ module, showName = true, filter, variant = 'full' }: P
 	const lastAuthProbeAtRef = useRef<number>(0)
 
 	const refreshStreams = useCallback(async () => {
-		const fetchImpl = authFetch ?? baseFetch
-		if (!fetchImpl) return
 		try {
-			const res = await fetchImpl(apiPath('/logs/v1/streams'), {
-				method: 'GET',
-				headers: { 'Cache-Control': 'no-store' },
-			})
-			if (!res.ok) return
-			const payload = (await res.json()) as unknown
-			if (!isRecord(payload)) return
-			const list = Array.isArray(payload.streams) ? payload.streams : []
-			const ids = list
-				.map((s) => {
-					if (!isRecord(s)) return ''
-					return typeof s.streamId === 'string' ? s.streamId : ''
-				})
-				.filter((s: string) => !!s)
+			const payload = await hmr.api.logs.streams()
+			const ids = payload.streams.map((stream) => stream.streamId).filter(Boolean)
 			ids.sort((a: string, b: string) => a.localeCompare(b))
 			if (ids.length) setStreams(ids)
 		} catch {
 			// ignore
 		}
-	}, [])
+	}, [hmr.api.logs])
 
 	useEffect(() => {
 		if (variant !== 'full') return
@@ -852,43 +828,27 @@ export function LiveLog({ module, showName = true, filter, variant = 'full' }: P
 		const ac = new AbortController()
 		abortRef.current = ac
 
-		const probeAuthBlocked = async (url: string): Promise<boolean> => {
-			if (!baseFetch) return false
+		const probeAuthBlocked = async (): Promise<boolean> => {
 			const now = Date.now()
 			if (now - lastAuthProbeAtRef.current < 1500) return false
 			lastAuthProbeAtRef.current = now
 			try {
-				const res = await baseFetch(apiPath('/auth/meta'), {
-					method: 'GET',
-					headers: { 'Cache-Control': 'no-store' },
-				})
-				if (!res.ok) return false
-				const payload = (await res.json()) as unknown
-				if (!isRecord(payload) || payload.enabled !== true) return false
+				const payload = await hmr.api.meta.auth()
+				if (payload.enabled !== true) return false
 				if (payload.authenticated === true) return false
 				const redirectPath =
 					typeof payload.redirectPath === 'string' && payload.redirectPath
 						? payload.redirectPath
 						: undefined
-				defaultOnAuthBlocked({ status: 401, url, redirectPath })
+				if (redirectPath && typeof window !== 'undefined') window.location.assign(redirectPath)
 				return true
 			} catch {
 				return false
 			}
 		}
 
-		const fetchImpl = authFetch ?? baseFetch
-		if (!fetchImpl) return () => undefined
-
 		const fetchMeta = async (): Promise<LogStreamMeta> => {
-			const res = await fetchImpl(
-				apiPath(`/logs/v1/streams/${encodeURIComponent(streamId)}/meta`),
-				{
-					signal: ac.signal,
-				},
-			)
-			if (!res.ok) throw new Error(`HTTP ${res.status}`)
-			return (await res.json()) as LogStreamMeta
+			return hmr.api.logs.meta(streamId, { signal: ac.signal })
 		}
 
 		const fetchRange = async (
@@ -896,19 +856,16 @@ export function LiveLog({ module, showName = true, filter, variant = 'full' }: P
 			fromSeq: string,
 			limit: number,
 		): Promise<LogRangeOk> => {
-			const params = new URLSearchParams(filterQuery)
-			params.set('epoch', String(m.epoch))
-			params.set('from', fromSeq)
-			params.set('limit', String(limit))
-			const res = await fetchImpl(
-				apiPath(`/logs/v1/streams/${encodeURIComponent(streamId)}/range?${params.toString()}`),
+			const payload = await hmr.api.logs.range(
+				streamId,
+				{
+					epoch: m.epoch,
+					from: fromSeq,
+					limit,
+					...activeFilter,
+				},
 				{ signal: ac.signal },
 			)
-			if (!res.ok) {
-				const text = await res.text().catch(() => '')
-				throw new Error(`HTTP ${res.status}${text ? `: ${text}` : ''}`)
-			}
-			const payload = (await res.json()) as unknown
 			if (!isRecord(payload) || payload.ok !== true) throw new Error('Invalid range response')
 			return payload as LogRangeOk
 		}
@@ -937,9 +894,7 @@ export function LiveLog({ module, showName = true, filter, variant = 'full' }: P
 			const params = new URLSearchParams(filterQuery)
 			params.set('epoch', String(m.epoch))
 			params.set('from', fromSeq)
-			const url = apiPath(
-				`/logs/v1/streams/${encodeURIComponent(streamId)}/follow?${params.toString()}`,
-			)
+			const url = hmr.api.logs.followUrl(streamId, params)
 			const es = new EventSource(url)
 
 			es.onopen = () => setConnected(true)
@@ -998,7 +953,7 @@ export function LiveLog({ module, showName = true, filter, variant = 'full' }: P
 			es.onerror = () => {
 				setConnected(false)
 				if (authProbeInFlightRef.current) return
-				authProbeInFlightRef.current = probeAuthBlocked(url).finally(() => {
+				authProbeInFlightRef.current = probeAuthBlocked().finally(() => {
 					authProbeInFlightRef.current = null
 				})
 				void authProbeInFlightRef.current.then((blocked) => {
@@ -1039,7 +994,7 @@ export function LiveLog({ module, showName = true, filter, variant = 'full' }: P
 			rafRef.current = null
 			es?.close()
 		}
-	}, [filterQuery, streamId])
+	}, [filterQuery, hmr, streamId])
 
 	useEffect(() => {
 		followRef.current = follow

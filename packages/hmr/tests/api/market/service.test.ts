@@ -1,5 +1,5 @@
 import { describe, expect, test, vi } from 'vitest'
-import { applyMarketMutation } from '../../../src/api/features/market/service'
+import { applyMarketMutation } from '@pluxel/hmr/api/features/market/service'
 
 const specInput: { name: string; raw: string | null; version: string | null; tag: string | null } =
 	{ name: 'foo', raw: null, version: null, tag: null }

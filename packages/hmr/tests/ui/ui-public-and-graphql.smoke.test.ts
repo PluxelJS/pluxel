@@ -4,7 +4,7 @@ import type { HmrWorkspaceSnapshot } from '@pluxel/hmr/snapshot'
 import { createFixture } from 'fs-fixture'
 import { resolve } from 'pathe'
 import { describe, expect, it } from 'vitest'
-import { createUiPublicStaticMiddleware } from '../../src/server/ui-public'
+import { createUiPublicStaticMiddleware } from '@pluxel/hmr/server/ui-public'
 
 type Middleware = (
 	req: IncomingMessage,

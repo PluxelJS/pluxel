@@ -254,7 +254,7 @@ export interface HmrViteConfigOptions {
 	deps: ResolvedHMRDependencyConfig
 	extraPlugins?: Plugin[]
 	runnerPlugin: Plugin
-	honoPlugin: Plugin
+	httpPlugin: Plugin
 	port?: number
 	optimizeDepsEnabled?: boolean
 	ssrOptimizeDepsEnabled?: boolean
@@ -362,7 +362,7 @@ export function buildHmrViteConfig(opts: HmrViteConfigOptions): InlineConfig {
 			}),
 			...(opts.extraPlugins ?? []),
 			opts.runnerPlugin,
-			opts.honoPlugin,
+			opts.httpPlugin,
 		],
 		// Performance-first dev host: keep optimizer mostly off by default.
 		// Vite 8: `optimizeDeps.disabled` is deprecated.

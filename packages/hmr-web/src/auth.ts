@@ -1,3 +1,15 @@
+type HmrFetchPreconnect =
+	typeof globalThis.fetch extends { preconnect: infer T }
+		? T
+		: (url: string | URL) => void
+
+export type HmrFetch = ((
+	input: RequestInfo | URL,
+	init?: RequestInit,
+) => Promise<Response>) & {
+	preconnect?: HmrFetchPreconnect
+}
+
 export type AuthBlockedInfo = {
 	status: number
 	url: string
@@ -20,6 +32,25 @@ export type AuthAwareFetchOptions = {
 }
 
 const AUTH_AWARE_FETCH = Symbol.for('pluxel.authAwareFetch')
+const noopPreconnect = (() => undefined) as HmrFetchPreconnect
+
+function resolvePreconnect(fetch: HmrFetch): HmrFetchPreconnect {
+	return (
+		fetch.preconnect ??
+		(typeof globalThis.fetch === 'function' && 'preconnect' in globalThis.fetch
+			? (globalThis.fetch.preconnect as HmrFetchPreconnect)
+			: noopPreconnect)
+	)
+}
+
+export function toGlobalFetch(fetch: HmrFetch): typeof globalThis.fetch {
+	const wrapped = ((
+		input: RequestInfo | URL,
+		init?: RequestInit,
+	) => fetch(input, init)) as typeof globalThis.fetch
+	wrapped.preconnect = resolvePreconnect(fetch)
+	return wrapped
+}
 
 /**
  * 重定向状态管理
@@ -79,9 +110,9 @@ export async function extractRedirectPath(res: Response): Promise<string | undef
 }
 
 export function createAuthAwareFetch(
-	baseFetch: typeof fetch,
+	baseFetch: HmrFetch,
 	options: AuthAwareFetchOptions = {},
-): typeof fetch {
+): HmrFetch {
 	if ((baseFetch as any)?.[AUTH_AWARE_FETCH]) return baseFetch
 
 	const onBlocked = options.onBlocked ?? defaultOnAuthBlocked
@@ -104,6 +135,7 @@ export function createAuthAwareFetch(
 	}) as any
 
 	;(wrapped as any)[AUTH_AWARE_FETCH] = true
+	;(wrapped as HmrFetch).preconnect = resolvePreconnect(baseFetch)
 	return wrapped
 }
 
@@ -112,15 +144,20 @@ type InstallGlobalAuthFetchOptions = AuthAwareFetchOptions & {
 }
 
 let installCount = 0
-let originalFetch: typeof fetch | null = null
+let originalFetch: HmrFetch | null = null
 
 export function installGlobalAuthFetch(options: InstallGlobalAuthFetchOptions = {}): () => void {
 	if (options.enabled === false) return () => {}
 	if (typeof globalThis.fetch !== 'function') return () => {}
 
 	if (installCount === 0) {
-		originalFetch = globalThis.fetch.bind(globalThis)
-		globalThis.fetch = createAuthAwareFetch(originalFetch, options)
+		const nativeFetch = globalThis.fetch as typeof globalThis.fetch
+		originalFetch = nativeFetch.bind(globalThis) as HmrFetch
+		originalFetch.preconnect =
+			'preconnect' in nativeFetch
+				? (nativeFetch.preconnect as HmrFetchPreconnect)
+				: noopPreconnect
+		globalThis.fetch = toGlobalFetch(createAuthAwareFetch(originalFetch, options))
 	}
 	installCount++
 

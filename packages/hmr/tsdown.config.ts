@@ -1,5 +1,5 @@
 import { fileURLToPath } from 'node:url'
-import { appendDtsImport, assertBundleNoText, rewriteDtsText } from '@pluxel/build/rolldown'
+import { appendDtsImport, rewriteDtsText } from '@pluxel/build/rolldown'
 import { defineConfig } from 'tsdown'
 import PreprocessorDirectives from 'unplugin-preprocessor-directives/rollup'
 
@@ -22,8 +22,6 @@ export default defineConfig({
 		'@pluxel/build/*',
 		'@pluxel/workspace',
 		'@pluxel/workspace/*',
-		'@pluxel/hmr-web',
-		'@pluxel/hmr-web/*',
 		'valibot-form',
 		'valibot-form/*',
 	],
@@ -32,7 +30,6 @@ export default defineConfig({
 		appendDtsImport('import type {} from "./events.d.mts"', ['index.d.mts']),
 		appendDtsImport('import type {} from "./services.d.mts"', ['index.d.mts']),
 		rewriteDtsText(dtsRewriteMap, { assertNotContains: ['@pluxel/hmr-web'] }),
-		assertBundleNoText(['@pluxel/hmr-web']),
 	],
 	env: {},
 	entry: {

@@ -1,7 +1,7 @@
 import '@pluxel/test/setup'
 
 // Ensure @pluxel/hmr services (http/AuthGuardService/ExtService) are registered.
-import '../../src/services'
+import '@pluxel/hmr/services'
 
 import { createHost, type Host } from '@pluxel/test'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -62,6 +62,25 @@ describe('AuthGuard end-to-end (http)', () => {
 			expect(payload?.redirectPath).toBe('/auth')
 		}
 
+		{
+			const res = await host.ctx.http.fetch(
+				req('http://local/__pluxel/hmr/graphql', {
+					method: 'POST',
+					headers: {
+						accept: 'application/json',
+						'content-type': 'application/json',
+					},
+					body: JSON.stringify({ query: '{ _empty }' }),
+				}),
+			)
+			expect(res.status).toBe(401)
+
+			const payload = (await res.json()) as any
+			expect(payload?.allow).toBe(false)
+			expect(payload?.kind).toBe('graphql')
+			expect(payload?.redirectPath).toBe('/auth')
+		}
+
 		// HTML navigation is redirected to /auth.
 		{
 			const res = await host.ctx.http.fetch(
@@ -102,6 +121,22 @@ describe('AuthGuard end-to-end (http)', () => {
 				}),
 			)
 			expect(res.status).toBe(200)
+		}
+
+		{
+			const res = await host.ctx.http.fetch(
+				req('http://local/__pluxel/hmr/graphql', {
+					method: 'POST',
+					headers: {
+						cookie,
+						'content-type': 'application/json',
+					},
+					body: JSON.stringify({ query: '{ _empty }' }),
+				}),
+			)
+			expect(res.status).toBe(200)
+			const payload = (await res.json()) as any
+			expect(payload?.data?._empty).toBe('ok')
 		}
 
 		// Unload plugin -> guard is removed -> internal API is accessible again without cookie.

@@ -8,8 +8,8 @@ import {
 	buildHmrViteConfig,
 	resolveFsAllowList,
 	resolveHMRDependencyConfig,
-} from '../../src/services/runtime/hmr/config'
-import { HMRService } from '../../src/services/runtime/hmr/HMRService'
+} from '@pluxel/hmr/services/runtime/hmr/config'
+import { HMRService } from '@pluxel/hmr/services/runtime/hmr/HMRService'
 
 const baseDeps = {
 	bridgeModules: [],
@@ -131,7 +131,7 @@ async function runHmr(root: string, hmr: HMRService, depsInput: ReturnType<typeo
 			fsAllow,
 			deps,
 			runnerPlugin: (hmr as unknown as { plugin: VitePlugin }).plugin,
-			honoPlugin: { name: 'noop' },
+			httpPlugin: { name: 'noop' },
 			port: 0,
 		}),
 		// Tests use the SSR module runner only; avoid flakiness from Vite's default HMR ws port (24678).

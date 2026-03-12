@@ -17,11 +17,9 @@ export function NavbarFooterActions({ compact }: { compact: boolean }) {
 		}
 		void (async () => {
 			try {
-				const res = await client.api.auth.meta.$get()
-				if (!res.ok) return
-				const data = (await res.json()) as any
-				if (data?.enabled !== true) return
-				const redirectPath = typeof data?.redirectPath === 'string' ? data.redirectPath : ''
+				const data = await client.api.meta.auth()
+				if (data.enabled !== true) return
+				const redirectPath = typeof data.redirectPath === 'string' ? data.redirectPath : ''
 				if (!redirectPath) return
 				redirectPathRef.current = redirectPath
 				window.location.assign(redirectPath)
@@ -29,7 +27,7 @@ export function NavbarFooterActions({ compact }: { compact: boolean }) {
 				// ignore
 			}
 		})()
-	}, [client.api.auth])
+	}, [client.api.meta])
 
 	return (
 		<Stack gap={6}>

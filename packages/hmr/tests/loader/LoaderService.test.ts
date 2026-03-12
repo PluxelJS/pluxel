@@ -9,13 +9,13 @@ import {
 	Plugin,
 	setParamToken,
 } from '@pluxel/core'
-import { LoaderService } from '../../src/services/runtime/loader/LoaderService'
+import { LoaderService } from '@pluxel/hmr/services/runtime/loader/LoaderService'
 import {
 	EXTRA_BUILTINS_KNOWN,
 	EXTRA_FORKS,
 	type BuiltinsKnownExtra,
 	type ForksExtra,
-} from '../../src/services/runtime/loader/selection'
+} from '@pluxel/hmr/services/runtime/loader/selection'
 
 function createHmrCtx(
 	core: Context,

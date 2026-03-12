@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { BatchDebouncer } from '../../src/services/runtime/hmr/internals'
+import { BatchDebouncer } from '@pluxel/hmr/services/runtime/hmr/internals'
 
 describe('BatchDebouncer waitForIdle', () => {
 	it('resolves immediately when idle', async () => {
