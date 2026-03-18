@@ -305,4 +305,3 @@ export function useExtensions<P extends ExtensionPoint>(point: P) {
 
 	return { items: visible as ExtensionItem<P>[], nodes, context: ctxForPoint }
 }
-

@@ -1,13 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import {
-	BaseFeature,
-	BasePlugin,
-	getPluginInfo,
-	Plugin,
-	UseFeature,
-	withHost,
-} from '@pluxel/test'
+import { BaseFeature, BasePlugin, getPluginInfo, Plugin, UseFeature, withHost } from '@pluxel/test'
 import type { StandardSchemaV1 } from '@standard-schema/spec'
 
 const PassthroughSchema: StandardSchemaV1 = {

@@ -47,4 +47,4 @@ export default {
 
 - Parser support comes from the bundler (rolldown/vite) via `this.parse`.
 - `oxc-parser` is only used in tests for schema normalization.
-- Dependency chain (intended): HMR → CLI (public facade) → Build (internal plugins).
+- Usage chain (intended): `@pluxel/hmr` / `@pluxel/cli` use `@pluxel/build` internally; published artifacts must not require users to install internal workspace packages (see `docs/PACKAGING.md`).

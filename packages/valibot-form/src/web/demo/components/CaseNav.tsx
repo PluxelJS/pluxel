@@ -108,11 +108,7 @@ export function CaseNav({
 						{tags.map((tag) => {
 							const active = activeTags.includes(tag)
 							return (
-								<UnstyledButton
-									key={tag}
-									onClick={() => onToggleTag(tag)}
-									aria-pressed={active}
-								>
+								<UnstyledButton key={tag} onClick={() => onToggleTag(tag)} aria-pressed={active}>
 									<Badge
 										variant={active ? 'filled' : 'outline'}
 										color={active ? 'blue' : 'gray'}
@@ -126,12 +122,7 @@ export function CaseNav({
 						})}
 					</Group>
 					{hasFilters ? (
-						<Button
-							variant="subtle"
-							size="xs"
-							color="gray"
-							onClick={onClearFilters}
-						>
+						<Button variant="subtle" size="xs" color="gray" onClick={onClearFilters}>
 							清除筛选
 						</Button>
 					) : null}

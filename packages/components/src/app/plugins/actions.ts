@@ -4,7 +4,7 @@ import type {
 	PluginStatusBatchAction,
 	PluginStatusBatchResult,
 	PluginStatusMutationResult,
-} from '@pluxel/hmr-web'
+} from '@pluxel/runtime/web'
 import type { RpcStub } from 'capnweb'
 import { invokeRpc } from '../rpc'
 import { getPluginOverviewSnapshot, requestPluginOverviewRefetch } from './data'
@@ -163,9 +163,7 @@ export async function buildStartPlan(
 		const needConfigCheck =
 			requireConfiguredFor === 'none'
 				? []
-				: startOrder.filter((name) =>
-						requireConfiguredFor === 'all' ? true : !rootsSet.has(name),
-					)
+				: startOrder.filter((name) => (requireConfiguredFor === 'all' ? true : !rootsSet.has(name)))
 
 		const blockedByConfig: string[] = []
 		if (needConfigCheck.length > 0) {

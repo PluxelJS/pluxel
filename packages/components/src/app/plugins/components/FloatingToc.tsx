@@ -13,9 +13,7 @@ export function FloatingTocScope({
 	children: React.ReactNode
 }) {
 	return (
-		<FloatingTocActiveContext.Provider value={active}>
-			{children}
-		</FloatingTocActiveContext.Provider>
+		<FloatingTocActiveContext.Provider value={active}>{children}</FloatingTocActiveContext.Provider>
 	)
 }
 
@@ -81,9 +79,7 @@ export function FloatingToc({
 					radius="lg"
 					style={{
 						transition: 'transform 160ms ease, box-shadow 160ms ease, opacity 160ms ease',
-						transform: expanded
-							? 'translateX(0)'
-							: `translateX(calc(100% - ${railWidth}px))`,
+						transform: expanded ? 'translateX(0)' : `translateX(calc(100% - ${railWidth}px))`,
 						maxHeight: '72vh',
 						height: panelHeight,
 						overflow: 'hidden',
@@ -110,7 +106,13 @@ export function FloatingToc({
 								>
 									<IconListDetails size={16} color="var(--mantine-color-blue-filled)" />
 								</Box>
-								<Box style={{ minWidth: 0, opacity: expanded ? 1 : 0, transition: 'opacity 140ms ease' }}>
+								<Box
+									style={{
+										minWidth: 0,
+										opacity: expanded ? 1 : 0,
+										transition: 'opacity 140ms ease',
+									}}
+								>
 									<Text
 										size="sm"
 										fw={700}

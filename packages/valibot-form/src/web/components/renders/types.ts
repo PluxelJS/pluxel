@@ -57,6 +57,8 @@ export function joinErrorMessages(errors?: FieldError[]): string | null {
 	return list.join('\n')
 }
 
-export function isErrorWithPath(error: FieldError): error is { message: string; dotPath?: string[] } {
+export function isErrorWithPath(
+	error: FieldError,
+): error is { message: string; dotPath?: string[] } {
 	return typeof error === 'object' && error !== null && 'message' in error
 }

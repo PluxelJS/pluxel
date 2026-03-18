@@ -33,4 +33,3 @@ function readList(input: string | undefined, fallback: string[]) {
 function readText(input: string | undefined, fallback: string) {
 	return input && input.trim() ? input.trim() : fallback
 }
-

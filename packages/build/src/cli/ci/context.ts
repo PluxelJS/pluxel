@@ -117,4 +117,3 @@ function stripLeadingSlash(value: string | undefined) {
 	if (!value) return value
 	return value.replace(/^\//, '')
 }
-

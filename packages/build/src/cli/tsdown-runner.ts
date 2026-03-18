@@ -236,7 +236,11 @@ function toInlineOnlyArray(value: InlineConfig['inlineOnly']): Array<string | Re
 	return Array.isArray(value) ? value : [value]
 }
 
-type ExternalMatcher = (id: string, importer: string | undefined, isResolved: boolean) => boolean | null | undefined | void
+type ExternalMatcher = (
+	id: string,
+	importer: string | undefined,
+	isResolved: boolean,
+) => boolean | null | undefined | void
 
 function isExternalFn(value: InlineConfig['external']): value is ExternalMatcher {
 	return typeof value === 'function'

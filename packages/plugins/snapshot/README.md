@@ -1,5 +1,7 @@
 # @pluxel/snapshot
 
+> Status: internal/private builtin plugin (workspace-only). Not part of the 4 published packages.
+
 Builtin snapshot builder plugin.
 
 What it does:

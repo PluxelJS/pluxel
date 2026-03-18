@@ -12,7 +12,11 @@ import {
 	useExtensionRuntimeVersion,
 } from '../../../extension'
 import { useCurrentPathname } from '../../router/useCurrentRoute'
-import { decodeURIComponentSafe, normalizeExtensionRestPath, readRestPathFromLocation } from './utils'
+import {
+	decodeURIComponentSafe,
+	normalizeExtensionRestPath,
+	readRestPathFromLocation,
+} from './utils'
 
 export function ExtensionRoute() {
 	const { pluginName: rawName, path: rawRest } = useParams({})
@@ -26,7 +30,9 @@ export function ExtensionRoute() {
 	const restPath = restPathFromParams || restPathFromLocation
 	const displayPath = `${EXTENSION_ROUTE_PREFIX}/${pluginName}${restPath}`
 	const ctxPathname =
-		locationPath && locationPath.startsWith(`${EXTENSION_ROUTE_PREFIX}/`) ? locationPath : displayPath
+		locationPath && locationPath.startsWith(`${EXTENSION_ROUTE_PREFIX}/`)
+			? locationPath
+			: displayPath
 	const routeVersion = useExtensionRuntimeVersion(pluginName)
 
 	const routeRender = useMemo(() => {

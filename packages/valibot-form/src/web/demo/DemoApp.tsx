@@ -4,11 +4,7 @@ import { useEffect, useMemo, useState } from 'react'
 import * as v from 'valibot'
 import * as f from '../../index'
 import { AutoForm } from '../index'
-import {
-	CASE_GROUPS,
-	DEMO_CASES,
-	type CaseGroupId,
-} from './data/cases'
+import { CASE_GROUPS, DEMO_CASES, type CaseGroupId } from './data/cases'
 import { CaseHeader } from './components/CaseHeader'
 import { CaseNav } from './components/CaseNav'
 import { FormPanel } from './components/FormPanel'
@@ -71,10 +67,7 @@ export function DemoApp() {
 		[orderedCases, activeId],
 	)
 
-	const groupedCases = useMemo(
-		() => groupCases(orderedCases, CASE_GROUPS),
-		[orderedCases],
-	)
+	const groupedCases = useMemo(() => groupCases(orderedCases, CASE_GROUPS), [orderedCases])
 
 	const navigation = useMemo(
 		() => resolveNavigation(orderedCases, activeCase?.id ?? ''),
@@ -84,13 +77,12 @@ export function DemoApp() {
 		? CASE_GROUPS.find((group) => group.id === activeCase.group)
 		: undefined
 
-	const resolvedSchema = playground.enabled && playground.schema ? playground.schema : activeCase?.schema
+	const resolvedSchema =
+		playground.enabled && playground.schema ? playground.schema : activeCase?.schema
 	const resolvedFormOpts =
 		playground.enabled && playground.schema ? playground.formOpts : activeCase?.formOpts
 	const schemaSource =
-		playground.enabled && playground.schema
-			? playground.code
-			: activeCase?.source
+		playground.enabled && playground.schema ? playground.code : activeCase?.source
 	const resetKey =
 		playground.enabled && playground.schema
 			? `playground-${playground.lastRunAt ?? 0}`
@@ -109,7 +101,10 @@ export function DemoApp() {
 
 	const runPlayground = () => {
 		try {
-			const executor = new Function('v', 'f', playground.code) as (vv: typeof v, ff: typeof f) => any
+			const executor = new Function('v', 'f', playground.code) as (
+				vv: typeof v,
+				ff: typeof f,
+			) => any
 			const result = executor(v, f)
 			const outputSchema = result?.schema ?? result
 			if (!outputSchema || typeof outputSchema !== 'object') {
@@ -163,9 +158,7 @@ export function DemoApp() {
 		/>
 	)
 
-	const mainStyle = isWide
-		? { height: 'calc(100vh - 60px)', overflow: 'hidden' }
-		: undefined
+	const mainStyle = isWide ? { height: 'calc(100vh - 60px)', overflow: 'hidden' } : undefined
 
 	return (
 		<AppShell

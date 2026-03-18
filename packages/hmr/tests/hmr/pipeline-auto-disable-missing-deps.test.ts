@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { HmrExecutor } from '@pluxel/hmr/services/runtime/hmr/pipeline'
+import { HmrExecutor } from '../../src/dev/hmr/pipeline'
 
 describe('HmrExecutor commit retry', () => {
 	it('auto-disables missing-deps plugins and commits the rest', async () => {
@@ -51,9 +51,7 @@ describe('HmrExecutor commit retry', () => {
 				if (commitCalls === 1) {
 					return {
 						ok: false as const,
-						err: new Error(
-							'[MissingDependency] Otlp | chain: UniverLoopbackPlugin -> Otlp',
-						),
+						err: new Error('[MissingDependency] Otlp | chain: UniverLoopbackPlugin -> Otlp'),
 					}
 				}
 				return { ok: true as const, val: null }

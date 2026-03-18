@@ -12,7 +12,7 @@ import {
 	Tooltip,
 } from '@mantine/core'
 import { openConfirmModal } from '@mantine/modals'
-import type { PluginDependencyState } from '@pluxel/hmr-web'
+import type { PluginDependencyState } from '@pluxel/runtime/web'
 import { IconPlus, IconRefresh } from '@tabler/icons-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNotify } from '../../../hooks'
@@ -89,7 +89,9 @@ export function DependencyOverridesCard() {
 
 	const setDependencyTarget = useCallback(
 		async (index: number, next: string | null) => {
-			const res = await hmr.withRpc((rpc) => rpc.plugin(pluginName).setDependencyTarget(index, next))
+			const res = await hmr.withRpc((rpc) =>
+				rpc.plugin(pluginName).setDependencyTarget(index, next),
+			)
 			if (!res.ok) throw new Error(res.error || res.code || '操作失败')
 		},
 		[hmr, pluginName],

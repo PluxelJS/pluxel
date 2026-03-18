@@ -39,6 +39,7 @@
 	},
 	"peerDependencies": {
 		"@pluxel/core": "workspace:*",
+		"@pluxel/runtime": "workspace:*",
 		"vitest": "^4.0.18"
 	},
 	"devDependencies": {

@@ -8,8 +8,8 @@ import {
 	buildHmrViteConfig,
 	resolveFsAllowList,
 	resolveHMRDependencyConfig,
-} from '@pluxel/hmr/services/runtime/hmr/config'
-import { HMRService } from '@pluxel/hmr/services/runtime/hmr/HMRService'
+	HMRService,
+} from '@pluxel/hmr'
 
 const baseDeps = {
 	bridgeModules: [],

@@ -69,9 +69,7 @@ export function formatForkPluginId(baseId: string, forkId: string): string {
 	return `${baseId}${PLUXEL_PLUGIN_FORK_SEPARATOR}${forkId}`
 }
 
-export function parseForkPluginId(
-	id: string,
-): { baseId: string; forkId: string } | null {
+export function parseForkPluginId(id: string): { baseId: string; forkId: string } | null {
 	if (typeof id !== 'string') return null
 	const text = id.trim()
 	const idx = text.indexOf(PLUXEL_PLUGIN_FORK_SEPARATOR)
@@ -94,4 +92,3 @@ export function assertValidPluginId(id: string): void {
 	if (parseForkPluginId(text)) return
 	assertValidBasePluginId(text)
 }
-

@@ -9,8 +9,7 @@ process.chdir(repoRoot)
 
 const activeProfile = process.env.PLUXEL_HMR_PROFILE ?? 'plugins-host'
 
-const configPath =
-	process.env.PLUXEL_HMR_CONFIG ?? 'packages/plugins/host/pluxel.hmr.jsonc'
+const configPath = process.env.PLUXEL_HMR_CONFIG ?? 'packages/plugins/host/pluxel.hmr.jsonc'
 
 const { ctx } = await startHmrHostFromConfig({
 	root: repoRoot,

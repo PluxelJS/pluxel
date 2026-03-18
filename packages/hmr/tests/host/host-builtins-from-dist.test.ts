@@ -24,7 +24,7 @@ describe('@pluxel/hmr/host builtinsFromDist', () => {
 					name: 'pluxel-plugin-app',
 					version: '0.0.0',
 					type: 'module',
-					exports: { '.': { '@pluxel/hmr': './src/index.ts' } },
+					exports: { '.': { '@pluxel/runtime': './src/index.ts' } },
 				},
 				null,
 				2,
@@ -56,7 +56,7 @@ describe('@pluxel/hmr/host builtinsFromDist', () => {
 			})
 
 			const cfg = (
-				res.ctx.root.hmrService as unknown as {
+				res.hmr as unknown as {
 					config: {
 						entries: string[]
 						builtinsFromDist?: Array<{ packageName: string; entry: string }>

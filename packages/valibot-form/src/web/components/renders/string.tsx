@@ -28,7 +28,9 @@ export function StringField(props: RendererProps) {
 					disabled: inputProps.disabled,
 					readOnly: inputProps.readOnly,
 				})}
-				styles={isCode ? { input: { fontFamily: 'var(--mantine-font-family-monospace)' } } : undefined}
+				styles={
+					isCode ? { input: { fontFamily: 'var(--mantine-font-family-monospace)' } } : undefined
+				}
 			/>
 		) : (
 			<TextInput

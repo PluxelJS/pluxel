@@ -1,7 +1,7 @@
 {
 	"name": "@pluxel/hmr",
 	"version": "0.3.0",
-	"description": "Pluxel HMR host/runtime (includes public Web SDK at @pluxel/hmr/web)",
+	"description": "Pluxel development adapter (workspace source execution, watch, HMR)",
 	"type": "module",
 	"types": "./dist/index.d.mts",
 	"exports": {
@@ -9,120 +9,64 @@
 			"@pluxel/source": "./src/index.ts",
 			"default": "./dist/index.mjs"
 		},
-		"./capnweb": {
-			"@pluxel/source": "./src/web/capnweb.ts",
-			"default": "./dist/capnweb.mjs"
-		},
-		"./config": {
-			"@pluxel/source": "./src/config.ts",
-			"default": "./dist/config.mjs"
-		},
 		"./diagnose": {
-			"@pluxel/source": "./src/diagnose/index.ts",
+			"@pluxel/source": "./src/diagnose.ts",
 			"default": "./dist/diagnose.mjs"
 		},
-		"./events": {
-			"@pluxel/source": "./src/events.ts",
-			"default": "./dist/events.mjs"
-		},
 		"./host": {
-			"@pluxel/source": "./src/host/index.ts",
+			"@pluxel/source": "./src/host.ts",
 			"default": "./dist/host.mjs"
 		},
-		"./logger": {
-			"@pluxel/source": "./src/logger/index.ts",
-			"default": "./dist/logger.mjs"
-		},
-		"./services": {
-			"@pluxel/source": "./src/services/index.ts",
-			"default": "./dist/services.mjs"
-		},
-		"./signaldb": {
-			"@pluxel/source": "./src/web/signaldb.ts",
-			"default": "./dist/signaldb.mjs"
+		"./plugin": {
+			"@pluxel/source": "./src/plugin.ts",
+			"default": "./dist/plugin.mjs"
 		},
 		"./snapshot": {
 			"@pluxel/source": "./src/snapshot.ts",
 			"default": "./dist/snapshot.mjs"
 		},
-		"./web": {
-			"@pluxel/source": "./src/web/web.ts",
-			"default": "./dist/web.mjs"
-		},
 		"./package.json": "./package.json"
 	},
 	"files": [
-		"!**/*.map",
-		"dist"
+		"dist",
+		"!**/*.map"
 	],
 	"scripts": {
-		"hmr": "pnpm --filter @pluxel/plugins-host hmr",
-		"mock": "pnpm --filter @pluxel/plugins-host hmr",
-		"hot": "pnpm --filter @pluxel/plugins-host hot",
-		"test": "pnpm exec vitest run",
-		"build": "vite build && tsdown",
-		"web": "vite build"
+		"dev": "pnpm --filter @pluxel/plugins-host hmr",
+		"build": "pnpm run build:lib",
+		"build:lib": "tsdown",
+		"test": "pnpm exec vitest run"
 	},
 	"dependencies": {
-		"@gqloom/core": "^0.16.1",
-		"@gqloom/valibot": "^0.15.1",
-		"@gqty/cli": "^5.0.0",
 		"@logtape/logtape": "^2.0.2",
+		"@pluxel/core": "workspace:*",
+		"@pluxel/runtime": "workspace:*",
 		"@rolldown/pluginutils": "1.0.0-rc.5",
-		"@pluxel/hmr-web": "workspace:*",
-		"@signaldb/core": "^1.7.2",
-		"@tanstack/pacer": "^0.19.0",
-		"@valibot/to-json-schema": "^1.5.0",
-		"better-sse": "^0.16.1",
-		"capnweb": "^0.5.0",
 		"chokidar": "^5.0.0",
-		"elysia": "^1.4.27",
-		"exsolve": "^1.0.8",
-		"fdir": "^6.5.0",
-		"graphql": "^16.13.0",
-		"graphql-yoga": "^5.18.0",
 		"jsonc-parser": "^3.3.1",
-		"mcp-lite": "^0.10.0",
-		"nypm": "^0.6.5",
-		"ohash": "^2.0.11",
 		"pathe": "^2.0.3",
 		"picomatch": "^4.0.3",
 		"pkg-types": "^2.3.0",
-		"superjson": "^2.2.6",
 		"tinypool": "^2.1.0",
-		"valibot": "^1.2.0",
+		"unplugin-macros": "^0.18.6",
 		"vite": "beta"
-	},
-	"peerDependencies": {
-		"@pluxel/core": "workspace:*",
-		"@tabler/icons-react": "*"
 	},
 	"devDependencies": {
 		"@pluxel/build": "workspace:*",
-		"@pluxel/components": "workspace:*",
 		"@pluxel/test": "workspace:*",
 		"@pluxel/workspace": "workspace:*",
-		"@types/picomatch": "^4.0.2",
-		"@types/react": "^19.2.14",
 		"fs-fixture": "^2.11.0",
-		"postcss": "^8.5.6",
-		"postcss-preset-mantine": "^1.18.0",
-		"postcss-simple-vars": "^7.0.1",
-		"valibot-form": "workspace:*"
+		"superjson": "^2.2.6",
+		"tsdown": "^0.20.3",
+		"typescript": "^5.9.3"
 	},
 	"publishConfig": {
 		"exports": {
 			".": "./dist/index.mjs",
-			"./capnweb": "./dist/capnweb.mjs",
-			"./config": "./dist/config.mjs",
 			"./diagnose": "./dist/diagnose.mjs",
-			"./events": "./dist/events.mjs",
 			"./host": "./dist/host.mjs",
-			"./logger": "./dist/logger.mjs",
-			"./services": "./dist/services.mjs",
-			"./signaldb": "./dist/signaldb.mjs",
+			"./plugin": "./dist/plugin.mjs",
 			"./snapshot": "./dist/snapshot.mjs",
-			"./web": "./dist/web.mjs",
 			"./package.json": "./package.json"
 		}
 	}

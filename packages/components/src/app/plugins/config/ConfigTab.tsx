@@ -64,7 +64,10 @@ export function ConfigTabContent({
 		[fieldIdPrefix, pluginName, tabKey],
 	)
 
-	const initialValue = useMemo(() => ({ ...defaultValue, ...savedValue }), [defaultValue, savedValue])
+	const initialValue = useMemo(
+		() => ({ ...defaultValue, ...savedValue }),
+		[defaultValue, savedValue],
+	)
 
 	const opts = useMemo(
 		() =>
@@ -225,7 +228,7 @@ function FormHotkeys({
 								reset(initialValue)
 							},
 						],
-				  ]
+					]
 				: [],
 		[active, initialValue, reset, submit],
 	)

@@ -33,7 +33,9 @@ describe('ConfigService', () => {
 			host.ctx.configService.patchConfig('P', { answer: 1 })
 
 			const first = await host.ctx.configService.ensureValidated('P', { answer: PassthroughSchema })
-			const second = await host.ctx.configService.ensureValidated('P', { answer: PassthroughSchema })
+			const second = await host.ctx.configService.ensureValidated('P', {
+				answer: PassthroughSchema,
+			})
 
 			expect(second).toBe(first)
 		})

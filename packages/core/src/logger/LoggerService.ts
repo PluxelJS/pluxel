@@ -32,7 +32,7 @@ export type LoggerServiceConfig = {
 	 * - `core`: `pluxelCategories.core`, no `name` field by default
 	 * - `hmr`: `pluxelCategories.hmr`, inject `name` by default (for pretty prefix)
 	 *
-	 * Default: inferred from `getPluxelRuntime()` (set by `@pluxel/hmr` entry).
+	 * Default: inferred from `getPluxelRuntime()` (set by `@pluxel/runtime` entry).
 	 */
 	preset?: LoggerServicePreset
 

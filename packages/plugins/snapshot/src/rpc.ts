@@ -1,4 +1,4 @@
-import { RpcTarget } from '@pluxel/hmr/capnweb'
+import { RpcTarget } from '@pluxel/runtime/capnweb'
 import type { SnapshotPlugin } from './index'
 
 export type SnapshotFilesResult =

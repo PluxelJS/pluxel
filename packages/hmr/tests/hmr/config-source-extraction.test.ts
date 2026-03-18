@@ -9,8 +9,8 @@ import {
 	type HMRDependencyConfig,
 	resolveFsAllowList,
 	resolveHMRDependencyConfig,
-} from '@pluxel/hmr/services/runtime/hmr/config'
-import { HMRService } from '@pluxel/hmr/services/runtime/hmr/HMRService'
+	HMRService,
+} from '@pluxel/hmr'
 
 const baseDeps: HMRDependencyConfig = {
 	bridgeModules: [],
@@ -185,9 +185,9 @@ describe('configSourcePlugin integration', () => {
 
 	it('supports configs.use(schema) when scanRoot is a symlink (realpath module ids)', async () => {
 		const root = workspaceRoot
-		// Keep the symlinked root under `packages/hmr/**` so Vite picks up the package tsconfig
+		// Keep the symlinked root under `packages/runtime/**` so Vite picks up the package tsconfig
 		// (decorators transform). Otherwise the file may execute as raw TS and crash with a SyntaxError.
-		const rootsRel = 'packages/hmr/.tmp-pluxel-configSource-symlink'
+		const rootsRel = 'packages/runtime/.tmp-pluxel-configSource-symlink'
 		const linkAbs = join(root, rootsRel)
 		rmSync(linkAbs, { recursive: true, force: true })
 		symlinkSync(fixturesPluginsDir, linkAbs, 'dir')
@@ -222,11 +222,7 @@ describe('configSourcePlugin integration', () => {
 		expect(typeof ctor).toBe('function')
 		const kv = (capture.lastModule as { KvPlugin?: unknown } | null)?.KvPlugin
 		expect(typeof kv).toBe('function')
-		expect(
-			core.getRequiredPluginDependencies(ctor),
-		).toContain(kv)
-		expect(
-			core.getUsedFeatures(ctor).map((x) => x.name),
-		).toContain('CacheFeature')
+		expect(core.getRequiredPluginDependencies(ctor)).toContain(kv)
+		expect(core.getUsedFeatures(ctor).map((x) => x.name)).toContain('CacheFeature')
 	}, 20_000)
 })

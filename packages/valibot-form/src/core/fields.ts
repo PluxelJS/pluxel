@@ -206,7 +206,11 @@ function fieldNameToLabel(fieldName: string): string {
 		.trim()
 }
 
-function normalizeBaseMeta(meta: FormMeta | undefined, fieldName?: string, required = true): FieldMeta {
+function normalizeBaseMeta(
+	meta: FormMeta | undefined,
+	fieldName?: string,
+	required = true,
+): FieldMeta {
 	const merged: FormMeta = { ...(meta ?? {}) }
 	const section = normalizeSection(merged.section)
 	const label = merged.label || (fieldName ? fieldNameToLabel(fieldName) : '未命名字段')
@@ -543,16 +547,13 @@ function normalizeBranchKey(value: DiscriminatorValue | undefined, index: number
 	return String(value)
 }
 
-function extractUnionNode(
-	schema: Schema,
-	ctx: ExtractCtx,
-	baseMeta: FieldMeta,
-): UnionFieldNode {
+function extractUnionNode(schema: Schema, ctx: ExtractCtx, baseMeta: FieldMeta): UnionFieldNode {
 	const meta = extractUnionMeta(schema)
 	const { unionSchema, sharedObjects } = gatherUnionParts(schema as any)
 	const branchesSource = unionSchema?.options ?? []
 	const discriminator =
-		meta.discriminator ?? (branchesSource.length ? inferDiscriminatorKey(branchesSource) : undefined)
+		meta.discriminator ??
+		(branchesSource.length ? inferDiscriminatorKey(branchesSource) : undefined)
 
 	const sharedFields: UnionBranchField[] = []
 	let discriminatorField: UnionBranchField | undefined
@@ -640,7 +641,9 @@ export function extractField(schema: Schema, ctx: ExtractCtx = {}): FieldNode | 
 	const { schema: unwrapped, required } = unwrapOptional(schema)
 	const baseMeta = normalizeBaseMeta(readMeta(unwrapped, META_TYPES.FORM), ctx.fieldName, required)
 	const resolvedMeta =
-		unwrapped.type === 'literal' && baseMeta.readOnly === undefined && baseMeta.disabled === undefined
+		unwrapped.type === 'literal' &&
+		baseMeta.readOnly === undefined &&
+		baseMeta.disabled === undefined
 			? { ...baseMeta, readOnly: true }
 			: baseMeta
 	const kind = resolveKind(unwrapped)

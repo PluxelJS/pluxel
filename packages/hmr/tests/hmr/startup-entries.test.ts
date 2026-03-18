@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { createFixture } from 'fs-fixture'
 import { join } from 'pathe'
-import { HMRService } from '@pluxel/hmr/services/runtime/hmr/HMRService'
+import { HMRService } from '@pluxel/hmr'
 
 const noop = () => undefined
 
@@ -71,7 +71,9 @@ describe('HMRService entries', () => {
 
 		const hmr = new HMRService(ctx, { roots: [root], entries: [a] })
 
-		const scope = await (hmr as unknown as { ensureStartupScope: () => Promise<{ entryList: string[] }> }).ensureStartupScope()
+		const scope = await (
+			hmr as unknown as { ensureStartupScope: () => Promise<{ entryList: string[] }> }
+		).ensureStartupScope()
 		expect(scope.entryList).toContain(a)
 		expect(scope.entryList).toContain(b) // anchors always included
 	})

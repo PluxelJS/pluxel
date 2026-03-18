@@ -12,7 +12,11 @@ import {
 	useExtensionRuntimeVersion,
 } from '../../../extension'
 import { useCurrentPathname } from '../../router/useCurrentRoute'
-import { decodeURIComponentSafe, normalizeExtensionRestPath, readRestPathFromLocation } from './utils'
+import {
+	decodeURIComponentSafe,
+	normalizeExtensionRestPath,
+	readRestPathFromLocation,
+} from './utils'
 
 export function ExtensionStandaloneRoute() {
 	const { pluginName: rawName, path: rawRest } = useParams({})

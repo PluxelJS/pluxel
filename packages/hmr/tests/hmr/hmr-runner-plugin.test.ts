@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { join } from 'pathe'
-import { HMRService } from '@pluxel/hmr/services/runtime/hmr/HMRService'
+import { HMRService } from '@pluxel/hmr'
 import { fixturesPluginsRelFromWorkspace, workspaceRoot } from './_paths'
 
 const noop = () => undefined

@@ -1,9 +1,7 @@
-import { basename, dirname, extname } from 'node:path'
 import {
 	type Config,
 	compareLogLevel,
 	type FilterLike,
-	getTextFormatter,
 	type LoggerConfig,
 	type LogLevel,
 	type LogRecord,
@@ -17,14 +15,10 @@ import { mergeDefaults } from './merge'
 import { readEnv } from './runtime'
 import {
 	createPluxelPrettyConsoleSink,
-	getTimeRotatingFileSink,
 	type PluxelPrettyConsoleSinkOptions,
-	type TimeRotatingFileSinkOptions,
 } from './sinks'
 import {
 	createPluxelPrettyTimestampFormatter,
-	createPluxelTextTimestampFormatter,
-	resolvePluxelLogFileTimezone,
 	resolvePluxelLogTimezone,
 } from './timestamp'
 import { matchesTopic, normalizeTopic } from './topic'
@@ -174,25 +168,15 @@ export type PluxelLogtapeConfigOptions = {
 	console?: PluxelPrettyConsoleSinkOptions | true | false
 
 	/**
-	 * Configure a rotating file sink (defaults to **daily time rotation**).
+	 * Optional file sink (Node-only).
 	 *
-	 * Shorthands:
-	 * - `string` / `{ path }`: treated as a *prefix path* (e.g. `/logs/app.log`)
-	 *   and expanded to daily files in the same directory:
-	 *   `/logs/app-YYYY-MM-DD.log`.
-	 *
-	 * Advanced:
-	 * - `{ directory, filename?, interval?, maxAgeMs? }`: full time-rotating options
-	 * - `{ sink }`: custom sink instance
+	 * Note:
+	 * - `@pluxel/core` does not build file sinks from a path. If you need the
+	 *   "daily rotation by prefix path" behavior, use `@pluxel/runtime/logger`
+	 *   (e.g. `ensurePluxelLogging({ file: "./logs/app.log" })`) or pass a custom sink
+	 *   created by `@logtape/file`.
 	 */
-	file?:
-		| string
-		| { path?: string; sink?: Sink }
-		| (Pick<
-				TimeRotatingFileSinkOptions,
-				'directory' | 'filename' | 'interval' | 'maxAgeMs' | 'formatter'
-		  > & { sink?: never })
-		| false
+	file?: Sink | false
 
 	/**
 	 * Optional "ui" sink (e.g. HMR log store) and category bindings.
@@ -384,98 +368,6 @@ function normalizeUi(ui: PluxelUiOption): PluxelUiLoggerOptions {
 	return ui
 }
 
-function formatDate(date: Date): string {
-	const yyyy = date.getFullYear()
-	const mm = String(date.getMonth() + 1).padStart(2, '0')
-	const dd = String(date.getDate()).padStart(2, '0')
-	return `${yyyy}-${mm}-${dd}`
-}
-
-function createDailyLogFilename(prefix: string, ext: string) {
-	return (date: Date) => `${prefix}-${formatDate(date)}${ext}`
-}
-
-function renderTextFormatterValue(value: unknown): string {
-	// LogTape's default "inspect" falls back to JSON.stringify in Node/Bun, which can throw for
-	// values like BigInt or circular structures. This renderer is intentionally conservative:
-	// it must never throw.
-	if (typeof value === 'string') return JSON.stringify(value)
-	if (typeof value === 'number' || typeof value === 'boolean') return String(value)
-	if (typeof value === 'bigint') return JSON.stringify(`${value}n`)
-	if (value === null) return 'null'
-	if (value === undefined) return 'undefined'
-	if (typeof value === 'symbol') return JSON.stringify(value.toString())
-	if (typeof value === 'function') {
-		const name = (value as { name?: unknown }).name
-		return JSON.stringify(`[Function ${typeof name === 'string' && name ? name : 'anonymous'}]`)
-	}
-
-	const seen = new WeakSet<object>()
-	try {
-		const out = JSON.stringify(value, (_k, v) => {
-			if (typeof v === 'bigint') return `${v}n`
-			if (typeof v === 'symbol') return v.toString()
-			if (typeof v === 'function') {
-				const name = (v as { name?: unknown }).name
-				return `[Function ${typeof name === 'string' && name ? name : 'anonymous'}]`
-			}
-			if (v && typeof v === 'object') {
-				if (seen.has(v)) return '[Circular]'
-				seen.add(v)
-			}
-			return v
-		})
-		return out ?? JSON.stringify(String(value))
-	} catch {
-		return JSON.stringify(String(value))
-	}
-}
-
-function createPluxelSafeTextFormatter(timestamp: (ts: number) => string) {
-	return getTextFormatter({
-		timestamp,
-		value: (v) => renderTextFormatterValue(v),
-	})
-}
-
-function createDailyTimeRotatingFileSink(path: string, opts?: { maxAgeMs?: number }): Sink {
-	const directory = dirname(path)
-	const base = basename(path)
-	const extRaw = extname(base)
-	const ext = extRaw || '.log'
-	const prefix = extRaw ? base.slice(0, -extRaw.length) : base
-
-	return getTimeRotatingFileSink({
-		directory,
-		filename: prefix ? createDailyLogFilename(prefix, ext) : (d) => `${formatDate(d)}${ext}`,
-		interval: 'daily',
-		maxAgeMs: opts?.maxAgeMs,
-		formatter: createPluxelSafeTextFormatter(
-			createPluxelTextTimestampFormatter(resolvePluxelLogFileTimezone()),
-		),
-	})
-}
-
-type TimeRotatingFileOption = Pick<
-	TimeRotatingFileSinkOptions,
-	'directory' | 'filename' | 'interval' | 'maxAgeMs' | 'formatter'
->
-
-function isTimeRotatingFileOption(value: unknown): value is TimeRotatingFileOption {
-	if (!value || typeof value !== 'object') return false
-	return typeof (value as Record<string, unknown>).directory === 'string'
-}
-
-type FilePathOrSinkOption = { path?: string; sink?: Sink }
-
-function isFilePathOrSinkOption(value: unknown): value is FilePathOrSinkOption {
-	if (!value || typeof value !== 'object') return false
-	const v = value as Record<string, unknown>
-	if ('sink' in v && v.sink !== undefined && typeof v.sink !== 'function') return false
-	if ('path' in v && v.path !== undefined && typeof v.path !== 'string') return false
-	return true
-}
-
 export function createPluxelLogtapeConfig(
 	opts: PluxelLogtapeConfigOptions = {},
 ): Config<string, string> {
@@ -489,22 +381,7 @@ export function createPluxelLogtapeConfig(
 	if (consoleOptions !== false) sinks.console = createPluxelPrettyConsoleSink(consoleOptions)
 
 	const file = opts.file
-	if (file !== false) {
-		if (typeof file === 'string') sinks.file = createDailyTimeRotatingFileSink(file)
-		else if (isTimeRotatingFileOption(file)) {
-			sinks.file = getTimeRotatingFileSink({
-				formatter:
-					file.formatter ??
-					createPluxelSafeTextFormatter(
-						createPluxelTextTimestampFormatter(resolvePluxelLogFileTimezone()),
-					),
-				...file,
-			})
-		} else if (isFilePathOrSinkOption(file)) {
-			if (file.sink) sinks.file = file.sink
-			else if (file.path) sinks.file = createDailyTimeRotatingFileSink(file.path)
-		}
-	}
+	if (file) sinks.file = file
 
 	const uiInput = opts.ui
 	if (uiInput) {

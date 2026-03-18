@@ -9,7 +9,7 @@
 // - `LogRecord.timestamp` 永远是 epoch ms；这里讨论的是“格式化显示”。
 // - vault 默认目录是 `data/vault/<namespace>/vault.json`（相对 cwd）。
 
-import { BasePlugin, Plugin } from '@pluxel/hmr'
+import { BasePlugin, Plugin } from '@pluxel/runtime'
 
 @Plugin({ name: 'PluginVaultDemo' })
 export class PluginVaultDemo extends BasePlugin {

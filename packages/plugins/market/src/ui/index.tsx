@@ -24,7 +24,7 @@ import {
 	type PackageSpecInput,
 	type PluginExtensionContext,
 	useExtensionContext,
-} from '@pluxel/hmr/web'
+} from '@pluxel/runtime/web'
 import { IconExternalLink, IconInfoCircle, IconShoppingBag } from '@tabler/icons-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 
@@ -82,11 +82,7 @@ const getPackageNameFromSpec = (spec: string) => {
 }
 
 const specKey = (spec?: PackageSpecInput) =>
-	(
-		spec?.raw ||
-		`${spec?.name ?? ''}@${spec?.version ?? spec?.tag ?? ''}` ||
-		''
-	).toLowerCase()
+	(spec?.raw || `${spec?.name ?? ''}@${spec?.version ?? spec?.tag ?? ''}` || '').toLowerCase()
 
 async function fetchPackageInventory(
 	hmr: PluginExtensionContext['services']['hmr'],
@@ -248,10 +244,7 @@ function MarketPage() {
 					: ''
 				const confirmed = await confirm({
 					title: '检测到插件依赖',
-					message: [
-						`以下依赖将自动安装：${dependencyList}`,
-						optionalList,
-					]
+					message: [`以下依赖将自动安装：${dependencyList}`, optionalList]
 						.filter(Boolean)
 						.join('\n'),
 					confirmLabel: '连带安装',

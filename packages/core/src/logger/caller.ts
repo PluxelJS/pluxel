@@ -1,5 +1,4 @@
-import { isAbsolute, relative } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { isAbsolute, relative } from 'pathe'
 import { isProduction } from 'std-env'
 
 import { readBoolEnv, tryGetCwd } from './runtime'
@@ -32,9 +31,10 @@ const DEFAULT_SKIP_MARKERS = [
 	'/node_modules/@logtape/',
 	'\\node_modules\\@logtape\\',
 	'/packages/core/src/logger/',
-	'/packages/hmr/src/logger/',
-	'/packages/hmr/src/services/runtime/hmr/logging.',
+	'/packages/runtime/src/logger/',
+	'/packages/hmr/src/dev/hmr/logging.',
 	'/packages/core/dist/',
+	'/packages/runtime/dist/',
 	'/packages/hmr/dist/',
 	'/dist/',
 	'LoggerService.',
@@ -45,7 +45,16 @@ const DEFAULT_SKIP_MARKERS = [
 function tryFileUrlToPath(input: string): string {
 	if (!input.startsWith('file://')) return input
 	try {
-		return fileURLToPath(input)
+			const url = new URL(input)
+			if (url.protocol !== 'file:') return input
+
+			let path = decodeURIComponent(url.pathname)
+			// Windows drive letters: file:///C:/path -> C:/path
+			if (/^\/[A-Za-z]:\//.test(path)) path = path.slice(1)
+			// UNC paths: file://server/share/path -> //server/share/path
+			if (url.hostname) path = `//${url.hostname}${path}`
+
+			return path
 	} catch {
 		return input
 	}

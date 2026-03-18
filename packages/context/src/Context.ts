@@ -25,6 +25,13 @@ type ServiceMeta = {
 
 // biome-ignore lint/suspicious/noUnsafeDeclarationMerging: this class is intentionally merged with an interface for service augmentation.
 export class Context {
+	get [Symbol.toStringTag]() {
+		// Hint frameworks like Elysia that this is a class-like object, so they don't deep-merge
+		// arbitrary runtime state into request contexts (which can accidentally traverse Vite config
+		// objects and trigger deprecation setters like `optimizeDeps.rollupOptions`).
+		return 'PluxelContext'
+	}
+
 	/** 全局 serviceKey → instKey 映射 */
 	private static defaultMapping: SymMap = Object.create(null)
 	/** ServiceClass → meta 缓存 */
@@ -381,7 +388,7 @@ export namespace Context {
 		 * - `*` → enables all debug topics (discouraged)
 		 *
 		 * Notes:
-		 * - Used by `@pluxel/hmr` to gate internal debug logs and to seed LogTape auto-config debug rules.
+		 * - Used by `@pluxel/runtime` to gate internal debug logs and to seed LogTape auto-config debug rules.
 		 * - Consumers can also pass these to `createPluxelLogtapeConfig({ debug })`.
 		 */
 		debug?: readonly DebugTopicPattern[]

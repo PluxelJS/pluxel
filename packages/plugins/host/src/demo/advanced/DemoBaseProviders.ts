@@ -8,7 +8,7 @@
 // - 只启用一个 Provider：DemoClock.System 或 DemoClock.Fixed（二选一）
 // - 再启用 DemoClockConsumer，观察注入到的 provider 变化
 
-import { BasePlugin, Plugin } from '@pluxel/hmr'
+import { BasePlugin, Plugin } from '@pluxel/runtime'
 
 export abstract class DemoClock extends BasePlugin {
 	abstract now(): number

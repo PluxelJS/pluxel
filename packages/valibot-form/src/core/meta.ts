@@ -182,7 +182,9 @@ export type MetadataAction<TType extends MetaType, TInput = unknown> = Omit<
 export function createMetaFactory<TType extends MetaType>(type: TType) {
 	// Use a variadic signature to stay assignable to Valibot's `BaseMetadata["reference"]`,
 	// which is typed as `(...args: any[]) => BaseMetadata<any>`.
-	const factory = <TInput = any>(...args: [metadata: MetaValueMap[TType]]): MetadataAction<TType, TInput> => ({
+	const factory = <TInput = any>(
+		...args: [metadata: MetaValueMap[TType]]
+	): MetadataAction<TType, TInput> => ({
 		kind: 'metadata',
 		type,
 		metadata: args[0],
@@ -192,9 +194,7 @@ export function createMetaFactory<TType extends MetaType>(type: TType) {
 }
 
 export const formMeta = createMetaFactory<'form'>('form')
-export const stringMeta = createMetaFactory<'string'>('string') as <
-	TInput extends string = string,
->(
+export const stringMeta = createMetaFactory<'string'>('string') as <TInput extends string = string>(
 	metadata: StringMeta,
 ) => MetadataAction<'string', TInput>
 export const numberMeta = createMetaFactory<'number'>('number') as <TInput extends number = number>(
@@ -210,7 +210,9 @@ export const picklistMeta = createMetaFactory<'picklist'>('picklist') as <
 >(
 	metadata: PicklistMeta,
 ) => MetadataAction<'picklist', TInput>
-export const arrayMeta = createMetaFactory<'array'>('array') as <TInput extends unknown[] = unknown[]>(
+export const arrayMeta = createMetaFactory<'array'>('array') as <
+	TInput extends unknown[] = unknown[],
+>(
 	metadata: ArrayMeta,
 ) => MetadataAction<'array', TInput>
 export const recordMeta = createMetaFactory<'record'>('record') as <

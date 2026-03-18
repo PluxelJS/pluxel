@@ -1,4 +1,5 @@
 {
+	"private": true,
 	"sideEffects": true,
 	"type": "module",
 	"name": "valibot-form",

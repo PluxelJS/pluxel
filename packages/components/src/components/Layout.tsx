@@ -195,7 +195,16 @@ export function Layout({
 				footer={navbarFooterNode}
 			/>
 		)
-	}, [navbar, navItems, LinkComponent, currentPath, ctx, compactNavbar, toggleCompact, navbarFooterNode])
+	}, [
+		navbar,
+		navItems,
+		LinkComponent,
+		currentPath,
+		ctx,
+		compactNavbar,
+		toggleCompact,
+		navbarFooterNode,
+	])
 
 	// —— Main 高度：一次算清 —— //
 	const mainHeight = `calc(100dvh - ${headerHeight}px - ${footerHeight}px)`

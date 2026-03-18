@@ -39,7 +39,7 @@ export type BuildNodeDistResult = {
  * Build a runnable Node dist directory:
  * - bundles the given entry to `outDir/index.mjs` (chunks allowed)
  * - traces + copies runtime `node_modules` via nf3
- * - optionally copies static package dirs (e.g. `@pluxel/hmr/dist/public`)
+ * - optionally copies static package dirs (e.g. `@pluxel/runtime/dist/public`)
  *
  * Notes:
  * - Output cleaning is restricted to `${cwd}/.pluxel/*` by default for safety.

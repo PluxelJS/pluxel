@@ -1,7 +1,8 @@
 import { resolve } from 'pathe'
+import { toPosixPath } from '@pluxel/runtime/shared'
 
 export function toPosix(p: string) {
-	return p.replace(/\\/g, '/')
+	return toPosixPath(p)
 }
 
 export function uniqSorted(items: readonly string[]): string[] {
@@ -28,4 +29,3 @@ export function toRootRelative(rootDirAbs: string, absPath: string) {
 	if (abs.startsWith(prefix)) return abs.slice(prefix.length)
 	return abs
 }
-

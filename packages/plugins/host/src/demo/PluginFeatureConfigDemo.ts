@@ -1,5 +1,5 @@
-import { BaseFeature, BasePlugin, Plugin } from '@pluxel/hmr'
-import { f, v } from '@pluxel/hmr/config'
+import { BaseFeature, BasePlugin, Plugin } from '@pluxel/runtime'
+import { f, v } from '@pluxel/runtime/config'
 
 const PluginConfig = v.object({
 	enabled: v.pipe(

@@ -4,7 +4,7 @@ import { ActionIcon, Group, Switch, Tooltip } from '@mantine/core'
 import { openConfirmModal } from '@mantine/modals'
 import { IconPlayerPlay, IconRotateClockwise, IconSquareX } from '@tabler/icons-react'
 import { useCallback, useRef, useState } from 'react'
-import type { PluginStatusAction } from '@pluxel/hmr-web'
+import type { PluginStatusAction } from '@pluxel/runtime/web'
 import { ExtensionSlot } from '../../../../extension'
 import { PluginStatusEntryLifecycleStage } from '../../../gqty'
 import { useNotify } from '../../../hooks'
@@ -183,10 +183,7 @@ export function ActionBar({ onStatusUpdated }: ActionBarProps) {
 				return
 			}
 
-			const results = await executeStartPlan(
-				plan.order,
-				action === 'restart' ? 'restart' : 'start',
-			)
+			const results = await executeStartPlan(plan.order, action === 'restart' ? 'restart' : 'start')
 			if (mySeq !== seqRef.current) return
 			const failed = results.filter((r) => !r.ok)
 			if (failed.length) {

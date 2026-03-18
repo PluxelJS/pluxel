@@ -157,9 +157,15 @@ export function registerPluginLifecycleBenchmarks(bench: Bench, scenario: Scenar
 	// This is closer to how real apps behave (baseline stays, you mutate a bit).
 	// ---------------------------------------------------------------------------
 
-	stableTask(bench, cleanups, 'baseline: noop commit (star)', () => scenario.setupStarBaseline('bench-star-noop'), async (ctx) => {
-		ensureOk(await ctx.registry.commit())
-	})
+	stableTask(
+		bench,
+		cleanups,
+		'baseline: noop commit (star)',
+		() => scenario.setupStarBaseline('bench-star-noop'),
+		async (ctx) => {
+			ensureOk(await ctx.registry.commit())
+		},
+	)
 
 	stableTask(
 		bench,
@@ -176,37 +182,61 @@ export function registerPluginLifecycleBenchmarks(bench: Bench, scenario: Scenar
 		},
 	)
 
-	stableTask(bench, cleanups, 'restart: leaf (star)', () => scenario.setupStarBaseline('bench-star-restart-leaf'), async (ctx) => {
-		await repeat(loops, async () => {
-			ctx.registry.restart(scenario.star.hotLeafV1)
-			ensureOk(await ctx.registry.commit())
-		})
-	})
+	stableTask(
+		bench,
+		cleanups,
+		'restart: leaf (star)',
+		() => scenario.setupStarBaseline('bench-star-restart-leaf'),
+		async (ctx) => {
+			await repeat(loops, async () => {
+				ctx.registry.restart(scenario.star.hotLeafV1)
+				ensureOk(await ctx.registry.commit())
+			})
+		},
+	)
 
-	stableTask(bench, cleanups, 'restart: root (star)', () => scenario.setupStarBaseline('bench-star-restart-root'), async (ctx) => {
-		await repeat(loops, async () => {
-			ctx.registry.restart(scenario.star.rootV1)
-			ensureOk(await ctx.registry.commit())
-		})
-	})
+	stableTask(
+		bench,
+		cleanups,
+		'restart: root (star)',
+		() => scenario.setupStarBaseline('bench-star-restart-root'),
+		async (ctx) => {
+			await repeat(loops, async () => {
+				ctx.registry.restart(scenario.star.rootV1)
+				ensureOk(await ctx.registry.commit())
+			})
+		},
+	)
 
-	stableTask(bench, cleanups, 'hmr: replace leaf (star)', () => scenario.setupStarBaseline('bench-star-replace-leaf'), async (ctx) => {
-		await repeat(loops, async () => {
-			ctx.registry.replace(scenario.star.hotLeafV1, scenario.star.hotLeafV2)
-			ensureOk(await ctx.registry.commit())
-			ctx.registry.replace(scenario.star.hotLeafV1, scenario.star.hotLeafV1)
-			ensureOk(await ctx.registry.commit())
-		})
-	})
+	stableTask(
+		bench,
+		cleanups,
+		'hmr: replace leaf (star)',
+		() => scenario.setupStarBaseline('bench-star-replace-leaf'),
+		async (ctx) => {
+			await repeat(loops, async () => {
+				ctx.registry.replace(scenario.star.hotLeafV1, scenario.star.hotLeafV2)
+				ensureOk(await ctx.registry.commit())
+				ctx.registry.replace(scenario.star.hotLeafV1, scenario.star.hotLeafV1)
+				ensureOk(await ctx.registry.commit())
+			})
+		},
+	)
 
-	stableTask(bench, cleanups, 'hmr: replace root (star)', () => scenario.setupStarBaseline('bench-star-replace-root'), async (ctx) => {
-		await repeat(loops, async () => {
-			ctx.registry.replace(scenario.star.rootV1, scenario.star.rootV2)
-			ensureOk(await ctx.registry.commit())
-			ctx.registry.replace(scenario.star.rootV1, scenario.star.rootV1)
-			ensureOk(await ctx.registry.commit())
-		})
-	})
+	stableTask(
+		bench,
+		cleanups,
+		'hmr: replace root (star)',
+		() => scenario.setupStarBaseline('bench-star-replace-root'),
+		async (ctx) => {
+			await repeat(loops, async () => {
+				ctx.registry.replace(scenario.star.rootV1, scenario.star.rootV2)
+				ensureOk(await ctx.registry.commit())
+				ctx.registry.replace(scenario.star.rootV1, scenario.star.rootV1)
+				ensureOk(await ctx.registry.commit())
+			})
+		},
+	)
 
 	stableTask(
 		bench,
@@ -239,19 +269,31 @@ export function registerPluginLifecycleBenchmarks(bench: Bench, scenario: Scenar
 		},
 	)
 
-	stableTask(bench, cleanups, 'restart: chain middle (deep)', () => scenario.setupChainBaseline('bench-chain-restart-middle'), async (ctx) => {
-		await repeat(loops, async () => {
-			ctx.registry.restart(scenario.chain.middle)
-			ensureOk(await ctx.registry.commit())
-		})
-	})
+	stableTask(
+		bench,
+		cleanups,
+		'restart: chain middle (deep)',
+		() => scenario.setupChainBaseline('bench-chain-restart-middle'),
+		async (ctx) => {
+			await repeat(loops, async () => {
+				ctx.registry.restart(scenario.chain.middle)
+				ensureOk(await ctx.registry.commit())
+			})
+		},
+	)
 
-	stableTask(bench, cleanups, 'restart: chain leaf (deep)', () => scenario.setupChainBaseline('bench-chain-restart-leaf'), async (ctx) => {
-		await repeat(loops, async () => {
-			ctx.registry.restart(scenario.chain.leaf)
-			ensureOk(await ctx.registry.commit())
-		})
-	})
+	stableTask(
+		bench,
+		cleanups,
+		'restart: chain leaf (deep)',
+		() => scenario.setupChainBaseline('bench-chain-restart-leaf'),
+		async (ctx) => {
+			await repeat(loops, async () => {
+				ctx.registry.restart(scenario.chain.leaf)
+				ensureOk(await ctx.registry.commit())
+			})
+		},
+	)
 
 	stableTask(
 		bench,
@@ -292,9 +334,15 @@ export function registerPluginLifecycleBenchmarks(bench: Bench, scenario: Scenar
 	// Large baselines (many independent plugins) to surface DI/build scaling.
 	// ---------------------------------------------------------------------------
 
-	stableTask(bench, cleanups, 'big: noop commit (independent + star)', () => scenario.setupBigStarBaseline('bench-big-noop'), async (ctx) => {
-		ensureOk(await ctx.registry.commit())
-	})
+	stableTask(
+		bench,
+		cleanups,
+		'big: noop commit (independent + star)',
+		() => scenario.setupBigStarBaseline('bench-big-noop'),
+		async (ctx) => {
+			ensureOk(await ctx.registry.commit())
+		},
+	)
 
 	stableTask(
 		bench,

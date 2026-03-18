@@ -253,20 +253,17 @@ describe('publish with CI context', () => {
 	it('can trigger webhook when publish is skipped (webhook flag)', async () => {
 		const requests: string[] = []
 
-		vi.stubGlobal(
-			'fetch',
-			(async (input: RequestInfo | URL, init?: RequestInit) => {
-				const url = typeof input === 'string' ? input : input.toString()
-				requests.push(url)
-				if (url.includes('oidc')) {
-					return new Response(JSON.stringify({ value: 'test-token' }), {
-						status: 200,
-						headers: { 'Content-Type': 'application/json' },
-					})
-				}
-				return new Response('{}', { status: 200, headers: { 'Content-Type': 'application/json' } })
-			}) as typeof fetch,
-		)
+		vi.stubGlobal('fetch', (async (input: RequestInfo | URL, init?: RequestInit) => {
+			const url = typeof input === 'string' ? input : input.toString()
+			requests.push(url)
+			if (url.includes('oidc')) {
+				return new Response(JSON.stringify({ value: 'test-token' }), {
+					status: 200,
+					headers: { 'Content-Type': 'application/json' },
+				})
+			}
+			return new Response('{}', { status: 200, headers: { 'Content-Type': 'application/json' } })
+		}) as typeof fetch)
 
 		try {
 			await withPackageFixture('example-pkg', '6.0.0', undefined, async (dir) => {

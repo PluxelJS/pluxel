@@ -5,11 +5,7 @@
 
 import type { Context } from '@pluxel/context'
 import { BasePlugin } from '../composition/BasePlugin'
-import {
-	type LifecycleSnapshot,
-	lifecycleSelectors,
-	PluginLifecycleActor,
-} from './PluginActor'
+import { type LifecycleSnapshot, lifecycleSelectors, PluginLifecycleActor } from './PluginActor'
 import type { PluginIdentifier } from '../types'
 
 const PLUGIN_LIFECYCLE = Symbol.for('pluxel:plugin:lifecycle')
@@ -84,7 +80,11 @@ export class LifecycleManager {
 
 	/* ─────────────────────────── Lifecycle Management ─────────────────────────── */
 
-	async startLifecycle(id: PluginIdentifier, plugin: BasePlugin, timeoutMs?: number): Promise<void> {
+	async startLifecycle(
+		id: PluginIdentifier,
+		plugin: BasePlugin,
+		timeoutMs?: number,
+	): Promise<void> {
 		const ref = this.ensureLifecycle(id, plugin)
 		if (lifecycleSelectors.isRunning(ref.getSnapshot?.())) return
 

@@ -59,7 +59,11 @@ const HANDLE_ID_BITS = 20
 const HANDLE_STRIDE = 2 ** HANDLE_ID_BITS
 
 function isPromiseLike(x: unknown): x is PromiseLike<unknown> {
-	return !!x && (typeof x === 'object' || typeof x === 'function') && typeof (x as any).then === 'function'
+	return (
+		!!x &&
+		(typeof x === 'object' || typeof x === 'function') &&
+		typeof (x as any).then === 'function'
+	)
 }
 
 function normalizePhase(phase: Phase | undefined): Phase {
@@ -206,12 +210,15 @@ class EffectsImpl implements Effects, EffectGuardHost {
 		if (!opts?.allowFrozen && this.freezeDepth > 0) throw new EffectsFrozenError()
 	}
 
-	private alloc(kind: EntryKind, a: unknown, b: unknown, meta: EffectsMeta | undefined): EffectGuard {
+	private alloc(
+		kind: EntryKind,
+		a: unknown,
+		b: unknown,
+		meta: EffectsMeta | undefined,
+	): EffectGuard {
 		const id = this.freeIds.length > 0 ? (this.freeIds.pop() as number) : this.nextId++
 		if (id >= HANDLE_STRIDE) {
-			throw new Error(
-				`Effects registry overflow: id=${id} exceeds HANDLE_STRIDE=${HANDLE_STRIDE}.`,
-			)
+			throw new Error(`Effects registry overflow: id=${id} exceeds HANDLE_STRIDE=${HANDLE_STRIDE}.`)
 		}
 		const nextToken = (this.tokenById[id] ?? 0) + 1
 		this.tokenById[id] = nextToken
@@ -275,7 +282,11 @@ class EffectsImpl implements Effects, EffectGuardHost {
 
 	async transaction<R>(fn: (tx: Effects) => R | Promise<R>): Promise<R> {
 		if (this.state !== ServiceState.LIVE) throw new EffectsDisposedError()
-		const checkpoints = [this.stacks[0].length, this.stacks[1].length, this.stacks[2].length] as const
+		const checkpoints = [
+			this.stacks[0].length,
+			this.stacks[1].length,
+			this.stacks[2].length,
+		] as const
 		this.freezeDepth++
 		const tx = new EffectsTxView(this)
 		try {
@@ -512,10 +523,7 @@ class EffectsScopeImpl implements EffectsScope {
 
 @Injectable({ key: serviceName })
 export class EffectsService extends EffectsScopeImpl {
-	constructor(
-		ctx: Context,
-		_cfg: unknown = undefined,
-	) {
+	constructor(ctx: Context, _cfg: unknown = undefined) {
 		super(ctx)
 	}
 }

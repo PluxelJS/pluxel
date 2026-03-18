@@ -5,12 +5,12 @@
 //    - 消费者通过构造注入生产者并订阅
 //
 // 2) declare module 事件合同（松耦合、走全局总线）：
-//    - 在 Context.Events 里集中声明事件名/参数
+//    - 在 RuntimeEvents 里集中声明事件名/参数
 //    - 生产者 ctx.emit(...)
 //    - 消费者 ctx.on(...)
 
-import { BasePlugin, Plugin } from '@pluxel/hmr'
-import { EvtChannel } from '@pluxel/hmr/services'
+import { BasePlugin, Plugin } from '@pluxel/runtime'
+import { EvtChannel } from '@pluxel/runtime/services'
 
 // -------------------------
 // 1) EvtChannel demo
@@ -56,11 +56,9 @@ export class PluginEventsChannelConsumer extends BasePlugin {
 // 2) Declared global events demo
 // -------------------------
 
-declare module '@pluxel/hmr' {
-	export namespace Context {
-		interface Events {
-			'pluxel:demo:bus:tick': [payload: { from: string; seq: number; at: number }]
-		}
+declare module '@pluxel/core' {
+	interface Events {
+		'pluxel:demo:bus:tick': [payload: { from: string; seq: number; at: number }]
 	}
 }
 

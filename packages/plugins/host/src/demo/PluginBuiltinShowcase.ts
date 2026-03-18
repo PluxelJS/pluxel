@@ -1,10 +1,10 @@
 // 展示型插件：尽量不注册自定义组件，仅使用宿主内置能力（builtin UI + config schemas）
 
-import { BasePlugin, Plugin } from '@pluxel/hmr'
-import { RpcTarget } from '@pluxel/hmr/capnweb'
-import { f, v } from '@pluxel/hmr/config'
-import type { SseChannel } from '@pluxel/hmr/services'
-import { doc } from '@pluxel/hmr/services'
+import { BasePlugin, Plugin } from '@pluxel/runtime'
+import { RpcTarget } from '@pluxel/runtime/capnweb'
+import { f, v } from '@pluxel/runtime/config'
+import type { SseChannel } from '@pluxel/runtime/services'
+import { doc } from '@pluxel/runtime/services'
 
 const MIN_REFRESH_MS = 250
 const MAX_REFRESH_MS = 10_000
@@ -714,22 +714,20 @@ export class PluginBuiltinShowcaseRpc extends RpcTarget {
 	}
 }
 
-declare module '@pluxel/hmr/web' {
-	namespace UI {
-		interface rpc {
-			PluginBuiltinShowcase: PluginBuiltinShowcaseRpc
-		}
+declare module '@pluxel/runtime/web' {
+	interface HmrUiRpcMap {
+		PluginBuiltinShowcase: PluginBuiltinShowcaseRpc
+	}
 
-		interface sse {
-			PluginBuiltinShowcase: {
-				uptimeMs: number
-				uptimeLabel: string
-				ticks: number
-				paused: boolean
-				refreshMs: number
-				tickStep: number
-				maxTicks: number
-			}
+	interface HmrUiSseMap {
+		PluginBuiltinShowcase: {
+			uptimeMs: number
+			uptimeLabel: string
+			ticks: number
+			paused: boolean
+			refreshMs: number
+			tickStep: number
+			maxTicks: number
 		}
 	}
 }

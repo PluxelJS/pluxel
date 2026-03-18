@@ -12,6 +12,14 @@
 			"dependsOn": ["^build"],
 			"outputs": ["dist/**", "public/**"]
 		},
+		"build:lib": {
+			"dependsOn": ["^build"],
+			"outputs": ["dist/**"]
+		},
+		"build:web": {
+			"dependsOn": [],
+			"outputs": ["public/**"]
+		},
 		"build:plugin": {
 			"dependsOn": ["^build"],
 			"outputs": ["dist/**", "public/**"]

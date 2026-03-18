@@ -142,7 +142,7 @@ export class ComposedPlugin extends BasePlugin {
 }
 `,
 	'plugin-with-config-alias.ts': `import * as v from 'valibot'
-import { BasePlugin, Config as UseConfig, Plugin, type Config as InferConfig } from '@pluxel/hmr'
+import { BasePlugin, Config as UseConfig, Plugin, type Config as InferConfig } from '@pluxel/core'
 
 const aliasSchema = v.object({
 	name: v.string(),
@@ -465,7 +465,7 @@ describe('configSourcePlugin', () => {
 			const bundle = await rolldown({
 				input: resolve(fixturesDir, 'plugin-with-config-alias.ts'),
 				plugins: [configSourcePlugin()],
-				external: ['valibot', '@pluxel/hmr', '@pluxel/core'],
+				external: ['valibot', '@pluxel/runtime', '@pluxel/core'],
 			})
 
 			const { output } = await bundle.generate({ format: 'esm' })

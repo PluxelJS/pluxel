@@ -1,0 +1,64 @@
+import { fileURLToPath } from 'node:url'
+import { defineConfig } from 'tsdown'
+import PreprocessorDirectives from 'unplugin-preprocessor-directives/rollup'
+
+const valibotFormSrc = fileURLToPath(new URL('../valibot-form/src', import.meta.url))
+const workspaceIndex = fileURLToPath(new URL('../workspace/src/index.ts', import.meta.url))
+
+export default defineConfig({
+	exports: {
+		devExports: '@pluxel/source',
+	},
+	noExternal: ['@pluxel/workspace', '@pluxel/workspace/*', 'valibot-form', 'valibot-form/*'],
+	plugins: [PreprocessorDirectives()],
+	env: {},
+	entry: {
+		index: 'src/index.ts',
+		frozen: 'src/frozen.ts',
+		// Type-only module augmentation bridge (stable .d.mts file for TS consumers).
+		events: 'src/events.ts',
+		logger: 'src/logger.ts',
+		services: 'src/services.ts',
+		shared: 'src/shared.ts',
+		internal: 'src/internal.ts',
+		config: 'src/config.ts',
+		web: 'src/web.ts',
+		'web/paths': 'src/web/paths.ts',
+		'web/vendors': 'src/web/plugin-ui/vendors.ts',
+		capnweb: 'src/capnweb.ts',
+		signaldb: 'src/signaldb.ts',
+	},
+	copy: ['public'],
+	alias: {
+		'~': valibotFormSrc,
+		'@pluxel/workspace': workspaceIndex,
+	},
+	tsconfig: './tsconfig.json',
+	dts: {
+		sourcemap: true,
+	},
+	// 不要内联 core / react 相关，避免重复 vendor。
+	external: [
+		'@pluxel/core',
+		'@pluxel/core/services',
+		'@pluxel/core/logger',
+		'react',
+		'react/jsx-runtime',
+		'react-dom',
+	],
+	format: ['esm'],
+	sourcemap: true,
+	clean: true,
+	minify: true,
+	treeshake: true,
+	inputOptions: {
+		transform: {
+			assumptions: {
+				setPublicClassFields: true,
+			},
+			typescript: {
+				removeClassFieldsWithoutInitializer: true,
+			},
+		},
+	},
+})

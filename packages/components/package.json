@@ -2,7 +2,7 @@
 	"private": true,
 	"name": "@pluxel/components",
 	"version": "0.1.0",
-	"description": "Pluxel UI components and application framework",
+	"description": "Internal Pluxel runtime UI shell and component library",
 	"main": "./src/index.ts",
 	"exports": {
 		".": {
@@ -50,7 +50,7 @@
 		"@dnd-kit/sortable": "^10.0.0",
 		"@dnd-kit/utilities": "^3.2.2",
 		"@gqty/react": "^3.1.1",
-		"@pluxel/hmr-web": "workspace:*",
+		"@pluxel/runtime": "workspace:*",
 		"@tanstack/react-router": "^1.163.2",
 		"@tanstack/react-virtual": "^3.13.19",
 		"capnweb": "^0.5.0",

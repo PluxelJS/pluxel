@@ -2,10 +2,11 @@
 //
 // 这是“完整链路”的参考实现：UI -> RPC -> 插件状态 -> SSE 实时推送。
 
-import { BasePlugin, Plugin } from '@pluxel/hmr'
-import { RpcTarget } from '@pluxel/hmr/capnweb'
-import type { SseChannel } from '@pluxel/hmr/services'
-import { Collection } from '@pluxel/hmr/signaldb'
+import { BasePlugin, Plugin } from '@pluxel/runtime'
+import { ui } from '@pluxel/hmr/plugin'
+import { RpcTarget } from '@pluxel/runtime/capnweb'
+import type { SseChannel } from '@pluxel/runtime/services'
+import { Collection } from '@pluxel/runtime/signaldb'
 
 type CounterDoc = { id: 'counter'; value: number; updatedAt: number }
 type EventSeqDoc = { id: 'event-seq'; value: number }
@@ -32,6 +33,8 @@ export type PluginWithUISsePayload =
 	| { type: 'event'; event: DemoEvent; status: PluginWithUIStatus }
 	| { type: 'cleared' }
 
+const pluginUi = ui('./PluginWithUI/ui/index.tsx')
+
 @Plugin({ name: 'PluginWithUI' })
 export class PluginWithUI extends BasePlugin {
 	private startedAt = Date.now()
@@ -48,7 +51,7 @@ export class PluginWithUI extends BasePlugin {
 
 		await this.initState()
 
-		this.ctx.ext.ui.register({ entryPath: './PluginWithUI/ui/index.tsx' })
+		pluginUi.bind(this.ctx)
 		this.ctx.ext.rpc.registerExtension(() => new PluginWithUIRpc(this))
 		this.ctx.ext.sse.registerExtension(() => this.attachSse())
 
@@ -238,14 +241,12 @@ export class PluginWithUIRpc extends RpcTarget {
 	}
 }
 
-declare module '@pluxel/hmr/web' {
-	namespace UI {
-		interface rpc {
-			PluginWithUI: PluginWithUIRpc
-		}
+declare module '@pluxel/runtime/web' {
+	interface HmrUiRpcMap {
+		PluginWithUI: PluginWithUIRpc
+	}
 
-		interface sse {
-			PluginWithUI: PluginWithUISsePayload
-		}
+	interface HmrUiSseMap {
+		PluginWithUI: PluginWithUISsePayload
 	}
 }

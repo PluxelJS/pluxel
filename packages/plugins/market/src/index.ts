@@ -1,12 +1,14 @@
 import { fileURLToPath } from 'node:url'
-import { BasePlugin, Plugin } from '@pluxel/hmr'
+import { ui } from '@pluxel/hmr/plugin'
+import { BasePlugin, Plugin } from '@pluxel/runtime'
 
 const uiEntryPath = fileURLToPath(new URL('./ui/index.tsx', import.meta.url))
+const marketUi = ui(uiEntryPath)
 
 @Plugin({ name: 'MarketUI', type: 'event' })
 export class MarketUI extends BasePlugin {
 	override async init() {
-		this.ctx.ext.ui.register({ entryPath: uiEntryPath })
+		marketUi.bind(this.ctx)
 	}
 }
 

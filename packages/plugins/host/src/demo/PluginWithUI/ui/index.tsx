@@ -1,5 +1,5 @@
 import { Badge, Button, Group, Stack, Text } from '@mantine/core'
-import { definePluginUIModule, ExtensionPoints, useExtensionContext } from '@pluxel/hmr/web'
+import { definePluginUIModule, ExtensionPoints, useExtensionContext } from '@pluxel/runtime/web'
 import { IconDashboard, IconExternalLink, IconRocket } from '@tabler/icons-react'
 import { EventsPanel, OverviewPanel, RoutePage, StreamsPanel } from './components'
 

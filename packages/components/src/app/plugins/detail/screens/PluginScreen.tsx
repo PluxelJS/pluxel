@@ -5,7 +5,12 @@ import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { EmptyState, ErrorState } from '../../../../components'
 import { ExtensionProvider, useExtensionContext } from '../../../../extension'
 import { useDebouncedFlag } from '../../../../hooks'
-import { type PluginScope, type PluginStatusEntry, PluginStatusEntryLifecycleStage, useQuery } from '../../../gqty'
+import {
+	type PluginScope,
+	type PluginStatusEntry,
+	PluginStatusEntryLifecycleStage,
+	useQuery,
+} from '../../../gqty'
 import { usePluginConfig } from '../../../hooks'
 import { usePluginOverview } from '../../data'
 import { PluginScopeProvider, type PluginSourceKind } from '../context'
@@ -157,8 +162,7 @@ function usePluginDetail(pluginName?: string) {
 	}
 	const ready = Boolean(scope?.name)
 
-	const loading =
-		Boolean(detailQuery.$state.isLoading || detailQuery.$state.isFetching)
+	const loading = Boolean(detailQuery.$state.isLoading || detailQuery.$state.isFetching)
 	const error = detailQuery.$state.error
 
 	const refetch = (force?: boolean) => {
@@ -202,8 +206,17 @@ export const PluginScreen = memo(function PluginScreen({ pluginName }: PluginScr
 	)
 	const isStacked = isStackedWide || isStackedBreak
 
-	const { scope, knownPluginNames, ready, listed, hasStatusSnapshot, statusEntry, error, loading, refetch } =
-		usePluginDetail(pluginName)
+	const {
+		scope,
+		knownPluginNames,
+		ready,
+		listed,
+		hasStatusSnapshot,
+		statusEntry,
+		error,
+		loading,
+		refetch,
+	} = usePluginDetail(pluginName)
 	const parentExtensionCtx = useExtensionContext()
 
 	// 稳定快照：refetch/同步期间，GQty 可能短暂返回空字段，导致 UI “0 依赖/空注入卡片”闪一下。
@@ -314,7 +327,11 @@ export const PluginScreen = memo(function PluginScreen({ pluginName }: PluginScr
 	}, [refetch])
 
 	const handleStatusOverride = useCallback(
-		(next: { isRunning: boolean; isEnabled: boolean; lifecycleStage: PluginStatusEntryLifecycleStage }) => {
+		(next: {
+			isRunning: boolean
+			isEnabled: boolean
+			lifecycleStage: PluginStatusEntryLifecycleStage
+		}) => {
 			setStatusOverride(next)
 		},
 		[],

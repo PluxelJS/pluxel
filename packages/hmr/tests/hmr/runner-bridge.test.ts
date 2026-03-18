@@ -2,14 +2,15 @@ import { describe, expect, it } from 'vitest'
 import type { Context } from '@pluxel/core'
 import { join } from 'pathe'
 import { createServer, normalizePath } from 'vite'
-import { fixturesPluginsDir, fixturesPluginsRelFromWorkspace, workspaceRoot } from './_paths'
+import { createFixture } from 'fs-fixture'
+import { workspaceRoot } from './_paths'
 import {
 	buildHmrViteConfig,
 	resolveFsAllowList,
 	resolveHMRDependencyConfig,
-} from '@pluxel/hmr/services/runtime/hmr/config'
-import { HMRService } from '@pluxel/hmr/services/runtime/hmr/HMRService'
-import { HmrRunner } from '@pluxel/hmr/services/runtime/hmr/runner'
+} from '../../src/dev/hmr/config'
+import { HMRService } from '../../src/dev/hmr/HMRService'
+import { HmrRunner } from '../../src/dev/hmr/runner'
 
 const noop = () => undefined
 
@@ -58,12 +59,21 @@ const createCtx = () => {
 describe('HMR runner bridge', () => {
 	it('reuses host @pluxel/core singletons in the runner', async () => {
 		const cwd = workspaceRoot
-		const fixturesDir = fixturesPluginsDir
+		await using fixture = await createFixture({
+			'PluginWithUI.ts': [
+				"import { BasePlugin, Plugin } from '@pluxel/core'",
+				'',
+				'export class PluginWithUI extends BasePlugin {}',
+				"Plugin({ name: 'PluginWithUI' })(PluginWithUI)",
+				'',
+			].join('\n'),
+		})
+		const fixturesDir = fixture.path
 		const pluginFile = join(fixturesDir, 'PluginWithUI.ts')
 
 		const ctx = createCtx()
 		const hmr = new HMRService(ctx, {
-			roots: [fixturesPluginsRelFromWorkspace],
+			roots: [fixturesDir],
 			entries: [],
 		})
 		hmr.setServerRoot(cwd)
@@ -93,7 +103,10 @@ describe('HMR runner bridge', () => {
 		})
 		try {
 			const runner = new HmrRunner()
-			runner.init(server)
+			runner.init(server, {
+				hostCwd: cwd,
+				bridgeProviders: deps.bridgeProviders,
+			})
 			await runner.bridgeHostModules(deps.bridgeModules, hmr.path, {
 				warn: () => undefined,
 			})

@@ -3,7 +3,7 @@
 `@pluxel/core` 是 **logger 封装与约定**，不是 logger runtime：不会在库内部调用 `configure()`。
 宿主（app / CLI / 各类启动入口，例如 `pluxel hmr`）必须显式配置 LogTape。
 
-补充：如果你在使用 `@pluxel/hmr`，也建议宿主在启动入口统一 `configure(createPluxelLogtapeConfig(...))`，
+补充：如果你在使用 `@pluxel/runtime`，也建议宿主在启动入口统一 `configure(createPluxelLogtapeConfig(...))`，
 避免分散的“自动配置”导致行为隐式且难以追踪。
 
 ## Categories
@@ -105,7 +105,7 @@ await configure(
 
 如需动态调整，可传函数（自行读取你的 map/配置源）。
 
-另外，`@pluxel/hmr/logger` 提供了一个可变的 `hmrPluginLevels`（`createPluxelPluginLevelState()`）
+另外，`@pluxel/runtime/logger` 提供了一个可变的 `hmrPluginLevels`（`createPluxelPluginLevelState()`）
 方便在运行时直接调级（无需重新 configure）。
 
 ## Sinks / Formatters
@@ -113,7 +113,7 @@ await configure(
 - `createPluxelPrettyConsoleSink()`：单入口「pretty console」，默认 `@logtape/pretty` + **默认启用 Youch（inline）**，且只对 `pluxelCategories.hmr/plugins` 的 error+ 做增强，避免 async 插入导致“错位 log”。
 - `createPluxelPrettyFormatter()`：仅 formatter（不含 Youch；Youch 是 async，只能在 sink 层做）。
 - `createPluxelYouchSink()`：独立 Youch sink（可组合）。
-- `getFileSink/getRotatingFileSink/getTimeRotatingFileSink/getStreamFileSink`：官方 file sinks 透传再导出。
+- Node-only 的 file sinks：放在 `@pluxel/runtime/logger`（或直接使用 `@logtape/file`）。
 
 ## Timestamp（时区）
 
@@ -126,32 +126,28 @@ await configure(
 
 ```ts
 import { configure } from "@logtape/logtape";
-import {
-  createPluxelLogtapeConfig,
-} from "@pluxel/core/logger";
+import { createPluxelLogtapeConfig } from "@pluxel/core/logger";
 
 await configure(
   createPluxelLogtapeConfig({
     preset: "hmr", // or "core"
-    // 默认 daily rotation: ./logs/app-YYYY-MM-DD.log
-    file: "./logs/app.log",
   }),
 );
 ```
 
-覆盖/追加（常见例子）：
+如果你在用 `@pluxel/runtime` 且希望直接传 `file: "./logs/app.log"`（daily rotation by prefix path），推荐用 runtime helper：
 
 ```ts
-await configure(
-  createPluxelLogtapeConfig({
-    preset: "hmr",
-    file: "./logs/app.log",
-    // 关闭 Youch（仅保留 pretty 的 error.stack 输出）
-    // console: { youch: false },
-    // 自定义 prefix（hmr 默认是 "name"；core 默认是 "context"）
-    // console: { pretty: { prefix: "context" } },
-    // 开启 debug（支持前缀；debug 会走统一 channel `pluxel:debug` 并标注 `{dbg:...}`）：
-    // debug: ["pluxel:hmr:*", "pluxel:ext:compile"],
-  }),
-);
+import { ensurePluxelLogging } from "@pluxel/runtime/logger";
+
+await ensurePluxelLogging({
+  preset: "hmr",
+  file: "./logs/app.log",
+  // 关闭 Youch（仅保留 pretty 的 error.stack 输出）
+  // console: { youch: false },
+  // 自定义 prefix（hmr 默认是 "name"；core 默认是 "context"）
+  // console: { pretty: { prefix: "context" } },
+  // 开启 debug（支持前缀；debug 会走统一 channel `pluxel:debug` 并标注 `{dbg:...}`）：
+  // debug: ["pluxel:hmr:*", "pluxel:ext:compile"],
+});
 ```

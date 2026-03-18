@@ -46,4 +46,4 @@ export {
 	type UiNotifyTone,
 	type ExtensionProviderProps,
 	useExtensionContext,
-} from '@pluxel/hmr-web'
+} from '@pluxel/runtime/web'

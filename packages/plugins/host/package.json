@@ -3,14 +3,31 @@
 	"private": true,
 	"type": "module",
 	"scripts": {
+		"workspace:links": "node scripts/_ensure-workspace-package-links.mjs",
+		"ensure:builtin-dists": "node scripts/_ensure-builtin-dist-entries.mjs",
+		"build:dev-deps": "pnpm -w turbo run build:lib --filter=@pluxel/runtime --filter=@pluxel/hmr --filter=@pluxel/snapshot --filter=pluxel-plugin-market-ui --output-logs=errors-only",
+		"build:deploy-deps": "pnpm -w turbo run build --filter=@pluxel/runtime --filter=@pluxel/snapshot --filter=pluxel-plugin-market-ui --output-logs=errors-only",
+		"dev:prepare": "pnpm run workspace:links && pnpm run build:dev-deps && pnpm run ensure:builtin-dists",
+		"dev": "pnpm run dev:prepare && node scripts/hmr-start.mjs",
+		"dev:smoke": "pnpm run hmr:smoke",
+		"hmr:prepare": "pnpm run dev:prepare",
 		"hmr": "node scripts/hmr-start.mjs",
 		"hmr:prompt": "pnpm exec pluxel hmr prompt --root ../../.. --config packages/plugins/host/pluxel.hmr.jsonc --profile plugins-host",
 		"hmr:doctor": "pnpm exec pluxel hmr doctor --root ../../.. --config packages/plugins/host/pluxel.hmr.jsonc --profile plugins-host",
 		"hmr:builtin": "pnpm exec pluxel hmr builtin --root ../../.. --config packages/plugins/host/pluxel.hmr.jsonc --profile plugins-host",
-		"hmr:smoke": "sh -c 'timeout -k 2s 25s pnpm --filter @pluxel/plugins-host hmr; s=$?; test $s -eq 124 -o $s -eq 143'"
+		"hmr:smoke": "sh -c 'pnpm run dev:prepare && timeout -k 2s 25s node scripts/hmr-start.mjs; s=$?; test $s -eq 124 -o $s -eq 143'",
+		"deploy:prepare": "pnpm run workspace:links && pnpm run build:deploy-deps && pnpm run ensure:builtin-dists",
+		"deploy:managed": "pnpm run deploy:prepare && node scripts/managed-start.mjs",
+		"deploy:managed:start": "node scripts/managed-start.mjs",
+		"deploy:managed:smoke": "pnpm run deploy:prepare && node scripts/smoke-http-host.mjs managed",
+		"deploy:frozen:build": "pnpm run deploy:prepare && node scripts/frozen-build.mjs",
+		"deploy:frozen:start": "node scripts/frozen-start.mjs",
+		"deploy:frozen": "pnpm run deploy:frozen:build && node scripts/frozen-start.mjs",
+		"deploy:frozen:smoke": "pnpm run deploy:frozen:build && node scripts/smoke-http-host.mjs frozen"
 	},
 	"dependencies": {
 		"@pluxel/hmr": "workspace:*",
+		"@pluxel/runtime": "workspace:*",
 		"@pluxel/snapshot": "workspace:*",
 		"pluxel-plugin-market-ui": "workspace:*"
 	},
@@ -23,6 +40,7 @@
 		"@types/react-dom": "^19.2.3",
 		"pathe": "^2.0.3",
 		"react": "^19.2.4",
-		"react-dom": "^19.2.4"
+		"react-dom": "^19.2.4",
+		"tinypool": "^2.1.0"
 	}
 }

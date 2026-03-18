@@ -55,7 +55,10 @@ function findMatchingBranchIndex(
 	return fallback
 }
 
-function collectNonBranchKeys(sharedFields: UnionFieldNode['sharedFields'], discriminator?: string) {
+function collectNonBranchKeys(
+	sharedFields: UnionFieldNode['sharedFields'],
+	discriminator?: string,
+) {
 	const set = new Set<string>()
 	for (const field of sharedFields) {
 		if (field.key) set.add(field.key)
@@ -170,7 +173,11 @@ export function UnionField(props: RendererProps) {
 		[branches],
 	)
 	const sharedSignature = useMemo(
-		() => sharedFields.map((field) => field.key).filter(Boolean).join('|'),
+		() =>
+			sharedFields
+				.map((field) => field.key)
+				.filter(Boolean)
+				.join('|'),
 		[sharedFields],
 	)
 
@@ -199,7 +206,8 @@ export function UnionField(props: RendererProps) {
 		Boolean(info.discriminatorField) &&
 		exposeDiscriminator !== 'never' &&
 		(booleanVariants.has(resolvedControl) || exposeDiscriminator === 'always')
-	const shouldRenderSelector = !booleanVariants.has(resolvedControl) || !shouldRenderDiscriminatorField
+	const shouldRenderSelector =
+		!booleanVariants.has(resolvedControl) || !shouldRenderDiscriminatorField
 
 	const branchOptions = useMemo(
 		() =>
@@ -271,8 +279,8 @@ export function UnionField(props: RendererProps) {
 		const explicitValue =
 			branch?.discriminatorValue ??
 			(checked
-				? branches[truthyBranchIndex]?.discriminatorValue ?? true
-				: branches[falsyBranchIndex]?.discriminatorValue ?? false)
+				? (branches[truthyBranchIndex]?.discriminatorValue ?? true)
+				: (branches[falsyBranchIndex]?.discriminatorValue ?? false))
 		snapshotAndSetBranch(targetIndex, explicitValue)
 	}
 
@@ -339,8 +347,8 @@ export function UnionField(props: RendererProps) {
 							checked: isTruthyDiscriminator(selectedBranch?.discriminatorValue),
 							onChange: (event) => handleBooleanToggle(event.currentTarget.checked),
 							label: isTruthyDiscriminator(selectedBranch?.discriminatorValue)
-								? branchOptions[truthyBranchIndex]?.label ?? '开启'
-								: branchOptions[falsyBranchIndex]?.label ?? '关闭',
+								? (branchOptions[truthyBranchIndex]?.label ?? '开启')
+								: (branchOptions[falsyBranchIndex]?.label ?? '关闭'),
 							onBlur: inputProps.onBlur,
 							disabled: isLocked,
 						})}
@@ -440,7 +448,9 @@ export function UnionField(props: RendererProps) {
 			<Stack gap="sm">
 				{selectedBranch.fields.map((field) => {
 					const fieldKey = field.key
-					const fieldErrors = field.replaceValue ? (errors ?? []) : errorBuckets.map.get(fieldKey) ?? []
+					const fieldErrors = field.replaceValue
+						? (errors ?? [])
+						: (errorBuckets.map.get(fieldKey) ?? [])
 					const fieldValue = field.replaceValue
 						? value
 						: isObject(value)
@@ -503,7 +513,13 @@ export function UnionField(props: RendererProps) {
 			</Stack>
 		)
 
-		return info.compact ? fieldsContent : <Card withBorder p="md">{fieldsContent}</Card>
+		return info.compact ? (
+			fieldsContent
+		) : (
+			<Card withBorder p="md">
+				{fieldsContent}
+			</Card>
+		)
 	}, [selectedBranch, errors, value, inputProps, discriminator, nonBranchKeys, info.compact])
 
 	return (

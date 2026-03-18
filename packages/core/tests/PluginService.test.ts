@@ -376,7 +376,7 @@ describe('PluginService commit()', () => {
 	})
 
 	it('can unregister during an active commit and still stop on the next commit', async () => {
-			await withHost(async (host) => {
+		await withHost(async (host) => {
 			const summaries: any[] = []
 			host.ctx.on('afterCommit', (summary) => {
 				summaries.push(summary)

@@ -58,24 +58,12 @@ const SortableRowComponent = ({
 	const handleIconSize = dh.rowH <= 26 ? 14 : 16
 
 	// 优化后的配色方案：提升背景可见度，保持文字清晰
-	const activeBg = active
-		? isDark
-			? rgba(brand[5], 0.28)
-			: rgba(brand[1], 0.45)
-		: undefined
-	const selectedBg = selected
-		? isDark
-			? rgba(accent[5], 0.22)
-			: rgba(accent[1], 0.35)
-		: undefined
+	const activeBg = active ? (isDark ? rgba(brand[5], 0.28) : rgba(brand[1], 0.45)) : undefined
+	const selectedBg = selected ? (isDark ? rgba(accent[5], 0.22) : rgba(accent[1], 0.35)) : undefined
 	const rowBackground = active ? activeBg : selected ? selectedBg : undefined
 	const baseColorValue = isDark ? theme.colors.gray[2] : theme.colors.gray[8]
 	const rowColorValue =
-		active || selected
-			? isDark
-				? theme.colors.gray[0]
-				: theme.colors.gray[9]
-			: baseColorValue
+		active || selected ? (isDark ? theme.colors.gray[0] : theme.colors.gray[9]) : baseColorValue
 	const separatorColor = isDark ? rgba(theme.colors.dark[4], 0.3) : rgba(theme.colors.gray[2], 0.5)
 
 	const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({

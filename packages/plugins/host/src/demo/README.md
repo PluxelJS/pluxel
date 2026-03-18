@@ -4,7 +4,7 @@
 
 ## 运行
 
-- 启动 HMR 测试宿主：`pnpm --filter @pluxel/plugins-host hmr`
+- 启动开发宿主：`pnpm --filter @pluxel/plugins-host dev`
 - Demo 入口由 `packages/plugins/host/pluxel.hmr.jsonc` 的 `include` 负责（例如 `packages/plugins/host/src/demo/**/*.ts`），不再依赖自定义宿主脚本。
 - Demo 默认假设 HMR 侧启用了 `configSourcePlugin`：因此 `configs.use(...)` / `features.use(...)` 可以不写装饰器，也能在启动前注册 schema/依赖信息。
 
@@ -15,7 +15,8 @@
 - `PluginFeatureConfigDemo.ts`：Feature 配置归因到父插件配置页（schema key 形如 `cache.config` / `cache.rules`，UI 会按 group 自动分组）。
 - `PluginFeatureDepsDemo.ts`：FeatureHost 的“唯一推荐 API”（`use()` / `dep()` / BridgePlugin）。
 - `PluginVaultDemo.ts`：插件里使用 `ctx.vault.open()` 做加密持久化（token/secret/batch/lock）。
-- `PluginWithUI.ts` + `PluginWithUI/ui/*`：完整链路（UI + RPC + SSE + 持久化 state）。
+- `PluginWithUI.ts` + `PluginWithUI/ui/*`：完整链路（类外 `@pluxel/hmr/plugin` UI 声明 + RPC + SSE + 持久化 state）。
+- `PluginHttpWorkerDemo.ts`：`ctx.http` + builtin doc 扩展 + `@pluxel/hmr/plugin` worker 绑定（Tinypool）；同时演示 frozen/static 下回退到稳定 runtime 行为。
 - `PluginStandaloneFrameDemo.ts` + `PluginStandaloneFrameDemo/ui/*`：演示插件 routes 的 `frame: 'standalone'`（无 navbar/sidebar，但仍在同一 App/鉴权策略下运行）。
 - `advanced/DemoBaseProviders.ts`：抽象基类 Token + 多实现（Provider 选择）。
 - `advanced/DemoForks.ts`：ForkablePlugin（同插件多实例 / fork）。

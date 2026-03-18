@@ -24,19 +24,8 @@
  * -----------------------------------------------------------------------------
  */
 
-import {
-	ActionIcon,
-	Box,
-	Group,
-	Paper,
-	Skeleton,
-	Stack,
-} from '@mantine/core'
-import {
-	IconCornerUpLeft,
-	IconPlugConnected,
-	IconSearchOff,
-} from '@tabler/icons-react'
+import { ActionIcon, Box, Group, Paper, Skeleton, Stack } from '@mantine/core'
+import { IconCornerUpLeft, IconPlugConnected, IconSearchOff } from '@tabler/icons-react'
 import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react'
 import type { JSX } from 'react/jsx-runtime'
 import { type GroupConfig, PluginOrganizer } from '../organizer'
@@ -46,7 +35,7 @@ import { RouterLinkAdapter } from '../../RouterLinkAdapter'
 import { PLUGIN_SEARCH_EVENT, PLUGIN_SEARCH_KEY } from '../../constants'
 import { updatePluginStatuses } from '../actions'
 import { requestPluginOverviewRefetch, setPluginOverviewGroups, usePluginOverview } from '../data'
-import type { PluginStatusAction } from '@pluxel/hmr-web'
+import type { PluginStatusAction } from '@pluxel/runtime/web'
 import { useHmrWebClient } from '../../rpc'
 import { invalidate } from '../../data/invalidations'
 import {
@@ -195,7 +184,6 @@ export const PluginList: React.FC<PluginListProps> = ({ pluginName }) => {
 			setHasLoadedOnce(true)
 		}
 	}, [overviewState.error, overviewState.isLoading])
-
 
 	const commitTimerRef = useRef<number | null>(null)
 	const inflightCommitRef = useRef<Promise<void> | null>(null)
@@ -363,8 +351,7 @@ export const PluginList: React.FC<PluginListProps> = ({ pluginName }) => {
 	const filterQuery = deferredSearch
 	const groupsForView = draftGroups ?? overview.groups
 	const searchTokens = useMemo(() => parseSearchTokens(filterQuery), [filterQuery])
-	const hasStatusFilter =
-		!statusFilter.running || !statusFilter.stopped || !statusFilter.disabled
+	const hasStatusFilter = !statusFilter.running || !statusFilter.stopped || !statusFilter.disabled
 
 	// 搜索过程中的过渡状态，用于降低视觉闪烁
 	const isTransitioning = search.trim() !== deferredSearch
@@ -372,7 +359,11 @@ export const PluginList: React.FC<PluginListProps> = ({ pluginName }) => {
 	const hasAnyMatch = useMemo(() => {
 		const { plain, pkg, tag, version, id: idTokens } = searchTokens
 		const hasQuery =
-			plain.length > 0 || pkg.length > 0 || tag.length > 0 || version.length > 0 || idTokens.length > 0
+			plain.length > 0 ||
+			pkg.length > 0 ||
+			tag.length > 0 ||
+			version.length > 0 ||
+			idTokens.length > 0
 		if (!hasQuery && !hasStatusFilter) return true
 
 		const groupNameMatches = (name: string) =>
@@ -447,9 +438,7 @@ export const PluginList: React.FC<PluginListProps> = ({ pluginName }) => {
 			/>
 		)
 	} else if ((filterQuery || hasStatusFilter) && !hasAnyMatch) {
-		const emptyTitle = filterQuery
-			? `没有匹配"${filterQuery}"的结果`
-			: '没有符合筛选条件的插件'
+		const emptyTitle = filterQuery ? `没有匹配"${filterQuery}"的结果` : '没有符合筛选条件的插件'
 		content = (
 			<EmptyState
 				icon={<IconSearchOff size={28} stroke={1.5} />}
@@ -460,21 +449,21 @@ export const PluginList: React.FC<PluginListProps> = ({ pluginName }) => {
 		)
 	} else {
 		content = (
-				<PluginOrganizer
-					key={organizerResetToken}
-					statuses={overview.statuses}
-					initialGroups={groupsForView}
-					activeId={pluginName}
-					onGroupsChange={handleGroupsChange}
-					selectedIds={selectedIds}
-					onSelectedIdsChange={setSelectedIds}
-					filterQuery={filterQuery}
-					statusFilter={statusFilter}
-					LinkComponent={RouterLinkAdapter}
-					density="ultra"
-					locked={syncing || bulkBusy}
-				/>
-			)
+			<PluginOrganizer
+				key={organizerResetToken}
+				statuses={overview.statuses}
+				initialGroups={groupsForView}
+				activeId={pluginName}
+				onGroupsChange={handleGroupsChange}
+				selectedIds={selectedIds}
+				onSelectedIdsChange={setSelectedIds}
+				filterQuery={filterQuery}
+				statusFilter={statusFilter}
+				LinkComponent={RouterLinkAdapter}
+				density="ultra"
+				locked={syncing || bulkBusy}
+			/>
+		)
 	}
 
 	return (

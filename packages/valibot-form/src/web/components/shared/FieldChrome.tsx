@@ -63,13 +63,7 @@ export function FieldChrome({
 			<BadgeNode badge={badge} />
 			{hint ? (
 				<Tooltip label={hint}>
-					<ActionIcon
-						size="sm"
-						variant="subtle"
-						color="gray"
-						aria-label="字段提示"
-						type="button"
-					>
+					<ActionIcon size="sm" variant="subtle" color="gray" aria-label="字段提示" type="button">
 						<IconInfoCircle size={14} />
 					</ActionIcon>
 				</Tooltip>

@@ -5,7 +5,9 @@ const buildRoot = fileURLToPath(new URL('../build/src', import.meta.url))
 const buildRolldown = fileURLToPath(new URL('../build/src/rolldown/index.ts', import.meta.url))
 
 export default defineConfig({
-	inlineOnly: [/^pathe(\/.*)?$/],
+	// This package ships as a bundled dev tool (Vitest preset + transforms).
+	// Keep runtime deps minimal by bundling, and suppress the "inlineOnly" transitive enumeration warning.
+	inlineOnly: false,
 	exports: {
 		devExports: '@pluxel/source',
 	},

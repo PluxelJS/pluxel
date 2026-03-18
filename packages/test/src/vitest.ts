@@ -1,7 +1,12 @@
 import { readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { configSourcePlugin, importTypeFixerPlugin } from '@pluxel/build/rolldown'
-import { defineConfig, mergeConfig, type UserConfig, type UserConfigExport } from 'vitest/config'
+import {
+	defineConfig,
+	mergeConfig,
+	type ViteUserConfig,
+	type ViteUserConfigExport,
+} from 'vitest/config'
 
 export type PluxelVitestOptions = {
 	/** Include patterns for configSource extraction (default: only src/tests). */
@@ -14,10 +19,10 @@ export type PluxelVitestOptions = {
 	 * Useful when your test suite needs an additional transform that should apply to source
 	 * before `configSourcePlugin` runs.
 	 */
-	prePlugins?: NonNullable<UserConfig['plugins']>
+	prePlugins?: NonNullable<ViteUserConfig['plugins']>
 }
 
-export const PLUXEL_BASE_RESOLVE_CONDITIONS = ['@pluxel/source', '@pluxel/hmr'] as const
+export const PLUXEL_BASE_RESOLVE_CONDITIONS = ['@pluxel/source', '@pluxel/runtime'] as const
 
 const DEFAULT_NODE_RESOLVE_CONDITIONS = [
 	// Prefer Node-friendly exports in tests.
@@ -46,7 +51,7 @@ function toArray(value: string | string[] | undefined): string[] | undefined {
 	return Array.isArray(value) ? value : [value]
 }
 
-function asPluginArray(value: UserConfig['plugins']): NonNullable<UserConfig['plugins']> {
+function asPluginArray(value: ViteUserConfig['plugins']): NonNullable<ViteUserConfig['plugins']> {
 	if (!value) return []
 	return Array.isArray(value) ? value : [value]
 }
@@ -62,7 +67,8 @@ function asStringArray(value: unknown): string[] {
 }
 
 function normalizeGlob(pattern: string): string {
-	if (pattern.startsWith('**/') || pattern.startsWith('/') || pattern.startsWith('!')) return pattern
+	if (pattern.startsWith('**/') || pattern.startsWith('/') || pattern.startsWith('!'))
+		return pattern
 	return `**/${pattern}`
 }
 
@@ -72,21 +78,21 @@ function normalizeGlobs(patterns: string[]): string[] {
 
 /**
  * Opinionated Vitest preset for Pluxel monorepo tests:
- * - enables `@pluxel/source` + `@pluxel/hmr` resolution conditions
+ * - enables `@pluxel/source` + `@pluxel/runtime` resolution conditions
  * - installs configSource + importTypeFixer Vite plugins (compile-time metadata extraction)
  * - runs `@pluxel/test/setup` once per worker
  */
 export function definePluxelVitestConfig(
-	overrides: UserConfigExport = {},
+	overrides: ViteUserConfigExport = {},
 	options: PluxelVitestOptions = {},
-): UserConfigExport {
+): ViteUserConfigExport {
 	const include = normalizeGlobs(
 		toArray(options.include) ?? ['packages/**/src/**/*.ts', 'packages/**/tests/**/*.ts'],
 	)
 	const exclude = normalizeGlobs(toArray(options.exclude) ?? ['**/node_modules/**', '**/*.d.ts'])
 	const baseConditions = buildPluxelResolveConditions()
 
-	const base: UserConfig = {
+	const base: ViteUserConfig = {
 		resolve: { conditions: baseConditions },
 		ssr: { resolve: { conditions: baseConditions } },
 		test: {
@@ -105,16 +111,16 @@ export function definePluxelVitestConfig(
 		},
 	}
 
-	const toolchainPlugins: NonNullable<UserConfig['plugins']> = [
+	const toolchainPlugins: NonNullable<ViteUserConfig['plugins']> = [
 		...asPluginArray(options.prePlugins),
 		importTypeFixerPlugin({ include, exclude }),
 		configSourcePlugin({ include, exclude }),
 	]
 
-	const finalize = (resolved: UserConfig): UserConfig => {
+	const finalize = (resolved: ViteUserConfig): ViteUserConfig => {
 		const overridePlugins = asPluginArray(resolved.plugins)
 		const { plugins: _ignored, ...rest } = resolved
-		const merged = mergeConfig(base, rest as UserConfig) as UserConfig
+		const merged = mergeConfig(base, rest as ViteUserConfig) as ViteUserConfig
 
 		// Always keep Pluxel resolution conditions available (and allow caller to add more).
 		const mergedConditions = uniqStrings([
@@ -146,14 +152,14 @@ export function definePluxelVitestConfig(
 
 	if (typeof overrides === 'function') {
 		return defineConfig(async (env) => {
-			const resolved = (await overrides(env as any)) as UserConfig
+			const resolved = (await overrides(env as any)) as ViteUserConfig
 			return finalize(resolved ?? {})
 		})
 	}
 
 	return defineConfig(
 		(async () => {
-			const resolved = (await overrides) as UserConfig
+			const resolved = (await overrides) as ViteUserConfig
 			return finalize(resolved ?? {})
 		})(),
 	)
@@ -171,9 +177,12 @@ export type PluxelVitestWorkspaceOptions = {
 	 */
 	roots?: readonly string[]
 	/** Per-project Vitest test config overrides. */
-	projectTest?: Omit<NonNullable<UserConfig['test']>, 'name' | 'include' | 'exclude' | 'setupFiles'>
+	projectTest?: Omit<
+		NonNullable<ViteUserConfig['test']>,
+		'name' | 'include' | 'exclude' | 'setupFiles'
+	>
 	/** Top-level Vitest test config (e.g. worker limits). */
-	test?: Omit<NonNullable<UserConfig['test']>, 'projects'>
+	test?: Omit<NonNullable<ViteUserConfig['test']>, 'projects'>
 	/** Test file include globs (relative to each package root). */
 	includeTests?: readonly string[]
 	/** Test file exclude globs (relative to each package root). */
@@ -242,7 +251,8 @@ export function collectPluxelVitestWorkspaceProjects(
 	options: Pick<PluxelVitestWorkspaceOptions, 'roots' | 'filter'> = {},
 ): WorkspacePackage[] {
 	const roots =
-		options.roots ?? (['packages', 'plugins', 'builtin-plugins', 'render-plugins', 'chatbots'] as const)
+		options.roots ??
+		(['packages', 'plugins', 'builtin-plugins', 'render-plugins', 'chatbots'] as const)
 	return collectWorkspacePackages(roots).filter((p) => options.filter?.(p) ?? true)
 }
 
@@ -254,9 +264,10 @@ export function collectPluxelVitestWorkspaceProjects(
  */
 export function definePluxelVitestWorkspaceConfig(
 	options: PluxelVitestWorkspaceOptions = {},
-): UserConfigExport {
+): ViteUserConfigExport {
 	const includeTests = options.includeTests ?? (['**/*.test.ts', '**/*.spec.ts'] as const)
-	const excludeTests = options.excludeTests ?? (['**/node_modules/**', '**/dist/**', '**/.*/**'] as const)
+	const excludeTests =
+		options.excludeTests ?? (['**/node_modules/**', '**/dist/**', '**/.*/**'] as const)
 
 	const includeToolchain =
 		options.includeToolchain ??

@@ -12,4 +12,3 @@ export interface BuildRuntimeConfig {
 	debug: boolean
 	tsdownConfigPath?: string
 }
-

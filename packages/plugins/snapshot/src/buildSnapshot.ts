@@ -142,4 +142,3 @@ function stripUndef<T>(obj: T): T {
 	}
 	return out as T
 }
-

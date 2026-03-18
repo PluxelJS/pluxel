@@ -1,4 +1,4 @@
-import type { BaseProvisionInfo, PluginDependencyState, HmrWebClient } from '@pluxel/hmr-web'
+import type { BaseProvisionInfo, PluginDependencyState, HmrWebClient } from '@pluxel/runtime/web'
 
 type CacheEntry<T> = {
 	at: number

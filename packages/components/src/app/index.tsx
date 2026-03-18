@@ -14,11 +14,7 @@ export function App({ history }: AppProps = {}) {
 	const [router] = useState(() => createAppRouter({ history }))
 	const { theme } = useDynamicTheme()
 	return (
-		<MantineProvider
-			theme={theme}
-			colorSchemeManager={colorSchemeManager}
-			withCssVariables
-		>
+		<MantineProvider theme={theme} colorSchemeManager={colorSchemeManager} withCssVariables>
 			<HmrWebClientProvider>
 				<RouterProvider router={router} />
 			</HmrWebClientProvider>

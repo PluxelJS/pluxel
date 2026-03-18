@@ -1,5 +1,7 @@
 # @pluxel/test
 
+> Status: published dev-only. It is intended for tests/tooling, not for production runtime dependencies.
+
 Single test surface for Pluxel:
 
 - Automatic core setup on import (`@pluxel/core/env` + services registration)

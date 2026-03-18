@@ -3,7 +3,7 @@ export {
 	createAuthAwareFetch,
 	invokeRpc,
 	rpcErrorMessage,
-} from '@pluxel/hmr-web'
+} from '@pluxel/runtime/web'
 export type {
 	PackageBatchResult,
 	PackageInventoryEntry,
@@ -13,6 +13,6 @@ export type {
 	PackageSpecInput,
 	PluginGroup,
 	PluginGroupInput,
-} from '@pluxel/hmr-web'
+} from '@pluxel/runtime/web'
 
-export { HmrWebClientProvider, useHmrWebClient } from '@pluxel/hmr-web'
+export { HmrWebClientProvider, useHmrWebClient } from '@pluxel/runtime/web'

@@ -1,6 +1,14 @@
 import { Divider, Stack, Text } from '@mantine/core'
 import { useElementSize, useMediaQuery } from '@mantine/hooks'
-import React, { createContext, memo, Suspense, useCallback, useContext, useEffect, useMemo } from 'react'
+import React, {
+	createContext,
+	memo,
+	Suspense,
+	useCallback,
+	useContext,
+	useEffect,
+	useMemo,
+} from 'react'
 import { getDefaults } from 'valibot'
 import type { ObjectLikeSchema } from '../../core'
 import { DEFAULT_SECTION_ID, DEFAULT_TEXTS } from '../../core/constants'

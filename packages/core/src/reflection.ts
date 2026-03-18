@@ -45,7 +45,12 @@ if (typeof r.metadata === 'function' && typeof r.getOwnMetadataKeys !== 'functio
 	// Track keys for metadata written via `Reflect.defineMetadata` and `Reflect.metadata(...)`.
 	const prevDefineMetadata: unknown = r.defineMetadata
 	if (typeof prevDefineMetadata === 'function') {
-		r.defineMetadata = (metadataKey: MetadataKey, metadataValue: unknown, target: object, propertyKey?: any) => {
+		r.defineMetadata = (
+			metadataKey: MetadataKey,
+			metadataValue: unknown,
+			target: object,
+			propertyKey?: any,
+		) => {
 			recordKey(target, propertyKey as PropertyKey, metadataKey)
 			return prevDefineMetadata(metadataKey, metadataValue, target, propertyKey)
 		}

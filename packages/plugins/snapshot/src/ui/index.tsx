@@ -1,5 +1,10 @@
 import { ActionIcon, Group, Tooltip } from '@mantine/core'
-import { ExtensionPoints, rpcErrorMessage, useExtensionContext, definePluginUIModule } from '@pluxel/hmr/web'
+import {
+	ExtensionPoints,
+	rpcErrorMessage,
+	useExtensionContext,
+	definePluginUIModule,
+} from '@pluxel/runtime/web'
 import { IconBolt, IconPackage } from '@tabler/icons-react'
 import { useCallback, useMemo, useState } from 'react'
 
@@ -104,4 +109,3 @@ export default definePluginUIModule({
 		},
 	],
 })
-

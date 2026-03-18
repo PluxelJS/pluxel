@@ -12,8 +12,8 @@
 //    - 把“连接两个插件”的逻辑提取成第三个插件
 //    - 让被集成的插件本体更纯粹（不必内建可选依赖逻辑）
 
-import { BasePlugin, HostBoundFeature, Plugin } from '@pluxel/hmr'
-import { EvtChannel } from '@pluxel/hmr/services'
+import { BasePlugin, HostBoundFeature, Plugin } from '@pluxel/runtime'
+import { EvtChannel } from '@pluxel/runtime/services'
 
 // -------------------------
 // 1) HostBoundFeature + use()

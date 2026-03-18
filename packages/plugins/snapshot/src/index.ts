@@ -1,15 +1,18 @@
 import { resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { BasePlugin, Plugin } from '@pluxel/hmr'
+import { ui } from '@pluxel/hmr/plugin'
+import { BasePlugin, Plugin } from '@pluxel/runtime'
 import { buildSnapshotMainSource } from './buildMain'
 import { buildSnapshotSource } from './buildSnapshot'
 import { SnapshotRpc } from './rpc'
+
+const snapshotUi = ui(fileURLToPath(new URL('./ui/index.tsx', import.meta.url)))
 
 @Plugin({ name: 'Snapshot' })
 export class SnapshotPlugin extends BasePlugin {
 	override init(): void {
 		// UI extension + RPC API (for host toolbar buttons).
-		this.ctx.ext.ui.register({ entryPath: uiEntryPath })
+		snapshotUi.bind(this.ctx)
 		this.ctx.ext.rpc.registerExtension(() => new SnapshotRpc(this))
 
 		this.ctx.logger.info('Snapshot builtin ready')
@@ -77,12 +80,8 @@ export class SnapshotPlugin extends BasePlugin {
 
 export default SnapshotPlugin
 
-const uiEntryPath = fileURLToPath(new URL('./ui/index.tsx', import.meta.url))
-
-declare module '@pluxel/hmr/web' {
-	namespace UI {
-		interface rpc {
-			Snapshot: SnapshotRpc
-		}
+declare module '@pluxel/runtime/web' {
+	interface HmrUiRpcMap {
+		Snapshot: SnapshotRpc
 	}
 }

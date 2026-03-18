@@ -95,10 +95,7 @@ function printNormalized(expr: Expression, ctx: PrintContext): string {
 		case 'TemplateLiteral':
 			return printTemplateLiteral(normalized, ctx)
 		case 'TaggedTemplateExpression':
-			return `${printNormalized(normalized.tag, ctx)}${printTemplateLiteral(
-				normalized.quasi,
-				ctx,
-			)}`
+			return `${printNormalized(normalized.tag, ctx)}${printTemplateLiteral(normalized.quasi, ctx)}`
 		case 'ArrowFunctionExpression':
 		case 'FunctionExpression':
 		case 'ClassExpression':
@@ -193,7 +190,10 @@ function isValibotCheckOrTransform(expr: Expression): boolean {
 	}
 }
 
-function printCallExpression(expr: Expression & { type: 'CallExpression' }, ctx: PrintContext): string {
+function printCallExpression(
+	expr: Expression & { type: 'CallExpression' },
+	ctx: PrintContext,
+): string {
 	const callee = unwrapTs(expr.callee)
 
 	if (isValibotCall(callee, 'optionalAsync')) {
@@ -381,7 +381,10 @@ function printBinaryExpression(
 	)}`
 }
 
-function printExpressionOrPrivate(value: Expression | PrivateIdentifier, ctx: PrintContext): string {
+function printExpressionOrPrivate(
+	value: Expression | PrivateIdentifier,
+	ctx: PrintContext,
+): string {
 	if (value.type === 'PrivateIdentifier') return `#${value.name}`
 	return printNormalized(value, ctx)
 }
@@ -393,13 +396,13 @@ function sliceOriginal(expr: { start: number; end: number }, ctx: PrintContext):
 }
 
 function quoteString(value: string): string {
-	let out = '\''
+	let out = "'"
 	for (const ch of value) {
 		switch (ch) {
 			case '\\':
 				out += '\\\\'
 				break
-			case '\'':
+			case "'":
 				out += "\\'"
 				break
 			case '\n':
@@ -431,6 +434,6 @@ function quoteString(value: string): string {
 			}
 		}
 	}
-	out += '\''
+	out += "'"
 	return out
 }

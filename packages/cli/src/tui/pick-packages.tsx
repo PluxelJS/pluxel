@@ -716,7 +716,10 @@ export function PickPackagesDualPicker(props: {
 
 	const grouped = useMemo(() => buildGroupedIndex(filtered), [filtered])
 
-	const groups = useMemo(() => buildGroupInfosDual(grouped, enabled, builtin), [grouped, enabled, builtin])
+	const groups = useMemo(
+		() => buildGroupInfosDual(grouped, enabled, builtin),
+		[grouped, enabled, builtin],
+	)
 
 	const groupKeyToIndex = useMemo(() => buildGroupKeyIndex(groups), [groups])
 
@@ -799,7 +802,8 @@ export function PickPackagesDualPicker(props: {
 		setSelection((prev) => {
 			const nextEnabled = new Set(prev.enabled)
 			const nextBuiltin = new Set(prev.builtin)
-			const isActive = (n: string) => (mode === 'enabled' ? prev.enabled.has(n) : prev.builtin.has(n))
+			const isActive = (n: string) =>
+				mode === 'enabled' ? prev.enabled.has(n) : prev.builtin.has(n)
 			const clear = (n: string) => {
 				nextEnabled.delete(n)
 				nextBuiltin.delete(n)
@@ -1191,7 +1195,9 @@ export function PickPackagesDualBrowser(props: {
 	const normalizeSelection = (enabledRaw: string[], builtinRaw: string[]) => {
 		const initialBuiltin = builtinRaw.filter((n) => discoveredSet.has(n))
 		const builtinSet = new Set(initialBuiltin)
-		const initialEnabled = enabledRaw.filter((n) => discoveredSet.has(n)).filter((n) => !builtinSet.has(n))
+		const initialEnabled = enabledRaw
+			.filter((n) => discoveredSet.has(n))
+			.filter((n) => !builtinSet.has(n))
 		return { enabled: new Set(initialEnabled), builtin: new Set(initialBuiltin) }
 	}
 	const [selection, setSelection] = useState<Selection>(() => {
@@ -1223,29 +1229,29 @@ export function PickPackagesDualBrowser(props: {
 
 	const grouped = useMemo(() => buildGroupedIndex(filtered), [filtered])
 
-		const groups = useMemo(
-			() => buildGroupInfosDual(grouped, enabled, builtin),
-			[grouped, enabled, builtin],
-		)
+	const groups = useMemo(
+		() => buildGroupInfosDual(grouped, enabled, builtin),
+		[grouped, enabled, builtin],
+	)
 
-		const groupKeyToIndex = useMemo(() => buildGroupKeyIndex(groups), [groups])
+	const groupKeyToIndex = useMemo(() => buildGroupKeyIndex(groups), [groups])
 
 	const groupIndex = groupKeyToIndex.get(activeGroupKey) ?? 0
 
-		useEffect(() => {
-			if (!groupKeyToIndex.has(activeGroupKey)) setActiveGroupKey(ALL_GROUP_KEY)
-		}, [groupKeyToIndex, activeGroupKey])
+	useEffect(() => {
+		if (!groupKeyToIndex.has(activeGroupKey)) setActiveGroupKey(ALL_GROUP_KEY)
+	}, [groupKeyToIndex, activeGroupKey])
 
-		const activeKey = groups[groupIndex]?.key ?? ALL_GROUP_KEY
+	const activeKey = groups[groupIndex]?.key ?? ALL_GROUP_KEY
 
 	const [groupOffset, setGroupOffset] = useState(0)
 	const [pkgIndex, setPkgIndex] = useState(0)
 	const [pkgOffset, setPkgOffset] = useState(0)
 
-		const packagesInGroup =
-			activeKey === ALL_GROUP_KEY ? grouped.allItems : (grouped.itemsByKey.get(activeKey) ?? [])
-		const visibleNames =
-			activeKey === ALL_GROUP_KEY ? grouped.allNames : (grouped.namesByKey.get(activeKey) ?? [])
+	const packagesInGroup =
+		activeKey === ALL_GROUP_KEY ? grouped.allItems : (grouped.itemsByKey.get(activeKey) ?? [])
+	const visibleNames =
+		activeKey === ALL_GROUP_KEY ? grouped.allNames : (grouped.namesByKey.get(activeKey) ?? [])
 
 	useEffect(() => {
 		setPkgIndex((idx) => clamp(idx, 0, Math.max(packagesInGroup.length - 1, 0)))
@@ -1312,7 +1318,8 @@ export function PickPackagesDualBrowser(props: {
 		setSelection((prev) => {
 			const nextEnabled = new Set(prev.enabled)
 			const nextBuiltin = new Set(prev.builtin)
-			const isActive = (n: string) => (mode === 'enabled' ? prev.enabled.has(n) : prev.builtin.has(n))
+			const isActive = (n: string) =>
+				mode === 'enabled' ? prev.enabled.has(n) : prev.builtin.has(n)
 			const clear = (n: string) => {
 				nextEnabled.delete(n)
 				nextBuiltin.delete(n)
@@ -1566,11 +1573,7 @@ export function PickPackagesDualBrowser(props: {
 					{' Filter '}
 				</Text>
 				<Text color="gray">{`: ${filter}`}</Text>
-				{focus === 'filter'
-					? '▊'
-					: filter
-						? ''
-						: ' (type to filter; use !token to exclude)'}
+				{focus === 'filter' ? '▊' : filter ? '' : ' (type to filter; use !token to exclude)'}
 			</Text>
 
 			<Box flexDirection="row" width="100%" height={bodyRows}>
@@ -1620,9 +1623,7 @@ export function PickPackagesDualBrowser(props: {
 								wrap="truncate"
 							>
 								{prefix}
-								<Text color={tagColor}>{tag}</Text>
-								{' '}
-								{p.name}
+								<Text color={tagColor}>{tag}</Text> {p.name}
 							</Text>
 						)
 					})}

@@ -97,7 +97,10 @@ export function AppProviders() {
 				<NotificationCenterProvider>
 					<ModalsProvider>
 						<Notifications position="top-center" />
-						<ExtensionLoader pollInterval={5000} onRunningPluginsChange={handleRunningPluginsChange} />
+						<ExtensionLoader
+							pollInterval={5000}
+							onRunningPluginsChange={handleRunningPluginsChange}
+						/>
 						<Outlet />
 					</ModalsProvider>
 				</NotificationCenterProvider>
@@ -105,4 +108,3 @@ export function AppProviders() {
 		</PluginOverviewProvider>
 	)
 }
-

@@ -13,4 +13,3 @@ export function normalizeViteId(id: string): string {
 	}
 	return normalizePath(cleaned)
 }
-

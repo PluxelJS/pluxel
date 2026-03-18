@@ -67,7 +67,7 @@ export default defineConfig(({ mode }) => {
 		// Production chunking: keep common libraries cache-friendly.
 		build: {
 			sourcemap: isDev ? true : 'hidden',
-			rollupOptions: {
+			rolldownOptions: {
 				output: {
 					codeSplitting: {
 						groups: [

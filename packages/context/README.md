@@ -1,5 +1,7 @@
 # @pluxel/context
 
+> Status: internal/private. `@pluxel/context` 会被 `@pluxel/core` 内联打包，外部用户不应直接依赖/导入它；请从 `@pluxel/core` 或 `@pluxel/runtime` 使用 `Context`。
+
 `Context` 是一个轻量的 service registry：服务通过 `Context.registerService()` 注册后，会以 getter 的形式挂到 `Context.prototype` 上（惰性实例化）。
 
 ## 关键语义：共享实例 + ctx 回灌

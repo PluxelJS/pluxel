@@ -1,4 +1,10 @@
-import type { I18nLocale, I18nMessageDict, I18nResources, I18nService, PluginI18nBundle } from '../types'
+import type {
+	I18nLocale,
+	I18nMessageDict,
+	I18nResources,
+	I18nService,
+	PluginI18nBundle,
+} from '../types'
 
 const resources: I18nResources = Object.create(null)
 const keysByPlugin = new Map<string, Map<I18nLocale, Set<string>>>()
@@ -55,12 +61,17 @@ function getDict(locale: I18nLocale): I18nMessageDict {
 	return dict
 }
 
-function normalizeBundles(input: PluginI18nBundle | PluginI18nBundle[] | null | undefined): PluginI18nBundle[] {
+function normalizeBundles(
+	input: PluginI18nBundle | PluginI18nBundle[] | null | undefined,
+): PluginI18nBundle[] {
 	if (!input) return []
 	return Array.isArray(input) ? input.filter(Boolean) : [input]
 }
 
-export function registerPluginI18n(pluginName: string, input: PluginI18nBundle | PluginI18nBundle[]): void {
+export function registerPluginI18n(
+	pluginName: string,
+	input: PluginI18nBundle | PluginI18nBundle[],
+): void {
 	unregisterPluginI18n(pluginName)
 
 	const bundles = normalizeBundles(input)
@@ -73,7 +84,8 @@ export function registerPluginI18n(pluginName: string, input: PluginI18nBundle |
 	}
 
 	for (const bundle of bundles) {
-		const ns = typeof bundle?.namespace === 'string' && bundle.namespace ? bundle.namespace : pluginName
+		const ns =
+			typeof bundle?.namespace === 'string' && bundle.namespace ? bundle.namespace : pluginName
 		const res = bundle?.resources
 		if (!res || typeof res !== 'object') continue
 
@@ -166,4 +178,3 @@ const extensionI18nService: I18nService = {
 export function getExtensionI18nService(): I18nService {
 	return extensionI18nService
 }
-

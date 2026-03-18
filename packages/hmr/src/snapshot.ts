@@ -18,7 +18,7 @@ export type BuiltinsFromDistEntry = {
 /**
  * Minimal workspace snapshot that the HMR host needs to boot deterministically.
  *
- * This intentionally does NOT depend on `@pluxel/cli` so `@pluxel/hmr` core stays decoupled.
+ * This intentionally does NOT depend on `@pluxel/cli` so `@pluxel/runtime` core stays decoupled.
  *
  * Notes:
  * - All paths are expected to be root-relative (preferred) or absolute. The host normalizes to abs.
@@ -44,7 +44,9 @@ function assertStringArray(value: unknown, label: string): asserts value is stri
 	}
 }
 
-export function assertHmrWorkspaceSnapshot(snapshot: unknown): asserts snapshot is HmrWorkspaceSnapshot {
+export function assertHmrWorkspaceSnapshot(
+	snapshot: unknown,
+): asserts snapshot is HmrWorkspaceSnapshot {
 	if (!snapshot || typeof snapshot !== 'object' || Array.isArray(snapshot)) {
 		throw new Error('[hmr] Invalid snapshot: expected object.')
 	}
@@ -80,4 +82,3 @@ export function assertHmrWorkspaceSnapshot(snapshot: unknown): asserts snapshot 
 		}
 	}
 }
-

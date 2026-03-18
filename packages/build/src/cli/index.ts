@@ -6,4 +6,3 @@ export * from './tsdown-runner'
 export * from './types'
 export * from './rules'
 export * from './utils/repo'
-

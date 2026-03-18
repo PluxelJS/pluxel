@@ -69,9 +69,7 @@ export function FormToc({
 				}))
 				.filter((item) => {
 					if (!item.id) return false
-					return (
-						item.id.startsWith(sectionIdPrefix) || item.id.startsWith(fieldIdPrefix)
-					)
+					return item.id.startsWith(sectionIdPrefix) || item.id.startsWith(fieldIdPrefix)
 				})
 			anchorsRef.current = parsed
 			setAnchors(parsed)
@@ -190,7 +188,9 @@ export function FormToc({
 
 		const filteredItems = items
 			.map((node) => filterNode(node))
-			.filter((node): node is { id: string; label: string; depth: number; children: any[] } => Boolean(node))
+			.filter((node): node is { id: string; label: string; depth: number; children: any[] } =>
+				Boolean(node),
+			)
 
 		return {
 			items: filteredItems,
@@ -236,7 +236,10 @@ export function FormToc({
 		const activeBox = active.getBoundingClientRect()
 		const viewportBox = viewport.getBoundingClientRect()
 		const padding = 16
-		if (activeBox.top < viewportBox.top + padding || activeBox.bottom > viewportBox.bottom - padding) {
+		if (
+			activeBox.top < viewportBox.top + padding ||
+			activeBox.bottom > viewportBox.bottom - padding
+		) {
 			active.scrollIntoView({ block: 'center' })
 		}
 	}, [tocExpanded, activeId, normalizedQuery])
@@ -291,7 +294,12 @@ export function FormToc({
 								boxShadow: isActive ? '0 0 0 3px var(--mantine-color-blue-light)' : 'none',
 							}}
 						/>
-						<Text size="sm" fw={isActive ? 700 : 600} style={{ flex: 1, minWidth: 0 }} lineClamp={1}>
+						<Text
+							size="sm"
+							fw={isActive ? 700 : 600}
+							style={{ flex: 1, minWidth: 0 }}
+							lineClamp={1}
+						>
 							{node.label}
 						</Text>
 					</Group>

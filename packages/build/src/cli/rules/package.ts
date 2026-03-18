@@ -21,4 +21,3 @@ export async function applyPackageRules(context: RuleContext): Promise<RuleMessa
 	await writePackageJSON(context.packageJsonPath, sortPackage(pkg))
 	return messages
 }
-

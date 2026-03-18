@@ -2,16 +2,14 @@ import type {
 	BaseIssue,
 	BaseSchema,
 	BaseSchemaAsync,
-	DescriptionAction,
 	PipeItem,
 	PipeItemAsync,
 	SchemaWithPipe,
 	SchemaWithPipeAsync,
-	TitleAction,
 } from 'valibot'
-import type { MetaType, MetaValueMap } from './meta'
+import type { MetaType, MetaValueMap, MetadataAction } from './meta'
 
-type MetadataAction = TitleAction<unknown, string> | DescriptionAction<unknown, string>
+type PluxelMetadataAction = MetadataAction<MetaType, unknown>
 
 export type Schema =
 	| BaseSchema<unknown, unknown, BaseIssue<unknown>>
@@ -19,7 +17,7 @@ export type Schema =
 	| SchemaWithPipe<
 			readonly [
 				BaseSchema<unknown, unknown, BaseIssue<unknown>>,
-				...(PipeItem<any, unknown, BaseIssue<unknown>> | MetadataAction)[],
+				...(PipeItem<any, unknown, BaseIssue<unknown>> | PluxelMetadataAction)[],
 			]
 	  >
 	| SchemaWithPipeAsync<
@@ -31,23 +29,20 @@ export type Schema =
 				...(
 					| PipeItem<any, unknown, BaseIssue<unknown>>
 					| PipeItemAsync<any, unknown, BaseIssue<unknown>>
-					| MetadataAction
+					| PluxelMetadataAction
 				)[],
 			]
 	  >
 
-export function readMeta<T extends MetaType>(
-	schema: Schema,
-	type: T,
-): MetaValueMap[T] | undefined {
+export function readMeta<T extends MetaType>(schema: Schema, type: T): MetaValueMap[T] | undefined {
 	if (!('pipe' in schema)) return undefined
 	const nestedSchemas: Schema[] = []
 	for (let index = schema.pipe.length - 1; index >= 0; index--) {
 		const item = schema.pipe[index]
 		if (item.kind === 'schema' && 'pipe' in item) {
 			nestedSchemas.push(item)
-		} else if (item.kind === 'metadata' && item.type === type) {
-			return item.metadata as MetaValueMap[T]
+		} else if (item.kind === 'metadata' && item.type === type && 'metadata' in item) {
+			return (item as unknown as MetadataAction<T, unknown>).metadata as MetaValueMap[T]
 		}
 	}
 	for (const nestedSchema of nestedSchemas) {

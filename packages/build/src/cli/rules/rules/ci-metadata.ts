@@ -41,4 +41,3 @@ function isBugsEqual(prev: PackageJson['bugs'], nextUrl: string) {
 	if (typeof prev === 'string') return prev === nextUrl
 	return prev.url === nextUrl
 }
-

@@ -11,7 +11,7 @@ import * as MantineHooks from '@mantine/hooks'
 import * as MantineModals from '@mantine/modals'
 import * as MantineNotifications from '@mantine/notifications'
 import * as Capnweb from 'capnweb'
-import * as HmrWeb from '@pluxel/hmr-web'
+import * as HmrWeb from '@pluxel/runtime/web'
 
 function createJsxDevRuntimeVendor() {
 	const vendor: Record<string, unknown> = { ...ReactJSXDevRuntime }
@@ -54,9 +54,9 @@ export const vendors = {
 	'@mantine/modals': MantineModals,
 	'@mantine/notifications': MantineNotifications,
 	capnweb: Capnweb,
-	// Extensions import from `@pluxel/hmr/web` (host-provided vendor module).
-	'@pluxel/hmr/web': HmrWeb,
-	'@pluxel/hmr/capnweb': Capnweb,
+	// Extensions import from `@pluxel/runtime/web` (host-provided vendor module).
+	'@pluxel/runtime/web': HmrWeb,
+	'@pluxel/runtime/capnweb': Capnweb,
 }
 
 export type Vendors = typeof vendors

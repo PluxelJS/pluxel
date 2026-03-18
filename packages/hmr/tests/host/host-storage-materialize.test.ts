@@ -1,0 +1,26 @@
+import { existsSync } from 'node:fs'
+import { resolve } from 'pathe'
+import { createFixture } from 'fs-fixture'
+import { describe, expect, it } from 'vitest'
+
+import { materializeProfiledFile } from '../../src/host/storage'
+
+describe('hmr host storage helpers', () => {
+	it('materializes profiled storage files, including seed fallback', async () => {
+		await using fixture = await createFixture({
+			'.pluxel/hmr/config.json': '{"seed":true}\n',
+		})
+
+		const resolved = await materializeProfiledFile(
+			resolve(fixture.path, '.pluxel/hmr/config.json'),
+			{
+				profile: 'dev',
+				seedFile: resolve(fixture.path, '.pluxel/hmr/config.json'),
+			},
+		)
+
+		expect(resolved.path).toBe(resolve(fixture.path, '.pluxel/hmr/config.dev.json'))
+		expect(existsSync(resolved.path)).toBe(true)
+	})
+})
+

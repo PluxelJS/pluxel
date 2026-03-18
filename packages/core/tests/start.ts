@@ -1,19 +1,12 @@
 // start.ts
-import { mkdir } from 'node:fs/promises'
-import { dirname, join } from 'node:path'
-import { fileURLToPath } from 'node:url'
 import { configure } from '@logtape/logtape'
 import { createPluxelLogtapeConfig } from '@pluxel/core/logger'
 import { Context } from '@pluxel/test'
 import { PluginA, PluginB, PluginC } from './plugins'
 
-const logsDir = join(dirname(fileURLToPath(import.meta.url)), '../logs')
-await mkdir(logsDir, { recursive: true })
-
 await configure(
 	createPluxelLogtapeConfig({
 		preset: 'core',
-		file: join(logsDir, 'core.log'),
 	}),
 )
 

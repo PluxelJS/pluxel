@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { Context } from '@pluxel/core'
 import { join, normalize, relative } from 'pathe'
-import { HMRService } from '@pluxel/hmr/services/runtime/hmr/HMRService'
+import { HMRService } from '@pluxel/hmr'
 import { fixturesPluginsDir, workspaceRoot } from './_paths'
 
 const noop = () => undefined
@@ -61,7 +61,7 @@ describe('HMRService file filter', () => {
 			roots: [pluginDir],
 			entries: [],
 		})
-		// Simulate Vite configuring server root to packages/hmr (matches real dev script)
+		// Simulate Vite configuring server root to packages/runtime (matches real dev script)
 		hmr.setServerRoot(pkgRoot)
 
 		const filter = hmr.toolkit.pathFilter

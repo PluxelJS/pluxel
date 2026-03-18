@@ -9,4 +9,3 @@ export async function runRules(context: RuleContext): Promise<RuleMessages> {
 
 	return messages.length > 0 ? messages : undefined
 }
-

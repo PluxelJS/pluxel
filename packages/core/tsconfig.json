@@ -5,6 +5,9 @@
 		"rootDir": "..",
 		"baseUrl": ".",
 		"outDir": "dist",
+		"noEmit": false,
+		"emitDeclarationOnly": true,
+		"jsx": "react-jsx",
 		"experimentalDecorators": true,
 		"emitDecoratorMetadata": true,
 		"paths": {

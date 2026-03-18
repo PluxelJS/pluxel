@@ -1,10 +1,6 @@
 {
-	"include": [
-		"tests"
-	],
+	"include": ["tests"],
 	"compilerOptions": {
-		"conditions": [
-			"import"
-		]
+		"conditions": ["import"]
 	}
 }

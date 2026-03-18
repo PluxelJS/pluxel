@@ -43,15 +43,15 @@ interface ImportToFix {
 
 const CODE_HINT = /@Plugin|\bPlugin\s*\(|__decorate\s*\(/
 
-export function importTypeFixerPlugin(options: ImportTypeFixerPluginOptions = {}): ViteCompatPlugin {
+export function importTypeFixerPlugin(
+	options: ImportTypeFixerPluginOptions = {},
+): ViteCompatPlugin {
 	const includePatterns = normalizePatterns(options.include, [
 		'**/*.ts',
 		'**/*.tsx',
 		'**/*.mts',
 		'**/*.cts',
-	]).map(
-		allowOptionalQuerySuffix,
-	)
+	]).map(allowOptionalQuerySuffix)
 	const excludePatterns = normalizePatterns(options.exclude, [
 		'**/node_modules/**',
 		'**/*.d.ts',
@@ -166,8 +166,7 @@ function collectTypeOnlyImports(code: string, ast: Program): TypeOnlyImportInfo[
 			if (spec.type === 'ImportSpecifier') {
 				// 检查是否是 type-only（整体或单个）
 				const raw = code.slice(spec.start, spec.end)
-				const isTypeOnly =
-					isWholeTypeOnly || spec.importKind === 'type' || /^\s*type\b/.test(raw)
+				const isTypeOnly = isWholeTypeOnly || spec.importKind === 'type' || /^\s*type\b/.test(raw)
 				if (!isTypeOnly) continue
 				const localName = spec.local.name
 				specifiers.push({

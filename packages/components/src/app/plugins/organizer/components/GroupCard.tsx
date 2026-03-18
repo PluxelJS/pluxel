@@ -1,15 +1,5 @@
 import { SortableContext, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable'
-import {
-	ActionIcon,
-	Box,
-	Collapse,
-	Flex,
-	Group,
-	Menu,
-	Stack,
-	Text,
-	Tooltip,
-} from '@mantine/core'
+import { ActionIcon, Box, Collapse, Flex, Group, Menu, Stack, Text, Tooltip } from '@mantine/core'
 import {
 	IconChevronDown,
 	IconChevronRight,
@@ -134,7 +124,12 @@ export const GroupCard = memo(function GroupCard(props: Props) {
 
 					<Menu withinPortal position="bottom-end">
 						<Menu.Target>
-							<ActionIcon size="xs" variant="subtle" aria-label="更多操作" style={{ flexShrink: 0 }}>
+							<ActionIcon
+								size="xs"
+								variant="subtle"
+								aria-label="更多操作"
+								style={{ flexShrink: 0 }}
+							>
 								<IconDotsVertical size={14} />
 							</ActionIcon>
 						</Menu.Target>
@@ -157,7 +152,12 @@ export const GroupCard = memo(function GroupCard(props: Props) {
 						</Menu.Dropdown>
 					</Menu>
 
-					<Tooltip label={locked ? '云端同步中' : '拖拽分组'} withinPortal openDelay={200} withArrow>
+					<Tooltip
+						label={locked ? '云端同步中' : '拖拽分组'}
+						withinPortal
+						openDelay={200}
+						withArrow
+					>
 						<ActionIcon
 							size="xs"
 							variant="subtle"
@@ -186,7 +186,10 @@ export const GroupCard = memo(function GroupCard(props: Props) {
 				minDropHeight={isCollapsed ? 10 : dh.rowH}
 			>
 				<Collapse in={!isCollapsed}>
-					<SortableContext items={visibleIds.map((id) => getItemSortableId(id))} strategy={verticalListSortingStrategy}>
+					<SortableContext
+						items={visibleIds.map((id) => getItemSortableId(id))}
+						strategy={verticalListSortingStrategy}
+					>
 						<Stack gap={0} mt={4} align="stretch" role="list" aria-label="插件列表">
 							{visibleIds.map((id) => (
 								<SortableRow

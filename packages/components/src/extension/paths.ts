@@ -45,4 +45,3 @@ export function buildExtensionHref(
 	const prefix = getExtensionRoutePrefix(frame)
 	return `${prefix}/${encodedName}${normalizedPath}`
 }
-

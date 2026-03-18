@@ -41,7 +41,6 @@
 		"bench:dist": "pnpm --filter @pluxel/build build && pnpm run build && bun run --tsconfig-override=\"./bench-tsconfig.json\" bench/pluginLifecycle.bench.ts"
 	},
 	"dependencies": {
-		"@logtape/file": "^2.0.2",
 		"@logtape/logtape": "^2.0.2",
 		"@logtape/pretty": "^2.0.2",
 		"@noble/hashes": "^2.0.1",

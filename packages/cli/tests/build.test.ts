@@ -123,7 +123,10 @@ const buildFixtures = {
 	},
 } satisfies Record<string, Record<string, string>>
 
-async function withBuildFixture<T>(name: keyof typeof buildFixtures, run: (dir: string) => Promise<T>) {
+async function withBuildFixture<T>(
+	name: keyof typeof buildFixtures,
+	run: (dir: string) => Promise<T>,
+) {
 	await using fixture = await createFixture(buildFixtures[name])
 	const originalCwd = process.cwd()
 	try {
@@ -233,7 +236,10 @@ describe('build command', () => {
 				})
 
 				const pkg = await readPackageJSON(runtime.packageJsonPath)
-				expect(pkg.repository).toEqual({ type: 'git', url: 'https://github.com/pluxel/example.git' })
+				expect(pkg.repository).toEqual({
+					type: 'git',
+					url: 'https://github.com/pluxel/example.git',
+				})
 				expect(pkg.homepage).toBe('https://github.com/pluxel/example')
 				expect(pkg.bugs).toEqual({ url: 'https://github.com/pluxel/example/issues' })
 			})
@@ -268,7 +274,10 @@ describe('build command', () => {
 				})
 
 				const pkg = await readPackageJSON(runtime.packageJsonPath)
-				expect(pkg.repository).toEqual({ type: 'git', url: 'https://gitlab.com/pluxel/example.git' })
+				expect(pkg.repository).toEqual({
+					type: 'git',
+					url: 'https://gitlab.com/pluxel/example.git',
+				})
 				expect(pkg.homepage).toBe('https://gitlab.com/pluxel/example')
 				expect(pkg.bugs).toEqual({ url: 'https://gitlab.com/pluxel/example/-/issues' })
 			})

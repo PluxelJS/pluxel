@@ -26,7 +26,7 @@ describe('HMR ConfigService profile storage', () => {
 					version: '0.0.0',
 					type: 'module',
 					exports: {
-						'.': { '@pluxel/hmr': './src/index.ts', default: './dist/index.mjs' },
+						'.': { '@pluxel/runtime': './src/index.ts', default: './dist/index.mjs' },
 					},
 				},
 				null,
@@ -114,14 +114,14 @@ describe('HMR ConfigService profile storage', () => {
 			const host = await createHmrHost({
 				root: fixture.path,
 				logging: false,
-				store: { configFile: '.pluxel/hmr/{profile}/config.json', seedConfig: false },
+				store: { configFile: '.pluxel/runtime/{profile}/config.json', seedConfig: false },
 				workspaceSnapshot: snapshot,
 			})
 			ctx = host.ctx
 
 			await host.ctx.root.configService.ready
 
-			const perProfile = resolve(fixture.path, '.pluxel/hmr/dev/config.json')
+			const perProfile = resolve(fixture.path, '.pluxel/runtime/dev/config.json')
 			expect(existsSync(perProfile)).toBe(true)
 		} finally {
 			if (ctx) await ctx.effects.dispose()

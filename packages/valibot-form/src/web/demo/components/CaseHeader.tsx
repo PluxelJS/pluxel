@@ -65,20 +65,10 @@ export function CaseHeader({
 			</Stack>
 			<Group gap="md" align="center">
 				<Group gap={6}>
-					<ActionIcon
-						variant="subtle"
-						aria-label="上一条"
-						disabled={!hasPrev}
-						onClick={onPrev}
-					>
+					<ActionIcon variant="subtle" aria-label="上一条" disabled={!hasPrev} onClick={onPrev}>
 						<IconChevronLeft size={16} />
 					</ActionIcon>
-					<ActionIcon
-						variant="subtle"
-						aria-label="下一条"
-						disabled={!hasNext}
-						onClick={onNext}
-					>
+					<ActionIcon variant="subtle" aria-label="下一条" disabled={!hasNext} onClick={onNext}>
 						<IconChevronRight size={16} />
 					</ActionIcon>
 				</Group>

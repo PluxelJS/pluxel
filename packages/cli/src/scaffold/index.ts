@@ -4,8 +4,18 @@ import { resolve } from 'pathe'
 import { resolvePluginEnv } from '@pluxel/build/cli'
 import { detectPm, type PM, runPackageManager } from '../utils/pm'
 import { parsePackageName, pascalCase, suggestPackageName, validatePackageName } from './name'
-import { ensureTemplate, generateFromTemplate, promptTemplateData, resolveTemplateBase } from './template'
-import { formatWorkspaceRoot, resolveDestination, resolveWorkspaceRoot, type WorkspaceReason } from './workspace'
+import {
+	ensureTemplate,
+	generateFromTemplate,
+	promptTemplateData,
+	resolveTemplateBase,
+} from './template'
+import {
+	formatWorkspaceRoot,
+	resolveDestination,
+	resolveWorkspaceRoot,
+	type WorkspaceReason,
+} from './workspace'
 
 export { parsePackageName } from './name'
 
@@ -167,7 +177,11 @@ async function ensurePackageName(explicit?: string) {
 	return answer.trim()
 }
 
-function createScaffoldPlan(input: string, template: string, values: NewCommandValues): ScaffoldPlan {
+function createScaffoldPlan(
+	input: string,
+	template: string,
+	values: NewCommandValues,
+): ScaffoldPlan {
 	const { dest, root, force = false, dryRun = false, install = true, pm } = values
 	const cwd = process.cwd()
 

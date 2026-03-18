@@ -144,14 +144,8 @@ export function createHost(config: Context.Config = {}): Host {
 	const resolveCfgName = (target: HostConfigTarget) =>
 		typeof target === 'string' ? target : getPluginInfo(target).id
 
-	function add(
-		Plugin: PluginConstructor,
-		opts?: { provideBase?: boolean },
-	): Host
-	function add(
-		Plugins: readonly PluginConstructor[],
-		opts?: { provideBase?: boolean },
-	): Host
+	function add(Plugin: PluginConstructor, opts?: { provideBase?: boolean }): Host
+	function add(Plugins: readonly PluginConstructor[], opts?: { provideBase?: boolean }): Host
 	function add(
 		PluginOrPlugins: PluginConstructor | readonly PluginConstructor[],
 		opts?: { provideBase?: boolean },

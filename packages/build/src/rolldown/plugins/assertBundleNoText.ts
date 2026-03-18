@@ -34,4 +34,3 @@ export function assertBundleNoText(forbidden: string[], options: Options = {}): 
 		},
 	}
 }
-

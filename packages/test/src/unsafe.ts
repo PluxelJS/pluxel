@@ -14,4 +14,3 @@ export {
 	requirePluginDependency,
 	resolvePluginDependency,
 } from '@pluxel/core'
-

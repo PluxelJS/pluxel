@@ -9,8 +9,7 @@ import { resolveTemplatesDir } from './utils'
 const TEMPLATE_PROMPT_FILES = new Set(['prompts.json', 'prompts.jsonc'])
 const TEMPLATE_EXT = '.hbs'
 
-const TEMPLATE_REGEX =
-	/{{\s*([a-zA-Z][\w]*)\s+([a-zA-Z0-9_]+)\s*}}|{{\s*([a-zA-Z0-9_]+)\s*}}/g
+const TEMPLATE_REGEX = /{{\s*([a-zA-Z][\w]*)\s+([a-zA-Z0-9_]+)\s*}}|{{\s*([a-zA-Z0-9_]+)\s*}}/g
 
 export async function ensureTemplate(explicit?: string): Promise<string | undefined> {
 	const normalized = typeof explicit === 'string' ? explicit.trim() : ''
@@ -148,7 +147,8 @@ export async function generateFromTemplate(
 				.slice(0, previewMax)
 				.map((output) => `- ${output.outputRelPath}`)
 				.join('\n')
-			const more = existing.length > previewMax ? `\n… and ${existing.length - previewMax} more` : ''
+			const more =
+				existing.length > previewMax ? `\n… and ${existing.length - previewMax} more` : ''
 
 			const ok = await confirm({
 				message: `Target has ${existing.length} existing file(s). Overwrite?${list ? `\n${list}` : ''}${more}`,

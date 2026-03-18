@@ -3,7 +3,7 @@ import { join } from 'pathe'
 import { symlinkSync } from 'node:fs'
 import { normalizePath } from 'vite'
 import { describe, expect, it } from 'vitest'
-import { HmrPathResolver } from '@pluxel/hmr/services/runtime/hmr/environment'
+import { HmrPathResolver } from '../../src/dev/hmr/environment'
 
 describe('HmrPathResolver', () => {
 	it('keeps existing absolute FS paths outside scan roots', async () => {
@@ -27,14 +27,14 @@ describe('HmrPathResolver', () => {
 
 	it('normalizes /@fs/ Windows drive paths and emits variants', () => {
 		const paths = new HmrPathResolver('C:/workspace', ['C:/workspace/packages'])
-		paths.setServerRoot('C:/workspace/hmr-ui')
+		paths.setServerRoot('C:/workspace/runtime-ui')
 
-		const clean = paths.toCleanId('/@fs/C:/workspace/hmr-ui/src/client.tsx')
-		expect(clean).toBe('C:/workspace/hmr-ui/src/client.tsx')
+		const clean = paths.toCleanId('/@fs/C:/workspace/runtime-ui/src/client.tsx')
+		expect(clean).toBe('C:/workspace/runtime-ui/src/client.tsx')
 
 		expect(paths.moduleIdVariantsClean(clean)).toEqual([
-			'C:/workspace/hmr-ui/src/client.tsx',
-			'/@fs/C:/workspace/hmr-ui/src/client.tsx',
+			'C:/workspace/runtime-ui/src/client.tsx',
+			'/@fs/C:/workspace/runtime-ui/src/client.tsx',
 			'/src/client.tsx',
 		])
 	})

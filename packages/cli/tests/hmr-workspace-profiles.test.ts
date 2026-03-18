@@ -3,12 +3,12 @@ import {
 	type PluxelHmrConfigV1,
 	readHmrConfigV1,
 	writeHmrConfigV1,
-} from '@pluxel/cli/hmr'
+} from '@pluxel/hmr/diagnose'
 import { createFixture } from 'fs-fixture'
 import { resolve } from 'pathe'
 import { describe, expect, it } from 'vitest'
 
-describe('@pluxel/cli/hmr workspace profiles', () => {
+describe('@pluxel/hmr/diagnose workspace profiles', () => {
 	it('parses config strictly (unknown fields rejected)', async () => {
 		await using fixture = await createFixture({
 			'pluxel.hmr.jsonc':
@@ -52,7 +52,7 @@ describe('@pluxel/cli/hmr workspace profiles', () => {
 					version: '0.0.0',
 					type: 'module',
 					dependencies: { 'pluxel-shared': 'workspace:*' },
-					exports: { '.': { '@pluxel/hmr': './src/index.ts' } },
+					exports: { '.': { '@pluxel/runtime': './src/index.ts' } },
 				},
 				null,
 				2,
@@ -63,7 +63,7 @@ describe('@pluxel/cli/hmr workspace profiles', () => {
 					name: 'pluxel-plugin-builtin',
 					version: '0.0.0',
 					type: 'module',
-					exports: { '.': { import: './dist/index.mjs', '@pluxel/hmr': './src/index.ts' } },
+					exports: { '.': { import: './dist/index.mjs', '@pluxel/runtime': './src/index.ts' } },
 				},
 				null,
 				2,
@@ -135,7 +135,7 @@ describe('@pluxel/cli/hmr workspace profiles', () => {
 					name: '@pluxel/graphql',
 					version: '0.0.0',
 					type: 'module',
-					exports: { '.': { '@pluxel/hmr': './src/index.ts' } },
+					exports: { '.': { '@pluxel/runtime': './src/index.ts' } },
 				},
 				null,
 				2,
@@ -146,7 +146,7 @@ describe('@pluxel/cli/hmr workspace profiles', () => {
 					name: 'pluxel-plugin-bot-suite',
 					version: '0.0.0',
 					type: 'module',
-					exports: { '.': { '@pluxel/hmr': './src/index.ts' } },
+					exports: { '.': { '@pluxel/runtime': './src/index.ts' } },
 				},
 				null,
 				2,
@@ -190,7 +190,7 @@ describe('@pluxel/cli/hmr workspace profiles', () => {
 					name: '@pluxel/graphql',
 					version: '0.0.0',
 					type: 'module',
-					exports: { '.': { '@pluxel/hmr': './src/index.ts', default: './dist/index.js' } },
+					exports: { '.': { '@pluxel/runtime': './src/index.ts', default: './dist/index.js' } },
 				},
 				null,
 				2,
@@ -202,7 +202,7 @@ describe('@pluxel/cli/hmr workspace profiles', () => {
 					name: 'pluxel-plugin-app',
 					version: '0.0.0',
 					type: 'module',
-					exports: { '.': { '@pluxel/hmr': './src/index.ts' } },
+					exports: { '.': { '@pluxel/runtime': './src/index.ts' } },
 				},
 				null,
 				2,

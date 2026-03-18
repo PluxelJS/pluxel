@@ -1,8 +1,140 @@
 {
 	"name": "@pluxel/runtime",
-	"private": true,
+	"version": "0.3.0",
+	"description": "Pluxel runtime kernel (includes control plane, web SDK, and frozen export)",
 	"type": "module",
+	"types": "./dist/index.d.mts",
+	"exports": {
+		".": {
+			"@pluxel/source": "./src/index.ts",
+			"default": "./dist/index.mjs"
+		},
+		"./capnweb": {
+			"@pluxel/source": "./src/capnweb.ts",
+			"default": "./dist/capnweb.mjs"
+		},
+		"./config": {
+			"@pluxel/source": "./src/config.ts",
+			"default": "./dist/config.mjs"
+		},
+		"./events": {
+			"@pluxel/source": "./src/events.ts",
+			"default": "./dist/events.mjs"
+		},
+		"./frozen": {
+			"@pluxel/source": "./src/frozen.ts",
+			"default": "./dist/frozen.mjs"
+		},
+		"./internal": {
+			"@pluxel/source": "./src/internal.ts",
+			"default": "./dist/internal.mjs"
+		},
+		"./logger": {
+			"@pluxel/source": "./src/logger.ts",
+			"default": "./dist/logger.mjs"
+		},
+		"./services": {
+			"@pluxel/source": "./src/services.ts",
+			"default": "./dist/services.mjs"
+		},
+		"./shared": {
+			"@pluxel/source": "./src/shared.ts",
+			"default": "./dist/shared.mjs"
+		},
+		"./signaldb": {
+			"@pluxel/source": "./src/signaldb.ts",
+			"default": "./dist/signaldb.mjs"
+		},
+		"./web": {
+			"@pluxel/source": "./src/web.ts",
+			"default": "./dist/web.mjs"
+		},
+		"./web/paths": {
+			"@pluxel/source": "./src/web/paths.ts",
+			"default": "./dist/web/paths.mjs"
+		},
+		"./web/vendors": {
+			"@pluxel/source": "./src/web/plugin-ui/vendors.ts",
+			"default": "./dist/web/vendors.mjs"
+		},
+		"./package.json": "./package.json"
+	},
+	"files": [
+		"!**/*.map",
+		"dist"
+	],
 	"scripts": {
-		"dev": "pnpm --filter @pluxel/plugins-host hmr"
+		"test": "pnpm exec vitest run",
+		"build": "pnpm run build:web && pnpm run build:lib",
+		"build:lib": "tsdown",
+		"build:web": "vite build",
+		"web": "pnpm run build:web"
+	},
+	"dependencies": {
+		"@elysiajs/eden": "^1.4.8",
+		"@gqloom/core": "^0.16.1",
+		"@gqloom/valibot": "^0.15.1",
+		"@gqty/cli": "^5.0.0",
+		"@logtape/file": "^2.0.2",
+		"@logtape/logtape": "^2.0.2",
+		"@noble/hashes": "^2.0.1",
+		"@pluxel/core": "workspace:*",
+		"@rolldown/pluginutils": "1.0.0-rc.5",
+		"@signaldb/core": "^1.7.2",
+		"@tanstack/pacer": "^0.19.0",
+		"@valibot/to-json-schema": "^1.5.0",
+		"better-sse": "^0.16.1",
+		"capnweb": "^0.5.0",
+		"chokidar": "^5.0.0",
+		"elysia": "^1.4.27",
+		"exsolve": "^1.0.8",
+		"fdir": "^6.5.0",
+		"graphql": "^16.13.0",
+		"graphql-yoga": "^5.18.0",
+		"jsonc-parser": "^3.3.1",
+		"mcp-lite": "^0.10.0",
+		"nypm": "^0.6.5",
+		"ohash": "^2.0.11",
+		"pathe": "^2.0.3",
+		"picomatch": "^4.0.3",
+		"pkg-types": "^2.3.0",
+		"superjson": "^2.2.6",
+		"tinypool": "^2.1.0",
+		"std-env": "4.0.0-rc.1",
+		"valibot": "^1.2.0"
+	},
+	"peerDependencies": {
+		"@tabler/icons-react": "*"
+	},
+	"devDependencies": {
+		"@pluxel/build": "workspace:*",
+		"@pluxel/test": "workspace:*",
+		"@pluxel/workspace": "workspace:*",
+		"@types/picomatch": "^4.0.2",
+		"@types/react": "^19.2.14",
+		"fs-fixture": "^2.11.0",
+		"postcss": "^8.5.6",
+		"postcss-preset-mantine": "^1.18.0",
+		"postcss-simple-vars": "^7.0.1",
+		"vite": "beta",
+		"valibot-form": "workspace:*"
+	},
+	"publishConfig": {
+		"exports": {
+			".": "./dist/index.mjs",
+			"./capnweb": "./dist/capnweb.mjs",
+			"./config": "./dist/config.mjs",
+			"./events": "./dist/events.mjs",
+			"./frozen": "./dist/frozen.mjs",
+			"./internal": "./dist/internal.mjs",
+			"./logger": "./dist/logger.mjs",
+			"./services": "./dist/services.mjs",
+			"./shared": "./dist/shared.mjs",
+			"./signaldb": "./dist/signaldb.mjs",
+			"./web": "./dist/web.mjs",
+			"./web/paths": "./dist/web/paths.mjs",
+			"./web/vendors": "./dist/web/vendors.mjs",
+			"./package.json": "./package.json"
+		}
 	}
 }

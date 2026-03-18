@@ -3,12 +3,13 @@ import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'pathe'
 import { describe, expect, it } from 'vitest'
-import { resolveHMRDependencyConfig } from '@pluxel/hmr/services/runtime/hmr/config'
+import { resolveHMRDependencyConfig } from '../../src/dev/hmr/config'
 
 describe('HMR bridgeProviders', () => {
-	it('does not include @pluxel/context by default', () => {
+	it('always includes @pluxel/context and maps it to @pluxel/core by default', () => {
 		const deps = resolveHMRDependencyConfig()
-		expect(deps.bridgeModules.includes('@pluxel/context')).toBe(false)
+		expect(deps.bridgeModules.includes('@pluxel/context')).toBe(true)
+		expect(deps.bridgeProviders['@pluxel/context']).toBe('@pluxel/core')
 	})
 
 	it('auto-maps @pluxel/context -> @pluxel/core when context is not installed', async () => {
@@ -25,10 +26,7 @@ describe('HMR bridgeProviders', () => {
 			expect(existsSync(join(root, 'node_modules/@pluxel/core/package.json'))).toBe(true)
 			expect(existsSync(join(root, 'node_modules/@pluxel/context/package.json'))).toBe(false)
 
-			const deps = resolveHMRDependencyConfig(
-				{ bridgeModules: ['@pluxel/context'] },
-				{ cwd: root },
-			)
+			const deps = resolveHMRDependencyConfig({ bridgeModules: ['@pluxel/context'] }, { cwd: root })
 			expect(deps.bridgeProviders['@pluxel/context']).toBe('@pluxel/core')
 			expect(deps.bridgeModules.includes('@pluxel/context')).toBe(true)
 			expect(deps.bridgeModules.includes('@pluxel/core')).toBe(true)
@@ -37,7 +35,7 @@ describe('HMR bridgeProviders', () => {
 		}
 	})
 
-	it('does not auto-map when @pluxel/context is installed', async () => {
+	it('keeps the provider mapping even when @pluxel/context is installed separately', async () => {
 		const root = await mkdtemp(join(tmpdir(), 'pluxel-hmr-bridge-providers-'))
 		try {
 			const coreRoot = join(root, 'node_modules/@pluxel/core')
@@ -58,11 +56,8 @@ describe('HMR bridgeProviders', () => {
 
 			expect(existsSync(join(root, 'node_modules/@pluxel/context/package.json'))).toBe(true)
 
-			const deps = resolveHMRDependencyConfig(
-				{ bridgeModules: ['@pluxel/context'] },
-				{ cwd: root },
-			)
-			expect(deps.bridgeProviders['@pluxel/context']).toBeUndefined()
+			const deps = resolveHMRDependencyConfig({ bridgeModules: ['@pluxel/context'] }, { cwd: root })
+			expect(deps.bridgeProviders['@pluxel/context']).toBe('@pluxel/core')
 			expect(deps.bridgeModules.includes('@pluxel/context')).toBe(true)
 		} finally {
 			await rm(root, { recursive: true, force: true })

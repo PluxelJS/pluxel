@@ -15,7 +15,10 @@ type Options = {
  * for vendoring internal packages into a public facade while ensuring private
  * module specifiers never leak into published type declarations.
  */
-export function rewriteDtsText(replacements: Record<string, string>, options: Options = {}): Plugin {
+export function rewriteDtsText(
+	replacements: Record<string, string>,
+	options: Options = {},
+): Plugin {
 	const exts = /\.d\.(?:mts|cts|ts)$/i
 	const entries = Object.entries(replacements).sort((a, b) => b[0].length - a[0].length)
 
@@ -51,4 +54,3 @@ export function rewriteDtsText(replacements: Record<string, string>, options: Op
 		},
 	}
 }
-

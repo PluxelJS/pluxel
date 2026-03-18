@@ -60,16 +60,8 @@ describe('normalizeSchemaSource', () => {
 	)
 
 	// 9. strip TypeScript-only `as ...`
-	t(
-		'strip as const',
-		"v.picklist(['compact','full'] as const)",
-		"v.picklist(['compact','full'])",
-	)
-	t(
-		'strip as type',
-		'v.optional(v.string(), DEFAULT as string)',
-		'v.optional(v.string(),DEFAULT)',
-	)
+	t('strip as const', "v.picklist(['compact','full'] as const)", "v.picklist(['compact','full'])")
+	t('strip as type', 'v.optional(v.string(), DEFAULT as string)', 'v.optional(v.string(),DEFAULT)')
 
 	// 10. strip TypeScript-only `satisfies ...`
 	t(
@@ -86,9 +78,5 @@ describe('normalizeSchemaSource', () => {
 	)
 
 	// 12. computed keys stay valid after normalization
-	t(
-		'computed key',
-		"v.object({['dynamic']:v.string()})",
-		"v.object({['dynamic']:v.string()})",
-	)
+	t('computed key', "v.object({['dynamic']:v.string()})", "v.object({['dynamic']:v.string()})")
 })

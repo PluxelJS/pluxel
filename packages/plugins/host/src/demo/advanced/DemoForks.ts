@@ -5,7 +5,7 @@
 // - 再启用 DemoWorkerConsumer
 // - 在依赖注入面板里把 DemoWorker 切换为某个 fork（例如 DemoWorker#<id>）
 
-import { BasePlugin, ForkablePlugin, Plugin } from '@pluxel/hmr'
+import { BasePlugin, ForkablePlugin, Plugin } from '@pluxel/runtime'
 
 @Plugin({ name: 'DemoWorker' })
 export class DemoWorker extends ForkablePlugin {

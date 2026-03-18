@@ -1,71 +1,10 @@
-import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
 import { createHmrHost } from '@pluxel/hmr/host'
 import type { HmrWorkspaceSnapshot } from '@pluxel/hmr/snapshot'
 import { createFixture } from 'fs-fixture'
 import { resolve } from 'pathe'
 import { describe, expect, it } from 'vitest'
-import { createUiPublicStaticMiddleware } from '@pluxel/hmr/server/ui-public'
-
-type Middleware = (
-	req: IncomingMessage,
-	res: ServerResponse,
-	next: (err?: unknown) => void,
-) => unknown
-
-function mount(base: string, handler: Middleware) {
-	return (req: IncomingMessage, res: ServerResponse, next: (err?: unknown) => void) => {
-		const rawUrl = typeof req?.url === 'string' ? req.url : '/'
-		const { pathname } = new URL(rawUrl, 'http://localhost')
-		if (pathname !== base && !pathname.startsWith(`${base}/`)) return next()
-
-		const originalUrl = req.url
-		req.url = rawUrl.slice(base.length) || '/'
-		handler(req, res, (err) => {
-			req.url = originalUrl
-			if (err) return next(err)
-			return next()
-		})
-	}
-}
-
-function htmlFallback() {
-	return (_req: IncomingMessage, res: ServerResponse) => {
-		res.statusCode = 200
-		res.setHeader('Content-Type', 'text/html; charset=utf-8')
-		res.end('<!doctype html><html><body>fallback</body></html>')
-	}
-}
-
-async function startHttpServer(middlewares: Middleware[]) {
-	const server = createServer((req, res) => {
-		let i = 0
-		const next = (err?: unknown) => {
-			if (err) {
-				res.statusCode = 500
-				res.end(String(err))
-				return
-			}
-			const mw = middlewares[i++]
-			if (!mw) {
-				res.statusCode = 404
-				res.end('not found')
-				return
-			}
-			mw(req, res, next)
-		}
-		next()
-	})
-
-	await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', () => resolve()))
-	const addr = server.address()
-	if (!addr || typeof addr === 'string') throw new Error('server address unavailable')
-
-	return {
-		baseUrl: `http://127.0.0.1:${addr.port}`,
-		close: async () =>
-			new Promise<void>((resolve, reject) => server.close((e) => (e ? reject(e) : resolve()))),
-	}
-}
+import { HMR_INTERNAL_API_BASE, HMR_TRANSPORT_PATHS } from '@pluxel/runtime/web/paths'
+import { Context } from '@pluxel/runtime'
 
 describe('HMR UI smoke', () => {
 	it('serves built UI assets from /dist/public', async () => {
@@ -74,40 +13,38 @@ describe('HMR UI smoke', () => {
 		})
 
 		const publicDir = resolve(fixture.path, 'dist/public')
-		const ui = createUiPublicStaticMiddleware(publicDir)
-		expect(ui).toBeTypeOf('function')
+		const ctx = new Context({
+			configService: { mode: 'memory' },
+			http: {
+				uiAssets: 'static-built',
+				uiPublicDir: publicDir,
+				controlPlane: { web: false, rpc: false, sse: false, auth: 'none' },
+			},
+		})
 
-		const middleware = ui as NonNullable<typeof ui>
-		const { baseUrl, close } = await startHttpServer([
-			mount('/dist/public', middleware),
-			htmlFallback(),
-		])
-		try {
-			const res1 = await fetch(`${baseUrl}/dist/public/assets/hello.js`)
-			expect(res1.status).toBe(200)
-			expect(res1.headers.get('content-type')).toContain('application/javascript')
+		const res1 = await ctx.http.fetch(new Request('http://local/dist/public/assets/hello.js'))
+		expect(res1.status).toBe(200)
+		expect(res1.headers.get('content-type')).toContain('application/javascript')
 
-			// Regression: missing assets must not fall through to an HTML SPA fallback
-			// (which triggers strict-MIME errors in browsers).
-			const res3 = await fetch(`${baseUrl}/dist/public/assets/missing.css`)
-			expect(res3.status).toBe(404)
-			expect(res3.headers.get('content-type')).toContain('text/plain')
-		} finally {
-			await close()
-		}
+		// Regression: missing assets must not fall through to an HTML SPA fallback
+		// (which triggers strict-MIME errors in browsers).
+		const res3 = await ctx.http.fetch(new Request('http://local/dist/public/assets/missing.css'))
+		expect(res3.status).toBe(404)
+		expect(await res3.text()).toContain('Not Found')
+		await ctx.effects.dispose()
 	})
 
-	it('exposes /__pluxel/hmr/graphql (used by the UI)', async () => {
+	it('exposes the internal GraphQL transport used by the UI', async () => {
 		await using fixture = await createFixture({
 			'pnpm-workspace.yaml': ['packages:', '  - packages/*', ''].join('\n'),
 			// HMR may persist runtime config under `data/`; pre-create so fixture cleanup is stable.
-			'data/hmr/config.dev.json': '{}\n',
+			'data/runtime/config.dev.json': '{}\n',
 			'packages/a/package.json': JSON.stringify(
 				{
 					name: 'pluxel-plugin-a',
 					version: '0.0.0',
 					type: 'module',
-					exports: { '.': { '@pluxel/hmr': './src/index.ts', default: './dist/index.mjs' } },
+					exports: { '.': { '@pluxel/runtime': './src/index.ts', default: './dist/index.mjs' } },
 				},
 				null,
 				2,
@@ -136,7 +73,7 @@ describe('HMR UI smoke', () => {
 			})
 
 			const res = await host.ctx.http.fetch(
-				new Request('http://local/__pluxel/hmr/graphql', {
+				new Request(`http://local${HMR_INTERNAL_API_BASE}${HMR_TRANSPORT_PATHS.graphql}`, {
 					method: 'POST',
 					headers: { 'content-type': 'application/json' },
 					body: JSON.stringify({ query: '{ _empty }' }),

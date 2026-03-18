@@ -1,10 +1,5 @@
 import { isValidElement, type ReactNode } from 'react'
-import {
-	IconHistory,
-	IconHome2,
-	IconPackages,
-	IconPuzzle,
-} from '@tabler/icons-react'
+import { IconHistory, IconHome2, IconPackages, IconPuzzle } from '@tabler/icons-react'
 import type { NavItem } from '../../components'
 
 export const baseNavItems: NavItem[] = [

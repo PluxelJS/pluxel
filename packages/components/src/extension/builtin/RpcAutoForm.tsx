@@ -395,7 +395,7 @@ export function BuiltinRpcAutoForm({
 					if (!ok) return
 				}
 
-					setSubmitting(true)
+				setSubmitting(true)
 				try {
 					if (!rpcMethod) throw new Error('Missing rpc.method')
 					if (!hmr) throw new Error('rpcAutoForm requires ctx.services.hmr')

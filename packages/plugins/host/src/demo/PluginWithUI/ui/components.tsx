@@ -14,8 +14,8 @@ import {
 	TextInput,
 	Title,
 } from '@mantine/core'
-import type { PluginExtensionContext } from '@pluxel/hmr/web'
-import { rpcErrorMessage, useExtensionContext } from '@pluxel/hmr/web'
+import type { PluginExtensionContext } from '@pluxel/runtime/web'
+import { rpcErrorMessage, useExtensionContext } from '@pluxel/runtime/web'
 import {
 	IconActivity,
 	IconCirclePlus,

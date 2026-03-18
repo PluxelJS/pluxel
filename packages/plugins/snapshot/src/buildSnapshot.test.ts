@@ -42,4 +42,3 @@ describe('buildSnapshotSource', () => {
 		expect(snapshot).toContain('feature: "alpha"')
 	})
 })
-

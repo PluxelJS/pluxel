@@ -114,8 +114,7 @@ export abstract class BasePlugin<C extends Context = Context> {
 					: undefined,
 			init: typeof plugin.init === 'function' ? plugin.init.bind(plugin) : undefined,
 			stop: typeof plugin.stop === 'function' ? plugin.stop.bind(plugin) : undefined,
-			dispose:
-				typeof effects?.dispose === 'function' ? effects.dispose.bind(effects) : undefined,
+			dispose: typeof effects?.dispose === 'function' ? effects.dispose.bind(effects) : undefined,
 			subscribeErrors:
 				typeof onError === 'function'
 					? (cb: (err: unknown) => void) => {

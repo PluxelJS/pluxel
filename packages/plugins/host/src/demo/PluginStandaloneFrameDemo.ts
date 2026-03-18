@@ -1,4 +1,7 @@
-import { BasePlugin, Plugin } from '@pluxel/hmr'
+import { BasePlugin, Plugin } from '@pluxel/runtime'
+import { ui } from '@pluxel/hmr/plugin'
+
+const standaloneUi = ui('./PluginStandaloneFrameDemo/ui/index.tsx')
 
 /**
  * Demo: standalone frame routes.
@@ -9,8 +12,7 @@ import { BasePlugin, Plugin } from '@pluxel/hmr'
 @Plugin({ name: 'PluginStandaloneFrameDemo' })
 export class PluginStandaloneFrameDemo extends BasePlugin {
 	override async init() {
-		this.ctx.ext.ui.register({ entryPath: './PluginStandaloneFrameDemo/ui/index.tsx' })
+		standaloneUi.bind(this.ctx)
 		this.ctx.logger.info('ready')
 	}
 }
-

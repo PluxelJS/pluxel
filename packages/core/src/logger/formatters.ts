@@ -89,6 +89,80 @@ function colorizeHmrAttribution(text: string): string {
 	return out
 }
 
+function colorizeHmrUpdateSummary(text: string): string {
+	const idx = text.indexOf('[HMR] #')
+	const idx2 = idx === -1 ? text.indexOf('[HMR] updated') : -1
+	const start = idx !== -1 ? idx : idx2
+	if (start === -1) return text
+
+	const reset = '\u001B[0m'
+	const dim = '\u001B[2m'
+	const cyan = '\u001B[36m'
+	const green = '\u001B[32m'
+	const red = '\u001B[31m'
+	const magenta = '\u001B[35m'
+	const blue = '\u001B[34m'
+
+	const head = text.slice(0, start)
+	let out = text.slice(start)
+
+	// Tag / epoch / status
+	out = out.replace(/\[HMR\]/g, `${magenta}[HMR]${reset}`)
+	out = out.replace(/#(\d+)/g, `${cyan}#$1${reset}`)
+	out = out.replace(/\bok\b/g, `${green}ok${reset}`)
+	out = out.replace(/\bfail\b/g, `${red}fail${reset}`)
+	out = out.replace(/\bsuccess\b/g, `${green}success${reset}`)
+	out = out.replace(/\bfailed\b/g, `${red}failed${reset}`)
+
+	// Key/value pairs (keep keys subtle; values stay default).
+	const keys = [
+		'epoch',
+		'status',
+		'changedFiles',
+		'targets',
+		'affected',
+		'fallbackRoots',
+		'activeServices',
+		'invalidated.vite',
+		'invalidated.runner',
+		'plugins.loaded',
+		'plugins.enabled',
+		'plugins.running',
+		'commitMs',
+		'batchMs',
+		'hotspotsTop(3)',
+		'changedPreview(0)',
+		'changedPreview(1)',
+		'changedPreview(2)',
+		'changedPreview(3)',
+	]
+	for (const key of keys) {
+		const escaped = key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+		out = out.replace(new RegExp(`(^|\\s)(${escaped})(=)`, 'g'), (_m, p1: string, k: string) => {
+			return `${p1}${dim}${k}${reset}=`
+		})
+	}
+
+	// Make commit errors obvious.
+	out = out.replace(/(^|\s)(commitError)(=)/g, (_m, p1: string, k: string) => {
+		return `${p1}${red}${k}${reset}=`
+	})
+
+	// Durations + counts
+	out = out.replace(/(\d+(?:\.\d+)?)ms/g, `${cyan}$1ms${reset}`)
+	out = out.replace(/\(\+(\d+) more\)/g, `${dim}(+$1 more)${reset}`)
+	out = out.replace(/\b\(none\)\b/g, `${dim}(none)${reset}`)
+	out = out.replace(/\b\(omitted\)\b/g, `${dim}(omitted)${reset}`)
+
+	// Paths (conservative; only common source ext)
+	out = out.replace(
+		/(^|\s)([A-Za-z0-9_./-]+?\.(?:ts|tsx|js|jsx|mjs|cjs|mts|cts|json|yaml|yml))(?=$|\s|[:)])/g,
+		(_m, p1: string, p2: string) => `${p1}${blue}${p2}${reset}`,
+	)
+
+	return `${head}${out}`
+}
+
 function stripTrailingNewlines(text: string): string {
 	return text.replace(/\n+$/g, '')
 }
@@ -443,9 +517,7 @@ function formatHmrReportDetails(record: LogRecord, colorsOn: boolean): string[] 
 	const reason = typeof props.reason === 'string' ? props.reason : undefined
 	const scope = props.scope as unknown
 	const rootsCount =
-		scope &&
-		typeof scope === 'object' &&
-		typeof (scope as { roots?: unknown }).roots === 'number'
+		scope && typeof scope === 'object' && typeof (scope as { roots?: unknown }).roots === 'number'
 			? ((scope as { roots: number }).roots as number)
 			: undefined
 	const entries =
@@ -512,8 +584,9 @@ function formatHmrReportDetails(record: LogRecord, colorsOn: boolean): string[] 
 		pluginsByRoot &&
 		typeof pluginsByRoot === 'object' &&
 		Array.isArray((pluginsByRoot as { reasons?: unknown }).reasons)
-			? (((pluginsByRoot as { reasons: unknown[] }).reasons as unknown[])
-					.filter((x) => typeof x === 'string') as string[])
+			? (((pluginsByRoot as { reasons: unknown[] }).reasons as unknown[]).filter(
+					(x) => typeof x === 'string',
+				) as string[])
 			: undefined
 	const pluginsByRootUnresolved =
 		pluginsByRoot &&
@@ -569,8 +642,7 @@ function formatHmrReportDetails(record: LogRecord, colorsOn: boolean): string[] 
 	}
 	if (pluginsByRootMode && pluginsByRootMode !== 'byRoot') {
 		headParts.push(`pluginsByRoot=${pluginsByRootMode}`)
-		if (pluginsByRootReasons?.length)
-			headParts.push(`reasons=${pluginsByRootReasons.join(',')}`)
+		if (pluginsByRootReasons?.length) headParts.push(`reasons=${pluginsByRootReasons.join(',')}`)
 		if (pluginsByRootUnresolved !== undefined)
 			headParts.push(`unresolved=${fmtCount(pluginsByRootUnresolved)}`)
 		if (pluginsByRootUnmapped !== undefined)
@@ -774,7 +846,7 @@ export function withPluxelMessagePrefix(
 		}
 
 		// Only add extra styling when the base formatter already emits ANSI.
-		const styled = colorsOn ? colorizeHmrAttribution(out) : out
+		const styled = colorsOn ? colorizeHmrAttribution(colorizeHmrUpdateSummary(out)) : out
 		return styled
 	}
 

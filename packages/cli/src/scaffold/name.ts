@@ -72,4 +72,3 @@ function applyPluginPrefix(name: string, prefixes: string[]) {
 	const separator = fallback.endsWith('-') || normalizedName.startsWith('-') ? '' : '-'
 	return `${fallback}${separator}${normalizedName}`
 }
-

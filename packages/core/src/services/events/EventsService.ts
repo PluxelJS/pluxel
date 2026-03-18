@@ -43,7 +43,9 @@ export class EventsService extends Eventure<Events> {
 	) {
 		const cfg: EventEmitterOptions<Events> = config ? { ...config } : {}
 		// Use a stable LogTape logger instead of passing the ctx-bound LoggerService instance.
-		cfg.logger = ctx.logger.with({ service: 'eventure' }) as unknown as EventEmitterOptions<Events>['logger']
+		cfg.logger = ctx.logger.with({
+			service: 'eventure',
+		}) as unknown as EventEmitterOptions<Events>['logger']
 		super(cfg)
 	}
 
@@ -100,7 +102,9 @@ export class EvtChannel<D extends EventDescriptor> extends Channel<D> {
 		config?: EventEmitterOptions<Record<string, D>>,
 	) {
 		const cfg: EventEmitterOptions<Record<string, D>> = config ? { ...config } : {}
-		cfg.logger = ctx.logger.with({ service: 'eventure' }) as unknown as EventEmitterOptions<Record<string, D>>['logger']
+		cfg.logger = ctx.logger.with({ service: 'eventure' }) as unknown as EventEmitterOptions<
+			Record<string, D>
+		>['logger']
 		super(cfg)
 	}
 

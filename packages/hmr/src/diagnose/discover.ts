@@ -65,7 +65,7 @@ function resolvePluginEntryAbs(pkgDirAbs: string, manifest: PackageJson): string
 	if (!exportsField || typeof exportsField !== 'object') return null
 	const dot = (exportsField as any)['.']
 	if (!dot || typeof dot !== 'object') return null
-	const hmr = (dot as any)['@pluxel/hmr']
+	const hmr = (dot as any)['@pluxel/runtime']
 	if (typeof hmr !== 'string' || !hmr.trim()) return null
 
 	return resolve(pkgDirAbs, hmr)
@@ -151,4 +151,3 @@ export async function discoverWorkspacePlugins(
 	const { packages } = await scanWorkspacePackages(input)
 	return discoverPluginsFromPackages(input.rootDir, packages)
 }
-

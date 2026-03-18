@@ -115,7 +115,7 @@ interface ResolveContext {
 }
 
 const DEFAULT_EXPORT = '__pluxel_default_export__'
-const CONFIG_DECORATOR_SOURCES = ['@pluxel/core', '@pluxel/hmr'] as const
+const CONFIG_DECORATOR_SOURCES = ['@pluxel/core', '@pluxel/runtime'] as const
 
 const CODE_HINT =
 	/@Plugin|\bPlugin\s*\(|@Config|\bConfig\s*\(|\.(?:config|configs)\.use\s*\(|\.features\.use\s*\(|__decorate\s*\(|v\.|valibot\.|f\./

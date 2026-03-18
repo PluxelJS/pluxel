@@ -196,24 +196,24 @@ describe('extend / isolate / ctx 回灌', () => {
 		expect(inst.visits).toEqual(['root', 'child-1', 'child-2'])
 	})
 
-		test('root scope：同一实例永远绑定 root ctx', () => {
-			const ctx = new Context({ name: 'root' })
-			const child = ctx.extend({ name: 'child' })
-			const inst = ctx.root.rootTapService as unknown as RootTapService
-			expect(inst.ping()).toBe('root')
-			expect(child.root.rootTapService).toBe(inst)
-			expect(inst.ctx.name).toBe('root')
-			expect(child.root.rootTapService.ping()).toBe('root')
-		})
+	test('root scope：同一实例永远绑定 root ctx', () => {
+		const ctx = new Context({ name: 'root' })
+		const child = ctx.extend({ name: 'child' })
+		const inst = ctx.root.rootTapService as unknown as RootTapService
+		expect(inst.ping()).toBe('root')
+		expect(child.root.rootTapService).toBe(inst)
+		expect(inst.ctx.name).toBe('root')
+		expect(child.root.rootTapService.ping()).toBe('root')
+	})
 
-		test('isolate 不允许隔离 root scope 服务（避免误导：root 服务总是走 ctx.root）', () => {
-			const ctx = new Context({ name: 'root' })
-			// isolateKeys is type-safe and excludes RootServices, so this uses a cast to reach the runtime guard.
-			expect(() =>
-				ctx.isolateKeys(['rootTapService'] as unknown as Iterable<keyof Context.PublicServices>),
-			).toThrow()
-			expect(() => ctx.isolate([asTestServiceClass(RootTapService)])).toThrow()
-		})
+	test('isolate 不允许隔离 root scope 服务（避免误导：root 服务总是走 ctx.root）', () => {
+		const ctx = new Context({ name: 'root' })
+		// isolateKeys is type-safe and excludes RootServices, so this uses a cast to reach the runtime guard.
+		expect(() =>
+			ctx.isolateKeys(['rootTapService'] as unknown as Iterable<keyof Context.PublicServices>),
+		).toThrow()
+		expect(() => ctx.isolate([asTestServiceClass(RootTapService)])).toThrow()
+	})
 
 	test('config 合并（构造注入快照不变）', () => {
 		const ctx = new Context({ name: 'root', mathService: { foo: 'A' } })

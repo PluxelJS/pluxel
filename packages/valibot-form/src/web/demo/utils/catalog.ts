@@ -40,8 +40,7 @@ export function filterCases(
 	const queryValue = normalizeQuery(filters.query)
 	return cases.filter((caseItem) => {
 		if (filters.groupFilter !== 'all' && caseItem.group !== filters.groupFilter) return false
-		const matchesQuery =
-			!queryValue || (searchMap.get(caseItem.id) ?? '').includes(queryValue)
+		const matchesQuery = !queryValue || (searchMap.get(caseItem.id) ?? '').includes(queryValue)
 		const matchesTags =
 			filters.activeTags.length === 0 ||
 			filters.activeTags.every((tag) => caseItem.tags.includes(tag))

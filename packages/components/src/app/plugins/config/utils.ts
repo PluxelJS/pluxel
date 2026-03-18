@@ -27,4 +27,3 @@ export function makeSectionAnchorPrefix(pluginName: string, tabKey: string) {
 export function makeFieldAnchorPrefix(pluginName: string, tabKey: string) {
 	return `config-${toDomSlug(pluginName)}-${toDomSlug(tabKey)}-field-`
 }
-

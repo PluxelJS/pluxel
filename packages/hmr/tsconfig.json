@@ -1,38 +1,12 @@
-// packages/hmr/tsconfig.json
 {
-	"extends": "../../tsconfig.workspace.json",
-	"include": [
-		"src",
-		// 显式收编 manifest；或改成 "public/**/*.json"
-		"public/.vite/manifest.json"
-	],
-	"exclude": [
-		// Client UI entry is type-checked/built by Vite; excluding it keeps Bun/server typings from
-		// leaking into the UI graph (and avoids pulling workspace UI packages into this TS program).
-		"src/client.tsx"
-	],
+	"extends": "../../tsconfig.src.json",
+	"include": ["src"],
 	"compilerOptions": {
-		// Typecheck against published (dist) types for workspace deps, instead of following `@pluxel/source`
-		// into their raw TS sources. This keeps the HMR package's Bun typings from leaking into UI deps and
-		// avoids "file is not listed within the file list" errors from composite builds.
-		"customConditions": [],
-		// Prevent self-importing the published `@pluxel/hmr` types while typechecking this package's sources.
-		// (Otherwise TS may load both src + dist declarations and report duplicate module augmentation errors.)
-		"paths": {
-			"@pluxel/hmr": ["packages/hmr/src/index.ts"],
-			"@pluxel/hmr/*": ["packages/hmr/src/*"],
-			"@pluxel/hmr-web": ["packages/hmr-web/dist/index.d.mts"],
-			"@pluxel/hmr-web/*": ["packages/hmr-web/src/*"],
-			"@pluxel/hmr-web/react": ["packages/hmr-web/dist/react.d.mts"],
-			"@pluxel/hmr-web/vendors": ["packages/hmr-web/dist/vendors.d.mts"]
-		},
-		"outDir": "dist",
-		"jsx": "react-jsx",
-		"lib": ["ES2023", "DOM"],
-		"types": ["@types/bun", "vite/client"],
-		"allowArbitraryExtensions": true,
-		"emitDeclarationOnly": true,
 		"experimentalDecorators": true,
-		"emitDecoratorMetadata": true
+		"emitDecoratorMetadata": true,
+		"outDir": "dist",
+		"emitDeclarationOnly": true,
+		"lib": ["ES2023", "DOM"],
+		"jsx": "react-jsx"
 	}
 }

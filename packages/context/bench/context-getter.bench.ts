@@ -52,10 +52,16 @@ const makeCtxGraph = () => {
 	const skIso = Symbol('BenchIso')
 
 	class SharedSvc {
-		constructor(public ctx: CtxLike, _cfg?: unknown) {}
+		constructor(
+			public ctx: CtxLike,
+			_cfg?: unknown,
+		) {}
 	}
 	class IsoSvc {
-		constructor(public ctx: CtxLike, _cfg?: unknown) {}
+		constructor(
+			public ctx: CtxLike,
+			_cfg?: unknown,
+		) {}
 	}
 
 	const rootInstances: Record<symbol, unknown> = Object.create(null)

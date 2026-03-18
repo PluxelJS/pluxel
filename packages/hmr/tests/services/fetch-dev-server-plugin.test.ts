@@ -2,7 +2,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from 'node:ht
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { createFetchDevServerPlugin } from '@pluxel/hmr/services/http/vite-fetch-plugin'
+import { createFetchDevServerPlugin } from '@pluxel/hmr'
 
 type Middleware = (
 	req: IncomingMessage,

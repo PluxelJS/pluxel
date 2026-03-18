@@ -1,0 +1,29 @@
+{
+	"extends": "../../tsconfig.workspace.json",
+	"include": ["src"],
+	"exclude": ["src/client.tsx"],
+	"compilerOptions": {
+		"noEmit": false,
+		"paths": {
+			"@pluxel/runtime": ["packages/runtime/src/index.ts"],
+			"@pluxel/runtime/*": ["packages/runtime/src/*"],
+			"@pluxel/runtime/web": ["packages/runtime/src/web.ts"],
+			"@pluxel/runtime/capnweb": ["packages/runtime/src/capnweb.ts"],
+			"@pluxel/runtime/signaldb": ["packages/runtime/src/signaldb.ts"],
+			"@pluxel/runtime/config": ["packages/runtime/src/config.ts"],
+			"@pluxel/runtime/logger": ["packages/runtime/src/logger.ts"],
+			"@pluxel/runtime/events": ["packages/runtime/src/events.ts"],
+			"@pluxel/runtime/services": ["packages/runtime/src/services.ts"],
+			"@pluxel/runtime/services/*": ["packages/runtime/src/services/*"],
+			"@pluxel/runtime/frozen": ["packages/runtime/src/frozen.ts"]
+		},
+		"outDir": "dist",
+		"jsx": "react-jsx",
+		"lib": ["ES2023", "DOM"],
+		"types": ["@types/bun", "vite/client"],
+		"allowArbitraryExtensions": true,
+		"emitDeclarationOnly": true,
+		"experimentalDecorators": true,
+		"emitDecoratorMetadata": true
+	}
+}

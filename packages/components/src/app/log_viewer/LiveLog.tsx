@@ -4,7 +4,7 @@ import {
 	type LogSseEvent,
 	type LogStreamMeta,
 	type RuntimeLogLine,
-} from '@pluxel/hmr-web'
+} from '@pluxel/runtime/web'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import {
 	memo,

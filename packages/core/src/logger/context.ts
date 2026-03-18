@@ -14,4 +14,3 @@ export function findPluginId(ctx: PluxelContextLike): string | undefined {
 	}
 	return undefined
 }
-

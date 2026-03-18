@@ -65,8 +65,7 @@ export function createImportTracker(options: ImportTrackerPluginOptions): Import
 		// - export * from 'pkg'
 		// Dynamic:
 		// - import('pkg')
-		const staticRe =
-			/\b(?:import|export)\s+(?:type\s+)?(?:[^'"]*?\s+from\s+)?['"]([^'"]+)['"]/g
+		const staticRe = /\b(?:import|export)\s+(?:type\s+)?(?:[^'"]*?\s+from\s+)?['"]([^'"]+)['"]/g
 		const dynamicRe = /\bimport\s*\(\s*['"]([^'"]+)['"]\s*\)/g
 
 		for (const match of code.matchAll(staticRe)) {

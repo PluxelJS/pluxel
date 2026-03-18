@@ -5,4 +5,3 @@ export const pluxelCategories = {
 } as const
 
 export type PluxelCategory = (typeof pluxelCategories)[keyof typeof pluxelCategories]
-

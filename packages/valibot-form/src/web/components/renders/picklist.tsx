@@ -2,7 +2,12 @@ import type { PicklistFieldNode } from '../../../core/fields'
 import { FieldChrome } from '../shared'
 import { cleanProps } from '../../utils/propHelpers'
 import { PicklistControl } from './controls/PicklistControl'
-import { normalizeErrorMessages, type RendererProps, triggerFormBlur, triggerFormEvents } from './types'
+import {
+	normalizeErrorMessages,
+	type RendererProps,
+	triggerFormBlur,
+	triggerFormEvents,
+} from './types'
 
 export function PicklistField(props: RendererProps) {
 	const { node, errors, inputProps, value } = props

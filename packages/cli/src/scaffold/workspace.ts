@@ -88,4 +88,3 @@ function inspectWorkspaceRoot(root: string): WorkspaceDetection | null {
 function existsFile(root: string, name: string) {
 	return fs.existsSync(resolve(root, name))
 }
-

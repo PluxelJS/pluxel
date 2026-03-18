@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { createFixture } from 'fs-fixture'
 import { join } from 'pathe'
-import { HMRService } from '@pluxel/hmr/services/runtime/hmr/HMRService'
+import { HMRService } from '@pluxel/hmr'
 
 const noop = () => undefined
 

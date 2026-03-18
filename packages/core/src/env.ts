@@ -24,7 +24,7 @@ export function getPluxelRuntime(): PluxelRuntime {
 /**
  * Set the current Pluxel runtime for this JS process.
  *
- * Note: this is process-global. Use it only in runtime entrypoints (e.g. @pluxel/hmr).
+ * Note: this is process-global. Use it only in runtime entrypoints (e.g. @pluxel/runtime).
  */
 export function setPluxelRuntime(runtime: PluxelRuntime): void {
 	;(globalThis as any)[RUNTIME_SYMBOL] = runtime
@@ -75,7 +75,7 @@ function createPluxelEnv(): PluxelEnv {
 export const pluxelEnv: PluxelEnv =
 	cachedEnv ?? ((globalThis as any)[ENV_SYMBOL] = createPluxelEnv())
 
-// Default to "core" unless a higher-level runtime (e.g. @pluxel/hmr) overrides it.
+// Default to "core" unless a higher-level runtime (e.g. @pluxel/runtime) overrides it.
 if (readGlobalRuntime() === undefined) {
 	setPluxelRuntime('core')
 }

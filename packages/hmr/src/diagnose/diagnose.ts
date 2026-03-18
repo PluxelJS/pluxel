@@ -20,7 +20,7 @@ export type DiagnoseWorkspaceInput = {
 	 * Package names to omit from discovery/enabled resolution.
 	 *
 	 * Primary use case: the host preloads certain packages as builtins (baseline),
-	 * so workspace profiles should not also load their `@pluxel/hmr` source entries
+	 * so workspace profiles should not also load their `@pluxel/runtime` source entries
 	 * (prevents "plugin name conflict" from double-loading the same package).
 	 */
 	omitPackages?: string[]
@@ -58,7 +58,8 @@ function resolveDefaultDistEntryFromManifest(manifest: unknown): string | null {
 
 	// Intentional simplification (no compat burden): builtin packages must provide a direct dist ESM entry.
 	// We only accept a string `.mjs` at `exports["."].import|default|module` or `exports["."]` itself.
-	const pick = (v: unknown) => (typeof v === 'string' && v.trim().endsWith('.mjs') ? v.trim() : null)
+	const pick = (v: unknown) =>
+		typeof v === 'string' && v.trim().endsWith('.mjs') ? v.trim() : null
 	if (typeof dot === 'string') return pick(dot)
 	if (typeof dot !== 'object' || Array.isArray(dot)) return null
 	const obj = dot as Record<string, unknown>
@@ -87,7 +88,10 @@ async function readWorkspaceRootDeclaredPluginDeps(rootDirAbs: string): Promise<
 	}
 }
 
-export function mergeHmrProfile(cfg: PluxelHmrConfigV1, env?: Record<string, string | undefined>): MergedProfile {
+export function mergeHmrProfile(
+	cfg: PluxelHmrConfigV1,
+	env?: Record<string, string | undefined>,
+): MergedProfile {
 	const activeProfile = env?.PLUXEL_HMR_PROFILE ?? cfg.profile
 	const profile = cfg.profiles[activeProfile]
 	if (!profile) {
@@ -105,7 +109,10 @@ export function mergeHmrProfile(cfg: PluxelHmrConfigV1, env?: Record<string, str
 	return { activeProfile, roots, enabled, builtinPackages, includeGlobs, excludeGlobs }
 }
 
-export async function resolveHmrRootsExpanded(rootDir: string, roots: 'auto' | string[]): Promise<string[]> {
+export async function resolveHmrRootsExpanded(
+	rootDir: string,
+	roots: 'auto' | string[],
+): Promise<string[]> {
 	const base = resolve(rootDir)
 	if (roots !== 'auto') return uniqSorted(roots.map((r) => toPosix(resolve(base, r))))
 
@@ -316,7 +323,9 @@ export async function buildWorkspaceSnapshotFromScan(params: {
 				)
 			}
 			if (missingEdges.length > maxEdges) {
-				warnings.push(`[hmr] …and ${missingEdges.length - maxEdges} more missing managed-plugin edge(s).`)
+				warnings.push(
+					`[hmr] …and ${missingEdges.length - maxEdges} more missing managed-plugin edge(s).`,
+				)
 			}
 		}
 	}
@@ -364,11 +373,14 @@ export async function buildWorkspaceSnapshotFromScan(params: {
 	return { ok: true, snapshot, warnings }
 }
 
-export async function diagnoseWorkspace(input: DiagnoseWorkspaceInput): Promise<DiagnoseWorkspaceResult> {
+export async function diagnoseWorkspace(
+	input: DiagnoseWorkspaceInput,
+): Promise<DiagnoseWorkspaceResult> {
 	const rootDirAbs = resolve(input.rootDir)
 	const configPathAbs = resolve(rootDirAbs, input.configPath)
 
-	if (!existsSync(configPathAbs)) return { ok: false, errors: [`Missing config file: ${configPathAbs}`] }
+	if (!existsSync(configPathAbs))
+		return { ok: false, errors: [`Missing config file: ${configPathAbs}`] }
 
 	let cfg: PluxelHmrConfigV1
 	try {
@@ -398,7 +410,10 @@ export async function diagnoseWorkspace(input: DiagnoseWorkspaceInput): Promise<
 	})
 	const discovered = discoverPluginsFromPackages(rootDirAbs, packages)
 
-	const omitPackages = uniqSorted([...(input.omitPackages ?? []), ...(merged.builtinPackages ?? [])])
+	const omitPackages = uniqSorted([
+		...(input.omitPackages ?? []),
+		...(merged.builtinPackages ?? []),
+	])
 
 	const base = await buildWorkspaceSnapshotFromScan({
 		rootDir: rootDirAbs,

@@ -248,9 +248,10 @@ export function PicklistControl({
 					value={multiValue}
 					onChange={(ids) => {
 						const cleaned = ids.map((id) => id.trim()).filter(Boolean)
-						const raw = cleaned
-							.map((id) => toRaw(id))
-							.filter((item) => item !== null) as (string | number)[]
+						const raw = cleaned.map((id) => toRaw(id)).filter((item) => item !== null) as (
+							| string
+							| number
+						)[]
 						onChange(raw)
 					}}
 					onBlur={onBlur as any}
