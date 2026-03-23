@@ -22,6 +22,22 @@ export type ConfigFormBridge = {
 	submit: () => void
 }
 
+type SaveConfigFailure = {
+	ok: false
+	code?: string
+	message?: string
+	errors?: Record<string, Record<string, Array<{ message: string; path: string[] }>>>
+}
+
+type SaveConfigSuccess = {
+	ok: true
+	config?: Record<string, unknown>
+	defaults?: Record<string, unknown>
+	saved?: boolean
+}
+
+type SaveConfigResult = SaveConfigFailure | SaveConfigSuccess
+
 export function ConfigTabContent({
 	pluginName,
 	tabKey,
@@ -73,10 +89,10 @@ export function ConfigTabContent({
 		() =>
 			formOptions({
 				defaultValues: initialValue,
-				onSubmit: async ({ value, formApi }) => {
-					const result = await hmr.withRpc((rpc) =>
-						rpc.plugin(pluginName).saveConfig({ [tabKey]: value }),
-					)
+					onSubmit: async ({ value, formApi }) => {
+						const result = (await (hmr as any).withRpc((rpc: any) =>
+							rpc.plugin(pluginName).saveConfig({ [tabKey]: value }),
+						)) as SaveConfigResult
 					if (result.ok === false) {
 						if (result.code === 'validation_failed' && result.errors) {
 							const fieldErrors = result.errors[tabKey]
@@ -152,7 +168,7 @@ function FormBridge({
 }: {
 	tabKey: string
 	registerForm: (key: string, api: ConfigFormBridge) => void | (() => void)
-}) {
+}): null {
 	const { form, reset, submit } = useAutoFormCtx<any>()
 
 	useEffect(() => {
@@ -195,7 +211,7 @@ function FormStateReporter({
 	tabKey: string
 	state: ConfigFormState
 	reportState: (key: string, state: ConfigFormState) => void
-}) {
+}): null {
 	useEffect(() => {
 		reportState(tabKey, state)
 	}, [reportState, state, tabKey])
@@ -209,15 +225,15 @@ function FormHotkeys({
 }: {
 	active: boolean
 	initialValue: Record<string, any>
-}) {
+}): null {
 	const { submit, reset } = useAutoFormCtx<any>()
 	const hotkeys = useMemo(
-		() =>
+		(): Parameters<typeof useHotkeys>[0] =>
 			active
 				? [
 						[
 							'mod+S',
-							(e) => {
+							(e: KeyboardEvent) => {
 								e.preventDefault()
 								submit()
 							},

@@ -1,6 +1,6 @@
 import { defaultOnAuthBlocked, type HmrFetch, type OnAuthBlocked } from './auth'
 import { HMR_INTERNAL_API_BASE } from './paths'
-import type { ExtensionManifestEvent } from './plugin-ui/types'
+import type { ExtensionManifestEvent } from './extensions'
 import type { HmrUiSseMap } from './protocol'
 
 export interface BuiltinSseEvents {

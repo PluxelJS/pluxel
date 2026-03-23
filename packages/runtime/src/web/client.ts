@@ -9,7 +9,7 @@ import {
 	toGlobalFetch,
 } from './auth'
 import type { LogFilter, LogRangeResult, LogStreamMeta } from './logs'
-import type { ExtensionManifest } from './plugin-ui/types'
+import type { ExtensionManifest } from './extensions'
 import type { HmrRpcApi, HmrUiRpcMap } from './protocol'
 import { createRpcClientFactory, createUiRpcView, invokeRpc } from './rpc'
 import { type SseClientOptions, type SseClientWithNamespaces, sse } from './sse'
@@ -18,6 +18,7 @@ import {
 	HMR_INTERNAL_API_BASE,
 	HMR_META_AUTH_PATH,
 	HMR_TRANSPORT_PATHS,
+	hmrSignalDbCollectionPath,
 	hmrLogStreamPath,
 	joinPath,
 } from './paths'
@@ -46,6 +47,7 @@ export interface HmrInternalMeta {
 		graphql: string
 		sse: string
 		mcp: string
+		signaldb: string
 	}
 }
 
@@ -136,6 +138,7 @@ export interface HmrTransportLinks {
 	graphql: string
 	sse: string
 	mcp: string
+	signaldbCollection(pluginName: string, collection: string): string
 	logsFollow(streamId: string, query?: URLSearchParams | string): string
 	extensionEvents(namespaces?: string[]): string
 }
@@ -240,6 +243,8 @@ export function createHmrTransport(options: HmrWebClientOptions = {}): HmrTransp
 		graphql: resolveClientUrl(joinPath(apiBase, HMR_TRANSPORT_PATHS.graphql)),
 		sse: resolveClientUrl(joinPath(apiBase, HMR_TRANSPORT_PATHS.sse)),
 		mcp: resolveClientUrl(joinPath(apiBase, HMR_TRANSPORT_PATHS.mcp)),
+		signaldbCollection: (pluginName: string, collection: string) =>
+			resolveClientUrl(joinPath(apiBase, hmrSignalDbCollectionPath(pluginName, collection))),
 		logsFollow: (streamId: string, query?: URLSearchParams | string) => {
 			const base = resolveClientUrl(joinPath(apiBase, hmrLogStreamPath(streamId, '/follow')))
 			const suffix =

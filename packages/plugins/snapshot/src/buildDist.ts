@@ -1,7 +1,7 @@
 import { cp, mkdir, rm } from 'node:fs/promises'
 import { createRequire } from 'node:module'
 import { dirname, join, resolve } from 'node:path'
-import { configSourcePlugin, importTypeFixerPlugin } from '@pluxel/build/rolldown'
+import { configSourcePlugin, hmrUiBridgePlugin, importTypeFixerPlugin } from '@pluxel/build/rolldown'
 import { getDebugLogger } from '@pluxel/core/logger'
 import { defineConfig, type InlineConfig, build as runTsdown } from 'tsdown'
 
@@ -72,7 +72,7 @@ export async function buildNodeDist(
 		exports: false,
 		platform: 'node',
 		external: (id) => isBareImport(id),
-		plugins: [importTypeFixerPlugin(), configSourcePlugin()],
+		plugins: [importTypeFixerPlugin(), configSourcePlugin(), hmrUiBridgePlugin()],
 		inputOptions: {
 			resolve: {
 				conditionNames: conditions,

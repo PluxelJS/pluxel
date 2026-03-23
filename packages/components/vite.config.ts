@@ -87,6 +87,26 @@ export default defineConfig(({ mode }) => {
 								priority: 30,
 							},
 							{
+								name: 'tanstack',
+								test: /[\\/]node_modules[\\/]@tanstack[\\/]/,
+								priority: 28,
+							},
+							{
+								name: 'gqty',
+								test: /[\\/]node_modules[\\/](gqty|graphql)[\\/]/,
+								priority: 26,
+							},
+							{
+								name: 'mf-runtime',
+								test: /[\\/]node_modules[\\/]@module-federation[\\/]/,
+								priority: 24,
+							},
+							{
+								name: 'dnd-kit',
+								test: /[\\/]node_modules[\\/]@dnd-kit[\\/]/,
+								priority: 22,
+							},
+							{
 								name: 'tabler',
 								test: /[\\/]node_modules[\\/]@tabler[\\/]icons-react[\\/]/,
 								priority: 20,

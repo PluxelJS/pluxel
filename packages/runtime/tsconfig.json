@@ -9,7 +9,6 @@
 			"@pluxel/runtime/*": ["packages/runtime/src/*"],
 			"@pluxel/runtime/web": ["packages/runtime/src/web.ts"],
 			"@pluxel/runtime/capnweb": ["packages/runtime/src/capnweb.ts"],
-			"@pluxel/runtime/signaldb": ["packages/runtime/src/signaldb.ts"],
 			"@pluxel/runtime/config": ["packages/runtime/src/config.ts"],
 			"@pluxel/runtime/logger": ["packages/runtime/src/logger.ts"],
 			"@pluxel/runtime/events": ["packages/runtime/src/events.ts"],

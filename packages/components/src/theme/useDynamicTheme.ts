@@ -109,7 +109,7 @@ export function createDynamicTheme(colorKey: string): MantineTheme {
 			],
 		},
 	})
-	return mergeMantineTheme(baseTheme, colorTheme)
+	return mergeMantineTheme(baseTheme as any, colorTheme as any) as MantineTheme
 }
 
 /** 动态主题 Hook */

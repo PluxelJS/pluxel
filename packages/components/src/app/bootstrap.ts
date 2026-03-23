@@ -1,6 +1,5 @@
 import * as valibot from 'valibot'
 import * as valibotForm from 'valibot-form'
-import { initVendors } from '../extension'
 
 declare global {
 	// eslint-disable-next-line @typescript-eslint/consistent-type-definitions
@@ -16,18 +15,16 @@ const schemaVendors = { valibot, valibotForm } as const
 
 function ensureSchemaVendors() {
 	if (typeof globalThis === 'undefined') return
-	if (!globalThis.__PLUXEL_SCHEMA_VENDORS__) {
-		globalThis.__PLUXEL_SCHEMA_VENDORS__ = schemaVendors
+	const target = globalThis as typeof globalThis & {
+		__PLUXEL_SCHEMA_VENDORS__?: typeof schemaVendors
 	}
-}
-
-function ensureExtensionVendors() {
-	initVendors()
+	if (!target.__PLUXEL_SCHEMA_VENDORS__) {
+		target.__PLUXEL_SCHEMA_VENDORS__ = schemaVendors
+	}
 }
 
 export function bootstrapAppEnvironment() {
 	ensureSchemaVendors()
-	ensureExtensionVendors()
 }
 
 bootstrapAppEnvironment()

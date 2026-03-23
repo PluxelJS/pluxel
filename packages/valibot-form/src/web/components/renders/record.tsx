@@ -204,7 +204,7 @@ export function RecordField(props: RendererProps) {
 	}, [valueKind])
 
 	useEffect(() => {
-		if (!inlineAddEnabled) return
+		if (!inlineAddEnabled) return undefined
 		const handle = requestAnimationFrame(() => {
 			draftKeyRef.current?.focus()
 		})

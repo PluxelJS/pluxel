@@ -18,9 +18,10 @@
 		"dist"
 	],
 	"scripts": {
-		"build": "pluxel build",
-		"build:lib": "pluxel build",
-		"build:plugin": "pluxel build",
+		"build": "pluxel build && pnpm run build:ui",
+		"build:lib": "pluxel build && pnpm run build:ui",
+		"build:plugin": "pluxel build && pnpm run build:ui",
+		"build:ui": "node scripts/build-ui.mjs",
 		"test": "pnpm exec vitest run"
 	},
 	"peerDependencies": {
@@ -37,6 +38,7 @@
 	"devDependencies": {
 		"@pluxel/cli": "workspace:*",
 		"@pluxel/hmr": "workspace:*",
+		"@pluxel/runtime": "workspace:*",
 		"@pluxel/test": "workspace:*",
 		"tsdown": "^0.20.3",
 		"typescript": "^5.9.3"

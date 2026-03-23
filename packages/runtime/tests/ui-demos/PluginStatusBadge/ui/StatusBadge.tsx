@@ -2,7 +2,7 @@
 // 简单的状态徽章组件
 
 import { Badge, Tooltip } from '@mantine/core'
-import { definePluginUIModule, ExtensionPoints, useExtensionContext } from '@pluxel/runtime/web'
+import { definePluginUIModule, ExtensionPoints, useExtensionContext } from '@pluxel/runtime/web/ui'
 import { IconActivity } from '@tabler/icons-react'
 import { useEffect, useState } from 'react'
 
@@ -43,7 +43,4 @@ export default definePluginUIModule({
 			render: () => <StatusBadge />,
 		},
 	],
-	setup({ pluginName }) {
-		console.log(`[${pluginName}] UI loaded`)
-	},
 })

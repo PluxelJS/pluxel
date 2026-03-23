@@ -1,8 +1,6 @@
 import { createContext, type ReactNode, useContext, useEffect, useRef } from 'react'
 import { createHmrWebClient, type HmrWebClient, type HmrWebClientOptions } from './client'
 
-import './plugin-ui-augment'
-
 const WebClientContext = createContext<HmrWebClient | null>(null)
 
 export type HmrWebClientProviderProps = {

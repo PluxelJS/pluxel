@@ -12,7 +12,7 @@ import {
 	Tooltip,
 } from '@mantine/core'
 import { openConfirmModal } from '@mantine/modals'
-import type { PluginDependencyState } from '@pluxel/runtime/web'
+import type { PluginDependencyState } from '@pluxel/runtime/web/ui'
 import { IconPlus, IconRefresh } from '@tabler/icons-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNotify } from '../../../hooks'

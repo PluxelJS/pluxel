@@ -77,7 +77,7 @@ const ctx = new Context({
 \t\tuiAssets: ${JSON.stringify(options.bootstrap?.uiAssets ?? 'disabled')},
 \t\tcontrolPlane: ${JSON.stringify(options.bootstrap?.controlPlane ?? { web: false, rpc: false, sse: false, auth: 'none' })},
 \t},
-\textensionService: { mode: 'disabled' },
+\textensionService: { enabled: false },
 })
 
 await ctx.loader.preloadPlugins(

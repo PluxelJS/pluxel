@@ -1,22 +1,17 @@
 import { ActionIcon, Group, Tooltip } from '@mantine/core'
 import {
+	createPluginUiHelpers,
 	ExtensionPoints,
-	rpcErrorMessage,
-	useExtensionContext,
 	definePluginUIModule,
-} from '@pluxel/runtime/web'
+	rpcErrorMessage,
+} from '@pluxel/runtime/web/ui'
 import { IconBolt, IconPackage } from '@tabler/icons-react'
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useState } from 'react'
 
-function useSnapshotUi() {
-	const ctx = useExtensionContext('global')
-	const notify = ctx.services.ui?.notify
-	const rpc = ctx.services.hmr.ui.Snapshot
-	return useMemo(() => ({ notify, rpc }), [notify, rpc])
-}
+const snapshotUi = createPluginUiHelpers('Snapshot')
 
 function SnapshotHeaderActions() {
-	const { notify, rpc } = useSnapshotUi()
+	const { notify, rpc } = snapshotUi.useGlobalRuntime()
 	const [snapshotLoading, setSnapshotLoading] = useState(false)
 	const [distLoading, setDistLoading] = useState(false)
 

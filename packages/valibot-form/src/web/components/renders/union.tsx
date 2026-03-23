@@ -1,4 +1,5 @@
 import { Card, Radio, SegmentedControl, Select, Stack, Switch, Text } from '@mantine/core'
+import type { ChangeEvent } from 'react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { UnionBranch, UnionFieldNode } from '../../../core/fields'
 import { FieldRenderer } from '../internal/FieldRenderer'
@@ -345,7 +346,8 @@ export function UnionField(props: RendererProps) {
 					<Switch
 						{...cleanProps({
 							checked: isTruthyDiscriminator(selectedBranch?.discriminatorValue),
-							onChange: (event) => handleBooleanToggle(event.currentTarget.checked),
+								onChange: (event: ChangeEvent<HTMLInputElement>) =>
+									handleBooleanToggle(event.currentTarget.checked),
 							label: isTruthyDiscriminator(selectedBranch?.discriminatorValue)
 								? (branchOptions[truthyBranchIndex]?.label ?? '开启')
 								: (branchOptions[falsyBranchIndex]?.label ?? '关闭'),

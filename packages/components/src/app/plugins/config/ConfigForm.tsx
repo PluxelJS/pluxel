@@ -12,7 +12,7 @@ import { makeFieldAnchorPrefix, makeSectionAnchorPrefix } from './utils'
 
 export interface ConfigFormProps {
 	pluginName: string
-	schemas: Record<string, ObjectSchema<unknown, unknown>>
+	schemas: Record<string, ObjectSchema<any, any>>
 	/** 已保存的配置 */
 	savedConfig: Record<string, unknown>
 	/** schema 默认值 */
@@ -30,6 +30,22 @@ type FieldErrors = Record<string, FieldIssue[]>
 type FormLike = {
 	setFieldMeta: (fieldName: string, updater: (meta: unknown) => unknown) => void
 }
+
+type SaveConfigFailure = {
+	ok: false
+	code?: string
+	message?: string
+	errors?: Record<string, unknown>
+}
+
+type SaveConfigSuccess = {
+	ok: true
+	config?: Record<string, unknown>
+	defaults?: Record<string, unknown>
+	saved?: boolean
+}
+
+type SaveConfigResult = SaveConfigFailure | SaveConfigSuccess
 
 function isRecord(value: unknown): value is Record<string, unknown> {
 	return Boolean(value && typeof value === 'object' && !Array.isArray(value))
@@ -201,7 +217,9 @@ export function ConfigForm({
 
 		setSavingAll(true)
 		try {
-			const result = await hmr.withRpc((rpc) => rpc.plugin(pluginName).saveConfig(patch))
+				const result = (await (hmr as any).withRpc((rpc: any) =>
+					rpc.plugin(pluginName).saveConfig(patch),
+				)) as SaveConfigResult
 			if (result.ok === false) {
 				if (result.code === 'validation_failed' && result.errors) {
 					const errorsByTab = isRecord(result.errors) ? result.errors : {}

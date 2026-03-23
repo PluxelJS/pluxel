@@ -1,22 +1,16 @@
 import { useCallback, useSyncExternalStore } from 'react'
-import { extensionRegistry } from './internal/registry'
 import {
 	getExtensionRuntimeRevision,
 	getPluginExtensionRuntimeRevision,
 	subscribeExtensionRuntimeChanges,
 	subscribePluginExtensionRuntimeChanges,
 } from './internal/runtime'
-
-/**
- * 获取扩展 Registry 版本（用于触发重渲染）
- */
-export function useExtensionVersion(): number {
-	return useSyncExternalStore(
-		extensionRegistry.subscribe,
-		() => extensionRegistry.getVersion(),
-		() => extensionRegistry.getVersion(),
-	)
-}
+import {
+	getExtensionModuleState,
+	getExtensionModuleStates,
+	subscribeExtensionModuleStates,
+	subscribePluginExtensionModuleState,
+} from './internal/module-state'
 
 /**
  * 统一的扩展运行时版本号
@@ -36,4 +30,21 @@ export function useExtensionRuntimeVersion(pluginName?: string): number {
 	}, [pluginName])
 
 	return useSyncExternalStore(subscribe, getSnapshot, getSnapshot)
+}
+
+export function useExtensionModuleState(pluginName: string) {
+	const subscribe = useCallback(
+		(listener: () => void) => subscribePluginExtensionModuleState(pluginName, listener),
+		[pluginName],
+	)
+	const getSnapshot = useCallback(() => getExtensionModuleState(pluginName), [pluginName])
+	return useSyncExternalStore(subscribe, getSnapshot, getSnapshot)
+}
+
+export function useExtensionModuleStates() {
+	return useSyncExternalStore(
+		subscribeExtensionModuleStates,
+		getExtensionModuleStates,
+		getExtensionModuleStates,
+	)
 }

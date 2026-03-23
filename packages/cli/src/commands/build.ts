@@ -7,7 +7,7 @@ import {
 } from '@pluxel/build/cli'
 import { type ArgValues, define } from 'gunshi'
 import type { InlineConfig } from 'tsdown'
-import { configSourcePlugin, createImportTracker, importTypeFixerPlugin } from '../rolldown'
+import { createImportTracker } from '../rolldown'
 
 const buildCommandArgs = {
 	watch: {
@@ -58,11 +58,7 @@ export const buildCommand = define({
 			context: runtime,
 			onSuccess: pluginHook,
 			log: ctx.log,
-			extraConfig: mergeOverlayPlugins(cliTsdownOverlay, [
-				importTypeFixerPlugin(),
-				configSourcePlugin(),
-				importTracker.plugin,
-			]),
+			extraConfig: mergeOverlayPlugins(cliTsdownOverlay, [importTracker.plugin]),
 		})
 	},
 })

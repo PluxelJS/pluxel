@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react'
-import type { BuiltinExtensionDef, BuiltinExtensionKind } from '../types'
+import type { BuiltinExtensionDef, BuiltinExtensionKind } from '@pluxel/runtime/web/extensions'
 import { BuiltinDoc } from './Doc'
 
 export { BuiltinDoc } from './Doc'

@@ -4,7 +4,7 @@ import type {
 	I18nResources,
 	I18nService,
 	PluginI18nBundle,
-} from '../types'
+} from '@pluxel/runtime/web/ui'
 
 const resources: I18nResources = Object.create(null)
 const keysByPlugin = new Map<string, Map<I18nLocale, Set<string>>>()

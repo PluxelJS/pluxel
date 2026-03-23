@@ -1,25 +1,30 @@
 import { createHash } from 'node:crypto'
 import { existsSync } from 'node:fs'
-import { mkdir, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises'
+import { mkdir, readdir, readFile, rm, stat } from 'node:fs/promises'
 import type { Logger as LogtapeLogger } from '@logtape/logtape'
 import { type Context } from '@pluxel/core'
 import { getDebugLogger } from '@pluxel/core/logger'
 import {
-	looksLikeBrokenExtensionBundle,
-	normalizeJsxRuntime,
-	toBrowserBundleResolve,
-	transformVendorImports,
-	type ExtensionCompilerApi,
+	createCompiledExtensionModule,
 	type ExtensionModuleStore,
+	resolveModuleIdBaseDir,
 } from '@pluxel/runtime/internal'
-import type { PluginExtensionConfig } from '@pluxel/runtime/web'
-import { extensionVendorPackages } from '@pluxel/runtime/web/vendors'
+import { findNearestPackageRoot } from '@pluxel/runtime/shared'
+import {
+	EXTENSION_FEDERATION_EXPOSE,
+	EXTENSION_FEDERATION_MANIFEST_FILE,
+	EXTENSION_FEDERATION_REMOTE_ENTRY_FILE,
+	EXTENSION_FEDERATION_SHARE_STRATEGY,
+	extensionFederationRemoteName,
+	extensionFederationSharedPackages,
+	sanitizeExtensionPluginName,
+} from '@pluxel/runtime/web/federation'
+import { HMR_INTERNAL_API_BASE, hmrExtensionArtifactBasePath } from '@pluxel/runtime/web/paths'
 import chokidar, { type FSWatcher } from 'chokidar'
 import { dirname, isAbsolute, join, relative, resolve } from 'pathe'
-import type { ResolveOptions } from 'vite'
+import { buildPluginUiRemote, resolveExtensionFederationShared } from '../../plugin-build'
 
 import { collectModuleGraphFiles } from '../compile/bundler/moduleGraph'
-import { BundlerService } from '../compile/bundler/BundlerService'
 import { HMRService } from '../hmr/HMRService'
 
 export type ExtensionCompilerServiceConfig = {
@@ -31,16 +36,21 @@ export type ExtensionCompilerServiceConfig = {
 	 */
 	cacheDir?: string
 	/**
-	 * How many compiled modules to keep per plugin on disk.
+	 * How many compiled remote builds to keep per plugin on disk.
 	 * @default 2
 	 */
 	cacheKeep?: number
 	/**
-	 * Override the vendor package list externalized from extension bundles.
-	 *
-	 * Defaults to `@pluxel/runtime/web`'s `extensionVendorPackages`.
+	 * Maximum number of plugin UI remotes compiled concurrently.
+	 * @default 2
 	 */
-	vendorPackages?: string[]
+	compileConcurrency?: number
+	/**
+	 * Override the shared package list exposed by the host runtime.
+	 *
+	 * Defaults to `@pluxel/runtime/web`'s `extensionFederationSharedPackages`.
+	 */
+	sharedPackages?: string[]
 }
 
 type PluginCompileEntry = {
@@ -48,6 +58,7 @@ type PluginCompileEntry = {
 	pluginDir: string
 	entryPath: string
 	sourceFiles: string[]
+	graphDirty: boolean
 	active: boolean
 	watcher?: FSWatcher | null
 }
@@ -90,20 +101,21 @@ const HASH_ALLOWED_EXTENSIONS = [
 	'.json',
 ] as const
 
-// Bump when bundling/rewriting logic changes (invalidates sourceHash cacheKey).
-const EXTENSION_COMPILER_VERSION = 10
+// Bump when federation build semantics change (invalidates sourceHash cache key).
+const EXTENSION_COMPILER_VERSION = 11
 
-export class ExtensionCompilerService implements ExtensionCompilerApi {
+export class ExtensionCompilerService {
 	private readonly enabled: boolean
 	private readonly dbg: LogtapeLogger
 	private store: ExtensionModuleStore | null = null
 	private readonly hmr: HMRService
-	private readonly bundler: BundlerService
 	private readonly cacheDir: string
 	private readonly cacheKeep: number
+	private readonly compileConcurrency: number
 
 	private readonly entries = new Map<string, PluginCompileEntry>()
 	private pendingPlugins = new Set<string>()
+	private inflightPlugins = new Set<string>()
 	private flushTimer: NodeJS.Timeout | null = null
 	private flushPromise: Promise<void> | null = null
 
@@ -111,16 +123,15 @@ export class ExtensionCompilerService implements ExtensionCompilerApi {
 		public ctx: Context,
 		deps: {
 			hmr: HMRService
-			bundler: BundlerService
 			enabled?: boolean
 		},
 		config?: ExtensionCompilerServiceConfig,
 	) {
 		this.hmr = deps.hmr
-		this.bundler = deps.bundler
 		this.enabled = (deps.enabled ?? true) && config?.enabled !== false
 		this.cacheDir = config?.cacheDir ?? resolve(process.cwd(), '.pluxel/extensions')
 		this.cacheKeep = Math.max(0, Math.floor(config?.cacheKeep ?? 2))
+		this.compileConcurrency = Math.max(1, Math.floor(config?.compileConcurrency ?? 2))
 		const logger = (this.ctx as unknown as { logger?: unknown }).logger
 		const fn =
 			logger && typeof logger === 'object'
@@ -139,7 +150,7 @@ export class ExtensionCompilerService implements ExtensionCompilerApi {
 		this.store = store
 	}
 
-	bindModule(ctx: Context, config: PluginExtensionConfig): () => void {
+	bindDeclaration(ctx: Context, config: { entryPath: string }): () => void {
 		if (!this.enabled) return () => undefined
 		const store = this.store
 		if (!store) return () => undefined
@@ -163,6 +174,7 @@ export class ExtensionCompilerService implements ExtensionCompilerApi {
 			pluginDir,
 			entryPath: config.entryPath,
 			sourceFiles,
+			graphDirty: true,
 			active: true,
 			watcher: null,
 		}
@@ -222,16 +234,11 @@ export class ExtensionCompilerService implements ExtensionCompilerApi {
 		}
 
 		const task = (async () => {
-			const queue = [...this.pendingPlugins]
-			for (const pluginName of queue) {
-				const entry = this.entries.get(pluginName)
-				if (!entry || !entry.active) {
-					this.pendingPlugins.delete(pluginName)
-					continue
-				}
-				await this.compilePlugin(pluginName)
-				this.pendingPlugins.delete(pluginName)
-			}
+			const workers = Array.from(
+				{ length: Math.min(this.compileConcurrency, Math.max(this.pendingPlugins.size, 1)) },
+				() => this.flushWorker(),
+			)
+			await Promise.all(workers)
 		})()
 
 		this.flushPromise = task
@@ -248,114 +255,166 @@ export class ExtensionCompilerService implements ExtensionCompilerApi {
 		this.dbg.debug('compile start {pluginName}', { pluginName })
 		try {
 			await this.refreshWatchFiles(entry)
-			const vendorPackages = this.getVendorPackages()
+			const sharedPackages = this.getSharedPackages()
 			const sourceHash = await this.computeSourceHash(
 				entry.sourceFiles,
-				vendorPackages,
+				sharedPackages,
 				entry.pluginDir,
 			)
 			const current = store.getCompiledModule(pluginName)
 			if (current?.sourceHash === sourceHash) {
+				await store.commitCompiledModule(current)
 				this.dbg.debug('compile done {pluginName} (cached)', { pluginName })
 				return true
 			}
+			await store.markCompiling?.(pluginName, {
+				updatedAt: Date.now(),
+				sourceHash: current?.sourceHash,
+				compiledAt: current?.compiledAt,
+			})
 
-			const cachedFile = this.getCachedModuleFilePath(pluginName, sourceHash)
-			if (cachedFile && existsSync(cachedFile)) {
-				const [cachedCode, cachedStats] = await Promise.all([
-					readFile(cachedFile, 'utf-8').catch((): null => null),
-					stat(cachedFile).catch((): null => null),
-				])
-				if (cachedCode && !looksLikeBrokenExtensionBundle(cachedCode)) {
-					const compiledAt =
-						cachedStats?.mtimeMs !== undefined ? Math.floor(cachedStats.mtimeMs) : Date.now()
-					await store.commitCompiledModule(pluginName, sourceHash, cachedCode, compiledAt)
+			const manifestFile = this.getManifestFilePath(pluginName, sourceHash)
+			if (manifestFile && existsSync(manifestFile)) {
+				const manifestStats = await stat(manifestFile).catch((): null => null)
+				if (manifestStats?.isFile()) {
+					await store.commitCompiledModule(
+						createCompiledExtensionModule({
+							pluginName,
+							sourceHash,
+							compiledAt: Math.floor(manifestStats.mtimeMs || Date.now()),
+						}),
+						{ artifactRoot: this.getCachedModuleDirPath(pluginName, sourceHash) },
+					)
 					if (this.cacheKeep > 0) void this.cleanupCacheDir(pluginName)
 					this.dbg.debug('compile done {pluginName} (cached:disk)', { pluginName })
 					return true
 				}
-				// Invalid cache entry: delete and fall through to recompile.
-				await rm(cachedFile, { force: true }).catch((): undefined => undefined)
 			}
 
-			const code = await this.bundleEntry(entry, vendorPackages)
-			if (looksLikeBrokenExtensionBundle(code)) {
-				this.ctx.logger.error('compiled extension bundle looks invalid; skipping cache', {
+			const built = await this.buildFederatedRemote(entry, sharedPackages, sourceHash)
+			await store.commitCompiledModule(
+				createCompiledExtensionModule({
 					pluginName,
 					sourceHash,
-				})
-				return false
-			}
-			await store.commitCompiledModule(pluginName, sourceHash, code)
-			if (cachedFile && this.cacheKeep > 0) {
-				await this.writeCachedModule(cachedFile, code).catch((): undefined => undefined)
-				void this.cleanupCacheDir(pluginName)
-			}
+					compiledAt: built.compiledAt,
+				}),
+				{ artifactRoot: built.outDir },
+			)
+			if (this.cacheKeep > 0) void this.cleanupCacheDir(pluginName)
 			this.dbg.debug('compile done {pluginName}', { pluginName })
 			return true
 		} catch (error) {
+			const current = store.getCompiledModule(pluginName)
+			await store.markCompileError?.(pluginName, error, {
+				updatedAt: Date.now(),
+				sourceHash: current?.sourceHash,
+				compiledAt: current?.compiledAt,
+			})
 			this.ctx.logger.error('failed to compile {pluginName}', { pluginName, error })
 			return false
 		}
 	}
 
-	private getCachedModuleFilePath(pluginName: string, sourceHash: string): string | null {
-		if (this.cacheKeep <= 0) return null
-		const dir = join(this.cacheDir, sanitizePluginName(pluginName))
-		return join(dir, `${sourceHash}.mjs`)
+	private async flushWorker(): Promise<void> {
+		for (;;) {
+			const pluginName = this.takeNextPendingPlugin()
+			if (!pluginName) return
+			const entry = this.entries.get(pluginName)
+			if (!entry || !entry.active) {
+				this.inflightPlugins.delete(pluginName)
+				continue
+			}
+
+			try {
+				await this.compilePlugin(pluginName)
+			} finally {
+				this.inflightPlugins.delete(pluginName)
+			}
+		}
 	}
 
-	private async writeCachedModule(path: string, code: string): Promise<void> {
-		await mkdir(dirname(path), { recursive: true })
-		await writeFile(path, code, 'utf-8')
+	private takeNextPendingPlugin(): string | null {
+		for (const pluginName of this.pendingPlugins) {
+			if (this.inflightPlugins.has(pluginName)) continue
+			this.pendingPlugins.delete(pluginName)
+			this.inflightPlugins.add(pluginName)
+			return pluginName
+		}
+		return null
+	}
+
+	private getPluginCacheDir(pluginName: string): string {
+		return join(this.cacheDir, sanitizeExtensionPluginName(pluginName))
+	}
+
+	private getCachedModuleDirPath(pluginName: string, sourceHash: string): string | null {
+		if (this.cacheKeep <= 0) return null
+		return join(this.getPluginCacheDir(pluginName), sourceHash)
+	}
+
+	private getManifestFilePath(pluginName: string, sourceHash: string): string | null {
+		const dir = this.getCachedModuleDirPath(pluginName, sourceHash)
+		return dir ? join(dir, EXTENSION_FEDERATION_MANIFEST_FILE) : null
 	}
 
 	private async cleanupCacheDir(pluginName: string): Promise<void> {
 		if (this.cacheKeep <= 0) return
-		const dir = join(this.cacheDir, sanitizePluginName(pluginName))
+		const dir = this.getPluginCacheDir(pluginName)
 		const entries = await readdir(dir).catch((): string[] => [])
 		if (!entries.length) return
 
-		const modules: Array<{ path: string; mtime: number }> = []
+		const builds: Array<{ path: string; mtime: number }> = []
 		for (const name of entries) {
-			if (!name.endsWith('.mjs')) continue
 			const full = join(dir, name)
-			const st = await stat(full).catch((): null => null)
+			const manifestFile = join(full, EXTENSION_FEDERATION_MANIFEST_FILE)
+			const st = await stat(manifestFile).catch((): null => null)
 			if (!st?.isFile()) continue
-			modules.push({ path: full, mtime: st.mtimeMs ?? 0 })
+			builds.push({ path: full, mtime: st.mtimeMs ?? 0 })
 		}
 
-		modules.sort((a, b) => b.mtime - a.mtime)
-		for (const stale of modules.slice(this.cacheKeep)) {
-			await rm(stale.path, { force: true }).catch((): undefined => undefined)
+		builds.sort((a, b) => b.mtime - a.mtime)
+		for (const stale of builds.slice(this.cacheKeep)) {
+			await rm(stale.path, { recursive: true, force: true }).catch((): undefined => undefined)
 		}
 	}
 
-	private async bundleEntry(
+	private async buildFederatedRemote(
 		entry: PluginCompileEntry,
-		vendorPackages: readonly string[],
-	): Promise<string> {
-		const vite = this.hmr.vite
-		if (!vite) throw new Error('ViteDevServer not initialized')
-
+		sharedPackages: readonly string[],
+		sourceHash: string,
+	): Promise<{ compiledAt: number; outDir: string }> {
 		const absoluteEntry = this.resolvePluginFile(entry.pluginDir, entry.entryPath)
 		if (!absoluteEntry || !existsSync(absoluteEntry)) {
 			throw new Error(`Entry file not found: ${absoluteEntry}`)
 		}
 
-		const resolveForBrowserBundle = toBrowserBundleResolve(vite.config.resolve as ResolveOptions)
-		const bundled = (
-			await this.bundler.bundle({
-				label: entry.pluginName,
-				target: 'browser',
-				entry: absoluteEntry,
-				root: vite.config.root,
-				resolve: resolveForBrowserBundle,
-				external: Array.from(vendorPackages),
-			})
-		).code
+		const outDir = this.getCachedModuleDirPath(entry.pluginName, sourceHash)
+		if (!outDir) throw new Error('Extension compiler cacheDir is disabled')
 
-		return normalizeJsxRuntime(transformVendorImports(bundled, vendorPackages))
+		await rm(outDir, { recursive: true, force: true }).catch((): undefined => undefined)
+		await mkdir(outDir, { recursive: true })
+
+		const publicPath = `${HMR_INTERNAL_API_BASE}${hmrExtensionArtifactBasePath(entry.pluginName, sourceHash)}/`
+		await buildPluginUiRemote({
+			root: entry.pluginDir,
+			pluginName: entry.pluginName,
+			entryPath: absoluteEntry,
+			outDir,
+			publicPath,
+			sharedPackages,
+			minify: false,
+		})
+
+		const manifestFile = join(outDir, EXTENSION_FEDERATION_MANIFEST_FILE)
+		const manifestContent = await readFile(manifestFile, 'utf-8').catch((): null => null)
+		if (!manifestContent) {
+			throw new Error(`Module federation manifest not found for ${entry.pluginName}`)
+		}
+		const manifestStat = await stat(manifestFile)
+		return {
+			compiledAt: Math.floor(manifestStat.mtimeMs || Date.now()),
+			outDir,
+		}
 	}
 
 	private setupWatcher(pluginName: string, entry: PluginCompileEntry): void {
@@ -372,6 +431,7 @@ export class ExtensionCompilerService implements ExtensionCompilerApi {
 		})
 		const handleChange = () => {
 			if (!entry.active) return
+			entry.graphDirty = true
 			this.enqueueCompile(pluginName)
 		}
 		watcher.on('change', handleChange)
@@ -387,9 +447,10 @@ export class ExtensionCompilerService implements ExtensionCompilerApi {
 		}
 	}
 
-	private getVendorPackages(): readonly string[] {
-		const configured = (this.ctx.config as any)?.extensionCompiler?.vendorPackages
-		return Array.isArray(configured) && configured.length ? configured : extensionVendorPackages
+	private getSharedPackages(): readonly string[] {
+		const configured = (this.ctx.config as any)?.extensionCompiler?.sharedPackages
+		if (Array.isArray(configured) && configured.length) return configured
+		return extensionFederationSharedPackages
 	}
 
 	private collectSourceFiles(pluginDir: string, entryPath: string): string[] {
@@ -399,12 +460,18 @@ export class ExtensionCompilerService implements ExtensionCompilerApi {
 
 	private async computeSourceHash(
 		files: string[],
-		vendorPackages: readonly string[],
+		sharedPackages: readonly string[],
 		baseDir?: string,
 	): Promise<string> {
 		const hash = createHash('sha256')
 		hash.update(`compiler:${EXTENSION_COMPILER_VERSION}`)
-		hash.update(`vendors:${Array.from(vendorPackages).join('|')}`)
+		const sharedSignature = baseDir
+			? resolveExtensionFederationShared(baseDir, sharedPackages).signature
+			: Array.from(sharedPackages).join('|')
+		hash.update(`shared:${sharedSignature}`)
+		hash.update(`shareStrategy:${EXTENSION_FEDERATION_SHARE_STRATEGY}`)
+		hash.update(`remoteEntry:${EXTENSION_FEDERATION_REMOTE_ENTRY_FILE}`)
+		hash.update(`expose:${EXTENSION_FEDERATION_EXPOSE}`)
 		const expanded = await this.expandHashTargets(files)
 		expanded.sort()
 
@@ -475,8 +542,11 @@ export class ExtensionCompilerService implements ExtensionCompilerApi {
 		if (!url.startsWith('/')) url = '/' + url
 
 		try {
-			await vite.transformRequest(url)
-			const rootModule = await vite.moduleGraph.getModuleByUrl(url)
+			let rootModule = await vite.moduleGraph.getModuleByUrl(url)
+			if (!rootModule || entry.graphDirty) {
+				await vite.transformRequest(url)
+				rootModule = await vite.moduleGraph.getModuleByUrl(url)
+			}
 			if (!rootModule) return
 
 			const nextFiles = collectModuleGraphFiles(rootModule, {
@@ -484,6 +554,7 @@ export class ExtensionCompilerService implements ExtensionCompilerApi {
 			})
 			const nextSignature = nextFiles.join('\n')
 			const prevSignature = entry.sourceFiles.join('\n')
+			entry.graphDirty = false
 			if (nextSignature === prevSignature) return
 
 			entry.sourceFiles = nextFiles
@@ -518,16 +589,18 @@ export class ExtensionCompilerService implements ExtensionCompilerApi {
 
 	private findPluginDir(ctx: Context, pluginName: string): string | null {
 		const registryPath = ctx.loader.api.registry.findModuleIdByName(pluginName)
-		if (registryPath) return dirname(registryPath)
+		if (registryPath) {
+			const baseDir = resolveModuleIdBaseDir(registryPath)
+			if (baseDir) return findNearestPackageRoot(baseDir) ?? baseDir
+		}
 
 		const needle = pluginName.toLowerCase()
 		for (const path of ctx.loader.api.anchors.list()) {
-			if (path.toLowerCase().includes(needle)) return dirname(path)
+			if (path.toLowerCase().includes(needle) && isAbsolute(path)) {
+				const baseDir = dirname(path)
+				return findNearestPackageRoot(baseDir) ?? baseDir
+			}
 		}
 		return null
 	}
-}
-
-function sanitizePluginName(name: string): string {
-	return name.replace(/[^a-zA-Z0-9_-]/g, '_')
 }

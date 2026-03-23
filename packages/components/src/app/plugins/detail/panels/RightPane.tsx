@@ -15,18 +15,11 @@ import { useNavigate } from '@tanstack/react-router'
 import { Fragment, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ObjectSchema } from 'valibot'
 import { EmptyState, ErrorState } from '../../../../components'
-import {
-	ExtensionErrorBoundary,
-	ExtensionProvider,
-	getPluginRouteComponent,
-	type PluginExtensionContext,
-	useExtensionContext,
-	useExtensionRuntimeVersion,
-	useExtensions,
-} from '../../../../extension'
+import { useExtensions } from '../../../../extension'
 import type { PluginConfigState } from '../../../hooks'
 import { RouterLinkAdapter } from '../../../RouterLinkAdapter'
 import { useCurrentPathname, useCurrentSearch } from '../../../router/useCurrentRoute'
+import { PluginRouteRenderer, useResolvedPluginRoute } from '../../../routes/ext/PluginRouteRenderer'
 import { FloatingTocScope } from '../../components/FloatingToc'
 import { ConfigForm, compareSchemaKeys, PLUGIN_SCHEMA_GROUP, splitSchemaKey } from '../../config'
 import { LogLevelsCard, PluginPanel } from '../components'
@@ -103,17 +96,23 @@ function encodeURIComponentSafe(value: string): string {
 	}
 }
 
-function normalizeSearchRecord(input: unknown): Record<string, unknown> {
+function normalizeSearchRecord(input: unknown): Record<string, string> {
 	if (!input) return {}
 	if (typeof input === 'string') {
 		const params = new URLSearchParams(input)
-		const out: Record<string, unknown> = {}
+		const out: Record<string, string> = {}
 		for (const [key, value] of params.entries()) {
 			out[key] = value
 		}
 		return out
 	}
-	if (typeof input === 'object') return { ...(input as Record<string, unknown>) }
+	if (typeof input === 'object') {
+		const out: Record<string, string> = {}
+		for (const [key, value] of Object.entries(input as Record<string, unknown>)) {
+			if (typeof value === 'string') out[key] = value
+		}
+		return out
+	}
 	return {}
 }
 
@@ -190,7 +189,8 @@ export function RightPane({ config }: RightPaneProps) {
 		>()
 
 		for (const { meta, node, nodeKey } of entries) {
-			const tabMeta = isRecord(meta.tab) ? meta.tab : undefined
+			const tabMeta =
+				isRecord(meta) && isRecord(meta.tab) ? (meta.tab as Record<string, unknown>) : undefined
 			const rawGroupId =
 				typeof tabMeta?.id === 'string' && tabMeta.id.trim().length > 0
 					? tabMeta.id.trim()
@@ -253,18 +253,13 @@ export function RightPane({ config }: RightPaneProps) {
 		return normalizeRestPath(rest)
 	}, [pathname, pluginName])
 
-	const routeVersion = useExtensionRuntimeVersion(pluginName)
-	const routeRender = useMemo(() => {
-		if (!restPath) return undefined
-		return getPluginRouteComponent(pluginName, restPath)
-	}, [pluginName, restPath, routeVersion])
 	const showRouteTab = Boolean(restPath)
 	const lastRestPathRef = useRef<string>('')
 
 	const updateSearch = useCallback(
 		(patch: Record<string, string | undefined>, target?: string) => {
 			const base = normalizeSearchRecord(search)
-			const next = { ...base }
+				const next: Record<string, string> = { ...base }
 			let changed = false
 
 			for (const [key, value] of Object.entries(patch)) {
@@ -286,11 +281,11 @@ export function RightPane({ config }: RightPaneProps) {
 
 			const to = target ?? pathname
 			if (!to) return
-			navigate({
-				to,
-				replace: true,
-				search: next,
-			})
+				navigate({
+					to,
+					replace: true,
+					search: next as never,
+				})
 		},
 		[navigate, pathname, search],
 	)
@@ -527,14 +522,12 @@ export function RightPane({ config }: RightPaneProps) {
 		<PluginPanel padding="sm" gap="sm">
 			<Box style={COLUMN_STYLE}>
 				{hasTabs ? (
-					<Tabs
-						value={activeTab}
-						onChange={handleTabChange}
-						keepMounted
-						size="sm"
-						radius="sm"
-						style={COLUMN_STYLE}
-					>
+						<Tabs
+							value={activeTab}
+							onChange={handleTabChange}
+							keepMounted
+							style={COLUMN_STYLE}
+						>
 						<Group gap="xs" align="center" justify="space-between" wrap="nowrap">
 							<Tabs.List
 								style={{
@@ -572,7 +565,6 @@ export function RightPane({ config }: RightPaneProps) {
 									<RouteContent
 										pluginName={pluginName}
 										restPath={restPath}
-										routeRender={routeRender}
 									/>
 								</FloatingTocScope>
 							</Tabs.Panel>
@@ -671,16 +663,13 @@ function ConfigContent({
 	activeSchemaKey: string
 	onSchemaChange: (key: string) => void
 }) {
-	const schemaMapAll = (config.data?.schemaMap ?? {}) as Record<
-		string,
-		ObjectSchema<unknown, unknown>
-	>
+	const schemaMapAll = (config.data?.schemaMap ?? {}) as Record<string, ObjectSchema<any, any>>
 	const savedConfigAll = (config.data?.savedConfig ?? {}) as Record<string, unknown>
 	const defaultsAll = (config.data?.defaults ?? {}) as Record<string, unknown>
 
 	const schemaMap = useMemo(() => {
 		if (!schemaGroup) return schemaMapAll
-		const out: Record<string, ObjectSchema<unknown, unknown>> = {}
+			const out: Record<string, ObjectSchema<any, any>> = {}
 		for (const [key, schema] of Object.entries(schemaMapAll)) {
 			if (splitSchemaKey(key).group !== schemaGroup) continue
 			out[key] = schema
@@ -749,95 +738,51 @@ function ConfigContent({
 function RouteContent({
 	pluginName,
 	restPath,
-	routeRender,
 }: {
 	pluginName: string
 	restPath: string
-	routeRender: ((ctx: PluginExtensionContext) => ReactNode) | undefined
 }) {
-	const ctx = useExtensionContext()
-	const runningPlugins = ctx.runningPlugins
-	const runningPluginsReady = ctx.runningPluginsReady
-	const pluginRunning = runningPlugins.has(pluginName)
-	const routeVersion = useExtensionRuntimeVersion(pluginName)
-
 	const fullPath = useMemo(() => {
 		return `/plugins/${encodeURIComponentSafe(pluginName)}${restPath}`
 	}, [pluginName, restPath])
-
-	const pluginCtx = useMemo<PluginExtensionContext>(
-		() => ({
-			...ctx,
-			pathname: fullPath,
-			pluginName,
-		}),
-		[ctx, fullPath, pluginName],
-	)
-
-	if (!pluginRunning && runningPluginsReady) {
-		return (
-			<Center style={{ flex: 1 }}>
-				<Stack gap="xs" align="center">
-					<Text fw={600}>插件未运行</Text>
-					<Text c="dimmed" size="sm">
-						请先启动插件 {pluginName}，才能访问 {fullPath}
-					</Text>
-					<Button
-						size="xs"
-						variant="light"
-						component={RouterLinkAdapter}
-						to={`/plugins/${encodeURIComponentSafe(pluginName)}`}
-					>
-						返回插件详情
-					</Button>
-				</Stack>
-			</Center>
-		)
-	}
-
-	if (routeVersion === 0) {
-		return (
-			<Center style={{ flex: 1, gap: 8 }}>
-				<Loader size="sm" />
-				<Text c="dimmed">扩展页面加载中…</Text>
-			</Center>
-		)
-	}
-
-	if (!routeRender) {
-		return (
-			<Center style={{ flex: 1 }}>
-				<Stack gap="xs" align="center">
-					<Text fw={600}>找不到扩展页面</Text>
-					<Text c="dimmed" size="sm">
-						该插件尚未注册页面：{fullPath}
-					</Text>
-					<Button
-						size="xs"
-						variant="light"
-						component={RouterLinkAdapter}
-						to={`/plugins/${encodeURIComponentSafe(pluginName)}`}
-					>
-						返回插件详情
-					</Button>
-				</Stack>
-			</Center>
-		)
-	}
+	const { pluginCtx, routeRender, routeVersion } = useResolvedPluginRoute({
+		pluginName,
+		pathname: fullPath,
+		restPath,
+	})
 
 	return (
-		<ScrollArea type="auto" scrollbarSize={10} offsetScrollbars style={{ flex: 1, minHeight: 0 }}>
-			<Box p="xs" style={{ minHeight: '100%' }}>
-				<ExtensionProvider value={pluginCtx}>
-					<ExtensionErrorBoundary
-						pluginName={pluginName}
-						extensionId={`${pluginName}:route:${restPath || '/'}`}
-						point={`route:${fullPath}`}
-					>
-						{routeRender(pluginCtx)}
-					</ExtensionErrorBoundary>
-				</ExtensionProvider>
-			</Box>
-		</ScrollArea>
+		<PluginRouteRenderer
+			pluginName={pluginName}
+			displayPath={fullPath}
+			pathname={fullPath}
+			pluginCtx={pluginCtx}
+			routeRender={routeRender}
+			routeVersion={routeVersion}
+			backContent={
+				<Button
+					size="xs"
+					variant="light"
+					component={RouterLinkAdapter}
+					to={`/plugins/${encodeURIComponentSafe(pluginName)}`}
+				>
+					返回插件详情
+				</Button>
+			}
+			wrapContent={(content) => (
+				<ScrollArea
+					type="auto"
+					scrollbarSize={10}
+					offsetScrollbars
+					style={{ flex: 1, minHeight: 0 }}
+				>
+					<Box p="xs" style={{ minHeight: '100%' }}>
+						<Stack gap="sm" style={{ minHeight: '100%' }}>
+							{content}
+						</Stack>
+					</Box>
+				</ScrollArea>
+			)}
+		/>
 	)
 }

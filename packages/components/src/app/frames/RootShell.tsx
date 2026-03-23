@@ -12,7 +12,7 @@ import { NavbarFooterActions } from '../layout/NavbarFooterActions'
 
 export function RootShell() {
 	const pathname = useCurrentPathname()
-	const navbarSurface = useExtensionSurface(ExtensionPoints.NavbarItems)
+	const navbarSurface = useExtensionSurface(ExtensionPoints.NavbarItems, { renderNodes: false })
 	const navbarFooterSurface = useExtensionSurface(ExtensionPoints.NavbarFooter)
 	const statusBarSurface = useExtensionSurface(ExtensionPoints.GlobalStatusBar)
 

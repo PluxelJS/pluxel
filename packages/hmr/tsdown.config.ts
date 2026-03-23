@@ -16,6 +16,7 @@ export default defineConfig({
 		host: 'src/host.ts',
 		diagnose: 'src/diagnose.ts',
 		plugin: 'src/plugin.ts',
+		'plugin-build': 'src/plugin-build.ts',
 		snapshot: 'src/snapshot.ts',
 	},
 	copy: ['src/dev/compile/bundler/bundle-worker.mjs'],

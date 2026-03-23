@@ -18,13 +18,12 @@ import {
 	type SnapshotLoader,
 } from '@pluxel/market'
 import {
+	createPluginUiHelpers,
 	definePluginUIModule,
 	type PackageBatchResult,
 	type PackageInventoryEntry,
 	type PackageSpecInput,
-	type PluginExtensionContext,
-	useExtensionContext,
-} from '@pluxel/runtime/web'
+} from '@pluxel/runtime/web/ui'
 import { IconExternalLink, IconInfoCircle, IconShoppingBag } from '@tabler/icons-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 
@@ -85,7 +84,7 @@ const specKey = (spec?: PackageSpecInput) =>
 	(spec?.raw || `${spec?.name ?? ''}@${spec?.version ?? spec?.tag ?? ''}` || '').toLowerCase()
 
 async function fetchPackageInventory(
-	hmr: PluginExtensionContext['services']['hmr'],
+	hmr: ReturnType<typeof marketUi.usePluginRuntime>['hmr'],
 	includeUntracked: boolean,
 ): Promise<PackageInventoryEntry[]> {
 	return hmr.withRpc((rpc) => rpc.package().inventory({ includeUntracked }))
@@ -122,8 +121,10 @@ type UiConfirmLike = {
 	cancelLabel?: string
 }
 
+const marketUi = createPluginUiHelpers('MarketUI')
+
 function MarketPage() {
-	const hmr = useExtensionContext('plugin').services.hmr
+	const { hmr, notify, confirm } = marketUi.usePluginRuntime()
 	const scheme = useComputedColorScheme('light', { getInitialValueInEffect: true })
 	const appearance = scheme === 'dark' ? 'dark' : 'light'
 	const marketBase = useMemo(() => resolveMarketBase(), [])
@@ -131,20 +132,28 @@ function MarketPage() {
 	const [installedPackages, setInstalledPackages] = useState<Record<string, string>>({})
 	const [installing, setInstalling] = useState(false)
 
-	const notify = useCallback((payload: UiNotifyLike) => {
-		if (!payload.message) return
-		const prefix = payload.title ? `[${payload.title}]` : '[market]'
-		if (payload.tone === 'error') {
-			console.error(prefix, payload.message)
-		} else {
-			console.warn(prefix, payload.message)
-		}
-	}, [])
+	const notifyUser = useCallback(
+		(payload: UiNotifyLike) => {
+			if (notify) {
+				notify(payload)
+				return
+			}
+			if (!payload.message) return
+			const prefix = payload.title ? `[${payload.title}]` : '[market]'
+			if (payload.tone === 'error') console.error(prefix, payload.message)
+			else console.warn(prefix, payload.message)
+		},
+		[notify],
+	)
 
-	const confirm = useCallback((payload: UiConfirmLike) => {
-		const msg = [payload.title, payload.message].filter(Boolean).join('\n') || '确认继续？'
-		return Promise.resolve(typeof window !== 'undefined' ? window.confirm(msg) : false)
-	}, [])
+	const confirmAction = useCallback(
+		(payload: UiConfirmLike) => {
+			if (confirm) return confirm(payload)
+			const msg = [payload.title, payload.message].filter(Boolean).join('\n') || '确认继续？'
+			return Promise.resolve(typeof window !== 'undefined' ? window.confirm(msg) : false)
+		},
+		[confirm],
+	)
 
 	const marketClient = useMemo(
 		() =>
@@ -159,13 +168,13 @@ function MarketPage() {
 			const inventory = await fetchPackageInventory(hmr, false)
 			setInstalledPackages(buildInstalledPackages(inventory))
 		} catch (error) {
-			notify({
+			notifyUser({
 				title: '读取包清单失败',
 				message: resolveMessage(error, '无法加载已安装包信息'),
 				tone: 'error',
 			})
 		}
-	}, [hmr, notify])
+	}, [hmr, notifyUser])
 
 	useEffect(() => {
 		void loadInventory()
@@ -177,14 +186,14 @@ function MarketPage() {
 			return await loadSnapshot()
 		} catch (error) {
 			const message = resolveMessage(error, '无法获取市场快照')
-			notify({
+			notifyUser({
 				title: '市场数据请求失败',
 				message,
 				tone: 'error',
 			})
 			throw error
 		}
-	}, [marketClient, notify])
+	}, [marketClient, notifyUser])
 
 	const handleInstallSubmit = useCallback(
 		async (items: InstallCandidate[]) => {
@@ -242,7 +251,7 @@ function MarketPage() {
 				const optionalList = optionalDeps.length
 					? `可选依赖未自动安装：${summarizeList(optionalDeps, 4, ' 项')}`
 					: ''
-				const confirmed = await confirm({
+				const confirmed = await confirmAction({
 					title: '检测到插件依赖',
 					message: [`以下依赖将自动安装：${dependencyList}`, optionalList]
 						.filter(Boolean)
@@ -320,13 +329,13 @@ function MarketPage() {
 				}
 
 				if (failures.length) {
-					notify({
+					notifyUser({
 						title: '部分插件安装失败',
 						message: summarizeList(failures, 2, ' 项', '；'),
 						tone: 'error',
 					})
 				} else {
-					notify({
+					notifyUser({
 						title: '安装已提交',
 						message: `已提交 ${installQueue.length} 个安装任务。`,
 						tone: 'success',
@@ -334,7 +343,7 @@ function MarketPage() {
 				}
 			} catch (error) {
 				const message = resolveMessage(error, '网络错误')
-				notify({
+				notifyUser({
 					title: '安装失败',
 					message,
 					tone: 'error',
@@ -344,7 +353,7 @@ function MarketPage() {
 				void loadInventory()
 			}
 		},
-		[confirm, hmr, installing, installedPackages, loadInventory, notify],
+		[confirmAction, hmr, installing, installedPackages, loadInventory, notifyUser],
 	)
 
 	return (
@@ -429,7 +438,4 @@ export default definePluginUIModule({
 			render: () => <MarketPage />,
 		},
 	],
-	setup({ pluginName }) {
-		console.log(`[${pluginName}] Market UI module loaded`)
-	},
 })

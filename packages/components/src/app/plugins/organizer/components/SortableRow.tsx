@@ -17,6 +17,10 @@ import { memo, useMemo } from 'react'
 import type { RowDensity } from '../constants'
 
 type RowMeta = { tag?: string; version?: string }
+type LinkLikeProps = {
+	to: string
+	children: React.ReactNode
+} & Omit<React.ComponentPropsWithoutRef<'a'>, 'href'>
 
 export type SortableRowProps = {
 	pid: string
@@ -26,7 +30,7 @@ export type SortableRowProps = {
 	selected: boolean
 	active: boolean
 	onSelect: (e: React.MouseEvent, pid: string, mode?: 'click' | 'context') => void
-	LinkComp?: React.ComponentType<{ to: string; children: React.ReactNode }>
+	LinkComp?: React.ComponentType<LinkLikeProps>
 	disabled: boolean
 	dh: RowDensity
 	meta?: RowMeta

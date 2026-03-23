@@ -1,12 +1,13 @@
 import { useCallback, useMemo, type ReactNode } from 'react'
+import type { ExtensionPoint, ExtensionItem, ExtensionPointCtx } from '@pluxel/runtime/web/ui'
 import { useExtensions } from '../internal/registry'
-import type { ExtensionPoint, ExtensionItem, ExtensionPointCtx } from '../types'
 
 export interface ExtensionSurfaceOptions<
 	P extends ExtensionPoint,
 	TMeta = ExtensionItem<P>['meta'],
 > {
 	projectMeta?: (meta: ExtensionItem<P>['meta']) => TMeta
+	renderNodes?: boolean
 }
 
 export interface ExtensionSurfaceRenderPayload<P extends ExtensionPoint, TMeta> {
@@ -32,7 +33,7 @@ export function useExtensionSurface<P extends ExtensionPoint, TMeta = ExtensionI
 	point: P,
 	options: ExtensionSurfaceOptions<P, TMeta> = {},
 ): ExtensionSurfaceResult<P, TMeta> {
-	const { items, nodes, context } = useExtensions(point)
+	const { items, nodes, context } = useExtensions(point, { renderNodes: options.renderNodes })
 
 	const projectedItems = useMemo(() => {
 		const projector = options.projectMeta
@@ -42,7 +43,7 @@ export function useExtensionSurface<P extends ExtensionPoint, TMeta = ExtensionI
 		}))
 	}, [items, options.projectMeta])
 
-	const hasFill = nodes.length > 0
+	const hasFill = items.length > 0
 
 	const render = useCallback(
 		(fn: ExtensionSurfaceRender<P, TMeta>) =>

@@ -35,7 +35,7 @@ import { RouterLinkAdapter } from '../../RouterLinkAdapter'
 import { PLUGIN_SEARCH_EVENT, PLUGIN_SEARCH_KEY } from '../../constants'
 import { updatePluginStatuses } from '../actions'
 import { requestPluginOverviewRefetch, setPluginOverviewGroups, usePluginOverview } from '../data'
-import type { PluginStatusAction } from '@pluxel/runtime/web'
+import type { PluginStatusAction } from '@pluxel/runtime/web/ui'
 import { useHmrWebClient } from '../../rpc'
 import { invalidate } from '../../data/invalidations'
 import {

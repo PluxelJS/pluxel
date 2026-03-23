@@ -1,10 +1,17 @@
 import { describe, expect, it, vi } from 'vitest'
 import { createFixture } from 'fs-fixture'
 import { dirname, join } from 'pathe'
+import { fileURLToPath } from 'node:url'
 import { mkdir, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 
-import { ExtensionService } from '../../src/services/plugin-interaction/ExtensionService'
+import {
+	createCompiledExtensionModule,
+	ExtensionService,
+} from '../../src/services/plugin-interaction/ExtensionService'
+import { doc } from '../../src/web/extensions'
+
+const runtimePackageDir = dirname(dirname(dirname(fileURLToPath(import.meta.url))))
 
 function createNodeFsShim() {
 	return {
@@ -73,57 +80,147 @@ function createFakeCtx(overrides?: Partial<any>) {
 describe('ExtensionService runtime/dev boundary', () => {
 	it('runtime ExtensionService has no chokidar import (guardrail)', async () => {
 		const code = await readFile(
-			join(process.cwd(), 'src/services/plugin-interaction/ExtensionService.ts'),
+			join(runtimePackageDir, 'src/services/plugin-interaction/ExtensionService.ts'),
 			'utf-8',
 		)
 		expect(code).not.toMatch(/\bchokidar\b/)
 	})
 
-	it('bindModule() no-ops (and warns once) when compile mode but compiler missing', () => {
-		const { ctx, logger } = createFakeCtx()
-		const service = new ExtensionService(ctx, { mode: 'compile', enabled: true })
+	it('packaged() registers packaged federation metadata', async () => {
+		await using fixture = await createFixture({
+			dist: {
+				'index.mjs': 'export {}',
+				'ui.remote': {
+					'mf-manifest.json': JSON.stringify({
+						id: 'demo',
+						metadata: {},
+					}),
+				},
+			},
+		})
+		const registryPath = join(fixture.path, 'dist/index.mjs')
+		const { ctx } = createFakeCtx({
+			loader: {
+				api: {
+					registry: {
+						findModuleIdByName: vi.fn(() => registryPath),
+					},
+					anchors: {
+						list: vi.fn(() => [registryPath]),
+					},
+				},
+			},
+			pluginInfo: { id: 'test-plugin' },
+		})
+		const service = new ExtensionService(ctx, { enabled: true })
 
-		const dispose1 = service.bindModule({ entryPath: './ui.tsx' })
-		const dispose2 = service.bindModule({ entryPath: './ui.tsx' })
+		const dispose = service.packaged()
+		await vi.waitFor(() => expect(service.getCompiledModule('test-plugin')).toBeDefined())
 
-		dispose1()
-		dispose2()
+		expect(service.getCompiledModule('test-plugin')).toMatchObject({
+			pluginName: 'test-plugin',
+			manifestUrl: expect.stringContaining('/extensions/artifacts/'),
+			exposedModule: './ui-module',
+		})
+		expect(
+			service.resolveArtifactFile('test-plugin', service.getCompiledModule('test-plugin')!.sourceHash, 'mf-manifest.json'),
+		).toBe(join(fixture.path, 'dist/ui.remote/mf-manifest.json'))
 
-		expect(logger.warn).toHaveBeenCalledTimes(1)
+		dispose()
 	})
 
-	it('bindModule() delegates to a configured compiler when present', () => {
-		const { ctx } = createFakeCtx()
-		const compiler = {
-			attachStore: vi.fn(),
-			bindModule: vi.fn(() => () => undefined),
-		}
+	it('packaged() resolves the default manifest from package root dist output', async () => {
+		await using fixture = await createFixture({
+			'package.json': JSON.stringify({ name: 'test-plugin', version: '0.0.0' }),
+			src: {
+				'index.ts': 'export {}',
+			},
+			dist: {
+				'ui.remote': {
+					'mf-manifest.json': JSON.stringify({
+						id: 'demo',
+						metadata: {},
+					}),
+				},
+			},
+		})
+		const registryPath = join(fixture.path, 'src/index.ts')
+		const { ctx } = createFakeCtx({
+			loader: {
+				api: {
+					registry: {
+						findModuleIdByName: vi.fn(() => registryPath),
+					},
+					anchors: {
+						list: vi.fn(() => [registryPath]),
+					},
+				},
+			},
+			pluginInfo: { id: 'test-plugin' },
+		})
+		const service = new ExtensionService(ctx, { enabled: true })
 
-		const service = new ExtensionService(ctx, { mode: 'compile', enabled: true, compiler })
-		const disposer = service.bindModule({ entryPath: './ui.tsx' })
-		disposer()
+		const dispose = service.packaged()
+		await vi.waitFor(() => expect(service.getCompiledModule('test-plugin')).toBeDefined())
 
-		expect(compiler.attachStore).toHaveBeenCalledTimes(1)
-		expect(compiler.bindModule).toHaveBeenCalledTimes(1)
+		expect(
+			service.resolveArtifactFile(
+				'test-plugin',
+				service.getCompiledModule('test-plugin')!.sourceHash,
+				'mf-manifest.json',
+			),
+		).toBe(join(fixture.path, 'dist/ui.remote/mf-manifest.json'))
+
+		dispose()
 	})
 
-	it('registerBuiltin() bumps manifest version and is cleaned up by disposer', async () => {
+	it('packaged() does not warn when the implicit packaged manifest is absent', async () => {
+		await using fixture = await createFixture({
+			'package.json': JSON.stringify({ name: 'test-plugin', version: '0.0.0' }),
+			src: {
+				'index.ts': 'export {}',
+			},
+		})
+		const registryPath = join(fixture.path, 'src/index.ts')
+		const { ctx, logger } = createFakeCtx({
+			loader: {
+				api: {
+					registry: {
+						findModuleIdByName: vi.fn(() => registryPath),
+					},
+					anchors: {
+						list: vi.fn(() => [registryPath]),
+					},
+				},
+			},
+			pluginInfo: { id: 'test-plugin' },
+		})
+		const service = new ExtensionService(ctx, { enabled: true })
+
+		const dispose = service.packaged()
+		await Promise.resolve()
+
+		expect(service.getCompiledModule('test-plugin')).toBeUndefined()
+		expect(logger.warn).not.toHaveBeenCalled()
+		dispose()
+	})
+
+	it('doc() bumps manifest version and is cleaned up by disposer', async () => {
 		await using fixture = await createFixture({})
 		const { ctx } = createFakeCtx()
 		void fixture
-		const service = new ExtensionService(ctx, { mode: 'registry-only', enabled: true })
+		const service = new ExtensionService(ctx, { enabled: true })
 
 		const events: any[] = []
 		const unsubscribe = service.subscribeManifest((e) => events.push(e))
 
 		const before = service.getManifest().version
-		const dispose = service.registerBuiltin({
+		const dispose = service.doc({
 			id: 'a',
 			point: 'plugin:tabs' as any,
-			kind: 'doc' as any,
 			title: 't',
-			body: 'b',
-		} as any)
+			content: doc`b`,
+		})
 
 		const afterAdd = service.getManifest()
 		expect(afterAdd.version).toBeGreaterThan(before)
@@ -138,12 +235,105 @@ describe('ExtensionService runtime/dev boundary', () => {
 		expect(events.length).toBeGreaterThan(0)
 	})
 
-	it('getModuleSource() serves committed module code', async () => {
+	it('helpers() emit signaldb-only builtin form/button blocks', async () => {
 		const { ctx } = createFakeCtx()
-		const service = new ExtensionService(ctx, { mode: 'registry-only', enabled: true })
+		const service = new ExtensionService(ctx, { enabled: true })
+		const binding = {
+			field: (key: string, fallback: unknown) =>
+				({ kind: 'signaldb', collection: 'runtime', selector: { id: 'runtime' }, path: key, fallback }) as const,
+			path: (path: string, fallback: unknown) =>
+				({ kind: 'signaldb', collection: 'runtime', selector: { id: 'runtime' }, path, fallback }) as const,
+			snapshot: (fallback: unknown) =>
+				({ kind: 'signaldb', collection: 'runtime', selector: { id: 'runtime' }, fallback }) as const,
+		}
+
+		const helpers = service.helpers(binding)
+		const form = helpers.form({
+			schemaKey: 'demo',
+			write: {
+				collection: 'runtime-actions',
+				mode: 'insert',
+				value: { id: { kind: 'generatedId' }, paused: { kind: 'field', key: 'paused' } },
+			},
+			sync: { id: 'runtime', paused: false },
+		})
+		const button = helpers.button({
+			label: 'Reset',
+			write: {
+				collection: 'runtime-actions',
+				mode: 'insert',
+				value: { id: { kind: 'generatedId' }, ticks: 0 },
+			},
+		})
+
+		expect(form).toMatchObject({
+			kind: 'form',
+			syncFrom: { kind: 'signaldb', collection: 'runtime', selector: { id: 'runtime' } },
+		})
+		expect(button).toMatchObject({
+			kind: 'action',
+			label: 'Reset',
+		})
+	})
+
+	it('compile status transitions are surfaced via manifest events', async () => {
+		const { ctx } = createFakeCtx()
+		const service = new ExtensionService(ctx, { enabled: true })
+		const events: any[] = []
+		const unsubscribe = service.subscribeManifest((event) => events.push(event))
+
+		await service.markCompiling?.('test-plugin', { updatedAt: 100 })
+		await service.markCompileError?.('test-plugin', new Error('boom'), {
+			updatedAt: 200,
+			sourceHash: 'prev',
+			compiledAt: 123,
+		})
+
+		const manifest = service.getManifest()
+		expect(manifest.states).toContainEqual(
+			expect.objectContaining({
+				pluginName: 'test-plugin',
+				state: 'error',
+				updatedAt: 200,
+				sourceHash: 'prev',
+			}),
+		)
+		expect(events).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({ type: 'building', pluginName: 'test-plugin', updatedAt: 100 }),
+				expect.objectContaining({
+					type: 'error',
+					pluginName: 'test-plugin',
+					updatedAt: 200,
+					sourceHash: 'prev',
+					message: 'boom',
+				}),
+			]),
+		)
+
+		unsubscribe()
+	})
+
+	it('commitCompiledModule() stores federated module metadata', async () => {
+		const { ctx } = createFakeCtx()
+		const service = new ExtensionService(ctx, { enabled: true })
 
 		const okHash = 'abcd'
-		await service.commitCompiledModule('test-plugin', okHash, 'export const ok = 1\n', 123)
-		expect(await service.getModuleSource('test-plugin', okHash)).toContain('export const ok')
+		await service.commitCompiledModule(
+			createCompiledExtensionModule({
+				pluginName: 'test-plugin',
+				sourceHash: okHash,
+				compiledAt: 123,
+			}),
+		)
+
+		expect(service.getCompiledModule('test-plugin')).toMatchObject({
+			pluginName: 'test-plugin',
+			sourceHash: okHash,
+			remoteName: expect.any(String),
+			manifestUrl: expect.stringContaining('/extensions/artifacts/'),
+			exposedModule: './ui-module',
+			compiledAt: 123,
+		})
 	})
 })

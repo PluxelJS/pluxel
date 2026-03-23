@@ -106,6 +106,15 @@ export interface HMRConfig {
 	exclude?: string[]
 	/** 额外允许 Vite Dev Server 访问的目录（绝对路径或会基于 cwd 解析的相对路径） */
 	fsAllow?: string[]
+	/**
+	 * Browser entry sources served by the HMR dev server.
+	 *
+	 * These are fed into Vite's client-side dep optimizer so browser imports do not fall back to raw
+	 * CommonJS `/@fs/.../node_modules/*` files.
+	 *
+	 * Paths may be absolute or relative to `cwd`.
+	 */
+	clientEntries?: string[]
 	/** 依赖相关配置（external / bridge / optimizeDeps 等） */
 	deps?: HMRDependencyConfig
 	/**
@@ -501,11 +510,15 @@ export class HMRService {
 			configFsAllow: Array.isArray(this.config.fsAllow) ? this.config.fsAllow : undefined,
 			hmrPackageRoot,
 		})
+		const clientEntries = this.config.clientEntries?.map((entry) =>
+			normalizePath(resolve(this.cwd, entry)),
+		)
 		const serverConfig = buildHmrViteConfig({
 			// Vite root should point at the HMR package UI, not the host cwd.
 			// Otherwise dep optimization may not crawl the correct entries and will try to update deps at runtime.
 			root: hmrPackageRoot ?? this.cwd,
 			fsAllow: serverFsAllow,
+			clientEntries,
 			port: this.config.port,
 			deps: this.deps,
 			extraPlugins: this.config.vitePlugins,

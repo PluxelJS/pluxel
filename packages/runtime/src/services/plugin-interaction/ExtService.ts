@@ -2,6 +2,7 @@ import { type Context, Injectable } from '@pluxel/core'
 
 import { ExtensionService } from './ExtensionService'
 import { RpcService } from './RpcService'
+import { SignalDbService } from './SignalDbService'
 import { SseService } from './SseService'
 
 const serviceName = 'ext' as const
@@ -9,6 +10,7 @@ const serviceName = 'ext' as const
 type ExtChildren = {
 	rpc: RpcService
 	sse: SseService
+	signaldb: SignalDbService
 	ui: ExtensionService
 }
 
@@ -39,9 +41,14 @@ export class ExtService {
 		return this.use('sse', (ctx) => new SseService(ctx, (ctx.config as any)?.sse))
 	}
 
-	/** Plugin UI module compiler/manifest service */
+	/** Plugin UI remote registry + host-rendered UI extension registry. */
 	get ui(): Context.PublicService<ExtensionService> {
 		return this.use('ui', (ctx) => new ExtensionService(ctx, (ctx.config as any)?.extensionService))
+	}
+
+	/** Runtime-owned signaldb collections with built-in sync wiring. */
+	get signaldb(): Context.PublicService<SignalDbService> {
+		return this.use('signaldb', (ctx) => new SignalDbService(ctx))
 	}
 
 	private use<K extends keyof ExtChildren>(

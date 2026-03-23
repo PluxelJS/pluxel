@@ -1,3 +1,4 @@
+import { existsSync } from 'node:fs'
 import type { Context } from '@pluxel/core'
 import {
 	clearDevRuntimeHandles,
@@ -39,6 +40,11 @@ export type AttachHmrRuntimeResult = {
 
 function uniqSorted(list: readonly string[]) {
 	return [...new Set(list)].sort((a, b) => a.localeCompare(b))
+}
+
+function resolveDefaultClientEntries(cwd: string): string[] {
+	const runtimeClientEntry = resolve(cwd, 'packages/runtime/src/client.tsx')
+	return existsSync(runtimeClientEntry) ? [runtimeClientEntry] : []
 }
 
 function resolveBuiltinsFromDistEntries(
@@ -94,6 +100,7 @@ export async function attachHmrRuntime(
 		include: snapshot.includeGlobs.length ? uniqSorted(snapshot.includeGlobs) : undefined,
 		entries: snapshot.enabledEntries,
 		exclude: snapshot.excludeGlobs.length ? uniqSorted(snapshot.excludeGlobs) : undefined,
+		clientEntries: resolveDefaultClientEntries(cwd),
 		builtinsFromDist,
 		vitePlugins: options.vitePlugins,
 		deps,
@@ -107,7 +114,7 @@ export async function attachHmrRuntime(
 	const bundler = new BundlerService(ctx)
 	const extensionCompiler = new ExtensionCompilerService(
 		ctx,
-		{ hmr, bundler, enabled: true },
+		{ hmr, enabled: true },
 		ctx.config.extensionCompiler,
 	)
 
@@ -116,9 +123,10 @@ export async function attachHmrRuntime(
 	ctx.config.extensionService = {
 		...(ctx.config.extensionService ?? {}),
 		enabled: true,
-		mode: 'compile',
-		compiler: extensionCompiler,
 	}
+	const extensionStore = ctx.ext.ui
+	extensionStore.reconfigure(ctx.config.extensionService)
+	extensionCompiler.attachStore(extensionStore)
 
 	setDevRuntimeHandles(ctx, {
 		hmr: {
@@ -132,14 +140,14 @@ export async function attachHmrRuntime(
 					vite: hmr.vite,
 				}),
 		},
+		extensions: {
+			bindUiSource: (ownerCtx, declaration) => extensionCompiler.bindDeclaration(ownerCtx, declaration),
+		},
 	})
 
 	ctx.effects.defer(() => {
 		// Best-effort cleanup: we don't restore previous values, but we do ensure no leaked resources.
 		clearRuntimeModuleAdapter(ctx)
-		if (ctx.config.extensionService && typeof ctx.config.extensionService === 'object') {
-			;(ctx.config.extensionService as any).compiler = null
-		}
 		clearDevRuntimeHandles(ctx)
 		extensionCompiler.dispose()
 		return bundler.dispose()
@@ -156,4 +164,3 @@ export async function startHmrRuntime(
 	await res.hmr.start()
 	return { ...res, started: true }
 }
-

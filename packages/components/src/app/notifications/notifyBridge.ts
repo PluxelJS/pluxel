@@ -38,9 +38,9 @@ export function notifyAndRecord(payload: NotificationData) {
 
 	pushToCenter?.({
 		id,
-		title: payload.title,
+		title: typeof payload.title === 'string' ? payload.title : undefined,
 		message: getText(payload.message),
-		color: payload.color,
+		color: typeof payload.color === 'string' ? payload.color : undefined,
 	})
 
 	return displayedId

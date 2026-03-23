@@ -1,8 +1,8 @@
 // packages/components/src/extension/slots/ExtensionSlot.tsx
 
 import type { ReactNode } from 'react'
+import type { ExtensionPoint } from '@pluxel/runtime/web/ui'
 import { useExtensionSurface } from './ExtensionSurface'
-import type { ExtensionPoint } from '../types'
 
 export interface ExtensionSlotProps<P extends ExtensionPoint = ExtensionPoint> {
 	/** 扩展点 */

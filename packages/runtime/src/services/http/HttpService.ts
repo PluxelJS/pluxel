@@ -4,7 +4,7 @@ import { isAbsolute, resolve } from 'pathe'
 
 import { ensureHmrPluginLevelsLoaded } from '../../logger/levels'
 import type { RenderHandler } from '../../server/types'
-import type { ExtensionManifestEvent } from '../../web/plugin-ui/types'
+import type { ExtensionManifestEvent } from '../../web/extensions'
 import { HMR_INTERNAL_API_BASE } from '../../web/paths'
 import {
 	createUiPublicAssetHandler,
@@ -351,9 +351,10 @@ export class HttpService {
 			const method = (request.method ?? 'GET').toUpperCase()
 
 			const uiPublic = this.uiPublic()
-			if (uiPublic && path.startsWith(`${UI_PUBLIC_BASE}/`)) {
+			if (path.startsWith(`${UI_PUBLIC_BASE}/`)) {
 				const denied = await this.guardUiRequest(request, path, method, 'ui')
 				if (denied) return denied
+				if (!uiPublic) return new Response('Not Found', { status: 404 })
 				return (await uiPublic(request)) ?? new Response('Not Found', { status: 404 })
 			}
 
@@ -386,7 +387,7 @@ export class HttpService {
 		namespace: string,
 		handler: (channel: SseChannel) => undefined | (() => void),
 	) {
-		return this.ctx.ext.sse.registerExtension(() => handler, { namespace })
+		return this.ctx.ext.sse.expose(() => handler, { namespace })
 	}
 
 	private streamManifestEvents(channel: SseChannel): undefined | (() => void) {
@@ -589,14 +590,7 @@ export class HttpService {
 				createStaticRenderer(),
 			)
 		}
-		// NOTE: SOURCE_ONLY preprocessor blocks are stripped by tsdown for non-source builds.
-		// Do NOT remove them or rewrite this into runtime conditions.
-		// #if SOURCE_ONLY
 		return import('../../server/dev').then(({ createDevRenderer }) => createDevRenderer())
-		// #else
-		// biome-ignore lint/correctness/noUnreachable: SOURCE_ONLY preprocessor strips this branch at build time.
-		return import('../../server/static').then(({ createStaticRenderer }) => createStaticRenderer())
-		// #endif
 	}
 
 	private async render(request: Request) {

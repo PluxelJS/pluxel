@@ -4,6 +4,7 @@ import { createFixture } from 'fs-fixture'
 import type { Plugin as RolldownPlugin } from 'rolldown'
 import { rolldown } from 'rolldown'
 import { configSourcePlugin } from '../../src/rolldown/plugins/configSourcePlugin'
+import { hmrUiBridgePlugin } from '../../src/rolldown/plugins/hmrUiBridgePlugin'
 import { importTypeFixerPlugin } from '../../src/rolldown/plugins/importTypeFixerPlugin'
 
 const fixtureFiles = {
@@ -433,6 +434,64 @@ export class FeatureHostPlugin extends BasePlugin {
 
 export class CacheFeature {}
 `,
+	'plugin-with-hmr-ui.ts': `import { ui } from '@pluxel/hmr/plugin'
+
+class BasePlugin {
+	ctx: any
+}
+
+function Plugin(_meta?: any): ClassDecorator {
+	return () => {}
+}
+
+const pluginUi = ui('./ui/index.tsx')
+
+@Plugin({ name: 'UiBridgePlugin' })
+export class UiBridgePlugin extends BasePlugin {
+	init() {
+		return pluginUi.bind(this.ctx)
+	}
+}
+`,
+	'plugin-with-hmr-ui-alias.ts': `import { ui as defineUi, worker } from '@pluxel/hmr/plugin'
+
+class BasePlugin {
+	ctx: any
+}
+
+function Plugin(_meta?: any): ClassDecorator {
+	return () => {}
+}
+
+export const demoWorker = worker('./worker.ts')
+const pluginUi = defineUi({ entryPath: './ui/index.tsx' })
+
+@Plugin({ name: 'UiAliasBridgePlugin' })
+export class UiAliasBridgePlugin extends BasePlugin {
+	init() {
+		return pluginUi.bind(this.ctx)
+	}
+}
+`,
+	'plugin-with-hmr-ui-namespace.ts': `import * as hmrPlugin from '@pluxel/hmr/plugin'
+
+class BasePlugin {
+	ctx: any
+}
+
+function Plugin(_meta?: any): ClassDecorator {
+	return () => {}
+}
+
+const pluginUi = hmrPlugin.ui('./ui/index.tsx')
+
+@Plugin({ name: 'UiNamespaceBridgePlugin' })
+export class UiNamespaceBridgePlugin extends BasePlugin {
+	init() {
+		return pluginUi.bind(this.ctx)
+	}
+}
+`,
 } satisfies Record<string, string>
 
 async function withFixtures<T>(run: (fixturesDir: string) => Promise<T>) {
@@ -772,6 +831,55 @@ describe('importTypeFixerPlugin', () => {
 })
 
 describe('plugins integration', () => {
+	it('rewrites HMR ui bridge imports into runtime packaged helpers', async () => {
+		await withFixtures(async (fixturesDir) => {
+			const bundle = await rolldown({
+				input: resolve(fixturesDir, 'plugin-with-hmr-ui.ts'),
+				plugins: [hmrUiBridgePlugin()],
+				external: ['@pluxel/hmr/plugin'],
+			})
+
+			const { output } = await bundle.generate({ format: 'esm' })
+			const code = output[0].code
+
+			expect(code).toContain('ctx.ext.ui.packaged()')
+			expect(code).toContain('__pluxelRuntimeUiBridge__')
+			expect(code).not.toContain("import { ui } from '@pluxel/hmr/plugin'")
+		})
+	})
+
+	it('preserves non-ui hmr imports while rewriting aliased ui bindings', async () => {
+		await withFixtures(async (fixturesDir) => {
+			const bundle = await rolldown({
+				input: resolve(fixturesDir, 'plugin-with-hmr-ui-alias.ts'),
+				plugins: [hmrUiBridgePlugin()],
+				external: ['@pluxel/hmr/plugin'],
+			})
+
+			const { output } = await bundle.generate({ format: 'esm' })
+			const code = output[0].code
+
+			expect(code).toContain("import { worker } from \"@pluxel/hmr/plugin\";")
+			expect(code).toContain('const defineUi = __pluxelRuntimeUiBridge__')
+			expect(code).toContain('ctx.ext.ui.packaged()')
+			expect(code).not.toContain('ui as defineUi')
+		})
+	})
+
+	it('rejects namespace imports from @pluxel/hmr/plugin to keep AST rewrite deterministic', async () => {
+		await withFixtures(async (fixturesDir) => {
+			const bundle = await rolldown({
+					input: resolve(fixturesDir, 'plugin-with-hmr-ui-namespace.ts'),
+					plugins: [hmrUiBridgePlugin()],
+					external: ['@pluxel/hmr/plugin'],
+				})
+
+			await expect(bundle.generate({ format: 'esm' })).rejects.toThrow(
+				/namespace import is not supported/,
+			)
+		})
+	})
+
 	it('composes importTypeFixer with configSourcePlugin', async () => {
 		await withFixtures(async (fixturesDir) => {
 			const bundle = await rolldown({
@@ -785,6 +893,22 @@ describe('plugins integration', () => {
 
 			expect(code).toContain('__setConfigSource__')
 			expect(code).toContain('TestPlugin')
+		})
+	})
+
+	it('composes hmrUiBridgePlugin with existing build plugins', async () => {
+		await withFixtures(async (fixturesDir) => {
+			const bundle = await rolldown({
+				input: resolve(fixturesDir, 'plugin-with-hmr-ui.ts'),
+				plugins: [importTypeFixerPlugin(), configSourcePlugin(), hmrUiBridgePlugin()],
+				external: ['@pluxel/hmr/plugin'],
+			})
+
+			const { output } = await bundle.generate({ format: 'esm' })
+			const code = output[0].code
+
+			expect(code).toContain('ctx.ext.ui.packaged()')
+			expect(code).toContain('UiBridgePlugin')
 		})
 	})
 })

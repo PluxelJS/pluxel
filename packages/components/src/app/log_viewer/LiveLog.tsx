@@ -4,7 +4,7 @@ import {
 	type LogSseEvent,
 	type LogStreamMeta,
 	type RuntimeLogLine,
-} from '@pluxel/runtime/web'
+} from '@pluxel/runtime/web/ui'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import {
 	memo,
@@ -761,7 +761,7 @@ export function LiveLog({ module, showName = true, filter, variant = 'full' }: P
 	}, [draftFilter])
 
 	useEffect(() => {
-		if (!dirty) return
+		if (!dirty) return undefined
 		const t = setTimeout(() => {
 			setActiveFilter(normalizeFilter(draftFilter))
 		}, 350)
@@ -1007,7 +1007,7 @@ export function LiveLog({ module, showName = true, filter, variant = 'full' }: P
 	}, [follow])
 
 	useEffect(() => {
-		if (!copied) return
+		if (!copied) return undefined
 		const t = setTimeout(() => setCopied(null), 900)
 		return () => clearTimeout(t)
 	}, [copied])

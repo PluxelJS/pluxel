@@ -7,7 +7,7 @@ export const theme = createTheme({
 	fontFamily: fontStack,
 	headings: {
 		fontFamily: fontStack,
-		fontWeight: 600,
+		fontWeight: '600',
 		sizes: {
 			h1: { fontSize: rem(32) },
 			h2: { fontSize: rem(26) },

@@ -13,7 +13,15 @@
 		"experimentalDecorators": true,
 		"emitDecoratorMetadata": true,
 		"jsx": "react-jsx",
-		"lib": ["ES2023", "DOM", "DOM.Iterable"]
+		"lib": ["ES2023", "DOM", "DOM.Iterable"],
+		"baseUrl": "../../../../../",
+		"paths": {
+			"@pluxel/runtime": ["packages/runtime/src/index.ts"],
+			"@pluxel/runtime/services": ["packages/runtime/src/services.ts"],
+			"@pluxel/runtime/web/ui": ["packages/runtime/src/web/ui.ts"],
+			"@pluxel/runtime/web/extensions": ["packages/runtime/src/web/extensions.ts"],
+			"@pluxel/runtime/web/federation": ["packages/runtime/src/web/federation.ts"]
+		}
 	},
 	"include": ["./**/*.ts", "./**/*.tsx"]
 }

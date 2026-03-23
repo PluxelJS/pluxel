@@ -1,10 +1,12 @@
 import { describe, expect, it, vi } from 'vitest'
 import { createFixture } from 'fs-fixture'
 import { createImportTracker } from '@pluxel/cli/rolldown'
+import { readFile } from 'node:fs/promises'
 import { resolve } from 'pathe'
 import { readPackageJSON } from 'pkg-types'
 import {
 	BuildEnvKeys,
+	cliTsdownOverlay,
 	createOptionalDependencyHook,
 	resolveBuildContext,
 	runWithTsdown,
@@ -118,6 +120,53 @@ const buildFixtures = {
 			'',
 			'// @Plugin marker for import tracking',
 			'export const answer = 24',
+			'',
+		].join('\n'),
+	},
+	hmrUi: {
+		'package.json': JSON.stringify(
+			{
+				name: 'pluxel-cli-build-fixture-hmr-ui',
+				version: '1.0.0',
+				type: 'module',
+			},
+			null,
+			2,
+		),
+		'tsconfig.json': JSON.stringify(
+			{
+				compilerOptions: {
+					target: 'ES2020',
+					module: 'ESNext',
+					moduleResolution: 'Bundler',
+					strict: false,
+					declaration: false,
+					allowSyntheticDefaultImports: true,
+					esModuleInterop: true,
+				},
+				include: ['src'],
+			},
+			null,
+			2,
+		),
+		'tsdown.config.ts': [
+			'export default {',
+			"\tentry: 'src/index.ts',",
+			"\tformat: ['esm'],",
+			'\tdts: false,',
+			'\tsourcemap: false,',
+			'\tclean: true,',
+			'}',
+			'',
+		].join('\n'),
+		'src/index.ts': [
+			"import { ui } from '@pluxel/hmr/plugin'",
+			'',
+			"const pluginUi = ui('./ui/index.tsx')",
+			'',
+			'export function bindPluginUi(ctx: any) {',
+			'\treturn pluginUi.bind(ctx)',
+			'}',
 			'',
 		].join('\n'),
 	},
@@ -284,5 +333,23 @@ describe('build command', () => {
 		} finally {
 			vi.unstubAllEnvs()
 		}
+	})
+
+	it('rewrites hmr ui bridge declarations in cli tsdown builds', async () => {
+		await withBuildFixture('hmrUi', async (fixtureDir) => {
+			const runtime = await resolveBuildContext({})
+
+			await runWithTsdown({
+				context: runtime,
+				onSuccess: async () => undefined,
+				log: () => {},
+				extraConfig: cliTsdownOverlay,
+			})
+
+			const output = await readFile(resolve(fixtureDir, 'dist/index.mjs'), 'utf-8')
+			expect(output).toContain('ctx.ext.ui.packaged()')
+			expect(output).not.toContain('@pluxel/hmr/plugin')
+			expect(output).not.toContain('import{ui')
+		})
 	})
 })

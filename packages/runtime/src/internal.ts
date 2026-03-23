@@ -28,15 +28,8 @@ export {
 	resolveProfiledPath,
 	resolveRuntimeStoragePaths,
 } from './runtime/paths'
+export { resolveModuleIdBaseDir, resolveModuleIdPath } from './runtime/module-id'
 
 // Dev-only helpers used by @pluxel/hmr (kept out of the public `services` surface).
-export type {
-	ExtensionCompilerApi,
-	ExtensionModuleStore,
-} from './services/plugin-interaction/ExtensionService'
-export {
-	normalizeJsxRuntime,
-	looksLikeBrokenExtensionBundle,
-	toBrowserBundleResolve,
-	transformVendorImports,
-} from './services/plugin-interaction/extensionBundleTransform'
+export type { ExtensionModuleStore } from './services/plugin-interaction/ExtensionService'
+export { createCompiledExtensionModule } from './services/plugin-interaction/ExtensionService'

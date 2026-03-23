@@ -33,7 +33,7 @@
 ## Dev Host Wiring (核心)
 
 - `packages/hmr/src/host.ts`
-  - 内部 wiring：创建 `HMRService`、安装 module adapter、设置 dev handles、注入 UI extension compiler（通过 `ctx.config.extensionService.compiler`）
+  - 内部 wiring：创建 `HMRService`、安装 module adapter、设置 dev handles、接通 UI extension source binder
   - 标准启动路径：`createHmrHostFromConfig` / `startHmrHostFromConfig`
 
 ## HMR Service (Vite + Runner + Pipeline)
@@ -55,9 +55,8 @@
 ## Extension Compile (dev-only)
 
 - `packages/hmr/src/dev/extensions/ExtensionCompilerService.ts`
-  - 使用 `BundlerService` 生成 browser bundle
-  - 与 runtime 的 vendor/JSX 逻辑对齐：调用 `@pluxel/runtime/internal`
-    - `normalizeJsxRuntime` / `toBrowserBundleResolve` / `transformVendorImports`
+  - 使用 Module Federation remote build 生成插件 UI artifact
+  - shared 协议来自 `@pluxel/runtime/web` 的 federation 定义
 
 - `packages/hmr/src/dev/compile/bundler/*`
   - bundler worker：`bundle-worker.mjs`

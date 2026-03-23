@@ -4,7 +4,7 @@ import { ActionIcon, Group, Switch, Tooltip } from '@mantine/core'
 import { openConfirmModal } from '@mantine/modals'
 import { IconPlayerPlay, IconRotateClockwise, IconSquareX } from '@tabler/icons-react'
 import { useCallback, useRef, useState } from 'react'
-import type { PluginStatusAction } from '@pluxel/runtime/web'
+import type { PluginStatusAction } from '@pluxel/runtime/web/ui'
 import { ExtensionSlot } from '../../../../extension'
 import { PluginStatusEntryLifecycleStage } from '../../../gqty'
 import { useNotify } from '../../../hooks'
@@ -229,7 +229,9 @@ export function ActionBar({ onStatusUpdated }: ActionBarProps) {
 					.filter((name): name is string => Boolean(name && isKnownPlugin(name)))
 			: []
 
-		const proceed = () => void performAction(action)
+			const proceed = (): void => {
+				void performAction(action)
+			}
 
 		if (missing.length) {
 			openConfirmModal({

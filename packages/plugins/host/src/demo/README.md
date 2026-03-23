@@ -1,32 +1,60 @@
 # Demo Plugins
 
-`packages/plugins/host/src/demo` 放的是“演示/参考实现”插件：目标是让人（以及未来的 LLM）只靠读这些文件，就能写出同风格的高质量插件。
+`packages/plugins/host/src/demo` 是参考实现集合。目标是让人和 LLM 只靠读这些 demo，就能写出同风格的插件。
 
 ## 运行
 
 - 启动开发宿主：`pnpm --filter @pluxel/plugins-host dev`
-- Demo 入口由 `packages/plugins/host/pluxel.hmr.jsonc` 的 `include` 负责（例如 `packages/plugins/host/src/demo/**/*.ts`），不再依赖自定义宿主脚本。
-- Demo 默认假设 HMR 侧启用了 `configSourcePlugin`：因此 `configs.use(...)` / `features.use(...)` 可以不写装饰器，也能在启动前注册 schema/依赖信息。
+- demo 入口由 `packages/plugins/host/pluxel.hmr.jsonc` 的 `include` 负责
+- 默认假设 HMR 侧启用了 `configSourcePlugin`
 
-## 清单（建议阅读顺序）
+## 建议阅读顺序
 
-- `PluginEventsDemo.ts`：两种事件通信方式（EvtChannel + declare module 全局事件合同）。
-- `PluginBuiltinShowcase.ts`：尽量只用 builtin UI/config 的“大而全”样例（表单 meta、SSE state、内置文档块等）。
-- `PluginFeatureConfigDemo.ts`：Feature 配置归因到父插件配置页（schema key 形如 `cache.config` / `cache.rules`，UI 会按 group 自动分组）。
-- `PluginFeatureDepsDemo.ts`：FeatureHost 的“唯一推荐 API”（`use()` / `dep()` / BridgePlugin）。
-- `PluginVaultDemo.ts`：插件里使用 `ctx.vault.open()` 做加密持久化（token/secret/batch/lock）。
-- `PluginWithUI.ts` + `PluginWithUI/ui/*`：完整链路（类外 `@pluxel/hmr/plugin` UI 声明 + RPC + SSE + 持久化 state）。
-- `PluginHttpWorkerDemo.ts`：`ctx.http` + builtin doc 扩展 + `@pluxel/hmr/plugin` worker 绑定（Tinypool）；同时演示 frozen/static 下回退到稳定 runtime 行为。
-- `PluginStandaloneFrameDemo.ts` + `PluginStandaloneFrameDemo/ui/*`：演示插件 routes 的 `frame: 'standalone'`（无 navbar/sidebar，但仍在同一 App/鉴权策略下运行）。
-- `advanced/DemoBaseProviders.ts`：抽象基类 Token + 多实现（Provider 选择）。
-- `advanced/DemoForks.ts`：ForkablePlugin（同插件多实例 / fork）。
+- `PluginEventsDemo.ts`：事件通信
+- `PluginBuiltinShowcase.ts`：宿主渲染 doc + signaldb action/state，无自定义 UI
+- `PluginFeatureConfigDemo.ts`：Feature 配置归因
+- `PluginFeatureDepsDemo.ts`：FeatureHost 推荐 API
+- `PluginVaultDemo.ts`：加密持久化
+- `PluginWithUI.ts` + `PluginWithUI/ui/*`：完整自定义前端链路
+- `PluginHttpWorkerDemo.ts`：http + worker + fallback
+- `advanced/DemoBaseProviders.ts`：抽象 token + 多实现
+- `advanced/DemoForks.ts`：forkable plugin
 
-## Demo 仅做类型检查
+## 前端推荐写法
 
-如果你只想检查 demo 相关的 TS 类型（不牵扯整个 workspace 的 build），用：
+- 插件主类里保留 `const pluginUi = ui('./ui/index.tsx')` + `pluginUi.bind(this.ctx)`；这是 authoring bridge，不是 runtime contract
+- `@pluxel/hmr/plugin` 只用 named import：`import { ui, worker } from '@pluxel/hmr/plugin'`
+- `pluxel build` 会把 `ui(...).bind(ctx)` 重写成 `ctx.ext.ui.packaged()`
+- 插件 UI 浏览器侧统一从 `@pluxel/runtime/web/ui` 导入，并使用 `definePluginUIModule(...)`
+- 前端命名空间推荐先写 `const fooUi = createPluginUiHelpers('MyPlugin')`
+- `extensions` / `routes` 直接写稳定的裸对象结构
+- `extensions[].id` 在单个 UI 模块内必须稳定且唯一
+- `routes[].definition.path` 统一写相对子路径，如 `/dashboard`
+- `setup()` 只做模块级副作用和清理
+
+## `ctx.ext` 分层
+
+- `ctx.ext.rpc.expose(...)`：自定义 UI 的 RPC
+- `ctx.ext.sse.expose(...)`：自定义 UI 的 SSE
+- `ctx.ext.signaldb.collection({ name })`：服务端 authoritative collection
+- `ctx.ext.signaldb.bind(collection, selector)`：给宿主渲染 doc/helpers 绑定单条记录
+- `ui(...).bind(ctx)`：作者侧 bridge，给 HMR / AST / build 用
+- `ctx.ext.ui.packaged()`：runtime packaged remote 注册入口
+- `ctx.ext.ui.doc(...)`：宿主渲染 doc 扩展
+- `ctx.ext.ui.helpers(binding)`：宿主渲染 doc 的轻量 authoring helper
+
+`doc` 现在只消费 `signaldb`：
+
+- 展示读 state collection
+- 交互写 action/state collection
+- 不再直接依赖 RPC / SSE
+
+## 类型检查
+
+只检查 demo 相关 TS 类型：
 
 - `pnpm exec tsc -p packages/plugins/host/src/demo/tsconfig.json`
 
-## 非 demo（功能性示例）
+## 非 demo 示例
 
-- `packages/plugins/market/src/index.ts`：market UI（建议通过 workspace profile 的 `enabled` 启用）
+- `packages/plugins/market/src/index.ts`：market UI

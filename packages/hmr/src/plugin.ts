@@ -1,27 +1,39 @@
 import { pathToFileURL } from 'node:url'
 import type { Context } from '@pluxel/runtime'
-import { getDevRuntimeHandles } from '@pluxel/runtime/internal'
-import type { PluginExtensionConfig } from '@pluxel/runtime/web'
+import { getDevRuntimeHandles, resolveModuleIdBaseDir } from '@pluxel/runtime/internal'
 import { isAbsolute, resolve } from 'pathe'
 
+export interface HmrUiSourceDeclaration {
+	/** Authoring/HMR-only declaration. Runtime never consumes this path directly. */
+	entryPath: string
+}
+
 export interface HmrUiModuleDeclaration {
-	readonly entryPath: string
+	/**
+	 * Dev/HMR bridge entry.
+	 *
+	 * Plugin code keeps calling `ui(...).bind(ctx)` so build-time tooling can recognize and rewrite
+	 * this declaration if needed. In dev, HMR consumes the source declaration directly; outside dev
+	 * it falls back to packaged remote registration on `ctx.ext.ui`. The runtime registry only sees
+	 * compiled MF artifacts, never this source entry path.
+	 */
 	bind(ctx: Context): () => void
 }
 
-function normalizeUiConfig(input: string | PluginExtensionConfig): PluginExtensionConfig {
-	if (typeof input === 'string') return { entryPath: input }
-	return { entryPath: String(input.entryPath ?? '').trim() }
+function normalizeUiConfig(input: string | HmrUiSourceDeclaration): HmrUiSourceDeclaration {
+	const entryPath = typeof input === 'string' ? String(input).trim() : String(input.entryPath ?? '').trim()
+	return { entryPath }
 }
 
-export function ui(input: string | PluginExtensionConfig): HmrUiModuleDeclaration {
+export function ui(input: string | HmrUiSourceDeclaration): HmrUiModuleDeclaration {
 	const config = normalizeUiConfig(input)
 	if (!config.entryPath) throw new Error('[pluxel/hmr] ui(): entryPath required')
 
 	return {
-		entryPath: config.entryPath,
 		bind(ctx: Context) {
-			return ctx.ext.ui.bindModule(config)
+			const devBinder = getDevRuntimeHandles(ctx)?.extensions?.bindUiSource
+			if (devBinder) return devBinder(ctx, config)
+			return ctx.ext.ui.packaged()
 		},
 	}
 }
@@ -60,7 +72,8 @@ function resolvePluginFile(ctx: Context, targetPath: string): string {
 	if (pluginId) {
 		try {
 			const registryPath = ctx.loader?.api?.registry?.findModuleIdByName?.(pluginId)
-			if (registryPath) return resolve(registryPath, '..', targetPath)
+			const baseDir = registryPath ? resolveModuleIdBaseDir(registryPath) : null
+			if (baseDir) return resolve(baseDir, targetPath)
 		} catch {
 			// Ignore registry lookup failures and fall back to cwd.
 		}

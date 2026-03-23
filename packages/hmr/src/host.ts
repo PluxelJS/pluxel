@@ -1,14 +1,10 @@
-import { existsSync } from 'node:fs'
-import { copyFile, mkdir } from 'node:fs/promises'
-import { dirname, isAbsolute, resolve } from 'pathe'
+import { isAbsolute, resolve } from 'pathe'
 import type { Plugin as VitePlugin } from 'vite'
+import { mkdir } from 'node:fs/promises'
 
 import { setPluxelRuntime } from '@pluxel/core'
 import { ensurePluxelLogging, type EnsurePluxelLoggingOptions } from '@pluxel/runtime/logger'
 import {
-	type MaterializeProfiledFileOptions,
-	type ResolvedProfiledPath,
-	resolveProfiledPath,
 	resolveRuntimeStoragePaths,
 	type RuntimeStorageLayout,
 } from '@pluxel/runtime/internal'
@@ -20,6 +16,7 @@ import type { HMRConfig } from './dev/hmr/HMRService'
 import type { HMRDependencyConfig } from './dev/hmr/config'
 import { applyHmrEnvOverrides } from './dev/runtime'
 import { diagnoseWorkspace, resolveDefaultHmrConfigPath } from './diagnose'
+import { materializeProfiledFile } from './host/storage'
 import { assertHmrWorkspaceSnapshot, type HmrWorkspaceSnapshot } from './snapshot'
 
 export type CreateHmrHostOptions = {
@@ -70,19 +67,6 @@ export type StartHmrHostFromConfigResult = CreateHmrHostResult & {
 export type CreateHmrHostFromConfigResult = CreateHmrHostResult & {
 	snapshot: HmrWorkspaceSnapshot
 	warnings: string[]
-}
-
-async function materializeProfiledFile(
-	basePath: string,
-	options: MaterializeProfiledFileOptions = {},
-): Promise<ResolvedProfiledPath> {
-	const resolved = resolveProfiledPath(basePath, options.profile)
-	await mkdir(dirname(resolved.path), { recursive: true })
-	if (options.seedFile !== false && options.seedFile && !existsSync(resolved.path)) {
-		const seedFile = resolve(options.seedFile)
-		if (existsSync(seedFile)) await copyFile(seedFile, resolved.path)
-	}
-	return resolved
 }
 
 async function prepareStore(

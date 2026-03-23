@@ -5,9 +5,9 @@
 	"scripts": {
 		"workspace:links": "node scripts/_ensure-workspace-package-links.mjs",
 		"ensure:builtin-dists": "node scripts/_ensure-builtin-dist-entries.mjs",
-		"build:dev-deps": "pnpm -w turbo run build:lib --filter=@pluxel/runtime --filter=@pluxel/hmr --filter=@pluxel/snapshot --filter=pluxel-plugin-market-ui --output-logs=errors-only",
+		"build:dev-deps": "pnpm -w turbo run build:lib --filter=@pluxel/runtime --filter=@pluxel/hmr --output-logs=errors-only",
 		"build:deploy-deps": "pnpm -w turbo run build --filter=@pluxel/runtime --filter=@pluxel/snapshot --filter=pluxel-plugin-market-ui --output-logs=errors-only",
-		"dev:prepare": "pnpm run workspace:links && pnpm run build:dev-deps && pnpm run ensure:builtin-dists",
+		"dev:prepare": "pnpm run workspace:links && pnpm run build:dev-deps",
 		"dev": "pnpm run dev:prepare && node scripts/hmr-start.mjs",
 		"dev:smoke": "pnpm run hmr:smoke",
 		"hmr:prepare": "pnpm run dev:prepare",

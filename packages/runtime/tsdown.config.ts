@@ -23,10 +23,11 @@ export default defineConfig({
 		internal: 'src/internal.ts',
 		config: 'src/config.ts',
 		web: 'src/web.ts',
+		'web/ui': 'src/web/ui.ts',
+		'web/extensions': 'src/web/extensions.ts',
+		'web/federation': 'src/web/federation.ts',
 		'web/paths': 'src/web/paths.ts',
-		'web/vendors': 'src/web/plugin-ui/vendors.ts',
 		capnweb: 'src/capnweb.ts',
-		signaldb: 'src/signaldb.ts',
 	},
 	copy: ['public'],
 	alias: {

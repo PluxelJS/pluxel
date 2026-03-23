@@ -101,6 +101,16 @@ export {
 } from './services/routing/pluginGatedRoutes'
 
 export { doc } from './services/plugin-interaction/doc'
+export type {
+	BuiltinAuthoringHelpers,
+	UiDocHelpers,
+} from './services/plugin-interaction/ExtensionService'
+export type { BuiltinSyncBinding, UiBinding } from './services/plugin-interaction/BuiltinBinding'
+export type {
+	SignalDbCollectionHandle,
+	SignalDbBinding,
+	SignalDbCollectionOptions,
+} from './services/plugin-interaction/SignalDbService'
 export type { HmrUiRpcMap } from './web/protocol'
 export type { SseChannel } from './services/plugin-interaction/SseService'
 

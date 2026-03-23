@@ -1,4 +1,5 @@
 import type { Context as PluginContext } from '@pluxel/core'
+import type { Changeset, LoadResponse } from '@signaldb/core'
 import {
 	HMR_INTERNAL_API_BASE,
 	HMR_META_AUTH_PATH,
@@ -14,6 +15,8 @@ import { pluginNameParams } from '../../api/http/models'
 import { HmrRpcApi } from '../../api/http/rpc/HmrRpcApi'
 import { PluginHandle } from '../../api/http/rpc/PluginHandle'
 import { getHmrMcpHttpHandler } from '../../api/mcp'
+import type { SignalDbItem } from '../../web/plugin-ui/signaldb-contracts'
+import { SignalDbService } from '../plugin-interaction/SignalDbService'
 import type { ElysiaBoundaryBuilder } from './HttpService'
 import { createElysiaApp } from './elysia'
 
@@ -22,6 +25,10 @@ type InternalApiOptions = {
 	web?: boolean
 	rpc?: boolean
 	sse?: boolean
+}
+
+type SignalDbPushBody<T extends SignalDbItem = SignalDbItem> = {
+	changes: Changeset<T>
 }
 
 function resolveRequestKind(path: string): 'api' | 'graphql' {
@@ -174,6 +181,57 @@ function createInternalTransportPlugins(
 	}
 	if (web || rpc || sse) {
 		plugins.push(
+			createInternalPlugin(ctx, 'signaldb', (app) =>
+				app
+					.get(
+						`${HMR_TRANSPORT_PATHS.signaldb}/:plugin/:collection`,
+						async ({ params, pluginCtx, set }: any) => {
+							set.headers['cache-control'] = 'no-store'
+							return await loadSignalDbSnapshot(
+								pluginCtx,
+								decodePathParam(params.plugin),
+								decodePathParam(params.collection),
+							)
+						},
+					)
+					.post(
+						`${HMR_TRANSPORT_PATHS.signaldb}/:plugin/:collection`,
+						async ({ params, pluginCtx, request, set, status }: any) => {
+							set.headers['cache-control'] = 'no-store'
+							const body = await request.json().catch((): null => null)
+							const changes = readSignalDbChanges(body)
+							if (!changes) {
+								return status(400, {
+									ok: false,
+									code: 'invalid_signaldb_changes',
+								})
+							}
+
+							const result = await pushSignalDbChanges(
+								pluginCtx,
+								decodePathParam(params.plugin),
+								decodePathParam(params.collection),
+								changes,
+							)
+
+							if (result === 'missing') {
+								return status(409, {
+									ok: false,
+									code: 'signaldb_unavailable',
+								})
+							}
+							if (result === 'readonly') {
+								return status(403, {
+									ok: false,
+									code: 'signaldb_readonly',
+								})
+							}
+
+							return { ok: true }
+						},
+						{ parse: 'none' },
+					),
+			),
 			createInternalPlugin(ctx, 'meta', (app) =>
 				metaRoutes(app as unknown as Parameters<typeof metaRoutes>[0]),
 			),
@@ -218,4 +276,81 @@ export function createInternalApiRoutes(
 	options: InternalApiOptions = {},
 ): ElysiaBoundaryBuilder {
 	return () => createInternalApiPlugin(ctx, options)
+}
+
+function decodePathParam(value: unknown): string {
+	try {
+		return decodeURIComponent(String(value ?? '').trim())
+	} catch {
+		return String(value ?? '').trim()
+	}
+}
+
+async function loadSignalDbSnapshot<T extends SignalDbItem>(
+	ctx: PluginContext,
+	pluginName: string,
+	collectionName: string,
+): Promise<LoadResponse<T>> {
+	const service = resolveSignalDbService(ctx, pluginName)
+	if (!service) return { items: [] }
+	return await service.loadCollectionSync<T>(collectionName)
+}
+
+async function pushSignalDbChanges<T extends SignalDbItem>(
+	ctx: PluginContext,
+	pluginName: string,
+	collectionName: string,
+	changes: Changeset<T>,
+): Promise<'applied' | 'readonly' | 'missing'> {
+	const service = resolveSignalDbService(ctx, pluginName)
+	if (!service) return 'missing'
+	return await service.applyCollectionSyncChanges(collectionName, changes)
+}
+
+function resolveSignalDbService(ctx: PluginContext, pluginName: string): SignalDbService | null {
+	const ctor =
+		ctx.loader.api.runtime.resolve(pluginName) ?? ctx.loader.api.registry.getCtor(pluginName)
+	if (!ctor) return null
+
+	const instance = ctx.registry.getInstance(ctor as never) as
+		| {
+				ctx?: {
+					ext?: {
+						signaldb?: unknown
+					}
+				}
+		  }
+		| undefined
+	const signaldb = instance?.ctx?.ext?.signaldb
+	if (!signaldb || typeof signaldb !== 'object') return null
+	if (
+		typeof (signaldb as SignalDbService).loadCollectionSync !== 'function' ||
+		typeof (signaldb as SignalDbService).applyCollectionSyncChanges !== 'function'
+	) {
+		return null
+	}
+	return signaldb as SignalDbService
+}
+
+function readSignalDbChanges(body: unknown): Changeset<SignalDbItem> | null {
+	if (!body || typeof body !== 'object') return null
+	const changes = (body as SignalDbPushBody<SignalDbItem>).changes
+	if (!changes || typeof changes !== 'object') return null
+
+	return {
+		added: sanitizeSignalDbItems(changes.added),
+		modified: sanitizeSignalDbItems(changes.modified),
+		removed: sanitizeSignalDbItems(changes.removed),
+	}
+}
+
+function sanitizeSignalDbItems<T extends SignalDbItem>(items: readonly T[] | undefined): T[] {
+	if (!Array.isArray(items)) return []
+	return items
+		.filter((item): item is T => !!item && typeof item.id === 'string' && item.id.length > 0)
+		.map((item) => cloneSignalDbItem(item))
+}
+
+function cloneSignalDbItem<T>(item: T): T {
+	return item && typeof item === 'object' ? ({ ...(item as Record<string, unknown>) } as T) : item
 }

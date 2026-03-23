@@ -22,9 +22,9 @@ async function collectWorkspacePackages(root: string) {
 
 	const walk = async (dir: string, depth: number) => {
 		if (depth <= 0) return
-		let entries: Awaited<ReturnType<typeof readdir>>
+		let entries
 		try {
-			entries = await readdir(dir, { withFileTypes: true })
+			entries = await readdir(dir, { withFileTypes: true, encoding: 'utf8' })
 		} catch {
 			return
 		}
@@ -66,10 +66,10 @@ describe('packaging invariants', () => {
 
 		for (const [name, meta] of workspace) {
 			if (publishable.has(name)) {
-				expect(meta.private).toBe(false, `${name} must not be private (${meta.path})`)
+				expect(meta.private, `${name} must not be private (${meta.path})`).toBe(false)
 				continue
 			}
-			expect(meta.private).toBe(true, `${name} must be private (${meta.path})`)
+			expect(meta.private, `${name} must be private (${meta.path})`).toBe(true)
 		}
 	})
 
@@ -108,17 +108,17 @@ describe('packaging invariants', () => {
 				if (!ws) continue
 
 				if (ws.private) {
-					expect(false).toBe(
-						true,
+					expect(
+						false,
 						`${pkg.name} must not depend on private workspace package "${dep}" (${ws.path}) at runtime`,
-					)
+					).toBe(true)
 					continue
 				}
 
-				expect(allow.has(dep)).toBe(
-					true,
+				expect(
+					allow.has(dep),
 					`${pkg.name} must not depend on workspace package "${dep}" at runtime`,
-				)
+				).toBe(true)
 			}
 		}
 	})

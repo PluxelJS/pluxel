@@ -6,6 +6,7 @@ import { useCallback, useMemo, useState } from 'react'
 import {
 	createGlobalExtensionContext,
 	type ExtensionContext,
+	ExtensionPathnameProvider,
 	ExtensionProvider,
 	getExtensionI18nService,
 } from '../../extension'
@@ -45,7 +46,6 @@ export function AppProviders() {
 	const extensionContext = useMemo<ExtensionContext>(
 		() =>
 			createGlobalExtensionContext({
-				pathname,
 				colorScheme,
 				runningPlugins,
 				runningPluginsReady: runningReady,
@@ -88,23 +88,25 @@ export function AppProviders() {
 					},
 				},
 			}),
-		[pathname, colorScheme, runningPlugins, runningReady, hmr],
+		[colorScheme, runningPlugins, runningReady, hmr],
 	)
 
 	return (
 		<PluginOverviewProvider>
-			<ExtensionProvider value={extensionContext}>
-				<NotificationCenterProvider>
-					<ModalsProvider>
-						<Notifications position="top-center" />
-						<ExtensionLoader
-							pollInterval={5000}
-							onRunningPluginsChange={handleRunningPluginsChange}
-						/>
-						<Outlet />
-					</ModalsProvider>
-				</NotificationCenterProvider>
-			</ExtensionProvider>
+			<ExtensionPathnameProvider value={pathname}>
+				<ExtensionProvider value={extensionContext}>
+					<NotificationCenterProvider>
+						<ModalsProvider>
+							<Notifications position="top-center" />
+							<ExtensionLoader
+								pollInterval={5000}
+								onRunningPluginsChange={handleRunningPluginsChange}
+							/>
+							<Outlet />
+						</ModalsProvider>
+					</NotificationCenterProvider>
+				</ExtensionProvider>
+			</ExtensionPathnameProvider>
 		</PluginOverviewProvider>
 	)
 }

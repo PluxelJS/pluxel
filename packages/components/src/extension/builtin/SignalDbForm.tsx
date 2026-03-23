@@ -1,30 +1,24 @@
 import { Box, Button, Group, Loader, Paper, Stack, Text } from '@mantine/core'
 import { formOptions } from '@tanstack/react-form'
 import { useEffect, useMemo, useRef, useState } from 'react'
+import type { BuiltinSignalDbFormBlock } from '@pluxel/runtime/web/extensions'
+import { useExtensionContext, useSignalDbCollectionsState } from '@pluxel/runtime/web/ui'
 import type { ObjectSchema } from 'valibot'
 import * as v from 'valibot'
 import * as f from 'valibot-form'
 import { AutoForm, useAutoFormCtx } from 'valibot-form/web'
-import type { BuiltinRpcArg, BuiltinRpcAutoFormBlock } from '../types'
-import { useExtensionContext } from '../types'
-import { isObject, resolveSseRef, useSseForValues } from './_shared'
+import { applySignalDbWrite, isObject, resolveSignalDbRef } from './_shared'
 
 type SchemaCacheEntry = { schema: ObjectSchema<any, any>; defaults: Record<string, any> }
 const schemaCache = new Map<string, SchemaCacheEntry>()
 
+type SchemaLoadState =
+	| { status: 'loading' }
+	| { status: 'error'; error: Error }
+	| { status: 'ready'; schema: ObjectSchema<any, any>; defaults: Record<string, any> }
+
 function normalizeKey(input: unknown): string {
 	return typeof input === 'string' ? input.trim() : ''
-}
-
-function buildArgsFromTemplate(value: any, args?: BuiltinRpcArg[]) {
-	if (!Array.isArray(args) || args.length === 0) return [value]
-	return args.map((item) => {
-		if (item && typeof item === 'object' && (item as any).kind === 'field') {
-			const key = normalizeKey((item as any).key)
-			return key ? (value as any)?.[key] : undefined
-		}
-		return item
-	})
 }
 
 function safeStringify(input: unknown): string {
@@ -35,49 +29,13 @@ function safeStringify(input: unknown): string {
 	}
 }
 
-type SchemaLoadState =
-	| { status: 'loading' }
-	| { status: 'error'; error: Error }
-	| { status: 'ready'; schema: ObjectSchema<any, any>; defaults: Record<string, any> }
-
-function useRpcAutoFormSchema(
-	hmr: { withRpc: (runner: (client: any) => Promise<any>) => Promise<any> } | null,
-	pluginName: string,
-	schemaKey: string,
-): SchemaLoadState {
-	const [state, setState] = useState<SchemaLoadState>({ status: 'loading' })
-
-	useEffect(() => {
-		if (!schemaKey) {
-			setState({ status: 'error', error: new Error('schemaKey is required') })
-			return
-		}
-		if (!hmr) {
-			setState({ status: 'error', error: new Error('rpcAutoForm requires ctx.services.hmr') })
-			return
-		}
-
-		let cancelled = false
-		setState({ status: 'loading' })
-		void loadSchema(hmr, pluginName, schemaKey)
-			.then((entry) => {
-				if (cancelled) return
-				setState({ status: 'ready', schema: entry.schema, defaults: entry.defaults })
-			})
-			.catch((e) => {
-				if (cancelled) return
-				setState({
-					status: 'error',
-					error: e instanceof Error ? e : new Error('schema load failed'),
-				})
-			})
-
-		return () => {
-			cancelled = true
-		}
-	}, [hmr, pluginName, schemaKey])
-
-	return state
+function valuesMatch(current: unknown, next: Record<string, unknown>): boolean {
+	if (!current || typeof current !== 'object') return false
+	const obj = current as Record<string, unknown>
+	for (const [key, value] of Object.entries(next)) {
+		if (obj[key] !== value) return false
+	}
+	return true
 }
 
 function pickKnownValues(source: unknown, allowedKeys: string[]): Record<string, unknown> {
@@ -90,89 +48,38 @@ function pickKnownValues(source: unknown, allowedKeys: string[]): Record<string,
 	return out
 }
 
-function valuesMatch(current: unknown, picked: Record<string, unknown>): boolean {
-	if (!current || typeof current !== 'object') return false
-	const obj = current as Record<string, unknown>
-	for (const key of Object.keys(picked)) {
-		if (obj[key] !== picked[key]) return false
-	}
-	return true
-}
-
-function SseSyncSlot({
+function SyncSlot({
 	enabled,
 	payload,
 	allowedKeys,
-	holdMs,
-	lastSuccessSigRef,
-	lastSuccessAtRef,
-	awaitingSseRef,
 }: {
 	enabled: boolean
 	payload: unknown
 	allowedKeys: string[]
-	holdMs: number
-	lastSuccessSigRef: { current: string }
-	lastSuccessAtRef: { current: number }
-	awaitingSseRef: { current: boolean }
-}) {
+}): null {
 	const { reset, defaultValues, form } = useAutoFormCtx<any>()
 	const lastSigRef = useRef('')
 
 	useEffect(() => {
-		if (!enabled) return
-		if (!payload || typeof payload !== 'object') return
+		if (!enabled) return undefined
+		if (!payload || typeof payload !== 'object') return undefined
 		const picked = pickKnownValues(payload, allowedKeys)
-		const pickedKeys = Object.keys(picked)
-		if (pickedKeys.length === 0) return
+		if (Object.keys(picked).length === 0) return undefined
 
-		// Avoid clobbering edits mid-submit; for onChange mode this should be rare.
-		if ((form.state as any)?.isSubmitting) return
-		if ((form.state as any)?.isDirty) return
+		if ((form.state as any)?.isSubmitting) return undefined
+		if ((form.state as any)?.isDirty) return undefined
 
 		const sig = safeStringify(picked)
-		if (sig && sig === lastSigRef.current) return
-
-		const currentValues = (form.state as any)?.values
-		if (valuesMatch(currentValues, picked)) {
+		if (sig && sig === lastSigRef.current) return undefined
+		if (valuesMatch((form.state as any)?.values, picked)) {
 			lastSigRef.current = sig
-			if (awaitingSseRef.current) {
-				const lastSuccessSig = lastSuccessSigRef.current
-				if (sig && lastSuccessSig && sig === lastSuccessSig) {
-					awaitingSseRef.current = false
-				}
-			}
-			return
-		}
-
-		if (awaitingSseRef.current) {
-			const lastSuccessSig = lastSuccessSigRef.current
-			const lastSuccessAt = lastSuccessAtRef.current
-			const withinHold = lastSuccessAt > 0 && Date.now() - lastSuccessAt < holdMs
-			if (sig && lastSuccessSig && sig === lastSuccessSig) {
-				awaitingSseRef.current = false
-			} else if (withinHold) {
-				return
-			} else {
-				awaitingSseRef.current = false
-			}
+			return undefined
 		}
 
 		lastSigRef.current = sig
-
 		reset({ ...(defaultValues ?? {}), ...picked })
-	}, [
-		allowedKeys,
-		defaultValues,
-		enabled,
-		form.state,
-		payload,
-		reset,
-		holdMs,
-		awaitingSseRef,
-		lastSuccessSigRef,
-		lastSuccessAtRef,
-	])
+		return undefined
+	}, [allowedKeys, defaultValues, enabled, form.state, payload, reset])
 
 	return null
 }
@@ -185,7 +92,6 @@ function AutoSubmitController({
 	canSubmit,
 	submitting,
 	onSubmit,
-	lastSuccessSigRef,
 }: {
 	enabled: boolean
 	debounceMs: number
@@ -194,35 +100,27 @@ function AutoSubmitController({
 	canSubmit: boolean
 	submitting: boolean
 	onSubmit: () => void
-	lastSuccessSigRef: { current: string }
-}) {
+}): null {
 	const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 	const lastScheduledSigRef = useRef('')
 
 	useEffect(() => {
-		if (!enabled) return
-		if (!dirty) return
-		if (!canSubmit) return
-		if (submitting) return
+		if (!enabled || !dirty || !canSubmit || submitting) return undefined
 
 		const sig = safeStringify(values)
-		if (sig && sig === lastSuccessSigRef.current) return
-		if (sig && sig === lastScheduledSigRef.current) return
+		if (sig && sig === lastScheduledSigRef.current) return undefined
 		lastScheduledSigRef.current = sig
 
 		if (timerRef.current) clearTimeout(timerRef.current)
-		timerRef.current = setTimeout(
-			() => {
-				onSubmit()
-			},
-			Math.max(0, debounceMs),
-		)
+		timerRef.current = setTimeout(() => {
+			onSubmit()
+		}, Math.max(0, debounceMs))
 
 		return () => {
 			if (timerRef.current) clearTimeout(timerRef.current)
 			timerRef.current = null
 		}
-	}, [canSubmit, debounceMs, dirty, enabled, lastSuccessSigRef, onSubmit, submitting, values])
+	}, [canSubmit, debounceMs, dirty, enabled, onSubmit, submitting, values])
 
 	return null
 }
@@ -230,11 +128,9 @@ function AutoSubmitController({
 function AutoSubmitSlot({
 	enabled,
 	debounceMs,
-	lastSuccessSigRef,
 }: {
 	enabled: boolean
 	debounceMs: number
-	lastSuccessSigRef: { current: string }
 }) {
 	const { form, submit } = useAutoFormCtx<any>()
 	return (
@@ -255,11 +151,50 @@ function AutoSubmitSlot({
 					canSubmit={canSubmit}
 					submitting={submitting}
 					onSubmit={submit}
-					lastSuccessSigRef={lastSuccessSigRef}
 				/>
 			)}
 		</form.Subscribe>
 	)
+}
+
+function useSignalDbFormSchema(
+	hmr: { withRpc: (runner: (client: any) => Promise<any>) => Promise<any> } | null,
+	pluginName: string,
+	schemaKey: string,
+): SchemaLoadState {
+	const [state, setState] = useState<SchemaLoadState>({ status: 'loading' })
+
+	useEffect(() => {
+		if (!schemaKey) {
+			setState({ status: 'error', error: new Error('schemaKey is required') })
+			return undefined
+		}
+		if (!hmr) {
+			setState({ status: 'error', error: new Error('doc form requires ctx.services.hmr') })
+			return undefined
+		}
+
+		let cancelled = false
+		setState({ status: 'loading' })
+		void loadSchema(hmr, pluginName, schemaKey)
+			.then((entry) => {
+				if (cancelled) return
+				setState({ status: 'ready', schema: entry.schema, defaults: entry.defaults })
+			})
+			.catch((error) => {
+				if (cancelled) return
+				setState({
+					status: 'error',
+					error: error instanceof Error ? error : new Error('schema load failed'),
+				})
+			})
+
+		return () => {
+			cancelled = true
+		}
+	}, [hmr, pluginName, schemaKey])
+
+	return state
 }
 
 async function loadSchema(
@@ -277,13 +212,10 @@ async function loadSchema(
 	}
 
 	const expr = (result.schemaSource ?? {})[schemaKey]
-	if (typeof expr !== 'string' || !expr.trim())
-		throw new Error(`schema key not found: ${schemaKey}`)
+	if (typeof expr !== 'string' || !expr.trim()) throw new Error(`schema key not found: ${schemaKey}`)
 
 	const schema = new Function('v', 'f', `return ${expr}`)(v, f)
-	if (schema instanceof Promise) {
-		throw new Error('async schema not supported in rpcAutoForm yet')
-	}
+	if (schema instanceof Promise) throw new Error('async schema not supported in doc form yet')
 
 	const defaults = (result.defaults?.[schemaKey] ?? {}) as Record<string, any>
 	const entry: SchemaCacheEntry = { schema, defaults }
@@ -291,14 +223,14 @@ async function loadSchema(
 	return entry
 }
 
-export function BuiltinRpcAutoForm({
+export function BuiltinSignalDbForm({
 	pluginName,
 	title,
 	block,
 }: {
 	pluginName: string
 	title: string
-	block: BuiltinRpcAutoFormBlock
+	block: BuiltinSignalDbFormBlock
 }) {
 	const ctx = useExtensionContext()
 	const hmr = ctx.services.hmr
@@ -311,21 +243,31 @@ export function BuiltinRpcAutoForm({
 
 	const schemaKey = normalizeKey(block.schemaKey)
 	const submitMode = block.submitMode ?? 'manual'
-	const rpcMethod = normalizeKey(block.rpc?.method)
-	const shouldSyncFromSse = submitMode === 'onChange' && Boolean(block.syncFromSse)
 	const autoSubmitDebounceMs =
 		typeof block.autoSubmitDebounceMs === 'number' && block.autoSubmitDebounceMs >= 0
 			? block.autoSubmitDebounceMs
 			: 250
-	const sseSyncHoldMs =
-		typeof block.syncHoldMs === 'number' && block.syncHoldMs >= 0
-			? block.syncHoldMs
-			: Math.max(800, autoSubmitDebounceMs * 4)
-	const lastSuccessSigRef = useRef('')
-	const lastSuccessAtRef = useRef(0)
-	const awaitingSseRef = useRef(false)
 
-	const state = useRpcAutoFormSchema(hmr, pluginName, schemaKey)
+	const state = useSignalDbFormSchema(hmr, pluginName, schemaKey)
+	const collections = useSignalDbCollectionsState(
+		hmr,
+		pluginName,
+		useMemo(() => {
+			const names = new Set<string>([block.write.collection])
+			if (block.syncFrom?.collection) names.add(block.syncFrom.collection)
+			return Array.from(names)
+		}, [block.syncFrom?.collection, block.write.collection]),
+	)
+
+	const syncPayload = useMemo(() => {
+		if (!block.syncFrom || !isObject(block.syncFrom)) return null
+		return resolveSignalDbRef(block.syncFrom, collections as any)
+	}, [block.syncFrom, collections])
+
+	const allowedKeys = useMemo(() => {
+		if (state.status !== 'ready') return []
+		return Object.keys(state.defaults ?? {})
+	}, [state.status, state.status === 'ready' ? state.defaults : null])
 
 	const notifySuccess = (titleFallback: string) => {
 		const notify = ctx.services.ui?.notify
@@ -333,8 +275,8 @@ export function BuiltinRpcAutoForm({
 		if (typeof notify !== 'function' || !success) return
 		notify({
 			tone: 'success',
-			title: success?.title ?? titleFallback,
-			message: success?.message,
+			title: success.title ?? titleFallback,
+			message: success.message,
 			...(success ?? {}),
 		})
 	}
@@ -345,36 +287,18 @@ export function BuiltinRpcAutoForm({
 		if (typeof notify !== 'function' || !error) return
 		notify({
 			tone: 'error',
-			title: error?.title ?? '提交失败',
-			message:
-				error?.message ?? (err instanceof Error ? err.message : String(err ?? 'unknown error')),
+			title: error.title ?? '提交失败',
+			message: error.message ?? (err instanceof Error ? err.message : String(err ?? 'unknown error')),
 			...(error ?? {}),
 		})
 	}
 
 	const [submitting, setSubmitting] = useState(false)
 
-	const sseStateByEvent = useSseForValues(
-		pluginName,
-		shouldSyncFromSse ? [block.syncFromSse as any] : [],
-	)
-	const syncPayload = useMemo(() => {
-		if (!shouldSyncFromSse) return null
-		const ref: any = block.syncFromSse
-		if (!isObject(ref) || ref.kind !== 'sse') return null
-		return resolveSseRef(ref as any, sseStateByEvent)
-	}, [block.syncFromSse, sseStateByEvent, shouldSyncFromSse])
-
-	const allowedKeys = useMemo(() => {
-		if (state.status !== 'ready') return []
-		return Object.keys(state.defaults ?? {})
-	}, [state.status, state.status === 'ready' ? state.defaults : null])
-
 	const formOpts = useMemo(() => {
 		if (state.status !== 'ready') return null
-		const initialValue = state.defaults ?? {}
 		return formOptions({
-			defaultValues: initialValue,
+			defaultValues: state.defaults ?? {},
 			onSubmit: async ({ value, formApi }) => {
 				if (submitting) return
 
@@ -397,47 +321,18 @@ export function BuiltinRpcAutoForm({
 
 				setSubmitting(true)
 				try {
-					if (!rpcMethod) throw new Error('Missing rpc.method')
-					if (!hmr) throw new Error('rpcAutoForm requires ctx.services.hmr')
-					const rpcNs = (hmr.ui as any)?.[pluginName]
-					const fn = rpcNs?.[rpcMethod]
-					if (typeof fn !== 'function')
-						throw new Error(`RPC method not found: ${pluginName}.${rpcMethod}`)
-
-					const args = buildArgsFromTemplate(value, block.rpc?.args)
-					await fn(...args)
-
-					lastSuccessSigRef.current = safeStringify(value)
-					lastSuccessAtRef.current = Date.now()
-					awaitingSseRef.current = shouldSyncFromSse
-					notifySuccess(title || '提交成功')
-					if (block.resetOnSuccess) {
-						formApi.reset()
-					} else if (submitMode === 'onChange' && !shouldSyncFromSse) {
-						formApi.reset(value as any)
-					}
-				} catch (e) {
-					notifyError(e)
+					applySignalDbWrite(collections as any, block.write, value as Record<string, unknown>)
+					notifySuccess(title || '已提交')
+					if (block.resetOnSuccess) formApi.reset()
+					else formApi.reset(value as any)
+				} catch (error) {
+					notifyError(error)
 				} finally {
 					if (isMountedRef.current) setSubmitting(false)
 				}
 			},
 		})
-	}, [
-		ctx.services,
-		hmr,
-		block.confirm,
-		block.feedback,
-		block.resetOnSuccess,
-		block.rpc?.args,
-		rpcMethod,
-		pluginName,
-		state.status,
-		state.status === 'ready' ? state.defaults : null,
-		submitting,
-		submitMode,
-		shouldSyncFromSse,
-	])
+	}, [block.confirm, block.feedback, block.resetOnSuccess, block.write, collections, ctx.services, state.status, state.status === 'ready' ? state.defaults : null, submitting, title])
 
 	if (state.status === 'loading') {
 		return (
@@ -480,19 +375,14 @@ export function BuiltinRpcAutoForm({
 				) : null}
 
 				<AutoForm schema={state.schema as any} formOpts={formOpts as any}>
-					<SseSyncSlot
-						enabled={shouldSyncFromSse}
+					<SyncSlot
+						enabled={Boolean(block.syncFrom)}
 						payload={syncPayload}
 						allowedKeys={allowedKeys}
-						holdMs={sseSyncHoldMs}
-						lastSuccessSigRef={lastSuccessSigRef}
-						lastSuccessAtRef={lastSuccessAtRef}
-						awaitingSseRef={awaitingSseRef}
 					/>
 					<AutoSubmitSlot
 						enabled={submitMode === 'onChange'}
 						debounceMs={autoSubmitDebounceMs}
-						lastSuccessSigRef={lastSuccessSigRef}
 					/>
 					<Box px="xs" pb={6}>
 						<AutoForm.Fields />

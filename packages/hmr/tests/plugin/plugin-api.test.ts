@@ -28,7 +28,7 @@ function createPluginCtx() {
 		},
 		ext: {
 			ui: {
-				bindModule: vi.fn(() => () => undefined),
+				packaged: vi.fn(() => () => undefined),
 			},
 		},
 	}
@@ -41,15 +41,34 @@ afterEach(() => {
 })
 
 describe('@pluxel/hmr/plugin', () => {
-	it('ui() binds through the runtime UI sink', () => {
+	it('ui() binds through dev handles when HMR wiring is attached', () => {
+		const { root, pluginCtx } = createPluginCtx()
+		const bindUiSource = vi.fn(() => () => undefined)
+
+		setDevRuntimeHandles(root, {
+			extensions: {
+				bindUiSource,
+			},
+		})
+
+		const declaration = ui('./ui/index.tsx')
+		const dispose = declaration.bind(pluginCtx)
+
+		expect(bindUiSource).toHaveBeenCalledWith(pluginCtx, {
+			entryPath: './ui/index.tsx',
+		})
+		expect(typeof dispose).toBe('function')
+		clearDevRuntimeHandles(root)
+	})
+
+	it('ui() falls back to packaged runtime registration outside HMR', () => {
 		const { pluginCtx } = createPluginCtx()
 
 		const declaration = ui('./ui/index.tsx')
 		const dispose = declaration.bind(pluginCtx)
 
-		expect(pluginCtx.ext.ui.bindModule).toHaveBeenCalledWith({
-			entryPath: './ui/index.tsx',
-		})
+		expect(pluginCtx.ext.ui.packaged).toHaveBeenCalledTimes(1)
+		expect(pluginCtx.ext.ui.packaged).toHaveBeenCalledWith()
 		expect(typeof dispose).toBe('function')
 	})
 

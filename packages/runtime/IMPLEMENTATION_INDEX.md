@@ -15,8 +15,11 @@
   - `./services` → `packages/runtime/src/services.ts`
   - `./logger` → `packages/runtime/src/logger.ts`
   - `./web` → `packages/runtime/src/web.ts`
+  - `./web/ui` → `packages/runtime/src/web/ui.ts`
+  - `./web/extensions` → `packages/runtime/src/web/extensions.ts`
+  - `./web/federation` → `packages/runtime/src/web/federation.ts`
+  - `./web/paths` → `packages/runtime/src/web/paths.ts`
   - `./capnweb` → `packages/runtime/src/capnweb.ts`
-  - `./signaldb` → `packages/runtime/src/signaldb.ts`
   - `./frozen` → `packages/runtime/src/frozen.ts`
   - `./shared` → `packages/runtime/src/shared.ts`
   - `./internal` → `packages/runtime/src/internal.ts`
@@ -74,7 +77,7 @@
   - `module-runtime`：runtime module cache adapter（给 HMR runner 使用）
   - `paths`：storage/layout/profile materialize helpers（HMR host 与脚本复用）
   - dev-only compile helpers（给 `@pluxel/hmr` 复用，不扩张 public `services` surface）
-    - `ExtensionModuleStore` / `ExtensionCompilerApi`
+    - `ExtensionModuleStore`
     - `normalizeJsxRuntime` / `toBrowserBundleResolve` / `transformVendorImports`
 
 - `packages/runtime/src/shared.ts`

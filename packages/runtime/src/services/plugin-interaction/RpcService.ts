@@ -33,6 +33,10 @@ export class RpcService {
 		return () => guard.dispose()
 	}
 
+	expose<T extends RpcTarget>(factory: RpcExtensionFactory<T>): () => void {
+		return this.registerExtension(factory)
+	}
+
 	/**
 	 * 创建扩展视图（供 HmrRpcApi 使用）
 	 * 使用 Object.defineProperty 定义 getter，避免 Proxy

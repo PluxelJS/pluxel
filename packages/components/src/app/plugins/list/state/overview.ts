@@ -1,5 +1,5 @@
-import type { PluginGroup, PluginStatusEntry } from '../../gqty'
-import type { GroupConfig, PluginStatuses } from '../organizer'
+import type { PluginGroup, PluginStatusEntry } from '../../../gqty'
+import type { GroupConfig, PluginStatuses } from '../../organizer'
 
 export type OverviewSnapshot = {
 	statuses: PluginStatuses

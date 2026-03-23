@@ -1,4 +1,4 @@
-import { createHmrWebClient } from '@pluxel/runtime/web'
+import { createHmrWebClient } from '@pluxel/runtime/web/ui'
 
 let hmr: ReturnType<typeof createHmrWebClient> | null = null
 

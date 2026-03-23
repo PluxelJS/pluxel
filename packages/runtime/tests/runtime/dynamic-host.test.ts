@@ -16,7 +16,7 @@ describe('@pluxel/runtime Context bootstrap', () => {
 					policy: { allowInstall: false, allowUninstall: false },
 					state: { enabled: false },
 				},
-				extensionService: { mode: 'disabled' },
+				extensionService: { enabled: false },
 			})
 
 			expect(ctx.configService.isReady).toBe(true)
@@ -48,7 +48,7 @@ describe('@pluxel/runtime Context bootstrap', () => {
 					policy: { allowInstall: false, allowUninstall: false },
 					state: { enabled: false },
 				},
-				extensionService: { mode: 'disabled' },
+				extensionService: { enabled: false },
 			})
 
 			expect(ctx.configService.isEnabledInConfig('ExamplePlugin')).toBe(true)

@@ -1,7 +1,8 @@
 import { Badge, Button, Group, Stack, Text } from '@mantine/core'
-import { definePluginUIModule, ExtensionPoints, useExtensionContext } from '@pluxel/runtime/web'
+import { definePluginUIModule, ExtensionPoints } from '@pluxel/runtime/web/ui'
 import { IconDashboard, IconExternalLink, IconRocket } from '@tabler/icons-react'
-import { EventsPanel, OverviewPanel, RoutePage, StreamsPanel } from './components'
+import { EventsPanel, OverviewPanel, RoutePage, StandaloneRoutePage, StreamsPanel } from './components'
+import { pluginWithUi } from './runtime'
 
 function HeaderAction() {
 	return (
@@ -12,7 +13,7 @@ function HeaderAction() {
 }
 
 function GlobalStatusBar() {
-	const ctx = useExtensionContext('global')
+	const ctx = pluginWithUi.useGlobalContext()
 	return (
 		<Group gap="xs">
 			<Badge variant="dot" color="grape">
@@ -26,22 +27,32 @@ function GlobalStatusBar() {
 }
 
 function PluginInfo() {
-	const ctx = useExtensionContext('plugin')
+	const { pluginName } = pluginWithUi.usePluginContext()
 	return (
 		<Stack gap="xs">
 			<Text fw={600}>PluginWithUI</Text>
 			<Text size="sm" c="dimmed">
-				演示扩展 UI：Tab、Route、SSE、RPC。
+				演示扩展 UI：Tab、Route、Standalone Route、SSE、RPC。
 			</Text>
-			<Button
-				variant="light"
-				size="xs"
-				leftSection={<IconExternalLink size={14} />}
-				component="a"
-				href={`/plugins/${encodeURIComponent(ctx.pluginName)}/dashboard`}
-			>
-				打开 Dashboard
-			</Button>
+			<Group gap="xs">
+				<Button
+					variant="light"
+					size="xs"
+					leftSection={<IconExternalLink size={14} />}
+					component="a"
+					href={`/plugins/${encodeURIComponent(pluginName)}/dashboard`}
+				>
+					打开 Dashboard
+				</Button>
+				<Button
+					variant="subtle"
+					size="xs"
+					component="a"
+					href={`/ext-standalone/${encodeURIComponent(pluginName)}/standalone`}
+				>
+					Standalone
+				</Button>
+			</Group>
 		</Stack>
 	)
 }
@@ -103,13 +114,20 @@ export default definePluginUIModule({
 		},
 		{
 			definition: {
-				path: '/standalone',
-				title: 'PluginWithUI Standalone',
+				path: '/notes',
+				title: 'PluginWithUI Notes',
 			},
 			render: () => <RoutePage />,
 		},
+		{
+			definition: {
+				path: '/standalone',
+				title: 'PluginWithUI Standalone',
+				addToNav: true,
+				navPriority: 40,
+				frame: 'standalone',
+			},
+			render: () => <StandaloneRoutePage />,
+		},
 	],
-	setup({ pluginName }) {
-		console.log(`[${pluginName}] UI module loaded`)
-	},
 })

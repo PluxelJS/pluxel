@@ -1,11 +1,9 @@
-// 展示型插件：尽量不注册自定义组件，仅使用宿主内置能力（builtin UI + config schemas）
+// 展示型插件：尽量不注册自定义组件，仅使用宿主渲染扩展与配置 schema。
 
 import { BasePlugin, Plugin } from '@pluxel/runtime'
-import { RpcTarget } from '@pluxel/runtime/capnweb'
 import { f, v } from '@pluxel/runtime/config'
-import type { SseChannel } from '@pluxel/runtime/services'
+import type { UiDocHelpers } from '@pluxel/runtime/services'
 import { doc } from '@pluxel/runtime/services'
-
 const MIN_REFRESH_MS = 250
 const MAX_REFRESH_MS = 10_000
 
@@ -88,6 +86,7 @@ type RuntimeSnapshot = {
 }
 
 type BuiltinState = {
+	id: 'runtime'
 	uptimeMs: number
 	uptimeLabel: string
 	ticks: number
@@ -96,6 +95,24 @@ type BuiltinState = {
 	tickStep: number
 	maxTicks: number
 }
+
+type BuiltinAction =
+	| {
+			id: string
+			kind: 'setPaused'
+			paused: boolean
+			status: 'pending' | 'done' | 'error'
+			createdAt?: number
+			error?: string
+	  }
+	| {
+			id: string
+			kind: 'setTicks'
+			ticks: number
+			status: 'pending' | 'done' | 'error'
+			createdAt?: number
+			error?: string
+	  }
 
 const clampNumber = (input: unknown, fallback: number, min: number, max: number) => {
 	const value = typeof input === 'number' ? input : Number(input)
@@ -202,7 +219,7 @@ const formatDuration = (ms: number, format: FormatSnapshot) => {
 const DisplayConfig = v.object({
 	refreshMs: v.pipe(
 		v.optional(v.number(), DEFAULTS.display.refreshMs),
-		f.formMeta({ label: '刷新间隔 (ms)', description: 'SSE state 推送间隔' }),
+		f.formMeta({ label: '刷新间隔 (ms)', description: 'signaldb 状态同步间隔' }),
 		f.numberMeta({ min: MIN_REFRESH_MS, max: MAX_REFRESH_MS, step: 250 }),
 	),
 })
@@ -335,7 +352,7 @@ const FormatConfig = v.object({
 const RuntimeFormSchema = v.object({
 	ticks: v.pipe(
 		v.optional(v.number(), 0),
-		f.formMeta({ label: 'ticks', description: '演示：AutoForm 手动提交 → RPC' }),
+		f.formMeta({ label: 'ticks', description: '演示：AutoForm 手动提交 → signaldb action' }),
 		f.numberMeta({ min: 0, max: 1_000_000, step: 1 }),
 	),
 })
@@ -343,7 +360,7 @@ const RuntimeFormSchema = v.object({
 const RuntimeToggleSchema = v.object({
 	paused: v.pipe(
 		v.optional(v.boolean(), false),
-		f.formMeta({ label: 'paused', description: '演示：submitMode=onChange' }),
+		f.formMeta({ label: 'paused', description: '演示：submitMode=onChange + signaldb action' }),
 		f.booleanMeta({}),
 	),
 })
@@ -354,6 +371,14 @@ export class PluginBuiltinShowcase extends BasePlugin {
 	private tickTimer: ReturnType<typeof setTimeout> | null = null
 	private ticks = 0
 	private paused = false
+	private builtin!: UiDocHelpers<BuiltinState>
+	private builtinState = this.ctx.ext.signaldb.collection<BuiltinState>({ name: 'runtime' })
+	private builtinActions = this.ctx.ext.signaldb.collection<BuiltinAction>({
+		name: 'runtime-actions',
+		clientWrites: true,
+		persistence: false,
+	})
+	private readonly processingActions = new Set<string>()
 
 	private display = this.configs.use(DisplayConfig)
 	private behavior = this.configs.use(BehaviorConfig)
@@ -367,10 +392,21 @@ export class PluginBuiltinShowcase extends BasePlugin {
 
 		this.startedAt = Date.now()
 
-		this.ctx.ext.rpc.registerExtension(() => new PluginBuiltinShowcaseRpc(this))
+		await this.builtinState.ready()
+		await this.builtinActions.ready()
+		this.builtin = this.ctx.ext.ui.helpers(
+			this.ctx.ext.signaldb.bind(this.builtinState, { id: 'runtime' }),
+		)
+		this.syncBuiltinState()
+		this.consumePendingActions()
+		const stopWatch = this.builtinActions.watch((event) => {
+			if (event.type === 'insert' || event.type === 'update' || event.type === 'snapshot') {
+				this.consumePendingActions()
+			}
+		})
+		this.ctx.effects.defer(() => stopWatch())
 
 		this.registerBuiltins()
-		this.ctx.ext.sse.registerExtension(() => this.pushState())
 		this.startTickLoop()
 	}
 
@@ -432,6 +468,7 @@ export class PluginBuiltinShowcase extends BasePlugin {
 		const runtime = this.getRuntimeSnapshot(config)
 
 		return {
+			id: 'runtime',
 			uptimeMs: runtime.uptimeMs,
 			uptimeLabel: runtime.uptimeLabel,
 			ticks: runtime.ticks,
@@ -442,8 +479,17 @@ export class PluginBuiltinShowcase extends BasePlugin {
 		}
 	}
 
-	private sse<T>(path: string, fallback: T) {
-		return { kind: 'sse' as const, path, fallback }
+	private defaultBuiltinState(): BuiltinState {
+		return {
+			id: 'runtime',
+			uptimeMs: 0,
+			uptimeLabel: '0s',
+			ticks: 0,
+			paused: false,
+			refreshMs: DEFAULTS.display.refreshMs,
+			tickStep: DEFAULTS.behavior.tickStep,
+			maxTicks: DEFAULTS.behavior.maxTicks,
+		}
 	}
 
 	private registerBuiltins() {
@@ -465,12 +511,18 @@ export class PluginBuiltinShowcase extends BasePlugin {
 						layout: { variant: 'grid', density: 'compact', columns: 3, labelPlacement: 'top' },
 						rows: [
 							{ label: 'Plugin', value: this.ctx.pluginInfo.id },
-							{ label: 'Uptime', value: this.sse('uptimeLabel', '0s') },
-							{ label: 'Ticks', value: this.sse('ticks', 0) },
-							{ label: 'Tick step', value: this.sse('tickStep', DEFAULTS.behavior.tickStep) },
-							{ label: 'Paused', value: this.sse('paused', false) },
-							{ label: 'Max ticks', value: this.sse('maxTicks', DEFAULTS.behavior.maxTicks) },
-							{ label: 'Refresh (ms)', value: this.sse('refreshMs', DEFAULTS.display.refreshMs) },
+							{ label: 'Uptime', value: this.builtin.field('uptimeLabel', '0s') },
+							{ label: 'Ticks', value: this.builtin.field('ticks', 0) },
+							{
+								label: 'Tick step',
+								value: this.builtin.field('tickStep', DEFAULTS.behavior.tickStep),
+							},
+							{ label: 'Paused', value: this.builtin.field('paused', false) },
+							{ label: 'Max ticks', value: this.builtin.field('maxTicks', DEFAULTS.behavior.maxTicks) },
+							{
+								label: 'Refresh (ms)',
+								value: this.builtin.field('refreshMs', DEFAULTS.display.refreshMs),
+							},
 						],
 					}),
 				)}
@@ -492,26 +544,66 @@ export class PluginBuiltinShowcase extends BasePlugin {
 			content: doc`
 				${doc.block(
 					'Pause',
-					doc.form({
-						description: 'submitMode=onChange + SSE sync.',
+					this.builtin.form({
+						description: 'submitMode=onChange + signaldb action doc.',
 						submitMode: 'onChange',
 						autoSubmitDebounceMs: 120,
-						syncFromSse: { kind: 'sse' },
 						schemaKey: '_runtimeToggle',
-						rpc: { method: 'setPaused', args: [{ kind: 'field', key: 'paused' }] },
+						sync: this.defaultBuiltinState(),
+						write: {
+							collection: 'runtime-actions',
+							mode: 'insert',
+							value: {
+								id: { kind: 'generatedId' },
+								kind: 'setPaused',
+								paused: { kind: 'field', key: 'paused' },
+								status: 'pending',
+								createdAt: { kind: 'now' },
+							},
+						},
 					}),
 				)}
 
 				${doc.block(
 					'Set ticks',
-					doc.form({
-						description: 'Manual submit → RPC.',
+					this.builtin.form({
+						description: 'Manual submit → signaldb action doc.',
 						submitLabel: 'Submit',
 						submitMode: 'manual',
 						schemaKey: '_runtime',
-						rpc: { method: 'setTicks', args: [{ kind: 'field', key: 'ticks' }] },
 						feedback: { success: { title: 'Submitted', tone: 'success' } },
 						resetOnSuccess: false,
+						write: {
+							collection: 'runtime-actions',
+							mode: 'insert',
+							value: {
+								id: { kind: 'generatedId' },
+								kind: 'setTicks',
+								ticks: { kind: 'field', key: 'ticks' },
+								status: 'pending',
+								createdAt: { kind: 'now' },
+							},
+						},
+					}),
+				)}
+
+				${doc.block(
+					'Reset ticks',
+					this.builtin.button({
+						label: 'Reset to 0',
+						description: '单按钮 action：无需 RPC，只写入 action collection。',
+						write: {
+							collection: 'runtime-actions',
+							mode: 'insert',
+							value: {
+								id: { kind: 'generatedId' },
+								kind: 'setTicks',
+								ticks: 0,
+								status: 'pending',
+								createdAt: { kind: 'now' },
+							},
+						},
+						feedback: { success: { title: 'Queued', tone: 'success' } },
 					}),
 				)}
 			`,
@@ -541,29 +633,45 @@ export class PluginBuiltinShowcase extends BasePlugin {
 
 			${doc.block(
 				'Snapshot',
-				doc.card({
-					description: 'Markdown + builtin blocks.',
-					layout: { variant: 'grid', density: 'compact', columns: 3, labelPlacement: 'top' },
-					rows: [
-						{ label: 'Uptime', value: this.sse('uptimeLabel', '0s') },
-						{ label: 'Ticks', value: this.sse('ticks', 0) },
-						{ label: 'Paused', value: this.sse('paused', false) },
-						{ label: 'Tick step', value: this.sse('tickStep', DEFAULTS.behavior.tickStep) },
-						{ label: 'Refresh (ms)', value: this.sse('refreshMs', DEFAULTS.display.refreshMs) },
-					],
-				}),
-			)}
+					doc.card({
+						description: 'Markdown + builtin blocks.',
+						layout: { variant: 'grid', density: 'compact', columns: 3, labelPlacement: 'top' },
+						rows: [
+							{ label: 'Uptime', value: this.builtin.field('uptimeLabel', '0s') },
+							{ label: 'Ticks', value: this.builtin.field('ticks', 0) },
+							{ label: 'Paused', value: this.builtin.field('paused', false) },
+							{
+								label: 'Tick step',
+								value: this.builtin.field('tickStep', DEFAULTS.behavior.tickStep),
+							},
+							{
+								label: 'Refresh (ms)',
+								value: this.builtin.field('refreshMs', DEFAULTS.display.refreshMs),
+							},
+						],
+					}),
+				)}
 
-			${doc.block(
+				${doc.block(
 				'Quick controls',
-				doc.form({
-					description: 'onChange + SSE sync.',
-					submitMode: 'onChange',
-					autoSubmitDebounceMs: 120,
-					syncFromSse: { kind: 'sse' },
-					schemaKey: '_runtimeToggle',
-					rpc: { method: 'setPaused', args: [{ kind: 'field', key: 'paused' }] },
-				}),
+					this.builtin.form({
+						description: 'onChange + signaldb action doc.',
+						submitMode: 'onChange',
+						autoSubmitDebounceMs: 120,
+						schemaKey: '_runtimeToggle',
+						sync: this.defaultBuiltinState(),
+						write: {
+							collection: 'runtime-actions',
+							mode: 'insert',
+							value: {
+								id: { kind: 'generatedId' },
+								kind: 'setPaused',
+								paused: { kind: 'field', key: 'paused' },
+								status: 'pending',
+								createdAt: { kind: 'now' },
+							},
+						},
+					}),
 			)}
 
 			- 纯文段和 builtin 表单可以混合排布
@@ -614,20 +722,16 @@ export class PluginBuiltinShowcase extends BasePlugin {
 				label: 'Stream',
 				value: { kind: 'badge', label: 'Live', color: 'green', variant: 'light' } as const,
 			},
-			{ label: 'Uptime', value: this.sse('uptimeLabel', '0s') },
-			{ label: 'Uptime (ms)', value: this.sse('uptimeMs', 0) },
-			{ label: 'Ticks', value: this.sse('ticks', 0) },
-			{ label: 'Tick step', value: this.sse('tickStep', DEFAULTS.behavior.tickStep) },
-			{ label: 'Paused', value: this.sse('paused', false) },
-			{ label: 'Max ticks', value: this.sse('maxTicks', DEFAULTS.behavior.maxTicks) },
-			{ label: 'Refresh (ms)', value: this.sse('refreshMs', DEFAULTS.display.refreshMs) },
+			{ label: 'Uptime', value: this.builtin.field('uptimeLabel', '0s') },
+			{ label: 'Uptime (ms)', value: this.builtin.field('uptimeMs', 0) },
+			{ label: 'Ticks', value: this.builtin.field('ticks', 0) },
+			{ label: 'Tick step', value: this.builtin.field('tickStep', DEFAULTS.behavior.tickStep) },
+			{ label: 'Paused', value: this.builtin.field('paused', false) },
+			{ label: 'Max ticks', value: this.builtin.field('maxTicks', DEFAULTS.behavior.maxTicks) },
+			{ label: 'Refresh (ms)', value: this.builtin.field('refreshMs', DEFAULTS.display.refreshMs) },
 			{
 				label: 'Snapshot',
-				value: this.sse('', {
-					uptimeLabel: '0s',
-					ticks: 0,
-					refreshMs: DEFAULTS.display.refreshMs,
-				}),
+				value: this.builtin.snapshot(this.defaultBuiltinState()),
 			},
 		]
 
@@ -644,6 +748,7 @@ export class PluginBuiltinShowcase extends BasePlugin {
 					if (autoPauseAtMax) this.paused = true
 				}
 			}
+			this.syncBuiltinState()
 			this.tickTimer = setTimeout(tick, refreshMs)
 		}
 		tick()
@@ -653,81 +758,48 @@ export class PluginBuiltinShowcase extends BasePlugin {
 		})
 	}
 
-	private pushState() {
-		return (channel: SseChannel) => {
-			let timer: ReturnType<typeof setTimeout> | null = null
-			let aborted = false
-
-			const emit = () => {
-				channel.emit('state', this.buildState())
-			}
-
-			const schedule = () => {
-				if (aborted) return
-				const ms = this.getConfigSnapshot().refreshMs
-				timer = setTimeout(() => {
-					emit()
-					schedule()
-				}, ms)
-			}
-
-			emit()
-			schedule()
-
-			channel.onAbort(() => {
-				aborted = true
-				if (timer) clearTimeout(timer)
-				timer = null
-			})
-			return () => {
-				aborted = true
-				if (timer) clearTimeout(timer)
-				timer = null
-			}
+	private syncBuiltinState() {
+		this.builtinState.replaceOne({ id: 'runtime' }, this.buildState(), { upsert: true })
+	}
+	private consumePendingActions() {
+		for (const action of this.builtinActions.find({ status: 'pending' })) {
+			if (this.processingActions.has(action.id)) continue
+			this.processingActions.add(action.id)
+			Promise.resolve()
+				.then(() => this.applyBuiltinAction(action))
+				.finally(() => {
+					this.processingActions.delete(action.id)
+				})
 		}
 	}
 
-	setPaused(next: boolean) {
-		this.paused = Boolean(next)
-		return { ok: true, paused: this.paused }
-	}
-
-	setTicks(next: number) {
-		const value = Number(next)
-		if (!Number.isFinite(value) || value < 0) throw new Error('ticks must be a non-negative number')
-		this.ticks = Math.floor(value)
-		return { ok: true, ticks: this.ticks }
-	}
-}
-
-export class PluginBuiltinShowcaseRpc extends RpcTarget {
-	constructor(private readonly plugin: PluginBuiltinShowcase) {
-		super()
-	}
-
-	setPaused(next: boolean) {
-		return this.plugin.setPaused(next)
-	}
-
-	setTicks(next: number) {
-		return this.plugin.setTicks(next)
-	}
-}
-
-declare module '@pluxel/runtime/web' {
-	interface HmrUiRpcMap {
-		PluginBuiltinShowcase: PluginBuiltinShowcaseRpc
-	}
-
-	interface HmrUiSseMap {
-		PluginBuiltinShowcase: {
-			uptimeMs: number
-			uptimeLabel: string
-			ticks: number
-			paused: boolean
-			refreshMs: number
-			tickStep: number
-			maxTicks: number
+	private applyBuiltinAction(action: BuiltinAction) {
+		try {
+			if (action.kind === 'setPaused') {
+				this.paused = Boolean(action.paused)
+			} else if (action.kind === 'setTicks') {
+				const value = Number(action.ticks)
+				if (!Number.isFinite(value) || value < 0) {
+					throw new Error('ticks must be a non-negative number')
+				}
+				this.ticks = Math.floor(value)
+			}
+			this.syncBuiltinState()
+			this.builtinActions.replaceOne(
+				{ id: action.id },
+				{ ...action, status: 'done', error: undefined },
+				{ upsert: true },
+			)
+		} catch (error) {
+			this.builtinActions.replaceOne(
+				{ id: action.id },
+				{
+					...action,
+					status: 'error',
+					error: error instanceof Error ? error.message : String(error),
+				},
+				{ upsert: true },
+			)
 		}
 	}
 }

@@ -1,15 +1,15 @@
 /**
  * HMR protocol types (client/server shared).
  *
- * Keep protocol contracts and UI extension augmentation in one file so `@pluxel/runtime/web`
- * has a single type source of truth.
+ * Keep protocol contracts and UI extension augmentation in one place so
+ * `@pluxel/runtime/web/ui` can stay the single plugin-UI-facing type surface.
  */
 
 /**
  * UI extensibility surface.
  *
  * @example
- * declare module '@pluxel/runtime/web' {
+ * declare module '@pluxel/runtime/web/ui' {
  *   interface HmrUiRpcMap {
  *     MyPlugin: MyPluginRpc
  *   }
@@ -17,10 +17,17 @@
  *   interface HmrUiSseMap {
  *     MyPlugin: MyPluginSsePayload
  *   }
+ *
+ *   interface HmrUiSignalDbMap {
+ *     MyPlugin: {
+ *       events: DemoEvent
+ *     }
+ *   }
  * }
  */
 export interface HmrUiRpcMap {}
 export interface HmrUiSseMap {}
+export interface HmrUiSignalDbMap {}
 
 export type PluginStatusAction = 'start' | 'stop' | 'restart' | 'enable' | 'disable'
 export type ConfigPatch = Record<string, unknown>

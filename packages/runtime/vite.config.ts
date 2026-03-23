@@ -13,12 +13,20 @@ const runtimeAliases = [
 		replacement: fileURLToPath(new URL('./src/web.ts', import.meta.url)),
 	},
 	{
-		find: /^@pluxel\/runtime\/capnweb$/,
-		replacement: fileURLToPath(new URL('./src/capnweb.ts', import.meta.url)),
+		find: /^@pluxel\/runtime\/web\/ui$/,
+		replacement: fileURLToPath(new URL('./src/web/ui.ts', import.meta.url)),
 	},
 	{
-		find: /^@pluxel\/runtime\/signaldb$/,
-		replacement: fileURLToPath(new URL('./src/signaldb.ts', import.meta.url)),
+		find: /^@pluxel\/runtime\/web\/extensions$/,
+		replacement: fileURLToPath(new URL('./src/web/extensions.ts', import.meta.url)),
+	},
+	{
+		find: /^@pluxel\/runtime\/web\/federation$/,
+		replacement: fileURLToPath(new URL('./src/web/federation.ts', import.meta.url)),
+	},
+	{
+		find: /^@pluxel\/runtime\/capnweb$/,
+		replacement: fileURLToPath(new URL('./src/capnweb.ts', import.meta.url)),
 	},
 	{
 		find: /^@pluxel\/runtime\/config$/,
@@ -115,6 +123,26 @@ export default defineConfig({
 							name: 'emotion',
 							test: /[\\/]node_modules[\\/]@emotion[\\/]/,
 							priority: 30,
+						},
+						{
+							name: 'tanstack',
+							test: /[\\/]node_modules[\\/]@tanstack[\\/]/,
+							priority: 28,
+						},
+						{
+							name: 'gqty',
+							test: /[\\/]node_modules[\\/](gqty|graphql)[\\/]/,
+							priority: 26,
+						},
+						{
+							name: 'mf-runtime',
+							test: /[\\/]node_modules[\\/]@module-federation[\\/]/,
+							priority: 24,
+						},
+						{
+							name: 'dnd-kit',
+							test: /[\\/]node_modules[\\/]@dnd-kit[\\/]/,
+							priority: 22,
 						},
 						{
 							name: 'tabler',

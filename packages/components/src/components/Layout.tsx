@@ -134,8 +134,8 @@ export function Layout({
 
 	// 抽屉打开时，移动端锁定页面滚动（提升交互质感）
 	useEffect(() => {
-		if (!lockScrollOnMobile) return
-		if (!(typeof document !== 'undefined')) return
+		if (!lockScrollOnMobile) return undefined
+		if (!(typeof document !== 'undefined')) return undefined
 		const el = document.body
 		if (isMobile && opened) {
 			const prev = el.style.overflow
@@ -144,7 +144,7 @@ export function Layout({
 				el.style.overflow = prev
 			}
 		}
-		return
+		return undefined
 	}, [isMobile, opened, lockScrollOnMobile])
 
 	// —— 用于 render props 的上下文对象 —— //

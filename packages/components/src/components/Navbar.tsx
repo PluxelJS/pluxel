@@ -81,7 +81,7 @@ const Navbar = memo(function Navbar({
 	useEffect(() => {
 		if (currentPath != null) {
 			setPathname((prev) => (prev === currentPath ? prev : currentPath))
-			return
+			return undefined
 		}
 		if (typeof window !== 'undefined') {
 			setPathname(window.location.pathname)
@@ -94,6 +94,7 @@ const Navbar = memo(function Navbar({
 				window.removeEventListener('hashchange', onPop)
 			}
 		}
+		return undefined
 	}, [currentPath])
 
 	// —— 把 LinkComponent 包装成 Mantine NavLink 识别的组件（转发 ref、支持传入其他 a 属性） ——

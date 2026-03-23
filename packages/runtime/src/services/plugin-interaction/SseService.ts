@@ -95,6 +95,10 @@ export class SseService {
 		return () => guard.dispose()
 	}
 
+	expose(factory: SseExtensionFactory, options: RegisterOptions = {}): () => void {
+		return this.registerExtension(factory, options)
+	}
+
 	stream(c: SseHttpContext, namespaces?: string[]): unknown {
 		const params = new URL(c.request.url).searchParams
 		const requestedRaw = this.normalizeNamespaces(namespaces ?? this.parseNamespaces(params))

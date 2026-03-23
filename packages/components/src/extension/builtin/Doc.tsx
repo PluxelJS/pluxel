@@ -8,12 +8,13 @@ import type {
 	BuiltinDocContent,
 	BuiltinDocExtensionDef,
 	BuiltinDocPart,
-} from '../types'
-import { useExtensionContext } from '../types'
+} from '@pluxel/runtime/web/extensions'
+import { useExtensionContext } from '@pluxel/runtime/web/ui'
 import { FloatingToc } from '../../app/plugins/components/FloatingToc'
 import { findScrollableParent, toDomSlug } from '../../app/plugins/config/utils'
+import { BuiltinSignalDbAction } from './SignalDbAction'
 import { BuiltinInfoCard } from './InfoCard'
-import { BuiltinRpcAutoForm } from './RpcAutoForm'
+import { BuiltinSignalDbForm } from './SignalDbForm'
 
 type DocAnchor = { id: string; label: string; depth: number }
 
@@ -153,8 +154,10 @@ export function BuiltinDoc({ def }: { def: BuiltinDocExtensionDef }) {
 		(title: string, block: BuiltinDocBlock) => {
 			if (block.kind === 'infoCard')
 				return <BuiltinInfoCard pluginName={pluginName} block={block} />
-			if (block.kind === 'rpcAutoForm')
-				return <BuiltinRpcAutoForm pluginName={pluginName} title={title} block={block} />
+			if (block.kind === 'form')
+				return <BuiltinSignalDbForm pluginName={pluginName} title={title} block={block} />
+			if (block.kind === 'action')
+				return <BuiltinSignalDbAction pluginName={pluginName} block={block} />
 			return null
 		},
 		[pluginName],

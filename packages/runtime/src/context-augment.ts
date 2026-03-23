@@ -14,7 +14,7 @@ declare module '@pluxel/core' {
 			profile?: string
 			/** HTTP/control-plane runtime settings. */
 			http?: HttpServiceConfig
-			/** UI extension registry/compiler mode. */
+			/** UI extension registry settings. */
 			extensionService?: ExtensionServiceConfig
 		}
 	}

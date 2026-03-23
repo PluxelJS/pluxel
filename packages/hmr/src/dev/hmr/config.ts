@@ -1,4 +1,5 @@
 import { existsSync } from 'node:fs'
+import { createRequire } from 'node:module'
 import { configSourcePlugin, importTypeFixerPlugin } from '@pluxel/build/rolldown'
 import { resolve } from 'pathe'
 import {
@@ -115,6 +116,37 @@ const DEFAULT_OPTIMIZE_DEPS_INCLUDE = [
 	'react-dom/client',
 ] as const
 const DEFAULT_OPTIMIZE_DEPS_INTEROP = ['react', 'react-dom'] as const
+const DEFAULT_CLIENT_DEDUPE = [
+	'react',
+	'react-dom',
+	'@mantine/core',
+	'@mantine/hooks',
+	'@mantine/notifications',
+	'@mantine/dates',
+] as const
+const DEFAULT_CLIENT_OPTIMIZE_DEPS_INCLUDE = [
+	'react',
+	'react-dom',
+	'react/jsx-runtime',
+	'react-dom/client',
+	'@mantine/core',
+	'@mantine/hooks',
+	'@mantine/notifications',
+	'@tabler/icons-react',
+] as const
+const require = createRequire(import.meta.url)
+
+function resolveOptionalPackageEntry(specifier: string): string | null {
+	try {
+		return normalizePath(require.resolve(specifier))
+	} catch {
+		return null
+	}
+}
+
+const TABLER_ICONS_ESM_ENTRY = resolveOptionalPackageEntry(
+	'@tabler/icons-react/dist/esm/icons/index.mjs',
+)
 
 // Prefer workspace TS sources for SSR runner (monorepo/dev).
 // NOTE: We must exclude these conditions from the client environment to avoid resolving Node-only sources.
@@ -268,6 +300,7 @@ export interface HmrViteConfigOptions {
 	root: string
 	fsAllow: string[]
 	deps: ResolvedHMRDependencyConfig
+	clientEntries?: string[]
 	extraPlugins?: Plugin[]
 	runnerPlugin: Plugin
 	httpPlugin: Plugin
@@ -275,6 +308,15 @@ export interface HmrViteConfigOptions {
 	optimizeDepsEnabled?: boolean
 	ssrOptimizeDepsEnabled?: boolean
 	cacheDir?: string
+}
+
+function resolveClientEntries(root: string, entries?: readonly string[]): string[] {
+	if (entries?.length) {
+		return entries.map((entry) => normalizePath(resolve(root, entry)))
+	}
+
+	const defaultEntry = resolve(root, 'src/client.tsx')
+	return existsSync(defaultEntry) ? [normalizePath(defaultEntry)] : []
 }
 
 export function buildHmrViteConfig(opts: HmrViteConfigOptions): InlineConfig {
@@ -294,13 +336,21 @@ export function buildHmrViteConfig(opts: HmrViteConfigOptions): InlineConfig {
 	// Opt-in via config when you want "fastest steady-state" for the UI/runner.
 	const optimizeDepsEnabled = opts.optimizeDepsEnabled === true
 	const ssrOptimizeDepsEnabled = opts.ssrOptimizeDepsEnabled === true
-	const isUiRoot = existsSync(resolve(opts.root, 'src/client.tsx'))
+	const clientEntries = resolveClientEntries(opts.root, opts.clientEntries)
+	const hasClientEntries = clientEntries.length > 0
 	// Prefer Vite's default cacheDir (`<root>/node_modules/.vite`) because sharing a single cache
 	// across different hosts/roots can cause "update deps" metadata mismatches in Vite 8 beta.
 	// If callers want a shared cache, they can still opt-in explicitly via config.
 	const cacheDir = opts.cacheDir
 	const dedupePackages = Array.from(
-		new Set([...REQUIRED_DEDUPE_PACKAGES, ...opts.deps.bridgeModules.map(toBasePackage)]),
+		new Set([
+			...REQUIRED_DEDUPE_PACKAGES,
+			...DEFAULT_CLIENT_DEDUPE,
+			...opts.deps.bridgeModules.map(toBasePackage),
+		]),
+	)
+	const clientOptimizeDepsInclude = Array.from(
+		new Set([...DEFAULT_CLIENT_OPTIMIZE_DEPS_INCLUDE, ...opts.deps.optimizeDepsInclude]),
 	)
 
 	type LoggerWithOnce = Logger & {
@@ -344,6 +394,14 @@ export function buildHmrViteConfig(opts: HmrViteConfigOptions): InlineConfig {
 			},
 		},
 		resolve: {
+			alias: TABLER_ICONS_ESM_ENTRY
+				? [
+						{
+							find: /^@tabler\/icons-react$/,
+							replacement: TABLER_ICONS_ESM_ENTRY,
+						},
+					]
+				: [],
 			conditions: clientConditions,
 			dedupe: dedupePackages,
 			// Ensure linked workspaces resolve to real filesystem paths so the runner does not
@@ -383,13 +441,21 @@ export function buildHmrViteConfig(opts: HmrViteConfigOptions): InlineConfig {
 		// Performance-first dev host: keep optimizer mostly off by default.
 		// Vite 8: `optimizeDeps.disabled` is deprecated.
 		//
-		// For the HMR UI (`src/client.tsx` exists), enable minimal crawling from the UI entry.
+		// For browser entries, enable deterministic crawling from the served entry sources.
 		// This avoids first-load races where Vite emits optimized dep URLs before they exist on disk.
 		optimizeDeps: optimizeDepsEnabled
-			? {}
-			: isUiRoot
+			? {
+					entries: clientEntries,
+					include: clientOptimizeDepsInclude,
+					needsInterop: Array.from(opts.deps.optimizeDepsInterop),
+					ignoreOutdatedRequests: true,
+					holdUntilCrawlEnd: true,
+				}
+			: hasClientEntries
 				? {
-						entries: ['src/client.tsx'],
+						entries: clientEntries,
+						include: clientOptimizeDepsInclude,
+						needsInterop: Array.from(opts.deps.optimizeDepsInterop),
 						ignoreOutdatedRequests: true,
 						// Avoid a first-load race where Vite emits optimized dep URLs before they exist on disk.
 						holdUntilCrawlEnd: true,

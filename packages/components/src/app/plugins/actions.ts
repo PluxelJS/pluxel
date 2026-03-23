@@ -4,7 +4,7 @@ import type {
 	PluginStatusBatchAction,
 	PluginStatusBatchResult,
 	PluginStatusMutationResult,
-} from '@pluxel/runtime/web'
+} from '@pluxel/runtime/web/ui'
 import type { RpcStub } from 'capnweb'
 import { invokeRpc } from '../rpc'
 import { getPluginOverviewSnapshot, requestPluginOverviewRefetch } from './data'
@@ -98,7 +98,9 @@ export async function buildStartPlan(
 			if (detailVisited.has(name)) continue
 			detailVisited.add(name)
 			try {
-				const detail = await rpc.plugin(name).detail()
+				const detail = (await rpc.plugin(name).detail()) as {
+					dependencies?: Array<{ name?: string; optional?: boolean }>
+				} | null
 				const deps = (detail?.dependencies ?? [])
 					.filter((d: any) => !d?.optional)
 					.map((d: any) => (typeof d?.name === 'string' ? d.name.trim() : ''))
@@ -232,10 +234,17 @@ export async function updatePluginStatuses(
 					error: result.commitError ?? '未知错误',
 				}))
 			}
-			for (const [idx, action] of actions.entries()) {
-				if (normalized[idx]?.ok) {
-					invalidate({ topic: 'plugin-status', pluginName: action.name, reason: action.action })
-				}
+			const succeeded = normalized
+				.map((item, idx) => ({ item, action: actions[idx] }))
+				.filter((entry) => entry.item?.ok)
+			if (succeeded.length > 0) {
+				const first = succeeded[0]?.action
+				invalidate({
+					topic: 'plugin-status',
+					pluginName: succeeded.length === 1 ? first?.name : undefined,
+					reason:
+						succeeded.length === 1 && first ? first.action : 'batch',
+				})
 			}
 			return normalized
 		})

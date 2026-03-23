@@ -162,16 +162,16 @@ function usePluginDetail(pluginName?: string) {
 	}
 	const ready = Boolean(scope?.name)
 
-	const loading = Boolean(detailQuery.$state.isLoading || detailQuery.$state.isFetching)
+	const loading = Boolean(detailQuery.$state.isLoading)
 	const error = detailQuery.$state.error
 
-	const refetch = (force?: boolean) => {
+	const refetch = (force?: boolean): Promise<void> => {
 		type Refetchable = { $refetch?: (force?: boolean) => Promise<unknown> }
 		const tasks: Promise<unknown>[] = []
 		const detailRefetch = (detailQuery as unknown as Refetchable).$refetch
 		if (typeof detailRefetch === 'function') tasks.push(detailRefetch(force))
 		if (tasks.length === 0) return Promise.resolve()
-		return Promise.allSettled(tasks).then(() => undefined)
+		return Promise.allSettled(tasks).then((): void => undefined)
 	}
 
 	return {
@@ -340,7 +340,7 @@ export const PluginScreen = memo(function PluginScreen({ pluginName }: PluginScr
 	const contextValue = useMemo(() => {
 		const effectiveScope = scope ?? stable?.scope
 		if (!effectiveScope) return null
-		const rawSource = effectiveStatusEntry?.source ?? effectiveStatus?.source
+		const rawSource = resolvedStatus?.source ?? statusRef.current?.source ?? null
 		const source = {
 			kind: (rawSource?.kind ?? 'unknown') as PluginSourceKind,
 			moduleId: rawSource?.moduleId ?? null,

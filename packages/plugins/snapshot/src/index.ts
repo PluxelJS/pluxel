@@ -13,7 +13,7 @@ export class SnapshotPlugin extends BasePlugin {
 	override init(): void {
 		// UI extension + RPC API (for host toolbar buttons).
 		snapshotUi.bind(this.ctx)
-		this.ctx.ext.rpc.registerExtension(() => new SnapshotRpc(this))
+		this.ctx.ext.rpc.expose(() => new SnapshotRpc(this))
 
 		this.ctx.logger.info('Snapshot builtin ready')
 	}
@@ -80,7 +80,7 @@ export class SnapshotPlugin extends BasePlugin {
 
 export default SnapshotPlugin
 
-declare module '@pluxel/runtime/web' {
+declare module '@pluxel/runtime/web/ui' {
 	interface HmrUiRpcMap {
 		Snapshot: SnapshotRpc
 	}

@@ -1,5 +1,5 @@
 import { Badge, Button, Code, Group, ScrollArea, Select, Stack, Text, Title } from '@mantine/core'
-import type { LogLevel, PluginLevelsSnapshot, PluginLogLevel } from '@pluxel/runtime/web'
+import type { LogLevel, PluginLevelsSnapshot, PluginLogLevel } from '@pluxel/runtime/web/ui'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { rpcErrorMessage, useHmrWebClient } from '../../../rpc'
 

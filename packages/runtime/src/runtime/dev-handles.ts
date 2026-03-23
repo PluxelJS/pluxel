@@ -16,6 +16,10 @@ export type DevRuntimeHandles = {
 		}
 		executeFiles?: (files: string[], keepOrder?: boolean) => Promise<void>
 	}
+	extensions?: {
+		// HMR consumes author-facing source declarations and pushes compiled MF artifacts into runtime.
+		bindUiSource: (ctx: Context, options: { entryPath: string }) => () => void
+	}
 	bundler?: {
 		watchTinypoolWorker: (
 			ctx: Context,

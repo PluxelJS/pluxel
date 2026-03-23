@@ -120,16 +120,23 @@ export interface CreateRouterOptions {
 }
 
 export function createAppRouter(options: CreateRouterOptions = {}) {
+	const enableIntentPreload =
+		(typeof import.meta !== 'undefined' &&
+			typeof import.meta.env === 'object' &&
+			import.meta.env &&
+			'PROD' in import.meta.env
+			? import.meta.env.PROD
+			: process.env.NODE_ENV === 'production') === true
 	const history =
 		options.history ??
 		(typeof window !== 'undefined' ? createBrowserHistory() : createMemoryHistory())
 	return createRouter({
 		routeTree,
 		history,
-		defaultPreload: 'intent',
+		defaultPreload: enableIntentPreload ? 'intent' : false,
 		defaultNotFoundComponent: NotFoundRoute,
 		defaultErrorComponent: RouteError,
-	})
+	} as never)
 }
 
 const _routerForTypes = createAppRouter()

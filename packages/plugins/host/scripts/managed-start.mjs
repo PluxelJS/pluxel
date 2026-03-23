@@ -77,7 +77,6 @@ const ctx = new Context({
 		controlPlane: { web: true, rpc: true, sse: true, auth: 'none' },
 		uiAssets: 'static-built',
 	},
-	extensionService: { mode: 'registry-only' },
 })
 
 await ctx.loader.preloadPlugins(builtins, { strict: true, commit: true })

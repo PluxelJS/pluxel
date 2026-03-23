@@ -4,6 +4,7 @@ import {
 	Grid,
 	Group,
 	Paper,
+	rem,
 	Stack,
 	Text,
 	Title,
@@ -48,7 +49,7 @@ export function HomeIntro({ lastRoute }: { lastRoute: string | null }) {
 				}}
 			>
 				<Stack gap="md" maw={720}>
-					<Text size="sm" c="dimmed" tt="uppercase" fw={600} letterSpacing={0.6}>
+					<Text size="sm" c="dimmed" tt="uppercase" fw={600} style={{ letterSpacing: rem(0.6) }}>
 						欢迎回来
 					</Text>
 					<Title order={2} fw={700}>

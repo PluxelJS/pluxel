@@ -37,7 +37,7 @@ describe('@pluxel/hmr attachHmrRuntime', () => {
 				uiAssets: 'disabled',
 				controlPlane: { web: false, rpc: false, sse: false, auth: 'none' },
 			},
-			extensionService: { mode: 'disabled' },
+			extensionService: { enabled: false },
 		})
 		const res = await attachHmrRuntime(ctx, {
 			cwd: fixture.path,
@@ -49,7 +49,7 @@ describe('@pluxel/hmr attachHmrRuntime', () => {
 		expect(hasRuntimeModuleAdapter(ctx)).toBe(true)
 		expect(getRuntimeModuleAdapter(ctx).normalizeId('/tmp/a.ts')).toBe('/tmp/a.ts')
 		expect(getDevRuntimeHandles(ctx)?.bundler?.watchTinypoolWorker).toBeTypeOf('function')
-		expect((ctx.config as any)?.extensionService?.compiler).toBeTruthy()
+		expect(getDevRuntimeHandles(ctx)?.extensions?.bindUiSource).toBeTypeOf('function')
 
 		await res.hmr.start()
 		await res.hmr.close()
@@ -98,4 +98,3 @@ describe('@pluxel/hmr attachHmrRuntime', () => {
 		await ctx.effects.dispose()
 	})
 })
-

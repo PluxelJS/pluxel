@@ -92,6 +92,7 @@ function applyOverview(overview: PluginOverview) {
 
 function setLoading(isLoading: boolean) {
 	const prev = snapshot.current
+	if (prev.hasSnapshot && isLoading) return
 	if (prev.isLoading === isLoading) return
 	setSnapshot({ ...prev, isLoading })
 }
@@ -177,7 +178,7 @@ export function PluginOverviewProvider({ children }: { children?: ReactNode }) {
 	const query = useQuery({
 		suspense: false,
 		operationName: 'PluginOverview',
-		notifyOnNetworkStatusChange: true,
+		notifyOnNetworkStatusChange: false,
 		refetchOnReconnect: false,
 		refetchOnWindowVisible: false,
 		fetchInBackground: true,
@@ -207,7 +208,7 @@ export function PluginOverviewProvider({ children }: { children?: ReactNode }) {
 		},
 	})
 
-	const isLoading = query.$state.isLoading === true || query.$state.isFetching === true
+	const isLoading = query.$state.isLoading === true
 	const error = query.$state.error
 
 	useEffect(() => {
@@ -235,14 +236,21 @@ export function PluginOverviewProvider({ children }: { children?: ReactNode }) {
 	}, [overview, isLoading, error])
 
 	useEffect(() => {
-		registerPluginOverviewRefetcher(() => query.$refetch(true).then(() => undefined))
-		return () => registerPluginOverviewRefetcher(null)
+		const refetchOverview = async (): Promise<void> => {
+			await query.$refetch(true)
+		}
+		registerPluginOverviewRefetcher(
+			refetchOverview,
+		)
+		return (): void => {
+			registerPluginOverviewRefetcher(null)
+		}
 	}, [query.$refetch])
 
 	useEffect(() => {
 		let inflight = false
 		let pending = false
-		const handle = () => {
+		const handle = (): void => {
 			if (error) return
 			if (inflight) {
 				pending = true

@@ -36,6 +36,7 @@ export type {
 } from './web/logs'
 export {
 	HMR_EXTENSIONS_BASE,
+	HMR_EXTENSIONS_ARTIFACTS_BASE,
 	HMR_EXTENSIONS_EVENTS_PATH,
 	HMR_EXTENSIONS_MANIFEST_PATH,
 	HMR_EXTENSIONS_MODULES_BASE,
@@ -46,12 +47,25 @@ export {
 	HMR_META_INFO_PATH,
 	HMR_META_SSE_PATH,
 	HMR_TRANSPORT_PATHS,
+	hmrExtensionArtifactBasePath,
+	hmrExtensionArtifactPath,
 	hmrExtensionModulePath,
 	hmrLogStreamPath,
+	hmrSignalDbCollectionPath,
 	joinPath,
 } from './web/paths'
 export * from './web/plugin-ui/types'
-export { extensionVendorPackages, type ExtensionVendorPackage } from './web/plugin-ui/vendors'
+export {
+	EXTENSION_FEDERATION_EXPOSE,
+	EXTENSION_FEDERATION_MANIFEST_FILE,
+	EXTENSION_FEDERATION_REMOTE_ENTRY_FILE,
+	EXTENSION_FEDERATION_SHARE_STRATEGY,
+	extensionFederationModuleId,
+	extensionFederationRemoteName,
+	extensionFederationSharedPackages,
+	sanitizeExtensionPluginName,
+	type ExtensionFederationSharedPackage,
+} from './web/plugin-ui/federation'
 export * from './web/protocol'
 export { HmrWebClientProvider, type HmrWebClientProviderProps, useHmrWebClient } from './web/react'
 export { invokeRpc, rpcErrorMessage } from './web/rpc'
@@ -61,6 +75,3 @@ export type {
 	SseClientWithNamespaces,
 	SseMessage,
 } from './web/sse'
-
-// Ensure module augmentation for '@pluxel/runtime/web' is included in the TS program.
-import './web/plugin-ui-augment'

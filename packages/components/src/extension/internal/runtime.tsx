@@ -9,10 +9,19 @@ import type {
 	ExtensionPoint,
 	PluginExtensionContext,
 	PluginUIModule,
-} from '../types'
+} from '@pluxel/runtime/web/ui'
 import { buildExtensionHref, normalizeExtensionRouteSubPath } from '../paths'
 
 type RouteComponent = (ctx: PluginExtensionContext) => ReactNode
+type RuntimeRegistration = { point: ExtensionPoint; item: ExtensionItem<any> }
+
+interface PreparedPluginRuntime {
+	setupCleanup?: () => void
+	i18n?: PluginUIModule['i18n']
+	extensionRegistrations: RuntimeRegistration[]
+	navRegistrations: RuntimeRegistration[]
+	routeMap: Map<string, RouteComponent>
+}
 
 class ExtensionRuntime {
 	private readonly pluginCleanups = new Map<string, Array<() => void>>()
@@ -93,11 +102,9 @@ class ExtensionRuntime {
 		}
 
 		extRuntime('loading runtime %s@%s', pluginName, sourceHash)
-		this.disposePlugin(pluginName)
-
 		const evaluated = await this.evaluateModule(importer)
-		await this.registerPlugin(pluginName, evaluated)
-		this.pluginHashes.set(pluginName, sourceHash)
+		const prepared = await this.preparePlugin(pluginName, evaluated)
+		this.commitPlugin(pluginName, prepared, sourceHash)
 
 		this.notify()
 		this.notifyPlugin(pluginName)
@@ -107,7 +114,9 @@ class ExtensionRuntime {
 	unloadPluginModule(pluginName: string): void {
 		if (!this.pluginCleanups.has(pluginName)) return
 		extRuntime('unload runtime %s', pluginName)
-		this.disposePlugin(pluginName)
+		extensionRegistry.batch(() => {
+			this.disposePlugin(pluginName)
+		})
 		this.notify()
 		this.notifyPlugin(pluginName)
 	}
@@ -129,145 +138,175 @@ class ExtensionRuntime {
 		unregisterPluginI18n(pluginName)
 	}
 
-	private async registerPlugin(pluginName: string, module: PluginUIModule): Promise<void> {
-		const cleanups: Array<() => void> = []
-
-		if (module.i18n) {
-			registerPluginI18n(pluginName, module.i18n)
+	private async preparePlugin(
+		pluginName: string,
+		module: PluginUIModule,
+	): Promise<PreparedPluginRuntime> {
+		const prepared: PreparedPluginRuntime = {
+			i18n: module.i18n,
+			extensionRegistrations: [],
+			navRegistrations: [],
+			routeMap: new Map(),
 		}
 
-		if (module.setup) {
-			const maybe = await module.setup({ pluginName })
-			if (typeof maybe === 'function') cleanups.push(maybe)
-		}
-
-		if (module.extensions) {
-			const registrations: Array<{ point: ExtensionPoint; item: ExtensionItem<any> }> = []
-			for (const ext of module.extensions) {
-				const extId = `${pluginName}:${ext.id}`
-				const extRender = (ext as unknown as { render?: unknown })?.render
-				const rawMeta = (ext as unknown as { meta?: unknown })?.meta
-				const extraMeta =
-					rawMeta && typeof rawMeta === 'object' ? (rawMeta as Record<string, unknown>) : {}
-				const meta = {
-					...extraMeta,
-					id: extId,
-					pluginName,
-					priority: ext.priority ?? 0,
-					// Default to hiding plugin-provided UI when the plugin is not running.
-					// Plugins can opt out per extension via `requireRunning: false`.
-					requireRunning: ext.requireRunning ?? true,
-				} as ExtensionMeta
-
-				registrations.push({
-					point: ext.point,
-					item: {
-						meta,
-						render: (ctx) => {
-							if (typeof extRender !== 'function') {
-								return (
-									<div
-										style={{
-											padding: 8,
-											borderRadius: 8,
-											border: '1px solid rgba(255, 0, 0, 0.25)',
-											background: 'rgba(255, 0, 0, 0.06)',
-											fontSize: 12,
-											lineHeight: 1.4,
-										}}
-									>
-										<div style={{ fontWeight: 600 }}>
-											Invalid extension: {pluginName} · {ext.point}
-										</div>
-										<div style={{ opacity: 0.85 }}>
-											Expected <code>render(ctx)</code> to be a function.
-										</div>
-									</div>
-								)
-							}
-							return (
-								<ExtensionErrorBoundary
-									key={meta.id}
-									pluginName={pluginName}
-									extensionId={meta.id}
-									point={ext.point}
-									fallback={
-										process.env.NODE_ENV !== 'production'
-											? ({ error }) => (
-													<div
-														style={{
-															padding: 8,
-															borderRadius: 8,
-															border: '1px solid rgba(255, 0, 0, 0.25)',
-															background: 'rgba(255, 0, 0, 0.06)',
-															fontSize: 12,
-															lineHeight: 1.4,
-														}}
-													>
-														<div style={{ fontWeight: 600 }}>
-															Extension render failed: {pluginName} · {ext.point}
-														</div>
-														<div style={{ opacity: 0.85 }}>
-															{error?.message ?? String(error ?? 'unknown error')}
-														</div>
-													</div>
-												)
-											: null
-									}
-								>
-									{(extRender as (ctx: unknown) => ReactNode)(ctx)}
-								</ExtensionErrorBoundary>
-							)
-						},
-					},
-				})
-			}
-			if (registrations.length > 0) {
-				cleanups.push(extensionRegistry.registerMany(registrations))
-			}
-		}
-
-		if (module.routes) {
-			let routeMap = this.routeComponents.get(pluginName)
-			if (!routeMap) {
-				routeMap = new Map()
-				this.routeComponents.set(pluginName, routeMap)
-			} else {
-				routeMap.clear()
+		try {
+			if (module.setup) {
+				const maybe = await module.setup({ pluginName })
+				if (typeof maybe === 'function') {
+					prepared.setupCleanup = maybe
+				}
 			}
 
-			const navRegistrations: Array<{ point: ExtensionPoint; item: ExtensionItem<any> }> = []
-			for (const route of module.routes) {
-				const normalizedPath = normalizeExtensionRouteSubPath(route.definition.path)
-				routeMap.set(normalizedPath, route.render)
-
-				if (route.definition.addToNav) {
-					const frame = route.definition.frame === 'standalone' ? 'standalone' : 'shell'
-					const meta: ExtensionMeta<'navbar:items'> = {
-						id: `${pluginName}:route:${normalizedPath || '/'}`,
+			if (module.extensions) {
+				for (const ext of module.extensions) {
+					const extId = `${pluginName}:${ext.id}`
+					const extRender = (ext as unknown as { render?: unknown })?.render
+					const rawMeta = (ext as unknown as { meta?: unknown })?.meta
+					const extraMeta =
+						rawMeta && typeof rawMeta === 'object' ? (rawMeta as Record<string, unknown>) : {}
+					const meta = {
+						...extraMeta,
+						id: extId,
 						pluginName,
-						priority: route.definition.navPriority ?? 0,
-						requireRunning: false,
-						label: route.definition.title,
-						href: buildExtensionHref(pluginName, normalizedPath, frame),
-						icon: route.definition.icon,
-					}
+						priority: ext.priority ?? 0,
+						// Default to hiding plugin-provided UI when the plugin is not running.
+						// Plugins can opt out per extension via `requireRunning: false`.
+						requireRunning: ext.requireRunning ?? true,
+					} as ExtensionMeta
 
-					navRegistrations.push({
-						point: 'navbar:items' satisfies ExtensionPoint,
+					prepared.extensionRegistrations.push({
+						point: ext.point,
 						item: {
 							meta,
-							render: () => null,
+							render: (ctx) => {
+								if (typeof extRender !== 'function') {
+									return (
+										<div
+											style={{
+												padding: 8,
+												borderRadius: 8,
+												border: '1px solid rgba(255, 0, 0, 0.25)',
+												background: 'rgba(255, 0, 0, 0.06)',
+												fontSize: 12,
+												lineHeight: 1.4,
+											}}
+										>
+											<div style={{ fontWeight: 600 }}>
+												Invalid extension: {pluginName} · {ext.point}
+											</div>
+											<div style={{ opacity: 0.85 }}>
+												Expected <code>render(ctx)</code> to be a function.
+											</div>
+										</div>
+									)
+								}
+								return (
+									<ExtensionErrorBoundary
+										key={meta.id}
+										pluginName={pluginName}
+										extensionId={meta.id}
+										point={ext.point}
+										fallback={
+											process.env.NODE_ENV !== 'production'
+												? ({ error }) => (
+														<div
+															style={{
+																padding: 8,
+																borderRadius: 8,
+																border: '1px solid rgba(255, 0, 0, 0.25)',
+																background: 'rgba(255, 0, 0, 0.06)',
+																fontSize: 12,
+																lineHeight: 1.4,
+															}}
+														>
+															<div style={{ fontWeight: 600 }}>
+																Extension render failed: {pluginName} · {ext.point}
+															</div>
+															<div style={{ opacity: 0.85 }}>
+																{error?.message ?? String(error ?? 'unknown error')}
+															</div>
+														</div>
+													)
+												: null
+										}
+									>
+										{(extRender as (ctx: unknown) => ReactNode)(ctx)}
+									</ExtensionErrorBoundary>
+								)
+							},
 						},
 					})
 				}
 			}
-			if (navRegistrations.length > 0) {
-				cleanups.push(extensionRegistry.registerMany(navRegistrations))
+
+			if (module.routes) {
+				for (const route of module.routes) {
+					const normalizedPath = normalizeExtensionRouteSubPath(route.definition.path)
+					prepared.routeMap.set(normalizedPath, route.render)
+
+					if (route.definition.addToNav) {
+						const frame = route.definition.frame === 'standalone' ? 'standalone' : 'shell'
+						const meta: ExtensionMeta<'navbar:items'> = {
+							id: `${pluginName}:route:${normalizedPath || '/'}`,
+							pluginName,
+							priority: route.definition.navPriority ?? 0,
+							requireRunning: false,
+							label: route.definition.title,
+							href: buildExtensionHref(pluginName, normalizedPath, frame),
+							icon: route.definition.icon,
+						}
+
+						prepared.navRegistrations.push({
+							point: 'navbar:items' satisfies ExtensionPoint,
+							item: {
+								meta,
+								render: () => null,
+							},
+						})
+					}
+				}
 			}
+
+			return prepared
+		} catch (error) {
+			if (prepared.setupCleanup) {
+				try {
+					prepared.setupCleanup()
+				} catch {
+					// ignore cleanup errors
+				}
+			}
+			throw error
+		}
+	}
+
+	private commitPlugin(
+		pluginName: string,
+		prepared: PreparedPluginRuntime,
+		sourceHash: string,
+	): void {
+		const cleanups: Array<() => void> = []
+		if (prepared.setupCleanup) {
+			cleanups.push(prepared.setupCleanup)
 		}
 
-		this.pluginCleanups.set(pluginName, cleanups)
+		extensionRegistry.batch(() => {
+			this.disposePlugin(pluginName)
+
+			if (prepared.i18n) {
+				registerPluginI18n(pluginName, prepared.i18n)
+			}
+			if (prepared.extensionRegistrations.length > 0) {
+				cleanups.push(extensionRegistry.registerMany(prepared.extensionRegistrations))
+			}
+			if (prepared.navRegistrations.length > 0) {
+				cleanups.push(extensionRegistry.registerMany(prepared.navRegistrations))
+			}
+
+			this.routeComponents.set(pluginName, new Map(prepared.routeMap))
+			this.pluginCleanups.set(pluginName, cleanups)
+			this.pluginHashes.set(pluginName, sourceHash)
+		})
 	}
 
 	private async evaluateModule(

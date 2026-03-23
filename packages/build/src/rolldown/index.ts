@@ -1,6 +1,8 @@
 export { appendDtsImport } from './plugins/appendDtsImport'
 export type { ConfigSourcePluginOptions } from './plugins/configSourcePlugin'
 export { configSourcePlugin } from './plugins/configSourcePlugin'
+export type { HmrUiBridgePluginOptions } from './plugins/hmrUiBridgePlugin'
+export { hmrUiBridgePlugin } from './plugins/hmrUiBridgePlugin'
 export type {
 	ImportTracker,
 	ImportTrackerPluginOptions,

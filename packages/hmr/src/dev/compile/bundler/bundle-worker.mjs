@@ -12,7 +12,7 @@ const normalizeOutput = (res) => {
 
 export default async function runBundle(job) {
 	const { entry, root, resolve } = job
-	const external = job.vendors ?? job.external ?? []
+	const external = job.external ?? []
 	const externalSet = new Set(external)
 	const target = job.target ?? 'node'
 	const label = typeof job.label === 'string' && job.label.trim() ? job.label.trim() : null

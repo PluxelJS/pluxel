@@ -11,12 +11,18 @@
 	"profiles": {
 		"plugins-host": {
 			"enabled": [],
-			"builtin": ["@pluxel/snapshot", "pluxel-plugin-market-ui"],
-			"include": ["packages/plugins/host/src/demo/**/*.ts"],
+			"builtin": [],
+			"include": [
+				"packages/plugins/host/src/demo/**/*.ts",
+				"packages/plugins/snapshot/src/index.ts",
+				"packages/plugins/market/src/index.ts"
+			],
 			"exclude": [
 				"packages/plugins/host/src/demo/**/ui/**",
 				"packages/plugins/host/src/demo/env.ts",
-				"packages/plugins/host/src/demo/index.ts"
+				"packages/plugins/host/src/demo/index.ts",
+				"packages/plugins/snapshot/src/ui/**",
+				"packages/plugins/market/src/ui/**"
 			]
 		}
 	}

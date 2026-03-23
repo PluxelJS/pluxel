@@ -1,8 +1,6 @@
 // packages/components/src/extension/internal/registry.ts
 
-export { ExtensionProvider, useExtensionContext } from '../types'
-
-import { useCallback, useMemo, useSyncExternalStore } from 'react'
+import { type ReactNode, useCallback, useMemo, useSyncExternalStore } from 'react'
 import {
 	ExtensionProvider,
 	isExtensionPluginRunning,
@@ -14,10 +12,15 @@ import {
 	type ExtensionPointCtx,
 	type PluginExtensionContext,
 	type GlobalExtensionContext,
-} from '../types'
+} from '@pluxel/runtime/web/ui'
 
 // 稳定的空数组引用，避免 useSyncExternalStore 无限循环
 const EMPTY_ITEMS: ExtensionItem[] = []
+const EMPTY_NODES: ReactNode[] = []
+
+export interface UseExtensionsOptions {
+	renderNodes?: boolean
+}
 
 /**
  * 扩展注册表
@@ -26,7 +29,6 @@ class ExtensionRegistry {
 	private extensions = new Map<ExtensionPoint, Map<string, ExtensionItem<any>>>()
 	private listeners = new Set<() => void>()
 	private pointListeners = new Map<ExtensionPoint, Set<() => void>>()
-	private version = 0
 	private snapshotCache = new Map<ExtensionPoint, ExtensionItem<any>[]>()
 	private batchDepth = 0
 	private batchedPoints = new Set<ExtensionPoint>()
@@ -114,7 +116,7 @@ class ExtensionRegistry {
 		if (cached) return cached as ExtensionItem<P>[]
 
 		const bucket = this.extensions.get(point)
-		if (!bucket) return EMPTY_ITEMS as ExtensionItem<P>[] // 使用稳定的空数组
+		if (!bucket) return EMPTY_ITEMS as unknown as ExtensionItem<P>[] // 使用稳定的空数组
 
 		const items = Array.from(bucket.values()).sort((a, b) => {
 			const prio = b.meta.priority - a.meta.priority
@@ -122,7 +124,7 @@ class ExtensionRegistry {
 			return a.meta.id.localeCompare(b.meta.id)
 		})
 		this.snapshotCache.set(point, items)
-		return items as ExtensionItem<P>[]
+		return items as unknown as ExtensionItem<P>[]
 	}
 
 	/**
@@ -191,13 +193,6 @@ class ExtensionRegistry {
 		}
 	}
 
-	/**
-	 * 获取版本号
-	 */
-	getVersion(): number {
-		return this.version
-	}
-
 	private invalidateCache(point: ExtensionPoint): void {
 		this.snapshotCache.delete(point)
 	}
@@ -211,7 +206,6 @@ class ExtensionRegistry {
 	}
 
 	private notifyPoints(points: Set<ExtensionPoint>): void {
-		this.version++
 		for (const cb of this.listeners) {
 			try {
 				cb()
@@ -235,9 +229,13 @@ export const extensionRegistry = new ExtensionRegistry()
 /**
  * Hook: 获取扩展点的扩展
  */
-export function useExtensions<P extends ExtensionPoint>(point: P) {
+export function useExtensions<P extends ExtensionPoint>(
+	point: P,
+	options: UseExtensionsOptions = {},
+) {
 	const ctx = useExtensionContext()
 	const isPluginPoint = point.startsWith('plugin:')
+	const renderNodes = options.renderNodes !== false
 
 	const subscribe = useCallback(
 		(listener: () => void) => extensionRegistry.subscribePoint(point, listener),
@@ -289,7 +287,7 @@ export function useExtensions<P extends ExtensionPoint>(point: P) {
 
 	// 渲染节点
 	const nodes = useMemo(() => {
-		if (!ctxForPoint) return []
+		if (!renderNodes || !ctxForPoint) return EMPTY_NODES
 		// Important: extension components read ctx via hooks. For plugin:* points we must
 		// provide a plugin-scoped context even though the root provider is global.
 		const scoped = ctxForPoint as unknown as ExtensionContext
@@ -301,7 +299,7 @@ export function useExtensions<P extends ExtensionPoint>(point: P) {
 				{item.render(scoped as any)}
 			</ExtensionProvider>
 		))
-	}, [visible, ctxForPoint, point])
+	}, [ctxForPoint, point, renderNodes, visible])
 
 	return { items: visible as ExtensionItem<P>[], nodes, context: ctxForPoint }
 }

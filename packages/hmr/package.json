@@ -21,6 +21,10 @@
 			"@pluxel/source": "./src/plugin.ts",
 			"default": "./dist/plugin.mjs"
 		},
+		"./plugin-build": {
+			"@pluxel/source": "./src/plugin-build.ts",
+			"default": "./dist/plugin-build.mjs"
+		},
 		"./snapshot": {
 			"@pluxel/source": "./src/snapshot.ts",
 			"default": "./dist/snapshot.mjs"
@@ -39,6 +43,7 @@
 	},
 	"dependencies": {
 		"@logtape/logtape": "^2.0.2",
+		"@module-federation/vite": "1.13.1",
 		"@pluxel/core": "workspace:*",
 		"@pluxel/runtime": "workspace:*",
 		"@rolldown/pluginutils": "1.0.0-rc.5",
@@ -66,6 +71,7 @@
 			"./diagnose": "./dist/diagnose.mjs",
 			"./host": "./dist/host.mjs",
 			"./plugin": "./dist/plugin.mjs",
+			"./plugin-build": "./dist/plugin-build.mjs",
 			"./snapshot": "./dist/snapshot.mjs",
 			"./package.json": "./package.json"
 		}

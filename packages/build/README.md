@@ -1,50 +1,55 @@
 # @pluxel/build (internal)
 
-Internal build helpers for the Pluxel monorepo. This package is not meant for external consumption; it powers the local CLI and rolldown integration used by Pluxel plugins and packages.
+`@pluxel/build` 是 Pluxel 内部 build helper 包，供 `@pluxel/cli` 和 `@pluxel/hmr` 使用。
 
-## Contents
+它的目标只有一个：把 authoring 源码稳定降级成干净的运行时产物。
 
-### Rolldown/Vite plugins
+## 关键插件
 
-All plugins are exported from `@pluxel/build/rolldown`.
+`@pluxel/build/rolldown` 导出几类核心插件：
 
 - `configSourcePlugin`
-  - Extracts `@Config(...)` schema source and `configs.use(...)` schema usage at build time.
-  - Injects `__setConfigSource__` / `__registerConfigSchema__` / `__registerUsedFeatures__`.
-  - Uses the bundler’s parser (`this.parse`) and normalizes schema source via AST (no comment/TS syntax leakage).
+  - 提取 `@Config(...)` 和 `configs.use(...)` 的 schema source
+- `hmrUiBridgePlugin`
+  - 把 `ui(...).bind(ctx)` 重写成 `ctx.ext.ui.packaged()`
+  - 只接受 `@pluxel/hmr/plugin` 的 named import，保证 rewrite 可判定
 - `importTypeFixerPlugin`
-  - Converts type-only imports to runtime imports for constructor parameter DI in `@Plugin` classes.
-  - Uses AST spans to safely remove `type` modifiers.
-- `createImportTracker`
-  - Tracks static/dynamic imports that match provided package prefixes.
-- `appendDtsImport`
-  - Appends a snippet to generated `.d.ts` assets.
-- `rewriteDtsModuleAugmentations`
-  - Rewrites `declare module 'x' {}` names inside `.d.ts` outputs.
-- `rewriteDtsText`
-  - Rewrites plain text inside generated `.d.ts` outputs (useful to prevent private module specifiers leaking).
-- `assertBundleNoText`
-  - Fails the build if forbidden text is found in generated outputs (excluding sourcemaps by default).
+  - 修正 `@Plugin` 类构造参数需要的 type-only import
 
-### CLI helpers
+其余工具主要用于 `.d.ts` 重写、bundle 守卫和 import 跟踪。
 
-Exports live under `@pluxel/build/cli` and are used by Pluxel’s internal build tooling:
+## CLI overlay
 
-- `tsdown-runner` and related configuration helpers
-- Shared CLI config/rules/utils
+`@pluxel/build/cli` 里的 `cliTsdownOverlay` 是默认插件构建基线，包含：
 
-## Usage (internal)
+- `importTypeFixerPlugin()`
+- `configSourcePlugin()`
+- `hmrUiBridgePlugin()`
+
+目标是让最终产物不再残留 authoring/HMR 语义。
+
+## Usage
 
 ```ts
-import { configSourcePlugin, importTypeFixerPlugin } from '@pluxel/build/rolldown'
+import {
+	configSourcePlugin,
+	hmrUiBridgePlugin,
+	importTypeFixerPlugin,
+} from '@pluxel/build/rolldown'
 
 export default {
-  plugins: [importTypeFixerPlugin(), configSourcePlugin()],
+	plugins: [importTypeFixerPlugin(), configSourcePlugin(), hmrUiBridgePlugin()],
 }
+```
+
+```ts
+import { cliTsdownOverlay } from '@pluxel/build/cli'
+
+export default cliTsdownOverlay
 ```
 
 ## Notes
 
-- Parser support comes from the bundler (rolldown/vite) via `this.parse`.
-- `oxc-parser` is only used in tests for schema normalization.
-- Usage chain (intended): `@pluxel/hmr` / `@pluxel/cli` use `@pluxel/build` internally; published artifacts must not require users to install internal workspace packages (see `docs/PACKAGING.md`).
+- parser 能力来自 bundler 的 `this.parse`
+- `oxc-parser` 只在测试里做 AST 校验
+- 最终发布产物不能要求用户安装内部 workspace 包

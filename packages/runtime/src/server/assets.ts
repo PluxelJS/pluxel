@@ -1,3 +1,4 @@
+import { existsSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 import { dirname, resolve } from 'pathe'
@@ -27,8 +28,27 @@ const moduleDir = dirname(fileURLToPath(import.meta.url))
 // - In source/dev mode, the dev renderer serves UI from `/src/*` instead.
 export const DEFAULT_PUBLIC_BASE = UI_PUBLIC_BASE
 
+function toViteFsPath(absPath: string): string {
+	const normalized = absPath.replace(/\\/g, '/')
+	return normalized.startsWith('/') ? `/@fs${normalized}` : `/@fs/${normalized}`
+}
+
+function resolveDevClientEntryUrl(): string {
+	const candidates = [
+		resolve(moduleDir, '../client.tsx'),
+		resolve(moduleDir, '../src/client.tsx'),
+		resolve(moduleDir, '../../src/client.tsx'),
+	]
+
+	for (const candidate of candidates) {
+		if (existsSync(candidate)) return toViteFsPath(candidate)
+	}
+
+	return '/src/client.tsx'
+}
+
 export const DEV_ASSETS: Assets = {
-	js: '/src/client.tsx',
+	js: resolveDevClientEntryUrl(),
 	css: [],
 	preload: [],
 }

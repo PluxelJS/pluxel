@@ -9,6 +9,7 @@ import {
 	Stack,
 	Text,
 	Title,
+	useComputedColorScheme,
 	useMantineTheme,
 } from '@mantine/core'
 import { useDisclosure, useMediaQuery } from '@mantine/hooks'
@@ -33,6 +34,7 @@ export const PluginsLayout: React.FC = () => {
 	}, [pathname])
 
 	const theme = useMantineTheme()
+	const colorScheme = useComputedColorScheme('light', { getInitialValueInEffect: true })
 	const isSmall = useMediaQuery(`(max-width: ${theme.breakpoints.md})`, undefined, {
 		getInitialValueInEffect: true,
 	})
@@ -132,10 +134,10 @@ export const PluginsLayout: React.FC = () => {
 				title="插件"
 				keepMounted
 				styles={{
-					content: {
-						background: theme.colorScheme === 'dark' ? theme.colors.dark[7] : theme.colors.gray[0],
-					},
-				}}
+						content: {
+							background: colorScheme === 'dark' ? theme.colors.dark[7] : theme.colors.gray[0],
+						},
+					}}
 			>
 				<Stack gap="sm" style={{ height: '100%', minHeight: 0 }}>
 					<Box style={{ flex: 1, minHeight: 0, display: 'flex', overflow: 'hidden' }}>
