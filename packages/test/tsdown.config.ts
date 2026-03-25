@@ -6,10 +6,12 @@ const buildRolldown = fileURLToPath(new URL('../build/src/rolldown/index.ts', im
 
 export default defineConfig({
 	// This package ships as a bundled dev tool (Vitest preset + transforms).
-	// Keep runtime deps minimal by bundling, and suppress the "inlineOnly" transitive enumeration warning.
-	inlineOnly: false,
 	exports: {
 		devExports: '@pluxel/source',
+	},
+	deps: {
+		// Bundle internal build helpers so consumers don't need @pluxel/build at runtime.
+		alwaysBundle: ['@pluxel/build', '@pluxel/build/*'],
 	},
 	entry: {
 		index: './src/index.ts',
@@ -26,8 +28,6 @@ export default defineConfig({
 	clean: true,
 	minify: true,
 	treeshake: true,
-	// Bundle internal build helpers so consumers don't need @pluxel/build at runtime.
-	noExternal: ['@pluxel/build', '@pluxel/build/*'],
 	alias: {
 		'@pluxel/build': buildRoot,
 		'@pluxel/build/rolldown': buildRolldown,

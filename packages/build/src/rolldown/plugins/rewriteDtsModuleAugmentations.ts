@@ -1,4 +1,4 @@
-import type { Plugin } from 'rolldown'
+import type { ViteCompatPlugin } from './compat'
 
 function escapeRE(s: string) {
 	return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
@@ -8,7 +8,9 @@ function escapeRE(s: string) {
  * 仅重写 d.ts 中的「模块补充」模块名：
  *   declare module '<from>' { ... }  =>  declare module '<to>' { ... }
  */
-export function rewriteDtsModuleAugmentations(map: Record<string, string>): Plugin {
+export function rewriteDtsModuleAugmentations(
+	map: Record<string, string>,
+): ViteCompatPlugin {
 	const exts = /\.d\.(?:mts|cts|ts)$/i
 	const entries = Object.entries(map).map(([from, to]) => {
 		const re = new RegExp(

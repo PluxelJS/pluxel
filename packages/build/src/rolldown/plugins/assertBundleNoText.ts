@@ -1,4 +1,4 @@
-import type { Plugin } from 'rolldown'
+import type { ViteCompatPlugin } from './compat'
 
 type Options = {
 	/** File name filter; defaults to excluding sourcemaps. */
@@ -11,7 +11,10 @@ type Options = {
  * Useful as a safety net to ensure private module specifiers (or internal markers)
  * never leak into published artifacts.
  */
-export function assertBundleNoText(forbidden: string[], options: Options = {}): Plugin {
+export function assertBundleNoText(
+	forbidden: string[],
+	options: Options = {},
+): ViteCompatPlugin {
 	const include = options.include ?? ((file) => !/\.map$/i.test(file))
 	const needles = forbidden.filter(Boolean)
 

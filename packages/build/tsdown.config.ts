@@ -1,7 +1,10 @@
 import { defineConfig } from 'tsdown'
 
 export default defineConfig({
-	inlineOnly: ['rolldown', /^@rolldown\//, /^@oxc-project\//],
+	deps: {
+		// Keep rolldown itself external in the public surface; helper deps can still be bundled if tsdown decides to.
+		neverBundle: ['rolldown', 'rolldown/*'],
+	},
 	exports: {
 		devExports: '@pluxel/source',
 	},

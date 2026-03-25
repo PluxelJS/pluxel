@@ -20,9 +20,6 @@
 		"bench": "pnpm exec vitest bench bench/context-getter.bench.ts",
 		"build": "tsdown"
 	},
-	"devDependencies": {
-		"@pluxel/test": "workspace:*"
-	},
 	"publishConfig": {
 		"exports": {
 			".": {

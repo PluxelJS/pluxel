@@ -66,5 +66,8 @@
 			},
 			"./package.json": "./package.json"
 		}
+	},
+	"inlinedDependencies": {
+		"pathe": "2.0.3"
 	}
 }

@@ -4,13 +4,12 @@ export default defineConfig({
 	exports: {
 		devExports: '@pluxel/source',
 	},
-	noExternal: [
+	deps: {
 		// Internal/private workspace packages must be bundled into the published artifact.
-		'@pluxel/build',
-		'@pluxel/build/*',
-		'@pluxel/workspace',
-		'@pluxel/workspace/*',
-	],
+		alwaysBundle: ['@pluxel/build', '@pluxel/build/*', '@pluxel/workspace', '@pluxel/workspace/*'],
+		onlyBundle: ['fdir'],
+		neverBundle: ['@pluxel/core', '@pluxel/runtime', 'vite', 'vite/*'],
+	},
 	entry: {
 		index: 'src/index.ts',
 		host: 'src/host.ts',
@@ -39,5 +38,4 @@ export default defineConfig({
 			},
 		},
 	},
-	external: ['@pluxel/core', '@pluxel/runtime', 'vite', 'vite/*'],
 })

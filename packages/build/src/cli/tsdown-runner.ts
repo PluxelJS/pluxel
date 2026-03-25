@@ -116,14 +116,14 @@ async function loadUserOverrides(
 		const mod = await import(moduleUrl)
 		const source = normalizeOverride(mod?.default ?? mod?.config ?? mod?.tsdown ?? mod)
 		if (!source) {
-			throw new Error('tsdown override must export an object or async function')
+			throw new Error('tsdown override must export a single config object or async function')
 		}
 		const resolvedConfig = await resolveOverride(source, context)
-		if (resolvedConfig && typeof resolvedConfig === 'object') {
+		if (resolvedConfig && isPlainObject(resolvedConfig)) {
 			log(`[build] loaded tsdown overrides from ${resolved}`)
 			return { source: resolved, config: resolvedConfig }
 		}
-		throw new Error('tsdown override must return a plain object')
+		throw new Error('tsdown override must resolve to a single plain config object')
 	} catch (error) {
 		const reason = error instanceof Error ? error.message : String(error)
 		throw new Error(`Failed to load tsdown override at ${resolved}: ${reason}`)
@@ -134,10 +134,17 @@ type TsdownOverride =
 	| InlineConfig
 	| ((context: BuildRuntimeConfig) => InlineConfig | Promise<InlineConfig>)
 
+type TsdownDepsConfig = NonNullable<InlineConfig['deps']>
+type NeverBundleValue = TsdownDepsConfig['neverBundle']
+type AlwaysBundleValue = TsdownDepsConfig['alwaysBundle']
+type OnlyBundleValue = TsdownDepsConfig['onlyBundle']
+type BundleMatchFn = (...args: any[]) => boolean | null | undefined | void
+const DEPRECATED_DEPS_KEYS = ['external', 'noExternal', 'inlineOnly'] as const
+
 function normalizeOverride(input: unknown): TsdownOverride | undefined {
 	if (!input) return undefined
 	if (typeof input === 'function') return input as TsdownOverride
-	if (typeof input === 'object') return input as InlineConfig
+	if (isPlainObject(input)) return input as InlineConfig
 	return undefined
 }
 
@@ -149,16 +156,26 @@ async function resolveOverride(
 	return typeof override === 'function' ? await override(context) : override
 }
 
-const SPECIAL_KEYS = new Set(['plugins', 'external', 'inlineOnly'])
+const SPECIAL_KEYS = new Set(['plugins', 'deps'])
 
 function mergeInlineConfigs(user: InlineConfig, overlay: InlineConfig | undefined) {
+	assertNoDeprecatedDepsKeys(user, 'tsdown user override')
 	if (!overlay) return { ...user }
+
+	assertNoDeprecatedDepsKeys(overlay, 'tsdown overlay')
 	const merged: InlineConfig = { ...user }
 	applyOverlay(merged as Record<string, unknown>, overlay as Record<string, unknown>)
 	merged.plugins = mergePlugins(user.plugins, overlay.plugins)
-	merged.external = mergeExternal(user.external, overlay.external)
-	merged.inlineOnly = mergeInlineOnly(user.inlineOnly, overlay.inlineOnly)
+	merged.deps = mergeDeps(user.deps, overlay.deps)
 	return merged
+}
+
+function assertNoDeprecatedDepsKeys(config: InlineConfig, label: string) {
+	const deprecated = DEPRECATED_DEPS_KEYS.filter((key) => key in config)
+	if (deprecated.length === 0) return
+	throw new Error(
+		`${label} must use deps.* keys only; found deprecated keys: ${deprecated.join(', ')}`,
+	)
 }
 
 function applyOverlay(target: Record<string, unknown>, overlay: Record<string, unknown>) {
@@ -174,6 +191,22 @@ function applyOverlay(target: Record<string, unknown>, overlay: Record<string, u
 	}
 }
 
+function mergeDeps(
+	userDeps: InlineConfig['deps'],
+	overlayDeps: InlineConfig['deps'],
+): InlineConfig['deps'] | undefined {
+	if (!overlayDeps) return userDeps
+	if (!userDeps) return overlayDeps
+
+	return {
+		...userDeps,
+		...overlayDeps,
+		neverBundle: mergeBundleMatchers(userDeps.neverBundle, overlayDeps.neverBundle),
+		alwaysBundle: mergeBundleMatchers(userDeps.alwaysBundle, overlayDeps.alwaysBundle),
+		onlyBundle: mergeOnlyBundle(userDeps.onlyBundle, overlayDeps.onlyBundle),
+	}
+}
+
 function mergePlugins(
 	...sources: Array<InlineConfig['plugins'] | undefined>
 ): InlineConfig['plugins'] | undefined {
@@ -186,43 +219,34 @@ function mergePlugins(
 	return list.length > 0 ? list : undefined
 }
 
-function mergeExternal(
-	userExternal: InlineConfig['external'],
-	overlayExternal: InlineConfig['external'],
-): InlineConfig['external'] | undefined {
-	if (!overlayExternal) return userExternal
-	if (!userExternal) return overlayExternal
-
-	const overlayIsFn = isExternalFn(overlayExternal)
-	const userIsFn = isExternalFn(userExternal)
-	if (!overlayIsFn && !userIsFn) {
-		return [...toPatternArray(userExternal), ...toPatternArray(overlayExternal)]
-	}
-
-	const overlayFn = overlayIsFn ? overlayExternal : createExternalMatcher(overlayExternal)
-	const userFn = userIsFn ? userExternal : createExternalMatcher(userExternal)
-	return (id: string, importer: string | undefined, isResolved: boolean) =>
-		Boolean((overlayFn?.(id, importer, isResolved) ?? false) || userFn?.(id, importer, isResolved))
-}
-
-function mergeInlineOnly(
-	userValue: InlineConfig['inlineOnly'],
-	overlayValue: InlineConfig['inlineOnly'],
-): InlineConfig['inlineOnly'] | undefined {
+function mergeBundleMatchers<T extends NeverBundleValue | AlwaysBundleValue>(
+	userValue: T | undefined,
+	overlayValue: T | undefined,
+): T | undefined {
 	if (!overlayValue) return userValue
 	if (!userValue) return overlayValue
-	return [...toInlineOnlyArray(userValue), ...toInlineOnlyArray(overlayValue)]
+
+	const overlayIsFn = isBundleMatchFn(overlayValue)
+	const userIsFn = isBundleMatchFn(userValue)
+	if (!overlayIsFn && !userIsFn) {
+		return [...toBundlePatternArray(userValue), ...toBundlePatternArray(overlayValue)] as T
+	}
+
+	const overlayFn = overlayIsFn ? overlayValue : createBundleMatcher(overlayValue)
+	const userFn = userIsFn ? userValue : createBundleMatcher(userValue)
+	return ((...args: any[]) =>
+		Boolean((overlayFn?.(...args) ?? false) || (userFn?.(...args) ?? false))) as T
 }
 
-function createExternalMatcher(
-	patterns: Exclude<InlineConfig['external'], ExternalMatcher | undefined>,
-): ExternalMatcher {
-	const normalized = toPatternArray(patterns)
+function createBundleMatcher(
+	patterns: Exclude<NeverBundleValue | AlwaysBundleValue, BundleMatchFn | undefined>,
+): BundleMatchFn {
+	const normalized = toBundlePatternArray(patterns)
 	return (id: string) => normalized.some((pattern) => matchExternalPattern(pattern, id))
 }
 
-function toPatternArray(
-	patterns: Exclude<InlineConfig['external'], ExternalMatcher | undefined>,
+function toBundlePatternArray(
+	patterns: Exclude<NeverBundleValue | AlwaysBundleValue, BundleMatchFn | undefined>,
 ): Array<string | RegExp> {
 	return Array.isArray(patterns) ? patterns : [patterns]
 }
@@ -231,18 +255,23 @@ function matchExternalPattern(pattern: string | RegExp, id: string) {
 	return pattern instanceof RegExp ? pattern.test(id) : pattern === id
 }
 
-function toInlineOnlyArray(value: InlineConfig['inlineOnly']): Array<string | RegExp> {
-	if (!value) return []
+function mergeOnlyBundle(
+	userValue: OnlyBundleValue,
+	overlayValue: OnlyBundleValue,
+): OnlyBundleValue | undefined {
+	if (overlayValue === undefined) return userValue
+	if (userValue === undefined) return overlayValue
+	if (overlayValue === false || userValue === false) return false
+	return [...toOnlyBundleArray(userValue), ...toOnlyBundleArray(overlayValue)]
+}
+
+function toOnlyBundleArray(
+	value: Exclude<OnlyBundleValue, false | undefined>,
+): Array<string | RegExp> {
 	return Array.isArray(value) ? value : [value]
 }
 
-type ExternalMatcher = (
-	id: string,
-	importer: string | undefined,
-	isResolved: boolean,
-) => boolean | null | undefined | void
-
-function isExternalFn(value: InlineConfig['external']): value is ExternalMatcher {
+function isBundleMatchFn(value: unknown): value is BundleMatchFn {
 	return typeof value === 'function'
 }
 
@@ -383,18 +412,29 @@ function summarizeInlineConfig(config: InlineConfig, plugins?: InlineConfig['plu
 		copy: sanitizeDebugValue(config.copy),
 		clean: sanitizeDebugValue(config.clean),
 		sourcemap: sanitizeDebugValue(config.sourcemap),
-		inlineOnly: describeInlineOnly(config.inlineOnly),
-		external: describeExternal(config.external),
+		deps: describeDeps(config.deps),
 		plugins: describePlugins(plugins),
 	}
 }
 
-function describeInlineOnly(value: InlineConfig['inlineOnly']) {
-	if (!value) return []
-	return (Array.isArray(value) ? value : [value]).map((item) => sanitizeDebugValue(item))
+function describeDeps(value: InlineConfig['deps']) {
+	if (!value) return {}
+	return {
+		alwaysBundle: describeBundleMatcher(value.alwaysBundle),
+		neverBundle: describeBundleMatcher(value.neverBundle),
+		onlyBundle:
+			value.onlyBundle === false
+				? false
+				: value.onlyBundle
+					? (Array.isArray(value.onlyBundle) ? value.onlyBundle : [value.onlyBundle]).map((item) =>
+							sanitizeDebugValue(item),
+						)
+					: undefined,
+		skipNodeModulesBundle: sanitizeDebugValue(value.skipNodeModulesBundle),
+	}
 }
 
-function describeExternal(value: InlineConfig['external']) {
+function describeBundleMatcher(value: NeverBundleValue | AlwaysBundleValue) {
 	if (!value) return []
 	if (typeof value === 'function') return ['[function matcher]']
 	const list = Array.isArray(value) ? value : [value]

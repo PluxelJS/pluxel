@@ -44,7 +44,6 @@
 	"devDependencies": {
 		"@mantine/core": "^8.3.18",
 		"@mantine/hooks": "^8.3.18",
-		"@pluxel/test": "workspace:*",
 		"@tabler/icons-react": "^3.37.1",
 		"@tanstack/react-form": "^1.28.3",
 		"@types/react": "^19.2.14",

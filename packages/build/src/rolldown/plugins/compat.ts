@@ -1,12 +1,11 @@
 export type ViteCompatPlugin<A = any> = import('rolldown').Plugin<A> & {
 	/**
-	 * Vite plugin ordering hint. Rolldown doesn't need it, but it is safe to keep here.
-	 * (We avoid importing `vite` types in this internal package.)
+	 * Vite-only hook; ignored by rolldown.
 	 */
-	enforce?: 'pre' | 'post'
-	/** Vite-only hook; ignored by rolldown. */
 	hotUpdate?: unknown
-	/** Vite-only hook; ignored by rolldown. */
+	/**
+	 * Vite-only hook; ignored by rolldown.
+	 */
 	apply?: unknown
 }
 

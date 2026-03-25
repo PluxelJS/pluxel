@@ -52,7 +52,7 @@ const buildFixtures = {
 			"\tentry: 'src/index.ts',",
 			"\tformat: ['esm'],",
 			'\tdts: false,',
-			"\texternal: ['pluxel-plugin-alpha', 'pluxel-plugin-beta'],",
+			"\tdeps: { neverBundle: ['pluxel-plugin-alpha', 'pluxel-plugin-beta'] },",
 			'\tsourcemap: false,',
 			'\tclean: true,',
 			'}',
@@ -108,7 +108,7 @@ const buildFixtures = {
 			"\tentry: 'src/index.ts',",
 			"\tformat: ['esm'],",
 			'\tdts: false,',
-			"\texternal: ['acme-plugin-alpha', 'acme-plugin-beta'],",
+			"\tdeps: { neverBundle: ['acme-plugin-alpha', 'acme-plugin-beta'] },",
 			'\tsourcemap: false,',
 			'\tclean: true,',
 			'}',
@@ -169,6 +169,85 @@ const buildFixtures = {
 			'}',
 			'',
 		].join('\n'),
+	},
+	deprecatedTsdownKeys: {
+		'package.json': JSON.stringify(
+			{
+				name: 'pluxel-cli-build-fixture-deprecated-keys',
+				version: '1.0.0',
+				type: 'module',
+			},
+			null,
+			2,
+		),
+		'tsconfig.json': JSON.stringify(
+			{
+				compilerOptions: {
+					target: 'ES2020',
+					module: 'ESNext',
+					moduleResolution: 'Bundler',
+					strict: false,
+					declaration: false,
+					allowSyntheticDefaultImports: true,
+					esModuleInterop: true,
+				},
+				include: ['src'],
+			},
+			null,
+			2,
+		),
+		'tsdown.config.ts': [
+			'export default {',
+			"\tentry: 'src/index.ts',",
+			"\tformat: ['esm'],",
+			'\tdts: false,',
+			"\texternal: ['pluxel-plugin-alpha'],",
+			'\tsourcemap: false,',
+			'\tclean: true,',
+			'}',
+			'',
+		].join('\n'),
+		'src/index.ts': ['export const answer = 1', ''].join('\n'),
+	},
+	arrayTsdownConfig: {
+		'package.json': JSON.stringify(
+			{
+				name: 'pluxel-cli-build-fixture-array-config',
+				version: '1.0.0',
+				type: 'module',
+			},
+			null,
+			2,
+		),
+		'tsconfig.json': JSON.stringify(
+			{
+				compilerOptions: {
+					target: 'ES2020',
+					module: 'ESNext',
+					moduleResolution: 'Bundler',
+					strict: false,
+					declaration: false,
+					allowSyntheticDefaultImports: true,
+					esModuleInterop: true,
+				},
+				include: ['src'],
+			},
+			null,
+			2,
+		),
+		'tsdown.config.ts': [
+			'export default [',
+			'\t{',
+			"\t\tentry: 'src/index.ts',",
+			"\t\tformat: ['esm'],",
+			'\t\tdts: false,',
+			'\t\tsourcemap: false,',
+			'\t\tclean: true,',
+			'\t},',
+			']',
+			'',
+		].join('\n'),
+		'src/index.ts': ['export const answer = 2', ''].join('\n'),
 	},
 } satisfies Record<string, Record<string, string>>
 
@@ -350,6 +429,36 @@ describe('build command', () => {
 			expect(output).toContain('ctx.ext.ui.packaged()')
 			expect(output).not.toContain('@pluxel/hmr/plugin')
 			expect(output).not.toContain('import{ui')
+		})
+	})
+
+	it('rejects deprecated tsdown dependency keys in plugin overrides', async () => {
+		await withBuildFixture('deprecatedTsdownKeys', async () => {
+			const runtime = await resolveBuildContext({})
+
+			await expect(
+				runWithTsdown({
+					context: runtime,
+					onSuccess: async () => undefined,
+					log: () => {},
+				}),
+			).rejects.toThrow(
+				'tsdown user override must use deps.* keys only; found deprecated keys: external',
+			)
+		})
+	})
+
+	it('rejects tsdown override arrays to keep plugin build semantics singular', async () => {
+		await withBuildFixture('arrayTsdownConfig', async () => {
+			const runtime = await resolveBuildContext({})
+
+			await expect(
+				runWithTsdown({
+					context: runtime,
+					onSuccess: async () => undefined,
+					log: () => {},
+				}),
+			).rejects.toThrow('tsdown override must export a single config object or async function')
 		})
 	})
 })

@@ -7,7 +7,7 @@
  * - Tracks both static and dynamic imports of plugin packages
  */
 
-import type { Plugin } from 'rolldown'
+import type { ViteCompatPlugin } from './compat'
 import { normalizePatterns } from './pluginUtils'
 
 export interface TrackedPluginUsage {
@@ -16,7 +16,7 @@ export interface TrackedPluginUsage {
 }
 
 export interface ImportTracker {
-	plugin: Plugin
+	plugin: ViteCompatPlugin
 	flush(): Map<string, TrackedPluginUsage>
 }
 
@@ -78,7 +78,7 @@ export function createImportTracker(options: ImportTrackerPluginOptions): Import
 		}
 	}
 
-	const plugin: Plugin = {
+	const plugin: ViteCompatPlugin = {
 		name: 'pluxel-import-tracker',
 		buildStart() {
 			collected.clear()

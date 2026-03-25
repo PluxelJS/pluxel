@@ -4,7 +4,9 @@ export default defineConfig({
 	exports: {
 		devExports: '@pluxel/source',
 	},
-	noExternal: ['@pluxel/build', '@pluxel/build/*'],
+	deps: {
+		alwaysBundle: ['@pluxel/build', '@pluxel/build/*'],
+	},
 	entry: {
 		index: 'src/index.ts',
 	},

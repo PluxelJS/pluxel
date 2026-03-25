@@ -20,5 +20,5 @@
 
 ## 发布与依赖
 
-- 只发布 5 个包（core/runtime/hmr/cli/test），其它包必须 private，并通过 `tsdown noExternal` 内联。
+- 只发布 5 个包（core/runtime/hmr/cli/test），其它包必须 private，并通过 `tsdown deps.alwaysBundle` 内联。
 - 以 `packages/build/tests/packaging-invariants.test.ts` 为最终约束，不要绕过测试。

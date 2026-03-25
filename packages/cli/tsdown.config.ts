@@ -19,20 +19,21 @@ export default defineConfig({
 		hmr: './src/hmr/index.ts',
 	},
 	// This CLI intentionally ships as a bundled artifact with minimal runtime deps.
-	// `inlineOnly` would require us to enumerate (and maintain) the entire transitive dependency
-	// set pulled in by bundled deps (e.g. Ink), so we suppress the warning.
-	inlineOnly: false,
-	// Inline internal build helpers + CLI-only deps so published CLI stays light on runtime deps.
-	noExternal: [
-		'@pluxel/build',
-		'@pluxel/build/*',
-		'@pluxel/workspace',
-		'@pluxel/workspace/*',
-		'react',
-		'react/*',
-		'ink',
-		'ink/*',
-	],
+	// Bundle internal toolchain pieces and CLI-only UI deps so the published CLI keeps a small runtime surface.
+	deps: {
+		// `@pluxel/build` exports rolldown plugin types. Keep rolldown itself external instead of re-bundling it here.
+		neverBundle: ['rolldown', 'rolldown/*'],
+		alwaysBundle: [
+			'@pluxel/build',
+			'@pluxel/build/*',
+			'@pluxel/workspace',
+			'@pluxel/workspace/*',
+			'react',
+			'react/*',
+			'ink',
+			'ink/*',
+		],
+	},
 	alias: {
 		'@pluxel/build': buildRoot,
 		'@pluxel/build/cli': buildCli,

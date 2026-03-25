@@ -9,7 +9,17 @@ export default defineConfig({
 	exports: {
 		devExports: '@pluxel/source',
 	},
-	noExternal: ['@pluxel/workspace', '@pluxel/workspace/*', 'valibot-form', 'valibot-form/*'],
+	deps: {
+		alwaysBundle: ['@pluxel/workspace', '@pluxel/workspace/*', 'valibot-form', 'valibot-form/*'],
+		neverBundle: [
+			'@pluxel/core',
+			'@pluxel/core/services',
+			'@pluxel/core/logger',
+			'react',
+			'react/jsx-runtime',
+			'react-dom',
+		],
+	},
 	plugins: [PreprocessorDirectives()],
 	env: {},
 	entry: {
@@ -38,15 +48,6 @@ export default defineConfig({
 	dts: {
 		sourcemap: true,
 	},
-	// 不要内联 core / react 相关，避免重复 vendor。
-	external: [
-		'@pluxel/core',
-		'@pluxel/core/services',
-		'@pluxel/core/logger',
-		'react',
-		'react/jsx-runtime',
-		'react-dom',
-	],
 	format: ['esm'],
 	sourcemap: true,
 	clean: true,

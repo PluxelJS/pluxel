@@ -1,7 +1,9 @@
 import { defineConfig } from 'tsdown'
 
 export default defineConfig({
-	inlineOnly: [/^option-t(\/.*)?$/],
+	deps: {
+		onlyBundle: [/^option-t(\/.*)?$/],
+	},
 	exports: {
 		devExports: '@pluxel/source',
 	},

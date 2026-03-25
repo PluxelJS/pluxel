@@ -54,7 +54,6 @@
 		"@abraham/reflection": "^0.13.0",
 		"@pluxel/build": "workspace:*",
 		"@pluxel/context": "workspace:*",
-		"@pluxel/test": "workspace:*",
 		"diod": "workspace:*",
 		"fs-fixture": "^2.11.0",
 		"option-t": "^55.1.2",
@@ -80,5 +79,9 @@
 			},
 			"./package.json": "./package.json"
 		}
+	},
+	"inlinedDependencies": {
+		"@abraham/reflection": "0.13.0",
+		"option-t": "55.1.2"
 	}
 }

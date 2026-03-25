@@ -17,12 +17,13 @@ const transformOptions = {
 }
 
 export default defineConfig({
-	inlineOnly: ['@abraham/reflection', /^option-t(\/.*)?$/],
+	deps: {
+		onlyBundle: ['@abraham/reflection', /^option-t(\/.*)?$/],
+		alwaysBundle: ['@pluxel/context', '@pluxel/context/*', 'diod', 'diod/*'],
+	},
 	exports: {
 		devExports: '@pluxel/source',
 	},
-	noExternal: ['@pluxel/context', '@pluxel/context/*', 'diod', 'diod/*'],
-	external: [],
 	entry: {
 		env: 'src/env.ts',
 		index: 'src/index.ts',

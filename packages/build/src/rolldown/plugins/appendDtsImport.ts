@@ -1,6 +1,6 @@
-import type { Plugin } from 'rolldown'
+import type { ViteCompatPlugin } from './compat'
 
-export function appendDtsImport(snippet: string, files: string[]): Plugin {
+export function appendDtsImport(snippet: string, files: string[]): ViteCompatPlugin {
 	const exts = /\.d\.(?:mts|cts|ts)$/i
 	const targets = files?.length ? files.slice() : null
 	return {

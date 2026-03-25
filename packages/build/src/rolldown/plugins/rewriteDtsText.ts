@@ -1,4 +1,4 @@
-import type { Plugin } from 'rolldown'
+import type { ViteCompatPlugin } from './compat'
 
 type Options = {
 	/**
@@ -18,7 +18,7 @@ type Options = {
 export function rewriteDtsText(
 	replacements: Record<string, string>,
 	options: Options = {},
-): Plugin {
+): ViteCompatPlugin {
 	const exts = /\.d\.(?:mts|cts|ts)$/i
 	const entries = Object.entries(replacements).sort((a, b) => b[0].length - a[0].length)
 
