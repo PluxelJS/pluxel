@@ -1,25 +1,23 @@
 export {
 	type AuthAwareFetchOptions,
 	type AuthBlockedInfo,
-	type HmrFetch,
+	type RuntimeFetch,
 	createAuthAwareFetch,
 	defaultOnAuthBlocked,
 	type OnAuthBlocked,
 } from './web/auth'
 
 export {
-	createHmrFetch,
-	createHmrTransport,
-	createHmrWebClient,
+	createRuntimeTransportClient,
+	createRuntimeTransportFetch,
+	createRuntimeTransportLinks,
 	expectData,
-	type HmrAuthMeta,
-	type HmrHttpApi,
-	type HmrInternalMeta,
-	type HmrLogRangeQuery,
-	type HmrStreamIndex,
-	type HmrTransportLinks,
-	type HmrWebClient,
-	type HmrWebClientOptions,
+	type RuntimeAuthMeta,
+	type RuntimeLogRangeQuery,
+	type RuntimeLogStreamsIndex,
+	type RuntimeMeta,
+	type RuntimeTransportClient,
+	type RuntimeTransportClientOptions,
 } from './web/client'
 export type {
 	LogFilter,
@@ -67,7 +65,11 @@ export {
 	type ExtensionFederationSharedPackage,
 } from './web/plugin-ui/federation'
 export * from './web/protocol'
-export { HmrWebClientProvider, type HmrWebClientProviderProps, useHmrWebClient } from './web/react'
+export {
+	RuntimeTransportClientProvider,
+	type RuntimeTransportClientProviderProps,
+	useRuntimeTransportClient,
+} from './web/react'
 export { invokeRpc, rpcErrorMessage } from './web/rpc'
 export type {
 	ResolvedSseEvents,

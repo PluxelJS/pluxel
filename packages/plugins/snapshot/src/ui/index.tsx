@@ -1,17 +1,22 @@
 import { ActionIcon, Group, Tooltip } from '@mantine/core'
 import {
-	createPluginUiHelpers,
+	createPluginUi,
 	ExtensionPoints,
 	definePluginUIModule,
 	rpcErrorMessage,
 } from '@pluxel/runtime/web/ui'
 import { IconBolt, IconPackage } from '@tabler/icons-react'
 import { useCallback, useState } from 'react'
+import type { DistBuildResult, SnapshotFilesResult } from '../rpc'
 
-const snapshotUi = createPluginUiHelpers('Snapshot')
+const snapshotUi = createPluginUi('Snapshot')
+
+function resultError(result: SnapshotFilesResult | DistBuildResult): string | null {
+	return 'error' in result ? result.error : null
+}
 
 function SnapshotHeaderActions() {
-	const { notify, rpc } = snapshotUi.useGlobalRuntime()
+	const { notify, rpc } = snapshotUi.use('global')
 	const [snapshotLoading, setSnapshotLoading] = useState(false)
 	const [distLoading, setDistLoading] = useState(false)
 
@@ -20,18 +25,22 @@ function SnapshotHeaderActions() {
 		try {
 			const res = await rpc.generateSnapshotFiles()
 			if (!res.ok) {
-				notify?.({ tone: 'error', title: '生成 Snapshot 失败', message: res.error })
+				notify({
+					tone: 'error',
+					title: 'Snapshot generation failed',
+					message: resultError(res) ?? 'Snapshot generation failed',
+				})
 				return
 			}
-			notify?.({
+			notify({
 				tone: 'success',
-				title: '已生成 Snapshot',
-				message: `输出目录：${res.dir}`,
+				title: 'Snapshot generated',
+				message: `Output directory: ${res.dir}`,
 			})
 		} catch (error) {
-			notify?.({
+			notify({
 				tone: 'error',
-				title: '生成 Snapshot 失败',
+				title: 'Snapshot generation failed',
 				message: rpcErrorMessage(error, 'Unknown error'),
 			})
 		} finally {
@@ -44,18 +53,22 @@ function SnapshotHeaderActions() {
 		try {
 			const res = await rpc.buildDist()
 			if (!res.ok) {
-				notify?.({ tone: 'error', title: '构建 Dist 失败', message: res.error })
+				notify({
+					tone: 'error',
+					title: 'Dist build failed',
+					message: resultError(res) ?? 'Dist build failed',
+				})
 				return
 			}
-			notify?.({
+			notify({
 				tone: 'success',
-				title: 'Dist 构建完成',
-				message: `入口：${res.entry}`,
+				title: 'Dist build completed',
+				message: `Entry: ${res.entry}`,
 			})
 		} catch (error) {
-			notify?.({
+			notify({
 				tone: 'error',
-				title: '构建 Dist 失败',
+				title: 'Dist build failed',
 				message: rpcErrorMessage(error, 'Unknown error'),
 			})
 		} finally {
@@ -65,12 +78,12 @@ function SnapshotHeaderActions() {
 
 	return (
 		<Group gap="xs" wrap="nowrap">
-			<Tooltip label="生成 Snapshot" withArrow>
+			<Tooltip label="Generate Snapshot" withArrow>
 				<ActionIcon
 					variant="default"
 					size="lg"
 					radius="xl"
-					aria-label="生成 Snapshot"
+					aria-label="Generate Snapshot"
 					loading={snapshotLoading}
 					onClick={handleSnapshot}
 				>
@@ -78,12 +91,12 @@ function SnapshotHeaderActions() {
 				</ActionIcon>
 			</Tooltip>
 
-			<Tooltip label="构建 Dist" withArrow>
+			<Tooltip label="Build Dist" withArrow>
 				<ActionIcon
 					variant="default"
 					size="lg"
 					radius="xl"
-					aria-label="构建 Dist"
+					aria-label="Build Dist"
 					loading={distLoading}
 					onClick={handleBuild}
 				>

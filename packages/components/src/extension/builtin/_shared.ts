@@ -57,7 +57,7 @@ export function neededSignalDbCollectionsForValue(value: unknown): string[] {
 }
 
 export function useSignalDbForValues(namespace: string, values: unknown[]) {
-	const hmr = useExtensionContext().services.hmr
+	const transport = useExtensionContext().services.transport
 	const neededCollections = useMemo(() => {
 		const collections = new Set<string>()
 		for (const value of values) {
@@ -66,7 +66,7 @@ export function useSignalDbForValues(namespace: string, values: unknown[]) {
 		return Array.from(collections)
 	}, [values])
 
-	return useSignalDbCollectionsState(hmr, namespace, neededCollections)
+	return useSignalDbCollectionsState(transport, namespace, neededCollections)
 }
 
 function createGeneratedId() {

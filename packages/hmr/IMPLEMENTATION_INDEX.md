@@ -1,79 +1,90 @@
-# @pluxel/hmr — Implementation Index (for LLM)
+# @pluxel/hmr — Implementation Index
 
-目标：索引 HMR/Vite 的实现入口、dev host wiring、以及从配置到启动的依赖链。
+目标：快速定位 dev host、Vite wiring、plugin authoring bridge 和插件 UI 编译链。
 
-## Maintainer References
+前端整条链路说明见：
 
-仓库级约束与设计目标（权威）见：
+- [`docs/FRONTEND_ARCHITECTURE.md`](../../docs/FRONTEND_ARCHITECTURE.md)
 
-- `docs/ARCHITECTURE.md`
-- `docs/PACKAGING.md`
-- `docs/AGENT_RULES.md`
+如果你是为了追“为什么 `ui(...).bind(ctx)` 最终会变成 packaged remote”，优先按下面顺序看：
 
-## Public Surface (package exports)
+1. `packages/hmr/src/plugin.ts`
+2. `packages/hmr/src/dev/extensions/ExtensionCompilerService.ts`
+3. `packages/build/src/rolldown/plugins/hmrUiBridgePlugin.ts`
+4. `packages/hmr/src/plugin-build.ts`
+
+## Package Exports
 
 - `packages/hmr/package.json`
-  - `.` → `packages/hmr/src/index.ts`（low-level attach + Vite config helpers + `HMRService`）
-  - `./host` → `packages/hmr/src/host.ts`（host composition + profiled store materialization）
-  - `./diagnose` → `packages/hmr/src/diagnose.ts`（single export hub for config/discovery/profile helpers）
-  - `./snapshot` → `packages/hmr/src/snapshot.ts`（HmrWorkspaceSnapshot 类型与断言）
-
-## Entry
-
 - `packages/hmr/src/index.ts`
-  - `setPluxelRuntime('hmr')`
-  - type-only：`packages/hmr/src/dev/context-augment.ts`（扩展 `Context.Config` 的 dev-only keys）
-  - 显式 exports（避免 `export *`）：
-    - env helper：`applyHmrEnvOverrides`（`packages/hmr/src/dev/runtime.ts`）
-    - low-level attach：`attachHmrRuntime` / `startHmrRuntime`（`packages/hmr/src/dev/attach-runtime.ts`）
-    - Vite fetch plugin：`createFetchDevServerPlugin`（`packages/hmr/src/dev/vite-fetch-plugin.ts`）
-    - Service：`HMRService`（`packages/hmr/src/dev/hmr/HMRService.ts`）
-    - Vite config helpers：`buildHmrViteConfig` / `resolveFsAllowList` / `resolveHMRDependencyConfig`（`packages/hmr/src/dev/hmr/config.ts`）
+- `packages/hmr/src/host.ts`
+- `packages/hmr/src/plugin.ts`
+- `packages/hmr/src/plugin-build.ts`
+- `packages/hmr/src/snapshot.ts`
 
-## Dev Host Wiring (核心)
+## Standard Entry
 
 - `packages/hmr/src/host.ts`
-  - 内部 wiring：创建 `HMRService`、安装 module adapter、设置 dev handles、接通 UI extension source binder
-  - 标准启动路径：`createHmrHostFromConfig` / `startHmrHostFromConfig`
+  `createHmrHostFromConfig` / `startHmrHostFromConfig`
+- `packages/hmr/src/dev/attach-runtime.ts`
+  把 HMR 能力 attach 到已有 runtime `Context`
 
-## HMR Service (Vite + Runner + Pipeline)
+## HMR Service
 
 - `packages/hmr/src/dev/hmr/HMRService.ts`
-  - 管理 Vite dev server 生命周期、runner、执行入口、builtins preload 等
-- `packages/hmr/src/dev/hmr/pipeline.ts` / `runner.ts` / `workspace-entry-resolver.ts`
-  - 入口解析、模块图跟踪、变更管线
-- `packages/hmr/src/dev/hmr/runtime-shims.ts`
-  - dev runtime 的 shim（为 runner 执行环境提供一致性）
-
-## Singleton Bridging (重要约束)
-
+  Vite dev server、runner、watch pipeline
 - `packages/hmr/src/dev/hmr/config.ts`
-  - `REQUIRED_BRIDGE_MODULES`：runner 必须与 host 共享单例的模块集合（避免 decorator/DI token 重复）
-  - `REQUIRED_BRIDGE_PROVIDERS`：把“逻辑模块”映射到真正提供实现的 host 模块
-    - 例如：`@pluxel/context` 被 workspace 内联到 `@pluxel/core` 时，runner 需要把 `@pluxel/context` 映射到 `@pluxel/core`，避免评估第二份实现
+  HMR Vite config、bridge modules、dedupe、optimizeDeps
+- `packages/hmr/src/dev/hmr/*`
+  runner / pipeline / runtime shims / workspace resolver
 
-## Extension Compile (dev-only)
+## Plugin Authoring Bridge
 
+- `packages/hmr/src/plugin.ts`
+  `ui(...)` / `worker(...)`
+- `packages/hmr/src/paraglide.ts`
+  解析 Paraglide 固定约定并生成 Vite plugin 注入
 - `packages/hmr/src/dev/extensions/ExtensionCompilerService.ts`
-  - 使用 Module Federation remote build 生成插件 UI artifact
-  - shared 协议来自 `@pluxel/runtime/web` 的 federation 定义
+  消费 `ui(...).bind(ctx)`，编译插件 UI 源码，提交 compiled module
+- `packages/hmr/src/plugin-build.ts`
+  用 `@module-federation/vite` 构建插件 UI remote，并复用 Paraglide 集成
 
-- `packages/hmr/src/dev/compile/bundler/*`
-  - bundler worker：`bundle-worker.mjs`
-  - module graph：`moduleGraph.ts`
+这是 HMR 与 MF2 对接的关键链路：
 
-## Diagnose → Snapshot
+- `plugin.ts`
+  作者侧 bridge 入口
+- `ExtensionCompilerService`
+  dev 期消费 bridge、watch 源码、提交 compiled module
+- `plugin-build.ts`
+  build 期把插件 UI 产出为稳定 MF2 remote
+
+这里的职责不要混：
+
+- `plugin.ts`
+  只定义作者侧 bridge 形状
+- `ExtensionCompilerService`
+  只处理 dev 期源码消费与 compiled module 提交
+- `plugin-build.ts`
+  只处理 remote 构建
+
+真正的 runtime 注册发生在 `@pluxel/runtime` 的 `ExtensionService`，不在这里。
+
+## Diagnose / Snapshot
 
 - `packages/hmr/src/diagnose/config.ts`
-  - `readHmrConfigV1` / `writeHmrConfigV1` / schema
+  HMR config 读写
 - `packages/hmr/src/diagnose/diagnose.ts`
-  - `diagnoseWorkspace(...)`：解析 workspace、生成 `HmrWorkspaceSnapshot`
+  workspace diagnose
 - `packages/hmr/src/snapshot.ts`
-  - `HmrWorkspaceSnapshot` 结构与断言（host 的输入边界）
+  `HmrWorkspaceSnapshot`
 
-## Host Composition (标准启动方式)
+## Tests
 
-- `packages/hmr/src/host.ts`
-  - `createHmrHostFromConfig` / `startHmrHostFromConfig`
-    - diagnose → new `Context`（来自 `@pluxel/runtime`）→ 内部 wiring → `hmr.start()`
-  - store/materialize helpers：来自 `@pluxel/runtime/internal`（paths/profile materialize）
+- `packages/hmr/tests/plugin/plugin-api.test.ts`
+  `ui(...)` / `worker(...)` bridge 行为
+- `packages/hmr/tests/plugin/paraglide-integration.test.ts`
+  Paraglide 固定路径约定与 build/dev 注入
+- `packages/hmr/tests/host/host-runtime-bridges.test.ts`
+  host attach/runtime bridge
+- `packages/hmr/tests/hmr/client-optimize-deps.test.ts`
+  dev client optimizeDeps 约束

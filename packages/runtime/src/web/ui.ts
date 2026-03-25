@@ -3,7 +3,6 @@ export {
 	ExtensionPathnameProvider,
 	ExtensionProvider,
 	createGlobalExtensionContext,
-	createI18nService,
 	createPluginExtensionContext,
 	definePluginUIModule,
 	isExtensionPluginRunning,
@@ -11,18 +10,16 @@ export {
 	useExtensionContext,
 	useExtensionPathname,
 } from './plugin-ui/ui-contracts'
-export { createPluginUiHelpers } from './plugin-ui/authoring'
+export { createPluginUi } from './plugin-ui/authoring'
 export type {
-	NamespaceUiRpc,
-	NamespaceUiRuntime,
-	PluginUiContext,
-	PluginUiHelpers,
-	PluginUiRuntime,
+	PluginUi,
+	PluginUiClient,
 } from './plugin-ui/authoring'
 export {
 	useSignalDbCollectionState,
 	useSignalDbCollectionsState,
 	useSignalDbDocState,
+	useSignalDbQueryState,
 } from './plugin-ui/signaldb-runtime'
 export type { SignalDbCollectionView } from './plugin-ui/signaldb-runtime'
 export {
@@ -30,10 +27,19 @@ export {
 	defaultOnAuthBlocked,
 	type AuthAwareFetchOptions,
 	type AuthBlockedInfo,
-	type HmrFetch,
+	type RuntimeFetch,
 	type OnAuthBlocked,
 } from './auth'
-export { createHmrFetch, createHmrTransport, createHmrWebClient, expectData } from './client'
+export {
+	createRuntimeTransportClient,
+	createRuntimeTransportFetch,
+	createRuntimeTransportLinks,
+	expectData,
+} from './client'
+export type {
+	RuntimeTransportClient,
+	RuntimeTransportClientOptions,
+} from './client'
 export type {
 	AnyExtensionDef,
 	ExtensionContext,
@@ -46,14 +52,9 @@ export type {
 	ExtensionPointMeta,
 	ExtensionServices,
 	GlobalExtensionContext,
-	I18nKey,
-	I18nLocale,
-	I18nMessageDict,
-	I18nParams,
-	I18nResources,
-	I18nService,
+	Locale,
+	LocaleService,
 	PluginExtensionContext,
-	PluginI18nBundle,
 	PluginUIModule,
 	RouteExtensionDef,
 	UiConfirmPayload,
@@ -61,20 +62,18 @@ export type {
 	UiNotifyPayload,
 	UiNotifyTone,
 } from './plugin-ui/ui-contracts'
-export { HmrWebClientProvider, type HmrWebClientProviderProps, useHmrWebClient } from './react'
+export {
+	RuntimeTransportClientProvider,
+	type RuntimeTransportClientProviderProps,
+	useRuntimeTransportClient,
+} from './react'
 export type {
-	HmrHttpApi,
-	HmrUiRpcMap,
-	HmrUiSignalDbMap,
-	HmrUiSseMap,
-	HmrWebClient,
-	HmrWebClientOptions,
 	ResolvedSseEvents,
-	SseNamespaceClient,
 	SseClientOptions,
 	SseClientWithNamespaces,
 	SseMessage,
-} from './plugin-ui/ui-runtime'
+	SseNamespaceClient,
+} from './sse'
 export type {
 	SignalDbFindOptions,
 	SignalDbItem,
@@ -85,12 +84,14 @@ export type {
 export type {
 	PackageBatchResult,
 	BaseProvisionInfo,
+	ExtensionUiRpcMap,
+	ExtensionUiSignalDbMap,
+	ExtensionUiSseMap,
 	PackageInventoryEntry,
 	PackageInventoryFilter,
 	PackageIssueSpec,
 	PackageLoadIssue,
 	PackageSpecInput,
-	HmrRpcApi,
 	LogLevel,
 	PluginDependencyState,
 	PluginGroup,
@@ -101,6 +102,7 @@ export type {
 	PluginStatusBatchAction,
 	PluginStatusBatchResult,
 	PluginStatusMutationResult,
+	RuntimeRpcApi,
 } from './protocol'
 export { invokeRpc, rpcErrorMessage } from './rpc'
 export type {

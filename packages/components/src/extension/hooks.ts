@@ -1,10 +1,10 @@
 import { useCallback, useSyncExternalStore } from 'react'
 import {
-	getExtensionRuntimeRevision,
-	getPluginExtensionRuntimeRevision,
-	subscribeExtensionRuntimeChanges,
-	subscribePluginExtensionRuntimeChanges,
-} from './internal/runtime'
+	getPluginUiModuleRevision,
+	getPluginUiRegistryRevision,
+	subscribePluginUiModuleChanges,
+	subscribePluginUiRegistryChanges,
+} from './internal/pluginUiRegistry'
 import {
 	getExtensionModuleState,
 	getExtensionModuleStates,
@@ -13,20 +13,20 @@ import {
 } from './internal/module-state'
 
 /**
- * 统一的扩展运行时版本号
+ * 插件 UI 模块注册表版本号。
  */
-export function useExtensionRuntimeVersion(pluginName?: string): number {
+export function usePluginUiVersion(pluginName?: string): number {
 	const subscribe = useCallback(
 		(listener: () => void) => {
-			if (pluginName) return subscribePluginExtensionRuntimeChanges(pluginName, listener)
-			return subscribeExtensionRuntimeChanges(listener)
+			if (pluginName) return subscribePluginUiModuleChanges(pluginName, listener)
+			return subscribePluginUiRegistryChanges(listener)
 		},
 		[pluginName],
 	)
 
 	const getSnapshot = useCallback(() => {
-		if (pluginName) return getPluginExtensionRuntimeRevision(pluginName)
-		return getExtensionRuntimeRevision()
+		if (pluginName) return getPluginUiModuleRevision(pluginName)
+		return getPluginUiRegistryRevision()
 	}, [pluginName])
 
 	return useSyncExternalStore(subscribe, getSnapshot, getSnapshot)

@@ -35,8 +35,8 @@ import { RouterLinkAdapter } from '../../RouterLinkAdapter'
 import { PLUGIN_SEARCH_EVENT, PLUGIN_SEARCH_KEY } from '../../constants'
 import { updatePluginStatuses } from '../actions'
 import { requestPluginOverviewRefetch, setPluginOverviewGroups, usePluginOverview } from '../data'
-import type { PluginStatusAction } from '@pluxel/runtime/web/ui'
-import { useHmrWebClient } from '../../rpc'
+import type { PluginStatusAction } from '../../../runtime'
+import { useRuntimeTransportClient } from '../../../runtime'
 import { invalidate } from '../../data/invalidations'
 import {
 	EMPTY_OVERVIEW,
@@ -64,7 +64,7 @@ const ACTION_LABEL: Record<PluginStatusAction, string> = {
 const STATUS_FILTER_KEY = 'pluxel:plugin-status-filter'
 
 export const PluginList: React.FC<PluginListProps> = ({ pluginName }) => {
-	const hmr = useHmrWebClient()
+	const transport = useRuntimeTransportClient()
 	const [statusFilter, setStatusFilter] = useState<StatusFilterState>(() => {
 		if (typeof window === 'undefined') {
 			return { running: true, stopped: true, disabled: true }
@@ -198,7 +198,7 @@ export const PluginList: React.FC<PluginListProps> = ({ pluginName }) => {
 			return
 		}
 		pendingCommitRef.current = null
-		const task = hmr
+		const task = transport
 			.withRpc((rpc) => rpc.updatePluginGroups(pending))
 			.then((result) => {
 				const nextGroups = Array.isArray(result) ? result : pending
@@ -223,7 +223,7 @@ export const PluginList: React.FC<PluginListProps> = ({ pluginName }) => {
 				}
 			})
 		inflightCommitRef.current = task
-	}, [hmr, notify])
+	}, [transport, notify])
 
 	const handleGroupsChange = useCallback(
 		(next: GroupConfig[]) => {

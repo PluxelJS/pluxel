@@ -7,18 +7,18 @@ import { IconActivity } from '@tabler/icons-react'
 import { useEffect, useState } from 'react'
 
 function StatusBadge() {
-	const hmr = useExtensionContext('global').services.hmr
+	const transport = useExtensionContext('global').services.transport
 	const [connected, setConnected] = useState(false)
 
 	useEffect(() => {
-		const sse = hmr.sse
+		const sse = transport.sse
 		const offOpen = sse.onOpen(() => setConnected(true))
 		const offErr = sse.onError(() => setConnected(false))
 		return () => {
 			offOpen()
 			offErr()
 		}
-	}, [hmr])
+	}, [transport])
 
 	return (
 		<Tooltip label={connected ? 'SSE 已连接' : 'SSE 连接中'}>

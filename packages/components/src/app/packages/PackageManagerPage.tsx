@@ -39,8 +39,8 @@ import {
 	type PackageInventoryEntry,
 	type PackageLoadIssue,
 	type PackageSpecInput,
-	useHmrWebClient,
-} from '../rpc'
+	useRuntimeTransportClient,
+} from '../../runtime'
 import { RouterLinkAdapter } from '../RouterLinkAdapter'
 import { useNotify } from '../hooks'
 import type { PackageRow } from './types'
@@ -59,7 +59,7 @@ import { usePluginOverview } from '../plugins/data'
 import { subscribeInvalidations, invalidate } from '../data/invalidations'
 
 export function PackageManagerPage() {
-	const hmr = useHmrWebClient()
+	const transport = useRuntimeTransportClient()
 	const [showAllPackages, setShowAllPackages] = useState(false)
 	const [showIssuesPanel, setShowIssuesPanel] = useState(true)
 	const searchInputRef = useRef<HTMLInputElement>(null)
@@ -102,7 +102,7 @@ export function PackageManagerPage() {
 			setInlineError(null)
 			if (!hasSnapshot) setPageError(null)
 			try {
-				const result = await hmr.withRpc(async (rpc) => {
+				const result = await transport.withRpc(async (rpc) => {
 					const pkg = rpc.package()
 					const [nextInventory, nextIssues] = await Promise.all([
 						pkg.inventory({ includeUntracked: showAllPackages }),
@@ -133,7 +133,7 @@ export function PackageManagerPage() {
 		inflightRef.current = task
 		inflightKeyRef.current = snapshotKey
 		return task
-	}, [hmr, showAllPackages])
+	}, [transport, showAllPackages])
 
 	useEffect(() => {
 		void refetch()
@@ -329,11 +329,11 @@ export function PackageManagerPage() {
 			specs: PackageSpecInput[],
 			options?: { force?: boolean; fresh?: boolean; reinstall?: boolean },
 		): Promise<PackageBatchResult> => {
-			const result = await hmr.withRpc((rpc) => rpc.package().mutate({ action, specs, options }))
+			const result = await transport.withRpc((rpc) => rpc.package().mutate({ action, specs, options }))
 			invalidate({ topic: 'package-data', reason: action })
 			return result
 		},
-		[hmr],
+		[transport],
 	)
 
 	const applyOperationLogs = useCallback((result?: PackageBatchResult | null) => {

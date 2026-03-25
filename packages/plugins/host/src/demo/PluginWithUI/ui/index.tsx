@@ -13,21 +13,21 @@ function HeaderAction() {
 }
 
 function GlobalStatusBar() {
-	const ctx = pluginWithUi.useGlobalContext()
+	const { context } = pluginWithUi.use('global')
 	return (
 		<Group gap="xs">
 			<Badge variant="dot" color="grape">
 				UI Demo
 			</Badge>
 			<Text size="xs" c="dimmed">
-				{ctx.runningPluginsReady ? 'plugins ready' : 'plugins loading…'}
+				{context.runningPluginsReady ? 'plugins ready' : 'plugins loading…'}
 			</Text>
 		</Group>
 	)
 }
 
 function PluginInfo() {
-	const { pluginName } = pluginWithUi.usePluginContext()
+	const { context } = pluginWithUi.use('plugin')
 	return (
 		<Stack gap="xs">
 			<Text fw={600}>PluginWithUI</Text>
@@ -40,7 +40,7 @@ function PluginInfo() {
 					size="xs"
 					leftSection={<IconExternalLink size={14} />}
 					component="a"
-					href={`/plugins/${encodeURIComponent(pluginName)}/dashboard`}
+					href={`/plugins/${encodeURIComponent(context.pluginName)}/dashboard`}
 				>
 					打开 Dashboard
 				</Button>
@@ -48,7 +48,7 @@ function PluginInfo() {
 					variant="subtle"
 					size="xs"
 					component="a"
-					href={`/ext-standalone/${encodeURIComponent(pluginName)}/standalone`}
+					href={`/ext-standalone/${encodeURIComponent(context.pluginName)}/standalone`}
 				>
 					Standalone
 				</Button>

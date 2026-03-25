@@ -12,7 +12,7 @@ import { metaRoutes } from '../../api/http/meta'
 import { debugRoutes } from '../../api/http/debug'
 import { logRoutes } from '../../api/http/logs'
 import { pluginNameParams } from '../../api/http/models'
-import { HmrRpcApi } from '../../api/http/rpc/HmrRpcApi'
+import { RuntimeRpcApi } from '../../api/http/rpc/RuntimeRpcApi'
 import { PluginHandle } from '../../api/http/rpc/PluginHandle'
 import { getHmrMcpHttpHandler } from '../../api/mcp'
 import type { SignalDbItem } from '../../web/plugin-ui/signaldb-contracts'
@@ -158,7 +158,7 @@ function createInternalTransportPlugins(
 					HMR_TRANSPORT_PATHS.rpc,
 					async ({ pluginCtx, request, status }: any) => {
 						try {
-							return await newHttpBatchRpcResponse(request, new HmrRpcApi(pluginCtx))
+							return await newHttpBatchRpcResponse(request, new RuntimeRpcApi(pluginCtx))
 						} catch (error) {
 							pluginCtx.logger.error('RPC request failed', { error })
 							return status(500, 'Internal RPC error')

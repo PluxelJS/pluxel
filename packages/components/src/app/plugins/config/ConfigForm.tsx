@@ -4,7 +4,7 @@ import type { ObjectSchema } from 'valibot'
 import { getDefaults } from 'valibot'
 import { EmptyState } from '../../../components'
 import { useNotify } from '../../hooks'
-import { useHmrWebClient } from '../../rpc'
+import { useRuntimeTransportClient } from '../../../runtime'
 import { type ConfigFormBridge, type ConfigFormState, ConfigTabPanel } from './ConfigTab'
 import { ConfigActionDock } from './components/ConfigActionDock'
 import { compareSchemaKeys, formatSchemaGroupLabel, splitSchemaKey } from './schemaKey'
@@ -68,7 +68,7 @@ export function ConfigForm({
 	activeKey: activeKeyProp,
 	onActiveKeyChange,
 }: ConfigFormProps) {
-	const hmr = useHmrWebClient()
+	const transport = useRuntimeTransportClient()
 	const safeSchemas = schemas ?? {}
 	const keys = useMemo(() => Object.keys(safeSchemas).sort(compareSchemaKeys), [safeSchemas])
 	const [activeKey, setActiveKey] = useState(keys[0] || '')
@@ -217,7 +217,7 @@ export function ConfigForm({
 
 		setSavingAll(true)
 		try {
-				const result = (await (hmr as any).withRpc((rpc: any) =>
+				const result = (await (transport as any).withRpc((rpc: any) =>
 					rpc.plugin(pluginName).saveConfig(patch),
 				)) as SaveConfigResult
 			if (result.ok === false) {
@@ -265,7 +265,7 @@ export function ConfigForm({
 		} finally {
 			setSavingAll(false)
 		}
-	}, [applyFieldErrors, hasMultipleSchemas, hmr, notify, pluginName, savingAll, schemaItems])
+	}, [applyFieldErrors, hasMultipleSchemas, transport, notify, pluginName, savingAll, schemaItems])
 
 	const submitCurrent = useCallback(() => {
 		const bridge = formBridgeRef.current[resolvedActiveKey]

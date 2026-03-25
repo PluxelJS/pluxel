@@ -1,15 +1,15 @@
 import { ActionIcon, Badge, Box, Group, Paper, Select, Stack, Text, Tooltip } from '@mantine/core'
 import { IconRefresh, IconStar } from '@tabler/icons-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { BaseProvisionInfo } from '@pluxel/runtime/web/ui'
-import { rpcErrorMessage, useHmrWebClient } from '../../../rpc'
+import type { BaseProvisionInfo } from '../../../../runtime'
+import { rpcErrorMessage, useRuntimeTransportClient } from '../../../../runtime'
 import { useNotify } from '../../../hooks'
 import { usePluginScope } from '../context'
 import { loadBaseProvision } from './rpcResourceCache'
 
 export function BaseProviderCard() {
 	const { pluginName, refetch } = usePluginScope()
-	const hmr = useHmrWebClient()
+	const transport = useRuntimeTransportClient()
 	const notify = useNotify()
 	const [info, setInfo] = useState<BaseProvisionInfo | null>(null)
 	const [loading, setLoading] = useState(false)
@@ -27,7 +27,7 @@ export function BaseProviderCard() {
 			if (!pluginName) return
 			setLoading(true)
 			try {
-				const res = await loadBaseProvision(hmr, pluginName, options)
+				const res = await loadBaseProvision(transport, pluginName, options)
 				if (!mountedRef.current) return
 				setInfo(res ?? null)
 			} catch (error) {
@@ -44,7 +44,7 @@ export function BaseProviderCard() {
 				}
 			}
 		},
-		[hmr, notify, pluginName],
+		[transport, notify, pluginName],
 	)
 
 	useEffect(() => {
@@ -64,7 +64,7 @@ export function BaseProviderCard() {
 			if (!pluginName || !info) return
 			if (!value) return
 			try {
-				const res = await hmr.withRpc((rpc) =>
+				const res = await transport.withRpc((rpc) =>
 					rpc.plugin(pluginName).setBaseProvider(info.baseToken, value),
 				)
 				if (!res.ok) throw new Error(res.error || res.code || '操作失败')
@@ -83,7 +83,7 @@ export function BaseProviderCard() {
 				})
 			}
 		},
-		[hmr, info, load, notify, pluginName, refetch],
+		[transport, info, load, notify, pluginName, refetch],
 	)
 
 	if (!info) return null

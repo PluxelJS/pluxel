@@ -18,11 +18,13 @@ import {
 	type SnapshotLoader,
 } from '@pluxel/market'
 import {
-	createPluginUiHelpers,
+	createPluginUi,
 	definePluginUIModule,
 	type PackageBatchResult,
 	type PackageInventoryEntry,
 	type PackageSpecInput,
+	type UiConfirmPayload,
+	type UiNotifyPayload,
 } from '@pluxel/runtime/web/ui'
 import { IconExternalLink, IconInfoCircle, IconShoppingBag } from '@tabler/icons-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
@@ -84,10 +86,10 @@ const specKey = (spec?: PackageSpecInput) =>
 	(spec?.raw || `${spec?.name ?? ''}@${spec?.version ?? spec?.tag ?? ''}` || '').toLowerCase()
 
 async function fetchPackageInventory(
-	hmr: ReturnType<typeof marketUi.usePluginRuntime>['hmr'],
+	transport: ReturnType<typeof marketUi.use>['transport'],
 	includeUntracked: boolean,
 ): Promise<PackageInventoryEntry[]> {
-	return hmr.withRpc((rpc) => rpc.package().inventory({ includeUntracked }))
+	return transport.withRpc((rpc) => rpc.package().inventory({ includeUntracked }))
 }
 
 function buildInstalledPackages(inventory: PackageInventoryEntry[]): Record<string, string> {
@@ -108,23 +110,13 @@ function resolveMessage(error: unknown, fallback: string) {
 	return fallback
 }
 
-type UiNotifyLike = {
-	title?: string
-	message?: string
-	tone?: string
-}
+type UiNotifyLike = UiNotifyPayload
+type UiConfirmLike = UiConfirmPayload
 
-type UiConfirmLike = {
-	title?: string
-	message?: string
-	confirmLabel?: string
-	cancelLabel?: string
-}
-
-const marketUi = createPluginUiHelpers('MarketUI')
+const marketUi = createPluginUi('MarketUI')
 
 function MarketPage() {
-	const { hmr, notify, confirm } = marketUi.usePluginRuntime()
+	const { transport, notify, confirm } = marketUi.use('plugin')
 	const scheme = useComputedColorScheme('light', { getInitialValueInEffect: true })
 	const appearance = scheme === 'dark' ? 'dark' : 'light'
 	const marketBase = useMemo(() => resolveMarketBase(), [])
@@ -134,23 +126,14 @@ function MarketPage() {
 
 	const notifyUser = useCallback(
 		(payload: UiNotifyLike) => {
-			if (notify) {
-				notify(payload)
-				return
-			}
-			if (!payload.message) return
-			const prefix = payload.title ? `[${payload.title}]` : '[market]'
-			if (payload.tone === 'error') console.error(prefix, payload.message)
-			else console.warn(prefix, payload.message)
+			notify(payload)
 		},
 		[notify],
 	)
 
 	const confirmAction = useCallback(
 		(payload: UiConfirmLike) => {
-			if (confirm) return confirm(payload)
-			const msg = [payload.title, payload.message].filter(Boolean).join('\n') || '确认继续？'
-			return Promise.resolve(typeof window !== 'undefined' ? window.confirm(msg) : false)
+			return confirm(payload)
 		},
 		[confirm],
 	)
@@ -165,7 +148,7 @@ function MarketPage() {
 
 	const loadInventory = useCallback(async () => {
 		try {
-			const inventory = await fetchPackageInventory(hmr, false)
+			const inventory = await fetchPackageInventory(transport, false)
 			setInstalledPackages(buildInstalledPackages(inventory))
 		} catch (error) {
 			notifyUser({
@@ -174,7 +157,7 @@ function MarketPage() {
 				tone: 'error',
 			})
 		}
-	}, [hmr, notifyUser])
+	}, [notifyUser, transport])
 
 	useEffect(() => {
 		void loadInventory()
@@ -292,7 +275,7 @@ function MarketPage() {
 			setInstalling(true)
 			const failures: string[] = []
 			try {
-				const res = await hmr.withRpc((rpc) =>
+				const res = await transport.withRpc((rpc) =>
 					rpc.package().mutate({
 						action: 'install',
 						specs: installQueue.map((task) => task.spec),
@@ -353,7 +336,7 @@ function MarketPage() {
 				void loadInventory()
 			}
 		},
-		[confirmAction, hmr, installing, installedPackages, loadInventory, notifyUser],
+		[confirmAction, installing, installedPackages, loadInventory, notifyUser, transport],
 	)
 
 	return (

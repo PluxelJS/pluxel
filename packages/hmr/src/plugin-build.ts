@@ -14,6 +14,7 @@ import {
 import { resolve } from 'pathe'
 import { build, type InlineConfig } from 'vite'
 import { federation, type ModuleFederationOptions } from '@module-federation/vite'
+import { resolveParaglideIntegration } from './paraglide'
 
 export type BuildPluginUiRemoteOptions = {
 	pluginName: string
@@ -45,6 +46,7 @@ export async function buildPluginUiRemote(
 	const resolvedShared = resolveExtensionFederationShared(root, sharedPackages)
 	const sharedResolveRoot = resolvedShared.resolveRoot
 	const shared = resolvedShared.shared
+	const paraglide = resolveParaglideIntegration(root)
 
 	const config: InlineConfig = {
 		configFile: false,
@@ -57,6 +59,7 @@ export async function buildPluginUiRemote(
 			tsconfigPaths: true,
 		} as InlineConfig['resolve'],
 		plugins: [
+			...(paraglide?.plugins ?? []),
 			federation({
 				name: remoteName,
 				filename: EXTENSION_FEDERATION_REMOTE_ENTRY_FILE,

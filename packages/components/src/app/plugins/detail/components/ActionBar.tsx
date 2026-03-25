@@ -4,11 +4,11 @@ import { ActionIcon, Group, Switch, Tooltip } from '@mantine/core'
 import { openConfirmModal } from '@mantine/modals'
 import { IconPlayerPlay, IconRotateClockwise, IconSquareX } from '@tabler/icons-react'
 import { useCallback, useRef, useState } from 'react'
-import type { PluginStatusAction } from '@pluxel/runtime/web/ui'
+import type { PluginStatusAction } from '../../../../runtime'
 import { ExtensionSlot } from '../../../../extension'
 import { PluginStatusEntryLifecycleStage } from '../../../gqty'
 import { useNotify } from '../../../hooks'
-import { useHmrWebClient } from '../../../rpc'
+import { useRuntimeTransportClient } from '../../../../runtime'
 import { buildStartPlan, executeStartPlan } from '../../actions'
 import { invalidate } from '../../../data/invalidations'
 import { usePluginScope } from '../context'
@@ -26,7 +26,7 @@ const ACTION_LABEL: Record<PluginStatusAction, string> = {
 }
 
 export function ActionBar({ onStatusUpdated }: ActionBarProps) {
-	const hmr = useHmrWebClient()
+	const transport = useRuntimeTransportClient()
 	const {
 		pluginName,
 		dependencies,
@@ -108,7 +108,7 @@ export function ActionBar({ onStatusUpdated }: ActionBarProps) {
 		setIsLoading(true)
 
 		try {
-			const res = await hmr.withRpc((rpc) => rpc.plugin(pluginName).updateStatus(action))
+			const res = await transport.withRpc((rpc) => rpc.plugin(pluginName).updateStatus(action))
 			if (mySeq !== seqRef.current) return
 
 			if (res.ok === false) {

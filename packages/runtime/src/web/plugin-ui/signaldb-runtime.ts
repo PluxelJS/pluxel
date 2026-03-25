@@ -1,12 +1,17 @@
+import { effect, signal, type WriteSignal } from '@maverick-js/signals'
 import {
 	Collection as SignalCollection,
 	type Changeset,
 	type Collection,
 	type LoadResponse,
 } from '@signaldb/core'
+import maverickjsReactivityAdapter from '@signaldb/maverickjs'
+import { createUseReactivityHook } from '@signaldb/react'
 import { SyncManager } from '@signaldb/sync'
-import { useMemo, useSyncExternalStore } from 'react'
-import type { HmrWebClient } from './ui-runtime'
+import type { DependencyList } from 'react'
+import { useMemo } from 'react'
+import type { RuntimeTransportClient } from '../client'
+import type { SseMessage } from '../sse'
 import {
 	type SignalDbFindOptions,
 	type SignalDbItem,
@@ -17,9 +22,9 @@ import {
 } from './signaldb-contracts'
 
 type CollectionMeta = {
-	ready: boolean
-	version: number
-	revision: number
+	ready: WriteSignal<boolean>
+	version: WriteSignal<number>
+	revision: WriteSignal<number>
 }
 
 type CollectionState<T extends SignalDbItem> = {
@@ -31,6 +36,8 @@ type CollectionState<T extends SignalDbItem> = {
 type SyncCollectionOptions = {
 	name: string
 }
+
+const useSignalDbReactive = createUseReactivityHook(effect)
 
 export interface SignalDbCollectionView<T extends SignalDbItem> {
 	readonly name: string
@@ -62,7 +69,6 @@ class SignalDbReplicaNamespace {
 	private readonly bucket
 	private readonly sync: SyncManager<SyncCollectionOptions, SignalDbItem, string>
 	private readonly states = new Map<string, CollectionState<SignalDbItem>>()
-	private readonly listeners = new Map<string, Set<() => void>>()
 	private readonly remoteHandlers = new Map<
 		string,
 		Set<(data?: LoadResponse<SignalDbItem>) => Promise<void>>
@@ -71,17 +77,20 @@ class SignalDbReplicaNamespace {
 
 	constructor(
 		private readonly pluginName: string,
-		private readonly hmr: HmrWebClient,
+		private readonly transport: RuntimeTransportClient,
 	) {
 		this.namespace = signalDbNamespace(pluginName)
-		this.sse = hmr.createSse({ namespaces: [this.namespace] })
+		this.sse = transport.createSse({ namespaces: [this.namespace] })
 		this.bucket = this.sse.ns(this.namespace)
 		this.sync = new SyncManager<SyncCollectionOptions, SignalDbItem, string>({
 			autostart: true,
 			pull: async ({ name }: SyncCollectionOptions) => {
-				const response = await this.hmr.fetch(this.hmr.transport.signaldbCollection(this.pluginName, name), {
-					method: 'GET',
-				})
+				const response = await this.transport.fetch(
+					this.transport.links.signaldbCollection(this.pluginName, name),
+					{
+						method: 'GET',
+					},
+				)
 				if (!response.ok) throw new Error(`signaldb pull failed: HTTP ${response.status}`)
 				return (await response.json()) as LoadResponse<SignalDbItem>
 			},
@@ -89,11 +98,14 @@ class SignalDbReplicaNamespace {
 				{ name }: SyncCollectionOptions,
 				{ changes }: { changes: Changeset<SignalDbItem> },
 			) => {
-				const response = await this.hmr.fetch(this.hmr.transport.signaldbCollection(this.pluginName, name), {
-					method: 'POST',
-					headers: { 'content-type': 'application/json' },
-					body: JSON.stringify({ changes }),
-				})
+				const response = await this.transport.fetch(
+					this.transport.links.signaldbCollection(this.pluginName, name),
+					{
+						method: 'POST',
+						headers: { 'content-type': 'application/json' },
+						body: JSON.stringify({ changes }),
+					},
+				)
 				if (!response.ok) throw new Error(`signaldb push failed: HTTP ${response.status}`)
 			},
 			registerRemoteChange: async (
@@ -113,21 +125,9 @@ class SignalDbReplicaNamespace {
 			},
 		})
 
-		this.bucket.onAny((msg) => {
+		this.bucket.onAny((msg: SseMessage<string>) => {
 			void this.apply(msg.payload as SignalDbSyncEvent)
 		})
-	}
-
-	subscribe(collection: string, cb: () => void): () => void {
-		this.ensureState(collection)
-		const set = this.listeners.get(collection) ?? new Set<() => void>()
-		if (!this.listeners.has(collection)) this.listeners.set(collection, set)
-		set.add(cb)
-
-		return () => {
-			set.delete(cb)
-			if (set.size === 0) this.listeners.delete(collection)
-		}
 	}
 
 	getView<T extends SignalDbItem>(collection: string): SignalDbCollectionView<T> {
@@ -135,15 +135,9 @@ class SignalDbReplicaNamespace {
 		return buildCollectionView(collection, state)
 	}
 
-	token(collection: string): string {
-		const state = this.ensureState(collection)
-		return `${state.meta.ready ? 1 : 0}:${state.meta.version}:${state.meta.revision}`
-	}
-
 	dispose() {
 		for (const state of this.states.values()) state.stopObserve()
 		this.states.clear()
-		this.listeners.clear()
 		this.remoteHandlers.clear()
 		this.syncTasks.clear()
 		void this.sync.dispose().catch((): undefined => undefined)
@@ -156,47 +150,27 @@ class SignalDbReplicaNamespace {
 
 		const signalCollection = new SignalCollection<SignalDbItem, string, SignalDbItem>({
 			name: `${this.pluginName}:${collection}`,
+			reactivity: maverickjsReactivityAdapter,
 		})
 		const stopObserve = observeCollection(signalCollection, () => {
 			const current = this.states.get(collection)
 			if (!current) return
-			current.meta = {
-				...current.meta,
-				revision: current.meta.revision + 1,
-			}
-			this.notify(collection)
+			current.meta.revision.set(current.meta.revision() + 1)
 		})
 
 		state = {
 			collection: signalCollection,
-			meta: { ready: false, version: 0, revision: 0 },
+			meta: {
+				ready: signal(false),
+				version: signal(0),
+				revision: signal(0),
+			},
 			stopObserve,
 		}
 		this.states.set(collection, state)
 		this.sync.addCollection(signalCollection, { name: collection })
 		void this.syncCollection(collection)
 		return state
-	}
-
-	private notify(collection: string) {
-		const listeners = this.listeners.get(collection)
-		if (!listeners?.size) return
-		for (const listener of listeners) listener()
-	}
-
-	private markMeta(collection: string, patch: Partial<CollectionMeta>) {
-		const state = this.states.get(collection)
-		if (!state) return
-		const next = { ...state.meta, ...patch }
-		if (
-			next.ready === state.meta.ready &&
-			next.version === state.meta.version &&
-			next.revision === state.meta.revision
-		) {
-			return
-		}
-		state.meta = next
-		this.notify(collection)
 	}
 
 	private async dispatchRemoteChange(collection: string, data?: LoadResponse<SignalDbItem>) {
@@ -212,7 +186,9 @@ class SignalDbReplicaNamespace {
 		const task = this.sync
 			.sync(collection, { force: true })
 			.then(() => {
-				this.markMeta(collection, { ready: true })
+				const state = this.states.get(collection)
+				if (!state) return
+				state.meta.ready.set(true)
 			})
 			.finally(() => {
 				this.syncTasks.delete(collection)
@@ -229,22 +205,22 @@ class SignalDbReplicaNamespace {
 		if (!data) return
 
 		await this.dispatchRemoteChange(payload.collection, data)
-		this.markMeta(payload.collection, {
-			ready: true,
-			version: payload.version,
-		})
+		const current = this.states.get(payload.collection)
+		if (!current) return
+		current.meta.ready.set(true)
+		current.meta.version.set(payload.version)
 	}
 }
 
 class SignalDbReplicaRoot {
 	private readonly namespaces = new Map<string, SignalDbReplicaNamespace>()
 
-	constructor(private readonly hmr: HmrWebClient) {}
+	constructor(private readonly transport: RuntimeTransportClient) {}
 
 	namespace(pluginName: string): SignalDbReplicaNamespace {
 		let replica = this.namespaces.get(pluginName)
 		if (!replica) {
-			replica = new SignalDbReplicaNamespace(pluginName, this.hmr)
+			replica = new SignalDbReplicaNamespace(pluginName, this.transport)
 			this.namespaces.set(pluginName, replica)
 		}
 		return replica
@@ -256,22 +232,22 @@ class SignalDbReplicaRoot {
 	}
 }
 
-const roots = new WeakMap<HmrWebClient, SignalDbReplicaRoot>()
-const patchedClients = new WeakSet<HmrWebClient>()
+const roots = new WeakMap<RuntimeTransportClient, SignalDbReplicaRoot>()
+const patchedClients = new WeakSet<RuntimeTransportClient>()
 
-function getReplicaRoot(hmr: HmrWebClient): SignalDbReplicaRoot {
-	let root = roots.get(hmr)
+function getReplicaRoot(transport: RuntimeTransportClient): SignalDbReplicaRoot {
+	let root = roots.get(transport)
 	if (!root) {
-		root = new SignalDbReplicaRoot(hmr)
-		roots.set(hmr, root)
-		if (!patchedClients.has(hmr)) {
-			patchedClients.add(hmr)
-			const originalDispose = hmr.dispose.bind(hmr)
-			hmr.dispose = (): void => {
-				const current = roots.get(hmr)
+		root = new SignalDbReplicaRoot(transport)
+		roots.set(transport, root)
+		if (!patchedClients.has(transport)) {
+			patchedClients.add(transport)
+			const originalDispose = transport.dispose.bind(transport)
+			transport.dispose = (): void => {
+				const current = roots.get(transport)
 				if (current) {
 					current.dispose()
-					roots.delete(hmr)
+					roots.delete(transport)
 				}
 				originalDispose()
 			}
@@ -284,10 +260,14 @@ function buildCollectionView<T extends SignalDbItem>(
 	name: string,
 	state: CollectionState<T>,
 ): SignalDbCollectionView<T> {
+	// Force React to subscribe to collection writes even when callers only use
+	// `find()` / `findOne()` / `count()` during render and ignore `items`.
+	void state.meta.revision()
+
 	return {
 		name,
-		ready: state.meta.ready,
-		version: state.meta.version,
+		ready: state.meta.ready(),
+		version: state.meta.version(),
 		items: state.collection.find().fetch().map(cloneItem),
 		find(selector = {} as SignalDbSelector<T>, options) {
 			return state.collection.find(selector as any, options as any).fetch().map(cloneItem)
@@ -380,57 +360,56 @@ function toLoadResponse<T extends SignalDbItem>(
 }
 
 export function useSignalDbCollectionState<T extends SignalDbItem>(
-	hmr: HmrWebClient,
+	transport: RuntimeTransportClient,
 	pluginName: string,
 	collection: string,
 ): SignalDbCollectionView<T> {
-	const namespace = useMemo(() => getReplicaRoot(hmr).namespace(pluginName), [hmr, pluginName])
-	const stateToken = useSyncExternalStore(
-		(cb) => namespace.subscribe(collection, cb),
-		() => namespace.token(collection),
-		() => '0:0:0',
+	const namespace = useMemo(
+		() => getReplicaRoot(transport).namespace(pluginName),
+		[pluginName, transport],
 	)
-
-	return useMemo(() => namespace.getView<T>(collection), [collection, namespace, stateToken])
+	return useSignalDbReactive(() => namespace.getView<T>(collection), [collection, namespace])
 }
 
 export function useSignalDbCollectionsState(
-	hmr: HmrWebClient,
+	transport: RuntimeTransportClient,
 	pluginName: string,
 	collections: string[],
 ): Record<string, SignalDbCollectionView<SignalDbItem>> {
-	const namespace = useMemo(() => getReplicaRoot(hmr).namespace(pluginName), [hmr, pluginName])
-	const token = useSyncExternalStore(
-		(cb) => {
-			const unsubs = collections.map((collection) => namespace.subscribe(collection, cb))
-			return () => {
-				for (const unsub of unsubs) unsub()
-			}
-		},
-		() =>
-			collections
-				.map((collection) => {
-					return `${collection}:${namespace.token(collection)}`
-				})
-				.join('|'),
-		() => '',
+	const namespace = useMemo(
+		() => getReplicaRoot(transport).namespace(pluginName),
+		[pluginName, transport],
 	)
+	const collectionsKey = collections.join('\0')
 
-	return useMemo(
+	return useSignalDbReactive(
 		() =>
 			Object.fromEntries(collections.map((collection) => [collection, namespace.getView(collection)])),
-		[collections, namespace, token],
+		[collectionsKey, namespace],
 	)
 }
 
 export function useSignalDbDocState<T extends SignalDbItem>(
-	hmr: HmrWebClient,
+	transport: RuntimeTransportClient,
 	pluginName: string,
 	collection: string,
 	selector: SignalDbSelector<T>,
 ): T | undefined {
-	const view = useSignalDbCollectionState<T>(hmr, pluginName, collection)
-	return useMemo(() => view.findOne(selector), [selector, view])
+	const namespace = useMemo(
+		() => getReplicaRoot(transport).namespace(pluginName),
+		[pluginName, transport],
+	)
+	return useSignalDbReactive(
+		() => namespace.getView<T>(collection).findOne(selector),
+		[collection, namespace, selector],
+	)
+}
+
+export function useSignalDbQueryState<T>(
+	query: () => T,
+	deps: DependencyList = [],
+): T {
+	return useSignalDbReactive(query, deps)
 }
 
 function cloneItem<T>(item: T): T {

@@ -4,7 +4,7 @@ import {
 	type LogSseEvent,
 	type LogStreamMeta,
 	type RuntimeLogLine,
-} from '@pluxel/runtime/web/ui'
+} from '../../runtime'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import {
 	memo,
@@ -17,7 +17,7 @@ import {
 	useState,
 	useSyncExternalStore,
 } from 'react'
-import { useHmrWebClient } from '../rpc'
+import { useRuntimeTransportClient } from '../../runtime'
 
 interface Props {
 	module?: string
@@ -699,7 +699,7 @@ const LogList = memo(function LogList(props: {
 })
 
 export function LiveLog({ module, showName = true, filter, variant = 'full' }: Props) {
-	const hmr = useHmrWebClient()
+	const transport = useRuntimeTransportClient()
 	const [meta, setMeta] = useState<LogStreamMeta | null>(null)
 	const [connected, setConnected] = useState(false)
 	const [follow, setFollow] = useState(true)
@@ -792,14 +792,14 @@ export function LiveLog({ module, showName = true, filter, variant = 'full' }: P
 
 	const refreshStreams = useCallback(async () => {
 		try {
-			const payload = await hmr.api.logs.streams()
+			const payload = await transport.http.logs.streams()
 			const ids = payload.streams.map((stream) => stream.streamId).filter(Boolean)
 			ids.sort((a: string, b: string) => a.localeCompare(b))
 			if (ids.length) setStreams(ids)
 		} catch {
 			// ignore
 		}
-	}, [hmr.api.logs])
+	}, [transport.http.logs])
 
 	useEffect(() => {
 		if (variant !== 'full') return
@@ -833,7 +833,7 @@ export function LiveLog({ module, showName = true, filter, variant = 'full' }: P
 			if (now - lastAuthProbeAtRef.current < 1500) return false
 			lastAuthProbeAtRef.current = now
 			try {
-				const payload = await hmr.api.meta.auth()
+				const payload = await transport.http.meta.auth()
 				if (payload.enabled !== true) return false
 				if (payload.authenticated === true) return false
 				const redirectPath =
@@ -848,7 +848,7 @@ export function LiveLog({ module, showName = true, filter, variant = 'full' }: P
 		}
 
 		const fetchMeta = async (): Promise<LogStreamMeta> => {
-			return hmr.api.logs.meta(streamId, { signal: ac.signal })
+			return transport.http.logs.meta(streamId, { signal: ac.signal })
 		}
 
 		const fetchRange = async (
@@ -856,7 +856,7 @@ export function LiveLog({ module, showName = true, filter, variant = 'full' }: P
 			fromSeq: string,
 			limit: number,
 		): Promise<LogRangeOk> => {
-			const payload = await hmr.api.logs.range(
+			const payload = await transport.http.logs.range(
 				streamId,
 				{
 					epoch: m.epoch,
@@ -894,7 +894,7 @@ export function LiveLog({ module, showName = true, filter, variant = 'full' }: P
 			const params = new URLSearchParams(filterQuery)
 			params.set('epoch', String(m.epoch))
 			params.set('from', fromSeq)
-			const url = hmr.api.logs.followUrl(streamId, params)
+			const url = transport.http.logs.followUrl(streamId, params)
 			const es = new EventSource(url)
 
 			es.onopen = () => setConnected(true)
@@ -994,7 +994,7 @@ export function LiveLog({ module, showName = true, filter, variant = 'full' }: P
 			rafRef.current = null
 			es?.close()
 		}
-	}, [filterQuery, hmr, streamId])
+	}, [filterQuery, transport, streamId])
 
 	useEffect(() => {
 		followRef.current = follow

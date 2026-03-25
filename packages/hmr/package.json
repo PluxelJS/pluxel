@@ -42,6 +42,7 @@
 		"test": "pnpm exec vitest run"
 	},
 	"dependencies": {
+		"@inlang/paraglide-js": "^2.15.1",
 		"@logtape/logtape": "^2.0.2",
 		"@module-federation/vite": "1.13.1",
 		"@pluxel/core": "workspace:*",

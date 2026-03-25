@@ -235,29 +235,25 @@ describe('ExtensionService runtime/dev boundary', () => {
 		expect(events.length).toBeGreaterThan(0)
 	})
 
-	it('helpers() emit signaldb-only builtin form/button blocks', async () => {
+	it('state() emits signaldb-only builtin form/action blocks', async () => {
 		const { ctx } = createFakeCtx()
 		const service = new ExtensionService(ctx, { enabled: true })
-		const binding = {
-			field: (key: string, fallback: unknown) =>
-				({ kind: 'signaldb', collection: 'runtime', selector: { id: 'runtime' }, path: key, fallback }) as const,
-			path: (path: string, fallback: unknown) =>
-				({ kind: 'signaldb', collection: 'runtime', selector: { id: 'runtime' }, path, fallback }) as const,
-			snapshot: (fallback: unknown) =>
-				({ kind: 'signaldb', collection: 'runtime', selector: { id: 'runtime' }, fallback }) as const,
+		const collection = {
+			name: 'runtime',
+			findOne: () => ({ id: 'runtime', paused: false }),
 		}
 
-		const helpers = service.helpers(binding)
-		const form = helpers.form({
+		const state = service.state(collection as any, { id: 'runtime' })
+		const form = state.form({
 			schemaKey: 'demo',
 			write: {
 				collection: 'runtime-actions',
 				mode: 'insert',
 				value: { id: { kind: 'generatedId' }, paused: { kind: 'field', key: 'paused' } },
 			},
-			sync: { id: 'runtime', paused: false },
+			state: { id: 'runtime', paused: false },
 		})
-		const button = helpers.button({
+		const action = state.action({
 			label: 'Reset',
 			write: {
 				collection: 'runtime-actions',
@@ -270,7 +266,7 @@ describe('ExtensionService runtime/dev boundary', () => {
 			kind: 'form',
 			syncFrom: { kind: 'signaldb', collection: 'runtime', selector: { id: 'runtime' } },
 		})
-		expect(button).toMatchObject({
+		expect(action).toMatchObject({
 			kind: 'action',
 			label: 'Reset',
 		})

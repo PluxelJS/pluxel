@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import * as v from 'valibot'
 import * as f from 'valibot-form'
 
-import { invokeRpc } from '../rpc'
+import { invokeRpc } from '../../runtime'
 
 export type PluginConfigData = {
 	schemaMap: Record<string, any>

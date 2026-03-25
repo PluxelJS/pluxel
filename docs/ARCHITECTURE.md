@@ -6,6 +6,10 @@
 - HMR/Vite 只存在于 `@pluxel/hmr`，并且只能 **attach 到既有 ctx**（不允许反向耦合）。
 - 依赖链清晰可追踪，避免“多层 index/barrel + 隐式重导出”造成理解成本上升。
 
+如果你在追查“插件前端为什么这样分层”，不要只看这份总览，直接同时看：
+
+- `docs/FRONTEND_ARCHITECTURE.md`
+
 ## 包边界与依赖方向
 
 依赖方向只允许：
@@ -18,6 +22,18 @@
 - `@pluxel/runtime`：kernel services（loader/package/scan/http/config/plugin-interaction/...）+ Web 协议与稳定路由。
 - `@pluxel/hmr`：workspace diagnose + Vite dev server + runner + pipeline + watch（通过 ctx 操作 runtime）。
 - `@pluxel/cli`：对外命令行入口（构建/脚手架/HMR 相关命令）。
+
+另外还有一个刻意单列的 internal toolchain 包：
+
+- `@pluxel/build`
+  不属于 runtime 依赖链；它只负责 build-time rewrite / overlay / 插件构建辅助，供 CLI 和构建流程消费
+
+换句话说：
+
+- `core/runtime/hmr/cli`
+  是运行时与宿主链路
+- `build`
+  是构建期链路
 
 ## Runtime kernel（`@pluxel/runtime`）
 
@@ -63,6 +79,28 @@
 - **优先保持单一、可追踪的实现**
 - **除非出现第二种非-HMR host 需要复用同一套 control-plane，否则不为“语义绝对纯净”继续拆层**
 
+### 前端边界补充
+
+runtime 里已经包含插件前端的运行时协议，但不包含前端 authoring/build 语义：
+
+- runtime 负责 `ctx.ext.rpc` / `ctx.ext.sse` / `ctx.ext.signaldb` / `ctx.ext.ui`
+- runtime 负责浏览器宿主消费已编译插件 UI remote 的协议
+- runtime 不负责 `ui(...).bind(ctx)` 这类 authoring bridge
+- runtime 不负责 Vite dev server，也不负责编译源码入口
+
+这层边界是本轮前端重构最重要的约束之一：源码入口属于 HMR / build，运行时只消费稳定产物。
+
+把插件前端再压成一句话：
+
+- `@pluxel/hmr/plugin`
+  给作者写 `ui(...).bind(ctx)` 这种源码声明
+- `@pluxel/build`
+  把 authoring 声明降成 `ctx.ext.ui.packaged()`
+- `@pluxel/runtime`
+  只消费 packaged remote / doc / signaldb / rpc / sse
+
+因此，不要再把“源码声明”“remote 构建”“runtime 注册”写进同一层抽象里。
+
 ## HMR dev host（`@pluxel/hmr`）
 
 ### startup-only
@@ -84,3 +122,21 @@ runner 必须与 host 共享部分模块的“单例语义”（decorators、DI 
 - singleton guard 触发或隐性状态分裂
 
 桥接配置位置：`packages/hmr/src/dev/hmr/config.ts`（`REQUIRED_BRIDGE_MODULES` / `REQUIRED_BRIDGE_PROVIDERS`）。
+
+## Build Toolchain（`@pluxel/build`）
+
+`@pluxel/build` 不参与 runtime service graph。它承担的是构建期静态改写：
+
+- `configSourcePlugin()`
+  提取配置 schema source
+- `hmrUiBridgePlugin()`
+  把 `ui(...).bind(ctx)` 降成 `ctx.ext.ui.packaged()`
+- `importTypeFixerPlugin()`
+  修正装饰器与类型导入场景
+
+这一层的判断标准很简单：
+
+- 如果逻辑只在构建期存在，而且目标是让最终产物更“纯 runtime”
+  放 `@pluxel/build`
+- 如果逻辑需要 watch、源码执行、dev host 生命周期
+  放 `@pluxel/hmr`

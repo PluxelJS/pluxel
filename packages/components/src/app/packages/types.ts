@@ -1,5 +1,5 @@
 import type { PluginStatusEntry } from '../gqty'
-import type { PackageInventoryEntry, PackageLoadIssue } from '../rpc'
+import type { PackageInventoryEntry, PackageLoadIssue } from '../../runtime'
 
 export type Maybe<T> = T | null | undefined
 

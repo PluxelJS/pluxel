@@ -1,9 +1,9 @@
 import type { RpcStub } from 'capnweb'
 import { newHttpBatchRpcSession } from 'capnweb'
 import { HMR_INTERNAL_API_BASE } from './paths'
-import type { HmrRpcApi, HmrUiRpcMap } from './protocol'
+import type { ExtensionUiRpcMap, RuntimeRpcApi } from './protocol'
 
-export type HmrRpcStub = RpcStub<HmrRpcApi>
+export type RuntimeRpcStub = RpcStub<RuntimeRpcApi>
 
 export type RpcClientCreateOptions = {
 	signal?: AbortSignal
@@ -14,7 +14,7 @@ export type RpcClientCreateOptions = {
 export function createRpcClient(
 	rpcBase = `${HMR_INTERNAL_API_BASE}/rpc`,
 	options: RpcClientCreateOptions = {},
-): HmrRpcStub {
+): RuntimeRpcStub {
 	const signal = options.signal
 	const credentials = options.credentials
 
@@ -31,10 +31,10 @@ export function createRpcClient(
 					},
 				})
 			: rpcBase
-	return newHttpBatchRpcSession<HmrRpcApi>(urlOrRequest as any)
+	return newHttpBatchRpcSession<RuntimeRpcApi>(urlOrRequest as any)
 }
 
-export type RpcClientFactory = (options?: RpcClientCreateOptions) => HmrRpcStub
+export type RpcClientFactory = (options?: RpcClientCreateOptions) => RuntimeRpcStub
 
 export function createRpcClientFactory(rpcBase = `${HMR_INTERNAL_API_BASE}/rpc`): RpcClientFactory {
 	// Capnweb batch RPC sessions must be short-lived per call; reusing a closed
@@ -42,7 +42,7 @@ export function createRpcClientFactory(rpcBase = `${HMR_INTERNAL_API_BASE}/rpc`)
 	return (options) => createRpcClient(rpcBase, options)
 }
 
-function disposeRpcClient(client: HmrRpcStub) {
+function disposeRpcClient(client: RuntimeRpcStub) {
 	const disposer =
 		(client as any)[Symbol.dispose] ??
 		(client as any)[Symbol.asyncDispose] ??
@@ -79,7 +79,7 @@ function createTimeout(timeoutMs: number) {
 }
 
 export async function invokeRpc<T>(
-	runner: (client: HmrRpcStub) => Promise<T>,
+	runner: (client: RuntimeRpcStub) => Promise<T>,
 	options?: { rpcBase?: string; timeoutMs?: number; credentials?: RequestCredentials },
 ): Promise<T> {
 	const base = options?.rpcBase ?? `${HMR_INTERNAL_API_BASE}/rpc`
@@ -105,9 +105,9 @@ export function rpcErrorMessage(error: unknown, fallback = 'RPC 调用失败'): 
 export function createUiRpcView(
 	raw: RpcClientFactory,
 	defaults: RpcClientCreateOptions = {},
-): HmrUiRpcMap {
-	// Important: capnweb http-batch sessions are short-lived. If we return the raw
-	// stub object and users memoize it (e.g. `const ui = hmr.ui.MyPlugin`),
+): ExtensionUiRpcMap {
+		// Important: capnweb http-batch sessions are short-lived. If we return the raw
+		// stub object and users memoize it (e.g. `const rpc = transport.extensions.MyPlugin`),
 	// the session may already be ended when the next interaction happens.
 	//
 	// To make this ergonomic and safe, we return a stable proxy where each method
@@ -181,5 +181,5 @@ export function createUiRpcView(
 				return getNamespaceProxy(namespace)
 			},
 		},
-	) as HmrUiRpcMap
+	) as ExtensionUiRpcMap
 }

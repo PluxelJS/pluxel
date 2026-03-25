@@ -1,12 +1,12 @@
 import type {
-	HmrRpcApi,
 	PluginStatusAction,
 	PluginStatusBatchAction,
 	PluginStatusBatchResult,
 	PluginStatusMutationResult,
-} from '@pluxel/runtime/web/ui'
+	RuntimeRpcApi,
+} from '../../runtime'
 import type { RpcStub } from 'capnweb'
-import { invokeRpc } from '../rpc'
+import { invokeRpc } from '../../runtime'
 import { getPluginOverviewSnapshot, requestPluginOverviewRefetch } from './data'
 import { invalidate } from '../data/invalidations'
 
@@ -31,7 +31,7 @@ export type StatusActionResult = StartResult & {
 	lifecycleStage?: PluginStatusMutationResult['lifecycleStage']
 }
 
-type HmrRpcStub = RpcStub<HmrRpcApi>
+type RuntimeRpcStub = RpcStub<RuntimeRpcApi>
 
 async function readStatusOverviewSnapshot() {
 	let snapshot = getPluginOverviewSnapshot()
@@ -44,7 +44,7 @@ async function readStatusOverviewSnapshot() {
 	return snapshot.overview?.status?.statuses ?? []
 }
 
-async function isPluginConfigured(rpc: HmrRpcStub, name: string) {
+async function isPluginConfigured(rpc: RuntimeRpcStub, name: string) {
 	try {
 		const plugin = rpc.plugin(name)
 		const [schemaResult, configResult] = await Promise.allSettled([

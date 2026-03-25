@@ -1,5 +1,5 @@
 import type { PluginStatusEntry } from '../gqty'
-import type { PackageInventoryEntry, PackageLoadIssue, PackageSpecInput } from '../rpc'
+import type { PackageInventoryEntry, PackageLoadIssue, PackageSpecInput } from '../../runtime'
 import type { Maybe, PackageRow } from './types'
 
 const timeFormatter = new Intl.DateTimeFormat('zh-CN', {

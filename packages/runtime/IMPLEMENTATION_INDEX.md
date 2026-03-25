@@ -1,92 +1,130 @@
-# @pluxel/runtime — Implementation Index (for LLM)
+# @pluxel/runtime — Implementation Index
 
-目标：用最少的跳转把 “runtime kernel 的实现在哪里、边界在哪里、关键依赖链是什么” 讲清楚。
+目标：快速定位 runtime kernel 的边界、公开面和关键实现。
 
-维护约束与设计目标（仓库级）见：
+前端整条链路说明见：
 
-- `docs/ARCHITECTURE.md`
-- `docs/PACKAGING.md`
-- `docs/AGENT_RULES.md`
+- [`docs/FRONTEND_ARCHITECTURE.md`](../../docs/FRONTEND_ARCHITECTURE.md)
 
-## Public Surface (package exports)
+如果你是为了追“插件前端最终在 runtime 里如何落地”，推荐先读 `Plugin Interaction`，再读 `Web Surface`。
+
+## Package Exports
 
 - `packages/runtime/package.json`
-  - `.` → `packages/runtime/src/index.ts`
-  - `./services` → `packages/runtime/src/services.ts`
-  - `./logger` → `packages/runtime/src/logger.ts`
-  - `./web` → `packages/runtime/src/web.ts`
-  - `./web/ui` → `packages/runtime/src/web/ui.ts`
-  - `./web/extensions` → `packages/runtime/src/web/extensions.ts`
-  - `./web/federation` → `packages/runtime/src/web/federation.ts`
-  - `./web/paths` → `packages/runtime/src/web/paths.ts`
-  - `./capnweb` → `packages/runtime/src/capnweb.ts`
-  - `./frozen` → `packages/runtime/src/frozen.ts`
-  - `./shared` → `packages/runtime/src/shared.ts`
-  - `./internal` → `packages/runtime/src/internal.ts`
+- `packages/runtime/src/index.ts`
+- `packages/runtime/src/services.ts`
+- `packages/runtime/src/web.ts`
+- `packages/runtime/src/internal.ts`
 
-## Runtime Entry / Service Registration
+## Runtime Entry
 
 - `packages/runtime/src/index.ts`
-  - 设置进程级 runtime 标记：`setPluxelRuntime('core')`
-  - `import './runtime/register'`：注册 runtime services（依赖注入/Context augmentation）
-  - 公开导出：最小 plugin authoring surface（`Context` / `Plugin` / `BasePlugin` …）+ `Config()` decorator
-
-- `packages/runtime/src/services.ts`
-  - `@pluxel/runtime/services`：runtime services（loader/package/http/config/scan…）+ 部分类型
-  - 约束：dev-only 的 compile helpers 不在这里导出（改放到 `@pluxel/runtime/internal`）
-
+  runtime 入口；设置 runtime 标记并注册 services
 - `packages/runtime/src/runtime/register.ts`
-  - side-effect imports：把各 Service 的 `@Injectable` 注册进 `Context`
-  - 这是“只要 import @pluxel/runtime 就能 new Context() 拿到服务”的关键。
+  side-effect 注册 `Context` services
 
-## Core Services (入口文件)
+## Core Services
 
-- HTTP / Control Plane
-  - `packages/runtime/src/services/http/HttpService.ts`：`ctx.http.fetch`、内部 API mount、UI 静态资源策略
-  - `packages/runtime/src/services/http/internalApi.ts`：内部 API route 组装
-  - `packages/runtime/src/server/ui-public.ts`：`/dist/public/*` 静态资源 handler
+- `packages/runtime/src/services/http/HttpService.ts`
+  HTTP / control plane / UI assets
+- `packages/runtime/src/services/ConfigService.ts`
+  配置读写
+- `packages/runtime/src/services/runtime/loader/LoaderService.ts`
+  插件加载
+- `packages/runtime/src/services/runtime/package/PackageService.ts`
+  包管理
+- `packages/runtime/src/services/runtime/scan/ScanService.ts`
+  workspace scan
+- `packages/runtime/src/services/PluginDataService.ts`
+  插件持久化数据
 
-- Config
-  - `packages/runtime/src/services/ConfigService.ts`：config 读写/readonly snapshot/profile path
+## Plugin Interaction
 
-- Loader / Package / Scan
-  - `packages/runtime/src/services/runtime/loader/LoaderService.ts`
-  - `packages/runtime/src/services/runtime/package/PackageService.ts`
-  - `packages/runtime/src/services/runtime/scan/ScanService.ts`
-  - `packages/runtime/src/services/runtime/scan/types.ts`：Scan/Package 共用 contracts（options/types/guards），避免跨服务 import 实现文件
+- `packages/runtime/src/services/plugin-interaction/ExtService.ts`
+  `ctx.ext` 聚合入口
+- `packages/runtime/src/services/plugin-interaction/ExtensionService.ts`
+  packaged UI remote + builtin/doc 扩展
+- `packages/runtime/src/services/plugin-interaction/SignalDbService.ts`
+  runtime-owned collection + sync transport
+- `packages/runtime/src/services/plugin-interaction/RpcService.ts`
+  RPC 暴露
+- `packages/runtime/src/services/plugin-interaction/SseService.ts`
+  SSE 暴露
 
-- Plugin interaction (UI/RPC/SSE/Extension)
-  - `packages/runtime/src/services/plugin-interaction/*`
+这一组文件就是插件前端运行时语义的核心：
 
-## Web SDK / Protocol
+- `ctx.ext.ui`
+  注册 packaged remote 或 host-rendered doc
+- `ctx.ext.signaldb`
+  提供状态同步 collection
+- `ctx.ext.rpc` / `ctx.ext.sse`
+  提供自定义 UI 的命令式交互通道
 
-- `packages/runtime/src/web.ts` + `packages/runtime/src/web/*`
-  - 浏览器侧协议常量、RPC/SSE 客户端、plugin UI contract（历史上叫 `hmr-web`，现在归并为 `@pluxel/runtime/web`）
-  - 公开入口：`@pluxel/runtime/web`
+如果你在追查 SignalDB 的前后端链路，推荐对照读：
 
-## Frozen Host Generator
+- `packages/runtime/src/services/plugin-interaction/SignalDbService.ts`
+  服务端 authoritative collection、SSE 广播、HTTP sync entry
+- `packages/runtime/src/web/plugin-ui/signaldb-runtime.ts`
+  浏览器 replica、`SyncManager` 集成、React hooks
+
+判断原则：
+
+- 只要还是“插件启动时注册什么”，优先看这里
+- 如果问题变成“浏览器侧怎么消费这些协议”，再跳去 `Web Surface`
+
+## Web Surface
+
+- `packages/runtime/src/web/ui.ts`
+  插件 UI public surface
+- `packages/runtime/src/web/client.ts`
+  runtime transport client、HTTP links、RPC/SSE 接入
+- `packages/runtime/src/web/react.tsx`
+  host-owned transport provider
+- `packages/runtime/src/web/protocol.ts`
+  浏览器/服务端共享协议类型与插件 UI augmentation contract
+- `packages/runtime/src/web/extensions.ts`
+  builtin/doc contract
+- `packages/runtime/src/web/federation.ts`
+  MF remote 名称、manifest 路径、shared contract
+- `packages/runtime/src/web/plugin-ui/*`
+  UI contract / authoring helpers / signaldb hooks
+
+这一层不是插件后端注册入口，而是浏览器侧消费契约。比较容易混淆的几个文件：
+
+- `authoring.ts`
+  插件 UI 浏览器侧 helper；解决的是“组件里怎么更顺手地拿 transport/rpc/signaldb”
+- `client.ts`
+  transport 客户端本体；浏览器低层入口
+- `react.tsx`
+  transport provider / hook；给宿主 app 提供唯一 transport 实例
+- `signaldb-runtime.ts`
+  浏览器侧 signaldb collection/doc hooks
+- `federation.ts`
+  MF remote 名称、manifest、shared contract
+
+如果你在追查“浏览器插件前端是如何被宿主消费的”，优先看：
+
+- `packages/runtime/src/web/plugin-ui/ui-contracts.ts`
+- `packages/runtime/src/web/plugin-ui/authoring.ts`
+- `packages/runtime/src/web/plugin-ui/signaldb-runtime.ts`
+- `packages/runtime/src/web/plugin-ui/federation.ts`
+
+## Frozen / Internal / Shared
 
 - `packages/runtime/src/frozen.ts`
-  - `buildFrozenHost()`：生成一个“冻结 Context 导出”的 `.mjs`，用于无 HMR 的部署场景
-  - 类型：`packages/runtime/src/runtime/contracts.ts`
-
-## Internal / Shared (给 @pluxel/hmr 用)
-
+  frozen host 构建
 - `packages/runtime/src/internal.ts`
-  - `dev-handles`：HMR 在 ctx 上挂 handle（`setDevRuntimeHandles` 等）
-  - `module-runtime`：runtime module cache adapter（给 HMR runner 使用）
-  - `paths`：storage/layout/profile materialize helpers（HMR host 与脚本复用）
-  - dev-only compile helpers（给 `@pluxel/hmr` 复用，不扩张 public `services` surface）
-    - `ExtensionModuleStore`
-    - `normalizeJsxRuntime` / `toBrowserBundleResolve` / `transformVendorImports`
-
+  runtime 与 hmr 的内部 glue
 - `packages/runtime/src/shared.ts`
-  - 纯工具与可复用策略：cache/conditions/exsolve/resolution/vite-id/missing-deps 等
-  - 约束：不依赖 Vite dev server；允许存在 “Vite id 形态” 的字符串工具（仅协议层）
+  纯工具与复用策略
 
-## Tests (runtime-only)
+## Tests
 
-- `packages/runtime/tests/runtime/dynamic-host.test.ts`：验证 `new Context()` + service config 的最小可用性
-- `packages/runtime/tests/runtime/host-paths.test.ts`：storage/profile path helpers
-- `packages/runtime/tests/web/public-surface-compat.test.ts`：验证 `@pluxel/runtime/web` 的导出与内部实现一致
-- `packages/runtime/tests/web/rpcExtensionsView.test.ts`：`createUiRpcView()` 行为与缓存/释放语义
+- `packages/runtime/tests/extension/extension-service-boundary.test.ts`
+  plugin UI runtime/build 边界
+- `packages/runtime/tests/extension/signaldb-service.test.ts`
+  signaldb collection/sync 语义
+- `packages/runtime/tests/web/public-subpath-surfaces.test.ts`
+  public subpath surface 稳定性
+- `packages/runtime/tests/web/demo-plugin-ui-contract.test.ts`
+  demo UI contract 稳定性

@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react'
 import { extRuntime } from '../debug'
 import { ExtensionErrorBoundary } from '../ErrorBoundary'
-import { registerPluginI18n, unregisterPluginI18n } from './i18n'
+import { extensionLocale } from './locale'
 import { extensionRegistry } from './registry'
 import type {
 	ExtensionItem,
@@ -17,13 +17,12 @@ type RuntimeRegistration = { point: ExtensionPoint; item: ExtensionItem<any> }
 
 interface PreparedPluginRuntime {
 	setupCleanup?: () => void
-	i18n?: PluginUIModule['i18n']
 	extensionRegistrations: RuntimeRegistration[]
 	navRegistrations: RuntimeRegistration[]
 	routeMap: Map<string, RouteComponent>
 }
 
-class ExtensionRuntime {
+class PluginUiRegistry {
 	private readonly pluginCleanups = new Map<string, Array<() => void>>()
 	private readonly routeComponents = new Map<string, Map<string, RouteComponent>>()
 	private readonly pluginHashes = new Map<string, string>()
@@ -52,7 +51,7 @@ class ExtensionRuntime {
 				listener()
 			} catch (error) {
 				if (process.env.NODE_ENV !== 'production') {
-					console.error('[ExtensionRuntime] listener failed', error)
+					console.error('[PluginUiRegistry] listener failed', error)
 				}
 			}
 		}
@@ -68,7 +67,7 @@ class ExtensionRuntime {
 				listener()
 			} catch (error) {
 				if (process.env.NODE_ENV !== 'production') {
-					console.error('[ExtensionRuntime] plugin listener failed', error)
+					console.error('[PluginUiRegistry] plugin listener failed', error)
 				}
 			}
 		}
@@ -101,19 +100,19 @@ class ExtensionRuntime {
 			return
 		}
 
-		extRuntime('loading runtime %s@%s', pluginName, sourceHash)
+		extRuntime('loading plugin-ui %s@%s', pluginName, sourceHash)
 		const evaluated = await this.evaluateModule(importer)
 		const prepared = await this.preparePlugin(pluginName, evaluated)
 		this.commitPlugin(pluginName, prepared, sourceHash)
 
 		this.notify()
 		this.notifyPlugin(pluginName)
-		extRuntime('loaded runtime %s@%s', pluginName, sourceHash)
+		extRuntime('loaded plugin-ui %s@%s', pluginName, sourceHash)
 	}
 
 	unloadPluginModule(pluginName: string): void {
 		if (!this.pluginCleanups.has(pluginName)) return
-		extRuntime('unload runtime %s', pluginName)
+		extRuntime('unload plugin-ui %s', pluginName)
 		extensionRegistry.batch(() => {
 			this.disposePlugin(pluginName)
 		})
@@ -135,7 +134,6 @@ class ExtensionRuntime {
 		this.pluginCleanups.delete(pluginName)
 		this.routeComponents.delete(pluginName)
 		this.pluginHashes.delete(pluginName)
-		unregisterPluginI18n(pluginName)
 	}
 
 	private async preparePlugin(
@@ -143,7 +141,6 @@ class ExtensionRuntime {
 		module: PluginUIModule,
 	): Promise<PreparedPluginRuntime> {
 		const prepared: PreparedPluginRuntime = {
-			i18n: module.i18n,
 			extensionRegistrations: [],
 			navRegistrations: [],
 			routeMap: new Map(),
@@ -151,7 +148,7 @@ class ExtensionRuntime {
 
 		try {
 			if (module.setup) {
-				const maybe = await module.setup({ pluginName })
+				const maybe = await module.setup({ pluginName, locale: extensionLocale })
 				if (typeof maybe === 'function') {
 					prepared.setupCleanup = maybe
 				}
@@ -293,9 +290,6 @@ class ExtensionRuntime {
 		extensionRegistry.batch(() => {
 			this.disposePlugin(pluginName)
 
-			if (prepared.i18n) {
-				registerPluginI18n(pluginName, prepared.i18n)
-			}
 			if (prepared.extensionRegistrations.length > 0) {
 				cleanups.push(extensionRegistry.registerMany(prepared.extensionRegistrations))
 			}
@@ -327,14 +321,17 @@ class ExtensionRuntime {
 	}
 }
 
-export const extensionRuntime = new ExtensionRuntime()
+export const pluginUiRegistry = new PluginUiRegistry()
 
-export const loadExtensionModule = extensionRuntime.loadPluginModule.bind(extensionRuntime)
-export const unloadExtensionModule = extensionRuntime.unloadPluginModule.bind(extensionRuntime)
-export const subscribeExtensionRuntimeChanges = extensionRuntime.subscribe.bind(extensionRuntime)
-export const getExtensionRuntimeRevision = extensionRuntime.getRevision.bind(extensionRuntime)
-export const subscribePluginExtensionRuntimeChanges =
-	extensionRuntime.subscribePlugin.bind(extensionRuntime)
-export const getPluginExtensionRuntimeRevision =
-	extensionRuntime.getPluginRevision.bind(extensionRuntime)
-export const getPluginRouteComponent = extensionRuntime.getRouteComponent.bind(extensionRuntime)
+export const loadPluginUiModule = pluginUiRegistry.loadPluginModule.bind(pluginUiRegistry)
+export const unloadPluginUiModule = pluginUiRegistry.unloadPluginModule.bind(pluginUiRegistry)
+export const subscribePluginUiRegistryChanges =
+	pluginUiRegistry.subscribe.bind(pluginUiRegistry)
+export const getPluginUiRegistryRevision =
+	pluginUiRegistry.getRevision.bind(pluginUiRegistry)
+export const subscribePluginUiModuleChanges =
+	pluginUiRegistry.subscribePlugin.bind(pluginUiRegistry)
+export const getPluginUiModuleRevision =
+	pluginUiRegistry.getPluginRevision.bind(pluginUiRegistry)
+export const getPluginUiRouteComponent =
+	pluginUiRegistry.getRouteComponent.bind(pluginUiRegistry)

@@ -1,5 +1,5 @@
 /**
- * HMR protocol types (client/server shared).
+ * Runtime transport protocol types (client/server shared).
  *
  * Keep protocol contracts and UI extension augmentation in one place so
  * `@pluxel/runtime/web/ui` can stay the single plugin-UI-facing type surface.
@@ -10,24 +10,24 @@
  *
  * @example
  * declare module '@pluxel/runtime/web/ui' {
- *   interface HmrUiRpcMap {
+ *   interface ExtensionUiRpcMap {
  *     MyPlugin: MyPluginRpc
  *   }
  *
- *   interface HmrUiSseMap {
+ *   interface ExtensionUiSseMap {
  *     MyPlugin: MyPluginSsePayload
  *   }
  *
- *   interface HmrUiSignalDbMap {
+ *   interface ExtensionUiSignalDbMap {
  *     MyPlugin: {
  *       events: DemoEvent
  *     }
  *   }
  * }
  */
-export interface HmrUiRpcMap {}
-export interface HmrUiSseMap {}
-export interface HmrUiSignalDbMap {}
+export interface ExtensionUiRpcMap {}
+export interface ExtensionUiSseMap {}
+export interface ExtensionUiSignalDbMap {}
 
 export type PluginStatusAction = 'start' | 'stop' | 'restart' | 'enable' | 'disable'
 export type ConfigPatch = Record<string, unknown>
@@ -268,7 +268,7 @@ export type LoggingHandleApi = {
 	clearPluginLevels: () => Promise<{ ok: true }>
 }
 
-type HmrRpcApiContract<ExtRpc = Record<string, unknown>> = {
+type RuntimeRpcApiContract<ExtRpc = Record<string, unknown>> = {
 	ping: () => string
 	plugin: (name: string) => PluginHandleApi
 	package: () => PackageHandleApi
@@ -280,4 +280,4 @@ type HmrRpcApiContract<ExtRpc = Record<string, unknown>> = {
 	updatePluginGroups: (groups: PluginGroupInput[]) => Promise<PluginGroup[]>
 }
 
-export type HmrRpcApi = HmrRpcApiContract<HmrUiRpcMap>
+export type RuntimeRpcApi = RuntimeRpcApiContract<ExtensionUiRpcMap>

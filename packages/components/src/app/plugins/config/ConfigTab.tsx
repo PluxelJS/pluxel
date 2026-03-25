@@ -5,7 +5,7 @@ import { useEffect, useMemo } from 'react'
 import type { ObjectSchema } from 'valibot'
 import { AutoForm, useAutoFormCtx } from 'valibot-form/web'
 import { useNotify } from '../../hooks'
-import { useHmrWebClient } from '../../rpc'
+import { useRuntimeTransportClient } from '../../../runtime'
 import { FormToc } from './components/FormToc'
 import { makeFieldAnchorPrefix, makeSectionAnchorPrefix } from './utils'
 
@@ -70,7 +70,7 @@ export function ConfigTabContent({
 	reportState?: (key: string, state: ConfigFormState) => void
 }) {
 	const notify = useNotify()
-	const hmr = useHmrWebClient()
+	const transport = useRuntimeTransportClient()
 	const sectionAnchorPrefix = useMemo(
 		() => sectionIdPrefix ?? makeSectionAnchorPrefix(pluginName, tabKey),
 		[pluginName, sectionIdPrefix, tabKey],
@@ -90,7 +90,7 @@ export function ConfigTabContent({
 			formOptions({
 				defaultValues: initialValue,
 					onSubmit: async ({ value, formApi }) => {
-						const result = (await (hmr as any).withRpc((rpc: any) =>
+						const result = (await (transport as any).withRpc((rpc: any) =>
 							rpc.plugin(pluginName).saveConfig({ [tabKey]: value }),
 						)) as SaveConfigResult
 					if (result.ok === false) {
@@ -124,7 +124,7 @@ export function ConfigTabContent({
 					notify({ title: '提交成功', message: `配置 ${tabKey} 已保存`, color: 'green' })
 				},
 			}),
-		[hmr, tabKey, initialValue, onSaved, notify, pluginName],
+		[transport, tabKey, initialValue, onSaved, notify, pluginName],
 	)
 
 	const hotkeys = useMemo(

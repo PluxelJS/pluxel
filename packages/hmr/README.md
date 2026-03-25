@@ -1,13 +1,31 @@
 # @pluxel/hmr
 
-`@pluxel/hmr` 是 Pluxel 的 dev host wrapper。它负责把开发期能力接到 `@pluxel/runtime` 上。
+`@pluxel/hmr` 是开发期适配层。它把 Vite、源码执行、watch、HMR 和插件 UI 编译接到 `@pluxel/runtime` 上。
 
-职责很简单：
+如果你要理解整条插件前端链路，直接看：
 
-- 读取配置并诊断 workspace
-- 创建或 attach 一个 `@pluxel/runtime` `Context`
+- [`docs/FRONTEND_ARCHITECTURE.md`](../../docs/FRONTEND_ARCHITECTURE.md)
+
+## 负责什么
+
+- 读取 HMR 配置并诊断 workspace
+- 创建或 attach 一个 runtime `Context`
 - 启动 Vite dev server、runner、watchers
-- 消费 `ui(...).bind(ctx)` 这类 authoring bridge，并把源码编译成可运行的 MF2 remote
+- 消费 `ui(...).bind(ctx)` 这类 authoring bridge
+- 把插件 UI 源码编译成可运行的 MF2 remote
+
+## 不负责什么
+
+- 正式运行时 UI 注册
+- 生产环境宿主服务
+- runtime 协议定义
+
+这些属于 `@pluxel/runtime`。
+
+如果只记一句边界判断，就是：
+
+- HMR 负责“源码如何变成可运行 remote”
+- runtime 负责“可运行 remote 如何被注册和消费”
 
 ## 推荐入口
 
@@ -18,43 +36,99 @@ const { ctx } = await startHmrHostFromConfig({
 	root: process.cwd(),
 	configPath: 'pluxel.hmr.jsonc',
 	profile: process.env.PLUXEL_HMR_PROFILE ?? 'dev',
-	logging: true,
 })
 ```
 
-如果你已经有自己的 `Context`，再用 `attachHmrRuntime(...)` 做低级 attach。
+已有 `Context` 时，再用 `attachHmrRuntime(...)`。
 
-## 核心设计
+## 前端边界
 
-- `runtime` 不理解 authoring 源码入口
-- `hmr` 才理解 `ui(...).bind(ctx)` 这种 bridge declaration
-- build 产物会把这层 bridge 重写成 `ctx.ext.ui.packaged()`
-- 因此 dev 语义和 runtime 语义始终分离
+- dev：`ui(...).bind(ctx)` 由 HMR bridge 消费源码入口
+- build：authoring bridge 会被重写成 `ctx.ext.ui.packaged()`
+- runtime：只消费编译后的 MF remote
 
-runtime 里保留的少量挂点只有：
+这三层故意分开，避免把 HMR 语义塞进 runtime 元数据。
 
-- `ui(...).bind(ctx)` 对应的 dev bridge 注入点
-- module runtime adapter 注入点
-- root-scoped dev handles
-- 给 extension compiler 使用的最小 module store bridge
+这里最关键的点不是“有没有 HMR”，而是“谁拥有源码语义”：
 
-## 推荐约束
+- `ui(...).bind(ctx)` 只属于 authoring / HMR / build 识别点
+- `ctx.ext.ui.packaged()` 才是最终 runtime 语义
+- runtime 永远不应该回头理解 `entryPath`
 
-- 推荐只用 `@pluxel/hmr/host` 作为高层入口
-- `attachHmrRuntime(...)` 只作为已有 `Context` 的 escape hatch
-- 宿主渲染 doc 默认只消费 `ctx.ext.signaldb`
-- 服务端代码避免从 `@pluxel/runtime/web` 或 `@pluxel/runtime/web/ui` 做 value import
+## MF2 在 HMR 里的角色
 
-## Profiling
+HMR 对 MF2 的使用也很克制：
 
-HMR attribution 日志是可选的：
+- HMR 不把 MF2 当 authoring API
+- HMR 只把插件 UI 源码编译成 MF2 remote
+- dev host 自己负责源码监听、重编译和 compiled module 提交
 
-- 开：`PLUXEL_HMR_ATTRIBUTION=info`
-- 关：`PLUXEL_HMR_ATTRIBUTION=0`
+也就是说，HMR 负责“如何从源码得到 remote”，MF2 负责“remote 长什么样、宿主怎么加载它”。
 
-## 维护文档
+## Paraglide
 
-- `docs/ARCHITECTURE.md`
-- `docs/PACKAGING.md`
-- `docs/AGENT_RULES.md`
-- `docs/SERVICES.md`
+插件 UI 的 i18n 目标库现在锁定为 `@inlang/paraglide-js`。
+
+当前约定：
+
+- 插件包根目录必须提供 `project.inlang`
+- 消息源目录固定为 `messages/`
+- 生成目录固定为 `src/paraglide/`
+
+在这个约定下：
+
+- dev：`ExtensionCompilerService` 会自动把 `paraglideVitePlugin(...)` 注入插件 UI 的子编译
+- build：`buildPluginUiRemote(...)` 也会自动注入同一个 Vite 插件
+- watch/hash：会跟踪 `project.inlang` / `messages`，但不会把 `src/paraglide` 生成产物当成输入再次触发重编
+
+也就是说，Paraglide 属于插件 UI 编译链能力，而不是 runtime 自己维护的一套翻译运行时。
+
+这套约定的设计意图是：
+
+- 插件作者只关心消息源和桥接 locale
+- HMR/build 统一负责把 Paraglide 接到子编译里
+- runtime 不再维护插件侧自定义字典注册接口
+
+## 和 build/CLI 的协作
+
+HMR 并不单独定义最终发布语义。正式构建时还会配合：
+
+- `@pluxel/build`
+  用 `hmrUiBridgePlugin()` 把 `ui(...).bind(ctx)` 降成 `ctx.ext.ui.packaged()`
+- `@pluxel/build/cli`
+  把这类 rewrite 纳入默认 overlay
+- `@pluxel/hmr/plugin-build`
+  负责插件 UI remote 的 MF2 构建
+
+也就是说，HMR 和 build 共享同一套 authoring 入口，但最后由 build 把 dev 语义清掉，只留下 runtime 需要的结果。
+
+## 当前固定约定
+
+如果你在维护这条链路，不要把下面几件事重新做成可选项：
+
+- `ui(...).bind(ctx)` 继续作为唯一的插件 UI authoring bridge
+- `ctx.ext.ui.packaged()` 继续作为唯一的 runtime packaged 注册语义
+- Paraglide 继续使用 `project.inlang` + `messages/` -> `src/paraglide/`
+- 插件 UI 浏览器 contract 继续收口到 `@pluxel/runtime/web/ui`
+
+## 公开面
+
+- `@pluxel/hmr`
+  low-level attach、Vite config helper、`HMRService`
+- `@pluxel/hmr/host`
+  标准 host 入口
+- `@pluxel/hmr/plugin`
+  作者侧 `ui(...)` / `worker(...)` bridge
+- `@pluxel/hmr/plugin-build`
+  插件 UI remote 的 MF build helper
+- `@pluxel/hmr/diagnose`
+  HMR 配置诊断
+- `@pluxel/hmr/snapshot`
+  `HmrWorkspaceSnapshot`
+
+## 约束
+
+- runtime 不理解源码 UI 入口
+- host 和 runner 之间的单例桥接必须保持稳定
+- dev handles 是 root-scoped，插件 ctx 只消费，不自己创建
+- 宿主渲染 doc 仍走 runtime `ctx.ext.signaldb` / `ctx.ext.ui.*`

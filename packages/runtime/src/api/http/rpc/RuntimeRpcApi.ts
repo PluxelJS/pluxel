@@ -1,7 +1,7 @@
-// rpc/HmrRpcApi.ts - 主 RPC API
+// rpc/RuntimeRpcApi.ts - 主 RPC API
 import type { Context } from '@pluxel/core'
 import { RpcTarget } from 'capnweb'
-import type { HmrUiRpcMap } from '../../../services'
+import type { ExtensionUiRpcMap } from '../../../services'
 import { writeGroups } from '../../features/groups/service'
 import { applyStatusActions } from '../../usecases/pluginStatus'
 import { LoggingHandle } from './LoggingHandle'
@@ -14,9 +14,9 @@ import type {
 	PluginStatusBatchResult,
 } from '../../../web/protocol'
 
-export class HmrRpcApi extends RpcTarget {
+export class RuntimeRpcApi extends RpcTarget {
 	private readonly ctx: Context
-	private readonly extView: HmrUiRpcMap
+	private readonly extView: ExtensionUiRpcMap
 
 	constructor(ctx: Context) {
 		super()
@@ -46,7 +46,7 @@ export class HmrRpcApi extends RpcTarget {
 	 * 访问插件注册的 RPC 扩展
 	 * @example rpc.ext['my-plugin'].method()
 	 */
-	get ext(): HmrUiRpcMap {
+	get ext(): ExtensionUiRpcMap {
 		return this.extView
 	}
 

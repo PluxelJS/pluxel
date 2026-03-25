@@ -2,7 +2,7 @@
 
 import { BasePlugin, Plugin } from '@pluxel/runtime'
 import { f, v } from '@pluxel/runtime/config'
-import type { UiDocHelpers } from '@pluxel/runtime/services'
+import type { UiState } from '@pluxel/runtime/services'
 import { doc } from '@pluxel/runtime/services'
 const MIN_REFRESH_MS = 250
 const MAX_REFRESH_MS = 10_000
@@ -371,7 +371,7 @@ export class PluginBuiltinShowcase extends BasePlugin {
 	private tickTimer: ReturnType<typeof setTimeout> | null = null
 	private ticks = 0
 	private paused = false
-	private builtin!: UiDocHelpers<BuiltinState>
+	private builtin!: UiState<BuiltinState>
 	private builtinState = this.ctx.ext.signaldb.collection<BuiltinState>({ name: 'runtime' })
 	private builtinActions = this.ctx.ext.signaldb.collection<BuiltinAction>({
 		name: 'runtime-actions',
@@ -394,9 +394,7 @@ export class PluginBuiltinShowcase extends BasePlugin {
 
 		await this.builtinState.ready()
 		await this.builtinActions.ready()
-		this.builtin = this.ctx.ext.ui.helpers(
-			this.ctx.ext.signaldb.bind(this.builtinState, { id: 'runtime' }),
-		)
+		this.builtin = this.ctx.ext.ui.state(this.builtinState, { id: 'runtime' })
 		this.syncBuiltinState()
 		this.consumePendingActions()
 		const stopWatch = this.builtinActions.watch((event) => {
@@ -549,7 +547,7 @@ export class PluginBuiltinShowcase extends BasePlugin {
 						submitMode: 'onChange',
 						autoSubmitDebounceMs: 120,
 						schemaKey: '_runtimeToggle',
-						sync: this.defaultBuiltinState(),
+						state: this.defaultBuiltinState(),
 						write: {
 							collection: 'runtime-actions',
 							mode: 'insert',
@@ -589,7 +587,7 @@ export class PluginBuiltinShowcase extends BasePlugin {
 
 				${doc.block(
 					'Reset ticks',
-					this.builtin.button({
+					this.builtin.action({
 						label: 'Reset to 0',
 						description: '单按钮 action：无需 RPC，只写入 action collection。',
 						write: {
@@ -659,7 +657,7 @@ export class PluginBuiltinShowcase extends BasePlugin {
 						submitMode: 'onChange',
 						autoSubmitDebounceMs: 120,
 						schemaKey: '_runtimeToggle',
-						sync: this.defaultBuiltinState(),
+						state: this.defaultBuiltinState(),
 						write: {
 							collection: 'runtime-actions',
 							mode: 'insert',

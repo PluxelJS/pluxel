@@ -12,18 +12,18 @@ export function BuiltinSignalDbAction({
 	block: BuiltinSignalDbActionBlock
 }) {
 	const ctx = useExtensionContext()
-	const hmr = ctx.services.hmr
+	const transport = ctx.services.transport
 	const collections = useSignalDbCollectionsState(
-		hmr,
+		transport,
 		pluginName,
 		useMemo(() => [block.write.collection], [block.write.collection]),
 	)
 	const [submitting, setSubmitting] = useState(false)
 
 	const notifySuccess = () => {
-		const notify = ctx.services.ui?.notify
+		const notify = ctx.services.ui.notify
 		const success = block.feedback?.success
-		if (typeof notify !== 'function' || !success) return
+		if (!success) return
 		notify({
 			tone: 'success',
 			title: success.title ?? block.label,
@@ -33,9 +33,9 @@ export function BuiltinSignalDbAction({
 	}
 
 	const notifyError = (err: unknown) => {
-		const notify = ctx.services.ui?.notify
+		const notify = ctx.services.ui.notify
 		const error = block.feedback?.error
-		if (typeof notify !== 'function' || !error) return
+		if (!error) return
 		notify({
 			tone: 'error',
 			title: error.title ?? '执行失败',
@@ -48,18 +48,7 @@ export function BuiltinSignalDbAction({
 		if (submitting) return
 		const confirm = block.confirm
 		if (confirm?.message) {
-			const ok = await (async () => {
-				const svc = ctx.services.ui?.confirm
-				if (typeof svc === 'function') {
-					try {
-						return Boolean(await svc(confirm))
-					} catch {
-						return false
-					}
-				}
-				if (typeof window !== 'undefined') return window.confirm(confirm.message)
-				return true
-			})()
+			const ok = await ctx.services.ui.confirm(confirm)
 			if (!ok) return
 		}
 

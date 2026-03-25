@@ -1,7 +1,7 @@
 import { Badge, Button, Code, Group, ScrollArea, Select, Stack, Text, Title } from '@mantine/core'
-import type { LogLevel, PluginLevelsSnapshot, PluginLogLevel } from '@pluxel/runtime/web/ui'
+import type { LogLevel, PluginLevelsSnapshot, PluginLogLevel } from '../../../../runtime'
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { rpcErrorMessage, useHmrWebClient } from '../../../rpc'
+import { rpcErrorMessage, useRuntimeTransportClient } from '../../../../runtime'
 
 type Snapshot = {
 	levels: Record<string, PluginLogLevel>
@@ -24,7 +24,7 @@ function isLogLevel(value: string): value is LogLevel {
 }
 
 export function LogLevelsCard({ pluginId }: { pluginId: string }) {
-	const hmr = useHmrWebClient()
+	const transport = useRuntimeTransportClient()
 	const [snapshot, setSnapshot] = useState<Snapshot | null>(null)
 	const [loading, setLoading] = useState(false)
 	const [saving, setSaving] = useState(false)
@@ -34,7 +34,7 @@ export function LogLevelsCard({ pluginId }: { pluginId: string }) {
 		setLoading(true)
 		setError(null)
 		try {
-			const res: PluginLevelsSnapshot = await hmr.withRpc((rpc) => rpc.logging().getPluginLevels())
+			const res: PluginLevelsSnapshot = await transport.withRpc((rpc) => rpc.logging().getPluginLevels())
 			setSnapshot({
 				levels: res.levels ?? Object.create(null),
 			})
@@ -43,7 +43,7 @@ export function LogLevelsCard({ pluginId }: { pluginId: string }) {
 		} finally {
 			setLoading(false)
 		}
-	}, [hmr])
+	}, [transport])
 
 	useEffect(() => {
 		void refresh()
@@ -66,7 +66,7 @@ export function LogLevelsCard({ pluginId }: { pluginId: string }) {
 			setSaving(true)
 			setError(null)
 			try {
-				await hmr.withRpc(async (rpc) => {
+				await transport.withRpc(async (rpc) => {
 					const api = rpc.logging()
 					if (next === '__inherit__') return await api.deletePluginLevel(pluginId)
 					if (next === '__off__') return await api.setPluginLevel(pluginId, null)
@@ -87,7 +87,7 @@ export function LogLevelsCard({ pluginId }: { pluginId: string }) {
 				setSaving(false)
 			}
 		},
-		[hmr, pluginId],
+		[transport, pluginId],
 	)
 
 	const deleteRule = useCallback(
@@ -95,7 +95,7 @@ export function LogLevelsCard({ pluginId }: { pluginId: string }) {
 			setSaving(true)
 			setError(null)
 			try {
-				await hmr.withRpc((rpc) => rpc.logging().deletePluginLevel(id))
+				await transport.withRpc((rpc) => rpc.logging().deletePluginLevel(id))
 				setSnapshot((prev) => {
 					if (!prev) return prev
 					const levels = { ...prev.levels }
@@ -108,7 +108,7 @@ export function LogLevelsCard({ pluginId }: { pluginId: string }) {
 				setSaving(false)
 			}
 		},
-		[hmr],
+		[transport],
 	)
 
 	const setDefaultLevel = useCallback(
@@ -116,7 +116,7 @@ export function LogLevelsCard({ pluginId }: { pluginId: string }) {
 			setSaving(true)
 			setError(null)
 			try {
-				await hmr.withRpc(async (rpc) => {
+				await transport.withRpc(async (rpc) => {
 					const api = rpc.logging()
 					if (next === '__inherit__') return await api.deletePluginLevelDefault()
 					if (next === '__off__') return await api.setPluginLevelDefault(null)
@@ -137,7 +137,7 @@ export function LogLevelsCard({ pluginId }: { pluginId: string }) {
 				setSaving(false)
 			}
 		},
-		[hmr],
+		[transport],
 	)
 
 	const overrides = useMemo(() => {
@@ -157,14 +157,14 @@ export function LogLevelsCard({ pluginId }: { pluginId: string }) {
 		setSaving(true)
 		setError(null)
 		try {
-			await hmr.withRpc((rpc) => rpc.logging().clearPluginLevels())
+			await transport.withRpc((rpc) => rpc.logging().clearPluginLevels())
 			setSnapshot({ levels: Object.create(null) })
 		} catch (e) {
 			setError(rpcErrorMessage(e))
 		} finally {
 			setSaving(false)
 		}
-	}, [hmr])
+	}, [transport])
 
 	return (
 		<Stack gap="sm">

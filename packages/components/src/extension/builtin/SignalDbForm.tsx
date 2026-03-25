@@ -2,7 +2,11 @@ import { Box, Button, Group, Loader, Paper, Stack, Text } from '@mantine/core'
 import { formOptions } from '@tanstack/react-form'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { BuiltinSignalDbFormBlock } from '@pluxel/runtime/web/extensions'
-import { useExtensionContext, useSignalDbCollectionsState } from '@pluxel/runtime/web/ui'
+import {
+	type RuntimeTransportClient,
+	useExtensionContext,
+	useSignalDbCollectionsState,
+} from '@pluxel/runtime/web/ui'
 import type { ObjectSchema } from 'valibot'
 import * as v from 'valibot'
 import * as f from 'valibot-form'
@@ -158,7 +162,7 @@ function AutoSubmitSlot({
 }
 
 function useSignalDbFormSchema(
-	hmr: { withRpc: (runner: (client: any) => Promise<any>) => Promise<any> } | null,
+	transport: RuntimeTransportClient | null,
 	pluginName: string,
 	schemaKey: string,
 ): SchemaLoadState {
@@ -169,14 +173,14 @@ function useSignalDbFormSchema(
 			setState({ status: 'error', error: new Error('schemaKey is required') })
 			return undefined
 		}
-		if (!hmr) {
-			setState({ status: 'error', error: new Error('doc form requires ctx.services.hmr') })
+		if (!transport) {
+			setState({ status: 'error', error: new Error('doc form requires ctx.services.transport') })
 			return undefined
 		}
 
 		let cancelled = false
 		setState({ status: 'loading' })
-		void loadSchema(hmr, pluginName, schemaKey)
+		void loadSchema(transport, pluginName, schemaKey)
 			.then((entry) => {
 				if (cancelled) return
 				setState({ status: 'ready', schema: entry.schema, defaults: entry.defaults })
@@ -192,13 +196,13 @@ function useSignalDbFormSchema(
 		return () => {
 			cancelled = true
 		}
-	}, [hmr, pluginName, schemaKey])
+	}, [pluginName, schemaKey, transport])
 
 	return state
 }
 
 async function loadSchema(
-	hmr: { withRpc: (runner: (client: any) => Promise<any>) => Promise<any> },
+	transport: RuntimeTransportClient,
 	pluginName: string,
 	schemaKey: string,
 ): Promise<SchemaCacheEntry> {
@@ -206,7 +210,9 @@ async function loadSchema(
 	const cached = schemaCache.get(cacheKey)
 	if (cached) return cached
 
-	const result: any = await hmr.withRpc((client: any) => client.plugin(pluginName).schema())
+	const result: any = await transport.withRpc((client: any) =>
+		client.plugin(pluginName).schema(),
+	)
 	if (!result || result.ok === false) {
 		throw new Error(result?.message ?? result?.code ?? 'schema_not_found')
 	}
@@ -233,7 +239,7 @@ export function BuiltinSignalDbForm({
 	block: BuiltinSignalDbFormBlock
 }) {
 	const ctx = useExtensionContext()
-	const hmr = ctx.services.hmr
+	const transport = ctx.services.transport
 	const isMountedRef = useRef(true)
 	useEffect(() => {
 		return () => {
@@ -248,9 +254,9 @@ export function BuiltinSignalDbForm({
 			? block.autoSubmitDebounceMs
 			: 250
 
-	const state = useSignalDbFormSchema(hmr, pluginName, schemaKey)
+	const state = useSignalDbFormSchema(transport, pluginName, schemaKey)
 	const collections = useSignalDbCollectionsState(
-		hmr,
+		transport,
 		pluginName,
 		useMemo(() => {
 			const names = new Set<string>([block.write.collection])
@@ -270,9 +276,9 @@ export function BuiltinSignalDbForm({
 	}, [state.status, state.status === 'ready' ? state.defaults : null])
 
 	const notifySuccess = (titleFallback: string) => {
-		const notify = ctx.services.ui?.notify
+		const notify = ctx.services.ui.notify
 		const success = block.feedback?.success
-		if (typeof notify !== 'function' || !success) return
+		if (!success) return
 		notify({
 			tone: 'success',
 			title: success.title ?? titleFallback,
@@ -282,9 +288,9 @@ export function BuiltinSignalDbForm({
 	}
 
 	const notifyError = (err: unknown) => {
-		const notify = ctx.services.ui?.notify
+		const notify = ctx.services.ui.notify
 		const error = block.feedback?.error
-		if (typeof notify !== 'function' || !error) return
+		if (!error) return
 		notify({
 			tone: 'error',
 			title: error.title ?? '提交失败',
@@ -304,18 +310,7 @@ export function BuiltinSignalDbForm({
 
 				const confirm = block.confirm
 				if (confirm?.message) {
-					const ok = await (async () => {
-						const svc = ctx.services.ui?.confirm
-						if (typeof svc === 'function') {
-							try {
-								return Boolean(await svc(confirm))
-							} catch {
-								return false
-							}
-						}
-						if (typeof window !== 'undefined') return window.confirm(confirm.message)
-						return true
-					})()
+					const ok = await ctx.services.ui.confirm(confirm)
 					if (!ok) return
 				}
 

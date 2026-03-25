@@ -81,7 +81,7 @@ export class SnapshotPlugin extends BasePlugin {
 export default SnapshotPlugin
 
 declare module '@pluxel/runtime/web/ui' {
-	interface HmrUiRpcMap {
+	interface ExtensionUiRpcMap {
 		Snapshot: SnapshotRpc
 	}
 }

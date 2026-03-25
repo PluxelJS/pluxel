@@ -23,6 +23,11 @@ import { HMR_INTERNAL_API_BASE, hmrExtensionArtifactBasePath } from '@pluxel/run
 import chokidar, { type FSWatcher } from 'chokidar'
 import { dirname, isAbsolute, join, relative, resolve } from 'pathe'
 import { buildPluginUiRemote, resolveExtensionFederationShared } from '../../plugin-build'
+import {
+	isParaglideGeneratedFile,
+	resolveParaglideIntegration,
+	type ResolvedParaglideIntegration,
+} from '../../paraglide'
 
 import { collectModuleGraphFiles } from '../compile/bundler/moduleGraph'
 import { HMRService } from '../hmr/HMRService'
@@ -58,6 +63,7 @@ type PluginCompileEntry = {
 	pluginDir: string
 	entryPath: string
 	sourceFiles: string[]
+	paraglide: ResolvedParaglideIntegration | null
 	graphDirty: boolean
 	active: boolean
 	watcher?: FSWatcher | null
@@ -174,6 +180,7 @@ export class ExtensionCompilerService {
 			pluginDir,
 			entryPath: config.entryPath,
 			sourceFiles,
+			paraglide: resolveParaglideIntegration(pluginDir),
 			graphDirty: true,
 			active: true,
 			watcher: null,
@@ -455,7 +462,10 @@ export class ExtensionCompilerService {
 
 	private collectSourceFiles(pluginDir: string, entryPath: string): string[] {
 		const entryFile = this.resolvePluginFile(pluginDir, entryPath)
-		return entryFile ? [entryFile] : []
+		const paraglide = resolveParaglideIntegration(pluginDir)
+		const sourceFiles = entryFile ? [entryFile] : []
+		if (paraglide) sourceFiles.push(...paraglide.sourceRoots)
+		return Array.from(new Set(sourceFiles))
 	}
 
 	private async computeSourceHash(
@@ -550,8 +560,13 @@ export class ExtensionCompilerService {
 			if (!rootModule) return
 
 			const nextFiles = collectModuleGraphFiles(rootModule, {
-				include: (filePath) => this.isHashableSourceFile(filePath),
+				include: (filePath) => this.isTrackedSourceFile(entry, filePath),
 			})
+			if (entry.paraglide) {
+				for (const sourceRoot of entry.paraglide.sourceRoots) {
+					if (!nextFiles.includes(sourceRoot)) nextFiles.push(sourceRoot)
+				}
+			}
 			const nextSignature = nextFiles.join('\n')
 			const prevSignature = entry.sourceFiles.join('\n')
 			entry.graphDirty = false
@@ -576,6 +591,12 @@ export class ExtensionCompilerService {
 			return false
 		}
 		return HASH_ALLOWED_EXTENSIONS.some((ext) => lower.endsWith(ext))
+	}
+
+	private isTrackedSourceFile(entry: PluginCompileEntry, filePath: string): boolean {
+		if (!this.isHashableSourceFile(filePath)) return false
+		if (isParaglideGeneratedFile(entry.paraglide, filePath)) return false
+		return true
 	}
 
 	private resolvePluginFile(

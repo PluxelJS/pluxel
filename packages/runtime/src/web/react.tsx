@@ -1,42 +1,61 @@
 import { createContext, type ReactNode, useContext, useEffect, useRef } from 'react'
-import { createHmrWebClient, type HmrWebClient, type HmrWebClientOptions } from './client'
+import {
+	createRuntimeTransportClient,
+	type RuntimeTransportClient,
+	type RuntimeTransportClientOptions,
+} from './client'
 
-const WebClientContext = createContext<HmrWebClient | null>(null)
+const RuntimeTransportClientContext = createContext<RuntimeTransportClient | null>(null)
 
-export type HmrWebClientProviderProps = {
+export type RuntimeTransportClientProviderProps = {
 	children: ReactNode
-	options?: HmrWebClientOptions
+	options?: RuntimeTransportClientOptions
+	client?: RuntimeTransportClient
 }
 
 /**
- * Host-only provider for the HMR web client.
+ * Host-only provider for the runtime transport client.
  *
  * Design:
  * - The app owns exactly one client instance (context is required).
  * - No global fetch patching and no hidden singleton fallback.
  */
-export function HmrWebClientProvider({ options, children }: HmrWebClientProviderProps) {
-	const ref = useRef<HmrWebClient | null>(null)
-	if (!ref.current) ref.current = createHmrWebClient(options)
+export function RuntimeTransportClientProvider({
+	options,
+	client,
+	children,
+}: RuntimeTransportClientProviderProps) {
+	const ref = useRef<RuntimeTransportClient | null>(null)
+	const ownsClient = useRef(false)
+	if (!ref.current) {
+		ref.current = client ?? createRuntimeTransportClient(options)
+		ownsClient.current = !client
+	}
 
 	useEffect(() => {
 		return () => {
-			ref.current?.dispose()
+			if (ownsClient.current) ref.current?.dispose()
 		}
 	}, [])
 
-	return <WebClientContext.Provider value={ref.current}>{children}</WebClientContext.Provider>
+	return (
+		<RuntimeTransportClientContext.Provider value={ref.current}>
+			{children}
+		</RuntimeTransportClientContext.Provider>
+	)
 }
 
 /**
- * Read the host-owned `HmrWebClient`.
+ * Read the host-owned runtime transport client.
  *
- * Throws when used outside `HmrWebClientProvider`.
+ * Throws when used outside `RuntimeTransportClientProvider`.
  */
-export function useHmrWebClient(): HmrWebClient {
-	const client = useContext(WebClientContext)
+export function useRuntimeTransportClient(): RuntimeTransportClient {
+	const client = useContext(RuntimeTransportClientContext)
 	if (!client) {
-		throw new Error('useHmrWebClient must be used within HmrWebClientProvider')
+		throw new Error(
+			'useRuntimeTransportClient must be used within RuntimeTransportClientProvider',
+		)
 	}
 	return client
 }

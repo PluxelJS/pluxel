@@ -5,12 +5,12 @@ import {
 	type AuthAwareFetchOptions,
 	createAuthAwareFetch,
 	defaultOnAuthBlocked,
-	type HmrFetch,
+	type RuntimeFetch,
 	toGlobalFetch,
 } from './auth'
 import type { LogFilter, LogRangeResult, LogStreamMeta } from './logs'
 import type { ExtensionManifest } from './extensions'
-import type { HmrRpcApi, HmrUiRpcMap } from './protocol'
+import type { ExtensionUiRpcMap, RuntimeRpcApi } from './protocol'
 import { createRpcClientFactory, createUiRpcView, invokeRpc } from './rpc'
 import { type SseClientOptions, type SseClientWithNamespaces, sse } from './sse'
 import {
@@ -24,17 +24,17 @@ import {
 } from './paths'
 import { mergeNamespaces } from './utils'
 
-export interface HmrAuthMeta {
+export interface RuntimeAuthMeta {
 	enabled: boolean
 	pluginName: string | null
 	redirectPath: string | null
 	authenticated: boolean
 }
 
-export interface HmrInternalMeta {
+export interface RuntimeMeta {
 	service: 'pluxel-hmr'
 	ready: true
-	auth: HmrAuthMeta
+	auth: RuntimeAuthMeta
 	sse: {
 		namespaces: string[]
 	}
@@ -51,11 +51,11 @@ export interface HmrInternalMeta {
 	}
 }
 
-export interface HmrStreamIndex {
+export interface RuntimeLogStreamsIndex {
 	streams: LogStreamMeta[]
 }
 
-export type HmrLogRangeQuery = LogFilter & {
+export type RuntimeLogRangeQuery = LogFilter & {
 	epoch?: number
 	from?: string
 	limit?: number
@@ -67,72 +67,78 @@ export type EdenResultLike<T = unknown> = {
 	response?: Response
 }
 
-type HmrTreatyFetchOptions = {
+type RuntimeTreatyFetchOptions = {
 	fetch?: RequestInit
 }
 
-type HmrTreatyQueryOptions<TQuery> = HmrTreatyFetchOptions & {
+type RuntimeTreatyQueryOptions<TQuery> = RuntimeTreatyFetchOptions & {
 	query?: TQuery
 }
 
-type HmrTreatyGet<TData, TQuery = never> = {
+type RuntimeTreatyGet<TData, TQuery = never> = {
 	get(
-		options?: [TQuery] extends [never] ? HmrTreatyFetchOptions : HmrTreatyQueryOptions<TQuery>,
+		options?: [TQuery] extends [never]
+			? RuntimeTreatyFetchOptions
+			: RuntimeTreatyQueryOptions<TQuery>,
 	): Promise<EdenResultLike<TData>>
 }
 
-type HmrTreatyStreamRoute = {
-	meta: HmrTreatyGet<LogStreamMeta>
-	range: HmrTreatyGet<LogRangeResult, HmrLogRangeQuery>
+type RuntimeTreatyStreamRoute = {
+	meta: RuntimeTreatyGet<LogStreamMeta>
+	range: RuntimeTreatyGet<LogRangeResult, RuntimeLogRangeQuery>
 }
 
-type HmrTreatyStreamsRoute = HmrTreatyGet<HmrStreamIndex> &
-	((params: { streamId: string }) => HmrTreatyStreamRoute)
+type RuntimeTreatyStreamsRoute = RuntimeTreatyGet<RuntimeLogStreamsIndex> &
+	((params: { streamId: string }) => RuntimeTreatyStreamRoute)
 
-interface HmrTreatyClient {
-	meta: HmrTreatyGet<HmrInternalMeta> & {
-		auth: HmrTreatyGet<HmrAuthMeta>
+interface RuntimeTreatyClient {
+	meta: RuntimeTreatyGet<RuntimeMeta> & {
+		auth: RuntimeTreatyGet<RuntimeAuthMeta>
 	}
 	extensions: {
-		manifest: HmrTreatyGet<ExtensionManifest>
+		manifest: RuntimeTreatyGet<ExtensionManifest>
 	}
 	logs: {
 		v1: {
-			streams: HmrTreatyStreamsRoute
+			streams: RuntimeTreatyStreamsRoute
 		}
 	}
 }
 
-export type HmrWebClientOptions = {
+export type RuntimeTransportClientOptions = {
 	origin?: string
 	apiBase?: string
 	rpcBase?: string
 	sse?: SseClientOptions
 	defaultNamespace?: string
 	credentials?: RequestCredentials
-	fetch?: HmrFetch
+	fetch?: RuntimeFetch
 	auth?: AuthAwareFetchOptions & {
 		enabled?: boolean
 	}
 }
 
-export interface HmrHttpApi {
+type RuntimeTransportHttp = {
 	meta: {
-		info(init?: RequestInit): Promise<HmrInternalMeta>
-		auth(init?: RequestInit): Promise<HmrAuthMeta>
+		info(init?: RequestInit): Promise<RuntimeMeta>
+		auth(init?: RequestInit): Promise<RuntimeAuthMeta>
 	}
 	extensions: {
 		manifest(init?: RequestInit): Promise<ExtensionManifest>
 	}
 	logs: {
-		streams(init?: RequestInit): Promise<HmrStreamIndex>
+		streams(init?: RequestInit): Promise<RuntimeLogStreamsIndex>
 		meta(streamId: string, init?: RequestInit): Promise<LogStreamMeta>
-		range(streamId: string, query?: HmrLogRangeQuery, init?: RequestInit): Promise<LogRangeResult>
+		range(
+			streamId: string,
+			query?: RuntimeLogRangeQuery,
+			init?: RequestInit,
+		): Promise<LogRangeResult>
 		followUrl(streamId: string, query?: URLSearchParams | string): string
 	}
 }
 
-export interface HmrTransportLinks {
+type RuntimeTransportLinks = {
 	apiBase: string
 	rpc: string
 	graphql: string
@@ -143,36 +149,47 @@ export interface HmrTransportLinks {
 	extensionEvents(namespaces?: string[]): string
 }
 
-export interface HmrWebClient {
-	fetch: HmrFetch
-	api: HmrHttpApi
-	transport: HmrTransportLinks
-	ui: HmrUiRpcMap
-	withRpc: <T>(runner: (client: RpcStub<HmrRpcApi>) => Promise<T>) => Promise<T>
+export interface RuntimeTransportClient {
+	fetch: RuntimeFetch
+	http: RuntimeTransportHttp
+	links: RuntimeTransportLinks
+	extensions: ExtensionUiRpcMap
+	withRpc: <T>(runner: (client: RpcStub<RuntimeRpcApi>) => Promise<T>) => Promise<T>
 	createSse: (options?: SseClientOptions) => SseClientWithNamespaces
 	sse: SseClientWithNamespaces
 	dispose: () => void
 }
 
-function createHmrTreatyClient(transport: HmrTransportLinks, fetch: HmrFetch): HmrTreatyClient {
-	// Keep the Treaty surface locally typed without importing the server project into this composite TS project.
-	return treaty(transport.apiBase, {
+function createRuntimeTreatyClient(
+	links: RuntimeTransportLinks,
+	fetch: RuntimeFetch,
+): RuntimeTreatyClient {
+	// Keep the Treaty surface locally typed.
+	// The internal Elysia app is assembled from dynamically mounted runtime plugins,
+	// so end-to-end route inference currently collapses before it reaches this client.
+	// Re-exporting that unstable server-side type here would couple browser code to
+	// internal assembly details without improving the public plugin/UI contract.
+	return treaty(links.apiBase, {
 		fetcher: toGlobalFetch(fetch),
-	}) as unknown as HmrTreatyClient
+	}) as unknown as RuntimeTreatyClient
 }
 
-function createHmrHttpApi(http: HmrTreatyClient, transport: HmrTransportLinks): HmrHttpApi {
+function createRuntimeTransportHttp(
+	http: RuntimeTreatyClient,
+	links: RuntimeTransportLinks,
+): RuntimeTransportHttp {
 	return {
 		meta: {
-			info: (init) => expectData<HmrInternalMeta>(http.meta.get({ fetch: init })),
-			auth: (init) => expectData<HmrAuthMeta>(http.meta.auth.get({ fetch: init })),
+			info: (init) => expectData<RuntimeMeta>(http.meta.get({ fetch: init })),
+			auth: (init) => expectData<RuntimeAuthMeta>(http.meta.auth.get({ fetch: init })),
 		},
 		extensions: {
 			manifest: (init) =>
 				expectData<ExtensionManifest>(http.extensions.manifest.get({ fetch: init })),
 		},
 		logs: {
-			streams: (init) => expectData<HmrStreamIndex>(http.logs.v1.streams.get({ fetch: init })),
+			streams: (init) =>
+				expectData<RuntimeLogStreamsIndex>(http.logs.v1.streams.get({ fetch: init })),
 			meta: (streamId, init) =>
 				expectData<LogStreamMeta>(http.logs.v1.streams({ streamId }).meta.get({ fetch: init })),
 			range: (streamId, query, init) =>
@@ -182,7 +199,7 @@ function createHmrHttpApi(http: HmrTreatyClient, transport: HmrTransportLinks): 
 						fetch: init,
 					}),
 				),
-			followUrl: (streamId, query) => transport.logsFollow(streamId, query),
+			followUrl: (streamId, query) => links.logsFollow(streamId, query),
 		},
 	}
 }
@@ -197,7 +214,7 @@ function resolveClientUrl(value: string): string {
 	return new URL(value, window.location.origin).toString()
 }
 
-function resolveApiBase(options: HmrWebClientOptions): string {
+function resolveApiBase(options: RuntimeTransportClientOptions): string {
 	return resolveClientUrl(
 		options.apiBase ??
 			(typeof options.origin === 'string' && options.origin
@@ -206,7 +223,7 @@ function resolveApiBase(options: HmrWebClientOptions): string {
 	)
 }
 
-function resolveBaseFetch(options: HmrWebClientOptions): HmrFetch {
+function resolveBaseFetch(options: RuntimeTransportClientOptions): RuntimeFetch {
 	const fetchImpl =
 		options.fetch ??
 		(typeof globalThis.fetch === 'function' ? globalThis.fetch.bind(globalThis) : undefined)
@@ -216,7 +233,10 @@ function resolveBaseFetch(options: HmrWebClientOptions): HmrFetch {
 	return fetchImpl
 }
 
-function withDefaultCredentials(baseFetch: HmrFetch, credentials: RequestCredentials): HmrFetch {
+function withDefaultCredentials(
+	baseFetch: RuntimeFetch,
+	credentials: RequestCredentials,
+): RuntimeFetch {
 	return (input: RequestInfo | URL, init?: RequestInit) => {
 		if (init?.credentials !== undefined) return baseFetch(input as any, init as any)
 		const isRequest = typeof Request === 'function' && input instanceof Request
@@ -225,7 +245,9 @@ function withDefaultCredentials(baseFetch: HmrFetch, credentials: RequestCredent
 	}
 }
 
-export function createHmrFetch(options: HmrWebClientOptions = {}): HmrFetch {
+export function createRuntimeTransportFetch(
+	options: RuntimeTransportClientOptions = {},
+): RuntimeFetch {
 	const credentials: RequestCredentials = options.credentials ?? 'same-origin'
 	const baseFetch = withDefaultCredentials(resolveBaseFetch(options), credentials)
 	if (options.auth?.enabled === false) return baseFetch
@@ -235,7 +257,9 @@ export function createHmrFetch(options: HmrWebClientOptions = {}): HmrFetch {
 	})
 }
 
-export function createHmrTransport(options: HmrWebClientOptions = {}): HmrTransportLinks {
+export function createRuntimeTransportLinks(
+	options: RuntimeTransportClientOptions = {},
+): RuntimeTransportLinks {
 	const apiBase = resolveApiBase(options)
 	const transport = {
 		apiBase,
@@ -276,19 +300,21 @@ export async function expectData<T>(promise: Promise<EdenResultLike<T>>): Promis
 	return result.data
 }
 
-export function createHmrWebClient(options: HmrWebClientOptions = {}): HmrWebClient {
-	const fetch = createHmrFetch(options)
-	const transport = createHmrTransport(options)
-	const http = createHmrTreatyClient(transport, fetch)
-	const api = createHmrHttpApi(http, transport)
+export function createRuntimeTransportClient(
+	options: RuntimeTransportClientOptions = {},
+): RuntimeTransportClient {
+	const fetch = createRuntimeTransportFetch(options)
+	const links = createRuntimeTransportLinks(options)
+	const httpClient = createRuntimeTreatyClient(links, fetch)
+	const http = createRuntimeTransportHttp(httpClient, links)
 	const baseSseOptions = options.sse ?? {}
 	const defaultNamespaces = options.defaultNamespace ? [options.defaultNamespace] : undefined
 	const credentials: RequestCredentials = options.credentials ?? 'same-origin'
 	const authEnabled = options.auth?.enabled !== false
-	const rawRpc = createRpcClientFactory(transport.rpc)
-	const ui = createUiRpcView(rawRpc, { credentials })
-	const withRpc = <T>(runner: (client: RpcStub<HmrRpcApi>) => Promise<T>) =>
-		invokeRpc(runner, { rpcBase: transport.rpc, credentials })
+	const rawRpc = createRpcClientFactory(links.rpc)
+	const extensions = createUiRpcView(rawRpc, { credentials })
+	const withRpc = <T>(runner: (client: RpcStub<RuntimeRpcApi>) => Promise<T>) =>
+		invokeRpc(runner, { rpcBase: links.rpc, credentials })
 
 	const baseNamespaces = mergeNamespaces(baseSseOptions.namespaces, defaultNamespaces)
 
@@ -305,11 +331,11 @@ export function createHmrWebClient(options: HmrWebClientOptions = {}): HmrWebCli
 		return {
 			...baseSseOptions,
 			...opts,
-			url: opts?.url ?? baseSseOptions.url ?? transport.sse,
+			url: opts?.url ?? baseSseOptions.url ?? links.sse,
 			withCredentials,
 			auth: authEnabled
 				? {
-						metaUrl: joinPath(transport.apiBase, HMR_META_AUTH_PATH),
+						metaUrl: joinPath(links.apiBase, HMR_META_AUTH_PATH),
 						fetch,
 						onBlocked: options.auth?.onBlocked ?? defaultOnAuthBlocked,
 					}
@@ -329,9 +355,9 @@ export function createHmrWebClient(options: HmrWebClientOptions = {}): HmrWebCli
 
 	return {
 		fetch,
-		api,
-		transport,
-		ui,
+		http,
+		links,
+		extensions,
 		withRpc,
 		createSse,
 		get sse() {

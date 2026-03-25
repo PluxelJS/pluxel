@@ -1,4 +1,8 @@
-import type { BaseProvisionInfo, HmrWebClient, PluginDependencyState } from '@pluxel/runtime/web/ui'
+import type {
+	BaseProvisionInfo,
+	PluginDependencyState,
+	RuntimeTransportClient,
+} from '../../../../runtime'
 
 type CacheEntry<T> = {
 	at: number
@@ -72,27 +76,27 @@ function cached<T>(
 }
 
 export function loadBaseProvision(
-	hmr: HmrWebClient,
+	transport: RuntimeTransportClient,
 	pluginName: string,
 	options?: { force?: boolean },
 ): Promise<BaseProvisionInfo | null> {
 	return cached(
 		`plugin:${pluginName}:baseProvision`,
 		60_000,
-		() => hmr.withRpc((rpc) => rpc.plugin(pluginName).baseProvision()),
+		() => transport.withRpc((rpc) => rpc.plugin(pluginName).baseProvision()),
 		options,
 	)
 }
 
 export function loadDependencyState(
-	hmr: HmrWebClient,
+	transport: RuntimeTransportClient,
 	pluginName: string,
 	options?: { force?: boolean },
 ): Promise<PluginDependencyState[]> {
 	return cached(
 		`plugin:${pluginName}:dependencyState`,
 		10_000,
-		() => hmr.withRpc((rpc) => rpc.plugin(pluginName).dependencyState()),
+		() => transport.withRpc((rpc) => rpc.plugin(pluginName).dependencyState()),
 		options,
 	)
 }

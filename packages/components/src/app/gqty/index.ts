@@ -4,10 +4,10 @@
 
 import { createReactClient } from '@gqty/react'
 import { Cache, createClient, defaultResponseHandler, type QueryFetcher } from 'gqty'
-import { getHmrWebClient } from '../../hmr/client'
+import { getRuntimeTransportClient } from '../../runtime'
 import { type GeneratedSchema, generatedSchema, scalarsEnumsHash } from './schema.generated'
 
-const hmr = getHmrWebClient()
+const transport = getRuntimeTransportClient()
 
 const inflightGraphql = new Map<string, Promise<any>>()
 
@@ -25,14 +25,14 @@ function graphqlKey(input: {
 }
 
 const queryFetcher: QueryFetcher = async ({ query, variables, operationName }, fetchOptions) => {
-	const endpoint = hmr.transport.graphql
+	const endpoint = transport.links.graphql
 
 	const key = graphqlKey({ query, variables, operationName })
 	const existing = inflightGraphql.get(key)
 	if (existing) return existing
 
 	const task = (async () => {
-		const response = await hmr.fetch(endpoint, {
+		const response = await transport.fetch(endpoint, {
 			method: 'POST',
 			headers: {
 				'Content-Type': 'application/json',

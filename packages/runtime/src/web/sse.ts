@@ -1,13 +1,13 @@
-import { defaultOnAuthBlocked, type HmrFetch, type OnAuthBlocked } from './auth'
+import { defaultOnAuthBlocked, type OnAuthBlocked, type RuntimeFetch } from './auth'
 import { HMR_INTERNAL_API_BASE } from './paths'
 import type { ExtensionManifestEvent } from './extensions'
-import type { HmrUiSseMap } from './protocol'
+import type { ExtensionUiSseMap } from './protocol'
 
 export interface BuiltinSseEvents {
 	extensions: ExtensionManifestEvent | { type: 'ready' }
 }
 
-export type ResolvedSseEvents = BuiltinSseEvents & HmrUiSseMap
+export type ResolvedSseEvents = BuiltinSseEvents & ExtensionUiSseMap
 
 type PayloadForNs<Ns extends string> = Ns extends keyof ResolvedSseEvents
 	? ResolvedSseEvents[Ns]
@@ -22,15 +22,15 @@ export type SseMessage<Ns extends string = keyof ResolvedSseEvents> = {
 
 type AnyHandler = (msg: SseMessage<string>) => void
 
-type NamespaceClient<Ns extends string> = {
+export type SseNamespaceClient<Ns extends string> = {
 	on(handler: (msg: SseMessage<Ns>) => void, events?: string | string[]): () => void
 	onAny(handler: (msg: SseMessage<Ns>) => void): () => void
 }
 
 export type SseClientWithNamespaces = SseClient & {
-	ns<Ns extends string>(name: Ns): NamespaceClient<Ns>
+	ns<Ns extends string>(name: Ns): SseNamespaceClient<Ns>
 } & {
-	[K in keyof ResolvedSseEvents]: NamespaceClient<K & string>
+	[K in keyof ResolvedSseEvents]: SseNamespaceClient<K & string>
 }
 
 export interface SseClientOptions {
@@ -48,7 +48,7 @@ export interface SseClientOptions {
 	 */
 	auth?: {
 		metaUrl: string
-		fetch?: HmrFetch
+		fetch?: RuntimeFetch
 		onBlocked?: OnAuthBlocked
 	}
 }
@@ -216,7 +216,7 @@ class SseClient {
 		}
 	}
 
-	ns<Ns extends string>(name: Ns): NamespaceClient<Ns> {
+	ns<Ns extends string>(name: Ns): SseNamespaceClient<Ns> {
 		const namespace = String(name)
 		let bucket = this.nsHandlers.get(namespace)
 		if (!bucket) {
@@ -224,7 +224,10 @@ class SseClient {
 			this.nsHandlers.set(namespace, bucket)
 		}
 		return {
-			on: (handler, events) => {
+			on: (
+				handler: (msg: SseMessage<Ns>) => void,
+				events?: string | string[],
+			) => {
 				const list = Array.isArray(events) ? events : events ? [events] : []
 				if (!list.length) {
 					const h = handler as unknown as AnyHandler
@@ -252,7 +255,7 @@ class SseClient {
 					for (const fn of unsubs) fn()
 				}
 			},
-			onAny: (handler) => {
+			onAny: (handler: (msg: SseMessage<Ns>) => void) => {
 				const h = handler as unknown as AnyHandler
 				bucket!.any.add(h)
 				const last = this.lastByNamespace.get(namespace)

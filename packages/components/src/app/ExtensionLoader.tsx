@@ -8,8 +8,8 @@ import {
 	type ExtensionModuleState,
 	ExtensionErrorBoundary,
 	extensionRegistry,
-	loadExtensionModule,
-	unloadExtensionModule,
+	loadPluginUiModule,
+	unloadPluginUiModule,
 } from '../extension'
 import { fetchExtensionManifest } from '../extension/api/manifest'
 import { builtinComponents } from '../extension/builtin'
@@ -23,7 +23,7 @@ import {
 	upsertExtensionModuleState,
 } from '../extension/internal/module-state'
 import { usePluginOverview } from './plugins/data'
-import { useHmrWebClient } from './rpc'
+import { useRuntimeTransportClient } from '../runtime'
 
 interface ExtensionLoaderProps {
 	pollInterval?: number
@@ -100,7 +100,7 @@ function scheduleUnload(pluginName: string, delayMs: number, reason: string) {
 		loaderState.unloadTimers.delete(pluginName)
 		if (loaderState.moduleCache.has(pluginName)) {
 			loaderState.moduleCache.delete(pluginName)
-			unloadExtensionModule(pluginName)
+			unloadPluginUiModule(pluginName)
 			extLog('unloaded %s (%s)', pluginName, reason)
 			recomputeLoaderSignature()
 		}
@@ -138,7 +138,7 @@ export function ExtensionLoader({
 	unloadOnStop = false,
 	unloadDelayMs = DEFAULT_UNLOAD_DELAY_MS,
 }: ExtensionLoaderProps): null {
-	const stream = useHmrWebClient().sse
+	const stream = useRuntimeTransportClient().sse
 	const overviewState = usePluginOverview()
 	const rawStatuses = overviewState.overview?.status?.statuses ?? []
 
@@ -347,7 +347,7 @@ export function ExtensionLoader({
 		}
 
 		extLog('loading %s@%s', module.pluginName, module.sourceHash)
-		const loadPromise = loadExtensionModule(
+		const loadPromise = loadPluginUiModule(
 			module.pluginName,
 			() => loadFederatedExtensionModule(module),
 			module.sourceHash,
@@ -476,7 +476,7 @@ export function ExtensionLoader({
 						if (!seen.has(name)) {
 							cancelScheduledUnload(name)
 							loaderState.moduleCache.delete(name)
-							unloadExtensionModule(name)
+							unloadPluginUiModule(name)
 						}
 					}
 
@@ -643,7 +643,7 @@ export function ExtensionLoader({
 				if (loaderState.moduleCache.has(payload.pluginName)) {
 					cancelScheduledUnload(payload.pluginName)
 					loaderState.moduleCache.delete(payload.pluginName)
-					unloadExtensionModule(payload.pluginName)
+					unloadPluginUiModule(payload.pluginName)
 				}
 				removeExtensionModuleState(payload.pluginName)
 				recomputeManifestSignature()

@@ -2,10 +2,10 @@ import { ActionIcon, Button, Stack, Tooltip } from '@mantine/core'
 import { IconLogout } from '@tabler/icons-react'
 import { useCallback, useRef } from 'react'
 import { ExtensionPoints, ExtensionSlot } from '../../extension'
-import { useHmrWebClient } from '../rpc'
+import { useRuntimeTransportClient } from '../../runtime'
 
 export function NavbarFooterActions({ compact }: { compact: boolean }) {
-	const client = useHmrWebClient()
+	const client = useRuntimeTransportClient()
 	const redirectPathRef = useRef<string | null>(null)
 
 	const gotoLogin = useCallback(() => {
@@ -17,7 +17,7 @@ export function NavbarFooterActions({ compact }: { compact: boolean }) {
 		}
 		void (async () => {
 			try {
-				const data = await client.api.meta.auth()
+				const data = await client.http.meta.auth()
 				if (data.enabled !== true) return
 				const redirectPath = typeof data.redirectPath === 'string' ? data.redirectPath : ''
 				if (!redirectPath) return
@@ -27,7 +27,7 @@ export function NavbarFooterActions({ compact }: { compact: boolean }) {
 				// ignore
 			}
 		})()
-	}, [client.api.meta])
+	}, [client.http.meta])
 
 	return (
 		<Stack gap={6}>

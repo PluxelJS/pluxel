@@ -253,15 +253,15 @@ export class PluginWithUIRpc extends RpcTarget {
 }
 
 declare module '@pluxel/runtime/web/ui' {
-	interface HmrUiRpcMap {
+	interface ExtensionUiRpcMap {
 		PluginWithUI: PluginWithUIRpc
 	}
 
-	interface HmrUiSseMap {
+	interface ExtensionUiSseMap {
 		PluginWithUI: PluginWithUISsePayload
 	}
 
-	interface HmrUiSignalDbMap {
+	interface ExtensionUiSignalDbMap {
 		PluginWithUI: {
 			status: PluginWithUIStatusDoc
 			events: DemoEvent

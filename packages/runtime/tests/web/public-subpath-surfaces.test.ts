@@ -16,9 +16,9 @@ function expectPublicSurface(publicMod: object, internalMod: object) {
 describe('runtime web subpath surfaces', () => {
 	it('keeps web/ui aligned with the internal ui facade', () => {
 		expectPublicSurface(PublicUi, InternalUi)
-		expect(PublicUi.createHmrWebClient).toBeTypeOf('function')
-		expect(PublicUi.createPluginUiHelpers).toBeTypeOf('function')
-		expect(PublicUi.useHmrWebClient).toBeTypeOf('function')
+		expect(PublicUi.createRuntimeTransportClient).toBeTypeOf('function')
+		expect(PublicUi.createPluginUi).toBeTypeOf('function')
+		expect(PublicUi.useRuntimeTransportClient).toBeTypeOf('function')
 	})
 
 	it('keeps web/extensions aligned with the internal extension contracts', () => {
@@ -29,6 +29,13 @@ describe('runtime web subpath surfaces', () => {
 	it('keeps the federation shared package contract stable', () => {
 		expect(extensionFederationSharedPackages).toEqual(
 			expect.arrayContaining(['@mantine/core', '@mantine/hooks', '@pluxel/runtime/web/ui']),
+		)
+		expect(extensionFederationSharedPackages).not.toEqual(
+			expect.arrayContaining([
+				'@signaldb/react',
+				'@signaldb/maverickjs',
+				'@maverick-js/signals',
+			]),
 		)
 	})
 })

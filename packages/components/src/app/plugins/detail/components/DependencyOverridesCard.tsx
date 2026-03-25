@@ -12,11 +12,11 @@ import {
 	Tooltip,
 } from '@mantine/core'
 import { openConfirmModal } from '@mantine/modals'
-import type { PluginDependencyState } from '@pluxel/runtime/web/ui'
+import type { PluginDependencyState } from '../../../../runtime'
 import { IconPlus, IconRefresh } from '@tabler/icons-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNotify } from '../../../hooks'
-import { rpcErrorMessage, useHmrWebClient } from '../../../rpc'
+import { rpcErrorMessage, useRuntimeTransportClient } from '../../../../runtime'
 import { usePluginScope } from '../context'
 import { loadDependencyState } from './rpcResourceCache'
 
@@ -37,7 +37,7 @@ function kindLabel(kind: PluginDependencyState['kind']) {
 
 export function DependencyOverridesCard() {
 	const { pluginName, refetch } = usePluginScope()
-	const hmr = useHmrWebClient()
+	const transport = useRuntimeTransportClient()
 	const notify = useNotify()
 	const [state, setState] = useState<PluginDependencyState[] | null>(null)
 	const [loading, setLoading] = useState(false)
@@ -55,7 +55,7 @@ export function DependencyOverridesCard() {
 			if (!pluginName) return
 			setLoading(true)
 			try {
-				const deps = await loadDependencyState(hmr, pluginName, options)
+				const deps = await loadDependencyState(transport, pluginName, options)
 				if (!mountedRef.current) return
 				const rows = Array.isArray(deps) ? deps : []
 				// 仅在“可操作”的依赖存在时展示：base/forkable 才需要注入选择；
@@ -73,7 +73,7 @@ export function DependencyOverridesCard() {
 				if (mountedRef.current) setLoading(false)
 			}
 		},
-		[hmr, notify, pluginName],
+		[transport, notify, pluginName],
 	)
 
 	useEffect(() => {
@@ -89,23 +89,23 @@ export function DependencyOverridesCard() {
 
 	const setDependencyTarget = useCallback(
 		async (index: number, next: string | null) => {
-			const res = await hmr.withRpc((rpc) =>
+			const res = await transport.withRpc((rpc) =>
 				rpc.plugin(pluginName).setDependencyTarget(index, next),
 			)
 			if (!res.ok) throw new Error(res.error || res.code || '操作失败')
 		},
-		[hmr, pluginName],
+		[transport, pluginName],
 	)
 
 	const ensureFork = useCallback(
 		async (baseName: string, forkId: string) => {
-			const res = await hmr.withRpc((rpc) =>
+			const res = await transport.withRpc((rpc) =>
 				rpc.plugin(pluginName).ensureFork(baseName, forkId, { enable: true }),
 			)
 			if (!res.ok) throw new Error(res.error || res.code || '创建 fork 失败')
 			return res.forkName ?? `${baseName}#${forkId}`
 		},
-		[hmr, pluginName],
+		[transport, pluginName],
 	)
 
 	const handleForkCreate = useCallback(

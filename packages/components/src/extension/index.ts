@@ -63,13 +63,12 @@ export type {
 	ExtensionModuleState,
 	ExtensionModuleStateKind,
 } from '@pluxel/runtime/web/extensions'
-// i18n (optional host service used by plugin ctx)
-export { getExtensionI18nService, setExtensionLocale } from './internal/i18n'
+export { extensionLocale } from './internal/locale'
 // Hooks
 export {
 	useExtensionModuleState,
 	useExtensionModuleStates,
-	useExtensionRuntimeVersion,
+	usePluginUiVersion,
 } from './hooks'
 // Paths (host routing conventions)
 export {
@@ -87,12 +86,12 @@ export {
 } from './internal/registry'
 // Runtime
 export {
-	getExtensionRuntimeRevision,
-	getPluginRouteComponent,
-	loadExtensionModule,
-	subscribeExtensionRuntimeChanges,
-	unloadExtensionModule,
-} from './internal/runtime'
+	getPluginUiRegistryRevision,
+	getPluginUiRouteComponent,
+	loadPluginUiModule,
+	subscribePluginUiRegistryChanges,
+	unloadPluginUiModule,
+} from './internal/pluginUiRegistry'
 export { requestExtensionManifestSync } from './internal/module-state'
 export {
 	ensureExtensionFederationRuntime,

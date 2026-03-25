@@ -5,7 +5,6 @@ import {
 	type LoadResponse,
 } from '@signaldb/core'
 import type { Context } from '@pluxel/core'
-import type { BuiltinSignalDbRef } from '../../web/extensions'
 import {
 	type SignalDbFindOptions,
 	type SignalDbItem,
@@ -14,7 +13,6 @@ import {
 	type SignalDbSyncEvent,
 	signalDbNamespace,
 } from '../../web/plugin-ui/signaldb-contracts'
-import type { UiBinding } from './BuiltinBinding'
 import type { SseChannel } from './SseService'
 
 export interface SignalDbCollectionOptions<T extends SignalDbItem> {
@@ -46,12 +44,6 @@ export interface SignalDbCollectionHandle<T extends SignalDbItem> {
 	removeOne(selector: SignalDbSelector<T>): 0 | 1
 	removeMany(selector: SignalDbSelector<T>): number
 	reset(items: T[]): void
-}
-
-export interface SignalDbBinding<T extends SignalDbItem> extends UiBinding<T> {
-	readonly collection: string
-	readonly selector: SignalDbSelector<T>
-	get(): T | undefined
 }
 
 export class SignalDbService {
@@ -89,21 +81,6 @@ export class SignalDbService {
 		})
 
 		return managed.publicApi
-	}
-
-	bind<T extends SignalDbItem>(
-		collection: SignalDbCollectionHandle<T>,
-		selector: SignalDbSelector<T>,
-	): SignalDbBinding<T> {
-		const selection = cloneSelector(selector) as SignalDbSelector<T>
-		return {
-			collection: collection.name,
-			selector: selection,
-			get: () => collection.findOne(selection),
-			field: (key, fallback) => createSignalDbRef(collection.name, selection, key, fallback),
-			path: (path, fallback) => createSignalDbRef(collection.name, selection, path, fallback),
-			snapshot: (fallback) => createSignalDbDocRef(collection.name, selection, fallback),
-		}
 	}
 
 	/** @internal Internal sync transport entry used by the HMR/web bridge. */
@@ -522,38 +499,6 @@ function resolveItemsByIds<T extends SignalDbItem>(
 		.map((id) => collection.findOne({ id } as any))
 		.filter(Boolean)
 		.map((item) => cloneItem(item as T))
-}
-
-function cloneSelector<T extends SignalDbItem>(selector: SignalDbSelector<T>): Record<string, unknown> {
-	return { ...(selector as Record<string, unknown>) }
-}
-
-function createSignalDbRef<TValue>(
-	collection: string,
-	selector: Record<string, unknown>,
-	path: string,
-	fallback: TValue,
-): BuiltinSignalDbRef<TValue> {
-	return {
-		kind: 'signaldb',
-		collection,
-		selector: { ...selector },
-		path: path.trim(),
-		fallback,
-	}
-}
-
-function createSignalDbDocRef<T>(
-	collection: string,
-	selector: Record<string, unknown>,
-	fallback: T,
-): BuiltinSignalDbRef<T> {
-	return {
-		kind: 'signaldb',
-		collection,
-		selector: { ...selector },
-		fallback,
-	}
 }
 
 function asIdFromSelector<T extends SignalDbItem>(selector: SignalDbSelector<T>): string | undefined {

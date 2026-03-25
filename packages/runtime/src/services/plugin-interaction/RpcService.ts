@@ -1,7 +1,7 @@
 // RpcService.ts - RPC 扩展管理服务
 import { type Context } from '@pluxel/core'
 import type { RpcTarget } from 'capnweb'
-import type { HmrUiRpcMap } from '../../web/protocol'
+import type { ExtensionUiRpcMap } from '../../web/protocol'
 
 /** 扩展工厂：每次 RPC 请求时调用，返回 RpcTarget 实例 */
 export type RpcExtensionFactory<T extends RpcTarget = RpcTarget> = (ctx: Context) => T
@@ -38,12 +38,12 @@ export class RpcService {
 	}
 
 	/**
-	 * 创建扩展视图（供 HmrRpcApi 使用）
+	 * 创建扩展视图（供 RuntimeRpcApi 使用）
 	 * 使用 Object.defineProperty 定义 getter，避免 Proxy
 	 */
-	createExtensionsView(ctx: Context): HmrUiRpcMap {
+	createExtensionsView(ctx: Context): ExtensionUiRpcMap {
 		// 需要使用普通对象（带 Object.prototype）以便 RPC 层能够序列化
-		const view = {} as HmrUiRpcMap
+		const view = {} as ExtensionUiRpcMap
 		for (const [name, factory] of this.extensions) {
 			Object.defineProperty(view, name, {
 				get: () => factory(ctx),

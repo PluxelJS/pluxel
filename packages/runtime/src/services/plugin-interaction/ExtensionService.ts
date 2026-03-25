@@ -15,6 +15,10 @@ import type {
 	ExtensionManifestEvent,
 	ExtensionModuleState,
 } from '../../web/extensions'
+import type {
+	SignalDbItem,
+	SignalDbSelector,
+} from '../../web/plugin-ui/signaldb-contracts'
 import type { ExtensionPoint } from '../../web/ui'
 import {
 	EXTENSION_FEDERATION_EXPOSE,
@@ -24,7 +28,7 @@ import {
 	extensionFederationRemoteName,
 } from '../../web/federation'
 import { HMR_INTERNAL_API_BASE, hmrExtensionArtifactPath } from '../../web/paths'
-import type { UiBinding } from './BuiltinBinding'
+import type { SignalDbCollectionHandle } from './SignalDbService'
 
 export interface ExtensionModuleStore {
 	getCompiledModule(pluginName: string): CompiledExtensionModule | undefined
@@ -48,19 +52,20 @@ export interface ExtensionServiceConfig {
 	enabled?: boolean
 }
 
-export interface UiDocHelpers<TState extends Record<string, unknown>> {
+export interface UiState<TState extends SignalDbItem> {
+	readonly collection: string
+	readonly selector: SignalDbSelector<TState>
+	get(): TState | undefined
 	field<K extends keyof TState & string>(key: K, fallback: TState[K]): BuiltinSyncRef<TState[K]>
 	path<TValue = unknown>(path: string, fallback: TValue): BuiltinSyncRef<TValue>
 	snapshot(fallback: TState): BuiltinSyncRef<TState>
 	form(
 		input: Omit<BuiltinFormBlock, 'kind' | 'syncFrom'> & {
-			sync?: false | BuiltinSyncRef<Record<string, unknown>> | TState
+			state?: false | BuiltinSyncRef<Record<string, unknown>> | TState
 		},
 	): BuiltinFormBlock
-	button(input: Omit<BuiltinActionBlock, 'kind'>): BuiltinActionBlock
+	action(input: Omit<BuiltinActionBlock, 'kind'>): BuiltinActionBlock
 }
-
-export type BuiltinAuthoringHelpers<TState extends Record<string, unknown>> = UiDocHelpers<TState>
 
 export class ExtensionService implements ExtensionModuleStore {
 	private enabled = true
@@ -176,26 +181,31 @@ export class ExtensionService implements ExtensionModuleStore {
 		return () => guard.dispose()
 	}
 
-	helpers<TState extends Record<string, unknown>>(
-		binding: UiBinding<TState>,
-	): UiDocHelpers<TState> {
+	state<TState extends SignalDbItem>(
+		collection: SignalDbCollectionHandle<TState>,
+		selector: SignalDbSelector<TState>,
+	): UiState<TState> {
+		const selection = cloneSelector(selector) as SignalDbSelector<TState>
 		return {
+			collection: collection.name,
+			selector: selection,
+			get: () => collection.findOne(selection),
 			field(key, fallback) {
-				return binding.field(key, fallback)
+				return createSignalDbRef(collection.name, selection, key, fallback)
 			},
 			path(path, fallback) {
-				return binding.path(path, fallback)
+				return createSignalDbRef(collection.name, selection, path, fallback)
 			},
 			snapshot(fallback) {
-				return binding.snapshot(fallback)
+				return createSignalDbDocRef(collection.name, selection, fallback)
 			},
-			form({ sync, ...rest }) {
+			form({ state, ...rest }) {
 				const syncFrom =
-					sync === false || sync == null
+					state === false || state == null
 						? undefined
-						: isBuiltinSyncRef(sync)
-							? sync
-							: binding.snapshot(sync)
+						: isBuiltinSyncRef(state)
+							? state
+							: createSignalDbDocRef(collection.name, selection, state)
 
 				return {
 					...rest,
@@ -203,7 +213,7 @@ export class ExtensionService implements ExtensionModuleStore {
 					syncFrom,
 				}
 			},
-			button(input) {
+			action(input) {
 				return {
 					...input,
 					kind: 'action',
@@ -532,6 +542,38 @@ export class ExtensionService implements ExtensionModuleStore {
 				? extensionFederationBuildManifestPath()
 				: relativeManifestPath
 		return resolve(cwd, manifestPath)
+	}
+}
+
+function cloneSelector<T extends SignalDbItem>(selector: SignalDbSelector<T>): Record<string, unknown> {
+	return { ...(selector as Record<string, unknown>) }
+}
+
+function createSignalDbRef<TValue>(
+	collection: string,
+	selector: Record<string, unknown>,
+	path: string,
+	fallback: TValue,
+): BuiltinSyncRef<TValue> {
+	return {
+		kind: 'signaldb',
+		collection,
+		selector: { ...selector },
+		path: path.trim(),
+		fallback,
+	}
+}
+
+function createSignalDbDocRef<T>(
+	collection: string,
+	selector: Record<string, unknown>,
+	fallback: T,
+): BuiltinSyncRef<T> {
+	return {
+		kind: 'signaldb',
+		collection,
+		selector: { ...selector },
+		fallback,
 	}
 }
 

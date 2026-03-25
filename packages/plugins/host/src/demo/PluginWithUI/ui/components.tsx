@@ -25,9 +25,9 @@ import {
 import { useEffect, useState } from 'react'
 import { pluginWithUi } from './runtime'
 
-type PluginWithUIRuntime = ReturnType<typeof pluginWithUi.usePluginRuntime>
+type PluginWithUIRuntime = ReturnType<typeof pluginWithUi.use>
 type PluginWithUIRpc = PluginWithUIRuntime['rpc']
-type PluginWithUISseClient = PluginWithUIRuntime['sseClient']
+type PluginWithUISseClient = PluginWithUIRuntime['transport']['sse']
 
 function useLiveConnectionState(sse: PluginWithUISseClient) {
 	const [connected, setConnected] = useState(false)
@@ -43,10 +43,11 @@ function useLiveConnectionState(sse: PluginWithUISseClient) {
 }
 
 export function OverviewPanel() {
-	const { pluginName, rpc, sse, sseClient } = pluginWithUi.usePluginRuntime()
-	const status = pluginWithUi.useSignalDbDoc('status', { id: 'status' })
-	const events = pluginWithUi.useSignalDbCollection('events')
-	const connected = useLiveConnectionState(sseClient)
+	const { context, rpc, sse, transport } = pluginWithUi.use('plugin')
+	const status = pluginWithUi.useDoc('status', { id: 'status' })
+	const events = pluginWithUi.useCollection('events')
+	const eventCount = pluginWithUi.useSignalDbQuery(() => events.count(), [events])
+	const connected = useLiveConnectionState(transport.sse)
 	const [tick, setTick] = useState<number | null>(null)
 	const [error, setError] = useState<string | null>(null)
 
@@ -93,7 +94,7 @@ export function OverviewPanel() {
 			<Card withBorder radius="md" p="md">
 				<Stack gap="xs">
 					<Text size="sm">
-						插件：<Code>{pluginName}</Code>
+						插件：<Code>{context.pluginName}</Code>
 					</Text>
 					<Text size="sm">
 						运行时长：<Code>{uptimeSeconds}s</Code>
@@ -102,7 +103,7 @@ export function OverviewPanel() {
 						计数器：<Code>{status?.counter ?? 0}</Code>
 					</Text>
 					<Text size="sm">
-						事件数：<Code>{events.items.length}</Code>
+						事件数：<Code>{eventCount}</Code>
 					</Text>
 					<Text size="sm">
 						最近心跳：<Code>{tick ? new Date(tick).toLocaleTimeString() : '—'}</Code>
@@ -140,8 +141,12 @@ export function OverviewPanel() {
 }
 
 export function EventsPanel() {
-	const { rpc } = pluginWithUi.usePluginRuntime()
-	const events = pluginWithUi.useSignalDbCollection('events')
+	const { rpc } = pluginWithUi.use('plugin')
+	const events = pluginWithUi.useCollection('events')
+	const recentEvents = pluginWithUi.useSignalDbQuery(
+		() => events.find({}, { sort: { at: -1 }, limit: 50 }),
+		[events],
+	)
 	const [error, setError] = useState<string | null>(null)
 	const [text, setText] = useState('')
 
@@ -211,7 +216,7 @@ export function EventsPanel() {
 								暂无事件，先发一条试试。
 							</Text>
 						) : null}
-						{events.find({}, { sort: { at: -1 }, limit: 50 }).map((ev) => (
+						{recentEvents.map((ev) => (
 							<Card key={ev.id} withBorder radius="md" p="sm">
 								<Group justify="space-between" align="flex-start">
 									<Stack gap={2}>
@@ -236,8 +241,8 @@ export function EventsPanel() {
 }
 
 export function StreamsPanel() {
-	const { sse, sseClient } = pluginWithUi.usePluginRuntime()
-	const connected = useLiveConnectionState(sseClient)
+	const { sse, transport } = pluginWithUi.use('plugin')
+	const connected = useLiveConnectionState(transport.sse)
 	const [lines, setLines] = useState<Array<{ key: string; text: string }>>([])
 
 	useEffect(() => {
@@ -299,7 +304,7 @@ type RoutePageProps = {
 }
 
 export function RoutePage({ frame = 'shell' }: RoutePageProps) {
-	const { pluginName } = pluginWithUi.usePluginRuntime()
+	const { context } = pluginWithUi.use('plugin')
 	const standalone = frame === 'standalone'
 	return (
 		<Stack gap="md" style={standalone ? { minHeight: '100dvh', padding: 24 } : undefined}>
@@ -311,14 +316,14 @@ export function RoutePage({ frame = 'shell' }: RoutePageProps) {
 						size="xs"
 						leftSection={<IconArrowLeft size={14} />}
 						component="a"
-						href={`/plugins/${encodeURIComponent(pluginName)}/dashboard`}
+						href={`/plugins/${encodeURIComponent(context.pluginName)}/dashboard`}
 					>
 						返回宿主壳
 					</Button>
 				) : null}
 			</Group>
 			<Text size="sm" c="dimmed">
-				这是插件提供的页面路由，用于演示 `routes` 能力。插件名：<Code>{pluginName}</Code>
+				这是插件提供的页面路由，用于演示 `routes` 能力。插件名：<Code>{context.pluginName}</Code>
 			</Text>
 			{standalone ? (
 				<Text size="sm">

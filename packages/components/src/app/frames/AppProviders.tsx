@@ -2,19 +2,19 @@ import { useComputedColorScheme } from '@mantine/core'
 import { ModalsProvider, openConfirmModal } from '@mantine/modals'
 import { Notifications } from '@mantine/notifications'
 import { Outlet } from '@tanstack/react-router'
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useMemo, useState, useSyncExternalStore } from 'react'
 import {
 	createGlobalExtensionContext,
+	extensionLocale,
 	type ExtensionContext,
 	ExtensionPathnameProvider,
 	ExtensionProvider,
-	getExtensionI18nService,
 } from '../../extension'
 import { ExtensionLoader } from '../ExtensionLoader'
 import { notifyAndRecord } from '../notifications/notifyBridge'
 import { NotificationCenterProvider } from '../notifications/NotificationCenterProvider'
 import { PluginOverviewProvider } from '../plugins/data'
-import { useHmrWebClient } from '../rpc'
+import { useRuntimeTransportClient } from '../../runtime'
 import { useCurrentPathname } from '../router/useCurrentRoute'
 
 export function AppProviders() {
@@ -22,7 +22,12 @@ export function AppProviders() {
 	const colorScheme = useComputedColorScheme('light', { getInitialValueInEffect: true })
 	const [runningPlugins, setRunningPlugins] = useState<ReadonlySet<string>>(() => new Set())
 	const [runningReady, setRunningReady] = useState(false)
-	const hmr = useHmrWebClient()
+	const transportClient = useRuntimeTransportClient()
+	const localeSnapshot = useSyncExternalStore(
+		extensionLocale.subscribe,
+		() => `${extensionLocale.locale}::${extensionLocale.fallbackLocale ?? ''}`,
+		() => `${extensionLocale.locale}::${extensionLocale.fallbackLocale ?? ''}`,
+	)
 
 	const handleRunningPluginsChange = useCallback((next: ReadonlySet<string>) => {
 		setRunningPlugins((prev) => {
@@ -50,8 +55,8 @@ export function AppProviders() {
 				runningPlugins,
 				runningPluginsReady: runningReady,
 				services: {
-					hmr,
-					i18n: getExtensionI18nService(),
+					transport: transportClient,
+					locale: extensionLocale,
 					ui: {
 						notify: (payload) => {
 							const tone = payload?.tone ?? 'info'
@@ -88,7 +93,7 @@ export function AppProviders() {
 					},
 				},
 			}),
-		[colorScheme, runningPlugins, runningReady, hmr],
+		[colorScheme, localeSnapshot, runningPlugins, runningReady, transportClient],
 	)
 
 	return (

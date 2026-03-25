@@ -1,5 +1,5 @@
 import { createContext, createElement, type ReactNode, useContext } from 'react'
-import type { HmrWebClient } from './ui-runtime'
+import type { RuntimeTransportClient } from '../client'
 
 export const ExtensionPoints = {
 	HeaderActions: 'header:actions',
@@ -120,125 +120,15 @@ export type ExtensionPoint = keyof ExtensionPointMap & string
 export type ExtensionPointCtx<P extends ExtensionPoint> = ExtensionPointMap[P]['ctx']
 export type ExtensionPointMeta<P extends ExtensionPoint> = ExtensionPointMap[P]['meta']
 
-export type I18nLocale = string
-export type I18nKey = string
-export type I18nParams = Record<string, string | number | boolean | null | undefined | Date>
-export type I18nMessageDict = Record<I18nKey, string>
-export type I18nResources = Record<I18nLocale, I18nMessageDict>
+export type Locale = string
 
-export interface I18nService {
-	locale: I18nLocale
-	fallbackLocale?: I18nLocale
-	t: (key: I18nKey, params?: I18nParams, options?: { defaultValue?: string }) => string
-	has: (key: I18nKey, locale?: I18nLocale) => boolean
-	formatDate: (value: Date | number, options?: Intl.DateTimeFormatOptions) => string
-	formatNumber: (value: number, options?: Intl.NumberFormatOptions) => string
-}
-
-export function createI18nService(input: {
-	locale: I18nLocale
-	resources?: I18nResources
-	fallbackLocale?: I18nLocale
-	defaultValue?: (key: I18nKey) => string
-}): I18nService {
-	const resources = input.resources ?? {}
-	const locale = input.locale
-	const fallbackLocale = input.fallbackLocale
-	const defaultValue = input.defaultValue
-
-	const dateCache = new Map<string, Intl.DateTimeFormat>()
-	const numberCache = new Map<string, Intl.NumberFormat>()
-
-	const getDateFormatter = (opts?: Intl.DateTimeFormatOptions) => {
-		const key = `${locale}::${opts ? safeJsonKey(opts) : ''}`
-		const cached = dateCache.get(key)
-		if (cached) return cached
-		try {
-			const fmt = new Intl.DateTimeFormat(locale, opts)
-			dateCache.set(key, fmt)
-			return fmt
-		} catch {
-			return null
-		}
-	}
-
-	const getNumberFormatter = (opts?: Intl.NumberFormatOptions) => {
-		const key = `${locale}::${opts ? safeJsonKey(opts) : ''}`
-		const cached = numberCache.get(key)
-		if (cached) return cached
-		try {
-			const fmt = new Intl.NumberFormat(locale, opts)
-			numberCache.set(key, fmt)
-			return fmt
-		} catch {
-			return null
-		}
-	}
-
-	const formatDate: I18nService['formatDate'] = (value, opts) => {
-		const date = typeof value === 'number' ? new Date(value) : value
-		const fmt = getDateFormatter(opts)
-		if (!fmt) return date.toISOString()
-		try {
-			return fmt.format(date)
-		} catch {
-			return date.toISOString()
-		}
-	}
-
-	const formatNumber: I18nService['formatNumber'] = (value, opts) => {
-		const fmt = getNumberFormatter(opts)
-		if (!fmt) return String(value)
-		try {
-			return fmt.format(value)
-		} catch {
-			return String(value)
-		}
-	}
-
-	const lookup = (key: I18nKey): string | undefined => {
-		const primary = resources?.[locale]?.[key]
-		if (typeof primary === 'string') return primary
-		if (fallbackLocale) {
-			const fb = resources?.[fallbackLocale]?.[key]
-			if (typeof fb === 'string') return fb
-		}
-		return undefined
-	}
-
-	const has: I18nService['has'] = (key, loc) => {
-		const useLocale = loc ?? locale
-		return typeof resources?.[useLocale]?.[key] === 'string'
-	}
-
-	const t: I18nService['t'] = (key, params, options) => {
-		const template = lookup(key) ?? options?.defaultValue ?? defaultValue?.(key) ?? key
-		if (!params) return template
-		return template.replace(/\{([a-zA-Z0-9_.-]+)\}/g, (_m, rawName) => {
-			const name = String(rawName)
-			const value = (params as any)[name] as unknown
-			if (value === undefined || value === null) return ''
-			if (value instanceof Date) return formatDate(value)
-			if (typeof value === 'number') return String(value)
-			if (typeof value === 'boolean') return value ? 'true' : 'false'
-			return String(value)
-		})
-	}
-
-	return { locale, fallbackLocale, t, has, formatDate, formatNumber }
-}
-
-function safeJsonKey(value: unknown): string {
-	try {
-		return JSON.stringify(value) ?? ''
-	} catch {
-		return ''
-	}
-}
-
-export interface PluginI18nBundle {
-	namespace?: string
-	resources: I18nResources
+export interface LocaleService {
+	readonly locale: Locale
+	readonly fallbackLocale?: Locale
+	setLocale(locale: Locale, options?: { fallbackLocale?: Locale }): void
+	subscribe(listener: () => void): () => void
+	formatDate(value: Date | number, options?: Intl.DateTimeFormatOptions): string
+	formatNumber(value: number, options?: Intl.NumberFormatOptions): string
 }
 
 export type UiNotifyTone = 'info' | 'success' | 'warning' | 'error'
@@ -260,12 +150,12 @@ export interface UiConfirmPayload {
 }
 
 export interface ExtensionServices {
-	hmr: HmrWebClient
-	ui?: {
-		notify?: (payload: UiNotifyPayload) => void
-		confirm?: (payload: UiConfirmPayload) => Promise<boolean>
+	transport: RuntimeTransportClient
+	ui: {
+		notify: (payload: UiNotifyPayload) => void
+		confirm: (payload: UiConfirmPayload) => Promise<boolean>
 	}
-	i18n?: I18nService
+	locale: LocaleService
 }
 
 export function createGlobalExtensionContext(input: {
@@ -345,8 +235,10 @@ export interface PluginUIModule {
 		definition: RouteExtensionDef
 		render: (ctx: PluginExtensionContext) => ReactNode
 	}>
-	i18n?: PluginI18nBundle | PluginI18nBundle[]
-	setup?: (ctx: { pluginName: string }) => void | (() => void) | Promise<void | (() => void)>
+	setup?: (ctx: {
+		pluginName: string
+		locale: LocaleService
+	}) => void | (() => void) | Promise<void | (() => void)>
 }
 
 export function definePluginUIModule<T extends PluginUIModule>(module: T): T {

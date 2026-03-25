@@ -1,203 +1,154 @@
+import type { DependencyList } from 'react'
 import { useMemo } from 'react'
 import type {
 	ExtensionContext,
 	ExtensionServices,
 	GlobalExtensionContext,
-	I18nService,
 	PluginExtensionContext,
 } from './ui-contracts'
 import { useExtensionContext } from './ui-contracts'
-import type { HmrUiRpcMap, HmrUiSignalDbMap, HmrWebClient, SseNamespaceClient } from './ui-runtime'
+import type { RuntimeTransportClient } from '../client'
+import type { ExtensionUiRpcMap, ExtensionUiSignalDbMap } from '../protocol'
 import type { SignalDbItem, SignalDbSelector } from './signaldb-contracts'
+import type { SseNamespaceClient } from '../sse'
 import {
 	type SignalDbCollectionView,
 	useSignalDbCollectionState,
 	useSignalDbDocState,
+	useSignalDbQueryState,
 } from './signaldb-runtime'
 
-type HostUiService = NonNullable<ExtensionServices['ui']>
+type HostUiService = ExtensionServices['ui']
 
-export type NamespaceUiRpc<Name extends string> = Name extends keyof HmrUiRpcMap
-	? HmrUiRpcMap[Name]
+type PluginUiRpc<Name extends string> = Name extends keyof ExtensionUiRpcMap
+	? ExtensionUiRpcMap[Name]
 	: never
 
-type NamespaceUiSignalDb<Name extends string> = Name extends keyof HmrUiSignalDbMap
-	? HmrUiSignalDbMap[Name]
+type PluginUiSignalDb<Name extends string> = Name extends keyof ExtensionUiSignalDbMap
+	? ExtensionUiSignalDbMap[Name]
 	: Record<string, SignalDbItem>
 
-type NamespaceUiSignalDbKey<Name extends string> = Extract<keyof NamespaceUiSignalDb<Name>, string>
+type PluginUiCollectionKey<Name extends string> = Extract<keyof PluginUiSignalDb<Name>, string>
 
-type NamespaceUiSignalDbItem<
+type PluginUiCollectionItem<
 	Name extends string,
-	Key extends NamespaceUiSignalDbKey<Name>,
-> = NamespaceUiSignalDb<Name>[Key] extends SignalDbItem ? NamespaceUiSignalDb<Name>[Key] : SignalDbItem
+	Key extends PluginUiCollectionKey<Name>,
+> = PluginUiSignalDb<Name>[Key] extends SignalDbItem ? PluginUiSignalDb<Name>[Key] : SignalDbItem
 
-export type PluginUiContext<Name extends string> = PluginExtensionContext & { pluginName: Name }
+type PluginUiContext<Name extends string> = PluginExtensionContext & { pluginName: Name }
 
-export type NamespaceUiRuntime<
+/**
+ * Unified browser-side client surface for one plugin namespace.
+ *
+ * - `rpc` / `sse`: primary plugin interaction channels
+ * - `notify` / `confirm` / `locale`: host-provided deterministic UI affordances
+ * - `transport`: low-level transport escape hatch when needed
+ */
+export type PluginUiClient<
 	Name extends string,
 	Ctx extends ExtensionContext = ExtensionContext,
 > = Readonly<{
-	namespace: Name
 	context: Ctx
-	services: ExtensionServices
-	hmr: HmrWebClient
-	rpc: NamespaceUiRpc<Name>
+	transport: RuntimeTransportClient
+	rpc: PluginUiRpc<Name>
 	sse: SseNamespaceClient<Name>
-	sseClient: HmrWebClient['sse']
-	notify: HostUiService['notify'] | undefined
-	confirm: HostUiService['confirm'] | undefined
-	i18n: I18nService | undefined
+	notify: HostUiService['notify']
+	confirm: HostUiService['confirm']
+	locale: ExtensionServices['locale']
 }>
 
-export type PluginUiRuntime<Name extends string> = Omit<
-	NamespaceUiRuntime<Name, PluginUiContext<Name>>,
-	'namespace'
-> & {
-	pluginName: Name
+export interface PluginUi<Name extends string> {
+	use(): PluginUiClient<Name>
+	use(kind: 'global'): PluginUiClient<Name, GlobalExtensionContext>
+	use(kind: 'plugin'): PluginUiClient<Name, PluginUiContext<Name>>
+	useSignalDbQuery<T>(query: () => T, deps?: DependencyList): T
+	useCollection<Key extends PluginUiCollectionKey<Name>>(
+		collection: Key,
+	): SignalDbCollectionView<PluginUiCollectionItem<Name, Key>>
+	useDoc<Key extends PluginUiCollectionKey<Name>>(
+		collection: Key,
+		selector: SignalDbSelector<PluginUiCollectionItem<Name, Key>>,
+	): PluginUiCollectionItem<Name, Key> | undefined
 }
 
-export interface PluginUiHelpers<Name extends string> {
-	readonly namespace: Name
-	useContext(): ExtensionContext
-	useGlobalContext(): GlobalExtensionContext
-	usePluginContext(): PluginUiContext<Name>
-	useRuntime(): NamespaceUiRuntime<Name>
-	useGlobalRuntime(): NamespaceUiRuntime<Name, GlobalExtensionContext>
-	usePluginRuntime(): PluginUiRuntime<Name>
-	useServices(): ExtensionServices
-	useHmr(): HmrWebClient
-	useRpc(): NamespaceUiRpc<Name>
-	useSse(): SseNamespaceClient<Name>
-	useSignalDbCollection<Key extends NamespaceUiSignalDbKey<Name>>(
-		collection: Key,
-	): SignalDbCollectionView<NamespaceUiSignalDbItem<Name, Key>>
-	useSignalDbDoc<Key extends NamespaceUiSignalDbKey<Name>>(
-		collection: Key,
-		selector: SignalDbSelector<NamespaceUiSignalDbItem<Name, Key>>,
-	): NamespaceUiSignalDbItem<Name, Key> | undefined
-}
-
-function useNamespaceRuntimeFromContext<Name extends string, Ctx extends ExtensionContext>(
-	namespace: Name,
+function usePluginClientFromContext<Name extends string, Ctx extends ExtensionContext>(
+	pluginName: Name,
 	context: Ctx,
-): NamespaceUiRuntime<Name, Ctx> {
+): PluginUiClient<Name, Ctx> {
 	const services = context.services
-	const hmr = services.hmr
+	const transport = services.transport
 
 	return useMemo(
 		() => ({
-			namespace,
 			context,
-			services,
-			hmr,
-			rpc: ((hmr.ui as unknown) as Record<string, unknown>)[namespace] as NamespaceUiRpc<Name>,
-			sse: hmr.sse.ns(namespace) as SseNamespaceClient<Name>,
-			sseClient: hmr.sse,
-			notify: services.ui?.notify,
-			confirm: services.ui?.confirm,
-			i18n: services.i18n,
+			transport,
+			rpc: ((transport.extensions as unknown) as Record<string, unknown>)[pluginName] as PluginUiRpc<Name>,
+			sse: transport.sse.ns(pluginName) as SseNamespaceClient<Name>,
+			notify: services.ui.notify,
+			confirm: services.ui.confirm,
+			locale: services.locale,
 		}),
-		[context, hmr, namespace, services],
+		[context, pluginName, services, transport],
 	)
 }
 
-function useExpectedPluginContext<Name extends string>(namespace: Name): PluginUiContext<Name> {
+function useExpectedPluginContext<Name extends string>(pluginName: Name): PluginUiContext<Name> {
 	const context = useExtensionContext('plugin')
-	if (context.pluginName !== namespace) {
+	if (context.pluginName !== pluginName) {
 		throw new Error(
-			`[plugin-ui] helper for "${namespace}" used under plugin "${context.pluginName}"`,
+			`[plugin-ui] helper for "${pluginName}" used under plugin "${context.pluginName}"`,
 		)
 	}
 	return context as PluginUiContext<Name>
 }
 
-export function createPluginUiHelpers<const Name extends string>(namespace: Name): PluginUiHelpers<Name> {
-	function useContext() {
-		return useExtensionContext()
+export function createPluginUi<const Name extends string>(pluginName: Name): PluginUi<Name> {
+	function use(): PluginUiClient<Name>
+	function use(kind: 'global'): PluginUiClient<Name, GlobalExtensionContext>
+	function use(kind: 'plugin'): PluginUiClient<Name, PluginUiContext<Name>>
+	function use(kind?: 'global' | 'plugin') {
+		if (kind === 'global') {
+			const context = useExtensionContext('global')
+			return usePluginClientFromContext(pluginName, context)
+		}
+		if (kind === 'plugin') {
+			const context = useExpectedPluginContext(pluginName)
+			return usePluginClientFromContext(pluginName, context)
+		}
+		const context = useExtensionContext()
+		return usePluginClientFromContext(pluginName, context)
 	}
 
-	function useGlobalContext() {
-		return useExtensionContext('global')
-	}
-
-	function usePluginContext() {
-		return useExpectedPluginContext(namespace)
-	}
-
-	function useRuntime() {
-		const context = useContext()
-		return useNamespaceRuntimeFromContext(namespace, context)
-	}
-
-	function useGlobalRuntime() {
-		const context = useGlobalContext()
-		return useNamespaceRuntimeFromContext(namespace, context)
-	}
-
-	function usePluginRuntime() {
-		const context = usePluginContext()
-		const runtime = useNamespaceRuntimeFromContext(namespace, context)
-		return useMemo(
-			() => ({
-				...runtime,
-				pluginName: namespace,
-			}),
-			[namespace, runtime],
-		)
-	}
-
-	function useServices() {
-		return useContext().services
-	}
-
-	function useHmr() {
-		return useServices().hmr
-	}
-
-	function useRpc() {
-		return useRuntime().rpc
-	}
-
-	function useSse() {
-		return useRuntime().sse
-	}
-
-	function useSignalDbCollection<Key extends NamespaceUiSignalDbKey<Name>>(collection: Key) {
-		const hmr = useHmr()
-		return useSignalDbCollectionState<NamespaceUiSignalDbItem<Name, Key>>(
-			hmr,
-			namespace,
+	function useCollection<Key extends PluginUiCollectionKey<Name>>(collection: Key) {
+		const client = use()
+		return useSignalDbCollectionState<PluginUiCollectionItem<Name, Key>>(
+			client.transport,
+			pluginName,
 			String(collection),
 		)
 	}
 
-	function useSignalDbDoc<Key extends NamespaceUiSignalDbKey<Name>>(
+	function useDoc<Key extends PluginUiCollectionKey<Name>>(
 		collection: Key,
-		selector: SignalDbSelector<NamespaceUiSignalDbItem<Name, Key>>,
+		selector: SignalDbSelector<PluginUiCollectionItem<Name, Key>>,
 	) {
-		const hmr = useHmr()
-		return useSignalDbDocState<NamespaceUiSignalDbItem<Name, Key>>(
-			hmr,
-			namespace,
+		const client = use()
+		return useSignalDbDocState<PluginUiCollectionItem<Name, Key>>(
+			client.transport,
+			pluginName,
 			String(collection),
 			selector,
 		)
 	}
 
+	function useSignalDbQuery<T>(query: () => T, deps?: DependencyList) {
+		return useSignalDbQueryState(query, deps)
+	}
+
 	return {
-		namespace,
-		useContext,
-		useGlobalContext,
-		usePluginContext,
-		useRuntime,
-		useGlobalRuntime,
-		usePluginRuntime,
-		useServices,
-		useHmr,
-		useRpc,
-		useSse,
-		useSignalDbCollection,
-		useSignalDbDoc,
+		use,
+		useSignalDbQuery,
+		useCollection,
+		useDoc,
 	}
 }
