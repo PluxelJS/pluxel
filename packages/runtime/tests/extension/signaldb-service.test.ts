@@ -2,6 +2,8 @@ import { describe, expect, it, vi } from 'vitest'
 import { SignalDbService } from '../../src/services/plugin-interaction/SignalDbService'
 
 function createFakeCtx() {
+	const sseDispose = vi.fn(() => undefined)
+	const sseRegister = vi.fn(() => sseDispose)
 	const ctx: any = {
 		pluginInfo: { id: 'test-plugin' },
 		effects: {
@@ -9,7 +11,7 @@ function createFakeCtx() {
 		},
 		ext: {
 			sse: {
-				expose: vi.fn(() => () => undefined),
+				expose: sseRegister,
 			},
 		},
 		pluginData: {
@@ -62,5 +64,61 @@ describe('SignalDbService', () => {
 
 		expect(ctx.pluginData.persistenceForCollection).toHaveBeenCalledWith('persisted-runtime-actions')
 		expect(collection.findOne({ id: 'a' })).toEqual({ id: 'a', value: 1 })
+	})
+
+	it('provides selector-bound doc helpers for builtin sync/form/action', async () => {
+		const ctx = createFakeCtx()
+		const service = new SignalDbService(ctx)
+		const collection = service.collection<{ id: string; paused: boolean; ticks: number }>({
+			name: 'runtime',
+			persistence: false,
+		})
+		await collection.ready()
+		collection.insert({ id: 'runtime', paused: false, ticks: 1 })
+
+		const doc = collection.doc({ id: 'runtime' })
+		const form = doc.form({
+			schemaKey: 'runtime',
+			write: collection.insertSpec({
+				id: { kind: 'generatedId' },
+				paused: { kind: 'field', key: 'paused' },
+			}),
+		})
+		const action = doc.action({
+			label: 'Reset',
+			write: doc.patchSpec({ ticks: 0 }),
+		})
+
+		expect(doc.get()).toEqual({ id: 'runtime', paused: false, ticks: 1 })
+		expect(doc.field('paused', true)).toMatchObject({
+			kind: 'signaldb',
+			collection: 'runtime',
+			selector: { id: 'runtime' },
+			path: 'paused',
+			fallback: true,
+		})
+		expect(form).toMatchObject({
+			kind: 'form',
+			syncFrom: {
+				kind: 'signaldb',
+				collection: 'runtime',
+				selector: { id: 'runtime' },
+				fallback: {},
+			},
+			write: {
+				collection: 'runtime',
+				mode: 'insert',
+			},
+		})
+		expect(action).toMatchObject({
+			kind: 'action',
+			label: 'Reset',
+			write: {
+				collection: 'runtime',
+				mode: 'patch',
+				selector: { id: 'runtime' },
+				value: { ticks: 0 },
+			},
+		})
 	})
 })

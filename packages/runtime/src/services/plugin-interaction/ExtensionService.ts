@@ -5,20 +5,13 @@ import { dirname, isAbsolute, resolve } from 'pathe'
 import { resolveModuleIdBaseDir } from '../../runtime/module-id'
 import { findNearestPackageRoot } from '../../shared'
 import type {
-	BuiltinActionBlock,
 	BuiltinDocExtensionDef,
 	BuiltinExtensionDef,
-	BuiltinFormBlock,
-	BuiltinSyncRef,
 	CompiledExtensionModule,
 	ExtensionManifest,
 	ExtensionManifestEvent,
 	ExtensionModuleState,
 } from '../../web/extensions'
-import type {
-	SignalDbItem,
-	SignalDbSelector,
-} from '../../web/plugin-ui/signaldb-contracts'
 import type { ExtensionPoint } from '../../web/ui'
 import {
 	EXTENSION_FEDERATION_EXPOSE,
@@ -28,7 +21,6 @@ import {
 	extensionFederationRemoteName,
 } from '../../web/federation'
 import { HMR_INTERNAL_API_BASE, hmrExtensionArtifactPath } from '../../web/paths'
-import type { SignalDbCollectionHandle } from './SignalDbService'
 
 export interface ExtensionModuleStore {
 	getCompiledModule(pluginName: string): CompiledExtensionModule | undefined
@@ -50,21 +42,6 @@ export interface ExtensionModuleStore {
 
 export interface ExtensionServiceConfig {
 	enabled?: boolean
-}
-
-export interface UiState<TState extends SignalDbItem> {
-	readonly collection: string
-	readonly selector: SignalDbSelector<TState>
-	get(): TState | undefined
-	field<K extends keyof TState & string>(key: K, fallback: TState[K]): BuiltinSyncRef<TState[K]>
-	path<TValue = unknown>(path: string, fallback: TValue): BuiltinSyncRef<TValue>
-	snapshot(fallback: TState): BuiltinSyncRef<TState>
-	form(
-		input: Omit<BuiltinFormBlock, 'kind' | 'syncFrom'> & {
-			state?: false | BuiltinSyncRef<Record<string, unknown>> | TState
-		},
-	): BuiltinFormBlock
-	action(input: Omit<BuiltinActionBlock, 'kind'>): BuiltinActionBlock
 }
 
 export class ExtensionService implements ExtensionModuleStore {
@@ -179,47 +156,6 @@ export class ExtensionService implements ExtensionModuleStore {
 			void this.removePlugin(pluginName)
 		})
 		return () => guard.dispose()
-	}
-
-	state<TState extends SignalDbItem>(
-		collection: SignalDbCollectionHandle<TState>,
-		selector: SignalDbSelector<TState>,
-	): UiState<TState> {
-		const selection = cloneSelector(selector) as SignalDbSelector<TState>
-		return {
-			collection: collection.name,
-			selector: selection,
-			get: () => collection.findOne(selection),
-			field(key, fallback) {
-				return createSignalDbRef(collection.name, selection, key, fallback)
-			},
-			path(path, fallback) {
-				return createSignalDbRef(collection.name, selection, path, fallback)
-			},
-			snapshot(fallback) {
-				return createSignalDbDocRef(collection.name, selection, fallback)
-			},
-			form({ state, ...rest }) {
-				const syncFrom =
-					state === false || state == null
-						? undefined
-						: isBuiltinSyncRef(state)
-							? state
-							: createSignalDbDocRef(collection.name, selection, state)
-
-				return {
-					...rest,
-					kind: 'form',
-					syncFrom,
-				}
-			},
-			action(input) {
-				return {
-					...input,
-					kind: 'action',
-				}
-			},
-		}
 	}
 
 	resolveArtifactFile(pluginName: string, sourceHash: string, file: string): string | null {
@@ -545,38 +481,6 @@ export class ExtensionService implements ExtensionModuleStore {
 	}
 }
 
-function cloneSelector<T extends SignalDbItem>(selector: SignalDbSelector<T>): Record<string, unknown> {
-	return { ...(selector as Record<string, unknown>) }
-}
-
-function createSignalDbRef<TValue>(
-	collection: string,
-	selector: Record<string, unknown>,
-	path: string,
-	fallback: TValue,
-): BuiltinSyncRef<TValue> {
-	return {
-		kind: 'signaldb',
-		collection,
-		selector: { ...selector },
-		path: path.trim(),
-		fallback,
-	}
-}
-
-function createSignalDbDocRef<T>(
-	collection: string,
-	selector: Record<string, unknown>,
-	fallback: T,
-): BuiltinSyncRef<T> {
-	return {
-		kind: 'signaldb',
-		collection,
-		selector: { ...selector },
-		fallback,
-	}
-}
-
 export function createCompiledExtensionModule(input: {
 	pluginName: string
 	sourceHash: string
@@ -614,10 +518,4 @@ function errorMessage(error: unknown): string {
 	} catch {
 		return 'Unknown extension compile error'
 	}
-}
-
-function isBuiltinSyncRef(value: unknown): value is BuiltinSyncRef<Record<string, unknown>> {
-	if (!value || typeof value !== 'object') return false
-	const kind = (value as { kind?: unknown }).kind
-	return kind === 'signaldb'
 }

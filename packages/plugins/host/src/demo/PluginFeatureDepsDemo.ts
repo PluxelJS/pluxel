@@ -112,7 +112,7 @@ export class PluginFeatureBridgeProvider extends BasePlugin {
 export class PluginFeatureBridgeConsumer extends BasePlugin {
 	bind(provider: PluginFeatureBridgeProvider): () => void {
 		this.ctx.logger.info('bridge bind', {
-			by: this.ctx.caller?.pluginInfo?.id ?? '<no-caller>',
+			by: this.caller?.pluginInfo?.id ?? '<no-caller>',
 			provider: provider.ctx.pluginInfo.id,
 		})
 

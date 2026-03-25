@@ -1,7 +1,4 @@
 // 展示型插件：自定义 UI 扩展 + 路由 + standalone frame + RPC + SSE（带持久化 state）。
-//
-// 这是“完整链路”的参考实现：ui().bind(ctx) -> definePluginUIModule() -> routes/extensions -> RPC/SSE。
-// 其中 ui().bind(ctx) 是给 HMR/AST 识别的桥接声明：dev 下由 HMR 消费源码声明，非 HMR 下回落到 packaged remote 注册。
 
 import { BasePlugin, Plugin } from '@pluxel/runtime'
 import { ui } from '@pluxel/hmr/plugin'

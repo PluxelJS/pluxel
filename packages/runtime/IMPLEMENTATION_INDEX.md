@@ -6,8 +6,6 @@
 
 - [`docs/FRONTEND_ARCHITECTURE.md`](../../docs/FRONTEND_ARCHITECTURE.md)
 
-如果你是为了追“插件前端最终在 runtime 里如何落地”，推荐先读 `Plugin Interaction`，再读 `Web Surface`。
-
 ## Package Exports
 
 - `packages/runtime/package.json`
@@ -60,17 +58,12 @@
 - `ctx.ext.rpc` / `ctx.ext.sse`
   提供自定义 UI 的命令式交互通道
 
-如果你在追查 SignalDB 的前后端链路，推荐对照读：
+SignalDB 前后端链路：
 
 - `packages/runtime/src/services/plugin-interaction/SignalDbService.ts`
   服务端 authoritative collection、SSE 广播、HTTP sync entry
 - `packages/runtime/src/web/plugin-ui/signaldb-runtime.ts`
   浏览器 replica、`SyncManager` 集成、React hooks
-
-判断原则：
-
-- 只要还是“插件启动时注册什么”，优先看这里
-- 如果问题变成“浏览器侧怎么消费这些协议”，再跳去 `Web Surface`
 
 ## Web Surface
 
@@ -89,7 +82,7 @@
 - `packages/runtime/src/web/plugin-ui/*`
   UI contract / authoring helpers / signaldb hooks
 
-这一层不是插件后端注册入口，而是浏览器侧消费契约。比较容易混淆的几个文件：
+主要文件：
 
 - `authoring.ts`
   插件 UI 浏览器侧 helper；解决的是“组件里怎么更顺手地拿 transport/rpc/signaldb”
@@ -101,13 +94,6 @@
   浏览器侧 signaldb collection/doc hooks
 - `federation.ts`
   MF remote 名称、manifest、shared contract
-
-如果你在追查“浏览器插件前端是如何被宿主消费的”，优先看：
-
-- `packages/runtime/src/web/plugin-ui/ui-contracts.ts`
-- `packages/runtime/src/web/plugin-ui/authoring.ts`
-- `packages/runtime/src/web/plugin-ui/signaldb-runtime.ts`
-- `packages/runtime/src/web/plugin-ui/federation.ts`
 
 ## Frozen / Internal / Shared
 

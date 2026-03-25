@@ -1,4 +1,4 @@
-// 演示：在插件中使用 `ctx.vault` 做加密持久化（Portable Vault v1）。
+// 演示：在插件中使用 `this.ctx.vault` 做加密持久化（Portable Vault v1）。
 //
 // 目标：
 // - 展示 token(字符串) 与 secret(JSON) 的基本读写

@@ -235,43 +235,6 @@ describe('ExtensionService runtime/dev boundary', () => {
 		expect(events.length).toBeGreaterThan(0)
 	})
 
-	it('state() emits signaldb-only builtin form/action blocks', async () => {
-		const { ctx } = createFakeCtx()
-		const service = new ExtensionService(ctx, { enabled: true })
-		const collection = {
-			name: 'runtime',
-			findOne: () => ({ id: 'runtime', paused: false }),
-		}
-
-		const state = service.state(collection as any, { id: 'runtime' })
-		const form = state.form({
-			schemaKey: 'demo',
-			write: {
-				collection: 'runtime-actions',
-				mode: 'insert',
-				value: { id: { kind: 'generatedId' }, paused: { kind: 'field', key: 'paused' } },
-			},
-			state: { id: 'runtime', paused: false },
-		})
-		const action = state.action({
-			label: 'Reset',
-			write: {
-				collection: 'runtime-actions',
-				mode: 'insert',
-				value: { id: { kind: 'generatedId' }, ticks: 0 },
-			},
-		})
-
-		expect(form).toMatchObject({
-			kind: 'form',
-			syncFrom: { kind: 'signaldb', collection: 'runtime', selector: { id: 'runtime' } },
-		})
-		expect(action).toMatchObject({
-			kind: 'action',
-			label: 'Reset',
-		})
-	})
-
 	it('compile status transitions are surfaced via manifest events', async () => {
 		const { ctx } = createFakeCtx()
 		const service = new ExtensionService(ctx, { enabled: true })

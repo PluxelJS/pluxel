@@ -5,6 +5,13 @@ import {
 	type LoadResponse,
 } from '@signaldb/core'
 import type { Context } from '@pluxel/core'
+import type {
+	BuiltinActionBlock,
+	BuiltinFormBlock,
+	BuiltinSignalDbWriteSpec,
+	BuiltinSyncRef,
+	BuiltinTemplateValue,
+} from '../../web/extensions'
 import {
 	type SignalDbFindOptions,
 	type SignalDbItem,
@@ -22,10 +29,36 @@ export interface SignalDbCollectionOptions<T extends SignalDbItem> {
 	clientWrites?: boolean
 }
 
+export interface SignalDbDocumentHandle<TState extends SignalDbItem> {
+	readonly collection: string
+	readonly selector: SignalDbSelector<TState>
+	get(): TState | undefined
+	field<K extends keyof TState & string>(key: K, fallback: TState[K]): BuiltinSyncRef<TState[K]>
+	path<TValue = unknown>(path: string, fallback: TValue): BuiltinSyncRef<TValue>
+	snapshot(fallback: TState): BuiltinSyncRef<TState>
+	form(
+		input: Omit<BuiltinFormBlock, 'kind' | 'syncFrom'> & {
+			state?: false | BuiltinSyncRef<Record<string, unknown>> | TState
+		},
+	): BuiltinFormBlock
+	action(input: Omit<BuiltinActionBlock, 'kind'>): BuiltinActionBlock
+	patchSpec(
+		value: BuiltinTemplateValue,
+		options?: { upsert?: boolean },
+	): BuiltinSignalDbWriteSpec
+	replaceSpec(
+		value: BuiltinTemplateValue,
+		options?: { upsert?: boolean },
+	): BuiltinSignalDbWriteSpec
+	removeSpec(): BuiltinSignalDbWriteSpec
+}
+
 export interface SignalDbCollectionHandle<T extends SignalDbItem> {
 	readonly name: string
 	ready(): Promise<void>
 	watch(listener: (event: SignalDbSyncEvent<T>) => void): () => void
+	/** Selector-bound document view for builtin refs/forms/actions. */
+	doc(selector: SignalDbSelector<T>): SignalDbDocumentHandle<T>
 	find(selector?: SignalDbSelector<T>, options?: SignalDbFindOptions<T>): T[]
 	findOne(selector: SignalDbSelector<T>): T | undefined
 	count(selector?: SignalDbSelector<T>): number
@@ -44,6 +77,18 @@ export interface SignalDbCollectionHandle<T extends SignalDbItem> {
 	removeOne(selector: SignalDbSelector<T>): 0 | 1
 	removeMany(selector: SignalDbSelector<T>): number
 	reset(items: T[]): void
+	insertSpec(value: BuiltinTemplateValue): BuiltinSignalDbWriteSpec
+	patchSpec(
+		selector: SignalDbSelector<T>,
+		value: BuiltinTemplateValue,
+		options?: { upsert?: boolean },
+	): BuiltinSignalDbWriteSpec
+	replaceSpec(
+		selector: SignalDbSelector<T>,
+		value: BuiltinTemplateValue,
+		options?: { upsert?: boolean },
+	): BuiltinSignalDbWriteSpec
+	removeSpec(selector: SignalDbSelector<T>): BuiltinSignalDbWriteSpec
 }
 
 export class SignalDbService {
@@ -158,6 +203,7 @@ class ManagedSignalDbCollection<T extends SignalDbItem> {
 			name: options.name,
 			ready: () => this.ready(),
 			watch: (listener) => this.watch(listener),
+			doc: (selector) => this.doc(selector),
 			find: (selector, findOptions) => this.find(selector, findOptions),
 			findOne: (selector) => this.findOne(selector),
 			count: (selector) => this.count(selector),
@@ -170,6 +216,11 @@ class ManagedSignalDbCollection<T extends SignalDbItem> {
 			removeOne: (selector) => this.removeOne(selector),
 			removeMany: (selector) => this.removeMany(selector),
 			reset: (items) => this.reset(items),
+			insertSpec: (value) => this.insertSpec(value),
+			patchSpec: (selector, value, writeOptions) => this.patchSpec(selector, value, writeOptions),
+			replaceSpec: (selector, value, writeOptions) =>
+				this.replaceSpec(selector, value, writeOptions),
+			removeSpec: (selector) => this.removeSpec(selector),
 		}
 	}
 
@@ -261,6 +312,11 @@ class ManagedSignalDbCollection<T extends SignalDbItem> {
 		return () => {
 			this.listeners.delete(listener)
 		}
+	}
+
+	doc(selector: SignalDbSelector<T>): SignalDbDocumentHandle<T> {
+		const selection = cloneSelector(selector) as SignalDbSelector<T>
+		return createSignalDbDocumentHandle(this.publicApi, selection)
 	}
 
 	find(selector: SignalDbSelector<T> = {}, options?: SignalDbFindOptions<T>): T[] {
@@ -417,6 +473,50 @@ class ManagedSignalDbCollection<T extends SignalDbItem> {
 		this.emit(event)
 	}
 
+	insertSpec(value: BuiltinTemplateValue): BuiltinSignalDbWriteSpec {
+		return {
+			collection: this.options.name,
+			mode: 'insert',
+			value,
+		}
+	}
+
+	patchSpec(
+		selector: SignalDbSelector<T>,
+		value: BuiltinTemplateValue,
+		options?: { upsert?: boolean },
+	): BuiltinSignalDbWriteSpec {
+		return {
+			collection: this.options.name,
+			mode: 'patch',
+			selector: cloneSelector(selector),
+			upsert: options?.upsert,
+			value,
+		}
+	}
+
+	replaceSpec(
+		selector: SignalDbSelector<T>,
+		value: BuiltinTemplateValue,
+		options?: { upsert?: boolean },
+	): BuiltinSignalDbWriteSpec {
+		return {
+			collection: this.options.name,
+			mode: 'replace',
+			selector: cloneSelector(selector),
+			upsert: options?.upsert,
+			value,
+		}
+	}
+
+	removeSpec(selector: SignalDbSelector<T>): BuiltinSignalDbWriteSpec {
+		return {
+			collection: this.options.name,
+			mode: 'remove',
+			selector: cloneSelector(selector),
+		}
+	}
+
 	applySyncChanges(changes: Changeset<T>) {
 		const collection = this.getCollection()
 
@@ -477,6 +577,93 @@ class ManagedSignalDbCollection<T extends SignalDbItem> {
 			this.emit(event)
 		}
 	}
+}
+
+function createSignalDbDocumentHandle<TState extends SignalDbItem>(
+	collection: SignalDbCollectionHandle<TState>,
+	selector: SignalDbSelector<TState>,
+): SignalDbDocumentHandle<TState> {
+	const selection = cloneSelector(selector) as SignalDbSelector<TState>
+	return {
+		collection: collection.name,
+		selector: selection,
+		get: () => collection.findOne(selection),
+		field(key, fallback) {
+			return createSignalDbRef(collection.name, selection, key, fallback)
+		},
+		path(path, fallback) {
+			return createSignalDbRef(collection.name, selection, path, fallback)
+		},
+		snapshot(fallback) {
+			return createSignalDbDocRef(collection.name, selection, fallback)
+		},
+		form({ state, ...rest }) {
+			const syncFrom =
+				state === false
+					? undefined
+					: isBuiltinSyncRef(state)
+						? state
+						: createSignalDbDocRef(collection.name, selection, (state ?? {}) as TState)
+
+			return {
+				...rest,
+				kind: 'form',
+				syncFrom,
+			}
+		},
+		action(input) {
+			return {
+				...input,
+				kind: 'action',
+			}
+		},
+		patchSpec(value, options) {
+			return collection.patchSpec(selection, value, options)
+		},
+		replaceSpec(value, options) {
+			return collection.replaceSpec(selection, value, options)
+		},
+		removeSpec() {
+			return collection.removeSpec(selection)
+		},
+	}
+}
+
+function cloneSelector<T extends SignalDbItem>(selector: SignalDbSelector<T>): Record<string, unknown> {
+	return { ...(selector as Record<string, unknown>) }
+}
+
+function createSignalDbRef<TValue>(
+	collection: string,
+	selector: Record<string, unknown>,
+	path: string,
+	fallback: TValue,
+): BuiltinSyncRef<TValue> {
+	return {
+		kind: 'signaldb',
+		collection,
+		selector: { ...selector },
+		path: path.trim(),
+		fallback,
+	}
+}
+
+function createSignalDbDocRef<T>(
+	collection: string,
+	selector: Record<string, unknown>,
+	fallback: T,
+): BuiltinSyncRef<T> {
+	return {
+		kind: 'signaldb',
+		collection,
+		selector: { ...selector },
+		fallback,
+	}
+}
+
+function isBuiltinSyncRef(value: unknown): value is BuiltinSyncRef<Record<string, unknown>> {
+	if (!value || typeof value !== 'object') return false
+	return (value as { kind?: unknown }).kind === 'signaldb'
 }
 
 function cloneItem<T>(item: T): T {

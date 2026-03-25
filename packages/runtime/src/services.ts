@@ -101,9 +101,9 @@ export {
 } from './services/routing/pluginGatedRoutes'
 
 export { doc } from './services/plugin-interaction/doc'
-export type { UiState } from './services/plugin-interaction/ExtensionService'
 export type {
 	SignalDbCollectionHandle,
+	SignalDbDocumentHandle,
 	SignalDbCollectionOptions,
 } from './services/plugin-interaction/SignalDbService'
 export type { ExtensionUiRpcMap } from './web/protocol'

@@ -73,8 +73,7 @@ export class SseService {
 		_cfg: unknown = undefined,
 	) {}
 
-	registerExtension(factory: SseExtensionFactory, options: RegisterOptions = {}): () => void {
-		const namespace = options.namespace ?? this.ctx.pluginInfo.id
+	registerExtension(namespace: string, factory: SseExtensionFactory): () => void {
 		if (!namespace) throw new Error('[SSE] registerExtension: namespace required')
 
 		const already = this.extensions.has(namespace)
@@ -96,7 +95,8 @@ export class SseService {
 	}
 
 	expose(factory: SseExtensionFactory, options: RegisterOptions = {}): () => void {
-		return this.registerExtension(factory, options)
+		const namespace = options.namespace ?? this.ctx.pluginInfo.id
+		return this.registerExtension(namespace, factory)
 	}
 
 	stream(c: SseHttpContext, namespaces?: string[]): unknown {

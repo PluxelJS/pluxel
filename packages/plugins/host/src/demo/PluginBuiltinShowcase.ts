@@ -2,7 +2,7 @@
 
 import { BasePlugin, Plugin } from '@pluxel/runtime'
 import { f, v } from '@pluxel/runtime/config'
-import type { UiState } from '@pluxel/runtime/services'
+import type { SignalDbDocumentHandle } from '@pluxel/runtime/services'
 import { doc } from '@pluxel/runtime/services'
 const MIN_REFRESH_MS = 250
 const MAX_REFRESH_MS = 10_000
@@ -22,6 +22,8 @@ type LabelStyle = (typeof LABEL_STYLES)[number]
 const SECTION_FORMAT = { id: 'format', title: '格式', description: '时间显示格式' }
 const SECTION_LABELS = { id: 'labels', title: '文案', description: '前后缀与展示文本' }
 const SECTION_ADVANCED = { id: 'advanced', title: '高级', description: '长表单测试' }
+const RUNTIME_DOC_ID = 'runtime' as const
+const RUNTIME_ACTIONS_COLLECTION = 'runtime-actions' as const
 
 const DEFAULTS = {
 	display: { refreshMs: 1000 },
@@ -114,36 +116,10 @@ type BuiltinAction =
 			error?: string
 	  }
 
-const clampNumber = (input: unknown, fallback: number, min: number, max: number) => {
-	const value = typeof input === 'number' ? input : Number(input)
-	if (!Number.isFinite(value)) return fallback
-	if (value < min) return min
-	if (value > max) return max
-	return value
-}
-
-const isUptimeStyle = (value: unknown): value is UptimeStyle =>
-	UPTIME_STYLES.includes(value as UptimeStyle)
-
-const isPicklistValue = <T extends readonly string[]>(
-	values: T,
-	value: unknown,
-): value is T[number] => typeof value === 'string' && (values as readonly string[]).includes(value)
-
-const readBoolean = (value: unknown, fallback: boolean) =>
-	typeof value === 'boolean' ? value : fallback
-
-const readString = (value: unknown, fallback: string) =>
-	typeof value === 'string' ? value : fallback
-
-const toStringRecord = (value: unknown): Record<string, string> => {
-	if (!value || typeof value !== 'object' || Array.isArray(value)) return {}
-	const out: Record<string, string> = {}
-	for (const [key, item] of Object.entries(value)) {
-		if (typeof item === 'string') out[key] = item
-	}
-	return out
-}
+type BuiltinFieldRef<Key extends string> = { kind: 'field'; key: Key }
+type BuiltinActionWrite =
+	| { kind: 'setPaused'; paused: boolean | BuiltinFieldRef<'paused'> }
+	| { kind: 'setTicks'; ticks: number | BuiltinFieldRef<'ticks'> }
 
 const UNIT_LABELS: Record<LabelStyle, Record<string, string>> = {
 	short: { d: 'd', h: 'h', m: 'm', s: 's', ms: 'ms' },
@@ -201,10 +177,10 @@ const formatDuration = (ms: number, format: FormatSnapshot) => {
 		trimmed.push({ value: safeMs % 1000, unit: 'ms' })
 	}
 
-	const prefix = format.prefix ?? ''
-	const suffix = format.suffix ?? ''
+	const prefix = format.prefix
+	const suffix = format.suffix
 	const body = trimmed.map((part) => assemble(part.value, part.unit)).join(separator)
-	const template = format.template?.trim()
+	const template = format.template.trim()
 	let templated = body
 	if (template) {
 		const tokenPattern = /{{\s*(uptime|value)\s*}}/g
@@ -218,7 +194,7 @@ const formatDuration = (ms: number, format: FormatSnapshot) => {
 
 const DisplayConfig = v.object({
 	refreshMs: v.pipe(
-		v.optional(v.number(), DEFAULTS.display.refreshMs),
+		v.optional(v.pipe(v.number(), v.minValue(MIN_REFRESH_MS), v.maxValue(MAX_REFRESH_MS)), DEFAULTS.display.refreshMs),
 		f.formMeta({ label: '刷新间隔 (ms)', description: 'signaldb 状态同步间隔' }),
 		f.numberMeta({ min: MIN_REFRESH_MS, max: MAX_REFRESH_MS, step: 250 }),
 	),
@@ -226,12 +202,12 @@ const DisplayConfig = v.object({
 
 const BehaviorConfig = v.object({
 	tickStep: v.pipe(
-		v.optional(v.number(), DEFAULTS.behavior.tickStep),
+		v.optional(v.pipe(v.number(), v.minValue(1), v.maxValue(100)), DEFAULTS.behavior.tickStep),
 		f.formMeta({ label: 'Tick 步长', description: '每次 Tick 递增的数值' }),
 		f.numberMeta({ min: 1, max: 100, step: 1 }),
 	),
 	maxTicks: v.pipe(
-		v.optional(v.number(), DEFAULTS.behavior.maxTicks),
+		v.optional(v.pipe(v.number(), v.minValue(0), v.maxValue(1_000_000)), DEFAULTS.behavior.maxTicks),
 		f.formMeta({ label: 'Max ticks', description: '0 表示不限制' }),
 		f.numberMeta({ min: 0, max: 1_000_000, step: 10 }),
 	),
@@ -281,7 +257,7 @@ const FormatConfig = v.object({
 		f.booleanMeta({}),
 	),
 	minDigits: v.pipe(
-		v.optional(v.number(), DEFAULTS.format.minDigits),
+		v.optional(v.pipe(v.number(), v.minValue(1), v.maxValue(6)), DEFAULTS.format.minDigits),
 		f.formMeta({ label: '最小位数', description: '用于视觉测试', section: SECTION_FORMAT }),
 		f.numberMeta({ min: 1, max: 6, step: 1 }),
 	),
@@ -351,7 +327,7 @@ const FormatConfig = v.object({
 
 const RuntimeFormSchema = v.object({
 	ticks: v.pipe(
-		v.optional(v.number(), 0),
+		v.optional(v.pipe(v.number(), v.minValue(0), v.maxValue(1_000_000)), 0),
 		f.formMeta({ label: 'ticks', description: '演示：AutoForm 手动提交 → signaldb action' }),
 		f.numberMeta({ min: 0, max: 1_000_000, step: 1 }),
 	),
@@ -371,13 +347,13 @@ export class PluginBuiltinShowcase extends BasePlugin {
 	private tickTimer: ReturnType<typeof setTimeout> | null = null
 	private ticks = 0
 	private paused = false
-	private builtin!: UiState<BuiltinState>
-	private builtinState = this.ctx.ext.signaldb.collection<BuiltinState>({ name: 'runtime' })
+	private builtinState = this.ctx.ext.signaldb.collection<BuiltinState>({ name: RUNTIME_DOC_ID })
 	private builtinActions = this.ctx.ext.signaldb.collection<BuiltinAction>({
-		name: 'runtime-actions',
+		name: RUNTIME_ACTIONS_COLLECTION,
 		clientWrites: true,
 		persistence: false,
 	})
+	private builtin!: SignalDbDocumentHandle<BuiltinState>
 	private readonly processingActions = new Set<string>()
 
 	private display = this.configs.use(DisplayConfig)
@@ -394,7 +370,7 @@ export class PluginBuiltinShowcase extends BasePlugin {
 
 		await this.builtinState.ready()
 		await this.builtinActions.ready()
-		this.builtin = this.ctx.ext.ui.state(this.builtinState, { id: 'runtime' })
+		this.builtin = this.builtinState.doc({ id: RUNTIME_DOC_ID })
 		this.syncBuiltinState()
 		this.consumePendingActions()
 		const stopWatch = this.builtinActions.watch((event) => {
@@ -409,44 +385,39 @@ export class PluginBuiltinShowcase extends BasePlugin {
 	}
 
 	private getConfigSnapshot(): ConfigSnapshot {
-		// 展示 configs.use(schema)：启动时注入一次，后续用字段即可。
-		const display = (this.display ?? DEFAULTS.display) as Record<string, unknown>
-		const behavior = (this.behavior ?? DEFAULTS.behavior) as Record<string, unknown>
-		const format = (this.format ?? DEFAULTS.format) as Record<string, unknown>
-
+		const { refreshMs } = this.display
+		const { tickStep, maxTicks, autoPauseAtMax } = this.behavior
+		const {
+			uptimeStyle,
+			showMs,
+			timeUnit,
+			separator,
+			padZeros,
+			minDigits,
+			labelStyle,
+			prefix,
+			suffix,
+			uppercaseUnits,
+			template,
+			unitAliases,
+		} = this.format
 		return {
-			refreshMs: clampNumber(
-				display.refreshMs,
-				DEFAULTS.display.refreshMs,
-				MIN_REFRESH_MS,
-				MAX_REFRESH_MS,
-			),
-			tickStep: clampNumber(behavior.tickStep, DEFAULTS.behavior.tickStep, 1, 100),
-			maxTicks: clampNumber(behavior.maxTicks, DEFAULTS.behavior.maxTicks, 0, 1_000_000),
-			autoPauseAtMax: readBoolean(behavior.autoPauseAtMax, DEFAULTS.behavior.autoPauseAtMax),
-			uptimeStyle: isUptimeStyle(format.uptimeStyle)
-				? format.uptimeStyle
-				: DEFAULTS.format.uptimeStyle,
-			showMs: readBoolean(format.showMs, DEFAULTS.format.showMs),
-			timeUnit: isPicklistValue(TIME_UNITS, format.timeUnit)
-				? format.timeUnit
-				: DEFAULTS.format.timeUnit,
-			separator: isPicklistValue(SEPARATORS, format.separator)
-				? format.separator
-				: DEFAULTS.format.separator,
-			padZeros: readBoolean(format.padZeros, DEFAULTS.format.padZeros),
-			minDigits: clampNumber(format.minDigits, DEFAULTS.format.minDigits, 1, 6),
-			labelStyle: isPicklistValue(LABEL_STYLES, format.labelStyle)
-				? format.labelStyle
-				: DEFAULTS.format.labelStyle,
-			prefix: readString(format.prefix, DEFAULTS.format.prefix),
-			suffix: readString(format.suffix, DEFAULTS.format.suffix),
-			uppercaseUnits: readBoolean(format.uppercaseUnits, DEFAULTS.format.uppercaseUnits),
-			template: readString(format.template, DEFAULTS.format.template),
-			unitAliases:
-				format.unitAliases && typeof format.unitAliases === 'object'
-					? toStringRecord(format.unitAliases)
-					: DEFAULTS.format.unitAliases,
+			refreshMs,
+			tickStep,
+			maxTicks,
+			autoPauseAtMax,
+			uptimeStyle,
+			showMs,
+			timeUnit,
+			separator,
+			padZeros,
+			minDigits,
+			labelStyle,
+			prefix,
+			suffix,
+			uppercaseUnits,
+			template,
+			unitAliases,
 		}
 	}
 
@@ -466,7 +437,7 @@ export class PluginBuiltinShowcase extends BasePlugin {
 		const runtime = this.getRuntimeSnapshot(config)
 
 		return {
-			id: 'runtime',
+			id: RUNTIME_DOC_ID,
 			uptimeMs: runtime.uptimeMs,
 			uptimeLabel: runtime.uptimeLabel,
 			ticks: runtime.ticks,
@@ -477,9 +448,9 @@ export class PluginBuiltinShowcase extends BasePlugin {
 		}
 	}
 
-	private defaultBuiltinState(): BuiltinState {
+	private runtimeStateFallback(): BuiltinState {
 		return {
-			id: 'runtime',
+			id: RUNTIME_DOC_ID,
 			uptimeMs: 0,
 			uptimeLabel: '0s',
 			ticks: 0,
@@ -488,6 +459,62 @@ export class PluginBuiltinShowcase extends BasePlugin {
 			tickStep: DEFAULTS.behavior.tickStep,
 			maxTicks: DEFAULTS.behavior.maxTicks,
 		}
+	}
+
+	private queueActionWrite(action: BuiltinActionWrite) {
+		return this.builtinActions.insertSpec({
+			id: { kind: 'generatedId' as const },
+			...action,
+			status: 'pending' as const,
+			createdAt: { kind: 'now' as const },
+		})
+	}
+
+	private summaryRows() {
+		return [
+			{ label: 'Uptime', value: this.builtin.field('uptimeLabel', '0s') },
+			{ label: 'Ticks', value: this.builtin.field('ticks', 0) },
+			{ label: 'Paused', value: this.builtin.field('paused', false) },
+			{ label: 'Tick step', value: this.builtin.field('tickStep', DEFAULTS.behavior.tickStep) },
+			{ label: 'Refresh (ms)', value: this.builtin.field('refreshMs', DEFAULTS.display.refreshMs) },
+		]
+	}
+
+	private pauseForm(description: string) {
+		return this.builtin.form({
+			description,
+			submitMode: 'onChange',
+			autoSubmitDebounceMs: 120,
+			schemaKey: '_runtimeToggle',
+			write: this.queueActionWrite({
+				kind: 'setPaused',
+				paused: { kind: 'field', key: 'paused' },
+			}),
+		})
+	}
+
+	private setTicksForm() {
+		return this.builtin.form({
+			description: 'Manual submit → signaldb action doc.',
+			submitLabel: 'Submit',
+			submitMode: 'manual',
+			schemaKey: '_runtime',
+			feedback: { success: { title: 'Submitted', tone: 'success' } },
+			resetOnSuccess: false,
+			write: this.queueActionWrite({
+				kind: 'setTicks',
+				ticks: { kind: 'field', key: 'ticks' },
+			}),
+		})
+	}
+
+	private resetTicksAction() {
+		return this.builtin.action({
+			label: 'Reset to 0',
+			description: '单按钮 action：无需 RPC，只写入 action collection。',
+			write: this.queueActionWrite({ kind: 'setTicks', ticks: 0 }),
+			feedback: { success: { title: 'Queued', tone: 'success' } },
+		})
 	}
 
 	private registerBuiltins() {
@@ -509,18 +536,8 @@ export class PluginBuiltinShowcase extends BasePlugin {
 						layout: { variant: 'grid', density: 'compact', columns: 3, labelPlacement: 'top' },
 						rows: [
 							{ label: 'Plugin', value: this.ctx.pluginInfo.id },
-							{ label: 'Uptime', value: this.builtin.field('uptimeLabel', '0s') },
-							{ label: 'Ticks', value: this.builtin.field('ticks', 0) },
-							{
-								label: 'Tick step',
-								value: this.builtin.field('tickStep', DEFAULTS.behavior.tickStep),
-							},
-							{ label: 'Paused', value: this.builtin.field('paused', false) },
+							...this.summaryRows(),
 							{ label: 'Max ticks', value: this.builtin.field('maxTicks', DEFAULTS.behavior.maxTicks) },
-							{
-								label: 'Refresh (ms)',
-								value: this.builtin.field('refreshMs', DEFAULTS.display.refreshMs),
-							},
 						],
 					}),
 				)}
@@ -542,67 +559,17 @@ export class PluginBuiltinShowcase extends BasePlugin {
 			content: doc`
 				${doc.block(
 					'Pause',
-					this.builtin.form({
-						description: 'submitMode=onChange + signaldb action doc.',
-						submitMode: 'onChange',
-						autoSubmitDebounceMs: 120,
-						schemaKey: '_runtimeToggle',
-						state: this.defaultBuiltinState(),
-						write: {
-							collection: 'runtime-actions',
-							mode: 'insert',
-							value: {
-								id: { kind: 'generatedId' },
-								kind: 'setPaused',
-								paused: { kind: 'field', key: 'paused' },
-								status: 'pending',
-								createdAt: { kind: 'now' },
-							},
-						},
-					}),
+					this.pauseForm('submitMode=onChange + signaldb action doc.'),
 				)}
 
 				${doc.block(
 					'Set ticks',
-					this.builtin.form({
-						description: 'Manual submit → signaldb action doc.',
-						submitLabel: 'Submit',
-						submitMode: 'manual',
-						schemaKey: '_runtime',
-						feedback: { success: { title: 'Submitted', tone: 'success' } },
-						resetOnSuccess: false,
-						write: {
-							collection: 'runtime-actions',
-							mode: 'insert',
-							value: {
-								id: { kind: 'generatedId' },
-								kind: 'setTicks',
-								ticks: { kind: 'field', key: 'ticks' },
-								status: 'pending',
-								createdAt: { kind: 'now' },
-							},
-						},
-					}),
+					this.setTicksForm(),
 				)}
 
 				${doc.block(
 					'Reset ticks',
-					this.builtin.action({
-						label: 'Reset to 0',
-						description: '单按钮 action：无需 RPC，只写入 action collection。',
-						write: {
-							collection: 'runtime-actions',
-							mode: 'insert',
-							value: {
-								id: { kind: 'generatedId' },
-								kind: 'setTicks',
-								ticks: 0,
-								status: 'pending',
-								createdAt: { kind: 'now' },
-							},
-						},
-						feedback: { success: { title: 'Queued', tone: 'success' } },
-					}),
+					this.resetTicksAction(),
 				)}
 			`,
 		})
@@ -634,42 +601,13 @@ export class PluginBuiltinShowcase extends BasePlugin {
 					doc.card({
 						description: 'Markdown + builtin blocks.',
 						layout: { variant: 'grid', density: 'compact', columns: 3, labelPlacement: 'top' },
-						rows: [
-							{ label: 'Uptime', value: this.builtin.field('uptimeLabel', '0s') },
-							{ label: 'Ticks', value: this.builtin.field('ticks', 0) },
-							{ label: 'Paused', value: this.builtin.field('paused', false) },
-							{
-								label: 'Tick step',
-								value: this.builtin.field('tickStep', DEFAULTS.behavior.tickStep),
-							},
-							{
-								label: 'Refresh (ms)',
-								value: this.builtin.field('refreshMs', DEFAULTS.display.refreshMs),
-							},
-						],
+						rows: this.summaryRows(),
 					}),
 				)}
 
 				${doc.block(
 				'Quick controls',
-					this.builtin.form({
-						description: 'onChange + signaldb action doc.',
-						submitMode: 'onChange',
-						autoSubmitDebounceMs: 120,
-						schemaKey: '_runtimeToggle',
-						state: this.defaultBuiltinState(),
-						write: {
-							collection: 'runtime-actions',
-							mode: 'insert',
-							value: {
-								id: { kind: 'generatedId' },
-								kind: 'setPaused',
-								paused: { kind: 'field', key: 'paused' },
-								status: 'pending',
-								createdAt: { kind: 'now' },
-							},
-						},
-					}),
+					this.pauseForm('onChange + signaldb action doc.'),
 			)}
 
 			- 纯文段和 builtin 表单可以混合排布
@@ -729,7 +667,7 @@ export class PluginBuiltinShowcase extends BasePlugin {
 			{ label: 'Refresh (ms)', value: this.builtin.field('refreshMs', DEFAULTS.display.refreshMs) },
 			{
 				label: 'Snapshot',
-				value: this.builtin.snapshot(this.defaultBuiltinState()),
+				value: this.builtin.snapshot(this.runtimeStateFallback()),
 			},
 		]
 
@@ -757,7 +695,7 @@ export class PluginBuiltinShowcase extends BasePlugin {
 	}
 
 	private syncBuiltinState() {
-		this.builtinState.replaceOne({ id: 'runtime' }, this.buildState(), { upsert: true })
+		this.builtinState.replaceOne({ id: RUNTIME_DOC_ID }, this.buildState(), { upsert: true })
 	}
 	private consumePendingActions() {
 		for (const action of this.builtinActions.find({ status: 'pending' })) {
