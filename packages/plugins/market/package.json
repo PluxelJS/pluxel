@@ -25,8 +25,8 @@
 		"test": "pnpm exec vitest run"
 	},
 	"peerDependencies": {
-		"@mantine/core": "^8.3.15",
-		"@mantine/hooks": "^8.3.15",
+		"@mantine/core": "^8.3.18",
+		"@mantine/hooks": "^8.3.18",
 		"@pluxel/core": "workspace:*",
 		"@pluxel/hmr": "workspace:*",
 		"@pluxel/runtime": "workspace:*",
@@ -40,8 +40,8 @@
 		"@pluxel/hmr": "workspace:*",
 		"@pluxel/runtime": "workspace:*",
 		"@pluxel/test": "workspace:*",
-		"tsdown": "^0.20.3",
-		"typescript": "^5.9.3"
+		"tsdown": "^0.21.4",
+		"typescript": "^6.0.2"
 	},
 	"publishConfig": {
 		"exports": {

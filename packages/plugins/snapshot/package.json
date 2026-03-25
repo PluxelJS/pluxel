@@ -29,14 +29,14 @@
 		"nf3": "^0.3.10"
 	},
 	"peerDependencies": {
-		"@mantine/core": "^8.3.15",
+		"@mantine/core": "^8.3.18",
 		"@pluxel/core": "workspace:*",
 		"@pluxel/hmr": "workspace:*",
 		"@pluxel/runtime": "workspace:*",
 		"@tabler/icons-react": "*",
 		"react": "^19.2.4",
 		"react-dom": "^19.2.4",
-		"tsdown": "^0.20.3"
+		"tsdown": "^0.21.4"
 	},
 	"devDependencies": {
 		"@pluxel/build": "workspace:*",
@@ -44,8 +44,8 @@
 		"@pluxel/hmr": "workspace:*",
 		"@pluxel/runtime": "workspace:*",
 		"@pluxel/test": "workspace:*",
-		"tsdown": "^0.20.3",
-		"typescript": "^5.9.3"
+		"tsdown": "^0.21.4",
+		"typescript": "^6.0.2"
 	},
 	"publishConfig": {
 		"exports": {

@@ -34,16 +34,16 @@
 		"@dnd-kit/modifiers": "^9.0.0",
 		"@dnd-kit/sortable": "^10.0.0",
 		"@dnd-kit/utilities": "^3.2.2",
-		"@mantine/core": "^8.3.15",
-		"@mantine/hooks": "^8.3.15",
+		"@mantine/core": "^8.3.18",
+		"@mantine/hooks": "^8.3.18",
 		"@tabler/icons-react": "^3.37.1",
 		"@tanstack/react-form": "^1.28.3",
 		"react": "^19.2.4",
 		"react-dom": "^19.2.4"
 	},
 	"devDependencies": {
-		"@mantine/core": "^8.3.15",
-		"@mantine/hooks": "^8.3.15",
+		"@mantine/core": "^8.3.18",
+		"@mantine/hooks": "^8.3.18",
 		"@pluxel/test": "workspace:*",
 		"@tabler/icons-react": "^3.37.1",
 		"@tanstack/react-form": "^1.28.3",
@@ -53,8 +53,8 @@
 		"jsdom": "^28.1.0",
 		"react": "^19.2.4",
 		"react-dom": "^19.2.4",
-		"tsdown": "^0.20.3",
-		"typescript": "^5.9.3",
+		"tsdown": "^0.21.4",
+		"typescript": "^6.0.2",
 		"vite": "beta"
 	},
 	"publishConfig": {

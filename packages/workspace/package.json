@@ -25,7 +25,7 @@
 		"pkg-types": "^2.3.0"
 	},
 	"devDependencies": {
-		"tsdown": "^0.20.3",
-		"typescript": "^5.9.3"
+		"tsdown": "^0.21.4",
+		"typescript": "^6.0.2"
 	}
 }
