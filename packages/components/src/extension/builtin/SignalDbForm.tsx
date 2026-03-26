@@ -1,7 +1,7 @@
 import { Box, Button, Group, Loader, Paper, Stack, Text } from '@mantine/core'
 import { formOptions } from '@tanstack/react-form'
 import { useEffect, useMemo, useRef, useState } from 'react'
-import type { BuiltinSignalDbFormBlock } from '@pluxel/runtime/web/extensions'
+import type { BuiltinFormBlock } from '@pluxel/runtime/web/extensions'
 import {
 	type RuntimeTransportClient,
 	useExtensionContext,
@@ -236,7 +236,7 @@ export function BuiltinSignalDbForm({
 }: {
 	pluginName: string
 	title: string
-	block: BuiltinSignalDbFormBlock
+	block: BuiltinFormBlock
 }) {
 	const ctx = useExtensionContext()
 	const transport = ctx.services.transport

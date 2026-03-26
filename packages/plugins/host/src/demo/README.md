@@ -8,31 +8,31 @@
 - demo 入口由 `packages/plugins/host/pluxel.hmr.jsonc` 的 `include` 控制
 - 默认假设 HMR 侧启用了 `configSourcePlugin`
 
-## 建议阅读顺序
+## 按用途看 Demo
 
-- `PluginEventsDemo.ts`
-  事件通信
-- `PluginBuiltinShowcase.ts`
-  宿主渲染 doc + signaldb state/action，无自定义 UI
-- `PluginFeatureConfigDemo.ts`
-  Feature 配置归因
-- `PluginFeatureDepsDemo.ts`
-  FeatureHost API
-- `PluginVaultDemo.ts`
-  加密持久化
-- `PluginWithUI.ts` + `PluginWithUI/ui/*`
-  完整自定义前端链路
-- `PluginHttpWorkerDemo.ts`
-  http + worker + fallback
-- `advanced/DemoBaseProviders.ts`
-  抽象 token + 多实现
-- `advanced/DemoForks.ts`
-  forkable plugin
+- 只用宿主渲染控件，不写自定义 UI：
+  `PluginBuiltinShowcase.ts`
+- 自定义 UI + SignalDB + RPC + SSE：
+  `PluginWithUI.ts` + `PluginWithUI/ui/*`
+- 插件间事件通信：
+  `PluginEventsDemo.ts`
+- 插件 / Feature 配置：
+  `PluginFeatureConfigDemo.ts`
+- Feature 依赖和桥接：
+  `PluginFeatureDepsDemo.ts`
+- HTTP 路由 + worker fallback：
+  `PluginHttpWorkerDemo.ts`
+- 加密持久化：
+  `PluginVaultDemo.ts`
+- 抽象基类 provider：
+  `advanced/DemoBaseProviders.ts`
+- Forkable plugin：
+  `advanced/DemoForks.ts`
 
 ## 前端入口
 
 - `configs.use(schema)` 读到的是 schema 归一化后的值；默认值放进 Valibot（如 `v.optional(..., default)`），不要在插件里再写 `this.foo ?? fallback` 这种二次兜底。
-- `this.ctx.ext.signaldb.collection({ name }).doc(selector).form(...)` 默认会同步当前选中的 SignalDB 文档；只有明确不想同步时才传 `state: false`。
+- `this.ctx.ext.signaldb.collection({ name }).doc(selector).form(...)` 默认会同步当前选中的 SignalDB 文档；只有明确不想同步时才传 `sync: false`。
 - 插件主类里保留 `const pluginUi = ui('./ui/index.tsx')` + `pluginUi.bind(this.ctx)`。
 - `@pluxel/hmr/plugin` 只用 named import：`import { ui, worker } from '@pluxel/hmr/plugin'`
 - build 会把这条 UI 声明重写成 `ctx.ext.ui.packaged()`
@@ -54,6 +54,11 @@
 - `extensions[].id` 在单个 UI 模块内必须稳定且唯一
 - `routes[].definition.path` 写相对子路径，如 `/dashboard`
 - `setup({ pluginName, locale })` 只做模块级副作用和清理；如果接 Paraglide，就在这里桥接宿主 locale
+
+最小自定义 UI 组合通常就是：
+
+- 服务端：`pluginUi.bind(this.ctx)` + `this.ctx.ext.rpc.expose(...)` + `this.ctx.ext.sse.expose(...)`
+- 浏览器侧：`createPluginUi('MyPlugin')` + `use()` / `useCollection()` / `useDoc()`
 
 ## `ctx.ext`
 
@@ -86,8 +91,13 @@
 宿主渲染 doc 只消费 `signaldb`：
 
 - 展示读 state collection
-- 交互写 state 或 action collection
+- `form`
+  宿主 AutoForm，默认同步当前 doc，再把提交写入 `write`
+- `action`
+  宿主按钮，点击后执行 `write`；常见用法是写入 action collection
 - 副作用由插件后端 watch collection 后处理
+
+`PluginBuiltinShowcase.ts` 演示了 `doc.card(...)`、`docHandle.form(...)` 和 `docHandle.action(...)` 这三种最小 builtin 组合。
 
 ## 类型检查
 

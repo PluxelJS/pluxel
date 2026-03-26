@@ -141,9 +141,6 @@ export type BuiltinDocBlock =
 	| BuiltinFormBlock
 	| BuiltinActionBlock
 
-export type BuiltinSignalDbFormBlock = BuiltinFormBlock
-export type BuiltinSignalDbActionBlock = BuiltinActionBlock
-
 export type BuiltinDocExtensionDef<P extends ExtensionPoint = ExtensionPoint> =
 	BuiltinExtensionBase<P> & {
 		kind: 'doc'
@@ -215,20 +212,10 @@ function docCard(input: Omit<BuiltinInfoCardBlock, 'kind'>): BuiltinInfoCardBloc
 	return { kind: 'infoCard', ...(input as any) }
 }
 
-function docForm(input: Omit<BuiltinFormBlock, 'kind'>): BuiltinFormBlock {
-	return { kind: 'form', ...(input as any) }
-}
-
-function docButton(input: Omit<BuiltinActionBlock, 'kind'>): BuiltinActionBlock {
-	return { kind: 'action', ...(input as any) }
-}
-
 export const doc: {
 	(strings: TemplateStringsArray, ...values: DocValue[]): BuiltinDocContent
 	block: typeof docBlock
 	card: typeof docCard
-	form: typeof docForm
-	button: typeof docButton
 } = Object.assign(
 	(strings: TemplateStringsArray, ...values: DocValue[]) => {
 		const marker = '\u0000__DOC_VAL__\u0000'
@@ -262,7 +249,7 @@ export const doc: {
 		if (tail) parts.push({ kind: 'md', text: tail })
 		return mergeAdjacentMarkdown(parts) as BuiltinDocContent
 	},
-	{ block: docBlock, card: docCard, form: docForm, button: docButton },
+	{ block: docBlock, card: docCard },
 )
 
 export type BuiltinExtensionDef = BuiltinDocExtensionDef

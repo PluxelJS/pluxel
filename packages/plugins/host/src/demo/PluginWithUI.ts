@@ -6,6 +6,10 @@ import { RpcTarget } from '@pluxel/runtime/capnweb'
 import type { SseChannel } from '@pluxel/runtime/services'
 
 type PluginWithUIStatusDoc = PluginWithUIStatus & { id: 'status' }
+const STATUS_DOC_ID = 'status' as const
+const MAX_EVENT_SCAN = 200
+const MAX_EVENT_HISTORY = 80
+const TRIMMED_EVENT_HISTORY = 50
 
 export type DemoEvent = {
 	id: string
@@ -87,16 +91,12 @@ export class PluginWithUI extends BasePlugin {
 	private async initState() {
 		await Promise.all([this.status.ready(), this.events.ready()])
 
-		const existingList = this.events
-			.find({}, { limit: 200 })
-			.map((event: DemoEvent) => ({ ...event, id: String(event.id) }))
+		const existingList = this.events.find({}, { limit: MAX_EVENT_SCAN })
 		const maxId = existingList.reduce((acc, e) => Math.max(acc, Number(e.id) || 0), 0)
 		this.eventSeq = Math.max(maxId, 0) + 1
 
-		const statusDoc = this.status.findOne({ id: 'status' })
-		this.writeStatus({
-			current: statusDoc,
-			counter: statusDoc?.counter ?? 0,
+		this.syncStatus({
+			counter: this.getStatusDoc()?.counter ?? 0,
 			eventCount: existingList.length,
 		})
 
@@ -106,28 +106,19 @@ export class PluginWithUI extends BasePlugin {
 	}
 
 	getStatus() {
-		const status = this.status.findOne({ id: 'status' })
-		return status
-			? {
-					pluginName: status.pluginName,
-					startedAt: status.startedAt,
-					counter: status.counter,
-					eventCount: status.eventCount,
-				}
-			: {
-					pluginName: this.ctx.pluginInfo.id,
-					startedAt: this.startedAt,
-					counter: 0,
-					eventCount: this.events.count(),
-				}
+		const status = this.getStatusDoc()
+		return {
+			pluginName: status?.pluginName ?? this.ctx.pluginInfo.id,
+			startedAt: status?.startedAt ?? this.startedAt,
+			counter: status?.counter ?? 0,
+			eventCount: status?.eventCount ?? this.events.count(),
+		}
 	}
 
 	listEvents(limit = 50): DemoEvent[] {
-		const capped = Math.max(0, Math.min(200, Math.floor(limit)))
+		const capped = Math.max(0, Math.min(MAX_EVENT_SCAN, Math.floor(limit)))
 		const docs = this.events.find({}, { limit: capped, sort: { at: -1 } })
-		return docs
-			.map((event: DemoEvent) => ({ ...event, id: String(event.id ?? '') }))
-			.slice(0, capped)
+		return docs.map((event: DemoEvent) => ({ ...event })).slice(0, capped)
 	}
 
 	appendEvent(kind: DemoEvent['kind'], message: string): DemoEvent {
@@ -149,8 +140,8 @@ export class PluginWithUI extends BasePlugin {
 		this.events.insert(event)
 
 		const all = this.events.find({}, { sort: { at: 1 } })
-		if (all.length > 80) {
-			const sorted = all.slice(0, Math.max(0, all.length - 50))
+		if (all.length > MAX_EVENT_HISTORY) {
+			const sorted = all.slice(0, Math.max(0, all.length - TRIMMED_EVENT_HISTORY))
 			for (const old of sorted) {
 				this.events.removeOne({ id: old.id })
 			}
@@ -163,8 +154,7 @@ export class PluginWithUI extends BasePlugin {
 
 	increment(delta = 1) {
 		const n = Number.isFinite(delta) ? Math.trunc(delta) : 1
-		const status = this.status.findOne({ id: 'status' })
-		const current = status?.counter ?? 0
+		const current = this.getStatusDoc()?.counter ?? 0
 		const next = current + (n === 0 ? 1 : n)
 		this.syncStatus({ counter: next })
 		this.appendEvent('counter', `计数器变更：${current} → ${next}`)
@@ -172,9 +162,9 @@ export class PluginWithUI extends BasePlugin {
 	}
 
 	resetCounter() {
-		const status = this.status.findOne({ id: 'status' })
+		const current = this.getStatusDoc()?.counter ?? 0
 		this.syncStatus({ counter: 0 })
-		this.appendEvent('counter', `计数器重置：${status?.counter ?? 0} → 0`)
+		this.appendEvent('counter', `计数器重置：${current} → 0`)
 		return { counter: 0 }
 	}
 
@@ -186,40 +176,30 @@ export class PluginWithUI extends BasePlugin {
 		return { ok: true }
 	}
 
+	private getStatusDoc() {
+		return this.status.findOne({ id: STATUS_DOC_ID })
+	}
+
 	private buildStatusDoc(input: {
-		current?: PluginWithUIStatusDoc
 		counter?: number
 		eventCount?: number
 	} = {}): PluginWithUIStatusDoc {
+		const current = this.getStatusDoc()
 		return {
-			id: 'status',
+			id: STATUS_DOC_ID,
 			pluginName: this.ctx.pluginInfo.id,
 			startedAt: this.startedAt,
-			counter: input.counter ?? input.current?.counter ?? 0,
+			counter: input.counter ?? current?.counter ?? 0,
 			eventCount: input.eventCount ?? this.events.count(),
 		}
 	}
 
 	private syncStatus(override: Partial<Omit<PluginWithUIStatusDoc, 'id'>> = {}) {
-		this.writeStatus({
-			current: this.status.findOne({ id: 'status' }),
+		const next = this.buildStatusDoc({
 			counter: override.counter,
 			eventCount: override.eventCount,
 		})
-	}
-
-	private writeStatus(input: {
-		current?: PluginWithUIStatusDoc
-		counter?: number
-		eventCount?: number
-	}) {
-		const next = this.buildStatusDoc({
-			current: input.current,
-			counter: input.counter,
-			eventCount: input.eventCount,
-		})
-		if (input.current) this.status.replaceOne({ id: 'status' }, next, { upsert: true })
-		else this.status.insert(next)
+		this.status.replaceOne({ id: STATUS_DOC_ID }, next, { upsert: true })
 	}
 }
 

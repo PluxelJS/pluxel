@@ -36,7 +36,7 @@ runtime 只消费两类前端输入：
 - `this.ctx.ext.signaldb.collection({ name })`
   runtime-owned collection，服务端 authoritative store
   `collection.doc(selector)` 给单文档场景生成 `get/field/path/snapshot/form/action`
-  `doc.form()` 默认同步当前 selector 命中的文档；如果你明确要无同步表单，才传 `state: false`
+  `doc.form()` 默认同步当前 selector 命中的文档；如果你明确要无同步表单，才传 `sync: false`
 - `pluginUi.bind(this.ctx)`
   绑定作者侧 UI 声明
 - `this.ctx.ext.ui.packaged()`
@@ -132,8 +132,13 @@ SignalDB 的 React 响应性现在走官方链路：
 宿主渲染 doc 现在只依赖 `signaldb`：
 
 - 展示读 state collection
-- 交互写 state 或 action collection
+- `form`
+  宿主 AutoForm，默认从 `collection.doc(selector)` 对应文档同步，并把提交写回 `write`
+- `action`
+  宿主按钮，不持有独立状态；点击后执行 `write`，常见用法是写入 action collection
 - 副作用由插件后端 watch collection 后处理
+
+`PluginBuiltinShowcase.ts` 演示了这三种 builtin：`doc.card(...)`、`docHandle.form(...)`、`docHandle.action(...)`。
 
 ## 开发期
 

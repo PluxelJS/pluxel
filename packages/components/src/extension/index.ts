@@ -49,8 +49,6 @@ export type {
 	BuiltinNowValue,
 	BuiltinActionBlock,
 	BuiltinFormBlock,
-	BuiltinSignalDbActionBlock,
-	BuiltinSignalDbFormBlock,
 	BuiltinSignalDbRef,
 	BuiltinSignalDbWriteMode,
 	BuiltinSignalDbWriteSpec,

@@ -22,7 +22,6 @@ const squareWorker = worker('./PluginHttpWorkerDemo/ui/worker.ts')
 export class PluginHttpWorkerDemo extends BasePlugin {
 	private pool: Tinypool | null = null
 	private workerBinding: HmrWorkerBinding | null = null
-	private workerUrl: string | null = null
 
 	override async init(): Promise<void> {
 		this.ctx.http.plugin.routes(
@@ -69,7 +68,6 @@ export class PluginHttpWorkerDemo extends BasePlugin {
 				this.ctx.logger.error('Failed to rebuild worker bundle', { error })
 			},
 			onUpdate: async ({ mode, url }) => {
-				this.workerUrl = mode === 'hmr' ? url : null
 				if (mode !== 'hmr' || !url) {
 					await this.disposePool()
 					return
@@ -82,11 +80,12 @@ export class PluginHttpWorkerDemo extends BasePlugin {
 	}
 
 	private async getWorkerStatus(): Promise<WorkerStatus> {
-		const enabled = this.workerBinding?.snapshot().mode === 'hmr'
+		const snapshot = this.workerBinding?.snapshot() ?? { mode: 'fallback' as const, url: null }
+		const enabled = snapshot.mode === 'hmr'
 		return {
 			enabled,
 			mode: enabled ? 'hmr-worker' : 'fallback-inline',
-			workerUrl: this.workerUrl,
+			workerUrl: snapshot.url,
 			note: enabled
 				? 'HMR dev bundler is available; worker source is compiled on demand.'
 				: 'No dev bundler attached. This is expected for frozen/static runtimes; use tsdown if you need a production worker artifact.',
@@ -121,13 +120,11 @@ export class PluginHttpWorkerDemo extends BasePlugin {
 
 		await this.disposePool()
 		this.pool = pool
-		this.workerUrl = workerUrl
 	}
 
 	private async disposePool(): Promise<void> {
 		const pool = this.pool
 		this.pool = null
-		this.workerUrl = null
 		if (!pool) return
 		await pool.destroy().catch((): undefined => undefined)
 	}

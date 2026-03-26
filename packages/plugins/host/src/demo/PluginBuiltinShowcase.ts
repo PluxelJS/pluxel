@@ -73,20 +73,6 @@ type FormatSnapshot = {
 	unitAliases: Record<string, string>
 }
 
-type ConfigSnapshot = FormatSnapshot & {
-	refreshMs: number
-	tickStep: number
-	maxTicks: number
-	autoPauseAtMax: boolean
-}
-
-type RuntimeSnapshot = {
-	uptimeMs: number
-	uptimeLabel: string
-	ticks: number
-	paused: boolean
-}
-
 type BuiltinState = {
 	id: 'runtime'
 	uptimeMs: number
@@ -384,9 +370,9 @@ export class PluginBuiltinShowcase extends BasePlugin {
 		this.startTickLoop()
 	}
 
-	private getConfigSnapshot(): ConfigSnapshot {
+	private buildState(): BuiltinState {
 		const { refreshMs } = this.display
-		const { tickStep, maxTicks, autoPauseAtMax } = this.behavior
+		const { tickStep, maxTicks } = this.behavior
 		const {
 			uptimeStyle,
 			showMs,
@@ -401,50 +387,30 @@ export class PluginBuiltinShowcase extends BasePlugin {
 			template,
 			unitAliases,
 		} = this.format
-		return {
-			refreshMs,
-			tickStep,
-			maxTicks,
-			autoPauseAtMax,
-			uptimeStyle,
-			showMs,
-			timeUnit,
-			separator,
-			padZeros,
-			minDigits,
-			labelStyle,
-			prefix,
-			suffix,
-			uppercaseUnits,
-			template,
-			unitAliases,
-		}
-	}
-
-	private getRuntimeSnapshot(config?: ConfigSnapshot): RuntimeSnapshot {
-		const format = config ?? this.getConfigSnapshot()
 		const uptimeMs = Date.now() - this.startedAt
-		return {
-			uptimeMs,
-			uptimeLabel: formatDuration(uptimeMs, format),
-			ticks: this.ticks,
-			paused: this.paused,
-		}
-	}
-
-	private buildState(): BuiltinState {
-		const config = this.getConfigSnapshot()
-		const runtime = this.getRuntimeSnapshot(config)
 
 		return {
 			id: RUNTIME_DOC_ID,
-			uptimeMs: runtime.uptimeMs,
-			uptimeLabel: runtime.uptimeLabel,
-			ticks: runtime.ticks,
-			paused: runtime.paused,
-			refreshMs: config.refreshMs,
-			tickStep: config.tickStep,
-			maxTicks: config.maxTicks,
+			uptimeMs,
+			uptimeLabel: formatDuration(uptimeMs, {
+				uptimeStyle,
+				showMs,
+				timeUnit,
+				separator,
+				padZeros,
+				minDigits,
+				labelStyle,
+				prefix,
+				suffix,
+				uppercaseUnits,
+				template,
+				unitAliases,
+			}),
+			ticks: this.ticks,
+			paused: this.paused,
+			refreshMs,
+			tickStep,
+			maxTicks,
 		}
 	}
 
@@ -676,7 +642,8 @@ export class PluginBuiltinShowcase extends BasePlugin {
 
 	private startTickLoop() {
 		const tick = () => {
-			const { refreshMs, tickStep, maxTicks, autoPauseAtMax } = this.getConfigSnapshot()
+			const { refreshMs } = this.display
+			const { tickStep, maxTicks, autoPauseAtMax } = this.behavior
 			if (!this.paused) {
 				this.ticks += tickStep
 				if (maxTicks > 0 && this.ticks >= maxTicks) {

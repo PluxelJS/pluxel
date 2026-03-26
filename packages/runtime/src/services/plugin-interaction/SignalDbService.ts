@@ -38,7 +38,7 @@ export interface SignalDbDocumentHandle<TState extends SignalDbItem> {
 	snapshot(fallback: TState): BuiltinSyncRef<TState>
 	form(
 		input: Omit<BuiltinFormBlock, 'kind' | 'syncFrom'> & {
-			state?: false | BuiltinSyncRef<Record<string, unknown>> | TState
+			sync?: false | BuiltinSyncRef<Record<string, unknown>> | TState
 		},
 	): BuiltinFormBlock
 	action(input: Omit<BuiltinActionBlock, 'kind'>): BuiltinActionBlock
@@ -597,13 +597,13 @@ function createSignalDbDocumentHandle<TState extends SignalDbItem>(
 		snapshot(fallback) {
 			return createSignalDbDocRef(collection.name, selection, fallback)
 		},
-		form({ state, ...rest }) {
+		form({ sync, ...rest }) {
 			const syncFrom =
-				state === false
+				sync === false
 					? undefined
-					: isBuiltinSyncRef(state)
-						? state
-						: createSignalDbDocRef(collection.name, selection, (state ?? {}) as TState)
+					: isBuiltinSyncRef(sync)
+						? sync
+						: createSignalDbDocRef(collection.name, selection, (sync ?? {}) as TState)
 
 			return {
 				...rest,

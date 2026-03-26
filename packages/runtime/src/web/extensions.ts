@@ -16,8 +16,6 @@ export type {
 	BuiltinInfoCardRow,
 	BuiltinNowValue,
 	BuiltinActionBlock,
-	BuiltinSignalDbActionBlock,
-	BuiltinSignalDbFormBlock,
 	BuiltinSignalDbRef,
 	BuiltinSignalDbWriteMode,
 	BuiltinSignalDbWriteSpec,
