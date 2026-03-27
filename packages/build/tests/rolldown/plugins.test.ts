@@ -492,6 +492,98 @@ export class UiNamespaceBridgePlugin extends BasePlugin {
 	}
 }
 `,
+	'plugin-with-cfg-layout.ts': `import * as v from 'valibot'
+	import { cfg } from '@pluxel/core'
+
+function Plugin(_meta?: any): ClassDecorator {
+	return () => {}
+}
+
+class BasePlugin {
+	// only for syntax; not executed in this test bundle
+	configs: any = { use: (_x: any) => ({}) }
+}
+
+@Plugin({ name: 'CfgLayoutPlugin' })
+export class CfgLayoutPlugin extends BasePlugin {
+	static readonly schemas = {
+		a: v.object({ a: v.boolean() }),
+		b: v.object({ b: v.boolean() }),
+	} as const
+
+		private static readonly c = cfg(CfgLayoutPlugin.schemas)
+
+		settings = this.configs.use(
+			CfgLayoutPlugin.c\`
+				# Layout
+				\${CfgLayoutPlugin.c.schema('a')}
+				\${CfgLayoutPlugin.c.schema('b')}
+				\${CfgLayoutPlugin.c.schemas()}
+			\`,
+		)
+	}
+	`,
+	'cfg-schemas-imported.ts': `import * as v from 'valibot'
+import { cfg } from '@pluxel/core'
+import { schemas as importedSchemas } from './cfg-schemas-map'
+
+function Plugin(_meta?: any): ClassDecorator {
+	return () => {}
+}
+
+class BasePlugin {
+	// only for syntax; not executed in this test bundle
+	configs: any = { use: (_x: any) => ({}) }
+}
+
+@Plugin({ name: 'CfgImportedSchemasPlugin' })
+export class CfgImportedSchemasPlugin extends BasePlugin {
+	private static readonly c = cfg(importedSchemas)
+
+	settings = this.configs.use(
+		CfgImportedSchemasPlugin.c\`
+			# Layout
+			\${CfgImportedSchemasPlugin.c.schema('a')}
+			\${CfgImportedSchemasPlugin.c.schemas()}
+		\`,
+	)
+}
+`,
+	'cfg-schemas-map.ts': `import * as v from 'valibot'
+
+export const schemas = {
+	a: v.object({ a: v.boolean() }),
+	b: v.object({ b: v.boolean() }),
+} as const
+`,
+	'invalid-cfg-layout.ts': `import * as v from 'valibot'
+import { cfg } from '@pluxel/core'
+
+function Plugin(_meta?: any): ClassDecorator {
+	return () => {}
+}
+
+class BasePlugin {
+	configs: any = { use: (_x: any) => ({}) }
+}
+
+@Plugin({ name: 'InvalidCfgLayoutPlugin' })
+export class InvalidCfgLayoutPlugin extends BasePlugin {
+	private static readonly schemas = {
+		a: v.object({ a: v.boolean() }),
+		b: v.object({ b: v.boolean() }),
+	} as const
+
+	private static readonly c = cfg(InvalidCfgLayoutPlugin.schemas)
+
+	settings = this.configs.use(
+		InvalidCfgLayoutPlugin.c\`
+			\${InvalidCfgLayoutPlugin.c.schemas()}
+			\${InvalidCfgLayoutPlugin.c.schema('a')}
+		\`,
+	)
+}
+`,
 } satisfies Record<string, string>
 
 async function withFixtures<T>(run: (fixturesDir: string) => Promise<T>) {
@@ -499,7 +591,60 @@ async function withFixtures<T>(run: (fixturesDir: string) => Promise<T>) {
 	return await run(fixture.path)
 }
 
-describe('configSourcePlugin', () => {
+	describe('configSourcePlugin', () => {
+		it('extracts cfg(schemaMap)`...` layout parts', async () => {
+			await withFixtures(async (fixturesDir) => {
+				const bundle = await rolldown({
+					input: resolve(fixturesDir, 'plugin-with-cfg-layout.ts'),
+					plugins: [configSourcePlugin()],
+					external: ['valibot', '@pluxel/core'],
+				})
+
+				const { output } = await bundle.generate({ format: 'esm' })
+				const code = output[0].code
+
+				expect(code).toContain('__setConfigLayout__')
+				expect(code).toContain('"kind": "schema"')
+				expect(code).toContain('"key": "a"')
+				expect(code).toContain('"key": "b"')
+				expect(code).toContain('"kind": "schemas"')
+			})
+		})
+
+		it('extracts cfg(schemaMap) across modules (imported schemaMap const)', async () => {
+			await withFixtures(async (fixturesDir) => {
+				const bundle = await rolldown({
+					input: resolve(fixturesDir, 'cfg-schemas-imported.ts'),
+					plugins: [configSourcePlugin()],
+					external: ['valibot', '@pluxel/core'],
+				})
+
+				const { output } = await bundle.generate({ format: 'esm' })
+				const code = output[0].code
+
+				expect(code).toContain('__registerConfigBinding__')
+				expect(code).toContain('__setConfigSource__')
+				expect(code).toContain('__setConfigLayout__')
+				// registerExpr should reference the schemaMap by key access (bundler may rename the binding)
+				expect(code).toContain('["a"]')
+				expect(code).toContain('["b"]')
+			})
+		})
+
+		it('rejects invalid cfg layout ordering during extraction', async () => {
+			await withFixtures(async (fixturesDir) => {
+				const bundle = await rolldown({
+					input: resolve(fixturesDir, 'invalid-cfg-layout.ts'),
+					plugins: [configSourcePlugin()],
+					external: ['valibot', '@pluxel/core'],
+				})
+
+				await expect(bundle.generate({ format: 'esm' })).rejects.toThrow(
+					/must be the last schema-placement token/,
+				)
+			})
+		})
+
 	it('extracts inline @Config schema source', async () => {
 		await withFixtures(async (fixturesDir) => {
 			const bundle = await rolldown({

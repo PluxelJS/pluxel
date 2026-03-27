@@ -9,6 +9,7 @@
 
 export * from './composition/BaseFeature'
 export * from './composition/ConfigHost'
+export * from './composition/cfg'
 export * from './composition/FeatureHost'
 export * from './composition/BasePlugin'
 export * from './types'

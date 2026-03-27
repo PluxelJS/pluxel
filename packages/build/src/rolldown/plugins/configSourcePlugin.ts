@@ -30,6 +30,7 @@ import type {
 	PrivateIdentifier,
 	PropertyDefinition,
 	SpreadElement,
+	TaggedTemplateExpression,
 } from 'oxc-parser'
 import type { TransformPluginContext } from 'rolldown'
 import { normalizeSchemaSource } from '../utils/configHandler'
@@ -50,6 +51,18 @@ interface ExtractedConfig {
 	fieldName: string
 	source: string
 	registerExpr?: string
+}
+
+interface ExtractedBinding {
+	className: string
+	fieldName: string
+	keys: string[]
+}
+
+interface ExtractedConfigLayout {
+	className: string
+	fieldName: string
+	layout: unknown[]
 }
 
 interface ExtractedFeatureUse {
@@ -160,20 +173,22 @@ export function configSourcePlugin(options: ConfigSourcePluginOptions = {}): Vit
 			async handler(this: TransformPluginContext, code, id) {
 				const normalizedId = normalizeViteId(id)
 
-				let sourceText = code
-				// If a previous transform downleveled decorators, prefer extracting from raw TS source.
-				// We keep the output based on the incoming `code` to avoid undoing other transforms.
-				if (typeof code === 'string') {
-					const looksDownleveledDecorators =
-						code.includes('__decorate') ||
-						(code.includes('Plugin(') && !code.includes('@Plugin') && !code.includes('@Config'))
+				// Avoid double-injecting when a module is re-transformed by Vite/Vitest pipelines.
+				// This can happen when other transforms produce a new module graph and our plugin
+				// is applied again to already-injected code.
+				if (typeof code === 'string' && code.includes('[pluxel-config-source] Injected metadata')) {
+					return null
+				}
 
-					if (looksDownleveledDecorators) {
-						try {
-							sourceText = await readFile(normalizedId, 'utf-8')
-						} catch {
-							// ignore: not a real file or not readable; fall back to provided code
-						}
+				// Prefer extracting from on-disk TS source when possible.
+				// This keeps cfg tagged templates / decorators in their authored form even if other transforms
+				// downlevel them (we still output based on the incoming `code` to avoid undoing transforms).
+				let sourceText = code
+				if (typeof code === 'string') {
+					try {
+						sourceText = await readFile(normalizedId, 'utf-8')
+					} catch {
+						// ignore: not a real file or not readable; fall back to provided code
 					}
 				}
 
@@ -220,19 +235,31 @@ export function configSourcePlugin(options: ConfigSourcePluginOptions = {}): Vit
 								}
 								return await extractConfigSources(moduleInfo, ast, ctx)
 							})()
-						: []
+						: { configs: [], bindings: [], layouts: [] }
 
-					if (extracted.length === 0 && extractedFeatures.length === 0) return null
+					if (
+						extracted.configs.length === 0 &&
+						extracted.bindings.length === 0 &&
+						extracted.layouts.length === 0 &&
+						extractedFeatures.length === 0
+					)
+						return null
 
 					// 生成注入代码
-					const injection = generateInjection(extracted, extractedFeatures, parseProgram)
+					const injection = generateInjection(
+						extracted.configs,
+						extracted.bindings,
+						extracted.layouts,
+						extractedFeatures,
+						parseProgram,
+					)
 					return {
 						code: code + '\n' + injection,
 						map: null as null,
 					}
 				} catch (err) {
-					this.warn(`Failed to extract @Config sources from ${id}: ${err}`)
-					return null
+					const detail = err instanceof Error ? err.message : String(err)
+					this.error(`Failed to extract config metadata from ${id}: ${detail}`)
 				}
 			},
 		},
@@ -383,6 +410,47 @@ async function ensureModuleInfo(
 }
 
 type ModuleResolver = (source: string, importer: string) => Promise<string | null>
+
+async function resolveExportedExpressionNode(
+	moduleInfo: ModuleInfo,
+	exportedName: string,
+	ctx: ResolveContext,
+): Promise<{ moduleInfo: ModuleInfo; expr: Expression } | undefined> {
+	const localName = moduleInfo.exports.get(exportedName)
+	if (localName) {
+		const decl = moduleInfo.declarations.get(localName)
+		if (decl) return { moduleInfo, expr: decl.node }
+	}
+
+	const reExport = moduleInfo.reExports.get(exportedName)
+	if (reExport && reExport.imported !== '*') {
+		const resolvedId = await ctx.moduleResolver(reExport.source, moduleInfo.id)
+		if (resolvedId) {
+			const targetInfo = await ensureModuleInfo(resolvedId, ctx)
+			if (targetInfo) return resolveExportedExpressionNode(targetInfo, reExport.imported, ctx)
+		}
+	}
+
+	return undefined
+}
+
+async function resolveIdentifierExpressionNode(
+	moduleInfo: ModuleInfo,
+	name: string,
+	ctx: ResolveContext,
+): Promise<{ moduleInfo: ModuleInfo; expr: Expression } | undefined> {
+	const decl = moduleInfo.declarations.get(name)
+	if (decl) return { moduleInfo, expr: decl.node }
+
+	const importInfo = moduleInfo.imports.get(name)
+	if (!importInfo || importInfo.imported === '*') return undefined
+
+	const resolvedId = await ctx.moduleResolver(importInfo.source, moduleInfo.id)
+	if (!resolvedId) return undefined
+	const targetInfo = await ensureModuleInfo(resolvedId, ctx)
+	if (!targetInfo) return undefined
+	return resolveExportedExpressionNode(targetInfo, importInfo.imported, ctx)
+}
 
 function isConfigImportSource(source: string): boolean {
 	for (const base of CONFIG_DECORATOR_SOURCES) {
@@ -905,8 +973,13 @@ async function extractConfigSources(
 	moduleInfo: ModuleInfo,
 	ast: Program,
 	ctx: ResolveContext,
-): Promise<ExtractedConfig[]> {
+): Promise<{ configs: ExtractedConfig[]; bindings: ExtractedBinding[]; layouts: ExtractedConfigLayout[] }> {
 	const extracted: ExtractedConfig[] = []
+	const bindings: ExtractedBinding[] = []
+	const layouts: ExtractedConfigLayout[] = []
+	const seenSchemaKeys = new Set<string>()
+	const seenBindings = new Set<string>()
+	const seenLayouts = new Set<string>()
 
 	// Find classes that have @Config-decorated fields (plugins and features).
 	for (const node of ast.body) {
@@ -944,7 +1017,12 @@ async function extractConfigSources(
 					const source = await extractConfigDecoratorSource(decorator, moduleInfo, ctx)
 					if (source) {
 						hasDecoratedConfig = true
-						extracted.push({ className, fieldName, source })
+						const schemaKey = fieldName
+						const key = `${className}::schema::${schemaKey}`
+						if (!seenSchemaKeys.has(key)) {
+							seenSchemaKeys.add(key)
+							extracted.push({ className, fieldName: schemaKey, source })
+						}
 					}
 				}
 			}
@@ -961,17 +1039,558 @@ async function extractConfigSources(
 						`Config conflict on ${className}.${fieldName}: cannot use both @Config(...) and config(s).use(...)`,
 					)
 				}
-				const source = await expandExpressionWithModule(moduleInfo, useMatch.schemaExpr, ctx)
-				const registerExpr =
-					useMatch.schemaExpr.type === 'Identifier'
-						? useMatch.schemaExpr.name
-						: moduleInfo.code.slice(useMatch.schemaExpr.start, useMatch.schemaExpr.end)
-				extracted.push({ className, fieldName, source, registerExpr })
+
+				// cfg(schemaMap) path: `field = this.configs.use(cfg(schemaMap))`
+				const cfgSchemaMapExpr = extractCfgSchemaMapExpr(moduleInfo, ast, useMatch.schemaExpr)
+				if (cfgSchemaMapExpr) {
+					const cfg = await extractCfgSchemasFromSchemaMapExpr(
+						moduleInfo,
+						ast,
+						cfgSchemaMapExpr,
+						'cfg(schemaMap)',
+						ctx,
+					)
+
+					const layout = extractCfgLayout(useMatch.schemaExpr)
+					if (layout) {
+						const layoutKey = `${className}::layout::${fieldName}`
+						if (!seenLayouts.has(layoutKey)) {
+							seenLayouts.add(layoutKey)
+							layouts.push({ className, fieldName, layout })
+						}
+					}
+
+					const bindKey = `${className}::bind::${fieldName}`
+					if (!seenBindings.has(bindKey)) {
+						seenBindings.add(bindKey)
+						bindings.push({ className, fieldName, keys: cfg.keys })
+					}
+
+					for (const entry of cfg.entries) {
+						const schemaKey = entry.key
+						const schemaSeen = `${className}::schema::${schemaKey}`
+						if (seenSchemaKeys.has(schemaSeen)) continue
+						seenSchemaKeys.add(schemaSeen)
+
+						const source = await expandExpressionWithModule(entry.moduleInfo, entry.schemaExpr, ctx)
+						extracted.push({
+							className,
+							fieldName: schemaKey,
+							source,
+							registerExpr: entry.registerExpr,
+						})
+					}
+					continue
+				}
+
+				// Reject legacy `cfg` tagged template (`cfg`...``) explicitly.
+				// cfg(schemaMap)`...` is supported (static markdown; interpolation is allowed only for cfg tokens).
+				if (useMatch.schemaExpr.type === 'TaggedTemplateExpression') {
+					const tag = (useMatch.schemaExpr as any).tag
+					const normalizedTag = tag ? unwrapExpression(tag) : null
+					const isLegacyCfgTag = normalizedTag?.type === 'Identifier' && normalizedTag.name === 'cfg'
+					if (isLegacyCfgTag) {
+						throw new Error(
+							`[cfg] Use cfg(schemaMap) (legacy cfg\`...\` is not supported): ${moduleInfo.id}`,
+						)
+					}
+				}
+
+				// schema path: `field = this.configs.use(schema)`
+				{
+					const bindKey = `${className}::bind::${fieldName}`
+					if (!seenBindings.has(bindKey)) {
+						seenBindings.add(bindKey)
+						bindings.push({ className, fieldName, keys: [fieldName] })
+					}
+
+					const schemaKey = fieldName
+					const schemaSeen = `${className}::schema::${schemaKey}`
+					if (seenSchemaKeys.has(schemaSeen)) continue
+					seenSchemaKeys.add(schemaSeen)
+
+					const source = await expandExpressionWithModule(moduleInfo, useMatch.schemaExpr, ctx)
+					const registerExpr =
+						useMatch.schemaExpr.type === 'Identifier'
+							? useMatch.schemaExpr.name
+							: moduleInfo.code.slice(useMatch.schemaExpr.start, useMatch.schemaExpr.end)
+					extracted.push({ className, fieldName: schemaKey, source, registerExpr })
+				}
 			}
 		}
 	}
 
-	return extracted
+	return { configs: extracted, bindings, layouts }
+}
+
+function normalizeMarkdownTemplate(input: string): string {
+	const lines = String(input ?? '').replace(/\r\n/g, '\n').split('\n')
+	while (lines.length && lines[0]?.trim() === '') lines.shift()
+	while (lines.length && lines[lines.length - 1]?.trim() === '') lines.pop()
+	let minIndent = Number.POSITIVE_INFINITY
+	for (const line of lines) {
+		if (!line.trim()) continue
+		const match = line.match(/^[\t ]+/)
+		const indent = match ? match[0].length : 0
+		minIndent = Math.min(minIndent, indent)
+	}
+	if (!Number.isFinite(minIndent) || minIndent <= 0) return lines.join('\n')
+	return lines.map((line) => (line.trim() ? line.slice(minIndent) : '')).join('\n')
+}
+
+type ExtractedLayoutPart =
+	| { kind: 'md'; text: string }
+	| { kind: 'schema'; key: string }
+	| { kind: 'schemas'; keys: string[] | null } // null => remaining
+
+function mergeAdjacentMarkdown(parts: ExtractedLayoutPart[]): ExtractedLayoutPart[] {
+	const merged: ExtractedLayoutPart[] = []
+	for (const part of parts) {
+		const prev = merged[merged.length - 1]
+		if (part.kind === 'md' && prev?.kind === 'md') {
+			prev.text += part.text
+			continue
+		}
+		merged.push(part.kind === 'md' ? { ...part } : part)
+	}
+	return merged
+}
+
+function assertValidExtractedLayout(parts: readonly ExtractedLayoutPart[]): void {
+	const placed = new Set<string>()
+	let hasRemaining = false
+
+	for (const part of parts) {
+		if (part.kind === 'md') continue
+		if (hasRemaining) {
+			throw new Error('[cfg] schemas() must be the last schema-placement token')
+		}
+		if (part.kind === 'schema') {
+			const key = String(part.key ?? '').trim()
+			if (placed.has(key)) {
+				throw new Error(`[cfg] duplicate schema placement for key "${key}"`)
+			}
+			placed.add(key)
+			continue
+		}
+		if (part.keys === null) {
+			hasRemaining = true
+			continue
+		}
+		for (const rawKey of part.keys) {
+			const key = String(rawKey ?? '').trim()
+			if (!key) continue
+			if (placed.has(key)) {
+				throw new Error(`[cfg] duplicate schema placement for key "${key}"`)
+			}
+			placed.add(key)
+		}
+	}
+}
+
+function extractCfgLayout(expr: Expression): ExtractedLayoutPart[] | null {
+	const normalized = unwrapExpression(expr as any) as any
+	if (!normalized || normalized.type !== 'TaggedTemplateExpression') return null
+
+	const quasi = normalized.quasi as any
+	const expressions = Array.isArray(quasi?.expressions) ? quasi.expressions : []
+
+	const quasis = Array.isArray(quasi?.quasis) ? quasi.quasis : []
+	const readQuasi = (q: unknown): string => {
+		if (!q || typeof q !== 'object') return ''
+		const v =
+			(q as any)?.value?.cooked ??
+			(q as any)?.value?.raw ??
+			(typeof (q as any)?.value === 'string' ? (q as any).value : '')
+		return String(v ?? '')
+	}
+
+	const toPart = (e: unknown): ExtractedLayoutPart => {
+		const node = e ? unwrapExpression(e as any) : null
+		if (!node || typeof node !== 'object') {
+			throw new Error('[cfg] invalid interpolation in cfg(schemaMap)`...`')
+		}
+		// Allow only:
+		// - c.schema('key')
+		// - c.schemas(...keys)   (no args => remaining)
+		if ((node as any).type !== 'CallExpression') {
+			throw new Error('[cfg] invalid interpolation in cfg(schemaMap)`...` (expected call)')
+		}
+		const call = node as any
+		const callee = call.callee ? unwrapExpression(call.callee) : null
+		if (!callee || callee.type !== 'MemberExpression' || callee.computed) {
+			throw new Error(
+				'[cfg] invalid interpolation in cfg(schemaMap)`...` (expected c.schema(...) / c.schemas(...))',
+			)
+		}
+		const prop = callee.property
+		const propName =
+			prop?.type === 'Identifier'
+				? prop.name
+				: prop?.type === 'StringLiteral'
+					? prop.value
+					: null
+		if (propName !== 'schema' && propName !== 'schemas') {
+			throw new Error(
+				'[cfg] invalid interpolation in cfg(schemaMap)`...` (expected c.schema(...) / c.schemas(...))',
+			)
+		}
+
+		const args = Array.isArray(call.arguments) ? call.arguments : []
+		const readStr = (arg: any): string | null => {
+			const a = arg?.type === 'SpreadElement' ? arg.argument : arg
+			const n = a ? unwrapExpression(a) : null
+			if (!n) return null
+			if (n.type === 'StringLiteral') return String(n.value)
+			if (n.type === 'Literal' && typeof n.value === 'string') return n.value
+			return null
+		}
+
+		if (propName === 'schema') {
+			if (args.length !== 1) {
+				throw new Error('[cfg] c.schema(key) requires exactly 1 string literal argument')
+			}
+			const key = readStr(args[0])
+			if (!key) throw new Error('[cfg] c.schema(key) requires a string literal argument')
+			return { kind: 'schema', key: String(key).trim() }
+		}
+
+		if (propName === 'schemas') {
+			if (args.length === 0) return { kind: 'schemas', keys: null }
+			const keys: string[] = []
+			for (const a of args) {
+				const k = readStr(a)
+				if (!k) throw new Error('[cfg] c.schemas(...keys) requires string literal arguments')
+				const kk = String(k).trim()
+				if (kk) keys.push(kk)
+			}
+			return { kind: 'schemas', keys: keys.length ? keys : null }
+		}
+
+		throw new Error('[cfg] invalid interpolation in cfg(schemaMap)`...`')
+	}
+
+	const marker = '\u0000__CFG_VAL__\u0000'
+	let raw = ''
+	const n = Math.max(quasis.length, expressions.length + 1)
+	for (let i = 0; i < n; i++) {
+		raw += readQuasi(quasis[i])
+		if (i < expressions.length) raw += `${marker}${i}${marker}`
+	}
+
+	raw = normalizeMarkdownTemplate(raw)
+
+	const parts: ExtractedLayoutPart[] = []
+	const re = new RegExp(`${marker}(\\d+)${marker}`, 'g')
+	let last = 0
+	for (;;) {
+		const match = re.exec(raw)
+		if (!match) break
+		const start = match.index
+		const end = start + match[0].length
+		const chunk = raw.slice(last, start)
+		if (chunk) parts.push({ kind: 'md', text: chunk })
+		const idx = Number(match[1])
+		if (!Number.isInteger(idx) || idx < 0 || idx >= expressions.length) {
+			throw new Error('[cfg] internal interpolation index out of range')
+		}
+		parts.push(toPart(expressions[idx]))
+		last = end
+	}
+	const tail = raw.slice(last)
+	if (tail) parts.push({ kind: 'md', text: tail })
+
+	const merged = mergeAdjacentMarkdown(parts)
+	assertValidExtractedLayout(merged)
+	// Drop empty layout (no text, no tokens).
+	const hasContent = merged.some((p) => (p.kind === 'md' ? p.text.trim() : true))
+	return hasContent ? merged : null
+}
+
+function extractCfgSchemaMapExpr(moduleInfo: ModuleInfo, ast: Program, expr: Expression): Expression | null {
+	const normalized = unwrapExpression(expr as any) as any
+
+	const isCfgCallee = (callee: any): boolean => {
+		if (!callee) return false
+		const c = unwrapExpression(callee) as any
+		if (c?.type === 'Identifier' && c.name === 'cfg') return true
+		if (c?.type === 'MemberExpression' && !c.computed) {
+			const p = c.property
+			if (p?.type === 'Identifier' && p.name === 'cfg') return true
+			if (p?.type === 'StringLiteral' && p.value === 'cfg') return true
+			return false
+		}
+		if (c?.type === 'SequenceExpression') {
+			const exprs = Array.isArray(c.expressions) ? c.expressions : []
+			return exprs.length > 0 ? isCfgCallee(exprs[exprs.length - 1]) : false
+		}
+		return false
+	}
+
+	const resolveCfgCallExpr = (raw: any): CallExpression | null => {
+		const node = raw ? (unwrapExpression(raw) as any) : null
+		if (!node) return null
+
+		if (node.type === 'CallExpression') {
+			return isCfgCallee(node.callee) ? (node as CallExpression) : null
+		}
+
+		if (node.type === 'Identifier') {
+			const decl = moduleInfo.declarations.get(node.name)
+			if (!decl) return null
+			const n = unwrapExpression(decl.node as any) as any
+			return n?.type === 'CallExpression' && isCfgCallee(n.callee) ? (n as CallExpression) : null
+		}
+
+		if (node.type === 'MemberExpression' && !node.computed) {
+			const obj = node.object
+			const prop = node.property
+			if (obj?.type !== 'Identifier') return null
+			const className = obj.name
+			const propName =
+				prop?.type === 'Identifier'
+					? prop.name
+					: prop?.type === 'StringLiteral'
+						? prop.value
+						: null
+			if (!className || !propName) return null
+
+			// Static class field: `class X { static c = cfg(...) }`
+			for (const stmt of ast.body) {
+				const classDecl =
+					stmt.type === 'ClassDeclaration'
+						? stmt
+						: stmt.type === 'ExportNamedDeclaration' && stmt.declaration?.type === 'ClassDeclaration'
+							? stmt.declaration
+							: stmt.type === 'ExportDefaultDeclaration' && stmt.declaration.type === 'ClassDeclaration'
+								? stmt.declaration
+								: null
+				if (!classDecl) continue
+				if (classDecl.id?.name !== className) continue
+				for (const m of classDecl.body.body) {
+					if (m.type !== 'PropertyDefinition') continue
+					const pd = m as any
+					if (!pd.static) continue
+					const key = pd.key
+					const k =
+						key?.type === 'Identifier'
+							? key.name
+							: key?.type === 'StringLiteral'
+								? key.value
+								: null
+					if (k !== propName) continue
+					const init = pd.value ? unwrapExpression(pd.value) : null
+					if (init?.type === 'CallExpression' && isCfgCallee(init.callee)) return init as CallExpression
+				}
+			}
+
+			// Static assignment: `X.c = cfg(...)` in module scope
+			for (const stmt of ast.body) {
+				if (stmt.type !== 'ExpressionStatement') continue
+				const e = unwrapExpression((stmt as any).expression) as any
+				if (!e || e.type !== 'AssignmentExpression') continue
+				const left = unwrapExpression(e.left) as any
+				if (!left || left.type !== 'MemberExpression' || left.computed) continue
+				const lo = left.object
+				const lp = left.property
+				if (lo?.type !== 'Identifier' || lo.name !== className) continue
+				const lk =
+					lp?.type === 'Identifier'
+						? lp.name
+						: lp?.type === 'StringLiteral'
+							? lp.value
+							: null
+				if (lk !== propName) continue
+				const right = unwrapExpression(e.right) as any
+				if (right?.type === 'CallExpression' && isCfgCallee(right.callee)) return right as CallExpression
+			}
+		}
+
+		return null
+	}
+
+	// Tagged template: cfg(schemaMap)`...` (layout source extraction happens elsewhere)
+	if (normalized?.type === 'TaggedTemplateExpression') {
+		const rawTag = normalized.tag
+		const tag = rawTag ? unwrapExpression(rawTag) : null
+		// Reject legacy `cfg`...` without schemaMap.
+		if (tag?.type === 'Identifier' && tag.name === 'cfg') {
+			throw new Error(`[cfg] cfg(schemaMap) is required: ${String((expr as any).start ?? '')}`)
+		}
+		const call = resolveCfgCallExpr(tag)
+		if (!call) return null
+		const args = call.arguments ?? []
+		const firstArg = args[0]
+		const mapExpr = firstArg ? (firstArg.type === 'SpreadElement' ? firstArg.argument : firstArg) : null
+		return mapExpr ? (mapExpr as Expression) : null
+	}
+
+	// Canonical form: cfg(schemaMap)
+	if (normalized?.type === 'CallExpression') {
+		if (isCfgCallee(normalized.callee)) {
+			const args = (normalized as CallExpression).arguments ?? []
+			const firstArg = args[0]
+			const mapExpr = firstArg
+				? (firstArg.type === 'SpreadElement' ? firstArg.argument : firstArg)
+				: null
+			return mapExpr ? (mapExpr as Expression) : null
+		}
+		// Downleveled tagged-template: c(templateObject()) where c is `cfg(schemaMap)`
+		{
+			const call = resolveCfgCallExpr(normalized.callee)
+			if (call) {
+				const args = (call as CallExpression).arguments ?? []
+				const firstArg = args[0]
+				const mapExpr = firstArg
+					? (firstArg.type === 'SpreadElement' ? firstArg.argument : firstArg)
+					: null
+				return mapExpr ? (mapExpr as Expression) : null
+			}
+		}
+	}
+
+	// Direct reference: `const c = cfg(schemaMap); ... this.configs.use(c)`
+	if (normalized?.type === 'Identifier' || normalized?.type === 'MemberExpression') {
+		const call = resolveCfgCallExpr(normalized)
+		if (call) {
+			const args = call.arguments ?? []
+			const firstArg = args[0]
+			const mapExpr = firstArg
+				? (firstArg.type === 'SpreadElement' ? firstArg.argument : firstArg)
+				: null
+			return mapExpr ? (mapExpr as Expression) : null
+		}
+	}
+
+	return null
+}
+
+async function extractCfgSchemasFromSchemaMapExpr(
+	moduleInfo: ModuleInfo,
+	ast: Program,
+	mapExpr: Expression,
+	kind: string,
+	ctx: ResolveContext,
+): {
+	keys: string[]
+	entries: Array<{ key: string; schemaExpr: Expression; moduleInfo: ModuleInfo; registerExpr: string }>
+} {
+	const entries: Array<{
+		key: string
+		schemaExpr: Expression
+		moduleInfo: ModuleInfo
+		registerExpr: string
+	}> = []
+	const keys: string[] = []
+	const seen = new Set<string>()
+
+	const normalizedMapExpr = unwrapExpression(mapExpr as any) as any
+	const mapRefExpr =
+		normalizedMapExpr && typeof normalizedMapExpr.start === 'number' && typeof normalizedMapExpr.end === 'number'
+			? moduleInfo.code.slice(normalizedMapExpr.start, normalizedMapExpr.end)
+			: null
+	const canUseMapAccessForRegister =
+		normalizedMapExpr?.type === 'Identifier' || normalizedMapExpr?.type === 'MemberExpression'
+
+	const resolveStaticClassSchemaMap = (member: any): Expression | null => {
+		// Support `SomeClass.schemas` when it is a static property initialized with an object literal
+		// in the same module (common pattern in tests and plugin classes).
+		if (!member || member.type !== 'MemberExpression') return null
+		if (member.computed) return null
+		if (member.object?.type !== 'Identifier') return null
+		if (member.property?.type !== 'Identifier') return null
+
+		const className = member.object.name
+		const propName = member.property.name
+		if (!className || !propName) return null
+
+		for (const node of ast.body) {
+			const classDecl =
+				node.type === 'ClassDeclaration'
+					? node
+					: node.type === 'ExportNamedDeclaration' && node.declaration?.type === 'ClassDeclaration'
+						? node.declaration
+						: node.type === 'ExportDefaultDeclaration' && node.declaration.type === 'ClassDeclaration'
+							? node.declaration
+							: null
+			if (!classDecl || classDecl.id?.name !== className) continue
+
+			for (const m of classDecl.body.body) {
+				if (m.type !== 'PropertyDefinition') continue
+				const pd = m as any
+				if (!pd.static) continue
+				const key = pd.key
+				if (key?.type !== 'Identifier' || key.name !== propName) continue
+				const v = pd.value ? unwrapExpression(pd.value as any) : null
+				if (!v) return null
+				return v as Expression
+			}
+		}
+
+		return null
+	}
+
+	const parseObjectSchemaMap = async (obj: Expression, kind: string) => {
+		const normalizedObj = unwrapExpression(obj as any) as any
+
+		let targetModule = moduleInfo
+		let target: any = normalizedObj
+
+		if (target.type === 'Identifier') {
+			const resolved = await resolveIdentifierExpressionNode(moduleInfo, target.name, ctx)
+			if (!resolved) {
+				throw new Error(
+					`[cfg] ${kind} schemaMap identifier must be a module-scope const or an imported const export: ${moduleInfo.id}`,
+				)
+			}
+			targetModule = resolved.moduleInfo
+			target = unwrapExpression(resolved.expr as any)
+		} else if (target.type === 'MemberExpression') {
+			const resolved = resolveStaticClassSchemaMap(target)
+			if (resolved) target = resolved
+		}
+
+		if (!target || target.type !== 'ObjectExpression') {
+			throw new Error(`[cfg] ${kind} must receive an object literal: ${moduleInfo.id}`)
+		}
+
+		for (const prop of target.properties) {
+			if (prop.type !== 'Property') {
+				throw new Error(`[cfg] ${kind} does not support spread properties: ${moduleInfo.id}`)
+			}
+			if (prop.computed) {
+				throw new Error(
+					`[cfg] ${kind} keys must be static (no computed keys): ${moduleInfo.id}`,
+				)
+			}
+			let key: string | null = null
+			if (prop.key.type === 'Identifier') key = prop.key.name
+			else if (prop.key.type === 'StringLiteral') key = prop.key.value
+			else if (prop.key.type === 'NumericLiteral') key = String(prop.key.value)
+			else {
+				throw new Error(`[cfg] ${kind} key type not supported: ${moduleInfo.id}`)
+			}
+			const k = String(key ?? '').trim()
+			if (!k) throw new Error(`[cfg] ${kind} key is empty: ${moduleInfo.id}`)
+			const v = prop.value as Expression
+			if (seen.has(k)) throw new Error(`[cfg] duplicate ${kind} key "${k}" in ${moduleInfo.id}`)
+			seen.add(k)
+			keys.push(k)
+
+			// Register schema with a stable reference when possible:
+			// - schemaMap identifier / member access: map["key"]
+			// - inline object literal: inline expression source
+			const registerExpr =
+				canUseMapAccessForRegister && mapRefExpr
+					? `${mapRefExpr}[${JSON.stringify(k)}]`
+					: moduleInfo.code.slice(v.start, v.end)
+
+			entries.push({ key: k, schemaExpr: v, moduleInfo: targetModule, registerExpr })
+		}
+	}
+
+	await parseObjectSchemaMap(mapExpr as Expression, kind)
+	return { keys, entries }
 }
 
 function extractFeatureUses(moduleInfo: ModuleInfo, ast: Program): ExtractedFeatureUse[] {
@@ -1040,7 +1659,8 @@ function extractConfigsUseCall(
 	const arg = normalized.arguments[0]
 	const resolved = arg.type === 'SpreadElement' ? arg.argument : arg
 	if (!resolved) return null
-	return { schemaExpr: resolved }
+	// Allow wrappers like `(expr)` / `expr as const` around the declaration.
+	return { schemaExpr: unwrapExpression(resolved as any) as Expression }
 }
 
 function extractFeaturesUseCall(
@@ -1069,7 +1689,8 @@ function extractFeaturesUseCall(
 	const arg = normalized.arguments[0]
 	const resolved = arg.type === 'SpreadElement' ? arg.argument : arg
 	if (!resolved) return null
-	return { featureExpr: resolved }
+	// Allow wrappers like `(expr)` / `expr as const`.
+	return { featureExpr: unwrapExpression(resolved as any) as Expression }
 }
 
 /**
@@ -1112,10 +1733,13 @@ async function extractConfigDecoratorSource(
  */
 function generateInjection(
 	configs: ExtractedConfig[],
+	bindings: ExtractedBinding[],
+	layouts: ExtractedConfigLayout[],
 	features: ExtractedFeatureUse[],
 	parseProgram: (code: string, filename: string) => Program,
 ): string {
-	if (configs.length === 0 && features.length === 0) return ''
+	if (configs.length === 0 && bindings.length === 0 && layouts.length === 0 && features.length === 0)
+		return ''
 
 	const needsRegister = configs.some(
 		(c) => typeof c.registerExpr === 'string' && c.registerExpr.length > 0,
@@ -1123,12 +1747,14 @@ function generateInjection(
 
 	const lines: string[] = ['// [pluxel-config-source] Injected metadata']
 
-	if (configs.length > 0 || features.length > 0) {
+	if (configs.length > 0 || bindings.length > 0 || layouts.length > 0 || features.length > 0) {
 		const imports: string[] = []
 		if (configs.length > 0) {
 			imports.push('__setConfigSource__')
 			if (needsRegister) imports.push('__registerConfigSchema__')
 		}
+		if (layouts.length > 0) imports.push('__setConfigLayout__')
+		if (bindings.length > 0) imports.push('__registerConfigBinding__')
 		if (features.length > 0) imports.push('__registerUsedFeatures__')
 		// Keep import stable/deterministic for snapshots and caching.
 		imports.sort()
@@ -1141,6 +1767,12 @@ function generateInjection(
 				`__setConfigSource__(${className}, ${JSON.stringify(fieldName)}, ${escapedSource});`,
 			)
 		}
+
+		for (const { className, fieldName, layout } of layouts) {
+			lines.push(
+				`__setConfigLayout__(${className}, ${JSON.stringify(fieldName)}, ${JSON.stringify(layout)});`,
+			)
+		}
 	}
 
 	if (configs.length > 0 && needsRegister) {
@@ -1148,6 +1780,14 @@ function generateInjection(
 			if (!cfg.registerExpr) continue
 			lines.push(
 				`__registerConfigSchema__(${cfg.className}, ${JSON.stringify(cfg.fieldName)}, ${cfg.registerExpr});`,
+			)
+		}
+	}
+
+	if (bindings.length > 0) {
+		for (const b of bindings) {
+			lines.push(
+				`__registerConfigBinding__(${b.className}, ${JSON.stringify(b.fieldName)}, ${JSON.stringify(b.keys)});`,
 			)
 		}
 	}

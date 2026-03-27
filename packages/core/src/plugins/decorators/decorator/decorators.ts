@@ -31,8 +31,18 @@ export function Config(schema: StandardSchemaV1): PropertyDecorator {
 		const ctor = (target as { constructor: AnyCtor }).constructor
 		const s = S(ctor)
 		const bucket = s.pending ?? Object.create(null)
-		bucket[String(key)] = schema
+		const fieldName = String(key)
+		bucket[fieldName] = schema
 		s.pending = bucket
+
+		// Bind decorated config fields as `{ field: [field] }` so runtime injection
+		// doesn't need any toolchain side effects to work.
+		const bindDst = (s.configBindings ?? Object.create(null)) as Record<string, readonly string[]>
+		if (!bindDst[fieldName]) {
+			const next = Object.assign(Object.create(null), bindDst)
+			next[fieldName] = __DEV__ ? $freeze([fieldName]) : [fieldName]
+			s.configBindings = next
+		}
 	}
 }
 

@@ -24,6 +24,8 @@ export class PluginHttpWorkerDemo extends BasePlugin {
 	private workerBinding: HmrWorkerBinding | null = null
 
 	override async init(): Promise<void> {
+		const d = doc({} as const)
+
 		this.ctx.http.plugin.routes(
 			(app) =>
 				app
@@ -51,7 +53,7 @@ export class PluginHttpWorkerDemo extends BasePlugin {
 			meta: {
 				label: 'Worker Demo',
 			},
-			content: doc`
+			content: d`
 				Route base: \`/__pluxel/plugins/PluginHttpWorkerDemo/worker-demo\`.
 
 				Endpoints:

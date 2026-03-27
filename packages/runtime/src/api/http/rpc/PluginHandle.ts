@@ -510,8 +510,13 @@ export class PluginHandle extends RpcTarget {
 		if (res.ok === false) {
 			return { ok: false, code: 'schema_not_found', message: res.message }
 		}
-		return { ok: true, schemaSource: res.schemaSource, defaults: res.defaults }
-	}
+			return {
+				ok: true,
+				schemaSource: res.schemaSource as any,
+				defaults: res.defaults as any,
+				layout: res.layout ?? null,
+			}
+		}
 
 	async config(): Promise<ConfigResultOk> {
 		const res = await pluginConfigGet(this.ctx, this.name)

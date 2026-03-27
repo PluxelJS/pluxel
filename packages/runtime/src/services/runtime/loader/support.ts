@@ -318,7 +318,15 @@ export class LoaderRegistryView {
 		if (!ctor) return undefined
 		return this.registry.getSchemaSource(ctor)
 	}
-}
+
+		getConfigLayout(
+			target: PluginConstructor | string,
+		): Readonly<Record<string, unknown[]>> | undefined {
+			const ctor = this.runtime.resolve(target)
+			if (!ctor) return undefined
+			return this.registry.getConfigLayout(ctor)
+		}
+	}
 
 export class LoaderAnchors {
 	constructor(private readonly anchors: AnchorStore) {}

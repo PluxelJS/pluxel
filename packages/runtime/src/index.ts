@@ -18,6 +18,7 @@ setPluxelRuntime('core')
 export {
 	BaseFeature,
 	BasePlugin,
+	cfg,
 	Context,
 	ForkablePlugin,
 	HostBoundFeature,

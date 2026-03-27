@@ -1,4 +1,4 @@
-import { Badge, Box, Stack, Text, TextInput, TypographyStylesProvider } from '@mantine/core'
+import { Badge, Box, Paper, Stack, Text, TextInput, TypographyStylesProvider } from '@mantine/core'
 import { IconSearch } from '@tabler/icons-react'
 import { MarkdownExit } from 'markdown-exit'
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -7,6 +7,7 @@ import type {
 	BuiltinDocBlock,
 	BuiltinDocContent,
 	BuiltinDocExtensionDef,
+	BuiltinMarkdownPart,
 	BuiltinDocPart,
 } from '@pluxel/runtime/web/extensions'
 import { useExtensionContext } from '@pluxel/runtime/web/ui'
@@ -15,12 +16,18 @@ import { findScrollableParent, toDomSlug } from '../../app/plugins/config/utils'
 import { BuiltinSignalDbAction } from './SignalDbAction'
 import { BuiltinInfoCard } from './InfoCard'
 import { BuiltinSignalDbForm } from './SignalDbForm'
+import { usePluginConfig } from '../../app/hooks/usePluginConfig'
+import type { ObjectSchema } from 'valibot'
+import { ConfigTabContent } from '../../app/plugins/config/ConfigTab'
+import { compareSchemaKeys } from '../../app/plugins/config/schemaKey'
 
 type DocAnchor = { id: string; label: string; depth: number }
+type DocConfigDirective = Extract<BuiltinMarkdownPart, { kind: 'schema' | 'schemas' }>
 
 type CompiledItem =
 	| { kind: 'html'; key: string; html: string }
 	| { kind: 'block'; key: string; id: string; title: string; block: BuiltinDocBlock }
+	| { kind: 'cfg'; key: string; directive: DocConfigDirective }
 
 function extractInlineText(token: any): string {
 	if (!token || typeof token !== 'object') return ''
@@ -34,7 +41,10 @@ function extractInlineText(token: any): string {
 		.join('')
 }
 
-function compileDoc(input: { content: BuiltinDocContent; docPrefix: string }): {
+function compileDoc(input: {
+	content: BuiltinDocContent
+	docPrefix: string
+}): {
 	items: CompiledItem[]
 	anchors: DocAnchor[]
 } {
@@ -67,8 +77,22 @@ function compileDoc(input: { content: BuiltinDocContent; docPrefix: string }): {
 			continue
 		}
 
-		if (part.kind !== 'md') continue
-		const text = typeof part.text === 'string' ? part.text : ''
+		if (part.kind === 'schema') {
+			const key = String(part.key ?? '').trim()
+			if (key) items.push({ kind: 'cfg', key: `cfg-${items.length + 1}`, directive: { kind: 'schema', key } })
+			continue
+		}
+		if (part.kind === 'schemas') {
+			const keys = part.keys
+			items.push({
+				kind: 'cfg',
+				key: `cfg-${items.length + 1}`,
+				directive: { kind: 'schemas', keys: Array.isArray(keys) ? keys.map((x) => String(x)) : null },
+			})
+			continue
+		}
+
+		const text = part.kind === 'md' ? (typeof (part as any).text === 'string' ? (part as any).text : '') : ''
 		if (!text) continue
 
 		const tokens = engine.parse(text, env)
@@ -100,10 +124,12 @@ const DocBody = memo(function DocBody({
 	items,
 	contentRef,
 	renderBlock,
+	renderCfg,
 }: {
 	items: CompiledItem[]
 	contentRef: RefObject<HTMLDivElement>
 	renderBlock: (title: string, block: BuiltinDocBlock) => ReactNode
+	renderCfg: (directive: CompiledItem & { kind: 'cfg' }) => ReactNode
 }) {
 	return (
 		<Box
@@ -117,6 +143,7 @@ const DocBody = memo(function DocBody({
 		>
 			<TypographyStylesProvider>
 				{items.map((item) => {
+					if (item.kind === 'cfg') return <Fragment key={item.key}>{renderCfg(item as any)}</Fragment>
 					if (item.kind === 'block')
 						return (
 							<Box key={item.key} my="sm">
@@ -150,6 +177,12 @@ export function BuiltinDoc({ def }: { def: BuiltinDocExtensionDef }) {
 	)
 
 	const pluginName = def.pluginName
+
+	// Track used schema keys across the rendered doc so `d.schemas()` behaves like cfg layout.
+	const usedSchemaKeysRef = useRef<Set<string> | null>(null)
+	usedSchemaKeysRef.current = usedSchemaKeysRef.current ?? new Set<string>()
+	usedSchemaKeysRef.current.clear()
+
 	const renderBlock = useCallback(
 		(title: string, block: BuiltinDocBlock) => {
 			if (block.kind === 'infoCard')
@@ -163,8 +196,123 @@ export function BuiltinDoc({ def }: { def: BuiltinDocExtensionDef }) {
 		[pluginName],
 	)
 
+	function toRecord(value: unknown): Record<string, any> {
+		if (!value || typeof value !== 'object' || Array.isArray(value)) return {}
+		return value as Record<string, any>
+	}
+
+	function DocCfgDirective({
+		directive,
+	}: {
+		directive: DocConfigDirective
+	}) {
+		const cfg = usePluginConfig(pluginName)
+		const data = cfg.data
+		const schemaMapAll = (data?.schemaMap ?? {}) as Record<string, ObjectSchema<any, any>>
+		const defaultsAll = (data?.defaults ?? {}) as Record<string, unknown>
+		const savedAll = (data?.savedConfig ?? {}) as Record<string, unknown>
+
+		const schemaKeys = useMemo(
+			() => Object.keys(schemaMapAll ?? {}).sort(compareSchemaKeys),
+			[schemaMapAll],
+		)
+
+		const [savedOverride, setSavedOverride] = useState<Record<string, any> | null>(null)
+		useEffect(() => setSavedOverride(null), [pluginName, data?.savedConfig])
+
+		if (cfg.loading && !cfg.data) return null
+		if (cfg.error) {
+			return (
+				<Paper withBorder radius="md" p="sm" my="sm">
+					<Text size="sm" c="red">
+						Failed to load config: {cfg.error.message}
+					</Text>
+				</Paper>
+			)
+		}
+
+		const used = usedSchemaKeysRef.current ?? new Set<string>()
+		const resolveKeys = (): string[] => {
+			if (directive.kind === 'schema') {
+				const key = String(directive.key ?? '').trim()
+				if (!key) return []
+				if (used.has(key)) return []
+				used.add(key)
+				return [key]
+			}
+
+			if (directive.keys === null) {
+				const remaining = schemaKeys.filter((k) => !used.has(k))
+				for (const k of remaining) used.add(k)
+				return remaining
+			}
+
+			const out: string[] = []
+			for (const raw of directive.keys ?? []) {
+				const key = String(raw ?? '').trim()
+				if (!key) continue
+				if (used.has(key)) continue
+				used.add(key)
+				out.push(key)
+			}
+			return out
+		}
+
+		const keys = resolveKeys()
+		if (keys.length === 0) return null
+
+		const finalSavedAll = (savedOverride ?? savedAll) as Record<string, unknown>
+		return (
+			<Box my="sm">
+				{keys.map((schemaKey) => {
+					const schema = schemaMapAll?.[schemaKey]
+					if (!schema) {
+						return (
+							<Paper key={`cfg-unknown-${schemaKey}`} withBorder radius="md" p="sm" my="sm">
+								<Text size="sm" c="red">
+									Unknown schema key: {schemaKey}
+								</Text>
+							</Paper>
+						)
+					}
+
+					return (
+						<Box key={`cfg-schema-${schemaKey}`} my="sm">
+							<ConfigTabContent
+								pluginName={pluginName}
+								tabKey={schemaKey}
+								schema={schema}
+								savedValue={toRecord(finalSavedAll?.[schemaKey])}
+								defaultValue={toRecord(defaultsAll?.[schemaKey])}
+								onSaved={(_k, value) =>
+									setSavedOverride((prev) => ({
+										...((prev ?? finalSavedAll) as any),
+										[schemaKey]: value,
+									}))
+								}
+								showToc={false}
+								active={true}
+							/>
+						</Box>
+					)
+				})}
+			</Box>
+		)
+	}
+
+	const renderCfg = useCallback(
+		(item: CompiledItem & { kind: 'cfg' }) => {
+			return <DocCfgDirective directive={item.directive as any} />
+		},
+		[pluginName],
+	)
+
 	const compiled = useMemo(
-		() => compileDoc({ content: def.content, docPrefix }),
+		() =>
+			compileDoc({
+				content: def.content,
+				docPrefix,
+			}),
 		[def.content, docPrefix],
 	)
 
@@ -376,7 +524,12 @@ export function BuiltinDoc({ def }: { def: BuiltinDocExtensionDef }) {
 				) : null}
 
 				{compiled.items.length ? (
-					<DocBody items={compiled.items} contentRef={contentRef} renderBlock={renderBlock} />
+			<DocBody
+				items={compiled.items}
+				contentRef={contentRef}
+				renderBlock={renderBlock}
+				renderCfg={renderCfg}
+			/>
 				) : null}
 			</Stack>
 

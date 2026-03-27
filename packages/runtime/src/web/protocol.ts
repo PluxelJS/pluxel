@@ -57,6 +57,12 @@ export type SchemaResultOk = {
 	ok: true
 	schemaSource: Record<string, string>
 	defaults: Record<string, unknown>
+	/**
+	 * Optional cfg layout parts (for host-side config layout).
+	 *
+	 * Extracted from `this.configs.use(cfg(schemaMap)\`...\`)` by build toolchains.
+	 */
+	layout?: import('./plugin-ui/extensions-contracts').BuiltinMarkdownPart[] | null
 }
 
 export type SchemaResultErr = {

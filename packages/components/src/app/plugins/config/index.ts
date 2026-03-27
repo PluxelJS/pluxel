@@ -1,4 +1,5 @@
 export { ConfigForm, type ConfigFormProps } from './ConfigForm'
+export { ConfigLayout } from './ConfigLayout'
 export {
 	compareSchemaKeys,
 	formatSchemaGroupLabel,

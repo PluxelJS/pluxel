@@ -5,6 +5,8 @@ import type {
 	UiConfirmPayload,
 	UiNotifyPayload,
 } from './ui-contracts'
+import type { ConfigLayoutPart } from '@pluxel/core'
+import { assertValidConfigLayout, normalizeMarkdownTemplate } from '@pluxel/core'
 
 export type BuiltinExtensionKind = 'doc'
 
@@ -149,42 +151,32 @@ export type BuiltinDocExtensionDef<P extends ExtensionPoint = ExtensionPoint> =
 		content: BuiltinDocContent
 	}
 
-function normalizeMarkdownTemplate(input: string): string {
-	const lines = input.replace(/\r\n/g, '\n').split('\n')
-	while (lines.length && lines[0]?.trim() === '') lines.shift()
-	while (lines.length && lines[lines.length - 1]?.trim() === '') lines.pop()
-	let minIndent = Number.POSITIVE_INFINITY
-	for (const line of lines) {
-		if (!line.trim()) continue
-		const match = line.match(/^[\t ]+/)
-		const indent = match ? match[0].length : 0
-		minIndent = Math.min(minIndent, indent)
-	}
-	if (!Number.isFinite(minIndent) || minIndent <= 0) return lines.join('\n')
-	return lines.map((line) => (line.trim() ? line.slice(minIndent) : '')).join('\n')
-}
+export type BuiltinMarkdownPart = ConfigLayoutPart
 
-export type BuiltinDocPart =
-	| { kind: 'md'; text: string }
-	| { kind: 'block'; title: string; block: BuiltinDocBlock }
+export type BuiltinDocPart = BuiltinMarkdownPart | { kind: 'block'; title: string; block: BuiltinDocBlock }
 
 declare const __builtinDocContentBrand: unique symbol
 export type BuiltinDocContent = BuiltinDocPart[] & { readonly [__builtinDocContentBrand]: true }
 
 type BlockDocPart = Extract<BuiltinDocPart, { kind: 'block' }>
-type DocValue = BlockDocPart
+type DocInterpolationValue = BuiltinDocPart | string
 
 function isDocPart(value: unknown): value is BuiltinDocPart {
 	return (
 		!!value &&
 		typeof value === 'object' &&
-		((value as any).kind === 'md' || (value as any).kind === 'block')
+		((value as any).kind === 'md' ||
+			(value as any).kind === 'schema' ||
+			(value as any).kind === 'schemas' ||
+			(value as any).kind === 'block')
 	)
 }
 
-function assertBlockDocPart(value: unknown): asserts value is BlockDocPart {
-	if (!isDocPart(value) || (value as any).kind !== 'block') {
-		throw new Error('[doc] invalid interpolation (expected doc.block(...))')
+function assertDocPart(value: unknown): asserts value is BuiltinDocPart {
+	if (!isDocPart(value)) {
+		throw new Error(
+			'[doc] invalid interpolation (expected d.block(...) / d.schema(...) / d.schemas(...), or a markdown string)',
+		)
 	}
 }
 
@@ -212,12 +204,40 @@ function docCard(input: Omit<BuiltinInfoCardBlock, 'kind'>): BuiltinInfoCardBloc
 	return { kind: 'infoCard', ...(input as any) }
 }
 
-export const doc: {
-	(strings: TemplateStringsArray, ...values: DocValue[]): BuiltinDocContent
+function docMarkdown(text: string): BuiltinDocPart {
+	const normalized = normalizeMarkdownTemplate(text)
+	return { kind: 'md', text: normalized } as BuiltinDocPart
+}
+
+function coerceDocInterpolationValue(value: DocInterpolationValue): BuiltinDocPart {
+	if (typeof value === 'string') {
+		return docMarkdown(value)
+	}
+	assertDocPart(value)
+	if (value.kind === 'md') return docMarkdown(value.text)
+	return value
+}
+
+type DocBuilder<M extends Record<string, unknown>> = {
+	(strings: TemplateStringsArray, ...values: DocInterpolationValue[]): BuiltinDocContent
 	block: typeof docBlock
 	card: typeof docCard
-} = Object.assign(
-	(strings: TemplateStringsArray, ...values: DocValue[]) => {
+	/**
+	 * Embed config schema editors inside markdown layout (host-rendered):
+	 * - `d.schema('k')` renders a single schema key editor
+	 * - `d.schemas()` renders remaining schema keys (not yet used in this doc)
+	 * - `d.schemas('a','b')` renders the specified keys
+	 */
+	schema: <K extends Extract<keyof M, string>>(key: K) => BuiltinDocPart
+	schemas: <K extends Extract<keyof M, string>>(...keys: readonly K[]) => BuiltinDocPart
+}
+
+function createDocBuilder<M extends Record<string, unknown>>(schemaMap: M): DocBuilder<M> {
+	if (!schemaMap || typeof schemaMap !== 'object' || Array.isArray(schemaMap)) {
+		throw new Error('[doc] doc(schemaMap)`...` requires a plain object schemaMap')
+	}
+
+	const tag = (strings: TemplateStringsArray, ...values: DocInterpolationValue[]) => {
 		const marker = '\u0000__DOC_VAL__\u0000'
 		let raw = ''
 		for (let i = 0; i < strings.length; i += 1) {
@@ -240,17 +260,46 @@ export const doc: {
 			if (!Number.isInteger(idx) || idx < 0 || idx >= values.length) {
 				throw new Error('[doc] internal interpolation index out of range')
 			}
-			const inserted = values[idx]
-			assertBlockDocPart(inserted)
-			parts.push(inserted)
+			const inserted = values[idx] as DocInterpolationValue
+			parts.push(coerceDocInterpolationValue(inserted))
 			last = end
 		}
 		const tail = raw.slice(last)
 		if (tail) parts.push({ kind: 'md', text: tail })
+		assertValidConfigLayout(
+			parts.filter((part): part is BuiltinMarkdownPart => part.kind !== 'block'),
+			{ label: '[doc]' },
+		)
 		return mergeAdjacentMarkdown(parts) as BuiltinDocContent
-	},
-	{ block: docBlock, card: docCard },
-)
+	}
+
+	return Object.assign(tag, {
+		block: docBlock,
+		card: docCard,
+		schema: ((key: Extract<keyof M, string>) => {
+			const k = String(key ?? '').trim()
+			if (!k) throw new Error('[doc.schema] schemaKey required')
+			if (!Object.prototype.hasOwnProperty.call(schemaMap, k)) {
+				throw new Error(`[doc.schema] unknown schemaKey "${k}" (not in schemaMap)`)
+			}
+			return { kind: 'schema', key: k } as BuiltinDocPart
+		}) as any,
+		schemas: ((...keys: readonly Extract<keyof M, string>[]) => {
+			const list = (keys ?? []).map((x) => String(x ?? '').trim()).filter(Boolean)
+			for (const k of list) {
+				if (!Object.prototype.hasOwnProperty.call(schemaMap, k)) {
+					throw new Error(`[doc.schemas] unknown schemaKey "${k}" (not in schemaMap)`)
+				}
+			}
+			return { kind: 'schemas', keys: list.length ? list : null } as BuiltinDocPart
+		}) as any,
+	}) as unknown as DocBuilder<M>
+}
+
+export function doc<M extends Record<string, unknown>>(schemaMap: M): DocBuilder<M> {
+	// Factory call: const d = doc(schemaMap); d`...${d.block(...)}...`
+	return createDocBuilder(schemaMap)
+}
 
 export type BuiltinExtensionDef = BuiltinDocExtensionDef
 

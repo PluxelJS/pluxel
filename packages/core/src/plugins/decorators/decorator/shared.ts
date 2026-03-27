@@ -3,6 +3,7 @@ import type { Identifier } from '../../../container'
 import type { PluginIdentifier } from '../../types'
 import { assertValidBasePluginId, assertValidPluginId } from '../../runtime/pluginId'
 import type { ConfigSchemaList, DeclaredMetaView, ParamOverride, PluginInfo } from './types'
+import type { ConfigLayout } from '../../composition/cfg'
 
 /*───────────────────────────────────────────────────────────
   Runtime Policy
@@ -39,6 +40,10 @@ export interface State {
 	config: ConfigSchemaList | null
 	/** Vite 插件注入的 @Config 源代码 */
 	configSource: Record<string, string> | null
+	/** Optional config layout (bindingField -> layout parts) */
+	configLayout: Record<string, ConfigLayout> | null
+	/** Config injection bindings: instanceField -> config keys */
+	configBindings: Record<string, readonly string[]> | null
 	/** 预取的设计期构造参数类型（热路径不再触碰 Reflect） */
 	rtypes: readonly unknown[]
 	/** 插件类引用 */
@@ -90,6 +95,8 @@ export const S = (ctor: AnyCtor): State => {
 		base: null,
 		config: null,
 		configSource: null,
+		configLayout: null,
+		configBindings: null,
 		rtypes: EMPTY_ARR,
 		ctor: null,
 		requiredDeps: null,
@@ -169,6 +176,44 @@ export function normalizeConfigSourceMap(
 	return __DEV__ ? $freeze(plain) : plain
 }
 
+function freezeLayout(layout: ConfigLayout): ConfigLayout {
+	if (!__DEV__) return layout
+	// Freeze shallowly for safety; parts are plain objects.
+	const next = layout.map((p) => (p && typeof p === 'object' ? Object.freeze({ ...(p as any) }) : p)) as any
+	return Object.freeze(next) as any
+}
+
+export function normalizeConfigLayoutMap(
+	layout: Record<string, ConfigLayout> | null,
+): Readonly<Record<string, ConfigLayout>> | null {
+	if (!layout || !Object.keys(layout).length) return null
+	const proto = Object.getPrototypeOf(layout)
+	if (!__DEV__ && proto === Object.prototype) {
+		return layout as Readonly<Record<string, ConfigLayout>>
+	}
+	const plain: Record<string, ConfigLayout> = { ...layout }
+	if (__DEV__) {
+		for (const [k, v] of Object.entries(plain)) {
+			if (!Array.isArray(v)) continue
+			plain[k] = freezeLayout(v)
+		}
+		return $freeze(plain)
+	}
+	return plain
+}
+
+export function normalizeConfigBindingsMap(
+	bindings: Record<string, readonly string[]> | null,
+): Readonly<Record<string, readonly string[]>> | null {
+	if (!bindings || !Object.keys(bindings).length) return null
+	const proto = Object.getPrototypeOf(bindings)
+	if (!__DEV__ && proto === Object.prototype) {
+		return bindings as Readonly<Record<string, readonly string[]>>
+	}
+	const plain: Record<string, readonly string[]> = { ...bindings }
+	return __DEV__ ? $freeze(plain) : plain
+}
+
 /** 重建对外快照（不动 epoch） */
 export function rebuildInfoSnapshot(ctor: AnyCtor, s: State): void {
 	const declaredName = s.declaredName || nameOf(ctor)
@@ -178,6 +223,14 @@ export function rebuildInfoSnapshot(ctor: AnyCtor, s: State): void {
 	const configSourceMap =
 		s.configSource && Object.keys(s.configSource).length
 			? normalizeConfigSourceMap(s.configSource)
+			: null
+	const configLayoutMap =
+		s.configLayout && Object.keys(s.configLayout).length
+			? normalizeConfigLayoutMap(s.configLayout)
+			: null
+	const configBindingsMap =
+		s.configBindings && Object.keys(s.configBindings).length
+			? normalizeConfigBindingsMap(s.configBindings)
 			: null
 
 	const snap: PluginInfo = {
@@ -190,6 +243,8 @@ export function rebuildInfoSnapshot(ctor: AnyCtor, s: State): void {
 		metadata: s.declaredMeta,
 		configMap: s.config,
 		configSourceMap,
+		configLayoutMap,
+		configBindingsMap,
 	}
 
 	s.infoSnap = __DEV__ ? $freeze(snap) : snap

@@ -1,13 +1,19 @@
-import { type Context, parseForkPluginId } from '@pluxel/core'
+import { type Context, getPluginInfo, parseForkPluginId } from '@pluxel/core'
 import {
 	ConfigValidationError,
 	collectConfigDefaults,
 	validateConfigPatch,
 } from '@pluxel/core/services'
 import { hashPasswordScrypt } from '../../builtins/basic-auth/password'
+import type { BuiltinMarkdownPart } from '../../web/extensions'
 
 export type PluginSchemaResult =
-	| { ok: true; schemaSource: Readonly<Record<string, string>>; defaults: Record<string, unknown> }
+	| {
+			ok: true
+			schemaSource: Readonly<Record<string, string>>
+			defaults: Record<string, unknown>
+			layout?: BuiltinMarkdownPart[] | null
+	  }
 	| { ok: false; code: string; message: string }
 
 export type PluginConfigResult =
@@ -90,7 +96,33 @@ export async function pluginSchema(ctx: Context, name: string): Promise<PluginSc
 		return {
 			ok: false,
 			code: 'schema_source_missing',
-			message: `Schema source not available for plugin "${name}". Ensure configSourcePlugin is configured and the plugin declares config via @Config(schema) or field = this.configs.use(schema).`,
+			message: `Schema source not available for plugin "${name}". Ensure configSourcePlugin is configured and the plugin declares config via @Config(schema) or class-field config declaration (field = this.configs.use(schema) / field = this.configs.use(cfg(schemaMap))).`,
+		}
+	}
+
+	const layoutMap = ctx.loader.api.registry.getConfigLayout(name) ?? null
+	let layout: BuiltinMarkdownPart[] | null = null
+	if (layoutMap && Object.keys(layoutMap).length > 0) {
+		const ctor = ctx.loader.api.registry.getCtor(name)
+		// Prefer the layout attached to the cfg-binding that covers all schema keys.
+		// Fallback to deterministic first entry.
+		const bindingsMap = ctor ? getPluginInfo(ctor).configBindingsMap : null
+
+		const schemaKeys = Object.keys(schemaMap ?? {})
+		const coversAll = (field: string): boolean => {
+			if (!bindingsMap) return false
+			const list = bindingsMap[field]
+			if (!Array.isArray(list)) return false
+			const set = new Set(list.map((x) => String(x)))
+			return schemaKeys.every((k) => set.has(k))
+		}
+
+		const entries = Object.entries(layoutMap).filter(([, v]) => Array.isArray(v) && v.length)
+		const preferred = entries.find(([field]) => coversAll(field))
+		if (preferred) layout = preferred[1] as any
+		else {
+			entries.sort((a, b) => a[0].localeCompare(b[0]))
+			layout = (entries[0]?.[1] as any) ?? null
 		}
 	}
 
@@ -98,6 +130,7 @@ export async function pluginSchema(ctx: Context, name: string): Promise<PluginSc
 		ok: true,
 		schemaSource,
 		defaults: await collectConfigDefaults(schemaMap, { missingObjectDefault: {} }),
+		layout,
 	}
 }
 

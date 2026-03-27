@@ -97,7 +97,7 @@
   宿主按钮，点击后执行 `write`；常见用法是写入 action collection
 - 副作用由插件后端 watch collection 后处理
 
-`PluginBuiltinShowcase.ts` 演示了 `doc.card(...)`、`docHandle.form(...)` 和 `docHandle.action(...)` 这三种最小 builtin 组合。
+`PluginBuiltinShowcase.ts` 演示了 `doc(schemaMap).card(...)`、`docHandle.form(...)` 和 `docHandle.action(...)` 这三种最小 builtin 组合。
 
 ## 类型检查
 

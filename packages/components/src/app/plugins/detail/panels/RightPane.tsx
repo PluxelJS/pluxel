@@ -21,7 +21,13 @@ import { RouterLinkAdapter } from '../../../RouterLinkAdapter'
 import { useCurrentPathname, useCurrentSearch } from '../../../router/useCurrentRoute'
 import { PluginRouteRenderer, useResolvedPluginRoute } from '../../../routes/ext/PluginRouteRenderer'
 import { FloatingTocScope } from '../../components/FloatingToc'
-import { ConfigForm, compareSchemaKeys, PLUGIN_SCHEMA_GROUP, splitSchemaKey } from '../../config'
+import {
+	ConfigForm,
+	ConfigLayout,
+	compareSchemaKeys,
+	PLUGIN_SCHEMA_GROUP,
+	splitSchemaKey,
+} from '../../config'
 import { LogLevelsCard, PluginPanel } from '../components'
 import { usePluginMeta } from '../context'
 
@@ -302,6 +308,13 @@ export function RightPane({ config }: RightPaneProps) {
 		const map = new Map<string, string[]>()
 		const all = schemaKeys.slice().sort(compareSchemaKeys)
 
+			const hasLayout = Boolean(config.data?.layout?.length)
+			if (hasLayout) {
+				// cfg layout becomes the single source of truth for grouping and ordering.
+				map.set('config', all)
+				return map
+			}
+
 		const pluginKeys = all.filter((key) => splitSchemaKey(key).group === PLUGIN_SCHEMA_GROUP)
 		map.set('config', pluginKeys)
 
@@ -318,7 +331,7 @@ export function RightPane({ config }: RightPaneProps) {
 		}
 
 		return map
-	}, [schemaKeys])
+		}, [config.data?.layout, schemaKeys])
 
 	const configGroupTabs = useMemo(() => {
 		const out: Array<{ id: string; label: string }> = []
@@ -695,11 +708,12 @@ function ConfigContent({
 			out[key] = value
 		}
 		return out
-	}, [defaultsAll, schemaGroup])
+		}, [defaultsAll, schemaGroup])
 
-	const hasSchema = Object.keys(schemaMap).length > 0
-	return (
-		<Box style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
+		const hasSchema = Object.keys(schemaMap).length > 0
+		const layout = config.data?.layout ?? null
+		return (
+			<Box style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
 			{config.error ? (
 				<ErrorState
 					title="加载配置失败"
@@ -712,17 +726,28 @@ function ConfigContent({
 					<Loader size="sm" />
 					<Text c="dimmed">加载配置中…</Text>
 				</Center>
-			) : hasSchema ? (
-				<ConfigForm
-					key={`${pluginName ?? 'config-form'}:${schemaGroup ?? '__all__'}`}
-					pluginName={pluginName}
-					schemas={schemaMap}
-					savedConfig={savedConfig}
-					defaults={defaults}
-					active={active}
-					activeKey={activeSchemaKey}
-					onActiveKeyChange={onSchemaChange}
-				/>
+				) : hasSchema ? (
+					layout && layout.length && !schemaGroup ? (
+						<ConfigLayout
+							pluginName={pluginName}
+							layout={layout as any}
+							schemas={schemaMap as any}
+							savedConfig={savedConfig}
+							defaults={defaults}
+							active={active}
+						/>
+				) : (
+					<ConfigForm
+						key={`${pluginName ?? 'config-form'}:${schemaGroup ?? '__all__'}`}
+						pluginName={pluginName}
+						schemas={schemaMap}
+						savedConfig={savedConfig}
+						defaults={defaults}
+						active={active}
+						activeKey={activeSchemaKey}
+						onActiveKeyChange={onSchemaChange}
+					/>
+				)
 			) : (
 				<EmptyState
 					icon={<IconSettingsOff size={28} stroke={1.5} />}

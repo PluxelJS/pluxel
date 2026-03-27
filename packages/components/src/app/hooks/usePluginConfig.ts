@@ -3,6 +3,7 @@ import * as v from 'valibot'
 import * as f from 'valibot-form'
 
 import { invokeRpc } from '../../runtime'
+import type { BuiltinMarkdownPart } from '@pluxel/runtime/web/extensions'
 
 export type PluginConfigData = {
 	schemaMap: Record<string, any>
@@ -10,6 +11,8 @@ export type PluginConfigData = {
 	defaults: Record<string, any>
 	/** 已保存的配置（来自 configService） */
 	savedConfig: Record<string, any>
+	/** optional cfg layout (host-rendered) */
+	layout?: BuiltinMarkdownPart[] | null
 }
 
 export type PluginConfigState = {
@@ -22,7 +25,11 @@ export type PluginConfigState = {
 // Schema 缓存（按插件名）
 const schemaCache = new Map<
 	string,
-	{ schemaMap: Record<string, any>; defaults: Record<string, any> }
+	{
+		schemaMap: Record<string, any>
+		defaults: Record<string, any>
+		layout?: BuiltinMarkdownPart[] | null
+	}
 >()
 
 /** 清除缓存 */
@@ -44,6 +51,7 @@ async function loadPluginData(
 	schemaMap: Record<string, any>
 	defaults: Record<string, any>
 	savedConfig: Record<string, any>
+	layout?: BuiltinMarkdownPart[] | null
 }> {
 	const cachedSchema = forceRefresh ? null : schemaCache.get(pluginName)
 
@@ -63,7 +71,7 @@ async function loadPluginData(
 		if (schemaResult.ok === false) {
 			// schema_not_found 代表插件未暴露配置 schema，此时视为“没有可配置项”而不是错误
 			if (schemaResult.code === 'schema_not_found') {
-				const payload = { schemaMap: {}, defaults: {} }
+				const payload = { schemaMap: {}, defaults: {}, layout: null as BuiltinMarkdownPart[] | null }
 				schemaCache.set(pluginName, payload)
 				return { ...payload, savedConfig }
 			}
@@ -97,8 +105,9 @@ async function loadPluginData(
 		}
 
 		const payload = { schemaMap, defaults: visibleDefaults }
-		schemaCache.set(pluginName, payload)
-		return { ...payload, savedConfig }
+		const nextPayload = { ...payload, layout: (schemaResult as any).layout ?? null }
+		schemaCache.set(pluginName, nextPayload)
+		return { ...nextPayload, savedConfig }
 	})
 }
 

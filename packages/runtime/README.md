@@ -58,6 +58,7 @@ runtime 只消费两类前端输入：
 
 - `configs.use(schema)` 读到的是 schema 归一化后的输出
 - 默认值放进 Valibot schema 本身，不要在插件里再写 `config ?? defaults`
+- cfg/schema 提取与 cfg layout 语义见 `docs/PLUGIN_DOC_CONFIG_DESIGN.md`；Host 合同见 `packages/runtime/docs/config/README.md`。
 
 ## SignalDB 语义
 
@@ -138,7 +139,7 @@ SignalDB 的 React 响应性现在走官方链路：
   宿主按钮，不持有独立状态；点击后执行 `write`，常见用法是写入 action collection
 - 副作用由插件后端 watch collection 后处理
 
-`PluginBuiltinShowcase.ts` 演示了这三种 builtin：`doc.card(...)`、`docHandle.form(...)`、`docHandle.action(...)`。
+`PluginBuiltinShowcase.ts` 演示了这三种 builtin：`doc(schemaMap).card(...)`、`docHandle.form(...)`、`docHandle.action(...)`。
 
 ## 开发期
 

@@ -90,11 +90,6 @@ export function setPluginIdentity(
 	if (s.infoSnap) rebuildInfoSnapshot(ctor, s)
 }
 
-/** @deprecated 使用 getPluginId 代替 */
-export function getEffectiveName(ctor: AnyCtor): string {
-	return getPluginId(ctor)
-}
-
 /*───────────────────────────────────────────────────────────
   Read APIs
 ───────────────────────────────────────────────────────────*/
@@ -256,6 +251,14 @@ export function getDeclaredConfigKeys(ctor: AnyCtor): string[] {
 	const s = STATE.get(ctor)
 	const map = (s?.config ?? s?.pending) as Record<string, unknown> | null | undefined
 	return map ? Object.keys(map) : []
+}
+
+export function getDeclaredConfigBindings(
+	ctor: AnyCtor,
+): Readonly<Record<string, readonly string[]>> | null {
+	const s = STATE.get(ctor)
+	const map = s?.configBindings as Record<string, readonly string[]> | null | undefined
+	return map && Object.keys(map).length ? map : null
 }
 
 export function getFeatureNamespace(feature: AnyCtor): string {
@@ -438,7 +441,78 @@ export function __setConfigSource__(ctor: AnyCtor, fieldName: string, source: st
 	if (s.infoSnap) rebuildInfoSnapshot(ctor, s)
 }
 
+export function __setConfigLayout__(ctor: AnyCtor, fieldName: string, layout: unknown): void {
+	const s = S(ctor)
+	if (!Array.isArray(layout)) {
+		throw new Error('[pluxel/core] __setConfigLayout__: layout must be an array')
+	}
+	const bucket = s.configLayout ?? Object.create(null)
+	bucket[fieldName] = layout as any
+	s.configLayout = bucket
+	if (s.infoSnap) rebuildInfoSnapshot(ctor, s)
+}
+
+export function __registerConfigBinding__(
+	ctor: AnyCtor,
+	fieldName: string,
+	keys: readonly string[],
+): void {
+	const label = String(fieldName ?? '').trim()
+	if (!label) throw new Error('[pluxel/core] __registerConfigBinding__: fieldName required')
+	const s = S(ctor)
+	const override = (s as any).cfgBindingOverrides?.[label] as readonly string[] | undefined
+	const list = override
+		? Array.from(override)
+		: Array.isArray(keys)
+			? keys.map((x) => String(x).trim()).filter(Boolean)
+			: []
+
+	const dst = (s.configBindings ?? Object.create(null)) as Record<string, readonly string[]>
+	const prev = dst[label]
+	// Cheap equality: exact string list match.
+	if (
+		prev &&
+		prev.length === list.length &&
+		prev.every((v, i) => v === list[i])
+	) {
+		return
+	}
+
+	const next = Object.assign(Object.create(null), dst)
+	next[label] = __DEV__ ? $freeze(list.slice()) : list.slice()
+	s.configBindings = next
+	if (s.infoSnap) rebuildInfoSnapshot(ctor, s)
+}
+
 export function __registerConfigSchema__(ctor: AnyCtor, fieldName: string, schema: unknown): void {
+	// Allow toolchains to register cfg(schemaMap) as a single value on the binding field.
+	// This keeps runtime robust even if build transforms change the syntax shape.
+	if (
+		schema &&
+		(typeof schema === 'object' || typeof schema === 'function') &&
+		(schema as any).kind === 'cfg' &&
+		(schema as any).schemaMap &&
+		typeof (schema as any).schemaMap === 'object' &&
+		!Array.isArray((schema as any).schemaMap)
+	) {
+		const s = S(ctor)
+		const schemaMap = (schema as any).schemaMap as Record<string, unknown>
+		const keys = Object.keys(schemaMap)
+		const overrides = ((s as any).cfgBindingOverrides ?? Object.create(null)) as Record<
+			string,
+			readonly string[]
+		>
+		;(s as any).cfgBindingOverrides = Object.assign(Object.create(null), overrides, {
+			[fieldName]: __DEV__ ? $freeze(keys.slice()) : keys.slice(),
+		})
+
+		__registerConfigBinding__(ctor, fieldName, keys)
+		for (const k of keys) {
+			__registerConfigSchema__(ctor, k, schemaMap[k])
+		}
+		return
+	}
+
 	const s = S(ctor)
 	if (!isStandardSchemaV1(schema)) {
 		throw new Error(
@@ -498,10 +572,12 @@ export function clonePluginDefinition(
 	// cold/immutable data
 	dst.declaredMeta = src.declaredMeta
 	dst.declaredName = src.declaredName
-	dst.base = src.base
-	dst.config = src.config
-	dst.configSource = src.configSource
-	dst.rtypes = src.rtypes
+		dst.base = src.base
+		dst.config = src.config
+		dst.configSource = src.configSource
+		dst.configLayout = src.configLayout
+		dst.configBindings = src.configBindings
+		dst.rtypes = src.rtypes
 
 	// identity (override allowed)
 	dst.id = identity?.id ?? src.id

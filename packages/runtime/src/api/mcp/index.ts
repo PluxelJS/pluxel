@@ -278,14 +278,15 @@ const PluginWaitForStageOutputSchema = v.union([
 	}),
 ])
 
-const PluginSchemaOutputSchema = v.union([
-	v.object({
-		ok: v.literal(true),
-		schemaSource: v.record(v.string(), v.string()),
-		defaults: JsonRecordSchema,
-	}),
-	v.object({ ok: v.literal(false), code: v.string(), message: v.string() }),
-])
+	const PluginSchemaOutputSchema = v.union([
+		v.object({
+			ok: v.literal(true),
+			schemaSource: v.record(v.string(), v.string()),
+			defaults: JsonRecordSchema,
+			layout: v.optional(v.nullable(v.array(v.unknown()))),
+		}),
+		v.object({ ok: v.literal(false), code: v.string(), message: v.string() }),
+	])
 
 const PluginConfigOutputSchema = v.union([
 	v.object({

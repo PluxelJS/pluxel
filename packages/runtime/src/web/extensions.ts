@@ -4,6 +4,7 @@ export type {
 	BuiltinDocBlockKind,
 	BuiltinDocContent,
 	BuiltinDocExtensionDef,
+	BuiltinMarkdownPart,
 	BuiltinDocPart,
 	BuiltinExtensionBase,
 	BuiltinExtensionDef,

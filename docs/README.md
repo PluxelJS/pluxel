@@ -34,6 +34,7 @@
   runtime / hmr service 边界补充说明
 - `docs/PLUGIN_DOC_CONFIG_DESIGN.md`
   插件配置声明与宿主 doc 编排的收敛设计
+  （实现侧 contract 参考：`packages/runtime/docs/config/README.md`）
 
 非权威/历史文档说明：
 

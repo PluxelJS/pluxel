@@ -5,7 +5,7 @@
 `ConfigService` 的职责是给 **插件侧** 提供一个稳定、极小的“读取配置快照”的契约，并且提供一个“是否启用”的偏好存储；同时它也承担唯一的“运行期配置引擎”职责：在插件启动前**确保配置已校验并回填默认值**，并维护“last-known-good”的 validated 视图缓存。
 
 - Core 只负责：已声明配置字段的注入时机/规则、在插件 Context 下按插件名取配置。
-- 更推荐的用法：插件用 `field = this.configs.use(schema)` 声明字段；schema/source 由上层工具链（如 configSourcePlugin）注册。
+- 更推荐的用法：插件用 class field initializer 声明字段，例如 `field = this.configs.use(schema)` / `field = this.configs.use(cfg(schemaMap))` / `field = this.configs.use(cfg(schemaMap)\`...\`)`；schema/source 以及可选的 cfg layout 由上层工具链（如 configSourcePlugin）注册。
 - 上层（App/HMR/Loader）负责：持久化、启用策略的解释、以及 UI/RPC 侧的“schema defaults / patch validation”等业务编排（这些在 core 里提供为纯函数 helper，不需要走 service）。
 
 ## Schema 合同（Standard Schema v1）

@@ -235,6 +235,11 @@ export class PluginRegistry {
 	getSchemaSource(ctor: PluginConstructor): Readonly<Record<string, string>> | undefined {
 		return getPluginInfo(ctor)?.configSourceMap
 	}
+		getConfigLayout(
+			ctor: PluginConstructor,
+		): Readonly<Record<string, unknown[]>> | undefined {
+			return getPluginInfo(ctor)?.configLayoutMap ?? undefined
+		}
 	getExportKeyByName(name: string): ExportKey | undefined {
 		return this.name2ExportKey.get(name)
 	}

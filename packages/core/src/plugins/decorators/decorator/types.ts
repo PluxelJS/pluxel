@@ -1,6 +1,7 @@
 import type { StandardSchemaV1 } from '@standard-schema/spec'
 import type { Identifier } from '../../../container'
 import type { PluginIdentifier } from '../../types'
+import type { ConfigLayout } from '../../composition/cfg'
 
 /**
  * Canonical DI key for a plugin.
@@ -66,4 +67,19 @@ export interface PluginInfo {
 	readonly configMap: ConfigSchemaList<StandardSchemaV1> | null
 	/** 由 Vite 插件注入的 @Config 源代码 map（fieldName -> source） */
 	readonly configSourceMap: Readonly<Record<string, string>> | null
+	/**
+	 * Optional config layout (bindingField -> layout parts).
+	 *
+	 * This is extracted from `this.configs.use(cfg(schemaMap)\`...\`)` by build toolchains and
+	 * can be used by hosts to render a custom config page layout.
+	 */
+	readonly configLayoutMap: Readonly<Record<string, ConfigLayout>> | null
+	/**
+	 * Config injection bindings (instanceField -> config keys).
+	 *
+	 * - `field = this.configs.use(schema)` binds `{ [field]: [field] }`
+	 * - `field = this.configs.use(cfg\`...\`)` binds `{ [field]: ["a","b",...] }`
+	 * - `@Config(schema) declare field` binds `{ [field]: [field] }`
+	 */
+	readonly configBindingsMap: Readonly<Record<string, readonly string[]>> | null
 }

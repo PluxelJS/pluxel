@@ -489,16 +489,18 @@ export class PluginBuiltinShowcase extends BasePlugin {
 	}
 
 	private registerOverviewDoc() {
+		const d = doc({} as const)
+
 		this.ctx.ext.ui.doc({
 			id: 'summary',
 			point: 'plugin:info',
 			title: 'Builtin Overview',
 			description: 'Host-rendered preset UI (no plugin UI module).',
 			requireRunning: false,
-			content: doc`
-				${doc.block(
+			content: d`
+				${d.block(
 					'Overview',
-					doc.card({
+					d.card({
 						layout: { variant: 'grid', density: 'compact', columns: 3, labelPlacement: 'top' },
 						rows: [
 							{ label: 'Plugin', value: this.ctx.pluginInfo.id },
@@ -512,6 +514,8 @@ export class PluginBuiltinShowcase extends BasePlugin {
 	}
 
 	private registerTabDocs() {
+		const d = doc({} as const)
+
 		const controlTab = { id: 'controls', label: 'Controls', icon: 'form' }
 		const metricsTab = { id: 'metrics', label: 'Metrics', icon: 'activity' }
 		const guideTab = { id: 'guide', label: 'Guide', icon: 'book' }
@@ -522,18 +526,18 @@ export class PluginBuiltinShowcase extends BasePlugin {
 			requireRunning: false,
 			priority: 20,
 			meta: { label: 'Controls', icon: 'form', tab: controlTab },
-			content: doc`
-				${doc.block(
+			content: d`
+				${d.block(
 					'Pause',
 					this.pauseForm('submitMode=onChange + signaldb action doc.'),
 				)}
 
-				${doc.block(
+				${d.block(
 					'Set ticks',
 					this.setTicksForm(),
 				)}
 
-				${doc.block(
+				${d.block(
 					'Reset ticks',
 					this.resetTicksAction(),
 				)}
@@ -546,10 +550,10 @@ export class PluginBuiltinShowcase extends BasePlugin {
 			requireRunning: false,
 			priority: 10,
 			meta: { label: 'Metrics', icon: 'list', tab: metricsTab },
-			content: doc`
-				${doc.block(
+			content: d`
+				${d.block(
 					'Metrics Stream',
-					doc.card({
+					d.card({
 						description: 'Compact status list (auto-updated).',
 						layout: { variant: 'list', density: 'compact', valueAlign: 'right' },
 						rows: this.buildMetricRows(),
@@ -558,20 +562,20 @@ export class PluginBuiltinShowcase extends BasePlugin {
 			`,
 		})
 
-		const docContent = doc`
+		const docContent = d`
 			# Builtin Doc
 			基于 markdown 的内容区域，可以注入内置组件。
 
-			${doc.block(
+			${d.block(
 				'Snapshot',
-					doc.card({
+					d.card({
 						description: 'Markdown + builtin blocks.',
 						layout: { variant: 'grid', density: 'compact', columns: 3, labelPlacement: 'top' },
 						rows: this.summaryRows(),
 					}),
 				)}
 
-				${doc.block(
+				${d.block(
 				'Quick controls',
 					this.pauseForm('onChange + signaldb action doc.'),
 			)}

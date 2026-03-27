@@ -202,8 +202,9 @@ export class PluginService {
 	private async injectConfig(plugin: PluginInstance): Promise<void> {
 		const pluginCtx = plugin.ctx
 		const info: PluginInfo = pluginCtx.pluginInfo
-		// Fast path: normal toolchain injection (configSourcePlugin) produced a configMap at decoration time.
+		// Fast path: toolchain injection (configSourcePlugin) produced a configMap/bindings at decoration time.
 		const schemaMap = info.configMap ?? undefined
+		const bindings = info.configBindingsMap ?? undefined
 		if (!schemaMap) return
 
 		const id = info.id
@@ -212,16 +213,31 @@ export class PluginService {
 		// Surface any error as a start failure; plugins should not start with invalid config.
 		await pluginCtx.configService.ensureValidated(id, schemaMap, { missingObjectDefault: {} })
 
-		const record = pluginCtx.configService.getValidatedConfig(id)
-		const pluginObj = plugin as unknown as Record<string, unknown>
-		const recordObj = record as unknown as Record<string, unknown>
+		// Only inject instance fields when the plugin declared bindings.
+		// Some plugins only declare schemas via composed features and don't have any config fields themselves,
+		// but still need validation so features can read from the validated snapshot.
+		if (bindings && Object.keys(bindings).length > 0) {
+			const record = pluginCtx.configService.getValidatedConfig(id)
+			const pluginObj = plugin as unknown as Record<string, unknown>
+			const recordObj = record as unknown as Record<string, unknown>
 
-		for (const key in schemaMap) {
-			if (!Object.hasOwn(schemaMap, key)) continue
-			// Feature configs are merged into the host plugin schema as namespaced keys (e.g. "cache.config").
-			// They belong to the host plugin *config panel*, but should not be injected onto the plugin instance.
-			if (key.includes('.')) continue
-			pluginObj[key] = recordObj[key]
+			for (const field of Object.keys(bindings)) {
+				const keys = bindings[field] ?? []
+				if (!Array.isArray(keys) || keys.length === 0) {
+					pluginObj[field] = Object.create(null)
+					continue
+				}
+				if (keys.length === 1) {
+					pluginObj[field] = recordObj[keys[0] as string]
+					continue
+				}
+				const view: Record<string, unknown> = Object.create(null)
+				for (let i = 0; i < keys.length; i++) {
+					const k = keys[i] as string
+					view[k] = recordObj[k]
+				}
+				pluginObj[field] = view
+			}
 		}
 
 		// Feature instances may be constructed during plugin field initialization (before config injection).
@@ -648,16 +664,24 @@ export class PluginService {
 
 		// Core responsibility: inject declared config fields before plugin init().
 		// Doing it directly avoids an extra event hop on every plugin start.
-		try {
-			await this.injectConfig(instance)
-		} catch (error) {
-			const logger = pluginCtx.logger ?? this.ctx.logger
-			logger.with({ error }).error`注入/校验配置到 ${String(id)} 失败`
 			try {
-				await pluginCtx.effects.dispose()
-			} catch {
-				/* ignored */
-			}
+				await this.injectConfig(instance)
+			} catch (error) {
+				const err =
+					error instanceof Error ? error : new Error(String(error), { cause: error })
+				try {
+					// Treat config injection/validation failures as start errors so callers can observe the root cause.
+					this.ctx.emit('startError', pluginCtx, err)
+				} catch {
+					// ignore: events service may be overridden
+				}
+				const logger = pluginCtx.logger ?? this.ctx.logger
+				logger.with({ error: err }).error`注入/校验配置到 ${String(id)} 失败`
+				try {
+					await pluginCtx.effects.dispose()
+				} catch {
+					/* ignored */
+				}
 			failed.add(id)
 			return
 		}

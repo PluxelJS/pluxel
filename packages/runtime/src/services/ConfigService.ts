@@ -94,7 +94,13 @@ export class ConfigService {
 		this.getExtra = this.getExtra.bind(this)
 		this.setExtra = this.setExtra.bind(this)
 
-		this.mode = cfg.mode ?? 'file'
+		// Default mode depends on the filesystem backend:
+		// - In tests we frequently run with an in-memory fs, where "file mode" would cause an
+		//   async boot load that can race with early patchConfig() calls (clobbering patches).
+		// - In normal runtimes, default to file persistence.
+		const fsMode = (ctx.config as unknown as { fs?: { mode?: unknown } })?.fs?.mode
+		const implicitMode: ConfigServiceMode = fsMode === 'memory' ? 'memory' : 'file'
+		this.mode = cfg.mode ?? implicitMode
 		this.readonlyMode = this.mode === 'readonly'
 
 		const profile = normalizeProfileName(ctx.config.profile)

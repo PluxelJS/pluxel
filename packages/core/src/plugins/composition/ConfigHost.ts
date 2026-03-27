@@ -1,4 +1,5 @@
 import type { StandardSchemaV1 } from '@standard-schema/spec'
+import type { CfgDecl } from './cfg'
 
 const CONFIG_SENTINEL = Symbol.for('pluxel:config:sentinel')
 
@@ -30,6 +31,12 @@ const SENTINEL = createSentinel()
  * injector can replace class-field values later.
  */
 export class ConfigHost {
+	use<TSchema extends StandardSchemaV1>(_schema: TSchema): StandardSchemaV1.InferOutput<TSchema>
+
+	use<TMap extends Record<string, StandardSchemaV1>>(
+		_decl: CfgDecl<TMap>,
+	): { [K in keyof TMap]: StandardSchemaV1.InferOutput<TMap[K]> }
+
 	/**
 	 * Type-first config declaration helper.
 	 *
@@ -40,8 +47,8 @@ export class ConfigHost {
 	 * - At runtime this returns a sentinel value. Real values are injected later by the registry.
 	 * - Schema registration must happen at module evaluation time (e.g. via configSource plugin injection).
 	 */
-	use<TSchema extends StandardSchemaV1>(_schema: TSchema): StandardSchemaV1.InferOutput<TSchema> {
-		return SENTINEL as unknown as StandardSchemaV1.InferOutput<TSchema>
+	use(_arg: unknown): unknown {
+		return SENTINEL
 	}
 }
 

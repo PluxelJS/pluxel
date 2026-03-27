@@ -1,13 +1,16 @@
 import type { Context } from '@pluxel/context'
 import type { Cleanup, EffectsScope } from '../../services/effects/EffectsService'
-import { getDeclaredConfigKeys, getFeatureNamespace } from '../decorators/decorator/api'
+import { getDeclaredConfigBindings, getDeclaredConfigKeys, getFeatureNamespace } from '../decorators/decorator/api'
 import type { AnyCtor } from '../decorators/decorator/shared'
 import { CONFIGS, type ConfigHost } from './ConfigHost'
 
 export type FeatureCtor<T> = new (ctx: Context, ...args: unknown[]) => T
 
 const HOST_BOUND_FEATURE = Symbol.for('pluxel:feature:hostBound')
-const INJECT_PLAN = new WeakMap<AnyCtor, { keys: readonly string[]; prefix: string }>()
+const INJECT_PLAN = new WeakMap<
+	AnyCtor,
+	{ keys: ReadonlyArray<{ field: string; keys: readonly string[] }>; prefix: string }
+>()
 
 export function isHostBoundFeature(ctor: unknown): boolean {
 	if (!ctor) return false
@@ -64,10 +67,20 @@ export abstract class BaseFeature<C extends Context = Context> {
 
 		let plan = INJECT_PLAN.get(ctor as unknown as AnyCtor)
 		if (!plan) {
-			const keys = getDeclaredConfigKeys(ctor as unknown as AnyCtor)
-			if (keys.length === 0) return
+			// Prefer explicit bindings; fall back to raw keys for legacy/edge cases.
+			const bindings = getDeclaredConfigBindings(ctor as unknown as AnyCtor)
+			const entries: Array<{ field: string; keys: readonly string[] }> = []
+			if (bindings) {
+				for (const [field, keys] of Object.entries(bindings)) {
+					entries.push({ field, keys })
+				}
+			} else {
+				const keys = getDeclaredConfigKeys(ctor as unknown as AnyCtor)
+				for (let i = 0; i < keys.length; i++) entries.push({ field: keys[i]!, keys: [keys[i]!] })
+			}
+			if (entries.length === 0) return
 			const ns = getFeatureNamespace(ctor as unknown as AnyCtor)
-			plan = { keys, prefix: `${ns}.` }
+			plan = { keys: entries, prefix: `${ns}.` }
 			INJECT_PLAN.set(ctor as unknown as AnyCtor, plan)
 		}
 
@@ -75,10 +88,23 @@ export abstract class BaseFeature<C extends Context = Context> {
 		if (!record || typeof record !== 'object') return
 
 		for (let i = 0; i < plan.keys.length; i++) {
-			const fieldName = plan.keys[i]!
-			;(this as unknown as Record<string, unknown>)[fieldName] = (
-				record as Record<string, unknown>
-			)[plan.prefix + fieldName]
+			const { field, keys } = plan.keys[i]!
+			if (!keys.length) {
+				;(this as unknown as Record<string, unknown>)[field] = {}
+				continue
+			}
+			if (keys.length === 1) {
+				;(this as unknown as Record<string, unknown>)[field] = (
+					record as Record<string, unknown>
+				)[plan.prefix + keys[0]!]
+				continue
+			}
+			const obj: Record<string, unknown> = Object.create(null)
+			for (let j = 0; j < keys.length; j++) {
+				const k = keys[j]!
+				obj[k] = (record as Record<string, unknown>)[plan.prefix + k]
+			}
+			;(this as unknown as Record<string, unknown>)[field] = obj
 		}
 	}
 

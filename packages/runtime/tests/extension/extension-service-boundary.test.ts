@@ -205,7 +205,7 @@ describe('ExtensionService runtime/dev boundary', () => {
 		dispose()
 	})
 
-	it('doc() bumps manifest version and is cleaned up by disposer', async () => {
+	it('doc(schemaMap)`...` bumps manifest version and is cleaned up by disposer', async () => {
 		await using fixture = await createFixture({})
 		const { ctx } = createFakeCtx()
 		void fixture
@@ -219,7 +219,7 @@ describe('ExtensionService runtime/dev boundary', () => {
 			id: 'a',
 			point: 'plugin:tabs' as any,
 			title: 't',
-			content: doc`b`,
+			content: doc({} as const)`b`,
 		})
 
 		const afterAdd = service.getManifest()
@@ -233,6 +233,17 @@ describe('ExtensionService runtime/dev boundary', () => {
 
 		unsubscribe()
 		expect(events.length).toBeGreaterThan(0)
+	})
+
+	it('doc(schemaMap)`...` rejects non-string primitive interpolation', () => {
+		const d = doc({} as const)
+		expect(() => d`${1 as any}`).toThrowError(/invalid interpolation/)
+	})
+
+	it('doc(schemaMap)`...` rejects duplicate or unreachable schema placements', () => {
+		const d = doc({ a: true, b: true } as const)
+		expect(() => d`${d.schema('a')}${d.schema('a')}`).toThrowError(/duplicate schema placement/)
+		expect(() => d`${d.schemas()}${d.schema('a')}`).toThrowError(/must be the last schema-placement token/)
 	})
 
 	it('compile status transitions are surfaced via manifest events', async () => {
