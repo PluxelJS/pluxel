@@ -258,6 +258,15 @@ manifest 当前应关注：
 
 ## What To Optimize Next
 
+后续优化和清理不再继续堆在这份主设计文档里，统一转到：
+
+- [future-work.md](./future-work.md)
+
+这样做是刻意的：
+
+- `overview.md` 只描述当前已经接受的系统设计
+- `future-work.md` 单独记录未来要继续完成的优化、清理和架构债
+
 当前代码已经完成两件最关键的收敛：
 
 - runtime 侧把 interaction 逻辑拆进 `ExtensionInteractionRegistry`
