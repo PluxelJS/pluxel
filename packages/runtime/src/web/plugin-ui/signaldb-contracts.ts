@@ -10,6 +10,10 @@ export interface SignalDbFindOptions<T extends SignalDbItem> {
 	sort?: SignalDbSort<T>
 }
 
+export interface SignalDbListSpec<T extends SignalDbItem> extends SignalDbFindOptions<T> {
+	where?: SignalDbSelector<T>
+}
+
 export interface SignalDbModifier<T extends SignalDbItem> {
 	$set: Partial<T>
 }

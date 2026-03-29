@@ -6,9 +6,14 @@ export type {
 	BuiltinDocExtensionDef,
 	BuiltinMarkdownPart,
 	BuiltinDocPart,
-	BuiltinExtensionBase,
 	BuiltinExtensionDef,
 	BuiltinExtensionKind,
+	ExtensionInteractionRecord,
+	ExtensionInteractionState,
+	InteractionCardinality,
+	InteractionOfferDef,
+	InteractionSessionDef,
+	InteractionSurfaceDef,
 	BuiltinFieldValueRef,
 	BuiltinGeneratedIdValue,
 	BuiltinFormBlock,
@@ -17,6 +22,7 @@ export type {
 	BuiltinInfoCardRow,
 	BuiltinNowValue,
 	BuiltinActionBlock,
+	BuiltinResourceSelectBlock,
 	BuiltinSignalDbRef,
 	BuiltinSignalDbWriteMode,
 	BuiltinSignalDbWriteSpec,
@@ -30,3 +36,5 @@ export type {
 	ExtensionModuleStateKind,
 } from './plugin-ui/extensions-contracts'
 export { doc } from './plugin-ui/extensions-contracts'
+export type { InteractionContract, InteractionContractRef } from './plugin-ui/interaction-contracts'
+export { defineInteractionContract } from './plugin-ui/interaction-contracts'

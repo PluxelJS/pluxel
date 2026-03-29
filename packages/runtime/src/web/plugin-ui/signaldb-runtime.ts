@@ -38,6 +38,7 @@ type SyncCollectionOptions = {
 }
 
 const useSignalDbReactive = createUseReactivityHook(effect)
+const SIGNALDB_SYNC_RETRY_MS = 800
 
 export interface SignalDbCollectionView<T extends SignalDbItem> {
 	readonly name: string
@@ -67,6 +68,8 @@ class SignalDbReplicaNamespace {
 	private readonly namespace: string
 	private readonly sse
 	private readonly bucket
+	private readonly stopBucketSubscription: () => void
+	private readonly stopOpenSubscription: () => void
 	private readonly sync: SyncManager<SyncCollectionOptions, SignalDbItem, string>
 	private readonly states = new Map<string, CollectionState<SignalDbItem>>()
 	private readonly remoteHandlers = new Map<
@@ -74,6 +77,7 @@ class SignalDbReplicaNamespace {
 		Set<(data?: LoadResponse<SignalDbItem>) => Promise<void>>
 	>()
 	private readonly syncTasks = new Map<string, Promise<void>>()
+	private readonly retryTimers = new Map<string, ReturnType<typeof setTimeout>>()
 
 	constructor(
 		private readonly pluginName: string,
@@ -125,17 +129,27 @@ class SignalDbReplicaNamespace {
 			},
 		})
 
-		this.bucket.onAny((msg: SseMessage<string>) => {
+		this.stopBucketSubscription = this.bucket.onAny((msg: SseMessage<string>) => {
 			void this.apply(msg.payload as SignalDbSyncEvent)
+		})
+		this.stopOpenSubscription = this.sse.onOpen(() => {
+			for (const collection of this.states.keys()) this.requestSync(collection)
 		})
 	}
 
 	getView<T extends SignalDbItem>(collection: string): SignalDbCollectionView<T> {
 		const state = this.ensureState(collection) as CollectionState<T>
+		if (!state.meta.ready() && !this.syncTasks.has(collection)) {
+			this.requestSync(collection)
+		}
 		return buildCollectionView(collection, state)
 	}
 
 	dispose() {
+		this.stopOpenSubscription()
+		this.stopBucketSubscription()
+		for (const timer of this.retryTimers.values()) clearTimeout(timer)
+		this.retryTimers.clear()
 		for (const state of this.states.values()) state.stopObserve()
 		this.states.clear()
 		this.remoteHandlers.clear()
@@ -169,8 +183,30 @@ class SignalDbReplicaNamespace {
 		}
 		this.states.set(collection, state)
 		this.sync.addCollection(signalCollection, { name: collection })
-		void this.syncCollection(collection)
+		this.requestSync(collection)
 		return state
+	}
+
+	private requestSync(collection: string) {
+		void this.syncCollection(collection).catch((): undefined => undefined)
+	}
+
+	private scheduleRetry(collection: string) {
+		if (this.retryTimers.has(collection)) return
+		const timer = setTimeout(() => {
+			this.retryTimers.delete(collection)
+			const state = this.states.get(collection)
+			if (!state || state.meta.ready()) return
+			this.requestSync(collection)
+		}, SIGNALDB_SYNC_RETRY_MS)
+		this.retryTimers.set(collection, timer)
+	}
+
+	private clearRetry(collection: string) {
+		const timer = this.retryTimers.get(collection)
+		if (!timer) return
+		clearTimeout(timer)
+		this.retryTimers.delete(collection)
 	}
 
 	private async dispatchRemoteChange(collection: string, data?: LoadResponse<SignalDbItem>) {
@@ -188,7 +224,14 @@ class SignalDbReplicaNamespace {
 			.then(() => {
 				const state = this.states.get(collection)
 				if (!state) return
+				this.clearRetry(collection)
 				state.meta.ready.set(true)
+			})
+			.catch((error) => {
+				const state = this.states.get(collection)
+				if (state) state.meta.ready.set(false)
+				this.scheduleRetry(collection)
+				throw error
 			})
 			.finally(() => {
 				this.syncTasks.delete(collection)
@@ -207,6 +250,7 @@ class SignalDbReplicaNamespace {
 		await this.dispatchRemoteChange(payload.collection, data)
 		const current = this.states.get(payload.collection)
 		if (!current) return
+		this.clearRetry(payload.collection)
 		current.meta.ready.set(true)
 		current.meta.version.set(payload.version)
 	}

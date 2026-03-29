@@ -1,6 +1,6 @@
 import { Badge, Box, Divider, Group, Paper, Stack, Text } from '@mantine/core'
-import { useMemo } from 'react'
 import type { BuiltinBadgeValue, BuiltinInfoCardBlock } from '@pluxel/runtime/web/extensions'
+import { useSignalDbQueryState } from '@pluxel/runtime/web'
 import { isObject, resolveSignalDbRef, useSignalDbForValues } from './_shared'
 
 function isBadgeValue(value: unknown): value is BuiltinBadgeValue {
@@ -77,17 +77,19 @@ export function BuiltinInfoCard({
 		rows.map((r) => r?.value),
 	)
 
-	const resolvedRows = useMemo(() => {
-		return rows.map((row) => {
-			const v: any = row?.value
-			if (!isObject(v)) return row
-			if (v.kind === 'signaldb') {
-				const nextValue = resolveSignalDbRef(v as any, signalDbCollections as any)
-				return { ...row, value: nextValue as any }
-			}
-			return row
-		})
-	}, [rows, signalDbCollections])
+	const resolvedRows = useSignalDbQueryState(
+		() =>
+			rows.map((row) => {
+				const value: any = row?.value
+				if (!isObject(value)) return row
+				if (value.kind === 'signaldb') {
+					const nextValue = resolveSignalDbRef(value as any, signalDbCollections as any)
+					return { ...row, value: nextValue as any }
+				}
+				return row
+			}),
+		[rows, signalDbCollections],
+	)
 
 	const layout = block.layout ?? {}
 	const density = layout.density ?? 'comfortable'

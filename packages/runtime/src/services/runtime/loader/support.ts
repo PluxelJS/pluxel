@@ -1,4 +1,5 @@
 import {
+	type ConfigLayout,
 	type Context,
 	type ForkablePluginConstructor,
 	getClassParams,
@@ -319,14 +320,14 @@ export class LoaderRegistryView {
 		return this.registry.getSchemaSource(ctor)
 	}
 
-		getConfigLayout(
-			target: PluginConstructor | string,
-		): Readonly<Record<string, unknown[]>> | undefined {
-			const ctor = this.runtime.resolve(target)
-			if (!ctor) return undefined
-			return this.registry.getConfigLayout(ctor)
-		}
+	getConfigLayout(
+		target: PluginConstructor | string,
+	): Readonly<Record<string, ConfigLayout>> | undefined {
+		const ctor = this.runtime.resolve(target)
+		if (!ctor) return undefined
+		return this.registry.getConfigLayout(ctor)
 	}
+}
 
 export class LoaderAnchors {
 	constructor(private readonly anchors: AnchorStore) {}

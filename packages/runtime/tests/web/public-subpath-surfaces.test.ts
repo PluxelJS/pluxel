@@ -16,14 +16,15 @@ function expectPublicSurface(publicMod: object, internalMod: object) {
 describe('runtime web subpath surfaces', () => {
 	it('keeps web/ui aligned with the internal ui facade', () => {
 		expectPublicSurface(PublicUi, InternalUi)
-		expect(PublicUi.createRuntimeTransportClient).toBeTypeOf('function')
-		expect(PublicUi.createPluginUi).toBeTypeOf('function')
-		expect(PublicUi.useRuntimeTransportClient).toBeTypeOf('function')
+		expect(PublicUi.pluginUi).toBeTypeOf('function')
+		expect(PublicUi.definePluginUIModule).toBeTypeOf('function')
+		expect(PublicUi.rpcErrorMessage).toBeTypeOf('function')
 	})
 
 	it('keeps web/extensions aligned with the internal extension contracts', () => {
 		expectPublicSurface(PublicExtensions, InternalExtensions)
 		expect(PublicExtensions.doc).toBeTypeOf('function')
+		expect(PublicExtensions.defineInteractionContract).toBeTypeOf('function')
 	})
 
 	it('keeps the federation shared package contract stable', () => {

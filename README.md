@@ -9,9 +9,9 @@ pnpm dev
 文档入口（先看这些，避免被历史笔记误导）：
 
 - `docs/README.md`
-- `docs/ARCHITECTURE.md`
-- `docs/PACKAGING.md`
-- `docs/AGENT_RULES.md`
+- `docs/architecture/system.md`
+- `docs/governance/packaging.md`
+- `docs/governance/agent-rules.md`
 
 开发宿主走 `packages/plugins/host`，但建议直接从仓库根目录使用这些入口：
 

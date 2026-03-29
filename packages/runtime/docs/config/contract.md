@@ -1,6 +1,6 @@
 # Plugin Config (Runtime Contract)
 
-这份文档描述的是 **runtime 与 host/UI** 在“插件配置”上的最小契约，便于实现侧对齐；设计原则与推荐写法见仓库级文档 `docs/PLUGIN_DOC_CONFIG_DESIGN.md`。
+这份文档描述的是 **runtime 与 host/UI** 在“插件配置”上的实现契约；设计原则与推荐写法见仓库级设计文档 `docs/design/plugin-config/overview.md`。
 
 ## `plugin.schema()` 返回值
 
@@ -14,6 +14,24 @@ Host 通过 `plugin.schema()` 获取：
   可选的 cfg layout parts，用于 Host 侧自定义配置页排版。
 
 `layout` 是构建期从 `this.configs.use(cfg(schemaMap)\`...\`)` 提取并注入的；未提供时 Host 使用默认布局。
+
+## Build Metadata Flow
+
+构建期 `configSourcePlugin` 只分析启动前静态声明，并注入：
+
+- `__setConfigSource__(Ctor, key, schemaSource)`
+- `__registerConfigSchema__(Ctor, key, schema)`
+- `__registerConfigBinding__(Ctor, field, keys)`
+- `__setConfigLayout__(Ctor, field, layoutParts)`
+
+core 快照把这些 metadata 组织到 `configSourceMap / configBindingsMap / configLayoutMap`。
+runtime 的 `plugin.schema()` 再把 Host 真正需要的部分整理成：
+
+- `schemaSource`
+- `defaults`
+- `layout`
+
+如果存在多个 layout 绑定，runtime 会优先选择“覆盖全部 schema keys”的那个绑定；否则退回到确定性的首个绑定。
 
 ## `layout` parts
 

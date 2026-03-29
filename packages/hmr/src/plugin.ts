@@ -33,7 +33,7 @@ export function ui(input: string | HmrUiSourceDeclaration): HmrUiModuleDeclarati
 		bind(ctx: Context) {
 			const devBinder = getDevRuntimeHandles(ctx)?.extensions?.bindUiSource
 			if (devBinder) return devBinder(ctx, config)
-			return ctx.ext.ui.packaged()
+			return ctx.ext.ui.remote.packaged()
 		},
 	}
 }

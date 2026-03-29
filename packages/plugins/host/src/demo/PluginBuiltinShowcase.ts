@@ -491,7 +491,7 @@ export class PluginBuiltinShowcase extends BasePlugin {
 	private registerOverviewDoc() {
 		const d = doc({} as const)
 
-		this.ctx.ext.ui.doc({
+		this.ctx.ext.ui.builtin.doc({
 			id: 'summary',
 			point: 'plugin:info',
 			title: 'Builtin Overview',
@@ -520,7 +520,7 @@ export class PluginBuiltinShowcase extends BasePlugin {
 		const metricsTab = { id: 'metrics', label: 'Metrics', icon: 'activity' }
 		const guideTab = { id: 'guide', label: 'Guide', icon: 'book' }
 
-		this.ctx.ext.ui.doc({
+		this.ctx.ext.ui.builtin.doc({
 			id: 'controls-doc',
 			point: 'plugin:tabs',
 			requireRunning: false,
@@ -544,7 +544,7 @@ export class PluginBuiltinShowcase extends BasePlugin {
 			`,
 		})
 
-		this.ctx.ext.ui.doc({
+		this.ctx.ext.ui.builtin.doc({
 			id: 'metrics-doc',
 			point: 'plugin:tabs',
 			requireRunning: false,
@@ -612,7 +612,7 @@ export class PluginBuiltinShowcase extends BasePlugin {
 			A: 可以在 block 扩展里逐步加入。
 		`
 
-		this.ctx.ext.ui.doc({
+		this.ctx.ext.ui.builtin.doc({
 			id: 'guide-doc',
 			point: 'plugin:tabs',
 			requireRunning: false,

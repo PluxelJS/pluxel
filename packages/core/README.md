@@ -9,8 +9,8 @@
 
 文档入口：
 
-- `docs/ARCHITECTURE.md`
-- `docs/AGENT_RULES.md`
+- `docs/architecture/system.md`
+- `docs/governance/agent-rules.md`
 
 对外导出（package exports）：
 

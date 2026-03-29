@@ -31,6 +31,11 @@ export interface ExtensionUiSignalDbMap {}
 
 export type PluginStatusAction = 'start' | 'stop' | 'restart' | 'enable' | 'disable'
 export type ConfigPatch = Record<string, unknown>
+export type ConfigFieldMutation = {
+	schemaKey: string
+	fieldPath: string
+	value: unknown
+}
 export type ConfigValidationErrors = Record<
 	string,
 	Record<string, { message: string; path: string[] }[]>
@@ -52,6 +57,53 @@ export type ConfigResultErr = {
 }
 
 export type ConfigResult = ConfigResultOk | ConfigResultErr
+
+export type ExtensionSessionLoadResultOk = {
+	ok: true
+	input: unknown
+	draft: unknown
+	prepared: unknown
+}
+
+export type ExtensionSessionLoadResultErr = {
+	ok: false
+	code:
+		| 'session_not_found'
+		| 'surface_not_found'
+		| 'offer_not_found'
+		| 'prepare_failed'
+		| 'validation_failed'
+	message?: string
+}
+
+export type ExtensionSessionLoadResult =
+	| ExtensionSessionLoadResultOk
+	| ExtensionSessionLoadResultErr
+
+export type ExtensionSessionDraftSyncInput = {
+	sessionId: string
+	draft: unknown
+}
+
+export type ExtensionSessionCommitInput = {
+	sessionId: string
+	result: unknown
+}
+
+export type ExtensionSessionMutationResult =
+	| {
+			ok: true
+	  }
+	| {
+			ok: false
+			code:
+				| 'session_not_found'
+				| 'surface_not_found'
+				| 'offer_not_found'
+				| 'validation_failed'
+				| 'apply_failed'
+			message?: string
+	  }
 
 export type SchemaResultOk = {
 	ok: true
@@ -248,6 +300,7 @@ export interface PluginHandleApi {
 	config: () => Promise<ConfigResultOk>
 	validateConfig: (patch: ConfigPatch) => Promise<ConfigResult>
 	saveConfig: (patch: ConfigPatch) => Promise<ConfigResult>
+	saveConfigField: (input: ConfigFieldMutation) => Promise<ConfigResult>
 	resetConfig: (keys?: string[]) => Promise<ConfigResult>
 }
 
@@ -255,6 +308,12 @@ export interface BuildSnapshotResult {
 	ok: boolean
 	path?: string
 	error?: string
+}
+
+export interface ExtensionSessionHandleApi {
+	loadSession: (sessionId: string) => Promise<ExtensionSessionLoadResult>
+	syncDraft: (input: ExtensionSessionDraftSyncInput) => Promise<ExtensionSessionMutationResult>
+	commitSession: (input: ExtensionSessionCommitInput) => Promise<ExtensionSessionMutationResult>
 }
 
 export type LogLevel = 'trace' | 'debug' | 'info' | 'warning' | 'error' | 'fatal'
@@ -279,6 +338,7 @@ type RuntimeRpcApiContract<ExtRpc = Record<string, unknown>> = {
 	plugin: (name: string) => PluginHandleApi
 	package: () => PackageHandleApi
 	logging: () => LoggingHandleApi
+	ui: () => ExtensionSessionHandleApi
 	ext: ExtRpc
 	extensions: () => string[]
 	buildSnapshot: () => Promise<BuildSnapshotResult>

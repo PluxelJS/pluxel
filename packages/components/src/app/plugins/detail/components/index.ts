@@ -6,6 +6,7 @@ export {
 	usePluginDependencyEntries,
 } from './DependencyList'
 export { DependencyOverridesCard } from './DependencyOverridesCard'
+export { ExtensionDiagnosticsCard } from './ExtensionDiagnosticsCard'
 export { LogLevelsCard } from './LogLevelsCard'
 export { PluginPanel } from './PluginPanel'
 export { PluginSection } from './PluginSection'

@@ -1,7 +1,7 @@
 import { Badge, Box, Paper, Stack, Text, TextInput, TypographyStylesProvider } from '@mantine/core'
 import { IconSearch } from '@tabler/icons-react'
 import { MarkdownExit } from 'markdown-exit'
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Fragment, memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode, RefObject } from 'react'
 import type {
 	BuiltinDocBlock,
@@ -10,11 +10,11 @@ import type {
 	BuiltinMarkdownPart,
 	BuiltinDocPart,
 } from '@pluxel/runtime/web/extensions'
-import { useExtensionContext } from '@pluxel/runtime/web/ui'
 import { FloatingToc } from '../../app/plugins/components/FloatingToc'
 import { findScrollableParent, toDomSlug } from '../../app/plugins/config/utils'
 import { BuiltinSignalDbAction } from './SignalDbAction'
 import { BuiltinInfoCard } from './InfoCard'
+import { BuiltinResourceSelect } from './ResourceSelect'
 import { BuiltinSignalDbForm } from './SignalDbForm'
 import { usePluginConfig } from '../../app/hooks/usePluginConfig'
 import type { ObjectSchema } from 'valibot'
@@ -41,10 +41,7 @@ function extractInlineText(token: any): string {
 		.join('')
 }
 
-function compileDoc(input: {
-	content: BuiltinDocContent
-	docPrefix: string
-}): {
+function compileDoc(input: { content: BuiltinDocContent; docPrefix: string }): {
 	items: CompiledItem[]
 	anchors: DocAnchor[]
 } {
@@ -79,7 +76,12 @@ function compileDoc(input: {
 
 		if (part.kind === 'schema') {
 			const key = String(part.key ?? '').trim()
-			if (key) items.push({ kind: 'cfg', key: `cfg-${items.length + 1}`, directive: { kind: 'schema', key } })
+			if (key)
+				items.push({
+					kind: 'cfg',
+					key: `cfg-${items.length + 1}`,
+					directive: { kind: 'schema', key },
+				})
 			continue
 		}
 		if (part.kind === 'schemas') {
@@ -87,12 +89,16 @@ function compileDoc(input: {
 			items.push({
 				kind: 'cfg',
 				key: `cfg-${items.length + 1}`,
-				directive: { kind: 'schemas', keys: Array.isArray(keys) ? keys.map((x) => String(x)) : null },
+				directive: {
+					kind: 'schemas',
+					keys: Array.isArray(keys) ? keys.map((x) => String(x)) : null,
+				},
 			})
 			continue
 		}
 
-		const text = part.kind === 'md' ? (typeof (part as any).text === 'string' ? (part as any).text : '') : ''
+		const text =
+			part.kind === 'md' ? (typeof (part as any).text === 'string' ? (part as any).text : '') : ''
 		if (!text) continue
 
 		const tokens = engine.parse(text, env)
@@ -143,7 +149,8 @@ const DocBody = memo(function DocBody({
 		>
 			<TypographyStylesProvider>
 				{items.map((item) => {
-					if (item.kind === 'cfg') return <Fragment key={item.key}>{renderCfg(item as any)}</Fragment>
+					if (item.kind === 'cfg')
+						return <Fragment key={item.key}>{renderCfg(item as any)}</Fragment>
 					if (item.kind === 'block')
 						return (
 							<Box key={item.key} my="sm">
@@ -162,8 +169,6 @@ const DocBody = memo(function DocBody({
 })
 
 export function BuiltinDoc({ def }: { def: BuiltinDocExtensionDef }) {
-	useExtensionContext()
-
 	const contentRef = useRef<HTMLDivElement | null>(null)
 	const tocViewportRef = useRef<HTMLDivElement | null>(null)
 	const [activeId, setActiveId] = useState<string | null>(null)
@@ -185,12 +190,24 @@ export function BuiltinDoc({ def }: { def: BuiltinDocExtensionDef }) {
 
 	const renderBlock = useCallback(
 		(title: string, block: BuiltinDocBlock) => {
+			const blockPluginName =
+				typeof (block as any)?.pluginName === 'string' && (block as any).pluginName.trim()
+					? (block as any).pluginName.trim()
+					: pluginName
 			if (block.kind === 'infoCard')
-				return <BuiltinInfoCard pluginName={pluginName} block={block} />
+				return <BuiltinInfoCard pluginName={blockPluginName} block={block} />
 			if (block.kind === 'form')
-				return <BuiltinSignalDbForm pluginName={pluginName} title={title} block={block} />
+				return <BuiltinSignalDbForm pluginName={blockPluginName} title={title} block={block} />
 			if (block.kind === 'action')
-				return <BuiltinSignalDbAction pluginName={pluginName} block={block} />
+				return <BuiltinSignalDbAction pluginName={blockPluginName} block={block} />
+			if (block.kind === 'resourceSelect')
+				return (
+					<BuiltinResourceSelect
+						targetPluginName={pluginName}
+						sourcePluginName={pluginName}
+						block={block}
+					/>
+				)
 			return null
 		},
 		[pluginName],
@@ -201,11 +218,7 @@ export function BuiltinDoc({ def }: { def: BuiltinDocExtensionDef }) {
 		return value as Record<string, any>
 	}
 
-	function DocCfgDirective({
-		directive,
-	}: {
-		directive: DocConfigDirective
-	}) {
+	function DocCfgDirective({ directive }: { directive: DocConfigDirective }) {
 		const cfg = usePluginConfig(pluginName)
 		const data = cfg.data
 		const schemaMapAll = (data?.schemaMap ?? {}) as Record<string, ObjectSchema<any, any>>
@@ -524,12 +537,12 @@ export function BuiltinDoc({ def }: { def: BuiltinDocExtensionDef }) {
 				) : null}
 
 				{compiled.items.length ? (
-			<DocBody
-				items={compiled.items}
-				contentRef={contentRef}
-				renderBlock={renderBlock}
-				renderCfg={renderCfg}
-			/>
+					<DocBody
+						items={compiled.items}
+						contentRef={contentRef}
+						renderBlock={renderBlock}
+						renderCfg={renderCfg}
+					/>
 				) : null}
 			</Stack>
 

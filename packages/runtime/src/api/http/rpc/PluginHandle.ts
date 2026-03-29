@@ -31,6 +31,7 @@ import { addForkToCatalog } from '../../usecases/forksCatalog'
 import {
 	pluginConfigGet,
 	pluginConfigPatch,
+	pluginConfigPatchField,
 	pluginConfigReset,
 	pluginConfigValidate,
 	pluginSchema,
@@ -41,6 +42,7 @@ import type {
 	ConfigPatch,
 	ConfigResult,
 	ConfigResultOk,
+	ConfigFieldMutation,
 	EnsureForkResult,
 	PluginDependencyKind,
 	PluginDependencyMutationResult,
@@ -531,6 +533,10 @@ export class PluginHandle extends RpcTarget {
 
 	async saveConfig(patch: ConfigPatch): Promise<ConfigResult> {
 		return (await pluginConfigPatch(this.ctx, this.name, (patch ?? {}) as any)) as any
+	}
+
+	async saveConfigField(input: ConfigFieldMutation): Promise<ConfigResult> {
+		return (await pluginConfigPatchField(this.ctx, this.name, (input ?? {}) as any)) as any
 	}
 
 	async resetConfig(keys?: string[]): Promise<ConfigResult> {

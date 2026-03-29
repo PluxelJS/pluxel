@@ -3,7 +3,11 @@ import { useMediaQuery } from '@mantine/hooks'
 import { IconPuzzle } from '@tabler/icons-react'
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { EmptyState, ErrorState } from '../../../../components'
-import { ExtensionProvider, useExtensionContext } from '../../../../extension'
+import {
+	createPluginExtensionContext,
+	ExtensionProvider,
+	useGlobalExtensionContext,
+} from '../../../../extension'
 import { useDebouncedFlag } from '../../../../hooks'
 import {
 	type PluginScope,
@@ -12,6 +16,7 @@ import {
 	useQuery,
 } from '../../../gqty'
 import { usePluginConfig } from '../../../hooks'
+import { useCurrentPathname } from '../../../router/useCurrentRoute'
 import { usePluginOverview } from '../../data'
 import { PluginScopeProvider, type PluginSourceKind } from '../context'
 import { PluginLayout } from '../panels/PluginLayout'
@@ -217,7 +222,8 @@ export const PluginScreen = memo(function PluginScreen({ pluginName }: PluginScr
 		loading,
 		refetch,
 	} = usePluginDetail(pluginName)
-	const parentExtensionCtx = useExtensionContext()
+	const parentExtensionCtx = useGlobalExtensionContext()
+	const pathname = useCurrentPathname()
 
 	// 稳定快照：refetch/同步期间，GQty 可能短暂返回空字段，导致 UI “0 依赖/空注入卡片”闪一下。
 	// 这里缓存上一份成功读取到的 detail，用于过渡期展示。
@@ -383,11 +389,11 @@ export const PluginScreen = memo(function PluginScreen({ pluginName }: PluginScr
 
 	const pluginExtensionCtx = useMemo(() => {
 		if (!parentExtensionCtx) return null
-		return {
-			...parentExtensionCtx,
+		return createPluginExtensionContext(parentExtensionCtx, {
 			pluginName: displayName,
-		}
-	}, [parentExtensionCtx, displayName])
+			pathname,
+		})
+	}, [parentExtensionCtx, displayName, pathname])
 
 	if (!pluginName) {
 		return (

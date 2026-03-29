@@ -46,7 +46,7 @@ export class PluginHttpWorkerDemo extends BasePlugin {
 			},
 		)
 
-		this.ctx.ext.ui.doc({
+		this.ctx.ext.ui.builtin.doc({
 			id: 'plugin-http-worker-demo',
 			point: 'plugin:tabs',
 			title: 'HTTP Worker Demo',

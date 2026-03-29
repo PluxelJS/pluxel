@@ -7,7 +7,10 @@ import type {
 	BuiltinTemplateValue,
 } from '@pluxel/runtime/web/extensions'
 import { useMemo } from 'react'
-import { useExtensionContext, useSignalDbCollectionsState } from '@pluxel/runtime/web/ui'
+import {
+	useGlobalExtensionContext,
+	useSignalDbCollectionsState,
+} from '@pluxel/runtime/web'
 
 export function isObject(value: unknown): value is Record<string, unknown> {
 	return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
@@ -57,7 +60,7 @@ export function neededSignalDbCollectionsForValue(value: unknown): string[] {
 }
 
 export function useSignalDbForValues(namespace: string, values: unknown[]) {
-	const transport = useExtensionContext().services.transport
+	const transport = useGlobalExtensionContext().services.transport
 	const neededCollections = useMemo(() => {
 		const collections = new Set<string>()
 		for (const value of values) {

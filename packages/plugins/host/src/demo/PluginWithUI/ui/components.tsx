@@ -23,9 +23,9 @@ import {
 	IconWaveSine,
 } from '@tabler/icons-react'
 import { useEffect, useState } from 'react'
-import { pluginWithUi } from './runtime'
+import { plugin } from './runtime'
 
-type PluginWithUIRuntime = ReturnType<typeof pluginWithUi.use>
+type PluginWithUIRuntime = ReturnType<typeof plugin.use>
 type PluginWithUIRpc = PluginWithUIRuntime['rpc']
 type PluginWithUISseClient = PluginWithUIRuntime['transport']['sse']
 
@@ -43,21 +43,20 @@ function useLiveConnectionState(sse: PluginWithUISseClient) {
 }
 
 export function OverviewPanel() {
-	const { context, rpc, sse, transport } = pluginWithUi.use('plugin')
-	const status = pluginWithUi.useDoc('status', { id: 'status' })
-	const events = pluginWithUi.useCollection('events')
-	const eventCount = pluginWithUi.useSignalDbQuery(() => events.count(), [events])
-	const connected = useLiveConnectionState(transport.sse)
+	const app = plugin.use()
+	const status = app.db.useDocById('status', 'status')
+	const eventCount = app.db.useCount('events')
+	const connected = useLiveConnectionState(app.transport.sse)
 	const [tick, setTick] = useState<number | null>(null)
 	const [error, setError] = useState<string | null>(null)
 
 	useEffect(() => {
-		const off = sse.on((msg) => {
+		const off = app.sse.on((msg) => {
 			const payload = msg.payload
 			if (payload.type === 'tick') setTick(payload.now)
 		}, 'tick')
 		return () => off()
-	}, [sse])
+	}, [app.sse])
 
 	const now = tick ?? Date.now()
 	const uptimeSeconds = status ? Math.max(0, Math.floor((now - status.startedAt) / 1000)) : 0
@@ -94,7 +93,7 @@ export function OverviewPanel() {
 			<Card withBorder radius="md" p="md">
 				<Stack gap="xs">
 					<Text size="sm">
-						插件：<Code>{context.pluginName}</Code>
+						插件：<Code>{app.pluginName}</Code>
 					</Text>
 					<Text size="sm">
 						运行时长：<Code>{uptimeSeconds}s</Code>
@@ -115,7 +114,7 @@ export function OverviewPanel() {
 				<Button
 					leftSection={<IconCirclePlus size={16} />}
 					onClick={() =>
-						rpc
+						app.rpc
 							.increment(1)
 							.then(() => setError(null))
 							.catch((e: unknown) => setError(rpcErrorMessage(e, '无法执行 +1')))
@@ -127,7 +126,7 @@ export function OverviewPanel() {
 					variant="light"
 					leftSection={<IconRestore size={16} />}
 					onClick={() =>
-						rpc
+						app.rpc
 							.resetCounter()
 							.then(() => setError(null))
 							.catch((e: unknown) => setError(rpcErrorMessage(e, '无法重置计数器')))
@@ -141,11 +140,11 @@ export function OverviewPanel() {
 }
 
 export function EventsPanel() {
-	const { rpc } = pluginWithUi.use('plugin')
-	const events = pluginWithUi.useCollection('events')
-	const recentEvents = pluginWithUi.useSignalDbQuery(
-		() => events.find({}, { sort: { at: -1 }, limit: 50 }),
-		[events],
+	const app = plugin.use()
+	const eventsCollection = app.db.collection('events')
+	const events = eventsCollection.useView()
+	const recentEvents = eventsCollection.useLiveQuery((view) =>
+		view.find({}, { sort: { at: -1 }, limit: 50 }),
 	)
 	const [error, setError] = useState<string | null>(null)
 	const [text, setText] = useState('')
@@ -153,9 +152,10 @@ export function EventsPanel() {
 	const addNote = async () => {
 		const message = text.trim()
 		if (!message) return
-		setText('')
 		try {
-			await rpc.addNote(message)
+			await app.rpc.addNote(message)
+			setText('')
+			setError(null)
 		} catch (e) {
 			setError(rpcErrorMessage(e, '无法添加事件'))
 		}
@@ -173,7 +173,7 @@ export function EventsPanel() {
 						variant="light"
 						color="red"
 						onClick={(): void => {
-							void rpc.clearEvents().catch((): void => {})
+							void app.rpc.clearEvents().catch((): void => {})
 						}}
 					>
 						清空
@@ -203,7 +203,7 @@ export function EventsPanel() {
 			<Card withBorder radius="md" p={0}>
 				<ScrollArea h={320} type="auto" scrollbarSize={10} offsetScrollbars>
 					<Stack gap="xs" p="sm">
-						{!events.ready ? (
+						{!events.ready && recentEvents.length === 0 ? (
 							<Group gap="xs">
 								<Loader size="sm" />
 								<Text size="sm" c="dimmed">
@@ -241,12 +241,12 @@ export function EventsPanel() {
 }
 
 export function StreamsPanel() {
-	const { sse, transport } = pluginWithUi.use('plugin')
-	const connected = useLiveConnectionState(transport.sse)
+	const app = plugin.use()
+	const connected = useLiveConnectionState(app.transport.sse)
 	const [lines, setLines] = useState<Array<{ key: string; text: string }>>([])
 
 	useEffect(() => {
-		const off = sse.onAny((msg) => {
+		const off = app.sse.onAny((msg) => {
 			const payload = msg.payload
 			const text =
 				typeof payload === 'object' && payload && 'type' in payload
@@ -255,7 +255,7 @@ export function StreamsPanel() {
 			setLines((prev) => [{ key: `${Date.now()}-${prev.length}`, text }, ...prev].slice(0, 50))
 		})
 		return () => off()
-	}, [sse])
+	}, [app.sse])
 
 	return (
 		<Stack gap="md">
@@ -304,7 +304,7 @@ type RoutePageProps = {
 }
 
 export function RoutePage({ frame = 'shell' }: RoutePageProps) {
-	const { context } = pluginWithUi.use('plugin')
+	const app = plugin.use()
 	const standalone = frame === 'standalone'
 	return (
 		<Stack gap="md" style={standalone ? { minHeight: '100dvh', padding: 24 } : undefined}>
@@ -316,14 +316,14 @@ export function RoutePage({ frame = 'shell' }: RoutePageProps) {
 						size="xs"
 						leftSection={<IconArrowLeft size={14} />}
 						component="a"
-						href={`/plugins/${encodeURIComponent(context.pluginName)}/dashboard`}
+						href={`/plugins/${encodeURIComponent(app.pluginName)}/dashboard`}
 					>
 						返回宿主壳
 					</Button>
 				) : null}
 			</Group>
 			<Text size="sm" c="dimmed">
-				这是插件提供的页面路由，用于演示 `routes` 能力。插件名：<Code>{context.pluginName}</Code>
+				这是插件提供的页面路由，用于演示 `routes` 能力。插件名：<Code>{app.pluginName}</Code>
 			</Text>
 			{standalone ? (
 				<Text size="sm">

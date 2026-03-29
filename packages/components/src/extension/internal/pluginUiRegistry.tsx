@@ -7,9 +7,10 @@ import type {
 	ExtensionItem,
 	ExtensionMeta,
 	ExtensionPoint,
+	InteractionSessionComponent,
 	PluginExtensionContext,
 	PluginUIModule,
-} from '@pluxel/runtime/web/ui'
+} from '@pluxel/runtime/web'
 import { buildExtensionHref, normalizeExtensionRouteSubPath } from '../paths'
 
 type RouteComponent = (ctx: PluginExtensionContext) => ReactNode
@@ -20,11 +21,16 @@ interface PreparedPluginRuntime {
 	extensionRegistrations: RuntimeRegistration[]
 	navRegistrations: RuntimeRegistration[]
 	routeMap: Map<string, RouteComponent>
+	sessionMap: Map<string, InteractionSessionComponent<any, any, any, any>>
 }
 
 class PluginUiRegistry {
 	private readonly pluginCleanups = new Map<string, Array<() => void>>()
 	private readonly routeComponents = new Map<string, Map<string, RouteComponent>>()
+	private readonly sessionComponents = new Map<
+		string,
+		Map<string, InteractionSessionComponent<any, any, any, any>>
+	>()
 	private readonly pluginHashes = new Map<string, string>()
 	private readonly pluginVersions = new Map<string, number>()
 	private revision = 0
@@ -133,6 +139,7 @@ class PluginUiRegistry {
 		}
 		this.pluginCleanups.delete(pluginName)
 		this.routeComponents.delete(pluginName)
+		this.sessionComponents.delete(pluginName)
 		this.pluginHashes.delete(pluginName)
 	}
 
@@ -144,6 +151,7 @@ class PluginUiRegistry {
 			extensionRegistrations: [],
 			navRegistrations: [],
 			routeMap: new Map(),
+			sessionMap: new Map(),
 		}
 
 		try {
@@ -264,6 +272,14 @@ class PluginUiRegistry {
 				}
 			}
 
+			if (module.sessions) {
+				for (const [sessionKey, session] of Object.entries(module.sessions)) {
+					if (typeof sessionKey !== 'string' || !sessionKey.trim()) continue
+					if (typeof session !== 'function') continue
+					prepared.sessionMap.set(sessionKey.trim(), session)
+				}
+			}
+
 			return prepared
 		} catch (error) {
 			if (prepared.setupCleanup) {
@@ -298,6 +314,7 @@ class PluginUiRegistry {
 			}
 
 			this.routeComponents.set(pluginName, new Map(prepared.routeMap))
+			this.sessionComponents.set(pluginName, new Map(prepared.sessionMap))
 			this.pluginCleanups.set(pluginName, cleanups)
 			this.pluginHashes.set(pluginName, sourceHash)
 		})
@@ -319,6 +336,15 @@ class PluginUiRegistry {
 		const normalized = normalizeExtensionRouteSubPath(restPath)
 		return routeMap.get(normalized)
 	}
+
+	getSessionComponent(
+		pluginName: string,
+		sessionKey: string,
+	): InteractionSessionComponent<any, any, any, any> | undefined {
+		const sessionMap = this.sessionComponents.get(pluginName)
+		if (!sessionMap) return undefined
+		return sessionMap.get(sessionKey)
+	}
 }
 
 export const pluginUiRegistry = new PluginUiRegistry()
@@ -335,3 +361,5 @@ export const getPluginUiModuleRevision =
 	pluginUiRegistry.getPluginRevision.bind(pluginUiRegistry)
 export const getPluginUiRouteComponent =
 	pluginUiRegistry.getRouteComponent.bind(pluginUiRegistry)
+export const getPluginUiSessionComponent =
+	pluginUiRegistry.getSessionComponent.bind(pluginUiRegistry)

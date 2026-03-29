@@ -6,6 +6,7 @@ import {
 } from '@pluxel/core/services'
 import { hashPasswordScrypt } from '../../builtins/basic-auth/password'
 import type { BuiltinMarkdownPart } from '../../web/extensions'
+import type { ConfigFieldMutation } from '../../web/protocol'
 
 export type PluginSchemaResult =
 	| {
@@ -41,6 +42,32 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
 	if (Array.isArray(value)) return false
 	const proto = Object.getPrototypeOf(value)
 	return proto === Object.prototype || proto === null
+}
+
+function writeNestedField(
+	source: Record<string, unknown>,
+	path: string,
+	value: unknown,
+): Record<string, unknown> {
+	const segments = path
+		.split('.')
+		.map((segment) => segment.trim())
+		.filter(Boolean)
+	if (segments.length === 0) return source
+
+	const out: Record<string, unknown> = { ...source }
+	let cursor: Record<string, unknown> = out
+	for (let i = 0; i < segments.length - 1; i += 1) {
+		const key = segments[i]!
+		const next =
+			cursor[key] && typeof cursor[key] === 'object' && !Array.isArray(cursor[key])
+				? { ...(cursor[key] as Record<string, unknown>) }
+				: {}
+		cursor[key] = next
+		cursor = next
+	}
+	cursor[segments[segments.length - 1]!] = value
+	return out
 }
 
 function applyBasicAuthPatchTransform(
@@ -234,6 +261,31 @@ export async function pluginConfigPatch(
 		config: normalizePlainObject(ctx.configService.getRawConfig(name)),
 		defaults,
 	}
+}
+
+export async function pluginConfigPatchField(
+	ctx: Context,
+	name: string,
+	input: ConfigFieldMutation,
+): Promise<PluginConfigResult> {
+	const schemaKey = String(input.schemaKey ?? '').trim()
+	const fieldPath = String(input.fieldPath ?? '').trim()
+	if (!schemaKey || !fieldPath) {
+		return {
+			ok: false,
+			code: 'validation_failed',
+			message: 'schemaKey and fieldPath are required',
+		}
+	}
+
+	const current = normalizePlainObject(ctx.configService.getRawConfig(name))
+	const currentSchemaValue = isPlainObject(current[schemaKey])
+		? (current[schemaKey] as Record<string, unknown>)
+		: {}
+	const nextSchemaValue = writeNestedField(currentSchemaValue, fieldPath, input.value)
+	return await pluginConfigPatch(ctx, name, {
+		[schemaKey]: nextSchemaValue,
+	})
 }
 
 export async function pluginConfigReset(

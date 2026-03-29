@@ -11,7 +11,7 @@
 
 如果你在看插件前端链路，建议同时看：
 
-- `docs/FRONTEND_ARCHITECTURE.md`
+- `docs/architecture/frontend.md`
 - `packages/plugins/host/src/demo/README.md`
 
 ## Run
@@ -76,7 +76,7 @@ pnpm --filter @pluxel/plugins-host deploy:frozen:smoke
 - `dev`
   由 `@pluxel/hmr` 消费 `ui(...).bind(ctx)` 这类 authoring bridge
 - `deploy:*`
-  只消费 build 后的 runtime 语义，例如 `ctx.ext.ui.packaged()`
+  只消费 build 后的 runtime 语义，例如 `ctx.ext.ui.remote.packaged()`
 
 也就是说，这个 host 包的价值主要有两点：
 

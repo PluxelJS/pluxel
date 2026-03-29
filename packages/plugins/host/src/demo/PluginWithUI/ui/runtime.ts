@@ -1,3 +1,3 @@
-import { createPluginUi } from '@pluxel/runtime/web/ui'
+import { pluginUi } from '@pluxel/runtime/web/ui'
 
-export const pluginWithUi = createPluginUi('PluginWithUI')
+export const plugin = pluginUi('PluginWithUI')

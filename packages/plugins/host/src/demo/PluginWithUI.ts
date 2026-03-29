@@ -1,5 +1,6 @@
 // 展示型插件：自定义 UI 扩展 + 路由 + standalone frame + RPC + SSE（带持久化 state）。
 
+import { fileURLToPath } from 'node:url'
 import { BasePlugin, Plugin } from '@pluxel/runtime'
 import { ui } from '@pluxel/hmr/plugin'
 import { RpcTarget } from '@pluxel/runtime/capnweb'
@@ -30,7 +31,7 @@ export type PluginWithUISsePayload =
 	| { type: 'tick'; now: number }
 	| { type: 'activity'; message: string }
 
-const pluginUi = ui('./PluginWithUI/ui/index.tsx')
+const pluginUi = ui(fileURLToPath(new URL('./PluginWithUI/ui/index.tsx', import.meta.url)))
 
 @Plugin({ name: 'PluginWithUI' })
 export class PluginWithUI extends BasePlugin {

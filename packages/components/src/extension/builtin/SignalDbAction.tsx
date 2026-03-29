@@ -1,7 +1,10 @@
 import { Button, Group, Loader, Paper, Stack, Text } from '@mantine/core'
 import { useMemo, useState } from 'react'
 import type { BuiltinActionBlock } from '@pluxel/runtime/web/extensions'
-import { useExtensionContext, useSignalDbCollectionsState } from '@pluxel/runtime/web/ui'
+import {
+	useGlobalExtensionContext,
+	useSignalDbCollectionsState,
+} from '@pluxel/runtime/web'
 import { applySignalDbWrite } from './_shared'
 
 export function BuiltinSignalDbAction({
@@ -11,7 +14,7 @@ export function BuiltinSignalDbAction({
 	pluginName: string
 	block: BuiltinActionBlock
 }) {
-	const ctx = useExtensionContext()
+	const ctx = useGlobalExtensionContext()
 	const transport = ctx.services.transport
 	const collections = useSignalDbCollectionsState(
 		transport,

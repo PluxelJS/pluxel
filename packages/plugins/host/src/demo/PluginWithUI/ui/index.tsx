@@ -2,7 +2,7 @@ import { Badge, Button, Group, Stack, Text } from '@mantine/core'
 import { definePluginUIModule, ExtensionPoints } from '@pluxel/runtime/web/ui'
 import { IconDashboard, IconExternalLink, IconRocket } from '@tabler/icons-react'
 import { EventsPanel, OverviewPanel, RoutePage, StandaloneRoutePage, StreamsPanel } from './components'
-import { pluginWithUi } from './runtime'
+import { plugin } from './runtime'
 
 function HeaderAction() {
 	return (
@@ -13,21 +13,21 @@ function HeaderAction() {
 }
 
 function GlobalStatusBar() {
-	const { context } = pluginWithUi.use('global')
+	const app = plugin.useGlobal()
 	return (
 		<Group gap="xs">
 			<Badge variant="dot" color="grape">
 				UI Demo
 			</Badge>
 			<Text size="xs" c="dimmed">
-				{context.runningPluginsReady ? 'plugins ready' : 'plugins loading…'}
+				{app.runningPluginsReady ? 'plugins ready' : 'plugins loading…'}
 			</Text>
 		</Group>
 	)
 }
 
 function PluginInfo() {
-	const { context } = pluginWithUi.use('plugin')
+	const app = plugin.use()
 	return (
 		<Stack gap="xs">
 			<Text fw={600}>PluginWithUI</Text>
@@ -40,7 +40,7 @@ function PluginInfo() {
 					size="xs"
 					leftSection={<IconExternalLink size={14} />}
 					component="a"
-					href={`/plugins/${encodeURIComponent(context.pluginName)}/dashboard`}
+					href={`/plugins/${encodeURIComponent(app.pluginName)}/dashboard`}
 				>
 					打开 Dashboard
 				</Button>
@@ -48,7 +48,7 @@ function PluginInfo() {
 					variant="subtle"
 					size="xs"
 					component="a"
-					href={`/ext-standalone/${encodeURIComponent(context.pluginName)}/standalone`}
+					href={`/ext-standalone/${encodeURIComponent(app.pluginName)}/standalone`}
 				>
 					Standalone
 				</Button>

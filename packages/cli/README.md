@@ -6,16 +6,16 @@ Pluxel CLI（对外发布包之一）。
 
 如果你在追：
 
-- runtime / hmr / build 的总边界：看 `docs/ARCHITECTURE.md`
-- 插件前端链路：看 `docs/FRONTEND_ARCHITECTURE.md`
-- 发布与内联约束：看 `docs/PACKAGING.md`
+- runtime / hmr / build 的总边界：看 `docs/architecture/system.md`
+- 插件前端链路：看 `docs/architecture/frontend.md`
+- 发布与内联约束：看 `docs/governance/packaging.md`
 
 文档入口：
 
-- `docs/ARCHITECTURE.md`
-- `docs/FRONTEND_ARCHITECTURE.md`
-- `docs/PACKAGING.md`
-- `docs/AGENT_RULES.md`
+- `docs/architecture/system.md`
+- `docs/architecture/frontend.md`
+- `docs/governance/packaging.md`
+- `docs/governance/agent-rules.md`
 
 常用：
 

@@ -1,44 +1,44 @@
 import { ActionIcon, Group, Tooltip } from '@mantine/core'
 import {
-	createPluginUi,
 	ExtensionPoints,
 	definePluginUIModule,
+	pluginUi,
 	rpcErrorMessage,
 } from '@pluxel/runtime/web/ui'
 import { IconBolt, IconPackage } from '@tabler/icons-react'
 import { useCallback, useState } from 'react'
 import type { DistBuildResult, SnapshotFilesResult } from '../rpc'
 
-const snapshotUi = createPluginUi('Snapshot')
+const plugin = pluginUi('Snapshot')
 
 function resultError(result: SnapshotFilesResult | DistBuildResult): string | null {
 	return 'error' in result ? result.error : null
 }
 
 function SnapshotHeaderActions() {
-	const { notify, rpc } = snapshotUi.use('global')
+	const app = plugin.useGlobal()
 	const [snapshotLoading, setSnapshotLoading] = useState(false)
 	const [distLoading, setDistLoading] = useState(false)
 
 	const handleSnapshot = useCallback(async () => {
 		setSnapshotLoading(true)
 		try {
-			const res = await rpc.generateSnapshotFiles()
+			const res = await app.rpc.generateSnapshotFiles()
 			if (!res.ok) {
-				notify({
+				app.notify({
 					tone: 'error',
 					title: 'Snapshot generation failed',
 					message: resultError(res) ?? 'Snapshot generation failed',
 				})
 				return
 			}
-			notify({
+			app.notify({
 				tone: 'success',
 				title: 'Snapshot generated',
 				message: `Output directory: ${res.dir}`,
 			})
 		} catch (error) {
-			notify({
+			app.notify({
 				tone: 'error',
 				title: 'Snapshot generation failed',
 				message: rpcErrorMessage(error, 'Unknown error'),
@@ -46,27 +46,27 @@ function SnapshotHeaderActions() {
 		} finally {
 			setSnapshotLoading(false)
 		}
-	}, [notify, rpc])
+	}, [app])
 
 	const handleBuild = useCallback(async () => {
 		setDistLoading(true)
 		try {
-			const res = await rpc.buildDist()
+			const res = await app.rpc.buildDist()
 			if (!res.ok) {
-				notify({
+				app.notify({
 					tone: 'error',
 					title: 'Dist build failed',
 					message: resultError(res) ?? 'Dist build failed',
 				})
 				return
 			}
-			notify({
+			app.notify({
 				tone: 'success',
 				title: 'Dist build completed',
 				message: `Entry: ${res.entry}`,
 			})
 		} catch (error) {
-			notify({
+			app.notify({
 				tone: 'error',
 				title: 'Dist build failed',
 				message: rpcErrorMessage(error, 'Unknown error'),
@@ -74,7 +74,7 @@ function SnapshotHeaderActions() {
 		} finally {
 			setDistLoading(false)
 		}
-	}, [notify, rpc])
+	}, [app])
 
 	return (
 		<Group gap="xs" wrap="nowrap">

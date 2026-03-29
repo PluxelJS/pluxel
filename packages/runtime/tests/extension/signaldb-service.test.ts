@@ -4,10 +4,14 @@ import { SignalDbService } from '../../src/services/plugin-interaction/SignalDbS
 function createFakeCtx() {
 	const sseDispose = vi.fn(() => undefined)
 	const sseRegister = vi.fn(() => sseDispose)
+	const deferred: Array<() => void> = []
 	const ctx: any = {
 		pluginInfo: { id: 'test-plugin' },
 		effects: {
-			defer: (fn: () => void) => ({ dispose: fn }),
+			defer: (fn: () => void) => {
+				deferred.push(fn)
+				return { dispose: fn }
+			},
 		},
 		ext: {
 			sse: {
@@ -23,6 +27,7 @@ function createFakeCtx() {
 			})),
 		},
 	}
+	ctx.__deferred = deferred
 	return ctx
 }
 
@@ -120,5 +125,25 @@ describe('SignalDbService', () => {
 				value: { ticks: 0 },
 			},
 		})
+	})
+
+	it('re-registers the signaldb SSE namespace from the sync transport path when needed', async () => {
+		const ctx = createFakeCtx()
+		const service = new SignalDbService(ctx)
+		const collection = service.collection<{ id: string; value: number }>({
+			name: 'events',
+			persistence: false,
+		})
+
+		await collection.ready()
+		expect(ctx.ext.sse.expose).toHaveBeenCalledTimes(1)
+
+		const streamCleanup = ctx.__deferred[0]
+		expect(typeof streamCleanup).toBe('function')
+		streamCleanup()
+
+		await service.loadCollectionSync('events')
+
+		expect(ctx.ext.sse.expose).toHaveBeenCalledTimes(2)
 	})
 })

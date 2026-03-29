@@ -1,5 +1,5 @@
 import { useCallback, useMemo, type ReactNode } from 'react'
-import type { ExtensionPoint, ExtensionItem, ExtensionPointCtx } from '@pluxel/runtime/web/ui'
+import type { ExtensionPoint, ExtensionItem, ExtensionPointCtx } from '@pluxel/runtime/web'
 import { useExtensions } from '../internal/registry'
 
 export interface ExtensionSurfaceOptions<

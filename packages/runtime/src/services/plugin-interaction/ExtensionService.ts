@@ -11,6 +11,9 @@ import type {
 	ExtensionManifest,
 	ExtensionManifestEvent,
 	ExtensionModuleState,
+	InteractionContract,
+	InteractionOfferDef,
+	InteractionSurfaceDef,
 } from '../../web/extensions'
 import type { ExtensionPoint } from '../../web/ui'
 import {
@@ -21,6 +24,18 @@ import {
 	extensionFederationRemoteName,
 } from '../../web/federation'
 import { HMR_INTERNAL_API_BASE, hmrExtensionArtifactPath } from '../../web/paths'
+import { ExtensionInteractionRegistry } from './ExtensionInteractionRegistry'
+import {
+	errorMessage,
+	type InteractionOfferPrepareContext,
+	type InteractionOfferPrepareResult,
+	type InteractionSurfaceApplyContext,
+	type InteractionSurfaceRuntimeContext,
+	normalizeInteractionContractRef,
+	type RegisteredOffer,
+	type RegisteredSurface,
+	stripRuntime,
+} from './ExtensionService.shared'
 
 export interface ExtensionModuleStore {
 	getCompiledModule(pluginName: string): CompiledExtensionModule | undefined
@@ -44,6 +59,27 @@ export interface ExtensionServiceConfig {
 	enabled?: boolean
 }
 
+type TypedInteractionSurfaceRuntimeContext<TInput> = Omit<InteractionSurfaceRuntimeContext, 'input'> & {
+	input: TInput
+}
+
+type TypedInteractionSurfaceApplyContext<TInput, TDraft> = Omit<
+	InteractionSurfaceApplyContext,
+	'input' | 'draft'
+> & {
+	input: TInput
+	draft: TDraft
+}
+
+type TypedInteractionOfferPrepareContext<TInput> = Omit<InteractionOfferPrepareContext, 'input'> & {
+	input: TInput
+}
+
+type TypedInteractionOfferPrepareResult<TDraft, TPrepared> = {
+	draft?: TDraft
+	prepared?: TPrepared
+}
+
 export class ExtensionService implements ExtensionModuleStore {
 	private enabled = true
 	private manifestVersion = 0
@@ -51,12 +87,61 @@ export class ExtensionService implements ExtensionModuleStore {
 	private readonly moduleStatesByPlugin = new Map<string, ExtensionModuleState>()
 	private readonly artifactRootsByPlugin = new Map<string, { sourceHash: string; dir: string }>()
 	private readonly manifestListeners = new Set<(event: ExtensionManifestEvent) => void>()
-	private readonly builtinsByPlugin = new Map<string, Map<string, BuiltinExtensionDef>>()
+	private readonly interactions: ExtensionInteractionRegistry
+	readonly remote = {
+		packaged: (input?: { manifestPath?: string | null }) => this.packaged(input),
+	}
+	readonly builtin = {
+		doc: <P extends ExtensionPoint = 'plugin:tabs'>(
+			input: Omit<BuiltinDocExtensionDef<P>, 'kind' | 'pluginName' | 'point'> & { point?: P },
+		) => this.doc(input),
+	}
+	readonly interaction = {
+		surface: <
+			P extends ExtensionPoint = 'plugin:tabs',
+			TInput = unknown,
+			TDraft = unknown,
+			TResult = unknown,
+		>(
+			input: Omit<InteractionSurfaceDef<P>, 'pluginName' | 'point' | 'contract'> & {
+				point?: P
+				contract: InteractionContract<TInput, TDraft, TResult>
+				input?: () => TInput | Promise<TInput>
+				onDraftChange?: (
+					draft: TDraft,
+					context: TypedInteractionSurfaceRuntimeContext<TInput>,
+				) => unknown | Promise<unknown>
+				apply: (
+					result: TResult,
+					context: TypedInteractionSurfaceApplyContext<TInput, TDraft>,
+				) => unknown | Promise<unknown>
+			},
+		) => this.surface(input),
+		offer: <
+			P extends ExtensionPoint = 'plugin:tabs',
+			TInput = unknown,
+			TDraft = unknown,
+			TResult = unknown,
+			TPrepared = unknown,
+		>(
+			input: Omit<InteractionOfferDef<P>, 'pluginName' | 'point' | 'contract'> & {
+				point?: P
+				contract: InteractionContract<TInput, TDraft, TResult>
+				prepare?: (
+					context: TypedInteractionOfferPrepareContext<TInput>,
+				) =>
+					| TypedInteractionOfferPrepareResult<TDraft, TPrepared>
+					| Promise<TypedInteractionOfferPrepareResult<TDraft, TPrepared>>
+				renderKey: string
+			},
+		) => this.offer(input),
+	}
 
 	constructor(
 		public ctx: Context,
 		config?: ExtensionServiceConfig,
 	) {
+		this.interactions = new ExtensionInteractionRegistry(ctx)
 		this.reconfigure(config)
 	}
 
@@ -70,11 +155,27 @@ export class ExtensionService implements ExtensionModuleStore {
 	}
 
 	getManifest(): ExtensionManifest {
-		if (!this.enabled) return { version: 0, modules: [], builtins: [] }
+		this.syncInteractionContext()
+		if (!this.enabled)
+			return {
+				version: 0,
+				modules: [],
+				builtins: [],
+				surfaces: [],
+				offers: [],
+				sessions: [],
+				interactions: [],
+				states: [],
+			}
+		const resolved = this.interactions.getSnapshot()
 		return {
 			version: this.manifestVersion,
 			modules: this.manifestModules.slice(),
-			builtins: this.getBuiltinsSnapshot(),
+			builtins: resolved.builtins,
+			surfaces: resolved.surfaces,
+			offers: resolved.offers,
+			sessions: resolved.sessions,
+			interactions: resolved.interactions,
 			states: this.getModuleStatesSnapshot(),
 		}
 	}
@@ -133,8 +234,10 @@ export class ExtensionService implements ExtensionModuleStore {
 
 	async removePlugin(pluginName: string): Promise<void> {
 		if (!this.enabled) return
+		this.syncInteractionContext()
 		this.artifactRootsByPlugin.delete(pluginName)
 		this.moduleStatesByPlugin.delete(pluginName)
+		this.interactions.clearPlugin(pluginName)
 		this.removeManifestEntry(pluginName)
 	}
 
@@ -177,20 +280,19 @@ export class ExtensionService implements ExtensionModuleStore {
 	 */
 	private registerBuiltin(def: Omit<BuiltinExtensionDef, 'pluginName'>): () => void {
 		if (!this.enabled) return () => undefined
-		const pluginName = this.ctx.pluginInfo.id
+		this.syncInteractionContext()
+		const currentPluginName = this.ctx.pluginInfo.id
 		const id = String(def.id ?? '').trim()
 		const point = String(def.point ?? '').trim()
 		const kind = String(def.kind ?? '').trim()
 		if (!id) throw new Error('[ExtensionService] registerBuiltin: id required')
-		if (!point) throw new Error('[ExtensionService] registerBuiltin: point required')
 		if (!kind) throw new Error('[ExtensionService] registerBuiltin: kind required')
-
 		const normalized: BuiltinExtensionDef = {
 			...def,
 			id,
 			point: point as ExtensionPoint,
 			kind: kind as BuiltinExtensionDef['kind'],
-			pluginName,
+			pluginName: currentPluginName,
 		}
 		try {
 			JSON.stringify(normalized)
@@ -200,10 +302,13 @@ export class ExtensionService implements ExtensionModuleStore {
 			)
 		}
 
-		this.addBuiltin(normalized)
+		this.interactions.addBuiltin(normalized)
 		const guard = this.ctx.effects.defer(() => {
-			this.removeBuiltin(normalized)
+			if (this.interactions.removeBuiltin(normalized)) {
+				this.bumpManifestSync()
+			}
 		})
+		this.bumpManifestSync()
 		return () => guard.dispose()
 	}
 
@@ -219,28 +324,159 @@ export class ExtensionService implements ExtensionModuleStore {
 		return this.registerBuiltin(def)
 	}
 
-	private addBuiltin(def: BuiltinExtensionDef): void {
-		if (!this.enabled) return
-		const pluginName = def.pluginName
-		const key = `${String(def.point)}:${String(def.id)}`
-		let bucket = this.builtinsByPlugin.get(pluginName)
-		if (!bucket) {
-			bucket = new Map()
-			this.builtinsByPlugin.set(pluginName, bucket)
+	surface<P extends ExtensionPoint = 'plugin:tabs', TInput = unknown, TDraft = unknown, TResult = unknown>(
+		input: Omit<InteractionSurfaceDef<P>, 'pluginName' | 'point' | 'contract'> & {
+			point?: P
+			contract: InteractionContract<TInput, TDraft, TResult>
+			input?: () => TInput | Promise<TInput>
+			onDraftChange?: (
+				draft: TDraft,
+				context: TypedInteractionSurfaceRuntimeContext<TInput>,
+			) => unknown | Promise<unknown>
+			apply: (
+				result: TResult,
+				context: TypedInteractionSurfaceApplyContext<TInput, TDraft>,
+			) => unknown | Promise<unknown>
+		},
+	): () => void {
+		if (!this.enabled) return () => undefined
+		this.syncInteractionContext()
+		const pluginName = this.ctx.pluginInfo.id
+		const point = (input.point ?? ('plugin:tabs' as P)) as P
+		const id = String(input.id ?? '').trim()
+		if (!id) throw new Error('[ExtensionService] surface: id required')
+		if (typeof input.apply !== 'function') {
+			throw new Error('[ExtensionService] surface: apply(result, ctx) required')
 		}
-		bucket.set(key, def)
+
+		const normalized: RegisteredSurface = {
+			...(input as Omit<InteractionSurfaceDef<P>, 'pluginName' | 'point' | 'contract'>),
+			id,
+			pluginName,
+			point,
+			contract: normalizeInteractionContractRef(input.contract),
+			providers: Array.isArray(input.providers)
+				? input.providers.map((item) => String(item ?? '').trim()).filter(Boolean)
+				: input.providers === null
+					? null
+					: undefined,
+			cardinality: input.cardinality === 'multiple' ? 'multiple' : 'single',
+			runtime: {
+				contract: input.contract,
+				input: input.input as (() => unknown | Promise<unknown>) | undefined,
+				onDraftChange: input.onDraftChange as
+					| ((draft: unknown, context: InteractionSurfaceRuntimeContext) => unknown | Promise<unknown>)
+					| undefined,
+				apply: input.apply as (
+					result: unknown,
+					context: InteractionSurfaceApplyContext,
+				) => unknown | Promise<unknown>,
+			},
+		}
+
+		try {
+			JSON.stringify(stripRuntime(normalized))
+		} catch (_err) {
+			throw new Error(
+				`[ExtensionService] surface: def must be JSON-serializable (id=${id}, point=${String(
+					normalized.point,
+				)})`,
+			)
+		}
+
+		this.interactions.addSurface(normalized)
+		try {
+			JSON.stringify(normalized.contract)
+		} catch {
+			throw new Error('[ExtensionService] surface: contract metadata must be JSON-serializable')
+		}
+		const guard = this.ctx.effects.defer(() => {
+			if (this.interactions.removeSurface(normalized)) {
+				this.bumpManifestSync()
+			}
+		})
 		this.bumpManifestSync()
+		return () => guard.dispose()
 	}
 
-	private removeBuiltin(def: BuiltinExtensionDef): void {
-		if (!this.enabled) return
-		const bucket = this.builtinsByPlugin.get(def.pluginName)
-		if (!bucket) return
-		const key = `${String(def.point)}:${String(def.id)}`
-		if (bucket.get(key) !== def) return
-		bucket.delete(key)
-		if (bucket.size === 0) this.builtinsByPlugin.delete(def.pluginName)
+	offer<
+		P extends ExtensionPoint = 'plugin:tabs',
+		TInput = unknown,
+		TDraft = unknown,
+		TResult = unknown,
+		TPrepared = unknown,
+	>(
+		input: Omit<InteractionOfferDef<P>, 'pluginName' | 'point' | 'contract'> & {
+			point?: P
+			contract: InteractionContract<TInput, TDraft, TResult>
+			prepare?: (
+				context: TypedInteractionOfferPrepareContext<TInput>,
+			) =>
+				| TypedInteractionOfferPrepareResult<TDraft, TPrepared>
+				| Promise<TypedInteractionOfferPrepareResult<TDraft, TPrepared>>
+		},
+	): () => void {
+		if (!this.enabled) return () => undefined
+		this.syncInteractionContext()
+		const pluginName = this.ctx.pluginInfo.id
+		const point = (input.point ?? ('plugin:tabs' as P)) as P
+		const id = String(input.id ?? '').trim()
+		const renderKey = String(input.renderKey ?? '').trim()
+		if (!id) throw new Error('[ExtensionService] offer: id required')
+		if (!renderKey) throw new Error('[ExtensionService] offer: renderKey required')
+
+		const normalized: RegisteredOffer = {
+			...(input as Omit<InteractionOfferDef<P>, 'pluginName' | 'point' | 'contract'>),
+			id,
+			pluginName,
+			point,
+			renderKey,
+			contract: normalizeInteractionContractRef(input.contract),
+			targets: Array.isArray(input.targets)
+				? input.targets.map((item) => String(item ?? '').trim()).filter(Boolean)
+				: input.targets === null
+					? null
+					: undefined,
+			runtime: {
+				contract: input.contract,
+				prepare: input.prepare as
+					| ((context: InteractionOfferPrepareContext) => InteractionOfferPrepareResult | Promise<InteractionOfferPrepareResult>)
+					| undefined,
+			},
+		}
+
+		try {
+			JSON.stringify(stripRuntime(normalized))
+		} catch (_err) {
+			throw new Error(
+				`[ExtensionService] offer: def must be JSON-serializable (id=${id}, point=${String(
+					normalized.point,
+				)}, renderKey=${renderKey})`,
+			)
+		}
+		this.interactions.addOffer(normalized)
+		const guard = this.ctx.effects.defer(() => {
+			if (this.interactions.removeOffer(normalized)) {
+				this.bumpManifestSync()
+			}
+		})
 		this.bumpManifestSync()
+		return () => guard.dispose()
+	}
+
+	async loadSession(sessionId: string) {
+		this.syncInteractionContext()
+		return await this.interactions.loadSession(sessionId)
+	}
+
+	async syncDraft(input: { sessionId: string; draft: unknown }) {
+		this.syncInteractionContext()
+		return await this.interactions.syncDraft(input)
+	}
+
+	async commitSession(input: { sessionId: string; result: unknown }) {
+		this.syncInteractionContext()
+		return await this.interactions.commitSession(input)
 	}
 
 	private setCompiledModuleRecord(module: CompiledExtensionModule): void {
@@ -298,19 +534,8 @@ export class ExtensionService implements ExtensionModuleStore {
 		})
 	}
 
-	private getBuiltinsSnapshot(): BuiltinExtensionDef[] {
-		const builtins: BuiltinExtensionDef[] = []
-		for (const bucket of this.builtinsByPlugin.values()) {
-			for (const def of bucket.values()) builtins.push(def)
-		}
-		builtins.sort((a, b) => {
-			const pluginDiff = a.pluginName.localeCompare(b.pluginName)
-			if (pluginDiff !== 0) return pluginDiff
-			const pointDiff = String(a.point).localeCompare(String(b.point))
-			if (pointDiff !== 0) return pointDiff
-			return String(a.id).localeCompare(String(b.id))
-		})
-		return builtins
+	private syncInteractionContext(): void {
+		this.interactions.setContext(this.ctx)
 	}
 
 	private getModuleStatesSnapshot(): ExtensionModuleState[] {
@@ -439,7 +664,10 @@ export class ExtensionService implements ExtensionModuleStore {
 		return this.resolveRelativeManifestPath(pluginName, extensionFederationManifestPath())
 	}
 
-	private resolveRelativeManifestPath(pluginName: string, relativeManifestPath: string): string | null {
+	private resolveRelativeManifestPath(
+		pluginName: string,
+		relativeManifestPath: string,
+	): string | null {
 		const registryPath = this.ctx.loader?.api?.registry?.findModuleIdByName?.(pluginName)
 		if (registryPath) {
 			const baseDir = resolveModuleIdBaseDir(registryPath)
@@ -508,14 +736,4 @@ function normalizeArtifactFile(file: string): string | null {
 	if (!cleaned) return null
 	if (cleaned.split('/').some((segment) => segment === '..' || segment.length === 0)) return null
 	return cleaned
-}
-
-function errorMessage(error: unknown): string {
-	if (error instanceof Error && error.message) return error.message
-	if (typeof error === 'string' && error.trim()) return error.trim()
-	try {
-		return JSON.stringify(error)
-	} catch {
-		return 'Unknown extension compile error'
-	}
 }

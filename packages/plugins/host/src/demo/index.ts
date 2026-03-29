@@ -1,6 +1,7 @@
 export * from './advanced/DemoBaseProviders'
 export * from './advanced/DemoForks'
 export * from './PluginBuiltinShowcase'
+export * from './PluginContributionFontDemo'
 export * from './PluginEventsDemo'
 export * from './PluginFeatureConfigDemo'
 export * from './PluginHttpWorkerDemo'

@@ -61,6 +61,7 @@ export type ExtensionCompilerServiceConfig = {
 type PluginCompileEntry = {
 	pluginName: string
 	pluginDir: string
+	entryBaseDir: string
 	entryPath: string
 	sourceFiles: string[]
 	paraglide: ResolvedParaglideIntegration | null
@@ -173,11 +174,13 @@ export class ExtensionCompilerService {
 			pluginDir = dirname(config.entryPath)
 		}
 		if (!pluginDir) throw new Error(`无法定位插件目录: ${pluginName}`)
+		const entryBaseDir = this.findPluginEntryBaseDir(ctx, pluginName) ?? pluginDir
 
-		const sourceFiles = this.collectSourceFiles(pluginDir, config.entryPath)
+		const sourceFiles = this.collectSourceFiles(entryBaseDir, pluginDir, config.entryPath)
 		const entry: PluginCompileEntry = {
 			pluginName,
 			pluginDir,
+			entryBaseDir,
 			entryPath: config.entryPath,
 			sourceFiles,
 			paraglide: resolveParaglideIntegration(pluginDir),
@@ -390,7 +393,7 @@ export class ExtensionCompilerService {
 		sharedPackages: readonly string[],
 		sourceHash: string,
 	): Promise<{ compiledAt: number; outDir: string }> {
-		const absoluteEntry = this.resolvePluginFile(entry.pluginDir, entry.entryPath)
+		const absoluteEntry = this.resolvePluginFile(entry.entryBaseDir, entry.entryPath)
 		if (!absoluteEntry || !existsSync(absoluteEntry)) {
 			throw new Error(`Entry file not found: ${absoluteEntry}`)
 		}
@@ -460,8 +463,8 @@ export class ExtensionCompilerService {
 		return extensionFederationSharedPackages
 	}
 
-	private collectSourceFiles(pluginDir: string, entryPath: string): string[] {
-		const entryFile = this.resolvePluginFile(pluginDir, entryPath)
+	private collectSourceFiles(entryBaseDir: string, pluginDir: string, entryPath: string): string[] {
+		const entryFile = this.resolvePluginFile(entryBaseDir, entryPath)
 		const paraglide = resolveParaglideIntegration(pluginDir)
 		const sourceFiles = entryFile ? [entryFile] : []
 		if (paraglide) sourceFiles.push(...paraglide.sourceRoots)
@@ -543,7 +546,7 @@ export class ExtensionCompilerService {
 		const vite = this.hmr.vite
 		if (!vite) return
 
-		const absoluteEntry = this.resolvePluginFile(entry.pluginDir, entry.entryPath)
+		const absoluteEntry = this.resolvePluginFile(entry.entryBaseDir, entry.entryPath)
 		if (!absoluteEntry || !existsSync(absoluteEntry)) return
 
 		const root = vite.config.root
@@ -609,11 +612,8 @@ export class ExtensionCompilerService {
 	}
 
 	private findPluginDir(ctx: Context, pluginName: string): string | null {
-		const registryPath = ctx.loader.api.registry.findModuleIdByName(pluginName)
-		if (registryPath) {
-			const baseDir = resolveModuleIdBaseDir(registryPath)
-			if (baseDir) return findNearestPackageRoot(baseDir) ?? baseDir
-		}
+		const baseDir = this.findPluginEntryBaseDir(ctx, pluginName)
+		if (baseDir) return findNearestPackageRoot(baseDir) ?? baseDir
 
 		const needle = pluginName.toLowerCase()
 		for (const path of ctx.loader.api.anchors.list()) {
@@ -623,5 +623,11 @@ export class ExtensionCompilerService {
 			}
 		}
 		return null
+	}
+
+	private findPluginEntryBaseDir(ctx: Context, pluginName: string): string | null {
+		const registryPath = ctx.loader.api.registry.findModuleIdByName(pluginName)
+		if (!registryPath) return null
+		return resolveModuleIdBaseDir(registryPath)
 	}
 }

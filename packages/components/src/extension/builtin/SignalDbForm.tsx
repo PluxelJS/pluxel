@@ -4,9 +4,10 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import type { BuiltinFormBlock } from '@pluxel/runtime/web/extensions'
 import {
 	type RuntimeTransportClient,
-	useExtensionContext,
+	useGlobalExtensionContext,
 	useSignalDbCollectionsState,
-} from '@pluxel/runtime/web/ui'
+	useSignalDbQueryState,
+} from '@pluxel/runtime/web'
 import type { ObjectSchema } from 'valibot'
 import * as v from 'valibot'
 import * as f from 'valibot-form'
@@ -56,10 +57,14 @@ function SyncSlot({
 	enabled,
 	payload,
 	allowedKeys,
+	optimisticSync,
+	onOptimisticSyncSettled,
 }: {
 	enabled: boolean
 	payload: unknown
 	allowedKeys: string[]
+	optimisticSync: { sig: string; at: number } | null
+	onOptimisticSyncSettled: () => void
 }): null {
 	const { reset, defaultValues, form } = useAutoFormCtx<any>()
 	const lastSigRef = useRef('')
@@ -70,10 +75,27 @@ function SyncSlot({
 		const picked = pickKnownValues(payload, allowedKeys)
 		if (Object.keys(picked).length === 0) return undefined
 
+		const currentValues = (form.state as any)?.values
+		const sig = safeStringify(picked)
+		if (valuesMatch(currentValues, picked)) {
+			if (sig) lastSigRef.current = sig
+			if ((form.state as any)?.isDirty || optimisticSync) {
+				reset({ ...(defaultValues ?? {}), ...picked })
+			}
+			if (optimisticSync) onOptimisticSyncSettled()
+			return undefined
+		}
+
 		if ((form.state as any)?.isSubmitting) return undefined
 		if ((form.state as any)?.isDirty) return undefined
-
-		const sig = safeStringify(picked)
+		if (optimisticSync) {
+			if (sig && sig === optimisticSync.sig) {
+				lastSigRef.current = sig
+				onOptimisticSyncSettled()
+				return undefined
+			}
+			return undefined
+		}
 		if (sig && sig === lastSigRef.current) return undefined
 		if (valuesMatch((form.state as any)?.values, picked)) {
 			lastSigRef.current = sig
@@ -83,7 +105,16 @@ function SyncSlot({
 		lastSigRef.current = sig
 		reset({ ...(defaultValues ?? {}), ...picked })
 		return undefined
-	}, [allowedKeys, defaultValues, enabled, form.state, payload, reset])
+	}, [
+		allowedKeys,
+		defaultValues,
+		enabled,
+		form.state,
+		onOptimisticSyncSettled,
+		optimisticSync,
+		payload,
+		reset,
+	])
 
 	return null
 }
@@ -238,7 +269,7 @@ export function BuiltinSignalDbForm({
 	title: string
 	block: BuiltinFormBlock
 }) {
-	const ctx = useExtensionContext()
+	const ctx = useGlobalExtensionContext()
 	const transport = ctx.services.transport
 	const isMountedRef = useRef(true)
 	useEffect(() => {
@@ -265,10 +296,13 @@ export function BuiltinSignalDbForm({
 		}, [block.syncFrom?.collection, block.write.collection]),
 	)
 
-	const syncPayload = useMemo(() => {
-		if (!block.syncFrom || !isObject(block.syncFrom)) return null
-		return resolveSignalDbRef(block.syncFrom, collections as any)
-	}, [block.syncFrom, collections])
+	const syncPayload = useSignalDbQueryState(
+		() => {
+			if (!block.syncFrom || !isObject(block.syncFrom)) return null
+			return resolveSignalDbRef(block.syncFrom, collections as any)
+		},
+		[block.syncFrom, collections],
+	)
 
 	const allowedKeys = useMemo(() => {
 		if (state.status !== 'ready') return []
@@ -300,6 +334,19 @@ export function BuiltinSignalDbForm({
 	}
 
 	const [submitting, setSubmitting] = useState(false)
+	const [optimisticSync, setOptimisticSync] = useState<{ sig: string; at: number } | null>(null)
+
+	useEffect(() => {
+		if (!optimisticSync) return undefined
+		const timer = setTimeout(() => {
+			setOptimisticSync((current) =>
+				current && current.sig === optimisticSync.sig && current.at === optimisticSync.at
+					? null
+					: current,
+			)
+		}, 1_500)
+		return () => clearTimeout(timer)
+	}, [optimisticSync])
 
 	const formOpts = useMemo(() => {
 		if (state.status !== 'ready') return null
@@ -317,17 +364,42 @@ export function BuiltinSignalDbForm({
 				setSubmitting(true)
 				try {
 					applySignalDbWrite(collections as any, block.write, value as Record<string, unknown>)
+					if (block.syncFrom) {
+						const submitted = pickKnownValues(value as Record<string, unknown>, allowedKeys)
+						const sig = safeStringify(submitted)
+						if (sig) {
+							setOptimisticSync({
+								sig,
+								at: Date.now(),
+							})
+						}
+					}
 					notifySuccess(title || '已提交')
 					if (block.resetOnSuccess) formApi.reset()
-					else formApi.reset(value as any)
+					else if (submitMode !== 'onChange' || !block.syncFrom) formApi.reset(value as any)
 				} catch (error) {
+					setOptimisticSync(null)
 					notifyError(error)
 				} finally {
 					if (isMountedRef.current) setSubmitting(false)
 				}
 			},
 		})
-	}, [block.confirm, block.feedback, block.resetOnSuccess, block.write, collections, ctx.services, state.status, state.status === 'ready' ? state.defaults : null, submitting, title])
+	}, [
+		allowedKeys,
+		block.confirm,
+		block.feedback,
+		block.resetOnSuccess,
+		block.syncFrom,
+		submitMode,
+		block.write,
+		collections,
+		ctx.services,
+		state.status,
+		state.status === 'ready' ? state.defaults : null,
+		submitting,
+		title,
+	])
 
 	if (state.status === 'loading') {
 		return (
@@ -374,6 +446,8 @@ export function BuiltinSignalDbForm({
 						enabled={Boolean(block.syncFrom)}
 						payload={syncPayload}
 						allowedKeys={allowedKeys}
+						optimisticSync={optimisticSync}
+						onOptimisticSyncSettled={() => setOptimisticSync(null)}
 					/>
 					<AutoSubmitSlot
 						enabled={submitMode === 'onChange'}

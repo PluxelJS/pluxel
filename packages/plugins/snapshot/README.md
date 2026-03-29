@@ -17,5 +17,5 @@ Notes:
 最容易误解的一点是：
 
 - snapshot 产物不是标准插件 UI remote
-- 它不会替代 `ctx.ext.ui.packaged()` 这条正常前端链路
+- 它不会替代 `ctx.ext.ui.remote.packaged()` 这条正常前端链路
 - 它解决的是“冻结一份可运行 runtime 快照”，不是“构建插件前端”

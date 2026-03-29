@@ -5,17 +5,20 @@ import type {
 	UiConfirmPayload,
 	UiNotifyPayload,
 } from './ui-contracts'
+import type { InteractionContractRef } from './interaction-contracts'
 import type { ConfigLayoutPart } from '@pluxel/core'
 import { assertValidConfigLayout, normalizeMarkdownTemplate } from '@pluxel/core'
 
 export type BuiltinExtensionKind = 'doc'
 
-type BuiltinMetaProp<P extends ExtensionPoint> = ExtensionPointMap[P] extends { metaRequired: true }
+type ContributionMetaProp<P extends ExtensionPoint> = ExtensionPointMap[P] extends {
+	metaRequired: true
+}
 	? { meta: ExtensionPointMeta<P> }
 	: { meta?: ExtensionPointMeta<P> }
 
-export type BuiltinExtensionBase<P extends ExtensionPoint = ExtensionPoint> = BuiltinMetaProp<P> & {
-	kind: BuiltinExtensionKind
+type ExtensionRuntimeBase<P extends ExtensionPoint = ExtensionPoint> = ContributionMetaProp<P> & {
+	kind: 'doc'
 	point: P
 	id: string
 	pluginName: string
@@ -23,8 +26,75 @@ export type BuiltinExtensionBase<P extends ExtensionPoint = ExtensionPoint> = Bu
 	requireRunning?: boolean
 }
 
+type BuiltinSlotMetaProp<P extends ExtensionPoint> = ExtensionPointMap[P] extends {
+	metaRequired: true
+}
+	? { meta: ExtensionPointMeta<P> }
+	: { meta?: ExtensionPointMeta<P> }
+
+export type InteractionCardinality = 'single' | 'multiple'
+
+export type InteractionSurfaceDef<P extends ExtensionPoint = ExtensionPoint> =
+	BuiltinSlotMetaProp<P> & {
+		id: string
+		pluginName: string
+		point: P
+		contract: InteractionContractRef
+		providers?: string[] | null
+		title?: string
+		description?: string
+		cardinality?: InteractionCardinality
+		required?: boolean
+	}
+
+export type InteractionOfferDef<P extends ExtensionPoint = ExtensionPoint> = {
+	point: P
+	id: string
+	pluginName: string
+	contract: InteractionContractRef
+	renderKey: string
+	targets?: string[] | null
+	priority?: number
+	requireRunning?: boolean
+	title?: string
+	description?: string
+}
+
+export type InteractionSessionDef<P extends ExtensionPoint = ExtensionPoint> =
+	ContributionMetaProp<P> & {
+		id: string
+		point: P
+		pluginName: string
+		providerPluginName: string
+		offerId: string
+		surfaceId: string
+		contract: InteractionContractRef
+		renderKey: string
+		priority?: number
+		requireRunning?: boolean
+	}
+
+export type ExtensionInteractionState =
+	| 'active'
+	| 'waiting-surface'
+	| 'waiting-provider'
+	| 'rejected'
+
+export type ExtensionInteractionRecord<P extends ExtensionPoint = ExtensionPoint> = {
+	targetPlugin?: string
+	surface?: string
+	point: P
+	offerId: string
+	providerPlugin?: string
+	priority: number
+	contract: InteractionContractRef
+	state: ExtensionInteractionState
+	reason?: string
+}
+
 export type BuiltinSignalDbRef<T = unknown> = {
 	kind: 'signaldb'
+	pluginName?: string
 	collection: string
 	selector?: Record<string, unknown>
 	path?: string
@@ -61,6 +131,7 @@ export type BuiltinTemplateValue =
 export type BuiltinSignalDbWriteMode = 'patch' | 'replace' | 'insert' | 'remove'
 
 export type BuiltinSignalDbWriteSpec = {
+	pluginName?: string
 	collection: string
 	mode?: BuiltinSignalDbWriteMode
 	selector?: Record<string, unknown>
@@ -100,10 +171,11 @@ export type BuiltinInfoCardLayout = {
 	valueAlign?: 'left' | 'right'
 }
 
-export type BuiltinDocBlockKind = 'infoCard' | 'form' | 'action'
+export type BuiltinDocBlockKind = 'infoCard' | 'form' | 'action' | 'resourceSelect'
 
 export type BuiltinInfoCardBlock = {
 	kind: 'infoCard'
+	pluginName?: string
 	description?: string
 	rows?: BuiltinInfoCardRow[]
 	layout?: BuiltinInfoCardLayout
@@ -111,6 +183,7 @@ export type BuiltinInfoCardBlock = {
 
 export type BuiltinFormBlock = {
 	kind: 'form'
+	pluginName?: string
 	description?: string
 	submitLabel?: string
 	submitMode?: 'manual' | 'onChange'
@@ -128,6 +201,7 @@ export type BuiltinFormBlock = {
 
 export type BuiltinActionBlock = {
 	kind: 'action'
+	pluginName?: string
 	label: string
 	description?: string
 	write: BuiltinSignalDbWriteSpec
@@ -138,13 +212,42 @@ export type BuiltinActionBlock = {
 	}
 }
 
+export type BuiltinResourceSelectTarget = {
+	pluginName?: string
+	schemaKey: string
+	field: string
+	mode?: 'value' | 'ref'
+	refKind?: string
+	includeLabel?: boolean
+}
+
+export type BuiltinResourceSelectBlock = {
+	kind: 'resourceSelect'
+	pluginName?: string
+	label: string
+	description?: string
+	placeholder?: string
+	clearable?: boolean
+	nothingFoundMessage?: string
+	collection: string
+	valueField?: string
+	labelField: string
+	descriptionField?: string
+	target: BuiltinResourceSelectTarget
+	feedback?: {
+		success?: UiNotifyPayload
+		error?: UiNotifyPayload
+	}
+}
+
 export type BuiltinDocBlock =
 	| BuiltinInfoCardBlock
 	| BuiltinFormBlock
 	| BuiltinActionBlock
+	| BuiltinResourceSelectBlock
 
 export type BuiltinDocExtensionDef<P extends ExtensionPoint = ExtensionPoint> =
-	BuiltinExtensionBase<P> & {
+	ExtensionRuntimeBase<P> & {
 		kind: 'doc'
 		title?: string
 		description?: string
@@ -153,7 +256,9 @@ export type BuiltinDocExtensionDef<P extends ExtensionPoint = ExtensionPoint> =
 
 export type BuiltinMarkdownPart = ConfigLayoutPart
 
-export type BuiltinDocPart = BuiltinMarkdownPart | { kind: 'block'; title: string; block: BuiltinDocBlock }
+export type BuiltinDocPart =
+	| BuiltinMarkdownPart
+	| { kind: 'block'; title: string; block: BuiltinDocBlock }
 
 declare const __builtinDocContentBrand: unique symbol
 export type BuiltinDocContent = BuiltinDocPart[] & { readonly [__builtinDocContentBrand]: true }
@@ -185,7 +290,7 @@ function mergeAdjacentMarkdown(parts: BuiltinDocPart[]): BuiltinDocPart[] {
 	for (const part of parts) {
 		const prev = merged[merged.length - 1]
 		if (part.kind === 'md' && prev?.kind === 'md') {
-			prev.text += part.text
+			merged[merged.length - 1] = { ...prev, text: `${prev.text}${part.text}` }
 			continue
 		}
 		merged.push(part.kind === 'md' ? { ...part } : part)
@@ -279,7 +384,7 @@ function createDocBuilder<M extends Record<string, unknown>>(schemaMap: M): DocB
 		schema: ((key: Extract<keyof M, string>) => {
 			const k = String(key ?? '').trim()
 			if (!k) throw new Error('[doc.schema] schemaKey required')
-			if (!Object.prototype.hasOwnProperty.call(schemaMap, k)) {
+			if (!Object.hasOwn(schemaMap, k)) {
 				throw new Error(`[doc.schema] unknown schemaKey "${k}" (not in schemaMap)`)
 			}
 			return { kind: 'schema', key: k } as BuiltinDocPart
@@ -287,7 +392,7 @@ function createDocBuilder<M extends Record<string, unknown>>(schemaMap: M): DocB
 		schemas: ((...keys: readonly Extract<keyof M, string>[]) => {
 			const list = (keys ?? []).map((x) => String(x ?? '').trim()).filter(Boolean)
 			for (const k of list) {
-				if (!Object.prototype.hasOwnProperty.call(schemaMap, k)) {
+				if (!Object.hasOwn(schemaMap, k)) {
 					throw new Error(`[doc.schemas] unknown schemaKey "${k}" (not in schemaMap)`)
 				}
 			}
@@ -327,6 +432,10 @@ export interface ExtensionManifest {
 	version: number
 	modules: CompiledExtensionModule[]
 	builtins?: BuiltinExtensionDef[]
+	surfaces?: InteractionSurfaceDef[]
+	offers?: InteractionOfferDef[]
+	sessions?: InteractionSessionDef[]
+	interactions?: ExtensionInteractionRecord[]
 	states?: ExtensionModuleState[]
 }
 

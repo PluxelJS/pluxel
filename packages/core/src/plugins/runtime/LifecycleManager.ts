@@ -137,7 +137,7 @@ export class LifecycleManager {
 	}
 
 	async stopLifecycle(
-		id: PluginIdentifier,
+		_id: PluginIdentifier,
 		plugin: BasePlugin,
 		opts?: { ref?: PluginLifecycleActor; timeoutMs?: number },
 	): Promise<void> {

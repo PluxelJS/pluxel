@@ -4,7 +4,7 @@
 
 前端整条链路说明见：
 
-- [`docs/FRONTEND_ARCHITECTURE.md`](../../docs/FRONTEND_ARCHITECTURE.md)
+- [`docs/architecture/frontend.md`](../../docs/architecture/frontend.md)
 
 ## Package Exports
 

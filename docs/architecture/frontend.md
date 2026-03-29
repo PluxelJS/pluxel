@@ -34,11 +34,11 @@ Pluxel 的插件前端分成三段：
 - 作者侧源码声明：
   从 `@pluxel/hmr/plugin` 导入 `ui` / `worker`
 - 浏览器插件 UI：
-  从 `@pluxel/runtime/web/ui` 导入 `definePluginUIModule(...)` 与 `createPluginUi(...)`
+  从 `@pluxel/runtime/web/ui` 导入 `definePluginUIModule(...)` 与 `pluginUi(...)`
 - 运行时注册：
   后端统一走 `ctx.ext.rpc / sse / signaldb / ui`
 - build 产物：
-  `ui(...).bind(ctx)` 最终必须降成 `ctx.ext.ui.packaged()`
+  `ui(...).bind(ctx)` 最终必须降成 `ctx.ext.ui.remote.packaged()`
 - 正式 i18n：
   统一走 `@inlang/paraglide-js`，路径约定是 `project.inlang` + `messages/` -> `src/paraglide/`
 
@@ -98,10 +98,10 @@ Pluxel 的插件前端分成三段：
 
 | 通道 | 后端入口 | 浏览器侧入口 | 适合什么 | 不适合什么 |
 | --- | --- | --- | --- | --- |
-| RPC | `ctx.ext.rpc.expose(...)` | `createPluginUi(...).use*().rpc` | 明确命令式动作、一次请求一次结果、需要返回值或报错 | 连续状态同步、高频流 |
-| SSE | `ctx.ext.sse.expose(...)` | `createPluginUi(...).use*().sse` | 流式事件、进度推送、高频通知 | 结构化状态读写 |
-| SignalDB | `ctx.ext.signaldb.collection(...)` | `useCollection()` / `useDoc()` | 结构化状态同步、前后端同构 collection、doc/builtin state/action | 复杂命令式副作用语义 |
-| UI | `ctx.ext.ui.packaged()` / `ctx.ext.ui.doc(...)` | 宿主 plugin UI registry | 注册“怎么展示” | 数据同步本身 |
+| RPC | `ctx.ext.rpc.expose(...)` | `plugin.use().rpc` / `plugin.useGlobal().rpc` | 明确命令式动作、一次请求一次结果、需要返回值或报错 | 连续状态同步、高频流 |
+| SSE | `ctx.ext.sse.expose(...)` | `plugin.use().sse` / `plugin.useGlobal().sse` | 流式事件、进度推送、高频通知 | 结构化状态读写 |
+| SignalDB | `ctx.ext.signaldb.collection(...)` | `plugin.use().db.collection('x').useList()` / `app.db.useDoc()` / `app.db.useCount()` | 结构化状态同步、前后端同构 collection、doc/builtin state/action | 复杂命令式副作用语义 |
+| UI | `ctx.ext.ui.remote.packaged()` / `ctx.ext.ui.builtin.doc(...)` / `ctx.ext.ui.interaction.*(...)` | 宿主 plugin UI registry | 注册“怎么展示” | 数据同步本身 |
 
 推荐判断规则很简单：
 
@@ -140,9 +140,10 @@ await status.ready()
 典型浏览器形态：
 
 ```ts
-const pluginUi = createPluginUi('MyPlugin')
-const status = pluginUi.useCollection('status')
-const current = pluginUi.useDoc('status', { id: 'main' })
+const plugin = pluginUi('MyPlugin')
+const app = plugin.use()
+const status = app.db.collection('status').useView()
+const current = app.db.useDoc('status', { id: 'main' })
 ```
 
 这里最重要的不是 API 形式，而是语义：
@@ -182,12 +183,13 @@ const current = pluginUi.useDoc('status', { id: 'main' })
 
 - 每个插件名对应一个 replica namespace
 - 每个 collection 名在浏览器侧建一个本地 `Collection`
-- React 组件通过 `useSignalDbCollectionState()` / `useSignalDbDocState()` 订阅这个 replica
+- React 组件通常通过 `plugin.use().db.collection(...).useView()` / `app.db.useDoc(...)` 订阅这个 replica
 
-`createPluginUi(...)` 只是把这些 hook 再封了一层更适合插件作者使用的 API：
+`pluginUi(...)` 只是把这些 hook 再封成一个更适合插件作者使用的 `app` 句柄：
 
-- `useCollection(collectionName)`
-- `useDoc(collectionName, selector)`
+- `plugin.use()` / `plugin.useGlobal()`
+- `app.db.collection(collectionName).useView() / useList() / useCount()`
+- `app.db.useDoc(collectionName, selector)`
 
 因此浏览器侧拿到的不是“原始网络数据”，而是一个可查询、可变更、可观察的 collection view。
 
@@ -269,7 +271,7 @@ runtime 本身不应该理解 `entryPath`，也不应该关心源码在哪里。
 
 - 在 dev 里，把源码入口交给 HMR bridge
 - 在 build 里，给 AST rewrite 一个静态可识别调用点
-- 在非 dev 且未重写的极端路径下，才退回 `ctx.ext.ui.packaged()`
+- 在非 dev 且未重写的极端路径下，才退回 `ctx.ext.ui.remote.packaged()`
 
 也因此，`entryPath` 是 authoring 信息，不是 runtime 信息。最终运行时只应该看到 packaged manifest。
 
@@ -318,12 +320,14 @@ MF2 在 Pluxel 里承担的是“已编译插件 UI 的标准 remote 形态”�
 
 ## 5. runtime
 
-正式运行时只做两件事：
+正式运行时只做三件事：
 
-- `ctx.ext.ui.packaged()`
+- `ctx.ext.ui.remote.packaged()`
   注册编译后的 MF remote
-- `ctx.ext.ui.doc(...)`
+- `ctx.ext.ui.builtin.doc(...)`
   注册宿主渲染 doc/builtin
+- `ctx.ext.ui.interaction.surface(...)` / `ctx.ext.ui.interaction.offer(...)`
+  注册跨插件 custom UI interaction
 
 也就是说 runtime 只理解：
 
@@ -337,9 +341,10 @@ MF2 在 Pluxel 里承担的是“已编译插件 UI 的标准 remote 形态”�
 - `ctx.ext.rpc.expose(...)`
 - `ctx.ext.sse.expose(...)`
 - `ctx.ext.signaldb.collection(...)`
-- `ctx.ext.ui.packaged()`
-- `ctx.ext.ui.doc(...)`
-- `ctx.ext.ui.state(...)`
+- `ctx.ext.ui.remote.packaged()`
+- `ctx.ext.ui.builtin.doc(...)`
+- `ctx.ext.ui.interaction.surface(...)`
+- `ctx.ext.ui.interaction.offer(...)`
 
 这里要注意一个很关键的区分：
 
@@ -365,7 +370,7 @@ MF2 在 Pluxel 里承担的是“已编译插件 UI 的标准 remote 形态”�
 ### build 链路
 
 1. 构建工具扫描插件源码
-2. `hmrUiBridgePlugin` 把 `ui(...).bind(ctx)` 重写成 `ctx.ext.ui.packaged()`
+2. `hmrUiBridgePlugin` 把 `ui(...).bind(ctx)` 重写成 `ctx.ext.ui.remote.packaged()`
 3. 插件 UI 通过 `@pluxel/hmr/plugin-build` + `@module-federation/vite` 构建为 MF2 remote
 4. 产物包含 `mf-manifest.json`、`remoteEntry.js` 等 artifact
 5. runtime 部署时只看到 packaged remote
@@ -388,7 +393,7 @@ MF2 在 Pluxel 里承担的是“已编译插件 UI 的标准 remote 形态”�
 
 ### runtime 链路
 
-1. 插件启动时调用 `ctx.ext.ui.packaged()`
+1. 插件启动时调用 `ctx.ext.ui.remote.packaged()`
 2. runtime 解析 packaged manifest 路径
 3. `ExtensionService` 记录 compiled module 元数据
 4. 浏览器宿主通过 MF runtime `createInstance/registerRemotes/loadRemote` 加载插件 UI
@@ -464,19 +469,20 @@ Pluxel 目前的选择是更偏“内聚系统设计”而不是“把所有语�
 浏览器插件前端统一从 `@pluxel/runtime/web/ui` 导入：
 
 - `definePluginUIModule(...)`
-- `createPluginUi(...)`
-- `useSignalDbCollectionState(...)`
-- `useSignalDbDocState(...)`
-- `useRuntimeTransportClient()`
+- `pluginUi(...)`
 
 这层的目标是给插件作者一套稳定的“浏览器侧契约”，而不是暴露宿主内部实现。
 
-当前 `createPluginUi(...)` 的推荐心智模型是：
+当前 `pluginUi(...)` 的推荐心智模型是：
 
-- `use()`
-  当前 extension context 下的插件 UI client；也可显式传 `use('global')` / `use('plugin')`
-- `useCollection()` / `useDoc()` / `useSignalDbQuery()`
-  SignalDB 副本读取
+- `const plugin = pluginUi('MyPlugin')`
+  只在模块里声明一次插件名，作为类型锚点
+- `const app = plugin.use()`
+  默认拿 plugin-scoped app；这是绝大多数组件主入口
+- `app.db`
+  SignalDB 副本读取主路径
+- `plugin.useGlobal()`
+  只用于 header/global status bar 之类全局扩展点
 
 这里没有再抽象出额外的“前端 state facade”。原因是 Pluxel 已经把状态模型稳定在 SignalDB collection 上，再套一层自定义 store API 只会让后端 collection 语义和前端消费语义重新分叉。
 
@@ -496,41 +502,51 @@ SignalDB + React 的响应性现在也刻意不再自造：
 
 原因是我们要共享的是“稳定插件契约”，不是把 runtime 内部实现细节也暴露给 remote。
 
-也就是说，helper 本身不再把 `context/services/transport/rpc/sse` 全都拆成独立 hook；先选一个插件 UI client，再从返回对象上取 `rpc` / `sse` / `notify` / `confirm` / `locale` / `context`，需要底层传输时再用 `transport`。
+也就是说，helper 本身不再把 `context/services/transport/rpc/sse` 全都拆成独立 hook；先拿到 `const app = plugin.use()` 或 `plugin.useGlobal()`，再从 `app` 上取 `rpc` / `sse` / `notify` / `confirm` / `colorScheme` / `locale` / `formatDate()` / `formatNumber()`，需要底层传输时再用 `transport`。
 
-`use()` 的返回能力边界：
+`app` 的返回能力边界：
 
-- `context`
-  当前 extension context
+- `pluginName` / `pathname`
+  当前插件与路径信息
+- `colorScheme`
+  宿主当前主题模式
 - `rpc`
   插件命名空间 RPC
 - `sse`
   插件命名空间 SSE
 - `notify` / `confirm`
   宿主注入的 UI 能力（强制）
-- `locale`
-  宿主注入的 locale 服务；负责 locale 状态、fallback locale，以及日期/数字格式化
+- `locale` / `fallbackLocale`
+  宿主注入的 locale 状态
+- `setLocale()` / `formatDate()` / `formatNumber()`
+  宿主注入的 locale 能力
+- `db`
+  当前插件命名空间 SignalDB 入口
 - `transport`
   底层 transport 客户端（escape hatch）
 
 SignalDB 的读取建议：
 
-- `useDoc(collection, selector)`
+- `app.db.useDoc(collection, selector)`
   固定单文档读取
-- `useCollection(collection)`
-  需要读写整个 replica、拿集合句柄时使用
-- `useSignalDbQuery(() => collection.find(...).fetch(), [collection])`
-  列表、排序、过滤、聚合、派生值；自定义组件里优先用这个
+- `app.db.collection(collection).useView()`
+  需要拿完整 replica 句柄时使用
+- `app.db.collection(collection).useList(...)`
+  列表、排序、过滤
+- `app.db.useCount(collection, selector?)` / `app.db.collection(collection).useCount(...)`
+  计数
+- `app.db.useLiveQuery(() => ...)`
+  复杂聚合、派生值；只在前面这些不够时使用
 
 UI 能力的典型写法：
 
 ```ts
-const pluginUi = createPluginUi('MyPlugin')
-const { notify, confirm, locale } = pluginUi.use('plugin')
+const plugin = pluginUi('MyPlugin')
+const app = plugin.use()
 
-notify({ tone: 'success', title: '完成', message: '操作成功' })
-const ok = await confirm({ message: '确认继续？' })
-notify({ tone: 'info', title: locale.formatDate(Date.now()) })
+app.notify({ tone: 'success', title: '完成', message: '操作成功' })
+const ok = await app.confirm({ message: '确认继续？' })
+app.notify({ tone: 'info', title: app.formatDate(Date.now()) })
 ```
 
 对“完整自定义插件 UI”的正式本地化，当前唯一推荐路径是 `@inlang/paraglide-js`。Pluxel 不再维护插件级字典注册接口，而是把 Paraglide 放在插件 UI 编译链里处理：
@@ -670,12 +686,12 @@ dev:
 
 build:
   @pluxel/build + @pluxel/hmr/plugin-build
-    -> rewrite ui(...).bind(ctx) to ctx.ext.ui.packaged()
+    -> rewrite ui(...).bind(ctx) to ctx.ext.ui.remote.packaged()
     -> build MF2 remote
 
 runtime:
   @pluxel/runtime
-    -> ctx.ext.ui.packaged()
+    -> ctx.ext.ui.remote.packaged()
     -> ExtensionService stores compiled module metadata
     -> browser host loads MF2 remote
 

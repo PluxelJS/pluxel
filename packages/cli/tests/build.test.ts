@@ -426,7 +426,7 @@ describe('build command', () => {
 			})
 
 			const output = await readFile(resolve(fixtureDir, 'dist/index.mjs'), 'utf-8')
-			expect(output).toContain('ctx.ext.ui.packaged()')
+			expect(output).toContain('ctx.ext.ui.remote.packaged()')
 			expect(output).not.toContain('@pluxel/hmr/plugin')
 			expect(output).not.toContain('import{ui')
 		})

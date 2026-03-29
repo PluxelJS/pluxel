@@ -12,7 +12,7 @@
 
 如果你在追“插件前端整条链路”，这份文档只负责 service 边界；完整说明看：
 
-- `docs/FRONTEND_ARCHITECTURE.md`
+- `docs/architecture/frontend.md`
 
 ## @pluxel/runtime 服务概览
 
@@ -32,7 +32,7 @@
 - `packages/runtime/src/web/**`
   解决的是浏览器宿主和插件 UI 如何消费 runtime 协议
 
-不要把浏览器 `createPluginUi(...)` helper 误当成 service 层 API。
+不要把浏览器 `pluginUi(...).use()` helper 误当成 service 层 API。
 
 ### `FsService`（`ctx.root.fs`）
 

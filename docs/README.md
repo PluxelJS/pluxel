@@ -1,13 +1,19 @@
 # Pluxel Docs
 
-这里是 **Pluxel 仓库的“规范/设计目标/维护约束”的唯一权威来源**（给人和 agent/LLM 都看）。
+这里是 **Pluxel 仓库的权威设计与治理文档入口**。
 
-先记一个分层规则，后面读文档会快很多：
+先看分层：
 
-- `docs/*.md`
-  回答“为什么这样设计、边界在哪里、哪些规则不能破”
+- `docs/architecture/**`
+  回答“系统怎么分层、依赖方向与服务边界是什么”
+- `docs/governance/**`
+  回答“发布、维护、重构时有哪些硬约束”
+- `docs/design/**`
+  回答“某个具体子系统为什么收敛成当前设计”
 - `packages/*/README.md`
   回答“这个包对外提供什么、应该怎么用”
+- `packages/*/docs/**`
+  回答“这个包内部某个子系统的实现 contract / host contract 是什么”
 - `packages/*/IMPLEMENTATION_INDEX.md`
   回答“具体代码入口在哪、从哪里开始追实现”
 
@@ -15,10 +21,14 @@
 
 阅读顺序（推荐）：
 
-1) `docs/ARCHITECTURE.md`：整体架构与依赖方向（core/runtime/hmr/cli）
-2) `docs/FRONTEND_ARCHITECTURE.md`：插件前端链路（`ctx.ext` / HMR / MF2 / runtime）
-3) `docs/PACKAGING.md`：发布/内联/依赖约束（只发布 5 个包）
-4) `docs/AGENT_RULES.md`：后续维护规则（避免引入新的遗留/噪音）
+1. `docs/architecture/system.md`
+   整体架构与依赖方向（core/runtime/hmr/cli）
+2. `docs/architecture/frontend.md`
+   插件前端链路（`ctx.ext` / HMR / MF2 / runtime）
+3. `docs/governance/packaging.md`
+   发布/内联/依赖约束（只发布 5 个包）
+4. `docs/governance/agent-rules.md`
+   后续维护规则（避免引入新的遗留/噪音）
 
 包内文档（次级入口）：
 
@@ -30,11 +40,14 @@
 
 仓库级补充文档：
 
-- `docs/SERVICES.md`
+- `docs/architecture/services.md`
   runtime / hmr service 边界补充说明
-- `docs/PLUGIN_DOC_CONFIG_DESIGN.md`
+- `docs/design/plugin-config/overview.md`
   插件配置声明与宿主 doc 编排的收敛设计
-  （实现侧 contract 参考：`packages/runtime/docs/config/README.md`）
+  （实现侧 contract：`packages/runtime/docs/config/contract.md`）
+- `docs/design/plugin-contribution/overview.md`
+  插件间 contribution / slot / provider-owned custom widget / resource reference 设计
+  （包含当前 capability matrix、常见交互形式与稳定/非稳定边界）
 
 非权威/历史文档说明：
 
@@ -47,6 +60,6 @@
 
 补充：
 
-- 一些 internal/private 包（例如 `@pluxel/context`）会配置 `exports` 供仓库内 import，但仍不属于发布集合；发布/依赖约束以 `docs/PACKAGING.md` 为准。
+- 一些 internal/private 包（例如 `@pluxel/context`）会配置 `exports` 供仓库内 import，但仍不属于发布集合；发布/依赖约束以 `docs/governance/packaging.md` 为准。
 - `packages/plugins/host/**`、`packages/plugins/host/src/demo/**`
   是样例与 smoke host，不是权威架构文档；它们用于展示“当前推荐写法”，不替代 `docs/*`。

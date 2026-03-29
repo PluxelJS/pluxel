@@ -8,7 +8,6 @@ import {
 	Group,
 	Stack,
 	Text,
-	useComputedColorScheme,
 } from '@mantine/core'
 import {
 	SnapshotDashboard,
@@ -18,8 +17,8 @@ import {
 	type SnapshotLoader,
 } from '@pluxel/market'
 import {
-	createPluginUi,
 	definePluginUIModule,
+	pluginUi,
 	type PackageBatchResult,
 	type PackageInventoryEntry,
 	type PackageSpecInput,
@@ -86,7 +85,7 @@ const specKey = (spec?: PackageSpecInput) =>
 	(spec?.raw || `${spec?.name ?? ''}@${spec?.version ?? spec?.tag ?? ''}` || '').toLowerCase()
 
 async function fetchPackageInventory(
-	transport: ReturnType<typeof marketUi.use>['transport'],
+	transport: ReturnType<typeof plugin.use>['transport'],
 	includeUntracked: boolean,
 ): Promise<PackageInventoryEntry[]> {
 	return transport.withRpc((rpc) => rpc.package().inventory({ includeUntracked }))
@@ -113,12 +112,11 @@ function resolveMessage(error: unknown, fallback: string) {
 type UiNotifyLike = UiNotifyPayload
 type UiConfirmLike = UiConfirmPayload
 
-const marketUi = createPluginUi('MarketUI')
+const plugin = pluginUi('MarketUI')
 
 function MarketPage() {
-	const { transport, notify, confirm } = marketUi.use('plugin')
-	const scheme = useComputedColorScheme('light', { getInitialValueInEffect: true })
-	const appearance = scheme === 'dark' ? 'dark' : 'light'
+	const app = plugin.use()
+	const appearance = app.colorScheme === 'dark' ? 'dark' : 'light'
 	const marketBase = useMemo(() => resolveMarketBase(), [])
 	const [inlineMessage, setInlineMessage] = useState<string | null>(null)
 	const [installedPackages, setInstalledPackages] = useState<Record<string, string>>({})
@@ -126,16 +124,16 @@ function MarketPage() {
 
 	const notifyUser = useCallback(
 		(payload: UiNotifyLike) => {
-			notify(payload)
+			app.notify(payload)
 		},
-		[notify],
+		[app],
 	)
 
 	const confirmAction = useCallback(
 		(payload: UiConfirmLike) => {
-			return confirm(payload)
+			return app.confirm(payload)
 		},
-		[confirm],
+		[app],
 	)
 
 	const marketClient = useMemo(
@@ -148,7 +146,7 @@ function MarketPage() {
 
 	const loadInventory = useCallback(async () => {
 		try {
-			const inventory = await fetchPackageInventory(transport, false)
+			const inventory = await fetchPackageInventory(app.transport, false)
 			setInstalledPackages(buildInstalledPackages(inventory))
 		} catch (error) {
 			notifyUser({
@@ -157,7 +155,7 @@ function MarketPage() {
 				tone: 'error',
 			})
 		}
-	}, [notifyUser, transport])
+	}, [app, notifyUser])
 
 	useEffect(() => {
 		void loadInventory()

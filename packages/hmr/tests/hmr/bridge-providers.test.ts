@@ -9,6 +9,7 @@ describe('HMR bridgeProviders', () => {
 	it('always includes @pluxel/context and maps it to @pluxel/core by default', () => {
 		const deps = resolveHMRDependencyConfig()
 		expect(deps.bridgeModules.includes('@pluxel/context')).toBe(true)
+		expect(deps.bridgeModules.includes('@pluxel/runtime/internal')).toBe(true)
 		expect(deps.bridgeProviders['@pluxel/context']).toBe('@pluxel/core')
 	})
 

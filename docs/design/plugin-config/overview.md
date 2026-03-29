@@ -6,7 +6,7 @@
 
 - 启动前配置声明（唯一推荐）：`this.configs.use(cfg(schemaMap))`（可选：附带 cfg layout）
 - 纯 schema（单 key）：`this.configs.use(schema)`（等价于单 key 的 cfg 声明）
-- 运行期 doc（统一入口）：`this.ctx.ext.ui.doc({ content: doc(schemaMap)\`...\` })`
+- 运行期 doc（统一入口）：`this.ctx.ext.ui.builtin.doc({ content: doc(schemaMap)\`...\` })`
 
 规则：
 
@@ -83,11 +83,6 @@ ${c.schemas()}
 
 若 cfg layout 未覆盖所有 key，Host UI 会把剩余 key 追加到页面末尾的 `Unplaced Schemas` 区域，确保仍可编辑。
 
-实现说明（Host）：
-
-- Build toolchain 会把 cfg layout 注入到插件 definition（`configLayoutMap`），并通过 `plugin.schema()` 返回 `layout`。
-- Host 的配置页在检测到 `layout` 时，会按该 layout 渲染配置表单；否则回退到默认的“按 schema group/tab”表单布局。
-
 也允许单 schema 的快捷写法：
 
 ```ts
@@ -129,7 +124,7 @@ init() {
 	} as const
 	const d = doc(schemas)
 
-	this.ctx.ext.ui.doc({
+	this.ctx.ext.ui.builtin.doc({
 		id: 'runtime',
 		point: 'plugin:tabs',
 		title: 'Runtime',
@@ -175,31 +170,13 @@ rolldown 仅支持：
 
 **插件启动前的 `this.configs.use(...)` 必须是静态可提取声明：使用 `cfg(schemaMap)`，也允许 `this.configs.use(schema)` 这种单 schema 的快捷写法。**
 
-## Build-Time Responsibilities
-
-构建期只围绕启动前声明提取 metadata：
-
-1. config schema map
-2. schema source
-3. bindings（哪个 field 绑定了哪些 key）
-4. cfg layout（可选；哪个 field 绑定了 layout）
-
-注入接口（当前实现）：
-
-- `__setConfigSource__(Ctor, key, schemaSource)`（每个 schema key 一条）
-- `__registerConfigSchema__(Ctor, key, schema)`（每个 schema key 一条）
-- `__registerConfigBinding__(Ctor, field, keys)`（每个 configs.use(...) field 一条）
-- `__setConfigLayout__(Ctor, field, layoutParts)`（可选；每个 cfg layout 一条）
-
-`doc(...)` 不进入启动前 AST 提取链路。
-
 ## Type Model
 
 `this.configs.use(cfg(schemaMap))` 的返回类型只由 `schemaMap` 决定：`{ [K in keyof schemaMap]: InferOutput<schemaMap[K]> }`。
 
 补充：
 
-- Host config 合同（`plugin.schema()` / cfg layout parts）见 `packages/runtime/docs/config/README.md`。
+- Host / runtime 实现 contract 见 `packages/runtime/docs/config/contract.md`。
 
 ## Summary
 

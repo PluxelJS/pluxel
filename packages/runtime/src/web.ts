@@ -53,6 +53,10 @@ export {
 	joinPath,
 } from './web/paths'
 export * from './web/plugin-ui/types'
+export type {
+	InteractionContract,
+	InteractionContractRef,
+} from './web/plugin-ui/interaction-contracts'
 export {
 	EXTENSION_FEDERATION_EXPOSE,
 	EXTENSION_FEDERATION_MANIFEST_FILE,
@@ -71,6 +75,19 @@ export {
 	useRuntimeTransportClient,
 } from './web/react'
 export { invokeRpc, rpcErrorMessage } from './web/rpc'
+export {
+	useSignalDbCollectionState,
+	useSignalDbCollectionsState,
+	useSignalDbDocState,
+	useSignalDbQueryState,
+	type SignalDbCollectionView,
+} from './web/plugin-ui/signaldb-runtime'
+export type {
+	SignalDbFindOptions,
+	SignalDbItem,
+	SignalDbListSpec,
+	SignalDbSelector,
+} from './web/plugin-ui/signaldb-contracts'
 export type {
 	ResolvedSseEvents,
 	SseClientOptions,

@@ -14,7 +14,16 @@ export const extensionRoutes = (app: AnyElysiaApp) =>
 			.get('/manifest', ({ set, pluginCtx }) => {
 				const extensionService = pluginCtx.ext.ui
 				if (!extensionService) {
-					return { version: 0, modules: [] }
+					return {
+						version: 0,
+						modules: [],
+						builtins: [],
+						surfaces: [],
+						offers: [],
+						sessions: [],
+						interactions: [],
+						states: [],
+					}
 				}
 				set.headers['cache-control'] = 'no-store'
 				return extensionService.getManifest()
@@ -48,12 +57,15 @@ export const extensionRoutes = (app: AnyElysiaApp) =>
 				}
 
 				if (file === EXTENSION_FEDERATION_MANIFEST_FILE) {
-					return new Response(rewriteFederationManifest(body.toString('utf-8'), pluginName, sourceHash), {
-						headers: {
-							'content-type': 'application/json; charset=utf-8',
-							'cache-control': 'public, max-age=31536000, immutable',
+					return new Response(
+						rewriteFederationManifest(body.toString('utf-8'), pluginName, sourceHash),
+						{
+							headers: {
+								'content-type': 'application/json; charset=utf-8',
+								'cache-control': 'public, max-age=31536000, immutable',
+							},
 						},
-					})
+					)
 				}
 
 				return new Response(body, {
@@ -66,7 +78,11 @@ export const extensionRoutes = (app: AnyElysiaApp) =>
 			.get('/events', (context) => context.pluginCtx.ext.sse.stream(context, ['extensions'])),
 	)
 
-function extractArtifactFilePath(url: string, pluginName: string, sourceHash: string): string | null {
+function extractArtifactFilePath(
+	url: string,
+	pluginName: string,
+	sourceHash: string,
+): string | null {
 	const pathname = new URL(url).pathname
 	const prefix = `${HMR_INTERNAL_API_BASE}${hmrExtensionArtifactBasePath(pluginName, sourceHash)}`
 	if (!pathname.startsWith(prefix)) return null

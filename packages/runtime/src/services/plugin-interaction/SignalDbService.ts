@@ -36,11 +36,12 @@ export interface SignalDbDocumentHandle<TState extends SignalDbItem> {
 	field<K extends keyof TState & string>(key: K, fallback: TState[K]): BuiltinSyncRef<TState[K]>
 	path<TValue = unknown>(path: string, fallback: TValue): BuiltinSyncRef<TValue>
 	snapshot(fallback: TState): BuiltinSyncRef<TState>
-	form(
-		input: Omit<BuiltinFormBlock, 'kind' | 'syncFrom'> & {
-			sync?: false | BuiltinSyncRef<Record<string, unknown>> | TState
-		},
+	form(input: Omit<BuiltinFormBlock, 'kind' | 'syncFrom'>): BuiltinFormBlock
+	formFrom(
+		syncFrom: BuiltinSyncRef<Record<string, unknown>> | TState,
+		input: Omit<BuiltinFormBlock, 'kind' | 'syncFrom'>,
 	): BuiltinFormBlock
+	formUnsynced(input: Omit<BuiltinFormBlock, 'kind' | 'syncFrom'>): BuiltinFormBlock
 	action(input: Omit<BuiltinActionBlock, 'kind'>): BuiltinActionBlock
 	patchSpec(
 		value: BuiltinTemplateValue,
@@ -92,9 +93,9 @@ export interface SignalDbCollectionHandle<T extends SignalDbItem> {
 }
 
 export class SignalDbService {
-	private readonly collections = new Map<string, ManagedSignalDbCollection<any>>()
-	private readonly channels = new Set<SseChannel>()
-	private streamRegistered = false
+	private readonly collectionsByPlugin = new Map<string, Map<string, ManagedSignalDbCollection<any>>>()
+	private readonly channelsByPlugin = new Map<string, Set<SseChannel>>()
+	private readonly streamRegisteredByPlugin = new Set<string>()
 
 	constructor(
 		public ctx: Context,
@@ -104,24 +105,31 @@ export class SignalDbService {
 	collection<T extends SignalDbItem>(
 		options: SignalDbCollectionOptions<T>,
 	): SignalDbCollectionHandle<T> {
+		const pluginName = this.currentPluginName()
 		const name = String(options.name ?? '').trim()
 		if (!name) throw new Error('[ext.signaldb] collection(): name required')
 
-		const existing = this.collections.get(name)
+		const collections = this.collectionsFor(pluginName)
+		const existing = collections.get(name)
 		if (existing) return existing.publicApi as SignalDbCollectionHandle<T>
 
 		const managed = new ManagedSignalDbCollection<T>(this.ctx, this, {
 			...options,
 			name,
+			pluginName,
 		})
-		this.collections.set(name, managed)
-		this.ensureStream()
+		collections.set(name, managed)
+		this.ensureStream(pluginName)
 		void managed.ready().then(() => {
-			this.broadcast('snapshot', managed.snapshotEvent())
+			this.broadcast(pluginName, 'snapshot', managed.snapshotEvent())
 		})
 
 		this.ctx.effects.defer(() => {
-			if (this.collections.get(name) === managed) this.collections.delete(name)
+			const currentCollections = this.collectionsByPlugin.get(pluginName)
+			if (currentCollections?.get(name) === managed) {
+				currentCollections.delete(name)
+				if (currentCollections.size === 0) this.collectionsByPlugin.delete(pluginName)
+			}
 			void managed.dispose()
 		})
 
@@ -130,8 +138,10 @@ export class SignalDbService {
 
 	/** @internal Internal sync transport entry used by the HMR/web bridge. */
 	async loadCollectionSync<T extends SignalDbItem>(name: string): Promise<LoadResponse<T>> {
-		const managed = this.collections.get(name)
+		const pluginName = this.currentPluginName()
+		const managed = this.collectionsFor(pluginName).get(name)
 		if (!managed) return { items: [] }
+		this.ensureStream(pluginName)
 		await managed.ready()
 		return managed.loadSyncResponse() as LoadResponse<T>
 	}
@@ -141,47 +151,78 @@ export class SignalDbService {
 		name: string,
 		changes: Changeset<T>,
 	): Promise<'applied' | 'readonly' | 'missing'> {
-		const managed = this.collections.get(name)
+		const pluginName = this.currentPluginName()
+		const managed = this.collectionsFor(pluginName).get(name)
 		if (!managed) return 'missing'
+		this.ensureStream(pluginName)
 		await managed.ready()
 		if (!managed.allowsClientWrites()) return 'readonly'
 		managed.applySyncChanges(changes)
 		return 'applied'
 	}
 
-	private ensureStream() {
-		if (this.streamRegistered) return
-		this.streamRegistered = true
+	private ensureStream(pluginName: string) {
+		if (this.streamRegisteredByPlugin.has(pluginName)) return
+		this.streamRegisteredByPlugin.add(pluginName)
 
 		this.ctx.ext.sse.expose(
 			() => (channel) => {
-				this.channels.add(channel)
+				const channels = this.channelsFor(pluginName)
+				channels.add(channel)
 				channel.onAbort(() => {
-					this.channels.delete(channel)
+					channels.delete(channel)
 				})
 
 				return () => {
-					this.channels.delete(channel)
+					channels.delete(channel)
 				}
 			},
-			{ namespace: signalDbNamespace(this.ctx.pluginInfo.id) },
+			{ namespace: signalDbNamespace(pluginName) },
 		)
+		this.ctx.effects.defer(() => {
+			this.streamRegisteredByPlugin.delete(pluginName)
+			this.channelsByPlugin.delete(pluginName)
+		})
 	}
 
 	broadcast(
+		pluginName: string,
 		event: Extract<SignalDbSyncEvent['type'], 'snapshot' | 'insert' | 'update' | 'remove' | 'reset'>,
 		payload: SignalDbSyncEvent,
 	) {
-		for (const channel of this.channels) {
+		for (const channel of this.channelsFor(pluginName)) {
 			try {
 				channel.emit(event, payload)
 			} catch {}
 		}
 	}
+
+	private currentPluginName(): string {
+		return String(this.ctx.pluginInfo.id ?? '').trim()
+	}
+
+	private collectionsFor(pluginName: string): Map<string, ManagedSignalDbCollection<any>> {
+		let collections = this.collectionsByPlugin.get(pluginName)
+		if (!collections) {
+			collections = new Map()
+			this.collectionsByPlugin.set(pluginName, collections)
+		}
+		return collections
+	}
+
+	private channelsFor(pluginName: string): Set<SseChannel> {
+		let channels = this.channelsByPlugin.get(pluginName)
+		if (!channels) {
+			channels = new Set()
+			this.channelsByPlugin.set(pluginName, channels)
+		}
+		return channels
+	}
 }
 
 type ManagedCollectionOptions<T extends SignalDbItem> = SignalDbCollectionOptions<T> & {
 	name: string
+	pluginName: string
 }
 
 class ManagedSignalDbCollection<T extends SignalDbItem> {
@@ -343,7 +384,7 @@ class ManagedSignalDbCollection<T extends SignalDbItem> {
 			version,
 			items: inserted ? [cloneItem(inserted)] : [],
 		}
-		this.owner.broadcast('insert', event)
+		this.owner.broadcast(this.options.pluginName, 'insert', event)
 		this.emit(event)
 		return id
 	}
@@ -362,7 +403,7 @@ class ManagedSignalDbCollection<T extends SignalDbItem> {
 			version,
 			items: inserted,
 		}
-		this.owner.broadcast('insert', event)
+		this.owner.broadcast(this.options.pluginName, 'insert', event)
 		this.emit(event)
 		return ids
 	}
@@ -388,7 +429,7 @@ class ManagedSignalDbCollection<T extends SignalDbItem> {
 			version,
 			items: updated ? [cloneItem(updated)] : [],
 		}
-		this.owner.broadcast('update', event)
+		this.owner.broadcast(this.options.pluginName, 'update', event)
 		this.emit(event)
 		return result
 	}
@@ -416,7 +457,7 @@ class ManagedSignalDbCollection<T extends SignalDbItem> {
 			version,
 			items: updated ? [cloneItem(updated)] : [],
 		}
-		this.owner.broadcast('update', event)
+		this.owner.broadcast(this.options.pluginName, 'update', event)
 		this.emit(event)
 		return result
 	}
@@ -433,7 +474,7 @@ class ManagedSignalDbCollection<T extends SignalDbItem> {
 			version,
 			ids: before?.id ? [before.id] : [],
 		}
-		this.owner.broadcast('remove', event)
+		this.owner.broadcast(this.options.pluginName, 'remove', event)
 		this.emit(event)
 		return result
 	}
@@ -453,7 +494,7 @@ class ManagedSignalDbCollection<T extends SignalDbItem> {
 			version,
 			ids: matched,
 		}
-		this.owner.broadcast('remove', event)
+		this.owner.broadcast(this.options.pluginName, 'remove', event)
 		this.emit(event)
 		return removed
 	}
@@ -469,7 +510,7 @@ class ManagedSignalDbCollection<T extends SignalDbItem> {
 			version,
 			items: this.snapshotItems(),
 		}
-		this.owner.broadcast('reset', event)
+		this.owner.broadcast(this.options.pluginName, 'reset', event)
 		this.emit(event)
 	}
 
@@ -553,7 +594,7 @@ class ManagedSignalDbCollection<T extends SignalDbItem> {
 				version,
 				items: added,
 			}
-			this.owner.broadcast('insert', event)
+			this.owner.broadcast(this.options.pluginName, 'insert', event)
 			this.emit(event)
 		}
 		if (modified.length) {
@@ -563,7 +604,7 @@ class ManagedSignalDbCollection<T extends SignalDbItem> {
 				version,
 				items: modified,
 			}
-			this.owner.broadcast('update', event)
+			this.owner.broadcast(this.options.pluginName, 'update', event)
 			this.emit(event)
 		}
 		if (removedIds.length) {
@@ -573,7 +614,7 @@ class ManagedSignalDbCollection<T extends SignalDbItem> {
 				version,
 				ids: removedIds,
 			}
-			this.owner.broadcast('remove', event)
+			this.owner.broadcast(this.options.pluginName, 'remove', event)
 			this.emit(event)
 		}
 	}
@@ -597,19 +638,20 @@ function createSignalDbDocumentHandle<TState extends SignalDbItem>(
 		snapshot(fallback) {
 			return createSignalDbDocRef(collection.name, selection, fallback)
 		},
-		form({ sync, ...rest }) {
-			const syncFrom =
-				sync === false
-					? undefined
-					: isBuiltinSyncRef(sync)
-						? sync
-						: createSignalDbDocRef(collection.name, selection, (sync ?? {}) as TState)
-
-			return {
-				...rest,
-				kind: 'form',
-				syncFrom,
-			}
+		form(input) {
+			return createBuiltinFormBlock(
+				input,
+				createSignalDbDocRef(collection.name, selection, {} as Record<string, unknown>),
+			)
+		},
+		formFrom(syncFrom, input) {
+			const normalizedSyncFrom = isBuiltinSyncRef(syncFrom)
+				? syncFrom
+				: createSignalDbDocRef(collection.name, selection, syncFrom as TState)
+			return createBuiltinFormBlock(input, normalizedSyncFrom)
+		},
+		formUnsynced(input) {
+			return createBuiltinFormBlock(input)
 		},
 		action(input) {
 			return {
@@ -626,6 +668,17 @@ function createSignalDbDocumentHandle<TState extends SignalDbItem>(
 		removeSpec() {
 			return collection.removeSpec(selection)
 		},
+	}
+}
+
+function createBuiltinFormBlock(
+	input: Omit<BuiltinFormBlock, 'kind' | 'syncFrom'>,
+	syncFrom?: BuiltinSyncRef<Record<string, unknown>>,
+): BuiltinFormBlock {
+	return {
+		...input,
+		kind: 'form',
+		syncFrom,
 	}
 }
 

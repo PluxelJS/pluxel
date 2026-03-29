@@ -6,7 +6,7 @@
 
 如果你要理解插件前端整条链路，不要只看这个 README，直接看：
 
-- [`docs/FRONTEND_ARCHITECTURE.md`](../../docs/FRONTEND_ARCHITECTURE.md)
+- [`docs/architecture/frontend.md`](../../docs/architecture/frontend.md)
 
 在前端架构里，`@pluxel/build` 的角色很明确：
 
@@ -19,7 +19,7 @@
 - `configSourcePlugin()`
   提取 `@Config(...)` / `configs.use(...)` 的 schema source
 - `hmrUiBridgePlugin()`
-  把 `ui(...).bind(ctx)` 重写成 `ctx.ext.ui.packaged()`
+  把 `ui(...).bind(ctx)` 重写成 `ctx.ext.ui.remote.packaged()`
 - `importTypeFixerPlugin()`
   修正装饰器和类构造场景下需要的 type-only import
 
@@ -36,7 +36,7 @@
 对插件前端来说，最关键的就是这一步：
 
 - 源码里允许写 `ui(...).bind(ctx)`
-- 最终产物里只应该剩下 `ctx.ext.ui.packaged()`
+- 最终产物里只应该剩下 `ctx.ext.ui.remote.packaged()`
 
 这样 runtime 才不会反向依赖 HMR authoring bridge。
 

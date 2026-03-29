@@ -16,7 +16,7 @@ import {
 	extensionFederationModuleId,
 } from '@pluxel/runtime/web/federation'
 import type { CompiledExtensionModule } from '@pluxel/runtime/web/extensions'
-import type { PluginUIModule } from '@pluxel/runtime/web/ui'
+import type { PluginUIModule } from '@pluxel/runtime/web'
 import * as RuntimeWebUi from '@pluxel/runtime/web/ui'
 
 let federationRuntime: ModuleFederation | null = null

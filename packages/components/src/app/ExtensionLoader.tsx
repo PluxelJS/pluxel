@@ -5,9 +5,12 @@ import {
 	type BuiltinExtensionKind,
 	type CompiledExtensionModule,
 	type ExtensionMeta,
+	type ExtensionManifest,
 	type ExtensionModuleState,
+	type InteractionSessionDef,
 	ExtensionErrorBoundary,
 	extensionRegistry,
+	getPluginUiSessionComponent,
 	loadPluginUiModule,
 	unloadPluginUiModule,
 } from '../extension'
@@ -15,13 +18,17 @@ import { fetchExtensionManifest } from '../extension/api/manifest'
 import { builtinComponents } from '../extension/builtin'
 import { extLog } from '../extension/debug'
 import { loadFederatedExtensionModule } from '../extension/federationRuntime'
+import { InteractionSessionHost } from '../extension/session/InteractionSessionHost'
 import {
+	clearExtensionManifestDiagnostics,
+	getExtensionManifestDiagnostics,
 	getExtensionModuleStates,
 	removeExtensionModuleState,
 	replaceExtensionModuleStates,
+	replaceExtensionManifestDiagnostics,
 	setExtensionManifestSyncHandler,
 	upsertExtensionModuleState,
-} from '../extension/internal/module-state'
+} from '../extension/internal/runtime-state'
 import { usePluginOverview } from './plugins/data'
 import { useRuntimeTransportClient } from '../runtime'
 
@@ -43,6 +50,11 @@ interface LoadedPluginModule extends CompiledExtensionModule {
 	inflight?: Promise<void>
 }
 
+interface CachedRegistration {
+	sig: string
+	cleanup: () => void
+}
+
 const FAST_SYNC_POLL_MS = 1_000
 const CONNECTED_RECONCILE_POLL_MS = 30_000
 const POLL_URGENCY_WINDOW_MS = 15_000
@@ -53,7 +65,8 @@ const loaderState = {
 	loading: false,
 	pendingForce: false,
 	moduleCache: new Map<string, LoadedPluginModule>(),
-	builtinCache: new Map<string, { sig: string; cleanup: () => void }>(),
+	builtinCache: new Map<string, CachedRegistration>(),
+	sessionCache: new Map<string, CachedRegistration>(),
 	manifestBackoff: null as { at: number; backoffMs: number } | null,
 	unloadTimers: new Map<string, ReturnType<typeof setTimeout>>(),
 	sseConnected: false,
@@ -62,16 +75,23 @@ const loaderState = {
 
 const DEFAULT_UNLOAD_DELAY_MS = 8_000
 
-function recomputeLoaderSignature() {
-	const moduleSig = Array.from(loaderState.moduleCache.values())
-		.map((mod) => `${mod.pluginName}:${mod.sourceHash}`)
+function getSerializableSignature(value: unknown, fallback: string): string {
+	try {
+		return JSON.stringify(value)
+	} catch {
+		return fallback
+	}
+}
+
+function getCachedRegistrationSignature(cache: Map<string, CachedRegistration>): string {
+	return Array.from(cache.entries())
+		.map(([key, value]) => `${key}:${value.sig}`)
 		.sort()
 		.join('|')
-	const builtinSig = Array.from(loaderState.builtinCache.entries())
-		.map(([key, v]) => `${key}:${v.sig}`)
-		.sort()
-		.join('|')
-	const stateSig = getExtensionModuleStates()
+}
+
+function getModuleStatesSignature(states: readonly ExtensionModuleState[]): string {
+	return states
 		.map((state) =>
 			[
 				state.pluginName,
@@ -84,7 +104,107 @@ function recomputeLoaderSignature() {
 		)
 		.sort()
 		.join('|')
-	loaderState.manifestSignature = `${moduleSig}||builtins:${builtinSig}||states:${stateSig}`
+}
+
+function getManifestDiagnosticsSignature(
+	snapshot: Pick<ExtensionManifest, 'interactions' | 'offers' | 'surfaces' | 'sessions'>,
+): string {
+	const interactionsSig = snapshot.interactions
+		.map((item) =>
+			[
+				item.targetPlugin ?? '',
+				item.surface ?? '',
+				item.point,
+				item.providerPlugin ?? '',
+				item.offerId,
+				item.state,
+				item.reason ?? '',
+			].join(':'),
+		)
+		.sort()
+		.join('|')
+	const offersSig = snapshot.offers
+		.map((item) => [item.pluginName, item.point, item.id, item.renderKey].join(':'))
+		.sort()
+		.join('|')
+	const surfacesSig = snapshot.surfaces
+		.map((item) => [item.pluginName, item.point, item.id, item.required ? '1' : '0'].join(':'))
+		.sort()
+		.join('|')
+	const sessionsSig = snapshot.sessions
+		.map((item) => [item.pluginName, item.providerPluginName, item.point, item.id].join(':'))
+		.sort()
+		.join('|')
+	return `${interactionsSig}||offers:${offersSig}||surfaces:${surfacesSig}||sessions:${sessionsSig}`
+}
+
+function getManifestPayloadSignature(
+	payload: Pick<
+		ExtensionManifest,
+		'modules' | 'builtins' | 'sessions' | 'states' | 'interactions' | 'offers' | 'surfaces'
+	>,
+): string {
+	const modulesSig = payload.modules
+		.map((module) => `${module.pluginName}:${module.sourceHash}`)
+		.sort()
+		.join('|')
+	const builtinsSig = payload.builtins
+		.map((builtin) =>
+			getSerializableSignature(builtin, [
+				(builtin as any)?.kind ?? '',
+				(builtin as any)?.pluginName ?? '',
+				(builtin as any)?.point ?? '',
+				(builtin as any)?.id ?? '',
+			].join(':')),
+		)
+		.sort()
+		.join('|')
+	const sessionsSig = payload.sessions
+		.map((session) =>
+			getSerializableSignature(
+				session,
+				`session:${session.pluginName ?? ''}:${session.point ?? ''}:${session.id ?? ''}`,
+			),
+		)
+		.sort()
+		.join('|')
+	const statesSig = getModuleStatesSignature(payload.states)
+	const diagnosticsSig = getManifestDiagnosticsSignature(payload)
+	return `${modulesSig}||builtins:${builtinsSig}||sessions:${sessionsSig}||states:${statesSig}||diag:${diagnosticsSig}`
+}
+
+function clearCachedRegistration(
+	cache: Map<string, CachedRegistration>,
+	runtimeId: string,
+	cached = cache.get(runtimeId),
+): void {
+	if (!cached) return
+	try {
+		cached.cleanup()
+	} catch {}
+	cache.delete(runtimeId)
+}
+
+function pruneCachedRegistrations(
+	cache: Map<string, CachedRegistration>,
+	seen: Set<string>,
+): void {
+	for (const runtimeId of Array.from(cache.keys())) {
+		if (seen.has(runtimeId)) continue
+		clearCachedRegistration(cache, runtimeId)
+	}
+}
+
+function recomputeLoaderSignature() {
+	const moduleSig = Array.from(loaderState.moduleCache.values())
+		.map((mod) => `${mod.pluginName}:${mod.sourceHash}`)
+		.sort()
+		.join('|')
+	const builtinSig = getCachedRegistrationSignature(loaderState.builtinCache)
+	const sessionSig = getCachedRegistrationSignature(loaderState.sessionCache)
+	const stateSig = getModuleStatesSignature(getExtensionModuleStates())
+	const manifestDiagnostics = getManifestDiagnosticsSignature(getExtensionManifestDiagnostics())
+	loaderState.manifestSignature = `${moduleSig}||builtins:${builtinSig}||sessions:${sessionSig}||states:${stateSig}||diag:${manifestDiagnostics}`
 }
 
 function cancelScheduledUnload(pluginName: string) {
@@ -219,16 +339,6 @@ export function ExtensionLoader({
 		extensionRegistry.batch(() => {
 			const next = Array.isArray(builtins) ? builtins : []
 			const seen = new Set<string>()
-			const fallbackSig = (
-				def: BuiltinExtensionDef,
-				meta: { kind: string; pluginName: string; point: string; id: string },
-			) => {
-				try {
-					return JSON.stringify(def)
-				} catch {
-					return `${meta.kind}:${meta.pluginName}:${meta.point}:${meta.id}`
-				}
-			}
 
 			for (const def of next) {
 				if (!def || typeof def !== 'object') continue
@@ -242,21 +352,22 @@ export function ExtensionLoader({
 				const runtimeId = `${pluginName}:builtin:${point}:${id}`
 				seen.add(runtimeId)
 
-				const sig = fallbackSig(def, { kind, pluginName, point, id })
+				const sig = getSerializableSignature(def, `${kind}:${pluginName}:${point}:${id}`)
 
 				const cached = loaderState.builtinCache.get(runtimeId)
 				if (cached && cached.sig === sig) continue
-				if (cached) {
-					try {
-						cached.cleanup()
-					} catch {}
-					loaderState.builtinCache.delete(runtimeId)
-				}
+				clearCachedRegistration(loaderState.builtinCache, runtimeId, cached)
 
 				const meta: ExtensionMeta = {
 					...((def as any).meta ?? {}),
 					id: runtimeId,
 					pluginName,
+					availabilityPluginName:
+						typeof (def as any).availabilityPluginName === 'string'
+							? (def as any).availabilityPluginName
+							: typeof (def as any).sourcePluginName === 'string'
+								? (def as any).sourcePluginName
+								: pluginName,
 					priority: typeof (def as any).priority === 'number' ? (def as any).priority : 0,
 					requireRunning: (def as any).requireRunning ?? true,
 				}
@@ -304,13 +415,102 @@ export function ExtensionLoader({
 				loaderState.builtinCache.set(runtimeId, { sig, cleanup })
 			}
 
-			for (const [key, cached] of Array.from(loaderState.builtinCache.entries())) {
-				if (seen.has(key)) continue
-				try {
-					cached.cleanup()
-				} catch {}
-				loaderState.builtinCache.delete(key)
+			pruneCachedRegistrations(loaderState.builtinCache, seen)
+		})
+	}, [])
+
+	const syncSessions = useCallback((sessions?: InteractionSessionDef[]) => {
+		extensionRegistry.batch(() => {
+			const next = Array.isArray(sessions) ? sessions : []
+			const seen = new Set<string>()
+
+			for (const def of next) {
+				if (!def || typeof def !== 'object') continue
+				const pluginName = typeof def.pluginName === 'string' ? def.pluginName : ''
+				const point = typeof def.point === 'string' ? def.point : ''
+				const id = typeof def.id === 'string' ? def.id : ''
+				const sourcePlugin =
+					typeof def.providerPluginName === 'string' ? def.providerPluginName : ''
+				if (!pluginName || !point || !id) continue
+
+				const runtimeId = `${pluginName}:session:${point}:${id}`
+				seen.add(runtimeId)
+
+				const sig = getSerializableSignature(def, `session:${pluginName}:${point}:${id}`)
+				const cached = loaderState.sessionCache.get(runtimeId)
+				if (cached && cached.sig === sig) continue
+				clearCachedRegistration(loaderState.sessionCache, runtimeId, cached)
+
+				const meta: ExtensionMeta = {
+					...((def as any).meta ?? {}),
+					id: runtimeId,
+					pluginName,
+					availabilityPluginName: sourcePlugin || pluginName,
+					priority: typeof def.priority === 'number' ? def.priority : 0,
+					requireRunning: def.requireRunning ?? true,
+				}
+
+				const SessionComponent = sourcePlugin
+					? getPluginUiSessionComponent(sourcePlugin, def.renderKey)
+					: undefined
+				const render = () => (
+					<ExtensionErrorBoundary
+						pluginName={pluginName}
+						extensionId={runtimeId}
+						point={point}
+						fallback={
+							process.env.NODE_ENV !== 'production'
+								? ({ error }) => (
+										<div
+											style={{
+												padding: 8,
+												borderRadius: 8,
+												border: '1px solid rgba(255, 0, 0, 0.25)',
+												background: 'rgba(255, 0, 0, 0.06)',
+												fontSize: 12,
+												lineHeight: 1.4,
+											}}
+										>
+											<div style={{ fontWeight: 600 }}>
+												Interaction session render failed: {pluginName} · {point}
+											</div>
+											<div style={{ opacity: 0.85 }}>
+												{error?.message ?? String(error ?? 'unknown error')}
+											</div>
+										</div>
+									)
+								: null
+						}
+					>
+						{SessionComponent ? (
+							<InteractionSessionHost session={def} component={SessionComponent} />
+						) : (
+							<div
+								style={{
+									padding: 8,
+									borderRadius: 8,
+									border: '1px solid rgba(255, 153, 0, 0.25)',
+									background: 'rgba(255, 153, 0, 0.06)',
+									fontSize: 12,
+									lineHeight: 1.4,
+								}}
+							>
+								<div style={{ fontWeight: 600 }}>
+									Session UI not found: {sourcePlugin || 'unknown'} · {def.renderKey}
+								</div>
+								<div style={{ opacity: 0.85 }}>
+									Provider UI module did not expose the requested interaction session component.
+								</div>
+							</div>
+						)}
+					</ExtensionErrorBoundary>
+				)
+
+				const cleanup = extensionRegistry.register(point as any, { meta, render })
+				loaderState.sessionCache.set(runtimeId, { sig, cleanup })
 			}
+
+			pruneCachedRegistrations(loaderState.sessionCache, seen)
 		})
 	}, [])
 
@@ -388,41 +588,6 @@ export function ExtensionLoader({
 				loaderState.manifestBackoff = null
 				extLog('fetched manifest v%d', manifest.version)
 
-					const computeSignature = (payload: typeof manifest) => {
-						const modulesSig = payload.modules
-						.map((module) => `${module.pluginName}:${module.sourceHash}`)
-						.sort()
-						.join('|')
-						const builtinsSig = (payload.builtins ?? [])
-						.map((b) => {
-							try {
-								return JSON.stringify(b)
-							} catch {
-								const pluginName = (b as any)?.pluginName ?? ''
-								const point = (b as any)?.point ?? ''
-								const id = (b as any)?.id ?? ''
-								const kind = (b as any)?.kind ?? ''
-								return `${kind}:${pluginName}:${point}:${id}`
-							}
-						})
-							.sort()
-							.join('|')
-						const statesSig = (payload.states ?? [])
-							.map((state) =>
-								[
-									state.pluginName,
-									state.state,
-									state.updatedAt,
-									state.sourceHash ?? '',
-									state.compiledAt ?? '',
-									state.message ?? '',
-								].join(':'),
-							)
-							.sort()
-							.join('|')
-						return `${modulesSig}||builtins:${builtinsSig}||states:${statesSig}`
-					}
-
 				const applyManifest = async (
 					payload: typeof manifest,
 					allowRetry: boolean,
@@ -432,7 +597,7 @@ export function ExtensionLoader({
 					moduleCount: number
 					skipped: boolean
 				}> => {
-					const nextSignature = computeSignature(payload)
+					const nextSignature = getManifestPayloadSignature(payload)
 					if (
 						!force &&
 						payload.version === loaderState.manifestVersion &&
@@ -448,8 +613,8 @@ export function ExtensionLoader({
 
 					const failedPlugins: string[] = []
 					const seen = new Set<string>()
-						await Promise.all(
-							payload.modules.map(async (module) => {
+					await Promise.all(
+						payload.modules.map(async (module) => {
 							seen.add(module.pluginName)
 							try {
 								await ensureModuleLoaded(module)
@@ -457,16 +622,23 @@ export function ExtensionLoader({
 								failedPlugins.push(module.pluginName)
 								console.error('[ExtensionLoader] failed to load module', module.pluginName, error)
 							}
-							}),
-						)
+						}),
+					)
 
-						replaceExtensionModuleStates(payload.states)
-						syncBuiltins(payload.builtins)
+					replaceExtensionModuleStates(payload.states)
+					replaceExtensionManifestDiagnostics({
+						interactions: payload.interactions,
+						offers: payload.offers,
+						surfaces: payload.surfaces,
+						sessions: payload.sessions,
+					})
+					syncBuiltins(payload.builtins)
+					syncSessions(payload.sessions)
 
 					// 自愈：如果加载失败（比如服务端删除了陈旧 hash 并触发重新编译），立刻刷新 manifest 再重试一次
 					if (allowRetry && failedPlugins.length) {
 						const retryManifest = await fetchExtensionManifest()
-						const retrySignature = computeSignature(retryManifest)
+						const retrySignature = getManifestPayloadSignature(retryManifest)
 						if (retryManifest.version !== payload.version || retrySignature !== nextSignature) {
 							return applyManifest(retryManifest, false)
 						}
@@ -488,8 +660,8 @@ export function ExtensionLoader({
 					}
 				}
 
-					const applied = await applyManifest(manifest, true)
-					if (applied.skipped) return
+				const applied = await applyManifest(manifest, true)
+				if (applied.skipped) return
 
 				loaderState.manifestVersion = applied.version
 				loaderState.manifestSignature = applied.signature
@@ -511,13 +683,20 @@ export function ExtensionLoader({
 				}
 			}
 		},
-		[ensureModuleLoaded, recomputeManifestSignature, shouldSkipManifestSync, syncBuiltins],
+		[
+			ensureModuleLoaded,
+			recomputeManifestSignature,
+			shouldSkipManifestSync,
+			syncBuiltins,
+			syncSessions,
+		],
 	)
 
 	useEffect(() => {
 		setExtensionManifestSyncHandler((force) => syncManifest(force))
 		return () => {
 			setExtensionManifestSyncHandler(null)
+			clearExtensionManifestDiagnostics()
 		}
 	}, [syncManifest])
 
@@ -534,9 +713,12 @@ export function ExtensionLoader({
 		const schedule = (delay: number) => {
 			clear()
 			if (disposed) return
-			timer = setTimeout(() => {
-				void run()
-			}, Math.max(0, delay))
+			timer = setTimeout(
+				() => {
+					void run()
+				},
+				Math.max(0, delay),
+			)
 		}
 
 		const run = async (): Promise<void> => {

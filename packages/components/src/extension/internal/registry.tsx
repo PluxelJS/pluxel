@@ -12,7 +12,7 @@ import {
 	type ExtensionPointCtx,
 	type PluginExtensionContext,
 	type GlobalExtensionContext,
-} from '@pluxel/runtime/web/ui'
+} from '@pluxel/runtime/web'
 
 // 稳定的空数组引用，避免 useSyncExternalStore 无限循环
 const EMPTY_ITEMS: ExtensionItem[] = []
@@ -263,7 +263,10 @@ export function useExtensions<P extends ExtensionPoint>(
 			if (
 				item.meta.requireRunning &&
 				item.meta.pluginName !== '__static__' &&
-				!isExtensionPluginRunning(ctxForPoint as any, item.meta.pluginName)
+				!isExtensionPluginRunning(
+					ctxForPoint as any,
+					item.meta.availabilityPluginName ?? item.meta.pluginName,
+				)
 			) {
 				return false
 			}

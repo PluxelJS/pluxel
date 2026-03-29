@@ -1,6 +1,7 @@
+import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
 import { existsSync, readFileSync } from 'node:fs'
-import { rm } from 'node:fs/promises'
-import Module, { createRequire } from 'node:module'
+import { createRequire } from 'node:module'
+import { pathToFileURL } from 'node:url'
 import {
 	EXTENSION_FEDERATION_EXPOSE,
 	extensionFederationBuildOutDir,
@@ -9,11 +10,9 @@ import {
 	EXTENSION_FEDERATION_SHARE_STRATEGY,
 	extensionFederationRemoteName,
 	extensionFederationSharedPackages,
-	sanitizeExtensionPluginName,
 } from '@pluxel/runtime/web/federation'
 import { resolve } from 'pathe'
-import { build, type InlineConfig } from 'vite'
-import { federation, type ModuleFederationOptions } from '@module-federation/vite'
+import type { ModuleFederationOptions } from '@module-federation/vite'
 import { resolveParaglideIntegration } from './paraglide'
 
 export type BuildPluginUiRemoteOptions = {
@@ -32,6 +31,33 @@ export type ResolvedFederationShared = {
 	resolveRoot: string
 }
 
+type SerializedParaglideConfig = {
+	project: string
+	outdir: string
+}
+
+type PluginUiBuildChildPayload = {
+	root: string
+	outDir: string
+	entryPath: string
+	remoteName: string
+	cacheDir: string
+	shared: ModuleFederationOptions['shared']
+	publicPath: string
+	minify: boolean
+	paraglide: SerializedParaglideConfig | null
+	imports: {
+		vite: string
+		federation: string
+		paraglide: string
+	}
+}
+
+const rootBuildSchedulers = new Map<string, RootBuildScheduler>()
+const inflightBuilds = new Map<string, Promise<{ outDir: string; manifestPath: string }>>()
+const runtimeRequire = createRequire(import.meta.url)
+let cleanupHooksRegistered = false
+
 export async function buildPluginUiRemote(
 	options: BuildPluginUiRemoteOptions,
 ): Promise<{ outDir: string; manifestPath: string }> {
@@ -44,78 +70,301 @@ export async function buildPluginUiRemote(
 		: extensionFederationSharedPackages
 	const publicPath = options.publicPath ?? '/'
 	const resolvedShared = resolveExtensionFederationShared(root, sharedPackages)
-	const sharedResolveRoot = resolvedShared.resolveRoot
-	const shared = resolvedShared.shared
 	const paraglide = resolveParaglideIntegration(root)
-
-	const config: InlineConfig = {
-		configFile: false,
-		root,
-		publicDir: false,
-		clearScreen: false,
-		logLevel: 'error',
-		resolve: {
-			preserveSymlinks: false,
-			tsconfigPaths: true,
-		} as InlineConfig['resolve'],
-		plugins: [
-			...(paraglide?.plugins ?? []),
-			federation({
-				name: remoteName,
-				filename: EXTENSION_FEDERATION_REMOTE_ENTRY_FILE,
-				exposes: {
-					[EXTENSION_FEDERATION_EXPOSE]: entryPath,
-				},
-				manifest: {
-					fileName: EXTENSION_FEDERATION_MANIFEST_FILE,
-				},
-				dts: false,
-				publicPath,
-				shared,
-				shareStrategy: EXTENSION_FEDERATION_SHARE_STRATEGY,
-			}),
-		],
-		build: {
-			outDir,
-			emptyOutDir: true,
-			target: 'chrome89',
-			manifest: false,
-			minify: options.minify ?? true,
-			cssCodeSplit: true,
-			sourcemap: true,
-			rollupOptions: {
-				input: entryPath,
-			},
-		},
-	}
-
-	await cleanupFederationTempArtifacts(root)
-	try {
-		await withPatchedPackageJsonResolution(sharedResolveRoot, sharedPackages, async () => {
-			const previousCwd = process.cwd()
-			process.chdir(root)
-			try {
-				return await build(config)
-			} finally {
-				process.chdir(previousCwd)
-			}
-		})
-	} finally {
-		await cleanupFederationTempArtifacts(root)
-	}
-
-	return {
+	const result = {
 		outDir,
 		manifestPath: resolve(outDir, EXTENSION_FEDERATION_MANIFEST_FILE),
 	}
+
+	const buildKey = [
+		root,
+		outDir,
+		entryPath,
+		remoteName,
+		resolvedShared.signature,
+		publicPath,
+		String(options.minify ?? true),
+		paraglide?.project ?? '',
+		paraglide?.outdir ?? '',
+	].join('\u0000')
+	const existing = inflightBuilds.get(buildKey)
+	if (existing) return existing
+
+	const task = (async () => {
+		const buildId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+		await getRootBuildScheduler(root).runBuild({
+			root,
+			outDir,
+			entryPath,
+			remoteName,
+			cacheDir: resolve(root, '.pluxel/vite-plugin-ui-cache', `${remoteName}-${buildId}`),
+			shared: resolvedShared.shared,
+			publicPath,
+			minify: options.minify ?? true,
+			paraglide: paraglide
+				? {
+						project: paraglide.project,
+						outdir: paraglide.outdir,
+					}
+				: null,
+			imports: {
+				vite: pathToFileURL(runtimeRequire.resolve('vite')).href,
+				federation: pathToFileURL(runtimeRequire.resolve('@module-federation/vite')).href,
+				paraglide: pathToFileURL(runtimeRequire.resolve('@inlang/paraglide-js')).href,
+			},
+		})
+		return result
+	})()
+
+	inflightBuilds.set(buildKey, task)
+	return task.finally(() => {
+		if (inflightBuilds.get(buildKey) === task) {
+			inflightBuilds.delete(buildKey)
+		}
+	})
 }
 
-async function cleanupFederationTempArtifacts(root: string): Promise<void> {
+export function disposePluginUiBuildSchedulers(): void {
+	for (const scheduler of rootBuildSchedulers.values()) {
+		scheduler.close()
+	}
+	rootBuildSchedulers.clear()
+	inflightBuilds.clear()
+}
+
+function getRootBuildScheduler(root: string): RootBuildScheduler {
+	const normalizedRoot = resolve(root)
+	let scheduler = rootBuildSchedulers.get(normalizedRoot)
+	if (!scheduler) {
+		registerCleanupHooks()
+		scheduler = new RootBuildScheduler(normalizedRoot)
+		rootBuildSchedulers.set(normalizedRoot, scheduler)
+	}
+	return scheduler
+}
+
+function registerCleanupHooks(): void {
+	if (cleanupHooksRegistered) return
+	cleanupHooksRegistered = true
+	const dispose = () => disposePluginUiBuildSchedulers()
+	process.once('exit', dispose)
+	process.once('beforeExit', dispose)
+}
+
+class RootBuildScheduler {
+	private readonly root: string
+	private tail: Promise<void> = Promise.resolve()
+	private activeChild: ChildProcessWithoutNullStreams | null = null
+	private pendingCount = 0
+	private closed = false
+
+	constructor(root: string) {
+		this.root = root
+	}
+
+	runBuild(payload: PluginUiBuildChildPayload): Promise<void> {
+		if (this.closed) {
+			throw new Error(`Plugin UI build scheduler already closed for ${this.root}`)
+		}
+		this.pendingCount += 1
+		const task = this.tail
+			.catch((): void => undefined)
+			.then(() => this.spawnIsolatedBuild(payload))
+		this.tail = task.finally(() => {
+			this.pendingCount -= 1
+			if (
+				this.pendingCount === 0 &&
+				!this.activeChild &&
+				rootBuildSchedulers.get(this.root) === this
+			) {
+				rootBuildSchedulers.delete(this.root)
+			}
+		})
+		return task
+	}
+
+	close(): void {
+		this.closed = true
+		const child = this.activeChild
+		this.activeChild = null
+		if (child && !child.killed) {
+			child.kill()
+		}
+		if (rootBuildSchedulers.get(this.root) === this) {
+			rootBuildSchedulers.delete(this.root)
+		}
+	}
+
+	private async spawnIsolatedBuild(payload: PluginUiBuildChildPayload): Promise<void> {
+		if (this.closed) {
+			throw new Error(`Plugin UI build scheduler already closed for ${this.root}`)
+		}
+
+		const child = spawn(
+			process.execPath,
+			['--input-type=module', '--eval', PLUGIN_UI_BUILD_CHILD_SCRIPT],
+			{
+				cwd: this.root,
+				env: {
+					...process.env,
+					PLUXEL_PLUGIN_UI_BUILD_PAYLOAD: JSON.stringify(payload),
+				},
+				stdio: ['ignore', 'pipe', 'pipe'],
+			},
+		)
+		this.activeChild = child
+
+		const stdoutLines: string[] = []
+		const stderrLines: string[] = []
+		child.stdout.on('data', (chunk) => {
+			this.pushOutput(stdoutLines, chunk)
+		})
+		child.stderr.on('data', (chunk) => {
+			this.pushOutput(stderrLines, chunk)
+		})
+
+		await new Promise<void>((resolvePromise, rejectPromise) => {
+			let settled = false
+			const settle = (callback: () => void) => {
+				if (settled) return
+				settled = true
+				this.activeChild = null
+				callback()
+			}
+			child.once('error', (error) => {
+				settle(() => {
+					rejectPromise(this.decorateChildError(error, stdoutLines, stderrLines))
+				})
+			})
+			child.once('exit', (code, signal) => {
+				settle(() => {
+					if (code === 0) {
+						resolvePromise()
+						return
+					}
+					rejectPromise(
+						this.decorateChildError(
+							new Error(
+								[
+									`Plugin UI build failed for ${this.root}`,
+									signal ? `signal: ${signal}` : `exit code: ${code ?? 'unknown'}`,
+								].join('\n'),
+							),
+							stdoutLines,
+							stderrLines,
+						),
+					)
+				})
+			})
+		})
+	}
+
+	private decorateChildError(error: Error, stdoutLines: string[], stderrLines: string[]): Error {
+		const details = [...stderrLines.slice(-40), ...stdoutLines.slice(-20)]
+			.join('\n')
+			.trim()
+		if (!details) return error
+		return new Error(`${error.message}\n${details}`)
+	}
+
+	private pushOutput(bucket: string[], chunk: unknown): void {
+		const text = String(chunk ?? '')
+		if (!text) return
+		for (const line of text.split(/\r?\n/)) {
+			if (!line) continue
+			bucket.push(line)
+			if (bucket.length > 120) bucket.shift()
+		}
+	}
+}
+
+const PLUGIN_UI_BUILD_CHILD_SCRIPT = `
+import { rm } from 'node:fs/promises'
+import { resolve as resolvePath } from 'node:path'
+const toPluginArray = (input) => Array.isArray(input) ? input.flatMap((item) => toPluginArray(item)) : [input]
+const cleanup = async (options) => {
 	await Promise.all([
-		rm(resolve(root, 'node_modules/__mf__virtual'), { recursive: true, force: true }),
-		rm(resolve(root, '.__mf__temp'), { recursive: true, force: true }),
+		rm(resolvePath(options.root, 'node_modules/__mf__virtual'), { recursive: true, force: true }),
+		rm(resolvePath(options.root, '.__mf__temp'), { recursive: true, force: true }),
+		rm(options.cacheDir, { recursive: true, force: true }),
 	])
 }
+
+async function runBuild(options) {
+	const { build } = await import(options.imports.vite)
+	const { federation } = await import(options.imports.federation)
+	const plugins = []
+	if (options.paraglide) {
+		const { paraglideVitePlugin } = await import(options.imports.paraglide)
+		plugins.push(...toPluginArray(paraglideVitePlugin({
+			project: options.paraglide.project,
+			outdir: options.paraglide.outdir,
+		})))
+	}
+	plugins.push(federation({
+		name: options.remoteName,
+		filename: ${JSON.stringify(EXTENSION_FEDERATION_REMOTE_ENTRY_FILE)},
+		exposes: {
+			[${JSON.stringify(EXTENSION_FEDERATION_EXPOSE)}]: options.entryPath,
+		},
+		manifest: {
+			fileName: ${JSON.stringify(EXTENSION_FEDERATION_MANIFEST_FILE)},
+		},
+		dts: false,
+		publicPath: options.publicPath,
+		shared: options.shared,
+		shareStrategy: ${JSON.stringify(EXTENSION_FEDERATION_SHARE_STRATEGY)},
+	}))
+
+	await cleanup(options)
+	try {
+		await build({
+			configFile: false,
+			root: options.root,
+			cacheDir: options.cacheDir,
+			publicDir: false,
+			clearScreen: false,
+			logLevel: 'error',
+			resolve: {
+				preserveSymlinks: false,
+				tsconfigPaths: true,
+			},
+			plugins,
+			build: {
+				outDir: options.outDir,
+				emptyOutDir: true,
+				target: 'chrome89',
+				manifest: false,
+				minify: options.minify,
+				cssCodeSplit: true,
+				sourcemap: true,
+				rollupOptions: {
+					input: options.entryPath,
+				},
+			},
+		})
+	} catch (error) {
+		await rm(options.outDir, { recursive: true, force: true })
+		throw error
+	} finally {
+		await cleanup(options)
+	}
+}
+
+const payload = process.env.PLUXEL_PLUGIN_UI_BUILD_PAYLOAD
+if (!payload) {
+	console.error('Missing PLUXEL_PLUGIN_UI_BUILD_PAYLOAD')
+	process.exit(1)
+}
+
+try {
+	await runBuild(JSON.parse(payload))
+	process.exit(0)
+} catch (error) {
+	console.error(error instanceof Error ? error.stack || error.message : String(error))
+	process.exit(1)
+}
+`
 
 export function resolveExtensionFederationShared(
 	root: string,
@@ -151,38 +400,6 @@ function resolveSharedPackageVersion(root: string, packageName: string): string 
 		return typeof parsed.version === 'string' ? parsed.version : undefined
 	} catch {
 		return undefined
-	}
-}
-
-async function withPatchedPackageJsonResolution<T>(
-	root: string,
-	sharedPackages: readonly string[],
-	run: () => Promise<T>,
-): Promise<T> {
-	const moduleLoader = Module as typeof Module & {
-		_resolveFilename?: (...args: unknown[]) => string
-	}
-	const originalResolveFilename = moduleLoader._resolveFilename
-	if (!originalResolveFilename) return run()
-
-	const patchedPackages = new Set(sharedPackages.map(removePathFromNpmPackage))
-
-	moduleLoader._resolveFilename = function patchedResolveFilename(...args: unknown[]): string {
-		const [request] = args
-		if (typeof request === 'string' && request.endsWith('/package.json')) {
-			const packageName = request.slice(0, -'/package.json'.length)
-			if (patchedPackages.has(packageName)) {
-				const resolved = resolvePackageJsonPath(root, packageName)
-				if (resolved) return resolved
-			}
-		}
-		return originalResolveFilename.apply(this, args)
-	}
-
-	try {
-		return await run()
-	} finally {
-		moduleLoader._resolveFilename = originalResolveFilename
 	}
 }
 
@@ -228,16 +445,6 @@ function resolvePackageEntry(root: string, packageName: string): string | null {
 	} catch {
 		return null
 	}
-}
-
-function removePathFromNpmPackage(input: string): string {
-	if (!input.startsWith('@')) {
-		const [name] = input.split('/')
-		return name || input
-	}
-
-	const [scope, name] = input.split('/')
-	return scope && name ? `${scope}/${name}` : input
 }
 
 function findWorkspaceRoot(start: string): string | null {

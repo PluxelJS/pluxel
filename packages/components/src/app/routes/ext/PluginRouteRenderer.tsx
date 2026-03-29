@@ -7,8 +7,8 @@ import {
 	ExtensionProvider,
 	getPluginUiRouteComponent,
 	type PluginExtensionContext,
+	useGlobalExtensionContext,
 	usePluginUiVersion,
-	useExtensionContext,
 } from '../../../extension'
 import { ExtensionRouteStateFallback, ExtensionRouteStatusBanner } from './ExtensionRouteStatus'
 
@@ -20,7 +20,7 @@ export function useResolvedPluginRoute(opts: {
 	restPath: string
 }) {
 	const { pluginName, pathname, restPath } = opts
-	const baseCtx = useExtensionContext('global')
+	const baseCtx = useGlobalExtensionContext()
 	const routeVersion = usePluginUiVersion(pluginName)
 
 	const routeRender = useMemo(() => {

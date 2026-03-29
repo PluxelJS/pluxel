@@ -17,7 +17,7 @@ import { LiveLog as LiveLogRaw } from '../../../log_viewer/LiveLog'
 import { RouterLinkAdapter } from '../../../RouterLinkAdapter'
 import { ExtensionSlot } from '../../../../extension'
 import { usePluginMeta } from '../context'
-import { ActionBar, PluginPanel, PluginSourceCard } from '../components'
+import { ActionBar, ExtensionDiagnosticsCard, PluginPanel, PluginSourceCard } from '../components'
 
 const LiveLog = memo(LiveLogRaw)
 
@@ -179,6 +179,7 @@ export function LeftPane({ compact = false }: LeftPaneProps) {
 					<Collapse in={detailsOpen}>
 						<Stack gap="sm" mt="sm">
 							<PluginSourceCard LinkComponent={RouterLinkAdapter} />
+							<ExtensionDiagnosticsCard />
 						</Stack>
 					</Collapse>
 				</Paper>

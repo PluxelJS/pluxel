@@ -987,7 +987,7 @@ describe('plugins integration', () => {
 			const { output } = await bundle.generate({ format: 'esm' })
 			const code = output[0].code
 
-			expect(code).toContain('ctx.ext.ui.packaged()')
+			expect(code).toContain('ctx.ext.ui.remote.packaged()')
 			expect(code).toContain('__pluxelRuntimeUiBridge__')
 			expect(code).not.toContain("import { ui } from '@pluxel/hmr/plugin'")
 		})
@@ -1006,7 +1006,7 @@ describe('plugins integration', () => {
 
 			expect(code).toContain("import { worker } from \"@pluxel/hmr/plugin\";")
 			expect(code).toContain('const defineUi = __pluxelRuntimeUiBridge__')
-			expect(code).toContain('ctx.ext.ui.packaged()')
+			expect(code).toContain('ctx.ext.ui.remote.packaged()')
 			expect(code).not.toContain('ui as defineUi')
 		})
 	})
@@ -1052,7 +1052,7 @@ describe('plugins integration', () => {
 			const { output } = await bundle.generate({ format: 'esm' })
 			const code = output[0].code
 
-			expect(code).toContain('ctx.ext.ui.packaged()')
+			expect(code).toContain('ctx.ext.ui.remote.packaged()')
 			expect(code).toContain('UiBridgePlugin')
 		})
 	})

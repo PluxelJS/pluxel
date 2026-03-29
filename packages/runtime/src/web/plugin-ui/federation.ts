@@ -9,7 +9,7 @@ export const EXTENSION_FEDERATION_SHARE_STRATEGY = 'loaded-first' as const
 //
 // Do not add SignalDB's internal React/reactivity packages here.
 // Plugin UI code should consume SignalDB only through `@pluxel/runtime/web/ui`
-// (`createPluginUi().useCollection/useDoc/useSignalDbQuery`), so the host only
+// (`pluginUi(...).use().db`), so the host only
 // needs to share the runtime UI contract package itself.
 export const extensionFederationSharedPackages = [
 	'react',

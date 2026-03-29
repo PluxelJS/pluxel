@@ -4,6 +4,7 @@ import { RpcTarget } from 'capnweb'
 import type { ExtensionUiRpcMap } from '../../../services'
 import { writeGroups } from '../../features/groups/service'
 import { applyStatusActions } from '../../usecases/pluginStatus'
+import { ExtensionSessionHandle } from './ExtensionSessionHandle'
 import { LoggingHandle } from './LoggingHandle'
 import { PackageHandle } from './PackageHandle'
 import { PluginHandle } from './PluginHandle'
@@ -40,6 +41,11 @@ export class RuntimeRpcApi extends RpcTarget {
 	/** Logging settings (host-level, persisted). */
 	logging() {
 		return new LoggingHandle(this.ctx)
+	}
+
+	/** Cross-plugin interaction sessions (surface/offer lifecycle). */
+	ui() {
+		return new ExtensionSessionHandle(this.ctx)
 	}
 
 	/**

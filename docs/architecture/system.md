@@ -8,7 +8,7 @@
 
 如果你在追查“插件前端为什么这样分层”，不要只看这份总览，直接同时看：
 
-- `docs/FRONTEND_ARCHITECTURE.md`
+- `docs/architecture/frontend.md`
 
 ## 包边界与依赖方向
 
@@ -95,7 +95,7 @@ runtime 里已经包含插件前端的运行时协议，但不包含前端 autho
 - `@pluxel/hmr/plugin`
   给作者写 `ui(...).bind(ctx)` 这种源码声明
 - `@pluxel/build`
-  把 authoring 声明降成 `ctx.ext.ui.packaged()`
+  把 authoring 声明降成 `ctx.ext.ui.remote.packaged()`
 - `@pluxel/runtime`
   只消费 packaged remote / doc / signaldb / rpc / sse
 
@@ -130,7 +130,7 @@ runner 必须与 host 共享部分模块的“单例语义”（decorators、DI 
 - `configSourcePlugin()`
   提取配置 schema source
 - `hmrUiBridgePlugin()`
-  把 `ui(...).bind(ctx)` 降成 `ctx.ext.ui.packaged()`
+  把 `ui(...).bind(ctx)` 降成 `ctx.ext.ui.remote.packaged()`
 - `importTypeFixerPlugin()`
   修正装饰器与类型导入场景
 

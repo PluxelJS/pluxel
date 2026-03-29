@@ -1,5 +1,6 @@
 import { createContext, createElement, type ReactNode, useContext } from 'react'
 import type { RuntimeTransportClient } from '../client'
+import type { InteractionContractRef } from './interaction-contracts'
 
 export const ExtensionPoints = {
 	HeaderActions: 'header:actions',
@@ -61,6 +62,14 @@ export function useExtensionContext(kind?: 'global' | 'plugin'): ExtensionContex
 	}
 	if (kind === 'global') return 'pluginName' in ctx ? toGlobalExtensionContext(ctx) : ctx
 	return ctx
+}
+
+export function useGlobalExtensionContext(): GlobalExtensionContext {
+	return useExtensionContext('global')
+}
+
+export function usePluginExtensionContext(): PluginExtensionContext {
+	return useExtensionContext('plugin')
 }
 
 export function useExtensionPathname(): string {
@@ -194,6 +203,7 @@ export function toGlobalExtensionContext(ctx: ExtensionContext): GlobalExtension
 export interface RuntimeMetaBase {
 	id: string
 	pluginName: string
+	availabilityPluginName?: string
 	priority: number
 	requireRunning: boolean
 }
@@ -229,8 +239,44 @@ export type ExtensionDef<P extends ExtensionPoint = ExtensionPoint> = {
 
 export type AnyExtensionDef = { [P in ExtensionPoint]: ExtensionDef<P> }[ExtensionPoint]
 
+export type InteractionSessionPhase = 'ready' | 'syncing-draft' | 'committing'
+
+export type InteractionSessionComponentProps<
+	TInput = unknown,
+	TDraft = unknown,
+	TPrepared = unknown,
+	TResult = unknown,
+> = {
+	sessionId: string
+	targetPlugin: string
+	providerPlugin: string
+	surfaceId: string
+	offerId: string
+	contract: InteractionContractRef
+	input: TInput
+	prepared: TPrepared
+	draft: TDraft
+	setDraft: (next: TDraft | ((prev: TDraft) => TDraft)) => void
+	patchDraft: (patch: Partial<TDraft>) => void
+	pushDraft: (next?: TDraft) => Promise<void>
+	commit: (result: TResult) => Promise<void>
+	reload: () => Promise<void>
+	disabled?: boolean
+	phase: InteractionSessionPhase
+}
+
+export type InteractionSessionComponent<
+	TInput = unknown,
+	TDraft = unknown,
+	TPrepared = unknown,
+	TResult = unknown,
+> = (
+	props: InteractionSessionComponentProps<TInput, TDraft, TPrepared, TResult>,
+) => ReactNode
+
 export interface PluginUIModule {
 	extensions?: AnyExtensionDef[]
+	sessions?: Record<string, InteractionSessionComponent<any, any, any, any>>
 	routes?: Array<{
 		definition: RouteExtensionDef
 		render: (ctx: PluginExtensionContext) => ReactNode
@@ -289,6 +335,18 @@ function validatePluginUIModule(module: PluginUIModule): void {
 				console.error('[plugin-ui] Extension render must be a function.', ext)
 			}
 			seen.add(id)
+		}
+	}
+
+	if (module.sessions && typeof module.sessions === 'object') {
+		for (const [sessionKey, session] of Object.entries(module.sessions)) {
+			if (!sessionKey.trim()) {
+				console.error('[plugin-ui] Session key must be a non-empty string.', module.sessions)
+				continue
+			}
+			if (typeof session !== 'function') {
+				console.error('[plugin-ui] Session component must be a function.', sessionKey, session)
+			}
 		}
 	}
 

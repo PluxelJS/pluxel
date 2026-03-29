@@ -9,9 +9,11 @@ export {
 	ExtensionProvider,
 	isExtensionPluginRunning,
 	toGlobalExtensionContext,
+	useGlobalExtensionContext,
+	usePluginExtensionContext,
 	useExtensionContext,
 	useExtensionPathname,
-} from '@pluxel/runtime/web/ui'
+} from '@pluxel/runtime/web'
 export { doc } from '@pluxel/runtime/web/extensions'
 export type {
 	AnyExtensionDef,
@@ -24,6 +26,9 @@ export type {
 	ExtensionPointMap,
 	ExtensionPointMeta,
 	GlobalExtensionContext,
+	InteractionSessionComponent,
+	InteractionSessionComponentProps,
+	InteractionSessionPhase,
 	PluginExtensionContext,
 	PluginUIModule,
 	RouteExtensionDef,
@@ -31,11 +36,12 @@ export type {
 	UiConfirmTone,
 	UiNotifyPayload,
 	UiNotifyTone,
-} from '@pluxel/runtime/web/ui'
+} from '@pluxel/runtime/web'
 export type {
-	BuiltinExtensionBase,
 	BuiltinExtensionDef,
 	BuiltinExtensionKind,
+	ExtensionInteractionRecord,
+	ExtensionInteractionState,
 	BuiltinFieldValueRef,
 	BuiltinGeneratedIdValue,
 	BuiltinDocBlock,
@@ -48,7 +54,12 @@ export type {
 	BuiltinInfoCardRow,
 	BuiltinNowValue,
 	BuiltinActionBlock,
+	BuiltinResourceSelectBlock,
 	BuiltinFormBlock,
+	InteractionCardinality,
+	InteractionOfferDef,
+	InteractionSessionDef,
+	InteractionSurfaceDef,
 	BuiltinSignalDbRef,
 	BuiltinSignalDbWriteMode,
 	BuiltinSignalDbWriteSpec,
@@ -60,12 +71,26 @@ export type {
 	ExtensionManifestEvent,
 	ExtensionModuleState,
 	ExtensionModuleStateKind,
+	InteractionContract,
+	InteractionContractRef,
 } from '@pluxel/runtime/web/extensions'
+export { defineInteractionContract } from '@pluxel/runtime/web/extensions'
 export { extensionLocale } from './internal/locale'
+export {
+	extensionInteractionLabel,
+	extensionInteractionReasonLabel,
+	hasPluginExtensionDiagnostics,
+	summarizePluginExtensionDiagnostics,
+	type PluginExtensionDiagnosticsSnapshot,
+	type PluginExtensionDiagnosticsSummary,
+} from './diagnostics'
 // Hooks
 export {
 	useExtensionModuleState,
 	useExtensionModuleStates,
+	useExtensionManifestDiagnostics,
+	usePluginExtensionDiagnostics,
+	usePluginUiStatus,
 	usePluginUiVersion,
 } from './hooks'
 // Paths (host routing conventions)
@@ -86,11 +111,12 @@ export {
 export {
 	getPluginUiRegistryRevision,
 	getPluginUiRouteComponent,
+	getPluginUiSessionComponent,
 	loadPluginUiModule,
 	subscribePluginUiRegistryChanges,
 	unloadPluginUiModule,
 } from './internal/pluginUiRegistry'
-export { requestExtensionManifestSync } from './internal/module-state'
+export { requestExtensionManifestSync } from './internal/runtime-state'
 export {
 	ensureExtensionFederationRuntime,
 	loadFederatedExtensionModule,

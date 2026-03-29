@@ -28,7 +28,9 @@ function createPluginCtx() {
 		},
 		ext: {
 			ui: {
-				packaged: vi.fn(() => () => undefined),
+				remote: {
+					packaged: vi.fn(() => () => undefined),
+				},
 			},
 		},
 	}
@@ -67,8 +69,8 @@ describe('@pluxel/hmr/plugin', () => {
 		const declaration = ui('./ui/index.tsx')
 		const dispose = declaration.bind(pluginCtx)
 
-		expect(pluginCtx.ext.ui.packaged).toHaveBeenCalledTimes(1)
-		expect(pluginCtx.ext.ui.packaged).toHaveBeenCalledWith()
+		expect(pluginCtx.ext.ui.remote.packaged).toHaveBeenCalledTimes(1)
+		expect(pluginCtx.ext.ui.remote.packaged).toHaveBeenCalledWith()
 		expect(typeof dispose).toBe('function')
 	})
 

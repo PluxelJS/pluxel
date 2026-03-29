@@ -1,4 +1,4 @@
-import type { Locale, LocaleService } from '@pluxel/runtime/web/ui'
+import type { Locale, LocaleService } from '@pluxel/runtime/web'
 
 type Listener = () => void
 

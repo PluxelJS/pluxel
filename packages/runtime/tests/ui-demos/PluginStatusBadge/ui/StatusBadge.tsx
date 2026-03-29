@@ -2,12 +2,18 @@
 // 简单的状态徽章组件
 
 import { Badge, Tooltip } from '@mantine/core'
-import { definePluginUIModule, ExtensionPoints, useExtensionContext } from '@pluxel/runtime/web/ui'
+import {
+	definePluginUIModule,
+	ExtensionPoints,
+	pluginUi,
+} from '@pluxel/runtime/web/ui'
 import { IconActivity } from '@tabler/icons-react'
 import { useEffect, useState } from 'react'
 
+const plugin = pluginUi('PluginStatusBadge')
+
 function StatusBadge() {
-	const transport = useExtensionContext('global').services.transport
+	const transport = plugin.useGlobal().transport
 	const [connected, setConnected] = useState(false)
 
 	useEffect(() => {

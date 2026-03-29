@@ -5,7 +5,7 @@ import {
 	rpcErrorMessage,
 	RuntimeTransportClientProvider,
 	useRuntimeTransportClient,
-} from '@pluxel/runtime/web/ui'
+} from '@pluxel/runtime/web'
 
 export {
 	createAuthAwareFetch,
@@ -40,7 +40,7 @@ export type {
 	RuntimeLogLine,
 	RuntimeRpcApi,
 	RuntimeTransportClient,
-} from '@pluxel/runtime/web/ui'
+} from '@pluxel/runtime/web'
 
 let transport: ReturnType<typeof createRuntimeTransportClient> | null = null
 

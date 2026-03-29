@@ -13,7 +13,7 @@
  *   pluginUi.bind(this.ctx)
  *
  * becomes:
- *   function __pluxelRuntimeUiBridge__(input) { ... return { bind(ctx) { return ctx.ext.ui.packaged() } } }
+ *   function __pluxelRuntimeUiBridge__(input) { ... return { bind(ctx) { return ctx.ext.ui.remote.packaged() } } }
  *   const ui = __pluxelRuntimeUiBridge__
  *   const pluginUi = ui('./ui/index.tsx')
  *   pluginUi.bind(this.ctx)
@@ -225,7 +225,7 @@ function buildHelperBlock(helperName: string, localNames: string[]): string {
 		"\tif (!entryPath) throw new Error('[pluxel/hmr] ui(): entryPath required')",
 		'\treturn {',
 		'\t\tbind(ctx) {',
-		'\t\t\treturn ctx.ext.ui.packaged()',
+		'\t\t\treturn ctx.ext.ui.remote.packaged()',
 		'\t\t},',
 		'\t}',
 		'}',
