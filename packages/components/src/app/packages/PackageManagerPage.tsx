@@ -823,19 +823,19 @@ export function PackageManagerPage() {
 						px="sm"
 						py={6}
 						style={{
-							backgroundColor: 'var(--mantine-color-blue-light)',
+							backgroundColor: 'var(--plx-accent-soft)',
 							borderRadius: 'var(--mantine-radius-md)',
-							border: '1px solid var(--mantine-color-blue-4)',
+							border: '1px solid var(--plx-workbench-tab-active-border)',
 						}}
 					>
-						<Text size="sm" fw={600} c="blue.7">
+						<Text size="sm" fw={600} style={{ color: 'var(--plx-accent-strong)' }}>
 							已选 {selectedPackages.size} 项
 						</Text>
 						<Group gap={6}>
 							<Tooltip label="重载所选包">
 								<ActionIcon
 									variant="light"
-									color="blue"
+									color="brand"
 									size="md"
 									onClick={() => void handleBatchReload(true)}
 									loading={reloadBatchLoading}
@@ -846,7 +846,7 @@ export function PackageManagerPage() {
 							<Tooltip label="重装所选包">
 								<ActionIcon
 									variant="light"
-									color="blue"
+									color="brand"
 									size="md"
 									loading={reinstallBatchLoading}
 									onClick={() => void handleBatchReinstall()}
@@ -926,7 +926,7 @@ export function PackageManagerPage() {
 													<Badge
 														key={plugin}
 														variant="light"
-														color="blue"
+														color="brand"
 														component={RouterLinkAdapter}
 														to={`/plugins/${encodeURIComponent(plugin)}`}
 														style={{ cursor: 'pointer' }}
@@ -942,7 +942,7 @@ export function PackageManagerPage() {
 										</Flex>
 									</Table.Td>
 									<Table.Td>
-										<Badge variant="light" color="blue">
+										<Badge variant="light" color="gray">
 											{formatSpec(row)}
 										</Badge>
 									</Table.Td>
@@ -973,7 +973,7 @@ export function PackageManagerPage() {
 												<Tooltip label="重装">
 													<ActionIcon
 														variant="light"
-														color="blue"
+														color="brand"
 														size="md"
 														onClick={() => void performReinstall(row)}
 														disabled={busy}

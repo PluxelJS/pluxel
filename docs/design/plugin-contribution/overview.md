@@ -337,3 +337,26 @@ Pluxel 的插件 UI 系统最终应该稳定为：
 最重要的设计原则不是“高度抽象”，而是：
 
 **简单 UI 交给宿主，自由 UI 交给插件；但状态模型、同步语义、宿主诊断必须统一。**
+
+## Plugin Workbench Points
+
+随着插件工作台改成固定的三向布局，插件扩展点也需要按区域收敛，而不是继续把所有内容都塞进旧的 `plugin:info`。
+
+当前宿主约定如下：
+
+- `plugin:header`
+  主工作区头部的紧凑扩展位。只放状态 chip、轻量按钮、筛选器这类横向内容。
+- `plugin:tabs`
+  主工作区标签页内容。适合页面级主内容。
+- `plugin:actions`
+  插件状态与辅助动作区。适合启动、停止、重启以及少量附加动作。
+- `plugin:context`
+  右侧上下文栏。适合摘要卡片、说明、辅助信息、上下文状态。
+- `plugin:dock`
+  底部 dock。适合日志相关补充、诊断输出、运行期辅助面板。
+
+兼容策略：
+
+- `plugin:info` 继续保留一段时间，但只作为 legacy fallback
+- 新实现统一优先迁到 `plugin:context`
+- 需要横向紧凑展示的扩展不要再挂到 `plugin:tabs` 或 `plugin:info`

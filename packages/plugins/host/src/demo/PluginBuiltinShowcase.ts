@@ -1,331 +1,76 @@
 // 展示型插件：尽量不注册自定义组件，仅使用宿主渲染扩展与配置 schema。
 
 import { BasePlugin, Plugin } from '@pluxel/runtime'
-import { f, v } from '@pluxel/runtime/config'
 import type { SignalDbDocumentHandle } from '@pluxel/runtime/services'
 import { doc } from '@pluxel/runtime/services'
-const MIN_REFRESH_MS = 250
-const MAX_REFRESH_MS = 10_000
+import {
+	BehaviorConfig,
+	type BuiltinAction,
+	type BuiltinActionWrite,
+	type BuiltinState,
+	type BuiltinTabMeta,
+	DEFAULTS,
+	DisplayConfig,
+	FormatConfig,
+	RUNTIME_ACTIONS_COLLECTION,
+	RUNTIME_DOC_ID,
+	RuntimeFormSchema,
+	RuntimeToggleSchema,
+	formatDuration,
+} from './PluginBuiltinShowcase.shared'
 
-const UPTIME_STYLES = ['compact', 'full'] as const
-type UptimeStyle = (typeof UPTIME_STYLES)[number]
-
-const TIME_UNITS = ['auto', 's', 'ms'] as const
-type TimeUnit = (typeof TIME_UNITS)[number]
-
-const SEPARATORS = ['space', 'colon', 'dot'] as const
-type Separator = (typeof SEPARATORS)[number]
-
-const LABEL_STYLES = ['short', 'full', 'verbose'] as const
-type LabelStyle = (typeof LABEL_STYLES)[number]
-
-const SECTION_FORMAT = { id: 'format', title: '格式', description: '时间显示格式' }
-const SECTION_LABELS = { id: 'labels', title: '文案', description: '前后缀与展示文本' }
-const SECTION_ADVANCED = { id: 'advanced', title: '高级', description: '长表单测试' }
-const RUNTIME_DOC_ID = 'runtime' as const
-const RUNTIME_ACTIONS_COLLECTION = 'runtime-actions' as const
-
-const DEFAULTS = {
-	display: { refreshMs: 1000 },
-	behavior: { tickStep: 1, maxTicks: 0, autoPauseAtMax: false },
-	format: {
-		uptimeStyle: 'compact' as UptimeStyle,
-		showMs: false,
-		timeUnit: 'auto' as TimeUnit,
-		separator: 'space' as Separator,
-		padZeros: false,
-		minDigits: 2,
-		labelStyle: 'short' as LabelStyle,
-		prefix: '',
-		suffix: '',
-		uppercaseUnits: false,
-		template: '',
-		unitAliases: { d: 'day', h: 'hr', m: 'min', s: 'sec', ms: 'ms' },
-		exampleLines: [
-			'1h 12m',
-			'2d 04h',
-			'06m 15s',
-			'0d 00h 42m',
-			'5m 08s',
-			'3h 09m',
-			'7m 45s',
-			'12h 33m',
-			'9s',
-			'0h 00m 08s',
-			'16m 02s',
-			'23h 11m',
-		],
-	},
+type BuiltinDocBuilder = ReturnType<typeof doc>
+type BuiltinDocContent = ReturnType<BuiltinDocBuilder>
+type TabDocDefinition = {
+	id: string
+	tab: BuiltinTabMeta
+	priority: number
+	content: BuiltinDocContent
 }
 
-type FormatSnapshot = {
-	uptimeStyle: UptimeStyle
-	showMs: boolean
-	timeUnit: TimeUnit
-	separator: Separator
-	padZeros: boolean
-	minDigits: number
-	labelStyle: LabelStyle
-	prefix: string
-	suffix: string
-	uppercaseUnits: boolean
-	template: string
-	unitAliases: Record<string, string>
-}
+const BUILTIN_TABS = {
+	controls: { id: 'controls', label: 'Controls', icon: 'form' },
+	metrics: { id: 'metrics', label: 'Metrics', icon: 'activity' },
+	guide: { id: 'guide', label: 'Guide', icon: 'book' },
+} satisfies Record<string, BuiltinTabMeta>
 
-type BuiltinState = {
-	id: 'runtime'
-	uptimeMs: number
-	uptimeLabel: string
-	ticks: number
-	paused: boolean
-	refreshMs: number
-	tickStep: number
-	maxTicks: number
-}
+const GUIDE_INTRO = `
+# Builtin Doc
+基于 markdown 的内容区域，可以注入内置组件。
+`
 
-type BuiltinAction =
-	| {
-			id: string
-			kind: 'setPaused'
-			paused: boolean
-			status: 'pending' | 'done' | 'error'
-			createdAt?: number
-			error?: string
-	  }
-	| {
-			id: string
-			kind: 'setTicks'
-			ticks: number
-			status: 'pending' | 'done' | 'error'
-			createdAt?: number
-			error?: string
-	  }
+const GUIDE_NOTES = `
+- 纯文段和 builtin 表单可以混合排布
+- 适合在说明文档中加入可交互控件
 
-type BuiltinFieldRef<Key extends string> = { kind: 'field'; key: Key }
-type BuiltinActionWrite =
-	| { kind: 'setPaused'; paused: boolean | BuiltinFieldRef<'paused'> }
-	| { kind: 'setTicks'; ticks: number | BuiltinFieldRef<'ticks'> }
+## 说明
+本段用于拉长文本，测试目录与滚动条联动效果。
 
-const UNIT_LABELS: Record<LabelStyle, Record<string, string>> = {
-	short: { d: 'd', h: 'h', m: 'm', s: 's', ms: 'ms' },
-	full: { d: 'day', h: 'hour', m: 'minute', s: 'second', ms: 'ms' },
-	verbose: { d: 'days', h: 'hours', m: 'minutes', s: 'seconds', ms: 'milliseconds' },
-}
+### 为什么选择 doc
+doc 让插件作者可以先写一段解释，再插入交互组件。
+同一页面里既能阅读，也能操作。
 
-const formatDuration = (ms: number, format: FormatSnapshot) => {
-	const safeMs = Math.max(0, Math.floor(ms))
-	const separator = format.separator === 'colon' ? ':' : format.separator === 'dot' ? '.' : ' '
-	const labelTable = UNIT_LABELS[format.labelStyle]
+### 使用建议
+- 段落要有结构
+- 章节层级不要太深
+- 关键点放在标题后几行
 
-	const formatValue = (value: number) => {
-		if (!format.padZeros) return String(value)
-		return String(value).padStart(format.minDigits, '0')
-	}
+### 视觉测试
+这里连续堆叠几段文本来制造滚动高度。
+在真实插件里可以用配置说明、故障排查步骤、变更记录等填充。
 
-	const resolveLabel = (unit: string) => {
-		let label = format.unitAliases[unit] ?? labelTable[unit] ?? unit
-		if (format.uppercaseUnits) label = label.toUpperCase()
-		return label
-	}
+#### 变更记录
+1. 新增内置 doc 渲染
+2. 支持 block 注入
+3. 支持 TOC
 
-	const assemble = (value: number, unit: string) => {
-		const numberText = formatValue(value)
-		const unitText = resolveLabel(unit)
-		const spacer = format.labelStyle === 'short' ? '' : ' '
-		return `${numberText}${spacer}${unitText}`
-	}
+#### 常见问题
+Q: 为什么要统一入口？
+A: 避免多套 UI 能力碎片化，降低维护成本。
 
-	const parts: Array<{ value: number; unit: string }> = []
-
-	if (format.timeUnit === 'ms') {
-		parts.push({ value: safeMs, unit: 'ms' })
-	} else if (format.timeUnit === 's') {
-		parts.push({ value: Math.floor(safeMs / 1000), unit: 's' })
-	} else {
-		const totalSeconds = Math.floor(safeMs / 1000)
-		const seconds = totalSeconds % 60
-		const totalMinutes = Math.floor(totalSeconds / 60)
-		const minutes = totalMinutes % 60
-		const totalHours = Math.floor(totalMinutes / 60)
-		const hours = totalHours % 24
-		const days = Math.floor(totalHours / 24)
-
-		if (days) parts.push({ value: days, unit: 'd' })
-		if (hours || parts.length) parts.push({ value: hours, unit: 'h' })
-		if (minutes || parts.length) parts.push({ value: minutes, unit: 'm' })
-		parts.push({ value: seconds, unit: 's' })
-	}
-
-	const trimmed =
-		format.uptimeStyle === 'compact' ? parts.slice(0, Math.min(parts.length, 2)) : parts
-	if (format.showMs && format.timeUnit === 'auto') {
-		trimmed.push({ value: safeMs % 1000, unit: 'ms' })
-	}
-
-	const prefix = format.prefix
-	const suffix = format.suffix
-	const body = trimmed.map((part) => assemble(part.value, part.unit)).join(separator)
-	const template = format.template.trim()
-	let templated = body
-	if (template) {
-		const tokenPattern = /{{\s*(uptime|value)\s*}}/g
-		const hasToken = tokenPattern.test(template)
-		templated = hasToken
-			? template.replace(tokenPattern, body).trim()
-			: `${template} ${body}`.trim()
-	}
-	return `${prefix}${templated}${suffix}`
-}
-
-const DisplayConfig = v.object({
-	refreshMs: v.pipe(
-		v.optional(v.pipe(v.number(), v.minValue(MIN_REFRESH_MS), v.maxValue(MAX_REFRESH_MS)), DEFAULTS.display.refreshMs),
-		f.formMeta({ label: '刷新间隔 (ms)', description: 'signaldb 状态同步间隔' }),
-		f.numberMeta({ min: MIN_REFRESH_MS, max: MAX_REFRESH_MS, step: 250 }),
-	),
-})
-
-const BehaviorConfig = v.object({
-	tickStep: v.pipe(
-		v.optional(v.pipe(v.number(), v.minValue(1), v.maxValue(100)), DEFAULTS.behavior.tickStep),
-		f.formMeta({ label: 'Tick 步长', description: '每次 Tick 递增的数值' }),
-		f.numberMeta({ min: 1, max: 100, step: 1 }),
-	),
-	maxTicks: v.pipe(
-		v.optional(v.pipe(v.number(), v.minValue(0), v.maxValue(1_000_000)), DEFAULTS.behavior.maxTicks),
-		f.formMeta({ label: 'Max ticks', description: '0 表示不限制' }),
-		f.numberMeta({ min: 0, max: 1_000_000, step: 10 }),
-	),
-	autoPauseAtMax: v.pipe(
-		v.optional(v.boolean(), DEFAULTS.behavior.autoPauseAtMax),
-		f.formMeta({ label: '达到上限自动暂停', description: 'ticks >= Max 时自动暂停' }),
-		f.booleanMeta({}),
-	),
-})
-
-const FormatConfig = v.object({
-	uptimeStyle: v.pipe(
-		v.optional(v.picklist(UPTIME_STYLES), DEFAULTS.format.uptimeStyle),
-		f.formMeta({
-			label: 'Uptime 样式',
-			description: '显示时长的紧凑程度',
-			section: SECTION_FORMAT,
-		}),
-		f.picklistMeta({
-			control: 'segmented',
-			labels: { compact: '紧凑', full: '完整' },
-		}),
-	),
-	showMs: v.pipe(
-		v.optional(v.boolean(), DEFAULTS.format.showMs),
-		f.formMeta({ label: '显示毫秒', description: 'Uptime 末尾追加 ms', section: SECTION_FORMAT }),
-		f.booleanMeta({}),
-	),
-	timeUnit: v.pipe(
-		v.optional(v.picklist(TIME_UNITS), DEFAULTS.format.timeUnit),
-		f.formMeta({ label: '单位策略', description: '用于视觉测试', section: SECTION_FORMAT }),
-		f.picklistMeta({
-			control: 'segmented',
-			labels: { auto: '自动', s: '秒', ms: '毫秒' },
-		}),
-	),
-	separator: v.pipe(
-		v.optional(v.picklist(SEPARATORS), DEFAULTS.format.separator),
-		f.formMeta({ label: '分隔符', description: '用于视觉测试', section: SECTION_FORMAT }),
-		f.picklistMeta({
-			labels: { space: '空格', colon: '冒号', dot: '点号' },
-		}),
-	),
-	padZeros: v.pipe(
-		v.optional(v.boolean(), DEFAULTS.format.padZeros),
-		f.formMeta({ label: '补零', description: '位数不足时补零', section: SECTION_FORMAT }),
-		f.booleanMeta({}),
-	),
-	minDigits: v.pipe(
-		v.optional(v.pipe(v.number(), v.minValue(1), v.maxValue(6)), DEFAULTS.format.minDigits),
-		f.formMeta({ label: '最小位数', description: '用于视觉测试', section: SECTION_FORMAT }),
-		f.numberMeta({ min: 1, max: 6, step: 1 }),
-	),
-	labelStyle: v.pipe(
-		v.optional(v.picklist(LABEL_STYLES), DEFAULTS.format.labelStyle),
-		f.formMeta({ label: '文案风格', description: '用于视觉测试', section: SECTION_LABELS }),
-		f.picklistMeta({
-			control: 'segmented',
-			labels: { short: '简洁', full: '完整', verbose: '详细' },
-		}),
-	),
-	prefix: v.pipe(
-		v.optional(v.string(), DEFAULTS.format.prefix),
-		f.formMeta({ label: '前缀', description: '显示前缀测试', section: SECTION_LABELS }),
-		f.stringMeta({ placeholder: 'e.g. ~' }),
-	),
-	suffix: v.pipe(
-		v.optional(v.string(), DEFAULTS.format.suffix),
-		f.formMeta({ label: '后缀', description: '显示后缀测试', section: SECTION_LABELS }),
-		f.stringMeta({ placeholder: 'e.g. approx' }),
-	),
-	uppercaseUnits: v.pipe(
-		v.optional(v.boolean(), DEFAULTS.format.uppercaseUnits),
-		f.formMeta({ label: '单位大写', description: '用于视觉测试', section: SECTION_LABELS }),
-		f.booleanMeta({}),
-	),
-	template: v.pipe(
-		v.optional(v.string(), DEFAULTS.format.template),
-		f.formMeta({
-			label: '模板说明',
-			description: '支持 {{uptime}} / {{value}} 占位符',
-			section: SECTION_LABELS,
-			layout: { full: true },
-		}),
-		f.stringMeta({
-			control: 'textarea',
-			rows: 4,
-			placeholder: '例：已运行 {{uptime}}，保持在线。',
-		}),
-	),
-	unitAliases: v.pipe(
-		v.optional(v.record(v.string(), v.string()), DEFAULTS.format.unitAliases),
-		f.formMeta({
-			label: '单位别名',
-			description: '键值表测试',
-			section: SECTION_ADVANCED,
-			layout: { full: true },
-		}),
-		f.recordMeta({
-			layout: 'list',
-			addLabel: '添加别名',
-			key: { label: '原单位' },
-			value: { label: '别名' },
-		}),
-	),
-	exampleLines: v.pipe(
-		v.optional(v.array(v.string()), DEFAULTS.format.exampleLines),
-		f.formMeta({
-			label: '示例行',
-			description: '列表字段测试',
-			section: SECTION_ADVANCED,
-			layout: { full: true },
-		}),
-		f.arrayMeta({ layout: 'list', addLabel: '添加示例', itemLabel: '内容' }),
-	),
-})
-
-const RuntimeFormSchema = v.object({
-	ticks: v.pipe(
-		v.optional(v.pipe(v.number(), v.minValue(0), v.maxValue(1_000_000)), 0),
-		f.formMeta({ label: 'ticks', description: '演示：AutoForm 手动提交 → signaldb action' }),
-		f.numberMeta({ min: 0, max: 1_000_000, step: 1 }),
-	),
-})
-
-const RuntimeToggleSchema = v.object({
-	paused: v.pipe(
-		v.optional(v.boolean(), false),
-		f.formMeta({ label: 'paused', description: '演示：submitMode=onChange + signaldb action' }),
-		f.booleanMeta({}),
-	),
-})
+Q: 是否支持更复杂组件？
+A: 可以在 block 扩展里逐步加入。
+`
 
 @Plugin({ name: 'PluginBuiltinShowcase' })
 export class PluginBuiltinShowcase extends BasePlugin {
@@ -436,13 +181,17 @@ export class PluginBuiltinShowcase extends BasePlugin {
 		})
 	}
 
+	private runtimeField<Key extends keyof BuiltinState>(key: Key, fallback: BuiltinState[Key]) {
+		return this.builtin.field(key, fallback)
+	}
+
 	private summaryRows() {
 		return [
-			{ label: 'Uptime', value: this.builtin.field('uptimeLabel', '0s') },
-			{ label: 'Ticks', value: this.builtin.field('ticks', 0) },
-			{ label: 'Paused', value: this.builtin.field('paused', false) },
-			{ label: 'Tick step', value: this.builtin.field('tickStep', DEFAULTS.behavior.tickStep) },
-			{ label: 'Refresh (ms)', value: this.builtin.field('refreshMs', DEFAULTS.display.refreshMs) },
+			{ label: 'Uptime', value: this.runtimeField('uptimeLabel', '0s') },
+			{ label: 'Ticks', value: this.runtimeField('ticks', 0) },
+			{ label: 'Paused', value: this.runtimeField('paused', false) },
+			{ label: 'Tick step', value: this.runtimeField('tickStep', DEFAULTS.behavior.tickStep) },
+			{ label: 'Refresh (ms)', value: this.runtimeField('refreshMs', DEFAULTS.display.refreshMs) },
 		]
 	}
 
@@ -493,7 +242,7 @@ export class PluginBuiltinShowcase extends BasePlugin {
 
 		this.ctx.ext.ui.builtin.doc({
 			id: 'summary',
-			point: 'plugin:info',
+			point: 'plugin:context',
 			title: 'Builtin Overview',
 			description: 'Host-rendered preset UI (no plugin UI module).',
 			requireRunning: false,
@@ -505,7 +254,10 @@ export class PluginBuiltinShowcase extends BasePlugin {
 						rows: [
 							{ label: 'Plugin', value: this.ctx.pluginInfo.id },
 							...this.summaryRows(),
-							{ label: 'Max ticks', value: this.builtin.field('maxTicks', DEFAULTS.behavior.maxTicks) },
+							{
+								label: 'Max ticks',
+								value: this.builtin.field('maxTicks', DEFAULTS.behavior.maxTicks),
+							},
 						],
 					}),
 				)}
@@ -515,110 +267,79 @@ export class PluginBuiltinShowcase extends BasePlugin {
 
 	private registerTabDocs() {
 		const d = doc({} as const)
+		const docs: TabDocDefinition[] = [
+			{
+				id: 'controls-doc',
+				tab: BUILTIN_TABS.controls,
+				priority: 20,
+				content: this.buildControlsDoc(d),
+			},
+			{
+				id: 'metrics-doc',
+				tab: BUILTIN_TABS.metrics,
+				priority: 10,
+				content: this.buildMetricsDoc(d),
+			},
+			{
+				id: 'guide-doc',
+				tab: BUILTIN_TABS.guide,
+				priority: 0,
+				content: this.buildGuideDoc(d),
+			},
+		]
 
-		const controlTab = { id: 'controls', label: 'Controls', icon: 'form' }
-		const metricsTab = { id: 'metrics', label: 'Metrics', icon: 'activity' }
-		const guideTab = { id: 'guide', label: 'Guide', icon: 'book' }
+		for (const definition of docs) this.registerTabDoc(definition)
+	}
 
-		this.ctx.ext.ui.builtin.doc({
-			id: 'controls-doc',
-			point: 'plugin:tabs',
-			requireRunning: false,
-			priority: 20,
-			meta: { label: 'Controls', icon: 'form', tab: controlTab },
-			content: d`
-				${d.block(
-					'Pause',
-					this.pauseForm('submitMode=onChange + signaldb action doc.'),
-				)}
+	private buildControlsDoc(d: BuiltinDocBuilder): BuiltinDocContent {
+		return d`
+			${d.block('Pause', this.pauseForm('submitMode=onChange + signaldb action doc.'))}
+			${d.block('Set ticks', this.setTicksForm())}
+			${d.block('Reset ticks', this.resetTicksAction())}
+		`
+	}
 
-				${d.block(
-					'Set ticks',
-					this.setTicksForm(),
-				)}
+	private buildMetricsDoc(d: BuiltinDocBuilder): BuiltinDocContent {
+		return d`
+			${d.block(
+				'Metrics Stream',
+				d.card({
+					description: 'Compact status list (auto-updated).',
+					layout: { variant: 'list', density: 'compact', valueAlign: 'right' },
+					rows: this.buildMetricRows(),
+				}),
+			)}
+		`
+	}
 
-				${d.block(
-					'Reset ticks',
-					this.resetTicksAction(),
-				)}
-			`,
-		})
-
-		this.ctx.ext.ui.builtin.doc({
-			id: 'metrics-doc',
-			point: 'plugin:tabs',
-			requireRunning: false,
-			priority: 10,
-			meta: { label: 'Metrics', icon: 'list', tab: metricsTab },
-			content: d`
-				${d.block(
-					'Metrics Stream',
-					d.card({
-						description: 'Compact status list (auto-updated).',
-						layout: { variant: 'list', density: 'compact', valueAlign: 'right' },
-						rows: this.buildMetricRows(),
-					}),
-				)}
-			`,
-		})
-
-		const docContent = d`
-			# Builtin Doc
-			基于 markdown 的内容区域，可以注入内置组件。
-
+	private buildGuideDoc(d: BuiltinDocBuilder): BuiltinDocContent {
+		return d`
+			${GUIDE_INTRO}
 			${d.block(
 				'Snapshot',
-					d.card({
-						description: 'Markdown + builtin blocks.',
-						layout: { variant: 'grid', density: 'compact', columns: 3, labelPlacement: 'top' },
-						rows: this.summaryRows(),
-					}),
-				)}
-
-				${d.block(
-				'Quick controls',
-					this.pauseForm('onChange + signaldb action doc.'),
+				d.card({
+					description: 'Markdown + builtin blocks.',
+					layout: { variant: 'grid', density: 'compact', columns: 3, labelPlacement: 'top' },
+					rows: this.summaryRows(),
+				}),
 			)}
-
-			- 纯文段和 builtin 表单可以混合排布
-			- 适合在说明文档中加入可交互控件
-
-			## 说明
-			本段用于拉长文本，测试目录与滚动条联动效果。
-
-			### 为什么选择 doc
-			doc 让插件作者可以先写一段解释，再插入交互组件。
-			同一页面里既能阅读，也能操作。
-
-			### 使用建议
-			- 段落要有结构
-			- 章节层级不要太深
-			- 关键点放在标题后几行
-
-			### 视觉测试
-			这里连续堆叠几段文本来制造滚动高度。
-			在真实插件里可以用配置说明、故障排查步骤、变更记录等填充。
-
-			#### 变更记录
-			1. 新增内置 doc 渲染
-			2. 支持 block 注入
-			3. 支持 TOC
-
-			#### 常见问题
-			Q: 为什么要统一入口？
-			A: 避免多套 UI 能力碎片化，降低维护成本。
-
-			Q: 是否支持更复杂组件？
-			A: 可以在 block 扩展里逐步加入。
+			${d.block('Quick controls', this.pauseForm('onChange + signaldb action doc.'))}
+			${GUIDE_NOTES}
 		`
+	}
 
+	private registerTabDoc(input: TabDocDefinition) {
 		this.ctx.ext.ui.builtin.doc({
-			id: 'guide-doc',
+			id: input.id,
 			point: 'plugin:tabs',
 			requireRunning: false,
-			priority: 0,
-			meta: { label: 'Guide', icon: 'book', tab: guideTab },
-			content: docContent,
+			priority: input.priority,
+			meta: {
+				label: input.tab.label,
+				icon: input.tab.icon,
+				tab: input.tab,
+			},
+			content: input.content,
 		})
 	}
 
@@ -628,13 +349,13 @@ export class PluginBuiltinShowcase extends BasePlugin {
 				label: 'Stream',
 				value: { kind: 'badge', label: 'Live', color: 'green', variant: 'light' } as const,
 			},
-			{ label: 'Uptime', value: this.builtin.field('uptimeLabel', '0s') },
-			{ label: 'Uptime (ms)', value: this.builtin.field('uptimeMs', 0) },
-			{ label: 'Ticks', value: this.builtin.field('ticks', 0) },
-			{ label: 'Tick step', value: this.builtin.field('tickStep', DEFAULTS.behavior.tickStep) },
-			{ label: 'Paused', value: this.builtin.field('paused', false) },
-			{ label: 'Max ticks', value: this.builtin.field('maxTicks', DEFAULTS.behavior.maxTicks) },
-			{ label: 'Refresh (ms)', value: this.builtin.field('refreshMs', DEFAULTS.display.refreshMs) },
+			{ label: 'Uptime', value: this.runtimeField('uptimeLabel', '0s') },
+			{ label: 'Uptime (ms)', value: this.runtimeField('uptimeMs', 0) },
+			{ label: 'Ticks', value: this.runtimeField('ticks', 0) },
+			{ label: 'Tick step', value: this.runtimeField('tickStep', DEFAULTS.behavior.tickStep) },
+			{ label: 'Paused', value: this.runtimeField('paused', false) },
+			{ label: 'Max ticks', value: this.runtimeField('maxTicks', DEFAULTS.behavior.maxTicks) },
+			{ label: 'Refresh (ms)', value: this.runtimeField('refreshMs', DEFAULTS.display.refreshMs) },
 			{
 				label: 'Snapshot',
 				value: this.builtin.snapshot(this.runtimeStateFallback()),

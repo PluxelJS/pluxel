@@ -1,5 +1,5 @@
 import { Component, type ErrorInfo, type ReactNode } from 'react'
-import { RouteError } from './routes/RouteError'
+import { RouteError } from './router/views'
 import { useCurrentPathname } from './router/useCurrentRoute'
 
 type AppErrorBoundaryProps = {

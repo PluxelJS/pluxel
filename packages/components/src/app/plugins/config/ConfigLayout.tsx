@@ -1,8 +1,8 @@
 import { Box, Paper, Stack, Text, TypographyStylesProvider } from '@mantine/core'
-import { Fragment, useEffect, useMemo, useState } from 'react'
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ObjectSchema } from 'valibot'
 import { MarkdownExit } from 'markdown-exit'
-import { ConfigTabContent } from './ConfigTab'
+import { type ConfigFormState, ConfigTabContent } from './ConfigTab'
 import { compareSchemaKeys } from './schemaKey'
 import type { BuiltinMarkdownPart } from '@pluxel/runtime/web/extensions'
 
@@ -19,6 +19,32 @@ function toRecord(value: unknown): Record<string, any> {
 	return value as Record<string, any>
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+	return Boolean(value && typeof value === 'object' && !Array.isArray(value))
+}
+
+function deepEqual(a: unknown, b: unknown): boolean {
+	if (Object.is(a, b)) return true
+	if (Array.isArray(a) && Array.isArray(b)) {
+		if (a.length !== b.length) return false
+		for (let i = 0; i < a.length; i += 1) {
+			if (!deepEqual(a[i], b[i])) return false
+		}
+		return true
+	}
+	if (isRecord(a) && isRecord(b)) {
+		const aKeys = Object.keys(a)
+		const bKeys = Object.keys(b)
+		if (aKeys.length !== bKeys.length) return false
+		for (const key of aKeys) {
+			if (!(key in b)) return false
+			if (!deepEqual(a[key], b[key])) return false
+		}
+		return true
+	}
+	return false
+}
+
 export function ConfigLayout({
 	pluginName,
 	layout,
@@ -26,6 +52,9 @@ export function ConfigLayout({
 	savedConfig,
 	defaults,
 	active,
+	draftValues,
+	onDirtyChange,
+	onDraftChange,
 }: {
 	pluginName: string
 	layout: BuiltinMarkdownPart[]
@@ -33,21 +62,44 @@ export function ConfigLayout({
 	savedConfig: Record<string, unknown>
 	defaults: Record<string, unknown>
 	active: boolean
+	draftValues?: Record<string, Record<string, unknown>>
+	onDirtyChange?: (dirty: boolean) => void
+	onDraftChange?: (drafts: Record<string, Record<string, unknown>>) => void
 }) {
 	const [savedOverride, setSavedOverride] = useState<Record<string, any> | null>(null)
+	const [formStates, setFormStates] = useState<Record<string, ConfigFormState>>({})
+	const lastDraftsRef = useRef<Record<string, Record<string, unknown>>>({})
 
 	// Reset local baseline when external saved config changes.
 	useEffect(() => {
 		setSavedOverride(null)
 	}, [layout, pluginName, savedConfig])
 
+	useEffect(() => {
+		onDirtyChange?.(Object.values(formStates).some((state) => state?.dirty))
+	}, [formStates, onDirtyChange])
+
+	useEffect(() => {
+		const nextDrafts: Record<string, Record<string, unknown>> = {}
+		for (const [key, state] of Object.entries(formStates)) {
+			if (!state?.dirty) continue
+			nextDrafts[key] = toRecord(state.values)
+		}
+		if (!onDraftChange) return undefined
+		if (deepEqual(lastDraftsRef.current, nextDrafts)) return undefined
+		const handle = window.setTimeout(() => {
+			lastDraftsRef.current = nextDrafts
+			onDraftChange(nextDrafts)
+		}, 120)
+		return () => window.clearTimeout(handle)
+	}, [formStates, onDraftChange])
+
 	const schemaKeys = useMemo(() => Object.keys(schemas ?? {}).sort(compareSchemaKeys), [schemas])
 
 	const rendered = useMemo(() => {
 		const used = new Set<string>()
 		const chunks: Array<
-			| { kind: 'md'; key: string; html: string }
-			| { kind: 'schema'; key: string; schemaKey: string }
+			{ kind: 'md'; key: string; html: string } | { kind: 'schema'; key: string; schemaKey: string }
 		> = []
 
 		let idx = 0
@@ -92,6 +144,21 @@ export function ConfigLayout({
 	}, [layout, schemaKeys])
 
 	const finalSavedConfig = (savedOverride ?? savedConfig) as Record<string, unknown>
+	const reportState = useCallback((key: string, state: ConfigFormState) => {
+		setFormStates((prev) => {
+			const existing = prev[key]
+			if (
+				existing &&
+				existing.dirty === state.dirty &&
+				existing.canSubmit === state.canSubmit &&
+				existing.submitting === state.submitting &&
+				deepEqual(existing.values, state.values)
+			) {
+				return prev
+			}
+			return { ...prev, [key]: state }
+		})
+	}, [])
 
 	return (
 		<Box style={{ flex: 1, minHeight: 0 }}>
@@ -123,12 +190,14 @@ export function ConfigLayout({
 										schema={schema}
 										savedValue={toRecord(finalSavedConfig?.[schemaKey])}
 										defaultValue={toRecord(defaults?.[schemaKey])}
+										draftValue={toRecord(draftValues?.[schemaKey])}
 										onSaved={(_k, value) =>
 											setSavedOverride((prev) => ({
 												...((prev ?? finalSavedConfig) as any),
 												[schemaKey]: value,
 											}))
 										}
+										reportState={reportState}
 										showToc={false}
 										active={active}
 									/>
@@ -146,7 +215,8 @@ export function ConfigLayout({
 							Unplaced Schemas
 						</Text>
 						<Text size="sm" c="dimmed">
-							cfg layout did not place some schema keys. They are appended here so config remains editable.
+							cfg layout did not place some schema keys. They are appended here so config remains
+							editable.
 						</Text>
 						{rendered.remaining.map((schemaKey) => {
 							const schema = schemas?.[schemaKey]
@@ -162,12 +232,14 @@ export function ConfigLayout({
 										schema={schema}
 										savedValue={toRecord(finalSavedConfig?.[schemaKey])}
 										defaultValue={toRecord(defaults?.[schemaKey])}
+										draftValue={toRecord(draftValues?.[schemaKey])}
 										onSaved={(_k, value) =>
 											setSavedOverride((prev) => ({
 												...((prev ?? finalSavedConfig) as any),
 												[schemaKey]: value,
 											}))
 										}
+										reportState={reportState}
 										showToc={false}
 										active={active}
 									/>

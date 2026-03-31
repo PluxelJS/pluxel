@@ -4,6 +4,14 @@
 
 当前条目：
 
+- `docs/design/vite-architecture.md`
+  Vite 配置分层：components workbench、runtime web、hmr dev host 与环境插件作用域规则
+- `docs/design/plugin-workbench/design.md`
+  插件工作台设计：当前布局、tab 策略、交互原则与设计缘由
+- `docs/design/plugin-workbench/implementation.md`
+  插件工作台实现：当前代码结构、状态流、dirty 上报与导航链路
+- `docs/design/plugin-workbench/extension-model.md`
+  插件工作台下一阶段扩展模型：editor/sidebar/panel 三容器 tab 化与新 view 契约
 - `docs/design/plugin-config/overview.md`
   插件 config 声明与 builtin doc/config layout 的设计收敛
 - `docs/design/plugin-contribution/overview.md`

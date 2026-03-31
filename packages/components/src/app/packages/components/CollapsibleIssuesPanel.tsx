@@ -42,6 +42,25 @@ const timeFormatter = new Intl.DateTimeFormat('zh-CN', {
 	second: '2-digit',
 })
 
+const ERROR_PANEL_STYLES = {
+	card: {
+		borderColor:
+			'color-mix(in srgb, var(--plx-state-error-border) 78%, var(--plx-panel-border-strong) 22%)',
+		backgroundColor:
+			'color-mix(in srgb, var(--plx-state-error-bg) 42%, var(--plx-panel-bg) 58%)',
+	},
+	header: {
+		borderBottom:
+			'1px solid color-mix(in srgb, var(--plx-state-error-border) 70%, var(--plx-panel-border) 30%)',
+		backgroundColor:
+			'color-mix(in srgb, var(--plx-state-error-bg) 64%, var(--plx-panel-bg) 36%)',
+	},
+	row: {
+		borderBottom:
+			'1px solid color-mix(in srgb, var(--plx-state-error-border) 54%, var(--plx-panel-border) 46%)',
+	},
+} as const
+
 function formatTime(value: number | null | undefined) {
 	if (!value || Number.isNaN(value)) return '未知时间'
 	try {
@@ -104,23 +123,17 @@ export function CollapsibleIssuesPanel({
 			shadow="sm"
 			radius="md"
 			p={0}
-			style={{
-				borderColor: 'var(--mantine-color-red-4)',
-				backgroundColor: 'var(--mantine-color-red-light)',
-			}}
+			style={ERROR_PANEL_STYLES.card}
 		>
 			<Group
 				justify="space-between"
 				px="sm"
 				py="xs"
-				style={{
-					borderBottom: '1px solid var(--mantine-color-red-3)',
-					backgroundColor: 'var(--mantine-color-red-1)',
-				}}
+				style={ERROR_PANEL_STYLES.header}
 			>
 				<Group gap="xs">
-					<IconAlertTriangle size={16} color="var(--mantine-color-red-6)" />
-					<Text size="sm" fw={600} c="red.7">
+					<IconAlertTriangle size={16} color="var(--plx-state-error-icon-color)" />
+					<Text size="sm" fw={600} c="var(--plx-state-error-title)">
 						{sortedIssues.length} 个加载告警
 					</Text>
 				</Group>
@@ -152,9 +165,7 @@ export function CollapsibleIssuesPanel({
 						return (
 							<div
 								key={key}
-								style={{
-									borderBottom: '1px solid var(--mantine-color-red-2)',
-								}}
+								style={ERROR_PANEL_STYLES.row}
 							>
 								<UnstyledButton
 									onClick={() => toggleExpand(key)}
@@ -167,9 +178,9 @@ export function CollapsibleIssuesPanel({
 									}}
 								>
 									{isExpanded ? (
-										<IconChevronDown size={14} color="var(--mantine-color-red-6)" />
+										<IconChevronDown size={14} color="var(--plx-state-error-icon-color)" />
 									) : (
-										<IconChevronRight size={14} color="var(--mantine-color-red-6)" />
+										<IconChevronRight size={14} color="var(--plx-state-error-icon-color)" />
 									)}
 									<Badge color="red" size="xs" variant="light">
 										{ISSUE_SOURCE_LABEL[issue.source] ?? issue.source}
@@ -193,7 +204,11 @@ export function CollapsibleIssuesPanel({
 												</Text>
 											)}
 										</Group>
-										<Text size="sm" c="red.7" style={{ wordBreak: 'break-word' }}>
+										<Text
+											size="sm"
+											c="var(--plx-state-error-title)"
+											style={{ wordBreak: 'break-word' }}
+										>
 											{issue.message}
 										</Text>
 										{issue.error && (

@@ -10,16 +10,18 @@ import {
 	useMantineTheme,
 	rgba,
 } from '@mantine/core'
-import { IconGripVertical } from '@tabler/icons-react'
+import { IconGripVertical, IconPlus } from '@tabler/icons-react'
 import type { UniqueIdentifier } from '@dnd-kit/core'
 import type React from 'react'
 import { memo, useMemo } from 'react'
+import type { WorkbenchNavigationRequest } from '../../../workbench/context'
 import type { RowDensity } from '../constants'
 
 type RowMeta = { tag?: string; version?: string }
 type LinkLikeProps = {
 	to: string
 	children: React.ReactNode
+	workbenchMode?: WorkbenchNavigationRequest
 } & Omit<React.ComponentPropsWithoutRef<'a'>, 'href'>
 
 export type SortableRowProps = {
@@ -55,20 +57,17 @@ const SortableRowComponent = ({
 	const scheme = useComputedColorScheme('light', { getInitialValueInEffect: true })
 	const isDark = scheme === 'dark'
 	const brand = theme.colors.brand ?? theme.colors.indigo
-	const accent = theme.colors.blue
 	const showStatusLabel = dh.rowH >= 30
 	const rowGap = dh.rowH <= 26 ? 4 : 6
 	const handleSize = dh.rowH <= 26 ? 16 : 20
 	const handleIconSize = dh.rowH <= 26 ? 14 : 16
 
-	// 优化后的配色方案：提升背景可见度，保持文字清晰
-	const activeBg = active ? (isDark ? rgba(brand[5], 0.28) : rgba(brand[1], 0.45)) : undefined
-	const selectedBg = selected ? (isDark ? rgba(accent[5], 0.22) : rgba(accent[1], 0.35)) : undefined
+	const activeBg = active ? (isDark ? rgba(brand[6], 0.2) : rgba(brand[1], 0.9)) : undefined
+	const selectedBg = selected ? (isDark ? rgba(brand[5], 0.12) : rgba(brand[0], 0.92)) : undefined
 	const rowBackground = active ? activeBg : selected ? selectedBg : undefined
-	const baseColorValue = isDark ? theme.colors.gray[2] : theme.colors.gray[8]
-	const rowColorValue =
-		active || selected ? (isDark ? theme.colors.gray[0] : theme.colors.gray[9]) : baseColorValue
-	const separatorColor = isDark ? rgba(theme.colors.dark[4], 0.3) : rgba(theme.colors.gray[2], 0.5)
+	const rowColorValue = 'var(--plx-text)'
+	const metaColorValue = active ? 'var(--plx-accent-strong)' : 'var(--plx-text-muted)'
+	const separatorColor = 'color-mix(in srgb, var(--plx-panel-border) 84%, transparent)'
 
 	const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
 		id: sortableId,
@@ -127,7 +126,7 @@ const SortableRowComponent = ({
 				display: 'flex',
 				alignItems: 'center',
 				gap: rowGap,
-				borderRadius: 6,
+				borderRadius: 8,
 				cursor: disabled ? 'default' : 'pointer',
 				userSelect: 'none',
 				background: rowBackground,
@@ -232,18 +231,17 @@ const SortableRowComponent = ({
 				{metaLabel && (
 					<Text
 						size="xs"
-						style={{
-							fontSize: 10,
-							opacity: 0.7,
-							whiteSpace: 'nowrap',
-							flexShrink: 0,
-							maxWidth: 120,
-							overflow: 'hidden',
-							textOverflow: 'ellipsis',
-							color: rowColorValue,
-						}}
-					>
-						{metaLabel}
+							style={{
+								fontSize: 10,
+								whiteSpace: 'nowrap',
+								flexShrink: 0,
+								maxWidth: 120,
+								overflow: 'hidden',
+								textOverflow: 'ellipsis',
+								color: metaColorValue,
+							}}
+						>
+							{metaLabel}
 					</Text>
 				)}
 			</Box>
@@ -272,9 +270,7 @@ const SortableRowComponent = ({
 									? isDark
 										? rgba(theme.colors.teal[4], 0.85)
 										: rgba(theme.colors.teal[6], 0.8)
-									: isDark
-										? rgba(theme.colors.gray[6], 0.5)
-										: rgba(theme.colors.gray[5], 0.6),
+									: 'color-mix(in srgb, var(--plx-text-muted) 88%, transparent)',
 							}}
 						/>
 					</Tooltip>
@@ -285,6 +281,24 @@ const SortableRowComponent = ({
 					)}
 				</Group>
 			)}
+
+			{LinkComp ? (
+				<Tooltip label="在新标签页打开" withinPortal withArrow openDelay={200}>
+					<ActionIcon
+						component={LinkComp as any}
+						to={href}
+						workbenchMode="open-tab"
+						variant="subtle"
+						size="sm"
+						aria-label={`在新标签页打开 ${name}`}
+						onClick={(event: React.MouseEvent) => {
+							event.stopPropagation()
+						}}
+					>
+						<IconPlus size={14} />
+					</ActionIcon>
+				</Tooltip>
+			) : null}
 		</Box>
 	)
 }

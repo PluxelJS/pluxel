@@ -215,5 +215,7 @@ runtime 本身不启动 Vite。开发期统一通过 `@pluxel/hmr` 接入：
   冻结宿主构建
 - `@pluxel/runtime/shared`
   给 `@pluxel/hmr` 复用的纯工具
+- `@pluxel/runtime/vite`
+  Vite 环境判断和 `serverOnly/browserOnly` 插件包装
 - `@pluxel/runtime/internal`
   runtime 与 hmr 之间的内部 glue

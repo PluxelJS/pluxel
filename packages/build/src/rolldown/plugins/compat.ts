@@ -1,5 +1,9 @@
 export type ViteCompatPlugin<A = any> = import('rolldown').Plugin<A> & {
 	/**
+	 * Vite-only hook ordering; ignored by plain rolldown typing.
+	 */
+	enforce?: unknown
+	/**
 	 * Vite-only hook; ignored by rolldown.
 	 */
 	hotUpdate?: unknown

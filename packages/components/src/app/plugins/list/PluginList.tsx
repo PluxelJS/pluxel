@@ -491,9 +491,10 @@ export const PluginList: React.FC<PluginListProps> = ({ pluginName }) => {
 					flex: 1,
 					minHeight: 0,
 					minWidth: 0,
-					padding: 2,
-					background: 'var(--mantine-color-body)',
-					borderRadius: 6,
+					padding: 4,
+					background: 'var(--plx-panel-bg-muted)',
+					border: '1px solid var(--plx-panel-border)',
+					borderRadius: 8,
 					display: 'flex',
 					flexDirection: 'column',
 				}}

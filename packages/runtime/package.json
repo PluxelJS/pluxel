@@ -41,6 +41,10 @@
 			"@pluxel/source": "./src/shared.ts",
 			"default": "./dist/shared.mjs"
 		},
+		"./vite": {
+			"@pluxel/source": "./src/vite.ts",
+			"default": "./dist/vite.mjs"
+		},
 		"./web": {
 			"@pluxel/source": "./src/web.ts",
 			"default": "./dist/web.mjs"
@@ -129,6 +133,7 @@
 			"./logger": "./dist/logger.mjs",
 			"./services": "./dist/services.mjs",
 			"./shared": "./dist/shared.mjs",
+			"./vite": "./dist/vite.mjs",
 			"./web": "./dist/web.mjs",
 			"./web/extensions": "./dist/web/extensions.mjs",
 			"./web/federation": "./dist/web/federation.mjs",

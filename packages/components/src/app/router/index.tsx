@@ -1,119 +1,26 @@
 import {
 	createBrowserHistory,
 	createMemoryHistory,
-	createRootRoute,
-	createRoute,
 	createRouter,
 	type RouterHistory,
 } from '@tanstack/react-router'
-import { AppErrorBoundary } from '../AppErrorBoundary'
-import { AppProviders } from '../frames/AppProviders'
-import { RootShell } from '../frames/RootShell'
-import { StandaloneShell } from '../frames/StandaloneShell'
-import { LiveLog } from '../log_viewer/LiveLog'
-import { ExtensionRoute } from '../routes/ext/ExtensionRoute'
-import { ExtensionStandaloneRoute } from '../routes/ext/ExtensionStandaloneRoute'
-import { HomeRoute } from '../routes/HomeRoute'
-import { NotFoundRoute } from '../routes/NotFoundRoute'
-import { PackagesRoute } from '../routes/PackagesRoute'
-import { PluginDetailRoute } from '../routes/PluginDetailRoute'
-import { PluginsPlaceholder, PluginsRoute } from '../routes/PluginsRoute'
-import { RouteError } from '../routes/RouteError'
+import { NotFoundRoute, RouteError } from './views'
+import { routeTree } from './routeTree.gen'
 
-const rootRoute = createRootRoute({
-	component: () => (
-		<AppErrorBoundary>
-			<AppProviders />
-		</AppErrorBoundary>
-	),
-})
+export type PluginDetailSearch = {
+	tab?: string
+	schema?: string
+}
 
-const shellRoute = createRoute({
-	getParentRoute: () => rootRoute,
-	id: 'shell',
-	component: RootShell,
-})
-
-const standaloneRoute = createRoute({
-	getParentRoute: () => rootRoute,
-	id: 'standalone',
-	component: StandaloneShell,
-})
-
-const homeRoute = createRoute({
-	getParentRoute: () => shellRoute,
-	path: '/',
-	component: HomeRoute,
-})
-
-const logsRoute = createRoute({
-	getParentRoute: () => shellRoute,
-	path: 'logs',
-	component: () => <LiveLog />,
-})
-
-const packagesRoute = createRoute({
-	getParentRoute: () => shellRoute,
-	path: 'packages',
-	component: PackagesRoute,
-})
-
-const pluginsRoute = createRoute({
-	getParentRoute: () => shellRoute,
-	path: 'plugins',
-	component: PluginsRoute,
-})
-
-const pluginsIndexRoute = createRoute({
-	getParentRoute: () => pluginsRoute,
-	path: '/',
-	component: PluginsPlaceholder,
-})
-
-const pluginDetailRoute = createRoute({
-	getParentRoute: () => pluginsRoute,
-	path: '$name',
-	component: PluginDetailRoute,
-})
-
-const pluginDetailIndexRoute = createRoute({
-	getParentRoute: () => pluginDetailRoute,
-	path: '/',
-	component: () => null,
-})
-
-// 支持 /plugins/:name/* 作为插件页的“子路由”，避免切换子路由时整页卸载（对动态注入 UI 更友好）
-const pluginDetailPathRoute = createRoute({
-	getParentRoute: () => pluginDetailRoute,
-	path: '$path*',
-	component: () => null,
-})
-
-const extensionRoute = createRoute({
-	getParentRoute: () => shellRoute,
-	path: 'ext/$pluginName/$path*',
-	component: ExtensionRoute,
-})
-
-const extensionStandaloneRoute = createRoute({
-	getParentRoute: () => standaloneRoute,
-	path: 'ext-standalone/$pluginName/$path*',
-	component: ExtensionStandaloneRoute,
-})
-
-const routeTree = rootRoute.addChildren([
-	shellRoute.addChildren([
-		homeRoute,
-		logsRoute,
-		packagesRoute,
-		extensionRoute,
-		pluginsRoute.addChildren([
-			pluginsIndexRoute,
-			pluginDetailRoute.addChildren([pluginDetailIndexRoute, pluginDetailPathRoute]),
-		]),
-	]),
-	standaloneRoute.addChildren([extensionStandaloneRoute]),
-])
+export function validatePluginDetailSearch(search: Record<string, unknown>): PluginDetailSearch {
+	return {
+		tab: typeof search.tab === 'string' && search.tab.trim().length > 0 ? search.tab : undefined,
+		schema:
+			typeof search.schema === 'string' && search.schema.trim().length > 0
+				? search.schema
+				: undefined,
+	}
+}
 
 export interface CreateRouterOptions {
 	history?: RouterHistory
@@ -122,9 +29,9 @@ export interface CreateRouterOptions {
 export function createAppRouter(options: CreateRouterOptions = {}) {
 	const enableIntentPreload =
 		(typeof import.meta !== 'undefined' &&
-			typeof import.meta.env === 'object' &&
-			import.meta.env &&
-			'PROD' in import.meta.env
+		typeof import.meta.env === 'object' &&
+		import.meta.env &&
+		'PROD' in import.meta.env
 			? import.meta.env.PROD
 			: process.env.NODE_ENV === 'production') === true
 	const history =

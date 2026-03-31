@@ -1,6 +1,6 @@
-import { Box, Center, Stack, Text, Title, useComputedColorScheme } from '@mantine/core'
+import { Box, Center, Stack, Text, Title } from '@mantine/core'
 import type { ReactNode } from 'react'
-import { getPatternStyle } from '../theme'
+import { usePlxScheme } from '../theme'
 
 export interface EmptyStateProps {
 	icon?: ReactNode
@@ -24,16 +24,13 @@ export function EmptyState({
 	withBorder = false,
 	minHeight = 200,
 }: EmptyStateProps) {
-	const scheme = useComputedColorScheme('light', { getInitialValueInEffect: true })
-	const isDark = scheme === 'dark'
-	const pattern = withPattern ? getPatternStyle(isDark ? 'dark' : 'light') : null
-
-	// 默认使用柔和的半透明背景，视觉上更统一
-	const defaultBg = isDark ? 'rgba(30, 41, 59, 0.5)' : 'rgba(248, 250, 252, 0.8)'
+	const scheme = usePlxScheme()
+	const patternTokens = withPattern ? scheme.pattern : null
+	const emptyTokens = scheme.state.empty
 
 	const borderStyle = withBorder
 		? {
-				border: `1px solid ${isDark ? 'rgba(148,163,184,0.2)' : 'rgba(15,23,42,0.08)'}`,
+				border: `1px solid ${emptyTokens.border}`,
 				borderRadius: 'var(--mantine-radius-lg)',
 			}
 		: {
@@ -46,12 +43,11 @@ export function EmptyState({
 				minHeight,
 				width: '100%',
 				padding: 'var(--mantine-spacing-xl)',
-				backgroundColor: pattern ? pattern.backgroundColor : defaultBg,
-				...(pattern
+				backgroundColor: patternTokens ? patternTokens.backgroundColor : emptyTokens.bg,
+				...(patternTokens
 					? {
-							backgroundImage: pattern.backgroundImage,
-							backgroundSize: pattern.backgroundSize,
-							backgroundPosition: pattern.backgroundPosition,
+							backgroundImage: patternTokens.backgroundImage,
+							backgroundSize: patternTokens.backgroundSize,
 						}
 					: {}),
 				...borderStyle,
@@ -65,18 +61,18 @@ export function EmptyState({
 							width: 56,
 							height: 56,
 							borderRadius: '50%',
-							background: scheme === 'dark' ? 'rgba(99,102,241,0.15)' : 'rgba(99,102,241,0.1)',
+							background: emptyTokens.iconBg,
 							display: 'flex',
 							alignItems: 'center',
 							justifyContent: 'center',
-							color: 'var(--mantine-color-indigo-5)',
+							color: emptyTokens.iconColor,
 						}}
 					>
 						{icon}
 					</Box>
 				)}
 				<Stack align="center" gap={4}>
-					<Title order={5} ta="center">
+					<Title order={5} ta="center" c={emptyTokens.titleColor}>
 						{title}
 					</Title>
 					{description && (

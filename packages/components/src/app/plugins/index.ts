@@ -2,12 +2,12 @@
 export { Plugin } from './Plugin'
 
 // List
-export { PluginsLayout, PluginList } from './list'
+export { PluginList } from './list'
 
 // Detail
 export {
 	PluginScreen,
-	PluginLayout,
+	PluginWorkbench,
 	PluginScopeProvider,
 	usePluginMeta,
 	usePluginStatus,

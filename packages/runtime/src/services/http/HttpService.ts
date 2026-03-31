@@ -193,10 +193,7 @@ export class HttpService {
 	reconfigureUiAssets(config: Pick<HttpServiceConfig, 'uiAssets' | 'uiPublicDir'>): void {
 		const nextUiAssets = config.uiAssets ?? 'static-built'
 		const nextUiPublicDir = config.uiPublicDir ?? ''
-		if (
-			nextUiAssets === this.config.uiAssets &&
-			nextUiPublicDir === this.config.uiPublicDir
-		) {
+		if (nextUiAssets === this.config.uiAssets && nextUiPublicDir === this.config.uiPublicDir) {
 			return
 		}
 
@@ -587,7 +584,7 @@ export class HttpService {
 		}
 		if (this.config.uiAssets === 'static-built') {
 			return import('../../server/static').then(({ createStaticRenderer }) =>
-				createStaticRenderer(),
+				createStaticRenderer({ publicDirAbs: this.resolveUiPublicDir() ?? undefined }),
 			)
 		}
 		return import('../../server/dev').then(({ createDevRenderer }) => createDevRenderer())

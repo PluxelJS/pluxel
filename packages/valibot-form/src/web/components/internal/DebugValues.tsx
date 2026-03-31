@@ -17,7 +17,8 @@ export function DebugValues({ formValues }: { formValues: any }) {
 						fontSize: '12px',
 						margin: 0,
 						padding: '8px',
-						backgroundColor: 'var(--mantine-color-gray-0)',
+						backgroundColor: 'var(--plx-panel-bg-muted, var(--mantine-color-default-hover))',
+						border: '1px solid var(--plx-panel-border, var(--mantine-color-default-border))',
 						borderRadius: '4px',
 						whiteSpace: 'pre-wrap',
 					}}
@@ -32,7 +33,8 @@ export function DebugValues({ formValues }: { formValues: any }) {
 						fontSize: '12px',
 						margin: 0,
 						padding: '8px',
-						backgroundColor: 'var(--mantine-color-gray-0)',
+						backgroundColor: 'var(--plx-panel-bg-muted, var(--mantine-color-default-hover))',
+						border: '1px solid var(--plx-panel-border, var(--mantine-color-default-border))',
 						borderRadius: '4px',
 						whiteSpace: 'pre-wrap',
 					}}

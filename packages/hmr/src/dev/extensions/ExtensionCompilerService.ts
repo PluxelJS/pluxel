@@ -42,7 +42,9 @@ export type ExtensionCompilerServiceConfig = {
 	cacheDir?: string
 	/**
 	 * How many compiled remote builds to keep per plugin on disk.
-	 * @default 2
+	 * Keep a few historical hashes so open tabs / inflight MF loads do not trip over
+	 * freshly evicted artifacts during rapid rebuilds.
+	 * @default 5
 	 */
 	cacheKeep?: number
 	/**
@@ -137,7 +139,7 @@ export class ExtensionCompilerService {
 		this.hmr = deps.hmr
 		this.enabled = (deps.enabled ?? true) && config?.enabled !== false
 		this.cacheDir = config?.cacheDir ?? resolve(process.cwd(), '.pluxel/extensions')
-		this.cacheKeep = Math.max(0, Math.floor(config?.cacheKeep ?? 2))
+		this.cacheKeep = Math.max(0, Math.floor(config?.cacheKeep ?? 5))
 		this.compileConcurrency = Math.max(1, Math.floor(config?.compileConcurrency ?? 2))
 		const logger = (this.ctx as unknown as { logger?: unknown }).logger
 		const fn =

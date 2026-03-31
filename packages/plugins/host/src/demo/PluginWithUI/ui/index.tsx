@@ -1,7 +1,13 @@
-import { Badge, Button, Group, Stack, Text } from '@mantine/core'
+import { Button, Group, Stack, Text } from '@mantine/core'
 import { definePluginUIModule, ExtensionPoints } from '@pluxel/runtime/web/ui'
 import { IconDashboard, IconExternalLink, IconRocket } from '@tabler/icons-react'
-import { EventsPanel, OverviewPanel, RoutePage, StandaloneRoutePage, StreamsPanel } from './components'
+import {
+	EventsPanel,
+	OverviewPanel,
+	RoutePage,
+	StandaloneRoutePage,
+	StreamsPanel,
+} from './components'
 import { plugin } from './runtime'
 
 function HeaderAction() {
@@ -9,20 +15,6 @@ function HeaderAction() {
 		<Button variant="light" size="xs" leftSection={<IconRocket size={14} />} color="grape">
 			PluginWithUI
 		</Button>
-	)
-}
-
-function GlobalStatusBar() {
-	const app = plugin.useGlobal()
-	return (
-		<Group gap="xs">
-			<Badge variant="dot" color="grape">
-				UI Demo
-			</Badge>
-			<Text size="xs" c="dimmed">
-				{app.runningPluginsReady ? 'plugins ready' : 'plugins loading…'}
-			</Text>
-		</Group>
 	)
 }
 
@@ -59,13 +51,6 @@ function PluginInfo() {
 
 export default definePluginUIModule({
 	extensions: [
-		{
-			point: ExtensionPoints.GlobalStatusBar,
-			id: 'global-status',
-			priority: 50,
-			meta: { label: 'PluginWithUI' },
-			render: () => <GlobalStatusBar />,
-		},
 		{
 			point: ExtensionPoints.HeaderActions,
 			id: 'header-action',

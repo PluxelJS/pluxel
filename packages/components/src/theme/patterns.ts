@@ -1,4 +1,7 @@
-export type PatternScheme = 'light' | 'dark'
+import { DEFAULT_COLOR_KEY, getColorPreset } from './colorPresets'
+import { getPlxScheme, type PlxResolvedColorScheme } from './schemes'
+
+export type PatternScheme = PlxResolvedColorScheme
 
 type PatternStyle = {
 	backgroundColor: string
@@ -8,27 +11,12 @@ type PatternStyle = {
 	backgroundAttachment?: string
 }
 
+const DEFAULT_SEED_HEX = getColorPreset(DEFAULT_COLOR_KEY).color
+
 export const patternBackgrounds: Record<PatternScheme, PatternStyle> = {
-	light: {
-		backgroundColor: '#f8f9fb', // 更浅的背景色
-		backgroundImage: `
-			linear-gradient(to right, rgba(220, 225, 235, 0.35) 1px, transparent 1px),
-			linear-gradient(to bottom, rgba(220, 225, 235, 0.35) 1px, transparent 1px),
-			radial-gradient(circle 480px at 0% 20%, rgba(99, 179, 237, 0.08), transparent 65%),
-			radial-gradient(circle 480px at 100% 0%, rgba(52, 211, 235, 0.06), transparent 65%)
-		`,
-		backgroundSize: '48px 48px, 48px 48px, 100% 100%, 100% 100%',
-	},
-	dark: {
-		backgroundColor: '#0a0f1a', // 稍微更深的背景
-		backgroundImage: `
-			linear-gradient(to right, rgba(34, 45, 64, 0.25) 1px, transparent 1px),
-			linear-gradient(to bottom, rgba(34, 45, 64, 0.25) 1px, transparent 1px),
-			radial-gradient(circle 520px at 15% 0%, rgba(96, 165, 250, 0.12), transparent 60%),
-			radial-gradient(circle 520px at 85% 0%, rgba(45, 212, 191, 0.1), transparent 60%)
-		`,
-		backgroundSize: '48px 48px, 48px 48px, 100% 100%, 100% 100%',
-	},
+	light: getPlxScheme('light', DEFAULT_SEED_HEX).pattern,
+	dark: getPlxScheme('dark', DEFAULT_SEED_HEX).pattern,
 }
 
-export const getPatternStyle = (scheme: PatternScheme) => patternBackgrounds[scheme]
+export const getPatternStyle = (scheme: PatternScheme, seedHex = DEFAULT_SEED_HEX) =>
+	getPlxScheme(scheme, seedHex).pattern

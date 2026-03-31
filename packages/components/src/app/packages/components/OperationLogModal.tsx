@@ -74,13 +74,13 @@ export function OperationLogModal({
 			)}
 			<Box
 				style={{
-					border: '1px solid var(--mantine-color-gray-3)',
+					border: '1px solid var(--plx-panel-border-strong)',
 					borderRadius: 12,
 					padding: 'var(--mantine-spacing-xs)',
 					height: '48vh',
 					minHeight: 280,
 					overflow: 'hidden',
-					background: 'var(--mantine-color-body)',
+					background: 'var(--plx-panel-bg)',
 					display: 'flex',
 				}}
 			>

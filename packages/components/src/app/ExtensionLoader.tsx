@@ -390,8 +390,8 @@ export function ExtensionLoader({
 											style={{
 												padding: 8,
 												borderRadius: 8,
-												border: '1px solid rgba(255, 0, 0, 0.25)',
-												background: 'rgba(255, 0, 0, 0.06)',
+												border: '1px solid var(--plx-state-error-border)',
+												background: 'var(--plx-state-error-bg)',
 												fontSize: 12,
 												lineHeight: 1.4,
 											}}
@@ -465,8 +465,8 @@ export function ExtensionLoader({
 											style={{
 												padding: 8,
 												borderRadius: 8,
-												border: '1px solid rgba(255, 0, 0, 0.25)',
-												background: 'rgba(255, 0, 0, 0.06)',
+												border: '1px solid var(--plx-state-error-border)',
+												background: 'var(--plx-state-error-bg)',
 												fontSize: 12,
 												lineHeight: 1.4,
 											}}
@@ -489,8 +489,8 @@ export function ExtensionLoader({
 								style={{
 									padding: 8,
 									borderRadius: 8,
-									border: '1px solid rgba(255, 153, 0, 0.25)',
-									background: 'rgba(255, 153, 0, 0.06)',
+									border: '1px solid var(--plx-panel-border-strong)',
+									background: 'var(--plx-panel-bg-muted)',
 									fontSize: 12,
 									lineHeight: 1.4,
 								}}

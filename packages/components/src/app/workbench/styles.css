@@ -1,0 +1,1549 @@
+.plx-workbench {
+	--plx-shell-bg: var(--plx-workbench-shell-bg);
+	--plx-shell-bg-alt: var(--plx-workbench-shell-bg-alt);
+	--plx-activity-bg: var(--plx-workbench-activity-bg);
+	--plx-activity-item-active: var(--plx-workbench-activity-item-active);
+	--plx-topbar-bg: var(--plx-workbench-topbar-bg);
+	--plx-tabbar-bg: var(--plx-workbench-tabbar-bg);
+	--plx-surface-canvas: var(--plx-workbench-surface-canvas);
+	--plx-tab-active-bg: var(--plx-workbench-tab-active-bg);
+	--plx-tab-active-border: var(--plx-workbench-tab-active-border);
+	--plx-activity-width: 68px;
+	background: linear-gradient(
+		180deg,
+		var(--plx-shell-bg) 0%,
+		var(--plx-shell-bg-alt) 52%,
+		var(--plx-app-bg-alt) 100%
+	);
+	color: var(--plx-text);
+	display: grid;
+	grid-template-columns: var(--plx-activity-width) minmax(0, 1fr);
+	height: 100dvh;
+	width: 100%;
+}
+
+.plx-workbench__activity {
+	align-items: center;
+	background: var(--plx-activity-bg);
+	backdrop-filter: blur(12px);
+	border-right: 1px solid var(--plx-border);
+	display: flex;
+	flex-direction: column;
+	gap: 10px;
+	overflow: visible;
+	padding: 10px 8px;
+	position: relative;
+	z-index: 20;
+}
+
+.plx-workbench__activityBrand {
+	align-items: center;
+	border: 1px solid var(--plx-border-strong);
+	border-radius: 14px;
+	display: inline-flex;
+	height: 38px;
+	justify-content: center;
+	width: 38px;
+	background: var(--plx-surface-strong);
+	box-shadow: var(--plx-shadow);
+}
+
+.plx-workbench__activityList {
+	align-items: center;
+	display: flex;
+	flex: 1;
+	flex-direction: column;
+	gap: 8px;
+	width: 100%;
+}
+
+.plx-workbench__activityItem {
+	align-items: center;
+	background: transparent;
+	border: 0;
+	border-radius: 12px;
+	color: var(--plx-text-muted);
+	cursor: pointer;
+	display: inline-flex;
+	height: 40px;
+	justify-content: center;
+	position: relative;
+	transition:
+		background-color 140ms ease,
+		color 140ms ease,
+		transform 140ms ease;
+	width: 40px;
+}
+
+.plx-workbench__activityItem:hover,
+.plx-workbench__activityItem:focus-visible {
+	background: var(--plx-activity-item-active);
+	color: var(--plx-text);
+	outline: none;
+	transform: translateY(-1px);
+}
+
+.plx-workbench__activityItem[data-active="true"] {
+	background: var(--plx-activity-item-active);
+	color: var(--plx-accent);
+}
+
+.plx-workbench__activityLabel {
+	background: var(--plx-surface-strong);
+	border: 1px solid var(--plx-border);
+	border-radius: 999px;
+	box-shadow: var(--plx-shadow);
+	color: var(--plx-text);
+	font-size: 12px;
+	font-weight: 600;
+	left: calc(100% + 10px);
+	opacity: 0;
+	padding: 6px 10px;
+	pointer-events: none;
+	position: absolute;
+	top: 50%;
+	transform: translateY(-50%) translateX(-4px);
+	transition:
+		opacity 140ms ease,
+		transform 140ms ease;
+	white-space: nowrap;
+	z-index: 8;
+}
+
+.plx-workbench__activityItem:hover .plx-workbench__activityLabel,
+.plx-workbench__activityItem:focus-visible .plx-workbench__activityLabel {
+	opacity: 1;
+	transform: translateY(-50%) translateX(0);
+}
+
+.plx-workbench__activityFooter {
+	align-items: center;
+	display: flex;
+	flex-direction: column;
+	gap: 10px;
+	width: 100%;
+}
+
+.plx-workbench__main {
+	display: grid;
+	grid-template-rows: 34px 32px minmax(0, 1fr);
+	min-width: 0;
+	position: relative;
+	z-index: 1;
+}
+
+.plx-workbench__topbar,
+.plx-workbench__tabbar,
+.plx-workbench__statusbar {
+	align-items: center;
+	backdrop-filter: blur(16px);
+	display: flex;
+	min-width: 0;
+}
+
+.plx-workbench__topbar {
+	border-bottom: 1px solid var(--plx-border);
+	background: var(--plx-topbar-bg);
+	gap: 12px;
+	justify-content: space-between;
+	padding: 0 8px 0 10px;
+}
+
+.plx-workbench__topbar[data-compact="true"] {
+	padding-inline: 8px 10px;
+}
+
+.plx-workbench__topbarTitle {
+	align-items: center;
+	display: flex;
+	flex-direction: row;
+	gap: 8px;
+	min-width: 0;
+}
+
+.plx-workbench__eyebrow {
+	color: var(--plx-text-muted);
+	font-size: 9px;
+	font-weight: 700;
+	letter-spacing: 0.08em;
+	line-height: 1;
+	text-transform: uppercase;
+	white-space: nowrap;
+}
+
+.plx-workbench__title {
+	font-size: 13px;
+	font-weight: 700;
+	line-height: 1.2;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.plx-workbench__subtitle {
+	color: var(--plx-text-muted);
+	font-size: 11px;
+	line-height: 1.2;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.plx-workbench__topbarActions {
+	align-items: center;
+	display: flex;
+	gap: 6px;
+}
+
+.plx-workbench__themeToggle {
+	border: 1px solid var(--plx-border);
+	background: var(--plx-surface-muted);
+	color: var(--plx-text);
+}
+
+.plx-workbench__themeToggle:hover,
+.plx-workbench__themeToggle:focus-visible {
+	background: var(--plx-surface-strong);
+	border-color: var(--plx-border-strong);
+}
+
+.plx-workbench__action {
+	align-items: center;
+	background: var(--plx-surface-muted);
+	border: 1px solid var(--plx-border);
+	border-radius: 10px;
+	color: var(--plx-text);
+	cursor: pointer;
+	display: inline-flex;
+	gap: 6px;
+	height: 26px;
+	padding: 0 8px;
+	transition:
+		border-color 140ms ease,
+		background-color 140ms ease,
+		transform 140ms ease;
+}
+
+.plx-workbench__action:hover,
+.plx-workbench__action:focus-visible {
+	background: var(--plx-surface-strong);
+	border-color: var(--plx-border-strong);
+	outline: none;
+	transform: translateY(-1px);
+}
+
+.plx-workbench__actionHint {
+	color: var(--plx-text-muted);
+	font-size: 10px;
+	font-weight: 700;
+	letter-spacing: 0.04em;
+}
+
+.plx-workbench__tabbar {
+	align-items: center;
+	border-bottom: 1px solid var(--plx-border);
+	background: var(--plx-tabbar-bg);
+	gap: 6px;
+	max-height: 32px;
+	overflow-x: auto;
+	overflow-y: hidden;
+	overscroll-behavior-x: contain;
+	overscroll-behavior-y: none;
+	padding: 2px 8px;
+	scrollbar-width: none;
+}
+
+.plx-workbench__tabbar::-webkit-scrollbar {
+	display: none;
+}
+
+.plx-workbench__tab {
+	align-items: center;
+	background: transparent;
+	border: 1px solid transparent;
+	border-radius: 8px;
+	color: var(--plx-text-muted);
+	cursor: pointer;
+	display: inline-flex;
+	flex: 0 0 auto;
+	gap: 8px;
+	height: 28px;
+	max-width: 220px;
+	min-width: 0;
+	padding: 0 10px;
+	transition:
+		background-color 140ms ease,
+		border-color 140ms ease,
+		color 140ms ease;
+}
+
+.plx-workbench__tab:hover,
+.plx-workbench__tab:focus-visible {
+	background: var(--plx-surface);
+	border-color: var(--plx-border);
+	color: var(--plx-text);
+	outline: none;
+}
+
+.plx-workbench__tab[data-active="true"] {
+	background: var(--plx-tab-active-bg);
+	border-color: var(--plx-tab-active-border);
+	box-shadow: none;
+	color: var(--plx-text);
+}
+
+.plx-workbench__tabText {
+	display: flex;
+	flex-direction: column;
+	gap: 1px;
+	min-width: 0;
+	text-align: left;
+}
+
+.plx-workbench__tabTitle {
+	font-size: 12px;
+	font-weight: 700;
+	line-height: 1.2;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.plx-workbench__tabDirty {
+	background: var(--plx-dirty-dot);
+	border-radius: 999px;
+	display: inline-flex;
+	flex: 0 0 auto;
+	height: 6px;
+	margin-top: 1px;
+	width: 6px;
+}
+
+.plx-workbench__tabMeta {
+	color: var(--plx-text-muted);
+	font-size: 10px;
+	line-height: 1.1;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.plx-workbench__tabClose {
+	align-items: center;
+	background: transparent;
+	border: 0;
+	border-radius: 999px;
+	color: var(--plx-text-muted);
+	cursor: pointer;
+	display: inline-flex;
+	height: 18px;
+	justify-content: center;
+	margin-left: auto;
+	opacity: 0.7;
+	padding: 0;
+	width: 18px;
+}
+
+.plx-workbench__tabClose:hover,
+.plx-workbench__tabClose:focus-visible {
+	background: var(--plx-accent-soft);
+	color: var(--plx-text);
+	opacity: 1;
+	outline: none;
+}
+
+.plx-workbench__body {
+	display: flex;
+	min-height: 0;
+	min-width: 0;
+	padding: 6px 6px 6px 4px;
+}
+
+.plx-workbench__surface {
+	background: var(--plx-surface-canvas);
+	border: 1px solid var(--plx-border);
+	border-radius: 12px;
+	box-shadow: var(--plx-shadow);
+	display: flex;
+	flex: 1;
+	min-height: 0;
+	min-width: 0;
+	overflow: hidden;
+}
+
+.plx-workbench__panelGroup {
+	display: flex;
+	flex: 1;
+	min-height: 0;
+	min-width: 0;
+}
+
+.plx-workbench__navigationRail {
+	display: flex;
+	flex-direction: column;
+	height: 100%;
+	min-height: 0;
+}
+
+.plx-workbench__navigationHeader {
+	align-items: center;
+	border-bottom: 1px solid var(--plx-border);
+	display: flex;
+	gap: 10px;
+	justify-content: space-between;
+	padding: 8px 10px 6px;
+}
+
+.plx-workbench__navigationTitle {
+	display: flex;
+	flex-direction: column;
+	gap: 1px;
+	min-width: 0;
+}
+
+.plx-workbench__navigationHeader .plx-workbench__subtitle {
+	display: none;
+}
+
+.plx-workbench__navigationBody {
+	display: flex;
+	flex: 1;
+	min-height: 0;
+	min-width: 0;
+	overflow: hidden;
+	padding: 6px;
+}
+
+.plx-workbench__navigationBody > * {
+	display: flex;
+	flex: 1;
+	min-height: 0;
+	min-width: 0;
+}
+
+.plx-workbench__resizeHandle {
+	background: transparent;
+	position: relative;
+	width: 10px;
+}
+
+.plx-workbench__resizeHandle::before {
+	background: var(--plx-border);
+	border-radius: 999px;
+	content: "";
+	inset: 8px 4px;
+	position: absolute;
+	transition: background-color 140ms ease;
+}
+
+.plx-workbench__resizeHandle:hover::before,
+.plx-workbench__resizeHandle[data-resizing="true"]::before {
+	background: var(--plx-accent);
+}
+
+.plx-workbench__workspace {
+	display: flex;
+	flex: 1;
+	min-height: 0;
+	min-width: 0;
+	padding: 6px;
+}
+
+.plx-workbench__workspaceContent {
+	display: flex;
+	flex: 1;
+	min-height: 0;
+	min-width: 0;
+}
+
+.plx-workbench__workspaceContent > * {
+	display: flex;
+	flex: 1;
+	min-height: 0;
+	min-width: 0;
+}
+
+.plx-workbench__statusbar {
+	border-top: 1px solid var(--plx-border);
+	color: var(--plx-text-muted);
+	font-size: 11px;
+	gap: 10px;
+	padding: 0 12px;
+}
+
+.plx-workbench__statusbar:empty {
+	display: none;
+}
+
+@media (max-width: 960px) {
+	.plx-workbench {
+		grid-template-columns: 60px minmax(0, 1fr);
+	}
+
+	.plx-workbench__main {
+		grid-template-rows: 34px 32px minmax(0, 1fr);
+	}
+
+	.plx-workbench__topbarActions .plx-workbench__actionLabel,
+	.plx-workbench__actionHint,
+	.plx-workbench__subtitle {
+		display: none;
+	}
+
+	.plx-workbench__body {
+		padding: 10px;
+	}
+}
+
+.plx-pluginWorkbench {
+	display: flex;
+	flex: 1;
+	height: 100%;
+	min-height: 0;
+	min-width: 0;
+	overflow: hidden;
+}
+
+.plx-pluginSkeleton {
+	background: var(--plx-panel-bg);
+	border: 1px solid var(--plx-border);
+	border-radius: 12px;
+	box-shadow: var(--plx-shadow);
+	display: grid;
+	grid-template-rows: auto auto minmax(0, 1fr) minmax(132px, 22%);
+	height: 100%;
+	min-height: 0;
+	min-width: 0;
+	overflow: hidden;
+}
+
+.plx-pluginSkeleton__header {
+	align-items: flex-start;
+	border-bottom: 1px solid var(--plx-border);
+	display: flex;
+	gap: 16px;
+	justify-content: space-between;
+	padding: 14px 16px 10px;
+}
+
+.plx-pluginSkeleton__title {
+	display: flex;
+	flex: 1;
+	flex-direction: column;
+	gap: 10px;
+	min-width: 0;
+}
+
+.plx-pluginSkeleton__chips {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 8px;
+}
+
+.plx-pluginSkeleton__actions {
+	display: flex;
+	flex: 0 0 auto;
+	gap: 8px;
+}
+
+.plx-pluginSkeleton__tabs {
+	align-items: center;
+	border-bottom: 1px solid var(--plx-border);
+	display: flex;
+	gap: 8px;
+	overflow: hidden;
+	padding: 8px 14px 10px;
+}
+
+.plx-pluginSkeleton__body {
+	display: grid;
+	flex: 1;
+	grid-template-columns: minmax(0, 1fr) 300px;
+	min-height: 0;
+	min-width: 0;
+}
+
+.plx-pluginSkeleton__workspace,
+.plx-pluginSkeleton__aside,
+.plx-pluginSkeleton__dock {
+	min-height: 0;
+	min-width: 0;
+}
+
+.plx-pluginSkeleton__workspace {
+	display: flex;
+	flex-direction: column;
+	gap: 10px;
+	min-height: 0;
+	padding: 14px;
+}
+
+.plx-pluginSkeleton__workspaceHead {
+	display: flex;
+	gap: 10px;
+}
+
+.plx-pluginSkeleton__aside {
+	border-left: 1px solid var(--plx-border);
+	display: flex;
+	flex-direction: column;
+	gap: 10px;
+	padding: 12px;
+}
+
+.plx-pluginSkeleton__asideHead {
+	align-items: center;
+	display: flex;
+	justify-content: space-between;
+}
+
+.plx-pluginSkeleton__dock {
+	border-top: 1px solid var(--plx-border);
+	display: flex;
+	flex-direction: column;
+	gap: 10px;
+	padding: 10px 14px 14px;
+}
+
+.plx-pluginSkeleton__dockTabs {
+	display: flex;
+	gap: 8px;
+}
+
+.plx-pluginSkeleton[data-stacked="true"] {
+	grid-template-rows: auto auto minmax(0, 1fr) 180px 160px;
+}
+
+.plx-pluginSkeleton[data-stacked="true"] .plx-pluginSkeleton__header,
+.plx-pluginSkeleton[data-stacked="true"] .plx-pluginSkeleton__body {
+	display: flex;
+	flex-direction: column;
+}
+
+.plx-pluginSkeleton[data-stacked="true"] .plx-pluginSkeleton__actions {
+	flex-wrap: wrap;
+}
+
+.plx-pluginSkeleton[data-stacked="true"] .plx-pluginSkeleton__aside {
+	border-left: 0;
+	border-top: 1px solid var(--plx-border);
+}
+
+.plx-pluginWorkbench__horizontal,
+.plx-pluginWorkbench__vertical {
+	display: flex;
+	flex: 1;
+	height: 100%;
+	min-height: 0;
+	min-width: 0;
+	overflow: hidden;
+}
+
+.plx-pluginWorkbench__workspace,
+.plx-pluginWorkbench__contextRail,
+.plx-pluginWorkbench__dock {
+	display: flex;
+	flex-direction: column;
+	min-height: 0;
+	min-width: 0;
+}
+
+.plx-pluginWorkbench__workspace {
+	height: 100%;
+	padding: 6px;
+}
+
+.plx-pluginWorkbench__workspace > * {
+	display: flex;
+	flex: 1;
+	min-height: 0;
+	min-width: 0;
+}
+
+.plx-pluginWorkbench__contextRail,
+.plx-pluginWorkbench__dock {
+	background: var(--plx-surface-muted);
+}
+
+.plx-pluginWorkbench__contextRail {
+	border-left: 1px solid var(--plx-border);
+	height: 100%;
+	overflow: hidden;
+}
+
+.plx-pluginWorkbench__dock {
+	border-top: 1px solid var(--plx-border);
+	height: 100%;
+	overflow: hidden;
+}
+
+.plx-pluginWorkbench__viewHeader {
+	border-bottom: 1px solid var(--plx-border);
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+	padding: 6px 10px 8px;
+}
+
+.plx-pluginWorkbench__viewHeader[data-mode="inline"] {
+	gap: 0;
+	padding: 5px 8px;
+}
+
+.plx-pluginWorkbench__viewHeaderRow {
+	align-items: center;
+	display: flex;
+	gap: 8px;
+	min-width: 0;
+}
+
+.plx-pluginWorkbench__viewMeta {
+	align-items: center;
+	display: flex;
+	gap: 10px;
+	justify-content: space-between;
+	min-width: 0;
+}
+
+.plx-pluginWorkbench__viewMetaAside {
+	align-items: center;
+	display: inline-flex;
+	flex: 0 0 auto;
+	gap: 8px;
+}
+
+.plx-pluginWorkbench__viewTitle {
+	display: flex;
+	flex-direction: column;
+	gap: 1px;
+	min-width: 0;
+}
+
+.plx-pluginWorkbench__contextRail .plx-pluginWorkbench__viewTitle .plx-workbench__subtitle,
+.plx-pluginWorkbench__dock .plx-pluginWorkbench__viewTitle .plx-workbench__subtitle,
+.plx-pluginWorkbench__dock .plx-pluginWorkbench__viewTitle .plx-workbench__eyebrow {
+	display: none;
+}
+
+.plx-pluginWorkbench__viewBody {
+	display: flex;
+	flex: 1;
+	flex-direction: column;
+	min-height: 0;
+	min-width: 0;
+	overflow: hidden;
+}
+
+.plx-pluginWorkbench__viewPanel {
+	display: flex;
+	flex: 1;
+	min-height: 0;
+	min-width: 0;
+}
+
+.plx-pluginWorkbench__viewPanel[data-active="false"] {
+	display: none;
+}
+
+.plx-pluginWorkbench__contextScroll {
+	display: flex;
+	flex: 1;
+	min-height: 0;
+	min-width: 0;
+}
+
+.plx-pluginWorkbench__contextScroll .mantine-ScrollArea-viewport,
+.plx-pluginWorkbench__contextScroll .mantine-ScrollArea-content {
+	min-height: 100%;
+}
+
+.plx-pluginWorkbench__contextStack {
+	min-height: 100%;
+	padding: 6px 8px 6px 6px;
+}
+
+.plx-pluginWorkbench__contextStack--compact {
+	padding: 8px;
+}
+
+.plx-pluginWorkbench__viewTabs {
+	align-items: center;
+	display: flex;
+	flex: 1;
+	gap: 8px;
+	min-width: 0;
+	overflow-x: auto;
+	overflow-y: hidden;
+	scrollbar-width: none;
+}
+
+.plx-pluginWorkbench__viewTabs::-webkit-scrollbar {
+	display: none;
+}
+
+.plx-pluginWorkbench__viewTab {
+	align-items: center;
+	background: transparent;
+	border: 1px solid transparent;
+	border-radius: 9px;
+	color: var(--plx-text-muted);
+	cursor: pointer;
+	display: inline-flex;
+	flex: 0 0 auto;
+	gap: 6px;
+	height: 28px;
+	padding: 0 10px;
+	transition:
+		background-color 140ms ease,
+		border-color 140ms ease,
+		color 140ms ease;
+}
+
+.plx-pluginWorkbench__viewTab:hover,
+.plx-pluginWorkbench__viewTab:focus-visible {
+	background: color-mix(in srgb, var(--plx-surface-muted) 82%, transparent);
+	border-color: var(--plx-border);
+	color: var(--plx-text);
+	outline: none;
+}
+
+.plx-pluginWorkbench__viewTab[data-active="true"] {
+	background: var(--plx-surface-strong);
+	border-color: var(--plx-tab-active-border);
+	color: var(--plx-text);
+}
+
+.plx-pluginWorkbench__viewTabLabel {
+	font-size: 12px;
+	font-weight: 600;
+	line-height: 1;
+}
+
+.plx-pluginWorkbench__viewTabCount {
+	background: var(--plx-surface-strong);
+	border: 1px solid var(--plx-border);
+	border-radius: 999px;
+	color: var(--plx-text-muted);
+	display: inline-flex;
+	font-size: 10px;
+	font-weight: 700;
+	line-height: 1;
+	min-width: 18px;
+	justify-content: center;
+	padding: 2px 4px;
+}
+
+.plx-pluginWorkbench__viewTab[data-active='true'] .plx-pluginWorkbench__viewTabCount {
+	background: color-mix(in srgb, var(--plx-accent-soft) 86%, var(--plx-surface-strong) 14%);
+	border-color: var(--plx-tab-active-border);
+	color: var(--plx-accent-strong);
+}
+
+.plx-pluginWorkbench__paneControls {
+	align-items: center;
+	background: var(--plx-surface-muted);
+	border: 1px solid var(--plx-border);
+	border-radius: 10px;
+	display: inline-flex;
+	gap: 4px;
+	padding: 2px;
+}
+
+.plx-pluginWorkbench__paneControl {
+	align-items: center;
+	background: transparent;
+	border: 0;
+	border-radius: 8px;
+	color: var(--plx-text-muted);
+	cursor: pointer;
+	display: inline-flex;
+	height: 36px;
+	justify-content: center;
+	padding: 0;
+	transition:
+		background-color 140ms ease,
+		color 140ms ease,
+		transform 140ms ease;
+	width: 36px;
+}
+
+.plx-pluginWorkbench__paneControl:hover,
+.plx-pluginWorkbench__paneControl:focus-visible {
+	background: var(--plx-surface-strong);
+	color: var(--plx-text);
+	outline: none;
+	transform: translateY(-1px);
+}
+
+.plx-pluginWorkbench__paneControl[data-active="true"] {
+	background: var(--plx-surface-strong);
+	box-shadow: inset 0 0 0 1px var(--plx-tab-active-border);
+	color: var(--plx-text);
+}
+
+.plx-pluginWorkbench__headerExtensions {
+	max-width: min(28vw, 320px);
+	min-width: 0;
+	overflow: hidden;
+}
+
+.plx-pluginWorkbench__headerExtensions > * {
+	flex: 0 0 auto;
+	min-width: 0;
+}
+
+.plx-pluginWorkbench__toolbar {
+	border-bottom: 1px solid var(--plx-border);
+	display: flex;
+	flex-direction: column;
+	gap: 4px;
+	min-width: 0;
+	padding: 2px 2px 4px;
+}
+
+.plx-pluginWorkbench__commandBar {
+	align-items: center;
+	display: flex;
+	gap: 12px;
+	justify-content: space-between;
+	min-width: 0;
+}
+
+.plx-pluginWorkbench__commandMeta {
+	display: flex;
+	flex-direction: column;
+	flex: 1;
+	gap: 6px;
+	min-width: 0;
+}
+
+.plx-pluginWorkbench__commandTitle {
+	align-items: center;
+	display: flex;
+	flex-wrap: wrap;
+	gap: 6px;
+	min-width: 0;
+}
+
+.plx-pluginWorkbench__commandName {
+	font-size: 16px;
+	font-weight: 700;
+	line-height: 1.2;
+	margin-right: 2px;
+}
+
+.plx-pluginWorkbench__commandBadges {
+	min-width: 0;
+}
+
+.plx-pluginWorkbench__commandBadges .mantine-Badge-root {
+	border-radius: 999px;
+	font-size: 11px;
+	height: 22px;
+	padding-inline: 8px;
+}
+
+.plx-pluginWorkbench__commandInfo {
+	align-items: center;
+	display: flex;
+	flex-wrap: wrap;
+	gap: 6px;
+	min-width: 0;
+}
+
+.plx-pluginWorkbench__commandActions {
+	align-items: center;
+	display: flex;
+	gap: 8px;
+	justify-content: flex-end;
+	min-width: 0;
+}
+
+.plx-pluginWorkbench__toolbarTabs {
+	align-items: center;
+	display: flex;
+	gap: 6px;
+	min-width: 0;
+	overflow: hidden;
+	padding-top: 2px;
+	padding-bottom: 0;
+	width: 100%;
+}
+
+.plx-pluginWorkbench__tabsList {
+	background: transparent;
+	border-bottom: 1px solid color-mix(in srgb, var(--plx-border) 82%, transparent);
+	display: flex;
+	flex: 1;
+	flex-wrap: nowrap;
+	max-height: 34px;
+	min-width: 0;
+	overflow-x: auto;
+	overflow-y: hidden;
+	overscroll-behavior-x: contain;
+	overscroll-behavior-y: none;
+	padding-inline: 0;
+	scrollbar-width: none;
+	white-space: nowrap;
+}
+
+.plx-pluginWorkbench__tabsList::-webkit-scrollbar {
+	display: none;
+}
+
+.plx-pluginWorkbench__tabsList::before {
+	border-bottom: 0;
+}
+
+.plx-pluginWorkbench__tabsList .mantine-Tabs-tab {
+	background: transparent;
+	border: none;
+	border-bottom: 2px solid transparent;
+	border-radius: 0;
+	color: var(--plx-text-muted);
+	font-size: 12px;
+	font-weight: 600;
+	height: 32px;
+	margin-bottom: -1px;
+	padding-inline: 12px;
+	position: relative;
+}
+
+.plx-pluginWorkbench__tabsList .mantine-Tabs-tab:hover,
+.plx-pluginWorkbench__tabsList .mantine-Tabs-tab:focus-visible {
+	background: color-mix(in srgb, var(--plx-surface-muted) 52%, transparent);
+	border-bottom-color: color-mix(in srgb, var(--plx-text-muted) 38%, transparent);
+	color: var(--plx-text);
+}
+
+.plx-pluginWorkbench__tabsList .mantine-Tabs-tab[data-active="true"] {
+	background: transparent;
+	border-bottom-color: var(--plx-accent);
+	color: var(--plx-accent-strong);
+}
+
+.plx-pluginWorkbench__dockPane {
+	display: flex;
+	flex: 1;
+	min-height: 0;
+	min-width: 0;
+	padding: 6px 8px 8px;
+}
+
+.plx-pluginWorkbench__dockPane > * {
+	display: flex;
+	flex: 1;
+	min-height: 0;
+	min-width: 0;
+}
+
+.plx-pluginWorkbench__metaChip {
+	background: var(--plx-surface-muted);
+	border: 1px solid var(--plx-border);
+	border-radius: 999px;
+	color: var(--plx-text);
+	max-width: min(38vw, 420px);
+	padding-inline: 10px;
+	text-decoration: none;
+}
+
+.plx-pluginWorkbench__metaChip:hover,
+.plx-pluginWorkbench__metaChip:focus-visible {
+	background: var(--plx-accent-soft);
+	border-color: var(--plx-tab-active-border);
+	color: var(--plx-text);
+}
+
+.plx-pluginWorkbench__metaChip .mantine-Button-label {
+	display: block;
+	max-width: 100%;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.plx-pluginWorkbench__summaryRow {
+	align-items: flex-start;
+	display: grid;
+	gap: 8px;
+	grid-template-columns: 40px minmax(0, 1fr);
+}
+
+.plx-pluginWorkbench__summaryLabel {
+	color: var(--plx-text-muted);
+	font-size: 11px;
+	font-weight: 600;
+	line-height: 1.7;
+}
+
+.plx-pluginWorkbench__summaryValue {
+	align-items: center;
+	display: flex;
+	flex-wrap: wrap;
+	gap: 6px;
+	min-width: 0;
+}
+
+.plx-pluginWorkbench__summaryValue[data-wrap="true"] {
+	align-items: flex-start;
+}
+
+.plx-pluginWorkbench__summaryText {
+	flex: 1;
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.plx-pluginWorkbench__contentPanel {
+	background: var(--plx-panel-bg);
+	border-color: var(--plx-border);
+	border-radius: 10px;
+	box-shadow: none;
+}
+
+.plx-pluginWorkbench__configToolbar {
+	align-items: center;
+	border-bottom: 1px solid color-mix(in srgb, var(--plx-border) 82%, transparent);
+	display: flex;
+	gap: 8px;
+	justify-content: space-between;
+	margin-bottom: 6px;
+	min-height: 36px;
+	padding: 0 2px 6px;
+}
+
+.plx-pluginWorkbench__configToolbarNav {
+	align-items: center;
+	display: flex;
+	flex: 1 1 auto;
+	flex-wrap: nowrap;
+	gap: 8px;
+	min-width: 0;
+}
+
+.plx-pluginWorkbench__configToolbarDivider {
+	background: color-mix(in srgb, var(--plx-border) 84%, transparent);
+	border-radius: 999px;
+	flex: 0 0 auto;
+	height: 18px;
+	width: 1px;
+}
+
+.plx-pluginWorkbench__configToolbarScroller {
+	flex: 0 1 auto;
+	min-width: 0;
+	overflow-x: auto;
+	overflow-y: hidden;
+	padding-bottom: 1px;
+	scrollbar-width: none;
+	white-space: nowrap;
+}
+
+.plx-pluginWorkbench__configToolbarScroller::-webkit-scrollbar {
+	display: none;
+}
+
+.plx-pluginWorkbench__configActionDock {
+	align-items: center;
+	align-self: auto;
+	background: color-mix(in srgb, var(--plx-surface) 88%, var(--plx-app-bg-alt) 12%);
+	border: 1px solid var(--plx-border);
+	border-radius: 10px;
+	display: flex;
+	flex: 0 0 auto;
+	flex-wrap: nowrap;
+	gap: 8px;
+	justify-content: flex-end;
+	max-width: min(100%, 760px);
+	min-width: 0;
+	padding: 3px 5px;
+	box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--plx-panel-border) 66%, transparent);
+}
+
+.plx-pluginWorkbench__configActionSummary {
+	align-items: center;
+	display: flex;
+	flex: 0 1 auto;
+	flex-wrap: nowrap;
+	gap: 6px;
+	min-width: 0;
+}
+
+.plx-pluginWorkbench__configActionSelect {
+	flex: 0 1 auto;
+	min-width: 0;
+	width: 164px;
+	max-width: 100%;
+	overflow: hidden;
+}
+
+.plx-pluginWorkbench__configActionSelect .mantine-Input-input {
+	background: var(--plx-surface-strong);
+	border-color: color-mix(in srgb, var(--plx-border) 82%, transparent);
+	border-radius: 8px;
+	color: var(--plx-text);
+	font-weight: 600;
+	min-height: 28px;
+	overflow: hidden;
+	padding-right: 28px;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.plx-pluginWorkbench__configActionSelect .mantine-Input-input:focus,
+.plx-pluginWorkbench__configActionSelect .mantine-Input-input:focus-within,
+.plx-pluginWorkbench__configActionSelect .mantine-Input-input[data-expanded='true'] {
+	border-color: var(--plx-tab-active-border);
+	box-shadow: 0 0 0 1px color-mix(in srgb, var(--plx-tab-active-border) 70%, transparent);
+}
+
+.plx-pluginWorkbench__configActionSelect .mantine-Select-section {
+	color: var(--plx-text-muted);
+}
+
+.plx-pluginWorkbench__configActionKey {
+	max-width: 140px;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.plx-pluginWorkbench__configActionButtons {
+	flex: 0 1 auto;
+	min-width: 0;
+}
+
+.plx-pluginWorkbench__configActionDock .mantine-Badge-root {
+	flex: 0 0 auto;
+}
+
+.plx-pluginWorkbench__configActionDock .mantine-Badge-root,
+.plx-pluginWorkbench__configActionDock .mantine-Button-root {
+	height: 28px;
+}
+
+.plx-pluginWorkbench__configActionButtons .mantine-Button-root {
+	border-radius: 8px;
+	padding-inline: 10px;
+}
+
+.plx-pluginPanel {
+	background: var(--plx-panel-bg);
+	border: 1px solid var(--plx-border);
+	border-radius: 10px;
+	box-shadow: none;
+}
+
+.plx-pluginPanel__stack {
+	display: flex;
+	flex: 1;
+	flex-direction: column;
+	gap: var(--plx-plugin-panel-gap, 8px);
+	min-height: 0;
+}
+
+.plx-pluginPanel__header {
+	align-items: flex-start;
+	display: flex;
+	gap: 12px;
+	justify-content: space-between;
+	min-width: 0;
+}
+
+.plx-pluginPanel__heading {
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+	min-width: 0;
+}
+
+.plx-pluginPanel__title {
+	font-size: 18px;
+	font-weight: 600;
+	line-height: 1.2;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.plx-pluginPanel__description {
+	color: var(--plx-text-muted);
+	font-size: 14px;
+	line-height: 1.35;
+}
+
+.plx-pluginPanel__aside {
+	flex: 0 0 auto;
+}
+
+.plx-pluginWorkbench__assistHost {
+	align-self: stretch;
+	display: flex;
+	flex: 1 1 auto;
+	flex-direction: column;
+	gap: 8px;
+	min-height: 0;
+	min-width: 0;
+	padding: 6px;
+	width: 100%;
+}
+
+.plx-pluginWorkbench__assistCard {
+	background: var(--plx-surface-strong);
+	border-color: var(--plx-border);
+	box-shadow: none;
+}
+
+.plx-pluginWorkbench__assistCard .mantine-Collapse-content {
+	display: flex;
+	min-width: 0;
+	width: 100%;
+}
+
+.plx-pluginWorkbench__assistCollapse {
+	display: flex;
+	min-width: 0;
+	width: 100%;
+}
+
+.plx-pluginWorkbench__assistCollapse > * {
+	flex: 1 1 auto;
+	min-width: 0;
+	width: 100%;
+}
+
+.plx-pluginWorkbench__assistCard .plx-pluginWorkbench__assistHost {
+	padding: 0;
+}
+
+.plx-pluginWorkbench__assistSection {
+	align-self: stretch;
+	display: flex;
+	flex: 1;
+	min-height: 0;
+	min-width: 0;
+	padding: 2px 2px 0;
+	width: 100%;
+}
+
+.plx-pluginWorkbench__assistSection > * {
+	flex: 1 1 auto;
+	min-width: 0;
+	width: 100%;
+}
+
+.plx-pluginWorkbench__outline {
+	align-self: stretch;
+	min-height: 0;
+	min-width: 0;
+	width: 100%;
+}
+
+.plx-pluginWorkbench__outlineSearch,
+.plx-pluginWorkbench__outlineList,
+.plx-pluginWorkbench__outlineItem,
+.plx-pluginWorkbench__outlineEmpty {
+	min-width: 0;
+	width: 100%;
+}
+
+.plx-pluginWorkbench__outlineScroll {
+	flex: 1 1 auto;
+	max-width: 100%;
+	min-width: 0;
+	width: 100%;
+}
+
+.plx-pluginWorkbench__outlineScroll .mantine-ScrollArea-viewport,
+.plx-pluginWorkbench__outlineScroll .mantine-ScrollArea-content {
+	min-width: 100%;
+	width: 100%;
+}
+
+.plx-pluginWorkbench__outlineNode {
+	align-items: center;
+	appearance: none;
+	background: transparent;
+	border: 1px solid var(--mantine-color-default-border);
+	border-radius: 10px;
+	box-sizing: border-box;
+	box-shadow: none;
+	color: inherit;
+	cursor: pointer;
+	display: flex;
+	padding: 8px 10px;
+	text-align: left;
+	transition:
+		background-color 140ms ease,
+		border-color 140ms ease,
+		box-shadow 140ms ease;
+	user-select: none;
+	width: 100%;
+}
+
+.plx-pluginWorkbench__outlineNode:hover,
+.plx-pluginWorkbench__outlineNode:focus-visible {
+	background: color-mix(in srgb, var(--plx-accent-soft) 52%, transparent);
+	border-color: color-mix(in srgb, var(--plx-tab-active-border) 68%, var(--plx-border) 32%);
+	outline: none;
+}
+
+.plx-pluginWorkbench__outlineNode[data-active="true"] {
+	background: var(--plx-accent-soft);
+	border-color: var(--plx-workbench-tab-active-border);
+	box-shadow: inset 3px 0 0 var(--plx-accent), var(--mantine-shadow-sm);
+}
+
+.plx-pluginWorkbench__outlineRow,
+.plx-pluginWorkbench__outlineLabelGroup {
+	min-width: 0;
+	width: 100%;
+}
+
+.plx-pluginWorkbench__outlineLabel {
+	flex: 1 1 auto;
+	min-width: 0;
+}
+
+.plx-pluginWorkbench__outlineDot {
+	background: var(--mantine-color-dimmed);
+	border-radius: 999px;
+	flex: 0 0 auto;
+	height: 8px;
+	width: 8px;
+}
+
+.plx-pluginWorkbench__outlineDot[data-active="true"] {
+	background: var(--plx-accent);
+	box-shadow: 0 0 0 3px var(--plx-accent-soft);
+}
+
+.plx-pluginWorkbench__outlineBranch {
+	border-left: 1px solid color-mix(in srgb, var(--plx-border) 78%, transparent);
+	margin-left: 6px;
+	padding-left: 8px;
+}
+
+.plx-pluginWorkbench__actionBar {
+	align-items: center;
+	display: flex;
+	min-width: 0;
+}
+
+.plx-pluginWorkbench__actionBar[data-prominent="true"] {
+	gap: 8px;
+}
+
+.plx-pluginWorkbench__actionPersist {
+	align-items: center;
+	background: var(--plx-surface-muted);
+	border: 1px solid var(--plx-border);
+	border-radius: 999px;
+	display: flex;
+	gap: 10px;
+	padding: 4px 10px;
+}
+
+.plx-pluginWorkbench__actionPersistText {
+	display: flex;
+	flex-direction: column;
+	gap: 1px;
+	line-height: 1.1;
+}
+
+.plx-pluginWorkbench__actionButton {
+	border-radius: 10px;
+}
+
+.plx-pluginWorkbench__actionButton--primary {
+	background: var(--plx-accent);
+	border-color: transparent;
+	color: var(--plx-accent-contrast);
+}
+
+.plx-pluginWorkbench__actionButton--primary:hover,
+.plx-pluginWorkbench__actionButton--primary:focus-visible {
+	background: var(--plx-accent-strong);
+}
+
+.plx-pluginWorkbench__actionButton--primary:disabled {
+	background: var(--plx-surface-muted);
+	border-color: var(--plx-border);
+	color: var(--plx-text-muted);
+}
+
+.plx-pluginWorkbench__actionButton .mantine-Button-label,
+.plx-pluginWorkbench__actionButton .mantine-Button-section {
+	color: inherit;
+}
+
+.plx-pluginWorkbench__actionBar[data-prominent="true"] .mantine-Switch-root {
+	flex: 0 0 auto;
+}
+
+.plx-pluginWorkbench__actionBar[data-prominent="true"] > * {
+	min-width: 0;
+}
+
+.plx-workbench__resizeHandle--horizontal {
+	height: 10px;
+	width: auto;
+}
+
+.plx-workbench__resizeHandle--horizontal::before {
+	inset: 4px 10px;
+}
+
+@media (max-width: 1200px) {
+	.plx-pluginWorkbench__workspace {
+		padding: 6px;
+	}
+
+	.plx-pluginWorkbench__viewHeader {
+		padding-inline: 10px;
+	}
+
+	.plx-pluginWorkbench__contextStack,
+	.plx-pluginWorkbench__dockPane {
+		padding-inline: 8px;
+	}
+
+	.plx-pluginWorkbench__commandBar {
+		align-items: stretch;
+		flex-direction: column;
+	}
+
+	.plx-pluginWorkbench__commandActions {
+		justify-content: flex-start;
+		width: 100%;
+	}
+
+	.plx-pluginWorkbench__metaChip {
+		max-width: 100%;
+	}
+
+	.plx-pluginWorkbench__actionBar[data-prominent="true"] {
+		flex-wrap: wrap;
+	}
+
+	.plx-pluginWorkbench__configToolbar {
+		align-items: stretch;
+		flex-direction: column;
+	}
+
+	.plx-pluginWorkbench__configToolbarNav {
+		flex-wrap: wrap;
+	}
+
+	.plx-pluginWorkbench__configActionDock {
+		align-self: flex-start;
+		flex-wrap: wrap;
+		max-width: 100%;
+	}
+
+	.plx-pluginWorkbench__configActionSelect {
+		width: 100%;
+	}
+}

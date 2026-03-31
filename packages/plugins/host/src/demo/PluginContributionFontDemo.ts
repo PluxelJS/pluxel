@@ -61,39 +61,41 @@ type FontPickerResult =
 			type: 'clear-font'
 	  }
 
-const FontPickerContract = defineInteractionContract<FontPickerInput, FontPickerDraft, FontPickerResult>(
-	{
-		id: 'pluxel.demo.font-picker',
-		version: 1,
-		label: 'Font Picker',
-		validateInput(value) {
-			const current = readFontRef((value as FontPickerInput | null | undefined)?.current)
-			return { current }
-		},
-		validateDraft(value) {
-			const selectedId = (value as FontPickerDraft | null | undefined)?.selectedId
-			return {
-				selectedId: typeof selectedId === 'string' && selectedId.trim() ? selectedId.trim() : null,
-			}
-		},
-		validateResult(value) {
-			if (value && typeof value === 'object' && (value as any).type === 'clear-font') {
-				return { type: 'clear-font' } satisfies FontPickerResult
-			}
-			const ref = readFontRef((value as { ref?: unknown } | null | undefined)?.ref)
-			if (!ref) throw new Error('Font picker result requires a valid ref')
-			return {
-				type: 'set-font',
-				ref: {
-					provider: ref.provider,
-					kind: 'font-set',
-					id: ref.id,
-					...(ref.label ? { label: ref.label } : {}),
-				},
-			} satisfies FontPickerResult
-		},
+const FontPickerContract = defineInteractionContract<
+	FontPickerInput,
+	FontPickerDraft,
+	FontPickerResult
+>({
+	id: 'pluxel.demo.font-picker',
+	version: 1,
+	label: 'Font Picker',
+	validateInput(value) {
+		const current = readFontRef((value as FontPickerInput | null | undefined)?.current)
+		return { current }
 	},
-)
+	validateDraft(value) {
+		const selectedId = (value as FontPickerDraft | null | undefined)?.selectedId
+		return {
+			selectedId: typeof selectedId === 'string' && selectedId.trim() ? selectedId.trim() : null,
+		}
+	},
+	validateResult(value) {
+		if (value && typeof value === 'object' && (value as any).type === 'clear-font') {
+			return { type: 'clear-font' } satisfies FontPickerResult
+		}
+		const ref = readFontRef((value as { ref?: unknown } | null | undefined)?.ref)
+		if (!ref) throw new Error('Font picker result requires a valid ref')
+		return {
+			type: 'set-font',
+			ref: {
+				provider: ref.provider,
+				kind: 'font-set',
+				id: ref.id,
+				...(ref.label ? { label: ref.label } : {}),
+			},
+		} satisfies FontPickerResult
+	},
+})
 
 const FontSetRefSchema = v.object({
 	provider: v.pipe(v.optional(v.string(), 'PluginContributionFontManager'), f.stringMeta({})),
@@ -136,7 +138,7 @@ export class PluginContributionFontManager extends BasePlugin {
 
 		this.ctx.ext.ui.builtin.doc({
 			id: 'font-manager-overview',
-			point: 'plugin:info',
+			point: 'plugin:context',
 			title: 'Font Sets',
 			requireRunning: false,
 			content: d`

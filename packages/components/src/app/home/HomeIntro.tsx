@@ -8,7 +8,6 @@ import {
 	Stack,
 	Text,
 	Title,
-	useComputedColorScheme,
 } from '@mantine/core'
 import {
 	IconBolt,
@@ -20,17 +19,11 @@ import {
 } from '@tabler/icons-react'
 import type { ReactNode } from 'react'
 import { RouterLinkAdapter } from '../RouterLinkAdapter'
-import { getPatternStyle } from '../../theme'
+import { usePlxScheme } from '../../theme'
 
 export function HomeIntro({ lastRoute }: { lastRoute: string | null }) {
-	const scheme = useComputedColorScheme('light', { getInitialValueInEffect: true })
-	const pattern = getPatternStyle(scheme === 'dark' ? 'dark' : 'light')
+	const plx = usePlxScheme()
 	const quickActions = buildQuickActions(lastRoute)
-
-	const heroBorder = scheme === 'dark' ? 'rgba(148,163,184,0.25)' : 'rgba(15,23,42,0.08)'
-	const heroShadow =
-		scheme === 'dark' ? '0 30px 80px rgba(2,6,23,0.85)' : '0 20px 60px rgba(15, 23, 42, 0.08)'
-	const schemeMode = scheme === 'dark' ? 'dark' : 'light'
 
 	return (
 		<Stack gap="lg" p="lg" style={{ height: '100%', minHeight: 0 }}>
@@ -40,12 +33,12 @@ export function HomeIntro({ lastRoute }: { lastRoute: string | null }) {
 				style={{
 					borderRadius: 32,
 					padding: 'var(--mantine-spacing-xl)',
-					boxShadow: heroShadow,
-					border: `1px solid ${heroBorder}`,
-					backgroundColor: pattern.backgroundColor,
-					backgroundImage: pattern.backgroundImage,
-					backgroundSize: pattern.backgroundSize,
-					backgroundPosition: pattern.backgroundPosition,
+					boxShadow: 'var(--plx-shadow)',
+					border: '1px solid var(--plx-panel-border-strong)',
+					backgroundColor: plx.pattern.backgroundColor,
+					backgroundImage: plx.pattern.backgroundImage,
+					backgroundSize: plx.pattern.backgroundSize,
+					backgroundPosition: plx.pattern.backgroundPosition,
 				}}
 			>
 				<Stack gap="md" maw={720}>
@@ -79,16 +72,14 @@ export function HomeIntro({ lastRoute }: { lastRoute: string | null }) {
 								display: 'flex',
 								flexDirection: 'column',
 								gap: 12,
-								backgroundColor: scheme === 'dark' ? 'rgba(2,6,23,0.85)' : 'rgba(255,255,255,0.92)',
-								border: `1px solid ${
-									scheme === 'dark' ? 'rgba(148,163,184,0.2)' : 'rgba(15,23,42,0.08)'
-								}`,
+								backgroundColor: 'var(--plx-panel-bg)',
+								border: '1px solid var(--plx-panel-border)',
 							}}
 						>
 							<Group justify="space-between" align="flex-start">
 								<div>
 									<Text fw={600}>{action.title}</Text>
-									<Text size="sm" c={scheme === 'dark' ? 'gray.4' : 'dimmed'}>
+									<Text size="sm" c="dimmed">
 										{action.description}
 									</Text>
 								</div>
@@ -97,8 +88,8 @@ export function HomeIntro({ lastRoute }: { lastRoute: string | null }) {
 										width: 32,
 										height: 32,
 										borderRadius: '50%',
-										background:
-											scheme === 'dark' ? 'rgba(99,102,241,0.25)' : 'rgba(99,102,241,0.12)',
+										background: 'var(--plx-panel-accent-bg)',
+										color: 'var(--plx-panel-accent-fg)',
 										display: 'flex',
 										alignItems: 'center',
 										justifyContent: 'center',
@@ -129,7 +120,6 @@ export function HomeIntro({ lastRoute }: { lastRoute: string | null }) {
 						description="以分组和搜索快速定位插件，并实时查看运行状态。"
 						icon={<IconPlugConnected size={24} stroke={1.6} />}
 						to="/plugins"
-						scheme={schemeMode}
 					/>
 				</Grid.Col>
 				<Grid.Col span={{ base: 12, md: 4 }}>
@@ -138,7 +128,6 @@ export function HomeIntro({ lastRoute }: { lastRoute: string | null }) {
 						description="管理依赖、查看版本和同步安装状态。"
 						icon={<IconPackages size={24} stroke={1.6} />}
 						to="/packages"
-						scheme={schemeMode}
 					/>
 				</Grid.Col>
 				<Grid.Col span={{ base: 12, md: 4 }}>
@@ -147,7 +136,6 @@ export function HomeIntro({ lastRoute }: { lastRoute: string | null }) {
 						description="监控最新日志事件，把脉系统健康度。"
 						icon={<IconHistory size={24} stroke={1.6} />}
 						to="/logs"
-						scheme={schemeMode}
 					/>
 				</Grid.Col>
 				<Grid.Col span={{ base: 12, md: 4 }}>
@@ -156,7 +144,6 @@ export function HomeIntro({ lastRoute }: { lastRoute: string | null }) {
 						description="记住 / 或 Ctrl/⌘ + F 可随时唤起插件搜索。"
 						icon={<IconKeyboard size={24} stroke={1.6} />}
 						to="/plugins"
-						scheme={schemeMode}
 					/>
 				</Grid.Col>
 				<Grid.Col span={{ base: 12, md: 4 }}>
@@ -165,7 +152,6 @@ export function HomeIntro({ lastRoute }: { lastRoute: string | null }) {
 						description="在顶部工具栏可快速触发快照构建，保存当前状态。"
 						icon={<IconBolt size={24} stroke={1.6} />}
 						to="/plugins"
-						scheme={schemeMode}
 					/>
 				</Grid.Col>
 			</Grid>
@@ -250,15 +236,12 @@ function HomeCard({
 	description,
 	to,
 	icon,
-	scheme,
 }: {
 	title: string
 	description: string
 	to: string
 	icon: ReactNode
-	scheme: 'light' | 'dark'
 }) {
-	const isDark = scheme === 'dark'
 	return (
 		<Button
 			component={RouterLinkAdapter}
@@ -274,14 +257,14 @@ function HomeCard({
 				flexDirection: 'column',
 				textAlign: 'left',
 				padding: 'var(--mantine-spacing-lg)',
-				backgroundColor: isDark ? 'rgba(2,6,23,0.85)' : 'rgba(255,255,255,0.92)',
-				border: isDark ? '1px solid rgba(148,163,184,0.25)' : '1px solid rgba(15,23,42,0.08)',
-				color: isDark ? 'var(--mantine-color-gray-0)' : undefined,
+				backgroundColor: 'var(--plx-panel-bg)',
+				border: '1px solid var(--plx-panel-border)',
+				color: 'var(--plx-text)',
 			}}
 		>
 			<div>
 				<Title order={4}>{title}</Title>
-				<Text c={isDark ? 'gray.4' : 'dimmed'} size="sm" mt={4}>
+				<Text c="dimmed" size="sm" mt={4}>
 					{description}
 				</Text>
 			</div>

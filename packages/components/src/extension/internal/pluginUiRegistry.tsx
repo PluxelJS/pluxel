@@ -190,8 +190,8 @@ class PluginUiRegistry {
 											style={{
 												padding: 8,
 												borderRadius: 8,
-												border: '1px solid rgba(255, 0, 0, 0.25)',
-												background: 'rgba(255, 0, 0, 0.06)',
+												border: '1px solid var(--plx-state-error-border)',
+												background: 'var(--plx-state-error-bg)',
 												fontSize: 12,
 												lineHeight: 1.4,
 											}}
@@ -218,8 +218,8 @@ class PluginUiRegistry {
 															style={{
 																padding: 8,
 																borderRadius: 8,
-																border: '1px solid rgba(255, 0, 0, 0.25)',
-																background: 'rgba(255, 0, 0, 0.06)',
+																border: '1px solid var(--plx-state-error-border)',
+																background: 'var(--plx-state-error-bg)',
 																fontSize: 12,
 																lineHeight: 1.4,
 															}}

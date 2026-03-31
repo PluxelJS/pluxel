@@ -1,7 +1,7 @@
-import { Box, Button, Center, Stack, Text, Title, useComputedColorScheme } from '@mantine/core'
+import { Box, Button, Center, Stack, Text, Title } from '@mantine/core'
 import { IconAlertTriangle, IconRefresh } from '@tabler/icons-react'
 import type { ReactNode } from 'react'
-import { getPatternStyle } from '../theme'
+import { usePlxScheme } from '../theme'
 
 export interface ErrorStateProps {
 	icon?: ReactNode
@@ -27,16 +27,13 @@ export function ErrorState({
 	withBorder = false,
 	minHeight = 200,
 }: ErrorStateProps) {
-	const scheme = useComputedColorScheme('light', { getInitialValueInEffect: true })
-	const isDark = scheme === 'dark'
-	const pattern = withPattern ? getPatternStyle(isDark ? 'dark' : 'light') : null
-
-	// 错误状态使用带有红色调的半透明背景
-	const defaultBg = isDark ? 'rgba(50, 30, 30, 0.5)' : 'rgba(254, 242, 242, 0.8)'
+	const scheme = usePlxScheme()
+	const pattern = withPattern ? scheme.pattern : null
+	const errorTokens = scheme.state.error
 
 	const borderStyle = withBorder
 		? {
-				border: `1px solid ${isDark ? 'rgba(248,113,113,0.3)' : 'rgba(239,68,68,0.2)'}`,
+				border: `1px solid ${errorTokens.border}`,
 				borderRadius: 'var(--mantine-radius-lg)',
 			}
 		: {
@@ -49,7 +46,7 @@ export function ErrorState({
 				minHeight,
 				width: '100%',
 				padding: 'var(--mantine-spacing-xl)',
-				backgroundColor: pattern ? pattern.backgroundColor : defaultBg,
+				backgroundColor: pattern ? pattern.backgroundColor : errorTokens.bg,
 				...(pattern
 					? {
 							backgroundImage: pattern.backgroundImage,
@@ -67,17 +64,17 @@ export function ErrorState({
 						width: 56,
 						height: 56,
 						borderRadius: '50%',
-						background: scheme === 'dark' ? 'rgba(248,113,113,0.15)' : 'rgba(239,68,68,0.1)',
+						background: errorTokens.iconBg,
 						display: 'flex',
 						alignItems: 'center',
 						justifyContent: 'center',
-						color: 'var(--mantine-color-red-5)',
+						color: errorTokens.iconColor,
 					}}
 				>
 					{icon || <IconAlertTriangle size={28} stroke={1.5} />}
 				</Box>
 				<Stack align="center" gap={4}>
-					<Title order={5} ta="center" c="red.6">
+					<Title order={5} ta="center" c={errorTokens.titleColor}>
 						{title}
 					</Title>
 					{message && (
@@ -88,12 +85,16 @@ export function ErrorState({
 				</Stack>
 				{onRetry && (
 					<Button
-						variant="light"
-						color="red"
+						variant="subtle"
 						size="sm"
 						leftSection={<IconRefresh size={16} />}
 						onClick={onRetry}
 						mt="xs"
+						style={{
+							background: errorTokens.iconBg,
+							border: `1px solid ${errorTokens.border}`,
+							color: errorTokens.titleColor,
+						}}
 					>
 						{retryLabel}
 					</Button>

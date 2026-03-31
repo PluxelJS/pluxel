@@ -58,12 +58,14 @@ const pickEntry = (manifest: Manifest, entry = 'src/client.tsx') =>
 		? entry
 		: (Object.keys(manifest).find((key) => manifest[key]?.isEntry) ?? Object.keys(manifest)[0])
 
-async function loadBuiltManifest(): Promise<Manifest> {
-	const candidates = [
-		resolve(moduleDir, '../../public/.vite/manifest.json'),
-		resolve(moduleDir, '../public/.vite/manifest.json'),
-		resolve(moduleDir, './public/.vite/manifest.json'),
-	]
+async function loadBuiltManifest(options?: { publicDirAbs?: string }): Promise<Manifest> {
+	const candidates = options?.publicDirAbs
+		? [resolve(options.publicDirAbs, '.vite/manifest.json')]
+		: [
+				resolve(moduleDir, '../../public/.vite/manifest.json'),
+				resolve(moduleDir, '../public/.vite/manifest.json'),
+				resolve(moduleDir, './public/.vite/manifest.json'),
+			]
 
 	let lastError: unknown
 	for (const path of candidates) {
@@ -82,8 +84,8 @@ async function loadBuiltManifest(): Promise<Manifest> {
 	)
 }
 
-export async function resolveBuiltAssets(): Promise<Assets> {
-	const manifest = await loadBuiltManifest()
+export async function resolveBuiltAssets(options?: { publicDirAbs?: string }): Promise<Assets> {
+	const manifest = await loadBuiltManifest(options)
 	const entryKey = pickEntry(manifest)
 	const entry = manifest[entryKey]
 	if (!entry) throw new Error(`manifest missing entry: ${entryKey}`)

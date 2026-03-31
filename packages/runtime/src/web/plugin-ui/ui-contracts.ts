@@ -7,9 +7,12 @@ export const ExtensionPoints = {
 	NavbarItems: 'navbar:items',
 	NavbarFooter: 'navbar:footer',
 	NavbarAuthText: 'navbar:authText',
+	PluginHeader: 'plugin:header',
 	PluginTabs: 'plugin:tabs',
 	PluginActions: 'plugin:actions',
+	PluginContext: 'plugin:context',
 	PluginInfo: 'plugin:info',
+	PluginDock: 'plugin:dock',
 	GlobalStatusBar: 'global:statusBar',
 } as const
 
@@ -103,6 +106,11 @@ export interface ExtensionPointMap {
 		metaRequired?: false
 	}
 	'navbar:authText': { ctx: GlobalExtensionContext; meta: {}; metaRequired?: false }
+	'plugin:header': {
+		ctx: PluginExtensionContext
+		meta: { label?: string; icon?: string | ReactNode }
+		metaRequired?: false
+	}
 	'plugin:tabs': {
 		ctx: PluginExtensionContext
 		meta: {
@@ -117,7 +125,9 @@ export interface ExtensionPointMap {
 		meta: { label?: string; icon?: string | ReactNode }
 		metaRequired?: false
 	}
+	'plugin:context': { ctx: PluginExtensionContext; meta: {}; metaRequired?: false }
 	'plugin:info': { ctx: PluginExtensionContext; meta: {}; metaRequired?: false }
+	'plugin:dock': { ctx: PluginExtensionContext; meta: {}; metaRequired?: false }
 	'global:statusBar': {
 		ctx: GlobalExtensionContext
 		meta: { label?: string }
@@ -270,9 +280,7 @@ export type InteractionSessionComponent<
 	TDraft = unknown,
 	TPrepared = unknown,
 	TResult = unknown,
-> = (
-	props: InteractionSessionComponentProps<TInput, TDraft, TPrepared, TResult>,
-) => ReactNode
+> = (props: InteractionSessionComponentProps<TInput, TDraft, TPrepared, TResult>) => ReactNode
 
 export interface PluginUIModule {
 	extensions?: AnyExtensionDef[]

@@ -1,8 +1,9 @@
-import { Box, Group, ScrollArea, SegmentedControl, Stack, Text, Tooltip } from '@mantine/core'
+import { Box, ScrollArea } from '@mantine/core'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ObjectSchema } from 'valibot'
 import { getDefaults } from 'valibot'
 import { EmptyState } from '../../../components'
+import { SegmentedButtons } from 'valibot-form/web'
 import { useNotify } from '../../hooks'
 import { useRuntimeTransportClient } from '../../../runtime'
 import { type ConfigFormBridge, type ConfigFormState, ConfigTabPanel } from './ConfigTab'
@@ -19,7 +20,10 @@ export interface ConfigFormProps {
 	defaults: Record<string, unknown>
 	active?: boolean
 	activeKey?: string
+	draftValues?: Record<string, Record<string, unknown>>
 	onActiveKeyChange?: (key: string) => void
+	onDirtyChange?: (dirty: boolean) => void
+	onDraftChange?: (drafts: Record<string, Record<string, unknown>>) => void
 }
 
 type FormBridge = ConfigFormBridge
@@ -55,6 +59,28 @@ function toRecord(value: unknown): Record<string, unknown> {
 	return isRecord(value) ? value : {}
 }
 
+function deepEqual(a: unknown, b: unknown): boolean {
+	if (Object.is(a, b)) return true
+	if (Array.isArray(a) && Array.isArray(b)) {
+		if (a.length !== b.length) return false
+		for (let i = 0; i < a.length; i += 1) {
+			if (!deepEqual(a[i], b[i])) return false
+		}
+		return true
+	}
+	if (isRecord(a) && isRecord(b)) {
+		const aKeys = Object.keys(a)
+		const bKeys = Object.keys(b)
+		if (aKeys.length !== bKeys.length) return false
+		for (const key of aKeys) {
+			if (!(key in b)) return false
+			if (!deepEqual(a[key], b[key])) return false
+		}
+		return true
+	}
+	return false
+}
+
 function toIssueArray(value: unknown): FieldIssue[] {
 	return Array.isArray(value) ? (value as FieldIssue[]) : []
 }
@@ -66,7 +92,10 @@ export function ConfigForm({
 	defaults,
 	active = true,
 	activeKey: activeKeyProp,
+	draftValues,
 	onActiveKeyChange,
+	onDirtyChange,
+	onDraftChange,
 }: ConfigFormProps) {
 	const transport = useRuntimeTransportClient()
 	const safeSchemas = schemas ?? {}
@@ -80,6 +109,7 @@ export function ConfigForm({
 	const [scrollHostVersion, setScrollHostVersion] = useState(0)
 	const formBridgeRef = useRef<Record<string, FormBridge>>({})
 	const [formStates, setFormStates] = useState<Record<string, FormState>>({})
+	const lastDraftsRef = useRef<Record<string, Record<string, unknown>>>({})
 	const markSaved = useCallback((key: string, value: TabValue) => {
 		const savedAt = Date.now()
 		setSavedAtMap((m) => ({ ...m, [key]: savedAt }))
@@ -167,7 +197,7 @@ export function ConfigForm({
 				existing.dirty === next.dirty &&
 				existing.canSubmit === next.canSubmit &&
 				existing.submitting === next.submitting &&
-				existing.values === next.values
+				deepEqual(existing.values, next.values)
 			) {
 				return prev
 			}
@@ -217,9 +247,9 @@ export function ConfigForm({
 
 		setSavingAll(true)
 		try {
-				const result = (await (transport as any).withRpc((rpc: any) =>
-					rpc.plugin(pluginName).saveConfig(patch),
-				)) as SaveConfigResult
+			const result = (await (transport as any).withRpc((rpc: any) =>
+				rpc.plugin(pluginName).saveConfig(patch),
+			)) as SaveConfigResult
 			if (result.ok === false) {
 				if (result.code === 'validation_failed' && result.errors) {
 					const errorsByTab = isRecord(result.errors) ? result.errors : {}
@@ -298,31 +328,34 @@ export function ConfigForm({
 		return schemaItems.filter((item) => formStates[item.key]?.dirty).map((item) => item.key)
 	}, [formStates, schemaItems])
 
+	useEffect(() => {
+		onDirtyChange?.(dirtyKeys.length > 0)
+	}, [dirtyKeys.length, onDirtyChange])
+
+	useEffect(() => {
+		const nextDrafts: Record<string, Record<string, unknown>> = {}
+		for (const [key, state] of Object.entries(formStates)) {
+			if (!state?.dirty) continue
+			nextDrafts[key] = toRecord(state.values)
+		}
+		if (!onDraftChange) return undefined
+		if (deepEqual(lastDraftsRef.current, nextDrafts)) return undefined
+		const handle = window.setTimeout(() => {
+			lastDraftsRef.current = nextDrafts
+			onDraftChange(nextDrafts)
+		}, 120)
+		return () => window.clearTimeout(handle)
+	}, [formStates, onDraftChange])
+
 	const activeState = formStates[resolvedActiveKey] ?? {
 		dirty: false,
 		canSubmit: false,
 		submitting: false,
 		values: {},
 	}
-
-	const changedFieldsByKey = useMemo(() => {
-		const out: Record<string, string[]> = {}
-		for (const item of schemaItems) {
-			const current = formStates[item.key]?.values
-			if (!current) {
-				out[item.key] = []
-				continue
-			}
-			const baseline = item.initialValue
-			const keys = new Set([...Object.keys(baseline), ...Object.keys(current)])
-			const changed: string[] = []
-			for (const key of keys) {
-				if (!Object.is(baseline[key], current[key])) changed.push(key)
-			}
-			out[item.key] = changed
-		}
-		return out
-	}, [formStates, schemaItems])
+	const showSchemaSwitcher =
+		(hasMultipleSchemas && activeGroupHasMultipleSchemas) ||
+		(!hasMultipleGroups && hasMultipleSchemas)
 
 	const schemaOptions = useMemo(() => {
 		const activeSet = new Set(activeGroupKeys)
@@ -331,7 +364,6 @@ export function ConfigForm({
 			.map((item) => {
 				const state = formStates[item.key]
 				const dirty = Boolean(state?.dirty)
-				const changedFields = changedFieldsByKey[item.key] ?? []
 				const savedAt = savedAtMap[item.key]
 				const { group, sub } = splitSchemaKey(item.key)
 				const displayKey =
@@ -340,72 +372,21 @@ export function ConfigForm({
 							? '配置'
 							: sub
 						: formatSchemaKeyLabel(item.key)
+				const statusSuffix = dirty ? ' •' : savedAt ? '' : ''
 
-				const label = (
-					<Tooltip
-						key={item.key}
-						withArrow
-						openDelay={300}
-						label={
-							<Stack gap={4}>
-								<Text size="xs" fw={600}>
-									{item.key}
-								</Text>
-								{dirty ? (
-									<Text size="xs">
-										{changedFields.length > 0
-											? `已修改 ${changedFields.length} 项：${formatFieldList(changedFields)}`
-											: '已修改'}
-									</Text>
-								) : savedAt ? (
-									<Text size="xs">上次保存：{new Date(savedAt).toLocaleString()}</Text>
-								) : (
-									<Text size="xs">未修改</Text>
-								)}
-							</Stack>
-						}
-					>
-						<Group gap={6} wrap="nowrap">
-							<Text size="xs">{displayKey}</Text>
-							{dirty ? (
-								<Box
-									style={{
-										width: 6,
-										height: 6,
-										borderRadius: 999,
-										background: 'var(--mantine-color-yellow-filled)',
-									}}
-								/>
-							) : null}
-						</Group>
-					</Tooltip>
-				)
-
-				return { value: item.key, label }
+				return { value: item.key, label: `${displayKey}${statusSuffix}` }
 			})
-	}, [activeGroupKeys, changedFieldsByKey, formStates, hasMultipleGroups, savedAtMap, schemaItems])
+	}, [activeGroupKeys, formStates, hasMultipleGroups, savedAtMap, schemaItems])
 
 	const groupOptions = useMemo(() => {
 		if (!hasMultipleGroups) return []
 		const keyToDirty = (key: string) => Boolean(formStates[key]?.dirty)
 		return groups.map((g) => {
 			const dirty = g.keys.some(keyToDirty)
-			const label = (
-				<Group key={g.group} gap={6} wrap="nowrap">
-					<Text size="xs">{formatSchemaGroupLabel(g.group)}</Text>
-					{dirty ? (
-						<Box
-							style={{
-								width: 6,
-								height: 6,
-								borderRadius: 999,
-								background: 'var(--mantine-color-yellow-filled)',
-							}}
-						/>
-					) : null}
-				</Group>
-			)
-			return { value: g.group, label }
+			return {
+				value: g.group,
+				label: `${formatSchemaGroupLabel(g.group)}${dirty ? ' •' : ''}`,
+			}
 		})
 	}, [formStates, groups, hasMultipleGroups])
 
@@ -430,39 +411,68 @@ export function ConfigForm({
 						overflow: 'hidden',
 					}}
 				>
-					{hasMultipleGroups ? (
-						<Group justify="space-between" mb="xs" wrap="nowrap">
-							<SegmentedControl
-								size="xs"
-								radius="xl"
-								value={resolvedActiveGroup}
-								onChange={(v) => {
-									const nextGroup = String(v)
-									const nextKey = groups.find((g) => g.group === nextGroup)?.keys?.[0] ?? ''
-									if (!nextKey) return
-									setActiveKey(nextKey)
-									onActiveKeyChange?.(nextKey)
-								}}
-								data={groupOptions}
-							/>
-						</Group>
-					) : null}
+					{hasMultipleGroups || showSchemaSwitcher || active ? (
+						<Box className="plx-pluginWorkbench__configToolbar">
+							<div className="plx-pluginWorkbench__configToolbarNav">
+								{hasMultipleGroups ? (
+									<div className="plx-pluginWorkbench__configToolbarScroller">
+										<SegmentedButtons
+											size="xs"
+											value={resolvedActiveGroup}
+											onChange={(v) => {
+												const nextGroup = String(v)
+												const nextKey = groups.find((g) => g.group === nextGroup)?.keys?.[0] ?? ''
+												if (!nextKey) return
+												setActiveKey(nextKey)
+												onActiveKeyChange?.(nextKey)
+											}}
+											data={groupOptions}
+											fullWidth={false}
+										/>
+									</div>
+								) : null}
 
-					{(hasMultipleSchemas && activeGroupHasMultipleSchemas) ||
-					(!hasMultipleGroups && hasMultipleSchemas) ? (
-						<Group justify="space-between" mb="xs" wrap="nowrap">
-							<SegmentedControl
-								size="xs"
-								radius="xl"
-								value={resolvedActiveKey}
-								onChange={(v) => {
-									const nextKey = String(v)
-									setActiveKey(nextKey)
-									onActiveKeyChange?.(nextKey)
-								}}
-								data={schemaOptions}
-							/>
-						</Group>
+								{hasMultipleGroups && showSchemaSwitcher ? (
+									<div aria-hidden="true" className="plx-pluginWorkbench__configToolbarDivider" />
+								) : null}
+
+								{showSchemaSwitcher ? (
+									<div className="plx-pluginWorkbench__configToolbarScroller">
+										<SegmentedButtons
+											size="xs"
+											value={resolvedActiveKey}
+											onChange={(v) => {
+												const nextKey = String(v)
+												setActiveKey(nextKey)
+												onActiveKeyChange?.(nextKey)
+											}}
+											data={schemaOptions}
+											fullWidth={false}
+										/>
+									</div>
+								) : null}
+							</div>
+
+							{active ? (
+								<ConfigActionDock
+									activeKey={resolvedActiveKey}
+									activeState={activeState}
+									activeSavedAt={savedAtMap[resolvedActiveKey]}
+									dirtyKeys={dirtyKeys}
+									hasMultipleSchemas={hasMultipleSchemas}
+									savingAll={savingAll}
+									schemaOptions={showSchemaSwitcher ? schemaOptions : []}
+									onActiveKeyChange={(nextKey) => {
+										setActiveKey(nextKey)
+										onActiveKeyChange?.(nextKey)
+									}}
+									onSubmitCurrent={submitCurrent}
+									onSubmitAll={saveAll}
+									onResetCurrent={resetCurrent}
+									onResetDefaults={resetToDefaults}
+								/>
+							) : null}
+						</Box>
 					) : null}
 
 					{schemaItems.map(({ key, schema, savedValue, defaultValue }) => {
@@ -487,6 +497,7 @@ export function ConfigForm({
 									schema={schema}
 									savedValue={savedValue}
 									defaultValue={defaultValue}
+									draftValue={toRecord(draftValues?.[key])}
 									onSaved={markSaved}
 									showToc={showOverlay}
 									active={showOverlay}
@@ -502,27 +513,8 @@ export function ConfigForm({
 					})}
 				</Box>
 			)}
-			{active && hasConfig ? (
-				<ConfigActionDock
-					activeKey={resolvedActiveKey}
-					activeState={activeState}
-					activeSavedAt={savedAtMap[resolvedActiveKey]}
-					dirtyKeys={dirtyKeys}
-					hasMultipleSchemas={hasMultipleSchemas}
-					savingAll={savingAll}
-					onSubmitCurrent={submitCurrent}
-					onSubmitAll={saveAll}
-					onResetCurrent={resetCurrent}
-					onResetDefaults={resetToDefaults}
-				/>
-			) : null}
 		</Box>
 	)
-}
-
-function formatFieldList(fields: string[], limit = 4) {
-	if (fields.length <= limit) return fields.join(', ')
-	return `${fields.slice(0, limit).join(', ')} +${fields.length - limit}`
 }
 
 function formatSchemaKeyLabel(key: string): string {

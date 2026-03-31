@@ -1,6 +1,6 @@
 // ActionBar.tsx
 
-import { ActionIcon, Group, Switch, Tooltip } from '@mantine/core'
+import { ActionIcon, Button, Group, Switch, Text, Tooltip } from '@mantine/core'
 import { openConfirmModal } from '@mantine/modals'
 import { IconPlayerPlay, IconRotateClockwise, IconSquareX } from '@tabler/icons-react'
 import { useCallback, useRef, useState } from 'react'
@@ -15,6 +15,8 @@ import { usePluginScope } from '../context'
 
 export interface ActionBarProps {
 	onStatusUpdated?: () => Promise<void> | void
+	compact?: boolean
+	prominent?: boolean
 }
 
 const ACTION_LABEL: Record<PluginStatusAction, string> = {
@@ -25,7 +27,7 @@ const ACTION_LABEL: Record<PluginStatusAction, string> = {
 	disable: '禁用',
 }
 
-export function ActionBar({ onStatusUpdated }: ActionBarProps) {
+export function ActionBar({ onStatusUpdated, compact = false, prominent = false }: ActionBarProps) {
 	const transport = useRuntimeTransportClient()
 	const {
 		pluginName,
@@ -229,9 +231,9 @@ export function ActionBar({ onStatusUpdated }: ActionBarProps) {
 					.filter((name): name is string => Boolean(name && isKnownPlugin(name)))
 			: []
 
-			const proceed = (): void => {
-				void performAction(action)
-			}
+		const proceed = (): void => {
+			void performAction(action)
+		}
 
 		if (missing.length) {
 			openConfirmModal({
@@ -254,9 +256,100 @@ export function ActionBar({ onStatusUpdated }: ActionBarProps) {
 	const busy = isLoading || isSyncing
 	const canToggle = !busy
 	const persistDisabled = busy
+	const iconSize = compact ? 16 : 18
+	const actionSize = compact ? 'md' : 'lg'
+	const switchSize = compact ? 'sm' : 'md'
+
+	if (prominent) {
+		return (
+			<Group
+				gap={8}
+				justify="flex-end"
+				wrap="nowrap"
+				className="plx-pluginWorkbench__actionBar"
+				data-prominent="true"
+			>
+				<div className="plx-pluginWorkbench__actionPersist">
+					<div className="plx-pluginWorkbench__actionPersistText">
+						<Text size="xs" fw={600}>
+							持久启用
+						</Text>
+						<Text size="xs" c="dimmed">
+							{busy ? '状态同步中…' : isEnabled ? '重启后继续保持启用' : '仅本次运行生效'}
+						</Text>
+					</div>
+					<Tooltip
+						label={
+							busy
+								? '同步中…'
+								: isEnabled
+									? '禁用后将停止运行并移除持久启用'
+									: '启用后可持久保留该插件'
+						}
+					>
+						<Switch
+							size="sm"
+							checked={isEnabled}
+							disabled={persistDisabled}
+							onChange={(event) =>
+								void performAction(event.currentTarget.checked ? 'enable' : 'disable')
+							}
+						/>
+					</Tooltip>
+				</div>
+
+				<Tooltip label={busy ? '同步中…' : '启动'}>
+					<Button
+						className="plx-pluginWorkbench__actionButton plx-pluginWorkbench__actionButton--primary"
+						variant="filled"
+						size="sm"
+						leftSection={<IconPlayerPlay size={16} />}
+						onClick={() => handleAction('start')}
+						disabled={!canToggle || isRunning}
+					>
+						启动
+					</Button>
+				</Tooltip>
+
+				<Tooltip label={busy ? '同步中…' : '终止'}>
+					<Button
+						className="plx-pluginWorkbench__actionButton"
+						variant="light"
+						color="red"
+						size="sm"
+						leftSection={<IconSquareX size={16} />}
+						onClick={() => handleAction('stop')}
+						disabled={!canToggle || !isRunning}
+					>
+						终止
+					</Button>
+				</Tooltip>
+
+				<Tooltip label={busy ? '同步中…' : '重启'}>
+					<Button
+						className="plx-pluginWorkbench__actionButton"
+						variant="default"
+						size="sm"
+						leftSection={<IconRotateClockwise size={16} />}
+						onClick={() => handleAction('restart')}
+						disabled={!canToggle || !isRunning}
+					>
+						重启
+					</Button>
+				</Tooltip>
+
+				<ExtensionSlot point="plugin:actions" fallback={null} />
+			</Group>
+		)
+	}
 
 	return (
-		<Group gap="xs" align="right">
+		<Group
+			gap={compact ? 6 : 'xs'}
+			justify="flex-end"
+			wrap="nowrap"
+			className="plx-pluginWorkbench__actionBar"
+		>
 			<ExtensionSlot point="plugin:actions" fallback={null} />
 
 			<Tooltip
@@ -265,10 +358,10 @@ export function ActionBar({ onStatusUpdated }: ActionBarProps) {
 				}
 			>
 				<Switch
-					size="md"
+					size={switchSize}
 					checked={isEnabled}
-					onLabel="启用"
-					offLabel="禁用"
+					onLabel={compact ? '' : '启用'}
+					offLabel={compact ? '' : '禁用'}
 					disabled={persistDisabled}
 					onChange={(event) =>
 						void performAction(event.currentTarget.checked ? 'enable' : 'disable')
@@ -279,35 +372,35 @@ export function ActionBar({ onStatusUpdated }: ActionBarProps) {
 			<Tooltip label={busy ? '同步中…' : '启动'}>
 				<ActionIcon
 					variant="light"
-					size="lg"
+					size={actionSize}
 					onClick={() => handleAction('start')}
 					disabled={!canToggle || isRunning}
 				>
-					<IconPlayerPlay size={18} />
+					<IconPlayerPlay size={iconSize} />
 				</ActionIcon>
 			</Tooltip>
 
 			<Tooltip label={busy ? '同步中…' : '终止'}>
 				<ActionIcon
 					variant="light"
-					size="lg"
+					size={actionSize}
 					color="red"
 					onClick={() => handleAction('stop')}
 					disabled={!canToggle || !isRunning}
 				>
-					<IconSquareX size={18} />
+					<IconSquareX size={iconSize} />
 				</ActionIcon>
 			</Tooltip>
 
 			<Tooltip label={busy ? '同步中…' : '重启'}>
 				<ActionIcon
 					variant="light"
-					size="lg"
+					size={actionSize}
 					color="green"
 					onClick={() => handleAction('restart')}
 					disabled={!canToggle || !isRunning}
 				>
-					<IconRotateClockwise size={18} />
+					<IconRotateClockwise size={iconSize} />
 				</ActionIcon>
 			</Tooltip>
 		</Group>

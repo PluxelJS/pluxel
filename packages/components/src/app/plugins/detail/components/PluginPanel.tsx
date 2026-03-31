@@ -1,4 +1,3 @@
-import { Card, Group, Stack, Text } from '@mantine/core'
 import type { CSSProperties, ReactNode } from 'react'
 
 interface PluginPanelProps {
@@ -8,6 +7,7 @@ interface PluginPanelProps {
 	children?: ReactNode
 	gap?: number | string
 	padding?: number | string
+	className?: string
 	style?: CSSProperties
 }
 
@@ -36,34 +36,39 @@ export function PluginPanel({
 	children,
 	gap = 8,
 	padding = 16,
+	className,
 	style,
 }: PluginPanelProps) {
 	return (
-		<Card withBorder shadow="sm" radius="lg" style={{ ...ROOT_STYLE, ...style }} p={padding}>
-			<Stack gap={gap} style={{ flex: 1, minHeight: 0 }}>
+		<div
+			className={['plx-pluginPanel', className].filter(Boolean).join(' ')}
+			style={{
+				...ROOT_STYLE,
+				...style,
+				padding: typeof padding === 'number' ? `${padding}px` : padding,
+				['--plx-plugin-panel-gap' as string]: typeof gap === 'number' ? `${gap}px` : gap,
+			}}
+		>
+			<div className="plx-pluginPanel__stack" style={{ flex: 1, minHeight: 0 }}>
 				{title || description || rightSection ? (
-					<Group justify="space-between" align="flex-start" wrap="nowrap" gap={12}>
-						<Stack gap={2} style={{ minWidth: 0 }}>
+					<div className="plx-pluginPanel__header">
+						<div className="plx-pluginPanel__heading">
 							{typeof title === 'string' ? (
-								<Text fw={600} size="lg" lineClamp={1}>
-									{title}
-								</Text>
+								<div className="plx-pluginPanel__title">{title}</div>
 							) : (
 								title
 							)}
 							{typeof description === 'string' ? (
-								<Text size="sm" c="dimmed">
-									{description}
-								</Text>
+								<div className="plx-pluginPanel__description">{description}</div>
 							) : (
 								description
 							)}
-						</Stack>
-						{rightSection && <div style={{ flexShrink: 0 }}>{rightSection}</div>}
-					</Group>
+						</div>
+						{rightSection && <div className="plx-pluginPanel__aside">{rightSection}</div>}
+					</div>
 				) : null}
 				<div style={CONTENT_STYLE}>{children}</div>
-			</Stack>
-		</Card>
+			</div>
+		</div>
 	)
 }

@@ -1,4 +1,4 @@
-import { Affix, Badge, Button, Group, Paper, Stack, Text, Tooltip } from '@mantine/core'
+import { Badge, Button, Group, Select, Text, Tooltip } from '@mantine/core'
 import { SavedStatus } from './SavedStatus'
 
 type ActiveState = {
@@ -14,6 +14,8 @@ export function ConfigActionDock({
 	dirtyKeys,
 	hasMultipleSchemas,
 	savingAll,
+	schemaOptions,
+	onActiveKeyChange,
 	onSubmitCurrent,
 	onSubmitAll,
 	onResetCurrent,
@@ -25,6 +27,8 @@ export function ConfigActionDock({
 	dirtyKeys: string[]
 	hasMultipleSchemas: boolean
 	savingAll: boolean
+	schemaOptions: Array<{ value: string; label: string }>
+	onActiveKeyChange: (key: string) => void
 	onSubmitCurrent: () => void
 	onSubmitAll: () => void
 	onResetCurrent: () => void
@@ -37,68 +41,85 @@ export function ConfigActionDock({
 			: '没有未保存的配置'
 
 	return (
-		<Affix position={{ bottom: 16, right: 16 }} withinPortal zIndex={1000}>
-			<Paper withBorder radius="xl" p="xs" shadow="md">
-				<Stack gap={6}>
-					<Group justify="space-between" wrap="nowrap">
-						<Group gap="xs" wrap="nowrap">
-							<Text fw={600} size="sm">
-								{activeKey}
-							</Text>
-							<SavedStatus dirty={activeState.dirty} savedAt={activeSavedAt} />
-						</Group>
-						{dirtyCount > 0 ? (
-							<Tooltip label={dirtyLabel} withArrow>
-								<Badge variant="light" color="yellow">
-									已修改 {dirtyCount}
-								</Badge>
-							</Tooltip>
-						) : (
-							<Badge variant="light" color="green">
-								全部已保存
-							</Badge>
-						)}
-					</Group>
+		<div className="plx-pluginWorkbench__configActionDock">
+			<div className="plx-pluginWorkbench__configActionSummary">
+				{schemaOptions.length > 0 ? (
+					<div className="plx-pluginWorkbench__configActionSelect">
+						<Select
+							size="xs"
+							value={activeKey}
+							data={schemaOptions}
+							onChange={(value) => {
+								if (typeof value === 'string' && value) onActiveKeyChange(value)
+							}}
+							allowDeselect={false}
+							searchable={schemaOptions.length > 6}
+							placeholder="当前配置"
+							aria-label="选择当前配置面板"
+							nothingFoundMessage="没有可选项"
+						/>
+					</div>
+				) : (
+					<Text fw={600} size="sm" className="plx-pluginWorkbench__configActionKey">
+						{activeKey}
+					</Text>
+				)}
+				<SavedStatus dirty={activeState.dirty} savedAt={activeSavedAt} />
+				{dirtyCount > 0 ? (
+					<Tooltip label={dirtyLabel} withArrow>
+						<Badge variant="light" color="yellow">
+							已修改 {dirtyCount}
+						</Badge>
+					</Tooltip>
+				) : (
+					<Badge variant="light" color="green">
+						全部已保存
+					</Badge>
+				)}
+			</div>
 
-					<Group gap="xs" wrap="nowrap">
-						<Button
-							size="xs"
-							variant="default"
-							onClick={onResetCurrent}
-							disabled={!activeState.dirty || activeState.submitting}
-						>
-							撤销当前
-						</Button>
-						<Button
-							size="xs"
-							variant="subtle"
-							onClick={onResetDefaults}
-							disabled={activeState.submitting}
-						>
-							重置默认
-						</Button>
-						<Button
-							size="xs"
-							onClick={onSubmitCurrent}
-							loading={activeState.submitting}
-							disabled={!activeState.dirty || !activeState.canSubmit}
-						>
-							提交当前
-						</Button>
-						{hasMultipleSchemas ? (
-							<Button
-								size="xs"
-								variant="light"
-								onClick={onSubmitAll}
-								loading={savingAll}
-								disabled={dirtyCount === 0 || savingAll}
-							>
-								提交全部
-							</Button>
-						) : null}
-					</Group>
-				</Stack>
-			</Paper>
-		</Affix>
+			<Group
+				gap="xs"
+				wrap="wrap"
+				justify="flex-end"
+				className="plx-pluginWorkbench__configActionButtons"
+			>
+				<Button
+					size="xs"
+					variant="default"
+					onClick={onResetCurrent}
+					disabled={!activeState.dirty || activeState.submitting}
+				>
+					撤销当前
+				</Button>
+				<Button
+					size="xs"
+					variant="subtle"
+					onClick={onResetDefaults}
+					disabled={activeState.submitting}
+				>
+					重置默认
+				</Button>
+				<Button
+					size="xs"
+					onClick={onSubmitCurrent}
+					loading={activeState.submitting}
+					disabled={!activeState.dirty || !activeState.canSubmit}
+				>
+					提交当前
+				</Button>
+				{hasMultipleSchemas ? (
+					<Button
+						size="xs"
+						variant="light"
+						onClick={onSubmitAll}
+						loading={savingAll}
+						disabled={dirtyCount === 0 || savingAll}
+					>
+						提交全部
+					</Button>
+				) : null}
+			</Group>
+		</div>
 	)
 }

@@ -11,6 +11,7 @@ import {
 import type { UniqueIdentifier } from '@dnd-kit/core'
 import type React from 'react'
 import { memo, useMemo } from 'react'
+import type { WorkbenchNavigationRequest } from '../../../workbench/context'
 import type { GroupConfig } from '../types'
 import type { RowDensity } from '../constants'
 import { DroppableContainer } from './DroppableContainer'
@@ -24,7 +25,13 @@ type Props = {
 	selectedSet: Set<string>
 	activeSet: Set<string>
 	onSelect: (e: React.MouseEvent, id: string, mode?: 'click' | 'context') => void
-	LinkComp?: React.ComponentType<{ to: string; children: React.ReactNode }>
+	LinkComp?: React.ComponentType<
+		{
+			to: string
+			children: React.ReactNode
+			workbenchMode?: WorkbenchNavigationRequest
+		} & Omit<React.ComponentPropsWithoutRef<'a'>, 'href'>
+	>
 	sortableId: UniqueIdentifier
 	droppableId: UniqueIdentifier
 	isFiltering: boolean
@@ -85,8 +92,10 @@ export const GroupCard = memo(function GroupCard(props: Props) {
 				transform: transform ? `translate3d(${transform.x}px, ${transform.y}px, 0)` : undefined,
 				transition: transition ?? 'opacity 120ms ease-out',
 				minWidth: 0,
-				padding: 4,
-				borderBottom: '1px solid var(--mantine-color-default-border)',
+				padding: 6,
+				border: '1px solid var(--plx-panel-border)',
+				borderRadius: 10,
+				background: 'var(--plx-panel-bg)',
 			}}
 			role="group"
 			aria-label={`分组 ${g.name || '未命名'}`}
@@ -98,13 +107,28 @@ export const GroupCard = memo(function GroupCard(props: Props) {
 							<Text
 								fw={600}
 								size="xs"
-								style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
+								style={{
+									whiteSpace: 'nowrap',
+									overflow: 'hidden',
+									textOverflow: 'ellipsis',
+									color: 'var(--plx-text)',
+								}}
 							>
 								{g.name || '未命名分组'}
 							</Text>
 						</Tooltip>
 					</Box>
-					<Text size="xs" c="dimmed" style={{ flexShrink: 0, whiteSpace: 'nowrap' }}>
+					<Text
+						size="xs"
+						style={{
+							flexShrink: 0,
+							whiteSpace: 'nowrap',
+							color: 'var(--plx-text-muted)',
+							background: 'var(--plx-accent-soft)',
+							padding: '1px 6px',
+							borderRadius: 999,
+						}}
+					>
 						{stat.running}/{stat.total}
 					</Text>
 				</Group>
@@ -190,7 +214,7 @@ export const GroupCard = memo(function GroupCard(props: Props) {
 						items={visibleIds.map((id) => getItemSortableId(id))}
 						strategy={verticalListSortingStrategy}
 					>
-						<Stack gap={0} mt={4} align="stretch" role="list" aria-label="插件列表">
+						<Stack gap={0} mt={6} align="stretch" role="list" aria-label="插件列表">
 							{visibleIds.map((id) => (
 								<SortableRow
 									key={id}

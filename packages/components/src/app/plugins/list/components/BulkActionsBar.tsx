@@ -13,7 +13,7 @@ export function BulkActionsBar({ count, busy, onAction }: Props) {
 	return (
 		<Paper withBorder radius="xs" p={4} shadow="xs">
 			<Group justify="space-between" align="center" gap={6} wrap="nowrap">
-				<Badge variant="light" color="blue" size="xs">
+				<Badge variant="light" color="gray" size="xs">
 					已选 {count}
 				</Badge>
 				<Group gap={4} wrap="nowrap">

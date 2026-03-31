@@ -31,11 +31,17 @@ const schemaCache = new Map<
 		layout?: BuiltinMarkdownPart[] | null
 	}
 >()
+const configDataCache = new Map<string, PluginConfigData>()
 
 /** 清除缓存 */
 export function invalidateSchemaCache(pluginName?: string) {
-	if (pluginName) schemaCache.delete(pluginName)
-	else schemaCache.clear()
+	if (pluginName) {
+		schemaCache.delete(pluginName)
+		configDataCache.delete(pluginName)
+		return
+	}
+	schemaCache.clear()
+	configDataCache.clear()
 }
 
 // HMR 自动失效（前端代码变更时）
@@ -71,7 +77,11 @@ async function loadPluginData(
 		if (schemaResult.ok === false) {
 			// schema_not_found 代表插件未暴露配置 schema，此时视为“没有可配置项”而不是错误
 			if (schemaResult.code === 'schema_not_found') {
-				const payload = { schemaMap: {}, defaults: {}, layout: null as BuiltinMarkdownPart[] | null }
+				const payload = {
+					schemaMap: {},
+					defaults: {},
+					layout: null as BuiltinMarkdownPart[] | null,
+				}
 				schemaCache.set(pluginName, payload)
 				return { ...payload, savedConfig }
 			}
@@ -112,9 +122,10 @@ async function loadPluginData(
 }
 
 export function usePluginConfig(pluginName: string | undefined): PluginConfigState {
+	const cachedData = pluginName ? configDataCache.get(pluginName) : undefined
 	const [state, setState] = useState<{ data?: PluginConfigData; loading: boolean; error?: Error }>({
-		data: undefined,
-		loading: !!pluginName,
+		data: cachedData,
+		loading: Boolean(pluginName && !cachedData),
 		error: undefined,
 	})
 	const stateRef = useRef(state)
@@ -125,23 +136,28 @@ export function usePluginConfig(pluginName: string | undefined): PluginConfigSta
 	}, [state])
 
 	const doFetch = useCallback(
-		async (forceRefresh = false) => {
+		async (forceRefresh = false, preservedData?: PluginConfigData) => {
 			if (!pluginName) return
 			abortRef.current?.abort()
 			const ctrl = (abortRef.current = new AbortController())
 
 			// stale-while-revalidate：refetch 时保留旧数据，避免表单/布局闪烁
-			const prev = stateRef.current
-			setState({ data: prev.data, loading: true, error: undefined })
+			setState({
+				data: preservedData ?? stateRef.current.data,
+				loading: true,
+				error: undefined,
+			})
 
 			try {
 				const data = await loadPluginData(pluginName, forceRefresh)
 				if (ctrl.signal.aborted) return
+				configDataCache.set(pluginName, data)
 				setState({ data, loading: false, error: undefined })
 			} catch (e) {
 				if (ctrl.signal.aborted) return
+				const cached = configDataCache.get(pluginName) ?? stateRef.current.data
 				setState({
-					data: undefined,
+					data: cached,
 					loading: false,
 					error: e instanceof Error ? e : new Error('加载失败'),
 				})
@@ -155,7 +171,9 @@ export function usePluginConfig(pluginName: string | undefined): PluginConfigSta
 			setState({ data: undefined, loading: false, error: undefined })
 			return undefined
 		}
-		void doFetch()
+		const cached = configDataCache.get(pluginName)
+		setState({ data: cached, loading: Boolean(!cached), error: undefined })
+		void doFetch(false, cached)
 		return () => abortRef.current?.abort()
 	}, [pluginName, doFetch])
 

@@ -1,5 +1,5 @@
-export { PluginScreen } from './screens/PluginScreen'
-export { PluginLayout } from './panels/PluginLayout'
+export { PluginScreen } from './PluginScreen'
+export { PluginWorkbench } from './workbench/PluginWorkbench'
 export {
 	PluginScopeProvider,
 	usePluginMeta,

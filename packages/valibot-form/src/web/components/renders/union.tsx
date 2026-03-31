@@ -1,9 +1,10 @@
-import { Card, Radio, SegmentedControl, Select, Stack, Switch, Text } from '@mantine/core'
+import { Card, Radio, Select, Stack, Switch, Text } from '@mantine/core'
 import type { ChangeEvent } from 'react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { UnionBranch, UnionFieldNode } from '../../../core/fields'
 import { FieldRenderer } from '../internal/FieldRenderer'
 import { cleanProps } from '../../utils/propHelpers'
+import { SegmentedButtons } from '../SegmentedButtons'
 import { FieldChrome } from '../shared'
 import {
 	isErrorWithPath,
@@ -140,7 +141,14 @@ function buildNextValue(args: {
 
 function renderEmptyBranch() {
 	return (
-		<Card withBorder p="md" style={{ backgroundColor: 'var(--mantine-color-gray-0)' }}>
+		<Card
+			withBorder
+			p="md"
+			style={{
+				backgroundColor: 'var(--plx-panel-bg-muted, var(--mantine-color-default-hover))',
+				borderColor: 'var(--plx-panel-border, var(--mantine-color-default-border))',
+			}}
+		>
 			<Text size="sm" c="dimmed" ta="center">
 				此选项无需额外配置
 			</Text>
@@ -308,15 +316,13 @@ export function UnionField(props: RendererProps) {
 		switch (resolvedControl) {
 			case 'segmented':
 				return (
-					<SegmentedControl
-						{...cleanProps({
-							data: branchOptions,
-							value: String(selectedBranchIndex),
-							onChange: handleSelectorChange,
-							onBlur: inputProps.onBlur,
-							disabled: isLocked,
-							fullWidth: true,
-						})}
+					<SegmentedButtons
+						data={branchOptions}
+						value={String(selectedBranchIndex)}
+						onChange={handleSelectorChange}
+						onBlur={inputProps.onBlur}
+						disabled={isLocked}
+						fullWidth
 					/>
 				)
 			case 'radio':
@@ -346,8 +352,8 @@ export function UnionField(props: RendererProps) {
 					<Switch
 						{...cleanProps({
 							checked: isTruthyDiscriminator(selectedBranch?.discriminatorValue),
-								onChange: (event: ChangeEvent<HTMLInputElement>) =>
-									handleBooleanToggle(event.currentTarget.checked),
+							onChange: (event: ChangeEvent<HTMLInputElement>) =>
+								handleBooleanToggle(event.currentTarget.checked),
 							label: isTruthyDiscriminator(selectedBranch?.discriminatorValue)
 								? (branchOptions[truthyBranchIndex]?.label ?? '开启')
 								: (branchOptions[falsyBranchIndex]?.label ?? '关闭'),

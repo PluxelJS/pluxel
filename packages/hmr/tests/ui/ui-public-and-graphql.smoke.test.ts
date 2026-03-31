@@ -1,6 +1,7 @@
 import { createHmrHost } from '@pluxel/hmr/host'
 import type { HmrWorkspaceSnapshot } from '@pluxel/hmr/snapshot'
 import { createFixture } from 'fs-fixture'
+import { writeFile } from 'node:fs/promises'
 import { resolve } from 'pathe'
 import { describe, expect, it } from 'vitest'
 import { HMR_INTERNAL_API_BASE, HMR_TRANSPORT_PATHS } from '@pluxel/runtime/web/paths'
@@ -59,6 +60,66 @@ describe('HMR UI smoke', () => {
 		)
 		expect(staleAsset.status).toBe(404)
 		expect(await staleAsset.text()).toContain('Not Found')
+		await ctx.effects.dispose()
+	})
+
+	it('refreshes static HTML asset hashes after manifest changes without restarting the host', async () => {
+		await using fixture = await createFixture({
+			'dist/public/.vite/manifest.json': JSON.stringify(
+				{
+					'src/client.tsx': {
+						file: 'assets/client-old.js',
+						isEntry: true,
+						css: ['assets/client-old.css'],
+					},
+				},
+				null,
+				2,
+			),
+			'dist/public/assets/client-old.js': 'console.log("old")\n',
+			'dist/public/assets/client-old.css': 'body { color: red; }\n',
+			'dist/public/assets/client-new.js': 'console.log("new")\n',
+			'dist/public/assets/client-new.css': 'body { color: blue; }\n',
+		})
+
+		const publicDir = resolve(fixture.path, 'dist/public')
+		const ctx = new Context({
+			configService: { mode: 'memory' },
+			http: {
+				uiAssets: 'static-built',
+				uiPublicDir: publicDir,
+				controlPlane: { web: false, rpc: false, sse: false, auth: 'none' },
+			},
+		})
+
+		const firstHtml = await ctx.http
+			.fetch(new Request('http://local/', { headers: { accept: 'text/html' } }))
+			.then((res) => res.text())
+		expect(firstHtml).toContain('/dist/public/assets/client-old.js')
+		expect(firstHtml).toContain('/dist/public/assets/client-old.css')
+
+		await writeFile(
+			resolve(publicDir, '.vite/manifest.json'),
+			JSON.stringify(
+				{
+					'src/client.tsx': {
+						file: 'assets/client-new.js',
+						isEntry: true,
+						css: ['assets/client-new.css'],
+					},
+				},
+				null,
+				2,
+			),
+			'utf8',
+		)
+
+		const secondHtml = await ctx.http
+			.fetch(new Request('http://local/', { headers: { accept: 'text/html' } }))
+			.then((res) => res.text())
+		expect(secondHtml).toContain('/dist/public/assets/client-new.js')
+		expect(secondHtml).toContain('/dist/public/assets/client-new.css')
+		expect(secondHtml).not.toContain('/dist/public/assets/client-old.js')
 		await ctx.effects.dispose()
 	})
 

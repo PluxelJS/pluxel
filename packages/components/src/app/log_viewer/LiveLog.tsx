@@ -8,6 +8,7 @@ import {
 import { useVirtualizer } from '@tanstack/react-virtual'
 import {
 	memo,
+	type CSSProperties,
 	type ReactNode,
 	useCallback,
 	useEffect,
@@ -18,6 +19,7 @@ import {
 	useSyncExternalStore,
 } from 'react'
 import { useRuntimeTransportClient } from '../../runtime'
+import { type PlxLogPalette, usePlxScheme } from '../../theme'
 
 interface Props {
 	module?: string
@@ -51,9 +53,35 @@ const ANSI_SGR_RE = new RegExp(`${ANSI_ESC}\\[([0-9;]*)m`, 'g')
 
 const MONO_FONT =
 	'12.5px ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace'
-const PANEL_BG = 'rgba(2, 6, 23, 0.55)'
-const LIST_BG = 'rgba(2, 6, 23, 0.45)'
-const BORDER = '1px solid rgba(148,163,184,0.20)'
+
+function controlButtonStyle(
+	palette: PlxLogPalette,
+	tone: 'neutral' | 'accent' = 'neutral',
+): CSSProperties {
+	return {
+		fontFamily: MONO_FONT,
+		fontSize: 12,
+		cursor: 'pointer',
+		background: tone === 'accent' ? palette.buttonBgAccent : palette.buttonBg,
+		border: palette.border,
+		borderRadius: 8,
+		color: palette.buttonText,
+		padding: '2px 8px',
+	}
+}
+
+function fieldStyle(palette: PlxLogPalette, width: number): CSSProperties {
+	return {
+		fontFamily: MONO_FONT,
+		fontSize: 12,
+		padding: '2px 8px',
+		borderRadius: 8,
+		border: palette.border,
+		color: palette.inputText,
+		background: palette.inputBg,
+		width,
+	}
+}
 
 function normalizeFilter(filter: LogFilter | undefined): LogFilter {
 	const trimOrUndef = (v: unknown) => {
@@ -148,23 +176,8 @@ function formatTime(epochMs: number): string {
 	return `${pad2(d.getHours())}:${pad2(d.getMinutes())}:${pad2(d.getSeconds())}.${pad3(d.getMilliseconds())}`
 }
 
-function levelColor(level: string): string {
-	switch (level) {
-		case 'trace':
-			return '#94a3b8'
-		case 'debug':
-			return '#60a5fa'
-		case 'info':
-			return '#34d399'
-		case 'warning':
-			return '#fbbf24'
-		case 'error':
-			return '#fb7185'
-		case 'fatal':
-			return '#c084fc'
-		default:
-			return '#cbd5e1'
-	}
+function levelColor(level: string, palette: PlxLogPalette): string {
+	return palette.levels[level] ?? palette.levels.default
 }
 
 function formatCategory(category?: string[]): string {
@@ -176,25 +189,6 @@ function oneLine(s: string): string {
 	if (!s) return ''
 	return s.replace(/\r\n|\r|\n/g, '⏎').replace(/\t/g, '⇥')
 }
-
-const ANSI_16_FG = [
-	'#000000',
-	'#b91c1c',
-	'#15803d',
-	'#a16207',
-	'#1d4ed8',
-	'#7c3aed',
-	'#0e7490',
-	'#e2e8f0',
-	'#64748b',
-	'#ef4444',
-	'#22c55e',
-	'#eab308',
-	'#3b82f6',
-	'#a855f7',
-	'#06b6d4',
-	'#f8fafc',
-] as const
 
 async function copyToClipboard(text: string): Promise<boolean> {
 	const v = text ?? ''
@@ -224,9 +218,9 @@ async function copyToClipboard(text: string): Promise<boolean> {
 	}
 }
 
-function xterm256(n: number): string | undefined {
+function xterm256(n: number, ansi16: readonly string[]): string | undefined {
 	if (!Number.isFinite(n) || n < 0 || n > 255) return undefined
-	if (n < 16) return ANSI_16_FG[n]!
+	if (n < 16) return ansi16[n]
 	if (n >= 232) {
 		const v = 8 + (n - 232) * 10
 		return `rgb(${v},${v},${v})`
@@ -253,7 +247,7 @@ type AnsiStyle = {
 	textDecoration?: string
 }
 
-function renderAnsi(text: string): ReactNode {
+function renderAnsi(text: string, ansi16: readonly string[]): ReactNode {
 	if (!text || !text.includes('\u001b[')) return text
 
 	const parts: Array<{ key: string; text: string; style: AnsiStyle | null }> = []
@@ -312,11 +306,11 @@ function renderAnsi(text: string): ReactNode {
 
 			// 16-color
 			if (code >= 30 && code <= 37) {
-				style.color = ANSI_16_FG[code - 30]!
+				style.color = ansi16[code - 30]!
 				continue
 			}
 			if (code >= 90 && code <= 97) {
-				style.color = ANSI_16_FG[8 + (code - 90)]!
+				style.color = ansi16[8 + (code - 90)]!
 				continue
 			}
 			if (code === 39) {
@@ -325,11 +319,11 @@ function renderAnsi(text: string): ReactNode {
 			}
 
 			if (code >= 40 && code <= 47) {
-				style.backgroundColor = ANSI_16_FG[code - 40]!
+				style.backgroundColor = ansi16[code - 40]!
 				continue
 			}
 			if (code >= 100 && code <= 107) {
-				style.backgroundColor = ANSI_16_FG[8 + (code - 100)]!
+				style.backgroundColor = ansi16[8 + (code - 100)]!
 				continue
 			}
 			if (code === 49) {
@@ -343,7 +337,7 @@ function renderAnsi(text: string): ReactNode {
 				const mode = nums[i + 1]
 				if (mode === 5) {
 					const n = nums[i + 2]
-					const c = typeof n === 'number' ? xterm256(n) : undefined
+					const c = typeof n === 'number' ? xterm256(n, ansi16) : undefined
 					if (c) {
 						if (isBg) style.backgroundColor = c
 						else style.color = c
@@ -501,6 +495,7 @@ const LogList = memo(function LogList(props: {
 	setFollow: (v: boolean) => void
 	setNewSincePause: (v: number | ((n: number) => number)) => void
 	apiRef: { current: LogListApi | null }
+	palette: PlxLogPalette
 	metaCount?: number
 }) {
 	const {
@@ -517,6 +512,7 @@ const LogList = memo(function LogList(props: {
 		setFollow,
 		setNewSincePause,
 		apiRef,
+		palette,
 		metaCount,
 	} = props
 
@@ -581,15 +577,16 @@ const LogList = memo(function LogList(props: {
 				fontSize: 12,
 				lineHeight: `${ROW_H}px`,
 				whiteSpace: 'pre',
-				backgroundColor: LIST_BG,
+				color: palette.text,
+				backgroundColor: palette.listBg,
 				backgroundImage: `repeating-linear-gradient(
 					180deg,
-					rgba(148,163,184,0.028) 0px,
-					rgba(148,163,184,0.028) ${ROW_H}px,
+					${palette.listStripe} 0px,
+					${palette.listStripe} ${ROW_H}px,
 					rgba(0,0,0,0) ${ROW_H}px,
 					rgba(0,0,0,0) ${ROW_H * 2}px
 				)`,
-				border: BORDER,
+				border: palette.border,
 				borderRadius: 8,
 				backdropFilter: 'blur(10px)',
 			}}
@@ -608,7 +605,7 @@ const LogList = memo(function LogList(props: {
 					const isSelected = selectedSeq === line.seq
 					const categoryText = showCategory ? formatCategory(line.category) : ''
 					const msgText = oneLine(messageToText(line))
-					const msgNode = ansi ? renderAnsi(msgText) : stripAnsi(msgText)
+					const msgNode = ansi ? renderAnsi(msgText, palette.ansi16) : stripAnsi(msgText)
 					return (
 						<button
 							key={`${line.epoch}:${line.seq}`}
@@ -653,14 +650,16 @@ const LogList = memo(function LogList(props: {
 								color: 'inherit',
 								cursor: 'default',
 								userSelect: 'text',
-								background: isSelected ? 'rgba(59,130,246,0.14)' : 'transparent',
-								borderLeft: `3px solid ${levelColor(line.level)}`,
+								background: isSelected ? palette.rowSelectedBg : 'transparent',
+								borderLeft: `3px solid ${levelColor(line.level, palette)}`,
 							}}
 						>
-							<span style={{ color: '#94a3b8', flex: '0 0 auto' }}>{formatTime(line.ts)}</span>
+							<span style={{ color: palette.textMuted, flex: '0 0 auto' }}>
+								{formatTime(line.ts)}
+							</span>
 							<span
 								style={{
-									color: levelColor(line.level),
+									color: levelColor(line.level, palette),
 									fontWeight: 700,
 									flex: '0 0 auto',
 									width: 56,
@@ -669,12 +668,14 @@ const LogList = memo(function LogList(props: {
 								{String(line.level).toUpperCase().padEnd(7)}
 							</span>
 							{categoryText ? (
-								<span style={{ color: '#60a5fa', flex: '0 0 auto' }}>{categoryText}</span>
+								<span style={{ color: palette.category, flex: '0 0 auto' }}>{categoryText}</span>
 							) : null}
 							{showName && line.name ? (
-								<span style={{ color: '#94a3b8', flex: '0 0 auto' }}>[{line.name}]</span>
+								<span style={{ color: palette.textMuted, flex: '0 0 auto' }}>
+									[{line.name}]
+								</span>
 							) : null}
-							<span style={{ color: '#e2e8f0', flex: '1 1 auto' }}>{msgNode}</span>
+							<span style={{ color: palette.text, flex: '1 1 auto' }}>{msgNode}</span>
 						</button>
 					)
 				})}
@@ -686,7 +687,7 @@ const LogList = memo(function LogList(props: {
 							display: 'flex',
 							alignItems: 'center',
 							justifyContent: 'center',
-							color: '#94a3b8',
+							color: palette.textMuted,
 							padding: 16,
 						}}
 					>
@@ -700,6 +701,7 @@ const LogList = memo(function LogList(props: {
 
 export function LiveLog({ module, showName = true, filter, variant = 'full' }: Props) {
 	const transport = useRuntimeTransportClient()
+	const plxScheme = usePlxScheme()
 	const [meta, setMeta] = useState<LogStreamMeta | null>(null)
 	const [connected, setConnected] = useState(false)
 	const [follow, setFollow] = useState(true)
@@ -1014,6 +1016,8 @@ export function LiveLog({ module, showName = true, filter, variant = 'full' }: P
 
 	const isFull = variant === 'full'
 	const showSidePanel = isFull || !!selectedLine
+	const showToolbar = true
+	const palette = plxScheme.log
 
 	const clearLogs = useCallback(() => {
 		ringRef.current.clear()
@@ -1037,131 +1041,99 @@ export function LiveLog({ module, showName = true, filter, variant = 'full' }: P
 				minWidth: 0,
 				display: 'flex',
 				flexDirection: 'column',
-				gap: 8,
+				gap: showToolbar ? 8 : 0,
 				overflow: 'hidden',
 			}}
 		>
-			{/* Minimal header (embedded pages stay clean) */}
-			<div
-				style={{
-					display: 'flex',
-					alignItems: 'center',
-					flexWrap: 'wrap',
-					gap: 10,
-					rowGap: 8,
-					flex: '0 0 auto',
-					fontFamily: MONO_FONT,
-					fontSize: 12,
-					color: '#94a3b8',
-					background: PANEL_BG,
-					border: BORDER,
-					borderRadius: 10,
-					padding: '8px 10px',
-					backdropFilter: 'blur(8px)',
-				}}
-			>
-				<div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-					<label style={{ cursor: 'pointer', userSelect: 'none', display: 'flex', gap: 6 }}>
-						<input
-							type="checkbox"
-							checked={follow}
-							onChange={(e) => {
-								const next = e.currentTarget.checked
-								followWantedRef.current = next
-								setFollow(next)
-							}}
-						/>
-						<span>follow</span>
-					</label>
-					{!follow && newSincePause > 0 ? (
-						<button
-							type="button"
-							onClick={() => {
-								followWantedRef.current = true
-								setFollow(true)
-							}}
-							style={{
-								fontFamily: MONO_FONT,
-								fontSize: 12,
-								cursor: 'pointer',
-								background: 'rgba(59,130,246,0.18)',
-								border: BORDER,
-								borderRadius: 8,
-								color: '#e2e8f0',
-								padding: '2px 8px',
-							}}
-						>
-							+{newSincePause} new
-						</button>
-					) : null}
+			{showToolbar ? (
+				<div
+					style={{
+						display: 'flex',
+						alignItems: 'center',
+						flexWrap: 'wrap',
+						gap: 10,
+						rowGap: 8,
+						flex: '0 0 auto',
+						fontFamily: MONO_FONT,
+						fontSize: 12,
+						color: palette.textMuted,
+						background: palette.panelBg,
+						border: palette.border,
+						borderRadius: 10,
+						padding: '8px 10px',
+						backdropFilter: 'blur(8px)',
+					}}
+				>
+					{isFull ? (
+						<>
+							<div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+								<label style={{ cursor: 'pointer', userSelect: 'none', display: 'flex', gap: 6 }}>
+									<input
+										type="checkbox"
+										checked={follow}
+										onChange={(e) => {
+											const next = e.currentTarget.checked
+											followWantedRef.current = next
+											setFollow(next)
+										}}
+									/>
+									<span>follow</span>
+								</label>
+								{!follow && newSincePause > 0 ? (
+									<button
+										type="button"
+										onClick={() => {
+											followWantedRef.current = true
+											setFollow(true)
+										}}
+										style={controlButtonStyle(palette, 'accent')}
+									>
+										+{newSincePause} new
+									</button>
+								) : null}
+							</div>
+
+							<label style={{ cursor: 'pointer', userSelect: 'none', display: 'flex', gap: 6 }}>
+								<input
+									type="checkbox"
+									checked={showCategory}
+									onChange={(e) => setShowCategory(e.currentTarget.checked)}
+								/>
+								<span>category</span>
+							</label>
+							<label style={{ cursor: 'pointer', userSelect: 'none', display: 'flex', gap: 6 }}>
+								<input
+									type="checkbox"
+									checked={ansi}
+									onChange={(e) => setAnsi(e.currentTarget.checked)}
+								/>
+								<span>ansi</span>
+							</label>
+
+							<div style={{ opacity: 0.8 }}>
+								{connected ? 'connected' : 'disconnected'}
+								{meta ? ` · epoch=${meta.epoch} · tail=${meta.tailSeq}` : ''}
+							</div>
+						</>
+					) : (
+						<>
+							<div style={{ opacity: 0.8 }}>
+								{connected ? 'connected' : 'disconnected'}
+								{meta ? ` · epoch=${meta.epoch} · tail=${meta.tailSeq}` : ''}
+								{activeFilter.name ? ` · filter=${activeFilter.name}` : ''}
+							</div>
+							<button type="button" onClick={clearLogs} style={controlButtonStyle(palette)}>
+								clear
+							</button>
+							<button type="button" onClick={scrollToTail} style={controlButtonStyle(palette)}>
+								tail
+							</button>
+						</>
+					)}
+
+					<div style={{ flex: 1 }} />
 				</div>
-
-				<label style={{ cursor: 'pointer', userSelect: 'none', display: 'flex', gap: 6 }}>
-					<input
-						type="checkbox"
-						checked={showCategory}
-						onChange={(e) => setShowCategory(e.currentTarget.checked)}
-					/>
-					<span>category</span>
-				</label>
-				<label style={{ cursor: 'pointer', userSelect: 'none', display: 'flex', gap: 6 }}>
-					<input
-						type="checkbox"
-						checked={ansi}
-						onChange={(e) => setAnsi(e.currentTarget.checked)}
-					/>
-					<span>ansi</span>
-				</label>
-
-				<div style={{ opacity: 0.8 }}>
-					{connected ? 'connected' : 'disconnected'}
-					{meta ? ` · epoch=${meta.epoch} · tail=${meta.tailSeq}` : ''}
-				</div>
-
-				{!isFull && activeFilter.name ? (
-					<div style={{ opacity: 0.8 }}>· filter={activeFilter.name}</div>
-				) : null}
-
-				<div style={{ flex: 1 }} />
-
-				{/* Embedded pages: keep essential actions here */}
-				{!isFull ? (
-					<>
-						<button
-							type="button"
-							onClick={clearLogs}
-							style={{
-								fontFamily: MONO_FONT,
-								fontSize: 12,
-								cursor: 'pointer',
-								background: 'rgba(148,163,184,0.12)',
-								border: BORDER,
-								borderRadius: 8,
-								color: '#e2e8f0',
-								padding: '2px 8px',
-							}}
-						>
-							clear
-						</button>
-						<button
-							type="button"
-							onClick={scrollToTail}
-							style={{
-								fontFamily: MONO_FONT,
-								fontSize: 12,
-								cursor: 'pointer',
-								background: 'rgba(148,163,184,0.12)',
-								border: BORDER,
-								borderRadius: 8,
-								color: '#e2e8f0',
-								padding: '2px 8px',
-							}}
-						>
-							tail
-						</button>
-					</>
-				) : null}
-			</div>
+			) : null}
 
 			<div style={{ display: 'flex', flex: 1, minHeight: 0, minWidth: 0, gap: 10 }}>
 				<LogList
@@ -1178,6 +1150,7 @@ export function LiveLog({ module, showName = true, filter, variant = 'full' }: P
 					setFollow={setFollow}
 					setNewSincePause={setNewSincePause}
 					apiRef={listApiRef}
+					palette={palette}
 					metaCount={meta?.count}
 				/>
 
@@ -1192,8 +1165,9 @@ export function LiveLog({ module, showName = true, filter, variant = 'full' }: P
 							flexDirection: 'column',
 							fontFamily: MONO_FONT,
 							fontSize: 12,
-							background: PANEL_BG,
-							border: BORDER,
+							color: palette.text,
+							background: palette.panelBg,
+							border: palette.border,
 							borderRadius: 8,
 							backdropFilter: 'blur(10px)',
 						}}
@@ -1202,45 +1176,23 @@ export function LiveLog({ module, showName = true, filter, variant = 'full' }: P
 							style={{
 								flex: '0 0 auto',
 								padding: 10,
-								background: 'rgba(2, 6, 23, 0.78)',
-								borderBottom: BORDER,
+								background: palette.panelHeaderBg,
+								borderBottom: palette.border,
 								backdropFilter: 'blur(10px)',
 							}}
 						>
 							{isFull ? (
 								<>
 									<div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-										<div style={{ color: '#e2e8f0' }}>query</div>
+										<div style={{ color: palette.text }}>query</div>
 										<div style={{ flex: 1 }} />
-										<button
-											type="button"
-											onClick={clearLogs}
-											style={{
-												fontFamily: MONO_FONT,
-												fontSize: 12,
-												cursor: 'pointer',
-												background: 'rgba(148,163,184,0.12)',
-												border: BORDER,
-												borderRadius: 8,
-												color: '#e2e8f0',
-												padding: '2px 8px',
-											}}
-										>
+										<button type="button" onClick={clearLogs} style={controlButtonStyle(palette)}>
 											clear
 										</button>
 										<button
 											type="button"
 											onClick={scrollToTail}
-											style={{
-												fontFamily: MONO_FONT,
-												fontSize: 12,
-												cursor: 'pointer',
-												background: 'rgba(148,163,184,0.12)',
-												border: BORDER,
-												borderRadius: 8,
-												color: '#e2e8f0',
-												padding: '2px 8px',
-											}}
+											style={controlButtonStyle(palette)}
 										>
 											tail
 										</button>
@@ -1253,30 +1205,12 @@ export function LiveLog({ module, showName = true, filter, variant = 'full' }: P
 											onChange={(e) => setStreamIdInput(e.currentTarget.value)}
 											list={streamDatalistId}
 											spellCheck={false}
-											style={{
-												fontFamily: MONO_FONT,
-												fontSize: 12,
-												padding: '2px 8px',
-												borderRadius: 8,
-												border: BORDER,
-												color: '#e2e8f0',
-												background: 'rgba(15,23,42,0.55)',
-												width: 220,
-											}}
+											style={fieldStyle(palette, 220)}
 										/>
 										<button
 											type="button"
 											onClick={() => void refreshStreams()}
-											style={{
-												fontFamily: MONO_FONT,
-												fontSize: 12,
-												cursor: 'pointer',
-												background: 'rgba(148,163,184,0.12)',
-												border: BORDER,
-												borderRadius: 8,
-												color: '#e2e8f0',
-												padding: '2px 8px',
-											}}
+											style={controlButtonStyle(palette)}
 										>
 											refresh
 										</button>
@@ -1305,16 +1239,7 @@ export function LiveLog({ module, showName = true, filter, variant = 'full' }: P
 												}}
 												spellCheck={false}
 												placeholder="name / pluginId / context"
-												style={{
-													fontFamily: MONO_FONT,
-													fontSize: 12,
-													padding: '2px 8px',
-													borderRadius: 8,
-													border: BORDER,
-													color: '#e2e8f0',
-													background: 'rgba(15,23,42,0.55)',
-													width: 260,
-												}}
+												style={fieldStyle(palette, 260)}
 											/>
 											<input
 												value={draftFilter.pluginId ?? ''}
@@ -1329,16 +1254,7 @@ export function LiveLog({ module, showName = true, filter, variant = 'full' }: P
 												}}
 												spellCheck={false}
 												placeholder="pluginId"
-												style={{
-													fontFamily: MONO_FONT,
-													fontSize: 12,
-													padding: '2px 8px',
-													borderRadius: 8,
-													border: BORDER,
-													color: '#e2e8f0',
-													background: 'rgba(15,23,42,0.55)',
-													width: 180,
-												}}
+												style={fieldStyle(palette, 180)}
 											/>
 											<input
 												value={draftFilter.context ?? ''}
@@ -1353,16 +1269,7 @@ export function LiveLog({ module, showName = true, filter, variant = 'full' }: P
 												}}
 												spellCheck={false}
 												placeholder="context"
-												style={{
-													fontFamily: MONO_FONT,
-													fontSize: 12,
-													padding: '2px 8px',
-													borderRadius: 8,
-													border: BORDER,
-													color: '#e2e8f0',
-													background: 'rgba(15,23,42,0.55)',
-													width: 180,
-												}}
+												style={fieldStyle(palette, 180)}
 											/>
 											<input
 												value={draftFilter.category ?? ''}
@@ -1377,16 +1284,7 @@ export function LiveLog({ module, showName = true, filter, variant = 'full' }: P
 												}}
 												spellCheck={false}
 												placeholder="category (a.b.*)"
-												style={{
-													fontFamily: MONO_FONT,
-													fontSize: 12,
-													padding: '2px 8px',
-													borderRadius: 8,
-													border: BORDER,
-													color: '#e2e8f0',
-													background: 'rgba(15,23,42,0.55)',
-													width: 260,
-												}}
+												style={fieldStyle(palette, 260)}
 											/>
 										</div>
 
@@ -1402,16 +1300,7 @@ export function LiveLog({ module, showName = true, filter, variant = 'full' }: P
 												<button
 													type="button"
 													onClick={applyNow}
-													style={{
-														fontFamily: MONO_FONT,
-														fontSize: 12,
-														cursor: 'pointer',
-														background: 'rgba(59,130,246,0.18)',
-														border: BORDER,
-														borderRadius: 8,
-														color: '#e2e8f0',
-														padding: '2px 8px',
-													}}
+													style={controlButtonStyle(palette, 'accent')}
 												>
 													apply
 												</button>
@@ -1422,16 +1311,7 @@ export function LiveLog({ module, showName = true, filter, variant = 'full' }: P
 													setDraftFilter(defaultsFilter)
 													setActiveFilter(defaultsFilter)
 												}}
-												style={{
-													fontFamily: MONO_FONT,
-													fontSize: 12,
-													cursor: 'pointer',
-													background: 'rgba(148,163,184,0.12)',
-													border: BORDER,
-													borderRadius: 8,
-													color: '#e2e8f0',
-													padding: '2px 8px',
-												}}
+												style={controlButtonStyle(palette)}
 											>
 												reset
 											</button>
@@ -1441,21 +1321,12 @@ export function LiveLog({ module, showName = true, filter, variant = 'full' }: P
 													setDraftFilter({})
 													setActiveFilter({})
 												}}
-												style={{
-													fontFamily: MONO_FONT,
-													fontSize: 12,
-													cursor: 'pointer',
-													background: 'rgba(148,163,184,0.12)',
-													border: BORDER,
-													borderRadius: 8,
-													color: '#e2e8f0',
-													padding: '2px 8px',
-												}}
+												style={controlButtonStyle(palette)}
 											>
 												all
 											</button>
 											<div style={{ flex: 1 }} />
-											<div style={{ opacity: 0.75 }}>
+											<div style={{ opacity: 0.75, color: palette.textMuted }}>
 												{activeFilter.name ||
 												activeFilter.pluginId ||
 												activeFilter.context ||
@@ -1478,13 +1349,13 @@ export function LiveLog({ module, showName = true, filter, variant = 'full' }: P
 										marginTop: isFull ? 10 : 0,
 									}}
 								>
-									<div style={{ color: '#e2e8f0' }}>details</div>
-									<div style={{ color: '#94a3b8' }}>
+									<div style={{ color: palette.text }}>details</div>
+									<div style={{ color: palette.textMuted }}>
 										seq={selectedLine.seq} · level={selectedLine.level}
 									</div>
 									<div style={{ flex: 1 }} />
 									{copied ? (
-										<div style={{ color: '#94a3b8', opacity: 0.9 }}>
+										<div style={{ color: palette.textMuted, opacity: 0.9 }}>
 											{copied === 'line' ? 'copied line' : 'copied json'}
 										</div>
 									) : null}
@@ -1497,16 +1368,7 @@ export function LiveLog({ module, showName = true, filter, variant = 'full' }: P
 												if (ok) setCopied('line')
 											})
 										}}
-										style={{
-											fontFamily: MONO_FONT,
-											fontSize: 12,
-											cursor: 'pointer',
-											background: 'rgba(148,163,184,0.12)',
-											border: BORDER,
-											borderRadius: 8,
-											color: '#e2e8f0',
-											padding: '2px 8px',
-										}}
+										style={controlButtonStyle(palette)}
 									>
 										copy
 									</button>
@@ -1517,16 +1379,7 @@ export function LiveLog({ module, showName = true, filter, variant = 'full' }: P
 												if (ok) setCopied('json')
 											})
 										}}
-										style={{
-											fontFamily: MONO_FONT,
-											fontSize: 12,
-											cursor: 'pointer',
-											background: 'rgba(148,163,184,0.12)',
-											border: BORDER,
-											borderRadius: 8,
-											color: '#e2e8f0',
-											padding: '2px 8px',
-										}}
+										style={controlButtonStyle(palette)}
 									>
 										json
 									</button>
@@ -1536,22 +1389,13 @@ export function LiveLog({ module, showName = true, filter, variant = 'full' }: P
 											setSelectedSeq(null)
 											setSelectedLine(null)
 										}}
-										style={{
-											fontFamily: MONO_FONT,
-											fontSize: 12,
-											cursor: 'pointer',
-											background: 'rgba(148,163,184,0.12)',
-											border: BORDER,
-											borderRadius: 8,
-											color: '#e2e8f0',
-											padding: '2px 8px',
-										}}
+										style={controlButtonStyle(palette)}
 									>
 										close
 									</button>
 								</div>
 							) : isFull ? (
-								<div style={{ color: '#94a3b8', marginTop: 10 }}>
+								<div style={{ color: palette.textMuted, marginTop: 10 }}>
 									(select a line to inspect props)
 								</div>
 							) : null}
@@ -1561,19 +1405,19 @@ export function LiveLog({ module, showName = true, filter, variant = 'full' }: P
 							{selectedLine ? (
 								<>
 									{selectedLine.error ? (
-										<pre style={{ margin: 0, padding: 0, color: '#fb7185' }}>
+										<pre style={{ margin: 0, padding: 0, color: palette.errorText }}>
 											{JSON.stringify(selectedLine.error, null, 2)}
 										</pre>
 									) : null}
 									{selectedLine.props ? (
-										<pre style={{ margin: 0, padding: 0, color: '#e2e8f0' }}>
+										<pre style={{ margin: 0, padding: 0, color: palette.text }}>
 											{JSON.stringify(selectedLine.props, null, 2)}
 										</pre>
 									) : (
-										<div style={{ color: '#94a3b8' }}>(no props)</div>
+										<div style={{ color: palette.textMuted }}>(no props)</div>
 									)}
 									{selectedLine.raw ? (
-										<pre style={{ marginTop: 10, padding: 0, color: '#94a3b8' }}>
+										<pre style={{ marginTop: 10, padding: 0, color: palette.textMuted }}>
 											{JSON.stringify(selectedLine.raw, null, 2)}
 										</pre>
 									) : null}

@@ -8,7 +8,6 @@ import {
 	type Logger,
 	normalizePath,
 	type Plugin,
-	perEnvironmentPlugin,
 	searchForWorkspaceRoot,
 } from 'vite'
 import {
@@ -20,6 +19,7 @@ import {
 	pathVariantsAbs,
 	toBasePackage,
 } from '@pluxel/runtime/shared'
+import { serverOnlyVitePlugin } from '@pluxel/runtime/vite'
 import { clientNodeImportGuardPlugin } from './plugins/clientNodeImportGuard'
 
 export interface HMRDependencyConfig {
@@ -423,18 +423,15 @@ export function buildHmrViteConfig(opts: HmrViteConfigOptions): InlineConfig {
 		},
 		plugins: [
 			clientNodeImportGuardPlugin(),
-			perEnvironmentPlugin('pluxel:ssr-transform', (environment) => {
-				if (environment.name !== 'ssr') return false
-				return [
-					// Keep semantics plugins unscoped:
-					// - `preserveSymlinks: false` makes Vite normalize module ids to realpaths.
-					// - root-based include globs are brittle under symlinks and can skip schema injection.
-					// These plugins are already cheap (CODE_HINT + AST parse only when needed) and are only
-					// invoked for modules Vite actually loads/evaluates.
-					importTypeFixerPlugin(),
-					configSourcePlugin(),
-				]
-			}),
+			serverOnlyVitePlugin('pluxel:ssr-transform', [
+				// Keep semantics plugins unscoped:
+				// - `preserveSymlinks: false` makes Vite normalize module ids to realpaths.
+				// - root-based include globs are brittle under symlinks and can skip schema injection.
+				// These plugins are already cheap (CODE_HINT + AST parse only when needed) and are only
+				// invoked for modules Vite actually loads/evaluates.
+				importTypeFixerPlugin(),
+				configSourcePlugin(),
+			]),
 			...(opts.extraPlugins ?? []),
 			opts.runnerPlugin,
 			opts.httpPlugin,

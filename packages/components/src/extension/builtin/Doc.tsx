@@ -1,6 +1,6 @@
-import { Badge, Box, Paper, Stack, Text, TextInput, TypographyStylesProvider } from '@mantine/core'
-import { IconSearch } from '@tabler/icons-react'
+import { Badge, Box, Paper, Stack, Text, TypographyStylesProvider } from '@mantine/core'
 import { MarkdownExit } from 'markdown-exit'
+import { createPortal } from 'react-dom'
 import { Fragment, memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode, RefObject } from 'react'
 import type {
@@ -10,7 +10,6 @@ import type {
 	BuiltinMarkdownPart,
 	BuiltinDocPart,
 } from '@pluxel/runtime/web/extensions'
-import { FloatingToc } from '../../app/plugins/components/FloatingToc'
 import { findScrollableParent, toDomSlug } from '../../app/plugins/config/utils'
 import { BuiltinSignalDbAction } from './SignalDbAction'
 import { BuiltinInfoCard } from './InfoCard'
@@ -20,14 +19,81 @@ import { usePluginConfig } from '../../app/hooks/usePluginConfig'
 import type { ObjectSchema } from 'valibot'
 import { ConfigTabContent } from '../../app/plugins/config/ConfigTab'
 import { compareSchemaKeys } from '../../app/plugins/config/schemaKey'
+import { OutlineNavigator } from '../../app/plugins/detail/workbench/OutlineNavigator'
+import type { OutlineAnchor } from '../../app/plugins/detail/workbench/outline'
+import { usePluginWorkbenchTabActivity } from '../../app/plugins/detail/workbench/tabActivity'
+import {
+	usePluginWorkbenchAside,
+	usePluginWorkbenchAssistVisibility,
+} from '../../app/plugins/detail/workbench/context'
 
-type DocAnchor = { id: string; label: string; depth: number }
 type DocConfigDirective = Extract<BuiltinMarkdownPart, { kind: 'schema' | 'schemas' }>
 
 type CompiledItem =
 	| { kind: 'html'; key: string; html: string }
 	| { kind: 'block'; key: string; id: string; title: string; block: BuiltinDocBlock }
 	| { kind: 'cfg'; key: string; directive: DocConfigDirective }
+
+type BuiltinBlockRendererProps = {
+	pluginName: string
+	title: string
+	block: BuiltinDocBlock
+}
+
+function renderBuiltinBlock(input: BuiltinBlockRendererProps): ReactNode {
+	const { pluginName, title, block } = input
+	if (block.kind === 'infoCard') {
+		if (typeof BuiltinInfoCard !== 'function') {
+			return <BuiltinBlockUnavailable kind={block.kind} />
+		}
+		return <BuiltinInfoCard pluginName={pluginName} block={block} />
+	}
+	if (block.kind === 'form') {
+		if (typeof BuiltinSignalDbForm !== 'function') {
+			return <BuiltinBlockUnavailable kind={block.kind} />
+		}
+		return <BuiltinSignalDbForm pluginName={pluginName} title={title} block={block} />
+	}
+	if (block.kind === 'action') {
+		if (typeof BuiltinSignalDbAction !== 'function') {
+			return <BuiltinBlockUnavailable kind={block.kind} />
+		}
+		return <BuiltinSignalDbAction pluginName={pluginName} block={block} />
+	}
+	if (block.kind === 'resourceSelect') {
+		if (typeof BuiltinResourceSelect !== 'function') {
+			return <BuiltinBlockUnavailable kind={block.kind} />
+		}
+		return (
+			<BuiltinResourceSelect
+				targetPluginName={pluginName}
+				sourcePluginName={pluginName}
+				block={block}
+			/>
+		)
+	}
+	return <BuiltinBlockUnavailable kind={(block as BuiltinDocBlock).kind} />
+}
+
+function BuiltinBlockUnavailable({ kind }: { kind: string }) {
+	return (
+		<Paper withBorder radius="md" p="sm" my="sm">
+			<Text size="sm" c="red">
+				Builtin block renderer unavailable: {kind}
+			</Text>
+		</Paper>
+	)
+}
+
+function BuiltinConfigRendererUnavailable() {
+	return (
+		<Paper withBorder radius="md" p="sm" my="sm">
+			<Text size="sm" c="red">
+				Builtin config renderer unavailable
+			</Text>
+		</Paper>
+	)
+}
 
 function extractInlineText(token: any): string {
 	if (!token || typeof token !== 'object') return ''
@@ -43,14 +109,14 @@ function extractInlineText(token: any): string {
 
 function compileDoc(input: { content: BuiltinDocContent; docPrefix: string }): {
 	items: CompiledItem[]
-	anchors: DocAnchor[]
+	anchors: OutlineAnchor[]
 } {
 	const { content, docPrefix } = input
 	const engine = new MarkdownExit({ html: false, linkify: true })
 	const env: Record<string, unknown> = {}
 
 	const seen = new Map<string, number>()
-	const anchors: DocAnchor[] = []
+	const anchors: OutlineAnchor[] = []
 	const items: CompiledItem[] = []
 
 	let mdIndex = 0
@@ -170,11 +236,10 @@ const DocBody = memo(function DocBody({
 
 export function BuiltinDoc({ def }: { def: BuiltinDocExtensionDef }) {
 	const contentRef = useRef<HTMLDivElement | null>(null)
-	const tocViewportRef = useRef<HTMLDivElement | null>(null)
 	const [activeId, setActiveId] = useState<string | null>(null)
-	const [tocExpanded, setTocExpanded] = useState(false)
-	const [query, setQuery] = useState('')
 	const [scrollHost, setScrollHost] = useState<HTMLElement | null>(null)
+	const { assistHost, asideAvailable } = usePluginWorkbenchAside()
+	const tabActive = usePluginWorkbenchTabActivity()
 
 	const docPrefix = useMemo(
 		() => `doc-${toDomSlug(def.pluginName)}-${toDomSlug(def.id)}-`,
@@ -194,21 +259,11 @@ export function BuiltinDoc({ def }: { def: BuiltinDocExtensionDef }) {
 				typeof (block as any)?.pluginName === 'string' && (block as any).pluginName.trim()
 					? (block as any).pluginName.trim()
 					: pluginName
-			if (block.kind === 'infoCard')
-				return <BuiltinInfoCard pluginName={blockPluginName} block={block} />
-			if (block.kind === 'form')
-				return <BuiltinSignalDbForm pluginName={blockPluginName} title={title} block={block} />
-			if (block.kind === 'action')
-				return <BuiltinSignalDbAction pluginName={blockPluginName} block={block} />
-			if (block.kind === 'resourceSelect')
-				return (
-					<BuiltinResourceSelect
-						targetPluginName={pluginName}
-						sourcePluginName={pluginName}
-						block={block}
-					/>
-				)
-			return null
+			return renderBuiltinBlock({
+				pluginName: blockPluginName,
+				title,
+				block,
+			})
 		},
 		[pluginName],
 	)
@@ -291,21 +346,25 @@ export function BuiltinDoc({ def }: { def: BuiltinDocExtensionDef }) {
 
 					return (
 						<Box key={`cfg-schema-${schemaKey}`} my="sm">
-							<ConfigTabContent
-								pluginName={pluginName}
-								tabKey={schemaKey}
-								schema={schema}
-								savedValue={toRecord(finalSavedAll?.[schemaKey])}
-								defaultValue={toRecord(defaultsAll?.[schemaKey])}
-								onSaved={(_k, value) =>
-									setSavedOverride((prev) => ({
-										...((prev ?? finalSavedAll) as any),
-										[schemaKey]: value,
-									}))
-								}
-								showToc={false}
-								active={true}
-							/>
+							{typeof ConfigTabContent === 'function' ? (
+								<ConfigTabContent
+									pluginName={pluginName}
+									tabKey={schemaKey}
+									schema={schema}
+									savedValue={toRecord(finalSavedAll?.[schemaKey])}
+									defaultValue={toRecord(defaultsAll?.[schemaKey])}
+									onSaved={(_k, value) =>
+										setSavedOverride((prev) => ({
+											...((prev ?? finalSavedAll) as any),
+											[schemaKey]: value,
+										}))
+									}
+									showToc={false}
+									active={true}
+								/>
+							) : (
+								<BuiltinConfigRendererUnavailable />
+							)}
 						</Box>
 					)
 				})}
@@ -334,24 +393,6 @@ export function BuiltinDoc({ def }: { def: BuiltinDocExtensionDef }) {
 
 	const hasHeader = Boolean(def.title || def.description)
 	const shouldRender = compiled.items.length > 0 || hasHeader
-
-	const buildTree = useCallback((list: DocAnchor[]) => {
-		const roots: Array<{ id: string; label: string; depth: number; children: any[] }> = []
-		const stack: Array<{ id: string; label: string; depth: number; children: any[] }> = []
-		for (const anchor of list) {
-			const node = {
-				id: anchor.id,
-				label: anchor.label,
-				depth: anchor.depth,
-				children: [] as any[],
-			}
-			while (stack.length && stack[stack.length - 1].depth >= node.depth) stack.pop()
-			if (stack.length) stack[stack.length - 1].children.push(node)
-			else roots.push(node)
-			stack.push(node)
-		}
-		return roots
-	}, [])
 
 	const resolveScrollContainer = useCallback(
 		(target: HTMLElement | null) => {
@@ -451,23 +492,6 @@ export function BuiltinDoc({ def }: { def: BuiltinDocExtensionDef }) {
 		}
 	}, [scrollHost, updateActive])
 
-	useEffect(() => {
-		if (!tocExpanded) return
-		const viewport = tocViewportRef.current
-		if (!viewport) return
-		const active = viewport.querySelector('[data-toc-active="true"]') as HTMLElement | null
-		if (!active) return
-		const activeBox = active.getBoundingClientRect()
-		const viewportBox = viewport.getBoundingClientRect()
-		const padding = 16
-		if (
-			activeBox.top < viewportBox.top + padding ||
-			activeBox.bottom > viewportBox.bottom - padding
-		) {
-			active.scrollIntoView({ block: 'center' })
-		}
-	}, [tocExpanded, activeId, query])
-
 	const scrollToSection = useCallback(
 		(id: string) => {
 			if (!id) return
@@ -489,183 +513,122 @@ export function BuiltinDoc({ def }: { def: BuiltinDocExtensionDef }) {
 		[resolveScrollContainer],
 	)
 
-	const tocItems = useMemo(() => buildTree(headingAnchors), [headingAnchors, buildTree])
-	const normalizedQuery = query.trim().toLowerCase()
-	const filtered = useMemo(() => {
-		if (!normalizedQuery) return { items: tocItems, matchCount: headingAnchors.length }
-		const matches = (label: string) => label.toLowerCase().includes(normalizedQuery)
-		let matchCount = 0
-		const filterNode = (node: { id: string; label: string; depth: number; children: any[] }) => {
-			const nextChildren: any[] = []
-			for (const child of node.children) {
-				const childNode = filterNode(child)
-				if (childNode) nextChildren.push(childNode)
-			}
-			const selfMatch = matches(node.label)
-			if (selfMatch) matchCount += 1
-			if (selfMatch || nextChildren.length > 0) return { ...node, children: nextChildren }
-			return null
-		}
-		return {
-			items: tocItems
-				.map((node) => filterNode(node))
-				.filter((node): node is { id: string; label: string; depth: number; children: any[] } =>
-					Boolean(node),
-				),
-			matchCount,
-		}
-	}, [headingAnchors.length, normalizedQuery, tocItems])
+	const tocVisible = hasToc && compiled.items.length > 0 && headingAnchors.length > 0 && tabActive
+	usePluginWorkbenchAssistVisibility(tocVisible)
 
 	if (!shouldRender) return null
 
-	return (
-		<Box>
-			<Stack gap="xs">
-				{def.title || def.description ? (
-					<Stack gap={4}>
-						{def.title ? (
-							<Text size="sm" fw={650} style={{ lineHeight: 1.25 }}>
-								{def.title}
-							</Text>
-						) : null}
-						{def.description ? (
-							<Text size="xs" c="dimmed" style={{ lineHeight: 1.4 }}>
-								{def.description}
-							</Text>
-						) : null}
-					</Stack>
+	const headerContent =
+		def.title || def.description ? (
+			<Stack gap={4}>
+				{def.title ? (
+					<Text size="sm" fw={650} style={{ lineHeight: 1.25 }}>
+						{def.title}
+					</Text>
 				) : null}
-
-				{compiled.items.length ? (
-					<DocBody
-						items={compiled.items}
-						contentRef={contentRef}
-						renderBlock={renderBlock}
-						renderCfg={renderCfg}
-					/>
+				{def.description ? (
+					<Text size="xs" c="dimmed" style={{ lineHeight: 1.4 }}>
+						{def.description}
+					</Text>
 				) : null}
 			</Stack>
+		) : null
 
-			{hasToc && compiled.items.length && tocItems.length ? (
-				<FloatingToc
-					title="文档导航"
-					hint="悬停展开，搜索或点击跳转到对应章节。"
-					meta={
-						<Badge size="xs" variant="light" color="blue">
-							{normalizedQuery
-								? `${filtered.matchCount}/${headingAnchors.length}`
-								: headingAnchors.length}
-						</Badge>
-					}
-					controls={
-						<TextInput
-							size="xs"
-							placeholder="搜索章节…"
-							value={query}
-							onChange={(event) => setQuery(event.currentTarget.value)}
-							leftSection={<IconSearch size={14} />}
-						/>
-					}
-					onExpandedChange={setTocExpanded}
-					viewportRef={(node) => {
-						tocViewportRef.current = node
-					}}
-				>
-					{(normalizedQuery ? filtered.items : tocItems).length ? (
-						<Stack gap="xs">
-							{(normalizedQuery ? filtered.items : tocItems).map((node) => {
-								const renderNode = (
-									item: { id: string; label: string; children: any[] },
-									depth = 0,
-								) => {
-									const isActive = item.id === activeId
-									return (
-										<Box
-											key={item.id}
-											onClick={(e) => {
-												e.stopPropagation()
-												scrollToSection(item.id)
-											}}
-											role="button"
-											tabIndex={0}
-											data-toc-active={isActive ? 'true' : undefined}
-											onKeyDown={(e) => {
-												if (e.key === 'Enter' || e.key === ' ') {
-													e.preventDefault()
-													e.stopPropagation()
-													scrollToSection(item.id)
-												}
-											}}
-											style={{
-												borderRadius: 10,
-												padding: '8px 10px',
-												cursor: 'pointer',
-												border: `1px solid ${
-													isActive
-														? 'var(--mantine-color-blue-outline)'
-														: 'var(--mantine-color-default-border)'
-												}`,
-												backgroundColor: isActive
-													? 'var(--mantine-color-blue-light)'
-													: 'transparent',
-												boxShadow: isActive
-													? 'inset 3px 0 0 var(--mantine-color-blue-filled), var(--mantine-shadow-sm)'
-													: 'none',
-												marginLeft: depth ? 8 : 0,
-												position: 'relative',
-												transition:
-													'background-color 140ms ease, border-color 140ms ease, box-shadow 140ms ease',
-											}}
-										>
-											<Box
-												style={{
-													display: 'flex',
-													alignItems: 'center',
-													gap: 8,
-													minWidth: 0,
-												}}
-											>
-												<Box
-													style={{
-														width: 8,
-														height: 8,
-														borderRadius: 999,
-														background: isActive
-															? 'var(--mantine-color-blue-filled)'
-															: 'var(--mantine-color-gray-5)',
-														flexShrink: 0,
-														boxShadow: isActive
-															? '0 0 0 3px var(--mantine-color-blue-light)'
-															: 'none',
-													}}
-												/>
-												<Text
-													size="sm"
-													fw={isActive ? 700 : 600}
-													style={{ flex: 1, minWidth: 0, userSelect: 'none' }}
-													lineClamp={1}
-												>
-													{item.label}
-												</Text>
-											</Box>
-											{item.children?.length ? (
-												<Stack gap={6} mt={6}>
-													{item.children.map((child: any) => renderNode(child, depth + 1))}
-												</Stack>
-											) : null}
-										</Box>
-									)
-								}
-								return renderNode(node, 0)
-							})}
-						</Stack>
-					) : (
+	const bodyContent = compiled.items.length ? (
+		<DocBody
+			items={compiled.items}
+			contentRef={contentRef}
+			renderBlock={renderBlock}
+			renderCfg={renderCfg}
+		/>
+	) : null
+
+	const renderInlineToc = () => (
+		<Paper withBorder radius="md" p="sm">
+			<OutlineNavigator
+				anchors={headingAnchors}
+				activeId={activeId}
+				onSelect={scrollToSection}
+				placeholder="搜索章节…"
+				emptyLabel="未找到匹配章节"
+				header={({ hasQuery, shownCount, totalCount }) => (
+					<>
+						<Box
+							style={{
+								display: 'flex',
+								justifyContent: 'space-between',
+								alignItems: 'center',
+								gap: 8,
+							}}
+						>
+							<Text size="sm" fw={700}>
+								文档导航
+							</Text>
+							<Badge size="xs" variant="light" color="gray">
+								{hasQuery ? `${shownCount}/${totalCount}` : totalCount}
+							</Badge>
+						</Box>
 						<Text size="xs" c="dimmed">
-							未找到匹配章节
+							搜索或点击跳转到对应章节。
 						</Text>
-					)}
-				</FloatingToc>
-			) : null}
+					</>
+				)}
+			/>
+		</Paper>
+	)
+
+	const renderSidebarToc = () => (
+		<div className="plx-pluginWorkbench__assistSection">
+			<OutlineNavigator
+				anchors={headingAnchors}
+				activeId={activeId}
+				onSelect={scrollToSection}
+				placeholder="搜索章节…"
+				emptyLabel="未找到匹配章节"
+				header={({ hasQuery, shownCount, totalCount }) => (
+					<Box
+						style={{
+							display: 'flex',
+							justifyContent: 'space-between',
+							alignItems: 'center',
+							gap: 8,
+						}}
+					>
+						<Text size="xs" c="dimmed" fw={600}>
+							{hasQuery ? `${shownCount}/${totalCount} 项匹配` : `${totalCount} 项`}
+						</Text>
+						{hasQuery ? (
+							<Badge size="xs" variant="light" color="gray">
+								筛选中
+							</Badge>
+						) : null}
+					</Box>
+				)}
+			/>
+		</div>
+	)
+
+	const documentContent = (
+		<Box>
+			<Stack gap="xs">
+				{headerContent}
+				{bodyContent}
+			</Stack>
 		</Box>
+	)
+
+	if (tocVisible && asideAvailable && !assistHost) {
+		return documentContent
+	}
+
+	return (
+		<>
+			{documentContent}
+			{tocVisible
+				? assistHost
+					? createPortal(renderSidebarToc(), assistHost)
+					: renderInlineToc()
+				: null}
+		</>
 	)
 }

@@ -13,6 +13,7 @@ import {
 import { IconCheck, IconCopy } from '@tabler/icons-react'
 import type { ReactNode } from 'react'
 import { useMemo } from 'react'
+import type { WorkbenchNavigationRequest } from '../../../workbench/context'
 import type { PluginSourceInfo } from '../context'
 import { usePluginScope } from '../context'
 import type { DependencyListProps } from './DependencyList'
@@ -105,9 +106,10 @@ function getBadgeLabel(source: PluginSourceInfo): { label: string; color: string
 
 export interface PluginSourceCardProps {
 	LinkComponent?: DependencyListProps['LinkComponent']
+	linkWorkbenchMode?: WorkbenchNavigationRequest
 }
 
-export function PluginSourceCard({ LinkComponent }: PluginSourceCardProps) {
+export function PluginSourceCard({ LinkComponent, linkWorkbenchMode }: PluginSourceCardProps) {
 	const { source, knownPluginNames } = usePluginScope()
 	const theme = useMantineTheme()
 	const badge = getBadgeLabel(source)
@@ -148,7 +150,11 @@ export function PluginSourceCard({ LinkComponent }: PluginSourceCardProps) {
 							{dependencies.length}
 						</Badge>
 						<Box style={{ flex: 1, minWidth: 0 }}>
-							<DependencyList LinkComponent={LinkComponent} isLinkable={isLinkable} />
+							<DependencyList
+								LinkComponent={LinkComponent}
+								isLinkable={isLinkable}
+								linkWorkbenchMode={linkWorkbenchMode}
+							/>
 						</Box>
 					</Group>
 				</Stack>

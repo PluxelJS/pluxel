@@ -1,16 +1,19 @@
 import type React from 'react'
 import { forwardRef, useCallback } from 'react'
 import { useNavigate, useRouter } from '@tanstack/react-router'
+import { useWorkbenchTabs, type WorkbenchNavigationRequest } from './workbench/context'
 
 export type RouterLinkAdapterProps = {
 	to: string
 	children: React.ReactNode
+	workbenchMode?: WorkbenchNavigationRequest
 } & Omit<React.ComponentPropsWithoutRef<'a'>, 'href'>
 
 export const RouterLinkAdapter = forwardRef<HTMLAnchorElement, RouterLinkAdapterProps>(
-	({ to, children, onClick, target, rel, ...rest }, ref) => {
+	({ to, children, onClick, target, rel, workbenchMode = 'auto', ...rest }, ref) => {
 		const router = useRouter()
 		const navigate = useNavigate()
+		const workbenchTabs = useWorkbenchTabs()
 
 		let href = to
 		try {
@@ -35,6 +38,7 @@ export const RouterLinkAdapter = forwardRef<HTMLAnchorElement, RouterLinkAdapter
 				}
 
 				event.preventDefault()
+				workbenchTabs.requestNavigation(to, workbenchMode)
 				if (to === '/') {
 					// 主动点击首页链接时，通过 state 传递 manual 标记
 					navigate({
@@ -45,7 +49,7 @@ export const RouterLinkAdapter = forwardRef<HTMLAnchorElement, RouterLinkAdapter
 					navigate({ to })
 				}
 			},
-			[navigate, onClick, target, to],
+			[navigate, onClick, target, to, workbenchMode, workbenchTabs],
 		)
 
 		return (

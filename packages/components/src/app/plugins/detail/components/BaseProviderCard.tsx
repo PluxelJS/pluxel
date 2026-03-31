@@ -89,7 +89,7 @@ export function BaseProviderCard() {
 	if (!info) return null
 
 	const highlight = info.isDefault
-	const borderColor = highlight ? 'var(--mantine-color-green-6)' : 'var(--mantine-color-gray-4)'
+	const borderColor = highlight ? 'var(--plx-accent)' : 'var(--plx-panel-border-strong)'
 
 	return (
 		<Paper withBorder radius="md" p="sm" shadow="xs" style={{ borderColor }}>

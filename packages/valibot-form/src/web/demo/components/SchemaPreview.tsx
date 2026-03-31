@@ -28,9 +28,9 @@ export function SchemaPreview({ sourceText }: SchemaPreviewProps) {
 					fontSize: 12,
 					margin: 0,
 					padding: 12,
-					backgroundColor: 'var(--mantine-color-gray-0)',
+					backgroundColor: 'var(--plx-panel-bg-muted, var(--mantine-color-default-hover))',
 					borderRadius: 6,
-					border: '1px solid var(--mantine-color-gray-2)',
+					border: '1px solid var(--plx-panel-border, var(--mantine-color-default-border))',
 					whiteSpace: 'pre-wrap',
 				}}
 			>

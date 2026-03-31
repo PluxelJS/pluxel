@@ -89,6 +89,7 @@ import {
 	unique,
 } from './utils'
 import { deriveRootLabel } from './utils/roots'
+import type { WorkbenchNavigationRequest } from '../../workbench/context'
 
 export type { GroupConfig, PluginStatus, PluginStatuses } from './types'
 
@@ -104,7 +105,13 @@ type Props = {
 	onGroupsChange: (groups: GroupConfig[]) => void
 	filterQuery?: string
 	statusFilter?: StatusFilter
-	LinkComponent?: React.ComponentType<{ to: string; children: React.ReactNode }>
+	LinkComponent?: React.ComponentType<
+		{
+			to: string
+			children: React.ReactNode
+			workbenchMode?: WorkbenchNavigationRequest
+		} & Omit<React.ComponentPropsWithoutRef<'a'>, 'href'>
+	>
 	activeId?: string | null
 	activeIds?: string[]
 	selectedIds?: string[]
@@ -762,6 +769,7 @@ export function PluginOrganizer({
 					display: 'grid',
 					gridTemplateRows:
 						groups.length > 0 ? 'minmax(0, 1fr) minmax(0, 2fr)' : 'minmax(0, 1fr) auto',
+					gap: 4,
 					minHeight: 0,
 					height: '100%',
 					...style,
@@ -771,6 +779,7 @@ export function PluginOrganizer({
 				{/* 未分组：占用上半区；内部滚动 */}
 				<Card
 					withBorder
+					shadow="none"
 					radius="xs"
 					p={4}
 					style={{
@@ -779,6 +788,8 @@ export function PluginOrganizer({
 						display: 'flex',
 						flexDirection: 'column',
 						overflow: 'hidden',
+						background: 'var(--plx-panel-bg)',
+						borderColor: 'var(--plx-panel-border)',
 					}}
 				>
 					<Group justify="space-between" align="center" mb={2} wrap="nowrap">
@@ -877,70 +888,96 @@ export function PluginOrganizer({
 
 				{/* 我的分组：有分组时占下半区并可滚动；无分组时收缩为提示行 */}
 				{groups.length > 0 ? (
-					<Stack gap={2} style={{ minHeight: 0, minWidth: 0, overflow: 'hidden', paddingTop: 2 }}>
-						<Group justify="space-between" align="center">
-							<Group gap={4} align="center">
-								<Text fw={600} size="xs">
-									我的分组
-								</Text>
-								<Text size="xs" c="dimmed">
-									{visibleGroups.length} 个
-								</Text>
+					<Card
+						withBorder
+						shadow="none"
+						radius="xs"
+						p={4}
+						style={{
+							minHeight: 0,
+							minWidth: 0,
+							overflow: 'hidden',
+							display: 'flex',
+							flexDirection: 'column',
+							background: 'var(--plx-panel-bg)',
+							borderColor: 'var(--plx-panel-border)',
+						}}
+					>
+						<Stack gap={2} style={{ minHeight: 0, minWidth: 0, overflow: 'hidden' }}>
+							<Group justify="space-between" align="center">
+								<Group gap={4} align="center">
+									<Text fw={600} size="xs">
+										我的分组
+									</Text>
+									<Text size="xs" c="dimmed">
+										{visibleGroups.length} 个
+									</Text>
+								</Group>
 							</Group>
-						</Group>
 
-						<ScrollArea
-							type="auto"
-							offsetScrollbars
-							scrollbarSize={4}
-							style={{ flex: 1, minHeight: 0, maxHeight: '100%' }}
-							viewportProps={{ style: { paddingRight: 2, paddingBottom: 2 } }}
-						>
-							<Box style={{ minWidth: 0 }}>
-								<SortableContext items={groupIdsSortable} strategy={verticalListSortingStrategy}>
-									<Stack gap={2} align="stretch" py={2}>
-										{visibleGroups.length === 0 ? (
-											<Text c="dimmed" size="xs" pl="xs">
-												暂无分组，可在上方创建。
-											</Text>
-										) : (
-											visibleGroups.map((g) => {
-												const vis = g.pluginIds
-												const isCollapsed = !!collapsed[g.groupId]
-												return (
-													<GroupCard
-														key={g.groupId}
-														g={g}
-														visibleIds={vis}
-														runningSet={runningSet}
-														enabledSet={enabledSet}
-														selectedSet={selectedSet}
-														activeSet={activeSet}
-														onSelect={handleRowSelect}
-														LinkComp={LinkComp}
-														sortableId={gid(g.groupId)}
-														droppableId={cid(g.groupId)}
-														isFiltering={isFiltering}
-														isCollapsed={isCollapsed}
-														toggleCollapse={() => toggleGroupCollapse(g.groupId)}
-														getName={getName}
-														getMeta={getMeta}
-														getItemSortableId={(id) => iid(id)}
-														dh={dh}
-														onRename={renameGroup}
-														onDelete={deleteGroup}
-														locked={locked}
-													/>
-												)
-											})
-										)}
-									</Stack>
-								</SortableContext>
-							</Box>
-						</ScrollArea>
-					</Stack>
+							<ScrollArea
+								type="auto"
+								offsetScrollbars
+								scrollbarSize={4}
+								style={{ flex: 1, minHeight: 0, maxHeight: '100%' }}
+								viewportProps={{ style: { paddingRight: 2, paddingBottom: 2 } }}
+							>
+								<Box style={{ minWidth: 0 }}>
+									<SortableContext items={groupIdsSortable} strategy={verticalListSortingStrategy}>
+										<Stack gap={2} align="stretch" py={2}>
+											{visibleGroups.length === 0 ? (
+												<Text c="dimmed" size="xs" pl="xs">
+													暂无分组，可在上方创建。
+												</Text>
+											) : (
+												visibleGroups.map((g) => {
+													const vis = g.pluginIds
+													const isCollapsed = !!collapsed[g.groupId]
+													return (
+														<GroupCard
+															key={g.groupId}
+															g={g}
+															visibleIds={vis}
+															runningSet={runningSet}
+															enabledSet={enabledSet}
+															selectedSet={selectedSet}
+															activeSet={activeSet}
+															onSelect={handleRowSelect}
+															LinkComp={LinkComp}
+															sortableId={gid(g.groupId)}
+															droppableId={cid(g.groupId)}
+															isFiltering={isFiltering}
+															isCollapsed={isCollapsed}
+															toggleCollapse={() => toggleGroupCollapse(g.groupId)}
+															getName={getName}
+															getMeta={getMeta}
+															getItemSortableId={(id) => iid(id)}
+															dh={dh}
+															onRename={renameGroup}
+															onDelete={deleteGroup}
+															locked={locked}
+														/>
+													)
+												})
+											)}
+										</Stack>
+									</SortableContext>
+								</Box>
+							</ScrollArea>
+						</Stack>
+					</Card>
 				) : (
-					<Box style={{ paddingTop: 2, minWidth: 0 }}>
+					<Card
+						withBorder
+						shadow="none"
+						radius="xs"
+						p={4}
+						style={{
+							minWidth: 0,
+							background: 'var(--plx-panel-bg)',
+							borderColor: 'var(--plx-panel-border)',
+						}}
+					>
 						<Group justify="space-between" align="center">
 							<Group gap={4} align="center">
 								<Text fw={600} size="xs">
@@ -954,7 +991,7 @@ export function PluginOrganizer({
 						<Text c="dimmed" size="xs" pl="xs">
 							暂无分组，可在上方创建。
 						</Text>
-					</Box>
+					</Card>
 				)}
 			</Box>
 

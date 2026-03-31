@@ -96,6 +96,18 @@ interface ModuleInfoStore {
 	promises: Map<string, Promise<ModuleInfo | undefined>>
 }
 
+function readLiteralString(
+	node: { type?: unknown; value?: unknown } | null | undefined,
+): string | null {
+	return node?.type === 'Literal' && typeof node.value === 'string' ? node.value : null
+}
+
+function readLiteralNumber(
+	node: { type?: unknown; value?: unknown } | null | undefined,
+): number | null {
+	return node?.type === 'Literal' && typeof node.value === 'number' ? node.value : null
+}
+
 function createModuleInfoStore(): ModuleInfoStore {
 	return {
 		cache: new Map(),
@@ -973,7 +985,11 @@ async function extractConfigSources(
 	moduleInfo: ModuleInfo,
 	ast: Program,
 	ctx: ResolveContext,
-): Promise<{ configs: ExtractedConfig[]; bindings: ExtractedBinding[]; layouts: ExtractedConfigLayout[] }> {
+): Promise<{
+	configs: ExtractedConfig[]
+	bindings: ExtractedBinding[]
+	layouts: ExtractedConfigLayout[]
+}> {
 	const extracted: ExtractedConfig[] = []
 	const bindings: ExtractedBinding[] = []
 	const layouts: ExtractedConfigLayout[] = []
@@ -1088,7 +1104,8 @@ async function extractConfigSources(
 				if (useMatch.schemaExpr.type === 'TaggedTemplateExpression') {
 					const tag = (useMatch.schemaExpr as any).tag
 					const normalizedTag = tag ? unwrapExpression(tag) : null
-					const isLegacyCfgTag = normalizedTag?.type === 'Identifier' && normalizedTag.name === 'cfg'
+					const isLegacyCfgTag =
+						normalizedTag?.type === 'Identifier' && normalizedTag.name === 'cfg'
 					if (isLegacyCfgTag) {
 						throw new Error(
 							`[cfg] Use cfg(schemaMap) (legacy cfg\`...\` is not supported): ${moduleInfo.id}`,
@@ -1124,7 +1141,9 @@ async function extractConfigSources(
 }
 
 function normalizeMarkdownTemplate(input: string): string {
-	const lines = String(input ?? '').replace(/\r\n/g, '\n').split('\n')
+	const lines = String(input ?? '')
+		.replace(/\r\n/g, '\n')
+		.split('\n')
 	while (lines.length && lines[0]?.trim() === '') lines.shift()
 	while (lines.length && lines[lines.length - 1]?.trim() === '') lines.pop()
 	let minIndent = Number.POSITIVE_INFINITY
@@ -1224,12 +1243,7 @@ function extractCfgLayout(expr: Expression): ExtractedLayoutPart[] | null {
 			)
 		}
 		const prop = callee.property
-		const propName =
-			prop?.type === 'Identifier'
-				? prop.name
-				: prop?.type === 'StringLiteral'
-					? prop.value
-					: null
+		const propName = prop?.type === 'Identifier' ? prop.name : readLiteralString(prop)
 		if (propName !== 'schema' && propName !== 'schemas') {
 			throw new Error(
 				'[cfg] invalid interpolation in cfg(schemaMap)`...` (expected c.schema(...) / c.schemas(...))',
@@ -1241,9 +1255,7 @@ function extractCfgLayout(expr: Expression): ExtractedLayoutPart[] | null {
 			const a = arg?.type === 'SpreadElement' ? arg.argument : arg
 			const n = a ? unwrapExpression(a) : null
 			if (!n) return null
-			if (n.type === 'StringLiteral') return String(n.value)
-			if (n.type === 'Literal' && typeof n.value === 'string') return n.value
-			return null
+			return n.type === 'Literal' && typeof n.value === 'string' ? String(n.value) : null
 		}
 
 		if (propName === 'schema') {
@@ -1307,7 +1319,11 @@ function extractCfgLayout(expr: Expression): ExtractedLayoutPart[] | null {
 	return hasContent ? merged : null
 }
 
-function extractCfgSchemaMapExpr(moduleInfo: ModuleInfo, ast: Program, expr: Expression): Expression | null {
+function extractCfgSchemaMapExpr(
+	moduleInfo: ModuleInfo,
+	ast: Program,
+	expr: Expression,
+): Expression | null {
 	const normalized = unwrapExpression(expr as any) as any
 
 	const isCfgCallee = (callee: any): boolean => {
@@ -1317,7 +1333,7 @@ function extractCfgSchemaMapExpr(moduleInfo: ModuleInfo, ast: Program, expr: Exp
 		if (c?.type === 'MemberExpression' && !c.computed) {
 			const p = c.property
 			if (p?.type === 'Identifier' && p.name === 'cfg') return true
-			if (p?.type === 'StringLiteral' && p.value === 'cfg') return true
+			if (readLiteralString(p) === 'cfg') return true
 			return false
 		}
 		if (c?.type === 'SequenceExpression') {
@@ -1347,12 +1363,7 @@ function extractCfgSchemaMapExpr(moduleInfo: ModuleInfo, ast: Program, expr: Exp
 			const prop = node.property
 			if (obj?.type !== 'Identifier') return null
 			const className = obj.name
-			const propName =
-				prop?.type === 'Identifier'
-					? prop.name
-					: prop?.type === 'StringLiteral'
-						? prop.value
-						: null
+			const propName = prop?.type === 'Identifier' ? prop.name : readLiteralString(prop)
 			if (!className || !propName) return null
 
 			// Static class field: `class X { static c = cfg(...) }`
@@ -1360,9 +1371,11 @@ function extractCfgSchemaMapExpr(moduleInfo: ModuleInfo, ast: Program, expr: Exp
 				const classDecl =
 					stmt.type === 'ClassDeclaration'
 						? stmt
-						: stmt.type === 'ExportNamedDeclaration' && stmt.declaration?.type === 'ClassDeclaration'
+						: stmt.type === 'ExportNamedDeclaration' &&
+								stmt.declaration?.type === 'ClassDeclaration'
 							? stmt.declaration
-							: stmt.type === 'ExportDefaultDeclaration' && stmt.declaration.type === 'ClassDeclaration'
+							: stmt.type === 'ExportDefaultDeclaration' &&
+									stmt.declaration.type === 'ClassDeclaration'
 								? stmt.declaration
 								: null
 				if (!classDecl) continue
@@ -1372,15 +1385,11 @@ function extractCfgSchemaMapExpr(moduleInfo: ModuleInfo, ast: Program, expr: Exp
 					const pd = m as any
 					if (!pd.static) continue
 					const key = pd.key
-					const k =
-						key?.type === 'Identifier'
-							? key.name
-							: key?.type === 'StringLiteral'
-								? key.value
-								: null
+					const k = key?.type === 'Identifier' ? key.name : readLiteralString(key)
 					if (k !== propName) continue
 					const init = pd.value ? unwrapExpression(pd.value) : null
-					if (init?.type === 'CallExpression' && isCfgCallee(init.callee)) return init as CallExpression
+					if (init?.type === 'CallExpression' && isCfgCallee(init.callee))
+						return init as CallExpression
 				}
 			}
 
@@ -1394,15 +1403,11 @@ function extractCfgSchemaMapExpr(moduleInfo: ModuleInfo, ast: Program, expr: Exp
 				const lo = left.object
 				const lp = left.property
 				if (lo?.type !== 'Identifier' || lo.name !== className) continue
-				const lk =
-					lp?.type === 'Identifier'
-						? lp.name
-						: lp?.type === 'StringLiteral'
-							? lp.value
-							: null
+				const lk = lp?.type === 'Identifier' ? lp.name : readLiteralString(lp)
 				if (lk !== propName) continue
 				const right = unwrapExpression(e.right) as any
-				if (right?.type === 'CallExpression' && isCfgCallee(right.callee)) return right as CallExpression
+				if (right?.type === 'CallExpression' && isCfgCallee(right.callee))
+					return right as CallExpression
 			}
 		}
 
@@ -1421,7 +1426,11 @@ function extractCfgSchemaMapExpr(moduleInfo: ModuleInfo, ast: Program, expr: Exp
 		if (!call) return null
 		const args = call.arguments ?? []
 		const firstArg = args[0]
-		const mapExpr = firstArg ? (firstArg.type === 'SpreadElement' ? firstArg.argument : firstArg) : null
+		const mapExpr = firstArg
+			? firstArg.type === 'SpreadElement'
+				? firstArg.argument
+				: firstArg
+			: null
 		return mapExpr ? (mapExpr as Expression) : null
 	}
 
@@ -1431,7 +1440,9 @@ function extractCfgSchemaMapExpr(moduleInfo: ModuleInfo, ast: Program, expr: Exp
 			const args = (normalized as CallExpression).arguments ?? []
 			const firstArg = args[0]
 			const mapExpr = firstArg
-				? (firstArg.type === 'SpreadElement' ? firstArg.argument : firstArg)
+				? firstArg.type === 'SpreadElement'
+					? firstArg.argument
+					: firstArg
 				: null
 			return mapExpr ? (mapExpr as Expression) : null
 		}
@@ -1442,7 +1453,9 @@ function extractCfgSchemaMapExpr(moduleInfo: ModuleInfo, ast: Program, expr: Exp
 				const args = (call as CallExpression).arguments ?? []
 				const firstArg = args[0]
 				const mapExpr = firstArg
-					? (firstArg.type === 'SpreadElement' ? firstArg.argument : firstArg)
+					? firstArg.type === 'SpreadElement'
+						? firstArg.argument
+						: firstArg
 					: null
 				return mapExpr ? (mapExpr as Expression) : null
 			}
@@ -1456,7 +1469,9 @@ function extractCfgSchemaMapExpr(moduleInfo: ModuleInfo, ast: Program, expr: Exp
 			const args = call.arguments ?? []
 			const firstArg = args[0]
 			const mapExpr = firstArg
-				? (firstArg.type === 'SpreadElement' ? firstArg.argument : firstArg)
+				? firstArg.type === 'SpreadElement'
+					? firstArg.argument
+					: firstArg
 				: null
 			return mapExpr ? (mapExpr as Expression) : null
 		}
@@ -1471,10 +1486,15 @@ async function extractCfgSchemasFromSchemaMapExpr(
 	mapExpr: Expression,
 	kind: string,
 	ctx: ResolveContext,
-): {
+): Promise<{
 	keys: string[]
-	entries: Array<{ key: string; schemaExpr: Expression; moduleInfo: ModuleInfo; registerExpr: string }>
-} {
+	entries: Array<{
+		key: string
+		schemaExpr: Expression
+		moduleInfo: ModuleInfo
+		registerExpr: string
+	}>
+}> {
 	const entries: Array<{
 		key: string
 		schemaExpr: Expression
@@ -1486,7 +1506,9 @@ async function extractCfgSchemasFromSchemaMapExpr(
 
 	const normalizedMapExpr = unwrapExpression(mapExpr as any) as any
 	const mapRefExpr =
-		normalizedMapExpr && typeof normalizedMapExpr.start === 'number' && typeof normalizedMapExpr.end === 'number'
+		normalizedMapExpr &&
+		typeof normalizedMapExpr.start === 'number' &&
+		typeof normalizedMapExpr.end === 'number'
 			? moduleInfo.code.slice(normalizedMapExpr.start, normalizedMapExpr.end)
 			: null
 	const canUseMapAccessForRegister =
@@ -1510,7 +1532,8 @@ async function extractCfgSchemasFromSchemaMapExpr(
 					? node
 					: node.type === 'ExportNamedDeclaration' && node.declaration?.type === 'ClassDeclaration'
 						? node.declaration
-						: node.type === 'ExportDefaultDeclaration' && node.declaration.type === 'ClassDeclaration'
+						: node.type === 'ExportDefaultDeclaration' &&
+								node.declaration.type === 'ClassDeclaration'
 							? node.declaration
 							: null
 			if (!classDecl || classDecl.id?.name !== className) continue
@@ -1559,15 +1582,17 @@ async function extractCfgSchemasFromSchemaMapExpr(
 				throw new Error(`[cfg] ${kind} does not support spread properties: ${moduleInfo.id}`)
 			}
 			if (prop.computed) {
-				throw new Error(
-					`[cfg] ${kind} keys must be static (no computed keys): ${moduleInfo.id}`,
-				)
+				throw new Error(`[cfg] ${kind} keys must be static (no computed keys): ${moduleInfo.id}`)
 			}
 			let key: string | null = null
 			if (prop.key.type === 'Identifier') key = prop.key.name
-			else if (prop.key.type === 'StringLiteral') key = prop.key.value
-			else if (prop.key.type === 'NumericLiteral') key = String(prop.key.value)
 			else {
+				const stringKey = readLiteralString(prop.key)
+				const numberKey = readLiteralNumber(prop.key)
+				if (stringKey != null) key = stringKey
+				else if (numberKey != null) key = String(numberKey)
+			}
+			if (key == null) {
 				throw new Error(`[cfg] ${kind} key type not supported: ${moduleInfo.id}`)
 			}
 			const k = String(key ?? '').trim()
@@ -1738,7 +1763,12 @@ function generateInjection(
 	features: ExtractedFeatureUse[],
 	parseProgram: (code: string, filename: string) => Program,
 ): string {
-	if (configs.length === 0 && bindings.length === 0 && layouts.length === 0 && features.length === 0)
+	if (
+		configs.length === 0 &&
+		bindings.length === 0 &&
+		layouts.length === 0 &&
+		features.length === 0
+	)
 		return ''
 
 	const needsRegister = configs.some(

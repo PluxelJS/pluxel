@@ -1,14 +1,6 @@
-import {
-	Autocomplete,
-	MultiSelect,
-	Radio,
-	SegmentedControl,
-	Select,
-	Stack,
-	TagsInput,
-	Text,
-} from '@mantine/core'
+import { Autocomplete, MultiSelect, Radio, Select, Stack, TagsInput, Text } from '@mantine/core'
 import { forwardRef, useCallback, useEffect, useMemo, useState } from 'react'
+import { SegmentedButtons } from '../../SegmentedButtons'
 
 export interface PicklistControlProps {
 	meta: {
@@ -295,13 +287,13 @@ export function PicklistControl({
 
 	if (variant === 'segmented') {
 		return (
-			<SegmentedControl
+			<SegmentedButtons
 				data={sharedData as any}
 				value={singleValue || null}
 				onChange={(id) => onChange(toRaw(id))}
 				onBlur={onBlur}
 				fullWidth
-				{...(disabled !== undefined && { disabled })}
+				disabled={disabled}
 			/>
 		)
 	}

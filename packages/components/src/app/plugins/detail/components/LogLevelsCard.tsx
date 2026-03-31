@@ -23,7 +23,13 @@ function isLogLevel(value: string): value is LogLevel {
 	return LEVEL_SET.has(value)
 }
 
-export function LogLevelsCard({ pluginId }: { pluginId: string }) {
+export function LogLevelsCard({
+	pluginId,
+	compact = false,
+}: {
+	pluginId: string
+	compact?: boolean
+}) {
 	const transport = useRuntimeTransportClient()
 	const [snapshot, setSnapshot] = useState<Snapshot | null>(null)
 	const [loading, setLoading] = useState(false)
@@ -34,7 +40,9 @@ export function LogLevelsCard({ pluginId }: { pluginId: string }) {
 		setLoading(true)
 		setError(null)
 		try {
-			const res: PluginLevelsSnapshot = await transport.withRpc((rpc) => rpc.logging().getPluginLevels())
+			const res: PluginLevelsSnapshot = await transport.withRpc((rpc) =>
+				rpc.logging().getPluginLevels(),
+			)
 			setSnapshot({
 				levels: res.levels ?? Object.create(null),
 			})
@@ -167,9 +175,15 @@ export function LogLevelsCard({ pluginId }: { pluginId: string }) {
 	}, [transport])
 
 	return (
-		<Stack gap="sm">
+		<Stack gap={compact ? 'xs' : 'sm'} style={compact ? { minHeight: 0 } : undefined}>
 			<Group gap="xs" justify="space-between" wrap="nowrap">
-				<Title order={5}>日志级别</Title>
+				{compact ? (
+					<Text size="xs" c="dimmed">
+						调整默认级别或当前插件覆盖，便于临时排查。
+					</Text>
+				) : (
+					<Title order={5}>日志级别</Title>
+				)}
 				<Group gap="xs" wrap="nowrap">
 					<Button
 						size="xs"
@@ -192,10 +206,12 @@ export function LogLevelsCard({ pluginId }: { pluginId: string }) {
 				</Group>
 			</Group>
 
-			<Text size="sm" c="dimmed">
-				per-plugin level 由 HMR 面板管理并持久化；不会为每个插件创建 category/logger config（只做
-				pluginId 查表过滤）。
-			</Text>
+			{compact ? null : (
+				<Text size="sm" c="dimmed">
+					per-plugin level 由 HMR 面板管理并持久化；不会为每个插件创建 category/logger config（只做
+					pluginId 查表过滤）。
+				</Text>
+			)}
 
 			{error ? (
 				<Text size="sm" c="red">
@@ -203,47 +219,49 @@ export function LogLevelsCard({ pluginId }: { pluginId: string }) {
 				</Text>
 			) : null}
 
-			<Stack gap="xs">
-				<Text size="sm" fw={600}>
-					默认（所有插件）
-				</Text>
-				<Select
-					size="sm"
-					value={defaultSelectValue}
-					disabled={saving}
-					onChange={(v) => void setDefaultLevel(v)}
-					data={[
-						{ value: '__inherit__', label: '继承全局 (PLUXEL_LOG_LEVEL)' },
-						{ value: '__off__', label: '关闭 (null)' },
-						...LEVEL_OPTIONS,
-					]}
-				/>
-			</Stack>
-
-			<Stack gap="xs">
-				<Group gap="xs" justify="space-between" wrap="nowrap">
+			<Group align="flex-start" grow gap="sm" wrap="wrap">
+				<Stack gap="xs">
 					<Text size="sm" fw={600}>
-						当前插件
+						默认（所有插件）
 					</Text>
-					<Badge variant="light" color="gray">
-						<Code>{pluginId}</Code>
-					</Badge>
-				</Group>
-				<Select
-					size="sm"
-					value={pluginSelectValue}
-					disabled={saving}
-					onChange={(v) => void setPluginLevel(v)}
-					data={[
-						{ value: '__inherit__', label: '继承默认' },
-						{ value: '__off__', label: '关闭 (null)' },
-						...LEVEL_OPTIONS,
-					]}
-				/>
-			</Stack>
+					<Select
+						size="sm"
+						value={defaultSelectValue}
+						disabled={saving}
+						onChange={(v) => void setDefaultLevel(v)}
+						data={[
+							{ value: '__inherit__', label: '继承全局 (PLUXEL_LOG_LEVEL)' },
+							{ value: '__off__', label: '关闭 (null)' },
+							...LEVEL_OPTIONS,
+						]}
+					/>
+				</Stack>
+
+				<Stack gap="xs">
+					<Group gap="xs" justify="space-between" wrap="nowrap">
+						<Text size="sm" fw={600}>
+							当前插件
+						</Text>
+						<Badge variant="light" color="gray">
+							<Code>{pluginId}</Code>
+						</Badge>
+					</Group>
+					<Select
+						size="sm"
+						value={pluginSelectValue}
+						disabled={saving}
+						onChange={(v) => void setPluginLevel(v)}
+						data={[
+							{ value: '__inherit__', label: '继承默认' },
+							{ value: '__off__', label: '关闭 (null)' },
+							...LEVEL_OPTIONS,
+						]}
+					/>
+				</Stack>
+			</Group>
 
 			{overrides.length ? (
-				<Stack gap="xs">
+				<Stack gap="xs" style={compact ? { minHeight: 0 } : undefined}>
 					<Group gap="xs" justify="space-between" wrap="nowrap">
 						<Text size="sm" fw={600}>
 							已有规则
@@ -252,7 +270,13 @@ export function LogLevelsCard({ pluginId }: { pluginId: string }) {
 							{overrides.length}
 						</Badge>
 					</Group>
-					<ScrollArea h={160} type="auto" scrollbarSize={10} offsetScrollbars>
+					<ScrollArea
+						h={compact ? 132 : 160}
+						type="auto"
+						scrollbarSize={10}
+						offsetScrollbars
+						style={compact ? { minHeight: 0 } : undefined}
+					>
 						<Stack gap={4} p={2}>
 							{overrides.map((r) => (
 								<Group key={r.id} gap="xs" justify="space-between" wrap="nowrap">

@@ -1,7 +1,7 @@
 import { Box } from '@mantine/core'
 import { useHotkeys } from '@mantine/hooks'
 import { formOptions } from '@tanstack/react-form'
-import { useEffect, useMemo } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { ObjectSchema } from 'valibot'
 import { AutoForm, useAutoFormCtx } from 'valibot-form/web'
 import { useNotify } from '../../hooks'
@@ -18,8 +18,34 @@ export type ConfigFormState = {
 
 export type ConfigFormBridge = {
 	form: any
-	reset: (values?: Record<string, any>) => void
+	reset: (values?: Record<string, any>, opts?: { keepDefaultValues?: boolean }) => void
 	submit: () => void
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+	return Boolean(value && typeof value === 'object' && !Array.isArray(value))
+}
+
+function deepEqual(a: unknown, b: unknown): boolean {
+	if (Object.is(a, b)) return true
+	if (Array.isArray(a) && Array.isArray(b)) {
+		if (a.length !== b.length) return false
+		for (let i = 0; i < a.length; i += 1) {
+			if (!deepEqual(a[i], b[i])) return false
+		}
+		return true
+	}
+	if (isRecord(a) && isRecord(b)) {
+		const aKeys = Object.keys(a)
+		const bKeys = Object.keys(b)
+		if (aKeys.length !== bKeys.length) return false
+		for (const key of aKeys) {
+			if (!(key in b)) return false
+			if (!deepEqual(a[key], b[key])) return false
+		}
+		return true
+	}
+	return false
 }
 
 type SaveConfigFailure = {
@@ -44,6 +70,7 @@ export function ConfigTabContent({
 	schema,
 	savedValue,
 	defaultValue,
+	draftValue,
 	onSaved,
 	showToc,
 	active = true,
@@ -59,6 +86,7 @@ export function ConfigTabContent({
 	schema: ObjectSchema<any, any>
 	savedValue: Record<string, any>
 	defaultValue: Record<string, any>
+	draftValue?: Record<string, any>
 	onSaved: (k: string, value: Record<string, any>) => void
 	showToc?: boolean
 	active?: boolean
@@ -79,6 +107,7 @@ export function ConfigTabContent({
 		() => fieldIdPrefix ?? makeFieldAnchorPrefix(pluginName, tabKey),
 		[fieldIdPrefix, pluginName, tabKey],
 	)
+	const [initialDraftValue] = useState(() => draftValue)
 
 	const initialValue = useMemo(
 		() => ({ ...defaultValue, ...savedValue }),
@@ -89,10 +118,10 @@ export function ConfigTabContent({
 		() =>
 			formOptions({
 				defaultValues: initialValue,
-					onSubmit: async ({ value, formApi }) => {
-						const result = (await (transport as any).withRpc((rpc: any) =>
-							rpc.plugin(pluginName).saveConfig({ [tabKey]: value }),
-						)) as SaveConfigResult
+				onSubmit: async ({ value, formApi }) => {
+					const result = (await (transport as any).withRpc((rpc: any) =>
+						rpc.plugin(pluginName).saveConfig({ [tabKey]: value }),
+					)) as SaveConfigResult
 					if (result.ok === false) {
 						if (result.code === 'validation_failed' && result.errors) {
 							const fieldErrors = result.errors[tabKey]
@@ -145,18 +174,28 @@ export function ConfigTabContent({
 	return (
 		<AutoForm key={`${pluginName}-${tabKey}`} schema={schema as any} formOpts={opts}>
 			{registerForm ? <FormBridge tabKey={tabKey} registerForm={registerForm} /> : null}
+			{initialDraftValue ? <FormDraftRestore draftValue={initialDraftValue} /> : null}
 			{reportState ? <FormStateSlot tabKey={tabKey} reportState={reportState} /> : null}
 			{active ? <FormHotkeys active={active} initialValue={initialValue} /> : null}
-			{showToc ? (
-				<FormToc
-					sectionIdPrefix={sectionAnchorPrefix}
-					fieldIdPrefix={fieldAnchorPrefix}
-					scrollHost={scrollHost}
-					scrollHostVersion={scrollHostVersion ?? 0}
-				/>
-			) : null}
-			<Box px="xs" pb={96} style={{ position: 'relative' }}>
-				<AutoForm.Fields sectionIdPrefix={sectionAnchorPrefix} fieldIdPrefix={fieldAnchorPrefix} />
+			<Box
+				style={{
+					minWidth: 0,
+				}}
+			>
+				<Box px="xs" pb={24} style={{ position: 'relative' }}>
+					<AutoForm.Fields
+						sectionIdPrefix={sectionAnchorPrefix}
+						fieldIdPrefix={fieldAnchorPrefix}
+					/>
+				</Box>
+				{showToc ? (
+					<FormToc
+						sectionIdPrefix={sectionAnchorPrefix}
+						fieldIdPrefix={fieldAnchorPrefix}
+						scrollHost={scrollHost}
+						scrollHostVersion={scrollHostVersion ?? 0}
+					/>
+				) : null}
 			</Box>
 		</AutoForm>
 	)
@@ -177,6 +216,23 @@ function FormBridge({
 			if (typeof disposer === 'function') disposer()
 		}
 	}, [form, registerForm, reset, tabKey])
+
+	return null
+}
+
+function FormDraftRestore({ draftValue }: { draftValue: Record<string, any> }): null {
+	const { form, reset } = useAutoFormCtx<any>()
+	const restoredDraftRef = useRef(false)
+
+	useEffect(() => {
+		if (!draftValue || Object.keys(draftValue).length === 0) {
+			restoredDraftRef.current = false
+			return
+		}
+		if (restoredDraftRef.current || form.state.isDirty) return
+		restoredDraftRef.current = true
+		reset(draftValue)
+	}, [draftValue, form.state.isDirty, reset])
 
 	return null
 }
@@ -212,7 +268,20 @@ function FormStateReporter({
 	state: ConfigFormState
 	reportState: (key: string, state: ConfigFormState) => void
 }): null {
+	const lastStateRef = useRef<ConfigFormState | null>(null)
+
 	useEffect(() => {
+		const previous = lastStateRef.current
+		if (
+			previous &&
+			previous.dirty === state.dirty &&
+			previous.canSubmit === state.canSubmit &&
+			previous.submitting === state.submitting &&
+			deepEqual(previous.values, state.values)
+		) {
+			return
+		}
+		lastStateRef.current = state
 		reportState(tabKey, state)
 	}, [reportState, state, tabKey])
 

@@ -1,6 +1,14 @@
 import { isValidElement, type ReactNode } from 'react'
 import { IconHistory, IconHome2, IconPackages, IconPuzzle } from '@tabler/icons-react'
-import type { NavItem } from '../../components'
+
+export interface NavItem {
+	label: string
+	href: string
+	icon?: ReactNode
+	rightSection?: ReactNode
+	exact?: boolean
+	disabled?: boolean
+}
 
 export const baseNavItems: NavItem[] = [
 	{ label: '首页', href: '/', exact: true, icon: <IconHome2 size={18} stroke={1.7} /> },
