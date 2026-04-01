@@ -24,7 +24,7 @@
  * -----------------------------------------------------------------------------
  */
 
-import { ActionIcon, Box, Group, Paper, Skeleton, Stack } from '@mantine/core'
+import { ActionIcon, Box, Group, Skeleton, Stack } from '@mantine/core'
 import { IconCornerUpLeft, IconPlugConnected, IconSearchOff } from '@tabler/icons-react'
 import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react'
 import type { JSX } from 'react/jsx-runtime'
@@ -467,32 +467,27 @@ export const PluginList: React.FC<PluginListProps> = ({ pluginName }) => {
 
 	return (
 		<Stack
-			gap={4}
+			gap={6}
 			w="100%"
 			style={{ minWidth: 0, minHeight: '100%', height: '100%', flex: 1, overflow: 'hidden' }}
 		>
-			<Paper withBorder radius="xs" p={4}>
-				<SearchBar
-					value={search}
-					onChange={handleSearchChange}
-					inputRef={inputRef}
-					statusFilter={statusFilter}
-					onToggleStatus={toggleStatusFilter}
-				/>
-			</Paper>
+			<SearchBar
+				value={search}
+				onChange={handleSearchChange}
+				inputRef={inputRef}
+				statusFilter={statusFilter}
+				onToggleStatus={toggleStatusFilter}
+			/>
 
 			{selectedIds.length > 0 ? (
 				<BulkActionsBar count={selectedIds.length} busy={bulkBusy} onAction={handleBulkAction} />
 			) : null}
 
 			<Box
-				className="plx-theme-panel plx-theme-panel--muted"
 				style={{
 					flex: 1,
 					minHeight: 0,
 					minWidth: 0,
-					padding: 4,
-					borderRadius: 8,
 					display: 'flex',
 					flexDirection: 'column',
 				}}

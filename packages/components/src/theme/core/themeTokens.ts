@@ -38,6 +38,18 @@ export type PlxLogSurfaceFoundation = {
 export const PLX_MANTINE_COLORS = {
 	black: '#101416',
 	white: '#fcfdfb',
+	dark: [
+		'#edf2f7',
+		'#d7dee6',
+		'#abb6c2',
+		'#84919d',
+		'#49535d',
+		'#313940',
+		'#252c33',
+		'#1b2127',
+		'#161b20',
+		'#11161a',
+	] as MantineColorsTuple,
 	teal: [
 		'#edf9f4',
 		'#d7f1e6',

@@ -1,5 +1,5 @@
 import { SortableContext, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable'
-import { ActionIcon, Box, Collapse, Flex, Group, Menu, Stack, Text, Tooltip } from '@mantine/core'
+import { ActionIcon, Badge, Box, Collapse, Flex, Group, Menu, Stack, Text, Tooltip } from '@mantine/core'
 import {
 	IconChevronDown,
 	IconChevronRight,
@@ -117,19 +117,14 @@ export const GroupCard = memo(function GroupCard(props: Props) {
 							</Text>
 						</Tooltip>
 					</Box>
-					<Text
+					<Badge
 						size="xs"
-						style={{
-							flexShrink: 0,
-							whiteSpace: 'nowrap',
-							color: 'var(--plx-text-muted)',
-							background: 'var(--plx-accent-soft)',
-							padding: '1px 6px',
-							borderRadius: 999,
-						}}
+						variant="light"
+						color={stat.running > 0 ? 'brand' : 'gray'}
+						style={{ flexShrink: 0, whiteSpace: 'nowrap' }}
 					>
 						{stat.running}/{stat.total}
-					</Text>
+					</Badge>
 				</Group>
 
 				<Group gap={2} align="center" wrap="nowrap" style={{ flexShrink: 0 }}>

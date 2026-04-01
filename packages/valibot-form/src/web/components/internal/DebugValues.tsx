@@ -1,5 +1,5 @@
 // DebugValues.tsx
-import { Tabs } from '@mantine/core'
+import { Paper, Tabs } from '@mantine/core'
 
 export function DebugValues({ formValues }: { formValues: any }) {
 	const { values, errorMap, errors } = formValues
@@ -12,30 +12,30 @@ export function DebugValues({ formValues }: { formValues: any }) {
 			</Tabs.List>
 
 			<Tabs.Panel value="values">
-				<pre
+				<Paper
+					component="pre"
+					withBorder
+					radius="sm"
+					p="sm"
 					style={{
 						fontSize: '12px',
 						margin: 0,
-						padding: '8px',
-						backgroundColor: 'var(--plx-panel-bg-muted, var(--mantine-color-default-hover))',
-						border: '1px solid var(--plx-panel-border, var(--mantine-color-default-border))',
-						borderRadius: '4px',
 						whiteSpace: 'pre-wrap',
 					}}
 				>
 					<code>{JSON.stringify(values, null, 2)}</code>
-				</pre>
+				</Paper>
 			</Tabs.Panel>
 
 			<Tabs.Panel value="errors">
-				<pre
+				<Paper
+					component="pre"
+					withBorder
+					radius="sm"
+					p="sm"
 					style={{
 						fontSize: '12px',
 						margin: 0,
-						padding: '8px',
-						backgroundColor: 'var(--plx-panel-bg-muted, var(--mantine-color-default-hover))',
-						border: '1px solid var(--plx-panel-border, var(--mantine-color-default-border))',
-						borderRadius: '4px',
 						whiteSpace: 'pre-wrap',
 					}}
 				>
@@ -49,7 +49,7 @@ export function DebugValues({ formValues }: { formValues: any }) {
 							2,
 						)}
 					</code>
-				</pre>
+				</Paper>
 			</Tabs.Panel>
 		</Tabs>
 	)

@@ -69,6 +69,7 @@ export function SearchBar({ value, onChange, inputRef, statusFilter, onToggleSta
 			value={value}
 			onChange={(e) => onChange(e.currentTarget.value)}
 			leftSection={<IconSearch size={14} />}
+			leftSectionPointerEvents="none"
 			rightSection={rightSection}
 			rightSectionWidth={clearBtn ? 120 : 96}
 			rightSectionPointerEvents="auto"

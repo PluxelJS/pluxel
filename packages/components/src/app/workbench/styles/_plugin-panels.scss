@@ -251,18 +251,13 @@
 .plx-pluginWorkbench__configActionDock {
 	align-items: center;
 	align-self: auto;
-	background: color-mix(in srgb, var(--plx-surface) 88%, var(--plx-app-bg-alt) 12%);
-	border: 1px solid var(--plx-border);
-	border-radius: 10px;
-	box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--plx-panel-border) 66%, transparent);
 	display: flex;
 	flex: 0 0 auto;
 	flex-wrap: nowrap;
-	gap: 8px;
+	gap: 10px;
 	justify-content: flex-end;
 	max-width: min(100%, 760px);
 	min-width: 0;
-	padding: 3px 5px;
 }
 
 .plx-pluginWorkbench__configActionSummary {
@@ -336,8 +331,6 @@
 }
 
 .plx-pluginWorkbench__assistCard {
-	background: var(--plx-surface-strong);
-	border-color: var(--plx-border);
 	box-shadow: none;
 }
 
@@ -411,34 +404,32 @@
 	align-items: center;
 	appearance: none;
 	background: transparent;
-	border: 1px solid var(--mantine-color-default-border);
-	border-radius: 10px;
+	border: 0;
+	border-radius: 8px;
 	box-sizing: border-box;
 	box-shadow: none;
 	color: inherit;
 	cursor: pointer;
 	display: flex;
-	padding: 8px 10px;
+	padding: 7px 8px;
 	text-align: left;
 	transition:
 		background-color 140ms ease,
-		border-color 140ms ease,
-		box-shadow 140ms ease;
+		box-shadow 140ms ease,
+		color 140ms ease;
 	user-select: none;
 	width: 100%;
 }
 
 .plx-pluginWorkbench__outlineNode:hover,
 .plx-pluginWorkbench__outlineNode:focus-visible {
-	background: color-mix(in srgb, var(--plx-accent-soft) 52%, transparent);
-	border-color: color-mix(in srgb, var(--plx-selected-border) 68%, var(--plx-border) 32%);
+	background: color-mix(in srgb, var(--plx-accent-soft) 52%, var(--plx-surface) 48%);
 	outline: none;
 }
 
 .plx-pluginWorkbench__outlineNode[data-active="true"] {
-	background: var(--plx-accent-soft);
-	border-color: var(--plx-selected-border);
-	box-shadow: inset 3px 0 0 var(--plx-accent), var(--mantine-shadow-sm);
+	background: color-mix(in srgb, var(--plx-accent-soft) 62%, var(--plx-surface) 38%);
+	box-shadow: inset 2px 0 0 var(--plx-accent);
 }
 
 .plx-pluginWorkbench__outlineRow,
@@ -462,13 +453,13 @@
 
 .plx-pluginWorkbench__outlineDot[data-active="true"] {
 	background: var(--plx-accent);
-	box-shadow: 0 0 0 3px var(--plx-accent-soft);
+	box-shadow: 0 0 0 2px color-mix(in srgb, var(--plx-accent-soft) 72%, transparent);
 }
 
 .plx-pluginWorkbench__outlineBranch {
-	border-left: 1px solid color-mix(in srgb, var(--plx-border) 78%, transparent);
-	margin-left: 6px;
-	padding-left: 8px;
+	border-left: 1px solid color-mix(in srgb, var(--plx-border) 58%, transparent);
+	margin-left: 7px;
+	padding-left: 10px;
 }
 
 .plx-pluginWorkbench__actionBar {

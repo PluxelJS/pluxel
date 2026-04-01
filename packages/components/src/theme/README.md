@@ -35,6 +35,9 @@ This directory is intentionally split by responsibility. The goal is to make lat
 5. New shared primitives require proof.
    Before adding a new token, mixin, or class, confirm that at least two unrelated call sites need the same contract.
 
+6. Do not wrap a single Mantine field just to make it look custom.
+   Avoid `Paper`/custom bordered `Box` around one `TextInput`, `Select`, or `Button` row unless the wrapper solves layout grouping, scrolling, or section separation.
+
 ## Edit Protocol For LLMs
 
 When changing frontend visuals, follow this order:
@@ -51,6 +54,7 @@ Avoid these patterns:
 - adding decorative pattern or state-skin tokens for individual components
 - duplicating panel/card/input visuals in SCSS when Mantine already provides them
 - introducing a second source of truth for colors outside `accent/` and `core/`
+- wrapping a lone search/select control in an extra bordered container just for polish
 
 ## Current Boundaries
 

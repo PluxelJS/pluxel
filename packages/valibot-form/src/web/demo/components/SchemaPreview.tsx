@@ -1,4 +1,4 @@
-import { Button, Group, Stack } from '@mantine/core'
+import { Button, Group, Paper, Stack } from '@mantine/core'
 import { useClipboard } from '@mantine/hooks'
 import { useMemo } from 'react'
 
@@ -23,19 +23,19 @@ export function SchemaPreview({ sourceText }: SchemaPreviewProps) {
 					{clipboard.copied ? '已复制' : '复制源码'}
 				</Button>
 			</Group>
-			<pre
+			<Paper
+				component="pre"
+				withBorder
+				radius="sm"
+				p="md"
 				style={{
 					fontSize: 12,
 					margin: 0,
-					padding: 12,
-					backgroundColor: 'var(--plx-panel-bg-muted, var(--mantine-color-default-hover))',
-					borderRadius: 6,
-					border: '1px solid var(--plx-panel-border, var(--mantine-color-default-border))',
 					whiteSpace: 'pre-wrap',
 				}}
 			>
 				<code>{text || '暂无源码'}</code>
-			</pre>
+			</Paper>
 		</Stack>
 	)
 }

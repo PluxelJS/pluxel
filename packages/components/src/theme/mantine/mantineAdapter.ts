@@ -2,7 +2,6 @@ import { DEFAULT_THEME, createTheme, mergeMantineTheme, type MantineTheme } from
 import { DEFAULT_ACCENT_KEY, getAccentPreset } from '../accent/accentPresets'
 import { PLX_MANTINE_COLORS } from '../core/themeTokens'
 import {
-	createMantineDarkPaletteFromTonalPalette,
 	createMantinePaletteFromTonalPalette,
 	createMaterialThemeSource,
 } from '../core/tonalPalette'
@@ -24,7 +23,7 @@ function createAccentTheme(accentKey: string) {
 		colors: {
 			brand: preset.palette,
 			gray: createMantinePaletteFromTonalPalette(material.core.n2),
-			dark: createMantineDarkPaletteFromTonalPalette(material.core.n1),
+			dark: PLX_MANTINE_COLORS.dark,
 			teal: PLX_MANTINE_COLORS.teal,
 		},
 		other: {
