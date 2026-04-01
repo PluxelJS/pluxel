@@ -67,7 +67,7 @@ import {
 	WorkbenchLayoutProvider,
 	WorkbenchTabsProvider,
 } from './context'
-import './styles.css'
+import './styles.scss'
 const PANEL_STYLE = {
 	display: 'flex',
 	flexDirection: 'column' as const,
@@ -534,14 +534,18 @@ export function WorkbenchShell() {
 									</div>
 								</header>
 
-								<div className="plx-workbench__tabbar" role="tablist" aria-label="工作标签页">
+								<div
+									className="plx-workbench__editorTabStrip"
+									role="tablist"
+									aria-label="工作标签页"
+								>
 									{uiState.tabs.map((tab) => {
 										const isActive = tab.id === uiState.activeTabId
 										const isDirty = Boolean(dirtyTabs[tab.id])
 										return (
 											<div
 												key={tab.id}
-												className="plx-workbench__tab"
+												className="plx-workbench__editorTabButton"
 												data-active={isActive ? 'true' : 'false'}
 												role="tab"
 												aria-selected={isActive}
@@ -554,22 +558,22 @@ export function WorkbenchShell() {
 													}
 												}}
 											>
-												<div className="plx-workbench__tabText">
-													<span className="plx-workbench__tabTitle">{tab.title}</span>
+												<div className="plx-workbench__editorTabBody">
+													<span className="plx-workbench__editorTabTitle">{tab.title}</span>
 													{isDirty ? (
 														<span
-															className="plx-workbench__tabDirty"
+															className="plx-workbench__editorTabDirtyDot"
 															title="未保存更改"
 															aria-hidden="true"
 														/>
 													) : null}
 													{tab.meta ? (
-														<span className="plx-workbench__tabMeta">{tab.meta}</span>
+														<span className="plx-workbench__editorTabMeta">{tab.meta}</span>
 													) : null}
 												</div>
 												<button
 													type="button"
-													className="plx-workbench__tabClose"
+													className="plx-workbench__iconButton"
 													aria-label={`关闭 ${tab.title}`}
 													onClick={(event) => {
 														event.stopPropagation()
@@ -614,7 +618,7 @@ export function WorkbenchShell() {
 															</div>
 															<button
 																type="button"
-																className="plx-workbench__tabClose"
+																className="plx-workbench__iconButton"
 																aria-label="收起插件列表"
 																onClick={togglePluginNav}
 															>

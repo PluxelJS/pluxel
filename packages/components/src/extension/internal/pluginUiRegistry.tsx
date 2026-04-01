@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react'
+import { InlineNotice } from '../../components'
 import { extRuntime } from '../debug'
 import { ExtensionErrorBoundary } from '../ErrorBoundary'
 import { extensionLocale } from './locale'
@@ -186,23 +187,16 @@ class PluginUiRegistry {
 							render: (ctx) => {
 								if (typeof extRender !== 'function') {
 									return (
-										<div
-											style={{
-												padding: 8,
-												borderRadius: 8,
-												border: '1px solid var(--plx-state-error-border)',
-												background: 'var(--plx-state-error-bg)',
-												fontSize: 12,
-												lineHeight: 1.4,
-											}}
-										>
-											<div style={{ fontWeight: 600 }}>
+										<InlineNotice
+											tone="error"
+											title={
+												<>
 												Invalid extension: {pluginName} · {ext.point}
-											</div>
-											<div style={{ opacity: 0.85 }}>
+												</>
+											}
+										>
 												Expected <code>render(ctx)</code> to be a function.
-											</div>
-										</div>
+										</InlineNotice>
 									)
 								}
 								return (
@@ -214,23 +208,16 @@ class PluginUiRegistry {
 										fallback={
 											process.env.NODE_ENV !== 'production'
 												? ({ error }) => (
-														<div
-															style={{
-																padding: 8,
-																borderRadius: 8,
-																border: '1px solid var(--plx-state-error-border)',
-																background: 'var(--plx-state-error-bg)',
-																fontSize: 12,
-																lineHeight: 1.4,
-															}}
-														>
-															<div style={{ fontWeight: 600 }}>
+														<InlineNotice
+															tone="error"
+															title={
+																<>
 																Extension render failed: {pluginName} · {ext.point}
-															</div>
-															<div style={{ opacity: 0.85 }}>
+																</>
+															}
+														>
 																{error?.message ?? String(error ?? 'unknown error')}
-															</div>
-														</div>
+														</InlineNotice>
 													)
 												: null
 										}

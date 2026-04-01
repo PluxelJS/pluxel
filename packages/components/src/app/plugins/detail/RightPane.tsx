@@ -33,6 +33,11 @@ import type { PluginDetailSearch } from '../../router'
 import { useCurrentPathname } from '../../router/useCurrentRoute'
 import { PluginRouteRenderer, useResolvedPluginRoute } from '../../router/extensions'
 import {
+	PANE_TABS_PROPS,
+	PaneTabLabel,
+	getPaneTabsRootClassName,
+} from '../../workbench/PaneTabs'
+import {
 	ConfigForm,
 	ConfigLayout,
 	compareSchemaKeys,
@@ -460,7 +465,14 @@ export function RightPane({ config, showLevelsTab = false }: RightPaneProps) {
 		<PluginPanel className="plx-pluginWorkbench__contentPanel" padding="xs" gap="xs">
 			<Box style={COLUMN_STYLE}>
 				{hasTabs ? (
-					<Tabs value={activeTab} onChange={handleTabChange} keepMounted style={COLUMN_STYLE}>
+					<Tabs
+						{...PANE_TABS_PROPS}
+						value={activeTab}
+						onChange={handleTabChange}
+						keepMounted
+						style={COLUMN_STYLE}
+						className={getPaneTabsRootClassName('toolbar')}
+					>
 						<div className="plx-pluginWorkbench__toolbar">
 							<div className="plx-pluginWorkbench__commandBar">
 								<div className="plx-pluginWorkbench__commandMeta">
@@ -556,18 +568,30 @@ export function RightPane({ config, showLevelsTab = false }: RightPaneProps) {
 							</div>
 
 							<div className="plx-pluginWorkbench__toolbarTabs">
-								<Tabs.List className="plx-pluginWorkbench__tabsList">
-									{showRouteTab ? <Tabs.Tab value="route">页面</Tabs.Tab> : null}
-									{showConfigTab ? <Tabs.Tab value="config">配置</Tabs.Tab> : null}
-									{showLevelsTab ? <Tabs.Tab value="logging">级别</Tabs.Tab> : null}
+								<Tabs.List className="plx-paneTabs__list" aria-label="插件工作台标签页">
+									{showRouteTab ? (
+										<Tabs.Tab value="route">
+											<PaneTabLabel label="页面" />
+										</Tabs.Tab>
+									) : null}
+									{showConfigTab ? (
+										<Tabs.Tab value="config">
+											<PaneTabLabel label="配置" />
+										</Tabs.Tab>
+									) : null}
+									{showLevelsTab ? (
+										<Tabs.Tab value="logging">
+											<PaneTabLabel label="级别" />
+										</Tabs.Tab>
+									) : null}
 									{configGroupTabs.map((tab) => (
 										<Tabs.Tab key={tab.id} value={tab.id}>
-											{tab.label}
+											<PaneTabLabel label={tab.label} />
 										</Tabs.Tab>
 									))}
 									{tabGroups.map((tab) => (
 										<Tabs.Tab key={tab.id} value={tab.id}>
-											{tab.label}
+											<PaneTabLabel label={tab.label} />
 										</Tabs.Tab>
 									))}
 								</Tabs.List>
@@ -575,13 +599,13 @@ export function RightPane({ config, showLevelsTab = false }: RightPaneProps) {
 						</div>
 
 						{showRouteTab ? (
-							<Tabs.Panel value="route" style={COLUMN_STYLE}>
+							<Tabs.Panel value="route" className="plx-paneTabs__panel" style={COLUMN_STYLE}>
 								<RouteContent pluginName={pluginName} restPath={restPath} />
 							</Tabs.Panel>
 						) : null}
 
 						{showConfigTab ? (
-							<Tabs.Panel value="config" style={COLUMN_STYLE}>
+							<Tabs.Panel value="config" className="plx-paneTabs__panel" style={COLUMN_STYLE}>
 								<ConfigContent
 									config={config}
 									pluginName={pluginName}
@@ -595,7 +619,11 @@ export function RightPane({ config, showLevelsTab = false }: RightPaneProps) {
 						) : null}
 
 						{showLevelsTab ? (
-							<Tabs.Panel value="logging" style={COLUMN_STYLE}>
+							<Tabs.Panel
+								value="logging"
+								className="plx-paneTabs__panel"
+								style={COLUMN_STYLE}
+							>
 								<ScrollArea type="auto" scrollbarSize={10} offsetScrollbars style={COLUMN_STYLE}>
 									<Box p="xs" style={{ minHeight: '100%' }}>
 										<LogLevelsCard pluginId={pluginName} compact />
@@ -605,7 +633,12 @@ export function RightPane({ config, showLevelsTab = false }: RightPaneProps) {
 						) : null}
 
 						{configGroupTabs.map((tab) => (
-							<Tabs.Panel key={tab.id} value={tab.id} style={COLUMN_STYLE}>
+							<Tabs.Panel
+								key={tab.id}
+								value={tab.id}
+								className="plx-paneTabs__panel"
+								style={COLUMN_STYLE}
+							>
 								<ConfigContent
 									config={config}
 									pluginName={pluginName}
@@ -622,7 +655,12 @@ export function RightPane({ config, showLevelsTab = false }: RightPaneProps) {
 							const id = tab.id
 							const isActive = activeTab === id
 							return (
-								<Tabs.Panel key={id} value={id} style={COLUMN_STYLE}>
+								<Tabs.Panel
+									key={id}
+									value={id}
+									className="plx-paneTabs__panel"
+									style={COLUMN_STYLE}
+								>
 									<PluginWorkbenchTabActivityProvider active={isActive}>
 										<ScrollArea
 											type="auto"

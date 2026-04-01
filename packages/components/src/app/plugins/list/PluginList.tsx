@@ -433,7 +433,6 @@ export const PluginList: React.FC<PluginListProps> = ({ pluginName }) => {
 				icon={<IconPlugConnected size={28} stroke={1.5} />}
 				title="暂无插件"
 				description="安装插件后，这里会显示所有可用的插件列表。"
-				withPattern
 				minHeight={160}
 			/>
 		)
@@ -487,13 +486,12 @@ export const PluginList: React.FC<PluginListProps> = ({ pluginName }) => {
 			) : null}
 
 			<Box
+				className="plx-theme-panel plx-theme-panel--muted"
 				style={{
 					flex: 1,
 					minHeight: 0,
 					minWidth: 0,
 					padding: 4,
-					background: 'var(--plx-panel-bg-muted)',
-					border: '1px solid var(--plx-panel-border)',
 					borderRadius: 8,
 					display: 'flex',
 					flexDirection: 'column',

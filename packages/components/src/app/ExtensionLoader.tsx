@@ -29,6 +29,7 @@ import {
 	setExtensionManifestSyncHandler,
 	upsertExtensionModuleState,
 } from '../extension/internal/runtime-state'
+import { InlineNotice } from '../components'
 import { usePluginOverview } from './plugins/data'
 import { useRuntimeTransportClient } from '../runtime'
 
@@ -386,23 +387,16 @@ export function ExtensionLoader({
 						fallback={
 							process.env.NODE_ENV !== 'production'
 								? ({ error }) => (
-										<div
-											style={{
-												padding: 8,
-												borderRadius: 8,
-												border: '1px solid var(--plx-state-error-border)',
-												background: 'var(--plx-state-error-bg)',
-												fontSize: 12,
-												lineHeight: 1.4,
-											}}
-										>
-											<div style={{ fontWeight: 600 }}>
+										<InlineNotice
+											tone="error"
+											title={
+												<>
 												Builtin render failed: {pluginName} · {point}
-											</div>
-											<div style={{ opacity: 0.85 }}>
+												</>
+											}
+										>
 												{error?.message ?? String(error ?? 'unknown error')}
-											</div>
-										</div>
+										</InlineNotice>
 									)
 								: null
 						}
@@ -461,23 +455,16 @@ export function ExtensionLoader({
 						fallback={
 							process.env.NODE_ENV !== 'production'
 								? ({ error }) => (
-										<div
-											style={{
-												padding: 8,
-												borderRadius: 8,
-												border: '1px solid var(--plx-state-error-border)',
-												background: 'var(--plx-state-error-bg)',
-												fontSize: 12,
-												lineHeight: 1.4,
-											}}
-										>
-											<div style={{ fontWeight: 600 }}>
+										<InlineNotice
+											tone="error"
+											title={
+												<>
 												Interaction session render failed: {pluginName} · {point}
-											</div>
-											<div style={{ opacity: 0.85 }}>
+												</>
+											}
+										>
 												{error?.message ?? String(error ?? 'unknown error')}
-											</div>
-										</div>
+										</InlineNotice>
 									)
 								: null
 						}
@@ -485,23 +472,15 @@ export function ExtensionLoader({
 						{SessionComponent ? (
 							<InteractionSessionHost session={def} component={SessionComponent} />
 						) : (
-							<div
-								style={{
-									padding: 8,
-									borderRadius: 8,
-									border: '1px solid var(--plx-panel-border-strong)',
-									background: 'var(--plx-panel-bg-muted)',
-									fontSize: 12,
-									lineHeight: 1.4,
-								}}
-							>
-								<div style={{ fontWeight: 600 }}>
+							<InlineNotice
+								title={
+									<>
 									Session UI not found: {sourcePlugin || 'unknown'} · {def.renderKey}
-								</div>
-								<div style={{ opacity: 0.85 }}>
+									</>
+								}
+							>
 									Provider UI module did not expose the requested interaction session component.
-								</div>
-							</div>
+							</InlineNotice>
 						)}
 					</ExtensionErrorBoundary>
 				)

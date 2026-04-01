@@ -10,7 +10,6 @@ export function NotFoundRoute() {
 				<EmptyState
 					title="页面不存在"
 					description={path ? `未找到路由：${path}` : '未找到路由'}
-					withPattern
 					minHeight={220}
 				/>
 				<Title order={6} c="dimmed">

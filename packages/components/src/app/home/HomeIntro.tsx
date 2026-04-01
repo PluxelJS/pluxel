@@ -1,14 +1,4 @@
-import {
-	Box,
-	Button,
-	Grid,
-	Group,
-	Paper,
-	rem,
-	Stack,
-	Text,
-	Title,
-} from '@mantine/core'
+import { Button, Grid, Group, Paper, Stack, Text, ThemeIcon, Title } from '@mantine/core'
 import {
 	IconBolt,
 	IconClockPlay,
@@ -19,30 +9,15 @@ import {
 } from '@tabler/icons-react'
 import type { ReactNode } from 'react'
 import { RouterLinkAdapter } from '../RouterLinkAdapter'
-import { usePlxScheme } from '../../theme'
 
 export function HomeIntro({ lastRoute }: { lastRoute: string | null }) {
-	const plx = usePlxScheme()
 	const quickActions = buildQuickActions(lastRoute)
 
 	return (
 		<Stack gap="lg" p="lg" style={{ height: '100%', minHeight: 0 }}>
-			<Paper
-				radius="xl"
-				withBorder
-				style={{
-					borderRadius: 32,
-					padding: 'var(--mantine-spacing-xl)',
-					boxShadow: 'var(--plx-shadow)',
-					border: '1px solid var(--plx-panel-border-strong)',
-					backgroundColor: plx.pattern.backgroundColor,
-					backgroundImage: plx.pattern.backgroundImage,
-					backgroundSize: plx.pattern.backgroundSize,
-					backgroundPosition: plx.pattern.backgroundPosition,
-				}}
-			>
+			<Paper radius="xl" withBorder p="xl">
 				<Stack gap="md" maw={720}>
-					<Text size="sm" c="dimmed" tt="uppercase" fw={600} style={{ letterSpacing: rem(0.6) }}>
+					<Text size="sm" c="dimmed" tt="uppercase" fw={600} style={{ letterSpacing: 0.6 }}>
 						欢迎回来
 					</Text>
 					<Title order={2} fw={700}>
@@ -64,7 +39,7 @@ export function HomeIntro({ lastRoute }: { lastRoute: string | null }) {
 					{quickActions.map((action) => (
 						<Paper
 							key={action.title}
-							withBorder={false}
+							withBorder
 							radius="lg"
 							p="md"
 							style={{
@@ -72,8 +47,6 @@ export function HomeIntro({ lastRoute }: { lastRoute: string | null }) {
 								display: 'flex',
 								flexDirection: 'column',
 								gap: 12,
-								backgroundColor: 'var(--plx-panel-bg)',
-								border: '1px solid var(--plx-panel-border)',
 							}}
 						>
 							<Group justify="space-between" align="flex-start">
@@ -83,20 +56,9 @@ export function HomeIntro({ lastRoute }: { lastRoute: string | null }) {
 										{action.description}
 									</Text>
 								</div>
-								<Box
-									style={{
-										width: 32,
-										height: 32,
-										borderRadius: '50%',
-										background: 'var(--plx-panel-accent-bg)',
-										color: 'var(--plx-panel-accent-fg)',
-										display: 'flex',
-										alignItems: 'center',
-										justifyContent: 'center',
-									}}
-								>
+								<ThemeIcon variant="light" color="brand" radius="xl" size="lg">
 									{action.icon}
-								</Box>
+								</ThemeIcon>
 							</Group>
 							<Button
 								component={RouterLinkAdapter}
@@ -243,23 +205,21 @@ function HomeCard({
 	icon: ReactNode
 }) {
 	return (
-		<Button
-			component={RouterLinkAdapter}
+		<Paper
+			component={RouterLinkAdapter as any}
 			to={to}
-			variant="default"
+			withBorder
 			radius="lg"
+			p="lg"
 			style={{
-				width: '100%',
-				height: '100%',
+				color: 'inherit',
 				display: 'flex',
-				alignItems: 'flex-start',
-				justifyContent: 'space-between',
 				flexDirection: 'column',
+				gap: 12,
+				height: '100%',
+				justifyContent: 'space-between',
 				textAlign: 'left',
-				padding: 'var(--mantine-spacing-lg)',
-				backgroundColor: 'var(--plx-panel-bg)',
-				border: '1px solid var(--plx-panel-border)',
-				color: 'var(--plx-text)',
+				textDecoration: 'none',
 			}}
 		>
 			<div>
@@ -274,6 +234,6 @@ function HomeCard({
 					进入 →
 				</Text>
 			</Group>
-		</Button>
+		</Paper>
 	)
 }

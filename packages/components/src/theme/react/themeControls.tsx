@@ -9,6 +9,7 @@ import {
 	Popover,
 	rgba,
 	ScrollArea,
+	SegmentedControl,
 	Stack,
 	Text,
 	Tooltip,
@@ -16,9 +17,8 @@ import {
 	useMantineColorScheme,
 } from '@mantine/core'
 import { IconCheck, IconMoonStars, IconPalette, IconSun } from '@tabler/icons-react'
-import { useCallback, useState } from 'react'
-import { SegmentedButtons } from 'valibot-form/web'
-import { useThemeColorKey } from './runtime'
+import { useCallback, useState, type CSSProperties } from 'react'
+import { useAccentTheme } from './useAppTheme'
 
 export interface ColorSchemeToggleProps
 	extends Omit<ActionIconProps, 'children' | 'onClick'> {
@@ -64,22 +64,26 @@ export function ThemeCustomizer({ compact = false }: ThemeCustomizerProps) {
 	const { setColorScheme } = useMantineColorScheme()
 	const [expanded, setExpanded] = useState(false)
 	const [opened, setOpened] = useState(false)
-	const { colorKey: accentColor, setThemeColor, presets } = useThemeColorKey()
+	const { accentKey, setAccentTheme, presets } = useAccentTheme()
 
 	const handleColorChange = useCallback(
 		(key: string) => {
-			setThemeColor(key)
+			setAccentTheme(key)
 		},
-		[setThemeColor],
+		[setAccentTheme],
 	)
 
-	const currentPreset = presets.find((preset) => preset.key === accentColor) ?? presets[0]
+	const currentPreset = presets.find((preset) => preset.key === accentKey) ?? presets[0]
+	const panelStyle = {
+		background: 'var(--plx-panel-bg)',
+		border: '1px solid var(--plx-panel-border-strong)',
+	} as const
 	const schemeControl = (
 		<Box>
 			<Text size="xs" c="dimmed" mb={6}>
 				明暗模式
 			</Text>
-			<SegmentedButtons
+			<SegmentedControl
 				fullWidth
 				size="xs"
 				value={computed}
@@ -107,15 +111,22 @@ export function ThemeCustomizer({ compact = false }: ThemeCustomizerProps) {
 								size="md"
 								radius="md"
 								onClick={() => handleColorChange(preset.key)}
-								style={{
-									background: accentColor === preset.key ? rgba(preset.color, 0.2) : undefined,
-									border:
-										accentColor === preset.key
-											? `2px solid ${preset.color}`
-											: '2px solid transparent',
-								}}
+								style={
+									{
+										background:
+											accentKey === preset.key ? rgba(preset.color, 0.2) : 'transparent',
+										border: `2px solid ${
+											accentKey === preset.key ? preset.color : 'transparent'
+										}`,
+										boxShadow:
+											accentKey === preset.key
+												? `0 0 0 1px ${rgba(preset.color, 0.18)}`
+												: 'none',
+										color: preset.color,
+									} as CSSProperties
+								}
 							>
-								{accentColor === preset.key ? (
+								{accentKey === preset.key ? (
 									<IconCheck size={14} color={preset.color} />
 								) : (
 									<ColorSwatch color={preset.color} size={14} withShadow={false} />
@@ -154,16 +165,16 @@ export function ThemeCustomizer({ compact = false }: ThemeCustomizerProps) {
 				</Popover.Target>
 				<Popover.Dropdown
 					p="sm"
-					style={{
-						background: 'var(--plx-panel-bg)',
-						border: '1px solid var(--plx-panel-border-strong)',
-						boxShadow: 'var(--plx-shadow)',
-					}}
+					style={panelStyle}
 				>
 					<Stack gap="sm">
 						<Group justify="space-between" align="center">
 							<Group gap="xs">
-								<IconPalette size={16} stroke={1.8} style={{ opacity: 0.7 }} />
+								<IconPalette
+									size={16}
+									stroke={1.8}
+									style={{ opacity: 0.72 }}
+								/>
 								<Text size="xs" fw={600}>
 									主题设置
 								</Text>
@@ -184,13 +195,7 @@ export function ThemeCustomizer({ compact = false }: ThemeCustomizerProps) {
 			radius="lg"
 			px="md"
 			py="sm"
-			styles={{
-				root: {
-					background: 'var(--plx-panel-bg)',
-					border: '1px solid var(--plx-panel-border-strong)',
-					boxShadow: 'var(--plx-shadow)',
-				},
-			}}
+			style={panelStyle}
 		>
 			<Stack gap="sm">
 				<Group
@@ -200,7 +205,7 @@ export function ThemeCustomizer({ compact = false }: ThemeCustomizerProps) {
 					style={{ cursor: 'pointer' }}
 				>
 					<Group gap="xs">
-						<IconPalette size={16} stroke={1.8} style={{ opacity: 0.7 }} />
+						<IconPalette size={16} stroke={1.8} style={{ opacity: 0.72 }} />
 						<Text size="xs" fw={600}>
 							主题设置
 						</Text>

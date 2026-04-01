@@ -1,5 +1,11 @@
+import { Tabs } from '@mantine/core'
 import type { ReactNode } from 'react'
 import { useCallback, useMemo } from 'react'
+import {
+	PANE_TABS_PROPS,
+	PaneTabLabel,
+	getPaneTabsRootClassName,
+} from '../../../workbench/PaneTabs'
 import { useWorkbenchTabs } from '../../../workbench/context'
 
 export type PluginWorkbenchView = {
@@ -15,39 +21,6 @@ function normalizeActiveView(value: unknown, views: PluginWorkbenchView[], fallb
 	if (typeof value === 'string' && views.some((view) => view.id === value)) return value
 	if (fallbackId && views.some((view) => view.id === fallbackId)) return fallbackId
 	return views[0]?.id ?? ''
-}
-
-function PluginWorkbenchViewTabs({
-	activeTab,
-	label,
-	views,
-	onChange,
-}: {
-	activeTab: string
-	label: string
-	views: PluginWorkbenchView[]
-	onChange: (viewId: string) => void
-}) {
-	return (
-		<div className="plx-pluginWorkbench__viewTabs" role="tablist" aria-label={label}>
-			{views.map((view) => (
-				<button
-					key={view.id}
-					type="button"
-					role="tab"
-					aria-selected={activeTab === view.id}
-					className="plx-pluginWorkbench__viewTab"
-					data-active={activeTab === view.id ? 'true' : 'false'}
-					onClick={() => onChange(view.id)}
-				>
-					<span className="plx-pluginWorkbench__viewTabLabel">{view.label}</span>
-					{typeof view.count === 'number' ? (
-						<span className="plx-pluginWorkbench__viewTabCount">{view.count}</span>
-					) : null}
-				</button>
-			))}
-		</div>
-	)
 }
 
 export function PluginWorkbenchViewContainer({
@@ -82,27 +55,35 @@ export function PluginWorkbenchViewContainer({
 	)
 
 	const selectView = useCallback(
-		(viewId: string) => {
-			if (viewId === activeViewId) return
+		(viewId: string | null) => {
+			if (!viewId || viewId === activeViewId) return
 			setActiveTabState(scope, viewId)
 		},
 		[activeViewId, scope, setActiveTabState],
 	)
 
 	return (
-		<div className={className}>
+		<Tabs
+			{...PANE_TABS_PROPS}
+			value={activeViewId}
+			onChange={selectView}
+			keepMounted
+			className={`${getPaneTabsRootClassName('panel')} ${className ?? ''}`.trim()}
+		>
 			<div className="plx-pluginWorkbench__viewHeader" data-mode={headerMode}>
 				{headerMode === 'inline' ? (
-					<div className="plx-pluginWorkbench__viewHeaderRow">
-						<PluginWorkbenchViewTabs
-							activeTab={activeViewId}
-							label={label}
-							views={visibleViews}
-							onChange={selectView}
-						/>
-						{rightMeta ? (
-							<div className="plx-pluginWorkbench__viewMetaAside">{rightMeta}</div>
-						) : null}
+					<div className="plx-pluginWorkbench__tabsHeaderRow">
+						<Tabs.List className="plx-paneTabs__list" aria-label={label}>
+							{visibleViews.map((view) => (
+								<Tabs.Tab key={view.id} value={view.id}>
+									<PaneTabLabel
+										label={view.label}
+										badge={typeof view.count === 'number' ? view.count : undefined}
+									/>
+								</Tabs.Tab>
+							))}
+						</Tabs.List>
+						{rightMeta ? <div className="plx-pluginWorkbench__headerAside">{rightMeta}</div> : null}
 					</div>
 				) : (
 					<>
@@ -118,31 +99,31 @@ export function PluginWorkbenchViewContainer({
 									<div />
 								)}
 								{rightMeta ? (
-									<div className="plx-pluginWorkbench__viewMetaAside">{rightMeta}</div>
+									<div className="plx-pluginWorkbench__headerAside">{rightMeta}</div>
 								) : null}
 							</div>
 						) : null}
-						<PluginWorkbenchViewTabs
-							activeTab={activeViewId}
-							label={label}
-							views={visibleViews}
-							onChange={selectView}
-						/>
+						<Tabs.List className="plx-paneTabs__list" aria-label={label}>
+							{visibleViews.map((view) => (
+								<Tabs.Tab key={view.id} value={view.id}>
+									<PaneTabLabel
+										label={view.label}
+										badge={typeof view.count === 'number' ? view.count : undefined}
+									/>
+								</Tabs.Tab>
+							))}
+						</Tabs.List>
 					</>
 				)}
 			</div>
 
 			<div className="plx-pluginWorkbench__viewBody">
 				{visibleViews.map((view) => (
-					<div
-						key={view.id}
-						className="plx-pluginWorkbench__viewPanel"
-						data-active={activeViewId === view.id ? 'true' : 'false'}
-					>
+					<Tabs.Panel key={view.id} value={view.id} className="plx-paneTabs__panel">
 						{view.content}
-					</div>
+					</Tabs.Panel>
 				))}
 			</div>
-		</div>
+		</Tabs>
 	)
 }

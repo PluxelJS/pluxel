@@ -3,7 +3,7 @@ import { type RouterHistory, RouterProvider } from '@tanstack/react-router'
 import { useState } from 'react'
 import { getRuntimeTransportClient, RuntimeTransportClientProvider } from '../runtime'
 import './bootstrap'
-import { plxCssVariablesResolver, useDynamicTheme } from '../theme'
+import { appCssVariablesResolver, useAppTheme } from '../theme'
 import { createAppRouter } from './router'
 
 export interface AppProps {
@@ -13,14 +13,14 @@ export interface AppProps {
 export function App({ history }: AppProps = {}) {
 	const [router] = useState(() => createAppRouter({ history }))
 	const [transportClient] = useState(() => getRuntimeTransportClient())
-	const { theme } = useDynamicTheme()
+	const { theme } = useAppTheme()
 	return (
 		<MantineProvider
 			theme={theme}
 			colorSchemeManager={colorSchemeManager}
 			defaultColorScheme="auto"
 			withCssVariables
-			cssVariablesResolver={plxCssVariablesResolver}
+			cssVariablesResolver={appCssVariablesResolver}
 		>
 			<RuntimeTransportClientProvider client={transportClient}>
 				<RouterProvider router={router} />

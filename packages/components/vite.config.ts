@@ -13,6 +13,9 @@ const VALIBOT_FORM_SOURCE_ENTRY = fileURLToPath(new URL('../valibot-form/src/ind
 const VALIBOT_FORM_WEB_SOURCE_ENTRY = fileURLToPath(
 	new URL('../valibot-form/src/web/index.ts', import.meta.url),
 )
+const MANTINE_SASS_ENTRY = fileURLToPath(
+	new URL('./src/styles/theme/_mantine.scss', import.meta.url),
+).replaceAll('\\', '/')
 
 export default defineConfig(({ mode }) => {
 	const isDev = mode !== 'production'
@@ -46,6 +49,15 @@ export default defineConfig(({ mode }) => {
 		},
 
 		plugins: createWorkbenchFrontendPlugins(),
+
+		css: {
+			preprocessorOptions: {
+				scss: {
+					api: 'modern-compiler',
+					additionalData: `@use "${MANTINE_SASS_ENTRY}" as mantine;`,
+				},
+			},
+		},
 
 		// Pre-bundle common deps for faster cold start and more stable HMR.
 		optimizeDeps: {

@@ -1,20 +1,20 @@
 import type { MantineColorsTuple } from '@mantine/core'
-import { createMantinePaletteFromSeed } from './material'
+import { createMantinePaletteFromSeed } from '../core/tonalPalette'
 
-interface ColorPresetDefinition {
+interface AccentPresetDefinition {
 	key: string
 	name: string
 	/** 代表色 - 用于预览 */
 	color: string
 }
 
-export interface ColorPreset extends ColorPresetDefinition {
+export interface AccentPreset extends AccentPresetDefinition {
 	/** 完整的 10 色阶调色板 */
 	palette: MantineColorsTuple
 }
 
 /** 颜色预设 - 使用 Material tonal palette 生成完整色阶 */
-const COLOR_PRESET_DEFINITIONS: ColorPresetDefinition[] = [
+const ACCENT_PRESET_DEFINITIONS: AccentPresetDefinition[] = [
 	{
 		key: 'sage',
 		name: '鼠尾草',
@@ -82,23 +82,23 @@ const COLOR_PRESET_DEFINITIONS: ColorPresetDefinition[] = [
 	},
 ]
 
-export const COLOR_PRESETS: ColorPreset[] = COLOR_PRESET_DEFINITIONS.map((preset) => ({
+export const ACCENT_PRESETS: AccentPreset[] = ACCENT_PRESET_DEFINITIONS.map((preset) => ({
 	...preset,
 	palette: createMantinePaletteFromSeed(preset.color),
 }))
-const COLOR_PRESET_MAP = new Map(COLOR_PRESETS.map((preset) => [preset.key, preset] as const))
+const ACCENT_PRESET_MAP = new Map(ACCENT_PRESETS.map((preset) => [preset.key, preset] as const))
 
 /** 默认主题色 key */
-export const DEFAULT_COLOR_KEY = 'sage'
+export const DEFAULT_ACCENT_KEY = 'sage'
 
 /** 根据 key 获取颜色预设 */
-export function getColorPreset(key: string): ColorPreset {
-	return COLOR_PRESET_MAP.get(key) ?? COLOR_PRESETS[0]
+export function getAccentPreset(key: string): AccentPreset {
+	return ACCENT_PRESET_MAP.get(key) ?? ACCENT_PRESETS[0]
 }
 
-export function resolveThemeColorKey(key: string | null | undefined): string {
-	return typeof key === 'string' ? getColorPreset(key).key : DEFAULT_COLOR_KEY
+export function normalizeAccentKey(key: string | null | undefined): string {
+	return typeof key === 'string' ? getAccentPreset(key).key : DEFAULT_ACCENT_KEY
 }
 
 /** localStorage key */
-export const THEME_COLOR_STORAGE_KEY = 'pluxel:theme:accent-color'
+export const ACCENT_STORAGE_KEY = 'pluxel:theme:accent-color'

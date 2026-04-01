@@ -19,7 +19,7 @@ import {
 	useSyncExternalStore,
 } from 'react'
 import { useRuntimeTransportClient } from '../../runtime'
-import { type PlxLogPalette, usePlxScheme } from '../../theme'
+import { type PlxLogTheme, useThemeModel } from '../../theme'
 
 interface Props {
 	module?: string
@@ -55,7 +55,7 @@ const MONO_FONT =
 	'12.5px ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace'
 
 function controlButtonStyle(
-	palette: PlxLogPalette,
+	palette: PlxLogTheme,
 	tone: 'neutral' | 'accent' = 'neutral',
 ): CSSProperties {
 	return {
@@ -70,7 +70,7 @@ function controlButtonStyle(
 	}
 }
 
-function fieldStyle(palette: PlxLogPalette, width: number): CSSProperties {
+function fieldStyle(palette: PlxLogTheme, width: number): CSSProperties {
 	return {
 		fontFamily: MONO_FONT,
 		fontSize: 12,
@@ -176,7 +176,7 @@ function formatTime(epochMs: number): string {
 	return `${pad2(d.getHours())}:${pad2(d.getMinutes())}:${pad2(d.getSeconds())}.${pad3(d.getMilliseconds())}`
 }
 
-function levelColor(level: string, palette: PlxLogPalette): string {
+function levelColor(level: string, palette: PlxLogTheme): string {
 	return palette.levels[level] ?? palette.levels.default
 }
 
@@ -495,7 +495,7 @@ const LogList = memo(function LogList(props: {
 	setFollow: (v: boolean) => void
 	setNewSincePause: (v: number | ((n: number) => number)) => void
 	apiRef: { current: LogListApi | null }
-	palette: PlxLogPalette
+	palette: PlxLogTheme
 	metaCount?: number
 }) {
 	const {
@@ -701,7 +701,7 @@ const LogList = memo(function LogList(props: {
 
 export function LiveLog({ module, showName = true, filter, variant = 'full' }: Props) {
 	const transport = useRuntimeTransportClient()
-	const plxScheme = usePlxScheme()
+	const plxScheme = useThemeModel()
 	const [meta, setMeta] = useState<LogStreamMeta | null>(null)
 	const [connected, setConnected] = useState(false)
 	const [follow, setFollow] = useState(true)

@@ -392,7 +392,6 @@ export const PluginScreen = memo(function PluginScreen({ pluginName }: PluginScr
 				icon={<IconPuzzle size={28} stroke={1.5} />}
 				title="请选择一个插件"
 				description="从左侧列表选择插件以查看详情。"
-				withPattern
 				minHeight="100%"
 			/>
 		)
@@ -405,7 +404,6 @@ export const PluginScreen = memo(function PluginScreen({ pluginName }: PluginScr
 				icon={<IconPuzzle size={28} stroke={1.5} />}
 				title="插件不存在"
 				description={`未找到插件：${pluginName}`}
-				withPattern
 				minHeight="100%"
 			/>
 		)
@@ -417,7 +415,6 @@ export const PluginScreen = memo(function PluginScreen({ pluginName }: PluginScr
 				title="加载失败"
 				message={error.message || '无法加载插件详情，请重试'}
 				onRetry={() => void refetch(true)}
-				withPattern
 				minHeight="100%"
 			/>
 		)

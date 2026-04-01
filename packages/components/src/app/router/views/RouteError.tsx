@@ -6,7 +6,7 @@ export function RouteError({ error }: { error: unknown }) {
 		error instanceof Error ? error.message : typeof error === 'string' ? error : '未知错误'
 	return (
 		<Center style={{ flex: 1 }}>
-			<ErrorState title="页面发生错误" message={message} withPattern minHeight={240} />
+			<ErrorState title="页面发生错误" message={message} minHeight={240} />
 		</Center>
 	)
 }

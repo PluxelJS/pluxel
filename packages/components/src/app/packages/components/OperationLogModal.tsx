@@ -73,14 +73,13 @@ export function OperationLogModal({
 				</ScrollArea.Autosize>
 			)}
 			<Box
+				className="plx-theme-panel plx-theme-panel--strong"
 				style={{
-					border: '1px solid var(--plx-panel-border-strong)',
 					borderRadius: 12,
 					padding: 'var(--mantine-spacing-xs)',
 					height: '48vh',
 					minHeight: 280,
 					overflow: 'hidden',
-					background: 'var(--plx-panel-bg)',
 					display: 'flex',
 				}}
 			>

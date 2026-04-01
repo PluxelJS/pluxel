@@ -778,6 +778,7 @@ export function PluginOrganizer({
 			>
 				{/* 未分组：占用上半区；内部滚动 */}
 				<Card
+					className="plx-theme-panel"
 					withBorder
 					shadow="none"
 					radius="xs"
@@ -788,8 +789,6 @@ export function PluginOrganizer({
 						display: 'flex',
 						flexDirection: 'column',
 						overflow: 'hidden',
-						background: 'var(--plx-panel-bg)',
-						borderColor: 'var(--plx-panel-border)',
 					}}
 				>
 					<Group justify="space-between" align="center" mb={2} wrap="nowrap">
@@ -889,6 +888,7 @@ export function PluginOrganizer({
 				{/* 我的分组：有分组时占下半区并可滚动；无分组时收缩为提示行 */}
 				{groups.length > 0 ? (
 					<Card
+						className="plx-theme-panel"
 						withBorder
 						shadow="none"
 						radius="xs"
@@ -899,8 +899,6 @@ export function PluginOrganizer({
 							overflow: 'hidden',
 							display: 'flex',
 							flexDirection: 'column',
-							background: 'var(--plx-panel-bg)',
-							borderColor: 'var(--plx-panel-border)',
 						}}
 					>
 						<Stack gap={2} style={{ minHeight: 0, minWidth: 0, overflow: 'hidden' }}>
@@ -968,14 +966,13 @@ export function PluginOrganizer({
 					</Card>
 				) : (
 					<Card
+						className="plx-theme-panel"
 						withBorder
 						shadow="none"
 						radius="xs"
 						p={4}
 						style={{
 							minWidth: 0,
-							background: 'var(--plx-panel-bg)',
-							borderColor: 'var(--plx-panel-border)',
 						}}
 					>
 						<Group justify="space-between" align="center">

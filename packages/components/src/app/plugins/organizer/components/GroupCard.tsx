@@ -88,14 +88,13 @@ export const GroupCard = memo(function GroupCard(props: Props) {
 	return (
 		<Box
 			ref={setNodeRef}
+			className="plx-theme-panel"
 			style={{
 				transform: transform ? `translate3d(${transform.x}px, ${transform.y}px, 0)` : undefined,
 				transition: transition ?? 'opacity 120ms ease-out',
 				minWidth: 0,
 				padding: 6,
-				border: '1px solid var(--plx-panel-border)',
 				borderRadius: 10,
-				background: 'var(--plx-panel-bg)',
 			}}
 			role="group"
 			aria-label={`分组 ${g.name || '未命名'}`}

@@ -1,0 +1,98 @@
+@use "sass:map";
+@use "sass:math";
+
+$breakpoints: (
+	xs: 36em,
+	sm: 48em,
+	md: 62em,
+	lg: 75em,
+	xl: 88em,
+);
+
+@function breakpoint($name) {
+	$value: map.get($breakpoints, $name);
+
+	@if $value == null {
+		@error "Unknown Mantine breakpoint `#{$name}`.";
+	}
+
+	@return $value;
+}
+
+@function rem($size) {
+	@if math.is-unitless($size) {
+		@return calc($size / 16 * 1rem);
+	}
+
+	@if math.unit($size) == "rem" {
+		@return $size;
+	}
+
+	@if math.unit($size) == "px" {
+		@return calc(math.div($size, 16px) * 1rem);
+	}
+
+	@return $size;
+}
+
+@mixin smaller-than($name) {
+	@media (max-width: breakpoint($name)) {
+		@content;
+	}
+}
+
+@mixin larger-than($name) {
+	@media (min-width: breakpoint($name)) {
+		@content;
+	}
+}
+
+@mixin hover {
+	@media (hover: hover) {
+		&:hover {
+			@content;
+		}
+	}
+
+	@media (hover: none) {
+		&:active {
+			@content;
+		}
+	}
+}
+
+@mixin light {
+	[data-mantine-color-scheme="light"] & {
+		@content;
+	}
+}
+
+@mixin dark {
+	[data-mantine-color-scheme="dark"] & {
+		@content;
+	}
+}
+
+@mixin light-root {
+	[data-mantine-color-scheme="light"] {
+		@content;
+	}
+}
+
+@mixin dark-root {
+	[data-mantine-color-scheme="dark"] {
+		@content;
+	}
+}
+
+@mixin ltr {
+	[dir="ltr"] & {
+		@content;
+	}
+}
+
+@mixin rtl {
+	[dir="rtl"] & {
+		@content;
+	}
+}

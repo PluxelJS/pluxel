@@ -72,9 +72,9 @@ export function SearchBar({ value, onChange, inputRef, statusFilter, onToggleSta
 			rightSection={rightSection}
 			rightSectionWidth={clearBtn ? 120 : 96}
 			rightSectionPointerEvents="auto"
-			size="xs"
-			variant="filled"
-			radius="sm"
+			size="sm"
+			variant="default"
+			radius="md"
 		/>
 	)
 }

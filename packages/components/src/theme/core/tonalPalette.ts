@@ -12,6 +12,7 @@ export type PlxMaterialMode = 'light' | 'dark'
 export type PlxMaterialPaletteKey = 'a1' | 'a2' | 'a3' | 'n1' | 'n2' | 'error'
 
 const MANTINE_SCALE_TONES = [98, 96, 92, 86, 76, 64, 52, 40, 30, 20] as const
+const MANTINE_DARK_SCALE_TONES = [90, 82, 72, 64, 56, 44, 34, 26, 20, 14] as const
 
 export function alpha(hex: string, opacity: number) {
 	const normalized = hex.replace('#', '')
@@ -57,6 +58,12 @@ export function toneHex(palette: TonalPalette, tone: number) {
 
 export function createMantinePaletteFromTonalPalette(palette: TonalPalette): MantineColorsTuple {
 	return MANTINE_SCALE_TONES.map((tone) => toneHex(palette, tone)) as unknown as MantineColorsTuple
+}
+
+export function createMantineDarkPaletteFromTonalPalette(
+	palette: TonalPalette,
+): MantineColorsTuple {
+	return MANTINE_DARK_SCALE_TONES.map((tone) => toneHex(palette, tone)) as unknown as MantineColorsTuple
 }
 
 export function createMantinePaletteFromSeed(

@@ -14,7 +14,6 @@ export type PlxNeutralFoundation = {
 	textMuted: string
 	border: string
 	borderStrong: string
-	panelGradient: string
 	tabbarBg: string
 	topbarBg: string
 	activityBg: string
@@ -35,15 +34,6 @@ export type PlxLogSurfaceFoundation = {
 	inputBg: string
 	trace: string
 }
-
-export type PlxMantineShadows = {
-	xs: string
-	sm: string
-	md: string
-}
-
-export const PLX_FONT_STACK =
-	'Inter, "HarmonyOS Sans", "PingFang SC", "Microsoft Yahei", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif'
 
 export const PLX_MANTINE_COLORS = {
 	black: '#101416',
@@ -68,34 +58,32 @@ export const PLX_NEUTRAL_FOUNDATIONS: Record<PlxThemeMode, PlxNeutralFoundation>
 		bgAlt: '#15181a',
 		surface: '#181b1e',
 		surfaceStrong: '#1c2024',
-		surfaceMuted: '#14181b',
+		surfaceMuted: '#151a1e',
 		shellBg: '#0d0f11',
 		shellBgAlt: '#121518',
 		text: '#e6eaee',
-		textMuted: '#9aa4af',
+		textMuted: '#adb6c0',
 		border: 'rgba(150, 162, 173, 0.14)',
-		borderStrong: 'rgba(164, 176, 188, 0.2)',
-		panelGradient: 'linear-gradient(180deg, #1d2125 0%, #181c20 100%)',
-		tabbarBg: 'rgba(19, 23, 26, 0.96)',
-		topbarBg: 'rgba(22, 26, 29, 0.94)',
-		activityBg: 'rgba(17, 20, 23, 0.98)',
+		borderStrong: 'rgba(164, 176, 188, 0.24)',
+		tabbarBg: 'rgba(19, 23, 26, 0.97)',
+		topbarBg: 'rgba(23, 27, 30, 0.95)',
+		activityBg: 'rgba(16, 19, 22, 0.98)',
 	},
 	light: {
 		bg: '#f3f5f7',
 		bgAlt: '#f7f8fa',
 		surface: '#fbfcfd',
 		surfaceStrong: '#ffffff',
-		surfaceMuted: '#eef1f3',
+		surfaceMuted: '#edf1f4',
 		shellBg: '#eef2f4',
 		shellBgAlt: '#f7f9fb',
 		text: '#1a2027',
-		textMuted: '#66727d',
+		textMuted: '#5d6975',
 		border: 'rgba(109, 121, 132, 0.14)',
-		borderStrong: 'rgba(109, 121, 132, 0.19)',
-		panelGradient: 'linear-gradient(180deg, #ffffff 0%, #f8fafc 100%)',
-		tabbarBg: 'rgba(245, 247, 249, 0.96)',
-		topbarBg: 'rgba(251, 252, 253, 0.94)',
-		activityBg: 'rgba(247, 249, 251, 0.98)',
+		borderStrong: 'rgba(109, 121, 132, 0.22)',
+		tabbarBg: 'rgba(239, 243, 246, 0.97)',
+		topbarBg: 'rgba(248, 250, 252, 0.95)',
+		activityBg: 'rgba(243, 247, 250, 0.98)',
 	},
 }
 
@@ -136,12 +124,6 @@ export const PLX_LOG_SURFACES: Record<PlxThemeMode, PlxLogSurfaceFoundation> = {
 export const PLX_APP_SHADOWS: Record<PlxThemeMode, string> = {
 	dark: '0 14px 30px rgba(2, 6, 23, 0.24)',
 	light: '0 8px 22px rgba(15, 23, 42, 0.04)',
-}
-
-export const PLX_MANTINE_SHADOWS: PlxMantineShadows = {
-	xs: '0 1px 3px rgba(15, 23, 42, 0.03)',
-	sm: '0 2px 8px rgba(15, 23, 42, 0.05)',
-	md: '0 4px 16px rgba(15, 23, 42, 0.08)',
 }
 
 export const PLX_LOG_ANSI16: Record<PlxThemeMode, readonly string[]> = {

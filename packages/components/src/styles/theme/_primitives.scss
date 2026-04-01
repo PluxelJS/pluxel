@@ -1,0 +1,33 @@
+@use "./tokens" as theme;
+
+:root {
+	color-scheme: light dark;
+}
+
+html,
+body,
+#root {
+	min-height: 100%;
+}
+
+body {
+	background: theme.token(app-bg-alt);
+	color: theme.token(text);
+	margin: 0;
+}
+
+a {
+	color: inherit;
+}
+
+.plx-theme-panel {
+	@include theme.panel-surface(panel-bg, panel-border, false);
+}
+
+.plx-theme-panel--strong {
+	border-color: theme.token(panel-border-strong);
+}
+
+.plx-theme-panel--muted {
+	@include theme.panel-surface(panel-bg-muted, panel-border, false);
+}

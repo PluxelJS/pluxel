@@ -7,7 +7,7 @@ import {
 	useMantineTheme,
 } from '@mantine/core'
 import { useMemo } from 'react'
-import { DEFAULT_COLOR_KEY, getColorPreset } from './colorPresets'
+import { DEFAULT_ACCENT_KEY, getAccentPreset } from '../accent/accentPresets'
 import {
 	PLX_APP_SHADOWS,
 	PLX_FIXED_LEVELS,
@@ -15,28 +15,12 @@ import {
 	PLX_LOG_SURFACES,
 	PLX_NEUTRAL_FOUNDATIONS,
 	type PlxThemeMode,
-} from './foundations'
-import { alpha, createMaterialThemeSource, mix, toneHex } from './material'
+} from './themeTokens'
+import { alpha, createMaterialThemeSource, mix, toneHex } from './tonalPalette'
 
-export type PlxResolvedColorScheme = PlxThemeMode
+export type PlxResolvedThemeMode = PlxThemeMode
 
-type PatternTokens = {
-	backgroundColor: string
-	backgroundImage: string
-	backgroundSize: string
-	backgroundPosition?: string
-	backgroundAttachment?: string
-}
-
-type StateTokens = {
-	bg: string
-	border: string
-	iconBg: string
-	iconColor: string
-	titleColor: string
-}
-
-export type PlxLogPalette = {
+export type PlxLogTheme = {
 	panelBg: string
 	panelHeaderBg: string
 	listBg: string
@@ -57,8 +41,8 @@ export type PlxLogPalette = {
 	ansi16: readonly string[]
 }
 
-export type PlxSchemeTokens = {
-	mode: PlxResolvedColorScheme
+export type PlxThemeModel = {
+	mode: PlxResolvedThemeMode
 	app: {
 		bg: string
 		bgAlt: string
@@ -72,13 +56,11 @@ export type PlxSchemeTokens = {
 		accent: string
 		accentStrong: string
 		accentSoft: string
-		panelGradient: string
 		shadow: string
 	}
 	controls: {
-		segmentedHoverBg: string
-		segmentedActiveBg: string
-		segmentedBorder: string
+		selectedBg: string
+		selectedBorder: string
 	}
 	workbench: {
 		shellBg: string
@@ -88,54 +70,23 @@ export type PlxSchemeTokens = {
 		topbarBg: string
 		tabbarBg: string
 		surfaceCanvas: string
-		tabActiveBg: string
-		tabActiveBorder: string
 	}
-	pattern: PatternTokens
-	state: {
-		empty: StateTokens
-		error: StateTokens
-	}
-	log: PlxLogPalette
+	log: PlxLogTheme
 }
 
-const DEFAULT_SEED_HEX = getColorPreset(DEFAULT_COLOR_KEY).color
-const schemeCache = new Map<string, PlxSchemeTokens>()
+const DEFAULT_ACCENT_HEX = getAccentPreset(DEFAULT_ACCENT_KEY).color
+const themeModelCache = new Map<string, PlxThemeModel>()
 
 function themeSeed(theme?: MantineTheme) {
-	return theme?.other.plxSeed ?? DEFAULT_SEED_HEX
+	return theme?.other.plxAccentHex ?? DEFAULT_ACCENT_HEX
 }
 
-function createPattern(mode: PlxResolvedColorScheme, backgroundColor: string, accent: string, neutral: string) {
-	if (mode === 'dark') {
-		return {
-			backgroundColor,
-			backgroundImage: `
-				linear-gradient(to right, ${alpha(neutral, 0.11)} 1px, transparent 1px),
-				linear-gradient(to bottom, ${alpha(neutral, 0.11)} 1px, transparent 1px),
-				radial-gradient(circle 560px at 10% 0%, ${alpha(accent, 0.16)} 0%, transparent 64%),
-				radial-gradient(circle 540px at 100% 0%, ${alpha(neutral, 0.12)} 0%, transparent 62%)
-			`,
-			backgroundSize: '48px 48px, 48px 48px, 100% 100%, 100% 100%',
-		}
-	}
-	return {
-		backgroundColor,
-		backgroundImage: `
-			linear-gradient(to right, ${alpha(neutral, 0.1)} 1px, transparent 1px),
-			linear-gradient(to bottom, ${alpha(neutral, 0.1)} 1px, transparent 1px),
-			radial-gradient(circle 580px at 0% 0%, ${alpha(accent, 0.14)} 0%, transparent 66%),
-			radial-gradient(circle 540px at 100% 0%, ${alpha(neutral, 0.08)} 0%, transparent 64%)
-		`,
-		backgroundSize: '48px 48px, 48px 48px, 100% 100%, 100% 100%',
-	}
-}
-
-function createLogPalette(tokens: PlxSchemeTokens, seedHex: string): PlxLogPalette {
+function createLogTheme(tokens: PlxThemeModel, seedHex: string): PlxLogTheme {
 	const source = createMaterialThemeSource(seedHex)
 	const { fatal, info, warning } = PLX_FIXED_LEVELS[tokens.mode]
 	const surfaces = PLX_LOG_SURFACES[tokens.mode]
-	const errorTone = tokens.mode === 'dark' ? toneHex(source.core.error, 82) : toneHex(source.core.error, 42)
+	const errorTone =
+		tokens.mode === 'dark' ? toneHex(source.core.error, 82) : toneHex(source.core.error, 42)
 
 	if (tokens.mode === 'dark') {
 		return {
@@ -198,9 +149,9 @@ function createLogPalette(tokens: PlxSchemeTokens, seedHex: string): PlxLogPalet
 	}
 }
 
-function buildPlxScheme(seedHex: string, mode: PlxResolvedColorScheme): PlxSchemeTokens {
+function buildThemeModel(seedHex: string, mode: PlxResolvedThemeMode): PlxThemeModel {
 	const source = createMaterialThemeSource(seedHex)
-	const { a1, error } = source.core
+	const { a1 } = source.core
 	const isDark = mode === 'dark'
 	const neutral = PLX_NEUTRAL_FOUNDATIONS[mode]
 
@@ -218,7 +169,6 @@ function buildPlxScheme(seedHex: string, mode: PlxResolvedColorScheme): PlxSchem
 				accent: mix(toneHex(a1, 68), '#8ea092', 0.12),
 				accentStrong: mix(toneHex(a1, 78), '#b1c1b5', 0.12),
 				accentSoft: alpha(mix(toneHex(a1, 58), '#7f8f84', 0.22), 0.1),
-				panelGradient: neutral.panelGradient,
 				shadow: PLX_APP_SHADOWS.dark,
 			}
 		: {
@@ -234,14 +184,14 @@ function buildPlxScheme(seedHex: string, mode: PlxResolvedColorScheme): PlxSchem
 				accent: mix(toneHex(a1, 42), '#5d7263', 0.12),
 				accentStrong: mix(toneHex(a1, 32), '#435746', 0.08),
 				accentSoft: alpha(mix(toneHex(a1, 68), '#9fb39f', 0.16), 0.09),
-				panelGradient: neutral.panelGradient,
 				shadow: PLX_APP_SHADOWS.light,
 			}
 
 	const controls = {
-		segmentedHoverBg: neutral.surface,
-		segmentedActiveBg: neutral.surfaceStrong,
-		segmentedBorder: neutral.borderStrong,
+		selectedBg: isDark
+			? mix(neutral.surfaceStrong, toneHex(a1, 76), 0.08)
+			: mix(neutral.surfaceStrong, toneHex(a1, 92), 0.14),
+		selectedBorder: isDark ? alpha(app.accentStrong, 0.26) : alpha(app.accent, 0.22),
 	}
 
 	const workbench = isDark
@@ -253,8 +203,6 @@ function buildPlxScheme(seedHex: string, mode: PlxResolvedColorScheme): PlxSchem
 				topbarBg: neutral.topbarBg,
 				tabbarBg: neutral.tabbarBg,
 				surfaceCanvas: neutral.surface,
-				tabActiveBg: neutral.surfaceStrong,
-				tabActiveBorder: alpha(app.accent, 0.16),
 			}
 		: {
 				shellBg: neutral.shellBg,
@@ -264,64 +212,45 @@ function buildPlxScheme(seedHex: string, mode: PlxResolvedColorScheme): PlxSchem
 				topbarBg: neutral.topbarBg,
 				tabbarBg: neutral.tabbarBg,
 				surfaceCanvas: neutral.surface,
-				tabActiveBg: neutral.surfaceStrong,
-				tabActiveBorder: alpha(app.accent, 0.12),
 			}
 
-	const tokens: PlxSchemeTokens = {
+	const tokens: PlxThemeModel = {
 		mode,
 		app,
 		controls,
 		workbench,
-		pattern: createPattern(mode, app.bgAlt, app.accent, app.textMuted),
-		state: {
-			empty: {
-				bg: neutral.surfaceStrong,
-				border: app.border,
-				iconBg: app.accentSoft,
-				iconColor: app.accentStrong,
-				titleColor: app.text,
-			},
-			error: {
-				bg: isDark ? alpha(toneHex(error, 24), 0.54) : toneHex(error, 96),
-				border: isDark ? alpha(toneHex(error, 76), 0.22) : alpha(toneHex(error, 50), 0.18),
-				iconBg: isDark ? alpha(toneHex(error, 66), 0.18) : alpha(toneHex(error, 64), 0.12),
-				iconColor: isDark ? toneHex(error, 86) : toneHex(error, 42),
-				titleColor: isDark ? toneHex(error, 92) : toneHex(error, 30),
-			},
-		},
-		log: {} as PlxLogPalette,
+		log: {} as PlxLogTheme,
 	}
 
-	tokens.log = createLogPalette(tokens, seedHex)
+	tokens.log = createLogTheme(tokens, seedHex)
 	return tokens
 }
 
-export function resolvePlxColorScheme(colorScheme?: MantineColorScheme): PlxResolvedColorScheme {
+export function resolveThemeMode(colorScheme?: MantineColorScheme): PlxResolvedThemeMode {
 	return colorScheme === 'dark' ? 'dark' : 'light'
 }
 
-export function getPlxScheme(
+export function getThemeModel(
 	colorScheme?: MantineColorScheme,
-	seedHex = DEFAULT_SEED_HEX,
-): PlxSchemeTokens {
-	const mode = resolvePlxColorScheme(colorScheme)
+	seedHex = DEFAULT_ACCENT_HEX,
+): PlxThemeModel {
+	const mode = resolveThemeMode(colorScheme)
 	const key = `${mode}:${seedHex.toLowerCase()}`
-	const cached = schemeCache.get(key)
+	const cached = themeModelCache.get(key)
 	if (cached) return cached
-	const next = buildPlxScheme(seedHex, mode)
-	schemeCache.set(key, next)
+	const next = buildThemeModel(seedHex, mode)
+	themeModelCache.set(key, next)
 	return next
 }
 
-export function usePlxScheme() {
+export function useThemeModel() {
 	const colorScheme = useComputedColorScheme('light', { getInitialValueInEffect: true })
 	const theme = useMantineTheme()
 	const seedHex = themeSeed(theme)
-	return useMemo(() => getPlxScheme(colorScheme, seedHex), [colorScheme, seedHex])
+	return useMemo(() => getThemeModel(colorScheme, seedHex), [colorScheme, seedHex])
 }
 
-function toCssVariables(tokens: PlxSchemeTokens, theme: MantineTheme) {
+function toCssVariables(tokens: PlxThemeModel, theme: MantineTheme) {
 	const brand = theme.colors.brand ?? []
 	const isDark = tokens.mode === 'dark'
 	return {
@@ -334,8 +263,6 @@ function toCssVariables(tokens: PlxSchemeTokens, theme: MantineTheme) {
 		'--plx-panel-bg-muted': tokens.app.surfaceMuted,
 		'--plx-panel-border': tokens.app.border,
 		'--plx-panel-border-strong': tokens.app.borderStrong,
-		'--plx-panel-accent-bg': tokens.app.accentSoft,
-		'--plx-panel-accent-fg': tokens.app.accentStrong,
 		'--plx-border': tokens.app.border,
 		'--plx-border-strong': tokens.app.borderStrong,
 		'--plx-text': tokens.app.text,
@@ -343,21 +270,9 @@ function toCssVariables(tokens: PlxSchemeTokens, theme: MantineTheme) {
 		'--plx-accent': tokens.app.accent,
 		'--plx-accent-strong': tokens.app.accentStrong,
 		'--plx-accent-soft': tokens.app.accentSoft,
-		'--plx-segmented-hover-bg': tokens.controls.segmentedHoverBg,
-		'--plx-segmented-active-bg': tokens.controls.segmentedActiveBg,
-		'--plx-segmented-border': tokens.controls.segmentedBorder,
-		'--plx-panel-gradient': tokens.app.panelGradient,
+		'--plx-selected-bg': tokens.controls.selectedBg,
+		'--plx-selected-border': tokens.controls.selectedBorder,
 		'--plx-shadow': tokens.app.shadow,
-		'--plx-state-empty-bg': tokens.state.empty.bg,
-		'--plx-state-empty-border': tokens.state.empty.border,
-		'--plx-state-empty-icon-bg': tokens.state.empty.iconBg,
-		'--plx-state-empty-icon-color': tokens.state.empty.iconColor,
-		'--plx-state-empty-title': tokens.state.empty.titleColor,
-		'--plx-state-error-bg': tokens.state.error.bg,
-		'--plx-state-error-border': tokens.state.error.border,
-		'--plx-state-error-icon-bg': tokens.state.error.iconBg,
-		'--plx-state-error-icon-color': tokens.state.error.iconColor,
-		'--plx-state-error-title': tokens.state.error.titleColor,
 		'--plx-workbench-shell-bg': tokens.workbench.shellBg,
 		'--plx-workbench-shell-bg-alt': tokens.workbench.shellBgAlt,
 		'--plx-workbench-activity-bg': tokens.workbench.activityBg,
@@ -365,8 +280,6 @@ function toCssVariables(tokens: PlxSchemeTokens, theme: MantineTheme) {
 		'--plx-workbench-topbar-bg': tokens.workbench.topbarBg,
 		'--plx-workbench-tabbar-bg': tokens.workbench.tabbarBg,
 		'--plx-workbench-surface-canvas': tokens.workbench.surfaceCanvas,
-		'--plx-workbench-tab-active-bg': tokens.workbench.tabActiveBg,
-		'--plx-workbench-tab-active-border': tokens.workbench.tabActiveBorder,
 		'--plx-brand-1': brand[1] ?? tokens.app.surface,
 		'--plx-brand-2': brand[2] ?? tokens.app.surfaceStrong,
 		'--plx-brand-5': brand[5] ?? tokens.app.accent,
@@ -379,11 +292,11 @@ function toCssVariables(tokens: PlxSchemeTokens, theme: MantineTheme) {
 	}
 }
 
-export const plxCssVariablesResolver: CSSVariablesResolver = (theme) => {
+export const appCssVariablesResolver: CSSVariablesResolver = (theme) => {
 	const base = defaultCssVariablesResolver(theme)
 	const seedHex = themeSeed(theme)
-	const light = getPlxScheme('light', seedHex)
-	const dark = getPlxScheme('dark', seedHex)
+	const light = getThemeModel('light', seedHex)
+	const dark = getThemeModel('dark', seedHex)
 
 	return {
 		variables: {

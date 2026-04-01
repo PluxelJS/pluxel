@@ -329,7 +329,9 @@ export function PackageManagerPage() {
 			specs: PackageSpecInput[],
 			options?: { force?: boolean; fresh?: boolean; reinstall?: boolean },
 		): Promise<PackageBatchResult> => {
-			const result = await transport.withRpc((rpc) => rpc.package().mutate({ action, specs, options }))
+			const result = await transport.withRpc((rpc) =>
+				rpc.package().mutate({ action, specs, options }),
+			)
 			invalidate({ topic: 'package-data', reason: action })
 			return result
 		},
@@ -805,7 +807,6 @@ export function PackageManagerPage() {
 					icon={<IconPackages size={28} stroke={1.5} />}
 					title="暂无包数据"
 					description="可先在上方安装新包，或等待插件上报。"
-					withPattern
 					minHeight={200}
 				/>
 			)
@@ -818,75 +819,77 @@ export function PackageManagerPage() {
 		return (
 			<Stack gap="xs" style={{ height: '100%' }}>
 				{selectedPackages.size > 0 && (
-					<Group
-						gap="sm"
+					<Paper
+						withBorder
+						radius="md"
 						px="sm"
 						py={6}
 						style={{
-							backgroundColor: 'var(--plx-accent-soft)',
-							borderRadius: 'var(--mantine-radius-md)',
-							border: '1px solid var(--plx-workbench-tab-active-border)',
+							background: 'var(--plx-accent-soft)',
+							borderColor: 'var(--plx-selected-border)',
 						}}
 					>
-						<Text size="sm" fw={600} style={{ color: 'var(--plx-accent-strong)' }}>
-							已选 {selectedPackages.size} 项
-						</Text>
-						<Group gap={6}>
-							<Tooltip label="重载所选包">
-								<ActionIcon
-									variant="light"
-									color="brand"
-									size="md"
-									onClick={() => void handleBatchReload(true)}
-									loading={reloadBatchLoading}
-								>
-									<IconRefresh size={18} />
-								</ActionIcon>
-							</Tooltip>
-							<Tooltip label="重装所选包">
-								<ActionIcon
-									variant="light"
-									color="brand"
-									size="md"
-									loading={reinstallBatchLoading}
-									onClick={() => void handleBatchReinstall()}
-								>
-									<IconRotateClockwise size={18} />
-								</ActionIcon>
-							</Tooltip>
-							<Tooltip label="卸载运行态">
-								<ActionIcon
-									variant="light"
-									color="orange"
-									size="md"
-									loading={uninstallBatchLoading}
-									onClick={() => confirmBatchUninstall()}
-								>
-									<IconTrash size={18} />
-								</ActionIcon>
-							</Tooltip>
-							<Tooltip label="彻底移除">
-								<ActionIcon
-									variant="light"
-									color="red"
-									size="md"
-									loading={removeBatchLoading}
-									onClick={() => confirmBatchRemove()}
-								>
-									<IconX size={18} />
-								</ActionIcon>
-							</Tooltip>
+						<Group gap="sm" align="center" wrap="nowrap">
+							<Text size="sm" fw={600} style={{ color: 'var(--plx-accent-strong)' }}>
+								已选 {selectedPackages.size} 项
+							</Text>
+							<Group gap={6}>
+								<Tooltip label="重载所选包">
+									<ActionIcon
+										variant="light"
+										color="brand"
+										size="md"
+										onClick={() => void handleBatchReload(true)}
+										loading={reloadBatchLoading}
+									>
+										<IconRefresh size={18} />
+									</ActionIcon>
+								</Tooltip>
+								<Tooltip label="重装所选包">
+									<ActionIcon
+										variant="light"
+										color="brand"
+										size="md"
+										loading={reinstallBatchLoading}
+										onClick={() => void handleBatchReinstall()}
+									>
+										<IconRotateClockwise size={18} />
+									</ActionIcon>
+								</Tooltip>
+								<Tooltip label="卸载运行态">
+									<ActionIcon
+										variant="light"
+										color="orange"
+										size="md"
+										loading={uninstallBatchLoading}
+										onClick={() => confirmBatchUninstall()}
+									>
+										<IconTrash size={18} />
+									</ActionIcon>
+								</Tooltip>
+								<Tooltip label="彻底移除">
+									<ActionIcon
+										variant="light"
+										color="red"
+										size="md"
+										loading={removeBatchLoading}
+										onClick={() => confirmBatchRemove()}
+									>
+										<IconX size={18} />
+									</ActionIcon>
+								</Tooltip>
+							</Group>
+							<ActionIcon
+								variant="subtle"
+								color="gray"
+								size="sm"
+								onClick={clearSelection}
+								style={{ marginLeft: 'auto' }}
+							>
+								<IconX size={14} />
+							</ActionIcon>
 						</Group>
-						<ActionIcon
-							variant="subtle"
-							color="gray"
-							size="sm"
-							onClick={clearSelection}
-							style={{ marginLeft: 'auto' }}
-						>
-							<IconX size={14} />
-						</ActionIcon>
-					</Group>
+					</Paper>
 				)}
 				<ScrollArea style={{ flex: 1 }}>
 					<Table striped highlightOnHover miw={720}>
@@ -1034,7 +1037,6 @@ export function PackageManagerPage() {
 				title="加载失败"
 				message={pageError.message || '无法加载包管理数据'}
 				onRetry={() => void refetch()}
-				withPattern
 				minHeight="100%"
 			/>
 		)
