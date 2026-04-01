@@ -10,7 +10,7 @@ import type {
 	BuiltinMarkdownPart,
 	BuiltinDocPart,
 } from '@pluxel/runtime/web/extensions'
-import { findScrollableParent, toDomSlug } from '../../app/plugins/config/utils'
+import { findScrollableParent, toDomSlug } from '../../app/plugins/config/configAnchors'
 import { BuiltinSignalDbAction } from './SignalDbAction'
 import { BuiltinInfoCard } from './InfoCard'
 import { BuiltinResourceSelect } from './ResourceSelect'

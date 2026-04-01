@@ -29,22 +29,25 @@ import { EmptyState, ErrorState } from '../../../components'
 import { ExtensionSlot, useExtensions } from '../../../extension'
 import type { PluginConfigState } from '../../hooks'
 import { RouterLinkAdapter } from '../../RouterLinkAdapter'
-import type { PluginDetailSearch } from '../../router'
+import type { PluginDetailSearch } from '../../router/pluginDetailSearch'
 import { useCurrentPathname } from '../../router/useCurrentRoute'
-import { PluginRouteRenderer, useResolvedPluginRoute } from '../../router/extensions'
+import { PluginRouteRenderer, useResolvedPluginRoute } from '../../router/extensions/PluginRouteRenderer'
 import {
 	PANE_TABS_PROPS,
 	PaneTabLabel,
 	getPaneTabsRootClassName,
 } from '../../workbench/PaneTabs'
+import { ConfigForm } from '../config/ConfigForm'
+import { ConfigLayout } from '../config/ConfigLayout'
 import {
-	ConfigForm,
-	ConfigLayout,
 	compareSchemaKeys,
 	PLUGIN_SCHEMA_GROUP,
 	splitSchemaKey,
-} from '../config'
-import { ActionBar, DependencyList, LogLevelsCard, PluginPanel } from './components'
+} from '../config/schemaKey'
+import { DependencyList } from './cards/DependencyList'
+import { LogLevelsCard } from './cards/LogLevelsCard'
+import { PluginPanel } from './cards/PluginPanel'
+import { ActionBar } from './controls/ActionBar'
 import { usePluginMeta, usePluginScope } from './context'
 import {
 	buildRightPaneSearchSyncPatch,

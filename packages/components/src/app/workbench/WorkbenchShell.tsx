@@ -18,10 +18,10 @@ import {
 import { startTransition, type ReactNode, useCallback, useEffect, useMemo, useRef } from 'react'
 import { ExtensionPoints, useExtensionSurface } from '../../extension'
 import { ColorSchemeToggle } from '../../theme'
-import { PluginList } from '../plugins/list'
+import { PluginCatalog } from '../plugins/catalog/PluginCatalog'
 import { PLUGIN_SEARCH_EVENT } from '../constants'
 import { baseNavItems, buildExtensionNavItems } from '../navigation/navConfig'
-import { WorkbenchPaneControls } from '../plugins/detail/components'
+import { WorkbenchPaneControls } from '../plugins/detail/controls/WorkbenchPaneControls'
 import { PluginWorkbenchLayoutProvider } from '../plugins/detail/workbench/context'
 import { useCurrentPathname } from '../router/useCurrentRoute'
 import {
@@ -626,7 +626,7 @@ export function WorkbenchShell() {
 															</button>
 														</div>
 														<div className="plx-workbench__navigationBody">
-															<PluginList pluginName={pluginName} />
+															<PluginCatalog pluginName={pluginName} />
 														</div>
 													</div>
 												</Panel>

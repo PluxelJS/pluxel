@@ -5,7 +5,7 @@ import type { UnionBranch, UnionFieldNode } from '../../../core/fields'
 import { FieldRenderer } from '../internal/FieldRenderer'
 import { cleanProps } from '../../utils/propHelpers'
 import { SegmentedButtons } from '../SegmentedButtons'
-import { FieldChrome } from '../shared'
+import { FieldChrome } from '../chrome/FieldChrome'
 import {
 	isErrorWithPath,
 	normalizeErrorMessages,

@@ -22,7 +22,7 @@ import type {
 	StringFieldNode,
 } from '../../../core/fields'
 import { FieldRenderer } from '../internal/FieldRenderer'
-import { FieldChrome } from '../shared'
+import { FieldChrome } from '../chrome/FieldChrome'
 import { cleanProps } from '../../utils/propHelpers'
 import { PicklistControl } from './controls/PicklistControl'
 import {

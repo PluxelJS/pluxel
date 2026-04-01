@@ -1,6 +1,6 @@
 import { NumberInput } from '@mantine/core'
 import type { NumberFieldNode } from '../../../core/fields'
-import { FieldChrome } from '../shared'
+import { FieldChrome } from '../chrome/FieldChrome'
 import { cleanProps } from '../../utils/propHelpers'
 import { normalizeErrorMessages, type RendererProps, triggerFormEvents } from './types'
 

@@ -17,7 +17,8 @@ import { useExtensionSurface, usePluginUiStatus } from '../../../../extension'
 import { RouterLinkAdapter } from '../../../RouterLinkAdapter'
 import { LiveLog as LiveLogRaw } from '../../../log_viewer/LiveLog'
 import { usePluginMeta, usePluginScope } from '../context'
-import { DependencyList, LogLevelsCard, usePluginDependencyEntries } from '../components'
+import { DependencyList, usePluginDependencyEntries } from '../cards/DependencyList'
+import { LogLevelsCard } from '../cards/LogLevelsCard'
 import {
 	type PluginWorkbenchView,
 	PluginWorkbenchViewContainer,

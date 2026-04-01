@@ -300,7 +300,7 @@ if (process.env.NODE_ENV !== 'production') {
 
 /* ───────── 子组件：调试（懒加载 + 类型稳） ───────── */
 const DebugValues = React.lazy(() =>
-	import('./internal/DebugValues').then((m) => ({ default: m.DebugValues })),
+	import('./debug/DebugValues').then((m) => ({ default: m.DebugValues })),
 )
 function DebugPanelImpl() {
 	const { form } = useAutoFormCtx<any>()

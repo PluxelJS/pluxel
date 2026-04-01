@@ -7,7 +7,7 @@ import { AutoForm, useAutoFormCtx } from 'valibot-form/web'
 import { useNotify } from '../../hooks'
 import { useRuntimeTransportClient } from '../../../runtime'
 import { FormToc } from './components/FormToc'
-import { makeFieldAnchorPrefix, makeSectionAnchorPrefix } from './utils'
+import { makeFieldAnchorPrefix, makeSectionAnchorPrefix } from './configAnchors'
 
 export type ConfigFormState = {
 	dirty: boolean

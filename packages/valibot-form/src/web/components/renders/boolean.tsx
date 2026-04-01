@@ -1,5 +1,5 @@
 import { Switch } from '@mantine/core'
-import { FieldChrome } from '../shared'
+import { FieldChrome } from '../chrome/FieldChrome'
 import { cleanProps } from '../../utils/propHelpers'
 import { normalizeErrorMessages, type RendererProps, triggerFormEvents } from './types'
 

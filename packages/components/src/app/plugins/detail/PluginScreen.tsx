@@ -17,7 +17,7 @@ import {
 } from '../../gqty'
 import { usePluginConfig } from '../../hooks'
 import { useCurrentPathname } from '../../router/useCurrentRoute'
-import { usePluginOverview } from '../data'
+import { usePluginOverview } from '../pluginOverviewStore'
 import { PluginScopeProvider, type PluginSourceKind } from './context'
 import { PluginWorkbench } from './workbench/PluginWorkbench'
 

@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react'
-import type { PluginDetailSearch } from '../../router'
+import type { PluginDetailSearch } from '../../router/pluginDetailSearch'
 
 export type RightPaneState = {
 	tab?: string

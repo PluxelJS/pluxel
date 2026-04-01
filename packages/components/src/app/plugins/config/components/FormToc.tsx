@@ -2,7 +2,7 @@ import { Badge, Group, Text } from '@mantine/core'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useAutoFormCtx } from 'valibot-form/web'
-import { findScrollableParent } from '../utils'
+import { findScrollableParent } from '../configAnchors'
 import { OutlineNavigator } from '../../detail/workbench/OutlineNavigator'
 import {
 	usePluginWorkbenchAside,

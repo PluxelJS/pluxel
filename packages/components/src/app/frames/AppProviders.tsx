@@ -13,7 +13,7 @@ import {
 import { ExtensionLoader } from '../ExtensionLoader'
 import { notifyAndRecord } from '../notifications/notifyBridge'
 import { NotificationCenterProvider } from '../notifications/NotificationCenterProvider'
-import { PluginOverviewProvider } from '../plugins/data'
+import { PluginOverviewProvider } from '../plugins/pluginOverviewStore'
 import { useRuntimeTransportClient } from '../../runtime'
 import { useCurrentPathname } from '../router/useCurrentRoute'
 

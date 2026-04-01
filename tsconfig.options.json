@@ -6,6 +6,7 @@
 		"moduleResolution": "bundler",
 		"moduleDetection": "force",
 		"lib": ["ES2023"],
+		"ignoreDeprecations": "6.0",
 
 		// Enable all strict type checking options.
 		"strict": true,

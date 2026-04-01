@@ -9,7 +9,7 @@ import { useRuntimeTransportClient } from '../../../runtime'
 import { type ConfigFormBridge, type ConfigFormState, ConfigTabPanel } from './ConfigTab'
 import { ConfigActionDock } from './components/ConfigActionDock'
 import { compareSchemaKeys, formatSchemaGroupLabel, splitSchemaKey } from './schemaKey'
-import { makeFieldAnchorPrefix, makeSectionAnchorPrefix } from './utils'
+import { makeFieldAnchorPrefix, makeSectionAnchorPrefix } from './configAnchors'
 
 export interface ConfigFormProps {
 	pluginName: string

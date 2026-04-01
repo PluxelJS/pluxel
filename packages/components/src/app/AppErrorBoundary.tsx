@@ -1,5 +1,5 @@
 import { Component, type ErrorInfo, type ReactNode } from 'react'
-import { RouteError } from './router/views'
+import { RouteErrorScreen } from './router/screens/RouteErrorScreen'
 import { useCurrentPathname } from './router/useCurrentRoute'
 
 type AppErrorBoundaryProps = {
@@ -43,7 +43,7 @@ class AppErrorBoundaryImpl extends Component<AppErrorBoundaryProps, AppErrorBoun
 
 	override render() {
 		if (this.state.error) {
-			return <RouteError error={this.state.error} />
+			return <RouteErrorScreen error={this.state.error} />
 		}
 		return this.props.children
 	}

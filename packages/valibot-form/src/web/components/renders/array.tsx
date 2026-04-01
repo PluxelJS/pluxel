@@ -40,7 +40,7 @@ import type {
 	PicklistFieldNode,
 	StringFieldNode,
 } from '../../../core/fields'
-import { FieldChrome } from '../shared'
+import { FieldChrome } from '../chrome/FieldChrome'
 import { cleanProps } from '../../utils/propHelpers'
 import { PicklistControl } from './controls/PicklistControl'
 import { FieldRenderer } from '../internal/FieldRenderer'

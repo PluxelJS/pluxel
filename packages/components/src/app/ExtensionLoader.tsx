@@ -30,7 +30,7 @@ import {
 	upsertExtensionModuleState,
 } from '../extension/internal/runtime-state'
 import { InlineNotice } from '../components'
-import { usePluginOverview } from './plugins/data'
+import { usePluginOverview } from './plugins/pluginOverviewStore'
 import { useRuntimeTransportClient } from '../runtime'
 
 interface ExtensionLoaderProps {
