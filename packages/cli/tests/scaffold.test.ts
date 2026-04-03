@@ -1,8 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import fs from 'node:fs'
-import { fileURLToPath } from 'node:url'
-import { createFixture } from 'fs-fixture'
+import { createFixture } from '@pluxel/test/fixtures'
 import { resolve } from 'pathe'
+import type fs from 'node:fs'
 import { parsePackageName } from '../src/scaffold'
 import { generateFromTemplate } from '../src/scaffold/template'
 
@@ -33,8 +32,28 @@ describe('scaffold name helpers', () => {
 
 describe('scaffold template rendering', () => {
 	it('generates the plugin template with plugin-named entry files', async () => {
-		await using fixture = await createFixture({})
-		const templateBase = fileURLToPath(new URL('../templates/plugin', import.meta.url))
+		await using fixture = await createFixture({
+			template: {
+				'package.json.hbs': JSON.stringify(
+					{
+						name: '{{packageName}}',
+						description: '{{description}}',
+					},
+					null,
+					2,
+				),
+				src: {
+					'{{pluginName}}.ts.hbs': 'export class {{className}} {}\n',
+				},
+				tests: {
+					'{{pluginName}}.test.ts.hbs': "export const name = '{{pluginName}}'\n",
+				},
+				'vitest.config.ts.hbs': 'export default {}\n',
+				'static.txt': 'copied as-is\n',
+				'prompts.jsonc': '[{ "name": "ignored", "message": "ignored" }]\n',
+			},
+		})
+		const templateBase = resolve(fixture.path, 'template')
 
 		const data = {
 			pluginName: 'hello-world',
@@ -52,20 +71,23 @@ describe('scaffold template rendering', () => {
 				data,
 				force: false,
 				dryRun: false,
+				fs: fixture.fs as unknown as typeof fs,
 			},
 			() => {},
 		)
 		expect(ok).toBe(true)
 
-		expect(fs.existsSync(resolve(targetDir, 'package.json'))).toBe(true)
-		expect(fs.existsSync(resolve(targetDir, 'src', `${data.pluginName}.ts`))).toBe(true)
-		expect(fs.existsSync(resolve(targetDir, 'tests', `${data.pluginName}.test.ts`))).toBe(true)
-		expect(fs.existsSync(resolve(targetDir, 'tsdown.config.ts'))).toBe(true)
-		expect(fs.existsSync(resolve(targetDir, 'tsconfig.test.json'))).toBe(true)
-		expect(fs.existsSync(resolve(targetDir, 'vitest.config.ts'))).toBe(true)
-		expect(fs.existsSync(resolve(targetDir, 'prompts.jsonc'))).toBe(false)
+		expect(fixture.fs.existsSync(resolve(targetDir, 'package.json'))).toBe(true)
+		expect(fixture.fs.existsSync(resolve(targetDir, 'src', `${data.pluginName}.ts`))).toBe(true)
+		expect(fixture.fs.existsSync(resolve(targetDir, 'tests', `${data.pluginName}.test.ts`))).toBe(true)
+		expect(fixture.fs.existsSync(resolve(targetDir, 'vitest.config.ts'))).toBe(true)
+		expect(fixture.fs.existsSync(resolve(targetDir, 'static.txt'))).toBe(true)
+		expect(fixture.fs.existsSync(resolve(targetDir, 'prompts.jsonc'))).toBe(false)
 
-		const entry = fs.readFileSync(resolve(targetDir, 'src', `${data.pluginName}.ts`), 'utf8')
+		const entry = fixture.fs.readFileSync(
+			resolve(targetDir, 'src', `${data.pluginName}.ts`),
+			'utf8',
+		)
 		expect(entry).toContain(`export class ${data.className}`)
 	})
 })

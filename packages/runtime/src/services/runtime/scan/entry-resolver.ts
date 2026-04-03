@@ -1,15 +1,17 @@
-import { existsSync } from 'node:fs'
 import { normalize, resolve as r } from 'pathe'
 import type { PackageJson } from 'pkg-types'
 import { toDirectoryURLString } from '../shared/exsolve'
 import { getCachedResolver, resolveModulePath } from '../shared/resolution'
-import { safeReadManifest } from './package'
+import { nodeWorkspaceFs, safeReadManifest, type WorkspaceFs } from './fs'
 import type { ModuleResolveCache } from './resolve-cache'
 import type { EntryResolution, EntryResolutionOk, ResolvedScanOptions } from './types'
 
 export class EntryResolver {
 	private readonly cache = new Map<string, Promise<EntryResolution>>()
-	constructor(private readonly moduleResolveCache: ModuleResolveCache) {}
+	constructor(
+		private readonly moduleResolveCache: ModuleResolveCache,
+		private readonly fs: WorkspaceFs = nodeWorkspaceFs,
+	) {}
 
 	clear() {
 		this.cache.clear()
@@ -42,19 +44,19 @@ export class EntryResolver {
 		options: ResolvedScanOptions,
 		manifest?: PackageJson,
 	): Promise<EntryResolution> {
-		const pkgJson = manifest ?? (await safeReadManifest(dir))
+		const pkgJson = manifest ?? (await safeReadManifest(dir, this.fs))
 
 		if (!pkgJson) {
 			const tried: string[] = []
 			for (const rel of options.conservativeCandidates) {
 				tried.push(rel)
 				const abs = r(dir, rel)
-				if (existsSync(abs)) {
+				if (this.fs.existsSync(abs)) {
 					return entryOk(dir, normalize(abs), 'fallback', tried)
 				}
 			}
 			// 若保守候选未命中，尝试任意 .ts 作为兜底入口
-			const tsEntry = findFirstTsEntry(dir)
+			const tsEntry = findFirstTsEntry(dir, this.fs)
 			if (tsEntry) {
 				tried.push(tsEntry.relative)
 				return entryOk(dir, tsEntry.absolute, 'fallback', tried)
@@ -71,7 +73,7 @@ export class EntryResolver {
 		const hmrExport = options.preferHmrExports ? pickHmrExport(pkgJson?.exports) : undefined
 		if (hmrExport) {
 			const abs = r(dir, hmrExport)
-			if (existsSync(abs)) {
+			if (this.fs.existsSync(abs)) {
 				return entryOk(dir, normalize(abs), 'exports', [])
 			}
 		}
@@ -120,7 +122,7 @@ export class EntryResolver {
 
 		for (const rel of candidates) {
 			const abs = r(dir, rel)
-			if (!existsSync(abs)) continue
+			if (!this.fs.existsSync(abs)) continue
 			const source =
 				rel === main ? 'main' : rel === module ? 'module' : rel === types ? 'types' : 'fallback'
 			return entryOk(dir, normalize(abs), source, tried)
@@ -151,11 +153,14 @@ function entryOk(
 	}
 }
 
-function findFirstTsEntry(dir: string): { absolute: string; relative: string } | null {
+function findFirstTsEntry(
+	dir: string,
+	fs: WorkspaceFs,
+): { absolute: string; relative: string } | null {
 	const candidates = ['index.ts', 'src/index.ts']
 	for (const rel of candidates) {
 		const abs = r(dir, rel)
-		if (existsSync(abs)) {
+		if (fs.existsSync(abs)) {
 			return { absolute: normalize(abs), relative: rel }
 		}
 	}

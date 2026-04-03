@@ -1,6 +1,5 @@
 import fs from 'node:fs'
 import { cancel, confirm, isCancel, select, text } from '@clack/prompts'
-import { fdir } from 'fdir'
 import { dirname, isAbsolute, relative, resolve } from 'pathe'
 import { type ParseError, parse, printParseErrorCode } from 'jsonc-parser'
 import { capitalize, kebabCase, pascalCase } from './name'
@@ -11,13 +10,78 @@ const TEMPLATE_EXT = '.hbs'
 
 const TEMPLATE_REGEX = /{{\s*([a-zA-Z][\w]*)\s+([a-zA-Z0-9_]+)\s*}}|{{\s*([a-zA-Z0-9_]+)\s*}}/g
 
-export async function ensureTemplate(explicit?: string): Promise<string | undefined> {
+type TemplateDirentLike = {
+	name: string
+	isDirectory?: () => boolean
+}
+
+function getTemplateDirentName(entry: string | TemplateDirentLike): string {
+	return typeof entry === 'string' ? entry : entry.name
+}
+
+function isTemplateDirectory(
+	fileSystem: typeof fs,
+	parentDir: string,
+	entry: string | TemplateDirentLike,
+): boolean {
+	if (typeof entry !== 'string') return entry.isDirectory?.() === true
+	try {
+		return fileSystem.statSync(resolve(parentDir, entry)).isDirectory()
+	} catch {
+		return false
+	}
+}
+
+async function walkTemplateFiles(
+	rootDir: string,
+	fileSystem: typeof fs,
+): Promise<string[]> {
+	const out: string[] = []
+	const visit = async (dir: string) => {
+		const entries = (await fileSystem.promises.readdir(dir, {
+			withFileTypes: true,
+		})) as Array<string | TemplateDirentLike>
+		for (const entry of entries) {
+			const name = getTemplateDirentName(entry)
+			const path = resolve(dir, name)
+			if (isTemplateDirectory(fileSystem, dir, entry)) {
+				await visit(path)
+				continue
+			}
+			out.push(path)
+		}
+	}
+
+	await visit(rootDir)
+	return out.sort((a, b) => a.localeCompare(b))
+}
+
+function listKnownTemplates(fileSystem: typeof fs = fs, base = resolveTemplatesDir()): string[] {
+	if (!fileSystem.existsSync(base)) return []
+	try {
+		return fileSystem
+			.readdirSync(base, { withFileTypes: true })
+			.filter((entry) => isTemplateDirectory(fileSystem, base, entry as string | TemplateDirentLike))
+			.map((entry) => getTemplateDirentName(entry as string | TemplateDirentLike))
+			.filter((name) => !name.startsWith('.'))
+			.sort((a, b) => a.localeCompare(b))
+	} catch {
+		return []
+	}
+}
+
+export async function ensureTemplate(
+	explicit?: string,
+	options: { fs?: typeof fs; templatesDir?: string } = {},
+): Promise<string | undefined> {
 	const normalized = typeof explicit === 'string' ? explicit.trim() : ''
 	if (normalized) return normalized
+	const fileSystem = options.fs ?? fs
+	const templatesDir = options.templatesDir ?? resolveTemplatesDir()
 
-	const known = listKnownTemplates()
+	const known = listKnownTemplates(fileSystem, templatesDir)
 	if (known.length === 0) {
-		throw new Error(`No templates found under ${resolveTemplatesDir()}`)
+		throw new Error(`No templates found under ${templatesDir}`)
 	}
 
 	if (!isInteractive()) {
@@ -62,15 +126,20 @@ export async function ensureTemplate(explicit?: string): Promise<string | undefi
 	return String(picked).trim()
 }
 
-export function resolveTemplateBase(input: string) {
+export function resolveTemplateBase(
+	input: string,
+	options: { cwd?: string; templatesDir?: string } = {},
+) {
+	const cwd = options.cwd ?? process.cwd()
+	const templatesDir = options.templatesDir ?? resolveTemplatesDir()
 	if (isAbsolute(input) || /^[A-Za-z]:[\\/]/.test(input)) {
 		return input
 	}
 	// Allow relative paths like ./templates/foo in addition to named templates.
 	if (input.startsWith('.') || input.includes('/') || input.includes('\\')) {
-		return resolve(process.cwd(), input)
+		return resolve(cwd, input)
 	}
-	return resolveTemplatesDir(input)
+	return resolve(templatesDir, input)
 }
 
 export async function generateFromTemplate(
@@ -80,17 +149,19 @@ export async function generateFromTemplate(
 		data: Record<string, string>
 		force: boolean
 		dryRun: boolean
+		fs?: typeof fs
 	},
 	log: (...args: unknown[]) => void,
 ): Promise<boolean> {
+	const fileSystem = params.fs ?? fs
 	let force = params.force
-	if (!fs.existsSync(params.templateBase)) {
-		const available = listKnownTemplates()
+	if (!fileSystem.existsSync(params.templateBase)) {
+		const available = listKnownTemplates(fileSystem)
 		const hint = available.length > 0 ? `\nAvailable templates: ${available.join(', ')}` : ''
 		throw new Error(`Template not found: ${params.templateBase}${hint}`)
 	}
 
-	const templateFiles = await listTemplateFiles(params.templateBase)
+	const templateFiles = await listTemplateFiles(params.templateBase, fileSystem)
 	if (templateFiles.length === 0) {
 		throw new Error(`No template files found in ${params.templateBase}`)
 	}
@@ -113,11 +184,11 @@ export async function generateFromTemplate(
 		duplicates.set(output.outputPath, output.templatePath)
 	}
 
-	const existing = outputs.filter((output) => fs.existsSync(output.outputPath))
+	const existing = outputs.filter((output) => fileSystem.existsSync(output.outputPath))
 	const existingSet = new Set(existing.map((output) => output.outputPath))
 	const existingDirs = existing.filter((output) => {
 		try {
-			return fs.statSync(output.outputPath).isDirectory()
+			return fileSystem.statSync(output.outputPath).isDirectory()
 		} catch {
 			return false
 		}
@@ -169,21 +240,21 @@ export async function generateFromTemplate(
 		}
 	}
 
-	fs.mkdirSync(params.targetDir, { recursive: true })
+	fileSystem.mkdirSync(params.targetDir, { recursive: true })
 	log(`\n→ Generating plugin to ${params.targetDir}`)
 	for (const output of outputs) {
-		fs.mkdirSync(dirname(output.outputPath), { recursive: true })
+		fileSystem.mkdirSync(dirname(output.outputPath), { recursive: true })
 
 		if (output.isTextTemplate) {
-			const contents = await fs.promises.readFile(output.templatePath, 'utf8')
+			const contents = await fileSystem.promises.readFile(output.templatePath, 'utf8')
 			const renderedContents = renderTemplateValue(
 				contents,
 				params.data,
 				`template file (${output.templatePath})`,
 			)
-			await fs.promises.writeFile(output.outputPath, renderedContents, 'utf8')
+			await fileSystem.promises.writeFile(output.outputPath, renderedContents, 'utf8')
 		} else {
-			await fs.promises.copyFile(output.templatePath, output.outputPath)
+			await fileSystem.promises.copyFile(output.templatePath, output.outputPath)
 		}
 
 		log(existingSet.has(output.outputPath) ? 'overwritten:' : 'created:', output.outputPath)
@@ -195,8 +266,9 @@ export async function generateFromTemplate(
 export async function promptTemplateData(
 	templateBase: string,
 	baseData: Record<string, string>,
+	options: { fs?: typeof fs } = {},
 ): Promise<Record<string, string> | null> {
-	const prompts = await loadTemplatePrompts(templateBase)
+	const prompts = await loadTemplatePrompts(templateBase, options.fs ?? fs)
 	if (!prompts || prompts.length === 0) return {}
 
 	const reserved = new Set(Object.keys(baseData))
@@ -316,33 +388,13 @@ function renderTemplateValue(input: string, data: Record<string, string>, label:
 	}
 }
 
-async function listTemplateFiles(templateBase: string): Promise<string[]> {
-	const files = await new fdir()
-		.withFullPaths()
-		.filter((_path, isDir) => !isDir)
-		.crawl(templateBase)
-		.withPromise()
-
+async function listTemplateFiles(templateBase: string, fileSystem: typeof fs): Promise<string[]> {
+	const files = await walkTemplateFiles(templateBase, fileSystem)
 	return files
 		.filter((path) => {
 			const rel = relative(templateBase, path)
 			return !TEMPLATE_PROMPT_FILES.has(rel)
 		})
-		.sort((a, b) => a.localeCompare(b))
-}
-
-function listKnownTemplates(): string[] {
-	const base = resolveTemplatesDir()
-	if (!fs.existsSync(base)) return []
-	try {
-		return fs
-			.readdirSync(base, { withFileTypes: true })
-			.filter((entry) => entry.isDirectory() && !entry.name.startsWith('.'))
-			.map((entry) => entry.name)
-			.sort((a, b) => a.localeCompare(b))
-	} catch {
-		return []
-	}
 }
 
 type PromptChoice = {
@@ -369,13 +421,16 @@ function renderPromptValue(value: string, scope: Record<string, string>, label: 
 	return renderTemplateValue(value, scope, `prompt ${label}`)
 }
 
-async function loadTemplatePrompts(templateBase: string): Promise<TemplatePrompt[] | null> {
+async function loadTemplatePrompts(
+	templateBase: string,
+	fileSystem: typeof fs,
+): Promise<TemplatePrompt[] | null> {
 	const candidates = ['prompts.jsonc', 'prompts.json']
 	for (const fileName of candidates) {
 		const filePath = resolve(templateBase, fileName)
-		if (!fs.existsSync(filePath)) continue
+		if (!fileSystem.existsSync(filePath)) continue
 
-		const raw = await fs.promises.readFile(filePath, 'utf8')
+		const raw = await fileSystem.promises.readFile(filePath, 'utf8')
 		const errors: ParseError[] = []
 		const parsed = parse(raw, errors)
 		if (errors.length > 0) {

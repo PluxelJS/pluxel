@@ -1,6 +1,6 @@
 import { mkdir, writeFile } from 'node:fs/promises'
 import { join } from 'pathe'
-import { createFixture } from 'fs-fixture'
+import { createDiskFixture as createFixture } from '@pluxel/test/fixtures'
 import { describe, expect, it, vi } from 'vitest'
 
 const pluginBuildMocks = vi.hoisted(() => ({

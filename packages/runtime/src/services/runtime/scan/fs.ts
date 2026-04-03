@@ -1,6 +1,13 @@
-import fs from 'node:fs/promises'
 import os from 'node:os'
-import { crawlFilesAbs, DEFAULT_IGNORED_DIR_NAMES } from '@pluxel/workspace'
+import {
+	DEFAULT_IGNORED_DIR_NAMES,
+	loadWorkspaceInfoWithFs,
+	manifestPathForWithFs,
+	nodeWorkspaceFs,
+	safeReadManifestWithFs,
+	crawlFilesAbsWithFs,
+	type WorkspaceFs,
+} from '@pluxel/workspace'
 import { extname, isAbsolute, normalize, resolve } from 'pathe'
 import { createLimiter } from './limit'
 
@@ -12,7 +19,16 @@ export interface TsScanOptions {
 	concurrency?: number
 }
 
-export async function getAllTsFiles(inputs: string[], opts: TsScanOptions = {}): Promise<string[]> {
+export const safeReadManifest = safeReadManifestWithFs
+export const manifestPathFor = manifestPathForWithFs
+export { crawlFilesAbsWithFs, loadWorkspaceInfoWithFs, nodeWorkspaceFs }
+export type { WorkspaceFs }
+
+export async function getAllTsFiles(
+	inputs: string[],
+	opts: TsScanOptions = {},
+	fs: WorkspaceFs = nodeWorkspaceFs,
+): Promise<string[]> {
 	const extensions = normalizeExtensions(opts.exts)
 	const includeDts = opts.includeDts ?? false
 	const followSymlinks = opts.followSymlinks ?? true
@@ -25,14 +41,14 @@ export async function getAllTsFiles(inputs: string[], opts: TsScanOptions = {}):
 
 	for (const input of inputs) {
 		const abs = toAbsolute(input)
-		const st = await fs.stat(abs).catch((): null => null)
+		const st = await fs.promises.stat(abs).catch((): null => null)
 		if (!st) continue
 
-		if (st.isDirectory()) {
+		if (st.isDirectory?.()) {
 			const base = abs.split(/[\\/]/).pop()
 			if (base && ignoreDirNames.has(base)) continue
 			dirsToScan.push(abs)
-		} else if (st.isFile()) {
+		} else if (st.isFile?.()) {
 			if (shouldInclude(abs, extensions, includeDts)) {
 				out.add(normalize(abs))
 			}
@@ -42,12 +58,15 @@ export async function getAllTsFiles(inputs: string[], opts: TsScanOptions = {}):
 	await Promise.all(
 		dirsToScan.map((dir) =>
 			limit(async () => {
-				const matches = await crawlFilesAbs({
-					roots: [dir],
-					followSymlinks,
-					ignoreDirNames,
-					fileFilter: (p) => shouldInclude(p, extensions, includeDts),
-				})
+				const matches = await crawlFilesAbsWithFs(
+					{
+						roots: [dir],
+						followSymlinks,
+						ignoreDirNames,
+						fileFilter: (p) => shouldInclude(p, extensions, includeDts),
+					},
+					fs,
+				)
 
 				for (const file of matches) out.add(normalize(file))
 			}),

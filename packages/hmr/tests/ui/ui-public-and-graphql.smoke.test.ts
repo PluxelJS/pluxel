@@ -1,12 +1,13 @@
-import { createHmrHost } from '@pluxel/hmr/host'
 import type { HmrWorkspaceSnapshot } from '@pluxel/hmr/snapshot'
-import { createFixture } from 'fs-fixture'
+import { createDiskFixture as createFixture } from '@pluxel/test/fixtures'
 import { writeFile } from 'node:fs/promises'
 import { resolve } from 'pathe'
 import { describe, expect, it } from 'vitest'
+import { SuperJSON } from 'superjson'
 import { HMR_INTERNAL_API_BASE, HMR_TRANSPORT_PATHS } from '@pluxel/runtime/web/paths'
 import { Context } from '@pluxel/runtime'
 import { createCompiledExtensionModule } from '@pluxel/runtime/internal'
+import { createTestHmrHost } from '../support/test-host'
 
 describe('HMR UI smoke', () => {
 	it('serves built UI assets from /dist/public', async () => {
@@ -127,7 +128,11 @@ describe('HMR UI smoke', () => {
 		await using fixture = await createFixture({
 			'pnpm-workspace.yaml': ['packages:', '  - packages/*', ''].join('\n'),
 			// HMR may persist runtime config under `data/`; pre-create so fixture cleanup is stable.
-			'data/runtime/config.dev.json': '{}\n',
+			'data/runtime/config.dev.json': `${SuperJSON.stringify({
+				enabled: new Set<string>(),
+				plugins: {},
+				extra: {},
+			})}\n`,
 			'packages/a/package.json': JSON.stringify(
 				{
 					name: 'pluxel-plugin-a',
@@ -142,40 +147,35 @@ describe('HMR UI smoke', () => {
 			'packages/a/dist/index.mjs': 'export const plugins = []\n',
 		})
 
-		const prevCwd = process.cwd()
-		try {
-			const snapshot: HmrWorkspaceSnapshot = {
-				activeProfile: 'dev',
-				roots: ['packages/a'],
-				enabled: ['pluxel-plugin-a'],
-				builtinPackages: [],
-				enabledEntries: ['packages/a/src/index.ts'],
-				includedEntries: [],
-				watchRoots: ['packages/a'],
-				includeGlobs: [],
-				excludeGlobs: [],
-			}
-			const host = await createHmrHost({
-				root: fixture.path,
-				logging: false,
-				workspaceSnapshot: snapshot,
-			})
-
-			const res = await host.ctx.http.fetch(
-				new Request(`http://local${HMR_INTERNAL_API_BASE}${HMR_TRANSPORT_PATHS.graphql}`, {
-					method: 'POST',
-					headers: { 'content-type': 'application/json' },
-					body: JSON.stringify({ query: '{ _empty }' }),
-				}),
-			)
-
-			expect(res.status).toBe(200)
-			const json = (await res.json()) as { data?: { _empty?: string } }
-			expect(json.data?._empty).toBe('ok')
-			await host.ctx.effects.dispose()
-		} finally {
-			process.chdir(prevCwd)
+		const snapshot: HmrWorkspaceSnapshot = {
+			activeProfile: 'dev',
+			roots: ['packages/a'],
+			enabled: ['pluxel-plugin-a'],
+			builtinPackages: [],
+			enabledEntries: ['packages/a/src/index.ts'],
+			includedEntries: [],
+			watchRoots: ['packages/a'],
+			includeGlobs: [],
+			excludeGlobs: [],
 		}
+		const host = await createTestHmrHost({
+			fs: fixture.fs,
+			root: fixture.path,
+			snapshot,
+		})
+
+		const res = await host.ctx.http.fetch(
+			new Request(`http://local${HMR_INTERNAL_API_BASE}${HMR_TRANSPORT_PATHS.graphql}`, {
+				method: 'POST',
+				headers: { 'content-type': 'application/json' },
+				body: JSON.stringify({ query: '{ _empty }' }),
+			}),
+		)
+
+		expect(res.status).toBe(200)
+		const json = (await res.json()) as { data?: { _empty?: string } }
+		expect(json.data?._empty).toBe('ok')
+		await host.ctx.effects.dispose()
 	}, 15_000)
 
 	it('serves extension artifact manifests and files through the internal artifact route', async () => {

@@ -1,8 +1,7 @@
-import { existsSync, readFileSync } from 'node:fs'
-import { readdir } from 'node:fs/promises'
 import { normalize, resolve as r } from 'pathe'
 import type { PackageJson } from 'pkg-types'
-import { manifestPathFor, safeReadManifest } from './manifest'
+import { nodeWorkspaceFs, readTextFile, type WorkspaceFs } from './fs'
+import { manifestPathForWithFs, safeReadManifestWithFs } from './manifest'
 
 export interface WorkspaceInfo {
 	root: string
@@ -14,8 +13,15 @@ export interface WorkspaceInfo {
 }
 
 export async function loadWorkspaceInfo(root: string): Promise<WorkspaceInfo> {
-	const manifest = await safeReadManifest(root)
-	const manifestPath = manifestPathFor(root)
+	return await loadWorkspaceInfoWithFs(root, nodeWorkspaceFs)
+}
+
+export async function loadWorkspaceInfoWithFs(
+	root: string,
+	fs: WorkspaceFs = nodeWorkspaceFs,
+): Promise<WorkspaceInfo> {
+	const manifest = await safeReadManifestWithFs(root, fs)
+	const manifestPath = manifestPathForWithFs(root, fs)
 
 	const patterns = new Set<string>()
 	for (const p of extractPackageWorkspaces(manifest)) {
@@ -23,8 +29,8 @@ export async function loadWorkspaceInfo(root: string): Promise<WorkspaceInfo> {
 	}
 
 	const pnpmWorkspacePath = r(root, 'pnpm-workspace.yaml')
-	if (existsSync(pnpmWorkspacePath)) {
-		for (const p of parsePnpmWorkspace(readFileSync(pnpmWorkspacePath, 'utf8'))) {
+	if (fs.existsSync(pnpmWorkspacePath)) {
+		for (const p of parsePnpmWorkspace(await readTextFile(fs, pnpmWorkspacePath))) {
 			patterns.add(p)
 		}
 	}
@@ -35,7 +41,7 @@ export async function loadWorkspaceInfo(root: string): Promise<WorkspaceInfo> {
 		patterns.add('apps/*')
 	}
 
-	const packageDirs = await collectPackageDirs(root, [...patterns])
+	const packageDirs = await collectPackageDirsWithFs(root, [...patterns], fs)
 	const isMonorepo = explicitPatterns || packageDirs.length > 0
 
 	const info: WorkspaceInfo = {
@@ -58,18 +64,22 @@ export function extractPackageWorkspaces(pkg: PackageJson | undefined): string[]
 	return []
 }
 
-async function collectPackageDirs(root: string, patterns: string[]): Promise<string[]> {
+async function collectPackageDirsWithFs(
+	root: string,
+	patterns: string[],
+	fs: WorkspaceFs,
+): Promise<string[]> {
 	const out = new Set<string>()
 	for (const pattern of patterns) {
 		const m = pattern.replace(/\/\*\*?$/, '/*').match(/^(.*)\/\*$/)
 		if (!m) continue
 		const base = r(root, m[1])
 		try {
-			const list = await readdir(base, { withFileTypes: true })
+			const list = await fs.promises.readdir(base, { withFileTypes: true })
 			for (const entry of list) {
-				if (!entry.isDirectory()) continue
+				if (!entry.isDirectory?.()) continue
 				const pkgDir = r(base, entry.name)
-				if (existsSync(r(pkgDir, 'package.json'))) {
+				if (fs.existsSync(r(pkgDir, 'package.json'))) {
 					out.add(normalize(pkgDir))
 				}
 			}

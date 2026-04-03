@@ -1,6 +1,6 @@
-import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { type ParseError, parse, printParseErrorCode } from 'jsonc-parser'
 import { resolve } from 'pathe'
+import { nodeHmrWorkspaceFs, type HmrWorkspaceFs } from './fs'
 
 export const DEFAULT_HMR_CONFIG_BASENAME = 'pluxel.hmr.jsonc' as const
 
@@ -89,37 +89,47 @@ export function parseHmrConfigV1Jsonc(
 	return validateHmrConfigV1Strict(data, label)
 }
 
-export function readHmrConfigV1(configPath: string): PluxelHmrConfigV1 {
-	if (!existsSync(configPath)) throw new Error(`[hmr-config] Missing config file: ${configPath}`)
-	const raw = readFileSync(configPath, 'utf8')
+export function readHmrConfigV1(
+	configPath: string,
+	fs: HmrWorkspaceFs = nodeHmrWorkspaceFs,
+): PluxelHmrConfigV1 {
+	if (!fs.existsSync(configPath)) throw new Error(`[hmr-config] Missing config file: ${configPath}`)
+	const raw = fs.readFileSync(configPath, 'utf8')
 	return parseHmrConfigV1Jsonc(raw, configPath)
 }
 
 export function writeHmrConfigV1(
 	configPath: string,
 	config: PluxelHmrConfigV1,
-	opts?: { headerComment?: string },
+	opts?: { headerComment?: string; fs?: HmrWorkspaceFs },
 ) {
 	const header = opts?.headerComment ?? defaultHmrConfigHeaderComment()
 	const normalized = normalizeHmrConfigV1(config)
 	const json = JSON.stringify(normalized, null, '\t')
 	const out = header ? `${header}${json}\n` : `${json}\n`
-	writeFileSync(configPath, out, 'utf8')
+	;(opts?.fs ?? nodeHmrWorkspaceFs).writeFileSync(configPath, out, 'utf8')
 }
 
-export function ensureHmrConfigV1(configPath: string): PluxelHmrConfigV1 {
-	if (existsSync(configPath)) return readHmrConfigV1(configPath)
+export function ensureHmrConfigV1(
+	configPath: string,
+	fs: HmrWorkspaceFs = nodeHmrWorkspaceFs,
+): PluxelHmrConfigV1 {
+	if (fs.existsSync(configPath)) return readHmrConfigV1(configPath, fs)
 	const cfg = createDefaultHmrConfigV1()
-	writeHmrConfigV1(configPath, cfg)
+	writeHmrConfigV1(configPath, cfg, { fs })
 	return cfg
 }
 
-export function backupAndRewriteHmrConfigV1(configPath: string, next: PluxelHmrConfigV1) {
+export function backupAndRewriteHmrConfigV1(
+	configPath: string,
+	next: PluxelHmrConfigV1,
+	fs: HmrWorkspaceFs = nodeHmrWorkspaceFs,
+) {
 	const ts = new Date().toISOString().replace(/[:.]/g, '-')
 	const backupPath = `${configPath}.bak.${ts}`
-	const raw = readFileSync(configPath, 'utf8')
-	writeFileSync(backupPath, raw, 'utf8')
-	writeHmrConfigV1(configPath, next)
+	const raw = fs.readFileSync(configPath, 'utf8')
+	fs.writeFileSync(backupPath, raw, 'utf8')
+	writeHmrConfigV1(configPath, next, { fs })
 	return { backupPath }
 }
 

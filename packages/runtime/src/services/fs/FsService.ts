@@ -1,5 +1,15 @@
 import { existsSync } from 'node:fs'
-import { mkdir, readFile, readdir, rename, rm, stat, writeFile } from 'node:fs/promises'
+import {
+	copyFile,
+	mkdir,
+	readFile,
+	readdir,
+	realpath,
+	rename,
+	rm,
+	stat,
+	writeFile,
+} from 'node:fs/promises'
 import { type Context, RootService } from '@pluxel/core'
 import { basename, dirname, resolve } from 'pathe'
 
@@ -18,6 +28,33 @@ declare module '@pluxel/core' {
 
 export type FsServiceMode = 'node' | 'memory'
 
+export type FsServiceNodeBackendFs = {
+	existsSync(path: string): boolean
+	promises: {
+		copyFile(src: string, dest: string): Promise<void>
+		mkdir(path: string, options?: { recursive?: boolean }): Promise<string | undefined>
+		readFile(
+			path: string,
+			options?: BufferEncoding | { encoding?: BufferEncoding | null } | null,
+		): Promise<string | Buffer>
+		readdir(path: string, options?: { withFileTypes?: boolean }): Promise<string[]>
+		realpath(path: string): Promise<string>
+		rename(oldPath: string, newPath: string): Promise<void>
+		rm(path: string, options?: { recursive?: boolean; force?: boolean }): Promise<void>
+		stat(path: string): Promise<{
+			isFile(): boolean
+			isDirectory(): boolean
+			size?: number
+			mtimeMs?: number
+		}>
+		writeFile(
+			path: string,
+			data: string | NodeJS.ArrayBufferView,
+			options?: BufferEncoding | { encoding?: BufferEncoding; mode?: number } | null,
+		): Promise<void>
+	}
+}
+
 export type FsServiceConfig = {
 	/**
 	 * Select fs backend.
@@ -28,6 +65,8 @@ export type FsServiceConfig = {
 	 * @default "node"
 	 */
 	mode?: FsServiceMode
+	/** Override the filesystem backend with a custom node-like implementation. */
+	backend?: FsServiceBackend
 }
 
 export class FsError extends Error {
@@ -55,7 +94,7 @@ export type FsStat = {
 	mtimeMs?: number
 }
 
-type FsBackend = {
+export type FsServiceBackend = {
 	exists: (path: string) => boolean
 	readText: (path: string) => Promise<string>
 	writeTextAtomic: (path: string, text: string) => Promise<void>
@@ -106,36 +145,44 @@ function getErrnoCode(error: unknown): unknown {
 	return (error as { code?: unknown }).code
 }
 
-async function renameReplaceNode(tmp: string, dst: string): Promise<void> {
+async function renameReplaceNode(
+	tmp: string,
+	dst: string,
+	fs: Pick<FsServiceNodeBackendFs['promises'], 'rename' | 'rm'>,
+): Promise<void> {
 	try {
-		await rename(tmp, dst)
+		await fs.rename(tmp, dst)
 		return
 	} catch (cause: unknown) {
 		// Windows rename cannot replace existing file. Also seen as EPERM in some cases.
 		const code = getErrnoCode(cause)
 		if (code === 'EEXIST' || code === 'EPERM') {
 			try {
-				await rm(dst, { force: true })
+				await fs.rm(dst, { force: true })
 			} catch {
 				// ignore
 			}
-			await rename(tmp, dst)
+			await fs.rename(tmp, dst)
 			return
 		}
 		throw cause
 	}
 }
 
-async function writeAtomicNode(path: string, data: Uint8Array | string): Promise<void> {
+async function writeAtomicNode(
+	path: string,
+	data: Uint8Array | string,
+	fs: Pick<FsServiceNodeBackendFs, 'promises'>,
+): Promise<void> {
 	const dir = dirname(path)
-	await mkdir(dir, { recursive: true })
+	await fs.promises.mkdir(dir, { recursive: true })
 	const tmp = resolve(dir, `.tmp.${basename(path)}.${randomHex(8)}`)
 	try {
-		await writeFile(tmp, data, { mode: 0o600 })
-		await renameReplaceNode(tmp, path)
+		await fs.promises.writeFile(tmp, data, { mode: 0o600 })
+		await renameReplaceNode(tmp, path, fs.promises)
 	} catch (cause) {
 		try {
-			await rm(tmp, { force: true })
+			await fs.promises.rm(tmp, { force: true })
 		} catch {
 			// ignore
 		}
@@ -143,46 +190,68 @@ async function writeAtomicNode(path: string, data: Uint8Array | string): Promise
 	}
 }
 
-function createNodeBackend(): FsBackend {
+const nodeBackendFs: FsServiceNodeBackendFs = {
+	existsSync,
+	promises: {
+		copyFile,
+		mkdir,
+		readFile,
+		readdir: readdir as FsServiceNodeBackendFs['promises']['readdir'],
+		realpath,
+		rename,
+		rm,
+		stat,
+		writeFile,
+	},
+}
+
+export function createNodeFsServiceBackend(
+	fs: FsServiceNodeBackendFs = nodeBackendFs,
+): FsServiceBackend {
 	return {
-		exists: (path) => existsSync(path),
+		exists: (path) => fs.existsSync(path),
 		readText: async (path) => {
 			try {
-				return await readFile(path, 'utf8')
+				const content = await fs.promises.readFile(path, 'utf8')
+				return typeof content === 'string' ? content : new TextDecoder().decode(content)
 			} catch (cause: unknown) {
 				if (getErrnoCode(cause) === 'ENOENT')
 					throw new FsError('ENOENT', `Missing file: ${path}`, { cause })
 				throw new FsError('IO', `Failed to read file: ${path}`, { cause })
 			}
 		},
-		writeTextAtomic: (path, text) => writeAtomicNode(path, text),
+		writeTextAtomic: (path, text) => writeAtomicNode(path, text, fs),
 		readBytes: async (path) => {
 			try {
-				return new Uint8Array(await readFile(path))
+				const content = await fs.promises.readFile(path)
+				return typeof content === 'string' ? utf8Encode(content) : new Uint8Array(content)
 			} catch (cause: unknown) {
 				if (getErrnoCode(cause) === 'ENOENT')
 					throw new FsError('ENOENT', `Missing file: ${path}`, { cause })
 				throw new FsError('IO', `Failed to read file: ${path}`, { cause })
 			}
 		},
-		writeBytesAtomic: (path, bytes) => writeAtomicNode(path, bytes),
+		writeBytesAtomic: (path, bytes) => writeAtomicNode(path, bytes, fs),
 		unlink: async (path) => {
 			try {
-				await rm(path, { force: true })
+				await fs.promises.rm(path, { force: true })
 			} catch (cause: unknown) {
 				throw new FsError('IO', `Failed to unlink: ${path}`, { cause })
 			}
 		},
 		rm: async (path, options) => {
 			try {
-				await rm(path, { recursive: options.recursive === true, force: options.force === true })
+				await fs.promises.rm(path, {
+					recursive: options.recursive === true,
+					force: options.force === true,
+				})
 			} catch (cause: unknown) {
 				throw new FsError('IO', `Failed to rm: ${path}`, { cause })
 			}
 		},
 		readdir: async (path) => {
 			try {
-				return (await readdir(path)) as string[]
+				return (await fs.promises.readdir(path)) as string[]
 			} catch (cause: unknown) {
 				if (getErrnoCode(cause) === 'ENOENT') return []
 				throw new FsError('IO', `Failed to readdir: ${path}`, { cause })
@@ -190,7 +259,7 @@ function createNodeBackend(): FsBackend {
 		},
 		stat: async (path) => {
 			try {
-				const st = await stat(path)
+				const st = await fs.promises.stat(path)
 				const type: FsEntryType = st.isFile() ? 'file' : st.isDirectory() ? 'dir' : 'other'
 				return { type, size: st.size, mtimeMs: st.mtimeMs }
 			} catch (cause: unknown) {
@@ -201,7 +270,7 @@ function createNodeBackend(): FsBackend {
 	}
 }
 
-function createMemoryBackend(): FsBackend {
+function createMemoryBackend(): FsServiceBackend {
 	const files = new Map<string, Uint8Array>()
 	const stats: FsServiceStats = {
 		readText: 0,
@@ -285,14 +354,15 @@ function createMemoryBackend(): FsBackend {
  */
 @RootService({ key: serviceName })
 export class FsService {
-	private backend: FsBackend
+	private backend: FsServiceBackend
 
 	constructor(
 		public ctx: Context,
 		config: FsServiceConfig = {},
 	) {
 		const mode: FsServiceMode = config.mode ?? 'node'
-		this.backend = mode === 'memory' ? createMemoryBackend() : createNodeBackend()
+		this.backend =
+			config.backend ?? (mode === 'memory' ? createMemoryBackend() : createNodeFsServiceBackend())
 	}
 
 	/** Returns whether a path exists (file only in memory mode; file/dir in node mode). */
@@ -367,4 +437,3 @@ export class FsService {
 		)
 	}
 }
-

@@ -1,8 +1,5 @@
-import { existsSync } from 'node:fs'
-import { readFile } from 'node:fs/promises'
 import { resolve } from 'pathe'
 import picomatch from 'picomatch'
-import { crawlFilesAbs, DEFAULT_IGNORED_DIR_NAMES, loadWorkspaceInfo } from '@pluxel/workspace'
 import type { BuiltinsFromDistEntry, HmrWorkspaceSnapshot } from '../snapshot'
 import { type PluxelHmrConfigV1, readHmrConfigV1, resolveDefaultHmrConfigPath } from './config'
 import {
@@ -11,6 +8,16 @@ import {
 	scanWorkspacePackages,
 } from './discover'
 import { toPosix, toRootRelative, uniqPreserveOrder, uniqSorted } from './utils'
+import {
+	DEFAULT_IGNORED_DIR_NAMES,
+	crawlFilesAbsWithFs,
+	loadWorkspaceInfoWithFs,
+	nodeHmrWorkspaceFs,
+	nodeWorkspaceFs,
+	readTextFile,
+	type HmrWorkspaceFs,
+	type WorkspaceFs,
+} from './fs'
 
 export type DiagnoseWorkspaceInput = {
 	rootDir: string
@@ -24,6 +31,7 @@ export type DiagnoseWorkspaceInput = {
 	 * (prevents "plugin name conflict" from double-loading the same package).
 	 */
 	omitPackages?: string[]
+	fs?: HmrWorkspaceFs
 }
 
 export type WorkspaceSnapshot = HmrWorkspaceSnapshot & { discovered: DiscoveredPlugin[] }
@@ -78,9 +86,12 @@ function collectManifestDeps(manifest: unknown): Set<string> {
 	return out
 }
 
-async function readWorkspaceRootDeclaredPluginDeps(rootDirAbs: string): Promise<Set<string>> {
+async function readWorkspaceRootDeclaredPluginDeps(
+	rootDirAbs: string,
+	fs: WorkspaceFs = nodeWorkspaceFs,
+): Promise<Set<string>> {
 	try {
-		const raw = await readFile(resolve(rootDirAbs, 'package.json'), 'utf8')
+		const raw = await readTextFile(fs, resolve(rootDirAbs, 'package.json'))
 		const json = JSON.parse(raw) as unknown
 		return collectManifestDeps(json)
 	} catch {
@@ -112,11 +123,12 @@ export function mergeHmrProfile(
 export async function resolveHmrRootsExpanded(
 	rootDir: string,
 	roots: 'auto' | string[],
+	fs: WorkspaceFs = nodeWorkspaceFs,
 ): Promise<string[]> {
 	const base = resolve(rootDir)
 	if (roots !== 'auto') return uniqSorted(roots.map((r) => toPosix(resolve(base, r))))
 
-	const info = await loadWorkspaceInfo(base)
+	const info = await loadWorkspaceInfoWithFs(base, fs)
 	const rootsAbs = uniqSorted(info.packageDirs.length ? info.packageDirs : [info.root])
 	return rootsAbs.map(toPosix)
 }
@@ -155,8 +167,10 @@ async function resolveIncludeEntryFilesAbs(params: {
 	rootDir: string
 	includeGlobs: string[]
 	excludeGlobs: string[]
+	fs?: WorkspaceFs
 }): Promise<string[]> {
 	const rootDirAbs = resolve(params.rootDir)
+	const fs = params.fs ?? nodeWorkspaceFs
 
 	const includeAbs = params.includeGlobs.map((g) => toPosix(resolve(rootDirAbs, g)))
 	if (!includeAbs.length) return []
@@ -167,16 +181,19 @@ async function resolveIncludeEntryFilesAbs(params: {
 
 	const crawlRoots = uniqSorted(
 		params.includeGlobs.map((p) => toPosix(resolveGlobBaseDir(rootDirAbs, p))),
-	).filter((d) => existsSync(d))
+	).filter((d) => fs.existsSync(d))
 
 	const out = new Set<string>()
 	for (const root of crawlRoots) {
-		const files = await crawlFilesAbs({
-			roots: [root],
-			ignoreDirNames: DEFAULT_IGNORED_DIR_NAMES,
-			fileFilter: (p) =>
-				p.endsWith('.ts') || p.endsWith('.tsx') || p.endsWith('.mts') || p.endsWith('.cts'),
-		})
+		const files = await crawlFilesAbsWithFs(
+			{
+				roots: [root],
+				ignoreDirNames: DEFAULT_IGNORED_DIR_NAMES,
+				fileFilter: (p) =>
+					p.endsWith('.ts') || p.endsWith('.tsx') || p.endsWith('.mts') || p.endsWith('.cts'),
+			},
+			fs,
+		)
 
 		for (const abs of files) {
 			if (!isIncluded(abs)) continue
@@ -211,9 +228,11 @@ export async function buildWorkspaceSnapshotFromScan(params: {
 	packages: Array<{ name: string; deps: string[]; pkgDirAbs: string }>
 	discovered: DiscoveredPlugin[]
 	omitPackages?: string[]
+	fs?: WorkspaceFs
 }): Promise<DiagnoseWorkspaceResult> {
 	const rootDirAbs = resolve(params.rootDir)
-	const rootDeclaredDeps = await readWorkspaceRootDeclaredPluginDeps(rootDirAbs)
+	const rootDeclaredDeps = await readWorkspaceRootDeclaredPluginDeps(rootDirAbs, params.fs)
+	const fs = params.fs ?? nodeWorkspaceFs
 
 	const depsByName = new Map(params.packages.map((p) => [p.name, p.deps]))
 	const discoveredSet = new Set(params.discovered.map((p) => p.name))
@@ -242,7 +261,7 @@ export async function buildWorkspaceSnapshotFromScan(params: {
 			continue
 		}
 		const entryAbs = toPosix(resolve(rootDirAbs, plugin.entry))
-		if (!existsSync(entryAbs)) {
+		if (!fs.existsSync(entryAbs)) {
 			errors.push(`[hmr] Plugin entry missing on disk: ${name} -> ${plugin.entry}`)
 			continue
 		}
@@ -253,6 +272,7 @@ export async function buildWorkspaceSnapshotFromScan(params: {
 		rootDir: rootDirAbs,
 		includeGlobs: params.merged.includeGlobs,
 		excludeGlobs: params.merged.excludeGlobs,
+		fs: params.fs,
 	})
 	const includedEntries = includeEntryFilesAbs.map((abs) => toRootRelative(rootDirAbs, abs))
 
@@ -378,13 +398,14 @@ export async function diagnoseWorkspace(
 ): Promise<DiagnoseWorkspaceResult> {
 	const rootDirAbs = resolve(input.rootDir)
 	const configPathAbs = resolve(rootDirAbs, input.configPath)
+	const fs = input.fs ?? nodeHmrWorkspaceFs
 
-	if (!existsSync(configPathAbs))
+	if (!fs.existsSync(configPathAbs))
 		return { ok: false, errors: [`Missing config file: ${configPathAbs}`] }
 
 	let cfg: PluxelHmrConfigV1
 	try {
-		cfg = readHmrConfigV1(configPathAbs)
+		cfg = readHmrConfigV1(configPathAbs, fs)
 	} catch (error) {
 		return { ok: false, errors: [error instanceof Error ? error.message : String(error)] }
 	}
@@ -398,7 +419,7 @@ export async function diagnoseWorkspace(
 
 	let rootsExpandedAbs: string[]
 	try {
-		rootsExpandedAbs = await resolveHmrRootsExpanded(rootDirAbs, merged.roots)
+		rootsExpandedAbs = await resolveHmrRootsExpanded(rootDirAbs, merged.roots, fs)
 	} catch (error) {
 		return { ok: false, errors: [error instanceof Error ? error.message : String(error)] }
 	}
@@ -407,6 +428,7 @@ export async function diagnoseWorkspace(
 		rootDir: rootDirAbs,
 		roots: rootsExpandedAbs,
 		excludeGlobs: merged.excludeGlobs,
+		fs,
 	})
 	const discovered = discoverPluginsFromPackages(rootDirAbs, packages)
 
@@ -422,6 +444,7 @@ export async function diagnoseWorkspace(
 		packages: packages.map((p) => ({ name: p.name, deps: p.deps, pkgDirAbs: p.pkgDirAbs })),
 		discovered,
 		omitPackages: omitPackages.length ? omitPackages : undefined,
+		fs,
 	})
 
 	if (!base.ok) return base
@@ -452,7 +475,7 @@ export async function diagnoseWorkspace(
 		}
 
 		const entryAbs = resolve(pkg.pkgDirAbs, rel)
-		if (!existsSync(entryAbs)) {
+		if (!fs.existsSync(entryAbs)) {
 			return {
 				ok: false,
 				errors: [`[hmr] Builtin dist entry missing on disk for ${pkgName}: ${entryAbs}`],

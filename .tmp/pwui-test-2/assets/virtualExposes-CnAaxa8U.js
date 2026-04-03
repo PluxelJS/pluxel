@@ -1,0 +1,2 @@
+import { t as virtual_mf_exposes_pluxel_ext_PluginWithUI_6jdrs0__remoteEntry_js_default } from "./virtual_mf-exposes_pluxel_ext_PluginWithUI_6jdrs0__remoteEntry_js-CVIpotUG.js";
+export { virtual_mf_exposes_pluxel_ext_PluginWithUI_6jdrs0__remoteEntry_js_default as default };

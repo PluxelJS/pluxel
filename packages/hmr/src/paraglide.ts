@@ -17,14 +17,21 @@ export interface ResolvedParaglideIntegration {
 }
 
 export function resolveParaglideIntegration(root: string): ResolvedParaglideIntegration | null {
+	return resolveParaglideIntegrationWithFs(root, { existsSync })
+}
+
+export function resolveParaglideIntegrationWithFs(
+	root: string,
+	fsOps: { existsSync(path: string): boolean },
+): ResolvedParaglideIntegration | null {
 	const project = `./${PLUXEL_PARAGLIDE_PROJECT_FILE}`
 	const outdir = `./${PLUXEL_PARAGLIDE_OUTDIR}`
 	const projectFile = resolve(root, PLUXEL_PARAGLIDE_PROJECT_FILE)
-	if (!existsSync(projectFile)) return null
+	if (!fsOps.existsSync(projectFile)) return null
 
 	const sourceRoots = [projectFile]
 	const messagesDir = resolve(root, PLUXEL_PARAGLIDE_MESSAGES_DIR)
-	if (existsSync(messagesDir)) sourceRoots.push(messagesDir)
+	if (fsOps.existsSync(messagesDir)) sourceRoots.push(messagesDir)
 
 	return {
 		project,

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { createFixture } from 'fs-fixture'
+import { createDiskFixture as createFixture } from '@pluxel/test/fixtures'
 
 import { Context } from '@pluxel/runtime'
 

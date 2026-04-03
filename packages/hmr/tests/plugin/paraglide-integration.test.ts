@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { createFixture } from 'fs-fixture'
+import { createFixture } from '@pluxel/test/fixtures'
 import { join } from 'pathe'
 
 import {
@@ -7,7 +7,7 @@ import {
 	PLUXEL_PARAGLIDE_MESSAGES_DIR,
 	PLUXEL_PARAGLIDE_OUTDIR,
 	PLUXEL_PARAGLIDE_PROJECT_FILE,
-	resolveParaglideIntegration,
+	resolveParaglideIntegrationWithFs,
 } from '../../src/paraglide'
 
 describe('paraglide integration', () => {
@@ -20,7 +20,7 @@ describe('paraglide integration', () => {
 			},
 		})
 
-		expect(resolveParaglideIntegration(fixture.path)).toBeNull()
+		expect(resolveParaglideIntegrationWithFs(fixture.path, fixture.fs)).toBeNull()
 	})
 
 	it('detects the default project/messages/outdir convention', async () => {
@@ -36,7 +36,7 @@ describe('paraglide integration', () => {
 			},
 		})
 
-		const resolved = resolveParaglideIntegration(fixture.path)
+		const resolved = resolveParaglideIntegrationWithFs(fixture.path, fixture.fs)
 		expect(resolved).toMatchObject({
 			project: `./${PLUXEL_PARAGLIDE_PROJECT_FILE}`,
 			outdir: `./${PLUXEL_PARAGLIDE_OUTDIR}`,
@@ -60,7 +60,7 @@ describe('paraglide integration', () => {
 			},
 		})
 
-		const resolved = resolveParaglideIntegration(fixture.path)
+		const resolved = resolveParaglideIntegrationWithFs(fixture.path, fixture.fs)
 		expect(
 			isParaglideGeneratedFile(resolved, join(fixture.path, PLUXEL_PARAGLIDE_OUTDIR, 'messages.js')),
 		).toBe(

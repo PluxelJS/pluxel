@@ -13,6 +13,8 @@ export type PluxelVitestOptions = {
 	include?: string | string[]
 	/** Exclude patterns for configSource extraction. */
 	exclude?: string | string[]
+	/** Override Vitest's local default for packages without matching tests. */
+	passWithNoTests?: boolean
 	/**
 	 * Extra Vite plugins to run BEFORE Pluxel toolchain plugins.
 	 *
@@ -91,16 +93,17 @@ export function definePluxelVitestConfig(
 	)
 	const exclude = normalizeGlobs(toArray(options.exclude) ?? ['**/node_modules/**', '**/*.d.ts'])
 	const baseConditions = buildPluxelResolveConditions()
+	const setupFile = '@pluxel/test/setup'
 
 	const base: ViteUserConfig = {
 		resolve: { conditions: baseConditions },
 		ssr: { resolve: { conditions: baseConditions } },
 		test: {
 			environment: 'node',
-			setupFiles: ['@pluxel/test/setup'],
+			setupFiles: [setupFile],
 			// Monorepos commonly have packages without tests. Keep local runs friendly,
 			// but still allow CI to fail if a project unexpectedly has no tests.
-			passWithNoTests: !process.env.CI,
+			passWithNoTests: options.passWithNoTests ?? !process.env.CI,
 			// Avoid Vite deps optimizer OOMs in large monorepos (node tests don't need it).
 			deps: {
 				optimizer: {
@@ -140,7 +143,7 @@ export function definePluxelVitestConfig(
 		// Always keep core setup in place. Caller can add more setup files.
 		merged.test = merged.test ?? {}
 		merged.test.setupFiles = uniqStrings([
-			'@pluxel/test/setup',
+			setupFile,
 			...asStringArray(merged.test.setupFiles),
 		])
 

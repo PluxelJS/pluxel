@@ -2,11 +2,25 @@
 
 > Status: published dev-only. It is intended for tests/tooling, not for production runtime dependencies.
 
-Single test surface for Pluxel:
+Single test surface for Pluxel plugin/runtime tests:
 
 - Automatic core setup on import (`@pluxel/core/env` + services registration)
 - A minimal Host/Context API for integration/unit tests
 - An opinionated Vitest preset (optional)
+
+Workspace tests can use `@pluxel/test/fixtures` for VFS-backed fixtures. External consumers should still prefer bringing their own fixture/fs library.
+Each fixture owns its own filesystem instance. Prefer `await using fixture = await createFixture(...)`, then pass `fixture.fs` / `fixture.fsp` into the code under test.
+
+```ts
+import { createFixture } from '@pluxel/test/fixtures'
+
+await using fixture = await createFixture({
+  'packages/a/src/index.ts': 'export const entry = "a"\n',
+})
+
+await fixture.fsp.writeFile(fixture.getPath('tmp.txt'), 'ok\n', 'utf8')
+expect(fixture.fs.existsSync(fixture.getPath('tmp.txt'))).toBe(true)
+```
 
 LLM-facing guide: `packages/test/LLM_TESTING_GUIDE.md`.
 

@@ -1,7 +1,5 @@
-import { afterEach, describe, expect, test } from 'vitest'
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
-import { resolve } from 'pathe'
+import { describe, expect, test } from 'vitest'
+import { createFixture } from '@pluxel/test/fixtures'
 import { EntryResolver } from '../../src/services/runtime/scan/entry-resolver'
 import { ModuleResolveCache } from '../../src/services/runtime/scan/resolve-cache'
 import type { ResolvedScanOptions } from '../../src/services/runtime/scan/types'
@@ -18,42 +16,31 @@ const baseOptions: ResolvedScanOptions = {
 }
 
 const cache = new ModuleResolveCache()
-const resolver = new EntryResolver(cache)
-
-let workdir = mkdtempSync(resolve(tmpdir(), 'hmr-entry-test-'))
-afterEach(() => {
-	rmSync(workdir, { recursive: true, force: true })
-	workdir = mkdtempSync(resolve(tmpdir(), 'hmr-entry-test-'))
-})
 
 describe('EntryResolver preferHmrExports', () => {
-	function writeFixture() {
-		mkdirSync(resolve(workdir, 'src'), { recursive: true })
-		mkdirSync(resolve(workdir, 'dist'), { recursive: true })
-		writeFileSync(
-			resolve(workdir, 'package.json'),
-			JSON.stringify(
-				{
-					name: 'pluxel-plugin-wretch',
-					exports: {
-						'.': {
-							'@pluxel/runtime': './src/wretch.ts',
-							default: './dist/wretch.mjs',
-						},
+	const fixtureTree = {
+		'package.json': JSON.stringify(
+			{
+				name: 'pluxel-plugin-wretch',
+				exports: {
+					'.': {
+						'@pluxel/runtime': './src/wretch.ts',
+						default: './dist/wretch.mjs',
 					},
 				},
-				null,
-				2,
-			),
-		)
-		writeFileSync(resolve(workdir, 'src', 'wretch.ts'), '// hmr entry')
-		writeFileSync(resolve(workdir, 'dist', 'wretch.mjs'), '// bundled entry')
+			},
+			null,
+			2,
+		),
+		'src/wretch.ts': '// hmr entry',
+		'dist/wretch.mjs': '// bundled entry',
 	}
 
 	test('prefers @pluxel/runtime export when enabled', async () => {
-		writeFixture()
+		await using fixture = await createFixture(fixtureTree)
+		const resolver = new EntryResolver(cache, fixture.fs)
 		const options: ResolvedScanOptions = { ...baseOptions, preferHmrExports: true }
-		const result = await resolver.resolve(workdir, options)
+		const result = await resolver.resolve(fixture.path, options)
 		expect(result.ok).toBe(true)
 		if (result.ok) {
 			expect(result.entry.replace(/\\/g, '/').endsWith('/src/wretch.ts')).toBe(true)
@@ -61,9 +48,10 @@ describe('EntryResolver preferHmrExports', () => {
 	})
 
 	test('falls back to default export when disabled', async () => {
-		writeFixture()
+		await using fixture = await createFixture(fixtureTree)
+		const resolver = new EntryResolver(cache, fixture.fs)
 		const options: ResolvedScanOptions = { ...baseOptions, preferHmrExports: false }
-		const result = await resolver.resolve(workdir, options)
+		const result = await resolver.resolve(fixture.path, options)
 		expect(result.ok).toBe(true)
 		if (result.ok) {
 			expect(result.entry.replace(/\\/g, '/').endsWith('/dist/wretch.mjs')).toBe(true)

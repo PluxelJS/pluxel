@@ -1,19 +1,35 @@
-import { existsSync, readFileSync, writeFileSync } from 'node:fs'
-import { readPackageJSON } from 'pkg-types'
+import { readFileSync, writeFileSync } from 'node:fs'
 import { resolve as r } from 'pathe'
 import type { PackageJson } from 'pkg-types'
+import { nodeWorkspaceFs, readTextFile, type WorkspaceFs } from './fs'
 
 export async function safeReadManifest(dir: string): Promise<PackageJson | undefined> {
+	return await safeReadManifestWithFs(dir, nodeWorkspaceFs)
+}
+
+export async function safeReadManifestWithFs(
+	dir: string,
+	fs: WorkspaceFs = nodeWorkspaceFs,
+): Promise<PackageJson | undefined> {
+	const manifestPath = r(dir, 'package.json')
+	if (!fs.existsSync(manifestPath)) return undefined
 	try {
-		return await readPackageJSON(dir)
+		return JSON.parse(await readTextFile(fs, manifestPath)) as PackageJson
 	} catch {
 		return undefined
 	}
 }
 
 export function manifestPathFor(dir: string): string | undefined {
+	return manifestPathForWithFs(dir, nodeWorkspaceFs)
+}
+
+export function manifestPathForWithFs(
+	dir: string,
+	fs: WorkspaceFs = nodeWorkspaceFs,
+): string | undefined {
 	const path = r(dir, 'package.json')
-	return existsSync(path) ? path : undefined
+	return fs.existsSync(path) ? path : undefined
 }
 
 export function readRawManifest(path: string): { data: PackageJson; raw: string } {

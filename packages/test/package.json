@@ -12,6 +12,11 @@
 			"import": "./dist/index.mjs",
 			"require": "./dist/index.cjs"
 		},
+		"./fixtures": {
+			"@pluxel/source": "./src/fixtures.ts",
+			"import": "./dist/fixtures.mjs",
+			"require": "./dist/fixtures.cjs"
+		},
 		"./setup": {
 			"@pluxel/source": "./src/setup.ts",
 			"import": "./dist/setup.mjs",
@@ -35,6 +40,7 @@
 	],
 	"scripts": {
 		"build": "tsdown",
+		"test": "pnpm exec vitest run --config vitest.config.ts",
 		"typecheck": "tsc -p tsconfig.json --noEmit"
 	},
 	"peerDependencies": {
@@ -43,7 +49,9 @@
 		"vitest": "^4.1.1"
 	},
 	"devDependencies": {
+		"@platformatic/vfs": "^0.3.0",
 		"@pluxel/build": "workspace:*",
+		"fs-fixture": "^2.13.0",
 		"vitest": "^4.1.1"
 	},
 	"publishConfig": {
@@ -51,6 +59,10 @@
 			".": {
 				"import": "./dist/index.mjs",
 				"require": "./dist/index.cjs"
+			},
+			"./fixtures": {
+				"import": "./dist/fixtures.mjs",
+				"require": "./dist/fixtures.cjs"
 			},
 			"./setup": {
 				"import": "./dist/setup.mjs",
@@ -68,6 +80,8 @@
 		}
 	},
 	"inlinedDependencies": {
+		"@platformatic/vfs": "0.3.0",
+		"fs-fixture": "2.13.0",
 		"pathe": "2.0.3"
 	}
 }

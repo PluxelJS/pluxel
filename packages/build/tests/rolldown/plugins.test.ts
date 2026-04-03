@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { resolve } from 'node:path'
-import { createFixture } from 'fs-fixture'
+import { createDiskFixture as createFixture } from '@pluxel/test/fixtures'
 import type { Plugin as RolldownPlugin } from 'rolldown'
 import { rolldown } from 'rolldown'
 import { configSourcePlugin } from '../../src/rolldown/plugins/configSourcePlugin'

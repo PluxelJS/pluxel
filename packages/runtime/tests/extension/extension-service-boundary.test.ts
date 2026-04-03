@@ -1,9 +1,8 @@
 import { describe, expect, it, vi } from 'vitest'
-import { createFixture } from 'fs-fixture'
+import { createFixture, type TestFixture } from '@pluxel/test/fixtures'
 import { dirname, join } from 'pathe'
 import { fileURLToPath } from 'node:url'
-import { mkdir, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises'
-import { existsSync } from 'node:fs'
+import { readFile } from 'node:fs/promises'
 
 import {
 	createCompiledExtensionModule,
@@ -13,24 +12,24 @@ import { defineInteractionContract, doc } from '../../src/web/extensions'
 
 const runtimePackageDir = dirname(dirname(dirname(fileURLToPath(import.meta.url))))
 
-function createNodeFsShim() {
+function createNodeFsShim(fixture: Pick<TestFixture, 'fs' | 'fsp'>) {
 	return {
-		exists: (path: string) => existsSync(path),
-		readText: (path: string) => readFile(path, 'utf-8'),
+		exists: (path: string) => fixture.fs.existsSync(path),
+		readText: (path: string) => fixture.fsp.readFile(path, 'utf-8'),
 		writeTextAtomic: async (path: string, text: string) => {
-			await mkdir(dirname(path), { recursive: true })
-			await writeFile(path, text, 'utf-8')
+			await fixture.fsp.mkdir(dirname(path), { recursive: true })
+			await fixture.fsp.writeFile(path, text, 'utf-8')
 		},
 		readdir: async (path: string) => {
 			try {
-				return await readdir(path)
+				return await fixture.fsp.readdir(path)
 			} catch {
 				return []
 			}
 		},
 		stat: async (path: string) => {
 			try {
-				const st = await stat(path)
+				const st = await fixture.fsp.stat(path)
 				return {
 					type: st.isFile() ? 'file' : st.isDirectory() ? 'dir' : 'other',
 					size: st.size,
@@ -41,22 +40,29 @@ function createNodeFsShim() {
 			}
 		},
 		unlink: async (path: string) => {
-			await rm(path, { force: true })
+			await fixture.fsp.rm(path, { force: true })
 		},
 		rm: async (path: string, options: { recursive?: boolean; force?: boolean }) => {
-			await rm(path, { recursive: options.recursive === true, force: options.force === true })
+			await fixture.fsp.rm(path, {
+				recursive: options.recursive === true,
+				force: options.force === true,
+			})
 		},
 	}
 }
 
-function createFakeCtx(overrides?: Partial<any>) {
+function createFakeCtx(overrides?: Partial<any>, fixture?: Pick<TestFixture, 'fs' | 'fsp'>) {
 	const rootLogger = {
 		error: vi.fn(),
 		warn: vi.fn(),
 		info: vi.fn(),
 		debug: vi.fn(),
 	}
-	const root: any = { logger: rootLogger, config: {}, fs: createNodeFsShim() }
+	const root: any = {
+		logger: rootLogger,
+		config: {},
+		...(fixture ? { fs: createNodeFsShim(fixture) } : {}),
+	}
 
 	const ctx: any = {
 		root,
@@ -70,7 +76,7 @@ function createFakeCtx(overrides?: Partial<any>) {
 		...overrides,
 	}
 	if (!ctx.root) ctx.root = root
-	if (!ctx.root.fs) ctx.root.fs = createNodeFsShim()
+	if (!ctx.root.fs && fixture) ctx.root.fs = createNodeFsShim(fixture)
 	if (!ctx.root.logger) ctx.root.logger = rootLogger
 	if (!ctx.root.config) ctx.root.config = {}
 	ctx.config = ctx.config ?? ctx.root.config
@@ -179,7 +185,7 @@ describe('ExtensionService runtime/dev boundary', () => {
 				},
 			},
 			pluginInfo: { id: 'test-plugin' },
-		})
+		}, fixture)
 		const service = new ExtensionService(ctx, { enabled: true })
 
 		const dispose = service.packaged()
@@ -229,7 +235,7 @@ describe('ExtensionService runtime/dev boundary', () => {
 				},
 			},
 			pluginInfo: { id: 'test-plugin' },
-		})
+		}, fixture)
 		const service = new ExtensionService(ctx, { enabled: true })
 
 		const dispose = service.packaged()
@@ -266,7 +272,7 @@ describe('ExtensionService runtime/dev boundary', () => {
 				},
 			},
 			pluginInfo: { id: 'test-plugin' },
-		})
+		}, fixture)
 		const service = new ExtensionService(ctx, { enabled: true })
 
 		const dispose = service.packaged()

@@ -14,6 +14,7 @@ export default defineConfig({
 		alwaysBundle: ['@pluxel/build', '@pluxel/build/*'],
 	},
 	entry: {
+		fixtures: './src/fixtures.ts',
 		index: './src/index.ts',
 		setup: './src/setup.ts',
 		vitest: './src/vitest.ts',

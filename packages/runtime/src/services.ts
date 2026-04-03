@@ -26,6 +26,9 @@ export {
 export {
 	FsError,
 	FsService,
+	createNodeFsServiceBackend,
+	type FsServiceBackend,
+	type FsServiceNodeBackendFs,
 	type FsEntryType,
 	type FsServiceConfig,
 	type FsServiceMode,

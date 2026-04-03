@@ -1,4 +1,4 @@
-import { createFixture } from 'fs-fixture'
+import { createDiskFixture as createFixture } from '@pluxel/test/fixtures'
 import { join } from 'pathe'
 import { symlinkSync } from 'node:fs'
 import { normalizePath } from 'vite'

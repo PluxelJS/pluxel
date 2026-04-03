@@ -4,7 +4,7 @@ import { existsSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { execFileSync, spawn } from 'node:child_process'
-import { createFixture } from 'fs-fixture'
+import { createDiskFixture as createFixture } from '@pluxel/test/fixtures'
 
 const macroEntrySource = [
 	"import { bakeMachine } from '../../defineMachine.macro' with { type: 'macro' }",

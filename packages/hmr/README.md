@@ -30,13 +30,15 @@
 ## 推荐入口
 
 ```ts
-import { startHmrHostFromConfig } from '@pluxel/hmr/host'
+import { bootPlannedHmrHost, planHmrHostFromConfig } from '@pluxel/hmr/host'
 
-const { ctx } = await startHmrHostFromConfig({
+const plan = await planHmrHostFromConfig({
 	root: process.cwd(),
 	configPath: 'pluxel.hmr.jsonc',
 	profile: process.env.PLUXEL_HMR_PROFILE ?? 'dev',
 })
+const { ctx, hmr } = await bootPlannedHmrHost(plan)
+await hmr.start()
 ```
 
 已有 `Context` 时，再用 `attachHmrRuntime(...)`。

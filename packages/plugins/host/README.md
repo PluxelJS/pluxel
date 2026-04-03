@@ -66,7 +66,7 @@ pnpm --filter @pluxel/plugins-host deploy:frozen:smoke
 
 ## Boundary
 
-- `scripts/hmr-start.mjs` 走 `startHmrHostFromConfig()`，这是开发样例。
+- `scripts/hmr-start.mjs` 走 `planHmrHostFromConfig()` + `bootPlannedHmrHost()`，这是开发样例。
 - `scripts/managed-start.mjs` 走 `new Context()` + `ctx.loader.preloadPlugins()`，runtime 直接拥有 storage / config / control plane / builtin baseline。
 - `scripts/frozen-build.mjs` + `scripts/frozen-start.mjs` 走 `buildFrozenHost()` 产物，冻结版不再模拟 HMR。
 - 真实 HTTP 暴露统一复用 `scripts/_serve-fetch-host.mjs`，因此 managed / frozen 共用同一条 runtime fetch -> Node server 桥接。

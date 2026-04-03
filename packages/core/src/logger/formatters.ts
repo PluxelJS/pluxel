@@ -419,6 +419,8 @@ function formatHmrUpdatedDetails(record: LogRecord, colorsOn: boolean): string[]
 	const props = record.properties as Record<string, unknown>
 
 	const epoch = typeof props.epoch === 'number' ? props.epoch : undefined
+	const ok = typeof props.ok === 'boolean' ? props.ok : undefined
+	const commitError = typeof props.commitError === 'string' ? props.commitError : undefined
 	const changedFiles = typeof props.changedFiles === 'number' ? props.changedFiles : undefined
 	const changedPreview = Array.isArray(props.changedPreview)
 		? (props.changedPreview.filter((x) => typeof x === 'string') as string[])
@@ -471,7 +473,12 @@ function formatHmrUpdatedDetails(record: LogRecord, colorsOn: boolean): string[]
 
 	const summaryParts: string[] = []
 	const amber = '\u001B[38;2;253;224;71m'
+	const green = '\u001B[32m'
+	const red = '\u001B[31m'
 	const fmtCount = (n: number) => colorizeValue(String(n), colorsOn, amber)
+	const fmtStatus = (value: 'ok' | 'failed') =>
+		colorizeValue(value, colorsOn, value === 'ok' ? green : red)
+	if (ok !== undefined) summaryParts.push(`status=${fmtStatus(ok ? 'ok' : 'failed')}`)
 	if (epoch !== undefined) summaryParts.push(`epoch=${fmtCount(epoch)}`)
 	if (changedFiles !== undefined) summaryParts.push(`changed=${fmtCount(changedFiles)}`)
 	if (targets !== undefined) summaryParts.push(`targets=${fmtCount(targets)}`)
@@ -484,6 +491,8 @@ function formatHmrUpdatedDetails(record: LogRecord, colorsOn: boolean): string[]
 	if (batchMs) timeParts.push(`batch=${batchMs}`)
 	if (commitMs) timeParts.push(`commit=${commitMs}`)
 	if (timeParts.length) lines.push(`    time: ${timeParts.join(' ')}`)
+
+	if (commitError) lines.push(`    error: ${String(commitError).replace(/\s+/g, ' ').slice(0, 240)}`)
 
 	const pluginParts: string[] = []
 	if (pluginsLoaded !== undefined) pluginParts.push(`loaded=${fmtCount(pluginsLoaded)}`)

@@ -1,0 +1,117 @@
+{
+  ".__mf__temp/pluxel_ext_PluginWithUI_6jdrs0/localSharedImportMap.js": {
+    "file": "assets/localSharedImportMap-YJZkTlZN.js",
+    "name": "localSharedImportMap",
+    "src": ".__mf__temp/pluxel_ext_PluginWithUI_6jdrs0/localSharedImportMap.js",
+    "isDynamicEntry": true,
+    "imports": [
+      "_dist-Bkn8ZjXc.js"
+    ]
+  },
+  "_dist-Bkn8ZjXc.js": {
+    "file": "assets/dist-Bkn8ZjXc.js",
+    "name": "dist",
+    "imports": [
+      "_preload-helper-CKGNGTs9.js"
+    ]
+  },
+  "_pluxel_ext_PluginWithUI_6jdrs0__H_A_I__hostAutoInit__H_A_I__-Cm0qJ30r.js": {
+    "file": "assets/pluxel_ext_PluginWithUI_6jdrs0__H_A_I__hostAutoInit__H_A_I__-Cm0qJ30r.js",
+    "name": "pluxel_ext_PluginWithUI_6jdrs0__H_A_I__hostAutoInit__H_A_I__",
+    "imports": [
+      "_preload-helper-CKGNGTs9.js"
+    ],
+    "dynamicImports": [
+      "_virtual_mf-REMOTE_ENTRY_ID_pluxel_ext_PluginWithUI_6jdrs0__remoteEntry_js-BD--uf2H.js"
+    ]
+  },
+  "_pluxel_ext_PluginWithUI_6jdrs0__loadShare___mf_0_mantine_mf_1_core__loadShare__.mjs-1PSNKu5D.js": {
+    "file": "assets/pluxel_ext_PluginWithUI_6jdrs0__loadShare___mf_0_mantine_mf_1_core__loadShare__.mjs-1PSNKu5D.js",
+    "name": "pluxel_ext_PluginWithUI_6jdrs0__loadShare___mf_0_mantine_mf_1_core__loadShare__.mjs"
+  },
+  "_pluxel_ext_PluginWithUI_6jdrs0__loadShare___mf_0_pluxel_mf_1_runtime_mf_1_web_mf_1_ui__loadShare__.mjs-R30-42y2.js": {
+    "file": "assets/pluxel_ext_PluginWithUI_6jdrs0__loadShare___mf_0_pluxel_mf_1_runtime_mf_1_web_mf_1_ui__loadShare__.mjs-R30-42y2.js",
+    "name": "pluxel_ext_PluginWithUI_6jdrs0__loadShare___mf_0_pluxel_mf_1_runtime_mf_1_web_mf_1_ui__loadShare__.mjs"
+  },
+  "_pluxel_ext_PluginWithUI_6jdrs0__loadShare__react__loadShare__.mjs-1UdM3_As.js": {
+    "file": "assets/pluxel_ext_PluginWithUI_6jdrs0__loadShare__react__loadShare__.mjs-1UdM3_As.js",
+    "name": "pluxel_ext_PluginWithUI_6jdrs0__loadShare__react__loadShare__.mjs",
+    "imports": [
+      "_rolldown-runtime-C64D6zeW.js"
+    ]
+  },
+  "_preload-helper-CKGNGTs9.js": {
+    "file": "assets/preload-helper-CKGNGTs9.js",
+    "name": "preload-helper"
+  },
+  "_rolldown-runtime-C64D6zeW.js": {
+    "file": "assets/rolldown-runtime-C64D6zeW.js",
+    "name": "rolldown-runtime"
+  },
+  "_virtual_mf-REMOTE_ENTRY_ID_pluxel_ext_PluginWithUI_6jdrs0__remoteEntry_js-BD--uf2H.js": {
+    "file": "assets/virtual_mf-REMOTE_ENTRY_ID_pluxel_ext_PluginWithUI_6jdrs0__remoteEntry_js-BD--uf2H.js",
+    "name": "virtual_mf-REMOTE_ENTRY_ID_pluxel_ext_PluginWithUI_6jdrs0__remoteEntry_js",
+    "imports": [
+      "_preload-helper-CKGNGTs9.js",
+      "_dist-Bkn8ZjXc.js"
+    ],
+    "dynamicImports": [
+      ".__mf__temp/pluxel_ext_PluginWithUI_6jdrs0/localSharedImportMap.js",
+      "_virtual_mf-exposes_pluxel_ext_PluginWithUI_6jdrs0__remoteEntry_js-CVIpotUG.js"
+    ]
+  },
+  "_virtual_mf-exposes_pluxel_ext_PluginWithUI_6jdrs0__remoteEntry_js-CVIpotUG.js": {
+    "file": "assets/virtual_mf-exposes_pluxel_ext_PluginWithUI_6jdrs0__remoteEntry_js-CVIpotUG.js",
+    "name": "virtual_mf-exposes_pluxel_ext_PluginWithUI_6jdrs0__remoteEntry_js",
+    "imports": [
+      "_preload-helper-CKGNGTs9.js"
+    ],
+    "dynamicImports": [
+      "src/demo/PluginWithUI/ui/index.tsx"
+    ]
+  },
+  "node_modules/__mf__virtual/pluxel_ext_PluginWithUI_6jdrs0__H_A_I__hostAutoInit__H_A_I__.js": {
+    "file": "assets/hostInit-DTpR4Rer.js",
+    "name": "hostInit",
+    "src": "node_modules/__mf__virtual/pluxel_ext_PluginWithUI_6jdrs0__H_A_I__hostAutoInit__H_A_I__.js",
+    "isEntry": true,
+    "imports": [
+      "_pluxel_ext_PluginWithUI_6jdrs0__H_A_I__hostAutoInit__H_A_I__-Cm0qJ30r.js"
+    ]
+  },
+  "src/demo/PluginWithUI/ui/index.tsx": {
+    "file": "assets/index-DZ4sP7Q8.js",
+    "name": "index",
+    "src": "src/demo/PluginWithUI/ui/index.tsx",
+    "isEntry": true,
+    "imports": [
+      "_rolldown-runtime-C64D6zeW.js",
+      "_dist-Bkn8ZjXc.js",
+      "_pluxel_ext_PluginWithUI_6jdrs0__H_A_I__hostAutoInit__H_A_I__-Cm0qJ30r.js",
+      "_pluxel_ext_PluginWithUI_6jdrs0__loadShare___mf_0_mantine_mf_1_core__loadShare__.mjs-1PSNKu5D.js",
+      "_pluxel_ext_PluginWithUI_6jdrs0__loadShare___mf_0_pluxel_mf_1_runtime_mf_1_web_mf_1_ui__loadShare__.mjs-R30-42y2.js",
+      "_pluxel_ext_PluginWithUI_6jdrs0__loadShare__react__loadShare__.mjs-1UdM3_As.js",
+      "_virtual_mf-REMOTE_ENTRY_ID_pluxel_ext_PluginWithUI_6jdrs0__remoteEntry_js-BD--uf2H.js",
+      "_virtual_mf-exposes_pluxel_ext_PluginWithUI_6jdrs0__remoteEntry_js-CVIpotUG.js"
+    ]
+  },
+  "virtual:mf-REMOTE_ENTRY_ID:pluxel_ext_PluginWithUI_6jdrs0__remoteEntry_js": {
+    "file": "remoteEntry.js",
+    "name": "remoteEntry",
+    "src": "virtual:mf-REMOTE_ENTRY_ID:pluxel_ext_PluginWithUI_6jdrs0__remoteEntry_js",
+    "isEntry": true,
+    "imports": [
+      "_dist-Bkn8ZjXc.js",
+      "_virtual_mf-REMOTE_ENTRY_ID_pluxel_ext_PluginWithUI_6jdrs0__remoteEntry_js-BD--uf2H.js"
+    ]
+  },
+  "virtual:mf-exposes:pluxel_ext_PluginWithUI_6jdrs0__remoteEntry_js": {
+    "file": "assets/virtualExposes-CnAaxa8U.js",
+    "name": "virtualExposes",
+    "src": "virtual:mf-exposes:pluxel_ext_PluginWithUI_6jdrs0__remoteEntry_js",
+    "isEntry": true,
+    "imports": [
+      "_virtual_mf-exposes_pluxel_ext_PluginWithUI_6jdrs0__remoteEntry_js-CVIpotUG.js"
+    ]
+  }
+}

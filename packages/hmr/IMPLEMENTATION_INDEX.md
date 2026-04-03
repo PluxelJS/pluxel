@@ -25,7 +25,7 @@
 ## Standard Entry
 
 - `packages/hmr/src/host.ts`
-  `createHmrHostFromConfig` / `startHmrHostFromConfig`
+  `planHmrHostFromConfig` / `bootPlannedHmrHost`
 - `packages/hmr/src/dev/attach-runtime.ts`
   把 HMR 能力 attach 到已有 runtime `Context`
 

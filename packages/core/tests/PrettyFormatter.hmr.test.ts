@@ -20,6 +20,7 @@ describe('createPluxelPrettyFormatter (hmr)', () => {
 			rawMessage: 'HMR updated',
 			properties: {
 				context: 'root',
+				ok: true,
 				epoch: 1,
 				changedFiles: 1,
 				changedPreview: ['packages/cmd/src/exec.ts'],
@@ -37,6 +38,7 @@ describe('createPluxelPrettyFormatter (hmr)', () => {
 
 		const out = formatter(record)
 		expect(out).toContain('HMR updated')
+		expect(out).toContain('status=ok')
 		expect(out).toContain('epoch=1')
 		expect(out).toContain('time: batch=30.6ms commit=12.3ms')
 		expect(out).toContain('plugins: loaded=22 enabled=22 running=21')
@@ -44,6 +46,44 @@ describe('createPluxelPrettyFormatter (hmr)', () => {
 		expect(out).toContain('changed:')
 		expect(out).toContain('- packages/cmd/src/exec.ts')
 		expect(out).toContain('hotspots:')
+		expect(out).not.toContain('⟪')
+	})
+
+	it('renders failed "HMR updated" with status and commit error', () => {
+		const formatter = createPluxelPrettyFormatter({
+			colors: false,
+			icons: false,
+			includeCaller: false,
+			prefix: 'context',
+			timestamp: () => 'T',
+		})
+
+		const record: LogRecord = {
+			category: ['pluxel', 'hmr'],
+			level: 'warning',
+			timestamp: Date.now(),
+			message: ['HMR updated'],
+			rawMessage: 'HMR updated',
+			properties: {
+				context: 'root',
+				ok: false,
+				epoch: 2,
+				changedFiles: 1,
+				targets: 1,
+				affected: 1,
+				fallbackRoots: 1,
+				activeServices: 5,
+				batchMs: 31.2,
+				commitMs: 6.6,
+				invalidated: { vite: 1, runner: 1 },
+				commitError: 'reload failed: broken export shape',
+			},
+		}
+
+		const out = formatter(record)
+		expect(out).toContain('HMR updated')
+		expect(out).toContain('status=failed')
+		expect(out).toContain('error: reload failed: broken export shape')
 		expect(out).not.toContain('⟪')
 	})
 

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import type { Context } from '@pluxel/core'
 import { join } from 'pathe'
 import { createServer, normalizePath } from 'vite'
-import { createFixture } from 'fs-fixture'
+import { createDiskFixture as createFixture } from '@pluxel/test/fixtures'
 import { workspaceRoot } from './_paths'
 import {
 	buildHmrViteConfig,

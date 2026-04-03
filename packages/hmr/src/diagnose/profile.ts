@@ -3,6 +3,7 @@ import type { PluxelHmrConfigV1 } from './config'
 import { DEFAULT_HMR_CONFIG_BASENAME, readHmrConfigV1 } from './config'
 import type { WorkspaceSnapshot } from './diagnose'
 import { diagnoseWorkspace, mergeHmrProfile } from './diagnose'
+import { nodeHmrWorkspaceFs, type HmrWorkspaceFs } from './fs'
 import { uniqPreserveOrder } from './utils'
 
 export type HmrProfileRef = {
@@ -32,6 +33,7 @@ export type HmrProfileRef = {
 	 * Defaults to `process.env`. When `profile` is provided, it wins over `env.PLUXEL_HMR_PROFILE`.
 	 */
 	env?: Record<string, string | undefined>
+	fs?: HmrWorkspaceFs
 }
 
 export type HmrProfileView = {
@@ -53,10 +55,10 @@ export function resolveHmrConfigPath(ref: Pick<HmrProfileRef, 'rootDir' | 'confi
 	return isAbsolute(raw) ? raw : resolve(rootDirAbs, raw)
 }
 
-export function readHmrConfig(ref: Pick<HmrProfileRef, 'rootDir' | 'configPath'> = {}) {
+export function readHmrConfig(ref: Pick<HmrProfileRef, 'rootDir' | 'configPath' | 'fs'> = {}) {
 	const rootDirAbs = resolve(ref.rootDir ?? process.cwd())
 	const configPathAbs = resolveHmrConfigPath({ rootDir: rootDirAbs, configPath: ref.configPath })
-	const config = readHmrConfigV1(configPathAbs)
+	const config = readHmrConfigV1(configPathAbs, ref.fs ?? nodeHmrWorkspaceFs)
 	return { rootDir: rootDirAbs, configPath: configPathAbs, config }
 }
 
@@ -120,6 +122,7 @@ export async function resolveHmrWorkspaceSnapshot(
 		configPath: configPathAbs,
 		env,
 		omitPackages: ref.omitPackages,
+		fs: ref.fs,
 	})
 	if (res.ok === false) throw new Error(res.errors.join('\n'))
 	return res.snapshot

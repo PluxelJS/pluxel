@@ -1,6 +1,5 @@
-import { existsSync } from 'node:fs'
 import { resolve } from 'pathe'
-import { createFixture } from 'fs-fixture'
+import { createFixture } from '@pluxel/test/fixtures'
 import { describe, expect, it } from 'vitest'
 
 import { materializeProfiledFile } from '../../src/host/storage'
@@ -17,10 +16,10 @@ describe('hmr host storage helpers', () => {
 				profile: 'dev',
 				seedFile: resolve(fixture.path, '.pluxel/hmr/config.json'),
 			},
+			fixture.fs,
 		)
 
 		expect(resolved.path).toBe(resolve(fixture.path, '.pluxel/hmr/config.dev.json'))
-		expect(existsSync(resolved.path)).toBe(true)
+		expect(fixture.fs.existsSync(resolved.path)).toBe(true)
 	})
 })
-

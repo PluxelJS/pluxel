@@ -3,6 +3,7 @@ import {
 	DEFAULT_HMR_CONFIG_BASENAME,
 	diagnoseWorkspace,
 	type PluxelHmrConfigV1,
+	type WorkspaceSnapshot,
 	readHmrConfigV1,
 	uniqPreserveOrder,
 	writeHmrConfigV1,
@@ -90,14 +91,35 @@ function printHeading(title: string) {
 	process.stdout.write(`\n${title}\n${'-'.repeat(Math.min(Math.max(title.length, 8), 64))}\n`)
 }
 
+function writeSnapshotIndex(runtime: HmrRuntime, snapshot: WorkspaceSnapshot) {
+	writeHmrDiscoveredIndex({
+		rootDir: runtime.rootDir,
+		configPath: runtime.configPath,
+		activeProfile: snapshot.activeProfile,
+		rootsExpandedAbs: snapshot.roots.map((r) => resolve(runtime.rootDir, r)),
+		excludeGlobs: snapshot.excludeGlobs,
+		builtinPackages: snapshot.builtinPackages,
+		omitFromEntries: snapshot.builtinPackages,
+		discovered: snapshot.discovered,
+	})
+}
+
+async function bootAndStartPlannedHost(
+	plan: ReturnType<typeof import('@pluxel/hmr/host').planHmrHost>,
+) {
+	const { bootPlannedHmrHost } = await import('@pluxel/hmr/host')
+	const host = await bootPlannedHmrHost(plan)
+	await host.hmr.start()
+}
+
 async function startHostFromSnapshot(rootDir: string, snapshotOrJson: unknown) {
-	const { assertHmrWorkspaceSnapshot } = await import('@pluxel/hmr/snapshot')
-	const { startHmrHost } = await import('@pluxel/hmr/host')
+	const snapshotModule: typeof import('@pluxel/hmr/snapshot') = await import('@pluxel/hmr/snapshot')
+	const { planHmrHost } = await import('@pluxel/hmr/host')
 
 	const snapshot = typeof snapshotOrJson === 'string' ? JSON.parse(snapshotOrJson) : snapshotOrJson
-	assertHmrWorkspaceSnapshot(snapshot)
+	snapshotModule.assertHmrWorkspaceSnapshot(snapshot)
 
-	await startHmrHost({ root: rootDir, workspaceSnapshot: snapshot })
+	await bootAndStartPlannedHost(planHmrHost({ root: rootDir, snapshot }))
 }
 
 async function runTui(params: {
@@ -153,16 +175,7 @@ async function runDoctor(values: HmrCommonValues) {
 	}
 
 	const s = res.snapshot
-	writeHmrDiscoveredIndex({
-		rootDir: runtime.rootDir,
-		configPath: runtime.configPath,
-		activeProfile: s.activeProfile,
-		rootsExpandedAbs: s.roots.map((r) => resolve(runtime.rootDir, r)),
-		excludeGlobs: s.excludeGlobs,
-		builtinPackages: s.builtinPackages,
-		omitFromEntries: s.builtinPackages,
-		discovered: s.discovered,
-	})
+	writeSnapshotIndex(runtime, s)
 
 	printHeading('Summary')
 	process.stdout.write(
@@ -189,31 +202,18 @@ async function runDoctor(values: HmrCommonValues) {
 
 async function runStart(values: HmrCommonValues) {
 	const runtime = resolveRuntime(values)
-	const res = await diagnoseWorkspace({
-		rootDir: runtime.rootDir,
+	const { planHmrHostFromConfig } = await import('@pluxel/hmr/host')
+	const plan = await planHmrHostFromConfig({
+		root: runtime.rootDir,
 		configPath: runtime.configPath,
 		env: runtime.env,
 	})
-	if (res.ok === false) {
-		process.stderr.write('HMR start blocked by workspace errors.\n')
-		process.stderr.write(`${res.errors.join('\n')}\n`)
-		throw new Error('start blocked')
-	}
 
-	for (const w of res.warnings) process.stdout.write(`${w}\n`)
-	writeHmrDiscoveredIndex({
-		rootDir: runtime.rootDir,
-		configPath: runtime.configPath,
-		activeProfile: res.snapshot.activeProfile,
-		rootsExpandedAbs: res.snapshot.roots.map((r) => resolve(runtime.rootDir, r)),
-		excludeGlobs: res.snapshot.excludeGlobs,
-		builtinPackages: res.snapshot.builtinPackages,
-		omitFromEntries: res.snapshot.builtinPackages,
-		discovered: res.snapshot.discovered,
-	})
+	for (const w of plan.warnings) process.stdout.write(`${w}\n`)
+	writeSnapshotIndex(runtime, plan.snapshot)
 
 	process.stdout.write('Starting HMR (Ctrl+C to stop)…\n')
-	await startHostFromSnapshot(runtime.rootDir, res.snapshot)
+	await bootAndStartPlannedHost(plan)
 }
 
 async function runPrompt(values: HmrCommonValues) {

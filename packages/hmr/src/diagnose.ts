@@ -11,6 +11,8 @@ export {
 	writeHmrConfigV1,
 } from './diagnose/config'
 export type { PluxelHmrConfig, PluxelHmrConfigV1 } from './diagnose/config'
+export { nodeHmrWorkspaceFs, nodeWorkspaceFs } from './diagnose/fs'
+export type { HmrWorkspaceFs, WorkspaceFs } from './diagnose/fs'
 
 export {
 	discoverPluginsFromPackages,

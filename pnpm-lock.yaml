@@ -66,9 +66,9 @@ importers:
 
   packages/build:
     devDependencies:
-      fs-fixture:
-        specifier: ^2.11.0
-        version: 2.11.0
+      '@pluxel/test':
+        specifier: workspace:*
+        version: link:../test
       oxc-parser:
         specifier: ^0.115.0
         version: 0.115.0
@@ -139,9 +139,6 @@ importers:
       '@types/react':
         specifier: ^19.2.14
         version: 19.2.14
-      fs-fixture:
-        specifier: ^2.11.0
-        version: 2.11.0
       ink:
         specifier: ^6.8.0
         version: 6.8.0(@types/react@19.2.14)(react@19.2.4)
@@ -305,12 +302,12 @@ importers:
       '@pluxel/context':
         specifier: workspace:*
         version: link:../context
+      '@pluxel/test':
+        specifier: workspace:*
+        version: link:../test
       diod:
         specifier: workspace:*
         version: link:../diod
-      fs-fixture:
-        specifier: ^2.11.0
-        version: 2.11.0
       option-t:
         specifier: ^55.1.2
         version: 55.1.2
@@ -387,9 +384,6 @@ importers:
       '@pluxel/workspace':
         specifier: workspace:*
         version: link:../workspace
-      fs-fixture:
-        specifier: ^2.11.0
-        version: 2.11.0
       superjson:
         specifier: ^2.2.6
         version: 2.2.6
@@ -628,15 +622,15 @@ importers:
         specifier: ^1.2.0
         version: 1.3.1(typescript@6.0.2)
     devDependencies:
+      '@pluxel/test':
+        specifier: workspace:*
+        version: link:../test
       '@pluxel/workspace':
         specifier: workspace:*
         version: link:../workspace
       '@types/react':
         specifier: ^19.2.14
         version: 19.2.14
-      fs-fixture:
-        specifier: ^2.11.0
-        version: 2.11.0
       postcss:
         specifier: ^8.5.6
         version: 8.5.8
@@ -662,9 +656,15 @@ importers:
         specifier: workspace:*
         version: link:../runtime
     devDependencies:
+      '@platformatic/vfs':
+        specifier: ^0.3.0
+        version: 0.3.0
       '@pluxel/build':
         specifier: workspace:*
         version: link:../build
+      fs-fixture:
+        specifier: ^2.13.0
+        version: 2.13.0
       vitest:
         specifier: ^4.1.1
         version: 4.1.1(@types/node@25.5.0)(jsdom@28.1.0(@noble/hashes@2.0.1))(vite@8.0.0-beta.18(@types/node@25.5.0)(esbuild@0.27.4)(jiti@2.6.1)(sass-embedded@1.98.0)(sass@1.98.0)(sugarss@5.0.1(postcss@8.5.8))(tsx@4.21.0)(yaml@2.8.3))
@@ -1916,6 +1916,10 @@ packages:
   '@parcel/watcher@2.5.6':
     resolution: {integrity: sha512-tmmZ3lQxAe/k/+rNnXQRawJ4NjxO2hqiOLTHvWchtGZULp4RyFeh6aU4XdOYBFe2KE1oShQTv4AblOs2iOrNnQ==}
     engines: {node: '>= 10.0.0'}
+
+  '@platformatic/vfs@0.3.0':
+    resolution: {integrity: sha512-BGXVOAz59HYPZCgI9v/MtiTF/ng8YAWtkooxVwOPR3TatNgGy0WZ/t15ScqytiZi5NdSRqWNRfuAbXKeAlKDdQ==}
+    engines: {node: '>= 22'}
 
   '@pluxel/market@0.1.0':
     resolution: {integrity: sha512-dvij099Kczt3KJMHotf8kclgbRk1Web5Vqb/dndXtecTrOXv9dJqSgNM2mBK+n7pFt4mHxeqeZiOax+Dlg1rYg==}
@@ -3243,8 +3247,8 @@ packages:
     resolution: {integrity: sha512-hcg3ZmepS30/7BSFqRvoo3DOMQu7IjqxO5nCDt+zM9XWjb33Wg7ziNT+Qvqbuc3+gWpzO02JubVyk2G4Zvo1OQ==}
     engines: {node: '>=10'}
 
-  fs-fixture@2.11.0:
-    resolution: {integrity: sha512-elzOu5Ru04qPSBT344kngxx1bpq3RbpznEyjTcn+NHI2nvzwDcGt2zde/a6LBmF5SJtgSYBGHAPnel6S1IefeA==}
+  fs-fixture@2.13.0:
+    resolution: {integrity: sha512-bqL4EVFNgoA38OnztLfeHn4NZJ32zWnSNA3ALtessYO0WjpL//QuYl1YkYd7j+TY0cLO6cqgoHxPJpfSwKQAPA==}
     engines: {node: '>=18.0.0'}
 
   fsevents@2.3.3:
@@ -6094,6 +6098,8 @@ snapshots:
       '@parcel/watcher-win32-x64': 2.5.6
     optional: true
 
+  '@platformatic/vfs@0.3.0': {}
+
   '@pluxel/market@0.1.0(ramda@0.32.0)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)':
     dependencies:
       '@funkia/list': 0.1.0(ramda@0.32.0)
@@ -7212,7 +7218,7 @@ snapshots:
       jsonfile: 6.2.0
       universalify: 2.0.1
 
-  fs-fixture@2.11.0: {}
+  fs-fixture@2.13.0: {}
 
   fsevents@2.3.3:
     optional: true

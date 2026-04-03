@@ -28,6 +28,10 @@ export type BuildFrozenHostOptions = {
 	profile?: string
 	generatedBy?: string
 	bootstrap?: FrozenHostBootstrap
+	fs?: {
+		mkdir(path: string, options?: { recursive?: boolean }): Promise<string | undefined>
+		writeFile(path: string, data: string, encoding: BufferEncoding): Promise<void>
+	}
 }
 
 export type BuildFrozenHostResult = {

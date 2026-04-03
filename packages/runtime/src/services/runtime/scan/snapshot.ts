@@ -1,4 +1,5 @@
 import type { EntryResolver } from './entry-resolver'
+import { nodeWorkspaceFs, type WorkspaceFs } from './fs'
 import { buildScanGraph } from './graph-builder'
 import {
 	normalizePackageDir,
@@ -21,10 +22,13 @@ export interface ScanSnapshot {
 }
 
 export class ScanSnapshotBuilder {
-	constructor(private readonly entryResolver: EntryResolver) {}
+	constructor(
+		private readonly entryResolver: EntryResolver,
+		private readonly fs: WorkspaceFs = nodeWorkspaceFs,
+	) {}
 
 	async build(inputs: string[], options: ResolvedScanOptions): Promise<ScanSnapshot> {
-		const graph = await buildScanGraph(inputs, options, this.entryResolver)
+		const graph = await buildScanGraph(inputs, options, this.entryResolver, this.fs)
 		const index = indexPackages(graph.packages)
 
 		const findPackage = (selector: PackageSelector) => selectPackage(selector, index)

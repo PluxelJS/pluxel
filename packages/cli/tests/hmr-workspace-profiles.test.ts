@@ -1,10 +1,11 @@
 import {
 	diagnoseWorkspace,
+	type HmrWorkspaceFs,
 	type PluxelHmrConfigV1,
 	readHmrConfigV1,
 	writeHmrConfigV1,
 } from '@pluxel/hmr/diagnose'
-import { createFixture } from 'fs-fixture'
+import { createFixture } from '@pluxel/test/fixtures'
 import { resolve } from 'pathe'
 import { describe, expect, it } from 'vitest'
 
@@ -14,7 +15,8 @@ describe('@pluxel/hmr/diagnose workspace profiles', () => {
 			'pluxel.hmr.jsonc':
 				'{ "version": 1, "profile": "dev", "profiles": { "dev": { "enabled": [] } }, "foo": 1 }',
 		})
-		expect(() => readHmrConfigV1(resolve(fixture.path, 'pluxel.hmr.jsonc'))).toThrow()
+		const fs = fixture.fs as HmrWorkspaceFs
+		expect(() => readHmrConfigV1(resolve(fixture.path, 'pluxel.hmr.jsonc'), fs)).toThrow()
 	})
 
 	it('returns a friendly error when config file is missing', async () => {
@@ -30,9 +32,10 @@ describe('@pluxel/hmr/diagnose workspace profiles', () => {
 
 		const rootDir = fixture.path
 		const configPath = resolve(rootDir, 'pluxel.hmr.jsonc')
-		const res = await diagnoseWorkspace({ rootDir, configPath, env: {} })
+		const fs = fixture.fs as HmrWorkspaceFs
+		const res = await diagnoseWorkspace({ rootDir, configPath, env: {}, fs })
 		expect(res.ok).toBe(false)
-		if (res.ok) return
+		if (res.ok !== false) return
 		expect(res.errors[0]).toContain('Missing config file')
 		expect(res.errors[0]).toContain('pluxel.hmr.jsonc')
 	})
@@ -80,6 +83,7 @@ describe('@pluxel/hmr/diagnose workspace profiles', () => {
 
 		const rootDir = fixture.path
 		const configPath = resolve(rootDir, 'pluxel.hmr.jsonc')
+		const fs = fixture.fs as HmrWorkspaceFs
 
 		const cfg: PluxelHmrConfigV1 = {
 			version: 1,
@@ -96,11 +100,11 @@ describe('@pluxel/hmr/diagnose workspace profiles', () => {
 				},
 			},
 		}
-		writeHmrConfigV1(configPath, cfg, { headerComment: '' })
+		writeHmrConfigV1(configPath, cfg, { headerComment: '', fs })
 
-		const res = await diagnoseWorkspace({ rootDir, configPath, env: {} })
+		const res = await diagnoseWorkspace({ rootDir, configPath, env: {}, fs })
 		expect(res.ok).toBe(true)
-		if (!res.ok) return
+		if (res.ok !== true) return
 
 		expect(res.snapshot.activeProfile).toBe('dev')
 		expect(res.snapshot.enabled).toEqual(['pluxel-plugin-a'])
@@ -156,6 +160,7 @@ describe('@pluxel/hmr/diagnose workspace profiles', () => {
 
 		const rootDir = fixture.path
 		const configPath = resolve(rootDir, 'pluxel.hmr.jsonc')
+		const fs = fixture.fs as HmrWorkspaceFs
 		writeHmrConfigV1(
 			configPath,
 			{
@@ -164,7 +169,7 @@ describe('@pluxel/hmr/diagnose workspace profiles', () => {
 				defaults: { roots: 'auto' },
 				profiles: { dev: { enabled: ['@pluxel/graphql', 'pluxel-plugin-bot-suite'] } },
 			},
-			{ headerComment: '' },
+			{ headerComment: '', fs },
 		)
 
 		const res = await diagnoseWorkspace({
@@ -172,9 +177,10 @@ describe('@pluxel/hmr/diagnose workspace profiles', () => {
 			configPath,
 			env: {},
 			omitPackages: ['@pluxel/graphql'],
+			fs,
 		})
 		expect(res.ok).toBe(true)
-		if (!res.ok) return
+		if (res.ok !== true) return
 
 		expect(res.snapshot.enabled).toEqual(['pluxel-plugin-bot-suite'])
 		expect(res.snapshot.enabledEntries).toEqual(['chatbots/bot-suite/src/index.ts'])
@@ -212,6 +218,7 @@ describe('@pluxel/hmr/diagnose workspace profiles', () => {
 
 		const rootDir = fixture.path
 		const configPath = resolve(rootDir, 'pluxel.hmr.jsonc')
+		const fs = fixture.fs as HmrWorkspaceFs
 		writeHmrConfigV1(
 			configPath,
 			{
@@ -220,12 +227,12 @@ describe('@pluxel/hmr/diagnose workspace profiles', () => {
 				defaults: { roots: 'auto' },
 				profiles: { dev: { enabled: ['pluxel-plugin-app'], builtin: ['@pluxel/graphql'] } },
 			},
-			{ headerComment: '' },
+			{ headerComment: '', fs },
 		)
 
-		const res = await diagnoseWorkspace({ rootDir, configPath, env: {} })
+		const res = await diagnoseWorkspace({ rootDir, configPath, env: {}, fs })
 		expect(res.ok).toBe(false)
-		if (res.ok) return
+		if (res.ok !== false) return
 		expect(res.errors.join('\n')).toMatch(/missing dist \.mjs export entry/i)
 	})
 })

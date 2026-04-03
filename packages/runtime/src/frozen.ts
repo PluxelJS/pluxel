@@ -99,10 +99,11 @@ export async function buildFrozenHost(
 	const manifestPath = resolve(dir, 'frozen-manifest.json')
 	const rows = buildImportRows(options.plugins)
 	const source = buildBootstrapSource(options, rows)
+	const fileOps = options.fs ?? { mkdir, writeFile }
 
-	await mkdir(dir, { recursive: true })
-	await writeFile(entry, source, 'utf-8')
-	await writeFile(
+	await fileOps.mkdir(dir, { recursive: true })
+	await fileOps.writeFile(entry, source, 'utf-8')
+	await fileOps.writeFile(
 		manifestPath,
 		JSON.stringify(
 			{

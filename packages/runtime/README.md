@@ -196,7 +196,7 @@ SignalDB 的 React 响应性现在走官方链路：
 
 runtime 本身不启动 Vite。开发期统一通过 `@pluxel/hmr` 接入：
 
-- `startHmrHostFromConfig(...)`
+- `planHmrHostFromConfig(...)` + `bootPlannedHmrHost(plan)` + `host.hmr.start()`
 - `attachHmrRuntime(ctx, ...)`
 
 ## 主要 subpath

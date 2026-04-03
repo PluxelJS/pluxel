@@ -1,9 +1,9 @@
 import { createHash } from 'node:crypto'
+import { existsSync } from 'node:fs'
 import { readFile, stat } from 'node:fs/promises'
 import type { Context } from '@pluxel/core'
 import { dirname, isAbsolute, resolve } from 'pathe'
 import { resolveModuleIdBaseDir } from '../../runtime/module-id'
-import { findNearestPackageRoot } from '../../shared'
 import type {
 	BuiltinDocExtensionDef,
 	BuiltinExtensionDef,
@@ -24,6 +24,7 @@ import {
 	extensionFederationRemoteName,
 } from '../../web/federation'
 import { HMR_INTERNAL_API_BASE, hmrExtensionArtifactPath } from '../../web/paths'
+import type { FsService, FsStat } from '../fs/FsService'
 import { ExtensionInteractionRegistry } from './ExtensionInteractionRegistry'
 import {
 	errorMessage,
@@ -59,7 +60,10 @@ export interface ExtensionServiceConfig {
 	enabled?: boolean
 }
 
-type TypedInteractionSurfaceRuntimeContext<TInput> = Omit<InteractionSurfaceRuntimeContext, 'input'> & {
+type TypedInteractionSurfaceRuntimeContext<TInput> = Omit<
+	InteractionSurfaceRuntimeContext,
+	'input'
+> & {
 	input: TInput
 }
 
@@ -324,7 +328,12 @@ export class ExtensionService implements ExtensionModuleStore {
 		return this.registerBuiltin(def)
 	}
 
-	surface<P extends ExtensionPoint = 'plugin:tabs', TInput = unknown, TDraft = unknown, TResult = unknown>(
+	surface<
+		P extends ExtensionPoint = 'plugin:tabs',
+		TInput = unknown,
+		TDraft = unknown,
+		TResult = unknown,
+	>(
 		input: Omit<InteractionSurfaceDef<P>, 'pluginName' | 'point' | 'contract'> & {
 			point?: P
 			contract: InteractionContract<TInput, TDraft, TResult>
@@ -365,7 +374,10 @@ export class ExtensionService implements ExtensionModuleStore {
 				contract: input.contract,
 				input: input.input as (() => unknown | Promise<unknown>) | undefined,
 				onDraftChange: input.onDraftChange as
-					| ((draft: unknown, context: InteractionSurfaceRuntimeContext) => unknown | Promise<unknown>)
+					| ((
+							draft: unknown,
+							context: InteractionSurfaceRuntimeContext,
+					  ) => unknown | Promise<unknown>)
 					| undefined,
 				apply: input.apply as (
 					result: unknown,
@@ -440,7 +452,9 @@ export class ExtensionService implements ExtensionModuleStore {
 			runtime: {
 				contract: input.contract,
 				prepare: input.prepare as
-					| ((context: InteractionOfferPrepareContext) => InteractionOfferPrepareResult | Promise<InteractionOfferPrepareResult>)
+					| ((
+							context: InteractionOfferPrepareContext,
+					  ) => InteractionOfferPrepareResult | Promise<InteractionOfferPrepareResult>)
 					| undefined,
 			},
 		}
@@ -621,10 +635,10 @@ export class ExtensionService implements ExtensionModuleStore {
 		}
 
 		const [content, fileStat] = await Promise.all([
-			readFile(resolvedManifestPath, 'utf-8').catch((): null => null),
-			stat(resolvedManifestPath).catch((): null => null),
+			this.readPackagedManifestText(resolvedManifestPath),
+			this.statPackagedManifest(resolvedManifestPath),
 		])
-		if (!content || !fileStat?.isFile()) {
+		if (!content || fileStat?.type !== 'file') {
 			if (explicitManifestPath) {
 				this.ctx.logger.warn('packaged extension manifest missing', {
 					pluginName,
@@ -640,7 +654,7 @@ export class ExtensionService implements ExtensionModuleStore {
 		}
 
 		const sourceHash = createHash('sha256').update(content).digest('hex').slice(0, 16)
-		const compiledAt = Math.floor(fileStat.mtimeMs || Date.now())
+		const compiledAt = Math.floor(fileStat?.mtimeMs || Date.now())
 		await this.commitCompiledModule(
 			createCompiledExtensionModule({
 				pluginName,
@@ -672,7 +686,7 @@ export class ExtensionService implements ExtensionModuleStore {
 		if (registryPath) {
 			const baseDir = resolveModuleIdBaseDir(registryPath)
 			if (baseDir) {
-				const packageRoot = findNearestPackageRoot(baseDir)
+				const packageRoot = this.findNearestPackageRoot(baseDir)
 				if (packageRoot) {
 					const packageRelativePath =
 						relativeManifestPath === extensionFederationManifestPath()
@@ -687,7 +701,7 @@ export class ExtensionService implements ExtensionModuleStore {
 		for (const path of this.ctx.loader?.api?.anchors?.list?.() ?? []) {
 			if (path.toLowerCase().includes(pluginName.toLowerCase()) && isAbsolute(path)) {
 				const baseDir = dirname(path)
-				const packageRoot = findNearestPackageRoot(baseDir)
+				const packageRoot = this.findNearestPackageRoot(baseDir)
 				if (packageRoot) {
 					const packageRelativePath =
 						relativeManifestPath === extensionFederationManifestPath()
@@ -706,6 +720,63 @@ export class ExtensionService implements ExtensionModuleStore {
 				? extensionFederationBuildManifestPath()
 				: relativeManifestPath
 		return resolve(cwd, manifestPath)
+	}
+
+	private getPackagedManifestFs(): Pick<FsService, 'exists' | 'readText' | 'stat'> | undefined {
+		const root = this.ctx.root as
+			| { fs?: Pick<FsService, 'exists' | 'readText' | 'stat'> }
+			| undefined
+		return root?.fs
+	}
+
+	private async readPackagedManifestText(path: string): Promise<string | null> {
+		const fs = this.getPackagedManifestFs()
+		if (typeof fs?.readText === 'function') {
+			try {
+				return await fs.readText(path)
+			} catch {
+				return null
+			}
+		}
+		return await readFile(path, 'utf-8').catch((): null => null)
+	}
+
+	private async statPackagedManifest(path: string): Promise<FsStat | null> {
+		const fs = this.getPackagedManifestFs()
+		if (typeof fs?.stat === 'function') {
+			try {
+				return await fs.stat(path)
+			} catch {
+				return { type: 'missing' }
+			}
+		}
+		return await stat(path)
+			.then((st) => ({
+				type: st.isFile()
+					? ('file' as const)
+					: st.isDirectory()
+						? ('dir' as const)
+						: ('other' as const),
+				mtimeMs: st.mtimeMs,
+			}))
+			.catch((): null => null)
+	}
+
+	private findNearestPackageRoot(start: string): string | null {
+		const fs = this.getPackagedManifestFs()
+		const pathExists =
+			typeof fs?.exists === 'function' ? (path: string) => fs.exists!(path) : existsSync
+		try {
+			let current = start
+			while (true) {
+				if (pathExists(resolve(current, 'package.json'))) return current
+				const parent = dirname(current)
+				if (parent === current) return null
+				current = parent
+			}
+		} catch {
+			return null
+		}
 	}
 }
 

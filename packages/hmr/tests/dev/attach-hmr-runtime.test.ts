@@ -1,4 +1,4 @@
-import { createFixture } from 'fs-fixture'
+import { createFixture } from '@pluxel/test/fixtures'
 import { describe, expect, it, vi } from 'vitest'
 
 import { attachHmrRuntime } from '@pluxel/hmr'
@@ -41,7 +41,7 @@ describe('@pluxel/hmr attachHmrRuntime', () => {
 		})
 		const res = await attachHmrRuntime(ctx, {
 			cwd: fixture.path,
-			workspaceSnapshot: snapshot,
+			snapshot,
 			warmup: false,
 			printUrls: false,
 		})
@@ -81,7 +81,7 @@ describe('@pluxel/hmr attachHmrRuntime', () => {
 		})
 		await attachHmrRuntime(ctx, {
 			cwd: fixture.path,
-			workspaceSnapshot: snapshot,
+			snapshot,
 			warmup: false,
 			printUrls: false,
 		})
@@ -89,7 +89,7 @@ describe('@pluxel/hmr attachHmrRuntime', () => {
 		await expect(
 			attachHmrRuntime(ctx, {
 				cwd: fixture.path,
-				workspaceSnapshot: snapshot,
+				snapshot,
 				warmup: false,
 				printUrls: false,
 			}),

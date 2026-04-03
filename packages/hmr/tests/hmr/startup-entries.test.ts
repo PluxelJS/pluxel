@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { createFixture } from 'fs-fixture'
+import { createFixture } from '@pluxel/test/fixtures'
 import { join } from 'pathe'
 import { HMRService } from '@pluxel/hmr'
 

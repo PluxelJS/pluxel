@@ -12,7 +12,6 @@ import type { HmrPathApi, HmrToolkit } from './environment'
 import { startTimer } from '@pluxel/runtime/shared'
 import {
 	collectHotspots,
-	formatHmrUpdateSummary,
 	isLogEnabled,
 	logAttributionReport,
 	type TimingTracker,
@@ -796,30 +795,7 @@ export class HmrBatchProcessor {
 		const changedPretty = [...new Set(changed.map((id) => this.path.pretty(id)))].sort()
 		const changedPreview = changedPretty.slice(0, CHANGED_PREVIEW_LIMIT)
 		const changedPreviewOmitted = Math.max(0, changedPretty.length - changedPreview.length)
-		this.ctx.logger.info(
-			formatHmrUpdateSummary({
-				epoch,
-				commitOk,
-				commitError,
-				changedFiles: changed.length,
-				changedPreview,
-				changedPreviewOmitted,
-				targets: execOrder.length,
-				affected: graph.affectedIds.size,
-				fallbackRoots: graph.roots.length,
-				activeServices,
-				plugins: pluginTotals,
-				invalidated,
-				commitMs,
-				batchMs,
-				hotspots,
-			}),
-		)
-
-		// Keep structured details at `debug` so:
-		// - console stays compact (default level is `info`)
-		// - UI/log-store can still consume rich metadata.
-		this.ctx.logger.debug('HMR updated', {
+		this.ctx.logger.info('HMR updated', {
 			epoch,
 			changedFiles: changed.length,
 			changedPreview: changedPreview.length ? changedPreview : undefined,

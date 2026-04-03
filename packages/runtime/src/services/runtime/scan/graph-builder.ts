@@ -1,11 +1,16 @@
 import os from 'node:os'
-import { loadWorkspaceInfo } from '@pluxel/workspace'
 import { isAbsolute, normalize, resolve as r } from 'pathe'
 import type { PackageJson } from 'pkg-types'
 import type { EntryResolver } from './entry-resolver'
-import { getAllTsFiles } from './fs'
+import {
+	getAllTsFiles,
+	loadWorkspaceInfoWithFs,
+	manifestPathFor,
+	nodeWorkspaceFs,
+	safeReadManifest,
+	type WorkspaceFs,
+} from './fs'
 import { createLimiter } from './limit'
-import { manifestPathFor, safeReadManifest } from './package'
 import type {
 	EntryResolution,
 	PackageNode,
@@ -24,12 +29,14 @@ type BuildContext = {
 	focusSet?: Set<string>
 	matchedFocus: Set<string>
 	diagnostics: ScanDiagnostic[]
+	fs: WorkspaceFs
 }
 
 export async function buildScanGraph(
 	input: string[],
 	options: ResolvedScanOptions,
 	entryResolver: EntryResolver,
+	fs: WorkspaceFs = nodeWorkspaceFs,
 ): Promise<ScanGraph> {
 	const startedAt = Date.now()
 	const inputs = normalizeInputs(input)
@@ -51,13 +58,14 @@ export async function buildScanGraph(
 		focusSet,
 		matchedFocus,
 		diagnostics,
+		fs,
 	}
 
 	let monoRoots = 0
 	let packageCount = 0
 
 	for (const dir of inputs) {
-		const workspace = await loadWorkspaceInfo(dir)
+		const workspace = await loadWorkspaceInfoWithFs(dir, fs)
 		if (workspace.isMonorepo) {
 			monoRoots++
 			const packageDirs = new Set(workspace.packageDirs)
@@ -181,9 +189,9 @@ async function processPackageDir(params: {
 	const { pkgDir, workspaceRoot, workspaceManifest, isExplicitInput, ctx } = params
 	const manifest =
 		pkgDir === workspaceRoot
-			? (workspaceManifest ?? (await safeReadManifest(pkgDir)))
-			: await safeReadManifest(pkgDir)
-	const manifestPath = manifestPathFor(pkgDir)
+			? (workspaceManifest ?? (await safeReadManifest(pkgDir, ctx.fs)))
+			: await safeReadManifest(pkgDir, ctx.fs)
+	const manifestPath = manifestPathFor(pkgDir, ctx.fs)
 	const name = manifest?.name
 	const normalizedDir = normalize(pkgDir)
 	const focusSet = ctx.focusSet
@@ -252,11 +260,15 @@ async function resolveTsFallback(
 	ctx: BuildContext,
 ): Promise<{ entry: EntryResolution; fallbackFiles: string[] }> {
 	const normalizedDir = normalize(pkgDir)
-	const files = await getAllTsFiles([pkgDir], {
-		includeDts: false,
-		followSymlinks: true,
-		concurrency: Math.min((os.cpus()?.length ?? 4) * 2, 64),
-	})
+	const files = await getAllTsFiles(
+		[pkgDir],
+		{
+			includeDts: false,
+			followSymlinks: true,
+			concurrency: Math.min((os.cpus()?.length ?? 4) * 2, 64),
+		},
+		ctx.fs,
+	)
 	if (files.length === 0) {
 		return {
 			entry: {

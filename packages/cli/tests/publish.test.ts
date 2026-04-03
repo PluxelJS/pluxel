@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { createFixture } from 'fs-fixture'
+import { createFixture, type TestFixture } from '@pluxel/test/fixtures'
 
 vi.mock('../src/utils/exec', () => ({
 	runCommand: vi.fn(),
@@ -30,10 +30,14 @@ async function withPackageFixture<T>(
 	name: string,
 	version: string,
 	options: { private?: boolean } | undefined,
-	run: (dir: string) => Promise<T>,
+	run: (fixture: TestFixture) => Promise<T>,
 ) {
 	await using fixture = await createFixture(buildPackageTree(name, version, options))
-	return await run(fixture.path)
+	return await run(fixture)
+}
+
+function readPackageJsonFrom(fixture: TestFixture) {
+	return async (path: string) => JSON.parse(String(await fixture.fsp.readFile(path, 'utf8')))
 }
 
 const noop = () => {
@@ -59,7 +63,7 @@ function cleanCiEnv(env: NodeJS.ProcessEnv = process.env) {
 
 describe('publish single package', () => {
 	it('publishes when version is new', async () => {
-		await withPackageFixture('example-pkg', '1.1.0', undefined, async (dir) => {
+		await withPackageFixture('example-pkg', '1.1.0', undefined, async (fixture) => {
 			const { publishPackage } = await getPublish()
 			const rc = await getRunCommand()
 			rc.mockImplementation(async (_command, args) => {
@@ -69,9 +73,10 @@ describe('publish single package', () => {
 			})
 
 			const result = await publishPackage({
-				cwd: dir,
+				cwd: fixture.path,
 				log: noop,
 				env: cleanCiEnv(process.env),
+				readPackageJson: readPackageJsonFrom(fixture),
 			})
 
 			expect(result.packageName).toBe('example-pkg')
@@ -82,16 +87,17 @@ describe('publish single package', () => {
 	})
 
 	it('skips publishing when version already exists', async () => {
-		await withPackageFixture('example-pkg', '1.0.0', undefined, async (dir) => {
+		await withPackageFixture('example-pkg', '1.0.0', undefined, async (fixture) => {
 			const { publishPackage } = await getPublish()
 			const rc = await getRunCommand()
 			rc.mockResolvedValue({ code: 0, stdout: JSON.stringify('1.0.0'), stderr: '' })
 
 			const result = await publishPackage({
-				cwd: dir,
+				cwd: fixture.path,
 				skipVersionCheck: false,
 				log: noop,
 				env: cleanCiEnv(process.env),
+				readPackageJson: readPackageJsonFrom(fixture),
 			})
 
 			expect(result.packageName).toBe('example-pkg')
@@ -103,25 +109,27 @@ describe('publish single package', () => {
 	})
 
 	it('throws error for private packages', async () => {
-		await withPackageFixture('private-pkg', '1.0.0', { private: true }, async (dir) => {
+		await withPackageFixture('private-pkg', '1.0.0', { private: true }, async (fixture) => {
 			const { publishPackage } = await getPublish()
 			await expect(
 				publishPackage({
-					cwd: dir,
+					cwd: fixture.path,
 					log: noop,
+					readPackageJson: readPackageJsonFrom(fixture),
 				}),
 			).rejects.toThrow('private')
 		})
 	})
 
 	it('respects dryRun flag', async () => {
-		await withPackageFixture('example-pkg', '1.2.0', undefined, async (dir) => {
+		await withPackageFixture('example-pkg', '1.2.0', undefined, async (fixture) => {
 			const { publishPackage } = await getPublish()
 			const result = await publishPackage({
-				cwd: dir,
+				cwd: fixture.path,
 				dryRun: true,
 				skipVersionCheck: true,
 				log: noop,
+				readPackageJson: readPackageJsonFrom(fixture),
 			})
 
 			expect(result.packageName).toBe('example-pkg')
@@ -133,10 +141,10 @@ describe('publish single package', () => {
 
 describe('publish with CI context', () => {
 	it('does not notify market during dry-run even in CI', async () => {
-		await withPackageFixture('example-pkg', '2.0.0', undefined, async (dir) => {
+		await withPackageFixture('example-pkg', '2.0.0', undefined, async (fixture) => {
 			const { publishPackage } = await getPublish()
 			const result = await publishPackage({
-				cwd: dir,
+				cwd: fixture.path,
 				dryRun: true,
 				skipVersionCheck: true,
 				env: {
@@ -145,6 +153,7 @@ describe('publish with CI context', () => {
 					GITHUB_REPOSITORY: 'acme/example',
 				},
 				log: noop,
+				readPackageJson: readPackageJsonFrom(fixture),
 			})
 
 			expect(result.packageName).toBe('example-pkg')
@@ -154,7 +163,7 @@ describe('publish with CI context', () => {
 	})
 
 	it('skips market notification when not in CI', async () => {
-		await withPackageFixture('example-pkg', '2.1.0', undefined, async (dir) => {
+		await withPackageFixture('example-pkg', '2.1.0', undefined, async (fixture) => {
 			const { publishPackage } = await getPublish()
 			const env = { ...process.env }
 			delete env.GITHUB_ACTIONS
@@ -163,11 +172,12 @@ describe('publish with CI context', () => {
 			delete env.CI_PROJECT_PATH
 
 			const result = await publishPackage({
-				cwd: dir,
+				cwd: fixture.path,
 				dryRun: true,
 				skipVersionCheck: true,
 				env,
 				log: noop,
+				readPackageJson: readPackageJsonFrom(fixture),
 			})
 
 			expect(result.notified).toBe(false)
@@ -177,10 +187,10 @@ describe('publish with CI context', () => {
 	it('does not add provenance for restricted/private packages in CI', async () => {
 		const logs: string[] = []
 
-		await withPackageFixture('example-pkg', '3.0.0', undefined, async (dir) => {
+		await withPackageFixture('example-pkg', '3.0.0', undefined, async (fixture) => {
 			const { publishPackage } = await getPublish()
 			await publishPackage({
-				cwd: dir,
+				cwd: fixture.path,
 				access: 'restricted', // 私有包
 				dryRun: true,
 				skipVersionCheck: true, // 跳过版本检查以避免网络请求
@@ -191,6 +201,7 @@ describe('publish with CI context', () => {
 					GITHUB_REPOSITORY: 'acme/example',
 				},
 				log: (...args) => logs.push(args.join(' ')),
+				readPackageJson: readPackageJsonFrom(fixture),
 			})
 
 			const debugArgs = logs.find((log) => log.includes('debug: npm args'))
@@ -202,13 +213,14 @@ describe('publish with CI context', () => {
 	it('skips version check in raw mode (mimics plain npm publish)', async () => {
 		const logs: string[] = []
 
-		await withPackageFixture('example-pkg', '4.0.0', undefined, async (dir) => {
+		await withPackageFixture('example-pkg', '4.0.0', undefined, async (fixture) => {
 			const { publishPackage } = await getPublish()
 			const result = await publishPackage({
-				cwd: dir,
+				cwd: fixture.path,
 				dryRun: true, // avoid running npm
 				env: { ...process.env, PLUXEL_PUBLISH_RAW: '1' },
 				log: (...args) => logs.push(args.join(' ')),
+				readPackageJson: readPackageJsonFrom(fixture),
 			})
 
 			expect(result.packageName).toBe('example-pkg')
@@ -219,15 +231,16 @@ describe('publish with CI context', () => {
 	it('prints debug info when enabled', async () => {
 		const logs: string[] = []
 
-		await withPackageFixture('example-pkg', '5.0.0', undefined, async (dir) => {
+		await withPackageFixture('example-pkg', '5.0.0', undefined, async (fixture) => {
 			const { publishPackage } = await getPublish()
 			await publishPackage({
-				cwd: dir,
+				cwd: fixture.path,
 				dryRun: true,
 				skipVersionCheck: true,
 				debug: true,
 				env: { ...process.env, NPM_CONFIG_PROVENANCE: 'true', NODE_AUTH_TOKEN: '***' },
 				log: (...args) => logs.push(args.join(' ')),
+				readPackageJson: readPackageJsonFrom(fixture),
 			})
 
 			expect(logs.some((line) => line.includes('debug: npm args'))).toBe(true)
@@ -266,10 +279,10 @@ describe('publish with CI context', () => {
 		}) as typeof fetch)
 
 		try {
-			await withPackageFixture('example-pkg', '6.0.0', undefined, async (dir) => {
+			await withPackageFixture('example-pkg', '6.0.0', undefined, async (fixture) => {
 				const { publishPackage } = await getPublish()
 				const result = await publishPackage({
-					cwd: dir,
+					cwd: fixture.path,
 					dryRun: true,
 					skipVersionCheck: true,
 					webhook: true,
@@ -282,6 +295,7 @@ describe('publish with CI context', () => {
 						PLUXEL_MARKET_AUDIENCE: 'https://market.test/webhook',
 					},
 					log: noop,
+					readPackageJson: readPackageJsonFrom(fixture),
 				})
 
 				expect(result.notified).toBe(true)

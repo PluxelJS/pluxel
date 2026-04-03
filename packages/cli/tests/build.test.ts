@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { createFixture } from 'fs-fixture'
+import { createDiskFixture as createFixture } from '@pluxel/test/fixtures'
 import { createImportTracker } from '@pluxel/cli/rolldown'
 import { readFile } from 'node:fs/promises'
 import { resolve } from 'pathe'

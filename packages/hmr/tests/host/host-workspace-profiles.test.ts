@@ -1,52 +1,84 @@
-import { createHmrHost } from '@pluxel/hmr/host'
 import type { HmrWorkspaceSnapshot } from '@pluxel/hmr/snapshot'
-import { createFixture } from 'fs-fixture'
+import { createFixture } from '@pluxel/test/fixtures'
 import { resolve } from 'pathe'
 import { describe, expect, it } from 'vitest'
+import { bootPlannedHmrHost, planHmrHost } from '../../src/host'
+import { createTestHmrHost } from '../support/test-host'
 
 describe('@pluxel/hmr/host snapshot contract', () => {
-	it('refuses to start when workspaceSnapshot is missing', async () => {
+	it('refuses to start when snapshot is missing', async () => {
 		await using fixture = await createFixture({
 			'pnpm-workspace.yaml': ['packages:', '  - packages/*', ''].join('\n'),
 		})
 
-		const prevCwd = process.cwd()
-		try {
-			// @ts-expect-error runtime contract check: workspaceSnapshot is required
-			await expect(createHmrHost({ root: fixture.path, logging: false })).rejects.toThrow(
-				/workspaceSnapshot is required/i,
-			)
-		} finally {
-			process.chdir(prevCwd)
-		}
+		// @ts-expect-error runtime contract check: snapshot is required
+		await expect(
+			createTestHmrHost({ fs: fixture.fs, root: fixture.path }),
+		).rejects.toThrow(/snapshot is required/i)
 	})
 
-	it('boots deterministically when workspaceSnapshot is provided', async () => {
+	it('boots deterministically when snapshot is provided', async () => {
 		await using fixture = await createFixture({
 			'packages/a/src/index.ts': 'export const entry = "a"\n',
 		})
 
-		const prevCwd = process.cwd()
-		try {
-			const snapshot: HmrWorkspaceSnapshot = {
-				activeProfile: 'dev',
-				roots: ['packages/a'],
-				enabled: ['pluxel-plugin-a'],
-				builtinPackages: [],
-				enabledEntries: ['packages/a/src/index.ts'],
-				includedEntries: [],
-				watchRoots: ['packages/a'],
-				includeGlobs: [],
-				excludeGlobs: [],
-			}
-			const res = await createHmrHost({
-				root: fixture.path,
-				logging: false,
-				workspaceSnapshot: snapshot,
-			})
-			expect(res.root).toBe(resolve(fixture.path))
-		} finally {
-			process.chdir(prevCwd)
+		const snapshot: HmrWorkspaceSnapshot = {
+			activeProfile: 'dev',
+			roots: ['packages/a'],
+			enabled: ['pluxel-plugin-a'],
+			builtinPackages: [],
+			enabledEntries: ['packages/a/src/index.ts'],
+			includedEntries: [],
+			watchRoots: ['packages/a'],
+			includeGlobs: [],
+			excludeGlobs: [],
 		}
+		const res = await createTestHmrHost({
+			fs: fixture.fs,
+			root: fixture.path,
+			storage: {
+				configFile: '.pluxel/hmr/config.json',
+				seedConfig: false,
+			},
+			snapshot,
+		})
+		expect(res.root).toBe(resolve(fixture.path))
+		expect(fixture.fs.existsSync(resolve(fixture.path, '.pluxel/hmr/config.dev.json'))).toBe(true)
+	}, 15_000)
+
+	it('separates host planning from startup side effects', async () => {
+		await using fixture = await createFixture({
+			'packages/a/src/index.ts': 'export const entry = "a"\n',
+		})
+
+		const snapshot: HmrWorkspaceSnapshot = {
+			activeProfile: 'dev',
+			roots: ['packages/a'],
+			enabled: ['pluxel-plugin-a'],
+			builtinPackages: [],
+			enabledEntries: ['packages/a/src/index.ts'],
+			includedEntries: [],
+			watchRoots: ['packages/a'],
+			includeGlobs: [],
+			excludeGlobs: [],
+		}
+
+		const plan = planHmrHost({
+			fs: fixture.fs,
+			root: fixture.path,
+			storage: {
+				configFile: '.pluxel/hmr/config.json',
+				seedConfig: false,
+			},
+			snapshot,
+			logging: false,
+			chdir: false,
+		})
+
+		expect(fixture.fs.existsSync(resolve(fixture.path, '.pluxel/hmr/config.dev.json'))).toBe(false)
+
+		const res = await bootPlannedHmrHost(plan)
+		expect(fixture.fs.existsSync(resolve(fixture.path, '.pluxel/hmr/config.dev.json'))).toBe(true)
+		await res.ctx.effects.dispose()
 	}, 15_000)
 })

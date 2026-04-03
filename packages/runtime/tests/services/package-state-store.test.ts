@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { createFixture } from 'fs-fixture'
+import { createFixture } from '@pluxel/test/fixtures'
 import { resolve } from 'pathe'
-import { readFile, writeFile } from 'node:fs/promises'
 
 import { PackageStateStore } from '../../src/services/runtime/package/state-store'
 
@@ -19,8 +18,9 @@ describe('PackageStateStore', () => {
 		const store = new PackageStateStore({
 			file,
 			fs: {
-				readText: async (p) => await readFile(p, 'utf8'),
-				writeTextAtomic: async (p, data) => void (await writeFile(p, data, 'utf8')),
+				readText: async (p) => await fixture.fsp.readFile(p, 'utf8'),
+				writeTextAtomic: async (p, data) =>
+					void (await fixture.fsp.writeFile(p, data, 'utf8')),
 			},
 		})
 
@@ -28,4 +28,3 @@ describe('PackageStateStore', () => {
 		expect(out).toBeNull()
 	})
 })
-

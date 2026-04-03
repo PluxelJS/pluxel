@@ -22,7 +22,7 @@ import { applyHmrEnvOverrides } from './runtime'
 
 export type AttachHmrRuntimeOptions = {
 	cwd?: string
-	workspaceSnapshot: HmrWorkspaceSnapshot
+	snapshot: HmrWorkspaceSnapshot
 	snapshotPatch?: (snapshot: HmrWorkspaceSnapshot) => HmrWorkspaceSnapshot
 	printUrls?: boolean
 	warmup?: boolean
@@ -76,7 +76,7 @@ export async function attachHmrRuntime(
 	options: AttachHmrRuntimeOptions,
 ): Promise<AttachHmrRuntimeResult> {
 	const cwd = resolve(options.cwd ?? process.cwd())
-	let snapshot = options.workspaceSnapshot
+	let snapshot = options.snapshot
 	if (options.snapshotPatch) snapshot = options.snapshotPatch(snapshot)
 	assertHmrWorkspaceSnapshot(snapshot)
 

@@ -1,12 +1,12 @@
-import { createHmrHost } from '@pluxel/hmr/host'
 import type { HmrWorkspaceSnapshot } from '@pluxel/hmr/snapshot'
 import {
 	getDevRuntimeHandles,
 	getRuntimeModuleAdapter,
 	hasRuntimeModuleAdapter,
 } from '@pluxel/runtime/internal'
-import { createFixture } from 'fs-fixture'
+import { createFixture } from '@pluxel/test/fixtures'
 import { describe, expect, it, vi } from 'vitest'
+import { createTestHmrHost } from '../support/test-host'
 
 describe('@pluxel/hmr/host runtime bridges', () => {
 	it('installs module adapter + dev handles on the host Context', async () => {
@@ -27,11 +27,10 @@ describe('@pluxel/hmr/host runtime bridges', () => {
 			excludeGlobs: [],
 		}
 
-		const res = await createHmrHost({
+		const res = await createTestHmrHost({
+			fs: fixture.fs,
 			root: fixture.path,
-			chdir: false,
-			logging: false,
-			workspaceSnapshot: snapshot,
+			snapshot,
 			warmup: false,
 			printUrls: false,
 		})

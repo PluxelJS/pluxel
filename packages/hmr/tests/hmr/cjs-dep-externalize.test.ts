@@ -1,6 +1,6 @@
 import { createServer as createNetServer } from 'node:net'
 import type { Context } from '@pluxel/core'
-import { createFixture } from 'fs-fixture'
+import { createDiskFixture as createFixture } from '@pluxel/test/fixtures'
 import { join } from 'pathe'
 import { createServer, normalizePath, type Plugin as VitePlugin } from 'vite'
 import { describe, expect, it } from 'vitest'

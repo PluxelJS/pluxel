@@ -7,6 +7,12 @@ Goals:
 - keep tests stable (avoid internal/private APIs)
 - keep config/feature behavior correct (toolchain metadata extraction)
 
+Repo-internal note:
+- `@pluxel/test/fixtures` is for this monorepo only.
+- Prefer `createFixture()` there for VFS-backed hermetic tests.
+- Use `createDiskFixture()` only when the suite truly needs real paths, symlinks, `process.chdir(...)`, or external tooling/bundlers.
+- Fixtures are isolated. Dispose them with `await using`, and pass `fixture.fs` / `fixture.fsp` explicitly into the code under test.
+
 ## Golden rules (must follow)
 
 1) **Prefer `@pluxel/test` only**.

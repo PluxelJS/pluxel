@@ -1,10 +1,14 @@
-import { existsSync } from 'node:fs'
-import { readFile } from 'node:fs/promises'
 import { dirname, resolve } from 'pathe'
 import type { PackageJson } from 'pkg-types'
 import picomatch from 'picomatch'
-import { crawlFilesAbs, DEFAULT_IGNORED_DIR_NAMES } from '@pluxel/workspace'
 import { toPosix, toRootRelative, uniqSorted } from './utils'
+import {
+	DEFAULT_IGNORED_DIR_NAMES,
+	crawlFilesAbsWithFs,
+	nodeWorkspaceFs,
+	readTextFile,
+	type WorkspaceFs,
+} from './fs'
 
 export type DiscoverWorkspacePluginsInput = {
 	rootDir: string
@@ -33,9 +37,12 @@ function normalizeMatchers(rootDir: string, excludeGlobs: string[]) {
 	return picomatch(patterns.map(toPosix), { dot: true })
 }
 
-async function safeReadPackageJson(path: string): Promise<PackageJson | null> {
+async function safeReadPackageJson(
+	path: string,
+	fs: WorkspaceFs = nodeWorkspaceFs,
+): Promise<PackageJson | null> {
 	try {
-		const raw = await readFile(path, 'utf8')
+		const raw = await readTextFile(fs, path)
 		return JSON.parse(raw) as PackageJson
 	} catch {
 		return null
@@ -72,15 +79,16 @@ function resolvePluginEntryAbs(pkgDirAbs: string, manifest: PackageJson): string
 }
 
 export async function scanWorkspacePackages(
-	input: DiscoverWorkspacePluginsInput,
+	input: DiscoverWorkspacePluginsInput & { fs?: WorkspaceFs },
 ): Promise<{ packages: WorkspacePackage[]; packageJsonPathsAbs: string[] }> {
 	const rootDirAbs = resolve(input.rootDir)
 	const isExcluded = normalizeMatchers(rootDirAbs, input.excludeGlobs)
+	const fs = input.fs ?? nodeWorkspaceFs
 
 	const rootsAbs = uniqSorted(
 		input.roots
 			.map((r) => resolve(rootDirAbs, r))
-			.filter((p) => existsSync(p))
+			.filter((p) => fs.existsSync(p))
 			.map(toPosix),
 	)
 
@@ -88,16 +96,19 @@ export async function scanWorkspacePackages(
 
 	for (const root of rootsAbs) {
 		const direct = resolve(root, 'package.json')
-		if (existsSync(direct) && !isExcluded(toPosix(direct))) {
+		if (fs.existsSync(direct) && !isExcluded(toPosix(direct))) {
 			packageJsonPathsAbs.push(toPosix(direct))
 			continue
 		}
 
-		const files = await crawlFilesAbs({
-			roots: [root],
-			ignoreDirNames: DEFAULT_IGNORED_DIR_NAMES,
-			fileFilter: (p) => p.endsWith('package.json'),
-		})
+		const files = await crawlFilesAbsWithFs(
+			{
+				roots: [root],
+				ignoreDirNames: DEFAULT_IGNORED_DIR_NAMES,
+				fileFilter: (p) => p.endsWith('package.json'),
+			},
+			fs,
+		)
 
 		for (const abs of files) {
 			if (isExcluded(abs)) continue
@@ -109,7 +120,7 @@ export async function scanWorkspacePackages(
 
 	const packages: WorkspacePackage[] = []
 	for (const pkgJsonPathAbs of uniquePaths) {
-		const manifest = await safeReadPackageJson(pkgJsonPathAbs)
+		const manifest = await safeReadPackageJson(pkgJsonPathAbs, fs)
 		if (!manifest) continue
 		const name = manifest.name
 		if (typeof name !== 'string' || !name.trim()) continue
@@ -146,7 +157,7 @@ export function discoverPluginsFromPackages(
 }
 
 export async function discoverWorkspacePlugins(
-	input: DiscoverWorkspacePluginsInput,
+	input: DiscoverWorkspacePluginsInput & { fs?: WorkspaceFs },
 ): Promise<DiscoveredPlugin[]> {
 	const { packages } = await scanWorkspacePackages(input)
 	return discoverPluginsFromPackages(input.rootDir, packages)

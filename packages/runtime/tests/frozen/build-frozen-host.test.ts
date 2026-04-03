@@ -1,7 +1,6 @@
-import { readFile } from 'node:fs/promises'
 import { resolve } from 'pathe'
 import { describe, expect, it } from 'vitest'
-import { createFixture } from 'fs-fixture'
+import { createFixture } from '@pluxel/test/fixtures'
 
 import { buildFrozenHost } from '@pluxel/runtime/frozen'
 
@@ -12,6 +11,10 @@ describe('@pluxel/runtime/frozen buildFrozenHost', () => {
 		const res = await buildFrozenHost({
 			outDir,
 			profile: 'prod',
+			fs: {
+				mkdir: fixture.fsp.mkdir,
+				writeFile: fixture.fsp.writeFile,
+			},
 			plugins: [
 				{
 					moduleId: '@scope/example',
@@ -23,8 +26,8 @@ describe('@pluxel/runtime/frozen buildFrozenHost', () => {
 			enabled: ['ExamplePlugin'],
 		})
 
-		const entry = await readFile(res.entry, 'utf-8')
-		const manifest = JSON.parse(await readFile(res.manifestPath, 'utf-8'))
+		const entry = await fixture.fsp.readFile(res.entry, 'utf-8')
+		const manifest = JSON.parse(await fixture.fsp.readFile(res.manifestPath, 'utf-8'))
 
 		expect(entry).toContain("import '@pluxel/runtime'")
 		expect(entry).toContain('@scope/example/dist/index.mjs')

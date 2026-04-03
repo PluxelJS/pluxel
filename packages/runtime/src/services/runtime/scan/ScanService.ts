@@ -3,6 +3,7 @@ import { dirname, normalize } from 'pathe'
 import { type ExsolveResolver, toDirectoryURLString } from '../shared/exsolve'
 import { getCachedResolver, resolveModulePath } from '../shared/resolution'
 import { EntryResolver } from './entry-resolver'
+import { nodeWorkspaceFs, type WorkspaceFs } from './fs'
 import { DEFAULT_SCAN_OPTIONS, resolveScanOptions } from './options'
 import { ModuleResolveCache } from './resolve-cache'
 import {
@@ -59,6 +60,8 @@ export interface ScanServiceConfig {
 	options?: ScanOptionsInput
 	/** ROOT used when resolving already installed packages. Defaults to process.cwd(). */
 	installedBase?: string
+	/** Override workspace scanning filesystem operations for hermetic tests. */
+	fs?: WorkspaceFs
 }
 
 /**
@@ -74,19 +77,23 @@ export class ScanService {
 	private defaults: ResolvedScanOptions
 	private roots: string[]
 	private readonly resolveCache = new ModuleResolveCache()
-	private readonly entryResolver = new EntryResolver(this.resolveCache)
-	private readonly snapshotBuilder = new ScanSnapshotBuilder(this.entryResolver)
-	private readonly snapshotCache = new ScanSnapshotCache(this.snapshotBuilder)
-	private readonly installedResolver: InstalledPackageResolver
+	private scanFs: WorkspaceFs
+	private installedBase: string
+	private entryResolver: EntryResolver
+	private snapshotBuilder: ScanSnapshotBuilder
+	private snapshotCache: ScanSnapshotCache
+	private installedResolver: InstalledPackageResolver
 
 	constructor(ctx: Context, config: ScanServiceConfig = {}) {
 		this.ctx = ctx
 		this.defaults = resolveScanOptions(DEFAULT_SCAN_OPTIONS, config.options)
 		this.roots = normalizeScanInputs(config.roots ?? process.cwd())
-		this.installedResolver = new InstalledPackageResolver(
-			this.resolveCache,
-			config.installedBase ?? process.cwd(),
-		)
+		this.scanFs = config.fs ?? nodeWorkspaceFs
+		this.installedBase = config.installedBase ?? process.cwd()
+		this.entryResolver = new EntryResolver(this.resolveCache, this.scanFs)
+		this.snapshotBuilder = new ScanSnapshotBuilder(this.entryResolver, this.scanFs)
+		this.snapshotCache = new ScanSnapshotCache(this.snapshotBuilder)
+		this.installedResolver = new InstalledPackageResolver(this.resolveCache, this.installedBase)
 	}
 
 	/**
@@ -119,6 +126,16 @@ export class ScanService {
 			this.roots = normalizeScanInputs(config.roots)
 			mutated = true
 		}
+		if (config.fs && config.fs !== this.scanFs) {
+			this.scanFs = config.fs
+			this.rebuildScanState()
+			mutated = true
+		}
+		if (config.installedBase && config.installedBase !== this.installedBase) {
+			this.installedBase = config.installedBase
+			this.installedResolver = new InstalledPackageResolver(this.resolveCache, this.installedBase)
+			mutated = true
+		}
 		if (mutated) this.clearCaches()
 	}
 
@@ -143,6 +160,12 @@ export class ScanService {
 	clearCaches() {
 		this.snapshotCache.clear()
 		this.invalidateResolverCache({ by: 'scanService', reason: 'clearCaches' })
+	}
+
+	private rebuildScanState() {
+		this.entryResolver = new EntryResolver(this.resolveCache, this.scanFs)
+		this.snapshotBuilder = new ScanSnapshotBuilder(this.entryResolver, this.scanFs)
+		this.snapshotCache = new ScanSnapshotCache(this.snapshotBuilder)
 	}
 
 	/**
