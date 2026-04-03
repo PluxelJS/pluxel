@@ -279,6 +279,7 @@ dist
 .env.test.local
 .env.production.Local
 .turbo
+.tmp
 
 build/
 !packages/build/
