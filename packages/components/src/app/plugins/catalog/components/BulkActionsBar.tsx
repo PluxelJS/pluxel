@@ -18,7 +18,9 @@ export function BulkActionsBar({ count, busy, onAction }: Props) {
 						已选 {count}
 					</Badge>
 					<Text className="plx-pluginCatalog__bulkTitle">批量操作</Text>
-					<Text className="plx-pluginCatalog__bulkHint">空格切换选择，Esc 清空，Ctrl/⌘A 全选</Text>
+					<Text className="plx-pluginCatalog__bulkHint">
+						Space 选择，Shift+方向 连选，Enter 打开，G/M/U 分组
+					</Text>
 				</div>
 				<Group gap={4} wrap="nowrap">
 					<ActionIcon

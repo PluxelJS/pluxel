@@ -47,14 +47,22 @@ import { openConfirmModal } from '@mantine/modals'
 import { IconArrowsShuffle, IconFolderPlus, IconLayoutKanban } from '@tabler/icons-react'
 import type React from 'react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import {
+	DEFAULT_STATUS_FILTER,
+	hasActiveSearchTokens,
+	hasActiveStatusFilter,
+	matchesGroupSearch,
+	matchesPluginSearch,
+} from '../filterModel'
 import { parseSearchTokens } from '../searchTokens'
 import { DroppableContainer } from './components/DroppableContainer'
+import { FlatPluginList } from './components/FlatPluginList'
 import { GroupEditorModal } from './components/GroupEditorModal'
 import { GroupPlacementModal } from './components/GroupPlacementModal'
 import { GroupCard } from './components/GroupCard'
 import { SortableRow } from './components/SortableRow'
 import { cid, gid, iid } from './controllerModel'
-import { DENSITY, type Density } from './constants'
+import { DENSITY, FILTERED_FLAT_VIRTUALIZE_THRESHOLD, type Density } from './constants'
 import type { GroupConfig, PluginStatuses } from './types'
 import {
 	arraysEqual,
@@ -140,12 +148,9 @@ export function PluginOrganizer({
 	style,
 }: Props) {
 	const dh = DENSITY[density]
-	const effectiveStatusFilter = statusFilter ?? { running: true, stopped: true, disabled: true }
+	const effectiveStatusFilter = statusFilter ?? DEFAULT_STATUS_FILTER
 	const searchTokens = useMemo(() => parseSearchTokens(filterQuery), [filterQuery])
-	const hasStatusFilter =
-		!effectiveStatusFilter.running ||
-		!effectiveStatusFilter.stopped ||
-		!effectiveStatusFilter.disabled
+	const hasStatusFilter = hasActiveStatusFilter(effectiveStatusFilter)
 
 	// 基础映射
 	const runningSet = useMemo(() => {
@@ -217,43 +222,9 @@ export function PluginOrganizer({
 	}, [allIds, saneGroups])
 
 	// 过滤（混合：组名 or 插件 name/ID + 语法）
-	const isFiltering =
-		searchTokens.plain.length > 0 ||
-		searchTokens.pkg.length > 0 ||
-		searchTokens.tag.length > 0 ||
-		searchTokens.version.length > 0 ||
-		searchTokens.id.length > 0 ||
-		hasStatusFilter
+	const isFiltering = hasActiveSearchTokens(searchTokens) || hasStatusFilter
 	const pluginMatch = useCallback(
-		(id: string) => {
-			const st = statuses[id]
-			const name = (st?.name || '').toLowerCase()
-			const pkg = (st?.packageName || '').toLowerCase()
-			const tag = (st?.tag || '').toLowerCase()
-			const version = (st?.version || '').toLowerCase()
-			const idValue = id.toLowerCase()
-
-			const running = !!st?.isRunning
-			const enabled = st?.isEnabled !== false
-			const disabled = !enabled
-			const stopped = enabled && !running
-			const statusOk =
-				(effectiveStatusFilter.running && running) ||
-				(effectiveStatusFilter.stopped && stopped) ||
-				(effectiveStatusFilter.disabled && disabled)
-
-			if (!statusOk) return false
-
-			const plainOk = searchTokens.plain.every((term) =>
-				[name, pkg, tag, version, idValue].some((field) => field.includes(term)),
-			)
-			const pkgOk = searchTokens.pkg.every((term) => pkg.includes(term))
-			const tagOk = searchTokens.tag.every((term) => tag.includes(term))
-			const versionOk = searchTokens.version.every((term) => version.includes(term))
-			const idOk = searchTokens.id.every((term) => idValue.includes(term))
-
-			return plainOk && pkgOk && tagOk && versionOk && idOk
-		},
+		(id: string) => matchesPluginSearch(id, statuses[id], searchTokens, effectiveStatusFilter),
 		[effectiveStatusFilter, searchTokens, statuses],
 	)
 
@@ -307,15 +278,27 @@ export function PluginOrganizer({
 	const visibleGroups = useMemo(() => {
 		if (!isFiltering) return groups
 		return groups.reduce<GroupConfig[]>((acc, group) => {
-			const nameMatch =
-				searchTokens.plain.length > 0 &&
-				searchTokens.plain.every((term) => (group.name || '').toLowerCase().includes(term))
+			const nameMatch = matchesGroupSearch(group.name || '', searchTokens)
 			const pluginIds = nameMatch ? [...group.pluginIds] : group.pluginIds.filter(pluginMatch)
 			if (!nameMatch && pluginIds.length === 0) return acc
 			acc.push({ ...group, pluginIds })
 			return acc
 		}, [])
-	}, [groups, isFiltering, pluginMatch, searchTokens.plain])
+	}, [groups, isFiltering, pluginMatch, searchTokens])
+	const flatVisibleIds = useMemo(() => {
+		if (!isFiltering) return ungroupedDisplayOrder
+		const flattened = [...ungroupedDisplayOrder]
+		for (const group of visibleGroups) flattened.push(...group.pluginIds)
+		return flattened
+	}, [isFiltering, ungroupedDisplayOrder, visibleGroups])
+	const flatVisibleRunning = useMemo(() => {
+		let count = 0
+		for (const id of flatVisibleIds) if (runningSet.has(id)) count += 1
+		return count
+	}, [flatVisibleIds, runningSet])
+	const showFlatResults = isFiltering
+	const shouldVirtualizeFlatResults =
+		showFlatResults && flatVisibleIds.length > FILTERED_FLAT_VIRTUALIZE_THRESHOLD
 
 	// —— 外界状态变化（新增/删除插件 id）下的本地对齐 —— //
 	useEffect(() => {
@@ -495,8 +478,8 @@ export function PluginOrganizer({
 		allIds,
 		controlledSelectedIds,
 		onSelectedIdsChange,
-		visibleGroups,
-		ungroupedDisplayOrder,
+		visibleGroups: showFlatResults ? [] : visibleGroups,
+		ungroupedDisplayOrder: showFlatResults ? flatVisibleIds : ungroupedDisplayOrder,
 		onCreateGroup: () => openCreateGroupModal(selectedIds.length > 0 ? selectedIds : undefined),
 		onMoveSelection: () => setPlacementModalOpen(true),
 		onMoveToUngrouped: () => moveSelectedPlugins('ROOT_UNGROUPED'),
@@ -569,7 +552,9 @@ export function PluginOrganizer({
 				style={{
 					display: 'grid',
 					gridTemplateRows:
-						groups.length > 0 ? 'minmax(0, 1fr) minmax(0, 2fr)' : 'minmax(0, 1fr) auto',
+						groups.length > 0 && !showFlatResults
+							? 'minmax(0, 1fr) minmax(0, 2fr)'
+							: 'minmax(0, 1fr) auto',
 					gap: 4,
 					minHeight: 0,
 					height: '100%',
@@ -596,9 +581,13 @@ export function PluginOrganizer({
 				>
 					<div className="plx-pluginCatalog__sectionHeader">
 						<div className="plx-pluginCatalog__sectionHeading">
-							<Text className="plx-pluginCatalog__sectionTitle">未分组</Text>
+							<Text className="plx-pluginCatalog__sectionTitle">
+								{showFlatResults ? '平铺结果' : '未分组'}
+							</Text>
 							<Text className="plx-pluginCatalog__sectionMetric">
-								{visibleUngroupedRunning}/{visibleUngrouped.length}
+								{showFlatResults
+									? `${flatVisibleRunning}/${flatVisibleIds.length}`
+									: `${visibleUngroupedRunning}/${visibleUngrouped.length}`}
 							</Text>
 						</div>
 						<Box className="plx-pluginCatalog__sectionActions">
@@ -661,91 +650,112 @@ export function PluginOrganizer({
 						</Box>
 					</div>
 					<Text className="plx-pluginCatalog__sectionNote">
-						G 创建或收拢为分组，M 移动到分组，U 移回未分组。
+						{showFlatResults
+							? '当前按筛选结果平铺显示，清空筛选后恢复分组编辑。'
+							: 'G 创建或收拢为分组，M 移动到分组，U 移回未分组。'}
 					</Text>
 
-					<DroppableContainer
-						id={cid('ROOT_UNGROUPED')}
-						disabled={isFiltering || locked}
-						minDropHeight={visibleUngrouped.length ? 0 : dh.rowH}
-						style={{
-							flex: 1,
-							minHeight: 0,
-							overflowY: 'auto',
-							overflowX: 'hidden',
-							paddingRight: 4,
-						}}
-					>
-						<SortableContext
-							items={ungroupedDisplayOrder.map((id) => iid(id))}
-							strategy={verticalListSortingStrategy}
+					{showFlatResults ? (
+						<FlatPluginList
+							ids={flatVisibleIds}
+							virtualize={shouldVirtualizeFlatResults}
+							runningSet={runningSet}
+							enabledSet={enabledSet}
+							selectedSet={selectedSet}
+							activeSet={activeSet}
+							focusedId={focusedId}
+							onSelect={handleRowSelect}
+							LinkComp={LinkComp}
+							getName={getName}
+							getMeta={getMeta}
+							dh={dh}
+							emptyLabel={isFiltering ? '没有匹配的插件。' : '暂无可显示的插件。'}
+							listLabel={isFiltering ? '筛选结果插件' : '平铺插件'}
+						/>
+					) : (
+						<DroppableContainer
+							id={cid('ROOT_UNGROUPED')}
+							disabled={isFiltering || locked}
+							minDropHeight={visibleUngrouped.length ? 0 : dh.rowH}
+							style={{
+								flex: 1,
+								minHeight: 0,
+								overflowY: 'auto',
+								overflowX: 'hidden',
+								paddingRight: 4,
+							}}
 						>
-							<Stack gap={0} align="stretch" role="list" aria-label="未分组插件">
-								{hmrVirtualGroups.map((group) => (
-									<Box key={`hmr-group-${group.label}`} className="plx-pluginCatalog__subgroup">
-										<div className="plx-pluginCatalog__subgroupHeader">
-											<Text className="plx-pluginCatalog__subgroupLabel">{group.label}</Text>
-											<Text className="plx-pluginCatalog__subgroupCount">
-												{group.pluginIds.length} 个
-											</Text>
-										</div>
-										{group.pluginIds.map((id) => (
-											<SortableRow
-												key={id}
-												pid={id}
-												name={getName(id)}
-												running={runningSet.has(id)}
-												enabled={enabledSet.has(id)}
-												selected={selectedSet.has(id)}
-												active={activeSet.has(id)}
-												onSelect={handleRowSelect}
-												LinkComp={LinkComp}
-												dragDisabled={isFiltering || locked}
-												focused={focusedId === id}
-												meta={getMeta(id)}
-												dh={dh}
-												sortableId={iid(id)}
-											/>
-										))}
-									</Box>
-								))}
-								{packageUngrouped.length > 0 && (
-									<Box className="plx-pluginCatalog__subgroup">
-										<div className="plx-pluginCatalog__subgroupHeader">
-											<Text className="plx-pluginCatalog__subgroupLabel">
-												{hmrVirtualGroups.length > 0 ? '包管理安装' : '未分组插件'}
-											</Text>
-											<Text className="plx-pluginCatalog__subgroupCount">
-												{packageUngrouped.length} 个
-											</Text>
-										</div>
-										{packageUngrouped.map((id) => (
-											<SortableRow
-												key={id}
-												pid={id}
-												name={getName(id)}
-												running={runningSet.has(id)}
-												enabled={enabledSet.has(id)}
-												selected={selectedSet.has(id)}
-												active={activeSet.has(id)}
-												onSelect={handleRowSelect}
-												LinkComp={LinkComp}
-												dragDisabled={isFiltering || locked}
-												focused={focusedId === id}
-												meta={getMeta(id)}
-												dh={dh}
-												sortableId={iid(id)}
-											/>
-										))}
-									</Box>
-								)}
-							</Stack>
-						</SortableContext>
-					</DroppableContainer>
+							<SortableContext
+								items={ungroupedDisplayOrder.map((id) => iid(id))}
+								strategy={verticalListSortingStrategy}
+							>
+								<Stack gap={0} align="stretch" role="list" aria-label="未分组插件">
+									{hmrVirtualGroups.map((group) => (
+										<Box key={`hmr-group-${group.label}`} className="plx-pluginCatalog__subgroup">
+											<div className="plx-pluginCatalog__subgroupHeader">
+												<Text className="plx-pluginCatalog__subgroupLabel">{group.label}</Text>
+												<Text className="plx-pluginCatalog__subgroupCount">
+													{group.pluginIds.length} 个
+												</Text>
+											</div>
+											{group.pluginIds.map((id) => (
+												<SortableRow
+													key={id}
+													pid={id}
+													name={getName(id)}
+													running={runningSet.has(id)}
+													enabled={enabledSet.has(id)}
+													selected={selectedSet.has(id)}
+													active={activeSet.has(id)}
+													onSelect={handleRowSelect}
+													LinkComp={LinkComp}
+													dragDisabled={isFiltering || locked}
+													focused={focusedId === id}
+													meta={getMeta(id)}
+													dh={dh}
+													sortableId={iid(id)}
+												/>
+											))}
+										</Box>
+									))}
+									{packageUngrouped.length > 0 && (
+										<Box className="plx-pluginCatalog__subgroup">
+											<div className="plx-pluginCatalog__subgroupHeader">
+												<Text className="plx-pluginCatalog__subgroupLabel">
+													{hmrVirtualGroups.length > 0 ? '包管理安装' : '未分组插件'}
+												</Text>
+												<Text className="plx-pluginCatalog__subgroupCount">
+													{packageUngrouped.length} 个
+												</Text>
+											</div>
+											{packageUngrouped.map((id) => (
+												<SortableRow
+													key={id}
+													pid={id}
+													name={getName(id)}
+													running={runningSet.has(id)}
+													enabled={enabledSet.has(id)}
+													selected={selectedSet.has(id)}
+													active={activeSet.has(id)}
+													onSelect={handleRowSelect}
+													LinkComp={LinkComp}
+													dragDisabled={isFiltering || locked}
+													focused={focusedId === id}
+													meta={getMeta(id)}
+													dh={dh}
+													sortableId={iid(id)}
+												/>
+											))}
+										</Box>
+									)}
+								</Stack>
+							</SortableContext>
+						</DroppableContainer>
+					)}
 				</Card>
 
 				{/* 我的分组：有分组时占下半区并可滚动；无分组时收缩为提示行 */}
-				{groups.length > 0 ? (
+				{groups.length > 0 && !showFlatResults ? (
 					<Card
 						className="plx-theme-panel plx-pluginCatalog__sectionCard"
 						withBorder
@@ -837,10 +847,14 @@ export function PluginOrganizer({
 						<div className="plx-pluginCatalog__sectionHeader">
 							<div className="plx-pluginCatalog__sectionHeading">
 								<Text className="plx-pluginCatalog__sectionTitle">我的分组</Text>
-								<Text className="plx-pluginCatalog__sectionMetric">0 个</Text>
+								<Text className="plx-pluginCatalog__sectionMetric">{groups.length} 个</Text>
 							</div>
 						</div>
-						<Text className="plx-pluginCatalog__sectionNote">暂无分组，可在上方创建。</Text>
+						<Text className="plx-pluginCatalog__sectionNote">
+							{groups.length > 0 && showFlatResults
+								? '筛选或长列表模式下暂时隐藏分组卡，清空筛选后恢复分组编辑。'
+								: '暂无分组，可在上方创建。'}
+						</Text>
 					</Card>
 				)}
 			</Box>

@@ -195,7 +195,9 @@ const SortableRowComponent = ({
 				{LinkComp ? (
 					<LinkComp
 						to={href}
+						workbenchMode="replace-active"
 						data-plugin-link="true"
+						data-plugin-link-mode="replace-active"
 						style={{ textDecoration: 'none', display: 'block', color: rowColorValue, minWidth: 0 }}
 						onClick={(e: any) => {
 							e.stopPropagation()
@@ -227,6 +229,7 @@ const SortableRowComponent = ({
 							href={href}
 							underline="never"
 							data-plugin-link="true"
+							data-plugin-link-mode="replace-active"
 							style={{
 								whiteSpace: 'nowrap',
 								overflow: 'hidden',
@@ -306,6 +309,8 @@ const SortableRowComponent = ({
 						component={LinkComp as any}
 						to={href}
 						workbenchMode="open-tab"
+						data-plugin-link="true"
+						data-plugin-link-mode="open-tab"
 						variant="subtle"
 						size="sm"
 						aria-label={`在新标签页打开 ${name}`}

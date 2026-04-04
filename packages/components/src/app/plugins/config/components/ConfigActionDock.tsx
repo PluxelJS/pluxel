@@ -1,4 +1,5 @@
 import { Badge, Button, Group, Select, Text, Tooltip } from '@mantine/core'
+import { PLUGIN_DETAIL_HOTKEY_LABELS } from '../../../workbench/shortcuts'
 import { SavedStatus } from './SavedStatus'
 
 type ActiveState = {
@@ -76,6 +77,10 @@ export function ConfigActionDock({
 						全部已保存
 					</Badge>
 				)}
+				<Text size="xs" c="dimmed">
+					{PLUGIN_DETAIL_HOTKEY_LABELS.saveCurrentConfig} 保存
+					{hasMultipleSchemas ? ` · ${PLUGIN_DETAIL_HOTKEY_LABELS.saveAllConfig} 全部` : ''}
+				</Text>
 			</div>
 
 			<Group
@@ -105,6 +110,7 @@ export function ConfigActionDock({
 					onClick={onSubmitCurrent}
 					loading={activeState.submitting}
 					disabled={!activeState.dirty || !activeState.canSubmit}
+					title="保存当前配置 (Ctrl/⌘ + S)"
 				>
 					提交当前
 				</Button>
@@ -115,6 +121,7 @@ export function ConfigActionDock({
 						onClick={onSubmitAll}
 						loading={savingAll}
 						disabled={dirtyCount === 0 || savingAll}
+						title="保存全部已修改配置 (Ctrl/⌘ + Shift + S)"
 					>
 						提交全部
 					</Button>

@@ -6,6 +6,7 @@ import {
 	IconChevronLeft,
 	IconHome2,
 	IconLayoutSidebarLeftCollapse,
+	IconPlus,
 	IconSearch,
 	IconX,
 } from '@tabler/icons-react'
@@ -67,6 +68,7 @@ import {
 	WorkbenchLayoutProvider,
 	WorkbenchTabsProvider,
 } from './context'
+import { WORKBENCH_HOTKEYS, WORKBENCH_HOTKEY_LABELS } from './shortcuts'
 import './styles.scss'
 const PANEL_STYLE = {
 	display: 'flex',
@@ -80,6 +82,7 @@ function WorkbenchHotkeys({
 	canTogglePluginRail,
 	onCloseActiveTab,
 	onFocusSearch,
+	onNewPluginTab,
 	onNextTab,
 	onPrevTab,
 	onTogglePluginRail,
@@ -87,12 +90,13 @@ function WorkbenchHotkeys({
 	canTogglePluginRail: boolean
 	onCloseActiveTab: () => void
 	onFocusSearch: () => void
+	onNewPluginTab: () => void
 	onNextTab: () => void
 	onPrevTab: () => void
 	onTogglePluginRail: () => void
 }): null {
 	useHotkey(
-		'Mod+B',
+		WORKBENCH_HOTKEYS.togglePluginRail,
 		() => {
 			if (!canTogglePluginRail) return
 			onTogglePluginRail()
@@ -100,28 +104,35 @@ function WorkbenchHotkeys({
 		{ ignoreInputs: true, preventDefault: true },
 	)
 	useHotkey(
-		'Mod+K',
+		WORKBENCH_HOTKEYS.focusSearch,
 		() => {
 			onFocusSearch()
 		},
 		{ ignoreInputs: true, preventDefault: true },
 	)
 	useHotkey(
-		'Mod+W',
+		WORKBENCH_HOTKEYS.newPluginTab,
+		() => {
+			onNewPluginTab()
+		},
+		{ ignoreInputs: true, preventDefault: true },
+	)
+	useHotkey(
+		WORKBENCH_HOTKEYS.closeActiveTab,
 		() => {
 			onCloseActiveTab()
 		},
 		{ ignoreInputs: true, preventDefault: true },
 	)
 	useHotkey(
-		'Mod+Shift+BracketLeft' as never,
+		WORKBENCH_HOTKEYS.prevTab as never,
 		() => {
 			onPrevTab()
 		},
 		{ ignoreInputs: true, preventDefault: true },
 	)
 	useHotkey(
-		'Mod+Shift+BracketRight' as never,
+		WORKBENCH_HOTKEYS.nextTab as never,
 		() => {
 			onNextTab()
 		},
@@ -277,6 +288,21 @@ export function WorkbenchShell() {
 
 	const focusWorkbenchSearch = useCallback(() => {
 		setSectionPaneVisible(PLUGINS_SECTION_ID, true)
+		queueWorkbenchNavigationIntent({ to: '/plugins', mode: 'replace-active' })
+		if (!pathname.startsWith('/plugins')) {
+			navigate({ to: '/plugins' })
+		}
+		if (typeof window !== 'undefined') {
+			window.setTimeout(() => {
+				window.dispatchEvent(
+					new CustomEvent<string | undefined>(PLUGIN_SEARCH_EVENT, { detail: undefined }),
+				)
+			}, 0)
+		}
+	}, [navigate, pathname, setSectionPaneVisible])
+	const openPluginSearchTab = useCallback(() => {
+		setSectionPaneVisible(PLUGINS_SECTION_ID, true)
+		queueWorkbenchNavigationIntent({ to: '/plugins', mode: 'open-tab' })
 		if (!pathname.startsWith('/plugins')) {
 			navigate({ to: '/plugins' })
 		}
@@ -450,6 +476,7 @@ export function WorkbenchShell() {
 									closeTab(workbenchStore.state.uiState.activeTabId ?? currentTab.id)
 								}
 								onFocusSearch={focusWorkbenchSearch}
+								onNewPluginTab={openPluginSearchTab}
 								onNextTab={() => stepTab(1)}
 								onPrevTab={() => stepTab(-1)}
 								onTogglePluginRail={togglePluginNav}
@@ -504,11 +531,28 @@ export function WorkbenchShell() {
 												type="button"
 												className="plx-workbench__action"
 												onClick={togglePluginNav}
-												title="切换插件列表"
+												title={`切换插件列表 (${WORKBENCH_HOTKEY_LABELS.togglePluginRail})`}
 											>
 												<IconLayoutSidebarLeftCollapse size={16} stroke={1.8} />
 												<span className="plx-workbench__actionLabel">插件列表</span>
-												<span className="plx-workbench__actionHint">⌘B</span>
+												<span className="plx-workbench__actionHint">
+													{WORKBENCH_HOTKEY_LABELS.togglePluginRail}
+												</span>
+											</button>
+										) : null}
+
+										{currentSection === PLUGINS_SECTION_ID ? (
+											<button
+												type="button"
+												className="plx-workbench__action"
+												onClick={openPluginSearchTab}
+												title={`新建插件标签页 (${WORKBENCH_HOTKEY_LABELS.newPluginTab})`}
+											>
+												<IconPlus size={16} stroke={1.8} />
+												<span className="plx-workbench__actionLabel">新标签页</span>
+												<span className="plx-workbench__actionHint">
+													{WORKBENCH_HOTKEY_LABELS.newPluginTab}
+												</span>
 											</button>
 										) : null}
 
@@ -518,11 +562,13 @@ export function WorkbenchShell() {
 											type="button"
 											className="plx-workbench__action"
 											onClick={focusWorkbenchSearch}
-											title="搜索插件"
+											title={`搜索插件 (${WORKBENCH_HOTKEY_LABELS.focusSearch})`}
 										>
 											<IconSearch size={16} stroke={1.8} />
 											<span className="plx-workbench__actionLabel">搜索</span>
-											<span className="plx-workbench__actionHint">⌘K</span>
+											<span className="plx-workbench__actionHint">
+												{WORKBENCH_HOTKEY_LABELS.focusSearch}
+											</span>
 										</button>
 
 										<ColorSchemeToggle
@@ -595,9 +641,7 @@ export function WorkbenchShell() {
 												id="pluxel-workbench-main"
 												groupRef={pluginLayoutGroupRef}
 												orientation="horizontal"
-												defaultLayout={
-													currentSectionPane?.layout ?? DEFAULT_PLUGIN_SECTION_LAYOUT
-												}
+												defaultLayout={currentSectionPane?.layout ?? DEFAULT_PLUGIN_SECTION_LAYOUT}
 												onLayoutChanged={handleLayoutChanged}
 											>
 												<Panel

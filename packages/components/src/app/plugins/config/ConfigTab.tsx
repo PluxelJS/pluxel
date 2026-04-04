@@ -6,6 +6,7 @@ import type { ObjectSchema } from 'valibot'
 import { AutoForm, useAutoFormCtx } from 'valibot-form/web'
 import { useNotify } from '../../hooks'
 import { useRuntimeTransportClient } from '../../../runtime'
+import { PLUGIN_DETAIL_HOTKEYS } from '../../workbench/shortcuts'
 import { FormToc } from './components/FormToc'
 import { makeFieldAnchorPrefix, makeSectionAnchorPrefix } from './configAnchors'
 
@@ -156,21 +157,6 @@ export function ConfigTabContent({
 		[transport, tabKey, initialValue, onSaved, notify, pluginName],
 	)
 
-	const hotkeys = useMemo(
-		(): [string, (e: KeyboardEvent) => void][] => [
-			[
-				'mod+S',
-				(e) => {
-					e.preventDefault()
-					document.getElementById(`submit-fab-${tabKey}`)?.click()
-				},
-			],
-			['Escape', () => document.getElementById(`cancel-fab-${tabKey}`)?.click()],
-		],
-		[tabKey],
-	)
-	useHotkeys(hotkeys)
-
 	return (
 		<AutoForm key={`${pluginName}-${tabKey}`} schema={schema as any} formOpts={opts}>
 			{registerForm ? <FormBridge tabKey={tabKey} registerForm={registerForm} /> : null}
@@ -301,7 +287,7 @@ function FormHotkeys({
 			active
 				? [
 						[
-							'mod+S',
+							PLUGIN_DETAIL_HOTKEYS.saveCurrentConfig,
 							(e: KeyboardEvent) => {
 								e.preventDefault()
 								submit()

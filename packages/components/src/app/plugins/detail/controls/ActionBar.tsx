@@ -1,6 +1,7 @@
 // ActionBar.tsx
 
 import { ActionIcon, Button, Group, Switch, Text, Tooltip } from '@mantine/core'
+import { useHotkeys } from '@mantine/hooks'
 import { openConfirmModal } from '@mantine/modals'
 import { IconPlayerPlay, IconRotateClockwise, IconSquareX } from '@tabler/icons-react'
 import { useCallback, useRef, useState } from 'react'
@@ -12,6 +13,7 @@ import { useRuntimeTransportClient } from '../../../../runtime'
 import { buildStartPlan, executeStartPlan } from '../../pluginStatusActions'
 import { invalidate } from '../../../data/invalidations'
 import { usePluginScope } from '../context'
+import { PLUGIN_DETAIL_HOTKEYS, PLUGIN_DETAIL_HOTKEY_LABELS } from '../../../workbench/shortcuts'
 
 export interface ActionBarProps {
 	onStatusUpdated?: () => Promise<void> | void
@@ -260,6 +262,21 @@ export function ActionBar({ onStatusUpdated, compact = false, prominent = false 
 	const actionSize = compact ? 'md' : 'lg'
 	const switchSize = compact ? 'sm' : 'md'
 
+	useHotkeys(
+		prominent
+			? [
+					[
+						PLUGIN_DETAIL_HOTKEYS.restartPlugin,
+						(event: KeyboardEvent) => {
+							event.preventDefault()
+							if (!canToggle || !isRunning) return
+							handleAction('restart')
+						},
+					],
+				]
+			: [],
+	)
+
 	if (prominent) {
 		return (
 			<Group
@@ -325,7 +342,7 @@ export function ActionBar({ onStatusUpdated, compact = false, prominent = false 
 					</Button>
 				</Tooltip>
 
-				<Tooltip label={busy ? '同步中…' : '重启'}>
+				<Tooltip label={busy ? '同步中…' : '重启 (Ctrl/⌘ + Alt + R)'}>
 					<Button
 						className="plx-pluginWorkbench__actionButton"
 						variant="default"
@@ -335,6 +352,9 @@ export function ActionBar({ onStatusUpdated, compact = false, prominent = false 
 						disabled={!canToggle || !isRunning}
 					>
 						重启
+						<span className="plx-pluginWorkbench__actionKeyHint">
+							{PLUGIN_DETAIL_HOTKEY_LABELS.restartPlugin}
+						</span>
 					</Button>
 				</Tooltip>
 
@@ -392,7 +412,7 @@ export function ActionBar({ onStatusUpdated, compact = false, prominent = false 
 				</ActionIcon>
 			</Tooltip>
 
-			<Tooltip label={busy ? '同步中…' : '重启'}>
+			<Tooltip label={busy ? '同步中…' : '重启 (Ctrl/⌘ + Alt + R)'}>
 				<ActionIcon
 					variant="light"
 					size={actionSize}

@@ -1,6 +1,7 @@
 import { ActionIcon, Group, TextInput } from '@mantine/core'
 import {
 	IconBan,
+	IconFilterOff,
 	IconPlayerPlay,
 	IconPlayerStop,
 	IconSearch,
@@ -8,12 +9,7 @@ import {
 	IconQuestionMark,
 } from '@tabler/icons-react'
 import type React from 'react'
-
-export type StatusFilterState = {
-	running: boolean
-	stopped: boolean
-	disabled: boolean
-}
+import type { StatusFilterState } from '../filterModel'
 
 type Props = {
 	value: string
@@ -21,7 +17,9 @@ type Props = {
 	inputRef: React.RefObject<HTMLInputElement>
 	statusFilter: StatusFilterState
 	onToggleStatus: (key: keyof StatusFilterState) => void
+	onResetFilters: () => void
 	onOpenHelp: () => void
+	hasActiveFilters: boolean
 }
 
 export function SearchBar({
@@ -30,7 +28,9 @@ export function SearchBar({
 	inputRef,
 	statusFilter,
 	onToggleStatus,
+	onResetFilters,
 	onOpenHelp,
+	hasActiveFilters,
 }: Props) {
 	const clearBtn = value ? (
 		<ActionIcon size="sm" variant="subtle" onClick={() => onChange('')}>
@@ -50,12 +50,23 @@ export function SearchBar({
 			>
 				<IconQuestionMark size={12} />
 			</ActionIcon>
+			{hasActiveFilters ? (
+				<ActionIcon
+					size="sm"
+					variant="subtle"
+					onClick={onResetFilters}
+					title="清空搜索和筛选 (Esc)"
+					aria-label="清空搜索和筛选"
+				>
+					<IconFilterOff size={12} />
+				</ActionIcon>
+			) : null}
 			<ActionIcon
 				size="sm"
 				variant={statusFilter.running ? 'filled' : 'subtle'}
 				color={statusFilter.running ? 'green' : undefined}
 				onClick={() => onToggleStatus('running')}
-				title="只看运行中"
+				title="运行中 (Alt+1)"
 				aria-label="运行中"
 				aria-pressed={statusFilter.running}
 			>
@@ -66,7 +77,7 @@ export function SearchBar({
 				variant={statusFilter.stopped ? 'filled' : 'subtle'}
 				color={statusFilter.stopped ? 'gray' : undefined}
 				onClick={() => onToggleStatus('stopped')}
-				title="只看停止"
+				title="停止 (Alt+2)"
 				aria-label="停止"
 				aria-pressed={statusFilter.stopped}
 			>
@@ -77,7 +88,7 @@ export function SearchBar({
 				variant={statusFilter.disabled ? 'filled' : 'subtle'}
 				color={statusFilter.disabled ? 'red' : undefined}
 				onClick={() => onToggleStatus('disabled')}
-				title="只看禁用"
+				title="禁用 (Alt+3)"
 				aria-label="禁用"
 				aria-pressed={statusFilter.disabled}
 			>
@@ -95,11 +106,12 @@ export function SearchBar({
 			leftSection={<IconSearch size={14} />}
 			leftSectionPointerEvents="none"
 			rightSection={rightSection}
-			rightSectionWidth={clearBtn ? 144 : 120}
+			rightSectionWidth={hasActiveFilters ? 176 : clearBtn ? 144 : 120}
 			rightSectionPointerEvents="auto"
 			size="sm"
 			variant="default"
 			radius="md"
+			aria-label="搜索插件"
 		/>
 	)
 }

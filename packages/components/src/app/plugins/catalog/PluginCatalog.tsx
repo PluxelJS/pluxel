@@ -50,10 +50,19 @@ import {
 	cloneGroups,
 	type OverviewSnapshot,
 } from './catalogOverview'
+import {
+	DEFAULT_STATUS_FILTER,
+	hasActiveSearchTokens,
+	hasActiveStatusFilter,
+	isEditableTarget,
+	matchesGroupSearch,
+	matchesPluginSearch,
+	type StatusFilterState,
+} from './filterModel'
 import { parseSearchTokens } from './searchTokens'
 import { BulkActionsBar, type BulkAction } from './components/BulkActionsBar'
 import { CatalogHelpModal } from './components/CatalogHelpModal'
-import { SearchBar, type StatusFilterState } from './components/SearchBar'
+import { SearchBar } from './components/SearchBar'
 
 interface PluginCatalogProps {
 	pluginName?: string
@@ -73,11 +82,11 @@ export const PluginCatalog: React.FC<PluginCatalogProps> = ({ pluginName }) => {
 	const transport = useRuntimeTransportClient()
 	const [statusFilter, setStatusFilter] = useState<StatusFilterState>(() => {
 		if (typeof window === 'undefined') {
-			return { running: true, stopped: true, disabled: true }
+			return DEFAULT_STATUS_FILTER
 		}
 		try {
 			const raw = localStorage.getItem(STATUS_FILTER_KEY)
-			if (!raw) return { running: true, stopped: true, disabled: true }
+			if (!raw) return DEFAULT_STATUS_FILTER
 			const parsed = JSON.parse(raw) as Partial<StatusFilterState>
 			return {
 				running: parsed.running !== false,
@@ -85,7 +94,7 @@ export const PluginCatalog: React.FC<PluginCatalogProps> = ({ pluginName }) => {
 				disabled: parsed.disabled !== false,
 			}
 		} catch {
-			return { running: true, stopped: true, disabled: true }
+			return DEFAULT_STATUS_FILTER
 		}
 	})
 	// —— 混合搜索（持久化 + 降压 + 无闪烁） —— //
@@ -121,23 +130,45 @@ export const PluginCatalog: React.FC<PluginCatalogProps> = ({ pluginName }) => {
 	}, [statusFilter])
 
 	const inputRef = useRef<HTMLInputElement>(null)
+	const resetFilters = useCallback(() => {
+		setSearch('')
+		setStatusFilter(DEFAULT_STATUS_FILTER)
+	}, [])
 	useEffect(() => {
 		const onKey = (e: KeyboardEvent) => {
+			const editableTarget = isEditableTarget(e.target)
 			const mod = e.ctrlKey || e.metaKey
-			if ((mod && e.key.toLowerCase() === 'f') || e.key === '/') {
+			if ((mod && e.key.toLowerCase() === 'f') || (!editableTarget && e.key === '/')) {
 				e.preventDefault()
 				inputRef.current?.focus()
-			} else if (e.key === '?' || e.key === 'F1') {
+			} else if (e.key === 'F1' || (!editableTarget && e.key === '?')) {
 				e.preventDefault()
 				setHelpOpened(true)
+			} else if (!editableTarget && e.altKey && ['1', '2', '3'].includes(e.key)) {
+				e.preventDefault()
+				const key = e.key === '1' ? 'running' : e.key === '2' ? 'stopped' : ('disabled' as const)
+				setStatusFilter((prev) => ({ ...prev, [key]: !prev[key] }))
 			} else if (e.key === 'Escape') {
-				setSearch('')
-				inputRef.current?.blur()
+				if (helpOpened) {
+					e.preventDefault()
+					setHelpOpened(false)
+					return
+				}
+				if (selectedIds.length > 0) {
+					e.preventDefault()
+					setSelectedIds([])
+					return
+				}
+				if (search || hasActiveStatusFilter(statusFilter)) {
+					e.preventDefault()
+					resetFilters()
+					inputRef.current?.blur()
+				}
 			}
 		}
 		window.addEventListener('keydown', onKey)
 		return () => window.removeEventListener('keydown', onKey)
-	}, [])
+	}, [helpOpened, resetFilters, search, selectedIds.length, setSelectedIds, statusFilter])
 
 	useEffect(() => {
 		const handler = (event: Event) => {
@@ -361,54 +392,21 @@ export const PluginCatalog: React.FC<PluginCatalogProps> = ({ pluginName }) => {
 	const filterQuery = deferredSearch
 	const groupsForView = draftGroups ?? overview.groups
 	const searchTokens = useMemo(() => parseSearchTokens(filterQuery), [filterQuery])
-	const hasStatusFilter = !statusFilter.running || !statusFilter.stopped || !statusFilter.disabled
+	const hasStatusFilter = hasActiveStatusFilter(statusFilter)
+	const hasActiveFilters = filterQuery.length > 0 || hasStatusFilter
 
 	// 搜索过程中的过渡状态，用于降低视觉闪烁
 	const isTransitioning = search.trim() !== deferredSearch
 	const hasAnyMatch = useMemo(() => {
-		const { plain, pkg, tag, version, id: idTokens } = searchTokens
-		const hasQuery =
-			plain.length > 0 ||
-			pkg.length > 0 ||
-			tag.length > 0 ||
-			version.length > 0 ||
-			idTokens.length > 0
+		const hasQuery = hasActiveSearchTokens(searchTokens)
 		if (!hasQuery && !hasStatusFilter) return true
 
-		const groupNameMatches = (name: string) =>
-			plain.length > 0 && plain.every((term) => name.toLowerCase().includes(term))
-
 		for (const group of groupsForView) {
-			if (group.name && groupNameMatches(group.name)) return true
+			if (group.name && matchesGroupSearch(group.name, searchTokens)) return true
 		}
 
 		for (const [pid, st] of Object.entries(overview.statuses)) {
-			const name = (st?.name || '').toLowerCase()
-			const pkgName = (st?.packageName || '').toLowerCase()
-			const tagValue = (st?.tag || '').toLowerCase()
-			const versionValue = (st?.version || '').toLowerCase()
-			const idValue = pid.toLowerCase()
-
-			const running = !!st?.isRunning
-			const enabled = st?.isEnabled !== false
-			const disabled = !enabled
-			const stopped = enabled && !running
-			const statusOk =
-				(statusFilter.running && running) ||
-				(statusFilter.stopped && stopped) ||
-				(statusFilter.disabled && disabled)
-
-			if (!statusOk) continue
-
-			const plainOk = plain.every((term) =>
-				[name, pkgName, tagValue, versionValue, idValue].some((field) => field.includes(term)),
-			)
-			const pkgOk = pkg.every((term) => pkgName.includes(term))
-			const tagOk = tag.every((term) => tagValue.includes(term))
-			const versionOk = version.every((term) => versionValue.includes(term))
-			const idOk = idTokens.every((term) => idValue.includes(term))
-
-			if (plainOk && pkgOk && tagOk && versionOk && idOk) return true
+			if (matchesPluginSearch(pid, st, searchTokens, statusFilter)) return true
 		}
 		return false
 	}, [groupsForView, hasStatusFilter, overview.statuses, searchTokens, statusFilter])
@@ -483,7 +481,9 @@ export const PluginCatalog: React.FC<PluginCatalogProps> = ({ pluginName }) => {
 					inputRef={inputRef}
 					statusFilter={statusFilter}
 					onToggleStatus={toggleStatusFilter}
+					onResetFilters={resetFilters}
 					onOpenHelp={() => setHelpOpened(true)}
+					hasActiveFilters={hasActiveFilters}
 				/>
 				<div className="plx-pluginCatalog__metaBar" aria-live="polite">
 					<div className="plx-pluginCatalog__metaGroup">
@@ -501,16 +501,27 @@ export const PluginCatalog: React.FC<PluginCatalogProps> = ({ pluginName }) => {
 								已选 <strong>{selectedIds.length}</strong>
 							</Box>
 						) : null}
+						{hasActiveFilters ? (
+							<Box component="span" className="plx-pluginCatalog__metaPill">
+								筛选 <strong>{filterQuery ? '搜索' : '状态'}</strong>
+							</Box>
+						) : null}
 					</div>
 					<div className="plx-pluginCatalog__shortcutGroup" aria-hidden>
 						<span className="plx-pluginCatalog__shortcut">
 							<span className="plx-pluginCatalog__shortcutKey">/</span> 搜索
 						</span>
 						<span className="plx-pluginCatalog__shortcut">
+							<span className="plx-pluginCatalog__shortcutKey">Alt+1/2/3</span> 状态
+						</span>
+						<span className="plx-pluginCatalog__shortcut">
 							<span className="plx-pluginCatalog__shortcutKey">↑↓</span> 浏览
 						</span>
 						<span className="plx-pluginCatalog__shortcut">
-							<span className="plx-pluginCatalog__shortcutKey">Space</span> 选择
+							<span className="plx-pluginCatalog__shortcutKey">Enter</span> 打开
+						</span>
+						<span className="plx-pluginCatalog__shortcut">
+							<span className="plx-pluginCatalog__shortcutKey">⌘Enter</span> 新开
 						</span>
 					</div>
 				</div>

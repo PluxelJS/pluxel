@@ -1,5 +1,6 @@
 import { startTransition, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type React from 'react'
+import { isEditableTarget } from '../filterModel'
 import type { GroupConfig } from './types'
 import { arraysEqual } from './organizerModel'
 import { buildContainers } from './controllerModel'
@@ -18,15 +19,6 @@ type UsePluginSelectionControllerArgs = {
 	onMoveSelection: () => void
 	onMoveToUngrouped: () => void
 	locked: boolean
-}
-
-const isInteractiveTarget = (target: EventTarget | null) => {
-	if (!(target instanceof HTMLElement)) return false
-	return Boolean(
-		target.closest(
-			'input, textarea, select, button, a[href], [role="button"], [contenteditable="true"]',
-		),
-	)
 }
 
 export function usePluginSelectionController({
@@ -111,17 +103,33 @@ export function usePluginSelectionController({
 		setFocusedId(nextFocus)
 	}, [activeId, focusedId, selectedIds, visibleLinearIds])
 
-	const activateFocusedPlugin = useCallback((pluginId: string) => {
-		const rows = containerRef.current
-			? Array.from(containerRef.current.querySelectorAll('[data-plugin-row="true"]'))
-			: []
-		for (const row of rows) {
-			if (!(row instanceof HTMLElement) || row.dataset.pluginId !== pluginId) continue
-			const link = row.querySelector('[data-plugin-link]')
-			if (link instanceof HTMLElement) link.click()
-			return
+	useEffect(() => {
+		if (!focusedId || !containerRef.current) return
+		const row = Array.from(containerRef.current.querySelectorAll('[data-plugin-row="true"]')).find(
+			(node) => node instanceof HTMLElement && node.dataset.pluginId === focusedId,
+		)
+		if (row instanceof HTMLElement) {
+			row.scrollIntoView({ block: 'nearest' })
 		}
-	}, [])
+	}, [focusedId])
+
+	const activateFocusedPlugin = useCallback(
+		(pluginId: string, mode: 'replace-active' | 'open-tab' = 'replace-active') => {
+			const rows = containerRef.current
+				? Array.from(containerRef.current.querySelectorAll('[data-plugin-row="true"]'))
+				: []
+			for (const row of rows) {
+				if (!(row instanceof HTMLElement) || row.dataset.pluginId !== pluginId) continue
+				const link =
+					row.querySelector(`[data-plugin-link-mode="${mode}"]`) ??
+					row.querySelector('[data-plugin-link-mode="replace-active"]') ??
+					row.querySelector('[data-plugin-link]')
+				if (link instanceof HTMLElement) link.click()
+				return
+			}
+		},
+		[],
+	)
 
 	const handleRowSelect = useCallback(
 		(event: React.MouseEvent, pluginId: string, mode: OrganizerRowSelectMode = 'click') => {
@@ -187,7 +195,7 @@ export function usePluginSelectionController({
 
 	const handleKeyDown = useCallback(
 		(event: React.KeyboardEvent<HTMLDivElement>) => {
-			if (isInteractiveTarget(event.target)) return
+			if (isEditableTarget(event.target)) return
 			if (visibleLinearIds.length === 0) return
 
 			const mod = event.metaKey || event.ctrlKey
@@ -263,7 +271,7 @@ export function usePluginSelectionController({
 				}
 				case 'Enter':
 					event.preventDefault()
-					if (focusedId) activateFocusedPlugin(focusedId)
+					if (focusedId) activateFocusedPlugin(focusedId, mod ? 'open-tab' : 'replace-active')
 					return
 				case 'g':
 				case 'G':

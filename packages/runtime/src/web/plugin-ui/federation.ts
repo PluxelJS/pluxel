@@ -17,6 +17,7 @@ export const extensionFederationSharedPackages = [
 	'react/jsx-dev-runtime',
 	'react-dom',
 	'react-dom/client',
+	'@tanstack/react-virtual',
 	'@mantine/core',
 	'@mantine/hooks',
 	'@pluxel/runtime/web/ui',

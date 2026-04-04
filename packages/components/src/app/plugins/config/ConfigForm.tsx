@@ -1,4 +1,5 @@
 import { Box, ScrollArea } from '@mantine/core'
+import { useHotkeys } from '@mantine/hooks'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ObjectSchema } from 'valibot'
 import { getDefaults } from 'valibot'
@@ -6,6 +7,7 @@ import { EmptyState } from '../../../components'
 import { SegmentedButtons } from 'valibot-form/web'
 import { useNotify } from '../../hooks'
 import { useRuntimeTransportClient } from '../../../runtime'
+import { PLUGIN_DETAIL_HOTKEYS } from '../../workbench/shortcuts'
 import { type ConfigFormBridge, type ConfigFormState, ConfigTabPanel } from './ConfigTab'
 import { ConfigActionDock } from './components/ConfigActionDock'
 import { compareSchemaKeys, formatSchemaGroupLabel, splitSchemaKey } from './schemaKey'
@@ -389,6 +391,20 @@ export function ConfigForm({
 			}
 		})
 	}, [formStates, groups, hasMultipleGroups])
+
+	useHotkeys(
+		active && hasMultipleSchemas
+			? [
+					[
+						PLUGIN_DETAIL_HOTKEYS.saveAllConfig,
+						(event: KeyboardEvent) => {
+							event.preventDefault()
+							void saveAll()
+						},
+					],
+				]
+			: [],
+	)
 
 	return (
 		<Box style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, minWidth: 0 }}>

@@ -29,14 +29,15 @@ describe('runtime web subpath surfaces', () => {
 
 	it('keeps the federation shared package contract stable', () => {
 		expect(extensionFederationSharedPackages).toEqual(
-			expect.arrayContaining(['@mantine/core', '@mantine/hooks', '@pluxel/runtime/web/ui']),
+			expect.arrayContaining([
+				'@tanstack/react-virtual',
+				'@mantine/core',
+				'@mantine/hooks',
+				'@pluxel/runtime/web/ui',
+			]),
 		)
 		expect(extensionFederationSharedPackages).not.toEqual(
-			expect.arrayContaining([
-				'@signaldb/react',
-				'@signaldb/maverickjs',
-				'@maverick-js/signals',
-			]),
+			expect.arrayContaining(['@signaldb/react', '@signaldb/maverickjs', '@maverick-js/signals']),
 		)
 	})
 })

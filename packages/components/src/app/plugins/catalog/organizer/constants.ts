@@ -13,4 +13,7 @@ export const DENSITY: Record<Density, RowDensity> = {
 	ultra: { rowH: 22, px: 6, py: 1, font: 'xs' },
 }
 
+export const FILTERED_FLAT_VIRTUALIZE_THRESHOLD = 300
+export const FLAT_VIRTUAL_OVERSCAN = 12
+
 export const UNGROUPED_SCROLL_MAX_HEIGHT = 'clamp(160px, 32vh, 360px)'
