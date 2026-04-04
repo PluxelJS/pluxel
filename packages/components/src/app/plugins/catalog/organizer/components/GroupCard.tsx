@@ -1,5 +1,16 @@
 import { SortableContext, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable'
-import { ActionIcon, Badge, Box, Collapse, Flex, Group, Menu, Stack, Text, Tooltip } from '@mantine/core'
+import {
+	ActionIcon,
+	Badge,
+	Box,
+	Collapse,
+	Flex,
+	Group,
+	Menu,
+	Stack,
+	Text,
+	Tooltip,
+} from '@mantine/core'
 import {
 	IconChevronDown,
 	IconChevronRight,
@@ -24,7 +35,8 @@ type Props = {
 	enabledSet: Set<string>
 	selectedSet: Set<string>
 	activeSet: Set<string>
-	onSelect: (e: React.MouseEvent, id: string, mode?: 'click' | 'context') => void
+	focusedId: string | null
+	onSelect: (e: React.MouseEvent, id: string, mode?: 'click' | 'context' | 'toggle') => void
 	LinkComp?: React.ComponentType<
 		{
 			to: string
@@ -54,6 +66,7 @@ export const GroupCard = memo(function GroupCard(props: Props) {
 		enabledSet,
 		selectedSet,
 		activeSet,
+		focusedId,
 		onSelect,
 		LinkComp,
 		sortableId,
@@ -218,9 +231,10 @@ export const GroupCard = memo(function GroupCard(props: Props) {
 									enabled={enabledSet.has(id)}
 									selected={selectedSet.has(id)}
 									active={activeSet.has(id)}
+									focused={focusedId === id}
 									onSelect={onSelect}
 									LinkComp={LinkComp}
-									disabled={isFiltering || locked}
+									dragDisabled={isFiltering || locked}
 									meta={getMeta(id)}
 									dh={dh}
 									sortableId={getItemSortableId(id)}

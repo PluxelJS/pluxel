@@ -1,5 +1,12 @@
 import { ActionIcon, Group, TextInput } from '@mantine/core'
-import { IconBan, IconPlayerPlay, IconPlayerStop, IconSearch, IconX } from '@tabler/icons-react'
+import {
+	IconBan,
+	IconPlayerPlay,
+	IconPlayerStop,
+	IconSearch,
+	IconX,
+	IconQuestionMark,
+} from '@tabler/icons-react'
 import type React from 'react'
 
 export type StatusFilterState = {
@@ -14,9 +21,17 @@ type Props = {
 	inputRef: React.RefObject<HTMLInputElement>
 	statusFilter: StatusFilterState
 	onToggleStatus: (key: keyof StatusFilterState) => void
+	onOpenHelp: () => void
 }
 
-export function SearchBar({ value, onChange, inputRef, statusFilter, onToggleStatus }: Props) {
+export function SearchBar({
+	value,
+	onChange,
+	inputRef,
+	statusFilter,
+	onToggleStatus,
+	onOpenHelp,
+}: Props) {
 	const clearBtn = value ? (
 		<ActionIcon size="sm" variant="subtle" onClick={() => onChange('')}>
 			<IconX size={14} />
@@ -26,6 +41,15 @@ export function SearchBar({ value, onChange, inputRef, statusFilter, onToggleSta
 	const rightSection = (
 		<Group gap={2} wrap="nowrap">
 			{clearBtn}
+			<ActionIcon
+				size="sm"
+				variant="subtle"
+				onClick={onOpenHelp}
+				title="查看快捷键和搜索语法"
+				aria-label="查看帮助"
+			>
+				<IconQuestionMark size={12} />
+			</ActionIcon>
 			<ActionIcon
 				size="sm"
 				variant={statusFilter.running ? 'filled' : 'subtle'}
@@ -71,7 +95,7 @@ export function SearchBar({ value, onChange, inputRef, statusFilter, onToggleSta
 			leftSection={<IconSearch size={14} />}
 			leftSectionPointerEvents="none"
 			rightSection={rightSection}
-			rightSectionWidth={clearBtn ? 120 : 96}
+			rightSectionWidth={clearBtn ? 144 : 120}
 			rightSectionPointerEvents="auto"
 			size="sm"
 			variant="default"

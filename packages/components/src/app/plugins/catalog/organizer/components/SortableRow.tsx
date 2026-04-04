@@ -10,7 +10,7 @@ import {
 	useMantineTheme,
 	rgba,
 } from '@mantine/core'
-import { IconGripVertical, IconPlus } from '@tabler/icons-react'
+import { IconCheck, IconGripVertical, IconPlus } from '@tabler/icons-react'
 import type { UniqueIdentifier } from '@dnd-kit/core'
 import type React from 'react'
 import { memo, useMemo } from 'react'
@@ -31,9 +31,10 @@ export type SortableRowProps = {
 	enabled?: boolean
 	selected: boolean
 	active: boolean
-	onSelect: (e: React.MouseEvent, pid: string, mode?: 'click' | 'context') => void
+	focused: boolean
+	onSelect: (e: React.MouseEvent, pid: string, mode?: 'click' | 'context' | 'toggle') => void
 	LinkComp?: React.ComponentType<LinkLikeProps>
-	disabled: boolean
+	dragDisabled: boolean
 	dh: RowDensity
 	meta?: RowMeta
 	sortableId: UniqueIdentifier
@@ -46,9 +47,10 @@ const SortableRowComponent = ({
 	enabled,
 	selected,
 	active,
+	focused,
 	onSelect,
 	LinkComp,
-	disabled,
+	dragDisabled,
 	dh,
 	meta,
 	sortableId,
@@ -71,7 +73,7 @@ const SortableRowComponent = ({
 
 	const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
 		id: sortableId,
-		disabled,
+		disabled: dragDisabled,
 		animateLayoutChanges: () => false,
 	})
 
@@ -96,7 +98,6 @@ const SortableRowComponent = ({
 				link?.click?.()
 			}}
 			onClick={(e) => {
-				if (disabled) return
 				const isModified = e.shiftKey || e.metaKey || e.ctrlKey
 				if (isModified) {
 					e.preventDefault()
@@ -113,7 +114,6 @@ const SortableRowComponent = ({
 			onContextMenu={(e) => {
 				e.preventDefault()
 				e.stopPropagation()
-				if (disabled) return
 				onSelect(e, pid, 'context')
 			}}
 			data-plugin-row="true"
@@ -127,16 +127,19 @@ const SortableRowComponent = ({
 				alignItems: 'center',
 				gap: rowGap,
 				borderRadius: 8,
-				cursor: disabled ? 'default' : 'pointer',
+				cursor: 'pointer',
 				userSelect: 'none',
 				background: rowBackground,
 				color: rowColorValue,
 				borderBottom: `1px solid ${separatorColor}`,
 				boxSizing: 'border-box',
 			}}
+			className="plx-pluginCatalog__row"
 			data-po-row="1"
+			data-plugin-id={pid}
 			data-selected={selected || undefined}
 			data-active={active || undefined}
+			data-focused={focused || undefined}
 			role="listitem"
 			aria-roledescription="draggable plugin row"
 		>
@@ -163,12 +166,29 @@ const SortableRowComponent = ({
 					height: handleSize,
 					flex: `0 0 ${handleSize}px`,
 					touchAction: 'none',
-					cursor: isDragging ? 'grabbing' : 'grab',
+					cursor: dragDisabled ? 'default' : isDragging ? 'grabbing' : 'grab',
 				}}
 				{...listeners}
 				{...attributes}
+				disabled={dragDisabled}
 			>
 				<IconGripVertical size={handleIconSize} />
+			</ActionIcon>
+
+			<ActionIcon
+				variant="transparent"
+				title={selected ? '取消选择' : '加入选择'}
+				aria-label={selected ? `取消选择 ${name}` : `选择 ${name}`}
+				className="plx-pluginCatalog__rowSelector"
+				data-row-selector="true"
+				data-selected={selected || undefined}
+				onClick={(event) => {
+					event.preventDefault()
+					event.stopPropagation()
+					onSelect(event, pid, 'toggle')
+				}}
+			>
+				<IconCheck size={11} stroke={2.2} />
 			</ActionIcon>
 
 			<Box style={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -178,7 +198,6 @@ const SortableRowComponent = ({
 						data-plugin-link="true"
 						style={{ textDecoration: 'none', display: 'block', color: rowColorValue, minWidth: 0 }}
 						onClick={(e: any) => {
-							if (disabled) return
 							e.stopPropagation()
 							if (e.shiftKey || e.metaKey || e.ctrlKey) {
 								e.preventDefault()
@@ -216,7 +235,6 @@ const SortableRowComponent = ({
 							}}
 							aria-current={active ? 'page' : undefined}
 							onClick={(e) => {
-								if (disabled) return
 								e.stopPropagation()
 								if (e.shiftKey || e.metaKey || e.ctrlKey) {
 									e.preventDefault()
@@ -231,17 +249,17 @@ const SortableRowComponent = ({
 				{metaLabel && (
 					<Text
 						size="xs"
-							style={{
-								fontSize: 10,
-								whiteSpace: 'nowrap',
-								flexShrink: 0,
-								maxWidth: 120,
-								overflow: 'hidden',
-								textOverflow: 'ellipsis',
-								color: metaColorValue,
-							}}
-						>
-							{metaLabel}
+						style={{
+							fontSize: 10,
+							whiteSpace: 'nowrap',
+							flexShrink: 0,
+							maxWidth: 120,
+							overflow: 'hidden',
+							textOverflow: 'ellipsis',
+							color: metaColorValue,
+						}}
+					>
+						{metaLabel}
 					</Text>
 				)}
 			</Box>
@@ -310,7 +328,8 @@ const areRowPropsEqual = (prev: SortableRowProps, next: SortableRowProps) => {
 	if (prev.enabled !== next.enabled) return false
 	if (prev.selected !== next.selected) return false
 	if (prev.active !== next.active) return false
-	if (prev.disabled !== next.disabled) return false
+	if (prev.focused !== next.focused) return false
+	if (prev.dragDisabled !== next.dragDisabled) return false
 	if (prev.sortableId !== next.sortableId) return false
 	if (prev.LinkComp !== next.LinkComp) return false
 	if (prev.onSelect !== next.onSelect) return false

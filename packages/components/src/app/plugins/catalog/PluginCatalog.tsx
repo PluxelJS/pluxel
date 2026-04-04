@@ -52,6 +52,7 @@ import {
 } from './catalogOverview'
 import { parseSearchTokens } from './searchTokens'
 import { BulkActionsBar, type BulkAction } from './components/BulkActionsBar'
+import { CatalogHelpModal } from './components/CatalogHelpModal'
 import { SearchBar, type StatusFilterState } from './components/SearchBar'
 
 interface PluginCatalogProps {
@@ -126,6 +127,9 @@ export const PluginCatalog: React.FC<PluginCatalogProps> = ({ pluginName }) => {
 			if ((mod && e.key.toLowerCase() === 'f') || e.key === '/') {
 				e.preventDefault()
 				inputRef.current?.focus()
+			} else if (e.key === '?' || e.key === 'F1') {
+				e.preventDefault()
+				setHelpOpened(true)
 			} else if (e.key === 'Escape') {
 				setSearch('')
 				inputRef.current?.blur()
@@ -152,6 +156,7 @@ export const PluginCatalog: React.FC<PluginCatalogProps> = ({ pluginName }) => {
 	const [selectedIds, setSelectedIds] = useState<string[]>([])
 	const [bulkBusy, setBulkBusy] = useState(false)
 	const [organizerResetToken, setOrganizerResetToken] = useState(0)
+	const [helpOpened, setHelpOpened] = useState(false)
 	const notify = useNotify()
 
 	const overviewState = usePluginOverview()
@@ -360,7 +365,6 @@ export const PluginCatalog: React.FC<PluginCatalogProps> = ({ pluginName }) => {
 
 	// 搜索过程中的过渡状态，用于降低视觉闪烁
 	const isTransitioning = search.trim() !== deferredSearch
-
 	const hasAnyMatch = useMemo(() => {
 		const { plain, pkg, tag, version, id: idTokens } = searchTokens
 		const hasQuery =
@@ -471,32 +475,52 @@ export const PluginCatalog: React.FC<PluginCatalogProps> = ({ pluginName }) => {
 	}
 
 	return (
-		<Stack
-			gap={6}
-			w="100%"
-			style={{ minWidth: 0, minHeight: '100%', height: '100%', flex: 1, overflow: 'hidden' }}
-		>
-			<SearchBar
-				value={search}
-				onChange={handleSearchChange}
-				inputRef={inputRef}
-				statusFilter={statusFilter}
-				onToggleStatus={toggleStatusFilter}
-			/>
+		<Stack className="plx-pluginCatalog" w="100%">
+			<div className="plx-pluginCatalog__toolbar">
+				<SearchBar
+					value={search}
+					onChange={handleSearchChange}
+					inputRef={inputRef}
+					statusFilter={statusFilter}
+					onToggleStatus={toggleStatusFilter}
+					onOpenHelp={() => setHelpOpened(true)}
+				/>
+				<div className="plx-pluginCatalog__metaBar" aria-live="polite">
+					<div className="plx-pluginCatalog__metaGroup">
+						<Box component="span" className="plx-pluginCatalog__metaPill">
+							总数 <strong>{overview.total}</strong>
+						</Box>
+						<Box component="span" className="plx-pluginCatalog__metaPill">
+							运行 <strong>{overview.running}</strong>
+						</Box>
+						<Box component="span" className="plx-pluginCatalog__metaPill">
+							禁用 <strong>{overview.disabled}</strong>
+						</Box>
+						{selectedIds.length > 0 ? (
+							<Box component="span" className="plx-pluginCatalog__metaPill">
+								已选 <strong>{selectedIds.length}</strong>
+							</Box>
+						) : null}
+					</div>
+					<div className="plx-pluginCatalog__shortcutGroup" aria-hidden>
+						<span className="plx-pluginCatalog__shortcut">
+							<span className="plx-pluginCatalog__shortcutKey">/</span> 搜索
+						</span>
+						<span className="plx-pluginCatalog__shortcut">
+							<span className="plx-pluginCatalog__shortcutKey">↑↓</span> 浏览
+						</span>
+						<span className="plx-pluginCatalog__shortcut">
+							<span className="plx-pluginCatalog__shortcutKey">Space</span> 选择
+						</span>
+					</div>
+				</div>
+			</div>
 
 			{selectedIds.length > 0 ? (
 				<BulkActionsBar count={selectedIds.length} busy={bulkBusy} onAction={handleBulkAction} />
 			) : null}
 
-			<Box
-				style={{
-					flex: 1,
-					minHeight: 0,
-					minWidth: 0,
-					display: 'flex',
-					flexDirection: 'column',
-				}}
-			>
+			<Box className="plx-pluginCatalog__body">
 				{/* 内容容器：使用 opacity 过渡避免闪烁 */}
 				<Box
 					style={{
@@ -509,6 +533,8 @@ export const PluginCatalog: React.FC<PluginCatalogProps> = ({ pluginName }) => {
 					{content}
 				</Box>
 			</Box>
+
+			<CatalogHelpModal opened={helpOpened} onClose={() => setHelpOpened(false)} />
 		</Stack>
 	)
 }

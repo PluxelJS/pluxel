@@ -1,4 +1,4 @@
-import { ActionIcon, Badge, Group, Paper } from '@mantine/core'
+import { ActionIcon, Badge, Group, Paper, Text } from '@mantine/core'
 import { IconBan, IconPlayerStop, IconPower, IconX } from '@tabler/icons-react'
 
 export type BulkAction = 'stop' | 'disable' | 'enable' | 'clear'
@@ -11,11 +11,15 @@ type Props = {
 
 export function BulkActionsBar({ count, busy, onAction }: Props) {
 	return (
-		<Paper withBorder radius="xs" p={4} shadow="xs">
+		<Paper className="plx-pluginCatalog__bulkBar" withBorder radius="md" p={0} shadow="none">
 			<Group justify="space-between" align="center" gap={6} wrap="nowrap">
-				<Badge variant="light" color="gray" size="xs">
-					已选 {count}
-				</Badge>
+				<div className="plx-pluginCatalog__bulkMeta">
+					<Badge variant="light" color="gray" size="xs">
+						已选 {count}
+					</Badge>
+					<Text className="plx-pluginCatalog__bulkTitle">批量操作</Text>
+					<Text className="plx-pluginCatalog__bulkHint">空格切换选择，Esc 清空，Ctrl/⌘A 全选</Text>
+				</div>
 				<Group gap={4} wrap="nowrap">
 					<ActionIcon
 						size="sm"
