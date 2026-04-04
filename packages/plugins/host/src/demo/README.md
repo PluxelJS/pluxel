@@ -131,7 +131,6 @@
 
 - `pnpm exec tsc -p packages/plugins/host/src/demo/tsconfig.json`
 
-## 非 demo 示例
+## 非目标
 
-- `packages/plugins/market/src/index.ts`
-  market UI
+- 这里不再维护额外 builtin 插件样例；`plugins-host` 只保留宿主和 demo 插件本身。

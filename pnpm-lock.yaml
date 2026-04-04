@@ -402,12 +402,6 @@ importers:
       '@pluxel/runtime':
         specifier: workspace:*
         version: link:../../runtime
-      '@pluxel/snapshot':
-        specifier: workspace:*
-        version: link:../snapshot
-      pluxel-plugin-market-ui:
-        specifier: workspace:*
-        version: link:../market
     devDependencies:
       '@mantine/core':
         specifier: ^8.3.18
@@ -439,95 +433,6 @@ importers:
       tinypool:
         specifier: ^2.1.0
         version: 2.1.0
-
-  packages/plugins/market:
-    dependencies:
-      '@mantine/core':
-        specifier: ^8.3.18
-        version: 8.3.18(@mantine/hooks@8.3.18(react@19.2.4))(@types/react@19.2.14)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
-      '@mantine/hooks':
-        specifier: ^8.3.18
-        version: 8.3.18(react@19.2.4)
-      '@pluxel/core':
-        specifier: workspace:*
-        version: link:../../core
-      '@pluxel/market':
-        specifier: ^0.1.0
-        version: 0.1.0(ramda@0.32.0)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
-      '@tabler/icons-react':
-        specifier: ^3.37.1
-        version: 3.40.0(react@19.2.4)
-      react:
-        specifier: ^19.2.4
-        version: 19.2.4
-      react-dom:
-        specifier: ^19.2.4
-        version: 19.2.4(react@19.2.4)
-    devDependencies:
-      '@pluxel/cli':
-        specifier: workspace:*
-        version: link:../../cli
-      '@pluxel/hmr':
-        specifier: workspace:*
-        version: link:../../hmr
-      '@pluxel/runtime':
-        specifier: workspace:*
-        version: link:../../runtime
-      '@pluxel/test':
-        specifier: workspace:*
-        version: link:../../test
-      tsdown:
-        specifier: ^0.21.4
-        version: 0.21.4(typescript@6.0.2)
-      typescript:
-        specifier: ^6.0.2
-        version: 6.0.2
-
-  packages/plugins/snapshot:
-    dependencies:
-      '@mantine/core':
-        specifier: ^8.3.18
-        version: 8.3.18(@mantine/hooks@8.3.18(react@19.2.4))(@types/react@19.2.14)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
-      '@pluxel/core':
-        specifier: workspace:*
-        version: link:../../core
-      '@tabler/icons-react':
-        specifier: '*'
-        version: 3.36.1(react@19.2.4)
-      knitwork:
-        specifier: ^1.3.0
-        version: 1.3.0
-      nf3:
-        specifier: ^0.3.10
-        version: 0.3.13
-      react:
-        specifier: ^19.2.4
-        version: 19.2.4
-      react-dom:
-        specifier: ^19.2.4
-        version: 19.2.4(react@19.2.4)
-    devDependencies:
-      '@pluxel/build':
-        specifier: workspace:*
-        version: link:../../build
-      '@pluxel/cli':
-        specifier: workspace:*
-        version: link:../../cli
-      '@pluxel/hmr':
-        specifier: workspace:*
-        version: link:../../hmr
-      '@pluxel/runtime':
-        specifier: workspace:*
-        version: link:../../runtime
-      '@pluxel/test':
-        specifier: workspace:*
-        version: link:../../test
-      tsdown:
-        specifier: ^0.21.4
-        version: 0.21.4(typescript@6.0.2)
-      typescript:
-        specifier: ^6.0.2
-        version: 6.0.2
 
   packages/runtime:
     dependencies:
@@ -2392,11 +2297,6 @@ packages:
   '@standard-schema/spec@1.1.0':
     resolution: {integrity: sha512-l2aFy5jALhniG5HgqrD6jXLi/rUWrKvqN/qJx6yoJsgKhblVd+iqqU4RCXavm/jPityDo5TCvKMnpjKnOriy0w==}
 
-  '@tabler/icons-react@3.36.1':
-    resolution: {integrity: sha512-/8nOXeNeMoze9xY/QyEKG65wuvRhkT3q9aytaur6Gj8bYU2A98YVJyLc9MRmc5nVvpy+bRlrrwK/Ykr8WGyUWg==}
-    peerDependencies:
-      react: '>= 16'
-
   '@tabler/icons-react@3.37.1':
     resolution: {integrity: sha512-R7UE71Jji7i4Su56Y9zU1uYEBakUejuDJvyuYVmBuUoqp/x3Pn4cv2huarexR3P0GJ2eHg4rUj9l5zccqS6K/Q==}
     peerDependencies:
@@ -2406,9 +2306,6 @@ packages:
     resolution: {integrity: sha512-oO5+6QCnna4a//mYubx4euZfECtzQZFDGsDMIdzZUhbdyBCT+3bRVFBPueGIcemWld4Vb/0UQ39C/cmGfGylAg==}
     peerDependencies:
       react: '>= 16'
-
-  '@tabler/icons@3.36.1':
-    resolution: {integrity: sha512-f4Jg3Fof/Vru5ioix/UO4GX+sdDsF9wQo47FbtvG+utIYYVQ/QVAC0QYgcBbAjQGfbdOh2CCf0BgiFOF9Ixtjw==}
 
   '@tabler/icons@3.37.1':
     resolution: {integrity: sha512-neLCWkuyNHEPXCyYu6nbN4S3g/59BTa4qyITAugYVpq1YzYNDOZooW7/vRWH98ZItXAudxdKU8muFT7y1PqzuA==}
@@ -3568,9 +3465,6 @@ packages:
     resolution: {integrity: sha512-o+NO+8WrRiQEE4/7nwRJhN1HWpVmJm511pBHUxPLtp0BUISzlBplORYSmTclCnJvQq2tKu/sgl3xVpkc7ZWuQQ==}
     engines: {node: '>=6'}
 
-  knitwork@1.3.0:
-    resolution: {integrity: sha512-4LqMNoONzR43B1W0ek0fhXMsDNW/zxa1NdFAVMY+k28pgZLovR4G3PB5MrpTxCy1QaZCqNoiaKPr5w5qZHfSNw==}
-
   kysely@0.28.14:
     resolution: {integrity: sha512-SU3lgh0rPvq7upc6vvdVrCsSMUG1h3ChvHVOY7wJ2fw4C9QEB7X3d5eyYEyULUX7UQtxZJtZXGuT6U2US72UYA==}
     engines: {node: '>=20.0.0'}
@@ -3766,9 +3660,6 @@ packages:
     resolution: {integrity: sha512-N8SpfPUnUp1bK+PMYW8qSWdl9U+wwNWI4QKxOYDy9JAro3WMX7p2OeVRF9v+347pnakNevPmiHhNmZ2HbFA76w==}
     engines: {node: ^10 || ^12 || ^13.7 || ^14 || >=15.0.1}
     hasBin: true
-
-  nf3@0.3.13:
-    resolution: {integrity: sha512-drDt0yl4d/yUhlpD0GzzqahSpA5eUNeIfFq0/aoZb0UlPY0ZwP4u1EfREVvZrYdEnJ3OU9Le9TrzbvWgEkkeKw==}
 
   no-case@3.0.4:
     resolution: {integrity: sha512-fgAN3jGAh+RoxUGZHTSOLJIqUc2wmoBwGR4tbpNAKmmovFoWq0OdRkb0VkldReO2a2iBT/OEulG9XSUc10r3zg==}
@@ -6370,11 +6261,6 @@ snapshots:
 
   '@standard-schema/spec@1.1.0': {}
 
-  '@tabler/icons-react@3.36.1(react@19.2.4)':
-    dependencies:
-      '@tabler/icons': 3.36.1
-      react: 19.2.4
-
   '@tabler/icons-react@3.37.1(react@19.2.4)':
     dependencies:
       '@tabler/icons': 3.37.1
@@ -6384,8 +6270,6 @@ snapshots:
     dependencies:
       '@tabler/icons': 3.40.0
       react: 19.2.4
-
-  '@tabler/icons@3.36.1': {}
 
   '@tabler/icons@3.37.1': {}
 
@@ -7550,8 +7434,6 @@ snapshots:
 
   kleur@4.1.5: {}
 
-  knitwork@1.3.0: {}
-
   kysely@0.28.14: {}
 
   lightningcss-android-arm64@1.31.1:
@@ -7707,8 +7589,6 @@ snapshots:
   mute-stream@2.0.0: {}
 
   nanoid@3.3.11: {}
-
-  nf3@0.3.13: {}
 
   no-case@3.0.4:
     dependencies:

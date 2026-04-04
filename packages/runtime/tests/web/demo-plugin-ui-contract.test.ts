@@ -17,8 +17,7 @@ function extensionIds(module: PluginUIModule) {
 
 type DemoModules = {
 	pluginWithUi: PluginUIModule
-	marketUi: PluginUIModule
-	snapshotUi: PluginUIModule
+	fontPickerUi: PluginUIModule
 	statusBadgeUi: PluginUIModule
 }
 
@@ -27,19 +26,16 @@ async function loadDemoModules(): Promise<DemoModules> {
 	try {
 		const [
 			{ default: pluginWithUi },
-			{ default: marketUi },
-			{ default: snapshotUi },
+			{ default: fontPickerUi },
 			{ default: statusBadgeUi },
 		] = await Promise.all([
 			import('../../../plugins/host/src/demo/PluginWithUI/ui/index'),
-			import('../../../plugins/market/src/ui/index'),
-			import('../../../plugins/snapshot/src/ui/index'),
+			import('../../../plugins/host/src/demo/PluginContributionFontDemo/ui/index'),
 			import('../ui-demos/PluginStatusBadge/ui/StatusBadge'),
 		])
 		return {
 			pluginWithUi,
-			marketUi,
-			snapshotUi,
+			fontPickerUi,
 			statusBadgeUi,
 		}
 	} finally {
@@ -51,11 +47,10 @@ describe('demo plugin UI contract', () => {
 	it(
 		'keeps demo modules on the stable definePluginUIModule surface',
 		async () => {
-		const { pluginWithUi, marketUi, snapshotUi, statusBadgeUi } = await loadDemoModules()
+		const { pluginWithUi, fontPickerUi, statusBadgeUi } = await loadDemoModules()
 		const modules: Array<[name: string, module: PluginUIModule]> = [
 			['PluginWithUI', pluginWithUi],
-			['MarketUI', marketUi],
-			['Snapshot', snapshotUi],
+			['PluginContributionFontDemo', fontPickerUi],
 			['PluginStatusBadge', statusBadgeUi],
 		]
 
@@ -69,8 +64,8 @@ describe('demo plugin UI contract', () => {
 	)
 
 	it('preserves the key host demo affordances', async () => {
-		const { pluginWithUi, marketUi, snapshotUi, statusBadgeUi } = await loadDemoModules()
-		expect(pluginWithUi.extensions?.some((ext) => ext.point === ExtensionPoints.GlobalStatusBar)).toBe(
+		const { pluginWithUi, fontPickerUi, statusBadgeUi } = await loadDemoModules()
+		expect(pluginWithUi.extensions?.some((ext) => ext.point === ExtensionPoints.HeaderActions)).toBe(
 			true,
 		)
 		expect(pluginWithUi.extensions?.some((ext) => ext.point === ExtensionPoints.PluginInfo)).toBe(true)
@@ -88,10 +83,7 @@ describe('demo plugin UI contract', () => {
 		expect(standaloneRoute?.frame).toBe('standalone')
 		expect(standaloneRoute?.addToNav).toBe(true)
 
-		expect(routePaths(marketUi)).toEqual(['/market'])
-		expect(
-			snapshotUi.extensions?.every((ext) => ext.point === ExtensionPoints.HeaderActions),
-		).toBe(true)
+		expect(Object.keys(fontPickerUi.sessions ?? {})).toEqual(['fontPickerSession'])
 		expect(
 			statusBadgeUi.extensions?.every((ext) => ext.point === ExtensionPoints.HeaderActions),
 		).toBe(true)

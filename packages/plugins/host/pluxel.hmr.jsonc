@@ -12,17 +12,11 @@
 		"plugins-host": {
 			"enabled": [],
 			"builtin": [],
-			"include": [
-				"packages/plugins/host/src/demo/**/*.ts",
-				"packages/plugins/snapshot/src/index.ts",
-				"packages/plugins/market/src/index.ts"
-			],
+			"include": ["packages/plugins/host/src/demo/**/*.ts"],
 			"exclude": [
 				"packages/plugins/host/src/demo/**/ui/**",
 				"packages/plugins/host/src/demo/env.ts",
-				"packages/plugins/host/src/demo/index.ts",
-				"packages/plugins/snapshot/src/ui/**",
-				"packages/plugins/market/src/ui/**"
+				"packages/plugins/host/src/demo/index.ts"
 			]
 		}
 	}

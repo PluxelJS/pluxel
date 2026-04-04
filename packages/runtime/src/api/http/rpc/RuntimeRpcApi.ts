@@ -64,30 +64,9 @@ export class RuntimeRpcApi extends RpcTarget {
 	}
 
 	async buildSnapshot() {
-		try {
-			const ctor = this.ctx.loader.api.registry.getCtor('Snapshot')
-			if (!ctor) {
-				return {
-					ok: false as const,
-					error: 'Snapshot plugin is not loaded (enable builtin @pluxel/snapshot).',
-				}
-			}
-
-			const instance = this.ctx.registry.getInstance(ctor as never) as unknown
-			const generateSnapshotFiles = (instance as { generateSnapshotFiles?: unknown })
-				?.generateSnapshotFiles
-			if (typeof generateSnapshotFiles !== 'function') {
-				return {
-					ok: false as const,
-					error: 'Snapshot plugin is not running (enable it in config).',
-				}
-			}
-
-			const res = await (generateSnapshotFiles as () => Promise<unknown>)()
-			const configPath = (res as { configPath?: unknown } | null | undefined)?.configPath
-			return { ok: true as const, path: typeof configPath === 'string' ? configPath : '' }
-		} catch (error) {
-			return { ok: false as const, error: (error as Error)?.message ?? 'Unknown error' }
+		return {
+			ok: false as const,
+			error: 'Snapshot builder is temporarily unavailable while the plugin is being rewritten.',
 		}
 	}
 

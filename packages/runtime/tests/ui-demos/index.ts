@@ -1,1 +1,1 @@
-export * from './MarketUI'
+export * from './PluginStatusBadge'
