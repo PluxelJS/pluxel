@@ -57,8 +57,6 @@
 
 .plx-pluginWorkbench__commandBadges .mantine-Badge-root {
 	border-radius: 999px;
-	font-size: 11px;
-	height: 22px;
 	padding-inline: 8px;
 }
 
@@ -308,7 +306,8 @@
 
 .plx-pluginWorkbench__configActionDock .mantine-Badge-root,
 .plx-pluginWorkbench__configActionDock .mantine-Button-root {
-	height: 28px;
+	height: auto;
+	min-height: 28px;
 }
 
 .plx-pluginWorkbench__configActionButtons .mantine-Button-root {

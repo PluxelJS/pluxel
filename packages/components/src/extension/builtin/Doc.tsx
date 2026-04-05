@@ -1,4 +1,4 @@
-import { Badge, Box, Paper, Stack, Text, TypographyStylesProvider } from '@mantine/core'
+import { Badge, Box, Paper, Stack, Text, Typography } from '@mantine/core'
 import { MarkdownExit } from 'markdown-exit'
 import { createPortal } from 'react-dom'
 import { Fragment, memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -213,7 +213,7 @@ const DocBody = memo(function DocBody({
 				border: 'none',
 			}}
 		>
-			<TypographyStylesProvider>
+			<Typography>
 				{items.map((item) => {
 					if (item.kind === 'cfg')
 						return <Fragment key={item.key}>{renderCfg(item as any)}</Fragment>
@@ -229,7 +229,7 @@ const DocBody = memo(function DocBody({
 					// biome-ignore lint/security/noDangerouslySetInnerHtml: HTML comes from our markdown renderer for trusted builtin docs.
 					return <Box key={item.key} dangerouslySetInnerHTML={{ __html: item.html }} />
 				})}
-			</TypographyStylesProvider>
+			</Typography>
 		</Box>
 	)
 })

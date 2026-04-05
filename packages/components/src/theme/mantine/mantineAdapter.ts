@@ -11,6 +11,12 @@ export interface PlxMantineMetadata {
 	plxAccentKey: string
 }
 
+const CJK_SAFE_TEXT_BOX_STYLES = {
+	lineHeight: 1.2,
+	textBoxEdge: 'auto',
+	textBoxTrim: 'none',
+} as const
+
 function createAccentTheme(accentKey: string) {
 	const preset = getAccentPreset(accentKey)
 	const material = createMaterialThemeSource(preset.color)
@@ -30,6 +36,33 @@ function createAccentTheme(accentKey: string) {
 			plxAccentHex: preset.color,
 			plxAccentKey: preset.key,
 		} satisfies PlxMantineMetadata,
+		components: {
+			Button: {
+				styles: {
+					label: CJK_SAFE_TEXT_BOX_STYLES,
+				},
+			},
+			Badge: {
+				styles: {
+					label: CJK_SAFE_TEXT_BOX_STYLES,
+				},
+			},
+			Pill: {
+				styles: {
+					label: CJK_SAFE_TEXT_BOX_STYLES,
+				},
+			},
+			Chip: {
+				styles: {
+					label: CJK_SAFE_TEXT_BOX_STYLES,
+				},
+			},
+			TabsTab: {
+				styles: {
+					tabLabel: CJK_SAFE_TEXT_BOX_STYLES,
+				},
+			},
+		},
 	})
 }
 

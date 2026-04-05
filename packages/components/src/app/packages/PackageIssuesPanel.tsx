@@ -154,7 +154,7 @@ export function PackageIssuesPanel({
 										{formatTime(issue.recordedAt)}
 									</Text>
 								</UnstyledButton>
-								<Collapse in={isExpanded}>
+								<Collapse expanded={isExpanded}>
 									<Stack gap="xs" px="md" pb="sm" pt={0}>
 										<Group gap="xs">
 											<Badge size="xs" variant="light" color="gray">

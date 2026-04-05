@@ -107,6 +107,8 @@ export const PluginCatalog: React.FC<PluginCatalogProps> = ({ pluginName }) => {
 		}
 	})
 	const deferredSearch = useDeferredValue(search.trim())
+	const [selectedIds, setSelectedIds] = useState<string[]>([])
+	const [helpOpened, setHelpOpened] = useState(false)
 
 	// 搜索变化时使用 transition 降低优先级，避免输入卡顿
 	const handleSearchChange = useCallback((value: string) => {
@@ -184,10 +186,8 @@ export const PluginCatalog: React.FC<PluginCatalogProps> = ({ pluginName }) => {
 	const [draftGroups, setDraftGroups] = useState<GroupConfig[] | null>(null)
 	const lastSyncedRef = useRef<GroupConfig[]>([])
 	const [hasLoadedOnce, setHasLoadedOnce] = useState(false)
-	const [selectedIds, setSelectedIds] = useState<string[]>([])
 	const [bulkBusy, setBulkBusy] = useState(false)
 	const [organizerResetToken, setOrganizerResetToken] = useState(0)
-	const [helpOpened, setHelpOpened] = useState(false)
 	const notify = useNotify()
 
 	const overviewState = usePluginOverview()

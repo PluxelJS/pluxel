@@ -3,6 +3,7 @@ import { type RouterHistory, RouterProvider } from '@tanstack/react-router'
 import { useState } from 'react'
 import { getRuntimeTransportClient, RuntimeTransportClientProvider } from '../runtime'
 import './bootstrap'
+import '../styles/index.scss'
 import { appCssVariablesResolver, useAppTheme } from '../theme'
 import { createAppRouter } from './router'
 

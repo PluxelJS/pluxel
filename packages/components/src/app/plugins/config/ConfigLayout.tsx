@@ -1,4 +1,4 @@
-import { Box, Paper, Stack, Text, TypographyStylesProvider } from '@mantine/core'
+import { Box, Paper, Stack, Text, Typography } from '@mantine/core'
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ObjectSchema } from 'valibot'
 import { MarkdownExit } from 'markdown-exit'
@@ -164,7 +164,7 @@ export function ConfigLayout({
 		<Box style={{ flex: 1, minHeight: 0 }}>
 			{rendered.chunks.length ? (
 				<Box>
-					<TypographyStylesProvider>
+					<Typography>
 						{rendered.chunks.map((chunk) => {
 							if (chunk.kind === 'md') {
 								// biome-ignore lint/security/noDangerouslySetInnerHtml: markdown is plugin-authored source code.
@@ -204,7 +204,7 @@ export function ConfigLayout({
 								</Fragment>
 							)
 						})}
-					</TypographyStylesProvider>
+					</Typography>
 				</Box>
 			) : null}
 

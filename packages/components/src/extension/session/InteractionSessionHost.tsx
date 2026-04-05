@@ -7,7 +7,12 @@ import type {
 	InteractionSessionComponent,
 	InteractionSessionComponentProps,
 } from '@pluxel/runtime/web'
-import { useGlobalExtensionContext } from '@pluxel/runtime/web'
+import {
+	createPluginExtensionContext,
+	ExtensionProvider,
+	useExtensionPathname,
+	useGlobalExtensionContext,
+} from '@pluxel/runtime/web'
 
 type LoadedSessionPayload = {
 	input: unknown
@@ -23,12 +28,22 @@ export function InteractionSessionHost({
 	component: InteractionSessionComponent<any, any, any, any>
 }) {
 	const ctx = useGlobalExtensionContext()
+	const pathname = useExtensionPathname()
 	const transport = ctx.services.transport
 	const [payload, setPayload] = useState<LoadedSessionPayload | null>(null)
 	const [phase, setPhase] = useState<'loading' | 'ready' | 'syncing-draft' | 'committing'>('loading')
 	const [error, setError] = useState<Error | null>(null)
 	const loadRevisionRef = useRef(0)
 	const sessionRevisionRef = useRef(0)
+	const providerPluginName = session.providerPluginName || session.pluginName
+	const providerCtx = useMemo(
+		() =>
+			createPluginExtensionContext(ctx, {
+				pluginName: providerPluginName,
+				pathname,
+			}),
+		[ctx, pathname, providerPluginName],
+	)
 
 	const load = useCallback(async () => {
 		const loadRevision = ++loadRevisionRef.current
@@ -190,5 +205,9 @@ export function InteractionSessionHost({
 	}
 
 	if (!sessionProps) return null
-	return <SessionComponent {...sessionProps} />
+	return (
+		<ExtensionProvider value={providerCtx}>
+			<SessionComponent {...sessionProps} />
+		</ExtensionProvider>
+	)
 }

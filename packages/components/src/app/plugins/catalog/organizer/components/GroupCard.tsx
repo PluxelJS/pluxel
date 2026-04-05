@@ -216,7 +216,7 @@ export const GroupCard = memo(function GroupCard(props: Props) {
 				disabled={isFiltering || locked}
 				minDropHeight={isCollapsed ? 10 : dh.rowH}
 			>
-				<Collapse in={!isCollapsed}>
+				<Collapse expanded={!isCollapsed}>
 					<SortableContext
 						items={visibleIds.map((id) => getItemSortableId(id))}
 						strategy={verticalListSortingStrategy}

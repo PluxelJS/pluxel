@@ -179,7 +179,7 @@ function SidebarOutlineSection({
 						/>
 					</ActionIcon>
 				</Group>
-				<Collapse in={open}>
+				<Collapse expanded={open}>
 					<div className="plx-pluginWorkbench__assistCollapse">
 						<AssistHostMount onHostChange={onHostChange} />
 					</div>

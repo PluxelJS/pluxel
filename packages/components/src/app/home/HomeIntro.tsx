@@ -75,7 +75,7 @@ export function HomeIntro({ lastRoute }: { lastRoute: string | null }) {
 				</Group>
 			</Paper>
 
-			<Grid gutter="lg">
+			<Grid gap="lg">
 				<Grid.Col span={{ base: 12, md: 4 }}>
 					<HomeCard
 						title="插件工作台"

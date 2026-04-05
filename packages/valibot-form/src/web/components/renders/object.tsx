@@ -142,7 +142,7 @@ export function ObjectField(props: RendererProps) {
 						{node.meta.description}
 					</Text>
 				) : null}
-				{info.collapsible ? <Collapse in={!collapsed}>{content}</Collapse> : content}
+				{info.collapsible ? <Collapse expanded={!collapsed}>{content}</Collapse> : content}
 			</Stack>
 		)
 	}
@@ -161,7 +161,7 @@ export function ObjectField(props: RendererProps) {
 						{joinErrorMessages(baseErrors)}
 					</Text>
 				) : null}
-				{info.collapsible ? <Collapse in={!collapsed}>{content}</Collapse> : content}
+				{info.collapsible ? <Collapse expanded={!collapsed}>{content}</Collapse> : content}
 				{node.meta.help ? (
 					<Text size="sm" c="dimmed">
 						{node.meta.help}

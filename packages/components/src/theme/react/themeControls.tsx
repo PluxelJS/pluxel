@@ -213,7 +213,7 @@ export function ThemeCustomizer({ compact = false }: ThemeCustomizerProps) {
 					<ColorSwatch color={currentPreset.color} size={16} />
 				</Group>
 
-				<Collapse in={expanded}>
+				<Collapse expanded={expanded}>
 					<Stack gap="sm" pt="xs">
 						{schemeControl}
 						{accentPicker}
