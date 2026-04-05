@@ -16,3 +16,6 @@ public-hoist-pattern:
   - '@mantine/modals'
   - '@mantine/notifications'
   - tsdown
+
+trustPolicy: no-downgrade
+trustPolicyIgnoreAfter: 43200

@@ -1,6 +1,7 @@
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
 import { existsSync, readFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
+import { delimiter } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import {
 	EXTENSION_FEDERATION_EXPOSE,
@@ -56,6 +57,9 @@ type PluginUiBuildChildPayload = {
 const rootBuildSchedulers = new Map<string, RootBuildScheduler>()
 const inflightBuilds = new Map<string, Promise<{ outDir: string; manifestPath: string }>>()
 const runtimeRequire = createRequire(import.meta.url)
+const MFE_VITE_NO_TEST_ENV_CHECK = 'true'
+const nodeExecutable = resolveNodeExecutable()
+const shouldDisableFederationTestEnvCheck = isTestLikeProcessEnv(process.env)
 let cleanupHooksRegistered = false
 
 export async function buildPluginUiRemote(
@@ -151,6 +155,40 @@ function registerCleanupHooks(): void {
 	process.once('beforeExit', dispose)
 }
 
+function resolveNodeExecutable(): string {
+	const explicit = process.env.PLUXEL_NODE_EXEC_PATH
+	if (typeof explicit === 'string' && existsSync(explicit)) return explicit
+
+	const npmNodeExecPath = process.env.npm_node_execpath
+	if (typeof npmNodeExecPath === 'string' && existsSync(npmNodeExecPath)) {
+		return npmNodeExecPath
+	}
+
+	const pathEnv = process.env.PATH
+	const executableNames = process.platform === 'win32' ? ['node.exe', 'node'] : ['node']
+	if (typeof pathEnv === 'string' && pathEnv) {
+		for (const dir of pathEnv.split(delimiter)) {
+			if (!dir) continue
+			const normalizedDir = dir.replace(/[\\/]+$/, '')
+			for (const executableName of executableNames) {
+				const candidate = `${normalizedDir}/${executableName}`
+				if (existsSync(candidate)) return candidate
+			}
+		}
+	}
+
+	if (existsSync(process.execPath)) return process.execPath
+	return 'node'
+}
+
+function isTestLikeProcessEnv(env: NodeJS.ProcessEnv): boolean {
+	return (
+		env.NODE_ENV === 'test' ||
+		env.VITEST != null ||
+		env.JEST_WORKER_ID != null
+	)
+}
+
 class RootBuildScheduler {
 	private readonly root: string
 	private tail: Promise<void> = Promise.resolve()
@@ -201,12 +239,15 @@ class RootBuildScheduler {
 		}
 
 		const child = spawn(
-			process.execPath,
+			nodeExecutable,
 			['--input-type=module', '--eval', PLUGIN_UI_BUILD_CHILD_SCRIPT],
 			{
 				cwd: this.root,
 				env: {
 					...process.env,
+					...(shouldDisableFederationTestEnvCheck
+						? { MFE_VITE_NO_TEST_ENV_CHECK }
+						: {}),
 					PLUXEL_PLUGIN_UI_BUILD_PAYLOAD: JSON.stringify(payload),
 				},
 				stdio: ['ignore', 'pipe', 'pipe'],
@@ -280,15 +321,8 @@ class RootBuildScheduler {
 
 const PLUGIN_UI_BUILD_CHILD_SCRIPT = `
 import { rm } from 'node:fs/promises'
-import { resolve as resolvePath } from 'node:path'
 const toPluginArray = (input) => Array.isArray(input) ? input.flatMap((item) => toPluginArray(item)) : [input]
-const cleanup = async (options) => {
-	await Promise.all([
-		rm(resolvePath(options.root, 'node_modules/__mf__virtual'), { recursive: true, force: true }),
-		rm(resolvePath(options.root, '.__mf__temp'), { recursive: true, force: true }),
-		rm(options.cacheDir, { recursive: true, force: true }),
-	])
-}
+const cleanup = async (options) => rm(options.cacheDir, { recursive: true, force: true })
 
 async function runBuild(options) {
 	const { build } = await import(options.imports.vite)
@@ -316,7 +350,6 @@ async function runBuild(options) {
 		shareStrategy: ${JSON.stringify(EXTENSION_FEDERATION_SHARE_STRATEGY)},
 	}))
 
-	await cleanup(options)
 	try {
 		await build({
 			configFile: false,

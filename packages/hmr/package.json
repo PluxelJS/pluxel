@@ -44,7 +44,7 @@
 	"dependencies": {
 		"@inlang/paraglide-js": "^2.15.1",
 		"@logtape/logtape": "^2.0.2",
-		"@module-federation/vite": "1.13.1",
+		"@module-federation/vite": "1.14.1",
 		"@pluxel/core": "workspace:*",
 		"@pluxel/runtime": "workspace:*",
 		"@rolldown/pluginutils": "1.0.0-rc.5",
@@ -62,7 +62,7 @@
 		"@pluxel/test": "workspace:*",
 		"@pluxel/workspace": "workspace:*",
 		"superjson": "^2.2.6",
-		"tsdown": "^0.21.4",
+		"tsdown": "^0.21.7",
 		"typescript": "^6.0.2"
 	},
 	"publishConfig": {

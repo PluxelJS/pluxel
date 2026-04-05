@@ -197,6 +197,10 @@ web_modules/
 .cache
 .parcel-cache
 
+# Module Federation Vite temporary directories
+**/.__mf__temp/
+**/node_modules/__mf__virtual/
+
 # Next.js build output
 .next
 out

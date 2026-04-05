@@ -37,7 +37,7 @@
 
 - 同 root 只复用调度器，不复用 federation build 进程状态
 - 每次真正的 remote build 都走一次隔离子进程
-- build 结束后显式清理临时目录和 federation 中间产物
+- 每次 build 只清理自己创建的 isolated cacheDir
 
 这套方案现在是合理的，因为它优先保证稳定性和结果可预测；但它仍然是“围绕 MF2/Vite 当前行为做的工程隔离”，不是最理想的最终模型。
 

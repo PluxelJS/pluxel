@@ -36,7 +36,7 @@
 	"peerDependencies": {
 		"pathe": "^2.0.3",
 		"pkg-types": "^2.3.0",
-		"tsdown": "^0.21.4"
+		"tsdown": "^0.21.7"
 	},
 	"devDependencies": {
 		"@pluxel/test": "workspace:*",
@@ -44,7 +44,7 @@
 		"pathe": "^2.0.3",
 		"pkg-types": "^2.3.0",
 		"rolldown": "1.0.0-rc.5",
-		"tsdown": "^0.21.4",
+		"tsdown": "^0.21.7",
 		"typescript": "^6.0.2"
 	},
 	"publishConfig": {

@@ -74,14 +74,14 @@ HMR 对 MF2 的使用也很克制：
 - 同一个插件包根目录共享一个 root-scoped build scheduler
 - 同 root 的多个 UI remote 构建请求会串行执行
 - 每一次真正的 MF2/Vite build 都在一个全新的子进程里完成
-- 构建结束后会清理 `__mf__virtual`、`.__mf__temp` 和这次 build 的临时 cache
+- 每次 build 只清理这次专属的临时 cache，不主动触碰 root 下的 federation 临时目录
 
 这不是保守实现，而是当前最实用的实现。
 
 设计原因很直接：
 
 - `@module-federation/vite` 当前在同进程重复构建时会残留进程内状态
-- 同 root 并发构建还会争用共享临时目录
+- `1.14.1` 仍然需要在测试环境里显式关闭它自己的 test-env skip，但这已经收口在 child build 边界
 - 所以“常驻 worker 里反复 build”虽然看起来更快，实际会更脆
 
 因此这里故意只复用调度，不复用 federation build 进程状态。
@@ -90,7 +90,7 @@ HMR 对 MF2 的使用也很克制：
 
 - 同 root 请求仍然能做去重和排队
 - 跨 root 仍然可以并行
-- 构建失败不会把脏的 federation 临时产物留给下一次 build
+- 本地补丁面继续收缩在子进程边界和专属 cacheDir 上
 - HMR/runtime 不需要额外理解上游插件的内部状态机
 
 如果未来上游彻底修好同进程可重入性，这里唯一值得升级的方向，才是回到“每个 package root 一个常驻 build worker”。
