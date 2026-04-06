@@ -191,11 +191,11 @@ class PluginUiRegistry {
 											tone="error"
 											title={
 												<>
-												Invalid extension: {pluginName} · {ext.point}
+													Invalid extension: {pluginName} · {ext.point}
 												</>
 											}
 										>
-												Expected <code>render(ctx)</code> to be a function.
+											Expected <code>render(ctx)</code> to be a function.
 										</InlineNotice>
 									)
 								}
@@ -212,11 +212,11 @@ class PluginUiRegistry {
 															tone="error"
 															title={
 																<>
-																Extension render failed: {pluginName} · {ext.point}
+																	Extension render failed: {pluginName} · {ext.point}
 																</>
 															}
 														>
-																{error?.message ?? String(error ?? 'unknown error')}
+															{error?.message ?? String(error ?? 'unknown error')}
 														</InlineNotice>
 													)
 												: null
@@ -338,15 +338,11 @@ export const pluginUiRegistry = new PluginUiRegistry()
 
 export const loadPluginUiModule = pluginUiRegistry.loadPluginModule.bind(pluginUiRegistry)
 export const unloadPluginUiModule = pluginUiRegistry.unloadPluginModule.bind(pluginUiRegistry)
-export const subscribePluginUiRegistryChanges =
-	pluginUiRegistry.subscribe.bind(pluginUiRegistry)
-export const getPluginUiRegistryRevision =
-	pluginUiRegistry.getRevision.bind(pluginUiRegistry)
+export const subscribePluginUiRegistryChanges = pluginUiRegistry.subscribe.bind(pluginUiRegistry)
+export const getPluginUiRegistryRevision = pluginUiRegistry.getRevision.bind(pluginUiRegistry)
 export const subscribePluginUiModuleChanges =
 	pluginUiRegistry.subscribePlugin.bind(pluginUiRegistry)
-export const getPluginUiModuleRevision =
-	pluginUiRegistry.getPluginRevision.bind(pluginUiRegistry)
-export const getPluginUiRouteComponent =
-	pluginUiRegistry.getRouteComponent.bind(pluginUiRegistry)
+export const getPluginUiModuleRevision = pluginUiRegistry.getPluginRevision.bind(pluginUiRegistry)
+export const getPluginUiRouteComponent = pluginUiRegistry.getRouteComponent.bind(pluginUiRegistry)
 export const getPluginUiSessionComponent =
 	pluginUiRegistry.getSessionComponent.bind(pluginUiRegistry)

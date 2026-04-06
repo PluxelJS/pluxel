@@ -1,4 +1,4 @@
-import { type Context, Injectable } from '@pluxel/core'
+import { type Context as PluxelContext, Injectable } from '@pluxel/core'
 import { Elysia } from 'elysia'
 import { isAbsolute, resolve } from 'pathe'
 
@@ -131,13 +131,13 @@ export class HttpService {
 		new Response('HTTP runtime unavailable', { status: 503 })
 	private uiPublicHandler: UiPublicAssetHandler | null | undefined = undefined
 
-	private readonly logger: NonNullable<Context['logger']>
+	private readonly logger: NonNullable<PluxelContext['logger']>
 	private renderer: Promise<RenderHandler> | null = null
 	private sseBuiltinsReady = false
 	private readonly config: Required<HttpServiceConfig>
 
 	constructor(
-		public ctx: Context,
+		public ctx: PluxelContext,
 		config: HttpServiceConfig = {},
 	) {
 		this.logger = ctx.logger!

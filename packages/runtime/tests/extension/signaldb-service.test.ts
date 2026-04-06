@@ -67,7 +67,9 @@ describe('SignalDbService', () => {
 		await collection.ready()
 		collection.insert({ id: 'a', value: 1 })
 
-		expect(ctx.pluginData.persistenceForCollection).toHaveBeenCalledWith('persisted-runtime-actions')
+		expect(ctx.pluginData.persistenceForCollection).toHaveBeenCalledWith(
+			'persisted-runtime-actions',
+		)
 		expect(collection.findOne({ id: 'a' })).toEqual({ id: 'a', value: 1 })
 	})
 

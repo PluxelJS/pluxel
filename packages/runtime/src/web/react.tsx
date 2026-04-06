@@ -53,9 +53,7 @@ export function RuntimeTransportClientProvider({
 export function useRuntimeTransportClient(): RuntimeTransportClient {
 	const client = useContext(RuntimeTransportClientContext)
 	if (!client) {
-		throw new Error(
-			'useRuntimeTransportClient must be used within RuntimeTransportClientProvider',
-		)
+		throw new Error('useRuntimeTransportClient must be used within RuntimeTransportClientProvider')
 	}
 	return client
 }

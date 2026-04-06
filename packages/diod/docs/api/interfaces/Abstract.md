@@ -1,6 +1,6 @@
 [**DIOD v3.0.0**](../README.md) • **Docs**
 
-***
+---
 
 # Interface: Abstract\<T\>
 

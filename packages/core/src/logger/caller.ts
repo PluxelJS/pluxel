@@ -45,16 +45,16 @@ const DEFAULT_SKIP_MARKERS = [
 function tryFileUrlToPath(input: string): string {
 	if (!input.startsWith('file://')) return input
 	try {
-			const url = new URL(input)
-			if (url.protocol !== 'file:') return input
+		const url = new URL(input)
+		if (url.protocol !== 'file:') return input
 
-			let path = decodeURIComponent(url.pathname)
-			// Windows drive letters: file:///C:/path -> C:/path
-			if (/^\/[A-Za-z]:\//.test(path)) path = path.slice(1)
-			// UNC paths: file://server/share/path -> //server/share/path
-			if (url.hostname) path = `//${url.hostname}${path}`
+		let path = decodeURIComponent(url.pathname)
+		// Windows drive letters: file:///C:/path -> C:/path
+		if (/^\/[A-Za-z]:\//.test(path)) path = path.slice(1)
+		// UNC paths: file://server/share/path -> //server/share/path
+		if (url.hostname) path = `//${url.hostname}${path}`
 
-			return path
+		return path
 	} catch {
 		return input
 	}

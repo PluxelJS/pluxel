@@ -23,7 +23,9 @@ describe('HMR bridgeProviders', () => {
 		const root = fixture.path
 
 		expect(fixture.fs.existsSync(join(root, 'node_modules/@pluxel/core/package.json'))).toBe(true)
-		expect(fixture.fs.existsSync(join(root, 'node_modules/@pluxel/context/package.json'))).toBe(false)
+		expect(fixture.fs.existsSync(join(root, 'node_modules/@pluxel/context/package.json'))).toBe(
+			false,
+		)
 
 		const deps = resolveHMRDependencyConfig({ bridgeModules: ['@pluxel/context'] }, { cwd: root })
 		expect(deps.bridgeProviders['@pluxel/context']).toBe('@pluxel/core')
@@ -48,7 +50,9 @@ describe('HMR bridgeProviders', () => {
 		})
 		const root = fixture.path
 
-		expect(fixture.fs.existsSync(join(root, 'node_modules/@pluxel/context/package.json'))).toBe(true)
+		expect(fixture.fs.existsSync(join(root, 'node_modules/@pluxel/context/package.json'))).toBe(
+			true,
+		)
 
 		const deps = resolveHMRDependencyConfig({ bridgeModules: ['@pluxel/context'] }, { cwd: root })
 		expect(deps.bridgeProviders['@pluxel/context']).toBe('@pluxel/core')

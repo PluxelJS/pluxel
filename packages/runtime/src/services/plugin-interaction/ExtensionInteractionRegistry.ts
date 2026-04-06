@@ -10,7 +10,6 @@ import type { ExtensionPoint } from '../../web/ui'
 import {
 	assertSerializableValue,
 	errorMessage,
-	type InteractionOfferPrepareResult,
 	type RegisteredOffer,
 	type RegisteredSurface,
 	type ResolvedSessionCandidate,
@@ -367,10 +366,7 @@ export class ExtensionInteractionRegistry {
 		}
 	}
 
-	async syncDraft(input: {
-		sessionId: string
-		draft: unknown
-	}): Promise<
+	async syncDraft(input: { sessionId: string; draft: unknown }): Promise<
 		| {
 				ok: true
 		  }
@@ -417,10 +413,7 @@ export class ExtensionInteractionRegistry {
 		}
 	}
 
-	async commitSession(input: {
-		sessionId: string
-		result: unknown
-	}): Promise<
+	async commitSession(input: { sessionId: string; result: unknown }): Promise<
 		| {
 				ok: true
 		  }
@@ -505,7 +498,10 @@ export class ExtensionInteractionRegistry {
 		return offers
 	}
 
-	private contractsMatch(left: InteractionSurfaceDef['contract'], right: InteractionOfferDef['contract']): boolean {
+	private contractsMatch(
+		left: InteractionSurfaceDef['contract'],
+		right: InteractionOfferDef['contract'],
+	): boolean {
 		return String(left.id) === String(right.id) && Number(left.version) === Number(right.version)
 	}
 
@@ -515,9 +511,7 @@ export class ExtensionInteractionRegistry {
 
 	private resolveSessionRuntime(
 		sessionId: string,
-	):
-		| { session: InteractionSessionDef; surface: RegisteredSurface; offer: RegisteredOffer }
-		| null {
+	): { session: InteractionSessionDef; surface: RegisteredSurface; offer: RegisteredOffer } | null {
 		const resolved = this.getSnapshot()
 		const session = resolved.sessions.find((item) => item.id === sessionId)
 		if (!session) return null
@@ -618,7 +612,10 @@ export class ExtensionInteractionRegistry {
 		}
 	}
 
-	private compareSessionCandidates(a: ResolvedSessionCandidate, b: ResolvedSessionCandidate): number {
+	private compareSessionCandidates(
+		a: ResolvedSessionCandidate,
+		b: ResolvedSessionCandidate,
+	): number {
 		const priorityDiff = (b.record.priority ?? 0) - (a.record.priority ?? 0)
 		if (priorityDiff !== 0) return priorityDiff
 		const sourceA = String(a.record.providerPlugin ?? '').trim()

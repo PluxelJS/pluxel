@@ -200,7 +200,7 @@ function applyManifestPatterns(source: ManifestSource, patterns: string[]) {
 	const current = source.data.workspaces
 	const base: WorkspacesObject =
 		source.mode === 'object'
-			? { ...(source.objectSource ?? {}) }
+			? { ...source.objectSource }
 			: current && !Array.isArray(current)
 				? { ...current }
 				: {}

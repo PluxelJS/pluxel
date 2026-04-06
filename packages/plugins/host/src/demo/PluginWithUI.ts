@@ -119,7 +119,7 @@ export class PluginWithUI extends BasePlugin {
 	listEvents(limit = 50): DemoEvent[] {
 		const capped = Math.max(0, Math.min(MAX_EVENT_SCAN, Math.floor(limit)))
 		const docs = this.events.find({}, { limit: capped, sort: { at: -1 } })
-		return docs.map((event: DemoEvent) => ({ ...event })).slice(0, capped)
+		return docs.slice(0, capped).map((event: DemoEvent) => Object.assign({}, event))
 	}
 
 	appendEvent(kind: DemoEvent['kind'], message: string): DemoEvent {
@@ -181,10 +181,12 @@ export class PluginWithUI extends BasePlugin {
 		return this.status.findOne({ id: STATUS_DOC_ID })
 	}
 
-	private buildStatusDoc(input: {
-		counter?: number
-		eventCount?: number
-	} = {}): PluginWithUIStatusDoc {
+	private buildStatusDoc(
+		input: {
+			counter?: number
+			eventCount?: number
+		} = {},
+	): PluginWithUIStatusDoc {
 		const current = this.getStatusDoc()
 		return {
 			id: STATUS_DOC_ID,

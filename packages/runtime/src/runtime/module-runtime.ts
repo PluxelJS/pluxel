@@ -34,7 +34,10 @@ export function hasRuntimeModuleAdapter(ctx: Pick<Context, 'config'>): boolean {
 	return store.has(ctx as object)
 }
 
-export function setRuntimeModuleAdapter(ctx: Pick<Context, 'config'>, adapter: RuntimeModuleAdapter): void {
+export function setRuntimeModuleAdapter(
+	ctx: Pick<Context, 'config'>,
+	adapter: RuntimeModuleAdapter,
+): void {
 	store.set(ctx as object, adapter)
 }
 

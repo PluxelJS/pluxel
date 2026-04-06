@@ -10,6 +10,6 @@
 		{ "path": "packages/core" },
 		{ "path": "packages/runtime" },
 		{ "path": "packages/hmr" },
-		{ "path": "packages/diod" },
+		{ "path": "packages/diod" }
 	]
 }

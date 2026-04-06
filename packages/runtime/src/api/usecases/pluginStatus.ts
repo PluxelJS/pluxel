@@ -91,19 +91,25 @@ export async function applyStatusActions(
 			ok: false,
 			commitError,
 			results: interim.map((r) =>
-				r.ok ? { ...r, ok: false, code: 'commit_failed', error: commitError } : r,
+				r.ok
+					? Object.assign({}, r, {
+							ok: false,
+							code: 'commit_failed',
+							error: commitError,
+						})
+					: r,
 			),
 		}
 	}
 
 	const snapshots = Array.from(touched).map((name) => {
 		const ctor = resolvePlugin(ctx, name)
-		return { name, ...readStatusSnapshot(ctx, name, ctor as any) }
+		return Object.assign({ name }, readStatusSnapshot(ctx, name, ctor as any))
 	})
 	const snapMap = new Map(snapshots.map((s) => [s.name, s]))
 
 	return {
 		ok: interim.every((r) => r.ok),
-		results: interim.map((r) => (r.ok ? { ...r, ...snapMap.get(r.name) } : r)),
+		results: interim.map((r) => (r.ok ? Object.assign({}, r, snapMap.get(r.name)) : r)),
 	}
 }

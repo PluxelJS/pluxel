@@ -11,13 +11,7 @@ export function getPaneTabsRootClassName(variant: 'panel' | 'toolbar') {
 	return `plx-paneTabs plx-paneTabs--${variant}`
 }
 
-export function PaneTabLabel({
-	badge,
-	label,
-}: {
-	badge?: ReactNode
-	label: ReactNode
-}) {
+export function PaneTabLabel({ badge, label }: { badge?: ReactNode; label: ReactNode }) {
 	return (
 		<span className="plx-paneTabs__label">
 			<span className="plx-paneTabs__labelText">{label}</span>

@@ -10,7 +10,7 @@ import {
 	stat,
 	writeFile,
 } from 'node:fs/promises'
-import { type Context, RootService } from '@pluxel/core'
+import { type Context as PluxelContext, RootService } from '@pluxel/core'
 import { basename, dirname, resolve } from 'pathe'
 
 const serviceName = 'fs' as const
@@ -357,7 +357,7 @@ export class FsService {
 	private backend: FsServiceBackend
 
 	constructor(
-		public ctx: Context,
+		public ctx: PluxelContext,
 		config: FsServiceConfig = {},
 	) {
 		const mode: FsServiceMode = config.mode ?? 'node'

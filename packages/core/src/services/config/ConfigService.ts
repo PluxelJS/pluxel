@@ -1,4 +1,4 @@
-import { type Context, Injectable } from '@pluxel/context'
+import { type Context as PluxelContext, Injectable } from '@pluxel/context'
 import type { StandardSchemaV1 } from '@standard-schema/spec'
 import { type ConfigSchemaMap, normalizeConfigRecord } from './ops'
 import { ConfigValidationError } from './types'
@@ -31,7 +31,7 @@ declare module '@pluxel/context' {
  */
 @Injectable({ key: serviceName })
 export class ConfigService {
-	public ctx: Context
+	public ctx: PluxelContext
 	/** Core is always "ready"; overridden implementations (e.g. HMR) may load from disk asynchronously. */
 	public isReady = true
 	/** Resolves when initial config is ready; core resolves immediately. */
@@ -53,7 +53,7 @@ export class ConfigService {
 	private configRevByPlugin = new Map<string, number>()
 	private extra: Record<string, unknown> = Object.create(null)
 
-	constructor(ctx: Context, _config: unknown = undefined) {
+	constructor(ctx: PluxelContext, _config: unknown = undefined) {
 		this.ctx = ctx
 	}
 

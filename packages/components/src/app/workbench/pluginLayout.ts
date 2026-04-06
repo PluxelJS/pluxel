@@ -40,13 +40,7 @@ export const DEFAULT_PLUGIN_WORKBENCH_VERTICAL_LAYOUT = {
 }
 
 export function sanitizePluginSectionLayout(layout: Record<string, number>) {
-	return sanitizeTwoPanelLayout(
-		layout,
-		DEFAULT_PLUGIN_SECTION_LAYOUT,
-		PLUGIN_RAIL_PANEL_ID,
-		14,
-		56,
-	)
+	return sanitizeTwoPanelLayout(layout, DEFAULT_PLUGIN_SECTION_LAYOUT, PLUGIN_RAIL_PANEL_ID, 14, 56)
 }
 
 export function sanitizePluginWorkbenchPanelsState(value: unknown): PluginWorkbenchPanelsState {

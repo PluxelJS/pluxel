@@ -45,7 +45,7 @@ export function computeInitPlan(
 		const raw = (plugin.dependencies ?? []) as PluginIdentifier[]
 		let deps = raw
 		if (raw.length) {
-			const next = new Array<PluginIdentifier>(raw.length)
+			const next = Array<PluginIdentifier>(raw.length)
 			for (let i = 0; i < raw.length; i++) next[i] = resolve(raw[i])
 			deps = next
 		}

@@ -96,7 +96,9 @@ export function hmrUiBridgePlugin(options: HmrUiBridgePluginOptions = {}): ViteC
 }
 
 function rewriteHmrUiBridge(code: string, ast: Program): string | null {
-	const importDecls = ast.body.filter((node): node is ImportDeclaration => node.type === 'ImportDeclaration')
+	const importDecls = ast.body.filter(
+		(node): node is ImportDeclaration => node.type === 'ImportDeclaration',
+	)
 	if (importDecls.length === 0) return null
 
 	const lastImportEnd = importDecls.reduce((max, node) => Math.max(max, node.end), 0)
@@ -132,7 +134,10 @@ function rewriteHmrUiBridge(code: string, ast: Program): string | null {
 
 	const helperName = createUniqueHelperName(code, localNames)
 	const helperBlock = buildHelperBlock(helperName, [...localNames])
-	const edits: ImportRewrite[] = [...rewrites, { start: lastImportEnd, end: lastImportEnd, replacement: helperBlock }]
+	const edits: ImportRewrite[] = [
+		...rewrites,
+		{ start: lastImportEnd, end: lastImportEnd, replacement: helperBlock },
+	]
 
 	let result = code
 	edits.sort((a, b) => b.start - a.start)
@@ -201,7 +206,12 @@ function renderNamedImportSpecifier(spec: ImportSpecifier): string {
 
 function getImportedName(spec: ImportSpecifier): string {
 	const imported = spec.imported
-	if (imported && typeof imported === 'object' && 'name' in imported && typeof imported.name === 'string') {
+	if (
+		imported &&
+		typeof imported === 'object' &&
+		'name' in imported &&
+		typeof imported.name === 'string'
+	) {
 		return imported.name
 	}
 	return spec.local.name

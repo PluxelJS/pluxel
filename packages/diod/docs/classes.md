@@ -7,12 +7,12 @@ import { Service } from 'diod'
 
 @Service()
 export class ServiceOne {
-  constructor(
-    private readonly dep1: ServiceTwo,
-    private readonly dep2: ServiceThree
-  ) {}
+	constructor(
+		private readonly dep1: ServiceTwo,
+		private readonly dep2: ServiceThree,
+	) {}
 
-  //...
+	//...
 }
 ```
 
@@ -21,9 +21,9 @@ import { Service } from 'diod'
 
 @Service()
 export class ServiceTwo {
-  constructor(private readonly dep1: ServiceFour) {}
+	constructor(private readonly dep1: ServiceFour) {}
 
-  //...
+	//...
 }
 ```
 
@@ -32,7 +32,7 @@ import { Service } from 'diod'
 
 @Service()
 export class ServiceThree {
-  //...
+	//...
 }
 ```
 
@@ -41,7 +41,7 @@ import { Service } from 'diod'
 
 @Service()
 export class ServiceFour {
-  //...
+	//...
 }
 ```
 

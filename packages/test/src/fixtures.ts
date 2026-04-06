@@ -150,7 +150,10 @@ type SupportedFs = {
 	readdir(
 		path: PathLike,
 		options: unknown,
-		callback?: (error: NodeJS.ErrnoException | null, entries?: string[] | SupportedDirEntry[]) => void,
+		callback?: (
+			error: NodeJS.ErrnoException | null,
+			entries?: string[] | SupportedDirEntry[],
+		) => void,
 	): void
 	readdirSync(path: PathLike, options: { withFileTypes: true }): SupportedDirEntry[]
 	readdirSync(path: PathLike, options?: { withFileTypes?: false }): string[]
@@ -324,10 +327,7 @@ function createVirtualRuntime(state: VirtualFixtureState): FixtureFsApi {
 		return await realFsPromises.mkdir(path, options)
 	}
 
-	function mkdirAnySync(
-		path: string,
-		options: { recursive?: boolean } = {},
-	): string | undefined {
+	function mkdirAnySync(path: string, options: { recursive?: boolean } = {}): string | undefined {
 		if (isVirtualPath(path)) return state.vfs.mkdirSync(path, options)
 		return realFs.mkdirSync(path, options)
 	}
@@ -617,7 +617,10 @@ function createVirtualRuntime(state: VirtualFixtureState): FixtureFsApi {
 			await mkdirAny(dir, { recursive: true })
 			return dir
 		},
-		readFile(path: PathLike, options?: BufferEncoding | { encoding?: BufferEncoding | null } | null) {
+		readFile(
+			path: PathLike,
+			options?: BufferEncoding | { encoding?: BufferEncoding | null } | null,
+		) {
 			if (isVirtualPath(path)) return state.vfs.promises.readFile(toPath(path), options as never)
 			return realFsPromises.readFile(path, options as never)
 		},
@@ -668,11 +671,19 @@ function createVirtualRuntime(state: VirtualFixtureState): FixtureFsApi {
 			if (isVirtualPath(path)) return state.vfs.accessSync(toPath(path), mode)
 			return realFs.accessSync(path, mode)
 		},
-		appendFile(path: PathLike, data, options: any, callback?: (error: NodeJS.ErrnoException | null) => void) {
+		appendFile(
+			path: PathLike,
+			data,
+			options: any,
+			callback?: (error: NodeJS.ErrnoException | null) => void,
+		) {
 			const resolvedCallback = typeof options === 'function' ? options : callback
 			const resolvedOptions = typeof options === 'function' ? undefined : options
 			if (!resolvedCallback) return
-			callbackify(() => fsp.appendFile(path, normalizeData(data), resolvedOptions), resolvedCallback)
+			callbackify(
+				() => fsp.appendFile(path, normalizeData(data), resolvedOptions),
+				resolvedCallback,
+			)
 		},
 		appendFileSync(path: PathLike, data, options?) {
 			return appendFileRawSync(toPath(path), data, options)
@@ -680,7 +691,12 @@ function createVirtualRuntime(state: VirtualFixtureState): FixtureFsApi {
 		copyFile(source: PathLike, destination: PathLike, callback) {
 			callbackify(() => fsp.copyFile(source, destination), callback)
 		},
-		cp(source: PathLike, destination: PathLike, options: any, callback?: (error: NodeJS.ErrnoException | null) => void) {
+		cp(
+			source: PathLike,
+			destination: PathLike,
+			options: any,
+			callback?: (error: NodeJS.ErrnoException | null) => void,
+		) {
 			const resolvedCallback = typeof options === 'function' ? options : callback
 			const resolvedOptions = typeof options === 'function' ? undefined : options
 			if (!resolvedCallback) return
@@ -735,7 +751,11 @@ function createVirtualRuntime(state: VirtualFixtureState): FixtureFsApi {
 			if (isVirtualPath(path)) return state.vfs.existsSync(toPath(path))
 			return realFs.existsSync(path)
 		},
-		lstat(path: PathLike, options: any, callback?: (error: NodeJS.ErrnoException | null, stats?: SupportedStats) => void) {
+		lstat(
+			path: PathLike,
+			options: any,
+			callback?: (error: NodeJS.ErrnoException | null, stats?: SupportedStats) => void,
+		) {
 			const resolvedCallback = typeof options === 'function' ? options : callback
 			const resolvedOptions = typeof options === 'function' ? undefined : options
 			if (!resolvedCallback) return
@@ -750,7 +770,11 @@ function createVirtualRuntime(state: VirtualFixtureState): FixtureFsApi {
 				throw error
 			}
 		},
-		mkdir(path: PathLike, options: any, callback?: (error: NodeJS.ErrnoException | null, createdPath?: string) => void) {
+		mkdir(
+			path: PathLike,
+			options: any,
+			callback?: (error: NodeJS.ErrnoException | null, createdPath?: string) => void,
+		) {
 			const resolvedCallback = typeof options === 'function' ? options : callback
 			const resolvedOptions = typeof options === 'function' ? undefined : options
 			if (!resolvedCallback) return
@@ -769,17 +793,31 @@ function createVirtualRuntime(state: VirtualFixtureState): FixtureFsApi {
 			return dir
 		},
 		promises: fsp,
-		readFile(path: PathLike, options: any, callback?: (error: NodeJS.ErrnoException | null, data?: string | Buffer) => void) {
+		readFile(
+			path: PathLike,
+			options: any,
+			callback?: (error: NodeJS.ErrnoException | null, data?: string | Buffer) => void,
+		) {
 			const resolvedCallback = typeof options === 'function' ? options : callback
 			const resolvedOptions = typeof options === 'function' ? undefined : options
 			if (!resolvedCallback) return
 			callbackify(() => fsp.readFile(path, resolvedOptions), resolvedCallback as never)
 		},
-		readFileSync(path: PathLike, options?: BufferEncoding | { encoding?: BufferEncoding | null } | null) {
+		readFileSync(
+			path: PathLike,
+			options?: BufferEncoding | { encoding?: BufferEncoding | null } | null,
+		) {
 			if (isVirtualPath(path)) return state.vfs.readFileSync(toPath(path), options as never)
 			return realFs.readFileSync(path, options as never)
 		},
-		readdir(path: PathLike, options: any, callback?: (error: NodeJS.ErrnoException | null, entries?: string[] | SupportedDirEntry[]) => void) {
+		readdir(
+			path: PathLike,
+			options: any,
+			callback?: (
+				error: NodeJS.ErrnoException | null,
+				entries?: string[] | SupportedDirEntry[],
+			) => void,
+		) {
 			const resolvedCallback = typeof options === 'function' ? options : callback
 			const resolvedOptions = typeof options === 'function' ? undefined : options
 			if (!resolvedCallback) return
@@ -788,7 +826,11 @@ function createVirtualRuntime(state: VirtualFixtureState): FixtureFsApi {
 		readdirSync: ((path: PathLike, options?: { withFileTypes?: boolean }) => {
 			return readdirAnySync(toPath(path), options)
 		}) as SupportedFs['readdirSync'],
-		readlink(path: PathLike, options: any, callback?: (error: NodeJS.ErrnoException | null, linkString?: string) => void) {
+		readlink(
+			path: PathLike,
+			options: any,
+			callback?: (error: NodeJS.ErrnoException | null, linkString?: string) => void,
+		) {
 			const resolvedCallback = typeof options === 'function' ? options : callback
 			const resolvedOptions = typeof options === 'function' ? undefined : options
 			if (!resolvedCallback) return
@@ -798,7 +840,11 @@ function createVirtualRuntime(state: VirtualFixtureState): FixtureFsApi {
 			if (isVirtualPath(path)) return state.vfs.readlinkSync(toPath(path), options)
 			return realFs.readlinkSync(path, options)
 		},
-		realpath(path: PathLike, options: any, callback?: (error: NodeJS.ErrnoException | null, resolvedPath?: string) => void) {
+		realpath(
+			path: PathLike,
+			options: any,
+			callback?: (error: NodeJS.ErrnoException | null, resolvedPath?: string) => void,
+		) {
 			const resolvedCallback = typeof options === 'function' ? options : callback
 			const resolvedOptions = typeof options === 'function' ? undefined : options
 			if (!resolvedCallback) return
@@ -832,7 +878,11 @@ function createVirtualRuntime(state: VirtualFixtureState): FixtureFsApi {
 		rmdirSync(path: PathLike) {
 			return rmdirAnySync(toPath(path))
 		},
-		stat(path: PathLike, options: any, callback?: (error: NodeJS.ErrnoException | null, stats?: unknown) => void) {
+		stat(
+			path: PathLike,
+			options: any,
+			callback?: (error: NodeJS.ErrnoException | null, stats?: unknown) => void,
+		) {
 			const resolvedCallback = typeof options === 'function' ? options : callback
 			const resolvedOptions = typeof options === 'function' ? undefined : options
 			if (!resolvedCallback) return
@@ -847,7 +897,12 @@ function createVirtualRuntime(state: VirtualFixtureState): FixtureFsApi {
 				throw error
 			}
 		},
-		symlink(target: string, path: PathLike, type: any, callback?: (error: NodeJS.ErrnoException | null) => void) {
+		symlink(
+			target: string,
+			path: PathLike,
+			type: any,
+			callback?: (error: NodeJS.ErrnoException | null) => void,
+		) {
 			const resolvedCallback = typeof type === 'function' ? type : callback
 			const resolvedType = typeof type === 'function' ? undefined : type
 			if (!resolvedCallback) return
@@ -862,7 +917,12 @@ function createVirtualRuntime(state: VirtualFixtureState): FixtureFsApi {
 		unlinkSync(path: PathLike) {
 			return unlinkAnySync(toPath(path))
 		},
-		writeFile(path: PathLike, data, options: any, callback?: (error: NodeJS.ErrnoException | null) => void) {
+		writeFile(
+			path: PathLike,
+			data,
+			options: any,
+			callback?: (error: NodeJS.ErrnoException | null) => void,
+		) {
 			const resolvedCallback = typeof options === 'function' ? options : callback
 			const resolvedOptions = typeof options === 'function' ? undefined : options
 			if (!resolvedCallback) return

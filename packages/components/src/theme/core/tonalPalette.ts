@@ -63,7 +63,9 @@ export function createMantinePaletteFromTonalPalette(palette: TonalPalette): Man
 export function createMantineDarkPaletteFromTonalPalette(
 	palette: TonalPalette,
 ): MantineColorsTuple {
-	return MANTINE_DARK_SCALE_TONES.map((tone) => toneHex(palette, tone)) as unknown as MantineColorsTuple
+	return MANTINE_DARK_SCALE_TONES.map((tone) =>
+		toneHex(palette, tone),
+	) as unknown as MantineColorsTuple
 }
 
 export function createMantinePaletteFromSeed(

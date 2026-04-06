@@ -210,4 +210,3 @@ export type VaultPayloadV1 = {
 	secrets?: Record<string, unknown>
 	meta?: Record<string, unknown>
 }
-

@@ -7,4 +7,3 @@
 1. `docs/architecture/system.md`
 2. `docs/architecture/frontend.md`
 3. `docs/architecture/services.md`
-

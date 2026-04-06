@@ -32,10 +32,7 @@ function isTemplateDirectory(
 	}
 }
 
-async function walkTemplateFiles(
-	rootDir: string,
-	fileSystem: typeof fs,
-): Promise<string[]> {
+async function walkTemplateFiles(rootDir: string, fileSystem: typeof fs): Promise<string[]> {
 	const out: string[] = []
 	const visit = async (dir: string) => {
 		const entries = (await fileSystem.promises.readdir(dir, {
@@ -61,7 +58,9 @@ function listKnownTemplates(fileSystem: typeof fs = fs, base = resolveTemplatesD
 	try {
 		return fileSystem
 			.readdirSync(base, { withFileTypes: true })
-			.filter((entry) => isTemplateDirectory(fileSystem, base, entry as string | TemplateDirentLike))
+			.filter((entry) =>
+				isTemplateDirectory(fileSystem, base, entry as string | TemplateDirentLike),
+			)
 			.map((entry) => getTemplateDirentName(entry as string | TemplateDirentLike))
 			.filter((name) => !name.startsWith('.'))
 			.sort((a, b) => a.localeCompare(b))
@@ -303,10 +302,10 @@ export async function promptTemplateData(
 		}
 
 		if (type === 'select') {
-			const options = normalizePromptOptions(prompt, name)
+			const selectOptions = normalizePromptOptions(prompt, name)
 			const result = await select({
 				message,
-				options,
+				options: selectOptions,
 				initialValue:
 					typeof prompt.default === 'string'
 						? renderPromptValue(prompt.default, promptScope, 'default')
@@ -384,17 +383,16 @@ function renderTemplateValue(input: string, data: Record<string, string>, label:
 		return renderTemplate(input, data)
 	} catch (error) {
 		const reason = error instanceof Error ? error.message : String(error)
-		throw new Error(`Invalid ${label}: ${reason}`)
+		throw new Error(`Invalid ${label}: ${reason}`, { cause: error })
 	}
 }
 
 async function listTemplateFiles(templateBase: string, fileSystem: typeof fs): Promise<string[]> {
 	const files = await walkTemplateFiles(templateBase, fileSystem)
-	return files
-		.filter((path) => {
-			const rel = relative(templateBase, path)
-			return !TEMPLATE_PROMPT_FILES.has(rel)
-		})
+	return files.filter((path) => {
+		const rel = relative(templateBase, path)
+		return !TEMPLATE_PROMPT_FILES.has(rel)
+	})
 }
 
 type PromptChoice = {

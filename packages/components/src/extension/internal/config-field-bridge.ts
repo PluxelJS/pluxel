@@ -78,9 +78,11 @@ export function useConfigFieldBridge(input: {
 	>
 
 	const currentSchemaValue = useMemo(() => {
+		const defaultSchemaValue = defaults?.[schemaKey] as Record<string, unknown> | undefined
+		const savedSchemaValue = savedConfig?.[schemaKey] as Record<string, unknown> | undefined
 		return {
-			...((defaults?.[schemaKey] as Record<string, unknown> | undefined) ?? {}),
-			...((savedConfig?.[schemaKey] as Record<string, unknown> | undefined) ?? {}),
+			...defaultSchemaValue,
+			...savedSchemaValue,
 		}
 	}, [defaults, savedConfig, schemaKey])
 

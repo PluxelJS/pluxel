@@ -182,11 +182,7 @@ function resolveNodeExecutable(): string {
 }
 
 function isTestLikeProcessEnv(env: NodeJS.ProcessEnv): boolean {
-	return (
-		env.NODE_ENV === 'test' ||
-		env.VITEST != null ||
-		env.JEST_WORKER_ID != null
-	)
+	return env.NODE_ENV === 'test' || env.VITEST != null || env.JEST_WORKER_ID != null
 }
 
 class RootBuildScheduler {
@@ -205,9 +201,7 @@ class RootBuildScheduler {
 			throw new Error(`Plugin UI build scheduler already closed for ${this.root}`)
 		}
 		this.pendingCount += 1
-		const task = this.tail
-			.catch((): void => undefined)
-			.then(() => this.spawnIsolatedBuild(payload))
+		const task = this.tail.catch((): void => undefined).then(() => this.spawnIsolatedBuild(payload))
 		this.tail = task.finally(() => {
 			this.pendingCount -= 1
 			if (
@@ -245,9 +239,7 @@ class RootBuildScheduler {
 				cwd: this.root,
 				env: {
 					...process.env,
-					...(shouldDisableFederationTestEnvCheck
-						? { MFE_VITE_NO_TEST_ENV_CHECK }
-						: {}),
+					...(shouldDisableFederationTestEnvCheck ? { MFE_VITE_NO_TEST_ENV_CHECK } : {}),
 					PLUXEL_PLUGIN_UI_BUILD_PAYLOAD: JSON.stringify(payload),
 				},
 				stdio: ['ignore', 'pipe', 'pipe'],
@@ -301,9 +293,7 @@ class RootBuildScheduler {
 	}
 
 	private decorateChildError(error: Error, stdoutLines: string[], stderrLines: string[]): Error {
-		const details = [...stderrLines.slice(-40), ...stdoutLines.slice(-20)]
-			.join('\n')
-			.trim()
+		const details = [...stderrLines.slice(-40), ...stdoutLines.slice(-20)].join('\n').trim()
 		if (!details) return error
 		return new Error(`${error.message}\n${details}`)
 	}

@@ -5,12 +5,12 @@
 		"tsconfig*.json",
 		// Workspace-level Vitest entry (used by `pnpm exec vitest` at repo root).
 		"vitest.config.ts",
-		"pnpm-workspace.yaml"
+		"pnpm-workspace.yaml",
 	],
 	"tasks": {
 		"build": {
 			"dependsOn": ["^build"],
-			"outputs": ["dist/**", "public/**"]
+			"outputs": ["dist/**", "public/**"],
 		},
 		"@pluxel/test#build": {
 			// `@pluxel/test` is a dev-only helper package. It compiles against the
@@ -18,31 +18,31 @@
 			// tasks into Turbo's topological graph, otherwise internal packages that
 			// use `@pluxel/test` in devDependencies create a false build cycle.
 			"dependsOn": [],
-			"outputs": ["dist/**"]
+			"outputs": ["dist/**"],
 		},
 		"build:lib": {
 			"dependsOn": ["^build"],
-			"outputs": ["dist/**"]
+			"outputs": ["dist/**"],
 		},
 		"build:web": {
 			"dependsOn": [],
-			"outputs": ["public/**"]
+			"outputs": ["public/**"],
 		},
 		"build:plugin": {
 			"dependsOn": ["^build"],
-			"outputs": ["dist/**", "public/**"]
+			"outputs": ["dist/**", "public/**"],
 		},
 		"test": {
 			"dependsOn": ["build"],
-			"outputs": []
+			"outputs": [],
 		},
 		"web": {
 			"outputs": ["public/**"],
-			"dependsOn": []
+			"dependsOn": [],
 		},
 		"dev": {
 			"cache": false,
-			"persistent": true
-		}
-	}
+			"persistent": true,
+		},
+	},
 }

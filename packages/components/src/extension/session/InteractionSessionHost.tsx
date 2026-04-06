@@ -31,7 +31,9 @@ export function InteractionSessionHost({
 	const pathname = useExtensionPathname()
 	const transport = ctx.services.transport
 	const [payload, setPayload] = useState<LoadedSessionPayload | null>(null)
-	const [phase, setPhase] = useState<'loading' | 'ready' | 'syncing-draft' | 'committing'>('loading')
+	const [phase, setPhase] = useState<'loading' | 'ready' | 'syncing-draft' | 'committing'>(
+		'loading',
+	)
 	const [error, setError] = useState<Error | null>(null)
 	const loadRevisionRef = useRef(0)
 	const sessionRevisionRef = useRef(0)
@@ -78,32 +80,33 @@ export function InteractionSessionHost({
 			if (disposed) return
 			setPayload(null)
 			setPhase('ready')
-			setError(nextError instanceof Error ? nextError : new Error('Failed to load interaction session'))
+			setError(
+				nextError instanceof Error ? nextError : new Error('Failed to load interaction session'),
+			)
 		})
 		return () => {
 			disposed = true
 		}
 	}, [load])
 
-	const setDraft = useCallback(
-		(next: unknown | ((prev: unknown) => unknown)) => {
-			setPayload((prev) => {
-				if (!prev) return prev
-				const draft = typeof next === 'function' ? (next as (value: unknown) => unknown)(prev.draft) : next
-				return { ...prev, draft }
-			})
-		},
-		[],
-	)
+	const setDraft = useCallback((next: unknown | ((prev: unknown) => unknown)) => {
+		setPayload((prev) => {
+			if (!prev) return prev
+			const draft =
+				typeof next === 'function' ? (next as (value: unknown) => unknown)(prev.draft) : next
+			return { ...prev, draft }
+		})
+	}, [])
 
 	const patchDraft = useCallback((patch: Record<string, unknown>) => {
 		setPayload((prev) => {
-			if (!prev || !prev.draft || typeof prev.draft !== 'object' || Array.isArray(prev.draft)) return prev
+			if (!prev || !prev.draft || typeof prev.draft !== 'object' || Array.isArray(prev.draft))
+				return prev
 			return {
 				...prev,
 				draft: {
 					...(prev.draft as Record<string, unknown>),
-					...(patch ?? {}),
+					...patch,
 				},
 			}
 		})

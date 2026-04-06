@@ -147,7 +147,7 @@ export function setWorkbenchPluginWorkbenchPanelsState(
 				tabState: {
 					...prev.uiState.tabState,
 					[tabId]: {
-						...(prev.uiState.tabState[tabId] ?? {}),
+						...prev.uiState.tabState[tabId],
 						[PLUGIN_WORKBENCH_PANELS_SCOPE]: nextState,
 					},
 				},

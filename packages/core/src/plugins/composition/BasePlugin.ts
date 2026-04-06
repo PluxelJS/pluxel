@@ -77,13 +77,13 @@ export abstract class BasePlugin<C extends Context = Context> {
 		// decorated with @Plugin. Avoid throwing during logging/stringification.
 		let id: string
 		try {
-			// biome-ignore lint/complexity/noThisInStatic: safe for Symbol.toPrimitive formatting
+			// Safe use of `this` inside Symbol.toPrimitive formatting.
 			id = getPluginInfo(this)?.id ?? this.name
 		} catch {
 			// undecorated base
 			id = BasePlugin.name
 		}
-		// biome-ignore lint/complexity/noThisInStatic: safe for Symbol.toPrimitive formatting
+		// Safe use of `this` inside Symbol.toPrimitive formatting.
 		return `${id}(${this.name})`
 	}
 

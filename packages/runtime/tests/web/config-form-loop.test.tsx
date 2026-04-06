@@ -27,7 +27,7 @@ const mockPluginDetailSearch = {
 	tab: undefined as string | undefined,
 }
 let RightPaneComponent:
-	| typeof import('../../../components/src/app/plugins/detail/RightPane')['RightPane']
+	| (typeof import('../../../components/src/app/plugins/detail/RightPane'))['RightPane']
 	| null = null
 
 vi.mock('../../../components/src/extension', () => ({

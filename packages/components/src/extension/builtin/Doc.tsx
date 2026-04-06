@@ -226,7 +226,7 @@ const DocBody = memo(function DocBody({
 								{renderBlock(item.title, item.block)}
 							</Box>
 						)
-					// biome-ignore lint/security/noDangerouslySetInnerHtml: HTML comes from our markdown renderer for trusted builtin docs.
+					// oxlint-disable-next-line react/no-danger -- HTML comes from our markdown renderer for trusted builtin docs.
 					return <Box key={item.key} dangerouslySetInnerHTML={{ __html: item.html }} />
 				})}
 			</Typography>

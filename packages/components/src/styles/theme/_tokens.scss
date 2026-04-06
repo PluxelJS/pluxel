@@ -1,5 +1,5 @@
-@use "sass:map";
-@use "sass:string";
+@use 'sass:map';
+@use 'sass:string';
 
 $tokens: (
 	app-bg: --plx-app-bg,
@@ -32,10 +32,10 @@ $tokens: (
 	}
 
 	@if $fallback == null {
-		@return string.unquote("var(#{$var-name})");
+		@return string.unquote('var(#{$var-name})');
 	}
 
-	@return string.unquote("var(#{$var-name}, #{$fallback})");
+	@return string.unquote('var(#{$var-name}, #{$fallback})');
 }
 
 @mixin panel-surface($background-token: panel-bg, $border-token: panel-border, $with-shadow: true) {

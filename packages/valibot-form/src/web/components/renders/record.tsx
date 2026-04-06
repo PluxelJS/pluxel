@@ -345,9 +345,9 @@ export function RecordField(props: RendererProps) {
 				autosize
 				onBlur={(event) => {
 					if (isLocked) return
-					const value = (event.currentTarget as HTMLTextAreaElement).value
+					const inputValue = (event.currentTarget as HTMLTextAreaElement).value
 					try {
-						const parsed = JSON.parse(value || formatted)
+						const parsed = JSON.parse(inputValue || formatted)
 						handleValueChange(index, parsed)
 						handleBlur()
 						setJsonErrors((prev) => {

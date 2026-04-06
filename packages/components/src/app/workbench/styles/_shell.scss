@@ -1,5 +1,5 @@
-@use "../../../styles/theme/mantine" as mantine;
-@use "../../../styles/theme/tokens" as theme;
+@use '../../../styles/theme/mantine' as mantine;
+@use '../../../styles/theme/tokens' as theme;
 
 .plx-workbench {
 	--plx-shell-bg: var(--plx-workbench-shell-bg);
@@ -84,7 +84,7 @@
 	transform: translateY(-1px);
 }
 
-.plx-workbench__activityItem[data-active="true"] {
+.plx-workbench__activityItem[data-active='true'] {
 	background: var(--plx-activity-item-active);
 	color: var(--plx-accent);
 }
@@ -150,7 +150,7 @@
 	padding: 0 8px 0 10px;
 }
 
-.plx-workbench__topbar[data-compact="true"] {
+.plx-workbench__topbar[data-compact='true'] {
 	padding-inline: 8px 10px;
 }
 
@@ -243,12 +243,11 @@
 .plx-workbench__editorTabStrip {
 	@include theme.tab-strip(surface-muted, border);
 	align-items: center;
-	background:
-		linear-gradient(
-			180deg,
-			color-mix(in srgb, var(--plx-tabbar-bg) 92%, transparent) 0%,
-			color-mix(in srgb, var(--plx-topbar-bg) 28%, var(--plx-tabbar-bg) 72%) 100%
-		);
+	background: linear-gradient(
+		180deg,
+		color-mix(in srgb, var(--plx-tabbar-bg) 92%, transparent) 0%,
+		color-mix(in srgb, var(--plx-topbar-bg) 28%, var(--plx-tabbar-bg) 72%) 100%
+	);
 	border-bottom: 1px solid var(--plx-border);
 	border-inline: 0;
 	border-radius: 0;
@@ -288,7 +287,7 @@
 	transform: translateY(-1px);
 }
 
-.plx-workbench__editorTabButton[data-active="true"] {
+.plx-workbench__editorTabButton[data-active='true'] {
 	background: color-mix(in srgb, var(--plx-selected-bg) 72%, var(--plx-surface-strong) 28%);
 	border-color: color-mix(in srgb, var(--plx-selected-border) 78%, var(--plx-border-strong) 22%);
 	box-shadow:
@@ -335,7 +334,7 @@
 	white-space: nowrap;
 }
 
-.plx-workbench__editorTabButton[data-active="true"] .plx-workbench__editorTabMeta {
+.plx-workbench__editorTabButton[data-active='true'] .plx-workbench__editorTabMeta {
 	color: color-mix(in srgb, var(--plx-text) 78%, var(--plx-text-muted) 22%);
 }
 
@@ -363,7 +362,7 @@
 	outline: none;
 }
 
-.plx-workbench__editorTabButton[data-active="true"] .plx-workbench__iconButton {
+.plx-workbench__editorTabButton[data-active='true'] .plx-workbench__iconButton {
 	color: color-mix(in srgb, var(--plx-accent-strong) 76%, var(--plx-text) 24%);
 	opacity: 0.92;
 }
@@ -444,14 +443,14 @@
 .plx-workbench__resizeHandle::before {
 	background: var(--plx-border);
 	border-radius: 999px;
-	content: "";
+	content: '';
 	inset: 8px 4px;
 	position: absolute;
 	transition: background-color 140ms ease;
 }
 
 .plx-workbench__resizeHandle:hover::before,
-.plx-workbench__resizeHandle[data-resizing="true"]::before {
+.plx-workbench__resizeHandle[data-resizing='true']::before {
 	background: var(--plx-accent);
 }
 

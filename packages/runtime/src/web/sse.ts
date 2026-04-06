@@ -224,10 +224,7 @@ class SseClient {
 			this.nsHandlers.set(namespace, bucket)
 		}
 		return {
-			on: (
-				handler: (msg: SseMessage<Ns>) => void,
-				events?: string | string[],
-			) => {
+			on: (handler: (msg: SseMessage<Ns>) => void, events?: string | string[]) => {
 				const list = Array.isArray(events) ? events : events ? [events] : []
 				if (!list.length) {
 					const h = handler as unknown as AnyHandler

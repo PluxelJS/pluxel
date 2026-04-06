@@ -52,7 +52,7 @@ export function deriveTabFromPath(pathname: string): WorkbenchTab {
 			meta: '扩展',
 		}
 	}
-	const section = pathname.split('/').filter(Boolean)[0] ?? '页面'
+	const section = pathname.split('/').find(Boolean) ?? '页面'
 	return {
 		id: `route:${pathname}`,
 		path: pathname,

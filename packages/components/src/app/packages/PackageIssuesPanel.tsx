@@ -45,20 +45,17 @@ function formatVersion(issue: IssueData) {
 	return 'latest'
 }
 
-export function PackageIssuesPanel({
-	issues,
-	maxHeight = 200,
-	onClose,
-}: PackageIssuesPanelProps) {
+export function PackageIssuesPanel({ issues, maxHeight = 200, onClose }: PackageIssuesPanelProps) {
 	const [expandedKeys, setExpandedKeys] = useState<Set<string>>(new Set())
 
 	// 使用索引生成唯一key，避免同包多告警的key冲突
 	const sortedIssues = useMemo(() => {
 		const sorted = [...issues].sort((a, b) => (b.recordedAt ?? 0) - (a.recordedAt ?? 0))
-		return sorted.map((issue, index) => ({
-			...issue,
-			uniqueKey: `${issue.name}-${issue.recordedAt}-${index}`,
-		}))
+		return sorted.map((issue, index) =>
+			Object.assign({}, issue, {
+				uniqueKey: `${issue.name}-${issue.recordedAt}-${index}`,
+			}),
+		)
 	}, [issues])
 
 	if (sortedIssues.length === 0) {

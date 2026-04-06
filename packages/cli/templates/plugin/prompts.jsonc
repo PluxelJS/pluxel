@@ -3,6 +3,6 @@
 		"type": "input",
 		"name": "description",
 		"message": "Package description",
-		"default": "Pluxel plugin: {{className}}"
-	}
+		"default": "Pluxel plugin: {{className}}",
+	},
 ]

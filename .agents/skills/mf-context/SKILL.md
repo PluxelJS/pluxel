@@ -10,10 +10,12 @@ Collect the following information step by step from `$ARGUMENTS` (defaults to th
 ## 1. Basic Info
 
 Read `{projectRoot}/package.json` and extract:
+
 - `name`: project name
 - Merge `dependencies` + `devDependencies` into a full dependency map
 
 Detect the package manager (check files in order):
+
 - `pnpm-lock.yaml` → pnpm
 - `yarn.lock` → yarn
 - `package-lock.json` → npm
@@ -22,25 +24,25 @@ Detect the package manager (check files in order):
 
 Find config files in the following priority order (`.ts` / `.mts` take precedence over `.js` / `.mjs` / `.cjs`):
 
-| Priority | Filename |
-|---|---|
-| 1 | `module-federation.config.{ts,mts,js,mjs,cjs}` |
-| 2 | `rsbuild.config.{ts,mts,js,mjs,cjs}` |
-| 3 | `rspack.config.{ts,mts,js,mjs,cjs}` |
-| 4 | `modern.config.{ts,mts,js,mjs,cjs}` |
-| 5 | `next.config.{ts,mts,js,mjs,cjs}` |
-| 6 | `webpack.config.{ts,js}` |
+| Priority | Filename                                       |
+| -------- | ---------------------------------------------- |
+| 1        | `module-federation.config.{ts,mts,js,mjs,cjs}` |
+| 2        | `rsbuild.config.{ts,mts,js,mjs,cjs}`           |
+| 3        | `rspack.config.{ts,mts,js,mjs,cjs}`            |
+| 4        | `modern.config.{ts,mts,js,mjs,cjs}`            |
+| 5        | `next.config.{ts,mts,js,mjs,cjs}`              |
+| 6        | `webpack.config.{ts,js}`                       |
 
 Read the first matched file and extract the `remotes`, `exposes`, and `shared` fields. Determine the bundler from the filename (`rspack` / `rsbuild` / `webpack`).
 
 ## 3. Determine MF Role
 
-| Condition | Role |
-|---|---|
+| Condition                   | Role          |
+| --------------------------- | ------------- |
 | Has `remotes` and `exposes` | `host+remote` |
-| Only `remotes` | `host` |
-| Only `exposes` | `remote` |
-| Neither | `unknown` |
+| Only `remotes`              | `host`        |
+| Only `exposes`              | `remote`      |
+| Neither                     | `unknown`     |
 
 ## 4. Recent Error Event (optional)
 

@@ -3,11 +3,7 @@ export {
 	LogtapeLoggerService,
 	type LogtapeLoggerServiceConfig,
 } from './logger/LogtapeLoggerService'
-export {
-	createLogStoreSink,
-	createRuntimeLogSink,
-	type RuntimeLogSinkOptions,
-} from './logger/sink'
+export { createLogStoreSink, createRuntimeLogSink, type RuntimeLogSinkOptions } from './logger/sink'
 
 export {
 	ConfigService,
@@ -56,10 +52,7 @@ export {
 	type AnyElysiaApp,
 	type CreateElysiaAppOptions,
 } from './services/http/elysia'
-export {
-	createPluginGatedRouter,
-	type PluginGatedModuleDef,
-} from './services/http/elysia-routing'
+export { createPluginGatedRouter, type PluginGatedModuleDef } from './services/http/elysia-routing'
 export {
 	AuthGuardService,
 	type AuthGuardContext,
@@ -86,10 +79,7 @@ export {
 	type CreateConnectFetchMiddlewareOptions,
 } from './services/http/node-adapters'
 
-export {
-	PluginDataService,
-	type PluginDataServiceConfig,
-} from './services/PluginDataService'
+export { PluginDataService, type PluginDataServiceConfig } from './services/PluginDataService'
 
 export {
 	getPluginRoutingSnapshot,

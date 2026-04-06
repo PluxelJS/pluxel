@@ -5,9 +5,9 @@ on:
     branches: [main]
   pull_request:
     paths-ignore:
-      - ".vscode/**"
-      - "LICENSE"
-      - "README.md"
+      - '.vscode/**'
+      - 'LICENSE'
+      - 'README.md'
   workflow_dispatch:
 
 concurrency:
@@ -23,9 +23,9 @@ defaults:
     shell: bash
 
 env:
-  CI: "true"
-  NODE_OPTIONS: "--max-old-space-size=4096"
-  PLUXEL_FAST_BUILD: "true"
+  CI: 'true'
+  NODE_OPTIONS: '--max-old-space-size=4096'
+  PLUXEL_FAST_BUILD: 'true'
 
 jobs:
   test:

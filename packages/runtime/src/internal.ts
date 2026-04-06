@@ -5,10 +5,7 @@ export {
 	setDevRuntimeHandles,
 } from './runtime/dev-handles'
 
-export type {
-	RuntimeModuleAdapter,
-	RuntimeModuleCacheEntry,
-} from './runtime/module-runtime'
+export type { RuntimeModuleAdapter, RuntimeModuleCacheEntry } from './runtime/module-runtime'
 export {
 	clearRuntimeModuleAdapter,
 	createHmrModuleRuntimeAdapter,

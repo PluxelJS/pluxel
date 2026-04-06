@@ -79,7 +79,9 @@ describe('scaffold template rendering', () => {
 
 		expect(fixture.fs.existsSync(resolve(targetDir, 'package.json'))).toBe(true)
 		expect(fixture.fs.existsSync(resolve(targetDir, 'src', `${data.pluginName}.ts`))).toBe(true)
-		expect(fixture.fs.existsSync(resolve(targetDir, 'tests', `${data.pluginName}.test.ts`))).toBe(true)
+		expect(fixture.fs.existsSync(resolve(targetDir, 'tests', `${data.pluginName}.test.ts`))).toBe(
+			true,
+		)
 		expect(fixture.fs.existsSync(resolve(targetDir, 'vitest.config.ts'))).toBe(true)
 		expect(fixture.fs.existsSync(resolve(targetDir, 'static.txt'))).toBe(true)
 		expect(fixture.fs.existsSync(resolve(targetDir, 'prompts.jsonc'))).toBe(false)

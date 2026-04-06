@@ -86,7 +86,7 @@ export async function attachHmrRuntime(
 	}
 
 	const deps: HMRDependencyConfig | undefined = options.cjsExternal?.length
-		? { ...(options.deps ?? {}), cjsExternal: options.cjsExternal }
+		? { ...options.deps, cjsExternal: options.cjsExternal }
 		: options.deps
 	const builtinsFromDist = resolveBuiltinsFromDistEntries(
 		cwd,
@@ -119,9 +119,9 @@ export async function attachHmrRuntime(
 	)
 
 	// Dev-only runtime service configs (picked up by runtime services on first instantiation).
-	ctx.config.http = { ...(ctx.config.http ?? {}), uiAssets: 'dev-server' }
+	ctx.config.http = { ...ctx.config.http, uiAssets: 'dev-server' }
 	ctx.config.extensionService = {
-		...(ctx.config.extensionService ?? {}),
+		...ctx.config.extensionService,
 		enabled: true,
 	}
 	const extensionStore = ctx.ext.ui
@@ -141,7 +141,8 @@ export async function attachHmrRuntime(
 				}),
 		},
 		extensions: {
-			bindUiSource: (ownerCtx, declaration) => extensionCompiler.bindDeclaration(ownerCtx, declaration),
+			bindUiSource: (ownerCtx, declaration) =>
+				extensionCompiler.bindDeclaration(ownerCtx, declaration),
 		},
 	})
 

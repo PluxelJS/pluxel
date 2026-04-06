@@ -1,4 +1,4 @@
-import { type Context, Injectable, symbols } from '@pluxel/context'
+import { type Context as PluxelContext, Injectable, symbols } from '@pluxel/context'
 // EventsService.ts
 import {
 	EvtChannel as Channel,
@@ -38,7 +38,7 @@ declare module '@pluxel/context' {
 })
 export class EventsService extends Eventure<Events> {
 	constructor(
-		public ctx: Context,
+		public ctx: PluxelContext,
 		config?: EventEmitterOptions<Events>,
 	) {
 		const cfg: EventEmitterOptions<Events> = config ? { ...config } : {}
@@ -55,7 +55,7 @@ export class EventsService extends Eventure<Events> {
 		opts?: OnOptions,
 		forcePrepend?: boolean,
 	): Unsubscribe {
-		;(listener as unknown as { [symbols.ATTACH]?: Context })[symbols.ATTACH] = this.ctx
+		;(listener as unknown as { [symbols.ATTACH]?: PluxelContext })[symbols.ATTACH] = this.ctx
 		const ret = super._register(event, listener, opts, forcePrepend)
 		const effects = this.ctx.caller?.effects ?? this.ctx.effects
 		effects.defer(ret as unknown as () => void)
@@ -82,8 +82,9 @@ export class EventsService extends Eventure<Events> {
 			const fn = listeners[i]
 			// 注册时存下的 ctx
 			const attachedCtx =
-				((fn as unknown as { [symbols.ATTACH]?: Context })[attachSym] as Context | undefined) ??
-				this.ctx
+				((fn as unknown as { [symbols.ATTACH]?: PluxelContext })[attachSym] as
+					| PluxelContext
+					| undefined) ?? this.ctx
 
 			// 如果有 filterFn，就用它判断；否则直接调用
 			if (!filterFn || filterFn.call(thisArg, attachedCtx)) {
@@ -98,7 +99,7 @@ export class EventsService extends Eventure<Events> {
 
 export class EvtChannel<D extends EventDescriptor> extends Channel<D> {
 	constructor(
-		public ctx: Context,
+		public ctx: PluxelContext,
 		config?: EventEmitterOptions<Record<string, D>>,
 	) {
 		const cfg: EventEmitterOptions<Record<string, D>> = config ? { ...config } : {}
@@ -113,7 +114,7 @@ export class EvtChannel<D extends EventDescriptor> extends Channel<D> {
 		opts?: OnOptions,
 		prepend?: boolean,
 	): Unsubscribe {
-		;(listener as unknown as { [symbols.ATTACH]?: Context })[symbols.ATTACH] = this.ctx
+		;(listener as unknown as { [symbols.ATTACH]?: PluxelContext })[symbols.ATTACH] = this.ctx
 		const ret = super._register(listener, opts, prepend)
 		const effects = this.ctx.caller?.effects ?? this.ctx.effects
 		effects.defer(ret as unknown as () => void)
@@ -126,9 +127,9 @@ export interface Events {
 	beforeStart: [PluginInstance] // 启动前
 	commitFailed: (failed: Set<PluginIdentifier>) => void
 	afterCommit: (summary: CommitSummary) => void
-	afterStart: [Context] // 启动成功
-	startError: [Context, Error] // 启动失败
+	afterStart: [PluxelContext] // 启动成功
+	startError: [PluxelContext, Error] // 启动失败
 	resolveError: [PluginIdentifier, Error] // 构造/依赖解析失败（无 plugin ctx）
 }
 
-type FilterFunction = ((attachedCtx: Context) => boolean) | undefined
+type FilterFunction = ((attachedCtx: PluxelContext) => boolean) | undefined

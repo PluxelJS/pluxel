@@ -248,7 +248,8 @@ async function startFrozenHost() {
 		fetch: (request) => ctx.http.fetch(request),
 	})
 
-	ctx.logger.info`Frozen host ready (profile=${activeProfile}, url=${server.baseUrl}, entry=${res.entry})`
+	ctx.logger
+		.info`Frozen host ready (profile=${activeProfile}, url=${server.baseUrl}, entry=${res.entry})`
 
 	const watchSignals = installShutdown('frozen host', async (signal) => {
 		ctx.logger.info`Stopping frozen host (${signal})`

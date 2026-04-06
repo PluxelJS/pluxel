@@ -7,10 +7,7 @@ import type {
 	BuiltinTemplateValue,
 } from '@pluxel/runtime/web/extensions'
 import { useMemo } from 'react'
-import {
-	useGlobalExtensionContext,
-	useSignalDbCollectionsState,
-} from '@pluxel/runtime/web'
+import { useGlobalExtensionContext, useSignalDbCollectionsState } from '@pluxel/runtime/web'
 
 export function isObject(value: unknown): value is Record<string, unknown> {
 	return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
@@ -123,7 +120,9 @@ function ensureWritableObject(value: unknown): Record<string, unknown> {
 }
 
 function ensureDocId(value: Record<string, unknown>) {
-	return typeof value.id === 'string' && value.id.trim() ? value : { ...value, id: createGeneratedId() }
+	return typeof value.id === 'string' && value.id.trim()
+		? value
+		: { ...value, id: createGeneratedId() }
 }
 
 function normalizeWriteMode(write: BuiltinSignalDbWriteSpec) {
@@ -166,12 +165,17 @@ export function applySignalDbWrite(
 		}
 		case 'patch': {
 			if (!selector) throw new Error('signaldb patch write requires selector')
-			return collection.updateOne(selector, { $set: ensureWritableObject(resolvedValue) }, { upsert: write.upsert })
+			return collection.updateOne(
+				selector,
+				{ $set: ensureWritableObject(resolvedValue) },
+				{ upsert: write.upsert },
+			)
 		}
 		case 'replace': {
 			if (!selector) throw new Error('signaldb replace write requires selector')
 			const payload = ensureWritableObject(resolvedValue)
-			if (typeof payload.id !== 'string' && typeof selector.id === 'string') payload.id = selector.id
+			if (typeof payload.id !== 'string' && typeof selector.id === 'string')
+				payload.id = selector.id
 			return collection.replaceOne(selector, payload, { upsert: write.upsert })
 		}
 		case 'remove': {

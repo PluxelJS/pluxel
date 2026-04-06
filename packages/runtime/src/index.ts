@@ -11,6 +11,7 @@ import {
 } from 'valibot'
 import './runtime/register'
 // Type-level bridge for `Context.Events` (module augmentation).
+// oxlint-disable-next-line import/no-empty-named-blocks -- Type-only bridge keeps the augmentation file in the TS graph without a runtime import.
 import type {} from './events'
 
 setPluxelRuntime('core')

@@ -3,7 +3,6 @@ packages:
   - packages/plugins/*
 
 onlyBuiltDependencies:
-  - '@biomejs/biome'
   - esbuild
 
 public-hoist-pattern:

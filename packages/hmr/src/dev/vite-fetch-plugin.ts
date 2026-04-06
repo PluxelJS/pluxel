@@ -130,34 +130,28 @@ export function createFetchDevServerPlugin(options: FetchDevServerPluginOptions)
 			}
 		},
 		configureServer(server) {
-			server.middlewares.use(async (req, res, next) => {
-				const rawUrl = req.url ?? '/'
-				for (const pattern of exclude) {
-					const matched = pattern instanceof RegExp ? pattern.test(rawUrl) : pattern(rawUrl)
-					if (matched) return next()
-				}
+			server.middlewares.use((req, res, next) => {
+				void (async () => {
+					const rawUrl = req.url ?? '/'
+					for (const pattern of exclude) {
+						const matched = pattern instanceof RegExp ? pattern.test(rawUrl) : pattern(rawUrl)
+						if (matched) {
+							next()
+							return
+						}
+					}
 
-				let response: Response
-				try {
-					response = await options.fetch(toRequest(req))
-				} catch (error) {
-					const err = error instanceof Error ? error : new Error(String(error))
-					server.ssrFixStacktrace(err)
-					next(err)
-					return
-				}
-
-				try {
+					const response = await options.fetch(toRequest(req))
 					const out =
 						options.injectClientScript === false || !isHtmlResponse(response)
 							? response
 							: withInjectedViteClient(response, viteBase)
 					await sendResponse(res, out)
-				} catch (error) {
+				})().catch((error) => {
 					const err = error instanceof Error ? error : new Error(String(error))
 					server.ssrFixStacktrace(err)
 					next(err)
-				}
+				})
 			})
 		},
 		handleHotUpdate: options.handleHotUpdate,

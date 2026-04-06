@@ -14,10 +14,7 @@ export type RegisteredSurface = InteractionSurfaceDef & {
 			draft: unknown,
 			context: InteractionSurfaceRuntimeContext,
 		) => unknown | Promise<unknown>
-		apply: (
-			result: unknown,
-			context: InteractionSurfaceApplyContext,
-		) => unknown | Promise<unknown>
+		apply: (result: unknown, context: InteractionSurfaceApplyContext) => unknown | Promise<unknown>
 	}
 }
 
@@ -106,7 +103,7 @@ export function assertSerializableValue(label: string, value: unknown): void {
 	if (value === undefined) return
 	try {
 		JSON.stringify(value)
-	} catch (_error) {
+	} catch {
 		throw new Error(`${label} must be JSON-serializable`)
 	}
 }

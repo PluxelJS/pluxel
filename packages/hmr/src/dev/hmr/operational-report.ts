@@ -155,9 +155,9 @@ export async function buildHmrOperationalReport(params: {
 	const isUnder = (child: string, root: string) =>
 		child === root || child.startsWith(root.endsWith('/') ? root : `${root}/`)
 
-	const loadedByRoot = new Array<number>(rootsAbs.length).fill(0)
-	const enabledByRoot = new Array<number>(rootsAbs.length).fill(0)
-	const runningByRoot = new Array<number>(rootsAbs.length).fill(0)
+	const loadedByRoot = Array<number>(rootsAbs.length).fill(0)
+	const enabledByRoot = Array<number>(rootsAbs.length).fill(0)
+	const runningByRoot = Array<number>(rootsAbs.length).fill(0)
 
 	const { plugins: pluginTotals, builtins } = collectPluginTotals({
 		registryView: params.registryView,

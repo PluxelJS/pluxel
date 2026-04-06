@@ -19,13 +19,8 @@ export type ServiceCfg<S extends AnyCtor> =
 	ConstructorParameters<S> extends [Context, infer C, ...any[]] ? C : undefined
 export type ServiceOverrideCtor<S extends ServiceCtor> =
 	ServiceCfg<S> extends undefined
-		? new (
-				ctx: Context,
-			) => ServiceContractInst<S>
-		: new (
-				ctx: Context,
-				cfg?: ServiceCfg<S>,
-			) => ServiceContractInst<S>
+		? new (ctx: Context) => ServiceContractInst<S>
+		: new (ctx: Context, cfg?: ServiceCfg<S>) => ServiceContractInst<S>
 
 /**
  * Services are expected to expose a writable `ctx` property so `Context` can

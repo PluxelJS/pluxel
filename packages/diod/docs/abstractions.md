@@ -10,15 +10,15 @@ import { Service } from 'diod'
 
 @Service()
 export class SignUpUseCase {
-  constructor(
-    private readonly userRepository: UserRepository,
-    private readonly mailer: Mailer
-  ) {}
+	constructor(
+		private readonly userRepository: UserRepository,
+		private readonly mailer: Mailer,
+	) {}
 
-  execute(userData: UserDto): void {
-    const user = this.userRepository.create(userData)
-    this.mailer.sendConfirmationEmail(user)
-  }
+	execute(userData: UserDto): void {
+		const user = this.userRepository.create(userData)
+		this.mailer.sendConfirmationEmail(user)
+	}
 }
 ```
 
@@ -27,16 +27,16 @@ With these abstractions:
 ```ts
 // application/services/Mailer.ts
 export abstract class Mailer {
-  sendConfirmationEmail(userData: user): void
-  sendResetPasswordEmail(userData: user): void
+	sendConfirmationEmail(userData: user): void
+	sendResetPasswordEmail(userData: user): void
 }
 ```
 
 ```ts
 // domain/UserRepository.ts
 export abstract class UserRepository {
-  create(userData: UserDto): User
-  findBy(userData: UserCriteria): User[]
+	create(userData: UserDto): User
+	findBy(userData: UserCriteria): User[]
 }
 ```
 
@@ -49,12 +49,12 @@ import { Mailer } from '../application/services/Mailer'
 
 @Service()
 export class AcmeMailer implements Mailer {
-  sendConfirmationEmail(userData: user): void {
-    // ...
-  }
-  sendResetPasswordEmail(userData: user): void {
-    // ...
-  }
+	sendConfirmationEmail(userData: user): void {
+		// ...
+	}
+	sendResetPasswordEmail(userData: user): void {
+		// ...
+	}
 }
 ```
 
@@ -65,12 +65,12 @@ import { UserRepository } from '../domain/UserRepository'
 
 @Service()
 export class SqliteUserRepository implements UserRepository {
-  create(userData: UserDto): User {
-    // ...
-  }
-  findBy(userData: UserCriteria): User[] {
-    // ...
-  }
+	create(userData: UserDto): User {
+		// ...
+	}
+	findBy(userData: UserCriteria): User[] {
+		// ...
+	}
 }
 ```
 
@@ -89,6 +89,6 @@ const container = builder.build()
 
 const signUpUseCase = container.get(SignUpUseCase)
 signUpUseCase.execute({
-  /* ... */
+	/* ... */
 })
 ```

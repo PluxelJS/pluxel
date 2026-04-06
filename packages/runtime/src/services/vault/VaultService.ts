@@ -1,5 +1,5 @@
 import { scrypt as nobleScrypt } from '@noble/hashes/scrypt.js'
-import { type Context, Injectable } from '@pluxel/core'
+import { type Context as PluxelContext, Injectable } from '@pluxel/core'
 import { basename, resolve } from 'pathe'
 import { env as stdEnv } from 'std-env'
 import type { FsService } from '../fs/FsService'
@@ -405,12 +405,12 @@ function validateVaultFile(vault: VaultFileV1): void {
 	}
 }
 
-function getVaultConfig(ctx: Context): VaultServiceConfig {
+function getVaultConfig(ctx: PluxelContext): VaultServiceConfig {
 	return ctx.config.vault ?? {}
 }
 
 function runtimePaths(
-	ctx: Context,
+	ctx: PluxelContext,
 	namespace: string,
 	opts?: { dir?: string; keyfilePath?: string },
 ): VaultRuntime {
@@ -425,7 +425,7 @@ function runtimePaths(
 	}
 }
 
-function resolveDefaultAadString(ctx: Context, ns: string): string | null {
+function resolveDefaultAadString(ctx: PluxelContext, ns: string): string | null {
 	const def = getVaultConfig(ctx).defaultAad
 	if (def === false) return null
 	if (typeof def === 'string') return def
@@ -459,7 +459,7 @@ function decodeEnvBytes(value: string, encoding: 'utf8' | 'base64' | 'hex'): Uin
 	return base64ToBytes(value)
 }
 
-function resolveMaterial(ctx: Context, ns: string, opts?: VaultOpenOptions): VaultMaterial {
+function resolveMaterial(ctx: PluxelContext, ns: string, opts?: VaultOpenOptions): VaultMaterial {
 	const cfg = getVaultConfig(ctx)
 
 	const aadString = opts?.aadString ?? resolveDefaultAadString(ctx, ns)
@@ -736,7 +736,7 @@ async function addPassphraseSlot(
 function clonePayload(payload: VaultPayloadV1): VaultPayloadV1 {
 	return {
 		...payload,
-		tokens: { ...(payload.tokens ?? {}) },
+		tokens: { ...payload.tokens },
 		secrets: payload.secrets ? { ...payload.secrets } : undefined,
 		meta: payload.meta ? { ...payload.meta } : undefined,
 	}
@@ -749,7 +749,7 @@ function clonePayload(payload: VaultPayloadV1): VaultPayloadV1 {
  */
 @Injectable({ key: serviceName })
 export class VaultService {
-	constructor(public ctx: Context) {}
+	constructor(public ctx: PluxelContext) {}
 
 	/**
 	 * Open a vault handle (defaults to current plugin namespace).

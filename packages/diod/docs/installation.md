@@ -18,10 +18,10 @@ Modify your `tsconfig.json` to include the following settings
 
 ```json
 {
-  "compilerOptions": {
-    "experimentalDecorators": true,
-    "emitDecoratorMetadata": true
-  }
+	"compilerOptions": {
+		"experimentalDecorators": true,
+		"emitDecoratorMetadata": true
+	}
 }
 ```
 

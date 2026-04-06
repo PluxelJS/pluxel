@@ -3,6 +3,6 @@
 	"extends": "./tsconfig.options.json",
 	"compilerOptions": {
 		"baseUrl": ".",
-		"customConditions": ["@pluxel/source"],
+		"customConditions": ["@pluxel/source"]
 	}
 }

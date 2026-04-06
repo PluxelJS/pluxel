@@ -4,6 +4,7 @@
 > LogTape-behavior claims are based on official docs / JSR signatures.
 
 ---
+
 ---
 
 ## Allowed call forms (only these in new code)
@@ -16,28 +17,28 @@ Use for human-readable text when you do **not** need queryable fields.
 Template literals currently do **not** support structured data. ([LogTape][1])
 
 ```ts
-logger.info`Loaded plugin ${id} in ${ms}ms`;
-````
+logger.info`Loaded plugin ${id} in ${ms}ms`
+```
 
 ### Form B — String message (optionally with structured properties)
 
 String message with **no** props is valid (and often the cheapest for static text). ([LogTape][3])
 
 ```ts
-logger.info("ready");
-logger.info("Guard registered");
+logger.info('ready')
+logger.info('Guard registered')
 ```
 
 String message + properties is structured logging (recommended when fields matter). ([LogTape][1])
 
 ```ts
-logger.info("Loaded plugin {id} in {ms}ms", { id, ms });
+logger.info('Loaded plugin {id} in {ms}ms', { id, ms })
 ```
 
 Lazy properties (only evaluated if the log level is enabled). ([LogTape][1])
 
 ```ts
-logger.debug("Stats {*}", () => ({ stats: expensiveStats() }));
+logger.debug('Stats {*}', () => ({ stats: expensiveStats() }))
 ```
 
 ### Form C — Properties-only shorthand (structured; equivalent to `"{*}"`; NOT lazy)
@@ -46,7 +47,7 @@ Logging an object as the first argument records those properties as structured d
 `logger.info({ ... })` is explicitly equivalent to `logger.info("{*}", { ... })`. ([LogTape][1])
 
 ```ts
-logger.debug({ id, ms, status });
+logger.debug({ id, ms, status })
 ```
 
 ### Form D — Lazy logging callback (defers expensive interpolation)
@@ -54,7 +55,7 @@ logger.debug({ id, ms, status });
 Lazy callbacks are evaluated only when the log emits. ([JSR][7])
 
 ```ts
-logger.debug(l => l`Snapshot ${expensiveDump()}`);
+logger.debug((l) => l`Snapshot ${expensiveDump()}`)
 ```
 
 ---
@@ -67,30 +68,32 @@ Passing `{ id, ms, meta }` constructs/transfers structured properties and may ca
 
 Use:
 
-* Static text → `logger.info("ready")` ([LogTape][3])
-* Text + cheap values → tagged template logger.info\`...\` ([LogTape][2])
-* Text + expensive values → lazy callback (Form D) ([JSR][7])
+- Static text → `logger.info("ready")` ([LogTape][3])
+- Text + cheap values → tagged template logger.info\`...\` ([LogTape][2])
+- Text + expensive values → lazy callback (Form D) ([JSR][7])
 
 ### LT-DECISION-002 — If you need queryable fields, use structured logging
 
 Use **Form B** (message + properties) or **Form C** (properties-only) so fields remain available as structured data. ([LogTape][1])
 
-> Audit guidance (non-overriding): operational logs *often* want fields → bias toward Form B/C, but still keep only fields you actually need (and keep heavy ones lazy).
+> Audit guidance (non-overriding): operational logs _often_ want fields → bias toward Form B/C, but still keep only fields you actually need (and keep heavy ones lazy).
 
 ### LT-DECISION-003 — Any expensive work must be expressed lazily
 
-* Expensive interpolation → **Form D**
-* Expensive property construction → **Form B with `() => ({...})`**
-* Properties-only shorthand (Form C) is never lazy. ([JSR][7])
+- Expensive interpolation → **Form D**
+- Expensive property construction → **Form B with `() => ({...})`**
+- Properties-only shorthand (Form C) is never lazy. ([JSR][7])
 
 ---
 
 ## PLX Error Logging Rules (Formatter-Controlled)
 
 ### PLX-ERR-001 — Do NOT render/interpolate errors in the log message
+
 The message must never include an error placeholder or any user-formatted error string. Error presentation is owned by our LoggerService / formatter layer.
 
 **Forbidden:**
+
 - `logger.error("failed: {error}", { error })`
 - `logger.error("failed: {err}", { err })`
 - ``logger.error`failed: ${error}``
@@ -99,37 +102,41 @@ The message must never include an error placeholder or any user-formatted error 
 - `logger.error("failed: " + error.stack)`
 
 **Allowed:**
+
 - `logger.error("failed", { error })`
 - `logger.error("failed", { err })`
-- `logger.error("execute failed ({op})", { op, error })` *(message may include other non-error fields)*
-
+- `logger.error("execute failed ({op})", { op, error })` _(message may include other non-error fields)_
 
 ### PLX-ERR-002 — Errors must be passed as structured properties using ONLY `error` or `err`
+
 To keep sinks/formatters predictable, the error object must be provided as a structured property with the key **exactly** `error` or `err`.
 
 **Rules:**
+
 - Use **one** key only: either `error` or `err` (do not provide both).
 - Do not rename it (`exception`, `e`, `cause`, `stack`, etc. are not allowed as the primary error field).
 - Do not pre-stringify (`String(error)`, `error.message`, `error.stack`) in the call site; formatting is handled centrally.
 
 **Examples:**
+
 ```ts
-logger.error("request failed", { error, reqId, url });
-logger.warn("cleanup failed", { err, label });
-````
+logger.error('request failed', { error, reqId, url })
+logger.warn('cleanup failed', { err, label })
+```
 
 ### PLX-ERR-003 — Any “heavy” error formatting belongs to the formatter (not call sites)
 
 Call sites must not compute expensive or sensitive error representations (stack trimming, serialization, deep inspection, cause-chain rendering, redaction). The formatter decides what to print and how.
 
 In console output:
+
 - `@pluxel/core/logger` pretty formatter renders `error/err` as a multiline stack block (synchronous, non-interleaving).
 - Youch (optional) can be enabled for selected categories (e.g. loader/HMR) when richer rendering is desired.
 
 If extra diagnostics are needed, attach them as separate structured fields (and make them lazy if expensive), while still passing the raw `error/err` field:
 
 ```ts
-logger.error("execute failed", () => ({ error, debug: expensiveDebug() }));
+logger.error('execute failed', () => ({ error, debug: expensiveDebug() }))
 ```
 
 ---
@@ -143,18 +150,18 @@ When you pass structured data (as the second argument, or as the first object ar
 #### Example: extra `meta` is structured, but not interpolated unless referenced
 
 ```ts
-logger.info("Loaded plugin {id} in {ms}ms", { id, ms, meta });
+logger.info('Loaded plugin {id} in {ms}ms', { id, ms, meta })
 ```
 
-* The rendered message interpolates `{id}` and `{ms}`.
-* `meta` remains in `record.properties`; it won’t be inserted into the message unless you reference `{meta}` or `{*}`. ([LogTape][1])
+- The rendered message interpolates `{id}` and `{ms}`.
+- `meta` remains in `record.properties`; it won’t be inserted into the message unless you reference `{meta}` or `{*}`. ([LogTape][1])
 
 ### LT-PROPS-002 — `{*}` renders all properties into the message while keeping them structured
 
 Use `{*}` when you want the message text to include a stringified view of the entire properties object. ([LogTape][1])
 
 ```ts
-logger.debug("plugin ctx {*}", { id, ms, meta });
+logger.debug('plugin ctx {*}', { id, ms, meta })
 ```
 
 ### LT-PROPS-003 — Properties-only shorthand is the `{*}` shorthand
@@ -176,28 +183,28 @@ Avoid using `"*"` as a key to keep `{*}` predictable. ([LogTape][4])
 1. Debug/trace context dumps (especially during investigation):
 
 ```ts
-logger.debug("ctx {*}", { pluginId, reqId, phase, meta });
+logger.debug('ctx {*}', { pluginId, reqId, phase, meta })
 ```
 
 2. Properties-only logs where a message is unnecessary:
 
 ```ts
-logger.debug({ pluginId, reqId, phase, meta });
+logger.debug({ pluginId, reqId, phase, meta })
 ```
 
 3. When you want “some text + all fields”:
 
 ```ts
-logger.info("Loaded plugin, ctx {*}", { id, ms, meta });
+logger.info('Loaded plugin, ctx {*}', { id, ms, meta })
 ```
 
 ### Avoid / caution
 
-* High-volume paths: `{*}` can stringify large objects; prefer targeted placeholders `{id}`, `{ms}` and keep heavy data behind lazy props. ([LogTape][1])
-* Never build heavy objects eagerly just to dump them with `{*}`; use lazy properties:
+- High-volume paths: `{*}` can stringify large objects; prefer targeted placeholders `{id}`, `{ms}` and keep heavy data behind lazy props. ([LogTape][1])
+- Never build heavy objects eagerly just to dump them with `{*}`; use lazy properties:
 
 ```ts
-logger.debug("ctx {*}", () => ({ meta: expensiveMeta() }));
+logger.debug('ctx {*}', () => ({ meta: expensiveMeta() }))
 ```
 
 ---
@@ -212,10 +219,10 @@ Fix:
 
 ```ts
 // before
-logger.info`Loaded plugin ${id} in ${ms}ms`;
+logger.info`Loaded plugin ${id} in ${ms}ms`
 
 // after
-logger.info("Loaded plugin {id} in {ms}ms", { id, ms });
+logger.info('Loaded plugin {id} in {ms}ms', { id, ms })
 ```
 
 ### LT-ANTI-002 — Eager expensive interpolation
@@ -224,10 +231,10 @@ Fix:
 
 ```ts
 // before
-logger.debug`Snapshot ${expensiveDump()}`;
+logger.debug`Snapshot ${expensiveDump()}`
 
 // after
-logger.debug(l => l`Snapshot ${expensiveDump()}`);
+logger.debug((l) => l`Snapshot ${expensiveDump()}`)
 ```
 
 ### LT-ANTI-003 — Eager expensive properties (including in Form C)
@@ -236,10 +243,10 @@ Fix:
 
 ```ts
 // before
-logger.debug({ meta: expensiveMeta() });
+logger.debug({ meta: expensiveMeta() })
 
 // after
-logger.debug("ctx {*}", () => ({ meta: expensiveMeta() }));
+logger.debug('ctx {*}', () => ({ meta: expensiveMeta() }))
 ```
 
 ### LT-ANTI-004 — Placeholder key contains spaces (avoid collisions)
@@ -266,7 +273,7 @@ Fix (style rule): normalize to `{username}`.
 ### LT-H001 — Escaping `{` uses double braces `{{`
 
 ```ts
-logger.debug("This logs {{single}} curly braces.");
+logger.debug('This logs {{single}} curly braces.')
 ```
 
 ([LogTape][1])
@@ -279,10 +286,10 @@ Missing paths resolve to `undefined` (optional chaining avoids failures). ([LogT
 Examples:
 
 ```ts
-logger.info("User {user.name} logged in", { user: { name: "Alice" } });
-logger.info("Admin {users[0].name}", { users: [{ name: "Alice" }] });
-logger.info('Full name {user["full-name"]}', { user: { "full-name": "Alice" } });
-logger.info("Email {user?.profile?.email}", { user: { name: "Alice" } });
+logger.info('User {user.name} logged in', { user: { name: 'Alice' } })
+logger.info('Admin {users[0].name}', { users: [{ name: 'Alice' }] })
+logger.info('Full name {user["full-name"]}', { user: { 'full-name': 'Alice' } })
+logger.info('Email {user?.profile?.email}', { user: { name: 'Alice' } })
 ```
 
 ### LT-H003 — Prefer `{key}` (no spaces) even though `{ key }` is allowed
@@ -298,11 +305,11 @@ Spaces are allowed and have matching precedence rules; avoid them for predictabi
 Explicit contexts are designed to reuse the same properties across multiple log messages. ([LogTape][5])
 
 ```ts
-const base = getLogger(["app", "module"]);
-const ctx = base.with({ reqId, userId });
+const base = getLogger(['app', 'module'])
+const ctx = base.with({ reqId, userId })
 
-ctx.info("Start {op}", { op });
-ctx.info("Done {op}", { op });
+ctx.info('Start {op}', { op })
+ctx.info('Done {op}', { op })
 ```
 
 > Performance note: context fields are structured properties too—only put fields in context if they’re actually useful downstream.
@@ -310,9 +317,9 @@ ctx.info("Done {op}", { op });
 ### LT-C002 — Child loggers inherit explicit context
 
 ```ts
-const parent = getLogger(["app"]).with({ reqId });
-const child = parent.getChild(["module"]);
-child.debug("ctx {reqId}");
+const parent = getLogger(['app']).with({ reqId })
+const child = parent.getChild(['module'])
+child.debug('ctx {reqId}')
 ```
 
 ([LogTape][5])
@@ -330,7 +337,7 @@ Implicit contexts require `contextLocalStorage` in `configure()`. Without it, Lo
 A category is a list of strings (e.g., `["my-app","my-module"]`), and log dispatch targets loggers whose categories are prefixes. ([LogTape][3])
 
 ```ts
-const logger = getLogger(["my-app", "auth-guard"]);
+const logger = getLogger(['my-app', 'auth-guard'])
 ```
 
 **Codex style rule:** do not embed `[Module]` into message text—use categories for identity and filtering.
@@ -375,41 +382,41 @@ rg -n "\{\s+\w+|\{\w+\s+\}" .
 
 ```ts
 // Human-readable only (no structured fields)
-logger.info`Loaded plugin ${id} in ${ms}ms`;
+logger.info`Loaded plugin ${id} in ${ms}ms`
 
 // Cheapest static text
-logger.info("ready");
+logger.info('ready')
 
 // Structured, stable template
-logger.info("Loaded plugin {id} in {ms}ms", { id, ms });
+logger.info('Loaded plugin {id} in {ms}ms', { id, ms })
 
 // Structured + all fields rendered
-logger.debug("ctx {*}", { reqId, pluginId, phase });
+logger.debug('ctx {*}', { reqId, pluginId, phase })
 
 // Lazy interpolation (expensive)
-logger.debug(l => l`Snapshot ${expensiveDump()}`);
+logger.debug((l) => l`Snapshot ${expensiveDump()}`)
 
 // Lazy structured fields (expensive)
-logger.debug("Snapshot {*}", () => ({ dump: expensiveDump() }));
+logger.debug('Snapshot {*}', () => ({ dump: expensiveDump() }))
 
 // Error handle
-logger.error("failed", { error })
-logger.error("failed", { err })
-logger.fatal("fatal err", { error })
+logger.error('failed', { error })
+logger.error('failed', { err })
+logger.fatal('fatal err', { error })
 
 // Repeated correlation fields
-const ctx = getLogger(["app", "module"]).with({ reqId, userId });
-ctx.info("Start {op}", { op });
+const ctx = getLogger(['app', 'module']).with({ reqId, userId })
+ctx.info('Start {op}', { op })
 ```
 
 ---
 
 ## References
 
-[1]: https://logtape.org/manual/struct "Structured logging | LogTape"
-[2]: https://logtape.org/manual/start "Quick start | LogTape"
-[3]: https://logtape.org/manual/categories "Categories | LogTape"
-[4]: https://logtape.org/changelog "LogTape changelog"
-[5]: https://logtape.org/manual/contexts "Contexts | LogTape"
-[6]: https://logtape.org/manual/library "Using in libraries | LogTape"
-[7]: https://jsr.io/%40logtape/logtape/doc/~/LogMethod "LogMethod - @logtape/logtape - JSR"
+[1]: https://logtape.org/manual/struct 'Structured logging | LogTape'
+[2]: https://logtape.org/manual/start 'Quick start | LogTape'
+[3]: https://logtape.org/manual/categories 'Categories | LogTape'
+[4]: https://logtape.org/changelog 'LogTape changelog'
+[5]: https://logtape.org/manual/contexts 'Contexts | LogTape'
+[6]: https://logtape.org/manual/library 'Using in libraries | LogTape'
+[7]: https://jsr.io/%40logtape/logtape/doc/~/LogMethod 'LogMethod - @logtape/logtape - JSR'

@@ -8,9 +8,7 @@ function escapeRE(s: string) {
  * 仅重写 d.ts 中的「模块补充」模块名：
  *   declare module '<from>' { ... }  =>  declare module '<to>' { ... }
  */
-export function rewriteDtsModuleAugmentations(
-	map: Record<string, string>,
-): ViteCompatPlugin {
+export function rewriteDtsModuleAugmentations(map: Record<string, string>): ViteCompatPlugin {
 	const exts = /\.d\.(?:mts|cts|ts)$/i
 	const entries = Object.entries(map).map(([from, to]) => {
 		const re = new RegExp(
@@ -36,7 +34,7 @@ export function rewriteDtsModuleAugmentations(
 				let code = get()
 				for (const { re, to } of entries) {
 					// 只改「declare module」行，不触及 import/export
-					code = code.replace(re, (_, head, q) => `${head}${q}${to}${q}`)
+					code = code.replace(re, (_match, head, q) => `${head}${q}${to}${q}`)
 				}
 				set(code)
 			}

@@ -4,20 +4,20 @@ You can register factories to create complex instances. Imagine you have these s
 
 ```ts
 export abstract class Logger {
-  //...
+	//...
 }
 export class ConsoleLogger implements Logger {
-  //...
+	//...
 }
 ```
 
 ```ts
 export class MyDatabase {
-  constructor(
-    private readonly connectionString: string,
-    private readonly logger: Logger
-  ) {}
-  //...
+	constructor(
+		private readonly connectionString: string,
+		private readonly logger: Logger,
+	) {}
+	//...
 }
 ```
 
@@ -31,7 +31,7 @@ const builder = new ContainerBuilder()
 // ...
 builder.register(Logger).use(ConsoleLogger)
 builder.register(MyDatabase).useFactory((c) => {
-  return new MyDatabase('my-connection-string', c.get(Logger))
+	return new MyDatabase('my-connection-string', c.get(Logger))
 })
 // ...
 const container = builder.build()

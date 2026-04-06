@@ -300,7 +300,7 @@ export class ExtensionService implements ExtensionModuleStore {
 		}
 		try {
 			JSON.stringify(normalized)
-		} catch (_err) {
+		} catch {
 			throw new Error(
 				`[ExtensionService] registerBuiltin: def must be JSON-serializable (id=${id}, point=${point}, kind=${kind})`,
 			)
@@ -388,7 +388,7 @@ export class ExtensionService implements ExtensionModuleStore {
 
 		try {
 			JSON.stringify(stripRuntime(normalized))
-		} catch (_err) {
+		} catch {
 			throw new Error(
 				`[ExtensionService] surface: def must be JSON-serializable (id=${id}, point=${String(
 					normalized.point,
@@ -461,7 +461,7 @@ export class ExtensionService implements ExtensionModuleStore {
 
 		try {
 			JSON.stringify(stripRuntime(normalized))
-		} catch (_err) {
+		} catch {
 			throw new Error(
 				`[ExtensionService] offer: def must be JSON-serializable (id=${id}, point=${String(
 					normalized.point,

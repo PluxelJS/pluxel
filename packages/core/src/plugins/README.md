@@ -62,15 +62,15 @@
 import { BasePlugin, HostBoundFeature, Plugin } from '@pluxel/core'
 
 class CacheFeature extends HostBoundFeature<BasePlugin> {
-  // constructor(ctx, host) 由 HostBoundFeature 提供；host 自动注入
-  hit() {
-    this.ctx.logger.info('cache hit', { host: this.host.ctx.pluginInfo.id })
-  }
+	// constructor(ctx, host) 由 HostBoundFeature 提供；host 自动注入
+	hit() {
+		this.ctx.logger.info('cache hit', { host: this.host.ctx.pluginInfo.id })
+	}
 }
 
 @Plugin({ name: 'MyPlugin' })
 class MyPlugin extends BasePlugin {
-  cache = this.features.use(CacheFeature) // 不需要 this.features.use(CacheFeature, this)
+	cache = this.features.use(CacheFeature) // 不需要 this.features.use(CacheFeature, this)
 }
 ```
 
@@ -90,8 +90,8 @@ if (dep) dep.doSomething()
 
 ```ts
 this.features.dep(OtherPlugin, (dep) => {
-  const off = dep.someChannel.on((x) => this.ctx.logger.info('got', { x }))
-  return () => off() // dep 消失/重启时清理
+	const off = dep.someChannel.on((x) => this.ctx.logger.info('got', { x }))
+	return () => off() // dep 消失/重启时清理
 })
 ```
 

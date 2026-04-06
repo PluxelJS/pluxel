@@ -146,7 +146,7 @@ export class PluginDefinitions {
 								wrap(mustGet(paramTypes[2])),
 							)
 						default: {
-							const args = new Array<BasePlugin>(depsCount)
+							const args = Array<BasePlugin>(depsCount)
 							for (let i = 0; i < depsCount; i++) {
 								args[i] = wrap(mustGet(paramTypes[i]))
 							}

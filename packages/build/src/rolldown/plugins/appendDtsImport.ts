@@ -12,7 +12,7 @@ export function appendDtsImport(snippet: string, files: string[]): ViteCompatPlu
 
 				const isAsset = (chunk as any).type === 'asset'
 				const code = String(isAsset ? (chunk as any).source : (chunk as any).code)
-				const hasNL = /\n$/.test(code)
+				const hasNL = code.endsWith('\n')
 				const next = code + (hasNL ? '' : '\n') + snippet + '\n'
 
 				if (isAsset) (chunk as any).source = next

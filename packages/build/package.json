@@ -1,12 +1,16 @@
 {
-	"private": true,
 	"name": "@pluxel/build",
 	"version": "0.1.0",
+	"private": true,
 	"description": "Pluxel build helpers (tsdown runner + rolldown plugins)",
+	"files": [
+		"dist",
+		"!**/*.map"
+	],
+	"type": "module",
 	"main": "./dist/index.cjs",
 	"module": "./dist/index.mjs",
 	"types": "./dist/index.d.cts",
-	"type": "module",
 	"exports": {
 		".": {
 			"@pluxel/source": "./src/index.ts",
@@ -25,28 +29,6 @@
 		},
 		"./package.json": "./package.json"
 	},
-	"files": [
-		"dist",
-		"!**/*.map"
-	],
-	"scripts": {
-		"build": "tsdown",
-		"test": "pnpm exec vitest run"
-	},
-	"peerDependencies": {
-		"pathe": "^2.0.3",
-		"pkg-types": "^2.3.0",
-		"tsdown": "^0.21.7"
-	},
-	"devDependencies": {
-		"@pluxel/test": "workspace:*",
-		"oxc-parser": "^0.115.0",
-		"pathe": "^2.0.3",
-		"pkg-types": "^2.3.0",
-		"rolldown": "1.0.0-rc.5",
-		"tsdown": "^0.21.7",
-		"typescript": "^6.0.2"
-	},
 	"publishConfig": {
 		"exports": {
 			".": {
@@ -63,5 +45,23 @@
 			},
 			"./package.json": "./package.json"
 		}
+	},
+	"scripts": {
+		"build": "tsdown",
+		"test": "pnpm exec vitest run"
+	},
+	"devDependencies": {
+		"@pluxel/test": "workspace:*",
+		"oxc-parser": "^0.115.0",
+		"pathe": "^2.0.3",
+		"pkg-types": "^2.3.0",
+		"rolldown": "1.0.0-rc.5",
+		"tsdown": "^0.21.7",
+		"typescript": "^6.0.2"
+	},
+	"peerDependencies": {
+		"pathe": "^2.0.3",
+		"pkg-types": "^2.3.0",
+		"tsdown": "^0.21.7"
 	}
 }

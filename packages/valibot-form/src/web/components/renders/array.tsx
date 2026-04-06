@@ -170,6 +170,10 @@ function SortableCard(props: SortableCardProps) {
 	)
 }
 
+function createArrayItemKey(nextId: number) {
+	return `array-item-${nextId}`
+}
+
 type ArrayFieldPicklistProps = {
 	node: RendererProps['node']
 	items: unknown[]
@@ -311,31 +315,55 @@ function ArrayFieldMain(props: RendererProps) {
 	}, [errors])
 
 	const [jsonParseErrors, setJsonParseErrors] = useState<Record<number, string | undefined>>({})
+	const itemKeyIdRef = useRef(0)
+	const itemKeysRef = useRef<string[]>([])
 
 	useEffect(() => {
 		setJsonParseErrors({})
 	}, [items.length])
 
-	const updateItems = (next: unknown[], options?: TriggerOptions) =>
+	if (itemKeysRef.current.length < items.length) {
+		for (let i = itemKeysRef.current.length; i < items.length; i++) {
+			itemKeysRef.current.push(createArrayItemKey(itemKeyIdRef.current++))
+		}
+	} else if (itemKeysRef.current.length > items.length) {
+		itemKeysRef.current = itemKeysRef.current.slice(0, items.length)
+	}
+
+	const itemKeys = itemKeysRef.current
+	const updateItems = (next: unknown[], options?: TriggerOptions, nextKeys = itemKeys) => {
+		itemKeysRef.current = nextKeys
 		triggerFormEvents(inputProps, next, options)
+	}
 	const handleBlur = () => triggerFormBlur(inputProps)
 
 	const handleAdd = () => {
 		const template = info.defaultItem ?? defaultItemForNode(itemNode)
-		updateItems([...items, cloneValue(template)], { blur: true })
+		updateItems([...items, cloneValue(template)], { blur: true }, [
+			...itemKeys,
+			createArrayItemKey(itemKeyIdRef.current++),
+		])
 	}
 
 	const handleRemove = (index: number) => {
 		if (!canRemove || isLocked) return
 		if (items.length <= minItems) return
 		const next = items.filter((_, idx) => idx !== index)
-		updateItems(next, { blur: true })
+		updateItems(
+			next,
+			{ blur: true },
+			itemKeys.filter((_, itemIndex) => itemIndex !== index),
+		)
 	}
 
 	const handleMove = (index: number, direction: number) => {
 		if (!canReorder || isLocked) return
 		const target = index + direction
-		updateItems(reorderList(items, index, target), { blur: true })
+		updateItems(
+			reorderList(items, index, target),
+			{ blur: true },
+			reorderList(itemKeys, index, target),
+		)
 	}
 
 	const handleChange = (index: number, nextValue: unknown, options?: TriggerOptions) => {
@@ -409,15 +437,15 @@ function ArrayFieldMain(props: RendererProps) {
 					: '{}'
 		return (
 			<Textarea
-				key={`${index}-${items.length}`}
+				key={`${itemKeys[index] ?? `array-json-${index}`}-${items.length}`}
 				defaultValue={formatted}
 				minRows={4}
 				autosize
 				onBlur={(event) => {
 					if (isLocked) return
-					const value = (event.currentTarget as HTMLTextAreaElement).value
+					const inputValue = (event.currentTarget as HTMLTextAreaElement).value
 					try {
-						const parsed = JSON.parse(value || formatted)
+						const parsed = JSON.parse(inputValue || formatted)
 						handleChange(index, parsed, { blur: true })
 						setJsonParseErrors((prev) => {
 							const next = { ...prev }
@@ -479,7 +507,7 @@ function ArrayFieldMain(props: RendererProps) {
 				}
 			case 'boolean':
 				return {
-					inline: options.compact ? false : true,
+					inline: !options.compact,
 					node: (
 						<Switch
 							label={options.compact ? undefined : `${itemLabel} #${index + 1}`}
@@ -671,7 +699,10 @@ function ArrayFieldMain(props: RendererProps) {
 			(typeof draftValue === 'number' && Number.isNaN(draftValue))
 				? template
 				: draftValue
-		updateItems([...items, cloneValue(valueToAdd)], { blur: true })
+		updateItems([...items, cloneValue(valueToAdd)], { blur: true }, [
+			...itemKeys,
+			createArrayItemKey(itemKeyIdRef.current++),
+		])
 		setDraftValue(undefined)
 	}
 
@@ -784,7 +815,7 @@ function ArrayFieldMain(props: RendererProps) {
 		</tr>
 	) : null
 
-	const renderItemCard = (item: unknown, idx: number) => {
+	const renderItemCard = (item: unknown, idx: number, itemKey: string) => {
 		const control = renderControl(idx, item)
 		const inline = layout === 'grid' ? false : control.inline
 		const errorsNode = renderErrors(idx)
@@ -801,13 +832,7 @@ function ArrayFieldMain(props: RendererProps) {
 			return {
 				inline: true,
 				element: (
-					<Card
-						key={`${idx}-${layout}`}
-						withBorder
-						shadow="xs"
-						p="md"
-						style={{ flex: '0 1 280px' }}
-					>
+					<Card key={itemKey} withBorder shadow="xs" p="md" style={{ flex: '0 1 280px' }}>
 						<Group justify="space-between" align="center">
 							{control.node}
 							{actionsNode}
@@ -821,7 +846,7 @@ function ArrayFieldMain(props: RendererProps) {
 		return {
 			inline: false,
 			element: (
-				<Card key={`${idx}-${layout}`} withBorder shadow="xs" p="md">
+				<Card key={itemKey} withBorder shadow="xs" p="md">
 					<Group justify="space-between" mb="sm">
 						<Text fw={600}>
 							{itemLabel} #{idx + 1}
@@ -843,8 +868,8 @@ function ArrayFieldMain(props: RendererProps) {
 	const [activeId, setActiveId] = useState<UniqueIdentifier | null>(null)
 
 	const renderedCards = items.map((item, idx) => ({
-		...renderItemCard(item, idx),
-		id: `item-${idx}` as const,
+		...renderItemCard(item, idx, itemKeys[idx] ?? createArrayItemKey(itemKeyIdRef.current++)),
+		id: itemKeys[idx] ?? createArrayItemKey(itemKeyIdRef.current++),
 	}))
 	const inlineCards = renderedCards.filter((item) => item.inline)
 	const blockCards = renderedCards.filter((item) => !item.inline)
@@ -853,7 +878,7 @@ function ArrayFieldMain(props: RendererProps) {
 		const control = renderControl(idx, item, { compact: true })
 		const errorsNode = renderErrors(idx)
 		return (
-			<tr key={`row-${idx}`}>
+			<tr key={itemKeys[idx] ?? `row-${idx}`}>
 				<td style={{ width: 56 }}>
 					<Text size="sm" c="dimmed">
 						#{idx + 1}
@@ -893,7 +918,7 @@ function ArrayFieldMain(props: RendererProps) {
 					if (!over || active.id === over.id) return
 					const from = renderedCards.findIndex((item) => item.id === active.id)
 					const to = renderedCards.findIndex((item) => item.id === over.id)
-					updateItems(reorderList(items, from, to), { blur: true })
+					updateItems(reorderList(items, from, to), { blur: true }, reorderList(itemKeys, from, to))
 				}}
 				onDragCancel={() => setActiveId(null)}
 			>

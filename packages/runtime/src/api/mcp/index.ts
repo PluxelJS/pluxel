@@ -278,15 +278,15 @@ const PluginWaitForStageOutputSchema = v.union([
 	}),
 ])
 
-	const PluginSchemaOutputSchema = v.union([
-		v.object({
-			ok: v.literal(true),
-			schemaSource: v.record(v.string(), v.string()),
-			defaults: JsonRecordSchema,
-			layout: v.optional(v.nullable(v.array(v.unknown()))),
-		}),
-		v.object({ ok: v.literal(false), code: v.string(), message: v.string() }),
-	])
+const PluginSchemaOutputSchema = v.union([
+	v.object({
+		ok: v.literal(true),
+		schemaSource: v.record(v.string(), v.string()),
+		defaults: JsonRecordSchema,
+		layout: v.optional(v.nullable(v.array(v.unknown()))),
+	}),
+	v.object({ ok: v.literal(false), code: v.string(), message: v.string() }),
+])
 
 const PluginConfigOutputSchema = v.union([
 	v.object({
@@ -401,7 +401,8 @@ function createPluxelMcpServer(ctx: Context) {
 		inputSchema: LogsLatestInputSchema,
 		outputSchema: LogsLatestOutputSchema,
 		handler: (args) => {
-			const afterSeq = typeof args.afterSeq === 'string' && args.afterSeq ? args.afterSeq : undefined
+			const afterSeq =
+				typeof args.afterSeq === 'string' && args.afterSeq ? args.afterSeq : undefined
 			const out = logsLatest({
 				streamId: args.streamId,
 				limit: args.limit,
@@ -418,7 +419,8 @@ function createPluxelMcpServer(ctx: Context) {
 		inputSchema: LogsLatestTextInputSchema,
 		outputSchema: LogsTextOutputSchema,
 		handler: (args) => {
-			const afterSeq = typeof args.afterSeq === 'string' && args.afterSeq ? args.afterSeq : undefined
+			const afterSeq =
+				typeof args.afterSeq === 'string' && args.afterSeq ? args.afterSeq : undefined
 			const out = logsLatestText({
 				streamId: args.streamId,
 				limit: args.limit,
@@ -436,7 +438,8 @@ function createPluxelMcpServer(ctx: Context) {
 		inputSchema: LogsWaitForInputSchema,
 		outputSchema: LogsLatestOutputSchema,
 		handler: async (args) => {
-			const afterSeq = typeof args.afterSeq === 'string' && args.afterSeq ? args.afterSeq : undefined
+			const afterSeq =
+				typeof args.afterSeq === 'string' && args.afterSeq ? args.afterSeq : undefined
 			const out = await logsWaitFor({
 				streamId: args.streamId,
 				limit: args.limit,
@@ -454,7 +457,8 @@ function createPluxelMcpServer(ctx: Context) {
 		inputSchema: LogsWaitForTextInputSchema,
 		outputSchema: LogsTextOutputSchema,
 		handler: async (args) => {
-			const afterSeq = typeof args.afterSeq === 'string' && args.afterSeq ? args.afterSeq : undefined
+			const afterSeq =
+				typeof args.afterSeq === 'string' && args.afterSeq ? args.afterSeq : undefined
 			const out = await logsWaitForText({
 				streamId: args.streamId,
 				limit: args.limit,

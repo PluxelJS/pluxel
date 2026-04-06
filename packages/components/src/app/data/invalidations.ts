@@ -51,8 +51,7 @@ export function subscribeInvalidations(listener: Listener): () => void {
 }
 
 export function invalidate(event: InvalidationEvent | InvalidationTopic): void {
-	const payload: InvalidationEvent =
-		typeof event === 'string' ? { topic: event } : event
+	const payload: InvalidationEvent = typeof event === 'string' ? { topic: event } : event
 	const prev = pendingByTopic.get(payload.topic)
 	pendingByTopic.set(payload.topic, prev ? mergeEvent(prev, payload) : payload)
 	if (flushScheduled) return

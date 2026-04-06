@@ -230,7 +230,7 @@ export function mergeRightPaneState(
 		schema: typeof patch.schema === 'string' ? patch.schema : fallbackSchema,
 		schemas:
 			patch.schemas && typeof patch.schemas === 'object'
-				? { ...(previous.schemas ?? {}), ...patch.schemas }
+				? { ...previous.schemas, ...patch.schemas }
 				: previous.schemas,
 	}
 }

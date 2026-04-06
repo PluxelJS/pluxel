@@ -277,8 +277,8 @@ export class DiodContainer<U = unknown> implements Container {
 					const accDep = this.makeAccessors(perRequestServices, visiting, path, true)
 					const ctx = {
 						...accDep,
-						findTaggedServiceIdentifiers: <U = unknown>(tag: string) =>
-							this.findTaggedServiceIdentifiers<U>(tag),
+						findTaggedServiceIdentifiers: <TTagged = unknown>(tag: string) =>
+							this.findTaggedServiceIdentifiers<TTagged>(tag),
 					}
 
 					try {

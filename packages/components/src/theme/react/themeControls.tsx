@@ -20,8 +20,7 @@ import { IconCheck, IconMoonStars, IconPalette, IconSun } from '@tabler/icons-re
 import { useCallback, useState, type CSSProperties } from 'react'
 import { useAccentTheme } from './useAppTheme'
 
-export interface ColorSchemeToggleProps
-	extends Omit<ActionIconProps, 'children' | 'onClick'> {
+export interface ColorSchemeToggleProps extends Omit<ActionIconProps, 'children' | 'onClick'> {
 	label?: string
 }
 
@@ -113,15 +112,10 @@ export function ThemeCustomizer({ compact = false }: ThemeCustomizerProps) {
 								onClick={() => handleColorChange(preset.key)}
 								style={
 									{
-										background:
-											accentKey === preset.key ? rgba(preset.color, 0.2) : 'transparent',
-										border: `2px solid ${
-											accentKey === preset.key ? preset.color : 'transparent'
-										}`,
+										background: accentKey === preset.key ? rgba(preset.color, 0.2) : 'transparent',
+										border: `2px solid ${accentKey === preset.key ? preset.color : 'transparent'}`,
 										boxShadow:
-											accentKey === preset.key
-												? `0 0 0 1px ${rgba(preset.color, 0.18)}`
-												: 'none',
+											accentKey === preset.key ? `0 0 0 1px ${rgba(preset.color, 0.18)}` : 'none',
 										color: preset.color,
 									} as CSSProperties
 								}
@@ -163,18 +157,11 @@ export function ThemeCustomizer({ compact = false }: ThemeCustomizerProps) {
 						</ActionIcon>
 					</Tooltip>
 				</Popover.Target>
-				<Popover.Dropdown
-					p="sm"
-					style={panelStyle}
-				>
+				<Popover.Dropdown p="sm" style={panelStyle}>
 					<Stack gap="sm">
 						<Group justify="space-between" align="center">
 							<Group gap="xs">
-								<IconPalette
-									size={16}
-									stroke={1.8}
-									style={{ opacity: 0.72 }}
-								/>
+								<IconPalette size={16} stroke={1.8} style={{ opacity: 0.72 }} />
 								<Text size="xs" fw={600}>
 									主题设置
 								</Text>
@@ -191,12 +178,7 @@ export function ThemeCustomizer({ compact = false }: ThemeCustomizerProps) {
 	}
 
 	return (
-		<Paper
-			radius="lg"
-			px="md"
-			py="sm"
-			style={panelStyle}
-		>
+		<Paper radius="lg" px="md" py="sm" style={panelStyle}>
 			<Stack gap="sm">
 				<Group
 					justify="space-between"

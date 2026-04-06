@@ -3,15 +3,9 @@ import type { Plugin as VitePlugin } from 'vite'
 
 import { setPluxelRuntime } from '@pluxel/core'
 import { ensurePluxelLogging, type EnsurePluxelLoggingOptions } from '@pluxel/runtime/logger'
-import {
-	resolveRuntimeStoragePaths,
-	type RuntimeStoragePaths,
-} from '@pluxel/runtime/internal'
+import { resolveRuntimeStoragePaths, type RuntimeStoragePaths } from '@pluxel/runtime/internal'
 import { Context } from '@pluxel/runtime'
-import {
-	createNodeFsServiceBackend,
-	type BuiltinPluginSpec,
-} from '@pluxel/runtime/services'
+import { createNodeFsServiceBackend, type BuiltinPluginSpec } from '@pluxel/runtime/services'
 
 import { attachHmrRuntime } from './dev/attach-runtime'
 import type { HMRConfig } from './dev/hmr/HMRService'
@@ -201,7 +195,7 @@ export async function planHmrHostFromConfig(
 	const env: Record<string, string | undefined> = {
 		...process.env,
 		...(profile ? { PLUXEL_HMR_PROFILE: profile } : {}),
-		...(envOverrides ?? {}),
+		...envOverrides,
 	}
 
 	const diagnosed = await diagnoseWorkspace({
@@ -271,7 +265,7 @@ export async function bootPlannedHmrHost<TSnapshot extends HmrWorkspaceSnapshot>
 		packageService: {
 			state: { enabled: true, file: plan.runtimeStorage.packageStateFile },
 		},
-		...(plan.context ?? {}),
+		...plan.context,
 	})
 	await ctx.root.configService.ready
 

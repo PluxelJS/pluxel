@@ -1,4 +1,4 @@
-@use "../../../styles/theme/tokens" as theme;
+@use '../../../styles/theme/tokens' as theme;
 
 .plx-pluginSkeleton {
 	@include theme.panel-surface(panel-bg, border);
@@ -104,21 +104,21 @@
 	gap: 8px;
 }
 
-.plx-pluginSkeleton[data-stacked="true"] {
+.plx-pluginSkeleton[data-stacked='true'] {
 	grid-template-rows: auto auto minmax(0, 1fr) 180px 160px;
 }
 
-.plx-pluginSkeleton[data-stacked="true"] .plx-pluginSkeleton__header,
-.plx-pluginSkeleton[data-stacked="true"] .plx-pluginSkeleton__body {
+.plx-pluginSkeleton[data-stacked='true'] .plx-pluginSkeleton__header,
+.plx-pluginSkeleton[data-stacked='true'] .plx-pluginSkeleton__body {
 	display: flex;
 	flex-direction: column;
 }
 
-.plx-pluginSkeleton[data-stacked="true"] .plx-pluginSkeleton__actions {
+.plx-pluginSkeleton[data-stacked='true'] .plx-pluginSkeleton__actions {
 	flex-wrap: wrap;
 }
 
-.plx-pluginSkeleton[data-stacked="true"] .plx-pluginSkeleton__aside {
+.plx-pluginSkeleton[data-stacked='true'] .plx-pluginSkeleton__aside {
 	border-left: 0;
 	border-top: 1px solid var(--plx-border);
 }

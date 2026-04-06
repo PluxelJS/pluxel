@@ -23,7 +23,7 @@ type ServiceMeta = {
 	scope: 'context' | 'root'
 }
 
-// biome-ignore lint/suspicious/noUnsafeDeclarationMerging: this class is intentionally merged with an interface for service augmentation.
+// oxlint-disable-next-line typescript/no-unsafe-declaration-merging -- this class is intentionally merged with an interface for service augmentation.
 export class Context {
 	get [Symbol.toStringTag]() {
 		// Hint frameworks like Elysia that this is a class-like object, so they don't deep-merge
@@ -221,7 +221,7 @@ export class Context {
 
 		// 2) 规范化 name/config（config 合并、name 默认）
 		opts.name = opts.name ?? `${this.name}.child`
-		opts.config = { ...this.config, ...(opts.config ?? {}) }
+		opts.config = { ...this.config, ...opts.config }
 
 		// 3) 先把外部可覆写/新增的字段灌进去（相信外部用户，不做运行时判断）
 		Object.assign(child, opts)

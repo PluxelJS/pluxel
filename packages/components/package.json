@@ -1,8 +1,9 @@
 {
-	"private": true,
 	"name": "@pluxel/components",
 	"version": "0.1.0",
+	"private": true,
 	"description": "Internal Pluxel runtime UI shell and component library",
+	"type": "module",
 	"main": "./src/index.ts",
 	"exports": {
 		".": {
@@ -26,23 +27,10 @@
 			"default": "./src/hooks/index.ts"
 		}
 	},
-	"type": "module",
 	"scripts": {
 		"dev": "vite",
 		"build": "vite build",
 		"preview": "vite preview"
-	},
-	"peerDependencies": {
-		"@mantine/core": "^9.0.0",
-		"@mantine/dates": "^9.0.0",
-		"@mantine/hooks": "^9.0.0",
-		"@mantine/modals": "^9.0.0",
-		"@mantine/notifications": "^9.0.0",
-		"@tabler/icons-react": "^3.37.1",
-		"@tanstack/react-form": "^1.28.3",
-		"react": "^19.2.4",
-		"react-dom": "^19.2.4",
-		"valibot": "^1.2.0"
 	},
 	"dependencies": {
 		"@dnd-kit/core": "^6.3.1",
@@ -74,5 +62,17 @@
 		"sass-embedded": "^1.93.2",
 		"valibot": "^1.2.0",
 		"vite": "beta"
+	},
+	"peerDependencies": {
+		"@mantine/core": "^9.0.0",
+		"@mantine/dates": "^9.0.0",
+		"@mantine/hooks": "^9.0.0",
+		"@mantine/modals": "^9.0.0",
+		"@mantine/notifications": "^9.0.0",
+		"@tabler/icons-react": "^3.37.1",
+		"@tanstack/react-form": "^1.28.3",
+		"react": "^19.2.4",
+		"react-dom": "^19.2.4",
+		"valibot": "^1.2.0"
 	}
 }

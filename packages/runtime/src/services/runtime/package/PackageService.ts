@@ -1,4 +1,4 @@
-import { type Context, Injectable } from '@pluxel/core'
+import { type Context as PluxelContext, Injectable } from '@pluxel/core'
 import { loadWorkspaceInfo } from '@pluxel/workspace'
 import type { EntryResolution, EntryResolutionOk, ScanTaskOptions } from '../scan/types'
 import { isEntryOk } from '../scan/types'
@@ -136,7 +136,7 @@ export class PackageService {
 	private initialized = false
 
 	constructor(
-		public ctx: Context,
+		public ctx: PluxelContext,
 		config: PackageServiceConfig = {},
 	) {
 		this.defaults = {
@@ -716,7 +716,7 @@ export class PackageService {
 
 		if (!result.workspace && base.workspace) {
 			result.env = {
-				...(result.env ?? {}),
+				...result.env,
 				PNPM_IGNORE_WORKSPACE_ROOT_CHECK: 'true',
 				npm_config_ignore_workspace_root_check: 'true',
 			}

@@ -1,4 +1,4 @@
-import { type Context, Injectable } from '@pluxel/context'
+import { type Context as PluxelContext, Injectable } from '@pluxel/context'
 
 export type Cleanup = () => void | Promise<void>
 export type DisposableLike = { dispose: () => void | Promise<void> }
@@ -33,23 +33,26 @@ declare module '@pluxel/context' {
 	}
 }
 
-const enum ServiceState {
-	LIVE = 0,
-	DISPOSING = 1,
-	DISPOSED = 2,
-}
+const ServiceState = {
+	LIVE: 0,
+	DISPOSING: 1,
+	DISPOSED: 2,
+} as const
+type ServiceState = (typeof ServiceState)[keyof typeof ServiceState]
 
-const enum EntryKind {
-	CLEANUP = 0,
-	DISPOSABLE = 1,
-	RELEASE = 2,
-}
+const EntryKind = {
+	CLEANUP: 0,
+	DISPOSABLE: 1,
+	RELEASE: 2,
+} as const
+type EntryKind = (typeof EntryKind)[keyof typeof EntryKind]
 
-const enum EntryState {
-	ACTIVE = 0,
-	RUNNING = 1,
-	DONE = 2,
-}
+const EntryState = {
+	ACTIVE: 0,
+	RUNNING: 1,
+	DONE: 2,
+} as const
+type EntryState = (typeof EntryState)[keyof typeof EntryState]
 
 const PHASES: readonly Phase[] = ['shutdown', 'runtime', 'final'] as const
 const DEFAULT_PHASE: Phase = 'runtime'
@@ -193,7 +196,7 @@ class EffectsImpl implements Effects, EffectGuardHost {
 	private readonly metaById: (EffectsMeta | null)[] = []
 
 	constructor(
-		private readonly ctx: Context,
+		private readonly ctx: PluxelContext,
 		opts?: { parent?: EffectsImpl; meta?: EffectsMeta; registerOpts?: RegisterOpts },
 	) {
 		if (opts?.parent) {
@@ -299,9 +302,11 @@ class EffectsImpl implements Effects, EffectGuardHost {
 				rollbackError = e
 			}
 			if (rollbackError) {
+				// oxlint-disable-next-line eslint/preserve-caught-error -- AggregateError already preserves both failures explicitly.
 				throw new AggregateError(
 					[error, rollbackError],
 					'Effects transaction failed (rollback errors)',
+					{ cause: error },
 				)
 			}
 			throw error
@@ -491,7 +496,7 @@ class EffectsImpl implements Effects, EffectGuardHost {
 class EffectsScopeImpl implements EffectsScope {
 	protected readonly impl: EffectsImpl
 	constructor(
-		public readonly ctx: Context,
+		public readonly ctx: PluxelContext,
 		opts?: { parent?: EffectsImpl; meta?: EffectsMeta; registerOpts?: RegisterOpts },
 	) {
 		this.impl = new EffectsImpl(ctx, opts)
@@ -523,7 +528,7 @@ class EffectsScopeImpl implements EffectsScope {
 
 @Injectable({ key: serviceName })
 export class EffectsService extends EffectsScopeImpl {
-	constructor(ctx: Context, _cfg: unknown = undefined) {
+	constructor(ctx: PluxelContext, _cfg: unknown = undefined) {
 		super(ctx)
 	}
 }

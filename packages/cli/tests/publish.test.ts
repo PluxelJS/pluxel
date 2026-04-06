@@ -266,7 +266,7 @@ describe('publish with CI context', () => {
 	it('can trigger webhook when publish is skipped (webhook flag)', async () => {
 		const requests: string[] = []
 
-		vi.stubGlobal('fetch', (async (input: RequestInfo | URL, init?: RequestInit) => {
+		vi.stubGlobal('fetch', (async (input: RequestInfo | URL, _init?: RequestInit) => {
 			const url = typeof input === 'string' ? input : input.toString()
 			requests.push(url)
 			if (url.includes('oidc')) {

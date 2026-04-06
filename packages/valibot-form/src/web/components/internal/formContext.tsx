@@ -15,7 +15,7 @@ export function useAppForm<S extends ObjectLikeSchema, TValues = InferOutput<S>>
 	const opts = useMemo(
 		() => ({
 			defaultValues,
-			...(formOpts ?? {}),
+			...formOpts,
 		}),
 		[defaultValues, formOpts],
 	)

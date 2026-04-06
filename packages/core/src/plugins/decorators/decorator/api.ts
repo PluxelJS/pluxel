@@ -470,11 +470,7 @@ export function __registerConfigBinding__(
 	const dst = (s.configBindings ?? Object.create(null)) as Record<string, readonly string[]>
 	const prev = dst[label]
 	// Cheap equality: exact string list match.
-	if (
-		prev &&
-		prev.length === list.length &&
-		prev.every((v, i) => v === list[i])
-	) {
+	if (prev && prev.length === list.length && prev.every((v, i) => v === list[i])) {
 		return
 	}
 
@@ -572,12 +568,12 @@ export function clonePluginDefinition(
 	// cold/immutable data
 	dst.declaredMeta = src.declaredMeta
 	dst.declaredName = src.declaredName
-		dst.base = src.base
-		dst.config = src.config
-		dst.configSource = src.configSource
-		dst.configLayout = src.configLayout
-		dst.configBindings = src.configBindings
-		dst.rtypes = src.rtypes
+	dst.base = src.base
+	dst.config = src.config
+	dst.configSource = src.configSource
+	dst.configLayout = src.configLayout
+	dst.configBindings = src.configBindings
+	dst.rtypes = src.rtypes
 
 	// identity (override allowed)
 	dst.id = identity?.id ?? src.id

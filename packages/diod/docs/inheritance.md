@@ -7,7 +7,7 @@ import { Service } from 'diod'
 
 @Service()
 export class SomeClass extends BaseClass {
-  // only members not constructor here...
+	// only members not constructor here...
 }
 ```
 
@@ -18,9 +18,9 @@ import { Service } from 'diod'
 
 @Service()
 export class BaseClass {
-  constructor(private readonly dep: Dependency) {}
+	constructor(private readonly dep: Dependency) {}
 
-  //...
+	//...
 }
 ```
 

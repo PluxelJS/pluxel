@@ -31,19 +31,14 @@ import type { PluginConfigState } from '../../hooks'
 import { RouterLinkAdapter } from '../../RouterLinkAdapter'
 import type { PluginDetailSearch } from '../../router/pluginDetailSearch'
 import { useCurrentPathname } from '../../router/useCurrentRoute'
-import { PluginRouteRenderer, useResolvedPluginRoute } from '../../router/extensions/PluginRouteRenderer'
 import {
-	PANE_TABS_PROPS,
-	PaneTabLabel,
-	getPaneTabsRootClassName,
-} from '../../workbench/PaneTabs'
+	PluginRouteRenderer,
+	useResolvedPluginRoute,
+} from '../../router/extensions/PluginRouteRenderer'
+import { PANE_TABS_PROPS, PaneTabLabel, getPaneTabsRootClassName } from '../../workbench/PaneTabs'
 import { ConfigForm } from '../config/ConfigForm'
 import { ConfigLayout } from '../config/ConfigLayout'
-import {
-	compareSchemaKeys,
-	PLUGIN_SCHEMA_GROUP,
-	splitSchemaKey,
-} from '../config/schemaKey'
+import { compareSchemaKeys, PLUGIN_SCHEMA_GROUP, splitSchemaKey } from '../config/schemaKey'
 import { DependencyList } from './cards/DependencyList'
 import { LogLevelsCard } from './cards/LogLevelsCard'
 import { PluginPanel } from './cards/PluginPanel'
@@ -622,11 +617,7 @@ export function RightPane({ config, showLevelsTab = false }: RightPaneProps) {
 						) : null}
 
 						{showLevelsTab ? (
-							<Tabs.Panel
-								value="logging"
-								className="plx-paneTabs__panel"
-								style={COLUMN_STYLE}
-							>
+							<Tabs.Panel value="logging" className="plx-paneTabs__panel" style={COLUMN_STYLE}>
 								<ScrollArea type="auto" scrollbarSize={10} offsetScrollbars style={COLUMN_STYLE}>
 									<Box p="xs" style={{ minHeight: '100%' }}>
 										<LogLevelsCard pluginId={pluginName} compact />

@@ -6,7 +6,7 @@
 	"profile": "plugins-host",
 	"defaults": {
 		"roots": "auto",
-		"exclude": ["**/node_modules/**", "**/dist/**", "**/.turbo/**", "**/*.map"]
+		"exclude": ["**/node_modules/**", "**/dist/**", "**/.turbo/**", "**/*.map"],
 	},
 	"profiles": {
 		"plugins-host": {
@@ -16,8 +16,8 @@
 			"exclude": [
 				"packages/plugins/host/src/demo/**/ui/**",
 				"packages/plugins/host/src/demo/env.ts",
-				"packages/plugins/host/src/demo/index.ts"
-			]
-		}
-	}
+				"packages/plugins/host/src/demo/index.ts",
+			],
+		},
+	},
 }

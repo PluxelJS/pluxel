@@ -1,47 +1,23 @@
 {
-	"private": true,
 	"name": "diod",
 	"version": "3.0.0",
+	"private": true,
 	"description": "A very opinionated and different inversion of control container and dependency injector for Typescript, Node.js or browser apps",
 	"keywords": [
-		"dependency injection",
-		"inversion of control",
-		"service locator",
-		"dependency",
-		"injection",
-		"service",
 		"container",
+		"dependency",
+		"dependency injection",
+		"injection",
+		"inversion of control",
+		"service",
+		"service locator",
 		"typescript"
 	],
-	"type": "module",
 	"files": [
 		"lib",
 		"CHANGELOG.md"
 	],
-	"browserslist": [
-		"> 1%, not dead, not ie 11, not op_mini all"
-	],
-	"scripts": {
-		"build": "tsdown",
-		"test": "pnpm exec vitest run",
-		"docs": "rimraf docs/api && typedoc --plugin typedoc-plugin-markdown",
-		"lint": "biome check",
-		"qa": "pnpm run lint && pnpm run type-check && pnpm run test",
-		"prepack": "pnpm run qa && pnpm run build",
-		"size": "size-limit"
-	},
-	"size-limit": [
-		{
-			"limit": "2 kB",
-			"path": "lib/diod.es.js"
-		}
-	],
-	"devDependencies": {
-		"option-t": "^55.1.2",
-		"reflect-metadata": "^0.2.2",
-		"tsdown": "^0.21.7",
-		"typescript": "^6.0.2"
-	},
+	"type": "module",
 	"main": "./dist/index.cjs",
 	"module": "./dist/index.mjs",
 	"types": "./dist/index.d.cts",
@@ -62,6 +38,30 @@
 			"./package.json": "./package.json"
 		}
 	},
+	"scripts": {
+		"build": "tsdown",
+		"test": "pnpm exec vitest run",
+		"docs": "rimraf docs/api && typedoc --plugin typedoc-plugin-markdown",
+		"lint": "oxlint -c ../../.oxlintrc.json .",
+		"qa": "pnpm run lint && pnpm run type-check && pnpm run test",
+		"prepack": "pnpm run qa && pnpm run build",
+		"size": "size-limit"
+	},
+	"devDependencies": {
+		"option-t": "^55.1.2",
+		"reflect-metadata": "^0.2.2",
+		"tsdown": "^0.21.7",
+		"typescript": "^6.0.2"
+	},
+	"browserslist": [
+		"> 1%, not dead, not ie 11, not op_mini all"
+	],
+	"size-limit": [
+		{
+			"limit": "2 kB",
+			"path": "lib/diod.es.js"
+		}
+	],
 	"inlinedDependencies": {
 		"option-t": "55.1.2"
 	}

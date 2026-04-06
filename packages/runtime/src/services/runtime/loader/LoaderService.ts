@@ -1,7 +1,7 @@
 // loader/index.ts
 import type { ForkablePluginConstructor } from '@pluxel/core'
 import {
-	type Context,
+	type Context as PluxelContext,
 	formatForkPluginId,
 	getPluginInfo,
 	Injectable,
@@ -122,7 +122,7 @@ export class LoaderService {
 	// Stable public API surface for external callers (RPC/HMR/Extension).
 	public readonly api: LoaderApi
 
-	constructor(public ctx: Context) {
+	constructor(public ctx: PluxelContext) {
 		this.registry = new PluginRegistry(this.ctx)
 		this.runtime = new RuntimeResolver(this.ctx, this.registry)
 		this.moduleReplacer = new ModuleReplacer(this.ctx, this.registry, this.anchors, (name) =>

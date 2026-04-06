@@ -1,10 +1,6 @@
 import type { Context as PluginContext } from '@pluxel/core'
 import type { Changeset, LoadResponse } from '@signaldb/core'
-import {
-	HMR_INTERNAL_API_BASE,
-	HMR_META_AUTH_PATH,
-	HMR_TRANSPORT_PATHS,
-} from '../../web/paths'
+import { HMR_INTERNAL_API_BASE, HMR_META_AUTH_PATH, HMR_TRANSPORT_PATHS } from '../../web/paths'
 import { newHttpBatchRpcResponse } from 'capnweb'
 
 import { extensionRoutes } from '../../api/http/extensions'

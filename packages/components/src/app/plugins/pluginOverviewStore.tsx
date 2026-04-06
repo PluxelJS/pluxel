@@ -142,21 +142,19 @@ export function usePluginOverview(): PluginOverviewSnapshot {
 function normalizeStatusOverview(input: any): PluginStatusOverview {
 	const rawSummary = input?.summary ?? {}
 	return {
-		statuses: (input?.statuses ?? [])
-			.filter(Boolean)
-			.map((entry: any) => ({
-				name: entry?.name ?? '',
-				isRunning: Boolean(entry?.isRunning),
-				isEnabled: entry?.isEnabled !== false,
-				lifecycleStage: entry?.lifecycleStage ?? PluginStatusEntryLifecycleStage.stopped,
-				source: {
-					kind: entry?.source?.kind ?? PluginSourceInfoKind.unknown,
-					moduleId: entry?.source?.moduleId ?? null,
-					packageName: entry?.source?.packageName ?? null,
-					version: entry?.source?.version ?? null,
-					tag: entry?.source?.tag ?? null,
-				},
-			})),
+		statuses: (input?.statuses ?? []).filter(Boolean).map((entry: any) => ({
+			name: entry?.name ?? '',
+			isRunning: Boolean(entry?.isRunning),
+			isEnabled: entry?.isEnabled !== false,
+			lifecycleStage: entry?.lifecycleStage ?? PluginStatusEntryLifecycleStage.stopped,
+			source: {
+				kind: entry?.source?.kind ?? PluginSourceInfoKind.unknown,
+				moduleId: entry?.source?.moduleId ?? null,
+				packageName: entry?.source?.packageName ?? null,
+				version: entry?.source?.version ?? null,
+				tag: entry?.source?.tag ?? null,
+			},
+		})),
 		summary: {
 			total: Number(rawSummary?.total ?? 0),
 			running: Number(rawSummary?.running ?? 0),
@@ -182,8 +180,8 @@ export function PluginOverviewProvider({ children }: { children?: ReactNode }) {
 		refetchOnReconnect: false,
 		refetchOnWindowVisible: false,
 		fetchInBackground: true,
-		prepare: ({ query }) => {
-			const status = query.pluginStatus
+		prepare: ({ query: preparedQuery }) => {
+			const status = preparedQuery.pluginStatus
 			status.summary.total
 			status.summary.running
 			status.summary.stopped
@@ -200,7 +198,7 @@ export function PluginOverviewProvider({ children }: { children?: ReactNode }) {
 				source.version
 				source.tag
 			})
-			query.pluginGroups.forEach((group) => {
+			preparedQuery.pluginGroups.forEach((group) => {
 				group.groupId
 				group.name
 				group.pluginIds
@@ -239,9 +237,7 @@ export function PluginOverviewProvider({ children }: { children?: ReactNode }) {
 		const refetchOverview = async (): Promise<void> => {
 			await query.$refetch(true)
 		}
-		registerPluginOverviewRefetcher(
-			refetchOverview,
-		)
+		registerPluginOverviewRefetcher(refetchOverview)
 		return (): void => {
 			registerPluginOverviewRefetcher(null)
 		}

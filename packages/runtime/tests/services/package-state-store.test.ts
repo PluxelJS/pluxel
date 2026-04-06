@@ -19,8 +19,7 @@ describe('PackageStateStore', () => {
 			file,
 			fs: {
 				readText: async (p) => await fixture.fsp.readFile(p, 'utf8'),
-				writeTextAtomic: async (p, data) =>
-					void (await fixture.fsp.writeFile(p, data, 'utf8')),
+				writeTextAtomic: async (p, data) => void (await fixture.fsp.writeFile(p, data, 'utf8')),
 			},
 		})
 

@@ -1,5 +1,5 @@
 import { getLogger, type Logger as LogtapeLogger } from '@logtape/logtape'
-import { type Context, Injectable } from '@pluxel/context'
+import { type Context as PluxelContext, Injectable } from '@pluxel/context'
 import { getPluxelRuntime } from '../env'
 import { pluxelCategories } from './categories'
 import { findPluginId } from './context'
@@ -57,7 +57,7 @@ export type LoggerServiceConfig = {
 	key: serviceName,
 })
 export class LoggerService {
-	public readonly ctx: Context
+	public readonly ctx: PluxelContext
 	private readonly baseCategoryLogger: LogtapeLogger
 	private readonly pluginsCategoryLogger: LogtapeLogger
 	private readonly debugCategoryLogger: LogtapeLogger
@@ -65,7 +65,7 @@ export class LoggerService {
 	private readonly cache = new WeakMap<object, ContextLoggerCacheEntry>()
 	private readonly debugChannelCache = new Map<string, LogtapeLogger>()
 
-	constructor(ctx: Context, cfg?: LoggerServiceConfig) {
+	constructor(ctx: PluxelContext, cfg?: LoggerServiceConfig) {
 		this.ctx = ctx
 
 		const preset: LoggerServicePreset =

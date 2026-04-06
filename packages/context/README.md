@@ -18,13 +18,13 @@
 
 ```ts
 class MyService {
-  constructor(public ctx: Context) {}
+	constructor(public ctx: Context) {}
 
-  async doWork() {
-    const ctx = this.ctx // snapshot
-    await something()
-    ctx.logger.info("...") // use snapshot, not this.ctx
-  }
+	async doWork() {
+		const ctx = this.ctx // snapshot
+		await something()
+		ctx.logger.info('...') // use snapshot, not this.ctx
+	}
 }
 ```
 
@@ -34,11 +34,11 @@ class MyService {
 // ❌ 不建议
 const log = ctx.logger.info
 await something()
-log("...") // 可能对应别的 ctx
+log('...') // 可能对应别的 ctx
 
 // ✅ 建议：即时访问 / 显式传参
 await something()
-ctx.logger.info("...")
+ctx.logger.info('...')
 ```
 
 ### 3) 需要独立实例时用 isolate()
@@ -47,10 +47,10 @@ ctx.logger.info("...")
 
 ```ts
 // ✅ 推荐：按 ctor（更严格；能更早暴露 HMR/重复加载导致的 ctor 身份不一致）
-const child = ctx.isolate([SomeService], { name: "child" })
+const child = ctx.isolate([SomeService], { name: 'child' })
 
 // ✅ 可选：按 service key（更方便；但可能“看不出你导入的是哪份 ctor”）
-const child2 = ctx.isolateKeys(["someService"], { name: "child2" })
+const child2 = ctx.isolateKeys(['someService'], { name: 'child2' })
 ```
 
 `isolate()` 创建的是一个新的“实例空间”，并且**对该 Context 的 `extend()` 后代同样生效**（除非后代再次对同一服务调用 `isolate()` 生成新的实例空间）。

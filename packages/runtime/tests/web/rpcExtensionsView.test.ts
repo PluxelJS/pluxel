@@ -10,6 +10,7 @@ describe('runtime/web createUiRpcView', () => {
 					Demo: {
 						// Return a thenable without `.finally()` to ensure we normalize via Promise.resolve().
 						hello: () => ({
+							// oxlint-disable-next-line unicorn/no-thenable -- test fixture intentionally simulates a bare thenable
 							then: (resolve: (value: string) => void) => resolve('ok'),
 						}),
 					},

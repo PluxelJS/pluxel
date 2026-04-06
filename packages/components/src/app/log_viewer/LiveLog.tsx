@@ -110,7 +110,7 @@ function sameFilter(a: LogFilter, b: LogFilter): boolean {
 
 /* ================= 轻量环形缓冲 + 外部订阅（避免 setState 全量重渲染） ================= */
 function createRingStore<T>(cap = 2000) {
-	const buf = new Array<T>(cap)
+	const buf = Array<T>(cap)
 	let start = 0
 	let len = 0
 	let version = 0
@@ -671,9 +671,7 @@ const LogList = memo(function LogList(props: {
 								<span style={{ color: palette.category, flex: '0 0 auto' }}>{categoryText}</span>
 							) : null}
 							{showName && line.name ? (
-								<span style={{ color: palette.textMuted, flex: '0 0 auto' }}>
-									[{line.name}]
-								</span>
+								<span style={{ color: palette.textMuted, flex: '0 0 auto' }}>[{line.name}]</span>
 							) : null}
 							<span style={{ color: palette.text, flex: '1 1 auto' }}>{msgNode}</span>
 						</button>

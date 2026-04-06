@@ -13,14 +13,8 @@ import type { Context } from '@pluxel/context'
 import { pluxelCategories } from './categories'
 import { mergeDefaults } from './merge'
 import { readEnv } from './runtime'
-import {
-	createPluxelPrettyConsoleSink,
-	type PluxelPrettyConsoleSinkOptions,
-} from './sinks'
-import {
-	createPluxelPrettyTimestampFormatter,
-	resolvePluxelLogTimezone,
-} from './timestamp'
+import { createPluxelPrettyConsoleSink, type PluxelPrettyConsoleSinkOptions } from './sinks'
+import { createPluxelPrettyTimestampFormatter, resolvePluxelLogTimezone } from './timestamp'
 import { matchesTopic, normalizeTopic } from './topic'
 
 export type PluxelLogtapeConfigPreset = 'core' | 'hmr'

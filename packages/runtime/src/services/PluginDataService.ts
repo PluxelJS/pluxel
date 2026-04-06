@@ -1,6 +1,6 @@
-import { type Context, Injectable } from '@pluxel/core'
+import { type Context as PluxelContext, Injectable } from '@pluxel/core'
 import type { BaseItem, PersistenceAdapter } from '@signaldb/core'
-import chokidar, { type FSWatcher } from 'chokidar'
+import { watch, type FSWatcher } from 'chokidar'
 import { basename, resolve } from 'pathe'
 import { SuperJSON } from 'superjson'
 import { resolveRuntimeStoragePaths } from '../runtime/paths'
@@ -51,7 +51,7 @@ export class PluginDataService {
 	private readonly watchers = new Map<string, Set<FSWatcher>>()
 	private readonly enabled: boolean
 
-	constructor(public ctx: Context) {
+	constructor(public ctx: PluxelContext) {
 		const cfg = ctx.config.pluginData ?? {}
 		this.enabled = cfg.enabled !== false
 		const dir = cfg.dir ?? resolveRuntimeStoragePaths(process.cwd()).pluginDataDir
@@ -105,11 +105,10 @@ export class PluginDataService {
 				}
 				await notify()
 				try {
-					watcher = chokidar
-						.watch(file, {
-							ignoreInitial: true,
-							awaitWriteFinish: { stabilityThreshold: 100, pollInterval: 50 },
-						})
+					watcher = watch(file, {
+						ignoreInitial: true,
+						awaitWriteFinish: { stabilityThreshold: 100, pollInterval: 50 },
+					})
 						.on('add', () => void notify())
 						.on('change', () => void notify())
 					if (!this.watchers.has(file)) this.watchers.set(file, new Set())
@@ -190,11 +189,12 @@ export class PluginDataService {
 
 							const collections = getRecordProp(parsed, 'collections')
 							if (isRecord(collections)) {
-								const raw = getRecordProp(collections, collection)
-								if (Array.isArray(raw)) return raw as T[]
-								if (typeof raw === 'string') {
+								const collectionValue = getRecordProp(collections, collection)
+								if (Array.isArray(collectionValue)) return collectionValue as T[]
+								if (typeof collectionValue === 'string') {
 									try {
-										return (options?.deserialize?.(raw) ?? JSON.parse(raw)) as T[]
+										return (options?.deserialize?.(collectionValue) ??
+											JSON.parse(collectionValue)) as T[]
 									} catch {
 										return []
 									}
@@ -209,11 +209,12 @@ export class PluginDataService {
 						if (isRecord(parsed)) {
 							const collections = getRecordProp(parsed, 'collections')
 							if (isRecord(collections)) {
-								const raw = getRecordProp(collections, collection)
-								if (Array.isArray(raw)) return raw as T[]
-								if (typeof raw === 'string') {
+								const collectionValue = getRecordProp(collections, collection)
+								if (Array.isArray(collectionValue)) return collectionValue as T[]
+								if (typeof collectionValue === 'string') {
 									try {
-										return (options?.deserialize?.(raw) ?? JSON.parse(raw)) as T[]
+										return (options?.deserialize?.(collectionValue) ??
+											JSON.parse(collectionValue)) as T[]
 									} catch {
 										return []
 									}

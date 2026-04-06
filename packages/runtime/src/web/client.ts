@@ -241,7 +241,7 @@ function withDefaultCredentials(
 		if (init?.credentials !== undefined) return baseFetch(input as any, init as any)
 		const isRequest = typeof Request === 'function' && input instanceof Request
 		if (!init && isRequest) return baseFetch(input as any, init as any)
-		return baseFetch(input as any, { ...(init ?? {}), credentials } as any)
+		return baseFetch(input as any, { ...init, credentials } as any)
 	}
 }
 
@@ -319,7 +319,7 @@ export function createRuntimeTransportClient(
 	const baseNamespaces = mergeNamespaces(baseSseOptions.namespaces, defaultNamespaces)
 
 	const buildSseOptions = (opts?: SseClientOptions, inheritNamespaces = true): SseClientOptions => {
-		const params = { ...(baseSseOptions.params ?? {}), ...(opts?.params ?? {}) }
+		const params = { ...baseSseOptions.params, ...opts?.params }
 		const namespaces = inheritNamespaces
 			? mergeNamespaces(baseNamespaces, opts?.namespaces)
 			: mergeNamespaces(opts?.namespaces)

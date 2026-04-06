@@ -9,7 +9,9 @@ import {
 } from '../workspace/src/vite'
 import { createWorkbenchFrontendPlugins } from './vite/plugins'
 
-const VALIBOT_FORM_SOURCE_ENTRY = fileURLToPath(new URL('../valibot-form/src/index.ts', import.meta.url))
+const VALIBOT_FORM_SOURCE_ENTRY = fileURLToPath(
+	new URL('../valibot-form/src/index.ts', import.meta.url),
+)
 const VALIBOT_FORM_WEB_SOURCE_ENTRY = fileURLToPath(
 	new URL('../valibot-form/src/web/index.ts', import.meta.url),
 )

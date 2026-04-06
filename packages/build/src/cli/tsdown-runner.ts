@@ -126,7 +126,9 @@ async function loadUserOverrides(
 		throw new Error('tsdown override must resolve to a single plain config object')
 	} catch (error) {
 		const reason = error instanceof Error ? error.message : String(error)
-		throw new Error(`Failed to load tsdown override at ${resolved}: ${reason}`)
+		throw new Error(`Failed to load tsdown override at ${resolved}: ${reason}`, {
+			cause: error,
+		})
 	}
 }
 

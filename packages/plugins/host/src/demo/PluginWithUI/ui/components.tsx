@@ -26,7 +26,6 @@ import { useEffect, useState } from 'react'
 import { plugin } from './runtime'
 
 type PluginWithUIRuntime = ReturnType<typeof plugin.use>
-type PluginWithUIRpc = PluginWithUIRuntime['rpc']
 type PluginWithUISseClient = PluginWithUIRuntime['transport']['sse']
 
 function useLiveConnectionState(sse: PluginWithUISseClient) {

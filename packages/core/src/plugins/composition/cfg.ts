@@ -8,12 +8,12 @@ export type ConfigLayoutPart =
 	| { readonly kind: 'schemas'; readonly keys: readonly string[] | null } // null => remaining
 
 export type ConfigLayout = readonly ConfigLayoutPart[]
-export type ConfigLayoutDirectivePart = Extract<ConfigLayoutPart, { readonly kind: 'schema' | 'schemas' }>
+export type ConfigLayoutDirectivePart = Extract<
+	ConfigLayoutPart,
+	{ readonly kind: 'schema' | 'schemas' }
+>
 
-export function assertValidConfigLayout(
-	layout: ConfigLayout,
-	options?: { label?: string },
-): void {
+export function assertValidConfigLayout(layout: ConfigLayout, options?: { label?: string }): void {
 	const label = String(options?.label ?? '[cfg]')
 	const placed = new Set<string>()
 	let hasRemaining = false
@@ -60,15 +60,17 @@ export type CfgDecl<T extends CfgSchemaMap> = {
 const CFG_TOKEN_BRAND: unique symbol = Symbol.for('pluxel:cfg:token') as any
 type CfgToken =
 	| { readonly kind: 'schema'; readonly key: string; readonly [CFG_TOKEN_BRAND]: true }
-	| { readonly kind: 'schemas'; readonly keys: readonly string[] | null; readonly [CFG_TOKEN_BRAND]: true }
+	| {
+			readonly kind: 'schemas'
+			readonly keys: readonly string[] | null
+			readonly [CFG_TOKEN_BRAND]: true
+	  }
 
-type CfgBuilder<T extends CfgSchemaMap> = CfgDecl<T> & ((
-	strings: TemplateStringsArray,
-	...values: readonly CfgToken[]
-) => CfgDecl<T>) & {
-	schema: <K extends Extract<keyof T, string>>(key: K) => CfgToken
-	schemas: <K extends Extract<keyof T, string>>(...keys: readonly K[]) => CfgToken
-}
+type CfgBuilder<T extends CfgSchemaMap> = CfgDecl<T> &
+	((strings: TemplateStringsArray, ...values: readonly CfgToken[]) => CfgDecl<T>) & {
+		schema: <K extends Extract<keyof T, string>>(key: K) => CfgToken
+		schemas: <K extends Extract<keyof T, string>>(...keys: readonly K[]) => CfgToken
+	}
 
 export function normalizeMarkdownTemplate(input: string): string {
 	const lines = input.replace(/\r\n/g, '\n').split('\n')
@@ -94,14 +96,10 @@ export const cfg: {
 		}
 		const toToken = (t: unknown): CfgToken => {
 			if (!t || typeof t !== 'object') {
-				throw new Error(
-					'[cfg] invalid interpolation (use c.schema(key) / c.schemas(...keys) only)',
-				)
+				throw new Error('[cfg] invalid interpolation (use c.schema(key) / c.schemas(...keys) only)')
 			}
 			if (!(t as any)[CFG_TOKEN_BRAND]) {
-				throw new Error(
-					'[cfg] invalid interpolation (use c.schema(key) / c.schemas(...keys) only)',
-				)
+				throw new Error('[cfg] invalid interpolation (use c.schema(key) / c.schemas(...keys) only)')
 			}
 			return t as CfgToken
 		}
@@ -121,10 +119,10 @@ export const cfg: {
 				kind: 'schema',
 				key: assertKnownKey(key, 'schema(key)'),
 				[CFG_TOKEN_BRAND]: true,
-			} as const)
+			}) as const
 
 		const schemasToken = (keys: readonly string[] | null): CfgToken =>
-			({ kind: 'schemas', keys, [CFG_TOKEN_BRAND]: true } as const)
+			({ kind: 'schemas', keys, [CFG_TOKEN_BRAND]: true }) as const
 
 		const tokenToPart = (t: CfgToken): ConfigLayoutPart => {
 			if (t.kind === 'schema') {

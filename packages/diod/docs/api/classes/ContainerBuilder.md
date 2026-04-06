@@ -1,6 +1,6 @@
 [**DIOD v3.0.0**](../README.md) • **Docs**
 
-***
+---
 
 # Class: ContainerBuilder
 
@@ -34,7 +34,7 @@ Build options.
 
 [`Container`](../interfaces/Container.md)
 
-***
+---
 
 ### isRegistered()
 
@@ -58,7 +58,7 @@ The class that identifies this service to be checked.
 
 `boolean`
 
-***
+---
 
 ### register()
 
@@ -84,7 +84,7 @@ defining it as a dependency.
 
 [`Registration`](../interfaces/Registration.md)\<`T`\>
 
-***
+---
 
 ### registerAndUse()
 
@@ -108,7 +108,7 @@ The concrete class implementation to be registered as itself.
 
 [`ConfigurableRegistration`](../interfaces/ConfigurableRegistration.md) & [`WithScopeChange`](../interfaces/WithScopeChange.md) & [`WithDependencies`](../interfaces/WithDependencies.md)
 
-***
+---
 
 ### unregister()
 

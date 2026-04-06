@@ -31,7 +31,8 @@ const checks = [
 	},
 	{
 		name: 'PLX-ERR-001: no ${error}/${err} interpolation in tagged templates',
-		pattern: String.raw`\.(warn|error|fatal)` + String.raw`[^` + '`' + String.raw`]*\$\{\s*(error|err)\b`,
+		pattern:
+			String.raw`\.(warn|error|fatal)` + String.raw`[^` + '`' + String.raw`]*\$\{\s*(error|err)\b`,
 	},
 	{
 		name: 'PLX-ERR-001: no error string concatenation at call site',

@@ -35,7 +35,7 @@ function sanitizeMessageParts(
 ): unknown[] | undefined {
 	if (!message.length) return undefined
 	const n = Math.min(message.length, caps.maxMessageParts)
-	const out = new Array<unknown>(n)
+	const out = Array<unknown>(n)
 	for (let i = 0; i < n; i++) {
 		const part = message[i]
 		if (typeof part === 'string')
@@ -261,7 +261,7 @@ export function createRuntimeLogSink(options: RuntimeLogSinkOptions = {}): Sink 
 
 	const caps: Required<RuntimeLogSinkCaps> = {
 		...DEFAULT_CAPS,
-		...(options.caps ?? {}),
+		...options.caps,
 		maxMsgChars: clampInt(options.caps?.maxMsgChars, DEFAULT_CAPS.maxMsgChars, 100, 200_000),
 		maxMessageParts: clampInt(options.caps?.maxMessageParts, DEFAULT_CAPS.maxMessageParts, 1, 200),
 		maxMessagePartChars: clampInt(

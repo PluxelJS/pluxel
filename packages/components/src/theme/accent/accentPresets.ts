@@ -82,10 +82,11 @@ const ACCENT_PRESET_DEFINITIONS: AccentPresetDefinition[] = [
 	},
 ]
 
-export const ACCENT_PRESETS: AccentPreset[] = ACCENT_PRESET_DEFINITIONS.map((preset) => ({
-	...preset,
-	palette: createMantinePaletteFromSeed(preset.color),
-}))
+export const ACCENT_PRESETS: AccentPreset[] = ACCENT_PRESET_DEFINITIONS.map((preset) =>
+	Object.assign({}, preset, {
+		palette: createMantinePaletteFromSeed(preset.color),
+	}),
+)
 const ACCENT_PRESET_MAP = new Map(ACCENT_PRESETS.map((preset) => [preset.key, preset] as const))
 
 /** 默认主题色 key */

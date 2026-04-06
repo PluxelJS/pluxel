@@ -17,18 +17,14 @@ export class ExtensionSessionHandle extends RpcTarget implements ExtensionSessio
 		return await this.ctx.ext.ui.loadSession(String(sessionId ?? '').trim())
 	}
 
-	async syncDraft(
-		input: ExtensionSessionDraftSyncInput,
-	): Promise<ExtensionSessionMutationResult> {
+	async syncDraft(input: ExtensionSessionDraftSyncInput): Promise<ExtensionSessionMutationResult> {
 		return await this.ctx.ext.ui.syncDraft({
 			sessionId: String(input?.sessionId ?? '').trim(),
 			draft: input?.draft,
 		})
 	}
 
-	async commitSession(
-		input: ExtensionSessionCommitInput,
-	): Promise<ExtensionSessionMutationResult> {
+	async commitSession(input: ExtensionSessionCommitInput): Promise<ExtensionSessionMutationResult> {
 		return await this.ctx.ext.ui.commitSession({
 			sessionId: String(input?.sessionId ?? '').trim(),
 			result: input?.result,

@@ -48,4 +48,3 @@ export function applyHmrEnvOverrides(base: HMRConfig, env = process.env): HMRCon
 
 	return out
 }
-

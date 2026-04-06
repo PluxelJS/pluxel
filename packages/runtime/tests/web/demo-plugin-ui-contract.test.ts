@@ -24,15 +24,12 @@ type DemoModules = {
 async function loadDemoModules(): Promise<DemoModules> {
 	const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
 	try {
-		const [
-			{ default: pluginWithUi },
-			{ default: fontPickerUi },
-			{ default: statusBadgeUi },
-		] = await Promise.all([
-			import('../../../plugins/host/src/demo/PluginWithUI/ui/index'),
-			import('../../../plugins/host/src/demo/PluginContributionFontDemo/ui/index'),
-			import('../ui-demos/PluginStatusBadge/ui/StatusBadge'),
-		])
+		const [{ default: pluginWithUi }, { default: fontPickerUi }, { default: statusBadgeUi }] =
+			await Promise.all([
+				import('../../../plugins/host/src/demo/PluginWithUI/ui/index'),
+				import('../../../plugins/host/src/demo/PluginContributionFontDemo/ui/index'),
+				import('../ui-demos/PluginStatusBadge/ui/StatusBadge'),
+			])
 		return {
 			pluginWithUi,
 			fontPickerUi,
@@ -44,9 +41,7 @@ async function loadDemoModules(): Promise<DemoModules> {
 }
 
 describe('demo plugin UI contract', () => {
-	it(
-		'keeps demo modules on the stable definePluginUIModule surface',
-		async () => {
+	it('keeps demo modules on the stable definePluginUIModule surface', async () => {
 		const { pluginWithUi, fontPickerUi, statusBadgeUi } = await loadDemoModules()
 		const modules: Array<[name: string, module: PluginUIModule]> = [
 			['PluginWithUI', pluginWithUi],
@@ -59,16 +54,16 @@ describe('demo plugin UI contract', () => {
 			expectUnique(extensionIds(module), `${name} extension ids`)
 			expectUnique(routePaths(module), `${name} route paths`)
 		}
-		},
-		15_000,
-	)
+	}, 15_000)
 
 	it('preserves the key host demo affordances', async () => {
 		const { pluginWithUi, fontPickerUi, statusBadgeUi } = await loadDemoModules()
-		expect(pluginWithUi.extensions?.some((ext) => ext.point === ExtensionPoints.HeaderActions)).toBe(
+		expect(
+			pluginWithUi.extensions?.some((ext) => ext.point === ExtensionPoints.HeaderActions),
+		).toBe(true)
+		expect(pluginWithUi.extensions?.some((ext) => ext.point === ExtensionPoints.PluginInfo)).toBe(
 			true,
 		)
-		expect(pluginWithUi.extensions?.some((ext) => ext.point === ExtensionPoints.PluginInfo)).toBe(true)
 		expect(
 			pluginWithUi.extensions?.some(
 				(ext) => ext.point === ExtensionPoints.PluginInfo && ext.requireRunning === true,

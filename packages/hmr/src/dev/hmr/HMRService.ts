@@ -344,16 +344,16 @@ export class HMRService {
 		}
 
 		setPkgrootCacheLimit(this.config.pkgrootCacheLimit)
-		this.serverConfigured = new Promise<void>((resolve, reject) => {
+		this.serverConfigured = new Promise<void>((resolveServerConfigured, rejectServerConfigured) => {
 			this.serverConfiguredResolve = () => {
 				this.serverConfiguredResolve = () => undefined
 				this.serverConfiguredReject = () => undefined
-				resolve()
+				resolveServerConfigured()
 			}
 			this.serverConfiguredReject = (error) => {
 				this.serverConfiguredResolve = () => undefined
 				this.serverConfiguredReject = () => undefined
-				reject(error)
+				rejectServerConfigured(error)
 			}
 		})
 
@@ -826,7 +826,7 @@ export class HMRService {
 						}
 					} else {
 						for (const k of keys) pushIfPlugin(k)
-						pluginKeys.sort((a, b) => a.localeCompare(b))
+						pluginKeys.sort((leftKey, rightKey) => leftKey.localeCompare(rightKey))
 						if (pluginKeys.length === 0) {
 							throw new Error(
 								`[hmr] Builtin "${b.packageName}" exports no @Plugin ctors as named exports.` +
@@ -1069,7 +1069,7 @@ export class HMRService {
 		this.lastBatchSummary = summary
 		if (!this.batchWaiters.size) return
 
-		for (const w of [...this.batchWaiters]) {
+		for (const w of Array.from(this.batchWaiters)) {
 			if (summary.epoch <= w.afterEpoch) continue
 			w.cleanup()
 			w.resolve(summary)
@@ -1089,7 +1089,7 @@ export class HMRService {
 		const current = this.lastBatchSummary
 		if (current && current.epoch > afterEpoch) return Promise.resolve(current)
 
-		return new Promise<HmrBatchSummary>((resolve, reject) => {
+		return new Promise<HmrBatchSummary>((resolveWaiter, rejectWaiter) => {
 			let timeout: NodeJS.Timeout | undefined
 			let waiter: HmrBatchWaiter | null = null
 
@@ -1107,13 +1107,13 @@ export class HMRService {
 				options.signal && typeof options.signal === 'object'
 					? () => {
 							cleanup()
-							reject(Object.assign(new Error('Aborted'), { name: 'AbortError' }))
+							rejectWaiter(Object.assign(new Error('Aborted'), { name: 'AbortError' }))
 						}
 					: null
 
 			if (options.signal?.aborted) {
 				cleanup()
-				reject(Object.assign(new Error('Aborted'), { name: 'AbortError' }))
+				rejectWaiter(Object.assign(new Error('Aborted'), { name: 'AbortError' }))
 				return
 			}
 			if (onAbort) options.signal.addEventListener('abort', onAbort, { once: true })
@@ -1121,7 +1121,7 @@ export class HMRService {
 			if (timeoutMs > 0) {
 				timeout = setTimeout(() => {
 					cleanup()
-					reject(
+					rejectWaiter(
 						Object.assign(new Error(`Timed out waiting for HMR batch (afterEpoch=${afterEpoch})`), {
 							name: 'HmrBatchTimeoutError',
 							afterEpoch,
@@ -1130,7 +1130,7 @@ export class HMRService {
 				}, timeoutMs)
 			}
 
-			waiter = { afterEpoch, resolve, reject, cleanup }
+			waiter = { afterEpoch, resolve: resolveWaiter, reject: rejectWaiter, cleanup }
 			this.batchWaiters.add(waiter)
 		})
 	}
@@ -1330,7 +1330,7 @@ export class HMRService {
 
 			const rootsAbs = this.scanRootsAbs.slice().sort()
 			const rootsPretty = rootsAbs.map((root) => this.path.pretty(root))
-			const entriesByRoot = new Array<number>(rootsAbs.length).fill(0)
+			const entriesByRoot = Array<number>(rootsAbs.length).fill(0)
 			const isUnder = (child: string, root: string) =>
 				child === root || child.startsWith(root.endsWith('/') ? root : `${root}/`)
 

@@ -1,6 +1,10 @@
 import type { Context } from '@pluxel/context'
 import type { Cleanup, EffectsScope } from '../../services/effects/EffectsService'
-import { getDeclaredConfigBindings, getDeclaredConfigKeys, getFeatureNamespace } from '../decorators/decorator/api'
+import {
+	getDeclaredConfigBindings,
+	getDeclaredConfigKeys,
+	getFeatureNamespace,
+} from '../decorators/decorator/api'
 import type { AnyCtor } from '../decorators/decorator/shared'
 import { CONFIGS, type ConfigHost } from './ConfigHost'
 
@@ -94,9 +98,9 @@ export abstract class BaseFeature<C extends Context = Context> {
 				continue
 			}
 			if (keys.length === 1) {
-				;(this as unknown as Record<string, unknown>)[field] = (
-					record as Record<string, unknown>
-				)[plan.prefix + keys[0]!]
+				;(this as unknown as Record<string, unknown>)[field] = (record as Record<string, unknown>)[
+					plan.prefix + keys[0]!
+				]
 				continue
 			}
 			const obj: Record<string, unknown> = Object.create(null)

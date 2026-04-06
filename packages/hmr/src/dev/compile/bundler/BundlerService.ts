@@ -3,10 +3,10 @@ import { existsSync } from 'node:fs'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import type { Logger as LogtapeLogger } from '@logtape/logtape'
-import { type Context, Injectable } from '@pluxel/core'
+import { type Context as PluxelContext, Injectable } from '@pluxel/core'
 import { getDebugLogger } from '@pluxel/core/logger'
 import { resolveModuleIdBaseDir } from '@pluxel/runtime/internal'
-import chokidar, { type FSWatcher } from 'chokidar'
+import { watch, type FSWatcher } from 'chokidar'
 import { dirname, isAbsolute, join, resolve } from 'pathe'
 import { collectModuleGraphFiles } from './moduleGraph'
 
@@ -47,7 +47,7 @@ export type BundleResult = {
 	hash: string
 }
 
-export type TinypoolWorkerOwnerContext = Pick<Context, 'loader' | 'pluginInfo'>
+export type TinypoolWorkerOwnerContext = Pick<PluxelContext, 'loader' | 'pluginInfo'>
 
 export type TinypoolWorkerCompileOptions = {
 	external?: string[]
@@ -87,7 +87,7 @@ export class BundlerService {
 	private readonly outDir: string
 
 	constructor(
-		public ctx: Context,
+		public ctx: PluxelContext,
 		config?: BundlerServiceConfig,
 	) {
 		const logger = (this.ctx as unknown as { logger?: unknown }).logger
@@ -217,7 +217,7 @@ export class BundlerService {
 			if (!files.length || disposed) return
 
 			watchSignature = nextSignature
-			const nextWatcher = chokidar.watch(files, {
+			const nextWatcher = watch(files, {
 				ignoreInitial: true,
 				awaitWriteFinish: { stabilityThreshold: 100, pollInterval: 50 },
 				ignored: WATCHER_IGNORED_GLOBS,

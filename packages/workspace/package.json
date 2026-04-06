@@ -1,8 +1,12 @@
 {
 	"name": "@pluxel/workspace",
-	"private": true,
 	"version": "0.3.0",
+	"private": true,
 	"description": "Workspace utilities (fs crawl, workspace info)",
+	"files": [
+		"dist",
+		"!**/*.map"
+	],
 	"type": "module",
 	"types": "./dist/index.d.mts",
 	"exports": {
@@ -12,10 +16,6 @@
 		},
 		"./package.json": "./package.json"
 	},
-	"files": [
-		"dist",
-		"!**/*.map"
-	],
 	"scripts": {
 		"build": "tsdown"
 	},

@@ -62,12 +62,16 @@ describe('paraglide integration', () => {
 
 		const resolved = resolveParaglideIntegrationWithFs(fixture.path, fixture.fs)
 		expect(
-			isParaglideGeneratedFile(resolved, join(fixture.path, PLUXEL_PARAGLIDE_OUTDIR, 'messages.js')),
-		).toBe(
-			true,
-		)
+			isParaglideGeneratedFile(
+				resolved,
+				join(fixture.path, PLUXEL_PARAGLIDE_OUTDIR, 'messages.js'),
+			),
+		).toBe(true)
 		expect(
-			isParaglideGeneratedFile(resolved, join(fixture.path, PLUXEL_PARAGLIDE_MESSAGES_DIR, 'en.json')),
+			isParaglideGeneratedFile(
+				resolved,
+				join(fixture.path, PLUXEL_PARAGLIDE_MESSAGES_DIR, 'en.json'),
+			),
 		).toBe(false)
 	})
 })

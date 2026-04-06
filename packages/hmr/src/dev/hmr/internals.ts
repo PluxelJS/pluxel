@@ -154,7 +154,7 @@ export class BatchDebouncer {
 
 	private notifyIdle() {
 		if (!this.isIdle() || this.idleWaiters.size === 0) return
-		for (const w of [...this.idleWaiters]) {
+		for (const w of Array.from(this.idleWaiters)) {
 			try {
 				w.resolve()
 			} catch {

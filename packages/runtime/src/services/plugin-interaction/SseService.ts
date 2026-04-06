@@ -235,7 +235,7 @@ export class SseService {
 			event: string,
 			data?: unknown,
 			extras?: Omit<SseEventPayload, 'data' | 'event'>,
-		) => send({ ...(extras ?? {}), event, data })
+		) => send({ ...extras, event, data })
 
 		return { namespace, ...base, send, emit }
 	}

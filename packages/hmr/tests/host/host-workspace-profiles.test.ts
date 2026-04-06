@@ -12,9 +12,9 @@ describe('@pluxel/hmr/host snapshot contract', () => {
 		})
 
 		// @ts-expect-error runtime contract check: snapshot is required
-		await expect(
-			createTestHmrHost({ fs: fixture.fs, root: fixture.path }),
-		).rejects.toThrow(/snapshot is required/i)
+		await expect(createTestHmrHost({ fs: fixture.fs, root: fixture.path })).rejects.toThrow(
+			/snapshot is required/i,
+		)
 	})
 
 	it('boots deterministically when snapshot is provided', async () => {

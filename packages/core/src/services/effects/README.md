@@ -30,4 +30,3 @@ Guard 是唯一关键句柄：
 - `guard.cancel()`：只注销不执行
 
 > 详细语义与实现 checklist：`packages/core/src/services/effects/DESIGN.md`。
-

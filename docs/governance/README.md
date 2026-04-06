@@ -6,4 +6,3 @@
 
 1. `docs/governance/packaging.md`
 2. `docs/governance/agent-rules.md`
-

@@ -8,7 +8,7 @@
 // - Performance first: heavy work is split into pure helpers without changing
 //   construction/lifecycle hot paths.
 
-import type { Context, ServiceClass } from '@pluxel/context'
+import type { Context as PluxelContext, ServiceClass } from '@pluxel/context'
 import { Injectable } from '@pluxel/context'
 import { createErr, createOk } from 'option-t/plain_result'
 import type { ServiceMap } from '../../container'
@@ -48,7 +48,7 @@ type PluginServiceConfig = {
 	featureDeclarationPolicy?: 'off' | 'warn' | 'error'
 }
 
-type AnyServiceClass = ServiceClass<new (ctx: Context, cfg?: unknown) => unknown>
+type AnyServiceClass = ServiceClass<new (ctx: PluxelContext, cfg?: unknown) => unknown>
 
 export interface CommitSummary {
 	container: PluginDiContainer
@@ -77,7 +77,9 @@ type InstanceWatcher = {
 
 const serviceName = 'registry' as const
 declare module '@pluxel/context' {
+	// oxlint-disable-next-line eslint/no-unused-vars -- declaration merging target namespace
 	namespace Context {
+		// oxlint-disable-next-line eslint/no-unused-vars -- declaration merging target interface
 		interface Config {
 			[serviceName]?: PluginServiceConfig
 		}
@@ -88,6 +90,7 @@ declare module '@pluxel/context' {
 		caller?: Context
 	}
 	export namespace Context {
+		// oxlint-disable-next-line eslint/no-unused-vars -- declaration merging target interface
 		interface Services {
 			[serviceName]: PluginService
 		}
@@ -137,7 +140,7 @@ export class PluginService {
 	private readonly lifecycle: LifecycleManager
 
 	constructor(
-		public ctx: Context,
+		public ctx: PluxelContext,
 		config: PluginServiceConfig,
 	) {
 		this.startTimeoutMs = config?.startTimeoutMs ?? 1_500
@@ -664,24 +667,23 @@ export class PluginService {
 
 		// Core responsibility: inject declared config fields before plugin init().
 		// Doing it directly avoids an extra event hop on every plugin start.
+		try {
+			await this.injectConfig(instance)
+		} catch (error) {
+			const err = error instanceof Error ? error : new Error(String(error), { cause: error })
 			try {
-				await this.injectConfig(instance)
-			} catch (error) {
-				const err =
-					error instanceof Error ? error : new Error(String(error), { cause: error })
-				try {
-					// Treat config injection/validation failures as start errors so callers can observe the root cause.
-					this.ctx.emit('startError', pluginCtx, err)
-				} catch {
-					// ignore: events service may be overridden
-				}
-				const logger = pluginCtx.logger ?? this.ctx.logger
-				logger.with({ error: err }).error`注入/校验配置到 ${String(id)} 失败`
-				try {
-					await pluginCtx.effects.dispose()
-				} catch {
-					/* ignored */
-				}
+				// Treat config injection/validation failures as start errors so callers can observe the root cause.
+				this.ctx.emit('startError', pluginCtx, err)
+			} catch {
+				// ignore: events service may be overridden
+			}
+			const logger = pluginCtx.logger ?? this.ctx.logger
+			logger.with({ error: err }).error`注入/校验配置到 ${String(id)} 失败`
+			try {
+				await pluginCtx.effects.dispose()
+			} catch {
+				/* ignored */
+			}
 			failed.add(id)
 			return
 		}

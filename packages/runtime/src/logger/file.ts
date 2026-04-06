@@ -4,7 +4,10 @@ import {
 	type TimeRotatingFileSinkOptions,
 } from '@logtape/file'
 import { getTextFormatter, type Sink } from '@logtape/logtape'
-import { createPluxelTextTimestampFormatter, resolvePluxelLogFileTimezone } from '@pluxel/core/logger'
+import {
+	createPluxelTextTimestampFormatter,
+	resolvePluxelLogFileTimezone,
+} from '@pluxel/core/logger'
 import { basename, dirname, extname } from 'pathe'
 
 function formatDate(date: Date): string {
@@ -92,9 +95,7 @@ export function createDailyTimeRotatingFileSink(
 		maxAgeMs: opts.maxAgeMs,
 		formatter:
 			opts.formatter ??
-			createSafeTextFormatter(
-				createPluxelTextTimestampFormatter(resolvePluxelLogFileTimezone()),
-			),
+			createSafeTextFormatter(createPluxelTextTimestampFormatter(resolvePluxelLogFileTimezone())),
 	})
 }
 

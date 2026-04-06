@@ -26,13 +26,13 @@ function definePlugin(name: string, deps?: unknown[]): PluginCtor {
 }
 
 function createIndependent(prefix: string, count: number): PluginCtor[] {
-	const list = new Array<PluginCtor>(count)
+	const list = Array<PluginCtor>(count)
 	for (let i = 0; i < count; i++) list[i] = definePlugin(`${prefix}${i}`)
 	return list
 }
 
 function createChain(length: number) {
-	const chain = new Array<PluginCtor>(length)
+	const chain = Array<PluginCtor>(length)
 	let prev: PluginCtor | undefined
 	for (let i = 0; i < length; i++) {
 		const ctor = definePlugin(`BenchChain_${i}`, prev ? [prev] : undefined)
@@ -56,7 +56,7 @@ function createStar(leaves: number) {
 	const hotLeafV1 = definePlugin('BenchStarHotLeaf', [rootV1])
 	const hotLeafV2 = definePlugin('BenchStarHotLeaf', [rootV1])
 
-	const leafCtors = new Array<PluginCtor>(leaves)
+	const leafCtors = Array<PluginCtor>(leaves)
 	leafCtors[0] = hotLeafV1
 	for (let i = 1; i < leaves; i++) leafCtors[i] = definePlugin(`BenchStarLeaf_${i}`, [rootV1])
 

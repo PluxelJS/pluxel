@@ -1,11 +1,5 @@
 import { readFileSync, writeFileSync } from 'node:fs'
-import {
-	copyFile,
-	mkdir,
-	rename,
-	rm,
-	writeFile,
-} from 'node:fs/promises'
+import { copyFile, mkdir, rename, rm, writeFile } from 'node:fs/promises'
 import {
 	DEFAULT_IGNORED_DIR_NAMES,
 	crawlFilesAbsWithFs,
@@ -27,11 +21,10 @@ export type { WorkspaceFs }
 
 export type HmrWorkspaceFs = WorkspaceFs &
 	FsServiceNodeBackendFs & {
-	readFileSync(path: string, encoding: BufferEncoding): string
-	writeFileSync(path: string, contents: string, encoding: BufferEncoding): void
-	promises: WorkspaceFs['promises'] &
-		FsServiceNodeBackendFs['promises']
-}
+		readFileSync(path: string, encoding: BufferEncoding): string
+		writeFileSync(path: string, contents: string, encoding: BufferEncoding): void
+		promises: WorkspaceFs['promises'] & FsServiceNodeBackendFs['promises']
+	}
 
 export const nodeHmrWorkspaceFs = {
 	...nodeWorkspaceFs,

@@ -352,23 +352,23 @@ export function PluginWorkbenchPanel() {
 					</div>
 				),
 			},
-				{
-					id: 'levels',
-					label: '级别',
-					content: (
-						<WorkbenchScrollPane compact>
-							<LogLevelsCard pluginId={pluginName} compact />
-						</WorkbenchScrollPane>
-					),
-				},
+			{
+				id: 'levels',
+				label: '级别',
+				content: (
+					<WorkbenchScrollPane compact>
+						<LogLevelsCard pluginId={pluginName} compact />
+					</WorkbenchScrollPane>
+				),
+			},
 			{
 				id: 'tools',
-					label: '工具',
-					count: dockSurface.nodes.length,
-					hidden: dockSurface.nodes.length === 0,
-					content: <WorkbenchScrollPane compact>{dockSurface.nodes}</WorkbenchScrollPane>,
-				},
-			],
+				label: '工具',
+				count: dockSurface.nodes.length,
+				hidden: dockSurface.nodes.length === 0,
+				content: <WorkbenchScrollPane compact>{dockSurface.nodes}</WorkbenchScrollPane>,
+			},
+		],
 		[dockSurface.nodes, pluginName],
 	)
 

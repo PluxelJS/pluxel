@@ -103,10 +103,7 @@ export {
 	normalizeExtensionRouteSubPath,
 } from './paths'
 // Registry
-export {
-	extensionRegistry,
-	useExtensions,
-} from './internal/registry'
+export { extensionRegistry, useExtensions } from './internal/registry'
 // Runtime
 export {
 	getPluginUiRegistryRevision,
@@ -117,10 +114,7 @@ export {
 	unloadPluginUiModule,
 } from './internal/pluginUiRegistry'
 export { requestExtensionManifestSync } from './internal/runtime-state'
-export {
-	ensureExtensionFederationRuntime,
-	loadFederatedExtensionModule,
-} from './federationRuntime'
+export { ensureExtensionFederationRuntime, loadFederatedExtensionModule } from './federationRuntime'
 
 // 组件 & Slot helpers
 export { ExtensionSlot } from './slots/ExtensionSlot'

@@ -6,10 +6,7 @@ import type {
 	GlobalExtensionContext,
 	PluginExtensionContext,
 } from './ui-contracts'
-import {
-	useGlobalExtensionContext,
-	usePluginExtensionContext,
-} from './ui-contracts'
+import { useGlobalExtensionContext, usePluginExtensionContext } from './ui-contracts'
 import type { RuntimeTransportClient } from '../client'
 import type { ExtensionUiRpcMap, ExtensionUiSignalDbMap } from '../protocol'
 import type {
@@ -99,10 +96,7 @@ export type PluginUiApp<
 	db: PluginUiDb<Name>
 }>
 
-export interface PluginUiCollection<
-	Name extends string,
-	Key extends PluginUiCollectionKey<Name>,
-> {
+export interface PluginUiCollection<Name extends string, Key extends PluginUiCollectionKey<Name>> {
 	readonly name: Key
 	useView(): SignalDbCollectionView<PluginUiCollectionItem<Name, Key>>
 	useDocById(id: string): PluginUiCollectionItem<Name, Key> | undefined
@@ -160,18 +154,16 @@ function usePluginDb<Name extends string>(
 		deps: DependencyList = [],
 	): T {
 		const view = useCollectionView(collection)
-		const stableDeps = useMemo(
-			() => deps.map((dep) => stabilizeSignalDbValue(dep)),
-			// `deps` comes from the caller; we intentionally normalize by structure.
-			// eslint-disable-next-line react-hooks/exhaustive-deps
-			[signalDbValueKey(deps)],
-		)
+		const depsKey = signalDbValueKey(deps)
+		const stableDeps = useMemo(() => deps.map((dep) => stabilizeSignalDbValue(dep)), [depsKey])
 		return useSignalDbQueryState(() => query(view), [view, stableDeps])
 	}
 
 	function useDocById<Key extends PluginUiCollectionKey<Name>>(collection: Key, id: string) {
 		const stableId = useMemo(() => String(id), [id])
-		return useDoc(collection, { id: stableId } as SignalDbSelector<PluginUiCollectionItem<Name, Key>>)
+		return useDoc(collection, { id: stableId } as SignalDbSelector<
+			PluginUiCollectionItem<Name, Key>
+		>)
 	}
 
 	function useDoc<Key extends PluginUiCollectionKey<Name>>(
@@ -206,21 +198,25 @@ function usePluginDb<Name extends string>(
 		>,
 	): number {
 		const stableSelector = useStableSignalDbSelector(selector)
-		return useCollectionLiveQuery(collection, (view) => view.count(stableSelector), [stableSelector])
+		return useCollectionLiveQuery(collection, (view) => view.count(stableSelector), [
+			stableSelector,
+		])
 	}
 
 	function useLiveQuery<T>(query: () => T, deps?: DependencyList) {
+		const depsKey = signalDbValueKey(deps ?? [])
 		const stableDeps = useMemo(
 			() => (deps ?? []).map((dep) => stabilizeSignalDbValue(dep)),
-			// eslint-disable-next-line react-hooks/exhaustive-deps
-			[signalDbValueKey(deps ?? [])],
+			[depsKey],
 		)
 		return useSignalDbQueryState(query, stableDeps)
 	}
 
 	return useMemo(
 		() => ({
-			collection<Key extends PluginUiCollectionKey<Name>>(name: Key): PluginUiCollection<Name, Key> {
+			collection<Key extends PluginUiCollectionKey<Name>>(
+				name: Key,
+			): PluginUiCollection<Name, Key> {
 				return {
 					name,
 					useView: () => useCollectionView(name),
@@ -252,18 +248,22 @@ function usePluginAppFromContext<Name extends string, Ctx extends ExtensionConte
 	const locale = services.locale.locale
 	const fallbackLocale = services.locale.fallbackLocale
 	const rpc = useMemo(
-		() => ((transport.extensions as unknown) as Record<string, unknown>)[pluginName] as PluginUiRpc<Name>,
+		() =>
+			(transport.extensions as unknown as Record<string, unknown>)[pluginName] as PluginUiRpc<Name>,
 		[pluginName, transport],
 	)
-	const sse = useMemo(() => transport.sse.ns(pluginName) as SseNamespaceClient<Name>, [
-		pluginName,
-		transport,
-	])
+	const sse = useMemo(
+		() => transport.sse.ns(pluginName) as SseNamespaceClient<Name>,
+		[pluginName, transport],
+	)
 
 	return useMemo(
 		() => ({
 			pluginName,
-			pathname: ('pluginName' in context ? context.pathname : null) as PluginUiApp<Name, Ctx>['pathname'],
+			pathname: ('pluginName' in context ? context.pathname : null) as PluginUiApp<
+				Name,
+				Ctx
+			>['pathname'],
 			colorScheme: context.colorScheme,
 			runningPlugins: context.runningPlugins,
 			runningPluginsReady: context.runningPluginsReady,
@@ -279,7 +279,18 @@ function usePluginAppFromContext<Name extends string, Ctx extends ExtensionConte
 			confirm: services.ui.confirm,
 			db,
 		}),
-		[context, db, fallbackLocale, locale, localeSnapshot, pluginName, rpc, services, sse, transport],
+		[
+			context,
+			db,
+			fallbackLocale,
+			locale,
+			localeSnapshot,
+			pluginName,
+			rpc,
+			services,
+			sse,
+			transport,
+		],
 	)
 }
 
@@ -303,7 +314,10 @@ export function pluginUi<const Name extends string>(pluginName: Name): PluginUi<
 function useStableSignalDbSelector<T extends SignalDbItem>(
 	selector: SignalDbSelector<T>,
 ): SignalDbSelector<T> {
-	const normalized = useMemo(() => normalizeSignalDbSelector(selector), [signalDbValueKey(selector)])
+	const normalized = useMemo(
+		() => normalizeSignalDbSelector(selector),
+		[signalDbValueKey(selector)],
+	)
 	return normalized as SignalDbSelector<T>
 }
 
@@ -364,7 +378,9 @@ function signalDbValueKey(value: unknown, seen = new WeakSet<object>()): string 
 	if (valueType !== 'object') return `${valueType}:${String(value)}`
 	if (seen.has(value as object)) return 'circular'
 	seen.add(value as object)
-	const entries = Object.entries(value as Record<string, unknown>).sort(([a], [b]) => a.localeCompare(b))
+	const entries = Object.entries(value as Record<string, unknown>).sort(([a], [b]) =>
+		a.localeCompare(b),
+	)
 	const result = `object:{${entries
 		.map(([key, entryValue]) => `${key}:${signalDbValueKey(entryValue, seen)}`)
 		.join(',')}}`

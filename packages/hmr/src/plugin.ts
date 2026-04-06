@@ -21,7 +21,8 @@ export interface HmrUiModuleDeclaration {
 }
 
 function normalizeUiConfig(input: string | HmrUiSourceDeclaration): HmrUiSourceDeclaration {
-	const entryPath = typeof input === 'string' ? String(input).trim() : String(input.entryPath ?? '').trim()
+	const entryPath =
+		typeof input === 'string' ? String(input).trim() : String(input.entryPath ?? '').trim()
 	return { entryPath }
 }
 

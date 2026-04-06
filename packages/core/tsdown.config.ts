@@ -41,7 +41,7 @@ export default defineConfig({
 	treeshake: true,
 	inputOptions(options, _format, context) {
 		options.transform = {
-			...(options.transform ?? {}),
+			...options.transform,
 			...transformOptions,
 		}
 

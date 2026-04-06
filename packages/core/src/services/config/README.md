@@ -31,7 +31,6 @@ UI/RPC 往往需要：
 - `collectConfigDefaults(schemaMap, { missingObjectDefault })`
 - `validateConfigPatch(schemaMap, patch)`
 
-
 ## 关键语义
 
 - `getValidatedConfig()` 默认用 `ctx.pluginInfo?.id` 作为 key：**只有在插件 Context 里调用才有意义**。它不会隐式回退 raw：若未 `ensureValidated(...)`，会抛错（避免静默读取未校验配置）。

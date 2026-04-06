@@ -32,17 +32,9 @@ export type {
 	RuntimeLogError,
 	RuntimeLogLine,
 } from './logger/protocol'
-export {
-	compileLogFilter,
-	matchesLogFilter,
-	matchesLogFilterCompiled,
-} from './logger/protocol'
+export { compileLogFilter, matchesLogFilter, matchesLogFilterCompiled } from './logger/protocol'
 
-export {
-	createLogStoreSink,
-	createRuntimeLogSink,
-	type RuntimeLogSinkOptions,
-} from './logger/sink'
+export { createLogStoreSink, createRuntimeLogSink, type RuntimeLogSinkOptions } from './logger/sink'
 
 export type {
 	RuntimeLogStoreAppend,

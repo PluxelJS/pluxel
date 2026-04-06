@@ -76,12 +76,11 @@
 }
 
 .plx-pluginCatalog__sectionCard {
-	background:
-		linear-gradient(
-			180deg,
-			color-mix(in srgb, var(--plx-surface-strong) 92%, transparent) 0%,
-			color-mix(in srgb, var(--plx-surface) 98%, transparent) 100%
-		);
+	background: linear-gradient(
+		180deg,
+		color-mix(in srgb, var(--plx-surface-strong) 92%, transparent) 0%,
+		color-mix(in srgb, var(--plx-surface) 98%, transparent) 100%
+	);
 	border: 1px solid color-mix(in srgb, var(--plx-border) 80%, transparent);
 	border-radius: 12px;
 	box-shadow:
@@ -167,12 +166,11 @@
 
 .plx-pluginCatalog__bulkBar {
 	align-items: center;
-	background:
-		linear-gradient(
-			180deg,
-			color-mix(in srgb, var(--plx-accent-soft) 46%, var(--plx-surface) 54%) 0%,
-			color-mix(in srgb, var(--plx-accent-soft) 32%, var(--plx-surface) 68%) 100%
-		);
+	background: linear-gradient(
+		180deg,
+		color-mix(in srgb, var(--plx-accent-soft) 46%, var(--plx-surface) 54%) 0%,
+		color-mix(in srgb, var(--plx-accent-soft) 32%, var(--plx-surface) 68%) 100%
+	);
 	border: 1px solid color-mix(in srgb, var(--plx-selected-border) 76%, var(--plx-border) 24%);
 	border-radius: 12px;
 	box-shadow: 0 10px 22px color-mix(in srgb, var(--plx-accent) 10%, transparent);
@@ -229,12 +227,12 @@
 	transform: scale(1.03);
 }
 
-.plx-pluginCatalog__rowSelector[data-selected="true"] {
+.plx-pluginCatalog__rowSelector[data-selected='true'] {
 	background: var(--plx-accent);
 	border-color: var(--plx-accent);
 	color: var(--plx-accent-contrast);
 }
 
-.plx-pluginCatalog__row[data-focused="true"] {
+.plx-pluginCatalog__row[data-focused='true'] {
 	box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--plx-selected-border) 78%, transparent);
 }

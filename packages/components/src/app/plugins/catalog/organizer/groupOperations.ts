@@ -31,10 +31,11 @@ export const movePluginIdsToTarget = ({
 	targetGroupId: string | 'ROOT_UNGROUPED'
 }) => {
 	const movingSet = new Set(pluginIds)
-	const cleanedGroups = groups.map((group) => ({
-		...group,
-		pluginIds: group.pluginIds.filter((id) => !movingSet.has(id)),
-	}))
+	const cleanedGroups = groups.map((group) =>
+		Object.assign({}, group, {
+			pluginIds: group.pluginIds.filter((id) => !movingSet.has(id)),
+		}),
+	)
 	const cleanedUngrouped = ungroupedOrder.filter((id) => !movingSet.has(id))
 
 	if (targetGroupId === 'ROOT_UNGROUPED') {
@@ -47,7 +48,7 @@ export const movePluginIdsToTarget = ({
 	return {
 		groups: cleanedGroups.map((group) =>
 			group.groupId === targetGroupId
-				? { ...group, pluginIds: [...group.pluginIds, ...pluginIds] }
+				? Object.assign({}, group, { pluginIds: [...group.pluginIds, ...pluginIds] })
 				: group,
 		),
 		ungroupedOrder: cleanedUngrouped,

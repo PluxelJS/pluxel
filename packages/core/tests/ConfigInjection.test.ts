@@ -41,9 +41,7 @@ class CfgGroups extends BasePlugin {
 		b: PassthroughSchema,
 	} as const
 
-	settings = this.configs.use(
-		cfg(CfgGroups.schemas),
-	)
+	settings = this.configs.use(cfg(CfgGroups.schemas))
 
 	override init(): void {
 		seen.push({ foo: (this.settings as any).a, count: (this.settings as any).b })
@@ -102,14 +100,19 @@ describe('TestHost config injection', () => {
 			expect(Object.keys(schemaMap ?? {}).sort()).toEqual(['count', 'foo'])
 			expect(schemaMap.foo).toBe(PassthroughSchema)
 			expect(schemaMap.count).toBe(PassthroughSchema)
-			expect((PassthroughSchema as any)['~standard']?.validate?.('hello')).toEqual({ value: 'hello' })
+			expect((PassthroughSchema as any)['~standard']?.validate?.('hello')).toEqual({
+				value: 'hello',
+			})
 			validatedInputs = []
 			const snap = await host.ctx.configService.ensureValidated('Cfg', schemaMap)
 			expect(host.ctx.configService.getConfigRevision('Cfg')).toBeGreaterThan(0)
 			expect(validatedInputs).toEqual(['hello', 42])
 			expect(snap).toMatchObject({ foo: 'hello', count: 42 })
 			await host.start(CfgPlugin)
-			expect(host.ctx.configService.getValidatedConfig('Cfg')).toMatchObject({ foo: 'hello', count: 42 })
+			expect(host.ctx.configService.getValidatedConfig('Cfg')).toMatchObject({
+				foo: 'hello',
+				count: 42,
+			})
 
 			const instance = host.require(CfgPlugin) as CfgPlugin
 			expect(instance.ctx.pluginInfo.id).toBe('Cfg')
@@ -162,7 +165,9 @@ describe('TestHost config injection', () => {
 		} as const)
 
 		expect(() => c`${c.schema('a')}${c.schema('a')}`).toThrowError(/duplicate schema placement/)
-		expect(() => c`${c.schemas()}${c.schema('a')}`).toThrowError(/must be the last schema-placement token/)
+		expect(() => c`${c.schemas()}${c.schema('a')}`).toThrowError(
+			/must be the last schema-placement token/,
+		)
 	})
 
 	it('supports fork ids via runtime pluginInfo.id', async () => {

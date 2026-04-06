@@ -48,13 +48,13 @@ Pluxel 的插件前端分成三段：
 
 把整条链路压成一句话容易，但落到实现时最容易混掉的是“谁拥有哪段语义”。当前建议直接按下面这张表记：
 
-| 层 | 主要入口 | 负责什么 | 不负责什么 |
-| --- | --- | --- | --- |
-| authoring | `ui('./ui/index.tsx').bind(ctx)` / `definePluginUIModule(...)` | 给插件作者稳定声明入口；给 HMR / AST rewrite 一个可识别锚点 | 不直接注册 runtime remote；不要求作者写 MF 配置 |
-| dev / HMR | `@pluxel/hmr` | watch 源码、编译插件 UI、把 dev 产物提交给 runtime | 不定义 runtime 协议；不要求 runtime 理解源码 |
-| build | `@pluxel/build` + `@pluxel/hmr/plugin-build` | 把 authoring bridge 降成 runtime 语义，并产出 MF2 remote | 不保留 dev handle；不把 `entryPath` 带进最终运行时 |
-| runtime | `ctx.ext.*` | 注册运行时交互能力与已编译 UI remote / host-rendered doc | 不消费 authoring bridge；不编译源码 |
-| browser host | federation runtime + plugin UI registry | 加载 remote、解析 extension surface、渲染插件 UI | 不知道源码声明长什么样 |
+| 层           | 主要入口                                                       | 负责什么                                                    | 不负责什么                                         |
+| ------------ | -------------------------------------------------------------- | ----------------------------------------------------------- | -------------------------------------------------- |
+| authoring    | `ui('./ui/index.tsx').bind(ctx)` / `definePluginUIModule(...)` | 给插件作者稳定声明入口；给 HMR / AST rewrite 一个可识别锚点 | 不直接注册 runtime remote；不要求作者写 MF 配置    |
+| dev / HMR    | `@pluxel/hmr`                                                  | watch 源码、编译插件 UI、把 dev 产物提交给 runtime          | 不定义 runtime 协议；不要求 runtime 理解源码       |
+| build        | `@pluxel/build` + `@pluxel/hmr/plugin-build`                   | 把 authoring bridge 降成 runtime 语义，并产出 MF2 remote    | 不保留 dev handle；不把 `entryPath` 带进最终运行时 |
+| runtime      | `ctx.ext.*`                                                    | 注册运行时交互能力与已编译 UI remote / host-rendered doc    | 不消费 authoring bridge；不编译源码                |
+| browser host | federation runtime + plugin UI registry                        | 加载 remote、解析 extension surface、渲染插件 UI            | 不知道源码声明长什么样                             |
 
 ## 设计目标
 
@@ -96,12 +96,12 @@ Pluxel 的插件前端分成三段：
 
 从“插件后端”和“浏览器插件前端”之间如何通信来看，当前系统有四条通道：
 
-| 通道 | 后端入口 | 浏览器侧入口 | 适合什么 | 不适合什么 |
-| --- | --- | --- | --- | --- |
-| RPC | `ctx.ext.rpc.expose(...)` | `plugin.use().rpc` / `plugin.useGlobal().rpc` | 明确命令式动作、一次请求一次结果、需要返回值或报错 | 连续状态同步、高频流 |
-| SSE | `ctx.ext.sse.expose(...)` | `plugin.use().sse` / `plugin.useGlobal().sse` | 流式事件、进度推送、高频通知 | 结构化状态读写 |
-| SignalDB | `ctx.ext.signaldb.collection(...)` | `plugin.use().db.collection('x').useList()` / `app.db.useDoc()` / `app.db.useCount()` | 结构化状态同步、前后端同构 collection、doc/builtin state/action | 复杂命令式副作用语义 |
-| UI | `ctx.ext.ui.remote.packaged()` / `ctx.ext.ui.builtin.doc(...)` / `ctx.ext.ui.interaction.*(...)` | 宿主 plugin UI registry | 注册“怎么展示” | 数据同步本身 |
+| 通道     | 后端入口                                                                                         | 浏览器侧入口                                                                          | 适合什么                                                        | 不适合什么           |
+| -------- | ------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------- | --------------------------------------------------------------- | -------------------- |
+| RPC      | `ctx.ext.rpc.expose(...)`                                                                        | `plugin.use().rpc` / `plugin.useGlobal().rpc`                                         | 明确命令式动作、一次请求一次结果、需要返回值或报错              | 连续状态同步、高频流 |
+| SSE      | `ctx.ext.sse.expose(...)`                                                                        | `plugin.use().sse` / `plugin.useGlobal().sse`                                         | 流式事件、进度推送、高频通知                                    | 结构化状态读写       |
+| SignalDB | `ctx.ext.signaldb.collection(...)`                                                               | `plugin.use().db.collection('x').useList()` / `app.db.useDoc()` / `app.db.useCount()` | 结构化状态同步、前后端同构 collection、doc/builtin state/action | 复杂命令式副作用语义 |
+| UI       | `ctx.ext.ui.remote.packaged()` / `ctx.ext.ui.builtin.doc(...)` / `ctx.ext.ui.interaction.*(...)` | 宿主 plugin UI registry                                                               | 注册“怎么展示”                                                  | 数据同步本身         |
 
 推荐判断规则很简单：
 
@@ -130,8 +130,8 @@ Pluxel 的插件前端分成三段：
 
 ```ts
 const status = this.ctx.ext.signaldb.collection({
-  name: 'status',
-  initial: [{ id: 'main', running: true }],
+	name: 'status',
+	initial: [{ id: 'main', running: true }],
 })
 
 await status.ready()

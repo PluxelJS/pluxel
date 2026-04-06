@@ -433,16 +433,16 @@ type WorkbenchViewKind = 'document' | 'inspect' | 'tool'
 type WorkbenchViewPersistence = 'tab' | 'plugin' | 'workspace'
 
 interface WorkbenchViewDef {
-  id: string
-  title: string
-  icon?: ReactNode | string
-  location: WorkbenchViewLocation
-  kind: WorkbenchViewKind
-  order?: number
-  when?: (ctx: PluginExtensionContext) => boolean
-  initialVisibility?: 'visible' | 'hidden'
-  persistence?: WorkbenchViewPersistence
-  render: (ctx: PluginExtensionContext) => ReactNode
+	id: string
+	title: string
+	icon?: ReactNode | string
+	location: WorkbenchViewLocation
+	kind: WorkbenchViewKind
+	order?: number
+	when?: (ctx: PluginExtensionContext) => boolean
+	initialVisibility?: 'visible' | 'hidden'
+	persistence?: WorkbenchViewPersistence
+	render: (ctx: PluginExtensionContext) => ReactNode
 }
 ```
 
@@ -529,7 +529,7 @@ interface WorkbenchViewDef {
 插件如果想扩展右侧或底部，应该明确声明：
 
 - 这是一个 `sidebar` view
-或
+  或
 - 这是一个 `panel` view
 
 而不是再让宿主猜“这段节点适合塞哪里”。

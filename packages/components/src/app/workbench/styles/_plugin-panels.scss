@@ -134,7 +134,7 @@
 	min-width: 0;
 }
 
-.plx-pluginWorkbench__summaryValue[data-wrap="true"] {
+.plx-pluginWorkbench__summaryValue[data-wrap='true'] {
 	align-items: flex-start;
 }
 
@@ -433,7 +433,7 @@
 	outline: none;
 }
 
-.plx-pluginWorkbench__outlineNode[data-active="true"] {
+.plx-pluginWorkbench__outlineNode[data-active='true'] {
 	background: color-mix(in srgb, var(--plx-accent-soft) 62%, var(--plx-surface) 38%);
 	box-shadow: inset 2px 0 0 var(--plx-accent);
 }
@@ -457,7 +457,7 @@
 	width: 8px;
 }
 
-.plx-pluginWorkbench__outlineDot[data-active="true"] {
+.plx-pluginWorkbench__outlineDot[data-active='true'] {
 	background: var(--plx-accent);
 	box-shadow: 0 0 0 2px color-mix(in srgb, var(--plx-accent-soft) 72%, transparent);
 }
@@ -474,7 +474,7 @@
 	min-width: 0;
 }
 
-.plx-pluginWorkbench__actionBar[data-prominent="true"] {
+.plx-pluginWorkbench__actionBar[data-prominent='true'] {
 	gap: 8px;
 }
 
@@ -521,11 +521,11 @@
 	color: inherit;
 }
 
-.plx-pluginWorkbench__actionBar[data-prominent="true"] .mantine-Switch-root {
+.plx-pluginWorkbench__actionBar[data-prominent='true'] .mantine-Switch-root {
 	flex: 0 0 auto;
 }
 
-.plx-pluginWorkbench__actionBar[data-prominent="true"] > * {
+.plx-pluginWorkbench__actionBar[data-prominent='true'] > * {
 	min-width: 0;
 }
 
@@ -559,7 +559,7 @@
 		width: 100%;
 	}
 
-	.plx-pluginWorkbench__actionBar[data-prominent="true"] {
+	.plx-pluginWorkbench__actionBar[data-prominent='true'] {
 		flex-wrap: wrap;
 	}
 }

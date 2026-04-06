@@ -1,8 +1,5 @@
 import { Paper, Select, Stack, Text } from '@mantine/core'
-import {
-	definePluginUIModule,
-	type InteractionSessionComponentProps,
-} from '@pluxel/runtime/web/ui'
+import { definePluginUIModule, type InteractionSessionComponentProps } from '@pluxel/runtime/web/ui'
 import { plugin } from './runtime'
 
 type FontPickerDraft = {
@@ -25,12 +22,15 @@ function FontPickerSession({
 >) {
 	const app = plugin.use()
 	const collection = app.db.collection('fontSets').useView()
-	const options = app.db.collection('fontSets').useList({ sort: { name: 1 } }).map((item) => ({
-		value: item.id,
-		label: item.name,
-		description: item.description,
-		previewText: item.previewText,
-	}))
+	const options = app.db
+		.collection('fontSets')
+		.useList({ sort: { name: 1 } })
+		.map((item) => ({
+			value: item.id,
+			label: item.name,
+			description: item.description,
+			previewText: item.previewText,
+		}))
 
 	const selected = options.find((item) => item.value === draft.selectedId) ?? null
 	const handleChange = async (nextValue: string | null) => {

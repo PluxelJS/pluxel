@@ -21,8 +21,8 @@ And you want to register all of them in your event bus:
 
 ```ts
 const handlers = container
-  .findTaggedServiceIdentifiers<EventHandler>('event-handler')
-  .map((identifier) => container.get(identifier))
+	.findTaggedServiceIdentifiers<EventHandler>('event-handler')
+	.map((identifier) => container.get(identifier))
 const eventBus = container.get(EventBus)
 eventBus.addHandlers(handlers)
 ```

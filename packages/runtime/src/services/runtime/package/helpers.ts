@@ -29,7 +29,7 @@ export function resolveInstallDefaults(
 	if (safe.dry !== undefined) resolved.dry = safe.dry
 	if (!resolved.workspace && inWorkspace) {
 		resolved.env = {
-			...(resolved.env ?? {}),
+			...resolved.env,
 			PNPM_IGNORE_WORKSPACE_ROOT_CHECK: 'true',
 			npm_config_ignore_workspace_root_check: 'true',
 		}

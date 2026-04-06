@@ -51,7 +51,9 @@ async function resolvePackageJsonPath(projectRoot: string) {
 		return await resolvePackageJSON(projectRoot)
 	} catch (error) {
 		const reason = error instanceof Error ? error.message : String(error)
-		throw new Error(`Unable to find package.json under ${projectRoot}: ${reason}`)
+		throw new Error(`Unable to find package.json under ${projectRoot}: ${reason}`, {
+			cause: error,
+		})
 	}
 }
 

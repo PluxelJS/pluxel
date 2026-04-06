@@ -1,4 +1,4 @@
-import { type Context, Injectable } from '@pluxel/core'
+import { type Context as PluxelContext, Injectable } from '@pluxel/core'
 
 const serviceName = 'internalApiValidation' as const
 
@@ -36,9 +36,9 @@ type ActiveValidator = {
 @Injectable({ key: serviceName })
 export class InternalApiValidationService {
 	private readonly validators = new Set<ActiveValidator>()
-	private readonly logger: NonNullable<Context['logger']>
+	private readonly logger: NonNullable<PluxelContext['logger']>
 
-	constructor(public ctx: Context) {
+	constructor(public ctx: PluxelContext) {
 		this.logger = ctx.logger!
 		this.validators.add({
 			pluginName: 'hmr:internalApiValidation',

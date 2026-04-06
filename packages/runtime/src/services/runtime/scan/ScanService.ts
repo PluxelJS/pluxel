@@ -1,4 +1,4 @@
-import { type Context, Injectable } from '@pluxel/core'
+import { type Context as PluxelContext, Injectable } from '@pluxel/core'
 import { dirname, normalize } from 'pathe'
 import { type ExsolveResolver, toDirectoryURLString } from '../shared/exsolve'
 import { getCachedResolver, resolveModulePath } from '../shared/resolution'
@@ -73,7 +73,7 @@ export interface ScanServiceConfig {
  */
 @Injectable({ key: serviceName })
 export class ScanService {
-	public ctx: Context
+	public ctx: PluxelContext
 	private defaults: ResolvedScanOptions
 	private roots: string[]
 	private readonly resolveCache = new ModuleResolveCache()
@@ -84,7 +84,7 @@ export class ScanService {
 	private snapshotCache: ScanSnapshotCache
 	private installedResolver: InstalledPackageResolver
 
-	constructor(ctx: Context, config: ScanServiceConfig = {}) {
+	constructor(ctx: PluxelContext, config: ScanServiceConfig = {}) {
 		this.ctx = ctx
 		this.defaults = resolveScanOptions(DEFAULT_SCAN_OPTIONS, config.options)
 		this.roots = normalizeScanInputs(config.roots ?? process.cwd())
@@ -198,7 +198,7 @@ export class ScanService {
 		const finalScan =
 			focusHints.length > 0
 				? {
-						...(baseScan ?? {}),
+						...baseScan,
 						focusPackages: mergeFocus(baseScan?.focusPackages, focusHints),
 					}
 				: baseScan

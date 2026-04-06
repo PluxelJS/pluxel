@@ -86,7 +86,7 @@ export function createHost(config: Context.Config = {}): Host {
 	const cfg: Context.Config = {
 		root: config.root ?? {},
 		...config,
-		fs: { mode: 'memory', ...(config.fs ?? {}) },
+		fs: { mode: 'memory', ...config.fs },
 	}
 	const ctx = new Context({ name: 'test', ...cfg })
 	const registry = ctx.registry as PluginService
@@ -249,7 +249,7 @@ export function createContext(config: Context.Config = {}): TestContext {
 	const cfg: Context.Config = {
 		root: config.root ?? {},
 		...config,
-		fs: { mode: 'memory', ...(config.fs ?? {}) },
+		fs: { mode: 'memory', ...config.fs },
 	}
 	const ctx = new Context({ name: 'test', ...cfg })
 	return {

@@ -1,14 +1,14 @@
 {
-	"private": true,
-	"sideEffects": true,
-	"type": "module",
 	"name": "valibot-form",
 	"version": "0.1.0",
+	"private": true,
 	"description": "Valibot schema-driven form renderer",
-	"types": "./dist/index.d.mts",
 	"files": [
 		"dist"
 	],
+	"type": "module",
+	"sideEffects": true,
+	"types": "./dist/index.d.mts",
 	"exports": {
 		".": {
 			"@pluxel/source": "./src/index.ts",
@@ -20,6 +20,13 @@
 		},
 		"./package.json": "./package.json"
 	},
+	"publishConfig": {
+		"exports": {
+			".": "./dist/index.mjs",
+			"./web": "./dist/web.mjs",
+			"./package.json": "./package.json"
+		}
+	},
 	"scripts": {
 		"build": "tsdown",
 		"dev": "vite",
@@ -28,18 +35,6 @@
 	},
 	"dependencies": {
 		"valibot": "^1.2.0"
-	},
-	"peerDependencies": {
-		"@dnd-kit/core": "^6.3.1",
-		"@dnd-kit/modifiers": "^9.0.0",
-		"@dnd-kit/sortable": "^10.0.0",
-		"@dnd-kit/utilities": "^3.2.2",
-		"@mantine/core": "^9.0.0",
-		"@mantine/hooks": "^9.0.0",
-		"@tabler/icons-react": "^3.37.1",
-		"@tanstack/react-form": "^1.28.3",
-		"react": "^19.2.4",
-		"react-dom": "^19.2.4"
 	},
 	"devDependencies": {
 		"@mantine/core": "^9.0.0",
@@ -56,11 +51,16 @@
 		"typescript": "^6.0.2",
 		"vite": "beta"
 	},
-	"publishConfig": {
-		"exports": {
-			".": "./dist/index.mjs",
-			"./web": "./dist/web.mjs",
-			"./package.json": "./package.json"
-		}
+	"peerDependencies": {
+		"@dnd-kit/core": "^6.3.1",
+		"@dnd-kit/modifiers": "^9.0.0",
+		"@dnd-kit/sortable": "^10.0.0",
+		"@dnd-kit/utilities": "^3.2.2",
+		"@mantine/core": "^9.0.0",
+		"@mantine/hooks": "^9.0.0",
+		"@tabler/icons-react": "^3.37.1",
+		"@tanstack/react-form": "^1.28.3",
+		"react": "^19.2.4",
+		"react-dom": "^19.2.4"
 	}
 }

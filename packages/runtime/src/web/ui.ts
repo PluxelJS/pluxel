@@ -1,14 +1,6 @@
-export {
-	ExtensionPoints,
-	definePluginUIModule,
-} from './plugin-ui/ui-contracts'
+export { ExtensionPoints, definePluginUIModule } from './plugin-ui/ui-contracts'
 export { pluginUi } from './plugin-ui/authoring'
-export type {
-	PluginUi,
-	PluginUiApp,
-	PluginUiCollection,
-	PluginUiDb,
-} from './plugin-ui/authoring'
+export type { PluginUi, PluginUiApp, PluginUiCollection, PluginUiDb } from './plugin-ui/authoring'
 export type {
 	AnyExtensionDef,
 	ExtensionDef,

@@ -1,5 +1,5 @@
-@use "sass:map";
-@use "sass:math";
+@use 'sass:map';
+@use 'sass:math';
 
 $breakpoints: (
 	xs: 36em,
@@ -24,11 +24,11 @@ $breakpoints: (
 		@return calc($size / 16 * 1rem);
 	}
 
-	@if math.unit($size) == "rem" {
+	@if math.unit($size) == 'rem' {
 		@return $size;
 	}
 
-	@if math.unit($size) == "px" {
+	@if math.unit($size) == 'px' {
 		@return calc(math.div($size, 16px) * 1rem);
 	}
 
@@ -62,37 +62,37 @@ $breakpoints: (
 }
 
 @mixin light {
-	[data-mantine-color-scheme="light"] & {
+	[data-mantine-color-scheme='light'] & {
 		@content;
 	}
 }
 
 @mixin dark {
-	[data-mantine-color-scheme="dark"] & {
+	[data-mantine-color-scheme='dark'] & {
 		@content;
 	}
 }
 
 @mixin light-root {
-	[data-mantine-color-scheme="light"] {
+	[data-mantine-color-scheme='light'] {
 		@content;
 	}
 }
 
 @mixin dark-root {
-	[data-mantine-color-scheme="dark"] {
+	[data-mantine-color-scheme='dark'] {
 		@content;
 	}
 }
 
 @mixin ltr {
-	[dir="ltr"] & {
+	[dir='ltr'] & {
 		@content;
 	}
 }
 
 @mixin rtl {
-	[dir="rtl"] & {
+	[dir='rtl'] & {
 		@content;
 	}
 }

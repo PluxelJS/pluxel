@@ -1,4 +1,4 @@
-import { type Context, Injectable } from '@pluxel/core'
+import { type Context as PluxelContext, Injectable } from '@pluxel/core'
 
 const serviceName = 'authGuard' as const
 
@@ -42,9 +42,9 @@ type ActiveGuard = AuthGuardRegistration & {
 @Injectable({ key: serviceName })
 export class AuthGuardService {
 	private guard: ActiveGuard | undefined
-	private readonly logger: NonNullable<Context['logger']>
+	private readonly logger: NonNullable<PluxelContext['logger']>
 
-	constructor(public ctx: Context) {
+	constructor(public ctx: PluxelContext) {
 		this.logger = ctx.logger!
 	}
 

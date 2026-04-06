@@ -4,7 +4,6 @@ about: Suggest an idea for this project
 title: ''
 labels: ''
 assignees: ''
-
 ---
 
 Be sure to follow the [Contributor Code of Conduct](https://github.com/artberri/diod/blob/main/CODE_OF_CONDUCT.md).

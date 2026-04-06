@@ -167,7 +167,7 @@ export function ConfigLayout({
 					<Typography>
 						{rendered.chunks.map((chunk) => {
 							if (chunk.kind === 'md') {
-								// biome-ignore lint/security/noDangerouslySetInnerHtml: markdown is plugin-authored source code.
+								// oxlint-disable-next-line react/no-danger -- markdown is plugin-authored source code.
 								return <Box key={chunk.key} dangerouslySetInnerHTML={{ __html: chunk.html }} />
 							}
 							const schemaKey = chunk.schemaKey

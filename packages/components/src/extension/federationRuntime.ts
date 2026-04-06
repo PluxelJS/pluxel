@@ -1,10 +1,7 @@
 import componentsPkg from '../../package.json'
 import * as MantineHooks from '@mantine/hooks'
 import runtimePkg from '@pluxel/runtime/package.json'
-import {
-	createInstance,
-	type ModuleFederation,
-} from '@module-federation/runtime'
+import { createInstance, type ModuleFederation } from '@module-federation/runtime'
 import * as MantineCore from '@mantine/core'
 import * as React from 'react'
 import * as ReactDOM from 'react-dom'

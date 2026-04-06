@@ -151,12 +151,15 @@ function getManifestPayloadSignature(
 		.join('|')
 	const builtinsSig = payload.builtins
 		.map((builtin) =>
-			getSerializableSignature(builtin, [
-				(builtin as any)?.kind ?? '',
-				(builtin as any)?.pluginName ?? '',
-				(builtin as any)?.point ?? '',
-				(builtin as any)?.id ?? '',
-			].join(':')),
+			getSerializableSignature(
+				builtin,
+				[
+					(builtin as any)?.kind ?? '',
+					(builtin as any)?.pluginName ?? '',
+					(builtin as any)?.point ?? '',
+					(builtin as any)?.id ?? '',
+				].join(':'),
+			),
 		)
 		.sort()
 		.join('|')
@@ -186,10 +189,7 @@ function clearCachedRegistration(
 	cache.delete(runtimeId)
 }
 
-function pruneCachedRegistrations(
-	cache: Map<string, CachedRegistration>,
-	seen: Set<string>,
-): void {
+function pruneCachedRegistrations(cache: Map<string, CachedRegistration>, seen: Set<string>): void {
 	for (const runtimeId of Array.from(cache.keys())) {
 		if (seen.has(runtimeId)) continue
 		clearCachedRegistration(cache, runtimeId)
@@ -360,7 +360,7 @@ export function ExtensionLoader({
 				clearCachedRegistration(loaderState.builtinCache, runtimeId, cached)
 
 				const meta: ExtensionMeta = {
-					...((def as any).meta ?? {}),
+					...(def as any).meta,
 					id: runtimeId,
 					pluginName,
 					availabilityPluginName:
@@ -391,11 +391,11 @@ export function ExtensionLoader({
 											tone="error"
 											title={
 												<>
-												Builtin render failed: {pluginName} · {point}
+													Builtin render failed: {pluginName} · {point}
 												</>
 											}
 										>
-												{error?.message ?? String(error ?? 'unknown error')}
+											{error?.message ?? String(error ?? 'unknown error')}
 										</InlineNotice>
 									)
 								: null
@@ -436,7 +436,7 @@ export function ExtensionLoader({
 				clearCachedRegistration(loaderState.sessionCache, runtimeId, cached)
 
 				const meta: ExtensionMeta = {
-					...((def as any).meta ?? {}),
+					...(def as any).meta,
 					id: runtimeId,
 					pluginName,
 					availabilityPluginName: sourcePlugin || pluginName,
@@ -459,11 +459,11 @@ export function ExtensionLoader({
 											tone="error"
 											title={
 												<>
-												Interaction session render failed: {pluginName} · {point}
+													Interaction session render failed: {pluginName} · {point}
 												</>
 											}
 										>
-												{error?.message ?? String(error ?? 'unknown error')}
+											{error?.message ?? String(error ?? 'unknown error')}
 										</InlineNotice>
 									)
 								: null
@@ -475,11 +475,11 @@ export function ExtensionLoader({
 							<InlineNotice
 								title={
 									<>
-									Session UI not found: {sourcePlugin || 'unknown'} · {def.renderKey}
+										Session UI not found: {sourcePlugin || 'unknown'} · {def.renderKey}
 									</>
 								}
 							>
-									Provider UI module did not expose the requested interaction session component.
+								Provider UI module did not expose the requested interaction session component.
 							</InlineNotice>
 						)}
 					</ExtensionErrorBoundary>

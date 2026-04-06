@@ -80,7 +80,7 @@ function SyncSlot({
 		if (valuesMatch(currentValues, picked)) {
 			if (sig) lastSigRef.current = sig
 			if ((form.state as any)?.isDirty || optimisticSync) {
-				reset({ ...(defaultValues ?? {}), ...picked })
+				reset({ ...defaultValues, ...picked })
 			}
 			if (optimisticSync) onOptimisticSyncSettled()
 			return undefined
@@ -103,7 +103,7 @@ function SyncSlot({
 		}
 
 		lastSigRef.current = sig
-		reset({ ...(defaultValues ?? {}), ...picked })
+		reset({ ...defaultValues, ...picked })
 		return undefined
 	}, [
 		allowedKeys,
@@ -147,9 +147,12 @@ function AutoSubmitController({
 		lastScheduledSigRef.current = sig
 
 		if (timerRef.current) clearTimeout(timerRef.current)
-		timerRef.current = setTimeout(() => {
-			onSubmit()
-		}, Math.max(0, debounceMs))
+		timerRef.current = setTimeout(
+			() => {
+				onSubmit()
+			},
+			Math.max(0, debounceMs),
+		)
 
 		return () => {
 			if (timerRef.current) clearTimeout(timerRef.current)
@@ -160,13 +163,7 @@ function AutoSubmitController({
 	return null
 }
 
-function AutoSubmitSlot({
-	enabled,
-	debounceMs,
-}: {
-	enabled: boolean
-	debounceMs: number
-}) {
+function AutoSubmitSlot({ enabled, debounceMs }: { enabled: boolean; debounceMs: number }) {
 	const { form, submit } = useAutoFormCtx<any>()
 	return (
 		<form.Subscribe
@@ -241,15 +238,14 @@ async function loadSchema(
 	const cached = schemaCache.get(cacheKey)
 	if (cached) return cached
 
-	const result: any = await transport.withRpc((client: any) =>
-		client.plugin(pluginName).schema(),
-	)
+	const result: any = await transport.withRpc((client: any) => client.plugin(pluginName).schema())
 	if (!result || result.ok === false) {
 		throw new Error(result?.message ?? result?.code ?? 'schema_not_found')
 	}
 
 	const expr = (result.schemaSource ?? {})[schemaKey]
-	if (typeof expr !== 'string' || !expr.trim()) throw new Error(`schema key not found: ${schemaKey}`)
+	if (typeof expr !== 'string' || !expr.trim())
+		throw new Error(`schema key not found: ${schemaKey}`)
 
 	const schema = new Function('v', 'f', `return ${expr}`)(v, f)
 	if (schema instanceof Promise) throw new Error('async schema not supported in doc form yet')
@@ -296,13 +292,10 @@ export function BuiltinSignalDbForm({
 		}, [block.syncFrom?.collection, block.write.collection]),
 	)
 
-	const syncPayload = useSignalDbQueryState(
-		() => {
-			if (!block.syncFrom || !isObject(block.syncFrom)) return null
-			return resolveSignalDbRef(block.syncFrom, collections as any)
-		},
-		[block.syncFrom, collections],
-	)
+	const syncPayload = useSignalDbQueryState(() => {
+		if (!block.syncFrom || !isObject(block.syncFrom)) return null
+		return resolveSignalDbRef(block.syncFrom, collections as any)
+	}, [block.syncFrom, collections])
 
 	const allowedKeys = useMemo(() => {
 		if (state.status !== 'ready') return []
@@ -317,7 +310,7 @@ export function BuiltinSignalDbForm({
 			tone: 'success',
 			title: success.title ?? titleFallback,
 			message: success.message,
-			...(success ?? {}),
+			...success,
 		})
 	}
 
@@ -328,8 +321,9 @@ export function BuiltinSignalDbForm({
 		notify({
 			tone: 'error',
 			title: error.title ?? '提交失败',
-			message: error.message ?? (err instanceof Error ? err.message : String(err ?? 'unknown error')),
-			...(error ?? {}),
+			message:
+				error.message ?? (err instanceof Error ? err.message : String(err ?? 'unknown error')),
+			...error,
 		})
 	}
 
@@ -449,10 +443,7 @@ export function BuiltinSignalDbForm({
 						optimisticSync={optimisticSync}
 						onOptimisticSyncSettled={() => setOptimisticSync(null)}
 					/>
-					<AutoSubmitSlot
-						enabled={submitMode === 'onChange'}
-						debounceMs={autoSubmitDebounceMs}
-					/>
+					<AutoSubmitSlot enabled={submitMode === 'onChange'} debounceMs={autoSubmitDebounceMs} />
 					<Box px="xs" pb={6}>
 						<AutoForm.Fields />
 					</Box>

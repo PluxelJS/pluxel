@@ -391,7 +391,6 @@ export class HmrRunner {
 		if (!isHardBridgeSpecifier(pkgName) && !this.isBridgeModule(pkgName)) return result
 
 		if (process.env.PLUXEL_HMR_DEBUG_FETCH === '1') {
-			// eslint-disable-next-line no-console
 			console.error('[hmr:runner] patch fetchModule.invalidate=false', { id, pkgName })
 		}
 
@@ -410,7 +409,6 @@ export class HmrRunner {
 			process.env.PLUXEL_HMR_DEBUG_FETCH === '1' &&
 			(canonicalId.includes('/packages/context/') || canonicalId.includes('packages/context/'))
 		) {
-			// eslint-disable-next-line no-console
 			console.error('[hmr:runner] fetchModule', { url, canonicalId, importer })
 		}
 		if (
@@ -624,12 +622,16 @@ export class HmrRunner {
 			}
 
 			const dist = await this.resolveWorkspaceEntry(specifier, 'dist')
-			if (!dist) throw new Error(`[hmr] Cannot resolve host export for "${specifier}".`)
+			if (!dist) {
+				throw new Error(`[hmr] Cannot resolve host export for "${specifier}".`, {
+					cause: error,
+				})
+			}
 			try {
 				return await import(pathToFileURL(dist).toString())
-			} catch (error) {
+			} catch (importError) {
 				throw new Error(`[hmr] Failed to import host export for "${specifier}" (${dist}).`, {
-					cause: error,
+					cause: importError,
 				})
 			}
 		}

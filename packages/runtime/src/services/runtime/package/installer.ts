@@ -138,9 +138,9 @@ export class PackageInstaller {
 
 		const pkg = await this.readPackageJsonSafe(cwd)
 		const declared: Record<string, string> = {
-			...(pkg.dependencies ?? {}),
-			...(pkg.devDependencies ?? {}),
-			...(pkg.optionalDependencies ?? {}),
+			...pkg.dependencies,
+			...pkg.devDependencies,
+			...pkg.optionalDependencies,
 		}
 		const entries: Array<{
 			spec: NormalizedPackageSpecifier

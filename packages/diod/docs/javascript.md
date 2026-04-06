@@ -6,26 +6,26 @@ Imagine you have these services:
 
 ```ts
 export class ServiceOne {
-  constructor(
-    private readonly dep1: ServiceTwo,
-    private readonly dep2: ServiceThree
-  ) {}
+	constructor(
+		private readonly dep1: ServiceTwo,
+		private readonly dep2: ServiceThree,
+	) {}
 
-  //...
+	//...
 }
 
 export class ServiceTwo {
-  constructor(private readonly dep1: ServiceFour) {}
+	constructor(private readonly dep1: ServiceFour) {}
 
-  //...
+	//...
 }
 
 export class ServiceThree {
-  //...
+	//...
 }
 
 export class ServiceFour {
-  //...
+	//...
 }
 ```
 

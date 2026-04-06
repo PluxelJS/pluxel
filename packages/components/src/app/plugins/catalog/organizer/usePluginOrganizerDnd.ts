@@ -70,7 +70,10 @@ const computeTargetIndex = (
 			return next ? Math.max(0, filtered.indexOf(next) + 1) : filtered.length
 		}
 
-		const prev = [...full.slice(0, Math.max(0, first))].reverse().find((id) => !movingSet.has(id))
+		const prev = full
+			.slice(0, Math.max(0, first))
+			.toReversed()
+			.find((id) => !movingSet.has(id))
 		return prev ? Math.max(0, filtered.indexOf(prev)) : 0
 	}
 

@@ -124,7 +124,7 @@ function createCounterMap(): CounterMap {
 
 function createChunk(): Chunk {
 	return {
-		lines: new Array(CHUNK_SIZE),
+		lines: Array(CHUNK_SIZE),
 		start: 0,
 		len: 0,
 		meta: {
@@ -234,7 +234,7 @@ export class RuntimeLogStore {
 		this.streamId = opts.streamId
 		this.cap = Math.min(Math.max(1, Math.floor(opts.windowLines ?? 200_000)), 2_000_000)
 		this.maxChunks = Math.min(Math.ceil(this.cap / CHUNK_SIZE) + 4, 10_000)
-		this.chunks = new Array(this.maxChunks)
+		this.chunks = Array(this.maxChunks)
 		this.epoch = Math.max(1, Math.floor(opts.epoch ?? 1))
 		this.headSeq = 1n
 		this.tailSeq = 0n
@@ -296,7 +296,7 @@ export class RuntimeLogStore {
 
 		const epoch = this.epoch
 		const from = this.nextSeq
-		const out = new Array<RuntimeLogLine>(inputs.length)
+		const out = Array<RuntimeLogLine>(inputs.length)
 
 		for (let i = 0; i < inputs.length; i++) {
 			const seq = this.nextSeq++
@@ -548,7 +548,7 @@ export class RuntimeLogStore {
 		if (n === 0) return []
 		if (this.chunkCount === 0) return []
 
-		const out = new Array<RuntimeLogLine>(n)
+		const out = Array<RuntimeLogLine>(n)
 		let need = n
 
 		let idx = this.tailChunk

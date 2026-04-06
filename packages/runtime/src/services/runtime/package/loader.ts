@@ -249,7 +249,7 @@ export class PackageLoader {
 		else if (base.roots !== undefined) merged.roots = base.roots
 
 		const mergedScan = base.scan
-			? { ...base.scan, ...(overrides.scan ?? {}) }
+			? { ...base.scan, ...overrides.scan }
 			: (overrides.scan ?? base.scan)
 		if (mergedScan !== undefined) {
 			merged.scan = mergedScan

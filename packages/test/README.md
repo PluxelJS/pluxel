@@ -15,7 +15,7 @@ Each fixture owns its own filesystem instance. Prefer `await using fixture = awa
 import { createFixture } from '@pluxel/test/fixtures'
 
 await using fixture = await createFixture({
-  'packages/a/src/index.ts': 'export const entry = "a"\n',
+	'packages/a/src/index.ts': 'export const entry = "a"\n',
 })
 
 await fixture.fsp.writeFile(fixture.getPath('tmp.txt'), 'ok\n', 'utf8')
@@ -30,20 +30,20 @@ LLM-facing guide: `packages/test/LLM_TESTING_GUIDE.md`.
 import { Plugin, BasePlugin, withHost } from '@pluxel/test'
 
 await withHost(async (host) => {
-  @Plugin({ name: 'P' })
-  class P extends BasePlugin {}
+	@Plugin({ name: 'P' })
+	class P extends BasePlugin {}
 
-  host.add(P) // or host.add([P1, P2, ...])
-  await host.commit()
+	host.add(P) // or host.add([P1, P2, ...])
+	await host.commit()
 
-  const p = host.require(P)
+	const p = host.require(P)
 })
 ```
 
 ### Draft vs commit
 
-- `host.add(P)` / `host.add([P1, P2, ...])` only change the *draft*.
-- `host.remove(P)` / `host.remove([P1, P2, ...])` only change the *draft*.
+- `host.add(P)` / `host.add([P1, P2, ...])` only change the _draft_.
+- `host.remove(P)` / `host.remove([P1, P2, ...])` only change the _draft_.
 - `await host.commit()` applies the draft and is **strict** (throws if any plugin fails to start).
 - If you expect failures and want a summary instead: `await host.commitAllowFail()`.
 
@@ -75,7 +75,7 @@ Note: `@pluxel/core` installs a lightweight reflection provider (`@abraham/refle
 compat shim so importing `reflect-metadata` later does not crash.
 
 If a dependency truly requires `reflect-metadata`'s full semantics (key enumeration/deletion, etc),
-import `reflect-metadata` explicitly in *your* app/test entry **before** any decorated classes are evaluated.
+import `reflect-metadata` explicitly in _your_ app/test entry **before** any decorated classes are evaluated.
 
 ### Workspace (monorepo)
 
@@ -85,10 +85,10 @@ If you have many workspace packages and want a single root `vitest.config.ts`:
 import { defineConfig } from 'vitest/config'
 
 export default defineConfig({
-  test: {
-    // Vitest Projects: treat each package config as a separate project.
-    projects: ['packages/**/vitest.config.ts'],
-  },
+	test: {
+		// Vitest Projects: treat each package config as a separate project.
+		projects: ['packages/**/vitest.config.ts'],
+	},
 })
 ```
 
@@ -103,12 +103,12 @@ If you prefer automatic discovery instead of maintaining globs:
 import { definePluxelVitestWorkspaceConfig } from '@pluxel/test/vitest'
 
 export default definePluxelVitestWorkspaceConfig({
-  test: {
-    // optional: cap workers for very large workspaces
-    fileParallelism: false,
-    minWorkers: 1,
-    maxWorkers: 1,
-  },
+	test: {
+		// optional: cap workers for very large workspaces
+		fileParallelism: false,
+		minWorkers: 1,
+		maxWorkers: 1,
+	},
 })
 ```
 
@@ -119,8 +119,8 @@ import { definePluxelVitestConfig } from '@pluxel/test/vitest'
 import SomeTransform from 'some-transform/vite'
 
 export default definePluxelVitestConfig(
-  { plugins: [SomeTransform()] }, // after Pluxel toolchain plugins
-  { prePlugins: [SomeTransform()] }, // before Pluxel toolchain plugins
+	{ plugins: [SomeTransform()] }, // after Pluxel toolchain plugins
+	{ prePlugins: [SomeTransform()] }, // before Pluxel toolchain plugins
 )
 ```
 

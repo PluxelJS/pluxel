@@ -2,7 +2,6 @@ import * as valibot from 'valibot'
 import * as valibotForm from 'valibot-form'
 
 declare global {
-	// eslint-disable-next-line @typescript-eslint/consistent-type-definitions
 	interface GlobalThis {
 		__PLUXEL_SCHEMA_VENDORS__?: {
 			valibot: typeof valibot

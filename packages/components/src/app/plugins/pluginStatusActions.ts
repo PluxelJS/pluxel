@@ -242,8 +242,7 @@ export async function updatePluginStatuses(
 				invalidate({
 					topic: 'plugin-status',
 					pluginName: succeeded.length === 1 ? first?.name : undefined,
-					reason:
-						succeeded.length === 1 && first ? first.action : 'batch',
+					reason: succeeded.length === 1 && first ? first.action : 'batch',
 				})
 			}
 			return normalized

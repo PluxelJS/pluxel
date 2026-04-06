@@ -30,8 +30,8 @@ export function NumberField(props: RendererProps) {
 				value={currentValue}
 				{...cleanProps({
 					onChange: (val: number | string) => {
-						const parsed = val === '' || val === undefined ? undefined : Number(val)
-						const safe = Number.isNaN(parsed) ? undefined : parsed
+						const parsedValue = val === '' || val === undefined ? undefined : Number(val)
+						const safe = Number.isNaN(parsedValue) ? undefined : parsedValue
 						triggerFormEvents(inputProps, safe)
 					},
 					onBlur: inputProps.onBlur,

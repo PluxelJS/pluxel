@@ -1,7 +1,7 @@
 import { BasePlugin, Plugin } from '@pluxel/runtime'
 import { worker, type HmrWorkerBinding } from '@pluxel/hmr/plugin'
 import { doc } from '@pluxel/runtime/services'
-import Tinypool from 'tinypool'
+import { Tinypool } from 'tinypool'
 
 type WorkerStatus = {
 	enabled: boolean

@@ -1,10 +1,7 @@
 import { Loader, Paper, Select, Stack, Text } from '@mantine/core'
 import { useMemo } from 'react'
 import type { BuiltinResourceSelectBlock } from '@pluxel/runtime/web/extensions'
-import {
-	useGlobalExtensionContext,
-	useSignalDbCollectionState,
-} from '@pluxel/runtime/web'
+import { useGlobalExtensionContext, useSignalDbCollectionState } from '@pluxel/runtime/web'
 import type { SignalDbItem } from '@pluxel/runtime/web'
 import { readNested, readString, useConfigFieldBridge } from '../internal/config-field-bridge'
 

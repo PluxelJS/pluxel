@@ -43,14 +43,8 @@ export interface SignalDbDocumentHandle<TState extends SignalDbItem> {
 	): BuiltinFormBlock
 	formUnsynced(input: Omit<BuiltinFormBlock, 'kind' | 'syncFrom'>): BuiltinFormBlock
 	action(input: Omit<BuiltinActionBlock, 'kind'>): BuiltinActionBlock
-	patchSpec(
-		value: BuiltinTemplateValue,
-		options?: { upsert?: boolean },
-	): BuiltinSignalDbWriteSpec
-	replaceSpec(
-		value: BuiltinTemplateValue,
-		options?: { upsert?: boolean },
-	): BuiltinSignalDbWriteSpec
+	patchSpec(value: BuiltinTemplateValue, options?: { upsert?: boolean }): BuiltinSignalDbWriteSpec
+	replaceSpec(value: BuiltinTemplateValue, options?: { upsert?: boolean }): BuiltinSignalDbWriteSpec
 	removeSpec(): BuiltinSignalDbWriteSpec
 }
 
@@ -70,11 +64,7 @@ export interface SignalDbCollectionHandle<T extends SignalDbItem> {
 		modifier: SignalDbModifier<T>,
 		options?: { upsert?: boolean },
 	): 0 | 1
-	replaceOne(
-		selector: SignalDbSelector<T>,
-		replacement: T,
-		options?: { upsert?: boolean },
-	): 0 | 1
+	replaceOne(selector: SignalDbSelector<T>, replacement: T, options?: { upsert?: boolean }): 0 | 1
 	removeOne(selector: SignalDbSelector<T>): 0 | 1
 	removeMany(selector: SignalDbSelector<T>): number
 	reset(items: T[]): void
@@ -93,7 +83,10 @@ export interface SignalDbCollectionHandle<T extends SignalDbItem> {
 }
 
 export class SignalDbService {
-	private readonly collectionsByPlugin = new Map<string, Map<string, ManagedSignalDbCollection<any>>>()
+	private readonly collectionsByPlugin = new Map<
+		string,
+		Map<string, ManagedSignalDbCollection<any>>
+	>()
 	private readonly channelsByPlugin = new Map<string, Set<SseChannel>>()
 	private readonly streamRegisteredByPlugin = new Set<string>()
 
@@ -187,7 +180,10 @@ export class SignalDbService {
 
 	broadcast(
 		pluginName: string,
-		event: Extract<SignalDbSyncEvent['type'], 'snapshot' | 'insert' | 'update' | 'remove' | 'reset'>,
+		event: Extract<
+			SignalDbSyncEvent['type'],
+			'snapshot' | 'insert' | 'update' | 'remove' | 'reset'
+		>,
 		payload: SignalDbSyncEvent,
 	) {
 		for (const channel of this.channelsFor(pluginName)) {
@@ -361,7 +357,10 @@ class ManagedSignalDbCollection<T extends SignalDbItem> {
 	}
 
 	find(selector: SignalDbSelector<T> = {}, options?: SignalDbFindOptions<T>): T[] {
-		return this.getCollection().find(selector as any, options as any).fetch().map(cloneItem)
+		return this.getCollection()
+			.find(selector as any, options as any)
+			.fetch()
+			.map(cloneItem)
 	}
 
 	findOne(selector: SignalDbSelector<T>): T | undefined {
@@ -370,7 +369,9 @@ class ManagedSignalDbCollection<T extends SignalDbItem> {
 	}
 
 	count(selector: SignalDbSelector<T> = {}): number {
-		return this.getCollection().find(selector as any).count()
+		return this.getCollection()
+			.find(selector as any)
+			.count()
 	}
 
 	insert(item: T): string {
@@ -434,17 +435,9 @@ class ManagedSignalDbCollection<T extends SignalDbItem> {
 		return result
 	}
 
-	replaceOne(
-		selector: SignalDbSelector<T>,
-		replacement: T,
-		options?: { upsert?: boolean },
-	): 0 | 1 {
+	replaceOne(selector: SignalDbSelector<T>, replacement: T, options?: { upsert?: boolean }): 0 | 1 {
 		const collection = this.getCollection()
-		const result = collection.replaceOne(
-			selector as any,
-			cloneItem(replacement),
-			options,
-		)
+		const result = collection.replaceOne(selector as any, cloneItem(replacement), options)
 		if (!result) return 0
 		const updatedId = replacement.id || asIdFromSelector(selector)
 		const updated = updatedId
@@ -682,7 +675,9 @@ function createBuiltinFormBlock(
 	}
 }
 
-function cloneSelector<T extends SignalDbItem>(selector: SignalDbSelector<T>): Record<string, unknown> {
+function cloneSelector<T extends SignalDbItem>(
+	selector: SignalDbSelector<T>,
+): Record<string, unknown> {
 	return { ...(selector as Record<string, unknown>) }
 }
 
@@ -741,6 +736,8 @@ function resolveItemsByIds<T extends SignalDbItem>(
 		.map((item) => cloneItem(item as T))
 }
 
-function asIdFromSelector<T extends SignalDbItem>(selector: SignalDbSelector<T>): string | undefined {
+function asIdFromSelector<T extends SignalDbItem>(
+	selector: SignalDbSelector<T>,
+): string | undefined {
 	return typeof selector.id === 'string' ? selector.id : undefined
 }

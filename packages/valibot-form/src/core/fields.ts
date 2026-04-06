@@ -211,7 +211,7 @@ function normalizeBaseMeta(
 	fieldName?: string,
 	required = true,
 ): FieldMeta {
-	const merged: FormMeta = { ...(meta ?? {}) }
+	const merged: FormMeta = { ...meta }
 	const section = normalizeSection(merged.section)
 	const label = merged.label || (fieldName ? fieldNameToLabel(fieldName) : '未命名字段')
 	const { section: _omitSection, ...rest } = merged

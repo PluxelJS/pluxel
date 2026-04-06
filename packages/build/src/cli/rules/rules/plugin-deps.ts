@@ -52,7 +52,7 @@ function resolvePluginVersions(pkg: PackageJson, context: RuleContext) {
 }
 
 function ensurePeerDependencies(pkg: PackageJson, versions: Map<string, string>) {
-	const peers = { ...(pkg.peerDependencies ?? {}) }
+	const peers = { ...pkg.peerDependencies }
 	const updates: string[] = []
 	let mutated = false
 

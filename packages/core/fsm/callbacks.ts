@@ -1,5 +1,5 @@
 // file: src/callbacks.ts
-export function onStart(taskName: string) {
+export function onStart(_taskName: string) {
 	// transition callback example
 	// console.log("start:", taskName);
 }

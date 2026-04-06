@@ -10,7 +10,6 @@ import { resolveMarketWebhookClient } from './market-rpc'
 type Logger = (...args: unknown[]) => void
 type ReadPackageJson = (path: string) => Promise<PackageJson>
 
-// eslint-disable-next-line @typescript-eslint/no-empty-function
 const noop = () => {}
 
 function isTruthyEnv(value: string | undefined) {
@@ -64,7 +63,9 @@ export async function publishPackage(options: PublishOptions): Promise<PublishRe
 		pkg = await readPackageJson(pkgPath)
 	} catch (error) {
 		const reason = error instanceof Error ? error.message : String(error)
-		throw new Error(`Failed to read package.json at ${pkgPath}: ${reason}`)
+		throw new Error(`Failed to read package.json at ${pkgPath}: ${reason}`, {
+			cause: error,
+		})
 	}
 
 	if (!pkg.name) {

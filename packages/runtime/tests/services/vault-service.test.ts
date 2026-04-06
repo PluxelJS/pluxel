@@ -219,4 +219,3 @@ describe('VaultService (runtime)', () => {
 		delete stdEnv[envName]
 	})
 })
-

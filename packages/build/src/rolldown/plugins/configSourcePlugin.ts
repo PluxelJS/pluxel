@@ -30,7 +30,6 @@ import type {
 	PrivateIdentifier,
 	PropertyDefinition,
 	SpreadElement,
-	TaggedTemplateExpression,
 } from 'oxc-parser'
 import type { TransformPluginContext } from 'rolldown'
 import { normalizeSchemaSource } from '../utils/configHandler'
@@ -1372,10 +1371,10 @@ function extractCfgSchemaMapExpr(
 					stmt.type === 'ClassDeclaration'
 						? stmt
 						: stmt.type === 'ExportNamedDeclaration' &&
-								stmt.declaration?.type === 'ClassDeclaration'
+							  stmt.declaration?.type === 'ClassDeclaration'
 							? stmt.declaration
 							: stmt.type === 'ExportDefaultDeclaration' &&
-									stmt.declaration.type === 'ClassDeclaration'
+								  stmt.declaration.type === 'ClassDeclaration'
 								? stmt.declaration
 								: null
 				if (!classDecl) continue
@@ -1533,7 +1532,7 @@ async function extractCfgSchemasFromSchemaMapExpr(
 					: node.type === 'ExportNamedDeclaration' && node.declaration?.type === 'ClassDeclaration'
 						? node.declaration
 						: node.type === 'ExportDefaultDeclaration' &&
-								node.declaration.type === 'ClassDeclaration'
+							  node.declaration.type === 'ClassDeclaration'
 							? node.declaration
 							: null
 			if (!classDecl || classDecl.id?.name !== className) continue
@@ -1553,7 +1552,7 @@ async function extractCfgSchemasFromSchemaMapExpr(
 		return null
 	}
 
-	const parseObjectSchemaMap = async (obj: Expression, kind: string) => {
+	const parseObjectSchemaMap = async (obj: Expression, schemaKind: string) => {
 		const normalizedObj = unwrapExpression(obj as any) as any
 
 		let targetModule = moduleInfo
@@ -1563,7 +1562,7 @@ async function extractCfgSchemasFromSchemaMapExpr(
 			const resolved = await resolveIdentifierExpressionNode(moduleInfo, target.name, ctx)
 			if (!resolved) {
 				throw new Error(
-					`[cfg] ${kind} schemaMap identifier must be a module-scope const or an imported const export: ${moduleInfo.id}`,
+					`[cfg] ${schemaKind} schemaMap identifier must be a module-scope const or an imported const export: ${moduleInfo.id}`,
 				)
 			}
 			targetModule = resolved.moduleInfo
@@ -1574,15 +1573,17 @@ async function extractCfgSchemasFromSchemaMapExpr(
 		}
 
 		if (!target || target.type !== 'ObjectExpression') {
-			throw new Error(`[cfg] ${kind} must receive an object literal: ${moduleInfo.id}`)
+			throw new Error(`[cfg] ${schemaKind} must receive an object literal: ${moduleInfo.id}`)
 		}
 
 		for (const prop of target.properties) {
 			if (prop.type !== 'Property') {
-				throw new Error(`[cfg] ${kind} does not support spread properties: ${moduleInfo.id}`)
+				throw new Error(`[cfg] ${schemaKind} does not support spread properties: ${moduleInfo.id}`)
 			}
 			if (prop.computed) {
-				throw new Error(`[cfg] ${kind} keys must be static (no computed keys): ${moduleInfo.id}`)
+				throw new Error(
+					`[cfg] ${schemaKind} keys must be static (no computed keys): ${moduleInfo.id}`,
+				)
 			}
 			let key: string | null = null
 			if (prop.key.type === 'Identifier') key = prop.key.name

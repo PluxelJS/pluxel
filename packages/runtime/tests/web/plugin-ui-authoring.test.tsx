@@ -41,7 +41,10 @@ vi.mock('../../src/web/plugin-ui/signaldb-runtime', () => ({
 
 import { useEffect, useState } from 'react'
 import { pluginUi } from '../../src/web/plugin-ui/authoring'
-import { ExtensionProvider, type PluginExtensionContext } from '../../src/web/plugin-ui/ui-contracts'
+import {
+	ExtensionProvider,
+	type PluginExtensionContext,
+} from '../../src/web/plugin-ui/ui-contracts'
 
 const plugin = pluginUi('PluginWithUI')
 

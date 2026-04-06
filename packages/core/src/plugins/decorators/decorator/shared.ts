@@ -179,7 +179,9 @@ export function normalizeConfigSourceMap(
 function freezeLayout(layout: ConfigLayout): ConfigLayout {
 	if (!__DEV__) return layout
 	// Freeze shallowly for safety; parts are plain objects.
-	const next = layout.map((p) => (p && typeof p === 'object' ? Object.freeze({ ...(p as any) }) : p)) as any
+	const next = layout.map((p) =>
+		p && typeof p === 'object' ? Object.freeze({ ...(p as any) }) : p,
+	) as any
 	return Object.freeze(next) as any
 }
 
@@ -281,7 +283,7 @@ export function sparseObjectToArray(
 		const idx = (ks[i] as unknown as number) | 0
 		if (idx > max) max = idx
 	}
-	const arr = new Array<Identifier<unknown> | undefined>(max + 1)
+	const arr = Array<Identifier<unknown> | undefined>(max + 1)
 	for (let i = 0; i < ks.length; i++) {
 		const idx = (ks[i] as unknown as number) | 0
 		arr[idx] = (o as unknown as Record<string, Identifier<unknown>>)[String(idx)]

@@ -302,7 +302,7 @@ describe('build command', () => {
 
 	it('respects custom env config for prefixes and manifest fields', async () => {
 		try {
-			await withBuildFixture('custom', async (fixtureDir) => {
+			await withBuildFixture('custom', async (_fixtureDir) => {
 				vi.stubEnv(BuildEnvKeys.pluginPrefix, 'acme-plugin')
 				vi.stubEnv(BuildEnvKeys.manifestField, 'customField')
 

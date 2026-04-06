@@ -2,6 +2,10 @@
 	"name": "@pluxel/hmr",
 	"version": "0.3.0",
 	"description": "Pluxel development adapter (workspace source execution, watch, HMR)",
+	"files": [
+		"dist",
+		"!**/*.map"
+	],
 	"type": "module",
 	"types": "./dist/index.d.mts",
 	"exports": {
@@ -31,10 +35,17 @@
 		},
 		"./package.json": "./package.json"
 	},
-	"files": [
-		"dist",
-		"!**/*.map"
-	],
+	"publishConfig": {
+		"exports": {
+			".": "./dist/index.mjs",
+			"./diagnose": "./dist/diagnose.mjs",
+			"./host": "./dist/host.mjs",
+			"./plugin": "./dist/plugin.mjs",
+			"./plugin-build": "./dist/plugin-build.mjs",
+			"./snapshot": "./dist/snapshot.mjs",
+			"./package.json": "./package.json"
+		}
+	},
 	"scripts": {
 		"dev": "pnpm --filter @pluxel/plugins-host hmr",
 		"build": "pnpm run build:lib",
@@ -64,17 +75,6 @@
 		"superjson": "^2.2.6",
 		"tsdown": "^0.21.7",
 		"typescript": "^6.0.2"
-	},
-	"publishConfig": {
-		"exports": {
-			".": "./dist/index.mjs",
-			"./diagnose": "./dist/diagnose.mjs",
-			"./host": "./dist/host.mjs",
-			"./plugin": "./dist/plugin.mjs",
-			"./plugin-build": "./dist/plugin-build.mjs",
-			"./snapshot": "./dist/snapshot.mjs",
-			"./package.json": "./package.json"
-		}
 	},
 	"inlinedDependencies": {
 		"fdir": "6.5.0"

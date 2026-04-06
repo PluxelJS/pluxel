@@ -55,11 +55,7 @@ export interface SignalDbCollectionView<T extends SignalDbItem> {
 		modifier: SignalDbModifier<T>,
 		options?: { upsert?: boolean },
 	): 0 | 1
-	replaceOne(
-		selector: SignalDbSelector<T>,
-		replacement: T,
-		options?: { upsert?: boolean },
-	): 0 | 1
+	replaceOne(selector: SignalDbSelector<T>, replacement: T, options?: { upsert?: boolean }): 0 | 1
 	removeOne(selector: SignalDbSelector<T>): 0 | 1
 	removeMany(selector: SignalDbSelector<T>): number
 }
@@ -314,7 +310,10 @@ function buildCollectionView<T extends SignalDbItem>(
 		version: state.meta.version(),
 		items: state.collection.find().fetch().map(cloneItem),
 		find(selector = {} as SignalDbSelector<T>, options) {
-			return state.collection.find(selector as any, options as any).fetch().map(cloneItem)
+			return state.collection
+				.find(selector as any, options as any)
+				.fetch()
+				.map(cloneItem)
 		},
 		findOne(selector) {
 			const item = state.collection.findOne(selector as any)
@@ -395,7 +394,7 @@ function toLoadResponse<T extends SignalDbItem>(
 				changes: {
 					added: [],
 					modified: [],
-					removed: payload.ids.map((id) => ({ id } as T)),
+					removed: payload.ids.map((id) => ({ id }) as T),
 				},
 			}
 		default:
@@ -428,7 +427,9 @@ export function useSignalDbCollectionsState(
 
 	return useSignalDbReactive(
 		() =>
-			Object.fromEntries(collections.map((collection) => [collection, namespace.getView(collection)])),
+			Object.fromEntries(
+				collections.map((collection) => [collection, namespace.getView(collection)]),
+			),
 		[collectionsKey, namespace],
 	)
 }
@@ -449,10 +450,7 @@ export function useSignalDbDocState<T extends SignalDbItem>(
 	)
 }
 
-export function useSignalDbQueryState<T>(
-	query: () => T,
-	deps: DependencyList = [],
-): T {
+export function useSignalDbQueryState<T>(query: () => T, deps: DependencyList = []): T {
 	return useSignalDbReactive(query, deps)
 }
 

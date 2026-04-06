@@ -173,19 +173,22 @@ describe('ExtensionService runtime/dev boundary', () => {
 			},
 		})
 		const registryPath = join(fixture.path, 'dist/index.mjs')
-		const { ctx } = createFakeCtx({
-			loader: {
-				api: {
-					registry: {
-						findModuleIdByName: vi.fn(() => registryPath),
-					},
-					anchors: {
-						list: vi.fn(() => [registryPath]),
+		const { ctx } = createFakeCtx(
+			{
+				loader: {
+					api: {
+						registry: {
+							findModuleIdByName: vi.fn(() => registryPath),
+						},
+						anchors: {
+							list: vi.fn(() => [registryPath]),
+						},
 					},
 				},
+				pluginInfo: { id: 'test-plugin' },
 			},
-			pluginInfo: { id: 'test-plugin' },
-		}, fixture)
+			fixture,
+		)
 		const service = new ExtensionService(ctx, { enabled: true })
 
 		const dispose = service.packaged()
@@ -223,19 +226,22 @@ describe('ExtensionService runtime/dev boundary', () => {
 			},
 		})
 		const registryPath = join(fixture.path, 'src/index.ts')
-		const { ctx } = createFakeCtx({
-			loader: {
-				api: {
-					registry: {
-						findModuleIdByName: vi.fn(() => registryPath),
-					},
-					anchors: {
-						list: vi.fn(() => [registryPath]),
+		const { ctx } = createFakeCtx(
+			{
+				loader: {
+					api: {
+						registry: {
+							findModuleIdByName: vi.fn(() => registryPath),
+						},
+						anchors: {
+							list: vi.fn(() => [registryPath]),
+						},
 					},
 				},
+				pluginInfo: { id: 'test-plugin' },
 			},
-			pluginInfo: { id: 'test-plugin' },
-		}, fixture)
+			fixture,
+		)
 		const service = new ExtensionService(ctx, { enabled: true })
 
 		const dispose = service.packaged()
@@ -260,19 +266,22 @@ describe('ExtensionService runtime/dev boundary', () => {
 			},
 		})
 		const registryPath = join(fixture.path, 'src/index.ts')
-		const { ctx, logger } = createFakeCtx({
-			loader: {
-				api: {
-					registry: {
-						findModuleIdByName: vi.fn(() => registryPath),
-					},
-					anchors: {
-						list: vi.fn(() => [registryPath]),
+		const { ctx, logger } = createFakeCtx(
+			{
+				loader: {
+					api: {
+						registry: {
+							findModuleIdByName: vi.fn(() => registryPath),
+						},
+						anchors: {
+							list: vi.fn(() => [registryPath]),
+						},
 					},
 				},
+				pluginInfo: { id: 'test-plugin' },
 			},
-			pluginInfo: { id: 'test-plugin' },
-		}, fixture)
+			fixture,
+		)
 		const service = new ExtensionService(ctx, { enabled: true })
 
 		const dispose = service.packaged()

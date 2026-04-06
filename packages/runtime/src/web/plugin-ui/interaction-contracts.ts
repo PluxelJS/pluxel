@@ -14,11 +14,7 @@ export interface InteractionContract<
 	validateResult?: (value: unknown) => TResult
 }
 
-export function defineInteractionContract<
-	TInput = unknown,
-	TDraft = unknown,
-	TResult = unknown,
->(
+export function defineInteractionContract<TInput = unknown, TDraft = unknown, TResult = unknown>(
 	contract: InteractionContract<TInput, TDraft, TResult>,
 ): InteractionContract<TInput, TDraft, TResult> {
 	const id = String(contract?.id ?? '').trim()

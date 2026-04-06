@@ -6,9 +6,11 @@ declare module 'tinypool' {
 		idleTimeout?: number
 	}
 
-	export default class Tinypool {
+	export class Tinypool {
 		constructor(options: TinypoolOptions)
 		run<T = unknown, R = unknown>(task: T): Promise<R>
 		destroy(): Promise<void>
 	}
+
+	export default Tinypool
 }

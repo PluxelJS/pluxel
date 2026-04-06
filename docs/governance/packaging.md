@@ -16,9 +16,9 @@
 
 ## 约束（必须遵守）
 
-1) **internal/private workspace 包不能出现在发布包的 runtime `dependencies` / `optionalDependencies`**
-2) internal/private workspace 包如果被实现使用，必须通过 `tsdown deps.alwaysBundle` **内联到产物**
-3) internal/private 包必须显式标记 `"private": true`
+1. **internal/private workspace 包不能出现在发布包的 runtime `dependencies` / `optionalDependencies`**
+2. internal/private workspace 包如果被实现使用，必须通过 `tsdown deps.alwaysBundle` **内联到产物**
+3. internal/private 包必须显式标记 `"private": true`
 
 这些约束由测试强制：
 

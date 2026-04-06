@@ -28,7 +28,7 @@ export const extensionRoutes = (app: AnyElysiaApp) =>
 				set.headers['cache-control'] = 'no-store'
 				return extensionService.getManifest()
 			})
-			.get('/artifacts/:plugin/:hash/*', async ({ params, pluginCtx, request, set, status }) => {
+			.get('/artifacts/:plugin/:hash/*', async ({ params, pluginCtx, request, status }) => {
 				const extensionService = pluginCtx.ext.ui
 				if (!extensionService) {
 					return status(503, 'Extension service not available')

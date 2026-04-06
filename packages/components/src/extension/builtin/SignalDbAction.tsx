@@ -1,10 +1,7 @@
 import { Button, Group, Loader, Paper, Stack, Text } from '@mantine/core'
 import { useMemo, useState } from 'react'
 import type { BuiltinActionBlock } from '@pluxel/runtime/web/extensions'
-import {
-	useGlobalExtensionContext,
-	useSignalDbCollectionsState,
-} from '@pluxel/runtime/web'
+import { useGlobalExtensionContext, useSignalDbCollectionsState } from '@pluxel/runtime/web'
 import { applySignalDbWrite } from './_shared'
 
 export function BuiltinSignalDbAction({
@@ -31,7 +28,7 @@ export function BuiltinSignalDbAction({
 			tone: 'success',
 			title: success.title ?? block.label,
 			message: success.message,
-			...(success ?? {}),
+			...success,
 		})
 	}
 
@@ -42,8 +39,9 @@ export function BuiltinSignalDbAction({
 		notify({
 			tone: 'error',
 			title: error.title ?? '执行失败',
-			message: error.message ?? (err instanceof Error ? err.message : String(err ?? 'unknown error')),
-			...(error ?? {}),
+			message:
+				error.message ?? (err instanceof Error ? err.message : String(err ?? 'unknown error')),
+			...error,
 		})
 	}
 

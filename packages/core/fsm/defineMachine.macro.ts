@@ -102,7 +102,7 @@ export interface BakedMachine<
 	States extends readonly string[],
 	Events extends readonly string[],
 	CbNames extends string,
-	HookNames extends string,
+	HookName extends string,
 > {
 	S: StateMap<States>
 	E: EventMap<Events>
@@ -116,7 +116,7 @@ export interface BakedMachine<
 		exitId: number[]
 		hasOutgoing: number[]
 		callbackNames: readonly CbNames[]
-		hookNames: readonly HookNames[]
+		hookNames: readonly HookName[]
 		abortOnStateChange: boolean
 	}
 }

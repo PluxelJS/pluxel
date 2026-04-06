@@ -492,7 +492,8 @@ function formatHmrUpdatedDetails(record: LogRecord, colorsOn: boolean): string[]
 	if (commitMs) timeParts.push(`commit=${commitMs}`)
 	if (timeParts.length) lines.push(`    time: ${timeParts.join(' ')}`)
 
-	if (commitError) lines.push(`    error: ${String(commitError).replace(/\s+/g, ' ').slice(0, 240)}`)
+	if (commitError)
+		lines.push(`    error: ${String(commitError).replace(/\s+/g, ' ').slice(0, 240)}`)
 
 	const pluginParts: string[] = []
 	if (pluginsLoaded !== undefined) pluginParts.push(`loaded=${fmtCount(pluginsLoaded)}`)

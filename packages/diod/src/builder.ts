@@ -347,10 +347,10 @@ export class ContainerBuilder {
 	}
 
 	/** 基于校验结果构建容器 + 别名索引 */
-	public build({
-		autowire = true,
-		aliasPolicy = 'error',
-	}: BuildOptions = {}): Result<DiodContainer, ServiceVerificationAggregateError> {
+	public build({ autowire = true, aliasPolicy = 'error' }: BuildOptions = {}): Result<
+		DiodContainer,
+		ServiceVerificationAggregateError
+	> {
 		const r = this.buildServices({ autowire, aliasPolicy })
 		if (!isOk(r)) return r
 		const { services, dependents, aliasIndex } = r.val

@@ -5,6 +5,12 @@
 	"bin": {
 		"pluxel": "bin/pluxel.mjs"
 	},
+	"files": [
+		"bin",
+		"dist",
+		"!**/*.map"
+	],
+	"type": "module",
 	"exports": {
 		"./hmr": {
 			"@pluxel/source": "./src/hmr/index.ts",
@@ -23,20 +29,18 @@
 		},
 		"./package.json": "./package.json"
 	},
-	"files": [
-		"bin",
-		"dist",
-		"!**/*.map"
-	],
-	"type": "module",
+	"publishConfig": {
+		"exports": {
+			"./hmr": "./dist/hmr.mjs",
+			"./build": "./dist/build.mjs",
+			"./rolldown": "./dist/rolldown.mjs",
+			"./package.json": "./package.json"
+		}
+	},
 	"scripts": {
 		"dev": "bun src/cli.ts new --dry-run --no-install",
 		"build": "tsdown",
 		"test": "pnpm exec vitest run"
-	},
-	"peerDependencies": {
-		"@pluxel/market": "*",
-		"tsdown": "*"
 	},
 	"dependencies": {
 		"@clack/prompts": "^1.0.1",
@@ -61,12 +65,8 @@
 		"tsdown": "^0.21.7",
 		"typescript": "^6.0.2"
 	},
-	"publishConfig": {
-		"exports": {
-			"./hmr": "./dist/hmr.mjs",
-			"./build": "./dist/build.mjs",
-			"./rolldown": "./dist/rolldown.mjs",
-			"./package.json": "./package.json"
-		}
+	"peerDependencies": {
+		"@pluxel/market": "*",
+		"tsdown": "*"
 	}
 }

@@ -106,8 +106,8 @@ export function createUiRpcView(
 	raw: RpcClientFactory,
 	defaults: RpcClientCreateOptions = {},
 ): ExtensionUiRpcMap {
-		// Important: capnweb http-batch sessions are short-lived. If we return the raw
-		// stub object and users memoize it (e.g. `const rpc = transport.extensions.MyPlugin`),
+	// Important: capnweb http-batch sessions are short-lived. If we return the raw
+	// stub object and users memoize it (e.g. `const rpc = transport.extensions.MyPlugin`),
 	// the session may already be ended when the next interaction happens.
 	//
 	// To make this ergonomic and safe, we return a stable proxy where each method

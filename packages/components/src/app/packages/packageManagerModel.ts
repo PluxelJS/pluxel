@@ -224,9 +224,7 @@ export function filterPackageRows(rows: PackageRow[], term: string): PackageRow[
 	})
 }
 
-export function toIssueDataList(
-	issues: Array<Maybe<PackageLoadIssue>>,
-): IssueData[] {
+export function toIssueDataList(issues: Array<Maybe<PackageLoadIssue>>): IssueData[] {
 	return [...issues]
 		.filter((issue): issue is PackageLoadIssue => Boolean(issue))
 		.map((issue) => ({

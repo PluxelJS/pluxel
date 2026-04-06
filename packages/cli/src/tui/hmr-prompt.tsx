@@ -709,7 +709,6 @@ function HmrPromptApp(props: {
 			},
 		})
 		// run once on mount
-		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [])
 
 	const mergedResult = useMemo(() => {
@@ -1212,7 +1211,7 @@ function HmrPromptApp(props: {
 			const profiles = { ...prev.profiles }
 			const profile = profiles[activeProfile] ?? { enabled: [] }
 			if (scope === 'defaults') {
-				const defaults = { ...(prev.defaults ?? {}) }
+				const defaults = { ...prev.defaults }
 				if (target === 'include') {
 					if (normalized.length) defaults.include = normalized
 					else delete defaults.include
@@ -1476,8 +1475,7 @@ function HmrPromptApp(props: {
 				setToast('Cannot delete the last profile.')
 				return
 			}
-			const remaining = names.filter((n) => n !== act.name)
-			const nextActive = remaining[0] ?? activeProfile
+			const nextActive = names.find((name) => name !== act.name) ?? activeProfile
 			setModal({
 				kind: 'confirm',
 				title: 'Delete profile',
@@ -1491,11 +1489,11 @@ function HmrPromptApp(props: {
 						const next = { ...prev.profiles }
 						delete next[act.name]
 						const remaining = Object.keys(next).sort((a, b) => a.localeCompare(b))
-						const nextActive = remaining[0] ?? prev.profile
+						const nextProfile = remaining[0] ?? prev.profile
 						return {
 							...prev,
 							profiles: next,
-							profile: prev.profile === act.name ? nextActive : prev.profile,
+							profile: prev.profile === act.name ? nextProfile : prev.profile,
 						}
 					})
 					setActiveProfile((p) => (p === act.name ? nextActive : p))
@@ -1544,8 +1542,15 @@ function HmrPromptApp(props: {
 				: snapshot.status === 'ok'
 					? { text: 'snapshot ok', color: 'gray' as const }
 					: { text: 'snapshot idle', color: 'gray' as const }
-	const statusParts = [scanPart, snapshotPart]
+	const statusParts = [
+		{ key: 'scan', ...scanPart },
+		{ key: 'snapshot', ...snapshotPart },
+	]
 	const doctorWindow = doctorLines.slice(doctorOffset, doctorOffset + doctorWindowRows)
+	const doctorWindowEntries = doctorWindow.map((line, windowIndex) => ({
+		key: String(doctorOffset + windowIndex),
+		line,
+	}))
 
 	return (
 		<Box flexDirection="column" width="100%">
@@ -1560,7 +1565,7 @@ function HmrPromptApp(props: {
 				<Text color="gray"> • </Text>
 				{statusParts.map((part, i) => {
 					return (
-						<Text key={`${part.text}:${i}`}>
+						<Text key={part.key}>
 							<Text color={part.color}>{part.text}</Text>
 							{i < statusParts.length - 1 ? <Text color="gray"> • </Text> : null}
 						</Text>
@@ -1700,9 +1705,9 @@ function HmrPromptApp(props: {
 						<Text>Doctor</Text>
 						<Text color="gray">↑/↓ scroll • d details • Ctrl+R rescan • Ctrl+←/→ tabs</Text>
 						<Box borderStyle="round" borderColor="gray" flexDirection="column" flexGrow={1}>
-							{doctorWindow.map((line, i) => (
-								<Text key={`${doctorOffset + i}:${line}`} wrap="truncate">
-									{line}
+							{doctorWindowEntries.map((entry) => (
+								<Text key={entry.key} wrap="truncate">
+									{entry.line}
 								</Text>
 							))}
 						</Box>
@@ -1871,9 +1876,9 @@ function HelpOverlay(props: { tab: TabKey; onClose: () => void }) {
 		}
 	})
 
-	const Key = (props: { children: string }) => (
+	const Key = (keyProps: { children: string }) => (
 		<Text color="black" backgroundColor="cyan">
-			{` ${props.children} `}
+			{` ${keyProps.children} `}
 		</Text>
 	)
 

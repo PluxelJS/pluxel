@@ -11,10 +11,7 @@ type Options = {
  * Useful as a safety net to ensure private module specifiers (or internal markers)
  * never leak into published artifacts.
  */
-export function assertBundleNoText(
-	forbidden: string[],
-	options: Options = {},
-): ViteCompatPlugin {
+export function assertBundleNoText(forbidden: string[], options: Options = {}): ViteCompatPlugin {
 	const include = options.include ?? ((file) => !/\.map$/i.test(file))
 	const needles = forbidden.filter(Boolean)
 

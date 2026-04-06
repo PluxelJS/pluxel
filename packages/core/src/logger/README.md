@@ -44,7 +44,7 @@ ctx.logger.info`HMR started on ${port}`
 需要结构化数据：用 method call 的 properties 参数（或 `with()` 绑定后再输出 message）。
 
 ```ts
-ctx.logger.info("module loaded", { pluginId, file })
+ctx.logger.info('module loaded', { pluginId, file })
 ctx.logger.with({ pluginId, file }).info`module loaded`
 ```
 
@@ -59,7 +59,7 @@ log.warn`module updated`
 错误日志：把 `error` 放进结构化属性（便于 pretty/youch/filters 识别）。
 
 ```ts
-ctx.logger.error("execute failed", { error })
+ctx.logger.error('execute failed', { error })
 ```
 
 昂贵计算：用 LogTape 的 lazy callback，让成本只在该 level 启用时发生。
@@ -71,7 +71,7 @@ ctx.logger.debug((l) => l`cache keys:\n${keys.join('\n')}`)
 动态/惰性属性：用 LogTape `lazy()`，让属性只在该 level 启用时求值（也避免冻结动态上下文）。
 
 ```ts
-import { lazy } from "@logtape/logtape";
+import { lazy } from '@logtape/logtape'
 
 ctx.logger.with({ user: lazy(() => currentUserId()) }).info`request start`
 ```
@@ -81,7 +81,7 @@ ctx.logger.with({ user: lazy(() => currentUserId()) }).info`request start`
 调试日志统一走一个稳定的 channel：category 固定为 `["pluxel","debug"]`，topic 通过属性携带。
 
 ```ts
-ctx.logger.getDebugChannel("pluxel:hmr:batch").debug("batch targets", { targets })
+ctx.logger.getDebugChannel('pluxel:hmr:batch').debug('batch targets', { targets })
 ```
 
 如何开启：在 LogTape 配置里指定 `debug: [...]`（支持 `: *` 前缀），pretty 输出会标注 `{dbg:...}`。
@@ -92,15 +92,15 @@ ctx.logger.getDebugChannel("pluxel:hmr:batch").debug("batch targets", { targets 
 
 ```ts
 await configure(
-  createPluxelLogtapeConfig({
-    preset: "hmr",
-    pluginLevels: {
-      "*": "info",        // 默认
-      "plugin-a": "debug",
-      "plugin-b": null,   // 禁用
-    },
-  }),
-);
+	createPluxelLogtapeConfig({
+		preset: 'hmr',
+		pluginLevels: {
+			'*': 'info', // 默认
+			'plugin-a': 'debug',
+			'plugin-b': null, // 禁用
+		},
+	}),
+)
 ```
 
 如需动态调整，可传函数（自行读取你的 map/配置源）。
@@ -125,29 +125,29 @@ await configure(
 ## 配置示例（宿主侧）
 
 ```ts
-import { configure } from "@logtape/logtape";
-import { createPluxelLogtapeConfig } from "@pluxel/core/logger";
+import { configure } from '@logtape/logtape'
+import { createPluxelLogtapeConfig } from '@pluxel/core/logger'
 
 await configure(
-  createPluxelLogtapeConfig({
-    preset: "hmr", // or "core"
-  }),
-);
+	createPluxelLogtapeConfig({
+		preset: 'hmr', // or "core"
+	}),
+)
 ```
 
 如果你在用 `@pluxel/runtime` 且希望直接传 `file: "./logs/app.log"`（daily rotation by prefix path），推荐用 runtime helper：
 
 ```ts
-import { ensurePluxelLogging } from "@pluxel/runtime/logger";
+import { ensurePluxelLogging } from '@pluxel/runtime/logger'
 
 await ensurePluxelLogging({
-  preset: "hmr",
-  file: "./logs/app.log",
-  // 关闭 Youch（仅保留 pretty 的 error.stack 输出）
-  // console: { youch: false },
-  // 自定义 prefix（hmr 默认是 "name"；core 默认是 "context"）
-  // console: { pretty: { prefix: "context" } },
-  // 开启 debug（支持前缀；debug 会走统一 channel `pluxel:debug` 并标注 `{dbg:...}`）：
-  // debug: ["pluxel:hmr:*", "pluxel:ext:compile"],
-});
+	preset: 'hmr',
+	file: './logs/app.log',
+	// 关闭 Youch（仅保留 pretty 的 error.stack 输出）
+	// console: { youch: false },
+	// 自定义 prefix（hmr 默认是 "name"；core 默认是 "context"）
+	// console: { pretty: { prefix: "context" } },
+	// 开启 debug（支持前缀；debug 会走统一 channel `pluxel:debug` 并标注 `{dbg:...}`）：
+	// debug: ["pluxel:hmr:*", "pluxel:ext:compile"],
+})
 ```

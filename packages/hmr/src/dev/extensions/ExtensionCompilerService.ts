@@ -15,12 +15,11 @@ import {
 	EXTENSION_FEDERATION_MANIFEST_FILE,
 	EXTENSION_FEDERATION_REMOTE_ENTRY_FILE,
 	EXTENSION_FEDERATION_SHARE_STRATEGY,
-	extensionFederationRemoteName,
 	extensionFederationSharedPackages,
 	sanitizeExtensionPluginName,
 } from '@pluxel/runtime/web/federation'
 import { HMR_INTERNAL_API_BASE, hmrExtensionArtifactBasePath } from '@pluxel/runtime/web/paths'
-import chokidar, { type FSWatcher } from 'chokidar'
+import { watch, type FSWatcher } from 'chokidar'
 import { dirname, isAbsolute, join, relative, resolve } from 'pathe'
 import { buildPluginUiRemote, resolveExtensionFederationShared } from '../../plugin-build'
 import {
@@ -436,7 +435,7 @@ export class ExtensionCompilerService {
 			entry.watcher = null
 			return
 		}
-		const watcher = chokidar.watch(targets, {
+		const watcher = watch(targets, {
 			ignoreInitial: true,
 			awaitWriteFinish: { stabilityThreshold: 100, pollInterval: 50 },
 			ignored: WATCHER_IGNORED_GLOBS,
@@ -620,8 +619,8 @@ export class ExtensionCompilerService {
 		const needle = pluginName.toLowerCase()
 		for (const path of ctx.loader.api.anchors.list()) {
 			if (path.toLowerCase().includes(needle) && isAbsolute(path)) {
-				const baseDir = dirname(path)
-				return findNearestPackageRoot(baseDir) ?? baseDir
+				const pathBaseDir = dirname(path)
+				return findNearestPackageRoot(pathBaseDir) ?? pathBaseDir
 			}
 		}
 		return null

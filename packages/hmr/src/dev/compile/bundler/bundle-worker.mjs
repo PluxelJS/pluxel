@@ -81,11 +81,13 @@ export default async function runBundle(job) {
 				msg = String(error)
 			}
 		}
-		throw new Error(`[bundler-worker] Vite build failed (entry=${entry}): ${msg}`)
+		throw new Error(`[bundler-worker] Vite build failed (entry=${entry}): ${msg}`, {
+			cause: error,
+		})
 	}
 
 	const outputs = normalizeOutput(result)
-		.flatMap((entry) => entry.output ?? [])
+		.flatMap((outputEntry) => outputEntry.output ?? [])
 		.filter(Boolean)
 	const chunk =
 		outputs.find(
@@ -250,7 +252,7 @@ function createBrowserImportGuardPlugin(opts) {
 			chain.push(cur)
 			cur = parent.get(cur) ?? null
 		}
-		return chain.reverse().map(shortId)
+		return chain.toReversed().map(shortId)
 	}
 
 	function throwNodeImport(source, importer, kind) {

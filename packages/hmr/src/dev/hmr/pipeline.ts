@@ -10,12 +10,7 @@ import {
 } from '@pluxel/runtime/shared'
 import type { HmrPathApi, HmrToolkit } from './environment'
 import { startTimer } from '@pluxel/runtime/shared'
-import {
-	collectHotspots,
-	isLogEnabled,
-	logAttributionReport,
-	type TimingTracker,
-} from './logging'
+import { collectHotspots, isLogEnabled, logAttributionReport, type TimingTracker } from './logging'
 import { collectPluginTotals } from './operational-report'
 import type { HmrRunner } from './runner'
 import { runWithRequireShims } from './runtime-shims'

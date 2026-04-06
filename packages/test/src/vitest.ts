@@ -130,10 +130,10 @@ export function definePluxelVitestConfig(
 			...baseConditions,
 			...asStringArray(merged.resolve?.conditions),
 		])
-		merged.resolve = { ...(merged.resolve ?? {}), conditions: mergedConditions }
+		merged.resolve = { ...merged.resolve, conditions: mergedConditions }
 		merged.ssr = merged.ssr ?? {}
 		merged.ssr.resolve = {
-			...(merged.ssr.resolve ?? {}),
+			...merged.ssr.resolve,
 			conditions: uniqStrings([
 				...baseConditions,
 				...asStringArray(merged.ssr.resolve?.conditions),
@@ -142,10 +142,7 @@ export function definePluxelVitestConfig(
 
 		// Always keep core setup in place. Caller can add more setup files.
 		merged.test = merged.test ?? {}
-		merged.test.setupFiles = uniqStrings([
-			setupFile,
-			...asStringArray(merged.test.setupFiles),
-		])
+		merged.test.setupFiles = uniqStrings([setupFile, ...asStringArray(merged.test.setupFiles)])
 
 		// Compose plugins with explicit order control.
 		merged.plugins = [...toolchainPlugins, ...overridePlugins]
@@ -296,7 +293,7 @@ export function definePluxelVitestWorkspaceConfig(
 					name: p.name,
 					include: [...includeTests],
 					exclude: [...excludeTests],
-					...(options.projectTest ?? {}),
+					...options.projectTest,
 				},
 			},
 			{ include: [...includeToolchain], exclude: [...excludeToolchain] },
@@ -305,7 +302,7 @@ export function definePluxelVitestWorkspaceConfig(
 
 	return defineConfig({
 		test: {
-			...(options.test ?? {}),
+			...options.test,
 			projects,
 		},
 	})

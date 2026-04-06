@@ -1,11 +1,11 @@
-import { type Context, Injectable, OverrideOf } from '@pluxel/core'
+import { type Context as PluxelContext, Injectable, OverrideOf } from '@pluxel/core'
 import {
 	type ConfigSchemaMap,
 	ConfigValidationError,
 	ConfigService as CoreConfigService,
 	normalizeConfigRecord,
 } from '@pluxel/core/services'
-import chokidar, { type FSWatcher } from 'chokidar'
+import { watch, type FSWatcher } from 'chokidar'
 import { hash as ohash } from 'ohash'
 import { SuperJSON } from 'superjson'
 import { resolveProfiledPath, resolveRuntimeStoragePaths } from '../runtime/paths'
@@ -44,7 +44,7 @@ export class ConfigService {
 		Object.create(null),
 	)
 
-	public ctx: Context
+	public ctx: PluxelContext
 
 	/** Whether the initial on-disk config has been loaded (or initialized). */
 	public isReady = false
@@ -88,7 +88,7 @@ export class ConfigService {
 	private readonly mode: ConfigServiceMode
 	private readonly readonlyMode: boolean
 
-	constructor(ctx: Context, cfg: ConfigServiceConfig = {}) {
+	constructor(ctx: PluxelContext, cfg: ConfigServiceConfig = {}) {
 		this.ctx = ctx
 		// 允许调用方把方法解构出来用（避免丢失 this 导致 this.data 为空）
 		this.getExtra = this.getExtra.bind(this)
@@ -117,12 +117,11 @@ export class ConfigService {
 				this.isReady = true
 			})
 
-			this.watcher = chokidar
-				.watch(this.file, {
-					ignoreInitial: true,
-					// 防止编辑器“分块写”引发多次触发
-					awaitWriteFinish: { stabilityThreshold: 100, pollInterval: 50 },
-				})
+			this.watcher = watch(this.file, {
+				ignoreInitial: true,
+				// 防止编辑器“分块写”引发多次触发
+				awaitWriteFinish: { stabilityThreshold: 100, pollInterval: 50 },
+			})
 				.on('add', () => this.onDiskChange(this.file))
 				.on('change', () => this.onDiskChange(this.file))
 		} else {
@@ -699,7 +698,7 @@ function normalizeProfileName(raw: unknown): string | undefined {
 	if (!trimmed) return undefined
 	// Keep profile names safe for filesystem usage across platforms.
 	const safe = trimmed
-		// biome-ignore lint/suspicious/noControlCharactersInRegex: intentionally strips ASCII control characters for safe filenames.
+		// oxlint-disable-next-line eslint/no-control-regex -- intentionally strips ASCII control characters for safe filenames.
 		.replace(/[<>:"/\\|?*\u0000-\u001F]/g, '-')
 		.replace(/\s+/g, '-')
 		.replace(/-+/g, '-')

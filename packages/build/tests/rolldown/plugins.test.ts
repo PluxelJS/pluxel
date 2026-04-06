@@ -591,59 +591,59 @@ async function withFixtures<T>(run: (fixturesDir: string) => Promise<T>) {
 	return await run(fixture.path)
 }
 
-	describe('configSourcePlugin', () => {
-		it('extracts cfg(schemaMap)`...` layout parts', async () => {
-			await withFixtures(async (fixturesDir) => {
-				const bundle = await rolldown({
-					input: resolve(fixturesDir, 'plugin-with-cfg-layout.ts'),
-					plugins: [configSourcePlugin()],
-					external: ['valibot', '@pluxel/core'],
-				})
-
-				const { output } = await bundle.generate({ format: 'esm' })
-				const code = output[0].code
-
-				expect(code).toContain('__setConfigLayout__')
-				expect(code).toContain('"kind": "schema"')
-				expect(code).toContain('"key": "a"')
-				expect(code).toContain('"key": "b"')
-				expect(code).toContain('"kind": "schemas"')
+describe('configSourcePlugin', () => {
+	it('extracts cfg(schemaMap)`...` layout parts', async () => {
+		await withFixtures(async (fixturesDir) => {
+			const bundle = await rolldown({
+				input: resolve(fixturesDir, 'plugin-with-cfg-layout.ts'),
+				plugins: [configSourcePlugin()],
+				external: ['valibot', '@pluxel/core'],
 			})
+
+			const { output } = await bundle.generate({ format: 'esm' })
+			const code = output[0].code
+
+			expect(code).toContain('__setConfigLayout__')
+			expect(code).toContain('"kind": "schema"')
+			expect(code).toContain('"key": "a"')
+			expect(code).toContain('"key": "b"')
+			expect(code).toContain('"kind": "schemas"')
 		})
+	})
 
-		it('extracts cfg(schemaMap) across modules (imported schemaMap const)', async () => {
-			await withFixtures(async (fixturesDir) => {
-				const bundle = await rolldown({
-					input: resolve(fixturesDir, 'cfg-schemas-imported.ts'),
-					plugins: [configSourcePlugin()],
-					external: ['valibot', '@pluxel/core'],
-				})
-
-				const { output } = await bundle.generate({ format: 'esm' })
-				const code = output[0].code
-
-				expect(code).toContain('__registerConfigBinding__')
-				expect(code).toContain('__setConfigSource__')
-				expect(code).toContain('__setConfigLayout__')
-				// registerExpr should reference the schemaMap by key access (bundler may rename the binding)
-				expect(code).toContain('["a"]')
-				expect(code).toContain('["b"]')
+	it('extracts cfg(schemaMap) across modules (imported schemaMap const)', async () => {
+		await withFixtures(async (fixturesDir) => {
+			const bundle = await rolldown({
+				input: resolve(fixturesDir, 'cfg-schemas-imported.ts'),
+				plugins: [configSourcePlugin()],
+				external: ['valibot', '@pluxel/core'],
 			})
+
+			const { output } = await bundle.generate({ format: 'esm' })
+			const code = output[0].code
+
+			expect(code).toContain('__registerConfigBinding__')
+			expect(code).toContain('__setConfigSource__')
+			expect(code).toContain('__setConfigLayout__')
+			// registerExpr should reference the schemaMap by key access (bundler may rename the binding)
+			expect(code).toContain('["a"]')
+			expect(code).toContain('["b"]')
 		})
+	})
 
-		it('rejects invalid cfg layout ordering during extraction', async () => {
-			await withFixtures(async (fixturesDir) => {
-				const bundle = await rolldown({
-					input: resolve(fixturesDir, 'invalid-cfg-layout.ts'),
-					plugins: [configSourcePlugin()],
-					external: ['valibot', '@pluxel/core'],
-				})
-
-				await expect(bundle.generate({ format: 'esm' })).rejects.toThrow(
-					/must be the last schema-placement token/,
-				)
+	it('rejects invalid cfg layout ordering during extraction', async () => {
+		await withFixtures(async (fixturesDir) => {
+			const bundle = await rolldown({
+				input: resolve(fixturesDir, 'invalid-cfg-layout.ts'),
+				plugins: [configSourcePlugin()],
+				external: ['valibot', '@pluxel/core'],
 			})
+
+			await expect(bundle.generate({ format: 'esm' })).rejects.toThrow(
+				/must be the last schema-placement token/,
+			)
 		})
+	})
 
 	it('extracts inline @Config schema source', async () => {
 		await withFixtures(async (fixturesDir) => {
@@ -1004,7 +1004,7 @@ describe('plugins integration', () => {
 			const { output } = await bundle.generate({ format: 'esm' })
 			const code = output[0].code
 
-			expect(code).toContain("import { worker } from \"@pluxel/hmr/plugin\";")
+			expect(code).toContain('import { worker } from "@pluxel/hmr/plugin";')
 			expect(code).toContain('const defineUi = __pluxelRuntimeUiBridge__')
 			expect(code).toContain('ctx.ext.ui.remote.packaged()')
 			expect(code).not.toContain('ui as defineUi')
@@ -1014,10 +1014,10 @@ describe('plugins integration', () => {
 	it('rejects namespace imports from @pluxel/hmr/plugin to keep AST rewrite deterministic', async () => {
 		await withFixtures(async (fixturesDir) => {
 			const bundle = await rolldown({
-					input: resolve(fixturesDir, 'plugin-with-hmr-ui-namespace.ts'),
-					plugins: [hmrUiBridgePlugin()],
-					external: ['@pluxel/hmr/plugin'],
-				})
+				input: resolve(fixturesDir, 'plugin-with-hmr-ui-namespace.ts'),
+				plugins: [hmrUiBridgePlugin()],
+				external: ['@pluxel/hmr/plugin'],
+			})
 
 			await expect(bundle.generate({ format: 'esm' })).rejects.toThrow(
 				/namespace import is not supported/,
