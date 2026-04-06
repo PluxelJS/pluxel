@@ -288,7 +288,7 @@ function assertDocPart(value: unknown): asserts value is BuiltinDocPart {
 function mergeAdjacentMarkdown(parts: BuiltinDocPart[]): BuiltinDocPart[] {
 	const merged: BuiltinDocPart[] = []
 	for (const part of parts) {
-		const prev = merged[merged.length - 1]
+		const prev = merged.at(-1)
 		if (part.kind === 'md' && prev?.kind === 'md') {
 			merged[merged.length - 1] = { ...prev, text: `${prev.text}${part.text}` }
 			continue
@@ -396,7 +396,7 @@ function createDocBuilder<M extends Record<string, unknown>>(schemaMap: M): DocB
 					throw new Error(`[doc.schemas] unknown schemaKey "${k}" (not in schemaMap)`)
 				}
 			}
-			return { kind: 'schemas', keys: list.length ? list : null } as BuiltinDocPart
+			return { kind: 'schemas', keys: list.length > 0 ? list : null } as BuiltinDocPart
 		}) as any,
 	}) as unknown as DocBuilder<M>
 }

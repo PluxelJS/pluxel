@@ -161,7 +161,7 @@ export function getClassParams<T = unknown>(
 	}
 
 	// 1) 预取 rtypes 作为基数组
-	const out = s.rtypes.length ? (s.rtypes as unknown[]).slice() : []
+	const out = s.rtypes.length > 0 ? [...s.rtypes as unknown[]] : []
 
 	// 2) 应用持久 tokens（数组形态，最快）
 	if (s.tokens) applyOverride(out, s.tokens)
@@ -188,7 +188,7 @@ export function requirePluginDependency(target: object | AnyCtor, dep: PluginIde
 	const s = S(ctor)
 	const cur = s.requiredDeps
 	if (cur?.includes(dep)) return
-	const next = cur ? cur.slice() : []
+	const next = cur ? [...cur] : []
 	next.push(dep)
 	s.requiredDeps = next
 }
@@ -218,7 +218,8 @@ export function getRequiredPluginDependencies(
 
 		if (!inherit) break
 		const proto =
-			(cur as { prototype?: unknown }).prototype != null
+			(cur as { prototype?: unknown }).prototype !== null &&
+				(cur as { prototype?: unknown }).prototype !== undefined
 				? Object.getPrototypeOf((cur as { prototype?: unknown }).prototype)
 				: null
 		if (!proto || proto === Object.prototype) break
@@ -238,7 +239,7 @@ export function useFeature(target: AnyCtor, feature: AnyCtor): void {
 	const s = S(target)
 	const cur = s.features
 	if (cur?.includes(feature)) return
-	const next = cur ? cur.slice() : []
+	const next = cur ? [...cur] : []
 	next.push(feature)
 	s.features = __DEV__ ? $freeze(next) : next
 }
@@ -258,7 +259,7 @@ export function getDeclaredConfigBindings(
 ): Readonly<Record<string, readonly string[]>> | null {
 	const s = STATE.get(ctor)
 	const map = s?.configBindings as Record<string, readonly string[]> | null | undefined
-	return map && Object.keys(map).length ? map : null
+	return map && Object.keys(map).length > 0 ? map : null
 }
 
 export function getFeatureNamespace(feature: AnyCtor): string {
@@ -301,7 +302,7 @@ function applyFeatureComposition(
 	// - ensures feature configs "belong" to the host plugin panel without collisions.
 	const fs = STATE.get(feature)
 	const featureConfig = (fs?.config ?? fs?.pending) as Record<string, unknown> | null | undefined
-	if (featureConfig && Object.keys(featureConfig).length) {
+	if (featureConfig && Object.keys(featureConfig).length > 0) {
 		const ns = getFeatureNamespace(feature)
 		const dst = (
 			finalized ? (s.config ?? Object.create(null)) : (s.pending ?? Object.create(null))
@@ -324,7 +325,7 @@ function applyFeatureComposition(
 	}
 
 	const featureSource = fs?.configSource
-	if (featureSource && Object.keys(featureSource).length) {
+	if (featureSource && Object.keys(featureSource).length > 0) {
 		const ns = getFeatureNamespace(feature)
 		const dst = (s.configSource ?? Object.create(null)) as Record<string, string>
 		const next = Object.assign(Object.create(null), dst)
@@ -377,7 +378,7 @@ export function UseFeature(...features: AnyCtor[]): ClassDecorator {
 
 export function setParamToken(ctor: AnyCtor, index: number, token: Identifier<unknown>): void {
 	const s = S(ctor)
-	const next = s.tokens ? s.tokens.slice() : []
+	const next = s.tokens ? [...s.tokens] : []
 	if (index >= next.length) next.length = index + 1
 	next[index] = token
 	s.tokens = next
@@ -386,7 +387,7 @@ export function setParamToken(ctor: AnyCtor, index: number, token: Identifier<un
 
 export function setParamTokens(ctor: AnyCtor, override: ParamOverride): void {
 	const s = S(ctor)
-	const base = s.tokens ? s.tokens.slice() : []
+	const base = s.tokens ? [...s.tokens] : []
 	if (Array.isArray(override)) applyOverride(base, override)
 	else
 		applyOverride(
@@ -400,7 +401,7 @@ export function setParamTokens(ctor: AnyCtor, override: ParamOverride): void {
 export function clearParamToken(ctor: AnyCtor, index: number): void {
 	const s = S(ctor)
 	if (!s.tokens) return
-	const next = s.tokens.slice()
+	const next = [...s.tokens]
 	if (index < next.length) {
 		next[index] = undefined
 		// 紧凑收尾
@@ -425,7 +426,7 @@ export function getStoredParamTokens(
 ): ReadonlyArray<Identifier<unknown> | undefined> | undefined {
 	const t = STATE.get(ctor)?.tokens
 	if (!t) return undefined
-	const copy = t.slice()
+	const copy = [...t]
 	return __DEV__ ? $freeze(copy) : copy
 }
 
@@ -444,7 +445,7 @@ export function __setConfigSource__(ctor: AnyCtor, fieldName: string, source: st
 export function __setConfigLayout__(ctor: AnyCtor, fieldName: string, layout: unknown): void {
 	const s = S(ctor)
 	if (!Array.isArray(layout)) {
-		throw new Error('[pluxel/core] __setConfigLayout__: layout must be an array')
+		throw new TypeError('[pluxel/core] __setConfigLayout__: layout must be an array')
 	}
 	const bucket = s.configLayout ?? Object.create(null)
 	bucket[fieldName] = layout as any
@@ -462,7 +463,7 @@ export function __registerConfigBinding__(
 	const s = S(ctor)
 	const override = (s as any).cfgBindingOverrides?.[label] as readonly string[] | undefined
 	const list = override
-		? Array.from(override)
+		? [...override]
 		: Array.isArray(keys)
 			? keys.map((x) => String(x).trim()).filter(Boolean)
 			: []
@@ -475,7 +476,7 @@ export function __registerConfigBinding__(
 	}
 
 	const next = Object.assign(Object.create(null), dst)
-	next[label] = __DEV__ ? $freeze(list.slice()) : list.slice()
+	next[label] = __DEV__ ? $freeze([...list]) : [...list]
 	s.configBindings = next
 	if (s.infoSnap) rebuildInfoSnapshot(ctor, s)
 }
@@ -499,7 +500,7 @@ export function __registerConfigSchema__(ctor: AnyCtor, fieldName: string, schem
 			readonly string[]
 		>
 		;(s as any).cfgBindingOverrides = Object.assign(Object.create(null), overrides, {
-			[fieldName]: __DEV__ ? $freeze(keys.slice()) : keys.slice(),
+			[fieldName]: __DEV__ ? $freeze([...keys]) : [...keys],
 		})
 
 		__registerConfigBinding__(ctor, fieldName, keys)
@@ -561,7 +562,7 @@ export function clonePluginDefinition(
 		throw new Error(`clonePluginDefinition(${String(from)}) 失败：源类未装饰 @Plugin`)
 	}
 	if (typeof to !== 'function') {
-		throw new Error(`clonePluginDefinition(${String(from)}) 失败：目标不是可装饰的类`)
+		throw new TypeError(`clonePluginDefinition(${String(from)}) 失败：目标不是可装饰的类`)
 	}
 	const dst = S(to as unknown as AnyCtor)
 

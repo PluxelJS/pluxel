@@ -17,7 +17,7 @@ export class EntryResolver {
 		this.cache.clear()
 	}
 
-	async resolve(
+	resolve(
 		dir: string,
 		options: ResolvedScanOptions,
 		manifest?: PackageJson,

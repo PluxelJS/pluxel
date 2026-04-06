@@ -30,8 +30,7 @@ export function writeHmrDiscoveredIndex(params: {
 	discovered: DiscoveredPlugin[]
 }) {
 	const rootDirAbs = resolve(params.rootDir)
-	const discoveredSorted = params.discovered
-		.slice()
+	const discoveredSorted = [...params.discovered]
 		.sort((a, b) => a.name.localeCompare(b.name) || a.pkgDir.localeCompare(b.pkgDir))
 
 	const builtinPackages = uniqSorted((params.builtinPackages ?? []).map(String).filter(Boolean))
@@ -53,12 +52,12 @@ export function writeHmrDiscoveredIndex(params: {
 		},
 		workspace: {
 			...(rootsExpanded ? { rootsExpanded } : {}),
-			...(params.excludeGlobs?.length ? { excludeGlobs: params.excludeGlobs.slice() } : {}),
-			...(hiddenPackages.length ? { hiddenPackages } : {}),
+			...(params.excludeGlobs?.length ? { excludeGlobs: [...params.excludeGlobs] } : {}),
+			...(hiddenPackages.length > 0 ? { hiddenPackages } : {}),
 		},
 		builtin: {
-			...(builtinPackages.length ? { packages: builtinPackages } : {}),
-			...(omitFromEntries.length ? { omitFromEntries } : {}),
+			...(builtinPackages.length > 0 ? { packages: builtinPackages } : {}),
+			...(omitFromEntries.length > 0 ? { omitFromEntries } : {}),
 		},
 		discovered: {
 			count: discoveredSorted.length,

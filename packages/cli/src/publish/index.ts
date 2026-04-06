@@ -216,5 +216,5 @@ async function getPublishedVersion(
 	}
 
 	const segments = output.split(/\s+/).filter(Boolean)
-	return segments.length > 0 ? segments[segments.length - 1] : undefined
+	return segments.length > 0 ? segments.at(-1) : undefined
 }

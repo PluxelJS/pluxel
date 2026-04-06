@@ -14,8 +14,8 @@ export class InstanceConfiguration<T> extends ServiceConfiguration<T> {
 	}
 
 	protected build(): ServiceData<T> {
-		const tags = this.tags.length ? this.tags.slice() : []
-		const aliases = this.alias.length ? this.alias.slice() : []
+		const tags = this.tags.length > 0 ? [...this.tags] : []
+		const aliases = this.alias.length > 0 ? [...this.alias] : []
 
 		return {
 			tags,

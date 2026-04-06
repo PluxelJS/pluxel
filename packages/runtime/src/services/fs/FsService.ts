@@ -123,7 +123,7 @@ function bytesToHex(bytes: Uint8Array): string {
 }
 
 function copyBytes(bytes: Uint8Array): Uint8Array {
-	return bytes.slice()
+	return Uint8Array.from(bytes)
 }
 
 function randomHex(bytes: number): string {

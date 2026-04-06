@@ -561,7 +561,7 @@ export class HttpService {
 	private defaultPluginBoundaryId(pluginId: string, path: string): string {
 		return path === '/'
 			? `${pluginId}:http`
-			: `${pluginId}:http:${path.slice(1).replace(/\//g, ':')}`
+			: `${pluginId}:http:${path.slice(1).replaceAll('/', ':')}`
 	}
 
 	private requestFullReload() {
@@ -569,25 +569,23 @@ export class HttpService {
 	}
 
 	private refreshMountedIndex() {
-		this.mountedIndex = Array.from(this.mounted.values()).sort(
-			(a, b) => b.base.length - a.base.length,
-		)
+		this.mountedIndex = [...this.mounted.values()].sort((a, b) => b.base.length - a.base.length)
 	}
 
 	private createApp(options?: CreateElysiaAppOptions) {
 		return createElysiaApp(this.ctx, options)
 	}
 
-	private createRenderer(): Promise<RenderHandler> {
+	private async createRenderer(): Promise<RenderHandler> {
 		if (this.config.uiAssets === 'disabled') {
-			return Promise.resolve(() => new Response('Not Found', { status: 404 }))
+			return () => new Response('Not Found', { status: 404 })
 		}
 		if (this.config.uiAssets === 'static-built') {
-			return import('../../server/static').then(({ createStaticRenderer }) =>
-				createStaticRenderer({ publicDirAbs: this.resolveUiPublicDir() ?? undefined }),
-			)
+			const { createStaticRenderer } = await import('../../server/static')
+			return createStaticRenderer({ publicDirAbs: this.resolveUiPublicDir() ?? undefined })
 		}
-		return import('../../server/dev').then(({ createDevRenderer }) => createDevRenderer())
+		const { createDevRenderer } = await import('../../server/dev')
+		return createDevRenderer()
 	}
 
 	private async render(request: Request) {

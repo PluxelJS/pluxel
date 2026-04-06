@@ -1,7 +1,7 @@
 import type { ViteCompatPlugin } from './compat'
 
 function escapeRE(s: string) {
-	return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+	return s.replaceAll(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }
 
 /**

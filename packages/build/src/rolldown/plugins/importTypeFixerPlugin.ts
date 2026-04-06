@@ -405,7 +405,7 @@ function applyRelativeReplacements(
 ): string {
 	let result = ''
 	let cursor = 0
-	const sorted = replacements.slice().sort((a, b) => a.start - b.start)
+	const sorted = [...replacements].sort((a, b) => a.start - b.start)
 	for (const rep of sorted) {
 		if (rep.start < cursor) continue
 		result += source.slice(cursor, rep.start)

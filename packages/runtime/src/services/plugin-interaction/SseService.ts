@@ -70,7 +70,7 @@ export class SseService {
 
 	constructor(
 		public ctx: Context,
-		_cfg: unknown = undefined,
+		_cfg: unknown,
 	) {}
 
 	registerExtension(namespace: string, factory: SseExtensionFactory): () => void {
@@ -113,7 +113,7 @@ export class SseService {
 			return c.status(404, 'No SSE extensions registered')
 		}
 
-		if (missing.length) {
+		if (missing.length > 0) {
 			c.pluginCtx.logger.warn('namespaces missing, fallback', { missing })
 		}
 
@@ -133,7 +133,7 @@ export class SseService {
 	}
 
 	getNamespaces(): string[] {
-		return Array.from(this.extensions.keys())
+		return [...this.extensions.keys()]
 	}
 
 	hasExtension(namespace: string): boolean {
@@ -300,7 +300,7 @@ export class SseService {
 	}
 
 	private normalizeNamespaces(namespaces: string[]): string[] {
-		return Array.from(new Set(namespaces.filter(Boolean)))
+		return [...new Set(namespaces.filter(Boolean))]
 	}
 
 	private markPending(namespace: string, session: Session<SessionState>) {
@@ -322,7 +322,8 @@ export class SseService {
 	private tryAttachPending(namespace: string) {
 		const waiters = this.pendingByNamespace.get(namespace)
 		if (!waiters?.size) return
-		for (const session of Array.from(waiters)) {
+		const sessions = [...waiters]
+		for (const session of sessions) {
 			if (!session.isConnected) {
 				this.unmarkPending(namespace, session)
 				continue

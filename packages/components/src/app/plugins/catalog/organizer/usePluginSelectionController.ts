@@ -151,7 +151,7 @@ export function usePluginSelectionController({
 							const list = selectionContainers.containerToItems.get(itemContainer) ?? []
 							const currentIndex = list.indexOf(pluginId)
 							const anchorIndex = list.indexOf(anchor)
-							if (currentIndex >= 0 && anchorIndex >= 0) {
+							if (currentIndex !== -1 && anchorIndex !== -1) {
 								const [lo, hi] =
 									currentIndex < anchorIndex
 										? [currentIndex, anchorIndex]
@@ -221,37 +221,39 @@ export function usePluginSelectionController({
 
 			switch (event.key) {
 				case 'a':
-				case 'A':
-					if (!mod) return
-					event.preventDefault()
-					setSelectedIds(visibleLinearIds)
-					setFocusedId((current) => current ?? visibleLinearIds[0] ?? null)
-					lastSelectedRef.current = visibleLinearIds[0] ?? null
-					return
+				case 'A': {
+					if (mod) {
+						event.preventDefault()
+						setSelectedIds(visibleLinearIds)
+						setFocusedId((current) => current ?? visibleLinearIds[0] ?? null)
+						lastSelectedRef.current = visibleLinearIds[0] ?? null
+					}
+					break
+				}
 				case 'Escape':
 					event.preventDefault()
 					setSelectedIds([])
 					lastSelectedRef.current = null
-					return
+					break
 				case 'ArrowDown':
 					event.preventDefault()
 					moveFocus((focusedId ? visibleLinearIds.indexOf(focusedId) : -1) + 1, event.shiftKey)
-					return
+					break
 				case 'ArrowUp':
 					event.preventDefault()
 					moveFocus(
 						focusedId ? visibleLinearIds.indexOf(focusedId) - 1 : visibleLinearIds.length - 1,
 						event.shiftKey,
 					)
-					return
+					break
 				case 'Home':
 					event.preventDefault()
 					moveFocus(0, event.shiftKey)
-					return
+					break
 				case 'End':
 					event.preventDefault()
 					moveFocus(visibleLinearIds.length - 1, event.shiftKey)
-					return
+					break
 				case ' ': {
 					event.preventDefault()
 					const targetId = focusedId ?? visibleLinearIds[0]
@@ -267,32 +269,38 @@ export function usePluginSelectionController({
 						lastSelectedRef.current = targetId
 						return prev.length === 1 && prev[0] === targetId ? [] : [targetId]
 					})
-					return
+					break
 				}
 				case 'Enter':
 					event.preventDefault()
 					if (focusedId) activateFocusedPlugin(focusedId, mod ? 'open-tab' : 'replace-active')
-					return
+					break
 				case 'g':
-				case 'G':
-					if (mod || event.altKey || locked) return
-					event.preventDefault()
-					onCreateGroup()
-					return
+				case 'G': {
+					if (!(mod || event.altKey || locked)) {
+						event.preventDefault()
+						onCreateGroup()
+					}
+					break
+				}
 				case 'm':
-				case 'M':
-					if (mod || event.altKey || locked || selectedIds.length === 0) return
-					event.preventDefault()
-					onMoveSelection()
-					return
+				case 'M': {
+					if (!(mod || event.altKey || locked || selectedIds.length === 0)) {
+						event.preventDefault()
+						onMoveSelection()
+					}
+					break
+				}
 				case 'u':
-				case 'U':
-					if (mod || event.altKey || locked || selectedIds.length === 0) return
-					event.preventDefault()
-					onMoveToUngrouped()
-					return
+				case 'U': {
+					if (!(mod || event.altKey || locked || selectedIds.length === 0)) {
+						event.preventDefault()
+						onMoveToUngrouped()
+					}
+					break
+				}
 				default:
-					return
+					break
 			}
 		},
 		[

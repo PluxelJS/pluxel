@@ -75,7 +75,7 @@ export class PluginDefinitions {
 
 		const paramTypes = getClassParams(Plugin) as PluginIdentifier[]
 		const required = getRequiredPluginDependencies(Plugin, { inherit: true })
-		if (required.length) {
+		if (required.length > 0) {
 			const declared = new Set<PluginIdentifier>()
 			for (let i = 0; i < paramTypes.length; i++) declared.add(paramTypes[i]!)
 
@@ -85,7 +85,7 @@ export class PluginDefinitions {
 				if (!declared.has(dep)) missing.push(dep)
 			}
 
-			if (missing.length) {
+			if (missing.length > 0) {
 				throw new Error(
 					[
 						`Missing constructor dependencies for ${String(Plugin)}.`,

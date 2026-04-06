@@ -260,7 +260,7 @@ export function LogLevelsCard({
 				</Stack>
 			</Group>
 
-			{overrides.length ? (
+			{overrides.length > 0 ? (
 				<Stack gap="xs" style={compact ? { minHeight: 0 } : undefined}>
 					<Group gap="xs" justify="space-between" wrap="nowrap">
 						<Text size="sm" fw={600}>

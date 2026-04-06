@@ -47,7 +47,7 @@ export function verifyPasswordScrypt(password: string, stored: string): boolean 
 	} catch {
 		return false
 	}
-	if (!salt.length || !expected.length) return false
+	if (salt.length === 0 || expected.length === 0) return false
 
 	let actual: Buffer
 	try {

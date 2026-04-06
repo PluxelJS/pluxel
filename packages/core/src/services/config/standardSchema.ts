@@ -36,7 +36,7 @@ function standardIssuePath(issue: StandardSchemaV1.Issue): Array<string | number
 		const key = (step as { key?: unknown }).key
 		if (typeof key === 'string' || typeof key === 'number') out.push(key)
 		else if (typeof key === 'symbol') out.push(key.description ?? key.toString())
-		else if (key != null) out.push(String(key))
+		else if (key !== null && key !== undefined) out.push(String(key))
 	}
 	return out
 }

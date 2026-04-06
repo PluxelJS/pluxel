@@ -28,8 +28,8 @@ export type ExtensionFederationSharedPackage = (typeof extensionFederationShared
 export function sanitizeExtensionPluginName(pluginName: string): string {
 	const normalized = String(pluginName ?? '')
 		.trim()
-		.replace(/[^a-zA-Z0-9_-]+/g, '_')
-		.replace(/^_+|_+$/g, '')
+		.replaceAll(/[^a-zA-Z0-9_-]+/g, '_')
+		.replaceAll(/^_+|_+$/g, '')
 	const suffix = stablePluginSuffix(pluginName)
 	return normalized ? `${normalized}_${suffix}` : `plugin_${suffix}`
 }
@@ -49,7 +49,7 @@ export function extensionFederationBuildOutDir(
 ): string {
 	const normalized = String(baseDir ?? '')
 		.trim()
-		.replace(/\/+$/g, '')
+		.replaceAll(/\/+$/g, '')
 	return normalized ? `${normalized}/${EXTENSION_FEDERATION_OUT_DIR}` : EXTENSION_FEDERATION_OUT_DIR
 }
 
@@ -58,7 +58,7 @@ export function extensionFederationManifestPath(
 ): string {
 	const normalized = String(dir ?? '')
 		.trim()
-		.replace(/\/+$/g, '')
+		.replaceAll(/\/+$/g, '')
 	return normalized
 		? `${normalized}/${EXTENSION_FEDERATION_MANIFEST_FILE}`
 		: EXTENSION_FEDERATION_MANIFEST_FILE

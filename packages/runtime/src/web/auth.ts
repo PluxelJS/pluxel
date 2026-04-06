@@ -28,7 +28,7 @@ export type AuthAwareFetchOptions = {
 }
 
 const AUTH_AWARE_FETCH = Symbol.for('pluxel.authAwareFetch')
-const noopPreconnect = (() => undefined) as RuntimeFetchPreconnect
+const noopPreconnect = (() => {}) as RuntimeFetchPreconnect
 
 function resolvePreconnect(fetch: RuntimeFetch): RuntimeFetchPreconnect {
 	return (

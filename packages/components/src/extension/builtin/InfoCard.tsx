@@ -118,7 +118,7 @@ export function BuiltinInfoCard({
 					</Stack>
 				) : null}
 
-				{resolvedRows.length ? (
+				{resolvedRows.length > 0 ? (
 					<>
 						{block.description ? <Divider /> : null}
 						{variant === 'grid' || columns > 1 ? (

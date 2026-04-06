@@ -204,7 +204,7 @@ function normalizeBatchResults(
 ): StatusActionResult[] {
 	const base = payload?.results ?? []
 	const commitError = payload?.commitError ?? fallbackError
-	if (!base.length) return []
+	if (base.length === 0) return []
 
 	return base.map((item: PluginStatusMutationResult) => {
 		const ok = Boolean(item?.ok) && !commitError
@@ -222,7 +222,7 @@ function normalizeBatchResults(
 export async function updatePluginStatuses(
 	actions: PluginStatusBatchAction[],
 ): Promise<StatusActionResult[]> {
-	if (!actions.length) return []
+	if (actions.length === 0) return []
 	try {
 		return await invokeRpc(async (rpc) => {
 			const result = await rpc.updatePluginStatuses(actions)

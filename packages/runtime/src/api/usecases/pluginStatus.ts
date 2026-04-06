@@ -73,7 +73,7 @@ export async function applyStatusActions(
 	ctx: Context,
 	actions: PluginStatusBatchAction[],
 ): Promise<PluginStatusBatchResult> {
-	if (!actions.length) return { ok: true, results: [] }
+	if (actions.length === 0) return { ok: true, results: [] }
 
 	const interim: PluginStatusMutationResult[] = []
 	const touched = new Set<string>()
@@ -102,7 +102,7 @@ export async function applyStatusActions(
 		}
 	}
 
-	const snapshots = Array.from(touched).map((name) => {
+	const snapshots = [...touched].map((name) => {
 		const ctor = resolvePlugin(ctx, name)
 		return Object.assign({ name }, readStatusSnapshot(ctx, name, ctor as any))
 	})

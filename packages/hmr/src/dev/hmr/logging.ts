@@ -92,7 +92,7 @@ const formatTopEntries = (
 	prettyId: PrettyIdFn,
 	marker?: (id: string) => string | undefined,
 ): string[] => {
-	if (!entries.length) return ['    (none)']
+	if (entries.length === 0) return ['    (none)']
 
 	const msStrings = entries.map(([, ms]) => ms.toFixed(1))
 	const msWidth = Math.max(...msStrings.map((s) => s.length))

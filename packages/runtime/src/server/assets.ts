@@ -29,7 +29,7 @@ const moduleDir = dirname(fileURLToPath(import.meta.url))
 export const DEFAULT_PUBLIC_BASE = UI_PUBLIC_BASE
 
 function toViteFsPath(absPath: string): string {
-	const normalized = absPath.replace(/\\/g, '/')
+	const normalized = absPath.replaceAll('\\', '/')
 	return normalized.startsWith('/') ? `/@fs${normalized}` : `/@fs/${normalized}`
 }
 
@@ -118,7 +118,7 @@ export async function resolveBuiltAssets(options?: { publicDirAbs?: string }): P
 
 	return {
 		js: toUrl(main!),
-		css: Array.from(cssSet).map(toUrl),
+		css: [...cssSet].map(toUrl),
 		preload: rest.map(toUrl),
 	}
 }

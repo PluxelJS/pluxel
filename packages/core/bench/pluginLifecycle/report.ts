@@ -285,7 +285,7 @@ export function toMainReport(input: {
 			latencyP99Ms: row.latencyP99Ms,
 			runs: row.runs,
 		})),
-		comparison: input.comparison.length
+		comparison: input.comparison.length > 0
 			? input.comparison.map((item) => ({
 					name: item.name,
 					baselineOpsMean: item.baselineOpsMean,
@@ -375,7 +375,7 @@ export function renderMarkdown(input: {
 				)} | ${statusLabel(item.status)} | ${item.runs != null ? item.runs.toLocaleString() : '—'} |`,
 		),
 		'',
-		...(regressions.length
+		...(regressions.length > 0
 			? [
 					'> ⚠️ Potential regressions detected beyond tolerance:',
 					...regressions.map(

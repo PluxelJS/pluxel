@@ -61,13 +61,13 @@ export function groupCases(cases: DemoCase[], groups: CaseGroup[]) {
 	return groups
 		.map((group) => {
 			const items = cases.filter((item) => item.group === group.id)
-			return items.length ? { group, cases: items } : null
+			return items.length > 0 ? { group, cases: items } : null
 		})
 		.filter(Boolean) as { group: CaseGroup; cases: DemoCase[] }[]
 }
 
 export function resolveActiveCase(cases: DemoCase[], activeId: string): DemoCase | null {
-	if (!cases.length) return null
+	if (cases.length === 0) return null
 	return cases.find((item) => item.id === activeId) ?? cases[0]
 }
 
@@ -75,6 +75,6 @@ export function resolveNavigation(cases: DemoCase[], activeId: string) {
 	const idx = cases.findIndex((item) => item.id === activeId)
 	return {
 		prevId: idx > 0 ? cases[idx - 1].id : null,
-		nextId: idx >= 0 && idx < cases.length - 1 ? cases[idx + 1].id : null,
+		nextId: idx !== -1 && idx < cases.length - 1 ? cases[idx + 1].id : null,
 	}
 }

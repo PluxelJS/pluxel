@@ -47,7 +47,7 @@ export function UtilityPanel({
 	}
 
 	useEffect(() => {
-		if (!tabs.length) {
+		if (tabs.length === 0) {
 			if (activeTab !== undefined) {
 				onTabChange?.(null)
 			} else {

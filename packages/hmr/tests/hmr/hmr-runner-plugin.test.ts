@@ -3,7 +3,7 @@ import { join } from 'pathe'
 import { HMRService } from '@pluxel/hmr'
 import { fixturesPluginsRelFromWorkspace, workspaceRoot } from './_paths'
 
-const noop = () => undefined
+const noop = () => {}
 
 function createNoopLogger() {
 	const self: any = {

@@ -65,7 +65,7 @@ class ExtensionRegistry {
 	 * 批量注册
 	 */
 	registerMany(items: Array<{ point: ExtensionPoint; item: ExtensionItem<any> }>): () => void {
-		if (!items.length) return () => {}
+		if (items.length === 0) return () => {}
 
 		const touched = new Set<ExtensionPoint>()
 		const inserted: Array<{ point: ExtensionPoint; id: string; item: ExtensionItem<any> }> = []

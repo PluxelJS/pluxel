@@ -25,10 +25,10 @@ export function suggestPackageName(cwd: string) {
 export function kebabCase(s: string) {
 	return String(s)
 		.trim()
-		.replace(/^@[^/]+\/+/g, '')
+		.replaceAll(/^@[^/]+\/+/g, '')
 		.toLowerCase()
-		.replace(/[^a-z0-9]+/g, '-')
-		.replace(/^-+|-+$/g, '')
+		.replaceAll(/[^a-z0-9]+/g, '-')
+		.replaceAll(/^-+|-+$/g, '')
 }
 
 export function pascalCase(s: string) {

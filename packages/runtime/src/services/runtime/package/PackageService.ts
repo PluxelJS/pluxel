@@ -244,7 +244,7 @@ export class PackageService {
 		overrides: InstallOptions = {},
 	): Promise<PackageInstallResult[]> {
 		await this.ensureReady()
-		if (!inputs.length) return []
+		if (inputs.length === 0) return []
 		const specs = inputs.map((item) => this.normalizeSpecifier(item))
 		specs.forEach((spec) => this.assertInstallPolicy(spec, overrides))
 		specs.forEach((spec) => {
@@ -319,7 +319,7 @@ export class PackageService {
 	/** Batch uninstall: runtime only. */
 	async uninstallMany(inputs: PackageSpecifierInput[]): Promise<PackageUninstallResult[]> {
 		await this.ensureReady()
-		if (!inputs.length) return []
+		if (inputs.length === 0) return []
 		const specs = this.normalizeUniqueByName(inputs)
 		specs.forEach((spec) => this.assertUninstallPolicy(spec))
 		const key = this.buildMultiKey(specs)
@@ -332,7 +332,7 @@ export class PackageService {
 		overrides: InstallOptions = {},
 	): Promise<PackageRemovalResult[]> {
 		await this.ensureReady()
-		if (!inputs.length) return []
+		if (inputs.length === 0) return []
 		const specs = this.normalizeUniqueByName(inputs)
 		specs.forEach((spec) => this.assertUninstallPolicy(spec))
 		const key = this.buildMultiKey(specs)
@@ -376,7 +376,7 @@ export class PackageService {
 		intent: Partial<Pick<LoadIntentConfig, 'autoInstall' | 'fresh' | 'source'>> = {},
 	): Promise<PackageReloadResult[]> {
 		await this.ensureReady()
-		if (!inputs.length) return []
+		if (inputs.length === 0) return []
 		const specs = this.normalizeUniqueByName(inputs)
 		if ((intent.autoInstall ?? true) !== false) {
 			specs.forEach((spec) => this.assertInstallPolicy(spec, options.install))
@@ -406,7 +406,7 @@ export class PackageService {
 		} = {},
 	): Promise<PackageReloadResult[]> {
 		await this.ensureReady()
-		if (!inputs.length) return []
+		if (inputs.length === 0) return []
 		const specs = this.normalizeUniqueByName(inputs)
 		specs.forEach((spec) => {
 			this.assertUninstallPolicy(spec)
@@ -502,7 +502,7 @@ export class PackageService {
 			})
 		}
 
-		return Array.from(entries.values())
+		return [...entries.values()]
 	}
 
 	/** Retry recorded failures with optional reinstall. */
@@ -624,7 +624,7 @@ export class PackageService {
 			if (this.state.hasLoaded(name)) continue
 			toLoad.push(name)
 		}
-		if (!toLoad.length) return
+		if (toLoad.length === 0) return
 
 		for (const name of toLoad) {
 			try {
@@ -699,12 +699,12 @@ export class PackageService {
 
 	private resolveInstallOptions(overrides: InstallOptions = {}): ResolvedInstallOptions {
 		const base = this.defaults.install
-		const result: ResolvedInstallOptions = { ...base }
-
-		result.cwd = overrides.cwd ?? base.cwd ?? process.cwd()
-		result.force = overrides.force ?? base.force
-		result.installPeerDependencies =
-			overrides.installPeerDependencies ?? base.installPeerDependencies
+		const result: ResolvedInstallOptions = {
+			...base,
+			cwd: overrides.cwd ?? base.cwd ?? process.cwd(),
+			force: overrides.force ?? base.force,
+			installPeerDependencies: overrides.installPeerDependencies ?? base.installPeerDependencies,
+		}
 
 		if (overrides.dev !== undefined) result.dev = overrides.dev
 		if (overrides.workspace !== undefined) result.workspace = overrides.workspace
@@ -733,7 +733,6 @@ export class PackageService {
 	private buildMultiKey(specs: NormalizedPackageSpecifier[]): string {
 		return specs
 			.map((s) => s.key)
-			.slice()
 			.sort()
 			.join('|')
 	}
@@ -861,10 +860,10 @@ export class PackageService {
 		}
 		this.assertPackageSelectors(spec, 'INSTALL_FAILED')
 		const registries = this.collectRequestedRegistries(overrides)
-		if (registries.length && this.policy.allowedRegistries?.length) {
+		if (registries.length > 0 && this.policy.allowedRegistries?.length) {
 			const allowed = new Set(this.policy.allowedRegistries)
 			const denied = registries.filter((item) => !allowed.has(item))
-			if (denied.length) {
+			if (denied.length > 0) {
 				throw new PackageServiceError(
 					'INSTALL_FAILED',
 					`Registry blocked by package policy: ${denied.join(', ')}`,

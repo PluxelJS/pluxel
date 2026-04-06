@@ -66,7 +66,7 @@ function formatErrorLike(v: unknown, maxStackLines: number) {
 		.split('\n')
 		.map((l) => l.trim())
 		.filter(Boolean)
-	if (!lines.length) return head
+	if (lines.length === 0) return head
 	const limited = lines.slice(0, Math.max(1, maxStackLines)).join('\n')
 	return `${head}\n${limited}`
 }
@@ -128,7 +128,7 @@ function formatSelectedProps(record: RuntimeLogLine, maxStackLines: number) {
 		}
 	}
 
-	if (!out.length) return null
+	if (out.length === 0) return null
 	return out.join('\n')
 }
 
@@ -147,10 +147,9 @@ export function formatUiLogRecordForLlm(
 	const time = typeof record.ts === 'number' ? toIsoTime(record.ts) : 'time?'
 	const level = typeof record.level === 'string' ? record.level : 'info'
 
-	const pieces: string[] = []
-	pieces.push(time, level.toUpperCase())
+	const pieces: string[] = [time, level.toUpperCase()]
 
-	if (cfg.includeCategory && Array.isArray(record.category) && record.category.length) {
+	if (cfg.includeCategory && Array.isArray(record.category) && record.category.length > 0) {
 		pieces.push(record.category.join('.'))
 	}
 
@@ -197,7 +196,7 @@ export function formatUiLogRecordsForLlm(
 		if (!prev) return
 		const suffix = prevCount > 1 ? ` (x${prevCount})` : ''
 		const line = `${prev}${suffix}`
-		const add = line.length + (lines.length ? 1 : 0)
+		const add = line.length + (lines.length > 0 ? 1 : 0)
 		if (used + add > cfg.maxChars) {
 			truncated = true
 			return
@@ -229,7 +228,7 @@ export function formatUiLogRecordsForLlm(
 
 	if (truncated) {
 		const marker = '… (truncated)'
-		if (used + (lines.length ? 1 : 0) + marker.length <= cfg.maxChars) {
+		if (used + (lines.length > 0 ? 1 : 0) + marker.length <= cfg.maxChars) {
 			lines.push(marker)
 		}
 	}

@@ -24,10 +24,8 @@ export function getCachedResolver(
 	from: readonly string[],
 	opts?: { limit?: number },
 ): ExsolveResolver {
-	const normalizedFrom = Array.from(
-		new Set(from.map((f) => String(f).trim()).filter((f) => f.length > 0)),
-	)
-	if (!normalizedFrom.length) {
+	const normalizedFrom = [...new Set(from.map((f) => String(f).trim()).filter((f) => f.length > 0))]
+	if (normalizedFrom.length === 0) {
 		throw new Error('[runtime:resolution] Resolver "from" list is empty.')
 	}
 
@@ -124,7 +122,7 @@ export function canResolveFromCwd(
 		return (
 			resolveModulePath(resolver, baseSpecifier, {
 				conditions: opts?.conditions ?? RESOLVE_CHECK_CONDITIONS,
-			}) != null
+				}) !== null
 		)
 	} catch {
 		return false

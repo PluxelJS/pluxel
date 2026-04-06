@@ -42,7 +42,7 @@ describe('EffectsService', () => {
 		await withContext(async (ctx) => {
 			let ran = 0
 			await ctx.effects.transaction(async (tx) => {
-				expect(() => ctx.effects.defer(() => undefined)).toThrow(EffectsFrozenError)
+				expect(() => ctx.effects.defer(() => {})).toThrow(EffectsFrozenError)
 				tx.defer(() => {
 					ran += 1
 				})

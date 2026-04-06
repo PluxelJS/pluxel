@@ -160,7 +160,7 @@ export class FeatureHost<Host = unknown> {
 
 			if (!current) return
 			current.cbs.delete(cbAny)
-			if (current.cbs.size !== 0) return
+			if (current.cbs.size > 0) return
 			if (current.unsub) {
 				try {
 					current.unsub()

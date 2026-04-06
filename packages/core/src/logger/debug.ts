@@ -19,7 +19,7 @@ export function resolveDebugTopics(config: unknown): DebugTopic[] {
 		if (!s) continue
 		out.push(s)
 	}
-	return Array.from(new Set(out))
+	return [...new Set(out)]
 }
 
 export function isDebugTopicEnabled(config: unknown, topic: DebugTopic): boolean {

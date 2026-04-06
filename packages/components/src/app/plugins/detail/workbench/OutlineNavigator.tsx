@@ -89,7 +89,7 @@ export function OutlineNavigator({
 				className="plx-pluginWorkbench__outlineScroll"
 				style={{ maxHeight }}
 			>
-				{shownItems.length ? (
+				{shownItems.length > 0 ? (
 					<Stack gap="xs" className="plx-pluginWorkbench__outlineList">
 						{shownItems.map((item) => (
 							<OutlineNodeButton
@@ -159,14 +159,14 @@ function OutlineNodeButton({
 							{node.label}
 						</Text>
 					</Group>
-					{showBranchCount && node.children.length ? (
+					{showBranchCount && node.children.length > 0 ? (
 						<Badge variant="light" size="xs" color="gray">
 							{node.children.length}
 						</Badge>
 					) : null}
 				</Group>
 			</Box>
-			{node.children.length ? (
+			{node.children.length > 0 ? (
 				<Stack gap={6} mt={6} className="plx-pluginWorkbench__outlineBranch">
 					{node.children.map((child) => (
 						<OutlineNodeButton

@@ -387,7 +387,7 @@ export function createPluxelLogtapeConfig(
 		for (const category of categories) {
 			loggers.push({
 				category:
-					typeof category === 'string' ? category : Array.from(category as readonly string[]),
+					typeof category === 'string' ? category : [...category as readonly string[]],
 				sinks: [id],
 				lowestLevel,
 				parentSinks: ui.parentSinks,
@@ -404,7 +404,7 @@ export function createPluxelLogtapeConfig(
 	const baseLowestLevel = resolveLowestLevel(opts.lowestLevel)
 	const baseLogger: LoggerConfig<string, string> = {
 		category: ['pluxel'],
-		sinks: baseSinks.length ? baseSinks : undefined,
+		sinks: baseSinks.length > 0 ? baseSinks : undefined,
 		lowestLevel: baseLowestLevel,
 	}
 	loggers.unshift(baseLogger)
@@ -465,8 +465,8 @@ export function createPluxelLogtapeConfig(
 			if (sinks.console) metaSinks.push('console')
 			else if (sinks.file) metaSinks.push('file')
 		}
-		if (!metaSinks.length) {
-			if (!(fallbackSinkId in sinks)) sinks[fallbackSinkId] = () => undefined
+		if (metaSinks.length === 0) {
+			if (!(fallbackSinkId in sinks)) sinks[fallbackSinkId] = () => {}
 			metaSinks.push(fallbackSinkId)
 		}
 
@@ -489,7 +489,7 @@ export function createPluxelLogtapeConfig(
 		}
 
 		const id = 'pluxelDebugTopics'
-		if (patterns.length) {
+		if (patterns.length > 0) {
 			filters[id] = ((record: LogRecord) => {
 				const props = record.properties
 				const topic =
@@ -508,10 +508,10 @@ export function createPluxelLogtapeConfig(
 			category: ['pluxel', 'debug'],
 			// Use the same sinks as the base `["pluxel"]` logger by default.
 			// Be explicit here to avoid relying on inheritance semantics across LogTape versions.
-			sinks: baseSinks.length ? baseSinks : undefined,
+			sinks: baseSinks.length > 0 ? baseSinks : undefined,
 			parentSinks: 'override',
-			lowestLevel: patterns.length ? 'debug' : null,
-			filters: patterns.length ? [id] : undefined,
+			lowestLevel: patterns.length > 0 ? 'debug' : null,
+			filters: patterns.length > 0 ? [id] : undefined,
 		})
 	}
 
@@ -519,7 +519,7 @@ export function createPluxelLogtapeConfig(
 
 	return {
 		sinks,
-		filters: Object.keys(filters).length ? filters : undefined,
+		filters: Object.keys(filters).length > 0 ? filters : undefined,
 		loggers,
 		reset: opts.reset,
 	}

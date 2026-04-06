@@ -44,7 +44,7 @@ export function computeInitPlan(
 	for (const [id, plugin] of plugins) {
 		const raw = (plugin.dependencies ?? []) as PluginIdentifier[]
 		let deps = raw
-		if (raw.length) {
+		if (raw.length > 0) {
 			const next = Array<PluginIdentifier>(raw.length)
 			for (let i = 0; i < raw.length; i++) next[i] = resolve(raw[i])
 			deps = next
@@ -66,7 +66,7 @@ export function computeInitPlan(
 		if (degree === 0) frontier.push(id)
 	}
 
-	while (frontier.length) {
+	while (frontier.length > 0) {
 		levels.push(frontier)
 		const next: PluginIdentifier[] = []
 		for (const current of frontier) {
@@ -193,7 +193,7 @@ async function startPluginsBatched(
 			if (failed.has(id)) continue
 
 			const deps = dependencies.get(id)
-			if (deps && deps.length) {
+			if (deps && deps.length > 0) {
 				let blocked = false
 				for (let i = 0; i < deps.length; i++) {
 					if (failed.has(deps[i])) {
@@ -302,7 +302,7 @@ async function startPluginsReadyQueue(
 		inFlight.add(p)
 	}
 
-	while (head < ready.length || blockedHead < blocked.length || inFlight.size) {
+	while (head < ready.length || blockedHead < blocked.length || inFlight.size > 0) {
 		while (blockedHead < blocked.length) {
 			const id = blocked[blockedHead++]!
 			failAndPropagate(id)
@@ -315,12 +315,12 @@ async function startPluginsReadyQueue(
 			schedule(id)
 		}
 
-		if (inFlight.size) await Promise.race(inFlight)
+		if (inFlight.size > 0) await Promise.race(inFlight)
 	}
 }
 
 function normalizeStartConcurrency(value: number | undefined): number {
-	if (value == null) return 8
+	if (value === null || value === undefined) return 8
 	if (!Number.isFinite(value)) return 8
 	const n = Math.floor(value)
 	return n >= 1 ? n : 1
@@ -397,14 +397,14 @@ export async function stopPluginsTopo(
 		inFlight.add(p)
 	}
 
-	while (head < ready.length || inFlight.size) {
+	while (head < ready.length || inFlight.size > 0) {
 		while (head < ready.length && inFlight.size < concurrency) {
 			const id = ready[head++]!
 			if (stopped.has(id)) continue
 			schedule(id)
 		}
 
-		if (inFlight.size) {
+		if (inFlight.size > 0) {
 			await Promise.race(inFlight)
 			continue
 		}
@@ -417,7 +417,7 @@ export async function stopPluginsTopo(
 }
 
 function normalizeStopConcurrency(value: number | undefined, fallback: number): number {
-	if (value == null) return fallback
+	if (value === null || value === undefined) return fallback
 	if (!Number.isFinite(value)) return fallback
 	const n = Math.floor(value)
 	return n >= 1 ? n : 1

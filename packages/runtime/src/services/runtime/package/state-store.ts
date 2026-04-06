@@ -135,7 +135,7 @@ function parsePackageStatePayload(raw: string, file: string): PackageStatePayloa
 	}
 	const schema = (parsed as any).schema
 	if (typeof schema !== 'number' || !Number.isFinite(schema)) {
-		throw new Error(`[package-state] Invalid state payload (missing schema): ${file}`)
+		throw new TypeError(`[package-state] Invalid state payload (missing schema): ${file}`)
 	}
 	if (schema !== CURRENT_STATE_SCHEMA) {
 		// We intentionally do not provide legacy migrations here.
@@ -143,7 +143,7 @@ function parsePackageStatePayload(raw: string, file: string): PackageStatePayloa
 		return null
 	}
 	if (!Array.isArray((parsed as any).packages) || !Array.isArray((parsed as any).issues)) {
-		throw new Error(`[package-state] Invalid state payload (missing arrays): ${file}`)
+		throw new TypeError(`[package-state] Invalid state payload (missing arrays): ${file}`)
 	}
 	return parsed as unknown as PackageStatePayload
 }

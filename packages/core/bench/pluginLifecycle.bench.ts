@@ -43,7 +43,7 @@ const silencePluginLogs = () => {
 		}
 	})
 	return () => {
-		while (restoreStack.length) {
+		while (restoreStack.length > 0) {
 			const restore = restoreStack.pop()
 			restore?.()
 		}
@@ -123,7 +123,7 @@ writeReports({
 	baselinePath: new URL('plugin-lifecycle.baseline.json', benchmarksDir),
 })
 
-if (comparison.length) {
+if (comparison.length > 0) {
 	console.log('\nComparison vs baseline:')
 	console.table(
 		comparison.map((item) => ({
@@ -153,7 +153,7 @@ const regressions = comparison
 		return opsDelta < -tolerancePct || latencyDelta > tolerancePct
 	})
 
-if (regressions.length) {
+if (regressions.length > 0) {
 	console.warn('\nPotential regressions detected (threshold:', tolerancePct, '%):')
 	for (const item of regressions) {
 		console.warn(

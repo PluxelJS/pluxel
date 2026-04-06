@@ -67,8 +67,8 @@ const getBaseClass = <T extends B, B>(target: Abstract<T>): Abstract<B> | undefi
 
 /** 去注释（用于粗略判定是否显式声明了“无参构造”） */
 function stripComments(code: string): string {
-	const noLine = code.replace(/\/\/.*$/gm, '')
-	return noLine.replace(/\/\*[\s\S]*?\*\//g, '')
+	const noLine = code.replaceAll(/\/\/.*$/gm, '')
+	return noLine.replaceAll(/\/\*[\s\S]*?\*\//g, '')
 }
 
 /**

@@ -66,8 +66,8 @@ describe('HmrExecutor commit retry', () => {
 			registry,
 			configService,
 			logger: {
-				warn: () => undefined,
-				error: () => undefined,
+				warn: () => {},
+				error: () => {},
 			},
 		} as any
 

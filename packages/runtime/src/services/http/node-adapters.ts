@@ -34,7 +34,7 @@ function appendSetCookies(headers: Headers, res: ServerResponse) {
 	const getSetCookie = (headers as Headers & { getSetCookie?: () => string[] }).getSetCookie
 	if (typeof getSetCookie === 'function') {
 		const values = getSetCookie.call(headers)
-		if (values.length) {
+		if (values.length > 0) {
 			res.setHeader('set-cookie', values)
 			return
 		}

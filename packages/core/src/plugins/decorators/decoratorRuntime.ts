@@ -129,7 +129,7 @@ export function pluginMethodDecorator<T extends BasePlugin>(
 
 		const original = (desc as PropertyDescriptor | undefined)?.value
 		if (typeof original !== 'function') {
-			throw new Error(
+			throw new TypeError(
 				`pluginMethodDecorator(${String(depToken)}) can only decorate methods: ${String(key)}`,
 			)
 		}

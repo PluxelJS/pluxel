@@ -92,11 +92,11 @@ export async function loadWorkspaceState(root: string): Promise<WorkspaceState> 
 	}
 }
 
-export async function addWorkspacePattern(root: string, input: string): Promise<WorkspaceMutation> {
+export function addWorkspacePattern(root: string, input: string): Promise<WorkspaceMutation> {
 	return mutateWorkspacePattern(root, input, 'add')
 }
 
-export async function removeWorkspacePattern(
+export function removeWorkspacePattern(
 	root: string,
 	input: string,
 ): Promise<WorkspaceMutation> {
@@ -154,7 +154,7 @@ export function normalizePatternInput(root: string, input: string): PatternInput
 	}
 	const hasGlob = /[*?[\]]/.test(trimmed)
 	const value = isAbsolute(trimmed) ? relative(root, trimmed) : trimmed
-	let normalized = value.replace(/\\/g, '/')
+	let normalized = value.replaceAll('\\', '/')
 	if (normalized.startsWith('./')) normalized = normalized.slice(2)
 	if (!normalized) normalized = '.'
 	return { pattern: normalized, hasGlob }
@@ -223,5 +223,5 @@ export function ensureDirExists(root: string, pattern: string) {
 
 export function resolveRelative(root: string, input: string) {
 	const absolute = resolve(root, input)
-	return relative(root, absolute).replace(/\\/g, '/')
+	return relative(root, absolute).replaceAll('\\', '/')
 }

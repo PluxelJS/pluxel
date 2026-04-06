@@ -151,8 +151,8 @@ export function formatDuration(ms: number, format: FormatSnapshot) {
 		const days = Math.floor(totalHours / 24)
 
 		if (days) parts.push({ value: days, unit: 'd' })
-		if (hours || parts.length) parts.push({ value: hours, unit: 'h' })
-		if (minutes || parts.length) parts.push({ value: minutes, unit: 'm' })
+		if (hours || parts.length > 0) parts.push({ value: hours, unit: 'h' })
+		if (minutes || parts.length > 0) parts.push({ value: minutes, unit: 'm' })
 		parts.push({ value: seconds, unit: 's' })
 	}
 
@@ -166,7 +166,7 @@ export function formatDuration(ms: number, format: FormatSnapshot) {
 	const template = format.template.trim()
 	const templated = template
 		? /{{\s*(uptime|value)\s*}}/g.test(template)
-			? template.replace(/{{\s*(uptime|value)\s*}}/g, body).trim()
+			? template.replaceAll(/{{\s*(uptime|value)\s*}}/g, body).trim()
 			: `${template} ${body}`.trim()
 		: body
 	return `${format.prefix}${templated}${format.suffix}`

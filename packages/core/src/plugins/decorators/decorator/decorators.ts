@@ -81,7 +81,7 @@ export function Plugin(a?: PluginMetadata | PluginIdentifier, b?: PluginMetadata
 
 		// 预取设计期类型
 		const rt = (Reflect.getMetadata(PARAM_TYPES, ctor) as unknown[]) ?? EMPTY_ARR
-		s.rtypes = Array.isArray(rt) ? rt : Array.from(rt)
+		s.rtypes = Array.isArray(rt) ? rt : [...rt]
 
 		// 存储 ctor 引用
 		s.ctor = ctor as PluginIdentifier
@@ -99,7 +99,7 @@ export function Plugin(a?: PluginMetadata | PluginIdentifier, b?: PluginMetadata
 		s.base = base
 
 		// 聚合 pending @Config
-		if (s.pending && Object.keys(s.pending).length) {
+		if (s.pending && Object.keys(s.pending).length > 0) {
 			s.config = __DEV__ ? $freeze(s.pending as ConfigSchemaList) : (s.pending as ConfigSchemaList)
 			s.pending = null
 		} else {

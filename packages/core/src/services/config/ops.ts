@@ -11,7 +11,7 @@ function normalizeMissingObjectDefault(value: unknown): unknown {
 	if (!value || typeof value !== 'object' || Array.isArray(value)) return value
 	const proto = Object.getPrototypeOf(value)
 	if (proto !== Object.prototype && proto !== null) return value
-	if (Object.keys(value as Record<string, unknown>).length !== 0) return value
+	if (Object.keys(value as Record<string, unknown>).length > 0) return value
 	return EMPTY_OBJECT_DEFAULT
 }
 
@@ -51,7 +51,7 @@ export async function collectConfigDefaults(
 		for (const [key, schema] of entries) {
 			jobs.push(
 				(async () => {
-					const first = await safeParseStandardSchema(schema, undefined)
+					const first = await safeParseStandardSchema(schema)
 					if (first.success) return [key, first.output]
 					if (missingObjectDefault !== undefined) {
 						const second = await safeParseStandardSchema(schema, missingObjectDefault)
@@ -155,7 +155,7 @@ export async function normalizeConfigRecord(
 				if (cur !== undefined) {
 					return { key, cur, result: await safeParseStandardSchema(schema, cur) }
 				}
-				const first = await safeParseStandardSchema(schema, undefined)
+				const first = await safeParseStandardSchema(schema)
 				if (first.success) return { key, cur, result: first }
 				if (missingObjectDefault !== undefined) {
 					return { key, cur, result: await safeParseStandardSchema(schema, missingObjectDefault) }

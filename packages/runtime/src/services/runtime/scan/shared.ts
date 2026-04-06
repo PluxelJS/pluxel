@@ -13,7 +13,7 @@ export function normalizeScanInputs(input: string | string[]): string[] {
 	if (out.size === 0) {
 		return [normalize(r(process.cwd(), '.'))]
 	}
-	return Array.from(out).sort()
+	return [...out].sort()
 }
 
 export function resolveScanRoots(defaultRoots: string[], override?: string | string[]): string[] {

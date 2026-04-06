@@ -39,7 +39,7 @@ if (typeof r.metadata === 'function' && typeof r.getOwnMetadataKeys !== 'functio
 	const readOwnKeys = (target: object, propertyKey: PropertyKey): MetadataKey[] => {
 		const byProp = ownedKeys.get(target)
 		const set = byProp?.get(propertyKey)
-		return set ? Array.from(set) : []
+		return set ? [...set] : []
 	}
 
 	// Track keys for metadata written via `Reflect.defineMetadata` and `Reflect.metadata(...)`.
@@ -78,7 +78,7 @@ if (typeof r.metadata === 'function' && typeof r.getOwnMetadataKeys !== 'functio
 			for (const k of readOwnKeys(cur, propertyKey as PropertyKey)) out.add(k)
 			cur = Object.getPrototypeOf(cur)
 		}
-		return Array.from(out)
+		return [...out]
 	}
 
 	r.deleteMetadata = (metadataKey: MetadataKey, target: object, propertyKey?: any): boolean => {

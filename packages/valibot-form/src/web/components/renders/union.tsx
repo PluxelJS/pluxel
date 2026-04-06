@@ -44,15 +44,15 @@ function findMatchingBranchIndex(
 	discriminator?: string,
 	fallback = 0,
 ) {
-	if (!branches.length) return fallback
+	if (branches.length === 0) return fallback
 	if (!discriminator || !isObject(value)) return fallback
 	const discValue = value[discriminator]
 	const idx = branches.findIndex((b) => b.discriminatorValue === discValue)
-	if (idx >= 0) return idx
+	if (idx !== -1) return idx
 	if (typeof discValue === 'boolean') {
 		const truthyIdx = branches.findIndex((b) => isTruthyDiscriminator(b.discriminatorValue))
 		const falsyIdx = branches.findIndex((b) => !isTruthyDiscriminator(b.discriminatorValue))
-		return discValue ? (truthyIdx >= 0 ? truthyIdx : fallback) : falsyIdx >= 0 ? falsyIdx : fallback
+		return discValue ? (truthyIdx !== -1 ? truthyIdx : fallback) : falsyIdx !== -1 ? falsyIdx : fallback
 	}
 	return fallback
 }
@@ -312,7 +312,7 @@ export function UnionField(props: RendererProps) {
 
 	const selectorNode = (() => {
 		if (!shouldRenderSelector) return null
-		if (!branches.length) return null
+		if (branches.length === 0) return null
 		switch (resolvedControl) {
 			case 'segmented':
 				return (

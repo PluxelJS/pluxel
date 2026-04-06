@@ -17,7 +17,7 @@ export type PluginWorkbenchView = {
 }
 
 function normalizeActiveView(value: unknown, views: PluginWorkbenchView[], fallbackId?: string) {
-	if (!views.length) return ''
+	if (views.length === 0) return ''
 	if (typeof value === 'string' && views.some((view) => view.id === value)) return value
 	if (fallbackId && views.some((view) => view.id === fallbackId)) return fallbackId
 	return views[0]?.id ?? ''

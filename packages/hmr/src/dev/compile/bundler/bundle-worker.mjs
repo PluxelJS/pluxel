@@ -37,7 +37,7 @@ export default async function runBundle(job) {
 				: null
 
 		const jobResolve = resolve ?? {}
-		const conditions = Array.from(new Set(['@pluxel/runtime', ...(jobResolve.conditions ?? [])]))
+		const conditions = [...new Set(['@pluxel/runtime', ...jobResolve.conditions ?? []])]
 
 		result = await build({
 			root,
@@ -162,7 +162,7 @@ function createBrowserImportGuardPlugin(opts) {
 	function cleanId(id) {
 		if (typeof id !== 'string') return null
 		const q = id.indexOf('?')
-		return q >= 0 ? id.slice(0, q) : id
+		return q !== -1 ? id.slice(0, q) : id
 	}
 
 	function prettifyId(id) {
@@ -265,7 +265,7 @@ function createBrowserImportGuardPlugin(opts) {
 			opts.label ? `Bundle: ${opts.label}` : null,
 			`Entry: ${shortId(entryId)}`,
 			importerId ? `Importer: ${shortId(importerId)}` : null,
-			chain.length ? `Import chain: ${chain.join(' -> ')} -> ${source}` : null,
+			chain.length > 0 ? `Import chain: ${chain.join(' -> ')} -> ${source}` : null,
 			`Kind: ${kind}`,
 			'',
 			'Fix: keep server-only modules out of plugin UI entries (split UI vs server, or add a browser build).',
@@ -283,7 +283,7 @@ function createBrowserImportGuardPlugin(opts) {
 			opts.label ? `Bundle: ${opts.label}` : null,
 			`Entry: ${shortId(entryId)}`,
 			importerId ? `Importer: ${shortId(importerId)}` : null,
-			chain.length ? `Import chain: ${chain.join(' -> ')} -> ${source}` : null,
+			chain.length > 0 ? `Import chain: ${chain.join(' -> ')} -> ${source}` : null,
 			`Kind: ${kind}`,
 			'',
 			'This often happens when a plugin UI entry imported server-only code (Node-only deps, or deps not installed in the host).',
@@ -342,7 +342,7 @@ function createBrowserImportGuardPlugin(opts) {
 			if (!code.includes('import(')) return null
 
 			const matches = [...code.matchAll(DYN_IMPORT)]
-			if (!matches.length) return null
+			if (matches.length === 0) return null
 
 			for (const m of matches) {
 				const spec = m?.[2]

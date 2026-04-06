@@ -53,14 +53,14 @@ function ExtensionContributionStatusBanner({ pluginName }: { pluginName: string 
 					<Badge
 						size="xs"
 						variant="light"
-						color={summary.incomingIssues.length ? 'yellow' : 'blue'}
+						color={summary.incomingIssues.length > 0 ? 'yellow' : 'blue'}
 					>
 						incoming {diagnostics.incoming.length}
 					</Badge>
 					<Badge
 						size="xs"
 						variant="light"
-						color={summary.outgoingIssues.length ? 'yellow' : 'blue'}
+						color={summary.outgoingIssues.length > 0 ? 'yellow' : 'blue'}
 					>
 						outgoing {diagnostics.outgoing.length}
 					</Badge>

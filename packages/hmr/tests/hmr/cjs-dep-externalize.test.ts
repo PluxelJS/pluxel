@@ -25,7 +25,7 @@ function buildDeps(cjsExternal: string[]) {
 	return { ...baseDeps, cjsExternal }
 }
 
-const noop = () => undefined
+const noop = () => {}
 
 type NoopChannel = {
 	trace: () => void
@@ -82,19 +82,19 @@ function createContext(errorLogs?: ErrorLog[], scanService?: unknown) {
 			beginBatch() {
 				return {
 					replaceModule: async () => false,
-					rollback: () => undefined,
-					commit: () => undefined,
+					rollback: () => {},
+					commit: () => {},
 				}
 			},
-			pruneModule: () => undefined,
+			pruneModule: () => {},
 		},
 		registry: {
 			commit: async () => ({ ok: true }),
-			resetDraft: () => undefined,
+			resetDraft: () => {},
 			container: { services: new Map() },
 		},
 		http: {
-			vitePlugin: { name: 'noop', apply: 'serve', configureServer: () => undefined },
+			vitePlugin: { name: 'noop', apply: 'serve', configureServer: () => {} },
 		},
 	} as unknown as Context
 }

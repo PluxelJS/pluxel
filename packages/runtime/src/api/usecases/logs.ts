@@ -190,7 +190,7 @@ export function logsLatest(input: LogsLatestInput = {}): LogsLatestOutput {
  */
 export async function logsWaitFor(input: LogsWaitInput = {}): Promise<LogsLatestOutput> {
 	const first = logsLatest(input)
-	if (first.lines.length) return first
+	if (first.lines.length > 0) return first
 
 	const timeoutMs =
 		typeof input.timeoutMs === 'number' && Number.isFinite(input.timeoutMs)
@@ -257,7 +257,7 @@ export async function logsWaitFor(input: LogsWaitInput = {}): Promise<LogsLatest
 			}
 			if (ev.type !== 'append') return
 			const lines = Array.isArray(ev.lines) ? ev.lines : []
-			if (!lines.length) return
+			if (lines.length === 0) return
 
 			for (let i = 0; i < lines.length; i++) {
 				const l = lines[i]!

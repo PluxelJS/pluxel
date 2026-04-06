@@ -79,7 +79,7 @@ const COLUMN_STYLE = {
 const pluginDetailRouteApi = getRouteApi('/_workbench/plugins/$name')
 const EMPTY_PLUGIN_DETAIL_SEARCH: PluginDetailSearch = {}
 type NavigateFn = (options: Record<string, unknown>) => Promise<unknown>
-const NOOP_NAVIGATE: NavigateFn = async () => undefined
+const NOOP_NAVIGATE: NavigateFn = async () => {}
 
 function usePluginDetailSearch() {
 	try {
@@ -110,7 +110,7 @@ function resolveActiveSchemaKey(params: {
 }) {
 	if (!isConfigTab(params.activeTab)) return ''
 	const tabKeys = params.schemaKeysByConfigTab.get(params.activeTab) ?? params.schemaKeys
-	if (!tabKeys.length) return ''
+	if (tabKeys.length === 0) return ''
 
 	const fromSearch = params.resolveSchema(params.schemaFromSearch)
 	if (fromSearch && tabKeys.includes(fromSearch)) return fromSearch
@@ -204,7 +204,7 @@ export function RightPane({ config, showLevelsTab = false }: RightPaneProps) {
 		const map = new Map<string, string[]>()
 		const all = schemaKeys.slice().sort(compareSchemaKeys)
 
-		const hasLayout = Boolean(config.data?.layout?.length)
+		const hasLayout = Boolean(config.data?.layout?.length > 0)
 		if (hasLayout) {
 			// cfg layout becomes the single source of truth for grouping and ordering.
 			map.set('config', all)
@@ -233,7 +233,7 @@ export function RightPane({ config, showLevelsTab = false }: RightPaneProps) {
 		const out: Array<{ id: string; label: string }> = []
 		for (const [id, keys] of schemaKeysByConfigTab.entries()) {
 			if (!id.startsWith(CONFIG_GROUP_TAB_PREFIX)) continue
-			if (!keys.length) continue
+			if (keys.length === 0) continue
 			out.push({ id, label: id.slice(CONFIG_GROUP_TAB_PREFIX.length) })
 		}
 		return out.sort((a, b) => a.label.localeCompare(b.label))
@@ -372,7 +372,7 @@ export function RightPane({ config, showLevelsTab = false }: RightPaneProps) {
 			const nextSchema = (() => {
 				if (!isConfigTab(next)) return undefined
 				const tabKeys = schemaKeysByConfigTab.get(next) ?? []
-				if (!tabKeys.length) return undefined
+				if (tabKeys.length === 0) return undefined
 				const stored = resolveStoredSchemaForTab(storedState, next, tabKeys)
 				if (stored) return stored
 				return tabKeys[0] ?? undefined
@@ -428,7 +428,7 @@ export function RightPane({ config, showLevelsTab = false }: RightPaneProps) {
 	const schemaKeyForTab = useCallback(
 		(tabId: string) => {
 			const tabKeys = schemaKeysByConfigTab.get(tabId) ?? []
-			if (!tabKeys.length) return ''
+			if (tabKeys.length === 0) return ''
 
 			if (activeTab === tabId) return activeSchemaKey
 
@@ -758,7 +758,7 @@ function ConfigContent({
 					<Text c="dimmed">加载配置中…</Text>
 				</Center>
 			) : hasSchema ? (
-				layout && layout.length && !schemaGroup ? (
+				layout && layout.length > 0 && !schemaGroup ? (
 					<ConfigLayout
 						pluginName={pluginName}
 						layout={layout as any}

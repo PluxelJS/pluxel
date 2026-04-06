@@ -169,7 +169,7 @@ async function runDoctor(values: HmrCommonValues) {
 	}
 
 	printHeading('pluxel hmr doctor: ok')
-	if (res.warnings.length) {
+	if (res.warnings.length > 0) {
 		printHeading('Warnings')
 		process.stdout.write(`${res.warnings.join('\n')}\n`)
 	}
@@ -188,12 +188,12 @@ async function runDoctor(values: HmrCommonValues) {
 		].join('\n') + '\n',
 	)
 
-	if (s.discovered.length) {
+	if (s.discovered.length > 0) {
 		printHeading('Discovered plugin packages')
 		process.stdout.write(formatList(s.discovered.map((p) => `${p.name} -> ${p.entry}`)))
 		process.stdout.write('\n')
 	}
-	if (s.includedEntries.length) {
+	if (s.includedEntries.length > 0) {
 		printHeading('Resolved include entries')
 		process.stdout.write(formatList(s.includedEntries))
 		process.stdout.write('\n')
@@ -240,9 +240,9 @@ async function runEnabled(values: HmrSetValues) {
 		cfg.profiles[activeProfile] = {
 			...currentProfile,
 			enabled: nextEnabled,
-			...(nextBuiltin.length ? { builtin: nextBuiltin } : {}),
+			...(nextBuiltin.length > 0 ? { builtin: nextBuiltin } : {}),
 		}
-		if (!nextBuiltin.length) delete cfg.profiles[activeProfile]!.builtin
+		if (nextBuiltin.length === 0) delete cfg.profiles[activeProfile]!.builtin
 		writeHmrConfigV1(runtime.configPath, cfg)
 		process.stdout.write(`Wrote ${runtime.configPath}\n`)
 		return
@@ -276,9 +276,9 @@ async function runBuiltin(values: HmrSetValues) {
 		cfg.profiles[activeProfile] = {
 			...currentProfile,
 			enabled: nextEnabled,
-			...(nextBuiltin.length ? { builtin: nextBuiltin } : {}),
+			...(nextBuiltin.length > 0 ? { builtin: nextBuiltin } : {}),
 		}
-		if (!nextBuiltin.length) delete cfg.profiles[activeProfile]!.builtin
+		if (nextBuiltin.length === 0) delete cfg.profiles[activeProfile]!.builtin
 		writeHmrConfigV1(runtime.configPath, cfg)
 		process.stdout.write(`Wrote ${runtime.configPath}\n`)
 		return

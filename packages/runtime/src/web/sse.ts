@@ -208,7 +208,7 @@ class SseClient {
 
 	on(handler: AnyHandler, namespaces?: string | string[]): () => void {
 		const list = Array.isArray(namespaces) ? namespaces : namespaces ? [namespaces] : []
-		if (!list.length) return this.onAny(handler)
+		if (list.length === 0) return this.onAny(handler)
 		const unsubs: Array<() => void> = []
 		for (const ns of list) unsubs.push(this.ns(ns).onAny(handler))
 		return () => {
@@ -226,7 +226,7 @@ class SseClient {
 		return {
 			on: (handler: (msg: SseMessage<Ns>) => void, events?: string | string[]) => {
 				const list = Array.isArray(events) ? events : events ? [events] : []
-				if (!list.length) {
+				if (list.length === 0) {
 					const h = handler as unknown as AnyHandler
 					bucket!.any.add(h)
 					const last = this.lastByNamespace.get(namespace)

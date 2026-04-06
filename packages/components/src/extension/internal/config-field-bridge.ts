@@ -39,7 +39,7 @@ export function writeNested(
 		cursor[key] = next
 		cursor = next
 	}
-	cursor[segments[segments.length - 1]!] = value
+	cursor[segments.at(-1)!] = value
 	return out
 }
 

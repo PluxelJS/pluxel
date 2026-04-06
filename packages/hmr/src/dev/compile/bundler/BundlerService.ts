@@ -214,7 +214,7 @@ export class BundlerService {
 			if (nextSignature === watchSignature) return
 
 			await closeWatcher()
-			if (!files.length || disposed) return
+			if (files.length === 0 || disposed) return
 
 			watchSignature = nextSignature
 			const nextWatcher = watch(files, {
@@ -335,7 +335,7 @@ export class BundlerService {
 				// ignore invalid file URLs
 			}
 		}
-		return candidates[candidates.length - 1]!
+		return candidates.at(-1)!
 	}
 
 	private resolveEntryForContext(ownerCtx: TinypoolWorkerOwnerContext, tsEntry: string): string {

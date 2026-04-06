@@ -437,7 +437,7 @@ async function loadTemplatePrompts(
 			throw new Error(`Invalid prompts config: ${filePath} (${detail})`)
 		}
 		if (!Array.isArray(parsed)) {
-			throw new Error(`Invalid prompts config: ${filePath} (expected array)`)
+			throw new TypeError(`Invalid prompts config: ${filePath} (expected array)`)
 		}
 		return parsed as TemplatePrompt[]
 	}

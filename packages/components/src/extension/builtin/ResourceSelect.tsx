@@ -5,6 +5,14 @@ import { useGlobalExtensionContext, useSignalDbCollectionState } from '@pluxel/r
 import type { SignalDbItem } from '@pluxel/runtime/web'
 import { readNested, readString, useConfigFieldBridge } from '../internal/config-field-bridge'
 
+type ResourceSelectOption = {
+	value: string
+	label: string
+	description?: string
+	rawValue: unknown
+	rawLabel: string
+}
+
 function optionKey(value: unknown): string {
 	if (typeof value === 'string') return value
 	if (typeof value === 'number' || typeof value === 'boolean' || typeof value === 'bigint') {
@@ -62,9 +70,9 @@ export function BuiltinResourceSelect({
 					description,
 					rawValue,
 					rawLabel: label,
-				}
+				} satisfies ResourceSelectOption
 			})
-			.filter((item): item is NonNullable<typeof item> => Boolean(item))
+			.filter(Boolean) as ResourceSelectOption[]
 	}, [collection, descriptionField, labelField, valueField])
 
 	const selectedValue = useMemo(() => {

@@ -21,7 +21,7 @@ export function toViteFsIdVariants(absPath: string): string[] {
 
 export function cleanViteUrl(id: string): string {
 	const i = id.indexOf('?')
-	return i >= 0 ? id.slice(0, i) : id
+	return i !== -1 ? id.slice(0, i) : id
 }
 
 export function unwrapViteId(id: string): string {

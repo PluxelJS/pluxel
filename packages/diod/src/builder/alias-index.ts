@@ -54,7 +54,7 @@ export function computeAliasIndex(
 	}
 
 	for (const [a, id] of seen) aliasIndex.set(a, id)
-	if (conflicts.size) {
+	if (conflicts.size > 0) {
 		for (const [alias, ids] of conflicts) {
 			errors.push({ kind: 'AliasConflict', alias, ids })
 		}
@@ -102,7 +102,7 @@ export function computeAliasIndexErrorIncremental(
 		}
 	}
 
-	if (conflicts.size) {
+	if (conflicts.size > 0) {
 		for (const [alias, ids] of conflicts) {
 			errors.push({ kind: 'AliasConflict', alias, ids })
 		}

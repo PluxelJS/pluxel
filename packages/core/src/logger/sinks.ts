@@ -198,7 +198,7 @@ export function createPluxelYouchSink(opts: PluxelYouchSinkOptions = {}): Sink {
 }
 
 function stripTrailingNewlines(text: string): string {
-	return text.replace(/\n+$/g, '')
+	return text.replaceAll(/\n+$/g, '')
 }
 
 function createPluxelInlineYouchConsoleSink(

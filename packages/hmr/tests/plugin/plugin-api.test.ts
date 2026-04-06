@@ -29,7 +29,7 @@ function createPluginCtx() {
 		ext: {
 			ui: {
 				remote: {
-					packaged: vi.fn(() => () => undefined),
+					packaged: vi.fn(() => () => {}),
 				},
 			},
 		},
@@ -45,7 +45,7 @@ afterEach(() => {
 describe('@pluxel/hmr/plugin', () => {
 	it('ui() binds through dev handles when HMR wiring is attached', () => {
 		const { root, pluginCtx } = createPluginCtx()
-		const bindUiSource = vi.fn(() => () => undefined)
+		const bindUiSource = vi.fn(() => () => {})
 
 		setDevRuntimeHandles(root, {
 			extensions: {
@@ -95,7 +95,7 @@ describe('@pluxel/hmr/plugin', () => {
 	it('worker() uses root-scoped dev handles and tracks HMR updates', async () => {
 		const { root, pluginCtx } = createPluginCtx()
 		const onUpdate = vi.fn()
-		const stopWatching = vi.fn(async () => undefined)
+		const stopWatching = vi.fn(async () => {})
 		const watchTinypoolWorker = vi.fn(async (_ctx, _entry, options) => {
 			await options.onUpdate('file:///tmp/hmr-worker.mjs')
 			return stopWatching

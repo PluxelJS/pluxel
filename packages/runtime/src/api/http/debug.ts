@@ -36,11 +36,11 @@ function getPluginSchemaInfos(ctx: PluginContext): PluginSchemaInfo[] {
 // 转义 HTML 特殊字符
 function escapeHtml(str: string): string {
 	return str
-		.replace(/&/g, '&amp;')
-		.replace(/</g, '&lt;')
-		.replace(/>/g, '&gt;')
-		.replace(/"/g, '&quot;')
-		.replace(/'/g, '&#39;')
+		.replaceAll('&', '&amp;')
+		.replaceAll('<', '&lt;')
+		.replaceAll('>', '&gt;')
+		.replaceAll('"', '&quot;')
+		.replaceAll('\'', '&#39;')
 }
 
 const STYLES = `

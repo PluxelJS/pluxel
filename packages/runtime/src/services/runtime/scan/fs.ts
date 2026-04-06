@@ -48,10 +48,8 @@ export async function getAllTsFiles(
 			const base = abs.split(/[\\/]/).pop()
 			if (base && ignoreDirNames.has(base)) continue
 			dirsToScan.push(abs)
-		} else if (st.isFile?.()) {
-			if (shouldInclude(abs, extensions, includeDts)) {
-				out.add(normalize(abs))
-			}
+		} else if (st.isFile?.() && shouldInclude(abs, extensions, includeDts)) {
+			out.add(normalize(abs))
 		}
 	}
 

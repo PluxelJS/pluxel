@@ -343,16 +343,12 @@ export function buildHmrViteConfig(opts: HmrViteConfigOptions): InlineConfig {
 	// across different hosts/roots can cause "update deps" metadata mismatches in Vite 8 beta.
 	// If callers want a shared cache, they can still opt-in explicitly via config.
 	const cacheDir = opts.cacheDir
-	const dedupePackages = Array.from(
-		new Set([
-			...REQUIRED_DEDUPE_PACKAGES,
-			...DEFAULT_CLIENT_DEDUPE,
-			...opts.deps.bridgeModules.map(toBasePackage),
-		]),
-	)
-	const clientOptimizeDepsInclude = Array.from(
-		new Set([...DEFAULT_CLIENT_OPTIMIZE_DEPS_INCLUDE, ...opts.deps.optimizeDepsInclude]),
-	)
+	const dedupePackages = [...new Set([
+	...REQUIRED_DEDUPE_PACKAGES,
+	...DEFAULT_CLIENT_DEDUPE,
+	...opts.deps.bridgeModules.map(toBasePackage)
+])]
+	const clientOptimizeDepsInclude = [...new Set([...DEFAULT_CLIENT_OPTIMIZE_DEPS_INCLUDE, ...opts.deps.optimizeDepsInclude])]
 
 	type LoggerWithOnce = Logger & {
 		infoOnce: (msg: string, options?: unknown) => void
@@ -445,7 +441,7 @@ export function buildHmrViteConfig(opts: HmrViteConfigOptions): InlineConfig {
 			? {
 					entries: clientEntries,
 					include: clientOptimizeDepsInclude,
-					needsInterop: Array.from(opts.deps.optimizeDepsInterop),
+					needsInterop: [...opts.deps.optimizeDepsInterop],
 					ignoreOutdatedRequests: true,
 					holdUntilCrawlEnd: true,
 				}
@@ -453,7 +449,7 @@ export function buildHmrViteConfig(opts: HmrViteConfigOptions): InlineConfig {
 				? {
 						entries: clientEntries,
 						include: clientOptimizeDepsInclude,
-						needsInterop: Array.from(opts.deps.optimizeDepsInterop),
+						needsInterop: [...opts.deps.optimizeDepsInterop],
 						ignoreOutdatedRequests: true,
 						// Avoid a first-load race where Vite emits optimized dep URLs before they exist on disk.
 						holdUntilCrawlEnd: true,
@@ -466,16 +462,16 @@ export function buildHmrViteConfig(opts: HmrViteConfigOptions): InlineConfig {
 						holdUntilCrawlEnd: false,
 					},
 		ssr: {
-			noExternal: Array.from(opts.deps.ssrNoExternal),
-			external: Array.from(opts.deps.ssrExternal),
+			noExternal: [...opts.deps.ssrNoExternal],
+			external: [...opts.deps.ssrExternal],
 			optimizeDeps: ssrOptimizeDepsEnabled
 				? {
 						// Make CJS-only dependencies safer to consume from TS/ESM plugin sources:
 						// Vite can pre-bundle & interop CJS deps for SSR when they are not externalized.
 						// (externalized deps are handled by Vite/Node runtime, including require-only exports in many cases.)
 						noDiscovery: true,
-						include: Array.from(opts.deps.optimizeDepsInclude),
-						needsInterop: Array.from(opts.deps.optimizeDepsInterop),
+						include: [...opts.deps.optimizeDepsInclude],
+						needsInterop: [...opts.deps.optimizeDepsInterop],
 					}
 				: { noDiscovery: true, include: [], needsInterop: [] },
 			resolve: {

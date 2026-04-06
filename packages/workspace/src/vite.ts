@@ -38,7 +38,11 @@ export function buildPluxelFrontendResolveConditions(env = process.env.NODE_ENV)
 		)
 			? [env]
 			: []
-	return Array.from(new Set(['@pluxel/source', ...DEFAULT_FRONTEND_RESOLVE_CONDITIONS, ...extras]))
+	return [...new Set([
+	'@pluxel/source',
+	...DEFAULT_FRONTEND_RESOLVE_CONDITIONS,
+	...extras
+])]
 }
 
 export function createPluxelUiChunkGroups() {

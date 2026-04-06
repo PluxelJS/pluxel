@@ -20,8 +20,8 @@ export function buildOutlineTree(anchors: OutlineAnchor[]): OutlineNode[] {
 			children: [],
 		}
 
-		while (stack.length && stack[stack.length - 1].depth >= node.depth) stack.pop()
-		if (stack.length) stack[stack.length - 1].children.push(node)
+		while (stack.length > 0 && stack.at(-1).depth >= node.depth) stack.pop()
+		if (stack.length > 0) stack.at(-1).children.push(node)
 		else roots.push(node)
 		stack.push(node)
 	}
@@ -46,7 +46,7 @@ export function filterOutlineTree(
 	const filterNode = (node: OutlineNode): OutlineNode | null => {
 		const nextChildren = node.children
 			.map((child) => filterNode(child))
-			.filter((child): child is OutlineNode => Boolean(child))
+			.filter(Boolean) as OutlineNode[]
 		const selfMatch = matches(node.label)
 
 		if (selfMatch) matchCount += 1
@@ -59,7 +59,7 @@ export function filterOutlineTree(
 	return {
 		items: items
 			.map((node) => filterNode(node))
-			.filter((node): node is OutlineNode => Boolean(node)),
+			.filter(Boolean) as OutlineNode[],
 		matchCount,
 	}
 }

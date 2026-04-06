@@ -134,7 +134,7 @@ export class ModuleReplacer {
 			const current = nameMap.get(pid)
 			if (current && current !== p) {
 				if (!next) {
-					next = params.slice()
+					next = [...params]
 					replacements = []
 				}
 				next[i] = current

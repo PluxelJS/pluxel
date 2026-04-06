@@ -225,7 +225,7 @@ function WorkbenchHarness({ active = true }: { active?: boolean }) {
 						activeTabPath: '/plugins/test-plugin/config',
 						activeTabDirty: dirty,
 						isTabDirty: () => dirty,
-						getActiveTabState: () => undefined,
+						getActiveTabState: () => {},
 						setActiveTabState: () => {},
 						requestNavigation: () => 'replace-active',
 						setActiveTabDirty: () => {},
@@ -459,7 +459,7 @@ function RightPaneDirtyHarness() {
 			activeTabPath: '/plugins/test-plugin/config',
 			activeTabDirty,
 			isTabDirty: () => activeTabDirty,
-			getActiveTabState: () => undefined,
+			getActiveTabState: () => {},
 			setActiveTabState: () => {},
 			requestNavigation: () => 'replace-active' as const,
 			setActiveTabDirty: (dirty: boolean) => {
@@ -549,7 +549,7 @@ describe('ConfigForm loop safety', () => {
 	it('does not hit maximum update depth while typing with active toc enabled', async () => {
 		vi.useFakeTimers()
 		console.error = ((...args: unknown[]) => {
-			consoleErrors.push(args.map((arg) => String(arg)).join(' '))
+			consoleErrors.push(args.map(String).join(' '))
 		}) as typeof console.error
 
 		const container = document.createElement('div')
@@ -584,7 +584,7 @@ describe('ConfigForm loop safety', () => {
 	it('does not hit maximum update depth with live workbench aside mounted', async () => {
 		vi.useFakeTimers()
 		console.error = ((...args: unknown[]) => {
-			consoleErrors.push(args.map((arg) => String(arg)).join(' '))
+			consoleErrors.push(args.map(String).join(' '))
 		}) as typeof console.error
 
 		const container = document.createElement('div')
@@ -619,7 +619,7 @@ describe('ConfigForm loop safety', () => {
 	it('does not hit maximum update depth while typing with toc disabled', async () => {
 		vi.useFakeTimers()
 		console.error = ((...args: unknown[]) => {
-			consoleErrors.push(args.map((arg) => String(arg)).join(' '))
+			consoleErrors.push(args.map(String).join(' '))
 		}) as typeof console.error
 
 		const container = document.createElement('div')
@@ -653,7 +653,7 @@ describe('ConfigForm loop safety', () => {
 	it('does not hit maximum update depth in cfg layout mode', async () => {
 		vi.useFakeTimers()
 		console.error = ((...args: unknown[]) => {
-			consoleErrors.push(args.map((arg) => String(arg)).join(' '))
+			consoleErrors.push(args.map(String).join(' '))
 		}) as typeof console.error
 
 		const container = document.createElement('div')
@@ -688,7 +688,7 @@ describe('ConfigForm loop safety', () => {
 	it('does not hit maximum update depth with schema switcher visible', async () => {
 		vi.useFakeTimers()
 		console.error = ((...args: unknown[]) => {
-			consoleErrors.push(args.map((arg) => String(arg)).join(' '))
+			consoleErrors.push(args.map(String).join(' '))
 		}) as typeof console.error
 
 		const container = document.createElement('div')
@@ -723,7 +723,7 @@ describe('ConfigForm loop safety', () => {
 	it('does not loop when workbench dirty propagation recreates setActiveTabDirty', async () => {
 		vi.useFakeTimers()
 		console.error = ((...args: unknown[]) => {
-			consoleErrors.push(args.map((arg) => String(arg)).join(' '))
+			consoleErrors.push(args.map(String).join(' '))
 		}) as typeof console.error
 
 		const container = document.createElement('div')

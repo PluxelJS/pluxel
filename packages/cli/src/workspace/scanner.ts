@@ -9,7 +9,7 @@ export async function scanWorkspaceDirs(root: string, base?: string) {
 		fileFilter: (p) => p.endsWith('package.json'),
 	})
 	return dedupe(
-		files.map((file) => relative(root, dirname(file)).replace(/\\/g, '/')).filter(Boolean),
+		files.map((file) => relative(root, dirname(file)).replaceAll('\\', '/')).filter(Boolean),
 	)
 }
 

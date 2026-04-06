@@ -234,7 +234,7 @@ export class ConfigService {
 		const enabledList = Array.isArray(parsed.enabled)
 			? (parsed.enabled as string[])
 			: parsed?.enabled instanceof Set
-				? Array.from(parsed.enabled as Set<string>)
+				? [...parsed.enabled as Set<string>]
 				: []
 		for (let i = 0; i < enabledList.length; i++) this.data.enabled.add(enabledList[i])
 
@@ -283,7 +283,7 @@ export class ConfigService {
 	}
 
 	private async isolateBrokenConfigFile(file: string, content: string) {
-		const safeTs = new Date().toISOString().replace(/[:.]/g, '-')
+		const safeTs = new Date().toISOString().replaceAll(/[:.]/g, '-')
 		const brokenFile = `${file}.broken.${safeTs}`
 		try {
 			await this.ctx.root.fs.writeTextAtomic(brokenFile, content)
@@ -699,9 +699,9 @@ function normalizeProfileName(raw: unknown): string | undefined {
 	// Keep profile names safe for filesystem usage across platforms.
 	const safe = trimmed
 		// oxlint-disable-next-line eslint/no-control-regex -- intentionally strips ASCII control characters for safe filenames.
-		.replace(/[<>:"/\\|?*\u0000-\u001F]/g, '-')
-		.replace(/\s+/g, '-')
-		.replace(/-+/g, '-')
+		.replaceAll(/[<>:"/\\|?*\u0000-\u001F]/g, '-')
+		.replaceAll(/\s+/g, '-')
+		.replaceAll(/-+/g, '-')
 		.replace(/^[-.]+/, '')
 		.replace(/[-.]+$/, '')
 	return safe || undefined

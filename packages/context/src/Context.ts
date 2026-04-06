@@ -132,7 +132,7 @@ export class Context {
 					const svc = (this as unknown as Record<string, unknown>)[key] as Record<string, unknown>
 					const fn = svc[m] as unknown
 					if (typeof fn !== 'function') {
-						throw new Error(`[pluxel/context] Service method not found: ${key}.${m}`)
+						throw new TypeError(`[pluxel/context] Service method not found: ${key}.${m}`)
 					}
 					return (fn as (...a: unknown[]) => unknown).call(svc, ...args)
 				},
@@ -205,7 +205,7 @@ export class Context {
 					const svc = (this as unknown as Record<string, unknown>)[key] as Record<string, unknown>
 					const fn = svc[m] as unknown
 					if (typeof fn !== 'function') {
-						throw new Error(`[pluxel/context] Service method not found: ${key}.${m}`)
+						throw new TypeError(`[pluxel/context] Service method not found: ${key}.${m}`)
 					}
 					return (fn as (...a: unknown[]) => unknown).call(svc, ...args)
 				},

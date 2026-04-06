@@ -11,7 +11,7 @@ export class RpcService {
 
 	constructor(
 		public ctx: Context,
-		_cfg: unknown = undefined,
+		_cfg: unknown,
 	) {}
 
 	/**
@@ -58,7 +58,7 @@ export class RpcService {
 	 * 获取所有已注册的命名空间
 	 */
 	getNamespaces(): string[] {
-		return Array.from(this.extensions.keys())
+		return [...this.extensions.keys()]
 	}
 
 	/**

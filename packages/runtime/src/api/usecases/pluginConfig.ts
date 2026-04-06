@@ -66,7 +66,7 @@ function writeNestedField(
 		cursor[key] = next
 		cursor = next
 	}
-	cursor[segments[segments.length - 1]!] = value
+	cursor[segments.at(-1)!] = value
 	return out
 }
 
@@ -140,11 +140,11 @@ export async function pluginSchema(ctx: Context, name: string): Promise<PluginSc
 			if (!bindingsMap) return false
 			const list = bindingsMap[field]
 			if (!Array.isArray(list)) return false
-			const set = new Set(list.map((x) => String(x)))
+			const set = new Set(list.map(String))
 			return schemaKeys.every((k) => set.has(k))
 		}
 
-		const entries = Object.entries(layoutMap).filter(([, v]) => Array.isArray(v) && v.length)
+		const entries = Object.entries(layoutMap).filter(([, v]) => Array.isArray(v) && v.length > 0)
 		const preferred = entries.find(([field]) => coversAll(field))
 		if (preferred) layout = preferred[1] as any
 		else {
@@ -301,7 +301,7 @@ export async function pluginConfigReset(
 			message: 'No config schema registered for this plugin.',
 		}
 
-	const targetKeys = Array.isArray(keys) && keys.length ? keys : Object.keys(schema)
+	const targetKeys = Array.isArray(keys) && keys.length > 0 ? keys : Object.keys(schema)
 	ctx.configService.unsetConfigKeys(name, targetKeys)
 
 	const defaults = await collectConfigDefaults(schema, { missingObjectDefault: {} })

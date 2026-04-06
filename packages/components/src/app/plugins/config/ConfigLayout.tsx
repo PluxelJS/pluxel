@@ -162,7 +162,7 @@ export function ConfigLayout({
 
 	return (
 		<Box style={{ flex: 1, minHeight: 0 }}>
-			{rendered.chunks.length ? (
+			{rendered.chunks.length > 0 ? (
 				<Box>
 					<Typography>
 						{rendered.chunks.map((chunk) => {
@@ -208,7 +208,7 @@ export function ConfigLayout({
 				</Box>
 			) : null}
 
-			{rendered.remaining.length ? (
+			{rendered.remaining.length > 0 ? (
 				<Paper withBorder radius="md" p="sm" mt="sm">
 					<Stack gap={6}>
 						<Text size="sm" fw={600}>

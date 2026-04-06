@@ -201,7 +201,7 @@ function fieldNameToLabel(fieldName: string): string {
 			.join(' ')
 	}
 	return fieldName
-		.replace(/([A-Z])/g, ' $1')
+		.replaceAll(/([A-Z])/g, ' $1')
 		.replace(/^./, (str) => str.toUpperCase())
 		.trim()
 }
@@ -318,8 +318,8 @@ function extractStringMeta(schema: Schema): StringMeta {
 		if (item.type in validationMap) {
 			const key = validationMap[item.type as keyof typeof validationMap]
 			if (meta[key] === undefined) meta[key] = item.requirement
-		} else if (item.type in fmtMap) {
-			if (!meta.format) meta.format = fmtMap[item.type as keyof typeof fmtMap]
+		} else if (item.type in fmtMap && !meta.format) {
+			meta.format = fmtMap[item.type as keyof typeof fmtMap]
 		}
 	}
 	return meta
@@ -459,8 +459,8 @@ function entriesToMap(schema: Schema): Map<string, Schema> | undefined {
 function inferDiscriminatorKey(branches: readonly Schema[]): string | undefined {
 	const entryMaps = branches
 		.map((branch) => entriesToMap(branch))
-		.filter((item): item is Map<string, Schema> => Boolean(item))
-	if (!entryMaps.length) return undefined
+		.filter(Boolean) as Map<string, Schema>[]
+	if (entryMaps.length === 0) return undefined
 
 	const candidate = new Map<string, DiscriminatorValue[]>()
 	for (const map of entryMaps) {
@@ -478,7 +478,7 @@ function inferDiscriminatorKey(branches: readonly Schema[]): string | undefined 
 		if (values.length !== requiredCount) return false
 		return new Set(values.map((v) => `${v}`)).size === requiredCount
 	})
-	if (!validCandidates.length) return undefined
+	if (validCandidates.length === 0) return undefined
 
 	const booleanCandidate = validCandidates.find(([_, values]) =>
 		values.every((v) => BOOLEANISH.has(v)),
@@ -553,7 +553,7 @@ function extractUnionNode(schema: Schema, ctx: ExtractCtx, baseMeta: FieldMeta):
 	const branchesSource = unionSchema?.options ?? []
 	const discriminator =
 		meta.discriminator ??
-		(branchesSource.length ? inferDiscriminatorKey(branchesSource) : undefined)
+		(branchesSource.length > 0 ? inferDiscriminatorKey(branchesSource) : undefined)
 
 	const sharedFields: UnionBranchField[] = []
 	let discriminatorField: UnionBranchField | undefined
@@ -605,7 +605,7 @@ function extractUnionNode(schema: Schema, ctx: ExtractCtx, baseMeta: FieldMeta):
 		const fallbackKey =
 			ctx.fieldName ||
 			discriminator ||
-			(baseMeta.label ? baseMeta.label.toLowerCase().replace(/\s+/g, '_') : 'value')
+			(baseMeta.label ? baseMeta.label.toLowerCase().replaceAll(/\s+/g, '_') : 'value')
 		const node = extractField(branchSchema, {
 			fieldName: fallbackKey,
 			path: ctx.path,

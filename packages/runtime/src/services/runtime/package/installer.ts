@@ -49,7 +49,10 @@ export class PackageInstaller {
 			sharedResolveCache = undefined
 		}
 		const cache = getExsolveCache(sharedResolveCache)
-		return canResolveFromCwd(cwd, name, cache, { group: 'package:installer-resolver', limit: 16 })
+		return canResolveFromCwd(cwd, name, cache, {
+			group: 'package:installer-resolver',
+			limit: 16,
+		})
 	}
 
 	invalidateCache(cwd?: string) {
@@ -61,7 +64,7 @@ export class PackageInstaller {
 		specs: NormalizedPackageSpecifier[],
 		options: ResolvedInstallOptions,
 	): Promise<PackageInstallResult[]> {
-		if (!specs.length) return []
+		if (specs.length === 0) return []
 		const targets = specs.map((s) => s.target)
 		const opOptions: OperationOptions = { ...options, silent: options.silent ?? false }
 		const opResult = await addDependency(targets, opOptions)
@@ -94,8 +97,8 @@ export class PackageInstaller {
 		specs: NormalizedPackageSpecifier[],
 		options: ResolvedInstallOptions,
 	): Promise<void> {
-		if (!specs.length) return
-		const targets = Array.from(new Set(specs.map((s) => s.name)))
+		if (specs.length === 0) return
+		const targets = [...new Set(specs.map((s) => s.name))]
 		const opOptions: OperationOptions = { ...options, silent: options.silent ?? false }
 		try {
 			const opResult = await removeDependency(targets, opOptions)
@@ -171,7 +174,7 @@ export class PackageInstaller {
 		for (const entry of entries) {
 			if (!unique.has(entry.spec.name)) unique.set(entry.spec.name, entry)
 		}
-		const normalized = Array.from(unique.values())
+		const normalized = [...unique.values()]
 		this.installedCache.set(cwd, { at: now, entries: normalized })
 		return normalized
 	}
@@ -198,9 +201,9 @@ export class PackageInstaller {
 			}
 		}
 
-		const unique = (list: string[]) => Array.from(new Set(list))
+		const unique = (list: string[]) => [...new Set(list)]
 		const installPeerGroup = async (list: string[], dev: boolean) => {
-			if (!list.length) return
+			if (list.length === 0) return
 			const specsToInstall = unique(list).map((raw) => this.normalizeSpecifier(raw))
 			const installed = await this.installTargetsWithLogs(specsToInstall, {
 				...options,
@@ -212,10 +215,10 @@ export class PackageInstaller {
 			})
 		}
 
-		if (peerDeps.length) {
+		if (peerDeps.length > 0) {
 			await installPeerGroup(peerDeps, false)
 		}
-		if (peerDevDeps.length) {
+		if (peerDevDeps.length > 0) {
 			await installPeerGroup(peerDevDeps, true)
 		}
 	}

@@ -27,7 +27,7 @@ export class ClassConfiguration<T>
 	}
 
 	public withDependencies(dependencies: Identifier<unknown>[]): this {
-		this.dependencies = dependencies.slice()
+		this.dependencies = [...dependencies]
 		this.autowire = false
 		this.onMutate?.()
 		return this
@@ -51,7 +51,6 @@ export class ClassConfiguration<T>
 		if (effectiveAutowire) {
 			// 可能抛 UndecoratedServiceError，由 builder 捕获并折叠为 InvalidRegistration
 			this.dependencies = getDependencies(this.newable)
-			return
 		}
 		// 非 autowire：不在这里做显式依赖数校验，交由 verifier 统一处理
 	}
@@ -60,9 +59,9 @@ export class ClassConfiguration<T>
 		const effectiveAutowire = !!(options.autowire && this.autowire)
 		this.setDependencyInformationIfNotExist(effectiveAutowire)
 
-		const tags = this.tags.length ? this.tags.slice() : []
-		const aliases = this.alias.length ? this.alias.slice() : []
-		const dependencies = this.dependencies.length ? this.dependencies.slice() : []
+		const tags = this.tags.length > 0 ? [...this.tags] : []
+		const aliases = this.alias.length > 0 ? [...this.alias] : []
+		const dependencies = this.dependencies.length > 0 ? [...this.dependencies] : []
 
 		return {
 			tags,

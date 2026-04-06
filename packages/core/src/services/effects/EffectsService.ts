@@ -237,7 +237,7 @@ class EffectsImpl implements Effects, EffectGuardHost {
 		const reqPhase = normalizePhase(meta?.phase)
 		let pIdx = phaseIndex(reqPhase)
 		const drainIdx = this.drainPhaseIndex
-		if (drainIdx != null && pIdx < drainIdx) pIdx = drainIdx
+			if (drainIdx !== null && drainIdx !== undefined && pIdx < drainIdx) pIdx = drainIdx
 		this.stacks[pIdx].push(handle)
 
 		return new EffectGuard(this, id, nextToken)
@@ -332,7 +332,7 @@ class EffectsImpl implements Effects, EffectGuardHost {
 			}
 		}
 		this.drainPhaseIndex = null
-		if (errors.length) {
+		if (errors.length > 0) {
 			throw new AggregateError(errors, 'Effects transaction rollback errors')
 		}
 	}
@@ -390,7 +390,7 @@ class EffectsImpl implements Effects, EffectGuardHost {
 			if (resolve) {
 				this.resolveById[id] = null
 				this.rejectById[id] = null
-				resolve(undefined)
+				resolve()
 			}
 			this.finish(id)
 			return
@@ -415,7 +415,7 @@ class EffectsImpl implements Effects, EffectGuardHost {
 				if (resolve) {
 					this.resolveById[id] = null
 					this.rejectById[id] = null
-					resolve(undefined)
+					resolve()
 				}
 				this.finish(id)
 			},
@@ -454,7 +454,7 @@ class EffectsImpl implements Effects, EffectGuardHost {
 		this.freeIds.push(id)
 	}
 
-	async dispose(): Promise<void> {
+	dispose(): Promise<void> {
 		if (this.disposePromise) return this.disposePromise
 		if (this.state === ServiceState.DISPOSED) return this.resolved
 
@@ -486,7 +486,7 @@ class EffectsImpl implements Effects, EffectGuardHost {
 				this.drainPhaseIndex = null
 				this.state = ServiceState.DISPOSED
 			}
-			if (errors.length) throw new AggregateError(errors, 'Effects dispose errors')
+			if (errors.length > 0) throw new AggregateError(errors, 'Effects dispose errors')
 		})()
 
 		return this.disposePromise
@@ -528,7 +528,7 @@ class EffectsScopeImpl implements EffectsScope {
 
 @Injectable({ key: serviceName })
 export class EffectsService extends EffectsScopeImpl {
-	constructor(ctx: PluxelContext, _cfg: unknown = undefined) {
+	constructor(ctx: PluxelContext, _cfg: unknown) {
 		super(ctx)
 	}
 }

@@ -310,12 +310,10 @@ function normalizeOnSuccess(
 		return (_config: SuccessArgs[0], signal: SuccessArgs[1]) => runShellCommand(hook, signal, log)
 	}
 
-	return async (config: SuccessArgs[0], signal: SuccessArgs[1]) => {
-		await hook(config, signal)
-	}
+	return hook
 }
 
-async function runShellCommand(command: string, signal: AbortSignal, log: BuildLogger) {
+function runShellCommand(command: string, signal: AbortSignal, log: BuildLogger) {
 	log(`[build] exec: ${command}`)
 	return new Promise<void>((resolvePromise, reject) => {
 		const child = spawn(command, {

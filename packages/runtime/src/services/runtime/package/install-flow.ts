@@ -84,7 +84,7 @@ export class PackageInstallFlow {
 			toInstall.push(spec)
 		}
 
-		if (toInstall.length) {
+		if (toInstall.length > 0) {
 			try {
 				const installed = await this.installer.installTargetsWithLogs(toInstall, options)
 				for (const record of installed) {

@@ -156,7 +156,7 @@ export function ObjectField(props: RendererProps) {
 						{node.meta.description}
 					</Text>
 				) : null}
-				{baseErrors.length ? (
+				{baseErrors.length > 0 ? (
 					<Text size="sm" c="red.6" style={{ whiteSpace: 'pre-line' }}>
 						{joinErrorMessages(baseErrors)}
 					</Text>

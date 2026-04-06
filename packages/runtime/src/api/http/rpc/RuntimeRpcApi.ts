@@ -74,8 +74,8 @@ export class RuntimeRpcApi extends RpcTarget {
 		return applyStatusActions(this.ctx, actions ?? [])
 	}
 
-	updatePluginGroups(groups: PluginGroupInput[]): Promise<PluginGroup[]> {
+	async updatePluginGroups(groups: PluginGroupInput[]): Promise<PluginGroup[]> {
 		const safe = Array.isArray(groups) ? groups : []
-		return Promise.resolve(writeGroups(this.ctx, safe))
+		return writeGroups(this.ctx, safe)
 	}
 }

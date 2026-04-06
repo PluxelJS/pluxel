@@ -97,15 +97,15 @@ export class PackageState {
 	}
 
 	loadedNames(): string[] {
-		return Array.from(this.loaded.keys())
+		return [...this.loaded.keys()]
 	}
 
 	issueNames(): string[] {
-		return Array.from(this.issues.keys())
+		return [...this.issues.keys()]
 	}
 
 	listIssues(): PackageLoadIssue[] {
-		return Array.from(this.issues.values())
+		return [...this.issues.values()]
 	}
 
 	getDependencies(name: string): string[] {
@@ -115,13 +115,13 @@ export class PackageState {
 
 	getDependents(name: string): string[] {
 		const set = this.dependencyIndex.get(name)
-		return set ? Array.from(set) : []
+		return set ? [...set] : []
 	}
 
 	removeDependentsOf(name: string) {
 		for (const [dep, set] of this.dependencyIndex.entries()) {
 			set.delete(name)
-			if (!set.size) {
+			if (set.size === 0) {
 				this.dependencyIndex.delete(dep)
 			}
 		}
@@ -144,7 +144,7 @@ export class PackageState {
 			const set = this.dependencyIndex.get(trimmed)
 			if (!set) continue
 			set.delete(record.spec.name)
-			if (!set.size) this.dependencyIndex.delete(trimmed)
+			if (set.size === 0) this.dependencyIndex.delete(trimmed)
 		}
 	}
 
@@ -190,7 +190,7 @@ export class PackageState {
 			generatedAt: new Date().toISOString(),
 			packages,
 			issues,
-			blocked: Array.from(this.blocked),
+			blocked: [...this.blocked],
 		}
 	}
 }

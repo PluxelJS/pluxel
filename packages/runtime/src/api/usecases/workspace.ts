@@ -16,7 +16,7 @@ export async function workspaceResolveEntry(ctx: Context, input: WorkspaceResolv
 
 	const preferHmrExports = input.preferHmrExports !== false
 	const conditions =
-		Array.isArray(input.conditions) && input.conditions.length
+		Array.isArray(input.conditions) && input.conditions.length > 0
 			? input.conditions
 			: [...PLUXEL_HMR_WORKSPACE_CONDITIONS_WITH_SOURCE]
 

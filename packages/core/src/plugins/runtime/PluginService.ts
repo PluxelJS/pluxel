@@ -148,7 +148,9 @@ export class PluginService {
 		this.startStrategy = config?.startStrategy ?? 'ready-queue'
 		this.startConcurrency = config?.startConcurrency ?? 8
 		this.stopConcurrency = config?.stopConcurrency ?? 1
-		this.featureDeclarationPolicyExplicit = config?.featureDeclarationPolicy != null
+		this.featureDeclarationPolicyExplicit =
+			config?.featureDeclarationPolicy !== null &&
+			config?.featureDeclarationPolicy !== undefined
 		this.featureDeclarationPolicyDefault =
 			config?.featureDeclarationPolicy ?? (isProduction ? 'off' : 'warn')
 
@@ -168,7 +170,10 @@ export class PluginService {
 		this.definitions = new PluginDefinitions(() => {
 			const pluginCTX = this.ctx.root.isolate(isolated, { name: `${this.order++}` })
 			const override = this.nextCommitFeatureDeclarationPolicy
-			if (this.featureDeclarationPolicyExplicit || override != null) {
+				if (
+					this.featureDeclarationPolicyExplicit ||
+					(override !== null && override !== undefined)
+				) {
 				const policy = override ?? this.featureDeclarationPolicyDefault
 				Object.defineProperty(pluginCTX, PluginService.FEATURE_DECLARATION_POLICY, {
 					value: policy,
@@ -346,7 +351,7 @@ export class PluginService {
 	private notifyInstanceWatchers(summary: CommitSummary, seq: number): void {
 		if (this.instanceWatchersByResolved.size === 0) return
 		const touched = summary.touched
-		if (!touched.length) return
+		if (touched.length === 0) return
 
 		const resolver = (summary.container as unknown as { resolveIdentifier?: unknown })
 			.resolveIdentifier
@@ -467,7 +472,7 @@ export class PluginService {
 		const stack: PluginIdentifier[] = []
 		for (const r of roots) stack.push(resolve(r))
 
-		while (stack.length) {
+		while (stack.length > 0) {
 			const current = stack.pop()!
 			if (affected.has(current)) continue
 			affected.add(current)
@@ -702,7 +707,7 @@ export class PluginService {
 		}
 	}
 
-	private async startPlugins(
+	private startPlugins(
 		container: PluginDiContainer,
 		plan: InitPlan,
 	): Promise<Set<PluginIdentifier>> {
@@ -719,7 +724,7 @@ export class PluginService {
 	 * - 启动：对 add/replace 拓扑分批启动；失败只影响其依赖链
 	 * - 失败插件从 singletons 中清理（下次 commit 仍会尝试重启）
 	 */
-	async commit() {
+	commit() {
 		return this.enqueueCommit(null)
 	}
 
@@ -812,7 +817,7 @@ export class PluginService {
 				remove: [...removed].map(String),
 				replace: [...replaced].map(String),
 				add: [...added].map(String),
-				restart: restartRequested.size ? [...restartRequested].map(String) : undefined,
+				restart: restartRequested.size > 0 ? [...restartRequested].map(String) : undefined,
 			}))
 
 			await this.applyTeardown(oldContainer, toStop)
@@ -824,7 +829,7 @@ export class PluginService {
 			for (const id of restartStart) this.builderSingletons.delete(id)
 
 			const toInitMap: ServiceMap<BasePlugin> = new Map()
-			if (toStart.size) {
+			if (toStart.size > 0) {
 				const services = this.services(container)
 				// Perf: toStart is usually small (HMR / incremental enables),
 				// so index into the service map instead of scanning the whole container.
@@ -835,7 +840,7 @@ export class PluginService {
 			}
 
 			let failed = new Set<PluginIdentifier>()
-			if (toInitMap.size) {
+			if (toInitMap.size > 0) {
 				const plan = computeInitPlan(toInitMap, (id) => this.resolveIdentifier(container, id))
 				failed = await this.startPlugins(container, plan)
 			}
@@ -844,7 +849,7 @@ export class PluginService {
 
 			// Ensure failed plugins are not observable as "available" for this commit.
 			// (They may have been instantiated but not successfully started.)
-			if (failed.size) {
+			if (failed.size > 0) {
 				for (const id of failed) this.builderSingletons.delete(id)
 				for (const id of failed) this.detachedSingletons.delete(id)
 			}
@@ -866,7 +871,7 @@ export class PluginService {
 			this._pendingStart.clear()
 			for (const id of failed) this._pendingStart.add(id)
 
-			if (failed.size) {
+			if (failed.size > 0) {
 				this.ctx.logger.warn('以下插件启动失败', { failed: [...failed].map(String) })
 				this.ctx.emit('commitFailed', failed)
 			}

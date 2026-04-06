@@ -35,7 +35,7 @@ export const assertNoDup = (groups: GroupConfig[], ungrouped: string[]) => {
 		for (const id of ungrouped) seen.set(id, (seen.get(id) ?? 0) + 1)
 		for (const g of groups) for (const id of g.pluginIds) seen.set(id, (seen.get(id) ?? 0) + 1)
 		const dup = [...seen].filter(([, n]) => n > 1).map(([id]) => id)
-		if (dup.length) console.warn('[PluginOrganizer] Duplicate ids detected:', dup)
+		if (dup.length > 0) console.warn('[PluginOrganizer] Duplicate ids detected:', dup)
 	}
 }
 
@@ -68,25 +68,25 @@ export const readCollapsedState = (): Record<string, boolean> => {
 
 export function deriveRootLabel(moduleId: string | null | undefined, statusName: string) {
 	if (!moduleId) return '本地插件'
-	const normalized = moduleId.replace(/\\/g, '/')
+	const normalized = moduleId.replaceAll('\\', '/')
 	const parts = normalized.split('/').filter(Boolean)
 	if (parts.length === 0) return '本地插件'
-	const last = parts[parts.length - 1] ?? ''
+	const last = parts.at(-1) ?? ''
 	if (/\.[a-z0-9]+$/i.test(last)) parts.pop()
 	const skip = new Set(['src', 'lib', 'dist', 'build'])
-	let candidate = parts[parts.length - 1] ?? ''
+	let candidate = parts.at(-1) ?? ''
 	while (candidate && skip.has(candidate) && parts.length > 1) {
 		parts.pop()
-		candidate = parts[parts.length - 1] ?? ''
+		candidate = parts.at(-1) ?? ''
 	}
 	const normalizedCandidate = candidate.toLowerCase()
 	const normalizedName = statusName.toLowerCase()
 	if (normalizedCandidate === normalizedName && parts.length > 1) {
 		parts.pop()
-		candidate = parts[parts.length - 1] ?? candidate
+		candidate = parts.at(-1) ?? candidate
 		while (candidate && skip.has(candidate) && parts.length > 1) {
 			parts.pop()
-			candidate = parts[parts.length - 1] ?? candidate
+			candidate = parts.at(-1) ?? candidate
 		}
 	}
 	return candidate || '本地插件'

@@ -180,7 +180,7 @@ export class ScanService {
 		this.ctx.emit('runtime:resolverCacheInvalidated', detail)
 	}
 
-	private async snapshot(request: ScanTaskOptions = {}): Promise<ScanSnapshot> {
+	private snapshot(request: ScanTaskOptions = {}): Promise<ScanSnapshot> {
 		const roots = resolveScanRoots(this.roots, request.roots)
 		const options = resolveScanOptions(this.defaults, request.scan)
 		return this.snapshotCache.get(roots, options)

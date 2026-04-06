@@ -27,7 +27,7 @@ function extractMissingDependencyChains(detail: string): string[][] {
 			.split(/->|→/g)
 			.map((s) => normalizeDependencyToken(s))
 			.filter(Boolean)
-		if (parts.length) out.push(parts)
+		if (parts.length > 0) out.push(parts)
 	}
 	return out
 }
@@ -64,7 +64,7 @@ export function disablePluginsOnMissingDependencyError(params: {
 	}
 
 	const chains = extractMissingDependencyChains(detail)
-	if (!chains.length) return new Set()
+	if (chains.length === 0) return new Set()
 
 	const toDisable = new Set<string>()
 	for (const chain of chains) {
@@ -87,7 +87,7 @@ export function disablePluginsOnMissingDependencyError(params: {
 		}
 	})
 
-	if (disabled.size && params.logger) {
+	if (disabled.size > 0 && params.logger) {
 		params.logger.warn(params.message ?? 'auto-disabled plugins due to missing dependencies', {
 			stage: params.stage,
 			disabled: [...disabled].sort(),

@@ -12,7 +12,7 @@ import {
 import { HMRService } from '../../src/dev/hmr/HMRService'
 import { HmrRunner } from '../../src/dev/hmr/runner'
 
-const noop = () => undefined
+const noop = () => {}
 
 function createNoopLogger() {
 	const self: any = {
@@ -51,7 +51,7 @@ const createCtx = () => {
 			container: { services: new Map() },
 		},
 		http: {
-			vitePlugin: { name: 'noop', apply: 'serve', configureServer: () => undefined },
+			vitePlugin: { name: 'noop', apply: 'serve', configureServer: () => {} },
 		},
 	} as unknown as Context
 }
@@ -108,7 +108,7 @@ describe('HMR runner bridge', () => {
 				bridgeProviders: deps.bridgeProviders,
 			})
 			await runner.bridgeHostModules(deps.bridgeModules, hmr.path, {
-				warn: () => undefined,
+				warn: () => {},
 			})
 			expect((runner as any).bridgedRunnerUrls?.has?.('/packages/core/src/index.ts')).toBe(true)
 			await runner.assertBridgedSingletons(deps.bridgeModules)

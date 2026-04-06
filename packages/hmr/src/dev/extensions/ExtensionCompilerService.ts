@@ -159,9 +159,9 @@ export class ExtensionCompilerService {
 	}
 
 	bindDeclaration(ctx: Context, config: { entryPath: string }): () => void {
-		if (!this.enabled) return () => undefined
+		if (!this.enabled) return () => {}
 		const store = this.store
-		if (!store) return () => undefined
+		if (!store) return () => {}
 
 		const pluginName = ctx.pluginInfo.id
 
@@ -372,7 +372,7 @@ export class ExtensionCompilerService {
 		if (this.cacheKeep <= 0) return
 		const dir = this.getPluginCacheDir(pluginName)
 		const entries = await readdir(dir).catch((): string[] => [])
-		if (!entries.length) return
+		if (entries.length === 0) return
 
 		const builds: Array<{ path: string; mtime: number }> = []
 		for (const name of entries) {
@@ -430,8 +430,8 @@ export class ExtensionCompilerService {
 
 	private setupWatcher(pluginName: string, entry: PluginCompileEntry): void {
 		this.disposeWatcher(entry)
-		const targets = Array.from(new Set(entry.sourceFiles))
-		if (!targets.length) {
+		const targets = [...new Set(entry.sourceFiles)]
+		if (targets.length === 0) {
 			entry.watcher = null
 			return
 		}
@@ -460,7 +460,7 @@ export class ExtensionCompilerService {
 
 	private getSharedPackages(): readonly string[] {
 		const configured = (this.ctx.config as any)?.extensionCompiler?.sharedPackages
-		if (Array.isArray(configured) && configured.length) return configured
+		if (Array.isArray(configured) && configured.length > 0) return configured
 		return extensionFederationSharedPackages
 	}
 
@@ -469,7 +469,7 @@ export class ExtensionCompilerService {
 		const paraglide = resolveParaglideIntegration(pluginDir)
 		const sourceFiles = entryFile ? [entryFile] : []
 		if (paraglide) sourceFiles.push(...paraglide.sourceRoots)
-		return Array.from(new Set(sourceFiles))
+		return [...new Set(sourceFiles)]
 	}
 
 	private async computeSourceHash(
@@ -481,7 +481,7 @@ export class ExtensionCompilerService {
 		hash.update(`compiler:${EXTENSION_COMPILER_VERSION}`)
 		const sharedSignature = baseDir
 			? resolveExtensionFederationShared(baseDir, sharedPackages).signature
-			: Array.from(sharedPackages).join('|')
+			: [...sharedPackages].join('|')
 		hash.update(`shared:${sharedSignature}`)
 		hash.update(`shareStrategy:${EXTENSION_FEDERATION_SHARE_STRATEGY}`)
 		hash.update(`remoteEntry:${EXTENSION_FEDERATION_REMOTE_ENTRY_FILE}`)
@@ -509,7 +509,7 @@ export class ExtensionCompilerService {
 		const collected: string[] = []
 		const visited = new Set<string>()
 
-		const queue = files.slice()
+		const queue = [...files]
 		for (const target of queue) {
 			if (!target) continue
 			if (visited.has(target)) continue

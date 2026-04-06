@@ -140,7 +140,7 @@ function buildShimRules(input: RuntimeShimRegistryInput | undefined): ShimRule[]
 }
 
 function sanitizeIdSegment(input: string) {
-	const cleaned = input.replace(/[^a-zA-Z0-9._-]+/g, '_')
+	const cleaned = input.replaceAll(/[^a-zA-Z0-9._-]+/g, '_')
 	return cleaned.length > 60 ? cleaned.slice(0, 60) : cleaned
 }
 
@@ -165,7 +165,7 @@ export function installRequireShims(resolver: RequireShimResolver) {
 	mod._load = (request: unknown, parent: unknown, isMain: boolean) => {
 		if (requireScope.getStore() === true && typeof request === 'string') {
 			const shim = requireShimResolver?.(request)
-			if (shim != null) return shim
+			if (shim !== null && shim !== undefined) return shim
 		}
 		return originalLoad(request, parent, isMain)
 	}

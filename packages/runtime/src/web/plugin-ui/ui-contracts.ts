@@ -368,7 +368,7 @@ function validatePluginUIModule(module: PluginUIModule): void {
 				continue
 			}
 			const frame = (route as any)?.definition?.frame
-			if (frame != null && frame !== 'shell' && frame !== 'standalone') {
+			if (frame !== null && frame !== undefined && frame !== 'shell' && frame !== 'standalone') {
 				console.error('[plugin-ui] Route frame must be "shell" or "standalone".', route)
 			}
 			if ((route as any)?.definition?.addToNav === true && frame === 'standalone') {

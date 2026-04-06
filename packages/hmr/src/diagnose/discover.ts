@@ -31,7 +31,7 @@ export type WorkspacePackage = {
 }
 
 function normalizeMatchers(rootDir: string, excludeGlobs: string[]) {
-	const patterns = excludeGlobs.length
+	const patterns = excludeGlobs.length > 0
 		? excludeGlobs.map((g) => toPosix(resolve(rootDir, g)))
 		: [resolve(rootDir, '**/node_modules/**'), resolve(rootDir, '**/dist/**')]
 	return picomatch(patterns.map(toPosix), { dot: true })

@@ -420,7 +420,7 @@ describe('build command', () => {
 
 			await runWithTsdown({
 				context: runtime,
-				onSuccess: async () => undefined,
+				onSuccess: async () => {},
 				log: () => {},
 				extraConfig: cliTsdownOverlay,
 			})
@@ -439,7 +439,7 @@ describe('build command', () => {
 			await expect(
 				runWithTsdown({
 					context: runtime,
-					onSuccess: async () => undefined,
+					onSuccess: async () => {},
 					log: () => {},
 				}),
 			).rejects.toThrow(
@@ -455,7 +455,7 @@ describe('build command', () => {
 			await expect(
 				runWithTsdown({
 					context: runtime,
-					onSuccess: async () => undefined,
+					onSuccess: async () => {},
 					log: () => {},
 				}),
 			).rejects.toThrow('tsdown override must export a single config object or async function')

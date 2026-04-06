@@ -159,7 +159,7 @@ export function ActionBar({ onStatusUpdated, compact = false, prominent = false 
 				requireConfiguredFor: 'dependencies',
 			})
 
-			if (plan.missing.length) {
+			if (plan.missing.length > 0) {
 				notify({
 					title: '部分依赖未找到',
 					message: `已跳过：${plan.missing.join('，')}`,
@@ -167,7 +167,7 @@ export function ActionBar({ onStatusUpdated, compact = false, prominent = false 
 				})
 			}
 
-			if (plan.blockedByConfig.length) {
+			if (plan.blockedByConfig.length > 0) {
 				notify({
 					title: '级联启动已取消',
 					message: `以下依赖尚未配置：${plan.blockedByConfig.join('，')}`,
@@ -190,7 +190,7 @@ export function ActionBar({ onStatusUpdated, compact = false, prominent = false 
 			const results = await executeStartPlan(plan.order, action === 'restart' ? 'restart' : 'start')
 			if (mySeq !== seqRef.current) return
 			const failed = results.filter((r) => !r.ok)
-			if (failed.length) {
+			if (failed.length > 0) {
 				notify({
 					title: '部分依赖启动失败',
 					message: failed.map((f) => f.name).join('，') || '启动失败',
@@ -237,7 +237,7 @@ export function ActionBar({ onStatusUpdated, compact = false, prominent = false 
 			void performAction(action)
 		}
 
-		if (missing.length) {
+		if (missing.length > 0) {
 			openConfirmModal({
 				title: '前置依赖未启动',
 				children: (

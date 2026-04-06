@@ -129,7 +129,7 @@ export async function resolveHmrRootsExpanded(
 	if (roots !== 'auto') return uniqSorted(roots.map((r) => toPosix(resolve(base, r))))
 
 	const info = await loadWorkspaceInfoWithFs(base, fs)
-	const rootsAbs = uniqSorted(info.packageDirs.length ? info.packageDirs : [info.root])
+	const rootsAbs = uniqSorted(info.packageDirs.length > 0 ? info.packageDirs : [info.root])
 	return rootsAbs.map(toPosix)
 }
 
@@ -159,7 +159,7 @@ function resolveGlobBaseDir(rootDirAbs: string, pattern: string) {
 	const trimmed = prefix.replace(/\/+$/, '')
 	if (!trimmed) return rootDirAbs
 	const slash = trimmed.lastIndexOf('/')
-	const dir = slash >= 0 ? trimmed.slice(0, slash) : '.'
+	const dir = slash !== -1 ? trimmed.slice(0, slash) : '.'
 	return resolve(rootDirAbs, dir)
 }
 
@@ -173,11 +173,11 @@ async function resolveIncludeEntryFilesAbs(params: {
 	const fs = params.fs ?? nodeWorkspaceFs
 
 	const includeAbs = params.includeGlobs.map((g) => toPosix(resolve(rootDirAbs, g)))
-	if (!includeAbs.length) return []
+	if (includeAbs.length === 0) return []
 
 	const excludeAbs = params.excludeGlobs.map((g) => toPosix(resolve(rootDirAbs, g)))
 	const isIncluded = picomatch(includeAbs, { dot: true })
-	const isExcluded = excludeAbs.length ? picomatch(excludeAbs, { dot: true }) : null
+	const isExcluded = excludeAbs.length > 0 ? picomatch(excludeAbs, { dot: true }) : null
 
 	const crawlRoots = uniqSorted(
 		params.includeGlobs.map((p) => toPosix(resolveGlobBaseDir(rootDirAbs, p))),
@@ -214,8 +214,8 @@ function findContainingWorkspacePackageName(
 	for (const p of packages) {
 		const dir = toPosix(p.pkgDirAbs)
 		const prefix = dir.endsWith('/') ? dir : `${dir}/`
-		if (file === dir || file.startsWith(prefix)) {
-			if (!best || dir.length > best.dir.length) best = { name: p.name, dir }
+		if ((file === dir || file.startsWith(prefix)) && (!best || dir.length > best.dir.length)) {
+			best = { name: p.name, dir }
 		}
 	}
 	return best?.name ?? null
@@ -276,10 +276,10 @@ export async function buildWorkspaceSnapshotFromScan(params: {
 	})
 	const includedEntries = includeEntryFilesAbs.map((abs) => toRootRelative(rootDirAbs, abs))
 
-	if (errors.length) return { ok: false, errors, discovered: params.discovered }
+	if (errors.length > 0) return { ok: false, errors, discovered: params.discovered }
 
 	const warnings: string[] = []
-	if (skippedEnabled.length) {
+	if (skippedEnabled.length > 0) {
 		warnings.push(
 			`[hmr] Skipped ${skippedEnabled.length} enabled package(s) because they are provided by builtins: ${skippedEnabled.join(
 				', ',
@@ -298,9 +298,9 @@ export async function buildWorkspaceSnapshotFromScan(params: {
 				.filter((d) => discoveredSet.has(d))
 				.filter((d) => !enabledSet.has(d))
 				.filter((d) => !omit.has(d))
-			if (missing.length) missingEdges.push({ from: name, missing: uniqSorted(missing) })
+			if (missing.length > 0) missingEdges.push({ from: name, missing: uniqSorted(missing) })
 		}
-		if (missingEdges.length) {
+		if (missingEdges.length > 0) {
 			const maxEdges = 20
 			const shown = missingEdges.slice(0, maxEdges)
 			warnings.push(
@@ -329,10 +329,10 @@ export async function buildWorkspaceSnapshotFromScan(params: {
 				.filter((d) => !discoveredSet.has(d)) // not a workspace plugin package
 				.filter((d) => !rootDeclaredDeps.has(d)) // not declared at workspace root
 				.filter((d) => !omit.has(d))
-			if (missing.length) missingEdges.push({ from: name, missing: uniqSorted(missing) })
+			if (missing.length > 0) missingEdges.push({ from: name, missing: uniqSorted(missing) })
 		}
 
-		if (missingEdges.length) {
+		if (missingEdges.length > 0) {
 			const maxEdges = 20
 			warnings.push(
 				`[hmr] ${missingEdges.length} selected plugin package(s) depend on managed (node_modules) plugin packages that are not declared in the workspace root package.json. If you rely on PackageService auto-load, add them to root deps (or load them manually / provide as builtins).`,
@@ -443,14 +443,14 @@ export async function diagnoseWorkspace(
 		rootsExpandedAbs,
 		packages: packages.map((p) => ({ name: p.name, deps: p.deps, pkgDirAbs: p.pkgDirAbs })),
 		discovered,
-		omitPackages: omitPackages.length ? omitPackages : undefined,
+		omitPackages: omitPackages.length > 0 ? omitPackages : undefined,
 		fs,
 	})
 
 	if (!base.ok) return base
 
 	const builtinPkgs = base.snapshot.builtinPackages
-	if (!builtinPkgs.length) return base
+	if (builtinPkgs.length === 0) return base
 
 	const byName = new Map(packages.map((p) => [p.name, p]))
 	const builtinsFromDist: BuiltinsFromDistEntry[] = []

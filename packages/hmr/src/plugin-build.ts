@@ -182,7 +182,11 @@ function resolveNodeExecutable(): string {
 }
 
 function isTestLikeProcessEnv(env: NodeJS.ProcessEnv): boolean {
-	return env.NODE_ENV === 'test' || env.VITEST != null || env.JEST_WORKER_ID != null
+	return (
+		env.NODE_ENV === 'test' ||
+		(env.VITEST !== null && env.VITEST !== undefined) ||
+		(env.JEST_WORKER_ID !== null && env.JEST_WORKER_ID !== undefined)
+	)
 }
 
 class RootBuildScheduler {

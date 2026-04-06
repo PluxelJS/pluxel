@@ -2,10 +2,11 @@ import { describe, expect, it, vi } from 'vitest'
 import { SignalDbService } from '../../src/services/plugin-interaction/SignalDbService'
 
 function createFakeCtx() {
-	const sseDispose = vi.fn(() => undefined)
+	const sseDispose = vi.fn(() => {})
 	const sseRegister = vi.fn(() => sseDispose)
 	const deferred: Array<() => void> = []
 	const ctx: any = {
+		__deferred: deferred,
 		pluginInfo: { id: 'test-plugin' },
 		effects: {
 			defer: (fn: () => void) => {
@@ -27,7 +28,6 @@ function createFakeCtx() {
 			})),
 		},
 	}
-	ctx.__deferred = deferred
 	return ctx
 }
 

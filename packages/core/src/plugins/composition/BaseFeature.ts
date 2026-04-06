@@ -93,7 +93,7 @@ export abstract class BaseFeature<C extends Context = Context> {
 
 		for (let i = 0; i < plan.keys.length; i++) {
 			const { field, keys } = plan.keys[i]!
-			if (!keys.length) {
+			if (keys.length === 0) {
 				;(this as unknown as Record<string, unknown>)[field] = {}
 				continue
 			}

@@ -2,7 +2,7 @@ import type { PackageJson } from 'pkg-types'
 import { resolveRepoFromCi } from '../../ci/context'
 import type { RuleContext } from '../types'
 
-export async function ciMetadataRule(pkg: PackageJson, _context: RuleContext) {
+export function ciMetadataRule(pkg: PackageJson, _context: RuleContext) {
 	const repo = resolveRepoFromCi()
 	if (!repo) return undefined
 	const baseUrl = `https://${repo.host}/${repo.repo.replace(/^\//, '')}`

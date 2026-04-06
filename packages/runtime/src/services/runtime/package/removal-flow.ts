@@ -17,7 +17,7 @@ export class PackageRemovalFlow {
 	) {}
 
 	async uninstallMany(specs: NormalizedPackageSpecifier[]): Promise<PackageUninstallResult[]> {
-		if (!specs.length) return []
+		if (specs.length === 0) return []
 		const results: PackageUninstallResult[] = specs.map((spec) => ({
 			spec,
 			status: 'uninstalled',
@@ -64,7 +64,7 @@ export class PackageRemovalFlow {
 		specs: NormalizedPackageSpecifier[],
 		options: ResolvedInstallOptions,
 	): Promise<PackageRemovalResult[]> {
-		if (!specs.length) return []
+		if (specs.length === 0) return []
 		const results: PackageRemovalResult[] = specs.map((spec) => ({
 			spec,
 			status: 'removed',

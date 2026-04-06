@@ -3,7 +3,7 @@ import { BatchDebouncer } from '../../src/dev/hmr/internals'
 
 describe('BatchDebouncer waitForIdle', () => {
 	it('resolves immediately when idle', async () => {
-		const d = new BatchDebouncer(async () => undefined, 10, 100, 10)
+		const d = new BatchDebouncer(async () => {}, 10, 100, 10)
 		await expect(d.waitForIdle({ timeoutMs: 5 })).resolves.toBeUndefined()
 	})
 
@@ -37,7 +37,7 @@ describe('BatchDebouncer waitForIdle', () => {
 			const d = new BatchDebouncer(
 				async () => {
 					// never resolve
-					await new Promise<void>(() => undefined)
+					await new Promise<void>(() => {})
 				},
 				10,
 				100,

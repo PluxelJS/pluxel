@@ -18,7 +18,7 @@ export function computeAffectedDependents(
 	const stack: Identifier<unknown>[] = []
 	for (const id of dirty) stack.push(id)
 
-	while (stack.length) {
+	while (stack.length > 0) {
 		const id = stack.pop()
 		if (!id) continue
 		if (affected.has(id)) continue

@@ -124,7 +124,7 @@ export class LifecycleManager {
 		const err =
 			capturedErr instanceof Error
 				? capturedErr
-				: capturedErr != null
+				: capturedErr !== null && capturedErr !== undefined
 					? new Error(String(capturedErr), { cause: capturedErr })
 					: new Error(`Plugin ${String(id)} failed to start`)
 
@@ -166,7 +166,7 @@ export class LifecycleManager {
 }
 
 function normalizeTimeoutMs(value: number | undefined, fallback: number): number {
-	if (value == null) return fallback
+	if (value === null || value === undefined) return fallback
 	if (!Number.isFinite(value)) return fallback
 	const ms = Math.floor(value)
 	return ms > 0 ? ms : fallback

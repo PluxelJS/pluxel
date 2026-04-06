@@ -13,7 +13,7 @@ function stripTrailingSlashes(pathname: string): string {
 }
 
 function normalizeFsPath(pathname: string): string {
-	return pathname.replace(/\\/g, '/')
+	return pathname.replaceAll('\\', '/')
 }
 
 function contentTypeByExt(ext: string): string | undefined {

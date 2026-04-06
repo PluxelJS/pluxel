@@ -292,7 +292,7 @@ export function PackageManagerScreen() {
 			}
 			const successes = result.results.filter((item) => item?.ok)
 			const failures = result.results.filter((item) => !item?.ok)
-			if (successes.length) {
+			if (successes.length > 0) {
 				const names = successes.map(
 					(item) => item.spec?.name || item.spec?.raw || item.code || '未知包',
 				)
@@ -309,7 +309,7 @@ export function PackageManagerScreen() {
 			if (result.error) {
 				messages.push(result.error)
 			}
-			if (messages.length) {
+			if (messages.length > 0) {
 				notify({
 					title: '部分操作失败',
 					message: summarizeList(messages, 3, '个失败', '；'),
@@ -526,7 +526,7 @@ export function PackageManagerScreen() {
 
 	const handleInstall = async () => {
 		const specs = pendingInstallSpecs
-		if (!specs.length) {
+		if (specs.length === 0) {
 			notify({
 				title: '请输入包名',
 				message: '例如：pluxel-plugin-redis 或 @scope/pkg@1.0.0，每行一个。',
@@ -577,7 +577,7 @@ export function PackageManagerScreen() {
 			}
 		} finally {
 			setInstallLoading(false)
-			if (successes.length) {
+			if (successes.length > 0) {
 				notify({
 					title: '安装完成',
 					message: `${summarizeList(successes, 3, '个')} 已完成安装`,
@@ -588,7 +588,7 @@ export function PackageManagerScreen() {
 				}
 				await refetch()
 			}
-			if (failures.length) {
+			if (failures.length > 0) {
 				notify({
 					title: '部分安装失败',
 					message: summarizeList(failures, 3, '个失败', '；'),
@@ -928,7 +928,7 @@ export function PackageManagerScreen() {
 										</Text>
 									</Table.Td>
 									<Table.Td>
-										{row.issues.length ? (
+										{row.issues.length > 0 ? (
 											<Badge color="red" variant="filled">
 												{row.issues.length} 个告警
 											</Badge>

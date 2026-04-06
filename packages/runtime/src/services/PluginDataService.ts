@@ -153,10 +153,9 @@ export class PluginDataService {
 
 		if (mode === 'perCollection') {
 			const file = this.fileForCollection(ns, collection)
-			const sharedFile = this.fileForNamespace(ns) // 读取时作为降级 fallback
+			const sharedFile = this.fileForNamespace(ns)
 
 			const loadItems = async (): Promise<T[]> => {
-				// 优先读取独立文件
 				const raw = await this.readTextOptional(file)
 				const text = raw?.trim()
 				if (text?.length) {
@@ -168,16 +167,13 @@ export class PluginDataService {
 							if (Array.isArray(items)) return items as T[]
 						}
 					} catch {
-						// fallthrough
 					}
 					try {
 						return (options?.deserialize?.(text) ?? SuperJSON.parse(text) ?? []) as T[]
 					} catch {
-						// ignore parse error
 					}
 				}
 
-				// 回退读取 shared 文件中的该 collection
 				const sharedRawText = await this.readTextOptional(sharedFile)
 				const sharedText = sharedRawText?.trim()
 				if (sharedText?.length) {
@@ -202,7 +198,6 @@ export class PluginDataService {
 							}
 						}
 					} catch {
-						// ignore
 					}
 					try {
 						const parsed = SuperJSON.parse<unknown>(sharedText)
@@ -222,7 +217,6 @@ export class PluginDataService {
 							}
 						}
 					} catch {
-						// ignore
 					}
 				}
 
@@ -246,17 +240,15 @@ export class PluginDataService {
 					}
 					await notify()
 					try {
-						watcher = chokidar
-							.watch(file, {
-								ignoreInitial: true,
-								awaitWriteFinish: { stabilityThreshold: 100, pollInterval: 50 },
-							})
+						watcher = watch(file, {
+							ignoreInitial: true,
+							awaitWriteFinish: { stabilityThreshold: 100, pollInterval: 50 },
+						})
 							.on('add', () => void notify())
 							.on('change', () => void notify())
 						if (!this.watchers.has(file)) this.watchers.set(file, new Set())
 						this.watchers.get(file)?.add(watcher)
 					} catch {
-						// ignore watcher errors
 					}
 				},
 				unregister: async () => {
@@ -270,7 +262,6 @@ export class PluginDataService {
 			}
 		}
 
-		// shared 模式：单文件存放多个 Collection
 		const file = this.fileForNamespace(ns)
 		const loadStore = async (): Promise<MultiCollectionStore> => {
 			const rawText = await this.readTextOptional(file)
@@ -287,11 +278,9 @@ export class PluginDataService {
 					if (isRecord(maybeCollections)) {
 						return { collections: maybeCollections }
 					}
-					// 旧格式：顶层就是各 collection
 					return { collections: parsed }
 				}
 			} catch {
-				// fall through
 			}
 
 			try {
@@ -303,7 +292,6 @@ export class PluginDataService {
 					return { collections: parsed as unknown as Record<string, unknown> }
 				}
 			} catch {
-				// ignore parse error
 			}
 			return { collections: {} }
 		}
@@ -347,17 +335,15 @@ export class PluginDataService {
 				}
 				await notify()
 				try {
-					watcher = chokidar
-						.watch(file, {
-							ignoreInitial: true,
-							awaitWriteFinish: { stabilityThreshold: 100, pollInterval: 50 },
-						})
+					watcher = watch(file, {
+						ignoreInitial: true,
+						awaitWriteFinish: { stabilityThreshold: 100, pollInterval: 50 },
+					})
 						.on('add', () => void notify())
 						.on('change', () => void notify())
 					if (!this.watchers.has(file)) this.watchers.set(file, new Set())
 					this.watchers.get(file)?.add(watcher)
 				} catch {
-					// ignore watcher errors (e.g., missing file)
 				}
 			},
 			unregister: async () => {
@@ -371,7 +357,6 @@ export class PluginDataService {
 		}
 	}
 
-	/** 获取对应 namespace 的默认存储文件路径（已规范化）。 */
 	getFilePath(): string {
 		return this.fileForNamespace(this.normalizeNamespace(this.ctx.pluginInfo?.id ?? 'default'))
 	}
@@ -399,6 +384,6 @@ export class PluginDataService {
 
 	private normalizeNamespace(ns: string): string {
 		const trimmed = ns || 'default'
-		return basename(trimmed).replace(/[^A-Za-z0-9_-]/g, '_')
+		return basename(trimmed).replaceAll(/[^A-Za-z0-9_-]/g, '_')
 	}
 }

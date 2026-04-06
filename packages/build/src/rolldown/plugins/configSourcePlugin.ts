@@ -394,7 +394,7 @@ function collectModuleInfo(
 	return info
 }
 
-async function ensureModuleInfo(
+function ensureModuleInfo(
 	moduleId: string,
 	ctx: ResolveContext,
 ): Promise<ModuleInfo | undefined> {
@@ -820,7 +820,7 @@ function applyReplacements(
 ): string {
 	let cursor = start
 	let result = ''
-	const sorted = replacements.slice().sort((a, b) => a.start - b.start)
+	const sorted = [...replacements].sort((a, b) => a.start - b.start)
 	for (const rep of sorted) {
 		if (rep.start < cursor) continue
 		result += source.slice(cursor, rep.start)
@@ -1141,10 +1141,10 @@ async function extractConfigSources(
 
 function normalizeMarkdownTemplate(input: string): string {
 	const lines = String(input ?? '')
-		.replace(/\r\n/g, '\n')
+		.replaceAll('\r\n', '\n')
 		.split('\n')
-	while (lines.length && lines[0]?.trim() === '') lines.shift()
-	while (lines.length && lines[lines.length - 1]?.trim() === '') lines.pop()
+	while (lines.length > 0 && lines[0]?.trim() === '') lines.shift()
+	while (lines.length > 0 && lines.at(-1)?.trim() === '') lines.pop()
 	let minIndent = Number.POSITIVE_INFINITY
 	for (const line of lines) {
 		if (!line.trim()) continue
@@ -1164,7 +1164,7 @@ type ExtractedLayoutPart =
 function mergeAdjacentMarkdown(parts: ExtractedLayoutPart[]): ExtractedLayoutPart[] {
 	const merged: ExtractedLayoutPart[] = []
 	for (const part of parts) {
-		const prev = merged[merged.length - 1]
+		const prev = merged.at(-1)
 		if (part.kind === 'md' && prev?.kind === 'md') {
 			prev.text += part.text
 			continue
@@ -1275,7 +1275,7 @@ function extractCfgLayout(expr: Expression): ExtractedLayoutPart[] | null {
 				const kk = String(k).trim()
 				if (kk) keys.push(kk)
 			}
-			return { kind: 'schemas', keys: keys.length ? keys : null }
+			return { kind: 'schemas', keys: keys.length > 0 ? keys : null }
 		}
 
 		throw new Error('[cfg] invalid interpolation in cfg(schemaMap)`...`')
@@ -1337,7 +1337,7 @@ function extractCfgSchemaMapExpr(
 		}
 		if (c?.type === 'SequenceExpression') {
 			const exprs = Array.isArray(c.expressions) ? c.expressions : []
-			return exprs.length > 0 ? isCfgCallee(exprs[exprs.length - 1]) : false
+			return exprs.length > 0 ? isCfgCallee(exprs.at(-1)) : false
 		}
 		return false
 	}
@@ -1590,12 +1590,12 @@ async function extractCfgSchemasFromSchemaMapExpr(
 			else {
 				const stringKey = readLiteralString(prop.key)
 				const numberKey = readLiteralNumber(prop.key)
-				if (stringKey != null) key = stringKey
-				else if (numberKey != null) key = String(numberKey)
-			}
-			if (key == null) {
-				throw new Error(`[cfg] ${kind} key type not supported: ${moduleInfo.id}`)
-			}
+					if (stringKey !== null && stringKey !== undefined) key = stringKey
+					else if (numberKey !== null && numberKey !== undefined) key = String(numberKey)
+				}
+				if (key === null || key === undefined) {
+					throw new Error(`[cfg] ${kind} key type not supported: ${moduleInfo.id}`)
+				}
 			const k = String(key ?? '').trim()
 			if (!k) throw new Error(`[cfg] ${kind} key is empty: ${moduleInfo.id}`)
 			const v = prop.value as Expression

@@ -136,7 +136,7 @@ export function usePluginOrganizerDnd({
 				const groupOrder = groupsRef.current.map((group) => group.groupId)
 				const oldIndex = groupOrder.indexOf(movingGroupId)
 				const newIndex = groupOrder.indexOf(targetGroupId)
-				if (oldIndex < 0 || newIndex < 0 || oldIndex === newIndex) return
+				if (oldIndex === -1 || newIndex === -1 || oldIndex === newIndex) return
 				const nextGroups = arrayMove(groupsRef.current, oldIndex, newIndex)
 				setGroups(nextGroups)
 				queueMicrotask(() => onGroupsChangeRef.current(nextGroups))

@@ -62,7 +62,7 @@ export function getPluginRoutingSnapshot<T extends PluginGatedDef>(
 	}
 
 	return {
-		enabledPlugins: Array.from(enabledPlugins).sort(),
+		enabledPlugins: [...enabledPlugins].sort(),
 		enabledRouteIds: enabledRouteIds.sort(),
 	}
 }

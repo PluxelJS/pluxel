@@ -33,7 +33,7 @@ function sanitizeMessageParts(
 	seen: WeakSet<object>,
 	caps: Required<RuntimeLogSinkCaps>,
 ): unknown[] | undefined {
-	if (!message.length) return undefined
+	if (message.length === 0) return undefined
 	const n = Math.min(message.length, caps.maxMessageParts)
 	const out = Array<unknown>(n)
 	for (let i = 0; i < n; i++) {
@@ -216,7 +216,7 @@ function toRuntimeLogLineInput(
 				{
 					timestamp: record.timestamp,
 					level: record.level,
-					category: Array.from(record.category),
+					category: [...record.category],
 					message,
 					properties: props,
 				},
@@ -228,7 +228,7 @@ function toRuntimeLogLineInput(
 	return {
 		ts,
 		level: record.level,
-		category: Array.from(record.category),
+		category: [...record.category],
 		name,
 		pluginId,
 		context,
@@ -283,7 +283,7 @@ export function createRuntimeLogSink(options: RuntimeLogSinkOptions = {}): Sink 
 			clearTimeout(timer)
 			timer = null
 		}
-		if (!buf.length) return
+		if (buf.length === 0) return
 		flushing = true
 		const batch = buf
 		buf = []

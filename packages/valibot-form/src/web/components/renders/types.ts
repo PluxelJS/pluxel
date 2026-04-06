@@ -53,7 +53,7 @@ export function normalizeErrorMessages(errors?: FieldError[]): string[] {
 
 export function joinErrorMessages(errors?: FieldError[]): string | null {
 	const list = normalizeErrorMessages(errors)
-	if (!list.length) return null
+	if (list.length === 0) return null
 	return list.join('\n')
 }
 

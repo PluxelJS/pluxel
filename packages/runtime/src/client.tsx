@@ -4,7 +4,7 @@ import ReactDOM from 'react-dom/client'
 import '@mantine/core/styles.css'
 import '@mantine/notifications/styles.css'
 
-const root = document.getElementById('root')!
+const root = document.querySelector('#root')!
 const RootContainer = process.env.NODE_ENV === 'production' ? React.StrictMode : Fragment
 
 ReactDOM.createRoot(root).render(

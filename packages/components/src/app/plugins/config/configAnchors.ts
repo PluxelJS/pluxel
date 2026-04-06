@@ -2,8 +2,8 @@ export function toDomSlug(value: string) {
 	return (
 		value
 			.toLowerCase()
-			.replace(/[^a-z0-9_-]+/gi, '-')
-			.replace(/^-+|-+$/g, '') || 'section'
+			.replaceAll(/[^a-z0-9_-]+/gi, '-')
+			.replaceAll(/^-+|-+$/g, '') || 'section'
 	)
 }
 

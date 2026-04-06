@@ -2,7 +2,7 @@ import type { PackageJson } from 'pkg-types'
 import { MANIFEST_DEPEND_ON_FIELD } from '../../env'
 import type { RuleContext } from '../types'
 
-export async function pluginDependencyRule(pkg: PackageJson, context: RuleContext) {
+export function pluginDependencyRule(pkg: PackageJson, context: RuleContext) {
 	if (context.pluginUsages.size === 0) return undefined
 
 	const runtimeDependencies = new Set(Object.keys(pkg.dependencies ?? {}))

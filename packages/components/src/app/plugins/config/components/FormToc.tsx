@@ -102,7 +102,7 @@ export function FormToc({
 				let current: { id: string; score: number } | null = null
 
 				for (const anchor of anchorsRef.current) {
-					const el = document.getElementById(anchor.id)
+					const el = document.querySelector<HTMLElement>(`#${CSS.escape(anchor.id)}`)
 					if (!el) continue
 					const container =
 						(scrollHost && scrollHost.contains(el) ? scrollHost : null) ??
@@ -141,7 +141,7 @@ export function FormToc({
 	const scrollToSection = useCallback(
 		(id: string) => {
 			if (!id) return
-			const target = document.getElementById(id)
+			const target = document.querySelector(`#${id}`)
 			if (!target) return
 			const scrollMarginTop =
 				Number.parseFloat(getComputedStyle(target).scrollMarginTop || '0') || 0

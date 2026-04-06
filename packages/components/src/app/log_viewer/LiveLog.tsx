@@ -136,7 +136,7 @@ function createRingStore<T>(cap = 2000) {
 			}
 		},
 		pushMany(items: readonly T[]) {
-			if (!items.length) return
+			if (items.length === 0) return
 			for (let i = 0; i < items.length; i++) this.push(items[i]!)
 			notify()
 		},
@@ -187,7 +187,7 @@ function formatCategory(category?: string[]): string {
 
 function oneLine(s: string): string {
 	if (!s) return ''
-	return s.replace(/\r\n|\r|\n/g, '⏎').replace(/\t/g, '⇥')
+	return s.replaceAll(/\r\n|\r|\n/g, '⏎').replaceAll('	', '⇥')
 }
 
 async function copyToClipboard(text: string): Promise<boolean> {
@@ -255,7 +255,7 @@ function renderAnsi(text: string, ansi16: readonly string[]): ReactNode {
 
 	const push = (chunk: string, start: number, end: number) => {
 		if (!chunk) return
-		const st = Object.keys(style).length ? { ...style } : null
+		const st = Object.keys(style).length > 0 ? { ...style } : null
 		parts.push({ key: `${start}:${end}`, text: chunk, style: st })
 	}
 
@@ -795,7 +795,7 @@ export function LiveLog({ module, showName = true, filter, variant = 'full' }: P
 			const payload = await transport.http.logs.streams()
 			const ids = payload.streams.map((stream) => stream.streamId).filter(Boolean)
 			ids.sort((a: string, b: string) => a.localeCompare(b))
-			if (ids.length) setStreams(ids)
+			if (ids.length > 0) setStreams(ids)
 		} catch {
 			// ignore
 		}
@@ -885,7 +885,7 @@ export function LiveLog({ module, showName = true, filter, variant = 'full' }: P
 
 		const onAppendLines = (lines: RuntimeLogLine[]) => {
 			if (disposed || ac.signal.aborted) return
-			if (!lines.length) return
+			if (lines.length === 0) return
 			pendingLinesRef.current.push(...lines)
 			scheduleFlush()
 		}

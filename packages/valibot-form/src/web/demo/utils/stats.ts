@@ -16,11 +16,11 @@ export function buildCaseStats(schema: ObjectSchema<any, any>): CaseStats {
 	const sectionIds = new Set(
 		fields
 			.map((field) => field.meta.section?.id)
-			.filter((value): value is string => Boolean(value)),
+			.filter(Boolean) as string[],
 	)
 	return {
 		fieldCount,
 		complexCount,
-		sectionCount: sectionIds.size || (fieldCount ? 1 : 0),
+		sectionCount: sectionIds.size > 0 ? sectionIds.size : fieldCount ? 1 : 0,
 	}
 }

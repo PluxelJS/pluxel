@@ -4,7 +4,7 @@ import { join, normalize, relative } from 'pathe'
 import { HMRService } from '@pluxel/hmr'
 import { fixturesPluginsDir, workspaceRoot } from './_paths'
 
-const noop = () => undefined
+const noop = () => {}
 
 function createNoopLogger() {
 	const self: any = {
@@ -38,14 +38,14 @@ const createCtx = () => {
 				},
 			},
 			replaceModule: async () => true,
-			pruneModule: () => undefined,
+			pruneModule: () => {},
 		},
 		registry: {
 			commit: async () => ({}),
 			container: { services: new Map() },
 		},
 		http: {
-			vitePlugin: { name: 'noop', apply: 'serve', configureServer: () => undefined },
+			vitePlugin: { name: 'noop', apply: 'serve', configureServer: () => {} },
 		},
 	} as unknown as Context
 }

@@ -8,8 +8,8 @@ describe('HmrExecutor import candidates', () => {
 
 		const ctx = {
 			logger: {
-				error: () => undefined,
-				warn: () => undefined,
+				error: () => {},
+				warn: () => {},
 			},
 			loader: {
 				beginBatch: () => ({
@@ -17,13 +17,13 @@ describe('HmrExecutor import candidates', () => {
 						expect(moduleId).toBe(cleanId)
 						return true
 					},
-					commit: () => undefined,
-					rollback: () => undefined,
+					commit: () => {},
+					rollback: () => {},
 				}),
 			},
 			registry: {
 				commit: async () => ({ ok: true }),
-				resetDraft: () => undefined,
+				resetDraft: () => {},
 			},
 		} as any
 

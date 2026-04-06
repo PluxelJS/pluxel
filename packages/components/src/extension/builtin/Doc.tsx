@@ -157,7 +157,7 @@ function compileDoc(input: { content: BuiltinDocContent; docPrefix: string }): {
 				key: `cfg-${items.length + 1}`,
 				directive: {
 					kind: 'schemas',
-					keys: Array.isArray(keys) ? keys.map((x) => String(x)) : null,
+					keys: Array.isArray(keys) ? keys.map(String) : null,
 				},
 			})
 			continue
@@ -419,7 +419,7 @@ export function BuiltinDoc({ def }: { def: BuiltinDocExtensionDef }) {
 		let current: { id: string; score: number } | null = null
 
 		for (const anchor of headingAnchors) {
-			const el = document.getElementById(anchor.id)
+			const el = document.querySelector<HTMLElement>(`#${CSS.escape(anchor.id)}`)
 			if (!el) continue
 			const pos = container
 				? el.getBoundingClientRect().top - (containerBox?.top ?? 0) + container.scrollTop
@@ -447,7 +447,7 @@ export function BuiltinDoc({ def }: { def: BuiltinDocExtensionDef }) {
 		}
 
 		const firstAnchorEl = headingAnchors[0]?.id
-			? document.getElementById(headingAnchors[0].id)
+			? document.querySelector<HTMLElement>(`#${CSS.escape(headingAnchors[0].id)}`)
 			: null
 		const base = firstAnchorEl ?? root
 		const host =
@@ -495,7 +495,7 @@ export function BuiltinDoc({ def }: { def: BuiltinDocExtensionDef }) {
 	const scrollToSection = useCallback(
 		(id: string) => {
 			if (!id) return
-			const target = document.getElementById(id)
+			const target = document.querySelector<HTMLElement>(`#${CSS.escape(id)}`)
 			if (!target) return
 			const scrollMarginTop =
 				Number.parseFloat(getComputedStyle(target).scrollMarginTop || '0') || 0
@@ -534,7 +534,7 @@ export function BuiltinDoc({ def }: { def: BuiltinDocExtensionDef }) {
 			</Stack>
 		) : null
 
-	const bodyContent = compiled.items.length ? (
+	const bodyContent = compiled.items.length > 0 ? (
 		<DocBody
 			items={compiled.items}
 			contentRef={contentRef}

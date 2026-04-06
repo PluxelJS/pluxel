@@ -4,7 +4,7 @@ import ReactDOM from 'react-dom/client'
 import { DemoApp } from './demo/DemoApp'
 import '@mantine/core/styles.css'
 
-ReactDOM.createRoot(document.getElementById('root')!).render(
+ReactDOM.createRoot(document.querySelector('#root')!).render(
 	<React.StrictMode>
 		<MantineProvider>
 			<DemoApp />

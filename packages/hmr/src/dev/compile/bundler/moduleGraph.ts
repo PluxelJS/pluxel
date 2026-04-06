@@ -13,7 +13,7 @@ export function collectModuleGraphFiles(
 	const visited = new Set<ModuleNode>()
 	const stack: ModuleNode[] = [root]
 
-	while (stack.length) {
+	while (stack.length > 0) {
 		const node = stack.pop()!
 		if (visited.has(node)) continue
 		visited.add(node)
@@ -32,7 +32,7 @@ export function collectModuleGraphFiles(
 		files.add(root.file)
 	}
 
-	return Array.from(files).sort()
+	return [...files].sort()
 }
 
 function getImportedModules(node: ModuleNode): Iterable<ModuleNode> {

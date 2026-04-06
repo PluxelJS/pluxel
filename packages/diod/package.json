@@ -42,7 +42,7 @@
 		"build": "tsdown",
 		"test": "pnpm exec vitest run",
 		"docs": "rimraf docs/api && typedoc --plugin typedoc-plugin-markdown",
-		"lint": "oxlint -c ../../.oxlintrc.json .",
+		"lint": "oxlint -c ../../.oxlintrc.json --report-unused-disable-directives-severity=error .",
 		"qa": "pnpm run lint && pnpm run type-check && pnpm run test",
 		"prepack": "pnpm run qa && pnpm run build",
 		"size": "size-limit"

@@ -209,7 +209,7 @@ export class PluginLifecycleActor {
 					this.stopAbort = null
 					this.pendingStop = false
 				},
-				onAsyncError: async (err: unknown) => {
+				onAsyncError: (err: unknown) => {
 					this.ctx.err = toError(err)
 					this.ctx.failedStep = 'runtime'
 					this.ctx.attempt++
@@ -217,7 +217,10 @@ export class PluginLifecycleActor {
 			},
 			hooks: {
 				onEnterRunning: () => {
-					if (this.opts.useErrorChannel && this.errorUnsub == null) {
+					if (
+						this.opts.useErrorChannel &&
+						(this.errorUnsub === null || this.errorUnsub === undefined)
+					) {
 						const unsub = this.ctx.runtime.subscribeErrors?.((err) => {
 							void dispatch(E.asyncError, err)
 						})
@@ -291,7 +294,7 @@ export class PluginLifecycleActor {
 				sub.unsubscribe()
 			}
 
-			if (timeoutMs != null) {
+				if (timeoutMs !== null && timeoutMs !== undefined) {
 				timer = setTimeout(() => {
 					if (done) return
 					done = true

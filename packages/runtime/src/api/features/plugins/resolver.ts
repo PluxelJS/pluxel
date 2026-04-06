@@ -10,12 +10,12 @@ import { createPluginScope, ensurePlugin, getPluginDependencies, getScopeCtor } 
 
 export function createPluginResolvers(pCtx: PlxContext): Resolver[] {
 	const queries = resolver({
-		pluginId: query(PluginIdScope)
-			.input({ name: v.string() })
-			.resolve(async ({ name }) => {
-				ensurePlugin(pCtx, name)
-				return { __typename: 'PluginIdScope', name }
-			}),
+			pluginId: query(PluginIdScope)
+				.input({ name: v.string() })
+				.resolve(({ name }) => {
+					ensurePlugin(pCtx, name)
+					return { __typename: 'PluginIdScope', name }
+				}),
 		plugin: query(PluginScope)
 			.input({ name: v.string() })
 			.resolve(({ name }) => createPluginScope(pCtx, name)),

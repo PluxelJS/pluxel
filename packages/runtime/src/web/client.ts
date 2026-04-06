@@ -341,7 +341,7 @@ export function createRuntimeTransportClient(
 					}
 				: undefined,
 			params,
-			namespaces: namespaces.length ? namespaces : undefined,
+			namespaces: namespaces.length > 0 ? namespaces : undefined,
 		}
 	}
 

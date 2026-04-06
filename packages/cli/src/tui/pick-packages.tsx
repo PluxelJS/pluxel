@@ -9,7 +9,7 @@ type IndexedDiscoveredPlugin = PickPackagesDiscoveredPlugin & {
 }
 
 function normalizePath(p: string) {
-	return p.replace(/\\/g, '/')
+	return p.replaceAll('\\', '/')
 }
 
 function groupKeyForPkgDir(pkgDir: string) {
@@ -51,7 +51,7 @@ function indexDiscovered(discovered: PickPackagesDiscoveredPlugin[]) {
 
 function filterDiscovered(discovered: IndexedDiscoveredPlugin[], query: string) {
 	const { include, exclude } = parseFilterQuery(query)
-	if (!include.length && !exclude.length) return discovered
+	if (include.length === 0 && exclude.length === 0) return discovered
 
 	return discovered.filter((p) => {
 		for (const ex of exclude) if (p.search.includes(ex)) return false
@@ -242,8 +242,7 @@ export function PickPackagesPicker(props: {
 	const discoveredIndexed = useMemo(
 		() =>
 			indexDiscovered(
-				props.params.discovered
-					.slice()
+				[...props.params.discovered]
 					.sort((a, b) => a.pkgDir.localeCompare(b.pkgDir) || a.name.localeCompare(b.name)),
 			),
 		[props.params.discovered],
@@ -464,13 +463,13 @@ export function PickPackagesPicker(props: {
 				return
 			}
 			if (!key.ctrl && !key.meta && input === ' ') {
-				if (!visibleNames.length) return
+				if (visibleNames.length === 0) return
 				const any = setHasAnyInList(visibleNames, selected)
 				toggleMany(visibleNames, !any)
 				return
 			}
 			if (input === 'a' && !key.ctrl && !key.meta) {
-				if (visibleNames.length) toggleMany(visibleNames, true)
+				if (visibleNames.length > 0) toggleMany(visibleNames, true)
 				return
 			}
 			if (input === 'c' && !key.ctrl && !key.meta) {
@@ -478,7 +477,7 @@ export function PickPackagesPicker(props: {
 				return
 			}
 			if (input === 'i' && !key.ctrl && !key.meta) {
-				if (visibleNames.length) invertMany(visibleNames)
+				if (visibleNames.length > 0) invertMany(visibleNames)
 				return
 			}
 			if (key.return) {
@@ -528,7 +527,6 @@ export function PickPackagesPicker(props: {
 				const p = packagesInGroup[pkgIndex]
 				if (!p) return
 				toggleName(p.name)
-				return
 			}
 		}
 	})
@@ -680,8 +678,7 @@ export function PickPackagesDualPicker(props: {
 	const discoveredIndexed = useMemo(
 		() =>
 			indexDiscovered(
-				props.params.discovered
-					.slice()
+				[...props.params.discovered]
 					.sort((a, b) => a.pkgDir.localeCompare(b.pkgDir) || a.name.localeCompare(b.name)),
 			),
 		[props.params.discovered],
@@ -1023,7 +1020,6 @@ export function PickPackagesDualPicker(props: {
 				const p = packagesInGroup[pkgIndex]
 				if (!p) return
 				toggleName(p.name)
-				return
 			}
 		}
 	})
@@ -1180,8 +1176,7 @@ export function PickPackagesDualBrowser(props: {
 	const discoveredIndexed = useMemo(
 		() =>
 			indexDiscovered(
-				props.discovered
-					.slice()
+				[...props.discovered]
 					.sort((a, b) => a.pkgDir.localeCompare(b.pkgDir) || a.name.localeCompare(b.name)),
 			),
 		[props.discovered],

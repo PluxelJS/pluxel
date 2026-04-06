@@ -66,11 +66,11 @@ export function assertHmrWorkspaceSnapshot(
 
 	if (s.builtinsFromDist !== undefined) {
 		if (!Array.isArray(s.builtinsFromDist)) {
-			throw new Error('[hmr] Invalid snapshot: builtinsFromDist must be an array.')
+			throw new TypeError('[hmr] Invalid snapshot: builtinsFromDist must be an array.')
 		}
 		for (const raw of s.builtinsFromDist) {
 			if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
-				throw new Error('[hmr] Invalid snapshot: builtinsFromDist must contain objects.')
+				throw new TypeError('[hmr] Invalid snapshot: builtinsFromDist must contain objects.')
 			}
 			const o = raw as Record<string, unknown>
 			if (typeof o.packageName !== 'string' || !o.packageName.trim()) {

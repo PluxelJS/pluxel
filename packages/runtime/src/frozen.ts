@@ -10,7 +10,7 @@ import type {
 type ImportRow = FrozenPluginSpec & { alias: string }
 
 function safeIdent(input: string): string {
-	let id = input.replace(/[^A-Za-z0-9_$]/g, '_')
+	let id = input.replaceAll(/[^A-Za-z0-9_$]/g, '_')
 	if (!id) id = 'Plugin'
 	if (/^[0-9]/.test(id)) id = `_${id}`
 	return id

@@ -295,7 +295,7 @@ export async function prefetchTransforms(params: {
 		seen.add(id)
 		queue.push(id)
 	}
-	if (!queue.length) return
+	if (queue.length === 0) return
 
 	let cursor = 0
 	const workerCount = Math.min(params.concurrency, queue.length)
@@ -361,7 +361,7 @@ export class HmrExecutor {
 		cleanIds: readonly string[],
 		_keepOrder = true,
 	): Promise<{ res: CommitResult; commitMs: number } | undefined> {
-		if (!cleanIds.length) return undefined
+		if (cleanIds.length === 0) return undefined
 
 		// Historically `keepOrder=false` did not change ordering; preserve that behavior.
 		const ordered = dedupeIds(cleanIds)
@@ -447,7 +447,7 @@ export class HmrExecutor {
 		filesPath: readonly string[],
 		keepOrder = true,
 	): Promise<{ res: CommitResult; commitMs: number } | undefined> {
-		if (!filesPath.length) return undefined
+		if (filesPath.length === 0) return undefined
 
 		// Always normalize+dedupe in a single pass (avoid allocating an intermediate array).
 		// `keepOrder=false` historically did not change ordering; preserve that behavior.
@@ -741,12 +741,12 @@ export class HmrBatchProcessor {
 
 		if (this.cfg.prefetchConcurrency > 0 && this.cfg.prefetchLimit > 0) {
 			const prefetchList = buildOrderedList(
-				targets.size ? targets : graph.affectedIds,
+				targets.size > 0 ? targets : graph.affectedIds,
 				graph.distance,
 				this.cfg.prefetchOrder,
 				this.cfg.prefetchLimit,
 			)
-			if (prefetchList.length) {
+			if (prefetchList.length > 0) {
 				await prefetchTransforms({
 					env: this.env,
 					ids: prefetchList,
@@ -793,14 +793,14 @@ export class HmrBatchProcessor {
 		this.ctx.logger.info('HMR updated', {
 			epoch,
 			changedFiles: changed.length,
-			changedPreview: changedPreview.length ? changedPreview : undefined,
+			changedPreview: changedPreview.length > 0 ? changedPreview : undefined,
 			changedPreviewOmitted: changedPreviewOmitted || undefined,
 			targets: execOrder.length,
 			affected: graph.affectedIds.size,
 			fallbackRoots: graph.roots.length,
 			activeServices,
 			plugins: pluginTotals,
-			hotspots: hotspots.length ? hotspots : undefined,
+			hotspots: hotspots.length > 0 ? hotspots : undefined,
 			invalidated,
 			commitMs,
 			batchMs,
@@ -893,7 +893,7 @@ export class HmrBatchProcessor {
 		const dbg = this.dbg.cache
 		if (isLogEnabled(dbg, 'debug')) {
 			dbg.debug((l) => l`invalidated: vite=${viteInvalidated} runner=${runnerInvalidated}`)
-			if (invalidatedKeys.length) {
+			if (invalidatedKeys.length > 0) {
 				dbg.debug((l) => {
 					const keys = invalidatedKeys.map((k) => this.path.pretty(k))
 					return l`runner keys (${keys.length})\n${keys.map((k) => `    ${k}`).join('\n')}`

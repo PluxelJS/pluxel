@@ -63,7 +63,7 @@ function normalizeOptions(
 	labels?: Partial<Record<string | number, string>>,
 	disabled?: readonly (string | number)[],
 ) {
-	const disabledSet = new Set((disabled ?? []).map((item) => String(item)))
+	const disabledSet = new Set((disabled ?? []).map(String))
 	const mapped: NormalizedOption[] = []
 	const seen = new Set<string | number>()
 

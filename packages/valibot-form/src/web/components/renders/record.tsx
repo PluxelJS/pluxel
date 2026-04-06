@@ -128,7 +128,7 @@ export function RecordField(props: RendererProps) {
 
 	useEffect(() => {
 		setRows((prev) => {
-			if (!entries.length && !prev.length) return prev
+			if (entries.length === 0 && prev.length === 0) return prev
 			const entryMap = new Map(entries)
 			const seen = new Set<string>()
 			const next: RecordRow[] = []
@@ -196,7 +196,7 @@ export function RecordField(props: RendererProps) {
 	const addLabel = info.addLabel ?? (node.meta.label ? `添加${node.meta.label}` : '添加记录')
 
 	const [draftKey, setDraftKey] = useState('')
-	const [draftValue, setDraftValue] = useState<unknown>(undefined)
+	const [draftValue, setDraftValue] = useState<unknown>()
 	const draftKeyRef = useRef<HTMLInputElement | null>(null)
 
 	useEffect(() => {
@@ -314,7 +314,7 @@ export function RecordField(props: RendererProps) {
 
 	const handleAdd = () => {
 		if (!canAdd || isLocked) return
-		const baseKey = (keyPlaceholder ?? keyLabel ?? 'key').replace(/\s+/g, '_')
+		const baseKey = (keyPlaceholder ?? keyLabel ?? 'key').replaceAll(/\s+/g, '_')
 		let index = rows.length + 1
 		let nextKey = `${baseKey}_${index}`
 		while (existingKeySet.has(nextKey)) {

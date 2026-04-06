@@ -174,7 +174,7 @@ export class ExtensionService implements ExtensionModuleStore {
 		const resolved = this.interactions.getSnapshot()
 		return {
 			version: this.manifestVersion,
-			modules: this.manifestModules.slice(),
+			modules: [...this.manifestModules],
 			builtins: resolved.builtins,
 			surfaces: resolved.surfaces,
 			offers: resolved.offers,
@@ -246,7 +246,7 @@ export class ExtensionService implements ExtensionModuleStore {
 	}
 
 	packaged(input?: { manifestPath?: string | null }): () => void {
-		if (!this.enabled) return () => undefined
+		if (!this.enabled) return () => {}
 		const pluginName = this.ctx.pluginInfo.id
 		let disposed = false
 
@@ -283,7 +283,7 @@ export class ExtensionService implements ExtensionModuleStore {
 	 * Designed for markdown docs with builtin blocks that should not require `await import()`.
 	 */
 	private registerBuiltin(def: Omit<BuiltinExtensionDef, 'pluginName'>): () => void {
-		if (!this.enabled) return () => undefined
+		if (!this.enabled) return () => {}
 		this.syncInteractionContext()
 		const currentPluginName = this.ctx.pluginInfo.id
 		const id = String(def.id ?? '').trim()
@@ -348,14 +348,14 @@ export class ExtensionService implements ExtensionModuleStore {
 			) => unknown | Promise<unknown>
 		},
 	): () => void {
-		if (!this.enabled) return () => undefined
+		if (!this.enabled) return () => {}
 		this.syncInteractionContext()
 		const pluginName = this.ctx.pluginInfo.id
 		const point = (input.point ?? ('plugin:tabs' as P)) as P
 		const id = String(input.id ?? '').trim()
 		if (!id) throw new Error('[ExtensionService] surface: id required')
 		if (typeof input.apply !== 'function') {
-			throw new Error('[ExtensionService] surface: apply(result, ctx) required')
+			throw new TypeError('[ExtensionService] surface: apply(result, ctx) required')
 		}
 
 		const normalized: RegisteredSurface = {
@@ -428,7 +428,7 @@ export class ExtensionService implements ExtensionModuleStore {
 				| Promise<TypedInteractionOfferPrepareResult<TDraft, TPrepared>>
 		},
 	): () => void {
-		if (!this.enabled) return () => undefined
+		if (!this.enabled) return () => {}
 		this.syncInteractionContext()
 		const pluginName = this.ctx.pluginInfo.id
 		const point = (input.point ?? ('plugin:tabs' as P)) as P
@@ -553,7 +553,7 @@ export class ExtensionService implements ExtensionModuleStore {
 	}
 
 	private getModuleStatesSnapshot(): ExtensionModuleState[] {
-		const states = Array.from(this.moduleStatesByPlugin.values())
+		const states = [...this.moduleStatesByPlugin.values()]
 		states.sort((a, b) => a.pluginName.localeCompare(b.pluginName))
 		return states
 	}

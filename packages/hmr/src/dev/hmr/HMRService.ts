@@ -215,7 +215,7 @@ const hmrPackageRoot = (() => {
 	}
 })()
 
-const unique = <T>(iter: Iterable<T>) => Array.from(new Set(iter))
+const unique = <T>(iter: Iterable<T>) => [...new Set(iter)]
 
 export type HmrWaitForBatchOptions = {
 	/**
@@ -267,8 +267,8 @@ export class HMRService {
 	public vite!: ViteDevServer
 	private startPromise?: Promise<void>
 	private readonly serverConfigured: Promise<void>
-	private serverConfiguredResolve: () => void = () => undefined
-	private serverConfiguredReject: (error: unknown) => void = () => undefined
+	private serverConfiguredResolve: () => void = () => {}
+	private serverConfiguredReject: (error: unknown) => void = () => {}
 
 	private ssrEnv!: DevEnvironment
 	private readonly runner = new HmrRunner()
@@ -340,19 +340,21 @@ export class HMRService {
 	) {
 		this.scanService = this.ctx.scanService
 		if (!Array.isArray(this.config.entries)) {
-			throw new Error('[hmr] hmrService.entries must be string[] (explicit cold-start entry list)')
+			throw new TypeError(
+				'[hmr] hmrService.entries must be string[] (explicit cold-start entry list)',
+			)
 		}
 
 		setPkgrootCacheLimit(this.config.pkgrootCacheLimit)
 		this.serverConfigured = new Promise<void>((resolveServerConfigured, rejectServerConfigured) => {
 			this.serverConfiguredResolve = () => {
-				this.serverConfiguredResolve = () => undefined
-				this.serverConfiguredReject = () => undefined
+				this.serverConfiguredResolve = () => {}
+				this.serverConfiguredReject = () => {}
 				resolveServerConfigured()
 			}
 			this.serverConfiguredReject = (error) => {
-				this.serverConfiguredResolve = () => undefined
-				this.serverConfiguredReject = () => undefined
+				this.serverConfiguredResolve = () => {}
+				this.serverConfiguredReject = () => {}
 				rejectServerConfigured(error)
 			}
 		})
@@ -752,7 +754,7 @@ export class HMRService {
 
 		const builtins = this.config.builtins ?? []
 		const builtinsFromDist = this.config.builtinsFromDist ?? []
-		if (!builtins.length && !builtinsFromDist.length) return
+		if (builtins.length === 0 && builtinsFromDist.length === 0) return
 
 		this.maybeWarnBuiltinOverlap()
 
@@ -765,7 +767,7 @@ export class HMRService {
 			const builtinPlugins: string[] = []
 			const builtinPluginSet = new Set<string>()
 
-			if (builtinsFromDist.length) {
+			if (builtinsFromDist.length > 0) {
 				const specs = builtinsFromDist
 					.map((b) => ({
 						packageName: String(b.packageName ?? '').trim(),
@@ -821,7 +823,7 @@ export class HMRService {
 						if (pluginKeys.length === 0) {
 							throw new Error(
 								`[hmr] Builtin "${b.packageName}" export "${b.exportKey}" is not an @Plugin ctor.` +
-									(keys.length ? ` Available keys: ${keys.slice(0, 16).join(', ')}` : ''),
+									(keys.length > 0 ? ` Available keys: ${keys.slice(0, 16).join(', ')}` : ''),
 							)
 						}
 					} else {
@@ -831,7 +833,7 @@ export class HMRService {
 							throw new Error(
 								`[hmr] Builtin "${b.packageName}" exports no @Plugin ctors as named exports.` +
 									' Export at least one plugin ctor as a named export (do not rely on default).' +
-									(keys.length ? ` Available keys: ${keys.slice(0, 16).join(', ')}` : ''),
+									(keys.length > 0 ? ` Available keys: ${keys.slice(0, 16).join(', ')}` : ''),
 							)
 						}
 					}
@@ -863,7 +865,7 @@ export class HMRService {
 				}
 			}
 
-			if (builtins.length) resolved.push(...builtins)
+			if (builtins.length > 0) resolved.push(...builtins)
 			// Commit builtins as a baseline so later loader batch rollbacks revert back to a container
 			// that already includes the built-in plugins.
 			const declared = await this.ctx.loader.preloadPlugins(resolved, {
@@ -873,7 +875,7 @@ export class HMRService {
 				autoDisableMaxPasses: this.config.builtinsAutoDisableMaxPasses ?? 8,
 			})
 
-			if (builtinsFromDist.length) {
+			if (builtinsFromDist.length > 0) {
 				this.ctx.logger.info('Builtin baseline ready (from dist)', {
 					packages: builtinsFromDist.length,
 					plugins: builtinPlugins.length,
@@ -881,7 +883,7 @@ export class HMRService {
 					builtinPlugins,
 				})
 			}
-			if (builtins.length && !builtinsFromDist.length) {
+			if (builtins.length > 0 && builtinsFromDist.length === 0) {
 				this.ctx.logger.info(`Builtin baseline ready: ${declared.length} plugin(s)`)
 			}
 		} catch (error) {
@@ -895,7 +897,7 @@ export class HMRService {
 		if (this.warnedBuiltinOverlap) return
 		const builtins = this.config.builtins ?? []
 		const builtinsFromDist = this.config.builtinsFromDist ?? []
-		if (!builtins.length && !builtinsFromDist.length) return
+		if (builtins.length === 0 && builtinsFromDist.length === 0) return
 
 		const isUnder = (child: string, root: string) =>
 			child === root || child.startsWith(root.endsWith('/') ? root : `${root}/`)
@@ -915,7 +917,7 @@ export class HMRService {
 			if (!existsSync(abs)) continue
 			if (this.scanRootsAbs.some((root) => isUnder(abs, root))) overlaps.push(rel)
 		}
-		if (!overlaps.length) return
+		if (overlaps.length === 0) return
 
 		this.warnedBuiltinOverlap = true
 		this.ctx.logger.warn(
@@ -990,7 +992,7 @@ export class HMRService {
 
 	private resolveBuiltinDistDirsClean(): readonly string[] {
 		const list = this.config.builtinsFromDist ?? []
-		if (!list.length) return []
+		if (list.length === 0) return []
 		const out: string[] = []
 		for (const b of list) {
 			const entry = typeof b?.entry === 'string' ? b.entry.trim() : ''
@@ -1067,9 +1069,10 @@ export class HMRService {
 
 	private onBatchSummary(summary: HmrBatchSummary) {
 		this.lastBatchSummary = summary
-		if (!this.batchWaiters.size) return
+		if (this.batchWaiters.size === 0) return
 
-		for (const w of Array.from(this.batchWaiters)) {
+		const waiters = [...this.batchWaiters]
+		for (const w of waiters) {
 			if (summary.epoch <= w.afterEpoch) continue
 			w.cleanup()
 			w.resolve(summary)
@@ -1193,7 +1196,7 @@ export class HMRService {
 			// Governance: preserve caller-provided entry order.
 			// - `entries` order is deliberate (profiles/CLI/host define it)
 			// - anchors are appended in sorted order by `ensureStartupScope()`
-			const coldFiles = scope.entryList.slice()
+			const coldFiles = [...scope.entryList]
 			const dbgWarmup = this.dbg.warmup
 			const debugWarmup = isLogEnabled(dbgWarmup, 'debug')
 			if (debugWarmup) {
@@ -1242,7 +1245,7 @@ export class HMRService {
 				warmupMs,
 				commitMs,
 				totalMs,
-				hotspots: hotspots.length ? hotspots : undefined,
+				hotspots: hotspots.length > 0 ? hotspots : undefined,
 			})
 
 			// Post-warmup operational report (counts + hotspots) is helpful for demo hosts and profiling.
@@ -1328,7 +1331,7 @@ export class HMRService {
 				out.push(anchor)
 			}
 
-			const rootsAbs = this.scanRootsAbs.slice().sort()
+			const rootsAbs = [...this.scanRootsAbs].sort()
 			const rootsPretty = rootsAbs.map((root) => this.path.pretty(root))
 			const entriesByRoot = Array<number>(rootsAbs.length).fill(0)
 			const isUnder = (child: string, root: string) =>
@@ -1379,7 +1382,7 @@ export class HMRService {
 				this.workspaceEntryResolver.resolveBareWorkspaceEntry(specifier),
 			resolveLimit: this.config.reportResolveLimit,
 			builtinsModuleIds: this.config.builtinsFromDist?.map((b) => b.packageName) ?? [],
-			hotspots: hotspots.length ? hotspots : undefined,
+			hotspots: hotspots.length > 0 ? hotspots : undefined,
 		})
 
 		this.ctx.logger.info('HMR report', report)

@@ -391,6 +391,6 @@ export function registerPluginLifecycleBenchmarks(bench: Bench, scenario: Scenar
 	)
 
 	return () => {
-		while (cleanups.length) cleanups.pop()?.()
+		while (cleanups.length > 0) cleanups.pop()?.()
 	}
 }

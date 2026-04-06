@@ -102,7 +102,7 @@ export function CaseNav({
 				allowDeselect={false}
 			/>
 
-			{tags.length ? (
+			{tags.length > 0 ? (
 				<Stack gap={6}>
 					<Group gap={6} wrap="wrap">
 						{tags.map((tag) => {
@@ -132,7 +132,7 @@ export function CaseNav({
 			<Divider />
 
 			<ScrollArea style={{ flex: 1 }} offsetScrollbars>
-				{groupedCases.length ? (
+				{groupedCases.length > 0 ? (
 					<Stack gap="md">
 						{groupedCases.map((bucket) => (
 							<Stack key={bucket.group.id} gap={6}>

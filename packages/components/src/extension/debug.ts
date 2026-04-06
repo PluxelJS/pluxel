@@ -30,7 +30,7 @@ export type DebugLogger = (...args: unknown[]) => void
 
 export function createDebug(topic: string): DebugLogger {
 	const t = normalizeTopic(topic)
-	if (!t) return (..._args: unknown[]) => undefined
+	if (!t) return (..._args: unknown[]) => {}
 	return (...args: unknown[]) => {
 		const patterns = getDebugPatterns()
 		let enabled = false

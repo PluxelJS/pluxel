@@ -121,7 +121,7 @@ export class BatchDebouncer {
 		if (this.pending.size >= this.maxBatchFiles) this.flush('maxbatch')
 	}
 	private flush(_reason: BatchDebounceReason) {
-		if (!this.pending.size) return
+		if (this.pending.size === 0) return
 		this.clearTimers()
 		const files = [...this.pending]
 		this.pending.clear()
@@ -154,7 +154,8 @@ export class BatchDebouncer {
 
 	private notifyIdle() {
 		if (!this.isIdle() || this.idleWaiters.size === 0) return
-		for (const w of Array.from(this.idleWaiters)) {
+		const waiters = [...this.idleWaiters]
+		for (const w of waiters) {
 			try {
 				w.resolve()
 			} catch {

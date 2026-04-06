@@ -31,7 +31,7 @@ export type CrawlFilesOptions = {
 }
 
 function toPosix(p: string) {
-	return p.replace(/\\/g, '/')
+	return p.replaceAll('\\', '/')
 }
 
 function uniqSorted(items: readonly string[]): string[] {
@@ -87,8 +87,8 @@ async function visitFiles(params: {
 				await visitFiles({ ...params, dir: resolvedPath })
 				continue
 			}
-			if (resolvedStats.isFile?.()) {
-				if (!params.fileFilter || params.fileFilter(resolvedPath)) params.out.push(resolvedPath)
+			if (resolvedStats.isFile?.() && (!params.fileFilter || params.fileFilter(resolvedPath))) {
+				params.out.push(resolvedPath)
 			}
 			continue
 		}

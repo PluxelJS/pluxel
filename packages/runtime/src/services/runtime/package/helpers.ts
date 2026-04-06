@@ -54,7 +54,7 @@ export function dedupeByName(specs: NormalizedPackageSpecifier[]): NormalizedPac
 			map.set(spec.name, spec)
 		}
 	}
-	return Array.from(map.values())
+	return [...map.values()]
 }
 
 export function parseDependOn(value: unknown): string[] {

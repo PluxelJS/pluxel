@@ -30,7 +30,7 @@ function createHmrCtx(core: Context) {
 		ensureValidated() {
 			return Promise.resolve({})
 		},
-		patchConfig: () => undefined,
+		patchConfig: () => {},
 		getExtra<T = unknown>(key: string): T | undefined {
 			return extra[key] as T | undefined
 		},
@@ -51,7 +51,7 @@ function createHmrCtx(core: Context) {
 		events: coreEvents,
 		on: core.on.bind(core),
 		emit: typeof coreEmit === 'function' ? coreEmit.bind(core) : undefined,
-		logger: { info: () => undefined, warn: () => undefined, error: () => undefined },
+		logger: { info: () => {}, warn: () => {}, error: () => {} },
 		configService,
 	} as unknown as Context
 }

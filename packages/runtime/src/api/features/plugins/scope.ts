@@ -19,8 +19,11 @@ export function ensurePlugin(pCtx: PlxContext, name: string): PluginConstructor 
 }
 
 export function createPluginScope(pCtx: PlxContext, name: string): PluginScopeOutput {
-	const scope = { __typename: 'PluginScope' as const, name } as InternalScope
-	scope[PLUGIN_CTOR] = ensurePlugin(pCtx, name)
+	const scope = {
+		__typename: 'PluginScope' as const,
+		name,
+		[PLUGIN_CTOR]: ensurePlugin(pCtx, name),
+	} as InternalScope
 	return scope
 }
 

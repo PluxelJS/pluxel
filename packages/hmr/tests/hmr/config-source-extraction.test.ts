@@ -28,7 +28,7 @@ type CoreApi = {
 	getUsedFeatures: (ctor: unknown) => Array<{ name: string }>
 }
 
-const noop = () => undefined
+const noop = () => {}
 
 function createNoopLogger(errorLogs: ErrorLog[]) {
 	const channel: any = {
@@ -136,19 +136,19 @@ function createContext(
 						capture.lastModule = mod
 						return false
 					},
-					rollback: () => undefined,
-					commit: () => undefined,
+					rollback: () => {},
+					commit: () => {},
 				}
 			},
-			pruneModule: () => undefined,
+			pruneModule: () => {},
 		},
 		registry: {
 			commit: async () => ({ ok: true }),
-			resetDraft: () => undefined,
+			resetDraft: () => {},
 			container: { services: new Map() },
 		},
 		http: {
-			vitePlugin: { name: 'noop', apply: 'serve', configureServer: () => undefined },
+			vitePlugin: { name: 'noop', apply: 'serve', configureServer: () => {} },
 		},
 	} as unknown as Context
 }

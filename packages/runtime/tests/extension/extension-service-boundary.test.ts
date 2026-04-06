@@ -377,7 +377,7 @@ describe('ExtensionService runtime/dev boundary', () => {
 			title: 'Typography',
 			providers: ['font-manager'],
 			input: () => ({ current: null }),
-			apply: async () => undefined,
+			apply: async () => {},
 			meta: { label: 'Typography', tab: { id: 'typography', label: 'Typography' } } as any,
 		})
 
@@ -392,7 +392,7 @@ describe('ExtensionService runtime/dev boundary', () => {
 			title: 'Typography',
 			providers: ['font-manager'],
 			input: () => ({ current: null }),
-			apply: async () => undefined,
+			apply: async () => {},
 			meta: { label: 'Typography', tab: { id: 'typography', label: 'Typography' } } as any,
 		})
 
@@ -555,7 +555,7 @@ describe('ExtensionService runtime/dev boundary', () => {
 			contract: FontInteractionContract,
 			providers: ['font-manager'],
 			input: () => ({ current: null }),
-			apply: async () => undefined,
+			apply: async () => {},
 		})
 
 		service.ctx = createFakeCtx({
@@ -599,7 +599,7 @@ describe('ExtensionService runtime/dev boundary', () => {
 			contract: FontInteractionContract,
 			providers: ['font-manager', 'theme-manager'],
 			input: () => ({ current: null }),
-			apply: async () => undefined,
+			apply: async () => {},
 		})
 
 		service.ctx = createFakeCtx({
@@ -665,7 +665,7 @@ describe('ExtensionService runtime/dev boundary', () => {
 			providers: ['font-manager'],
 			required: true,
 			input: () => ({ current: null }),
-			apply: async () => undefined,
+			apply: async () => {},
 		})
 
 		const manifest = service.getManifest()

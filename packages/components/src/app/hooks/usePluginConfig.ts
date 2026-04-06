@@ -107,7 +107,7 @@ async function loadPluginData(
 				schemaMap[key] = schema
 			}
 		}
-		if (pending.length) await Promise.all(pending)
+		if (pending.length > 0) await Promise.all(pending)
 
 		const visibleDefaults: Record<string, any> = {}
 		for (const k of Object.keys(schemaMap)) {

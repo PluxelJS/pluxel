@@ -40,7 +40,7 @@ type InitialOpen =
 	| { kind: 'paths'; focus?: PathsFocus }
 
 function formatListInline(items: string[], max = 6) {
-	if (!items.length) return '(none)'
+	if (items.length === 0) return '(none)'
 	const head = items.slice(0, max)
 	const rest = items.length - head.length
 	return rest > 0 ? `${head.join(', ')}, +${rest}` : head.join(', ')
@@ -303,7 +303,7 @@ function StringListPanel(props: {
 				}
 				if (inputMode.kind === 'add') props.onChange([...props.items, v])
 				else {
-					const next = props.items.slice()
+					const next = [...props.items]
 					next[index] = v
 					props.onChange(next)
 				}
@@ -359,7 +359,7 @@ function StringListPanel(props: {
 		}
 		if (input === 'd' && !key.ctrl && !key.meta) {
 			if (!count) return
-			const next = props.items.slice()
+			const next = [...props.items]
 			next.splice(index, 1)
 			props.onChange(next)
 			const nextIndex = clamp(index, 0, Math.max(next.length - 1, 0))
@@ -403,7 +403,7 @@ function StringListPanel(props: {
 				</Text>
 			) : (
 				<Text color="gray" wrap="truncate">
-					{props.items.length ? '' : '(empty)'}
+					{props.items.length > 0 ? '' : '(empty)'}
 				</Text>
 			)}
 		</Box>
@@ -533,7 +533,6 @@ function ProfilesPanel(props: {
 		}
 		if (input === 'x') {
 			props.onAction({ type: 'delete', name: current })
-			return
 		}
 	})
 
@@ -754,7 +753,7 @@ function HmrPromptApp(props: {
 				})
 				const discovered = discoverPluginsFromPackages(rootDirAbs, scanPackages)
 
-				const discoveredForUi = props.skipPackages.size
+				const discoveredForUi = props.skipPackages.size > 0
 					? discovered.filter((p) => !props.skipPackages.has(p.name))
 					: discovered
 
@@ -979,9 +978,7 @@ function HmrPromptApp(props: {
 
 		// While typing (e.g. filter/input), avoid global single-key actions.
 		if (typing) {
-			if (isTab && !isShiftTab) {
-				if (maybeOpenProfilesByTabHold()) return
-			}
+			if (isTab && !isShiftTab && maybeOpenProfilesByTabHold()) return
 			if (key.ctrl && input.toLowerCase() === 'p') {
 				openProfilesOverlay()
 				return
@@ -1036,9 +1033,7 @@ function HmrPromptApp(props: {
 		}
 
 		// Long-press Tab (repeat) opens profile picker.
-		if (isTab && !isShiftTab) {
-			if (maybeOpenProfilesByTabHold()) return
-		}
+		if (isTab && !isShiftTab && maybeOpenProfilesByTabHold()) return
 
 		// Profiles overlay from anywhere (jump to Packages).
 		if (key.ctrl && input.toLowerCase() === 'p') {
@@ -1133,10 +1128,8 @@ function HmrPromptApp(props: {
 		}
 
 		// Scope switch (roots/include/exclude)
-		if (input.toLowerCase() === 's' && !key.ctrl && !key.meta) {
-			if (tab === 'paths') {
-				setScope((p) => (p === 'profile' ? 'defaults' : 'profile'))
-			}
+		if (input.toLowerCase() === 's' && !key.ctrl && !key.meta && tab === 'paths') {
+			setScope((p) => (p === 'profile' ? 'defaults' : 'profile'))
 		}
 
 		// Roots mode toggle
@@ -1180,9 +1173,9 @@ function HmrPromptApp(props: {
 			profiles[activeProfile] = {
 				...profile,
 				enabled: next.enabled,
-				...(next.builtin.length ? { builtin: next.builtin } : {}),
+				...(next.builtin.length > 0 ? { builtin: next.builtin } : {}),
 			}
-			if (!next.builtin.length) delete profiles[activeProfile].builtin
+			if (next.builtin.length === 0) delete profiles[activeProfile].builtin
 			return { ...prev, profiles }
 		})
 		setDirty(true)
@@ -1203,9 +1196,9 @@ function HmrPromptApp(props: {
 
 	function setListForScope(target: 'roots' | 'include' | 'exclude', next: string[]) {
 		const normalized = uniqPreserveOrder(next.map((s) => s.trim()).filter(Boolean))
-		if (target === 'roots' && normalized.length) {
-			if (scope === 'defaults') rememberedRootsRef.current.defaults = normalized.slice()
-			else rememberedRootsRef.current.profile = normalized.slice()
+		if (target === 'roots' && normalized.length > 0) {
+			if (scope === 'defaults') rememberedRootsRef.current.defaults = [...normalized]
+			else rememberedRootsRef.current.profile = [...normalized]
 		}
 		setCfg((prev) => {
 			const profiles = { ...prev.profiles }
@@ -1213,14 +1206,14 @@ function HmrPromptApp(props: {
 			if (scope === 'defaults') {
 				const defaults = { ...prev.defaults }
 				if (target === 'include') {
-					if (normalized.length) defaults.include = normalized
+					if (normalized.length > 0) defaults.include = normalized
 					else delete defaults.include
 				} else if (target === 'exclude') {
-					if (normalized.length) defaults.exclude = normalized
+					if (normalized.length > 0) defaults.exclude = normalized
 					else delete defaults.exclude
 				} else {
 					// roots list only when custom; toggle handled separately
-					defaults.roots = normalized.length ? normalized : 'auto'
+					defaults.roots = normalized.length > 0 ? normalized : 'auto'
 				}
 				return { ...prev, defaults, profiles }
 			}
@@ -1228,17 +1221,17 @@ function HmrPromptApp(props: {
 			if (target === 'include') {
 				profiles[activeProfile] = {
 					...profile,
-					...(normalized.length ? { include: normalized } : {}),
+					...(normalized.length > 0 ? { include: normalized } : {}),
 				}
-				if (!normalized.length) delete profiles[activeProfile].include
+				if (normalized.length === 0) delete profiles[activeProfile].include
 			} else if (target === 'exclude') {
 				profiles[activeProfile] = {
 					...profile,
-					...(normalized.length ? { exclude: normalized } : {}),
+					...(normalized.length > 0 ? { exclude: normalized } : {}),
 				}
-				if (!normalized.length) delete profiles[activeProfile].exclude
+				if (normalized.length === 0) delete profiles[activeProfile].exclude
 			} else {
-				profiles[activeProfile] = { ...profile, roots: normalized.length ? normalized : 'auto' }
+				profiles[activeProfile] = { ...profile, roots: normalized.length > 0 ? normalized : 'auto' }
 			}
 			return { ...prev, profiles }
 		})
@@ -1256,7 +1249,7 @@ function HmrPromptApp(props: {
 				scope === 'defaults'
 					? rememberedRootsRef.current.defaults
 					: rememberedRootsRef.current.profile
-			if (remembered.length) {
+			if (remembered.length > 0) {
 				setListForScope('roots', remembered)
 				setToast('Roots: custom')
 				return
@@ -1266,9 +1259,9 @@ function HmrPromptApp(props: {
 		}
 
 		const list = current
-		if (list.length) {
-			if (scope === 'defaults') rememberedRootsRef.current.defaults = list.slice()
-			else rememberedRootsRef.current.profile = list.slice()
+		if (list.length > 0) {
+			if (scope === 'defaults') rememberedRootsRef.current.defaults = [...list]
+			else rememberedRootsRef.current.profile = [...list]
 		}
 		setListForScope('roots', [])
 		setToast('Roots: auto')
@@ -1282,7 +1275,7 @@ function HmrPromptApp(props: {
 			scope === 'defaults'
 				? rememberedRootsRef.current.defaults
 				: rememberedRootsRef.current.profile
-		return remembered.length ? remembered : []
+		return remembered.length > 0 ? remembered : []
 	}
 
 	// Auto-open flows (when invoked via `pluxel hmr enabled/builtin` etc).
@@ -1320,19 +1313,20 @@ function HmrPromptApp(props: {
 		if (snapshot.status === 'error') return snapshot.errors
 		if (snapshot.status !== 'ok') return ['(no data yet)']
 		const s = snapshot.snapshot
-		const lines: string[] = []
-		lines.push(`profile: ${s.activeProfile}`)
-		lines.push(`enabled: ${s.enabled.length} • builtin: ${s.builtinPackages.length}`)
-		lines.push(`entries: ${s.enabledEntries.length} (+include ${s.includedEntries.length})`)
-		lines.push(`watch roots: ${s.watchRoots.length}`)
-		lines.push(`discovered: ${s.discovered.length}${doctorDetails ? '' : ' (d details)'}`)
-		lines.push('')
-		if (snapshot.warnings.length) {
+		const lines: string[] = [
+			`profile: ${s.activeProfile}`,
+			`enabled: ${s.enabled.length} • builtin: ${s.builtinPackages.length}`,
+			`entries: ${s.enabledEntries.length} (+include ${s.includedEntries.length})`,
+			`watch roots: ${s.watchRoots.length}`,
+			`discovered: ${s.discovered.length}${doctorDetails ? '' : ' (d details)'}`,
+			'',
+		]
+		if (snapshot.warnings.length > 0) {
 			lines.push('Warnings:')
 			for (const w of snapshot.warnings) lines.push(w)
 			lines.push('')
 		}
-		if (doctorDetails && s.discovered.length) {
+		if (doctorDetails && s.discovered.length > 0) {
 			lines.push('Discovered:')
 			for (const p of s.discovered.slice(0, 200)) lines.push(`${p.name} -> ${p.entry}`)
 			if (s.discovered.length > 200) lines.push(`…and ${s.discovered.length - 200} more`)
@@ -1505,7 +1499,7 @@ function HmrPromptApp(props: {
 	}
 
 	const profilePos = Math.max(profileNames.indexOf(activeProfile), 0) + 1
-	const profileBadge = profileNames.length
+	const profileBadge = profileNames.length > 0
 		? `${activeProfile} (${profilePos}/${profileNames.length})`
 		: activeProfile
 	const enabledCount = (profile.enabled ?? []).length
@@ -1629,7 +1623,7 @@ function HmrPromptApp(props: {
 								onTypingChange={setTyping}
 								onChange={(next) => {
 									setListForScope('roots', next)
-									setToast(next.length ? 'Roots: custom' : 'Roots: auto')
+									setToast(next.length > 0 ? 'Roots: custom' : 'Roots: auto')
 								}}
 							/>
 						) : pathsFocus === 'include' ? (
@@ -1814,7 +1808,6 @@ function ProfilesOverlay(props: {
 
 		if (key.return) {
 			props.onClose()
-			return
 		}
 	})
 

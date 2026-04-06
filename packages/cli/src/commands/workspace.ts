@@ -252,8 +252,8 @@ async function handleInteractive(root: string, log: (...args: unknown[]) => void
 
 	const changed = result.added.length > 0 || result.removed.length > 0
 	const summary = [
-		result.added.length ? `enabled: ${result.added.join(', ')}` : '',
-		result.removed.length ? `disabled: ${result.removed.join(', ')}` : '',
+		result.added.length > 0 ? `enabled: ${result.added.join(', ')}` : '',
+		result.removed.length > 0 ? `disabled: ${result.removed.join(', ')}` : '',
 	]
 		.filter(Boolean)
 		.join('\n')
@@ -270,12 +270,12 @@ async function handleList(root: string, log: (...args: unknown[]) => void) {
 	const sources: string[] = []
 	if (state.manifest) sources.push(state.manifest.path)
 	if (state.pnpm) sources.push(state.pnpm.path)
-	log(`config files: ${sources.length ? sources.join(', ') : 'none (using defaults)'}`)
+	log(`config files: ${sources.length > 0 ? sources.join(', ') : 'none (using defaults)'}`)
 	log('patterns:')
 	for (const p of state.effectivePatterns) {
 		log(`  - ${p}`)
 	}
-	if (state.info.packageDirs.length) {
+	if (state.info.packageDirs.length > 0) {
 		log('packages:')
 		for (const dir of state.info.packageDirs) {
 			log(`  • ${relative(root, dir)}`)

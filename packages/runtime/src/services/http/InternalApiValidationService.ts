@@ -66,7 +66,7 @@ export class InternalApiValidationService {
 
 	register(validate: InternalApiValidator): () => void {
 		if (typeof validate !== 'function') {
-			throw new Error('[InternalApiValidationService] register(validate) is required.')
+			throw new TypeError('[InternalApiValidationService] register(validate) is required.')
 		}
 
 		const pluginId = this.ctx.pluginInfo?.id ?? 'unknown'
@@ -85,7 +85,7 @@ export class InternalApiValidationService {
 	}
 
 	async check(input: InternalApiValidationContext): Promise<InternalApiValidationResult> {
-		if (!this.validators.size) return { allow: true }
+		if (this.validators.size === 0) return { allow: true }
 
 		for (const v of this.validators) {
 			try {

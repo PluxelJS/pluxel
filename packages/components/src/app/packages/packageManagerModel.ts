@@ -190,7 +190,7 @@ export function summarizeList(
 	suffix: string,
 	delimiter = '、',
 ) {
-	if (!items.length) return ''
+	if (items.length === 0) return ''
 	if (items.length <= peekCount) {
 		return items.join(delimiter)
 	}
@@ -225,8 +225,7 @@ export function filterPackageRows(rows: PackageRow[], term: string): PackageRow[
 }
 
 export function toIssueDataList(issues: Array<Maybe<PackageLoadIssue>>): IssueData[] {
-	return [...issues]
-		.filter((issue): issue is PackageLoadIssue => Boolean(issue))
+	return ([...issues].filter(Boolean) as PackageLoadIssue[])
 		.map((issue) => ({
 			name: issue.spec?.name ?? '未知包',
 			version: issue.spec?.version ?? null,

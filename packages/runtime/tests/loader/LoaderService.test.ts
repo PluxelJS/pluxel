@@ -50,7 +50,7 @@ function createHmrCtx(
 		ensureValidated() {
 			return Promise.resolve({})
 		},
-		patchConfig: () => undefined,
+		patchConfig: () => {},
 		getExtra(key: string) {
 			return extra[key]
 		},
@@ -75,7 +75,7 @@ function createHmrCtx(
 			typeof coreAny.emit === 'function'
 				? (coreAny.emit as (...args: unknown[]) => unknown).bind(core)
 				: undefined,
-		logger: { info: () => undefined, warn: () => undefined, error: () => undefined },
+		logger: { info: () => {}, warn: () => {}, error: () => {} },
 		configService,
 	} as unknown as Context
 }

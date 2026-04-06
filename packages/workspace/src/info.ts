@@ -97,7 +97,7 @@ export function parsePnpmWorkspace(contents: string): string[] {
 	let indent = 0
 
 	for (const raw of lines) {
-		const line = raw.replace(/\t/g, '  ')
+		const line = raw.replaceAll('	', '  ')
 		if (!inPk) {
 			const match = line.match(/^(\s*)packages\s*:\s*$/)
 			if (match) {

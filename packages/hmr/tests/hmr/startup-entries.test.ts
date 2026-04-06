@@ -3,7 +3,7 @@ import { createFixture } from '@pluxel/test/fixtures'
 import { join } from 'pathe'
 import { HMRService } from '@pluxel/hmr'
 
-const noop = () => undefined
+const noop = () => {}
 
 function createNoopLogger() {
 	const self: any = {

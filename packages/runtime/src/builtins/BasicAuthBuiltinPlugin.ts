@@ -82,7 +82,7 @@ export class BasicAuthBuiltinPlugin extends BasePlugin {
 	private readonly tokenTtlMs = 7 * 24 * 60 * 60 * 1000
 	private readonly secret = b64url(randomBytes(32))
 
-	override async init() {
+	override init() {
 		const pluginId = this.ctx.pluginInfo?.id ?? 'BasicAuth'
 		const cfg0 = this.auth ?? {}
 

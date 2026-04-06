@@ -20,11 +20,11 @@ function randomHex(bytes: number): string {
 
 function b64urlEncode(bytes: Uint8Array): string {
 	const b64 = Buffer.from(bytes).toString('base64')
-	return b64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '')
+	return b64.replaceAll('+', '-').replaceAll('/', '_').replaceAll(/=+$/g, '')
 }
 
 function b64urlDecode(input: string): Uint8Array {
-	const b64 = input.replace(/-/g, '+').replace(/_/g, '/')
+	const b64 = input.replaceAll('-', '+').replaceAll('_', '/')
 	const pad = b64.length % 4 === 0 ? '' : '='.repeat(4 - (b64.length % 4))
 	return new Uint8Array(Buffer.from(b64 + pad, 'base64'))
 }

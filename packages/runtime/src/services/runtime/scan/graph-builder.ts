@@ -92,7 +92,7 @@ export async function buildScanGraph(
 
 			const rootPackages: PackageNode[] = []
 			await Promise.all(
-				Array.from(packageDirs).map((pkgDir) =>
+				[...packageDirs].map((pkgDir) =>
 					limit(async () => {
 						const node = await processPackageDir({
 							pkgDir,
@@ -172,8 +172,8 @@ export async function buildScanGraph(
 		options,
 		roots,
 		packages: packages.sort(byPackageDir),
-		entries: Array.from(entriesSet).map(normalize),
-		fallbackEntries: Array.from(fallbackSet).map(normalize),
+		entries: [...entriesSet].map(normalize),
+		fallbackEntries: [...fallbackSet].map(normalize),
 		diagnostics,
 		stats,
 	}
@@ -199,7 +199,7 @@ async function processPackageDir(params: {
 	if (
 		name &&
 		focusSet &&
-		focusSet.size &&
+		focusSet.size > 0 &&
 		!focusSet.has(name.toLowerCase()) &&
 		!focusSet.has(normalizedDir.toLowerCase())
 	) {
@@ -322,7 +322,7 @@ function relativeName(root: string, dir: string) {
 	const rel = normalize(dir)
 		.slice(normalize(root).length)
 		.replace(/^[/\\]/, '')
-		.replace(/\\/g, '/')
+		.replaceAll('\\', '/')
 	return rel || 'root'
 }
 

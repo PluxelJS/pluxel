@@ -40,11 +40,11 @@ const sameDir = (a: string, b: string) => {
 		return a.slice(0, ai) === b.slice(0, bi)
 	}
 
-	const na = a.includes('\\') ? a.replace(/\\/g, '/') : a
-	const nb = b.includes('\\') ? b.replace(/\\/g, '/') : b
+	const na = a.includes('\\') ? a.replaceAll('\\', '/') : a
+	const nb = b.includes('\\') ? b.replaceAll('\\', '/') : b
 	const nai = na.lastIndexOf('/')
 	const nbi = nb.lastIndexOf('/')
-	if (nai < 0 || nbi < 0) return false
+	if (nai === -1 || nbi === -1) return false
 	return na.slice(0, nai) === nb.slice(0, nbi)
 }
 export const LIFECYCLE_STATES = ['running', 'stopped', 'disabled'] as const

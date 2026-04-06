@@ -234,10 +234,10 @@ export async function buildHmrOperationalReport(params: {
 	if (pluginTotals.loaded > 0 && loadedByRoot.every((n) => n === 0) && stats.unresolved > 0) {
 		mode = 'off'
 		reasons.unshift('all-unresolved')
-	} else if (reasons.length) {
+	} else if (reasons.length > 0) {
 		mode = 'partial'
 	}
-	if (!reasons.length) reasons.push('ok')
+	if (reasons.length === 0) reasons.push('ok')
 
 	const pluginsByRoot: PluginsByRootInfo =
 		mode === 'byRoot'

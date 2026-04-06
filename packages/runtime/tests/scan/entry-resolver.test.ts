@@ -43,7 +43,7 @@ describe('EntryResolver preferHmrExports', () => {
 		const result = await resolver.resolve(fixture.path, options)
 		expect(result.ok).toBe(true)
 		if (result.ok) {
-			expect(result.entry.replace(/\\/g, '/').endsWith('/src/wretch.ts')).toBe(true)
+			expect(result.entry.replaceAll('\\', '/').endsWith('/src/wretch.ts')).toBe(true)
 		}
 	})
 
@@ -54,7 +54,7 @@ describe('EntryResolver preferHmrExports', () => {
 		const result = await resolver.resolve(fixture.path, options)
 		expect(result.ok).toBe(true)
 		if (result.ok) {
-			expect(result.entry.replace(/\\/g, '/').endsWith('/dist/wretch.mjs')).toBe(true)
+			expect(result.entry.replaceAll('\\', '/').endsWith('/dist/wretch.mjs')).toBe(true)
 		}
 	})
 })

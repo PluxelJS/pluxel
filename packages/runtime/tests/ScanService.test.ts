@@ -38,7 +38,7 @@ function createService(
 	root: string,
 	overrides: Partial<ConstructorParameters<typeof ScanService>[1]> = {},
 ) {
-	return new ScanService({ emit: () => undefined } as unknown as Context, {
+	return new ScanService({ emit: () => {} } as unknown as Context, {
 		roots: root,
 		installedBase: root,
 		...overrides,
@@ -46,7 +46,7 @@ function createService(
 }
 
 function asPosix(input: string) {
-	return input.replace(/\\+/g, '/')
+	return input.replaceAll(/\\+/g, '/')
 }
 
 describe('ScanService', () => {

@@ -42,7 +42,7 @@ export function neededSignalDbCollectionsForValue(value: unknown): string[] {
 	const visit = (input: unknown) => {
 		if (Array.isArray(input)) {
 			for (const item of input) visit(item)
-			return
+			return undefined
 		}
 		if (!input || typeof input !== 'object') return
 		const obj = input as Record<string, unknown>

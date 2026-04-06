@@ -340,7 +340,7 @@ export const logRoutes = (app: AnyElysiaApp) =>
 								lines: RuntimeLogLine[],
 								opts: { alreadyFiltered?: boolean } = {},
 							) => {
-								if (!lines.length) return
+								if (lines.length === 0) return
 								const fromN = parseSeq(fromSeq)
 								const nextN = parseSeq(nextSeq)
 								if (fromN === null || nextN === null) return
@@ -355,13 +355,13 @@ export const logRoutes = (app: AnyElysiaApp) =>
 									sliced = lines.slice(startIdx)
 									effectiveFromN = cursorN
 								}
-								if (!sliced.length) return
+								if (sliced.length === 0) return
 
 								let filtered = sliced
 								if (hasFilter && opts.alreadyFiltered !== true) {
 									filtered = sliced.filter((line) => matchesLogFilterCompiled(line, compiledFilter))
 								}
-								if (!filtered.length) return
+								if (filtered.length === 0) return
 
 								if (pendingLines + filtered.length > maxPendingLines) {
 									overflowToGap()

@@ -92,7 +92,7 @@ export class SignalDbService {
 
 	constructor(
 		public ctx: Context,
-		_cfg: unknown = undefined,
+		_cfg: unknown,
 	) {}
 
 	collection<T extends SignalDbItem>(
@@ -305,7 +305,7 @@ class ManagedSignalDbCollection<T extends SignalDbItem> {
 		if (collection.find().count() === 0) {
 			const seeded =
 				typeof this.options.initial === 'function' ? this.options.initial() : this.options.initial
-			if (Array.isArray(seeded) && seeded.length) {
+			if (Array.isArray(seeded) && seeded.length > 0) {
 				collection.insertMany(seeded)
 				this.bumpVersion()
 			}
@@ -495,7 +495,7 @@ class ManagedSignalDbCollection<T extends SignalDbItem> {
 	reset(items: T[]) {
 		const collection = this.getCollection()
 		collection.removeMany({})
-		if (items.length) collection.insertMany(items.map(cloneItem))
+		if (items.length > 0) collection.insertMany(items.map(cloneItem))
 		const version = this.bumpVersion()
 		const event: SignalDbSyncEvent<T> = {
 			type: 'reset',
@@ -560,7 +560,7 @@ class ManagedSignalDbCollection<T extends SignalDbItem> {
 		const addedIds = addedItems.map((item) => item.id)
 		const modifiedIds = modifiedItems.map((item) => item.id)
 
-		if (!addedIds.length && !modifiedIds.length && !removedIds.length) return
+		if (addedIds.length === 0 && modifiedIds.length === 0 && removedIds.length === 0) return
 
 		const nextAddedItems = new Map(addedItems.map((item) => [item.id, item]))
 		const nextModifiedItems = new Map(modifiedItems.map((item) => [item.id, item]))
@@ -580,7 +580,7 @@ class ManagedSignalDbCollection<T extends SignalDbItem> {
 		const version = this.bumpVersion()
 		const added = resolveItemsByIds(collection, addedIds)
 		const modified = resolveItemsByIds(collection, modifiedIds)
-		if (added.length) {
+		if (added.length > 0) {
 			const event: SignalDbSyncEvent<T> = {
 				type: 'insert',
 				collection: this.options.name,
@@ -590,7 +590,7 @@ class ManagedSignalDbCollection<T extends SignalDbItem> {
 			this.owner.broadcast(this.options.pluginName, 'insert', event)
 			this.emit(event)
 		}
-		if (modified.length) {
+		if (modified.length > 0) {
 			const event: SignalDbSyncEvent<T> = {
 				type: 'update',
 				collection: this.options.name,
@@ -600,7 +600,7 @@ class ManagedSignalDbCollection<T extends SignalDbItem> {
 			this.owner.broadcast(this.options.pluginName, 'update', event)
 			this.emit(event)
 		}
-		if (removedIds.length) {
+		if (removedIds.length > 0) {
 			const event: SignalDbSyncEvent<T> = {
 				type: 'remove',
 				collection: this.options.name,
@@ -729,7 +729,7 @@ function resolveItemsByIds<T extends SignalDbItem>(
 	collection: Collection<T, string, T>,
 	ids: readonly string[],
 ): T[] {
-	const uniqueIds = Array.from(new Set(ids.filter((id) => typeof id === 'string' && id.length > 0)))
+	const uniqueIds = [...new Set(ids.filter((id) => typeof id === 'string' && id.length > 0))]
 	return uniqueIds
 		.map((id) => collection.findOne({ id } as any))
 		.filter(Boolean)

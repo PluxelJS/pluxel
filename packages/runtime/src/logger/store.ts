@@ -267,7 +267,7 @@ export class RuntimeLogStore {
 		this.headSeq = 1n
 		this.tailSeq = 0n
 		this.nextSeq = 1n
-		this.chunks.fill(undefined)
+		this.chunks.fill()
 		const meta = this.meta()
 		this.events.emit(RESET_EVENT, {
 			type: 'reset',
@@ -283,7 +283,7 @@ export class RuntimeLogStore {
 	}
 
 	append(inputs: Array<Omit<RuntimeLogLine, 'epoch' | 'seq' | 'streamId'>>): RuntimeLogStoreAppend {
-		if (!inputs.length) {
+		if (inputs.length === 0) {
 			return {
 				type: 'append',
 				streamId: this.streamId,
@@ -610,7 +610,7 @@ class RuntimeLogStoreRegistry {
 	}
 
 	list(): RuntimeLogStore[] {
-		return Array.from(this.stores.values())
+		return [...this.stores.values()]
 	}
 
 	getOrCreate(streamId: string, opts: Partial<RuntimeLogStoreOptions> = {}): RuntimeLogStore {

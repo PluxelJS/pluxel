@@ -165,7 +165,7 @@ export class LoaderService {
 		plugins: readonly BuiltinPluginSpec[],
 		options: PreloadBuiltinsOptions = {},
 	): Promise<string[]> {
-		if (!plugins.length) return []
+		if (plugins.length === 0) return []
 		const defaultModuleId = options.moduleId ?? BUILTIN_MODULE_ID_DEFAULT
 		const shouldCommit = options.commit !== false
 		const strict = options.strict ?? false
@@ -366,7 +366,7 @@ export class LoaderService {
 	}
 
 	// 先停旧运行态，再把"已执行的新模块"导出解析并装入。
-	async replaceModule(moduleId: string, mod: Record<string, unknown>): Promise<boolean> {
+	replaceModule(moduleId: string, mod: Record<string, unknown>): Promise<boolean> {
 		return this.moduleReplacer.replaceModule(moduleId, mod)
 	}
 

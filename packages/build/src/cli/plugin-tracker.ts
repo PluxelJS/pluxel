@@ -43,7 +43,7 @@ export function createOptionalDependencyHook(options: PluginTrackerOptions): Bui
 
 function serializePluginSet(plugins: Map<string, TrackedPluginUsage>) {
 	return JSON.stringify(
-		Array.from(plugins.entries())
+		[...plugins.entries()]
 			.map(([name, usage]) => [name, usage.hasStaticImport, usage.hasDynamicImport] as const)
 			.sort(([nameA], [nameB]) => nameA.localeCompare(nameB)),
 	)

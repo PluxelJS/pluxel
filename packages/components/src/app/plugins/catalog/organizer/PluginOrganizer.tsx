@@ -397,7 +397,7 @@ export function PluginOrganizer({
 			const orderedPluginIds = groupEditor?.pluginIds?.length
 				? sortPluginIdsByOrder(groupEditor.pluginIds, groupsRef.current, ungroupedRef.current)
 				: []
-			const normalized = orderedPluginIds.length
+			const normalized = orderedPluginIds.length > 0
 				? movePluginIdsToTarget({
 						groups: groupsRef.current,
 						ungroupedOrder: ungroupedRef.current,
@@ -676,7 +676,7 @@ export function PluginOrganizer({
 						<DroppableContainer
 							id={cid('ROOT_UNGROUPED')}
 							disabled={isFiltering || locked}
-							minDropHeight={visibleUngrouped.length ? 0 : dh.rowH}
+							minDropHeight={visibleUngrouped.length > 0 ? 0 : dh.rowH}
 							style={{
 								flex: 1,
 								minHeight: 0,

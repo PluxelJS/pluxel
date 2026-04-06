@@ -80,7 +80,7 @@ export function parseHmrConfigV1Jsonc(
 		allowTrailingComma: true,
 		disallowComments: false,
 	})
-	if (errors.length) {
+	if (errors.length > 0) {
 		const summary = errors
 			.map((e) => `${printParseErrorCode(e.error)} at offset ${e.offset}`)
 			.join(', ')
@@ -125,7 +125,7 @@ export function backupAndRewriteHmrConfigV1(
 	next: PluxelHmrConfigV1,
 	fs: HmrWorkspaceFs = nodeHmrWorkspaceFs,
 ) {
-	const ts = new Date().toISOString().replace(/[:.]/g, '-')
+	const ts = new Date().toISOString().replaceAll(/[:.]/g, '-')
 	const backupPath = `${configPath}.bak.${ts}`
 	const raw = fs.readFileSync(configPath, 'utf8')
 	fs.writeFileSync(backupPath, raw, 'utf8')
@@ -162,7 +162,7 @@ function assertNoUnknownKeys(
 ) {
 	const allow = new Set(allowed)
 	const unknown = Object.keys(obj).filter((k) => !allow.has(k))
-	if (unknown.length)
+	if (unknown.length > 0)
 		throw new Error(`[hmr-config] Unknown field(s) in ${ctx}: ${unknown.join(', ')}`)
 }
 

@@ -104,7 +104,7 @@ function normalizeEntries(entries: WorkspaceCandidate[]): WorkspaceCandidate[] {
 function normalizeCandidatePath(input: string | undefined) {
 	if (!input) return ''
 	return input
-		.replace(/\\/g, '/')
+		.replaceAll('\\', '/')
 		.replace(/^\.\/+/, '')
 		.replace(/\/+$/, '')
 }

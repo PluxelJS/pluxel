@@ -30,11 +30,12 @@ export const buildContainers = (
 	groups: GroupConfig[],
 	ungroupedIds: string[],
 ): OrganizerContainers => {
-	const containerToItems = new Map<string, string[]>()
-	containerToItems.set(
-		'ROOT_UNGROUPED',
-		ungroupedIds.filter((id) => !groups.some((group) => group.pluginIds.includes(id))),
-	)
+	const containerToItems = new Map<string, string[]>([
+		[
+			'ROOT_UNGROUPED',
+			ungroupedIds.filter((id) => !groups.some((group) => group.pluginIds.includes(id))),
+		],
+	])
 	for (const group of groups) containerToItems.set(group.groupId, [...group.pluginIds])
 
 	const itemToContainer = new Map<string, string>()

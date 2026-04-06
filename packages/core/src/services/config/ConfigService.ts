@@ -53,7 +53,7 @@ export class ConfigService {
 	private configRevByPlugin = new Map<string, number>()
 	private extra: Record<string, unknown> = Object.create(null)
 
-	constructor(ctx: PluxelContext, _config: unknown = undefined) {
+	constructor(ctx: PluxelContext, _config: unknown) {
 		this.ctx = ctx
 	}
 

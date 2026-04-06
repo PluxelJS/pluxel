@@ -16,7 +16,7 @@ function isPlainObject(value: unknown): value is Record<PropertyKey, unknown> {
 }
 
 function mergeNode(override: unknown, fallback: unknown): unknown {
-	if (override == null) return fallback
+	if (override === null || override === undefined) return fallback
 	if (Array.isArray(override)) return override
 
 	if (isPlainObject(override) && isPlainObject(fallback)) {
@@ -33,7 +33,7 @@ function mergeNode(override: unknown, fallback: unknown): unknown {
 		// Apply overrides (deep merge for plain objects; arrays replace).
 		for (const key of Reflect.ownKeys(override)) {
 			const v = (override as Record<PropertyKey, unknown>)[key]
-			if (v == null) continue
+			if (v === null || v === undefined) continue
 			out[key] = mergeNode(v, out[key])
 		}
 

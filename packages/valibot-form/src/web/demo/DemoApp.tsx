@@ -56,7 +56,7 @@ export function DemoApp() {
 	)
 
 	useEffect(() => {
-		if (!orderedCases.length) return
+		if (orderedCases.length === 0) return
 		if (!orderedCases.some((item) => item.id === activeId)) {
 			setActiveId(orderedCases[0].id)
 		}

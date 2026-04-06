@@ -399,7 +399,7 @@ function ArrayFieldMain(props: RendererProps) {
 			compactKind === 'picklist') &&
 		!(compactKind === 'string' && isLongText)
 	const inlineAddEnabled = isCompactList && canAdd && !isLocked
-	const [draftValue, setDraftValue] = useState<unknown>(undefined)
+	const [draftValue, setDraftValue] = useState<unknown>()
 	const draftFocusRef = useRef<HTMLInputElement | null>(null)
 	const draftPicklistRef = useRef<HTMLDivElement | null>(null)
 
@@ -935,7 +935,7 @@ function ArrayFieldMain(props: RendererProps) {
 		)
 
 	const sortableBlockCards =
-		reorderEnabled && blockCards.length
+		reorderEnabled && blockCards.length > 0
 			? blockCards.map((item) => (
 					<SortableCard key={item.id} id={item.id} disabled={!reorderEnabled}>
 						{item.element}
@@ -944,7 +944,7 @@ function ArrayFieldMain(props: RendererProps) {
 			: blockCards.map((item) => item.element)
 
 	const sortableInlineCards =
-		reorderEnabled && inlineCards.length
+		reorderEnabled && inlineCards.length > 0
 			? inlineCards.map((item) => (
 					<SortableCard key={item.id} id={item.id} disabled={!reorderEnabled}>
 						{item.element}
@@ -991,12 +991,12 @@ function ArrayFieldMain(props: RendererProps) {
 		) : (
 			wrapSortable(
 				<>
-					{sortableInlineCards.length ? (
+					{sortableInlineCards.length > 0 ? (
 						<Group gap="md" wrap="wrap">
 							{sortableInlineCards}
 						</Group>
 					) : null}
-					{sortableBlockCards.length ? <Stack gap="md">{sortableBlockCards}</Stack> : null}
+					{sortableBlockCards.length > 0 ? <Stack gap="md">{sortableBlockCards}</Stack> : null}
 				</>,
 			)
 		)

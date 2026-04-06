@@ -73,15 +73,15 @@ function colorizeHmrAttribution(text: string): string {
 	const blue = '\u001B[34m'
 
 	// ms column
-	let out = text.replace(/\b(\d+(?:\.\d+)?)ms\b/g, `${cyan}$1ms${reset}`)
+	let out = text.replaceAll(/\b(\d+(?:\.\d+)?)ms\b/g, `${cyan}$1ms${reset}`)
 
 	// tags
-	out = out.replace(/\btarget\b/g, `${yellow}target${reset}`)
-	out = out.replace(/\bchanged\b/g, `${magenta}changed${reset}`)
-	out = out.replace(/\(none\)/g, `${dim}(none)${reset}`)
+	out = out.replaceAll(/\btarget\b/g, `${yellow}target${reset}`)
+	out = out.replaceAll(/\bchanged\b/g, `${magenta}changed${reset}`)
+	out = out.replaceAll('(none)', `${dim}(none)${reset}`)
 
 	// paths (keep this conservative to avoid coloring unrelated words)
-	out = out.replace(
+	out = out.replaceAll(
 		/(^|\s)([A-Za-z0-9_./-]+?\.(?:ts|tsx|js|jsx|mjs|cjs|mts|cts))(?=$|\s|[:)])/g,
 		(_m, p1: string, p2: string) => `${p1}${blue}${p2}${reset}`,
 	)
@@ -107,12 +107,12 @@ function colorizeHmrUpdateSummary(text: string): string {
 	let out = text.slice(start)
 
 	// Tag / epoch / status
-	out = out.replace(/\[HMR\]/g, `${magenta}[HMR]${reset}`)
-	out = out.replace(/#(\d+)/g, `${cyan}#$1${reset}`)
-	out = out.replace(/\bok\b/g, `${green}ok${reset}`)
-	out = out.replace(/\bfail\b/g, `${red}fail${reset}`)
-	out = out.replace(/\bsuccess\b/g, `${green}success${reset}`)
-	out = out.replace(/\bfailed\b/g, `${red}failed${reset}`)
+	out = out.replaceAll('[HMR]', `${magenta}[HMR]${reset}`)
+	out = out.replaceAll(/#(\d+)/g, `${cyan}#$1${reset}`)
+	out = out.replaceAll(/\bok\b/g, `${green}ok${reset}`)
+	out = out.replaceAll(/\bfail\b/g, `${red}fail${reset}`)
+	out = out.replaceAll(/\bsuccess\b/g, `${green}success${reset}`)
+	out = out.replaceAll(/\bfailed\b/g, `${red}failed${reset}`)
 
 	// Key/value pairs (keep keys subtle; values stay default).
 	const keys = [
@@ -137,25 +137,25 @@ function colorizeHmrUpdateSummary(text: string): string {
 		'changedPreview(3)',
 	]
 	for (const key of keys) {
-		const escaped = key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-		out = out.replace(new RegExp(`(^|\\s)(${escaped})(=)`, 'g'), (_m, p1: string, k: string) => {
+		const escaped = key.replaceAll(/[.*+?^${}()|[\]\\]/g, '\\$&')
+		out = out.replaceAll(new RegExp(`(^|\\s)(${escaped})(=)`, 'g'), (_m, p1: string, k: string) => {
 			return `${p1}${dim}${k}${reset}=`
 		})
 	}
 
 	// Make commit errors obvious.
-	out = out.replace(/(^|\s)(commitError)(=)/g, (_m, p1: string, k: string) => {
+	out = out.replaceAll(/(^|\s)(commitError)(=)/g, (_m, p1: string, k: string) => {
 		return `${p1}${red}${k}${reset}=`
 	})
 
 	// Durations + counts
-	out = out.replace(/(\d+(?:\.\d+)?)ms/g, `${cyan}$1ms${reset}`)
-	out = out.replace(/\(\+(\d+) more\)/g, `${dim}(+$1 more)${reset}`)
-	out = out.replace(/\b\(none\)\b/g, `${dim}(none)${reset}`)
-	out = out.replace(/\b\(omitted\)\b/g, `${dim}(omitted)${reset}`)
+	out = out.replaceAll(/(\d+(?:\.\d+)?)ms/g, `${cyan}$1ms${reset}`)
+	out = out.replaceAll(/\(\+(\d+) more\)/g, `${dim}(+$1 more)${reset}`)
+	out = out.replaceAll(/\b\(none\)\b/g, `${dim}(none)${reset}`)
+	out = out.replaceAll(/\b\(omitted\)\b/g, `${dim}(omitted)${reset}`)
 
 	// Paths (conservative; only common source ext)
-	out = out.replace(
+	out = out.replaceAll(
 		/(^|\s)([A-Za-z0-9_./-]+?\.(?:ts|tsx|js|jsx|mjs|cjs|mts|cts|json|yaml|yml))(?=$|\s|[:)])/g,
 		(_m, p1: string, p2: string) => `${p1}${blue}${p2}${reset}`,
 	)
@@ -164,7 +164,7 @@ function colorizeHmrUpdateSummary(text: string): string {
 }
 
 function stripTrailingNewlines(text: string): string {
-	return text.replace(/\n+$/g, '')
+	return text.replaceAll(/\n+$/g, '')
 }
 
 function toPlainValue(value: unknown, depth = 3, seen = new WeakSet<object>()): unknown {
@@ -364,8 +364,7 @@ function formatHmrHotspots(value: unknown, colorsOn: boolean): string[] | undefi
 	if (!Array.isArray(value) || value.length === 0) return undefined
 
 	const blue = '\u001B[34m'
-	const lines: string[] = []
-	lines.push('    hotspots:')
+	const lines: string[] = ['    hotspots:']
 	for (const item of value) {
 		if (!item || typeof item !== 'object') continue
 		const id =
@@ -399,7 +398,7 @@ function formatHmrWarmupDetails(record: LogRecord, colorsOn: boolean): string[] 
 		const v = colorizeValue(String(files), colorsOn, amber)
 		summaryParts.push(`files=${v}`)
 	}
-	if (summaryParts.length) lines.push(`    ${summaryParts.join(' ')}`)
+	if (summaryParts.length > 0) lines.push(`    ${summaryParts.join(' ')}`)
 
 	const timeParts: string[] = []
 	if (scanMs) timeParts.push(`scan=${scanMs}`)
@@ -407,12 +406,12 @@ function formatHmrWarmupDetails(record: LogRecord, colorsOn: boolean): string[] 
 	if (warmupMs) timeParts.push(`warmup=${warmupMs}`)
 	if (commitMs) timeParts.push(`commit=${commitMs}`)
 	if (totalMs) timeParts.push(`total=${totalMs}`)
-	if (timeParts.length) lines.push(`    time: ${timeParts.join(' ')}`)
+	if (timeParts.length > 0) lines.push(`    time: ${timeParts.join(' ')}`)
 
 	const hotspots = formatHmrHotspots(props.hotspots, colorsOn)
 	if (hotspots?.length) lines.push(...hotspots)
 
-	return lines.length ? lines : undefined
+	return lines.length > 0 ? lines : undefined
 }
 
 function formatHmrUpdatedDetails(record: LogRecord, colorsOn: boolean): string[] | undefined {
@@ -485,26 +484,26 @@ function formatHmrUpdatedDetails(record: LogRecord, colorsOn: boolean): string[]
 	if (affected !== undefined) summaryParts.push(`affected=${fmtCount(affected)}`)
 	if (activeServices !== undefined) summaryParts.push(`services=${fmtCount(activeServices)}`)
 	if (fallbackRoots !== undefined) summaryParts.push(`roots=${fmtCount(fallbackRoots)}`)
-	if (summaryParts.length) lines.push(`    ${summaryParts.join(' ')}`)
+	if (summaryParts.length > 0) lines.push(`    ${summaryParts.join(' ')}`)
 
 	const timeParts: string[] = []
 	if (batchMs) timeParts.push(`batch=${batchMs}`)
 	if (commitMs) timeParts.push(`commit=${commitMs}`)
-	if (timeParts.length) lines.push(`    time: ${timeParts.join(' ')}`)
+	if (timeParts.length > 0) lines.push(`    time: ${timeParts.join(' ')}`)
 
 	if (commitError)
-		lines.push(`    error: ${String(commitError).replace(/\s+/g, ' ').slice(0, 240)}`)
+		lines.push(`    error: ${String(commitError).replaceAll(/\s+/g, ' ').slice(0, 240)}`)
 
 	const pluginParts: string[] = []
 	if (pluginsLoaded !== undefined) pluginParts.push(`loaded=${fmtCount(pluginsLoaded)}`)
 	if (pluginsEnabled !== undefined) pluginParts.push(`enabled=${fmtCount(pluginsEnabled)}`)
 	if (pluginsRunning !== undefined) pluginParts.push(`running=${fmtCount(pluginsRunning)}`)
-	if (pluginParts.length) lines.push(`    plugins: ${pluginParts.join(' ')}`)
+	if (pluginParts.length > 0) lines.push(`    plugins: ${pluginParts.join(' ')}`)
 
 	const invParts: string[] = []
 	if (viteInvalidated !== undefined) invParts.push(`vite=${fmtCount(viteInvalidated)}`)
 	if (runnerInvalidated !== undefined) invParts.push(`runner=${fmtCount(runnerInvalidated)}`)
-	if (invParts.length) lines.push(`    invalidated: ${invParts.join(' ')}`)
+	if (invParts.length > 0) lines.push(`    invalidated: ${invParts.join(' ')}`)
 
 	if (changedPreview?.length) {
 		const blue = '\u001B[34m'
@@ -518,7 +517,7 @@ function formatHmrUpdatedDetails(record: LogRecord, colorsOn: boolean): string[]
 	const hotspots = formatHmrHotspots(props.hotspots, colorsOn)
 	if (hotspots?.length) lines.push(...hotspots)
 
-	return lines.length ? lines : undefined
+	return lines.length > 0 ? lines : undefined
 }
 
 function formatHmrReportDetails(record: LogRecord, colorsOn: boolean): string[] | undefined {
@@ -663,7 +662,7 @@ function formatHmrReportDetails(record: LogRecord, colorsOn: boolean): string[] 
 			)
 		}
 	}
-	if (headParts.length) lines.push(`    ${headParts.join(' ')}`)
+	if (headParts.length > 0) lines.push(`    ${headParts.join(' ')}`)
 
 	if (rootsList?.length) {
 		lines.push('    roots:')
@@ -703,14 +702,14 @@ function formatHmrReportDetails(record: LogRecord, colorsOn: boolean): string[] 
 			if (loaded !== undefined || enabled !== undefined || running !== undefined) {
 				parts.push(`plugins=${fmtTriple(loaded, enabled, running)}`)
 			}
-			lines.push(`      - ${root}${parts.length ? ` ${parts.join(' ')}` : ''}`)
+			lines.push(`      - ${root}${parts.length > 0 ? ` ${parts.join(' ')}` : ''}`)
 		}
 	}
 
 	const hotspots = formatHmrHotspots(props.hotspots, colorsOn)
 	if (hotspots?.length) lines.push(...hotspots)
 
-	return lines.length ? lines : undefined
+	return lines.length > 0 ? lines : undefined
 }
 
 function formatHmrPrettyDetails(record: LogRecord, colorsOn: boolean): string[] | undefined {
@@ -725,7 +724,7 @@ function formatHmrPrettyDetails(record: LogRecord, colorsOn: boolean): string[] 
 
 function formatExtraPropsInline(record: LogRecord, colorsOn: boolean): string | undefined {
 	const entries = collectExtraProps(record)
-	if (!entries.length) return undefined
+	if (entries.length === 0) return undefined
 
 	// Keep one-line logs dense: only inline when short and few keys.
 	const kvEntries = entries.filter(
@@ -749,7 +748,7 @@ function formatExtraPropsInline(record: LogRecord, colorsOn: boolean): string | 
 
 function formatExtraPropsBlock(record: LogRecord, colorsOn: boolean): string[] | undefined {
 	const entries = collectExtraProps(record)
-	if (!entries.length) return undefined
+	if (entries.length === 0) return undefined
 
 	const open = '⟪'
 	const close = '⟫'
@@ -780,7 +779,7 @@ function normalizeMessageForConsole(message: readonly unknown[]): unknown[] {
 	// LogTape represents template messages as [str, val, str, val, ...].
 	// If `val` is a string, merge it into the surrounding string parts so it
 	// becomes part of the message text (instead of going through value rendering).
-	const parts = Array.from(message)
+	const parts = [...message]
 
 	for (let i = 1; i < parts.length; i += 2) {
 		const v = parts[i]

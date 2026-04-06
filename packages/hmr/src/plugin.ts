@@ -101,13 +101,13 @@ export function worker(
 	const normalizedEntry = String(entryPath ?? '').trim()
 	if (!normalizedEntry) throw new Error('[pluxel/hmr] worker(): entryPath required')
 
-	const defaultExternal = defaults.external?.slice() ?? []
+	const defaultExternal = defaults.external ? [...defaults.external] : []
 	const defaultFallback = defaults.fallback ?? null
 
 	return {
 		entryPath: normalizedEntry,
 		async bind(ctx: Context, options: HmrWorkerBindOptions = {}): Promise<HmrWorkerBinding> {
-			const external = options.external?.slice() ?? defaultExternal
+			const external = options.external ? [...options.external] : defaultExternal
 			const fallback = options.fallback ?? defaultFallback
 			const onUpdate = options.onUpdate
 			const onError = options.onError

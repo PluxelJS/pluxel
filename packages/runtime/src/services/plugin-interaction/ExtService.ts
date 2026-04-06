@@ -28,7 +28,7 @@ export class ExtService {
 
 	constructor(
 		public ctx: PluxelContext,
-		_cfg: unknown = undefined,
+		_cfg: unknown,
 	) {}
 
 	/** Plugin RPC extensions registry */

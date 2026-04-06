@@ -615,7 +615,7 @@ export function ExtensionLoader({
 					syncSessions(payload.sessions)
 
 					// 自愈：如果加载失败（比如服务端删除了陈旧 hash 并触发重新编译），立刻刷新 manifest 再重试一次
-					if (allowRetry && failedPlugins.length) {
+					if (allowRetry && failedPlugins.length > 0) {
 						const retryManifest = await fetchExtensionManifest()
 						const retrySignature = getManifestPayloadSignature(retryManifest)
 						if (retryManifest.version !== payload.version || retrySignature !== nextSignature) {

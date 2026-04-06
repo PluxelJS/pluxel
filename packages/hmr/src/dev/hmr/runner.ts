@@ -135,7 +135,7 @@ export class HmrRunner {
 		const providerModules = Object.values(this._bridgeProviders).filter(
 			(v): v is string => typeof v === 'string' && v.length > 0,
 		)
-		this._bridgeModules = providerModules.length
+		this._bridgeModules = providerModules.length > 0
 			? [...new Set([...baseBridgeModules, ...providerModules])]
 			: baseBridgeModules
 		this.installFetchModuleInterceptor()
@@ -296,7 +296,7 @@ export class HmrRunner {
 							(c) =>
 								((c.startsWith('/') && !c.startsWith('/@')) || DRIVE_PATH_RE.test(c)) &&
 								existsSync(c),
-						) ?? (candidates.length ? path.toClean(candidates[0]!) : specifier)
+						) ?? (candidates.length > 0 ? path.toClean(candidates[0]!) : specifier)
 
 				this.primeModuleCacheEntry({ id: primaryId, exports, aliases: urls })
 			}),
@@ -561,7 +561,7 @@ export class HmrRunner {
 	}
 
 	private realpathCached(p: string) {
-		return this.cachedPromise(this.realpathCache, p, async () => realpath(p).catch(() => p))
+		return this.cachedPromise(this.realpathCache, p, () => realpath(p).catch(() => p))
 	}
 
 	private resolveWorkspaceEntry(
@@ -580,7 +580,7 @@ export class HmrRunner {
 		)
 	}
 
-	private async resolveWorkspaceEntryImpl(
+	private resolveWorkspaceEntryImpl(
 		specifier: string,
 		kind: 'source' | 'dist',
 	): Promise<string | null> {

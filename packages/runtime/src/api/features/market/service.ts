@@ -112,9 +112,9 @@ export function toServiceSpecifierInput(input: SpecInputValue): ServiceSpecifier
 
 const mutationHandlers: Record<PackageMutationAction, MutationHandler> = {
 	install: async (pCtx, specInputs, options) => {
-		if (!specInputs.length) return buildBatchResult([], '安装列表不能为空')
+		if (specInputs.length === 0) return buildBatchResult([], '安装列表不能为空')
 		const parsed = parseSpecInputs(specInputs)
-		if (!parsed.valid.length) return buildBatchResult(parsed.invalid)
+		if (parsed.valid.length === 0) return buildBatchResult(parsed.invalid)
 		const overrides: InstallOptions | undefined =
 			options.force === undefined ? undefined : { force: options.force }
 		try {
@@ -159,9 +159,9 @@ const mutationHandlers: Record<PackageMutationAction, MutationHandler> = {
 		}
 	},
 	uninstall: async (pCtx, specInputs) => {
-		if (!specInputs.length) return buildBatchResult([], '卸载列表不能为空')
+		if (specInputs.length === 0) return buildBatchResult([], '卸载列表不能为空')
 		const parsed = parseSpecInputs(specInputs)
-		if (!parsed.valid.length) return buildBatchResult(parsed.invalid)
+		if (parsed.valid.length === 0) return buildBatchResult(parsed.invalid)
 		try {
 			const results = await pCtx.packageService.uninstallMany(
 				parsed.valid.map((entry) => entry.serviceInput),
@@ -188,9 +188,9 @@ const mutationHandlers: Record<PackageMutationAction, MutationHandler> = {
 		}
 	},
 	remove: async (pCtx, specInputs) => {
-		if (!specInputs.length) return buildBatchResult([], '移除列表不能为空')
+		if (specInputs.length === 0) return buildBatchResult([], '移除列表不能为空')
 		const parsed = parseSpecInputs(specInputs)
-		if (!parsed.valid.length) return buildBatchResult(parsed.invalid)
+		if (parsed.valid.length === 0) return buildBatchResult(parsed.invalid)
 		try {
 			const results = await pCtx.packageService.removePackages(
 				parsed.valid.map((entry) => entry.serviceInput),
@@ -217,9 +217,9 @@ const mutationHandlers: Record<PackageMutationAction, MutationHandler> = {
 		}
 	},
 	reinstall: async (pCtx, specInputs, options) => {
-		if (!specInputs.length) return buildBatchResult([], '重装列表不能为空')
+		if (specInputs.length === 0) return buildBatchResult([], '重装列表不能为空')
 		const parsed = parseSpecInputs(specInputs)
-		if (!parsed.valid.length) return buildBatchResult(parsed.invalid)
+		if (parsed.valid.length === 0) return buildBatchResult(parsed.invalid)
 		try {
 			const results = await pCtx.packageService.reinstallMany(
 				parsed.valid.map((entry) => entry.serviceInput),
@@ -240,9 +240,9 @@ const mutationHandlers: Record<PackageMutationAction, MutationHandler> = {
 		}
 	},
 	reload: async (pCtx, specInputs, options) => {
-		if (!specInputs.length) return buildBatchResult([], '重载列表不能为空')
+		if (specInputs.length === 0) return buildBatchResult([], '重载列表不能为空')
 		const parsed = parseSpecInputs(specInputs)
-		if (!parsed.valid.length) return buildBatchResult(parsed.invalid)
+		if (parsed.valid.length === 0) return buildBatchResult(parsed.invalid)
 		try {
 			const results = await pCtx.packageService.reloadMany(
 				parsed.valid.map((entry) => entry.serviceInput),
@@ -268,7 +268,7 @@ const mutationHandlers: Record<PackageMutationAction, MutationHandler> = {
 			reinstall: options.reinstall ?? false,
 			fresh: options.fresh ?? true,
 		}
-		if (!specInputs.length) {
+		if (specInputs.length === 0) {
 			try {
 				const results = await pCtx.packageService.retryAllLoadIssues(retryOptions)
 				const mutations = results.map((record) =>
@@ -285,7 +285,7 @@ const mutationHandlers: Record<PackageMutationAction, MutationHandler> = {
 			}
 		}
 		const parsed = parseSpecInputs(specInputs)
-		if (!parsed.valid.length) return buildBatchResult(parsed.invalid)
+		if (parsed.valid.length === 0) return buildBatchResult(parsed.invalid)
 		const mutations = await mapWithConcurrency(
 			parsed.valid,
 			resolveConcurrency(parsed.valid.length),
@@ -408,14 +408,14 @@ function serializeReloadResults(
 }
 
 function formatUnknownError(error: unknown, fallback?: string): string | null {
-	if (error == null && !fallback) return null
+	if ((error === null || error === undefined) && !fallback) return null
 	const target = unwrapError(error) ?? fallback
 	if (target instanceof Error) return target.stack ?? target.message ?? fallback ?? null
 	if (typeof target === 'string') return target
 	try {
 		return JSON.stringify(target)
 	} catch {
-		return target != null ? String(target) : (fallback ?? null)
+		return target !== null && target !== undefined ? String(target) : (fallback ?? null)
 	}
 }
 
@@ -437,7 +437,7 @@ async function mapWithConcurrency<T, R>(
 	concurrency: number,
 	mapper: (item: T, index: number) => Promise<R>,
 ): Promise<R[]> {
-	if (!items.length) return []
+	if (items.length === 0) return []
 	const results = Array<R>(items.length)
 	let cursor = 0
 	const limit = Math.max(1, Math.min(concurrency, items.length))

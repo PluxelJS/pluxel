@@ -159,7 +159,7 @@ export const normalizeId = (raw: string | null | undefined, declaredName: string
 	}
 	// Keep id semantics centralized (fork ids, base ids, ASCII rules).
 	// This intentionally enforces a strict naming policy across host implementations.
-	if (raw == null) assertValidBasePluginId(id)
+	if (raw === null || raw === undefined) assertValidBasePluginId(id)
 	else assertValidPluginId(id)
 	return id
 }
@@ -167,7 +167,7 @@ export const normalizeId = (raw: string | null | undefined, declaredName: string
 export function normalizeConfigSourceMap(
 	source: Record<string, string> | null,
 ): Readonly<Record<string, string>> | null {
-	if (!source || !Object.keys(source).length) return null
+	if (!source || Object.keys(source).length === 0) return null
 	const proto = Object.getPrototypeOf(source)
 	if (!__DEV__ && proto === Object.prototype) {
 		return source as Readonly<Record<string, string>>
@@ -188,7 +188,7 @@ function freezeLayout(layout: ConfigLayout): ConfigLayout {
 export function normalizeConfigLayoutMap(
 	layout: Record<string, ConfigLayout> | null,
 ): Readonly<Record<string, ConfigLayout>> | null {
-	if (!layout || !Object.keys(layout).length) return null
+	if (!layout || Object.keys(layout).length === 0) return null
 	const proto = Object.getPrototypeOf(layout)
 	if (!__DEV__ && proto === Object.prototype) {
 		return layout as Readonly<Record<string, ConfigLayout>>
@@ -207,7 +207,7 @@ export function normalizeConfigLayoutMap(
 export function normalizeConfigBindingsMap(
 	bindings: Record<string, readonly string[]> | null,
 ): Readonly<Record<string, readonly string[]>> | null {
-	if (!bindings || !Object.keys(bindings).length) return null
+	if (!bindings || Object.keys(bindings).length === 0) return null
 	const proto = Object.getPrototypeOf(bindings)
 	if (!__DEV__ && proto === Object.prototype) {
 		return bindings as Readonly<Record<string, readonly string[]>>
@@ -223,15 +223,15 @@ export function rebuildInfoSnapshot(ctor: AnyCtor, s: State): void {
 	const displayName = s.displayName?.trim() || id
 
 	const configSourceMap =
-		s.configSource && Object.keys(s.configSource).length
+		s.configSource && Object.keys(s.configSource).length > 0
 			? normalizeConfigSourceMap(s.configSource)
 			: null
 	const configLayoutMap =
-		s.configLayout && Object.keys(s.configLayout).length
+		s.configLayout && Object.keys(s.configLayout).length > 0
 			? normalizeConfigLayoutMap(s.configLayout)
 			: null
 	const configBindingsMap =
-		s.configBindings && Object.keys(s.configBindings).length
+		s.configBindings && Object.keys(s.configBindings).length > 0
 			? normalizeConfigBindingsMap(s.configBindings)
 			: null
 
@@ -277,7 +277,7 @@ export function sparseObjectToArray(
 	o: Readonly<Record<number, Identifier<unknown>>>,
 ): Array<Identifier<unknown> | undefined> {
 	const ks = Object.keys(o)
-	if (!ks.length) return []
+	if (ks.length === 0) return []
 	let max = -1
 	for (let i = 0; i < ks.length; i++) {
 		const idx = (ks[i] as unknown as number) | 0

@@ -73,9 +73,9 @@ type CfgBuilder<T extends CfgSchemaMap> = CfgDecl<T> &
 	}
 
 export function normalizeMarkdownTemplate(input: string): string {
-	const lines = input.replace(/\r\n/g, '\n').split('\n')
-	while (lines.length && lines[0]?.trim() === '') lines.shift()
-	while (lines.length && lines[lines.length - 1]?.trim() === '') lines.pop()
+	const lines = input.replaceAll('\r\n', '\n').split('\n')
+	while (lines.length > 0 && lines[0]?.trim() === '') lines.shift()
+	while (lines.length > 0 && lines.at(-1)?.trim() === '') lines.pop()
 	let minIndent = Number.POSITIVE_INFINITY
 	for (const line of lines) {
 		if (!line.trim()) continue
@@ -146,7 +146,7 @@ export const cfg: {
 		const mergeAdjacentMarkdown = (parts: ConfigLayoutPart[]): ConfigLayoutPart[] => {
 			const merged: ConfigLayoutPart[] = []
 			for (const part of parts) {
-				const prev = merged[merged.length - 1]
+				const prev = merged.at(-1)
 				if (part.kind === 'md' && prev?.kind === 'md') {
 					;(prev as any).text += part.text
 					continue
@@ -193,7 +193,7 @@ export const cfg: {
 
 			const merged = mergeAdjacentMarkdown(parts)
 			assertValidConfigLayout(merged, { label: '[cfg]' })
-			return merged.length
+			return merged.length > 0
 				? ({ kind: 'cfg', schemaMap, layout: merged } as CfgDecl<typeof schemaMap>)
 				: ({ kind: 'cfg', schemaMap } as CfgDecl<typeof schemaMap>)
 		}) as any
@@ -203,7 +203,7 @@ export const cfg: {
 		const schemas = <K extends Extract<keyof typeof schemaMap, string>>(
 			...keys: readonly K[]
 		): CfgToken =>
-			keys.length
+			keys.length > 0
 				? schemasToken(keys.map((k) => assertKnownKey(String(k), 'schemas(...keys)')))
 				: schemasToken(null)
 

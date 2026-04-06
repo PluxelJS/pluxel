@@ -12,7 +12,7 @@ describe('ModuleReplacer export scanning', () => {
 		const anchors = new Set<string>()
 
 		const ctx = {
-			logger: { warn: () => undefined },
+			logger: { warn: () => {} },
 			configService: {
 				isReady: true,
 				ready: Promise.resolve(),
@@ -25,13 +25,13 @@ describe('ModuleReplacer export scanning', () => {
 		const registry = {
 			modules: new Map<string, Array<{ ctor: unknown }>>(),
 			names: new Map<string, unknown>(),
-			stopModule: () => undefined,
-			undeclareModule: () => undefined,
+			stopModule: () => {},
+			undeclareModule: () => {},
 			declarePlugin: (moduleId: string, _ctor: unknown, exportKey: string) => {
 				declared.push({ moduleId, exportKey })
 				return exportKey
 			},
-			syncRuntimeForModule: async () => undefined,
+			syncRuntimeForModule: async () => {},
 		} as any
 
 		const replacer = new ModuleReplacer(
@@ -41,7 +41,7 @@ describe('ModuleReplacer export scanning', () => {
 				add: (id: string) => anchors.add(id),
 				delete: (id: string) => anchors.delete(id),
 			} as any,
-			() => undefined,
+			() => {},
 		)
 
 		const mod: Record<string, unknown> = {}

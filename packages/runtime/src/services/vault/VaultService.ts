@@ -129,7 +129,7 @@ const DEFAULT_SCRYPT_MAXMEM = 256 * 1024 * 1024
 
 function normalizeNamespace(ns: string): string {
 	const trimmed = ns || 'default'
-	return basename(trimmed).replace(/[^A-Za-z0-9_-]/g, '_')
+	return basename(trimmed).replaceAll(/[^A-Za-z0-9_-]/g, '_')
 }
 
 function nowIso(): string {
@@ -148,7 +148,7 @@ const B64_DECODE_TABLE: Readonly<Record<string, number>> = (() => {
 })()
 
 function base64ToBytes(input: string): Uint8Array {
-	const s = input.replace(/=+$/g, '')
+	const s = input.replaceAll(/=+$/g, '')
 	const len = s.length
 	if (len === 0) return new Uint8Array()
 
@@ -278,7 +278,7 @@ function resolveAadBytes(
 		throw new VaultError('AAD_MISMATCH', 'Vault AAD mismatch')
 	return {
 		aadBytes: runtimeAad,
-		aadB64Url: runtimeAad.length ? b64urlEncode(runtimeAad) : undefined,
+		aadB64Url: runtimeAad.length > 0 ? b64urlEncode(runtimeAad) : undefined,
 	}
 }
 
@@ -292,7 +292,7 @@ async function aeadEncrypt(
 	const key = await subtle.importKey('raw', key32, { name: 'AES-GCM' }, false, ['encrypt'])
 	const algo: { name: 'AES-GCM'; iv: Uint8Array; tagLength: number; additionalData?: Uint8Array } =
 		{ name: 'AES-GCM', iv: nonce, tagLength: 128 }
-	if (aad.length) algo.additionalData = aad
+	if (aad.length > 0) algo.additionalData = aad
 	const out = await subtle.encrypt(algo, key, plaintext)
 	return new Uint8Array(out)
 }
@@ -313,7 +313,7 @@ async function aeadDecrypt(
 			tagLength: number
 			additionalData?: Uint8Array
 		} = { name: 'AES-GCM', iv: nonce, tagLength: 128 }
-		if (aad.length) algo.additionalData = aad
+		if (aad.length > 0) algo.additionalData = aad
 		const out = await subtle.decrypt(algo, key, ciphertextWithTag)
 		return new Uint8Array(out)
 	} catch (cause) {
@@ -789,11 +789,9 @@ export class VaultService {
 			createIfMissing: boolean,
 			fn: (state: UnlockedState) => Promise<T>,
 		): Promise<T | undefined> {
-			return await entry.lock.run(async () => {
+			return entry.lock.run(async () => {
 				if (entry.state.status !== 'unlocked') {
-					if (!fs.exists(runtime.vaultPath)) {
-						if (!createIfMissing) return undefined
-					}
+					if (!fs.exists(runtime.vaultPath) && !createIfMissing) return undefined
 
 					const material = resolveMaterial(ctx, namespace, options)
 					const file = createIfMissing
@@ -804,7 +802,7 @@ export class VaultService {
 					entry.state = { status: 'unlocked', dek, payload, aadBytes, file }
 				}
 
-				return await fn(entry.state)
+				return fn(entry.state)
 			})
 		}
 

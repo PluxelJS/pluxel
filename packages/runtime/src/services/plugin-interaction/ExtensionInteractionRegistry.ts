@@ -107,9 +107,11 @@ export class ExtensionInteractionRegistry {
 		sessions: InteractionSessionDef[]
 		interactions: ExtensionInteractionRecord[]
 	} {
-		const builtins = Array.from(this.builtinsByPlugin.values())
-			.flatMap((bucket) => Array.from(bucket.values()))
-			.sort((a, b) => {
+		const builtins: BuiltinExtensionDef[] = []
+		for (const bucket of this.builtinsByPlugin.values()) {
+			builtins.push(...bucket.values())
+		}
+		builtins.sort((a, b) => {
 				const pluginDiff = a.pluginName.localeCompare(b.pluginName)
 				if (pluginDiff !== 0) return pluginDiff
 				const pointDiff = String(a.point).localeCompare(String(b.point))
@@ -202,7 +204,7 @@ export class ExtensionInteractionRegistry {
 		for (const surface of surfaces) {
 			const key = `${surface.pluginName}\u0000${surface.id}`
 			const bucket = candidatesBySurface.get(key) ?? []
-			const sorted = bucket.slice().sort((a, b) => this.compareSessionCandidates(a, b))
+			const sorted = [...bucket].sort((a, b) => this.compareSessionCandidates(a, b))
 			if (sorted.length > 1 && surface.cardinality !== 'multiple') {
 				this.warnOnce(
 					`surface-conflict:${surface.pluginName}:${surface.id}`,
@@ -575,12 +577,14 @@ export class ExtensionInteractionRegistry {
 	}
 
 	private clearSessionStateForPlugin(pluginName: string): void {
-		for (const key of Array.from(this.sessionDraftById.keys())) {
+		const draftKeys = [...this.sessionDraftById.keys()]
+		for (const key of draftKeys) {
 			if (key.includes(`${pluginName}:`) || key.includes(`<-${pluginName}:`)) {
 				this.sessionDraftById.delete(key)
 			}
 		}
-		for (const key of Array.from(this.sessionInputById.keys())) {
+		const inputKeys = [...this.sessionInputById.keys()]
+		for (const key of inputKeys) {
 			if (key.includes(`${pluginName}:`) || key.includes(`<-${pluginName}:`)) {
 				this.sessionInputById.delete(key)
 			}
@@ -607,7 +611,8 @@ export class ExtensionInteractionRegistry {
 	}
 
 	private clearWarningStateForPlugin(pluginName: string): void {
-		for (const key of Array.from(this.warningSignatureByKey.keys())) {
+		const warningKeys = [...this.warningSignatureByKey.keys()]
+		for (const key of warningKeys) {
 			if (key.includes(`:${pluginName}:`)) this.warningSignatureByKey.delete(key)
 		}
 	}
