@@ -234,7 +234,7 @@ export class ConfigService {
 		const enabledList = Array.isArray(parsed.enabled)
 			? (parsed.enabled as string[])
 			: parsed?.enabled instanceof Set
-				? [...parsed.enabled as Set<string>]
+				? [...(parsed.enabled as Set<string>)]
 				: []
 		for (let i = 0; i < enabledList.length; i++) this.data.enabled.add(enabledList[i])
 
@@ -363,6 +363,7 @@ export class ConfigService {
 			.writeTextAtomic(file, content)
 			.then(() => {
 				this.lastWrittenDigest = nextDigest
+				return undefined
 			})
 			.finally(() => {
 				if (this.pendingWriteDigest === nextDigest) this.pendingWriteDigest = undefined

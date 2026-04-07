@@ -1,12 +1,12 @@
-import type {
-	PluginStatusAction,
-	PluginStatusBatchAction,
-	PluginStatusBatchResult,
-	PluginStatusMutationResult,
-	RuntimeRpcApi,
-} from '../../runtime'
 import type { RpcStub } from 'capnweb'
-import { invokeRpc } from '../../runtime'
+import {
+	invokeRpc,
+	type PluginStatusAction,
+	type PluginStatusBatchAction,
+	type PluginStatusBatchResult,
+	type PluginStatusMutationResult,
+	type RuntimeRpcApi,
+} from '../../runtime'
 import { getPluginOverviewSnapshot, requestPluginOverviewRefetch } from './pluginOverviewStore'
 import { invalidate } from '../data/invalidations'
 

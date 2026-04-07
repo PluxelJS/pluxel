@@ -11,8 +11,8 @@
 		"test:affected": "turbo run test --filter=...[origin/main]",
 		"test:watch": "vitest",
 		"build": "turbo run build",
-		"lint": "oxlint -c .oxlintrc.json --report-unused-disable-directives-severity=error packages",
-		"lint:fix": "oxlint -c .oxlintrc.json --report-unused-disable-directives-severity=error packages --fix",
+		"lint": "oxlint -c oxlint.config.ts --report-unused-disable-directives-severity=error packages scripts oxlint.config.ts vitest.config.ts pncat.config.ts",
+		"lint:fix": "oxlint -c oxlint.config.ts --report-unused-disable-directives-severity=error packages scripts oxlint.config.ts vitest.config.ts pncat.config.ts --fix",
 		"format": "oxfmt -c .oxfmtrc.json --ignore-path .gitignore --ignore-path .oxfmtignore --write .",
 		"format:check": "oxfmt -c .oxfmtrc.json --ignore-path .gitignore --ignore-path .oxfmtignore --check .",
 		"audit:logs": "node scripts/audit-logs.mjs",
@@ -45,7 +45,7 @@
 	"lint-staged": {
 		"*.{js,jsx,ts,tsx,cjs,mjs,md,json,jsonc}": [
 			"oxfmt -c .oxfmtrc.json --ignore-path .gitignore --ignore-path .oxfmtignore --write --no-error-on-unmatched-pattern",
-			"oxlint -c .oxlintrc.json --report-unused-disable-directives-severity=error --quiet"
+			"oxlint -c oxlint.config.ts --report-unused-disable-directives-severity=error --quiet"
 		]
 	},
 	"pre-commit": "lint-staged",

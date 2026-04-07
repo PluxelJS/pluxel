@@ -108,7 +108,7 @@ export const cfg: {
 			const k = String(key ?? '').trim()
 			if (!k) throw new Error(`[cfg] ${label}: key required`)
 			// Help catch casts and out-of-sync schemaMaps in JS at runtime.
-			if (!Object.prototype.hasOwnProperty.call(schemaMap, k)) {
+			if (!Object.hasOwn(schemaMap, k)) {
 				throw new Error(`[cfg] ${label}: unknown schemaKey "${k}" (not in schemaMap)`)
 			}
 			return k

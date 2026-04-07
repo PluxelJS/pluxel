@@ -3,11 +3,13 @@ import { existsSync } from 'node:fs'
 import { intro, isCancel, multiselect, note, outro } from '@clack/prompts'
 import { type ArgValues, define } from 'gunshi'
 import { basename, dirname, relative, resolve } from 'pathe'
-import type picomatchModule from 'picomatch'
 import picomatch from 'picomatch'
 import { detectPm, runPackageManager } from '../utils/pm'
-import type { WorkspaceCandidate } from '../workspace/candidates'
-import { readWorkspaceCandidates, upsertWorkspaceCandidates } from '../workspace/candidates'
+import {
+	readWorkspaceCandidates,
+	type WorkspaceCandidate,
+	upsertWorkspaceCandidates,
+} from '../workspace/candidates'
 import { scanWorkspaceDirs } from '../workspace/scanner'
 import {
 	addWorkspacePattern,
@@ -338,7 +340,7 @@ function containsGlob(input: string) {
 
 type GlobMatcher = {
 	pattern: string
-	match: picomatchModule.Matcher
+	match: ReturnType<typeof picomatch>
 }
 
 function createGlobMatchers(patterns: string[]): GlobMatcher[] {

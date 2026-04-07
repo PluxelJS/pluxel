@@ -1,10 +1,11 @@
 import type {
 	ExtensionInteractionRecord,
 	InteractionOfferDef,
+	InteractionContract,
+	InteractionContractRef,
 	InteractionSessionDef,
 	InteractionSurfaceDef,
 } from '../../web/extensions'
-import type { InteractionContract, InteractionContractRef } from '../../web/extensions'
 
 export type RegisteredSurface = InteractionSurfaceDef & {
 	runtime: {

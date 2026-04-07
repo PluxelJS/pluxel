@@ -208,18 +208,19 @@ function useSignalDbFormSchema(
 
 		let cancelled = false
 		setState({ status: 'loading' })
-		void loadSchema(transport, pluginName, schemaKey)
-			.then((entry) => {
+		void (async () => {
+			try {
+				const entry = await loadSchema(transport, pluginName, schemaKey)
 				if (cancelled) return
 				setState({ status: 'ready', schema: entry.schema, defaults: entry.defaults })
-			})
-			.catch((error) => {
+			} catch (error) {
 				if (cancelled) return
 				setState({
 					status: 'error',
 					error: error instanceof Error ? error : new Error('schema load failed'),
 				})
-			})
+			}
+		})()
 
 		return () => {
 			cancelled = true

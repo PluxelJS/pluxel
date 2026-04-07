@@ -1,8 +1,11 @@
 import { ActionIcon, Badge, Box, Group, Paper, Select, Stack, Text, Tooltip } from '@mantine/core'
 import { IconRefresh, IconStar } from '@tabler/icons-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { BaseProvisionInfo } from '../../../../runtime'
-import { rpcErrorMessage, useRuntimeTransportClient } from '../../../../runtime'
+import {
+	rpcErrorMessage,
+	useRuntimeTransportClient,
+	type BaseProvisionInfo,
+} from '../../../../runtime'
 import { useNotify } from '../../../hooks'
 import { usePluginScope } from '../context'
 import { loadBaseProvision } from '../rpcResourceCache'

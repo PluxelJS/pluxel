@@ -1,5 +1,4 @@
-import { field, resolver } from '@gqloom/core'
-import type { Resolver } from '@gqloom/core'
+import { field, resolver, type Resolver } from '@gqloom/core'
 import type { Context as PlxContext } from '@pluxel/core'
 
 import { PluginScope } from '../plugins/schema'

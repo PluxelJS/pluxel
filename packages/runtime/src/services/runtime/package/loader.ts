@@ -4,8 +4,7 @@ import { pathToFileURL } from 'node:url'
 import type { Context } from '@pluxel/core'
 import { resolve as resolvePath } from 'pathe'
 
-import type { EntryResolutionOk, ScanTaskOptions } from '../scan/types'
-import { isEntryOk } from '../scan/types'
+import { isEntryOk, type EntryResolutionOk, type ScanTaskOptions } from '../scan/types'
 import { parseDependOn } from './helpers'
 import type { ResolvedInstallOptions } from './internal-types'
 import type { PackageRuntime } from './runtime'
@@ -277,12 +276,12 @@ export class PackageLoader {
 			if (error instanceof Error) {
 				throw error
 			}
-				const message =
-					typeof error === 'string'
-						? error
-						: error !== null && error !== undefined
-							? String(error)
-							: '未知错误'
+			const message =
+				typeof error === 'string'
+					? error
+					: error !== null && error !== undefined
+						? String(error)
+						: '未知错误'
 			const wrapped = new Error(message)
 			if (error && typeof error === 'object' && 'stack' in error) {
 				const stack = (error as { stack?: unknown }).stack

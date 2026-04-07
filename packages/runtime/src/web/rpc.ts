@@ -1,5 +1,4 @@
-import type { RpcStub } from 'capnweb'
-import { newHttpBatchRpcSession } from 'capnweb'
+import { newHttpBatchRpcSession, type RpcStub } from 'capnweb'
 import { HMR_INTERNAL_API_BASE } from './paths'
 import type { ExtensionUiRpcMap, RuntimeRpcApi } from './protocol'
 

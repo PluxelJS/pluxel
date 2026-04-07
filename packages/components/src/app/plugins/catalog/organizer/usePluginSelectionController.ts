@@ -1,5 +1,12 @@
-import { startTransition, useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type React from 'react'
+import {
+	startTransition,
+	useCallback,
+	useEffect,
+	useMemo,
+	useRef,
+	useState,
+	type SetStateAction,
+} from 'react'
 import { isEditableTarget } from '../filterModel'
 import type { GroupConfig } from './types'
 import { arraysEqual } from './organizerModel'
@@ -41,7 +48,7 @@ export function usePluginSelectionController({
 
 	const selectedIds = controlledSelectedIds ?? internalSelectedIds
 	const setSelectedIds = useCallback(
-		(next: React.SetStateAction<string[]>) => {
+		(next: SetStateAction<string[]>) => {
 			if (controlledSelectedIds === undefined) {
 				setInternalSelectedIds((prev) => {
 					const resolved =

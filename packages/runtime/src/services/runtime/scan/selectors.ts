@@ -35,7 +35,7 @@ export function selectorLabel(selector: PackageSelector): string | undefined {
 }
 
 export function mergeFocus(existing: string[] | undefined, additions: string[]): string[] {
-	const merged = new Set(existing ?? [])
+	const merged = new Set(existing)
 	for (const hint of additions) {
 		if (hint) merged.add(hint)
 	}

@@ -131,27 +131,31 @@ export function createFetchDevServerPlugin(options: FetchDevServerPluginOptions)
 		},
 		configureServer(server) {
 			server.middlewares.use((req, res, next) => {
-				void (async () => {
-					const rawUrl = req.url ?? '/'
-					for (const pattern of exclude) {
-						const matched = pattern instanceof RegExp ? pattern.test(rawUrl) : pattern(rawUrl)
-						if (matched) {
-							next()
-							return
+				const handleRequest = async () => {
+					try {
+						const rawUrl = req.url ?? '/'
+						for (const pattern of exclude) {
+							const matched = pattern instanceof RegExp ? pattern.test(rawUrl) : pattern(rawUrl)
+							if (matched) {
+								next()
+								return
+							}
 						}
-					}
 
-					const response = await options.fetch(toRequest(req))
-					const out =
-						options.injectClientScript === false || !isHtmlResponse(response)
-							? response
-							: withInjectedViteClient(response, viteBase)
-					await sendResponse(res, out)
-				})().catch((error) => {
-					const err = error instanceof Error ? error : new Error(String(error))
-					server.ssrFixStacktrace(err)
-					next(err)
-				})
+						const response = await options.fetch(toRequest(req))
+						const out =
+							options.injectClientScript === false || !isHtmlResponse(response)
+								? response
+								: withInjectedViteClient(response, viteBase)
+						await sendResponse(res, out)
+					} catch (error) {
+						const err = error instanceof Error ? error : new Error(String(error))
+						server.ssrFixStacktrace(err)
+						next(err)
+					}
+				}
+
+				void handleRequest()
 			})
 		},
 		handleHotUpdate: options.handleHotUpdate,

@@ -60,7 +60,7 @@ for (const check of checks) {
 	if (!ok) failures.push({ name: check.name, output })
 }
 
-if (failures.length) {
+if (failures.length > 0) {
 	console.error('Log audit failed:\n')
 	for (const f of failures) {
 		console.error(`- ${f.name}`)

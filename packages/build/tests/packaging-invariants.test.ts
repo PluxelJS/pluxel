@@ -86,11 +86,11 @@ describe('packaging invariants', () => {
 		] as const
 
 		const allowedWorkspaceDeps = new Map<string, ReadonlySet<string>>([
-			['@pluxel/core', new Set([])],
+			['@pluxel/core', new Set()],
 			['@pluxel/runtime', new Set(['@pluxel/core'])],
 			['@pluxel/hmr', new Set(['@pluxel/core', '@pluxel/runtime'])],
 			['@pluxel/cli', new Set(['@pluxel/hmr'])],
-			['@pluxel/test', new Set([])],
+			['@pluxel/test', new Set()],
 		])
 
 		for (const pkg of packages) {

@@ -139,7 +139,8 @@ describe('ScanService', () => {
 		await using installedFixture = await createDiskFixture(scanSingleFixture)
 
 		const service = createService(normalize(emptyFixture.path))
-		expect((await service.resolveInstalledEntry('pathe')).ok).toBe(false)
+		const initialResolution = await service.resolveInstalledEntry('pathe')
+		expect(initialResolution.ok).toBe(false)
 
 		service.updateConfig({ installedBase: normalize(installedFixture.path) })
 		const resolution = await service.resolveInstalledEntry('pathe')

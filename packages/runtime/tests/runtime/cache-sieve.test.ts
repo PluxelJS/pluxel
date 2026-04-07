@@ -62,4 +62,20 @@ describe('runtime/shared cache (sieve)', () => {
 
 		expect(map.has('miss')).toBe(false)
 	})
+
+	it('supports synchronous factories for promise cache', async () => {
+		const map = new Map<string, Promise<number>>()
+
+		await expect(getOrCreatePromise(map, 'sync', () => 7, { limit: 2 })).resolves.toBe(7)
+		await expect(
+			getOrCreatePromise(
+				map,
+				'sync',
+				() => {
+					throw new Error('should not create')
+				},
+				{ limit: 2 },
+			),
+		).resolves.toBe(7)
+	})
 })

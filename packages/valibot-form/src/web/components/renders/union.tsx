@@ -1,9 +1,8 @@
 import { Card, Radio, Select, Stack, Switch, Text } from '@mantine/core'
-import type { ChangeEvent } from 'react'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react'
 import type { UnionBranch, UnionFieldNode } from '../../../core/fields'
-import { FieldRenderer } from '../internal/FieldRenderer'
 import { cleanProps } from '../../utils/propHelpers'
+import { useFieldRenderer } from '../internal/fieldRendererContext'
 import { SegmentedButtons } from '../SegmentedButtons'
 import { FieldChrome } from '../chrome/FieldChrome'
 import {
@@ -52,7 +51,13 @@ function findMatchingBranchIndex(
 	if (typeof discValue === 'boolean') {
 		const truthyIdx = branches.findIndex((b) => isTruthyDiscriminator(b.discriminatorValue))
 		const falsyIdx = branches.findIndex((b) => !isTruthyDiscriminator(b.discriminatorValue))
-		return discValue ? (truthyIdx !== -1 ? truthyIdx : fallback) : falsyIdx !== -1 ? falsyIdx : fallback
+		return discValue
+			? truthyIdx !== -1
+				? truthyIdx
+				: fallback
+			: falsyIdx !== -1
+				? falsyIdx
+				: fallback
 	}
 	return fallback
 }
@@ -159,6 +164,7 @@ function renderEmptyBranch() {
 export function UnionField(props: RendererProps) {
 	const { node, errors, inputProps, value } = props
 	const info = node as UnionFieldNode
+	const renderField = useFieldRenderer()
 	const branches = info.branches ?? []
 	const discriminator = info.discriminator
 	const sharedFields = info.sharedFields ?? []
@@ -403,47 +409,48 @@ export function UnionField(props: RendererProps) {
 						? (value as Record<string, unknown>)[fieldKey]
 						: undefined
 					return (
-						<FieldRenderer
-							key={fieldKey}
-							node={field.node}
-							value={fieldValue}
-							errors={fieldErrors}
-							inputProps={{
-								...inputProps,
-								name: inputProps.name ? `${inputProps.name}.${fieldKey}` : fieldKey,
-								onChange: (event: any) => {
-									const newFieldValue = event?.target?.value ?? event
-									if (fieldKey === discriminator) {
-										const nextCandidate = isObject(value)
-											? { ...value, [fieldKey]: newFieldValue }
-											: { [fieldKey]: newFieldValue }
-										snapshotAndSetBranch(
-											findMatchingBranchIndex(
-												branches,
-												nextCandidate,
-												discriminator,
-												selectedBranchIndex,
-											),
-											newFieldValue as UnionBranch['discriminatorValue'],
-										)
-										return
-									}
-									const currentValue = isObject(value) ? (value as Record<string, unknown>) : {}
-									const nextValue: Record<string, unknown> = {
-										...currentValue,
-										[fieldKey]: newFieldValue,
-									}
-									if (
-										discriminator &&
-										selectedBranch?.discriminatorValue !== null &&
-										selectedBranch?.discriminatorValue !== undefined
-									) {
-										nextValue[discriminator] = selectedBranch.discriminatorValue
-									}
-									triggerFormEvents(inputProps, nextValue)
+						<div key={fieldKey}>
+							{renderField({
+								node: field.node,
+								value: fieldValue,
+								errors: fieldErrors,
+								inputProps: {
+									...inputProps,
+									name: inputProps.name ? `${inputProps.name}.${fieldKey}` : fieldKey,
+									onChange: (event: any) => {
+										const newFieldValue = event?.target?.value ?? event
+										if (fieldKey === discriminator) {
+											const nextCandidate = isObject(value)
+												? { ...value, [fieldKey]: newFieldValue }
+												: { [fieldKey]: newFieldValue }
+											snapshotAndSetBranch(
+												findMatchingBranchIndex(
+													branches,
+													nextCandidate,
+													discriminator,
+													selectedBranchIndex,
+												),
+												newFieldValue as UnionBranch['discriminatorValue'],
+											)
+											return
+										}
+										const currentValue = isObject(value) ? (value as Record<string, unknown>) : {}
+										const nextValue: Record<string, unknown> = {
+											...currentValue,
+											[fieldKey]: newFieldValue,
+										}
+										if (
+											discriminator &&
+											selectedBranch?.discriminatorValue !== null &&
+											selectedBranch?.discriminatorValue !== undefined
+										) {
+											nextValue[discriminator] = selectedBranch.discriminatorValue
+										}
+										triggerFormEvents(inputProps, nextValue)
+									},
 								},
-							}}
-						/>
+							})}
+						</div>
 					)
 				})}
 			</Stack>
@@ -466,56 +473,57 @@ export function UnionField(props: RendererProps) {
 							: undefined
 
 					return (
-						<FieldRenderer
-							key={fieldKey}
-							node={field.node}
-							value={fieldValue}
-							errors={fieldErrors}
-							inputProps={{
-								...inputProps,
-								name: inputProps.name ? `${inputProps.name}.${fieldKey}` : fieldKey,
-								onChange: (event: any) => {
-									const newFieldValue = event?.target?.value ?? event
-									if (field.replaceValue) {
-										const currentValue = isObject(value) ? (value as Record<string, unknown>) : {}
-										const baseValue: Record<string, unknown> = isObject(newFieldValue)
-											? { ...(newFieldValue as Record<string, unknown>) }
-											: { [fieldKey]: newFieldValue }
+						<div key={fieldKey}>
+							{renderField({
+								node: field.node,
+								value: fieldValue,
+								errors: fieldErrors,
+								inputProps: {
+									...inputProps,
+									name: inputProps.name ? `${inputProps.name}.${fieldKey}` : fieldKey,
+									onChange: (event: any) => {
+										const newFieldValue = event?.target?.value ?? event
+										if (field.replaceValue) {
+											const currentValue = isObject(value) ? (value as Record<string, unknown>) : {}
+											const baseValue: Record<string, unknown> = isObject(newFieldValue)
+												? { ...(newFieldValue as Record<string, unknown>) }
+												: { [fieldKey]: newFieldValue }
 
-										for (const key of nonBranchKeys) {
-											if (key === discriminator) continue
-											if (key in currentValue && !(key in baseValue)) {
-												baseValue[key] = currentValue[key]
+											for (const key of nonBranchKeys) {
+												if (key === discriminator) continue
+												if (key in currentValue && !(key in baseValue)) {
+													baseValue[key] = currentValue[key]
+												}
 											}
-										}
 
-										if (
-											discriminator &&
-											selectedBranch?.discriminatorValue !== null &&
-											selectedBranch?.discriminatorValue !== undefined
-										) {
-											baseValue[discriminator] = selectedBranch.discriminatorValue
-										}
+											if (
+												discriminator &&
+												selectedBranch?.discriminatorValue !== null &&
+												selectedBranch?.discriminatorValue !== undefined
+											) {
+												baseValue[discriminator] = selectedBranch.discriminatorValue
+											}
 
-										triggerFormEvents(inputProps, baseValue)
-									} else {
-										const currentValue = isObject(value) ? (value as Record<string, unknown>) : {}
-										const nextValue: Record<string, unknown> = {
-											...currentValue,
-											[fieldKey]: newFieldValue,
+											triggerFormEvents(inputProps, baseValue)
+										} else {
+											const currentValue = isObject(value) ? (value as Record<string, unknown>) : {}
+											const nextValue: Record<string, unknown> = {
+												...currentValue,
+												[fieldKey]: newFieldValue,
+											}
+											if (
+												discriminator &&
+												selectedBranch?.discriminatorValue !== null &&
+												selectedBranch?.discriminatorValue !== undefined
+											) {
+												nextValue[discriminator] = selectedBranch.discriminatorValue
+											}
+											triggerFormEvents(inputProps, nextValue)
 										}
-										if (
-											discriminator &&
-											selectedBranch?.discriminatorValue !== null &&
-											selectedBranch?.discriminatorValue !== undefined
-										) {
-											nextValue[discriminator] = selectedBranch.discriminatorValue
-										}
-										triggerFormEvents(inputProps, nextValue)
-									}
+									},
 								},
-							}}
-						/>
+							})}
+						</div>
 					)
 				})}
 			</Stack>

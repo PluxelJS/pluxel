@@ -237,7 +237,7 @@ class EffectsImpl implements Effects, EffectGuardHost {
 		const reqPhase = normalizePhase(meta?.phase)
 		let pIdx = phaseIndex(reqPhase)
 		const drainIdx = this.drainPhaseIndex
-			if (drainIdx !== null && drainIdx !== undefined && pIdx < drainIdx) pIdx = drainIdx
+		if (drainIdx !== null && drainIdx !== undefined && pIdx < drainIdx) pIdx = drainIdx
 		this.stacks[pIdx].push(handle)
 
 		return new EffectGuard(this, id, nextToken)
@@ -409,26 +409,26 @@ class EffectsImpl implements Effects, EffectGuardHost {
 			this.rejectById[id] = reject
 		}
 
-		void Promise.resolve(ret).then(
-			() => {
+		void (async () => {
+			try {
+				await Promise.resolve(ret)
 				const resolve = this.resolveById[id]
 				if (resolve) {
 					this.resolveById[id] = null
 					this.rejectById[id] = null
 					resolve()
 				}
-				this.finish(id)
-			},
-			(error) => {
+			} catch (error) {
 				const reject = this.rejectById[id]
 				if (reject) {
 					this.resolveById[id] = null
 					this.rejectById[id] = null
 					reject(error)
 				}
+			} finally {
 				this.finish(id)
-			},
-		)
+			}
+		})()
 
 		return p
 	}

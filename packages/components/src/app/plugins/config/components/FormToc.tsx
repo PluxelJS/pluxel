@@ -102,7 +102,7 @@ export function FormToc({
 				let current: { id: string; score: number } | null = null
 
 				for (const anchor of anchorsRef.current) {
-					const el = document.querySelector<HTMLElement>(`#${CSS.escape(anchor.id)}`)
+					const el = document.getElementById(anchor.id)
 					if (!el) continue
 					const container =
 						(scrollHost && scrollHost.contains(el) ? scrollHost : null) ??

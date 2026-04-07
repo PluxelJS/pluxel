@@ -1,8 +1,7 @@
 import type { Context as PlxContext } from '@pluxel/core'
 import * as v from 'valibot'
 
-import { PluginGroupInput } from './schema'
-import type { PluginGroupInputValue, PluginGroupOutput } from './schema'
+import { PluginGroupInput, type PluginGroupInputValue, type PluginGroupOutput } from './schema'
 
 export function readGroups(pCtx: PlxContext): PluginGroupOutput[] {
 	const raw = pCtx.configService.getExtra('groups')

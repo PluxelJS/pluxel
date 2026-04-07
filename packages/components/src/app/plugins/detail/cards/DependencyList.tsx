@@ -1,13 +1,12 @@
 import { Badge, Box, Group, Text, Tooltip } from '@mantine/core'
-import type React from 'react'
-import { useMemo } from 'react'
+import { useMemo, type ElementType, type ReactNode } from 'react'
 import type { WorkbenchNavigationRequest } from '../../../workbench/context'
 import { usePluginDependencies } from '../context'
 
 export interface DependencyListProps {
-	LinkComponent?: React.ElementType<{
+	LinkComponent?: ElementType<{
 		to: string
-		children: React.ReactNode
+		children: ReactNode
 		workbenchMode?: WorkbenchNavigationRequest
 	}>
 	isLinkable?: (name: string) => boolean

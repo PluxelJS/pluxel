@@ -25,15 +25,24 @@ import { useHotkeys } from '@mantine/hooks'
 import { openConfirmModal } from '@mantine/modals'
 import {
 	IconAlertTriangle,
+	IconPackages,
 	IconRefresh,
 	IconRotateClockwise,
 	IconSearch,
+	IconSearch as IconSearchEmpty,
 	IconTerminal2,
 	IconTrash,
 	IconX,
 } from '@tabler/icons-react'
-import type { FormEventHandler } from 'react'
-import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react'
+import {
+	useCallback,
+	useDeferredValue,
+	useEffect,
+	useMemo,
+	useRef,
+	useState,
+	type FormEventHandler,
+} from 'react'
 import {
 	type PackageBatchResult,
 	type PackageInventoryEntry,
@@ -57,7 +66,6 @@ import {
 } from './packageManagerModel'
 import { PackageIssuesPanel } from './PackageIssuesPanel'
 import { PackageOperationLogModal } from './PackageOperationLogModal'
-import { IconPackages, IconSearch as IconSearchEmpty } from '@tabler/icons-react'
 import { EmptyState, ErrorState } from '../../components'
 import { usePluginOverview } from '../plugins/pluginOverviewStore'
 import { subscribeInvalidations, invalidate } from '../data/invalidations'

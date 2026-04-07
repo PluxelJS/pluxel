@@ -2,8 +2,11 @@ import { existsSync } from 'node:fs'
 import { copyFile, mkdir } from 'node:fs/promises'
 import { dirname } from 'pathe'
 
-import type { MaterializeProfiledFileOptions, ResolvedProfiledPath } from '@pluxel/runtime/internal'
-import { resolveProfiledPath } from '@pluxel/runtime/internal'
+import {
+	resolveProfiledPath,
+	type MaterializeProfiledFileOptions,
+	type ResolvedProfiledPath,
+} from '@pluxel/runtime/internal'
 import type { FsServiceNodeBackendFs } from '@pluxel/runtime/services'
 
 type MaterializeFs = Pick<FsServiceNodeBackendFs, 'existsSync'> & {

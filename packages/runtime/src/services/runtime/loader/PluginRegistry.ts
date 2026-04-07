@@ -36,7 +36,7 @@ const sameDir = (a: string, b: string) => {
 	// Avoid `pathe.normalize/dirname` in the common case.
 	const ai = a.lastIndexOf('/')
 	const bi = b.lastIndexOf('/')
-	if (ai > 0 && bi > 0 && a.indexOf('\\') === -1 && b.indexOf('\\') === -1) {
+	if (ai > 0 && bi > 0 && !a.includes('\\') && !b.includes('\\')) {
 		return a.slice(0, ai) === b.slice(0, bi)
 	}
 

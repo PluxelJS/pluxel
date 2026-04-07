@@ -140,16 +140,18 @@ export class BatchDebouncer {
 	}
 	private enqueueFlush(files: string[], epoch: number) {
 		this.inFlightCount++
-		this.inFlight = this.inFlight.then(async () => {
-			try {
-				await this.flushFn(files, epoch)
-			} catch (error) {
-				this.onError(error)
-			} finally {
-				this.inFlightCount = Math.max(0, this.inFlightCount - 1)
-				this.notifyIdle()
-			}
-		})
+		this.inFlight = this.inFlight.then(() => this.runFlush(files, epoch))
+	}
+
+	private async runFlush(files: string[], epoch: number): Promise<void> {
+		try {
+			await this.flushFn(files, epoch)
+		} catch (error) {
+			this.onError(error)
+		} finally {
+			this.inFlightCount = Math.max(0, this.inFlightCount - 1)
+			this.notifyIdle()
+		}
 	}
 
 	private notifyIdle() {

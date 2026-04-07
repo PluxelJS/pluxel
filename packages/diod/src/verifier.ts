@@ -2,8 +2,7 @@
 
 import { createErr, createOk, type Result } from 'option-t/plain_result'
 import type { ServiceListMetadata } from './internal-types'
-import type { AliasKey, Identifier } from './types'
-import { RegistrationType } from './types'
+import { RegistrationType, type AliasKey, type Identifier } from './types'
 import { getDependencyCount } from './utils/reflection'
 
 /* ----------------------------------------------------------------------------

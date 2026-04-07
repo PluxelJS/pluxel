@@ -1,12 +1,12 @@
-import type { DependencyList } from 'react'
-import { useMemo, useSyncExternalStore } from 'react'
-import type {
-	ExtensionContext,
-	ExtensionServices,
-	GlobalExtensionContext,
-	PluginExtensionContext,
+import { useMemo, useSyncExternalStore, type DependencyList } from 'react'
+import {
+	useGlobalExtensionContext,
+	usePluginExtensionContext,
+	type ExtensionContext,
+	type ExtensionServices,
+	type GlobalExtensionContext,
+	type PluginExtensionContext,
 } from './ui-contracts'
-import { useGlobalExtensionContext, usePluginExtensionContext } from './ui-contracts'
 import type { RuntimeTransportClient } from '../client'
 import type { ExtensionUiRpcMap, ExtensionUiSignalDbMap } from '../protocol'
 import type {

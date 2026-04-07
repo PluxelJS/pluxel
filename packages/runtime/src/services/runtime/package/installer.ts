@@ -1,6 +1,5 @@
 import type { Context } from '@pluxel/core'
-import type { OperationOptions } from 'nypm'
-import { addDependency, removeDependency } from 'nypm'
+import { addDependency, removeDependency, type OperationOptions } from 'nypm'
 import { type PackageJson, readPackageJSON } from 'pkg-types'
 
 import { getExsolveCache } from '../shared/exsolve'

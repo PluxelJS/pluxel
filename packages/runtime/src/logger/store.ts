@@ -1,11 +1,12 @@
-import type {
-	CompiledLogFilter,
-	LogFilter,
-	LogRangeResult,
-	LogStreamMeta,
-	RuntimeLogLine,
+import {
+	compileLogFilter,
+	matchesLogFilterCompiled,
+	type CompiledLogFilter,
+	type LogFilter,
+	type LogRangeResult,
+	type LogStreamMeta,
+	type RuntimeLogLine,
 } from './protocol'
-import { compileLogFilter, matchesLogFilterCompiled } from './protocol'
 
 const LOG_EVENT = 'runtime_log_append'
 const RESET_EVENT = 'runtime_log_reset'

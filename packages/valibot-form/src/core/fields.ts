@@ -1,18 +1,17 @@
 import { DEFAULT_TEXTS } from './constants'
-import type {
-	ArrayMeta,
-	FormMeta,
-	MetaType,
-	NumberMeta,
-	ObjectMeta,
-	PicklistMeta,
-	RecordMeta,
-	StringMeta,
-	UnionMeta,
+import {
+	META_TYPES,
+	type ArrayMeta,
+	type FormMeta,
+	type MetaType,
+	type NumberMeta,
+	type ObjectMeta,
+	type PicklistMeta,
+	type RecordMeta,
+	type StringMeta,
+	type UnionMeta,
 } from './meta'
-import { META_TYPES } from './meta'
-import type { Schema } from './schema'
-import { readMeta } from './schema'
+import { readMeta, type Schema } from './schema'
 import { collectObjectEntries } from './utils/objectEntries'
 
 export type FieldKind =
@@ -457,9 +456,10 @@ function entriesToMap(schema: Schema): Map<string, Schema> | undefined {
 }
 
 function inferDiscriminatorKey(branches: readonly Schema[]): string | undefined {
-	const entryMaps = branches
-		.map((branch) => entriesToMap(branch))
-		.filter(Boolean) as Map<string, Schema>[]
+	const entryMaps = branches.map((branch) => entriesToMap(branch)).filter(Boolean) as Map<
+		string,
+		Schema
+	>[]
 	if (entryMaps.length === 0) return undefined
 
 	const candidate = new Map<string, DiscriminatorValue[]>()

@@ -10,10 +10,9 @@ import {
 	setRuntimeModuleAdapter,
 } from '@pluxel/runtime/internal'
 import { isAbsolute, resolve } from 'pathe'
-import { type Plugin as VitePlugin } from 'vite'
+import type { Plugin as VitePlugin } from 'vite'
 
-import type { HmrWorkspaceSnapshot } from '../snapshot'
-import { assertHmrWorkspaceSnapshot } from '../snapshot'
+import { assertHmrWorkspaceSnapshot, type HmrWorkspaceSnapshot } from '../snapshot'
 import { BundlerService } from './compile/bundler/BundlerService'
 import type { HMRDependencyConfig } from './hmr/config'
 import { HMRService, type HMRConfig } from './hmr/HMRService'

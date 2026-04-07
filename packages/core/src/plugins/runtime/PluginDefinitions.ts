@@ -15,7 +15,8 @@ import { createErr, createOk } from 'option-t/plain_result'
 import { type DiodContainer, ExtendedContainerBuilder } from '../../container'
 import type { LeanMapTracker } from '../../container/LeanMapTracker'
 import { getForkOf } from './fork'
-import { BasePlugin, FORK_CTX, PLUGIN_CTX } from '../composition/BasePlugin'
+import { BasePlugin } from '../composition/BasePlugin'
+import { FORK_CTX, PLUGIN_CTX } from '../composition/symbols'
 import {
 	getClassParams,
 	getPluginInfo,

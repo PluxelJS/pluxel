@@ -4,6 +4,7 @@ import {
 	type LogSseEvent,
 	type LogStreamMeta,
 	type RuntimeLogLine,
+	useRuntimeTransportClient,
 } from '../../runtime'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import {
@@ -18,7 +19,6 @@ import {
 	useState,
 	useSyncExternalStore,
 } from 'react'
-import { useRuntimeTransportClient } from '../../runtime'
 import { type PlxLogTheme, useThemeModel } from '../../theme'
 
 interface Props {
@@ -958,6 +958,7 @@ export function LiveLog({ module, showName = true, filter, variant = 'full' }: P
 				})
 				void authProbeInFlightRef.current.then((blocked) => {
 					if (blocked) es.close()
+					return undefined
 				})
 			}
 
@@ -1364,6 +1365,7 @@ export function LiveLog({ module, showName = true, filter, variant = 'full' }: P
 												formatLineForCopy(selectedLine, { showCategory, showName }),
 											).then((ok) => {
 												if (ok) setCopied('line')
+												return undefined
 											})
 										}}
 										style={controlButtonStyle(palette)}
@@ -1375,6 +1377,7 @@ export function LiveLog({ module, showName = true, filter, variant = 'full' }: P
 										onClick={() => {
 											void copyToClipboard(JSON.stringify(selectedLine, null, 2)).then((ok) => {
 												if (ok) setCopied('json')
+												return undefined
 											})
 										}}
 										style={controlButtonStyle(palette)}

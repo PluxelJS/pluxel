@@ -6,9 +6,13 @@ import {
 } from '../decorators/decorator/api'
 import { __DEV__, type AnyCtor } from '../decorators/decorator/shared'
 import type { PluginIdentifier } from '../types'
-import type { BaseFeature, FeatureCtor, HostBoundFeature } from './BaseFeature'
-import { isHostBoundFeature } from './BaseFeature'
-import { PLUGIN_CTX } from './BasePlugin'
+import {
+	isHostBoundFeature,
+	type BaseFeature,
+	type FeatureCtor,
+	type HostBoundFeature,
+} from './BaseFeature'
+import { PLUGIN_CTX } from './symbols'
 
 const FEATURE_DECLARATION_POLICY = Symbol.for('pluxel:feature:declarationPolicy')
 type FeatureDeclarationPolicy = 'off' | 'warn' | 'error'

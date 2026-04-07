@@ -1,6 +1,5 @@
 import { Tabs } from '@mantine/core'
-import type { ReactNode } from 'react'
-import { useCallback, useMemo } from 'react'
+import { useCallback, useMemo, type ReactNode } from 'react'
 import {
 	PANE_TABS_PROPS,
 	PaneTabLabel,

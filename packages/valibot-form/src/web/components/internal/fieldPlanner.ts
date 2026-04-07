@@ -1,6 +1,5 @@
 import { DEFAULT_SECTION_ID } from '../../../core/constants'
-import type { FieldNode, NormalizedSectionMeta } from '../../../core/fields'
-import { extractFormFields } from '../../../core/fields'
+import { extractFormFields, type FieldNode, type NormalizedSectionMeta } from '../../../core/fields'
 import type { ObjectLikeSchema } from '../../../core'
 import { countCompactFields, resolveSectionColumns } from './layout'
 

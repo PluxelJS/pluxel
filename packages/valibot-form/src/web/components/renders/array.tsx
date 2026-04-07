@@ -30,8 +30,7 @@ import {
 } from '@dnd-kit/core'
 import { SortableContext, arrayMove, rectSortingStrategy, useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
-import { useEffect, useMemo, useRef, useState } from 'react'
-import type { ReactNode } from 'react'
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { DEFAULT_TEXTS, GRID_COLUMN_THRESHOLD } from '../../../core/constants'
 import type {
 	ArrayFieldNode,
@@ -41,9 +40,9 @@ import type {
 	StringFieldNode,
 } from '../../../core/fields'
 import { FieldChrome } from '../chrome/FieldChrome'
+import { useFieldRenderer } from '../internal/fieldRendererContext'
 import { cleanProps } from '../../utils/propHelpers'
 import { PicklistControl } from './controls/PicklistControl'
-import { FieldRenderer } from '../internal/FieldRenderer'
 import {
 	isErrorWithPath,
 	joinErrorMessages,
@@ -275,6 +274,7 @@ export function ArrayField(props: RendererProps) {
 function ArrayFieldMain(props: RendererProps) {
 	const { node, errors, inputProps, value } = props
 	const info = node as ArrayFieldNode
+	const renderField = useFieldRenderer()
 	const items = Array.isArray(value) ? (value as unknown[]) : []
 	const itemNode = info.item ?? null
 
@@ -609,14 +609,12 @@ function ArrayFieldMain(props: RendererProps) {
 				)
 				const itemErrors = itemErrorsMap.get(index) ?? []
 				return {
-					node: (
-						<FieldRenderer
-							node={nestedNode}
-							value={current}
-							errors={itemErrors}
-							inputProps={nestedInputProps}
-						/>
-					),
+					node: renderField({
+						node: nestedNode,
+						value: current,
+						errors: itemErrors,
+						inputProps: nestedInputProps,
+					}),
 				}
 			}
 			case 'json':

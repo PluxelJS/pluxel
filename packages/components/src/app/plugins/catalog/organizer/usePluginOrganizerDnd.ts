@@ -8,8 +8,16 @@ import {
 	useSensors,
 } from '@dnd-kit/core'
 import { arrayMove, sortableKeyboardCoordinates } from '@dnd-kit/sortable'
-import { startTransition, useCallback, useEffect, useMemo, useState } from 'react'
-import type { Dispatch, MutableRefObject, SetStateAction } from 'react'
+import {
+	startTransition,
+	useCallback,
+	useEffect,
+	useMemo,
+	useState,
+	type Dispatch,
+	type MutableRefObject,
+	type SetStateAction,
+} from 'react'
 import { assertNoDup } from './organizerModel'
 import {
 	buildContainers,

@@ -45,8 +45,17 @@ import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable'
 import { ActionIcon, Badge, Box, Card, ScrollArea, Stack, Text, Tooltip } from '@mantine/core'
 import { openConfirmModal } from '@mantine/modals'
 import { IconArrowsShuffle, IconFolderPlus, IconLayoutKanban } from '@tabler/icons-react'
-import type React from 'react'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import {
+	useCallback,
+	useEffect,
+	useMemo,
+	useRef,
+	useState,
+	type ComponentPropsWithoutRef,
+	type ComponentType,
+	type CSSProperties,
+	type ReactNode,
+} from 'react'
 import {
 	DEFAULT_STATUS_FILTER,
 	hasActiveSearchTokens,
@@ -92,12 +101,12 @@ type Props = {
 	onGroupsChange: (groups: GroupConfig[]) => void
 	filterQuery?: string
 	statusFilter?: StatusFilter
-	LinkComponent?: React.ComponentType<
+	LinkComponent?: ComponentType<
 		{
 			to: string
-			children: React.ReactNode
+			children: ReactNode
 			workbenchMode?: WorkbenchNavigationRequest
-		} & Omit<React.ComponentPropsWithoutRef<'a'>, 'href'>
+		} & Omit<ComponentPropsWithoutRef<'a'>, 'href'>
 	>
 	activeId?: string | null
 	activeIds?: string[]
@@ -109,7 +118,7 @@ type Props = {
 	locked?: boolean
 	/** 允许外部容器传样式以确保 100% 高度环境 */
 	className?: string
-	style?: React.CSSProperties
+	style?: CSSProperties
 }
 
 type GroupEditorState =
@@ -397,14 +406,15 @@ export function PluginOrganizer({
 			const orderedPluginIds = groupEditor?.pluginIds?.length
 				? sortPluginIdsByOrder(groupEditor.pluginIds, groupsRef.current, ungroupedRef.current)
 				: []
-			const normalized = orderedPluginIds.length > 0
-				? movePluginIdsToTarget({
-						groups: groupsRef.current,
-						ungroupedOrder: ungroupedRef.current,
-						pluginIds: orderedPluginIds,
-						targetGroupId: 'ROOT_UNGROUPED',
-					})
-				: { groups: groupsRef.current, ungroupedOrder: ungroupedRef.current }
+			const normalized =
+				orderedPluginIds.length > 0
+					? movePluginIdsToTarget({
+							groups: groupsRef.current,
+							ungroupedOrder: ungroupedRef.current,
+							pluginIds: orderedPluginIds,
+							targetGroupId: 'ROOT_UNGROUPED',
+						})
+					: { groups: groupsRef.current, ungroupedOrder: ungroupedRef.current }
 			const nextGroups: GroupConfig[] = [
 				...normalized.groups,
 				{ groupId: genGroupId(), name, pluginIds: orderedPluginIds },

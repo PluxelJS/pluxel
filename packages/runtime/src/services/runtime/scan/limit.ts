@@ -9,22 +9,19 @@ export function createLimiter(concurrency: number) {
 
 	return function run<T>(task: () => Promise<T>): Promise<T> {
 		return new Promise((resolve, reject) => {
-			const execute = () => {
+			const execute = async () => {
 				active++
-				task().then(
-					(value) => {
-						resolve(value)
-						next()
-					},
-					(error) => {
-						reject(error)
-						next()
-					},
-				)
+				try {
+					resolve(await task())
+				} catch (error) {
+					reject(error)
+				} finally {
+					next()
+				}
 			}
 
-			if (active < concurrency) execute()
-			else queue.push(execute)
+			if (active < concurrency) void execute()
+			else queue.push(() => void execute())
 		})
 	}
 }

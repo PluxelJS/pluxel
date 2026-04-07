@@ -33,8 +33,7 @@ import type {
 } from 'oxc-parser'
 import type { TransformPluginContext } from 'rolldown'
 import { normalizeSchemaSource } from '../utils/configHandler'
-import type { ViteCompatPlugin } from './compat'
-import { allowOptionalQuerySuffix } from './compat'
+import { allowOptionalQuerySuffix, type ViteCompatPlugin } from './compat'
 import { normalizeViteId } from './viteNormalizeId'
 import { normalizePatterns, parseWithLang } from './pluginUtils'
 
@@ -394,10 +393,7 @@ function collectModuleInfo(
 	return info
 }
 
-function ensureModuleInfo(
-	moduleId: string,
-	ctx: ResolveContext,
-): Promise<ModuleInfo | undefined> {
+function ensureModuleInfo(moduleId: string, ctx: ResolveContext): Promise<ModuleInfo | undefined> {
 	const cached = ctx.moduleInfoStore.cache.get(moduleId)
 	if (cached) return cached
 
@@ -1590,12 +1586,12 @@ async function extractCfgSchemasFromSchemaMapExpr(
 			else {
 				const stringKey = readLiteralString(prop.key)
 				const numberKey = readLiteralNumber(prop.key)
-					if (stringKey !== null && stringKey !== undefined) key = stringKey
-					else if (numberKey !== null && numberKey !== undefined) key = String(numberKey)
-				}
-				if (key === null || key === undefined) {
-					throw new Error(`[cfg] ${kind} key type not supported: ${moduleInfo.id}`)
-				}
+				if (stringKey !== null && stringKey !== undefined) key = stringKey
+				else if (numberKey !== null && numberKey !== undefined) key = String(numberKey)
+			}
+			if (key === null || key === undefined) {
+				throw new Error(`[cfg] ${kind} key type not supported: ${moduleInfo.id}`)
+			}
 			const k = String(key ?? '').trim()
 			if (!k) throw new Error(`[cfg] ${kind} key is empty: ${moduleInfo.id}`)
 			const v = prop.value as Expression

@@ -2,21 +2,22 @@
 
 import { MantineProvider } from '@mantine/core'
 import { RuntimeTransportClientProvider } from '../../src/web/react'
-import { act } from 'react'
-import { useMemo, useState } from 'react'
+import { act, useMemo, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import * as v from 'valibot'
 import * as f from 'valibot-form'
 import { WorkbenchTabsProvider } from '../../../components/src/app/workbench/context'
-import { PluginWorkbenchLayoutProvider } from '../../../components/src/app/plugins/detail/workbench/context'
 import { ConfigLayout } from '../../../components/src/app/plugins/config/ConfigLayout'
 import { ConfigForm } from '../../../components/src/app/plugins/config/ConfigForm'
 import { PluginScopeProvider } from '../../../components/src/app/plugins/detail/context'
-import { PluginWorkbenchAsideProvider } from '../../../components/src/app/plugins/detail/workbench/context'
 import { PluginWorkbenchSidebar } from '../../../components/src/app/plugins/detail/workbench/PluginWorkbenchHostViews'
 import { BuiltinDoc } from '../../../components/src/extension/builtin/Doc'
-import { usePluginWorkbenchAssistVisibility } from '../../../components/src/app/plugins/detail/workbench/context'
+import {
+	PluginWorkbenchAsideProvider,
+	PluginWorkbenchLayoutProvider,
+	usePluginWorkbenchAssistVisibility,
+} from '../../../components/src/app/plugins/detail/workbench/context'
 import { PluginWorkbenchTabActivityProvider } from '../../../components/src/app/plugins/detail/workbench/tabActivity'
 
 const ThemeCustomizer = () => null

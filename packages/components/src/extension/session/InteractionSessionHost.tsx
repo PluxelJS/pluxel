@@ -1,17 +1,15 @@
 import { Loader, Paper, Stack, Text } from '@mantine/core'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { InteractionSessionDef } from '@pluxel/runtime/web/extensions'
-import type {
-	ExtensionSessionLoadResult,
-	ExtensionSessionMutationResult,
-	InteractionSessionComponent,
-	InteractionSessionComponentProps,
-} from '@pluxel/runtime/web'
 import {
 	createPluginExtensionContext,
 	ExtensionProvider,
 	useExtensionPathname,
 	useGlobalExtensionContext,
+	type ExtensionSessionLoadResult,
+	type ExtensionSessionMutationResult,
+	type InteractionSessionComponent,
+	type InteractionSessionComponentProps,
 } from '@pluxel/runtime/web'
 
 type LoadedSessionPayload = {

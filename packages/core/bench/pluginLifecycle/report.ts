@@ -211,7 +211,7 @@ export function buildComparison(
 	})
 
 	for (const base of baselineReport?.tasks ?? []) {
-		if (!rows.find((row) => row.name === base.name)) {
+		if (!rows.some((row) => row.name === base.name)) {
 			comparison.push({
 				name: base.name,
 				baselineOpsMean: base.opsMean ?? null,
@@ -285,19 +285,20 @@ export function toMainReport(input: {
 			latencyP99Ms: row.latencyP99Ms,
 			runs: row.runs,
 		})),
-		comparison: input.comparison.length > 0
-			? input.comparison.map((item) => ({
-					name: item.name,
-					baselineOpsMean: item.baselineOpsMean,
-					opsMean: item.opsMean,
-					opsDeltaPct: item.opsDeltaPct,
-					baselineLatencyMeanMs: item.baselineLatencyMeanMs,
-					latencyMeanMs: item.latencyMeanMs,
-					latencyDeltaPct: item.latencyDeltaPct,
-					runs: item.runs,
-					status: item.status,
-				}))
-			: undefined,
+		comparison:
+			input.comparison.length > 0
+				? input.comparison.map((item) => ({
+						name: item.name,
+						baselineOpsMean: item.baselineOpsMean,
+						opsMean: item.opsMean,
+						opsDeltaPct: item.opsDeltaPct,
+						baselineLatencyMeanMs: item.baselineLatencyMeanMs,
+						latencyMeanMs: item.latencyMeanMs,
+						latencyDeltaPct: item.latencyDeltaPct,
+						runs: item.runs,
+						status: item.status,
+					}))
+				: undefined,
 		baseline:
 			input.baselineRecordedAt != null ? { recordedAt: input.baselineRecordedAt } : undefined,
 	}

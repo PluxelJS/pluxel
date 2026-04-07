@@ -1,13 +1,18 @@
-import type React from 'react'
-import { forwardRef, useCallback } from 'react'
+import {
+	forwardRef,
+	useCallback,
+	type ComponentPropsWithoutRef,
+	type MouseEvent,
+	type ReactNode,
+} from 'react'
 import { useNavigate, useRouter } from '@tanstack/react-router'
 import { useWorkbenchTabs, type WorkbenchNavigationRequest } from './workbench/context'
 
 export type RouterLinkAdapterProps = {
 	to: string
-	children: React.ReactNode
+	children: ReactNode
 	workbenchMode?: WorkbenchNavigationRequest
-} & Omit<React.ComponentPropsWithoutRef<'a'>, 'href'>
+} & Omit<ComponentPropsWithoutRef<'a'>, 'href'>
 
 export const RouterLinkAdapter = forwardRef<HTMLAnchorElement, RouterLinkAdapterProps>(
 	({ to, children, onClick, target, rel, workbenchMode = 'auto', ...rest }, ref) => {
@@ -23,7 +28,7 @@ export const RouterLinkAdapter = forwardRef<HTMLAnchorElement, RouterLinkAdapter
 		}
 
 		const handleClick = useCallback(
-			(event: React.MouseEvent<HTMLAnchorElement>) => {
+			(event: MouseEvent<HTMLAnchorElement>) => {
 				onClick?.(event)
 				if (
 					event.defaultPrevented ||

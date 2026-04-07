@@ -1,7 +1,6 @@
 // tests/_helpers.ts
 
-import type { Maybe } from 'option-t/maybe'
-import { expectNotNullOrUndefined } from 'option-t/maybe'
+import { expectNotNullOrUndefined, type Maybe } from 'option-t/maybe'
 import type { Result } from 'option-t/plain_result'
 import {
 	expectErr as expectErrForResult,

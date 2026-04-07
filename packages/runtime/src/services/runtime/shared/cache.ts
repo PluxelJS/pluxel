@@ -119,11 +119,11 @@ export function getOrCreateCachedValue<K, V>(
 export function getOrCreatePromise<K, V>(
 	map: Map<K, Promise<V>>,
 	key: K,
-	create: () => Promise<V>,
+	create: () => PromiseLike<V> | V,
 	opts?: { limit?: number; evictIf?: (value: V) => boolean },
 ): Promise<V> {
 	const limit = opts?.limit ?? 0
-	if (limit <= 0) return create()
+	if (limit <= 0) return Promise.resolve(create())
 
 	const cached = map.get(key)
 	if (cached) {
@@ -131,7 +131,7 @@ export function getOrCreatePromise<K, V>(
 		return cached
 	}
 
-	const promise = create()
+	const promise = Promise.resolve(create())
 		.then((value) => {
 			if (opts?.evictIf?.(value)) sieveDelete(map, key)
 			return value

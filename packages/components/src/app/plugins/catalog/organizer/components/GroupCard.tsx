@@ -20,8 +20,14 @@ import {
 	IconTrash,
 } from '@tabler/icons-react'
 import type { UniqueIdentifier } from '@dnd-kit/core'
-import type React from 'react'
-import { memo, useMemo } from 'react'
+import {
+	memo,
+	useMemo,
+	type ComponentPropsWithoutRef,
+	type ComponentType,
+	type MouseEvent,
+	type ReactNode,
+} from 'react'
 import type { WorkbenchNavigationRequest } from '../../../../workbench/context'
 import type { GroupConfig } from '../types'
 import type { RowDensity } from '../constants'
@@ -37,12 +43,13 @@ type Props = {
 	activeSet: Set<string>
 	focusedId: string | null
 	onSelect: (e: React.MouseEvent, id: string, mode?: 'click' | 'context' | 'toggle') => void
-	LinkComp?: React.ComponentType<
+	onSelect: (e: MouseEvent, id: string, mode?: 'click' | 'context' | 'toggle') => void
+	LinkComp?: ComponentType<
 		{
 			to: string
-			children: React.ReactNode
+			children: ReactNode
 			workbenchMode?: WorkbenchNavigationRequest
-		} & Omit<React.ComponentPropsWithoutRef<'a'>, 'href'>
+		} & Omit<ComponentPropsWithoutRef<'a'>, 'href'>
 	>
 	sortableId: UniqueIdentifier
 	droppableId: UniqueIdentifier

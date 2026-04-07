@@ -8,8 +8,7 @@
 // - Performance first: heavy work is split into pure helpers without changing
 //   construction/lifecycle hot paths.
 
-import type { Context as PluxelContext, ServiceClass } from '@pluxel/context'
-import { Injectable } from '@pluxel/context'
+import { Injectable, type Context as PluxelContext, type ServiceClass } from '@pluxel/context'
 import { createErr, createOk } from 'option-t/plain_result'
 import type { ServiceMap } from '../../container'
 import { LeanMapTracker } from '../../container/LeanMapTracker'
@@ -149,8 +148,7 @@ export class PluginService {
 		this.startConcurrency = config?.startConcurrency ?? 8
 		this.stopConcurrency = config?.stopConcurrency ?? 1
 		this.featureDeclarationPolicyExplicit =
-			config?.featureDeclarationPolicy !== null &&
-			config?.featureDeclarationPolicy !== undefined
+			config?.featureDeclarationPolicy !== null && config?.featureDeclarationPolicy !== undefined
 		this.featureDeclarationPolicyDefault =
 			config?.featureDeclarationPolicy ?? (isProduction ? 'off' : 'warn')
 
@@ -170,10 +168,7 @@ export class PluginService {
 		this.definitions = new PluginDefinitions(() => {
 			const pluginCTX = this.ctx.root.isolate(isolated, { name: `${this.order++}` })
 			const override = this.nextCommitFeatureDeclarationPolicy
-				if (
-					this.featureDeclarationPolicyExplicit ||
-					(override !== null && override !== undefined)
-				) {
+			if (this.featureDeclarationPolicyExplicit || (override !== null && override !== undefined)) {
 				const policy = override ?? this.featureDeclarationPolicyDefault
 				Object.defineProperty(pluginCTX, PluginService.FEATURE_DECLARATION_POLICY, {
 					value: policy,

@@ -6,8 +6,11 @@ import type {
 	UiNotifyPayload,
 } from './ui-contracts'
 import type { InteractionContractRef } from './interaction-contracts'
-import type { ConfigLayoutPart } from '@pluxel/core'
-import { assertValidConfigLayout, normalizeMarkdownTemplate } from '@pluxel/core'
+import {
+	assertValidConfigLayout,
+	normalizeMarkdownTemplate,
+	type ConfigLayoutPart,
+} from '@pluxel/core'
 
 export type BuiltinExtensionKind = 'doc'
 

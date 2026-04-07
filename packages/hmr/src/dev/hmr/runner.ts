@@ -3,8 +3,12 @@ import { readFile, realpath } from 'node:fs/promises'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { getDebugLogger } from '@pluxel/core/logger'
 import { dirname, resolve } from 'pathe'
-import type { Plugin } from 'vite'
-import { createServerModuleRunner, type DevEnvironment, type ViteDevServer } from 'vite'
+import {
+	createServerModuleRunner,
+	type DevEnvironment,
+	type Plugin,
+	type ViteDevServer,
+} from 'vite'
 import {
 	ESModulesEvaluator,
 	type EvaluatedModuleNode,
@@ -135,9 +139,10 @@ export class HmrRunner {
 		const providerModules = Object.values(this._bridgeProviders).filter(
 			(v): v is string => typeof v === 'string' && v.length > 0,
 		)
-		this._bridgeModules = providerModules.length > 0
-			? [...new Set([...baseBridgeModules, ...providerModules])]
-			: baseBridgeModules
+		this._bridgeModules =
+			providerModules.length > 0
+				? [...new Set([...baseBridgeModules, ...providerModules])]
+				: baseBridgeModules
 		this.installFetchModuleInterceptor()
 	}
 
@@ -597,7 +602,7 @@ export class HmrRunner {
 
 			return resolveModulePath(this._hostResolver, specifier, { conditions })
 		} catch {
-			return null
+			return Promise.resolve(null)
 		}
 	}
 

@@ -2,8 +2,7 @@
 import 'reflect-metadata'
 import { describe, expect, it } from 'vitest'
 import { ContainerBuilder } from '../src'
-import type { VerificationError } from '../src/verifier'
-import { ServiceVerificationAggregateError } from '../src/verifier'
+import { ServiceVerificationAggregateError, type VerificationError } from '../src/verifier'
 import { expectErr, expectExist, expectOk } from './_helpers'
 
 describe('alias index & resolution', () => {

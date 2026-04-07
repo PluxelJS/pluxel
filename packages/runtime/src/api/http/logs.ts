@@ -1,12 +1,13 @@
 import { parseEpoch, parseFromSeq, parseLogFilter, resolveFromSeq } from '../../logger/filters'
-import type {
-	LogFilter,
-	LogSseAppend,
-	LogSseGap,
-	LogSseReset,
-	RuntimeLogLine,
+import {
+	compileLogFilter,
+	matchesLogFilterCompiled,
+	type LogFilter,
+	type LogSseAppend,
+	type LogSseGap,
+	type LogSseReset,
+	type RuntimeLogLine,
 } from '../../logger/protocol'
-import { compileLogFilter, matchesLogFilterCompiled } from '../../logger/protocol'
 import {
 	type RuntimeLogStoreAppend,
 	type RuntimeLogStoreReset,

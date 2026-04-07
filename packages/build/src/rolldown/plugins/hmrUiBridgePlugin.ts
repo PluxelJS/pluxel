@@ -21,8 +21,7 @@
 
 import type { ImportDeclaration, ImportSpecifier, Program } from 'oxc-parser'
 import type { TransformPluginContext } from 'rolldown'
-import type { ViteCompatPlugin } from './compat'
-import { allowOptionalQuerySuffix } from './compat'
+import { allowOptionalQuerySuffix, type ViteCompatPlugin } from './compat'
 import { normalizeViteId } from './viteNormalizeId'
 import { normalizePatterns, parseWithLang } from './pluginUtils'
 

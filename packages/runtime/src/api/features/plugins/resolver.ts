@@ -1,5 +1,4 @@
-import { field, query, resolver } from '@gqloom/core'
-import type { Resolver } from '@gqloom/core'
+import { field, query, resolver, type Resolver } from '@gqloom/core'
 import type { Context as PlxContext } from '@pluxel/core'
 import * as v from 'valibot'
 
@@ -10,12 +9,12 @@ import { createPluginScope, ensurePlugin, getPluginDependencies, getScopeCtor } 
 
 export function createPluginResolvers(pCtx: PlxContext): Resolver[] {
 	const queries = resolver({
-			pluginId: query(PluginIdScope)
-				.input({ name: v.string() })
-				.resolve(({ name }) => {
-					ensurePlugin(pCtx, name)
-					return { __typename: 'PluginIdScope', name }
-				}),
+		pluginId: query(PluginIdScope)
+			.input({ name: v.string() })
+			.resolve(({ name }) => {
+				ensurePlugin(pCtx, name)
+				return { __typename: 'PluginIdScope', name }
+			}),
 		plugin: query(PluginScope)
 			.input({ name: v.string() })
 			.resolve(({ name }) => createPluginScope(pCtx, name)),

@@ -1,8 +1,6 @@
 import { isAbsolute, resolve } from 'pathe'
-import type { PluxelHmrConfigV1 } from './config'
-import { DEFAULT_HMR_CONFIG_BASENAME, readHmrConfigV1 } from './config'
-import type { WorkspaceSnapshot } from './diagnose'
-import { diagnoseWorkspace, mergeHmrProfile } from './diagnose'
+import { DEFAULT_HMR_CONFIG_BASENAME, readHmrConfigV1, type PluxelHmrConfigV1 } from './config'
+import { diagnoseWorkspace, mergeHmrProfile, type WorkspaceSnapshot } from './diagnose'
 import { nodeHmrWorkspaceFs, type HmrWorkspaceFs } from './fs'
 import { uniqPreserveOrder } from './utils'
 

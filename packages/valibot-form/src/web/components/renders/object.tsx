@@ -2,7 +2,7 @@ import { ActionIcon, Card, Collapse, Group, Stack, Text } from '@mantine/core'
 import { IconChevronDown, IconChevronRight } from '@tabler/icons-react'
 import { useMemo, useState } from 'react'
 import type { FieldNode, ObjectFieldNode } from '../../../core/fields'
-import { FieldRenderer } from '../internal/FieldRenderer'
+import { useFieldRenderer } from '../internal/fieldRendererContext'
 import { alignToCss, resolveFieldSpan } from '../internal/layout'
 import { planFieldSections } from '../internal/fieldPlanner'
 import {
@@ -20,6 +20,7 @@ const isObjectValue = (value: unknown): value is Record<string, unknown> =>
 export function ObjectField(props: RendererProps) {
 	const { node, errors, inputProps, value } = props
 	const info = node as ObjectFieldNode
+	const renderFieldNode = useFieldRenderer()
 	const baseErrors = normalizeErrorMessages(
 		errors?.filter((err) => typeof err !== 'object' || (err as any)?.dotPath?.length <= 1),
 	)
@@ -39,37 +40,34 @@ export function ObjectField(props: RendererProps) {
 	const sections = useMemo(() => planFieldSections(info.fields), [info.fields])
 	const [collapsed, setCollapsed] = useState(Boolean(info.collapsible && info.collapsed))
 
-	const renderField = (field: FieldNode) => {
+	const renderNestedField = (field: FieldNode) => {
 		if (!field.name) return null
 		const fieldValue = isObjectValue(value) ? value[field.name] : undefined
 		const fieldErrors = fieldErrorsMap.get(field.name) ?? []
 		const nestedName = inputProps.name ? `${inputProps.name}.${field.name}` : field.name
-		return (
-			<FieldRenderer
-				key={field.name}
-				node={field}
-				value={fieldValue}
-				errors={fieldErrors}
-				inputProps={{
-					name: nestedName,
-					onChange: (nextValue: unknown) => {
-						const current = isObjectValue(value) ? value : {}
-						const next = { ...current, [field.name!]: nextValue }
-						triggerFormEvents(inputProps, next)
-					},
-					onBlur: () => inputProps.onBlur?.({ target: { name: nestedName } } as any),
-					disabled: inputProps.disabled || field.meta.disabled,
-					readOnly: inputProps.readOnly || field.meta.readOnly,
-				}}
-			/>
-		)
+		return renderFieldNode({
+			node: field,
+			value: fieldValue,
+			errors: fieldErrors,
+			inputProps: {
+				name: nestedName,
+				onChange: (nextValue: unknown) => {
+					const current = isObjectValue(value) ? value : {}
+					const next = { ...current, [field.name!]: nextValue }
+					triggerFormEvents(inputProps, next)
+				},
+				onBlur: () => inputProps.onBlur?.({ target: { name: nestedName } } as any),
+				disabled: inputProps.disabled || field.meta.disabled,
+				readOnly: inputProps.readOnly || field.meta.readOnly,
+			},
+		})
 	}
 
 	const content = (
 		<Stack gap={info.gap ?? 'md'}>
 			{sections.hiddenFields.map((field) => (
 				<div key={`hidden-${field.name}`} style={{ display: 'none' }}>
-					{renderField(field.node)}
+					{renderNestedField(field.node)}
 				</div>
 			))}
 			{sections.sections.map((section) => (
@@ -101,7 +99,7 @@ export function ObjectField(props: RendererProps) {
 										alignSelf: alignToCss(field.meta.layout?.align),
 									}}
 								>
-									{renderField(field)}
+									{renderNestedField(field)}
 								</div>
 							)
 						})}

@@ -279,10 +279,13 @@ function callbackify<T>(
 	run: () => Promise<T>,
 	callback: (error: NodeJS.ErrnoException | null, value?: T) => void,
 ) {
-	run().then(
-		(value) => callback(null, value),
-		(error: NodeJS.ErrnoException) => callback(error),
-	)
+	void (async () => {
+		try {
+			callback(null, await run())
+		} catch (error) {
+			callback(error as NodeJS.ErrnoException)
+		}
+	})()
 }
 
 function createVirtualRuntime(state: VirtualFixtureState): FixtureFsApi {
@@ -737,13 +740,16 @@ function createVirtualRuntime(state: VirtualFixtureState): FixtureFsApi {
 				},
 				final(callback) {
 					const data = Buffer.concat(chunks)
-					;(flags.includes('a')
-						? appendFileRaw(targetPath, data, { encoding })
-						: writeFileRaw(targetPath, data, { encoding })
-					).then(
-						() => callback(),
-						(error: NodeJS.ErrnoException) => callback(error),
-					)
+					void (async () => {
+						try {
+							await (flags.includes('a')
+								? appendFileRaw(targetPath, data, { encoding })
+								: writeFileRaw(targetPath, data, { encoding }))
+							callback()
+						} catch (error) {
+							callback(error as NodeJS.ErrnoException)
+						}
+					})()
 				},
 			}) as ReturnType<typeof realFs.createWriteStream>
 		},

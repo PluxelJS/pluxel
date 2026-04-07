@@ -1,6 +1,5 @@
 import { writeFileSync } from 'node:fs'
-import type { DiscoveredPlugin } from '@pluxel/hmr/diagnose'
-import { toRootRelative, uniqSorted } from '@pluxel/hmr/diagnose'
+import { toRootRelative, type DiscoveredPlugin, uniqSorted } from '@pluxel/hmr/diagnose'
 import { dirname, resolve } from 'pathe'
 
 export const DEFAULT_HMR_DISCOVERED_BASENAME = 'pluxel.hmr.discovered.jsonc' as const
@@ -30,8 +29,9 @@ export function writeHmrDiscoveredIndex(params: {
 	discovered: DiscoveredPlugin[]
 }) {
 	const rootDirAbs = resolve(params.rootDir)
-	const discoveredSorted = [...params.discovered]
-		.sort((a, b) => a.name.localeCompare(b.name) || a.pkgDir.localeCompare(b.pkgDir))
+	const discoveredSorted = [...params.discovered].sort(
+		(a, b) => a.name.localeCompare(b.name) || a.pkgDir.localeCompare(b.pkgDir),
+	)
 
 	const builtinPackages = uniqSorted((params.builtinPackages ?? []).map(String).filter(Boolean))
 	const omitFromEntries = uniqSorted((params.omitFromEntries ?? []).map(String).filter(Boolean))

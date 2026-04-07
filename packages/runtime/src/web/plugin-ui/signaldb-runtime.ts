@@ -8,8 +8,7 @@ import {
 import maverickjsReactivityAdapter from '@signaldb/maverickjs'
 import { createUseReactivityHook } from '@signaldb/react'
 import { SyncManager } from '@signaldb/sync'
-import type { DependencyList } from 'react'
-import { useMemo } from 'react'
+import { useMemo, type DependencyList } from 'react'
 import type { RuntimeTransportClient } from '../client'
 import type { SseMessage } from '../sse'
 import {
@@ -219,9 +218,10 @@ class SignalDbReplicaNamespace {
 			.sync(collection, { force: true })
 			.then(() => {
 				const state = this.states.get(collection)
-				if (!state) return
+				if (!state) return undefined
 				this.clearRetry(collection)
 				state.meta.ready.set(true)
+				return undefined
 			})
 			.catch((error) => {
 				const state = this.states.get(collection)

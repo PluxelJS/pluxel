@@ -1,12 +1,14 @@
-import type {
-	BasePlugin,
-	CommitSummary,
-	ForkablePluginConstructor,
-	PluginConstructor,
-	PluginIdentifier,
-	PluginService,
+import {
+	checkPluginDecorator,
+	getPluginInfo,
+	type BasePlugin,
+	type CommitSummary,
+	type Context,
+	type ForkablePluginConstructor,
+	type PluginConstructor,
+	type PluginIdentifier,
+	type PluginService,
 } from '@pluxel/core'
-import { Context, checkPluginDecorator, getPluginInfo } from '@pluxel/core'
 
 type NamespacedConfigKey = `${string}.${string}`
 type HostConfigTarget = PluginConstructor | string

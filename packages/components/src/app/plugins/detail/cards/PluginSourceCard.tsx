@@ -11,13 +11,14 @@ import {
 	useMantineTheme,
 } from '@mantine/core'
 import { IconCheck, IconCopy } from '@tabler/icons-react'
-import type { ReactNode } from 'react'
-import { useMemo } from 'react'
+import { useMemo, type ReactNode } from 'react'
 import type { WorkbenchNavigationRequest } from '../../../workbench/context'
-import type { PluginSourceInfo } from '../context'
-import { usePluginScope } from '../context'
-import type { DependencyListProps } from './DependencyList'
-import { DependencyList, usePluginDependencyEntries } from './DependencyList'
+import { usePluginScope, type PluginSourceInfo } from '../context'
+import {
+	DependencyList,
+	usePluginDependencyEntries,
+	type DependencyListProps,
+} from './DependencyList'
 import { BaseProviderCard } from './BaseProviderCard'
 import { DependencyOverridesCard } from './DependencyOverridesCard'
 

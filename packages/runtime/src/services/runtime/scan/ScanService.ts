@@ -15,14 +15,14 @@ import {
 } from './selectors'
 import { normalizeScanInputs, resolveScanRoots } from './shared'
 import { type ScanSnapshot, ScanSnapshotBuilder, ScanSnapshotCache } from './snapshot'
-import { isPackageEntryOk } from './types'
-import type {
-	EntryResolution,
-	EntryResolutionOk,
-	ResolvedScanOptions,
-	ScanTaskOptions,
-	ScanOptionsInput,
-	WorkspaceEntryInfo,
+import {
+	isPackageEntryOk,
+	type EntryResolution,
+	type EntryResolutionOk,
+	type ResolvedScanOptions,
+	type ScanTaskOptions,
+	type ScanOptionsInput,
+	type WorkspaceEntryInfo,
 } from './types'
 
 const serviceName = 'scanService' as const

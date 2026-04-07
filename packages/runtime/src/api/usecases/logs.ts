@@ -1,10 +1,11 @@
-import type {
-	LogFilter,
-	LogRangeResult,
-	LogStreamMeta,
-	RuntimeLogLine,
+import {
+	compileLogFilter,
+	matchesLogFilterCompiled,
+	type LogFilter,
+	type LogRangeResult,
+	type LogStreamMeta,
+	type RuntimeLogLine,
 } from '../../logger/protocol'
-import { compileLogFilter, matchesLogFilterCompiled } from '../../logger/protocol'
 import { runtimeLogStores, runtimeLogs } from '../../logger/store'
 
 export type LogsMetaInput = {

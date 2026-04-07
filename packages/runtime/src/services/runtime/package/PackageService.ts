@@ -1,7 +1,11 @@
 import { type Context as PluxelContext, Injectable } from '@pluxel/core'
 import { loadWorkspaceInfo } from '@pluxel/workspace'
-import type { EntryResolution, EntryResolutionOk, ScanTaskOptions } from '../scan/types'
-import { isEntryOk } from '../scan/types'
+import {
+	isEntryOk,
+	type EntryResolution,
+	type EntryResolutionOk,
+	type ScanTaskOptions,
+} from '../scan/types'
 import {
 	dedupeByName,
 	isManagedPackageName,

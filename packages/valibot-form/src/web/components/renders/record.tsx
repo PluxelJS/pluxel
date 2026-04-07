@@ -21,8 +21,8 @@ import type {
 	RecordFieldNode,
 	StringFieldNode,
 } from '../../../core/fields'
-import { FieldRenderer } from '../internal/FieldRenderer'
 import { FieldChrome } from '../chrome/FieldChrome'
+import { useFieldRenderer } from '../internal/fieldRendererContext'
 import { cleanProps } from '../../utils/propHelpers'
 import { PicklistControl } from './controls/PicklistControl'
 import {
@@ -109,6 +109,7 @@ function inferValueKind(value: unknown): ValueKind {
 export function RecordField(props: RendererProps) {
 	const { node, errors, inputProps, value } = props
 	const info = node as RecordFieldNode
+	const renderField = useFieldRenderer()
 	const layout = info.layout ?? 'table'
 
 	const rowIdRef = useRef(0)
@@ -488,14 +489,12 @@ export function RecordField(props: RendererProps) {
 				const itemErrors = entryErrors.get(recordKey) ?? []
 				const nestedNode = tweakNestedNode(valueNode)
 
-				return (
-					<FieldRenderer
-						node={nestedNode}
-						value={current}
-						errors={itemErrors}
-						inputProps={nestedInputProps}
-					/>
-				)
+				return renderField({
+					node: nestedNode,
+					value: current,
+					errors: itemErrors,
+					inputProps: nestedInputProps,
+				})
 			}
 			case 'json':
 				return renderJsonFallback(index, current, Array.isArray(current) ? 'array' : 'object')

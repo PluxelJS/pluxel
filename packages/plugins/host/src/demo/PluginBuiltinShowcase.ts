@@ -1,8 +1,7 @@
 // 展示型插件：尽量不注册自定义组件，仅使用宿主渲染扩展与配置 schema。
 
 import { BasePlugin, Plugin } from '@pluxel/runtime'
-import type { SignalDbDocumentHandle } from '@pluxel/runtime/services'
-import { doc } from '@pluxel/runtime/services'
+import { doc, type SignalDbDocumentHandle } from '@pluxel/runtime/services'
 import {
 	BehaviorConfig,
 	type BuiltinAction,

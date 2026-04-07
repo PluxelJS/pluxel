@@ -92,7 +92,7 @@ export function captureCaller(opts: CallerCaptureOptions = {}): string | undefin
 	if (typeof captureStackTrace === 'function') {
 		captureStackTrace(error, opts.exclude ?? captureCaller)
 	} else {
-		error.stack = new Error().stack
+		error.stack = new Error('captureCaller stack').stack
 	}
 	const stack = error.stack
 	if (!stack) return undefined

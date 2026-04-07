@@ -1,7 +1,12 @@
 import { Badge, Button, Code, Group, ScrollArea, Select, Stack, Text, Title } from '@mantine/core'
-import type { LogLevel, PluginLevelsSnapshot, PluginLogLevel } from '../../../../runtime'
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { rpcErrorMessage, useRuntimeTransportClient } from '../../../../runtime'
+import {
+	rpcErrorMessage,
+	useRuntimeTransportClient,
+	type LogLevel,
+	type PluginLevelsSnapshot,
+	type PluginLogLevel,
+} from '../../../../runtime'
 
 type Snapshot = {
 	levels: Record<string, PluginLogLevel>

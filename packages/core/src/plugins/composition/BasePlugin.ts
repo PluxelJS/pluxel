@@ -10,14 +10,13 @@
 
 import type { Context } from '@pluxel/context'
 import type { AnyCtor } from '../decorators/decorator/shared'
-import { getPluginInfo } from '../decorators/PluginDecorator'
+import { getPluginInfo } from '../decorators/decorator/api'
 import { CONFIGS, type ConfigHost } from './ConfigHost'
 import { FeatureHost } from './FeatureHost'
-
-// HMR 注意：必须使用 Symbol.for
-export const PLUGIN_CTX = Symbol.for('pluxel:plugin:ctx')
-export const FORK_CTX = Symbol.for('pluxel:plugin:ctx:fork')
+import { FORK_CTX, PLUGIN_CTX } from './symbols'
 const FEATURE_HOST = Symbol.for('pluxel:plugin:featureHost')
+
+export { FORK_CTX, PLUGIN_CTX } from './symbols'
 
 export interface PluginLifecycleRuntime<_C extends Context = Context> {
 	beforeStart?: () => void

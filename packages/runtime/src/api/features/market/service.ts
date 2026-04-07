@@ -1,13 +1,13 @@
 import type { Context as PlxContext } from '@pluxel/core'
 import type { InferInput, InferOutput } from 'valibot'
 
-import type {
-	InstallOptions,
-	PackageInstallStatus,
-	PackageLoadIssue as ServiceIssue,
-	PackageReloadResult,
+import {
+	PackageServiceError,
+	type InstallOptions,
+	type PackageInstallStatus,
+	type PackageLoadIssue as ServiceIssue,
+	type PackageReloadResult,
 } from '../../../services/runtime/package/PackageService'
-import { PackageServiceError } from '../../../services/runtime/package/PackageService'
 import {
 	normalizeSpecifier,
 	type NormalizedPackageSpecifier,

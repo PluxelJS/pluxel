@@ -1,8 +1,13 @@
 import '@pluxel/test/setup'
 
 import { describe, expect, it } from 'vitest'
-import type { Context as PlxContext } from '@pluxel/core'
-import { BasePlugin, Context, ForkablePlugin, Plugin } from '@pluxel/core'
+import {
+	BasePlugin,
+	Context,
+	ForkablePlugin,
+	Plugin,
+	type Context as PlxContext,
+} from '@pluxel/core'
 import { LoaderService } from '@pluxel/runtime/services'
 import { getStatusOverview } from '../../src/api/features/pluginStatus/service'
 import { EXTRA_FORKS } from '../../src/services/runtime/loader/selection'

@@ -101,6 +101,7 @@ async function loadPluginData(
 				pending.push(
 					schema.then((r) => {
 						schemaMap[key] = r
+						return undefined
 					}),
 				)
 			} else {

@@ -1,6 +1,5 @@
 // context.tsx
-import type React from 'react'
-import { createContext, useContext } from 'react'
+import { createContext, useContext, type ReactNode } from 'react'
 import type {
 	PluginDependency,
 	PluginSourceInfo as GqlPluginSourceInfo,
@@ -43,7 +42,7 @@ export function PluginScopeProvider({
 	children,
 }: {
 	value: PluginScopeContextValue
-	children: React.ReactNode
+	children: ReactNode
 }) {
 	return <Ctx.Provider value={value}>{children}</Ctx.Provider>
 }

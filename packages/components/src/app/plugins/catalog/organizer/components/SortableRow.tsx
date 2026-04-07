@@ -12,17 +12,23 @@ import {
 } from '@mantine/core'
 import { IconCheck, IconGripVertical, IconPlus } from '@tabler/icons-react'
 import type { UniqueIdentifier } from '@dnd-kit/core'
-import type React from 'react'
-import { memo, useMemo } from 'react'
+import {
+	memo,
+	useMemo,
+	type ComponentPropsWithoutRef,
+	type ComponentType,
+	type MouseEvent,
+	type ReactNode,
+} from 'react'
 import type { WorkbenchNavigationRequest } from '../../../../workbench/context'
 import type { RowDensity } from '../constants'
 
 type RowMeta = { tag?: string; version?: string }
 type LinkLikeProps = {
 	to: string
-	children: React.ReactNode
+	children: ReactNode
 	workbenchMode?: WorkbenchNavigationRequest
-} & Omit<React.ComponentPropsWithoutRef<'a'>, 'href'>
+} & Omit<ComponentPropsWithoutRef<'a'>, 'href'>
 
 export type SortableRowProps = {
 	pid: string
@@ -32,8 +38,8 @@ export type SortableRowProps = {
 	selected: boolean
 	active: boolean
 	focused: boolean
-	onSelect: (e: React.MouseEvent, pid: string, mode?: 'click' | 'context' | 'toggle') => void
-	LinkComp?: React.ComponentType<LinkLikeProps>
+	onSelect: (e: MouseEvent, pid: string, mode?: 'click' | 'context' | 'toggle') => void
+	LinkComp?: ComponentType<LinkLikeProps>
 	dragDisabled: boolean
 	dh: RowDensity
 	meta?: RowMeta

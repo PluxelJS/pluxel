@@ -1,5 +1,4 @@
-import { readPackageJSON, sortPackage, writePackageJSON } from 'pkg-types'
-import type { PackageJson } from 'pkg-types'
+import { readPackageJSON, sortPackage, type PackageJson, writePackageJSON } from 'pkg-types'
 import type { RuleContext, RuleMessages } from './types'
 import { ciMetadataRule } from './rules/ci-metadata'
 import { pluginDependencyRule } from './rules/plugin-deps'

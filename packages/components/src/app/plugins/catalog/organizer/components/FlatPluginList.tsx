@@ -1,8 +1,15 @@
 import { Box, Stack, Text } from '@mantine/core'
 import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable'
 import { useVirtualizer } from '@tanstack/react-virtual'
-import type React from 'react'
-import { useEffect, useMemo, useRef } from 'react'
+import {
+	useEffect,
+	useMemo,
+	useRef,
+	type ComponentPropsWithoutRef,
+	type ComponentType,
+	type MouseEvent,
+	type ReactNode,
+} from 'react'
 import type { WorkbenchNavigationRequest } from '../../../../workbench/context'
 import { FLAT_VIRTUAL_OVERSCAN, type RowDensity } from '../constants'
 import { iid } from '../controllerModel'
@@ -10,9 +17,9 @@ import { SortableRow } from './SortableRow'
 
 type LinkLikeProps = {
 	to: string
-	children: React.ReactNode
+	children: ReactNode
 	workbenchMode?: WorkbenchNavigationRequest
-} & Omit<React.ComponentPropsWithoutRef<'a'>, 'href'>
+} & Omit<ComponentPropsWithoutRef<'a'>, 'href'>
 
 type FlatPluginListProps = {
 	ids: string[]
@@ -22,12 +29,8 @@ type FlatPluginListProps = {
 	selectedSet: Set<string>
 	activeSet: Set<string>
 	focusedId: string | null
-	onSelect: (
-		event: React.MouseEvent,
-		pluginId: string,
-		mode?: 'click' | 'context' | 'toggle',
-	) => void
-	LinkComp?: React.ComponentType<LinkLikeProps>
+	onSelect: (event: MouseEvent, pluginId: string, mode?: 'click' | 'context' | 'toggle') => void
+	LinkComp?: ComponentType<LinkLikeProps>
 	getName: (id: string) => string
 	getMeta: (id: string) => { tag?: string; version?: string }
 	dh: RowDensity

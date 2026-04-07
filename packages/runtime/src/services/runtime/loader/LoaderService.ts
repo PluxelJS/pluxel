@@ -1,7 +1,7 @@
 // loader/index.ts
-import type { ForkablePluginConstructor } from '@pluxel/core'
 import {
 	type Context as PluxelContext,
+	type ForkablePluginConstructor,
 	formatForkPluginId,
 	getPluginInfo,
 	Injectable,

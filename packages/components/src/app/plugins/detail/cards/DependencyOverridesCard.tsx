@@ -12,11 +12,14 @@ import {
 	Tooltip,
 } from '@mantine/core'
 import { openConfirmModal } from '@mantine/modals'
-import type { PluginDependencyState } from '../../../../runtime'
 import { IconPlus, IconRefresh } from '@tabler/icons-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNotify } from '../../../hooks'
-import { rpcErrorMessage, useRuntimeTransportClient } from '../../../../runtime'
+import {
+	rpcErrorMessage,
+	useRuntimeTransportClient,
+	type PluginDependencyState,
+} from '../../../../runtime'
 import { usePluginScope } from '../context'
 import { loadDependencyState } from '../rpcResourceCache'
 

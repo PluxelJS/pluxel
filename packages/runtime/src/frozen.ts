@@ -31,7 +31,7 @@ function buildImportRows(plugins: readonly FrozenPluginSpec[]): ImportRow[] {
 function buildBootstrapSource(options: BuildFrozenHostOptions, rows: readonly ImportRow[]): string {
 	const generatedBy = options.generatedBy ?? 'buildFrozenHost'
 	const configPayload = options.config ?? {}
-	const enabled = new Set(options.enabled ?? [])
+	const enabled = new Set(options.enabled)
 	const profile = options.profile ?? 'frozen'
 	const imports = rows
 		.map((row) =>

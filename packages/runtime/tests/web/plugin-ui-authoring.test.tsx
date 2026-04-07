@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { act } from 'react'
+import { act, useEffect, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
@@ -39,7 +39,6 @@ vi.mock('../../src/web/plugin-ui/signaldb-runtime', () => ({
 	}),
 }))
 
-import { useEffect, useState } from 'react'
 import { pluginUi } from '../../src/web/plugin-ui/authoring'
 import {
 	ExtensionProvider,

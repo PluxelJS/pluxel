@@ -153,6 +153,7 @@ class SseClient {
 			}
 			void this.authProbeInFlight.then((blocked) => {
 				if (blocked) this.close()
+				return undefined
 			})
 		}
 		src.onmessage = (ev) => {

@@ -1,7 +1,7 @@
 import type { Context } from '@pluxel/context'
 import type { Identifier } from '../../container'
 import type { BasePlugin } from '../composition/BasePlugin'
-import { PLUGIN_CTX } from '../composition/BasePlugin'
+import { PLUGIN_CTX } from '../composition/symbols'
 import { requirePluginDependency } from './PluginDecorator'
 
 type AnyFn = (...args: unknown[]) => unknown

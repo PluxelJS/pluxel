@@ -1,8 +1,17 @@
 import { Badge, Box, Paper, Stack, Text, Typography } from '@mantine/core'
 import { MarkdownExit } from 'markdown-exit'
 import { createPortal } from 'react-dom'
-import { Fragment, memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { ReactNode, RefObject } from 'react'
+import {
+	Fragment,
+	memo,
+	useCallback,
+	useEffect,
+	useMemo,
+	useRef,
+	useState,
+	type ReactNode,
+	type RefObject,
+} from 'react'
 import type {
 	BuiltinDocBlock,
 	BuiltinDocContent,
@@ -419,7 +428,7 @@ export function BuiltinDoc({ def }: { def: BuiltinDocExtensionDef }) {
 		let current: { id: string; score: number } | null = null
 
 		for (const anchor of headingAnchors) {
-			const el = document.querySelector<HTMLElement>(`#${CSS.escape(anchor.id)}`)
+			const el = document.getElementById(anchor.id)
 			if (!el) continue
 			const pos = container
 				? el.getBoundingClientRect().top - (containerBox?.top ?? 0) + container.scrollTop
@@ -447,7 +456,7 @@ export function BuiltinDoc({ def }: { def: BuiltinDocExtensionDef }) {
 		}
 
 		const firstAnchorEl = headingAnchors[0]?.id
-			? document.querySelector<HTMLElement>(`#${CSS.escape(headingAnchors[0].id)}`)
+			? document.getElementById(headingAnchors[0].id)
 			: null
 		const base = firstAnchorEl ?? root
 		const host =
@@ -495,7 +504,7 @@ export function BuiltinDoc({ def }: { def: BuiltinDocExtensionDef }) {
 	const scrollToSection = useCallback(
 		(id: string) => {
 			if (!id) return
-			const target = document.querySelector<HTMLElement>(`#${CSS.escape(id)}`)
+			const target = document.getElementById(id)
 			if (!target) return
 			const scrollMarginTop =
 				Number.parseFloat(getComputedStyle(target).scrollMarginTop || '0') || 0
@@ -534,14 +543,15 @@ export function BuiltinDoc({ def }: { def: BuiltinDocExtensionDef }) {
 			</Stack>
 		) : null
 
-	const bodyContent = compiled.items.length > 0 ? (
-		<DocBody
-			items={compiled.items}
-			contentRef={contentRef}
-			renderBlock={renderBlock}
-			renderCfg={renderCfg}
-		/>
-	) : null
+	const bodyContent =
+		compiled.items.length > 0 ? (
+			<DocBody
+				items={compiled.items}
+				contentRef={contentRef}
+				renderBlock={renderBlock}
+				renderCfg={renderCfg}
+			/>
+		) : null
 
 	const renderInlineToc = () => (
 		<Paper withBorder radius="md" p="sm">

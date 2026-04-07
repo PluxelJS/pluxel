@@ -1,12 +1,11 @@
-import { useEffect, useMemo, useSyncExternalStore } from 'react'
-import type { ReactNode } from 'react'
+import { useEffect, useMemo, useSyncExternalStore, type ReactNode } from 'react'
 import {
 	PluginSourceInfoKind,
 	PluginStatusEntryLifecycleStage,
+	useQuery,
 	type PluginGroup,
 	type PluginStatusOverview,
 } from '../gqty'
-import { useQuery } from '../gqty'
 import { subscribeInvalidations } from '../data/invalidations'
 
 type PluginOverview = {

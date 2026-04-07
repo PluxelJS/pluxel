@@ -16,6 +16,7 @@ import { type PlannedField, planSchemaFields, type SectionPlan } from './interna
 import { useAppForm } from './internal/formContext'
 import { alignToCss, resolveFieldSpan } from './internal/layout'
 import { FieldRenderer } from './internal/FieldRenderer'
+import { FieldRendererProvider } from './internal/fieldRendererContext'
 
 // -------- Context（暴露同一表单实例与渲染数据） ----------
 interface Ctx<S extends ObjectLikeSchema> {
@@ -91,7 +92,9 @@ export function AutoForm<S extends ObjectLikeSchema>({
 	// 用 <form> 包住所有插槽（标题/按钮/字段），确保是同一个实例
 	return (
 		<form {...formProps} onSubmit={onSubmit}>
-			<AutoFormCtx.Provider value={ctx}>{children}</AutoFormCtx.Provider>
+			<AutoFormCtx.Provider value={ctx}>
+				<FieldRendererProvider value={FieldRenderer}>{children}</FieldRendererProvider>
+			</AutoFormCtx.Provider>
 		</form>
 	)
 }

@@ -33,7 +33,16 @@ function createMiddlewareHarness(middleware: Middleware) {
 			return `http://127.0.0.1:${addr.port}`
 		},
 		async close() {
-			await new Promise<void>((resolve, reject) => server.close((e) => (e ? reject(e) : resolve())))
+			await new Promise<void>((resolve, reject) =>
+				server.close((error) => {
+					if (error) {
+						reject(error)
+						return
+					}
+
+					resolve()
+				}),
+			)
 		},
 	}
 }

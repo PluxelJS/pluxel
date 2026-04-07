@@ -40,8 +40,7 @@ import {
 	setPluginOverviewGroups,
 	usePluginOverview,
 } from '../pluginOverviewStore'
-import type { PluginStatusAction } from '../../../runtime'
-import { useRuntimeTransportClient } from '../../../runtime'
+import { useRuntimeTransportClient, type PluginStatusAction } from '../../../runtime'
 import { invalidate } from '../../data/invalidations'
 import {
 	EMPTY_OVERVIEW,
@@ -247,6 +246,7 @@ export const PluginCatalog: React.FC<PluginCatalogProps> = ({ pluginName }) => {
 				setDraftGroups(null)
 				setPluginOverviewGroups(nextGroups)
 				invalidate({ topic: 'plugin-groups', reason: 'rpc' })
+				return nextGroups
 			})
 			.catch((error: any) => {
 				const message = error?.message ?? '分组同步失败，请稍后重试。'
@@ -255,6 +255,7 @@ export const PluginCatalog: React.FC<PluginCatalogProps> = ({ pluginName }) => {
 				setDraftGroups(rollback)
 				setPluginOverviewGroups(rollback)
 				setOrganizerResetToken((n) => n + 1)
+				return undefined
 			})
 			.finally(() => {
 				inflightCommitRef.current = null

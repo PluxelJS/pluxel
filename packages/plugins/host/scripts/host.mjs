@@ -84,7 +84,14 @@ async function startFetchHostServer(options) {
 		baseUrl: `http://${host}:${port}`,
 		close: async () =>
 			new Promise((resolvePromise, reject) =>
-				server.close((error) => (error ? reject(error) : resolvePromise())),
+				server.close((error) => {
+					if (error) {
+						reject(error)
+						return
+					}
+
+					resolvePromise()
+				}),
 			),
 	}
 }
