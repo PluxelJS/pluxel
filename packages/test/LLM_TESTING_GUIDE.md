@@ -25,18 +25,36 @@ Repo-internal note:
    - The metadata injection is done by a transform plugin at _module compile time_.
    - If you declare the class inside `it(...)` / inside a function, the transform **cannot** inject the metadata for that class.
 
-3. **Never read `configs.use(...)` values in the constructor / field initializer**.
+3. **If an `@Plugin` constructor depends on another plugin class, do not use `import type` for that dependency.**
+   - Constructor DI relies on runtime constructor metadata.
+   - Repo lint now enforces and auto-fixes the safe cases before build.
+
+4. **Never read `configs.use(...)` values in the constructor / field initializer**.
    - The field is a sentinel until the runtime injector runs.
    - Read config values in `init()` or other methods.
+   - Repo lint enforces this (`pluxel/configs-use-no-early-read` and `pluxel/configs-use-no-redefault`).
 
-4. **Use the Host API to configure+start plugins**.
+5. **Do not put `configs.use(...)` on `#private` fields.**
+   - Runtime config injection cannot assign to JS private fields.
+   - Use a normal field (`private foo`) instead.
+
+6. **Use the Host API to configure+start plugins**.
    - Do not call internal registration functions.
 
-5. **Do not import `reflect-metadata` unless you actually need it**.
+7. **Do not import `reflect-metadata` unless you actually need it**.
    - `@pluxel/core` installs a lightweight reflection provider (`@abraham/reflection`) on import.
    - `@pluxel/core` adds a small compat shim so importing `reflect-metadata` later does not crash.
    - If a dependency truly requires `reflect-metadata`'s full semantics (key enumeration/deletion, etc),
      import `reflect-metadata` explicitly in your test/app entry **before** any decorated classes are evaluated.
+
+Lint note:
+
+- `pluxel/configs-use-top-level-class` enforces module-top-level `this.configs.use(...)` declarations.
+- `pluxel/configs-use-no-private-field` rejects `#private = this.configs.use(...)`.
+- `pluxel/features-use-top-level-class` does the same for `this.features.use(...)`.
+- `pluxel/plugin-constructor-no-type-only-imports` enforces runtime imports for `@Plugin` constructor deps.
+- Internal build/test/HMR toolchains run `oxlint.build.config.ts` before transform; only build-critical correctness rules are forced there, and violations fail early instead of being silently rewritten.
+- `pnpm lint:fix` only applies the safe autofix subset; expect remaining `pluxel/*` findings to need an intentional manual rewrite or an explicit suggestion accept.
 
 ## Recommended setup (Vitest)
 

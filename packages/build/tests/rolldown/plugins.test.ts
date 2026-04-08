@@ -1,10 +1,16 @@
 import { describe, expect, it } from 'vitest'
-import { resolve } from 'node:path'
+import { writeFileSync } from 'node:fs'
+import { relative, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { createDiskFixture as createFixture } from '@pluxel/test/fixtures'
-import { rolldown, type Plugin as RolldownPlugin } from 'rolldown'
+import { rolldown } from 'rolldown'
 import { configSourcePlugin } from '../../src/rolldown/plugins/configSourcePlugin'
 import { hmrUiBridgePlugin } from '../../src/rolldown/plugins/hmrUiBridgePlugin'
-import { importTypeFixerPlugin } from '../../src/rolldown/plugins/importTypeFixerPlugin'
+import { lintGuardPlugin } from '../../src/rolldown/plugins/lintGuardPlugin'
+
+const buildLintConfigPath = fileURLToPath(
+	new URL('../../../../oxlint.build.config.ts', import.meta.url),
+)
 
 const fixtureFiles = {
 	'composed-parts.ts': `import * as v from 'valibot'
@@ -433,6 +439,134 @@ export class FeatureHostPlugin extends BasePlugin {
 
 export class CacheFeature {}
 `,
+	'plugin-build-lint-valid.ts': `import { SomeService } from './services'
+
+function Plugin(_meta?: any): ClassDecorator {
+	return () => {}
+}
+
+class BasePlugin {
+	configs = { use(value: unknown) { return value } }
+	features = { use<T>(value: T) { return value } }
+}
+
+const schema = { ok: true }
+
+class CacheFeature {}
+
+@Plugin({ name: 'BuildLintValidPlugin' })
+export class BuildLintValidPlugin extends BasePlugin {
+	config = this.configs.use(schema)
+	cache = this.features.use(CacheFeature)
+
+	constructor(private readonly service: SomeService) {
+		super()
+		void service
+	}
+}
+`,
+	'plugin-build-lint-invalid-type-import.ts': `import type { SomeService } from './services'
+
+function Plugin(_meta?: any): ClassDecorator {
+	return () => {}
+}
+
+class BasePlugin {}
+
+@Plugin({ name: 'BuildLintInvalidTypeImportPlugin' })
+export class BuildLintInvalidTypeImportPlugin extends BasePlugin {
+	constructor(private readonly service: SomeService) {
+		super()
+		void service
+	}
+}
+`,
+	'plugin-build-lint-invalid-private-config.ts': `function Plugin(_meta?: any): ClassDecorator {
+	return () => {}
+}
+
+class BasePlugin {
+	configs = { use(value: unknown) { return value } }
+}
+
+const schema = { ok: true }
+
+@Plugin({ name: 'BuildLintInvalidPrivateConfigPlugin' })
+export class BuildLintInvalidPrivateConfigPlugin extends BasePlugin {
+	#config = this.configs.use(schema)
+}
+`,
+	'plugin-build-lint-invalid-feature-nested.ts': `function Plugin(_meta?: any): ClassDecorator {
+	return () => {}
+}
+
+class BasePlugin {
+	features = { use<T>(value: T) { return value } }
+}
+
+class CacheFeature {}
+
+export function makePlugin() {
+	@Plugin({ name: 'BuildLintInvalidFeatureNestedPlugin' })
+	class BuildLintInvalidFeatureNestedPlugin extends BasePlugin {
+		cache = this.features.use(CacheFeature)
+	}
+	return BuildLintInvalidFeatureNestedPlugin
+}
+`,
+	'plugin-build-lint-invalid-config-nested.ts': `function Plugin(_meta?: any): ClassDecorator {
+	return () => {}
+}
+
+class BasePlugin {
+	configs = { use(value: unknown) { return value } }
+}
+
+const schema = { ok: true }
+
+export function makePlugin() {
+	@Plugin({ name: 'BuildLintInvalidConfigNestedPlugin' })
+	class BuildLintInvalidConfigNestedPlugin extends BasePlugin {
+		config = this.configs.use(schema)
+	}
+	return BuildLintInvalidConfigNestedPlugin
+}
+`,
+	'plugin-build-lint-invalid-config-early-read.ts': `function Plugin(_meta?: any): ClassDecorator {
+	return () => {}
+}
+
+class BasePlugin {
+	configs = { use(value: unknown) { return value } }
+}
+
+const schema = { ok: true }
+
+@Plugin({ name: 'BuildLintInvalidConfigEarlyReadPlugin' })
+export class BuildLintInvalidConfigEarlyReadPlugin extends BasePlugin {
+	config = this.configs.use(schema)
+	ready = this.config
+}
+`,
+	'plugin-build-lint-invalid-config-redefault.ts': `function Plugin(_meta?: any): ClassDecorator {
+	return () => {}
+}
+
+class BasePlugin {
+	configs = { use(value: unknown) { return value } }
+}
+
+const schema = { ok: true }
+
+@Plugin({ name: 'BuildLintInvalidConfigRedefaultPlugin' })
+export class BuildLintInvalidConfigRedefaultPlugin extends BasePlugin {
+	config = this.configs.use(schema)
+
+	init() {
+		return this.config ?? {}
+	}
+}
+`,
 	'plugin-with-hmr-ui.ts': `import { ui } from '@pluxel/hmr/plugin'
 
 class BasePlugin {
@@ -589,6 +723,64 @@ async function withFixtures<T>(run: (fixturesDir: string) => Promise<T>) {
 	await using fixture = await createFixture(fixtureFiles)
 	return await run(fixture.path)
 }
+
+async function generateWithLintGuard(
+	fixturesDir: string,
+	input: string,
+	options: Partial<Parameters<typeof lintGuardPlugin>[0]> = {},
+) {
+	const bundle = await rolldown({
+		input: resolve(fixturesDir, input),
+		plugins: [
+			lintGuardPlugin({
+				cwd: fixturesDir,
+				configPath: buildLintConfigPath,
+				paths: [input],
+				mode: 'enforce',
+				...options,
+			}),
+		],
+	})
+
+	return await bundle.generate({ format: 'esm' })
+}
+
+async function expectLintGuardFailure(fixturesDir: string, input: string, ruleName: string) {
+	await expect(generateWithLintGuard(fixturesDir, input)).rejects.toThrow(new RegExp(ruleName))
+}
+
+const buildLintFailureCases = [
+	[
+		'type-only constructor dependency imports',
+		'plugin-build-lint-invalid-type-import.ts',
+		'plugin-constructor-no-type-only-imports',
+	],
+	[
+		'configs.use(...) private fields',
+		'plugin-build-lint-invalid-private-config.ts',
+		'configs-use-no-private-field',
+	],
+	[
+		'nested features.use(...) declarations',
+		'plugin-build-lint-invalid-feature-nested.ts',
+		'features-use-top-level-class',
+	],
+	[
+		'nested configs.use(...) declarations',
+		'plugin-build-lint-invalid-config-nested.ts',
+		'configs-use-top-level-class',
+	],
+	[
+		'early reads of configs.use(...) fields',
+		'plugin-build-lint-invalid-config-early-read.ts',
+		'configs-use-no-early-read',
+	],
+	[
+		're-defaulting configs.use(...) outputs',
+		'plugin-build-lint-invalid-config-redefault.ts',
+		'configs-use-no-redefault',
+	],
+] as const
 
 describe('configSourcePlugin', () => {
 	it('extracts cfg(schemaMap)`...` layout parts', async () => {
@@ -911,70 +1103,50 @@ describe('configSourcePlugin', () => {
 	})
 })
 
-describe('importTypeFixerPlugin', () => {
-	it('emits runtime-safe output for type-only imports', async () => {
-		await withFixtures(async (fixturesDir) => {
-			const bundle = await rolldown({
-				input: resolve(fixturesDir, 'plugin-with-type-import.ts'),
-				plugins: [importTypeFixerPlugin()],
-			})
-
-			const { output } = await bundle.generate({ format: 'esm' })
-			const code = output[0].code
-
-			expect(code).not.toContain('import type')
-			expect(code).toContain('TypeImportPlugin')
-			expect(code).toContain('constructor')
-		})
-	})
-
-	it('fixes type-only imports with alias specifiers', async () => {
-		await withFixtures(async (fixturesDir) => {
-			let transformed = ''
-			const capturePlugin: RolldownPlugin = {
-				name: 'capture-transform',
-				transform: {
-					filter: {
-						id: {
-							include: ['**/plugin-with-type-import-alias.ts'],
-						},
-					},
-					handler(code) {
-						transformed = code
-						return null
-					},
-				},
-			}
-			const bundle = await rolldown({
-				input: resolve(fixturesDir, 'plugin-with-type-import-alias.ts'),
-				plugins: [importTypeFixerPlugin(), capturePlugin],
-			})
-
-			await bundle.generate({ format: 'esm' })
-
-			expect(transformed).not.toMatch(/^import\\s+type\\b/m)
-			expect(transformed).toContain('SomeService as ServiceAlias')
-		})
-	})
-
-	it('keeps constructor params for type-only imports', async () => {
-		await withFixtures(async (fixturesDir) => {
-			const bundle = await rolldown({
-				input: resolve(fixturesDir, 'plugin-with-type-import.ts'),
-				plugins: [importTypeFixerPlugin()],
-				external: ['valibot', '@pluxel/core'],
-			})
-
-			const { output } = await bundle.generate({ format: 'esm' })
-			const code = output[0].code
-
-			expect(code).not.toContain('import type')
-			expect(code).toContain('constructor(someService, anotherService, regular)')
-		})
-	})
-})
-
 describe('plugins integration', () => {
+	it('allows valid plugin authoring through build lint guard', async () => {
+		await withFixtures(async (fixturesDir) => {
+			await expect(
+				generateWithLintGuard(fixturesDir, 'plugin-build-lint-valid.ts'),
+			).resolves.toBeDefined()
+		})
+	})
+
+	it('reruns lint on subsequent builds in the same process', async () => {
+		await withFixtures(async (fixturesDir) => {
+			const input = 'plugin-build-lint-valid.ts'
+			await expect(generateWithLintGuard(fixturesDir, input)).resolves.toBeDefined()
+
+			writeFileSync(
+				resolve(fixturesDir, input),
+				fixtureFiles['plugin-build-lint-invalid-type-import.ts'],
+				'utf8',
+			)
+
+			await expect(generateWithLintGuard(fixturesDir, input)).rejects.toThrow(
+				/plugin-constructor-no-type-only-imports/,
+			)
+		})
+	})
+
+	it('resolves a relative lint config path from plugin cwd', async () => {
+		await withFixtures(async (fixturesDir) => {
+			await expect(
+				generateWithLintGuard(fixturesDir, 'plugin-build-lint-valid.ts', {
+					configPath: relative(fixturesDir, buildLintConfigPath),
+				}),
+			).resolves.toBeDefined()
+		})
+	})
+
+	for (const [label, input, ruleName] of buildLintFailureCases) {
+		it(`fails build on ${label}`, async () => {
+			await withFixtures(async (fixturesDir) => {
+				await expectLintGuardFailure(fixturesDir, input, ruleName)
+			})
+		})
+	}
+
 	it('rewrites HMR ui bridge imports into runtime packaged helpers', async () => {
 		await withFixtures(async (fixturesDir) => {
 			const bundle = await rolldown({
@@ -1024,11 +1196,11 @@ describe('plugins integration', () => {
 		})
 	})
 
-	it('composes importTypeFixer with configSourcePlugin', async () => {
+	it('composes configSourcePlugin on plugin modules', async () => {
 		await withFixtures(async (fixturesDir) => {
 			const bundle = await rolldown({
 				input: resolve(fixturesDir, 'plugin-with-config.ts'),
-				plugins: [importTypeFixerPlugin(), configSourcePlugin()],
+				plugins: [configSourcePlugin()],
 				external: ['valibot', '@pluxel/core'],
 			})
 
@@ -1044,7 +1216,7 @@ describe('plugins integration', () => {
 		await withFixtures(async (fixturesDir) => {
 			const bundle = await rolldown({
 				input: resolve(fixturesDir, 'plugin-with-hmr-ui.ts'),
-				plugins: [importTypeFixerPlugin(), configSourcePlugin(), hmrUiBridgePlugin()],
+				plugins: [configSourcePlugin(), hmrUiBridgePlugin()],
 				external: ['@pluxel/hmr/plugin'],
 			})
 

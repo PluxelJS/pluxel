@@ -21,6 +21,11 @@
 			"import": "./dist/fixtures.mjs",
 			"require": "./dist/fixtures.cjs"
 		},
+		"./oxlint": {
+			"@pluxel/source": "./src/oxlint.ts",
+			"import": "./dist/oxlint.mjs",
+			"require": "./dist/oxlint.cjs"
+		},
 		"./setup": {
 			"@pluxel/source": "./src/setup.ts",
 			"import": "./dist/setup.mjs",
@@ -48,6 +53,10 @@
 				"import": "./dist/fixtures.mjs",
 				"require": "./dist/fixtures.cjs"
 			},
+			"./oxlint": {
+				"import": "./dist/oxlint.mjs",
+				"require": "./dist/oxlint.cjs"
+			},
 			"./setup": {
 				"import": "./dist/setup.mjs",
 				"require": "./dist/setup.cjs"
@@ -71,13 +80,15 @@
 	"devDependencies": {
 		"@platformatic/vfs": "^0.3.0",
 		"@pluxel/build": "workspace:*",
+		"@pluxel/workspace": "workspace:*",
 		"fs-fixture": "^2.13.0",
-		"vitest": "^4.1.2"
+		"vitest": "^4.1.3"
 	},
 	"peerDependencies": {
 		"@pluxel/core": "workspace:*",
 		"@pluxel/runtime": "workspace:*",
-		"vitest": "^4.1.2"
+		"oxlint": "^1.58.0",
+		"vitest": "^4.1.3"
 	},
 	"inlinedDependencies": {
 		"@platformatic/vfs": "0.3.0",

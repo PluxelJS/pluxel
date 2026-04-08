@@ -395,7 +395,7 @@ function collectModuleInfo(
 
 function ensureModuleInfo(moduleId: string, ctx: ResolveContext): Promise<ModuleInfo | undefined> {
 	const cached = ctx.moduleInfoStore.cache.get(moduleId)
-	if (cached) return cached
+	if (cached) return Promise.resolve(cached)
 
 	const pending = ctx.moduleInfoStore.promises.get(moduleId)
 	if (pending) return pending

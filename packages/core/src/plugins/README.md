@@ -45,6 +45,7 @@
   - 有工具链：用 class-field `foo = this.features.use(FooFeature)`，让 `configSourcePlugin` 注入 `__registerUsedFeatures__(PluginCtor, FooFeature)`。
   - 无工具链 / 动态 `init()` 里才 `features.use(...)`：用 `@UseFeature(FooFeature)`（或手动在模块加载时调用 `__registerUsedFeatures__(PluginCtor, FooFeature)`）。
   - 如果 Feature 既没有 `@Config/configs.use` 字段，也没有 `pluginMethodDecorator()` 声明 deps，则可以纯运行时组合，无需声明。
+- **`@Plugin` 构造函数里按类注入的依赖，不要用 `import type`**：这类参数需要 runtime constructor metadata；仓库 lint 会在构建前直接拦住这类写法，并对安全场景提供 autofix。
 
 另外：core 在 DEV 模式会对“有 config/requiredDeps 但未声明的 Feature”打 warn，帮助尽早发现“能跑但 UI/DI 不对”的误用。
 如需更强约束，可在 registry 配置里设置 `featureDeclarationPolicy: "error"`（或在测试中用 `await host.commit()`）让这类误用直接失败。

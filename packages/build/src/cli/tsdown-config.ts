@@ -1,7 +1,7 @@
 import { defineConfig } from 'tsdown'
 import { configSourcePlugin } from '../rolldown/plugins/configSourcePlugin'
 import { hmrUiBridgePlugin } from '../rolldown/plugins/hmrUiBridgePlugin'
-import { importTypeFixerPlugin } from '../rolldown/plugins/importTypeFixerPlugin'
+import { lintGuardPlugin } from '../rolldown/plugins/lintGuardPlugin'
 
 export const cliTsdownOverlay = defineConfig(() => ({
 	exports: {
@@ -11,5 +11,5 @@ export const cliTsdownOverlay = defineConfig(() => ({
 	deps: {
 		neverBundle: [/^@pluxel\//],
 	},
-	plugins: [importTypeFixerPlugin(), configSourcePlugin(), hmrUiBridgePlugin()],
+	plugins: [lintGuardPlugin(), configSourcePlugin(), hmrUiBridgePlugin()],
 }))

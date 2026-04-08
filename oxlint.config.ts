@@ -1,4 +1,10 @@
 import { defineConfig, type OxlintConfig, type OxlintOverride } from 'oxlint'
+import {
+	createPluxelSourceJsPluginEntry,
+	pluxelOxlintIgnorePatterns,
+	prefixPluxelRuleSet,
+	pluxelRules,
+} from './packages/workspace/src/oxlint/index.ts'
 
 /**
  * Lint design goals for this repo:
@@ -20,6 +26,7 @@ type Env = NonNullable<OxlintConfig['env']>
 type RuleMap = NonNullable<OxlintConfig['rules']>
 type Categories = NonNullable<OxlintConfig['categories']>
 type Plugins = NonNullable<OxlintConfig['plugins']>
+type JsPlugins = NonNullable<OxlintConfig['jsPlugins']>
 type IgnorePatterns = NonNullable<OxlintConfig['ignorePatterns']>
 type GlobSet = NonNullable<OxlintOverride['files']>
 
@@ -35,6 +42,7 @@ const env: Env = {
 }
 
 const plugins: Plugins = ['typescript', 'unicorn', 'oxc', 'import', 'promise', 'react', 'vitest']
+const jsPlugins: JsPlugins = [createPluxelSourceJsPluginEntry()]
 
 const categories: Categories = {
 	correctness: 'error',
@@ -42,17 +50,9 @@ const categories: Categories = {
 	perf: 'error',
 }
 
-const ignorePatterns: IgnorePatterns = [
-	'**/dist/**',
-	'packages/**/__fixtures__/**',
-	'packages/**/tests/fixtures/**',
-	'packages/**/__tests__/fixtures/**',
-	'packages/components/src/app/router/routeTree.gen.ts',
-	'packages/plugins/host/pluxel.hmr.discovered.jsonc',
-]
+const ignorePatterns: IgnorePatterns = [...pluxelOxlintIgnorePatterns]
 
 const createOverride = (files: GlobSet, rules: RuleMap): OxlintOverride => ({ files, rules })
-
 // Baseline repo policy: the default stance for rules we explicitly keep on/off.
 const baselineRules: RuleMap = {
 	'eslint/no-await-in-loop': 'off',
@@ -119,6 +119,7 @@ const highSignalRules: RuleMap = {
 
 const rules: RuleMap = {
 	...baselineRules,
+	...(prefixPluxelRuleSet(pluxelRules) as RuleMap),
 	...highSignalRules,
 }
 
@@ -143,6 +144,7 @@ const overrides: OxlintOverride[] = [
 export default defineConfig({
 	env,
 	plugins,
+	jsPlugins,
 	categories,
 	ignorePatterns,
 	rules,

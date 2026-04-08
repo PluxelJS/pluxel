@@ -24,6 +24,8 @@ expect(fixture.fs.existsSync(fixture.getPath('tmp.txt'))).toBe(true)
 
 LLM-facing guide: `packages/test/LLM_TESTING_GUIDE.md`.
 
+Toolchain/lint design: `docs/architecture/lint-toolchain.md`.
+
 ## Host
 
 ```ts
@@ -70,6 +72,9 @@ host.cfg(ForkA).set({ v: 'A' })
 ```ts
 export { default } from '@pluxel/test/vitest'
 ```
+
+Because the preset runs Pluxel build-correctness lint before transforms, the test project should
+also install `oxlint` as a dev dependency.
 
 Note: `@pluxel/core` installs a lightweight reflection provider (`@abraham/reflection`) and adds a small
 compat shim so importing `reflect-metadata` later does not crash.

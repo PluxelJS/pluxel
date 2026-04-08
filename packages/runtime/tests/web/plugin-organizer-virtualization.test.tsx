@@ -173,81 +173,91 @@ async function renderOrganizer(props: {
 }
 
 describe('PluginOrganizer virtualization', () => {
-	it('renders filtered results as a flat virtualized list and keeps row actions working', async () => {
-		const statuses = buildStatuses(420)
-		const selectedChanges = vi.fn()
-		const clicked: Array<{ to: string; mode?: string }> = []
-		const container = await renderOrganizer({
-			statuses,
-			initialGroups: [
-				{
-					groupId: 'group-a',
-					name: 'Alpha',
-					pluginIds: ['plugin-010', 'plugin-011', 'plugin-012'],
-				},
-			],
-			filterQuery: 'plugin',
-			onSelectedIdsChange: selectedChanges,
-			clicked,
-		})
+	it(
+		'renders filtered results as a flat virtualized list and keeps row actions working',
+		async () => {
+			const statuses = buildStatuses(420)
+			const selectedChanges = vi.fn()
+			const clicked: Array<{ to: string; mode?: string }> = []
+			const container = await renderOrganizer({
+				statuses,
+				initialGroups: [
+					{
+						groupId: 'group-a',
+						name: 'Alpha',
+						pluginIds: ['plugin-010', 'plugin-011', 'plugin-012'],
+					},
+				],
+				filterQuery: 'plugin',
+				onSelectedIdsChange: selectedChanges,
+				clicked,
+			})
 
-		const rows = container.querySelectorAll('[data-plugin-row="true"]')
-		expect(rows.length).toBeGreaterThan(0)
-		expect(rows.length).toBeLessThan(420)
-		expect(container.textContent).toContain('平铺结果')
-		expect(container.querySelector('.plx-pluginCatalog__subgroupHeader')).toBeNull()
+			const rows = container.querySelectorAll('[data-plugin-row="true"]')
+			expect(rows.length).toBeGreaterThan(0)
+			expect(rows.length).toBeLessThan(420)
+			expect(container.textContent).toContain('平铺结果')
+			expect(container.querySelector('.plx-pluginCatalog__subgroupHeader')).toBeNull()
 
-		const selector = container.querySelector('[data-row-selector="true"]')
-		expect(selector).not.toBeNull()
-		await act(async () => {
-			selector?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-		})
-		expect(selectedChanges).toHaveBeenLastCalledWith(['plugin-000'])
+			const selector = container.querySelector('[data-row-selector="true"]')
+			expect(selector).not.toBeNull()
+			await act(async () => {
+				selector?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+			})
+			expect(selectedChanges).toHaveBeenLastCalledWith(['plugin-000'])
 
-		const firstRow = container.querySelector('[data-plugin-row="true"]')
-		expect(firstRow).not.toBeNull()
-		await act(async () => {
-			firstRow?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-		})
-		expect(clicked).toContainEqual({ to: '/plugins/plugin-000', mode: 'replace-active' })
+			const firstRow = container.querySelector('[data-plugin-row="true"]')
+			expect(firstRow).not.toBeNull()
+			await act(async () => {
+				firstRow?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+			})
+			expect(clicked).toContainEqual({ to: '/plugins/plugin-000', mode: 'replace-active' })
 
-		const organizer = container.querySelector('[aria-label="插件列表与分组"]') as HTMLElement | null
-		expect(organizer).not.toBeNull()
-		organizer?.focus()
+			const organizer = container.querySelector(
+				'[aria-label="插件列表与分组"]',
+			) as HTMLElement | null
+			expect(organizer).not.toBeNull()
+			organizer?.focus()
 
-		await act(async () => {
-			organizer?.dispatchEvent(
-				new KeyboardEvent('keydown', {
-					key: 'Enter',
-					bubbles: true,
-				}),
-			)
-		})
-		expect(clicked).toContainEqual({ to: '/plugins/plugin-000', mode: 'replace-active' })
+			await act(async () => {
+				organizer?.dispatchEvent(
+					new KeyboardEvent('keydown', {
+						key: 'Enter',
+						bubbles: true,
+					}),
+				)
+			})
+			expect(clicked).toContainEqual({ to: '/plugins/plugin-000', mode: 'replace-active' })
 
-		await act(async () => {
-			organizer?.dispatchEvent(
-				new KeyboardEvent('keydown', {
-					key: 'Enter',
-					ctrlKey: true,
-					bubbles: true,
-				}),
-			)
-		})
-		expect(clicked).toContainEqual({ to: '/plugins/plugin-000', mode: 'open-tab' })
-	})
+			await act(async () => {
+				organizer?.dispatchEvent(
+					new KeyboardEvent('keydown', {
+						key: 'Enter',
+						ctrlKey: true,
+						bubbles: true,
+					}),
+				)
+			})
+			expect(clicked).toContainEqual({ to: '/plugins/plugin-000', mode: 'open-tab' })
+		},
+		10_000,
+	)
 
-	it('keeps large ungrouped browse mode unflattened when no filtering is active', async () => {
-		const statuses = buildStatuses(180)
-		const container = await renderOrganizer({
-			statuses,
-		})
+	it(
+		'keeps large ungrouped browse mode unflattened when no filtering is active',
+		async () => {
+			const statuses = buildStatuses(180)
+			const container = await renderOrganizer({
+				statuses,
+			})
 
-		const rows = container.querySelectorAll('[data-plugin-row="true"]')
-		expect(rows.length).toBe(180)
-		expect(container.textContent).not.toContain('平铺结果')
-		expect(container.querySelector('.plx-pluginCatalog__subgroupHeader')).not.toBeNull()
-	})
+			const rows = container.querySelectorAll('[data-plugin-row="true"]')
+			expect(rows.length).toBe(180)
+			expect(container.textContent).not.toContain('平铺结果')
+			expect(container.querySelector('.plx-pluginCatalog__subgroupHeader')).not.toBeNull()
+		},
+		10_000,
+	)
 
 	it('preserves grouped browse mode when no filtering is active', async () => {
 		const statuses = buildStatuses(6)

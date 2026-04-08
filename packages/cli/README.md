@@ -25,6 +25,11 @@ pluxel hmr
 pluxel new
 ```
 
+对外使用 `pluxel build` / `@pluxel/cli/build` 时，项目应自行安装：
+
+- `tsdown`
+- `oxlint`
+
 ## 在前端链路里的角色
 
 对插件前端来说，CLI 主要负责两件事：

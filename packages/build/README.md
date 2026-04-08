@@ -7,6 +7,7 @@
 如果你要理解插件前端整条链路，不要只看这个 README，直接看：
 
 - [`docs/architecture/frontend.md`](../../docs/architecture/frontend.md)
+- [`docs/architecture/lint-toolchain.md`](../../docs/architecture/lint-toolchain.md)
 
 在前端架构里，`@pluxel/build` 的角色很明确：
 
@@ -16,18 +17,18 @@
 
 ## 关键插件
 
+- `lintGuardPlugin()`
+  在内部仓库构建/HMR/测试链路里执行 `oxlint.build.config.ts`，只强制 build-critical correctness 规则；发现违规时直接失败，不再偷偷改源码
 - `configSourcePlugin()`
   提取 `@Config(...)` / `configs.use(...)` 的 schema source
 - `hmrUiBridgePlugin()`
   把 `ui(...).bind(ctx)` 重写成 `ctx.ext.ui.remote.packaged()`
-- `importTypeFixerPlugin()`
-  修正装饰器和类构造场景下需要的 type-only import
 
 ## 默认 overlay
 
 `@pluxel/build/cli` 的 `cliTsdownOverlay` 默认包含：
 
-- `importTypeFixerPlugin()`
+- `lintGuardPlugin()`
 - `configSourcePlugin()`
 - `hmrUiBridgePlugin()`
 
@@ -63,11 +64,11 @@
 import {
 	configSourcePlugin,
 	hmrUiBridgePlugin,
-	importTypeFixerPlugin,
+	lintGuardPlugin,
 } from '@pluxel/build/rolldown'
 
 export default {
-	plugins: [importTypeFixerPlugin(), configSourcePlugin(), hmrUiBridgePlugin()],
+	plugins: [lintGuardPlugin(), configSourcePlugin(), hmrUiBridgePlugin()],
 }
 ```
 

@@ -29,6 +29,8 @@
    发布/内联/依赖约束（只发布 5 个包）
 4. `docs/governance/agent-rules.md`
    后续维护规则（避免引入新的遗留/噪音）
+5. `docs/architecture/lint-toolchain.md`
+   lint / build-correctness / toolchain transform 的分层与约束
 
 包内文档（次级入口）：
 
@@ -42,6 +44,8 @@
 
 - `docs/architecture/services.md`
   runtime / hmr service 边界补充说明
+- `docs/architecture/lint-toolchain.md`
+  repo lint、build lint、toolchain 接入点与 autofix 边界
 - `docs/design/plugin-config/overview.md`
   插件配置声明与宿主 doc 编排的收敛设计
   （实现侧 contract：`packages/runtime/docs/config/contract.md`）

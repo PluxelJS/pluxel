@@ -1,6 +1,6 @@
 import { readdirSync, readFileSync } from 'node:fs'
-import { join } from 'node:path'
-import { configSourcePlugin, importTypeFixerPlugin } from '@pluxel/build/rolldown'
+import { join, resolve } from 'node:path'
+import { configSourcePlugin, lintGuardPlugin } from '@pluxel/build/rolldown'
 import {
 	defineConfig,
 	mergeConfig,
@@ -81,7 +81,7 @@ function normalizeGlobs(patterns: string[]): string[] {
 /**
  * Opinionated Vitest preset for Pluxel monorepo tests:
  * - enables `@pluxel/source` + `@pluxel/runtime` resolution conditions
- * - installs configSource + importTypeFixer Vite plugins (compile-time metadata extraction)
+ * - installs lint guard + configSource Vite plugins (source-policy enforcement + metadata extraction)
  * - runs `@pluxel/test/setup` once per worker
  */
 export function definePluxelVitestConfig(
@@ -114,16 +114,16 @@ export function definePluxelVitestConfig(
 		},
 	}
 
-	const toolchainPlugins: NonNullable<ViteUserConfig['plugins']> = [
-		...asPluginArray(options.prePlugins),
-		importTypeFixerPlugin({ include, exclude }),
-		configSourcePlugin({ include, exclude }),
-	]
-
 	const finalize = (resolved: ViteUserConfig): ViteUserConfig => {
 		const overridePlugins = asPluginArray(resolved.plugins)
 		const { plugins: _ignored, ...rest } = resolved
 		const merged = mergeConfig(base, rest as ViteUserConfig) as ViteUserConfig
+		const projectRoot = resolve(merged.root ?? process.cwd())
+		const toolchainPlugins: NonNullable<ViteUserConfig['plugins']> = [
+			...asPluginArray(options.prePlugins),
+			lintGuardPlugin({ cwd: projectRoot }),
+			configSourcePlugin({ include, exclude }),
+		]
 
 		// Always keep Pluxel resolution conditions available (and allow caller to add more).
 		const mergedConditions = uniqStrings([

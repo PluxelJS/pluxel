@@ -35,6 +35,52 @@ const CachedWithToken = <T extends BasePlugin>(token: PluginToken<T>) =>
 		return value
 	})
 
+@Plugin({ name: 'FeatureDepsKvPlugin' })
+class FeatureDepsKvPlugin extends BasePlugin {
+	private store = new Map<string, unknown>()
+	async has(key: string) {
+		return this.store.has(key)
+	}
+	async get(key: string) {
+		return this.store.get(key)
+	}
+	async set(key: string, value: unknown) {
+		this.store.set(key, value)
+	}
+}
+
+const FeatureDepsCached = () => CachedWithToken(FeatureDepsKvPlugin)
+
+class FeatureDepsCacheFeature extends BaseFeature {
+	@FeatureDepsCached()
+	async compute(key: string) {
+		return { key }
+	}
+}
+
+@Plugin({ name: 'FeatureDepsConsumerMissing' })
+class FeatureDepsConsumerMissing extends BasePlugin {
+	readonly cache = this.features.use(FeatureDepsCacheFeature)
+	async run() {
+		return await this.cache.compute('x')
+	}
+}
+
+@Plugin({ name: 'FeatureDepsConsumerOk' })
+class FeatureDepsConsumerOk extends BasePlugin {
+	readonly cache = this.features.use(FeatureDepsCacheFeature)
+	constructor(public kv: FeatureDepsKvPlugin) {
+		super()
+	}
+	async run() {
+		return await this.cache.compute('x')
+	}
+}
+
+__registerUsedFeature__(FeatureDepsConsumerMissing, FeatureDepsCacheFeature)
+__registerUsedFeature__(FeatureDepsConsumerOk, FeatureDepsCacheFeature)
+setParamToken(FeatureDepsConsumerOk, 0, FeatureDepsKvPlugin)
+
 describe('Decorator-required plugin deps', () => {
 	it('throws when a plugin uses a decorator but has no ctor dependency', async () => {
 		await withHost(async (host) => {
@@ -126,58 +172,13 @@ describe('Decorator-required plugin deps', () => {
 
 	it('propagates decorator-required deps from BaseFeature via features.use() (extraction equivalent)', async () => {
 		await withHost(async (host) => {
-			@Plugin({ name: 'KvPlugin' })
-			class KvPlugin extends BasePlugin {
-				private store = new Map<string, unknown>()
-				async has(key: string) {
-					return this.store.has(key)
-				}
-				async get(key: string) {
-					return this.store.get(key)
-				}
-				async set(key: string, value: unknown) {
-					this.store.set(key, value)
-				}
-			}
+			host.add(FeatureDepsKvPlugin)
+			expect(() => host.add(FeatureDepsConsumerMissing)).toThrow(/Missing constructor dependencies/)
 
-			const Cached = () => CachedWithToken(KvPlugin)
-
-			class CacheFeature extends BaseFeature {
-				@Cached()
-				async compute(key: string) {
-					return { key }
-				}
-			}
-
-			@Plugin({ name: 'ConsumerMissing' })
-			class ConsumerMissing extends BasePlugin {
-				readonly cache = this.features.use(CacheFeature)
-				async run() {
-					return await this.cache.compute('x')
-				}
-			}
-			__registerUsedFeature__(ConsumerMissing, CacheFeature)
-
-			host.add(KvPlugin)
-			expect(() => host.add(ConsumerMissing)).toThrow(/Missing constructor dependencies/)
-
-			@Plugin({ name: 'ConsumerOk' })
-			class ConsumerOk extends BasePlugin {
-				readonly cache = this.features.use(CacheFeature)
-				constructor(public kv: KvPlugin) {
-					super()
-				}
-				async run() {
-					return await this.cache.compute('x')
-				}
-			}
-			__registerUsedFeature__(ConsumerOk, CacheFeature)
-			setParamToken(ConsumerOk, 0, KvPlugin)
-
-			host.add(ConsumerOk)
+			host.add(FeatureDepsConsumerOk)
 			await host.commit()
 
-			const consumer = host.require(ConsumerOk) as ConsumerOk
+			const consumer = host.require(FeatureDepsConsumerOk) as FeatureDepsConsumerOk
 			expect(await consumer.run()).toEqual({ key: 'x' })
 		})
 	})

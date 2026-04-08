@@ -1,6 +1,6 @@
 import { existsSync } from 'node:fs'
 import { createRequire } from 'node:module'
-import { configSourcePlugin, importTypeFixerPlugin } from '@pluxel/build/rolldown'
+import { configSourcePlugin, lintGuardPlugin } from '@pluxel/build/rolldown'
 import { resolve } from 'pathe'
 import {
 	createLogger,
@@ -425,7 +425,7 @@ export function buildHmrViteConfig(opts: HmrViteConfigOptions): InlineConfig {
 				// - root-based include globs are brittle under symlinks and can skip schema injection.
 				// These plugins are already cheap (CODE_HINT + AST parse only when needed) and are only
 				// invoked for modules Vite actually loads/evaluates.
-				importTypeFixerPlugin(),
+				lintGuardPlugin({ cwd: opts.root }),
 				configSourcePlugin(),
 			]),
 			...(opts.extraPlugins ?? []),

@@ -3,7 +3,7 @@ import {
 	getPluginInfo,
 	type BasePlugin,
 	type CommitSummary,
-	type Context,
+	Context,
 	type ForkablePluginConstructor,
 	type PluginConstructor,
 	type PluginIdentifier,

@@ -1,6 +1,6 @@
 import { BasePlugin, Plugin } from '@pluxel/runtime'
 import { TelegramConfig } from './config'
-import type { PluginB } from './PluginB'
+import { PluginB } from './PluginB'
 import { PluginC } from './PluginC'
 import { test1 } from './testconfig'
 

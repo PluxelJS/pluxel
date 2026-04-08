@@ -14,6 +14,10 @@
 			"@pluxel/source": "./src/index.ts",
 			"default": "./dist/index.mjs"
 		},
+		"./oxlint": {
+			"@pluxel/source": "./src/oxlint/index.ts",
+			"default": "./dist/oxlint.mjs"
+		},
 		"./package.json": "./package.json"
 	},
 	"scripts": {
