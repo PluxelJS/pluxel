@@ -1,9 +1,22 @@
+// Provider-owned session UI for the interaction demo.
+
 import { Paper, Select, Stack, Text } from '@mantine/core'
 import { definePluginUIModule, type InteractionSessionComponentProps } from '@pluxel/runtime/web/ui'
 import { plugin } from './runtime'
 
 type FontPickerDraft = {
 	selectedId: string | null
+}
+
+type FontPickerResult =
+	| { type: 'set-font'; ref: { provider: string; kind: 'font-set'; id: string; label?: string } }
+	| { type: 'clear-font' }
+
+type FontOption = {
+	value: string
+	label: string
+	description: string
+	previewText: string
 }
 
 function FontPickerSession({
@@ -17,12 +30,11 @@ function FontPickerSession({
 	{ current: { id: string; label?: string } | null },
 	FontPickerDraft,
 	unknown,
-	| { type: 'set-font'; ref: { provider: string; kind: 'font-set'; id: string; label?: string } }
-	| { type: 'clear-font' }
+	FontPickerResult
 >) {
 	const app = plugin.use()
 	const collection = app.db.collection('fontSets').useView()
-	const options = app.db
+	const options: FontOption[] = app.db
 		.collection('fontSets')
 		.useList({ sort: { name: 1 } })
 		.map((item) => ({
@@ -34,28 +46,13 @@ function FontPickerSession({
 
 	const selected = options.find((item) => item.value === draft.selectedId) ?? null
 	const handleChange = async (nextValue: string | null) => {
-		const next =
-			nextValue == null ? null : (options.find((item) => item.value === nextValue) ?? null)
+		const next = nextValue == null ? null : findOption(options, nextValue)
 		const nextDraft = {
 			selectedId: next?.value ?? null,
 		} satisfies FontPickerDraft
 		setDraft(nextDraft)
 		await pushDraft(nextDraft)
-		await commit(
-			next
-				? {
-						type: 'set-font',
-						ref: {
-							provider: 'PluginContributionFontManager',
-							kind: 'font-set',
-							id: next.value,
-							label: next.label,
-						},
-					}
-				: {
-						type: 'clear-font',
-					},
-		)
+		await commit(toCommitResult(next))
 	}
 
 	return (
@@ -97,3 +94,20 @@ export default definePluginUIModule({
 		fontPickerSession: FontPickerSession,
 	},
 })
+
+function findOption(options: FontOption[], value: string) {
+	return options.find((item) => item.value === value) ?? null
+}
+
+function toCommitResult(option: FontOption | null): FontPickerResult {
+	if (!option) return { type: 'clear-font' }
+	return {
+		type: 'set-font',
+		ref: {
+			provider: 'PluginContributionFontManager',
+			kind: 'font-set',
+			id: option.value,
+			label: option.label,
+		},
+	}
+}

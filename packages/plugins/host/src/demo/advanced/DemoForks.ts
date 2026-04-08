@@ -1,9 +1,6 @@
-// 演示：ForkablePlugin（同一个插件可创建多个实例 / fork）
-//
-// 玩法（在 UI → 插件 → 依赖注入）：
-// - 启用 DemoWorker
-// - 再启用 DemoWorkerConsumer
-// - 在依赖注入面板里把 DemoWorker 切换为某个 fork（例如 DemoWorker#<id>）
+// Advanced: read this when:
+// - 你需要同一个插件的多个运行实例
+// - 你要看 consumer 如何依赖某个 fork
 
 import { BasePlugin, ForkablePlugin, Plugin } from '@pluxel/runtime'
 

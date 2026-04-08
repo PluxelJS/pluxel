@@ -1,4 +1,6 @@
-// 展示型插件：尽量不注册自定义组件，仅使用宿主渲染扩展与配置 schema。
+// Read this when:
+// - 你不打算写自定义 UI
+// - 你只想看 builtin doc/form/action 的完整最小组合
 
 import { BasePlugin, Plugin } from '@pluxel/runtime'
 import { doc, type SignalDbDocumentHandle } from '@pluxel/runtime/services'
@@ -27,48 +29,20 @@ type TabDocDefinition = {
 	content: BuiltinDocContent
 }
 
+// Builtin doc tabs stay close to the top so readers can see the output shape first.
 const BUILTIN_TABS = {
 	controls: { id: 'controls', label: 'Controls', icon: 'form' },
 	metrics: { id: 'metrics', label: 'Metrics', icon: 'activity' },
-	guide: { id: 'guide', label: 'Guide', icon: 'book' },
 } satisfies Record<string, BuiltinTabMeta>
 
-const GUIDE_INTRO = `
-# Builtin Doc
-基于 markdown 的内容区域，可以注入内置组件。
-`
+const BUILTIN_NOTES = `
+Builtin doc 适合放：
 
-const GUIDE_NOTES = `
-- 纯文段和 builtin 表单可以混合排布
-- 适合在说明文档中加入可交互控件
+- 当前状态摘要
+- 少量即时操作
+- 简短说明文段
 
-## 说明
-本段用于拉长文本，测试目录与滚动条联动效果。
-
-### 为什么选择 doc
-doc 让插件作者可以先写一段解释，再插入交互组件。
-同一页面里既能阅读，也能操作。
-
-### 使用建议
-- 段落要有结构
-- 章节层级不要太深
-- 关键点放在标题后几行
-
-### 视觉测试
-这里连续堆叠几段文本来制造滚动高度。
-在真实插件里可以用配置说明、故障排查步骤、变更记录等填充。
-
-#### 变更记录
-1. 新增内置 doc 渲染
-2. 支持 block 注入
-3. 支持 TOC
-
-#### 常见问题
-Q: 为什么要统一入口？
-A: 避免多套 UI 能力碎片化，降低维护成本。
-
-Q: 是否支持更复杂组件？
-A: 可以在 block 扩展里逐步加入。
+如果页面需要复杂交互、复杂布局或独立路由，就切到自定义 UI demo。
 `
 
 @Plugin({ name: 'PluginBuiltinShowcase' })
@@ -114,6 +88,7 @@ export class PluginBuiltinShowcase extends BasePlugin {
 		this.startTickLoop()
 	}
 
+	// Runtime state and builtin write payloads.
 	private buildState(): BuiltinState {
 		const { refreshMs } = this.display
 		const { tickStep, maxTicks } = this.behavior
@@ -194,6 +169,13 @@ export class PluginBuiltinShowcase extends BasePlugin {
 		]
 	}
 
+	private statusRows() {
+		return [
+			...this.summaryRows(),
+			{ label: 'Max ticks', value: this.runtimeField('maxTicks', DEFAULTS.behavior.maxTicks) },
+		]
+	}
+
 	private pauseForm(description: string) {
 		return this.builtin.form({
 			description,
@@ -236,30 +218,24 @@ export class PluginBuiltinShowcase extends BasePlugin {
 		this.registerTabDocs()
 	}
 
+	// Builtin doc registration.
 	private registerOverviewDoc() {
 		const d = doc({} as const)
 
-		this.ctx.ext.ui.builtin.doc({
+		this.registerBuiltinDoc({
 			id: 'summary',
 			point: 'plugin:context',
 			title: 'Builtin Overview',
 			description: 'Host-rendered preset UI (no plugin UI module).',
-			requireRunning: false,
 			content: d`
 				${d.block(
 					'Overview',
 					d.card({
 						layout: { variant: 'grid', density: 'compact', columns: 3, labelPlacement: 'top' },
-						rows: [
-							{ label: 'Plugin', value: this.ctx.pluginInfo.id },
-							...this.summaryRows(),
-							{
-								label: 'Max ticks',
-								value: this.builtin.field('maxTicks', DEFAULTS.behavior.maxTicks),
-							},
-						],
+						rows: [{ label: 'Plugin', value: this.ctx.pluginInfo.id }, ...this.statusRows()],
 					}),
 				)}
+				${BUILTIN_NOTES}
 			`,
 		})
 	}
@@ -278,12 +254,6 @@ export class PluginBuiltinShowcase extends BasePlugin {
 				tab: BUILTIN_TABS.metrics,
 				priority: 10,
 				content: this.buildMetricsDoc(d),
-			},
-			{
-				id: 'guide-doc',
-				tab: BUILTIN_TABS.guide,
-				priority: 0,
-				content: this.buildGuideDoc(d),
 			},
 		]
 
@@ -311,27 +281,10 @@ export class PluginBuiltinShowcase extends BasePlugin {
 		`
 	}
 
-	private buildGuideDoc(d: BuiltinDocBuilder): BuiltinDocContent {
-		return d`
-			${GUIDE_INTRO}
-			${d.block(
-				'Snapshot',
-				d.card({
-					description: 'Markdown + builtin blocks.',
-					layout: { variant: 'grid', density: 'compact', columns: 3, labelPlacement: 'top' },
-					rows: this.summaryRows(),
-				}),
-			)}
-			${d.block('Quick controls', this.pauseForm('onChange + signaldb action doc.'))}
-			${GUIDE_NOTES}
-		`
-	}
-
 	private registerTabDoc(input: TabDocDefinition) {
-		this.ctx.ext.ui.builtin.doc({
+		this.registerBuiltinDoc({
 			id: input.id,
 			point: 'plugin:tabs',
-			requireRunning: false,
 			priority: input.priority,
 			meta: {
 				label: input.tab.label,
@@ -342,26 +295,28 @@ export class PluginBuiltinShowcase extends BasePlugin {
 		})
 	}
 
+	private registerBuiltinDoc(
+		input: Parameters<typeof this.ctx.ext.ui.builtin.doc>[0] & { requireRunning?: false },
+	) {
+		this.ctx.ext.ui.builtin.doc({
+			requireRunning: false,
+			...input,
+		})
+	}
+
 	private buildMetricRows() {
-		const rows = [
+		return [
 			{
 				label: 'Stream',
 				value: { kind: 'badge', label: 'Live', color: 'green', variant: 'light' } as const,
 			},
-			{ label: 'Uptime', value: this.runtimeField('uptimeLabel', '0s') },
+			...this.statusRows(),
 			{ label: 'Uptime (ms)', value: this.runtimeField('uptimeMs', 0) },
-			{ label: 'Ticks', value: this.runtimeField('ticks', 0) },
-			{ label: 'Tick step', value: this.runtimeField('tickStep', DEFAULTS.behavior.tickStep) },
-			{ label: 'Paused', value: this.runtimeField('paused', false) },
-			{ label: 'Max ticks', value: this.runtimeField('maxTicks', DEFAULTS.behavior.maxTicks) },
-			{ label: 'Refresh (ms)', value: this.runtimeField('refreshMs', DEFAULTS.display.refreshMs) },
 			{
 				label: 'Snapshot',
 				value: this.builtin.snapshot(this.runtimeStateFallback()),
 			},
 		]
-
-		return rows
 	}
 
 	private startTickLoop() {
@@ -388,6 +343,7 @@ export class PluginBuiltinShowcase extends BasePlugin {
 	private syncBuiltinState() {
 		this.builtinState.replaceOne({ id: RUNTIME_DOC_ID }, this.buildState(), { upsert: true })
 	}
+
 	private consumePendingActions() {
 		for (const action of this.builtinActions.find({ status: 'pending' })) {
 			if (this.processingActions.has(action.id)) continue

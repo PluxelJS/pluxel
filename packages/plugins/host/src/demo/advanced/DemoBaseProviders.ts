@@ -1,12 +1,6 @@
-// 演示：抽象基类 Token + 多实现（Provider 选择）
-//
-// 适用场景：
-// - 你希望下游只依赖“能力接口”（抽象类/接口），而不固定依赖某个具体插件实现
-// - 由宿主/用户在 UI 中选择实际实现（Provider）
-//
-// 玩法（在 UI → 插件 → 依赖注入）：
-// - 只启用一个 Provider：DemoClock.System 或 DemoClock.Fixed（二选一）
-// - 再启用 DemoClockConsumer，观察注入到的 provider 变化
+// Advanced: read this when:
+// - 你需要“抽象能力 token + 多个 provider 实现”
+// - 你不想让 consumer 依赖某个具体插件类
 
 import { BasePlugin, Plugin } from '@pluxel/runtime'
 
@@ -20,11 +14,15 @@ export abstract class DemoClock extends BasePlugin {
 @Plugin(DemoClock, { name: 'DemoClock.System' })
 export class DemoClockSystem extends DemoClock {
 	override init(): void {
-		this.ctx.logger.info('ready', { id: this.ctx.pluginInfo.id })
+		this.logReady()
 	}
 
 	now(): number {
 		return Date.now()
+	}
+
+	private logReady() {
+		this.ctx.logger.info('ready', { id: this.ctx.pluginInfo.id })
 	}
 }
 
@@ -34,11 +32,15 @@ export class DemoClockFixed extends DemoClock {
 
 	override init(): void {
 		this.fixed = Date.now()
-		this.ctx.logger.info('ready', { id: this.ctx.pluginInfo.id, fixed: this.format(this.fixed) })
+		this.logReady()
 	}
 
 	now(): number {
 		return this.fixed
+	}
+
+	private logReady() {
+		this.ctx.logger.info('ready', { id: this.ctx.pluginInfo.id, fixed: this.format(this.fixed) })
 	}
 }
 

@@ -1,3 +1,8 @@
+// Browser module registration for the custom UI demo:
+// - extensions
+// - routes
+// - standalone route
+
 import { Button, Group, Stack, Text } from '@mantine/core'
 import { definePluginUIModule, ExtensionPoints } from '@pluxel/runtime/web/ui'
 import { IconDashboard, IconExternalLink, IconRocket } from '@tabler/icons-react'
@@ -9,6 +14,14 @@ import {
 	StreamsPanel,
 } from './components'
 import { plugin } from './runtime'
+
+function pluginRouteHref(pluginName: string, path: string) {
+	return `/plugins/${encodeURIComponent(pluginName)}${path}`
+}
+
+function standaloneRouteHref(pluginName: string, path: string) {
+	return `/ext-standalone/${encodeURIComponent(pluginName)}${path}`
+}
 
 function HeaderAction() {
 	return (
@@ -32,7 +45,7 @@ function PluginInfo() {
 					size="xs"
 					leftSection={<IconExternalLink size={14} />}
 					component="a"
-					href={`/plugins/${encodeURIComponent(app.pluginName)}/dashboard`}
+					href={pluginRouteHref(app.pluginName, '/dashboard')}
 				>
 					打开 Dashboard
 				</Button>
@@ -40,7 +53,7 @@ function PluginInfo() {
 					variant="subtle"
 					size="xs"
 					component="a"
-					href={`/ext-standalone/${encodeURIComponent(app.pluginName)}/standalone`}
+					href={standaloneRouteHref(app.pluginName, '/standalone')}
 				>
 					Standalone
 				</Button>

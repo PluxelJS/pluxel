@@ -17,7 +17,6 @@ type LabelStyle = (typeof LABEL_STYLES)[number]
 
 const SECTION_FORMAT = { id: 'format', title: '格式', description: '时间显示格式' }
 const SECTION_LABELS = { id: 'labels', title: '文案', description: '前后缀与展示文本' }
-const SECTION_ADVANCED = { id: 'advanced', title: '高级', description: '长表单测试' }
 
 export const RUNTIME_DOC_ID = 'runtime' as const
 export const RUNTIME_ACTIONS_COLLECTION = 'runtime-actions' as const
@@ -38,20 +37,6 @@ export const DEFAULTS = {
 		uppercaseUnits: false,
 		template: '',
 		unitAliases: { d: 'day', h: 'hr', m: 'min', s: 'sec', ms: 'ms' },
-		exampleLines: [
-			'1h 12m',
-			'2d 04h',
-			'06m 15s',
-			'0d 00h 42m',
-			'5m 08s',
-			'3h 09m',
-			'7m 45s',
-			'12h 33m',
-			'9s',
-			'0h 00m 08s',
-			'16m 02s',
-			'23h 11m',
-		],
 	},
 }
 
@@ -288,8 +273,8 @@ export const FormatConfig = v.object({
 		v.optional(v.record(v.string(), v.string()), DEFAULTS.format.unitAliases),
 		f.formMeta({
 			label: '单位别名',
-			description: '键值表测试',
-			section: SECTION_ADVANCED,
+			description: '覆盖默认单位文案',
+			section: SECTION_LABELS,
 			layout: { full: true },
 		}),
 		f.recordMeta({
@@ -298,16 +283,6 @@ export const FormatConfig = v.object({
 			key: { label: '原单位' },
 			value: { label: '别名' },
 		}),
-	),
-	exampleLines: v.pipe(
-		v.optional(v.array(v.string()), DEFAULTS.format.exampleLines),
-		f.formMeta({
-			label: '示例行',
-			description: '列表字段测试',
-			section: SECTION_ADVANCED,
-			layout: { full: true },
-		}),
-		f.arrayMeta({ layout: 'list', addLabel: '添加示例', itemLabel: '内容' }),
 	),
 })
 

@@ -1,45 +1,26 @@
-// 演示：FeatureHost 的“唯一推荐 API”
-//
-// 1) this.features.use(FeatureCtor)
-//    - 插件内模块化（一个插件实例内同一个 Feature 只构造一次）
-//    - 配合 HostBoundFeature，可自动注入宿主实例（不需要手动传 this）
-//
-// 2) this.features.dep(DepPlugin, cb?)
-//    - 跨插件“可选集成”（依赖可能不存在/可能被关闭/可能在下一次 commit 才出现）
-//    - 回调在依赖出现/重启(实例变化)时会再执行；依赖消失时会执行 cleanup
-//
-// 3) BridgePlugin（可选）
-//    - 把“连接两个插件”的逻辑提取成第三个插件
-//    - 让被集成的插件本体更纯粹（不必内建可选依赖逻辑）
+// Read this when:
+// - 你要写插件内 feature 组合
+// - 你要做可选依赖、局部事件和 bridge plugin
+// - 你想看推荐的“主文件 + shared 文件”拆分
 
-import { BasePlugin, HostBoundFeature, Plugin } from '@pluxel/runtime'
+import { BasePlugin, Plugin } from '@pluxel/runtime'
 import { EvtChannel } from '@pluxel/runtime/services'
+import {
+	PluginLoggerFeature,
+	reconnectOptionalPair,
+	type MsgEvent,
+	type TickEvent,
+} from './PluginFeatureDeps.shared'
 
-// -------------------------
-// 1) HostBoundFeature + use()
-// -------------------------
-
-class HostLoggerFeature extends HostBoundFeature<BasePlugin> {
-	info(message: string, extra?: Record<string, unknown>) {
-		this.ctx.logger.info(message, {
-			host: this.host.ctx.pluginInfo.id,
-			...extra,
-		})
-	}
-
-	debug(message: string, extra?: Record<string, unknown>) {
-		this.ctx.logger.debug(message, {
-			host: this.host.ctx.pluginInfo.id,
-			...extra,
-		})
-	}
+function startChannelFeed<Payload>(
+	plugin: BasePlugin,
+	intervalMs: number,
+	emit: () => Payload,
+	push: (payload: Payload) => void,
+) {
+	const timer = setInterval(() => push(emit()), intervalMs)
+	plugin.ctx.effects.defer(() => clearInterval(timer))
 }
-
-// -------------------------
-// 2) dep(): optional dependency
-// -------------------------
-
-type TickEvent = readonly [payload: { from: string; seq: number; at: number }]
 
 @Plugin({ name: 'PluginFeatureDepsProvider' })
 export class PluginFeatureDepsProvider extends BasePlugin {
@@ -47,22 +28,25 @@ export class PluginFeatureDepsProvider extends BasePlugin {
 	private seq = 0
 
 	override init(): void {
-		const timer = setInterval(() => {
-			this.seq += 1
-			this.channel.emit({
-				from: this.ctx.pluginInfo.id,
-				seq: this.seq,
-				at: Date.now(),
-			})
-		}, 750)
-
-		this.ctx.effects.defer(() => clearInterval(timer))
+		startChannelFeed(
+			this,
+			750,
+			() => {
+				this.seq += 1
+				return {
+					from: this.ctx.pluginInfo.id,
+					seq: this.seq,
+					at: Date.now(),
+				}
+			},
+			(payload) => this.channel.emit(payload),
+		)
 	}
 }
 
 @Plugin({ name: 'PluginFeatureDepsConsumer' })
 export class PluginFeatureDepsConsumer extends BasePlugin {
-	readonly log: HostLoggerFeature = this.features.use(HostLoggerFeature) // 自动注入 host：不需要传 this
+	readonly log: PluginLoggerFeature = this.features.use(PluginLoggerFeature)
 
 	override init(): void {
 		this.log.info('consumer init')
@@ -83,28 +67,25 @@ export class PluginFeatureDepsConsumer extends BasePlugin {
 	}
 }
 
-// -------------------------
-// 3) BridgePlugin: keep plugins pure
-// -------------------------
-
-type MsgEvent = readonly [payload: { from: string; text: string; at: number }]
-
 @Plugin({ name: 'PluginFeatureBridgeProvider' })
 export class PluginFeatureBridgeProvider extends BasePlugin {
 	readonly channel = new EvtChannel<MsgEvent>(this.ctx)
 	private seq = 0
 
 	override init(): void {
-		const timer = setInterval(() => {
-			this.seq += 1
-			this.channel.emit({
-				from: this.ctx.pluginInfo.id,
-				text: `hello#${this.seq}`,
-				at: Date.now(),
-			})
-		}, 1200)
-
-		this.ctx.effects.defer(() => clearInterval(timer))
+		startChannelFeed(
+			this,
+			1200,
+			() => {
+				this.seq += 1
+				return {
+					from: this.ctx.pluginInfo.id,
+					text: `hello#${this.seq}`,
+					at: Date.now(),
+				}
+			},
+			(payload) => this.channel.emit(payload),
+		)
 	}
 }
 
@@ -133,10 +114,13 @@ export class PluginFeatureBridgePlugin extends BasePlugin {
 
 	override init(): void {
 		const reconnect = () => {
-			if (this.unbind) this.unbind()
-			this.unbind = undefined
-			if (!this.provider || !this.consumer) return
-			this.unbind = this.consumer.bind(this.provider)
+			const state = {
+				provider: this.provider,
+				consumer: this.consumer,
+				unbind: this.unbind,
+			}
+			reconnectOptionalPair(state, (consumer, provider) => consumer.bind(provider))
+			this.unbind = state.unbind
 		}
 
 		this.features.dep(PluginFeatureBridgeProvider, (dep) => {

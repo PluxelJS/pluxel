@@ -1,3 +1,7 @@
+// Read this when:
+// - 你要挂插件级 HTTP 路由
+// - 你要看 HMR worker 存在时启用、否则 inline fallback 的写法
+
 import { BasePlugin, Plugin } from '@pluxel/runtime'
 import { worker, type HmrWorkerBinding } from '@pluxel/hmr/plugin'
 import { doc } from '@pluxel/runtime/services'
@@ -16,6 +20,7 @@ type SquareResult = {
 	mode: WorkerStatus['mode']
 }
 
+// HMR-only worker declaration; frozen/static hosts fall back inline.
 const squareWorker = worker('./PluginHttpWorkerDemo/ui/worker.ts')
 
 @Plugin({ name: 'PluginHttpWorkerDemo' })
@@ -81,6 +86,7 @@ export class PluginHttpWorkerDemo extends BasePlugin {
 		this.ctx.effects.defer(() => this.disposePool())
 	}
 
+	// Public route behavior.
 	private async getWorkerStatus(): Promise<WorkerStatus> {
 		const snapshot = this.workerBinding?.snapshot() ?? { mode: 'fallback' as const, url: null }
 		const enabled = snapshot.mode === 'hmr'
@@ -112,6 +118,7 @@ export class PluginHttpWorkerDemo extends BasePlugin {
 		}
 	}
 
+	// Worker lifecycle wiring.
 	private async replacePool(workerUrl: string): Promise<void> {
 		const pool = new Tinypool({
 			filename: workerUrl,

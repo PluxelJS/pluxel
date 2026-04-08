@@ -49,6 +49,8 @@
 - `docs/design/plugin-config/overview.md`
   插件配置声明与宿主 doc 编排的收敛设计
   （实现侧 contract：`packages/runtime/docs/config/contract.md`）
+- `docs/design/plugin-feature/overview.md`
+  Plugin/Feature 分层、`use(required)` / `tryUse(optional)`、以及真正 optional feature 的模块加载边界
 - `docs/design/plugin-contribution/overview.md`
   插件间 contribution / slot / provider-owned custom widget / resource reference 设计
   （包含当前 capability matrix、常见交互形式与稳定/非稳定边界）

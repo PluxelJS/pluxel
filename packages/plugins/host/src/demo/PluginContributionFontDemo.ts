@@ -1,9 +1,14 @@
+// Read this when:
+// - 你要做跨插件 interaction
+// - 你要看 consumer 拥有 config，provider 拥有资源和 session UI 的推荐分工
+
 import { ui } from '@pluxel/hmr/plugin'
 import { BasePlugin, Plugin } from '@pluxel/runtime'
 import { f, v } from '@pluxel/runtime/config'
 import { doc } from '@pluxel/runtime/services'
 import { defineInteractionContract } from '@pluxel/runtime/web/extensions'
 
+// Shared resource model for the provider.
 type FontSetDoc = {
 	id: string
 	name: string
@@ -34,6 +39,7 @@ const FONT_SETS: readonly FontSetDoc[] = [
 
 const fontContributionUi = ui('./PluginContributionFontDemo/ui/index.tsx')
 
+// Cross-plugin interaction contract.
 type FontPickerInput = {
 	current: {
 		provider: string
@@ -47,15 +53,12 @@ type FontPickerDraft = {
 	selectedId: string | null
 }
 
+type FontRef = NonNullable<FontPickerInput['current']>
+
 type FontPickerResult =
 	| {
 			type: 'set-font'
-			ref: {
-				provider: string
-				kind: 'font-set'
-				id: string
-				label?: string
-			}
+			ref: FontRef
 	  }
 	| {
 			type: 'clear-font'
@@ -87,12 +90,7 @@ const FontPickerContract = defineInteractionContract<
 		if (!ref) throw new Error('Font picker result requires a valid ref')
 		return {
 			type: 'set-font',
-			ref: {
-				provider: ref.provider,
-				kind: 'font-set',
-				id: ref.id,
-				...(ref.label ? { label: ref.label } : {}),
-			},
+			ref: toFontRef(ref),
 		} satisfies FontPickerResult
 	},
 })
@@ -119,6 +117,7 @@ const ConsumerAppearanceConfig = v.object({
 	),
 })
 
+// Provider owns resources plus the session UI.
 @Plugin({ name: 'PluginContributionFontManager' })
 export class PluginContributionFontManager extends BasePlugin {
 	private readonly fontSets = this.ctx.ext.signaldb.collection<FontSetDoc>({
@@ -173,6 +172,7 @@ export class PluginContributionFontManager extends BasePlugin {
 	}
 }
 
+// Consumer owns config and the interaction surface placement.
 @Plugin({ name: 'PluginContributionFontConsumer' })
 export class PluginContributionFontConsumer extends BasePlugin {
 	appearance = this.configs.use(ConsumerAppearanceConfig)
@@ -192,18 +192,9 @@ export class PluginContributionFontConsumer extends BasePlugin {
 				current: readFontRef(this.appearance.fontSetRef),
 			}),
 			apply: async (result) => {
-				const nextFontSetRef =
-					result.type === 'clear-font'
-						? null
-						: {
-								provider: result.ref.provider,
-								kind: result.ref.kind,
-								id: result.ref.id,
-								...(result.ref.label ? { label: result.ref.label } : {}),
-							}
 				this.ctx.configService.patchConfig(this.ctx.pluginInfo.id, {
 					appearance: {
-						fontSetRef: nextFontSetRef,
+						fontSetRef: result.type === 'clear-font' ? null : toFontRef(result.ref),
 					},
 				})
 			},
@@ -219,6 +210,7 @@ export class PluginContributionFontConsumer extends BasePlugin {
 	}
 }
 
+// Keep config parsing explicit so the interaction payload stays stable.
 function readFontRef(value: unknown): FontPickerInput['current'] {
 	if (!value || typeof value !== 'object' || Array.isArray(value)) return null
 	const provider = typeof (value as any).provider === 'string' ? (value as any).provider.trim() : ''
@@ -234,6 +226,15 @@ function readFontRef(value: unknown): FontPickerInput['current'] {
 		kind,
 		id,
 		...(label ? { label } : {}),
+	}
+}
+
+function toFontRef(ref: FontRef): FontRef {
+	return {
+		provider: ref.provider,
+		kind: 'font-set',
+		id: ref.id,
+		...(ref.label ? { label: ref.label } : {}),
 	}
 }
 

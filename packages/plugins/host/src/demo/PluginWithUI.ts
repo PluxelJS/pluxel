@@ -1,4 +1,6 @@
-// 展示型插件：自定义 UI 扩展 + 路由 + standalone frame + RPC + SSE（带持久化 state）。
+// Read this when:
+// - 你要写自定义 UI
+// - 你想看 server 侧 `ui(...).bind(this.ctx)` + RPC + SSE + SignalDB 的最小闭环
 
 import { fileURLToPath } from 'node:url'
 import { BasePlugin, Plugin } from '@pluxel/runtime'
@@ -6,6 +8,7 @@ import { ui } from '@pluxel/hmr/plugin'
 import { RpcTarget } from '@pluxel/runtime/capnweb'
 import type { SseChannel } from '@pluxel/runtime/services'
 
+// Shared server-side data model exposed to the UI.
 type PluginWithUIStatusDoc = PluginWithUIStatus & { id: 'status' }
 const STATUS_DOC_ID = 'status' as const
 const MAX_EVENT_SCAN = 200
@@ -31,6 +34,7 @@ export type PluginWithUISsePayload =
 	| { type: 'tick'; now: number }
 	| { type: 'activity'; message: string }
 
+// Keep UI entry declaration near the model so readers see the server/UI boundary early.
 const pluginUi = ui(fileURLToPath(new URL('./PluginWithUI/ui/index.tsx', import.meta.url)))
 
 @Plugin({ name: 'PluginWithUI' })
@@ -51,14 +55,18 @@ export class PluginWithUI extends BasePlugin {
 		this.startedAt = Date.now()
 
 		await this.initState()
-
-		pluginUi.bind(this.ctx)
-		this.ctx.ext.rpc.expose(() => new PluginWithUIRpc(this))
-		this.ctx.ext.sse.expose(() => this.attachSse())
+		this.registerUiBindings()
 
 		this.ctx.logger.info('ready')
 	}
 
+	private registerUiBindings() {
+		pluginUi.bind(this.ctx)
+		this.ctx.ext.rpc.expose(() => new PluginWithUIRpc(this))
+		this.ctx.ext.sse.expose(() => this.attachSse())
+	}
+
+	// SSE lifecycle.
 	private attachSse() {
 		return (channel: SseChannel) => {
 			this.channels.add(channel)
@@ -69,15 +77,14 @@ export class PluginWithUI extends BasePlugin {
 				channel.emit('tick', { type: 'tick', now: Date.now() })
 			}, 1000)
 
-			channel.onAbort(() => {
-				clearInterval(timer)
-				this.channels.delete(channel)
-			})
-
-			return () => {
+			const cleanup = () => {
 				clearInterval(timer)
 				this.channels.delete(channel)
 			}
+
+			channel.onAbort(cleanup)
+
+			return cleanup
 		}
 	}
 
@@ -96,14 +103,12 @@ export class PluginWithUI extends BasePlugin {
 		const maxId = existingList.reduce((acc, e) => Math.max(acc, Number(e.id) || 0), 0)
 		this.eventSeq = Math.max(maxId, 0) + 1
 
-		this.syncStatus({
-			counter: this.getStatusDoc()?.counter ?? 0,
-			eventCount: existingList.length,
-		})
-
-		if (existingList.length === 0)
+		if (existingList.length === 0) {
 			this.appendEvent('system', 'UI 扩展已加载：RPC/SSE/Routes/Tabs 都已就绪。')
-		else this.syncStatus()
+			return
+		}
+
+		this.syncStatus({ eventCount: existingList.length })
 	}
 
 	getStatus() {
@@ -119,66 +124,79 @@ export class PluginWithUI extends BasePlugin {
 	listEvents(limit = 50): DemoEvent[] {
 		const capped = Math.max(0, Math.min(MAX_EVENT_SCAN, Math.floor(limit)))
 		const docs = this.events.find({}, { limit: capped, sort: { at: -1 } })
-		return docs.slice(0, capped).map((event: DemoEvent) => Object.assign({}, event))
+		return docs.slice(0, capped).map((event: DemoEvent) => ({ ...event }))
 	}
 
 	appendEvent(kind: DemoEvent['kind'], message: string): DemoEvent {
 		const trimmed = message.trim()
 		if (!trimmed) throw new Error('消息不能为空')
 
-		let nextId = this.eventSeq
-		while (this.events.findOne({ id: String(nextId) })) {
-			nextId += 1
-		}
-		this.eventSeq = nextId + 1
 		const event: DemoEvent = {
-			id: String(nextId),
+			id: this.allocateEventId(),
 			kind,
 			message: trimmed,
 			at: Date.now(),
 		}
 
 		this.events.insert(event)
-
-		const all = this.events.find({}, { sort: { at: 1 } })
-		if (all.length > MAX_EVENT_HISTORY) {
-			const sorted = all.slice(0, Math.max(0, all.length - TRIMMED_EVENT_HISTORY))
-			for (const old of sorted) {
-				this.events.removeOne({ id: old.id })
-			}
-		}
-
+		this.trimEventHistory()
 		this.syncStatus()
 		this.broadcast({ type: 'activity', message: `event:${kind}` })
 		return { ...event }
 	}
 
 	increment(delta = 1) {
-		const n = Number.isFinite(delta) ? Math.trunc(delta) : 1
-		const current = this.getStatusDoc()?.counter ?? 0
-		const next = current + (n === 0 ? 1 : n)
-		this.syncStatus({ counter: next })
+		const current = this.readCounter()
+		const next = current + this.normalizeDelta(delta)
+		this.writeCounter(next)
 		this.appendEvent('counter', `计数器变更：${current} → ${next}`)
 		return { counter: next }
 	}
 
 	resetCounter() {
-		const current = this.getStatusDoc()?.counter ?? 0
-		this.syncStatus({ counter: 0 })
+		const current = this.readCounter()
+		this.writeCounter(0)
 		this.appendEvent('counter', `计数器重置：${current} → 0`)
 		return { counter: 0 }
 	}
 
 	clearEvents() {
 		this.events.removeMany({})
-		this.syncStatus()
-		this.broadcast({ type: 'activity', message: 'events:cleared' })
 		this.appendEvent('system', '事件已清空')
 		return { ok: true }
 	}
 
+	private readCounter() {
+		return this.getStatusDoc()?.counter ?? 0
+	}
+
+	private writeCounter(counter: number) {
+		this.syncStatus({ counter })
+	}
+
+	private normalizeDelta(delta: number) {
+		const normalized = Number.isFinite(delta) ? Math.trunc(delta) : 1
+		return normalized === 0 ? 1 : normalized
+	}
+
 	private getStatusDoc() {
 		return this.status.findOne({ id: STATUS_DOC_ID })
+	}
+
+	private allocateEventId() {
+		let nextId = this.eventSeq
+		while (this.events.findOne({ id: String(nextId) })) {
+			nextId += 1
+		}
+		this.eventSeq = nextId + 1
+		return String(nextId)
+	}
+
+	private trimEventHistory() {
+		const all = this.events.find({}, { sort: { at: 1 } })
+		if (all.length <= MAX_EVENT_HISTORY) return
+		const overflow = all.slice(0, Math.max(0, all.length - TRIMMED_EVENT_HISTORY))
+		for (const old of overflow) this.events.removeOne({ id: old.id })
 	}
 
 	private buildStatusDoc(
@@ -206,6 +224,7 @@ export class PluginWithUI extends BasePlugin {
 	}
 }
 
+// RPC contract exposed to the custom UI.
 export class PluginWithUIRpc extends RpcTarget {
 	constructor(private readonly plugin: PluginWithUI) {
 		super()
@@ -215,20 +234,20 @@ export class PluginWithUIRpc extends RpcTarget {
 		return this.plugin.getStatus()
 	}
 
-	addNote(message: string) {
-		return Promise.resolve(this.plugin.appendEvent('note', message))
+	async addNote(message: string) {
+		return this.plugin.appendEvent('note', message)
 	}
 
-	increment(delta?: number) {
-		return Promise.resolve(this.plugin.increment(typeof delta === 'number' ? delta : 1))
+	async increment(delta?: number) {
+		return this.plugin.increment(typeof delta === 'number' ? delta : 1)
 	}
 
-	resetCounter() {
-		return Promise.resolve(this.plugin.resetCounter())
+	async resetCounter() {
+		return this.plugin.resetCounter()
 	}
 
-	clearEvents() {
-		return Promise.resolve(this.plugin.clearEvents())
+	async clearEvents() {
+		return this.plugin.clearEvents()
 	}
 }
 

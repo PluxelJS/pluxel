@@ -1,3 +1,5 @@
+// Main UI panels for the custom UI demo.
+
 import {
 	Alert,
 	Badge,
@@ -22,11 +24,27 @@ import {
 	IconServer,
 	IconWaveSine,
 } from '@tabler/icons-react'
-import { useEffect, useState } from 'react'
+import { type ReactNode, useEffect, useState } from 'react'
 import { plugin } from './runtime'
 
 type PluginWithUIRuntime = ReturnType<typeof plugin.use>
 type PluginWithUISseClient = PluginWithUIRuntime['transport']['sse']
+type RpcAction = () => Promise<unknown>
+
+function useRpcError() {
+	const [error, setError] = useState<string | null>(null)
+
+	const run = async (action: RpcAction, fallbackMessage: string) => {
+		try {
+			await action()
+			setError(null)
+		} catch (error) {
+			setError(rpcErrorMessage(error, fallbackMessage))
+		}
+	}
+
+	return { error, run }
+}
 
 function useLiveConnectionState(sse: PluginWithUISseClient) {
 	const [connected, setConnected] = useState(false)
@@ -41,21 +59,39 @@ function useLiveConnectionState(sse: PluginWithUISseClient) {
 	return connected
 }
 
+function useLatestTick(app: PluginWithUIRuntime) {
+	const [tick, setTick] = useState<number | null>(null)
+
+	useEffect(() => {
+		const off = app.sse.on((msg) => {
+			if (msg.payload.type === 'tick') setTick(msg.payload.now)
+		}, 'tick')
+		return () => off()
+	}, [app.sse])
+
+	return tick
+}
+
+function pluginRouteHref(pluginName: string, path: string) {
+	return `/plugins/${encodeURIComponent(pluginName)}${path}`
+}
+
+function panelTitle(icon: ReactNode, title: string) {
+	return (
+		<Group gap="xs">
+			{icon}
+			<Title order={4}>{title}</Title>
+		</Group>
+	)
+}
+
 export function OverviewPanel() {
 	const app = plugin.use()
 	const status = app.db.useDocById('status', 'status')
 	const eventCount = app.db.useCount('events')
 	const connected = useLiveConnectionState(app.transport.sse)
-	const [tick, setTick] = useState<number | null>(null)
-	const [error, setError] = useState<string | null>(null)
-
-	useEffect(() => {
-		const off = app.sse.on((msg) => {
-			const payload = msg.payload
-			if (payload.type === 'tick') setTick(payload.now)
-		}, 'tick')
-		return () => off()
-	}, [app.sse])
+	const tick = useLatestTick(app)
+	const { error, run } = useRpcError()
 
 	const now = tick ?? Date.now()
 	const uptimeSeconds = status ? Math.max(0, Math.floor((now - status.startedAt) / 1000)) : 0
@@ -63,10 +99,7 @@ export function OverviewPanel() {
 	return (
 		<Stack gap="md">
 			<Group justify="space-between" align="center">
-				<Group gap="xs">
-					<IconServer size={18} />
-					<Title order={4}>PluginWithUI 概览</Title>
-				</Group>
+				{panelTitle(<IconServer size={18} />, 'PluginWithUI 概览')}
 				<Group gap="xs">
 					<Badge variant="light" color={connected ? 'teal' : 'gray'}>
 						{connected ? 'SSE 已连接' : 'SSE 未连接'}
@@ -112,24 +145,14 @@ export function OverviewPanel() {
 			<Group>
 				<Button
 					leftSection={<IconCirclePlus size={16} />}
-					onClick={() =>
-						app.rpc
-							.increment(1)
-							.then(() => setError(null))
-							.catch((e: unknown) => setError(rpcErrorMessage(e, '无法执行 +1')))
-					}
+					onClick={() => void run(() => app.rpc.increment(1), '无法执行 +1')}
 				>
 					+1
 				</Button>
 				<Button
 					variant="light"
 					leftSection={<IconRestore size={16} />}
-					onClick={() =>
-						app.rpc
-							.resetCounter()
-							.then(() => setError(null))
-							.catch((e: unknown) => setError(rpcErrorMessage(e, '无法重置计数器')))
-					}
+					onClick={() => void run(() => app.rpc.resetCounter(), '无法重置计数器')}
 				>
 					重置
 				</Button>
@@ -145,35 +168,25 @@ export function EventsPanel() {
 	const recentEvents = eventsCollection.useLiveQuery((view) =>
 		view.find({}, { sort: { at: -1 }, limit: 50 }),
 	)
-	const [error, setError] = useState<string | null>(null)
+	const { error, run } = useRpcError()
 	const [text, setText] = useState('')
 
 	const addNote = async () => {
 		const message = text.trim()
 		if (!message) return
-		try {
-			await app.rpc.addNote(message)
-			setText('')
-			setError(null)
-		} catch (e) {
-			setError(rpcErrorMessage(e, '无法添加事件'))
-		}
+		await run(() => app.rpc.addNote(message), '无法添加事件')
+		setText('')
 	}
 
 	return (
 		<Stack gap="md">
 			<Group justify="space-between">
-				<Group gap="xs">
-					<IconActivity size={18} />
-					<Title order={4}>事件流</Title>
-				</Group>
+				{panelTitle(<IconActivity size={18} />, '事件流')}
 				<Group gap="xs">
 					<Button
 						variant="light"
 						color="red"
-						onClick={(): void => {
-							void app.rpc.clearEvents().catch((): void => {})
-						}}
+						onClick={() => void run(() => app.rpc.clearEvents(), '无法清空事件')}
 					>
 						清空
 					</Button>
@@ -259,10 +272,7 @@ export function StreamsPanel() {
 	return (
 		<Stack gap="md">
 			<Group justify="space-between">
-				<Group gap="xs">
-					<IconWaveSine size={18} />
-					<Title order={4}>SSE / Logs</Title>
-				</Group>
+				{panelTitle(<IconWaveSine size={18} />, 'SSE / Logs')}
 				<Badge variant="light" color={connected ? 'teal' : 'gray'}>
 					{connected ? '连接中' : '未连接'}
 				</Badge>
@@ -315,7 +325,7 @@ export function RoutePage({ frame = 'shell' }: RoutePageProps) {
 						size="xs"
 						leftSection={<IconArrowLeft size={14} />}
 						component="a"
-						href={`/plugins/${encodeURIComponent(app.pluginName)}/dashboard`}
+						href={pluginRouteHref(app.pluginName, '/dashboard')}
 					>
 						返回宿主壳
 					</Button>

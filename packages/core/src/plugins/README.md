@@ -1,108 +1,73 @@
 # 插件系统（core/plugins）
 
-这套目录承载的是 **核心插件系统**：装饰器/元数据、DI 定义层（draft/build/commit）、运行时 registry（commit/restart/unregister/fork），以及插件生命周期 actor；并提供“插件内组合”的 Feature 基础设施（BaseFeature/FeatureHost）。
+这套目录承载的是核心插件系统实现：
 
-插件系统的测试更适合集中放在 `packages/core/tests/`（黑盒/集成式，用 `@pluxel/test` 跑真实插件行为），这里主要放实现与约定说明。
+- 插件装饰器与元数据
+- DI 定义层与运行时 registry
+- 插件生命周期 orchestration
+- 插件内组合的 `BaseFeature` / `FeatureHost`
 
-## 目录结构（按职责分层）
+权威设计文档见：
 
-对外 API 仍然通过 `plugins/index.ts` 统一导出；实现按职责分到 `runtime/`、`decorators/`、`composition/`，减少单目录噪音并提升可维护性。
+- `docs/design/plugin-feature/overview.md`
 
-### runtime/（运行时 orchestrator）
+这份 README 只保留实现入口和当前实现基线，不再承担完整设计收敛说明。
 
-- `runtime/PluginService.ts`：运行时 orchestrator（commit、restart、unregister、fork 管理、实例缓存等）
-- `runtime/PluginActor.ts`：单插件生命周期状态机（start/stop/retry/asyncError）+ selectors
-- `runtime/LifecycleManager.ts`：把 actor 挂到插件实例上、封装超时/停止策略（供 `PluginService` 使用）
-- `runtime/fork.ts`：fork ctor 的生成与 identity 规则（`id#forkId`）
-- `runtime/PluginDefinitions.ts`：DI 定义层（draft 注册/撤销 + build/confirm/resetDraft）
-- `runtime/commit.ts`：`PluginService` 使用的纯逻辑（init plan / start/stop scheduler）
+## 当前实现基线
 
-### decorators/（装饰器与元数据）
+当前已经稳定存在的 feature 能力：
 
-- `decorators/PluginDecorator.ts` + `decorators/decorator/*`：`@Plugin/@Config`、元数据存储、param tokens、requiredDeps、configSource、clone definition
-- `decorators/decoratorRuntime.ts`：跨插件 decorator 运行时（按 token resolve 依赖 + 注入 caller ctx + 缓存）
+- `this.features.use(FeatureCtor)`
+- `@UseFeature(...)`
+- `this.features.dep(DepPlugin, cb?)`
+- feature config merge 到宿主 plugin config
 
-### composition/（实例侧基础设施）
+当前推荐理解：
 
-- `composition/BasePlugin.ts`：`ctx` 注入与 lifecycle runtime 适配（构造热路径）
-- `composition/FeatureHost.ts` / `composition/BaseFeature.ts`：插件内组合 + 可选依赖 `dep()`
-- `composition/ConfigHost.ts`：`configs.use(schema)` 的声明型配置入口
+- `use()`：required feature，属于宿主静态组成
+- `dep()`：运行期 optional integration primitive
+- plugin constructor：只表达 required deps
 
-## 维护原则
+后续若引入 `tryUse()`，应以 `docs/design/plugin-feature/overview.md` 的边界为准，而不是继续扩展旧的“所有 feature 都一套模型”。
 
-- 对外 API 通过 `plugins/index.ts` 统一导出；内部实现尽量收敛到三层目录（runtime/decorators/composition），减少主目录噪音。
-- 任何改动优先用 `packages/core/tests/` 的黑盒场景验证行为不变。
-- Feature 组合入口：插件通过 `this.features.use(FeatureCtor)` 绑定子模块；若 Feature 内部使用 `pluginMethodDecorator()` 声明 requiredDeps，则宿主插件需在“启动前”声明它（`@UseFeature(FeatureCtor)` / `@UseFeature(F1, F2, ...)`，或在 HMR/rolldown 流水线里让 `features.use(...)` 的 class-field 由 `configSource` 插件注入 `__registerUsedFeatures__(Ctor, FeatureCtor)`），这样依赖约束才能提升到宿主插件的 DI 校验层，保持行为可预测。
-- Feature 配置归因：Feature 里也可以用 `@Config`；宿主插件在“启动前声明 Feature”时会把 Feature 的配置 schema 合并进宿主插件的 schema（namespaced key：`${FeatureCtor.featureKey ?? FeatureCtor.name}.${fieldName}`）。约定上建议 Feature 只暴露一个字段名为 `config`，这样 UI 会更像“一个 feature 一组配置”。
-- 更推荐的写法：用 `configs.use(schema)` 代替 `@Config + :Config<typeof schema>`，例如 `config = this.configs.use(schema)`（零类型标注）；schema/source 会在构建时由 `configSource` 插件注入注册，从而在插件启动前即可被 HMR/UI 读取。
-- 注意：`configs.use(schema)` 不支持 `#private` 字段（运行时无法注入）；请使用普通字段（`private foo = ...`）。
-- 注意：`dep()`/依赖注入的 caller-injection 通过“对象委托 + 覆盖 ctx”实现；如果插件方法依赖 JS 私有字段（`#foo`），在被当作依赖使用时可能会触发 brand-check 错误。建议插件代码避免 `#private`，使用 `private foo` 或把状态放进闭包/服务里。
+## 目录结构
 
-## 防呆规则（避免“能跑但 UI/DI 不对”）
+对外 API 通过 `plugins/index.ts` 统一导出；实现按职责分到 `runtime/`、`decorators/`、`composition/`。
 
-- **不要在 constructor / field initializer 里读取 `configs.use(...)` 的值**：它在注入前是 sentinel，读取会抛错；把读取放到 `init()`/方法里。
-- **Feature 如果有配置或 decorator-required deps，就必须“启动前声明”**：
-  - 有工具链：用 class-field `foo = this.features.use(FooFeature)`，让 `configSourcePlugin` 注入 `__registerUsedFeatures__(PluginCtor, FooFeature)`。
-  - 无工具链 / 动态 `init()` 里才 `features.use(...)`：用 `@UseFeature(FooFeature)`（或手动在模块加载时调用 `__registerUsedFeatures__(PluginCtor, FooFeature)`）。
-  - 如果 Feature 既没有 `@Config/configs.use` 字段，也没有 `pluginMethodDecorator()` 声明 deps，则可以纯运行时组合，无需声明。
-- **`@Plugin` 构造函数里按类注入的依赖，不要用 `import type`**：这类参数需要 runtime constructor metadata；仓库 lint 会在构建前直接拦住这类写法，并对安全场景提供 autofix。
+### runtime/
 
-另外：core 在 DEV 模式会对“有 config/requiredDeps 但未声明的 Feature”打 warn，帮助尽早发现“能跑但 UI/DI 不对”的误用。
-如需更强约束，可在 registry 配置里设置 `featureDeclarationPolicy: "error"`（或在测试中用 `await host.commit()`）让这类误用直接失败。
+- `runtime/PluginService.ts`
+- `runtime/PluginActor.ts`
+- `runtime/LifecycleManager.ts`
+- `runtime/fork.ts`
+- `runtime/PluginDefinitions.ts`
+- `runtime/commit.ts`
 
-## Feature 的“唯一推荐 API”：`use()` + `dep()`
+### decorators/
 
-> 目标：**插件作者不用想太多**。Feature 负责“插件内组合”；`dep()` 负责“可选跨插件集成”。
+- `decorators/PluginDecorator.ts` + `decorators/decorator/*`
+- `decorators/decoratorRuntime.ts`
 
-### 1) `this.features.use(FeatureCtor)`（插件内模块化）
+### composition/
 
-- 一个插件实例里，同一个 FeatureCtor 只会构造一次（缓存）。
-- 若 Feature 继承 `HostBoundFeature<BasePlugin>`，则在插件里使用时会自动把宿主实例注入进去：
+- `composition/BasePlugin.ts`
+- `composition/FeatureHost.ts`
+- `composition/BaseFeature.ts`
+- `composition/ConfigHost.ts`
 
-```ts
-import { BasePlugin, HostBoundFeature, Plugin } from '@pluxel/core'
+## 实现注意点
 
-class CacheFeature extends HostBoundFeature<BasePlugin> {
-	// constructor(ctx, host) 由 HostBoundFeature 提供；host 自动注入
-	hit() {
-		this.ctx.logger.info('cache hit', { host: this.host.ctx.pluginInfo.id })
-	}
-}
+- `features.use(...)` 的 class field 必须保持在 module top-level class 上，方便工具链提取声明期 metadata。
+- Feature 若声明 config 或 decorator-required deps，就必须在启动前被注册：
+  - 用 `@UseFeature(...)`
+  - 或让工具链从 class-field `this.features.use(...)` 注入 `__registerUsedFeatures__(...)`
+- `@Plugin` 构造函数里按类注入的依赖不能 `import type`；它依赖 runtime constructor metadata。
+- `dep()`/caller injection 采用对象委托 + 覆盖 `ctx`；若依赖插件方法依赖 JS `#private`，被作为依赖视图使用时可能触发 brand-check。
 
-@Plugin({ name: 'MyPlugin' })
-class MyPlugin extends BasePlugin {
-	cache = this.features.use(CacheFeature) // 不需要 this.features.use(CacheFeature, this)
-}
-```
+## 验证入口
 
-### 2) `this.features.dep(DepPlugin, cb?)`（可选跨插件集成）
-
-`dep()` 是给“**可选依赖**”用的：依赖插件可能不存在、可能被关闭、也可能在下一次 commit 才出现。
-
-- 直接取值（可能为 `undefined`）：
-
-```ts
-const dep = this.features.dep(OtherPlugin)
-if (dep) dep.doSomething()
-```
-
-- 订阅式（推荐）：依赖出现 / 重启（实例变化）时回调会再次执行；依赖消失时会自动执行 cleanup。
-- 若订阅时依赖已可用：会立即回调一次（同样支持 cleanup）。
-
-```ts
-this.features.dep(OtherPlugin, (dep) => {
-	const off = dep.someChannel.on((x) => this.ctx.logger.info('got', { x }))
-	return () => off() // dep 消失/重启时清理
-})
-```
-
-语义约定：
-
-- **回调只在“依赖可用”时执行**；不可用时不会执行。
-- 若依赖在后续 commit 出现、或 restart 导致实例变化：会先跑 cleanup，再重新回调一次。
-- `dep.ctx.caller` 会指向当前插件的 ctx（便于依赖侧用 `caller` 做 scope/权限/日志归因）。
-
-### Required vs Optional：什么时候用哪个？
-
-- **必须依赖（Required）**：用 constructor 注入 / decorator deps，让 commit 直接失败（语义最确定）。
-- **可选集成（Optional）**：用 `features.dep(...)`；或做一个 `BridgePlugin` 专门负责“把两个插件可选地连起来”，让被集成的插件本体保持纯粹。
+- 黑盒测试集中在 `packages/core/tests/`
+- feature 相关行为优先看：
+  - `packages/core/tests/DecoratorDeps.test.ts`
+  - `packages/core/tests/FeatureDeps.test.ts`
+  - `packages/core/tests/FeatureConfig.test.ts`
