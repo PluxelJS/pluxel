@@ -21,6 +21,7 @@ export {
 	BasePlugin,
 	cfg,
 	Context,
+	defineOptionalFeature,
 	ForkablePlugin,
 	HostBoundFeature,
 	Plugin,

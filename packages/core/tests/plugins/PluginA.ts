@@ -1,6 +1,6 @@
 import { BasePlugin, Plugin } from '@pluxel/test'
 // PluginA.ts
-// PluginA 依赖 PluginB 为必选依赖，依赖 PluginC 为可选依赖
+// PluginA 依赖 PluginB 为必选依赖；PluginC/PluginD 只是运行期附加能力
 import { PluginB } from './PluginB'
 import { PluginC, PluginD } from './PluginC'
 

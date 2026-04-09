@@ -1,14 +1,13 @@
 // Read this when:
 // - 你要写插件内 feature 组合
-// - 你要做可选依赖、局部事件和 bridge plugin
-// - 你想看推荐的“主文件 + shared 文件”拆分
+// - 你要区分 required feature 和 optional feature
+// - 你想看 `defineOptionalFeature(...)` + `tryUse(...)` + 懒加载 optional module 的标准写法
+// - 你想确认 “依赖插件类型存在” 和 “依赖插件包可能根本不存在” 该怎么分别表达
 
-import { BasePlugin, Plugin } from '@pluxel/runtime'
+import { BasePlugin, defineOptionalFeature, Plugin } from '@pluxel/runtime'
 import { EvtChannel } from '@pluxel/runtime/services'
 import {
 	PluginLoggerFeature,
-	reconnectOptionalPair,
-	type MsgEvent,
 	type TickEvent,
 } from './PluginFeatureDeps.shared'
 
@@ -44,101 +43,27 @@ export class PluginFeatureDepsProvider extends BasePlugin {
 	}
 }
 
+const providerMonitorFeature = defineOptionalFeature({
+	key: 'provider-monitor',
+	// 这里用类 token，是因为 provider plugin 与 host demo 在同一个静态代码面里，
+	// 可以安全地被宿主直接 import。
+	// 如果 provider 包本身可能不存在，就不要在 host 文件 import 它的类；
+	// 改为 `requires: ['acme.provider']` 这类稳定字符串标识，并把 provider-specific
+	// 代码留在 load() 对应的懒加载模块里。
+	requires: [PluginFeatureDepsProvider],
+	load: () =>
+		import('./PluginFeatureDeps.optional').then(
+			({ PluginFeatureProviderMonitorFeature }) => PluginFeatureProviderMonitorFeature,
+		),
+})
+
 @Plugin({ name: 'PluginFeatureDepsConsumer' })
 export class PluginFeatureDepsConsumer extends BasePlugin {
 	readonly log: PluginLoggerFeature = this.features.use(PluginLoggerFeature)
 
-	override init(): void {
+	override async init(): Promise<void> {
 		this.log.info('consumer init')
-
-		this.features.dep(PluginFeatureDepsProvider, (dep) => {
-			this.log.info('provider available', { dep: dep.ctx.pluginInfo.id })
-
-			const off = dep.channel.on(({ from, seq }) => {
-				// Avoid spamming info logs in the demo host; enable debug to observe the stream.
-				this.log.debug('tick', { from, seq })
-			})
-
-			return () => {
-				off()
-				this.log.info('provider unavailable')
-			}
-		})
-	}
-}
-
-@Plugin({ name: 'PluginFeatureBridgeProvider' })
-export class PluginFeatureBridgeProvider extends BasePlugin {
-	readonly channel = new EvtChannel<MsgEvent>(this.ctx)
-	private seq = 0
-
-	override init(): void {
-		startChannelFeed(
-			this,
-			1200,
-			() => {
-				this.seq += 1
-				return {
-					from: this.ctx.pluginInfo.id,
-					text: `hello#${this.seq}`,
-					at: Date.now(),
-				}
-			},
-			(payload) => this.channel.emit(payload),
-		)
-	}
-}
-
-@Plugin({ name: 'PluginFeatureBridgeConsumer' })
-export class PluginFeatureBridgeConsumer extends BasePlugin {
-	bind(provider: PluginFeatureBridgeProvider): () => void {
-		this.ctx.logger.info('bridge bind', {
-			by: this.caller?.pluginInfo?.id ?? '<no-caller>',
-			provider: provider.ctx.pluginInfo.id,
-		})
-
-		const off = provider.channel.on(({ from, text }) => {
-			// Avoid spamming info logs in the demo host; enable debug to observe the stream.
-			this.ctx.logger.debug('bridge message', { from, text })
-		})
-
-		return () => off()
-	}
-}
-
-@Plugin({ name: 'PluginFeatureBridgePlugin' })
-export class PluginFeatureBridgePlugin extends BasePlugin {
-	private provider?: PluginFeatureBridgeProvider
-	private consumer?: PluginFeatureBridgeConsumer
-	private unbind?: () => void
-
-	override init(): void {
-		const reconnect = () => {
-			const state = {
-				provider: this.provider,
-				consumer: this.consumer,
-				unbind: this.unbind,
-			}
-			reconnectOptionalPair(state, (consumer, provider) => consumer.bind(provider))
-			this.unbind = state.unbind
-		}
-
-		this.features.dep(PluginFeatureBridgeProvider, (dep) => {
-			this.provider = dep
-			reconnect()
-			return () => {
-				this.provider = undefined
-				reconnect()
-			}
-		})
-
-		this.features.dep(PluginFeatureBridgeConsumer, (dep) => {
-			this.consumer = dep
-			reconnect()
-			return () => {
-				this.consumer = undefined
-				reconnect()
-			}
-		})
+		const monitor = await this.features.tryUse(providerMonitorFeature)
+		this.log.info(monitor ? 'optional monitor enabled' : 'optional monitor skipped')
 	}
 }

@@ -21,8 +21,9 @@
    最小配置写法。看 `configs.use(...)`、`features.use(...)` 和 feature 配置如何归因到父插件。
 2. `PluginBuiltinShowcase.ts`
    不写自定义前端时的标准 builtin 路径。看 `signaldb.doc().form()`、`action()`、`doc(...)`。
-3. `PluginFeatureDepsDemo.ts` + `PluginFeatureDeps.shared.ts`
-   标准依赖写法。看 `features.use(...)`、`features.dep(...)`、局部 `EvtChannel`、bridge plugin，以及推荐的跨文件拆分。
+3. `PluginFeatureDepsDemo.ts` + `PluginFeatureDeps.shared.ts` + `PluginFeatureDeps.optional.ts`
+   标准 feature 分层。看 `features.use(...)`、`defineOptionalFeature(...)`、`features.tryUse(...)`、`features.dep(...)`、局部 `EvtChannel`，以及 required/optional feature 的跨文件拆分。
+   这里也顺手区分了 optional 依赖的两种写法：provider 类型可静态 import 时用类 token；provider 包本身可能缺失时改用稳定字符串 token，把 provider-specific 代码留在 `load()` 的懒加载模块后面。
 4. `PluginWithUI.ts` + `PluginWithUI/ui/*`
    最小自定义 UI 路径。看 `ui(...).bind(this.ctx)`、RPC、SSE、SignalDB 与浏览器侧 `plugin.use()`。
 
@@ -59,6 +60,9 @@
   放共享 type、可复用 feature、纯 helper
 - `PluginFeatureDepsDemo.ts`
   只保留插件类、依赖关系和生命周期
+- `PluginFeatureDeps.optional.ts`
+  只放 optional feature 的懒加载实现，不让主插件静态 import 它
+  如果 optional provider 的实现包也可能缺失，就继续把 provider-specific import 留在这里或更深一层懒加载边界后面，不要回流到主插件文件
 
 `PluginBuiltinShowcase.shared.ts` 和 `PluginWithUI/ui/*` 也分别演示了“共享 schema/格式化逻辑”和“浏览器侧模块独立”的拆法。
 

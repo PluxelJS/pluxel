@@ -170,6 +170,45 @@ Notes:
 - `@UseFeature(...)` is always safe and works without toolchain transforms.
 - `this.features.use(...)` in a class field enables extra toolchain metadata extraction; keep it at top-level.
 
+### `features.tryUse(spec)` for optional features
+
+Use `tryUse(...)` only for optional feature activation:
+
+```ts
+import type { SearchHintsFeature } from './features/SearchHintsFeature'
+
+const searchHintsFeature = defineOptionalFeature({
+	key: 'search-hints',
+	requires: [HintsProviderPlugin],
+	load: () =>
+		import('./features/SearchHintsFeature').then(
+			({ SearchHintsFeature }) => SearchHintsFeature,
+		),
+})
+
+@Plugin({ name: 'Host' })
+class Host extends BasePlugin {
+	hints?: SearchHintsFeature
+
+	override async init() {
+		this.hints = await this.features.tryUse(searchHintsFeature)
+	}
+}
+```
+
+Rules:
+
+- `tryUse(...)` belongs in `init()` or runtime methods, not class fields or constructors.
+- Define optional capabilities once with a module-top-level `const defineOptionalFeature(...)`, then pass that named spec to `tryUse()`.
+- `tryUse(...)` does not take feature constructor args; keep runtime input on the host plugin or the optional feature spec itself.
+- If the optional provider class cannot be safely imported on the host static path, use a stable string token in `requires` and keep provider-specific imports behind `load()`.
+- The optional feature itself must stay lightweight:
+  - no `configs.use(...)`
+  - no decorator-required plugin deps
+- `load()` must return a Promise and cross a real dynamic `import(...)` boundary; do not return a statically imported ctor from the host module, even indirectly.
+- If a feature needs declaration-time config or DI propagation, it is a `use(...)` feature, not a `tryUse(...)` feature.
+- If the optional feature needs extra runtime collaboration after activation, use `features.dep(...)` inside that feature.
+
 ### Forks
 
 ```ts

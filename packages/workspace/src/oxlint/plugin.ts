@@ -56,6 +56,21 @@ export const pluxelRulePolicy = {
 		buildCritical: true,
 		remediation: 'diagnostic',
 	},
+	'features-try-use-no-class-field': {
+		category: 'correctness',
+		buildCritical: true,
+		remediation: 'diagnostic',
+	},
+	'features-try-use-requires-defined-spec': {
+		category: 'correctness',
+		buildCritical: true,
+		remediation: 'diagnostic',
+	},
+	'features-try-use-no-static-load': {
+		category: 'correctness',
+		buildCritical: true,
+		remediation: 'diagnostic',
+	},
 	'plugin-constructor-no-type-only-imports': {
 		category: 'correctness',
 		buildCritical: true,

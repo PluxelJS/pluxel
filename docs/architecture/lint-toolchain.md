@@ -147,6 +147,9 @@ Pluxel 的 JS plugin 是面向 `oxlint` authoring API 写的，但 `oxlint@1.58.
 ## 当前不变量
 
 - `configs.use(...)` / `features.use(...)` 必须是 module top-level class field
+- `features.tryUse(...)` 不能写在 class field 或 constructor；它只属于 runtime activation
+- `features.tryUse(...)` 必须接 module top-level `const defineOptionalFeature(...)` 产物或导入 spec，不能在调用点临时拼 spec，也不能依赖 mutable spec binding
+- `defineOptionalFeature(...).load` 必须返回 Promise，并且不能直接或间接返回静态 import 的 feature；optional feature 必须通过真实 lazy load 脱离宿主 hard path
 - `configs.use(...)` 不能放在 `#private` 字段
 - `configs.use(...)` 不能在 field initializer / constructor 里提前读取
 - `configs.use(...)` 输出不能再被 `??` / `||` 重设默认值

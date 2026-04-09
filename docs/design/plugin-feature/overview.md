@@ -70,15 +70,21 @@ type OptionalFeatureSpec<T extends BaseFeature> = {
 }
 ```
 
-调用：
+声明：
 
 ```ts
-const ai = await this.features.tryUse({
+const aiFeature = defineOptionalFeature({
 	key: 'ai',
 	requires: ['pluxel.ai'],
 	when: (ctx) => ctx.configService.tryGetValidatedConfig()?.['feature.ai.enabled'] === true,
 	load: () => import('./features/AiFeature').then((m) => m.AiFeature),
 })
+```
+
+调用：
+
+```ts
+const ai = await this.features.tryUse(aiFeature)
 
 if (!ai) return
 ```
@@ -87,6 +93,7 @@ if (!ai) return
 
 - `tryUse()` 返回 `Promise<T | undefined>` 或等价结果对象
 - 只有它才允许 optional dependency / conditional activation / lazy loading
+- optional capability 先用 module-top-level `const defineOptionalFeature(...)` 声明，再在运行期用 `tryUse(spec)` 激活
 - `tryUse()` 不适合 class field，应在 `init()` 或其它运行期阶段调用
 
 ## Why Plugin Optional DI Is Rejected
@@ -154,17 +161,20 @@ if (!ai) return
 
 ### `tryUse()`
 
-`tryUse()` 不能接静态 `FeatureCtor`，而是接 descriptor/spec：
+`tryUse()` 不能接静态 `FeatureCtor`，而是接 `defineOptionalFeature(...)` 定义出的 spec：
 
 - 先做条件判断
 - 只有通过后才 `load()`
 - `load()` 负责动态导入真正 feature 实现
+- `load()` 必须返回 Promise，不能用同步 ctor 返回值伪装 optional
+- `tryUse()` 本身不再传 feature constructor args；optional feature 的运行期输入必须回到 host/plugin state 或 spec
 
 这能避免：
 
 - optional feature 模块求值过早
 - optional 插件包不存在时拖垮主插件
 - class-field 提取链路误把 optional feature 当静态组成部分
+- 同一个 optional key 因构造参数漂移而出现运行期歧义
 
 ## Dependency Expression
 
@@ -191,12 +201,20 @@ optional 依赖不应该默认编码成 ctor param `dep?: FooPlugin`。
 因此 optional feature 的依赖应该写在 spec 上：
 
 ```ts
-await this.features.tryUse({
+const remoteSearchFeature = defineOptionalFeature({
 	key: 'bridge',
 	requires: ['pluxel.remote-search'],
 	load: () => import('./features/RemoteSearchFeature').then((m) => m.RemoteSearchFeature),
 })
+
+await this.features.tryUse(remoteSearchFeature)
 ```
+
+如果依赖插件类型本身不能安全地出现在宿主静态 import 路径上，例如 provider 包可能没有安装，那么不要在 host 模块里引用它的 class。此时应当：
+
+- 在 `requires` 里使用稳定字符串 token
+- 把 provider-specific import 与桥接逻辑留在 `load()` 之后的懒加载模块里
+- 宿主只保留 activation gate，不承担 link-time optional provider 的静态耦合
 
 如果 feature 需要在启用后继续监听外部插件生命周期变化，运行期仍然使用：
 
@@ -246,7 +264,6 @@ optional feature 默认**不参与**启动前 feature config merge。
 
 - 要么把这部分 schema 提升成宿主拥有的静态 config
 - 要么承认它已经不是严格意义上的 link-time optional
-- 要么拆出一个稳定、轻量、总是可导入的 descriptor/contracts 模块
 
 不要同时要求：
 
@@ -316,21 +333,15 @@ toolchain 只需要保证：
 5. optional feature 的 gate config 放在宿主自己手里。
 6. 若 feature 启用后还需要跟随外部插件出现/消失，用 `dep()`。
 
-## Migration
+## Current Baseline
 
-现有系统里已经稳定存在的是：
+当前实现已经按下面的基线收敛：
 
-- `use()`
-- `@UseFeature(...)`
-- `dep()`
-- feature config merge
-
-下一步收敛目标是：
-
-1. 保留 `use()` 作为 required feature 通道
-2. 新增 `tryUse()` 作为 optional feature 通道
-3. 明确 optional 只属于 feature activation，不属于 plugin constructor DI
-4. 文档、lint、demo 全部围绕这条边界统一
+1. `use()` 是 required feature 通道。
+2. `tryUse()` 是 optional feature 通道。
+3. optional 只属于 feature activation，不属于 plugin constructor DI。
+4. `dep()` 只负责 feature 启用后的运行期 optional integration。
+5. 文档、lint、demo、runtime 都围绕这条边界保持一致。
 
 ## Summary
 

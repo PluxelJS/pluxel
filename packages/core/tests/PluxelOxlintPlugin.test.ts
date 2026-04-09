@@ -195,6 +195,273 @@ runRule('features-use-top-level-class', pluxelRules['features-use-top-level-clas
 	],
 })
 
+runRule('features-try-use-no-class-field', pluxelRules['features-try-use-no-class-field'], {
+	valid: [
+		{
+			filename: '/repo/packages/core/tests/plugin-a.ts',
+			code: `
+				const optionalFeature = defineOptionalFeature({
+					key: 'optional',
+					load: () => import('./optional').then(({ OptionalFeature }) => OptionalFeature),
+				})
+
+				@Plugin({ name: 'PluginA' })
+				class PluginA extends BasePlugin {
+					feature
+
+					override async init() {
+						this.feature = await this.features.tryUse(optionalFeature)
+					}
+				}
+			`,
+		},
+		{
+			filename: '/repo/packages/core/tests/plugin-a.ts',
+			code: `
+				const optionalFeature = defineOptionalFeature({
+					key: 'optional',
+					load: () => import('./optional').then(({ OptionalFeature }) => OptionalFeature),
+				})
+
+				@Plugin({ name: 'PluginA' })
+				class PluginA extends BasePlugin {
+					constructor() {
+						super()
+						const activateLater = async () =>
+							this.features.tryUse(optionalFeature)
+						void activateLater
+					}
+				}
+			`,
+		},
+	],
+	invalid: [
+		{
+			filename: '/repo/packages/core/tests/plugin-a.ts',
+			code: `
+				const optionalFeature = defineOptionalFeature({
+					key: 'optional',
+					load: () => import('./optional').then(({ OptionalFeature }) => OptionalFeature),
+				})
+
+				@Plugin({ name: 'PluginA' })
+				class PluginA extends BasePlugin {
+					feature = this.features.tryUse(optionalFeature)
+				}
+			`,
+			errors: [{ messageId: 'classField' }],
+		},
+		{
+			filename: '/repo/packages/core/tests/plugin-a.ts',
+			code: `
+				const optionalFeature = defineOptionalFeature({
+					key: 'optional',
+					load: () => import('./optional').then(({ OptionalFeature }) => OptionalFeature),
+				})
+
+				@Plugin({ name: 'PluginA' })
+				class PluginA extends BasePlugin {
+					constructor() {
+						super()
+						void this.features.tryUse(optionalFeature)
+					}
+				}
+			`,
+			errors: [{ messageId: 'constructor' }],
+		},
+	],
+})
+
+runRule(
+	'features-try-use-requires-defined-spec',
+	pluxelRules['features-try-use-requires-defined-spec'],
+	{
+		valid: [
+			{
+				filename: '/repo/packages/core/tests/plugin-a.ts',
+				code: `
+					const optionalFeature = defineOptionalFeature({
+						key: 'optional',
+						load: () => import('./optional').then(({ OptionalFeature }) => OptionalFeature),
+					})
+
+					@Plugin({ name: 'PluginA' })
+					class PluginA extends BasePlugin {
+						override async init() {
+							await this.features.tryUse(optionalFeature)
+						}
+					}
+				`,
+			},
+			{
+				filename: '/repo/packages/core/tests/plugin-a.ts',
+				code: `
+					import { optionalFeature } from './optional-spec'
+
+					@Plugin({ name: 'PluginA' })
+					class PluginA extends BasePlugin {
+						override async init() {
+							await this.features.tryUse(optionalFeature)
+						}
+					}
+				`,
+			},
+		],
+		invalid: [
+			{
+				filename: '/repo/packages/core/tests/plugin-a.ts',
+				code: `
+					@Plugin({ name: 'PluginA' })
+					class PluginA extends BasePlugin {
+						override async init() {
+							await this.features.tryUse({
+								key: 'optional',
+								load: () => import('./optional').then(({ OptionalFeature }) => OptionalFeature),
+							})
+						}
+					}
+				`,
+				errors: [{ messageId: 'inlineSpec' }],
+			},
+			{
+				filename: '/repo/packages/core/tests/plugin-a.ts',
+				code: `
+					let optionalFeature = defineOptionalFeature({
+						key: 'optional',
+						load: () => import('./optional').then(({ OptionalFeature }) => OptionalFeature),
+					})
+
+					@Plugin({ name: 'PluginA' })
+					class PluginA extends BasePlugin {
+						override async init() {
+							await this.features.tryUse(optionalFeature)
+						}
+					}
+				`,
+				errors: [{ messageId: 'mutableSpec' }],
+			},
+			{
+				filename: '/repo/packages/core/tests/plugin-a.ts',
+				code: `
+					const optionalFeature = {
+						key: 'optional',
+						load: () => import('./optional').then(({ OptionalFeature }) => OptionalFeature),
+					}
+
+					@Plugin({ name: 'PluginA' })
+					class PluginA extends BasePlugin {
+						override async init() {
+							await this.features.tryUse(optionalFeature)
+						}
+					}
+				`,
+				errors: [{ messageId: 'invalidSpec' }],
+			},
+			{
+				filename: '/repo/packages/core/tests/plugin-a.ts',
+				code: `
+					const optionalFeature = defineOptionalFeature({
+						key: 'optional',
+						load: () => import('./optional').then(({ OptionalFeature }) => OptionalFeature),
+					})
+
+					@Plugin({ name: 'PluginA' })
+					class PluginA extends BasePlugin {
+						override async init() {
+							await this.features.tryUse(optionalFeature, 'legacy')
+						}
+					}
+				`,
+				errors: [{ messageId: 'extraArgs' }],
+			},
+		],
+	},
+)
+
+runRule('features-try-use-no-static-load', pluxelRules['features-try-use-no-static-load'], {
+	valid: [
+		{
+			filename: '/repo/packages/core/tests/plugin-a.ts',
+			code: `
+				const optionalFeature = defineOptionalFeature({
+					key: 'optional',
+					load: () =>
+						import('./optional').then(
+							({ OptionalFeature }) => OptionalFeature,
+						),
+				})
+			`,
+		},
+	],
+	invalid: [
+		{
+			filename: '/repo/packages/core/tests/plugin-a.ts',
+			code: `
+				import { OptionalFeature } from './optional'
+
+				const optionalFeature = defineOptionalFeature({
+					key: 'optional',
+					load: async () => OptionalFeature,
+				})
+			`,
+			errors: [{ messageId: 'staticLoad', data: { name: 'OptionalFeature' } }],
+		},
+		{
+			filename: '/repo/packages/core/tests/plugin-a.ts',
+			code: `
+				import * as optionalModule from './optional'
+
+				const optionalFeature = defineOptionalFeature({
+					key: 'optional',
+					load() {
+						return optionalModule.OptionalFeature
+					},
+				})
+			`,
+			errors: [{ messageId: 'staticLoad', data: { name: 'optionalModule' } }],
+		},
+		{
+			filename: '/repo/packages/core/tests/plugin-a.ts',
+			code: `
+				class OptionalFeature extends BaseFeature {}
+
+				const optionalFeature = defineOptionalFeature({
+					key: 'optional',
+					load: async () => OptionalFeature,
+				})
+			`,
+			errors: [{ messageId: 'staticLoad', data: { name: 'OptionalFeature' } }],
+		},
+		{
+			filename: '/repo/packages/core/tests/plugin-a.ts',
+			code: `
+				import { OptionalFeature } from './optional'
+
+				const optionalFeature = defineOptionalFeature({
+					key: 'optional',
+					load: async () => {
+						await import('./optional')
+						return OptionalFeature
+					},
+				})
+			`,
+			errors: [{ messageId: 'staticLoad', data: { name: 'OptionalFeature' } }],
+		},
+		{
+			filename: '/repo/packages/core/tests/plugin-a.ts',
+			code: `
+				const optionalFeature = defineOptionalFeature({
+					key: 'optional',
+					load: async () => {
+						await Promise.resolve()
+					},
+				})
+			`,
+			errors: [{ messageId: 'noDynamicImport' }],
+		},
+	],
+})
+
 runRule('configs-use-no-early-read', pluxelRules['configs-use-no-early-read'], {
 	valid: [
 		{

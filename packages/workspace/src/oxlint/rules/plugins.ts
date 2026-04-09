@@ -5,6 +5,7 @@ import {
 	getStaticPropertyName,
 	isNodeLike,
 	unwrapExpression,
+	walkNode,
 } from '../shared/ast.ts'
 import { createRule, report } from '../shared/rule.ts'
 import type { OxNode, OxRule } from '../types.ts'
@@ -34,11 +35,19 @@ function isPluginClass(node: unknown): boolean {
 }
 
 function isThisFeaturesUseCall(node: unknown): boolean {
+	return isThisFeaturesCall(node, 'use')
+}
+
+function isThisFeaturesTryUseCall(node: unknown): boolean {
+	return isThisFeaturesCall(node, 'tryUse')
+}
+
+function isThisFeaturesCall(node: unknown, methodName: string): boolean {
 	const expression = unwrapExpression(node)
 	if (!expression || expression.type !== 'CallExpression') return false
 	const callee = unwrapExpression(expression.callee)
 	if (!callee || callee.type !== 'MemberExpression') return false
-	if (getStaticPropertyName(callee.property, Boolean(callee.computed)) !== 'use') return false
+	if (getStaticPropertyName(callee.property, Boolean(callee.computed)) !== methodName) return false
 	const target = unwrapExpression(callee.object)
 	if (!target || target.type !== 'MemberExpression') return false
 	const targetObject = getNodeField(target, 'object')
@@ -46,6 +55,158 @@ function isThisFeaturesUseCall(node: unknown): boolean {
 		targetObject?.type === 'ThisExpression' &&
 		getStaticPropertyName(target.property, Boolean(target.computed)) === 'features'
 	)
+}
+
+function isFunctionBoundary(node: unknown): boolean {
+	return isNodeLike(node)
+		? node.type === 'ArrowFunctionExpression' ||
+				node.type === 'FunctionExpression' ||
+				node.type === 'FunctionDeclaration'
+		: false
+}
+
+function getNearestTryUseBoundary(ancestors: readonly OxNode[]): OxNode | null {
+	for (let i = ancestors.length - 1; i >= 0; i--) {
+		const ancestor = ancestors[i]!
+		const parent = i > 0 ? ancestors[i - 1] : null
+		if (
+			isFunctionBoundary(ancestor) &&
+			(parent?.type === 'MethodDefinition' || parent?.type === 'PropertyDefinition')
+		) {
+			continue
+		}
+		if (
+			ancestor.type === 'PropertyDefinition' ||
+			ancestor.type === 'MethodDefinition' ||
+			isFunctionBoundary(ancestor)
+		) {
+			return ancestor
+		}
+	}
+	return null
+}
+
+function getPropertyValueByName(node: OxNode, propertyName: string): OxNode | null {
+	const properties = Array.isArray(node.properties) ? node.properties : []
+	for (const property of properties) {
+		if (!isNodeLike(property) || property.type !== 'Property') continue
+		if (getStaticPropertyName(property.key, Boolean(property.computed)) !== propertyName) continue
+		return unwrapExpression(property.value)
+	}
+	return null
+}
+
+function getCallFirstArg(node: OxNode): OxNode | null {
+	const args = Array.isArray(node.arguments) ? node.arguments : []
+	return unwrapExpression(args[0])
+}
+
+function isDefineOptionalFeatureCall(node: unknown): node is OxNode {
+	const expression = unwrapExpression(node)
+	if (!expression || expression.type !== 'CallExpression') return false
+	const callee = unwrapExpression(expression.callee)
+	if (!callee) return false
+	if (callee.type === 'Identifier') return callee.name === 'defineOptionalFeature'
+	if (callee.type !== 'MemberExpression') return false
+	return getStaticPropertyName(callee.property, Boolean(callee.computed)) === 'defineOptionalFeature'
+}
+
+function getOptionalFeatureLoadFunction(node: OxNode): OxNode | null {
+	const firstArg = getCallFirstArg(node)
+	if (!firstArg || firstArg.type !== 'ObjectExpression') return null
+	const loadValue = getPropertyValueByName(firstArg, 'load')
+	return loadValue && isFunctionBoundary(loadValue) ? loadValue : null
+}
+
+function getReturnedExpression(
+	node: OxNode,
+	visitorKeys: Readonly<Record<string, readonly string[]>>,
+): OxNode | null {
+	const body = getNodeField(node, 'body')
+	if (!body) return null
+	if (body.type !== 'BlockStatement') return unwrapExpression(body)
+
+	let found: OxNode | null = null
+	walkNode(
+		body,
+		visitorKeys,
+		(candidate) => {
+			if (candidate.type !== 'ReturnStatement') return
+			const argument = unwrapExpression(candidate.argument)
+			if (!argument) return
+			found = argument
+			return false
+		},
+		{ root: body, skipNestedExecution: true },
+	)
+	return found
+}
+
+function getStaticImportReference(
+	node: OxNode,
+	importsByLocal: ReadonlyMap<string, OxNode>,
+): { name: string; node: OxNode } | null {
+	const expression = unwrapExpression(node)
+	if (!expression) return null
+	if (expression.type === 'Identifier' && importsByLocal.has(expression.name)) {
+		return { name: expression.name, node: expression }
+	}
+	if (expression.type !== 'MemberExpression') return null
+	const object = unwrapExpression(expression.object)
+	if (!object || object.type !== 'Identifier' || !importsByLocal.has(object.name)) return null
+	return { name: object.name, node: object }
+}
+
+function collectTopLevelOptionalSpecBindings(program: OxNode): {
+	constSpecs: Map<string, OxNode>
+	mutableSpecs: Set<string>
+} {
+	const constSpecs = new Map<string, OxNode>()
+	const mutableSpecs = new Set<string>()
+	const body = Array.isArray(program.body) ? program.body : []
+	const visitDeclaration = (declaration: OxNode | null) => {
+		if (!declaration || declaration.type !== 'VariableDeclaration') return
+		for (const declarator of getNodeArrayField(declaration, 'declarations')) {
+			if (declarator.type !== 'VariableDeclarator') continue
+			const id = getNodeField(declarator, 'id')
+			const init = unwrapExpression(declarator.init)
+			if (id?.type !== 'Identifier' || !init || !isDefineOptionalFeatureCall(init)) continue
+			if (declaration.kind === 'const') {
+				constSpecs.set(id.name, init)
+				continue
+			}
+			mutableSpecs.add(id.name)
+		}
+	}
+	for (const statement of body) {
+		if (!isNodeLike(statement)) continue
+		if (statement.type === 'VariableDeclaration') {
+			visitDeclaration(statement)
+			continue
+		}
+		if (statement.type === 'ExportNamedDeclaration') {
+			visitDeclaration(getNodeField(statement, 'declaration'))
+		}
+	}
+	return { constSpecs, mutableSpecs }
+}
+
+function containsDynamicImport(
+	node: OxNode,
+	visitorKeys: Readonly<Record<string, readonly string[]>>,
+): boolean {
+	let found = false
+	walkNode(
+		node,
+		visitorKeys,
+		(candidate) => {
+			if (candidate.type !== 'ImportExpression') return
+			found = true
+			return false
+		},
+		{ root: node },
+	)
+	return found
 }
 
 function collectImportedBindings(program: OxNode): Map<string, OxNode> {
@@ -267,6 +428,165 @@ const featuresUseTopLevelClass = createRule(
 	}),
 )
 
+const featuresTryUseNoClassField = createRule(
+	{
+		type: 'problem',
+		docs: {
+			description:
+				'Disallow this.features.tryUse(...) in class fields or constructors because optional features are runtime-only',
+		},
+		messages: {
+			classField:
+				'`this.features.tryUse(...)` must not run in a class field. Call it in `init()` or another runtime method so optional feature activation stays out of declaration-time metadata.',
+			constructor:
+				'`this.features.tryUse(...)` must not run in a constructor. Call it in `init()` or another runtime method so optional feature activation stays out of construction-time wiring.',
+		},
+	},
+		(context) => ({
+			CallExpression(node) {
+				if (!isThisFeaturesTryUseCall(node)) return
+				const ancestors = context.sourceCode.getAncestors(node)
+				const boundary = getNearestTryUseBoundary(ancestors)
+				if (boundary?.type === 'PropertyDefinition') {
+					report(context, node, 'classField')
+					return
+				}
+				if (boundary?.type === 'MethodDefinition' && boundary.kind === 'constructor') {
+					report(context, node, 'constructor')
+				}
+			},
+		}),
+)
+
+const featuresTryUseRequiresDefinedSpec = createRule(
+	{
+		type: 'problem',
+		docs: {
+			description:
+				'Require this.features.tryUse(...) to receive a module-top-level defineOptionalFeature(...) spec',
+		},
+		messages: {
+			inlineSpec:
+				'`this.features.tryUse(...)` must not receive an inline spec. Define the optional capability once with `defineOptionalFeature(...)`, then pass that named spec to `tryUse()`.',
+			invalidSpec:
+				'`this.features.tryUse(...)` expects a module-top-level `defineOptionalFeature(...)` result (or an imported spec), not an ad-hoc runtime value.',
+			extraArgs:
+				'`this.features.tryUse(...)` accepts only the optional feature spec. Move runtime input onto the spec definition, host plugin state, or feature state.',
+			mutableSpec:
+				'`this.features.tryUse(...)` requires a module-top-level `const` spec from `defineOptionalFeature(...)`. Mutable `let`/`var` optional specs can drift at runtime.',
+		},
+	},
+	(context) => {
+		const importsByLocal = new Map<string, OxNode>()
+		const topLevelSpecs = new Map<string, OxNode>()
+		const mutableSpecs = new Set<string>()
+		return {
+			Program(node) {
+				importsByLocal.clear()
+				topLevelSpecs.clear()
+				mutableSpecs.clear()
+				for (const [name, importNode] of collectImportedBindings(node)) {
+					importsByLocal.set(name, importNode)
+				}
+				const bindings = collectTopLevelOptionalSpecBindings(node)
+				for (const [name, specNode] of bindings.constSpecs) {
+					topLevelSpecs.set(name, specNode)
+				}
+				for (const name of bindings.mutableSpecs) mutableSpecs.add(name)
+			},
+			CallExpression(node) {
+				if (!isThisFeaturesTryUseCall(node)) return
+				const args = Array.isArray(node.arguments) ? node.arguments : []
+				if (args.length > 1) {
+					const extraArg = unwrapExpression(args[1]) ?? node
+					report(context, extraArg, 'extraArgs')
+				}
+				const firstArg = getCallFirstArg(node)
+				if (!firstArg) return
+				if (firstArg.type === 'ObjectExpression') {
+					report(context, firstArg, 'inlineSpec')
+					return
+				}
+				if (firstArg.type === 'Identifier') {
+					if (topLevelSpecs.has(firstArg.name) || importsByLocal.has(firstArg.name)) return
+					if (mutableSpecs.has(firstArg.name)) {
+						report(context, firstArg, 'mutableSpec')
+						return
+					}
+					report(context, firstArg, 'invalidSpec')
+					return
+				}
+				if (firstArg.type === 'MemberExpression') {
+					const object = unwrapExpression(firstArg.object)
+					if (object?.type === 'Identifier' && importsByLocal.has(object.name)) return
+					report(context, firstArg, 'invalidSpec')
+					return
+				}
+				report(context, firstArg, 'invalidSpec')
+			},
+		}
+	},
+)
+
+const featuresTryUseNoStaticLoad = createRule(
+	{
+		type: 'problem',
+		docs: {
+			description:
+				'Require defineOptionalFeature(...).load to keep optional features on a genuine lazy-load path',
+		},
+		messages: {
+			staticLoad:
+				'`defineOptionalFeature(...).load` must lazy-load the optional feature. Returning `{{name}}` keeps it on the host plugin hard path instead of a real dynamic-import boundary.',
+			noDynamicImport:
+				'`defineOptionalFeature(...).load` must contain a dynamic `import(...)` boundary. Optional feature implementations cannot stay on the host module static path.',
+		},
+	},
+	(context) => {
+		const importsByLocal = new Map<string, OxNode>()
+		const topLevelSpecs = new Map<string, OxNode>()
+		return {
+			Program(node) {
+				importsByLocal.clear()
+				topLevelSpecs.clear()
+				for (const [name, importNode] of collectImportedBindings(node)) {
+					importsByLocal.set(name, importNode)
+				}
+				const bindings = collectTopLevelOptionalSpecBindings(node)
+				for (const [name, specNode] of bindings.constSpecs) {
+					topLevelSpecs.set(name, specNode)
+				}
+			},
+			CallExpression(node) {
+				if (!isDefineOptionalFeatureCall(node)) return
+				const loadFn = getOptionalFeatureLoadFunction(node)
+				if (!loadFn) return
+				const returned = getReturnedExpression(loadFn, context.sourceCode.visitorKeys)
+				if (returned) {
+					const linked = getStaticImportReference(returned, importsByLocal)
+					if (linked) {
+						report(context, linked.node, 'staticLoad', { name: linked.name })
+						return
+					}
+					if (returned.type === 'Identifier') {
+						report(context, returned, 'staticLoad', { name: returned.name })
+						return
+					}
+					if (returned.type === 'MemberExpression') {
+						const object = unwrapExpression(returned.object)
+						if (object?.type === 'Identifier' && topLevelSpecs.has(object.name)) {
+							report(context, object, 'staticLoad', { name: object.name })
+							return
+						}
+					}
+				}
+				if (containsDynamicImport(loadFn, context.sourceCode.visitorKeys)) return
+				report(context, loadFn, 'noDynamicImport')
+			},
+		}
+	},
+)
+
 const pluginConstructorNoTypeOnlyImports = createRule(
 	{
 		type: 'problem',
@@ -314,5 +634,8 @@ const pluginConstructorNoTypeOnlyImports = createRule(
 
 export const pluginsRules: Record<string, OxRule> = {
 	'features-use-top-level-class': featuresUseTopLevelClass,
+	'features-try-use-no-class-field': featuresTryUseNoClassField,
+	'features-try-use-requires-defined-spec': featuresTryUseRequiresDefinedSpec,
+	'features-try-use-no-static-load': featuresTryUseNoStaticLoad,
 	'plugin-constructor-no-type-only-imports': pluginConstructorNoTypeOnlyImports,
 }
