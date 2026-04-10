@@ -148,7 +148,7 @@ export function FormToc({
 			const container =
 				(scrollHost && scrollHost.contains(target) ? scrollHost : null) ??
 				target.closest<HTMLElement>('[data-config-scroll-root]') ??
-				findScrollableParent(target)
+				findScrollableParent(target as HTMLElement)
 
 			if (
 				container &&

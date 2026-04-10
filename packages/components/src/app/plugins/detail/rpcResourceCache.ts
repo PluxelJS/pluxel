@@ -1,8 +1,9 @@
 import type {
-	BaseProvisionInfo,
+	BaseProviderInfo,
 	PluginDependencyState,
 	RuntimeTransportClient,
 } from '../../../runtime'
+import { inspectPluginBaseProvider, inspectPluginDependencies } from '../../../runtime'
 
 type CacheEntry<T> = {
 	at: number
@@ -75,15 +76,15 @@ function cached<T>(
 	return task
 }
 
-export function loadBaseProvision(
+export function loadBaseProviderInfo(
 	transport: RuntimeTransportClient,
 	pluginName: string,
 	options?: { force?: boolean },
-): Promise<BaseProvisionInfo | null> {
+): Promise<BaseProviderInfo | null> {
 	return cached(
-		`plugin:${pluginName}:baseProvision`,
+		`plugin:${pluginName}:baseProviderInfo`,
 		60_000,
-		() => transport.withRpc((rpc) => rpc.plugin(pluginName).baseProvision()),
+		() => transport.withRpc((rpc) => inspectPluginBaseProvider(rpc, pluginName)),
 		options,
 	)
 }
@@ -96,7 +97,7 @@ export function loadDependencyState(
 	return cached(
 		`plugin:${pluginName}:dependencyState`,
 		10_000,
-		() => transport.withRpc((rpc) => rpc.plugin(pluginName).dependencyState()),
+		() => transport.withRpc((rpc) => inspectPluginDependencies(rpc, pluginName)),
 		options,
 	)
 }

@@ -1,8 +1,8 @@
 import type { Context as PluginContext } from '@pluxel/core'
 
 import { type AnyElysiaApp } from '../../services/http/elysia'
+import { pluginSchema } from '../usecases/pluginConfig'
 import { HMR_INTERNAL_API_BASE } from '../../web/paths'
-import { PluginHandle } from './rpc/PluginHandle'
 import { debugSchemaSourceQuery, pluginNameParams } from './models'
 
 const DEBUG_BASE = `${HMR_INTERNAL_API_BASE}/debug`
@@ -452,8 +452,7 @@ export const debugRoutes = (app: AnyElysiaApp) =>
 				'/schema-source/:name',
 				async ({ params, pluginCtx, set, status }) => {
 					const name = params.name
-					const handle = new PluginHandle(pluginCtx, name)
-					const result = await handle.schema()
+					const result = await pluginSchema(pluginCtx, name)
 
 					if (result.ok === false) {
 						const content = `

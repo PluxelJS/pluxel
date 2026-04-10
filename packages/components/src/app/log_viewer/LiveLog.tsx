@@ -956,7 +956,7 @@ export function LiveLog({ module, showName = true, filter, variant = 'full' }: P
 				authProbeInFlightRef.current = probeAuthBlocked().finally(() => {
 					authProbeInFlightRef.current = null
 				})
-				void authProbeInFlightRef.current.then((blocked) => {
+				void authProbeInFlightRef.current.then((blocked): undefined => {
 					if (blocked) es.close()
 					return undefined
 				})
@@ -1363,10 +1363,10 @@ export function LiveLog({ module, showName = true, filter, variant = 'full' }: P
 										onClick={() => {
 											void copyToClipboard(
 												formatLineForCopy(selectedLine, { showCategory, showName }),
-											).then((ok) => {
-												if (ok) setCopied('line')
-												return undefined
-											})
+												).then((ok): undefined => {
+													if (ok) setCopied('line')
+													return undefined
+												})
 										}}
 										style={controlButtonStyle(palette)}
 									>
@@ -1375,10 +1375,10 @@ export function LiveLog({ module, showName = true, filter, variant = 'full' }: P
 									<button
 										type="button"
 										onClick={() => {
-											void copyToClipboard(JSON.stringify(selectedLine, null, 2)).then((ok) => {
-												if (ok) setCopied('json')
-												return undefined
-											})
+												void copyToClipboard(JSON.stringify(selectedLine, null, 2)).then((ok): undefined => {
+													if (ok) setCopied('json')
+													return undefined
+												})
 										}}
 										style={controlButtonStyle(palette)}
 									>

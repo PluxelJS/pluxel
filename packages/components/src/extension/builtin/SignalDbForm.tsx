@@ -3,6 +3,7 @@ import { formOptions } from '@tanstack/react-form'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { BuiltinFormBlock } from '@pluxel/runtime/web/extensions'
 import {
+	type SchemaResult,
 	type RuntimeTransportClient,
 	useGlobalExtensionContext,
 	useSignalDbCollectionsState,
@@ -12,6 +13,7 @@ import type { ObjectSchema } from 'valibot'
 import * as v from 'valibot'
 import * as f from 'valibot-form'
 import { AutoForm, useAutoFormCtx } from 'valibot-form/web'
+import { getPluginSchema, type RuntimeRpcStub } from '../../runtime'
 import { applySignalDbWrite, isObject, resolveSignalDbRef } from './_shared'
 
 type SchemaCacheEntry = { schema: ObjectSchema<any, any>; defaults: Record<string, any> }
@@ -239,9 +241,14 @@ async function loadSchema(
 	const cached = schemaCache.get(cacheKey)
 	if (cached) return cached
 
-	const result: any = await transport.withRpc((client: any) => client.plugin(pluginName).schema())
-	if (!result || result.ok === false) {
-		throw new Error(result?.message ?? result?.code ?? 'schema_not_found')
+	const result = (await transport.withRpc((client) =>
+		getPluginSchema(client as RuntimeRpcStub, pluginName),
+	)) as SchemaResult
+	if (!result) {
+		throw new Error('schema_not_found')
+	}
+	if (result.ok === false) {
+		throw new Error(result.message ?? result.code ?? 'schema_not_found')
 	}
 
 	const expr = (result.schemaSource ?? {})[schemaKey]

@@ -400,6 +400,19 @@ importers:
         specifier: ^6.0.2
         version: 6.0.2
 
+  packages/ops:
+    dependencies:
+      '@sinclair/parsebox':
+        specifier: ^0.11.1
+        version: 0.11.3
+      '@sinclair/typebox':
+        specifier: ^0.34.48
+        version: 0.34.48
+    devDependencies:
+      '@pluxel/test':
+        specifier: workspace:*
+        version: link:../test
+
   packages/plugins/host:
     dependencies:
       '@pluxel/hmr':
@@ -469,6 +482,9 @@ importers:
       '@pluxel/core':
         specifier: workspace:*
         version: link:../core
+      '@pluxel/ops':
+        specifier: workspace:*
+        version: link:../ops
       '@signaldb/core':
         specifier: ^1.7.2
         version: 1.8.1
@@ -2388,6 +2404,9 @@ packages:
     resolution: {integrity: sha512-qAKkWAfPtEobZJ3yNqtOKZd1uCzXxIKpz3P1BL1WLSzteGpcVSRYHGKEmQ180572K8n2Sz2nRoOAwqbjEkJEbQ==}
     peerDependencies:
       '@signaldb/core': ^1.4.0
+
+  '@sinclair/parsebox@0.11.3':
+    resolution: {integrity: sha512-wyuSkz9loFDSa/zahDDF0AlTOMajh/dg4c+uGXWJVpLZjRAt+JaismUmGMaIMdM4V5znaxhwwTfiI8dBGn0QVQ==}
 
   '@sinclair/typebox@0.31.28':
     resolution: {integrity: sha512-/s55Jujywdw/Jpan+vsy6JZs1z2ZTGxTmbZTPiuSL2wz9mfzA2gN1zzaqmvfi4pq+uOt7Du85fkiwv5ymW84aQ==}
@@ -6322,6 +6341,8 @@ snapshots:
   '@signaldb/sync@1.3.1(@signaldb/core@1.8.1)':
     dependencies:
       '@signaldb/core': 1.8.1
+
+  '@sinclair/parsebox@0.11.3': {}
 
   '@sinclair/typebox@0.31.28': {}
 

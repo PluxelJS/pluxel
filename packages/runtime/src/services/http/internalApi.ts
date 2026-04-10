@@ -9,8 +9,8 @@ import { debugRoutes } from '../../api/http/debug'
 import { logRoutes } from '../../api/http/logs'
 import { pluginNameParams } from '../../api/http/models'
 import { RuntimeRpcApi } from '../../api/http/rpc/RuntimeRpcApi'
-import { PluginHandle } from '../../api/http/rpc/PluginHandle'
 import { getHmrMcpHttpHandler } from '../../api/mcp'
+import { pluginSchema } from '../../api/usecases/pluginConfig'
 import type { SignalDbItem } from '../../web/plugin-ui/signaldb-contracts'
 import { SignalDbService } from '../plugin-interaction/SignalDbService'
 import type { ElysiaBoundaryBuilder } from './HttpService'
@@ -124,16 +124,13 @@ function createInternalTransportPlugins(
 	const sse = options.sse !== false
 	const plugins: BaseElysiaApp[] = [
 		createInternalPlugin(ctx, 'root', (app) => app.get('/', 'Pluxel HMR RPC ready')),
-		createInternalPlugin(ctx, 'plugin-schema', (app) =>
-			app.get(
-				'/plugins/:name/schema',
-				async ({ pluginCtx, params }: any) => {
-					const handle = new PluginHandle(pluginCtx, params.name)
-					return await handle.schema()
-				},
-				{
-					params: pluginNameParams,
-				},
+			createInternalPlugin(ctx, 'plugin-schema', (app) =>
+				app.get(
+					'/plugins/:name/schema',
+					async ({ pluginCtx, params }: any) => await pluginSchema(pluginCtx, params.name),
+					{
+						params: pluginNameParams,
+					},
 			),
 		),
 	]

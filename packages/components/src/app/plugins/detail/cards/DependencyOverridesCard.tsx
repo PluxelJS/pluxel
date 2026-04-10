@@ -16,8 +16,12 @@ import { IconPlus, IconRefresh } from '@tabler/icons-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNotify } from '../../../hooks'
 import {
+	ensurePluginFork,
 	rpcErrorMessage,
+	setPluginDependencyTarget,
 	useRuntimeTransportClient,
+	type EnsureForkResult,
+	type PluginDependencyMutationResult,
 	type PluginDependencyState,
 } from '../../../../runtime'
 import { usePluginScope } from '../context'
@@ -93,7 +97,11 @@ export function DependencyOverridesCard() {
 	const setDependencyTarget = useCallback(
 		async (index: number, next: string | null) => {
 			const res = await transport.withRpc((rpc) =>
-				rpc.plugin(pluginName).setDependencyTarget(index, next),
+				setPluginDependencyTarget(rpc, {
+					name: pluginName,
+					index,
+					targetName: next,
+				}) as Promise<PluginDependencyMutationResult>,
 			)
 			if (!res.ok) throw new Error(res.error || res.code || '操作失败')
 		},
@@ -103,7 +111,11 @@ export function DependencyOverridesCard() {
 	const ensureFork = useCallback(
 		async (baseName: string, forkId: string) => {
 			const res = await transport.withRpc((rpc) =>
-				rpc.plugin(pluginName).ensureFork(baseName, forkId, { enable: true }),
+				ensurePluginFork(rpc, {
+					baseName,
+					forkId,
+					enable: true,
+				}) as Promise<EnsureForkResult>,
 			)
 			if (!res.ok) throw new Error(res.error || res.code || '创建 fork 失败')
 			return res.forkName ?? `${baseName}#${forkId}`

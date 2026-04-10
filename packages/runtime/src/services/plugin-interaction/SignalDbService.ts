@@ -113,10 +113,10 @@ export class SignalDbService {
 		})
 		collections.set(name, managed)
 		this.ensureStream(pluginName)
-		void managed.ready().then(() => {
-			this.broadcast(pluginName, 'snapshot', managed.snapshotEvent())
-			return undefined
-		})
+			void managed.ready().then((): undefined => {
+				this.broadcast(pluginName, 'snapshot', managed.snapshotEvent())
+				return undefined
+			})
 
 		this.ctx.effects.defer(() => {
 			const currentCollections = this.collectionsByPlugin.get(pluginName)

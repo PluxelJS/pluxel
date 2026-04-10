@@ -358,13 +358,13 @@ export class ConfigService {
 		const nextDigest = ohash(content)
 		if (nextDigest === this.lastWrittenDigest && this.ctx.root.fs.exists(file)) return
 
-		this.pendingWriteDigest = nextDigest
-		const task = this.ctx.root.fs
-			.writeTextAtomic(file, content)
-			.then(() => {
-				this.lastWrittenDigest = nextDigest
-				return undefined
-			})
+			this.pendingWriteDigest = nextDigest
+			const task = this.ctx.root.fs
+				.writeTextAtomic(file, content)
+				.then((): undefined => {
+					this.lastWrittenDigest = nextDigest
+					return undefined
+				})
 			.finally(() => {
 				if (this.pendingWriteDigest === nextDigest) this.pendingWriteDigest = undefined
 			})

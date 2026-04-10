@@ -94,6 +94,14 @@ export {
 } from './services/routing/pluginGatedRoutes'
 
 export { doc } from './services/plugin-interaction/doc'
+export {
+	OpsService,
+	type RuntimeOpContext,
+	type RuntimeOpContextInput,
+	type RuntimeOperation,
+	type RuntimeOpSource,
+	type RuntimeOpsRegisterOptions,
+} from './services/plugin-interaction/OpsService'
 export type {
 	SignalDbCollectionHandle,
 	SignalDbDocumentHandle,

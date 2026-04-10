@@ -3,18 +3,20 @@ import { IconRefresh, IconStar } from '@tabler/icons-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
 	rpcErrorMessage,
+	selectPluginBaseProvider,
 	useRuntimeTransportClient,
-	type BaseProvisionInfo,
+	type BaseProviderInfo,
+	type PluginDependencyMutationResult,
 } from '../../../../runtime'
 import { useNotify } from '../../../hooks'
 import { usePluginScope } from '../context'
-import { loadBaseProvision } from '../rpcResourceCache'
+import { loadBaseProviderInfo } from '../rpcResourceCache'
 
 export function BaseProviderCard() {
 	const { pluginName, refetch } = usePluginScope()
 	const transport = useRuntimeTransportClient()
 	const notify = useNotify()
-	const [info, setInfo] = useState<BaseProvisionInfo | null>(null)
+	const [info, setInfo] = useState<BaseProviderInfo | null>(null)
 	const [loading, setLoading] = useState(false)
 	const mountedRef = useRef(true)
 
@@ -30,7 +32,7 @@ export function BaseProviderCard() {
 			if (!pluginName) return
 			setLoading(true)
 			try {
-				const res = await loadBaseProvision(transport, pluginName, options)
+				const res = await loadBaseProviderInfo(transport, pluginName, options)
 				if (!mountedRef.current) return
 				setInfo(res ?? null)
 			} catch (error) {
@@ -68,7 +70,11 @@ export function BaseProviderCard() {
 			if (!value) return
 			try {
 				const res = await transport.withRpc((rpc) =>
-					rpc.plugin(pluginName).setBaseProvider(info.baseToken, value),
+					selectPluginBaseProvider(rpc, {
+						name: pluginName,
+						baseToken: info.baseToken,
+						providerName: value,
+					}) as Promise<PluginDependencyMutationResult>,
 				)
 				if (!res.ok) throw new Error(res.error || res.code || '操作失败')
 				await load({ force: true })

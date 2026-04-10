@@ -151,11 +151,11 @@ class SseClient {
 					this.authProbeInFlight = null
 				})
 			}
-			void this.authProbeInFlight.then((blocked) => {
-				if (blocked) this.close()
-				return undefined
-			})
-		}
+				void this.authProbeInFlight.then((blocked): undefined => {
+					if (blocked) this.close()
+					return undefined
+				})
+			}
 		src.onmessage = (ev) => {
 			let msg: { namespace?: unknown; event?: unknown; payload?: unknown } | null = null
 			try {

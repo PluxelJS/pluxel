@@ -1,22 +1,33 @@
 import {
 	createAuthAwareFetch,
 	createRuntimeTransportClient,
+	dispatchRuntimeCommand,
 	invokeRpc,
+	invokeRuntimeOp,
+	listRuntimeOps,
 	rpcErrorMessage,
 	RuntimeTransportClientProvider,
 	useRuntimeTransportClient,
 } from '@pluxel/runtime/web'
+export * from './ops'
 
 export {
 	createAuthAwareFetch,
+	dispatchRuntimeCommand,
 	invokeRpc,
+	invokeRuntimeOp,
+	listRuntimeOps,
 	rpcErrorMessage,
 	RuntimeTransportClientProvider,
 	useRuntimeTransportClient,
 }
 
 export type {
-	BaseProvisionInfo,
+	BaseProviderInfo,
+	ConfigResult,
+	ConfigResultErr,
+	ConfigResultOk,
+	EnsureForkResult,
 	LogFilter,
 	LogLevel,
 	LogRangeOk,
@@ -28,6 +39,8 @@ export type {
 	PackageIssueSpec,
 	PackageLoadIssue,
 	PackageSpecInput,
+	PluginDependencyRef,
+	PluginDependencyMutationResult,
 	PluginDependencyState,
 	PluginGroup,
 	PluginGroupInput,
@@ -37,9 +50,13 @@ export type {
 	PluginStatusBatchAction,
 	PluginStatusBatchResult,
 	PluginStatusMutationResult,
+	RuntimeOpDescriptor,
 	RuntimeLogLine,
 	RuntimeRpcApi,
 	RuntimeTransportClient,
+	SchemaResult,
+	SchemaResultErr,
+	SchemaResultOk,
 } from '@pluxel/runtime/web'
 
 let transport: ReturnType<typeof createRuntimeTransportClient> | null = null

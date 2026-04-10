@@ -8,7 +8,11 @@ import { useCallback, useRef, useState } from 'react'
 import { ExtensionSlot } from '../../../../extension'
 import { PluginStatusEntryLifecycleStage } from '../../../gqty'
 import { useNotify } from '../../../hooks'
-import { useRuntimeTransportClient, type PluginStatusAction } from '../../../../runtime'
+import {
+	runPluginStatusAction,
+	useRuntimeTransportClient,
+	type PluginStatusAction,
+} from '../../../../runtime'
 import { buildStartPlan, executeStartPlan } from '../../pluginStatusActions'
 import { invalidate } from '../../../data/invalidations'
 import { usePluginScope } from '../context'
@@ -111,13 +115,13 @@ export function ActionBar({ onStatusUpdated, compact = false, prominent = false 
 		setIsLoading(true)
 
 		try {
-			const res = await transport.withRpc((rpc) => rpc.plugin(pluginName).updateStatus(action))
+			const res = await transport.withRpc((rpc) => runPluginStatusAction(rpc, pluginName, action))
 			if (mySeq !== seqRef.current) return
 
 			if (res.ok === false) {
 				notify({
 					title: '插件状态更新失败',
-					message: res.error || res.code || '操作失败，请稍后重试',
+					message: res.error || res.commitError || '操作失败，请稍后重试',
 					color: 'red',
 				})
 				// 失败直接以真实数据为准（无需手写回滚）：拉齐一次
@@ -227,7 +231,7 @@ export function ActionBar({ onStatusUpdated, compact = false, prominent = false 
 		}
 		const missing = needsDependencyCheck
 			? dependencies
-					.filter((d) => !d.isRunning && !(d as any)?.optional)
+					.filter((d) => !d.isRunning)
 					.map((d) => d.name)
 					.filter((name): name is string => Boolean(name && isKnownPlugin(name)))
 			: []

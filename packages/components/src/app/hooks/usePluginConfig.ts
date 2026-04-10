@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import * as v from 'valibot'
 import * as f from 'valibot-form'
 
-import { invokeRpc } from '../../runtime'
+import { getPluginConfig, getPluginSchema, invokeRpc } from '../../runtime'
 import type { BuiltinMarkdownPart } from '@pluxel/runtime/web/extensions'
 
 export type PluginConfigData = {
@@ -62,11 +62,9 @@ async function loadPluginData(
 	const cachedSchema = forceRefresh ? null : schemaCache.get(pluginName)
 
 	return invokeRpc(async (rpc) => {
-		const p = rpc.plugin(pluginName)
-
 		// 发起调用（不 await），capnweb 会在 Promise.all 时 batch 发送
-		const schemaPromise = cachedSchema ? null : p.schema()
-		const configPromise = p.config()
+		const schemaPromise = cachedSchema ? null : getPluginSchema(rpc, pluginName)
+		const configPromise = getPluginConfig(rpc, pluginName)
 
 		const [schemaResult, configResult] = await Promise.all([schemaPromise, configPromise])
 		const savedConfig = configResult.ok ? (configResult.config as Record<string, any>) : {}
@@ -96,15 +94,15 @@ async function loadPluginData(
 			// Convention: schema keys starting with "_" are treated as private/internal and
 			// are hidden from the Config UI (still available to other host-rendered surfaces).
 			if (key.startsWith('_')) continue
-			const schema = new Function('v', 'f', `return ${expr}`)(v, f)
-			if (schema instanceof Promise) {
-				pending.push(
-					schema.then((r) => {
-						schemaMap[key] = r
-						return undefined
-					}),
-				)
-			} else {
+				const schema = new Function('v', 'f', `return ${expr}`)(v, f)
+				if (schema instanceof Promise) {
+					pending.push(
+						schema.then((r): undefined => {
+							schemaMap[key] = r
+							return undefined
+						}),
+					)
+				} else {
 				schemaMap[key] = schema
 			}
 		}

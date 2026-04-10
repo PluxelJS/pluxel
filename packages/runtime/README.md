@@ -29,6 +29,8 @@ runtime 只消费两类前端输入：
 
 ## `ctx.ext`
 
+- `this.ctx.ext.ops`
+  runtime control-plane 的唯一内核入口；插件、RPC、MCP、CLI 都应复用同一套 operation 定义与 descriptor，而不是各自维护一套 handler
 - `this.ctx.ext.rpc.expose(...)`
   暴露自定义 UI 的 RPC
 - `this.ctx.ext.sse.expose(...)`
@@ -57,6 +59,51 @@ runtime 只消费两类前端输入：
   root FS 入口
 - `this.ctx.loader.api`
   loader API
+
+### runtime control-plane 原则
+
+- runtime 内部控制面统一建模为 operation，而不是额外再造 `PluginHandle` / 专用 RPC façade
+- `defineOp(...)` 产出的 canonical descriptor 是唯一语义 IR；carrier 只能投影它，不能再造第二套 metadata
+- descriptor 分成五块：`doc`、`exposure`、`policy`、`schemas`、`transports`
+- 对外唯一 RPC 面是：
+  - `opsList()`
+  - `opsInvoke(id, input?)`
+  - `opsDispatch(command)`
+- `opsList()` 返回的是可序列化的 public descriptor snapshot，而不是内部 registry object 原样透出
+- CLI、MCP、RPC 命中的都是同一个 op registry；语义、schema、约束和返回值保持一致
+- 即使是 runtime 内部调用，默认也不绕过 op 输入/输出校验；性能优化应在现有 op 模型内做，而不是私下分叉 trusted path
+- `exposure` 只表达 `rpc/internal` 这类跨 carrier 可见性；tool / CLI 可见性由对应 transport projection 是否存在决定
+- external tool name 统一走 lower-case dotted / kebab 风格；不要把 camelCase 暴露给 carrier
+- tool 帮助信息统一来自 op `doc` 和 input schema description；不要在 carrier 里再拼第二份文案
+- runtime canonical op namespace 视为 host contract，保留给 runtime 自己使用；插件自定义 op 应使用插件自有前缀，而不是复用 `plugin.*` / `plugins.*` / `runtime.*`
+- MCP tool surface 也是 `ctx.ext.ops` 的实时投影，不应退化成“启动时快照”
+- `runtime.ops.list` 是 registry 里的唯一 meta-op；`opsInvoke()` / `opsDispatch()` 属于 RPC transport 本身，不再反向注册成泛调用 op
+
+当前 runtime core 已收敛到这一组 canonical runtime op ids：
+
+- `plugins.list`
+- `plugin.status`
+- `plugins.status.apply`
+- `plugin.start` / `plugin.stop` / `plugin.restart` / `plugin.enable` / `plugin.disable`
+- `plugin.wait-for-stage`
+- `plugin.dependencies.list`
+- `plugin.dependencies.inspect`
+- `plugin.dependencies.set-target`
+- `plugin.base-provider.inspect`
+- `plugin.base-provider.select`
+- `plugin.fork.ensure`
+- `plugin.schema`
+- `plugin.config.get`
+- `plugins.config.get`
+- `plugin.config.validate`
+- `plugins.config.validate`
+- `plugin.config.patch`
+- `plugins.config.set`
+- `plugin.config.patch-field`
+- `plugins.config.patch-field`
+- `plugin.config.reset`
+- `plugins.config.reset`
+- `runtime.ops.list`
 
 ## 配置
 

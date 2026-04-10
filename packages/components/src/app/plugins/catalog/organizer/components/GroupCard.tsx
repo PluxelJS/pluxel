@@ -42,7 +42,6 @@ type Props = {
 	selectedSet: Set<string>
 	activeSet: Set<string>
 	focusedId: string | null
-	onSelect: (e: React.MouseEvent, id: string, mode?: 'click' | 'context' | 'toggle') => void
 	onSelect: (e: MouseEvent, id: string, mode?: 'click' | 'context' | 'toggle') => void
 	LinkComp?: ComponentType<
 		{

@@ -10,6 +10,7 @@ import {
 } from '../../../extension'
 import { useDebouncedFlag } from '../../../hooks'
 import {
+	type PluginDependency,
 	type PluginScope,
 	type PluginStatusEntry,
 	PluginStatusEntryLifecycleStage,
@@ -81,6 +82,12 @@ function PluginSkeleton({ stacked }: { stacked: boolean }) {
 
 export interface PluginScreenProps {
 	pluginName: string
+}
+
+type PluginDetailView = {
+	name: string
+	desc: string
+	dependencies: PluginDependency[]
 }
 
 function usePluginDetail(pluginName?: string) {
@@ -156,22 +163,28 @@ function usePluginDetail(pluginName?: string) {
 			scope = undefined
 		}
 	}
-	const ready = Boolean(scope?.name)
 
+	const detail =
+		scope?.name
+			? {
+					name: scope.name,
+					desc: scope.detail?.desc ?? '',
+					dependencies: Array.isArray(scope.detail?.dependencies) ? [...scope.detail.dependencies] : [],
+				}
+			: undefined
+	const ready = Boolean(detail?.name)
 	const loading = Boolean(detailQuery.$state.isLoading)
 	const error = detailQuery.$state.error
 
-	const refetch = (force?: boolean): Promise<void> => {
+	const refetch = useCallback(async () => {
 		type Refetchable = { $refetch?: (force?: boolean) => Promise<unknown> }
-		const tasks: Promise<unknown>[] = []
-		const detailRefetch = (detailQuery as unknown as Refetchable).$refetch
-		if (typeof detailRefetch === 'function') tasks.push(detailRefetch(force))
-		if (tasks.length === 0) return Promise.resolve()
-		return Promise.allSettled(tasks).then((): void => undefined)
-	}
+		const refetchDetail = (detailQuery as unknown as Refetchable).$refetch
+		if (typeof refetchDetail !== 'function') return
+		await refetchDetail(true)
+	}, [detailQuery])
 
 	return {
-		scope,
+		detail,
 		knownPluginNames,
 		ready,
 		listed,
@@ -203,7 +216,7 @@ export const PluginScreen = memo(function PluginScreen({ pluginName }: PluginScr
 	const isStacked = isStackedWide || isStackedBreak
 
 	const {
-		scope,
+		detail,
 		knownPluginNames,
 		ready,
 		listed,
@@ -216,37 +229,25 @@ export const PluginScreen = memo(function PluginScreen({ pluginName }: PluginScr
 	const parentExtensionCtx = useGlobalExtensionContext()
 	const pathname = useCurrentPathname()
 
-	// 稳定快照：refetch/同步期间，GQty 可能短暂返回空字段，导致 UI “0 依赖/空注入卡片”闪一下。
+	// 稳定快照：refetch/同步期间，详情查询可能短暂返回空字段，导致 UI “0 依赖/空注入卡片”闪一下。
 	// 这里缓存上一份成功读取到的 detail，用于过渡期展示。
-	const lastStableRef = useRef<{
-		scope: PluginScope
-		name: string
-		desc: string
-		dependencies: Array<{ name?: string | null; isRunning?: boolean | null }>
-	} | null>(null)
+	const lastStableRef = useRef<PluginDetailView | null>(null)
 
 	useEffect(() => {
-		if (!scope?.name) {
+		if (!detail?.name) {
 			lastStableRef.current = null
 			return
 		}
-		try {
-			const deps = Array.isArray(scope.detail?.dependencies) ? [...scope.detail.dependencies] : []
-			lastStableRef.current = {
-				scope,
-				name: scope.name,
-				desc: scope.detail?.desc ?? '',
-				dependencies: deps,
-			}
-		} catch {
-			// ignore
+		lastStableRef.current = {
+			...detail,
+			dependencies: Array.isArray(detail.dependencies) ? [...detail.dependencies] : [],
 		}
-	}, [scope?.name, scope?.detail?.desc, scope?.detail?.dependencies])
+	}, [detail])
 
-	const stable = lastStableRef.current
+	const stable = lastStableRef.current?.name === pluginName ? lastStableRef.current : null
 	const viewReady = ready || Boolean(stable?.name)
-	const displayName = scope?.name ?? stable?.name ?? pluginName
-	const description = scope?.detail?.desc ?? stable?.desc ?? ''
+	const displayName = detail?.name ?? stable?.name ?? pluginName
+	const description = detail?.desc ?? stable?.desc ?? ''
 	const statusRef = useRef<{
 		isRunning: boolean
 		isEnabled: boolean
@@ -312,7 +313,7 @@ export const PluginScreen = memo(function PluginScreen({ pluginName }: PluginScr
 	const configState = usePluginConfig(viewReady ? displayName : undefined)
 	const syncing = useDebouncedFlag(loading || configState.loading, 160)
 
-	const rawDeps = scope?.detail?.dependencies
+	const rawDeps = detail?.dependencies
 	const stableDeps = stable?.dependencies ?? []
 	const preferStableDeps = Boolean(
 		rawDeps && Array.isArray(rawDeps) && rawDeps.length === 0 && stableDeps.length > 0,
@@ -320,7 +321,7 @@ export const PluginScreen = memo(function PluginScreen({ pluginName }: PluginScr
 	const dependencies = syncing && preferStableDeps ? stableDeps : (rawDeps ?? stableDeps)
 
 	const handleRefetch = useCallback(async () => {
-		await refetch(true)
+		await refetch()
 	}, [refetch])
 
 	const handleStatusOverride = useCallback(
@@ -335,8 +336,7 @@ export const PluginScreen = memo(function PluginScreen({ pluginName }: PluginScr
 	)
 
 	const contextValue = useMemo(() => {
-		const effectiveScope = scope ?? stable?.scope
-		if (!effectiveScope) return null
+		if (!detail && !stable) return null
 		const rawSource = resolvedStatus?.source ?? statusRef.current?.source ?? null
 		const source = {
 			kind: (rawSource?.kind ?? 'unknown') as PluginSourceKind,
@@ -348,7 +348,6 @@ export const PluginScreen = memo(function PluginScreen({ pluginName }: PluginScr
 		return {
 			pluginName: displayName,
 			description,
-			scope: effectiveScope,
 			dependencies,
 			knownPluginNames,
 			status: effectiveStatusEntry,
@@ -364,7 +363,6 @@ export const PluginScreen = memo(function PluginScreen({ pluginName }: PluginScr
 		dependencies,
 		description,
 		displayName,
-		effectiveStatus,
 		handleRefetch,
 		handleStatusOverride,
 		knownPluginNames,
@@ -372,8 +370,6 @@ export const PluginScreen = memo(function PluginScreen({ pluginName }: PluginScr
 		isRunning,
 		isEnabled,
 		lifecycleStage,
-		scope,
-		statusEntry,
 		stable,
 		syncing,
 	])
@@ -414,7 +410,7 @@ export const PluginScreen = memo(function PluginScreen({ pluginName }: PluginScr
 			<ErrorState
 				title="加载失败"
 				message={error.message || '无法加载插件详情，请重试'}
-				onRetry={() => void refetch(true)}
+				onRetry={() => void refetch()}
 				minHeight="100%"
 			/>
 		)

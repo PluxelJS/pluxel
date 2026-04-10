@@ -214,15 +214,15 @@ class SignalDbReplicaNamespace {
 		const pending = this.syncTasks.get(collection)
 		if (pending) return pending
 
-		const task = this.sync
-			.sync(collection, { force: true })
-			.then(() => {
-				const state = this.states.get(collection)
-				if (!state) return undefined
-				this.clearRetry(collection)
-				state.meta.ready.set(true)
-				return undefined
-			})
+			const task = this.sync
+				.sync(collection, { force: true })
+				.then((): undefined => {
+					const state = this.states.get(collection)
+					if (!state) return undefined
+					this.clearRetry(collection)
+					state.meta.ready.set(true)
+					return undefined
+				})
 			.catch((error) => {
 				const state = this.states.get(collection)
 				if (state) state.meta.ready.set(false)

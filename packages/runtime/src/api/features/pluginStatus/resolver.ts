@@ -26,7 +26,7 @@ export function createPluginStatusResolvers(pCtx: PlxContext): Resolver[] {
 		}),
 	}) as unknown as Resolver
 
-	// updatePluginStatus mutation 已迁移到 RPC: PluginHandle.updateStatus()
+	// updatePluginStatus mutation 已迁移到 runtime op: plugin.start|stop|restart|enable|disable
 
 	return [scopeStatus] satisfies Resolver[]
 }

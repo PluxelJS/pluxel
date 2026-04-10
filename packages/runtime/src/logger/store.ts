@@ -268,7 +268,7 @@ export class RuntimeLogStore {
 		this.headSeq = 1n
 		this.tailSeq = 0n
 		this.nextSeq = 1n
-		this.chunks.fill()
+			this.chunks.fill(undefined)
 		const meta = this.meta()
 		this.events.emit(RESET_EVENT, {
 			type: 'reset',

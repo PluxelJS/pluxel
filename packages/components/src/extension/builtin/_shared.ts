@@ -39,10 +39,10 @@ export function resolveSignalDbRef(
 
 export function neededSignalDbCollectionsForValue(value: unknown): string[] {
 	const collections = new Set<string>()
-	const visit = (input: unknown) => {
+	const visit = (input: unknown): void => {
 		if (Array.isArray(input)) {
 			for (const item of input) visit(item)
-			return undefined
+			return
 		}
 		if (!input || typeof input !== 'object') return
 		const obj = input as Record<string, unknown>

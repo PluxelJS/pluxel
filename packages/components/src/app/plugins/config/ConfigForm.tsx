@@ -5,7 +5,7 @@ import { getDefaults, type ObjectSchema } from 'valibot'
 import { EmptyState } from '../../../components'
 import { SegmentedButtons } from 'valibot-form/web'
 import { useNotify } from '../../hooks'
-import { useRuntimeTransportClient } from '../../../runtime'
+import { patchPluginConfig, useRuntimeTransportClient, type ConfigResult } from '../../../runtime'
 import { PLUGIN_DETAIL_HOTKEYS } from '../../workbench/shortcuts'
 import { type ConfigFormBridge, type ConfigFormState, ConfigTabPanel } from './ConfigTab'
 import { ConfigActionDock } from './components/ConfigActionDock'
@@ -35,22 +35,6 @@ type FieldErrors = Record<string, FieldIssue[]>
 type FormLike = {
 	setFieldMeta: (fieldName: string, updater: (meta: unknown) => unknown) => void
 }
-
-type SaveConfigFailure = {
-	ok: false
-	code?: string
-	message?: string
-	errors?: Record<string, unknown>
-}
-
-type SaveConfigSuccess = {
-	ok: true
-	config?: Record<string, unknown>
-	defaults?: Record<string, unknown>
-	saved?: boolean
-}
-
-type SaveConfigResult = SaveConfigFailure | SaveConfigSuccess
 
 function isRecord(value: unknown): value is Record<string, unknown> {
 	return Boolean(value && typeof value === 'object' && !Array.isArray(value))
@@ -248,9 +232,9 @@ export function ConfigForm({
 
 		setSavingAll(true)
 		try {
-			const result = (await (transport as any).withRpc((rpc: any) =>
-				rpc.plugin(pluginName).saveConfig(patch),
-			)) as SaveConfigResult
+			const result = (await transport.withRpc((rpc) =>
+				patchPluginConfig(rpc, pluginName, patch),
+			)) as ConfigResult
 			if (result.ok === false) {
 				if (result.code === 'validation_failed' && result.errors) {
 					const errorsByTab = isRecord(result.errors) ? result.errors : {}

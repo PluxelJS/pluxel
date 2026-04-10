@@ -1,6 +1,6 @@
 import { newHttpBatchRpcSession, type RpcStub } from 'capnweb'
 import { HMR_INTERNAL_API_BASE } from './paths'
-import type { ExtensionUiRpcMap, RuntimeRpcApi } from './protocol'
+import type { ExtensionUiRpcMap, RuntimeOpDescriptor, RuntimeRpcApi } from './protocol'
 
 export type RuntimeRpcStub = RpcStub<RuntimeRpcApi>
 
@@ -99,6 +99,27 @@ export function rpcErrorMessage(error: unknown, fallback = 'RPC 调用失败'): 
 	if (error instanceof Error) return error.message || fallback
 	if (typeof error === 'string') return error
 	return fallback
+}
+
+export async function listRuntimeOps(
+	options?: { rpcBase?: string; timeoutMs?: number; credentials?: RequestCredentials },
+): Promise<RuntimeOpDescriptor[]> {
+	return await invokeRpc((rpc) => Promise.resolve(rpc.opsList()), options)
+}
+
+export async function invokeRuntimeOp<T = unknown>(
+	id: string,
+	input?: unknown,
+	options?: { rpcBase?: string; timeoutMs?: number; credentials?: RequestCredentials },
+): Promise<T> {
+	return await invokeRpc((rpc) => rpc.opsInvoke(id, input) as unknown as Promise<T>, options)
+}
+
+export async function dispatchRuntimeCommand<T = unknown>(
+	command: string,
+	options?: { rpcBase?: string; timeoutMs?: number; credentials?: RequestCredentials },
+): Promise<T> {
+	return await invokeRpc((rpc) => rpc.opsDispatch(command) as unknown as Promise<T>, options)
 }
 
 export function createUiRpcView(

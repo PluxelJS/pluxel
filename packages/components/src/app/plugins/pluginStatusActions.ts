@@ -1,11 +1,14 @@
-import type { RpcStub } from 'capnweb'
 import {
+	applyPluginStatusActions,
+	getPluginConfig,
+	getPluginSchema,
 	invokeRpc,
+	listPluginDependencies,
 	type PluginStatusAction,
 	type PluginStatusBatchAction,
 	type PluginStatusBatchResult,
 	type PluginStatusMutationResult,
-	type RuntimeRpcApi,
+	type RuntimeRpcStub,
 } from '../../runtime'
 import { getPluginOverviewSnapshot, requestPluginOverviewRefetch } from './pluginOverviewStore'
 import { invalidate } from '../data/invalidations'
@@ -31,8 +34,6 @@ export type StatusActionResult = StartResult & {
 	lifecycleStage?: PluginStatusMutationResult['lifecycleStage']
 }
 
-type RuntimeRpcStub = RpcStub<RuntimeRpcApi>
-
 async function readStatusOverviewSnapshot() {
 	let snapshot = getPluginOverviewSnapshot()
 	if (!snapshot.hasSnapshot || !snapshot.overview) {
@@ -46,10 +47,9 @@ async function readStatusOverviewSnapshot() {
 
 async function isPluginConfigured(rpc: RuntimeRpcStub, name: string) {
 	try {
-		const plugin = rpc.plugin(name)
 		const [schemaResult, configResult] = await Promise.allSettled([
-			plugin.schema(),
-			plugin.config(),
+			getPluginSchema(rpc, name),
+			getPluginConfig(rpc, name),
 		])
 
 		// 没有 schema 视为“无需配置”，允许级联
@@ -98,12 +98,8 @@ export async function buildStartPlan(
 			if (detailVisited.has(name)) continue
 			detailVisited.add(name)
 			try {
-				const detail = (await rpc.plugin(name).detail()) as {
-					dependencies?: Array<{ name?: string; optional?: boolean }>
-				} | null
-				const deps = (detail?.dependencies ?? [])
-					.filter((d: any) => !d?.optional)
-					.map((d: any) => (typeof d?.name === 'string' ? d.name.trim() : ''))
+				const deps = (await listPluginDependencies(rpc, name))
+					.map((d) => (typeof d?.name === 'string' ? d.name.trim() : ''))
 					.filter(Boolean)
 				depMap.set(name, deps)
 				for (const dep of deps) {
@@ -225,7 +221,7 @@ export async function updatePluginStatuses(
 	if (actions.length === 0) return []
 	try {
 		return await invokeRpc(async (rpc) => {
-			const result = await rpc.updatePluginStatuses(actions)
+			const result = (await applyPluginStatusActions(rpc, actions)) as PluginStatusBatchResult
 			const normalized = normalizeBatchResults(result)
 			if (normalized.length === 0 && result?.commitError) {
 				return actions.map((action) => ({

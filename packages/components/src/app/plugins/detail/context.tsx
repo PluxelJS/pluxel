@@ -6,7 +6,6 @@ import type {
 	PluginSourceInfoKind,
 	PluginStatusEntry,
 	PluginStatusEntryLifecycleStage,
-	PluginScope,
 } from '../../gqty'
 
 export type PluginSourceKind = PluginSourceInfoKind
@@ -18,7 +17,6 @@ export type PluginSourceInfo = Omit<GqlPluginSourceInfo, '__typename' | 'kind'> 
 export interface PluginScopeContextValue {
 	pluginName: string
 	description: string
-	scope: PluginScope
 	dependencies: readonly PluginDependency[]
 	knownPluginNames: ReadonlySet<string>
 	status: PluginStatusEntry | null

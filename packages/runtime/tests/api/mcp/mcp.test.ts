@@ -1,11 +1,13 @@
 import { describe, expect, it } from 'vitest'
+import { Context } from '@pluxel/runtime'
 import { HMR_INTERNAL_API_BASE, HMR_TRANSPORT_PATHS } from '@pluxel/runtime/web/paths'
+import { defineOp, typebox } from '@pluxel/ops'
 import { getHmrMcpHttpHandler } from '../../../src/api/mcp'
 import { setDevRuntimeHandles } from '../../../src/runtime/dev-handles'
 
 describe('MCP (mcp-lite) endpoint', () => {
 	it('supports initialize, tools/list, tools/call', async () => {
-		const ctx = {} as any
+		const ctx = new Context({ name: 'root' }) as any
 		setDevRuntimeHandles(ctx, {
 			hmr: {
 				api: {
@@ -91,18 +93,24 @@ describe('MCP (mcp-lite) endpoint', () => {
 		expect(toolNames).toContain('logs.waitForText')
 		expect(toolNames).toContain('plugins.list')
 		expect(toolNames).toContain('plugin.status')
-		expect(toolNames).toContain('plugin.waitForStage')
+		expect(toolNames).toContain('plugin.wait-for-stage')
 		expect(toolNames).toContain('plugin.schema')
 		expect(toolNames).toContain('plugin.config.get')
 		expect(toolNames).toContain('plugin.config.validate')
 		expect(toolNames).toContain('plugin.config.patch')
 		expect(toolNames).toContain('plugin.config.reset')
+		expect(toolNames).toContain('plugins.status.apply')
+		expect(toolNames).toContain('plugins.config.set')
+		expect(toolNames).toContain('runtime.ops.list')
 		expect(toolNames).toContain('workspace.resolveEntry')
 		expect(toolNames).toContain('workspace.listEntries')
 		expect(toolNames).toContain('plugin.restart')
 		expect(toolNames).toContain('plugin.enable')
 		expect(toolNames).toContain('plugin.disable')
-		expect(toolNames).toContain('plugin.ensureFork')
+		expect(toolNames).toContain('plugin.dependencies.list')
+		expect(toolNames).toContain('plugin.dependencies.inspect')
+		expect(toolNames).toContain('plugin.base-provider.inspect')
+		expect(toolNames).toContain('plugin.fork.ensure')
 
 		const logs = await call({
 			jsonrpc: '2.0',
@@ -154,5 +162,80 @@ describe('MCP (mcp-lite) endpoint', () => {
 			params: { name: 'hmr.lastBatch', arguments: {} },
 		})
 		expect(lastBatch.result.structuredContent).toHaveProperty('batch')
+	})
+
+	it('refreshes MCP tool projection when ops registry changes', async () => {
+		const ctx = new Context({ name: 'root' }) as any
+		const handler = getHmrMcpHttpHandler(ctx)
+
+		let sessionId: string | null = null
+		let protocolVersion = '2025-06-18'
+
+		const call = async (body: unknown) => {
+			const headers: Record<string, string> = { 'content-type': 'application/json' }
+			if (sessionId) headers['mcp-session-id'] = sessionId
+			if ((body as any)?.method !== 'initialize') headers['mcp-protocol-version'] = protocolVersion
+
+			const res = await handler(
+				new Request(`http://localhost${HMR_INTERNAL_API_BASE}${HMR_TRANSPORT_PATHS.mcp}`, {
+					method: 'POST',
+					headers,
+					body: JSON.stringify(body),
+				}),
+			)
+
+			sessionId = res.headers.get('mcp-session-id') ?? sessionId
+			protocolVersion = res.headers.get('mcp-protocol-version') ?? protocolVersion
+
+			expect(res.status).toBe(200)
+			return await res.json()
+		}
+
+		await call({
+			jsonrpc: '2.0',
+			id: 1,
+			method: 'initialize',
+			params: {
+				protocolVersion,
+				clientInfo: { name: 'pluxel-test', version: '0' },
+				capabilities: {},
+			},
+		})
+
+		const before = await call({ jsonrpc: '2.0', id: 2, method: 'tools/list', params: {} })
+		expect((before.result.tools as Array<{ name: string }>).some((tool) => tool.name === 'demo.echo')).toBe(false)
+
+		ctx.ext.ops.register(
+			defineOp({
+				id: 'demo.echo',
+				doc: {
+					title: 'Demo Echo',
+					description: 'Echo a demo value.',
+				},
+				input: typebox.obj({
+					value: typebox.Type.String({ description: 'Value to echo back.' }),
+				}),
+				output: typebox.obj({
+					value: typebox.Type.String(),
+				}),
+				tool: {
+					name: 'demo.echo',
+				},
+				async execute(input) {
+					return input
+				},
+			}),
+		)
+
+		const after = await call({ jsonrpc: '2.0', id: 3, method: 'tools/list', params: {} })
+		expect((after.result.tools as Array<{ name: string }>).some((tool) => tool.name === 'demo.echo')).toBe(true)
+
+		const echo = await call({
+			jsonrpc: '2.0',
+			id: 4,
+			method: 'tools/call',
+			params: { name: 'demo.echo', arguments: { value: 'ok' } },
+		})
+		expect(echo.result.structuredContent).toEqual({ value: 'ok' })
 	})
 })

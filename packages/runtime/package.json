@@ -108,6 +108,7 @@
 		"@maverick-js/signals": "^6.0.0",
 		"@noble/hashes": "^2.0.1",
 		"@pluxel/core": "workspace:*",
+		"@pluxel/ops": "workspace:*",
 		"@signaldb/core": "^1.7.2",
 		"@signaldb/maverickjs": "^1.0.0",
 		"@signaldb/react": "^1.0.1",

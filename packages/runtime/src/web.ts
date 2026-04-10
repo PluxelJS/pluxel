@@ -74,7 +74,13 @@ export {
 	type RuntimeTransportClientProviderProps,
 	useRuntimeTransportClient,
 } from './web/react'
-export { invokeRpc, rpcErrorMessage } from './web/rpc'
+export {
+	dispatchRuntimeCommand,
+	invokeRpc,
+	invokeRuntimeOp,
+	listRuntimeOps,
+	rpcErrorMessage,
+} from './web/rpc'
 export {
 	useSignalDbCollectionState,
 	useSignalDbCollectionsState,

@@ -5,7 +5,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import type { ObjectSchema } from 'valibot'
 import { AutoForm, useAutoFormCtx } from 'valibot-form/web'
 import { useNotify } from '../../hooks'
-import { useRuntimeTransportClient } from '../../../runtime'
+import { patchPluginConfig, useRuntimeTransportClient, type ConfigResult } from '../../../runtime'
 import { PLUGIN_DETAIL_HOTKEYS } from '../../workbench/shortcuts'
 import { FormToc } from './components/FormToc'
 import { makeFieldAnchorPrefix, makeSectionAnchorPrefix } from './configAnchors'
@@ -48,22 +48,6 @@ function deepEqual(a: unknown, b: unknown): boolean {
 	}
 	return false
 }
-
-type SaveConfigFailure = {
-	ok: false
-	code?: string
-	message?: string
-	errors?: Record<string, Record<string, Array<{ message: string; path: string[] }>>>
-}
-
-type SaveConfigSuccess = {
-	ok: true
-	config?: Record<string, unknown>
-	defaults?: Record<string, unknown>
-	saved?: boolean
-}
-
-type SaveConfigResult = SaveConfigFailure | SaveConfigSuccess
 
 export function ConfigTabContent({
 	pluginName,
@@ -120,9 +104,9 @@ export function ConfigTabContent({
 			formOptions({
 				defaultValues: initialValue,
 				onSubmit: async ({ value, formApi }) => {
-					const result = (await (transport as any).withRpc((rpc: any) =>
-						rpc.plugin(pluginName).saveConfig({ [tabKey]: value }),
-					)) as SaveConfigResult
+					const result = (await transport.withRpc((rpc) =>
+						patchPluginConfig(rpc, pluginName, { [tabKey]: value }),
+					)) as ConfigResult
 					if (result.ok === false) {
 						if (result.code === 'validation_failed' && result.errors) {
 							const fieldErrors = result.errors[tabKey]

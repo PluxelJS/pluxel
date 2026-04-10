@@ -25,7 +25,7 @@ export type {
 } from './plugin-ui/signaldb-contracts'
 export type {
 	PackageBatchResult,
-	BaseProvisionInfo,
+	BaseProviderInfo,
 	ExtensionSessionCommitInput,
 	ExtensionSessionDraftSyncInput,
 	ExtensionSessionHandleApi,

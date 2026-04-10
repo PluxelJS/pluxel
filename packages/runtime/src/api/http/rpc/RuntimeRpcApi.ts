@@ -1,18 +1,21 @@
 // rpc/RuntimeRpcApi.ts - 主 RPC API
 import type { Context } from '@pluxel/core'
+import { errors } from '@pluxel/ops'
 import { RpcTarget } from 'capnweb'
 import type { ExtensionUiRpcMap } from '../../../services'
+import {
+	dispatchRuntimeCommand,
+	ensureRuntimeOpsRegistered,
+	getRuntimeOps,
+	invokeRuntimeOp,
+} from '../../ops'
 import { writeGroups } from '../../features/groups/service'
-import { applyStatusActions } from '../../usecases/pluginStatus'
 import { ExtensionSessionHandle } from './ExtensionSessionHandle'
 import { LoggingHandle } from './LoggingHandle'
 import { PackageHandle } from './PackageHandle'
-import { PluginHandle } from './PluginHandle'
 import type {
 	PluginGroup,
 	PluginGroupInput,
-	PluginStatusBatchAction,
-	PluginStatusBatchResult,
 } from '../../../web/protocol'
 
 export class RuntimeRpcApi extends RpcTarget {
@@ -22,15 +25,12 @@ export class RuntimeRpcApi extends RpcTarget {
 	constructor(ctx: Context) {
 		super()
 		this.ctx = ctx
+		ensureRuntimeOpsRegistered(ctx)
 		this.extView = ctx.ext.rpc.createExtensionsView(ctx)
 	}
 
 	ping() {
 		return 'hmr-rpc:ok'
-	}
-
-	plugin(name: string) {
-		return new PluginHandle(this.ctx, name)
 	}
 
 	/** 包管理操作 */
@@ -70,8 +70,23 @@ export class RuntimeRpcApi extends RpcTarget {
 		}
 	}
 
-	updatePluginStatuses(actions: PluginStatusBatchAction[]): Promise<PluginStatusBatchResult> {
-		return applyStatusActions(this.ctx, actions ?? [])
+	opsList() {
+		return getRuntimeOps(this.ctx)
+	}
+
+	async opsInvoke(id: string, input?: unknown): Promise<unknown> {
+		const descriptor = this.ctx.ext.ops.getDescriptor(id)
+		if (descriptor && descriptor.exposure.rpc !== true) {
+			throw new errors.OpError('E_FORBIDDEN', 'Operation not exposed over RPC', {
+				details: { node: id, reason: 'rpc_not_exposed' },
+				message: `Operation "${id}" is not exposed over RPC`,
+			})
+		}
+		return await invokeRuntimeOp(this.ctx, id, input, 'rpc')
+	}
+
+	async opsDispatch(command: string): Promise<unknown> {
+		return await dispatchRuntimeCommand(this.ctx, command, 'rpc')
 	}
 
 	async updatePluginGroups(groups: PluginGroupInput[]): Promise<PluginGroup[]> {

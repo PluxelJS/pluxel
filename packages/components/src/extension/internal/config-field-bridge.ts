@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useGlobalExtensionContext } from '@pluxel/runtime/web'
 import { usePluginConfig } from '../../app/hooks/usePluginConfig'
+import { patchPluginConfigField } from '../../runtime'
 
 export function readString(value: unknown): string | undefined {
 	return typeof value === 'string' && value.trim() ? value.trim() : undefined
@@ -104,15 +105,19 @@ export function useConfigFieldBridge(input: {
 
 			setSaving(true)
 			try {
-				const result: any = await transport.withRpc((rpc: any) =>
-					rpc.plugin(targetPlugin).saveConfigField({
+				const result = await transport.withRpc((rpc) =>
+					patchPluginConfigField(rpc, {
+						name: targetPlugin,
 						schemaKey,
 						fieldPath,
 						value,
 					}),
 				)
-				if (!result || result.ok === false) {
-					throw new Error(result?.message ?? result?.code ?? 'save_config_failed')
+				if (!result) {
+					throw new Error('save_config_failed')
+				}
+				if (result.ok === false) {
+					throw new Error(result.message ?? result.code ?? 'save_config_failed')
 				}
 				const nextSavedConfig =
 					result && result.ok === true && result.config && typeof result.config === 'object'

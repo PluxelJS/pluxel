@@ -240,23 +240,25 @@ export const PluginCatalog: React.FC<PluginCatalogProps> = ({ pluginName }) => {
 		pendingCommitRef.current = null
 		const task = transport
 			.withRpc((rpc) => rpc.updatePluginGroups(pending))
-			.then((result) => {
-				const nextGroups = Array.isArray(result) ? result : pending
-				lastSyncedRef.current = cloneGroups(nextGroups)
-				setDraftGroups(null)
-				setPluginOverviewGroups(nextGroups)
-				invalidate({ topic: 'plugin-groups', reason: 'rpc' })
-				return nextGroups
-			})
-			.catch((error: any) => {
-				const message = error?.message ?? '分组同步失败，请稍后重试。'
-				notify({ title: '同步失败', message, color: 'red' })
-				const rollback = cloneGroups(lastSyncedRef.current)
-				setDraftGroups(rollback)
-				setPluginOverviewGroups(rollback)
-				setOrganizerResetToken((n) => n + 1)
-				return undefined
-			})
+				.then((result): undefined => {
+					const nextGroups = Array.isArray(result) ? result : pending
+					lastSyncedRef.current = cloneGroups(nextGroups)
+					setDraftGroups(null)
+					setPluginOverviewGroups(nextGroups)
+					invalidate({ topic: 'plugin-groups', reason: 'rpc' })
+					return undefined
+				})
+				.catch((error: unknown): void => {
+					const message =
+						error && typeof error === 'object' && 'message' in error
+							? String((error as { message?: unknown }).message ?? '分组同步失败，请稍后重试。')
+							: '分组同步失败，请稍后重试。'
+					notify({ title: '同步失败', message, color: 'red' })
+					const rollback = cloneGroups(lastSyncedRef.current)
+					setDraftGroups(rollback)
+					setPluginOverviewGroups(rollback)
+					setOrganizerResetToken((n) => n + 1)
+				})
 			.finally(() => {
 				inflightCommitRef.current = null
 				if (queuedCommitRef.current || pendingCommitRef.current) {

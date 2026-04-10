@@ -51,7 +51,7 @@ export async function collectConfigDefaults(
 		for (const [key, schema] of entries) {
 			jobs.push(
 				(async () => {
-					const first = await safeParseStandardSchema(schema)
+					const first = await safeParseStandardSchema(schema, undefined)
 					if (first.success) return [key, first.output]
 					if (missingObjectDefault !== undefined) {
 						const second = await safeParseStandardSchema(schema, missingObjectDefault)
@@ -155,7 +155,7 @@ export async function normalizeConfigRecord(
 				if (cur !== undefined) {
 					return { key, cur, result: await safeParseStandardSchema(schema, cur) }
 				}
-				const first = await safeParseStandardSchema(schema)
+				const first = await safeParseStandardSchema(schema, undefined)
 				if (first.success) return { key, cur, result: first }
 				if (missingObjectDefault !== undefined) {
 					return { key, cur, result: await safeParseStandardSchema(schema, missingObjectDefault) }

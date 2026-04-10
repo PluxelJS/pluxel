@@ -34,6 +34,6 @@ export class PackageHandle extends RpcTarget {
 
 	/** 读取加载问题列表 */
 	loadIssues(): Promise<PackageLoadIssue[]> {
-		return listLoadIssues(this.ctx)
+		return Promise.resolve(listLoadIssues(this.ctx))
 	}
 }

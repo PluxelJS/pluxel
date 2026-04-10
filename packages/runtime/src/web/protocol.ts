@@ -5,6 +5,8 @@
  * `@pluxel/runtime/web/ui` can stay the single plugin-UI-facing type surface.
  */
 
+import type { OpPublicDescriptor } from '@pluxel/ops'
+
 /**
  * UI extensibility surface.
  *
@@ -141,6 +143,8 @@ export type PluginStatusBatchResult = {
 	commitError?: string
 }
 
+export type RuntimeOpDescriptor = OpPublicDescriptor
+
 export type PluginStatusEntryLifecycleStage = 'running' | 'stopped' | 'disabled'
 
 export type PluginDependencyKind = 'plugin' | 'base' | 'forkable'
@@ -162,6 +166,10 @@ export type PluginDependencyOption = {
 	name: string
 	isRunning: boolean
 	isEnabled: boolean
+}
+
+export type PluginDependencyRef = {
+	name?: string
 }
 
 export type PluginDependencyState = {
@@ -188,7 +196,7 @@ export type EnsureForkResult = {
 	error?: string
 }
 
-export type BaseProvisionInfo = {
+export type BaseProviderInfo = {
 	baseToken: string
 	currentDefault: string | null
 	isDefault: boolean
@@ -277,33 +285,6 @@ export interface PackageHandleApi {
 	loadIssues: () => Promise<PackageLoadIssue[]>
 }
 
-export interface PluginHandleApi {
-	name: string
-	detail: () => unknown
-	updateStatus: (action: PluginStatusAction) => Promise<PluginStatusMutationResult>
-	dependencyState: () => Promise<PluginDependencyState[]>
-	setDependencyTarget: (
-		index: number,
-		targetName: string | null,
-	) => Promise<PluginDependencyMutationResult>
-	setBaseProvider: (
-		baseToken: string,
-		providerName: string | null,
-	) => Promise<PluginDependencyMutationResult>
-	ensureFork: (
-		baseName: string,
-		forkId: string,
-		options?: { enable?: boolean },
-	) => Promise<EnsureForkResult>
-	baseProvision: () => Promise<BaseProvisionInfo | null>
-	schema: () => Promise<SchemaResult>
-	config: () => Promise<ConfigResultOk>
-	validateConfig: (patch: ConfigPatch) => Promise<ConfigResult>
-	saveConfig: (patch: ConfigPatch) => Promise<ConfigResult>
-	saveConfigField: (input: ConfigFieldMutation) => Promise<ConfigResult>
-	resetConfig: (keys?: string[]) => Promise<ConfigResult>
-}
-
 export interface BuildSnapshotResult {
 	ok: boolean
 	path?: string
@@ -335,14 +316,15 @@ export type LoggingHandleApi = {
 
 type RuntimeRpcApiContract<ExtRpc = Record<string, unknown>> = {
 	ping: () => string
-	plugin: (name: string) => PluginHandleApi
 	package: () => PackageHandleApi
 	logging: () => LoggingHandleApi
 	ui: () => ExtensionSessionHandleApi
 	ext: ExtRpc
 	extensions: () => string[]
 	buildSnapshot: () => Promise<BuildSnapshotResult>
-	updatePluginStatuses: (actions: PluginStatusBatchAction[]) => Promise<PluginStatusBatchResult>
+	opsList: () => RuntimeOpDescriptor[]
+	opsInvoke: (id: string, input?: unknown) => Promise<unknown>
+	opsDispatch: (command: string) => Promise<unknown>
 	updatePluginGroups: (groups: PluginGroupInput[]) => Promise<PluginGroup[]>
 }
 
