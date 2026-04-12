@@ -98,7 +98,8 @@ export async function buildStartPlan(
 			if (detailVisited.has(name)) continue
 			detailVisited.add(name)
 			try {
-				const deps = (await listPluginDependencies(rpc, name))
+				const dependencies = await listPluginDependencies(rpc, name)
+				const deps = dependencies
 					.map((d) => (typeof d?.name === 'string' ? d.name.trim() : ''))
 					.filter(Boolean)
 				depMap.set(name, deps)

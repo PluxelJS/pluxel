@@ -4,8 +4,8 @@
 
 import { BasePlugin, Plugin } from '@pluxel/runtime'
 
-declare module '@pluxel/core' {
-	interface Events {
+declare module '@pluxel/runtime' {
+	interface RuntimeEvents {
 		'pluxel:demo:bus:tick': [payload: { from: string; seq: number; at: number }]
 	}
 }

@@ -1,9 +1,10 @@
-import type {
-	BaseProviderInfo,
-	PluginDependencyState,
-	RuntimeTransportClient,
+import {
+	inspectPluginBaseProvider,
+	inspectPluginDependencies,
+	type BaseProviderInfo,
+	type PluginDependencyState,
+	type RuntimeTransportClient,
 } from '../../../runtime'
-import { inspectPluginBaseProvider, inspectPluginDependencies } from '../../../runtime'
 
 type CacheEntry<T> = {
 	at: number

@@ -26,10 +26,8 @@ export interface PluxelRuntimeEventMap {
 	'runtime:resolverCacheInvalidated': [detail?: ResolverCacheInvalidationDetail]
 }
 
-declare module '@pluxel/runtime' {
-	export interface RuntimeEvents extends PluxelRuntimeEventMap {}
-}
+export interface RuntimeEvents extends PluxelRuntimeEventMap {}
 
 declare module '@pluxel/core' {
-	interface Events extends PluxelRuntimeEventMap {}
+	interface Events extends RuntimeEvents {}
 }

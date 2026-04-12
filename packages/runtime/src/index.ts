@@ -13,6 +13,8 @@ import './runtime/register'
 
 setPluxelRuntime('core')
 
+export type { RuntimeEvents, ResolverCacheInvalidationDetail } from './events'
+
 export {
 	BaseFeature,
 	BasePlugin,

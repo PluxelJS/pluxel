@@ -2,7 +2,7 @@
  * Runtime transport protocol types (client/server shared).
  *
  * Keep protocol contracts and UI extension augmentation in one place so
- * `@pluxel/runtime/web/ui` can stay the single plugin-UI-facing type surface.
+ * `@pluxel/runtime/web` can stay the canonical browser-facing type surface.
  */
 
 import type { OpPublicDescriptor } from '@pluxel/ops'
@@ -11,7 +11,7 @@ import type { OpPublicDescriptor } from '@pluxel/ops'
  * UI extensibility surface.
  *
  * @example
- * declare module '@pluxel/runtime/web/ui' {
+ * declare module '@pluxel/runtime/web' {
  *   interface ExtensionUiRpcMap {
  *     MyPlugin: MyPluginRpc
  *   }

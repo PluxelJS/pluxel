@@ -39,8 +39,8 @@ function useRpcError() {
 		try {
 			await action()
 			setError(null)
-		} catch (error) {
-			setError(rpcErrorMessage(error, fallbackMessage))
+		} catch (caught) {
+			setError(rpcErrorMessage(caught, fallbackMessage))
 		}
 	}
 

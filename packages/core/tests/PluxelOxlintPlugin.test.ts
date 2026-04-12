@@ -702,6 +702,89 @@ runRule(
 	},
 )
 
+runRule('runtime-type-augmentations', pluxelRules['runtime-type-augmentations'], {
+	valid: [
+		{
+			code: `
+				class PluginA extends BasePlugin {
+					override init() {
+						this.ctx.ext.rpc.expose(() => new PluginARpc())
+						this.ctx.ext.sse.expose(() => null)
+						this.ctx.ext.signaldb.collection({ name: 'events' })
+					}
+				}
+
+				declare module '@pluxel/runtime/web' {
+					interface ExtensionUiRpcMap {
+						PluginA: PluginARpc
+					}
+					interface ExtensionUiSseMap {
+						PluginA: { type: 'ready' }
+					}
+					interface ExtensionUiSignalDbMap {
+						PluginA: {
+							events: { id: string }
+						}
+					}
+				}
+			`,
+		},
+		{
+			code: `
+				class PluginA extends BasePlugin {
+					override init() {
+						this.ctx.ext.rpc.expose(() => new PluginARpc())
+						this.ctx.ext.sse.expose(() => null)
+						this.ctx.ext.signaldb.collection({ name: 'events' })
+					}
+				}
+
+				import { PluginARpc, type PluginACollections } from './PluginA.shared'
+			`,
+		},
+		{
+			code: `
+				import './PluginA.contract'
+
+				class PluginA extends BasePlugin {
+					override init() {
+						this.ctx.ext.rpc.expose(() => new PluginARpc())
+					}
+				}
+			`,
+		},
+	],
+	invalid: [
+		{
+			code: `
+				class PluginA extends BasePlugin {
+					override init() {
+						this.ctx.ext.rpc.expose(() => new PluginARpc())
+						this.ctx.ext.sse.expose(() => null)
+						this.ctx.ext.signaldb.collection({ name: 'events' })
+					}
+				}
+			`,
+			errors: [
+				{ messageId: 'webRpc' },
+				{ messageId: 'webSse' },
+				{ messageId: 'webSignalDb' },
+			],
+		},
+		{
+			code: `
+				class PluginA extends BasePlugin {
+					override init() {
+						pluginUi.bind(this.ctx)
+						this.ctx.ext.signaldb.collection({ name: 'events' })
+					}
+				}
+			`,
+			errors: [{ messageId: 'webSignalDb' }],
+		},
+	],
+})
+
 describe('pluxel correctness helpers', () => {
 	it('keeps build enforcement sourced from the correctness rule set', () => {
 		expect(Object.keys(pluxelRulePolicy).sort()).toEqual(Object.keys(pluxelRules).sort())

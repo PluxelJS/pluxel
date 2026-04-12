@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, it } from 'vitest'
 
 import * as PublicWeb from '@pluxel/runtime/web'
 import * as InternalWeb from '../../src/web'

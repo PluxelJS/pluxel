@@ -139,7 +139,8 @@ HMR 并不单独定义最终发布语义。正式构建时还会配合：
 - `ui(...).bind(ctx)` 继续作为唯一的插件 UI authoring bridge
 - `ctx.ext.ui.remote.packaged()` 继续作为唯一的 runtime packaged 注册语义
 - Paraglide 继续使用 `project.inlang` + `messages/` -> `src/paraglide/`
-- 插件 UI 浏览器 contract 继续收口到 `@pluxel/runtime/web/ui`
+- 插件 UI 浏览器 runtime/MF shared import 继续收口到 `@pluxel/runtime/web/ui`
+- 插件 UI 类型增强统一声明到 `@pluxel/runtime/web`
 
 ## 公开面
 

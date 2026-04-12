@@ -33,6 +33,7 @@ export {
 	pluxelRules,
 } from './plugin.ts'
 export { configsRules } from './rules/configs.ts'
+export { augmentationsRules } from './rules/augmentations.ts'
 export { pluxelOxlintIgnorePatterns } from './config.ts'
 export { importsRules } from './rules/imports.ts'
 export { loggingRules } from './rules/logging.ts'

@@ -295,19 +295,15 @@ class EffectsImpl implements Effects, EffectGuardHost {
 		try {
 			return await fn(tx)
 		} catch (error) {
-			let rollbackError: unknown
 			try {
 				await this.rollback(checkpoints)
-			} catch (e) {
-				rollbackError = e
-			}
-			if (rollbackError) {
-				// oxlint-disable-next-line eslint/preserve-caught-error -- AggregateError already preserves both failures explicitly.
-				throw new AggregateError(
+			} catch (rollbackError) {
+				const aggregate = new AggregateError(
 					[error, rollbackError],
 					'Effects transaction failed (rollback errors)',
-					{ cause: error },
+					{ cause: rollbackError },
 				)
+				throw aggregate
 			}
 			throw error
 		} finally {

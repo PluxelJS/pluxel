@@ -7,6 +7,7 @@ import { BasePlugin, Plugin } from '@pluxel/runtime'
 import { ui } from '@pluxel/hmr/plugin'
 import { RpcTarget } from '@pluxel/runtime/capnweb'
 import type { SseChannel } from '@pluxel/runtime/services'
+import type { ExtensionUiRpcMap as _ExtensionUiRpcMap } from '@pluxel/runtime/web'
 
 // Shared server-side data model exposed to the UI.
 type PluginWithUIStatusDoc = PluginWithUIStatus & { id: 'status' }
@@ -251,7 +252,7 @@ export class PluginWithUIRpc extends RpcTarget {
 	}
 }
 
-declare module '@pluxel/runtime/web/ui' {
+declare module '@pluxel/runtime/web' {
 	interface ExtensionUiRpcMap {
 		PluginWithUI: PluginWithUIRpc
 	}

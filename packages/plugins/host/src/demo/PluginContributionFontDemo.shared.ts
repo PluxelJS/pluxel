@@ -1,5 +1,6 @@
 import { f, v } from '@pluxel/runtime/config'
 import { defineInteractionContract } from '@pluxel/runtime/web/extensions'
+import type { ExtensionUiSignalDbMap as _ExtensionUiSignalDbMap } from '@pluxel/runtime/web'
 
 export const FONT_MANAGER_PLUGIN_NAME = 'PluginContributionFontManager' as const
 export const FONT_KIND = 'font-set' as const
@@ -142,7 +143,7 @@ function readString(value: Record<string, unknown>, key: string) {
 	return typeof raw === 'string' ? raw.trim() : ''
 }
 
-declare module '@pluxel/runtime/web/ui' {
+declare module '@pluxel/runtime/web' {
 	interface ExtensionUiSignalDbMap {
 		PluginContributionFontManager: {
 			fontSets: FontSetDoc

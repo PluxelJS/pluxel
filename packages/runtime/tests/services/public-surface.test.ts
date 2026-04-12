@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, it } from 'vitest'
 
 import * as PublicServices from '@pluxel/runtime/services'
 import * as InternalServices from '../../src/services'

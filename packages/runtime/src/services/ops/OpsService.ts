@@ -8,8 +8,7 @@ import {
 	type OpResult,
 	type ToolDef,
 } from '@pluxel/ops'
-import type { Context as PluxelContext } from '@pluxel/core'
-import { Injectable } from '@pluxel/core'
+import { Injectable, type Context as PluxelContext } from '@pluxel/core'
 
 import type { RuntimeOpToolsetManifest } from '../../web/protocol'
 import {

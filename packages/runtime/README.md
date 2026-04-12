@@ -163,6 +163,8 @@ SignalDB 的 React 响应性现在走官方链路：
 - 插件 UI 不应直接 import `@signaldb/maverickjs`
 - 插件 UI 不应直接 import `@maverick-js/signals`
 - MF shared contract 也不单独共享这些包；只共享 `@pluxel/runtime/web/ui`
+- 插件 UI 类型增强统一写到 `declare module '@pluxel/runtime/web'`；
+  `@pluxel/runtime/web/ui` 只作为浏览器 UI runtime/MF shared import 入口
 
 `rpc` / `sse` / `notify` / `confirm` / `colorScheme` / `locale` / `formatDate()` / `formatNumber()` 都直接从 `plugin.use()` / `plugin.useGlobal()` 返回的 `app` 对象上拿；底层传输细节统一走 `transport`，SignalDB 统一走 `app.db`。
 
@@ -252,7 +254,7 @@ runtime 本身不启动 Vite。开发期统一通过 `@pluxel/hmr` 接入：
 - `@pluxel/runtime/services`
   runtime services 导出
 - `@pluxel/runtime/web`
-  浏览器协议与 SDK
+  浏览器协议与 SDK；插件 UI 类型增强统一声明到这里
 - `@pluxel/runtime/web/ui`
   插件 UI contract / client helpers / SignalDB hooks
 - `@pluxel/runtime/web/extensions`

@@ -120,6 +120,7 @@ const highSignalRules: RuleMap = {
 const rules: RuleMap = {
 	...baselineRules,
 	...(prefixPluxelRuleSet(pluxelRules) as RuleMap),
+	'pluxel/runtime-type-augmentations': 'warn',
 	...highSignalRules,
 }
 

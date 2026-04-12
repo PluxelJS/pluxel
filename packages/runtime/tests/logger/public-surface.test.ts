@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, it } from 'vitest'
 
 import * as PublicLogger from '@pluxel/runtime/logger'
 import * as InternalLogger from '../../src/logger'

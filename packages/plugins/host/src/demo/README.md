@@ -79,10 +79,12 @@
 - `@pluxel/hmr/plugin` 只用 named import：`import { ui, worker } from '@pluxel/hmr/plugin'`
 - 自定义 UI 插件主类保留 `const pluginUi = ui('./ui/index.tsx')` + `pluginUi.bind(this.ctx)`
 - 生命周期清理统一绑到 `this.ctx.effects`
+- 后端事件类型增强统一声明到 `@pluxel/runtime`
 
 ## 浏览器侧作者约定
 
 - 浏览器侧统一从 `@pluxel/runtime/web/ui` 导入
+- 浏览器侧类型增强统一声明到 `@pluxel/runtime/web`
 - UI 模块统一用 `definePluginUIModule(...)`
 - `const plugin = pluginUi('MyPlugin')`
 - 默认入口用 `plugin.use()`；`plugin.useGlobal()` 只留给全局扩展点
