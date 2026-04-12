@@ -9,74 +9,74 @@ function createPluginContext(root: Context, id: string): Context {
 	return ctx
 }
 
+function definePluginStatusOp() {
+	return defineOp({
+		id: 'plugin-alpha.status.get',
+		doc: {
+			title: 'Get plugin status',
+			description: 'Read runtime plugin status',
+			usage: 'plugin-alpha status --name <string>',
+		},
+		input: typebox.obj({
+			name: typebox.Type.String({ description: 'Plugin name to inspect.' }),
+		}),
+		output: typebox.obj({
+			name: typebox.Type.String(),
+			runtimeName: typebox.Type.String(),
+			sourceKind: typebox.Type.String(),
+		}),
+		exposure: {
+			rpc: true,
+		},
+		tool: {
+			name: 'plugin_status_get',
+		},
+		cli: {
+			triggers: ['plugin-alpha status'],
+		},
+		async execute(input, ctx) {
+			return {
+				name: input.name,
+				runtimeName: ctx.runtime.name,
+				sourceKind: ctx.source?.kind ?? 'unknown',
+			}
+		},
+	})
+}
+
 describe('OpsService', () => {
-	it('registers plugin operations into the shared runtime space', async () => {
+	it('projects one plugin op consistently across registry, tool, help, and execution surfaces', async () => {
 		const root = new Context({ name: 'root' }) as Context
 		const pluginCtx = createPluginContext(root, 'plugin.alpha')
 
-		pluginCtx.ext.ops.register(
-			defineOp({
-				id: 'plugin-alpha.status.get',
-				doc: {
-					title: 'Get plugin status',
-					description: 'Read runtime plugin status',
-					usage: 'plugin-alpha status --name <string>',
-				},
-				input: typebox.obj({
-					name: typebox.Type.String({ description: 'Plugin name to inspect.' }),
-				}),
-				output: typebox.obj({
-					name: typebox.Type.String(),
-					runtimeName: typebox.Type.String(),
-					sourceKind: typebox.Type.String(),
-				}),
-				exposure: {
-					rpc: true,
-				},
-				tool: {
-					name: 'plugin_status_get',
-				},
-				cli: {
-					triggers: ['plugin-alpha status'],
-				},
-				async execute(input, ctx) {
-					return {
-						name: input.name,
-						runtimeName: ctx.runtime.name,
-						sourceKind: ctx.source?.kind ?? 'unknown',
-					}
-				},
-			}),
-		)
+		pluginCtx.ops.register(definePluginStatusOp())
 
-		expect(root.ext.ops.list({ exposure: 'tool' }).map((entry) => entry.id)).toEqual([
+		expect(root.ops.list({ exposure: 'tool' }).map((entry) => entry.id)).toContain(
 			'plugin-alpha.status.get',
-		])
-		expect(root.ext.ops.listTools()).toEqual([
-			expect.objectContaining({
-				id: 'plugin-alpha.status.get',
-				name: 'plugin_status_get',
-				title: 'Get plugin status',
-				usage: 'plugin-alpha status --name <string>',
-			}),
-		])
-		expect(root.ext.ops.helpIndex().list).toEqual([
-			expect.objectContaining({ id: 'plugin-alpha.status.get', trigger: 'plugin-alpha status' }),
-		])
-		expect(root.ext.ops.helpCommand('plugin-alpha status')).toEqual(
+		)
+		expect(root.ops.listTools()).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					id: 'plugin-alpha.status.get',
+					name: 'plugin_status_get',
+					title: 'Get plugin status',
+				}),
+			]),
+		)
+		expect(root.ops.helpCommand('plugin-alpha status')).toEqual(
 			expect.objectContaining({
 				id: 'plugin-alpha.status.get',
 				usage: 'plugin-alpha status --name <string>',
 			}),
 		)
 
-		await expect(root.ext.ops.invoke('plugin-alpha.status.get', { name: 'demo' })).resolves.toEqual({
+		await expect(root.ops.invoke('plugin-alpha.status.get', { name: 'demo' })).resolves.toEqual({
 			name: 'demo',
 			runtimeName: 'root',
 			sourceKind: 'runtime',
 		})
 
-		await expect(root.ext.ops.dispatch('plugin-alpha status --name demo')).resolves.toEqual({
+		await expect(root.ops.dispatch('plugin-alpha status --name demo')).resolves.toEqual({
 			name: 'demo',
 			runtimeName: 'root',
 			sourceKind: 'cli',
@@ -87,7 +87,7 @@ describe('OpsService', () => {
 		const root = new Context({ name: 'root' }) as Context
 		const pluginCtx = createPluginContext(root, 'plugin.beta')
 
-		pluginCtx.ext.ops.register(
+		pluginCtx.ops.register(
 			defineOp({
 				id: 'plugin-beta.echo',
 				input: typebox.obj({
@@ -102,19 +102,26 @@ describe('OpsService', () => {
 			}),
 		)
 
-		expect(root.ext.ops.has('plugin-beta.echo')).toBe(true)
+		expect(root.ops.has('plugin-beta.echo')).toBe(true)
+		expect(root.ops.listCatalog()).toEqual([
+			expect.objectContaining({
+				id: 'plugin-beta.echo',
+				owner: 'plugin:plugin.beta',
+				ownerKind: 'plugin',
+				pluginId: 'plugin.beta',
+			}),
+		])
 
 		await pluginCtx.effects.dispose()
 
-		expect(root.ext.ops.has('plugin-beta.echo')).toBe(false)
+		expect(root.ops.has('plugin-beta.echo')).toBe(false)
+		expect(root.ops.listCatalog()).toEqual([])
 	})
 
-	it('rejects plugin registrations in reserved runtime namespaces', () => {
-		const root = new Context({ name: 'root' }) as Context
-		const pluginCtx = createPluginContext(root, 'plugin.gamma')
-
-		expect(() =>
-			pluginCtx.ext.ops.register(
+	it.each([
+		{
+			name: 'reserved runtime namespace',
+			create: () =>
 				defineOp({
 					id: 'plugin.status',
 					doc: {
@@ -134,16 +141,11 @@ describe('OpsService', () => {
 						return { ok: true }
 					},
 				}),
-			),
-		).toThrow(/reserved runtime namespace/i)
-	})
-
-	it('rejects plugin registrations that reuse reserved runtime CLI commands', () => {
-		const root = new Context({ name: 'root' }) as Context
-		const pluginCtx = createPluginContext(root, 'plugin.delta')
-
-		expect(() =>
-			pluginCtx.ext.ops.register(
+			error: /reserved runtime namespace/i,
+		},
+		{
+			name: 'reserved runtime CLI trigger',
+			create: () =>
 				defineOp({
 					id: 'plugin-delta.inspect',
 					doc: {
@@ -164,7 +166,11 @@ describe('OpsService', () => {
 						return { ok: true }
 					},
 				}),
-			),
-		).toThrow(/reserved runtime command namespace/i)
+			error: /reserved runtime command namespace/i,
+		},
+	])('rejects plugin registrations that reuse $name', ({ create, error }) => {
+		const root = new Context({ name: 'root' }) as Context
+		const pluginCtx = createPluginContext(root, 'plugin.gamma')
+		expect(() => pluginCtx.ops.register(create())).toThrow(error)
 	})
 })

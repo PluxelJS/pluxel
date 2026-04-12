@@ -54,7 +54,7 @@ ops.register(
 
 ## Execution model
 
-- `ctx.ext.ops.invoke(...)`, CLI dispatch, and tool protocol adapters all execute the same op.
+- `ctx.ops.invoke(...)`, CLI dispatch, and tool protocol adapters all execute the same op.
 - Validation stays on the canonical op boundary.
 - Tool-facing help is compiled from `doc` and input schema descriptions; adapters should not invent a second help model.
 

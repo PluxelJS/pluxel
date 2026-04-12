@@ -1,6 +1,14 @@
 import { newHttpBatchRpcSession, type RpcStub } from 'capnweb'
 import { HMR_INTERNAL_API_BASE } from './paths'
-import type { ExtensionUiRpcMap, RuntimeOpDescriptor, RuntimeRpcApi } from './protocol'
+import type {
+	ExtensionUiRpcMap,
+	OpsToolset,
+	OpsToolsetInput,
+	RuntimeOpCatalogEntry,
+	RuntimeOpDescriptor,
+	RuntimeRpcApi,
+	RuntimeOpToolsetManifest,
+} from './protocol'
 
 export type RuntimeRpcStub = RpcStub<RuntimeRpcApi>
 
@@ -105,6 +113,32 @@ export async function listRuntimeOps(
 	options?: { rpcBase?: string; timeoutMs?: number; credentials?: RequestCredentials },
 ): Promise<RuntimeOpDescriptor[]> {
 	return await invokeRpc((rpc) => Promise.resolve(rpc.opsList()), options)
+}
+
+export async function listRuntimeOpCatalog(
+	options?: { rpcBase?: string; timeoutMs?: number; credentials?: RequestCredentials },
+): Promise<RuntimeOpCatalogEntry[]> {
+	return await invokeRpc((rpc) => Promise.resolve(rpc.opsCatalog()), options)
+}
+
+export async function listRuntimeOpsToolsets(
+	options?: { rpcBase?: string; timeoutMs?: number; credentials?: RequestCredentials },
+): Promise<OpsToolset[]> {
+	return await invokeRpc((rpc) => Promise.resolve(rpc.opsToolsets()), options)
+}
+
+export async function resolveRuntimeOpsToolset(
+	toolsetId: string,
+	options?: { rpcBase?: string; timeoutMs?: number; credentials?: RequestCredentials },
+): Promise<RuntimeOpToolsetManifest | null> {
+	return await invokeRpc((rpc) => Promise.resolve(rpc.resolveOpsToolset(toolsetId)), options)
+}
+
+export async function updateRuntimeOpsToolsets(
+	toolsets: OpsToolsetInput[],
+	options?: { rpcBase?: string; timeoutMs?: number; credentials?: RequestCredentials },
+): Promise<OpsToolset[]> {
+	return await invokeRpc((rpc) => rpc.updateOpsToolsets(toolsets), options)
 }
 
 export async function invokeRuntimeOp<T = unknown>(

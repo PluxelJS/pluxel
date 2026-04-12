@@ -2,15 +2,19 @@ import type { LogRecord } from '@logtape/logtape'
 import { createPluxelPrettyFormatter } from '@pluxel/core/logger'
 import { describe, expect, it } from 'vitest'
 
+function createFormatter() {
+	return createPluxelPrettyFormatter({
+		colors: false,
+		icons: false,
+		includeCaller: false,
+		prefix: 'context',
+		timestamp: () => 'T',
+	})
+}
+
 describe('createPluxelPrettyFormatter (hmr)', () => {
 	it('renders "HMR updated" as a readable text block (no ⟪k=v⟫ spam)', () => {
-		const formatter = createPluxelPrettyFormatter({
-			colors: false,
-			icons: false,
-			includeCaller: false,
-			prefix: 'context',
-			timestamp: () => 'T',
-		})
+		const formatter = createFormatter()
 
 		const record: LogRecord = {
 			category: ['pluxel', 'hmr'],
@@ -50,13 +54,7 @@ describe('createPluxelPrettyFormatter (hmr)', () => {
 	})
 
 	it('renders failed "HMR updated" with status and commit error', () => {
-		const formatter = createPluxelPrettyFormatter({
-			colors: false,
-			icons: false,
-			includeCaller: false,
-			prefix: 'context',
-			timestamp: () => 'T',
-		})
+		const formatter = createFormatter()
 
 		const record: LogRecord = {
 			category: ['pluxel', 'hmr'],
@@ -88,13 +86,7 @@ describe('createPluxelPrettyFormatter (hmr)', () => {
 	})
 
 	it('renders "HMR report" with a roots list (no ⟪k=v⟫ spam)', () => {
-		const formatter = createPluxelPrettyFormatter({
-			colors: false,
-			icons: false,
-			includeCaller: false,
-			prefix: 'context',
-			timestamp: () => 'T',
-		})
+		const formatter = createFormatter()
 
 		const record: LogRecord = {
 			category: ['pluxel', 'hmr'],
@@ -127,13 +119,7 @@ describe('createPluxelPrettyFormatter (hmr)', () => {
 	})
 
 	it('renders "HMR report" with monorepo-safe pluginStats (no misleading 0:0:0 roots)', () => {
-		const formatter = createPluxelPrettyFormatter({
-			colors: false,
-			icons: false,
-			includeCaller: false,
-			prefix: 'context',
-			timestamp: () => 'T',
-		})
+		const formatter = createFormatter()
 
 		const record: LogRecord = {
 			category: ['pluxel', 'hmr'],
@@ -173,13 +159,7 @@ describe('createPluxelPrettyFormatter (hmr)', () => {
 	})
 
 	it('renders "HMR warmup done" as a readable text block (no ⟪k=v⟫ spam)', () => {
-		const formatter = createPluxelPrettyFormatter({
-			colors: false,
-			icons: false,
-			includeCaller: false,
-			prefix: 'context',
-			timestamp: () => 'T',
-		})
+		const formatter = createFormatter()
 
 		const record: LogRecord = {
 			category: ['pluxel', 'hmr'],

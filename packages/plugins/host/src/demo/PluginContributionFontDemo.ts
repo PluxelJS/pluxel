@@ -4,118 +4,19 @@
 
 import { ui } from '@pluxel/hmr/plugin'
 import { BasePlugin, Plugin } from '@pluxel/runtime'
-import { f, v } from '@pluxel/runtime/config'
 import { doc } from '@pluxel/runtime/services'
-import { defineInteractionContract } from '@pluxel/runtime/web/extensions'
-
-// Shared resource model for the provider.
-type FontSetDoc = {
-	id: string
-	name: string
-	previewText: string
-	description: string
-}
-
-const FONT_SETS: readonly FontSetDoc[] = [
-	{
-		id: 'editorial-serif',
-		name: 'Editorial Serif',
-		previewText: 'The quick brown fox jumps over the lazy dog.',
-		description: '适合长文、说明文与强调阅读质感的插件。',
-	},
-	{
-		id: 'mono-grid',
-		name: 'Mono Grid',
-		previewText: '0123456789 ABC xyz',
-		description: '适合日志、终端、指标与结构化内容场景。',
-	},
-	{
-		id: 'neo-grotesk',
-		name: 'Neo Grotesk',
-		previewText: 'Design systems scale through constraints.',
-		description: '适合偏产品化、信息密度较高的插件页面。',
-	},
-] as const
+import {
+	ConsumerAppearanceConfig,
+	FONT_MANAGER_PLUGIN_NAME,
+	FONT_SETS,
+	FontPickerContract,
+	readFontRef,
+	toFontRef,
+	type FontPickerDraft,
+	type FontSetDoc,
+} from './PluginContributionFontDemo.shared'
 
 const fontContributionUi = ui('./PluginContributionFontDemo/ui/index.tsx')
-
-// Cross-plugin interaction contract.
-type FontPickerInput = {
-	current: {
-		provider: string
-		kind: string
-		id: string
-		label?: string
-	} | null
-}
-
-type FontPickerDraft = {
-	selectedId: string | null
-}
-
-type FontRef = NonNullable<FontPickerInput['current']>
-
-type FontPickerResult =
-	| {
-			type: 'set-font'
-			ref: FontRef
-	  }
-	| {
-			type: 'clear-font'
-	  }
-
-const FontPickerContract = defineInteractionContract<
-	FontPickerInput,
-	FontPickerDraft,
-	FontPickerResult
->({
-	id: 'pluxel.demo.font-picker',
-	version: 1,
-	label: 'Font Picker',
-	validateInput(value) {
-		const current = readFontRef((value as FontPickerInput | null | undefined)?.current)
-		return { current }
-	},
-	validateDraft(value) {
-		const selectedId = (value as FontPickerDraft | null | undefined)?.selectedId
-		return {
-			selectedId: typeof selectedId === 'string' && selectedId.trim() ? selectedId.trim() : null,
-		}
-	},
-	validateResult(value) {
-		if (value && typeof value === 'object' && (value as any).type === 'clear-font') {
-			return { type: 'clear-font' } satisfies FontPickerResult
-		}
-		const ref = readFontRef((value as { ref?: unknown } | null | undefined)?.ref)
-		if (!ref) throw new Error('Font picker result requires a valid ref')
-		return {
-			type: 'set-font',
-			ref: toFontRef(ref),
-		} satisfies FontPickerResult
-	},
-})
-
-const FontSetRefSchema = v.object({
-	provider: v.pipe(v.optional(v.string(), 'PluginContributionFontManager'), f.stringMeta({})),
-	kind: v.pipe(v.optional(v.string(), 'font-set'), f.stringMeta({})),
-	id: v.pipe(v.optional(v.string(), 'neo-grotesk'), f.stringMeta({})),
-	label: v.pipe(v.optional(v.string(), 'Neo Grotesk'), f.stringMeta({})),
-})
-
-const ConsumerAppearanceConfig = v.object({
-	fontSetRef: v.pipe(
-		v.optional(FontSetRefSchema, {
-			provider: 'PluginContributionFontManager',
-			kind: 'font-set',
-			id: 'neo-grotesk',
-			label: 'Neo Grotesk',
-		}),
-		f.formMeta({
-			label: '字体集引用',
-			description: '这个字段始终归 consumer 所有；provider 只提供 UI 和资源集合。',
-		}),
-	),
-})
 
 // Provider owns resources plus the session UI.
 @Plugin({ name: 'PluginContributionFontManager' })
@@ -187,7 +88,7 @@ export class PluginContributionFontConsumer extends BasePlugin {
 			point: 'plugin:tabs',
 			contract: FontPickerContract,
 			title: 'Typography',
-			providers: ['PluginContributionFontManager'],
+			providers: [FONT_MANAGER_PLUGIN_NAME],
 			input: () => ({
 				current: readFontRef(this.appearance.fontSetRef),
 			}),
@@ -207,41 +108,5 @@ export class PluginContributionFontConsumer extends BasePlugin {
 		this.ctx.logger.info('font consumer config', {
 			appearance: this.appearance,
 		})
-	}
-}
-
-// Keep config parsing explicit so the interaction payload stays stable.
-function readFontRef(value: unknown): FontPickerInput['current'] {
-	if (!value || typeof value !== 'object' || Array.isArray(value)) return null
-	const provider = typeof (value as any).provider === 'string' ? (value as any).provider.trim() : ''
-	const kind = typeof (value as any).kind === 'string' ? (value as any).kind.trim() : ''
-	const id = typeof (value as any).id === 'string' ? (value as any).id.trim() : ''
-	const label =
-		typeof (value as any).label === 'string' && (value as any).label.trim()
-			? (value as any).label.trim()
-			: undefined
-	if (!provider || !kind || !id) return null
-	return {
-		provider,
-		kind,
-		id,
-		...(label ? { label } : {}),
-	}
-}
-
-function toFontRef(ref: FontRef): FontRef {
-	return {
-		provider: ref.provider,
-		kind: 'font-set',
-		id: ref.id,
-		...(ref.label ? { label: ref.label } : {}),
-	}
-}
-
-declare module '@pluxel/runtime/web/ui' {
-	interface ExtensionUiSignalDbMap {
-		PluginContributionFontManager: {
-			fontSets: FontSetDoc
-		}
 	}
 }

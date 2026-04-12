@@ -144,6 +144,14 @@ export type PluginStatusBatchResult = {
 }
 
 export type RuntimeOpDescriptor = OpPublicDescriptor
+export type RuntimeOpCatalogOwnerKind = 'runtime' | 'plugin' | 'context'
+export type RuntimeOpCatalogEntry = {
+	id: string
+	owner: string
+	ownerKind: RuntimeOpCatalogOwnerKind
+	pluginId?: string
+	descriptor: RuntimeOpDescriptor
+}
 
 export type PluginStatusEntryLifecycleStage = 'running' | 'stopped' | 'disabled'
 
@@ -160,6 +168,39 @@ export type PluginGroup = {
 	groupId: string
 	name: string
 	pluginIds: string[]
+}
+
+export type OpsToolsetInput = {
+	toolsetId: string
+	name: string
+	description?: string
+	opIds: string[]
+}
+
+export type OpsToolset = {
+	__typename?: 'OpsToolset'
+	toolsetId: string
+	name: string
+	description?: string
+	opIds: string[]
+}
+
+export type RuntimeOpToolsetEntry = {
+	id: string
+	title: string
+	description?: string
+	tags: string[]
+	owner: string
+	ownerKind: RuntimeOpCatalogOwnerKind
+	pluginId?: string
+	mutating: boolean
+	confirm: boolean
+}
+
+export type RuntimeOpToolsetManifest = {
+	toolset: OpsToolset
+	tools: RuntimeOpToolsetEntry[]
+	missingOpIds: string[]
 }
 
 export type PluginDependencyOption = {
@@ -323,8 +364,12 @@ type RuntimeRpcApiContract<ExtRpc = Record<string, unknown>> = {
 	extensions: () => string[]
 	buildSnapshot: () => Promise<BuildSnapshotResult>
 	opsList: () => RuntimeOpDescriptor[]
+	opsCatalog: () => RuntimeOpCatalogEntry[]
+	opsToolsets: () => OpsToolset[]
+	resolveOpsToolset: (toolsetId: string) => RuntimeOpToolsetManifest | null
 	opsInvoke: (id: string, input?: unknown) => Promise<unknown>
 	opsDispatch: (command: string) => Promise<unknown>
+	updateOpsToolsets: (toolsets: OpsToolsetInput[]) => Promise<OpsToolset[]>
 	updatePluginGroups: (groups: PluginGroupInput[]) => Promise<PluginGroup[]>
 }
 

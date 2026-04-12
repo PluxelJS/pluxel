@@ -27,10 +27,11 @@ runtime 只消费两类前端输入：
 - `ExtensionService`
 - 浏览器宿主侧的 federation runtime
 
-## `ctx.ext`
+## Runtime Services
 
-- `this.ctx.ext.ops`
+- `this.ctx.ops`
   runtime control-plane 的唯一内核入口；插件、RPC、MCP、CLI 都应复用同一套 operation 定义与 descriptor，而不是各自维护一套 handler
+  `this.ctx.ops.toolsets.*` 承载 host-owned toolset 组织层；tool 只是 ops 的投影，不是另一套内核
 - `this.ctx.ext.rpc.expose(...)`
   暴露自定义 UI 的 RPC
 - `this.ctx.ext.sse.expose(...)`
@@ -76,7 +77,7 @@ runtime 只消费两类前端输入：
 - external tool name 统一走 lower-case dotted / kebab 风格；不要把 camelCase 暴露给 carrier
 - tool 帮助信息统一来自 op `doc` 和 input schema description；不要在 carrier 里再拼第二份文案
 - runtime canonical op namespace 视为 host contract，保留给 runtime 自己使用；插件自定义 op 应使用插件自有前缀，而不是复用 `plugin.*` / `plugins.*` / `runtime.*`
-- MCP tool surface 也是 `ctx.ext.ops` 的实时投影，不应退化成“启动时快照”
+- MCP tool surface 也是 `ctx.ops` 的实时投影，不应退化成“启动时快照”
 - `runtime.ops.list` 是 registry 里的唯一 meta-op；`opsInvoke()` / `opsDispatch()` 属于 RPC transport 本身，不再反向注册成泛调用 op
 
 当前 runtime core 已收敛到这一组 canonical runtime op ids：

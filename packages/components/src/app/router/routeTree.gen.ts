@@ -14,6 +14,7 @@ import { Route as StandaloneRouteImport } from './routes/_standalone'
 import { Route as WorkbenchIndexRouteImport } from './routes/_workbench.index'
 import { Route as WorkbenchPluginsRouteImport } from './routes/_workbench.plugins'
 import { Route as WorkbenchPackagesRouteImport } from './routes/_workbench.packages'
+import { Route as WorkbenchOpsRouteImport } from './routes/_workbench.ops'
 import { Route as WorkbenchLogsRouteImport } from './routes/_workbench.logs'
 import { Route as WorkbenchPluginsIndexRouteImport } from './routes/_workbench.plugins.index'
 import { Route as WorkbenchPluginsNameRouteImport } from './routes/_workbench.plugins.$name'
@@ -43,6 +44,11 @@ const WorkbenchPluginsRoute = WorkbenchPluginsRouteImport.update({
 const WorkbenchPackagesRoute = WorkbenchPackagesRouteImport.update({
   id: '/packages',
   path: '/packages',
+  getParentRoute: () => WorkbenchRoute,
+} as any)
+const WorkbenchOpsRoute = WorkbenchOpsRouteImport.update({
+  id: '/ops',
+  path: '/ops',
   getParentRoute: () => WorkbenchRoute,
 } as any)
 const WorkbenchLogsRoute = WorkbenchLogsRouteImport.update({
@@ -88,6 +94,7 @@ const StandaloneExtStandalonePluginNameSplatRoute =
 export interface FileRoutesByFullPath {
   '/': typeof WorkbenchIndexRoute
   '/logs': typeof WorkbenchLogsRoute
+  '/ops': typeof WorkbenchOpsRoute
   '/packages': typeof WorkbenchPackagesRoute
   '/plugins': typeof WorkbenchPluginsRouteWithChildren
   '/plugins/$name': typeof WorkbenchPluginsNameRouteWithChildren
@@ -100,6 +107,7 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof WorkbenchIndexRoute
   '/logs': typeof WorkbenchLogsRoute
+  '/ops': typeof WorkbenchOpsRoute
   '/packages': typeof WorkbenchPackagesRoute
   '/plugins': typeof WorkbenchPluginsIndexRoute
   '/ext-standalone/$pluginName/$': typeof StandaloneExtStandalonePluginNameSplatRoute
@@ -112,6 +120,7 @@ export interface FileRoutesById {
   '/_standalone': typeof StandaloneRouteWithChildren
   '/_workbench': typeof WorkbenchRouteWithChildren
   '/_workbench/logs': typeof WorkbenchLogsRoute
+  '/_workbench/ops': typeof WorkbenchOpsRoute
   '/_workbench/packages': typeof WorkbenchPackagesRoute
   '/_workbench/plugins': typeof WorkbenchPluginsRouteWithChildren
   '/_workbench/': typeof WorkbenchIndexRoute
@@ -127,6 +136,7 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/logs'
+    | '/ops'
     | '/packages'
     | '/plugins'
     | '/plugins/$name'
@@ -139,6 +149,7 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/logs'
+    | '/ops'
     | '/packages'
     | '/plugins'
     | '/ext-standalone/$pluginName/$'
@@ -150,6 +161,7 @@ export interface FileRouteTypes {
     | '/_standalone'
     | '/_workbench'
     | '/_workbench/logs'
+    | '/_workbench/ops'
     | '/_workbench/packages'
     | '/_workbench/plugins'
     | '/_workbench/'
@@ -201,6 +213,13 @@ declare module '@tanstack/react-router' {
       path: '/packages'
       fullPath: '/packages'
       preLoaderRoute: typeof WorkbenchPackagesRouteImport
+      parentRoute: typeof WorkbenchRoute
+    }
+    '/_workbench/ops': {
+      id: '/_workbench/ops'
+      path: '/ops'
+      fullPath: '/ops'
+      preLoaderRoute: typeof WorkbenchOpsRouteImport
       parentRoute: typeof WorkbenchRoute
     }
     '/_workbench/logs': {
@@ -296,6 +315,7 @@ const WorkbenchPluginsRouteWithChildren =
 
 interface WorkbenchRouteChildren {
   WorkbenchLogsRoute: typeof WorkbenchLogsRoute
+  WorkbenchOpsRoute: typeof WorkbenchOpsRoute
   WorkbenchPackagesRoute: typeof WorkbenchPackagesRoute
   WorkbenchPluginsRoute: typeof WorkbenchPluginsRouteWithChildren
   WorkbenchIndexRoute: typeof WorkbenchIndexRoute
@@ -304,6 +324,7 @@ interface WorkbenchRouteChildren {
 
 const WorkbenchRouteChildren: WorkbenchRouteChildren = {
   WorkbenchLogsRoute: WorkbenchLogsRoute,
+  WorkbenchOpsRoute: WorkbenchOpsRoute,
   WorkbenchPackagesRoute: WorkbenchPackagesRoute,
   WorkbenchPluginsRoute: WorkbenchPluginsRouteWithChildren,
   WorkbenchIndexRoute: WorkbenchIndexRoute,

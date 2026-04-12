@@ -9,7 +9,18 @@ import {
 	type ToolDef,
 } from '@pluxel/ops'
 import type { Context as PluxelContext } from '@pluxel/core'
+import { Injectable } from '@pluxel/core'
 
+import type { RuntimeOpToolsetManifest } from '../../web/protocol'
+import {
+	buildOpsToolsetManifest,
+	readOpsToolsets,
+	type OpsToolsetInput,
+	type OpsToolsetOutput,
+	writeOpsToolsets,
+} from './toolsets'
+
+const serviceName = 'ops' as const
 const RESERVED_RUNTIME_OP_PREFIXES = ['plugin.', 'plugins.', 'runtime.'] as const
 const RESERVED_TOOL_NAME_PREFIXES = [
 	'plugin.',
@@ -39,13 +50,59 @@ export interface RuntimeOpsRegisterOptions {
 	owner?: string
 }
 
+export type RuntimeOpOwnerKind = 'runtime' | 'plugin' | 'context'
+
+export interface RuntimeOpCatalogEntry<Descriptor = OpDescriptor> {
+	id: string
+	owner: string
+	ownerKind: RuntimeOpOwnerKind
+	pluginId?: string
+	descriptor: Descriptor
+}
+
+declare module '@pluxel/core' {
+	namespace Context {
+		interface Services {
+			[serviceName]: OpsService
+		}
+	}
+}
+
+class OpsToolsetsHandle {
+	constructor(private readonly owner: OpsService) {}
+
+	list(): OpsToolsetOutput[] {
+		return readOpsToolsets(resolveRootContext(this.owner.ctx))
+	}
+
+	write(toolsets: OpsToolsetInput[]): OpsToolsetOutput[] {
+		return writeOpsToolsets(resolveRootContext(this.owner.ctx), toolsets)
+	}
+
+	resolve(toolsetId: string): RuntimeOpToolsetManifest | null {
+		const target = this.list().find((toolset) => toolset.toolsetId === toolsetId)
+		if (!target) return null
+		return buildOpsToolsetManifest({
+			toolset: target,
+			entries: resolveRootContext(this.owner.ctx).ops.listCatalog({ rpcOnly: true }),
+		})
+	}
+}
+
+@Injectable({ key: serviceName })
 export class OpsService {
 	private readonly space = createSpace<RuntimeOpContext>()
+	private readonly ownerById = new Map<string, string>()
+	private readonly toolsetsHandle = new OpsToolsetsHandle(this)
 
 	constructor(public ctx: PluxelContext) {}
 
 	get version(): number {
 		return this.space.version
+	}
+
+	get toolsets(): OpsToolsetsHandle {
+		return this.toolsetsHandle
 	}
 
 	register(op: RuntimeOperation, options: RuntimeOpsRegisterOptions = {}): () => void {
@@ -54,17 +111,20 @@ export class OpsService {
 		const unregister = this.space.register(op, {
 			owner,
 		})
+		this.ownerById.set(op.id, owner)
 
 		let active = true
 		const remove = () => {
 			if (!active) return
 			active = false
 			guard.cancel()
+			this.ownerById.delete(op.id)
 			unregister()
 		}
 		const guard = this.ctx.effects.defer(() => {
 			if (!active) return
 			active = false
+			this.ownerById.delete(op.id)
 			unregister()
 		})
 
@@ -72,6 +132,7 @@ export class OpsService {
 	}
 
 	unregister(id: string): void {
+		this.ownerById.delete(id)
 		this.space.unregister(id)
 	}
 
@@ -87,6 +148,10 @@ export class OpsService {
 		return this.space.getDescriptor(id)
 	}
 
+	getOwner(id: string): string | undefined {
+		return this.ownerById.get(id)
+	}
+
 	list(options?: {
 		owner?: string
 		carrier?: 'rpc' | 'tool' | 'cli'
@@ -97,6 +162,31 @@ export class OpsService {
 
 	listTools(options?: { includeInternal?: boolean }): ToolDef[] {
 		return this.space.listTools(options)
+	}
+
+	listCatalog(options?: {
+		owner?: string
+		includeInternal?: boolean
+		rpcOnly?: boolean
+	}): RuntimeOpCatalogEntry[] {
+		return this.space
+			.list({
+				owner: options?.owner,
+				carrier: options?.rpcOnly ? 'rpc' : undefined,
+				includeInternal: options?.includeInternal,
+			})
+			.map((descriptor) => {
+				const owner = this.ownerById.get(descriptor.id) ?? 'context:unknown'
+				const parsed = parseRuntimeOpOwner(owner)
+				const entry: RuntimeOpCatalogEntry = {
+					id: descriptor.id,
+					owner,
+					ownerKind: parsed.ownerKind,
+					descriptor,
+				}
+				if (parsed.pluginId) entry.pluginId = parsed.pluginId
+				return entry
+			})
 	}
 
 	async invoke<O = unknown>(
@@ -190,4 +280,20 @@ export class OpsService {
 			)
 		}
 	}
+}
+
+function resolveRootContext(ctx: PluxelContext): PluxelContext {
+	return (ctx.root ?? ctx) as PluxelContext
+}
+
+function parseRuntimeOpOwner(owner: string): {
+	ownerKind: RuntimeOpOwnerKind
+	pluginId?: string
+} {
+	if (owner.startsWith('plugin:')) {
+		const pluginId = owner.slice('plugin:'.length).trim()
+		return pluginId ? { ownerKind: 'plugin', pluginId } : { ownerKind: 'plugin' }
+	}
+	if (owner.startsWith('runtime:')) return { ownerKind: 'runtime' }
+	return { ownerKind: 'context' }
 }

@@ -124,7 +124,7 @@ export class PluginWithUI extends BasePlugin {
 	listEvents(limit = 50): DemoEvent[] {
 		const capped = Math.max(0, Math.min(MAX_EVENT_SCAN, Math.floor(limit)))
 		const docs = this.events.find({}, { limit: capped, sort: { at: -1 } })
-		return docs.slice(0, capped).map((event: DemoEvent) => ({ ...event }))
+		return docs.slice(0, capped).map((event: DemoEvent) => Object.assign({}, event))
 	}
 
 	appendEvent(kind: DemoEvent['kind'], message: string): DemoEvent {

@@ -118,6 +118,38 @@ function createDependencyLoader(graph: Record<string, string[]>) {
 	}
 }
 
+async function withPackagedService(
+	files: Record<string, unknown>,
+	registryPath: (fixture: TestFixture) => string,
+	run: (args: {
+		fixture: TestFixture
+		service: ExtensionService
+		ctx: any
+		logger: ReturnType<typeof createFakeCtx>['logger']
+	}) => Promise<void>,
+) {
+	await using fixture = await createFixture(files)
+	const entryPath = registryPath(fixture)
+	const { ctx, logger } = createFakeCtx(
+		{
+			loader: {
+				api: {
+					registry: {
+						findModuleIdByName: vi.fn(() => entryPath),
+					},
+					anchors: {
+						list: vi.fn(() => [entryPath]),
+					},
+				},
+			},
+			pluginInfo: { id: 'test-plugin' },
+		},
+		fixture,
+	)
+	const service = new ExtensionService(ctx, { enabled: true })
+	await run({ fixture, service, ctx, logger })
+}
+
 const FontInteractionContract = defineInteractionContract<
 	{ current: string | null },
 	{ selectedId: string | null },
@@ -161,7 +193,8 @@ describe('ExtensionService runtime/dev boundary', () => {
 	})
 
 	it('packaged() registers packaged federation metadata', async () => {
-		await using fixture = await createFixture({
+		await withPackagedService(
+			{
 			dist: {
 				'index.mjs': 'export {}',
 				'ui.remote': {
@@ -171,47 +204,30 @@ describe('ExtensionService runtime/dev boundary', () => {
 					}),
 				},
 			},
-		})
-		const registryPath = join(fixture.path, 'dist/index.mjs')
-		const { ctx } = createFakeCtx(
-			{
-				loader: {
-					api: {
-						registry: {
-							findModuleIdByName: vi.fn(() => registryPath),
-						},
-						anchors: {
-							list: vi.fn(() => [registryPath]),
-						},
-					},
-				},
-				pluginInfo: { id: 'test-plugin' },
 			},
-			fixture,
+			(fixture) => join(fixture.path, 'dist/index.mjs'),
+			async ({ fixture, service }) => {
+				const dispose = service.packaged()
+				await vi.waitFor(() => expect(service.getCompiledModule('test-plugin')).toBeDefined())
+				const compiled = service.getCompiledModule('test-plugin')!
+
+				expect(compiled).toMatchObject({
+					pluginName: 'test-plugin',
+					manifestUrl: expect.stringContaining('/extensions/artifacts/'),
+					exposedModule: './ui-module',
+				})
+				expect(
+					service.resolveArtifactFile('test-plugin', compiled.sourceHash, 'mf-manifest.json'),
+				).toBe(join(fixture.path, 'dist/ui.remote/mf-manifest.json'))
+
+				dispose()
+			},
 		)
-		const service = new ExtensionService(ctx, { enabled: true })
-
-		const dispose = service.packaged()
-		await vi.waitFor(() => expect(service.getCompiledModule('test-plugin')).toBeDefined())
-
-		expect(service.getCompiledModule('test-plugin')).toMatchObject({
-			pluginName: 'test-plugin',
-			manifestUrl: expect.stringContaining('/extensions/artifacts/'),
-			exposedModule: './ui-module',
-		})
-		expect(
-			service.resolveArtifactFile(
-				'test-plugin',
-				service.getCompiledModule('test-plugin')!.sourceHash,
-				'mf-manifest.json',
-			),
-		).toBe(join(fixture.path, 'dist/ui.remote/mf-manifest.json'))
-
-		dispose()
 	})
 
 	it('packaged() resolves the default manifest from package root dist output', async () => {
-		await using fixture = await createFixture({
+		await withPackagedService(
+			{
 			'package.json': JSON.stringify({ name: 'test-plugin', version: '0.0.0' }),
 			src: {
 				'index.ts': 'export {}',
@@ -224,72 +240,40 @@ describe('ExtensionService runtime/dev boundary', () => {
 					}),
 				},
 			},
-		})
-		const registryPath = join(fixture.path, 'src/index.ts')
-		const { ctx } = createFakeCtx(
-			{
-				loader: {
-					api: {
-						registry: {
-							findModuleIdByName: vi.fn(() => registryPath),
-						},
-						anchors: {
-							list: vi.fn(() => [registryPath]),
-						},
-					},
-				},
-				pluginInfo: { id: 'test-plugin' },
 			},
-			fixture,
+			(fixture) => join(fixture.path, 'src/index.ts'),
+			async ({ fixture, service }) => {
+				const dispose = service.packaged()
+				await vi.waitFor(() => expect(service.getCompiledModule('test-plugin')).toBeDefined())
+				const compiled = service.getCompiledModule('test-plugin')!
+
+				expect(
+					service.resolveArtifactFile('test-plugin', compiled.sourceHash, 'mf-manifest.json'),
+				).toBe(join(fixture.path, 'dist/ui.remote/mf-manifest.json'))
+
+				dispose()
+			},
 		)
-		const service = new ExtensionService(ctx, { enabled: true })
-
-		const dispose = service.packaged()
-		await vi.waitFor(() => expect(service.getCompiledModule('test-plugin')).toBeDefined())
-
-		expect(
-			service.resolveArtifactFile(
-				'test-plugin',
-				service.getCompiledModule('test-plugin')!.sourceHash,
-				'mf-manifest.json',
-			),
-		).toBe(join(fixture.path, 'dist/ui.remote/mf-manifest.json'))
-
-		dispose()
 	})
 
 	it('packaged() does not warn when the implicit packaged manifest is absent', async () => {
-		await using fixture = await createFixture({
+		await withPackagedService(
+			{
 			'package.json': JSON.stringify({ name: 'test-plugin', version: '0.0.0' }),
 			src: {
 				'index.ts': 'export {}',
 			},
-		})
-		const registryPath = join(fixture.path, 'src/index.ts')
-		const { ctx, logger } = createFakeCtx(
-			{
-				loader: {
-					api: {
-						registry: {
-							findModuleIdByName: vi.fn(() => registryPath),
-						},
-						anchors: {
-							list: vi.fn(() => [registryPath]),
-						},
-					},
-				},
-				pluginInfo: { id: 'test-plugin' },
 			},
-			fixture,
+			(fixture) => join(fixture.path, 'src/index.ts'),
+			async ({ service, logger }) => {
+				const dispose = service.packaged()
+				await Promise.resolve()
+
+				expect(service.getCompiledModule('test-plugin')).toBeUndefined()
+				expect(logger.warn).not.toHaveBeenCalled()
+				dispose()
+			},
 		)
-		const service = new ExtensionService(ctx, { enabled: true })
-
-		const dispose = service.packaged()
-		await Promise.resolve()
-
-		expect(service.getCompiledModule('test-plugin')).toBeUndefined()
-		expect(logger.warn).not.toHaveBeenCalled()
-		dispose()
 	})
 
 	it('doc(schemaMap)`...` bumps manifest version and is cleaned up by disposer', async () => {

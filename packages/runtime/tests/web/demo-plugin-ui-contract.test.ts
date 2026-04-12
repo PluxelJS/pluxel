@@ -3,10 +3,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import { ExtensionPoints, type PluginUIModule } from '../../src/web/ui'
 
-function expectUnique(values: string[], label: string) {
-	expect(new Set(values).size, `${label} should stay unique`).toBe(values.length)
-}
-
 function routePaths(module: PluginUIModule) {
 	return (module.routes ?? []).map((route) => route.definition.path)
 }
@@ -51,8 +47,12 @@ describe('demo plugin UI contract', () => {
 
 		for (const [name, module] of modules) {
 			expect(module).toBeTruthy()
-			expectUnique(extensionIds(module), `${name} extension ids`)
-			expectUnique(routePaths(module), `${name} route paths`)
+			expect(new Set(extensionIds(module)).size, `${name} extension ids should stay unique`).toBe(
+				extensionIds(module).length,
+			)
+			expect(new Set(routePaths(module)).size, `${name} route paths should stay unique`).toBe(
+				routePaths(module).length,
+			)
 		}
 	}, 15_000)
 

@@ -1,7 +1,7 @@
 import type { Context } from '@pluxel/core'
 import { type OpPublicDescriptor } from '@pluxel/ops'
 
-import type { RuntimeOperation } from '../../services/plugin-interaction/OpsService'
+import type { RuntimeOperation } from '../../services/ops/OpsService'
 import { defineRuntimeOp } from './helpers'
 import { emptyInputSchema, runtimeOpsDescriptorSchema } from './schemas'
 

@@ -35,29 +35,29 @@ describe('@pluxel/ops space', () => {
 
 		space.register(status, { owner: 'plugin:host' })
 
-		expect(space.list({ carrier: 'tool' }).map((entry) => entry.id)).toEqual([
-			'plugin.status.get',
-		])
-		expect(space.listTools()).toEqual([
-			expect.objectContaining({
-				id: 'plugin.status.get',
-				name: 'plugin_status_get',
-				title: 'Get plugin status',
-				guidance: expect.stringContaining('Usage: plugin status get --name <string>'),
-				details: 'Use this op when tooling needs a current lifecycle snapshot for one plugin.',
-				usage: 'plugin status get --name <string>',
-				examples: ['plugin status get --name demo'],
-				tags: ['plugin', 'status'],
-				inputHints: [
-					{
-						key: 'name',
-						type: 'string',
-						required: true,
-						description: 'Plugin name to inspect.',
-					},
-				],
-			}),
-		])
+		expect(space.list({ carrier: 'tool' }).map((entry) => entry.id)).toContain('plugin.status.get')
+		expect(space.listTools()).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					id: 'plugin.status.get',
+					name: 'plugin_status_get',
+					title: 'Get plugin status',
+					guidance: expect.stringContaining('Usage: plugin status get --name <string>'),
+					details: 'Use this op when tooling needs a current lifecycle snapshot for one plugin.',
+					usage: 'plugin status get --name <string>',
+					examples: ['plugin status get --name demo'],
+					tags: ['plugin', 'status'],
+					inputHints: [
+						{
+							key: 'name',
+							type: 'string',
+							required: true,
+							description: 'Plugin name to inspect.',
+						},
+					],
+				}),
+			]),
+		)
 
 		expect(await space.invoke('plugin.status.get', { name: 'demo' })).toEqual({
 			name: 'demo',

@@ -1,6 +1,6 @@
 import { cli, typebox } from '@pluxel/ops'
 
-import type { RuntimeOperation } from '../../services/plugin-interaction/OpsService'
+import type { RuntimeOperation } from '../../services/ops/OpsService'
 import { applyStatusActions } from '../usecases/pluginStatus'
 import { pluginStatus, pluginsList } from '../usecases/plugins'
 import { pluginWaitForStage } from '../usecases/pluginWait'

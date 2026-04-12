@@ -54,6 +54,9 @@
 - `docs/design/plugin-contribution/overview.md`
   插件间 contribution / slot / provider-owned custom widget / resource reference 设计
   （包含当前 capability matrix、常见交互形式与稳定/非稳定边界）
+- `docs/design/ops-catalog/overview.md`
+  ops live registry 的 host-side catalog 设计
+  （包含 runtime read model、生命周期边界与 workbench Ops 视图）
 
 非权威/历史文档说明：
 

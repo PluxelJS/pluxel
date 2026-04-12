@@ -1,10 +1,25 @@
 import { describe, expect, it } from 'vitest'
 import * as v from 'valibot'
 import { defineOp, typebox } from '@pluxel/ops'
+import { EffectsService } from '@pluxel/core/services'
 
 import { Context } from '@pluxel/runtime'
 import { RuntimeRpcApi } from '../../src/api/http/rpc/RuntimeRpcApi'
 import { ensureRuntimeOpsRegistered } from '../../src/api/ops'
+
+function createPluginContext(root: Context, id: string): Context {
+	const ctx = root.isolate([EffectsService], { name: id }) as Context
+	;(ctx as any).pluginInfo = { id }
+	return ctx
+}
+
+function createRuntimeHarness() {
+	const root = new Context({ name: 'root' }) as Context
+	const state = attachRuntimeStubs(root)
+	ensureRuntimeOpsRegistered(root)
+	const rpc = new RuntimeRpcApi(root as any)
+	return { root, state, rpc }
+}
 
 function attachRuntimeStubs(root: Context) {
 	class Alpha {}
@@ -14,6 +29,7 @@ function attachRuntimeStubs(root: Context) {
 	const running = new Set<string>()
 	const enabled = new Set<string>()
 	const rawConfig = new Map<string, Record<string, unknown>>()
+	const extra = new Map<string, unknown>()
 	const schemaMap = {
 		basic: v.object({
 			enabled: v.optional(v.boolean(), false),
@@ -46,8 +62,11 @@ function attachRuntimeStubs(root: Context) {
 		async ensureValidated(name: string) {
 			return rawConfig.get(name) ?? {}
 		},
-		getExtra() {
-			return undefined
+		getExtra(key: string) {
+			return extra.get(key)
+		},
+		setExtra(key: string, value: unknown) {
+			extra.set(key, value)
 		},
 	}
 
@@ -117,43 +136,35 @@ function attachRuntimeStubs(root: Context) {
 	Object.defineProperty(root, 'registry', { value: registry, configurable: true })
 	Object.defineProperty(root, 'packageService', { value: undefined, configurable: true })
 
-	return { Alpha, running, enabled, rawConfig }
+	return { Alpha, running, enabled, rawConfig, extra }
 }
 
 describe('runtime ops', () => {
-	it('re-registers missing runtime ops when ensured again', () => {
-		const root = new Context({ name: 'root' }) as Context
-		attachRuntimeStubs(root)
-		ensureRuntimeOpsRegistered(root)
+	it('restores missing runtime ops without registering transport façade ops', () => {
+		const { root } = createRuntimeHarness()
 
-		expect(root.ext.ops.has('plugin.status')).toBe(true)
-		expect(root.ext.ops.has('runtime.ops.list')).toBe(true)
-		expect(root.ext.ops.has('runtime.ops.invoke')).toBe(false)
-		expect(root.ext.ops.has('runtime.ops.dispatch')).toBe(false)
-		root.ext.ops.unregister('plugin.status')
-		expect(root.ext.ops.has('plugin.status')).toBe(false)
+		expect(root.ops.has('plugin.status')).toBe(true)
+		expect(root.ops.has('runtime.ops.invoke')).toBe(false)
+		expect(root.ops.has('runtime.ops.dispatch')).toBe(false)
+		root.ops.unregister('plugin.status')
 
 		ensureRuntimeOpsRegistered(root)
-		expect(root.ext.ops.has('plugin.status')).toBe(true)
+		expect(root.ops.has('plugin.status')).toBe(true)
 	})
 
 	it('routes CLI and RPC through the same runtime ops surface', async () => {
-		const root = new Context({ name: 'root' }) as Context
-		const state = attachRuntimeStubs(root)
-		ensureRuntimeOpsRegistered(root)
+		const { root, state, rpc } = createRuntimeHarness()
 
-		expect(root.ext.ops.has('plugins.status.apply')).toBe(true)
-		expect(root.ext.ops.helpCommand('plugin start')).toEqual(
+		expect(root.ops.helpCommand('plugin start')).toEqual(
 			expect.objectContaining({ id: 'plugin.start' }),
 		)
 
-		await expect(root.ext.ops.dispatch('plugin start --name Alpha')).resolves.toEqual({
+		await expect(root.ops.dispatch('plugin start --name Alpha')).resolves.toEqual({
 			ok: true,
 			name: 'Alpha',
 		})
 		expect(state.running.has('Alpha')).toBe(true)
 
-		const rpc = new RuntimeRpcApi(root as any)
 		await expect(
 			rpc.opsInvoke('plugins.status.apply', {
 				actions: [{ name: 'Alpha', action: 'stop' }],
@@ -186,11 +197,7 @@ describe('runtime ops', () => {
 	})
 
 	it('supports config reads and writes through runtime ops only', async () => {
-		const root = new Context({ name: 'root' }) as Context
-		const state = attachRuntimeStubs(root)
-		ensureRuntimeOpsRegistered(root)
-
-		const rpc = new RuntimeRpcApi(root as any)
+		const { state, rpc } = createRuntimeHarness()
 		await expect(
 			rpc.opsInvoke('plugins.config.set', {
 				entries: [{ name: 'Alpha', patch: { basic: { enabled: true } } }],
@@ -232,11 +239,7 @@ describe('runtime ops', () => {
 	})
 
 	it('exposes plugin detail and dependency inspection through runtime ops', async () => {
-		const root = new Context({ name: 'root' }) as Context
-		attachRuntimeStubs(root)
-		ensureRuntimeOpsRegistered(root)
-
-		const rpc = new RuntimeRpcApi(root as any)
+		const { rpc } = createRuntimeHarness()
 
 		await expect(rpc.opsInvoke('plugin.dependencies.list', { name: 'Alpha' })).resolves.toEqual([
 			{ name: 'Beta' },
@@ -246,11 +249,9 @@ describe('runtime ops', () => {
 	})
 
 	it('blocks rpc invocation for ops that are not rpc-exposed', async () => {
-		const root = new Context({ name: 'root' }) as Context
-		attachRuntimeStubs(root)
-		ensureRuntimeOpsRegistered(root)
+		const { root, rpc } = createRuntimeHarness()
 
-		root.ext.ops.register(
+		root.ops.register(
 			defineOp({
 				id: 'demo.tool-only',
 				doc: {
@@ -269,9 +270,115 @@ describe('runtime ops', () => {
 			{ owner: 'runtime:test' },
 		)
 
-		const rpc = new RuntimeRpcApi(root as any)
 		await expect(rpc.opsInvoke('demo.tool-only', {})).rejects.toMatchObject({
 			code: 'E_FORBIDDEN',
+		})
+	})
+
+	it('exposes rpc-visible ops through the catalog with owner metadata', () => {
+		const { root, rpc } = createRuntimeHarness()
+
+		const pluginCtx = createPluginContext(root, 'plugin.catalog')
+		pluginCtx.ops.register(
+			defineOp({
+				id: 'catalog.inspect',
+				doc: {
+					title: 'Catalog Inspect',
+					description: 'Inspect the runtime catalog',
+				},
+				input: typebox.obj({}),
+				output: typebox.obj({
+					ok: typebox.Type.Boolean(),
+				}),
+				exposure: {
+					rpc: true,
+				},
+				async execute() {
+					return { ok: true }
+				},
+			}),
+		)
+
+		root.ops.register(
+			defineOp({
+				id: 'catalog.tool-only',
+				doc: {
+					title: 'Catalog Tool Only',
+					description: 'Should stay out of rpc catalog.',
+				},
+				input: typebox.obj({}),
+				output: typebox.obj({
+					ok: typebox.Type.Boolean(),
+				}),
+				tool: true,
+				async execute() {
+					return { ok: true }
+				},
+			}),
+			{ owner: 'runtime:test' },
+		)
+
+		const catalog = rpc.opsCatalog()
+		const pluginEntry = catalog.find((entry) => entry.id === 'catalog.inspect')
+
+		expect(pluginEntry).toMatchObject({
+			id: 'catalog.inspect',
+			owner: 'plugin:plugin.catalog',
+			ownerKind: 'plugin',
+			pluginId: 'plugin.catalog',
+		})
+		expect(catalog.some((entry) => entry.id === 'catalog.tool-only')).toBe(false)
+		expect(catalog.some((entry) => entry.id === 'plugin.status' && entry.ownerKind === 'runtime')).toBe(
+			true,
+		)
+	})
+
+	it('persists and resolves host-owned ops toolsets through rpc', async () => {
+		const { state, rpc } = createRuntimeHarness()
+		const expectedToolset = {
+			__typename: 'OpsToolset' as const,
+			toolsetId: 'daily',
+			name: 'Daily Toolset',
+			description: 'Use for routine runtime inspection and mutation.',
+			opIds: ['plugin.status', 'plugins.status.apply'],
+		}
+
+		expect(rpc.opsToolsets()).toEqual([])
+
+		await expect(
+			rpc.updateOpsToolsets([
+				{
+					toolsetId: 'daily',
+					name: 'Daily Toolset',
+					description: 'Use for routine runtime inspection and mutation.',
+					opIds: ['plugin.status', 'plugin.status', 'plugins.status.apply'],
+				},
+			]),
+		).resolves.toEqual([expectedToolset])
+
+		expect(state.extra.get('opsToolsets')).toEqual([
+			{
+				toolsetId: 'daily',
+				name: 'Daily Toolset',
+				description: 'Use for routine runtime inspection and mutation.',
+				opIds: ['plugin.status', 'plugins.status.apply'],
+			},
+		])
+		expect(rpc.opsToolsets()).toEqual([expectedToolset])
+
+		expect(rpc.resolveOpsToolset('daily')).toEqual({
+			toolset: expectedToolset,
+			tools: expect.arrayContaining([
+				expect.objectContaining({
+					id: 'plugin.status',
+					mutating: false,
+				}),
+				expect.objectContaining({
+					id: 'plugins.status.apply',
+					mutating: true,
+				}),
+			]),
+			missingOpIds: [],
 		})
 	})
 })

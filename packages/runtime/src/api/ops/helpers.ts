@@ -5,7 +5,7 @@ import {
 	type OperationConfig,
 	type Schema,
 } from '@pluxel/ops'
-import type { RuntimeOpContext } from '../../services/plugin-interaction/OpsService'
+import type { RuntimeOpContext } from '../../services/ops/OpsService'
 
 export const defineRuntimeOp = <
 	SIn extends Schema,

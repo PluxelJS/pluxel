@@ -16,7 +16,7 @@ const EVENT_TICK = 'pluxel:demo:bus:tick' as const
 export class PluginEventsDeclaredProducer extends BasePlugin {
 	private seq = 0
 
-	override async init() {
+	override init(): void {
 		const timer = setInterval(() => {
 			this.seq += 1
 			this.ctx.emit(EVENT_TICK, {
@@ -32,7 +32,7 @@ export class PluginEventsDeclaredProducer extends BasePlugin {
 
 @Plugin({ name: 'PluginEventsDeclaredConsumer' })
 export class PluginEventsDeclaredConsumer extends BasePlugin {
-	override async init() {
+	override init(): void {
 		this.ctx.on(EVENT_TICK, ({ from, seq }) => {
 			// Avoid spamming info logs in the demo host; enable debug to observe the stream.
 			this.ctx.logger.debug('Declared Events tick', { from, seq })

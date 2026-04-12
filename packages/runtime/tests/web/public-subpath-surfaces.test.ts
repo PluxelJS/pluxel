@@ -5,13 +5,7 @@ import { extensionFederationSharedPackages } from '@pluxel/runtime/web/federatio
 import * as PublicUi from '@pluxel/runtime/web/ui'
 import * as InternalExtensions from '../../src/web/extensions'
 import * as InternalUi from '../../src/web/ui'
-
-function expectPublicSurface(publicMod: object, internalMod: object) {
-	const publicKeys = Object.keys(publicMod)
-	const internalKeys = new Set(Object.keys(internalMod))
-	const missing = publicKeys.filter((k) => !internalKeys.has(k)).sort()
-	expect(missing).toEqual([])
-}
+import { expectPublicSurface } from '../helpers/publicSurface'
 
 describe('runtime web subpath surfaces', () => {
 	it('keeps web/ui aligned with the internal ui facade', () => {

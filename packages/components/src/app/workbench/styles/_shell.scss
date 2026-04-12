@@ -20,6 +20,9 @@
 	display: grid;
 	grid-template-columns: var(--plx-activity-width) minmax(0, 1fr);
 	height: 100dvh;
+	min-height: 0;
+	min-width: 0;
+	overflow: hidden;
 	width: 100%;
 }
 
@@ -127,8 +130,11 @@
 
 .plx-workbench__main {
 	display: grid;
-	grid-template-rows: 34px 32px minmax(0, 1fr);
+	grid-template-rows: 34px 32px minmax(0, 1fr) auto;
+	height: 100%;
+	min-height: 0;
 	min-width: 0;
+	overflow: hidden;
 	position: relative;
 	z-index: 1;
 }
@@ -369,8 +375,10 @@
 
 .plx-workbench__body {
 	display: flex;
+	flex: 1;
 	min-height: 0;
 	min-width: 0;
+	overflow: hidden;
 	padding: 6px 6px 6px 4px;
 }
 
@@ -474,6 +482,162 @@
 	flex: 1;
 	min-height: 0;
 	min-width: 0;
+}
+
+.plx-opsScreen {
+	display: grid;
+	flex: 1;
+	grid-template-columns: 280px minmax(0, 1fr) 360px;
+	gap: 12px;
+	height: 100%;
+	min-height: 0;
+	min-width: 0;
+	overflow: hidden;
+	padding: 6px;
+}
+
+.plx-opsScreen__sidebar,
+.plx-opsScreen__catalog,
+.plx-opsScreen__inspector {
+	display: flex;
+	min-height: 0;
+	min-width: 0;
+	overflow: hidden;
+}
+
+.plx-opsPanel {
+	display: grid;
+	flex: 1;
+	grid-template-rows: auto minmax(0, 1fr);
+	height: 100%;
+	min-height: 0;
+	min-width: 0;
+	overflow: hidden;
+}
+
+.plx-opsPanel__header {
+	border-bottom: 1px solid var(--mantine-color-gray-3);
+	flex: 0 0 auto;
+	padding: 12px;
+}
+
+.plx-opsPanel__body {
+	display: block;
+	height: 100%;
+	min-height: 0;
+	min-width: 0;
+	overflow: hidden;
+}
+
+.plx-opsPanel__scroll {
+	display: block;
+	height: 100%;
+	min-height: 0;
+	min-width: 0;
+	overflow: auto;
+	overscroll-behavior: contain;
+}
+
+.plx-opsCatalog {
+	display: grid;
+	grid-template-rows: auto minmax(0, 1fr);
+	height: 100%;
+	min-height: 0;
+	min-width: 0;
+	overflow: hidden;
+}
+
+.plx-opsCatalog__meta {
+	display: grid;
+	gap: 8px;
+	min-width: 0;
+}
+
+.plx-opsCatalog__notice {
+	padding: 8px;
+}
+
+.plx-opsCatalog__list {
+	height: 100%;
+	min-height: 0;
+	min-width: 0;
+	overflow: auto;
+	overscroll-behavior: contain;
+}
+
+.plx-opsCatalog__table {
+	min-width: max-content;
+}
+
+.plx-opsCatalog__table th {
+	background: color-mix(in srgb, var(--mantine-color-dark-7) 92%, transparent);
+	backdrop-filter: blur(8px);
+	position: sticky;
+	top: 0;
+	z-index: 1;
+}
+
+.plx-opsCatalog__row {
+	cursor: pointer;
+}
+
+.plx-opsCatalog__row[data-active='true'] {
+	background: rgba(59, 130, 246, 0.08);
+}
+
+.plx-opsPanel__empty {
+	padding: 12px;
+}
+
+.plx-opsResultCard {
+	border: 1px solid transparent;
+}
+
+.plx-opsResultCard--success {
+	background: #0f1d16;
+	border-color: rgba(78, 201, 140, 0.35);
+}
+
+.plx-opsResultCard--error {
+	background: #251316;
+	border-color: rgba(255, 122, 122, 0.35);
+}
+
+.plx-opsResultCard__label--success {
+	color: #7ef0b2;
+}
+
+.plx-opsResultCard__label--error {
+	color: #ff9b9b;
+}
+
+.plx-opsResultCard__content {
+	font-family: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+	font-size: 12px;
+	line-height: 1.5;
+	margin: 0;
+	overflow: auto;
+	white-space: pre-wrap;
+	word-break: break-word;
+}
+
+.plx-opsResultCard__content--success {
+	color: #d8fbe8;
+}
+
+.plx-opsResultCard__content--error {
+	color: #ffe2e2;
+}
+
+.plx-opsMonospaceInput {
+	font-family: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+@include mantine.smaller-than(lg) {
+	.plx-opsScreen {
+		grid-template-columns: minmax(220px, 28%) minmax(0, 1fr) minmax(280px, 32%);
+		gap: 10px;
+	}
 }
 
 .plx-workbench__statusbar {

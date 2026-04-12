@@ -1,6 +1,6 @@
 import { typebox } from '@pluxel/ops'
 
-import type { RuntimeOperation } from '../../services/plugin-interaction/OpsService'
+import type { RuntimeOperation } from '../../services/ops/OpsService'
 import {
 	inspectPluginBaseProvider,
 	pluginBaseProviderSet,

@@ -2,15 +2,12 @@
 
 import { Paper, Select, Stack, Text } from '@mantine/core'
 import { definePluginUIModule, type InteractionSessionComponentProps } from '@pluxel/runtime/web/ui'
+import type {
+	FontPickerDraft,
+	FontPickerInput,
+	FontPickerResult,
+} from '../../PluginContributionFontDemo.shared'
 import { plugin } from './runtime'
-
-type FontPickerDraft = {
-	selectedId: string | null
-}
-
-type FontPickerResult =
-	| { type: 'set-font'; ref: { provider: string; kind: 'font-set'; id: string; label?: string } }
-	| { type: 'clear-font' }
 
 type FontOption = {
 	value: string
@@ -27,7 +24,7 @@ function FontPickerSession({
 	commit,
 	disabled,
 }: InteractionSessionComponentProps<
-	{ current: { id: string; label?: string } | null },
+	FontPickerInput,
 	FontPickerDraft,
 	unknown,
 	FontPickerResult

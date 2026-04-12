@@ -15,7 +15,7 @@
 
 ## 建议阅读顺序
 
-先读这 4 个，它们覆盖了最常见的标准用法：
+先读这 5 个，它们覆盖了最常见的标准用法：
 
 1. `PluginFeatureConfigDemo.ts`
    最小配置写法。看 `configs.use(...)`、`features.use(...)` 和 feature 配置如何归因到父插件。
@@ -26,6 +26,8 @@
    这里也顺手区分了 optional 依赖的两种写法：provider 类型可静态 import 时用类 token；provider 包本身可能缺失时改用稳定字符串 token，把 provider-specific 代码留在 `load()` 的懒加载模块后面。
 4. `PluginWithUI.ts` + `PluginWithUI/ui/*`
    最小自定义 UI 路径。看 `ui(...).bind(this.ctx)`、RPC、SSE、SignalDB 与浏览器侧 `plugin.use()`。
+5. `PluginOpsDemo.ts`
+   最小 ops 路径。看 `defineOp(...)`、`ctx.ops.register(...)`、`exposure.rpc`、`policy.mutating` 和 tool-facing op。
 
 在这之后按需再看：
 
@@ -33,8 +35,10 @@
   只补充声明式全局事件总线；局部事件优先看 `PluginFeatureDepsDemo.ts`。
 - `PluginContributionFontDemo.ts`
   推荐的 cross-plugin interaction：consumer 拥有 config/surface，provider 拥有资源与 session UI。
+- `PluginHttpRoutesDemo.ts`
+  最小插件级 HTTP 路由。
 - `PluginHttpWorkerDemo.ts`
-  HTTP 路由和 HMR worker fallback。
+  HMR worker fallback；HTTP endpoint 只是 worker 调用触发器。
 - `PluginVaultDemo.ts`
   插件级加密持久化。
 
@@ -50,6 +54,7 @@
 这套 demo 现在默认按下面的拆分思路组织：
 
 - 插件入口文件只保留 plugin/feature 装配与生命周期
+- 每个 demo 默认只承担一个主特性；如果一个特性需要完整闭环，可以带上必要支撑能力，但不要再顺手注册不相关能力
 - schema、共享类型、纯运行时 helper 分拆到相邻文件
 - 自定义 UI 独立放到 `PluginName/ui/*`
 - 只有会被宿主直接加载的插件类保留在 demo 主文件里
@@ -65,6 +70,7 @@
   如果 optional provider 的实现包也可能缺失，就继续把 provider-specific import 留在这里或更深一层懒加载边界后面，不要回流到主插件文件
 
 `PluginBuiltinShowcase.shared.ts` 和 `PluginWithUI/ui/*` 也分别演示了“共享 schema/格式化逻辑”和“浏览器侧模块独立”的拆法。
+`PluginContributionFontDemo.shared.ts` 演示了 cross-plugin contract、consumer config 与 provider resource model 的共享边界。
 
 ## 服务端作者约定
 
@@ -98,11 +104,18 @@
 - 服务端：`pluginUi.bind(this.ctx)` + `ctx.ext.rpc.expose(...)` + `ctx.ext.sse.expose(...)`
 - 浏览器侧：`const plugin = pluginUi('MyPlugin')` + `const app = plugin.use()` + `app.db.useDocById(...)`
 
+注册 ops：
+
+- 服务端：`defineOp(...)` + `ctx.ops.register(...)`
+- 读操作：声明 `exposure.rpc`
+- 写操作：声明 `policy.mutating`
+- 暴露给工具客户端：声明 `tool.name`
+
 ## 类型检查
 
 - `pnpm exec tsc -p packages/plugins/host/src/demo/tsconfig.json`
 
 ## 非目标
 
-- 这里不追求“每种能力都给一个等权 demo”
-- `plugins-host` 只保留最小但完整的推荐样例，不维护一组彼此重叠的变体
+- 不维护一组彼此重叠的变体；优先一特性一 demo
+- `plugins-host` 只保留最小但完整的推荐样例，不把多个无依赖关系的特性塞进同一个 demo

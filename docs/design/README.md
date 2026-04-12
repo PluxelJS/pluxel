@@ -18,6 +18,8 @@
   插件 config 声明与 builtin doc/config layout 的设计收敛
 - `docs/design/plugin-contribution/overview.md`
   插件 UI 系统设计：builtin、自定义前端、共享状态模型与 interaction ownership
+- `docs/design/ops-catalog/overview.md`
+  ops live registry 的 host-side catalog 设计：动态控制面、runtime read model 与 workbench Ops 视图
 
 实现 contract 不放在这里，统一跟随对应包：
 

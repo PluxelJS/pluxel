@@ -1,7 +1,8 @@
 import type { Context } from '@pluxel/core'
 import { toPublicDescriptor, type OpPublicDescriptor } from '@pluxel/ops'
 
-import type { RuntimeOpSource } from '../../services/plugin-interaction/OpsService'
+import type { RuntimeOpSource } from '../../services/ops/OpsService'
+import type { RuntimeOpCatalogEntry } from '../../web/protocol'
 import { pluginConfigOps } from './plugin-config'
 import { pluginDependencyOps } from './plugin-dependencies'
 import { pluginStatusOps } from './plugin-status'
@@ -15,7 +16,21 @@ function resolveRootContext(ctx: Context): Context {
 
 function listRegisteredRuntimeOps(ctx: Context): OpPublicDescriptor[] {
 	ensureRuntimeOpsRegistered(ctx)
-	return resolveRootContext(ctx).ext.ops.list().map(toPublicDescriptor)
+	return resolveRootContext(ctx).ops.list().map(toPublicDescriptor)
+}
+
+function listRegisteredRuntimeOpsCatalog(ctx: Context): RuntimeOpCatalogEntry[] {
+	ensureRuntimeOpsRegistered(ctx)
+	return resolveRootContext(ctx).ops.listCatalog({ rpcOnly: true }).map((entry) => {
+		const next: RuntimeOpCatalogEntry = {
+			id: entry.id,
+			owner: entry.owner,
+			ownerKind: entry.ownerKind,
+			descriptor: toPublicDescriptor(entry.descriptor),
+		}
+		if (entry.pluginId) next.pluginId = entry.pluginId
+		return next
+	})
 }
 
 async function invokeRegisteredRuntimeOp<O>(
@@ -25,7 +40,7 @@ async function invokeRegisteredRuntimeOp<O>(
 	source: RuntimeOpSource['kind'] = 'rpc',
 ): Promise<O> {
 	ensureRuntimeOpsRegistered(ctx)
-	return await resolveRootContext(ctx).ext.ops.invoke<O>(id, input, {
+	return await resolveRootContext(ctx).ops.invoke<O>(id, input, {
 		source: { kind: source },
 	})
 }
@@ -36,7 +51,7 @@ async function dispatchRegisteredRuntimeCommand<O>(
 	source: RuntimeOpSource['kind'] = 'cli',
 ): Promise<O> {
 	ensureRuntimeOpsRegistered(ctx)
-	return await resolveRootContext(ctx).ext.ops.dispatch<O>(command, {
+	return await resolveRootContext(ctx).ops.dispatch<O>(command, {
 		source: { kind: source },
 	})
 }
@@ -53,7 +68,7 @@ const runtimeOps = Object.freeze([
 export function ensureRuntimeOpsRegistered(ctx: Context): void {
 	const root = resolveRootContext(ctx)
 
-	const ops = root.ext.ops
+	const ops = root.ops
 	for (const op of runtimeOps) {
 		if (ops.has(op.id)) continue
 		ops.register(op, { owner: RUNTIME_OPS_OWNER })
@@ -62,6 +77,10 @@ export function ensureRuntimeOpsRegistered(ctx: Context): void {
 
 export function getRuntimeOps(ctx: Context): OpPublicDescriptor[] {
 	return listRegisteredRuntimeOps(ctx)
+}
+
+export function getRuntimeOpsCatalog(ctx: Context): RuntimeOpCatalogEntry[] {
+	return listRegisteredRuntimeOpsCatalog(ctx)
 }
 
 export async function invokeRuntimeOp<O>(

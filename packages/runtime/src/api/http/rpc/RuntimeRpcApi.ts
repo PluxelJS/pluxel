@@ -6,6 +6,7 @@ import type { ExtensionUiRpcMap } from '../../../services'
 import {
 	dispatchRuntimeCommand,
 	ensureRuntimeOpsRegistered,
+	getRuntimeOpsCatalog,
 	getRuntimeOps,
 	invokeRuntimeOp,
 } from '../../ops'
@@ -14,8 +15,11 @@ import { ExtensionSessionHandle } from './ExtensionSessionHandle'
 import { LoggingHandle } from './LoggingHandle'
 import { PackageHandle } from './PackageHandle'
 import type {
+	OpsToolset,
+	OpsToolsetInput,
 	PluginGroup,
 	PluginGroupInput,
+	RuntimeOpToolsetManifest,
 } from '../../../web/protocol'
 
 export class RuntimeRpcApi extends RpcTarget {
@@ -74,8 +78,20 @@ export class RuntimeRpcApi extends RpcTarget {
 		return getRuntimeOps(this.ctx)
 	}
 
+	opsCatalog() {
+		return getRuntimeOpsCatalog(this.ctx)
+	}
+
+	opsToolsets() {
+		return this.ctx.ops.toolsets.list()
+	}
+
+	resolveOpsToolset(toolsetId: string): RuntimeOpToolsetManifest | null {
+		return this.ctx.ops.toolsets.resolve(toolsetId)
+	}
+
 	async opsInvoke(id: string, input?: unknown): Promise<unknown> {
-		const descriptor = this.ctx.ext.ops.getDescriptor(id)
+		const descriptor = this.ctx.ops.getDescriptor(id)
 		if (descriptor && descriptor.exposure.rpc !== true) {
 			throw new errors.OpError('E_FORBIDDEN', 'Operation not exposed over RPC', {
 				details: { node: id, reason: 'rpc_not_exposed' },
@@ -87,6 +103,11 @@ export class RuntimeRpcApi extends RpcTarget {
 
 	async opsDispatch(command: string): Promise<unknown> {
 		return await dispatchRuntimeCommand(this.ctx, command, 'rpc')
+	}
+
+	async updateOpsToolsets(toolsets: OpsToolsetInput[]): Promise<OpsToolset[]> {
+		const safe = Array.isArray(toolsets) ? toolsets : []
+		return this.ctx.ops.toolsets.write(safe)
 	}
 
 	async updatePluginGroups(groups: PluginGroupInput[]): Promise<PluginGroup[]> {

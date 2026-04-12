@@ -78,8 +78,12 @@ export {
 	dispatchRuntimeCommand,
 	invokeRpc,
 	invokeRuntimeOp,
+	listRuntimeOpCatalog,
+	listRuntimeOpsToolsets,
 	listRuntimeOps,
 	rpcErrorMessage,
+	resolveRuntimeOpsToolset,
+	updateRuntimeOpsToolsets,
 } from './web/rpc'
 export {
 	useSignalDbCollectionState,

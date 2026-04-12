@@ -55,7 +55,7 @@ export function getHmrMcpHttpHandler(ctx: Context): (req: Request) => Promise<Re
 function ensureCachedHandler(root: Context): CachedHandlerEntry {
 	const cached = handlerCache.get(root)
 	if (!cached) throw new Error('MCP handler cache entry missing')
-	if (cached.opsVersion === root.ext.ops.version) return cached
+	if (cached.opsVersion === root.ops.version) return cached
 
 	const server = createPluxelMcpServer(root)
 	const transport = new StreamableHttpTransport({
@@ -63,6 +63,6 @@ function ensureCachedHandler(root: Context): CachedHandlerEntry {
 	})
 	const handler = transport.bind(server)
 	cached.current = async (req: Request) => await handler(req)
-	cached.opsVersion = root.ext.ops.version
+	cached.opsVersion = root.ops.version
 	return cached
 }

@@ -12,15 +12,6 @@ import { NotDecorated } from './fixtures/not-decorated'
 import { NotPerson } from './fixtures/not-person'
 import { BankUser } from './fixtures/user'
 
-/**
- * 小工具：断言 build 的 Err 是聚合错误，并返回该错误对象（强类型）
- */
-const expectBuildErr = (r: ReturnType<ContainerBuilder['build']>) => {
-	const e = expectErr(r, 'expected build to be Err')
-	expect(e).toBeInstanceOf(ServiceVerificationAggregateError)
-	return e
-}
-
 const idName = (id: unknown): string => {
 	if (typeof id === 'function') return id.name || '(anonymous)'
 	if (typeof id === 'symbol') return id.description ?? '(symbol)'
@@ -35,7 +26,8 @@ describe('build-time validations and registry ops', () => {
 		expectOk(builder.tryRegister(NotDecorated)) // 只 register，没有 use
 
 		// Assert
-		const e = expectBuildErr(builder.build())
+		const e = expectErr(builder.build(), 'expected build to be Err')
+		expect(e).toBeInstanceOf(ServiceVerificationAggregateError)
 		// 你现有实现里会生成对应信息；这里用 format() 做包含断言即可
 		expect(e.format()).toContain('registration is not completed')
 		expect(e.format()).toContain('NotDecorated')
@@ -46,7 +38,8 @@ describe('build-time validations and registry ops', () => {
 		// 直接 use 未装饰但带依赖的服务
 		expectOk(builder.tryRegisterAndUse(NotDecorated))
 
-		const e = expectBuildErr(builder.build())
+		const e = expectErr(builder.build(), 'expected build to be Err')
+		expect(e).toBeInstanceOf(ServiceVerificationAggregateError)
 		// 信息包含 "Service not decorated"
 		expect(e.format()).toContain('Service not decorated')
 		expect(e.format()).toContain('NotDecorated')
@@ -56,7 +49,8 @@ describe('build-time validations and registry ops', () => {
 		const builder = new ContainerBuilder()
 		expectOk(builder.tryRegisterAndUse(Agenda))
 
-		const e = expectBuildErr(builder.build())
+		const e = expectErr(builder.build(), 'expected build to be Err')
+		expect(e).toBeInstanceOf(ServiceVerificationAggregateError)
 		// 缺失依赖属于 MissingDependency
 		const hasMissing = e.errors.some((x) => x.kind === 'MissingDependency')
 		expect(hasMissing).toBe(true)
@@ -69,7 +63,8 @@ describe('build-time validations and registry ops', () => {
 		expectOk(builder.tryRegister(Schedule)).use(Schedule)
 		expectOk(builder.tryRegister(Agenda)).use(Agenda)
 
-		const e = expectBuildErr(builder.build())
+		const e = expectErr(builder.build(), 'expected build to be Err')
+		expect(e).toBeInstanceOf(ServiceVerificationAggregateError)
 		const hasMissing = e.errors.some((x) => x.kind === 'MissingDependency')
 		expect(hasMissing).toBe(true)
 		expect(e.format()).toContain('Agenda')
@@ -79,7 +74,8 @@ describe('build-time validations and registry ops', () => {
 		const builder = new ContainerBuilder()
 		expectOk(builder.tryRegisterAndUse(NotPerson))
 
-		const e = expectBuildErr(builder.build())
+		const e = expectErr(builder.build(), 'expected build to be Err')
+		expect(e).toBeInstanceOf(ServiceVerificationAggregateError)
 		// 你的实现通常会输出 NotPerson -> NotDecorated 的链
 		expect(e.format()).toContain('NotPerson')
 		expect(e.format()).toContain('NotDecorated')
@@ -100,7 +96,8 @@ describe('build-time validations and registry ops', () => {
 		const builder = new ContainerBuilder()
 		expectOk(builder.tryRegisterAndUse(BankUser))
 
-		const e = expectBuildErr(builder.build({ autowire: false }))
+		const e = expectErr(builder.build({ autowire: false }), 'expected build to be Err')
+		expect(e).toBeInstanceOf(ServiceVerificationAggregateError)
 		// 至少应包含 MissingDependency
 		const hasMissing = e.errors.some((x) => x.kind === 'MissingDependency')
 
@@ -121,7 +118,8 @@ describe('build-time validations and registry ops', () => {
 		expectOk(builder.tryRegisterAndUse(Circular2)).withDependencies([Circular3])
 		expectOk(builder.tryRegisterAndUse(Circular3)).withDependencies([Circular1])
 
-		const e = expectBuildErr(builder.build({ autowire: false }))
+		const e = expectErr(builder.build({ autowire: false }), 'expected build to be Err')
+		expect(e).toBeInstanceOf(ServiceVerificationAggregateError)
 		// 类型安全：检查 CircularDependency
 		const cycle = e.errors.find(
 			(x): x is Extract<VerificationError, { kind: 'CircularDependency' }> =>

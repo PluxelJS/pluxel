@@ -30,6 +30,7 @@ import { plugin } from './runtime'
 type PluginWithUIRuntime = ReturnType<typeof plugin.use>
 type PluginWithUISseClient = PluginWithUIRuntime['transport']['sse']
 type RpcAction = () => Promise<unknown>
+type SsePayloadWithType = { type: unknown }
 
 function useRpcError() {
 	const [error, setError] = useState<string | null>(null)
@@ -83,6 +84,15 @@ function panelTitle(icon: ReactNode, title: string) {
 			<Title order={4}>{title}</Title>
 		</Group>
 	)
+}
+
+function sseLineText(payload: unknown, fallback: string) {
+	if (hasPayloadType(payload)) return String(payload.type)
+	return fallback
+}
+
+function hasPayloadType(payload: unknown): payload is SsePayloadWithType {
+	return Boolean(payload) && typeof payload === 'object' && 'type' in payload
 }
 
 export function OverviewPanel() {
@@ -259,11 +269,7 @@ export function StreamsPanel() {
 
 	useEffect(() => {
 		const off = app.sse.onAny((msg) => {
-			const payload = msg.payload
-			const text =
-				typeof payload === 'object' && payload && 'type' in payload
-					? `${String((payload as any).type)}`
-					: msg.event
+			const text = sseLineText(msg.payload, msg.event)
 			setLines((prev) => [{ key: `${Date.now()}-${prev.length}`, text }, ...prev].slice(0, 50))
 		})
 		return () => off()

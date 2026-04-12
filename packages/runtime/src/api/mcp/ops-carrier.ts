@@ -19,13 +19,13 @@ export function registerRuntimeOpsCarrier(server: McpServer, ctx: Context) {
 	const root = (ctx.root ?? ctx) as Context
 	ensureRuntimeOpsRegistered(root)
 
-	for (const tool of root.ext.ops.listTools()) {
+	for (const tool of root.ops.listTools()) {
 		server.tool(tool.name, {
 			description: tool.guidance,
 			inputSchema: tool.inputSchema as any,
 			...(tool.outputSchema ? { outputSchema: tool.outputSchema as any } : {}),
 			handler: async (args) => {
-				const result = await root.ext.ops.invoke(tool.id, args, {
+				const result = await root.ops.invoke(tool.id, args, {
 					source: { kind: 'mcp' },
 				})
 				return textResult(summarizeOpResult(tool.name, result), result)

@@ -40,8 +40,6 @@
 
 - `packages/runtime/src/services/plugin-interaction/ExtService.ts`
   `ctx.ext` 聚合入口
-- `packages/runtime/src/services/plugin-interaction/OpsService.ts`
-  `ctx.ext.ops`；runtime / plugin / RPC / MCP / CLI 共享的 operation kernel
 - `packages/runtime/src/services/plugin-interaction/ExtensionService.ts`
   packaged UI remote + builtin/doc 扩展
 - `packages/runtime/src/services/plugin-interaction/SignalDbService.ts`
@@ -53,14 +51,19 @@
 
 这一组文件就是插件前端运行时语义的核心：
 
-- `ctx.ext.ops`
-  runtime control-plane 的唯一能力入口；注册、列举、调用、CLI dispatch 都从这里走
 - `ctx.ext.ui`
   注册 packaged remote 或 host-rendered doc
 - `ctx.ext.signaldb`
   提供状态同步 collection
 - `ctx.ext.rpc` / `ctx.ext.sse`
   提供自定义 UI 的命令式交互通道
+
+## Control Plane
+
+- `packages/runtime/src/services/ops/OpsService.ts`
+  `ctx.ops`；runtime / plugin / RPC / MCP / CLI 共享的 operation kernel，`ctx.ops.toolsets` 收敛 host-owned toolset 组织层
+- `ctx.ops`
+  runtime control-plane 的唯一能力入口；注册、列举、调用、CLI dispatch 和 toolset 组织层都从这里走
 
 SignalDB 前后端链路：
 
@@ -93,7 +96,7 @@ SignalDB 前后端链路：
 - `packages/runtime/src/api/mcp/index.ts`
   MCP HTTP 入口；只负责 server/transport 装配
 - `packages/runtime/src/api/mcp/ops-carrier.ts`
-  把 `ctx.ext.ops` 中已注册的 tool-visible op 投影成 MCP tools；不再维护第二套语义层
+  把 `ctx.ops` 中已注册的 tool-visible op 投影成 MCP tools；不再维护第二套语义层
 - `packages/runtime/src/api/mcp/dev-tools.ts`
   HMR / logs / workspace 等 runtime dev tools 注册
 - `packages/runtime/src/api/mcp/shared.ts`
@@ -150,7 +153,7 @@ SignalDB 前后端链路：
 ## Tests
 
 - `packages/runtime/tests/services/ops-service.test.ts`
-  `ctx.ext.ops` 服务边界与 descriptor/CLI help 稳定性
+  `ctx.ops` 服务边界与 descriptor/CLI help 稳定性
 - `packages/runtime/tests/services/runtime-ops.test.ts`
   runtime plugin ops 的主流程与批处理语义
 - `packages/runtime/tests/extension/extension-service-boundary.test.ts`

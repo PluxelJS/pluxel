@@ -1,6 +1,6 @@
 // Read this when:
-// - 你要挂插件级 HTTP 路由
 // - 你要看 HMR worker 存在时启用、否则 inline fallback 的写法
+// - 你需要一个 HTTP endpoint 作为 worker 调用触发器
 
 import { BasePlugin, Plugin } from '@pluxel/runtime'
 import { worker, type HmrWorkerBinding } from '@pluxel/hmr/plugin'
@@ -63,7 +63,7 @@ export class PluginHttpWorkerDemo extends BasePlugin {
 
 				Endpoints:
 				- \`GET /status\`: reports whether the HMR-only worker bundler is attached.
-				- \`GET /square/:value\`: squares a number via Tinypool when HMR is active.
+				- \`GET /square/:value\`: invokes the worker when HMR is active, otherwise uses inline fallback.
 
 				Frozen/static runtimes intentionally fall back to inline execution.
 				If you need a real production worker, prebuild a stable \`.mjs\` entry with tsdown instead of relying on the dev bundler.

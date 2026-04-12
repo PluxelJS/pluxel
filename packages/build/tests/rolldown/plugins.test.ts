@@ -724,6 +724,22 @@ async function withFixtures<T>(run: (fixturesDir: string) => Promise<T>) {
 	return await run(fixture.path)
 }
 
+async function generateCode(options: {
+	fixturesDir: string
+	input: string
+	plugins: NonNullable<Parameters<typeof rolldown>[0]>['plugins']
+	external?: string[]
+}) {
+	const bundle = await rolldown({
+		input: resolve(options.fixturesDir, options.input),
+		plugins: options.plugins,
+		...(options.external ? { external: options.external } : {}),
+	})
+
+	const { output } = await bundle.generate({ format: 'esm' })
+	return output[0].code
+}
+
 async function generateWithLintGuard(
 	fixturesDir: string,
 	input: string,
@@ -743,10 +759,6 @@ async function generateWithLintGuard(
 	})
 
 	return await bundle.generate({ format: 'esm' })
-}
-
-async function expectLintGuardFailure(fixturesDir: string, input: string, ruleName: string) {
-	await expect(generateWithLintGuard(fixturesDir, input)).rejects.toThrow(new RegExp(ruleName))
 }
 
 const buildLintFailureCases = [
@@ -785,14 +797,12 @@ const buildLintFailureCases = [
 describe('configSourcePlugin', () => {
 	it('extracts cfg(schemaMap)`...` layout parts', async () => {
 		await withFixtures(async (fixturesDir) => {
-			const bundle = await rolldown({
-				input: resolve(fixturesDir, 'plugin-with-cfg-layout.ts'),
+			const code = await generateCode({
+				fixturesDir,
+				input: 'plugin-with-cfg-layout.ts',
 				plugins: [configSourcePlugin()],
 				external: ['valibot', '@pluxel/core'],
 			})
-
-			const { output } = await bundle.generate({ format: 'esm' })
-			const code = output[0].code
 
 			expect(code).toContain('__setConfigLayout__')
 			expect(code).toContain('"kind": "schema"')
@@ -804,19 +814,16 @@ describe('configSourcePlugin', () => {
 
 	it('extracts cfg(schemaMap) across modules (imported schemaMap const)', async () => {
 		await withFixtures(async (fixturesDir) => {
-			const bundle = await rolldown({
-				input: resolve(fixturesDir, 'cfg-schemas-imported.ts'),
+			const code = await generateCode({
+				fixturesDir,
+				input: 'cfg-schemas-imported.ts',
 				plugins: [configSourcePlugin()],
 				external: ['valibot', '@pluxel/core'],
 			})
 
-			const { output } = await bundle.generate({ format: 'esm' })
-			const code = output[0].code
-
 			expect(code).toContain('__registerConfigBinding__')
 			expect(code).toContain('__setConfigSource__')
 			expect(code).toContain('__setConfigLayout__')
-			// registerExpr should reference the schemaMap by key access (bundler may rename the binding)
 			expect(code).toContain('["a"]')
 			expect(code).toContain('["b"]')
 		})
@@ -838,33 +845,26 @@ describe('configSourcePlugin', () => {
 
 	it('extracts inline @Config schema source', async () => {
 		await withFixtures(async (fixturesDir) => {
-			const bundle = await rolldown({
-				input: resolve(fixturesDir, 'plugin-with-config.ts'),
+			const code = await generateCode({
+				fixturesDir,
+				input: 'plugin-with-config.ts',
 				plugins: [configSourcePlugin()],
 				external: ['valibot', '@pluxel/core'],
 			})
 
-			const { output } = await bundle.generate({ format: 'esm' })
-			const code = output[0].code
-
-			// 应该包含 __setConfigSource__ 调用
 			expect(code).toContain('__setConfigSource__')
-
-			// 应该包含内联 schema 的源码
 			expect(code).toContain('v.object({inline:v.boolean()})')
 		})
 	})
 
 	it('extracts aliased @Config decorator imports', async () => {
 		await withFixtures(async (fixturesDir) => {
-			const bundle = await rolldown({
-				input: resolve(fixturesDir, 'plugin-with-config-alias.ts'),
+			const code = await generateCode({
+				fixturesDir,
+				input: 'plugin-with-config-alias.ts',
 				plugins: [configSourcePlugin()],
 				external: ['valibot', '@pluxel/runtime', '@pluxel/core'],
 			})
-
-			const { output } = await bundle.generate({ format: 'esm' })
-			const code = output[0].code
 
 			expect(code).toContain('__setConfigSource__')
 			expect(code).toContain('__setConfigSource__(AliasConfigPlugin')
@@ -874,14 +874,12 @@ describe('configSourcePlugin', () => {
 
 	it('injects __registerUsedFeatures__ for features.use(...) class fields', async () => {
 		await withFixtures(async (fixturesDir) => {
-			const bundle = await rolldown({
-				input: resolve(fixturesDir, 'plugin-with-feature-use.ts'),
+			const code = await generateCode({
+				fixturesDir,
+				input: 'plugin-with-feature-use.ts',
 				plugins: [configSourcePlugin()],
 				external: ['@pluxel/core'],
 			})
-
-			const { output } = await bundle.generate({ format: 'esm' })
-			const code = output[0].code
 
 			expect(code).toContain('__registerUsedFeatures__')
 			expect(code).toContain('__registerUsedFeatures__(FeatureHostPlugin, CacheFeature)')
@@ -972,14 +970,12 @@ describe('configSourcePlugin', () => {
 
 	it('handles computed keys inside schema objects', async () => {
 		await withFixtures(async (fixturesDir) => {
-			const bundle = await rolldown({
-				input: resolve(fixturesDir, 'plugin-with-computed-config.ts'),
+			const code = await generateCode({
+				fixturesDir,
+				input: 'plugin-with-computed-config.ts',
 				plugins: [configSourcePlugin()],
 				external: ['valibot', '@pluxel/core'],
 			})
-
-			const { output } = await bundle.generate({ format: 'esm' })
-			const code = output[0].code
 
 			expect(code).toContain('__setConfigSource__(ComputedKeyPlugin')
 			expect(code).toContain('[key]:v.string()')
@@ -1010,16 +1006,13 @@ describe('configSourcePlugin', () => {
 
 	it('generates correct __setConfigSource__ calls', async () => {
 		await withFixtures(async (fixturesDir) => {
-			const bundle = await rolldown({
-				input: resolve(fixturesDir, 'plugin-with-config.ts'),
+			const code = await generateCode({
+				fixturesDir,
+				input: 'plugin-with-config.ts',
 				plugins: [configSourcePlugin()],
 				external: ['valibot', '@pluxel/core'],
 			})
 
-			const { output } = await bundle.generate({ format: 'esm' })
-			const code = output[0].code
-
-			// 应该为每个 @Config 字段生成调用
 			expect(code).toContain('__setConfigSource__(TestPlugin')
 			expect(code).toContain('"localConfig"')
 			expect(code).toContain('"inlineConfig"')
@@ -1142,21 +1135,21 @@ describe('plugins integration', () => {
 	for (const [label, input, ruleName] of buildLintFailureCases) {
 		it(`fails build on ${label}`, async () => {
 			await withFixtures(async (fixturesDir) => {
-				await expectLintGuardFailure(fixturesDir, input, ruleName)
+				await expect(generateWithLintGuard(fixturesDir, input)).rejects.toThrow(
+					new RegExp(ruleName),
+				)
 			})
 		})
 	}
 
 	it('rewrites HMR ui bridge imports into runtime packaged helpers', async () => {
 		await withFixtures(async (fixturesDir) => {
-			const bundle = await rolldown({
-				input: resolve(fixturesDir, 'plugin-with-hmr-ui.ts'),
+			const code = await generateCode({
+				fixturesDir,
+				input: 'plugin-with-hmr-ui.ts',
 				plugins: [hmrUiBridgePlugin()],
 				external: ['@pluxel/hmr/plugin'],
 			})
-
-			const { output } = await bundle.generate({ format: 'esm' })
-			const code = output[0].code
 
 			expect(code).toContain('ctx.ext.ui.remote.packaged()')
 			expect(code).toContain('__pluxelRuntimeUiBridge__')
@@ -1166,14 +1159,12 @@ describe('plugins integration', () => {
 
 	it('preserves non-ui hmr imports while rewriting aliased ui bindings', async () => {
 		await withFixtures(async (fixturesDir) => {
-			const bundle = await rolldown({
-				input: resolve(fixturesDir, 'plugin-with-hmr-ui-alias.ts'),
+			const code = await generateCode({
+				fixturesDir,
+				input: 'plugin-with-hmr-ui-alias.ts',
 				plugins: [hmrUiBridgePlugin()],
 				external: ['@pluxel/hmr/plugin'],
 			})
-
-			const { output } = await bundle.generate({ format: 'esm' })
-			const code = output[0].code
 
 			expect(code).toContain('import { worker } from "@pluxel/hmr/plugin";')
 			expect(code).toContain('const defineUi = __pluxelRuntimeUiBridge__')
@@ -1198,14 +1189,12 @@ describe('plugins integration', () => {
 
 	it('composes configSourcePlugin on plugin modules', async () => {
 		await withFixtures(async (fixturesDir) => {
-			const bundle = await rolldown({
-				input: resolve(fixturesDir, 'plugin-with-config.ts'),
+			const code = await generateCode({
+				fixturesDir,
+				input: 'plugin-with-config.ts',
 				plugins: [configSourcePlugin()],
 				external: ['valibot', '@pluxel/core'],
 			})
-
-			const { output } = await bundle.generate({ format: 'esm' })
-			const code = output[0].code
 
 			expect(code).toContain('__setConfigSource__')
 			expect(code).toContain('TestPlugin')
@@ -1214,14 +1203,12 @@ describe('plugins integration', () => {
 
 	it('composes hmrUiBridgePlugin with existing build plugins', async () => {
 		await withFixtures(async (fixturesDir) => {
-			const bundle = await rolldown({
-				input: resolve(fixturesDir, 'plugin-with-hmr-ui.ts'),
+			const code = await generateCode({
+				fixturesDir,
+				input: 'plugin-with-hmr-ui.ts',
 				plugins: [configSourcePlugin(), hmrUiBridgePlugin()],
 				external: ['@pluxel/hmr/plugin'],
 			})
-
-			const { output } = await bundle.generate({ format: 'esm' })
-			const code = output[0].code
 
 			expect(code).toContain('ctx.ext.ui.remote.packaged()')
 			expect(code).toContain('UiBridgePlugin')

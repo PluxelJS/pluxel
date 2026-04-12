@@ -13,6 +13,16 @@ function createDeferred() {
 	return { promise, resolve, reject }
 }
 
+function collectCommitSummaries(host: {
+	ctx: { on: (event: 'afterCommit', cb: (summary: unknown) => void) => void }
+}) {
+	const summaries: unknown[] = []
+	host.ctx.on('afterCommit', (summary) => {
+		summaries.push(summary)
+	})
+	return summaries
+}
+
 async function waitUntil(cond: () => boolean, opts?: { timeoutMs?: number }) {
 	const timeoutMs = opts?.timeoutMs ?? 1_000
 	const start = Date.now()
@@ -414,10 +424,9 @@ describe('PluginService commit()', () => {
 
 	it('serializes overlapping commits and preserves plugin state', async () => {
 		await withHost(async (host) => {
-			const summaries: any[] = []
-			host.ctx.on('afterCommit', (summary) => {
-				summaries.push(summary)
-			})
+			const summaries = collectCommitSummaries(host) as Array<{
+				added?: unknown[]
+			}>
 
 			const slowInit = createDeferred()
 			let slowInitCalled = false
