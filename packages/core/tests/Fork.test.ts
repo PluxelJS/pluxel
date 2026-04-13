@@ -1,10 +1,10 @@
-import { describe, expect, it } from 'bun:test'
+import { describe, expect, it } from 'vitest'
 
-import { BasePlugin, ForkablePlugin, Plugin, setParamToken, withTestHost } from '@pluxel/core/test'
+import { BasePlugin, ForkablePlugin, Plugin, setParamToken, withHost } from '@pluxel/test'
 
 describe('Forkable plugins', () => {
 	it('rejects forking non‑forkable plugins', () => {
-		return withTestHost((host) => {
+		return withHost((host) => {
 			@Plugin({ name: 'NotForkable' })
 			class NotForkable extends BasePlugin {}
 
@@ -13,7 +13,7 @@ describe('Forkable plugins', () => {
 	})
 
 	it('runs multiple forks with isolated ctx and identity', async () => {
-		await withTestHost(async (host) => {
+		await withHost(async (host) => {
 			const events: string[] = []
 
 			@Plugin({ name: 'Forkee' })
@@ -23,14 +23,14 @@ describe('Forkable plugins', () => {
 				}
 			}
 
-			host.registerFork(Forkee, 'a')
-			host.registerFork(Forkee, 'b')
-			await host.commitStrict()
+			const A = host.fork(Forkee, 'a')
+			const B = host.fork(Forkee, 'b')
+			await host.commit()
 
 			expect(new Set(events)).toEqual(new Set(['Forkee#a', 'Forkee#b']))
 
-			const a = host.getFork(Forkee, 'a')
-			const b = host.getFork(Forkee, 'b')
+			const a = host.get(A)
+			const b = host.get(B)
 			expect(a).toBeDefined()
 			expect(b).toBeDefined()
 			expect(a).not.toBe(b)
@@ -41,11 +41,11 @@ describe('Forkable plugins', () => {
 	})
 
 	it('allows setParamToken to inject a specific fork', async () => {
-		await withTestHost(async (host) => {
+		await withHost(async (host) => {
 			@Plugin({ name: 'Dep' })
 			class Dep extends ForkablePlugin {}
 
-			const DepA = host.fork(Dep, 'a')
+			const _DepA = host.fork(Dep, 'a')
 			const DepB = host.fork(Dep, 'b')
 
 			@Plugin({ name: 'Consumer' })
@@ -59,10 +59,10 @@ describe('Forkable plugins', () => {
 
 			setParamToken(Consumer, 0, DepB)
 
-			host.registerAll(DepA, DepB, Consumer)
-			await host.commitStrict()
+			host.add(Consumer)
+			await host.commit()
 
-			const consumer = host.getOrThrow(Consumer) as Consumer
+			const consumer = host.require(Consumer) as Consumer
 			expect(consumer.dep.ctx.pluginInfo.id).toBe('Dep#b')
 		})
 	})

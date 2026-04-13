@@ -3,8 +3,7 @@ export const RegistrationType = {
 	Factory: 'factory',
 	Instance: 'instance',
 } as const
-export type RegistrationType =
-	(typeof RegistrationType)[keyof typeof RegistrationType]
+export type RegistrationType = (typeof RegistrationType)[keyof typeof RegistrationType]
 export type CheckRegistrationType<T extends RegistrationType> = T
 
 export const ScopeType = {

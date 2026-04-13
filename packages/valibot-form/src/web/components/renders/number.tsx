@@ -1,104 +1,49 @@
-import { Box, Group, NumberInput, Slider, Text } from '@mantine/core'
-import type { CommonProps } from '~/core/registry'
-import { registerRenderer, triggerFormEvents } from '~/core/registry'
-import { META_MAP } from '~/core/utils'
-import { FieldChrome } from '../shared'
+import { NumberInput } from '@mantine/core'
+import type { NumberFieldNode } from '../../../core/fields'
+import { FieldChrome } from '../chrome/FieldChrome'
 import { cleanProps } from '../../utils/propHelpers'
+import { normalizeErrorMessages, type RendererProps, triggerFormEvents } from './types'
 
-type RendererProps = CommonProps<typeof META_MAP.NUMBER> & { value?: unknown }
-
-function NumberField(props: RendererProps) {
-	const { formBaseInfo, errors, extractedPropsInfo, inputProps, value } = props
-	const errorMessages = (errors ?? []).map((err) => err.message)
-
-	const numericValue =
-		typeof value === 'number'
-			? value
-			: value == null || value === ''
-				? undefined
-				: typeof value === 'string' && !isNaN(Number(value))
-					? Number(value)
-					: undefined
-
-	const variant = extractedPropsInfo.variant ?? 'input'
-
-	const leftSection = extractedPropsInfo.prefix ? (
-		<Text size="sm" c="dimmed">
-			{extractedPropsInfo.prefix}
-		</Text>
-	) : undefined
-
-	const rightSection = extractedPropsInfo.suffix ? (
-		<Text size="sm" c="dimmed">
-			{extractedPropsInfo.suffix}
-		</Text>
-	) : undefined
-
-	const numberInput = (
-		<NumberInput
-			value={numericValue ?? ''}
-			onChange={(val) => {
-				const next = val === '' || val === undefined ? undefined : Number(val)
-				triggerFormEvents(inputProps, next)
-			}}
-			leftSection={leftSection}
-			rightSection={rightSection}
-			{...cleanProps({
-				min: extractedPropsInfo.min,
-				max: extractedPropsInfo.max,
-				step: extractedPropsInfo.step,
-				disabled: inputProps.disabled,
-				readOnly: inputProps.readOnly,
-				placeholder: extractedPropsInfo.placeholder,
-			})}
-		/>
-	)
-
-	const slider = (
-		<Box style={{ width: '100%' }}>
-			<Slider
-				value={numericValue ?? extractedPropsInfo.min ?? 0}
-				onChange={(val) => triggerFormEvents(inputProps, val)}
-				min={extractedPropsInfo.min ?? 0}
-				max={extractedPropsInfo.max ?? 100}
-				step={extractedPropsInfo.step ?? 1}
-				{...cleanProps({
-					marks: extractedPropsInfo.marks,
-					disabled: inputProps.disabled || inputProps.readOnly,
-				})}
-			/>
-			{(extractedPropsInfo.prefix || extractedPropsInfo.suffix) && (
-				<Group justify="space-between" mt={4}>
-					{extractedPropsInfo.prefix && (
-						<Text size="sm" c="dimmed">
-							{extractedPropsInfo.prefix}
-						</Text>
-					)}
-					<Text size="sm" fw={600}>
-						{numericValue ?? extractedPropsInfo.min ?? 0}
-						{extractedPropsInfo.suffix ? ` ${extractedPropsInfo.suffix}` : ''}
-					</Text>
-				</Group>
-			)}
-		</Box>
-	)
+export function NumberField(props: RendererProps) {
+	const { node, errors, inputProps, value } = props
+	const info = node as NumberFieldNode
+	const baseErrors = normalizeErrorMessages(errors)
+	const parsed =
+		typeof value === 'number' ? value : value == null || value === '' ? '' : Number(value)
+	const currentValue = Number.isNaN(parsed) ? '' : parsed
 
 	return (
 		<FieldChrome
 			{...cleanProps({
-				label: formBaseInfo.label,
-				required: formBaseInfo.required,
-				description: formBaseInfo.description,
-				helperText: formBaseInfo.helperText,
-				hint: formBaseInfo.hint ?? extractedPropsInfo.note,
-				tooltip: formBaseInfo.tooltip,
-				badge: formBaseInfo.badge,
-				errors: errorMessages,
+				label: node.meta.label,
+				required: node.required,
+				description: node.meta.description,
+				help: node.meta.help,
+				hint: node.meta.hint,
+				badge: node.meta.badge,
+				errors: baseErrors,
+				hideLabel: node.meta.hideLabel,
+				hideRequired: node.meta.hideRequired,
 			})}
 		>
-			{variant === 'slider' ? slider : numberInput}
+			<NumberInput
+				value={currentValue}
+				{...cleanProps({
+					onChange: (val: number | string) => {
+						const parsedValue = val === '' || val === undefined ? undefined : Number(val)
+						const safe = Number.isNaN(parsedValue) ? undefined : parsedValue
+						triggerFormEvents(inputProps, safe)
+					},
+					onBlur: inputProps.onBlur,
+					name: inputProps.name,
+					placeholder: info.placeholder,
+					min: info.min,
+					max: info.max,
+					step: info.step ?? (info.integer ? 1 : undefined),
+					disabled: inputProps.disabled,
+					readOnly: inputProps.readOnly,
+				})}
+			/>
 		</FieldChrome>
 	)
 }
-
-registerRenderer(META_MAP.NUMBER, (props: any) => <NumberField {...props} />)

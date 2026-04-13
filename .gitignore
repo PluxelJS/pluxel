@@ -197,6 +197,10 @@ web_modules/
 .cache
 .parcel-cache
 
+# Module Federation Vite temporary directories
+**/.__mf__temp/
+**/node_modules/__mf__virtual/
+
 # Next.js build output
 .next
 out
@@ -279,8 +283,29 @@ dist
 .env.test.local
 .env.production.Local
 .turbo
+.tmp
+tmp
 
 build/
+!packages/build/
+!packages/build/**
+packages/build/.turbo/
+packages/build/dist/
+packages/build/node_modules/
 
 # Build cache manifests
 *.tsbuildinfo
+
+# Runtime data / caches
+.pluxel/
+/pluxel.hmr.jsonc
+pluxel.hmr.discovered.jsonc
+pluxel.hmr.jsonc.bak.*
+data/
+packages/*/data/
+
+# Temporary type probes (elysia typing checks)
+**/.tmp-elysia-typing-check.ts
+
+# tsdown/rolldown-plugin-dts intermediate outputs
+packages/runtime/packages/

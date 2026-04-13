@@ -1,6 +1,6 @@
 // tests/custom-decorator.spec.ts
 import 'reflect-metadata'
-import { describe, expect, it } from 'bun:test'
+import { describe, expect, it } from 'vitest'
 import { ContainerBuilder } from '../src'
 import { expectExist, expectOk } from './_helpers'
 import { OtherServiceWithCustomDecorator } from './fixtures/other-service-with-custom-decorator'
@@ -20,6 +20,6 @@ describe('user defined decorators can be used', () => {
 
 		// Assert
 		expect(service.constructor.name).toBe('ServiceWithCustomDecorator')
-		expect(service.execDep()).toBeTrue()
+		expect(service.execDep()).toBe(true)
 	})
 })

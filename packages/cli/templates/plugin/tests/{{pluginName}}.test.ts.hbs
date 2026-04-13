@@ -1,0 +1,27 @@
+import { checkPluginDecorator, getPluginInfo } from '@pluxel/core'
+import { withHost } from '@pluxel/test'
+import { describe, expect, it } from 'vitest'
+import { {{className}} } from '../src/{{pluginName}}'
+
+describe('{{className}}', () => {
+	it('exports a decorated plugin class', () => {
+		expect({{className}}).toBeDefined()
+		expect(checkPluginDecorator({{className}})).toBe(true)
+		expect(getPluginInfo({{className}}).declaredName).toBe('{{className}}')
+	})
+
+	it('starts inside a host and can be toggled via config', async () => {
+		await withHost(async (host) => {
+			host.add({{className}})
+
+			// Demonstrates test utilities + config handle usage.
+			host.cfg({{className}}).disable()
+			await host.commit()
+			expect(host.isRunning({{className}})).toBe(false)
+
+			host.cfg({{className}}).enable()
+			await host.commit()
+			expect(host.isRunning({{className}})).toBe(true)
+		})
+	})
+})

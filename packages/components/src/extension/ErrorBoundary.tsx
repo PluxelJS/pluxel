@@ -38,10 +38,9 @@ export class ExtensionErrorBoundary extends Component<
 		if (
 			prevProps.extensionId !== this.props.extensionId ||
 			prevProps.pluginName !== this.props.pluginName
+		&& this.state.hasError
 		) {
-			if (this.state.hasError) {
-				this.setState({ hasError: false, error: null })
-			}
+			this.setState({ hasError: false, error: null })
 		}
 	}
 

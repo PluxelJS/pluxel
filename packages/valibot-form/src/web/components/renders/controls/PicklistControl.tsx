@@ -1,14 +1,6 @@
-import {
-	Badge,
-	CloseButton,
-	MultiSelect,
-	Radio,
-	SegmentedControl,
-	Select,
-	Stack,
-	Text,
-} from '@mantine/core'
+import { Autocomplete, MultiSelect, Radio, Select, Stack, TagsInput, Text } from '@mantine/core'
 import { forwardRef, useCallback, useEffect, useMemo, useState } from 'react'
+import { SegmentedButtons } from '../../SegmentedButtons'
 
 export interface PicklistControlProps {
 	meta: {
@@ -26,14 +18,15 @@ export interface PicklistControlProps {
 		placeholder?: string
 		searchable?: boolean
 		clearable?: boolean
-		maxSelections?: number
-		allowCreate?: boolean
-		variant?: 'select' | 'segmented' | 'radio'
+		max?: number
+		create?: boolean
+		control?: 'select' | 'segmented' | 'radio'
 		multiple?: boolean
-		nothingFoundLabel?: string
+		emptyLabel?: string
 	}
 	value?: unknown
 	onChange: (val: unknown) => void
+	onBlur?: () => void
 	disabled?: boolean
 	required?: boolean
 }
@@ -64,34 +57,13 @@ const SelectOptionItem = forwardRef<HTMLDivElement, any>(
 )
 SelectOptionItem.displayName = 'PicklistOptionItem'
 
-const MultiValueChip = forwardRef<HTMLDivElement, any>(
-	({ label, onRemove, disabled, data, ...others }, ref) => (
-		<Badge
-			ref={ref}
-			radius="sm"
-			variant="light"
-			color={(data as any)?.accentColor}
-			pr={disabled ? 12 : 4}
-			pl={10}
-			styles={{ root: { display: 'inline-flex', alignItems: 'center', gap: 4 } }}
-			{...others}
-		>
-			<Text size="sm">{label}</Text>
-			{disabled ? null : (
-				<CloseButton size="xs" variant="transparent" onMouseDown={onRemove} onClick={onRemove} />
-			)}
-		</Badge>
-	),
-)
-MultiValueChip.displayName = 'PicklistValueChip'
-
 function normalizeOptions(
 	options: readonly (string | number)[] = [],
 	entries?: PicklistControlProps['meta']['entries'],
 	labels?: Partial<Record<string | number, string>>,
 	disabled?: readonly (string | number)[],
 ) {
-	const disabledSet = new Set((disabled ?? []).map((item) => String(item)))
+	const disabledSet = new Set((disabled ?? []).map(String))
 	const mapped: NormalizedOption[] = []
 	const seen = new Set<string | number>()
 
@@ -119,8 +91,10 @@ function normalizeOptions(
 		})
 	}
 
-	const isAllNumbers =
-		(options?.length ?? 0) > 0 && (options ?? []).every((opt) => typeof opt === 'number')
+	const allValues: (string | number)[] = []
+	for (const opt of options ?? []) allValues.push(opt)
+	for (const entry of entries ?? []) allValues.push(entry.value)
+	const isAllNumbers = allValues.length > 0 && allValues.every((opt) => typeof opt === 'number')
 	return { entries: mapped, isAllNumbers }
 }
 
@@ -128,11 +102,12 @@ export function PicklistControl({
 	meta,
 	value,
 	onChange,
+	onBlur,
 	disabled,
 	required,
 }: PicklistControlProps) {
 	const multiple = Boolean(meta.multiple)
-	const variant = meta.variant ?? (multiple ? 'select' : 'select')
+	const variant = meta.control ?? (multiple ? 'select' : 'select')
 
 	const normalized = useMemo(
 		() => normalizeOptions(meta.options, meta.entries, meta.labels, meta.disabled),
@@ -203,7 +178,7 @@ export function PicklistControl({
 
 	const searchable = meta.searchable ?? (meta.options?.length ?? 0) >= 8
 	const clearable = meta.clearable ?? !required
-	const allowCreate = Boolean(meta.allowCreate)
+	const allowCreate = Boolean(meta.create)
 
 	const sharedData = useMemo(() => {
 		const loose: NormalizedOption[] = []
@@ -251,29 +226,37 @@ export function PicklistControl({
 		return data
 	}, [optionsState])
 
-	const handleCreate = useCallback(
-		(query: string) => {
-			const trimmed = query.trim()
-			if (!trimmed) return null
-			if (optionMap.has(trimmed)) {
-				const existing = optionMap.get(trimmed)!
-				return existing.value
-			}
-			const raw = normalized.isAllNumbers ? Number(trimmed) : trimmed
-			const option: NormalizedOption = {
-				value: String(trimmed),
-				label: trimmed,
-				raw,
-			}
-			setOptionsState((prev) => [...prev, option])
-			return option.value
-		},
-		[optionMap, normalized.isAllNumbers],
-	)
-
-	const nothingFound = meta.nothingFoundLabel ?? (searchable ? '无匹配项' : undefined)
+	const nothingFound = meta.emptyLabel ?? (searchable ? '无匹配项' : undefined)
 
 	if (multiple) {
+		if (allowCreate) {
+			const tagsData = optionsState.map((option) => ({
+				value: option.value,
+				...(option.disabled ? { disabled: true } : {}),
+			}))
+			return (
+				<TagsInput
+					data={tagsData}
+					value={multiValue}
+					onChange={(ids) => {
+						const cleaned = ids.map((id) => id.trim()).filter(Boolean)
+						const raw = cleaned.map((id) => toRaw(id)).filter((item) => item !== null) as (
+							| string
+							| number
+						)[]
+						onChange(raw)
+					}}
+					onBlur={onBlur as any}
+					clearable={clearable}
+					maxTags={meta.max}
+					placeholder={meta.placeholder}
+					disabled={disabled}
+					comboboxProps={{ withinPortal: true, position: 'bottom-start' as const }}
+					maxDropdownHeight={280}
+				/>
+			)
+		}
+
 		const multiSelectProps: any = {
 			data: sharedData,
 			value: multiValue,
@@ -284,6 +267,7 @@ export function PicklistControl({
 				)[]
 				onChange(raw)
 			},
+			onBlur,
 			searchable,
 			clearable,
 			hidePickedOptions: true,
@@ -294,27 +278,22 @@ export function PicklistControl({
 
 		if (meta.placeholder) multiSelectProps.placeholder = meta.placeholder
 		if (disabled !== undefined) multiSelectProps.disabled = disabled
-		if (meta.maxSelections) multiSelectProps.maxValues = meta.maxSelections
+		if (meta.max) multiSelectProps.maxValues = meta.max
 		if (nothingFound) multiSelectProps.nothingFoundMessage = nothingFound
 		if (SelectOptionItem) multiSelectProps.renderOption = SelectOptionItem
-
-		// Mantine v7 onCreate API
-		if (allowCreate) {
-			multiSelectProps.getCreateLabel = (query: string) => `+ 创建 "${query}"`
-			multiSelectProps.onCreate = handleCreate
-		}
 
 		return <MultiSelect {...multiSelectProps} />
 	}
 
 	if (variant === 'segmented') {
 		return (
-			<SegmentedControl
+			<SegmentedButtons
 				data={sharedData as any}
 				value={singleValue || null}
 				onChange={(id) => onChange(toRaw(id))}
+				onBlur={onBlur}
 				fullWidth
-				{...(disabled !== undefined && { disabled })}
+				disabled={disabled}
 			/>
 		)
 	}
@@ -324,6 +303,7 @@ export function PicklistControl({
 			<Radio.Group
 				value={singleValue || null}
 				onChange={(id) => onChange(toRaw(id))}
+				onBlur={onBlur}
 				{...(disabled !== undefined && { disabled })}
 			>
 				<Stack gap={6} mt="xs">
@@ -341,10 +321,35 @@ export function PicklistControl({
 	}
 
 	// Single select
+	if (allowCreate) {
+		const autoData = optionsState.map((option) => option.value)
+		return (
+			<Autocomplete
+				data={autoData}
+				value={singleValue || ''}
+				onChange={(next) => {
+					const trimmed = next.trim()
+					if (!trimmed) {
+						onChange(null)
+						return
+					}
+					onChange(toRaw(trimmed))
+				}}
+				onBlur={onBlur as any}
+				placeholder={meta.placeholder}
+				disabled={disabled}
+				clearable={clearable}
+				comboboxProps={{ withinPortal: true, position: 'bottom-start' as const }}
+				maxDropdownHeight={280}
+			/>
+		)
+	}
+
 	const selectProps: any = {
 		data: selectData,
 		value: singleValue || null,
 		onChange: (id: string | null) => onChange(toRaw(id)),
+		onBlur,
 		searchable,
 		clearable,
 		comboboxProps: { withinPortal: true, position: 'bottom-start' as const },
@@ -354,12 +359,6 @@ export function PicklistControl({
 	if (disabled !== undefined) selectProps.disabled = disabled
 	if (nothingFound) selectProps.nothingFoundMessage = nothingFound
 	if (SelectOptionItem) selectProps.renderOption = SelectOptionItem
-
-	// Mantine v7 onCreate API
-	if (allowCreate) {
-		selectProps.getCreateLabel = (query: string) => `+ 创建 "${query}"`
-		selectProps.onCreate = handleCreate
-	}
 
 	return <Select {...selectProps} />
 }

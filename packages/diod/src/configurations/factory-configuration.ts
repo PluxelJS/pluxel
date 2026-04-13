@@ -1,21 +1,25 @@
 import type { Buildable, ServiceData } from '../internal-types'
 import { RegistrationType, ScopeType } from '../types'
-import type { Factory, Identifier, WithScopeChange } from '../types/types'
+import type { Factory, Identifier, WithDependencies, WithScopeChange } from '../types/types'
 import { ServiceConfiguration } from './service-configuration'
 
 export class FactoryConfiguration<T>
 	extends ServiceConfiguration<T>
-	implements WithScopeChange
+	implements WithScopeChange, WithDependencies
 {
 	protected scope = ScopeType.Transient
 	private dependencies: Identifier<unknown>[] = []
 
-	private constructor(private readonly factory: Factory<T>) {
-		super()
+	private constructor(
+		private readonly factory: Factory<T>,
+		onMutate?: () => void,
+	) {
+		super(onMutate)
 	}
 
 	public withDependencies(dependencies: Identifier<unknown>[]): this {
-		this.dependencies = dependencies
+		this.dependencies = [...dependencies]
+		this.onMutate?.()
 		return this
 	}
 
@@ -36,21 +40,26 @@ export class FactoryConfiguration<T>
 	}
 
 	protected build(): ServiceData<T> {
+		const tags = this.tags.length > 0 ? [...this.tags] : []
+		const aliases = this.alias.length > 0 ? [...this.alias] : []
+		const dependencies = this.dependencies.length > 0 ? [...this.dependencies] : []
+
 		return {
-			tags: this.tags,
-			aliases: this.alias,
+			tags,
+			aliases,
 			isPrivate: this.isPrivate,
 			scope: this.scope,
 			type: RegistrationType.Factory,
 			factory: this.factory,
-			dependencies: this.dependencies,
+			dependencies,
 		}
 	}
 
 	public static createBuildable<TIdentifier>(
 		factory: Factory<TIdentifier>,
+		onMutate?: () => void,
 	): Buildable<FactoryConfiguration<TIdentifier>, TIdentifier> {
-		const use = new FactoryConfiguration(factory)
+		const use = new FactoryConfiguration(factory, onMutate)
 		return {
 			instance: use,
 			build: (): ServiceData<TIdentifier> => use.build(),

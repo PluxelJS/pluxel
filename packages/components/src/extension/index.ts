@@ -1,64 +1,34 @@
 // packages/components/src/extension/index.ts
 
 export { ExtensionErrorBoundary } from './ErrorBoundary'
-// Hooks
-export { useExtensionRuntimeVersion, useExtensionVersion } from './hooks'
-// Registry
 export {
+	createGlobalExtensionContext,
+	ExtensionPathnameProvider,
+	createPluginExtensionContext,
+	ExtensionPoints,
 	ExtensionProvider,
-	extensionRegistry,
+	isExtensionPluginRunning,
+	toGlobalExtensionContext,
+	useGlobalExtensionContext,
+	usePluginExtensionContext,
 	useExtensionContext,
-	useExtensionContextMaybe,
-	useExtensions,
-	useExtensionsWithContext,
-	useRegisterExtension,
-} from './registry'
-// Runtime
-export {
-	getExtensionRuntimeRevision,
-	getPluginRouteComponent,
-	loadExtensionModule,
-	subscribeExtensionRuntimeChanges,
-	unloadExtensionModule,
-} from './runtime'
-
-// 组件 & Slot helpers
-export { ExtensionSlot, ExtensionSlotRender } from './slots/ExtensionSlot'
-export {
-	type ExtensionSurfaceOptions,
-	type ExtensionSurfaceRender,
-	type ExtensionSurfaceRenderPayload,
-	type ExtensionSurfaceResult,
-	useExtensionSurface,
-} from './slots/ExtensionSurface'
-// 类型
+	useExtensionPathname,
+} from '@pluxel/runtime/web'
+export { doc } from '@pluxel/runtime/web/extensions'
 export type {
 	AnyExtensionDef,
-	BuiltinExtensionBase,
-	BuiltinExtensionDef,
-	BuiltinExtensionKind,
-	BuiltinDocBlock,
-	BuiltinDocBlockKind,
-	BuiltinDocExtensionDef,
-	BuiltinInfoCardBlock,
-	BuiltinInfoCardLayout,
-	BuiltinInfoCardRow,
-	BuiltinRpcArg,
-	BuiltinRpcAutoFormBlock,
-	BuiltinSseRef,
-	BuiltinValue,
-	CompiledExtensionModule,
 	ExtensionContext,
 	ExtensionDef,
 	ExtensionItem,
-	ExtensionManifest,
-	ExtensionManifestEvent,
 	ExtensionMeta,
 	ExtensionPoint,
 	ExtensionPointCtx,
 	ExtensionPointMap,
 	ExtensionPointMeta,
 	GlobalExtensionContext,
+	InteractionSessionComponent,
+	InteractionSessionComponentProps,
+	InteractionSessionPhase,
 	PluginExtensionContext,
 	PluginUIModule,
 	RouteExtensionDef,
@@ -66,24 +36,92 @@ export type {
 	UiConfirmTone,
 	UiNotifyPayload,
 	UiNotifyTone,
-} from './types'
+} from '@pluxel/runtime/web'
+export type {
+	BuiltinExtensionDef,
+	BuiltinExtensionKind,
+	ExtensionInteractionRecord,
+	ExtensionInteractionState,
+	BuiltinFieldValueRef,
+	BuiltinGeneratedIdValue,
+	BuiltinDocBlock,
+	BuiltinDocBlockKind,
+	BuiltinDocContent,
+	BuiltinDocExtensionDef,
+	BuiltinDocPart,
+	BuiltinInfoCardBlock,
+	BuiltinInfoCardLayout,
+	BuiltinInfoCardRow,
+	BuiltinNowValue,
+	BuiltinActionBlock,
+	BuiltinResourceSelectBlock,
+	BuiltinFormBlock,
+	InteractionCardinality,
+	InteractionOfferDef,
+	InteractionSessionDef,
+	InteractionSurfaceDef,
+	BuiltinSignalDbRef,
+	BuiltinSignalDbWriteMode,
+	BuiltinSignalDbWriteSpec,
+	BuiltinSyncRef,
+	BuiltinTemplateValue,
+	BuiltinValue,
+	CompiledExtensionModule,
+	ExtensionManifest,
+	ExtensionManifestEvent,
+	ExtensionModuleState,
+	ExtensionModuleStateKind,
+	InteractionContract,
+	InteractionContractRef,
+} from '@pluxel/runtime/web/extensions'
+export { defineInteractionContract } from '@pluxel/runtime/web/extensions'
+export { extensionLocale } from './internal/locale'
 export {
-	createGlobalExtensionContext,
-	createPluginExtensionContext,
-	defineDocBlocks,
-	ExtensionPoints,
-	isExtensionPluginRunning,
-	md,
-	blockRef,
-	toGlobalExtensionContext,
-} from './types'
+	extensionInteractionLabel,
+	extensionInteractionReasonLabel,
+	hasPluginExtensionDiagnostics,
+	summarizePluginExtensionDiagnostics,
+	type PluginExtensionDiagnosticsSnapshot,
+	type PluginExtensionDiagnosticsSummary,
+} from './diagnostics'
+// Hooks
+export {
+	useExtensionModuleState,
+	useExtensionModuleStates,
+	useExtensionManifestDiagnostics,
+	usePluginExtensionDiagnostics,
+	usePluginUiStatus,
+	usePluginUiVersion,
+} from './hooks'
+// Paths (host routing conventions)
+export {
+	EXTENSION_ROUTE_PREFIX,
+	EXTENSION_STANDALONE_ROUTE_PREFIX,
+	type ExtensionFrame,
+	type ExtensionRoutePrefix,
+	buildExtensionHref,
+	normalizeExtensionRouteSubPath,
+} from './paths'
+// Registry
+export { extensionRegistry, useExtensions } from './internal/registry'
+// Runtime
+export {
+	getPluginUiRegistryRevision,
+	getPluginUiRouteComponent,
+	getPluginUiSessionComponent,
+	loadPluginUiModule,
+	subscribePluginUiRegistryChanges,
+	unloadPluginUiModule,
+} from './internal/pluginUiRegistry'
+export { requestExtensionManifestSync } from './internal/runtime-state'
+export { ensureExtensionFederationRuntime, loadFederatedExtensionModule } from './federationRuntime'
 
-// Vendors (共享依赖)
+// 组件 & Slot helpers
+export { ExtensionSlot } from './slots/ExtensionSlot'
 export {
-	getVendor,
-	initVendors,
-	type VendorPackage,
-	type Vendors,
-	vendorPackages,
-	vendors,
-} from './vendors'
+	type ExtensionSurfaceOptions,
+	type ExtensionSurfaceRender,
+	type ExtensionSurfaceRenderPayload,
+	type ExtensionSurfaceResult,
+	useExtensionSurface,
+} from './slots/ExtensionSurface'

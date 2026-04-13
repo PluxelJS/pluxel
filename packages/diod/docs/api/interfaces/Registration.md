@@ -1,6 +1,6 @@
 [**DIOD v3.0.0**](../README.md) • **Docs**
 
-***
+---
 
 # Interface: Registration\<T\>
 
@@ -29,7 +29,7 @@ The implementation that the identifier will provide.
 
 Configuration fluent API for classes
 
-***
+---
 
 ### useClass()
 
@@ -49,7 +49,7 @@ The implementation that the identifier will provide.
 
 Configuration fluent API for classes
 
-***
+---
 
 ### useFactory()
 
@@ -69,7 +69,7 @@ The factory that will be executed when the identifier is requested.
 
 Configuration fluent API for factories
 
-***
+---
 
 ### useInstance()
 

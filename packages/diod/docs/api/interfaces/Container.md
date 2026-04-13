@@ -1,6 +1,6 @@
 [**DIOD v3.0.0**](../README.md) • **Docs**
 
-***
+---
 
 # Interface: Container
 
@@ -33,7 +33,7 @@ The tag name.
 
 An array of service identifiers tagged with the given tag.
 
-***
+---
 
 ### get()
 

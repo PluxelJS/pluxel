@@ -1,6 +1,5 @@
 import { useLocalStorage } from '@mantine/hooks'
-import type React from 'react'
-import { createContext, useCallback, useContext, useEffect, useMemo } from 'react'
+import { createContext, useCallback, useContext, useEffect, useMemo, type ReactNode } from 'react'
 import { setNotificationCenterPush } from './notifyBridge'
 
 export type NotificationRecord = {
@@ -36,7 +35,7 @@ const genId = () =>
 const STORAGE_KEY = 'pluxel:notifications-history'
 const MAX_HISTORY = 50
 
-export function NotificationCenterProvider({ children }: { children: React.ReactNode }) {
+export function NotificationCenterProvider({ children }: { children: ReactNode }) {
 	const [items, setItems] = useLocalStorage<NotificationRecord[]>({
 		key: STORAGE_KEY,
 		defaultValue: [],

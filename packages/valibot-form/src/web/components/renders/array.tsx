@@ -4,7 +4,7 @@ import {
 	Card,
 	Group,
 	NumberInput,
-	Select,
+	Table,
 	SimpleGrid,
 	Stack,
 	Switch,
@@ -30,53 +30,30 @@ import {
 } from '@dnd-kit/core'
 import { SortableContext, arrayMove, rectSortingStrategy, useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
-import { useEffect, useMemo, useState } from 'react'
-import type { ReactNode } from 'react'
-import { DEFAULT_TEXTS, GRID_COLUMN_THRESHOLD } from '~/core/constants'
-import type { ArrayMetaResult } from '~/core/actions/array'
-import type { CommonProps } from '~/core/registry'
-import { MetaRenderer, registerRenderer, triggerFormEvents } from '~/core/registry'
-import { META_MAP } from '~/core/utils'
-import { FieldChrome } from '../shared'
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { DEFAULT_TEXTS, GRID_COLUMN_THRESHOLD } from '../../../core/constants'
+import type {
+	ArrayFieldNode,
+	FieldNode,
+	NumberFieldNode,
+	PicklistFieldNode,
+	StringFieldNode,
+} from '../../../core/fields'
+import { FieldChrome } from '../chrome/FieldChrome'
+import { useFieldRenderer } from '../internal/fieldRendererContext'
 import { cleanProps } from '../../utils/propHelpers'
 import { PicklistControl } from './controls/PicklistControl'
-import { cachedExtractInfo } from '../schemaCache'
-
-type RendererProps = CommonProps<typeof META_MAP.ARRAY> & {
-	value?: unknown[]
-	defaultValue?: unknown
-}
-type ArrayUI = ArrayMetaResult
-
-const idOf = (value: string | number) => String(value)
-
-function buildPicklistData(config?: NonNullable<ArrayUI['picklist']>) {
-	if (!config) return { data: [], map: new Map<string, string | number>(), isAllNumbers: false }
-	const map = new Map<string, string | number>()
-	const disabled = new Set((config.disabled ?? []).map((item) => idOf(item)))
-	const data = (config.options ?? []).map((opt) => {
-		const id = idOf(opt)
-		map.set(id, opt)
-		return {
-			value: id,
-			label: config.labels?.[opt] ?? String(opt),
-			disabled: disabled.has(id),
-		}
-	})
-	const isAllNumbers = (config.options ?? []).every((opt) => typeof opt === 'number')
-	return { data, map, isAllNumbers }
-}
-
-function inferMode(
-	mode: ArrayUI['valueMode'],
-	value: unknown,
-): Exclude<ArrayUI['valueMode'], 'auto' | undefined> | 'string' {
-	if (mode && mode !== 'auto') return mode
-	if (typeof value === 'number') return 'number'
-	if (typeof value === 'boolean') return 'boolean'
-	// 不再自动推断为 json，让 object/array 保持原样
-	return 'string'
-}
+import {
+	isErrorWithPath,
+	joinErrorMessages,
+	normalizeErrorMessages,
+	type FieldError,
+	type RendererProps,
+	type TriggerOptions,
+	triggerFormBlur,
+	triggerFormEvents,
+} from './types'
+import { buildNestedInputProps, tweakNestedNode } from './nested'
 
 function cloneValue<T>(value: T): T {
 	if (value == null || typeof value !== 'object') return value
@@ -87,129 +64,70 @@ function cloneValue<T>(value: T): T {
 	}
 }
 
-function defaultByMode(
-	mode: Exclude<ArrayUI['valueMode'], undefined>,
-	options?: readonly (string | number)[],
-) {
-	if (mode === 'picklist') return options?.[0] ?? ''
-	switch (mode) {
+function defaultItemForNode(node?: FieldNode | null): unknown {
+	if (!node) return ''
+	switch (node.kind) {
+		case 'string':
+			return ''
 		case 'number':
 			return 0
 		case 'boolean':
 			return false
-		case 'json':
-			return {}
-		case 'auto':
+		case 'picklist': {
+			const meta = node as PicklistFieldNode
+			if (meta.entries?.length) return meta.entries[0].value
+			if (meta.options?.length) return meta.options[0]
 			return ''
+		}
+		case 'array':
+			return []
+		case 'record':
+		case 'object':
+		case 'union':
+			return {}
 		default:
 			return ''
 	}
 }
 
-/**
- * 数组项布局信息
- * - compact: 是否适合多列布局
- * - maxColumns: 推荐的最大列数（基于项类型的自然宽度）
- */
 interface ArrayItemLayoutInfo {
 	compact: boolean
 	maxColumns: 1 | 2 | 3
 }
 
-/**
- * 分析数组项的布局特性
- * 根据项类型决定是否适合多列以及最大列数
- */
-function analyzeArrayItemLayout(ep: ArrayUI & { itemSchema?: unknown }): ArrayItemLayoutInfo {
-	// 显式指定的 valueMode 优先
-	if (ep.valueMode && ep.valueMode !== 'auto') {
-		switch (ep.valueMode) {
-			case 'boolean':
-				// 开关控件非常紧凑，可以 3 列
-				return { compact: true, maxColumns: 3 }
-			case 'number':
-			case 'picklist':
-				// 数字和选择器适合 2-3 列
-				return { compact: true, maxColumns: 3 }
-			case 'string':
-				// 字符串默认 2 列（除非是 textarea）
-				return { compact: true, maxColumns: 2 }
-			case 'json':
-			case 'object':
-			case 'array':
-			case 'union':
-			case 'variant':
-				return { compact: false, maxColumns: 1 }
-			default:
-				return { compact: false, maxColumns: 1 }
+function analyzeArrayItemLayout(node?: FieldNode | null): ArrayItemLayoutInfo {
+	if (!node) return { compact: false, maxColumns: 1 }
+	switch (node.kind) {
+		case 'boolean':
+			return { compact: true, maxColumns: 3 }
+		case 'number':
+		case 'picklist':
+			return { compact: true, maxColumns: 3 }
+		case 'string': {
+			const control = (node as any).control
+			if (control === 'textarea' || control === 'code') return { compact: false, maxColumns: 1 }
+			return { compact: true, maxColumns: 2 }
 		}
+		default:
+			return { compact: false, maxColumns: 1 }
 	}
-
-	// 从 itemSchema 推断
-	if (ep.itemSchema) {
-		const info = cachedExtractInfo(ep.itemSchema as object, 'item')
-		if (info) {
-			switch (info.type) {
-				case 'boolean':
-					return { compact: true, maxColumns: 3 }
-				case 'number':
-				case 'picklist':
-					return { compact: true, maxColumns: 3 }
-				case 'string': {
-					// 检查 string 的 mode，textarea/code 需要单列
-					const mode = (info.props as any)?.mode
-					if (mode === 'textarea' || mode === 'code') {
-						return { compact: false, maxColumns: 1 }
-					}
-					return { compact: true, maxColumns: 2 }
-				}
-				case 'object':
-				case 'array':
-				case 'union':
-				case 'record':
-					return { compact: false, maxColumns: 1 }
-				default:
-					return { compact: false, maxColumns: 1 }
-			}
-		}
-	}
-
-	return { compact: false, maxColumns: 1 }
 }
 
-/**
- * 计算数组的最佳列数
- * @param layoutInfo 项布局信息
- * @param itemCount 项数量
- * @param explicitColumns 显式指定的列数
- * @param disableAutoGrid 是否禁用自动多列（嵌套场景）
- */
 function resolveArrayColumns(
 	layoutInfo: ArrayItemLayoutInfo,
 	itemCount: number,
 	explicitColumns?: number,
 	disableAutoGrid?: boolean,
 ): number {
-	// 显式指定优先
 	if (explicitColumns && explicitColumns > 0) {
 		return Math.min(explicitColumns, layoutInfo.maxColumns)
 	}
-
-	// 禁用自动多列（嵌套场景）
 	if (disableAutoGrid) return 1
-
-	// 非紧凑类型强制单列
 	if (!layoutInfo.compact) return 1
-
-	// 项数不足时单列
 	if (itemCount < GRID_COLUMN_THRESHOLD) return 1
-
-	// 根据项数量和最大列数计算最佳列数
-	// 原则：尽量填满行，避免最后一行只有一个元素显得孤单
-	const maxCols = layoutInfo.maxColumns
-	if (itemCount >= 6 && maxCols >= 3) return 3
-	if (itemCount >= 4 && maxCols >= 2) return 2
-	if (itemCount >= 3 && maxCols >= 2) return 2
+	if (itemCount >= 6 && layoutInfo.maxColumns >= 3) return 3
+	if (itemCount >= 4 && layoutInfo.maxColumns >= 2) return 2
+	if (itemCount >= 3 && layoutInfo.maxColumns >= 2) return 2
 	return 1
 }
 
@@ -223,13 +141,13 @@ export function reorderList<T>(list: readonly T[], fromIndex: number, toIndex: n
 	) {
 		return [...list]
 	}
-	return arrayMove(list, fromIndex, toIndex)
+	// `arrayMove` expects a mutable array; keep `list` readonly-friendly.
+	return arrayMove([...list], fromIndex, toIndex)
 }
 
 type SortableCardProps = {
 	id: UniqueIdentifier
 	children: ReactNode
-	dragHandle?: ReactNode
 	disabled?: boolean
 }
 
@@ -251,183 +169,323 @@ function SortableCard(props: SortableCardProps) {
 	)
 }
 
-function ArrayField(props: RendererProps) {
-	const { formBaseInfo, errors, extractedPropsInfo, inputProps, value, defaultValue } = props
-	const ep = extractedPropsInfo ?? {}
+function createArrayItemKey(nextId: number) {
+	return `array-item-${nextId}`
+}
+
+type ArrayFieldPicklistProps = {
+	node: RendererProps['node']
+	items: unknown[]
+	itemNode: PicklistFieldNode
+	baseErrors: FieldError[]
+	updateItems: (next: unknown[], options?: TriggerOptions) => void
+	handleBlur: () => void
+	isLocked: boolean
+}
+
+function ArrayFieldPicklist(props: ArrayFieldPicklistProps) {
+	const { node, items, itemNode, baseErrors, updateItems, handleBlur, isLocked } = props
+
+	return (
+		<FieldChrome
+			{...cleanProps({
+				label: node.meta.label,
+				required: node.required,
+				description: node.meta.description,
+				help: node.meta.help,
+				hint: node.meta.hint,
+				badge: node.meta.badge,
+				errors: baseErrors,
+				hideLabel: node.meta.hideLabel,
+				hideRequired: node.meta.hideRequired,
+			})}
+		>
+			<PicklistControl
+				meta={{
+					options: itemNode.options,
+					entries: itemNode.entries,
+					labels: itemNode.labels,
+					disabled: itemNode.disabled,
+					placeholder: itemNode.placeholder,
+					searchable: itemNode.searchable,
+					clearable: itemNode.clearable ?? true,
+					max: itemNode.max,
+					create: itemNode.create ?? false,
+					control: itemNode.control ?? 'select',
+					multiple: true,
+					emptyLabel: itemNode.emptyLabel,
+				}}
+				value={items}
+				onChange={(next) => {
+					if (Array.isArray(next)) updateItems(next)
+					else if (next == null) updateItems([])
+					else updateItems([next])
+				}}
+				onBlur={handleBlur}
+				disabled={isLocked}
+				required={false}
+			/>
+		</FieldChrome>
+	)
+}
+
+export function ArrayField(props: RendererProps) {
+	const { node, errors, inputProps, value } = props
+	const info = node as ArrayFieldNode
 	const items = Array.isArray(value) ? (value as unknown[]) : []
+	const itemNode = info.item ?? null
 
-	// 布局计算：基于项类型智能决定列数
-	const explicitLayout = ep.layout ?? ep.style
-	const layoutInfo = analyzeArrayItemLayout(ep)
-	const columns = resolveArrayColumns(layoutInfo, items.length, ep.columns, ep.disableAutoGrid)
-	// 有多列时使用 grid 布局
-	const layout = explicitLayout ?? (columns > 1 ? 'grid' : 'list')
+	const layoutInfo = analyzeArrayItemLayout(itemNode)
+	const columns = resolveArrayColumns(layoutInfo, items.length, info.columns, info.disableAutoGrid)
+	const preferredLayout = info.layout ?? (columns > 1 ? 'grid' : 'list')
+	const layout =
+		preferredLayout === 'picker' && itemNode?.kind !== 'picklist'
+			? columns > 1
+				? 'grid'
+				: 'list'
+			: preferredLayout
+	const isLocked = Boolean(inputProps.disabled || inputProps.readOnly)
 
-	const minItems = ep.minItems ?? 0
-	const maxItems = ep.maxItems
-	const canAdd =
-		ep.addable !== false && !inputProps.disabled && (!maxItems || items.length < maxItems)
-	const canRemove = ep.removable !== false
-	const canReorder = ep.reorderable !== false
-	const itemLabel = ep.itemLabel ?? formBaseInfo.label ?? DEFAULT_TEXTS.array.itemLabel
+	if (layout === 'picker' && itemNode?.kind === 'picklist') {
+		const baseErrors = normalizeErrorMessages(
+			errors?.filter((err) => !isErrorWithPath(err) || (err.dotPath?.length ?? 0) <= 1),
+		)
 
-	const pickMeta = useMemo(() => buildPicklistData(ep.picklist), [ep.picklist])
+		const updateItems = (next: unknown[], options?: TriggerOptions) =>
+			triggerFormEvents(inputProps, next, options)
+		const handleBlur = () => triggerFormBlur(inputProps)
+
+		return (
+			<ArrayFieldPicklist
+				node={node}
+				items={items}
+				itemNode={itemNode as PicklistFieldNode}
+				baseErrors={baseErrors}
+				updateItems={updateItems}
+				handleBlur={handleBlur}
+				isLocked={isLocked}
+			/>
+		)
+	}
+
+	return <ArrayFieldMain {...props} />
+}
+
+function ArrayFieldMain(props: RendererProps) {
+	const { node, errors, inputProps, value } = props
+	const info = node as ArrayFieldNode
+	const renderField = useFieldRenderer()
+	const items = Array.isArray(value) ? (value as unknown[]) : []
+	const itemNode = info.item ?? null
+
+	const layoutInfo = analyzeArrayItemLayout(itemNode)
+	const columns = resolveArrayColumns(layoutInfo, items.length, info.columns, info.disableAutoGrid)
+	const preferredLayout = info.layout ?? (columns > 1 ? 'grid' : 'list')
+	const layout =
+		preferredLayout === 'picker' && itemNode?.kind !== 'picklist'
+			? columns > 1
+				? 'grid'
+				: 'list'
+			: preferredLayout
+	const isLocked = Boolean(inputProps.disabled || inputProps.readOnly)
+
+	const minItems = info.min ?? 0
+	const maxItems = info.max
+	const canAdd = info.addable !== false && !isLocked && (!maxItems || items.length < maxItems)
+	const canRemove = info.removable !== false
+	const canReorder = info.reorderable !== false && items.length > 1
+	const itemLabel = info.itemLabel ?? node.meta.label ?? DEFAULT_TEXTS.array.itemLabel
+	const addLabel = info.addLabel ?? (itemLabel ? `添加${itemLabel}` : DEFAULT_TEXTS.array.addItem)
+
+	const baseErrors = normalizeErrorMessages(
+		errors?.filter((err) => !isErrorWithPath(err) || (err.dotPath?.length ?? 0) <= 1),
+	)
+
+	const itemErrorsMap = useMemo(() => {
+		const map = new Map<number, FieldError[]>()
+		for (const err of errors ?? []) {
+			if (!isErrorWithPath(err)) continue
+			if ((err.dotPath?.length ?? 0) <= 1) continue
+			const idx = Number(err.dotPath?.[1])
+			if (Number.isNaN(idx)) continue
+			if (!map.has(idx)) map.set(idx, [])
+			map.get(idx)!.push({ ...err, dotPath: err.dotPath?.slice(1) })
+		}
+		return map
+	}, [errors])
+
 	const [jsonParseErrors, setJsonParseErrors] = useState<Record<number, string | undefined>>({})
+	const itemKeyIdRef = useRef(0)
+	const itemKeysRef = useRef<string[]>([])
 
 	useEffect(() => {
 		setJsonParseErrors({})
 	}, [items.length])
 
-	const baseErrors = (errors ?? [])
-		.filter((err) => err.dotPath.length <= 1)
-		.map((err) => err.message)
-
-	const itemErrorsMap = useMemo(() => {
-		const map = new Map<number, string[]>()
-		for (const err of errors ?? []) {
-			if (err.dotPath.length <= 1) continue
-			const idx = Number(err.dotPath[1])
-			if (Number.isNaN(idx)) continue
-			if (!map.has(idx)) map.set(idx, [])
-			map.get(idx)!.push(err.message)
+	if (itemKeysRef.current.length < items.length) {
+		for (let i = itemKeysRef.current.length; i < items.length; i++) {
+			itemKeysRef.current.push(createArrayItemKey(itemKeyIdRef.current++))
 		}
-		return map
-	}, [errors])
-
-	const updateItems = (next: unknown[]) => triggerFormEvents(inputProps, next)
-
-	const usePicklistPicker = ep.valueMode === 'picklist' && ep.pickerMode === 'picker' && ep.picklist
-
-	if (usePicklistPicker) {
-		return (
-			<FieldChrome
-				{...cleanProps({
-					label: formBaseInfo.label,
-					required: formBaseInfo.required,
-					description: formBaseInfo.description,
-					helperText: formBaseInfo.helperText,
-					hint: formBaseInfo.hint,
-					tooltip: formBaseInfo.tooltip,
-					badge: formBaseInfo.badge,
-					errors: baseErrors,
-					hideLabel: formBaseInfo.hideLabel,
-					hideRequired: formBaseInfo.hideRequired,
-				})}
-			>
-				<PicklistControl
-					meta={
-						{
-							clearable: ep.picklist?.clearable ?? true,
-							allowCreate: ep.picklist?.allowCreate ?? false,
-							variant: ep.picklist?.variant ?? 'select',
-							multiple: true,
-							...cleanProps({
-								options: ep.picklist?.options,
-								entries: ep.picklist?.entries,
-								labels: ep.picklist?.labels,
-								disabled: ep.picklist?.disabled,
-								placeholder: ep.picklist?.placeholder,
-								searchable: ep.picklist?.searchable,
-								maxSelections: ep.picklist?.maxValues,
-								nothingFoundLabel: ep.picklist?.nothingFoundLabel,
-							}),
-						} as any
-					}
-					value={items}
-					onChange={(next) => {
-						if (Array.isArray(next)) updateItems(next)
-						else if (next == null) updateItems([])
-						else updateItems([next])
-					}}
-					disabled={inputProps.disabled ?? false}
-					required={false}
-				/>
-			</FieldChrome>
-		)
+	} else if (itemKeysRef.current.length > items.length) {
+		itemKeysRef.current = itemKeysRef.current.slice(0, items.length)
 	}
 
-	// defaults-picker 模式：从 defaultValue 中获取选项
-	const useDefaultsPicker =
-		ep.valueMode === 'defaults-picker' && Array.isArray(defaultValue) && defaultValue.length > 0
-
-	if (useDefaultsPicker) {
-		const options = defaultValue as (string | number)[]
-		return (
-			<FieldChrome
-				{...cleanProps({
-					label: formBaseInfo.label,
-					required: formBaseInfo.required,
-					description: formBaseInfo.description,
-					helperText: formBaseInfo.helperText,
-					hint: formBaseInfo.hint,
-					tooltip: formBaseInfo.tooltip,
-					badge: formBaseInfo.badge,
-					errors: baseErrors,
-					hideLabel: formBaseInfo.hideLabel,
-					hideRequired: formBaseInfo.hideRequired,
-				})}
-			>
-				<PicklistControl
-					meta={
-						{
-							clearable: ep.picklist?.clearable ?? true,
-							allowCreate: false,
-							variant: ep.picklist?.variant ?? 'select',
-							multiple: true,
-							options,
-							...cleanProps({
-								labels: ep.picklist?.labels,
-								disabled: ep.picklist?.disabled,
-								placeholder: ep.picklist?.placeholder,
-								searchable: ep.picklist?.searchable,
-								maxSelections: ep.picklist?.maxValues,
-								nothingFoundLabel: ep.picklist?.nothingFoundLabel,
-							}),
-						} as any
-					}
-					value={items}
-					onChange={(next) => {
-						if (Array.isArray(next)) updateItems(next)
-						else if (next == null) updateItems([])
-						else updateItems([next])
-					}}
-					disabled={inputProps.disabled ?? false}
-					required={false}
-				/>
-			</FieldChrome>
-		)
+	const itemKeys = itemKeysRef.current
+	const updateItems = (next: unknown[], options?: TriggerOptions, nextKeys = itemKeys) => {
+		itemKeysRef.current = nextKeys
+		triggerFormEvents(inputProps, next, options)
 	}
+	const handleBlur = () => triggerFormBlur(inputProps)
 
 	const handleAdd = () => {
-		const template = ep.defaultItem ?? defaultByMode(ep.valueMode ?? 'auto', ep.picklist?.options)
-
-		updateItems([...items, cloneValue(template)])
+		const template = info.defaultItem ?? defaultItemForNode(itemNode)
+		updateItems([...items, cloneValue(template)], { blur: true }, [
+			...itemKeys,
+			createArrayItemKey(itemKeyIdRef.current++),
+		])
 	}
 
 	const handleRemove = (index: number) => {
-		if (!canRemove || inputProps.disabled) return
+		if (!canRemove || isLocked) return
 		if (items.length <= minItems) return
 		const next = items.filter((_, idx) => idx !== index)
-		updateItems(next)
+		updateItems(
+			next,
+			{ blur: true },
+			itemKeys.filter((_, itemIndex) => itemIndex !== index),
+		)
 	}
 
 	const handleMove = (index: number, direction: number) => {
-		if (!canReorder || inputProps.disabled) return
+		if (!canReorder || isLocked) return
 		const target = index + direction
-		updateItems(reorderList(items, index, target))
+		updateItems(
+			reorderList(items, index, target),
+			{ blur: true },
+			reorderList(itemKeys, index, target),
+		)
 	}
 
-	const handleChange = (index: number, nextValue: unknown) => {
+	const handleChange = (index: number, nextValue: unknown, options?: TriggerOptions) => {
 		const next = [...items]
 		next[index] = nextValue
-		updateItems(next)
+		updateItems(next, options)
 	}
 
 	type ControlRenderResult = { node: ReactNode; inline?: boolean }
+	type ControlRenderOptions = { compact?: boolean }
 
-	const renderControl = (index: number, current: unknown): ControlRenderResult => {
-		const mode = inferMode(ep.valueMode, current)
-		switch (mode) {
+	const inferredPrimitiveKind = useMemo(() => {
+		for (const item of items) {
+			if (typeof item === 'string') return 'string'
+			if (typeof item === 'number') return 'number'
+			if (typeof item === 'boolean') return 'boolean'
+			if (item == null) continue
+			break
+		}
+		return null
+	}, [items])
+
+	const compactKind = itemNode?.kind ?? inferredPrimitiveKind
+	const numberMeta = itemNode?.kind === 'number' ? (itemNode as NumberFieldNode) : null
+	const stringMeta = itemNode?.kind === 'string' ? (itemNode as StringFieldNode) : null
+	const picklistMeta = itemNode?.kind === 'picklist' ? (itemNode as PicklistFieldNode) : null
+	const isLongText = stringMeta?.control === 'textarea' || stringMeta?.control === 'code'
+	const isCompactList =
+		layout === 'list' &&
+		(compactKind === 'string' ||
+			compactKind === 'number' ||
+			compactKind === 'boolean' ||
+			compactKind === 'picklist') &&
+		!(compactKind === 'string' && isLongText)
+	const inlineAddEnabled = isCompactList && canAdd && !isLocked
+	const [draftValue, setDraftValue] = useState<unknown>()
+	const draftFocusRef = useRef<HTMLInputElement | null>(null)
+	const draftPicklistRef = useRef<HTMLDivElement | null>(null)
+
+	useEffect(() => {
+		setDraftValue(undefined)
+	}, [compactKind])
+
+	useEffect(() => {
+		if (!inlineAddEnabled) return
+		setDraftValue((prev: unknown) => {
+			if (prev !== undefined) return prev
+			const template = info.defaultItem ?? defaultItemForNode(itemNode)
+			return cloneValue(template)
+		})
+	}, [inlineAddEnabled, compactKind, info.defaultItem, itemNode])
+
+	useEffect(() => {
+		if (!inlineAddEnabled) return
+		requestAnimationFrame(() => {
+			if (draftFocusRef.current) {
+				draftFocusRef.current.focus()
+				return
+			}
+			const picklistInput = draftPicklistRef.current?.querySelector('input')
+			picklistInput?.focus()
+		})
+	}, [inlineAddEnabled, items.length])
+
+	const renderJsonFallback = (index: number, current: unknown, fallback: 'array' | 'object') => {
+		const formatted =
+			current && typeof current === 'object'
+				? JSON.stringify(current, null, 2)
+				: fallback === 'array'
+					? '[]'
+					: '{}'
+		return (
+			<Textarea
+				key={`${itemKeys[index] ?? `array-json-${index}`}-${items.length}`}
+				defaultValue={formatted}
+				minRows={4}
+				autosize
+				onBlur={(event) => {
+					if (isLocked) return
+					const inputValue = (event.currentTarget as HTMLTextAreaElement).value
+					try {
+						const parsed = JSON.parse(inputValue || formatted)
+						handleChange(index, parsed, { blur: true })
+						setJsonParseErrors((prev) => {
+							const next = { ...prev }
+							delete next[index]
+							return next
+						})
+					} catch {
+						setJsonParseErrors((prev) => ({
+							...prev,
+							[index]: DEFAULT_TEXTS.validation.jsonError,
+						}))
+					}
+				}}
+				disabled={inputProps.disabled ?? false}
+				readOnly={inputProps.readOnly ?? false}
+				styles={{
+					input: { fontFamily: 'var(--mantine-font-family-monospace)' },
+				}}
+			/>
+		)
+	}
+
+	const renderControl = (
+		index: number,
+		current: unknown,
+		options: ControlRenderOptions = {},
+	): ControlRenderResult => {
+		const inferredType =
+			itemNode?.kind ??
+			(typeof current === 'number'
+				? 'number'
+				: typeof current === 'boolean'
+					? 'boolean'
+					: typeof current === 'string'
+						? 'string'
+						: current && typeof current === 'object'
+							? 'json'
+							: 'string')
+
+		switch (inferredType) {
 			case 'number':
 				return {
 					node: (
@@ -435,182 +493,132 @@ function ArrayField(props: RendererProps) {
 							value={typeof current === 'number' ? current : ''}
 							onChange={(val) => {
 								const parsed = val === '' || val === undefined ? undefined : Number(val)
-								handleChange(index, parsed ?? 0)
+								const safe = Number.isNaN(parsed) ? undefined : parsed
+								handleChange(index, safe)
 							}}
-							disabled={inputProps.disabled ?? false}
+							onBlur={handleBlur}
+							placeholder={numberMeta?.placeholder}
+							min={numberMeta?.min}
+							max={numberMeta?.max}
+							step={numberMeta?.step ?? (numberMeta?.integer ? 1 : undefined)}
+							disabled={isLocked}
 						/>
 					),
 				}
 			case 'boolean':
 				return {
-					inline: true,
+					inline: !options.compact,
 					node: (
 						<Switch
-							label={`${itemLabel} #${index + 1}`}
+							label={options.compact ? undefined : `${itemLabel} #${index + 1}`}
 							checked={Boolean(current)}
 							onChange={(event) => {
 								handleChange(index, (event.currentTarget as HTMLInputElement).checked)
 							}}
-							disabled={inputProps.disabled ?? false}
+							onBlur={handleBlur}
+							disabled={isLocked}
 						/>
 					),
 				}
-			case 'json': {
-				const formatted =
-					current && typeof current === 'object'
-						? JSON.stringify(current, null, 2)
-						: typeof current === 'string'
-							? current
-							: '{}'
+			case 'picklist': {
 				return {
 					node: (
-						<Textarea
-							key={`${index}-${items.length}-${typeof current === 'object' ? JSON.stringify(current) : current}`}
-							defaultValue={formatted}
-							minRows={4}
-							autosize
-							onBlur={(event) => {
-								const value = (event.currentTarget as HTMLTextAreaElement).value
-								try {
-									const parsed = JSON.parse(value || '{}')
-									handleChange(index, parsed)
-									setJsonParseErrors((prev) => {
-										const next = { ...prev }
-										delete next[index]
-										return next
-									})
-								} catch {
-									setJsonParseErrors((prev) => ({
-										...prev,
-										[index]: DEFAULT_TEXTS.validation.jsonError,
-									}))
-								}
+						<PicklistControl
+							meta={{
+								options: picklistMeta?.options,
+								entries: picklistMeta?.entries,
+								labels: picklistMeta?.labels,
+								disabled: picklistMeta?.disabled,
+								placeholder: picklistMeta?.placeholder,
+								searchable: picklistMeta?.searchable,
+								clearable: picklistMeta?.clearable ?? true,
+								max: picklistMeta?.max,
+								create: picklistMeta?.create,
+								control: picklistMeta?.control ?? 'select',
+								multiple: false,
+								emptyLabel: picklistMeta?.emptyLabel,
 							}}
-							disabled={inputProps.disabled ?? false}
-							styles={{
-								input: { fontFamily: 'var(--mantine-font-family-monospace)' },
-							}}
+							value={current}
+							onChange={(next) => handleChange(index, next)}
+							onBlur={handleBlur}
+							disabled={isLocked}
 						/>
 					),
 				}
 			}
-			case 'picklist': {
-				const currentId = current == null ? null : idOf(current as string | number)
+			case 'string': {
+				const control = stringMeta?.control ?? 'text'
+				if (control === 'textarea' || control === 'code') {
+					return {
+						node: (
+							<Textarea
+								value={
+									typeof current === 'string' ? current : current == null ? '' : String(current)
+								}
+								onChange={(event) =>
+									handleChange(index, (event.currentTarget as HTMLTextAreaElement).value)
+								}
+								onBlur={handleBlur}
+								minRows={stringMeta?.rows ?? 3}
+								autosize
+								disabled={inputProps.disabled ?? false}
+								readOnly={inputProps.readOnly ?? false}
+								placeholder={stringMeta?.placeholder}
+								minLength={stringMeta?.minLength}
+								maxLength={stringMeta?.maxLength}
+								styles={
+									control === 'code'
+										? { input: { fontFamily: 'var(--mantine-font-family-monospace)' } }
+										: undefined
+								}
+							/>
+						),
+					}
+				}
 				return {
 					node: (
-						<Select
-							data={pickMeta.data}
-							value={currentId ?? null}
-							onChange={(id) => {
-								if (id === null) return handleChange(index, null)
-								const raw = pickMeta.map.get(id!) ?? (pickMeta.isAllNumbers ? Number(id) : id)
-								handleChange(index, raw)
+						<TextInput
+							value={typeof current === 'string' ? current : current == null ? '' : String(current)}
+							onChange={(event) => {
+								handleChange(index, (event.currentTarget as HTMLInputElement).value)
 							}}
+							onBlur={handleBlur}
+							type={control === 'password' ? 'password' : 'text'}
 							disabled={inputProps.disabled ?? false}
-							{...cleanProps({
-								placeholder: ep.picklist?.placeholder,
-								clearable: ep.picklist?.clearable,
-								searchable: ep.picklist?.searchable,
-							})}
+							readOnly={inputProps.readOnly ?? false}
+							placeholder={stringMeta?.placeholder}
+							minLength={stringMeta?.minLength}
+							maxLength={stringMeta?.maxLength}
 						/>
 					),
 				}
 			}
 			case 'object':
 			case 'array':
-			case 'variant':
-			case 'union': {
-				// 递归渲染嵌套的 object/array/variant/union
-				if (!ep.itemSchema) {
-					// fallback 到 json 模式
-					const formatted =
-						current && typeof current === 'object' ? JSON.stringify(current, null, 2) : '{}'
+			case 'union':
+			case 'record': {
+				if (!itemNode) {
 					return {
-						node: (
-							<Textarea
-								key={`${index}-${items.length}`}
-								defaultValue={formatted}
-								minRows={4}
-								autosize
-								onBlur={(event) => {
-									const value = (event.currentTarget as HTMLTextAreaElement).value
-									try {
-										const parsed = JSON.parse(value || (mode === 'array' ? '[]' : '{}'))
-										handleChange(index, parsed)
-										setJsonParseErrors((prev) => {
-											const next = { ...prev }
-											delete next[index]
-											return next
-										})
-									} catch {
-										setJsonParseErrors((prev) => ({
-											...prev,
-											[index]: DEFAULT_TEXTS.validation.jsonError,
-										}))
-									}
-								}}
-								disabled={inputProps.disabled ?? false}
-								styles={{
-									input: { fontFamily: 'var(--mantine-font-family-monospace)' },
-								}}
-							/>
-						),
+						node: renderJsonFallback(index, current, inferredType === 'array' ? 'array' : 'object'),
 					}
 				}
-
-				const itemInfo = cachedExtractInfo(ep.itemSchema as object, `${index}`)
-				if (!itemInfo) {
-					return { node: null }
-				}
-
+				const nestedNode = tweakNestedNode(itemNode)
 				const nestedName = inputProps.name ? `${inputProps.name}.${index}` : String(index)
-				const nestedInputProps = {
-					name: nestedName,
-					onChange: (nextValue: unknown) => handleChange(index, nextValue),
-					onBlur: () => inputProps.onBlur?.({ target: { name: nestedName } } as any),
-					disabled: inputProps.disabled,
-					readOnly: inputProps.readOnly,
-				}
-
-				// 提取该索引的错误
-				const itemErrors = (itemErrorsMap.get(index) ?? []).map((msg) => ({
-					message: msg,
-					dotPath: [String(index)],
-				}))
-
-				// 嵌套类型使用紧凑布局，禁用自动多列（空间有限）
-				const nestedProps =
-					itemInfo.type === 'object'
-						? {
-								...itemInfo.props,
-								variant: 'stack' as const,
-								gap: 'sm',
-								columns: itemInfo.props.columns ?? 2,
-							}
-						: itemInfo.type === 'array'
-							? { ...itemInfo.props, disableAutoGrid: true }
-							: itemInfo.type === 'union'
-								? { ...itemInfo.props, compact: true }
-								: itemInfo.props
-
+				const nestedInputProps = buildNestedInputProps(inputProps, nestedName, (nextValue) =>
+					handleChange(index, nextValue),
+				)
+				const itemErrors = itemErrorsMap.get(index) ?? []
 				return {
-					node: (
-						<MetaRenderer
-							type={itemInfo.type}
-							formBaseInfo={{
-								...itemInfo.formInfo,
-								label: undefined,
-								hideLabel: true,
-								hideRequired: true,
-							}}
-							extractedPropsInfo={nestedProps}
-							errors={itemErrors}
-							value={current}
-							inputProps={nestedInputProps as any}
-						/>
-					),
+					node: renderField({
+						node: nestedNode,
+						value: current,
+						errors: itemErrors,
+						inputProps: nestedInputProps,
+					}),
 				}
 			}
+			case 'json':
+				return { node: renderJsonFallback(index, current, 'object') }
 			default:
 				return {
 					node: (
@@ -619,7 +627,9 @@ function ArrayField(props: RendererProps) {
 							onChange={(event) => {
 								handleChange(index, (event.currentTarget as HTMLInputElement).value)
 							}}
+							onBlur={handleBlur}
 							disabled={inputProps.disabled ?? false}
+							readOnly={inputProps.readOnly ?? false}
 						/>
 					),
 				}
@@ -633,16 +643,18 @@ function ArrayField(props: RendererProps) {
 					<ActionIcon
 						variant="subtle"
 						onClick={() => handleMove(idx, -1)}
-						disabled={idx === 0 || (inputProps.disabled ?? false)}
+						disabled={idx === 0 || isLocked}
 						aria-label="上移"
+						type="button"
 					>
 						<IconArrowUp size={16} />
 					</ActionIcon>
 					<ActionIcon
 						variant="subtle"
 						onClick={() => handleMove(idx, 1)}
-						disabled={idx === items.length - 1 || (inputProps.disabled ?? false)}
+						disabled={idx === items.length - 1 || isLocked}
 						aria-label="下移"
+						type="button"
 					>
 						<IconArrowDown size={16} />
 					</ActionIcon>
@@ -653,8 +665,9 @@ function ArrayField(props: RendererProps) {
 					variant="subtle"
 					color="red"
 					onClick={() => handleRemove(idx)}
-					disabled={(inputProps.disabled ?? false) || items.length <= minItems}
+					disabled={isLocked || items.length <= minItems}
 					aria-label="删除"
+					type="button"
 				>
 					<IconTrash size={16} />
 				</ActionIcon>
@@ -663,24 +676,150 @@ function ArrayField(props: RendererProps) {
 	)
 
 	const renderErrors = (idx: number) => {
-		const combined = [...(itemErrorsMap.get(idx) ?? []), jsonParseErrors[idx] ?? undefined].filter(
-			Boolean,
-		) as string[]
-		if (!combined.length) return null
+		const combined = [
+			...(itemErrorsMap.get(idx) ?? []),
+			...(jsonParseErrors[idx] ? [jsonParseErrors[idx]] : []),
+		]
+		const errorText = joinErrorMessages(combined)
+		if (!errorText) return null
 		return (
-			<Text size="xs" c="red.6">
-				{combined.join(', ')}
+			<Text size="xs" c="red.6" style={{ whiteSpace: 'pre-line' }}>
+				{errorText}
 			</Text>
 		)
 	}
 
-	const renderItemCard = (item: unknown, idx: number) => {
+	const handleInlineAdd = () => {
+		const template = info.defaultItem ?? defaultItemForNode(itemNode)
+		const valueToAdd =
+			draftValue === undefined ||
+			draftValue === null ||
+			(typeof draftValue === 'number' && Number.isNaN(draftValue))
+				? template
+				: draftValue
+		updateItems([...items, cloneValue(valueToAdd)], { blur: true }, [
+			...itemKeys,
+			createArrayItemKey(itemKeyIdRef.current++),
+		])
+		setDraftValue(undefined)
+	}
+
+	const inlineAddRow = inlineAddEnabled ? (
+		<tr>
+			<td style={{ width: 56 }}>
+				<Text size="sm" c="dimmed">
+					+
+				</Text>
+			</td>
+			<td>
+				{compactKind === 'number' ? (
+					<NumberInput
+						value={
+							typeof draftValue === 'number'
+								? draftValue
+								: draftValue == null
+									? ''
+									: Number(draftValue)
+						}
+						onChange={(val) => {
+							const parsed = val === '' || val === undefined ? undefined : Number(val)
+							const safe = Number.isNaN(parsed) ? undefined : parsed
+							setDraftValue(safe)
+						}}
+						ref={draftFocusRef}
+						onKeyDown={(event) => {
+							if (event.key === 'Enter') {
+								event.preventDefault()
+								handleInlineAdd()
+							}
+						}}
+						onBlur={handleBlur}
+						placeholder={numberMeta?.placeholder}
+						min={numberMeta?.min}
+						max={numberMeta?.max}
+						step={numberMeta?.step ?? (numberMeta?.integer ? 1 : undefined)}
+						disabled={isLocked}
+					/>
+				) : compactKind === 'boolean' ? (
+					<Switch
+						checked={Boolean(draftValue)}
+						onChange={(event) => setDraftValue(event.currentTarget.checked)}
+						onBlur={handleBlur}
+						disabled={isLocked}
+					/>
+				) : compactKind === 'picklist' ? (
+					<div ref={draftPicklistRef}>
+						<PicklistControl
+							meta={{
+								options: picklistMeta?.options,
+								entries: picklistMeta?.entries,
+								labels: picklistMeta?.labels,
+								disabled: picklistMeta?.disabled,
+								placeholder: picklistMeta?.placeholder,
+								searchable: picklistMeta?.searchable,
+								clearable: true,
+								max: picklistMeta?.max,
+								create: picklistMeta?.create,
+								control: picklistMeta?.control ?? 'select',
+								multiple: false,
+								emptyLabel: picklistMeta?.emptyLabel,
+							}}
+							value={draftValue}
+							onChange={(next) => setDraftValue(next)}
+							onBlur={handleBlur}
+							disabled={isLocked}
+						/>
+					</div>
+				) : (
+					<TextInput
+						value={
+							typeof draftValue === 'string'
+								? draftValue
+								: draftValue == null
+									? ''
+									: String(draftValue)
+						}
+						onChange={(event) => setDraftValue(event.currentTarget.value)}
+						ref={draftFocusRef}
+						onKeyDown={(event) => {
+							if (event.key === 'Enter') {
+								event.preventDefault()
+								handleInlineAdd()
+							}
+						}}
+						onBlur={handleBlur}
+						placeholder={stringMeta?.placeholder}
+						minLength={stringMeta?.minLength}
+						maxLength={stringMeta?.maxLength}
+						disabled={isLocked}
+						readOnly={inputProps.readOnly ?? false}
+					/>
+				)}
+			</td>
+			<td style={{ width: 120 }}>
+				<Group gap="xs" justify="flex-end">
+					<ActionIcon
+						variant="light"
+						color="blue"
+						onClick={handleInlineAdd}
+						disabled={isLocked}
+						aria-label="添加"
+						type="button"
+					>
+						<IconPlus size={16} />
+					</ActionIcon>
+				</Group>
+			</td>
+		</tr>
+	) : null
+
+	const renderItemCard = (item: unknown, idx: number, itemKey: string) => {
 		const control = renderControl(idx, item)
-		const inline = reorderEnabled ? false : control.inline
+		const inline = layout === 'grid' ? false : control.inline
 		const errorsNode = renderErrors(idx)
 		const actionsNode = (
 			<Group gap="xs" align="center">
-				{canReorder ? (
+				{canReorder && !isCompactList ? (
 					<IconGripVertical size={16} style={{ cursor: 'grab', opacity: 0.75 }} />
 				) : null}
 				{renderActions(idx)}
@@ -691,13 +830,7 @@ function ArrayField(props: RendererProps) {
 			return {
 				inline: true,
 				element: (
-					<Card
-						key={`${idx}-${layout}`}
-						withBorder
-						shadow="xs"
-						p="md"
-						style={{ flex: '0 1 280px' }}
-					>
+					<Card key={itemKey} withBorder shadow="xs" p="md" style={{ flex: '0 1 280px' }}>
 						<Group justify="space-between" align="center">
 							{control.node}
 							{actionsNode}
@@ -711,7 +844,7 @@ function ArrayField(props: RendererProps) {
 		return {
 			inline: false,
 			element: (
-				<Card key={`${idx}-${layout}`} withBorder shadow="xs" p="md">
+				<Card key={itemKey} withBorder shadow="xs" p="md">
 					<Group justify="space-between" mb="sm">
 						<Text fw={600}>
 							{itemLabel} #{idx + 1}
@@ -728,15 +861,37 @@ function ArrayField(props: RendererProps) {
 	}
 
 	const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }))
-	const reorderEnabled = canReorder && items.length > 1
+	const reorderEnabled = canReorder && !isLocked
+	const dragEnabled = reorderEnabled && !isCompactList
 	const [activeId, setActiveId] = useState<UniqueIdentifier | null>(null)
 
 	const renderedCards = items.map((item, idx) => ({
-		...renderItemCard(item, idx),
-		id: `item-${idx}` as const,
+		...renderItemCard(item, idx, itemKeys[idx] ?? createArrayItemKey(itemKeyIdRef.current++)),
+		id: itemKeys[idx] ?? createArrayItemKey(itemKeyIdRef.current++),
 	}))
 	const inlineCards = renderedCards.filter((item) => item.inline)
 	const blockCards = renderedCards.filter((item) => !item.inline)
+
+	const tableRows = items.map((item, idx) => {
+		const control = renderControl(idx, item, { compact: true })
+		const errorsNode = renderErrors(idx)
+		return (
+			<tr key={itemKeys[idx] ?? `row-${idx}`}>
+				<td style={{ width: 56 }}>
+					<Text size="sm" c="dimmed">
+						#{idx + 1}
+					</Text>
+				</td>
+				<td>
+					<Stack gap={4}>
+						{control.node}
+						{errorsNode}
+					</Stack>
+				</td>
+				<td style={{ width: 120 }}>{renderActions(idx)}</td>
+			</tr>
+		)
+	})
 
 	const dragOverlay =
 		activeId !== null ? (
@@ -750,7 +905,7 @@ function ArrayField(props: RendererProps) {
 		) : null
 
 	const wrapSortable = (content: ReactNode) =>
-		reorderEnabled ? (
+		dragEnabled ? (
 			<DndContext
 				sensors={sensors}
 				collisionDetection={closestCenter}
@@ -761,7 +916,7 @@ function ArrayField(props: RendererProps) {
 					if (!over || active.id === over.id) return
 					const from = renderedCards.findIndex((item) => item.id === active.id)
 					const to = renderedCards.findIndex((item) => item.id === over.id)
-					updateItems(reorderList(items, from, to))
+					updateItems(reorderList(items, from, to), { blur: true }, reorderList(itemKeys, from, to))
 				}}
 				onDragCancel={() => setActiveId(null)}
 			>
@@ -778,7 +933,7 @@ function ArrayField(props: RendererProps) {
 		)
 
 	const sortableBlockCards =
-		reorderEnabled && blockCards.length
+		reorderEnabled && blockCards.length > 0
 			? blockCards.map((item) => (
 					<SortableCard key={item.id} id={item.id} disabled={!reorderEnabled}>
 						{item.element}
@@ -787,7 +942,7 @@ function ArrayField(props: RendererProps) {
 			: blockCards.map((item) => item.element)
 
 	const sortableInlineCards =
-		reorderEnabled && inlineCards.length
+		reorderEnabled && inlineCards.length > 0
 			? inlineCards.map((item) => (
 					<SortableCard key={item.id} id={item.id} disabled={!reorderEnabled}>
 						{item.element}
@@ -796,10 +951,33 @@ function ArrayField(props: RendererProps) {
 			: inlineCards.map((item) => item.element)
 
 	const itemsNode =
-		items.length === 0 ? (
+		isCompactList && (items.length > 0 || inlineAddEnabled) ? (
+			<Table withTableBorder verticalSpacing="xs" horizontalSpacing="sm" highlightOnHover>
+				<thead>
+					<tr>
+						<th style={{ width: 56 }}>#</th>
+						<th>{itemLabel}</th>
+						<th />
+					</tr>
+				</thead>
+				<tbody>
+					{tableRows}
+					{inlineAddRow}
+					{items.length === 0 ? (
+						<tr>
+							<td colSpan={3}>
+								<Text size="sm" c="dimmed" py={6}>
+									{info.emptyHint ?? DEFAULT_TEXTS.array.emptyHint}
+								</Text>
+							</td>
+						</tr>
+					) : null}
+				</tbody>
+			</Table>
+		) : items.length === 0 ? (
 			<Card withBorder shadow="xs" p="md">
 				<Text size="sm" c="dimmed">
-					{ep.emptyHint ?? DEFAULT_TEXTS.array.emptyHint}
+					{info.emptyHint ?? DEFAULT_TEXTS.array.emptyHint}
 				</Text>
 			</Card>
 		) : layout === 'grid' ? (
@@ -811,12 +989,12 @@ function ArrayField(props: RendererProps) {
 		) : (
 			wrapSortable(
 				<>
-					{sortableInlineCards.length ? (
+					{sortableInlineCards.length > 0 ? (
 						<Group gap="md" wrap="wrap">
 							{sortableInlineCards}
 						</Group>
 					) : null}
-					{sortableBlockCards.length ? <Stack gap="md">{sortableBlockCards}</Stack> : null}
+					{sortableBlockCards.length > 0 ? <Stack gap="md">{sortableBlockCards}</Stack> : null}
 				</>,
 			)
 		)
@@ -824,33 +1002,31 @@ function ArrayField(props: RendererProps) {
 	return (
 		<FieldChrome
 			{...cleanProps({
-				label: formBaseInfo.label,
-				required: formBaseInfo.required,
-				description: formBaseInfo.description,
-				helperText: formBaseInfo.helperText,
-				hint: formBaseInfo.hint,
-				tooltip: formBaseInfo.tooltip,
-				badge: formBaseInfo.badge,
+				label: node.meta.label,
+				required: node.required,
+				description: node.meta.description,
+				help: node.meta.help,
+				hint: node.meta.hint,
+				badge: node.meta.badge,
 				errors: baseErrors,
-				hideLabel: formBaseInfo.hideLabel,
-				hideRequired: formBaseInfo.hideRequired,
+				hideLabel: node.meta.hideLabel,
+				hideRequired: node.meta.hideRequired,
 			})}
 		>
 			<Stack gap="md">
 				{itemsNode}
-				{canAdd ? (
+				{canAdd && !inlineAddEnabled ? (
 					<Button
 						leftSection={<IconPlus size={16} />}
 						variant="light"
 						onClick={handleAdd}
-						disabled={inputProps.disabled ?? false}
+						disabled={isLocked}
+						type="button"
 					>
-						{ep.addLabel ?? DEFAULT_TEXTS.array.addItem}
+						{addLabel}
 					</Button>
 				) : null}
 			</Stack>
 		</FieldChrome>
 	)
 }
-
-registerRenderer(META_MAP.ARRAY, (props) => <ArrayField {...(props as RendererProps)} />)

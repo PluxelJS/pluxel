@@ -2,6 +2,7 @@
 	"extends": "../../tsconfig.src.json",
 	"include": ["src", "tests"],
 	"compilerOptions": {
+		"jsx": "react-jsx",
 		// Specify an output folder for all emitted files.
 		"outDir": "dist",
 		// Only output d.ts files and not JavaScript files.

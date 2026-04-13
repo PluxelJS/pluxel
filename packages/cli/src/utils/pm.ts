@@ -25,7 +25,7 @@ export async function detectPm(
 	return fallback
 }
 
-export async function runPackageManager(pm: PM, args: string[], cwd: string) {
+export function runPackageManager(pm: PM, args: string[], cwd: string) {
 	return new Promise<void>((resolvePromise, reject) => {
 		const child = spawn(pm, args, {
 			stdio: 'inherit',

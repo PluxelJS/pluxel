@@ -1,15 +1,14 @@
 import { resolve } from 'pathe'
-import type { PackageJson } from 'pkg-types'
-import { readPackageJSON } from 'pkg-types'
-import { detectCiContext, isCi } from '../ci/context'
+import { readPackageJSON, type PackageJson } from 'pkg-types'
+import { detectCiContext } from '../ci/context'
 import { resolveOidcToken } from '../ci/oidc'
 import { CLI_DEFAULTS } from '../config'
 import { runCommand } from '../utils/exec'
 import { resolveMarketWebhookClient } from './market-rpc'
 
 type Logger = (...args: unknown[]) => void
+type ReadPackageJson = (path: string) => Promise<PackageJson>
 
-// eslint-disable-next-line @typescript-eslint/no-empty-function
 const noop = () => {}
 
 function isTruthyEnv(value: string | undefined) {
@@ -35,6 +34,7 @@ export interface PublishOptions {
 	log?: Logger
 	cwd?: string
 	env?: NodeJS.ProcessEnv
+	readPackageJson?: ReadPackageJson
 }
 
 export interface PublishResult {
@@ -53,15 +53,18 @@ export async function publishPackage(options: PublishOptions): Promise<PublishRe
 	const forceWebhook = options.webhook ?? false
 	const rawPublish = isTruthyEnv(env.PLUXEL_PUBLISH_RAW)
 	const access = rawPublish ? options.access : (options.access ?? CLI_DEFAULTS.publish.access)
+	const readPackageJson = options.readPackageJson ?? readPackageJSON
 
 	// 读取当前目录的 package.json
 	const pkgPath = resolve(cwd, 'package.json')
 	let pkg: PackageJson
 	try {
-		pkg = await readPackageJSON(pkgPath)
+		pkg = await readPackageJson(pkgPath)
 	} catch (error) {
 		const reason = error instanceof Error ? error.message : String(error)
-		throw new Error(`Failed to read package.json at ${pkgPath}: ${reason}`)
+		throw new Error(`Failed to read package.json at ${pkgPath}: ${reason}`, {
+			cause: error,
+		})
 	}
 
 	if (!pkg.name) {
@@ -100,9 +103,8 @@ export async function publishPackage(options: PublishOptions): Promise<PublishRe
 	// 检测 CI 环境，在 CI 中使用 --provenance 启用 OIDC
 	// 但只对公开包使用，私有包不支持 provenance
 	const ciContext = detectCiContext(env)
-	const inCi = isCi(env)
-	const isPublicPackage = access === 'public'
-	const shouldNotify = forceWebhook || Boolean(ciContext)
+	const shouldNotify =
+		forceWebhook || (Boolean(ciContext) && options.dryRun !== true && !skipPublish)
 	const publishArgs = ['publish']
 	if (access) {
 		publishArgs.push('--access', access)
@@ -213,5 +215,5 @@ async function getPublishedVersion(
 	}
 
 	const segments = output.split(/\s+/).filter(Boolean)
-	return segments.length > 0 ? segments[segments.length - 1] : undefined
+	return segments.length > 0 ? segments.at(-1) : undefined
 }

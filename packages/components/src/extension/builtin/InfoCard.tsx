@@ -1,7 +1,7 @@
 import { Badge, Box, Divider, Group, Paper, Stack, Text } from '@mantine/core'
-import { useMemo } from 'react'
-import type { BuiltinBadgeValue, BuiltinInfoCardBlock, ExtensionContext } from '../types'
-import { isObject, resolveSseRef, useSseForValues } from './_shared'
+import type { BuiltinBadgeValue, BuiltinInfoCardBlock } from '@pluxel/runtime/web/extensions'
+import { useSignalDbQueryState } from '@pluxel/runtime/web'
+import { isObject, resolveSignalDbRef, useSignalDbForValues } from './_shared'
 
 function isBadgeValue(value: unknown): value is BuiltinBadgeValue {
 	return Boolean(value) && typeof value === 'object' && (value as any).kind === 'badge'
@@ -65,29 +65,31 @@ function shouldAutoSpanFullWidth(value: unknown): boolean {
 }
 
 export function BuiltinInfoCard({
-	ctx,
 	pluginName,
 	block,
 }: {
-	ctx: ExtensionContext
 	pluginName: string
 	block: BuiltinInfoCardBlock
 }) {
 	const rows = Array.isArray(block.rows) ? block.rows : []
-	const sseStateByEvent = useSseForValues(
-		ctx,
+	const signalDbCollections = useSignalDbForValues(
 		pluginName,
 		rows.map((r) => r?.value),
 	)
 
-	const resolvedRows = useMemo(() => {
-		return rows.map((row) => {
-			const v: any = row?.value
-			if (!isObject(v) || v.kind !== 'sse') return row
-			const nextValue = resolveSseRef(v as any, sseStateByEvent)
-			return { ...row, value: nextValue as any }
-		})
-	}, [rows, sseStateByEvent])
+	const resolvedRows = useSignalDbQueryState(
+		() =>
+			rows.map((row) => {
+				const value: any = row?.value
+				if (!isObject(value)) return row
+				if (value.kind === 'signaldb') {
+					const nextValue = resolveSignalDbRef(value as any, signalDbCollections as any)
+					return { ...row, value: nextValue as any }
+				}
+				return row
+			}),
+		[rows, signalDbCollections],
+	)
 
 	const layout = block.layout ?? {}
 	const density = layout.density ?? 'comfortable'
@@ -102,33 +104,23 @@ export function BuiltinInfoCard({
 	const cardPadding = density === 'compact' ? 'xs' : 'sm'
 	const headerGap = density === 'compact' ? 2 : 4
 	const bodyGap = density === 'compact' ? 4 : 6
-	const titleSize = density === 'compact' ? 'sm' : 'sm'
 	const descSize = density === 'compact' ? 'xs' : 'xs'
 	const labelSize = density === 'compact' ? 'xs' : 'xs'
 
 	return (
 		<Paper withBorder radius="md" p={cardPadding} shadow="xs">
 			<Stack gap={density === 'compact' ? 6 : 8}>
-				{block.title || block.description ? (
+				{block.description ? (
 					<Stack gap={headerGap}>
-						{block.title ? (
-							<Group justify="space-between" align="center" wrap="nowrap">
-								<Text size={titleSize} fw={650} style={{ lineHeight: 1.2 }}>
-									{block.title}
-								</Text>
-							</Group>
-						) : null}
-						{block.description ? (
-							<Text size={descSize} c="dimmed" style={{ lineHeight: 1.35 }}>
-								{block.description}
-							</Text>
-						) : null}
+						<Text size={descSize} c="dimmed" style={{ lineHeight: 1.35 }}>
+							{block.description}
+						</Text>
 					</Stack>
 				) : null}
 
-				{resolvedRows.length ? (
+				{resolvedRows.length > 0 ? (
 					<>
-						{block.title || block.description ? <Divider /> : null}
+						{block.description ? <Divider /> : null}
 						{variant === 'grid' || columns > 1 ? (
 							<Box
 								style={{

@@ -1,0 +1,98 @@
+{
+	"name": "@pluxel/test",
+	"version": "0.1.0",
+	"description": "Test utilities for Pluxel packages (host/context helpers + Vitest preset).",
+	"files": [
+		"dist",
+		"!**/*.map"
+	],
+	"type": "module",
+	"main": "./dist/index.cjs",
+	"module": "./dist/index.mjs",
+	"types": "./dist/index.d.cts",
+	"exports": {
+		".": {
+			"@pluxel/source": "./src/index.ts",
+			"import": "./dist/index.mjs",
+			"require": "./dist/index.cjs"
+		},
+		"./fixtures": {
+			"@pluxel/source": "./src/fixtures.ts",
+			"import": "./dist/fixtures.mjs",
+			"require": "./dist/fixtures.cjs"
+		},
+		"./oxlint": {
+			"@pluxel/source": "./src/oxlint.ts",
+			"import": "./dist/oxlint.mjs",
+			"require": "./dist/oxlint.cjs"
+		},
+		"./setup": {
+			"@pluxel/source": "./src/setup.ts",
+			"import": "./dist/setup.mjs",
+			"require": "./dist/setup.cjs"
+		},
+		"./unsafe": {
+			"@pluxel/source": "./src/unsafe.ts",
+			"import": "./dist/unsafe.mjs",
+			"require": "./dist/unsafe.cjs"
+		},
+		"./vitest": {
+			"@pluxel/source": "./src/vitest.ts",
+			"import": "./dist/vitest.mjs",
+			"require": "./dist/vitest.cjs"
+		},
+		"./package.json": "./package.json"
+	},
+	"publishConfig": {
+		"exports": {
+			".": {
+				"import": "./dist/index.mjs",
+				"require": "./dist/index.cjs"
+			},
+			"./fixtures": {
+				"import": "./dist/fixtures.mjs",
+				"require": "./dist/fixtures.cjs"
+			},
+			"./oxlint": {
+				"import": "./dist/oxlint.mjs",
+				"require": "./dist/oxlint.cjs"
+			},
+			"./setup": {
+				"import": "./dist/setup.mjs",
+				"require": "./dist/setup.cjs"
+			},
+			"./unsafe": {
+				"import": "./dist/unsafe.mjs",
+				"require": "./dist/unsafe.cjs"
+			},
+			"./vitest": {
+				"import": "./dist/vitest.mjs",
+				"require": "./dist/vitest.cjs"
+			},
+			"./package.json": "./package.json"
+		}
+	},
+	"scripts": {
+		"build": "tsdown",
+		"test": "pnpm exec vitest run --config vitest.config.ts",
+		"typecheck": "tsc -p tsconfig.json --noEmit"
+	},
+	"devDependencies": {
+		"@platformatic/vfs": "^0.3.0",
+		"@pluxel/build": "workspace:*",
+		"@pluxel/workspace": "workspace:*",
+		"fs-fixture": "^2.13.0",
+		"vitest": "^4.1.3"
+	},
+	"peerDependencies": {
+		"@pluxel/core": "workspace:*",
+		"@pluxel/runtime": "workspace:*",
+		"oxlint": "^1.58.0",
+		"vitest": "^4.1.3"
+	},
+	"inlinedDependencies": {
+		"@platformatic/vfs": "0.3.0",
+		"fs-fixture": "2.13.0",
+		"pathe": "2.0.3"
+	}
+}

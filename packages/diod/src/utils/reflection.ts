@@ -4,12 +4,19 @@ import type { Abstract } from '../types/types'
 /** 设计时元数据 key */
 const PARAM_TYPES = 'design:paramtypes'
 
+type DepCacheEntry =
+	| { kind: 'deps'; deps: readonly Abstract<unknown>[] }
+	| { kind: 'missingDecoration' }
+
+const depsCache = new WeakMap<Abstract<unknown>, DepCacheEntry>()
+const ctorNoParamCache = new WeakMap<Abstract<unknown>, boolean>()
+
 /** 特指“需要装饰但未装饰”的构建期错误，由 builder 捕获并转为 InvalidRegistration */
 export class UndecoratedServiceError extends Error {
 	public readonly chain: string[]
 	public readonly targetName: string
 
-	constructor(target: Abstract<any>, chain: string[]) {
+	constructor(target: Abstract<unknown>, chain: string[]) {
 		super(`Service not decorated: ${[...chain, target.name].join(' -> ')}`)
 		this.chain = chain
 		this.targetName = target.name
@@ -22,21 +29,37 @@ const getDependenciesFromDecoratedServiceOrThrow = <T>(
 	target: Abstract<T>,
 	parents: string[],
 ): Abstract<unknown>[] => {
+	const cached = depsCache.get(target)
+	if (cached) {
+		if (cached.kind === 'deps') return cached.deps as Abstract<unknown>[]
+		if (cached.kind === 'missingDecoration') {
+			throw new UndecoratedServiceError(target, parents)
+		}
+	}
+
 	// Reflect metadata 可能不存在；统一用空数组兜底
+	const reflect = Reflect as unknown as {
+		getMetadata?: (key: string, target: unknown) => unknown
+	}
 	const dependencies: Abstract<unknown>[] =
-		(Reflect as any)?.getMetadata?.(PARAM_TYPES, target) ?? []
+		(reflect.getMetadata?.(PARAM_TYPES, target) as Abstract<unknown>[] | undefined) ?? []
 
 	// 若 ctor 形参个数 > 已读依赖数，说明未启用 reflect-metadata / 未加装饰器
 	if (dependencies.length < target.length) {
+		depsCache.set(target, { kind: 'missingDecoration' })
 		throw new UndecoratedServiceError(target, parents)
 	}
+
+	// 缓存（包含空数组），避免重复 Reflect.getMetadata + length 判断
+	depsCache.set(target, {
+		kind: 'deps',
+		deps: Object.freeze([...dependencies]),
+	})
 	return dependencies
 }
 
 /** 获取直接基类（到 Object 为止） */
-const getBaseClass = <T extends B, B>(
-	target: Abstract<T>,
-): Abstract<B> | undefined => {
+const getBaseClass = <T extends B, B>(target: Abstract<T>): Abstract<B> | undefined => {
 	const baseClass = Object.getPrototypeOf(target.prototype)?.constructor
 	if (baseClass === Object) return undefined
 	return baseClass
@@ -44,8 +67,8 @@ const getBaseClass = <T extends B, B>(
 
 /** 去注释（用于粗略判定是否显式声明了“无参构造”） */
 function stripComments(code: string): string {
-	const noLine = code.replace(/\/\/.*$/gm, '')
-	return noLine.replace(/\/\*[\s\S]*?\*\//g, '')
+	const noLine = code.replaceAll(/\/\/.*$/gm, '')
+	return noLine.replaceAll(/\/\*[\s\S]*?\*\//g, '')
 }
 
 /**
@@ -53,10 +76,15 @@ function stripComments(code: string): string {
  * 说明：我们不解析 AST，仅通过 toString + 正则粗判。
  */
 const hasOwnConstructorWithoutParams = <T>(target: Abstract<T>): boolean => {
+	const cached = ctorNoParamCache.get(target)
+	if (cached !== undefined) return cached
+
 	const proto = target.prototype as object
 	const classString = stripComments(proto.constructor.toString())
 	const constructorRegex = /\s*constructor\s*\(\s*\)\s*\{/
-	return constructorRegex.test(classString)
+	const ok = constructorRegex.test(classString)
+	ctorNoParamCache.set(target, ok)
+	return ok
 }
 
 /**

@@ -3,11 +3,13 @@ import { existsSync } from 'node:fs'
 import { intro, isCancel, multiselect, note, outro } from '@clack/prompts'
 import { type ArgValues, define } from 'gunshi'
 import { basename, dirname, relative, resolve } from 'pathe'
-import type picomatchModule from 'picomatch'
 import picomatch from 'picomatch'
 import { detectPm, runPackageManager } from '../utils/pm'
-import type { WorkspaceCandidate } from '../workspace/candidates'
-import { readWorkspaceCandidates, upsertWorkspaceCandidates } from '../workspace/candidates'
+import {
+	readWorkspaceCandidates,
+	type WorkspaceCandidate,
+	upsertWorkspaceCandidates,
+} from '../workspace/candidates'
 import { scanWorkspaceDirs } from '../workspace/scanner'
 import {
 	addWorkspacePattern,
@@ -16,11 +18,27 @@ import {
 	resolveRelative,
 } from '../workspace/state'
 
-const workspaceCommandArgs = {
+const workspaceRootArgs = {
 	root: {
 		type: 'string',
 		description: 'Workspace root',
 		default: '.',
+	},
+} as const
+
+const workspacePatternArgs = {
+	...workspaceRootArgs,
+	pattern: {
+		type: 'positional',
+		description: 'Workspace pattern or folder to mutate',
+	},
+} as const
+
+const workspacePullArgs = {
+	...workspaceRootArgs,
+	repo: {
+		type: 'positional',
+		description: 'Git URL to clone',
 	},
 	dir: {
 		type: 'string',
@@ -42,84 +60,145 @@ const workspaceCommandArgs = {
 	},
 } as const
 
-type WorkspaceArgs = typeof workspaceCommandArgs
-type WorkspaceValues = ArgValues<WorkspaceArgs>
+const workspaceScanArgs = {
+	...workspaceRootArgs,
+	base: {
+		type: 'positional',
+		description: 'Base directory to scan (relative to root)',
+	},
+} as const
+
+type WorkspaceRootArgs = typeof workspaceRootArgs
+type WorkspaceRootValues = ArgValues<WorkspaceRootArgs>
+type WorkspacePatternArgs = typeof workspacePatternArgs
+type WorkspacePatternValues = ArgValues<WorkspacePatternArgs>
+type WorkspacePullArgs = typeof workspacePullArgs
+type WorkspacePullValues = ArgValues<WorkspacePullArgs>
+type WorkspaceScanArgs = typeof workspaceScanArgs
+type WorkspaceScanValues = ArgValues<WorkspaceScanArgs>
+
+function resolveWorkspaceRoot(values: WorkspaceRootValues) {
+	return resolve(process.cwd(), values.root || '.')
+}
+
+const workspacePromptCommand = define({
+	name: 'prompt',
+	description: 'Interactive workspace toggler',
+	toKebab: true,
+	args: workspaceRootArgs,
+	async run(ctx) {
+		await handleInteractive(resolveWorkspaceRoot(ctx.values as WorkspaceRootValues), ctx.log)
+	},
+})
+
+const workspaceListCommand = define({
+	name: 'list',
+	description: 'List active workspace patterns and detected packages',
+	toKebab: true,
+	args: workspaceRootArgs,
+	async run(ctx) {
+		await handleList(resolveWorkspaceRoot(ctx.values as WorkspaceRootValues), ctx.log)
+	},
+})
+
+const workspaceAddCommand = define({
+	name: 'add',
+	description: 'Add/enable a workspace pattern',
+	toKebab: true,
+	args: workspacePatternArgs,
+	async run(ctx) {
+		const values = ctx.values as WorkspacePatternValues
+		const workspaceRoot = resolveWorkspaceRoot(values)
+		const pattern = values.pattern
+		if (!pattern) throw new Error('Please provide a pattern or folder to add')
+		const mutation = await addWorkspacePattern(workspaceRoot, pattern)
+		reportMutation(ctx.log, workspaceRoot, mutation)
+		if (mutation.changedTargets.length > 0) {
+			await installWorkspaceDeps(workspaceRoot, ctx.log)
+		}
+	},
+})
+
+const workspaceRemoveCommand = define({
+	name: 'remove',
+	description: 'Remove/disable a workspace pattern',
+	toKebab: true,
+	args: workspacePatternArgs,
+	async run(ctx) {
+		const values = ctx.values as WorkspacePatternValues
+		const workspaceRoot = resolveWorkspaceRoot(values)
+		const pattern = values.pattern
+		if (!pattern) throw new Error('Please provide a pattern or folder to remove')
+		const mutation = await removeWorkspacePattern(workspaceRoot, pattern)
+		reportMutation(ctx.log, workspaceRoot, mutation)
+		if (mutation.changedTargets.length > 0) {
+			await installWorkspaceDeps(workspaceRoot, ctx.log)
+		}
+	},
+})
+
+const workspacePullCommand = define({
+	name: 'pull',
+	description: 'Clone a repository and add it to workspace patterns',
+	toKebab: true,
+	args: workspacePullArgs,
+	async run(ctx) {
+		const values = ctx.values as WorkspacePullValues
+		const workspaceRoot = resolveWorkspaceRoot(values)
+		const repo = values.repo
+		if (!repo) throw new Error('Please provide a git url for pull')
+		const dir = values.dir || 'packages'
+		const name = values.name || inferName(repo)
+		const targetDir = resolve(workspaceRoot, dir, name)
+		if (existsSync(targetDir) && !values.force) {
+			throw new Error(`Target exists: ${targetDir}\nUse --force to overwrite.`)
+		}
+		await gitClone(repo, targetDir, values.ref)
+		ctx.log(`Cloned into ${targetDir}`)
+		const pattern = resolveRelative(workspaceRoot, targetDir)
+		const mutation = await addWorkspacePattern(workspaceRoot, pattern)
+		reportMutation(ctx.log, workspaceRoot, mutation)
+		if (mutation.changedTargets.length > 0) {
+			await installWorkspaceDeps(workspaceRoot, ctx.log)
+		}
+	},
+})
+
+const workspaceScanCommand = define({
+	name: 'scan',
+	description: 'Scan directories and refresh workspace candidate cache',
+	toKebab: true,
+	args: workspaceScanArgs,
+	async run(ctx) {
+		const values = ctx.values as WorkspaceScanValues
+		const workspaceRoot = resolveWorkspaceRoot(values)
+		const base = values.base || '.'
+		const existing = readWorkspaceCandidates(workspaceRoot)
+		const paths = await scanWorkspaceDirs(workspaceRoot, base)
+		const updated = upsertWorkspaceCandidates(workspaceRoot, paths, existing, 'scan')
+		ctx.log(`Recorded ${paths.length} candidate(s). Total tracked: ${updated.entries.length}.`)
+	},
+})
 
 export const workspaceCommand = define({
 	name: 'workspace',
 	description: 'Manage workspaces (pnpm / yarn)',
-	args: workspaceCommandArgs,
+	toKebab: true,
+	args: workspaceRootArgs,
+	subCommands: new Map([
+		['prompt', workspacePromptCommand],
+		['list', workspaceListCommand],
+		['add', workspaceAddCommand],
+		['remove', workspaceRemoveCommand],
+		['pull', workspacePullCommand],
+		['scan', workspaceScanCommand],
+	]),
 	async run(ctx) {
-		const values = ctx.values as WorkspaceValues
-		const positionals = normalizePositionals(ctx.name, ctx.positionals)
-		const [actionRaw, targetRaw] = positionals
-		const action = (actionRaw || 'interactive').toLowerCase()
-		const workspaceRoot = resolve(process.cwd(), values.root || '.')
-
-		if (action === 'interactive' || action === 'toggle') {
-			return handleInteractive(workspaceRoot, ctx.log)
-		}
-
-		if (action === 'list') {
-			return handleList(workspaceRoot, ctx.log)
-		}
-
-		if (action === 'add' || action === 'enable') {
-			const pattern = targetRaw
-			if (!pattern) throw new Error('Please provide a pattern or folder to add')
-			const mutation = await addWorkspacePattern(workspaceRoot, pattern)
-			reportMutation(ctx.log, workspaceRoot, mutation)
-			if (mutation.changedTargets.length > 0) {
-				await installWorkspaceDeps(workspaceRoot, ctx.log)
-			}
-			return
-		}
-
-		if (action === 'remove' || action === 'disable') {
-			const pattern = targetRaw
-			if (!pattern) throw new Error('Please provide a pattern or folder to remove')
-			const mutation = await removeWorkspacePattern(workspaceRoot, pattern)
-			reportMutation(ctx.log, workspaceRoot, mutation)
-			if (mutation.changedTargets.length > 0) {
-				await installWorkspaceDeps(workspaceRoot, ctx.log)
-			}
-			return
-		}
-
-		if (action === 'pull') {
-			const repo = targetRaw
-			if (!repo) throw new Error('Please provide a git url for pull')
-			const dir = values.dir || 'packages'
-			const name = values.name || inferName(repo)
-			const targetDir = resolve(workspaceRoot, dir, name)
-			if (existsSync(targetDir) && !values.force) {
-				throw new Error(`Target exists: ${targetDir}\nUse --force to overwrite.`)
-			}
-			await gitClone(repo, targetDir, values.ref)
-			ctx.log(`Cloned into ${targetDir}`)
-			const pattern = resolveRelative(workspaceRoot, targetDir)
-			const mutation = await addWorkspacePattern(workspaceRoot, pattern)
-			reportMutation(ctx.log, workspaceRoot, mutation)
-			if (mutation.changedTargets.length > 0) {
-				await installWorkspaceDeps(workspaceRoot, ctx.log)
-			}
-			return
-		}
-
-		if (action === 'scan') {
-			const base = targetRaw || '.'
-			const existing = readWorkspaceCandidates(workspaceRoot)
-			const paths = await scanWorkspaceDirs(workspaceRoot, base)
-			const updated = upsertWorkspaceCandidates(workspaceRoot, paths, existing, 'scan')
-			ctx.log(`Recorded ${paths.length} candidate(s). Total tracked: ${updated.entries.length}.`)
-			return
-		}
-
-		throw new Error(`Unknown workspace action: ${action}`)
+		await handleInteractive(resolveWorkspaceRoot(ctx.values as WorkspaceRootValues), ctx.log)
 	},
 })
 
-async function handleInteractive(root: string, log: (...args: any[]) => void) {
+async function handleInteractive(root: string, log: (...args: unknown[]) => void) {
 	let store = readWorkspaceCandidates(root)
 	if (!store || store.entries.length === 0) {
 		const scanned = await scanWorkspaceDirs(root)
@@ -175,8 +254,8 @@ async function handleInteractive(root: string, log: (...args: any[]) => void) {
 
 	const changed = result.added.length > 0 || result.removed.length > 0
 	const summary = [
-		result.added.length ? `enabled: ${result.added.join(', ')}` : '',
-		result.removed.length ? `disabled: ${result.removed.join(', ')}` : '',
+		result.added.length > 0 ? `enabled: ${result.added.join(', ')}` : '',
+		result.removed.length > 0 ? `disabled: ${result.removed.join(', ')}` : '',
 	]
 		.filter(Boolean)
 		.join('\n')
@@ -186,19 +265,19 @@ async function handleInteractive(root: string, log: (...args: any[]) => void) {
 	outro(summary || 'No changes.')
 }
 
-async function handleList(root: string, log: (...args: any[]) => void) {
+async function handleList(root: string, log: (...args: unknown[]) => void) {
 	const state = await loadWorkspaceState(root)
 	log(`workspace root: ${state.root}`)
 	log(`package manager: ${state.packageManager}`)
 	const sources: string[] = []
 	if (state.manifest) sources.push(state.manifest.path)
 	if (state.pnpm) sources.push(state.pnpm.path)
-	log(`config files: ${sources.length ? sources.join(', ') : 'none (using defaults)'}`)
+	log(`config files: ${sources.length > 0 ? sources.join(', ') : 'none (using defaults)'}`)
 	log('patterns:')
 	for (const p of state.effectivePatterns) {
 		log(`  - ${p}`)
 	}
-	if (state.info.packageDirs.length) {
+	if (state.info.packageDirs.length > 0) {
 		log('packages:')
 		for (const dir of state.info.packageDirs) {
 			log(`  • ${relative(root, dir)}`)
@@ -209,7 +288,7 @@ async function handleList(root: string, log: (...args: any[]) => void) {
 }
 
 function reportMutation(
-	log: (...args: any[]) => void,
+	log: (...args: unknown[]) => void,
 	root: string,
 	mutation: Awaited<ReturnType<typeof addWorkspacePattern>>,
 ) {
@@ -221,7 +300,7 @@ function reportMutation(
 	log(`${mutation.action} ${rel} in: ${mutation.changedTargets.join(', ')}`)
 }
 
-async function installWorkspaceDeps(root: string, log: (...args: any[]) => void) {
+async function installWorkspaceDeps(root: string, log: (...args: unknown[]) => void) {
 	const pm = await detectPm(root)
 	log(`\n→ Running ${pm} install to sync workspaces...`)
 	await runPackageManager(pm, ['install'], root)
@@ -261,7 +340,7 @@ function containsGlob(input: string) {
 
 type GlobMatcher = {
 	pattern: string
-	match: picomatchModule.Matcher
+	match: ReturnType<typeof picomatch>
 }
 
 function createGlobMatchers(patterns: string[]): GlobMatcher[] {
@@ -269,13 +348,6 @@ function createGlobMatchers(patterns: string[]): GlobMatcher[] {
 		pattern,
 		match: picomatch(pattern, { dot: true }),
 	}))
-}
-
-function normalizePositionals(name: string | undefined, positionals: string[]) {
-	if (positionals.length && name && positionals[0] === name) {
-		return positionals.slice(1)
-	}
-	return positionals
 }
 
 interface CandidateOptionDetail {

@@ -1,32 +1,32 @@
 {
-	"private": true,
 	"name": "@pluxel/context",
 	"version": "0.1.0",
+	"private": true,
 	"description": "Demo example that imports a local package",
-	"main": "./dist/index.cjs",
 	"type": "module",
+	"main": "./dist/index.cjs",
 	"module": "./dist/index.mjs",
 	"types": "./dist/index.d.cts",
 	"exports": {
 		".": {
 			"@pluxel/source": "./src/index.ts",
-			"require": "./dist/index.cjs",
-			"import": "./dist/index.mjs"
+			"import": "./dist/index.mjs",
+			"require": "./dist/index.cjs"
 		},
 		"./package.json": "./package.json"
 	},
-	"scripts": {
-		"test": "bun test",
-		"build": "tsdown"
-	},
-	"devDependencies": {},
 	"publishConfig": {
 		"exports": {
 			".": {
-				"require": "./dist/index.cjs",
-				"import": "./dist/index.mjs"
+				"import": "./dist/index.mjs",
+				"require": "./dist/index.cjs"
 			},
 			"./package.json": "./package.json"
 		}
+	},
+	"scripts": {
+		"test": "pnpm exec vitest run",
+		"bench": "pnpm exec vitest bench bench/context-getter.bench.ts",
+		"build": "tsdown"
 	}
 }

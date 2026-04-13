@@ -1,48 +1,28 @@
-import { fileURLToPath } from 'node:url'
-import { appendDtsImport } from '@pluxel/rolldown'
 import { defineConfig } from 'tsdown'
-import PreprocessorDirectives from 'unplugin-preprocessor-directives/rollup'
-
-const valibotFormSrc = fileURLToPath(new URL('../valibot-form/src', import.meta.url))
 
 export default defineConfig({
 	exports: {
 		devExports: '@pluxel/source',
 	},
-	plugins: [
-		PreprocessorDirectives(),
-		appendDtsImport('import type {} from "./services.d.mts"', ['index.d.mts']),
-	],
-	env: {},
+	deps: {
+		// Internal/private workspace packages must be bundled into the published artifact.
+		alwaysBundle: ['@pluxel/build', '@pluxel/build/*', '@pluxel/workspace', '@pluxel/workspace/*'],
+		onlyBundle: ['fdir'],
+		neverBundle: ['@pluxel/core', '@pluxel/runtime', 'vite', 'vite/*'],
+	},
 	entry: {
 		index: 'src/index.ts',
-		services: 'src/services/index.ts',
-		config: 'src/config.ts',
-		web: 'src/web/web.ts',
-		'web/react': 'src/web/react.tsx',
-		capnweb: 'src/web/capnweb.ts',
-		signaldb: 'src/web/signaldb.ts',
+		host: 'src/host.ts',
+		diagnose: 'src/diagnose.ts',
+		plugin: 'src/plugin.ts',
+		'plugin-build': 'src/plugin-build.ts',
+		snapshot: 'src/snapshot.ts',
 	},
-	copy: ['public', 'src/services/runtime-compile/bundler/bundle-worker.mjs'],
-	alias: {
-		'~': valibotFormSrc,
-	},
-	tsconfig: './tsconfig.json',
+	copy: ['src/dev/compile/bundler/bundle-worker.mjs'],
 	dts: {
-		resolver: 'oxc',
+		sourcemap: true,
+		eager: true,
 	},
-	// 不要内联 core / react 相关，避免重复 vendor。
-	external: [
-		'@pluxel/core',
-		'@pluxel/core/services',
-		'@pluxel/components',
-		'@pluxel/hmr-web',
-		'@pluxel/hmr-web/react',
-		'@pluxel/plugin-ui',
-		'react',
-		'react/jsx-runtime',
-		'react-dom',
-	],
 	format: ['esm'],
 	sourcemap: true,
 	clean: true,
@@ -55,10 +35,6 @@ export default defineConfig({
 			},
 			typescript: {
 				removeClassFieldsWithoutInitializer: true,
-			},
-			decorator: {
-				legacy: true,
-				emitDecoratorMetadata: true,
 			},
 		},
 	},

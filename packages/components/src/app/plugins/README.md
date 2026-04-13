@@ -1,0 +1,42 @@
+# Plugins Frontend Map
+
+This directory is the frontend surface for plugin browsing, detail, config, and organization.
+
+## Directory Roles
+
+- `catalog/`
+  Plugin navigation, search/filter tokens, grouped drag/drop organization, and navigation chrome.
+- `pluginOverviewStore.tsx`
+  Shared plugin overview snapshot state consumed across plugin/package screens.
+- `pluginStatusActions.ts`
+  RPC-backed plugin status and start-plan operations.
+- `detail/`
+  Single-plugin screen, workbench composition, scoped context, and detail-only `cards/controls`.
+- `config/`
+  Config form orchestration, schema grouping, saved-state handling, and form TOC helpers.
+
+## Hard Rules
+
+1. `detail/` owns plugin-specific screen composition.
+   Do not route plugin detail screens through compatibility wrapper files.
+
+2. `catalog/` owns filtering and overview projection.
+   Do not duplicate search token parsing or overview shaping outside `catalog/`.
+
+3. `catalog/organizer/` owns drag/drop rendering only.
+   Keep RPC, notifications, and persistence logic outside unless strictly needed for DnD itself.
+
+4. `config/` owns config submission flow.
+   Reuse its helpers instead of adding ad-hoc schema sorting, anchor logic, or saved-state badges elsewhere.
+
+5. Shared code must be truly shared.
+   If only one area uses it, keep it local to that area.
+
+## LLM Edit Protocol
+
+When editing plugin UI:
+
+1. Decide whether the change belongs to `catalog/`, `detail/`, `config/`, `pluginOverviewStore.tsx`, or `pluginStatusActions.ts`.
+2. Change the narrowest layer first.
+3. Prefer deleting compatibility wrappers instead of adding new ones.
+4. Add a new folder only when at least two files would immediately live under it.

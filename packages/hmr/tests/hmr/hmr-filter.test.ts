@@ -1,46 +1,73 @@
-import { describe, expect, it } from 'bun:test'
-import { join, normalize } from 'pathe'
-import { HMRService } from '../../src/services/hmr/HMRService'
+import { describe, expect, it } from 'vitest'
+import type { Context } from '@pluxel/core'
+import { join, normalize, relative } from 'pathe'
+import { HMRService } from '@pluxel/hmr'
+import { fixturesPluginsDir, workspaceRoot } from './_paths'
+
+const noop = () => {}
+
+function createNoopLogger() {
+	const self: any = {
+		trace: noop,
+		debug: noop,
+		info: noop,
+		warn: noop,
+		error: noop,
+		fatal: noop,
+		with: () => self,
+	}
+	return {
+		...self,
+		getDebugChannel: () => self,
+	}
+}
 
 // Minimal ctx stub to construct HMRService without booting Vite.
 const createCtx = () => {
 	const anchors = new Set<string>()
 	return {
-		logger: { info() {}, error() {}, warn() {} },
+		logger: createNoopLogger(),
+		on: () => noop,
+		scanService: { resolveEntry: async () => ({ ok: false }) },
 		loader: {
 			api: {
 				anchors: {
+					has: (id: string) => anchors.has(id),
 					list: () => anchors,
 					remove: (id: string) => anchors.delete(id),
 				},
 			},
 			replaceModule: async () => true,
-			pruneModule() {},
+			pruneModule: () => {},
 		},
 		registry: {
 			commit: async () => ({}),
 			container: { services: new Map() },
 		},
-		honoService: { viteHonoDevServer: { name: 'noop', apply: 'serve', configureServer() {} } },
-	} as any
+		http: {
+			vitePlugin: { name: 'noop', apply: 'serve', configureServer: () => {} },
+		},
+	} as unknown as Context
 }
 
-const pkgRoot = process.cwd()
-const pluginDir = join(pkgRoot, 'tests/plugins')
+const pkgRoot = workspaceRoot
+const pluginDir = fixturesPluginsDir
 const pluginFile = join(pluginDir, 'PluginA.ts')
 
 describe('HMRService file filter', () => {
 	it('accepts relative, absolute and /@fs watcher paths inside scan roots', () => {
 		const ctx = createCtx()
 		const hmr = new HMRService(ctx, {
-			dir: [pluginDir],
-			log: { useColors: false },
+			roots: [pluginDir],
+			entries: [],
 		})
-		// Simulate Vite configuring server root to packages/hmr (matches real dev script)
+		// Simulate Vite configuring server root to packages/runtime (matches real dev script)
 		hmr.setServerRoot(pkgRoot)
 
 		const filter = hmr.toolkit.pathFilter
-		const relPath = normalize('tests/plugins/PluginA.ts')
+		// Relative watcher paths are resolved against HMRService cwd (process.cwd()).
+		// This test suite can be executed from either workspace root or package root, so compute it dynamically.
+		const relPath = normalize(relative(process.cwd(), pluginFile))
 		const cleanRel = hmr.normalizeId(relPath)
 
 		expect(cleanRel).toBe(pluginFile)

@@ -4,119 +4,226 @@ import {
 	Card,
 	Group,
 	NumberInput,
-	Select,
 	Stack,
 	Switch,
 	Table,
 	Text,
-	TextInput,
 	Textarea,
+	TextInput,
 } from '@mantine/core'
 import { IconArrowDown, IconArrowUp, IconPlus, IconTrash } from '@tabler/icons-react'
-import { useEffect, useMemo, useState } from 'react'
-import type { RecordMetaResult } from '~/core/actions/record'
-import type { CommonProps } from '~/core/registry'
-import { MetaRenderer, registerRenderer, triggerFormEvents } from '~/core/registry'
-import { META_MAP } from '~/core/utils'
-import { FieldChrome } from '../shared'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { DEFAULT_TEXTS } from '../../../core/constants'
+import type {
+	FieldNode,
+	NumberFieldNode,
+	PicklistFieldNode,
+	RecordFieldNode,
+	StringFieldNode,
+} from '../../../core/fields'
+import { FieldChrome } from '../chrome/FieldChrome'
+import { useFieldRenderer } from '../internal/fieldRendererContext'
 import { cleanProps } from '../../utils/propHelpers'
 import { PicklistControl } from './controls/PicklistControl'
-import { cachedExtractInfo } from '../schemaCache'
+import {
+	isErrorWithPath,
+	joinErrorMessages,
+	normalizeErrorMessages,
+	type RendererProps,
+	type TriggerOptions,
+	triggerFormBlur,
+	triggerFormEvents,
+} from './types'
+import { buildNestedInputProps, tweakNestedNode } from './nested'
 
-type RendererProps = CommonProps<typeof META_MAP.RECORD> & { value?: Record<string, unknown> }
-type RecordUI = RecordMetaResult
+type ValueKind = FieldNode['kind'] | 'json' | null
 
-const idOf = (value: string | number) => String(value)
-
-function buildPicklistData(config?: NonNullable<RecordUI['picklist']>) {
-	if (!config) return { data: [], map: new Map<string, string | number>(), isAllNumbers: false }
-	const map = new Map<string, string | number>()
-	const disabled = new Set((config.disabled ?? []).map((item) => idOf(item)))
-	const data = (config.options ?? []).map((opt) => {
-		const id = idOf(opt)
-		map.set(id, opt)
-		return {
-			value: id,
-			label: config.labels?.[opt] ?? String(opt),
-			disabled: disabled.has(id),
-		}
-	})
-	const isAllNumbers = (config.options ?? []).every((opt) => typeof opt === 'number')
-	return { data, map, isAllNumbers }
+type RecordRow = {
+	id: string
+	key: string
+	value: unknown
 }
 
-function inferMode(
-	mode: RecordUI['valueMode'],
-	value: unknown,
-): Exclude<RecordUI['valueMode'], 'auto' | undefined> | 'string' {
-	if (mode && mode !== 'auto') return mode
-	if (Array.isArray(value)) return 'picklist-array'
+function resolvePicklistDefault(meta?: PicklistFieldNode | null): unknown {
+	if (meta?.entries?.length) return meta.entries[0].value
+	if (meta?.options?.length) return meta.options[0]
+	return ''
+}
+
+function resolveDefaultValueForNode(node?: FieldNode | null): unknown {
+	if (!node) return ''
+	switch (node.kind) {
+		case 'string':
+			return ''
+		case 'number':
+			return 0
+		case 'boolean':
+			return false
+		case 'picklist':
+			return resolvePicklistDefault(node)
+		case 'array':
+			return []
+		case 'object':
+		case 'record':
+		case 'union':
+			return {}
+		default:
+			return ''
+	}
+}
+
+function resolveDefaultValueForKind(
+	kind: ValueKind,
+	picklistMeta?: PicklistFieldNode | null,
+): unknown {
+	switch (kind) {
+		case 'string':
+			return ''
+		case 'number':
+			return 0
+		case 'boolean':
+			return false
+		case 'picklist':
+			return resolvePicklistDefault(picklistMeta)
+		case 'array':
+			return []
+		case 'object':
+		case 'record':
+		case 'union':
+		case 'json':
+			return {}
+		default:
+			return ''
+	}
+}
+
+function inferValueKind(value: unknown): ValueKind {
+	if (typeof value === 'string') return 'string'
 	if (typeof value === 'number') return 'number'
 	if (typeof value === 'boolean') return 'boolean'
+	if (Array.isArray(value)) return 'array'
 	if (value && typeof value === 'object') return 'json'
-	return 'string'
+	return null
 }
 
-const slug = (value: string) =>
-	value
-		.toLowerCase()
-		.replace(/[^a-z0-9_-]+/gi, '-')
-		.replace(/^-+|-+$/g, '') || 'item'
+export function RecordField(props: RendererProps) {
+	const { node, errors, inputProps, value } = props
+	const info = node as RecordFieldNode
+	const renderField = useFieldRenderer()
+	const layout = info.layout ?? 'table'
 
-function RecordField(props: RendererProps) {
-	const { formBaseInfo, errors, extractedPropsInfo, inputProps, value } = props
-	const ep = extractedPropsInfo ?? {}
-	// 使用 state 来保持键的顺序，避免编辑时因对象键重排序导致的跳跃
-	const [orderedKeys, setOrderedKeys] = useState<string[]>([])
+	const rowIdRef = useRef(0)
+	const buildRow = (key: string, rowValue: unknown): RecordRow => ({
+		id: `row_${rowIdRef.current++}`,
+		key,
+		value: rowValue,
+	})
 
-	const pickMeta = useMemo(() => buildPicklistData(ep.picklist), [ep.picklist])
+	const entries = useMemo(() => Object.entries((value as Record<string, unknown>) ?? {}), [value])
 
-	const rows = useMemo(() => {
-		const entries = Object.entries((value as Record<string, unknown>) ?? {})
-		// 如果是第一次加载或 value 的键集合发生了变化，更新 orderedKeys
-		const currentKeys = entries.map(([k]) => k)
-		const currentKeySet = new Set(currentKeys)
-		const orderedKeySet = new Set(orderedKeys)
+	const [rows, setRows] = useState<RecordRow[]>(() =>
+		Object.entries((value as Record<string, unknown>) ?? {}).map(([key, rowValue]) =>
+			buildRow(key, rowValue),
+		),
+	)
 
-		// 检查是否需要更新顺序（新增或删除了键）
-		const keysChanged =
-			currentKeys.length !== orderedKeys.length ||
-			currentKeys.some((k) => !orderedKeySet.has(k)) ||
-			orderedKeys.some((k) => !currentKeySet.has(k))
+	useEffect(() => {
+		setRows((prev) => {
+			if (entries.length === 0 && prev.length === 0) return prev
+			const entryMap = new Map(entries)
+			const seen = new Set<string>()
+			const next: RecordRow[] = []
 
-		if (keysChanged) {
-			// 保留现有顺序中仍存在的键，然后添加新键
-			const preserved = orderedKeys.filter((k) => currentKeySet.has(k))
-			const newKeys = currentKeys.filter((k) => !orderedKeySet.has(k))
-			const newOrder = [...preserved, ...newKeys]
-			setOrderedKeys(newOrder)
-			return newOrder.map((k) => [k, (value as Record<string, unknown>)[k]] as [string, unknown])
+			for (const row of prev) {
+				if (!entryMap.has(row.key)) continue
+				const nextValue = entryMap.get(row.key)
+				const nextRow = row.value === nextValue ? row : { ...row, value: nextValue }
+				next.push(nextRow)
+				seen.add(row.key)
+			}
+
+			for (const [key, rowValue] of entries) {
+				if (seen.has(key)) continue
+				next.push(buildRow(key, rowValue))
+			}
+
+			if (
+				next.length === prev.length &&
+				next.every(
+					(row, idx) =>
+						row.id === prev[idx].id && row.key === prev[idx].key && row.value === prev[idx].value,
+				)
+			) {
+				return prev
+			}
+			return next
+		})
+	}, [entries])
+
+	const inferredValueKind = useMemo<ValueKind>(() => {
+		for (const row of rows) {
+			const kind = inferValueKind(row.value)
+			if (kind) return kind
 		}
+		return null
+	}, [rows])
 
-		// 使用已有的顺序
-		return orderedKeys
-			.filter((k) => currentKeySet.has(k))
-			.map((k) => [k, (value as Record<string, unknown>)[k]] as [string, unknown])
-	}, [value, orderedKeys])
-	const layout = ep.layout ?? 'table'
-	const minItems = ep.minItems ?? 0
-	const maxItems = ep.maxItems
-	const canAdd =
-		ep.addable !== false && !inputProps.disabled && (!maxItems || rows.length < maxItems)
-	const canRemove = ep.removable !== false
-	const canReorder = ep.reorderable !== false
-	const editableKey = ep.editableKey !== false
-	const baseErrors = (errors ?? [])
-		.filter((err) => err.dotPath.length <= 1)
-		.map((err) => err.message)
+	const minItems = info.min ?? 0
+	const maxItems = info.max
+	const isLocked = Boolean(inputProps.disabled || inputProps.readOnly)
+	const canAdd = info.addable !== false && !isLocked && (!maxItems || rows.length < maxItems)
+	const canRemove = info.removable !== false
+	const canReorder = info.reorderable !== false && rows.length > 1
+	const editableKey = info.editableKey !== false
+
+	const keyLabel = info.key?.label ?? 'Key'
+	const valueLabel = info.valueMeta?.label ?? 'Value'
+	const keyPlaceholder = info.key?.placeholder
+	const valuePlaceholder = info.valueMeta?.placeholder
+	const valueNode = info.value ?? null
+	const valueKind = valueNode?.kind ?? inferredValueKind
+	const valueNumberMeta = valueNode?.kind === 'number' ? (valueNode as NumberFieldNode) : null
+	const valueStringMeta = valueNode?.kind === 'string' ? (valueNode as StringFieldNode) : null
+	const valuePicklistMeta = valueNode?.kind === 'picklist' ? (valueNode as PicklistFieldNode) : null
+	const inlineAddEnabled =
+		layout === 'table' &&
+		canAdd &&
+		!isLocked &&
+		editableKey &&
+		(valueKind === 'string' ||
+			valueKind === 'number' ||
+			valueKind === 'boolean' ||
+			valueKind === 'picklist')
+	const addLabel = info.addLabel ?? (node.meta.label ? `添加${node.meta.label}` : '添加记录')
+
+	const [draftKey, setDraftKey] = useState('')
+	const [draftValue, setDraftValue] = useState<unknown>()
+	const draftKeyRef = useRef<HTMLInputElement | null>(null)
+
+	useEffect(() => {
+		setDraftValue(undefined)
+	}, [valueKind])
+
+	useEffect(() => {
+		if (!inlineAddEnabled) return undefined
+		const handle = requestAnimationFrame(() => {
+			draftKeyRef.current?.focus()
+		})
+		return () => cancelAnimationFrame(handle)
+	}, [inlineAddEnabled, rows.length])
+
+	const baseErrors = normalizeErrorMessages(
+		errors?.filter((err) => !isErrorWithPath(err) || (err.dotPath?.length ?? 0) <= 1),
+	)
 
 	const entryErrors = useMemo(() => {
-		const map = new Map<string, { message: string; dotPath: string[] }[]>()
+		const map = new Map<string, { message: string; dotPath?: string[] }[]>()
 		for (const err of errors ?? []) {
-			if (err.dotPath.length <= 1) continue
-			const key = String(err.dotPath[1])
+			if (!isErrorWithPath(err)) continue
+			if ((err.dotPath?.length ?? 0) <= 1) continue
+			const key = String(err.dotPath?.[1])
 			if (!map.has(key)) map.set(key, [])
-			map.get(key)!.push({ message: err.message, dotPath: err.dotPath.slice(1) })
+			map.get(key)!.push({ message: err.message, dotPath: err.dotPath?.slice(1) })
 		}
 		return map
 	}, [errors])
@@ -127,69 +234,164 @@ function RecordField(props: RendererProps) {
 		setJsonErrors({})
 	}, [rows.length])
 
-	const commitRows = (nextRows: [string, unknown][]) => {
+	const commitRows = (nextRows: RecordRow[], options?: TriggerOptions) => {
 		const next: Record<string, unknown> = {}
-		for (const [k, v] of nextRows) {
-			next[k] = v
+		for (const row of nextRows) {
+			next[row.key] = row.value
 		}
-		triggerFormEvents(inputProps, next)
+		triggerFormEvents(inputProps, next, options)
+	}
+	const handleBlur = () => triggerFormBlur(inputProps)
+
+	const existingKeySet = useMemo(() => new Set(rows.map((row) => row.key)), [rows])
+	const draftKeyTrimmed = draftKey.trim()
+	const draftKeyError =
+		draftKeyTrimmed.length === 0 ? null : existingKeySet.has(draftKeyTrimmed) ? 'Key 已存在' : null
+	const draftKeyValid = draftKeyTrimmed.length > 0 && !draftKeyError
+
+	useEffect(() => {
+		if (!inlineAddEnabled || draftValue !== undefined) return
+		const next =
+			valueNode != null
+				? resolveDefaultValueForNode(valueNode)
+				: resolveDefaultValueForKind(valueKind, valuePicklistMeta)
+		setDraftValue(next)
+	}, [inlineAddEnabled, draftValue, valueKind, valueNode, valuePicklistMeta])
+
+	const resolveDraftValue = () => {
+		if (draftValue !== undefined) return draftValue
+		if (valueNode) return resolveDefaultValueForNode(valueNode)
+		return resolveDefaultValueForKind(valueKind, valuePicklistMeta)
+	}
+
+	const handleInlineAdd = () => {
+		if (!draftKeyValid) return
+		const valueToAdd = resolveDraftValue()
+		commitRows(
+			[...rows, { id: `row_${rowIdRef.current++}`, key: draftKeyTrimmed, value: valueToAdd }],
+			{
+				blur: true,
+			},
+		)
+		setDraftKey('')
+		setDraftValue(undefined)
 	}
 
 	const handleKeyChange = (index: number, nextKey: string) => {
-		const next = [...rows]
-		const [oldKey, currentValue] = next[index]
-		next[index] = [nextKey, currentValue]
-
-		// 更新有序键列表
-		const newOrderedKeys = [...orderedKeys]
-		newOrderedKeys[index] = nextKey
-		setOrderedKeys(newOrderedKeys)
-
+		const current = rows[index]
+		if (!current) return
+		if (nextKey !== current.key && existingKeySet.has(nextKey)) return
+		const next = rows.map((row, idx) => (idx === index ? { ...row, key: nextKey } : row))
+		setRows(next)
 		commitRows(next)
 	}
 
 	const handleValueChange = (index: number, nextValue: unknown) => {
-		const next = [...rows]
-		const [currentKey] = next[index]
-		next[index] = [currentKey, nextValue]
+		const current = rows[index]
+		if (!current) return
+		const next = rows.map((row, idx) => (idx === index ? { ...row, value: nextValue } : row))
+		setRows(next)
 		commitRows(next)
 	}
 
 	const handleRemove = (index: number) => {
-		if (!canRemove || inputProps.disabled) return
+		if (!canRemove || isLocked) return
 		if (rows.length <= minItems) return
 		const next = rows.filter((_, idx) => idx !== index)
-		commitRows(next)
+		setRows(next)
+		commitRows(next, { blur: true })
 	}
 
 	const handleMove = (index: number, direction: number) => {
-		if (!canReorder || inputProps.disabled) return
+		if (!canReorder || isLocked) return
 		const target = index + direction
 		if (target < 0 || target >= rows.length) return
 		const next = [...rows]
 		const [removed] = next.splice(index, 1)
 		next.splice(target, 0, removed)
-		commitRows(next)
+		setRows(next)
+		commitRows(next, { blur: true })
 	}
 
 	const handleAdd = () => {
-		const next: [string, unknown][] = [...rows, ['', '']]
-		commitRows(next)
+		if (!canAdd || isLocked) return
+		const baseKey = (keyPlaceholder ?? keyLabel ?? 'key').replaceAll(/\s+/g, '_')
+		let index = rows.length + 1
+		let nextKey = `${baseKey}_${index}`
+		while (existingKeySet.has(nextKey)) {
+			index += 1
+			nextKey = `${baseKey}_${index}`
+		}
+		const nextValue = resolveDraftValue()
+		const next: RecordRow[] = [
+			...rows,
+			{ id: `row_${rowIdRef.current++}`, key: nextKey, value: nextValue },
+		]
+		setRows(next)
+		commitRows(next, { blur: true })
 	}
 
-	const renderValueControl = (index: number, value: unknown) => {
-		const mode = inferMode(ep.valueMode, value)
-		switch (mode) {
+	const renderJsonFallback = (index: number, current: unknown, fallback: 'array' | 'object') => {
+		const formatted =
+			current && typeof current === 'object'
+				? JSON.stringify(current, null, 2)
+				: fallback === 'array'
+					? '[]'
+					: '{}'
+		return (
+			<Textarea
+				key={`${index}-${rows.length}`}
+				defaultValue={formatted}
+				minRows={4}
+				autosize
+				onBlur={(event) => {
+					if (isLocked) return
+					const inputValue = (event.currentTarget as HTMLTextAreaElement).value
+					try {
+						const parsed = JSON.parse(inputValue || formatted)
+						handleValueChange(index, parsed)
+						handleBlur()
+						setJsonErrors((prev) => {
+							const next = { ...prev }
+							delete next[index]
+							return next
+						})
+					} catch {
+						setJsonErrors((prev) => ({
+							...prev,
+							[index]: DEFAULT_TEXTS.validation.jsonError,
+						}))
+					}
+				}}
+				disabled={inputProps.disabled ?? false}
+				readOnly={inputProps.readOnly ?? false}
+				styles={{
+					input: { fontFamily: 'var(--mantine-font-family-monospace)' },
+				}}
+			/>
+		)
+	}
+
+	const renderValueControl = (index: number, current: unknown, recordKey: string) => {
+		const inferredType = valueNode?.kind ?? inferValueKind(current) ?? 'string'
+
+		switch (inferredType) {
 			case 'number':
 				return (
 					<NumberInput
 						{...cleanProps({
-							value: typeof value === 'number' ? value : '',
+							value: typeof current === 'number' ? current : '',
 							onChange: (val: string | number) => {
 								const parsed = val === '' || val === undefined ? undefined : Number(val)
-								handleValueChange(index, parsed ?? 0)
+								const safe = Number.isNaN(parsed) ? undefined : parsed
+								handleValueChange(index, safe)
 							},
-							disabled: inputProps.disabled,
+							onBlur: handleBlur,
+							disabled: isLocked,
+							placeholder: valuePlaceholder ?? valueNumberMeta?.placeholder,
+							min: valueNumberMeta?.min,
+							max: valueNumberMeta?.max,
+							step: valueNumberMeta?.step ?? (valueNumberMeta?.integer ? 1 : undefined),
 						})}
 					/>
 				)
@@ -197,396 +399,426 @@ function RecordField(props: RendererProps) {
 				return (
 					<Switch
 						{...cleanProps({
-							checked: Boolean(value),
+							checked: Boolean(current),
 							onChange: (event: React.ChangeEvent<HTMLInputElement>) =>
 								handleValueChange(index, event.currentTarget.checked),
-							disabled: inputProps.disabled,
+							onBlur: handleBlur,
+							disabled: isLocked,
 						})}
 					/>
 				)
-			case 'json': {
-				const formatted =
-					value && typeof value === 'object'
-						? JSON.stringify(value, null, 2)
-						: typeof value === 'string'
-							? value
-							: '{}'
-				return (
-					<Textarea
-						{...cleanProps({
-							key: `${index}-${rows.length}-${formatted.length}`,
-							defaultValue: formatted,
-							minRows: 4,
-							autosize: true,
-							onBlur: (event: React.FocusEvent<HTMLTextAreaElement>) => {
-								try {
-									const parsed = JSON.parse(event.currentTarget.value || '{}')
-									handleValueChange(index, parsed)
-									setJsonErrors((prev) => {
-										const next = { ...prev }
-										delete next[index]
-										return next
-									})
-								} catch {
-									setJsonErrors((prev) => ({
-										...prev,
-										[index]: 'JSON 格式错误',
-									}))
-								}
-							},
-							disabled: inputProps.disabled,
-							styles: { input: { fontFamily: 'var(--mantine-font-family-monospace)' } },
-						})}
-					/>
-				)
-			}
 			case 'picklist': {
-				const currentId = value == null ? null : idOf(value as string | number)
-				return (
-					<Select
-						data={pickMeta.data}
-						value={currentId ?? null}
-						onChange={(id) => {
-							if (id === null) return handleValueChange(index, null)
-							const raw = pickMeta.map.get(id!) ?? (pickMeta.isAllNumbers ? Number(id) : id)
-							handleValueChange(index, raw)
-						}}
-						disabled={inputProps.disabled ?? false}
-						{...cleanProps({
-							placeholder: ep.picklist?.placeholder,
-							clearable: ep.picklist?.clearable,
-							searchable: ep.picklist?.searchable,
-						})}
-					/>
-				)
-			}
-			case 'picklist-array': {
+				const meta = valueNode as PicklistFieldNode
 				return (
 					<PicklistControl
-						meta={
-							{
-								clearable: ep.picklist?.clearable ?? true,
-								allowCreate: ep.picklist?.allowCreate ?? false,
-								variant: ep.picklist?.variant ?? 'select',
-								multiple: true,
-								...cleanProps({
-									options: ep.picklist?.options,
-									entries: ep.picklist?.entries,
-									labels: ep.picklist?.labels,
-									disabled: ep.picklist?.disabled,
-									placeholder: ep.picklist?.placeholder,
-									searchable: ep.picklist?.searchable,
-									maxSelections: ep.picklist?.maxValues,
-									nothingFoundLabel: ep.picklist?.nothingFoundLabel,
-								}),
-							} as any
-						}
-						value={Array.isArray(value) ? value : []}
-						onChange={(next) => {
-							if (Array.isArray(next)) handleValueChange(index, next)
-							else if (next == null) handleValueChange(index, [])
-							else handleValueChange(index, [next])
+						meta={{
+							options: meta.options,
+							entries: meta.entries,
+							labels: meta.labels,
+							disabled: meta.disabled,
+							placeholder: meta.placeholder,
+							searchable: meta.searchable,
+							clearable: meta.clearable ?? true,
+							max: meta.max,
+							create: meta.create,
+							control: meta.control ?? 'select',
+							multiple: false,
+							emptyLabel: meta.emptyLabel,
 						}}
-						disabled={inputProps.disabled ?? false}
-						required={false}
+						value={current}
+						onChange={(next) => handleValueChange(index, next)}
+						onBlur={handleBlur}
+						disabled={isLocked}
 					/>
 				)
 			}
-			case 'object':
-			case 'array':
-			case 'union':
-			case 'variant': {
-				const itemInfo = cachedExtractInfo(ep.valueSchema as object, `${index}`)
-				if (!itemInfo) return null
-
-				const nestedName = inputProps.name
-					? `${inputProps.name}.${rows[index]?.[0] ?? index}`
-					: String(index)
-				const nestedInputProps = {
-					name: nestedName,
-					onChange: (nextValue: unknown) => handleValueChange(index, nextValue),
-					onBlur: () => inputProps.onBlur?.({ target: { name: nestedName } } as any),
-					disabled: inputProps.disabled,
-					readOnly: inputProps.readOnly,
-				}
-				const nestedErrors = (entryErrors.get(rows[index]?.[0] ?? '') ?? []).map((err) => ({
-					message: err.message,
-					dotPath: err.dotPath,
-				}))
-
-				const nestedProps =
-					itemInfo.type === 'object'
-						? {
-								...itemInfo.props,
-								variant: 'stack' as const,
-								gap: 'sm',
-								columns: itemInfo.props.columns ?? 2,
+			case 'string': {
+				const control = valueStringMeta?.control ?? 'text'
+				if (control === 'textarea' || control === 'code') {
+					return (
+						<Textarea
+							value={typeof current === 'string' ? current : ''}
+							onChange={(event) =>
+								handleValueChange(index, (event.currentTarget as HTMLTextAreaElement).value)
 							}
-						: itemInfo.type === 'array'
-							? { ...itemInfo.props, disableAutoGrid: true }
-							: itemInfo.type === 'union'
-								? { ...itemInfo.props, compact: true }
-								: itemInfo.props
-
+							onBlur={handleBlur}
+							minRows={valueStringMeta?.rows ?? 3}
+							autosize
+							disabled={inputProps.disabled ?? false}
+							readOnly={inputProps.readOnly ?? false}
+							placeholder={valuePlaceholder ?? valueStringMeta?.placeholder}
+							minLength={valueStringMeta?.minLength}
+							maxLength={valueStringMeta?.maxLength}
+							styles={
+								control === 'code'
+									? { input: { fontFamily: 'var(--mantine-font-family-monospace)' } }
+									: undefined
+							}
+						/>
+					)
+				}
 				return (
-					<MetaRenderer
-						type={itemInfo.type}
-						formBaseInfo={{
-							...itemInfo.formInfo,
-							label: undefined,
-							hideLabel: true,
-							hideRequired: true,
-						}}
-						extractedPropsInfo={nestedProps}
-						errors={nestedErrors}
-						value={value}
-						inputProps={nestedInputProps as any}
+					<TextInput
+						{...cleanProps({
+							value: typeof current === 'string' ? current : '',
+							onChange: (event: React.ChangeEvent<HTMLInputElement>) =>
+								handleValueChange(index, event.currentTarget.value),
+							onBlur: handleBlur,
+							disabled: inputProps.disabled,
+							placeholder: valuePlaceholder ?? valueStringMeta?.placeholder,
+							minLength: valueStringMeta?.minLength,
+							maxLength: valueStringMeta?.maxLength,
+						})}
+						readOnly={inputProps.readOnly ?? false}
 					/>
 				)
 			}
+			case 'array':
+			case 'object':
+			case 'record':
+			case 'union': {
+				if (!valueNode) {
+					return renderJsonFallback(index, current, inferredType === 'array' ? 'array' : 'object')
+				}
+
+				const nestedName = inputProps.name ? `${inputProps.name}.${recordKey}` : recordKey
+				const nestedInputProps = buildNestedInputProps(inputProps, nestedName, (nextValue) =>
+					handleValueChange(index, nextValue),
+				)
+
+				const itemErrors = entryErrors.get(recordKey) ?? []
+				const nestedNode = tweakNestedNode(valueNode)
+
+				return renderField({
+					node: nestedNode,
+					value: current,
+					errors: itemErrors,
+					inputProps: nestedInputProps,
+				})
+			}
+			case 'json':
+				return renderJsonFallback(index, current, Array.isArray(current) ? 'array' : 'object')
 			default:
 				return (
 					<TextInput
 						{...cleanProps({
-							value: typeof value === 'string' ? value : value == null ? '' : String(value),
+							value: typeof current === 'string' ? current : current == null ? '' : String(current),
 							onChange: (event: React.ChangeEvent<HTMLInputElement>) =>
 								handleValueChange(index, event.currentTarget.value),
-							placeholder: ep.valuePlaceholder,
+							onBlur: handleBlur,
 							disabled: inputProps.disabled,
+							placeholder: valuePlaceholder,
 						})}
+						readOnly={inputProps.readOnly ?? false}
 					/>
 				)
 		}
 	}
 
-	const rowsNode =
-		rows.length === 0 ? (
-			<Card withBorder p="md">
+	const renderActions = (idx: number) => (
+		<Group gap="xs">
+			{canReorder ? (
+				<>
+					<ActionIcon
+						variant="subtle"
+						onClick={() => handleMove(idx, -1)}
+						disabled={idx === 0 || isLocked}
+						aria-label="上移"
+						type="button"
+					>
+						<IconArrowUp size={16} />
+					</ActionIcon>
+					<ActionIcon
+						variant="subtle"
+						onClick={() => handleMove(idx, 1)}
+						disabled={idx === rows.length - 1 || isLocked}
+						aria-label="下移"
+						type="button"
+					>
+						<IconArrowDown size={16} />
+					</ActionIcon>
+				</>
+			) : null}
+			{canRemove ? (
+				<ActionIcon
+					variant="subtle"
+					color="red"
+					onClick={() => handleRemove(idx)}
+					disabled={isLocked || rows.length <= minItems}
+					aria-label="删除"
+					type="button"
+				>
+					<IconTrash size={16} />
+				</ActionIcon>
+			) : null}
+		</Group>
+	)
+
+	const renderErrors = (idx: number, recordKey: string) => {
+		const combined = [
+			...(entryErrors.get(recordKey) ?? []),
+			...(jsonErrors[idx] ? [jsonErrors[idx]] : []),
+		]
+		const errorText = joinErrorMessages(combined)
+		if (!errorText) return null
+		return (
+			<Text size="xs" c="red.6" style={{ whiteSpace: 'pre-line' }}>
+				{errorText}
+			</Text>
+		)
+	}
+
+	const keyWidth = info.key?.width
+	const valueWidth = info.valueMeta?.width
+
+	const tableRows = rows.map((row, idx) => (
+		<tr key={row.id}>
+			<td style={keyWidth ? { width: keyWidth } : undefined}>
+				{editableKey ? (
+					<TextInput
+						value={row.key}
+						onChange={(event) => handleKeyChange(idx, event.currentTarget.value)}
+						onBlur={handleBlur}
+						placeholder={keyPlaceholder}
+						disabled={isLocked}
+						readOnly={inputProps.readOnly ?? false}
+					/>
+				) : (
+					<Text size="sm">{row.key}</Text>
+				)}
+			</td>
+			<td style={valueWidth ? { width: valueWidth } : undefined}>
+				{renderValueControl(idx, row.value, row.key)}
+				{renderErrors(idx, row.key)}
+			</td>
+			<td style={{ width: 120 }}>{renderActions(idx)}</td>
+		</tr>
+	))
+
+	const inlineAddRow = inlineAddEnabled ? (
+		<tr>
+			<td style={keyWidth ? { width: keyWidth } : undefined}>
+				<Stack gap={4}>
+					<TextInput
+						value={draftKey}
+						onChange={(event) => setDraftKey(event.currentTarget.value)}
+						onKeyDown={(event) => {
+							if (event.key === 'Enter') {
+								event.preventDefault()
+								handleInlineAdd()
+							}
+						}}
+						onBlur={handleBlur}
+						placeholder={keyPlaceholder ?? keyLabel ?? 'Key'}
+						disabled={isLocked}
+						readOnly={inputProps.readOnly ?? false}
+						ref={draftKeyRef}
+					/>
+					{draftKeyError ? (
+						<Text size="xs" c="red.6">
+							{draftKeyError}
+						</Text>
+					) : null}
+				</Stack>
+			</td>
+			<td style={valueWidth ? { width: valueWidth } : undefined}>
+				{(() => {
+					if (valueKind === 'number') {
+						return (
+							<NumberInput
+								value={
+									typeof draftValue === 'number'
+										? draftValue
+										: draftValue == null
+											? ''
+											: Number(draftValue)
+								}
+								onChange={(val) => {
+									const parsed = val === '' || val === undefined ? undefined : Number(val)
+									const safe = Number.isNaN(parsed) ? undefined : parsed
+									setDraftValue(safe)
+								}}
+								onKeyDown={(event) => {
+									if (event.key === 'Enter') {
+										event.preventDefault()
+										handleInlineAdd()
+									}
+								}}
+								onBlur={handleBlur}
+								placeholder={valuePlaceholder ?? valueNumberMeta?.placeholder}
+								min={valueNumberMeta?.min}
+								max={valueNumberMeta?.max}
+								step={valueNumberMeta?.step ?? (valueNumberMeta?.integer ? 1 : undefined)}
+								disabled={isLocked}
+							/>
+						)
+					}
+					if (valueKind === 'boolean') {
+						return (
+							<Switch
+								checked={Boolean(draftValue)}
+								onChange={(event) => setDraftValue(event.currentTarget.checked)}
+								onBlur={handleBlur}
+								disabled={isLocked}
+							/>
+						)
+					}
+					if (valueKind === 'picklist') {
+						return (
+							<div>
+								<PicklistControl
+									meta={{
+										options: valuePicklistMeta?.options,
+										entries: valuePicklistMeta?.entries,
+										labels: valuePicklistMeta?.labels,
+										disabled: valuePicklistMeta?.disabled,
+										placeholder: valuePicklistMeta?.placeholder ?? valuePlaceholder,
+										searchable: valuePicklistMeta?.searchable,
+										clearable: true,
+										max: valuePicklistMeta?.max,
+										create: valuePicklistMeta?.create,
+										control: valuePicklistMeta?.control ?? 'select',
+										multiple: false,
+										emptyLabel: valuePicklistMeta?.emptyLabel,
+									}}
+									value={draftValue}
+									onChange={(next) => setDraftValue(next)}
+									onBlur={handleBlur}
+									disabled={isLocked}
+								/>
+							</div>
+						)
+					}
+					return (
+						<TextInput
+							value={
+								typeof draftValue === 'string'
+									? draftValue
+									: draftValue == null
+										? ''
+										: String(draftValue)
+							}
+							onChange={(event) => setDraftValue(event.currentTarget.value)}
+							onKeyDown={(event) => {
+								if (event.key === 'Enter') {
+									event.preventDefault()
+									handleInlineAdd()
+								}
+							}}
+							onBlur={handleBlur}
+							placeholder={valuePlaceholder ?? valueStringMeta?.placeholder ?? 'Value'}
+							minLength={valueStringMeta?.minLength}
+							maxLength={valueStringMeta?.maxLength}
+							disabled={isLocked}
+							readOnly={inputProps.readOnly ?? false}
+						/>
+					)
+				})()}
+			</td>
+			<td style={{ width: 120 }}>
+				<Group gap="xs" justify="flex-end">
+					<ActionIcon
+						variant="light"
+						color="blue"
+						onClick={handleInlineAdd}
+						disabled={!draftKeyValid || isLocked}
+						aria-label="添加"
+						type="button"
+					>
+						<IconPlus size={16} />
+					</ActionIcon>
+				</Group>
+			</td>
+		</tr>
+	) : null
+
+	const listRows = rows.map((row, idx) => (
+		<Card key={row.id} withBorder shadow="xs" p="md">
+			<Group justify="space-between" align="center" mb="sm">
+				<Group gap="xs">
+					<Text fw={600}>{row.key || `#${idx + 1}`}</Text>
+					{editableKey ? (
+						<TextInput
+							value={row.key}
+							onChange={(event) => handleKeyChange(idx, event.currentTarget.value)}
+							onBlur={handleBlur}
+							placeholder={keyPlaceholder}
+							disabled={isLocked}
+							readOnly={inputProps.readOnly ?? false}
+						/>
+					) : null}
+				</Group>
+				{renderActions(idx)}
+			</Group>
+			<Stack gap={6}>
+				{renderValueControl(idx, row.value, row.key)}
+				{renderErrors(idx, row.key)}
+			</Stack>
+		</Card>
+	))
+
+	const content =
+		layout === 'table' && (rows.length > 0 || inlineAddEnabled) ? (
+			<Table withTableBorder verticalSpacing="xs" horizontalSpacing="sm" highlightOnHover>
+				<thead>
+					<tr>
+						<th style={keyWidth ? { width: keyWidth } : undefined}>{keyLabel}</th>
+						<th style={valueWidth ? { width: valueWidth } : undefined}>{valueLabel}</th>
+						<th />
+					</tr>
+				</thead>
+				<tbody>
+					{tableRows}
+					{inlineAddRow}
+					{rows.length === 0 ? (
+						<tr>
+							<td colSpan={3}>
+								<Text size="sm" c="dimmed" py={6}>
+									{info.emptyHint ?? '暂无配置项'}
+								</Text>
+							</td>
+						</tr>
+					) : null}
+				</tbody>
+			</Table>
+		) : rows.length === 0 ? (
+			<Card withBorder shadow="xs" p="md">
 				<Text size="sm" c="dimmed">
-					{ep.emptyHint ?? '暂无数据，点击下方按钮添加键值对。'}
+					{info.emptyHint ?? '暂无配置项'}
 				</Text>
 			</Card>
-		) : layout === 'table' ? (
-			<Table highlightOnHover withTableBorder withColumnBorders>
-				<Table.Thead>
-					<Table.Tr>
-						<Table.Th style={{ width: ep.columns?.key ?? 200 }}>{ep.keyLabel ?? '键'}</Table.Th>
-						<Table.Th>{ep.valueLabel ?? '值'}</Table.Th>
-						<Table.Th style={{ width: 120 }}>操作</Table.Th>
-					</Table.Tr>
-				</Table.Thead>
-				<Table.Tbody>
-					{rows.map(([key, val], idx) => {
-						const keyDisplay = key ?? ''
-						const entryLabel = keyDisplay === '' ? `条目 ${idx + 1}` : String(keyDisplay)
-						const errKey = keyDisplay === '' ? String(idx) : String(keyDisplay)
-						const inlineErrors = [
-							...(entryErrors.get(errKey)?.map((e) => e.message) ?? []),
-							jsonErrors[idx],
-						].filter(Boolean) as string[]
-						const anchorId = `${inputProps.name ?? 'record'}-${slug(entryLabel)}-${idx}`
-						return (
-							<Table.Tr key={`record-row-${idx}`}>
-								<Table.Td style={{ position: 'relative' }}>
-									<div
-										id={anchorId}
-										data-config-anchor
-										data-config-anchor-depth={3}
-										data-config-anchor-label={entryLabel}
-										style={{ position: 'absolute', inset: 0, height: 0, scrollMarginTop: '72px' }}
-									/>
-									<TextInput
-										{...cleanProps({
-											value: keyDisplay,
-											onChange: (event: React.ChangeEvent<HTMLInputElement>) =>
-												handleKeyChange(idx, event.currentTarget.value),
-											placeholder: ep.keyPlaceholder,
-											disabled: !editableKey || inputProps.disabled,
-										})}
-									/>
-								</Table.Td>
-								<Table.Td>
-									<Stack gap={4}>
-										{renderValueControl(idx, val)}
-										{inlineErrors.length ? (
-											<Text size="xs" c="red.6">
-												{inlineErrors.join(', ')}
-											</Text>
-										) : null}
-									</Stack>
-								</Table.Td>
-								<Table.Td>
-									<Group gap="xs">
-										{canReorder ? (
-											<>
-												<ActionIcon
-													{...cleanProps({
-														variant: 'subtle' as const,
-														onClick: () => handleMove(idx, -1),
-														disabled: idx === 0 || inputProps.disabled,
-														'aria-label': '上移',
-													})}
-												>
-													<IconArrowUp size={16} />
-												</ActionIcon>
-												<ActionIcon
-													{...cleanProps({
-														variant: 'subtle' as const,
-														onClick: () => handleMove(idx, 1),
-														disabled: idx === rows.length - 1 || inputProps.disabled,
-														'aria-label': '下移',
-													})}
-												>
-													<IconArrowDown size={16} />
-												</ActionIcon>
-											</>
-										) : null}
-										{canRemove ? (
-											<ActionIcon
-												{...cleanProps({
-													variant: 'subtle' as const,
-													color: 'red',
-													onClick: () => handleRemove(idx),
-													disabled: inputProps.disabled || rows.length <= minItems,
-													'aria-label': '删除',
-												})}
-											>
-												<IconTrash size={16} />
-											</ActionIcon>
-										) : null}
-									</Group>
-								</Table.Td>
-							</Table.Tr>
-						)
-					})}
-				</Table.Tbody>
-			</Table>
 		) : (
-			<Stack gap="md">
-				{rows.map(([key, val], idx) => {
-					const keyDisplay = key ?? ''
-					const entryLabel = keyDisplay === '' ? `条目 ${idx + 1}` : String(keyDisplay)
-					const errKey = keyDisplay === '' ? String(idx) : String(keyDisplay)
-					const inlineErrors = [
-						...(entryErrors.get(errKey)?.map((e) => e.message) ?? []),
-						jsonErrors[idx],
-					].filter(Boolean) as string[]
-					const anchorId = `${inputProps.name ?? 'record'}-${slug(entryLabel)}-${idx}`
-					return (
-						<Card
-							key={`record-row-${idx}`}
-							withBorder
-							p="md"
-							style={{ scrollMarginTop: '72px', position: 'relative' }}
-						>
-							<div
-								id={anchorId}
-								data-config-anchor
-								data-config-anchor-depth={3}
-								data-config-anchor-label={entryLabel}
-								style={{ position: 'absolute', inset: 0, height: 0 }}
-							/>
-							<Stack gap="sm">
-								<Group justify="space-between" align="center">
-									<Text fw={600}>{entryLabel}</Text>
-									<Text size="xs" c="dimmed">
-										{formBaseInfo.label}
-									</Text>
-								</Group>
-								<TextInput
-									{...cleanProps({
-										label: ep.keyLabel ?? '键',
-										value: keyDisplay,
-										onChange: (event: React.ChangeEvent<HTMLInputElement>) =>
-											handleKeyChange(idx, event.currentTarget.value),
-										placeholder: ep.keyPlaceholder,
-										disabled: !editableKey || inputProps.disabled,
-									})}
-								/>
-								<Stack gap={4}>
-									{renderValueControl(idx, val)}
-									{inlineErrors.length ? (
-										<Text size="xs" c="red.6">
-											{inlineErrors.join(', ')}
-										</Text>
-									) : null}
-								</Stack>
-								<Group gap="xs" justify="flex-end">
-									{canReorder ? (
-										<>
-											<ActionIcon
-												{...cleanProps({
-													variant: 'subtle' as const,
-													onClick: () => handleMove(idx, -1),
-													disabled: idx === 0 || inputProps.disabled,
-													'aria-label': '上移',
-												})}
-											>
-												<IconArrowUp size={16} />
-											</ActionIcon>
-											<ActionIcon
-												{...cleanProps({
-													variant: 'subtle' as const,
-													onClick: () => handleMove(idx, 1),
-													disabled: idx === rows.length - 1 || inputProps.disabled,
-													'aria-label': '下移',
-												})}
-											>
-												<IconArrowDown size={16} />
-											</ActionIcon>
-										</>
-									) : null}
-									{canRemove ? (
-										<ActionIcon
-											{...cleanProps({
-												variant: 'subtle' as const,
-												color: 'red',
-												onClick: () => handleRemove(idx),
-												disabled: inputProps.disabled || rows.length <= minItems,
-												'aria-label': '删除',
-											})}
-										>
-											<IconTrash size={16} />
-										</ActionIcon>
-									) : null}
-								</Group>
-							</Stack>
-						</Card>
-					)
-				})}
-			</Stack>
+			<Stack gap="md">{listRows}</Stack>
 		)
 
 	return (
 		<FieldChrome
 			{...cleanProps({
-				label: formBaseInfo.label,
-				required: formBaseInfo.required,
-				description: formBaseInfo.description,
-				helperText: formBaseInfo.helperText,
-				hint: formBaseInfo.hint,
-				tooltip: formBaseInfo.tooltip,
-				badge: formBaseInfo.badge,
+				label: node.meta.label,
+				required: node.required,
+				description: node.meta.description,
+				help: node.meta.help,
+				hint: node.meta.hint,
+				badge: node.meta.badge,
 				errors: baseErrors,
+				hideLabel: node.meta.hideLabel,
+				hideRequired: node.meta.hideRequired,
 			})}
 		>
 			<Stack gap="md">
-				{rowsNode}
-				{canAdd ? (
+				{content}
+				{canAdd && !inlineAddEnabled ? (
 					<Button
-						{...cleanProps({
-							leftSection: <IconPlus size={16} />,
-							variant: 'light' as const,
-							onClick: handleAdd,
-							disabled: inputProps.disabled,
-						})}
+						leftSection={<IconPlus size={16} />}
+						variant="light"
+						onClick={handleAdd}
+						disabled={isLocked}
+						type="button"
 					>
-						{ep.addLabel ?? '新增键值对'}
+						{addLabel}
 					</Button>
 				) : null}
 			</Stack>
 		</FieldChrome>
 	)
 }
-
-registerRenderer(META_MAP.RECORD, (props) => <RecordField {...(props as RendererProps)} />)

@@ -1,20 +1,12 @@
-// packages/hmr/tsconfig.json
 {
-	"extends": "../../tsconfig.workspace.json",
-	"include": [
-		"src",
-		"tests",
-		// 显式收编 manifest；或改成 "public/**/*.json"
-		"public/.vite/manifest.json"
-	],
+	"extends": "../../tsconfig.src.json",
+	"include": ["src"],
 	"compilerOptions": {
-		"outDir": "dist",
-		"jsx": "react-jsx",
-		"lib": ["ES2023", "DOM"],
-		"types": ["@types/bun", "vite/client"],
-		"allowArbitraryExtensions": true,
-		"emitDeclarationOnly": true,
 		"experimentalDecorators": true,
-		"emitDecoratorMetadata": true
+		"emitDecoratorMetadata": true,
+		"outDir": "dist",
+		"emitDeclarationOnly": true,
+		"lib": ["ES2023", "DOM"],
+		"jsx": "react-jsx"
 	}
 }

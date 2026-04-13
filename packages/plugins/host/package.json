@@ -1,0 +1,28 @@
+{
+	"name": "@pluxel/plugins-host",
+	"private": true,
+	"type": "module",
+	"scripts": {
+		"dev": "node scripts/host.mjs dev",
+		"prompt": "pnpm exec pluxel hmr prompt --root ../../.. --config packages/plugins/host/pluxel.hmr.jsonc --profile plugins-host",
+		"doctor": "pnpm exec pluxel hmr doctor --root ../../.. --config packages/plugins/host/pluxel.hmr.jsonc --profile plugins-host",
+		"deploy": "node scripts/host.mjs managed",
+		"frozen": "node scripts/host.mjs frozen"
+	},
+	"dependencies": {
+		"@pluxel/hmr": "workspace:*",
+		"@pluxel/runtime": "workspace:*"
+	},
+	"devDependencies": {
+		"@mantine/core": "^9.0.1",
+		"@mantine/hooks": "^9.0.1",
+		"@pluxel/cli": "workspace:*",
+		"@tabler/icons-react": "^3.37.1",
+		"@types/react": "^19.2.14",
+		"@types/react-dom": "^19.2.3",
+		"pathe": "^2.0.3",
+		"react": "^19.2.4",
+		"react-dom": "^19.2.4",
+		"tinypool": "^2.1.0"
+	}
+}

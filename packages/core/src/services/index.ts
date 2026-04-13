@@ -1,9 +1,7 @@
 import '../reflection'
 
-export * from './EffectScopeService'
-export * from './EventsService'
-export * from './ConfigService'
-export * from './GraphQLService'
-export * from './HonoService'
+export { type CommitSummary, PluginService } from '../plugins'
+export * from './config'
+export * from './effects'
+export * from './events'
 export * from './LoggerService'
-export { PluginService, type CommitSummary } from '../plugins/service/PluginService'

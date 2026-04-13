@@ -22,7 +22,7 @@ import type {
 	WithScopeChange,
 } from './types/types'
 
-type MutateCb = () => void
+type MutateCb = (id: Identifier<unknown>) => void
 
 export class DiodRegistration<T> implements Registration<T> {
 	private buildable: Buildable<ServiceConfiguration<T>, T> | undefined
@@ -38,32 +38,36 @@ export class DiodRegistration<T> implements Registration<T> {
 	public useClass(
 		newable: Newable<T>,
 	): ConfigurableRegistration & WithScopeChange & WithDependencies {
-		const buildable = ClassConfiguration.createBuildable(newable)
+		const buildable = ClassConfiguration.createBuildable(newable, () =>
+			this.onMutate?.(this.identifier as Identifier<unknown>),
+		)
 		this.buildable = buildable
-		this.onMutate?.()
+		this.onMutate?.(this.identifier as Identifier<unknown>)
 		return buildable.instance
 	}
 
 	/** alias of useClass */
-	public use(
-		newable: Newable<T>,
-	): ConfigurableRegistration & WithScopeChange & WithDependencies {
+	public use(newable: Newable<T>): ConfigurableRegistration & WithScopeChange & WithDependencies {
 		return this.useClass(newable)
 	}
 
 	public useInstance(instance: Instance<T>): ConfigurableRegistration {
-		const buildable = InstanceConfiguration.createBuildable(instance)
+		const buildable = InstanceConfiguration.createBuildable(instance, () =>
+			this.onMutate?.(this.identifier as Identifier<unknown>),
+		)
 		this.buildable = buildable
-		this.onMutate?.()
+		this.onMutate?.(this.identifier as Identifier<unknown>)
 		return buildable.instance
 	}
 
 	public useFactory(
 		factory: Factory<T>,
 	): ConfigurableRegistration & WithScopeChange & WithDependencies {
-		const buildable = FactoryConfiguration.createBuildable(factory)
+		const buildable = FactoryConfiguration.createBuildable(factory, () =>
+			this.onMutate?.(this.identifier as Identifier<unknown>),
+		)
 		this.buildable = buildable
-		this.onMutate?.()
+		this.onMutate?.(this.identifier as Identifier<unknown>)
 		return buildable.instance
 	}
 
@@ -85,8 +89,7 @@ export class DiodRegistration<T> implements Registration<T> {
 		const registration = new DiodRegistration(identifier, onMutate)
 		return {
 			instance: registration,
-			build: (options: BuildOptions): ServiceData<TIdentifier> =>
-				registration.build(options),
+			build: (options: BuildOptions): ServiceData<TIdentifier> => registration.build(options),
 		}
 	}
 }

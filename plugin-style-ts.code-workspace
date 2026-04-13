@@ -2,40 +2,40 @@
 	"folders": [
 		{
 			"name": "🌱  monorepo",
-			"path": "."
+			"path": ".",
 		},
 		{
 			"name": "📁 @pluxel/cli",
-			"path": "packages/cli"
+			"path": "packages/cli",
 		},
 		{
 			"name": "📁 @pluxel/components",
-			"path": "packages/components"
+			"path": "packages/components",
 		},
 		{
 			"name": "📁 @pluxel/context",
-			"path": "packages/context"
+			"path": "packages/context",
 		},
 		{
 			"name": "📁 @pluxel/core",
-			"path": "packages/core"
+			"path": "packages/core",
 		},
 		{
 			"name": "📁 diod",
-			"path": "packages/diod"
+			"path": "packages/diod",
 		},
 		{
 			"name": "📁 @pluxel/hmr",
-			"path": "packages/hmr"
+			"path": "packages/hmr",
 		},
 		{
 			"name": "📁 @pluxel/rolldown",
-			"path": "packages/rolldown"
+			"path": "packages/rolldown",
 		},
 		{
 			"name": "📁 valibot-form",
-			"path": "packages/valibot-form"
-		}
+			"path": "packages/valibot-form",
+		},
 	],
 	"settings": {
 		"ColorfulMonorepo.workspaces.collection": [
@@ -44,79 +44,73 @@
 				"packageName": "monorepo",
 				"label": "🌱  monorepo",
 				"foreground": "#000000",
-				"background": "#84de4a"
+				"background": "#84de4a",
 			},
 			{
 				"path": "/home/ahdg/code/plugin-style-ts/packages/cli",
 				"packageName": "@pluxel/cli",
 				"label": "📁 @pluxel/cli",
 				"foreground": "#ffffff",
-				"background": "#8a7e4e"
+				"background": "#8a7e4e",
 			},
 			{
 				"path": "/home/ahdg/code/plugin-style-ts/packages/components",
 				"packageName": "@pluxel/components",
 				"label": "📁 @pluxel/components",
 				"foreground": "#ffffff",
-				"background": "#0e9105"
+				"background": "#0e9105",
 			},
 			{
 				"path": "/home/ahdg/code/plugin-style-ts/packages/context",
 				"packageName": "@pluxel/context",
 				"label": "📁 @pluxel/context",
 				"foreground": "#000000",
-				"background": "#3bafbf"
+				"background": "#3bafbf",
 			},
 			{
 				"path": "/home/ahdg/code/plugin-style-ts/packages/core",
 				"packageName": "@pluxel/core",
 				"label": "📁 @pluxel/core",
 				"foreground": "#ffffff",
-				"background": "#45985e"
+				"background": "#45985e",
 			},
 			{
 				"path": "/home/ahdg/code/plugin-style-ts/packages/diod",
 				"packageName": "diod",
 				"label": "📁 diod",
 				"foreground": "#ffffff",
-				"background": "#16af78"
+				"background": "#16af78",
 			},
 			{
 				"path": "/home/ahdg/code/plugin-style-ts/packages/hmr",
 				"packageName": "@pluxel/hmr",
 				"label": "📁 @pluxel/hmr",
 				"foreground": "#ffffff",
-				"background": "#662b90"
+				"background": "#662b90",
 			},
 			{
 				"path": "/home/ahdg/code/plugin-style-ts/packages/rolldown",
 				"packageName": "@pluxel/rolldown",
 				"label": "📁 @pluxel/rolldown",
 				"foreground": "#ffffff",
-				"background": "#2d497c"
+				"background": "#2d497c",
 			},
 			{
 				"path": "/home/ahdg/code/plugin-style-ts/packages/valibot-form",
 				"packageName": "valibot-form",
 				"label": "📁 valibot-form",
 				"foreground": "#ffffff",
-				"background": "#db0062"
-			}
+				"background": "#db0062",
+			},
 		],
 		"files.exclude": {},
 		"typescript.tsdk": "🌱  monorepo\\node_modules\\typescript\\lib",
 		"exportall.config.folderListener": [
 			"/packages/components/src/components/Plugin",
 			"/packages/components/src/form/schema",
-			"/packages/hmr/tests/ui-demos"
+			"/packages/hmr/tests/ui-demos",
 		],
-		"exportall.config.relExclusion": [
-			"/packages/components/src/app/Dashboard/Example.tsx"
-		],
-		"cSpell.words": [
-			"gqloom",
-			"Gqty",
-			"tabler"
-		]
-	}
+		"exportall.config.relExclusion": ["/packages/components/src/app/Dashboard/Example.tsx"],
+		"cSpell.words": ["gqloom", "Gqty", "tabler"],
+	},
 }

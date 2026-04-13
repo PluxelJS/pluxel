@@ -1,5 +1,5 @@
 // file: test/fsm.test.ts
-import { describe, expect, test } from 'bun:test'
+import { describe, expect, test } from 'vitest'
 import { defineMachine } from '../defineMachine.macro'
 import { fsm } from '../machine.runtime'
 

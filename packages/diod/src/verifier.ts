@@ -1,9 +1,8 @@
 // verifier.ts
 
 import { createErr, createOk, type Result } from 'option-t/plain_result'
-import type { ServiceData, ServiceListMetadata } from './internal-types'
-import type { AliasKey, Identifier } from './types'
-import { RegistrationType } from './types'
+import type { ServiceListMetadata } from './internal-types'
+import { RegistrationType, type AliasKey, type Identifier } from './types'
 import { getDependencyCount } from './utils/reflection'
 
 /* ----------------------------------------------------------------------------
@@ -13,8 +12,98 @@ import { getDependencyCount } from './utils/reflection'
 const idName = (id: Identifier<unknown> | AliasKey): string => {
 	if (typeof id === 'string') return id
 	if (typeof id === 'symbol') return id.description ?? '(symbol)'
-	// newable/abstract 在 TS 类型上不含 name，这里做运行期兜底
-	return (id as any)?.name ?? '(anonymous)'
+	// Identifier/Abstract 在运行期都是 function
+	if (typeof id === 'function') return id.name || '(anonymous)'
+	return '(anonymous)'
+}
+
+const resolveDependencyToken = (
+	services: ServiceListMetadata,
+	aliasIndex: ReadonlyMap<AliasKey, Identifier<unknown>>,
+	dep: Identifier<unknown>,
+): Identifier<unknown> => {
+	if (services.has(dep)) return dep
+	return aliasIndex.get(dep as unknown as AliasKey) ?? dep
+}
+
+const collectExplicitDependencyErrors = (
+	services: ServiceListMetadata,
+	nodes: Iterable<Identifier<unknown>>,
+	errors: VerificationError[],
+): void => {
+	for (const id of nodes) {
+		const meta = services.get(id)
+		if (!meta) continue
+		if (meta.type !== RegistrationType.Class) continue
+		if (meta.autowire !== false) continue
+
+		const expected = getDependencyCount(meta.class)
+		const actual = meta.dependencies.length
+		if (expected > actual) {
+			errors.push({
+				kind: 'InsufficientExplicitDependencies',
+				id,
+				expected,
+				actual,
+			})
+		}
+	}
+}
+
+const validateGraph = (
+	services: ServiceListMetadata,
+	aliasIndex: ReadonlyMap<AliasKey, Identifier<unknown>>,
+	getRoots: () => Iterable<Identifier<unknown>>,
+	shouldRecurse: (id: Identifier<unknown>) => boolean,
+): VerificationError[] => {
+	const color = new Map<Identifier<unknown>, 0 | 1 | 2>() // 0:white 1:gray 2:black
+	const stack: Identifier<unknown>[] = []
+	const stackIndex = new Map<Identifier<unknown>, number>() // node -> index in stack
+	const errors: VerificationError[] = []
+
+	collectExplicitDependencyErrors(services, getRoots(), errors)
+
+	const dfs = (node: Identifier<unknown>): void => {
+		const c = color.get(node) ?? 0
+		if (c === 2) return
+		if (c === 1) {
+			const idx = stackIndex.get(node) ?? -1
+			const loop = idx >= 0 ? [...stack.slice(idx), node] : [...stack, node]
+			errors.push({ kind: 'CircularDependency', chain: loop })
+			return
+		}
+
+		color.set(node, 1)
+		stackIndex.set(node, stack.length)
+		stack.push(node)
+
+		const meta = services.get(node)
+		if (meta) {
+			for (const dep of meta.dependencies) {
+				const resolved = resolveDependencyToken(services, aliasIndex, dep)
+				if (!services.has(resolved)) {
+					errors.push({
+						kind: 'MissingDependency',
+						missing: dep,
+						chain: [...stack, dep],
+					})
+					continue
+				}
+				if (shouldRecurse(resolved)) dfs(resolved)
+			}
+		}
+
+		stack.pop()
+		stackIndex.delete(node)
+		color.set(node, 2)
+	}
+
+	for (const id of getRoots()) {
+		if (!services.has(id)) continue
+		if ((color.get(id) ?? 0) === 0) dfs(id)
+	}
+
+	return errors
 }
 
 /* ----------------------------------------------------------------------------
@@ -88,6 +177,8 @@ export class ServiceVerificationAggregateError extends Error {
 					case 'InsufficientExplicitDependencies': {
 						return `[InsufficientExplicitDependencies] ${idName(e.id)} | expected=${e.expected} actual=${e.actual}`
 					}
+					default:
+						return `[Unknown]`
 				}
 			})
 			.join('\n')
@@ -110,78 +201,35 @@ export const validateAllServices = (
 	services: ServiceListMetadata,
 	aliasIndex: ReadonlyMap<AliasKey, Identifier<unknown>>,
 ): VerificationError[] => {
-	const color = new Map<Identifier<unknown>, 0 | 1 | 2>() // 0:white 1:gray 2:black
-	const stack: Identifier<unknown>[] = []
-	const stackIndex = new Map<Identifier<unknown>, number>() // node -> index in stack
-	const errors: VerificationError[] = []
+	return validateGraph(
+		services,
+		aliasIndex,
+		() => services.keys(),
+		() => true,
+	)
+}
 
-	// 1) 非 autowire 的显式依赖数一致性检查
-	for (const [id, meta] of services) {
-		// 仅对 class 型、且 autowire === false 的条目进行校验
-		if ((meta as ServiceData<unknown>).type === RegistrationType.Class) {
-			const m = meta as Extract<
-				ServiceData<unknown>,
-				{ type: typeof RegistrationType.Class }
-			>
-			// ClassServiceData<T> 中 autowire 字段存在；只有当 autowire=false 才需要检查
-			if ((m as any).autowire === false) {
-				const expected = getDependencyCount((m as any).class)
-				const actual = m.dependencies.length
-				if (expected > actual) {
-					errors.push({
-						kind: 'InsufficientExplicitDependencies',
-						id,
-						expected,
-						actual,
-					})
-				}
-			}
-		}
-	}
-
-	// 2) DFS：环与缺失依赖
-	const dfs = (node: Identifier<unknown>): void => {
-		const c = color.get(node) ?? 0
-		if (c === 2) return
-		if (c === 1) {
-			// 命中灰色：构造回路 [idx..end] + node
-			const idx = stackIndex.get(node) ?? -1
-			const loop = idx >= 0 ? [...stack.slice(idx), node] : [...stack, node]
-			errors.push({ kind: 'CircularDependency', chain: loop })
-			return
-		}
-
-		color.set(node, 1)
-		stackIndex.set(node, stack.length)
-		stack.push(node)
-
-		const meta = services.get(node) as ServiceData<unknown> | undefined
-		if (meta) {
-			for (const dep of meta.dependencies) {
-				const resolved = services.has(dep)
-					? dep
-					: (aliasIndex.get(dep as any) ?? dep)
-				if (!services.has(resolved)) {
-					errors.push({
-						kind: 'MissingDependency',
-						missing: dep,
-						chain: [...stack, dep],
-					})
-					continue
-				}
-				dfs(resolved)
-			}
-		}
-
-		stack.pop()
-		stackIndex.delete(node)
-		color.set(node, 2)
-	}
-
-	for (const [svc] of services) {
-		if ((color.get(svc) ?? 0) === 0) dfs(svc)
-	}
-	return errors
+/* ----------------------------------------------------------------------------
+ * 增量：仅校验子集（用于“变更很小”的 build）
+ * 说明：
+ * - 只从 subset 中的节点发起 DFS；
+ * - DFS 只深入到 subset 内节点（subset 外视为“已验证的叶子”）；
+ * - MissingDependency 仍按真实 services/aliasIndex 判断；
+ * - 若你的变更可能影响 subset 之外的解析（如 aliasPolicy 非 error / 大范围别名重映射），
+ *   应回退到 validateAllServices 进行全量校验。
+ * ------------------------------------------------------------------------- */
+export const validateServicesSubset = (
+	services: ServiceListMetadata,
+	aliasIndex: ReadonlyMap<AliasKey, Identifier<unknown>>,
+	subset: ReadonlySet<Identifier<unknown>>,
+): VerificationError[] => {
+	if (subset.size === 0) return []
+	return validateGraph(
+		services,
+		aliasIndex,
+		() => subset,
+		(id) => subset.has(id),
+	)
 }
 
 /* ----------------------------------------------------------------------------
@@ -195,9 +243,7 @@ const computeDependents = (
 	const dependentsMap = new Map<Identifier<unknown>, Set<Identifier<unknown>>>()
 	for (const [service, metadata] of services) {
 		for (const dep of metadata.dependencies) {
-			const resolved = services.has(dep)
-				? dep
-				: (aliasIndex.get(dep as any) ?? dep)
+			const resolved = resolveDependencyToken(services, aliasIndex, dep)
 			let set = dependentsMap.get(resolved)
 			if (!set) {
 				set = new Set<Identifier<unknown>>()
@@ -253,11 +299,7 @@ export const verifyAsResult = (
 	Map<Identifier<unknown>, Set<Identifier<unknown>>>,
 	ServiceVerificationAggregateError
 > => {
-	const { dependentsMap, errors } = verifyAndComputeDependents(
-		services,
-		aliasIndex,
-	)
-	if (errors.length > 0)
-		return createErr(new ServiceVerificationAggregateError(errors))
+	const { dependentsMap, errors } = verifyAndComputeDependents(services, aliasIndex)
+	if (errors.length > 0) return createErr(new ServiceVerificationAggregateError(errors))
 	return createOk(dependentsMap)
 }

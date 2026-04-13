@@ -1,0 +1,238 @@
+.plx-pluginCatalog {
+	display: flex;
+	flex: 1;
+	flex-direction: column;
+	gap: 6px;
+	height: 100%;
+	min-height: 0;
+	min-width: 0;
+}
+
+.plx-pluginCatalog__toolbar {
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+}
+
+.plx-pluginCatalog__metaBar {
+	align-items: center;
+	color: var(--plx-text-muted);
+	display: flex;
+	flex-wrap: wrap;
+	gap: 6px 10px;
+	justify-content: space-between;
+	min-height: 22px;
+	padding-inline: 2px;
+}
+
+.plx-pluginCatalog__metaGroup,
+.plx-pluginCatalog__shortcutGroup {
+	align-items: center;
+	display: inline-flex;
+	flex-wrap: wrap;
+	gap: 6px;
+	min-width: 0;
+}
+
+.plx-pluginCatalog__metaPill,
+.plx-pluginCatalog__shortcut {
+	align-items: center;
+	background: color-mix(in srgb, var(--plx-surface-muted) 84%, transparent);
+	border: 1px solid color-mix(in srgb, var(--plx-border) 76%, transparent);
+	border-radius: 999px;
+	color: var(--plx-text-muted);
+	display: inline-flex;
+	font-size: 10px;
+	font-weight: 600;
+	gap: 6px;
+	line-height: 1;
+	padding: 4px 8px;
+	white-space: nowrap;
+}
+
+.plx-pluginCatalog__metaPill strong {
+	color: var(--plx-text);
+	font-weight: 700;
+}
+
+.plx-pluginCatalog__shortcutKey {
+	background: color-mix(in srgb, var(--plx-surface-strong) 88%, transparent);
+	border: 1px solid color-mix(in srgb, var(--plx-border-strong) 82%, transparent);
+	border-radius: 999px;
+	color: var(--plx-text);
+	font-size: 9px;
+	font-weight: 700;
+	letter-spacing: 0.03em;
+	line-height: 1;
+	padding: 3px 6px;
+}
+
+.plx-pluginCatalog__body {
+	display: flex;
+	flex: 1;
+	flex-direction: column;
+	min-height: 0;
+	min-width: 0;
+}
+
+.plx-pluginCatalog__sectionCard {
+	background: linear-gradient(
+		180deg,
+		color-mix(in srgb, var(--plx-surface-strong) 92%, transparent) 0%,
+		color-mix(in srgb, var(--plx-surface) 98%, transparent) 100%
+	);
+	border: 1px solid color-mix(in srgb, var(--plx-border) 80%, transparent);
+	border-radius: 12px;
+	box-shadow:
+		inset 0 1px 0 color-mix(in srgb, var(--plx-surface-strong) 72%, transparent),
+		0 10px 24px color-mix(in srgb, var(--plx-border) 10%, transparent);
+}
+
+.plx-pluginCatalog__sectionHeader {
+	align-items: center;
+	display: flex;
+	gap: 10px;
+	justify-content: space-between;
+	margin-bottom: 4px;
+	min-width: 0;
+}
+
+.plx-pluginCatalog__sectionActions {
+	align-items: center;
+	display: inline-flex;
+	flex-wrap: wrap;
+	gap: 4px;
+	justify-content: flex-end;
+}
+
+.plx-pluginCatalog__sectionHeading {
+	align-items: baseline;
+	display: inline-flex;
+	gap: 6px;
+	min-width: 0;
+}
+
+.plx-pluginCatalog__sectionTitle {
+	color: var(--plx-text);
+	font-size: 11px;
+	font-weight: 700;
+	letter-spacing: 0.04em;
+	line-height: 1.2;
+	text-transform: uppercase;
+}
+
+.plx-pluginCatalog__sectionMetric {
+	color: var(--plx-text-muted);
+	font-size: 10px;
+	font-weight: 600;
+	line-height: 1;
+	white-space: nowrap;
+}
+
+.plx-pluginCatalog__sectionNote {
+	color: var(--plx-text-muted);
+	font-size: 10px;
+	line-height: 1.3;
+}
+
+.plx-pluginCatalog__subgroup {
+	margin-top: 6px;
+}
+
+.plx-pluginCatalog__subgroup:first-child {
+	margin-top: 0;
+}
+
+.plx-pluginCatalog__subgroupHeader {
+	align-items: center;
+	display: inline-flex;
+	gap: 6px;
+	margin-bottom: 2px;
+	padding-inline: 2px;
+}
+
+.plx-pluginCatalog__subgroupLabel {
+	color: var(--plx-text-muted);
+	font-size: 10px;
+	font-weight: 700;
+	line-height: 1.2;
+}
+
+.plx-pluginCatalog__subgroupCount {
+	color: var(--plx-text-muted);
+	font-size: 10px;
+	line-height: 1;
+}
+
+.plx-pluginCatalog__bulkBar {
+	align-items: center;
+	background: linear-gradient(
+		180deg,
+		color-mix(in srgb, var(--plx-accent-soft) 46%, var(--plx-surface) 54%) 0%,
+		color-mix(in srgb, var(--plx-accent-soft) 32%, var(--plx-surface) 68%) 100%
+	);
+	border: 1px solid color-mix(in srgb, var(--plx-selected-border) 76%, var(--plx-border) 24%);
+	border-radius: 12px;
+	box-shadow: 0 10px 22px color-mix(in srgb, var(--plx-accent) 10%, transparent);
+	display: flex;
+	gap: 8px;
+	justify-content: space-between;
+	padding: 6px 8px;
+}
+
+.plx-pluginCatalog__bulkMeta {
+	align-items: center;
+	display: inline-flex;
+	flex-wrap: wrap;
+	gap: 6px;
+	min-width: 0;
+}
+
+.plx-pluginCatalog__bulkTitle {
+	color: var(--plx-text);
+	font-size: 11px;
+	font-weight: 700;
+	line-height: 1;
+}
+
+.plx-pluginCatalog__bulkHint {
+	color: var(--plx-text-muted);
+	font-size: 10px;
+	line-height: 1.2;
+}
+
+.plx-pluginCatalog__rowSelector {
+	align-items: center;
+	background: transparent;
+	border: 1px solid color-mix(in srgb, var(--plx-border) 84%, transparent);
+	border-radius: 999px;
+	color: var(--plx-text-muted);
+	display: inline-flex;
+	height: 16px;
+	justify-content: center;
+	padding: 0;
+	transition:
+		background-color 120ms ease,
+		border-color 120ms ease,
+		color 120ms ease,
+		transform 120ms ease;
+	width: 16px;
+}
+
+.plx-pluginCatalog__rowSelector:hover,
+.plx-pluginCatalog__rowSelector:focus-visible {
+	border-color: var(--plx-selected-border);
+	color: var(--plx-text);
+	outline: none;
+	transform: scale(1.03);
+}
+
+.plx-pluginCatalog__rowSelector[data-selected='true'] {
+	background: var(--plx-accent);
+	border-color: var(--plx-accent);
+	color: var(--plx-accent-contrast);
+}
+
+.plx-pluginCatalog__row[data-focused='true'] {
+	box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--plx-selected-border) 78%, transparent);
+}

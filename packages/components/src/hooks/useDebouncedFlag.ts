@@ -13,6 +13,7 @@ export function useDebouncedFlag(value: boolean, delay = 200) {
 			return () => clearTimeout(timer)
 		}
 		setV(false)
+		return undefined
 	}, [value, delay])
 
 	return v

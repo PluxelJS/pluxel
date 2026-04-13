@@ -4,9 +4,9 @@ Create your own decorator to avoid coupling your inner architecture layers with 
 
 ```ts
 export const MyAppService = (): ClassDecorator => {
-  return <TFunction extends Function>(target: TFunction): TFunction => {
-    return target
-  }
+	return <TFunction extends Function>(target: TFunction): TFunction => {
+		return target
+	}
 }
 ```
 
@@ -17,9 +17,9 @@ import { MyAppService } from './my-app-service'
 
 @MyAppService()
 export class MyService {
-  constructor(/* ... */) {}
+	constructor(/* ... */) {}
 
-  //...
+	//...
 }
 ```
 

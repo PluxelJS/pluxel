@@ -1,38 +1,73 @@
 {
 	"name": "@pluxel/cli",
-	"version": "0.2.12",
-	"description": "Demo example that imports a local package",
+	"version": "0.3.0",
+	"description": "Pluxel CLI",
 	"bin": {
-		"pluxel": "dist/cli.mjs"
+		"pluxel": "bin/pluxel.mjs"
 	},
 	"files": [
+		"bin",
 		"dist",
 		"!**/*.map"
 	],
 	"type": "module",
+	"exports": {
+		"./hmr": {
+			"@pluxel/source": "./src/hmr/index.ts",
+			"import": "./dist/hmr.mjs",
+			"default": "./dist/hmr.mjs"
+		},
+		"./build": {
+			"@pluxel/source": "./src/build.ts",
+			"import": "./dist/build.mjs",
+			"default": "./dist/build.mjs"
+		},
+		"./rolldown": {
+			"@pluxel/source": "./src/rolldown.ts",
+			"import": "./dist/rolldown.mjs",
+			"default": "./dist/rolldown.mjs"
+		},
+		"./package.json": "./package.json"
+	},
+	"publishConfig": {
+		"exports": {
+			"./hmr": "./dist/hmr.mjs",
+			"./build": "./dist/build.mjs",
+			"./rolldown": "./dist/rolldown.mjs",
+			"./package.json": "./package.json"
+		}
+	},
 	"scripts": {
-		"dev": "bun src/cli.ts new plugin",
+		"dev": "bun src/cli.ts new --dry-run --no-install",
 		"build": "tsdown",
-		"test": "bun test --conditions=@pluxel/source"
+		"test": "pnpm exec vitest run"
+	},
+	"dependencies": {
+		"@clack/prompts": "^1.0.1",
+		"@pluxel/hmr": "workspace:*",
+		"fdir": "^6.5.0",
+		"gunshi": "^0.29.2",
+		"jsonc-parser": "^3.3.1",
+		"package-manager-detector": "^1.6.0",
+		"pathe": "^2.0.3",
+		"picomatch": "^4.0.3",
+		"pkg-types": "^2.3.0",
+		"yaml": "^2.8.2"
+	},
+	"devDependencies": {
+		"@pluxel/build": "workspace:*",
+		"@pluxel/test": "workspace:*",
+		"@pluxel/workspace": "workspace:*",
+		"@types/picomatch": "^4.0.2",
+		"@types/react": "^19.2.14",
+		"ink": "^6.8.0",
+		"react": "^19.2.4",
+		"tsdown": "^0.21.7",
+		"typescript": "^6.0.2"
 	},
 	"peerDependencies": {
 		"@pluxel/market": "*",
+		"oxlint": "^1.58.0",
 		"tsdown": "*"
-	},
-	"dependencies": {
-		"@clack/prompts": "^0.11.0",
-		"fdir": "^6.5.0",
-		"gunshi": "^0.26.3",
-		"node-plop": "^0.32.3",
-		"package-manager-detector": "^1.5.0",
-		"pathe": "^2.0.3",
-		"picomatch": "^4.0.2",
-		"pkg-types": "^2.3.0",
-		"unplugin-macros": "^0.18.6",
-		"yaml": "^2.5.0"
-	},
-	"devDependencies": {
-		"@pluxel/rolldown": "workspace:*",
-		"@types/picomatch": "^4.0.2"
 	}
 }

@@ -1,71 +1,60 @@
-import { afterEach, describe, expect, it, spyOn } from 'bun:test'
-
-import { withTestContext } from '@pluxel/core/test'
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { configureSync, type LogRecord, resetSync } from '@logtape/logtape'
+import { withContext } from '@pluxel/test'
 
 describe('LoggerService', () => {
-	const originalTrace = console.trace
-	const cleanup: Array<() => void> = []
-	const remember = (fn: () => void) => cleanup.push(fn)
-	const restoreAll = () => {
-		while (cleanup.length) {
-			const restore = cleanup.pop()
-			try {
-				restore?.()
-			} catch {}
-		}
-	}
-	afterEach(() => {
-		restoreAll()
-		console.trace = originalTrace
+	let records: LogRecord[] = []
+
+	beforeEach(() => {
+		records = []
+		configureSync({
+			sinks: {
+				capture(record) {
+					records.push(record)
+				},
+			},
+			loggers: [
+				{ category: ['pluxel', 'core'], lowestLevel: 'trace', sinks: ['capture'] },
+				{ category: ['pluxel', 'plugins'], lowestLevel: 'trace', sinks: ['capture'] },
+				// Silence LogTape's internal meta logger during tests.
+				{ category: ['logtape', 'meta'], lowestLevel: 'fatal', sinks: ['capture'] },
+			],
+		})
 	})
 
-	it('prefixes messages with root context name when plugin info is missing', () => {
-		return withTestContext(
-			(ctx) => {
-				const infoSpy = spyOn(console, 'info')
-				remember(() => infoSpy.mockRestore())
+	afterEach(() => {
+		resetSync()
+	})
 
+	it('logs as category "core" when plugin info is missing', () => {
+		return withContext(
+			(ctx) => {
 				ctx.logger.info('hello', { id: 1 })
 
-				expect(infoSpy).toHaveBeenCalledTimes(1)
-				expect(infoSpy.mock.calls[0]).toEqual(['[root:core-test]', 'hello', { id: 1 }])
+				const rec = records.find((r) => r.category.join(':') === 'pluxel:core')
+				expect(rec).toBeTruthy()
+				expect(rec?.category).toEqual(['pluxel', 'core'])
+				expect(rec?.properties.context).toBe('core-test')
+				expect(rec?.properties.id).toBe(1)
 			},
 			{ name: 'core-test' },
 		)
 	})
 
-	it('uses plugin id when available', () => {
-		return withTestContext(
+	it('logs as category "plugins" and attaches pluginId when available', () => {
+		return withContext(
 			(ctx) => {
 				ctx.pluginInfo = { id: 'PluginX' } as any
-				const warnSpy = spyOn(console, 'warn')
-				remember(() => warnSpy.mockRestore())
 
 				ctx.logger.warn('warn message')
 
-				expect(warnSpy).toHaveBeenCalledTimes(1)
-				expect(warnSpy.mock.calls[0]).toEqual(['[PluginX:plugin-test]', 'warn message'])
+				const rec = records.find((r) => r.category.join(':') === 'pluxel:plugins')
+				expect(rec).toBeTruthy()
+				expect(rec?.category).toEqual(['pluxel', 'plugins'])
+				expect(rec?.properties.context).toBe('plugin-test')
+				expect(rec?.properties.pluginId).toBe('PluginX')
 			},
 			{ name: 'plugin-test' },
-		)
-	})
-
-	it('falls back to console.log when level method is missing', () => {
-		return withTestContext(
-			(ctx) => {
-				const logSpy = spyOn(console, 'log')
-				remember(() => logSpy.mockRestore())
-
-				remember(() => {
-					console.trace = originalTrace
-				})
-				console.trace = undefined as any
-				ctx.logger.trace('trace missing')
-
-				expect(logSpy).toHaveBeenCalledTimes(1)
-				expect(logSpy.mock.calls[0]).toEqual(['[root:trace-fallback]', 'trace missing'])
-			},
-			{ name: 'trace-fallback' },
 		)
 	})
 })

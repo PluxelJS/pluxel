@@ -1,9 +1,8 @@
 // tests/alias.spec.ts
 import 'reflect-metadata'
-import { describe, expect, it } from 'bun:test'
+import { describe, expect, it } from 'vitest'
 import { ContainerBuilder } from '../src'
-import type { VerificationError } from '../src/verifier'
-import { ServiceVerificationAggregateError } from '../src/verifier'
+import { ServiceVerificationAggregateError, type VerificationError } from '../src/verifier'
 import { expectErr, expectExist, expectOk } from './_helpers'
 
 describe('alias index & resolution', () => {
@@ -32,20 +31,44 @@ describe('alias index & resolution', () => {
 		abstract class ILogger {
 			abstract log(msg: string): void
 		}
-		class Logger implements ILogger {
-			log(): void {}
+		class Logger extends ILogger {
+			log(_msg: string): void {
+				/* noop */
+			}
 		}
 
 		const builder = new ContainerBuilder()
-		expectOk(builder.tryRegisterAndUse(Logger)).addAlias(
-			ILogger as unknown as abstract new (
-				...a: any[]
-			) => any,
-		)
+		expectOk(builder.tryRegisterAndUse(Logger)).addAlias(ILogger)
 
 		const container = expectOk(builder.build())
-		const logger = expectExist(container.getByAlias<Logger>(ILogger as any))
+		const logger = expectExist(container.getByAlias<Logger>(ILogger))
 		expect(logger.constructor.name).toBe('Logger')
+	})
+
+	it('resolves alias tokens to the same singleton instance (direct + dependency)', () => {
+		abstract class Abs {
+			abstract log(msg: string): void
+		}
+		class Impl extends Abs {
+			log(_msg: string): void {
+				/* noop */
+			}
+		}
+		class Consumer {
+			constructor(public dep: Abs) {}
+		}
+
+		const builder = new ContainerBuilder()
+		expectOk(builder.tryRegisterAndUse(Impl)).addAlias(Abs).asSingleton()
+		expectOk(builder.tryRegisterAndUse(Consumer)).withDependencies([Abs])
+
+		const container = expectOk(builder.build())
+		const byAlias = expectExist(container.get(Abs))
+		const byImpl = expectExist(container.get(Impl))
+		expect(byAlias).toBe(byImpl)
+
+		const consumer = expectExist(container.get(Consumer))
+		expect(consumer.dep).toBe(byImpl)
 	})
 
 	it('getByAliasResult returns NotRegistered for unknown alias', () => {
@@ -57,8 +80,8 @@ describe('alias index & resolution', () => {
 		const r = container.getByAliasResult('nope')
 		const e = expectErr(r, 'expected NotRegistered for unknown alias')
 		expect(e.kind).toBe('NotRegistered')
-		// id 应该就是传入的别名键
-		expect((e as any).id).toBe('nope')
+		if (e.kind !== 'NotRegistered') throw new Error('expected NotRegistered')
+		expect(e.id).toBe('nope')
 	})
 
 	it('respects private visibility when resolving by alias', () => {
@@ -83,13 +106,10 @@ describe('alias index & resolution', () => {
 
 		const err = expectErr(builder.build())
 		expect(err).toBeInstanceOf(ServiceVerificationAggregateError)
-		const hasAliasConflict = (
-			err as ServiceVerificationAggregateError
-		).errors.some(
-			(x): x is Extract<VerificationError, { kind: 'AliasConflict' }> =>
-				x.kind === 'AliasConflict',
+		const hasAliasConflict = (err as ServiceVerificationAggregateError).errors.some(
+			(x): x is Extract<VerificationError, { kind: 'AliasConflict' }> => x.kind === 'AliasConflict',
 		)
-		expect(hasAliasConflict).toBeTrue()
+		expect(hasAliasConflict).toBe(true)
 		expect(err.format()).toContain('AliasConflict')
 		expect(err.format()).toContain('dup')
 	})
@@ -122,10 +142,7 @@ describe('alias index & resolution', () => {
 		class Multi {}
 		const ALPHA = Symbol('alpha')
 		const builder = new ContainerBuilder()
-		expectOk(builder.tryRegisterAndUse(Multi))
-			.addAlias('m1')
-			.addAlias(ALPHA)
-			.asSingleton()
+		expectOk(builder.tryRegisterAndUse(Multi)).addAlias('m1').addAlias(ALPHA).asSingleton()
 
 		const container = expectOk(builder.build())
 		const byStr = expectExist(container.getByAlias('m1'))

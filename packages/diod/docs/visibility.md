@@ -8,11 +8,11 @@ const builder = new ContainerBuilder()
 builder.registerAndUse(Whatever).private()
 // or
 builder
-  .register(Whatever)
-  .useFactory((c) => {
-    return new Whatever(/**/)
-  })
-  .private()
+	.register(Whatever)
+	.useFactory((c) => {
+		return new Whatever(/**/)
+	})
+	.private()
 // or
 builder.register(Whatever).useInstance().private()
 // ...

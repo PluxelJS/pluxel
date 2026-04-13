@@ -1,6 +1,6 @@
 // tests/autoregistering.spec.ts
 import 'reflect-metadata'
-import { describe, expect, it } from 'bun:test'
+import { describe, expect, it } from 'vitest'
 import { ContainerBuilder } from '../src'
 import { expectExist, expectOk } from './_helpers'
 import { AutoRegisteredServiceSample } from './fixtures/autoregistered-services'

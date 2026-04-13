@@ -4,16 +4,16 @@ You can register classes and use instances created by yourself. Imagine you have
 
 ```ts
 export abstract class Logger {
-  //...
+	//...
 }
 export class ConsoleLogger implements Logger {
-  //...
+	//...
 }
 ```
 
 ```ts
 export class Mailer {
-  //...
+	//...
 }
 ```
 

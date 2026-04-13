@@ -1,172 +1,217 @@
-import { Badge, Box, Group, Stack, Text, TextInput, TypographyStylesProvider } from '@mantine/core'
-import { IconSearch } from '@tabler/icons-react'
-import { createElement, memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { ReactNode, RefObject } from 'react'
-import ReactMarkdown from 'react-markdown'
-import remarkDirective from 'remark-directive'
-import remarkGfm from 'remark-gfm'
-import { visit } from 'unist-util-visit'
+import { Badge, Box, Paper, Stack, Text, Typography } from '@mantine/core'
+import { MarkdownExit } from 'markdown-exit'
+import { createPortal } from 'react-dom'
+import {
+	Fragment,
+	memo,
+	useCallback,
+	useEffect,
+	useMemo,
+	useRef,
+	useState,
+	type ReactNode,
+	type RefObject,
+} from 'react'
 import type {
 	BuiltinDocBlock,
+	BuiltinDocContent,
 	BuiltinDocExtensionDef,
-	ExtensionContext,
-} from '../types'
-import { FloatingToc } from '../../app/plugins/components/FloatingToc'
-import { findScrollableParent, toDomSlug } from '../../app/plugins/config/utils'
+	BuiltinMarkdownPart,
+	BuiltinDocPart,
+} from '@pluxel/runtime/web/extensions'
+import { findScrollableParent, toDomSlug } from '../../app/plugins/config/configAnchors'
+import { BuiltinSignalDbAction } from './SignalDbAction'
 import { BuiltinInfoCard } from './InfoCard'
-import { BuiltinRpcAutoForm } from './RpcAutoForm'
+import { BuiltinResourceSelect } from './ResourceSelect'
+import { BuiltinSignalDbForm } from './SignalDbForm'
+import { usePluginConfig } from '../../app/hooks/usePluginConfig'
+import type { ObjectSchema } from 'valibot'
+import { ConfigTabContent } from '../../app/plugins/config/ConfigTab'
+import { compareSchemaKeys } from '../../app/plugins/config/schemaKey'
+import { OutlineNavigator } from '../../app/plugins/detail/workbench/OutlineNavigator'
+import type { OutlineAnchor } from '../../app/plugins/detail/workbench/outline'
+import { usePluginWorkbenchTabActivity } from '../../app/plugins/detail/workbench/tabActivity'
+import {
+	usePluginWorkbenchAside,
+	usePluginWorkbenchAssistVisibility,
+} from '../../app/plugins/detail/workbench/context'
 
-type DirectiveNode = {
-	type?: string
-	name?: string
-	label?: string
-	attributes?: Record<string, unknown>
-	children?: unknown[]
-	data?: Record<string, unknown>
+type DocConfigDirective = Extract<BuiltinMarkdownPart, { kind: 'schema' | 'schemas' }>
+
+type CompiledItem =
+	| { kind: 'html'; key: string; html: string }
+	| { kind: 'block'; key: string; id: string; title: string; block: BuiltinDocBlock }
+	| { kind: 'cfg'; key: string; directive: DocConfigDirective }
+
+type BuiltinBlockRendererProps = {
+	pluginName: string
+	title: string
+	block: BuiltinDocBlock
 }
 
-type DocAnchor = { id: string; label: string; depth: number }
-
-type DocMarkdownProps = {
-	content: string
-	contentRef: RefObject<HTMLDivElement>
-	headingAnchors: DocAnchor[]
-	blockMap: Record<string, BuiltinDocBlock>
-	renderBlock: (block: BuiltinDocBlock) => ReactNode
-}
-
-function collectText(node: any): string {
-	if (!node) return ''
-	if (Array.isArray(node)) return node.map(collectText).join('')
-	if (typeof node.value === 'string') return node.value
-	if (Array.isArray(node.children)) return node.children.map(collectText).join('')
-	return ''
-}
-
-function readDirectiveLabel(directive: DirectiveNode): string {
-	if (!directive || typeof directive !== 'object') return ''
-	if (directive.type === 'containerDirective') {
-		const labelNode = Array.isArray(directive.children)
-			? directive.children.find((child: any) => Boolean(child?.data?.directiveLabel))
-			: null
-		if (labelNode) return collectText(labelNode)
+function renderBuiltinBlock(input: BuiltinBlockRendererProps): ReactNode {
+	const { pluginName, title, block } = input
+	if (block.kind === 'infoCard') {
+		if (typeof BuiltinInfoCard !== 'function') {
+			return <BuiltinBlockUnavailable kind={block.kind} />
+		}
+		return <BuiltinInfoCard pluginName={pluginName} block={block} />
 	}
-	return collectText(directive.children)
+	if (block.kind === 'form') {
+		if (typeof BuiltinSignalDbForm !== 'function') {
+			return <BuiltinBlockUnavailable kind={block.kind} />
+		}
+		return <BuiltinSignalDbForm pluginName={pluginName} title={title} block={block} />
+	}
+	if (block.kind === 'action') {
+		if (typeof BuiltinSignalDbAction !== 'function') {
+			return <BuiltinBlockUnavailable kind={block.kind} />
+		}
+		return <BuiltinSignalDbAction pluginName={pluginName} block={block} />
+	}
+	if (block.kind === 'resourceSelect') {
+		if (typeof BuiltinResourceSelect !== 'function') {
+			return <BuiltinBlockUnavailable kind={block.kind} />
+		}
+		return (
+			<BuiltinResourceSelect
+				targetPluginName={pluginName}
+				sourcePluginName={pluginName}
+				block={block}
+			/>
+		)
+	}
+	return <BuiltinBlockUnavailable kind={(block as BuiltinDocBlock).kind} />
 }
 
-function parseMarkdownHeadings(content: string, docPrefix: string): DocAnchor[] {
-	const anchors: DocAnchor[] = []
+function BuiltinBlockUnavailable({ kind }: { kind: string }) {
+	return (
+		<Paper withBorder radius="md" p="sm" my="sm">
+			<Text size="sm" c="red">
+				Builtin block renderer unavailable: {kind}
+			</Text>
+		</Paper>
+	)
+}
+
+function BuiltinConfigRendererUnavailable() {
+	return (
+		<Paper withBorder radius="md" p="sm" my="sm">
+			<Text size="sm" c="red">
+				Builtin config renderer unavailable
+			</Text>
+		</Paper>
+	)
+}
+
+function extractInlineText(token: any): string {
+	if (!token || typeof token !== 'object') return ''
+	if (typeof token.content === 'string') return token.content
+	const children = Array.isArray(token.children) ? token.children : []
+	return children
+		.map((child: any) => {
+			if (typeof child?.content === 'string') return child.content
+			return ''
+		})
+		.join('')
+}
+
+function compileDoc(input: { content: BuiltinDocContent; docPrefix: string }): {
+	items: CompiledItem[]
+	anchors: OutlineAnchor[]
+} {
+	const { content, docPrefix } = input
+	const engine = new MarkdownExit({ html: false, linkify: true })
+	const env: Record<string, unknown> = {}
+
 	const seen = new Map<string, number>()
-	let inFence = false
-	const lines = content.split(/\r?\n/)
-	for (const raw of lines) {
-		const line = raw.trimEnd()
-		const fenceMatch = line.match(/^\s*(```|~~~)/)
-		if (fenceMatch) {
-			inFence = !inFence
+	const anchors: OutlineAnchor[] = []
+	const items: CompiledItem[] = []
+
+	let mdIndex = 0
+	let blockIndex = 0
+
+	const parts: BuiltinDocPart[] = Array.isArray(content) ? content : []
+	for (const part of parts) {
+		if (!part || typeof part !== 'object') continue
+
+		if (part.kind === 'block') {
+			if (!part.block || typeof part.block !== 'object') continue
+			const label = String((part as any).title ?? '').trim()
+			if (!label) continue
+			const base = `${docPrefix}${toDomSlug(label)}`
+			const count = (seen.get(base) ?? 0) + 1
+			seen.set(base, count)
+			const id = count === 1 ? base : `${base}-${count}`
+			anchors.push({ id, label, depth: 2 })
+			blockIndex += 1
+			items.push({ kind: 'block', key: `block-${blockIndex}`, id, title: label, block: part.block })
 			continue
 		}
-		if (inFence) continue
-		const match = line.match(/^\s{0,3}(#{1,6})\s+(.+)$/)
-		if (!match) continue
-		const depth = match[1].length
-		const label = match[2].replace(/\s+#+\s*$/, '').trim()
-		if (!label) continue
-		const base = `${docPrefix}${toDomSlug(label)}`
-		const count = (seen.get(base) ?? 0) + 1
-		seen.set(base, count)
-		const id = count === 1 ? base : `${base}-${count}`
-		anchors.push({ id, label, depth })
+
+		if (part.kind === 'schema') {
+			const key = String(part.key ?? '').trim()
+			if (key)
+				items.push({
+					kind: 'cfg',
+					key: `cfg-${items.length + 1}`,
+					directive: { kind: 'schema', key },
+				})
+			continue
+		}
+		if (part.kind === 'schemas') {
+			const keys = part.keys
+			items.push({
+				kind: 'cfg',
+				key: `cfg-${items.length + 1}`,
+				directive: {
+					kind: 'schemas',
+					keys: Array.isArray(keys) ? keys.map(String) : null,
+				},
+			})
+			continue
+		}
+
+		const text =
+			part.kind === 'md' ? (typeof (part as any).text === 'string' ? (part as any).text : '') : ''
+		if (!text) continue
+
+		const tokens = engine.parse(text, env)
+		for (let i = 0; i < tokens.length; i++) {
+			const token = tokens[i]
+			if (!token || token.type !== 'heading_open') continue
+			const depth = Number.parseInt(String(token.tag ?? '').slice(1), 10)
+			const inline = tokens[i + 1]
+			const label = extractInlineText(inline).trim()
+			if (!label) continue
+			const base = `${docPrefix}${toDomSlug(label)}`
+			const count = (seen.get(base) ?? 0) + 1
+			seen.set(base, count)
+			const id = count === 1 ? base : `${base}-${count}`
+			token.attrSet('id', id)
+			token.attrSet('style', 'scroll-margin-top: 72px;')
+			anchors.push({ id, label, depth: Number.isFinite(depth) ? depth : 1 })
+		}
+
+		mdIndex += 1
+		const html = engine.renderer.render(tokens, engine.options, env)
+		items.push({ kind: 'html', key: `md-${mdIndex}`, html })
 	}
-	return anchors
+
+	return { items, anchors }
 }
 
-function remarkDocBlocks() {
-	return (tree: any) => {
-		visit(tree, (node: any) => {
-			const directive = node as DirectiveNode
-			if (!directive || typeof directive !== 'object') return
-			if (directive.type !== 'leafDirective' && directive.type !== 'containerDirective') return
-			if (directive.name !== 'block') return
-
-			const attrs = directive.attributes ?? {}
-			const label = readDirectiveLabel(directive).trim()
-			const attrId = typeof attrs.id === 'string' ? attrs.id.trim() : ''
-			const id = attrId || label
-
-			const data = directive.data ?? (directive.data = {})
-			data.hName = 'block'
-			data.hProperties = id ? { id } : {}
-
-			if (directive.type === 'containerDirective') directive.children = []
-		})
-	}
-}
-
-const DocMarkdown = memo(function DocMarkdown({
-	content,
+const DocBody = memo(function DocBody({
+	items,
 	contentRef,
-	headingAnchors,
-	blockMap,
 	renderBlock,
-}: DocMarkdownProps) {
-	const headingIndexRef = useRef(0)
-	headingIndexRef.current = 0
-
-	const BlockRenderer = useCallback(
-		({ node }: { node?: any }) => {
-			const rawId = node?.properties?.id
-			const id = typeof rawId === 'string' ? rawId.trim() : ''
-			if (!id || !blockMap[id]) {
-				if (process.env.NODE_ENV === 'production') return null
-				return (
-					<Box
-						my="sm"
-						p="xs"
-						style={{
-							borderRadius: 8,
-							border: '1px dashed rgba(255, 90, 80, 0.45)',
-							background: 'rgba(255, 90, 80, 0.06)',
-						}}
-					>
-						<Text size="xs" c="red">
-							{`Missing doc block: ${id || '(no id)'}`}
-						</Text>
-					</Box>
-				)
-			}
-
-			return <Box my="sm">{renderBlock(blockMap[id])}</Box>
-		},
-		[blockMap, renderBlock],
-	)
-
-	const makeHeading = useCallback(
-		(level: number) => {
-			return ({ node: _node, ...rest }: any) => {
-				const anchor = headingAnchors[headingIndexRef.current]
-				headingIndexRef.current += 1
-				const props = anchor ? { ...rest, id: anchor.id } : rest
-				return createElement(`h${level}`, props, rest.children)
-			}
-		},
-		[headingAnchors],
-	)
-
-	const components = useMemo(
-		() =>
-			({
-				block: BlockRenderer,
-				h1: makeHeading(1),
-				h2: makeHeading(2),
-				h3: makeHeading(3),
-				h4: makeHeading(4),
-				h5: makeHeading(5),
-				h6: makeHeading(6),
-			}) as any,
-		[BlockRenderer, makeHeading],
-	)
-
+	renderCfg,
+}: {
+	items: CompiledItem[]
+	contentRef: RefObject<HTMLDivElement>
+	renderBlock: (title: string, block: BuiltinDocBlock) => ReactNode
+	renderCfg: (directive: CompiledItem & { kind: 'cfg' }) => ReactNode
+}) {
 	return (
 		<Box
 			ref={contentRef}
@@ -177,106 +222,186 @@ const DocMarkdown = memo(function DocMarkdown({
 				border: 'none',
 			}}
 		>
-			<TypographyStylesProvider>
-				<ReactMarkdown remarkPlugins={[remarkGfm, remarkDirective, remarkDocBlocks]} components={components}>
-					{content}
-				</ReactMarkdown>
-			</TypographyStylesProvider>
+			<Typography>
+				{items.map((item) => {
+					if (item.kind === 'cfg')
+						return <Fragment key={item.key}>{renderCfg(item as any)}</Fragment>
+					if (item.kind === 'block')
+						return (
+							<Box key={item.key} my="sm">
+								<Box component="h2" id={item.id} style={{ scrollMarginTop: 72 }}>
+									{item.title}
+								</Box>
+								{renderBlock(item.title, item.block)}
+							</Box>
+						)
+					// oxlint-disable-next-line react/no-danger -- HTML comes from our markdown renderer for trusted builtin docs.
+					return <Box key={item.key} dangerouslySetInnerHTML={{ __html: item.html }} />
+				})}
+			</Typography>
 		</Box>
 	)
 })
 
-export function BuiltinDoc({
-	ctx,
-	def,
-}: {
-	ctx: ExtensionContext
-	def: BuiltinDocExtensionDef
-}) {
-	const content = typeof def.content === 'string' ? def.content.trim() : ''
-	const blocks = def.blocks && typeof def.blocks === 'object' ? def.blocks : {}
+export function BuiltinDoc({ def }: { def: BuiltinDocExtensionDef }) {
 	const contentRef = useRef<HTMLDivElement | null>(null)
-	const tocViewportRef = useRef<HTMLDivElement | null>(null)
 	const [activeId, setActiveId] = useState<string | null>(null)
-	const [tocExpanded, setTocExpanded] = useState(false)
-	const [query, setQuery] = useState('')
 	const [scrollHost, setScrollHost] = useState<HTMLElement | null>(null)
+	const { assistHost, asideAvailable } = usePluginWorkbenchAside()
+	const tabActive = usePluginWorkbenchTabActivity()
 
 	const docPrefix = useMemo(
 		() => `doc-${toDomSlug(def.pluginName)}-${toDomSlug(def.id)}-`,
 		[def.id, def.pluginName],
 	)
 
-	const headingAnchors = useMemo(
-		() => (content ? parseMarkdownHeadings(content, docPrefix) : []),
-		[content, docPrefix],
-	)
-
-	const hasToc = headingAnchors.length > 1
-
-	const blockMap = useMemo(() => {
-		const out: Record<string, BuiltinDocBlock> = {}
-		for (const [key, block] of Object.entries(blocks)) {
-			if (!block || typeof block !== 'object') continue
-			const typed = block as BuiltinDocBlock
-			if (typed.kind !== 'infoCard' && typed.kind !== 'rpcAutoForm') continue
-			out[key] = typed
-		}
-		return out
-	}, [blocks])
-
-	const orderedBlockIds =
-		Array.isArray(def.blockOrder) && def.blockOrder.length > 0
-			? def.blockOrder
-			: Object.keys(blockMap)
-
-	const blockEntries = orderedBlockIds
-		.map((id) => ({ id, block: blockMap[id] }))
-		.filter((entry): entry is { id: string; block: BuiltinDocBlock } => Boolean(entry.block))
-
 	const pluginName = def.pluginName
+
+	// Track used schema keys across the rendered doc so `d.schemas()` behaves like cfg layout.
+	const usedSchemaKeysRef = useRef<Set<string> | null>(null)
+	usedSchemaKeysRef.current = usedSchemaKeysRef.current ?? new Set<string>()
+	usedSchemaKeysRef.current.clear()
+
 	const renderBlock = useCallback(
-		(block: BuiltinDocBlock) => {
-			if (block.kind === 'infoCard') {
-				return <BuiltinInfoCard ctx={ctx} pluginName={pluginName} block={block} />
-			}
-			if (block.kind === 'rpcAutoForm') {
-				return <BuiltinRpcAutoForm ctx={ctx} pluginName={pluginName} block={block} />
-			}
-			return null
+		(title: string, block: BuiltinDocBlock) => {
+			const blockPluginName =
+				typeof (block as any)?.pluginName === 'string' && (block as any).pluginName.trim()
+					? (block as any).pluginName.trim()
+					: pluginName
+			return renderBuiltinBlock({
+				pluginName: blockPluginName,
+				title,
+				block,
+			})
 		},
-		[ctx, pluginName],
+		[pluginName],
 	)
 
-	const hasHeader = Boolean(def.title || def.description)
+	function toRecord(value: unknown): Record<string, any> {
+		if (!value || typeof value !== 'object' || Array.isArray(value)) return {}
+		return value as Record<string, any>
+	}
 
-	if (!content && blockEntries.length === 0 && !hasHeader) return null
+	function DocCfgDirective({ directive }: { directive: DocConfigDirective }) {
+		const cfg = usePluginConfig(pluginName)
+		const data = cfg.data
+		const schemaMapAll = (data?.schemaMap ?? {}) as Record<string, ObjectSchema<any, any>>
+		const defaultsAll = (data?.defaults ?? {}) as Record<string, unknown>
+		const savedAll = (data?.savedConfig ?? {}) as Record<string, unknown>
 
-	if (!content && !hasHeader) {
+		const schemaKeys = useMemo(
+			() => Object.keys(schemaMapAll ?? {}).sort(compareSchemaKeys),
+			[schemaMapAll],
+		)
+
+		const [savedOverride, setSavedOverride] = useState<Record<string, any> | null>(null)
+		useEffect(() => setSavedOverride(null), [pluginName, data?.savedConfig])
+
+		if (cfg.loading && !cfg.data) return null
+		if (cfg.error) {
+			return (
+				<Paper withBorder radius="md" p="sm" my="sm">
+					<Text size="sm" c="red">
+						Failed to load config: {cfg.error.message}
+					</Text>
+				</Paper>
+			)
+		}
+
+		const used = usedSchemaKeysRef.current ?? new Set<string>()
+		const resolveKeys = (): string[] => {
+			if (directive.kind === 'schema') {
+				const key = String(directive.key ?? '').trim()
+				if (!key) return []
+				if (used.has(key)) return []
+				used.add(key)
+				return [key]
+			}
+
+			if (directive.keys === null) {
+				const remaining = schemaKeys.filter((k) => !used.has(k))
+				for (const k of remaining) used.add(k)
+				return remaining
+			}
+
+			const out: string[] = []
+			for (const raw of directive.keys ?? []) {
+				const key = String(raw ?? '').trim()
+				if (!key) continue
+				if (used.has(key)) continue
+				used.add(key)
+				out.push(key)
+			}
+			return out
+		}
+
+		const keys = resolveKeys()
+		if (keys.length === 0) return null
+
+		const finalSavedAll = (savedOverride ?? savedAll) as Record<string, unknown>
 		return (
-			<Stack gap={6}>
-				{blockEntries.map((entry) => (
-					<Box key={entry.id}>{renderBlock(entry.block)}</Box>
-				))}
-			</Stack>
+			<Box my="sm">
+				{keys.map((schemaKey) => {
+					const schema = schemaMapAll?.[schemaKey]
+					if (!schema) {
+						return (
+							<Paper key={`cfg-unknown-${schemaKey}`} withBorder radius="md" p="sm" my="sm">
+								<Text size="sm" c="red">
+									Unknown schema key: {schemaKey}
+								</Text>
+							</Paper>
+						)
+					}
+
+					return (
+						<Box key={`cfg-schema-${schemaKey}`} my="sm">
+							{typeof ConfigTabContent === 'function' ? (
+								<ConfigTabContent
+									pluginName={pluginName}
+									tabKey={schemaKey}
+									schema={schema}
+									savedValue={toRecord(finalSavedAll?.[schemaKey])}
+									defaultValue={toRecord(defaultsAll?.[schemaKey])}
+									onSaved={(_k, value) =>
+										setSavedOverride((prev) => ({
+											...((prev ?? finalSavedAll) as any),
+											[schemaKey]: value,
+										}))
+									}
+									showToc={false}
+									active={true}
+								/>
+							) : (
+								<BuiltinConfigRendererUnavailable />
+							)}
+						</Box>
+					)
+				})}
+			</Box>
 		)
 	}
 
-	const buildTree = useCallback((list: DocAnchor[]) => {
-		const roots: Array<{ id: string; label: string; depth: number; children: any[] }> = []
-		const stack: Array<{ id: string; label: string; depth: number; children: any[] }> = []
-		for (const anchor of list) {
-			const node = { id: anchor.id, label: anchor.label, depth: anchor.depth, children: [] as any[] }
-			while (stack.length && stack[stack.length - 1].depth >= node.depth) stack.pop()
-			if (stack.length) {
-				stack[stack.length - 1].children.push(node)
-			} else {
-				roots.push(node)
-			}
-			stack.push(node)
-		}
-		return roots
-	}, [])
+	const renderCfg = useCallback(
+		(item: CompiledItem & { kind: 'cfg' }) => {
+			return <DocCfgDirective directive={item.directive as any} />
+		},
+		[pluginName],
+	)
+
+	const compiled = useMemo(
+		() =>
+			compileDoc({
+				content: def.content,
+				docPrefix,
+			}),
+		[def.content, docPrefix],
+	)
+
+	const headingAnchors = compiled.anchors
+	const hasToc = headingAnchors.length > 1
+
+	const hasHeader = Boolean(def.title || def.description)
+	const shouldRender = compiled.items.length > 0 || hasHeader
 
 	const resolveScrollContainer = useCallback(
 		(target: HTMLElement | null) => {
@@ -286,7 +411,8 @@ export function BuiltinDoc({
 				target.closest<HTMLElement>('[data-scroll-area-viewport]') ??
 				findScrollableParent(target)
 			if (!candidate) return null
-			if (candidate === document.scrollingElement || candidate === document.documentElement) return null
+			if (candidate === document.scrollingElement || candidate === document.documentElement)
+				return null
 			return candidate
 		},
 		[scrollHost],
@@ -312,9 +438,7 @@ export function BuiltinDoc({
 			const score = inView ? delta * 0.5 : delta
 			if (!current || score < current.score) current = { id: anchor.id, score }
 		}
-		if (current?.id) {
-			setActiveId((prev) => (prev === current.id ? prev : current.id))
-		}
+		if (current?.id) setActiveId((prev) => (prev === current.id ? prev : current.id))
 	}, [hasToc, headingAnchors, resolveScrollContainer])
 
 	useEffect(() => {
@@ -330,18 +454,16 @@ export function BuiltinDoc({
 			setScrollHost(null)
 			return
 		}
-		const firstAnchor = headingAnchors[0]?.id
+
+		const firstAnchorEl = headingAnchors[0]?.id
 			? document.getElementById(headingAnchors[0].id)
 			: null
-		const base = firstAnchor ?? root
+		const base = firstAnchorEl ?? root
 		const host =
 			base.closest<HTMLElement>('[data-scroll-area-viewport]') ?? findScrollableParent(base)
-		if (host === document.scrollingElement || host === document.documentElement) {
-			setScrollHost(null)
-		} else {
-			setScrollHost(host)
-		}
-	}, [content, headingAnchors.length])
+		if (host === document.scrollingElement || host === document.documentElement) setScrollHost(null)
+		else setScrollHost(host)
+	}, [headingAnchors, compiled.items.length])
 
 	useEffect((): void | (() => void) => {
 		const root = contentRef.current
@@ -366,9 +488,7 @@ export function BuiltinDoc({
 
 		let resizeObserver: ResizeObserver | null = null
 		if (typeof ResizeObserver !== 'undefined' && primary !== window) {
-			resizeObserver = new ResizeObserver(() => {
-				updateActive()
-			})
+			resizeObserver = new ResizeObserver(() => updateActive())
 			resizeObserver.observe(primary as HTMLElement)
 		}
 
@@ -381,212 +501,144 @@ export function BuiltinDoc({
 		}
 	}, [scrollHost, updateActive])
 
-	useEffect(() => {
-		if (!tocExpanded) return
-		const viewport = tocViewportRef.current
-		if (!viewport) return
-		const active = viewport.querySelector('[data-toc-active="true"]') as HTMLElement | null
-		if (!active) return
-		const activeBox = active.getBoundingClientRect()
-		const viewportBox = viewport.getBoundingClientRect()
-		const padding = 16
-		if (activeBox.top < viewportBox.top + padding || activeBox.bottom > viewportBox.bottom - padding) {
-			active.scrollIntoView({ block: 'center' })
-		}
-	}, [tocExpanded, activeId, query])
-
-	const scrollToSection = useCallback((id: string) => {
-		if (!id) return
-		const target = document.getElementById(id)
-		if (!target) return
-		const scrollMarginTop = Number.parseFloat(getComputedStyle(target).scrollMarginTop || '0') || 0
-		const container = resolveScrollContainer(target)
-		if (container) {
-			const targetBox = target.getBoundingClientRect()
-			const hostBox = container.getBoundingClientRect()
-			const top = targetBox.top - hostBox.top + container.scrollTop - scrollMarginTop
-			container.scrollTo({ top, behavior: 'smooth' })
-			return
-		}
-		const top = target.getBoundingClientRect().top + window.scrollY - scrollMarginTop
-		window.scrollTo({ top, behavior: 'smooth' })
-	}, [resolveScrollContainer])
-
-	const tocItems = useMemo(() => buildTree(headingAnchors), [headingAnchors, buildTree])
-	const normalizedQuery = query.trim().toLowerCase()
-	const filtered = useMemo(() => {
-		if (!normalizedQuery) {
-			return { items: tocItems, matchCount: headingAnchors.length }
-		}
-		const matches = (label: string) => label.toLowerCase().includes(normalizedQuery)
-		let matchCount = 0
-		const filterNode = (node: { id: string; label: string; depth: number; children: any[] }) => {
-			const nextChildren: any[] = []
-			for (const child of node.children) {
-				const childNode = filterNode(child)
-				if (childNode) nextChildren.push(childNode)
+	const scrollToSection = useCallback(
+		(id: string) => {
+			if (!id) return
+			const target = document.getElementById(id)
+			if (!target) return
+			const scrollMarginTop =
+				Number.parseFloat(getComputedStyle(target).scrollMarginTop || '0') || 0
+			const container = resolveScrollContainer(target)
+			if (container) {
+				const targetBox = target.getBoundingClientRect()
+				const hostBox = container.getBoundingClientRect()
+				const top = targetBox.top - hostBox.top + container.scrollTop - scrollMarginTop
+				container.scrollTo({ top, behavior: 'smooth' })
+				return
 			}
-			const selfMatch = matches(node.label)
-			if (selfMatch) matchCount += 1
-			if (selfMatch || nextChildren.length > 0) return { ...node, children: nextChildren }
-			return null
-		}
-		return {
-			items: tocItems
-				.map((node) => filterNode(node))
-				.filter(
-					(node): node is { id: string; label: string; depth: number; children: any[] } =>
-						Boolean(node),
-				),
-			matchCount,
-		}
-	}, [headingAnchors.length, normalizedQuery, tocItems])
+			const top = target.getBoundingClientRect().top + window.scrollY - scrollMarginTop
+			window.scrollTo({ top, behavior: 'smooth' })
+		},
+		[resolveScrollContainer],
+	)
 
-	return (
-		<Box>
-			<Stack gap="xs">
-				{def.title || def.description ? (
-					<Stack gap={4}>
-						{def.title ? (
-							<Text size="sm" fw={650} style={{ lineHeight: 1.25 }}>
-								{def.title}
-							</Text>
-						) : null}
-						{def.description ? (
-							<Text size="xs" c="dimmed" style={{ lineHeight: 1.4 }}>
-								{def.description}
-							</Text>
-						) : null}
-					</Stack>
+	const tocVisible = hasToc && compiled.items.length > 0 && headingAnchors.length > 0 && tabActive
+	usePluginWorkbenchAssistVisibility(tocVisible)
+
+	if (!shouldRender) return null
+
+	const headerContent =
+		def.title || def.description ? (
+			<Stack gap={4}>
+				{def.title ? (
+					<Text size="sm" fw={650} style={{ lineHeight: 1.25 }}>
+						{def.title}
+					</Text>
 				) : null}
-
-				{content ? (
-					<DocMarkdown
-						content={content}
-						contentRef={contentRef}
-						headingAnchors={headingAnchors}
-						blockMap={blockMap}
-						renderBlock={renderBlock}
-					/>
-				) : blockEntries.length ? (
-					<Stack gap={6}>
-						{blockEntries.map((entry) => (
-							<Box key={entry.id}>{renderBlock(entry.block)}</Box>
-						))}
-					</Stack>
+				{def.description ? (
+					<Text size="xs" c="dimmed" style={{ lineHeight: 1.4 }}>
+						{def.description}
+					</Text>
 				) : null}
 			</Stack>
-			{hasToc && content && tocItems.length ? (
-				<FloatingToc
-					title="文档导航"
-					hint="悬停展开，搜索或点击跳转到对应章节。"
-					meta={
-						<Badge size="xs" variant="light" color="blue">
-							{normalizedQuery ? `${filtered.matchCount}/${headingAnchors.length}` : headingAnchors.length}
-						</Badge>
-					}
-					controls={
-						<TextInput
-							size="xs"
-							placeholder="搜索章节…"
-							value={query}
-							onChange={(event) => setQuery(event.currentTarget.value)}
-							leftSection={<IconSearch size={14} />}
-						/>
-					}
-					onExpandedChange={setTocExpanded}
-					viewportRef={(node) => {
-						tocViewportRef.current = node
-					}}
-				>
-					{(normalizedQuery ? filtered.items : tocItems).length ? (
-						<Stack gap="xs">
-							{(normalizedQuery ? filtered.items : tocItems).map((node) => {
-								const renderNode = (item: { id: string; label: string; children: any[] }, depth = 0) => {
-									const isActive = item.id === activeId
-									return (
-										<Box
-											key={item.id}
-											onClick={(e) => {
-												e.stopPropagation()
-												scrollToSection(item.id)
-											}}
-											role="button"
-											tabIndex={0}
-											data-toc-active={isActive ? 'true' : undefined}
-											onKeyDown={(e) => {
-												if (e.key === 'Enter' || e.key === ' ') {
-													e.preventDefault()
-													e.stopPropagation()
-													scrollToSection(item.id)
-												}
-											}}
-											style={{
-												borderRadius: 10,
-												padding: '8px 10px',
-												cursor: 'pointer',
-												border: `1px solid ${
-													isActive
-														? 'var(--mantine-color-blue-outline)'
-														: 'var(--mantine-color-default-border)'
-												}`,
-												backgroundColor: isActive
-													? 'var(--mantine-color-blue-light)'
-													: 'transparent',
-												boxShadow: isActive ? 'var(--mantine-shadow-sm)' : 'none',
-												marginLeft: depth ? 8 : 0,
-												position: 'relative',
-											}}
-										>
-											<Group justify="space-between" align="center" gap={6} style={{ minWidth: 0 }}>
-												<Group gap={8} align="center" style={{ minWidth: 0 }}>
-													<Box
-														style={{
-															width: 8,
-															height: 8,
-															borderRadius: 999,
-															background: isActive
-																? 'var(--mantine-color-blue-filled)'
-																: 'var(--mantine-color-gray-5)',
-															flexShrink: 0,
-															boxShadow: isActive
-																? '0 0 0 3px var(--mantine-color-blue-light)'
-																: 'none',
-														}}
-													/>
-													<Text
-														size="sm"
-														fw={isActive ? 700 : 600}
-														style={{ flex: 1, minWidth: 0 }}
-														lineClamp={1}
-													>
-														{item.label}
-													</Text>
-												</Group>
-												{item.children.length ? (
-													<Badge variant="light" size="xs" color="gray">
-														{item.children.length}
-													</Badge>
-												) : null}
-											</Group>
-											{item.children.length ? (
-												<Stack gap={6} mt={6}>
-													{item.children.map((child: any) => renderNode(child, depth + 1))}
-												</Stack>
-											) : null}
-										</Box>
-									)
-								}
-								return renderNode(node)
-							})}
-						</Stack>
-					) : (
+		) : null
+
+	const bodyContent =
+		compiled.items.length > 0 ? (
+			<DocBody
+				items={compiled.items}
+				contentRef={contentRef}
+				renderBlock={renderBlock}
+				renderCfg={renderCfg}
+			/>
+		) : null
+
+	const renderInlineToc = () => (
+		<Paper withBorder radius="md" p="sm">
+			<OutlineNavigator
+				anchors={headingAnchors}
+				activeId={activeId}
+				onSelect={scrollToSection}
+				placeholder="搜索章节…"
+				emptyLabel="未找到匹配章节"
+				header={({ hasQuery, shownCount, totalCount }) => (
+					<>
+						<Box
+							style={{
+								display: 'flex',
+								justifyContent: 'space-between',
+								alignItems: 'center',
+								gap: 8,
+							}}
+						>
+							<Text size="sm" fw={700}>
+								文档导航
+							</Text>
+							<Badge size="xs" variant="light" color="gray">
+								{hasQuery ? `${shownCount}/${totalCount}` : totalCount}
+							</Badge>
+						</Box>
 						<Text size="xs" c="dimmed">
-							暂无匹配项
+							搜索或点击跳转到对应章节。
 						</Text>
-					)}
-				</FloatingToc>
-			) : null}
+					</>
+				)}
+			/>
+		</Paper>
+	)
+
+	const renderSidebarToc = () => (
+		<div className="plx-pluginWorkbench__assistSection">
+			<OutlineNavigator
+				anchors={headingAnchors}
+				activeId={activeId}
+				onSelect={scrollToSection}
+				placeholder="搜索章节…"
+				emptyLabel="未找到匹配章节"
+				header={({ hasQuery, shownCount, totalCount }) => (
+					<Box
+						style={{
+							display: 'flex',
+							justifyContent: 'space-between',
+							alignItems: 'center',
+							gap: 8,
+						}}
+					>
+						<Text size="xs" c="dimmed" fw={600}>
+							{hasQuery ? `${shownCount}/${totalCount} 项匹配` : `${totalCount} 项`}
+						</Text>
+						{hasQuery ? (
+							<Badge size="xs" variant="light" color="gray">
+								筛选中
+							</Badge>
+						) : null}
+					</Box>
+				)}
+			/>
+		</div>
+	)
+
+	const documentContent = (
+		<Box>
+			<Stack gap="xs">
+				{headerContent}
+				{bodyContent}
+			</Stack>
 		</Box>
+	)
+
+	if (tocVisible && asideAvailable && !assistHost) {
+		return documentContent
+	}
+
+	return (
+		<>
+			{documentContent}
+			{tocVisible
+				? assistHost
+					? createPortal(renderSidebarToc(), assistHost)
+					: renderInlineToc()
+				: null}
+		</>
 	)
 }

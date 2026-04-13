@@ -1,30 +1,57 @@
 // Context.ts
 
-import type { ServiceCfg, ServiceClass, ServiceContext, ServiceInst } from './service-types'
-import type { ServiceWithCtx } from './service-types'
+import type {
+	ServiceCfg,
+	ServiceClass,
+	ServiceContractInst,
+	ServiceCtor,
+	ServiceInst,
+	ServiceOverrideCtor,
+	ServiceWithCtx,
+} from './service-types'
 
 type SymMap = { [k in symbol]?: symbol }
 
+// "Any service" should allow arbitrary instance types and method proxy lists.
+// Using the default `ServiceClass<ServiceCtor>` would make `methods` resolve to `never[]`
+// because `InstanceType<ServiceCtor>` is `unknown`.
+type AnyServiceClass = ServiceClass<new (ctx: Context, cfg?: any) => any>
+
+type ServiceMeta = {
+	sk: symbol
+	key: string
+	scope: 'context' | 'root'
+}
+
+// oxlint-disable-next-line typescript/no-unsafe-declaration-merging -- this class is intentionally merged with an interface for service augmentation.
 export class Context {
+	get [Symbol.toStringTag]() {
+		// Hint frameworks like Elysia that this is a class-like object, so they don't deep-merge
+		// arbitrary runtime state into request contexts (which can accidentally traverse Vite config
+		// objects and trigger deprecation setters like `optimizeDeps.rollupOptions`).
+		return 'PluxelContext'
+	}
+
 	/** 全局 serviceKey → instKey 映射 */
 	private static defaultMapping: SymMap = Object.create(null)
-	/** ServiceClass → serviceKey 缓存 */
-	public static serviceKeyMap = new WeakMap<ServiceClass<any>, symbol>()
-	private static registeredKeys = new Set<string>()
+	/** ServiceClass → meta 缓存 */
+	private static serviceMetaByCtor = new WeakMap<AnyServiceClass, ServiceMeta>()
+	/** service key (property name) → meta */
+	private static serviceMetaByKey = new Map<string, ServiceMeta>()
 
 	/** 本实例的映射（继承自 defaultMapping 或父 Context） */
 	public mapping: SymMap
 	/** 服务实例缓存，所有同 root 的 Context 共享，除 isolate 时另行克隆 */
-	private instances: Record<symbol, any> = Object.create(null)
+	private instances: Record<symbol, unknown> = Object.create(null)
 	public parent?: Context
-	public root: Context
+	public root: Context.Root
 	public name: string
 	public config: Context.Config
 
 	constructor(config: Context.Config = {}, parent?: Context, name?: string) {
 		this.config = config
 		this.parent = parent
-		this.root = parent ? parent.root : this
+		this.root = parent ? parent.root : (this as unknown as Context.Root)
 		this.name = name ?? config.name ?? (parent ? parent.name : 'root')
 		// mapping 继承全局或父级
 		this.mapping = Object.create(Context.defaultMapping)
@@ -32,38 +59,68 @@ export class Context {
 		if (parent) this.instances = parent.instances
 	}
 
-	static registerService<S extends new (ctx: any, cfg: any) => object>(ctor: ServiceClass<S>) {
+	static registerService<S extends ServiceCtor>(ctor: ServiceClass<S>) {
 		const sk = Symbol(ctor.name)
 		const key = (ctor.key as string) ?? ctor.name.replace(/Service$/, '')
-		if (Context.registeredKeys.has(key)) {
+		if (Context.serviceMetaByKey.has(key)) {
 			throw new Error('如果你要覆盖已有服务，先 override。')
 		}
-		Context.registeredKeys.add(key)
-		Context.serviceKeyMap.set(ctor, sk)
+		if (key in Context.prototype) {
+			throw new Error(
+				`[pluxel/context] Invalid service key "${key}": conflicts with Context.prototype.`,
+			)
+		}
+		const scope = ((ctor as unknown as { scope?: 'context' | 'root' }).scope ?? 'context') as
+			| 'context'
+			| 'root'
+		const meta: ServiceMeta = { sk, key, scope }
+		Context.serviceMetaByCtor.set(ctor as unknown as AnyServiceClass, meta)
+		Context.serviceMetaByKey.set(key, meta)
 		Context.defaultMapping[sk] = sk
 
-		// 在原型上定义最简 getter，只 capture sk/ctor/key
+		// 在原型上定义 getter：按 scope 在“注册阶段”分配不同实现，避免热路径分支。
+		const getter: (this: Context) => ServiceInst<S> =
+			meta.scope === 'root'
+				? function (this: Context) {
+						const root = this.root
+						let inst = root.instances[sk] as ServiceInst<S>
+						if (inst) {
+							const withCtx = inst as unknown as ServiceWithCtx<Context>
+							if (withCtx.ctx !== root) withCtx.ctx = root
+							return inst
+						}
+						const cfg = (root.config as Record<string, unknown>)[key] as ServiceCfg<S>
+						inst = new ctor(root, cfg) as ServiceInst<S>
+						;(inst as unknown as ServiceWithCtx<Context>).ctx = root
+						root.instances[sk] = inst
+						return inst
+					}
+				: function (this: Context) {
+						const ik = this.mapping[sk] as symbol
+
+						// Fast path: read from `this.instances` first.
+						// - For non-isolated services, `ik === sk` and the instance lives in `root.instances`.
+						//   `this.instances` either *is* `root.instances` (normal) or prototypically inherits it
+						//   (after isolate() via Object.create), so lookups still hit.
+						// - For isolated services, `ik !== sk` and the instance lives in `this.instances[ik]`.
+						let inst = this.instances[ik] as ServiceInst<S>
+						if (inst) {
+							const withCtx = inst as unknown as ServiceWithCtx<Context>
+							if (withCtx.ctx !== this) withCtx.ctx = this
+							return inst
+						}
+						const cfg = (this.config as Record<string, unknown>)[key] as ServiceCfg<S>
+						inst = new ctor(this, cfg) as ServiceInst<S>
+						;(inst as unknown as ServiceWithCtx<Context>).ctx = this
+						// Only decide where to store on miss:
+						// - `ik === sk` → shared root space (avoid accidental isolation)
+						// - `ik !== sk` → this context's isolated space
+						;(ik === sk ? this.root.instances : this.instances)[ik] = inst
+						return inst
+					}
 		Object.defineProperty(Context.prototype, key, {
 			configurable: true,
-			get(this: Context) {
-				let ik = this.mapping[sk]
-				if (ik === undefined) {
-					this.mapping[sk] = ik = sk
-				}
-
-				const store = Object.hasOwn(this.mapping, sk) ? this.instances : this.root.instances
-
-				let inst = store[ik] as ServiceInst<S>
-				if (inst) {
-					;(inst as unknown as ServiceWithCtx<Context>).ctx = this
-					return inst
-				}
-				const cfg = (this.config as any)[key] as ServiceCfg<S>
-				inst = new ctor(this as any, cfg) as ServiceInst<S>
-				;(inst as unknown as ServiceWithCtx<Context>).ctx = this
-				store[ik] = inst
-				return inst
-			},
+			get: getter,
 		})
 
 		// 方法代理（同样最轻）
@@ -71,63 +128,86 @@ export class Context {
 			if (m in Context.prototype) continue
 			Object.defineProperty(Context.prototype, m, {
 				configurable: true,
-				value(this: Context, ...args: any[]) {
-					return (this as any)[key][m](...args)
+				value(this: Context, ...args: unknown[]) {
+					const svc = (this as unknown as Record<string, unknown>)[key] as Record<string, unknown>
+					const fn = svc[m] as unknown
+					if (typeof fn !== 'function') {
+						throw new TypeError(`[pluxel/context] Service method not found: ${key}.${m}`)
+					}
+					return (fn as (...a: unknown[]) => unknown).call(svc, ...args)
 				},
 			})
 		}
 	}
 
 	/** 提供 override —— 同步把原来的 getter 整块替换掉 */
-	static overrideService<
-		S extends new (
-			ctx: any,
-			cfg: any,
-		) => any,
-		T extends new (
-			ctx: ServiceContext<S>,
-			cfg: ServiceCfg<S>,
-		) => ServiceInst<S>,
-	>(original: ServiceClass<S>, overrideCtor: ServiceClass<T>) {
+	static overrideService<S extends ServiceCtor, T extends ServiceOverrideCtor<S>>(
+		original: ServiceClass<S>,
+		overrideCtor: ServiceClass<T>,
+	) {
 		// 1) 拿到同一个 sk
-		const sk = Context.serviceKeyMap.get(original)
-		if (sk === undefined) throw new Error('该服务从未被注册')
-		// —— 新增：把 overrideCtor 也注册到同一个 sk ——
-		Context.serviceKeyMap.set(overrideCtor, sk)
+		const meta = Context.serviceMetaByCtor.get(original as unknown as AnyServiceClass)
+		if (!meta) throw new Error('该服务从未被注册')
+		// —— overrideCtor 指向同一个 meta ——
+		Context.serviceMetaByCtor.set(overrideCtor as unknown as AnyServiceClass, meta)
 		// 2) 确保新 ctor 有同样的 key（属性名）
-		const key = (original.key as string) ?? original.name.replace(/Service$/, '')
-		;(overrideCtor as any).key = (original as any).key // 保险起见
+		const key = meta.key
+		;(overrideCtor as unknown as { key?: string }).key = (
+			original as unknown as { key?: string }
+		).key // 保险起见
 
-		// 3) 重新在原型上 define，一次性把 overrideCtor capture 进闭包
+		// 3) 重新在原型上 define，一次性把 overrideCtor capture 进闭包（按 scope 分配 getter 实现）
+		const scope = ((overrideCtor as unknown as { scope?: 'context' | 'root' }).scope ??
+			meta.scope) as 'context' | 'root'
+		meta.scope = scope
+		const sk = meta.sk
+		const getter: (this: Context) => ServiceContractInst<S> =
+			scope === 'root'
+				? function (this: Context) {
+						const root = this.root
+						let inst = root.instances[sk] as ServiceContractInst<S>
+						if (inst) {
+							const withCtx = inst as unknown as ServiceWithCtx<Context>
+							if (withCtx.ctx !== root) withCtx.ctx = root
+							return inst
+						}
+						const cfg = (root.config as Record<string, unknown>)[key] as ServiceCfg<S>
+						inst = new overrideCtor(root, cfg) as ServiceContractInst<S>
+						;(inst as unknown as ServiceWithCtx<Context>).ctx = root
+						root.instances[sk] = inst
+						return inst
+					}
+				: function (this: Context) {
+						const ik = this.mapping[sk] as symbol
+						let inst = this.instances[ik] as ServiceContractInst<S>
+						if (inst) {
+							const withCtx = inst as unknown as ServiceWithCtx<Context>
+							if (withCtx.ctx !== this) withCtx.ctx = this
+							return inst
+						}
+						const cfg = (this.config as Record<string, unknown>)[key] as ServiceCfg<S>
+						inst = new overrideCtor(this, cfg) as ServiceContractInst<S>
+						;(inst as unknown as ServiceWithCtx<Context>).ctx = this
+						;(ik === sk ? this.root.instances : this.instances)[ik] = inst
+						return inst
+					}
 		Object.defineProperty(Context.prototype, key, {
 			configurable: true,
-			get(this: Context) {
-				let ik = this.mapping[sk]
-				if (ik === undefined) {
-					this.mapping[sk] = ik = sk
-				}
-
-				const store = Object.hasOwn(this.mapping, sk) ? this.instances : this.root.instances
-
-				let inst = store[ik] as ServiceInst<S>
-				if (inst) {
-					;(inst as unknown as ServiceWithCtx<Context>).ctx = this
-					return inst
-				}
-				const cfg = (this.config as any)[key] as ServiceCfg<S>
-				inst = new overrideCtor(this as any, cfg) as ServiceInst<S>
-				;(inst as unknown as ServiceWithCtx<Context>).ctx = this
-				store[ik] = inst
-				return inst
-			},
+			get: getter,
 		})
 
-		// 4) 同步更新方法代理
+		// 4) 同步补齐方法代理（不覆盖既有 Context 方法/代理）
 		for (const m of overrideCtor.methods ?? []) {
+			if (m in Context.prototype) continue
 			Object.defineProperty(Context.prototype, m, {
 				configurable: true,
-				value(this: Context, ...args: any[]) {
-					return (this as any)[key][m](...args)
+				value(this: Context, ...args: unknown[]) {
+					const svc = (this as unknown as Record<string, unknown>)[key] as Record<string, unknown>
+					const fn = svc[m] as unknown
+					if (typeof fn !== 'function') {
+						throw new TypeError(`[pluxel/context] Service method not found: ${key}.${m}`)
+					}
+					return (fn as (...a: unknown[]) => unknown).call(svc, ...args)
 				},
 			})
 		}
@@ -140,15 +220,17 @@ export class Context {
 		const child = Object.create(this) as this
 
 		// 2) 规范化 name/config（config 合并、name 默认）
-		opts.name = (opts as any).name ?? `${this.name}.child`
-		opts.config = { ...this.config, ...((opts as any).config || {}) }
+		opts.name = opts.name ?? `${this.name}.child`
+		opts.config = { ...this.config, ...opts.config }
 
 		// 3) 先把外部可覆写/新增的字段灌进去（相信外部用户，不做运行时判断）
 		Object.assign(child, opts)
 
 		child.parent = this
 		child.root = this.root
-		child.mapping = Object.create(this.mapping) // 影子映射
+		// `mapping` is an override map (only isolate writes). Reuse it for extend() to
+		// avoid per-child objects and deep prototype chains.
+		child.mapping = this.mapping
 		child.instances = this.instances // 共享实例池
 
 		return child
@@ -156,16 +238,63 @@ export class Context {
 
 	/**
 	 * 隔离指定服务：克隆 instances 池，并为这些 ctor 单独生成 instKey
-	 * @param ctors 可迭代的 ServiceClass 集合，重复项会被自动忽略
+	 *
+	 * Notes:
+	 * - Root-scoped services cannot be isolated: they always resolve from `ctx.root`.
+	 * - This API is intentionally ctor-based (stricter): passing the wrong ctor copy will throw.
+	 *   This helps surface HMR/module-duplication issues instead of silently isolating "whatever is registered".
 	 */
-	isolate(ctors: Iterable<ServiceClass<any>>, opts: Context.ExtendOpts = {}): this {
+	isolate(ctors: Iterable<AnyServiceClass>, opts: Context.ExtendOpts = {}): this {
 		const child = this.extend(opts)
 		child.instances = Object.create(this.instances)
+		child.mapping = Object.create(this.mapping)
 
 		// 用 Set 去重，虽然重复也无害，但这样更直观
 		for (const ctor of new Set(ctors)) {
-			const sk = Context.serviceKeyMap.get(ctor)!
-			child.mapping[sk] = Symbol(ctor.name)
+			const meta = Context.serviceMetaByCtor.get(ctor)
+			if (!meta) {
+				const name = (ctor as unknown as { name?: string }).name
+				throw new Error(
+					`[pluxel/context] Cannot isolate an unregistered service: ${name || '<anonymous>'}`,
+				)
+			}
+			if (meta.scope === 'root') {
+				const key = meta.key
+				throw new Error(
+					`[pluxel/context] Cannot isolate a root-scoped service: ${key} (use ctx.root.${key}).`,
+				)
+			}
+			child.mapping[meta.sk] = Symbol(ctor.name)
+		}
+
+		return child
+	}
+
+	/**
+	 * Isolate by service keys (string names).
+	 *
+	 * This is more ergonomic and can be more type-friendly in config-driven code,
+	 * but it is less strict than ctor-based isolation (it won't detect "wrong ctor copy").
+	 */
+	isolateKeys<K extends keyof Context.Services & string>(
+		keys: Iterable<K>,
+		opts: Context.ExtendOpts = {},
+	): this {
+		const child = this.extend(opts)
+		child.instances = Object.create(this.instances)
+		child.mapping = Object.create(this.mapping)
+
+		for (const key of new Set(keys)) {
+			const meta = Context.serviceMetaByKey.get(key)
+			if (!meta) {
+				throw new Error(`[pluxel/context] Cannot isolate an unregistered service key: ${key}`)
+			}
+			if (meta.scope === 'root') {
+				throw new Error(
+					`[pluxel/context] Cannot isolate a root-scoped service key: ${key} (use ctx.root.${key}).`,
+				)
+			}
+			child.mapping[meta.sk] = Symbol(key)
 		}
 
 		return child
@@ -173,7 +302,9 @@ export class Context {
 }
 
 const CONTEXT_IMPL = Symbol.for('pluxel:context:impl')
-const existingContextImpl = (globalThis as any)[CONTEXT_IMPL] as typeof Context | undefined
+const existingContextImpl = (globalThis as unknown as Record<symbol, unknown>)[CONTEXT_IMPL] as
+	| typeof Context
+	| undefined
 if (existingContextImpl && existingContextImpl !== Context) {
 	throw new Error(
 		[
@@ -193,32 +324,75 @@ if (!existingContextImpl) {
 }
 
 export namespace Context {
-	type Fn = (...args: any[]) => any
-	type MethodKeys<T> = {
-		[K in keyof T]-?: T[K] extends Fn ? K : never
-	}[keyof T]
-
 	/**
 	 * Service registry (type-level). Packages should augment this interface.
 	 *
 	 * `Context` instances will expose these services with `ctx` omitted from their public type.
 	 */
 	export interface Services {}
+	export interface RootServices {}
 
-	export type PublicService<T> = T extends { ctx: any } ? Omit<T, 'ctx'> : T
+	export type PublicService<T> = T extends { ctx: unknown } ? Omit<T, 'ctx'> : T
 	export type PublicServices = { [K in keyof Services]: PublicService<Services[K]> }
+	export type RootPublicServices = { [K in keyof RootServices]: PublicService<RootServices[K]> }
+	export type Root = Context & RootPublicServices
 
-	// 这些键不允许通过 extend 覆写（内部或结构键）
-	type InternalKeys = 'parent' | 'root' | 'mapping' | 'instances' | 'constructor'
+	type LiteralUnion<T extends U, U = string> = T | (U & Record<never, never>)
 
-	// 允许覆写/新增的一切（包含外部 declare 的扩展字段）
-	export type ExtendOpts = Partial<Omit<Context, InternalKeys | MethodKeys<Context>>> &
-		// 允许用户自定义新键（不在 Context 类型里也可）
-		Record<string | number | symbol, unknown>
+	/**
+	 * Debug topic registry (type-level).
+	 *
+	 * Packages/apps can augment this interface to provide IntelliSense for
+	 * `Context.Config.debug` entries without restricting arbitrary strings.
+	 *
+	 * @example
+	 * ```ts
+	 * declare module "@pluxel/context" {
+	 *   namespace Context {
+	 *     interface DebugTopics {
+	 *       "pluxel:hmr:*": true
+	 *       "pluxel:bundler": true
+	 *     }
+	 *   }
+	 * }
+	 * ```
+	 */
+
+	export interface DebugTopics {}
+
+	type DebugTopicKey = keyof DebugTopics & string
+	type DebugTopicKeyNoWildcard = Exclude<DebugTopicKey, `${string}*${string}`>
+	type DebugTopicPatternLiteral = DebugTopicKey | `${DebugTopicKeyNoWildcard}:*` | '*'
+
+	export type DebugTopicPattern = LiteralUnion<DebugTopicPatternLiteral, string>
+
+	/**
+	 * Options for {@link Context.extend}.
+	 *
+	 * Keep this type intentionally simple: `Context` instances are dynamic and
+	 * type-level self-references can easily create circular aliases under `strict`.
+	 */
+	export type ExtendOpts = {
+		name?: string
+		config?: Context.Config
+	} & Record<string | number | symbol, unknown>
 
 	export interface Config {
 		name?: string
-		[key: string]: any
+		/**
+		 * Enable debug topics (pluxel convention).
+		 *
+		 * Values are `:`-separated category strings. Supported patterns:
+		 * - `pluxel:hmr:batch` → enables that exact category
+		 * - `pluxel:hmr:*` → enables the prefix category `["pluxel","hmr"]` (and thus its children)
+		 * - `*` → enables all debug topics (discouraged)
+		 *
+		 * Notes:
+		 * - Used by `@pluxel/runtime` to gate internal debug logs and to seed LogTape auto-config debug rules.
+		 * - Consumers can also pass these to `createPluxelLogtapeConfig({ debug })`.
+		 */
+		debug?: readonly DebugTopicPattern[]
+		[key: string]: unknown
 	}
 }
 

@@ -1,4 +1,4 @@
-import { ContainerBuilder, Newable } from '../../src/diod'
+import { ContainerBuilder, type Newable } from '../../src'
 
 const autoregisteredClasses: Newable<unknown>[] = []
 
@@ -16,8 +16,7 @@ const isNewable = (target: unknown): target is Newable<unknown> => {
  * @returns
  */
 export const RegisterService = (): ClassDecorator => {
-	// biome-ignore lint/complexity/noBannedTypes: <explanation>
-	return <TFunction extends Function>(target: TFunction): TFunction => {
+	return (target) => {
 		if (isNewable(target)) {
 			autoregisteredClasses.push(target)
 		} else {

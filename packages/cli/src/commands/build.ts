@@ -1,12 +1,13 @@
-import { configSourcePlugin, createImportTracker, importTypeFixerPlugin } from '@pluxel/rolldown'
+import {
+	type BuildRuntimeConfig,
+	cliTsdownOverlay,
+	createOptionalDependencyHook,
+	resolveBuildContext,
+	runWithTsdown,
+} from '@pluxel/build/cli'
 import { type ArgValues, define } from 'gunshi'
 import type { InlineConfig } from 'tsdown'
-import Macros from 'unplugin-macros/rolldown'
-import { resolveBuildContext } from '../build_impl/config'
-import { createOptionalDependencyHook } from '../build_impl/plugin-tracker'
-import { cliTsdownOverlay } from '../build_impl/tsdown-config'
-import { runWithTsdown } from '../build_impl/tsdown-runner'
-import type { BuildRuntimeConfig } from '../build_impl/types'
+import { createImportTracker } from '../rolldown'
 
 const buildCommandArgs = {
 	watch: {
@@ -57,12 +58,7 @@ export const buildCommand = define({
 			context: runtime,
 			onSuccess: pluginHook,
 			log: ctx.log,
-			extraConfig: mergeOverlayPlugins(cliTsdownOverlay, [
-				importTypeFixerPlugin(),
-				configSourcePlugin(),
-				Macros(),
-				importTracker.plugin,
-			]),
+			extraConfig: mergeOverlayPlugins(cliTsdownOverlay, [importTracker.plugin]),
 		})
 	},
 })

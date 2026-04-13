@@ -1,6 +1,6 @@
 [**DIOD v3.0.0**](../README.md) • **Docs**
 
-***
+---
 
 # Interface: WithScopeChange
 
@@ -17,7 +17,7 @@ within a [Container](Container.md).get request.
 
 `this`
 
-***
+---
 
 ### asSingleton()
 
@@ -29,7 +29,7 @@ Configure the service so that always gets the same, shared instance.
 
 `this`
 
-***
+---
 
 ### asTransient()
 

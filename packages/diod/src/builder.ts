@@ -2,17 +2,15 @@
 // Goals:
 // - Result-first core (no throw inside hot path)
 // - Thin throwing wrappers for fluent DX (register().use())
-// - Single dirty flag; simple, predictable invalidation
-// - Rebuild alias index on each build from fresh services metadata
+// - Per-service dirty set (incremental rebuild for metadata/validation)
+// - Incremental verify/dependents fast-path for small deltas (aliasPolicy='error')
 // - Idempotent unregister()
 
 import { createErr, createOk, isOk, type Result } from 'option-t/plain_result'
+import { computeAliasIndex, computeAliasIndexErrorIncremental } from './builder/alias-index'
+import { applyDependentsDelta, computeAffectedDependents } from './builder/dependents-delta'
 import { DiodContainer } from './container'
-import type {
-	Buildable,
-	ServiceData,
-	ServiceListMetadata,
-} from './internal-types'
+import type { Buildable, ServiceData } from './internal-types'
 import { DiodRegistration } from './registration'
 import type {
 	AliasConflictPolicy,
@@ -28,6 +26,7 @@ import type {
 import {
 	ServiceVerificationAggregateError,
 	type VerificationError,
+	validateServicesSubset,
 	verifyAndComputeDependents,
 } from './verifier'
 
@@ -48,27 +47,55 @@ export type RegistryError =
 /* ------------------------------- Builder Core ------------------------------ */
 
 export class ContainerBuilder {
-	protected readonly buildables: IBuildable = new Map()
+	/**
+	 * Underlying registry map.
+	 * - Default: plain Map
+	 * - Core may override (e.g. LeanMapTracker) to support draft/commit semantics.
+	 */
+	public buildables: IBuildable = new Map()
 
 	/** 构建期与惰性创建的 Builder_Singleton 实例缓存 */
 	public builderSingletons: Map<Identifier<unknown>, unknown> = new Map()
 
 	/* ---------------------------- simple cache line --------------------------- */
 	private _dirty = true
+	private readonly _dirtyIds = new Set<Identifier<unknown>>()
+	private _forceFullRebuild = true
 	private _lastAutowire: boolean | undefined
 	private _lastAliasPolicy: AliasConflictPolicy | undefined
 	private _servicesCache?: Map<Identifier<unknown>, ServiceData<unknown>>
 	private _dependentsCache?: Map<Identifier<unknown>, Set<Identifier<unknown>>>
 	private _aliasIndexCache?: Map<AliasKey, Identifier<unknown>>
 	private _errorsCache?: ServiceVerificationAggregateError
+	private _lastBuildOk = false
 	private _frozen = false
 
-	private markDirty(): void {
+	private static freezeMeta(data: ServiceData<unknown>): ServiceData<unknown> {
+		Object.freeze(data.tags)
+		Object.freeze(data.aliases)
+		Object.freeze(data.dependencies)
+		return Object.freeze(data)
+	}
+
+	private markDirty(id?: Identifier<unknown>): void {
 		this._dirty = true
-		this._servicesCache = undefined
-		this._dependentsCache = undefined
-		this._aliasIndexCache = undefined
+		if (id) {
+			this._forceFullRebuild = false
+			this._dirtyIds.add(id)
+		} else {
+			this._dirtyIds.clear()
+			this._forceFullRebuild = true
+			// unknown/bulk changes: baseline caches may be invalid
+			this._servicesCache = undefined
+			this._dependentsCache = undefined
+			this._aliasIndexCache = undefined
+		}
 		this._errorsCache = undefined
+	}
+
+	/** 外部 bulk 修改（如 tracker.reset）后调用，保证缓存不会“幽灵命中”。 */
+	public invalidateAll(): void {
+		this.markDirty()
 	}
 
 	/** 可选：构建成功后对外锁表（避免误改） */
@@ -78,28 +105,26 @@ export class ContainerBuilder {
 
 	/* ------------------------------ Result 内核 ------------------------------ */
 
-	private _tryRegisterCore<T>(
-		identifier: Identifier<T>,
-	): Result<Registration<T>, RegistryError> {
+	private _tryRegisterCore<T>(identifier: Identifier<T>): Result<Registration<T>, RegistryError> {
 		if (this._frozen) return createErr({ kind: 'Frozen' })
 		if (this.buildables.has(identifier)) {
 			return createErr({ kind: 'AlreadyRegistered', id: identifier })
 		}
-		const buildable = DiodRegistration.createBuildable(identifier, () => {
-			this.markDirty() // any config change → dirty
-		})
+		const buildable = DiodRegistration.createBuildable(identifier, (id) => this.markDirty(id))
 		this.buildables.set(identifier, buildable)
-		this.markDirty()
+		this._forceFullRebuild = false
+		this.markDirty(identifier as Identifier<unknown>)
 		return createOk(buildable.instance as Registration<T>)
 	}
 
-	private _tryUnregisterCore<T>(
-		identifier: Identifier<T>,
-	): Result<boolean, RegistryError> {
+	private _tryUnregisterCore<T>(identifier: Identifier<T>): Result<boolean, RegistryError> {
 		if (this._frozen) return createErr({ kind: 'Frozen' })
 		const existed = this.buildables.delete(identifier)
 		this.builderSingletons.delete(identifier)
-		if (existed) this.markDirty()
+		if (existed) {
+			this._forceFullRebuild = false
+			this.markDirty(identifier as Identifier<unknown>)
+		}
 		// 幂等：未注册不算错误
 		return createOk(existed)
 	}
@@ -111,15 +136,12 @@ export class ContainerBuilder {
 		const r = this._tryRegisterCore(identifier)
 		if (isOk(r)) return r.val
 		if (r.err.kind === 'Frozen') throw new Error('Builder is frozen')
-		if (r.err.kind === 'AlreadyRegistered')
-			throw new Error('Already registered')
+		if (r.err.kind === 'AlreadyRegistered') throw new Error('Already registered')
 		throw new Error('Unknown registration error')
 	}
 
 	/** 安全路径：无异常。 */
-	public tryRegister<T>(
-		identifier: Identifier<T>,
-	): Result<Registration<T>, RegistryError> {
+	public tryRegister<T>(identifier: Identifier<T>): Result<Registration<T>, RegistryError> {
 		return this._tryRegisterCore(identifier)
 	}
 
@@ -130,9 +152,7 @@ export class ContainerBuilder {
 		throw new Error('Builder is frozen')
 	}
 
-	public tryUnregister<T>(
-		identifier: Identifier<T>,
-	): Result<boolean, RegistryError> {
+	public tryUnregister<T>(identifier: Identifier<T>): Result<boolean, RegistryError> {
 		return this._tryUnregisterCore(identifier)
 	}
 
@@ -148,10 +168,7 @@ export class ContainerBuilder {
 
 	public tryRegisterAndUse<T>(
 		newable: Newable<T>,
-	): Result<
-		ConfigurableRegistration & WithScopeChange & WithDependencies,
-		RegistryError
-	> {
+	): Result<ConfigurableRegistration & WithScopeChange & WithDependencies, RegistryError> {
 		const r = this._tryRegisterCore(newable)
 		if (!isOk(r)) return r
 		return createOk(r.val.use(newable))
@@ -165,73 +182,9 @@ export class ContainerBuilder {
 	}
 
 	/* --------------------------- Build & Verification -------------------------- */
+	// helper logic extracted to ./builder/*
 
-	private computeAliasIndex(
-		services: ServiceMap,
-		aliasPolicy: AliasConflictPolicy,
-	): {
-		aliasIndex: Map<AliasKey, Identifier<unknown>>
-		errors: VerificationError[]
-	} {
-		const aliasIndex = new Map<AliasKey, Identifier<unknown>>()
-		const errors: VerificationError[] = []
-
-		if (aliasPolicy === 'firstWins') {
-			for (const [id, meta] of services) {
-				const aliases = meta.aliases as readonly AliasKey[] | undefined
-				if (!aliases) continue
-				for (let i = 0; i < aliases.length; i++) {
-					const a = aliases[i]!
-					if (!aliasIndex.has(a)) aliasIndex.set(a, id)
-				}
-			}
-			return { aliasIndex, errors }
-		}
-
-		if (aliasPolicy === 'lastWins') {
-			for (const [id, meta] of services) {
-				const aliases = meta.aliases as readonly AliasKey[] | undefined
-				if (!aliases) continue
-				for (let i = 0; i < aliases.length; i++) {
-					aliasIndex.set(aliases[i]!, id)
-				}
-			}
-			return { aliasIndex, errors }
-		}
-
-		// aliasPolicy === 'error'
-		const seen = new Map<AliasKey, Identifier<unknown>>()
-		const conflicts = new Map<AliasKey, Identifier<unknown>[]>()
-
-		for (const [id, meta] of services) {
-			const aliases = meta.aliases as readonly AliasKey[] | undefined
-			if (!aliases) continue
-			for (let i = 0; i < aliases.length; i++) {
-				const a = aliases[i]!
-				const prev = seen.get(a)
-				if (prev === undefined) {
-					seen.set(a, id)
-				} else if (prev !== id) {
-					const existed = conflicts.get(a)
-					if (existed) existed.push(id)
-					else conflicts.set(a, [prev, id])
-				}
-			}
-		}
-
-		for (const [a, id] of seen) aliasIndex.set(a, id)
-		if (conflicts.size) {
-			for (const [alias, ids] of conflicts) {
-				errors.push({ kind: 'AliasConflict', alias, ids })
-			}
-		}
-		return { aliasIndex, errors }
-	}
-
-	public buildServices({
-		autowire = true,
-		aliasPolicy = 'error',
-	}: BuildOptions = {}): Result<
+	public buildServices({ autowire = true, aliasPolicy = 'error' }: BuildOptions = {}): Result<
 		{
 			services: ServiceMap
 			dependents: Map<Identifier<unknown>, Set<Identifier<unknown>>>
@@ -254,47 +207,147 @@ export class ContainerBuilder {
 			})
 		}
 
-		const built = this.buildMetadataMap(autowire)
-		this._servicesCache = built.services
+		const canIncrementalServices =
+			!this._forceFullRebuild &&
+			this._servicesCache &&
+			this._lastAutowire === autowire &&
+			this._lastAliasPolicy === aliasPolicy &&
+			this._dirtyIds.size > 0
+
+		const prevServices = this._servicesCache
+		const prevAliasIndex = this._aliasIndexCache
+		const prevDependents = this._dependentsCache
+
+		const services =
+			canIncrementalServices && prevServices
+				? new Map(prevServices)
+				: new Map<Identifier<unknown>, ServiceData<unknown>>()
+
+		let builtErrors: VerificationError[] | undefined
+
+		if (!canIncrementalServices || !prevServices) {
+			// full rebuild
+			for (const [identifier, buildable] of this.buildables) {
+				try {
+					const data = ContainerBuilder.freezeMeta(
+						buildable.build({ autowire }) as ServiceData<unknown>,
+					)
+					services.set(identifier, data)
+				} catch (e) {
+					if (!builtErrors) builtErrors = []
+					builtErrors.push({
+						kind: 'InvalidRegistration',
+						id: identifier,
+						message: e instanceof Error ? e.message : String(e),
+					})
+				}
+			}
+		} else {
+			// incremental rebuild: only dirty ids
+			for (const id of this._dirtyIds) {
+				const buildable = this.buildables.get(id)
+				if (!buildable) {
+					services.delete(id)
+					continue
+				}
+				try {
+					const data = ContainerBuilder.freezeMeta(
+						buildable.build({ autowire }) as ServiceData<unknown>,
+					)
+					services.set(id, data)
+				} catch (e) {
+					if (!builtErrors) builtErrors = []
+					builtErrors.push({
+						kind: 'InvalidRegistration',
+						id,
+						message: e instanceof Error ? e.message : String(e),
+					})
+				}
+			}
+		}
+
+		const built = { services, errors: builtErrors ?? [] }
+
+		this._servicesCache = services
 		this._lastAutowire = autowire
 		this._lastAliasPolicy = aliasPolicy
 
-		const alias = this.computeAliasIndex(built.services, aliasPolicy)
+		const canIncrementalAlias =
+			aliasPolicy === 'error' &&
+			canIncrementalServices &&
+			this._lastBuildOk &&
+			prevAliasIndex &&
+			prevServices
+
+		const alias = canIncrementalAlias
+			? computeAliasIndexErrorIncremental(prevAliasIndex, prevServices, services, this._dirtyIds)
+			: computeAliasIndex(built.services, aliasPolicy)
+
 		this._aliasIndexCache = alias.aliasIndex
 
-		const { dependentsMap, errors } = verifyAndComputeDependents(
-			built.services as ServiceListMetadata,
-			alias.aliasIndex,
-		)
-		const allErrors =
-			built.errors.length || errors.length || alias.errors.length
-				? [...built.errors, ...errors, ...alias.errors]
-				: []
+		const canIncrementalVerify =
+			aliasPolicy === 'error' &&
+			canIncrementalAlias &&
+			prevDependents &&
+			prevServices &&
+			prevAliasIndex &&
+			this._lastBuildOk
+
+		const incremental =
+			canIncrementalVerify && prevDependents
+				? (() => {
+						const affected = computeAffectedDependents(this._dirtyIds, prevDependents)
+						const errs = validateServicesSubset(services, alias.aliasIndex, affected)
+						return { affected, errors: errs }
+					})()
+				: undefined
+
+		const { dependentsMap, errors } = incremental
+			? { dependentsMap: prevDependents, errors: incremental.errors }
+			: verifyAndComputeDependents(built.services, alias.aliasIndex)
+
+		const allErrors = [...built.errors, ...errors, ...alias.errors]
 
 		if (allErrors.length > 0) {
 			const agg = new ServiceVerificationAggregateError(allErrors)
 			this._errorsCache = agg
+			this._lastBuildOk = false
 			this._dependentsCache = new Map()
 			this._aliasIndexCache = alias.aliasIndex
 			this._dirty = false
+			this._dirtyIds.clear()
+			this._forceFullRebuild = false
 			return createErr(agg)
 		}
 
 		this._errorsCache = undefined
-		this._dependentsCache = dependentsMap
+		this._lastBuildOk = true
+
+		if (incremental && prevDependents && prevServices && prevAliasIndex) {
+			this._dependentsCache = applyDependentsDelta(
+				prevDependents,
+				prevServices,
+				prevAliasIndex,
+				services,
+				alias.aliasIndex,
+				incremental.affected,
+			)
+		} else {
+			this._dependentsCache = dependentsMap
+		}
+
 		this._dirty = false
+		this._dirtyIds.clear()
+		this._forceFullRebuild = false
 		return createOk({
 			services: built.services,
-			dependents: dependentsMap,
+			dependents: this._dependentsCache,
 			aliasIndex: alias.aliasIndex,
 		})
 	}
 
 	/** 基于校验结果构建容器 + 别名索引 */
-	public build({
-		autowire = true,
-		aliasPolicy = 'error',
-	}: BuildOptions = {}): Result<
+	public build({ autowire = true, aliasPolicy = 'error' }: BuildOptions = {}): Result<
 		DiodContainer,
 		ServiceVerificationAggregateError
 	> {
@@ -306,35 +359,8 @@ export class ContainerBuilder {
 			services,
 			dependents,
 			this.builderSingletons,
-			aliasIndex as any,
+			aliasIndex as unknown as ReadonlyMap<AliasKey, Identifier<unknown>>,
 		)
 		return createOk(container)
-	}
-
-	/* ------------------------------- Internals -------------------------------- */
-
-	private buildMetadataMap(autowire: boolean): {
-		services: Map<Identifier<unknown>, ServiceData<unknown>>
-		errors: VerificationError[]
-	} {
-		const services = new Map<Identifier<unknown>, ServiceData<unknown>>()
-		let errors: VerificationError[] | undefined
-
-		for (const [identifier, buildable] of this.buildables) {
-			try {
-				const data = buildable.build({ autowire })
-				const deps = data.dependencies
-				if (Array.isArray(deps)) Object.freeze(deps)
-				services.set(identifier, data)
-			} catch (e) {
-				if (!errors) errors = []
-				errors.push({
-					kind: 'InvalidRegistration',
-					id: identifier,
-					message: e instanceof Error ? e.message : String(e),
-				})
-			}
-		}
-		return { services, errors: errors ?? [] }
 	}
 }

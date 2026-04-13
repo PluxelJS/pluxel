@@ -20,7 +20,7 @@ on:
         default: false
 
 env:
-  BENCH_TOLERANCE: "5"
+  BENCH_TOLERANCE: '5'
 
 concurrency:
   group: core-bench-${{ github.ref }}
@@ -99,7 +99,6 @@ jobs:
             packages/core/benchmarks/plugin-lifecycle.json
             packages/core/benchmarks/plugin-lifecycle.baseline.json
           if-no-files-found: error
-
 
       - name: Comment PR with results
         if: github.event_name == 'pull_request'

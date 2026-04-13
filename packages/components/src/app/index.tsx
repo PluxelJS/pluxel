@@ -1,9 +1,10 @@
 import { localStorageColorSchemeManager, MantineProvider } from '@mantine/core'
 import { type RouterHistory, RouterProvider } from '@tanstack/react-router'
 import { useState } from 'react'
-import { HmrWebClientProvider } from './rpc'
+import { getRuntimeTransportClient, RuntimeTransportClientProvider } from '../runtime'
 import './bootstrap'
-import { useDynamicTheme } from '../theme'
+import '../styles/index.scss'
+import { appCssVariablesResolver, useAppTheme } from '../theme'
 import { createAppRouter } from './router'
 
 export interface AppProps {
@@ -12,16 +13,19 @@ export interface AppProps {
 
 export function App({ history }: AppProps = {}) {
 	const [router] = useState(() => createAppRouter({ history }))
-	const { theme } = useDynamicTheme()
+	const [transportClient] = useState(() => getRuntimeTransportClient())
+	const { theme } = useAppTheme()
 	return (
 		<MantineProvider
 			theme={theme}
 			colorSchemeManager={colorSchemeManager}
+			defaultColorScheme="auto"
 			withCssVariables
+			cssVariablesResolver={appCssVariablesResolver}
 		>
-			<HmrWebClientProvider>
+			<RuntimeTransportClientProvider client={transportClient}>
 				<RouterProvider router={router} />
-			</HmrWebClientProvider>
+			</RuntimeTransportClientProvider>
 		</MantineProvider>
 	)
 }

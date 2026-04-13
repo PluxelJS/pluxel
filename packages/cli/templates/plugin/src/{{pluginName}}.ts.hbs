@@ -1,0 +1,22 @@
+import { BasePlugin, Plugin } from '@pluxel/runtime'
+import { v } from '@pluxel/runtime/config'
+
+const {{className}}Config = v.object({
+	enabled: v.optional(v.boolean(), true),
+})
+
+@Plugin({ name: '{{className}}' })
+export class {{className}} extends BasePlugin {
+	config = this.configs.use({{className}}Config)
+
+	override init(): void {
+		this.ctx.logger.info('{{className}} ready')
+	}
+
+	override stop(): void {
+		this.ctx.logger.info('{{className}} stopped')
+	}
+}
+
+// oxlint-disable-next-line import/no-default-export -- plugin ctors are intentionally default-exported for ergonomic host imports.
+export default {{className}}

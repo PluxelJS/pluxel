@@ -4,40 +4,57 @@
 
 import { createReactClient } from '@gqty/react'
 import { Cache, createClient, defaultResponseHandler, type QueryFetcher } from 'gqty'
+import { getRuntimeTransportClient } from '../../runtime'
 import { type GeneratedSchema, generatedSchema, scalarsEnumsHash } from './schema.generated'
 
-const queryFetcher: QueryFetcher = async ({ query, variables, operationName }, fetchOptions) => {
-	// 浏览器走相对路径；SSR 端需要绝对 URL
-	const endpoint = '/api/graphql'
-	const response = await fetch(endpoint, {
-		method: 'POST',
-		headers: {
-			'Content-Type': 'application/json',
-		},
-		body: JSON.stringify({
-			query,
-			variables,
-			operationName,
-		}),
-		mode: 'cors',
-		...fetchOptions,
-	})
+const transport = getRuntimeTransportClient()
 
-	if (response.status === 401 || response.status === 403) {
-		try {
-			const cloned = response.clone()
-			const payload = await cloned.json()
-			const redirectPath = payload?.redirectPath ?? payload?.extensions?.redirectPath
-			if (redirectPath && typeof window !== 'undefined') {
-				window.location.assign(redirectPath)
-			}
-			throw new Error('Access denied')
-		} catch (error) {
-			throw error instanceof Error ? error : new Error('Access denied')
-		}
+const inflightGraphql = new Map<string, Promise<any>>()
+
+function graphqlKey(input: {
+	query?: unknown
+	variables?: unknown
+	operationName?: unknown
+}): string {
+	try {
+		return JSON.stringify(input) ?? ''
+	} catch {
+		// Avoid throwing from key generation; fallback to query string only.
+		return String((input as any)?.query ?? '')
 	}
+}
 
-	return await defaultResponseHandler(response)
+const queryFetcher: QueryFetcher = async ({ query, variables, operationName }, fetchOptions) => {
+	const endpoint = transport.links.graphql
+
+	const key = graphqlKey({ query, variables, operationName })
+	const existing = inflightGraphql.get(key)
+	if (existing) return existing
+
+	const task = (async () => {
+		const response = await transport.fetch(endpoint, {
+			method: 'POST',
+			headers: {
+				'Content-Type': 'application/json',
+			},
+			body: JSON.stringify({
+				query,
+				variables,
+				operationName,
+			}),
+			mode: 'cors',
+			...fetchOptions,
+		})
+
+		return await defaultResponseHandler(response)
+	})()
+
+	inflightGraphql.set(key, task)
+	try {
+		return await task
+	} finally {
+		inflightGraphql.delete(key)
+	}
 }
 
 const cache = new Cache(

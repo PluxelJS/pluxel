@@ -1,9 +1,17 @@
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import type { Bench, TaskResult, TaskResultRuntimeInfo, TaskResultTimestampProviderInfo, TaskResultWithStatistics } from 'tinybench'
+import type {
+	Bench,
+	TaskResult,
+	TaskResultRuntimeInfo,
+	TaskResultTimestampProviderInfo,
+	TaskResultWithStatistics,
+} from 'tinybench'
 
-type CompletedResult = TaskResultWithStatistics & TaskResultRuntimeInfo & TaskResultTimestampProviderInfo
+type CompletedResult = TaskResultWithStatistics &
+	TaskResultRuntimeInfo &
+	TaskResultTimestampProviderInfo
 const assertCompleted = (
 	taskName: string,
 	result: TaskResult & TaskResultRuntimeInfo & TaskResultTimestampProviderInfo,
@@ -18,7 +26,8 @@ const round = (value: number, digits = 3) =>
 	Number.isFinite(value) ? Number(value.toFixed(digits)) : value
 const pct = (value: number, digits = 2) =>
 	Number.isFinite(value) ? Number(value.toFixed(digits)) : value
-const safe = (value: number | undefined | null, digits = 3) => (value == null ? null : round(value, digits))
+const safe = (value: number | undefined | null, digits = 3) =>
+	value == null ? null : round(value, digits)
 
 const ratioPct = (current: number, baseline: number) =>
 	baseline === 0 ? null : ((current - baseline) / baseline) * 100
@@ -140,7 +149,11 @@ export type BaselineReport = { tasks: BenchRow[]; recordedAt?: string }
 
 export const resolveBaselinePath = (input: string): string | null => {
 	if (path.isAbsolute(input)) return input
-	const candidates = [input, path.resolve(process.cwd(), input), path.resolve(process.cwd(), '..', '..', input)]
+	const candidates = [
+		input,
+		path.resolve(process.cwd(), input),
+		path.resolve(process.cwd(), '..', '..', input),
+	]
 	for (const candidate of candidates) {
 		if (existsSync(candidate)) return candidate
 	}
@@ -198,7 +211,7 @@ export function buildComparison(
 	})
 
 	for (const base of baselineReport?.tasks ?? []) {
-		if (!rows.find((row) => row.name === base.name)) {
+		if (!rows.some((row) => row.name === base.name)) {
 			comparison.push({
 				name: base.name,
 				baselineOpsMean: base.opsMean ?? null,
@@ -272,20 +285,22 @@ export function toMainReport(input: {
 			latencyP99Ms: row.latencyP99Ms,
 			runs: row.runs,
 		})),
-		comparison: input.comparison.length
-			? input.comparison.map((item) => ({
-					name: item.name,
-					baselineOpsMean: item.baselineOpsMean,
-					opsMean: item.opsMean,
-					opsDeltaPct: item.opsDeltaPct,
-					baselineLatencyMeanMs: item.baselineLatencyMeanMs,
-					latencyMeanMs: item.latencyMeanMs,
-					latencyDeltaPct: item.latencyDeltaPct,
-					runs: item.runs,
-					status: item.status,
-				}))
-			: undefined,
-		baseline: input.baselineRecordedAt != null ? { recordedAt: input.baselineRecordedAt } : undefined,
+		comparison:
+			input.comparison.length > 0
+				? input.comparison.map((item) => ({
+						name: item.name,
+						baselineOpsMean: item.baselineOpsMean,
+						opsMean: item.opsMean,
+						opsDeltaPct: item.opsDeltaPct,
+						baselineLatencyMeanMs: item.baselineLatencyMeanMs,
+						latencyMeanMs: item.latencyMeanMs,
+						latencyDeltaPct: item.latencyDeltaPct,
+						runs: item.runs,
+						status: item.status,
+					}))
+				: undefined,
+		baseline:
+			input.baselineRecordedAt != null ? { recordedAt: input.baselineRecordedAt } : undefined,
 	}
 }
 
@@ -361,7 +376,7 @@ export function renderMarkdown(input: {
 				)} | ${statusLabel(item.status)} | ${item.runs != null ? item.runs.toLocaleString() : '—'} |`,
 		),
 		'',
-		...(regressions.length
+		...(regressions.length > 0
 			? [
 					'> ⚠️ Potential regressions detected beyond tolerance:',
 					...regressions.map(
@@ -416,9 +431,15 @@ export function writeReports(input: {
 	writeBaseline: boolean
 	baselinePath: URL
 }) {
-	writeFileSync(new URL('plugin-lifecycle.json', input.benchmarksDir), JSON.stringify(input.mainReport, null, 2))
+	writeFileSync(
+		new URL('plugin-lifecycle.json', input.benchmarksDir),
+		JSON.stringify(input.mainReport, null, 2),
+	)
 	writeFileSync(new URL('plugin-lifecycle.md', input.benchmarksDir), input.markdown, 'utf8')
-	writeFileSync(new URL('plugin-lifecycle-diff.json', input.benchmarksDir), JSON.stringify(input.diffReport, null, 2))
+	writeFileSync(
+		new URL('plugin-lifecycle-diff.json', input.benchmarksDir),
+		JSON.stringify(input.diffReport, null, 2),
+	)
 
 	if (input.writeBaseline) {
 		const baseline = {

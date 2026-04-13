@@ -1,21 +1,48 @@
 {
 	"$schema": "https://turborepo.com/schema.json",
+	"globalDependencies": [
+		// Many packages extend root TS configs; changing them must invalidate caches.
+		"tsconfig*.json",
+		// Workspace-level Vitest entry (used by `pnpm exec vitest` at repo root).
+		"vitest.config.ts",
+		"pnpm-workspace.yaml",
+	],
 	"tasks": {
 		"build": {
 			"dependsOn": ["^build"],
-			"outputs": ["dist/**"]
+			"outputs": ["dist/**", "public/**"],
+		},
+		"@pluxel/test#build": {
+			// `@pluxel/test` is a dev-only helper package. It compiles against the
+			// source-export surface of core/runtime and must not pull their build
+			// tasks into Turbo's topological graph, otherwise internal packages that
+			// use `@pluxel/test` in devDependencies create a false build cycle.
+			"dependsOn": [],
+			"outputs": ["dist/**"],
+		},
+		"build:lib": {
+			"dependsOn": ["^build"],
+			"outputs": ["dist/**"],
+		},
+		"build:web": {
+			"dependsOn": [],
+			"outputs": ["public/**"],
+		},
+		"build:plugin": {
+			"dependsOn": ["^build"],
+			"outputs": ["dist/**", "public/**"],
 		},
 		"test": {
 			"dependsOn": ["build"],
-			"outputs": ["dist/**"]
+			"outputs": [],
 		},
 		"web": {
 			"outputs": ["public/**"],
-			"dependsOn": []
+			"dependsOn": [],
 		},
 		"dev": {
 			"cache": false,
-			"persistent": true
-		}
-	}
+			"persistent": true,
+		},
+	},
 }

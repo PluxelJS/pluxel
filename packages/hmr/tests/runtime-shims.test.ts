@@ -1,14 +1,14 @@
-import { describe, expect, it } from 'bun:test'
-import { RuntimeShimRegistry } from '../src/services/hmr/runtime-shims'
+import { describe, expect, it } from 'vitest'
+import { RuntimeShimRegistry, SHIM_REFLECT_METADATA } from '../src/dev/hmr/runtime-shims'
 
 describe('runtime shims', () => {
-	it('shims reflect-metadata (exact + prefix) when enabled', () => {
-		const reg = new RuntimeShimRegistry({ shimReflectMetadata: true })
+	it('shims reflect-metadata (exact + prefix)', () => {
+		const reg = new RuntimeShimRegistry({ shims: SHIM_REFLECT_METADATA })
 
 		const r1 = reg.resolveId('reflect-metadata')
 		expect(r1).toBeTruthy()
-		expect(r1?.id).toStartWith('\0pluxel:hmr:shim:')
-		expect(r1?.moduleSideEffects).toBeFalse()
+		expect(r1!.id.startsWith('\0pluxel:hmr:shim:')).toBe(true)
+		expect(r1!.moduleSideEffects).toBe(false)
 		expect(reg.load(r1!.id)).toBe('export {}')
 
 		const r2 = reg.resolveId('reflect-metadata/Reflect')
@@ -25,12 +25,12 @@ describe('runtime shims', () => {
 		})
 
 		const foo = reg.resolveId('foo')
-		expect(foo?.id).toStartWith('\0pluxel:hmr:shim:')
+		expect(foo!.id.startsWith('\0pluxel:hmr:shim:')).toBe(true)
 		expect(reg.load(foo!.id)).toBe('export const x = 1')
 		expect(reg.require('foo')).toEqual({ x: 1 })
 
 		const bar = reg.resolveId('bar/baz')
-		expect(bar?.id).toStartWith('\0pluxel:hmr:shim:')
+		expect(bar!.id.startsWith('\0pluxel:hmr:shim:')).toBe(true)
 		expect(reg.load(bar!.id)).toBe('export {}')
 		expect(reg.require('bar/baz')).toEqual({})
 

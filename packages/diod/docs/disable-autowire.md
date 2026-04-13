@@ -29,10 +29,7 @@ import { ContainerBuilder } from 'diod'
 const builder = new ContainerBuilder()
 builder.registerAndUse(ServiceOne).withDependencies([ServiceTwo, ServiceThree])
 builder.register(ServiceTwo).use(ImplementationServiceTwo)
-builder
-  .register(ServiceThree)
-  .use(ImplementationServiceThree)
-  .withDependencies([ServiceFour])
+builder.register(ServiceThree).use(ImplementationServiceThree).withDependencies([ServiceFour])
 builder.registerAndUse(ServiceFour)
 export const container = builder.build({ autowire: false }) // Note the autowire: false build option
 ```

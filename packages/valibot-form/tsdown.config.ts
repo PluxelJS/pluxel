@@ -4,6 +4,20 @@ export default defineConfig({
 	exports: {
 		devExports: '@pluxel/source',
 	},
+	deps: {
+		neverBundle: [
+			'react',
+			'react-dom',
+			'@tanstack/react-form',
+			'@mantine/core',
+			'@mantine/hooks',
+			'@dnd-kit/core',
+			'@dnd-kit/modifiers',
+			'@dnd-kit/sortable',
+			'@dnd-kit/utilities',
+			'@tabler/icons-react',
+		],
+	},
 	entry: {
 		index: './src/index.ts',
 		web: './src/web/index.ts',
@@ -11,6 +25,7 @@ export default defineConfig({
 	alias: {},
 	dts: {
 		sourcemap: true,
+		eager: true,
 	},
 	format: ['esm'],
 	sourcemap: true,
@@ -19,15 +34,4 @@ export default defineConfig({
 	minify: false,
 	treeshake: true,
 	plugins: [],
-	external: [
-		'react',
-		'react-dom',
-		'@tanstack/react-form',
-		'@mantine/core',
-		'@dnd-kit/core',
-		'@dnd-kit/modifiers',
-		'@dnd-kit/sortable',
-		'@dnd-kit/utilities',
-		'@tabler/icons-react',
-	],
 })

@@ -14,32 +14,32 @@ import { ContainerBuilder, Newable } from 'diod'
 const autoregisteredClasses: Newable<unknown>[] = []
 
 const isNewable = (target: unknown): target is Newable<unknown> => {
-  if (typeof target !== 'function') {
-    return false
-  }
+	if (typeof target !== 'function') {
+		return false
+	}
 
-  const prototype = target.prototype
-  return !!prototype && !!prototype.constructor
+	const prototype = target.prototype
+	return !!prototype && !!prototype.constructor
 }
 
 export const RegisterService = (): ClassDecorator => {
-  return <TFunction extends Function>(target: TFunction): TFunction => {
-    if (isNewable(target)) {
-      autoregisteredClasses.push(target)
-    } else {
-      throw new Error('Abstract classes cannot be auto registered')
-    }
+	return <TFunction extends Function>(target: TFunction): TFunction => {
+		if (isNewable(target)) {
+			autoregisteredClasses.push(target)
+		} else {
+			throw new Error('Abstract classes cannot be auto registered')
+		}
 
-    return target
-  }
+		return target
+	}
 }
 
 export const autoregister = (builder: ContainerBuilder): ContainerBuilder => {
-  for (const service of autoregisteredClasses) {
-    builder.registerAndUse(service)
-  }
+	for (const service of autoregisteredClasses) {
+		builder.registerAndUse(service)
+	}
 
-  return builder
+	return builder
 }
 ```
 

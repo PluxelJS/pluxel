@@ -5,18 +5,33 @@ import {
 	type BuiltinExtensionKind,
 	type CompiledExtensionModule,
 	type ExtensionMeta,
+	type ExtensionManifest,
+	type ExtensionModuleState,
+	type InteractionSessionDef,
 	ExtensionErrorBoundary,
 	extensionRegistry,
-	initVendors,
-	loadExtensionModule,
-	unloadExtensionModule,
+	getPluginUiSessionComponent,
+	loadPluginUiModule,
+	unloadPluginUiModule,
 } from '../extension'
 import { fetchExtensionManifest } from '../extension/api/manifest'
 import { builtinComponents } from '../extension/builtin'
 import { extLog } from '../extension/debug'
-import { useQuery } from './gqty'
-import { subscribePluginStatusEvents } from './plugins/statusEvents'
-import { useSseClient } from './rpc'
+import { loadFederatedExtensionModule } from '../extension/federationRuntime'
+import { InteractionSessionHost } from '../extension/session/InteractionSessionHost'
+import {
+	clearExtensionManifestDiagnostics,
+	getExtensionManifestDiagnostics,
+	getExtensionModuleStates,
+	removeExtensionModuleState,
+	replaceExtensionModuleStates,
+	replaceExtensionManifestDiagnostics,
+	setExtensionManifestSyncHandler,
+	upsertExtensionModuleState,
+} from '../extension/internal/runtime-state'
+import { InlineNotice } from '../components'
+import { usePluginOverview } from './plugins/pluginOverviewStore'
+import { useRuntimeTransportClient } from '../runtime'
 
 interface ExtensionLoaderProps {
 	pollInterval?: number
@@ -36,29 +51,161 @@ interface LoadedPluginModule extends CompiledExtensionModule {
 	inflight?: Promise<void>
 }
 
+interface CachedRegistration {
+	sig: string
+	cleanup: () => void
+}
+
+const FAST_SYNC_POLL_MS = 1_000
+const CONNECTED_RECONCILE_POLL_MS = 30_000
+const POLL_URGENCY_WINDOW_MS = 15_000
+
 const loaderState = {
 	manifestVersion: 0,
 	manifestSignature: '',
 	loading: false,
 	pendingForce: false,
 	moduleCache: new Map<string, LoadedPluginModule>(),
-	builtinCache: new Map<string, { sig: string; cleanup: () => void }>(),
+	builtinCache: new Map<string, CachedRegistration>(),
+	sessionCache: new Map<string, CachedRegistration>(),
 	manifestBackoff: null as { at: number; backoffMs: number } | null,
-	unloadTimers: new Map<string, number>(),
+	unloadTimers: new Map<string, ReturnType<typeof setTimeout>>(),
+	sseConnected: false,
+	pollUrgentUntil: 0,
 }
 
 const DEFAULT_UNLOAD_DELAY_MS = 8_000
+
+function getSerializableSignature(value: unknown, fallback: string): string {
+	try {
+		return JSON.stringify(value)
+	} catch {
+		return fallback
+	}
+}
+
+function getCachedRegistrationSignature(cache: Map<string, CachedRegistration>): string {
+	return Array.from(cache.entries())
+		.map(([key, value]) => `${key}:${value.sig}`)
+		.sort()
+		.join('|')
+}
+
+function getModuleStatesSignature(states: readonly ExtensionModuleState[]): string {
+	return states
+		.map((state) =>
+			[
+				state.pluginName,
+				state.state,
+				state.updatedAt,
+				state.sourceHash ?? '',
+				state.compiledAt ?? '',
+				state.message ?? '',
+			].join(':'),
+		)
+		.sort()
+		.join('|')
+}
+
+function getManifestDiagnosticsSignature(
+	snapshot: Pick<ExtensionManifest, 'interactions' | 'offers' | 'surfaces' | 'sessions'>,
+): string {
+	const interactionsSig = snapshot.interactions
+		.map((item) =>
+			[
+				item.targetPlugin ?? '',
+				item.surface ?? '',
+				item.point,
+				item.providerPlugin ?? '',
+				item.offerId,
+				item.state,
+				item.reason ?? '',
+			].join(':'),
+		)
+		.sort()
+		.join('|')
+	const offersSig = snapshot.offers
+		.map((item) => [item.pluginName, item.point, item.id, item.renderKey].join(':'))
+		.sort()
+		.join('|')
+	const surfacesSig = snapshot.surfaces
+		.map((item) => [item.pluginName, item.point, item.id, item.required ? '1' : '0'].join(':'))
+		.sort()
+		.join('|')
+	const sessionsSig = snapshot.sessions
+		.map((item) => [item.pluginName, item.providerPluginName, item.point, item.id].join(':'))
+		.sort()
+		.join('|')
+	return `${interactionsSig}||offers:${offersSig}||surfaces:${surfacesSig}||sessions:${sessionsSig}`
+}
+
+function getManifestPayloadSignature(
+	payload: Pick<
+		ExtensionManifest,
+		'modules' | 'builtins' | 'sessions' | 'states' | 'interactions' | 'offers' | 'surfaces'
+	>,
+): string {
+	const modulesSig = payload.modules
+		.map((module) => `${module.pluginName}:${module.sourceHash}`)
+		.sort()
+		.join('|')
+	const builtinsSig = payload.builtins
+		.map((builtin) =>
+			getSerializableSignature(
+				builtin,
+				[
+					(builtin as any)?.kind ?? '',
+					(builtin as any)?.pluginName ?? '',
+					(builtin as any)?.point ?? '',
+					(builtin as any)?.id ?? '',
+				].join(':'),
+			),
+		)
+		.sort()
+		.join('|')
+	const sessionsSig = payload.sessions
+		.map((session) =>
+			getSerializableSignature(
+				session,
+				`session:${session.pluginName ?? ''}:${session.point ?? ''}:${session.id ?? ''}`,
+			),
+		)
+		.sort()
+		.join('|')
+	const statesSig = getModuleStatesSignature(payload.states)
+	const diagnosticsSig = getManifestDiagnosticsSignature(payload)
+	return `${modulesSig}||builtins:${builtinsSig}||sessions:${sessionsSig}||states:${statesSig}||diag:${diagnosticsSig}`
+}
+
+function clearCachedRegistration(
+	cache: Map<string, CachedRegistration>,
+	runtimeId: string,
+	cached = cache.get(runtimeId),
+): void {
+	if (!cached) return
+	try {
+		cached.cleanup()
+	} catch {}
+	cache.delete(runtimeId)
+}
+
+function pruneCachedRegistrations(cache: Map<string, CachedRegistration>, seen: Set<string>): void {
+	for (const runtimeId of Array.from(cache.keys())) {
+		if (seen.has(runtimeId)) continue
+		clearCachedRegistration(cache, runtimeId)
+	}
+}
 
 function recomputeLoaderSignature() {
 	const moduleSig = Array.from(loaderState.moduleCache.values())
 		.map((mod) => `${mod.pluginName}:${mod.sourceHash}`)
 		.sort()
 		.join('|')
-	const builtinSig = Array.from(loaderState.builtinCache.entries())
-		.map(([key, v]) => `${key}:${v.sig}`)
-		.sort()
-		.join('|')
-	loaderState.manifestSignature = `${moduleSig}||builtins:${builtinSig}`
+	const builtinSig = getCachedRegistrationSignature(loaderState.builtinCache)
+	const sessionSig = getCachedRegistrationSignature(loaderState.sessionCache)
+	const stateSig = getModuleStatesSignature(getExtensionModuleStates())
+	const manifestDiagnostics = getManifestDiagnosticsSignature(getExtensionManifestDiagnostics())
+	loaderState.manifestSignature = `${moduleSig}||builtins:${builtinSig}||sessions:${sessionSig}||states:${stateSig}||diag:${manifestDiagnostics}`
 }
 
 function cancelScheduledUnload(pluginName: string) {
@@ -74,7 +221,7 @@ function scheduleUnload(pluginName: string, delayMs: number, reason: string) {
 		loaderState.unloadTimers.delete(pluginName)
 		if (loaderState.moduleCache.has(pluginName)) {
 			loaderState.moduleCache.delete(pluginName)
-			unloadExtensionModule(pluginName)
+			unloadPluginUiModule(pluginName)
 			extLog('unloaded %s (%s)', pluginName, reason)
 			recomputeLoaderSignature()
 		}
@@ -82,35 +229,39 @@ function scheduleUnload(pluginName: string, delayMs: number, reason: string) {
 	loaderState.unloadTimers.set(pluginName, timer)
 }
 
+function markPollingUrgent(durationMs = POLL_URGENCY_WINDOW_MS) {
+	loaderState.pollUrgentUntil = Math.max(loaderState.pollUrgentUntil, Date.now() + durationMs)
+}
+
+function nextManifestSyncDelay(basePollInterval: number): number {
+	const fallbackMs = Math.max(500, basePollInterval)
+	const hasBuilding = getExtensionModuleStates().some((state) => state.state === 'building')
+	if (hasBuilding || Date.now() < loaderState.pollUrgentUntil) {
+		return Math.min(fallbackMs, FAST_SYNC_POLL_MS)
+	}
+	if (!loaderState.sseConnected) return fallbackMs
+	return Math.max(fallbackMs * 6, CONNECTED_RECONCILE_POLL_MS)
+}
+
+function readyStateFromModule(module: CompiledExtensionModule): ExtensionModuleState {
+	return {
+		pluginName: module.pluginName,
+		state: 'ready',
+		updatedAt: module.compiledAt,
+		sourceHash: module.sourceHash,
+		compiledAt: module.compiledAt,
+	}
+}
+
 export function ExtensionLoader({
 	pollInterval = 5000,
 	onRunningPluginsChange,
 	unloadOnStop = false,
 	unloadDelayMs = DEFAULT_UNLOAD_DELAY_MS,
-}: ExtensionLoaderProps) {
-	useEffect(() => {
-		if (typeof window === 'undefined') return
-		if (process.env.NODE_ENV !== 'production') {
-			console.log('[ExtensionLoader] mounted', {
-				origin: window.location.origin,
-				pathname: window.location.pathname,
-			})
-		}
-	}, [])
-
-	const stream = useSseClient({ namespaces: ['extensions'] })
-	const query = useQuery({
-		refetchOnWindowVisible: false,
-		fetchInBackground: true,
-		prepare: ({ query }) => {
-			query.pluginStatus?.statuses?.forEach((status) => {
-				status?.name
-				status?.isRunning
-			})
-		},
-	})
-
-	const rawStatuses = query.pluginStatus?.statuses ?? []
+}: ExtensionLoaderProps): null {
+	const stream = useRuntimeTransportClient().sse
+	const overviewState = usePluginOverview()
+	const rawStatuses = overviewState.overview?.status?.statuses ?? []
 
 	const derivedPlugins: PluginInfo[] = useMemo(() => {
 		return rawStatuses
@@ -141,11 +292,14 @@ export function ExtensionLoader({
 	})
 
 	const [stablePlugins, setStablePlugins] = useState<PluginInfo[]>(derivedPlugins)
-	const isLoading = query.$state.isLoading === true || query.$state.isFetching === true
+	const isLoading = overviewState.isLoading === true
+	const hasError = !overviewState.hasSnapshot && Boolean(overviewState.error)
 	const statusReadyRef = useRef(false)
 
 	useEffect(() => {
-		if (isLoading) return
+		// IMPORTANT: during refetch/errors, GQty may temporarily surface empty arrays.
+		// Never overwrite the stable snapshot with an "empty flash" (would break plugin pages).
+		if (isLoading || hasError) return
 		if (cachedRef.current.key === signature) {
 			setStablePlugins(cachedRef.current.plugins)
 			return
@@ -153,13 +307,15 @@ export function ExtensionLoader({
 		const cloned = derivedPlugins.map((plugin) => ({ ...plugin }))
 		cachedRef.current = { key: signature, plugins: cloned }
 		setStablePlugins(cloned)
-	}, [derivedPlugins, signature, isLoading])
+	}, [derivedPlugins, hasError, signature, isLoading])
 
-	const effectivePlugins = isLoading ? cachedRef.current.plugins : stablePlugins
+	const effectivePlugins = isLoading || hasError ? cachedRef.current.plugins : stablePlugins
 
 	useEffect(() => {
-		if (!isLoading) statusReadyRef.current = true
-	}, [isLoading])
+		if (!isLoading && !hasError) {
+			statusReadyRef.current = true
+		}
+	}, [hasError, isLoading])
 
 	useEffect(() => {
 		if (!onRunningPluginsChange) return
@@ -181,99 +337,160 @@ export function ExtensionLoader({
 	const recomputeManifestSignature = useCallback(recomputeLoaderSignature, [])
 
 	const syncBuiltins = useCallback((builtins?: BuiltinExtensionDef[]) => {
-		const next = Array.isArray(builtins) ? builtins : []
-		const seen = new Set<string>()
-		const fallbackSig = (
-			def: BuiltinExtensionDef,
-			meta: { kind: string; pluginName: string; point: string; id: string },
-		) => {
-			try {
-				return JSON.stringify(def)
-			} catch {
-				return `${meta.kind}:${meta.pluginName}:${meta.point}:${meta.id}`
-			}
-		}
+		extensionRegistry.batch(() => {
+			const next = Array.isArray(builtins) ? builtins : []
+			const seen = new Set<string>()
 
-		for (const def of next) {
-			if (!def || typeof def !== 'object') continue
-			const pluginName = typeof (def as any).pluginName === 'string' ? (def as any).pluginName : ''
-			const point = typeof (def as any).point === 'string' ? (def as any).point : ''
-			const id = typeof (def as any).id === 'string' ? (def as any).id : ''
-			const kind = typeof (def as any).kind === 'string' ? (def as any).kind : ''
-			if (!pluginName || !point || !id || !kind) continue
+			for (const def of next) {
+				if (!def || typeof def !== 'object') continue
+				const pluginName =
+					typeof (def as any).pluginName === 'string' ? (def as any).pluginName : ''
+				const point = typeof (def as any).point === 'string' ? (def as any).point : ''
+				const id = typeof (def as any).id === 'string' ? (def as any).id : ''
+				const kind = typeof (def as any).kind === 'string' ? (def as any).kind : ''
+				if (!pluginName || !point || !id || !kind) continue
 
-			const runtimeId = `${pluginName}:builtin:${point}:${id}`
-			seen.add(runtimeId)
+				const runtimeId = `${pluginName}:builtin:${point}:${id}`
+				seen.add(runtimeId)
 
-			const sig = fallbackSig(def, { kind, pluginName, point, id })
+				const sig = getSerializableSignature(def, `${kind}:${pluginName}:${point}:${id}`)
 
-			const cached = loaderState.builtinCache.get(runtimeId)
-			if (cached && cached.sig === sig) continue
-			if (cached) {
-				try {
-					cached.cleanup()
-				} catch {}
-				loaderState.builtinCache.delete(runtimeId)
-			}
+				const cached = loaderState.builtinCache.get(runtimeId)
+				if (cached && cached.sig === sig) continue
+				clearCachedRegistration(loaderState.builtinCache, runtimeId, cached)
 
-			const meta: ExtensionMeta = {
-				...((def as any).meta ?? {}),
-				id: runtimeId,
-				pluginName,
-				priority: typeof (def as any).priority === 'number' ? (def as any).priority : 0,
-				requireRunning: (def as any).requireRunning ?? true,
-			}
+				const meta: ExtensionMeta = {
+					...(def as any).meta,
+					id: runtimeId,
+					pluginName,
+					availabilityPluginName:
+						typeof (def as any).availabilityPluginName === 'string'
+							? (def as any).availabilityPluginName
+							: typeof (def as any).sourcePluginName === 'string'
+								? (def as any).sourcePluginName
+								: pluginName,
+					priority: typeof (def as any).priority === 'number' ? (def as any).priority : 0,
+					requireRunning: (def as any).requireRunning ?? true,
+				}
 
-			const Component = builtinComponents[kind as BuiltinExtensionKind]
-			if (!Component) {
-				extLog('skip builtin kind=%s (id=%s)', kind, runtimeId)
-				continue
-			}
+				const Component = builtinComponents[kind as BuiltinExtensionKind]
+				if (!Component) {
+					extLog('skip builtin kind=%s (id=%s)', kind, runtimeId)
+					continue
+				}
 
-			const render = (ctx: any) => (
-				<ExtensionErrorBoundary
-					pluginName={pluginName}
-					extensionId={runtimeId}
-					point={point}
-					fallback={
-						process.env.NODE_ENV !== 'production'
-							? ({ error }) => (
-									<div
-										style={{
-											padding: 8,
-											borderRadius: 8,
-											border: '1px solid rgba(255, 0, 0, 0.25)',
-											background: 'rgba(255, 0, 0, 0.06)',
-											fontSize: 12,
-											lineHeight: 1.4,
-										}}
-									>
-										<div style={{ fontWeight: 600 }}>
-											Builtin render failed: {pluginName} · {point}
-										</div>
-										<div style={{ opacity: 0.85 }}>
+				const render = () => (
+					<ExtensionErrorBoundary
+						pluginName={pluginName}
+						extensionId={runtimeId}
+						point={point}
+						fallback={
+							process.env.NODE_ENV !== 'production'
+								? ({ error }) => (
+										<InlineNotice
+											tone="error"
+											title={
+												<>
+													Builtin render failed: {pluginName} · {point}
+												</>
+											}
+										>
 											{error?.message ?? String(error ?? 'unknown error')}
-										</div>
-									</div>
-								)
-							: null
-					}
-				>
-					<Component ctx={ctx} def={def as any} />
-				</ExtensionErrorBoundary>
-			)
+										</InlineNotice>
+									)
+								: null
+						}
+					>
+						<Component def={def as any} />
+					</ExtensionErrorBoundary>
+				)
 
-			const cleanup = extensionRegistry.register(point as any, { meta, render })
-			loaderState.builtinCache.set(runtimeId, { sig, cleanup })
-		}
+				const cleanup = extensionRegistry.register(point as any, { meta, render })
+				loaderState.builtinCache.set(runtimeId, { sig, cleanup })
+			}
 
-		for (const [key, cached] of Array.from(loaderState.builtinCache.entries())) {
-			if (seen.has(key)) continue
-			try {
-				cached.cleanup()
-			} catch {}
-			loaderState.builtinCache.delete(key)
-		}
+			pruneCachedRegistrations(loaderState.builtinCache, seen)
+		})
+	}, [])
+
+	const syncSessions = useCallback((sessions?: InteractionSessionDef[]) => {
+		extensionRegistry.batch(() => {
+			const next = Array.isArray(sessions) ? sessions : []
+			const seen = new Set<string>()
+
+			for (const def of next) {
+				if (!def || typeof def !== 'object') continue
+				const pluginName = typeof def.pluginName === 'string' ? def.pluginName : ''
+				const point = typeof def.point === 'string' ? def.point : ''
+				const id = typeof def.id === 'string' ? def.id : ''
+				const sourcePlugin =
+					typeof def.providerPluginName === 'string' ? def.providerPluginName : ''
+				if (!pluginName || !point || !id) continue
+
+				const runtimeId = `${pluginName}:session:${point}:${id}`
+				seen.add(runtimeId)
+
+				const sig = getSerializableSignature(def, `session:${pluginName}:${point}:${id}`)
+				const cached = loaderState.sessionCache.get(runtimeId)
+				if (cached && cached.sig === sig) continue
+				clearCachedRegistration(loaderState.sessionCache, runtimeId, cached)
+
+				const meta: ExtensionMeta = {
+					...(def as any).meta,
+					id: runtimeId,
+					pluginName,
+					availabilityPluginName: sourcePlugin || pluginName,
+					priority: typeof def.priority === 'number' ? def.priority : 0,
+					requireRunning: def.requireRunning ?? true,
+				}
+
+				const SessionComponent = sourcePlugin
+					? getPluginUiSessionComponent(sourcePlugin, def.renderKey)
+					: undefined
+				const render = () => (
+					<ExtensionErrorBoundary
+						pluginName={pluginName}
+						extensionId={runtimeId}
+						point={point}
+						fallback={
+							process.env.NODE_ENV !== 'production'
+								? ({ error }) => (
+										<InlineNotice
+											tone="error"
+											title={
+												<>
+													Interaction session render failed: {pluginName} · {point}
+												</>
+											}
+										>
+											{error?.message ?? String(error ?? 'unknown error')}
+										</InlineNotice>
+									)
+								: null
+						}
+					>
+						{SessionComponent ? (
+							<InteractionSessionHost session={def} component={SessionComponent} />
+						) : (
+							<InlineNotice
+								title={
+									<>
+										Session UI not found: {sourcePlugin || 'unknown'} · {def.renderKey}
+									</>
+								}
+							>
+								Provider UI module did not expose the requested interaction session component.
+							</InlineNotice>
+						)}
+					</ExtensionErrorBoundary>
+				)
+
+				const cleanup = extensionRegistry.register(point as any, { meta, render })
+				loaderState.sessionCache.set(runtimeId, { sig, cleanup })
+			}
+
+			pruneCachedRegistrations(loaderState.sessionCache, seen)
+		})
 	}, [])
 
 	// 插件停止后是否卸载扩展模块（避免频繁加载/卸载可延迟执行）
@@ -308,18 +525,10 @@ export function ExtensionLoader({
 			return
 		}
 
-		const url = withCacheBusting(module.moduleUrl, module.sourceHash, module.compiledAt)
-		if (process.env.NODE_ENV !== 'production') {
-			console.log('[ExtensionLoader] importing', {
-				pluginName: module.pluginName,
-				sourceHash: module.sourceHash,
-				url,
-			})
-		}
 		extLog('loading %s@%s', module.pluginName, module.sourceHash)
-		const loadPromise = loadExtensionModule(
+		const loadPromise = loadPluginUiModule(
 			module.pluginName,
-			() => dynamicImport(url),
+			() => loadFederatedExtensionModule(module),
 			module.sourceHash,
 		)
 		loaderState.moduleCache.set(module.pluginName, {
@@ -330,12 +539,7 @@ export function ExtensionLoader({
 		try {
 			await loadPromise
 			cancelScheduledUnload(module.pluginName)
-			if (process.env.NODE_ENV !== 'production') {
-				console.log('[ExtensionLoader] loaded', {
-					pluginName: module.pluginName,
-					sourceHash: module.sourceHash,
-				})
-			}
+			upsertExtensionModuleState(readyStateFromModule(module))
 			extLog('loaded %s@%s', module.pluginName, module.sourceHash)
 		} catch (error) {
 			loaderState.moduleCache.delete(module.pluginName)
@@ -361,45 +565,18 @@ export function ExtensionLoader({
 				extLog('fetching manifest')
 				const manifest = await fetchExtensionManifest()
 				loaderState.manifestBackoff = null
-				if (process.env.NODE_ENV !== 'production') {
-					console.log('[ExtensionLoader] fetched manifest', {
-						version: manifest.version,
-						modules: manifest.modules.map((m) => ({
-							pluginName: m.pluginName,
-							sourceHash: m.sourceHash,
-							moduleUrl: m.moduleUrl,
-						})),
-					})
-				}
 				extLog('fetched manifest v%d', manifest.version)
-
-				const computeSignature = (payload: typeof manifest) => {
-					const modulesSig = payload.modules
-						.map((module) => `${module.pluginName}:${module.sourceHash}`)
-						.sort()
-						.join('|')
-					const builtinsSig = (payload.builtins ?? [])
-						.map((b) => {
-							try {
-								return JSON.stringify(b)
-							} catch {
-								const pluginName = (b as any)?.pluginName ?? ''
-								const point = (b as any)?.point ?? ''
-								const id = (b as any)?.id ?? ''
-								const kind = (b as any)?.kind ?? ''
-								return `${kind}:${pluginName}:${point}:${id}`
-							}
-						})
-						.sort()
-						.join('|')
-					return `${modulesSig}||builtins:${builtinsSig}`
-				}
 
 				const applyManifest = async (
 					payload: typeof manifest,
 					allowRetry: boolean,
-				): Promise<{ signature: string; version: number; moduleCount: number; skipped: boolean }> => {
-					const nextSignature = computeSignature(payload)
+				): Promise<{
+					signature: string
+					version: number
+					moduleCount: number
+					skipped: boolean
+				}> => {
+					const nextSignature = getManifestPayloadSignature(payload)
 					if (
 						!force &&
 						payload.version === loaderState.manifestVersion &&
@@ -427,16 +604,21 @@ export function ExtensionLoader({
 						}),
 					)
 
+					replaceExtensionModuleStates(payload.states)
+					replaceExtensionManifestDiagnostics({
+						interactions: payload.interactions,
+						offers: payload.offers,
+						surfaces: payload.surfaces,
+						sessions: payload.sessions,
+					})
 					syncBuiltins(payload.builtins)
+					syncSessions(payload.sessions)
 
 					// 自愈：如果加载失败（比如服务端删除了陈旧 hash 并触发重新编译），立刻刷新 manifest 再重试一次
-					if (allowRetry && failedPlugins.length) {
+					if (allowRetry && failedPlugins.length > 0) {
 						const retryManifest = await fetchExtensionManifest()
-						const retrySignature = computeSignature(retryManifest)
-						if (
-							retryManifest.version !== payload.version ||
-							retrySignature !== nextSignature
-						) {
+						const retrySignature = getManifestPayloadSignature(retryManifest)
+						if (retryManifest.version !== payload.version || retrySignature !== nextSignature) {
 							return applyManifest(retryManifest, false)
 						}
 					}
@@ -445,7 +627,7 @@ export function ExtensionLoader({
 						if (!seen.has(name)) {
 							cancelScheduledUnload(name)
 							loaderState.moduleCache.delete(name)
-							unloadExtensionModule(name)
+							unloadPluginUiModule(name)
 						}
 					}
 
@@ -480,52 +662,77 @@ export function ExtensionLoader({
 				}
 			}
 		},
-		[ensureModuleLoaded, recomputeManifestSignature, shouldSkipManifestSync, syncBuiltins],
+		[
+			ensureModuleLoaded,
+			recomputeManifestSignature,
+			shouldSkipManifestSync,
+			syncBuiltins,
+			syncSessions,
+		],
 	)
 
 	useEffect(() => {
-		// 确保扩展运行前共享 vendors 已挂载（防止页面初始化较慢时未注入 React/Mantine）
-		initVendors()
+		setExtensionManifestSyncHandler((force) => syncManifest(force))
+		return () => {
+			setExtensionManifestSyncHandler(null)
+			clearExtensionManifestDiagnostics()
+		}
+	}, [syncManifest])
 
-		void syncManifest()
-		if (pollInterval <= 0) return
-		const timer = setInterval(() => {
-			void syncManifest()
-		}, pollInterval)
-		return () => clearInterval(timer)
+	useEffect(() => {
+		let disposed = false
+		let timer: ReturnType<typeof setTimeout> | null = null
+
+		const clear = () => {
+			if (!timer) return
+			clearTimeout(timer)
+			timer = null
+		}
+
+		const schedule = (delay: number) => {
+			clear()
+			if (disposed) return
+			timer = setTimeout(
+				() => {
+					void run()
+				},
+				Math.max(0, delay),
+			)
+		}
+
+		const run = async (): Promise<void> => {
+			if (disposed) return
+			await syncManifest().catch((): void => undefined)
+			if (disposed || pollInterval <= 0) return
+			schedule(nextManifestSyncDelay(pollInterval))
+		}
+
+		void run()
+		return () => {
+			disposed = true
+			clear()
+		}
 	}, [pollInterval, syncManifest])
 
 	useEffect(() => {
 		if (typeof window === 'undefined') {
-			return
+			return undefined
 		}
-		let inflight = false
-		let pending = false
-		const triggerRefetch = () => {
-			// 遇到错误就停掉“自动刷新”，避免一直刷屏打后端
-			if (query.$state.error) return
-			if (inflight) {
-				pending = true
-				return
-			}
-			inflight = true
-			void query
-				.$refetch(true)
-				.catch(() => {})
-				.finally(() => {
-					inflight = false
-					if (pending) {
-						pending = false
-						triggerRefetch()
-					}
-				})
-			void syncManifest()
-		}
-		const unsubscribe = subscribePluginStatusEvents(triggerRefetch)
+		const offOpen = stream.onOpen(() => {
+			loaderState.sseConnected = true
+			markPollingUrgent()
+			void syncManifest(true)
+		})
+		const offError = stream.onError(() => {
+			loaderState.sseConnected = false
+			markPollingUrgent()
+		})
 		const off = stream.extensions.on(({ payload }) => {
 			if (!payload) return
+			if (!('version' in payload)) return
 			if (payload.type === 'sync') {
 				if (payload.version > loaderState.manifestVersion) {
+					markPollingUrgent()
 					void syncManifest(true)
 				}
 				loaderState.manifestVersion = payload.version
@@ -536,10 +743,54 @@ export function ExtensionLoader({
 			}
 			loaderState.manifestVersion = payload.version
 
+			if (payload.type === 'building') {
+				markPollingUrgent()
+				upsertExtensionModuleState({
+					pluginName: payload.pluginName,
+					state: 'building',
+					updatedAt: payload.updatedAt,
+					sourceHash: payload.sourceHash,
+					compiledAt: payload.compiledAt,
+				})
+				recomputeManifestSignature()
+				return
+			}
+
+			if (payload.type === 'error') {
+				markPollingUrgent()
+				upsertExtensionModuleState({
+					pluginName: payload.pluginName,
+					state: 'error',
+					updatedAt: payload.updatedAt,
+					sourceHash: payload.sourceHash,
+					compiledAt: payload.compiledAt,
+					message: payload.message,
+				})
+				recomputeManifestSignature()
+				if (process.env.NODE_ENV !== 'production') {
+					console.error('[ExtensionLoader] extension compile failed', {
+						pluginName: payload.pluginName,
+						message: payload.message,
+					})
+				}
+				return
+			}
+
 			if (payload.type === 'update') {
+				markPollingUrgent()
+				upsertExtensionModuleState({
+					pluginName: payload.pluginName,
+					state: 'ready',
+					updatedAt: payload.compiledAt,
+					sourceHash: payload.sourceHash,
+					compiledAt: payload.compiledAt,
+				})
+				recomputeManifestSignature()
 				void ensureModuleLoaded({
 					pluginName: payload.pluginName,
-					moduleUrl: payload.moduleUrl,
+					remoteName: payload.remoteName,
+					manifestUrl: payload.manifestUrl,
+					exposedModule: payload.exposedModule,
 					sourceHash: payload.sourceHash,
 					compiledAt: payload.compiledAt,
 				})
@@ -553,23 +804,18 @@ export function ExtensionLoader({
 				if (loaderState.moduleCache.has(payload.pluginName)) {
 					cancelScheduledUnload(payload.pluginName)
 					loaderState.moduleCache.delete(payload.pluginName)
-					unloadExtensionModule(payload.pluginName)
-					recomputeManifestSignature()
+					unloadPluginUiModule(payload.pluginName)
 				}
+				removeExtensionModuleState(payload.pluginName)
+				recomputeManifestSignature()
 			}
 		})
 		return () => {
-			unsubscribe()
+			offOpen()
+			offError()
 			off()
 		}
-	}, [ensureModuleLoaded, query.$refetch, recomputeManifestSignature, stream, syncManifest])
+	}, [ensureModuleLoaded, recomputeManifestSignature, stream, syncManifest])
 
 	return null
 }
-
-function withCacheBusting(url: string, hash: string, compiledAt: number): string {
-	const suffix = `v=${hash}:${compiledAt}`
-	return url.includes('?') ? `${url}&${suffix}` : `${url}?${suffix}`
-}
-
-const dynamicImport = (path: string) => import(/* @vite-ignore */ path)

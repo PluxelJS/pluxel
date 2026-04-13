@@ -8,7 +8,7 @@ export type Abstract<T> = abstract new (...args: any[]) => T
 export type Identifier<T> = Newable<T> | Abstract<T>
 
 /** Alias 键类型（支持 symbol，避免字符串冲突） */
-export type AliasKey = string | symbol | Abstract<any>
+export type AliasKey = string | symbol | Abstract<unknown>
 
 /** 别名冲突策略（构建期选择） */
 export type AliasConflictPolicy = 'error' | 'firstWins' | 'lastWins'
@@ -30,7 +30,7 @@ export type FactoryContext = ContainerAccessors & {
 export type Factory<T> = (ctx: FactoryContext) => T
 
 /** 实例可为任意对象 */
-export type Instance<T> = T & Object
+export type Instance<T> = T & object
 
 /* ----------------------------------------------------------------------------
  * Container interfaces（纯 Result/Maybe 风格）
@@ -70,15 +70,9 @@ export interface WithDependencies {
 }
 
 export interface Registration<T> {
-	useClass(
-		newable: Newable<T>,
-	): ConfigurableRegistration & WithScopeChange & WithDependencies
+	useClass(newable: Newable<T>): ConfigurableRegistration & WithScopeChange & WithDependencies
 	/** 等价别名 */
-	use(
-		newable: Newable<T>,
-	): ConfigurableRegistration & WithScopeChange & WithDependencies
+	use(newable: Newable<T>): ConfigurableRegistration & WithScopeChange & WithDependencies
 	useInstance(instance: Instance<T>): ConfigurableRegistration
-	useFactory(
-		factory: Factory<T>,
-	): ConfigurableRegistration & WithScopeChange & WithDependencies
+	useFactory(factory: Factory<T>): ConfigurableRegistration & WithScopeChange & WithDependencies
 }

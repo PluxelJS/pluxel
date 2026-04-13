@@ -7,7 +7,7 @@ type Area =
 	| 'dependency planning'
 	| 'dependents traversal'
 	| 'lifecycle restart'
-	| '@Config injection'
+	| 'config injection'
 	| 'noop/overhead'
 
 export const TASK_MEANING: Record<string, { goal: string; area: Area; notes?: string }> = {
@@ -71,8 +71,8 @@ export const TASK_MEANING: Record<string, { goal: string; area: Area; notes?: st
 		area: 'dependents traversal',
 	},
 	'config: inject-heavy restart': {
-		goal: 'Restart a plugin with many @Config fields and a large config record.',
-		area: '@Config injection',
+		goal: 'Restart a plugin with many config keys and a large config record.',
+		area: 'config injection',
 	},
 	'big: noop commit (independent + star)': {
 		goal: 'No-op commit with a large baseline present.',
@@ -93,7 +93,9 @@ export const TASK_MEANING: Record<string, { goal: string; area: Area; notes?: st
 }
 
 const isContext = (value: unknown): value is Ctx =>
-	typeof value === 'object' && value != null && typeof (value as any).disposeAll === 'function'
+	typeof value === 'object' &&
+	value != null &&
+	typeof (value as any).effects?.dispose === 'function'
 
 function stableTask<T>(
 	bench: Bench,
@@ -108,7 +110,11 @@ function stableTask<T>(
 		if (!state) state = await setup()
 		if (!registeredCleanup && isContext(state)) {
 			registeredCleanup = true
-			cleanups.push(() => state.disposeAll())
+			cleanups.push(() => {
+				void state.effects.dispose().catch(() => {
+					/* best-effort bench cleanup */
+				})
+			})
 		}
 		await run(state)
 	})
@@ -130,20 +136,20 @@ export function registerPluginLifecycleBenchmarks(bench: Bench, scenario: Scenar
 			const ctx = new Context({ name: 'bench-cold-star' })
 			scenario.registerStar(ctx)
 			ensureOk(await ctx.registry.commit())
-			ctx.disposeAll()
+			await ctx.effects.dispose()
 		})
 		.add('cold: build chain baseline', async () => {
 			const ctx = new Context({ name: 'bench-cold-chain' })
 			scenario.registerChain(ctx)
 			ensureOk(await ctx.registry.commit())
-			ctx.disposeAll()
+			await ctx.effects.dispose()
 		})
 		.add('cold: build big baseline (independent + star)', async () => {
 			const ctx = new Context({ name: 'bench-cold-big' })
 			scenario.registerBigIndependent(ctx)
 			scenario.registerStar(ctx)
 			ensureOk(await ctx.registry.commit())
-			ctx.disposeAll()
+			await ctx.effects.dispose()
 		})
 
 	// ---------------------------------------------------------------------------
@@ -151,9 +157,15 @@ export function registerPluginLifecycleBenchmarks(bench: Bench, scenario: Scenar
 	// This is closer to how real apps behave (baseline stays, you mutate a bit).
 	// ---------------------------------------------------------------------------
 
-	stableTask(bench, cleanups, 'baseline: noop commit (star)', () => scenario.setupStarBaseline('bench-star-noop'), async (ctx) => {
-		ensureOk(await ctx.registry.commit())
-	})
+	stableTask(
+		bench,
+		cleanups,
+		'baseline: noop commit (star)',
+		() => scenario.setupStarBaseline('bench-star-noop'),
+		async (ctx) => {
+			ensureOk(await ctx.registry.commit())
+		},
+	)
 
 	stableTask(
 		bench,
@@ -170,37 +182,61 @@ export function registerPluginLifecycleBenchmarks(bench: Bench, scenario: Scenar
 		},
 	)
 
-	stableTask(bench, cleanups, 'restart: leaf (star)', () => scenario.setupStarBaseline('bench-star-restart-leaf'), async (ctx) => {
-		await repeat(loops, async () => {
-			ctx.registry.restart(scenario.star.hotLeafV1)
-			ensureOk(await ctx.registry.commit())
-		})
-	})
+	stableTask(
+		bench,
+		cleanups,
+		'restart: leaf (star)',
+		() => scenario.setupStarBaseline('bench-star-restart-leaf'),
+		async (ctx) => {
+			await repeat(loops, async () => {
+				ctx.registry.restart(scenario.star.hotLeafV1)
+				ensureOk(await ctx.registry.commit())
+			})
+		},
+	)
 
-	stableTask(bench, cleanups, 'restart: root (star)', () => scenario.setupStarBaseline('bench-star-restart-root'), async (ctx) => {
-		await repeat(loops, async () => {
-			ctx.registry.restart(scenario.star.rootV1)
-			ensureOk(await ctx.registry.commit())
-		})
-	})
+	stableTask(
+		bench,
+		cleanups,
+		'restart: root (star)',
+		() => scenario.setupStarBaseline('bench-star-restart-root'),
+		async (ctx) => {
+			await repeat(loops, async () => {
+				ctx.registry.restart(scenario.star.rootV1)
+				ensureOk(await ctx.registry.commit())
+			})
+		},
+	)
 
-	stableTask(bench, cleanups, 'hmr: replace leaf (star)', () => scenario.setupStarBaseline('bench-star-replace-leaf'), async (ctx) => {
-		await repeat(loops, async () => {
-			ctx.registry.replace(scenario.star.hotLeafV1, scenario.star.hotLeafV2)
-			ensureOk(await ctx.registry.commit())
-			ctx.registry.replace(scenario.star.hotLeafV1, scenario.star.hotLeafV1)
-			ensureOk(await ctx.registry.commit())
-		})
-	})
+	stableTask(
+		bench,
+		cleanups,
+		'hmr: replace leaf (star)',
+		() => scenario.setupStarBaseline('bench-star-replace-leaf'),
+		async (ctx) => {
+			await repeat(loops, async () => {
+				ctx.registry.replace(scenario.star.hotLeafV1, scenario.star.hotLeafV2)
+				ensureOk(await ctx.registry.commit())
+				ctx.registry.replace(scenario.star.hotLeafV1, scenario.star.hotLeafV1)
+				ensureOk(await ctx.registry.commit())
+			})
+		},
+	)
 
-	stableTask(bench, cleanups, 'hmr: replace root (star)', () => scenario.setupStarBaseline('bench-star-replace-root'), async (ctx) => {
-		await repeat(loops, async () => {
-			ctx.registry.replace(scenario.star.rootV1, scenario.star.rootV2)
-			ensureOk(await ctx.registry.commit())
-			ctx.registry.replace(scenario.star.rootV1, scenario.star.rootV1)
-			ensureOk(await ctx.registry.commit())
-		})
-	})
+	stableTask(
+		bench,
+		cleanups,
+		'hmr: replace root (star)',
+		() => scenario.setupStarBaseline('bench-star-replace-root'),
+		async (ctx) => {
+			await repeat(loops, async () => {
+				ctx.registry.replace(scenario.star.rootV1, scenario.star.rootV2)
+				ensureOk(await ctx.registry.commit())
+				ctx.registry.replace(scenario.star.rootV1, scenario.star.rootV1)
+				ensureOk(await ctx.registry.commit())
+			})
+		},
+	)
 
 	stableTask(
 		bench,
@@ -233,19 +269,31 @@ export function registerPluginLifecycleBenchmarks(bench: Bench, scenario: Scenar
 		},
 	)
 
-	stableTask(bench, cleanups, 'restart: chain middle (deep)', () => scenario.setupChainBaseline('bench-chain-restart-middle'), async (ctx) => {
-		await repeat(loops, async () => {
-			ctx.registry.restart(scenario.chain.middle)
-			ensureOk(await ctx.registry.commit())
-		})
-	})
+	stableTask(
+		bench,
+		cleanups,
+		'restart: chain middle (deep)',
+		() => scenario.setupChainBaseline('bench-chain-restart-middle'),
+		async (ctx) => {
+			await repeat(loops, async () => {
+				ctx.registry.restart(scenario.chain.middle)
+				ensureOk(await ctx.registry.commit())
+			})
+		},
+	)
 
-	stableTask(bench, cleanups, 'restart: chain leaf (deep)', () => scenario.setupChainBaseline('bench-chain-restart-leaf'), async (ctx) => {
-		await repeat(loops, async () => {
-			ctx.registry.restart(scenario.chain.leaf)
-			ensureOk(await ctx.registry.commit())
-		})
-	})
+	stableTask(
+		bench,
+		cleanups,
+		'restart: chain leaf (deep)',
+		() => scenario.setupChainBaseline('bench-chain-restart-leaf'),
+		async (ctx) => {
+			await repeat(loops, async () => {
+				ctx.registry.restart(scenario.chain.leaf)
+				ensureOk(await ctx.registry.commit())
+			})
+		},
+	)
 
 	stableTask(
 		bench,
@@ -286,9 +334,15 @@ export function registerPluginLifecycleBenchmarks(bench: Bench, scenario: Scenar
 	// Large baselines (many independent plugins) to surface DI/build scaling.
 	// ---------------------------------------------------------------------------
 
-	stableTask(bench, cleanups, 'big: noop commit (independent + star)', () => scenario.setupBigStarBaseline('bench-big-noop'), async (ctx) => {
-		ensureOk(await ctx.registry.commit())
-	})
+	stableTask(
+		bench,
+		cleanups,
+		'big: noop commit (independent + star)',
+		() => scenario.setupBigStarBaseline('bench-big-noop'),
+		async (ctx) => {
+			ensureOk(await ctx.registry.commit())
+		},
+	)
 
 	stableTask(
 		bench,
@@ -337,7 +391,6 @@ export function registerPluginLifecycleBenchmarks(bench: Bench, scenario: Scenar
 	)
 
 	return () => {
-		while (cleanups.length) cleanups.pop()?.()
+		while (cleanups.length > 0) cleanups.pop()?.()
 	}
 }
-

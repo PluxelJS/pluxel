@@ -1,4 +1,4 @@
-import { rewriteDtsModuleAugmentations } from '@pluxel/rolldown'
+import { rewriteDtsModuleAugmentations } from '@pluxel/build/rolldown'
 import { defineConfig } from 'tsdown'
 
 const moduleAugmentationMap = {
@@ -14,22 +14,21 @@ const transformOptions = {
 	typescript: {
 		removeClassFieldsWithoutInitializer: true,
 	},
-	decorator: {
-		legacy: true,
-		emitDecoratorMetadata: true,
-	},
 }
 
 export default defineConfig({
+	deps: {
+		onlyBundle: ['@abraham/reflection', /^option-t(\/.*)?$/],
+		alwaysBundle: ['@pluxel/context', '@pluxel/context/*', 'diod', 'diod/*'],
+	},
 	exports: {
 		devExports: '@pluxel/source',
 	},
-	noExternal: ['@abraham/reflection'],
 	entry: {
+		env: 'src/env.ts',
 		index: 'src/index.ts',
 		services: 'src/services/index.ts',
-		test: 'src/test/index.ts',
-		'test/setup': 'src/test/setup.ts',
+		logger: 'src/logger/index.ts',
 	},
 	dts: {
 		sourcemap: true,
@@ -42,7 +41,7 @@ export default defineConfig({
 	treeshake: true,
 	inputOptions(options, _format, context) {
 		options.transform = {
-			...(options.transform ?? {}),
+			...options.transform,
 			...transformOptions,
 		}
 

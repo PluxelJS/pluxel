@@ -57,7 +57,7 @@ export class LeanMapTracker<K, V> extends Map<K, V> {
 
 	/** 一次性获取自上次 commit 以来的所有操作 */
 	commit(): Op<K, V>[] {
-		const ops = this.pendingOps.slice()
+		const ops = [...this.pendingOps]
 		this.pendingOps = []
 		return ops
 	}
@@ -90,7 +90,7 @@ export class LeanMapTracker<K, V> extends Map<K, V> {
 			}
 		}
 		// 准备 redo
-		this.redoStack = this.undoStack.slice()
+		this.redoStack = [...this.undoStack]
 		this.undoStack = []
 		this.pendingOps = []
 	}

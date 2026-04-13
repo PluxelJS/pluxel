@@ -1,16 +1,18 @@
-export * from '@pluxel/core'
+import { setPluxelRuntime } from '@pluxel/core'
 
-import { type ConfigSchemaList, Config as OrigConfig } from '@pluxel/core'
-import { type InferOutput, isOfType, type ObjectSchema, type ObjectSchemaAsync } from 'valibot'
-// 必须为值导入，让 @Injectable 装饰器执行以注册服务到 Context
-import './services'
+setPluxelRuntime('hmr')
 
-type ConfigSchema = ObjectSchema<any, any> | ObjectSchemaAsync<any, any>
-export type ConfigSchemaMap = ConfigSchemaList<ConfigSchema>
-export type Config<T extends ConfigSchema> = InferOutput<T>
-export function Config(configSchema: ConfigSchema): ReturnType<typeof OrigConfig> {
-	if (!isOfType('object', configSchema)) {
-		throw new Error('传入 Config 装饰器的必须是 valibot ObjectSchema')
-	}
-	return OrigConfig(configSchema as any)
-}
+// Type-level bridge for `Context.Config` (module augmentation) for dev-only keys.
+// oxlint-disable-next-line import/no-empty-named-blocks -- Type-only bridge keeps the augmentation file in the TS graph without a runtime import.
+import type {} from './dev/context-augment'
+
+export { applyHmrEnvOverrides } from './dev/runtime'
+export { attachHmrRuntime, startHmrRuntime } from './dev/attach-runtime'
+export { createFetchDevServerPlugin } from './dev/vite-fetch-plugin'
+export { HMRService } from './dev/hmr/HMRService'
+export {
+	buildHmrViteConfig,
+	resolveFsAllowList,
+	resolveHMRDependencyConfig,
+} from './dev/hmr/config'
+export type { HMRDependencyConfig } from './dev/hmr/config'

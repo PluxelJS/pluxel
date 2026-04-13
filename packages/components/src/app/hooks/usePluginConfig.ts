@@ -2,7 +2,8 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import * as v from 'valibot'
 import * as f from 'valibot-form'
 
-import { createRpcClient } from '../rpc'
+import { getPluginConfig, getPluginSchema, invokeRpc } from '../../runtime'
+import type { BuiltinMarkdownPart } from '@pluxel/runtime/web/extensions'
 
 export type PluginConfigData = {
 	schemaMap: Record<string, any>
@@ -10,6 +11,8 @@ export type PluginConfigData = {
 	defaults: Record<string, any>
 	/** 已保存的配置（来自 configService） */
 	savedConfig: Record<string, any>
+	/** optional cfg layout (host-rendered) */
+	layout?: BuiltinMarkdownPart[] | null
 }
 
 export type PluginConfigState = {
@@ -22,13 +25,23 @@ export type PluginConfigState = {
 // Schema 缓存（按插件名）
 const schemaCache = new Map<
 	string,
-	{ schemaMap: Record<string, any>; defaults: Record<string, any> }
+	{
+		schemaMap: Record<string, any>
+		defaults: Record<string, any>
+		layout?: BuiltinMarkdownPart[] | null
+	}
 >()
+const configDataCache = new Map<string, PluginConfigData>()
 
 /** 清除缓存 */
 export function invalidateSchemaCache(pluginName?: string) {
-	if (pluginName) schemaCache.delete(pluginName)
-	else schemaCache.clear()
+	if (pluginName) {
+		schemaCache.delete(pluginName)
+		configDataCache.delete(pluginName)
+		return
+	}
+	schemaCache.clear()
+	configDataCache.clear()
 }
 
 // HMR 自动失效（前端代码变更时）
@@ -44,68 +57,74 @@ async function loadPluginData(
 	schemaMap: Record<string, any>
 	defaults: Record<string, any>
 	savedConfig: Record<string, any>
+	layout?: BuiltinMarkdownPart[] | null
 }> {
 	const cachedSchema = forceRefresh ? null : schemaCache.get(pluginName)
 
-	// 同一个 session 内的调用会被 capnweb 自动 batch
-	using rpc = createRpcClient()
-	const p = rpc.plugin(pluginName)
+	return invokeRpc(async (rpc) => {
+		// 发起调用（不 await），capnweb 会在 Promise.all 时 batch 发送
+		const schemaPromise = cachedSchema ? null : getPluginSchema(rpc, pluginName)
+		const configPromise = getPluginConfig(rpc, pluginName)
 
-	// 发起调用（不 await），capnweb 会在 Promise.all 时 batch 发送
-	const schemaPromise = cachedSchema ? null : p.schema()
-	const configPromise = p.config()
+		const [schemaResult, configResult] = await Promise.all([schemaPromise, configPromise])
+		const savedConfig = configResult.ok ? (configResult.config as Record<string, any>) : {}
 
-	const [schemaResult, configResult] = await Promise.all([schemaPromise, configPromise])
-	const savedConfig = configResult.ok ? (configResult.config as Record<string, any>) : {}
+		if (cachedSchema) return { ...cachedSchema, savedConfig }
 
-	if (cachedSchema) return { ...cachedSchema, savedConfig }
-
-	if (!schemaResult) throw new Error('schema 加载失败')
-	if (schemaResult.ok === false) {
-		// schema_not_found 代表插件未暴露配置 schema，此时视为“没有可配置项”而不是错误
-		if (schemaResult.code === 'schema_not_found') {
-			const payload = { schemaMap: {}, defaults: {} }
-			schemaCache.set(pluginName, payload)
-			return { ...payload, savedConfig }
+		if (!schemaResult) throw new Error('schema 加载失败')
+		if (schemaResult.ok === false) {
+			// schema_not_found 代表插件未暴露配置 schema，此时视为“没有可配置项”而不是错误
+			if (schemaResult.code === 'schema_not_found') {
+				const payload = {
+					schemaMap: {},
+					defaults: {},
+					layout: null as BuiltinMarkdownPart[] | null,
+				}
+				schemaCache.set(pluginName, payload)
+				return { ...payload, savedConfig }
+			}
+			throw new Error(schemaResult.message ?? schemaResult.code)
 		}
-		throw new Error(schemaResult.message ?? schemaResult.code)
-	}
 
-	// 转换 schema 表达式
-	const schemaMap: Record<string, any> = {}
-	const pending: Promise<void>[] = []
+		// 转换 schema 表达式
+		const schemaMap: Record<string, any> = {}
+		const pending: Promise<void>[] = []
 
-	for (const [key, expr] of Object.entries(schemaResult.schemaSource)) {
-		// Convention: schema keys starting with "_" are treated as private/internal and
-		// are hidden from the Config UI (still available to other host-rendered surfaces).
-		if (key.startsWith('_')) continue
-		const schema = new Function('v', 'f', `return ${expr}`)(v, f)
-		if (schema instanceof Promise) {
-			pending.push(
-				schema.then((r) => {
-					schemaMap[key] = r
-				}),
-			)
-		} else {
-			schemaMap[key] = schema
+		for (const [key, expr] of Object.entries(schemaResult.schemaSource)) {
+			// Convention: schema keys starting with "_" are treated as private/internal and
+			// are hidden from the Config UI (still available to other host-rendered surfaces).
+			if (key.startsWith('_')) continue
+				const schema = new Function('v', 'f', `return ${expr}`)(v, f)
+				if (schema instanceof Promise) {
+					pending.push(
+						schema.then((r): undefined => {
+							schemaMap[key] = r
+							return undefined
+						}),
+					)
+				} else {
+				schemaMap[key] = schema
+			}
 		}
-	}
-	if (pending.length) await Promise.all(pending)
+		if (pending.length > 0) await Promise.all(pending)
 
-	const visibleDefaults: Record<string, any> = {}
-	for (const k of Object.keys(schemaMap)) {
-		visibleDefaults[k] = (schemaResult.defaults ?? {})[k]
-	}
+		const visibleDefaults: Record<string, any> = {}
+		for (const k of Object.keys(schemaMap)) {
+			visibleDefaults[k] = (schemaResult.defaults ?? {})[k]
+		}
 
-	const payload = { schemaMap, defaults: visibleDefaults }
-	schemaCache.set(pluginName, payload)
-	return { ...payload, savedConfig }
+		const payload = { schemaMap, defaults: visibleDefaults }
+		const nextPayload = { ...payload, layout: (schemaResult as any).layout ?? null }
+		schemaCache.set(pluginName, nextPayload)
+		return { ...nextPayload, savedConfig }
+	})
 }
 
 export function usePluginConfig(pluginName: string | undefined): PluginConfigState {
+	const cachedData = pluginName ? configDataCache.get(pluginName) : undefined
 	const [state, setState] = useState<{ data?: PluginConfigData; loading: boolean; error?: Error }>({
-		data: undefined,
-		loading: !!pluginName,
+		data: cachedData,
+		loading: Boolean(pluginName && !cachedData),
 		error: undefined,
 	})
 	const stateRef = useRef(state)
@@ -116,23 +135,28 @@ export function usePluginConfig(pluginName: string | undefined): PluginConfigSta
 	}, [state])
 
 	const doFetch = useCallback(
-		async (forceRefresh = false) => {
+		async (forceRefresh = false, preservedData?: PluginConfigData) => {
 			if (!pluginName) return
 			abortRef.current?.abort()
 			const ctrl = (abortRef.current = new AbortController())
 
 			// stale-while-revalidate：refetch 时保留旧数据，避免表单/布局闪烁
-			const prev = stateRef.current
-			setState({ data: prev.data, loading: true, error: undefined })
+			setState({
+				data: preservedData ?? stateRef.current.data,
+				loading: true,
+				error: undefined,
+			})
 
 			try {
 				const data = await loadPluginData(pluginName, forceRefresh)
 				if (ctrl.signal.aborted) return
+				configDataCache.set(pluginName, data)
 				setState({ data, loading: false, error: undefined })
 			} catch (e) {
 				if (ctrl.signal.aborted) return
+				const cached = configDataCache.get(pluginName) ?? stateRef.current.data
 				setState({
-					data: undefined,
+					data: cached,
 					loading: false,
 					error: e instanceof Error ? e : new Error('加载失败'),
 				})
@@ -146,7 +170,9 @@ export function usePluginConfig(pluginName: string | undefined): PluginConfigSta
 			setState({ data: undefined, loading: false, error: undefined })
 			return undefined
 		}
-		void doFetch()
+		const cached = configDataCache.get(pluginName)
+		setState({ data: cached, loading: Boolean(!cached), error: undefined })
+		void doFetch(false, cached)
 		return () => abortRef.current?.abort()
 	}, [pluginName, doFetch])
 

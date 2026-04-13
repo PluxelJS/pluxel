@@ -1,8 +1,16 @@
-import { useEffect, useMemo, useState } from 'react'
-import type { BuiltinSseRef, ExtensionContext } from '../types'
+import type {
+	BuiltinFieldValueRef,
+	BuiltinGeneratedIdValue,
+	BuiltinNowValue,
+	BuiltinSignalDbRef,
+	BuiltinSignalDbWriteSpec,
+	BuiltinTemplateValue,
+} from '@pluxel/runtime/web/extensions'
+import { useMemo } from 'react'
+import { useGlobalExtensionContext, useSignalDbCollectionsState } from '@pluxel/runtime/web'
 
 export function isObject(value: unknown): value is Record<string, unknown> {
-	return Boolean(value) && typeof value === 'object'
+	return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
 }
 
 export function getByDotPath(obj: unknown, path: string | undefined): unknown {
@@ -18,72 +26,163 @@ export function getByDotPath(obj: unknown, path: string | undefined): unknown {
 	return cur
 }
 
-export function useSseEventState(ctx: ExtensionContext, namespace: string, events: string[]) {
-	const [state, setState] = useState<Record<string, unknown>>({})
-
-	const client = (ctx.services as any)?.hmr?.sse ?? (ctx.services as any)?.sse
-	const key = `${namespace}::${events.slice().sort().join(',')}`
-
-	useEffect(() => {
-		if (!client || typeof client.ns !== 'function') return
-		if (!namespace) return
-		if (!events.length) return
-
-		let disposed = false
-		const disposers: Array<() => void> = []
-		const nsClient = client.ns(namespace)
-
-		for (const ev of events) {
-			disposers.push(
-				nsClient.on((msg: any) => {
-					if (disposed) return
-					setState((prev) => ({ ...prev, [ev]: msg?.payload }))
-				}, ev),
-			)
-		}
-
-		return () => {
-			disposed = true
-			for (const d of disposers) d()
-		}
-		// eslint-disable-next-line react-hooks/exhaustive-deps
-	}, [key, client])
-
-	return state
-}
-
-export function resolveSseRef(ref: BuiltinSseRef, sseStateByEvent: Record<string, unknown>) {
-	const ev =
-		typeof (ref as any).event === 'string' && (ref as any).event ? (ref as any).event : 'state'
-	const payload = sseStateByEvent[ev]
-	const picked = getByDotPath(
-		payload,
-		typeof (ref as any).path === 'string' ? (ref as any).path : undefined,
-	)
+export function resolveSignalDbRef(
+	ref: BuiltinSignalDbRef,
+	collections: Record<string, { findOne: (selector: Record<string, unknown>) => unknown }>,
+) {
+	const collection = collections[ref.collection]
+	if (!collection) return (ref as any).fallback
+	const doc = collection.findOne((ref.selector ?? {}) as Record<string, unknown>)
+	const picked = getByDotPath(doc, typeof ref.path === 'string' ? ref.path : undefined)
 	return picked === undefined ? (ref as any).fallback : picked
 }
 
-export function neededSseEventsForValue(value: unknown): string[] {
-	const events = new Set<string>()
-	const visit = (v: any) => {
-		if (!isObject(v)) return
-		if (v.kind === 'sse') {
-			events.add(typeof v.event === 'string' && v.event ? v.event : 'state')
+export function neededSignalDbCollectionsForValue(value: unknown): string[] {
+	const collections = new Set<string>()
+	const visit = (input: unknown): void => {
+		if (Array.isArray(input)) {
+			for (const item of input) visit(item)
 			return
 		}
+		if (!input || typeof input !== 'object') return
+		const obj = input as Record<string, unknown>
+		if (obj.kind === 'signaldb' && typeof obj.collection === 'string' && obj.collection) {
+			collections.add(obj.collection)
+			return
+		}
+		for (const item of Object.values(obj)) visit(item)
 	}
 	visit(value)
-	return Array.from(events)
+	return Array.from(collections)
 }
 
-export function useSseForValues(ctx: ExtensionContext, namespace: string, values: unknown[]) {
-	const neededEvents = useMemo(() => {
-		const events = new Set<string>()
-		for (const v of values) {
-			for (const ev of neededSseEventsForValue(v)) events.add(ev)
+export function useSignalDbForValues(namespace: string, values: unknown[]) {
+	const transport = useGlobalExtensionContext().services.transport
+	const neededCollections = useMemo(() => {
+		const collections = new Set<string>()
+		for (const value of values) {
+			for (const collection of neededSignalDbCollectionsForValue(value)) collections.add(collection)
 		}
-		return Array.from(events)
+		return Array.from(collections)
 	}, [values])
 
-	return useSseEventState(ctx, namespace, neededEvents)
+	return useSignalDbCollectionsState(transport, namespace, neededCollections)
+}
+
+function createGeneratedId() {
+	if (typeof globalThis.crypto?.randomUUID === 'function') return globalThis.crypto.randomUUID()
+	return `doc-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
+}
+
+function resolveSpecialTemplateValue(
+	value: BuiltinFieldValueRef | BuiltinGeneratedIdValue | BuiltinNowValue,
+	scope: Record<string, unknown>,
+) {
+	switch (value.kind) {
+		case 'field':
+			return scope[value.key]
+		case 'generatedId':
+			return createGeneratedId()
+		case 'now':
+			return value.format === 'iso' ? new Date().toISOString() : Date.now()
+		default:
+			return undefined
+	}
+}
+
+export function resolveTemplateValue(
+	template: BuiltinTemplateValue | undefined,
+	scope: Record<string, unknown>,
+): unknown {
+	if (template === undefined) return scope
+	if (Array.isArray(template)) {
+		return template.map((item) => resolveTemplateValue(item, scope))
+	}
+	if (!template || typeof template !== 'object') return template
+
+	const kind = (template as { kind?: unknown }).kind
+	if (kind === 'field' || kind === 'generatedId' || kind === 'now') {
+		return resolveSpecialTemplateValue(template as any, scope)
+	}
+
+	const out: Record<string, unknown> = {}
+	for (const [key, value] of Object.entries(template)) {
+		out[key] = resolveTemplateValue(value as BuiltinTemplateValue, scope)
+	}
+	return out
+}
+
+function ensureWritableObject(value: unknown): Record<string, unknown> {
+	if (!value || typeof value !== 'object' || Array.isArray(value)) {
+		throw new Error('signaldb write value must resolve to an object')
+	}
+	return { ...(value as Record<string, unknown>) }
+}
+
+function ensureDocId(value: Record<string, unknown>) {
+	return typeof value.id === 'string' && value.id.trim()
+		? value
+		: { ...value, id: createGeneratedId() }
+}
+
+function normalizeWriteMode(write: BuiltinSignalDbWriteSpec) {
+	if (write.mode) return write.mode
+	return write.selector ? 'patch' : 'insert'
+}
+
+export function applySignalDbWrite(
+	collections: Record<
+		string,
+		{
+			insert: (item: Record<string, unknown>) => string
+			updateOne: (
+				selector: Record<string, unknown>,
+				modifier: { $set: Record<string, unknown> },
+				options?: { upsert?: boolean },
+			) => 0 | 1
+			replaceOne: (
+				selector: Record<string, unknown>,
+				replacement: Record<string, unknown>,
+				options?: { upsert?: boolean },
+			) => 0 | 1
+			removeOne: (selector: Record<string, unknown>) => 0 | 1
+		}
+	>,
+	write: BuiltinSignalDbWriteSpec,
+	scope: Record<string, unknown>,
+) {
+	const collection = collections[write.collection]
+	if (!collection) throw new Error(`signaldb collection not available: ${write.collection}`)
+
+	const mode = normalizeWriteMode(write)
+	const resolvedValue = resolveTemplateValue(write.value, scope)
+	const selector = write.selector ? { ...write.selector } : undefined
+
+	switch (mode) {
+		case 'insert': {
+			const payload = ensureDocId(ensureWritableObject(resolvedValue))
+			return collection.insert(payload)
+		}
+		case 'patch': {
+			if (!selector) throw new Error('signaldb patch write requires selector')
+			return collection.updateOne(
+				selector,
+				{ $set: ensureWritableObject(resolvedValue) },
+				{ upsert: write.upsert },
+			)
+		}
+		case 'replace': {
+			if (!selector) throw new Error('signaldb replace write requires selector')
+			const payload = ensureWritableObject(resolvedValue)
+			if (typeof payload.id !== 'string' && typeof selector.id === 'string')
+				payload.id = selector.id
+			return collection.replaceOne(selector, payload, { upsert: write.upsert })
+		}
+		case 'remove': {
+			if (!selector) throw new Error('signaldb remove write requires selector')
+			return collection.removeOne(selector)
+		}
+		default:
+			throw new Error(`unsupported signaldb write mode: ${String(mode)}`)
+	}
 }

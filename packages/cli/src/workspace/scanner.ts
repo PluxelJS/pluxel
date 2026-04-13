@@ -1,20 +1,15 @@
+import { crawlFilesAbs, DEFAULT_IGNORED_DIR_NAMES } from '@pluxel/workspace'
 import { dirname, relative, resolve } from 'pathe'
-import { fdir } from 'fdir'
-
-const IGNORED = ['node_modules', '.git', '.turbo', '.output', '.next', '.nuxt', '.cache']
 
 export async function scanWorkspaceDirs(root: string, base?: string) {
 	const target = base ? resolve(root, base) : root
-	const files = await new fdir()
-		.withFullPaths()
-		.exclude((name) => IGNORED.includes(name))
-		.filter((path, isDirectory) => (isDirectory ? true : path.endsWith('package.json')))
-		.crawl(target)
-		.withPromise()
+	const files = await crawlFilesAbs({
+		roots: [target],
+		ignoreDirNames: DEFAULT_IGNORED_DIR_NAMES,
+		fileFilter: (p) => p.endsWith('package.json'),
+	})
 	return dedupe(
-		files
-			.map((file) => relative(root, dirname(file)).replace(/\\/g, '/'))
-			.filter((path) => path && !path.includes('node_modules')),
+		files.map((file) => relative(root, dirname(file)).replaceAll('\\', '/')).filter(Boolean),
 	)
 }
 

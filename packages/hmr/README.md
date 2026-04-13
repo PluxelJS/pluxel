@@ -1,78 +1,165 @@
-# HMR / Loader / Core 插件系统设计说明（面向 LLM）
+# @pluxel/hmr
 
-这份文档说明 `@pluxel/hmr` 如何与 `@pluxel/core` 的插件系统/DI（diod）协作：
-- 插件的注册、依赖解析、commit 语义（含失败/回滚边界）
-- HMR 的“批量执行 + 批量注入 + 单次 commit”如何保持一致性与性能
-- Loader 侧如何处理“依赖 ctor 引用失配”（Vite HMR 热更最常见问题）
+`@pluxel/hmr` 是开发期适配层。它把 Vite、源码执行、watch、HMR 和插件 UI 编译接到 `@pluxel/runtime` 上。
 
-## 1) Core 插件系统（@pluxel/core）核心语义
+如果你要理解整条插件前端链路，直接看：
 
-### 1.1 标识与注入（性能优先、强约定）
-- **插件实例的 DI key 永远是 ctor 本身**（包括 fork ctor）。不要“猜 token”，直接传你要的那个 ctor/base token。
-- **抽象 base / interface token 的注入**通过 DI alias 实现：`@Plugin(Base)` 的实现类可以选择 `provideBase`，从而让 `Base` token 指向它。
-- **冲突语义（确定性）**：同一个 base token 出现多个 provider 时，冲突在 build/commit（DI 验证）阶段被检测并报错；不是在 `registerPlugin()` 时“隐式覆盖”。
+- [`docs/architecture/frontend.md`](../../docs/architecture/frontend.md)
 
-相关实现入口：
-- `packages/core/src/plugins/PluginDefinitions.ts`：声明层（register/unregister/build）。
-- `packages/core/src/plugins/service/PluginService.ts`：`commit()` 负责构建新容器、拓扑启动、失败收集与重试。
+## 负责什么
 
-### 1.2 Commit 语义（非事务化启动，但 build 可回滚）
-- commit 分为两段：
-  - **build/verify 阶段（事务化）**：DI 构建/验证失败（缺依赖、alias 冲突等）→ 本次变更无效，容器不切换。
-  - **lifecycle 启动阶段（非事务化）**：容器已经切换，部分插件 `init/start` 失败不会回滚整个 commit；失败插件会被记录并在后续 commit 自动重试（只要仍注册在容器里）。
-- 失败插件从 `singletons` 缓存清理，确保下次 commit 会重新创建实例（而不是复用坏状态）。
+- 读取 HMR 配置并诊断 workspace
+- 创建或 attach 一个 runtime `Context`
+- 启动 Vite dev server、runner、watchers
+- 消费 `ui(...).bind(ctx)` 这类 authoring bridge
+- 把插件 UI 源码编译成可运行的 MF2 remote
 
-### 1.3 草稿回滚：为什么需要 `resetDraft()`
-HMR/Loader 会在 commit 前进行大量“声明层变更”（register/unregister/reload）。当 build/verify 失败时必须撤销这些草稿变更，否则后续 commit 会带着“脏草稿”继续滚动，导致难以定位问题。
+## 不负责什么
 
-因此 core 提供：
-- `ctx.registry.resetDraft()`：回滚 DI builder 的草稿注册（buildables）。
+- 正式运行时 UI 注册
+- 生产环境宿主服务
+- runtime 协议定义
 
-> 注意：这不是“回滚到旧版本插件继续运行”，而是“回滚到上一次 confirm 后的草稿基线”。
+这些属于 `@pluxel/runtime`。
 
-## 2) HMR 总流程（@pluxel/hmr）
+如果只记一句边界判断，就是：
 
-### 2.1 为什么需要依赖重绑（ctor 引用失配）
-diod 默认按“构造函数引用”做依赖键：引用不一致即视为缺失。Vite HMR 会重新执行模块并生成新 ctor，但不会自动替换容器里依赖者的构造参数 token，因此会出现 MissingDependency（依赖者仍持有旧 ctor 引用）。
+- HMR 负责“源码如何变成可运行 remote”
+- runtime 负责“可运行 remote 如何被注册和消费”
 
-### 2.2 关键策略一：热更后重绑依赖者（最小成本）
-在 `LoaderService.replaceModule` 之后执行 `refreshDependents()`：
-- 记录旧模块导出的插件 ctor（oldItems）。
-- 利用 `pluginInfo.id -> current ctor` 映射，把“直接依赖者”的构造参数 token 中的旧 ctor 替换成当前主 ctor。
-- 仅处理 `BasePlugin` 子类 token；其他参数不动。
+## 推荐入口
 
-性能取舍：
- - 只触碰“受影响插件的直接 dependents”，依赖图来自 `ctx.registry.container?.dependents`，不会全量扫描所有插件。
+```ts
+import { bootPlannedHmrHost, planHmrHostFromConfig } from '@pluxel/hmr/host'
 
-### 2.3 关键策略二：批量注入事务（避免 loader/core 状态漂移）
-`HMRService.runAndLoadAll()` 是“逐入口 evaluate + 注入（replaceModule）+ 单次 commit”：
-- 为了性能与时序稳定：入口顺序执行；最终只 commit 一次。
-- 但这意味着：如果 commit 在 DI build/verify 阶段失败，core 容器不会切换；若 loader 已更新自己的“声明层”映射，就会出现漂移（loader 以为插件已加载/重命名/锚定，core 实际未采纳）。
+const plan = await planHmrHostFromConfig({
+	root: process.cwd(),
+	configPath: 'pluxel.hmr.jsonc',
+	profile: process.env.PLUXEL_HMR_PROFILE ?? 'dev',
+})
+const { ctx, hmr } = await bootPlannedHmrHost(plan)
+await hmr.start()
+```
 
-因此 `LoaderService.beginBatch()` 提供 **loader 声明层事务**：
-- batch 内多次 `replaceModule()` 会记录 module/name 映射的旧值（O(变更)）。
-- commit 成功：`batch.commit()` 固化这些声明层变更。
-- commit 失败（仅 build/verify）：`batch.rollback()` 回滚声明层；同时调用 `ctx.registry.resetDraft()` 回滚 core 的 DI 草稿。
+已有 `Context` 时，再用 `attachHmrRuntime(...)`。
 
-失败边界（这是预期行为）：
-- **DI build/verify 失败**：回滚（因为容器没切换，本次变更“无效”）。
-- **插件生命周期启动失败**：不回滚（容器已切换，属于非事务化 commit 的部分失败），插件作者会立即得到失败反馈；后续 commit 会自动重试。
+## 前端边界
 
-## 3) Optional / 动态导入与 HMR
-`@pluxel/core` 的 `optional()` 设计目标是：可选依赖永远不阻塞构造；在 commit 之后如果依赖变为可用可以执行回调。
+- dev：`ui(...).bind(ctx)` 由 HMR bridge 消费源码入口
+- build：authoring bridge 会被重写成 `ctx.ext.ui.remote.packaged()`
+- runtime：只消费编译后的 MF remote
 
-常见日志：
-- `optional(dynamic import) 未在容器中`：动态导入拿到的 plugin ctor 尚未注册进容器（或正在 commit 的草稿容器中）。
+这三层故意分开，避免把 HMR 语义塞进 runtime 元数据。
 
-为避免 commit 期间误报，core optional 会优先查看“active draft container”（commit 尚未 confirm 时）。
+这里最关键的点不是“有没有 HMR”，而是“谁拥有源码语义”：
 
-## 4) 文件/入口索引（给 LLM 的导航）
-- HMR 批量执行入口：`packages/hmr/src/services/hmr/HMRService.ts`（`runAndLoadAll()`）
-- Loader 注入与 dependents 重绑：`packages/hmr/src/services/loader/LoaderService.ts`
-- Loader 声明层与 config/runtime 协调：`packages/hmr/src/services/loader/PluginRegistry.ts`
-- Core 插件容器与草稿/确认：`packages/core/src/plugins/PluginDefinitions.ts`
-- Core commit 编排与失败语义：`packages/core/src/plugins/service/PluginService.ts`
+- `ui(...).bind(ctx)` 只属于 authoring / HMR / build 识别点
+- `ctx.ext.ui.remote.packaged()` 才是最终 runtime 语义
+- runtime 永远不应该回头理解 `entryPath`
 
-## 5) 注意事项（避免误解）
-- “回滚”只针对 **DI build/verify 失败**（本次容器未切换）。生命周期失败不会回滚，这是刻意的：你需要看到即时失败与依赖链影响。
-- 依赖重绑只处理“直接 dependents”，如果你引入了自定义 token/非 BasePlugin 的构造参数依赖，需自行保证 token 稳定或扩展重绑策略。
+## MF2 在 HMR 里的角色
+
+HMR 对 MF2 的使用也很克制：
+
+- HMR 不把 MF2 当 authoring API
+- HMR 只把插件 UI 源码编译成 MF2 remote
+- dev host 自己负责源码监听、重编译和 compiled module 提交
+
+也就是说，HMR 负责“如何从源码得到 remote”，MF2 负责“remote 长什么样、宿主怎么加载它”。
+
+## 插件 UI 构建模型
+
+`@pluxel/hmr/plugin-build` 现在固定采用一个很刻意的模型：
+
+- 同一个插件包根目录共享一个 root-scoped build scheduler
+- 同 root 的多个 UI remote 构建请求会串行执行
+- 每一次真正的 MF2/Vite build 都在一个全新的子进程里完成
+- 每次 build 只清理这次专属的临时 cache，不主动触碰 root 下的 federation 临时目录
+
+这不是保守实现，而是当前最实用的实现。
+
+设计原因很直接：
+
+- `@module-federation/vite` 当前在同进程重复构建时会残留进程内状态
+- `1.14.1` 仍然需要在测试环境里显式关闭它自己的 test-env skip，但这已经收口在 child build 边界
+- 所以“常驻 worker 里反复 build”虽然看起来更快，实际会更脆
+
+因此这里故意只复用调度，不复用 federation build 进程状态。
+
+最终收益是：
+
+- 同 root 请求仍然能做去重和排队
+- 跨 root 仍然可以并行
+- 本地补丁面继续收缩在子进程边界和专属 cacheDir 上
+- HMR/runtime 不需要额外理解上游插件的内部状态机
+
+如果未来上游彻底修好同进程可重入性，这里唯一值得升级的方向，才是回到“每个 package root 一个常驻 build worker”。
+
+## Paraglide
+
+插件 UI 的 i18n 目标库现在锁定为 `@inlang/paraglide-js`。
+
+当前约定：
+
+- 插件包根目录必须提供 `project.inlang`
+- 消息源目录固定为 `messages/`
+- 生成目录固定为 `src/paraglide/`
+
+在这个约定下：
+
+- dev：`ExtensionCompilerService` 会自动把 `paraglideVitePlugin(...)` 注入插件 UI 的子编译
+- build：`buildPluginUiRemote(...)` 也会自动注入同一个 Vite 插件
+- watch/hash：会跟踪 `project.inlang` / `messages`，但不会把 `src/paraglide` 生成产物当成输入再次触发重编
+
+也就是说，Paraglide 属于插件 UI 编译链能力，而不是 runtime 自己维护的一套翻译运行时。
+
+这套约定的设计意图是：
+
+- 插件作者只关心消息源和桥接 locale
+- HMR/build 统一负责把 Paraglide 接到子编译里
+- runtime 不再维护插件侧自定义字典注册接口
+
+## 和 build/CLI 的协作
+
+HMR 并不单独定义最终发布语义。正式构建时还会配合：
+
+- `@pluxel/build`
+  用 `hmrUiBridgePlugin()` 把 `ui(...).bind(ctx)` 降成 `ctx.ext.ui.remote.packaged()`
+- `@pluxel/build/cli`
+  把这类 rewrite 纳入默认 overlay
+- `@pluxel/hmr/plugin-build`
+  负责插件 UI remote 的 MF2 构建
+
+也就是说，HMR 和 build 共享同一套 authoring 入口，但最后由 build 把 dev 语义清掉，只留下 runtime 需要的结果。
+
+## 当前固定约定
+
+如果你在维护这条链路，不要把下面几件事重新做成可选项：
+
+- `ui(...).bind(ctx)` 继续作为唯一的插件 UI authoring bridge
+- `ctx.ext.ui.remote.packaged()` 继续作为唯一的 runtime packaged 注册语义
+- Paraglide 继续使用 `project.inlang` + `messages/` -> `src/paraglide/`
+- 插件 UI 浏览器 runtime/MF shared import 继续收口到 `@pluxel/runtime/web/ui`
+- 插件 UI 类型增强统一声明到 `@pluxel/runtime/web`
+
+## 公开面
+
+- `@pluxel/hmr`
+  low-level attach、Vite config helper、`HMRService`
+- `@pluxel/hmr/host`
+  标准 host 入口
+- `@pluxel/hmr/plugin`
+  作者侧 `ui(...)` / `worker(...)` bridge
+- `@pluxel/hmr/plugin-build`
+  插件 UI remote 的 MF build helper
+- `@pluxel/hmr/diagnose`
+  HMR 配置诊断
+- `@pluxel/hmr/snapshot`
+  `HmrWorkspaceSnapshot`
+
+## 约束
+
+- runtime 不理解源码 UI 入口
+- host 和 runner 之间的单例桥接必须保持稳定
+- dev handles 是 root-scoped，插件 ctx 只消费，不自己创建
+- 宿主渲染 doc 仍走 runtime `ctx.ext.signaldb` / `ctx.ext.ui.*`

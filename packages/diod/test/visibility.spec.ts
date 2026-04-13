@@ -1,6 +1,6 @@
 // tests/visibility.spec.ts
 import 'reflect-metadata'
-import { describe, expect, it } from 'bun:test'
+import { describe, expect, it } from 'vitest'
 import { ContainerBuilder } from '../src'
 import { expectErr, expectExist, expectOk } from './_helpers'
 import { Agenda } from './fixtures/agenda'
@@ -31,10 +31,7 @@ describe('only public services can be directly queried from the container', () =
 		expect(container.get(Calendar)).toBeUndefined()
 
 		const res = container.getResult(Calendar)
-		const e = expectErr(
-			res,
-			'Calendar is private and cannot be directly resolved',
-		)
+		const e = expectErr(res, 'Calendar is private and cannot be directly resolved')
 		expect(e.kind).toBe('PrivateService')
 		// 可选进一步校验 id：expect(e.id).toBe(Calendar)
 	})

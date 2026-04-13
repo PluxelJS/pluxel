@@ -1,33 +1,22 @@
 // tests/builder.spec.ts
 import 'reflect-metadata'
-import { describe, expect, it } from 'bun:test'
+import { describe, expect, it } from 'vitest'
 import { ContainerBuilder } from '../src'
-import {
-	ServiceVerificationAggregateError,
-	type VerificationError,
-} from '../src/verifier'
+import { ServiceVerificationAggregateError, type VerificationError } from '../src/verifier'
 import { expectErr, expectExist, expectOk } from './_helpers'
 import { Agenda, Schedule } from './fixtures/agenda'
-import {
-	Circular1,
-	Circular2,
-	Circular3,
-	circular1,
-	circular2,
-} from './fixtures/circular'
+import { Circular1, Circular2, Circular3, circular1, circular2 } from './fixtures/circular'
 import { Clock } from './fixtures/clock'
 import { Routes } from './fixtures/extended-classes'
 import { NotDecorated } from './fixtures/not-decorated'
 import { NotPerson } from './fixtures/not-person'
 import { BankUser } from './fixtures/user'
 
-/**
- * 小工具：断言 build 的 Err 是聚合错误，并返回该错误对象（强类型）
- */
-const expectBuildErr = (r: ReturnType<ContainerBuilder['build']>) => {
-	const e = expectErr(r, 'expected build to be Err')
-	expect(e).toBeInstanceOf(ServiceVerificationAggregateError)
-	return e
+const idName = (id: unknown): string => {
+	if (typeof id === 'function') return id.name || '(anonymous)'
+	if (typeof id === 'symbol') return id.description ?? '(symbol)'
+	if (typeof id === 'string') return id
+	return '(anonymous)'
 }
 
 describe('build-time validations and registry ops', () => {
@@ -37,7 +26,8 @@ describe('build-time validations and registry ops', () => {
 		expectOk(builder.tryRegister(NotDecorated)) // 只 register，没有 use
 
 		// Assert
-		const e = expectBuildErr(builder.build())
+		const e = expectErr(builder.build(), 'expected build to be Err')
+		expect(e).toBeInstanceOf(ServiceVerificationAggregateError)
 		// 你现有实现里会生成对应信息；这里用 format() 做包含断言即可
 		expect(e.format()).toContain('registration is not completed')
 		expect(e.format()).toContain('NotDecorated')
@@ -48,7 +38,8 @@ describe('build-time validations and registry ops', () => {
 		// 直接 use 未装饰但带依赖的服务
 		expectOk(builder.tryRegisterAndUse(NotDecorated))
 
-		const e = expectBuildErr(builder.build())
+		const e = expectErr(builder.build(), 'expected build to be Err')
+		expect(e).toBeInstanceOf(ServiceVerificationAggregateError)
 		// 信息包含 "Service not decorated"
 		expect(e.format()).toContain('Service not decorated')
 		expect(e.format()).toContain('NotDecorated')
@@ -58,10 +49,11 @@ describe('build-time validations and registry ops', () => {
 		const builder = new ContainerBuilder()
 		expectOk(builder.tryRegisterAndUse(Agenda))
 
-		const e = expectBuildErr(builder.build())
+		const e = expectErr(builder.build(), 'expected build to be Err')
+		expect(e).toBeInstanceOf(ServiceVerificationAggregateError)
 		// 缺失依赖属于 MissingDependency
 		const hasMissing = e.errors.some((x) => x.kind === 'MissingDependency')
-		expect(hasMissing).toBeTrue()
+		expect(hasMissing).toBe(true)
 		// 人类可读信息包含目标类名
 		expect(e.format()).toContain('Agenda')
 	})
@@ -71,9 +63,10 @@ describe('build-time validations and registry ops', () => {
 		expectOk(builder.tryRegister(Schedule)).use(Schedule)
 		expectOk(builder.tryRegister(Agenda)).use(Agenda)
 
-		const e = expectBuildErr(builder.build())
+		const e = expectErr(builder.build(), 'expected build to be Err')
+		expect(e).toBeInstanceOf(ServiceVerificationAggregateError)
 		const hasMissing = e.errors.some((x) => x.kind === 'MissingDependency')
-		expect(hasMissing).toBeTrue()
+		expect(hasMissing).toBe(true)
 		expect(e.format()).toContain('Agenda')
 	})
 
@@ -81,7 +74,8 @@ describe('build-time validations and registry ops', () => {
 		const builder = new ContainerBuilder()
 		expectOk(builder.tryRegisterAndUse(NotPerson))
 
-		const e = expectBuildErr(builder.build())
+		const e = expectErr(builder.build(), 'expected build to be Err')
+		expect(e).toBeInstanceOf(ServiceVerificationAggregateError)
 		// 你的实现通常会输出 NotPerson -> NotDecorated 的链
 		expect(e.format()).toContain('NotPerson')
 		expect(e.format()).toContain('NotDecorated')
@@ -102,22 +96,19 @@ describe('build-time validations and registry ops', () => {
 		const builder = new ContainerBuilder()
 		expectOk(builder.tryRegisterAndUse(BankUser))
 
-		const e = expectBuildErr(builder.build({ autowire: false }))
+		const e = expectErr(builder.build({ autowire: false }), 'expected build to be Err')
+		expect(e).toBeInstanceOf(ServiceVerificationAggregateError)
 		// 至少应包含 MissingDependency
 		const hasMissing = e.errors.some((x) => x.kind === 'MissingDependency')
 
 		const hasInsufficient = e.errors.some(
-			(
-				x,
-			): x is Extract<
-				VerificationError,
-				{ kind: 'InsufficientExplicitDependencies' }
-			> => x.kind === 'InsufficientExplicitDependencies',
+			(x): x is Extract<VerificationError, { kind: 'InsufficientExplicitDependencies' }> =>
+				x.kind === 'InsufficientExplicitDependencies',
 			// 可选：进一步限定就是 BankUser
 			// && x.id === (BankUser as unknown as Identifier<unknown>)
 		)
 
-		expect(hasMissing || hasInsufficient).toBeTrue()
+		expect(hasMissing || hasInsufficient).toBe(true)
 		expect(e.format()).toContain('BankUser') // 保持可读断言
 	})
 
@@ -127,16 +118,17 @@ describe('build-time validations and registry ops', () => {
 		expectOk(builder.tryRegisterAndUse(Circular2)).withDependencies([Circular3])
 		expectOk(builder.tryRegisterAndUse(Circular3)).withDependencies([Circular1])
 
-		const e = expectBuildErr(builder.build({ autowire: false }))
+		const e = expectErr(builder.build({ autowire: false }), 'expected build to be Err')
+		expect(e).toBeInstanceOf(ServiceVerificationAggregateError)
 		// 类型安全：检查 CircularDependency
 		const cycle = e.errors.find(
 			(x): x is Extract<VerificationError, { kind: 'CircularDependency' }> =>
 				x.kind === 'CircularDependency',
 		)
-		expect(Boolean(cycle)).toBeTrue()
+		expect(Boolean(cycle)).toBe(true)
 		// 链名字应包含环
 		if (cycle) {
-			const names = cycle.chain.map((id) => (id as any).name ?? '(anonymous)')
+			const names = cycle.chain.map(idName)
 			expect(names.join(' -> ')).toContain('Circular1')
 			expect(names.join(' -> ')).toContain('Circular2')
 			expect(names.join(' -> ')).toContain('Circular3')
@@ -146,12 +138,8 @@ describe('build-time validations and registry ops', () => {
 	it('does not throw circular dependency error when different classes with the same name are used', () => {
 		const builder = new ContainerBuilder()
 		expectOk(builder.tryRegisterAndUse(circular1.Circular1))
-		expectOk(builder.tryRegisterAndUse(circular2.Circular1)).withDependencies([
-			circular2.Circular2,
-		])
-		expectOk(builder.tryRegisterAndUse(circular2.Circular2)).withDependencies([
-			circular1.Circular1,
-		])
+		expectOk(builder.tryRegisterAndUse(circular2.Circular1)).withDependencies([circular2.Circular2])
+		expectOk(builder.tryRegisterAndUse(circular2.Circular2)).withDependencies([circular1.Circular1])
 
 		// 成功构建
 		expectOk(builder.build({ autowire: false }))
@@ -174,10 +162,7 @@ describe('build-time validations and registry ops', () => {
 		expectOk(builder.tryRegisterAndUse(Clock))
 
 		const r = builder.tryUnregister(Circular1)
-		const success = expectOk(
-			r,
-			'no NotRegistered any more when unregistering unknown id',
-		)
+		const success = expectOk(r, 'no NotRegistered any more when unregistering unknown id')
 		expect(success).toBe(false)
 		// expect(unregErr.id).toBe(Circular1)
 	})
@@ -187,7 +172,7 @@ describe('build-time validations and registry ops', () => {
 		expectOk(builder.tryRegisterAndUse(Clock))
 
 		expectOk(builder.tryUnregister(Clock))
-		expect(builder.isRegistered(Clock)).toBeFalse()
+		expect(builder.isRegistered(Clock)).toBe(false)
 	})
 
 	it('can query if a service is registe red', () => {
@@ -197,7 +182,7 @@ describe('build-time validations and registry ops', () => {
 		const isClockRegistered = builder.isRegistered(Clock)
 		const isCircular1Registered = builder.isRegistered(Circular1)
 
-		expect(isClockRegistered).toBeTrue()
-		expect(isCircular1Registered).toBeFalse()
+		expect(isClockRegistered).toBe(true)
+		expect(isCircular1Registered).toBe(false)
 	})
 })

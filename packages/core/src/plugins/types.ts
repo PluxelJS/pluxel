@@ -1,10 +1,8 @@
 // types.ts
 // Shared plugin type aliases. Kept tiny for minimal type‑level coupling.
 
-export type { Abstract, Identifier, Newable } from '../container'
-
 import type { Identifier, Newable } from '../container'
-import type { BasePlugin, ForkablePlugin } from './BasePlugin'
+import type { BasePlugin, ForkablePlugin } from './composition/BasePlugin'
 
 export type AnyFn = (...args: any[]) => any
 

@@ -3,10 +3,28 @@ import { Bench } from 'tinybench'
 import { fileURLToPath } from 'node:url'
 import { mkdirSync } from 'node:fs'
 
-import { baselineEnvPath, benchOptions, debugBench, scenarioSizes, strictMode, tolerancePct, writeBaseline } from './pluginLifecycle/env'
+import {
+	baselineEnvPath,
+	benchOptions,
+	debugBench,
+	scenarioSizes,
+	strictMode,
+	tolerancePct,
+	writeBaseline,
+} from './pluginLifecycle/env'
 import { createScenario } from './pluginLifecycle/scenario'
 import { registerPluginLifecycleBenchmarks, TASK_MEANING } from './pluginLifecycle/tasks'
-import { buildComparison, collectRows, loadBaselineReport, printRowsTable, renderMarkdown, resolveBaselinePath, toDiffReport, toMainReport, writeReports } from './pluginLifecycle/report'
+import {
+	buildComparison,
+	collectRows,
+	loadBaselineReport,
+	printRowsTable,
+	renderMarkdown,
+	resolveBaselinePath,
+	toDiffReport,
+	toMainReport,
+	writeReports,
+} from './pluginLifecycle/report'
 
 const silencePluginLogs = () => {
 	const methods: Array<'trace' | 'debug' | 'info' | 'warn' | 'error' | 'log'> = [
@@ -25,7 +43,7 @@ const silencePluginLogs = () => {
 		}
 	})
 	return () => {
-		while (restoreStack.length) {
+		while (restoreStack.length > 0) {
 			const restore = restoreStack.pop()
 			restore?.()
 		}
@@ -59,8 +77,7 @@ mkdirSync(fileURLToPath(benchmarksDir), { recursive: true })
 
 const defaultBaselinePath = fileURLToPath(new URL('plugin-lifecycle.baseline.json', benchmarksDir))
 const resolvedBaselinePath = baselineEnvPath
-	? resolveBaselinePath(baselineEnvPath) ??
-		fileURLToPath(new URL(baselineEnvPath, benchmarksDir))
+	? (resolveBaselinePath(baselineEnvPath) ?? fileURLToPath(new URL(baselineEnvPath, benchmarksDir)))
 	: defaultBaselinePath
 if (debugBench && baselineEnvPath) {
 	console.log('[bench] baseline candidates resolved to:', resolvedBaselinePath ?? '(not found)')
@@ -106,14 +123,20 @@ writeReports({
 	baselinePath: new URL('plugin-lifecycle.baseline.json', benchmarksDir),
 })
 
-if (comparison.length) {
+if (comparison.length > 0) {
 	console.log('\nComparison vs baseline:')
 	console.table(
 		comparison.map((item) => ({
 			Task: item.name,
 			Status: item.status,
-			'Ops Δ%': item.opsDeltaPct == null ? '—' : `${item.opsDeltaPct > 0 ? '+' : ''}${item.opsDeltaPct.toFixed(2)}%`,
-			'Latency Δ%': item.latencyDeltaPct == null ? '—' : `${item.latencyDeltaPct > 0 ? '+' : ''}${item.latencyDeltaPct.toFixed(2)}%`,
+			'Ops Δ%':
+				item.opsDeltaPct == null
+					? '—'
+					: `${item.opsDeltaPct > 0 ? '+' : ''}${item.opsDeltaPct.toFixed(2)}%`,
+			'Latency Δ%':
+				item.latencyDeltaPct == null
+					? '—'
+					: `${item.latencyDeltaPct > 0 ? '+' : ''}${item.latencyDeltaPct.toFixed(2)}%`,
 			'Baseline ops': item.baselineOpsMean ?? '—',
 			'Current ops': item.opsMean ?? '—',
 			'Baseline latency (ms)': item.baselineLatencyMeanMs ?? '—',
@@ -122,13 +145,15 @@ if (comparison.length) {
 	)
 }
 
-const regressions = comparison.filter((item) => item.status === 'measured').filter((item) => {
-	const opsDelta = item.opsDeltaPct ?? 0
-	const latencyDelta = item.latencyDeltaPct ?? 0
-	return opsDelta < -tolerancePct || latencyDelta > tolerancePct
-})
+const regressions = comparison
+	.filter((item) => item.status === 'measured')
+	.filter((item) => {
+		const opsDelta = item.opsDeltaPct ?? 0
+		const latencyDelta = item.latencyDeltaPct ?? 0
+		return opsDelta < -tolerancePct || latencyDelta > tolerancePct
+	})
 
-if (regressions.length) {
+if (regressions.length > 0) {
 	console.warn('\nPotential regressions detected (threshold:', tolerancePct, '%):')
 	for (const item of regressions) {
 		console.warn(

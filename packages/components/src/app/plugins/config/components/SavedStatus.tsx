@@ -31,4 +31,3 @@ export function SavedStatus({ dirty, savedAt }: { dirty: boolean; savedAt?: numb
 		</Tooltip>
 	)
 }
-

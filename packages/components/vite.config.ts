@@ -1,91 +1,78 @@
-// vite.config.ts
-
-import react from '@vitejs/plugin-react'
 import { defineConfig } from 'vite'
+import { fileURLToPath } from 'node:url'
+import {
+	buildPluxelFrontendResolveConditions,
+	createPluxelUiChunkGroups,
+	PLUXEL_TABLER_ICONS_ESM_ENTRY_SPECIFIER,
+	PLUXEL_UI_DEDUPE_PACKAGES,
+	PLUXEL_UI_OPTIMIZE_DEPS_INCLUDE,
+} from '../workspace/src/vite'
+import { createWorkbenchFrontendPlugins } from './vite/plugins'
+
+const VALIBOT_FORM_SOURCE_ENTRY = fileURLToPath(
+	new URL('../valibot-form/src/index.ts', import.meta.url),
+)
+const VALIBOT_FORM_WEB_SOURCE_ENTRY = fileURLToPath(
+	new URL('../valibot-form/src/web/index.ts', import.meta.url),
+)
+const MANTINE_SASS_ENTRY = fileURLToPath(
+	new URL('./src/styles/theme/_mantine.scss', import.meta.url),
+).replaceAll('\\', '/')
 
 export default defineConfig(({ mode }) => {
 	const isDev = mode !== 'production'
+	const resolveConditions = buildPluxelFrontendResolveConditions(mode)
 
 	return {
 		server: {
 			proxy: {
-				// API + GraphQL 走后端 3000，方便本地联调
-				'/api': {
-					target: 'http://localhost:3000',
-					changeOrigin: true,
-				},
-				'/graphql': {
+				// Pluxel HMR internal API 走后端 3000，方便本地联调
+				'/__pluxel/hmr': {
 					target: 'http://localhost:3000',
 					changeOrigin: true,
 				},
 			},
 		},
 		resolve: {
-			tsconfigPaths: true,
-			dedupe: [
-				'react',
-				'react-dom',
-				'@mantine/core',
-				'@mantine/hooks',
-				'@mantine/notifications',
-				'@mantine/dates',
-			],
+			conditions: resolveConditions,
+			dedupe: [...PLUXEL_UI_DEDUPE_PACKAGES],
 			alias: {
-				// 你的设置：避免为每个图标单独切 chunk
-				'@tabler/icons-react': '@tabler/icons-react/dist/esm/icons/index.mjs',
+				// Workspace frontend should always consume current source, not stale package dist output.
+				'valibot-form/web': VALIBOT_FORM_WEB_SOURCE_ENTRY,
+				'valibot-form': VALIBOT_FORM_SOURCE_ENTRY,
+				// Avoid splitting each icon into a separate chunk.
+				'@tabler/icons-react': PLUXEL_TABLER_ICONS_ESM_ENTRY_SPECIFIER,
+			},
+		},
+		ssr: {
+			resolve: {
+				conditions: resolveConditions,
 			},
 		},
 
-		plugins: [react()],
+		plugins: createWorkbenchFrontendPlugins(),
 
-		// 关键：把 Mantine/Emotion 相关预打包，减少 cold start + 提升 HMR 稳定
-		optimizeDeps: {
-			include: [
-				'react',
-				'react-dom',
-				'@mantine/core',
-				'@mantine/hooks',
-				'@mantine/notifications',
-				// 你若用到再加：'@mantine/dates', 'dayjs'
-				'@tabler/icons-react',
-				'obug',
-			],
+		css: {
+			preprocessorOptions: {
+				scss: {
+					api: 'modern-compiler',
+					additionalData: `@use "${MANTINE_SASS_ENTRY}" as mantine;`,
+				},
+			},
 		},
 
-		// 更合理的生产分包：react/mantine/emotion/tabler 独立缓存
+		// Pre-bundle common deps for faster cold start and more stable HMR.
+		optimizeDeps: {
+			include: [...PLUXEL_UI_OPTIMIZE_DEPS_INCLUDE],
+		},
+
+		// Production chunking: keep common libraries cache-friendly.
 		build: {
 			sourcemap: isDev ? true : 'hidden',
-			rollupOptions: {
+			rolldownOptions: {
 				output: {
-					advancedChunks: {
-						groups: [
-							{
-								name: 'react',
-								test: /[\\/]node_modules[\\/](react|react-dom)[\\/]/,
-								priority: 50,
-							},
-							{
-								name: 'mantine',
-								test: /[\\/]node_modules[\\/]@mantine[\\/]/,
-								priority: 40,
-							},
-							{
-								name: 'emotion',
-								test: /[\\/]node_modules[\\/]@emotion[\\/]/,
-								priority: 30,
-							},
-							{
-								name: 'tabler',
-								test: /[\\/]node_modules[\\/]@tabler[\\/]icons-react[\\/]/,
-								priority: 20,
-							},
-							{
-								name: 'vendor',
-								test: /[\\/]node_modules[\\/]/,
-								priority: 0,
-								minSize: 10 * 1024,
-							},
-						],
+					codeSplitting: {
+						groups: createPluxelUiChunkGroups(),
 					},
 				},
 			},
