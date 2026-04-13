@@ -1,4 +1,4 @@
-import type { ViteCompatPlugin } from './compat'
+import type { ViteCompatPlugin } from './compat.ts'
 
 type Options = {
 	/**

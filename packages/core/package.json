@@ -75,6 +75,7 @@
 		"@abraham/reflection": "^0.13.0",
 		"@pluxel/build": "workspace:*",
 		"@pluxel/context": "workspace:*",
+		"@pluxel/core-di": "workspace:*",
 		"@pluxel/test": "workspace:*",
 		"diod": "workspace:*",
 		"option-t": "^55.1.2",

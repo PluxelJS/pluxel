@@ -2,6 +2,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { resolve } from 'node:path'
 import type { ViteUserConfig } from 'vitest/config'
 
+const buildRolldownModule = '../../build/src/rolldown/index.ts'
+
 async function loadVitestModule() {
 	const lintGuardPlugin = vi.fn((options?: unknown) => ({
 		name: `lint-guard-${lintGuardPlugin.mock.calls.length}`,
@@ -12,7 +14,7 @@ async function loadVitestModule() {
 		options,
 	}))
 
-	vi.doMock('@pluxel/build/rolldown', () => ({
+	vi.doMock(buildRolldownModule, () => ({
 		lintGuardPlugin,
 		configSourcePlugin,
 	}))
@@ -23,7 +25,7 @@ async function loadVitestModule() {
 
 afterEach(() => {
 	vi.resetModules()
-	vi.doUnmock('@pluxel/build/rolldown')
+	vi.doUnmock(buildRolldownModule)
 })
 
 describe('@pluxel/test/vitest', () => {
@@ -42,5 +44,8 @@ describe('@pluxel/test/vitest', () => {
 				cwd: resolve(process.cwd(), 'packages/test'),
 			},
 		})
+		expect(config.test?.setupFiles).toHaveLength(1)
+		expect(config.test?.setupFiles?.[0]).not.toBe('@pluxel/test/setup')
+		expect(config.test?.setupFiles?.[0]).toMatch(/packages\/test\/(?:src|dist)\/setup\.(?:ts|mjs|cjs)$/)
 	})
 })

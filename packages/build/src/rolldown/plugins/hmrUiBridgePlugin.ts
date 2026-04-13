@@ -21,9 +21,9 @@
 
 import type { ImportDeclaration, ImportSpecifier, Program } from 'oxc-parser'
 import type { TransformPluginContext } from 'rolldown'
-import { allowOptionalQuerySuffix, type ViteCompatPlugin } from './compat'
-import { normalizeViteId } from './viteNormalizeId'
-import { normalizePatterns, parseWithLang } from './pluginUtils'
+import { allowOptionalQuerySuffix, type ViteCompatPlugin } from './compat.ts'
+import { normalizeViteId } from './viteNormalizeId.ts'
+import { normalizePatterns, parseWithLang } from './pluginUtils.ts'
 
 export interface HmrUiBridgePluginOptions {
 	include?: string | string[]

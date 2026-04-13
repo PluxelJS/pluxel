@@ -594,13 +594,15 @@ export class HmrRunner {
 
 		try {
 			if (kind === 'dist') {
-				return resolveModulePath(this._hostResolver, specifier, {
-					mode: 'distPreferEsm',
-					conditions: ['node', ...conditions],
-				})
+				return Promise.resolve(
+					resolveModulePath(this._hostResolver, specifier, {
+						mode: 'distPreferEsm',
+						conditions: ['node', ...conditions],
+					}),
+				)
 			}
 
-			return resolveModulePath(this._hostResolver, specifier, { conditions })
+			return Promise.resolve(resolveModulePath(this._hostResolver, specifier, { conditions }))
 		} catch {
 			return Promise.resolve(null)
 		}

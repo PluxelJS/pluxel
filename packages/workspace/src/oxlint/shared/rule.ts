@@ -12,14 +12,14 @@ import type {
 type NativeOxlintRule = Parameters<RuleTester['run']>[1]
 
 function asNativeRule(rule: OxRule): NativeOxlintRule {
-	return rule
+	return rule as unknown as NativeOxlintRule
 }
 
 export function createRule(
 	meta: OxRuleMeta,
 	create: (context: OxRuleContext) => OxVisitor,
 ): OxRule {
-	return asNativeRule({ meta, create })
+	return { meta, create }
 }
 
 export function report(

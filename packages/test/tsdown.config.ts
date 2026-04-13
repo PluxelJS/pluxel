@@ -1,9 +1,6 @@
 import { fileURLToPath } from 'node:url'
 import { defineConfig } from 'tsdown'
 
-const buildRoot = fileURLToPath(new URL('../build/src', import.meta.url))
-const buildRolldown = fileURLToPath(new URL('../build/src/rolldown/index.ts', import.meta.url))
-
 export default defineConfig({
 	// This package ships as a bundled dev tool (Vitest preset + transforms).
 	exports: {
@@ -30,10 +27,6 @@ export default defineConfig({
 	clean: true,
 	minify: true,
 	treeshake: true,
-	alias: {
-		'@pluxel/build': buildRoot,
-		'@pluxel/build/rolldown': buildRolldown,
-	},
 	inputOptions: {
 		transform: {
 			assumptions: {

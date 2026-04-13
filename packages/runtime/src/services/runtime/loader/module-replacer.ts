@@ -179,15 +179,11 @@ export class ModuleReplacer {
 	 */
 	private refreshDependents(moduleId: string, oldItems: readonly { ctor: PluginConstructor }[]) {
 		if (oldItems.length === 0) return
-		const dependents = this.ctx.registry.container?.dependents
-		if (!dependents?.size) return
-		const dependentsMap = dependents as unknown as Map<unknown, Set<unknown>>
+		const graph = this.ctx.registry.graph
 
 		const affected = new Set<PluginConstructor>()
 		for (const { ctor } of oldItems) {
-			const deps = dependentsMap.get(ctor)
-			if (!deps) continue
-			for (const dep of deps) {
+			for (const dep of graph.dependentsOf(ctor)) {
 				if (typeof dep === 'function') affected.add(dep as PluginConstructor)
 			}
 		}

@@ -32,10 +32,10 @@ import type {
 	SpreadElement,
 } from 'oxc-parser'
 import type { TransformPluginContext } from 'rolldown'
-import { normalizeSchemaSource } from '../utils/configHandler'
-import { allowOptionalQuerySuffix, type ViteCompatPlugin } from './compat'
-import { normalizeViteId } from './viteNormalizeId'
-import { normalizePatterns, parseWithLang } from './pluginUtils'
+import { normalizeSchemaSource } from '../utils/configHandler.ts'
+import { allowOptionalQuerySuffix, type ViteCompatPlugin } from './compat.ts'
+import { normalizeViteId } from './viteNormalizeId.ts'
+import { normalizePatterns, parseWithLang } from './pluginUtils.ts'
 
 export interface ConfigSourcePluginOptions {
 	/** File patterns to include (default: *.ts, *.tsx in plugin directories) */

@@ -26,7 +26,7 @@ const tester = new RuleTester({
 })
 
 function runRule(name: string, rule: OxRule, tests: TestedCases) {
-	tester.run(name, rule satisfies TestedRule, tests)
+	tester.run(name, rule as unknown as TestedRule, tests)
 }
 
 runRule('log-no-rendered-error', pluxelRules['log-no-rendered-error'], {

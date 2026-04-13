@@ -22,7 +22,7 @@ type PluginOwnFields<T extends PluginConstructor> = Omit<InstanceType<T>, keyof 
 export type ConfigPatch<T extends PluginConstructor> = Partial<
 	Pick<PluginOwnFields<T>, NonFunctionPropertyNames<PluginOwnFields<T>>>
 > &
-	Partial<Record<NamespacedConfigKey, unknown>>
+	Partial<Record<string | NamespacedConfigKey, unknown>>
 
 export type ConfigPatchByName = Record<string, unknown>
 
@@ -48,7 +48,11 @@ export interface Host {
 	remove(id: PluginIdentifier): Host
 	remove(ids: readonly PluginIdentifier[]): Host
 	restart: (id: PluginIdentifier, opts?: { cascadeDependents?: boolean }) => Host
-	replace: (id: PluginIdentifier, next: PluginConstructor) => Host
+	replace: (
+		id: PluginIdentifier,
+		next: PluginConstructor,
+		opts?: { cascadeDependents?: boolean; provideBase?: boolean },
+	) => Host
 
 	/** Create+register a fork ctor into draft; returns the fork ctor. */
 	fork: <T extends ForkablePluginConstructor>(
@@ -96,13 +100,13 @@ export function createHost(config: Context.Config = {}): Host {
 
 	const last = () => registry.lastCommit
 
-	const services = () => [...(last()?.container.services.keys() ?? [])]
+	const services = () => [...(last()?.graph.keys() ?? [])]
 	const plugins = () =>
 		services().filter(
-			(id): id is PluginConstructor => typeof id === 'function' && checkPluginDecorator(id),
+			(id): id is PluginConstructor =>
+				typeof id === 'function' && checkPluginDecorator(id as PluginConstructor),
 		)
-	const has = (id: unknown) =>
-		(last()?.container.services as Map<unknown, unknown> | undefined)?.has(id) ?? false
+	const has = (id: unknown) => last()?.graph.has(id as never) ?? false
 
 	const get = <T extends PluginIdentifier>(id: T) => registry.getInstance(id)
 	const require = <T extends PluginIdentifier>(id: T) => {
@@ -180,8 +184,8 @@ export function createHost(config: Context.Config = {}): Host {
 			registry.restart(id, opts)
 			return host
 		},
-		replace: (id, next) => {
-			registry.replace(id, next)
+		replace: (id, next, opts) => {
+			registry.replace(id, next, opts)
 			return host
 		},
 

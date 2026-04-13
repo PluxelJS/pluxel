@@ -308,6 +308,9 @@ importers:
       '@pluxel/context':
         specifier: workspace:*
         version: link:../context
+      '@pluxel/core-di':
+        specifier: workspace:*
+        version: link:../core-di
       '@pluxel/test':
         specifier: workspace:*
         version: link:../test
@@ -317,6 +320,18 @@ importers:
       option-t:
         specifier: ^55.1.2
         version: 55.1.2
+      tinybench:
+        specifier: ^6.0.0
+        version: 6.0.0
+
+  packages/core-di:
+    devDependencies:
+      '@pluxel/test':
+        specifier: workspace:*
+        version: link:../test
+      diod:
+        specifier: workspace:*
+        version: link:../diod
       tinybench:
         specifier: ^6.0.0
         version: 6.0.0

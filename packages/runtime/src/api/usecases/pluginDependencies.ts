@@ -153,15 +153,7 @@ export function inspectPluginDependencies(ctx: Context, name: string): PluginDep
 		if (kind === 'base') {
 			const baseToken = token
 			try {
-				const resolver = (ctx.registry.container as { resolveIdentifier?: unknown })
-					?.resolveIdentifier
-				const resolved =
-					typeof resolver === 'function'
-						? (resolver as (this: unknown, x: unknown) => unknown).call(
-								ctx.registry.container,
-								baseToken,
-							)
-						: undefined
+				const resolved = ctx.registry.graph.resolve(baseToken as PluginIdentifier)
 				if (typeof resolved === 'function') baseProvider = tokenName(resolved)
 			} catch {}
 

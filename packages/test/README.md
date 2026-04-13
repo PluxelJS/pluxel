@@ -70,8 +70,10 @@ host.cfg(ForkA).set({ v: 'A' })
 `vitest.config.ts`:
 
 ```ts
-export { default } from '@pluxel/test/vitest'
+export { default } from '../test/src/vitest.ts'
 ```
+
+For published packages outside this monorepo, import `@pluxel/test/vitest` instead.
 
 Because the preset runs Pluxel build-correctness lint before transforms, the test project should
 also install `oxlint` as a dev dependency.
@@ -97,7 +99,7 @@ export default defineConfig({
 })
 ```
 
-Each package can keep its own `vitest.config.ts` (typically `export { default } from '@pluxel/test/vitest'`).
+Each package can keep its own `vitest.config.ts` (typically `export { default } from '../test/src/vitest.ts'`).
 
 By default, `@pluxel/test/vitest` sets `passWithNoTests: !process.env.CI` to avoid breaking local workspace runs
 when some packages have no tests.
@@ -120,7 +122,7 @@ export default definePluxelVitestWorkspaceConfig({
 If you need to add extra Vite plugins:
 
 ```ts
-import { definePluxelVitestConfig } from '@pluxel/test/vitest'
+import { definePluxelVitestConfig } from '../test/src/vitest.ts'
 import SomeTransform from 'some-transform/vite'
 
 export default definePluxelVitestConfig(

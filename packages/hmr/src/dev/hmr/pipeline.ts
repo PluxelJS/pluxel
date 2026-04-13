@@ -774,7 +774,7 @@ export class HmrBatchProcessor {
 			)
 		}
 
-		const activeServices = this.ctx.registry.container?.services.size ?? 0
+		const activeServices = this.ctx.registry.graph.activeCount()
 		const { plugins: pluginTotals } = collectPluginTotals({
 			registryView: this.ctx.loader.api.registry,
 			isEnabledInConfig: (name) => this.ctx.configService.isEnabledInConfig(name),

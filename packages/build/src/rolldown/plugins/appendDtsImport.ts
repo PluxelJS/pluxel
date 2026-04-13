@@ -1,4 +1,4 @@
-import type { ViteCompatPlugin } from './compat'
+import type { ViteCompatPlugin } from './compat.ts'
 
 export function appendDtsImport(snippet: string, files: string[]): ViteCompatPlugin {
 	const exts = /\.d\.(?:mts|cts|ts)$/i

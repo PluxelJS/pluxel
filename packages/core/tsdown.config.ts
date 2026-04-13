@@ -19,7 +19,14 @@ const transformOptions = {
 export default defineConfig({
 	deps: {
 		onlyBundle: ['@abraham/reflection', /^option-t(\/.*)?$/],
-		alwaysBundle: ['@pluxel/context', '@pluxel/context/*', 'diod', 'diod/*'],
+		alwaysBundle: [
+			'@pluxel/context',
+			'@pluxel/context/*',
+			'@pluxel/core-di',
+			'@pluxel/core-di/*',
+			'diod',
+			'diod/*',
+		],
 	},
 	exports: {
 		devExports: '@pluxel/source',

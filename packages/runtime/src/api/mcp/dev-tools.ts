@@ -21,7 +21,7 @@ type HmrBatchSummaryLike = {
 	commitError?: string
 	commit?: {
 		added: readonly string[]
-		replaced: readonly string[]
+		replaced: readonly { from: string; to: string }[]
 		removed: readonly string[]
 		failed: readonly string[]
 		touched: readonly string[]
@@ -150,7 +150,7 @@ const WaitForBatchOutputSchema = v.object({
 	commit: v.optional(
 		v.object({
 			added: v.array(v.string()),
-			replaced: v.array(v.string()),
+			replaced: v.array(v.object({ from: v.string(), to: v.string() })),
 			removed: v.array(v.string()),
 			failed: v.array(v.string()),
 			touched: v.array(v.string()),

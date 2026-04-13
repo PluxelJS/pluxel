@@ -3,7 +3,7 @@ import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { spawnSync } from 'node:child_process'
 import type { PluginContext } from 'rolldown'
-import { type ViteCompatPlugin } from './compat'
+import { type ViteCompatPlugin } from './compat.ts'
 
 export interface LintGuardPluginOptions {
 	cwd?: string

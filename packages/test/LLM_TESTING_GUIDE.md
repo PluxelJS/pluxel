@@ -63,13 +63,15 @@ Use the preset so toolchain metadata extraction is available:
 `vitest.config.ts`
 
 ```ts
-export { default } from '@pluxel/test/vitest'
+export { default } from '../test/src/vitest.ts'
 ```
+
+If you are consuming the published package outside this monorepo, use `@pluxel/test/vitest`.
 
 If you need extra Vite plugins in your test pipeline, use:
 
 ```ts
-import { definePluxelVitestConfig } from '@pluxel/test/vitest'
+import { definePluxelVitestConfig } from '../test/src/vitest.ts'
 import ExtraTransform from 'some-transform/vite'
 
 export default definePluxelVitestConfig(

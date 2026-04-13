@@ -131,9 +131,9 @@ function getReturnedExpression(
 		body,
 		visitorKeys,
 		(candidate) => {
-			if (candidate.type !== 'ReturnStatement') return
+			if (candidate.type !== 'ReturnStatement') return undefined
 			const argument = unwrapExpression(candidate.argument)
-			if (!argument) return
+			if (!argument) return undefined
 			found = argument
 			return false
 		},
@@ -148,12 +148,23 @@ function getStaticImportReference(
 ): { name: string; node: OxNode } | null {
 	const expression = unwrapExpression(node)
 	if (!expression) return null
-	if (expression.type === 'Identifier' && importsByLocal.has(expression.name)) {
+	if (
+		expression.type === 'Identifier' &&
+		typeof expression.name === 'string' &&
+		importsByLocal.has(expression.name)
+	) {
 		return { name: expression.name, node: expression }
 	}
 	if (expression.type !== 'MemberExpression') return null
 	const object = unwrapExpression(expression.object)
-	if (!object || object.type !== 'Identifier' || !importsByLocal.has(object.name)) return null
+	if (
+		!object ||
+		object.type !== 'Identifier' ||
+		typeof object.name !== 'string' ||
+		!importsByLocal.has(object.name)
+	) {
+		return null
+	}
 	return { name: object.name, node: object }
 }
 
@@ -172,10 +183,10 @@ function collectTopLevelOptionalSpecBindings(program: OxNode): {
 			const init = unwrapExpression(declarator.init)
 			if (id?.type !== 'Identifier' || !init || !isDefineOptionalFeatureCall(init)) continue
 			if (declaration.kind === 'const') {
-				constSpecs.set(id.name, init)
+				if (typeof id.name === 'string') constSpecs.set(id.name, init)
 				continue
 			}
-			mutableSpecs.add(id.name)
+			if (typeof id.name === 'string') mutableSpecs.add(id.name)
 		}
 	}
 	for (const statement of body) {
@@ -200,7 +211,7 @@ function containsDynamicImport(
 		node,
 		visitorKeys,
 		(candidate) => {
-			if (candidate.type !== 'ImportExpression') return
+			if (candidate.type !== 'ImportExpression') return undefined
 			found = true
 			return false
 		},
@@ -507,7 +518,7 @@ const featuresTryUseRequiresDefinedSpec = createRule(
 					report(context, firstArg, 'inlineSpec')
 					return
 				}
-				if (firstArg.type === 'Identifier') {
+				if (firstArg.type === 'Identifier' && typeof firstArg.name === 'string') {
 					if (topLevelSpecs.has(firstArg.name) || importsByLocal.has(firstArg.name)) return
 					if (mutableSpecs.has(firstArg.name)) {
 						report(context, firstArg, 'mutableSpec')
@@ -518,7 +529,13 @@ const featuresTryUseRequiresDefinedSpec = createRule(
 				}
 				if (firstArg.type === 'MemberExpression') {
 					const object = unwrapExpression(firstArg.object)
-					if (object?.type === 'Identifier' && importsByLocal.has(object.name)) return
+					if (
+						object?.type === 'Identifier' &&
+						typeof object.name === 'string' &&
+						importsByLocal.has(object.name)
+					) {
+						return
+					}
 					report(context, firstArg, 'invalidSpec')
 					return
 				}
@@ -568,13 +585,17 @@ const featuresTryUseNoStaticLoad = createRule(
 						report(context, linked.node, 'staticLoad', { name: linked.name })
 						return
 					}
-					if (returned.type === 'Identifier') {
+					if (returned.type === 'Identifier' && typeof returned.name === 'string') {
 						report(context, returned, 'staticLoad', { name: returned.name })
 						return
 					}
 					if (returned.type === 'MemberExpression') {
 						const object = unwrapExpression(returned.object)
-						if (object?.type === 'Identifier' && topLevelSpecs.has(object.name)) {
+						if (
+							object?.type === 'Identifier' &&
+							typeof object.name === 'string' &&
+							topLevelSpecs.has(object.name)
+						) {
 							report(context, object, 'staticLoad', { name: object.name })
 							return
 						}

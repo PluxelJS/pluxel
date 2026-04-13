@@ -7,8 +7,8 @@
  * - Tracks both static and dynamic imports of plugin packages
  */
 
-import type { ViteCompatPlugin } from './compat'
-import { normalizePatterns } from './pluginUtils'
+import type { ViteCompatPlugin } from './compat.ts'
+import { normalizePatterns } from './pluginUtils.ts'
 
 export interface TrackedPluginUsage {
 	hasStaticImport: boolean

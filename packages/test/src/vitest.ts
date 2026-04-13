@@ -1,6 +1,7 @@
 import { readdirSync, readFileSync } from 'node:fs'
-import { join, resolve } from 'node:path'
-import { configSourcePlugin, lintGuardPlugin } from '@pluxel/build/rolldown'
+import { extname, join, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
+import { configSourcePlugin, lintGuardPlugin } from '../../build/src/rolldown/index.ts'
 import {
 	defineConfig,
 	mergeConfig,
@@ -82,7 +83,7 @@ function normalizeGlobs(patterns: string[]): string[] {
  * Opinionated Vitest preset for Pluxel monorepo tests:
  * - enables `@pluxel/source` + `@pluxel/runtime` resolution conditions
  * - installs lint guard + configSource Vite plugins (source-policy enforcement + metadata extraction)
- * - runs `@pluxel/test/setup` once per worker
+ * - runs the local `@pluxel/test/setup` module once per worker
  */
 export function definePluxelVitestConfig(
 	overrides: ViteUserConfigExport = {},
@@ -93,7 +94,9 @@ export function definePluxelVitestConfig(
 	)
 	const exclude = normalizeGlobs(toArray(options.exclude) ?? ['**/node_modules/**', '**/*.d.ts'])
 	const baseConditions = buildPluxelResolveConditions()
-	const setupFile = '@pluxel/test/setup'
+	const setupFile = fileURLToPath(
+		new URL(`./setup${extname(fileURLToPath(import.meta.url))}`, import.meta.url),
+	)
 
 	const base: ViteUserConfig = {
 		resolve: { conditions: baseConditions },

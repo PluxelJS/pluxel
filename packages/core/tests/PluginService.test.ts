@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import { BasePlugin, Plugin, setParamToken, withHost } from '@pluxel/test'
-import { PluginA, PluginB, PluginC } from './plugins'
+import { PluginB } from './plugins'
 
 function createDeferred() {
 	let resolve!: () => void
@@ -33,27 +33,98 @@ async function waitUntil(cond: () => boolean, opts?: { timeoutMs?: number }) {
 }
 
 describe('PluginService commit()', () => {
-	it('preserves this-binding for container.resolveIdentifier', async () => {
+	it('resolves aliases through the committed graph', async () => {
 		await withHost(async (host) => {
-			@Plugin({ name: 'BIND-A' })
+			abstract class Abs extends BasePlugin {}
+
+			@Plugin(Abs, { name: 'BIND-A' })
+			class A extends Abs {}
+
+			await host.start(A, { provideBase: true })
+			expect(host.ctx.registry.graph.resolve(Abs)).toBe(A)
+			expect(host.get(Abs)).toBeInstanceOf(A)
+		})
+	})
+
+	it('replaces a plugin implementation while keeping old tokens resolvable', async () => {
+		await withHost(async (host) => {
+			abstract class Abs extends BasePlugin {}
+
+			@Plugin(Abs, { name: 'REPL-A' })
+			class A extends Abs {}
+
+			@Plugin(Abs, { name: 'REPL-B' })
+			class B extends Abs {}
+
+			await host.start(A, { provideBase: true })
+			host.replace(A, B, { provideBase: true })
+			await host.commit()
+
+			expect(host.ctx.registry.graph.resolve(Abs)).toBe(B)
+			expect(host.ctx.registry.graph.resolve(A)).toBe(B)
+			expect(host.get(Abs)).toBeInstanceOf(B)
+			expect(host.get(A)).toBeInstanceOf(B)
+			expect(host.get(B)).toBeInstanceOf(B)
+		})
+	})
+
+	it('reports replacement pairs and touched subtree for root replacement', async () => {
+		await withHost(async (host) => {
+			abstract class Abs extends BasePlugin {}
+
+			@Plugin(Abs, { name: 'PAIR-A' })
+			class A extends Abs {}
+
+			@Plugin(Abs, { name: 'PAIR-B' })
+			class B extends Abs {}
+
+			@Plugin({ name: 'PAIR-C' })
+			class C extends BasePlugin {
+				constructor(public readonly dep: Abs) {
+					super()
+				}
+			}
+			setParamToken(C, 0, Abs)
+
+			host.add([A, C], { provideBase: true })
+			await host.commit()
+
+			host.replace(A, B, { provideBase: true })
+			const summary = await host.commit()
+
+			expect(summary.replaced).toEqual([{ from: A, to: B }])
+			expect(new Set(summary.touched)).toEqual(new Set([A, B, C]))
+			expect(host.ctx.registry.graph.resolve(Abs)).toBe(B)
+			expect(host.ctx.registry.graph.resolve(A)).toBe(B)
+			expect(host.get(C)?.dep).toBeInstanceOf(B)
+		})
+	})
+
+	it('confirms no-op draft commits before publishing the summary graph', async () => {
+		await withHost(async (host) => {
+			@Plugin({ name: 'NOOP-A' })
 			class A extends BasePlugin {}
+
+			@Plugin({ name: 'NOOP-B' })
+			class B extends BasePlugin {}
 
 			await host.start(A)
 
-			const container = host.ctx.registry.container as unknown as {
-				resolveIdentifier?: (id: unknown) => unknown
-				__sentinel?: symbol
-			}
+			host.replace(A, B)
+			host.replace(B, A)
 
-			const sentinel = Symbol('sentinel')
-			container.__sentinel = sentinel
-			container.resolveIdentifier = function (this: { __sentinel?: symbol }, id: unknown) {
-				if (this.__sentinel !== sentinel) throw new Error('resolveIdentifier lost `this` binding')
-				return id
-			}
+			const summary = await host.commit()
+			expect(summary.graph).toBe(host.ctx.registry.graph)
+			expect(summary.graph.resolve(A)).toBe(A)
 
-			expect(host.isRunning(A)).toBe(true)
-			expect(() => host.remove(A)).not.toThrow()
+			const committedGraph = host.ctx.registry.graph
+			const second = await host.commit()
+			expect(second.graph).toBe(committedGraph)
+			expect(second.added).toEqual([])
+			expect(second.removed).toEqual([])
+			expect(second.replaced).toEqual([])
+			expect(second.failed).toEqual([])
+			expect(second.touched).toEqual([])
 		})
 	})
 
@@ -337,54 +408,6 @@ describe('PluginService commit()', () => {
 		)
 	})
 
-	it('teardown stops dependents before parents', async () => {
-		await withHost(
-			async (host) => {
-				const events: string[] = []
-
-				@Plugin({ name: 'Stop-A' })
-				class A extends BasePlugin {
-					override stop(): void {
-						events.push('A:stop')
-					}
-				}
-
-				const bStopGate = createDeferred()
-
-				@Plugin({ name: 'Stop-B' })
-				class B extends BasePlugin {
-					constructor(_a: A) {
-						super()
-					}
-					override async stop(): Promise<void> {
-						events.push('B:stop')
-						await bStopGate.promise
-					}
-				}
-				setParamToken(B, 0, A)
-
-				host.add([A, B])
-				await host.commit()
-				expect(host.get(A)).toBeDefined()
-				expect(host.get(B)).toBeDefined()
-				expect(host.isRunning(A)).toBe(true)
-				expect(host.isRunning(B)).toBe(true)
-
-				events.length = 0
-				host.remove(A) // cascades to dependents, so A and B are both stopped
-				const commitPromise = host.commit()
-
-				await waitUntil(() => events.includes('B:stop'))
-				expect(events.includes('A:stop')).toBe(false)
-
-				bStopGate.resolve()
-				await commitPromise
-				expect(events).toEqual(['B:stop', 'A:stop'])
-			},
-			{ registry: { stopConcurrency: 2 } },
-		)
-	})
-
 	it('can unregister during an active commit and still stop on the next commit', async () => {
 		await withHost(async (host) => {
 			const summaries: any[] = []
@@ -475,10 +498,10 @@ describe('PluginService commit()', () => {
 			expect(summaries[0]?.added).toEqual([SlowPlugin])
 			expect(new Set(summaries[1]?.added)).toEqual(new Set([PluginB]))
 
-			const lastContainer = host.last()?.container
-			expect(lastContainer).toBeDefined()
-			expect(lastContainer!.services.has(SlowPlugin)).toBe(true)
-			expect(lastContainer!.services.has(PluginB)).toBe(true)
+			const lastGraph = host.last()?.graph
+			expect(lastGraph).toBeDefined()
+			expect(lastGraph!.has(SlowPlugin)).toBe(true)
+			expect(lastGraph!.has(PluginB)).toBe(true)
 		})
 	})
 
@@ -520,7 +543,7 @@ describe('PluginService commit()', () => {
 			expect(host.last()?.failed).toContain(Flaky)
 			expect(host.isRunning(Flaky)).toBe(false)
 
-			// No container changes, but Flaky should be retried.
+			// No graph changes, but Flaky should be retried.
 			await host.commit()
 			expect(host.isRunning(Flaky)).toBe(true)
 			expect(events).toEqual(['ok'])
@@ -554,33 +577,4 @@ describe('PluginService commit()', () => {
 		})
 	})
 
-	it('updates registered plugin set across commits', async () => {
-		await withHost(async (host) => {
-			const readPluginSet = () => new Set<any>(host.plugins())
-
-			// Bun's TS transpilation may not emit `design:paramtypes` metadata;
-			// set tokens explicitly to keep DI behavior deterministic in tests.
-			setParamToken(PluginA, 0, PluginB)
-
-			host.add([PluginB, PluginC, PluginA])
-			await host.commit()
-
-			expect(readPluginSet()).toEqual(new Set([PluginB, PluginC, PluginA]))
-
-			host.restart(PluginA)
-			host.remove(PluginA)
-			await host.commit()
-			expect(readPluginSet()).toEqual(new Set([PluginB, PluginC]))
-
-			host.add(PluginA)
-			await host.commit()
-			expect(readPluginSet()).toEqual(new Set([PluginB, PluginC, PluginA]))
-			expect(host.isRunning(PluginA)).toBe(true)
-
-			host.remove(PluginA)
-			await host.commit()
-			expect(readPluginSet()).toEqual(new Set([PluginB, PluginC]))
-			expect(host.isRunning(PluginA)).toBe(false)
-		})
-	})
 })

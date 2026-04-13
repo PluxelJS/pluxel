@@ -1,2 +1,2 @@
-export { default } from '@pluxel/workspace/oxlint'
-export * from '@pluxel/workspace/oxlint'
+export { default } from '../../workspace/src/oxlint/index.ts'
+export * from '../../workspace/src/oxlint/index.ts'

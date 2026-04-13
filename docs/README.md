@@ -51,6 +51,8 @@
   （实现侧 contract：`packages/runtime/docs/config/contract.md`）
 - `docs/design/plugin-feature/overview.md`
   Plugin/Feature 分层、`use(required)` / `tryUse(optional)`、以及真正 optional feature 的模块加载边界
+- `docs/design/core-di/overview.md`
+  面向 `@pluxel/core` 的下一代 DI kernel 原型设计；强调轻量内核、外部可访问、增量图更新
 - `docs/design/plugin-contribution/overview.md`
   插件间 contribution / slot / provider-owned custom widget / resource reference 设计
   （包含当前 capability matrix、常见交互形式与稳定/非稳定边界）

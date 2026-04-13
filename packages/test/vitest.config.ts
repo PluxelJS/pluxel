@@ -1,4 +1,4 @@
-import { definePluxelVitestConfig } from './src/vitest'
+import { definePluxelVitestConfig } from './src/vitest.ts'
 
 export default definePluxelVitestConfig(
 	{},

@@ -1,4 +1,4 @@
-import type { ViteCompatPlugin } from './compat'
+import type { ViteCompatPlugin } from './compat.ts'
 
 function escapeRE(s: string) {
 	return s.replaceAll(/[.*+?^${}()|[\]\\]/g, '\\$&')

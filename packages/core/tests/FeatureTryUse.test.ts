@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import type { PluginIdentifier } from '@pluxel/core'
 import type {
 	DepOptionalFeature,
 	InlineOptionalFeature,
@@ -70,7 +71,7 @@ class TryUseInlineSpec extends BasePlugin {}
 
 const missingProviderTokenFeature = defineOptionalFeature({
 	key: 'missing-provider-token',
-	requires: ['pluxel.missing-provider'],
+	requires: ['pluxel.missing-provider' as unknown as PluginIdentifier],
 	load: async () => {
 		tryUseLoads.missingToken += 1
 		const mod = await import('./plugins/FeatureTryUse.optional')
