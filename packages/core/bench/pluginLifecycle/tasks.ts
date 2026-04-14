@@ -3,7 +3,7 @@ import type { Bench } from 'tinybench'
 import { ensureOk, type Ctx, type Scenario } from './scenario'
 
 type Area =
-	| 'diod build/verify'
+	| 'graph build/verify'
 	| 'dependency planning'
 	| 'dependents traversal'
 	| 'lifecycle restart'
@@ -13,15 +13,15 @@ type Area =
 export const TASK_MEANING: Record<string, { goal: string; area: Area; notes?: string }> = {
 	'cold: build star baseline': {
 		goal: 'Cold start: build+verify a fan-out graph (root -> many leaves).',
-		area: 'diod build/verify',
+		area: 'graph build/verify',
 	},
 	'cold: build chain baseline': {
 		goal: 'Cold start: build+verify a deep dependency chain.',
-		area: 'diod build/verify',
+		area: 'graph build/verify',
 	},
 	'cold: build big baseline (independent + star)': {
 		goal: 'Cold start: build+verify a large mostly-independent baseline plus a star.',
-		area: 'diod build/verify',
+		area: 'graph build/verify',
 		notes: 'Surfaces scaling of build/verify with many services.',
 	},
 	'baseline: noop commit (star)': {
@@ -30,7 +30,7 @@ export const TASK_MEANING: Record<string, { goal: string; area: Area; notes?: st
 	},
 	'incremental: add/remove leaf (star)': {
 		goal: 'Small change on stable star baseline (register/unregister single plugin).',
-		area: 'diod build/verify',
+		area: 'graph build/verify',
 	},
 	'restart: leaf (star)': {
 		goal: 'Restart a low-fanout plugin on a stable star baseline.',
@@ -44,7 +44,7 @@ export const TASK_MEANING: Record<string, { goal: string; area: Area; notes?: st
 	},
 	'hmr: replace leaf (star)': {
 		goal: 'HMR replace leaf implementation (alias + restart).',
-		area: 'diod build/verify',
+		area: 'graph build/verify',
 	},
 	'hmr: replace root (star)': {
 		goal: 'HMR replace root implementation (worst-case cascade).',
@@ -80,11 +80,11 @@ export const TASK_MEANING: Record<string, { goal: string; area: Area; notes?: st
 	},
 	'big: incremental add/remove leaf (independent + star)': {
 		goal: 'Small change with a large baseline present (build/verify scaling).',
-		area: 'diod build/verify',
+		area: 'graph build/verify',
 	},
 	'big: hmr replace leaf (independent + star)': {
 		goal: 'HMR replace leaf with a large baseline present (scaling + restart).',
-		area: 'diod build/verify',
+		area: 'graph build/verify',
 	},
 	'big: hmr replace root (independent + star)': {
 		goal: 'HMR replace root with a large baseline present (worst-case scaling).',

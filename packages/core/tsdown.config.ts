@@ -24,8 +24,6 @@ export default defineConfig({
 			'@pluxel/context/*',
 			'@pluxel/core-di',
 			'@pluxel/core-di/*',
-			'diod',
-			'diod/*',
 		],
 	},
 	exports: {

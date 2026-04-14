@@ -19,7 +19,7 @@ ctx.registry.register(PluginC) // PluginC 只是运行期附加能力，可注�
 ctx.registry.register(PluginA)
 
 await ctx.registry.commit()
-// 提交本周期，构建 diod 容器后依次初始化插件
+// 提交本周期，构建当前插件图后依次初始化插件
 
 ctx.registry.restart(PluginA)
 ctx.registry.unregister(PluginA)

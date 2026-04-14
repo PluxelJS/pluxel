@@ -1,7 +1,6 @@
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
 import { existsSync, readFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
-import { delimiter } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import {
 	EXTENSION_FEDERATION_EXPOSE,
@@ -158,24 +157,6 @@ function registerCleanupHooks(): void {
 function resolveNodeExecutable(): string {
 	const explicit = process.env.PLUXEL_NODE_EXEC_PATH
 	if (typeof explicit === 'string' && existsSync(explicit)) return explicit
-
-	const npmNodeExecPath = process.env.npm_node_execpath
-	if (typeof npmNodeExecPath === 'string' && existsSync(npmNodeExecPath)) {
-		return npmNodeExecPath
-	}
-
-	const pathEnv = process.env.PATH
-	const executableNames = process.platform === 'win32' ? ['node.exe', 'node'] : ['node']
-	if (typeof pathEnv === 'string' && pathEnv) {
-		for (const dir of pathEnv.split(delimiter)) {
-			if (!dir) continue
-			const normalizedDir = dir.replace(/[\\/]+$/, '')
-			for (const executableName of executableNames) {
-				const candidate = `${normalizedDir}/${executableName}`
-				if (existsSync(candidate)) return candidate
-			}
-		}
-	}
 
 	if (existsSync(process.execPath)) return process.execPath
 	return 'node'

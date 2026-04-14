@@ -314,9 +314,6 @@ importers:
       '@pluxel/test':
         specifier: workspace:*
         version: link:../test
-      diod:
-        specifier: workspace:*
-        version: link:../diod
       option-t:
         specifier: ^55.1.2
         version: 55.1.2

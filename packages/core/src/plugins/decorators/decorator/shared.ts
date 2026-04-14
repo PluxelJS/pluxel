@@ -1,6 +1,5 @@
 import { isProduction } from '../../../env'
-import type { Identifier } from '../../../container'
-import type { PluginIdentifier } from '../../types'
+import type { Identifier, PluginIdentifier } from '../../types'
 import { assertValidBasePluginId, assertValidPluginId } from '../../runtime/pluginId'
 import type { ConfigSchemaList, DeclaredMetaView, ParamOverride, PluginInfo } from './types'
 import type { ConfigLayout } from '../../composition/cfg'

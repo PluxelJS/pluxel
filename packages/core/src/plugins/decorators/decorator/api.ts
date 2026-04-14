@@ -1,6 +1,5 @@
-import type { Identifier } from '../../../container'
 import { isStandardSchemaV1 } from '../../../services/config/standardSchema'
-import type { PluginIdentifier, SubclassOf } from '../../types'
+import type { Identifier, PluginIdentifier, SubclassOf } from '../../types'
 import { assertValidBasePluginId } from '../../runtime/pluginId'
 import {
 	__DEV__,

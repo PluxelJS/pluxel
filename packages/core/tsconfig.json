@@ -1,6 +1,6 @@
 {
 	"extends": "../../tsconfig.src.json",
-	"include": ["src", "tests", "fsm", "../diod", "../context", "../core-di"],
+	"include": ["src", "tests", "fsm", "../context", "../core-di"],
 	"compilerOptions": {
 		"rootDir": "..",
 		"baseUrl": ".",
@@ -13,8 +13,6 @@
 		"paths": {
 			"@pluxel/core-di": ["../core-di/src"],
 			"@pluxel/core-di/*": ["../core-di/src/*"],
-			"diod": ["../diod/src"],
-			"diod/*": ["../diod/src/*"],
 			"@pluxel/context": ["../context/src"],
 			"@pluxel/context/*": ["../context/src/*"],
 			"@pluxel/core": ["./src"],

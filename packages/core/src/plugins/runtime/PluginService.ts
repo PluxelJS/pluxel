@@ -456,10 +456,6 @@ export class PluginService {
 		return this._activeRuntime ?? this.definitions.runtime
 	}
 
-	private planningGraph(): PluginGraph {
-		return this._activeGraph ?? this.graph
-	}
-
 	private hasDraftStructuralChanges(): boolean {
 		return this._activeGraph !== undefined || this.definitions.hasPendingChanges()
 	}

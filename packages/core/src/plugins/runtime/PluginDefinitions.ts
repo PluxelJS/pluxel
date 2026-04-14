@@ -57,6 +57,7 @@ const uniqueTokens = (tokens: Iterable<Token>): Token[] => {
 
 export class PluginDefinitions {
 	private readonly draft = new DraftGraph<ReturnType<typeof getPluginInfo>>()
+	private committedRuntime?: PluginRuntime
 
 	constructor(private readonly createPluginContext: createCTX) {}
 
@@ -69,7 +70,11 @@ export class PluginDefinitions {
 	}
 
 	public get runtime(): PluginRuntime {
-		return new Runtime(this.lastGraph, this.draft.instances) as PluginRuntime
+		const graph = this.lastGraph
+		if (this.committedRuntime?.graph === graph) return this.committedRuntime
+		const runtime = new Runtime(graph, this.draft.instances) as PluginRuntime
+		this.committedRuntime = runtime
+		return runtime
 	}
 
 	public resolvePlanning(id: PluginIdentifier): PluginIdentifier {

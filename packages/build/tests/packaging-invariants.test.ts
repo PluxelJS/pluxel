@@ -53,7 +53,7 @@ async function collectWorkspacePackages(root: string) {
 }
 
 describe('packaging invariants', () => {
-	it('only core/runtime/hmr/cli/test are publishable', async () => {
+	it('only core/runtime/hmr/cli/test/ops are publishable', async () => {
 		const root = fileURLToPath(new URL('../../..', import.meta.url))
 		const workspace = await collectWorkspacePackages(root)
 		const publishable = new Set([
@@ -62,6 +62,7 @@ describe('packaging invariants', () => {
 			'@pluxel/hmr',
 			'@pluxel/cli',
 			'@pluxel/test',
+			'@pluxel/ops',
 		])
 
 		for (const [name, meta] of workspace) {
@@ -83,14 +84,16 @@ describe('packaging invariants', () => {
 			{ name: '@pluxel/hmr', path: `${root}/packages/hmr/package.json` },
 			{ name: '@pluxel/cli', path: `${root}/packages/cli/package.json` },
 			{ name: '@pluxel/test', path: `${root}/packages/test/package.json` },
+			{ name: '@pluxel/ops', path: `${root}/packages/ops/package.json` },
 		] as const
 
 		const allowedWorkspaceDeps = new Map<string, ReadonlySet<string>>([
 			['@pluxel/core', new Set()],
-			['@pluxel/runtime', new Set(['@pluxel/core'])],
+			['@pluxel/runtime', new Set(['@pluxel/core', '@pluxel/ops'])],
 			['@pluxel/hmr', new Set(['@pluxel/core', '@pluxel/runtime'])],
 			['@pluxel/cli', new Set(['@pluxel/hmr'])],
 			['@pluxel/test', new Set()],
+			['@pluxel/ops', new Set()],
 		])
 
 		for (const pkg of packages) {
