@@ -89,12 +89,15 @@ export function Plugin(a?: PluginMetadata | PluginIdentifier, b?: PluginMetadata
 		// 提取并存储 declaredName
 		const { name: declaredName, ...restMeta } = meta
 		s.declaredName = declaredName || nameOf(ctor)
-		s.declaredMeta =
-			Object.keys(restMeta).length > 0
-				? __DEV__
-					? $freeze(restMeta as DeclaredMetaView)
-					: (restMeta as DeclaredMetaView)
-				: null
+		const mergedMeta =
+			s.declaredMeta && Object.keys(restMeta).length > 0
+				? ({ ...s.declaredMeta, ...restMeta } as DeclaredMetaView)
+				: s.declaredMeta
+					? s.declaredMeta
+					: Object.keys(restMeta).length > 0
+						? (restMeta as DeclaredMetaView)
+						: null
+		s.declaredMeta = mergedMeta ? (__DEV__ ? $freeze(mergedMeta) : mergedMeta) : null
 
 		s.base = base
 

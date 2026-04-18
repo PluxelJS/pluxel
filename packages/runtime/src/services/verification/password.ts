@@ -28,7 +28,6 @@ export function hashPasswordScrypt(password: string): string {
 }
 
 export function verifyPasswordScrypt(password: string, stored: string): boolean {
-	// format: scrypt$N$r$p$saltB64url$hashB64url
 	const parts = stored.split('$')
 	if (parts.length !== 6) return false
 	const [kind, Nraw, rraw, praw, saltB64, hashB64] = parts

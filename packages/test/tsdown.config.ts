@@ -1,14 +1,9 @@
-import { fileURLToPath } from 'node:url'
 import { defineConfig } from 'tsdown'
 
 export default defineConfig({
 	// This package ships as a bundled dev tool (Vitest preset + transforms).
 	exports: {
 		devExports: '@pluxel/source',
-	},
-	deps: {
-		// Bundle internal build helpers so consumers don't need @pluxel/build at runtime.
-		alwaysBundle: ['@pluxel/build', '@pluxel/build/*'],
 	},
 	entry: {
 		fixtures: './src/fixtures.ts',

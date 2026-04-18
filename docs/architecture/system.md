@@ -103,7 +103,7 @@ runtime 里已经包含插件前端的运行时协议，但不包含前端 autho
 
 ## HMR dev host（`@pluxel/hmr`）
 
-### startup-only
+### Host Entry
 
 - 标准入口：`@pluxel/hmr/host`（diagnose → new `Context` → wiring → start）
 - dev host 会写入 dev-only config keys（例如 `ctx.config.hmrService`），但 runtime 本身不包含 Vite 逻辑。

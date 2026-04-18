@@ -5,7 +5,7 @@ import { setPluxelRuntime } from '@pluxel/core'
 import { ensurePluxelLogging, type EnsurePluxelLoggingOptions } from '@pluxel/runtime/logger'
 import { resolveRuntimeStoragePaths, type RuntimeStoragePaths } from '@pluxel/runtime/internal'
 import { Context } from '@pluxel/runtime'
-import { createNodeFsServiceBackend, type BuiltinPluginSpec } from '@pluxel/runtime/services'
+import { bootstrapHostVault, createNodeFsServiceBackend, type BuiltinPluginSpec } from '@pluxel/runtime/services'
 
 import { attachHmrRuntime } from './dev/attach-runtime'
 import type { HMRConfig } from './dev/hmr/HMRService'
@@ -268,6 +268,7 @@ export async function bootPlannedHmrHost<TSnapshot extends HmrWorkspaceSnapshot>
 		...plan.context,
 	})
 	await ctx.root.configService.ready
+	await bootstrapHostVault(ctx)
 
 	const dev = await attachHmrRuntime(ctx, {
 		cwd: plan.root,

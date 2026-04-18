@@ -21,7 +21,7 @@ describe('HMR UI smoke', () => {
 			http: {
 				uiAssets: 'static-built',
 				uiPublicDir: publicDir,
-				controlPlane: { web: false, rpc: false, sse: false, auth: 'none' },
+				controlPlane: { web: false, rpc: false, sse: false },
 			},
 		})
 
@@ -42,7 +42,7 @@ describe('HMR UI smoke', () => {
 			configService: { mode: 'memory' },
 			http: {
 				uiAssets: 'dev-server',
-				controlPlane: { web: false, rpc: false, sse: false, auth: 'none' },
+				controlPlane: { web: false, rpc: false, sse: false },
 			},
 		})
 
@@ -89,7 +89,7 @@ describe('HMR UI smoke', () => {
 			http: {
 				uiAssets: 'static-built',
 				uiPublicDir: publicDir,
-				controlPlane: { web: false, rpc: false, sse: false, auth: 'none' },
+				controlPlane: { web: false, rpc: false, sse: false },
 			},
 		})
 
@@ -194,7 +194,7 @@ describe('HMR UI smoke', () => {
 			configService: { mode: 'memory' },
 			http: {
 				uiAssets: 'disabled',
-				controlPlane: { web: true, rpc: false, sse: false, auth: 'none' },
+				controlPlane: { web: true, rpc: false, sse: false },
 			},
 			extensionService: {
 				enabled: true,

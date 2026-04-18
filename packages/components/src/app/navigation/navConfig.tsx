@@ -1,5 +1,5 @@
 import { isValidElement, type ReactNode } from 'react'
-import { IconHistory, IconHome2, IconPackages, IconPuzzle, IconTool } from '@tabler/icons-react'
+import { IconHistory, IconHome2, IconPackages, IconPuzzle, IconShieldLock, IconTool } from '@tabler/icons-react'
 
 export interface NavItem {
 	label: string
@@ -13,6 +13,7 @@ export interface NavItem {
 export const baseNavItems: NavItem[] = [
 	{ label: '首页', href: '/', exact: true, icon: <IconHome2 size={18} stroke={1.7} /> },
 	{ label: '日志', href: '/logs', icon: <IconHistory size={18} stroke={1.7} /> },
+	{ label: '安全', href: '/security', icon: <IconShieldLock size={18} stroke={1.7} /> },
 	{ label: '包管理', href: '/packages', icon: <IconPackages size={18} stroke={1.7} /> },
 	{ label: 'Ops', href: '/ops', icon: <IconTool size={18} stroke={1.7} /> },
 	{ label: '插件', href: '/plugins', icon: <IconPuzzle size={18} stroke={1.7} /> },

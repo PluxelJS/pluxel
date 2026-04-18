@@ -2,38 +2,8 @@ import type { Context as PluginContext } from '@pluxel/core'
 import { type AnyElysiaApp } from '../../services/http/elysia'
 import { HMR_META_BASE, HMR_TRANSPORT_PATHS } from '../../web/paths'
 
-async function readAuthMeta(pluginCtx: PluginContext, request: Request) {
-	const authGuard = pluginCtx.authGuard
-	if (!authGuard || !authGuard.isActive()) {
-		return {
-			enabled: false,
-			pluginName: null,
-			redirectPath: null,
-			authenticated: true,
-		}
-	}
-
-	const path = new URL(request.url).pathname
-	const result = await authGuard.check({
-		kind: 'api',
-		path,
-		method: request.method ?? 'GET',
-		url: request.url,
-		headers: request.headers,
-		request,
-	})
-
-	return {
-		enabled: true,
-		pluginName: authGuard.getActivePluginName() ?? null,
-		redirectPath: authGuard.getRedirectPath() ?? null,
-		authenticated: result.allow,
-	}
-}
-
 function readInternalMeta(
 	pluginCtx: PluginContext,
-	auth: Awaited<ReturnType<typeof readAuthMeta>>,
 ) {
 	const extensionService = pluginCtx.ext.ui
 	const manifest = extensionService?.getManifest()
@@ -41,7 +11,6 @@ function readInternalMeta(
 	return {
 		service: 'pluxel-hmr' as const,
 		ready: true as const,
-		auth,
 		sse: {
 			namespaces: pluginCtx.ext.sse.getNamespaces(),
 		},
@@ -58,11 +27,8 @@ export const metaRoutes = (app: AnyElysiaApp) =>
 		meta
 			.get('/', async ({ set, pluginCtx, request }) => {
 				set.headers['cache-control'] = 'no-store'
-				return readInternalMeta(pluginCtx, await readAuthMeta(pluginCtx, request))
-			})
-			.get('/auth', async ({ set, pluginCtx, request }) => {
-				set.headers['cache-control'] = 'no-store'
-				return await readAuthMeta(pluginCtx, request)
+				void request
+				return readInternalMeta(pluginCtx)
 			})
 			.get('/sse', ({ set, pluginCtx }) => {
 				set.headers['cache-control'] = 'no-store'

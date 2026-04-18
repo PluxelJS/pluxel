@@ -6,6 +6,18 @@
  */
 
 import type { OpPublicDescriptor } from '@pluxel/ops'
+export type {
+	VerificationOtpProvisionResult,
+	VerificationOtpUserProvisionInput,
+	VerificationPasskeyRegistrationFinishInput,
+	VerificationPasskeyRegistrationOptions,
+	VerificationPasskeyRegistrationStartInput,
+	VerificationPasswordUserUpsertInput,
+	VerificationUserDeleteInput,
+} from '../services/verification/types'
+export type {
+	VaultKeyPair,
+} from '../services/vault/types'
 
 /**
  * UI extensibility surface.

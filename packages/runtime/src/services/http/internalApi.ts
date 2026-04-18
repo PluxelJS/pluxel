@@ -1,10 +1,22 @@
 import type { Context as PluginContext } from '@pluxel/core'
 import type { Changeset, LoadResponse } from '@signaldb/core'
-import { HMR_INTERNAL_API_BASE, HMR_META_AUTH_PATH, HMR_TRANSPORT_PATHS } from '../../web/paths'
+import {
+	canAccessSecurityAdmin,
+	createVerificationBlockedHeaders,
+	createVerificationBlockedPayload,
+	resolveControlPlaneRedirectPath,
+} from '../../shared/verification-http'
+import {
+	HMR_INTERNAL_API_BASE,
+	HMR_SECURITY_BASE,
+	HMR_TRANSPORT_PATHS,
+} from '../../web/paths'
+import { buildVerificationRedirectPath } from '../verification/transport'
 import { newHttpBatchRpcResponse } from 'capnweb'
 
 import { extensionRoutes } from '../../api/http/extensions'
 import { metaRoutes } from '../../api/http/meta'
+import { securityRoutes } from '../../api/http/security'
 import { debugRoutes } from '../../api/http/debug'
 import { logRoutes } from '../../api/http/logs'
 import { pluginNameParams } from '../../api/http/models'
@@ -31,6 +43,13 @@ function resolveRequestKind(path: string): 'api' | 'graphql' {
 	return path === `${HMR_INTERNAL_API_BASE}${HMR_TRANSPORT_PATHS.graphql}` ? 'graphql' : 'api'
 }
 
+function isSecurityApiPath(path: string): boolean {
+	return (
+		path === `${HMR_INTERNAL_API_BASE}${HMR_SECURITY_BASE}` ||
+		path.startsWith(`${HMR_INTERNAL_API_BASE}${HMR_SECURITY_BASE}/`)
+	)
+}
+
 function createInternalPlugin(
 	ctx: PluginContext,
 	name: string,
@@ -47,6 +66,22 @@ function applyInternalApiGuard(app: BaseElysiaApp): BaseElysiaApp {
 	return app.onBeforeHandle(async ({ pluginCtx, request, set, status }: any) => {
 		const path = new URL(request.url).pathname
 		const method = (request.method ?? 'GET').toUpperCase()
+		const state = pluginCtx.root.verification.authorize({ request })
+
+		if (isSecurityApiPath(path)) {
+			if (canAccessSecurityAdmin(state)) return undefined
+			const redirectPath = resolveControlPlaneRedirectPath(
+				buildVerificationRedirectPath,
+				request,
+				'api',
+				state.reason,
+			)
+			Object.assign(set.headers, createVerificationBlockedHeaders(redirectPath, state.reason))
+			return status(
+				401,
+				createVerificationBlockedPayload(path, method, 'api', redirectPath, state.reason),
+			)
+		}
 
 		const validation = pluginCtx.internalApiValidation
 		if (validation?.hasValidators()) {
@@ -76,41 +111,27 @@ function applyInternalApiGuard(app: BaseElysiaApp): BaseElysiaApp {
 			}
 		}
 
-		const authGuard = pluginCtx.authGuard
-		if (!authGuard || !authGuard.isActive() || path === HMR_META_AUTH_PATH) {
-			return undefined
-		}
-
 		const kind = resolveRequestKind(path)
-		const result = await authGuard.check({
-			kind,
-			path,
-			method,
-			url: request.url,
-			headers: request.headers,
+		if (state.allow) return undefined
+
+		const redirectPath = resolveControlPlaneRedirectPath(
+			buildVerificationRedirectPath,
 			request,
-		})
-		if (result.allow === true) return undefined
-
-		pluginCtx.logger.warn('Blocked request', {
+			kind,
+			state.reason,
+		)
+		pluginCtx.logger.warn('Blocked host verification gate', {
 			kind,
 			path,
 			method,
-			pluginName: result.pluginName,
+			reason: state.reason,
 		})
 
-		set.headers['cache-control'] = 'no-store'
-		set.headers['x-pluxel-auth-blocked'] = '1'
-		set.headers['x-pluxel-redirect-path'] = result.redirectPath
-		return status(401, {
-			allow: false,
-			code: 'access_denied',
-			kind,
-			path,
-			method,
-			pluginName: result.pluginName,
-			redirectPath: result.redirectPath,
-		})
+		Object.assign(set.headers, createVerificationBlockedHeaders(redirectPath, state.reason))
+		return status(
+			401,
+			createVerificationBlockedPayload(path, method, kind, redirectPath, state.reason),
+		)
 	}) as BaseElysiaApp
 }
 
@@ -124,13 +145,13 @@ function createInternalTransportPlugins(
 	const sse = options.sse !== false
 	const plugins: BaseElysiaApp[] = [
 		createInternalPlugin(ctx, 'root', (app) => app.get('/', 'Pluxel HMR RPC ready')),
-			createInternalPlugin(ctx, 'plugin-schema', (app) =>
-				app.get(
-					'/plugins/:name/schema',
-					async ({ pluginCtx, params }: any) => await pluginSchema(pluginCtx, params.name),
-					{
-						params: pluginNameParams,
-					},
+		createInternalPlugin(ctx, 'plugin-schema', (app) =>
+			app.get(
+				'/plugins/:name/schema',
+				async ({ pluginCtx, params }: any) => await pluginSchema(pluginCtx, params.name),
+				{
+					params: pluginNameParams,
+				},
 			),
 		),
 	]
@@ -227,6 +248,9 @@ function createInternalTransportPlugins(
 			),
 			createInternalPlugin(ctx, 'meta', (app) =>
 				metaRoutes(app as unknown as Parameters<typeof metaRoutes>[0]),
+			),
+			createInternalPlugin(ctx, 'security', (app) =>
+				securityRoutes(app as unknown as Parameters<typeof securityRoutes>[0]),
 			),
 			createInternalPlugin(ctx, 'debug', (app) =>
 				debugRoutes(app as unknown as Parameters<typeof debugRoutes>[0]),

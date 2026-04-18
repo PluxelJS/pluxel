@@ -30,7 +30,6 @@
 		"bench": "bun --conditions=@pluxel/source run bench/compare-diod.bench.ts"
 	},
 	"devDependencies": {
-		"@pluxel/test": "workspace:*",
 		"diod": "workspace:*",
 		"tinybench": "^6.0.0"
 	}

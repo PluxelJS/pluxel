@@ -191,7 +191,7 @@ async function startPluginsBatched<T>(
 				}
 			}
 
-			const p = instantiateAndStart(id).then((ok) => {
+			const p = instantiateAndStart(id).then((ok): undefined => {
 				if (!ok) failed.add(id)
 				return undefined
 			})

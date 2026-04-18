@@ -13,7 +13,7 @@ import { createErr, createOk } from 'option-t/plain_result'
 import { isProduction } from '../../env'
 import { EffectsService } from '../../services/effects/EffectsService'
 import type { BasePlugin } from '../composition/BasePlugin'
-import type { PluginInfo } from '../decorators/PluginDecorator'
+import type { PluginInfo } from '../decorators/decorator/types'
 // Optional dependency API removed in favor of feature composition (BaseFeature).
 import type {
 	ForkablePluginConstructor,
@@ -879,11 +879,10 @@ export class PluginService {
 				restart:
 					plan.restartRequested.size > 0 ? [...plan.restartRequested].map(String) : undefined,
 			}))
+			await this.applyTeardown(oldGraph, plan.toStopSlots)
 
-				await this.applyTeardown(oldGraph, plan.toStopSlots)
-
-				// Ensure fresh instances for restarts/replacements.
-				runtime.deleteMany(this.collectRuntimeEvictions(plan))
+			// Ensure fresh instances for restarts/replacements.
+			runtime.deleteMany(this.collectRuntimeEvictions(plan))
 
 			let failed = new Set<PluginIdentifier>()
 			if (plan.toStartSlots.size > 0) {

@@ -18,6 +18,16 @@ export {
 	resolveDebugTopics,
 	type DebugTopic,
 } from './services/debug'
+export { bootstrapHostVault } from './services/security/bootstrap'
+export {
+	deleteLocalVerificationUser,
+	describeLocalVerification,
+	resetLocalVerification,
+	setLocalVerificationMethod,
+	setLocalVerificationMode,
+	upsertLocalVerificationPasswordUser,
+	type LocalVerificationSnapshot,
+} from './services/security/local-admin'
 
 export {
 	FsError,
@@ -53,13 +63,6 @@ export {
 	type CreateElysiaAppOptions,
 } from './services/http/elysia'
 export { createPluginGatedRouter, type PluginGatedModuleDef } from './services/http/elysia-routing'
-export {
-	AuthGuardService,
-	type AuthGuardContext,
-	type AuthGuardKind,
-	type AuthGuardRegistration,
-	type AuthGuardResult,
-} from './services/http/AuthGuardService'
 export {
 	InternalApiValidationService,
 	type InternalApiValidationContext,
@@ -121,19 +124,21 @@ export {
 export type { ExtensionUiRpcMap } from './web/protocol'
 export type { SseChannel } from './services/plugin-interaction/SseService'
 
-export { VaultService, VaultError } from './services/vault/VaultService'
 export type {
-	VaultAeadAlg,
-	VaultCipherRecord,
-	VaultFileV1,
-	VaultHandle,
-	VaultKdfAlg,
-	VaultOpenOptions,
-	VaultPassphraseSlotV1,
-	VaultPayloadV1,
-	VaultPolicy,
+	VaultAdminApi,
+	VaultAdminState,
+	VaultBlobHandle,
+	VaultBlobsHandle,
+	VaultCollectionHandle,
+	VaultDocsHandle,
+	VaultKeyPair,
+	VaultKvHandle,
+	VaultKvTransaction,
+	VaultNamespace,
+	VaultNamespaceTransaction,
+	VaultNamespaceOptions,
+	VaultNamespaceStats,
 	VaultServiceConfig,
-	VaultSlotV1,
 } from './services/vault/types'
 
 export {

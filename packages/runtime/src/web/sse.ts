@@ -1,7 +1,14 @@
-import { defaultOnAuthBlocked, type OnAuthBlocked, type RuntimeFetch } from './auth'
+import {
+	defaultOnVerificationBlocked,
+	type OnVerificationBlocked,
+} from './verification'
 import { HMR_INTERNAL_API_BASE } from './paths'
 import type { ExtensionManifestEvent } from './extensions'
 import type { ExtensionUiSseMap } from './protocol'
+import {
+	resolveVerificationLandingPath,
+	type VerificationReason,
+} from '../shared/verification-http'
 
 export interface BuiltinSseEvents {
 	extensions: ExtensionManifestEvent | { type: 'ready' }
@@ -43,13 +50,12 @@ export interface SseClientOptions {
 	/** Whether to send cookies/credentials for cross-origin SSE. */
 	withCredentials?: boolean
 	/**
-	 * Optional auth integration: when SSE errors, we can probe auth state and redirect
+	 * Optional verification integration: when SSE errors, we can probe host verification state and redirect
 	 * instead of reconnecting forever.
 	 */
-	auth?: {
-		metaUrl: string
-		fetch?: RuntimeFetch
-		onBlocked?: OnAuthBlocked
+	verification?: {
+		readState: () => Promise<{ allow: boolean; reason?: VerificationReason }>
+		onBlocked?: OnVerificationBlocked
 	}
 }
 
@@ -65,10 +71,10 @@ class SseClient {
 	private readonly errorHandlers = new Set<() => void>()
 	private stopped = false
 	private readonly url: string
-	private readonly auth?: NonNullable<SseClientOptions['auth']>
+	private readonly verification?: NonNullable<SseClientOptions['verification']>
 	private readonly withCredentials?: boolean
-	private authProbeInFlight: Promise<boolean> | null = null
-	private lastAuthProbeAt = 0
+	private verificationProbeInFlight: Promise<boolean> | null = null
+	private lastVerificationProbeAt = 0
 	private connected = false
 
 	private static asap(fn: () => void) {
@@ -87,42 +93,31 @@ class SseClient {
 			}
 		}
 		this.url = url.toString()
-		this.auth = options.auth
+		this.verification = options.verification
 		this.withCredentials = options.withCredentials
 
 		this.connect()
 	}
 
-	private async probeAuthBlocked(): Promise<boolean> {
-		const auth = this.auth
-		if (!auth?.metaUrl) return false
+	private async probeVerificationBlocked(): Promise<boolean> {
+		const verification = this.verification
+		if (!verification) return false
 
 		const now = Date.now()
-		// Throttle probes: avoid spamming auth/meta on flaky networks.
-		if (now - this.lastAuthProbeAt < 1500) return false
-		this.lastAuthProbeAt = now
-
-		const fetchImpl =
-			auth.fetch ??
-			(typeof globalThis.fetch === 'function' ? globalThis.fetch.bind(globalThis) : undefined)
-		if (!fetchImpl) return false
+		if (now - this.lastVerificationProbeAt < 1500) return false
+		this.lastVerificationProbeAt = now
 
 		try {
-			const res = await fetchImpl(auth.metaUrl, {
-				method: 'GET',
-				headers: { 'Cache-Control': 'no-store' },
-			})
-			if (!res.ok) return false
-			const payload = (await res.json()) as any
-			if (!payload || payload.enabled !== true) return false
-			if (payload.authenticated === true) return false
+			const state = await verification.readState()
+			if (!state || state.allow === true) return false
 
-			const redirectPath =
-				typeof payload.redirectPath === 'string' && payload.redirectPath
-					? payload.redirectPath
-					: undefined
-			const onBlocked = auth.onBlocked ?? defaultOnAuthBlocked
-			onBlocked({ status: 401, url: this.url, redirectPath })
+			const onBlocked = verification.onBlocked ?? defaultOnVerificationBlocked
+			onBlocked({
+				status: 401,
+				url: this.url,
+				redirectPath: resolveVerificationLandingPath(state.reason),
+				reason: state.reason,
+			})
 			return true
 		} catch {
 			return false
@@ -145,17 +140,17 @@ class SseClient {
 		src.onerror = () => {
 			this.connected = false
 			for (const fn of this.errorHandlers) fn()
-			if (!this.auth) return
-			if (!this.authProbeInFlight) {
-				this.authProbeInFlight = this.probeAuthBlocked().finally(() => {
-					this.authProbeInFlight = null
+			if (!this.verification) return
+			if (!this.verificationProbeInFlight) {
+				this.verificationProbeInFlight = this.probeVerificationBlocked().finally(() => {
+					this.verificationProbeInFlight = null
 				})
 			}
-				void this.authProbeInFlight.then((blocked): undefined => {
-					if (blocked) this.close()
-					return undefined
-				})
-			}
+			void this.verificationProbeInFlight.then((blocked): undefined => {
+				if (blocked) this.close()
+				return undefined
+			})
+		}
 		src.onmessage = (ev) => {
 			let msg: { namespace?: unknown; event?: unknown; payload?: unknown } | null = null
 			try {

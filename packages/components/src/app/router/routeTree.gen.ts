@@ -12,6 +12,7 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as WorkbenchRouteImport } from './routes/_workbench'
 import { Route as StandaloneRouteImport } from './routes/_standalone'
 import { Route as WorkbenchIndexRouteImport } from './routes/_workbench.index'
+import { Route as WorkbenchSecurityRouteImport } from './routes/_workbench.security'
 import { Route as WorkbenchPluginsRouteImport } from './routes/_workbench.plugins'
 import { Route as WorkbenchPackagesRouteImport } from './routes/_workbench.packages'
 import { Route as WorkbenchOpsRouteImport } from './routes/_workbench.ops'
@@ -34,6 +35,11 @@ const StandaloneRoute = StandaloneRouteImport.update({
 const WorkbenchIndexRoute = WorkbenchIndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => WorkbenchRoute,
+} as any)
+const WorkbenchSecurityRoute = WorkbenchSecurityRouteImport.update({
+  id: '/security',
+  path: '/security',
   getParentRoute: () => WorkbenchRoute,
 } as any)
 const WorkbenchPluginsRoute = WorkbenchPluginsRouteImport.update({
@@ -97,6 +103,7 @@ export interface FileRoutesByFullPath {
   '/ops': typeof WorkbenchOpsRoute
   '/packages': typeof WorkbenchPackagesRoute
   '/plugins': typeof WorkbenchPluginsRouteWithChildren
+  '/security': typeof WorkbenchSecurityRoute
   '/plugins/$name': typeof WorkbenchPluginsNameRouteWithChildren
   '/plugins/': typeof WorkbenchPluginsIndexRoute
   '/ext-standalone/$pluginName/$': typeof StandaloneExtStandalonePluginNameSplatRoute
@@ -109,6 +116,7 @@ export interface FileRoutesByTo {
   '/logs': typeof WorkbenchLogsRoute
   '/ops': typeof WorkbenchOpsRoute
   '/packages': typeof WorkbenchPackagesRoute
+  '/security': typeof WorkbenchSecurityRoute
   '/plugins': typeof WorkbenchPluginsIndexRoute
   '/ext-standalone/$pluginName/$': typeof StandaloneExtStandalonePluginNameSplatRoute
   '/ext/$pluginName/$': typeof WorkbenchExtPluginNameSplatRoute
@@ -123,6 +131,7 @@ export interface FileRoutesById {
   '/_workbench/ops': typeof WorkbenchOpsRoute
   '/_workbench/packages': typeof WorkbenchPackagesRoute
   '/_workbench/plugins': typeof WorkbenchPluginsRouteWithChildren
+  '/_workbench/security': typeof WorkbenchSecurityRoute
   '/_workbench/': typeof WorkbenchIndexRoute
   '/_workbench/plugins/$name': typeof WorkbenchPluginsNameRouteWithChildren
   '/_workbench/plugins/': typeof WorkbenchPluginsIndexRoute
@@ -139,6 +148,7 @@ export interface FileRouteTypes {
     | '/ops'
     | '/packages'
     | '/plugins'
+    | '/security'
     | '/plugins/$name'
     | '/plugins/'
     | '/ext-standalone/$pluginName/$'
@@ -151,6 +161,7 @@ export interface FileRouteTypes {
     | '/logs'
     | '/ops'
     | '/packages'
+    | '/security'
     | '/plugins'
     | '/ext-standalone/$pluginName/$'
     | '/ext/$pluginName/$'
@@ -164,6 +175,7 @@ export interface FileRouteTypes {
     | '/_workbench/ops'
     | '/_workbench/packages'
     | '/_workbench/plugins'
+    | '/_workbench/security'
     | '/_workbench/'
     | '/_workbench/plugins/$name'
     | '/_workbench/plugins/'
@@ -199,6 +211,13 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof WorkbenchIndexRouteImport
+      parentRoute: typeof WorkbenchRoute
+    }
+    '/_workbench/security': {
+      id: '/_workbench/security'
+      path: '/security'
+      fullPath: '/security'
+      preLoaderRoute: typeof WorkbenchSecurityRouteImport
       parentRoute: typeof WorkbenchRoute
     }
     '/_workbench/plugins': {
@@ -318,6 +337,7 @@ interface WorkbenchRouteChildren {
   WorkbenchOpsRoute: typeof WorkbenchOpsRoute
   WorkbenchPackagesRoute: typeof WorkbenchPackagesRoute
   WorkbenchPluginsRoute: typeof WorkbenchPluginsRouteWithChildren
+  WorkbenchSecurityRoute: typeof WorkbenchSecurityRoute
   WorkbenchIndexRoute: typeof WorkbenchIndexRoute
   WorkbenchExtPluginNameSplatRoute: typeof WorkbenchExtPluginNameSplatRoute
 }
@@ -327,6 +347,7 @@ const WorkbenchRouteChildren: WorkbenchRouteChildren = {
   WorkbenchOpsRoute: WorkbenchOpsRoute,
   WorkbenchPackagesRoute: WorkbenchPackagesRoute,
   WorkbenchPluginsRoute: WorkbenchPluginsRouteWithChildren,
+  WorkbenchSecurityRoute: WorkbenchSecurityRoute,
   WorkbenchIndexRoute: WorkbenchIndexRoute,
   WorkbenchExtPluginNameSplatRoute: WorkbenchExtPluginNameSplatRoute,
 }

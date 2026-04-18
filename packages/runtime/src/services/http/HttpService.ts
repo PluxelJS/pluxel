@@ -3,9 +3,19 @@ import { Elysia } from 'elysia'
 import { isAbsolute, resolve } from 'pathe'
 
 import { ensureHmrPluginLevelsLoaded } from '../../logger/levels'
+import {
+	canAccessSecurityAdmin,
+	createVerificationBlockedHeaders,
+	createVerificationBlockedPayload,
+	resolveControlPlaneRedirectPath,
+	type VerificationBlockedKind,
+	type VerificationReason,
+} from '../../shared/verification-http'
 import type { RenderHandler } from '../../server/types'
 import type { ExtensionManifestEvent } from '../../web/extensions'
-import { HMR_INTERNAL_API_BASE } from '../../web/paths'
+import { HMR_INTERNAL_API_BASE, HMR_SECURITY_BASE } from '../../web/paths'
+import { buildVerificationRedirectPath, VERIFICATION_PAGE_PATH } from '../verification/transport'
+import { createVerificationRoutes } from '../verification/http'
 import {
 	createUiPublicAssetHandler,
 	resolveDefaultUiPublicDir,
@@ -13,7 +23,6 @@ import {
 	UI_PUBLIC_BASE,
 } from '../../server/ui-public'
 import type { SseChannel } from '../plugin-interaction/SseService'
-import type { AuthGuardContext, AuthGuardKind, AuthGuardResult } from './AuthGuardService'
 import { createElysiaApp, type AnyElysiaApp, type CreateElysiaAppOptions } from './elysia'
 import { createInternalApiRoutes } from './internalApi'
 
@@ -48,7 +57,6 @@ export interface HttpServiceConfig {
 		web?: boolean
 		rpc?: boolean
 		sse?: boolean
-		auth?: 'none' | 'basic' | 'custom'
 	}
 	uiAssets?: UiAssetStrategy
 	/**
@@ -146,11 +154,21 @@ export class HttpService {
 				web: config.controlPlane?.web !== false,
 				rpc: config.controlPlane?.rpc !== false,
 				sse: config.controlPlane?.sse !== false,
-				auth: config.controlPlane?.auth ?? 'none',
 			},
 			uiAssets: config.uiAssets ?? 'static-built',
 			uiPublicDir: config.uiPublicDir ?? '',
 		}
+		this.host.routes(
+			(app) => createVerificationRoutes(this.ctx, app),
+			{
+				id: 'pluxel:verification',
+				path: VERIFICATION_PAGE_PATH,
+				app: {
+					aot: true,
+					name: 'pluxel.http.verification',
+				},
+			},
+		)
 		this.rebuildRootApp()
 		if (
 			this.config.controlPlane.web ||
@@ -407,65 +425,69 @@ export class HttpService {
 		request: Request,
 		path: string,
 		method: string,
-		kind: AuthGuardKind,
+		kind: VerificationBlockedKind,
 	): Promise<Response | undefined> {
-		const service = this.ctx.authGuard
-		if (!service || !service.isActive()) return undefined
-
-		const input: AuthGuardContext = {
-			kind,
-			path,
-			method,
+		const state = this.ctx.root.verification.authorize({
 			headers: request.headers,
 			request,
 			url: request.url,
-		}
-
-		const result = await service.check(input)
-		if (result.allow === true) return undefined
-		const denied = result as Extract<AuthGuardResult, { allow: false }>
-
-		this.logger.warn('Blocked request', { kind, path, method, pluginName: denied.pluginName })
-
-		return this.buildAuthDeniedResponse(path, method, kind, denied)
-	}
-
-	private buildAuthDeniedResponse(
-		path: string,
-		method: string,
-		kind: AuthGuardKind,
-		result: Extract<AuthGuardResult, { allow: false }>,
-	): Response {
-		if (kind === 'ui') {
-			return new Response(null, {
-				status: 302,
-				headers: {
-					Location: result.redirectPath,
-					'Cache-Control': 'no-store',
-				},
-			})
-		}
-
-		return Response.json(
-			{
-				allow: false,
-				code: 'access_denied',
+		})
+		const isSecurityRoute = path === HMR_SECURITY_BASE || path.startsWith(`${HMR_SECURITY_BASE}/`)
+		const isSecurityCarrier =
+			path === UI_PUBLIC_BASE || path.startsWith(`${UI_PUBLIC_BASE}/`)
+		if ((isSecurityRoute || isSecurityCarrier) && canAccessSecurityAdmin(state)) return undefined
+		if (isSecurityRoute) {
+			this.logger.warn('Blocked host security admin route', {
 				kind,
 				path,
 				method,
-				pluginName: result.pluginName,
-				redirectPath: result.redirectPath,
-			},
-			{
-				status: 401,
-				headers: {
-					'Cache-Control': 'no-store',
-					'X-Pluxel-Auth-Blocked': '1',
-					'X-Pluxel-Redirect-Path': result.redirectPath,
-				},
-			},
-		)
+				reason: state.reason,
+			})
+			return this.buildVerificationDeniedResponse(request, path, method, kind, state.reason)
+		}
+		if (state.allow) return undefined
+
+		this.logger.warn('Blocked host verification gate', {
+			kind,
+			path,
+			method,
+			reason: state.reason,
+		})
+
+		return this.buildVerificationDeniedResponse(request, path, method, kind, state.reason)
 	}
+
+	private buildVerificationDeniedResponse(
+		request: Request,
+		path: string,
+		method: string,
+		kind: VerificationBlockedKind,
+		reason?: VerificationReason,
+	): Response {
+		const redirectPath = resolveControlPlaneRedirectPath(
+			buildVerificationRedirectPath,
+			request,
+			kind,
+			reason,
+		)
+			if (kind === 'ui') {
+				return new Response(null, {
+					status: 302,
+				headers: {
+					Location: redirectPath,
+					'Cache-Control': 'no-store',
+				},
+				})
+			}
+
+			return Response.json(
+				createVerificationBlockedPayload(path, method, kind, redirectPath, reason),
+				{
+					status: 401,
+					headers: createVerificationBlockedHeaders(redirectPath, reason),
+				},
+			)
+		}
 
 	private isHtmlNavigation(req: Request): boolean {
 		const headers = req.headers

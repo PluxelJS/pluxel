@@ -45,6 +45,7 @@
 	"dependencies": {
 		"@clack/prompts": "^1.0.1",
 		"@pluxel/hmr": "workspace:*",
+		"@pluxel/runtime": "workspace:*",
 		"fdir": "^6.5.0",
 		"gunshi": "^0.29.2",
 		"jsonc-parser": "^3.3.1",

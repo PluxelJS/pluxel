@@ -1,4 +1,4 @@
-import { existsSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import {
 	copyFile,
 	mkdir,
@@ -30,6 +30,10 @@ export type FsServiceMode = 'node' | 'memory'
 
 export type FsServiceNodeBackendFs = {
 	existsSync(path: string): boolean
+	readFileSync(
+		path: string,
+		options?: BufferEncoding | { encoding?: BufferEncoding | null } | null,
+	): string | Buffer
 	promises: {
 		copyFile(src: string, dest: string): Promise<void>
 		mkdir(path: string, options?: { recursive?: boolean }): Promise<string | undefined>
@@ -96,6 +100,7 @@ export type FsStat = {
 
 export type FsServiceBackend = {
 	exists: (path: string) => boolean
+	readTextSync: (path: string) => string
 	readText: (path: string) => Promise<string>
 	writeTextAtomic: (path: string, text: string) => Promise<void>
 	readBytes: (path: string) => Promise<Uint8Array>
@@ -192,6 +197,7 @@ async function writeAtomicNode(
 
 const nodeBackendFs: FsServiceNodeBackendFs = {
 	existsSync,
+	readFileSync,
 	promises: {
 		copyFile,
 		mkdir,
@@ -210,6 +216,16 @@ export function createNodeFsServiceBackend(
 ): FsServiceBackend {
 	return {
 		exists: (path) => fs.existsSync(path),
+		readTextSync: (path) => {
+			try {
+				const content = fs.readFileSync(path, 'utf8')
+				return typeof content === 'string' ? content : new TextDecoder().decode(content)
+			} catch (cause: unknown) {
+				if (getErrnoCode(cause) === 'ENOENT')
+					throw new FsError('ENOENT', `Missing file: ${path}`, { cause })
+				throw new FsError('IO', `Failed to read file: ${path}`, { cause })
+			}
+		},
 		readText: async (path) => {
 			try {
 				const content = await fs.promises.readFile(path, 'utf8')
@@ -287,6 +303,10 @@ function createMemoryBackend(): FsServiceBackend {
 
 	return {
 		exists: (path) => files.has(path),
+		readTextSync: (path) => {
+			stats.readText++
+			return utf8Decode(ensure(path))
+		},
 		readText: async (path) => {
 			stats.readText++
 			return utf8Decode(ensure(path))
@@ -368,6 +388,11 @@ export class FsService {
 	/** Returns whether a path exists (file only in memory mode; file/dir in node mode). */
 	exists(path: string): boolean {
 		return this.backend.exists(path)
+	}
+
+	/** Reads a UTF-8 text file. Throws `FsError` with `code: "ENOENT"` when missing. */
+	readTextSync(path: string): string {
+		return this.backend.readTextSync(path)
 	}
 
 	/** Reads a UTF-8 text file. Throws `FsError` with `code: "ENOENT"` when missing. */

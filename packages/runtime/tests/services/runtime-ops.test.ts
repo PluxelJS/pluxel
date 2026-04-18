@@ -3,7 +3,7 @@ import * as v from 'valibot'
 import { defineOp, typebox } from '@pluxel/ops'
 import { EffectsService } from '@pluxel/core/services'
 
-import { Context } from '@pluxel/runtime'
+import { BasePlugin, Context, Plugin } from '@pluxel/runtime'
 import { RuntimeRpcApi } from '../../src/api/http/rpc/RuntimeRpcApi'
 import { ensureRuntimeOpsRegistered } from '../../src/api/ops'
 
@@ -22,7 +22,10 @@ function createRuntimeHarness() {
 }
 
 function attachRuntimeStubs(root: Context) {
-	class Alpha {}
+	@Plugin({
+		name: 'Alpha',
+	})
+	class Alpha extends BasePlugin {}
 
 	const namesByCtor = new Map<any, string>([[Alpha, 'Alpha']])
 	const ctorsByName = new Map<string, any>([['Alpha', Alpha]])
@@ -144,12 +147,14 @@ describe('runtime ops', () => {
 		const { root } = createRuntimeHarness()
 
 		expect(root.ops.has('plugin.status')).toBe(true)
+		expect(root.ops.has('security.admin.events')).toBe(false)
 		expect(root.ops.has('runtime.ops.invoke')).toBe(false)
 		expect(root.ops.has('runtime.ops.dispatch')).toBe(false)
 		root.ops.unregister('plugin.status')
 
 		ensureRuntimeOpsRegistered(root)
 		expect(root.ops.has('plugin.status')).toBe(true)
+		expect(root.ops.has('security.admin.events')).toBe(false)
 	})
 
 	it('routes CLI and RPC through the same runtime ops surface', async () => {

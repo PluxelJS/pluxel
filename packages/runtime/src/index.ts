@@ -26,6 +26,7 @@ export {
 	Plugin,
 	pluginMethodDecorator,
 } from '@pluxel/core'
+export { bootstrapHostVault } from './services/security/bootstrap'
 
 type ConfigSchema =
 	| ObjectSchema<ObjectEntries, ErrorMessage<ObjectIssue> | undefined>

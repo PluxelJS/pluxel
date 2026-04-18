@@ -1,3 +1,10 @@
+import {
+	VERIFICATION_BLOCKED_HEADER,
+	VERIFICATION_REASON_HEADER,
+	VERIFICATION_REDIRECT_HEADER,
+} from '../shared/verification-http'
+import type { VerificationReason } from '../shared/verification-http'
+
 type RuntimeFetchPreconnect = typeof globalThis.fetch extends { preconnect: infer T }
 	? T
 	: (url: string | URL) => void
@@ -6,28 +13,20 @@ export type RuntimeFetch = ((input: RequestInfo | URL, init?: RequestInit) => Pr
 	preconnect?: RuntimeFetchPreconnect
 }
 
-export type AuthBlockedInfo = {
+export type VerificationBlockedInfo = {
 	status: number
 	url: string
 	redirectPath?: string
+	reason?: VerificationReason
 }
 
-export type OnAuthBlocked = (info: AuthBlockedInfo) => void
+export type OnVerificationBlocked = (info: VerificationBlockedInfo) => void
 
-export type AuthAwareFetchOptions = {
-	/**
-	 * Called when a response indicates auth is required/denied.
-	 * Default behavior: if `redirectPath` exists, `window.location.assign(redirectPath)`.
-	 */
-	onBlocked?: OnAuthBlocked
-	/**
-	 * Only treat responses as "auth blocked" when this header is present.
-	 * Defaults to `true` to avoid redirecting on unrelated 401/403 (e.g. 3rd-party APIs).
-	 */
-	requireMarkerHeader?: boolean
+export type VerificationAwareFetchOptions = {
+	onBlocked?: OnVerificationBlocked
 }
 
-const AUTH_AWARE_FETCH = Symbol.for('pluxel.authAwareFetch')
+const VERIFICATION_AWARE_FETCH = Symbol.for('pluxel.verificationAwareFetch')
 const noopPreconnect = (() => {}) as RuntimeFetchPreconnect
 
 function resolvePreconnect(fetch: RuntimeFetch): RuntimeFetchPreconnect {
@@ -46,16 +45,11 @@ export function toGlobalFetch(fetch: RuntimeFetch): typeof globalThis.fetch {
 	return wrapped
 }
 
-/**
- * 重定向状态管理
- * 使用时间戳而非布尔值，带超时自动重置以处理重定向失败的情况
- */
 let redirectingAt: number | null = null
-const REDIRECT_TIMEOUT_MS = 3000 // 3 秒后如果页面还在则重置
+const REDIRECT_TIMEOUT_MS = 3000
 
 function isRedirecting(): boolean {
 	if (redirectingAt === null) return false
-	// 超时自动重置
 	if (Date.now() - redirectingAt > REDIRECT_TIMEOUT_MS) {
 		redirectingAt = null
 		return false
@@ -71,7 +65,7 @@ export function resetRedirectingState(): void {
 	redirectingAt = null
 }
 
-export function defaultOnAuthBlocked(info: AuthBlockedInfo) {
+export function defaultOnVerificationBlocked(info: VerificationBlockedInfo) {
 	if (typeof window === 'undefined') return
 	if (!info.redirectPath) return
 	if (isRedirecting()) return
@@ -79,44 +73,48 @@ export function defaultOnAuthBlocked(info: AuthBlockedInfo) {
 	window.location.assign(info.redirectPath)
 }
 
-export function isAuthBlockedResponse(res: Response, opts?: AuthAwareFetchOptions): boolean {
+export function isVerificationBlockedResponse(
+	res: Response,
+): boolean {
 	const statusBlocked = res.status === 401 || res.status === 403
 	if (!statusBlocked) return false
-	const requireMarkerHeader = opts?.requireMarkerHeader ?? true
-	if (!requireMarkerHeader) return true
-	return res.headers.get('X-Pluxel-Auth-Blocked') === '1'
+	return res.headers.get(VERIFICATION_BLOCKED_HEADER) === '1'
 }
 
-export async function extractRedirectPath(res: Response): Promise<string | undefined> {
-	const header =
-		res.headers.get('X-Pluxel-Redirect-Path') ?? res.headers.get('x-pluxel-redirect-path')
-	if (header) return header
+export async function extractBlockedInfo(
+	res: Response,
+): Promise<Pick<VerificationBlockedInfo, 'redirectPath' | 'reason'>> {
+	const header = res.headers.get(VERIFICATION_REDIRECT_HEADER)
+	const reason = (res.headers.get(VERIFICATION_REASON_HEADER) as VerificationReason | null) ?? undefined
+	if (header) return { redirectPath: header, reason }
 
 	const ct = (res.headers.get('content-type') ?? '').toLowerCase()
-	if (!ct.includes('application/json')) return undefined
+	if (!ct.includes('application/json')) return { redirectPath: undefined, reason }
 
 	try {
 		const payload = (await res.clone().json()) as any
-		return payload?.redirectPath ?? payload?.extensions?.redirectPath
+		return {
+			redirectPath: payload?.redirectPath,
+			reason: payload?.reason,
+		}
 	} catch {
-		return undefined
+		return { redirectPath: undefined, reason }
 	}
 }
 
-export function createAuthAwareFetch(
+export function createVerificationAwareFetch(
 	baseFetch: RuntimeFetch,
-	options: AuthAwareFetchOptions = {},
+	options: VerificationAwareFetchOptions = {},
 ): RuntimeFetch {
-	if ((baseFetch as any)?.[AUTH_AWARE_FETCH]) return baseFetch
+	if ((baseFetch as any)?.[VERIFICATION_AWARE_FETCH]) return baseFetch
 
-	const onBlocked = options.onBlocked ?? defaultOnAuthBlocked
-	const requireMarkerHeader = options.requireMarkerHeader ?? true
+	const onBlocked = options.onBlocked ?? defaultOnVerificationBlocked
 
 	const wrapped = (async (input: RequestInfo | URL, init?: RequestInit) => {
 		const res = await baseFetch(input as any, init)
-		if (!isAuthBlockedResponse(res, { requireMarkerHeader })) return res
+		if (!isVerificationBlockedResponse(res)) return res
 
-		const redirectPath = await extractRedirectPath(res)
+		const blocked = await extractBlockedInfo(res)
 		const url =
 			typeof input === 'string'
 				? input
@@ -124,23 +122,25 @@ export function createAuthAwareFetch(
 					? input.toString()
 					: (input as Request).url
 
-		onBlocked({ status: res.status, url, redirectPath })
+		onBlocked({ status: res.status, url, redirectPath: blocked.redirectPath, reason: blocked.reason })
 		return res
-	}) as any
+	}) as RuntimeFetch
 
-	;(wrapped as any)[AUTH_AWARE_FETCH] = true
-	;(wrapped as RuntimeFetch).preconnect = resolvePreconnect(baseFetch)
+	;(wrapped as any)[VERIFICATION_AWARE_FETCH] = true
+	wrapped.preconnect = resolvePreconnect(baseFetch)
 	return wrapped
 }
 
-type InstallGlobalAuthFetchOptions = AuthAwareFetchOptions & {
+type InstallGlobalVerificationFetchOptions = VerificationAwareFetchOptions & {
 	enabled?: boolean
 }
 
 let installCount = 0
 let originalFetch: RuntimeFetch | null = null
 
-export function installGlobalAuthFetch(options: InstallGlobalAuthFetchOptions = {}): () => void {
+export function installGlobalVerificationFetch(
+	options: InstallGlobalVerificationFetchOptions = {},
+): () => void {
 	if (options.enabled === false) return () => {}
 	if (typeof globalThis.fetch !== 'function') return () => {}
 
@@ -151,7 +151,7 @@ export function installGlobalAuthFetch(options: InstallGlobalAuthFetchOptions = 
 			'preconnect' in nativeFetch
 				? (nativeFetch.preconnect as RuntimeFetchPreconnect)
 				: noopPreconnect
-		globalThis.fetch = toGlobalFetch(createAuthAwareFetch(originalFetch, options))
+		globalThis.fetch = toGlobalFetch(createVerificationAwareFetch(originalFetch, options))
 	}
 	installCount++
 

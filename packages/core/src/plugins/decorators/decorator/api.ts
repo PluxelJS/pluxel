@@ -371,6 +371,36 @@ export function UseFeature(...features: AnyCtor[]): ClassDecorator {
 	}
 }
 
+export function patchPluginMetadata(ctor: AnyCtor, patch: Record<string, unknown>): void {
+	if (!patch || typeof patch !== 'object') return
+	const entries = Object.entries(patch).filter(([, value]) => value !== undefined)
+	if (entries.length === 0) return
+
+	const s = S(ctor)
+	const next = Object.assign(Object.create(null), s.declaredMeta ?? Object.create(null))
+	for (let i = 0; i < entries.length; i++) {
+		const [key, value] = entries[i]!
+		next[key] = value
+	}
+	s.declaredMeta = __DEV__ ? $freeze(next) : next
+	if (s.infoSnap) rebuildInfoSnapshot(ctor, s)
+}
+
+export function appendPluginMetadataArray<T>(
+	ctor: AnyCtor,
+	key: string,
+	...values: readonly T[]
+): void {
+	if (!key || values.length === 0) return
+	const s = S(ctor)
+	const meta = (s.declaredMeta ?? Object.create(null)) as Record<string, unknown>
+	const prev = Array.isArray(meta[key]) ? (meta[key] as readonly T[]) : EMPTY_ARR
+	const next = [...prev, ...values] as T[]
+	patchPluginMetadata(ctor, {
+		[key]: __DEV__ ? $freeze(next) : next,
+	})
+}
+
 /*───────────────────────────────────────────────────────────
   Tokens：持久覆盖（写入即失效；不影响身份数据）
 ───────────────────────────────────────────────────────────*/

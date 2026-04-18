@@ -48,9 +48,13 @@
 
 ### `VaultService`（`ctx.vault`）
 
-- 职责：加密存储/密钥管理（面向插件 secrets）。
+- 职责：宿主管理的 shared 加密存储；负责 mount 状态、显式 unlock、deploy key 协作，不负责独立认证体系。
 - 位置：`packages/runtime/src/services/vault/VaultService.ts`
 - 依赖：通过 `ctx.root.fs` 做持久化。
+- 启动约束：官方 host 入口在启动插件系统前执行 `ctx.vault.preflight()`；mount 缺失时保持懒创建，mount 已存在时必须可解锁。
+- 原则与使用边界：
+  - `packages/runtime/HOST_VERIFICATION_DESIGN.md`
+  - `packages/runtime/src/services/vault/加密实现规范.md`
 
 ### `PluginDataService`（`ctx.pluginData`）
 
@@ -92,13 +96,7 @@
 - `ExtensionModuleStore`：给 `@pluxel/hmr` compiler 使用的最小 bridge，只暴露 compiled module 读写能力
   - 定义于 `packages/runtime/src/services/plugin-interaction/ExtensionService.ts`
 
-当前判断：
-
-- 这组实现的边界已经明确：`rpc/sse/signaldb` 负责数据与交互，`ui` 负责呈现注册；
-- runtime 只消费 packaged remote 和 host-rendered doc/builtin，不消费 `ui(...).bind(ctx)` 这类 authoring 语义；
-- 如果后续继续优化，优先整理类内状态与 transport 细节，不再新增一层公开概念。
-
-对插件前端作者来说，服务层最终会在浏览器侧收敛为一组更小的 contract：
+对插件前端作者来说，浏览器侧消费的是一组更小的 contract：
 
 - 后端注册：`ctx.ext.*`
 - 浏览器消费：`@pluxel/runtime/web/ui`

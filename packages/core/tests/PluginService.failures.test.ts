@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest'
 import { BasePlugin, Plugin, setParamToken, withHost } from '@pluxel/test'
 
 describe('PluginService failure reporting', () => {
-	it('commitStrict preserves failure summary and emits commitFailed for failed startup', async () => {
+	it('commitStrict preserves failure summary and emits commitFailed for failed start', async () => {
 		await withHost(async (host) => {
 			const afterCommit: Array<{ failed: unknown[] }> = []
 			const commitFailed: unknown[][] = []

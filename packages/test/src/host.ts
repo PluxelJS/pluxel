@@ -9,6 +9,7 @@ import {
 	type PluginIdentifier,
 	type PluginService,
 } from '@pluxel/core'
+import { bootstrapHostVault } from '@pluxel/runtime'
 
 type NamespacedConfigKey = `${string}.${string}`
 type HostConfigTarget = PluginConstructor | string
@@ -119,7 +120,12 @@ export function createHost(config: Context.Config = {}): Host {
 		return instance
 	}
 
+	async function bootstrapHostVaultForTests(): Promise<void> {
+		await bootstrapHostVault(ctx)
+	}
+
 	async function commit(): Promise<CommitSummary> {
+		await bootstrapHostVaultForTests()
 		const result = await registry.commitStrict()
 		if (!result.ok) throw result.err instanceof Error ? result.err : new Error(String(result.err))
 		const summary = registry.lastCommit
@@ -128,6 +134,7 @@ export function createHost(config: Context.Config = {}): Host {
 	}
 
 	async function commitAllowFail(): Promise<CommitSummary> {
+		await bootstrapHostVaultForTests()
 		const result = await registry.commit()
 		if (!result.ok) throw result.err instanceof Error ? result.err : new Error(String(result.err))
 		const summary = registry.lastCommit

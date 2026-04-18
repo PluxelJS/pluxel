@@ -8,9 +8,10 @@
 	},
 	"scripts": {
 		"test": "turbo run test",
-		"test:affected": "turbo run test --filter=...[origin/main]",
+		"test:full": "turbo run test --force",
 		"test:watch": "vitest",
-		"build": "turbo run build",
+		"build": "turbo run build --filter=!@pluxel/plugins-host",
+		"build:full": "turbo run build --force --filter=!@pluxel/plugins-host",
 		"lint": "oxlint -c oxlint.config.ts --report-unused-disable-directives-severity=error packages scripts oxlint.config.ts vitest.config.ts pncat.config.ts",
 		"lint:fix": "oxlint -c oxlint.config.ts --report-unused-disable-directives-severity=error packages scripts oxlint.config.ts vitest.config.ts pncat.config.ts --fix",
 		"format": "oxfmt -c .oxfmtrc.json --ignore-path .gitignore --ignore-path .oxfmtignore --write .",

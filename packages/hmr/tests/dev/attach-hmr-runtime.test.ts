@@ -35,7 +35,7 @@ describe('@pluxel/hmr attachHmrRuntime', () => {
 			packageService: { state: { enabled: false } },
 			http: {
 				uiAssets: 'disabled',
-				controlPlane: { web: false, rpc: false, sse: false, auth: 'none' },
+				controlPlane: { web: false, rpc: false, sse: false },
 			},
 			extensionService: { enabled: false },
 		})

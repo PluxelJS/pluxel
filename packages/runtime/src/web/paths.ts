@@ -3,6 +3,8 @@ export const HMR_META_BASE = '/meta' as const
 export const HMR_EXTENSIONS_BASE = '/extensions' as const
 export const HMR_LOG_STREAMS_BASE = '/logs/v1/streams' as const
 export const HMR_EXTENSIONS_ARTIFACTS_BASE = `${HMR_EXTENSIONS_BASE}/artifacts` as const
+export const HMR_VERIFICATION_BASE = '/__pluxel/verify' as const
+export const HMR_SECURITY_BASE = '/security' as const
 export const HMR_TRANSPORT_PATHS = {
 	rpc: '/rpc',
 	graphql: '/graphql',
@@ -12,8 +14,26 @@ export const HMR_TRANSPORT_PATHS = {
 } as const
 
 export const HMR_META_INFO_PATH = HMR_META_BASE
-export const HMR_META_AUTH_PATH = `${HMR_META_BASE}/auth`
 export const HMR_META_SSE_PATH = `${HMR_META_BASE}/sse`
+export const HMR_SECURITY_EVENTS_PATH = `${HMR_SECURITY_BASE}/events`
+export const HMR_SECURITY_VERIFICATION_MODE_PATH = `${HMR_SECURITY_BASE}/verification/mode`
+export const HMR_SECURITY_VERIFICATION_METHOD_PATH = `${HMR_SECURITY_BASE}/verification/method`
+export const HMR_SECURITY_VERIFICATION_PASSWORD_USERS_PATH =
+	`${HMR_SECURITY_BASE}/verification/users/password`
+export const HMR_SECURITY_VERIFICATION_OTP_USERS_PATH =
+	`${HMR_SECURITY_BASE}/verification/users/otp`
+export const HMR_SECURITY_VERIFICATION_PASSKEY_REGISTER_OPTIONS_PATH =
+	`${HMR_SECURITY_BASE}/verification/passkey/register/options`
+export const HMR_SECURITY_VERIFICATION_PASSKEY_REGISTER_PATH =
+	`${HMR_SECURITY_BASE}/verification/passkey/register`
+export const HMR_SECURITY_VERIFICATION_USERS_DELETE_PATH =
+	`${HMR_SECURITY_BASE}/verification/users/delete`
+export const HMR_SECURITY_VAULT_UNLOCK_PATH = `${HMR_SECURITY_BASE}/vault/unlock`
+export const HMR_SECURITY_VAULT_HOST_KEY_PATH = `${HMR_SECURITY_BASE}/vault/keys/host`
+export const HMR_SECURITY_VAULT_DEPLOY_GENERATE_PATH =
+	`${HMR_SECURITY_BASE}/vault/keys/deploy/generate`
+export const HMR_SECURITY_VAULT_DEPLOY_RECIPIENTS_PATH =
+	`${HMR_SECURITY_BASE}/vault/keys/deploy`
 export const HMR_EXTENSIONS_MANIFEST_PATH = `${HMR_EXTENSIONS_BASE}/manifest`
 export const HMR_EXTENSIONS_EVENTS_PATH = `${HMR_EXTENSIONS_BASE}/events`
 export const HMR_EXTENSIONS_MODULES_BASE = `${HMR_EXTENSIONS_BASE}/modules`

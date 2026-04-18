@@ -148,6 +148,7 @@ async function startDevHost() {
 
 async function startManagedHost() {
 	const { Context } = await import('@pluxel/runtime')
+	const { bootstrapHostVault } = await import('@pluxel/runtime/services')
 	const { ensurePluxelLogging } = await import('@pluxel/runtime/logger')
 	const { resolveRuntimeStoragePaths } = await import('@pluxel/runtime/internal')
 
@@ -185,11 +186,12 @@ async function startManagedHost() {
 			state: { enabled: false, file: storage.packageStateFile },
 		},
 		http: {
-			controlPlane: { web: true, rpc: true, sse: true, auth: 'none' },
+			controlPlane: { web: true, rpc: true, sse: true },
 			uiAssets: 'static-built',
 		},
 		extensionService: { enabled: false },
 	})
+	await bootstrapHostVault(ctx)
 
 	const server = await startFetchHostServer({
 		host: bindHost,
@@ -236,7 +238,6 @@ async function startFrozenHost() {
 				web: true,
 				rpc: true,
 				sse: true,
-				auth: 'none',
 			},
 			uiAssets: 'static-built',
 		},

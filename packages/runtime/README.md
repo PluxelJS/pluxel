@@ -54,8 +54,19 @@ runtime 只消费两类前端输入：
   插件级 HTTP 路由挂载入口
 - `workerDecl.bind(this.ctx, options)`
   HMR worker 绑定入口
-- `this.ctx.vault.open(...)`
-  插件级加密持久化入口
+- `this.ctx.vault`
+  插件与 runtime 的共享加密存储入口，只保留数据读写能力
+- `this.ctx.vault.kv(...)` / `this.ctx.vault.docs(...)` / `this.ctx.vault.blobs(...)`
+  共享加密持久化入口；namespace 只是存储分区，不是额外权限模型
+- `this.ctx.root.verification`
+  host-only gate；只回答“当前宿主是否允许进入 control plane”
+  `authorize()` / `describe()` 纯读
+  `verifyPassword()` / `verifyOtp()` / `finishPasskeyAuthentication()` 只写 verification session
+  `clear()` / `setMode()` / `setMethod()` / `upsertPasswordUser()` / `provisionOtpUser()` / `beginPasskeyRegistration()` / `finishPasskeyRegistration()` / `deleteUser()` 才产生副作用
+- `this.ctx.root.vaultAdmin.*`
+  host-only 管理面：`preflight()` / `describe()` / `unlock()` / `rekey()` / `ensureHostKey()` / `generateDeployKey()` / `setDeployRecipients()`
+- `this.ctx.vault`
+  设计原则见 `HOST_VERIFICATION_DESIGN.md`；vault 使用说明见 `src/services/vault/加密实现规范.md`
 - `this.ctx.root.fs.*`
   root FS 入口
 - `this.ctx.loader.api`
@@ -105,6 +116,24 @@ runtime 只消费两类前端输入：
 - `plugin.config.reset`
 - `plugins.config.reset`
 - `runtime.ops.list`
+
+security 管理不进入 runtime ops。
+
+浏览器宿主管理面统一走 `/security`，前端只通过专用 security client 调用：
+
+- `read()`
+- `verification.clear()`
+- `verification.setMode()`
+- `verification.setMethod()`
+- `verification.upsertPasswordUser()`
+- `verification.provisionOtpUser()`
+- `verification.beginPasskeyRegistration()`
+- `verification.finishPasskeyRegistration()`
+- `verification.deleteUser()`
+- `vault.unlock()`
+- `vault.ensureHostKey()`
+- `vault.generateDeployKey()`
+- `vault.setDeployRecipients()`
 
 ## 配置
 

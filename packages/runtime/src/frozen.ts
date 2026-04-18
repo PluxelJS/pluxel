@@ -54,6 +54,7 @@ function buildBootstrapSource(options: BuildFrozenHostOptions, rows: readonly Im
 /* eslint-disable */
 import { Context } from '@pluxel/core'
 import '@pluxel/core/services'
+import { bootstrapHostVault } from '@pluxel/runtime/services'
 import '@pluxel/runtime'
 ${imports}
 
@@ -75,10 +76,12 @@ const ctx = new Context({
 \t},
 \thttp: {
 \t\tuiAssets: ${JSON.stringify(options.bootstrap?.uiAssets ?? 'disabled')},
-\t\tcontrolPlane: ${JSON.stringify(options.bootstrap?.controlPlane ?? { web: false, rpc: false, sse: false, auth: 'none' })},
+\t\tcontrolPlane: ${JSON.stringify(options.bootstrap?.controlPlane ?? { web: false, rpc: false, sse: false })},
 \t},
 \textensionService: { enabled: false },
 })
+
+await bootstrapHostVault(ctx)
 
 await ctx.loader.preloadPlugins(
 \t[

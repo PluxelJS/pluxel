@@ -1,10 +1,9 @@
-import { type Context, getPluginInfo, parseForkPluginId } from '@pluxel/core'
+import { type Context, getPluginInfo } from '@pluxel/core'
 import {
 	ConfigValidationError,
 	collectConfigDefaults,
 	validateConfigPatch,
 } from '@pluxel/core/services'
-import { hashPasswordScrypt } from '../../builtins/basic-auth/password'
 import type { BuiltinMarkdownPart } from '../../web/extensions'
 import type { ConfigFieldMutation } from '../../web/protocol'
 
@@ -68,44 +67,6 @@ function writeNestedField(
 	}
 	cursor[segments.at(-1)!] = value
 	return out
-}
-
-function applyBasicAuthPatchTransform(
-	ctx: Context,
-	name: string,
-	patch: Record<string, unknown>,
-	output: Record<string, unknown>,
-) {
-	const baseId = parseForkPluginId(name)?.baseId ?? name
-	if (baseId !== 'BasicAuth') return
-
-	const inAuth = patch.auth
-	const outAuth = output.auth
-	if (!isPlainObject(inAuth) || !isPlainObject(outAuth)) return
-
-	// Preserve existing values when the patch doesn't include them (avoid wiping with defaults).
-	const existing = normalizePlainObject(ctx.configService.getRawConfig(name))
-	const existingAuth = isPlainObject(existing.auth) ? existing.auth : undefined
-
-	if (!('username' in inAuth) && existingAuth && typeof existingAuth.username === 'string') {
-		outAuth.username = existingAuth.username
-	}
-	if (
-		!('passwordHash' in inAuth) &&
-		existingAuth &&
-		typeof existingAuth.passwordHash === 'string'
-	) {
-		outAuth.passwordHash = existingAuth.passwordHash
-	}
-
-	// Never persist plaintext password.
-	const rawPassword = inAuth.password
-	if (typeof rawPassword === 'string' && rawPassword) {
-		outAuth.passwordHash = hashPasswordScrypt(rawPassword)
-		outAuth.password = ''
-	} else {
-		outAuth.password = ''
-	}
 }
 
 export async function pluginSchema(ctx: Context, name: string): Promise<PluginSchemaResult> {
@@ -196,8 +157,6 @@ export async function pluginConfigValidate(
 		}
 	}
 
-	applyBasicAuthPatchTransform(ctx, name, patch, validation.output)
-
 	return {
 		ok: true,
 		saved: false,
@@ -233,8 +192,6 @@ export async function pluginConfigPatch(
 			defaults,
 		}
 	}
-
-	applyBasicAuthPatchTransform(ctx, name, patch, validation.output)
 
 	if (Object.keys(validation.output).length > 0) {
 		ctx.configService.patchConfig(name, validation.output)
