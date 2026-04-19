@@ -1,8 +1,4 @@
-import { sanitizeTwoPanelLayout } from './storage'
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-	return Boolean(value && typeof value === 'object' && !Array.isArray(value))
-}
+import { sanitizeOptionalBooleanState, sanitizeTwoPanelLayout } from './storage'
 
 export type PluginWorkbenchPanelsState = {
 	rightPaneVisible?: boolean
@@ -44,21 +40,16 @@ export function sanitizePluginSectionLayout(layout: Record<string, number>) {
 }
 
 export function sanitizePluginWorkbenchPanelsState(value: unknown): PluginWorkbenchPanelsState {
-	if (!isRecord(value)) return {}
-	return {
-		rightPaneVisible:
-			typeof value.rightPaneVisible === 'boolean' ? value.rightPaneVisible : undefined,
-		dockVisible: typeof value.dockVisible === 'boolean' ? value.dockVisible : undefined,
-	}
+	return sanitizeOptionalBooleanState<PluginWorkbenchPanelsState>(value, [
+		'rightPaneVisible',
+		'dockVisible',
+	])
 }
 
 export function resolvePluginWorkbenchPanelsState(
-	tabState: Record<string, Record<string, unknown>>,
-	tabId: string | null,
+	value: unknown,
 ): ResolvedPluginWorkbenchPanelsState {
-	const scoped = tabId
-		? sanitizePluginWorkbenchPanelsState(tabState[tabId]?.[PLUGIN_WORKBENCH_PANELS_SCOPE])
-		: {}
+	const scoped = sanitizePluginWorkbenchPanelsState(value)
 	return {
 		rightPaneVisible:
 			scoped.rightPaneVisible ?? DEFAULT_PLUGIN_WORKBENCH_PANELS_STATE.rightPaneVisible,

@@ -20,6 +20,7 @@ import { usePluginConfig } from '../../hooks'
 import { useCurrentPathname } from '../../router/useCurrentRoute'
 import { usePluginOverview } from '../pluginOverviewStore'
 import { PluginScopeProvider, type PluginSourceKind } from './context'
+import { matchesKnownPluginName, resolveKnownPluginName } from './rightPaneState'
 import { PluginWorkbench } from './workbench/PluginWorkbench'
 
 function PluginSkeleton({ stacked }: { stacked: boolean }) {
@@ -90,6 +91,75 @@ type PluginDetailView = {
 	dependencies: PluginDependency[]
 }
 
+type PluginStatusSnapshot = {
+	isRunning: boolean
+	isEnabled: boolean
+	lifecycleStage: PluginStatusEntryLifecycleStage
+	source: NonNullable<PluginStatusEntry['source']> | null
+}
+
+function clonePluginDetailView(detail: PluginDetailView): PluginDetailView {
+	return {
+		...detail,
+		dependencies: Array.isArray(detail.dependencies) ? [...detail.dependencies] : [],
+	}
+}
+
+function resolveLifecycleStage(
+	isEnabled: boolean,
+	isRunning: boolean,
+	lifecycleStage?: PluginStatusEntryLifecycleStage | null,
+) {
+	if (lifecycleStage) return lifecycleStage
+	if (isEnabled) {
+		return isRunning
+			? PluginStatusEntryLifecycleStage.running
+			: PluginStatusEntryLifecycleStage.stopped
+	}
+	return PluginStatusEntryLifecycleStage.disabled
+}
+
+function resolveStatusSnapshot(statusEntry: PluginStatusEntry | null): PluginStatusSnapshot | null {
+	if (!statusEntry) return null
+	const isEnabled = statusEntry.isEnabled !== false
+	const isRunning = Boolean(statusEntry.isRunning)
+	return {
+		isRunning,
+		isEnabled,
+		lifecycleStage: resolveLifecycleStage(isEnabled, isRunning, statusEntry.lifecycleStage),
+		source: statusEntry.source ?? null,
+	}
+}
+
+function resolvePluginSource(snapshot: PluginStatusSnapshot | null): {
+	kind: PluginSourceKind
+	moduleId: string | null
+	packageName: string | null
+	version: string | null
+	tag: string | null
+} {
+	const rawSource = snapshot?.source ?? null
+	return {
+		kind: (rawSource?.kind ?? 'unknown') as PluginSourceKind,
+		moduleId: rawSource?.moduleId ?? null,
+		packageName: rawSource?.packageName ?? null,
+		version: rawSource?.version ?? null,
+		tag: rawSource?.tag ?? null,
+	}
+}
+
+function resolveVisibleDependencies(params: {
+	rawDeps?: PluginDependency[]
+	stableDeps: PluginDependency[]
+	syncing: boolean
+}) {
+	const { rawDeps, stableDeps, syncing } = params
+	const preferStableDeps = Boolean(
+		rawDeps && Array.isArray(rawDeps) && rawDeps.length === 0 && stableDeps.length > 0,
+	)
+	return syncing && preferStableDeps ? stableDeps : (rawDeps ?? stableDeps)
+}
+
 function usePluginDetail(pluginName?: string) {
 	// Reuse the global overview snapshot to avoid duplicate status requests on plugin pages.
 	const overview = usePluginOverview()
@@ -113,20 +183,13 @@ function usePluginDetail(pluginName?: string) {
 
 	const statusEntry = useMemo(() => {
 		if (!pluginName) return null
-		let entry = statusMap.get(pluginName) ?? null
-		if (!entry) {
-			const hash = pluginName.lastIndexOf('#')
-			if (hash > 0) entry = statusMap.get(pluginName.slice(0, hash)) ?? null
-		}
-		return entry
-	}, [pluginName, statusMap])
+		const resolvedName = resolveKnownPluginName(knownPluginNames, pluginName) ?? pluginName
+		return statusMap.get(resolvedName) ?? null
+	}, [knownPluginNames, pluginName, statusMap])
 
 	const listed = useMemo(() => {
 		if (!pluginName) return false
-		if (knownPluginNames.has(pluginName)) return true
-		const hash = pluginName.lastIndexOf('#')
-		if (hash > 0) return knownPluginNames.has(pluginName.slice(0, hash))
-		return false
+		return matchesKnownPluginName(knownPluginNames, pluginName)
 	}, [pluginName, knownPluginNames])
 
 	// Always request detail; we handle missing plugins via stable UI decisions instead of gating.
@@ -238,22 +301,14 @@ export const PluginScreen = memo(function PluginScreen({ pluginName }: PluginScr
 			lastStableRef.current = null
 			return
 		}
-		lastStableRef.current = {
-			...detail,
-			dependencies: Array.isArray(detail.dependencies) ? [...detail.dependencies] : [],
-		}
+		lastStableRef.current = clonePluginDetailView(detail)
 	}, [detail])
 
 	const stable = lastStableRef.current?.name === pluginName ? lastStableRef.current : null
 	const viewReady = ready || Boolean(stable?.name)
 	const displayName = detail?.name ?? stable?.name ?? pluginName
 	const description = detail?.desc ?? stable?.desc ?? ''
-	const statusRef = useRef<{
-		isRunning: boolean
-		isEnabled: boolean
-		lifecycleStage: PluginStatusEntryLifecycleStage
-		source: NonNullable<PluginStatusEntry['source']> | null
-	} | null>(null)
+	const statusRef = useRef<PluginStatusSnapshot | null>(null)
 	const statusEntryRef = useRef<PluginStatusEntry | null>(null)
 	const [statusOverride, setStatusOverride] = useState<{
 		isRunning: boolean
@@ -267,24 +322,7 @@ export const PluginScreen = memo(function PluginScreen({ pluginName }: PluginScr
 		setStatusOverride(null)
 	}, [pluginName])
 
-	const resolvedStatus = useMemo(() => {
-		if (!statusEntry) return null
-		const isEnabled = statusEntry.isEnabled !== false
-		const isRunning = Boolean(statusEntry.isRunning)
-		const lifecycleStage =
-			statusEntry.lifecycleStage ??
-			(isEnabled
-				? isRunning
-					? PluginStatusEntryLifecycleStage.running
-					: PluginStatusEntryLifecycleStage.stopped
-				: PluginStatusEntryLifecycleStage.disabled)
-		return {
-			isRunning,
-			isEnabled,
-			lifecycleStage,
-			source: statusEntry.source ?? null,
-		}
-	}, [statusEntry])
+	const resolvedStatus = useMemo(() => resolveStatusSnapshot(statusEntry), [statusEntry])
 
 	useEffect(() => {
 		if (resolvedStatus) statusRef.current = resolvedStatus
@@ -302,23 +340,18 @@ export const PluginScreen = memo(function PluginScreen({ pluginName }: PluginScr
 	const effectiveStatusEntry = statusEntry ?? statusEntryRef.current ?? null
 	const isRunning = Boolean(effectiveStatus?.isRunning)
 	const isEnabled = effectiveStatus?.isEnabled ?? true
-	const lifecycleStage =
-		effectiveStatus?.lifecycleStage ??
-		(isEnabled
-			? isRunning
-				? PluginStatusEntryLifecycleStage.running
-				: PluginStatusEntryLifecycleStage.stopped
-			: PluginStatusEntryLifecycleStage.disabled)
+	const lifecycleStage = resolveLifecycleStage(
+		isEnabled,
+		isRunning,
+		effectiveStatus?.lifecycleStage,
+	)
 
 	const configState = usePluginConfig(viewReady ? displayName : undefined)
 	const syncing = useDebouncedFlag(loading || configState.loading, 160)
 
 	const rawDeps = detail?.dependencies
 	const stableDeps = stable?.dependencies ?? []
-	const preferStableDeps = Boolean(
-		rawDeps && Array.isArray(rawDeps) && rawDeps.length === 0 && stableDeps.length > 0,
-	)
-	const dependencies = syncing && preferStableDeps ? stableDeps : (rawDeps ?? stableDeps)
+	const dependencies = resolveVisibleDependencies({ rawDeps, stableDeps, syncing })
 
 	const handleRefetch = useCallback(async () => {
 		await refetch()
@@ -337,14 +370,6 @@ export const PluginScreen = memo(function PluginScreen({ pluginName }: PluginScr
 
 	const contextValue = useMemo(() => {
 		if (!detail && !stable) return null
-		const rawSource = resolvedStatus?.source ?? statusRef.current?.source ?? null
-		const source = {
-			kind: (rawSource?.kind ?? 'unknown') as PluginSourceKind,
-			moduleId: rawSource?.moduleId ?? null,
-			packageName: rawSource?.packageName ?? null,
-			version: rawSource?.version ?? null,
-			tag: rawSource?.tag ?? null,
-		}
 		return {
 			pluginName: displayName,
 			description,
@@ -355,7 +380,7 @@ export const PluginScreen = memo(function PluginScreen({ pluginName }: PluginScr
 			isSyncing: syncing,
 			isEnabled,
 			lifecycleStage,
-			source,
+			source: resolvePluginSource(resolvedStatus ?? statusRef.current),
 			refetch: handleRefetch,
 			setStatusOverride: handleStatusOverride,
 		}

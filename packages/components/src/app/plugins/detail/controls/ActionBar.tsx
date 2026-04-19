@@ -16,6 +16,7 @@ import {
 import { buildStartPlan, executeStartPlan } from '../../pluginStatusActions'
 import { invalidate } from '../../../data/invalidations'
 import { usePluginScope } from '../context'
+import { resolveKnownPluginName } from '../rightPaneState'
 import { PLUGIN_DETAIL_HOTKEYS, PLUGIN_DETAIL_HOTKEY_LABELS } from '../../../workbench/shortcuts'
 
 export interface ActionBarProps {
@@ -30,6 +31,87 @@ const ACTION_LABEL: Record<PluginStatusAction, string> = {
 	restart: '重启',
 	enable: '启用',
 	disable: '禁用',
+}
+
+type ActionBarButtonProps = {
+	action: 'restart' | 'start' | 'stop'
+	busy: boolean
+	canToggle: boolean
+	compact: boolean
+	isRunning: boolean
+	onAction: (action: PluginStatusAction) => void
+	prominent: boolean
+}
+
+function ActionBarButton({
+	action,
+	busy,
+	canToggle,
+	compact,
+	isRunning,
+	onAction,
+	prominent,
+}: ActionBarButtonProps) {
+	const isRestart = action === 'restart'
+	const isStart = action === 'start'
+	const disabled = !canToggle || (isStart ? isRunning : !isRunning)
+	const label =
+		busy
+			? '同步中…'
+			: isRestart
+				? `重启 (${PLUGIN_DETAIL_HOTKEY_LABELS.restartPlugin})`
+				: ACTION_LABEL[action]
+	const iconSize = prominent ? 16 : compact ? 16 : 18
+	const buttonSize = compact ? 'md' : 'lg'
+	const icon =
+		action === 'start' ? (
+			<IconPlayerPlay size={iconSize} />
+		) : action === 'stop' ? (
+			<IconSquareX size={iconSize} />
+		) : (
+			<IconRotateClockwise size={iconSize} />
+		)
+
+	if (prominent) {
+		return (
+			<Tooltip label={label}>
+				<Button
+					className={
+						isStart
+							? 'plx-pluginWorkbench__actionButton plx-pluginWorkbench__actionButton--primary'
+							: 'plx-pluginWorkbench__actionButton'
+					}
+					variant={isStart ? 'filled' : isRestart ? 'default' : 'light'}
+					color={action === 'stop' ? 'red' : undefined}
+					size="sm"
+					leftSection={icon}
+					onClick={() => onAction(action)}
+					disabled={disabled}
+				>
+					{ACTION_LABEL[action]}
+					{isRestart ? (
+						<span className="plx-pluginWorkbench__actionKeyHint">
+							{PLUGIN_DETAIL_HOTKEY_LABELS.restartPlugin}
+						</span>
+					) : null}
+				</Button>
+			</Tooltip>
+		)
+	}
+
+	return (
+		<Tooltip label={label}>
+			<ActionIcon
+				variant="light"
+				size={buttonSize}
+				color={action === 'stop' ? 'red' : isRestart ? 'green' : undefined}
+				onClick={() => onAction(action)}
+				disabled={disabled}
+			>
+				{icon}
+			</ActionIcon>
+		</Tooltip>
+	)
 }
 
 export function ActionBar({ onStatusUpdated, compact = false, prominent = false }: ActionBarProps) {
@@ -224,16 +306,20 @@ export function ActionBar({ onStatusUpdated, compact = false, prominent = false 
 
 	const handleAction = (action: PluginStatusAction) => {
 		const needsDependencyCheck = action === 'start' || action === 'restart'
-		const isKnownPlugin = (name: string) => {
-			if (knownPluginNames.has(name)) return true
-			const hash = name.lastIndexOf('#')
-			return hash > 0 ? knownPluginNames.has(name.slice(0, hash)) : false
-		}
 		const missing = needsDependencyCheck
-			? dependencies
-					.filter((d) => !d.isRunning)
-					.map((d) => d.name)
-					.filter((name): name is string => Boolean(name && isKnownPlugin(name)))
+			? Array.from(
+					new Map(
+						dependencies
+							.filter((dep) => !dep.isRunning)
+							.map((dep) => {
+								const label = dep.name?.trim()
+								const target = label ? resolveKnownPluginName(knownPluginNames, label) : undefined
+								return label && target ? [target, { label, target }] : null
+							})
+							.filter(Boolean)
+							.map((entry) => entry as [string, { label: string; target: string }]),
+					).values(),
+			  )
 			: []
 
 		const proceed = (): void => {
@@ -246,11 +332,13 @@ export function ActionBar({ onStatusUpdated, compact = false, prominent = false 
 				children: (
 					<div>
 						<div>可尝试级联启动已配置的依赖链，然后启动当前插件。</div>
-						<div style={{ marginTop: 10 }}>以下依赖尚未运行：{missing.join('，')}</div>
+						<div style={{ marginTop: 10 }}>
+							以下依赖尚未运行：{missing.map((item) => item.label).join('，')}
+						</div>
 					</div>
 				),
 				labels: { confirm: '级联启动', cancel: '取消' },
-				onConfirm: () => void cascadeStart(missing, action),
+				onConfirm: () => void cascadeStart(missing.map((item) => item.target), action),
 				closeOnConfirm: true,
 			})
 		} else {
@@ -261,8 +349,6 @@ export function ActionBar({ onStatusUpdated, compact = false, prominent = false 
 	const busy = isLoading || isSyncing
 	const canToggle = !busy
 	const persistDisabled = busy
-	const iconSize = compact ? 16 : 18
-	const actionSize = compact ? 'md' : 'lg'
 	const switchSize = compact ? 'sm' : 'md'
 
 	useHotkeys(
@@ -318,48 +404,33 @@ export function ActionBar({ onStatusUpdated, compact = false, prominent = false 
 					</Tooltip>
 				</div>
 
-				<Tooltip label={busy ? '同步中…' : '启动'}>
-					<Button
-						className="plx-pluginWorkbench__actionButton plx-pluginWorkbench__actionButton--primary"
-						variant="filled"
-						size="sm"
-						leftSection={<IconPlayerPlay size={16} />}
-						onClick={() => handleAction('start')}
-						disabled={!canToggle || isRunning}
-					>
-						启动
-					</Button>
-				</Tooltip>
-
-				<Tooltip label={busy ? '同步中…' : '终止'}>
-					<Button
-						className="plx-pluginWorkbench__actionButton"
-						variant="light"
-						color="red"
-						size="sm"
-						leftSection={<IconSquareX size={16} />}
-						onClick={() => handleAction('stop')}
-						disabled={!canToggle || !isRunning}
-					>
-						终止
-					</Button>
-				</Tooltip>
-
-				<Tooltip label={busy ? '同步中…' : '重启 (Ctrl/⌘ + Alt + R)'}>
-					<Button
-						className="plx-pluginWorkbench__actionButton"
-						variant="default"
-						size="sm"
-						leftSection={<IconRotateClockwise size={16} />}
-						onClick={() => handleAction('restart')}
-						disabled={!canToggle || !isRunning}
-					>
-						重启
-						<span className="plx-pluginWorkbench__actionKeyHint">
-							{PLUGIN_DETAIL_HOTKEY_LABELS.restartPlugin}
-						</span>
-					</Button>
-				</Tooltip>
+				<ActionBarButton
+					action="start"
+					busy={busy}
+					canToggle={canToggle}
+					compact={compact}
+					isRunning={isRunning}
+					onAction={handleAction}
+					prominent
+				/>
+				<ActionBarButton
+					action="stop"
+					busy={busy}
+					canToggle={canToggle}
+					compact={compact}
+					isRunning={isRunning}
+					onAction={handleAction}
+					prominent
+				/>
+				<ActionBarButton
+					action="restart"
+					busy={busy}
+					canToggle={canToggle}
+					compact={compact}
+					isRunning={isRunning}
+					onAction={handleAction}
+					prominent
+				/>
 
 				<ExtensionSlot point="plugin:actions" fallback={null} />
 			</Group>
@@ -392,40 +463,33 @@ export function ActionBar({ onStatusUpdated, compact = false, prominent = false 
 				/>
 			</Tooltip>
 
-			<Tooltip label={busy ? '同步中…' : '启动'}>
-				<ActionIcon
-					variant="light"
-					size={actionSize}
-					onClick={() => handleAction('start')}
-					disabled={!canToggle || isRunning}
-				>
-					<IconPlayerPlay size={iconSize} />
-				</ActionIcon>
-			</Tooltip>
-
-			<Tooltip label={busy ? '同步中…' : '终止'}>
-				<ActionIcon
-					variant="light"
-					size={actionSize}
-					color="red"
-					onClick={() => handleAction('stop')}
-					disabled={!canToggle || !isRunning}
-				>
-					<IconSquareX size={iconSize} />
-				</ActionIcon>
-			</Tooltip>
-
-			<Tooltip label={busy ? '同步中…' : '重启 (Ctrl/⌘ + Alt + R)'}>
-				<ActionIcon
-					variant="light"
-					size={actionSize}
-					color="green"
-					onClick={() => handleAction('restart')}
-					disabled={!canToggle || !isRunning}
-				>
-					<IconRotateClockwise size={iconSize} />
-				</ActionIcon>
-			</Tooltip>
+			<ActionBarButton
+				action="start"
+				busy={busy}
+				canToggle={canToggle}
+				compact={compact}
+				isRunning={isRunning}
+				onAction={handleAction}
+				prominent={false}
+			/>
+			<ActionBarButton
+				action="stop"
+				busy={busy}
+				canToggle={canToggle}
+				compact={compact}
+				isRunning={isRunning}
+				onAction={handleAction}
+				prominent={false}
+			/>
+			<ActionBarButton
+				action="restart"
+				busy={busy}
+				canToggle={canToggle}
+				compact={compact}
+				isRunning={isRunning}
+				onAction={handleAction}
+				prominent={false}
+			/>
 		</Group>
 	)
 }

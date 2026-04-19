@@ -1,11 +1,4 @@
-import {
-	Group as PanelGroup,
-	type GroupImperativeHandle,
-	type Layout,
-	Panel,
-	Separator as PanelSeparator,
-} from 'react-resizable-panels'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useMemo, useRef, useState } from 'react'
 import type { PluginConfigState } from '../../../hooks'
 import {
 	DEFAULT_PLUGIN_WORKBENCH_HORIZONTAL_LAYOUT,
@@ -18,35 +11,32 @@ import {
 	PLUGIN_WORKBENCH_VERTICAL_LAYOUT_STORAGE_KEY,
 	sanitizePluginWorkbenchHorizontalLayout,
 	sanitizePluginWorkbenchVerticalLayout,
-} from '../../../workbench/pluginLayout'
-import { hasSameLayout, useStoredLayout } from '../../../workbench/storage'
+	WorkbenchSplitView,
+	type SplitViewHandle,
+	type SplitViewPane,
+	useStoredSplitLayout,
+	useSyncedLayout,
+} from '../../../workbench/split'
 import { RightPane } from '../RightPane'
 import { PluginWorkbenchPanel, PluginWorkbenchSidebar } from './PluginWorkbenchHostViews'
 import { PluginWorkbenchAsideProvider, usePluginWorkbenchLayout } from './context'
 
 const LEGACY_ASSIST_OWNER = Symbol('plugin-workbench-assist-legacy')
 
-const PANEL_STYLE = {
-	display: 'flex',
-	flexDirection: 'column' as const,
-	height: '100%',
-	minHeight: 0,
-	minWidth: 0,
-}
-
 export function PluginWorkbench({ config }: { config: PluginConfigState }) {
-	const horizontalGroupRef = useRef<GroupImperativeHandle | null>(null)
-	const verticalGroupRef = useRef<GroupImperativeHandle | null>(null)
+	const horizontalGroupRef = useRef<SplitViewHandle | null>(null)
+	const verticalGroupRef = useRef<SplitViewHandle | null>(null)
 	const [assistHost, setAssistHostState] = useState<HTMLDivElement | null>(null)
 	const [assistVisible, setAssistVisibleState] = useState(false)
 	const assistClaimsRef = useRef(new Map<symbol, true>())
-	const { dockVisible, rightPaneVisible } = usePluginWorkbenchLayout()
-	const [horizontalLayout, setHorizontalLayout] = useStoredLayout(
+	const { dockVisible, rightPaneVisible, setDockVisible, setRightPaneVisible } =
+		usePluginWorkbenchLayout()
+	const [horizontalLayout, handleHorizontalLayoutChanged] = useStoredSplitLayout(
 		PLUGIN_WORKBENCH_HORIZONTAL_LAYOUT_STORAGE_KEY,
 		DEFAULT_PLUGIN_WORKBENCH_HORIZONTAL_LAYOUT,
 		sanitizePluginWorkbenchHorizontalLayout,
 	)
-	const [verticalLayout, setVerticalLayout] = useStoredLayout(
+	const [verticalLayout, handleVerticalLayoutChanged] = useStoredSplitLayout(
 		PLUGIN_WORKBENCH_VERTICAL_LAYOUT_STORAGE_KEY,
 		DEFAULT_PLUGIN_WORKBENCH_VERTICAL_LAYOUT,
 		sanitizePluginWorkbenchVerticalLayout,
@@ -77,139 +67,91 @@ export function PluginWorkbench({ config }: { config: PluginConfigState }) {
 		}),
 		[assistHost, assistVisible, setAssistHost, setAssistVisible, setAssistClaim],
 	)
-	const horizontalGroupKey = rightPaneVisible ? 'split' : 'content-only'
-	const verticalGroupKey = dockVisible ? 'with-dock' : 'content-only'
-	const handleHorizontalLayoutChanged = useCallback(
-		(layout: Layout) => {
-			setHorizontalLayout((current) =>
-				sanitizePluginWorkbenchHorizontalLayout({
-					...current,
-					[PLUGIN_WORKBENCH_MAIN_PANEL_ID]:
-						layout[PLUGIN_WORKBENCH_MAIN_PANEL_ID] ?? current[PLUGIN_WORKBENCH_MAIN_PANEL_ID],
-					[PLUGIN_WORKBENCH_ASIDE_PANEL_ID]:
-						layout[PLUGIN_WORKBENCH_ASIDE_PANEL_ID] ?? current[PLUGIN_WORKBENCH_ASIDE_PANEL_ID],
-				}),
-			)
-		},
-		[setHorizontalLayout],
-	)
-	const handleVerticalLayoutChanged = useCallback(
-		(layout: Layout) => {
-			setVerticalLayout((current) =>
-				sanitizePluginWorkbenchVerticalLayout({
-					...current,
-					[PLUGIN_WORKBENCH_CONTENT_PANEL_ID]:
-						layout[PLUGIN_WORKBENCH_CONTENT_PANEL_ID] ?? current[PLUGIN_WORKBENCH_CONTENT_PANEL_ID],
-					[PLUGIN_WORKBENCH_DOCK_PANEL_ID]:
-						layout[PLUGIN_WORKBENCH_DOCK_PANEL_ID] ?? current[PLUGIN_WORKBENCH_DOCK_PANEL_ID],
-				}),
-			)
-		},
-		[setVerticalLayout],
+	useSyncedLayout(horizontalGroupRef, horizontalLayout, rightPaneVisible)
+	useSyncedLayout(verticalGroupRef, verticalLayout, dockVisible)
+
+	const dockPane = useMemo<SplitViewPane>(
+		() => ({
+			id: PLUGIN_WORKBENCH_DOCK_PANEL_ID,
+			defaultSize: verticalLayout[PLUGIN_WORKBENCH_DOCK_PANEL_ID],
+			minSize: 8,
+			snap: true,
+			visible: dockVisible,
+			onVisibleChange: setDockVisible,
+			children: <PluginWorkbenchPanel />,
+		}),
+		[dockVisible, setDockVisible, verticalLayout],
 	)
 
-	useEffect(() => {
-		if (!rightPaneVisible) return
-		const next = horizontalLayout
-		const current = horizontalGroupRef.current?.getLayout()
-		if (!current || !hasSameLayout(current, next)) {
-			horizontalGroupRef.current?.setLayout(next)
-		}
-	}, [horizontalLayout, rightPaneVisible])
+	const contentPane = useMemo<SplitViewPane>(
+		() => ({
+			id: PLUGIN_WORKBENCH_CONTENT_PANEL_ID,
+			defaultSize: verticalLayout[PLUGIN_WORKBENCH_CONTENT_PANEL_ID],
+			minSize: 12,
+			children: (
+				<div className="plx-pluginWorkbench__workspace">
+					<RightPane config={config} />
+				</div>
+			),
+		}),
+		[config, verticalLayout],
+	)
 
-	useEffect(() => {
-		if (!dockVisible) return
-		const next = verticalLayout
-		const current = verticalGroupRef.current?.getLayout()
-		if (!current || !hasSameLayout(current, next)) {
-			verticalGroupRef.current?.setLayout(next)
-		}
-	}, [dockVisible, verticalLayout])
+	const asidePane = useMemo<SplitViewPane>(
+		() => ({
+			id: PLUGIN_WORKBENCH_ASIDE_PANEL_ID,
+			defaultSize: horizontalLayout[PLUGIN_WORKBENCH_ASIDE_PANEL_ID],
+			minSize: 12,
+			snap: true,
+			visible: rightPaneVisible,
+			onVisibleChange: setRightPaneVisible,
+			children: <PluginWorkbenchSidebar />,
+		}),
+		[horizontalLayout, rightPaneVisible, setRightPaneVisible],
+	)
+
+	const mainPane = useMemo<SplitViewPane>(
+		() => ({
+			id: PLUGIN_WORKBENCH_MAIN_PANEL_ID,
+			defaultSize: horizontalLayout[PLUGIN_WORKBENCH_MAIN_PANEL_ID],
+			minSize: 44,
+			children: (
+				<WorkbenchSplitView
+					className="plx-pluginWorkbench__vertical"
+					defaultLayout={verticalLayout}
+					id="pluxel-plugin-workbench-vertical"
+					onLayoutChanged={dockVisible ? handleVerticalLayoutChanged : undefined}
+					orientation="vertical"
+					primary={contentPane}
+					secondary={dockPane}
+					separatorClassName="plx-workbench__resizeHandle plx-workbench__resizeHandle--horizontal"
+					ref={verticalGroupRef}
+				/>
+			),
+		}),
+		[
+			contentPane,
+			dockPane,
+			dockVisible,
+			handleVerticalLayoutChanged,
+			horizontalLayout,
+			verticalLayout,
+		],
+	)
 
 	return (
 		<PluginWorkbenchAsideProvider value={asideContext}>
 			<div className="plx-pluginWorkbench">
-				<PanelGroup
-					key={horizontalGroupKey}
+				<WorkbenchSplitView
 					className="plx-pluginWorkbench__horizontal"
+					defaultLayout={horizontalLayout}
 					id="pluxel-plugin-workbench-horizontal"
-					groupRef={horizontalGroupRef}
-					orientation="horizontal"
-					defaultLayout={
-						rightPaneVisible
-							? horizontalLayout
-							: {
-									[PLUGIN_WORKBENCH_MAIN_PANEL_ID]: 100,
-								}
-					}
 					onLayoutChanged={rightPaneVisible ? handleHorizontalLayoutChanged : undefined}
-				>
-					<Panel
-						id={PLUGIN_WORKBENCH_MAIN_PANEL_ID}
-						defaultSize={
-							rightPaneVisible ? `${horizontalLayout[PLUGIN_WORKBENCH_MAIN_PANEL_ID]}%` : '100%'
-						}
-						minSize={rightPaneVisible ? '44%' : '100%'}
-						style={PANEL_STYLE}
-					>
-						<PanelGroup
-							key={verticalGroupKey}
-							className="plx-pluginWorkbench__vertical"
-							id="pluxel-plugin-workbench-vertical"
-							groupRef={verticalGroupRef}
-							orientation="vertical"
-							defaultLayout={
-								dockVisible
-									? verticalLayout
-									: {
-											[PLUGIN_WORKBENCH_CONTENT_PANEL_ID]: 100,
-										}
-							}
-							onLayoutChanged={dockVisible ? handleVerticalLayoutChanged : undefined}
-						>
-							<Panel
-								id={PLUGIN_WORKBENCH_CONTENT_PANEL_ID}
-								defaultSize={
-									dockVisible ? `${verticalLayout[PLUGIN_WORKBENCH_CONTENT_PANEL_ID]}%` : '100%'
-								}
-								minSize={dockVisible ? '12%' : '100%'}
-								style={PANEL_STYLE}
-							>
-								<div className="plx-pluginWorkbench__workspace">
-									<RightPane config={config} />
-								</div>
-							</Panel>
-
-							{dockVisible ? (
-								<>
-									<PanelSeparator className="plx-workbench__resizeHandle plx-workbench__resizeHandle--horizontal" />
-									<Panel
-										id={PLUGIN_WORKBENCH_DOCK_PANEL_ID}
-										defaultSize={`${verticalLayout[PLUGIN_WORKBENCH_DOCK_PANEL_ID]}%`}
-										minSize="8%"
-										style={PANEL_STYLE}
-									>
-										<PluginWorkbenchPanel />
-									</Panel>
-								</>
-							) : null}
-						</PanelGroup>
-					</Panel>
-
-					{rightPaneVisible ? (
-						<>
-							<PanelSeparator className="plx-workbench__resizeHandle" />
-							<Panel
-								id={PLUGIN_WORKBENCH_ASIDE_PANEL_ID}
-								defaultSize={`${horizontalLayout[PLUGIN_WORKBENCH_ASIDE_PANEL_ID]}%`}
-								minSize="12%"
-								style={PANEL_STYLE}
-							>
-								<PluginWorkbenchSidebar />
-							</Panel>
-						</>
-					) : null}
-				</PanelGroup>
+					orientation="horizontal"
+					primary={mainPane}
+					secondary={asidePane}
+					ref={horizontalGroupRef}
+				/>
 			</div>
 		</PluginWorkbenchAsideProvider>
 	)

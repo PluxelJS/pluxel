@@ -2,7 +2,7 @@ import { createContext, useContext, useEffect, useRef, type ReactNode } from 're
 import {
 	DEFAULT_PLUGIN_WORKBENCH_PANELS_STATE,
 	type ResolvedPluginWorkbenchPanelsState,
-} from '../../../workbench/pluginLayout'
+} from '../../../workbench/split'
 
 export type PluginWorkbenchAsideContextValue = {
 	asideAvailable: boolean

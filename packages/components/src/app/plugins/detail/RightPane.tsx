@@ -36,6 +36,7 @@ import {
 	useResolvedPluginRoute,
 } from '../../router/extensions/PluginRouteRenderer'
 import { PANE_TABS_PROPS, PaneTabLabel, getPaneTabsRootClassName } from '../../workbench/PaneTabs'
+import { useResolvedWorkbenchTabState } from '../../workbench/split'
 import { ConfigForm } from '../config/ConfigForm'
 import { ConfigLayout } from '../config/ConfigLayout'
 import { compareSchemaKeys, PLUGIN_SCHEMA_GROUP, splitSchemaKey } from '../config/schemaKey'
@@ -55,10 +56,11 @@ import {
 	mergeRightPaneState,
 	normalizeRestPath,
 	patchPluginDetailSearch,
-	readStoredPaneState,
+	resolveKnownPluginName,
 	resolveActiveRightPaneTab,
 	resolveStoredSchemaForTab,
 	RIGHT_PANE_VIEW_STATE_KEY,
+	sanitizeRightPaneState,
 	type RightPaneState,
 } from './rightPaneState'
 import { usePluginWorkbenchLayout } from './workbench/context'
@@ -80,6 +82,202 @@ const pluginDetailRouteApi = getRouteApi('/_workbench/plugins/$name')
 const EMPTY_PLUGIN_DETAIL_SEARCH: PluginDetailSearch = {}
 type NavigateFn = (options: Record<string, unknown>) => Promise<unknown>
 const NOOP_NAVIGATE: NavigateFn = async () => {}
+
+function PaneScrollBody({
+	children,
+	fill = false,
+}: {
+	children: ReactNode
+	fill?: boolean
+}) {
+	return (
+		<ScrollArea type="auto" scrollbarSize={10} offsetScrollbars style={COLUMN_STYLE}>
+			<Box p="xs" style={{ minHeight: fill ? '100%' : undefined }}>
+				{children}
+			</Box>
+		</ScrollArea>
+	)
+}
+
+function filterSchemaGroupRecord<T>(
+	values: Record<string, T>,
+	schemaGroup?: string,
+) {
+	if (!schemaGroup) return values
+	const out: Record<string, T> = {}
+	for (const [key, value] of Object.entries(values)) {
+		if (splitSchemaKey(key).group !== schemaGroup) continue
+		out[key] = value
+	}
+	return out
+}
+
+function PaneTabPanel({
+	children,
+	value,
+}: {
+	children: ReactNode
+	value: string
+}) {
+	return (
+		<Tabs.Panel value={value} className="plx-paneTabs__panel" style={COLUMN_STYLE}>
+			{children}
+		</Tabs.Panel>
+	)
+}
+
+function PluginWorkbenchToolbar({
+	configGroupTabs,
+	resolveDependencyLinkTarget,
+	isEnabled,
+	isRunning,
+	isSyncing,
+	pluginName,
+	rightPaneVisible,
+	showConfigTab,
+	showLevelsTab,
+	showRouteTab,
+	source,
+	sourceCopyValue,
+	sourcePreview,
+	sourceTypeLabel,
+	tabGroups,
+}: {
+	configGroupTabs: Array<{ id: string; label: string }>
+	resolveDependencyLinkTarget: (name: string) => string | undefined
+	isEnabled: boolean
+	isRunning: boolean
+	isSyncing: boolean
+	pluginName: string
+	rightPaneVisible: boolean
+	showConfigTab: boolean
+	showLevelsTab: boolean
+	showRouteTab: boolean
+	source: {
+		kind: 'hmr' | 'package' | string
+		moduleId?: string | null
+		packageName?: string | null
+	}
+	sourceCopyValue: string | null
+	sourcePreview: string
+	sourceTypeLabel: string
+	tabGroups: Array<{ id: string; label: string }>
+}) {
+	const sourceBadgeVariant = source.kind === 'hmr' ? 'filled' : 'light'
+	const sourceBadgeColor =
+		source.kind === 'hmr' ? 'brand' : source.kind === 'package' ? 'green' : 'gray'
+
+	return (
+		<div className="plx-pluginWorkbench__toolbar">
+			<div className="plx-pluginWorkbench__commandBar">
+				<div className="plx-pluginWorkbench__commandMeta">
+					<div className="plx-pluginWorkbench__commandTitle">
+						<span className="plx-pluginWorkbench__commandName">{pluginName}</span>
+						<Badge size="sm" variant={sourceBadgeVariant} color={sourceBadgeColor}>
+							{sourceTypeLabel}
+						</Badge>
+						<Group gap={6} wrap="wrap" className="plx-pluginWorkbench__commandBadges">
+							<Badge
+								size="sm"
+								variant={isRunning ? 'filled' : 'light'}
+								color={isRunning ? 'green' : 'gray'}
+							>
+								{isRunning ? '运行中' : '已停止'}
+							</Badge>
+							<Badge
+								size="sm"
+								variant={isEnabled ? 'light' : 'outline'}
+								color={isEnabled ? 'brand' : 'gray'}
+							>
+								{isEnabled ? '已持久启用' : '未持久启用'}
+							</Badge>
+							{isSyncing ? (
+								<Badge variant="dot" color="brand" radius="sm">
+									同步中…
+								</Badge>
+							) : null}
+						</Group>
+					</div>
+					{!rightPaneVisible ? (
+						<div className="plx-pluginWorkbench__commandInfo">
+							{sourceCopyValue ? (
+								<CopyButton value={sourceCopyValue}>
+									{({ copied, copy }) => (
+										<Tooltip
+											label={
+												copied ? '已复制' : (source.moduleId ?? source.packageName ?? '未知来源')
+											}
+											multiline
+											maw={360}
+										>
+											<Button
+												type="button"
+												variant="subtle"
+												size="compact-xs"
+												className="plx-pluginWorkbench__metaChip"
+												onClick={copy}
+											>
+												{sourcePreview}
+											</Button>
+										</Tooltip>
+									)}
+								</CopyButton>
+							) : null}
+							<DependencyList
+								LinkComponent={RouterLinkAdapter}
+								resolveLinkTarget={resolveDependencyLinkTarget}
+								linkWorkbenchMode="open-tab"
+							/>
+						</div>
+					) : null}
+				</div>
+
+				<div className="plx-pluginWorkbench__commandActions">
+					<ActionBar prominent />
+					<ExtensionSlot
+						point="plugin:header"
+						wrapper={(nodes) => (
+							<Group gap={6} wrap="nowrap" className="plx-pluginWorkbench__headerExtensions">
+								{nodes}
+							</Group>
+						)}
+						fallback={null}
+					/>
+				</div>
+			</div>
+
+			<div className="plx-pluginWorkbench__toolbarTabs">
+				<Tabs.List className="plx-paneTabs__list" aria-label="插件工作台标签页">
+					{showRouteTab ? (
+						<Tabs.Tab value="route">
+							<PaneTabLabel label="页面" />
+						</Tabs.Tab>
+					) : null}
+					{showConfigTab ? (
+						<Tabs.Tab value="config">
+							<PaneTabLabel label="配置" />
+						</Tabs.Tab>
+					) : null}
+					{showLevelsTab ? (
+						<Tabs.Tab value="logging">
+							<PaneTabLabel label="级别" />
+						</Tabs.Tab>
+					) : null}
+					{configGroupTabs.map((tab) => (
+						<Tabs.Tab key={tab.id} value={tab.id}>
+							<PaneTabLabel label={tab.label} />
+						</Tabs.Tab>
+					))}
+					{tabGroups.map((tab) => (
+						<Tabs.Tab key={tab.id} value={tab.id}>
+							<PaneTabLabel label={tab.label} />
+						</Tabs.Tab>
+					))}
+				</Tabs.List>
+			</div>
+		</div>
+	)
+}
 
 function usePluginDetailSearch() {
 	try {
@@ -128,8 +326,7 @@ export function RightPane({ config, showLevelsTab = false }: RightPaneProps) {
 	const { pluginName, isEnabled, isRunning, isSyncing } = usePluginMeta()
 	const { source, knownPluginNames } = usePluginScope()
 	const { rightPaneVisible } = usePluginWorkbenchLayout()
-	const { activeTabId, getActiveTabState, setActiveTabState, setActiveTabDirty } =
-		useWorkbenchTabs()
+	const { activeTabId, setActiveTabState, setActiveTabDirty } = useWorkbenchTabs()
 	const { nodes: tabNodes, items: tabItems } = useExtensions('plugin:tabs')
 	const navigate = useOptionalNavigate()
 	const pathname = useCurrentPathname()
@@ -146,11 +343,10 @@ export function RightPane({ config, showLevelsTab = false }: RightPaneProps) {
 	const [configDirtyMap, setConfigDirtyMap] = useState<Record<string, boolean>>({})
 	// 配置表单需要与自定义 Tab 共存：即使没有 schema，也展示一个“暂无可配置项”的稳定入口。
 	const showConfigTab = true
-	const readStoredState = useCallback(
-		() => readStoredPaneState(getActiveTabState),
-		[getActiveTabState],
+	const storedState = useResolvedWorkbenchTabState(
+		RIGHT_PANE_VIEW_STATE_KEY,
+		sanitizeRightPaneState,
 	)
-	const storedState = useMemo(() => readStoredState(), [readStoredState, activeTabId])
 	const storedStateRef = useRef(storedState)
 
 	const restPath = useMemo(() => {
@@ -256,8 +452,6 @@ export function RightPane({ config, showLevelsTab = false }: RightPaneProps) {
 		(value: string | undefined) => (value && schemaKeys.includes(value) ? value : undefined),
 		[schemaKeys],
 	)
-
-	const hasTabs = true
 
 	useEffect(() => {
 		storedStateRef.current = storedState
@@ -403,7 +597,6 @@ export function RightPane({ config, showLevelsTab = false }: RightPaneProps) {
 			pluginConfigPath,
 			schemaKeysByConfigTab,
 			showRouteTab,
-			storedState.schemas,
 			updateRouteSearch,
 		],
 	)
@@ -451,240 +644,101 @@ export function RightPane({ config, showLevelsTab = false }: RightPaneProps) {
 		[source.moduleId, source.packageName, source.version],
 	)
 	const sourceCopyValue = source.moduleId ?? source.packageName ?? null
-	const isDependencyLinkable = useMemo(() => {
+	const resolveDependencyLinkTarget = useMemo(() => {
 		return (name: string) => {
-			if (knownPluginNames.has(name)) return true
-			const hash = name.lastIndexOf('#')
-			return hash > 0 ? knownPluginNames.has(name.slice(0, hash)) : false
+			return resolveKnownPluginName(knownPluginNames, name)
 		}
 	}, [knownPluginNames])
 
 	return (
 		<PluginPanel className="plx-pluginWorkbench__contentPanel" padding="xs" gap="xs">
 			<Box style={COLUMN_STYLE}>
-				{hasTabs ? (
-					<Tabs
-						{...PANE_TABS_PROPS}
-						value={activeTab}
-						onChange={handleTabChange}
-						keepMounted
-						style={COLUMN_STYLE}
-						className={getPaneTabsRootClassName('toolbar')}
-					>
-						<div className="plx-pluginWorkbench__toolbar">
-							<div className="plx-pluginWorkbench__commandBar">
-								<div className="plx-pluginWorkbench__commandMeta">
-									<div className="plx-pluginWorkbench__commandTitle">
-										<span className="plx-pluginWorkbench__commandName">{pluginName}</span>
-										<Badge
-											size="sm"
-											variant={source.kind === 'hmr' ? 'filled' : 'light'}
-											color={
-												source.kind === 'hmr'
-													? 'brand'
-													: source.kind === 'package'
-														? 'green'
-														: 'gray'
-											}
-										>
-											{sourceTypeLabel}
-										</Badge>
-										<Group gap={6} wrap="wrap" className="plx-pluginWorkbench__commandBadges">
-											<Badge
-												size="sm"
-												variant={isRunning ? 'filled' : 'light'}
-												color={isRunning ? 'green' : 'gray'}
-											>
-												{isRunning ? '运行中' : '已停止'}
-											</Badge>
-											<Badge
-												size="sm"
-												variant={isEnabled ? 'light' : 'outline'}
-												color={isEnabled ? 'brand' : 'gray'}
-											>
-												{isEnabled ? '已持久启用' : '未持久启用'}
-											</Badge>
-											{isSyncing ? (
-												<Badge variant="dot" color="brand" radius="sm">
-													同步中…
-												</Badge>
-											) : null}
-										</Group>
-									</div>
-									{!rightPaneVisible ? (
-										<div className="plx-pluginWorkbench__commandInfo">
-											{sourceCopyValue ? (
-												<CopyButton value={sourceCopyValue}>
-													{({ copied, copy }) => (
-														<Tooltip
-															label={
-																copied
-																	? '已复制'
-																	: (source.moduleId ?? source.packageName ?? '未知来源')
-															}
-															multiline
-															maw={360}
-														>
-															<Button
-																type="button"
-																variant="subtle"
-																size="compact-xs"
-																className="plx-pluginWorkbench__metaChip"
-																onClick={copy}
-															>
-																{sourcePreview}
-															</Button>
-														</Tooltip>
-													)}
-												</CopyButton>
-											) : null}
-											<DependencyList
-												LinkComponent={RouterLinkAdapter}
-												isLinkable={isDependencyLinkable}
-												linkWorkbenchMode="open-tab"
-											/>
-										</div>
-									) : null}
-								</div>
-
-								<div className="plx-pluginWorkbench__commandActions">
-									<ActionBar prominent />
-									<ExtensionSlot
-										point="plugin:header"
-										wrapper={(nodes) => (
-											<Group
-												gap={6}
-												wrap="nowrap"
-												className="plx-pluginWorkbench__headerExtensions"
-											>
-												{nodes}
-											</Group>
-										)}
-										fallback={null}
-									/>
-								</div>
-							</div>
-
-							<div className="plx-pluginWorkbench__toolbarTabs">
-								<Tabs.List className="plx-paneTabs__list" aria-label="插件工作台标签页">
-									{showRouteTab ? (
-										<Tabs.Tab value="route">
-											<PaneTabLabel label="页面" />
-										</Tabs.Tab>
-									) : null}
-									{showConfigTab ? (
-										<Tabs.Tab value="config">
-											<PaneTabLabel label="配置" />
-										</Tabs.Tab>
-									) : null}
-									{showLevelsTab ? (
-										<Tabs.Tab value="logging">
-											<PaneTabLabel label="级别" />
-										</Tabs.Tab>
-									) : null}
-									{configGroupTabs.map((tab) => (
-										<Tabs.Tab key={tab.id} value={tab.id}>
-											<PaneTabLabel label={tab.label} />
-										</Tabs.Tab>
-									))}
-									{tabGroups.map((tab) => (
-										<Tabs.Tab key={tab.id} value={tab.id}>
-											<PaneTabLabel label={tab.label} />
-										</Tabs.Tab>
-									))}
-								</Tabs.List>
-							</div>
-						</div>
-
-						{showRouteTab ? (
-							<Tabs.Panel value="route" className="plx-paneTabs__panel" style={COLUMN_STYLE}>
-								<RouteContent pluginName={pluginName} restPath={restPath} />
-							</Tabs.Panel>
-						) : null}
-
-						{showConfigTab ? (
-							<Tabs.Panel value="config" className="plx-paneTabs__panel" style={COLUMN_STYLE}>
-								<ConfigContent
-									config={config}
-									pluginName={pluginName}
-									schemaGroup="__plugin__"
-									active={activeTab === 'config'}
-									activeSchemaKey={schemaKeyForTab('config')}
-									onSchemaChange={(key) => handleSchemaChangeForTab('config', key)}
-									onDirtyChange={(dirty) => handleConfigDirtyChange('config', dirty)}
-								/>
-							</Tabs.Panel>
-						) : null}
-
-						{showLevelsTab ? (
-							<Tabs.Panel value="logging" className="plx-paneTabs__panel" style={COLUMN_STYLE}>
-								<ScrollArea type="auto" scrollbarSize={10} offsetScrollbars style={COLUMN_STYLE}>
-									<Box p="xs" style={{ minHeight: '100%' }}>
-										<LogLevelsCard pluginId={pluginName} compact />
-									</Box>
-								</ScrollArea>
-							</Tabs.Panel>
-						) : null}
-
-						{configGroupTabs.map((tab) => (
-							<Tabs.Panel
-								key={tab.id}
-								value={tab.id}
-								className="plx-paneTabs__panel"
-								style={COLUMN_STYLE}
-							>
-								<ConfigContent
-									config={config}
-									pluginName={pluginName}
-									schemaGroup={tab.label}
-									active={activeTab === tab.id}
-									activeSchemaKey={schemaKeyForTab(tab.id)}
-									onSchemaChange={(key) => handleSchemaChangeForTab(tab.id, key)}
-									onDirtyChange={(dirty) => handleConfigDirtyChange(tab.id, dirty)}
-								/>
-							</Tabs.Panel>
-						))}
-
-						{tabGroups.map((tab) => {
-							const id = tab.id
-							const isActive = activeTab === id
-							return (
-								<Tabs.Panel
-									key={id}
-									value={id}
-									className="plx-paneTabs__panel"
-									style={COLUMN_STYLE}
-								>
-									<PluginWorkbenchTabActivityProvider active={isActive}>
-										<ScrollArea
-											type="auto"
-											scrollbarSize={10}
-											offsetScrollbars
-											style={COLUMN_STYLE}
-										>
-											<Box p="xs" style={{ minHeight: '100%' }}>
-												<Stack gap="sm">
-													{tab.nodes.map(({ key, node }) => (
-														<Fragment key={key}>{node}</Fragment>
-													))}
-												</Stack>
-											</Box>
-										</ScrollArea>
-									</PluginWorkbenchTabActivityProvider>
-								</Tabs.Panel>
-							)
-						})}
-					</Tabs>
-				) : (
-					<ConfigContent
-						config={config}
+				<Tabs
+					{...PANE_TABS_PROPS}
+					value={activeTab}
+					onChange={handleTabChange}
+					keepMounted
+					style={COLUMN_STYLE}
+					className={getPaneTabsRootClassName('toolbar')}
+				>
+					<PluginWorkbenchToolbar
+						configGroupTabs={configGroupTabs}
+						resolveDependencyLinkTarget={resolveDependencyLinkTarget}
+						isEnabled={isEnabled}
+						isRunning={isRunning}
+						isSyncing={isSyncing}
 						pluginName={pluginName}
-						active
-						activeSchemaKey={activeSchemaKey}
-						onSchemaChange={(key) => handleSchemaChangeForTab('config', key)}
-						onDirtyChange={(dirty) => handleConfigDirtyChange('config', dirty)}
+						rightPaneVisible={rightPaneVisible}
+						showConfigTab={showConfigTab}
+						showLevelsTab={showLevelsTab}
+						showRouteTab={showRouteTab}
+						source={source}
+						sourceCopyValue={sourceCopyValue}
+						sourcePreview={sourcePreview}
+						sourceTypeLabel={sourceTypeLabel}
+						tabGroups={tabGroups}
 					/>
-				)}
+
+					{showRouteTab ? (
+						<PaneTabPanel value="route">
+							<RouteContent pluginName={pluginName} restPath={restPath} />
+						</PaneTabPanel>
+					) : null}
+
+					{showConfigTab ? (
+						<PaneTabPanel value="config">
+							<ConfigContent
+								config={config}
+								pluginName={pluginName}
+								schemaGroup="__plugin__"
+								active={activeTab === 'config'}
+								activeSchemaKey={schemaKeyForTab('config')}
+								onSchemaChange={(key) => handleSchemaChangeForTab('config', key)}
+								onDirtyChange={(dirty) => handleConfigDirtyChange('config', dirty)}
+							/>
+						</PaneTabPanel>
+					) : null}
+
+					{showLevelsTab ? (
+						<PaneTabPanel value="logging">
+							<PaneScrollBody fill>
+								<LogLevelsCard pluginId={pluginName} compact />
+							</PaneScrollBody>
+						</PaneTabPanel>
+					) : null}
+
+					{configGroupTabs.map((tab) => (
+						<PaneTabPanel key={tab.id} value={tab.id}>
+							<ConfigContent
+								config={config}
+								pluginName={pluginName}
+								schemaGroup={tab.label}
+								active={activeTab === tab.id}
+								activeSchemaKey={schemaKeyForTab(tab.id)}
+								onSchemaChange={(key) => handleSchemaChangeForTab(tab.id, key)}
+								onDirtyChange={(dirty) => handleConfigDirtyChange(tab.id, dirty)}
+							/>
+						</PaneTabPanel>
+					))}
+
+					{tabGroups.map((tab) => {
+						const id = tab.id
+						const isActive = activeTab === id
+						return (
+							<PaneTabPanel key={id} value={id}>
+								<PluginWorkbenchTabActivityProvider active={isActive}>
+									<PaneScrollBody fill>
+										<Stack gap="sm">
+											{tab.nodes.map(({ key, node }) => (
+												<Fragment key={key}>{node}</Fragment>
+											))}
+										</Stack>
+									</PaneScrollBody>
+								</PluginWorkbenchTabActivityProvider>
+							</PaneTabPanel>
+						)
+					})}
+				</Tabs>
 			</Box>
 		</PluginPanel>
 	)
@@ -711,35 +765,18 @@ function ConfigContent({
 	const savedConfigAll = (config.data?.savedConfig ?? {}) as Record<string, unknown>
 	const defaultsAll = (config.data?.defaults ?? {}) as Record<string, unknown>
 
-	const schemaMap = useMemo(() => {
-		if (!schemaGroup) return schemaMapAll
-		const out: Record<string, ObjectSchema<any, any>> = {}
-		for (const [key, schema] of Object.entries(schemaMapAll)) {
-			if (splitSchemaKey(key).group !== schemaGroup) continue
-			out[key] = schema
-		}
-		return out
-	}, [schemaGroup, schemaMapAll])
-
-	const savedConfig = useMemo(() => {
-		if (!schemaGroup) return savedConfigAll
-		const out: Record<string, unknown> = {}
-		for (const [key, value] of Object.entries(savedConfigAll)) {
-			if (splitSchemaKey(key).group !== schemaGroup) continue
-			out[key] = value
-		}
-		return out
-	}, [savedConfigAll, schemaGroup])
-
-	const defaults = useMemo(() => {
-		if (!schemaGroup) return defaultsAll
-		const out: Record<string, unknown> = {}
-		for (const [key, value] of Object.entries(defaultsAll)) {
-			if (splitSchemaKey(key).group !== schemaGroup) continue
-			out[key] = value
-		}
-		return out
-	}, [defaultsAll, schemaGroup])
+	const schemaMap = useMemo(
+		() => filterSchemaGroupRecord(schemaMapAll, schemaGroup),
+		[schemaGroup, schemaMapAll],
+	)
+	const savedConfig = useMemo(
+		() => filterSchemaGroupRecord(savedConfigAll, schemaGroup),
+		[savedConfigAll, schemaGroup],
+	)
+	const defaults = useMemo(
+		() => filterSchemaGroupRecord(defaultsAll, schemaGroup),
+		[defaultsAll, schemaGroup],
+	)
 
 	const hasSchema = Object.keys(schemaMap).length > 0
 	const layout = config.data?.layout ?? null
@@ -822,18 +859,11 @@ function RouteContent({ pluginName, restPath }: { pluginName: string; restPath: 
 				</Button>
 			}
 			wrapContent={(content) => (
-				<ScrollArea
-					type="auto"
-					scrollbarSize={10}
-					offsetScrollbars
-					style={{ flex: 1, minHeight: 0 }}
-				>
-					<Box p="xs" style={{ minHeight: '100%' }}>
-						<Stack gap="sm" style={{ minHeight: '100%' }}>
-							{content}
-						</Stack>
-					</Box>
-				</ScrollArea>
+				<PaneScrollBody fill>
+					<Stack gap="sm" style={{ minHeight: '100%' }}>
+						{content}
+					</Stack>
+				</PaneScrollBody>
 			)}
 		/>
 	)

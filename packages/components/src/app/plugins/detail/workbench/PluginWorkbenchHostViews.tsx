@@ -19,6 +19,7 @@ import { LiveLog as LiveLogRaw } from '../../../log_viewer/LiveLog'
 import { usePluginMeta, usePluginScope } from '../context'
 import { DependencyList, usePluginDependencyEntries } from '../cards/DependencyList'
 import { LogLevelsCard } from '../cards/LogLevelsCard'
+import { formatCompactSource, resolveKnownPluginName } from '../rightPaneState'
 import {
 	type PluginWorkbenchView,
 	PluginWorkbenchViewContainer,
@@ -206,18 +207,6 @@ function AssistHostMount({
 	return <div className="plx-pluginWorkbench__assistHost" ref={hostRef} />
 }
 
-function formatSourcePreview(
-	moduleId: string | null,
-	packageName: string | null,
-	version: string | null,
-) {
-	if (packageName) return `${packageName}${version ? `@${version}` : ''}`
-	if (!moduleId) return '未知来源'
-	const segments = moduleId.split(/[/\\]+/).filter(Boolean)
-	if (segments.length <= 3) return moduleId
-	return `…/${segments.slice(-3).join('/')}`
-}
-
 function PluginContextSummaryCard() {
 	const { pluginName, source, knownPluginNames } = usePluginScope()
 	const deps = usePluginDependencyEntries()
@@ -225,7 +214,7 @@ function PluginContextSummaryCard() {
 	const runningDependencyCount = deps.filter((dep) => dep.isRunning).length
 	const sourcePreview = useMemo(
 		() =>
-			formatSourcePreview(
+			formatCompactSource(
 				source.moduleId ?? null,
 				source.packageName ?? null,
 				source.version ?? null,
@@ -237,11 +226,9 @@ function PluginContextSummaryCard() {
 		.slice(0, 2)
 		.map((dep) => dep.name)
 		.join(' / ')
-	const isLinkable = useMemo(() => {
+	const resolveDependencyLinkTarget = useMemo(() => {
 		return (name: string) => {
-			if (knownPluginNames.has(name)) return true
-			const hash = name.lastIndexOf('#')
-			return hash > 0 ? knownPluginNames.has(name.slice(0, hash)) : false
+			return resolveKnownPluginName(knownPluginNames, name)
 		}
 	}, [knownPluginNames])
 	const copyValue = source.moduleId ?? source.packageName ?? null
@@ -294,7 +281,7 @@ function PluginContextSummaryCard() {
 						{deps.length > 0 ? (
 							<DependencyList
 								LinkComponent={RouterLinkAdapter}
-								isLinkable={isLinkable}
+								resolveLinkTarget={resolveDependencyLinkTarget}
 								linkWorkbenchMode="open-tab"
 							/>
 						) : (

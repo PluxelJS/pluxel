@@ -14,6 +14,7 @@ import { IconCheck, IconCopy } from '@tabler/icons-react'
 import { useMemo, type ReactNode } from 'react'
 import type { WorkbenchNavigationRequest } from '../../../workbench/context'
 import { usePluginScope, type PluginSourceInfo } from '../context'
+import { resolveKnownPluginName, shortenPathSegments } from '../rightPaneState'
 import {
 	DependencyList,
 	usePluginDependencyEntries,
@@ -21,12 +22,6 @@ import {
 } from './DependencyList'
 import { BaseProviderCard } from './BaseProviderCard'
 import { DependencyOverridesCard } from './DependencyOverridesCard'
-
-function shortenPath(path: string, keep = 3) {
-	const segments = path.split(/[/\\]+/).filter(Boolean)
-	if (segments.length <= keep) return path
-	return `…/${segments.slice(-keep).join('/')}`
-}
 
 function CopyAction({ value, label = '复制路径' }: { value: string | null; label?: string }) {
 	if (value == null || value === '') return null
@@ -47,7 +42,7 @@ function renderSourceContent(source: PluginSourceInfo, themeColor: string): Reac
 	switch (source.kind) {
 		case 'hmr': {
 			const fullPath = source.moduleId
-			const preview = fullPath ? shortenPath(fullPath) : '未提供路径'
+			const preview = fullPath ? shortenPathSegments(fullPath) : '未提供路径'
 			return (
 				<Group gap="xs" wrap="nowrap" align="center">
 					<Tooltip label={fullPath ?? '路径未知'} withArrow>
@@ -119,12 +114,9 @@ export function PluginSourceCard({ LinkComponent, linkWorkbenchMode }: PluginSou
 
 	const content = useMemo(() => renderSourceContent(source, accent), [source, accent])
 	const labelStyle = { width: 44, flexShrink: 0 }
-	const isLinkable = useMemo(() => {
+	const resolveDependencyLinkTarget = useMemo(() => {
 		return (name: string) => {
-			if (knownPluginNames.has(name)) return true
-			const hash = name.lastIndexOf('#')
-			if (hash > 0) return knownPluginNames.has(name.slice(0, hash))
-			return false
+			return resolveKnownPluginName(knownPluginNames, name)
 		}
 	}, [knownPluginNames])
 
@@ -153,7 +145,7 @@ export function PluginSourceCard({ LinkComponent, linkWorkbenchMode }: PluginSou
 						<Box style={{ flex: 1, minWidth: 0 }}>
 							<DependencyList
 								LinkComponent={LinkComponent}
-								isLinkable={isLinkable}
+								resolveLinkTarget={resolveDependencyLinkTarget}
 								linkWorkbenchMode={linkWorkbenchMode}
 							/>
 						</Box>

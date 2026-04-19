@@ -45,11 +45,11 @@
 		"@tanstack/react-router": "^1.168.8",
 		"@tanstack/react-store": "^0.9.3",
 		"@tanstack/react-virtual": "^3.13.19",
+		"allotment": "^1.20.5",
 		"capnweb": "^0.5.0",
 		"gqty": "^3.6.0",
 		"graphql": "^16.13.0",
 		"markdown-exit": "1.0.0-beta.8",
-		"react-resizable-panels": "^4.8.0",
 		"valibot-form": "workspace:*"
 	},
 	"devDependencies": {

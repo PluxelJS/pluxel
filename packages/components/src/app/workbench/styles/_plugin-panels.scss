@@ -87,11 +87,15 @@
 	width: 100%;
 }
 
-.plx-pluginWorkbench__metaChip {
+.plx-pluginWorkbench__metaChip,
+.plx-pluginWorkbench__actionPersist {
 	background: var(--plx-surface-muted);
 	border: 1px solid var(--plx-border);
-	border-radius: 999px;
 	color: var(--plx-text);
+}
+
+.plx-pluginWorkbench__metaChip {
+	border-radius: 999px;
 	max-width: min(38vw, 420px);
 	padding-inline: 10px;
 	text-decoration: none;
@@ -146,18 +150,19 @@
 	white-space: nowrap;
 }
 
-.plx-pluginWorkbench__contentPanel {
+.plx-pluginWorkbench__contentPanel,
+.plx-pluginPanel {
 	background: var(--plx-panel-bg);
-	border-color: var(--plx-border);
 	border-radius: 10px;
 	box-shadow: none;
 }
 
+.plx-pluginWorkbench__contentPanel {
+	border-color: var(--plx-border);
+}
+
 .plx-pluginPanel {
-	background: var(--plx-panel-bg);
 	border: 1px solid var(--plx-border);
-	border-radius: 10px;
-	box-shadow: none;
 }
 
 .plx-pluginPanel__stack {
@@ -480,8 +485,6 @@
 
 .plx-pluginWorkbench__actionPersist {
 	align-items: center;
-	background: var(--plx-surface-muted);
-	border: 1px solid var(--plx-border);
 	border-radius: 999px;
 	display: flex;
 	gap: 10px;

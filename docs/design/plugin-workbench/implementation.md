@@ -17,11 +17,13 @@
 - `packages/components/src/app/workbench/store.ts`
 - `packages/components/src/app/workbench/context.tsx`
 - `packages/components/src/app/workbench/WorkbenchShell.tsx`
-- `packages/components/src/app/plugins/detail/screens/PluginScreen.tsx`
+- `packages/components/src/app/workbench/split/index.ts`
+- `packages/components/src/app/workbench/split/*`
+- `packages/components/src/app/plugins/detail/PluginScreen.tsx`
 - `packages/components/src/app/plugins/detail/workbench/PluginWorkbench.tsx`
 - `packages/components/src/app/plugins/detail/workbench/PluginWorkbenchHostViews.tsx`
 - `packages/components/src/app/plugins/detail/workbench/PluginWorkbenchViewContainer.tsx`
-- `packages/components/src/app/plugins/detail/panels/RightPane.tsx`
+- `packages/components/src/app/plugins/detail/RightPane.tsx`
 - `packages/components/src/app/plugins/config/ConfigForm.tsx`
 - `packages/components/src/app/plugins/config/ConfigLayout.tsx`
 - `packages/components/src/app/plugins/config/ConfigTab.tsx`
@@ -135,7 +137,7 @@ Workbench 只有一个权威 UI 状态源：
 
 文件：
 
-- `packages/components/src/app/plugins/detail/screens/PluginScreen.tsx`
+- `packages/components/src/app/plugins/detail/PluginScreen.tsx`
 
 职责：
 
@@ -151,7 +153,7 @@ Workbench 只有一个权威 UI 状态源：
 
 职责：
 
-- 使用两层 `react-resizable-panels`
+- 使用两层 `WorkbenchSplitView`（底层当前适配 `allotment`）
 - 组织中心区、右栏、底部 dock
 - 只处理容器布局，不承担业务数据逻辑
 
@@ -177,7 +179,7 @@ Workbench 只有一个权威 UI 状态源：
 
 主工作内容统一收口到：
 
-- `packages/components/src/app/plugins/detail/panels/RightPane.tsx`
+- `packages/components/src/app/plugins/detail/RightPane.tsx`
 
 它当前负责：
 
@@ -238,6 +240,7 @@ Workbench 只有一个权威 UI 状态源：
 
 - router 只负责 route 装配和 URL contract
 - workbench 目录只负责壳层状态、导航意图、布局持久化
+- split 子目录只负责 pane adapter、layout spec、split state 工具
 - plugin detail 目录只负责插件工作面
 - 不再保留只做一层转发的旧 route/page 壳文件
 

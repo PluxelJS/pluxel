@@ -1,22 +1,31 @@
 @use '../../../styles/theme/mantine' as mantine;
 @use '../../../styles/theme/tokens' as theme;
 
-.plx-pluginWorkbench {
+.plx-pluginWorkbench,
+.plx-pluginWorkbench__horizontal,
+.plx-pluginWorkbench__vertical,
+.plx-pluginWorkbench__workspace > *,
+.plx-pluginWorkbench__viewBody,
+.plx-pluginWorkbench__contextScroll,
+.plx-paneTabs,
+.plx-paneTabs__panel,
+.plx-pluginWorkbench__viewBody > .plx-paneTabs__panel,
+.plx-pluginWorkbench__dockPane,
+.plx-pluginWorkbench__dockPane > * {
 	display: flex;
 	flex: 1;
-	height: 100%;
 	min-height: 0;
 	min-width: 0;
+}
+
+.plx-pluginWorkbench {
+	height: 100%;
 	overflow: hidden;
 }
 
 .plx-pluginWorkbench__horizontal,
 .plx-pluginWorkbench__vertical {
-	display: flex;
-	flex: 1;
 	height: 100%;
-	min-height: 0;
-	min-width: 0;
 	overflow: hidden;
 }
 
@@ -32,13 +41,6 @@
 .plx-pluginWorkbench__workspace {
 	height: 100%;
 	padding: 6px;
-}
-
-.plx-pluginWorkbench__workspace > * {
-	display: flex;
-	flex: 1;
-	min-height: 0;
-	min-width: 0;
 }
 
 .plx-pluginWorkbench__contextRail,
@@ -107,27 +109,12 @@
 }
 
 .plx-pluginWorkbench__viewBody {
-	display: flex;
-	flex: 1;
 	flex-direction: column;
-	min-height: 0;
-	min-width: 0;
 	overflow: hidden;
 }
 
 .plx-pluginWorkbench__viewBody > .plx-paneTabs__panel {
-	display: flex;
-	flex: 1;
-	min-height: 0;
-	min-width: 0;
 	overflow: hidden;
-}
-
-.plx-pluginWorkbench__contextScroll {
-	display: flex;
-	flex: 1;
-	min-height: 0;
-	min-width: 0;
 }
 
 .plx-pluginWorkbench__contextScroll .mantine-ScrollArea-viewport,
@@ -145,11 +132,7 @@
 }
 
 .plx-paneTabs {
-	display: flex;
-	flex: 1;
 	flex-direction: column;
-	min-height: 0;
-	min-width: 0;
 }
 
 .plx-paneTabs__list {
@@ -178,13 +161,6 @@
 	white-space: nowrap;
 }
 
-.plx-paneTabs__panel {
-	display: flex;
-	flex: 1;
-	min-height: 0;
-	min-width: 0;
-}
-
 .plx-pluginWorkbench__tabsHeaderRow .plx-paneTabs__list {
 	flex: 1;
 }
@@ -197,70 +173,13 @@
 	padding-top: 1px;
 }
 
-.plx-pluginWorkbench__paneControls {
-	align-items: center;
-	background: var(--plx-surface-muted);
-	border: 1px solid var(--plx-border);
-	border-radius: 10px;
-	display: inline-flex;
-	gap: 4px;
-	padding: 2px;
-}
-
-.plx-pluginWorkbench__paneControl {
-	align-items: center;
-	background: transparent;
-	border: 0;
-	border-radius: 8px;
-	color: var(--plx-text-muted);
-	cursor: pointer;
-	display: inline-flex;
-	height: 36px;
-	justify-content: center;
-	padding: 0;
-	transition:
-		background-color 140ms ease,
-		color 140ms ease,
-		transform 140ms ease;
-	width: 36px;
-}
-
-.plx-pluginWorkbench__paneControl:hover,
-.plx-pluginWorkbench__paneControl:focus-visible {
-	background: var(--plx-surface-strong);
-	color: var(--plx-text);
-	outline: none;
-	transform: translateY(-1px);
-}
-
-.plx-pluginWorkbench__paneControl[data-active='true'] {
-	background: var(--plx-surface-strong);
-	box-shadow: inset 0 0 0 1px var(--plx-selected-border);
-	color: var(--plx-text);
-}
-
 .plx-pluginWorkbench__dockPane {
-	display: flex;
-	flex: 1;
-	min-height: 0;
-	min-width: 0;
 	padding: 6px 8px 8px;
 }
 
-.plx-pluginWorkbench__dockPane > * {
-	display: flex;
-	flex: 1;
-	min-height: 0;
-	min-width: 0;
-}
-
 .plx-workbench__resizeHandle--horizontal {
-	height: 10px;
-	width: auto;
-}
-
-.plx-workbench__resizeHandle--horizontal::before {
-	inset: 4px 10px;
+	--sash-size: 10px;
+	--sash-hover-size: 2px;
 }
 
 @include mantine.smaller-than(lg) {
