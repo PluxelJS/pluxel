@@ -1,5 +1,5 @@
 import type { Context } from '@pluxel/core'
-import { toPublicDescriptor, type OpPublicDescriptor } from '@pluxel/ops'
+import { type OpDescriptor } from '@pluxel/ops'
 
 import type { RuntimeOpSource } from '../../services/ops/OpsService'
 import type { RuntimeOpCatalogEntry } from '../../web/protocol'
@@ -14,23 +14,14 @@ function resolveRootContext(ctx: Context): Context {
 	return (ctx.root ?? ctx) as Context
 }
 
-function listRegisteredRuntimeOps(ctx: Context): OpPublicDescriptor[] {
+function listRegisteredRuntimeOps(ctx: Context): OpDescriptor[] {
 	ensureRuntimeOpsRegistered(ctx)
-	return resolveRootContext(ctx).ops.list().map(toPublicDescriptor)
+	return resolveRootContext(ctx).ops.list()
 }
 
 function listRegisteredRuntimeOpsCatalog(ctx: Context): RuntimeOpCatalogEntry[] {
 	ensureRuntimeOpsRegistered(ctx)
-	return resolveRootContext(ctx).ops.listCatalog({ rpcOnly: true }).map((entry) => {
-		const next: RuntimeOpCatalogEntry = {
-			id: entry.id,
-			owner: entry.owner,
-			ownerKind: entry.ownerKind,
-			descriptor: toPublicDescriptor(entry.descriptor),
-		}
-		if (entry.pluginId) next.pluginId = entry.pluginId
-		return next
-	})
+	return resolveRootContext(ctx).ops.listCatalog({ carrier: 'rpc' })
 }
 
 async function invokeRegisteredRuntimeOp<O>(
@@ -75,7 +66,7 @@ export function ensureRuntimeOpsRegistered(ctx: Context): void {
 	}
 }
 
-export function getRuntimeOps(ctx: Context): OpPublicDescriptor[] {
+export function getRuntimeOps(ctx: Context): OpDescriptor[] {
 	return listRegisteredRuntimeOps(ctx)
 }
 

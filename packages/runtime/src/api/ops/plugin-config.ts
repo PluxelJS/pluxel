@@ -1,4 +1,5 @@
-import { cli, typebox } from '@pluxel/ops'
+import { cli } from '@pluxel/ops'
+import { Type, obj } from '@pluxel/ops/typebox'
 
 import type { RuntimeOperation } from '../../services/ops/OpsService'
 import {
@@ -9,11 +10,7 @@ import {
 	pluginConfigValidate,
 	pluginSchema,
 } from '../usecases/pluginConfig'
-import {
-	defineRuntimeOp,
-	messageOf,
-	runConfigBatch,
-} from './helpers'
+import { defineRuntimeOp, messageOf, runConfigBatch } from './helpers'
 import {
 	configBatchResultSchema,
 	configFieldEntrySchema,
@@ -38,7 +35,7 @@ const pluginSchemaGetOp = defineRuntimeOp({
 		title: 'Get Plugin Schema',
 		description: 'Read plugin config schema source and defaults.',
 	},
-	input: typebox.obj({
+	input: obj({
 		name: pluginNameSchema,
 	}),
 	output: schemaResultSchema,
@@ -59,7 +56,7 @@ const pluginConfigGetOp = defineRuntimeOp({
 		title: 'Get Plugin Config',
 		description: 'Read saved config and defaults for one plugin.',
 	},
-	input: typebox.obj({
+	input: obj({
 		name: pluginNameSchema,
 	}),
 	output: configResultSchema,
@@ -81,8 +78,8 @@ const pluginsConfigGetOp = defineRuntimeOp({
 		description:
 			'Read saved config for multiple plugins in one call. Results preserve input order.',
 	},
-	input: typebox.obj({
-		names: typebox.Type.Array(pluginNameSchema, {
+	input: obj({
+		names: Type.Array(pluginNameSchema, {
 			minItems: 1,
 			description: 'Plugin names to load in order.',
 		}),
@@ -110,9 +107,9 @@ const pluginConfigValidateOp = defineRuntimeOp({
 		title: 'Validate Plugin Config',
 		description: 'Validate a patch for one plugin without saving it.',
 	},
-	input: typebox.obj({
+	input: obj({
 		name: pluginNameSchema,
-		patch: typebox.Type.Record(typebox.Type.String(), typebox.Type.Unknown(), {
+		patch: Type.Record(Type.String(), Type.Unknown(), {
 			description: 'Config patch object to validate.',
 		}),
 	}),
@@ -136,8 +133,8 @@ const pluginsConfigValidateOp = defineRuntimeOp({
 		description:
 			'Validate config patches for multiple plugins. Entries run in order and do not mutate persisted config.',
 	},
-	input: typebox.obj({
-		entries: typebox.Type.Array(configPatchEntrySchema, {
+	input: obj({
+		entries: Type.Array(configPatchEntrySchema, {
 			minItems: 1,
 			description: 'Ordered config validation entries.',
 		}),
@@ -165,9 +162,9 @@ const pluginConfigPatchOp = defineRuntimeOp({
 		title: 'Patch Plugin Config',
 		description: 'Validate and persist a config patch for one plugin.',
 	},
-	input: typebox.obj({
+	input: obj({
 		name: pluginNameSchema,
-		patch: typebox.Type.Record(typebox.Type.String(), typebox.Type.Unknown(), {
+		patch: Type.Record(Type.String(), Type.Unknown(), {
 			description: 'Config patch object to persist.',
 		}),
 	}),
@@ -191,8 +188,8 @@ const pluginsConfigSetOp = defineRuntimeOp({
 		description:
 			'Validate and persist config patches for multiple plugins. Entries run in order; there is no cross-plugin rollback.',
 	},
-	input: typebox.obj({
-		entries: typebox.Type.Array(configPatchEntrySchema, {
+	input: obj({
+		entries: Type.Array(configPatchEntrySchema, {
 			minItems: 1,
 			description: 'Ordered config patch entries to persist.',
 		}),
@@ -220,17 +217,17 @@ const pluginConfigPatchFieldOp = defineRuntimeOp({
 		title: 'Patch Plugin Config Field',
 		description: 'Mutate a single nested config field and persist the resulting patch.',
 	},
-	input: typebox.obj({
+	input: obj({
 		name: pluginNameSchema,
-		schemaKey: typebox.Type.String({
+		schemaKey: Type.String({
 			minLength: 1,
 			description: 'Top-level config schema key.',
 		}),
-		fieldPath: typebox.Type.String({
+		fieldPath: Type.String({
 			minLength: 1,
 			description: 'Dot-path inside the selected schema section.',
 		}),
-		value: typebox.Type.Unknown({
+		value: Type.Unknown({
 			description: 'Value to write at the target field path.',
 		}),
 	}),
@@ -253,8 +250,8 @@ const pluginsConfigPatchFieldOp = defineRuntimeOp({
 		description:
 			'Mutate one nested field per entry for multiple plugins. Entries run in order; there is no cross-plugin rollback.',
 	},
-	input: typebox.obj({
-		entries: typebox.Type.Array(configFieldEntrySchema, {
+	input: obj({
+		entries: Type.Array(configFieldEntrySchema, {
 			minItems: 1,
 			description: 'Ordered config field mutations.',
 		}),
@@ -287,10 +284,10 @@ const pluginConfigResetOp = defineRuntimeOp({
 		title: 'Reset Plugin Config',
 		description: 'Reset selected config keys for one plugin, or all keys if omitted.',
 	},
-	input: typebox.obj({
+	input: obj({
 		name: pluginNameSchema,
-		keys: typebox.Type.Optional(
-			typebox.Type.Array(typebox.Type.String(), {
+		keys: Type.Optional(
+			Type.Array(Type.String(), {
 				description: 'Config keys to reset. Omit to reset all keys.',
 			}),
 		),
@@ -314,8 +311,8 @@ const pluginsConfigResetOp = defineRuntimeOp({
 		description:
 			'Reset selected config keys for multiple plugins. Entries run in order; there is no cross-plugin rollback.',
 	},
-	input: typebox.obj({
-		entries: typebox.Type.Array(configResetEntrySchema, {
+	input: obj({
+		entries: Type.Array(configResetEntrySchema, {
 			minItems: 1,
 			description: 'Ordered config reset entries.',
 		}),

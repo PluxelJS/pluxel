@@ -1,187 +1,187 @@
-import { typebox } from '@pluxel/ops'
+import { Type, obj, openObj } from '@pluxel/ops/typebox'
 
-export const pluginNameSchema = typebox.Type.String({
+export const pluginNameSchema = Type.String({
 	minLength: 1,
 	description: 'Plugin name.',
 })
-export const pluginActionSchema = typebox.Type.Union([
-	typebox.Type.Literal('start'),
-	typebox.Type.Literal('stop'),
-	typebox.Type.Literal('restart'),
-	typebox.Type.Literal('enable'),
-	typebox.Type.Literal('disable'),
-], {
-	description: 'Lifecycle action to apply.',
+export const pluginActionSchema = Type.Union(
+	[
+		Type.Literal('start'),
+		Type.Literal('stop'),
+		Type.Literal('restart'),
+		Type.Literal('enable'),
+		Type.Literal('disable'),
+	],
+	{
+		description: 'Lifecycle action to apply.',
+	},
+)
+
+export const pluginSourceSchema = openObj({
+	kind: Type.String(),
+	moduleId: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+	packageName: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+	version: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+	tag: Type.Optional(Type.Union([Type.String(), Type.Null()])),
 })
 
-export const pluginSourceSchema = typebox.openObj({
-	kind: typebox.Type.String(),
-	moduleId: typebox.Type.Optional(typebox.Type.Union([typebox.Type.String(), typebox.Type.Null()])),
-	packageName: typebox.Type.Optional(typebox.Type.Union([typebox.Type.String(), typebox.Type.Null()])),
-	version: typebox.Type.Optional(typebox.Type.Union([typebox.Type.String(), typebox.Type.Null()])),
-	tag: typebox.Type.Optional(typebox.Type.Union([typebox.Type.String(), typebox.Type.Null()])),
-})
-
-export const pluginStatusSnapshotSchema = typebox.obj({
-	name: typebox.Type.String(),
-	isRunning: typebox.Type.Boolean(),
-	isEnabled: typebox.Type.Boolean(),
-	lifecycleStage: typebox.Type.String(),
+export const pluginStatusSnapshotSchema = obj({
+	name: Type.String(),
+	isRunning: Type.Boolean(),
+	isEnabled: Type.Boolean(),
+	lifecycleStage: Type.String(),
 	source: pluginSourceSchema,
 })
 
-export const pluginStatusOutputSchema = typebox.Type.Union([
-	typebox.obj({
-		ok: typebox.Type.Literal(true),
+export const pluginStatusOutputSchema = Type.Union([
+	obj({
+		ok: Type.Literal(true),
 		status: pluginStatusSnapshotSchema,
 	}),
-	typebox.obj({
-		ok: typebox.Type.Literal(false),
-		code: typebox.Type.String(),
-		message: typebox.Type.String(),
+	obj({
+		ok: Type.Literal(false),
+		code: Type.String(),
+		message: Type.String(),
 	}),
 ])
 
-export const pluginStatusActionResultSchema = typebox.obj({
-	name: typebox.Type.String(),
-	ok: typebox.Type.Boolean(),
-	code: typebox.Type.Optional(typebox.Type.String()),
-	error: typebox.Type.Optional(typebox.Type.String()),
-	isRunning: typebox.Type.Optional(typebox.Type.Boolean()),
-	isEnabled: typebox.Type.Optional(typebox.Type.Boolean()),
-	lifecycleStage: typebox.Type.Optional(typebox.Type.String()),
-	source: typebox.Type.Optional(pluginSourceSchema),
+export const pluginStatusActionResultSchema = obj({
+	name: Type.String(),
+	ok: Type.Boolean(),
+	code: Type.Optional(Type.String()),
+	error: Type.Optional(Type.String()),
+	isRunning: Type.Optional(Type.Boolean()),
+	isEnabled: Type.Optional(Type.Boolean()),
+	lifecycleStage: Type.Optional(Type.String()),
+	source: Type.Optional(pluginSourceSchema),
 })
 
-export const pluginDependencyRefSchema = typebox.openObj({
-	name: typebox.Type.Optional(typebox.Type.String()),
+export const pluginDependencyRefSchema = openObj({
+	name: Type.Optional(Type.String()),
 })
 
-export const pluginDependencyOptionSchema = typebox.obj({
-	name: typebox.Type.String(),
-	isRunning: typebox.Type.Boolean(),
-	isEnabled: typebox.Type.Boolean(),
+export const pluginDependencyOptionSchema = obj({
+	name: Type.String(),
+	isRunning: Type.Boolean(),
+	isEnabled: Type.Boolean(),
 })
 
-export const pluginDependencyStateSchema = typebox.obj({
-	index: typebox.Type.Number(),
-	token: typebox.Type.String(),
-	kind: typebox.Type.Union([
-		typebox.Type.Literal('plugin'),
-		typebox.Type.Literal('base'),
-		typebox.Type.Literal('forkable'),
-	]),
-	effective: typebox.Type.String(),
-	isRunning: typebox.Type.Boolean(),
-	selected: typebox.Type.Union([typebox.Type.String(), typebox.Type.Null()]),
-	baseProvider: typebox.Type.Union([typebox.Type.String(), typebox.Type.Null()]),
-	options: typebox.Type.Array(pluginDependencyOptionSchema),
+export const pluginDependencyStateSchema = obj({
+	index: Type.Number(),
+	token: Type.String(),
+	kind: Type.Union([Type.Literal('plugin'), Type.Literal('base'), Type.Literal('forkable')]),
+	effective: Type.String(),
+	isRunning: Type.Boolean(),
+	selected: Type.Union([Type.String(), Type.Null()]),
+	baseProvider: Type.Union([Type.String(), Type.Null()]),
+	options: Type.Array(pluginDependencyOptionSchema),
 })
 
-export const pluginDependencyMutationResultSchema = typebox.obj({
-	ok: typebox.Type.Boolean(),
-	code: typebox.Type.Optional(typebox.Type.String()),
-	error: typebox.Type.Optional(typebox.Type.String()),
+export const pluginDependencyMutationResultSchema = obj({
+	ok: Type.Boolean(),
+	code: Type.Optional(Type.String()),
+	error: Type.Optional(Type.String()),
 })
 
-export const baseProviderInfoSchema = typebox.Type.Union([
-	typebox.Type.Null(),
-	typebox.obj({
-		baseToken: typebox.Type.String(),
-		currentDefault: typebox.Type.Union([typebox.Type.String(), typebox.Type.Null()]),
-		isDefault: typebox.Type.Boolean(),
-		providers: typebox.Type.Array(pluginDependencyOptionSchema),
+export const baseProviderInfoSchema = Type.Union([
+	Type.Null(),
+	obj({
+		baseToken: Type.String(),
+		currentDefault: Type.Union([Type.String(), Type.Null()]),
+		isDefault: Type.Boolean(),
+		providers: Type.Array(pluginDependencyOptionSchema),
 	}),
 ])
 
-export const ensureForkResultSchema = typebox.obj({
-	ok: typebox.Type.Boolean(),
-	forkName: typebox.Type.Optional(typebox.Type.String()),
-	code: typebox.Type.Optional(typebox.Type.String()),
-	error: typebox.Type.Optional(typebox.Type.String()),
+export const ensureForkResultSchema = obj({
+	ok: Type.Boolean(),
+	forkName: Type.Optional(Type.String()),
+	code: Type.Optional(Type.String()),
+	error: Type.Optional(Type.String()),
 })
 
-export const pluginStatusBatchOutputSchema = typebox.obj({
-	ok: typebox.Type.Boolean(),
-	results: typebox.Type.Array(pluginStatusActionResultSchema),
-	commitError: typebox.Type.Optional(typebox.Type.String()),
+export const pluginStatusBatchOutputSchema = obj({
+	ok: Type.Boolean(),
+	results: Type.Array(pluginStatusActionResultSchema),
+	commitError: Type.Optional(Type.String()),
 })
 
-export const configResultSchema = typebox.Type.Union([
-	typebox.obj({
-		ok: typebox.Type.Literal(true),
-		saved: typebox.Type.Boolean(),
-		config: typebox.Type.Record(typebox.Type.String(), typebox.Type.Unknown()),
-		defaults: typebox.Type.Record(typebox.Type.String(), typebox.Type.Unknown()),
+export const configResultSchema = Type.Union([
+	obj({
+		ok: Type.Literal(true),
+		saved: Type.Boolean(),
+		config: Type.Record(Type.String(), Type.Unknown()),
+		defaults: Type.Record(Type.String(), Type.Unknown()),
 	}),
-	typebox.obj({
-		ok: typebox.Type.Literal(false),
-		code: typebox.Type.String(),
-		message: typebox.Type.String(),
-		errors: typebox.Type.Optional(typebox.Type.Unknown()),
-		defaults: typebox.Type.Optional(
-			typebox.Type.Record(typebox.Type.String(), typebox.Type.Unknown()),
-		),
+	obj({
+		ok: Type.Literal(false),
+		code: Type.String(),
+		message: Type.String(),
+		errors: Type.Optional(Type.Unknown()),
+		defaults: Type.Optional(Type.Record(Type.String(), Type.Unknown())),
 	}),
 ])
 
-export const configBatchEntrySchema = typebox.obj({
-	name: typebox.Type.String(),
+export const configBatchEntrySchema = obj({
+	name: Type.String(),
 	result: configResultSchema,
 })
 
-export const configBatchResultSchema = typebox.obj({
-	ok: typebox.Type.Boolean(),
-	items: typebox.Type.Array(configBatchEntrySchema),
+export const configBatchResultSchema = obj({
+	ok: Type.Boolean(),
+	items: Type.Array(configBatchEntrySchema),
 })
 
-export const schemaResultSchema = typebox.Type.Union([
-	typebox.obj({
-		ok: typebox.Type.Literal(true),
-		schemaSource: typebox.Type.Record(typebox.Type.String(), typebox.Type.String()),
-		defaults: typebox.Type.Record(typebox.Type.String(), typebox.Type.Unknown()),
-		layout: typebox.Type.Optional(
-			typebox.Type.Union([typebox.Type.Null(), typebox.Type.Array(typebox.Type.Unknown())]),
-		),
+export const schemaResultSchema = Type.Union([
+	obj({
+		ok: Type.Literal(true),
+		schemaSource: Type.Record(Type.String(), Type.String()),
+		defaults: Type.Record(Type.String(), Type.Unknown()),
+		layout: Type.Optional(Type.Union([Type.Null(), Type.Array(Type.Unknown())])),
 	}),
-	typebox.obj({
-		ok: typebox.Type.Literal(false),
-		code: typebox.Type.String(),
-		message: typebox.Type.String(),
+	obj({
+		ok: Type.Literal(false),
+		code: Type.String(),
+		message: Type.String(),
 	}),
 ])
 
-export const emptyInputSchema = typebox.obj({})
+export const emptyInputSchema = obj({})
 
-export const configPatchEntrySchema = typebox.obj({
+export const configPatchEntrySchema = obj({
 	name: pluginNameSchema,
-	patch: typebox.Type.Record(typebox.Type.String(), typebox.Type.Unknown(), {
+	patch: Type.Record(Type.String(), Type.Unknown(), {
 		description: 'Config patch object to validate or persist.',
 	}),
 })
 
-export const configResetEntrySchema = typebox.obj({
+export const configResetEntrySchema = obj({
 	name: pluginNameSchema,
-	keys: typebox.Type.Optional(typebox.Type.Array(typebox.Type.String(), {
-		description: 'Config keys to reset. Omit to reset all keys.',
-	})),
+	keys: Type.Optional(
+		Type.Array(Type.String(), {
+			description: 'Config keys to reset. Omit to reset all keys.',
+		}),
+	),
 })
 
-export const configFieldEntrySchema = typebox.obj({
+export const configFieldEntrySchema = obj({
 	name: pluginNameSchema,
-	schemaKey: typebox.Type.String({ minLength: 1, description: 'Top-level config schema key.' }),
-	fieldPath: typebox.Type.String({ minLength: 1, description: 'Dot-path inside the selected schema section.' }),
-	value: typebox.Type.Unknown({ description: 'Value to write at the target field path.' }),
+	schemaKey: Type.String({ minLength: 1, description: 'Top-level config schema key.' }),
+	fieldPath: Type.String({
+		minLength: 1,
+		description: 'Dot-path inside the selected schema section.',
+	}),
+	value: Type.Unknown({ description: 'Value to write at the target field path.' }),
 })
 
-export const runtimeOpsDescriptorSchema = typebox.Type.Array(
-	typebox.openObj({
-		id: typebox.Type.String(),
-		doc: typebox.openObj({}),
-		exposure: typebox.openObj({}),
-		policy: typebox.openObj({}),
-		schemas: typebox.openObj({}),
-		params: typebox.Type.Optional(typebox.Type.Array(typebox.openObj({}))),
-		transports: typebox.openObj({}),
+export const runtimeOpsDescriptorSchema = Type.Array(
+	openObj({
+		id: Type.String(),
+		doc: openObj({}),
+		exposure: openObj({}),
+		policy: openObj({}),
+		schemas: openObj({}),
+		params: Type.Optional(Type.Array(openObj({}))),
+		transports: openObj({}),
 	}),
 )

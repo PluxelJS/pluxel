@@ -7,18 +7,12 @@ import {
 } from '@pluxel/ops'
 import type { RuntimeOpContext } from '../../services/ops/OpsService'
 
-export const defineRuntimeOp = <
-	SIn extends Schema,
-	SOut extends Schema | undefined = undefined,
->(
-	config: Omit<
-		OperationConfig<Infer<SIn>, SOut extends Schema ? Infer<SOut> : unknown, RuntimeOpContext>,
-		'input' | 'output'
-	> & {
+export const defineRuntimeOp = <SIn extends Schema, SOut extends Schema>(
+	config: Omit<OperationConfig<Infer<SIn>, Infer<SOut>, RuntimeOpContext>, 'input' | 'output'> & {
 		input: SIn
-		output?: SOut
+		output: SOut
 	},
-): Operation<Infer<SIn>, SOut extends Schema ? Infer<SOut> : unknown, RuntimeOpContext> =>
+): Operation<Infer<SIn>, Infer<SOut>, RuntimeOpContext> =>
 	defineOp<SIn, SOut, RuntimeOpContext>(config)
 
 export function messageOf(error: unknown): string {

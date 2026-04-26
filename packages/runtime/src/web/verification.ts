@@ -1,9 +1,9 @@
 import {
+	type VerificationReason,
 	VERIFICATION_BLOCKED_HEADER,
 	VERIFICATION_REASON_HEADER,
 	VERIFICATION_REDIRECT_HEADER,
 } from '../shared/verification-http'
-import type { VerificationReason } from '../shared/verification-http'
 
 type RuntimeFetchPreconnect = typeof globalThis.fetch extends { preconnect: infer T }
 	? T
@@ -73,9 +73,7 @@ export function defaultOnVerificationBlocked(info: VerificationBlockedInfo) {
 	window.location.assign(info.redirectPath)
 }
 
-export function isVerificationBlockedResponse(
-	res: Response,
-): boolean {
+export function isVerificationBlockedResponse(res: Response): boolean {
 	const statusBlocked = res.status === 401 || res.status === 403
 	if (!statusBlocked) return false
 	return res.headers.get(VERIFICATION_BLOCKED_HEADER) === '1'
@@ -85,7 +83,8 @@ export async function extractBlockedInfo(
 	res: Response,
 ): Promise<Pick<VerificationBlockedInfo, 'redirectPath' | 'reason'>> {
 	const header = res.headers.get(VERIFICATION_REDIRECT_HEADER)
-	const reason = (res.headers.get(VERIFICATION_REASON_HEADER) as VerificationReason | null) ?? undefined
+	const reason =
+		(res.headers.get(VERIFICATION_REASON_HEADER) as VerificationReason | null) ?? undefined
 	if (header) return { redirectPath: header, reason }
 
 	const ct = (res.headers.get('content-type') ?? '').toLowerCase()
@@ -122,7 +121,12 @@ export function createVerificationAwareFetch(
 					? input.toString()
 					: (input as Request).url
 
-		onBlocked({ status: res.status, url, redirectPath: blocked.redirectPath, reason: blocked.reason })
+		onBlocked({
+			status: res.status,
+			url,
+			redirectPath: blocked.redirectPath,
+			reason: blocked.reason,
+		})
 		return res
 	}) as RuntimeFetch
 

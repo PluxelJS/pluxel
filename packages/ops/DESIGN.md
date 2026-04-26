@@ -1,145 +1,95 @@
 # @pluxel/ops Design
 
-`@pluxel/ops` is the control-plane kernel for Pluxel. The package is intentionally small, but its boundaries are strict:
+`@pluxel/ops` is intentionally narrow: one authoring API, one descriptor, one execution boundary, one registry-backed runtime home.
 
-- authoring happens through `defineOp({ ... })`
-- runtime state lives in an op registry / space
-- every external surface is a projection of the compiled descriptor
+The root entry exports ops primitives only. TypeBox authoring helpers are a dedicated subpath:
 
-The design target is not "generic commands". The design target is one canonical operation model that can be projected into RPC, CLI, MCP, tests, docs, and future carriers without each surface inventing its own metadata.
+```ts
+import { defineOp } from '@pluxel/ops'
+import { Type, obj } from '@pluxel/ops/typebox'
+```
 
-## 1. The Three Layers
+## Core Model
 
-Every op has three layers:
+1. Authoring config: `defineOp({ id, input, output, doc, exposure, policy, cli, tool, execute })`
+2. Descriptor: frozen, serializable metadata compiled once.
+3. Operation: `{ id, descriptor, run, runSafe }` plus hidden runtime metadata.
 
-1. Authoring config
-   `defineOp({ id, doc, exposure, policy, cli, tool, input, output, execute })`
-2. Canonical descriptor
-   Compiled once at definition time. This is the stable IR.
-3. Carrier projection
-   CLI, MCP, RPC, docs, and host tooling only consume the descriptor.
+After definition, carriers read the descriptor. They do not reinterpret authoring config.
 
-The important rule is that layer 2 is the only semantic source after definition time.
+## Descriptor Contract
 
-## 2. Canonical Descriptor
+`OpDescriptor` is the public intermediate representation.
 
-`OpDescriptor` is the canonical IR. It is intentionally grouped into five blocks:
+- `id`: stable operation identity.
+- `doc`: human and tool guidance.
+- `exposure`: non-carrier visibility such as `rpc` and `internal`.
+- `policy`: execution semantics such as `mutating`, `idempotent`, `confirm`, and `audit`.
+- `schemas`: JSON Schema projections for input and output.
+- `params`: derived object-input summary for carriers.
+- `transports`: carrier projections, currently CLI and tool.
 
-- `doc`
-  Human / LLM help semantics
-- `exposure`
-  Cross-carrier visibility that is not itself a carrier projection. Today this is mainly `rpc` and `internal`.
-- `policy`
-  Runtime execution policy such as `mutating`, `idempotent`, `confirm`, `audit`
-- `schemas`
-  Canonical JSON Schemas for input / output
-- `transports`
-  Carrier-specific projections such as compiled CLI metadata and tool metadata
+Descriptors must not contain live parser modules, caches, owner metadata, or other runtime objects.
 
-This split is deliberate:
+## Execution Boundary
 
-- `doc` answers "what does this mean?"
-- `exposure` answers "what non-projection visibility rules apply?"
-- `policy` answers "what kind of action is this?"
-- `schemas` answer "what can cross the boundary?"
-- `transports` answer "how does a specific carrier consume the descriptor?"
-
-If a field does not fit one of those buckets, it probably belongs elsewhere.
-
-## 3. Authoring Rules
-
-Public ops should follow these rules:
-
-- always use `defineOp({ ... })`
-- always use TypeBox schemas
-- write `doc.title` and `doc.description` for any tool-visible op
-- describe every tool-visible object input field with schema `description`
-- keep `cli` parse-only: `triggers` and `tail`
-- use `tool: true` when the canonical op id is already the public tool name
-- only use `tool.name` when a custom external alias is genuinely required
-- express action semantics in `policy`, not in carrier glue
-
-Authoring should stay boring. The package does not want a second DSL.
-
-## 4. Help and Tooling Semantics
-
-`doc` is the only help source.
-
-- `doc.title`
-  stable display / summary label
-- `doc.description`
-  one-line summary
-- `doc.details`, `doc.usage`, `doc.examples`, `doc.tags`
-  additional guidance
-
-Tool metadata is compiled from `doc` and input schema descriptions:
-
-- `tool.description`
-  short summary for protocol fields
-- `tool.guidance`
-  richer compiled help text
-- `tool.inputHints`
-  lightweight carrier-friendly summary of structured inputs
-
-Carriers must not re-author help text. They may choose which compiled field to expose, but they must not invent a second semantic source.
-
-Carrier visibility follows a single rule:
-
-- RPC visibility comes from `exposure.rpc`
-- CLI visibility comes from whether `descriptor.transports.cli` exists
-- tool visibility comes from whether `descriptor.transports.tool` exists
-
-There must not be a second boolean mirror for tool / CLI visibility in the descriptor.
-
-## 5. Validation Boundary
-
-The execution boundary is fixed:
+Every invocation follows:
 
 `candidate -> validated input -> execute -> validated output`
 
-That boundary is shared by RPC, CLI, MCP, and internal dispatch. If a future fast path is required, it must be explicit in the op model. No carrier is allowed to create a private trusted bypass.
+This boundary is shared by registry invocation, CLI dispatch, RPC, MCP, and internal callers. `runSafe` only wraps the same boundary in `OpResult`.
 
-## 6. Registry Rules
+## Carrier Rules
 
-The registry is the runtime home of descriptors and operations.
+- RPC visibility comes from `exposure.rpc`.
+- CLI visibility comes from `descriptor.transports.cli`.
+- Tool visibility comes from `descriptor.transports.tool`.
+- Tool help comes from `doc` and schema descriptions.
+- CLI parsing comes from schema-derived params plus `descriptor.transports.cli`.
 
-- registration must be atomic
-- registration failure must not leave partial CLI / tool state behind
-- descriptors and exported metadata are frozen
-- caches are versioned from the registry, not from individual carriers
+Carriers may format metadata differently, but they must not invent new semantic sources.
 
-This is why carriers should project from the registry instead of precomputing their own parallel state forever.
+## Runtime State
 
-## 7. Runtime Namespace Rules
+Runtime-only objects live outside descriptors. ParseBox tails are the main example: the descriptor stores public parsebox metadata, while the live module object is attached as hidden non-enumerable operation metadata.
 
-Runtime control-plane ops are special. Their ids and external names are not just strings; they are part of the host contract.
+## Registry And Space
 
-That means runtime integrations are allowed to reserve namespaces such as:
+- Registration is atomic.
+- Duplicate op ids and tool names are rejected.
+- Owner metadata belongs to registry entries, not descriptors.
+- Owner and tool-name lookups are indexed.
+- Descriptor listing, entry listing, and tool listing scan registry state directly.
+- Public tool listing is cached by registry version.
+- Owner unload removes all CLI entries in one trie rebuild.
 
-- `plugin.*`
-- `plugins.*`
-- `runtime.*`
+`createSpace()` is the public construction API. The concrete space class is an implementation detail.
 
-Plugin-authored ops should live in plugin-owned namespaces instead of attempting to reuse host canonical ids.
+## File Boundaries
 
-## 8. Batch Semantics
+- `types.ts`: public contracts and errors.
+- `compile.ts`: config normalization, validation, descriptor compilation, hidden runtime metadata.
+- `define.ts`: validator compilation, execution boundary, error normalization.
+- `typebox.ts`: public TypeBox helper entry.
+- `schema.ts`: internal TypeBox normalization, JSON Schema projection, param derivation.
+- `registry.ts`: operation storage, owner index, tool index, listing, invocation.
+- `space.ts`: registry plus CLI facade.
+- `adapters/cli/*`: tokenization, trigger trie, candidate parsing, tail helpers.
+- `internal/runtime.ts`: hidden operation runtime metadata.
 
-Batch ops are allowed, but they must say what they are:
+Dependency direction:
 
-- read batch
-- sequential mutation batch
-- atomic batch
+`define -> compile -> schema/types`
 
-If a batch is sequential best-effort, that fact belongs in the op design and docs. "Batch" must not imply hidden transaction semantics.
+`space -> registry + cli adapter`
 
-## 9. Non-Goals
+`cli adapter -> descriptor + hidden runtime metadata + cli parser`
 
-`@pluxel/ops` intentionally does not provide:
+## Non-Goals
 
-- multiple schema systems
-- carrier-specific help backends
-- a second CLI authoring DSL
-- per-carrier validation semantics
-- ad-hoc transport middleware trees detached from ops
-
-The package is intentionally opinionated. The point is to reduce drift, not to be endlessly extensible.
+- Multiple schema systems.
+- Carrier-specific help sources.
+- A second CLI command DSL.
+- Public interceptor trees.
+- Per-carrier validation semantics.
+- Descriptor fields for live runtime objects.

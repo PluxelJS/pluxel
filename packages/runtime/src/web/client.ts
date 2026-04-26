@@ -10,15 +10,10 @@ import {
 } from './verification'
 import type { LogFilter, LogRangeResult, LogStreamMeta } from './logs'
 import type { ExtensionManifest } from './extensions'
-import type {
-	ExtensionUiRpcMap,
-	RuntimeRpcApi,
-} from './protocol'
+import type { ExtensionUiRpcMap, RuntimeRpcApi } from './protocol'
 import { createRpcClientFactory, createUiRpcView, invokeRpc } from './rpc'
 import { type SseClientOptions, type SseClientWithNamespaces, sse } from './sse'
-import {
-	createRuntimeSecurityClient,
-} from './security'
+import { createRuntimeSecurityClient } from './security'
 import {
 	HMR_EXTENSIONS_EVENTS_PATH,
 	HMR_INTERNAL_API_BASE,
@@ -320,12 +315,14 @@ export function createRuntimeTransportClient(
 			...opts,
 			url: opts?.url ?? baseSseOptions.url ?? links.sse,
 			withCredentials,
-				verification: verificationEnabled
-					? {
-							readState: async () => (await security.readOverview()).verification,
-							onBlocked:
-								options.verification?.onBlocked ?? defaultOnVerificationBlocked,
-						}
+			verification: verificationEnabled
+				? {
+						readState: async () => {
+							const overview = await security.readOverview()
+							return overview.verification
+						},
+						onBlocked: options.verification?.onBlocked ?? defaultOnVerificationBlocked,
+					}
 				: undefined,
 			params,
 			namespaces: namespaces.length > 0 ? namespaces : undefined,

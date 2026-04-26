@@ -16,6 +16,11 @@
 			"import": "./dist/index.mjs",
 			"require": "./dist/index.cjs"
 		},
+		"./typebox": {
+			"@pluxel/source": "./src/typebox.ts",
+			"import": "./dist/typebox.mjs",
+			"require": "./dist/typebox.cjs"
+		},
 		"./package.json": "./package.json"
 	},
 	"publishConfig": {
@@ -23,6 +28,10 @@
 			".": {
 				"import": "./dist/index.mjs",
 				"require": "./dist/index.cjs"
+			},
+			"./typebox": {
+				"import": "./dist/typebox.mjs",
+				"require": "./dist/typebox.cjs"
 			},
 			"./package.json": "./package.json"
 		}

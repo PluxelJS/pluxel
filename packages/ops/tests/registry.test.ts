@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { createSpace, defineOp, typebox } from '../src/index.ts'
+import { createSpace, defineOp } from '@pluxel/ops'
+import { Type, obj } from '@pluxel/ops/typebox'
 
 describe('@pluxel/ops space', () => {
 	it('lists operations by transport and owner', async () => {
@@ -15,12 +16,12 @@ describe('@pluxel/ops space', () => {
 				examples: ['plugin status get --name demo'],
 				tags: ['plugin', 'status'],
 			},
-			input: typebox.obj({
-				name: typebox.Type.String({ description: 'Plugin name to inspect.' }),
+			input: obj({
+				name: Type.String({ description: 'Plugin name to inspect.' }),
 			}),
-			output: typebox.obj({
-				name: typebox.Type.String(),
-				running: typebox.Type.Boolean(),
+			output: obj({
+				name: Type.String(),
+				running: Type.Boolean(),
 			}),
 			exposure: {
 				rpc: true,
@@ -35,6 +36,10 @@ describe('@pluxel/ops space', () => {
 
 		space.register(status, { owner: 'plugin:host' })
 
+		expect(space.getEntry('plugin.status.get')).toEqual({
+			owner: 'plugin:host',
+			descriptor: status.descriptor,
+		})
 		expect(space.list({ carrier: 'tool' }).map((entry) => entry.id)).toContain('plugin.status.get')
 		expect(space.listTools()).toEqual(
 			expect.arrayContaining([
@@ -82,11 +87,11 @@ describe('@pluxel/ops space', () => {
 		space.register(
 			defineOp({
 				id: 'plugin.status.get',
-				input: typebox.obj({
-					name: typebox.Type.String({ description: 'Plugin name to inspect.' }),
+				input: obj({
+					name: Type.String({ description: 'Plugin name to inspect.' }),
 				}),
-				output: typebox.obj({
-					ok: typebox.Type.Boolean(),
+				output: obj({
+					ok: Type.Boolean(),
 				}),
 				cli: {
 					triggers: ['plugin status'],
@@ -101,11 +106,11 @@ describe('@pluxel/ops space', () => {
 			space.register(
 				defineOp({
 					id: 'plugin.status.other',
-					input: typebox.obj({
-						name: typebox.Type.String({ description: 'Plugin name to inspect.' }),
+					input: obj({
+						name: Type.String({ description: 'Plugin name to inspect.' }),
 					}),
-					output: typebox.obj({
-						ok: typebox.Type.Boolean(),
+					output: obj({
+						ok: Type.Boolean(),
 					}),
 					cli: {
 						triggers: ['plugin status'],
@@ -120,6 +125,130 @@ describe('@pluxel/ops space', () => {
 		expect(space.has('plugin.status.other')).toBe(false)
 	})
 
+	it('does not leave partial cli triggers when a later trigger conflicts', async () => {
+		const space = createSpace()
+
+		space.register(
+			defineOp({
+				id: 'plugin.status.get',
+				input: obj({}),
+				output: obj({
+					ok: Type.Boolean(),
+				}),
+				cli: {
+					triggers: ['plugin status'],
+				},
+				async execute() {
+					return { ok: true }
+				},
+			}),
+		)
+
+		expect(() =>
+			space.register(
+				defineOp({
+					id: 'plugin.status.other',
+					input: obj({}),
+					output: obj({
+						ok: Type.Boolean(),
+					}),
+					cli: {
+						triggers: ['plugin other', 'plugin status'],
+					},
+					async execute() {
+						return { ok: true }
+					},
+				}),
+			),
+		).toThrow(/trigger conflict/i)
+
+		expect(space.has('plugin.status.other')).toBe(false)
+		await expect(space.dispatch('plugin other')).rejects.toMatchObject({
+			code: 'E_OP_NOT_FOUND',
+		})
+	})
+
+	it('rejects duplicate tool names during registration', () => {
+		const space = createSpace()
+
+		space.register(
+			defineOp({
+				id: 'plugin.status.get',
+				doc: {
+					title: 'Get plugin status',
+					description: 'Read the current plugin lifecycle state',
+				},
+				input: obj({
+					name: Type.String({ description: 'Plugin name to inspect.' }),
+				}),
+				output: obj({
+					ok: Type.Boolean(),
+				}),
+				tool: {
+					name: 'plugin_status_get',
+				},
+				async execute() {
+					return { ok: true }
+				},
+			}),
+		)
+
+		expect(() =>
+			space.register(
+				defineOp({
+					id: 'plugin.status.other',
+					doc: {
+						title: 'Get other plugin status',
+						description: 'Read a different plugin lifecycle state.',
+					},
+					input: obj({
+						name: Type.String({ description: 'Plugin name to inspect.' }),
+					}),
+					output: obj({
+						ok: Type.Boolean(),
+					}),
+					tool: {
+						name: 'plugin_status_get',
+					},
+					async execute() {
+						return { ok: true }
+					},
+				}),
+			),
+		).toThrow(/already registered/i)
+	})
+
+	it('cleans registry indexes on unregister', () => {
+		const space = createSpace()
+		const makeOp = (id: string) =>
+			defineOp({
+				id,
+				doc: {
+					title: 'Get plugin status',
+					description: 'Read the current plugin lifecycle state',
+				},
+				input: obj({
+					name: Type.String({ description: 'Plugin name to inspect.' }),
+				}),
+				output: obj({
+					ok: Type.Boolean(),
+				}),
+				tool: {
+					name: 'plugin_status_get',
+				},
+				async execute() {
+					return { ok: true }
+				},
+			})
+
+		const unregister = space.register(makeOp('plugin.status.get'), { owner: 'plugin:host' })
+		unregister()
+		expect(space.unregisterOwner('plugin:host')).toBe(0)
+		expect(() =>
+			space.register(makeOp('plugin.status.other'), { owner: 'plugin:host' }),
+		).not.toThrow()
+	})
+
 	it('freezes exported descriptors and tool metadata', () => {
 		const space = createSpace()
 		const unregister = space.register(
@@ -129,11 +258,11 @@ describe('@pluxel/ops space', () => {
 					title: 'Get plugin status',
 					description: 'Read the current plugin lifecycle state',
 				},
-				input: typebox.obj({
-					name: typebox.Type.String({ description: 'Plugin name to inspect.' }),
+				input: obj({
+					name: Type.String({ description: 'Plugin name to inspect.' }),
 				}),
-				output: typebox.obj({
-					ok: typebox.Type.Boolean(),
+				output: obj({
+					ok: Type.Boolean(),
 				}),
 				tool: {
 					name: 'plugin_status_get',

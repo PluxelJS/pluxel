@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { configureSync, type LogRecord, resetSync } from '@logtape/logtape'
-import { Context } from '@pluxel/runtime'
+import { withContext, type Context } from '@pluxel/test'
 import { LogtapeLoggerService } from '../src/logger/LogtapeLoggerService'
 
 function createPluginContext(root: Context, name: string, id: string): Context {
@@ -31,26 +31,28 @@ describe('LogtapeLoggerService', () => {
 	afterEach(() => resetSync())
 
 	it('attaches pluginId/context/name into record properties', () => {
-		const root = new Context({ name: 'root' }) as Context
-		const pluginCtx = createPluginContext(root, 'pluginA', 'plugin-a')
-		const service = new LogtapeLoggerService(pluginCtx)
-		service.info('hello')
+		return withContext((root) => {
+			const pluginCtx = createPluginContext(root, 'pluginA', 'plugin-a')
+			const service = new LogtapeLoggerService(pluginCtx)
+			service.info('hello')
 
-		const rec = records.find((r) => r.category.join(':') === 'pluxel:plugins')
-		expect(rec).toBeTruthy()
-		expect(rec?.properties.pluginId).toBe('plugin-a')
-		expect(rec?.properties.context).toBe('pluginA')
-		expect(rec?.properties.name).toBeUndefined()
+			const rec = records.find((r) => r.category.join(':') === 'pluxel:plugins')
+			expect(rec).toBeTruthy()
+			expect(rec?.properties.pluginId).toBe('plugin-a')
+			expect(rec?.properties.context).toBe('pluginA')
+			expect(rec?.properties.name).toBeUndefined()
+		})
 	})
 
 	it('uses "core" category for non-plugin contexts by default', () => {
-		const root = new Context({ name: 'root' }) as Context
-		const service = new LogtapeLoggerService(root)
-		service.warn('warn')
+		return withContext((root) => {
+			const service = new LogtapeLoggerService(root)
+			service.warn('warn')
 
-		const rec = records.find((r) => r.category.join(':') === 'pluxel:core')
-		expect(rec).toBeTruthy()
-		expect(rec?.properties.context).toBe('root')
-		expect(rec?.properties.name).toBeUndefined()
+			const rec = records.find((r) => r.category.join(':') === 'pluxel:core')
+			expect(rec).toBeTruthy()
+			expect(rec?.properties.context).toBe('test')
+			expect(rec?.properties.name).toBeUndefined()
+		})
 	})
 })

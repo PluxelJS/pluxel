@@ -23,7 +23,7 @@ export function registerRuntimeOpsCarrier(server: McpServer, ctx: Context) {
 		server.tool(tool.name, {
 			description: tool.guidance,
 			inputSchema: tool.inputSchema as any,
-			...(tool.outputSchema ? { outputSchema: tool.outputSchema as any } : {}),
+			outputSchema: tool.outputSchema as any,
 			handler: async (args) => {
 				const result = await root.ops.invoke(tool.id, args, {
 					source: { kind: 'mcp' },

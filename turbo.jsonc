@@ -139,7 +139,12 @@
 			"outputLogs": "new-only",
 		},
 		"@pluxel/runtime#build": {
-			"dependsOn": ["@pluxel/core#build", "@pluxel/ops#build", "@pluxel/workspace#build", "valibot-form#build"],
+			"dependsOn": [
+				"@pluxel/core#build",
+				"@pluxel/ops#build",
+				"@pluxel/workspace#build",
+				"valibot-form#build",
+			],
 			"outputs": ["dist/**", "public/**"],
 			"inputs": [
 				"$TURBO_DEFAULT$",
@@ -159,7 +164,12 @@
 			"outputLogs": "new-only",
 		},
 		"@pluxel/hmr#build": {
-			"dependsOn": ["@pluxel/build#build", "@pluxel/core#build", "@pluxel/runtime#build", "@pluxel/workspace#build"],
+			"dependsOn": [
+				"@pluxel/build#build",
+				"@pluxel/core#build",
+				"@pluxel/runtime#build",
+				"@pluxel/workspace#build",
+			],
 			"outputs": ["dist/**"],
 			"inputs": [
 				"$TURBO_DEFAULT$",
@@ -179,7 +189,12 @@
 			"outputLogs": "new-only",
 		},
 		"@pluxel/cli#build": {
-			"dependsOn": ["@pluxel/build#build", "@pluxel/hmr#build", "@pluxel/runtime#build", "@pluxel/workspace#build"],
+			"dependsOn": [
+				"@pluxel/build#build",
+				"@pluxel/hmr#build",
+				"@pluxel/runtime#build",
+				"@pluxel/workspace#build",
+			],
 			"outputs": ["dist/**"],
 			"inputs": [
 				"$TURBO_DEFAULT$",
@@ -234,7 +249,7 @@
 			"outputLogs": "new-only",
 		},
 		"test": {
-			"dependsOn": ["build"],
+			"dependsOn": ["build", "@pluxel/test#build"],
 			"outputs": [],
 			"inputs": [
 				"$TURBO_DEFAULT$",

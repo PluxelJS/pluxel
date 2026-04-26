@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import { EffectsService } from '@pluxel/core/services'
-import { Context } from '@pluxel/runtime'
-import { defineOp, typebox } from '@pluxel/ops'
+import { withContext, type Context } from '@pluxel/test'
+import { defineOp } from '@pluxel/ops'
+import { Type, obj } from '@pluxel/ops/typebox'
 
 function createPluginContext(root: Context, id: string): Context {
 	const ctx = root.isolate([EffectsService], { name: id }) as Context
@@ -17,13 +18,13 @@ function definePluginStatusOp() {
 			description: 'Read runtime plugin status',
 			usage: 'plugin-alpha status --name <string>',
 		},
-		input: typebox.obj({
-			name: typebox.Type.String({ description: 'Plugin name to inspect.' }),
+		input: obj({
+			name: Type.String({ description: 'Plugin name to inspect.' }),
 		}),
-		output: typebox.obj({
-			name: typebox.Type.String(),
-			runtimeName: typebox.Type.String(),
-			sourceKind: typebox.Type.String(),
+		output: obj({
+			name: Type.String(),
+			runtimeName: Type.String(),
+			sourceKind: Type.String(),
 		}),
 		exposure: {
 			rpc: true,
@@ -46,76 +47,78 @@ function definePluginStatusOp() {
 
 describe('OpsService', () => {
 	it('projects one plugin op consistently across registry, tool, help, and execution surfaces', async () => {
-		const root = new Context({ name: 'root' }) as Context
-		const pluginCtx = createPluginContext(root, 'plugin.alpha')
+		await withContext(async (root) => {
+			const pluginCtx = createPluginContext(root, 'plugin.alpha')
 
-		pluginCtx.ops.register(definePluginStatusOp())
+			pluginCtx.ops.register(definePluginStatusOp())
 
-		expect(root.ops.list({ exposure: 'tool' }).map((entry) => entry.id)).toContain(
-			'plugin-alpha.status.get',
-		)
-		expect(root.ops.listTools()).toEqual(
-			expect.arrayContaining([
+			expect(root.ops.list({ carrier: 'tool' }).map((entry) => entry.id)).toContain(
+				'plugin-alpha.status.get',
+			)
+			expect(root.ops.listTools()).toEqual(
+				expect.arrayContaining([
+					expect.objectContaining({
+						id: 'plugin-alpha.status.get',
+						name: 'plugin_status_get',
+						title: 'Get plugin status',
+					}),
+				]),
+			)
+			expect(root.ops.helpCommand('plugin-alpha status')).toEqual(
 				expect.objectContaining({
 					id: 'plugin-alpha.status.get',
-					name: 'plugin_status_get',
-					title: 'Get plugin status',
+					usage: 'plugin-alpha status --name <string>',
 				}),
-			]),
-		)
-		expect(root.ops.helpCommand('plugin-alpha status')).toEqual(
-			expect.objectContaining({
-				id: 'plugin-alpha.status.get',
-				usage: 'plugin-alpha status --name <string>',
-			}),
-		)
+			)
 
-		await expect(root.ops.invoke('plugin-alpha.status.get', { name: 'demo' })).resolves.toEqual({
-			name: 'demo',
-			runtimeName: 'root',
-			sourceKind: 'runtime',
-		})
+			await expect(root.ops.invoke('plugin-alpha.status.get', { name: 'demo' })).resolves.toEqual({
+				name: 'demo',
+				runtimeName: 'test',
+				sourceKind: 'runtime',
+			})
 
-		await expect(root.ops.dispatch('plugin-alpha status --name demo')).resolves.toEqual({
-			name: 'demo',
-			runtimeName: 'root',
-			sourceKind: 'cli',
+			await expect(root.ops.dispatch('plugin-alpha status --name demo')).resolves.toEqual({
+				name: 'demo',
+				runtimeName: 'test',
+				sourceKind: 'cli',
+			})
 		})
 	})
 
 	it('auto-unregisters plugin-owned operations on plugin dispose', async () => {
-		const root = new Context({ name: 'root' }) as Context
-		const pluginCtx = createPluginContext(root, 'plugin.beta')
+		await withContext(async (root) => {
+			const pluginCtx = createPluginContext(root, 'plugin.beta')
 
-		pluginCtx.ops.register(
-			defineOp({
-				id: 'plugin-beta.echo',
-				input: typebox.obj({
-					value: typebox.Type.String(),
+			pluginCtx.ops.register(
+				defineOp({
+					id: 'plugin-beta.echo',
+					input: obj({
+						value: Type.String(),
+					}),
+					output: obj({
+						value: Type.String(),
+					}),
+					async execute(input) {
+						return { value: input.value }
+					},
 				}),
-				output: typebox.obj({
-					value: typebox.Type.String(),
+			)
+
+			expect(root.ops.has('plugin-beta.echo')).toBe(true)
+			expect(root.ops.listCatalog()).toEqual([
+				expect.objectContaining({
+					id: 'plugin-beta.echo',
+					owner: 'plugin:plugin.beta',
+					ownerKind: 'plugin',
+					pluginId: 'plugin.beta',
 				}),
-				async execute(input) {
-					return { value: input.value }
-				},
-			}),
-		)
+			])
 
-		expect(root.ops.has('plugin-beta.echo')).toBe(true)
-		expect(root.ops.listCatalog()).toEqual([
-			expect.objectContaining({
-				id: 'plugin-beta.echo',
-				owner: 'plugin:plugin.beta',
-				ownerKind: 'plugin',
-				pluginId: 'plugin.beta',
-			}),
-		])
+			await pluginCtx.effects.dispose()
 
-		await pluginCtx.effects.dispose()
-
-		expect(root.ops.has('plugin-beta.echo')).toBe(false)
-		expect(root.ops.listCatalog()).toEqual([])
+			expect(root.ops.has('plugin-beta.echo')).toBe(false)
+			expect(root.ops.listCatalog()).toEqual([])
+		})
 	})
 
 	it.each([
@@ -128,11 +131,11 @@ describe('OpsService', () => {
 						title: 'Hijack Plugin Status',
 						description: 'Should not be allowed.',
 					},
-					input: typebox.obj({
-						name: typebox.Type.String({ description: 'Plugin name.' }),
+					input: obj({
+						name: Type.String({ description: 'Plugin name.' }),
 					}),
-					output: typebox.obj({
-						ok: typebox.Type.Boolean(),
+					output: obj({
+						ok: Type.Boolean(),
 					}),
 					tool: {
 						name: 'plugin.status',
@@ -153,11 +156,11 @@ describe('OpsService', () => {
 						description: 'Should not reuse runtime CLI verbs.',
 						usage: 'plugin status --name <string>',
 					},
-					input: typebox.obj({
-						name: typebox.Type.String({ description: 'Plugin name.' }),
+					input: obj({
+						name: Type.String({ description: 'Plugin name.' }),
 					}),
-					output: typebox.obj({
-						ok: typebox.Type.Boolean(),
+					output: obj({
+						ok: Type.Boolean(),
 					}),
 					cli: {
 						triggers: ['plugin status'],
@@ -169,8 +172,9 @@ describe('OpsService', () => {
 			error: /reserved runtime command namespace/i,
 		},
 	])('rejects plugin registrations that reuse $name', ({ create, error }) => {
-		const root = new Context({ name: 'root' }) as Context
-		const pluginCtx = createPluginContext(root, 'plugin.gamma')
-		expect(() => pluginCtx.ops.register(create())).toThrow(error)
+		return withContext((root) => {
+			const pluginCtx = createPluginContext(root, 'plugin.gamma')
+			expect(() => pluginCtx.ops.register(create())).toThrow(error)
+		})
 	})
 })

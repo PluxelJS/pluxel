@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest'
-import { BasePlugin, Plugin } from '@pluxel/core'
+import { BasePlugin, Plugin } from '@pluxel/test'
 import { __registerConfigSchema__ as registerUnsafeConfigSchema } from '@pluxel/test/unsafe'
 import * as v from 'valibot'
 import { PluginRegistry } from '../../src/services/runtime/loader/PluginRegistry'

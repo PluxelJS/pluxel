@@ -1,4 +1,5 @@
-import { cli, typebox } from '@pluxel/ops'
+import { cli } from '@pluxel/ops'
+import { Type, obj } from '@pluxel/ops/typebox'
 
 import type { RuntimeOperation } from '../../services/ops/OpsService'
 import { applyStatusActions } from '../usecases/pluginStatus'
@@ -22,13 +23,13 @@ const pluginsListOp = defineRuntimeOp({
 			'List registered plugins with current running/enabled state. This is the canonical read API for plugin inventory.',
 	},
 	input: emptyInputSchema,
-	output: typebox.obj({
-		plugins: typebox.Type.Array(pluginStatusSnapshotSchema),
-		summary: typebox.obj({
-			total: typebox.Type.Number(),
-			running: typebox.Type.Number(),
-			stopped: typebox.Type.Number(),
-			disabled: typebox.Type.Number(),
+	output: obj({
+		plugins: Type.Array(pluginStatusSnapshotSchema),
+		summary: obj({
+			total: Type.Number(),
+			running: Type.Number(),
+			stopped: Type.Number(),
+			disabled: Type.Number(),
 		}),
 	}),
 	exposure: { rpc: true },
@@ -48,7 +49,7 @@ const pluginStatusGetOp = defineRuntimeOp({
 		title: 'Get Plugin Status',
 		description: 'Read a single plugin lifecycle snapshot by name.',
 	},
-	input: typebox.obj({
+	input: obj({
 		name: pluginNameSchema,
 	}),
 	output: pluginStatusOutputSchema,
@@ -81,9 +82,9 @@ const pluginsStatusApplyOp = defineRuntimeOp({
 		description:
 			'Apply one or more start/stop/restart/enable/disable actions in order, then perform one registry commit at the end.',
 	},
-	input: typebox.obj({
-		actions: typebox.Type.Array(
-			typebox.obj({
+	input: obj({
+		actions: Type.Array(
+			obj({
 				name: pluginNameSchema,
 				action: pluginActionSchema,
 			}),
@@ -110,14 +111,14 @@ function createSingleStatusActionOp(action: 'start' | 'stop' | 'restart' | 'enab
 			title: `${action[0]!.toUpperCase()}${action.slice(1)} Plugin`,
 			description: `${action[0]!.toUpperCase()}${action.slice(1)} one plugin by name.`,
 		},
-		input: typebox.obj({
+		input: obj({
 			name: pluginNameSchema,
 		}),
-		output: typebox.obj({
-			ok: typebox.Type.Boolean(),
-			name: typebox.Type.String(),
-			error: typebox.Type.Optional(typebox.Type.String()),
-			commitError: typebox.Type.Optional(typebox.Type.String()),
+		output: obj({
+			ok: Type.Boolean(),
+			name: Type.String(),
+			error: Type.Optional(Type.String()),
+			commitError: Type.Optional(Type.String()),
 		}),
 		exposure: { rpc: true },
 		policy: { mutating: true, audit: ['plugin-status'] },
@@ -130,9 +131,7 @@ function createSingleStatusActionOp(action: 'start' | 'stop' | 'restart' | 'enab
 			const first = batch.results[0]
 			if (!batch.ok) {
 				const error =
-					typeof first?.error === 'string'
-						? first.error
-						: batch.commitError ?? `${action} failed`
+					typeof first?.error === 'string' ? first.error : (batch.commitError ?? `${action} failed`)
 				return {
 					ok: false,
 					name: input.name,
@@ -155,39 +154,39 @@ const pluginWaitForStageOp = defineRuntimeOp({
 		title: 'Wait For Plugin Stage',
 		description: 'Poll until a plugin reaches the requested lifecycle stage or timeout.',
 	},
-	input: typebox.obj({
+	input: obj({
 		name: pluginNameSchema,
-		stage: typebox.Type.String({
+		stage: Type.String({
 			minLength: 1,
 			description: 'Lifecycle stage to wait for.',
 		}),
-		timeoutMs: typebox.Type.Optional(
-			typebox.Type.Number({
+		timeoutMs: Type.Optional(
+			Type.Number({
 				minimum: 0,
 				description: 'Maximum wait time in milliseconds.',
 			}),
 		),
-		pollMs: typebox.Type.Optional(
-			typebox.Type.Number({
+		pollMs: Type.Optional(
+			Type.Number({
 				minimum: 20,
 				description: 'Polling interval in milliseconds.',
 			}),
 		),
 	}),
-	output: typebox.Type.Union([
-		typebox.obj({
-			ok: typebox.Type.Literal(true),
-			name: typebox.Type.String(),
-			stage: typebox.Type.String(),
+	output: Type.Union([
+		obj({
+			ok: Type.Literal(true),
+			name: Type.String(),
+			stage: Type.String(),
 			status: pluginStatusSnapshotSchema,
 		}),
-		typebox.obj({
-			ok: typebox.Type.Literal(false),
-			name: typebox.Type.String(),
-			stage: typebox.Type.String(),
-			code: typebox.Type.String(),
-			message: typebox.Type.String(),
-			last: typebox.Type.Optional(pluginStatusSnapshotSchema),
+		obj({
+			ok: Type.Literal(false),
+			name: Type.String(),
+			stage: Type.String(),
+			code: Type.String(),
+			message: Type.String(),
+			last: Type.Optional(pluginStatusSnapshotSchema),
 		}),
 	]),
 	exposure: { rpc: true },

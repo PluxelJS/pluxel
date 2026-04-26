@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { BasePlugin, getPluginInfo, Plugin } from '@pluxel/core'
+import { BasePlugin, getPluginInfo, Plugin } from '@pluxel/test'
 import { v } from '../src/config'
 import { Config } from '../src/index'
 

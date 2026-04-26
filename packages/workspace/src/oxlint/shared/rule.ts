@@ -1,4 +1,3 @@
-import type { RuleTester } from 'oxlint/plugins-dev'
 import type {
 	DiagnosticData,
 	OxNode,
@@ -8,12 +7,6 @@ import type {
 	OxVisitor,
 	OxDiagnostic,
 } from '../types.ts'
-
-type NativeOxlintRule = Parameters<RuleTester['run']>[1]
-
-function asNativeRule(rule: OxRule): NativeOxlintRule {
-	return rule as unknown as NativeOxlintRule
-}
 
 export function createRule(
 	meta: OxRuleMeta,

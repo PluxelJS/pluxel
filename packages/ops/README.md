@@ -1,61 +1,70 @@
 # @pluxel/ops
 
-`@pluxel/ops` is Pluxel's schema-first control-plane kernel. Runtime, RPC, CLI, and external tool protocols all reuse the same op definition.
+Schema-first operation kernel for Pluxel control-plane actions.
 
-## Public op
+One `defineOp` call produces one frozen descriptor. Runtime, RPC, CLI, MCP, docs, and tests project from that descriptor.
+
+TypeBox helpers live at `@pluxel/ops/typebox` so schema code keeps the familiar TypeBox shape.
+
+## Example
 
 ```ts
-import { cli, createSpace, defineOp, typebox } from '@pluxel/ops'
+import { cli, createSpace, defineOp } from '@pluxel/ops'
+import { Type, obj } from '@pluxel/ops/typebox'
 
 const ops = createSpace()
 
 ops.register(
 	defineOp({
 		id: 'plugin.config.patch',
-		doc: {
-			title: 'Patch Plugin Config',
-			description: 'Validate and persist a config patch for one plugin.',
-			usage: 'plugin config patch --name <plugin> -- <json>',
-			examples: ['plugin config patch --name demo -- {"basic":{"enabled":true}}'],
-			tags: ['plugin', 'config'],
-		},
-		input: typebox.obj({
-			name: typebox.Type.String({ minLength: 1, description: 'Plugin name.' }),
-			patch: typebox.Type.Record(typebox.Type.String(), typebox.Type.Unknown(), {
-				description: 'Config patch object to persist.',
+		input: obj({
+			name: Type.String({ description: 'Plugin name.' }),
+			patch: Type.Record(Type.String(), Type.Unknown(), {
+				description: 'Config patch object.',
 			}),
 		}),
-		output: typebox.obj({
-			ok: typebox.Type.Boolean(),
-		}),
-		cli: {
-			triggers: ['plugin config patch'],
-			tail: cli.tail.json('patch'),
+		output: obj({ ok: Type.Boolean() }),
+		doc: {
+			title: 'Patch Plugin Config',
+			description: 'Validate and persist a config patch.',
+			usage: 'plugin config patch --name <plugin> -- <json>',
 		},
-		tool: {
-			name: 'plugin.config.patch',
-		},
-		async execute(input) {
+		exposure: { rpc: true },
+		policy: { mutating: true, audit: ['plugin-config'] },
+		cli: { triggers: ['plugin config patch'], tail: cli.tail.json('patch') },
+		tool: true,
+		async execute() {
 			return { ok: true }
 		},
 	}),
 )
+
+await ops.dispatch('plugin config patch --name demo -- {"basic":{"enabled":true}}')
+await ops.invoke('plugin.config.patch', {
+	name: 'demo',
+	patch: { basic: { enabled: true } },
+})
 ```
 
-## Authoring rules
+## Public Shape
 
-- Use `defineOp({ ... })`. The object form is the canonical API.
-- Use TypeBox only.
-- Put all human and LLM guidance in `doc`.
-- Add `tool: { name }` only when the op should be exposed as a tool.
-- Keep `tool.name` stable and lower-case dotted / kebab.
-- For tool-visible object input, every field needs a schema `description`.
-- Keep `cli` parse-only: `triggers` and `tail`.
+- Author with `defineOp({ id, input, output, doc, exposure, policy, cli, tool, execute })`.
+- Create a runtime surface with `createSpace()`.
+- `Operation` exposes only `id`, `descriptor`, `run`, and `runSafe`.
+- Descriptors are serializable public metadata. Live runtime objects stay hidden.
 
-## Execution model
+## Rules
 
-- `ctx.ops.invoke(...)`, CLI dispatch, and tool protocol adapters all execute the same op.
-- Validation stays on the canonical op boundary.
-- Tool-facing help is compiled from `doc` and input schema descriptions; adapters should not invent a second help model.
+- Import ops core from `@pluxel/ops`.
+- Import `Type`, `obj`, and `openObj` from `@pluxel/ops/typebox`.
+- Always declare both `input` and `output`.
+- Keep operation ids and CLI triggers lowercase.
+- Put user/tool help in `doc`.
+- Put action semantics in `policy`.
+- Use `exposure.rpc` for RPC visibility.
+- Use `cli` only for parsing metadata.
+- Use `tool: true` unless a deliberate external tool alias is needed.
+- Describe every tool-visible object input field, including nested fields.
+- Keep tool names unique in one registry.
 
-See [DESIGN.md](./DESIGN.md) for the design rationale.
+See [DESIGN.md](./DESIGN.md) for architecture constraints.

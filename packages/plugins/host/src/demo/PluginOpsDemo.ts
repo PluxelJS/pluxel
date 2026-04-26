@@ -2,7 +2,8 @@
 // - 你要给插件注册 ops
 // - 你想看 `defineOp(...)` + `ctx.ops.register(...)` 的最小独立样板
 
-import { defineOp, typebox } from '@pluxel/ops'
+import { defineOp } from '@pluxel/ops'
+import { Type, obj } from '@pluxel/ops/typebox'
 import { BasePlugin, Plugin } from '@pluxel/runtime'
 
 @Plugin({ name: 'PluginOpsDemo' })
@@ -25,12 +26,12 @@ export class PluginOpsDemo extends BasePlugin {
 					description: 'Read the in-memory status exposed by the standalone ops demo.',
 					tags: ['demo', 'ops', 'status'],
 				},
-				input: typebox.obj({}),
-				output: typebox.obj({
-					pluginName: typebox.Type.String(),
-					startedAt: typebox.Type.Number(),
-					counter: typebox.Type.Number(),
-					lastNote: typebox.Type.Union([typebox.Type.String(), typebox.Type.Null()]),
+				input: obj({}),
+				output: obj({
+					pluginName: Type.String(),
+					startedAt: Type.Number(),
+					counter: Type.Number(),
+					lastNote: Type.Union([Type.String(), Type.Null()]),
 				}),
 				exposure: {
 					rpc: true,
@@ -52,15 +53,15 @@ export class PluginOpsDemo extends BasePlugin {
 					description: 'Increment the standalone ops demo counter.',
 					tags: ['demo', 'ops', 'counter'],
 				},
-				input: typebox.obj({
-					delta: typebox.Type.Optional(
-						typebox.Type.Number({
+				input: obj({
+					delta: Type.Optional(
+						Type.Number({
 							description: 'Counter increment. Defaults to 1.',
 						}),
 					),
 				}),
-				output: typebox.obj({
-					counter: typebox.Type.Number(),
+				output: obj({
+					counter: Type.Number(),
 				}),
 				exposure: {
 					rpc: true,
@@ -83,14 +84,14 @@ export class PluginOpsDemo extends BasePlugin {
 					description: 'Store a short in-memory note through an MCP/tool-facing op.',
 					tags: ['demo', 'ops', 'note'],
 				},
-				input: typebox.obj({
-					message: typebox.Type.String({
+				input: obj({
+					message: Type.String({
 						minLength: 1,
 						description: 'Note text to store in the demo plugin.',
 					}),
 				}),
-				output: typebox.obj({
-					message: typebox.Type.String(),
+				output: obj({
+					message: Type.String(),
 				}),
 				policy: {
 					mutating: true,

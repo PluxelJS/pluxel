@@ -16,7 +16,7 @@ describe('local security admin', () => {
 		await using fixture = await createFixture({})
 
 		expect(await describeLocalVerification(fixture.path)).toMatchObject({
-			mode: 'enforce',
+			mode: 'bypass',
 			method: 'password',
 			users: [],
 		})

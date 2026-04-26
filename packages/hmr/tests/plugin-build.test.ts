@@ -31,6 +31,13 @@ describe('buildPluginUiRemote', () => {
 
 		const tempRoot = fixture.path
 		const root = join(tempRoot, 'packages/plugins/demo')
+		const stickyVirtual = join(root, 'node_modules/__mf__virtual/sticky.txt')
+		const stickyTemp = join(root, '.__mf__temp/sticky.txt')
+		await mkdir(join(root, 'node_modules/__mf__virtual'), { recursive: true })
+		await mkdir(join(root, '.__mf__temp'), { recursive: true })
+		await writeFile(stickyVirtual, 'keep me\n')
+		await writeFile(stickyTemp, 'keep me\n')
+
 		const results = await Promise.all([
 			buildPluginUiRemote({
 				root,
@@ -59,6 +66,11 @@ describe('buildPluginUiRemote', () => {
 			}
 			expect(manifest.metaData?.remoteEntry?.name).toBe('remoteEntry.js')
 		}
+		await expect(readFile(stickyVirtual, 'utf-8')).resolves.toBe('keep me\n')
+		await expect(readFile(stickyTemp, 'utf-8')).resolves.toBe('keep me\n')
+		await expect(
+			readdir(join(root, '.pluxel/vite-plugin-ui-cache')).catch((): string[] => []),
+		).resolves.toEqual([])
 	}, 20_000)
 
 	it('builds the same remote repeatedly without reusing process-local federation state', async () => {
@@ -92,48 +104,5 @@ describe('buildPluginUiRemote', () => {
 
 		await access(first.manifestPath)
 		await access(second.manifestPath)
-	}, 20_000)
-
-	it('keeps legacy federation temp directories untouched while reusing child-process isolation', async () => {
-		await using fixture = await createFixture({
-			'packages/plugins/demo/package.json': JSON.stringify({
-				name: '@pluxel/plugins-demo',
-				private: true,
-				type: 'module',
-			}),
-			'packages/plugins/demo/src/ui/a.ts': 'export default { id: "a" }\n',
-			'packages/plugins/demo/node_modules/react/package.json': JSON.stringify({
-				name: 'react',
-				version: '19.2.0',
-				main: 'index.js',
-			}),
-			'packages/plugins/demo/node_modules/react/index.js': 'module.exports = {}\n',
-		})
-
-		const tempRoot = fixture.path
-		const root = join(tempRoot, 'packages/plugins/demo')
-		const stickyVirtual = join(root, 'node_modules/__mf__virtual/sticky.txt')
-		const stickyTemp = join(root, '.__mf__temp/sticky.txt')
-		await mkdir(join(root, 'node_modules/__mf__virtual'), { recursive: true })
-		await mkdir(join(root, '.__mf__temp'), { recursive: true })
-		await writeFile(stickyVirtual, 'keep me\n')
-		await writeFile(stickyTemp, 'keep me\n')
-
-		const result = await buildPluginUiRemote({
-			root,
-			pluginName: 'PluginA',
-			entryPath: join(root, 'src/ui/a.ts'),
-			outDir: join(tempRoot, 'plugin-a'),
-			publicPath: '/test/',
-			sharedPackages: ['react'],
-			minify: false,
-		})
-
-		await access(result.manifestPath)
-		await expect(readFile(stickyVirtual, 'utf-8')).resolves.toBe('keep me\n')
-		await expect(readFile(stickyTemp, 'utf-8')).resolves.toBe('keep me\n')
-		await expect(
-			readdir(join(root, '.pluxel/vite-plugin-ui-cache')).catch((): string[] => []),
-		).resolves.toEqual([])
 	}, 20_000)
 })

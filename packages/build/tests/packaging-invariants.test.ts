@@ -91,7 +91,7 @@ describe('packaging invariants', () => {
 			['@pluxel/core', new Set()],
 			['@pluxel/runtime', new Set(['@pluxel/core', '@pluxel/ops'])],
 			['@pluxel/hmr', new Set(['@pluxel/core', '@pluxel/runtime'])],
-			['@pluxel/cli', new Set(['@pluxel/hmr'])],
+			['@pluxel/cli', new Set(['@pluxel/hmr', '@pluxel/runtime'])],
 			['@pluxel/test', new Set()],
 			['@pluxel/ops', new Set()],
 		])

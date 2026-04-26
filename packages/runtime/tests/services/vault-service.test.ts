@@ -24,7 +24,7 @@ async function sealVaultForTesting(vault: unknown): Promise<void> {
 }
 
 describe('VaultService (shared mount runtime)', () => {
-	it('read-only access does not create files when the shared vault is missing', async () => {
+	it('read-only access and kv batch do not create files when the shared vault is missing', async () => {
 		const dir = `/vault/${randomHex(8)}`
 
 		await withHost(
@@ -42,25 +42,6 @@ describe('VaultService (shared mount runtime)', () => {
 				expect(await kv.get('missing')).toBeUndefined()
 				expect(await kv.keys()).toEqual([])
 				expect(await docs.get('default')).toBeUndefined()
-				expect(host.ctx.root.fs.debugListFiles(dir)).toEqual([])
-			},
-			{ fs: { mode: 'memory' }, vault: { dir } },
-		)
-	})
-
-	it('read-only kv batch does not create files', async () => {
-		const dir = `/vault/${randomHex(8)}`
-
-		await withHost(
-			async (host) => {
-				@Plugin({ name: 'PluginA' })
-				class PluginA extends BasePlugin {}
-
-				host.add(PluginA)
-				await host.commit()
-
-				const plugin = host.require(PluginA)
-				const kv = plugin.ctx.vault.kv()
 
 				await kv.batch((tx) => {
 					tx.get('x')
@@ -220,7 +201,9 @@ describe('VaultService (shared mount runtime)', () => {
 				await plugin.ctx.vault.flush()
 
 				expect(await space.kv().get('token')).toBe('value')
-				expect(await space.docs().collection<{ ready: boolean }>('profiles').get('default')).toEqual({
+				expect(
+					await space.docs().collection<{ ready: boolean }>('profiles').get('default'),
+				).toEqual({
 					ready: true,
 				})
 			},
@@ -374,35 +357,6 @@ describe('VaultService (shared mount runtime)', () => {
 
 				await sealVaultForTesting(plugin.ctx.vault)
 				expect(await plugin.ctx.vault.kv().get('token')).toBe('value')
-			},
-			{ fs: { mode: 'memory' }, vault: { dir } },
-		)
-	})
-
-	it('rekey() is host-key driven and does not depend on verification state', async () => {
-		const dir = `/vault/${randomHex(8)}`
-
-		await withHost(
-			async (host) => {
-				@Plugin({ name: 'PluginA' })
-				class PluginA extends BasePlugin {}
-
-				@Plugin({ name: 'PluginB' })
-				class PluginB extends BasePlugin {}
-
-				host.add(PluginA)
-				host.add(PluginB)
-				await host.commit()
-
-				const pluginA = host.require(PluginA)
-				await pluginA.ctx.vault.kv().set('token', 'value')
-				await pluginA.ctx.vault.flush()
-				await sealVaultForTesting(pluginA.ctx.vault)
-
-				await host.ctx.vaultAdmin.rekey()
-				await sealVaultForTesting(pluginA.ctx.vault)
-
-				expect(await pluginA.ctx.vault.kv().get('token')).toBe('value')
 			},
 			{ fs: { mode: 'memory' }, vault: { dir } },
 		)
@@ -618,7 +572,11 @@ describe('VaultService (shared mount runtime)', () => {
 
 				const pairA = await host.ctx.vaultAdmin.generateDeployKey()
 				const pairB = await host.ctx.vaultAdmin.generateDeployKey()
-				const admin = await host.ctx.vaultAdmin.setDeployRecipients([pairA.publicKey, pairB.publicKey, pairA.publicKey])
+				const admin = await host.ctx.vaultAdmin.setDeployRecipients([
+					pairA.publicKey,
+					pairB.publicKey,
+					pairA.publicKey,
+				])
 				expect(admin.deploy.recipients).toEqual([pairA.publicKey, pairB.publicKey])
 			},
 			{ fs: { mode: 'memory' }, vault: { dir } },

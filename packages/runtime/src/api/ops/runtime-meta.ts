@@ -1,12 +1,12 @@
 import type { Context } from '@pluxel/core'
-import { type OpPublicDescriptor } from '@pluxel/ops'
+import { type OpDescriptor } from '@pluxel/ops'
 
 import type { RuntimeOperation } from '../../services/ops/OpsService'
 import { defineRuntimeOp } from './helpers'
 import { emptyInputSchema, runtimeOpsDescriptorSchema } from './schemas'
 
 type RuntimeMetaDeps = {
-	listRuntimeOps: (ctx: Context) => OpPublicDescriptor[]
+	listRuntimeOps: (ctx: Context) => OpDescriptor[]
 }
 
 export function createRuntimeMetaOps(deps: RuntimeMetaDeps): readonly RuntimeOperation[] {

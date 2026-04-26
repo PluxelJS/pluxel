@@ -1,14 +1,6 @@
-import '@pluxel/test/setup'
-
 import { describe, expect, it } from 'vitest'
-import {
-	BasePlugin,
-	Context,
-	ForkablePlugin,
-	type ForkablePluginConstructor,
-	Plugin,
-	setParamToken,
-} from '@pluxel/core'
+import { BasePlugin, ForkablePlugin, Plugin, setParamToken } from '@pluxel/test'
+import type { ForkablePluginConstructor } from '@pluxel/core'
 import { LoaderService } from '@pluxel/runtime/services'
 import {
 	EXTRA_BUILTINS_KNOWN,
@@ -16,74 +8,11 @@ import {
 	type BuiltinsKnownExtra,
 	type ForksExtra,
 } from '../../src/services/runtime/loader/selection'
-
-function createHmrCtx(
-	core: Context,
-	state: { enabled?: Set<string>; extra?: Record<string, unknown> } = {},
-) {
-	const enabled = state.enabled ?? new Set<string>()
-	const extra: Record<string, unknown> = state.extra ?? Object.create(null)
-	const hmrService = { normalizeId: (id: string) => id }
-	const root = { hmrService }
-	const configService = {
-		isReady: true,
-		ready: Promise.resolve(),
-		isEnabledInConfig(name: string) {
-			return enabled.has(name)
-		},
-		setEnabledInConfig(name: string, on: boolean) {
-			if (on) enabled.add(name)
-			else enabled.delete(name)
-		},
-		enableInConfig(...names: string[]) {
-			for (const n of names) enabled.add(n)
-		},
-		disableInConfig(...names: string[]) {
-			for (const n of names) enabled.delete(n)
-		},
-		getRawConfig(_name: string) {
-			return {}
-		},
-		getConfigRevision() {
-			return 0
-		},
-		ensureValidated() {
-			return Promise.resolve({})
-		},
-		patchConfig: () => {},
-		getExtra(key: string) {
-			return extra[key]
-		},
-		setExtra(key: string, value: unknown) {
-			extra[key] = value
-		},
-		batch(run: () => void) {
-			run()
-		},
-	}
-
-	// Context from @pluxel/core exposes many services as readonly getters.
-	// For loader/HMR unit tests we provide a minimal shim context that delegates
-	// event wiring to the real core context but keeps stubs writable.
-	const coreAny = core as unknown as { events?: unknown; emit?: unknown }
-	return {
-		root,
-		registry: core.registry,
-		events: coreAny.events,
-		on: core.on.bind(core),
-		emit:
-			typeof coreAny.emit === 'function'
-				? (coreAny.emit as (...args: unknown[]) => unknown).bind(core)
-				: undefined,
-		logger: { info: () => {}, warn: () => {}, error: () => {} },
-		configService,
-	} as unknown as Context
-}
+import { createHmrTestContext } from '../support/hmr-context'
 
 describe('LoaderService', () => {
 	it('preloadPlugins supports forkable builtins (including enabled forks)', async () => {
-		const core = new Context()
-		const ctx = createHmrCtx(core)
+		const { core, ctx } = createHmrTestContext()
 		const loader = new LoaderService(ctx)
 
 		@Plugin({ name: 'Forky' })
@@ -116,8 +45,7 @@ describe('LoaderService', () => {
 	})
 
 	it('preloadPlugins auto-disables missing-dependency builtins and commits the rest', async () => {
-		const core = new Context()
-		const ctx = createHmrCtx(core)
+		const { core, ctx } = createHmrTestContext()
 		const loader = new LoaderService(ctx)
 
 		@Plugin({ name: 'Good' })
@@ -162,8 +90,7 @@ describe('LoaderService', () => {
 		setParamToken(Bad, 0, MissingBase)
 
 		{
-			const core = new Context()
-			const ctx = createHmrCtx(core, state)
+			const { core, ctx } = createHmrTestContext(state)
 			const loader = new LoaderService(ctx)
 
 			await loader.preloadPlugins([Good, Bad])
@@ -178,8 +105,7 @@ describe('LoaderService', () => {
 
 		// New startup: should respect disabled bits and should not "seed enable" again.
 		{
-			const core = new Context()
-			const ctx = createHmrCtx(core, state)
+			const { core, ctx } = createHmrTestContext(state)
 			const loader = new LoaderService(ctx)
 
 			await loader.preloadPlugins([Good, Bad])
@@ -197,8 +123,7 @@ describe('LoaderService', () => {
 	})
 
 	it('preloadPlugins strict mode throws on missing dependency', async () => {
-		const core = new Context()
-		const ctx = createHmrCtx(core)
+		const { ctx } = createHmrTestContext()
 		const loader = new LoaderService(ctx)
 
 		@Plugin({ name: 'Good' })
@@ -223,8 +148,7 @@ describe('LoaderService', () => {
 	})
 
 	it('preloadPlugins enables and commits builtins', async () => {
-		const core = new Context()
-		const ctx = createHmrCtx(core)
+		const { core, ctx } = createHmrTestContext()
 		const loader = new LoaderService(ctx)
 
 		@Plugin({ name: 'Builtin' })
@@ -239,8 +163,7 @@ describe('LoaderService', () => {
 	})
 
 	it('preloaded builtin baseline survives later failed batch rollback', async () => {
-		const core = new Context()
-		const ctx = createHmrCtx(core)
+		const { core, ctx } = createHmrTestContext()
 		const loader = new LoaderService(ctx)
 
 		@Plugin({ name: 'Builtin' })
@@ -274,8 +197,7 @@ describe('LoaderService', () => {
 	})
 
 	it('dependency inspector tolerates abstract/base tokens', async () => {
-		const core = new Context()
-		const ctx = createHmrCtx(core)
+		const { core, ctx } = createHmrTestContext()
 		const loader = new LoaderService(ctx)
 
 		abstract class Abs extends BasePlugin {}
@@ -301,8 +223,7 @@ describe('LoaderService', () => {
 	})
 
 	it('batch rollback keeps loader state consistent when core commit fails', async () => {
-		const core = new Context()
-		const ctx = createHmrCtx(core)
+		const { core, ctx } = createHmrTestContext()
 		// Enable baseline provider; the later consumer will be enabled too.
 		ctx.configService.enableInConfig('Impl1', 'Consumer')
 		const loader = new LoaderService(ctx)
@@ -353,8 +274,7 @@ describe('LoaderService', () => {
 	})
 
 	it('replaceModule normalizes ctor-param tokens by plugin id (builtin/HMR ctor identity mismatch)', async () => {
-		const core = new Context()
-		const ctx = createHmrCtx(core)
+		const { core, ctx } = createHmrTestContext()
 		const warns: unknown[] = []
 		;(ctx as unknown as { logger: { warn: (...args: unknown[]) => void } }).logger.warn = (
 			...args: unknown[]
@@ -402,8 +322,7 @@ describe('LoaderService', () => {
 	})
 
 	it('registry view exposes module ids and loaded names', async () => {
-		const core = new Context()
-		const ctx = createHmrCtx(core)
+		const { core, ctx } = createHmrTestContext()
 		const loader = new LoaderService(ctx)
 
 		@Plugin({ name: 'Alpha' })
@@ -425,8 +344,7 @@ describe('LoaderService', () => {
 	})
 
 	it('anchors remove expects clean ids', async () => {
-		const core = new Context()
-		const ctx = createHmrCtx(core)
+		const { ctx } = createHmrTestContext()
 		const loader = new LoaderService(ctx)
 
 		@Plugin({ name: 'Anchor' })

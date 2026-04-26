@@ -56,15 +56,21 @@ function createNoopLogger(errorLogs: ErrorLog[]) {
 	}
 }
 
-async function executePluginEntryAndCapture(
-	pluginEntry: string,
+async function withPluginRunner<T>(
+	run: (
+		execute: (pluginEntry: string) => Promise<{
+			capture: { lastModule: unknown | null }
+			errorLogs: ErrorLog[]
+			core: CoreApi
+		}>,
+	) => Promise<T>,
 	opts?: {
 		rootsRelFromWorkspace?: string
 		scanRootsAbs?: string[]
 		include?: string[]
 		exclude?: string[]
 	},
-): Promise<{ capture: { lastModule: unknown | null }; errorLogs: ErrorLog[]; core: CoreApi }> {
+): Promise<T> {
 	const root = workspaceRoot
 	const capture = { lastModule: null as unknown, beginBatchCalls: 0, replaceModuleCalls: 0 }
 	const errorLogs: ErrorLog[] = []
@@ -101,9 +107,15 @@ async function executePluginEntryAndCapture(
 	})
 
 	try {
-		await hmr.executeFiles([pluginEntry])
-		const core = (await (hmr as any).runner.import('@pluxel/core')) as CoreApi
-		return { capture, errorLogs, core }
+		return await run(async (pluginEntry) => {
+			capture.lastModule = null
+			capture.beginBatchCalls = 0
+			capture.replaceModuleCalls = 0
+			errorLogs.length = 0
+			await hmr.executeFiles([pluginEntry])
+			const core = (await (hmr as any).runner.import('@pluxel/core')) as CoreApi
+			return { capture, errorLogs, core }
+		})
 	} finally {
 		await server.close()
 	}
@@ -154,33 +166,50 @@ function createContext(
 }
 
 describe('configSourcePlugin integration', () => {
-	it('injects __setConfigSource__ so getConfigSource returns schemaSource', async () => {
+	it('extracts config and feature metadata for fixture entries', async () => {
 		const root = workspaceRoot
-		const pluginEntry = join(root, fixturesPluginsRelFromWorkspace, 'PluginB.ts')
-		const { capture, errorLogs, core } = await executePluginEntryAndCapture(pluginEntry)
+		await withPluginRunner(async (execute) => {
+			{
+				const pluginEntry = join(root, fixturesPluginsRelFromWorkspace, 'PluginB.ts')
+				const { capture, errorLogs, core } = await execute(pluginEntry)
 
-		expect(errorLogs).toEqual([])
-		expect(capture.lastModule).toBeTruthy()
-		const ctor = (capture.lastModule as { PluginB?: unknown } | null)?.PluginB
-		expect(typeof ctor).toBe('function')
-		const map = core.getConfigSource(ctor)
-		expect(map).toBeTruthy()
-		expect(Object.keys(map ?? {})).toContain('a')
-		expect(Object.keys(map ?? {})).toContain('ba')
-	}, 20_000)
+				expect(errorLogs).toEqual([])
+				expect(capture.lastModule).toBeTruthy()
+				const ctor = (capture.lastModule as { PluginB?: unknown } | null)?.PluginB
+				expect(typeof ctor).toBe('function')
+				const map = core.getConfigSource(ctor)
+				expect(map).toBeTruthy()
+				expect(Object.keys(map ?? {})).toContain('a')
+				expect(Object.keys(map ?? {})).toContain('ba')
+			}
 
-	it('supports configs.use(schema) fields (no @Config decorator)', async () => {
-		const root = workspaceRoot
-		const pluginEntry = join(root, fixturesPluginsRelFromWorkspace, 'PluginConfigUse.ts')
-		const { capture, errorLogs, core } = await executePluginEntryAndCapture(pluginEntry)
+			{
+				const pluginEntry = join(root, fixturesPluginsRelFromWorkspace, 'PluginConfigUse.ts')
+				const { capture, errorLogs, core } = await execute(pluginEntry)
 
-		expect(errorLogs).toEqual([])
-		expect(capture.lastModule).toBeTruthy()
-		const ctor = (capture.lastModule as { PluginConfigUse?: unknown } | null)?.PluginConfigUse
-		expect(typeof ctor).toBe('function')
-		const map = core.getConfigSource(ctor)
-		expect(map).toBeTruthy()
-		expect(Object.keys(map ?? {})).toContain('foo')
+				expect(errorLogs).toEqual([])
+				expect(capture.lastModule).toBeTruthy()
+				const ctor = (capture.lastModule as { PluginConfigUse?: unknown } | null)?.PluginConfigUse
+				expect(typeof ctor).toBe('function')
+				const map = core.getConfigSource(ctor)
+				expect(map).toBeTruthy()
+				expect(Object.keys(map ?? {})).toContain('foo')
+			}
+
+			{
+				const pluginEntry = join(root, fixturesPluginsRelFromWorkspace, 'PluginFeatureUse.ts')
+				const { capture, errorLogs, core } = await execute(pluginEntry)
+
+				expect(errorLogs).toEqual([])
+				expect(capture.lastModule).toBeTruthy()
+				const ctor = (capture.lastModule as { PluginFeatureUse?: unknown } | null)?.PluginFeatureUse
+				expect(typeof ctor).toBe('function')
+				const kv = (capture.lastModule as { KvPlugin?: unknown } | null)?.KvPlugin
+				expect(typeof kv).toBe('function')
+				expect(core.getRequiredPluginDependencies(ctor)).toContain(kv)
+				expect(core.getUsedFeatures(ctor).map((x) => x.name)).toContain('CacheFeature')
+			}
+		})
 	}, 20_000)
 
 	it('supports configs.use(schema) when scanRoot is a symlink (realpath module ids)', async () => {
@@ -194,35 +223,25 @@ describe('configSourcePlugin integration', () => {
 
 		try {
 			const pluginEntry = join(root, rootsRel, 'PluginConfigUse.ts')
-			const { capture, errorLogs, core } = await executePluginEntryAndCapture(pluginEntry, {
-				rootsRelFromWorkspace: rootsRel,
-				scanRootsAbs: [normalizePath(linkAbs)],
-			})
+			await withPluginRunner(
+				async (execute) => {
+					const { capture, errorLogs, core } = await execute(pluginEntry)
 
-			expect(errorLogs).toEqual([])
-			expect(capture.lastModule).toBeTruthy()
-			const ctor = (capture.lastModule as { PluginConfigUse?: unknown } | null)?.PluginConfigUse
-			expect(typeof ctor).toBe('function')
-			const map = core.getConfigSource(ctor)
-			expect(map).toBeTruthy()
-			expect(Object.keys(map ?? {})).toContain('foo')
+					expect(errorLogs).toEqual([])
+					expect(capture.lastModule).toBeTruthy()
+					const ctor = (capture.lastModule as { PluginConfigUse?: unknown } | null)?.PluginConfigUse
+					expect(typeof ctor).toBe('function')
+					const map = core.getConfigSource(ctor)
+					expect(map).toBeTruthy()
+					expect(Object.keys(map ?? {})).toContain('foo')
+				},
+				{
+					rootsRelFromWorkspace: rootsRel,
+					scanRootsAbs: [normalizePath(linkAbs)],
+				},
+			)
 		} finally {
 			rmSync(linkAbs, { recursive: true, force: true })
 		}
-	}, 20_000)
-
-	it('supports features.use(FeatureCtor) without @UseFeature (dependency propagation)', async () => {
-		const root = workspaceRoot
-		const pluginEntry = join(root, fixturesPluginsRelFromWorkspace, 'PluginFeatureUse.ts')
-		const { capture, errorLogs, core } = await executePluginEntryAndCapture(pluginEntry)
-
-		expect(errorLogs).toEqual([])
-		expect(capture.lastModule).toBeTruthy()
-		const ctor = (capture.lastModule as { PluginFeatureUse?: unknown } | null)?.PluginFeatureUse
-		expect(typeof ctor).toBe('function')
-		const kv = (capture.lastModule as { KvPlugin?: unknown } | null)?.KvPlugin
-		expect(typeof kv).toBe('function')
-		expect(core.getRequiredPluginDependencies(ctor)).toContain(kv)
-		expect(core.getUsedFeatures(ctor).map((x) => x.name)).toContain('CacheFeature')
 	}, 20_000)
 })

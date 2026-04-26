@@ -1,16 +1,18 @@
+import { Runtime } from '@sinclair/parsebox'
 import { describe, expect, it } from 'vitest'
-import { cli, defineOp, errors, toPublicDescriptor, typebox, validation } from '../src/index.ts'
+import { cli, defineOp, errors, validation } from '@pluxel/ops'
+import { Type, obj } from '@pluxel/ops/typebox'
 
 describe('@pluxel/ops core', () => {
 	it('applies TypeBox defaults before execute', async () => {
 		const op = defineOp({
 			id: 'math.sum',
-			input: typebox.obj({
-				a: typebox.Type.Number(),
-				b: typebox.Type.Optional(typebox.Type.Number({ default: 1 })),
+			input: obj({
+				a: Type.Number(),
+				b: Type.Optional(Type.Number({ default: 1 })),
 			}),
-			output: typebox.obj({
-				total: typebox.Type.Number(),
+			output: obj({
+				total: Type.Number(),
 			}),
 			async execute(input) {
 				return { total: input.a + input.b }
@@ -23,11 +25,11 @@ describe('@pluxel/ops core', () => {
 	it('rejects unknown object keys by default', async () => {
 		const op = defineOp({
 			id: 'math.strict',
-			input: typebox.obj({
-				a: typebox.Type.Number(),
+			input: obj({
+				a: Type.Number(),
 			}),
-			output: typebox.obj({
-				ok: typebox.Type.Boolean(),
+			output: obj({
+				ok: Type.Boolean(),
 			}),
 			async execute() {
 				return { ok: true }
@@ -40,36 +42,11 @@ describe('@pluxel/ops core', () => {
 		expect(result.error.code).toBe('E_INPUT_VALIDATION')
 	})
 
-	it('allows error recovery through phase interceptors', async () => {
-		const op = defineOp({
-			id: 'math.recover',
-			input: typebox.obj({
-				value: typebox.Type.Number(),
-			}),
-			output: typebox.obj({
-				value: typebox.Type.Number(),
-			}),
-			interceptors: [
-				{
-					canRecover: true,
-					onError() {
-						return { kind: 'recover', outputCandidate: { value: 0 } }
-					},
-				},
-			],
-			async execute() {
-				throw new Error('boom')
-			},
-		})
-
-		await expect(op.run({ value: 1 })).resolves.toEqual({ value: 0 })
-	})
-
 	it('preserves structured OpError instances', async () => {
 		const op = defineOp({
 			id: 'math.fail',
-			input: typebox.obj({}),
-			output: typebox.obj({}),
+			input: obj({}),
+			output: obj({}),
 			async execute() {
 				throw new errors.OpError('E_FORBIDDEN', 'Forbidden', {
 					details: { node: 'plugin.config.write', reason: 'blocked' },
@@ -86,17 +63,17 @@ describe('@pluxel/ops core', () => {
 	it('surfaces custom constraint validators as unified issues', async () => {
 		const op = defineOp({
 			id: 'math.constraint',
-			input: typebox.obj({
-				value: typebox.Type.Number(),
+			input: obj({
+				value: Type.Number(),
 			}),
-			output: typebox.obj({
-				ok: typebox.Type.Boolean(),
+			output: obj({
+				ok: Type.Boolean(),
 			}),
-				validateInput: [
-					(input): void | ReturnType<typeof validation.constraint> => {
-						if (input.value >= 0) return
-						return validation.constraint('value', 'Expected a non-negative number', {
-							code: 'non_negative',
+			validateInput: [
+				(input): void | ReturnType<typeof validation.constraint> => {
+					if (input.value >= 0) return
+					return validation.constraint('value', 'Expected a non-negative number', {
+						code: 'non_negative',
 					})
 				},
 			],
@@ -127,11 +104,11 @@ describe('@pluxel/ops core', () => {
 				doc: {
 					title: 'Get Plugin Status',
 				},
-				input: typebox.obj({
-					name: typebox.Type.String(),
+				input: obj({
+					name: Type.String(),
 				}),
-				output: typebox.obj({
-					ok: typebox.Type.Boolean(),
+				output: obj({
+					ok: Type.Boolean(),
 				}),
 				tool: {
 					name: 'plugin.status.get',
@@ -151,11 +128,11 @@ describe('@pluxel/ops core', () => {
 					title: 'Get Plugin Status',
 					description: 'Read one plugin status snapshot.',
 				},
-				input: typebox.obj({
-					name: typebox.Type.String(),
+				input: obj({
+					name: Type.String(),
 				}),
-				output: typebox.obj({
-					ok: typebox.Type.Boolean(),
+				output: obj({
+					ok: Type.Boolean(),
 				}),
 				tool: {
 					name: 'Plugin Status',
@@ -167,6 +144,21 @@ describe('@pluxel/ops core', () => {
 		).toThrow(/tool.name/i)
 	})
 
+	it('rejects invalid op ids at definition time', () => {
+		expect(() =>
+			defineOp({
+				id: 'Plugin Status',
+				input: obj({}),
+				output: obj({
+					ok: Type.Boolean(),
+				}),
+				async execute() {
+					return { ok: true }
+				},
+			}),
+		).toThrow(/Operation id/i)
+	})
+
 	it('rejects tool-visible inputs without field descriptions', () => {
 		expect(() =>
 			defineOp({
@@ -175,11 +167,11 @@ describe('@pluxel/ops core', () => {
 					title: 'Get Plugin Status',
 					description: 'Read one plugin status snapshot.',
 				},
-				input: typebox.obj({
-					name: typebox.Type.String(),
+				input: obj({
+					name: Type.String(),
 				}),
-				output: typebox.obj({
-					ok: typebox.Type.Boolean(),
+				output: obj({
+					ok: Type.Boolean(),
 				}),
 				tool: {
 					name: 'plugin.status.get',
@@ -191,13 +183,41 @@ describe('@pluxel/ops core', () => {
 		).toThrow(/must describe input "name"/i)
 	})
 
+	it('rejects tool-visible nested inputs without field descriptions', () => {
+		expect(() =>
+			defineOp({
+				id: 'plugin.status.patch',
+				doc: {
+					title: 'Patch Plugin Status',
+					description: 'Patch a nested plugin status shape.',
+				},
+				input: obj({
+					name: Type.String({ description: 'Plugin name.' }),
+					status: obj(
+						{
+							stage: Type.String(),
+						},
+						{ description: 'Nested status patch.' },
+					),
+				}),
+				output: obj({
+					ok: Type.Boolean(),
+				}),
+				tool: true,
+				async execute() {
+					return { ok: true }
+				},
+			}),
+		).toThrow(/must describe input "status\.stage"/i)
+	})
+
 	it('rejects internal ops that also declare external carriers', () => {
 		expect(() =>
 			defineOp({
 				id: 'internal.echo',
-				input: typebox.obj({}),
-				output: typebox.obj({
-					ok: typebox.Type.Boolean(),
+				input: obj({}),
+				output: obj({
+					ok: Type.Boolean(),
 				}),
 				exposure: {
 					internal: true,
@@ -210,22 +230,43 @@ describe('@pluxel/ops core', () => {
 		).toThrow(/cannot declare rpc, cli, or tool exposure/i)
 	})
 
-	it('projects parsebox CLI metadata into a serializable public descriptor', () => {
+	it('rejects invalid CLI trigger tokens at definition time', () => {
+		expect(() =>
+			defineOp({
+				id: 'plugin.status.get',
+				input: obj({}),
+				output: obj({
+					ok: Type.Boolean(),
+				}),
+				cli: {
+					triggers: ['Plugin Status'],
+				},
+				async execute() {
+					return { ok: true }
+				},
+			}),
+		).toThrow(/CLI trigger/i)
+	})
+
+	it('projects parsebox CLI metadata into the canonical descriptor without parser state', () => {
+		const module = new Runtime.Module({
+			Main: Runtime.String(['"']),
+		})
 		const op = defineOp({
 			id: 'math.parsebox',
 			doc: {
 				title: 'ParseBox Example',
 				description: 'Example parsebox op.',
 			},
-			input: typebox.obj({
-				value: typebox.Type.String({ description: 'Value.' }),
+			input: obj({
+				value: Type.String({ description: 'Value.' }),
 			}),
-			output: typebox.obj({
-				ok: typebox.Type.Boolean(),
+			output: obj({
+				ok: Type.Boolean(),
 			}),
 			cli: {
 				triggers: ['math parsebox'],
-				tail: cli.tail.parsebox({} as any, 'Main' as any, {
+				tail: cli.tail.parsebox(module, 'Main', {
 					placeholder: '<value>',
 					keys: ['value'],
 				}),
@@ -235,7 +276,7 @@ describe('@pluxel/ops core', () => {
 			},
 		})
 
-		expect(toPublicDescriptor(op.descriptor)).toEqual(
+		expect(op.descriptor).toEqual(
 			expect.objectContaining({
 				transports: expect.objectContaining({
 					cli: expect.objectContaining({

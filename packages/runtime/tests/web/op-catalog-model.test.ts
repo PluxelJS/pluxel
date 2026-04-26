@@ -24,7 +24,7 @@ function makeEntry(
 		},
 		exposure: { rpc: true, internal: false },
 		policy: {},
-		schemas: { input: inputSchema },
+		schemas: { input: inputSchema, output: { type: 'object', properties: {}, required: [] } },
 		transports: {},
 		...overrides?.descriptor,
 	}
@@ -56,13 +56,22 @@ describe('op catalog model', () => {
 
 	it('builds sidebar counts and supports dedicated owner filtering', () => {
 		const entries = [
-			makeEntry({ type: 'object', properties: {}, required: [] }, { id: 'demo.echo', owner: 'plugin:Demo', pluginId: 'Demo' }),
+			makeEntry(
+				{ type: 'object', properties: {}, required: [] },
+				{ id: 'demo.echo', owner: 'plugin:Demo', pluginId: 'Demo' },
+			),
 			makeEntry(
 				{ type: 'object', properties: {}, required: [] },
 				{ id: 'plugin.status', owner: 'runtime:ops', ownerKind: 'runtime', pluginId: undefined },
 			),
-			makeEntry({ type: 'object', properties: {}, required: [] }, { id: 'alpha.run', owner: 'plugin:Alpha', pluginId: 'Alpha' }),
-			makeEntry({ type: 'object', properties: {}, required: [] }, { id: 'beta.run', owner: 'plugin:Beta', pluginId: 'Beta' }),
+			makeEntry(
+				{ type: 'object', properties: {}, required: [] },
+				{ id: 'alpha.run', owner: 'plugin:Alpha', pluginId: 'Alpha' },
+			),
+			makeEntry(
+				{ type: 'object', properties: {}, required: [] },
+				{ id: 'beta.run', owner: 'plugin:Beta', pluginId: 'Beta' },
+			),
 		]
 
 		expect(buildOpsExplorerSidebarData(entries)).toEqual({
@@ -120,9 +129,18 @@ describe('op catalog model', () => {
 
 	it('supports ungrouped list building and membership lookup', () => {
 		const entries = [
-			makeEntry({ type: 'object', properties: {}, required: [] }, { id: 'alpha.run', owner: 'plugin:Alpha', pluginId: 'Alpha' }),
-			makeEntry({ type: 'object', properties: {}, required: [] }, { id: 'beta.run', owner: 'plugin:Beta', pluginId: 'Beta' }),
-			makeEntry({ type: 'object', properties: {}, required: [] }, { id: 'gamma.run', owner: 'plugin:Gamma', pluginId: 'Gamma' }),
+			makeEntry(
+				{ type: 'object', properties: {}, required: [] },
+				{ id: 'alpha.run', owner: 'plugin:Alpha', pluginId: 'Alpha' },
+			),
+			makeEntry(
+				{ type: 'object', properties: {}, required: [] },
+				{ id: 'beta.run', owner: 'plugin:Beta', pluginId: 'Beta' },
+			),
+			makeEntry(
+				{ type: 'object', properties: {}, required: [] },
+				{ id: 'gamma.run', owner: 'plugin:Gamma', pluginId: 'Gamma' },
+			),
 		]
 		const groups = [
 			{ toolsetId: 'daily', name: 'Daily', opIds: ['alpha.run', 'beta.run'] },
@@ -137,9 +155,10 @@ describe('op catalog model', () => {
 			}).entries.map((entry) => entry.id),
 		).toEqual(['gamma.run'])
 
-		expect(buildOpsToolsetMembershipMap(groups).get('beta.run')?.map((group) => group.name)).toEqual([
-			'Daily',
-			'Notes',
-		])
+		expect(
+			buildOpsToolsetMembershipMap(groups)
+				.get('beta.run')
+				?.map((group) => group.name),
+		).toEqual(['Daily', 'Notes'])
 	})
 })

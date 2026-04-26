@@ -1,5 +1,4 @@
 import type { Static, TSchema } from '@sinclair/typebox'
-import type { Runtime } from '@sinclair/parsebox'
 
 export type Schema = TSchema
 export type Infer<S extends Schema> = Static<S>
@@ -33,6 +32,7 @@ export const constraint = (
 	})
 
 export type OpErrorCode =
+	| 'E_OP_CONFIG'
 	| 'E_OP_NOT_FOUND'
 	| 'E_CLI_PARSE'
 	| 'E_INPUT_VALIDATION'
@@ -46,8 +46,14 @@ export type OpErrorCode =
 export type OpErrorKind = 'expected' | 'fault'
 
 export type OpErrorDetailsByCode = {
+	E_OP_CONFIG?: { id?: string; field?: string; reason?: string }
 	E_OP_NOT_FOUND?: { id?: string; text?: string }
-	E_CLI_PARSE?: { reason?: string; param?: string; suggestion?: string; at?: { start?: number; end?: number; raw?: string } }
+	E_CLI_PARSE?: {
+		reason?: string
+		param?: string
+		suggestion?: string
+		at?: { start?: number; end?: number; raw?: string }
+	}
 	E_INPUT_VALIDATION?: { issues: ValidationIssue[] }
 	E_OUTPUT_VALIDATION?: { issues: ValidationIssue[] }
 	E_FORBIDDEN?: { node?: string; reason?: string }
@@ -57,9 +63,10 @@ export type OpErrorDetailsByCode = {
 	E_INTERNAL?: Record<string, unknown>
 }
 
-export type OpErrorDetails<C extends OpErrorCode = OpErrorCode> = C extends keyof OpErrorDetailsByCode
-	? NonNullable<OpErrorDetailsByCode[C]> | undefined
-	: Record<string, unknown> | undefined
+export type OpErrorDetails<C extends OpErrorCode = OpErrorCode> =
+	C extends keyof OpErrorDetailsByCode
+		? NonNullable<OpErrorDetailsByCode[C]> | undefined
+		: Record<string, unknown> | undefined
 
 export class OpError<C extends OpErrorCode = OpErrorCode> extends Error {
 	readonly code: C
@@ -72,7 +79,10 @@ export class OpError<C extends OpErrorCode = OpErrorCode> extends Error {
 		publicMessage: string,
 		opts?: { message?: string; details?: OpErrorDetails<C>; cause?: unknown; kind?: OpErrorKind },
 	) {
-		super(opts?.message ?? publicMessage, opts?.cause !== undefined ? { cause: opts.cause } : undefined)
+		super(
+			opts?.message ?? publicMessage,
+			opts?.cause !== undefined ? { cause: opts.cause } : undefined,
+		)
 		this.name = 'OpError'
 		this.code = code
 		this.kind = opts?.kind ?? kindOfOpErrorCode(code)
@@ -101,11 +111,7 @@ export interface OpContext {
 	deadlineMs?: number
 	now?: number
 	emit?: (type: string, payload: Record<string, unknown>) => void
-	span?: <T>(
-		name: string,
-		attrs: Record<string, unknown>,
-		fn: () => T | Promise<T>,
-	) => Promise<T>
+	span?: <T>(name: string, attrs: Record<string, unknown>, fn: () => T | Promise<T>) => Promise<T>
 	classifyError?: (error: unknown) => OpError | undefined
 	onFault?: (payload: {
 		id: string
@@ -119,50 +125,11 @@ export interface OpContext {
 export type CustomValidator<T, Ctx extends OpContext = OpContext> = (
 	value: T,
 	ctx: Ctx,
-) => void | ValidationIssue | ValidationIssue[] | Promise<void | ValidationIssue | ValidationIssue[]>
-
-export type BeforeResult<State> =
-	| {
-			kind?: 'continue'
-			candidate?: unknown
-			state?: State
-	  }
-	| {
-			kind: 'shortCircuit'
-			outputCandidate: unknown
-			state?: State
-	  }
-
-export type AfterOutputResult =
+) =>
 	| void
-	| {
-			kind: 'transform'
-			outputCandidate: unknown
-	  }
-
-export type OnErrorResult =
-	| void
-	| {
-			kind: 'recover'
-			outputCandidate: unknown
-	  }
-
-export type OpInterceptor<State = unknown, Ctx extends OpContext = OpContext> = {
-	before?: (ctx: Ctx, candidate: unknown) => BeforeResult<State> | Promise<BeforeResult<State>>
-	afterInput?: (ctx: Ctx, input: unknown, state: State | undefined) => void | Promise<void>
-	afterOutput?: (ctx: Ctx, output: unknown, state: State | undefined) => AfterOutputResult | Promise<AfterOutputResult>
-	onError?: (ctx: Ctx, error: OpError, state: State | undefined) => OnErrorResult | Promise<OnErrorResult>
-	canRecover?: boolean
-	finally?: (
-		ctx: Ctx,
-		summary: {
-			ok: boolean
-			durationMs: number
-			err?: OpError
-		},
-		state: State | undefined,
-	) => void | Promise<void>
-}
+	| ValidationIssue
+	| ValidationIssue[]
+	| Promise<void | ValidationIssue | ValidationIssue[]>
 
 export type OpDoc = {
 	title?: string
@@ -197,7 +164,7 @@ export type ParamSpec = {
 	itemType?: Exclude<ParamValueType, 'array'>
 }
 
-export type CliTailSpec =
+export type CliLineTailSpec =
 	| {
 			mode: 'line'
 			key: string
@@ -208,17 +175,30 @@ export type CliTailSpec =
 			key: string
 			placeholder?: string
 	  }
-	| {
-			mode: 'parsebox'
-			module: Runtime.Module<Runtime.IProperties>
-			entry: keyof Runtime.IProperties
-			placeholder?: string
-			keys?: readonly string[]
-	  }
+
+export type CliParseboxTailSpec = {
+	mode: 'parsebox'
+	entry: string
+	placeholder?: string
+	keys?: readonly string[]
+}
+
+export type CliTailSpec = CliLineTailSpec | CliParseboxTailSpec
+
+export type CliParseboxModule = {
+	Parse(entry: PropertyKey, source: string): unknown
+}
+
+export type CliParseboxTailConfig = Omit<CliParseboxTailSpec, 'entry'> & {
+	module: CliParseboxModule
+	entry: PropertyKey
+}
+
+export type CliTailConfig = CliLineTailSpec | CliParseboxTailConfig
 
 export type OpCliConfig = {
 	triggers?: string[]
-	tail?: CliTailSpec
+	tail?: CliTailConfig
 }
 
 export type OpToolConfig = {
@@ -244,7 +224,7 @@ export type ToolDef = {
 	tags?: string[]
 	inputHints?: ToolInputHint[]
 	inputSchema: Record<string, unknown>
-	outputSchema?: Record<string, unknown>
+	outputSchema: Record<string, unknown>
 }
 
 export type OpCliProjection = {
@@ -260,36 +240,7 @@ export type OpTransports = {
 
 export type OpSchemas = {
 	input: Record<string, unknown>
-	output?: Record<string, unknown>
-}
-
-export type PublicCliTailSpec =
-	| {
-			mode: 'line'
-			key: string
-			placeholder?: string
-	  }
-	| {
-			mode: 'json'
-			key: string
-			placeholder?: string
-	  }
-	| {
-			mode: 'parsebox'
-			entry: string
-			placeholder?: string
-			keys?: readonly string[]
-	  }
-
-export type OpPublicCliProjection = {
-	triggers: string[]
-	tail?: PublicCliTailSpec
-	usage?: string
-}
-
-export type OpPublicTransports = {
-	cli?: OpPublicCliProjection
-	tool?: ToolDef
+	output: Record<string, unknown>
 }
 
 export type OpDescriptor = {
@@ -302,16 +253,6 @@ export type OpDescriptor = {
 	transports: OpTransports
 }
 
-export type OpPublicDescriptor = {
-	id: string
-	doc: OpDoc
-	exposure: Required<OpExposure>
-	policy: OpPolicy
-	schemas: OpSchemas
-	params?: ParamSpec[]
-	transports: OpPublicTransports
-}
-
 export type OpOk<T> = { ok: true; value: T }
 export type OpErr = { ok: false; error: OpError }
 export type OpResult<T> = OpOk<T> | OpErr
@@ -319,7 +260,7 @@ export type OpResult<T> = OpOk<T> | OpErr
 export type OperationConfig<I, O, Ctx extends OpContext = OpContext> = {
 	id: string
 	input: Schema
-	output?: Schema
+	output: Schema
 	doc?: OpDoc
 	exposure?: OpExposure
 	policy?: OpPolicy
@@ -327,14 +268,11 @@ export type OperationConfig<I, O, Ctx extends OpContext = OpContext> = {
 	tool?: false | true | OpToolConfig
 	validateInput?: Array<CustomValidator<I, Ctx>>
 	validateOutput?: Array<CustomValidator<O, Ctx>>
-	interceptors?: Array<OpInterceptor<any, Ctx>>
 	execute: (input: I, ctx: Ctx) => O | Promise<O>
 }
 
 export interface Operation<_I = unknown, O = unknown, Ctx extends OpContext = OpContext> {
 	readonly id: string
-	readonly inputSchema: Schema
-	readonly outputSchema?: Schema
 	readonly descriptor: OpDescriptor
 	run(candidate: unknown, ctx?: Ctx): Promise<O>
 	runSafe(candidate: unknown, ctx?: Ctx): Promise<OpResult<O>>
@@ -342,20 +280,42 @@ export interface Operation<_I = unknown, O = unknown, Ctx extends OpContext = Op
 
 export type AnyOperation<Ctx extends OpContext = OpContext> = Operation<any, any, Ctx>
 
+export type OperationEntry = {
+	owner?: string
+	descriptor: OpDescriptor
+}
+
+export type OperationRegisterOptions = {
+	owner?: string
+}
+
+export type OperationListOptions = {
+	owner?: string
+	carrier?: 'rpc' | 'tool' | 'cli'
+	includeInternal?: boolean
+}
+
+export type ToolListOptions = {
+	includeInternal?: boolean
+}
+
+export type OperationSpaceOptions = {
+	caseInsensitive?: boolean
+	maxTextLength?: number
+}
+
 export interface OperationSpace<Ctx extends OpContext = OpContext> {
 	readonly version: number
-	register(op: AnyOperation<Ctx>, opts?: { owner?: string }): () => void
+	register(op: AnyOperation<Ctx>, opts?: OperationRegisterOptions): () => void
 	unregister(id: string): void
 	unregisterOwner(owner: string): number
 	has(id: string): boolean
 	get(id: string): AnyOperation<Ctx> | undefined
+	getEntry(id: string): OperationEntry | undefined
 	getDescriptor(id: string): OpDescriptor | undefined
-	list(opts?: {
-		owner?: string
-		carrier?: 'rpc' | 'tool' | 'cli'
-		includeInternal?: boolean
-	}): OpDescriptor[]
-	listTools(opts?: { includeInternal?: boolean }): ToolDef[]
+	list(opts?: OperationListOptions): OpDescriptor[]
+	listEntries(opts?: OperationListOptions): OperationEntry[]
+	listTools(opts?: ToolListOptions): ToolDef[]
 	invoke<O = unknown>(id: string, candidate: unknown, ctx?: Ctx): Promise<O>
 	invokeSafe<O = unknown>(id: string, candidate: unknown, ctx?: Ctx): Promise<OpResult<O>>
 	dispatch<O = unknown>(text: string, ctx?: Ctx): Promise<O>
@@ -386,39 +346,3 @@ export type CliHelpCommandResult = {
 	tail?: CliTailSpec
 	usage?: string
 }
-
-const toPublicTailSpec = (tail: CliTailSpec | undefined): PublicCliTailSpec | undefined => {
-	if (!tail) return undefined
-	if (tail.mode !== 'parsebox') return tail
-	return {
-		mode: 'parsebox',
-		entry: String(tail.entry),
-		...(tail.placeholder ? { placeholder: tail.placeholder } : {}),
-		...(tail.keys ? { keys: [...tail.keys] } : {}),
-	}
-}
-
-export const toPublicDescriptor = (descriptor: OpDescriptor): OpPublicDescriptor => ({
-	id: descriptor.id,
-	doc: descriptor.doc,
-	exposure: descriptor.exposure,
-	policy: descriptor.policy,
-	schemas: descriptor.schemas,
-	...(descriptor.params ? { params: descriptor.params } : {}),
-	transports: {
-		...(descriptor.transports.cli
-			? {
-					cli: {
-						triggers: [...descriptor.transports.cli.triggers],
-						...(descriptor.transports.cli.usage
-							? { usage: descriptor.transports.cli.usage }
-							: {}),
-						...(descriptor.transports.cli.tail
-							? { tail: toPublicTailSpec(descriptor.transports.cli.tail) }
-							: {}),
-					},
-				}
-			: {}),
-		...(descriptor.transports.tool ? { tool: descriptor.transports.tool } : {}),
-	},
-})

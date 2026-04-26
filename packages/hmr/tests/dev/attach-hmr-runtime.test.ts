@@ -1,4 +1,5 @@
 import { createFixture } from '@pluxel/test/fixtures'
+import { createContext } from '@pluxel/test'
 import { describe, expect, it, vi } from 'vitest'
 
 import { attachHmrRuntime } from '@pluxel/hmr'
@@ -8,7 +9,6 @@ import {
 	getRuntimeModuleAdapter,
 	hasRuntimeModuleAdapter,
 } from '@pluxel/runtime/internal'
-import { Context } from '@pluxel/runtime'
 
 describe('@pluxel/hmr attachHmrRuntime', () => {
 	it('attaches HMR to an existing Context', async () => {
@@ -29,7 +29,7 @@ describe('@pluxel/hmr attachHmrRuntime', () => {
 			excludeGlobs: [],
 		}
 
-		const ctx = new Context({
+		const runtime = createContext({
 			configService: { mode: 'memory' },
 			pluginData: { enabled: false },
 			packageService: { state: { enabled: false } },
@@ -39,6 +39,7 @@ describe('@pluxel/hmr attachHmrRuntime', () => {
 			},
 			extensionService: { enabled: false },
 		})
+		const ctx = runtime.ctx
 		const res = await attachHmrRuntime(ctx, {
 			cwd: fixture.path,
 			snapshot,
@@ -53,7 +54,7 @@ describe('@pluxel/hmr attachHmrRuntime', () => {
 
 		await res.hmr.start()
 		await res.hmr.close()
-		await ctx.effects.dispose()
+		await runtime.dispose()
 	})
 
 	it('rejects double attach on the same Context', async () => {
@@ -74,11 +75,12 @@ describe('@pluxel/hmr attachHmrRuntime', () => {
 			excludeGlobs: [],
 		}
 
-		const ctx = new Context({
+		const runtime = createContext({
 			configService: { mode: 'memory' },
 			pluginData: { enabled: false },
 			packageService: { state: { enabled: false } },
 		})
+		const ctx = runtime.ctx
 		await attachHmrRuntime(ctx, {
 			cwd: fixture.path,
 			snapshot,
@@ -95,6 +97,6 @@ describe('@pluxel/hmr attachHmrRuntime', () => {
 			}),
 		).rejects.toThrow(/already has HMR attached/i)
 
-		await ctx.effects.dispose()
+		await runtime.dispose()
 	})
 })

@@ -148,6 +148,20 @@ host.cfg(Cfg).set({ foo: 'hello' })
 await host.start(Cfg)
 ```
 
+### Runtime ops / RPC / MCP tests
+
+Use the test package for runtime surfaces:
+
+- `withContext(...)` for service-level tests that only need a `Context`.
+- `withHost(...)` / `createHost()` for plugin lifecycle, loader, config, ops, RPC, or MCP behavior.
+- Do not hand-roll `loader`, `registry`, `configService`, or `ops` stubs unless the test is explicitly for an error edge that cannot be reached through public host APIs.
+
+If a test needs declared-but-stopped plugins, preload them through the real loader:
+
+```ts
+await host.ctx.loader.preloadPlugins([{ plugin: P, enable: false }], { commit: false })
+```
+
 ### `features.use(FeatureCtor)` + `@UseFeature(...)`
 
 Preferred (toolchain-friendly) pattern: **declare feature usage as class fields**.
@@ -183,9 +197,7 @@ const searchHintsFeature = defineOptionalFeature({
 	key: 'search-hints',
 	requires: [HintsProviderPlugin],
 	load: () =>
-		import('./features/SearchHintsFeature').then(
-			({ SearchHintsFeature }) => SearchHintsFeature,
-		),
+		import('./features/SearchHintsFeature').then(({ SearchHintsFeature }) => SearchHintsFeature),
 })
 
 @Plugin({ name: 'Host' })

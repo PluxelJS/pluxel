@@ -1,4 +1,4 @@
-import { typebox } from '@pluxel/ops'
+import { Type, obj } from '@pluxel/ops/typebox'
 
 import type { RuntimeOperation } from '../../services/ops/OpsService'
 import {
@@ -25,10 +25,10 @@ const pluginDependenciesListOp = defineRuntimeOp({
 		title: 'List Plugin Dependencies',
 		description: 'List declared plugin dependencies for dependency planning.',
 	},
-	input: typebox.obj({
+	input: obj({
 		name: pluginNameSchema,
 	}),
-	output: typebox.Type.Array(pluginDependencyRefSchema),
+	output: Type.Array(pluginDependencyRefSchema),
 	exposure: { rpc: true },
 	policy: { idempotent: true },
 	tool: true,
@@ -47,10 +47,10 @@ const pluginDependenciesInspectOp = defineRuntimeOp({
 		description:
 			'Inspect dependency injection state for one plugin, including base and forkable override options.',
 	},
-	input: typebox.obj({
+	input: obj({
 		name: pluginNameSchema,
 	}),
-	output: typebox.Type.Array(pluginDependencyStateSchema),
+	output: Type.Array(pluginDependencyStateSchema),
 	exposure: { rpc: true },
 	policy: { idempotent: true },
 	tool: true,
@@ -68,13 +68,13 @@ const pluginDependenciesSetTargetOp = defineRuntimeOp({
 		title: 'Set Plugin Dependency Target',
 		description: 'Override one dependency slot to a specific plugin or clear the override.',
 	},
-	input: typebox.obj({
+	input: obj({
 		name: pluginNameSchema,
-		index: typebox.Type.Number({
+		index: Type.Number({
 			minimum: 0,
 			description: 'Dependency slot index to override.',
 		}),
-		targetName: typebox.Type.Union([typebox.Type.String(), typebox.Type.Null()], {
+		targetName: Type.Union([Type.String(), Type.Null()], {
 			description: 'Plugin name to bind, or null to clear the override.',
 		}),
 	}),
@@ -83,12 +83,7 @@ const pluginDependenciesSetTargetOp = defineRuntimeOp({
 	policy: { mutating: true, audit: ['plugin-dependencies'] },
 	tool: true,
 	async execute(input, opCtx) {
-		return await pluginDependencySetTarget(
-			opCtx.runtime,
-			input.name,
-			input.index,
-			input.targetName,
-		)
+		return await pluginDependencySetTarget(opCtx.runtime, input.name, input.index, input.targetName)
 	},
 })
 
@@ -98,7 +93,7 @@ const pluginBaseProviderInspectOp = defineRuntimeOp({
 		title: 'Inspect Plugin Base Provider',
 		description: 'Read the current global provider mapping for the plugin base token, if any.',
 	},
-	input: typebox.obj({
+	input: obj({
 		name: pluginNameSchema,
 	}),
 	output: baseProviderInfoSchema,
@@ -119,13 +114,13 @@ const pluginBaseProviderSelectOp = defineRuntimeOp({
 		title: 'Select Plugin Base Provider',
 		description: 'Set or clear the global default provider for a base token.',
 	},
-	input: typebox.obj({
+	input: obj({
 		name: pluginNameSchema,
-		baseToken: typebox.Type.String({
+		baseToken: Type.String({
 			minLength: 1,
 			description: 'Base token to mutate.',
 		}),
-		providerName: typebox.Type.Union([typebox.Type.String(), typebox.Type.Null()], {
+		providerName: Type.Union([Type.String(), Type.Null()], {
 			description: 'Default provider plugin name, or null to clear it.',
 		}),
 	}),
@@ -149,17 +144,17 @@ const pluginForkEnsureOp = defineRuntimeOp({
 		title: 'Ensure Plugin Fork',
 		description: 'Ensure a fork exists for a forkable plugin and optionally enable it.',
 	},
-	input: typebox.obj({
-		baseName: typebox.Type.String({
+	input: obj({
+		baseName: Type.String({
 			minLength: 1,
 			description: 'Forkable base plugin name.',
 		}),
-		forkId: typebox.Type.String({
+		forkId: Type.String({
 			minLength: 1,
 			description: 'Stable fork identifier.',
 		}),
-		enable: typebox.Type.Optional(
-			typebox.Type.Boolean({
+		enable: Type.Optional(
+			Type.Boolean({
 				description: 'Whether to enable the fork after ensuring it exists.',
 			}),
 		),

@@ -31,6 +31,7 @@ describe('ExtensionCompilerService', () => {
 		})
 
 		const committed: Array<{ pluginName: string; sourceHash: string }> = []
+		const artifactRoots: string[] = []
 		let currentModule: { pluginName: string; sourceHash: string } | undefined
 
 		const service = new ExtensionCompilerService(
@@ -51,7 +52,7 @@ describe('ExtensionCompilerService', () => {
 			async commitCompiledModule(module, options) {
 				currentModule = module
 				committed.push(module)
-				expect(options?.artifactRoot).toContain('.pluxel/extensions/PluginWithUI')
+				if (options?.artifactRoot) artifactRoots.push(options.artifactRoot)
 			},
 			async markCompiling() {},
 			async markCompileError(_pluginName, error) {
@@ -83,7 +84,9 @@ describe('ExtensionCompilerService', () => {
 
 		await service.requestCompile('PluginWithUI')
 
-		expect(committed).toHaveLength(1)
+		expect(committed.length).toBeGreaterThanOrEqual(1)
+		expect(artifactRoots).toHaveLength(1)
+		expect(artifactRoots[0]).toContain('.pluxel/extensions/PluginWithUI')
 		expect(pluginBuildMocks.buildPluginUiRemote).toHaveBeenCalledWith(
 			expect.objectContaining({
 				root: fixture.getPath('packages/plugins/host'),

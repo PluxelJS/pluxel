@@ -1,79 +1,14 @@
-import '@pluxel/test/setup'
-
 import { describe, expect, it } from 'vitest'
-import {
-	BasePlugin,
-	Context,
-	ForkablePlugin,
-	Plugin,
-	type Context as PlxContext,
-} from '@pluxel/core'
+import { BasePlugin, ForkablePlugin, Plugin } from '@pluxel/test'
 import { LoaderService } from '@pluxel/runtime/services'
 import { getStatusOverview } from '../../src/api/features/pluginStatus/service'
 import { EXTRA_FORKS } from '../../src/services/runtime/loader/selection'
-
-function createHmrCtx(core: Context) {
-	const enabled = new Set<string>()
-	const extra: Record<string, unknown> = Object.create(null)
-	const hmrService = { normalizeId: (id: string) => id }
-	const root = { hmrService }
-	const configService = {
-		isReady: true,
-		ready: Promise.resolve(),
-		isEnabledInConfig(name: string) {
-			return enabled.has(name)
-		},
-		setEnabledInConfig(name: string, on: boolean) {
-			if (on) enabled.add(name)
-			else enabled.delete(name)
-		},
-		enableInConfig(...names: string[]) {
-			for (const n of names) enabled.add(n)
-		},
-		disableInConfig(...names: string[]) {
-			for (const n of names) enabled.delete(n)
-		},
-		getRawConfig(_name: string) {
-			return {}
-		},
-		getConfigRevision() {
-			return 0
-		},
-		ensureValidated() {
-			return Promise.resolve({})
-		},
-		patchConfig: () => {},
-		getExtra<T = unknown>(key: string): T | undefined {
-			return extra[key] as T | undefined
-		},
-		setExtra(key: string, value: unknown) {
-			extra[key] = value
-		},
-		batch(run: () => void) {
-			run()
-		},
-	}
-
-	const coreEvents = (core as unknown as { events: unknown }).events
-	const coreEmit = (core as unknown as { emit?: (...args: unknown[]) => unknown }).emit
-
-	return {
-		root,
-		registry: core.registry,
-		events: coreEvents,
-		on: core.on.bind(core),
-		emit: typeof coreEmit === 'function' ? coreEmit.bind(core) : undefined,
-		logger: { info: () => {}, warn: () => {}, error: () => {} },
-		configService,
-		loader: undefined as LoaderService | undefined,
-	} satisfies Partial<PlxContext>
-}
+import { createHmrTestContext } from '../support/hmr-context'
 
 describe('pluginStatus forks', () => {
 	it('includes fork plugins from runtime and from catalog', async () => {
-		const core = new Context()
-		const ctx = createHmrCtx(core) as PlxContext
-		const loader = new LoaderService(ctx as unknown as Context)
+		const { core, ctx } = createHmrTestContext()
+		const loader = new LoaderService(ctx)
 		ctx.loader = loader
 
 		@Plugin({ name: 'DemoWorker' })
@@ -107,8 +42,7 @@ describe('pluginStatus forks', () => {
 	})
 
 	it('enabling the same plugin twice is idempotent', async () => {
-		const core = new Context()
-		const ctx = createHmrCtx(core)
+		const { core, ctx } = createHmrTestContext()
 		const loader = new LoaderService(ctx)
 
 		@Plugin({ name: 'Alpha' })

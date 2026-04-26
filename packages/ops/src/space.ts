@@ -1,12 +1,24 @@
 import { CliAdapter } from './adapters/cli/adapter'
-import { OperationRegistry, type RegisterOptions } from './registry'
-import type { AnyOperation, CliHelpCommandResult, CliHelpIndexResult, OpContext, OpResult, OperationSpace, ToolDef } from './types'
+import { OperationRegistry } from './registry'
+import type {
+	AnyOperation,
+	CliHelpCommandResult,
+	CliHelpIndexResult,
+	OpContext,
+	OperationListOptions,
+	OperationRegisterOptions,
+	OpResult,
+	OperationSpace,
+	OperationSpaceOptions,
+	ToolDef,
+	ToolListOptions,
+} from './types'
 
-export class OpsSpace<Ctx extends OpContext = OpContext> implements OperationSpace<Ctx> {
+class SpaceImpl<Ctx extends OpContext = OpContext> implements OperationSpace<Ctx> {
 	private readonly registry = new OperationRegistry<Ctx>()
 	private readonly cli: CliAdapter<Ctx>
 
-	constructor(opts?: { caseInsensitive?: boolean; maxTextLength?: number }) {
+	constructor(opts?: OperationSpaceOptions) {
 		this.cli = new CliAdapter<Ctx>(opts)
 	}
 
@@ -14,7 +26,7 @@ export class OpsSpace<Ctx extends OpContext = OpContext> implements OperationSpa
 		return this.registry.version
 	}
 
-	register(op: AnyOperation<Ctx>, opts?: RegisterOptions) {
+	register(op: AnyOperation<Ctx>, opts?: OperationRegisterOptions) {
 		const unregister = this.registry.register(op, opts)
 		try {
 			this.cli.add(op)
@@ -34,9 +46,9 @@ export class OpsSpace<Ctx extends OpContext = OpContext> implements OperationSpa
 	}
 
 	unregisterOwner(owner: string) {
-		const ids = this.registry.listIdsByOwner(owner)
-		for (const id of ids) this.cli.remove(id)
-		return this.registry.unregisterOwner(owner)
+		const ids = this.registry.unregisterOwner(owner)
+		this.cli.removeMany(ids)
+		return ids.length
 	}
 
 	has(id: string) {
@@ -47,19 +59,23 @@ export class OpsSpace<Ctx extends OpContext = OpContext> implements OperationSpa
 		return this.registry.get(id)
 	}
 
+	getEntry(id: string) {
+		return this.registry.getEntry(id)
+	}
+
 	getDescriptor(id: string) {
 		return this.registry.getDescriptor(id)
 	}
 
-	list(opts?: {
-		owner?: string
-		carrier?: 'rpc' | 'tool' | 'cli'
-		includeInternal?: boolean
-	}) {
+	list(opts?: OperationListOptions) {
 		return this.registry.list(opts)
 	}
 
-	listTools(opts?: { includeInternal?: boolean }): ToolDef[] {
+	listEntries(opts?: OperationListOptions) {
+		return this.registry.listEntries(opts)
+	}
+
+	listTools(opts?: ToolListOptions): ToolDef[] {
 		return this.registry.listTools(opts)
 	}
 
@@ -84,7 +100,6 @@ export class OpsSpace<Ctx extends OpContext = OpContext> implements OperationSpa
 	}
 }
 
-export const createSpace = <Ctx extends OpContext = OpContext>(opts?: {
-	caseInsensitive?: boolean
-	maxTextLength?: number
-}): OperationSpace<Ctx> => new OpsSpace<Ctx>(opts)
+export const createSpace = <Ctx extends OpContext = OpContext>(
+	opts?: OperationSpaceOptions,
+): OperationSpace<Ctx> => new SpaceImpl<Ctx>(opts)

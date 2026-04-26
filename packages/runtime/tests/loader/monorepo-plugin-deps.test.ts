@@ -1,65 +1,11 @@
-import '@pluxel/test/setup'
-
 import { describe, expect, it } from 'vitest'
-import { BasePlugin, Context, Plugin, setParamToken } from '@pluxel/core'
+import { BasePlugin, Plugin, setParamToken } from '@pluxel/test'
 import { LoaderService } from '@pluxel/runtime/services'
-
-function createHmrCtx(core: Context) {
-	const enabled = new Set<string>()
-	const extra: Record<string, unknown> = Object.create(null)
-	const hmrService = { normalizeId: (id: string) => id }
-	const root = { hmrService }
-	const configService = {
-		isReady: true,
-		ready: Promise.resolve(),
-		isEnabledInConfig(name: string) {
-			return enabled.has(name)
-		},
-		enableInConfig(...names: string[]) {
-			for (const n of names) enabled.add(n)
-		},
-		disableInConfig(...names: string[]) {
-			for (const n of names) enabled.delete(n)
-		},
-		getRawConfig(_name: string) {
-			return {}
-		},
-		getConfigRevision() {
-			return 0
-		},
-		ensureValidated() {
-			return Promise.resolve({})
-		},
-		patchConfig: () => {},
-		getExtra<T = unknown>(key: string): T | undefined {
-			return extra[key] as T | undefined
-		},
-		setExtra(key: string, value: unknown) {
-			extra[key] = value
-		},
-		batch(run: () => void) {
-			run()
-		},
-	}
-
-	const coreEvents = (core as unknown as { events: unknown }).events
-	const coreEmit = (core as unknown as { emit?: (...args: unknown[]) => unknown }).emit
-
-	return {
-		root,
-		registry: core.registry,
-		events: coreEvents,
-		on: core.on.bind(core),
-		emit: typeof coreEmit === 'function' ? coreEmit.bind(core) : undefined,
-		logger: { info: () => {}, warn: () => {}, error: () => {} },
-		configService,
-	} as unknown as Context
-}
+import { createHmrTestContext } from '../support/hmr-context'
 
 describe('monorepo plugin dependencies', () => {
 	it('commits successfully when dependent plugin modules are both loaded (separate moduleIds)', async () => {
-		const core = new Context()
-		const ctx = createHmrCtx(core)
+		const { core, ctx } = createHmrTestContext()
 		const loader = new LoaderService(ctx)
 
 		@Plugin({ name: 'Provider' })
@@ -88,8 +34,7 @@ describe('monorepo plugin dependencies', () => {
 	})
 
 	it('fails commit when a runtime-enabled plugin depends on another plugin that is not loaded via entries', async () => {
-		const core = new Context()
-		const ctx = createHmrCtx(core)
+		const { core, ctx } = createHmrTestContext()
 		const loader = new LoaderService(ctx)
 
 		@Plugin({ name: 'Provider' })

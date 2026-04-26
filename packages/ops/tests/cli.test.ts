@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { Runtime } from '@sinclair/parsebox'
-import { cli, createSpace, defineOp, typebox } from '../src/index.ts'
+import { cli, createSpace, defineOp } from '@pluxel/ops'
+import { Type, obj, openObj } from '@pluxel/ops/typebox'
 
 describe('@pluxel/ops cli entrypoint', () => {
 	it('dispatches schema-derived flags with implicit line tail', async () => {
@@ -16,13 +17,13 @@ describe('@pluxel/ops cli entrypoint', () => {
 					examples: ['plugin search --name demo hello world'],
 					tags: ['plugin', 'search'],
 				},
-				input: typebox.obj({
-					name: typebox.Type.String(),
-					verbose: typebox.Type.Optional(typebox.Type.Boolean({ default: false })),
-					query: typebox.Type.Optional(typebox.Type.String()),
+				input: obj({
+					name: Type.String(),
+					verbose: Type.Optional(Type.Boolean({ default: false })),
+					query: Type.Optional(Type.String()),
 				}),
-				output: typebox.obj({
-					text: typebox.Type.String(),
+				output: obj({
+					text: Type.String(),
 				}),
 				cli: {
 					triggers: ['plugin search'],
@@ -36,7 +37,9 @@ describe('@pluxel/ops cli entrypoint', () => {
 			}),
 		)
 
-		await expect(space.dispatch('plugin search --name demo --verbose hello world')).resolves.toEqual({
+		await expect(
+			space.dispatch('plugin search --name demo --verbose hello world'),
+		).resolves.toEqual({
 			text: 'demo|true|hello world',
 		})
 
@@ -62,13 +65,13 @@ describe('@pluxel/ops cli entrypoint', () => {
 				doc: {
 					description: 'Patch plugin config with a JSON object payload',
 				},
-				input: typebox.obj({
-					name: typebox.Type.String(),
-					patch: typebox.openObj({}),
+				input: obj({
+					name: Type.String(),
+					patch: openObj({}),
 				}),
-				output: typebox.obj({
-					ok: typebox.Type.Boolean(),
-					keys: typebox.Type.Array(typebox.Type.String()),
+				output: obj({
+					ok: Type.Boolean(),
+					keys: Type.Array(Type.String()),
 				}),
 				cli: {
 					triggers: ['plugin config patch'],
@@ -106,12 +109,12 @@ describe('@pluxel/ops cli entrypoint', () => {
 		space.register(
 			defineOp({
 				id: 'plugin.lookup',
-				input: typebox.obj({
-					name: typebox.Type.String(),
-					verbose: typebox.Type.Optional(typebox.Type.Boolean({ default: false })),
+				input: obj({
+					name: Type.String(),
+					verbose: Type.Optional(Type.Boolean({ default: false })),
 				}),
-				output: typebox.obj({
-					text: typebox.Type.String(),
+				output: obj({
+					text: Type.String(),
 				}),
 				cli: {
 					triggers: ['plugin lookup'],
@@ -133,12 +136,12 @@ describe('@pluxel/ops cli entrypoint', () => {
 		space.register(
 			defineOp({
 				id: 'plugin.search',
-				input: typebox.obj({
-					name: typebox.Type.String(),
-					query: typebox.Type.Optional(typebox.Type.String()),
+				input: obj({
+					name: Type.String(),
+					query: Type.Optional(Type.String()),
 				}),
-				output: typebox.obj({
-					text: typebox.Type.String(),
+				output: obj({
+					text: Type.String(),
 				}),
 				cli: {
 					triggers: ['plugin search'],
@@ -150,10 +153,10 @@ describe('@pluxel/ops cli entrypoint', () => {
 			}),
 		)
 
-		await expect(
-			space.dispatch('plugin search --name demo --unknown value'),
-		).rejects.toMatchObject({
-			code: 'E_CLI_PARSE',
-		})
+		await expect(space.dispatch('plugin search --name demo --unknown value')).rejects.toMatchObject(
+			{
+				code: 'E_CLI_PARSE',
+			},
+		)
 	})
 })

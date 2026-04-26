@@ -104,7 +104,7 @@ export {
 	type RuntimeOpContextInput,
 	type RuntimeOperation,
 	type RuntimeOpSource,
-	type RuntimeOpOwnerKind,
+	type RuntimeOpCatalogOptions,
 	type RuntimeOpsRegisterOptions,
 } from './services/ops/OpsService'
 export type {

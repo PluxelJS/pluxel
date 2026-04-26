@@ -5,7 +5,7 @@
  * `@pluxel/runtime/web` can stay the canonical browser-facing type surface.
  */
 
-import type { OpPublicDescriptor } from '@pluxel/ops'
+import type { OpDescriptor } from '@pluxel/ops'
 export type {
 	VerificationOtpProvisionResult,
 	VerificationOtpUserProvisionInput,
@@ -15,9 +15,7 @@ export type {
 	VerificationPasswordUserUpsertInput,
 	VerificationUserDeleteInput,
 } from '../services/verification/types'
-export type {
-	VaultKeyPair,
-} from '../services/vault/types'
+export type { VaultKeyPair } from '../services/vault/types'
 
 /**
  * UI extensibility surface.
@@ -155,7 +153,7 @@ export type PluginStatusBatchResult = {
 	commitError?: string
 }
 
-export type RuntimeOpDescriptor = OpPublicDescriptor
+export type RuntimeOpDescriptor = OpDescriptor
 export type RuntimeOpCatalogOwnerKind = 'runtime' | 'plugin' | 'context'
 export type RuntimeOpCatalogEntry = {
 	id: string

@@ -5,12 +5,20 @@ import {
 	type CliHelpIndexResult,
 	type OpContext,
 	type OpDescriptor,
+	type OperationEntry,
+	type OperationListOptions,
+	type OperationRegisterOptions,
 	type OpResult,
 	type ToolDef,
+	type ToolListOptions,
 } from '@pluxel/ops'
 import { Injectable, type Context as PluxelContext } from '@pluxel/core'
 
-import type { RuntimeOpToolsetManifest } from '../../web/protocol'
+import type {
+	RuntimeOpCatalogEntry,
+	RuntimeOpCatalogOwnerKind,
+	RuntimeOpToolsetManifest,
+} from '../../web/protocol'
 import {
 	buildOpsToolsetManifest,
 	readOpsToolsets,
@@ -45,19 +53,11 @@ export type RuntimeOperation = AnyOperation<RuntimeOpContext>
 
 export type RuntimeOpContextInput = Omit<RuntimeOpContext, 'runtime'>
 
-export interface RuntimeOpsRegisterOptions {
-	owner?: string
-}
+export type RuntimeOpsRegisterOptions = OperationRegisterOptions
 
-export type RuntimeOpOwnerKind = 'runtime' | 'plugin' | 'context'
+export type RuntimeOpCatalogOptions = OperationListOptions
 
-export interface RuntimeOpCatalogEntry<Descriptor = OpDescriptor> {
-	id: string
-	owner: string
-	ownerKind: RuntimeOpOwnerKind
-	pluginId?: string
-	descriptor: Descriptor
-}
+export type { RuntimeOpCatalogEntry } from '../../web/protocol'
 
 declare module '@pluxel/core' {
 	namespace Context {
@@ -83,15 +83,28 @@ class OpsToolsetsHandle {
 		if (!target) return null
 		return buildOpsToolsetManifest({
 			toolset: target,
-			entries: resolveRootContext(this.owner.ctx).ops.listCatalog({ rpcOnly: true }),
+			entries: resolveRootContext(this.owner.ctx).ops.listCatalog({ carrier: 'rpc' }),
 		})
 	}
+}
+
+const toRuntimeOpCatalogEntry = (item: OperationEntry): RuntimeOpCatalogEntry => {
+	const { descriptor } = item
+	const owner = item.owner ?? 'context:unknown'
+	const parsed = parseRuntimeOpOwner(owner)
+	const entry: RuntimeOpCatalogEntry = {
+		id: descriptor.id,
+		owner,
+		ownerKind: parsed.ownerKind,
+		descriptor,
+	}
+	if (parsed.pluginId) entry.pluginId = parsed.pluginId
+	return entry
 }
 
 @Injectable({ key: serviceName })
 export class OpsService {
 	private readonly space = createSpace<RuntimeOpContext>()
-	private readonly ownerById = new Map<string, string>()
 	private readonly toolsetsHandle = new OpsToolsetsHandle(this)
 
 	constructor(public ctx: PluxelContext) {}
@@ -110,20 +123,17 @@ export class OpsService {
 		const unregister = this.space.register(op, {
 			owner,
 		})
-		this.ownerById.set(op.id, owner)
 
 		let active = true
 		const remove = () => {
 			if (!active) return
 			active = false
 			guard.cancel()
-			this.ownerById.delete(op.id)
 			unregister()
 		}
 		const guard = this.ctx.effects.defer(() => {
 			if (!active) return
 			active = false
-			this.ownerById.delete(op.id)
 			unregister()
 		})
 
@@ -131,7 +141,6 @@ export class OpsService {
 	}
 
 	unregister(id: string): void {
-		this.ownerById.delete(id)
 		this.space.unregister(id)
 	}
 
@@ -148,44 +157,26 @@ export class OpsService {
 	}
 
 	getOwner(id: string): string | undefined {
-		return this.ownerById.get(id)
+		return this.space.getEntry(id)?.owner
 	}
 
-	list(options?: {
-		owner?: string
-		carrier?: 'rpc' | 'tool' | 'cli'
-		includeInternal?: boolean
-	}): OpDescriptor[] {
+	list(options?: OperationListOptions): OpDescriptor[] {
 		return this.space.list(options)
 	}
 
-	listTools(options?: { includeInternal?: boolean }): ToolDef[] {
+	listTools(options?: ToolListOptions): ToolDef[] {
 		return this.space.listTools(options)
 	}
 
-	listCatalog(options?: {
-		owner?: string
-		includeInternal?: boolean
-		rpcOnly?: boolean
-	}): RuntimeOpCatalogEntry[] {
-		return this.space
-			.list({
-				owner: options?.owner,
-				carrier: options?.rpcOnly ? 'rpc' : undefined,
-				includeInternal: options?.includeInternal,
-			})
-			.map((descriptor) => {
-				const owner = this.ownerById.get(descriptor.id) ?? 'context:unknown'
-				const parsed = parseRuntimeOpOwner(owner)
-				const entry: RuntimeOpCatalogEntry = {
-					id: descriptor.id,
-					owner,
-					ownerKind: parsed.ownerKind,
-					descriptor,
-				}
-				if (parsed.pluginId) entry.pluginId = parsed.pluginId
-				return entry
-			})
+	listCatalog(options?: RuntimeOpCatalogOptions): RuntimeOpCatalogEntry[] {
+		const entries = this.space.listEntries({
+			owner: options?.owner,
+			carrier: options?.carrier,
+			includeInternal: options?.includeInternal,
+		})
+		const out: RuntimeOpCatalogEntry[] = []
+		for (const entry of entries) out.push(toRuntimeOpCatalogEntry(entry))
+		return out
 	}
 
 	async invoke<O = unknown>(
@@ -241,10 +232,7 @@ export class OpsService {
 		return { kind: 'runtime' }
 	}
 
-	private assertReservedNamespace(
-		op: RuntimeOperation,
-		owner: string,
-	): void {
+	private assertReservedNamespace(op: RuntimeOperation, owner: string): void {
 		if (owner.startsWith('runtime:')) return
 
 		const reservedIdPrefix = RESERVED_RUNTIME_OP_PREFIXES.find((prefix) => op.id.startsWith(prefix))
@@ -274,9 +262,7 @@ export class OpsService {
 			)
 		})
 		if (reservedTrigger) {
-			throw new Error(
-				`CLI trigger "${reservedTrigger}" uses a reserved runtime command namespace`,
-			)
+			throw new Error(`CLI trigger "${reservedTrigger}" uses a reserved runtime command namespace`)
 		}
 	}
 }
@@ -286,7 +272,7 @@ function resolveRootContext(ctx: PluxelContext): PluxelContext {
 }
 
 function parseRuntimeOpOwner(owner: string): {
-	ownerKind: RuntimeOpOwnerKind
+	ownerKind: RuntimeOpCatalogOwnerKind
 	pluginId?: string
 } {
 	if (owner.startsWith('plugin:')) {
