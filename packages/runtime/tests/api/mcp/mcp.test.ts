@@ -97,7 +97,6 @@ describe('MCP (mcp-lite) endpoint', () => {
 				'plugin.status',
 				'plugin.config.patch',
 				'plugins.status.apply',
-				'runtime.ops.list',
 				'workspace.resolveEntry',
 			]) {
 				expect(toolNames.has(name)).toBe(true)
@@ -169,13 +168,11 @@ describe('MCP (mcp-lite) endpoint', () => {
 					output: obj({
 						value: Type.String(),
 					}),
-					tool: {
-						name: 'demo.echo',
-					},
-					async execute(input) {
+					async run(input) {
 						return input
 					},
 				}),
+				{ metadata: { mcp: { name: 'demo.echo' } } },
 			)
 
 			const after = await call({ jsonrpc: '2.0', id: 3, method: 'tools/list', params: {} })
@@ -189,7 +186,7 @@ describe('MCP (mcp-lite) endpoint', () => {
 				method: 'tools/call',
 				params: { name: 'demo.echo', arguments: { value: 'ok' } },
 			})
-			expect(echo.result.structuredContent).toEqual({ value: 'ok' })
+			expect(echo.result.structuredContent).toEqual({ ok: true, value: { value: 'ok' } })
 		})
 	})
 })

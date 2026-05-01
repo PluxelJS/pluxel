@@ -1,294 +1,114 @@
-import { Runtime } from '@sinclair/parsebox'
 import { describe, expect, it } from 'vitest'
-import { cli, defineOp, errors, validation } from '@pluxel/ops'
+import { defineOp, errors, validation } from '@pluxel/ops'
 import { Type, obj } from '@pluxel/ops/typebox'
 
-describe('@pluxel/ops core', () => {
-	it('applies TypeBox defaults before execute', async () => {
+describe('@pluxel/ops core v2', () => {
+	it('creates a descriptor with only id, doc, and schemas', async () => {
 		const op = defineOp({
-			id: 'math.sum',
-			input: obj({
-				a: Type.Number(),
-				b: Type.Optional(Type.Number({ default: 1 })),
-			}),
-			output: obj({
-				total: Type.Number(),
-			}),
-			async execute(input) {
-				return { total: input.a + input.b }
-			},
-		})
-
-		await expect(op.run({ a: 2 })).resolves.toEqual({ total: 3 })
-	})
-
-	it('rejects unknown object keys by default', async () => {
-		const op = defineOp({
-			id: 'math.strict',
-			input: obj({
-				a: Type.Number(),
-			}),
-			output: obj({
-				ok: Type.Boolean(),
-			}),
-			async execute() {
-				return { ok: true }
-			},
-		})
-
-		const result = await op.runSafe({ a: 1, extra: true })
-		expect(result.ok).toBe(false)
-		if (result.ok !== false) return
-		expect(result.error.code).toBe('E_INPUT_VALIDATION')
-	})
-
-	it('preserves structured OpError instances', async () => {
-		const op = defineOp({
-			id: 'math.fail',
-			input: obj({}),
-			output: obj({}),
-			async execute() {
-				throw new errors.OpError('E_FORBIDDEN', 'Forbidden', {
-					details: { node: 'plugin.config.write', reason: 'blocked' },
-				})
-			},
-		})
-
-		const result = await op.runSafe({})
-		expect(result.ok).toBe(false)
-		if (result.ok !== false) return
-		expect(result.error.code).toBe('E_FORBIDDEN')
-	})
-
-	it('surfaces custom constraint validators as unified issues', async () => {
-		const op = defineOp({
-			id: 'math.constraint',
-			input: obj({
-				value: Type.Number(),
-			}),
-			output: obj({
-				ok: Type.Boolean(),
-			}),
-			validateInput: [
-				(input): void | ReturnType<typeof validation.constraint> => {
-					if (input.value >= 0) return
-					return validation.constraint('value', 'Expected a non-negative number', {
-						code: 'non_negative',
-					})
-				},
-			],
-			async execute() {
-				return { ok: true }
-			},
-		})
-
-		const result = await op.runSafe({ value: -1 })
-		expect(result.ok).toBe(false)
-		if (result.ok !== false) return
-		expect(result.error.code).toBe('E_INPUT_VALIDATION')
-		expect(result.error.details).toEqual({
-			issues: [
-				{
-					path: ['value'],
-					message: 'Expected a non-negative number',
-					code: 'non_negative',
-				},
-			],
-		})
-	})
-
-	it('rejects tool-visible ops without explicit doc guidance', () => {
-		expect(() =>
-			defineOp({
-				id: 'plugin.status.get',
-				doc: {
-					title: 'Get Plugin Status',
-				},
-				input: obj({
-					name: Type.String(),
-				}),
-				output: obj({
-					ok: Type.Boolean(),
-				}),
-				tool: {
-					name: 'plugin.status.get',
-				},
-				async execute() {
-					return { ok: true }
-				},
-			}),
-		).toThrow(/must define doc.description/i)
-	})
-
-	it('rejects invalid tool names at definition time', () => {
-		expect(() =>
-			defineOp({
-				id: 'plugin.status.get',
-				doc: {
-					title: 'Get Plugin Status',
-					description: 'Read one plugin status snapshot.',
-				},
-				input: obj({
-					name: Type.String(),
-				}),
-				output: obj({
-					ok: Type.Boolean(),
-				}),
-				tool: {
-					name: 'Plugin Status',
-				},
-				async execute() {
-					return { ok: true }
-				},
-			}),
-		).toThrow(/tool.name/i)
-	})
-
-	it('rejects invalid op ids at definition time', () => {
-		expect(() =>
-			defineOp({
-				id: 'Plugin Status',
-				input: obj({}),
-				output: obj({
-					ok: Type.Boolean(),
-				}),
-				async execute() {
-					return { ok: true }
-				},
-			}),
-		).toThrow(/Operation id/i)
-	})
-
-	it('rejects tool-visible inputs without field descriptions', () => {
-		expect(() =>
-			defineOp({
-				id: 'plugin.status.get',
-				doc: {
-					title: 'Get Plugin Status',
-					description: 'Read one plugin status snapshot.',
-				},
-				input: obj({
-					name: Type.String(),
-				}),
-				output: obj({
-					ok: Type.Boolean(),
-				}),
-				tool: {
-					name: 'plugin.status.get',
-				},
-				async execute() {
-					return { ok: true }
-				},
-			}),
-		).toThrow(/must describe input "name"/i)
-	})
-
-	it('rejects tool-visible nested inputs without field descriptions', () => {
-		expect(() =>
-			defineOp({
-				id: 'plugin.status.patch',
-				doc: {
-					title: 'Patch Plugin Status',
-					description: 'Patch a nested plugin status shape.',
-				},
-				input: obj({
-					name: Type.String({ description: 'Plugin name.' }),
-					status: obj(
-						{
-							stage: Type.String(),
-						},
-						{ description: 'Nested status patch.' },
-					),
-				}),
-				output: obj({
-					ok: Type.Boolean(),
-				}),
-				tool: true,
-				async execute() {
-					return { ok: true }
-				},
-			}),
-		).toThrow(/must describe input "status\.stage"/i)
-	})
-
-	it('rejects internal ops that also declare external carriers', () => {
-		expect(() =>
-			defineOp({
-				id: 'internal.echo',
-				input: obj({}),
-				output: obj({
-					ok: Type.Boolean(),
-				}),
-				exposure: {
-					internal: true,
-					rpc: true,
-				},
-				async execute() {
-					return { ok: true }
-				},
-			}),
-		).toThrow(/cannot declare rpc, cli, or tool exposure/i)
-	})
-
-	it('rejects invalid CLI trigger tokens at definition time', () => {
-		expect(() =>
-			defineOp({
-				id: 'plugin.status.get',
-				input: obj({}),
-				output: obj({
-					ok: Type.Boolean(),
-				}),
-				cli: {
-					triggers: ['Plugin Status'],
-				},
-				async execute() {
-					return { ok: true }
-				},
-			}),
-		).toThrow(/CLI trigger/i)
-	})
-
-	it('projects parsebox CLI metadata into the canonical descriptor without parser state', () => {
-		const module = new Runtime.Module({
-			Main: Runtime.String(['"']),
-		})
-		const op = defineOp({
-			id: 'math.parsebox',
+			id: 'math.add',
 			doc: {
-				title: 'ParseBox Example',
-				description: 'Example parsebox op.',
+				title: 'Add Numbers',
+				description: 'Add one to the input number.',
 			},
-			input: obj({
-				value: Type.String({ description: 'Value.' }),
-			}),
-			output: obj({
-				ok: Type.Boolean(),
-			}),
-			cli: {
-				triggers: ['math parsebox'],
-				tail: cli.tail.parsebox(module, 'Main', {
-					placeholder: '<value>',
-					keys: ['value'],
-				}),
-			},
-			async execute() {
-				return { ok: true }
+			input: obj({ value: Type.Number() }),
+			output: obj({ total: Type.Number() }),
+			run(input) {
+				return { total: input.value + 1 }
 			},
 		})
 
-		expect(op.descriptor).toEqual(
-			expect.objectContaining({
-				transports: expect.objectContaining({
-					cli: expect.objectContaining({
-						tail: {
-							mode: 'parsebox',
-							entry: 'Main',
-							placeholder: '<value>',
-							keys: ['value'],
-						},
-					}),
-				}),
+		expect(op.descriptor).toEqual({
+			id: 'math.add',
+			doc: {
+				title: 'Add Numbers',
+				description: 'Add one to the input number.',
+			},
+			schemas: {
+				input: expect.objectContaining({ type: 'object' }),
+				output: expect.objectContaining({ type: 'object' }),
+			},
+		})
+		expect(Object.keys(op.descriptor).sort()).toEqual(['doc', 'id', 'schemas'])
+		await expect(op.invokeRaw({ value: 2 })).resolves.toEqual({ total: 3 })
+	})
+
+	it('normalizes input before validate and run', async () => {
+		const seen: number[] = []
+		const op = defineOp({
+			id: 'math.defaulted',
+			doc: {
+				title: 'Default Number',
+				description: 'Apply schema defaults before custom validation.',
+			},
+			input: obj({
+				value: Type.Optional(Type.Number({ default: 4 })),
 			}),
-		)
+			output: obj({ value: Type.Number() }),
+			validate(input) {
+				seen.push(input.value ?? -1)
+			},
+			run(input) {
+				return { value: input.value ?? 0 }
+			},
+		})
+
+		await expect(op.invokeRaw({})).resolves.toEqual({ value: 4 })
+		expect(seen).toEqual([4])
+	})
+
+	it('returns structured validation errors from safe invoke', async () => {
+		const op = defineOp({
+			id: 'math.positive',
+			doc: {
+				title: 'Positive Number',
+				description: 'Require a positive number using custom validation.',
+			},
+			input: obj({ value: Type.Number() }),
+			output: obj({ value: Type.Number() }),
+			validate(input) {
+				if (input.value <= 0) {
+					return validation.issue('value must be positive', {
+						path: ['value'],
+						code: 'positive',
+					})
+				}
+			},
+			run(input) {
+				return input
+			},
+		})
+
+		const result = await op.invoke({ value: 0 })
+		expect(result.ok).toBe(false)
+		if (!result.ok) {
+			expect(result.error).toBeInstanceOf(errors.OpError)
+			expect(result.error.code).toBe('E_INPUT_VALIDATION')
+			expect(result.error.details).toEqual({
+				issues: [{ message: 'value must be positive', path: ['value'], code: 'positive' }],
+			})
+		}
+	})
+
+	it('runs output schema validation before validateOutput', async () => {
+		const op = defineOp({
+			id: 'math.output',
+			doc: {
+				title: 'Validate Output',
+				description: 'Validate output shape and output constraints.',
+			},
+			input: obj({}),
+			output: obj({ count: Type.Number() }),
+			validateOutput(output) {
+				if (output.count > 10) return validation.issue('count is too high', { path: ['count'] })
+			},
+			run() {
+				return { count: 11 }
+			},
+		})
+
+		await expect(op.invokeRaw({})).rejects.toMatchObject({
+			code: 'E_OUTPUT_VALIDATION',
+			details: { issues: [{ message: 'count is too high', path: ['count'] }] },
+		})
 	})
 })

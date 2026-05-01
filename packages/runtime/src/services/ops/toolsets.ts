@@ -51,28 +51,30 @@ function toOutput(toolset: OpsToolsetInputValue): OpsToolsetOutput {
 	}
 }
 
-export function readOpsToolsets(pCtx: PlxContext): OpsToolsetOutput[] {
-	const raw = pCtx.configService.getExtra(OPS_TOOLSETS_KEY)
-	if (!Array.isArray(raw)) return []
-
-	const toolsets: OpsToolsetOutput[] = []
-	for (const item of raw) {
+function normalizeToolsets(items: readonly unknown[]): OpsToolsetInputValue[] {
+	const byId = new Map<string, OpsToolsetInputValue>()
+	for (const item of items) {
 		const parsed = v.safeParse(OpsToolsetInputSchema, item)
 		if (!parsed.success) continue
 		const normalized = normalizeToolset(parsed.output)
 		if (!normalized) continue
-		toolsets.push(toOutput(normalized))
+		byId.set(normalized.toolsetId, normalized)
 	}
-	return toolsets
+	return [...byId.values()]
+}
+
+export function readOpsToolsets(pCtx: PlxContext): OpsToolsetOutput[] {
+	const raw = pCtx.configService.getExtra(OPS_TOOLSETS_KEY)
+	if (!Array.isArray(raw)) return []
+
+	return normalizeToolsets(raw).map(toOutput)
 }
 
 export function writeOpsToolsets(
 	pCtx: PlxContext,
-	toolsets: OpsToolsetInputValue[],
+	toolsets: readonly unknown[],
 ): OpsToolsetOutput[] {
-	const normalized = toolsets
-		.map(normalizeToolset)
-		.filter((toolset): toolset is OpsToolsetInputValue => toolset !== null)
+	const normalized = normalizeToolsets(toolsets)
 
 	pCtx.configService.setExtra(
 		OPS_TOOLSETS_KEY,
@@ -96,14 +98,13 @@ export function buildOpsToolsetManifest(options: {
 		pluginId?: string
 		descriptor: {
 			doc: {
-				title?: string
-				description?: string
-				tags?: string[]
+				title: string
+				description: string
 			}
-			policy: {
-				mutating?: boolean
-				confirm?: boolean
-			}
+		}
+		workbench: {
+			mutating: boolean
+			confirm: boolean
 		}
 	}>
 }): RuntimeOpToolsetManifest {
@@ -119,14 +120,14 @@ export function buildOpsToolsetManifest(options: {
 		}
 		tools.push({
 			id: entry.id,
-			title: entry.descriptor.doc.title ?? entry.id,
+			title: entry.descriptor.doc.title,
 			description: entry.descriptor.doc.description,
-			tags: entry.descriptor.doc.tags ?? [],
+			tags: [],
 			owner: entry.owner,
 			ownerKind: entry.ownerKind,
 			pluginId: entry.pluginId,
-			mutating: entry.descriptor.policy.mutating === true,
-			confirm: entry.descriptor.policy.confirm === true,
+			mutating: entry.workbench.mutating,
+			confirm: entry.workbench.confirm,
 		})
 	}
 

@@ -287,7 +287,7 @@ export function OpsCatalogPane({
 															<Text fw={600} size="sm">
 																{entry.descriptor.doc.title ?? entry.id}
 															</Text>
-															{entry.descriptor.policy.confirm ? (
+															{entry.workbench.confirm ? (
 																<Badge size="xs" variant="dot" color="yellow">
 																	确认
 																</Badge>

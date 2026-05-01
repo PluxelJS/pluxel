@@ -153,14 +153,33 @@ export type PluginStatusBatchResult = {
 	commitError?: string
 }
 
-export type RuntimeOpDescriptor = OpDescriptor
 export type RuntimeOpCatalogOwnerKind = 'runtime' | 'plugin' | 'context'
+export type RuntimeOpCliBindingSummary = {
+	triggers: string[]
+	tail?: {
+		mode: 'line' | 'json' | 'parsebox'
+		key?: string
+		entry?: string
+		placeholder?: string
+		keys?: readonly string[]
+	}
+}
+export type RuntimeOpCatalogBindings = {
+	cli?: RuntimeOpCliBindingSummary
+	rpc?: { exposed: true }
+	mcp?: { name: string }
+}
 export type RuntimeOpCatalogEntry = {
 	id: string
 	owner: string
 	ownerKind: RuntimeOpCatalogOwnerKind
 	pluginId?: string
-	descriptor: RuntimeOpDescriptor
+	descriptor: OpDescriptor
+	bindings: RuntimeOpCatalogBindings
+	workbench: {
+		mutating: boolean
+		confirm: boolean
+	}
 }
 
 export type PluginStatusEntryLifecycleStage = 'running' | 'stopped' | 'disabled'
@@ -373,7 +392,6 @@ type RuntimeRpcApiContract<ExtRpc = Record<string, unknown>> = {
 	ext: ExtRpc
 	extensions: () => string[]
 	buildSnapshot: () => Promise<BuildSnapshotResult>
-	opsList: () => RuntimeOpDescriptor[]
 	opsCatalog: () => RuntimeOpCatalogEntry[]
 	opsToolsets: () => OpsToolset[]
 	resolveOpsToolset: (toolsetId: string) => RuntimeOpToolsetManifest | null

@@ -173,15 +173,3 @@ export const configFieldEntrySchema = obj({
 	}),
 	value: Type.Unknown({ description: 'Value to write at the target field path.' }),
 })
-
-export const runtimeOpsDescriptorSchema = Type.Array(
-	openObj({
-		id: Type.String(),
-		doc: openObj({}),
-		exposure: openObj({}),
-		policy: openObj({}),
-		schemas: openObj({}),
-		params: Type.Optional(Type.Array(openObj({}))),
-		transports: openObj({}),
-	}),
-)

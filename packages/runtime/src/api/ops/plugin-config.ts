@@ -39,13 +39,10 @@ const pluginSchemaGetOp = defineRuntimeOp({
 		name: pluginNameSchema,
 	}),
 	output: schemaResultSchema,
-	exposure: { rpc: true },
-	policy: { idempotent: true },
-	tool: true,
 	cli: {
 		triggers: ['plugin schema'],
 	},
-	async execute(input, opCtx) {
+	async run(input, opCtx) {
 		return await pluginSchema(opCtx.runtime, input.name)
 	},
 })
@@ -60,13 +57,10 @@ const pluginConfigGetOp = defineRuntimeOp({
 		name: pluginNameSchema,
 	}),
 	output: configResultSchema,
-	exposure: { rpc: true },
-	policy: { idempotent: true },
-	tool: true,
 	cli: {
 		triggers: ['plugin config get'],
 	},
-	async execute(input, opCtx) {
+	async run(input, opCtx) {
 		return await pluginConfigGet(opCtx.runtime, input.name)
 	},
 })
@@ -85,14 +79,11 @@ const pluginsConfigGetOp = defineRuntimeOp({
 		}),
 	}),
 	output: configBatchResultSchema,
-	exposure: { rpc: true },
-	policy: { idempotent: true },
-	tool: true,
 	cli: {
 		triggers: ['plugins config get'],
 		tail: cli.tail.json('names'),
 	},
-	async execute(input, opCtx) {
+	async run(input, opCtx) {
 		return await runConfigBatch(
 			input.names.map((name) => ({ name })),
 			async (entry) => await pluginConfigGet(opCtx.runtime, entry.name),
@@ -114,14 +105,11 @@ const pluginConfigValidateOp = defineRuntimeOp({
 		}),
 	}),
 	output: configResultSchema,
-	exposure: { rpc: true },
-	policy: { idempotent: true },
-	tool: true,
 	cli: {
 		triggers: ['plugin config validate'],
 		tail: cli.tail.json('patch'),
 	},
-	async execute(input, opCtx) {
+	async run(input, opCtx) {
 		return await pluginConfigValidate(opCtx.runtime, input.name, input.patch)
 	},
 })
@@ -140,14 +128,11 @@ const pluginsConfigValidateOp = defineRuntimeOp({
 		}),
 	}),
 	output: configBatchResultSchema,
-	exposure: { rpc: true },
-	policy: { idempotent: true },
-	tool: true,
 	cli: {
 		triggers: ['plugins config validate'],
 		tail: cli.tail.json('entries'),
 	},
-	async execute(input, opCtx) {
+	async run(input, opCtx) {
 		return await runConfigBatch(
 			input.entries,
 			async (entry) => await pluginConfigValidate(opCtx.runtime, entry.name, entry.patch),
@@ -169,14 +154,12 @@ const pluginConfigPatchOp = defineRuntimeOp({
 		}),
 	}),
 	output: configResultSchema,
-	exposure: { rpc: true },
-	policy: { mutating: true, audit: ['plugin-config'] },
-	tool: true,
+	workbench: { mutating: true },
 	cli: {
 		triggers: ['plugin config patch'],
 		tail: cli.tail.json('patch'),
 	},
-	async execute(input, opCtx) {
+	async run(input, opCtx) {
 		return await pluginConfigPatch(opCtx.runtime, input.name, input.patch)
 	},
 })
@@ -195,14 +178,12 @@ const pluginsConfigSetOp = defineRuntimeOp({
 		}),
 	}),
 	output: configBatchResultSchema,
-	exposure: { rpc: true },
-	policy: { mutating: true, audit: ['plugin-config'] },
-	tool: true,
+	workbench: { mutating: true },
 	cli: {
 		triggers: ['plugins config set'],
 		tail: cli.tail.json('entries'),
 	},
-	async execute(input, opCtx) {
+	async run(input, opCtx) {
 		return await runConfigBatch(
 			input.entries,
 			async (entry) => await pluginConfigPatch(opCtx.runtime, entry.name, entry.patch),
@@ -232,9 +213,8 @@ const pluginConfigPatchFieldOp = defineRuntimeOp({
 		}),
 	}),
 	output: configResultSchema,
-	exposure: { rpc: true },
-	policy: { mutating: true, audit: ['plugin-config'] },
-	async execute(input, opCtx) {
+	workbench: { mutating: true },
+	async run(input, opCtx) {
 		return await pluginConfigPatchField(opCtx.runtime, input.name, {
 			schemaKey: input.schemaKey,
 			fieldPath: input.fieldPath,
@@ -257,14 +237,12 @@ const pluginsConfigPatchFieldOp = defineRuntimeOp({
 		}),
 	}),
 	output: configBatchResultSchema,
-	exposure: { rpc: true },
-	policy: { mutating: true, audit: ['plugin-config'] },
-	tool: true,
+	workbench: { mutating: true },
 	cli: {
 		triggers: ['plugins config patch-field'],
 		tail: cli.tail.json('entries'),
 	},
-	async execute(input, opCtx) {
+	async run(input, opCtx) {
 		return await runConfigBatch(
 			input.entries,
 			async (entry) =>
@@ -293,13 +271,11 @@ const pluginConfigResetOp = defineRuntimeOp({
 		),
 	}),
 	output: configResultSchema,
-	exposure: { rpc: true },
-	policy: { mutating: true, audit: ['plugin-config'] },
-	tool: true,
+	workbench: { mutating: true },
 	cli: {
 		triggers: ['plugin config reset'],
 	},
-	async execute(input, opCtx) {
+	async run(input, opCtx) {
 		return await pluginConfigReset(opCtx.runtime, input.name, input.keys)
 	},
 })
@@ -318,14 +294,12 @@ const pluginsConfigResetOp = defineRuntimeOp({
 		}),
 	}),
 	output: configBatchResultSchema,
-	exposure: { rpc: true },
-	policy: { mutating: true, audit: ['plugin-config'] },
-	tool: true,
+	workbench: { mutating: true },
 	cli: {
 		triggers: ['plugins config reset'],
 		tail: cli.tail.json('entries'),
 	},
-	async execute(input, opCtx) {
+	async run(input, opCtx) {
 		return await runConfigBatch(
 			input.entries,
 			async (entry) => await pluginConfigReset(opCtx.runtime, entry.name, entry.keys),

@@ -2,8 +2,6 @@ export {
 	Type,
 	TypeBox,
 	compileValidator,
-	deriveParamSpecs,
-	isObjectSchema,
 	obj,
 	openObj,
 	toJsonSchema,

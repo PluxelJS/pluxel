@@ -29,13 +29,10 @@ const pluginDependenciesListOp = defineRuntimeOp({
 		name: pluginNameSchema,
 	}),
 	output: Type.Array(pluginDependencyRefSchema),
-	exposure: { rpc: true },
-	policy: { idempotent: true },
-	tool: true,
 	cli: {
 		triggers: ['plugin dependencies list'],
 	},
-	async execute(input, opCtx) {
+	async run(input, opCtx) {
 		return listPluginDependencies(opCtx.runtime, input.name)
 	},
 })
@@ -51,13 +48,10 @@ const pluginDependenciesInspectOp = defineRuntimeOp({
 		name: pluginNameSchema,
 	}),
 	output: Type.Array(pluginDependencyStateSchema),
-	exposure: { rpc: true },
-	policy: { idempotent: true },
-	tool: true,
 	cli: {
 		triggers: ['plugin dependencies inspect'],
 	},
-	async execute(input, opCtx) {
+	async run(input, opCtx) {
 		return inspectPluginDependencies(opCtx.runtime, input.name)
 	},
 })
@@ -79,10 +73,8 @@ const pluginDependenciesSetTargetOp = defineRuntimeOp({
 		}),
 	}),
 	output: pluginDependencyMutationResultSchema,
-	exposure: { rpc: true },
-	policy: { mutating: true, audit: ['plugin-dependencies'] },
-	tool: true,
-	async execute(input, opCtx) {
+	workbench: { mutating: true },
+	async run(input, opCtx) {
 		return await pluginDependencySetTarget(opCtx.runtime, input.name, input.index, input.targetName)
 	},
 })
@@ -97,13 +89,10 @@ const pluginBaseProviderInspectOp = defineRuntimeOp({
 		name: pluginNameSchema,
 	}),
 	output: baseProviderInfoSchema,
-	exposure: { rpc: true },
-	policy: { idempotent: true },
-	tool: true,
 	cli: {
 		triggers: ['plugin base-provider inspect'],
 	},
-	async execute(input, opCtx) {
+	async run(input, opCtx) {
 		return inspectPluginBaseProvider(opCtx.runtime, input.name)
 	},
 })
@@ -125,10 +114,8 @@ const pluginBaseProviderSelectOp = defineRuntimeOp({
 		}),
 	}),
 	output: pluginDependencyMutationResultSchema,
-	exposure: { rpc: true },
-	policy: { mutating: true, audit: ['plugin-dependencies'] },
-	tool: true,
-	async execute(input, opCtx) {
+	workbench: { mutating: true },
+	async run(input, opCtx) {
 		return await pluginBaseProviderSet(
 			opCtx.runtime,
 			input.name,
@@ -160,13 +147,11 @@ const pluginForkEnsureOp = defineRuntimeOp({
 		),
 	}),
 	output: ensureForkResultSchema,
-	exposure: { rpc: true },
-	policy: { mutating: true, audit: ['plugin-dependencies'] },
-	tool: true,
+	workbench: { mutating: true },
 	cli: {
 		triggers: ['plugin fork ensure'],
 	},
-	async execute(input, opCtx) {
+	async run(input, opCtx) {
 		return await ensureFork(opCtx.runtime, input.baseName, input.forkId, {
 			enable: input.enable,
 		})

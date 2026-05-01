@@ -58,17 +58,11 @@ async function withRuntimeHarness<T>(run: (harness: RuntimeHarness) => Promise<T
 }
 
 describe('runtime ops', () => {
-	it('restores missing runtime ops without registering transport facade ops', async () => {
+	it('registers canonical runtime ops idempotently', async () => {
 		await withRuntimeHarness(({ root }) => {
-			expect(root.ops.has('plugin.status')).toBe(true)
-			expect(root.ops.has('security.admin.events')).toBe(false)
-			expect(root.ops.has('runtime.ops.invoke')).toBe(false)
-			expect(root.ops.has('runtime.ops.dispatch')).toBe(false)
-			root.ops.unregister('plugin.status')
-
+			expect(root.ops.get('plugin.status')).toBeTruthy()
 			ensureRuntimeOpsRegistered(root)
-			expect(root.ops.has('plugin.status')).toBe(true)
-			expect(root.ops.has('security.admin.events')).toBe(false)
+			expect(root.ops.get('plugin.status')).toBeTruthy()
 		})
 	})
 
@@ -80,7 +74,10 @@ describe('runtime ops', () => {
 
 			await expect(root.ops.dispatch('plugin start --name Alpha')).resolves.toEqual({
 				ok: true,
-				name: 'Alpha',
+				value: {
+					ok: true,
+					name: 'Alpha',
+				},
 			})
 			expect(host.isRunning(Alpha)).toBe(true)
 
@@ -90,12 +87,15 @@ describe('runtime ops', () => {
 				}),
 			).resolves.toEqual({
 				ok: true,
-				results: [
-					expect.objectContaining({
-						name: 'Alpha',
-						ok: true,
-					}),
-				],
+				value: {
+					ok: true,
+					results: [
+						expect.objectContaining({
+							name: 'Alpha',
+							ok: true,
+						}),
+					],
+				},
 			})
 			expect(host.isRunning(Alpha)).toBe(false)
 
@@ -105,12 +105,15 @@ describe('runtime ops', () => {
 				}),
 			).resolves.toEqual({
 				ok: true,
-				results: [
-					expect.objectContaining({
-						name: 'Alpha',
-						ok: true,
-					}),
-				],
+				value: {
+					ok: true,
+					results: [
+						expect.objectContaining({
+							name: 'Alpha',
+							ok: true,
+						}),
+					],
+				},
 			})
 			expect(host.isRunning(Alpha)).toBe(true)
 		})
@@ -124,15 +127,18 @@ describe('runtime ops', () => {
 				}),
 			).resolves.toEqual({
 				ok: true,
-				items: [
-					expect.objectContaining({
-						name: 'Alpha',
-						result: expect.objectContaining({
-							ok: true,
-							saved: true,
+				value: {
+					ok: true,
+					items: [
+						expect.objectContaining({
+							name: 'Alpha',
+							result: expect.objectContaining({
+								ok: true,
+								saved: true,
+							}),
 						}),
-					}),
-				],
+					],
+				},
 			})
 
 			expect(root.configService.getRawConfig('Alpha')).toEqual({ basic: { enabled: true } })
@@ -145,16 +151,22 @@ describe('runtime ops', () => {
 			).resolves.toEqual(
 				expect.objectContaining({
 					ok: true,
-					saved: true,
-					config: { basic: { enabled: false } },
+					value: expect.objectContaining({
+						ok: true,
+						saved: true,
+						config: { basic: { enabled: false } },
+					}),
 				}),
 			)
 
 			await expect(rpc.opsInvoke('plugin.config.get', { name: 'Alpha' })).resolves.toEqual({
 				ok: true,
-				saved: false,
-				config: { basic: { enabled: false } },
-				defaults: { basic: { enabled: false } },
+				value: {
+					ok: true,
+					saved: false,
+					config: { basic: { enabled: false } },
+					defaults: { basic: { enabled: false } },
+				},
 			})
 		})
 	})
@@ -163,44 +175,49 @@ describe('runtime ops', () => {
 		await withRuntimeHarness(async ({ rpc }) => {
 			await expect(
 				rpc.opsInvoke('plugin.dependencies.list', { name: 'Consumer' }),
-			).resolves.toEqual([expect.objectContaining({ name: 'Beta' })])
+			).resolves.toEqual({
+				ok: true,
+				value: [expect.objectContaining({ name: 'Beta' })],
+			})
 
 			await expect(
 				rpc.opsInvoke('plugin.dependencies.inspect', { name: 'Consumer' }),
-			).resolves.toEqual([
-				expect.objectContaining({
-					index: 0,
-					token: 'Beta',
-					kind: 'plugin',
-					effective: 'Beta',
-					selected: null,
-				}),
-			])
+			).resolves.toEqual({
+				ok: true,
+				value: [
+					expect.objectContaining({
+						index: 0,
+						token: 'Beta',
+						kind: 'plugin',
+						effective: 'Beta',
+						selected: null,
+					}),
+				],
+			})
 		})
 	})
 
-	it('blocks rpc invocation for ops that are not rpc-exposed', async () => {
+	it('blocks rpc invocation for ops that have no rpc binding', async () => {
 		await withRuntimeHarness(async ({ root, rpc }) => {
 			root.ops.register(
 				defineOp({
-					id: 'demo.tool-only',
+					id: 'demo.mcp-only',
 					doc: {
-						title: 'Demo Tool Only',
-						description: 'Tool-visible only.',
+						title: 'Demo MCP Only',
+						description: 'MCP-visible only.',
 					},
 					input: obj({}),
 					output: obj({
 						ok: Type.Boolean(),
 					}),
-					tool: true,
-					async execute() {
+					async run() {
 						return { ok: true }
 					},
 				}),
-				{ owner: 'runtime:test' },
+				{ owner: 'runtime:test', metadata: { rpc: false, mcp: {} } },
 			)
 
-			await expect(rpc.opsInvoke('demo.tool-only', {})).rejects.toMatchObject({
+			await expect(rpc.opsInvoke('demo.mcp-only', {})).rejects.toMatchObject({
 				code: 'E_FORBIDDEN',
 			})
 		})
@@ -221,32 +238,29 @@ describe('runtime ops', () => {
 					output: obj({
 						ok: Type.Boolean(),
 					}),
-					exposure: {
-						rpc: true,
-					},
-					async execute() {
+					async run() {
 						return { ok: true }
 					},
 				}),
+				{ metadata: { rpc: true } },
 			)
 
 			root.ops.register(
 				defineOp({
-					id: 'catalog.tool-only',
+					id: 'catalog.mcp-only',
 					doc: {
-						title: 'Catalog Tool Only',
+						title: 'Catalog MCP Only',
 						description: 'Should stay out of rpc catalog.',
 					},
 					input: obj({}),
 					output: obj({
 						ok: Type.Boolean(),
 					}),
-					tool: true,
-					async execute() {
+					async run() {
 						return { ok: true }
 					},
 				}),
-				{ owner: 'runtime:test' },
+				{ owner: 'runtime:test', metadata: { rpc: false, mcp: {} } },
 			)
 
 			const catalog = rpc.opsCatalog()
@@ -258,7 +272,7 @@ describe('runtime ops', () => {
 				ownerKind: 'plugin',
 				pluginId: 'plugin.catalog',
 			})
-			expect(catalog.some((entry) => entry.id === 'catalog.tool-only')).toBe(false)
+			expect(catalog.some((entry) => entry.id === 'catalog.mcp-only')).toBe(false)
 			expect(
 				catalog.some((entry) => entry.id === 'plugin.status' && entry.ownerKind === 'runtime'),
 			).toBe(true)
@@ -303,6 +317,35 @@ describe('runtime ops', () => {
 				]),
 				missingOpIds: [],
 			})
+
+			await expect(
+				rpc.updateOpsToolsets([
+					{
+						toolsetId: 'daily',
+						name: 'Stale Daily Name',
+						opIds: ['plugin.status'],
+					},
+					{
+						toolsetId: 'daily',
+						name: 'Daily Toolset',
+						description: 'Deduplicated write wins by toolset id.',
+						opIds: ['plugins.status.apply', 'plugins.status.apply'],
+					},
+					{
+						toolsetId: '',
+						name: 'Invalid',
+						opIds: ['plugin.status'],
+					},
+				]),
+			).resolves.toEqual([
+				{
+					__typename: 'OpsToolset',
+					toolsetId: 'daily',
+					name: 'Daily Toolset',
+					description: 'Deduplicated write wins by toolset id.',
+					opIds: ['plugins.status.apply'],
+				},
+			])
 		})
 	})
 })

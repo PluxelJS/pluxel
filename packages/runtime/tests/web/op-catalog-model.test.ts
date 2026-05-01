@@ -19,13 +19,9 @@ function makeEntry(
 		doc: {
 			title: 'Echo',
 			description: 'Echo input',
-			tags: ['demo'],
 			...overrides?.descriptor?.doc,
 		},
-		exposure: { rpc: true, internal: false },
-		policy: {},
 		schemas: { input: inputSchema, output: { type: 'object', properties: {}, required: [] } },
-		transports: {},
 		...overrides?.descriptor,
 	}
 	return {
@@ -33,6 +29,8 @@ function makeEntry(
 		owner: overrides?.owner ?? 'plugin:demo',
 		ownerKind: overrides?.ownerKind ?? 'plugin',
 		pluginId: overrides?.pluginId ?? 'demo',
+		bindings: overrides?.bindings ?? { rpc: { exposed: true } },
+		workbench: overrides?.workbench ?? { mutating: false, confirm: false },
 		...(overrides ? { ...overrides, descriptor } : { descriptor }),
 	}
 }

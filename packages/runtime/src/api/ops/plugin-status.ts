@@ -32,13 +32,10 @@ const pluginsListOp = defineRuntimeOp({
 			disabled: Type.Number(),
 		}),
 	}),
-	exposure: { rpc: true },
-	policy: { idempotent: true },
-	tool: true,
 	cli: {
 		triggers: ['plugins list'],
 	},
-	async execute(_input, opCtx) {
+	async run(_input, opCtx) {
 		return pluginsList(opCtx.runtime)
 	},
 })
@@ -53,13 +50,10 @@ const pluginStatusGetOp = defineRuntimeOp({
 		name: pluginNameSchema,
 	}),
 	output: pluginStatusOutputSchema,
-	exposure: { rpc: true },
-	policy: { idempotent: true },
-	tool: true,
 	cli: {
 		triggers: ['plugin status'],
 	},
-	async execute(input, opCtx) {
+	async run(input, opCtx) {
 		const status = pluginStatus(opCtx.runtime, input.name)
 		if (!status) {
 			return {
@@ -92,14 +86,12 @@ const pluginsStatusApplyOp = defineRuntimeOp({
 		),
 	}),
 	output: pluginStatusBatchOutputSchema,
-	exposure: { rpc: true },
-	policy: { mutating: true, audit: ['plugin-status'] },
-	tool: true,
+	workbench: { mutating: true },
 	cli: {
 		triggers: ['plugins status apply'],
 		tail: cli.tail.json('actions'),
 	},
-	async execute(input, opCtx) {
+	async run(input, opCtx) {
 		return await applyStatusActions(opCtx.runtime, input.actions)
 	},
 })
@@ -120,13 +112,11 @@ function createSingleStatusActionOp(action: 'start' | 'stop' | 'restart' | 'enab
 			error: Type.Optional(Type.String()),
 			commitError: Type.Optional(Type.String()),
 		}),
-		exposure: { rpc: true },
-		policy: { mutating: true, audit: ['plugin-status'] },
-		tool: true,
+		workbench: { mutating: true },
 		cli: {
 			triggers: [`plugin ${action}`],
 		},
-		async execute(input, opCtx) {
+		async run(input, opCtx) {
 			const batch = await applyStatusActions(opCtx.runtime, [{ name: input.name, action }])
 			const first = batch.results[0]
 			if (!batch.ok) {
@@ -189,13 +179,10 @@ const pluginWaitForStageOp = defineRuntimeOp({
 			last: Type.Optional(pluginStatusSnapshotSchema),
 		}),
 	]),
-	exposure: { rpc: true },
-	policy: { idempotent: true },
-	tool: true,
 	cli: {
 		triggers: ['plugin wait'],
 	},
-	async execute(input, opCtx) {
+	async run(input, opCtx) {
 		return await pluginWaitForStage(opCtx.runtime, input)
 	},
 })

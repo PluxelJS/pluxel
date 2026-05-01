@@ -20,6 +20,8 @@
   插件 UI 系统设计：builtin、自定义前端、共享状态模型与 interaction ownership
 - `docs/design/ops-catalog/overview.md`
   ops live registry 的 host-side catalog 设计：动态控制面、runtime read model 与 workbench Ops 视图
+- `packages/ops/docs/core-v2.md`、`packages/ops/docs/adapters-v2.md`
+  ops V2 设计：轻量 core contract 与 CLI/runtime/host 外沿设施分层
 实现 contract 不放在这里，统一跟随对应包：
 
 - `packages/runtime/docs/config/contract.md`

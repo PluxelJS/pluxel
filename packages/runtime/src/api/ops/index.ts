@@ -1,22 +1,16 @@
 import type { Context } from '@pluxel/core'
-import { type OpDescriptor } from '@pluxel/ops'
+import { type OpResult } from '@pluxel/ops'
 
 import type { RuntimeOpSource } from '../../services/ops/OpsService'
 import type { RuntimeOpCatalogEntry } from '../../web/protocol'
 import { pluginConfigOps } from './plugin-config'
 import { pluginDependencyOps } from './plugin-dependencies'
 import { pluginStatusOps } from './plugin-status'
-import { createRuntimeMetaOps } from './runtime-meta'
 
 const RUNTIME_OPS_OWNER = 'runtime:ops'
 
 function resolveRootContext(ctx: Context): Context {
 	return (ctx.root ?? ctx) as Context
-}
-
-function listRegisteredRuntimeOps(ctx: Context): OpDescriptor[] {
-	ensureRuntimeOpsRegistered(ctx)
-	return resolveRootContext(ctx).ops.list()
 }
 
 function listRegisteredRuntimeOpsCatalog(ctx: Context): RuntimeOpCatalogEntry[] {
@@ -29,7 +23,7 @@ async function invokeRegisteredRuntimeOp<O>(
 	id: string,
 	input: unknown,
 	source: RuntimeOpSource['kind'] = 'rpc',
-): Promise<O> {
+): Promise<OpResult<O>> {
 	ensureRuntimeOpsRegistered(ctx)
 	return await resolveRootContext(ctx).ops.invoke<O>(id, input, {
 		source: { kind: source },
@@ -40,7 +34,7 @@ async function dispatchRegisteredRuntimeCommand<O>(
 	ctx: Context,
 	command: string,
 	source: RuntimeOpSource['kind'] = 'cli',
-): Promise<O> {
+): Promise<OpResult<O>> {
 	ensureRuntimeOpsRegistered(ctx)
 	return await resolveRootContext(ctx).ops.dispatch<O>(command, {
 		source: { kind: source },
@@ -51,9 +45,6 @@ const runtimeOps = Object.freeze([
 	...pluginStatusOps,
 	...pluginDependencyOps,
 	...pluginConfigOps,
-	...createRuntimeMetaOps({
-		listRuntimeOps: listRegisteredRuntimeOps,
-	}),
 ])
 
 export function ensureRuntimeOpsRegistered(ctx: Context): void {
@@ -61,13 +52,9 @@ export function ensureRuntimeOpsRegistered(ctx: Context): void {
 
 	const ops = root.ops
 	for (const op of runtimeOps) {
-		if (ops.has(op.id)) continue
+		if (ops.get(op.id)) continue
 		ops.register(op, { owner: RUNTIME_OPS_OWNER })
 	}
-}
-
-export function getRuntimeOps(ctx: Context): OpDescriptor[] {
-	return listRegisteredRuntimeOps(ctx)
 }
 
 export function getRuntimeOpsCatalog(ctx: Context): RuntimeOpCatalogEntry[] {
@@ -79,7 +66,7 @@ export async function invokeRuntimeOp<O>(
 	id: string,
 	input: unknown,
 	source: RuntimeOpSource['kind'] = 'rpc',
-): Promise<O> {
+): Promise<OpResult<O>> {
 	return await invokeRegisteredRuntimeOp(ctx, id, input, source)
 }
 
@@ -87,6 +74,6 @@ export async function dispatchRuntimeCommand<O>(
 	ctx: Context,
 	command: string,
 	source: RuntimeOpSource['kind'] = 'cli',
-): Promise<O> {
+): Promise<OpResult<O>> {
 	return await dispatchRegisteredRuntimeCommand(ctx, command, source)
 }

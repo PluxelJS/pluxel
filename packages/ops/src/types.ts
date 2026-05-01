@@ -110,19 +110,10 @@ export interface OpContext {
 	signal?: AbortSignal
 	deadlineMs?: number
 	now?: number
-	emit?: (type: string, payload: Record<string, unknown>) => void
-	span?: <T>(name: string, attrs: Record<string, unknown>, fn: () => T | Promise<T>) => Promise<T>
-	classifyError?: (error: unknown) => OpError | undefined
-	onFault?: (payload: {
-		id: string
-		err: OpError
-		durationMs: number
-		recovered: boolean
-	}) => void | Promise<void>
 	meta?: Record<string, unknown>
 }
 
-export type CustomValidator<T, Ctx extends OpContext = OpContext> = (
+export type Validator<T, Ctx extends OpContext = OpContext> = (
 	value: T,
 	ctx: Ctx,
 ) =>
@@ -132,24 +123,8 @@ export type CustomValidator<T, Ctx extends OpContext = OpContext> = (
 	| Promise<void | ValidationIssue | ValidationIssue[]>
 
 export type OpDoc = {
-	title?: string
-	description?: string
-	details?: string
-	usage?: string
-	examples?: string[]
-	tags?: string[]
-}
-
-export type OpExposure = {
-	rpc?: boolean
-	internal?: boolean
-}
-
-export type OpPolicy = {
-	mutating?: boolean
-	idempotent?: boolean
-	confirm?: boolean
-	audit?: string[]
+	title: string
+	description: string
 }
 
 export type ParamValueType = 'string' | 'number' | 'integer' | 'boolean' | 'array' | 'json'
@@ -196,48 +171,6 @@ export type CliParseboxTailConfig = Omit<CliParseboxTailSpec, 'entry'> & {
 
 export type CliTailConfig = CliLineTailSpec | CliParseboxTailConfig
 
-export type OpCliConfig = {
-	triggers?: string[]
-	tail?: CliTailConfig
-}
-
-export type OpToolConfig = {
-	name?: string
-}
-
-export type ToolInputHint = {
-	key: string
-	type: ParamValueType
-	required: boolean
-	description?: string
-}
-
-export type ToolDef = {
-	id: string
-	name: string
-	title: string
-	description: string
-	guidance: string
-	details?: string
-	usage?: string
-	examples?: string[]
-	tags?: string[]
-	inputHints?: ToolInputHint[]
-	inputSchema: Record<string, unknown>
-	outputSchema: Record<string, unknown>
-}
-
-export type OpCliProjection = {
-	triggers: string[]
-	tail?: CliTailSpec
-	usage?: string
-}
-
-export type OpTransports = {
-	cli?: OpCliProjection
-	tool?: ToolDef
-}
-
 export type OpSchemas = {
 	input: Record<string, unknown>
 	output: Record<string, unknown>
@@ -246,11 +179,7 @@ export type OpSchemas = {
 export type OpDescriptor = {
 	id: string
 	doc: OpDoc
-	exposure: Required<OpExposure>
-	policy: OpPolicy
 	schemas: OpSchemas
-	params?: ParamSpec[]
-	transports: OpTransports
 }
 
 export type OpOk<T> = { ok: true; value: T }
@@ -261,66 +190,30 @@ export type OperationConfig<I, O, Ctx extends OpContext = OpContext> = {
 	id: string
 	input: Schema
 	output: Schema
-	doc?: OpDoc
-	exposure?: OpExposure
-	policy?: OpPolicy
-	cli?: false | true | OpCliConfig
-	tool?: false | true | OpToolConfig
-	validateInput?: Array<CustomValidator<I, Ctx>>
-	validateOutput?: Array<CustomValidator<O, Ctx>>
-	execute: (input: I, ctx: Ctx) => O | Promise<O>
+	doc: OpDoc
+	validate?: Validator<I, Ctx>
+	validateOutput?: Validator<O, Ctx>
+	run: (input: I, ctx: Ctx) => O | Promise<O>
 }
 
 export interface Operation<_I = unknown, O = unknown, Ctx extends OpContext = OpContext> {
 	readonly id: string
 	readonly descriptor: OpDescriptor
-	run(candidate: unknown, ctx?: Ctx): Promise<O>
-	runSafe(candidate: unknown, ctx?: Ctx): Promise<OpResult<O>>
+	run(input: _I, ctx: Ctx): O | Promise<O>
+	invoke(candidate: unknown, ctx?: Ctx): Promise<OpResult<O>>
+	invokeRaw(candidate: unknown, ctx?: Ctx): Promise<O>
 }
 
 export type AnyOperation<Ctx extends OpContext = OpContext> = Operation<any, any, Ctx>
 
-export type OperationEntry = {
-	owner?: string
-	descriptor: OpDescriptor
+export type Registration = {
+	id: string
+	dispose(): void
 }
 
-export type OperationRegisterOptions = {
-	owner?: string
-}
-
-export type OperationListOptions = {
-	owner?: string
-	carrier?: 'rpc' | 'tool' | 'cli'
-	includeInternal?: boolean
-}
-
-export type ToolListOptions = {
-	includeInternal?: boolean
-}
-
-export type OperationSpaceOptions = {
+export type CliAdapterOptions = {
 	caseInsensitive?: boolean
 	maxTextLength?: number
-}
-
-export interface OperationSpace<Ctx extends OpContext = OpContext> {
-	readonly version: number
-	register(op: AnyOperation<Ctx>, opts?: OperationRegisterOptions): () => void
-	unregister(id: string): void
-	unregisterOwner(owner: string): number
-	has(id: string): boolean
-	get(id: string): AnyOperation<Ctx> | undefined
-	getEntry(id: string): OperationEntry | undefined
-	getDescriptor(id: string): OpDescriptor | undefined
-	list(opts?: OperationListOptions): OpDescriptor[]
-	listEntries(opts?: OperationListOptions): OperationEntry[]
-	listTools(opts?: ToolListOptions): ToolDef[]
-	invoke<O = unknown>(id: string, candidate: unknown, ctx?: Ctx): Promise<O>
-	invokeSafe<O = unknown>(id: string, candidate: unknown, ctx?: Ctx): Promise<OpResult<O>>
-	dispatch<O = unknown>(text: string, ctx?: Ctx): Promise<O>
-	helpIndex(): CliHelpIndexResult
-	helpCommand(name: string): CliHelpCommandResult | undefined
 }
 
 export type CliToken = {
@@ -337,12 +230,21 @@ export type CliHelpIndexResult = {
 export type CliHelpCommandResult = {
 	id: string
 	triggers: string[]
-	title?: string
-	description?: string
-	details?: string
-	examples?: string[]
-	tags?: string[]
+	title: string
+	description: string
 	params?: ParamSpec[]
 	tail?: CliTailSpec
 	usage?: string
+}
+
+export type CliParamBinding = {
+	name?: string
+	aliases?: string[]
+	description?: string
+}
+
+export type CliBinding<I = Record<string, unknown>> = {
+	triggers: string[]
+	params?: Partial<Record<keyof I & string, CliParamBinding>>
+	tail?: CliTailConfig
 }

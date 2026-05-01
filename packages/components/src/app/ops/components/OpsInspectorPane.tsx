@@ -69,12 +69,12 @@ export function OpsInspectorPane({
 								<Badge size="xs" variant="light" color="gray">
 									{getOwnerDisplay(activeEntry)}
 								</Badge>
-								{activeEntry.descriptor.transports.tool ? (
+								{activeEntry.bindings.mcp ? (
 									<Badge size="xs" variant="light" color="blue">
-										Tool
+										MCP
 									</Badge>
 								) : null}
-								{activeEntry.descriptor.transports.cli ? (
+								{activeEntry.bindings.cli ? (
 									<Badge size="xs" variant="light" color="gray">
 										CLI
 									</Badge>
@@ -121,13 +121,13 @@ export function OpsInspectorPane({
 							</InlineNotice>
 						) : null}
 
-						{activeEntry.descriptor.transports.cli?.usage ? (
+						{activeEntry.bindings.cli ? (
 							<Paper withBorder radius="md" p="sm">
 								<Stack gap={4}>
 									<Text size="xs" fw={700} c="dimmed" tt="uppercase">
 										CLI
 									</Text>
-									<Code block>{activeEntry.descriptor.transports.cli.usage}</Code>
+									<Code block>{activeEntry.bindings.cli.triggers.join('\n')}</Code>
 								</Stack>
 							</Paper>
 						) : null}
@@ -137,10 +137,10 @@ export function OpsInspectorPane({
 								<Text size="xs" fw={700} c="dimmed" tt="uppercase">
 									执行
 								</Text>
-								{activeEntry.descriptor.policy.mutating || activeEntry.descriptor.policy.confirm ? (
+								{activeEntry.workbench.mutating || activeEntry.workbench.confirm ? (
 									<InlineNotice title="这个 op 会触发真实动作">
 										<Text size="sm" c="dimmed">
-											{activeEntry.descriptor.policy.confirm
+											{activeEntry.workbench.confirm
 												? '执行前会要求确认。'
 												: '执行后会修改宿主状态或插件状态。'}
 										</Text>

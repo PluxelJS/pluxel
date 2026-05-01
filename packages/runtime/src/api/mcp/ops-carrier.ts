@@ -19,7 +19,7 @@ export function registerRuntimeOpsCarrier(server: McpServer, ctx: Context) {
 	const root = (ctx.root ?? ctx) as Context
 	ensureRuntimeOpsRegistered(root)
 
-	for (const tool of root.ops.listTools()) {
+	for (const tool of root.ops.listMcpTools()) {
 		server.tool(tool.name, {
 			description: tool.guidance,
 			inputSchema: tool.inputSchema as any,

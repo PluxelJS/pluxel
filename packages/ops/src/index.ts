@@ -3,38 +3,34 @@ import { OpError, constraint, issue, kindOfOpErrorCode, toOpError } from './type
 
 export type {
 	AnyOperation,
+	CliBinding,
+	CliAdapterOptions,
 	CliHelpCommandResult,
 	CliHelpIndexResult,
+	CliParamBinding,
 	CliToken,
-	CustomValidator,
 	Infer,
 	OpContext,
 	OpDescriptor,
 	OpDoc,
-	OpExposure,
 	OpErr,
 	OpErrorCode,
 	OpErrorDetails,
 	OpErrorKind,
 	OpOk,
-	OpPolicy,
 	OpResult,
 	Operation,
 	OperationConfig,
-	OperationEntry,
-	OperationListOptions,
-	OperationRegisterOptions,
-	OperationSpace,
-	OperationSpaceOptions,
-	ToolDef,
-	ToolListOptions,
 	ParamSpec,
+	Registration,
 	Schema,
+	Validator,
 	ValidationIssue,
 } from './types'
 
 export { defineOp, isOperation } from './define'
-export { createSpace } from './space'
+export { CliAdapter, createCliAdapter } from './adapters/cli/adapter'
+export { createRegistry, OperationRegistry } from './registry'
 
 export const cli = {
 	tail,

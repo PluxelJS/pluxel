@@ -106,6 +106,7 @@ export {
 	type RuntimeOpSource,
 	type RuntimeOpCatalogOptions,
 	type RuntimeOpsRegisterOptions,
+	type RuntimeMcpToolDef,
 } from './services/ops/OpsService'
 export type {
 	SignalDbCollectionHandle,

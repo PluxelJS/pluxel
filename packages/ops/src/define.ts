@@ -1,11 +1,9 @@
-import { compileDescriptor, compileRuntime } from './compile'
-import { attachOperationRuntime } from './internal/runtime'
+import { compileDescriptor } from './compile'
 import { compileValidator } from './schema'
 import {
 	OpError,
 	toOpError,
 	type AnyOperation,
-	type CustomValidator,
 	type Infer,
 	type OpContext,
 	type OpErrorCode,
@@ -18,7 +16,7 @@ import {
 
 type ValidationSpec<T, Ctx extends OpContext> = {
 	validate: (value: unknown) => { ok: true; value: T } | { ok: false; issues: ValidationIssue[] }
-	custom: Array<CustomValidator<T, Ctx>>
+	custom?: (value: T, ctx: Ctx) => ReturnType<NonNullable<OperationConfig<T, unknown, Ctx>['validate']>>
 }
 
 const nowMs = (ctx?: OpContext) => (typeof ctx?.now === 'number' ? ctx.now : Date.now())
@@ -37,16 +35,6 @@ const throwIfStopped = (ctx?: OpContext) => {
 	}
 }
 
-const withSpan = async <T>(
-	ctx: OpContext | undefined,
-	name: string,
-	attrs: Record<string, unknown>,
-	fn: () => T | Promise<T>,
-): Promise<T> => {
-	if (!ctx?.span) return await fn()
-	return await ctx.span(name, attrs, fn)
-}
-
 const validateWithCustom = async <T, Ctx extends OpContext>(
 	spec: ValidationSpec<T, Ctx>,
 	value: unknown,
@@ -58,12 +46,11 @@ const validateWithCustom = async <T, Ctx extends OpContext>(
 		throw new OpError(code, 'Validation failed', { details: { issues: validated.issues } })
 	}
 
-	if (spec.custom.length === 0) return validated.value
+	if (!spec.custom) return validated.value
 
 	const issues: ValidationIssue[] = []
-	for (const validate of spec.custom) {
-		const result = await validate(validated.value, ctx)
-		if (!result) continue
+	const result = await spec.custom(validated.value, ctx)
+	if (result) {
 		if (Array.isArray(result)) issues.push(...result)
 		else issues.push(result)
 	}
@@ -74,10 +61,8 @@ const validateWithCustom = async <T, Ctx extends OpContext>(
 	return validated.value
 }
 
-const normalizeError = (ctx: OpContext | undefined, error: unknown): OpError => {
+const normalizeError = (error: unknown): OpError => {
 	if (error instanceof OpError) return error
-	const classified = ctx?.classifyError?.(error)
-	if (classified) return classified
 	return toOpError(error, 'E_INTERNAL', 'Operation failed')
 }
 
@@ -96,18 +81,16 @@ export const defineOp = <
 
 	const inputSpec: ValidationSpec<I, Ctx> = {
 		validate: compileValidator(config.input) as ValidationSpec<I, Ctx>['validate'],
-		custom: [...(config.validateInput ?? [])],
+		...(config.validate ? { custom: config.validate } : {}),
 	}
 	const outputSpec: ValidationSpec<O, Ctx> = {
 		validate: compileValidator(config.output) as ValidationSpec<O, Ctx>['validate'],
-		custom: [...(config.validateOutput ?? [])],
+		...(config.validateOutput ? { custom: config.validateOutput } : {}),
 	}
 	const descriptor = compileDescriptor(config)
-	const runtime = compileRuntime(config)
 
-	const run = async (candidate: unknown, ctx?: Ctx): Promise<O> => {
+	const invokeRaw = async (candidate: unknown, ctx?: Ctx): Promise<O> => {
 		const currentCtx = (ctx ?? {}) as Ctx
-		const start = nowMs(currentCtx)
 
 		try {
 			throwIfStopped(currentCtx)
@@ -117,12 +100,7 @@ export const defineOp = <
 				'E_INPUT_VALIDATION',
 				currentCtx,
 			)
-			const outputCandidate = await withSpan(
-				currentCtx,
-				'ops.execute',
-				{ id: config.id },
-				async () => await config.execute(inputValue, currentCtx),
-			)
+			const outputCandidate = await config.run(inputValue, currentCtx)
 			return await validateWithCustom(
 				outputSpec,
 				outputCandidate,
@@ -130,17 +108,7 @@ export const defineOp = <
 				currentCtx,
 			)
 		} catch (error) {
-			const normalized = normalizeError(currentCtx, error)
-			if (normalized.kind === 'fault') {
-				try {
-					await currentCtx.onFault?.({
-						id: config.id,
-						err: normalized,
-						durationMs: nowMs(currentCtx) - start,
-						recovered: false,
-					})
-				} catch {}
-			}
+			const normalized = normalizeError(error)
 			throw normalized
 		}
 	}
@@ -148,20 +116,22 @@ export const defineOp = <
 	const op: Operation<I, O, Ctx> = {
 		id: config.id,
 		descriptor,
-		run,
-		async runSafe(candidate: unknown, ctx?: Ctx): Promise<OpResult<O>> {
+		run: config.run,
+		invokeRaw,
+		async invoke(candidate: unknown, ctx?: Ctx): Promise<OpResult<O>> {
 			try {
-				return { ok: true, value: await run(candidate, ctx) }
+				return { ok: true, value: await invokeRaw(candidate, ctx) }
 			} catch (error) {
-				return { ok: false, error: normalizeError(ctx, error) }
+				return { ok: false, error: normalizeError(error) }
 			}
 		},
 	}
-	return attachOperationRuntime(op, runtime)
+	return op
 }
 
 export const isOperation = (value: unknown): value is AnyOperation =>
 	!!value &&
 	typeof value === 'object' &&
 	typeof (value as AnyOperation).id === 'string' &&
-	typeof (value as AnyOperation).run === 'function'
+	typeof (value as AnyOperation).invoke === 'function' &&
+	typeof (value as AnyOperation).invokeRaw === 'function'

@@ -7,7 +7,6 @@ import {
 	dispatchRuntimeCommand,
 	ensureRuntimeOpsRegistered,
 	getRuntimeOpsCatalog,
-	getRuntimeOps,
 	invokeRuntimeOp,
 } from '../../ops'
 import { writeGroups } from '../../features/groups/service'
@@ -74,10 +73,6 @@ export class RuntimeRpcApi extends RpcTarget {
 		}
 	}
 
-	opsList() {
-		return getRuntimeOps(this.ctx)
-	}
-
 	opsCatalog() {
 		return getRuntimeOpsCatalog(this.ctx)
 	}
@@ -91,8 +86,8 @@ export class RuntimeRpcApi extends RpcTarget {
 	}
 
 	async opsInvoke(id: string, input?: unknown): Promise<unknown> {
-		const descriptor = this.ctx.ops.getDescriptor(id)
-		if (descriptor && descriptor.exposure.rpc !== true) {
+		const entry = this.ctx.ops.listCatalog().find((item) => item.id === id)
+		if (entry && !entry.bindings.rpc) {
 			throw new errors.OpError('E_FORBIDDEN', 'Operation not exposed over RPC', {
 				details: { node: id, reason: 'rpc_not_exposed' },
 				message: `Operation "${id}" is not exposed over RPC`,

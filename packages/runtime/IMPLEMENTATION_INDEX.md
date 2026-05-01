@@ -53,8 +53,6 @@
   插件依赖、base provider、fork 相关 op
 - `packages/runtime/src/api/ops/plugin-config.ts`
   插件 schema/config/批处理配置 op
-- `packages/runtime/src/api/ops/runtime-meta.ts`
-  runtime 自省 op
 
 ## Host Security
 

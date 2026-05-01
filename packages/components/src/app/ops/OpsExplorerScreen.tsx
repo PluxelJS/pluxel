@@ -253,7 +253,7 @@ export function OpsExplorerScreen() {
 			}
 		}
 
-		if (entry.descriptor.policy.confirm) {
+		if (entry.workbench.confirm) {
 			openConfirmModal({
 				title: '确认执行操作',
 				children: (

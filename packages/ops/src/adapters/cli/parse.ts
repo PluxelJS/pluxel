@@ -197,7 +197,7 @@ const parseObjectCandidate = (
 			})
 		}
 		if (spec.type === 'array') {
-			let next = candidate[spec.inputKey]
+			let next = candidate[spec.inputKey] as unknown[] | undefined
 			if (!Array.isArray(next)) {
 				next = []
 				candidate[spec.inputKey] = next

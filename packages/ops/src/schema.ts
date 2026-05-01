@@ -7,7 +7,7 @@ import {
 import { TypeCompiler, type TypeCheck } from '@sinclair/typebox/compiler'
 import type { ValueError } from '@sinclair/typebox/errors'
 import { Value } from '@sinclair/typebox/value'
-import { OpError, issue, type Infer, type ParamSpec, type Schema, type ValidationIssue } from './types'
+import { issue, type Infer, type Schema, type ValidationIssue } from './types'
 
 export const Type = TypeBoxType
 export * as TypeBox from '@sinclair/typebox'
@@ -132,80 +132,3 @@ export const compileValidator = <S extends Schema>(schema: S): JsonValidator<Inf
 			: { ok: false as const, issues: issuesFromTypeBoxErrors(compiled.Errors(candidate) as Iterable<ValueError>) }
 	}
 }
-
-const kebabCase = (value: string) =>
-	value
-		.replaceAll(/([a-z0-9])([A-Z])/g, '$1-$2')
-		.replaceAll(/[_\s]+/g, '-')
-		.replaceAll(/-+/g, '-')
-		.replaceAll(/^-+|-+$/g, '')
-		.toLowerCase()
-
-const schemaTypeToParamType = (schema: Record<string, unknown>): ParamSpec['type'] => {
-	switch (schema.type) {
-		case 'string':
-			return 'string'
-		case 'number':
-			return 'number'
-		case 'integer':
-			return 'integer'
-		case 'boolean':
-			return 'boolean'
-		case 'array':
-			return 'array'
-		default:
-			return 'json'
-	}
-}
-
-const deriveArrayItemType = (
-	schema: Record<string, unknown>,
-): ParamSpec['itemType'] | undefined => {
-	if (schema.type !== 'array') return undefined
-	const items = schema.items
-	if (!items || typeof items !== 'object' || Array.isArray(items)) return 'json'
-	const itemType = schemaTypeToParamType(items as Record<string, unknown>)
-	return itemType === 'array' ? 'json' : itemType
-}
-
-export const deriveParamSpecs = (schema: Schema): ParamSpec[] | undefined => {
-	const jsonSchema = toJsonSchema(schema)
-	if (jsonSchema.type !== 'object') return undefined
-	const properties = jsonSchema.properties
-	if (!properties || typeof properties !== 'object' || Array.isArray(properties)) return undefined
-	const required = new Set(
-		Array.isArray(jsonSchema.required)
-			? jsonSchema.required.map((entry) => String(entry))
-			: [],
-	)
-
-	const out: ParamSpec[] = []
-	for (const [inputKey, rawSchema] of Object.entries(properties)) {
-		if (!rawSchema || typeof rawSchema !== 'object' || Array.isArray(rawSchema)) continue
-		const record = rawSchema as Record<string, unknown>
-		const canonical = kebabCase(inputKey) || inputKey
-		const aliases = Array.from(new Set([canonical, inputKey].filter(Boolean)))
-		out.push({
-			inputKey,
-			name: canonical,
-			aliases,
-			type: schemaTypeToParamType(record),
-			required: required.has(inputKey),
-			...(typeof record.description === 'string' ? { description: record.description } : {}),
-			...(deriveArrayItemType(record) ? { itemType: deriveArrayItemType(record) } : {}),
-		})
-	}
-
-	return out.length > 0 ? out : []
-}
-
-export const isObjectSchema = (schema: Schema): boolean => {
-	const jsonSchema = toJsonSchema(schema)
-	return jsonSchema.type === 'object'
-}
-
-export const createSchemaCompilationError = (cause: unknown) =>
-	new OpError('E_INTERNAL', 'Internal error', {
-		message: 'Failed to compile TypeBox schema',
-		cause,
-	})

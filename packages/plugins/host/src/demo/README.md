@@ -27,7 +27,7 @@
 4. `PluginWithUI.ts` + `PluginWithUI/ui/*`
    最小自定义 UI 路径。看 `ui(...).bind(this.ctx)`、RPC、SSE、SignalDB 与浏览器侧 `plugin.use()`。
 5. `PluginOpsDemo.ts`
-   最小 ops 路径。看 `defineOp(...)`、`ctx.ops.register(...)`、`exposure.rpc`、`policy.mutating` 和 tool-facing op。
+   最小 ops 路径。看 `defineOp(...)`、`ctx.ops.register(...)`，以及 runtime metadata 如何显式绑定 RPC / CLI / MCP / workbench。
 
 在这之后按需再看：
 
@@ -109,9 +109,10 @@
 注册 ops：
 
 - 服务端：`defineOp(...)` + `ctx.ops.register(...)`
-- 读操作：声明 `exposure.rpc`
-- 写操作：声明 `policy.mutating`
-- 暴露给工具客户端：声明 `tool.name`
+- core op 只声明 `id/doc/input/output/run`
+- RPC/CLI/MCP/workbench 入口通过 `ctx.ops.register(op, { metadata })` 显式绑定
+- 写操作在 `metadata.workbench.mutating` 标记，用于 host read model 和 UI
+- MCP 工具名在 `metadata.mcp.name` 标记，不写回 op descriptor
 
 ## 类型检查
 

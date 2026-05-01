@@ -1,5 +1,6 @@
 import {
 	defineOp,
+	type CliBinding,
 	type Infer,
 	type Operation,
 	type OperationConfig,
@@ -7,13 +8,40 @@ import {
 } from '@pluxel/ops'
 import type { RuntimeOpContext } from '../../services/ops/OpsService'
 
+export type RuntimeOpWorkbenchMetadata = {
+	mutating?: boolean
+	confirm?: boolean
+}
+
+export type RuntimeOpMetadata<I = Record<string, unknown>> = {
+	rpc?: boolean
+	mcp?: false | { name?: string }
+	workbench?: RuntimeOpWorkbenchMetadata
+	cli?: CliBinding<I>
+}
+
+const RUNTIME_OP_METADATA = new WeakMap<Operation<any, any, RuntimeOpContext>, RuntimeOpMetadata>()
+
 export const defineRuntimeOp = <SIn extends Schema, SOut extends Schema>(
 	config: Omit<OperationConfig<Infer<SIn>, Infer<SOut>, RuntimeOpContext>, 'input' | 'output'> & {
 		input: SIn
 		output: SOut
-	},
-): Operation<Infer<SIn>, Infer<SOut>, RuntimeOpContext> =>
-	defineOp<SIn, SOut, RuntimeOpContext>(config)
+	} & RuntimeOpMetadata<Infer<SIn>>,
+): Operation<Infer<SIn>, Infer<SOut>, RuntimeOpContext> => {
+	const { rpc, mcp, workbench, cli, ...opConfig } = config
+	const op = defineOp<SIn, SOut, RuntimeOpContext>(opConfig)
+	RUNTIME_OP_METADATA.set(op, {
+		rpc: rpc ?? true,
+		mcp: mcp ?? {},
+		...(workbench ? { workbench } : {}),
+		...(cli ? { cli } : {}),
+	})
+	return op
+}
+
+export const getRuntimeOpMetadata = (
+	op: Operation<any, any, RuntimeOpContext>,
+): RuntimeOpMetadata => RUNTIME_OP_METADATA.get(op) ?? {}
 
 export function messageOf(error: unknown): string {
 	if (error instanceof Error) return error.message

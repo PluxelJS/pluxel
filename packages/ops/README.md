@@ -1,46 +1,46 @@
 # @pluxel/ops
 
-Schema-first operation kernel for Pluxel control-plane actions.
+Lightweight operation kernel for Pluxel control-plane actions.
 
-One `defineOp` call produces one frozen descriptor. Runtime, RPC, CLI, MCP, docs, and tests project from that descriptor.
+One `defineOp` call produces one documented schema function with validation and a serializable descriptor. Runtime, RPC, CLI, MCP, catalog, and workbench metadata live outside the core descriptor.
 
 TypeBox helpers live at `@pluxel/ops/typebox` so schema code keeps the familiar TypeBox shape.
 
 ## Example
 
 ```ts
-import { cli, createSpace, defineOp } from '@pluxel/ops'
+import { cli as opsCli, createCliAdapter, createRegistry, defineOp } from '@pluxel/ops'
 import { Type, obj } from '@pluxel/ops/typebox'
 
-const ops = createSpace()
+const registry = createRegistry()
+const cli = createCliAdapter()
 
-ops.register(
-	defineOp({
-		id: 'plugin.config.patch',
-		input: obj({
-			name: Type.String({ description: 'Plugin name.' }),
-			patch: Type.Record(Type.String(), Type.Unknown(), {
-				description: 'Config patch object.',
-			}),
+const patchConfig = defineOp({
+	id: 'plugin.config.patch',
+	doc: {
+		title: 'Patch Plugin Config',
+		description: 'Validate and persist a config patch.',
+	},
+	input: obj({
+		name: Type.String({ description: 'Plugin name.' }),
+		patch: Type.Record(Type.String(), Type.Unknown(), {
+			description: 'Config patch object.',
 		}),
-		output: obj({ ok: Type.Boolean() }),
-		doc: {
-			title: 'Patch Plugin Config',
-			description: 'Validate and persist a config patch.',
-			usage: 'plugin config patch --name <plugin> -- <json>',
-		},
-		exposure: { rpc: true },
-		policy: { mutating: true, audit: ['plugin-config'] },
-		cli: { triggers: ['plugin config patch'], tail: cli.tail.json('patch') },
-		tool: true,
-		async execute() {
-			return { ok: true }
-		},
 	}),
-)
+	output: obj({ ok: Type.Boolean() }),
+	async run() {
+		return { ok: true }
+	},
+})
 
-await ops.dispatch('plugin config patch --name demo -- {"basic":{"enabled":true}}')
-await ops.invoke('plugin.config.patch', {
+registry.register(patchConfig)
+cli.bind(patchConfig, {
+	triggers: ['plugin config patch'],
+	tail: opsCli.tail.json('patch'),
+})
+
+await cli.dispatch('plugin config patch --name demo -- {"basic":{"enabled":true}}')
+await registry.invoke('plugin.config.patch', {
 	name: 'demo',
 	patch: { basic: { enabled: true } },
 })
@@ -48,23 +48,22 @@ await ops.invoke('plugin.config.patch', {
 
 ## Public Shape
 
-- Author with `defineOp({ id, input, output, doc, exposure, policy, cli, tool, execute })`.
-- Create a runtime surface with `createSpace()`.
-- `Operation` exposes only `id`, `descriptor`, `run`, and `runSafe`.
-- Descriptors are serializable public metadata. Live runtime objects stay hidden.
+- Author with `defineOp({ id, doc, input, output, validate, validateOutput, run })`.
+- `Operation` exposes `id`, `descriptor`, `run`, `invoke`, and `invokeRaw`.
+- `invoke` returns `OpResult`; `invokeRaw` throws `OpError`.
+- Descriptors contain only `id`, `doc.title`, `doc.description`, and input/output schemas.
 
 ## Rules
 
 - Import ops core from `@pluxel/ops`.
 - Import `Type`, `obj`, and `openObj` from `@pluxel/ops/typebox`.
 - Always declare both `input` and `output`.
-- Keep operation ids and CLI triggers lowercase.
-- Put user/tool help in `doc`.
-- Put action semantics in `policy`.
-- Use `exposure.rpc` for RPC visibility.
-- Use `cli` only for parsing metadata.
-- Use `tool: true` unless a deliberate external tool alias is needed.
-- Describe every tool-visible object input field, including nested fields.
-- Keep tool names unique in one registry.
+- Always declare `doc.title` and `doc.description`.
+- Keep operation ids lowercase.
+- Put CLI/RPC/MCP/workbench bindings in adapters or runtime metadata, not in `defineOp`.
+- Keep owner, lifetime, cleanup, catalog, and toolsets outside the core registry.
 
-See [DESIGN.md](./DESIGN.md) for architecture constraints.
+Design notes:
+
+- [Core V2](./docs/core-v2.md): lightweight kernel contract.
+- [Adapters V2](./docs/adapters-v2.md): CLI/runtime/host facilities around the kernel.

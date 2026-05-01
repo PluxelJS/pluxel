@@ -5,7 +5,6 @@ import type {
 	OpsToolset,
 	OpsToolsetInput,
 	RuntimeOpCatalogEntry,
-	RuntimeOpDescriptor,
 	RuntimeRpcApi,
 	RuntimeOpToolsetManifest,
 } from './protocol'
@@ -107,12 +106,6 @@ export function rpcErrorMessage(error: unknown, fallback = 'RPC 调用失败'): 
 	if (error instanceof Error) return error.message || fallback
 	if (typeof error === 'string') return error
 	return fallback
-}
-
-export async function listRuntimeOps(
-	options?: { rpcBase?: string; timeoutMs?: number; credentials?: RequestCredentials },
-): Promise<RuntimeOpDescriptor[]> {
-	return await invokeRpc((rpc) => Promise.resolve(rpc.opsList()), options)
 }
 
 export async function listRuntimeOpCatalog(

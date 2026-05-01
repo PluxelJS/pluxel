@@ -11,7 +11,7 @@ export function renderResult(value: unknown): string {
 }
 
 export function getRunTone(entry: RuntimeOpCatalogEntry): 'brand' | 'orange' {
-	return entry.descriptor.policy.mutating || entry.descriptor.policy.confirm ? 'orange' : 'brand'
+	return entry.workbench.mutating || entry.workbench.confirm ? 'orange' : 'brand'
 }
 
 export function getOwnerDisplay(entry: RuntimeOpCatalogEntry): string {

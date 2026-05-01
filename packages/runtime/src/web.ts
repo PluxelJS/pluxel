@@ -108,7 +108,6 @@ export {
 	invokeRuntimeOp,
 	listRuntimeOpCatalog,
 	listRuntimeOpsToolsets,
-	listRuntimeOps,
 	rpcErrorMessage,
 	resolveRuntimeOpsToolset,
 	updateRuntimeOpsToolsets,

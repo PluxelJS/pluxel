@@ -99,8 +99,12 @@ function matchesSearch(entry: RuntimeOpCatalogEntry, search: string): boolean {
 	if (!search) return true
 	const title = entry.descriptor.doc.title ?? ''
 	const description = entry.descriptor.doc.description ?? ''
-	const triggerText = entry.descriptor.transports.cli?.triggers.join(' ') ?? ''
-	const inputKeys = entry.descriptor.params?.map((param) => param.inputKey).join(' ') ?? ''
+	const triggerText = entry.bindings.cli?.triggers.join(' ') ?? ''
+	const inputSchema = entry.descriptor.schemas.input as { properties?: Record<string, unknown> } | null
+	const inputKeys =
+		inputSchema?.properties && typeof inputSchema.properties === 'object'
+			? Object.keys(inputSchema.properties).join(' ')
+			: ''
 	const haystack = [entry.id, entry.owner, title, description, triggerText, inputKeys]
 		.join(' ')
 		.toLowerCase()

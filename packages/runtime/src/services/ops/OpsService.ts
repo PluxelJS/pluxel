@@ -1,19 +1,18 @@
 import {
-	createSpace,
+	createCliAdapter,
+	createRegistry,
 	type AnyOperation,
+	type CliBinding,
 	type CliHelpCommandResult,
 	type CliHelpIndexResult,
 	type OpContext,
 	type OpDescriptor,
-	type OperationEntry,
-	type OperationListOptions,
-	type OperationRegisterOptions,
 	type OpResult,
-	type ToolDef,
-	type ToolListOptions,
+	type Registration,
 } from '@pluxel/ops'
 import { Injectable, type Context as PluxelContext } from '@pluxel/core'
 
+import { getRuntimeOpMetadata, type RuntimeOpMetadata } from '../../api/ops/helpers'
 import type {
 	RuntimeOpCatalogEntry,
 	RuntimeOpCatalogOwnerKind,
@@ -29,7 +28,7 @@ import {
 
 const serviceName = 'ops' as const
 const RESERVED_RUNTIME_OP_PREFIXES = ['plugin.', 'plugins.', 'runtime.'] as const
-const RESERVED_TOOL_NAME_PREFIXES = [
+const RESERVED_MCP_TOOL_NAME_PREFIXES = [
 	'plugin.',
 	'plugins.',
 	'runtime.',
@@ -38,6 +37,20 @@ const RESERVED_TOOL_NAME_PREFIXES = [
 	'hmr.',
 ] as const
 const RESERVED_CLI_TRIGGER_PREFIXES = ['plugin ', 'plugins ', 'runtime '] as const
+
+const catalogCacheKey = (options: RuntimeOpCatalogOptions | undefined): string =>
+	`${options?.owner ?? ''}\u0000${options?.carrier ?? ''}`
+
+const cloneCatalogEntries = (entries: RuntimeOpCatalogEntry[]): RuntimeOpCatalogEntry[] =>
+	entries.map((entry) => ({
+		id: entry.id,
+		owner: entry.owner,
+		ownerKind: entry.ownerKind,
+		...(entry.pluginId ? { pluginId: entry.pluginId } : {}),
+		descriptor: entry.descriptor,
+		bindings: { ...entry.bindings },
+		workbench: { ...entry.workbench },
+	}))
 
 export interface RuntimeOpSource {
 	kind: 'runtime' | 'plugin' | 'rpc' | 'cli' | 'mcp' | 'http'
@@ -53,9 +66,31 @@ export type RuntimeOperation = AnyOperation<RuntimeOpContext>
 
 export type RuntimeOpContextInput = Omit<RuntimeOpContext, 'runtime'>
 
-export type RuntimeOpsRegisterOptions = OperationRegisterOptions
+export type RuntimeOpOwner = {
+	kind: RuntimeOpCatalogOwnerKind
+	id: string
+}
 
-export type RuntimeOpCatalogOptions = OperationListOptions
+export type RuntimeOpsRegisterOptions = {
+	owner?: string | RuntimeOpOwner
+	lifetime?: { defer?: (fn: () => void) => { cancel?: () => void } }
+	metadata?: RuntimeOpMetadata
+}
+
+export type RuntimeOpCatalogOptions = {
+	owner?: string
+	carrier?: 'rpc' | 'mcp' | 'cli' | 'workbench'
+}
+
+export type RuntimeMcpToolDef = {
+	id: string
+	name: string
+	title: string
+	description: string
+	guidance: string
+	inputSchema: Record<string, unknown>
+	outputSchema: Record<string, unknown>
+}
 
 export type { RuntimeOpCatalogEntry } from '../../web/protocol'
 
@@ -88,8 +123,29 @@ class OpsToolsetsHandle {
 	}
 }
 
-const toRuntimeOpCatalogEntry = (item: OperationEntry): RuntimeOpCatalogEntry => {
-	const { descriptor } = item
+const summarizeCliBinding = (binding: CliBinding<any>) => ({
+	triggers: [...binding.triggers],
+	...(binding.tail
+		? {
+				tail:
+					binding.tail.mode === 'parsebox'
+						? {
+								mode: 'parsebox' as const,
+								entry: String(binding.tail.entry),
+								...(binding.tail.placeholder ? { placeholder: binding.tail.placeholder } : {}),
+								...(binding.tail.keys ? { keys: [...binding.tail.keys] } : {}),
+							}
+						: binding.tail,
+			}
+		: {}),
+})
+
+const toRuntimeOpCatalogEntry = (item: {
+	owner?: string
+	descriptor: OpDescriptor
+	metadata: RuntimeOpMetadata
+}): RuntimeOpCatalogEntry => {
+	const { descriptor, metadata } = item
 	const owner = item.owner ?? 'context:unknown'
 	const parsed = parseRuntimeOpOwner(owner)
 	const entry: RuntimeOpCatalogEntry = {
@@ -97,6 +153,15 @@ const toRuntimeOpCatalogEntry = (item: OperationEntry): RuntimeOpCatalogEntry =>
 		owner,
 		ownerKind: parsed.ownerKind,
 		descriptor,
+		bindings: {
+			...(metadata.cli ? { cli: summarizeCliBinding(metadata.cli) } : {}),
+			...(metadata.rpc === true ? { rpc: { exposed: true } } : {}),
+			...(metadata.mcp ? { mcp: { name: metadata.mcp.name ?? descriptor.id } } : {}),
+		},
+		workbench: {
+			mutating: metadata.workbench?.mutating === true,
+			confirm: metadata.workbench?.confirm === true,
+		},
 	}
 	if (parsed.pluginId) entry.pluginId = parsed.pluginId
 	return entry
@@ -104,13 +169,20 @@ const toRuntimeOpCatalogEntry = (item: OperationEntry): RuntimeOpCatalogEntry =>
 
 @Injectable({ key: serviceName })
 export class OpsService {
-	private readonly space = createSpace<RuntimeOpContext>()
+	private readonly registry = createRegistry<RuntimeOpContext>()
+	private readonly cli = createCliAdapter<RuntimeOpContext>()
+	private readonly owners = new Map<string, string>()
+	private readonly metadataById = new Map<string, RuntimeOpMetadata>()
+	private readonly registrations = new Map<string, { core: Registration; cli?: Registration }>()
 	private readonly toolsetsHandle = new OpsToolsetsHandle(this)
+	private versionValue = 0
+	private catalogCacheVersion = -1
+	private readonly catalogCache = new Map<string, RuntimeOpCatalogEntry[]>()
 
 	constructor(public ctx: PluxelContext) {}
 
 	get version(): number {
-		return this.space.version
+		return this.versionValue
 	}
 
 	get toolsets(): OpsToolsetsHandle {
@@ -118,10 +190,22 @@ export class OpsService {
 	}
 
 	register(op: RuntimeOperation, options: RuntimeOpsRegisterOptions = {}): () => void {
-		const owner = options.owner ?? this.resolveOwner()
-		this.assertReservedNamespace(op, owner)
-		const unregister = this.space.register(op, {
-			owner,
+		const owner = this.normalizeOwner(options.owner ?? this.resolveOwner())
+		const metadata = { ...getRuntimeOpMetadata(op), ...options.metadata }
+		this.assertReservedNamespace(op, owner, metadata)
+		const registration = this.registry.register(op)
+		let cliRegistration: Registration | undefined
+		try {
+			cliRegistration = metadata.cli ? this.cli.bind(op, metadata.cli) : undefined
+		} catch (error) {
+			registration.dispose()
+			throw error
+		}
+		this.owners.set(op.id, owner)
+		this.metadataById.set(op.id, metadata)
+		this.registrations.set(op.id, {
+			core: registration,
+			...(cliRegistration ? { cli: cliRegistration } : {}),
 		})
 
 		let active = true
@@ -129,82 +213,113 @@ export class OpsService {
 			if (!active) return
 			active = false
 			guard.cancel()
-			unregister()
+			this.removeRegistration(op.id)
 		}
-		const guard = this.ctx.effects.defer(() => {
+		const lifetime = options.lifetime ?? this.ctx.effects
+		const guard = lifetime.defer?.(() => {
 			if (!active) return
 			active = false
-			unregister()
-		})
+			this.removeRegistration(op.id)
+		}) ?? { cancel() {} }
+		this.clearCatalogCache()
 
 		return remove
 	}
 
-	unregister(id: string): void {
-		this.space.unregister(id)
-	}
-
-	has(id: string): boolean {
-		return this.space.has(id)
-	}
-
 	get(id: string): RuntimeOperation | undefined {
-		return this.space.get(id)
-	}
-
-	getDescriptor(id: string): OpDescriptor | undefined {
-		return this.space.getDescriptor(id)
+		return this.registry.get(id)
 	}
 
 	getOwner(id: string): string | undefined {
-		return this.space.getEntry(id)?.owner
+		return this.owners.get(id)
 	}
 
-	list(options?: OperationListOptions): OpDescriptor[] {
-		return this.space.list(options)
+	list(options?: RuntimeOpCatalogOptions): OpDescriptor[] {
+		return this.listCatalog(options).map((entry) => entry.descriptor)
 	}
 
-	listTools(options?: ToolListOptions): ToolDef[] {
-		return this.space.listTools(options)
+	listMcpTools(): RuntimeMcpToolDef[] {
+		const out: RuntimeMcpToolDef[] = []
+		for (const op of this.listRegisteredOperations()) {
+			const metadata = this.metadataById.get(op.id) ?? getRuntimeOpMetadata(op)
+			if (!metadata.mcp) continue
+			const name = metadata.mcp.name ?? op.id
+			out.push({
+				id: op.id,
+				name,
+				title: op.descriptor.doc.title,
+				description: op.descriptor.doc.description,
+				guidance: op.descriptor.doc.description,
+				inputSchema: op.descriptor.schemas.input,
+				outputSchema: op.descriptor.schemas.output,
+			})
+		}
+		out.sort((left, right) => left.id.localeCompare(right.id))
+		return Object.freeze(out) as RuntimeMcpToolDef[]
 	}
 
 	listCatalog(options?: RuntimeOpCatalogOptions): RuntimeOpCatalogEntry[] {
-		const entries = this.space.listEntries({
-			owner: options?.owner,
-			carrier: options?.carrier,
-			includeInternal: options?.includeInternal,
-		})
+		const version = this.version
+		if (this.catalogCacheVersion !== version) {
+			this.catalogCacheVersion = version
+			this.catalogCache.clear()
+		}
+		const key = catalogCacheKey(options)
+		const cached = this.catalogCache.get(key)
+		if (cached) return cloneCatalogEntries(cached)
+
 		const out: RuntimeOpCatalogEntry[] = []
-		for (const entry of entries) out.push(toRuntimeOpCatalogEntry(entry))
-		return out
+		for (const op of this.listRegisteredOperations()) {
+			const owner = this.owners.get(op.id)
+			const metadata = this.metadataById.get(op.id) ?? getRuntimeOpMetadata(op)
+			const entry = toRuntimeOpCatalogEntry({
+				owner,
+				descriptor: op.descriptor,
+				metadata,
+			})
+			if (options?.owner && entry.owner !== options.owner) continue
+			if (options?.carrier === 'workbench' && !metadata.workbench) continue
+			if (options?.carrier && options.carrier !== 'workbench' && !entry.bindings[options.carrier]) {
+				continue
+			}
+			out.push(entry)
+		}
+		out.sort((left, right) => left.id.localeCompare(right.id))
+		const frozen = Object.freeze(out.map((entry) => Object.freeze(entry)))
+		this.catalogCache.set(key, frozen as RuntimeOpCatalogEntry[])
+		return cloneCatalogEntries(frozen as RuntimeOpCatalogEntry[])
 	}
 
 	async invoke<O = unknown>(
 		id: string,
 		candidate: unknown,
 		ctx?: RuntimeOpContextInput,
-	): Promise<O> {
-		return await this.space.invoke<O>(id, candidate, this.createExecContext(ctx))
+	): Promise<OpResult<O>> {
+		return await this.registry.invoke<O>(id, candidate, this.createExecContext(ctx))
 	}
 
-	async invokeSafe<O = unknown>(
+	async invokeRaw<O = unknown>(
 		id: string,
 		candidate: unknown,
 		ctx?: RuntimeOpContextInput,
-	): Promise<OpResult<O>> {
-		return await this.space.invokeSafe<O>(id, candidate, this.createExecContext(ctx))
+	): Promise<O> {
+		return await this.registry.invokeRaw<O>(id, candidate, this.createExecContext(ctx))
 	}
 
-	async dispatch<O = unknown>(text: string, ctx?: RuntimeOpContextInput): Promise<O> {
-		return await this.space.dispatch<O>(text, this.createExecContext(ctx, 'cli'))
+	async dispatch<O = unknown>(text: string, ctx?: RuntimeOpContextInput): Promise<OpResult<O>> {
+		return await this.cli.dispatch<O>(text, this.createExecContext(ctx, 'cli'))
+	}
+
+	async dispatchRaw<O = unknown>(text: string, ctx?: RuntimeOpContextInput): Promise<O> {
+		return await this.cli.dispatchRaw<O>(text, this.createExecContext(ctx, 'cli'))
 	}
 
 	helpIndex(): CliHelpIndexResult {
-		return this.space.helpIndex()
+		return this.cli.helpIndex()
 	}
 
 	helpCommand(name: string): CliHelpCommandResult | undefined {
-		return this.space.helpCommand(name)
+		return this.cli.helpCommand(name)
 	}
 
 	private createExecContext(
@@ -225,6 +340,11 @@ export class OpsService {
 		return `context:${this.ctx.name}`
 	}
 
+	private normalizeOwner(owner: string | RuntimeOpOwner): string {
+		if (typeof owner === 'string') return owner
+		return `${owner.kind}:${owner.id}`
+	}
+
 	private resolveSource(kind?: RuntimeOpSource['kind']): RuntimeOpSource {
 		const pluginId = String(this.ctx.pluginInfo?.id ?? '').trim()
 		if (kind) return pluginId ? { kind, pluginId } : { kind }
@@ -232,7 +352,37 @@ export class OpsService {
 		return { kind: 'runtime' }
 	}
 
-	private assertReservedNamespace(op: RuntimeOperation, owner: string): void {
+	private listRegisteredOperations(): RuntimeOperation[] {
+		const out: RuntimeOperation[] = []
+		for (const descriptor of this.registry.list()) {
+			const op = this.registry.get(descriptor.id)
+			if (op) out.push(op)
+		}
+		return out
+	}
+
+	private clearCatalogCache(): void {
+		this.versionValue += 1
+		this.catalogCacheVersion = -1
+		this.catalogCache.clear()
+	}
+
+	private removeRegistration(id: string): void {
+		const registration = this.registrations.get(id)
+		if (!registration) return
+		this.registrations.delete(id)
+		registration.cli?.dispose()
+		registration.core.dispose()
+		this.owners.delete(id)
+		this.metadataById.delete(id)
+		this.clearCatalogCache()
+	}
+
+	private assertReservedNamespace(
+		op: RuntimeOperation,
+		owner: string,
+		metadata: RuntimeOpMetadata,
+	): void {
 		if (owner.startsWith('runtime:')) return
 
 		const reservedIdPrefix = RESERVED_RUNTIME_OP_PREFIXES.find((prefix) => op.id.startsWith(prefix))
@@ -242,19 +392,19 @@ export class OpsService {
 			)
 		}
 
-		const toolName = op.descriptor.transports.tool?.name
+		const toolName = metadata.mcp ? (metadata.mcp.name ?? op.id) : undefined
 		if (toolName) {
-			const reservedToolPrefix = RESERVED_TOOL_NAME_PREFIXES.find((prefix) =>
+			const reservedToolPrefix = RESERVED_MCP_TOOL_NAME_PREFIXES.find((prefix) =>
 				toolName.startsWith(prefix),
 			)
 			if (reservedToolPrefix) {
 				throw new Error(
-					`Tool name "${toolName}" uses reserved runtime namespace "${reservedToolPrefix}"`,
+					`MCP tool name "${toolName}" uses reserved runtime namespace "${reservedToolPrefix}"`,
 				)
 			}
 		}
 
-		const triggers = op.descriptor.transports.cli?.triggers ?? []
+		const triggers = metadata.cli?.triggers ?? []
 		const reservedTrigger = triggers.find((trigger) => {
 			const normalized = trigger.trim().toLowerCase()
 			return RESERVED_CLI_TRIGGER_PREFIXES.some(

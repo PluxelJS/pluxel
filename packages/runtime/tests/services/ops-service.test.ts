@@ -16,7 +16,6 @@ function definePluginStatusOp() {
 		doc: {
 			title: 'Get plugin status',
 			description: 'Read runtime plugin status',
-			usage: 'plugin-alpha status --name <string>',
 		},
 		input: obj({
 			name: Type.String({ description: 'Plugin name to inspect.' }),
@@ -26,16 +25,7 @@ function definePluginStatusOp() {
 			runtimeName: Type.String(),
 			sourceKind: Type.String(),
 		}),
-		exposure: {
-			rpc: true,
-		},
-		tool: {
-			name: 'plugin_status_get',
-		},
-		cli: {
-			triggers: ['plugin-alpha status'],
-		},
-		async execute(input, ctx) {
+		async run(input, ctx) {
 			return {
 				name: input.name,
 				runtimeName: ctx.runtime.name,
@@ -50,12 +40,17 @@ describe('OpsService', () => {
 		await withContext(async (root) => {
 			const pluginCtx = createPluginContext(root, 'plugin.alpha')
 
-			pluginCtx.ops.register(definePluginStatusOp())
+			pluginCtx.ops.register(definePluginStatusOp(), {
+				metadata: {
+					mcp: { name: 'plugin_status_get' },
+					cli: { triggers: ['plugin-alpha status'] },
+				},
+			})
 
-			expect(root.ops.list({ carrier: 'tool' }).map((entry) => entry.id)).toContain(
+			expect(root.ops.list({ carrier: 'mcp' }).map((entry) => entry.id)).toContain(
 				'plugin-alpha.status.get',
 			)
-			expect(root.ops.listTools()).toEqual(
+			expect(root.ops.listMcpTools()).toEqual(
 				expect.arrayContaining([
 					expect.objectContaining({
 						id: 'plugin-alpha.status.get',
@@ -72,15 +67,21 @@ describe('OpsService', () => {
 			)
 
 			await expect(root.ops.invoke('plugin-alpha.status.get', { name: 'demo' })).resolves.toEqual({
-				name: 'demo',
-				runtimeName: 'test',
-				sourceKind: 'runtime',
+				ok: true,
+				value: {
+					name: 'demo',
+					runtimeName: 'test',
+					sourceKind: 'runtime',
+				},
 			})
 
 			await expect(root.ops.dispatch('plugin-alpha status --name demo')).resolves.toEqual({
-				name: 'demo',
-				runtimeName: 'test',
-				sourceKind: 'cli',
+				ok: true,
+				value: {
+					name: 'demo',
+					runtimeName: 'test',
+					sourceKind: 'cli',
+				},
 			})
 		})
 	})
@@ -92,19 +93,23 @@ describe('OpsService', () => {
 			pluginCtx.ops.register(
 				defineOp({
 					id: 'plugin-beta.echo',
+					doc: {
+						title: 'Echo',
+						description: 'Echo a value.',
+					},
 					input: obj({
 						value: Type.String(),
 					}),
 					output: obj({
 						value: Type.String(),
 					}),
-					async execute(input) {
+					async run(input) {
 						return { value: input.value }
 					},
 				}),
 			)
 
-			expect(root.ops.has('plugin-beta.echo')).toBe(true)
+			expect(root.ops.get('plugin-beta.echo')).toBeTruthy()
 			expect(root.ops.listCatalog()).toEqual([
 				expect.objectContaining({
 					id: 'plugin-beta.echo',
@@ -116,8 +121,39 @@ describe('OpsService', () => {
 
 			await pluginCtx.effects.dispose()
 
-			expect(root.ops.has('plugin-beta.echo')).toBe(false)
+			expect(root.ops.get('plugin-beta.echo')).toBeUndefined()
 			expect(root.ops.listCatalog()).toEqual([])
+		})
+	})
+
+	it('rolls back core registration when adapter binding fails', async () => {
+		await withContext((root) => {
+			const pluginCtx = createPluginContext(root, 'plugin.rollback')
+			const op = defineOp({
+				id: 'plugin-rollback.scalar',
+				doc: {
+					title: 'Scalar CLI',
+					description: 'Invalid CLI binding for scalar input.',
+				},
+				input: Type.String(),
+				output: obj({
+					ok: Type.Boolean(),
+				}),
+				async run() {
+					return { ok: true }
+				},
+			})
+
+			expect(() =>
+				pluginCtx.ops.register(op, {
+					metadata: { cli: { triggers: ['plugin-rollback scalar'] } },
+				}),
+			).toThrow(/non-object input requires an explicit tail parser/i)
+
+			expect(root.ops.get('plugin-rollback.scalar')).toBeUndefined()
+			expect(root.ops.listCatalog().map((entry) => entry.id)).not.toContain(
+				'plugin-rollback.scalar',
+			)
 		})
 	})
 
@@ -137,10 +173,7 @@ describe('OpsService', () => {
 					output: obj({
 						ok: Type.Boolean(),
 					}),
-					tool: {
-						name: 'plugin.status',
-					},
-					async execute() {
+					async run() {
 						return { ok: true }
 					},
 				}),
@@ -154,7 +187,6 @@ describe('OpsService', () => {
 					doc: {
 						title: 'Inspect',
 						description: 'Should not reuse runtime CLI verbs.',
-						usage: 'plugin status --name <string>',
 					},
 					input: obj({
 						name: Type.String({ description: 'Plugin name.' }),
@@ -162,10 +194,7 @@ describe('OpsService', () => {
 					output: obj({
 						ok: Type.Boolean(),
 					}),
-					cli: {
-						triggers: ['plugin status'],
-					},
-					async execute() {
+					async run() {
 						return { ok: true }
 					},
 				}),
@@ -174,7 +203,11 @@ describe('OpsService', () => {
 	])('rejects plugin registrations that reuse $name', ({ create, error }) => {
 		return withContext((root) => {
 			const pluginCtx = createPluginContext(root, 'plugin.gamma')
-			expect(() => pluginCtx.ops.register(create())).toThrow(error)
+			const metadata =
+				create().id === 'plugin-delta.inspect'
+					? { cli: { triggers: ['plugin status'] } }
+					: { mcp: { name: 'plugin.status' } }
+			expect(() => pluginCtx.ops.register(create(), { metadata })).toThrow(error)
 		})
 	})
 })

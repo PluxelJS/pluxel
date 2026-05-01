@@ -59,6 +59,9 @@
 - `docs/design/ops-catalog/overview.md`
   ops live registry 的 host-side catalog 设计
   （包含 runtime read model、生命周期边界与 workbench Ops 视图）
+- `packages/ops/docs/core-v2.md`、`packages/ops/docs/adapters-v2.md`
+  ops V2 设计
+  （包含轻量 core API、必填 doc/schema、额外验证、CLI adapter 与 host read model 分层）
 
 非权威/历史文档说明：
 
