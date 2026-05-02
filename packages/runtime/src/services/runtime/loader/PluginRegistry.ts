@@ -243,6 +243,10 @@ export class PluginRegistry {
 		return this.name2ExportKey.get(name)
 	}
 
+	listModuleItems(moduleId: ModuleId): readonly ModuleItem[] {
+		return this.moduleMap.get(moduleId) ?? EMPTY
+	}
+
 	// =============== 声明层：落/撤 ===============
 	declarePlugin(
 		moduleId: ModuleId,
@@ -386,11 +390,14 @@ export class PluginRegistry {
 
 	// =============== 运行层：启/停 ===============
 	/** 根据 config 启用位，为该模块内需要启用的插件执行 start */
-	async syncRuntimeForModule(moduleId: ModuleId): Promise<void> {
+	async syncRuntimeForModule(
+		moduleId: ModuleId,
+		options: { refreshRegistered?: boolean; restartRegistered?: boolean } = {},
+	): Promise<void> {
 		const list = this.moduleMap.get(moduleId) ?? EMPTY
 		const starts: Array<Promise<void>> = []
 		const safeStart = (name: string, ctor: PluginConstructor) =>
-			this.startPlugin(name, ctor).catch((error) => {
+			this.startPlugin(name, ctor, options).catch((error) => {
 				this.ctx.logger.warn('启动失败：{name}', { name, moduleId, error })
 			})
 
@@ -439,11 +446,19 @@ export class PluginRegistry {
 		if (starts.length > 0) await Promise.all(starts)
 	}
 
-	async enable(name: PluginName, ctor: PluginConstructor): Promise<void> {
-		await this.startPlugin(name, ctor)
+	async enable(
+		name: PluginName,
+		ctor: PluginConstructor,
+		options: { refreshRegistered?: boolean; restartRegistered?: boolean } = {},
+	): Promise<void> {
+		await this.startPlugin(name, ctor, options)
 	}
 
-	async startPlugin(name: PluginName, ctor: PluginConstructor): Promise<void> {
+	async startPlugin(
+		name: PluginName,
+		ctor: PluginConstructor,
+		options: { refreshRegistered?: boolean; restartRegistered?: boolean } = {},
+	): Promise<void> {
 		const provideBase = this.resolveProvideBase(name, ctor)
 		const schema = this.getSchema(ctor)
 		if (schema) {
@@ -462,8 +477,12 @@ export class PluginRegistry {
 			// Idempotency: enable/start may be invoked multiple times (config ready races, user clicks, etc.).
 			// Avoid treating "already registered" as a failure, as the rollback would incorrectly unregister
 			// an otherwise healthy plugin registration and desync UI/runtime.
-			if (!this.ctx.registry.isRegistered(ctor)) {
+			const wasRegistered = this.ctx.registry.isRegistered(ctor)
+			if (options.refreshRegistered || !wasRegistered) {
 				this.ctx.registry.register(ctor, provideBase === undefined ? undefined : { provideBase })
+			}
+			if (options.restartRegistered && wasRegistered) {
+				this.ctx.registry.restart(ctor, { cascadeDependents: false })
 			}
 			if (provideBase) {
 				try {
@@ -489,9 +508,15 @@ export class PluginRegistry {
 	}
 
 	/** 只停运行层（保留 config 启用位） */
-	stopPlugin(name: PluginName, ctor: PluginConstructor): void {
+	stopPlugin(
+		name: PluginName,
+		ctor: PluginConstructor,
+		options: { cascadeDependents?: boolean } = {},
+	): void {
 		this.logGuard(`core.unregister(${name})`, () => {
-			this.ctx.registry.unregister(ctor)
+			this.ctx.registry.unregister(ctor, {
+				cascadeDependents: options.cascadeDependents ?? true,
+			})
 		})
 	}
 
@@ -507,18 +532,18 @@ export class PluginRegistry {
 	}
 
 	/** 停止某模块内全部插件（只影响运行层） */
-	stopModule(moduleId: ModuleId): void {
+	stopModule(moduleId: ModuleId, options: { cascadeDependents?: boolean } = {}): void {
 		const list = this.moduleMap.get(moduleId) ?? EMPTY
 		for (const { ctor } of list) {
 			const { id: name } = getPluginInfo(ctor)
 			if (!this.isPrimaryProvider(moduleId, ctor)) continue
-			this.stopPlugin(name, ctor)
+			this.stopPlugin(name, ctor, options)
 
 			// Stop forks derived from this ctor as well (module is going away).
 			for (const forkCtor of this.ctx.registry.listForks(ctor)) {
 				try {
 					const forkName = getPluginInfo(forkCtor).id
-					this.stopPlugin(forkName, forkCtor)
+					this.stopPlugin(forkName, forkCtor, options)
 				} catch {
 					// ignore: best-effort cleanup
 				}

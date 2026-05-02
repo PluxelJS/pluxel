@@ -73,6 +73,7 @@ const ACTION_LABEL: Record<PluginStatusAction, string> = {
 	stop: '终止',
 	restart: '重启',
 	enable: '启用',
+	'enable-persisted': '持久启用',
 	disable: '禁用',
 }
 const STATUS_FILTER_KEY = 'pluxel:plugin-status-filter'
@@ -287,7 +288,7 @@ export const PluginCatalog: React.FC<PluginCatalogProps> = ({ pluginName }) => {
 	}, [])
 
 	const handleBulkStatus = useCallback(
-		async (action: Exclude<PluginStatusAction, 'start' | 'restart'>) => {
+		async (action: Exclude<PluginStatusAction, 'start' | 'restart' | 'enable-persisted'>) => {
 			if (selectedIds.length === 0) return
 			const batch = [...selectedIds]
 			setBulkBusy(true)

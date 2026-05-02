@@ -119,6 +119,30 @@ describe('runtime ops', () => {
 		})
 	})
 
+	it('distinguishes enable from persisted-only enable', async () => {
+		await withRuntimeHarness(async ({ host, root, rpc }) => {
+			await expect(root.ops.dispatch('plugin enable-persisted --name Alpha')).resolves.toEqual({
+				ok: true,
+				value: {
+					ok: true,
+					name: 'Alpha',
+				},
+			})
+			expect(host.ctx.configService.isEnabledInConfig('Alpha')).toBe(true)
+			expect(host.isRunning(Alpha)).toBe(false)
+
+			await expect(rpc.opsInvoke('plugin.enable', { name: 'Alpha' })).resolves.toEqual({
+				ok: true,
+				value: {
+					ok: true,
+					name: 'Alpha',
+				},
+			})
+			expect(host.ctx.configService.isEnabledInConfig('Alpha')).toBe(true)
+			expect(host.isRunning(Alpha)).toBe(true)
+		})
+	})
+
 	it('supports config reads and writes through runtime ops only', async () => {
 		await withRuntimeHarness(async ({ root, rpc }) => {
 			await expect(

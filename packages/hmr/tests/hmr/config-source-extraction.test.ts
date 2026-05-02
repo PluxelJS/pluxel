@@ -148,6 +148,7 @@ function createContext(
 						capture.lastModule = mod
 						return false
 					},
+					listAffectedModules: () => [],
 					rollback: () => {},
 					commit: () => {},
 				}

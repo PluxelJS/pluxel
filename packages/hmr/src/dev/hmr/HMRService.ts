@@ -1055,15 +1055,26 @@ export class HMRService {
 		if (!commit) return summary
 
 		const added = commit.added.map((id) => this.formatIdentifier(id))
-		const replaced = commit.replaced.map((id) => this.formatIdentifier(id))
+		const replaced = commit.replaced.map(({ from, to }) => ({
+			from: this.formatIdentifier(from),
+			to: this.formatIdentifier(to),
+		}))
 		const removed = commit.removed.map((id) => this.formatIdentifier(id))
 		const failed = commit.failed.map((id) => this.formatIdentifier(id))
 		const touched = commit.touched.map((id) => this.formatIdentifier(id))
+		const structural = new Set<string>([
+			...added,
+			...removed,
+			...failed,
+			...replaced.map((item) => item.from),
+			...replaced.map((item) => item.to),
+		])
+		const restarted = touched.filter((id) => !structural.has(id))
 
 		return {
 			...summary,
 			lifecycleOk: failed.length === 0,
-			commit: { added, replaced, removed, failed, touched },
+			commit: { added, replaced, removed, failed, touched, restarted },
 		}
 	}
 

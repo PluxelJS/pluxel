@@ -28,6 +28,13 @@ type StatusSummary = {
 
 type PluginRegistryTx = ReturnType<PluginRegistry['beginTransaction']>
 
+export type LoaderBatch = {
+	replaceModule(moduleId: string, mod: Record<string, unknown>): Promise<boolean>
+	listAffectedModules(): readonly string[]
+	rollback(): void
+	commit(): void
+}
+
 export class AnchorStore {
 	private readonly anchors = new Set<string>()
 	private readonly hmrAnchors = new Set<string>()
@@ -92,8 +99,9 @@ export class AnchorJournal {
 	}
 }
 
-export class LoaderBatchSession {
+export class LoaderBatchSession implements LoaderBatch {
 	private readonly anchors: AnchorJournal
+	private readonly affectedModules = new Set<string>()
 
 	constructor(
 		private readonly moduleReplacer: ModuleReplacer,
@@ -103,18 +111,29 @@ export class LoaderBatchSession {
 		this.anchors = new AnchorJournal(anchors)
 	}
 
-	replaceModule(moduleId: string, mod: Record<string, unknown>) {
-		return this.moduleReplacer.replaceModule(moduleId, mod, { tx: this.tx, anchors: this.anchors })
+	async replaceModule(moduleId: string, mod: Record<string, unknown>) {
+		const result = await this.moduleReplacer.replaceModule(moduleId, mod, {
+			tx: this.tx,
+			anchors: this.anchors,
+		})
+		for (const affected of result.affectedModules) this.affectedModules.add(affected)
+		return result.isAnchor
+	}
+
+	listAffectedModules(): readonly string[] {
+		return [...this.affectedModules]
 	}
 
 	rollback() {
 		this.tx.rollback()
 		this.anchors.rollback()
+		this.affectedModules.clear()
 	}
 
 	commit() {
 		this.tx.commit()
 		this.anchors.commit()
+		this.affectedModules.clear()
 	}
 }
 
@@ -295,7 +314,7 @@ export class LoaderRegistryView {
 	}
 
 	findModuleIdByName(name: string): string | null {
-		return this.registry.name2PathMap.get(name) ?? null
+		return this.findModuleId(name)
 	}
 
 	getCtor(name: string): PluginConstructor | undefined {

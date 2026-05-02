@@ -8,6 +8,8 @@
   Vite 配置分层：components workbench、runtime web、hmr dev host 与环境插件作用域规则
 - `docs/design/plugin-feature/overview.md`
   Feature 设计收敛：`use(required)` / `tryUse(optional)`、可选依赖边界与 lazy load 规则
+- `docs/design/plugin-lifecycle-hmr.md`
+  core/runtime/hmr 下插件启停、HMR 默认重启、依赖级联与改进方向
 - `docs/design/plugin-workbench/design.md`
   插件工作台设计：当前布局、tab 策略、交互原则与设计缘由
 - `docs/design/plugin-workbench/implementation.md`

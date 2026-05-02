@@ -880,6 +880,7 @@ export class PluginService {
 					plan.restartRequested.size > 0 ? [...plan.restartRequested].map(String) : undefined,
 			}))
 			await this.applyTeardown(oldGraph, plan.toStopSlots)
+			confirm()
 
 			// Ensure fresh instances for restarts/replacements.
 			runtime.deleteMany(this.collectRuntimeEvictions(plan))
@@ -896,8 +897,6 @@ export class PluginService {
 					if (id !== undefined) failed.add(id as PluginIdentifier)
 				}
 			}
-
-			confirm()
 
 			// Ensure failed plugins are not observable as "available" for this commit.
 			// (They may have been instantiated but not successfully started.)

@@ -147,6 +147,7 @@ export {
 	type BuiltinForkSpec,
 	type BuiltinPluginSpec,
 	type LoaderApi,
+	type LoaderBatch,
 	type PreloadBuiltinsOptions,
 	type RemovalScope,
 } from './services/runtime/loader/LoaderService'

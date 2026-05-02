@@ -321,6 +321,169 @@ describe('LoaderService', () => {
 		})
 	})
 
+	it('batch exposes DI-cascade affected modules so HMR can restart dependents not re-executed by moduleGraph', async () => {
+		const { core, ctx } = createHmrTestContext()
+		ctx.configService.enableInConfig('Dep', 'Consumer')
+		const loader = new LoaderService(ctx)
+		let depSeq = 0
+		let consumerSeq = 0
+
+		@Plugin({ name: 'Dep' })
+		class Dep extends BasePlugin {
+			readonly seq = ++depSeq
+		}
+
+		@Plugin({ name: 'Consumer' })
+		class Consumer extends BasePlugin {
+			readonly seq = ++consumerSeq
+
+			constructor(readonly dep: Dep) {
+				super()
+			}
+		}
+		setParamToken(Consumer, 0, Dep)
+
+		{
+			const batch = loader.beginBatch()
+			await batch.replaceModule('Dep.ts', { Dep })
+			await batch.replaceModule('Consumer.ts', { Consumer })
+			const res = await core.registry.commit()
+			expect(res.ok).toBe(true)
+			batch.commit()
+		}
+
+		const firstDep = core.registry.getInstance(Dep)
+		const firstConsumer = core.registry.getInstance(Consumer)
+		expect(firstDep?.seq).toBe(1)
+		expect(firstConsumer?.seq).toBe(1)
+		expect(firstConsumer?.dep.seq).toBe(firstDep?.seq)
+
+		@Plugin({ name: 'Dep' })
+		class DepNext extends BasePlugin {
+			readonly seq = ++depSeq
+		}
+
+		const batch = loader.beginBatch()
+		await batch.replaceModule('Dep.ts', { DepNext })
+
+		// Simulate the HMR pipeline path where Vite did not select Consumer.ts as a target:
+		// runtime still reports the DI-cascade affected module so HMR can re-sync it before commit.
+		expect(new Set(batch.listAffectedModules())).toEqual(new Set(['Dep.ts', 'Consumer.ts']))
+		await loader.syncRuntimeForModules(batch.listAffectedModules())
+
+		const res = await core.registry.commit()
+		expect(res.ok).toBe(true)
+		batch.commit()
+
+		const secondDep = core.registry.getInstance(DepNext)
+		const secondConsumer = core.registry.getInstance(
+			loader.api.registry.getCtor('Consumer') ?? Consumer,
+		)
+		expect(secondDep?.seq).toBe(2)
+		expect(secondConsumer?.seq).toBe(2)
+		expect(secondConsumer?.dep.seq).toBe(secondDep?.seq)
+		expect(secondDep).not.toBe(firstDep)
+		expect(secondConsumer).not.toBe(firstConsumer)
+	})
+
+	it('rolls back single-plugin replace loader state when core commit fails', async () => {
+		const { core, ctx } = createHmrTestContext()
+		ctx.configService.enableInConfig('Dep', 'Bad')
+		const loader = new LoaderService(ctx)
+
+		@Plugin({ name: 'Dep' })
+		class Dep extends BasePlugin {}
+
+		@Plugin({ name: 'Bad' })
+		class Bad extends BasePlugin {
+			constructor(_dep: Dep) {
+				super()
+			}
+		}
+		setParamToken(Bad, 0, Dep)
+
+		{
+			const batch = loader.beginBatch()
+			await batch.replaceModule('Dep.ts', { Dep })
+			await batch.replaceModule('Bad.ts', { Bad })
+			const res = await core.registry.commit()
+			expect(res.ok).toBe(true)
+			batch.commit()
+		}
+
+		abstract class MissingBase extends BasePlugin {}
+
+		@Plugin({ name: 'Dep' })
+		class DepBroken extends BasePlugin {
+			constructor(_missing: MissingBase) {
+				super()
+			}
+		}
+		setParamToken(DepBroken, 0, MissingBase)
+
+		const batch = loader.beginBatch()
+		await batch.replaceModule('Dep.ts', { DepBroken })
+		const res = await core.registry.commit()
+		expect(res.ok).toBe(false)
+		batch.rollback()
+		core.registry.resetDraft()
+
+		expect(loader.api.registry.getCtor('Dep')).toBe(Dep)
+		expect(loader.api.registry.findModuleId('Dep')).toBe('Dep.ts')
+		expect(core.registry.isRunning(Dep)).toBe(true)
+	})
+
+	it('non-batch replaceModule syncs affected dependents without redundantly syncing the replaced module', async () => {
+		const { core, ctx } = createHmrTestContext()
+		ctx.configService.enableInConfig('Dep', 'Consumer')
+		const loader = new LoaderService(ctx)
+		let depSeq = 0
+		let consumerSeq = 0
+		let syncCalls = 0
+		const originalSyncRuntimeForModule = loader.syncRuntimeForModule.bind(loader)
+		loader.syncRuntimeForModule = async (moduleId: string) => {
+			syncCalls++
+			await originalSyncRuntimeForModule(moduleId)
+		}
+
+		@Plugin({ name: 'Dep' })
+		class Dep extends BasePlugin {
+			readonly seq = ++depSeq
+		}
+
+		@Plugin({ name: 'Consumer' })
+		class Consumer extends BasePlugin {
+			readonly seq = ++consumerSeq
+
+			constructor(readonly dep: Dep) {
+				super()
+			}
+		}
+		setParamToken(Consumer, 0, Dep)
+
+		await loader.replaceModule('Dep.ts', { Dep })
+		await loader.replaceModule('Consumer.ts', { Consumer })
+		let res = await core.registry.commit()
+		expect(res.ok).toBe(true)
+		expect(syncCalls).toBe(0)
+
+		@Plugin({ name: 'Dep' })
+		class DepNext extends BasePlugin {
+			readonly seq = ++depSeq
+		}
+
+		await loader.replaceModule('Dep.ts', { DepNext })
+		res = await core.registry.commit()
+		expect(res.ok).toBe(true)
+		expect(syncCalls).toBe(1)
+
+		const nextConsumer = core.registry.getInstance(
+			loader.api.registry.getCtor('Consumer') ?? Consumer,
+		)
+		expect(nextConsumer?.seq).toBe(2)
+		expect(nextConsumer?.dep.seq).toBe(2)
+	})
+
 	it('registry view exposes module ids and loaded names', async () => {
 		const { core, ctx } = createHmrTestContext()
 		const loader = new LoaderService(ctx)

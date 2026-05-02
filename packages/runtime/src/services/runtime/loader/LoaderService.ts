@@ -21,6 +21,7 @@ import {
 } from './selection'
 import {
 	AnchorStore,
+	type LoaderBatch,
 	LoaderAnchors,
 	type LoaderApi,
 	LoaderBatchSession,
@@ -33,7 +34,7 @@ import {
 	RuntimeResolver,
 } from './support'
 
-export type { LoaderApi, RemovalScope } from './support'
+export type { LoaderApi, LoaderBatch, RemovalScope } from './support'
 
 const serviceName = 'loader' as const
 const BUILTIN_MODULE_ID_DEFAULT = 'pluxel:builtins'
@@ -366,8 +367,10 @@ export class LoaderService {
 	}
 
 	// 先停旧运行态，再把"已执行的新模块"导出解析并装入。
-	replaceModule(moduleId: string, mod: Record<string, unknown>): Promise<boolean> {
-		return this.moduleReplacer.replaceModule(moduleId, mod)
+	async replaceModule(moduleId: string, mod: Record<string, unknown>): Promise<boolean> {
+		const result = await this.moduleReplacer.replaceModule(moduleId, mod)
+		await this.syncRuntimeForModules(result.affectedModules, { exclude: [moduleId] })
+		return result.isAnchor
 	}
 
 	/**
@@ -375,7 +378,7 @@ export class LoaderService {
 	 * - core 容器的草稿回滚由 `ctx.registry.resetDraft()`/commit 内部负责；
 	 * - 这里确保 loader 自身不“先走一步”导致状态漂移。
 	 */
-	beginBatch() {
+	beginBatch(): LoaderBatch {
 		return new LoaderBatchSession(
 			this.moduleReplacer,
 			this.registry.beginTransaction(),
@@ -402,6 +405,24 @@ export class LoaderService {
 	 * because core rolls draft changes back internally on verification failure.
 	 */
 	async syncRuntimeForModule(moduleId: string): Promise<void> {
-		await this.registry.syncRuntimeForModule(moduleId)
+		this.moduleReplacer.syncModuleParams(moduleId)
+		await this.registry.syncRuntimeForModule(moduleId, {
+			refreshRegistered: true,
+			restartRegistered: true,
+		})
+	}
+
+	async syncRuntimeForModules(
+		moduleIds: Iterable<string>,
+		options: { exclude?: Iterable<string> } = {},
+	): Promise<void> {
+		const seen = new Set<string>()
+		const excluded = new Set(options.exclude ?? [])
+		for (const moduleId of moduleIds) {
+			if (excluded.has(moduleId)) continue
+			if (seen.has(moduleId)) continue
+			seen.add(moduleId)
+			await this.syncRuntimeForModule(moduleId)
+		}
 	}
 }

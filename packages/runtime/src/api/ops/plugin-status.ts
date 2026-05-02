@@ -74,7 +74,7 @@ const pluginsStatusApplyOp = defineRuntimeOp({
 	doc: {
 		title: 'Apply Plugin Status Actions',
 		description:
-			'Apply one or more start/stop/restart/enable/disable actions in order, then perform one registry commit at the end.',
+			'Apply one or more start/stop/restart/enable/enable-persisted/disable actions in order, then perform one registry commit at the end.',
 	},
 	input: obj({
 		actions: Type.Array(
@@ -96,12 +96,17 @@ const pluginsStatusApplyOp = defineRuntimeOp({
 	},
 })
 
-function createSingleStatusActionOp(action: 'start' | 'stop' | 'restart' | 'enable' | 'disable') {
+function createSingleStatusActionOp(
+	action: 'start' | 'stop' | 'restart' | 'enable' | 'enable-persisted' | 'disable',
+) {
 	return defineRuntimeOp({
 		id: `plugin.${action}`,
 		doc: {
 			title: `${action[0]!.toUpperCase()}${action.slice(1)} Plugin`,
-			description: `${action[0]!.toUpperCase()}${action.slice(1)} one plugin by name.`,
+			description:
+				action === 'enable-persisted'
+					? 'Persist-enable one plugin without starting it now.'
+					: `${action[0]!.toUpperCase()}${action.slice(1)} one plugin by name.`,
 		},
 		input: obj({
 			name: pluginNameSchema,
@@ -195,6 +200,7 @@ export const pluginStatusOps: readonly RuntimeOperation[] = Object.freeze([
 	createSingleStatusActionOp('stop'),
 	createSingleStatusActionOp('restart'),
 	createSingleStatusActionOp('enable'),
+	createSingleStatusActionOp('enable-persisted'),
 	createSingleStatusActionOp('disable'),
 	pluginWaitForStageOp,
 ])

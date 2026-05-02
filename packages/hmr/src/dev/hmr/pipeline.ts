@@ -9,6 +9,7 @@ import {
 	type MissingDepsCandidate,
 	startTimer,
 } from '@pluxel/runtime/shared'
+import type { LoaderBatch } from '@pluxel/runtime/services'
 import type { HmrPathApi, HmrToolkit } from './environment'
 import { collectHotspots, isLogEnabled, logAttributionReport, type TimingTracker } from './logging'
 import { collectPluginTotals } from './operational-report'
@@ -18,6 +19,17 @@ import { runWithRequireShims } from './runtime-shims'
 export type PrefetchOrder = 'near' | 'all'
 
 type CommitResult = Awaited<ReturnType<Context['registry']['commit']>>
+type HmrExecutionResult = {
+	res: CommitResult
+	commitMs: number
+	affectedModules: readonly string[]
+	syncedModules: readonly string[]
+	autoDisabled: readonly string[]
+}
+
+type PluginStatusSnapshotLike = {
+	statuses?: Record<string, { isEnabled?: boolean; isRunning?: boolean }>
+}
 
 function dedupeCleanIds(ids: readonly string[], toClean: (id: string) => string) {
 	const seen = new Set<string>()
@@ -39,6 +51,16 @@ function dedupeIds(ids: readonly string[]) {
 		if (seen.has(id)) continue
 		seen.add(id)
 		out.push(id)
+	}
+	return out
+}
+
+function excludeIds(ids: readonly string[], excluded: readonly string[]) {
+	if (ids.length === 0 || excluded.length === 0) return ids
+	const excludedSet = new Set(excluded)
+	const out: string[] = []
+	for (const id of ids) {
+		if (!excludedSet.has(id)) out.push(id)
 	}
 	return out
 }
@@ -360,7 +382,7 @@ export class HmrExecutor {
 	async runAndLoadAllClean(
 		cleanIds: readonly string[],
 		_keepOrder = true,
-	): Promise<{ res: CommitResult; commitMs: number } | undefined> {
+	): Promise<HmrExecutionResult | undefined> {
 		if (cleanIds.length === 0) return undefined
 
 		// Historically `keepOrder=false` did not change ordering; preserve that behavior.
@@ -411,9 +433,20 @@ export class HmrExecutor {
 			}
 		}
 
+		const affectedModules = readBatchAffectedModules(batch)
+		const affectedOnlyModules = excludeIds(affectedModules, ordered)
+		const syncedModules = new Set<string>()
+		for (const id of
+			affectedOnlyModules.length > 0
+				? await syncModulesToCoreDraft(this.ctx, affectedOnlyModules)
+				: []) {
+			syncedModules.add(id)
+		}
+
 		const endCommit = startTimer()
 		let res: CommitResult = await this.ctx.registry.commit()
 		const commitMs = endCommit()
+		const autoDisabled = new Set<string>()
 
 		if (!res.ok) {
 			const autoDisableMissingDependencies = this.cfg.autoDisableMissingDependencies ?? true
@@ -424,7 +457,13 @@ export class HmrExecutor {
 				while (!res.ok && pass < autoDisableMaxPasses) {
 					const disabled = disablePluginsOnMissingDepsFromCommitError(this.ctx, res.err)
 					if (disabled.size === 0) break
-					await syncModulesToCoreDraft(this.ctx, ordered)
+					for (const name of disabled) autoDisabled.add(name)
+					for (const id of await syncModulesToCoreDraft(this.ctx, [
+						...ordered,
+						...affectedModules,
+					])) {
+						syncedModules.add(id)
+					}
 					res = await this.ctx.registry.commit()
 					pass++
 				}
@@ -440,13 +479,19 @@ export class HmrExecutor {
 			batch.commit()
 		}
 
-		return { res, commitMs }
+		return {
+			res,
+			commitMs,
+			affectedModules,
+			syncedModules: [...syncedModules],
+			autoDisabled: [...autoDisabled].sort(),
+		}
 	}
 
 	async runAndLoadAll(
 		filesPath: readonly string[],
 		keepOrder = true,
-	): Promise<{ res: CommitResult; commitMs: number } | undefined> {
+	): Promise<HmrExecutionResult | undefined> {
 		if (filesPath.length === 0) return undefined
 
 		// Always normalize+dedupe in a single pass (avoid allocating an intermediate array).
@@ -454,6 +499,25 @@ export class HmrExecutor {
 		const ordered = dedupeCleanIds(filesPath, (p) => this.path.toClean(p))
 		return await this.runAndLoadAllClean(ordered, keepOrder)
 	}
+}
+
+function readBatchAffectedModules(batch: LoaderBatch): readonly string[] {
+	return batch.listAffectedModules().filter((id) => id.length > 0)
+}
+
+function collectEnabledButStopped(ctx: Context, moduleIds: ReadonlySet<string>): readonly string[] {
+	if (moduleIds.size === 0) return []
+	const snapshot = ctx.loader.api.status.snapshot() as PluginStatusSnapshotLike
+	const statuses = snapshot.statuses ?? {}
+	const out: string[] = []
+	for (const [name, status] of Object.entries(statuses)) {
+		if (!status?.isEnabled || status.isRunning) continue
+		const moduleId = ctx.loader.api.registry.findModuleIdByName(name)
+		if (!moduleId || !moduleIds.has(moduleId)) continue
+		out.push(name)
+	}
+	out.sort((a, b) => a.localeCompare(b))
+	return out
 }
 
 function disablePluginsOnMissingDepsFromCommitError(ctx: Context, error: unknown): Set<string> {
@@ -478,17 +542,26 @@ function disablePluginsOnMissingDepsFromCommitError(ctx: Context, error: unknown
 	})
 }
 
-async function syncModulesToCoreDraft(ctx: Context, moduleIds: readonly string[]): Promise<void> {
+async function syncModulesToCoreDraft(
+	ctx: Context,
+	moduleIds: readonly string[],
+): Promise<readonly string[]> {
 	// LoaderService manages moduleId → exported ctors mapping; re-sync is the lowest-overhead way
 	// to re-register enabled plugins after core rolls back draft mutations on failed verification.
+	const synced: string[] = []
+	const seen = new Set<string>()
 	for (let i = 0; i < moduleIds.length; i++) {
 		const id = moduleIds[i]!
+		if (seen.has(id)) continue
+		seen.add(id)
 		try {
 			await ctx.loader.syncRuntimeForModule(id)
+			synced.push(id)
 		} catch (error) {
 			ctx.logger.warn('syncRuntimeForModule failed during commit retry', { moduleId: id, error })
 		}
 	}
+	return synced
 }
 
 function buildCjsExternalizeHint(error: unknown): string | null {
@@ -641,6 +714,23 @@ export type HmrBatchSummary = {
 	epoch: number
 	changed: readonly string[]
 	targets: readonly string[]
+	/**
+	 * Modules reported by the runtime loader as DI dependents of replaced plugin modules.
+	 *
+	 * These may not be Vite execution targets; HMR syncs them through the loader before commit so core
+	 * can apply lifecycle restart semantics with the latest runtime ctor map.
+	 */
+	affectedModules: readonly string[]
+	/** Runtime modules successfully re-synced into the core draft before commit. */
+	syncedModules: readonly string[]
+	/** Plugins persisted-disabled by the missing-dependency retry policy during this batch. */
+	autoDisabled: readonly string[]
+	/**
+	 * Enabled plugins in this batch's related module set that were still not running after commit.
+	 *
+	 * This catches lifecycle failures that do not make the batch itself fail.
+	 */
+	enabledButStopped: readonly string[]
 	affected: number
 	fallbackRoots: number
 	invalidated: { vite: number; runner: number }
@@ -672,10 +762,11 @@ export type HmrBatchSummary = {
 	 */
 	commit?: {
 		added: readonly string[]
-		replaced: readonly string[]
+		replaced: readonly { from: string; to: string }[]
 		removed: readonly string[]
 		failed: readonly string[]
 		touched: readonly string[]
+		restarted: readonly string[]
 	}
 }
 
@@ -759,6 +850,9 @@ export class HmrBatchProcessor {
 		const execOrder = buildOrderedList(targets, graph.distance, 'near', targets.size || 1)
 		const executed = await this.executor.runAndLoadAllClean(execOrder, true)
 		const commitMs = executed ? Math.round(executed.commitMs * 10) / 10 : null
+		const affectedModules = executed?.affectedModules ?? []
+		const syncedModules = executed?.syncedModules ?? []
+		const autoDisabled = executed?.autoDisabled ?? []
 
 		const attrLevel = this.cfg.attributionLevel
 		if (attrLevel !== 'off') {
@@ -785,6 +879,13 @@ export class HmrBatchProcessor {
 		const commitOk = Boolean(executed?.res.ok)
 		const commitError =
 			executed?.res.ok === false ? String(executed.res.err ?? 'commit failed') : undefined
+		const relatedModules = new Set<string>([
+			...execOrder,
+			...affectedModules,
+			...syncedModules,
+			...graph.affectedIds,
+		])
+		const enabledButStopped = collectEnabledButStopped(this.ctx, relatedModules)
 
 		const CHANGED_PREVIEW_LIMIT = 3
 		const changedPretty = [...new Set(changed.map((id) => this.path.pretty(id)))].sort()
@@ -796,6 +897,10 @@ export class HmrBatchProcessor {
 			changedPreview: changedPreview.length > 0 ? changedPreview : undefined,
 			changedPreviewOmitted: changedPreviewOmitted || undefined,
 			targets: execOrder.length,
+			affectedModules: affectedModules.length || undefined,
+			syncedModules: syncedModules.length || undefined,
+			autoDisabled: autoDisabled.length > 0 ? autoDisabled : undefined,
+			enabledButStopped: enabledButStopped.length > 0 ? enabledButStopped : undefined,
 			affected: graph.affectedIds.size,
 			fallbackRoots: graph.roots.length,
 			activeServices,
@@ -812,6 +917,10 @@ export class HmrBatchProcessor {
 			epoch,
 			changed,
 			targets: execOrder,
+			affectedModules,
+			syncedModules,
+			autoDisabled,
+			enabledButStopped,
 			affected: graph.affectedIds.size,
 			fallbackRoots: graph.roots.length,
 			activeServices,

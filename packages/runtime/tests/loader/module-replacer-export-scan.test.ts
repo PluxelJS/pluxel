@@ -52,7 +52,7 @@ describe('ModuleReplacer export scanning', () => {
 		})
 
 		const moduleId = '/repo/non-enum.ts'
-		const isAnchor = await replacer.replaceModule(moduleId, mod)
+		const { isAnchor } = await replacer.replaceModule(moduleId, mod)
 
 		expect(isAnchor).toBe(true)
 		expect(anchors.has(moduleId)).toBe(true)

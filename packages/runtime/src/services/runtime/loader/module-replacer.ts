@@ -22,6 +22,11 @@ type ReplaceModuleOptions = {
 	anchors?: AnchorJournal
 }
 
+export type ReplaceModuleResult = {
+	isAnchor: boolean
+	affectedModules: readonly string[]
+}
+
 type ExportedPlugin = {
 	ctor: PluginConstructor
 	exportKey: string
@@ -43,17 +48,20 @@ export class ModuleReplacer {
 		moduleId: string,
 		mod: Record<string, unknown>,
 		options: ReplaceModuleOptions = {},
-	): Promise<boolean> {
+	): Promise<ReplaceModuleResult> {
 		const id = moduleId
 		options.anchors?.record(id)
 		const oldItems = this.registry.modules.get(id) ?? []
-		// 停旧（只影响运行层，保留声明关系以便冲突判断更清晰）
-		this.registry.stopModule(id)
+		const exported = collectPluginExports(mod)
+		const affectedModules = this.collectAffectedModules(oldItems)
+
+		// 停旧模块本身；dependent declarations are kept and re-synced through affectedModules.
+		// This preserves core graph identity/slots and lets lifecycle cascade happen at commit time.
+		this.registry.stopModule(id, { cascadeDependents: false })
 
 		// 清理旧声明，准备落新声明
 		this.registry.undeclareModule(id, options.tx)
 
-		const exported = collectPluginExports(mod)
 		for (const item of exported) {
 			this.registry.declarePlugin(id, item.ctor, item.exportKey, options.tx)
 		}
@@ -74,6 +82,7 @@ export class ModuleReplacer {
 		const startEnabled = async () => {
 			// Apply persisted dependency overrides after all exports are declared.
 			for (const item of exported) await this.depOverrides.apply(item.ctor, this.registry)
+			for (const item of exported) this.normalizeCtorParams(id, item.ctor, 'syncRuntimeForModule')
 			// 运行层：根据持久启用位，自动启用需要启用的插件
 			await this.registry.syncRuntimeForModule(id)
 		}
@@ -94,13 +103,49 @@ export class ModuleReplacer {
 		const isAnchor = exported.length > 0
 		this.updateAnchors(id, isAnchor, options.anchors)
 
-		return isAnchor
+		return { isAnchor, affectedModules }
+	}
+
+	syncModuleParams(moduleId: string): void {
+		const list = this.registry.listModuleItems(moduleId)
+		for (const item of list) this.normalizeCtorParams(moduleId, item.ctor, 'syncRuntimeForModule')
+	}
+
+	private collectAffectedModules(oldItems: readonly { ctor: PluginConstructor }[]): readonly string[] {
+		if (oldItems.length === 0) return []
+		const graph = this.ctx.registry.graph
+		const out = new Set<string>()
+		for (const { ctor } of oldItems) {
+			const queue: PluginConstructor[] = [ctor]
+			const seen = new Set<PluginConstructor>()
+			for (let cursor = 0; cursor < queue.length; cursor++) {
+				const current = queue[cursor]!
+				if (seen.has(current)) continue
+				seen.add(current)
+
+				let name: string | undefined
+				try {
+					name = getPluginInfo(current).id
+				} catch {
+					name = undefined
+				}
+				if (name) {
+					const moduleId = this.registry.name2PathMap.get(name)
+					if (moduleId) out.add(moduleId)
+				}
+
+				for (const dep of graph.dependentsOf(current)) {
+					if (typeof dep === 'function') queue.push(dep as PluginConstructor)
+				}
+			}
+		}
+		return [...out]
 	}
 
 	private normalizeCtorParams(
 		moduleId: string,
 		ctor: PluginConstructor,
-		source: 'replaceModule' | 'refreshDependents',
+		source: 'replaceModule' | 'refreshDependents' | 'syncRuntimeForModule',
 	) {
 		// 只对 “BasePlugin 子类 ctor token” 做归一化；非插件 token 一律跳过。
 		// 注意：我们不改变“依赖目标的 id”，只是在同 id 的前提下，把 token 引用替换到 runtime ctor。

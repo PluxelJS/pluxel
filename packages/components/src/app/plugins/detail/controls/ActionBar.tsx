@@ -30,6 +30,7 @@ const ACTION_LABEL: Record<PluginStatusAction, string> = {
 	stop: '终止',
 	restart: '重启',
 	enable: '启用',
+	'enable-persisted': '持久启用',
 	disable: '禁用',
 }
 
@@ -162,6 +163,11 @@ export function ActionBar({ onStatusUpdated, compact = false, prominent = false 
 					nextStage = PluginStatusEntryLifecycleStage.disabled
 					break
 				case 'enable':
+					nextEnabled = true
+					nextRunning = true
+					nextStage = PluginStatusEntryLifecycleStage.running
+					break
+				case 'enable-persisted':
 					nextEnabled = true
 					nextStage = currentRunning
 						? PluginStatusEntryLifecycleStage.running

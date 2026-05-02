@@ -17,6 +17,7 @@ describe('HmrExecutor import candidates', () => {
 						expect(moduleId).toBe(cleanId)
 						return true
 					},
+					listAffectedModules: () => [],
 					commit: () => {},
 					rollback: () => {},
 				}),

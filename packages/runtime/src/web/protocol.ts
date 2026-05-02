@@ -41,7 +41,13 @@ export interface ExtensionUiRpcMap {}
 export interface ExtensionUiSseMap {}
 export interface ExtensionUiSignalDbMap {}
 
-export type PluginStatusAction = 'start' | 'stop' | 'restart' | 'enable' | 'disable'
+export type PluginStatusAction =
+	| 'start'
+	| 'stop'
+	| 'restart'
+	| 'enable'
+	| 'enable-persisted'
+	| 'disable'
 export type ConfigPatch = Record<string, unknown>
 export type ConfigFieldMutation = {
 	schemaKey: string

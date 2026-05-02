@@ -10,6 +10,7 @@ export const pluginActionSchema = Type.Union(
 		Type.Literal('stop'),
 		Type.Literal('restart'),
 		Type.Literal('enable'),
+		Type.Literal('enable-persisted'),
 		Type.Literal('disable'),
 	],
 	{

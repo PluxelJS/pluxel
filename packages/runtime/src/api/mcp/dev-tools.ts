@@ -13,6 +13,10 @@ type HmrBatchSummaryLike = {
 	lifecycleOk?: boolean
 	changed: readonly string[]
 	targets: readonly string[]
+	affectedModules?: readonly string[]
+	syncedModules?: readonly string[]
+	autoDisabled?: readonly string[]
+	enabledButStopped?: readonly string[]
 	affected: number
 	fallbackRoots: number
 	invalidated: { vite: number; runner: number }
@@ -25,6 +29,7 @@ type HmrBatchSummaryLike = {
 		removed: readonly string[]
 		failed: readonly string[]
 		touched: readonly string[]
+		restarted?: readonly string[]
 	}
 }
 
@@ -141,6 +146,10 @@ const WaitForBatchOutputSchema = v.object({
 	lifecycleOk: v.optional(v.boolean()),
 	changed: v.array(v.string()),
 	targets: v.array(v.string()),
+	affectedModules: v.optional(v.array(v.string())),
+	syncedModules: v.optional(v.array(v.string())),
+	autoDisabled: v.optional(v.array(v.string())),
+	enabledButStopped: v.optional(v.array(v.string())),
 	affected: v.number(),
 	fallbackRoots: v.number(),
 	invalidated: v.object({ vite: v.number(), runner: v.number() }),
@@ -154,6 +163,7 @@ const WaitForBatchOutputSchema = v.object({
 			removed: v.array(v.string()),
 			failed: v.array(v.string()),
 			touched: v.array(v.string()),
+			restarted: v.optional(v.array(v.string())),
 		}),
 	),
 })
@@ -209,6 +219,12 @@ export function registerRuntimeDevTools(server: McpServer, ctx: Context) {
 		...(typeof summary.lifecycleOk === 'boolean' ? { lifecycleOk: summary.lifecycleOk } : {}),
 		changed: [...summary.changed],
 		targets: [...summary.targets],
+		...(summary.affectedModules ? { affectedModules: [...summary.affectedModules] } : {}),
+		...(summary.syncedModules ? { syncedModules: [...summary.syncedModules] } : {}),
+		...(summary.autoDisabled ? { autoDisabled: [...summary.autoDisabled] } : {}),
+		...(summary.enabledButStopped
+			? { enabledButStopped: [...summary.enabledButStopped] }
+			: {}),
 		affected: summary.affected,
 		fallbackRoots: summary.fallbackRoots,
 		invalidated: summary.invalidated,

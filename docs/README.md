@@ -51,6 +51,8 @@
   （实现侧 contract：`packages/runtime/docs/config/contract.md`）
 - `docs/design/plugin-feature/overview.md`
   Plugin/Feature 分层、`use(required)` / `tryUse(optional)`、以及真正 optional feature 的模块加载边界
+- `docs/design/plugin-lifecycle-hmr.md`
+  core/runtime/hmr 下插件启停、HMR 默认重启、依赖级联与改进方向
 - `docs/design/core-di/overview.md`
   面向 `@pluxel/core` 的下一代 DI kernel 原型设计；强调轻量内核、外部可访问、增量图更新
 - `docs/design/plugin-contribution/overview.md`

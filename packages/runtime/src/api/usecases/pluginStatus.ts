@@ -38,6 +38,7 @@ async function runStatusAction(
 
 		switch (action) {
 			case 'start':
+			case 'enable':
 				await ctx.loader.api.control.enable(name, ctor)
 				break
 			case 'stop':
@@ -50,7 +51,7 @@ async function runStatusAction(
 			case 'disable':
 				ctx.loader.api.control.deactivate(name, ctor, { runtimeOnly: false })
 				break
-			case 'enable':
+			case 'enable-persisted':
 				ctx.loader.api.control.enablePersisted(name)
 				break
 			default:
@@ -58,7 +59,7 @@ async function runStatusAction(
 		}
 		return { name, ok: true }
 	} catch (error) {
-		const isStart = action === 'start' || action === 'restart'
+		const isStart = action === 'start' || action === 'restart' || action === 'enable'
 		const message = getErrorMessage(error)
 		const code = message.includes('Plugin not found')
 			? 'plugin_not_found'

@@ -49,5 +49,5 @@ export const PluginStatusMutationResult = v.object({
 
 export const UpdateStatusInput = v.object({
 	name: v.string(),
-	status: v.picklist(['start', 'stop', 'restart', 'enable', 'disable']),
+	status: v.picklist(['start', 'stop', 'restart', 'enable', 'enable-persisted', 'disable']),
 })
