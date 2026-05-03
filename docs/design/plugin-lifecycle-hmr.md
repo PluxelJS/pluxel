@@ -84,10 +84,12 @@ runtime control-plane 的动作语义：
 
 HMR 批处理用 `loader.beginBatch()` 包住 loader 声明状态。这个返回值是 runtime 明确导出的 `LoaderBatch` contract，而不是 HMR 侧的鸭子类型：
 
-- `replaceModule(moduleId, mod): Promise<boolean>`
-  替换一个已执行模块的声明和运行态，返回它是否仍是 plugin anchor。
-- `listAffectedModules(): readonly string[]`
+- `replaceModule(moduleId, mod): Promise<{ isAnchor, affectedModules }>`
+  替换一个已执行模块的声明和运行态，返回结构化结果；`isAnchor` 表示它是否仍是 plugin anchor，`affectedModules` 表示这次替换本身发现的 DI 级联影响面。
+- `getAffectedModules(): readonly string[]`
   返回本 batch 中 runtime 基于 core DI graph 收集到的 affected modules。
+- `syncModules(moduleIds): Promise<readonly string[]>`
+  由 runtime batch 负责把这些模块重新同步进 core draft。HMR 不直接调用单模块 sync 细节。
 - batch 成功：`batch.commit()`
 - batch 失败：`batch.rollback()` + `ctx.registry.resetDraft()`
 
@@ -117,18 +119,18 @@ HMR 启动后会：
 7. `HmrExecutor` 重新 import target module。
 8. `ModuleReplacer.replaceModule()`：
    - `stopModule(id, { cascadeDependents: false })`：先停旧模块运行态，但不在声明层提前删除 dependents；
-   - 基于 core graph 收集旧模块插件的 dependent closure，并映射成 affected module ids；
+   - 基于 core graph 的 slot 关系收集旧模块插件及其 fork 的 dependent closure，并映射成 affected module ids；
    - `undeclareModule(id)`：移除旧声明；
    - 扫描新 exports，声明新的插件 ctor；
-   - 归一化 constructor param token，避免 HMR 后同 id 不同 ctor 引用造成假缺依赖；
-   - `syncRuntimeForModule(id)`：把本 module 中配置启用的插件重新注册进 core 草稿。
+   - 归一化 constructor param token，包括普通插件 id 和 fork id，避免 HMR 后同 id 不同 ctor 引用造成假缺依赖；
+   - 内部 sync 当前 module：把本 module 中配置启用的插件重新注册进 core 草稿。
 9. batch 末尾 `ctx.registry.commit()`。
 10. commit 前，HMR 会先 sync runtime 报告的 affected modules 中“没有被本 batch 重新执行”的模块；这些 module 不一定被 Vite 选为 target，但会用 loader 已有 ctor 重新注册并重启。
 11. 如果 commit 因 `MissingDependency` 失败，默认自动禁用缺依赖链上的已知插件，重新 sync 本 batch modules + affected modules，再 retry commit。
 
 同步策略有两个效率约束：
 
-- 正常路径下，已被 runner 重新执行并 `replaceModule()` 的 target 不会再立刻 `syncRuntimeForModule()` 一遍。
+- 正常路径下，已被 runner 重新执行并 `replaceModule()` 的 target 不会再通过 batch sync 立刻同步一遍。
 - retry 路径下，core commit 失败会回滚 draft，因此必须重新 sync 本 batch targets 和 DI affected modules；sync 函数内部按 module id 去重。
 
 最终 summary 语义：
@@ -136,7 +138,7 @@ HMR 启动后会：
 - `affectedModules`
   runtime 从旧 core DI graph 发现的 affected module ids，包含被替换模块本身和依赖它的模块。
 - `syncedModules`
-  HMR 实际成功调用 `syncRuntimeForModule()` 的模块；正常路径通常只包含未重新执行的 dependents，retry 路径也会包含 batch targets。
+  HMR 实际通过 `LoaderBatch.syncModules()` 同步的模块；正常路径通常只包含未重新执行的 dependents，retry 路径也会包含 batch targets。
 - `autoDisabled`
   missing-deps retry 中被持久禁用的插件名。
 - `enabledButStopped`
@@ -211,11 +213,11 @@ HMR batch commit 和 builtins preload 都有 `MissingDependency` 自动禁用策
 
 最终分工如下：
 
-- core 只负责 DI graph、commit delta、拓扑 stop/start、restart cascade 和失败隔离。
-- runtime 负责 module/plugin catalog、配置启用位、ctor token 归一化、DI affected modules 映射、batch rollback。
+- core 只负责 DI graph、commit delta、拓扑 stop/start、restart cascade、no-op commit 快路径和失败隔离。
+- runtime 负责 module/plugin catalog、配置启用位、ctor/fork token 归一化、DI affected modules 映射、batch rollback/sync。
 - HMR 负责文件变更、Vite moduleGraph、runner import、cache invalidation、commit/retry orchestration、summary 输出。
 
-HMR 不直接读取 core graph 来推生命周期影响面；它只通过 `LoaderBatch.listAffectedModules()` 消费 runtime 的结果。这样 HMR 和 core 不形成隐式耦合。
+HMR 不直接读取 core graph 来推生命周期影响面；它只通过 `LoaderBatch.getAffectedModules()` / `LoaderBatch.syncModules()` 消费 runtime 的结果。这样 HMR 和 core 不形成隐式耦合。
 
 ### 2. HMR summary 已能解释主要 lifecycle 结果
 
@@ -272,6 +274,31 @@ runtime op 中：
 - `plugin.stop`：停止运行，保留持久启用位。
 - `plugin.disable`：停止运行并关闭持久启用位。
 
+### 5. Bench 与 API 方向
+
+当前 plugin lifecycle bench 适合发现结构性退化，但不适合把所有数字都当成优化准绳：
+
+- no-op commit 的均值在微秒级，百分比变化容易被计时噪声放大；它只能提示“是否还在做不必要的 build/verify”。
+- HMR 真实热路径更应关注“执行了多少 plugin module、sync 了多少 runtime affected modules、commit 重启了多少实例”。
+- fan-out root replace / restart 才是生命周期设计的压力项，因为它体现 dependent closure、拓扑 stop/start 和实例重建成本。
+
+因此当前优化原则是：
+
+- core 在无 draft 变化、无 pending restart、无 failed retry 时直接走 no-op commit 快路径，不再 build/verify 空图。
+- runtime affected closure 直接消费 core graph slot，不通过 `dependentsOf()` 分配 key 数组，也不再做 direct dependent 参数刷新这条重复路径。
+- HMR batch API 以结构化 result 和 batch-level sync 为边界；HMR 只编排文件执行和 commit/retry，不直接拼 runtime 内部同步细节。
+- `LoaderService.syncRuntimeForModule(s)` 是 runtime 内部 helper，不作为 HMR/control-plane API 暴露。
+
+如果不考虑旧接口兼容，下一步 API 设计应继续朝“事务对象承载全部 HMR runtime 语义”收敛：
+
+- `replaceModule()` 返回结构化结果，不再返回裸 boolean。
+- 非 batch `LoaderService.replaceModule()` 与 batch `replaceModule()` 使用同一个返回结构，调用方显式读取 `isAnchor`，避免同名 API 在不同入口有不同语义。
+- `getAffectedModules()` / `syncModules()` 由 `LoaderBatch` 提供，避免 HMR 依赖 `LoaderService.syncRuntimeForModule()` 这种低层 helper。
+- `LoaderBatch` 在 `commit()` / `rollback()` 后关闭，关闭后继续 replace/sync 会报错；`getAffectedModules()` 仍作为本次 batch 的观测结果可读。
+- 更进一步可以把 `replace + sync affected + retry replay` 封成 runtime 的 `prepareCommit(executedModules)`，让 HMR 只传“哪些模块已重新执行”，runtime 自己给出“哪些模块还要 sync”。
+
+这条方向仍保持三层独立：core 不知道 module，runtime 不知道 watcher，HMR 不知道 DI graph。
+
 ## 剩余改进
 
 ### A. 同 id 单插件替换暂不走 core `replace()`
@@ -286,13 +313,9 @@ runtime op 中：
 
 后续只有在 core 能提供“replace implementation but preserve read-key behavior”的更窄 API 时，再考虑重新评估。
 
-### B. 继续补配置驱动依赖覆盖
+### B. 配置驱动依赖覆盖
 
-已覆盖 base provider selection；仍建议继续补：
-
-- fork selection 热更。
-- dep override 热更。
-- persisted-only enable 在 UI 外工具里的 round-trip。
+已覆盖 base provider selection、fork token 和 dep override 热更。仍建议后续在 ops/control-plane 层补 persisted-only enable 的 round-trip，这不属于 HMR 生命周期正确性本身。
 
 ### C. 增加覆盖测试
 
@@ -300,20 +323,19 @@ runtime op 中：
 
 - provider module HMR 后，consumer 不在 Vite importer targets 中，仍能被 runtime affected modules 重新 sync。
 - provider module HMR 后，依赖 base token 的 consumer 也能由 runtime affected modules 重新 sync。
+- provider module HMR 后，依赖 enabled fork token 的 consumer 也能由 runtime affected modules 重新 sync。
+- provider module HMR 后，依赖 persisted dep override 目标的 consumer 也能由 runtime affected modules 重新 sync。
 - HMR executor 在 commit 前消费 runtime batch 的 affected modules。
 - HMR executor summary 暴露 `affectedModules` / `syncedModules` / `autoDisabled`。
 - HMR processor summary 暴露 batch 相关模块内的 `enabledButStopped`。
 - 非 batch `replaceModule()` 会 sync affected dependents，但不会重复 sync 刚替换的 module。
-- runtime `LoaderBatch` contract 已类型化，HMR 不再鸭子类型读取 affected modules。
+- runtime `LoaderBatch` contract 已类型化，HMR 不再鸭子类型读取 affected modules，也不直接拼单模块 sync 细节。
+- runtime HMR lifecycle 覆盖已从通用 `LoaderService.test.ts` 拆到 `loader/hmr-lifecycle.test.ts`，保留 token normalization、affected modules、rollback、非 batch replace、batch close 五个核心规格。
 - `plugin.enable` 会立即启动，`plugin.enable-persisted` 只写持久启用位。
-
-仍建议补：
-
-- fork selection / dep override 的配置驱动 HMR 覆盖。
 
 ## 推荐改造顺序
 
-1. 继续补 fork selection / dep override 这类配置驱动依赖的 HMR 覆盖。
-2. 若未来 core 提供更窄 replacement API，再重新评估 runtime HMR 单插件快路径。
+1. 若未来 core 提供更窄 replacement API，再重新评估 runtime HMR 单插件快路径。
+2. 在 ops/control-plane 层补 persisted-only enable round-trip，这属于控制面可观测性，不阻塞 HMR 生命周期设计。
 
 整体判断：当前 HMR 已经满足日常“改插件源码自动重启”和“依赖它的插件也跟着重启”的实用要求；DI 依赖图级联已从“通常靠 moduleGraph 成立”推进到“runtime affected modules 明确同步”，同时避免了已执行 target 的重复 sync。

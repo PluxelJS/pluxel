@@ -151,9 +151,7 @@ export class PackageLoader {
 				this.runtime.bindModuleId(spec.name, moduleId)
 				this.runtime.setCachedModule(moduleId, module)
 				this.runtime.primeHmrModuleCache(spec, moduleId, module)
-				if (entry.isAnchor) {
-					await this.ctx.loader.replaceModule(moduleId, module)
-				}
+				if (entry.isAnchor) await this.ctx.loader.replaceModule(moduleId, module)
 				const record: PackageLoadResult = {
 					spec,
 					resolution: entry.resolution,
@@ -205,7 +203,7 @@ export class PackageLoader {
 		}
 		this.runtime.primeHmrModuleCache(spec, moduleId, module)
 
-		const isAnchor = await this.ctx.loader.replaceModule(moduleId, module)
+		const { isAnchor } = await this.ctx.loader.replaceModule(moduleId, module)
 
 		const result: PackageLoadResult = {
 			spec,

@@ -10,7 +10,7 @@ import {
 } from '@pluxel/core'
 import type { ConfigSchemaMap } from '@pluxel/core/services'
 import { getRuntimeModuleAdapter } from '../../../runtime/module-runtime'
-import type { ModuleReplacer } from './module-replacer'
+import type { ModuleReplacer, ReplaceModuleResult } from './module-replacer'
 import type {
 	PluginLifecycleSnapshot,
 	PluginLifecycleStage,
@@ -27,10 +27,15 @@ type StatusSummary = {
 }
 
 type PluginRegistryTx = ReturnType<PluginRegistry['beginTransaction']>
+export type LoaderSyncModulesOptions = { exclude?: Iterable<string> }
 
 export type LoaderBatch = {
-	replaceModule(moduleId: string, mod: Record<string, unknown>): Promise<boolean>
-	listAffectedModules(): readonly string[]
+	replaceModule(moduleId: string, mod: Record<string, unknown>): Promise<ReplaceModuleResult>
+	getAffectedModules(): readonly string[]
+	syncModules(
+		moduleIds: Iterable<string>,
+		options?: LoaderSyncModulesOptions,
+	): Promise<readonly string[]>
 	rollback(): void
 	commit(): void
 }
@@ -102,38 +107,58 @@ export class AnchorJournal {
 export class LoaderBatchSession implements LoaderBatch {
 	private readonly anchors: AnchorJournal
 	private readonly affectedModules = new Set<string>()
+	private closed = false
 
 	constructor(
 		private readonly moduleReplacer: ModuleReplacer,
 		private readonly tx: PluginRegistryTx,
 		anchors: AnchorStore,
+		private readonly syncRuntimeForModules: (
+			moduleIds: Iterable<string>,
+			options?: LoaderSyncModulesOptions,
+		) => Promise<readonly string[]>,
 	) {
 		this.anchors = new AnchorJournal(anchors)
 	}
 
 	async replaceModule(moduleId: string, mod: Record<string, unknown>) {
+		this.assertOpen()
 		const result = await this.moduleReplacer.replaceModule(moduleId, mod, {
 			tx: this.tx,
 			anchors: this.anchors,
 		})
 		for (const affected of result.affectedModules) this.affectedModules.add(affected)
-		return result.isAnchor
+		return result
 	}
 
-	listAffectedModules(): readonly string[] {
+	getAffectedModules(): readonly string[] {
 		return [...this.affectedModules]
 	}
 
+	async syncModules(
+		moduleIds: Iterable<string>,
+		options?: LoaderSyncModulesOptions,
+	): Promise<readonly string[]> {
+		this.assertOpen()
+		return await this.syncRuntimeForModules(moduleIds, options)
+	}
+
 	rollback() {
+		if (this.closed) return
+		this.closed = true
 		this.tx.rollback()
 		this.anchors.rollback()
-		this.affectedModules.clear()
 	}
 
 	commit() {
+		if (this.closed) return
+		this.closed = true
 		this.tx.commit()
 		this.anchors.commit()
-		this.affectedModules.clear()
+	}
+
+	private assertOpen() {
+		if (this.closed) throw new Error('LoaderBatch is already closed')
 	}
 }
 

@@ -81,8 +81,9 @@ function createContext(errorLogs?: ErrorLog[], scanService?: unknown) {
 			},
 			beginBatch() {
 				return {
-					replaceModule: async () => false,
-					listAffectedModules: () => [],
+					replaceModule: async () => ({ isAnchor: false, affectedModules: [] }),
+					getAffectedModules: () => [],
+					syncModules: async () => [],
 					rollback: () => {},
 					commit: () => {},
 				}

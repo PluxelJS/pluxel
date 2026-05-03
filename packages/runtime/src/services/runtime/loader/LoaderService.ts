@@ -11,7 +11,7 @@ import {
 	disablePluginsOnMissingDependencyError,
 	type MissingDepsCandidate,
 } from '../shared/missing-deps'
-import { ModuleReplacer } from './module-replacer'
+import { ModuleReplacer, type ReplaceModuleResult } from './module-replacer'
 import { PluginRegistry } from './PluginRegistry'
 import {
 	type BuiltinsKnownExtra,
@@ -34,7 +34,8 @@ import {
 	RuntimeResolver,
 } from './support'
 
-export type { LoaderApi, LoaderBatch, RemovalScope } from './support'
+export type { ReplaceModuleResult } from './module-replacer'
+export type { LoaderApi, LoaderBatch, LoaderSyncModulesOptions, RemovalScope } from './support'
 
 const serviceName = 'loader' as const
 const BUILTIN_MODULE_ID_DEFAULT = 'pluxel:builtins'
@@ -367,10 +368,13 @@ export class LoaderService {
 	}
 
 	// 先停旧运行态，再把"已执行的新模块"导出解析并装入。
-	async replaceModule(moduleId: string, mod: Record<string, unknown>): Promise<boolean> {
+	async replaceModule(
+		moduleId: string,
+		mod: Record<string, unknown>,
+	): Promise<ReplaceModuleResult> {
 		const result = await this.moduleReplacer.replaceModule(moduleId, mod)
 		await this.syncRuntimeForModules(result.affectedModules, { exclude: [moduleId] })
-		return result.isAnchor
+		return result
 	}
 
 	/**
@@ -383,6 +387,7 @@ export class LoaderService {
 			this.moduleReplacer,
 			this.registry.beginTransaction(),
 			this.anchors,
+			(moduleIds, options) => this.syncRuntimeForModules(moduleIds, options),
 		)
 	}
 
@@ -404,7 +409,7 @@ export class LoaderService {
 	 * Used by the HMR pipeline when commit retries are needed (e.g. MissingDependency auto-disable),
 	 * because core rolls draft changes back internally on verification failure.
 	 */
-	async syncRuntimeForModule(moduleId: string): Promise<void> {
+	private async syncRuntimeForModule(moduleId: string): Promise<void> {
 		this.moduleReplacer.syncModuleParams(moduleId)
 		await this.registry.syncRuntimeForModule(moduleId, {
 			refreshRegistered: true,
@@ -412,17 +417,20 @@ export class LoaderService {
 		})
 	}
 
-	async syncRuntimeForModules(
+	private async syncRuntimeForModules(
 		moduleIds: Iterable<string>,
 		options: { exclude?: Iterable<string> } = {},
-	): Promise<void> {
+	): Promise<readonly string[]> {
 		const seen = new Set<string>()
 		const excluded = new Set(options.exclude ?? [])
+		const synced: string[] = []
 		for (const moduleId of moduleIds) {
 			if (excluded.has(moduleId)) continue
 			if (seen.has(moduleId)) continue
 			seen.add(moduleId)
 			await this.syncRuntimeForModule(moduleId)
+			synced.push(moduleId)
 		}
+		return synced
 	}
 }

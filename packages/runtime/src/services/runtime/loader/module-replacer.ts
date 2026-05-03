@@ -32,16 +32,27 @@ type ExportedPlugin = {
 	exportKey: string
 }
 
+type AffectedModulesScratch = {
+	marks: Uint8Array
+	slots: number[]
+	stack: number[]
+}
+
 export class ModuleReplacer {
 	private readonly depOverrides: DependencyOverrideApplier
+	private affectedScratch: AffectedModulesScratch = {
+		marks: new Uint8Array(0),
+		slots: [],
+		stack: [],
+	}
 
 	constructor(
 		private readonly ctx: Context,
 		private readonly registry: PluginRegistry,
 		private readonly anchors: AnchorStore,
-		resolveRuntimeCtor: (name: string) => PluginConstructor | undefined,
+		private readonly resolveRuntimeCtor: (name: string) => PluginConstructor | undefined,
 	) {
-		this.depOverrides = new DependencyOverrideApplier(this.ctx, resolveRuntimeCtor)
+		this.depOverrides = new DependencyOverrideApplier(this.ctx, this.resolveRuntimeCtor)
 	}
 
 	async replaceModule(
@@ -73,8 +84,8 @@ export class ModuleReplacer {
 		 * - 但新加载模块里的 Consumer 在评估时拿到的是“同一个插件 id”的另一个 ctor 引用；
 		 * 此时按 ctor 引用匹配依赖会失败，表现为 MissingDependency / commit 失败。
 		 *
-		 * 这里把“新加载插件 ctor 上记录的参数 token”按 plugin id 映射到当前 runtime 的 ctor，
-		 * 让依赖解析收敛到 `registry.names` 的事实来源，避免引用漂移造成的假缺依赖。
+		 * 这里把“新加载插件 ctor 上记录的参数 token”按 plugin id/fork id 映射到当前 runtime 的 ctor，
+		 * 让依赖解析收敛到 runtime resolver 的事实来源，避免引用漂移造成的假缺依赖。
 		 */
 		for (const item of exported) this.normalizeCtorParams(id, item.ctor, 'replaceModule')
 
@@ -98,8 +109,6 @@ export class ModuleReplacer {
 				})
 			})
 		}
-		this.refreshDependents(id, oldItems)
-
 		const isAnchor = exported.length > 0
 		this.updateAnchors(id, isAnchor, options.anchors)
 
@@ -114,38 +123,62 @@ export class ModuleReplacer {
 	private collectAffectedModules(oldItems: readonly { ctor: PluginConstructor }[]): readonly string[] {
 		if (oldItems.length === 0) return []
 		const graph = this.ctx.registry.graph
-		const out = new Set<string>()
-		for (const { ctor } of oldItems) {
-			const queue: PluginConstructor[] = [ctor]
-			const seen = new Set<PluginConstructor>()
-			for (let cursor = 0; cursor < queue.length; cursor++) {
-				const current = queue[cursor]!
-				if (seen.has(current)) continue
-				seen.add(current)
-
-				let name: string | undefined
-				try {
-					name = getPluginInfo(current).id
-				} catch {
-					name = undefined
-				}
-				if (name) {
-					const moduleId = this.registry.name2PathMap.get(name)
-					if (moduleId) out.add(moduleId)
-				}
-
-				for (const dep of graph.dependentsOf(current)) {
-					if (typeof dep === 'function') queue.push(dep as PluginConstructor)
-				}
+		const slotCount = graph.slotCount()
+		if (slotCount === 0) return []
+		if (this.affectedScratch.marks.length < slotCount) {
+			this.affectedScratch = {
+				marks: new Uint8Array(slotCount),
+				slots: [],
+				stack: [],
 			}
 		}
+
+		const { marks, slots, stack } = this.affectedScratch
+		slots.length = 0
+		stack.length = 0
+		const out = new Set<string>()
+		const pushRoot = (ctor: PluginConstructor) => {
+			const slot = graph.slotOf(ctor)
+			if (slot === undefined || marks[slot] === 1) return
+			marks[slot] = 1
+			slots.push(slot)
+			stack.push(slot)
+		}
+		for (const { ctor } of oldItems) {
+			pushRoot(ctor)
+			for (const forkCtor of this.ctx.registry.listForks(ctor)) {
+				pushRoot(forkCtor as PluginConstructor)
+			}
+		}
+
+		while (stack.length > 0) {
+			const slot = stack.pop()!
+			const name = graph.declarationAtSlot(slot)?.meta?.id
+			if (name) {
+				const moduleId = this.registry.name2PathMap.get(name)
+				if (moduleId) out.add(moduleId)
+			}
+
+			const dependents = graph.dependentSlotsOf(slot)
+			for (let i = 0; i < dependents.length; i++) {
+				const dep = dependents[i]!
+				if (dep < 0 || dep >= marks.length || marks[dep] === 1) continue
+				marks[dep] = 1
+				slots.push(dep)
+				stack.push(dep)
+			}
+		}
+
+		for (let i = 0; i < slots.length; i++) marks[slots[i]!] = 0
+		slots.length = 0
+		stack.length = 0
 		return [...out]
 	}
 
 	private normalizeCtorParams(
 		moduleId: string,
 		ctor: PluginConstructor,
-		source: 'replaceModule' | 'refreshDependents' | 'syncRuntimeForModule',
+		source: 'replaceModule' | 'syncRuntimeForModule',
 	) {
 		// 只对 “BasePlugin 子类 ctor token” 做归一化；非插件 token 一律跳过。
 		// 注意：我们不改变“依赖目标的 id”，只是在同 id 的前提下，把 token 引用替换到 runtime ctor。
@@ -162,7 +195,6 @@ export class ModuleReplacer {
 			  }>
 			| undefined
 
-		const nameMap = this.registry.names
 		for (let i = 0; i < params.length; i++) {
 			const p = params[i]
 			if (typeof p !== 'function') continue
@@ -176,7 +208,7 @@ export class ModuleReplacer {
 				continue
 			}
 
-			const current = nameMap.get(pid)
+			const current = this.resolveRuntimeCtor(pid)
 			if (current && current !== p) {
 				if (!next) {
 					next = [...params]
@@ -216,27 +248,6 @@ export class ModuleReplacer {
 		}
 		if (isAnchor) this.anchors.add(id)
 		else this.anchors.delete(id)
-	}
-
-	/**
-	 * 热更后，用当前 name -> ctor 映射重绑依赖者的构造参数引用，避免旧引用导致 MissingDependency。
-	 * 只处理受影响插件的直接依赖者，开销低。
-	 */
-	private refreshDependents(moduleId: string, oldItems: readonly { ctor: PluginConstructor }[]) {
-		if (oldItems.length === 0) return
-		const graph = this.ctx.registry.graph
-
-		const affected = new Set<PluginConstructor>()
-		for (const { ctor } of oldItems) {
-			for (const dep of graph.dependentsOf(ctor)) {
-				if (typeof dep === 'function') affected.add(dep as PluginConstructor)
-			}
-		}
-		if (affected.size === 0) return
-
-		for (const depCtor of affected) {
-			this.normalizeCtorParams(moduleId, depCtor, 'refreshDependents')
-		}
 	}
 }
 

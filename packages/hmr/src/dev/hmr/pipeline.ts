@@ -416,7 +416,8 @@ export class HmrExecutor {
 			const endInject = this.timing.start('inject', id)
 			let hasPlugin = false
 			try {
-				hasPlugin = await batch.replaceModule(id, mod)
+				const result = await batch.replaceModule(id, mod)
+				hasPlugin = result.isAnchor
 			} catch (err) {
 				this.ctx.logger.error('replaceModule failed for {file}', { file: id, error: err })
 				batch.rollback()
@@ -438,7 +439,7 @@ export class HmrExecutor {
 		const syncedModules = new Set<string>()
 		for (const id of
 			affectedOnlyModules.length > 0
-				? await syncModulesToCoreDraft(this.ctx, affectedOnlyModules)
+				? await syncModulesToCoreDraft(this.ctx, batch, affectedOnlyModules)
 				: []) {
 			syncedModules.add(id)
 		}
@@ -458,7 +459,7 @@ export class HmrExecutor {
 					const disabled = disablePluginsOnMissingDepsFromCommitError(this.ctx, res.err)
 					if (disabled.size === 0) break
 					for (const name of disabled) autoDisabled.add(name)
-					for (const id of await syncModulesToCoreDraft(this.ctx, [
+					for (const id of await syncModulesToCoreDraft(this.ctx, batch, [
 						...ordered,
 						...affectedModules,
 					])) {
@@ -502,7 +503,7 @@ export class HmrExecutor {
 }
 
 function readBatchAffectedModules(batch: LoaderBatch): readonly string[] {
-	return batch.listAffectedModules().filter((id) => id.length > 0)
+	return batch.getAffectedModules().filter((id) => id.length > 0)
 }
 
 function collectEnabledButStopped(ctx: Context, moduleIds: ReadonlySet<string>): readonly string[] {
@@ -544,21 +545,20 @@ function disablePluginsOnMissingDepsFromCommitError(ctx: Context, error: unknown
 
 async function syncModulesToCoreDraft(
 	ctx: Context,
-	moduleIds: readonly string[],
+	batch: LoaderBatch,
+	moduleIds: Iterable<string>,
 ): Promise<readonly string[]> {
 	// LoaderService manages moduleId → exported ctors mapping; re-sync is the lowest-overhead way
 	// to re-register enabled plugins after core rolls back draft mutations on failed verification.
 	const synced: string[] = []
 	const seen = new Set<string>()
-	for (let i = 0; i < moduleIds.length; i++) {
-		const id = moduleIds[i]!
+	for (const id of moduleIds) {
 		if (seen.has(id)) continue
 		seen.add(id)
 		try {
-			await ctx.loader.syncRuntimeForModule(id)
-			synced.push(id)
+			for (const moduleId of await batch.syncModules([id])) synced.push(moduleId)
 		} catch (error) {
-			ctx.logger.warn('syncRuntimeForModule failed during commit retry', { moduleId: id, error })
+			ctx.logger.warn('runtime batch sync failed during commit retry', { moduleId: id, error })
 		}
 	}
 	return synced

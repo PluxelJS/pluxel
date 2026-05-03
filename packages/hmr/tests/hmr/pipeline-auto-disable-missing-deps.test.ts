@@ -2,6 +2,45 @@ import { describe, expect, it } from 'vitest'
 
 import { HmrBatchProcessor, HmrExecutor } from '../../src/dev/hmr/pipeline'
 
+function createBatchStub(options: {
+	affected?: readonly string[]
+	syncCalls?: string[]
+	onCommit?: () => void
+	onRollback?: () => void
+}) {
+	const affected = options.affected ?? []
+	return {
+		replaceModule: async () => ({ isAnchor: false, affectedModules: [] }),
+		getAffectedModules: () => affected,
+		syncModules: async (ids: Iterable<string>) => {
+			const synced: string[] = []
+			for (const id of ids) {
+				options.syncCalls?.push(id)
+				synced.push(id)
+			}
+			return synced
+		},
+		commit: () => options.onCommit?.(),
+		rollback: () => options.onRollback?.(),
+	}
+}
+
+function createExecutor(ctx: any, options: Record<string, unknown> = {}) {
+	const runner = { import: async () => ({}) } as any
+	const path = {
+		variants: (id: string) => [id],
+		variantsClean: (id: string) => [id],
+		pretty: (id: string) => id,
+	} as any
+	const timing = { start: () => () => 0 } as any
+
+	return new HmrExecutor(ctx, runner, path, timing, {
+		useRequireShims: false,
+		dbgModules: null,
+		...options,
+	})
+}
+
 describe('HmrExecutor commit retry', () => {
 	it('syncs runtime-reported affected modules before commit', async () => {
 		const syncCalls: string[] = []
@@ -9,17 +48,14 @@ describe('HmrExecutor commit retry', () => {
 		let didBatchCommit = false
 
 		const loader = {
-			beginBatch: () => ({
-				replaceModule: async () => false,
-				listAffectedModules: () => ['/dep.ts', '/consumer.ts'],
-				commit: () => {
-					didBatchCommit = true
-				},
-				rollback: () => {},
-			}),
-			syncRuntimeForModule: async (id: string) => {
-				syncCalls.push(id)
-			},
+			beginBatch: () =>
+				createBatchStub({
+					affected: ['/dep.ts', '/consumer.ts'],
+					syncCalls,
+					onCommit: () => {
+						didBatchCommit = true
+					},
+				}),
 			api: {
 				registry: {
 					listRegistered: () => new Map<string, unknown>(),
@@ -44,18 +80,7 @@ describe('HmrExecutor commit retry', () => {
 			logger: { warn: () => {}, error: () => {} },
 		} as any
 
-		const runner = { import: async () => ({}) } as any
-		const path = {
-			variants: (id: string) => [id],
-			variantsClean: (id: string) => [id],
-			pretty: (id: string) => id,
-		} as any
-		const timing = { start: () => () => 0 } as any
-
-		const executor = new HmrExecutor(ctx, runner, path, timing, {
-			useRequireShims: false,
-			dbgModules: null,
-		})
+		const executor = createExecutor(ctx)
 
 		const out = await executor.runAndLoadAllClean(['/dep.ts'])
 		expect(out?.res.ok).toBe(true)
@@ -86,19 +111,16 @@ describe('HmrExecutor commit retry', () => {
 		}
 
 		const loader = {
-			beginBatch: () => ({
-				replaceModule: async () => false,
-				listAffectedModules: () => [],
-				commit: () => {
-					didBatchCommit = true
-				},
-				rollback: () => {
-					didBatchRollback = true
-				},
-			}),
-			syncRuntimeForModule: async (id: string) => {
-				syncCalls.push(id)
-			},
+			beginBatch: () =>
+				createBatchStub({
+					syncCalls,
+					onCommit: () => {
+						didBatchCommit = true
+					},
+					onRollback: () => {
+						didBatchRollback = true
+					},
+				}),
 			api: {
 				registry: {
 					listRegistered: () =>
@@ -136,17 +158,7 @@ describe('HmrExecutor commit retry', () => {
 			},
 		} as any
 
-		const runner = { import: async () => ({}) } as any
-		const path = {
-			variants: (id: string) => [id],
-			variantsClean: (id: string) => [id],
-			pretty: (id: string) => id,
-		} as any
-		const timing = { start: () => () => 0 } as any
-
-		const executor = new HmrExecutor(ctx, runner, path, timing, {
-			useRequireShims: false,
-			dbgModules: null,
+		const executor = createExecutor(ctx, {
 			autoDisableMissingDependencies: true,
 			autoDisableMaxPasses: 3,
 		})

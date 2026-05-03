@@ -15,9 +15,10 @@ describe('HmrExecutor import candidates', () => {
 				beginBatch: () => ({
 					replaceModule: async (moduleId: string, _mod: unknown) => {
 						expect(moduleId).toBe(cleanId)
-						return true
+						return { isAnchor: true, affectedModules: [] }
 					},
-					listAffectedModules: () => [],
+					getAffectedModules: () => [],
+					syncModules: async () => [],
 					commit: () => {},
 					rollback: () => {},
 				}),

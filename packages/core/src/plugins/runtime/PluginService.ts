@@ -59,6 +59,14 @@ type CommitExecutionPlan = {
 	toStartSlots: Set<number>
 }
 
+const EMPTY_DELTA = {
+	added: [],
+	removed: [],
+	replaced: [],
+	affected: [],
+	retargetedTokens: [],
+} as const
+
 export interface CommitSummary {
 	graph: PluginGraph
 	added: PluginIdentifier[]
@@ -833,6 +841,23 @@ export class PluginService {
 	}
 
 	private async executeCommit() {
+		if (
+			!this.definitions.hasPendingChanges() &&
+			this._pendingStart.size === 0 &&
+			this._pendingRestart.size === 0
+		) {
+			const graph = this.graph
+			this.publishCommitSummary({
+				graph,
+				added: [],
+				replaced: [],
+				removed: [],
+				failed: [],
+				touched: [],
+			})
+			return createOk({ graph, delta: EMPTY_DELTA })
+		}
+
 		const action = this.definitions.build()
 		if (!action.ok) {
 			action.err.reset()

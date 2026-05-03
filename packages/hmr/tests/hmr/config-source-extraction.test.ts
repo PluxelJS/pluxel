@@ -146,9 +146,10 @@ function createContext(
 					replaceModule: async (_id: string, mod: unknown) => {
 						capture.replaceModuleCalls++
 						capture.lastModule = mod
-						return false
+						return { isAnchor: false, affectedModules: [] }
 					},
-					listAffectedModules: () => [],
+					getAffectedModules: () => [],
+					syncModules: async () => [],
 					rollback: () => {},
 					commit: () => {},
 				}
