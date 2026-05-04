@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest'
 
-import { BasePlugin, ForkablePlugin, Plugin, setParamToken, withHost } from '@pluxel/test'
+import { BasePlugin, ForkablePlugin, Plugin, setParamToken, withCoreHost } from '@pluxel/core/test'
 
 describe('Abstract base and canonical ids', () => {
 	it('injects abstract base and resolves by impl ctor', async () => {
-		await withHost(async (host) => {
+		await withCoreHost(async (host) => {
 			abstract class Abs extends BasePlugin {
 				abstract ping(): string
 			}
@@ -50,7 +50,7 @@ describe('Abstract base and canonical ids', () => {
 	})
 
 	it('starts base provider before consumer in the same commit', async () => {
-		await withHost(async (host) => {
+		await withCoreHost(async (host) => {
 			const events: string[] = []
 			let providerReady = false
 
@@ -85,7 +85,7 @@ describe('Abstract base and canonical ids', () => {
 	})
 
 	it('throws on multiple providers for the same base', async () => {
-		await withHost(async (host) => {
+		await withCoreHost(async (host) => {
 			abstract class Abs extends BasePlugin {}
 
 			@Plugin(Abs, { name: 'Impl1' })
@@ -99,7 +99,7 @@ describe('Abstract base and canonical ids', () => {
 	})
 
 	it('forks of a base plugin do not replace the base provider', async () => {
-		await withHost(async (host) => {
+		await withCoreHost(async (host) => {
 			abstract class Abs extends ForkablePlugin {}
 
 			@Plugin(Abs, { name: 'Impl' })
@@ -132,7 +132,7 @@ describe('Abstract base and canonical ids', () => {
 	})
 
 	it('can opt a fork into providing base (and conflicts)', async () => {
-		await withHost(async (host) => {
+		await withCoreHost(async (host) => {
 			abstract class Abs extends ForkablePlugin {}
 
 			@Plugin(Abs, { name: 'Impl' })

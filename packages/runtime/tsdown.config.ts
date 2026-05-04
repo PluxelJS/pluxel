@@ -31,6 +31,7 @@ export default defineConfig({
 		logger: 'src/logger.ts',
 		services: 'src/services.ts',
 		shared: 'src/shared.ts',
+		test: 'src/test.ts',
 		vite: 'src/vite.ts',
 		internal: 'src/internal.ts',
 		config: 'src/config.ts',

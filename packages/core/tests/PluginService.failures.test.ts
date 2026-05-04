@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest'
 
-import { BasePlugin, Plugin, setParamToken, withHost } from '@pluxel/test'
+import { BasePlugin, Plugin, setParamToken, withCoreHost } from '@pluxel/core/test'
 
 describe('PluginService failure reporting', () => {
 	it('commitStrict preserves failure summary and emits commitFailed for failed start', async () => {
-		await withHost(async (host) => {
+		await withCoreHost(async (host) => {
 			const afterCommit: Array<{ failed: unknown[] }> = []
 			const commitFailed: unknown[][] = []
 
@@ -37,7 +37,7 @@ describe('PluginService failure reporting', () => {
 	})
 
 	it('reports only the failed dependency subtree while leaving independent plugins running', async () => {
-		await withHost(async (host) => {
+		await withCoreHost(async (host) => {
 			let independentStarted = 0
 
 			@Plugin({ name: 'FAIL-SUBTREE-A' })

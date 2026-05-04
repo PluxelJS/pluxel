@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { EffectsService } from '@pluxel/core/services'
-import { withContext, type Context } from '@pluxel/test'
+import { withRuntimeContext, type Context } from '@pluxel/runtime/test'
 import { defineOp } from '@pluxel/ops'
 import { Type, obj } from '@pluxel/ops/typebox'
 
@@ -37,7 +37,7 @@ function definePluginStatusOp() {
 
 describe('OpsService', () => {
 	it('projects one plugin op consistently across registry, tool, help, and execution surfaces', async () => {
-		await withContext(async (root) => {
+		await withRuntimeContext(async (root) => {
 			const pluginCtx = createPluginContext(root, 'plugin.alpha')
 
 			pluginCtx.ops.register(definePluginStatusOp(), {
@@ -87,7 +87,7 @@ describe('OpsService', () => {
 	})
 
 	it('auto-unregisters plugin-owned operations on plugin dispose', async () => {
-		await withContext(async (root) => {
+		await withRuntimeContext(async (root) => {
 			const pluginCtx = createPluginContext(root, 'plugin.beta')
 
 			pluginCtx.ops.register(
@@ -127,7 +127,7 @@ describe('OpsService', () => {
 	})
 
 	it('rolls back core registration when adapter binding fails', async () => {
-		await withContext((root) => {
+		await withRuntimeContext((root) => {
 			const pluginCtx = createPluginContext(root, 'plugin.rollback')
 			const op = defineOp({
 				id: 'plugin-rollback.scalar',
@@ -201,7 +201,7 @@ describe('OpsService', () => {
 			error: /reserved runtime command namespace/i,
 		},
 	])('rejects plugin registrations that reuse $name', ({ create, error }) => {
-		return withContext((root) => {
+		return withRuntimeContext((root) => {
 			const pluginCtx = createPluginContext(root, 'plugin.gamma')
 			const metadata =
 				create().id === 'plugin-delta.inspect'

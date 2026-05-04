@@ -5,6 +5,11 @@ export default defineConfig({
 	exports: {
 		devExports: '@pluxel/source',
 	},
+	deps: {
+		// The Vitest preset and oxlint bridge use private workspace build tooling; published
+		// artifacts must contain that code instead of externalizing private packages.
+		alwaysBundle: ['@pluxel/build', '@pluxel/build/*', '@pluxel/workspace', '@pluxel/workspace/*'],
+	},
 	entry: {
 		fixtures: './src/fixtures.ts',
 		index: './src/index.ts',

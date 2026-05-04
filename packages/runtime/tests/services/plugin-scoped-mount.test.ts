@@ -1,4 +1,4 @@
-import { BasePlugin, Plugin, withHost } from '@pluxel/test'
+import { BasePlugin, Plugin, withRuntimeHost } from '@pluxel/runtime/test'
 import { describe, expect, it } from 'vitest'
 
 import { type ElysiaRouteHandle, PLUGIN_HTTP_BASE } from '@pluxel/runtime/services'
@@ -27,7 +27,7 @@ class DynamicScopedHttpPlugin extends BasePlugin {
 
 describe('HttpService plugin-scoped mount', () => {
 	it('mounts plugin routes under the plugin id prefix and auto-disposes on unload', async () => {
-		await withHost(async (host) => {
+		await withRuntimeHost(async (host) => {
 			host.add(ScopedHttpPlugin)
 			host.cfg('ScopedHttpPlugin').enable()
 			await host.commit()
@@ -55,7 +55,7 @@ describe('HttpService plugin-scoped mount', () => {
 	})
 
 	it('supports replacing a mounted plugin route tree to add routes dynamically', async () => {
-		await withHost(async (host) => {
+		await withRuntimeHost(async (host) => {
 			host.add(DynamicScopedHttpPlugin)
 			host.cfg('DynamicScopedHttpPlugin').enable()
 			await host.commit()

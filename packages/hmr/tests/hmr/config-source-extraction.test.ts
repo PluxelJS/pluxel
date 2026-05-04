@@ -1,8 +1,13 @@
 import { describe, expect, it } from 'vitest'
-import type { Context } from '@pluxel/core'
 import { join } from 'pathe'
 import { rmSync, symlinkSync } from 'node:fs'
 import { createServer, normalizePath, type Plugin as VitePlugin } from 'vite'
+import {
+	captureLoaderModules,
+	createHmrTestHost,
+	type ErrorLog,
+	type LoaderModuleCapture,
+} from './_host'
 import { fixturesPluginsDir, fixturesPluginsRelFromWorkspace, workspaceRoot } from './_paths'
 import {
 	buildHmrViteConfig,
@@ -21,45 +26,16 @@ const baseDeps: HMRDependencyConfig = {
 	cjsExternal: [],
 }
 
-type ErrorLog = { msg: string; obj: unknown }
 type CoreApi = {
 	getConfigSource: (ctor: unknown) => Record<string, unknown> | null
 	getRequiredPluginDependencies: (ctor: unknown) => unknown[]
 	getUsedFeatures: (ctor: unknown) => Array<{ name: string }>
 }
 
-const noop = () => {}
-
-function createNoopLogger(errorLogs: ErrorLog[]) {
-	const channel: any = {
-		trace: noop,
-		debug: noop,
-		info: noop,
-		warn: noop,
-		error: noop,
-		fatal: noop,
-		with: () => channel,
-	}
-
-	return {
-		...channel,
-		getDebugChannel: () => channel,
-		error(messageOrObj: unknown, maybeProps?: unknown) {
-			if (typeof messageOrObj === 'string') {
-				errorLogs.push({ msg: messageOrObj, obj: maybeProps })
-				return
-			}
-			if (typeof maybeProps === 'string') {
-				errorLogs.push({ msg: maybeProps, obj: messageOrObj })
-			}
-		},
-	}
-}
-
 async function withPluginRunner<T>(
 	run: (
 		execute: (pluginEntry: string) => Promise<{
-			capture: { lastModule: unknown | null }
+			capture: LoaderModuleCapture
 			errorLogs: ErrorLog[]
 			core: CoreApi
 		}>,
@@ -74,6 +50,8 @@ async function withPluginRunner<T>(
 	const root = workspaceRoot
 	const capture = { lastModule: null as unknown, beginBatchCalls: 0, replaceModuleCalls: 0 }
 	const errorLogs: ErrorLog[] = []
+	const host = createHmrTestHost({ errorLogs })
+	captureLoaderModules(host, capture)
 	const deps = resolveHMRDependencyConfig(baseDeps)
 	const rootsRel = opts?.rootsRelFromWorkspace ?? fixturesPluginsRelFromWorkspace
 	const scanRootsAbs = opts?.scanRootsAbs ?? [normalizePath(fixturesPluginsDir)]
@@ -83,7 +61,7 @@ async function withPluginRunner<T>(
 		scanRoots: scanRootsAbs,
 	})
 
-	const hmr = new HMRService(createContext(capture, errorLogs), {
+	const hmr = new HMRService(host.ctx, {
 		roots: [rootsRel],
 		entries: [],
 		report: false,
@@ -118,53 +96,8 @@ async function withPluginRunner<T>(
 		})
 	} finally {
 		await server.close()
+		await host.dispose()
 	}
-}
-
-function createContext(
-	capture: { lastModule: unknown | null; beginBatchCalls: number; replaceModuleCalls: number },
-	errorLogs: ErrorLog[],
-) {
-	const anchors = new Set<string>()
-	return {
-		logger: createNoopLogger(errorLogs),
-		on: () => noop,
-		configService: { isReady: true, ready: Promise.resolve() },
-		scanService: { resolveEntry: async () => ({ ok: false }) },
-		loader: {
-			api: {
-				anchors: {
-					has: (id: string) => anchors.has(id),
-					list: () => anchors,
-					snapshot: () => new Set(anchors),
-					remove: (id: string) => anchors.delete(id),
-				},
-			},
-			beginBatch() {
-				capture.beginBatchCalls++
-				return {
-					replaceModule: async (_id: string, mod: unknown) => {
-						capture.replaceModuleCalls++
-						capture.lastModule = mod
-						return { isAnchor: false, affectedModules: [] }
-					},
-					getAffectedModules: () => [],
-					syncModules: async () => [],
-					rollback: () => {},
-					commit: () => {},
-				}
-			},
-			pruneModule: () => {},
-		},
-		registry: {
-			commit: async () => ({ ok: true }),
-			resetDraft: () => {},
-			container: { services: new Map() },
-		},
-		http: {
-			vitePlugin: { name: 'noop', apply: 'serve', configureServer: () => {} },
-		},
-	} as unknown as Context
 }
 
 describe('configSourcePlugin integration', () => {

@@ -24,7 +24,7 @@ describe('@pluxel/hmr/host builtinsFromDist', () => {
 					name: 'pluxel-plugin-app',
 					version: '0.0.0',
 					type: 'module',
-					exports: { '.': { '@pluxel/runtime': './src/index.ts' } },
+					exports: { '.': { '@pluxel/hmr': './src/index.ts' } },
 				},
 				null,
 				2,

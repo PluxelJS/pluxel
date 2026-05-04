@@ -18,6 +18,9 @@
 			"@pluxel/source": "./src/oxlint/index.ts",
 			"default": "./dist/oxlint.mjs"
 		},
+		"./vite": {
+			"default": "./src/vite.ts"
+		},
 		"./package.json": "./package.json"
 	},
 	"scripts": {

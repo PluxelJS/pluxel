@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import * as v from 'valibot'
 import { defineOp } from '@pluxel/ops'
 import { Type, obj } from '@pluxel/ops/typebox'
-import { BasePlugin, createHost, Plugin, setParamToken, type Host } from '@pluxel/test'
+import { BasePlugin, createRuntimeHost, Plugin, setParamToken, type RuntimeHost } from '@pluxel/runtime/test'
 
 import { RuntimeRpcApi } from '../../src/api/http/rpc/RuntimeRpcApi'
 import { ensureRuntimeOpsRegistered } from '../../src/api/ops'
@@ -29,13 +29,13 @@ class Consumer extends BasePlugin {
 setParamToken(Consumer, 0, Beta)
 
 type RuntimeHarness = {
-	readonly host: Host
-	readonly root: Host['ctx']
+	readonly host: RuntimeHost
+	readonly root: RuntimeHost['ctx']
 	readonly rpc: RuntimeRpcApi
 }
 
 async function createRuntimeHarness(): Promise<RuntimeHarness> {
-	const host = createHost()
+	const host = createRuntimeHost()
 	await host.ctx.loader.preloadPlugins(
 		[
 			{ plugin: Alpha, enable: false },

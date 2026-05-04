@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { configureSync, type LogRecord, resetSync } from '@logtape/logtape'
-import { withContext, type Context } from '@pluxel/test'
+import { withRuntimeContext, type Context } from '@pluxel/runtime/test'
 import { LogtapeLoggerService } from '../src/logger/LogtapeLoggerService'
 
 function createPluginContext(root: Context, name: string, id: string): Context {
@@ -31,7 +31,7 @@ describe('LogtapeLoggerService', () => {
 	afterEach(() => resetSync())
 
 	it('attaches pluginId/context/name into record properties', () => {
-		return withContext((root) => {
+		return withRuntimeContext((root) => {
 			const pluginCtx = createPluginContext(root, 'pluginA', 'plugin-a')
 			const service = new LogtapeLoggerService(pluginCtx)
 			service.info('hello')
@@ -45,7 +45,7 @@ describe('LogtapeLoggerService', () => {
 	})
 
 	it('uses "core" category for non-plugin contexts by default', () => {
-		return withContext((root) => {
+		return withRuntimeContext((root) => {
 			const service = new LogtapeLoggerService(root)
 			service.warn('warn')
 

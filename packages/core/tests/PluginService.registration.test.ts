@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest'
 
-import { BasePlugin, Plugin, setParamToken, withHost } from '@pluxel/test'
+import { BasePlugin, Plugin, setParamToken, withCoreHost } from '@pluxel/core/test'
 
 describe('PluginService registration state', () => {
 	it('updates registered plugin set across commits', async () => {
-		await withHost(async (host) => {
+		await withCoreHost(async (host) => {
 			@Plugin({ name: 'REG-B' })
 			class B extends BasePlugin {}
 

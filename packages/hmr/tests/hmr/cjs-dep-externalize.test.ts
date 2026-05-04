@@ -1,9 +1,9 @@
 import { createServer as createNetServer } from 'node:net'
-import type { Context } from '@pluxel/core'
 import { createDiskFixture as createFixture } from '@pluxel/test/fixtures'
 import { join } from 'pathe'
 import { createServer, normalizePath, type Plugin as VitePlugin } from 'vite'
 import { describe, expect, it } from 'vitest'
+import { createHmrTestHost, type ErrorLog } from './_host'
 import {
 	buildHmrViteConfig,
 	resolveFsAllowList,
@@ -19,86 +19,8 @@ const baseDeps = {
 	optimizeDepsInterop: [],
 }
 
-type ErrorLog = { msg: string; obj: unknown }
-
 function buildDeps(cjsExternal: string[]) {
 	return { ...baseDeps, cjsExternal }
-}
-
-const noop = () => {}
-
-type NoopChannel = {
-	trace: () => void
-	debug: () => void
-	info: () => void
-	warn: () => void
-	error: (messageOrObj: unknown, maybeProps?: unknown) => void
-	fatal: () => void
-	with: () => NoopChannel
-}
-
-function createNoopLogger(errorLogs?: ErrorLog[]) {
-	const channel: NoopChannel = {
-		trace: noop,
-		debug: noop,
-		info: noop,
-		warn: noop,
-		error(messageOrObj: unknown, maybeProps?: unknown) {
-			if (!errorLogs) return
-			if (typeof messageOrObj === 'string') {
-				errorLogs.push({ msg: messageOrObj, obj: maybeProps })
-				return
-			}
-			if (typeof maybeProps === 'string') {
-				errorLogs.push({ msg: maybeProps, obj: messageOrObj })
-			}
-		},
-		fatal: noop,
-		with: () => channel,
-	}
-
-	return {
-		...channel,
-		getDebugChannel: () => channel,
-	}
-}
-
-function createContext(errorLogs?: ErrorLog[], scanService?: unknown) {
-	const anchors = new Set<string>()
-	return {
-		logger: createNoopLogger(errorLogs),
-		on: () => noop,
-		configService: { isReady: true, ready: Promise.resolve() },
-		scanService: scanService ?? { resolveEntry: async () => ({ ok: false }) },
-		loader: {
-			api: {
-				anchors: {
-					has: (id: string) => anchors.has(id),
-					list: () => anchors,
-					snapshot: () => new Set(anchors),
-					remove: (id: string) => anchors.delete(id),
-				},
-			},
-			beginBatch() {
-				return {
-					replaceModule: async () => ({ isAnchor: false, affectedModules: [] }),
-					getAffectedModules: () => [],
-					syncModules: async () => [],
-					rollback: () => {},
-					commit: () => {},
-				}
-			},
-			pruneModule: () => {},
-		},
-		registry: {
-			commit: async () => ({ ok: true }),
-			resetDraft: () => {},
-			container: { services: new Map() },
-		},
-		http: {
-			vitePlugin: { name: 'noop', apply: 'serve', configureServer: () => {} },
-		},
-	} as unknown as Context
 }
 
 async function getFreePort(host = '127.0.0.1'): Promise<number> {
@@ -164,7 +86,8 @@ describe('HMR CJS dependency handling', () => {
 		const root = fixture.path
 		const errorLogs: ErrorLog[] = []
 		const depsInput = buildDeps(['cjs-pkg'])
-		const hmr = new HMRService(createContext(errorLogs), {
+		const host = createHmrTestHost({ errorLogs })
+		const hmr = new HMRService(host.ctx, {
 			roots: [root],
 			entries: [],
 			report: false,
@@ -172,7 +95,11 @@ describe('HMR CJS dependency handling', () => {
 		})
 		hmr.setServerRoot(root)
 
-		await runHmr(root, hmr, depsInput)
+		try {
+			await runHmr(root, hmr, depsInput)
+		} finally {
+			await host.dispose()
+		}
 
 		const executeFailed = errorLogs.find((e) => e.msg === '[HMR] execute failed')
 		expect(executeFailed).toBeUndefined()
@@ -199,7 +126,8 @@ describe('HMR CJS dependency handling', () => {
 		const root = fixture.path
 		const errorLogs: ErrorLog[] = []
 		const depsInput = buildDeps(['pluxel-plugin-napi-rs/*'])
-		const hmr = new HMRService(createContext(errorLogs), {
+		const host = createHmrTestHost({ errorLogs })
+		const hmr = new HMRService(host.ctx, {
 			roots: [root],
 			entries: [],
 			report: false,
@@ -207,7 +135,11 @@ describe('HMR CJS dependency handling', () => {
 		})
 		hmr.setServerRoot(root)
 
-		await runHmr(root, hmr, depsInput)
+		try {
+			await runHmr(root, hmr, depsInput)
+		} finally {
+			await host.dispose()
+		}
 
 		const executeFailed = errorLogs.find((e) => e.msg === '[HMR] execute failed')
 		expect(executeFailed).toBeUndefined()
@@ -231,13 +163,16 @@ describe('HMR CJS dependency handling', () => {
 		const root = fixture.path
 		const errorLogs: ErrorLog[] = []
 		const depsInput = buildDeps(['cjs-pkg'])
-		const ctx = createContext(errorLogs, {
-			resolveEntry: async ({ name }: { name: string }) => {
-				if (name !== 'cjs-pkg') return { ok: false }
-				return { ok: true, entry: join(root, 'cjs-pkg', 'index.cjs') }
+		const host = createHmrTestHost({
+			errorLogs,
+			scanService: {
+				resolveEntry: async ({ name }: { name: string }) => {
+					if (name !== 'cjs-pkg') return { ok: false }
+					return { ok: true, entry: join(root, 'cjs-pkg', 'index.cjs') }
+				},
 			},
 		})
-		const hmr = new HMRService(ctx, {
+		const hmr = new HMRService(host.ctx, {
 			roots: [root],
 			entries: [],
 			report: false,
@@ -245,7 +180,11 @@ describe('HMR CJS dependency handling', () => {
 		})
 		hmr.setServerRoot(root)
 
-		await runHmr(root, hmr, depsInput)
+		try {
+			await runHmr(root, hmr, depsInput)
+		} finally {
+			await host.dispose()
+		}
 
 		const executeFailed = errorLogs.find((e) => e.msg === '[HMR] execute failed')
 		expect(executeFailed).toBeUndefined()
@@ -274,7 +213,8 @@ describe('HMR CJS dependency handling', () => {
 		})
 		const root = fixture.path
 		const depsInput = buildDeps([])
-		const hmr = new HMRService(createContext(), {
+		const host = createHmrTestHost()
+		const hmr = new HMRService(host.ctx, {
 			roots: [root],
 			entries: [],
 			report: false,
@@ -287,6 +227,8 @@ describe('HMR CJS dependency handling', () => {
 			await runHmr(root, hmr, depsInput)
 		} catch (e) {
 			thrown = e
+		} finally {
+			await host.dispose()
 		}
 
 		expect(thrown).toBeTruthy()
@@ -317,7 +259,8 @@ describe('HMR CJS dependency handling', () => {
 		const root = fixture.path
 		const errorLogs: ErrorLog[] = []
 		const depsInput = buildDeps(['cjs-pkg'])
-		const hmr = new HMRService(createContext(errorLogs), {
+		const host = createHmrTestHost({ errorLogs })
+		const hmr = new HMRService(host.ctx, {
 			roots: [root],
 			entries: [],
 			report: false,
@@ -325,7 +268,11 @@ describe('HMR CJS dependency handling', () => {
 		})
 		hmr.setServerRoot(root)
 
-		await runHmr(root, hmr, depsInput)
+		try {
+			await runHmr(root, hmr, depsInput)
+		} finally {
+			await host.dispose()
+		}
 
 		const executeFailed = errorLogs.find((e) => e.msg === '[HMR] execute failed')
 		expect(executeFailed).toBeUndefined()

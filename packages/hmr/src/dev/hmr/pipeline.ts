@@ -65,6 +65,10 @@ function excludeIds(ids: readonly string[], excluded: readonly string[]) {
 	return out
 }
 
+function addAll<T>(target: Set<T>, values: Iterable<T>) {
+	for (const value of values) target.add(value)
+}
+
 type BatchGraph = {
 	affectedIds: Set<string>
 	roots: string[]
@@ -358,14 +362,136 @@ export type HmrExecutorConfig = {
 	autoDisableMaxPasses?: number
 }
 
+class HmrRuntimeCommitScheduler {
+	constructor(
+		private readonly ctx: Context,
+		private readonly cfg: Pick<
+			HmrExecutorConfig,
+			'autoDisableMissingDependencies' | 'autoDisableMaxPasses'
+		>,
+	) {}
+
+	async commitBatch(params: {
+		batch: LoaderBatch
+		replacedModules: readonly string[]
+	}): Promise<HmrExecutionResult> {
+		const { batch, replacedModules } = params
+		const affectedModules = readBatchAffectedModules(batch)
+		const syncedModules = new Set<string>()
+
+		const affectedOnlyModules = excludeIds(affectedModules, replacedModules)
+		if (affectedOnlyModules.length > 0) {
+			addAll(syncedModules, await this.syncModulesToCoreDraft(batch, affectedOnlyModules))
+		}
+
+		const endCommit = startTimer()
+		let res: CommitResult = await this.ctx.registry.commit()
+		const autoDisabled = new Set<string>()
+
+		if (!res.ok) {
+			await this.retryMissingDependencies({
+				batch,
+				res,
+				replacedModules,
+				affectedModules,
+				autoDisabled,
+				syncedModules,
+				setResult: (next) => {
+					res = next
+				},
+			})
+		}
+
+		const commitMs = endCommit()
+		this.closeBatch(batch, res.ok)
+
+		return {
+			res,
+			commitMs,
+			affectedModules,
+			syncedModules: [...syncedModules],
+			autoDisabled: [...autoDisabled].sort(),
+		}
+	}
+
+	private async retryMissingDependencies(params: {
+		batch: LoaderBatch
+		res: CommitResult
+		replacedModules: readonly string[]
+		affectedModules: readonly string[]
+		autoDisabled: Set<string>
+		syncedModules: Set<string>
+		setResult: (res: CommitResult) => void
+	}) {
+		let res = params.res
+		const autoDisableMissingDependencies = this.cfg.autoDisableMissingDependencies ?? true
+		const autoDisableMaxPasses = this.cfg.autoDisableMaxPasses ?? 8
+		if (!autoDisableMissingDependencies || autoDisableMaxPasses <= 0) return
+
+		let pass = 0
+		while (!res.ok && pass < autoDisableMaxPasses) {
+			const disabled = disablePluginsOnMissingDepsFromCommitError(this.ctx, res.err)
+			if (disabled.size === 0) break
+			for (const name of disabled) params.autoDisabled.add(name)
+
+			addAll(
+				params.syncedModules,
+				await this.syncModulesToCoreDraft(params.batch, [
+					...params.replacedModules,
+					...params.affectedModules,
+				]),
+			)
+			res = await this.ctx.registry.commit()
+			params.setResult(res)
+			pass++
+		}
+	}
+
+	private async syncModulesToCoreDraft(
+		batch: LoaderBatch,
+		moduleIds: Iterable<string>,
+	): Promise<readonly string[]> {
+		// LoaderService owns moduleId → exported ctor mapping. Re-sync through the batch is the
+		// stable orchestration boundary between HMR and runtime, especially after core draft rollback.
+		const synced: string[] = []
+		const seen = new Set<string>()
+		for (const id of moduleIds) {
+			if (seen.has(id)) continue
+			seen.add(id)
+			try {
+				for (const moduleId of await batch.syncModules([id])) synced.push(moduleId)
+			} catch (error) {
+				this.ctx.logger.warn('runtime batch sync failed during commit retry', {
+					moduleId: id,
+					error,
+				})
+			}
+		}
+		return synced
+	}
+
+	private closeBatch(batch: LoaderBatch, ok: boolean) {
+		if (ok) {
+			batch.commit()
+			return
+		}
+		batch.rollback()
+		this.ctx.registry.resetDraft()
+	}
+}
+
 export class HmrExecutor {
+	private readonly commitScheduler: HmrRuntimeCommitScheduler
+
 	constructor(
 		private readonly ctx: Context,
 		private readonly runner: HmrRunner,
 		private readonly path: HmrPathApi,
 		private readonly timing: TimingTracker,
 		private readonly cfg: HmrExecutorConfig,
-	) {}
+	) {
+		this.commitScheduler = new HmrRuntimeCommitScheduler(ctx, cfg)
+	}
 
 	private pickRunnerImportId(cleanId: string): string {
 		const variants = this.path.variantsClean
@@ -391,6 +517,7 @@ export class HmrExecutor {
 		const batch = this.ctx.loader.beginBatch()
 		const dbg = this.cfg.dbgModules
 		const debugModules = dbg ? isLogEnabled(dbg, 'debug') : false
+		const replacedModules: string[] = []
 
 		for (let i = 0; i < ordered.length; i++) {
 			const id = ordered[i]!
@@ -418,6 +545,7 @@ export class HmrExecutor {
 			try {
 				const result = await batch.replaceModule(id, mod)
 				hasPlugin = result.isAnchor
+				replacedModules.push(id)
 			} catch (err) {
 				this.ctx.logger.error('replaceModule failed for {file}', { file: id, error: err })
 				batch.rollback()
@@ -434,59 +562,7 @@ export class HmrExecutor {
 			}
 		}
 
-		const affectedModules = readBatchAffectedModules(batch)
-		const affectedOnlyModules = excludeIds(affectedModules, ordered)
-		const syncedModules = new Set<string>()
-		for (const id of
-			affectedOnlyModules.length > 0
-				? await syncModulesToCoreDraft(this.ctx, batch, affectedOnlyModules)
-				: []) {
-			syncedModules.add(id)
-		}
-
-		const endCommit = startTimer()
-		let res: CommitResult = await this.ctx.registry.commit()
-		const commitMs = endCommit()
-		const autoDisabled = new Set<string>()
-
-		if (!res.ok) {
-			const autoDisableMissingDependencies = this.cfg.autoDisableMissingDependencies ?? true
-			const autoDisableMaxPasses = this.cfg.autoDisableMaxPasses ?? 8
-
-			if (autoDisableMissingDependencies && autoDisableMaxPasses > 0) {
-				let pass = 0
-				while (!res.ok && pass < autoDisableMaxPasses) {
-					const disabled = disablePluginsOnMissingDepsFromCommitError(this.ctx, res.err)
-					if (disabled.size === 0) break
-					for (const name of disabled) autoDisabled.add(name)
-					for (const id of await syncModulesToCoreDraft(this.ctx, batch, [
-						...ordered,
-						...affectedModules,
-					])) {
-						syncedModules.add(id)
-					}
-					res = await this.ctx.registry.commit()
-					pass++
-				}
-			}
-
-			if (!res.ok) {
-				batch.rollback()
-				this.ctx.registry.resetDraft()
-			} else {
-				batch.commit()
-			}
-		} else {
-			batch.commit()
-		}
-
-		return {
-			res,
-			commitMs,
-			affectedModules,
-			syncedModules: [...syncedModules],
-			autoDisabled: [...autoDisabled].sort(),
-		}
+		return await this.commitScheduler.commitBatch({ batch, replacedModules })
 	}
 
 	async runAndLoadAll(
@@ -541,27 +617,6 @@ function disablePluginsOnMissingDepsFromCommitError(ctx: Context, error: unknown
 		logger: ctx.logger,
 		stage: 'hmr batch commit',
 	})
-}
-
-async function syncModulesToCoreDraft(
-	ctx: Context,
-	batch: LoaderBatch,
-	moduleIds: Iterable<string>,
-): Promise<readonly string[]> {
-	// LoaderService manages moduleId → exported ctors mapping; re-sync is the lowest-overhead way
-	// to re-register enabled plugins after core rolls back draft mutations on failed verification.
-	const synced: string[] = []
-	const seen = new Set<string>()
-	for (const id of moduleIds) {
-		if (seen.has(id)) continue
-		seen.add(id)
-		try {
-			for (const moduleId of await batch.syncModules([id])) synced.push(moduleId)
-		} catch (error) {
-			ctx.logger.warn('runtime batch sync failed during commit retry', { moduleId: id, error })
-		}
-	}
-	return synced
 }
 
 function buildCjsExternalizeHint(error: unknown): string | null {

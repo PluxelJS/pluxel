@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest'
 
-import { BasePlugin, Plugin, withHost } from '@pluxel/test'
+import { BasePlugin, Plugin, withCoreHost } from '@pluxel/core/test'
 
 describe('FeatureHost.dep', () => {
 	it('returns undefined when missing and injects caller when present', async () => {
-		await withHost(async (host) => {
+		await withCoreHost(async (host) => {
 			@Plugin({ name: 'Dep0' })
 			class Dep0 extends BasePlugin {}
 
@@ -42,7 +42,7 @@ describe('FeatureHost.dep', () => {
 	})
 
 	it('invokes callbacks when dep appears and runs cleanup when dep disappears', async () => {
-		await withHost(async (host) => {
+		await withCoreHost(async (host) => {
 			@Plugin({ name: 'Dep' })
 			class Dep extends BasePlugin {}
 
@@ -81,7 +81,7 @@ describe('FeatureHost.dep', () => {
 	})
 
 	it('supports multiple callbacks for the same dep', async () => {
-		await withHost(async (host) => {
+		await withCoreHost(async (host) => {
 			@Plugin({ name: 'DepMany' })
 			class DepMany extends BasePlugin {}
 
@@ -128,7 +128,7 @@ describe('FeatureHost.dep', () => {
 	})
 
 	it('invokes callbacks immediately when subscribing after dep is already running', async () => {
-		await withHost(async (host) => {
+		await withCoreHost(async (host) => {
 			@Plugin({ name: 'DepLate' })
 			class DepLate extends BasePlugin {}
 
@@ -191,7 +191,7 @@ describe('FeatureHost.dep', () => {
 	})
 
 	it('returned unsubscribe stops future callbacks and runs cleanup once', async () => {
-		await withHost(async (host) => {
+		await withCoreHost(async (host) => {
 			@Plugin({ name: 'DepOff' })
 			class DepOff extends BasePlugin {}
 
@@ -235,7 +235,7 @@ describe('FeatureHost.dep', () => {
 	})
 
 	it('does not run cleanup twice when dep disappears then unsubscribe is called', async () => {
-		await withHost(async (host) => {
+		await withCoreHost(async (host) => {
 			@Plugin({ name: 'DepGone' })
 			class DepGone extends BasePlugin {}
 
@@ -272,7 +272,7 @@ describe('FeatureHost.dep', () => {
 	})
 
 	it('auto-disposes dep subscriptions on plugin unload', async () => {
-		await withHost(async (host) => {
+		await withCoreHost(async (host) => {
 			@Plugin({ name: 'DepDispose' })
 			class DepDispose extends BasePlugin {}
 
@@ -300,7 +300,7 @@ describe('FeatureHost.dep', () => {
 	})
 
 	it('re-invokes callback when dep instance changes', async () => {
-		await withHost(async (host) => {
+		await withCoreHost(async (host) => {
 			@Plugin({ name: 'Dep2' })
 			class Dep2 extends BasePlugin {}
 
@@ -339,7 +339,7 @@ describe('FeatureHost.dep', () => {
 	})
 
 	it('does not expose deps that failed to start', async () => {
-		await withHost(async (host) => {
+		await withCoreHost(async (host) => {
 			@Plugin({ name: 'DepFail' })
 			class DepFail extends BasePlugin {
 				override init(): void {

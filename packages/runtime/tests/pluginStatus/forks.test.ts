@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { BasePlugin, ForkablePlugin, Plugin } from '@pluxel/test'
+import { BasePlugin, ForkablePlugin, Plugin } from '@pluxel/runtime/test'
 import { LoaderService } from '@pluxel/runtime/services'
 import { getStatusOverview } from '../../src/api/features/pluginStatus/service'
 import { EXTRA_FORKS } from '../../src/services/runtime/loader/selection'

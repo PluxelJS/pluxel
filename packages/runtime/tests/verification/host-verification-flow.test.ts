@@ -1,7 +1,7 @@
-import '@pluxel/test/setup'
+import '@pluxel/runtime/test'
 import '@pluxel/runtime'
 
-import { createHost, type Host } from '@pluxel/test'
+import { createRuntimeHost, type RuntimeHost } from '@pluxel/runtime/test'
 import { afterEach, describe, expect, it } from 'vitest'
 import {
 	HMR_INTERNAL_API_BASE,
@@ -42,12 +42,12 @@ async function sealVaultForTesting(vault: unknown): Promise<void> {
 	await (vault as { sealMountForTesting: () => Promise<void> }).sealMountForTesting()
 }
 
-async function setCredentials(host: Host, username = 'admin', password = 'secret') {
+async function setCredentials(host: RuntimeHost, username = 'admin', password = 'secret') {
 	await host.ctx.verification.upsertPasswordUser({ username, password })
 	await host.ctx.verification.setMode('enforce')
 }
 
-function createSecurityCookie(host: Host, username = 'admin', password = 'secret'): string {
+function createSecurityCookie(host: RuntimeHost, username = 'admin', password = 'secret'): string {
 	const result = host.ctx.verification.verifyPassword({
 		credentials: { username, password },
 	})
@@ -55,7 +55,7 @@ function createSecurityCookie(host: Host, username = 'admin', password = 'secret
 	return result.cookie.split(';')[0]!.trim()
 }
 
-async function readJson(host: Host, path: string, init?: RequestInit) {
+async function readJson(host: RuntimeHost, path: string, init?: RequestInit) {
 	const res = await host.ctx.http.fetch(req(securityUrl(path), init))
 	return {
 		res,
@@ -64,7 +64,7 @@ async function readJson(host: Host, path: string, init?: RequestInit) {
 }
 
 describe('Host verification end-to-end (http)', () => {
-	let host: Host | null = null
+	let host: RuntimeHost | null = null
 
 	afterEach(async () => {
 		if (!host) return
@@ -73,7 +73,7 @@ describe('Host verification end-to-end (http)', () => {
 	})
 
 	it('guards control-plane requests and unblocks after host verification succeeds', async () => {
-		host = createHost({
+		host = createRuntimeHost({
 			fs: { mode: 'memory' },
 		})
 
@@ -169,7 +169,7 @@ describe('Host verification end-to-end (http)', () => {
 	})
 
 	it('shows an explicit misconfigured message when verification credentials are missing', async () => {
-		host = createHost({
+		host = createRuntimeHost({
 			fs: { mode: 'memory' },
 		})
 
@@ -187,7 +187,7 @@ describe('Host verification end-to-end (http)', () => {
 	})
 
 	it('redirects straight through when verification is bypassed', async () => {
-		host = createHost({
+		host = createRuntimeHost({
 			fs: { mode: 'memory' },
 		})
 
@@ -203,7 +203,7 @@ describe('Host verification end-to-end (http)', () => {
 	})
 
 	it('defaults to bypass when verification is not configured yet', async () => {
-		host = createHost({
+		host = createRuntimeHost({
 			fs: { mode: 'memory' },
 		})
 
@@ -223,7 +223,7 @@ describe('Host verification end-to-end (http)', () => {
 	})
 
 	it('allows security bootstrap while verification is misconfigured', async () => {
-		host = createHost({
+		host = createRuntimeHost({
 			fs: { mode: 'memory' },
 		})
 		await host.ctx.verification.setMode('enforce')
@@ -259,7 +259,7 @@ describe('Host verification end-to-end (http)', () => {
 	})
 
 	it('allows security UI assets while verification is misconfigured', async () => {
-		host = createHost({
+		host = createRuntimeHost({
 			fs: { mode: 'memory' },
 		})
 		await host.ctx.verification.setMode('enforce')
@@ -275,7 +275,7 @@ describe('Host verification end-to-end (http)', () => {
 	})
 
 	it('does not let internal API validators block /security', async () => {
-		host = createHost({
+		host = createRuntimeHost({
 			fs: { mode: 'memory' },
 		})
 		await setCredentials(host)
@@ -302,7 +302,7 @@ describe('Host verification end-to-end (http)', () => {
 	})
 
 	it('redirects the /security page back to verification when credentials exist but the session is missing', async () => {
-		host = createHost({
+		host = createRuntimeHost({
 			fs: { mode: 'memory' },
 		})
 		await setCredentials(host)
@@ -317,7 +317,7 @@ describe('Host verification end-to-end (http)', () => {
 	})
 
 	it('redirects blocked control-plane API requests to /security when verification is misconfigured', async () => {
-		host = createHost({
+		host = createRuntimeHost({
 			fs: { mode: 'memory' },
 		})
 		await host.ctx.verification.setMode('enforce')
@@ -332,7 +332,7 @@ describe('Host verification end-to-end (http)', () => {
 	})
 
 	it('exposes verification and vault admin through dedicated security api', async () => {
-		host = createHost({
+		host = createRuntimeHost({
 			fs: { mode: 'memory' },
 		})
 		await setCredentials(host)
@@ -393,7 +393,7 @@ describe('Host verification end-to-end (http)', () => {
 	})
 
 	it('can disable the gate without dropping stored credentials', async () => {
-		host = createHost({
+		host = createRuntimeHost({
 			fs: { mode: 'memory' },
 		})
 		await setCredentials(host)
@@ -421,7 +421,7 @@ describe('Host verification end-to-end (http)', () => {
 	})
 
 	it('updates gate mode through the dedicated security api', async () => {
-		host = createHost({
+		host = createRuntimeHost({
 			fs: { mode: 'memory' },
 		})
 		await setCredentials(host)
@@ -449,7 +449,7 @@ describe('Host verification end-to-end (http)', () => {
 	})
 
 	it('verification success does not implicitly unlock vault', async () => {
-		host = createHost({
+		host = createRuntimeHost({
 			fs: { mode: 'memory' },
 		})
 
@@ -482,7 +482,7 @@ describe('Host verification end-to-end (http)', () => {
 	})
 
 	it('records verification audit events in host security state', async () => {
-		host = createHost({
+		host = createRuntimeHost({
 			fs: { mode: 'memory' },
 		})
 		await setCredentials(host)
@@ -527,7 +527,7 @@ describe('Host verification end-to-end (http)', () => {
 	})
 
 	it('preserves password bytes instead of trimming them', async () => {
-		host = createHost({
+		host = createRuntimeHost({
 			fs: { mode: 'memory' },
 		})
 
@@ -557,7 +557,7 @@ describe('Host verification end-to-end (http)', () => {
 	})
 
 	it('can switch to otp and verify with a generated code', async () => {
-		host = createHost({
+		host = createRuntimeHost({
 			fs: { mode: 'memory' },
 		})
 
@@ -602,7 +602,7 @@ describe('Host verification end-to-end (http)', () => {
 	})
 
 	it('changing verification method clears incompatible users', async () => {
-		host = createHost({
+		host = createRuntimeHost({
 			fs: { mode: 'memory' },
 		})
 		await setCredentials(host)

@@ -1,9 +1,9 @@
-import { withHost } from '@pluxel/test'
+import { withRuntimeHost } from '@pluxel/runtime/test'
 import { describe, expect, it } from 'vitest'
 
 describe('HttpService host.routes', () => {
 	it('mounts, replaces, and disposes an Elysia boundary through the root app', async () => {
-		await withHost(async (host) => {
+		await withRuntimeHost(async (host) => {
 			const handle = host.ctx.http.host.routes((app) => app.get('/', () => 'v1'), {
 				id: 'test:mounted',
 				path: '/mounted',
@@ -27,7 +27,7 @@ describe('HttpService host.routes', () => {
 	})
 
 	it('mounts a plain fetch boundary through the Elysia root', async () => {
-		await withHost(async (host) => {
+		await withRuntimeHost(async (host) => {
 			host.ctx.http.host.mount({
 				id: 'test:fetch-boundary',
 				path: '/fetch-boundary',

@@ -8,7 +8,7 @@ export interface ScanOptions {
 	conditions: string[]
 	/** Fallback relative paths tried when no explicit entry is found. */
 	conservativeCandidates: string[]
-	/** Prefer the `@pluxel/runtime` export target when present. */
+	/** Prefer the `@pluxel/hmr` export target when present. */
 	preferHmrExports: boolean
 	/** Whether to treat the workspace root itself as a package. */
 	includeRoot: boolean

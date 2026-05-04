@@ -1,7 +1,7 @@
 // start.ts
 import { configure } from '@logtape/logtape'
 import { createPluxelLogtapeConfig } from '@pluxel/core/logger'
-import { Context } from '@pluxel/test'
+import { Context } from '@pluxel/core/test'
 import { PluginA, PluginB, PluginC } from './plugins'
 
 await configure(

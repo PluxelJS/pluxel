@@ -94,7 +94,7 @@ export function readHmrConfigV1(
 	fs: HmrWorkspaceFs = nodeHmrWorkspaceFs,
 ): PluxelHmrConfigV1 {
 	if (!fs.existsSync(configPath)) throw new Error(`[hmr-config] Missing config file: ${configPath}`)
-	const raw = fs.readFileSync(configPath, 'utf8')
+	const raw = readHmrConfigText(configPath, fs)
 	return parseHmrConfigV1Jsonc(raw, configPath)
 }
 
@@ -127,10 +127,14 @@ export function backupAndRewriteHmrConfigV1(
 ) {
 	const ts = new Date().toISOString().replaceAll(/[:.]/g, '-')
 	const backupPath = `${configPath}.bak.${ts}`
-	const raw = fs.readFileSync(configPath, 'utf8')
+	const raw = readHmrConfigText(configPath, fs)
 	fs.writeFileSync(backupPath, raw, 'utf8')
 	writeHmrConfigV1(configPath, next, { fs })
 	return { backupPath }
+}
+
+function readHmrConfigText(configPath: string, fs: HmrWorkspaceFs): string {
+	return fs.readFileSync(configPath, 'utf8').toString()
 }
 
 function assertPlainObject(value: unknown, ctx: string): asserts value is Record<string, unknown> {

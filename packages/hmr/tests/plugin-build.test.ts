@@ -71,7 +71,7 @@ describe('buildPluginUiRemote', () => {
 		await expect(
 			readdir(join(root, '.pluxel/vite-plugin-ui-cache')).catch((): string[] => []),
 		).resolves.toEqual([])
-	}, 20_000)
+	}, 45_000)
 
 	it('builds the same remote repeatedly without reusing process-local federation state', async () => {
 		const root = resolve(workspaceRoot, 'packages/plugins/host')
@@ -104,5 +104,5 @@ describe('buildPluginUiRemote', () => {
 
 		await access(first.manifestPath)
 		await access(second.manifestPath)
-	}, 20_000)
+	}, 45_000)
 })

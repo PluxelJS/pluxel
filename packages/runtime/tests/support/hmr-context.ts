@@ -1,5 +1,4 @@
-import { Context } from '@pluxel/test'
-import type { Context as PlxContext } from '@pluxel/core'
+import { Context, type Context as PlxContext } from '@pluxel/core'
 
 export type HmrTestState = {
 	enabled?: Set<string>

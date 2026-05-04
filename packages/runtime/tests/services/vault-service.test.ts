@@ -1,4 +1,4 @@
-import { BasePlugin, Plugin, withHost } from '@pluxel/test'
+import { BasePlugin, Plugin, withRuntimeHost } from '@pluxel/runtime/test'
 import { resolve } from 'pathe'
 import { env as stdEnv } from 'std-env'
 import { describe, expect, it } from 'vitest'
@@ -27,7 +27,7 @@ describe('VaultService (shared mount runtime)', () => {
 	it('read-only access and kv batch do not create files when the shared vault is missing', async () => {
 		const dir = `/vault/${randomHex(8)}`
 
-		await withHost(
+		await withRuntimeHost(
 			async (host) => {
 				@Plugin({ name: 'PluginA' })
 				class PluginA extends BasePlugin {}
@@ -57,7 +57,7 @@ describe('VaultService (shared mount runtime)', () => {
 	it('first write creates one shared mount with key envelope and snapshot', async () => {
 		const dir = `/vault/${randomHex(8)}`
 
-		await withHost(
+		await withRuntimeHost(
 			async (host) => {
 				@Plugin({ name: 'PluginA' })
 				class PluginA extends BasePlugin {}
@@ -88,7 +88,7 @@ describe('VaultService (shared mount runtime)', () => {
 	it('flush writes one snapshot for multiple kv mutations', async () => {
 		const dir = `/vault/${randomHex(8)}`
 
-		await withHost(
+		await withRuntimeHost(
 			async (host) => {
 				@Plugin({ name: 'PluginA' })
 				class PluginA extends BasePlugin {}
@@ -122,7 +122,7 @@ describe('VaultService (shared mount runtime)', () => {
 	it('shared mount keeps plugin namespaces separate', async () => {
 		const dir = `/vault/${randomHex(8)}`
 
-		await withHost(
+		await withRuntimeHost(
 			async (host) => {
 				@Plugin({ name: 'PluginA' })
 				class PluginA extends BasePlugin {}
@@ -152,7 +152,7 @@ describe('VaultService (shared mount runtime)', () => {
 	it('namespace() provides a stable scoped facade over kv/docs/blobs', async () => {
 		const dir = `/vault/${randomHex(8)}`
 
-		await withHost(
+		await withRuntimeHost(
 			async (host) => {
 				@Plugin({ name: 'PluginA' })
 				class PluginA extends BasePlugin {}
@@ -183,7 +183,7 @@ describe('VaultService (shared mount runtime)', () => {
 	it('namespace.batch() updates kv and docs atomically within one namespace copy-on-write', async () => {
 		const dir = `/vault/${randomHex(8)}`
 
-		await withHost(
+		await withRuntimeHost(
 			async (host) => {
 				@Plugin({ name: 'PluginA' })
 				class PluginA extends BasePlugin {}
@@ -214,7 +214,7 @@ describe('VaultService (shared mount runtime)', () => {
 	it('tampered shared snapshot fails to decrypt after relock', async () => {
 		const dir = `/vault/${randomHex(8)}`
 
-		await withHost(
+		await withRuntimeHost(
 			async (host) => {
 				@Plugin({ name: 'PluginA' })
 				class PluginA extends BasePlugin {}
@@ -247,7 +247,7 @@ describe('VaultService (shared mount runtime)', () => {
 	it('describe stays pure-read when a local host identity is available', async () => {
 		const dir = `/vault/${randomHex(8)}`
 
-		await withHost(
+		await withRuntimeHost(
 			async (host) => {
 				@Plugin({ name: 'PluginA' })
 				class PluginA extends BasePlugin {}
@@ -276,7 +276,7 @@ describe('VaultService (shared mount runtime)', () => {
 		const dir = `/vault/${randomHex(8)}`
 		let envName = 'PLUXEL_VAULT_DEPLOY_IDENTITY'
 
-		await withHost(
+		await withRuntimeHost(
 			async (host) => {
 				@Plugin({ name: 'PluginA' })
 				class PluginA extends BasePlugin {}
@@ -316,7 +316,7 @@ describe('VaultService (shared mount runtime)', () => {
 	it('rekey() does not create a missing mount as a side effect', async () => {
 		const dir = `/vault/${randomHex(8)}`
 
-		await withHost(
+		await withRuntimeHost(
 			async (host) => {
 				@Plugin({ name: 'PluginA' })
 				class PluginA extends BasePlugin {}
@@ -338,7 +338,7 @@ describe('VaultService (shared mount runtime)', () => {
 
 	it('rekey() rewrites only the managed key envelope without rewriting the snapshot payload', async () => {
 		const dir = `/vault/${randomHex(8)}`
-		await withHost(
+		await withRuntimeHost(
 			async (host) => {
 				@Plugin({ name: 'PluginA' })
 				class PluginA extends BasePlugin {}
@@ -365,7 +365,7 @@ describe('VaultService (shared mount runtime)', () => {
 	it('stores blobs separately from the shared snapshot', async () => {
 		const dir = `/vault/${randomHex(8)}`
 
-		await withHost(
+		await withRuntimeHost(
 			async (host) => {
 				@Plugin({ name: 'PluginA' })
 				class PluginA extends BasePlugin {}
@@ -388,7 +388,7 @@ describe('VaultService (shared mount runtime)', () => {
 	it('host preflight keeps an empty shared mount lazy', async () => {
 		const dir = `/vault/${randomHex(8)}`
 
-		await withHost(
+		await withRuntimeHost(
 			async (host) => {
 				const admin = await host.ctx.vaultAdmin.preflight()
 				expect(admin).toMatchObject({
@@ -409,7 +409,7 @@ describe('VaultService (shared mount runtime)', () => {
 	it('host preflight fails when an existing sealed mount has no unlock identity', async () => {
 		const dir = `/vault/${randomHex(8)}`
 
-		await withHost(
+		await withRuntimeHost(
 			async (host) => {
 				@Plugin({ name: 'Seeder' })
 				class Seeder extends BasePlugin {}
@@ -443,7 +443,7 @@ describe('VaultService (shared mount runtime)', () => {
 		const dir = `/vault/${randomHex(8)}`
 		let envName = 'PLUXEL_VAULT_DEPLOY_IDENTITY'
 
-		await withHost(
+		await withRuntimeHost(
 			async (host) => {
 				@Plugin({ name: 'Seeder' })
 				class Seeder extends BasePlugin {}
@@ -486,7 +486,7 @@ describe('VaultService (shared mount runtime)', () => {
 	it('sealed mounts report unlock_required when no matching identity is available', async () => {
 		const dir = `/vault/${randomHex(8)}`
 
-		await withHost(
+		await withRuntimeHost(
 			async (host) => {
 				@Plugin({ name: 'Seeder' })
 				class Seeder extends BasePlugin {}
@@ -524,7 +524,7 @@ describe('VaultService (shared mount runtime)', () => {
 	it('registry commit rejects before activating more plugins when vault preflight fails', async () => {
 		const dir = `/vault/${randomHex(8)}`
 
-		await withHost(
+		await withRuntimeHost(
 			async (host) => {
 				@Plugin({ name: 'Seeder' })
 				class Seeder extends BasePlugin {}
@@ -558,7 +558,7 @@ describe('VaultService (shared mount runtime)', () => {
 	it('replacing deploy recipients rekeys the envelope for all saved recipients', async () => {
 		const dir = `/vault/${randomHex(8)}`
 
-		await withHost(
+		await withRuntimeHost(
 			async (host) => {
 				@Plugin({ name: 'Seeder' })
 				class Seeder extends BasePlugin {}

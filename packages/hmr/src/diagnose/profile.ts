@@ -97,7 +97,7 @@ export type ResolveHmrWorkspaceSnapshotOptions = HmrProfileRef & {
 	 * Package names to omit from discovery/enabled resolution.
 	 *
 	 * Primary use case: hosts that preload certain packages as builtins and want to avoid
-	 * double-loading their `@pluxel/runtime` source entries.
+	 * double-loading their `@pluxel/hmr` source entries.
 	 */
 	omitPackages?: string[]
 }

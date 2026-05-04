@@ -1,6 +1,6 @@
 import type { HmrWorkspaceSnapshot } from '@pluxel/hmr/snapshot'
 import { createDiskFixture as createFixture } from '@pluxel/test/fixtures'
-import { withContext } from '@pluxel/test'
+import { withRuntimeContext } from '@pluxel/runtime/test'
 import { writeFile } from 'node:fs/promises'
 import { resolve } from 'pathe'
 import { describe, expect, it } from 'vitest'
@@ -11,7 +11,7 @@ import { createTestHmrHost } from '../support/test-host'
 
 describe('HMR UI smoke', () => {
 	it('renders dev UI with a Vite-accessible source entry and rejects stale /dist/public asset requests', async () => {
-		await withContext(
+		await withRuntimeContext(
 			async (ctx) => {
 				const htmlRes = await ctx.http.fetch(
 					new Request('http://local/', {
@@ -60,7 +60,7 @@ describe('HMR UI smoke', () => {
 		})
 
 		const publicDir = resolve(fixture.path, 'dist/public')
-		await withContext(
+		await withRuntimeContext(
 			async (ctx) => {
 				const asset = await ctx.http.fetch(new Request('http://local/dist/public/assets/hello.js'))
 				expect(asset.status).toBe(200)
@@ -127,7 +127,7 @@ describe('HMR UI smoke', () => {
 					name: 'pluxel-plugin-a',
 					version: '0.0.0',
 					type: 'module',
-					exports: { '.': { '@pluxel/runtime': './src/index.ts', default: './dist/index.mjs' } },
+					exports: { '.': { '@pluxel/hmr': './src/index.ts', default: './dist/index.mjs' } },
 				},
 				null,
 				2,
@@ -179,7 +179,7 @@ describe('HMR UI smoke', () => {
 			},
 		})
 
-		await withContext(
+		await withRuntimeContext(
 			async (ctx) => {
 				await ctx.ext.ui.commitCompiledModule(
 					createCompiledExtensionModule({

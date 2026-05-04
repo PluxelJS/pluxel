@@ -1,5 +1,5 @@
 import { browserOnlyVitePlugin, serverOnlyVitePlugin } from '../src/vite'
-import { fixRolldownUndefinedExportsPlugin } from '../../workspace/src/vite'
+import { fixRolldownUndefinedExportsPlugin } from '@pluxel/workspace/vite'
 import type { Plugin, PluginOption } from 'vite'
 
 export function serverOnlyPlugin(plugin: Plugin): Plugin {

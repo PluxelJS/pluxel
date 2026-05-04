@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { withContext, type Context } from '@pluxel/test'
+import { withRuntimeContext, type Context } from '@pluxel/runtime/test'
 import { HMR_INTERNAL_API_BASE, HMR_TRANSPORT_PATHS } from '@pluxel/runtime/web/paths'
 import { defineOp } from '@pluxel/ops'
 import { Type, obj } from '@pluxel/ops/typebox'
@@ -47,7 +47,7 @@ async function createMcpCaller(ctx: Context) {
 
 describe('MCP (mcp-lite) endpoint', () => {
 	it('supports initialize, tools/list, tools/call', async () => {
-		await withContext(async (ctx) => {
+		await withRuntimeContext(async (ctx) => {
 			setDevRuntimeHandles(ctx, {
 				hmr: {
 					api: {
@@ -146,7 +146,7 @@ describe('MCP (mcp-lite) endpoint', () => {
 	})
 
 	it('refreshes MCP tool projection when ops registry changes', async () => {
-		await withContext(async (ctx) => {
+		await withRuntimeContext(async (ctx) => {
 			const { call, init } = await createMcpCaller(ctx)
 			expect(init.result.serverInfo.name).toBe('pluxel-hmr')
 

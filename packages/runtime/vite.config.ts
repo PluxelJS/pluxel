@@ -7,7 +7,7 @@ import {
 	createPluxelUiChunkGroups,
 	PLUXEL_UI_DEDUPE_PACKAGES,
 	PLUXEL_UI_OPTIMIZE_DEPS_INCLUDE,
-} from '../workspace/src/vite'
+} from '@pluxel/workspace/vite'
 import { createRuntimeWebPlugins } from './vite/plugins'
 
 const runtimeAliases = [

@@ -342,7 +342,7 @@ export function registerRuntimeDevTools(server: McpServer, ctx: Context) {
 	})
 
 	server.tool('workspace.resolveEntry', {
-		description: 'Resolve a workspace package entry (prefer @pluxel/runtime export by default).',
+		description: 'Resolve a workspace package entry (prefer @pluxel/hmr export by default).',
 		inputSchema: WorkspaceResolveEntryInputSchema,
 		outputSchema: EntryResolutionSchema,
 		handler: async (args) => {

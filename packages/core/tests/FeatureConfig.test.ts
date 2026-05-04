@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { BaseFeature, BasePlugin, getPluginInfo, Plugin, UseFeature, withHost } from '@pluxel/test'
+import { BaseFeature, BasePlugin, getPluginInfo, Plugin, UseFeature, withCoreHost } from '@pluxel/core/test'
 import type { StandardSchemaV1 } from '@standard-schema/spec'
 
 const PassthroughSchema: StandardSchemaV1 = {
@@ -32,7 +32,7 @@ class Host extends BasePlugin {
 
 describe('BaseFeature config composition', () => {
 	it('namespaces feature config into host plugin configMap and injects values into the feature instance', async () => {
-		await withHost(async (host) => {
+		await withCoreHost(async (host) => {
 			const info = getPluginInfo(Host)
 			expect(info.configMap).not.toBeNull()
 			expect(Object.keys(info.configMap ?? {})).toContain('cache.cfg')

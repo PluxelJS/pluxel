@@ -1,5 +1,5 @@
 import { resolve } from 'pathe'
-import { definePluxelVitestConfig } from '../test/src/vitest.ts'
+import { definePluxelVitestConfig } from '@pluxel/test/vitest'
 
 export default definePluxelVitestConfig(
 	{

@@ -132,6 +132,9 @@ HMR 启动后会：
 
 - 正常路径下，已被 runner 重新执行并 `replaceModule()` 的 target 不会再通过 batch sync 立刻同步一遍。
 - retry 路径下，core commit 失败会回滚 draft，因此必须重新 sync 本 batch targets 和 DI affected modules；sync 函数内部按 module id 去重。
+- 实现上这条提交链路由 HMR 内部的 runtime batch scheduler 统一调度：`HmrExecutor` 只负责 runner import 和
+  `batch.replaceModule()`，scheduler 负责 affected sync、commit、missing-deps retry、batch close/rollback。
+  retry replay 只包含已经成功 replace 的模块和 runtime affected modules；runner evaluation 失败的 target 不会把旧模块状态误重放进 core draft。
 
 最终 summary 语义：
 
@@ -218,6 +221,12 @@ HMR batch commit 和 builtins preload 都有 `MissingDependency` 自动禁用策
 - HMR 负责文件变更、Vite moduleGraph、runner import、cache invalidation、commit/retry orchestration、summary 输出。
 
 HMR 不直接读取 core graph 来推生命周期影响面；它只通过 `LoaderBatch.getAffectedModules()` / `LoaderBatch.syncModules()` 消费 runtime 的结果。这样 HMR 和 core 不形成隐式耦合。
+
+测试 host 也按这个边界复用：`@pluxel/core/test` 拥有唯一的 core host 调度骨架；`@pluxel/test`
+只是 core 测试包的轻量包装和 fixture / Vitest preset；`@pluxel/runtime/test` 复用同一 host 骨架，
+只额外注册 runtime services 并在 commit 前执行 runtime bootstrap。公开命名保持单一：`@pluxel/test`
+使用短名 `createHost` / `withHost`；`@pluxel/core/test` 使用 `createCoreHost` / `withCoreHost`；
+`@pluxel/runtime/test` 使用 `createRuntimeHost` / `withRuntimeHost`。
 
 ### 2. HMR summary 已能解释主要 lifecycle 结果
 
@@ -319,6 +328,32 @@ runtime op 中：
 
 ### C. 增加覆盖测试
 
+测试工具也按 core / runtime / HMR 分层：
+
+- `@pluxel/test`
+  默认入口是 core/plugin-semantics 测试工具，只依赖 `@pluxel/core`。它提供 `BasePlugin` / `Plugin`
+  / `setParamToken` / core-only `createHost` / `withHost`，以及 `fixtures` / `vitest` 等通用测试基础设施。
+  默认 setup 只加载 core services，不注册 runtime services。
+- `@pluxel/core/test`
+  core-owned host 骨架，提供真实 `Context` / `PluginService` / config handle / commit / dispose
+  调度。它是 `@pluxel/test` 和 `@pluxel/runtime/test` 的共享实现点，避免两侧 host API 演化时重复维护。
+  它只暴露 `Core*` 命名，避免和面向插件作者的 `@pluxel/test` 短名入口混淆。
+- `@pluxel/runtime/test`
+  runtime-owned 测试入口，显式注册 runtime services，提供真实 runtime host / context，并只暴露
+  `Runtime*` 命名。runtime 和 HMR 生命周期测试需要 loader/config/http/vault 等宿主能力时必须用它。
+  runtime/HMR 的 Vitest config 显式打开
+  `runtimeConditions`，core/test 默认不打开 `@pluxel/runtime` export condition。
+- HMR 测试 support
+  只包装 HMR 外部边界（runner/moduleGraph/logger capture/fixture server），不重新实现 loader、registry、
+  configService。
+
+测试原则已收敛为：生命周期正确性尽量用真实 `@pluxel/runtime/test` host / real `Context` / real
+`LoaderService` / real core registry 验证；只有 Vite runner、moduleGraph、文件 transform 捕获、错误注入这类
+HMR 外部边界才保留薄 mock。原因是 HMR 插件启停的风险点不在某个单函数返回值，而在
+runtime catalog、config enabled bit、core draft/commit、DI token normalization 和 rollback 是否一致。
+大面积自造 loader/config/registry mock 容易让测试“证明 mock 正确”，却遮住真实 commit 或 rollback
+路径的问题。HMR 生命周期测试因为本来就依赖 runtime，所以直接依赖 runtime 自己暴露的测试 host。
+
 已补覆盖：
 
 - provider module HMR 后，consumer 不在 Vite importer targets 中，仍能被 runtime affected modules 重新 sync。
@@ -330,7 +365,9 @@ runtime op 中：
 - HMR processor summary 暴露 batch 相关模块内的 `enabledButStopped`。
 - 非 batch `replaceModule()` 会 sync affected dependents，但不会重复 sync 刚替换的 module。
 - runtime `LoaderBatch` contract 已类型化，HMR 不再鸭子类型读取 affected modules，也不直接拼单模块 sync 细节。
-- runtime HMR lifecycle 覆盖已从通用 `LoaderService.test.ts` 拆到 `loader/hmr-lifecycle.test.ts`，保留 token normalization、affected modules、rollback、非 batch replace、batch close 五个核心规格。
+- runtime HMR lifecycle 覆盖已从通用 `LoaderService.test.ts` 拆到 `loader/hmr-lifecycle.test.ts`，并改用 `@pluxel/runtime/test` 的 runtime-owned 测试入口；保留 token normalization、affected modules、rollback、非 batch replace、batch close 五个核心规格。
+- HMR pipeline / executor 测试已改用真实 `@pluxel/runtime/test` host 覆盖 loader、configService、registry、commit；runner import 仍保留薄替身，用于精确控制本次模块执行结果。
+- HMR Vite 集成测试已改用真实 host 捕获 config metadata 和 CJS externalize 行为；只 patch logger capture、loader replace capture 或特定 scan resolver 场景。
 - `plugin.enable` 会立即启动，`plugin.enable-persisted` 只写持久启用位。
 
 ## 推荐改造顺序

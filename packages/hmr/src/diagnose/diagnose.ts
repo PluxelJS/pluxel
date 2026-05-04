@@ -27,7 +27,7 @@ export type DiagnoseWorkspaceInput = {
 	 * Package names to omit from discovery/enabled resolution.
 	 *
 	 * Primary use case: the host preloads certain packages as builtins (baseline),
-	 * so workspace profiles should not also load their `@pluxel/runtime` source entries
+	 * so workspace profiles should not also load their `@pluxel/hmr` source entries
 	 * (prevents "plugin name conflict" from double-loading the same package).
 	 */
 	omitPackages?: string[]

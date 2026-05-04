@@ -11,8 +11,8 @@ import {
 	BasePlugin,
 	defineOptionalFeature,
 	Plugin,
-	withHost,
-} from '@pluxel/test'
+	withCoreHost,
+} from '@pluxel/core/test'
 
 const tryUseLoads = {
 	dep: 0,
@@ -137,7 +137,7 @@ class TryUseSpecMismatch extends BasePlugin {}
 
 describe('FeatureHost.tryUse', () => {
 	it('skips optional features until required runtime deps are available', async () => {
-		await withHost(async (host) => {
+		await withCoreHost(async (host) => {
 			const { DepOptionalFeature } = await import('./plugins/FeatureTryUse.optional')
 			DepOptionalFeature.reset()
 			tryUseLoads.dep = 0
@@ -162,7 +162,7 @@ describe('FeatureHost.tryUse', () => {
 	})
 
 	it('loads once per key and supports host-bound optional features', async () => {
-		await withHost(async (host) => {
+		await withCoreHost(async (host) => {
 			tryUseLoads.hostBound = 0
 
 			host.add(TryUseHostBound)
@@ -178,7 +178,7 @@ describe('FeatureHost.tryUse', () => {
 	})
 
 	it('skips before load when string-token optional deps are absent', async () => {
-		await withHost(async (host) => {
+		await withCoreHost(async (host) => {
 			tryUseLoads.missingToken = 0
 
 			host.add(TryUseMissingProviderToken)
@@ -191,7 +191,7 @@ describe('FeatureHost.tryUse', () => {
 	})
 
 	it('requires defineOptionalFeature() specs at runtime', async () => {
-		await withHost(async (host) => {
+		await withCoreHost(async (host) => {
 			host.add(TryUseInlineSpec)
 			await host.commit()
 
@@ -209,7 +209,7 @@ describe('FeatureHost.tryUse', () => {
 	})
 
 	it('rejects legacy tryUse() constructor args at runtime', async () => {
-		await withHost(async (host) => {
+		await withCoreHost(async (host) => {
 			host.add(TryUseArgs)
 			await host.commit()
 
@@ -224,7 +224,7 @@ describe('FeatureHost.tryUse', () => {
 	})
 
 	it('rejects declaration-time features from tryUse()', async () => {
-		await withHost(async (host) => {
+		await withCoreHost(async (host) => {
 			host.add(TryUseInvalid)
 			await host.commit()
 
@@ -236,7 +236,7 @@ describe('FeatureHost.tryUse', () => {
 	})
 
 	it('rejects reusing one optional key with different specs', async () => {
-		await withHost(async (host) => {
+		await withCoreHost(async (host) => {
 			host.add(TryUseSpecMismatch)
 			await host.commit()
 

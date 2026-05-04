@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { BasePlugin, Plugin, setParamToken, withHost } from '@pluxel/test'
+import { BasePlugin, Plugin, setParamToken, withCoreHost } from '@pluxel/core/test'
 
 function createDeferred() {
 	let resolve!: () => void
@@ -12,7 +12,7 @@ function createDeferred() {
 
 describe('PluginService teardown ordering', () => {
 	it('stops dependents before parents', async () => {
-		await withHost(
+		await withCoreHost(
 			async (host) => {
 				const events: string[] = []
 

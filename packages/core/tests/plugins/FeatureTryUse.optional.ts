@@ -1,6 +1,6 @@
 import type { StandardSchemaV1 } from '@standard-schema/spec'
 
-import { BaseFeature, BasePlugin, HostBoundFeature } from '@pluxel/test'
+import { BaseFeature, BasePlugin, HostBoundFeature } from '@pluxel/core/test'
 
 const PassthroughSchema: StandardSchemaV1 = {
 	'~standard': {

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { BasePlugin, Plugin, setParamToken, withHost } from '@pluxel/test'
+import { BasePlugin, Plugin, setParamToken, withCoreHost } from '@pluxel/core/test'
 import { PluginB } from './plugins'
 
 function createDeferred() {
@@ -34,7 +34,7 @@ async function waitUntil(cond: () => boolean, opts?: { timeoutMs?: number }) {
 
 describe('PluginService commit()', () => {
 	it('resolves aliases through the committed graph', async () => {
-		await withHost(async (host) => {
+		await withCoreHost(async (host) => {
 			abstract class Abs extends BasePlugin {}
 
 			@Plugin(Abs, { name: 'BIND-A' })
@@ -47,7 +47,7 @@ describe('PluginService commit()', () => {
 	})
 
 	it('replaces a plugin implementation while keeping old tokens resolvable', async () => {
-		await withHost(async (host) => {
+		await withCoreHost(async (host) => {
 			abstract class Abs extends BasePlugin {}
 
 			@Plugin(Abs, { name: 'REPL-A' })
@@ -69,7 +69,7 @@ describe('PluginService commit()', () => {
 	})
 
 	it('reports replacement pairs and touched subtree for root replacement', async () => {
-		await withHost(async (host) => {
+		await withCoreHost(async (host) => {
 			abstract class Abs extends BasePlugin {}
 
 			@Plugin(Abs, { name: 'PAIR-A' })
@@ -101,7 +101,7 @@ describe('PluginService commit()', () => {
 	})
 
 	it('confirms no-op draft commits before publishing the summary graph', async () => {
-		await withHost(async (host) => {
+		await withCoreHost(async (host) => {
 			@Plugin({ name: 'NOOP-A' })
 			class A extends BasePlugin {}
 
@@ -129,7 +129,7 @@ describe('PluginService commit()', () => {
 	})
 
 	it('ready-queue starts dependents without batch barriers', async () => {
-		await withHost(
+		await withCoreHost(
 			async (host) => {
 				const events: string[] = []
 
@@ -190,7 +190,7 @@ describe('PluginService commit()', () => {
 	})
 
 	it('batch strategy keeps depth barriers', async () => {
-		await withHost(
+		await withCoreHost(
 			async (host) => {
 				const events: string[] = []
 
@@ -254,7 +254,7 @@ describe('PluginService commit()', () => {
 	})
 
 	it('ready-queue enforces bounded concurrency', async () => {
-		await withHost(
+		await withCoreHost(
 			async (host) => {
 				let active = 0
 				let maxActive = 0
@@ -302,7 +302,7 @@ describe('PluginService commit()', () => {
 	})
 
 	it('ready-queue fails fast on dependency chain', async () => {
-		await withHost(
+		await withCoreHost(
 			async (host) => {
 				let bInit = false
 				let cInit = false
@@ -352,7 +352,7 @@ describe('PluginService commit()', () => {
 	})
 
 	it('respects global startTimeoutMs when no override is provided', async () => {
-		await withHost(
+		await withCoreHost(
 			async (host) => {
 				@Plugin({ name: 'TO-global' })
 				class Slow extends BasePlugin {
@@ -381,7 +381,7 @@ describe('PluginService commit()', () => {
 	})
 
 	it('allows per-plugin startTimeoutMs via @Plugin metadata', async () => {
-		await withHost(
+		await withCoreHost(
 			async (host) => {
 				@Plugin({ name: 'TO-meta', startTimeoutMs: 200 })
 				class Slow extends BasePlugin {
@@ -409,7 +409,7 @@ describe('PluginService commit()', () => {
 	})
 
 	it('can unregister during an active commit and still stop on the next commit', async () => {
-		await withHost(async (host) => {
+		await withCoreHost(async (host) => {
 			const summaries: any[] = []
 			host.ctx.on('afterCommit', (summary) => {
 				summaries.push(summary)
@@ -440,13 +440,13 @@ describe('PluginService commit()', () => {
 	})
 
 	it('shutdownSelf() throws outside plugin context', async () => {
-		await withHost(async (host) => {
+		await withCoreHost(async (host) => {
 			expect(() => host.ctx.registry.shutdownSelf()).toThrow('not in a plugin context')
 		})
 	})
 
 	it('serializes overlapping commits and preserves plugin state', async () => {
-		await withHost(async (host) => {
+		await withCoreHost(async (host) => {
 			const summaries = collectCommitSummaries(host) as Array<{
 				added?: unknown[]
 			}>
@@ -506,7 +506,7 @@ describe('PluginService commit()', () => {
 	})
 
 	it('captures failing plugins and clears singletons for retries', async () => {
-		await withHost(async (host) => {
+		await withCoreHost(async (host) => {
 			@Plugin({ name: 'ThrowPlugin' })
 			class ThrowPlugin extends BasePlugin {
 				override init(): void {
@@ -524,7 +524,7 @@ describe('PluginService commit()', () => {
 	})
 
 	it('retries failed plugins on later commits even without container changes', async () => {
-		await withHost(async (host) => {
+		await withCoreHost(async (host) => {
 			let attempt = 0
 			const events: string[] = []
 
@@ -551,7 +551,7 @@ describe('PluginService commit()', () => {
 	})
 
 	it('recovers from DI build failures on the next commit', async () => {
-		await withHost(async (host) => {
+		await withCoreHost(async (host) => {
 			@Plugin({ name: 'MissingDep-B' })
 			class B extends BasePlugin {}
 

@@ -1,38 +1,20 @@
 import { describe, expect, it } from 'vitest'
+import { BasePlugin, createRuntimeHost, Plugin } from '@pluxel/runtime/test'
 import { HmrExecutor } from '../../src/dev/hmr/pipeline'
 
 describe('HmrExecutor import candidates', () => {
 	it('prefers /@fs for filesystem ids but records canonical moduleId', async () => {
 		const calls: string[] = []
 		const cleanId = '/repo/plugins/a/src/index.ts'
+		const host = createRuntimeHost()
 
-		const ctx = {
-			logger: {
-				error: () => {},
-				warn: () => {},
-			},
-			loader: {
-				beginBatch: () => ({
-					replaceModule: async (moduleId: string, _mod: unknown) => {
-						expect(moduleId).toBe(cleanId)
-						return { isAnchor: true, affectedModules: [] }
-					},
-					getAffectedModules: () => [],
-					syncModules: async () => [],
-					commit: () => {},
-					rollback: () => {},
-				}),
-			},
-			registry: {
-				commit: async () => ({ ok: true }),
-				resetDraft: () => {},
-			},
-		} as any
+		@Plugin({ name: 'Anchor' })
+		class Anchor extends BasePlugin {}
 
 		const runner = {
 			import: async (id: string) => {
 				calls.push(id)
-				if (id === `/@fs${cleanId}`) return { default: {} }
+				if (id === `/@fs${cleanId}`) return { Anchor }
 				throw new Error(`unexpected id: ${id}`)
 			},
 		} as any
@@ -49,13 +31,20 @@ describe('HmrExecutor import candidates', () => {
 			start: () => () => 0,
 		} as any
 
-		const executor = new HmrExecutor(ctx, runner, path, timing, {
-			useRequireShims: false,
-			dbgModules: null,
-		})
+		try {
+			const executor = new HmrExecutor(host.ctx, runner, path, timing, {
+				useRequireShims: false,
+				dbgModules: null,
+			})
 
-		await executor.runAndLoadAllClean([cleanId])
+			const out = await executor.runAndLoadAllClean([cleanId])
 
-		expect(calls).toEqual([`/@fs${cleanId}`])
+			expect(calls).toEqual([`/@fs${cleanId}`])
+			expect(out?.res.ok).toBe(true)
+			expect(host.ctx.loader.api.anchors.has(cleanId)).toBe(true)
+			expect(host.ctx.loader.api.registry.findModuleId('Anchor')).toBe(cleanId)
+		} finally {
+			await host.dispose()
+		}
 	})
 })

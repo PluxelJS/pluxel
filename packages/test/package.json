@@ -1,7 +1,7 @@
 {
 	"name": "@pluxel/test",
 	"version": "0.1.0",
-	"description": "Test utilities for Pluxel packages (host/context helpers + Vitest preset).",
+	"description": "Core/plugin test utilities for Pluxel packages (fixtures + Vitest preset).",
 	"files": [
 		"dist",
 		"!**/*.map"
@@ -79,19 +79,18 @@
 	},
 	"devDependencies": {
 		"@platformatic/vfs": "^0.3.0",
+		"@pluxel/build": "workspace:*",
 		"@pluxel/workspace": "workspace:*",
 		"fs-fixture": "^2.13.0",
 		"vitest": "^4.1.5"
 	},
 	"peerDependencies": {
 		"@pluxel/core": "workspace:*",
-		"@pluxel/runtime": "workspace:*",
 		"oxlint": "^1.58.0",
 		"vitest": "^4.1.5"
 	},
 	"inlinedDependencies": {
-		"@platformatic/vfs": "0.3.0",
-		"fs-fixture": "2.13.0",
-		"pathe": "2.0.3"
+		"@platformatic/vfs": "0.3.4",
+		"fs-fixture": "2.13.0"
 	}
 }

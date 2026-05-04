@@ -24,7 +24,7 @@ describe('EntryResolver preferHmrExports', () => {
 				name: 'pluxel-plugin-wretch',
 				exports: {
 					'.': {
-						'@pluxel/runtime': './src/wretch.ts',
+						'@pluxel/hmr': './src/wretch.ts',
 						default: './dist/wretch.mjs',
 					},
 				},
@@ -36,7 +36,7 @@ describe('EntryResolver preferHmrExports', () => {
 		'dist/wretch.mjs': '// bundled entry',
 	}
 
-	test('prefers @pluxel/runtime export when enabled', async () => {
+	test('prefers @pluxel/hmr export when enabled', async () => {
 		await using fixture = await createFixture(fixtureTree)
 		const resolver = new EntryResolver(cache, fixture.fs)
 		const options: ResolvedScanOptions = { ...baseOptions, preferHmrExports: true }

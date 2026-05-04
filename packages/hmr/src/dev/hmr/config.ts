@@ -326,7 +326,7 @@ export function buildHmrViteConfig(opts: HmrViteConfigOptions): InlineConfig {
 	// - a browser UI (client environment)
 	// - a server-side runner (ssr environment)
 	//
-	// `@pluxel/runtime` is a *server-only* export condition (workspace TS sources, Node-only deps).
+	// Pluxel dev conditions are server-only (workspace TS sources, Node-only deps).
 	// If we forward it into the client environment, Vite may resolve packages like
 	// `@pluxel/wretch` (or any runner-only plugin) to `./src/...` and then try to analyze/optimize Node-only imports
 	// (e.g. `undici`) as if they were browser deps.

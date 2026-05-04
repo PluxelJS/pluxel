@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { configureSync, type LogRecord, resetSync } from '@logtape/logtape'
-import { withContext } from '@pluxel/test'
+import { withCoreContext } from '@pluxel/core/test'
 
 describe('LoggerService', () => {
 	let records: LogRecord[] = []
@@ -27,7 +27,7 @@ describe('LoggerService', () => {
 	})
 
 	it('logs as category "core" when plugin info is missing', () => {
-		return withContext(
+		return withCoreContext(
 			(ctx) => {
 				ctx.logger.info('hello', { id: 1 })
 
@@ -42,7 +42,7 @@ describe('LoggerService', () => {
 	})
 
 	it('logs as category "plugins" and attaches pluginId when available', () => {
-		return withContext(
+		return withCoreContext(
 			(ctx) => {
 				ctx.pluginInfo = { id: 'PluginX' } as any
 

@@ -1,32 +1,16 @@
 import { describe, expect, it } from 'vitest'
+import { BasePlugin, createRuntimeHost, Plugin, setParamToken } from '@pluxel/runtime/test'
 
 import { HmrBatchProcessor, HmrExecutor } from '../../src/dev/hmr/pipeline'
 
-function createBatchStub(options: {
-	affected?: readonly string[]
-	syncCalls?: string[]
-	onCommit?: () => void
-	onRollback?: () => void
-}) {
-	const affected = options.affected ?? []
-	return {
-		replaceModule: async () => ({ isAnchor: false, affectedModules: [] }),
-		getAffectedModules: () => affected,
-		syncModules: async (ids: Iterable<string>) => {
-			const synced: string[] = []
-			for (const id of ids) {
-				options.syncCalls?.push(id)
-				synced.push(id)
-			}
-			return synced
-		},
-		commit: () => options.onCommit?.(),
-		rollback: () => options.onRollback?.(),
-	}
-}
-
-function createExecutor(ctx: any, options: Record<string, unknown> = {}) {
-	const runner = { import: async () => ({}) } as any
+function createExecutor(
+	ctx: any,
+	options: {
+		importModule?: (id: string) => Promise<Record<string, unknown>> | Record<string, unknown>
+		config?: Record<string, unknown>
+	} = {},
+) {
+	const runner = { import: async (id: string) => options.importModule?.(id) ?? {} } as any
 	const path = {
 		variants: (id: string) => [id],
 		variantsClean: (id: string) => [id],
@@ -37,144 +21,151 @@ function createExecutor(ctx: any, options: Record<string, unknown> = {}) {
 	return new HmrExecutor(ctx, runner, path, timing, {
 		useRequireShims: false,
 		dbgModules: null,
-		...options,
+		...options.config,
 	})
 }
 
 describe('HmrExecutor commit retry', () => {
 	it('syncs runtime-reported affected modules before commit', async () => {
-		const syncCalls: string[] = []
-		let commitCalls = 0
-		let didBatchCommit = false
+		const host = createRuntimeHost()
+		try {
+			let depSeq = 0
+			let consumerSeq = 0
 
-		const loader = {
-			beginBatch: () =>
-				createBatchStub({
-					affected: ['/dep.ts', '/consumer.ts'],
-					syncCalls,
-					onCommit: () => {
-						didBatchCommit = true
-					},
-				}),
-			api: {
-				registry: {
-					listRegistered: () => new Map<string, unknown>(),
+			@Plugin({ name: 'Dep' })
+			class Dep extends BasePlugin {
+				readonly seq = ++depSeq
+			}
+
+			@Plugin({ name: 'Consumer' })
+			class Consumer extends BasePlugin {
+				readonly seq = ++consumerSeq
+
+				constructor(readonly dep: Dep) {
+					super()
+				}
+			}
+			setParamToken(Consumer, 0, Dep)
+
+			host.ctx.configService.enableInConfig('Dep', 'Consumer')
+			await host.ctx.loader.replaceModule('/dep.ts', { Dep })
+			await host.ctx.loader.replaceModule('/consumer.ts', { Consumer })
+			await host.commit()
+
+			const firstConsumer = host.get(Consumer)
+			expect(firstConsumer?.seq).toBe(1)
+			expect(firstConsumer?.dep.seq).toBe(1)
+
+			@Plugin({ name: 'Dep' })
+			class DepNext extends BasePlugin {
+				readonly seq = ++depSeq
+			}
+
+			const executor = createExecutor(host.ctx, {
+				importModule: async (id) => {
+					expect(id).toBe('/dep.ts')
+					return { Dep: DepNext }
 				},
-			},
+			})
+
+			const out = await executor.runAndLoadAllClean(['/dep.ts'])
+			expect(out?.res.ok).toBe(true)
+			expect(new Set(out?.affectedModules)).toEqual(new Set(['/dep.ts', '/consumer.ts']))
+			expect(out?.syncedModules).toEqual(['/consumer.ts'])
+			expect(out?.autoDisabled).toEqual([])
+
+			const nextConsumer = host.get(Consumer)
+			expect(nextConsumer?.seq).toBe(2)
+			expect(nextConsumer?.dep.seq).toBe(2)
+			expect(nextConsumer).not.toBe(firstConsumer)
+		} finally {
+			await host.dispose()
 		}
-
-		const ctx = {
-			loader,
-			registry: {
-				commit: async () => {
-					commitCalls++
-					return { ok: true as const, val: null }
-				},
-				resetDraft: () => {},
-			},
-			configService: {
-				isEnabledInConfig: () => false,
-				disableInConfig: () => {},
-				batch: (run: () => void) => run(),
-			},
-			logger: { warn: () => {}, error: () => {} },
-		} as any
-
-		const executor = createExecutor(ctx)
-
-		const out = await executor.runAndLoadAllClean(['/dep.ts'])
-		expect(out?.res.ok).toBe(true)
-		expect(out?.affectedModules).toEqual(['/dep.ts', '/consumer.ts'])
-		expect(out?.syncedModules).toEqual(['/consumer.ts'])
-		expect(out?.autoDisabled).toEqual([])
-		expect(commitCalls).toBe(1)
-		expect(syncCalls).toEqual(['/consumer.ts'])
-		expect(didBatchCommit).toBe(true)
 	})
 
 	it('auto-disables missing-deps plugins and commits the rest', async () => {
-		const enabled = new Set<string>(['UniverLoopbackPlugin', 'Other'])
-		const disabledCalls: string[] = []
-		const syncCalls: string[] = []
-		let commitCalls = 0
-		let didBatchCommit = false
-		let didBatchRollback = false
-		let didResetDraft = false
+		const host = createRuntimeHost()
+		try {
+			abstract class MissingBase extends BasePlugin {}
 
-		const configService = {
-			isEnabledInConfig: (name: string) => enabled.has(name),
-			disableInConfig: (name: string) => {
-				enabled.delete(name)
-				disabledCalls.push(name)
-			},
-			batch: (run: () => void) => run(),
-		}
-
-		const loader = {
-			beginBatch: () =>
-				createBatchStub({
-					syncCalls,
-					onCommit: () => {
-						didBatchCommit = true
-					},
-					onRollback: () => {
-						didBatchRollback = true
-					},
-				}),
-			api: {
-				registry: {
-					listRegistered: () =>
-						new Map<string, unknown>([
-							['UniverLoopbackPlugin', function UniverLoopbackPlugin() {}],
-							['Other', function Other() {}],
-						]),
-				},
-			},
-		}
-
-		const registry = {
-			commit: async () => {
-				commitCalls++
-				if (commitCalls === 1) {
-					return {
-						ok: false as const,
-						err: new Error('[MissingDependency] Otlp | chain: UniverLoopbackPlugin -> Otlp'),
-					}
+			@Plugin({ name: 'Broken' })
+			class Broken extends BasePlugin {
+				constructor(_dep: MissingBase) {
+					super()
 				}
-				return { ok: true as const, val: null }
-			},
-			resetDraft: () => {
-				didResetDraft = true
-			},
+			}
+			setParamToken(Broken, 0, MissingBase)
+
+			host.ctx.configService.enableInConfig('Broken')
+
+			const executor = createExecutor(host.ctx, {
+				importModule: async (id) => {
+					expect(id).toBe('/broken.ts')
+					return { Broken }
+				},
+				config: {
+					autoDisableMissingDependencies: true,
+					autoDisableMaxPasses: 3,
+				},
+			})
+
+			const out = await executor.runAndLoadAllClean(['/broken.ts'])
+			expect(out?.res.ok).toBe(true)
+			expect(out?.affectedModules).toEqual([])
+			expect(out?.syncedModules).toEqual(['/broken.ts'])
+			expect(out?.autoDisabled).toEqual(['Broken'])
+			expect(host.ctx.configService.isEnabledInConfig('Broken')).toBe(false)
+			expect(host.isRunning(Broken)).toBe(false)
+		} finally {
+			await host.dispose()
 		}
+	})
 
-		const ctx = {
-			loader,
-			registry,
-			configService,
-			logger: {
-				warn: () => {},
-				error: () => {},
-			},
-		} as any
+	it('does not replay modules whose runner evaluation failed during commit retry', async () => {
+		const host = createRuntimeHost()
+		try {
+			let stableSeq = 0
 
-		const executor = createExecutor(ctx, {
-			autoDisableMissingDependencies: true,
-			autoDisableMaxPasses: 3,
-		})
+			@Plugin({ name: 'Stable' })
+			class Stable extends BasePlugin {
+				readonly seq = ++stableSeq
+			}
 
-		const out = await executor.runAndLoadAllClean(['/fake.ts'])
-		expect(out?.res.ok).toBe(true)
-		expect(out?.affectedModules).toEqual([])
-		expect(out?.syncedModules).toEqual(['/fake.ts'])
-		expect(out?.autoDisabled).toEqual(['UniverLoopbackPlugin'])
-		expect(commitCalls).toBe(2)
-		expect(disabledCalls).toEqual(['UniverLoopbackPlugin'])
-		expect(syncCalls).toEqual(['/fake.ts'])
-		expect(didBatchCommit).toBe(true)
-		expect(didBatchRollback).toBe(false)
-		expect(didResetDraft).toBe(false)
-		expect(enabled.has('UniverLoopbackPlugin')).toBe(false)
+			abstract class MissingBase extends BasePlugin {}
+
+			@Plugin({ name: 'Broken' })
+			class Broken extends BasePlugin {
+				constructor(_dep: MissingBase) {
+					super()
+				}
+			}
+			setParamToken(Broken, 0, MissingBase)
+
+			host.ctx.configService.enableInConfig('Stable', 'Broken')
+			await host.ctx.loader.replaceModule('/stable.ts', { Stable })
+			await host.commit()
+
+			const firstStable = host.require(Stable)
+			const executor = createExecutor(host.ctx, {
+				importModule: async (id) => {
+					if (id === '/stable.ts') throw new Error('syntax error')
+					if (id === '/broken.ts') return { Broken }
+					return {}
+				},
+				config: {
+					autoDisableMissingDependencies: true,
+					autoDisableMaxPasses: 3,
+				},
+			})
+
+			const out = await executor.runAndLoadAllClean(['/stable.ts', '/broken.ts'])
+			expect(out?.res.ok).toBe(true)
+			expect(out?.syncedModules).toEqual(['/broken.ts'])
+			expect(out?.autoDisabled).toEqual(['Broken'])
+			expect(host.require(Stable)).toBe(firstStable)
+		} finally {
+			await host.dispose()
+		}
 	})
 })
 

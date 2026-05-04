@@ -140,7 +140,9 @@ type TsdownDepsConfig = NonNullable<InlineConfig['deps']>
 type NeverBundleValue = TsdownDepsConfig['neverBundle']
 type AlwaysBundleValue = TsdownDepsConfig['alwaysBundle']
 type OnlyBundleValue = TsdownDepsConfig['onlyBundle']
-type BundleMatchFn = (...args: any[]) => boolean | null | undefined | void
+type BundleMatchValue = NeverBundleValue | AlwaysBundleValue
+type BundleMatchFn = Extract<BundleMatchValue, (...args: any[]) => unknown>
+type BundlePatternValue = Exclude<BundleMatchValue, BundleMatchFn | undefined>
 const DEPRECATED_DEPS_KEYS = ['external', 'noExternal', 'inlineOnly'] as const
 
 function normalizeOverride(input: unknown): TsdownOverride | undefined {
@@ -221,7 +223,7 @@ function mergePlugins(
 	return list.length > 0 ? list : undefined
 }
 
-function mergeBundleMatchers<T extends NeverBundleValue | AlwaysBundleValue>(
+function mergeBundleMatchers<T extends BundleMatchValue>(
 	userValue: T | undefined,
 	overlayValue: T | undefined,
 ): T | undefined {
@@ -234,22 +236,22 @@ function mergeBundleMatchers<T extends NeverBundleValue | AlwaysBundleValue>(
 		return [...toBundlePatternArray(userValue), ...toBundlePatternArray(overlayValue)] as T
 	}
 
-	const overlayFn = overlayIsFn ? overlayValue : createBundleMatcher(overlayValue)
-	const userFn = userIsFn ? userValue : createBundleMatcher(userValue)
+	const overlayFn = (overlayIsFn ? overlayValue : createBundleMatcher(overlayValue)) as (
+		...args: any[]
+	) => unknown
+	const userFn = (userIsFn ? userValue : createBundleMatcher(userValue)) as (
+		...args: any[]
+	) => unknown
 	return ((...args: any[]) =>
 		Boolean((overlayFn?.(...args) ?? false) || (userFn?.(...args) ?? false))) as T
 }
 
-function createBundleMatcher(
-	patterns: Exclude<NeverBundleValue | AlwaysBundleValue, BundleMatchFn | undefined>,
-): BundleMatchFn {
+function createBundleMatcher(patterns: BundlePatternValue): BundleMatchFn {
 	const normalized = toBundlePatternArray(patterns)
 	return (id: string) => normalized.some((pattern) => matchExternalPattern(pattern, id))
 }
 
-function toBundlePatternArray(
-	patterns: Exclude<NeverBundleValue | AlwaysBundleValue, BundleMatchFn | undefined>,
-): Array<string | RegExp> {
+function toBundlePatternArray(patterns: BundlePatternValue): Array<string | RegExp> {
 	return Array.isArray(patterns) ? patterns : [patterns]
 }
 

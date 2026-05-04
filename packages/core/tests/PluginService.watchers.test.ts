@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest'
 
-import { BasePlugin, Plugin, withHost } from '@pluxel/test'
+import { BasePlugin, Plugin, withCoreHost } from '@pluxel/core/test'
 
 describe('PluginService watchInstance()', () => {
 	it('tracks alias resolution from unavailable to started to replaced to removed', async () => {
-		await withHost(async (host) => {
+		await withCoreHost(async (host) => {
 			abstract class Abs extends BasePlugin {}
 
 			@Plugin(Abs, { name: 'WATCH-A' })
@@ -39,7 +39,7 @@ describe('PluginService watchInstance()', () => {
 	})
 
 	it('marks restart-only commits as touched and re-emits the restarted instance once', async () => {
-		await withHost(async (host) => {
+		await withCoreHost(async (host) => {
 			const seen: string[] = []
 			let seq = 0
 

@@ -1,5 +1,5 @@
 import { createFixture } from '@pluxel/test/fixtures'
-import { createContext } from '@pluxel/test'
+import { createRuntimeContext } from '@pluxel/runtime/test'
 import { describe, expect, it, vi } from 'vitest'
 
 import { attachHmrRuntime } from '@pluxel/hmr'
@@ -29,7 +29,7 @@ describe('@pluxel/hmr attachHmrRuntime', () => {
 			excludeGlobs: [],
 		}
 
-		const runtime = createContext({
+		const runtime = createRuntimeContext({
 			configService: { mode: 'memory' },
 			pluginData: { enabled: false },
 			packageService: { state: { enabled: false } },
@@ -75,7 +75,7 @@ describe('@pluxel/hmr attachHmrRuntime', () => {
 			excludeGlobs: [],
 		}
 
-		const runtime = createContext({
+		const runtime = createRuntimeContext({
 			configService: { mode: 'memory' },
 			pluginData: { enabled: false },
 			packageService: { state: { enabled: false } },

@@ -1,6 +1,7 @@
 import { dirname, resolve } from 'pathe'
 import type { PackageJson } from 'pkg-types'
 import picomatch from 'picomatch'
+import { PLUXEL_CONDITION_HMR } from '@pluxel/runtime/shared'
 import { toPosix, toRootRelative, uniqSorted } from './utils'
 import {
 	DEFAULT_IGNORED_DIR_NAMES,
@@ -72,7 +73,7 @@ function resolvePluginEntryAbs(pkgDirAbs: string, manifest: PackageJson): string
 	if (!exportsField || typeof exportsField !== 'object') return null
 	const dot = (exportsField as any)['.']
 	if (!dot || typeof dot !== 'object') return null
-	const hmr = (dot as any)['@pluxel/runtime']
+	const hmr = (dot as any)[PLUXEL_CONDITION_HMR]
 	if (typeof hmr !== 'string' || !hmr.trim()) return null
 
 	return resolve(pkgDirAbs, hmr)

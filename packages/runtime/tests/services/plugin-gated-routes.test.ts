@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { withContext } from '@pluxel/test'
+import { withRuntimeContext } from '@pluxel/runtime/test'
 import {
 	createElysiaApp,
 	createPluginGatedRouter,
@@ -23,7 +23,7 @@ const routes: PluginGatedModuleDef[] = [
 
 describe('plugin gated routes', () => {
 	it('returns 404 when plugin is disabled', async () => {
-		await withContext(async (ctx) => {
+		await withRuntimeContext(async (ctx) => {
 			ctx.configService.enableInConfig('PluginA')
 			const api = createPluginGatedRouter(ctx, routes)
 			const app = createElysiaApp(ctx, { aot: true })
@@ -35,7 +35,7 @@ describe('plugin gated routes', () => {
 	})
 
 	it('handles request when plugin is enabled', async () => {
-		await withContext(async (ctx) => {
+		await withRuntimeContext(async (ctx) => {
 			ctx.configService.enableInConfig('PluginB')
 			const api = createPluginGatedRouter(ctx, routes)
 			const app = createElysiaApp(ctx, { aot: true })
@@ -48,7 +48,7 @@ describe('plugin gated routes', () => {
 	})
 
 	it('computes a runtime snapshot of enabled plugins/routes', () => {
-		return withContext((ctx) => {
+		return withRuntimeContext((ctx) => {
 			ctx.configService.enableInConfig('PluginA')
 			const snap = getPluginRoutingSnapshot(ctx, routes)
 			expect(snap).toEqual({

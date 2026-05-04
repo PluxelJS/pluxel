@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { BasePlugin, ForkablePlugin, Plugin, setParamToken } from '@pluxel/test'
+import { BasePlugin, ForkablePlugin, Plugin, setParamToken } from '@pluxel/runtime/test'
 import type { ForkablePluginConstructor } from '@pluxel/core'
 import { LoaderService } from '@pluxel/runtime/services'
 import {

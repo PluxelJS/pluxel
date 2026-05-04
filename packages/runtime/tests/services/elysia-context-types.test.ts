@@ -1,4 +1,4 @@
-import '@pluxel/test/setup'
+import '@pluxel/runtime/test'
 
 import type { Context as PluginContext } from '@pluxel/core'
 import { expectTypeOf, it } from 'vitest'

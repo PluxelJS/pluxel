@@ -54,6 +54,7 @@
 	},
 	"devDependencies": {
 		"@tanstack/router-plugin": "1.167.9",
+		"@pluxel/workspace": "workspace:*",
 		"@types/react": "^19.2.14",
 		"@types/react-dom": "^19.2.3",
 		"@vitejs/plugin-react": "^5.1.4",

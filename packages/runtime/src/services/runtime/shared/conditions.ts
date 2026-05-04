@@ -1,10 +1,12 @@
-export const PLUXEL_CONDITION_HMR = '@pluxel/runtime' as const
+export const PLUXEL_CONDITION_HMR = '@pluxel/hmr' as const
 export const PLUXEL_CONDITION_SOURCE = '@pluxel/source' as const
 
 /**
- * Default export conditions used by Pluxel HMR when resolving workspace package entries.
+ * Default export conditions used by Pluxel HMR when resolving plugin package entries.
  *
  * Notes:
+ * - `@pluxel/hmr` is the plugin-package HMR source condition.
+ * - `@pluxel/source` is for internal workspace packages.
  * - `module` is kept for legacy fields that still key off it (some packages/tooling do).
  * - `default` is included to match Node's default export resolution behavior.
  */

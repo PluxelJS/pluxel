@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest'
-import { BasePlugin, Plugin, withHost } from '@pluxel/test'
+import { BasePlugin, Plugin, withCoreHost } from '@pluxel/core/test'
 
 describe('EventsService', () => {
 	it('auto-unsubscribes listeners when plugin is unloaded', async () => {
-		await withHost(async (host) => {
+		await withCoreHost(async (host) => {
 			@Plugin({ name: 'P' })
 			class P extends BasePlugin {
 				seen: string[] = []

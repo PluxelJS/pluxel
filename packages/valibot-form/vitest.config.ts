@@ -1,5 +1,5 @@
 import react from '@vitejs/plugin-react'
-import { definePluxelVitestConfig } from '../test/src/vitest.ts'
+import { definePluxelVitestConfig } from '@pluxel/test/vitest'
 
 export default definePluxelVitestConfig(
 	{

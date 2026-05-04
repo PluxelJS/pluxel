@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { withContext } from '@pluxel/test'
+import { withCoreContext } from '@pluxel/core/test'
 import { EffectsDisposedError, EffectsFrozenError } from '../src/services/effects/EffectsService'
 
 describe('EffectsService', () => {
 	it('defer: cancel prevents disposal; dispose is idempotent', async () => {
-		await withContext(async (ctx) => {
+		await withCoreContext(async (ctx) => {
 			let ran = 0
 
 			const g1 = ctx.effects.defer(() => {
@@ -25,7 +25,7 @@ describe('EffectsService', () => {
 	})
 
 	it('dispose drains re-entrant registrations in the same call', async () => {
-		await withContext(async (ctx) => {
+		await withCoreContext(async (ctx) => {
 			let ran = 0
 			ctx.effects.defer(() => {
 				ctx.effects.defer(() => {
@@ -39,7 +39,7 @@ describe('EffectsService', () => {
 	})
 
 	it('transaction freezes outer effects API but allows tx view', async () => {
-		await withContext(async (ctx) => {
+		await withCoreContext(async (ctx) => {
 			let ran = 0
 			await ctx.effects.transaction(async (tx) => {
 				expect(() => ctx.effects.defer(() => {})).toThrow(EffectsFrozenError)
@@ -54,7 +54,7 @@ describe('EffectsService', () => {
 	})
 
 	it('transaction rollback disposes checkpoint range', async () => {
-		await withContext(async (ctx) => {
+		await withCoreContext(async (ctx) => {
 			let ran = 0
 			await expect(
 				ctx.effects.transaction(async (tx) => {
@@ -72,7 +72,7 @@ describe('EffectsService', () => {
 	})
 
 	it('acquire releases immediately when registration fails (disposed)', async () => {
-		await withContext(async (ctx) => {
+		await withCoreContext(async (ctx) => {
 			let released = 0
 			await ctx.effects.dispose()
 			await expect(
@@ -88,7 +88,7 @@ describe('EffectsService', () => {
 	})
 
 	it('dispose aggregates errors (continue-on-error)', async () => {
-		await withContext(async (ctx) => {
+		await withCoreContext(async (ctx) => {
 			ctx.effects.defer(() => {
 				throw new Error('a')
 			})
@@ -101,7 +101,7 @@ describe('EffectsService', () => {
 	})
 
 	it('transaction preserves original error, but surfaces rollback errors too', async () => {
-		await withContext(async (ctx) => {
+		await withCoreContext(async (ctx) => {
 			await expect(
 				ctx.effects.transaction(async (tx) => {
 					tx.defer(() => {

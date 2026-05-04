@@ -2,11 +2,16 @@
 
 > Status: published dev-only. It is intended for tests/tooling, not for production runtime dependencies.
 
-Single test surface for Pluxel plugin/runtime tests:
+Core-side test surface for Pluxel plugin semantics:
 
 - Automatic core setup on import (`@pluxel/core/env` + services registration)
-- A minimal Host/Context API for integration/unit tests
+- A minimal core Host/Context API for integration/unit tests
 - An opinionated Vitest preset (optional)
+
+Runtime/HMR tests that need loader, config enabled bits, HTTP, vault, or runtime services should use
+`@pluxel/runtime/test`. This package intentionally does not register runtime services by default.
+The Host API is backed by `@pluxel/core/test`, so core lifecycle semantics have one shared
+implementation across test packages.
 
 Workspace tests can use `@pluxel/test/fixtures` for VFS-backed fixtures. External consumers should still prefer bringing their own fixture/fs library.
 Each fixture owns its own filesystem instance. Prefer `await using fixture = await createFixture(...)`, then pass `fixture.fs` / `fixture.fsp` into the code under test.
@@ -41,6 +46,10 @@ await withHost(async (host) => {
 	const p = host.require(P)
 })
 ```
+
+The host above is core-only: it exercises `Context` + `PluginService` lifecycle semantics without
+bootstrapping runtime services. Use `@pluxel/runtime/test` for tests whose behavior depends on the
+runtime host.
 
 ### Draft vs commit
 
@@ -103,6 +112,9 @@ Each package can keep its own `vitest.config.ts` (typically `export { default } 
 
 By default, `@pluxel/test/vitest` sets `passWithNoTests: !process.env.CI` to avoid breaking local workspace runs
 when some packages have no tests.
+
+The preset always enables the two Pluxel workspace conditions: internal packages resolve through
+`@pluxel/source`, and plugin packages resolve their HMR entry through `@pluxel/hmr`.
 
 If you prefer automatic discovery instead of maintaining globs:
 

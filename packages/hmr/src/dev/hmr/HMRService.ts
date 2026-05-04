@@ -613,7 +613,7 @@ export class HMRService {
 				}
 
 				// Builtins from dist: keep them stable and consistent across the runner cache.
-				// This avoids rewriting them to `exports["."].["@pluxel/runtime"]` TS sources which would
+				// This avoids rewriting them to HMR/source TS entries which would
 				// produce a different ctor identity and break `features.dep(BuiltinCtor)` integrations.
 				const builtinEntry = builtinsFromDist?.get(id)
 				if (builtinEntry) {

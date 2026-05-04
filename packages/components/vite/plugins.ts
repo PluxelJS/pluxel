@@ -1,6 +1,6 @@
 import react from '@vitejs/plugin-react'
 import { tanstackRouter } from '@tanstack/router-plugin/vite'
-import { fixRolldownUndefinedExportsPlugin } from '../../workspace/src/vite'
+import { fixRolldownUndefinedExportsPlugin } from '@pluxel/workspace/vite'
 import type { PluginOption } from 'vite'
 
 export function createWorkbenchFrontendPlugins(): PluginOption[] {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { BasePlugin, Plugin, setParamToken } from '@pluxel/test'
+import { BasePlugin, Plugin, setParamToken } from '@pluxel/runtime/test'
 import { LoaderService } from '@pluxel/runtime/services'
 import { EXTRA_DEP_OVERRIDES } from '../../src/services/runtime/loader/selection'
 import { createHmrTestContext } from '../support/hmr-context'

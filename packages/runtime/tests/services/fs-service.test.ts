@@ -1,4 +1,4 @@
-import { BasePlugin, Plugin, withHost } from '@pluxel/test'
+import { BasePlugin, Plugin, withRuntimeHost } from '@pluxel/runtime/test'
 import { describe, expect, it } from 'vitest'
 
 function randomHex(bytes: number): string {
@@ -18,7 +18,7 @@ describe('FsService (runtime)', () => {
 		const dir = `/fs/${randomHex(6)}`
 		const path = `${dir}/a.txt`
 
-		await withHost(
+		await withRuntimeHost(
 			async (host) => {
 				@Plugin({ name: 'P' })
 				class P extends BasePlugin {}

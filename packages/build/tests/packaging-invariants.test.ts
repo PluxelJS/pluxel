@@ -7,6 +7,7 @@ import { describe, expect, it } from 'vitest'
 type PackageJson = {
 	name?: string
 	private?: boolean
+	exports?: unknown
 	dependencies?: Record<string, string>
 	optionalDependencies?: Record<string, string>
 	peerDependencies?: Record<string, string>
@@ -50,6 +51,52 @@ async function collectWorkspacePackages(root: string) {
 
 	await walk(packagesDir, 3)
 	return out
+}
+
+function quotedStringPattern(value: string) {
+	const escaped = value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+	return new RegExp(`["'\`]${escaped}["'\`]`)
+}
+
+function forbiddenImportPattern(specifier: string) {
+	const escaped = specifier.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+	return new RegExp(`\\bfrom\\s*["'\`]${escaped}["'\`]`)
+}
+
+function collectExportConditions(exportsField: unknown): Set<string> {
+	const out = new Set<string>()
+	const visit = (value: unknown) => {
+		if (!value || typeof value !== 'object' || Array.isArray(value)) return
+		for (const [key, child] of Object.entries(value)) {
+			if (key.startsWith('@pluxel/')) out.add(key)
+			visit(child)
+		}
+	}
+	visit(exportsField)
+	return out
+}
+
+async function collectSourceFiles(dir: string): Promise<string[]> {
+	const out: string[] = []
+	const walk = async (current: string) => {
+		let entries
+		try {
+			entries = await readdir(current, { withFileTypes: true, encoding: 'utf8' })
+		} catch {
+			return
+		}
+		for (const ent of entries) {
+			if (ent.name === 'node_modules' || ent.name === 'dist' || ent.name === '.turbo') continue
+			const next = join(current, ent.name)
+			if (ent.isDirectory()) {
+				await walk(next)
+				continue
+			}
+			if (/\.(?:ts|tsx|mts|cts)$/.test(ent.name)) out.push(next)
+		}
+	}
+	await walk(dir)
+	return out.sort()
 }
 
 describe('packaging invariants', () => {
@@ -124,5 +171,133 @@ describe('packaging invariants', () => {
 				).toBe(true)
 			}
 		}
+	})
+
+	it('uses only real Pluxel export conditions', async () => {
+		const root = fileURLToPath(new URL('../../..', import.meta.url))
+		const workspace = await collectWorkspacePackages(root)
+		const allowed = new Set(['@pluxel/source', '@pluxel/hmr'])
+		const offenders: string[] = []
+
+		for (const meta of workspace.values()) {
+			const json = await readJson(meta.path)
+			for (const condition of collectExportConditions(json.exports)) {
+				if (!allowed.has(condition)) offenders.push(`${meta.path}: ${condition}`)
+			}
+		}
+
+		expect(
+			offenders,
+			'Pluxel export conditions are fixed: internals use @pluxel/source, plugin HMR uses @pluxel/hmr',
+		).toEqual([])
+	})
+
+	it('published packages explicitly bundle private workspace build-time imports', async () => {
+		const root = fileURLToPath(new URL('../../..', import.meta.url))
+
+		const packages = [
+			{
+				name: '@pluxel/core',
+				config: `${root}/packages/core/tsdown.config.ts`,
+				alwaysBundle: [
+					'@pluxel/context',
+					'@pluxel/context/*',
+					'@pluxel/core-di',
+					'@pluxel/core-di/*',
+				],
+			},
+			{
+				name: '@pluxel/runtime',
+				config: `${root}/packages/runtime/tsdown.config.ts`,
+				alwaysBundle: [
+					'@pluxel/workspace',
+					'@pluxel/workspace/*',
+					'valibot-form',
+					'valibot-form/*',
+				],
+			},
+			{
+				name: '@pluxel/hmr',
+				config: `${root}/packages/hmr/tsdown.config.ts`,
+				alwaysBundle: [
+					'@pluxel/build',
+					'@pluxel/build/*',
+					'@pluxel/workspace',
+					'@pluxel/workspace/*',
+				],
+			},
+			{
+				name: '@pluxel/cli',
+				config: `${root}/packages/cli/tsdown.config.ts`,
+				alwaysBundle: [
+					'@pluxel/build',
+					'@pluxel/build/*',
+					'@pluxel/workspace',
+					'@pluxel/workspace/*',
+				],
+			},
+			{
+				name: '@pluxel/test',
+				config: `${root}/packages/test/tsdown.config.ts`,
+				alwaysBundle: [
+					'@pluxel/build',
+					'@pluxel/build/*',
+					'@pluxel/workspace',
+					'@pluxel/workspace/*',
+				],
+			},
+		] as const
+
+		for (const pkg of packages) {
+			const config = await readFile(pkg.config, 'utf8')
+			for (const specifier of pkg.alwaysBundle) {
+				expect(
+					config,
+					`${pkg.name} must bundle private workspace import "${specifier}" in ${pkg.config}`,
+				).toMatch(quotedStringPattern(specifier))
+			}
+		}
+	})
+
+	it('core tests use core test host directly instead of the test package facade', async () => {
+		const root = fileURLToPath(new URL('../../..', import.meta.url))
+		const files = await collectSourceFiles(`${root}/packages/core`)
+		const allowed = new Set([
+			`${root}/packages/core/fsm/tests/macro-bake.test.ts`,
+			`${root}/packages/core/tests/PluxelOxlintPlugin.test.ts`,
+		])
+		const forbidden = forbiddenImportPattern('@pluxel/test')
+		const offenders: string[] = []
+
+		for (const file of files) {
+			if (allowed.has(file)) continue
+			const code = await readFile(file, 'utf8')
+			if (forbidden.test(code)) offenders.push(file)
+		}
+
+		expect(offenders, 'core package internals should import @pluxel/core/test, not @pluxel/test').toEqual(
+			[],
+		)
+	})
+
+	it('workspace vite helpers are consumed through the workspace package subpath', async () => {
+		const root = fileURLToPath(new URL('../../..', import.meta.url))
+		const files = [
+			...(await collectSourceFiles(`${root}/packages/components`)),
+			...(await collectSourceFiles(`${root}/packages/runtime`)),
+		]
+		const offenders: string[] = []
+
+		for (const file of files) {
+			const code = await readFile(file, 'utf8')
+			if (code.includes('../workspace/src/vite') || code.includes('../../workspace/src/vite')) {
+				offenders.push(file)
+			}
+		}
+
+		expect(
+			offenders,
+			'components/runtime should import workspace Vite helpers from @pluxel/workspace/vite',
+		).toEqual([])
 	})
 })

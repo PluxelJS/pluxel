@@ -34,6 +34,7 @@ export default defineConfig({
 		index: 'src/index.ts',
 		services: 'src/services/index.ts',
 		logger: 'src/logger/index.ts',
+		test: 'src/test.ts',
 	},
 	dts: {
 		sourcemap: true,

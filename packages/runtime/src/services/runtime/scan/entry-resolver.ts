@@ -1,5 +1,6 @@
 import { normalize, resolve as r } from 'pathe'
 import type { PackageJson } from 'pkg-types'
+import { PLUXEL_CONDITION_HMR } from '../shared/conditions'
 import { toDirectoryURLString } from '../shared/exsolve'
 import { getCachedResolver, resolveModulePath } from '../shared/resolution'
 import { nodeWorkspaceFs, safeReadManifest, type WorkspaceFs } from './fs'
@@ -189,8 +190,8 @@ function resolveHmrTarget(target: unknown): string | undefined {
 	}
 	if (typeof target === 'object') {
 		const record = target as Record<string, unknown>
-		if (record['@pluxel/runtime']) {
-			return resolveHmrTarget(record['@pluxel/runtime'])
+		if (record[PLUXEL_CONDITION_HMR]) {
+			return resolveHmrTarget(record[PLUXEL_CONDITION_HMR])
 		}
 	}
 	return undefined

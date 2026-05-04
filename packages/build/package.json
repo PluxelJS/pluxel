@@ -51,7 +51,7 @@
 		"test": "pnpm exec vitest run"
 	},
 	"devDependencies": {
-		"@pluxel/test": "workspace:*",
+		"fs-fixture": "^2.13.0",
 		"oxc-parser": "^0.115.0",
 		"pathe": "^2.0.3",
 		"pkg-types": "^2.3.0",

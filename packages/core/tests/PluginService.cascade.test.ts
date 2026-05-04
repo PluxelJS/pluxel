@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { BasePlugin, Plugin, setParamToken, withHost } from '@pluxel/test'
+import { BasePlugin, Plugin, setParamToken, withCoreHost } from '@pluxel/core/test'
 
 function defineDependentPair(prefix: string) {
 	@Plugin({ name: `${prefix}-A` })
@@ -18,7 +18,7 @@ function defineDependentPair(prefix: string) {
 }
 
 async function expectCascadeUnregisterFromDraft(opts?: { invalidateDraftFirst?: boolean }) {
-	await withHost(async (host) => {
+	await withCoreHost(async (host) => {
 		const { A, B } = defineDependentPair(
 			opts?.invalidateDraftFirst ? 'CASCADE-RECOVER' : 'CASCADE-DRAFT',
 		)
@@ -45,7 +45,7 @@ async function expectCascadeUnregisterFromDraft(opts?: { invalidateDraftFirst?: 
 
 describe('PluginService cascade options', () => {
 	it('rejects non-cascading unregisters that would leave a broken graph and restores the committed draft', async () => {
-		await withHost(async (host) => {
+		await withCoreHost(async (host) => {
 			const { A, B } = defineDependentPair('CASCADE-UNREG')
 
 			host.add([A, B])
@@ -73,7 +73,7 @@ describe('PluginService cascade options', () => {
 	})
 
 	it('restart without cascading only restarts the target plugin', async () => {
-		await withHost(async (host) => {
+		await withCoreHost(async (host) => {
 			@Plugin({ name: 'CASCADE-RESTART-A' })
 			class A extends BasePlugin {
 				public readonly id = Symbol('a')
@@ -111,7 +111,7 @@ describe('PluginService cascade options', () => {
 	})
 
 	it('restart fails early when the draft no longer has a provider for the requested root', async () => {
-		await withHost(async (host) => {
+		await withCoreHost(async (host) => {
 			const { A, B } = defineDependentPair('CASCADE-RESTART-MISSING')
 
 			host.add(A)
@@ -125,7 +125,7 @@ describe('PluginService cascade options', () => {
 	})
 
 	it('replace without cascading leaves existing dependents running and limits touched scope', async () => {
-		await withHost(async (host) => {
+		await withCoreHost(async (host) => {
 			abstract class Abs extends BasePlugin {}
 
 			@Plugin(Abs, { name: 'CASCADE-REPLACE-A' })

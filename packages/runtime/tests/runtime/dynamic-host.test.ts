@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { createDiskFixture as createFixture } from '@pluxel/test/fixtures'
-import { createContext } from '@pluxel/test'
+import { createRuntimeContext } from '@pluxel/runtime/test'
 
 describe('@pluxel/runtime Context bootstrap', () => {
 	it('boots core runtime services without any HMR/Vite layer', async () => {
@@ -8,7 +8,7 @@ describe('@pluxel/runtime Context bootstrap', () => {
 		const prev = process.cwd()
 		try {
 			process.chdir(fixture.path)
-			const runtime = createContext({
+			const runtime = createRuntimeContext({
 				profile: 'test',
 				configService: { mode: 'memory' },
 				packageService: {
@@ -33,7 +33,7 @@ describe('@pluxel/runtime Context bootstrap', () => {
 		const prev = process.cwd()
 		try {
 			process.chdir(fixture.path)
-			const runtime = createContext({
+			const runtime = createRuntimeContext({
 				profile: 'test',
 				configService: {
 					mode: 'readonly',
