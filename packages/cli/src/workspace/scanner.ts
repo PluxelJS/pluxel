@@ -1,4 +1,4 @@
-import { crawlFilesAbs, DEFAULT_IGNORED_DIR_NAMES } from '@pluxel/workspace'
+import { crawlFilesAbs, DEFAULT_IGNORED_DIR_NAMES } from '@pluxel/workspace/fs'
 import { dirname, relative, resolve } from 'pathe'
 
 export async function scanWorkspaceDirs(root: string, base?: string) {

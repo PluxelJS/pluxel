@@ -166,7 +166,6 @@ runRule('configs-use-no-private-field', pluxelRules['configs-use-no-private-fiel
 	],
 })
 
-
 runRule('features-use-top-level-class', pluxelRules['features-use-top-level-class'], {
 	valid: [
 		{
@@ -587,6 +586,119 @@ runRule('no-direct-logtape-get-logger', pluxelRules['no-direct-logtape-get-logge
 	],
 })
 
+runRule('no-workspace-root-import', pluxelRules['no-workspace-root-import'], {
+	valid: [
+		{
+			filename: '/repo/packages/runtime/src/services/runtime/scan/fs.ts',
+			code: "import { crawlFilesAbs } from '@pluxel/workspace/fs'",
+		},
+		{
+			filename: '/repo/packages/runtime/vite.config.ts',
+			code: "import { createPluxelUiChunkGroups } from '@pluxel/workspace/vite'",
+		},
+		{
+			filename: '/repo/packages/test/src/oxlint.ts',
+			code: "export * from '@pluxel/workspace/oxlint'",
+		},
+		{
+			filename: '/repo/packages/workspace/src/index.ts',
+			code: "export * from '@pluxel/workspace'",
+		},
+	],
+	invalid: [
+		{
+			filename: '/repo/packages/runtime/src/services/runtime/scan/fs.ts',
+			code: "import { crawlFilesAbs } from '@pluxel/workspace'",
+			errors: [{ messageId: 'root' }],
+		},
+		{
+			filename: '/repo/packages/cli/src/workspace/state.ts',
+			code: "export { loadWorkspaceInfo } from '@pluxel/workspace'",
+			errors: [{ messageId: 'root' }],
+		},
+		{
+			filename: '/repo/packages/hmr/src/diagnose/fs.ts',
+			code: "export * from '@pluxel/workspace'",
+			errors: [{ messageId: 'root' }],
+		},
+		{
+			filename: '/repo/packages/runtime/src/services/runtime/package/PackageService.ts',
+			code: "await import('@pluxel/workspace')",
+			errors: [{ messageId: 'root' }],
+		},
+	],
+})
+
+runRule(
+	'plugin-base-class-requires-plugin-registration',
+	pluxelRules['plugin-base-class-requires-plugin-registration'],
+	{
+		valid: [
+			{
+				code: `
+					@Plugin({ name: 'PluginA' })
+					class PluginA extends BasePlugin {}
+				`,
+			},
+			{
+				code: `
+					@Plugin({ name: 'PluginA' })
+					class PluginA extends ForkablePlugin {}
+				`,
+			},
+			{
+				code: `
+					abstract class PluginBase extends BasePlugin {}
+				`,
+			},
+			{
+				code: `
+					class PluginA extends BasePlugin {}
+					Plugin({ name: 'PluginA' })(PluginA)
+				`,
+			},
+			{
+				code: `
+					const PluginA = class extends BasePlugin {}
+					Plugin({ name: 'PluginA' })(PluginA)
+				`,
+			},
+			{
+				code: `
+					class PluginA extends runtime.BasePlugin {}
+					runtime.Plugin({ name: 'PluginA' })(PluginA)
+				`,
+			},
+		],
+		invalid: [
+			{
+				code: `
+					class PluginA extends BasePlugin {}
+				`,
+				errors: [{ messageId: 'missing' }],
+			},
+			{
+				code: `
+					class PluginA extends ForkablePlugin {}
+				`,
+				errors: [{ messageId: 'missing' }],
+			},
+			{
+				code: `
+					export class PluginA extends runtime.BasePlugin {}
+				`,
+				errors: [{ messageId: 'missing' }],
+			},
+			{
+				code: `
+					const PluginA = class extends BasePlugin {}
+				`,
+				errors: [{ messageId: 'missing' }],
+			},
+		],
+	},
+)
+
 runRule(
 	'plugin-constructor-no-type-only-imports',
 	pluxelRules['plugin-constructor-no-type-only-imports'],
@@ -765,11 +877,7 @@ runRule('runtime-type-augmentations', pluxelRules['runtime-type-augmentations'],
 					}
 				}
 			`,
-			errors: [
-				{ messageId: 'webRpc' },
-				{ messageId: 'webSse' },
-				{ messageId: 'webSignalDb' },
-			],
+			errors: [{ messageId: 'webRpc' }, { messageId: 'webSse' }, { messageId: 'webSignalDb' }],
 		},
 		{
 			code: `

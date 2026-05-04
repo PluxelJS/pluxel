@@ -53,6 +53,11 @@ export const pluxelRulePolicy = {
 		buildCritical: false,
 		remediation: 'diagnostic',
 	},
+	'no-workspace-root-import': {
+		category: 'correctness',
+		buildCritical: true,
+		remediation: 'diagnostic',
+	},
 	'features-use-top-level-class': {
 		category: 'correctness',
 		buildCritical: true,
@@ -69,6 +74,11 @@ export const pluxelRulePolicy = {
 		remediation: 'diagnostic',
 	},
 	'features-try-use-no-static-load': {
+		category: 'correctness',
+		buildCritical: true,
+		remediation: 'diagnostic',
+	},
+	'plugin-base-class-requires-plugin-registration': {
 		category: 'correctness',
 		buildCritical: true,
 		remediation: 'diagnostic',

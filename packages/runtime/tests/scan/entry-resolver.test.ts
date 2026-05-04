@@ -42,9 +42,8 @@ describe('EntryResolver preferHmrExports', () => {
 		const options: ResolvedScanOptions = { ...baseOptions, preferHmrExports: true }
 		const result = await resolver.resolve(fixture.path, options)
 		expect(result.ok).toBe(true)
-		if (result.ok) {
-			expect(result.entry.replaceAll('\\', '/').endsWith('/src/wretch.ts')).toBe(true)
-		}
+		if (!result.ok) throw new Error('expected entry resolution to succeed')
+		expect(result.entry.replaceAll('\\', '/').endsWith('/src/wretch.ts')).toBe(true)
 	})
 
 	test('falls back to default export when disabled', async () => {
@@ -53,8 +52,7 @@ describe('EntryResolver preferHmrExports', () => {
 		const options: ResolvedScanOptions = { ...baseOptions, preferHmrExports: false }
 		const result = await resolver.resolve(fixture.path, options)
 		expect(result.ok).toBe(true)
-		if (result.ok) {
-			expect(result.entry.replaceAll('\\', '/').endsWith('/dist/wretch.mjs')).toBe(true)
-		}
+		if (!result.ok) throw new Error('expected entry resolution to succeed')
+		expect(result.entry.replaceAll('\\', '/').endsWith('/dist/wretch.mjs')).toBe(true)
 	})
 })

@@ -6,7 +6,12 @@ export default defineConfig({
 	},
 	deps: {
 		// Internal/private workspace packages must be bundled into the published artifact.
-		alwaysBundle: ['@pluxel/build', '@pluxel/build/*', '@pluxel/workspace', '@pluxel/workspace/*'],
+		alwaysBundle: [
+			'@pluxel/build',
+			'@pluxel/build/*',
+			'@pluxel/workspace/fs',
+			'@pluxel/workspace/info',
+		],
 		onlyBundle: ['fdir'],
 		neverBundle: ['@pluxel/core', '@pluxel/runtime', 'vite', 'vite/*'],
 	},

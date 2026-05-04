@@ -422,10 +422,10 @@ export class LoaderService {
 		options: { exclude?: Iterable<string> } = {},
 	): Promise<readonly string[]> {
 		const seen = new Set<string>()
-		const excluded = new Set(options.exclude ?? [])
+		const excluded = options.exclude ? new Set(options.exclude) : undefined
 		const synced: string[] = []
 		for (const moduleId of moduleIds) {
-			if (excluded.has(moduleId)) continue
+			if (excluded?.has(moduleId)) continue
 			if (seen.has(moduleId)) continue
 			seen.add(moduleId)
 			await this.syncRuntimeForModule(moduleId)

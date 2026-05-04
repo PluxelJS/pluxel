@@ -9,7 +9,7 @@ describe('normalizeSchemaSource', () => {
 		parseSync(filename, code, { sourceType: 'module', lang: 'ts' }).program
 
 	const t = (name: string, input: string, expected: string) => {
-		it(name, () => {
+		it(`${name}`, () => {
 			const actual = normalizeSchemaSource(input, parseProgram)
 			expect(actual).toBe(expected)
 		})

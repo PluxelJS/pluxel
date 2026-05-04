@@ -34,6 +34,51 @@ function isPluginClass(node: unknown): boolean {
 		: false
 }
 
+function getClassDeclarationName(node: OxNode): string | null {
+	const id = getNodeField(node, 'id')
+	return id?.type === 'Identifier' && typeof id.name === 'string' ? id.name : null
+}
+
+function getVariableDeclaratorName(node: OxNode): string | null {
+	const id = getNodeField(node, 'id')
+	return id?.type === 'Identifier' && typeof id.name === 'string' ? id.name : null
+}
+
+function isAbstractClass(node: OxNode): boolean {
+	if (node.abstract === true) return true
+	const modifiers = Array.isArray(node.modifiers) ? node.modifiers : []
+	return modifiers.some((modifier) => isNodeLike(modifier) && modifier.type === 'TSAbstractKeyword')
+}
+
+function isPluginBaseSuperClass(node: unknown): boolean {
+	const expression = unwrapExpression(node)
+	if (!expression) return false
+	if (expression.type === 'Identifier') {
+		return expression.name === 'BasePlugin' || expression.name === 'ForkablePlugin'
+	}
+	if (expression.type !== 'MemberExpression') return false
+	const propertyName = getStaticPropertyName(expression.property, Boolean(expression.computed))
+	return propertyName === 'BasePlugin' || propertyName === 'ForkablePlugin'
+}
+
+function isPluginDecoratorFactory(node: unknown): boolean {
+	const expression = unwrapExpression(node)
+	if (!expression) return false
+	if (expression.type === 'Identifier') return expression.name === 'Plugin'
+	if (expression.type !== 'MemberExpression') return false
+	return getStaticPropertyName(expression.property, Boolean(expression.computed)) === 'Plugin'
+}
+
+function getPluginDecoratorApplicationTargetName(node: OxNode): string | null {
+	const call = unwrapExpression(node)
+	if (!call || call.type !== 'CallExpression') return null
+	const callee = unwrapExpression(call.callee)
+	if (!callee || callee.type !== 'CallExpression') return null
+	if (!isPluginDecoratorFactory(callee.callee)) return null
+	const firstArg = getCallFirstArg(call)
+	return firstArg?.type === 'Identifier' && typeof firstArg.name === 'string' ? firstArg.name : null
+}
+
 function isThisFeaturesUseCall(node: unknown): boolean {
 	return isThisFeaturesCall(node, 'use')
 }
@@ -108,7 +153,9 @@ function isDefineOptionalFeatureCall(node: unknown): node is OxNode {
 	if (!callee) return false
 	if (callee.type === 'Identifier') return callee.name === 'defineOptionalFeature'
 	if (callee.type !== 'MemberExpression') return false
-	return getStaticPropertyName(callee.property, Boolean(callee.computed)) === 'defineOptionalFeature'
+	return (
+		getStaticPropertyName(callee.property, Boolean(callee.computed)) === 'defineOptionalFeature'
+	)
 }
 
 function getOptionalFeatureLoadFunction(node: OxNode): OxNode | null {
@@ -453,20 +500,20 @@ const featuresTryUseNoClassField = createRule(
 				'`this.features.tryUse(...)` must not run in a constructor. Call it in `init()` or another runtime method so optional feature activation stays out of construction-time wiring.',
 		},
 	},
-		(context) => ({
-			CallExpression(node) {
-				if (!isThisFeaturesTryUseCall(node)) return
-				const ancestors = context.sourceCode.getAncestors(node)
-				const boundary = getNearestTryUseBoundary(ancestors)
-				if (boundary?.type === 'PropertyDefinition') {
-					report(context, node, 'classField')
-					return
-				}
-				if (boundary?.type === 'MethodDefinition' && boundary.kind === 'constructor') {
-					report(context, node, 'constructor')
-				}
-			},
-		}),
+	(context) => ({
+		CallExpression(node) {
+			if (!isThisFeaturesTryUseCall(node)) return
+			const ancestors = context.sourceCode.getAncestors(node)
+			const boundary = getNearestTryUseBoundary(ancestors)
+			if (boundary?.type === 'PropertyDefinition') {
+				report(context, node, 'classField')
+				return
+			}
+			if (boundary?.type === 'MethodDefinition' && boundary.kind === 'constructor') {
+				report(context, node, 'constructor')
+			}
+		},
+	}),
 )
 
 const featuresTryUseRequiresDefinedSpec = createRule(
@@ -608,6 +655,52 @@ const featuresTryUseNoStaticLoad = createRule(
 	},
 )
 
+const pluginBaseClassRequiresPluginRegistration = createRule(
+	{
+		type: 'problem',
+		docs: {
+			description:
+				'Require concrete classes that directly extend plugin base classes to be registered with @Plugin or Plugin(...)(ClassName)',
+		},
+		messages: {
+			missing:
+				'`{{name}}` extends a Pluxel plugin base class but is not registered. Add `@Plugin(...)` above the class, or call `Plugin(...)(ClassName)` in this module if decorator syntax is not available.',
+		},
+	},
+	(context) => ({
+		Program(node) {
+			const candidates = new Map<string, OxNode>()
+			const registered = new Set<string>()
+			const collectClass = (name: string | null, classNode: OxNode) => {
+				if (name && !isAbstractClass(classNode) && isPluginBaseSuperClass(classNode.superClass)) {
+					if (hasNamedDecorator(classNode, 'Plugin')) registered.add(name)
+					else candidates.set(name, classNode)
+				}
+			}
+			walkNode(node, context.sourceCode.visitorKeys, (candidate) => {
+				if (candidate.type === 'ClassDeclaration') {
+					collectClass(getClassDeclarationName(candidate), candidate)
+					return undefined
+				}
+				if (candidate.type === 'VariableDeclarator') {
+					const init = unwrapExpression(candidate.init)
+					if (init?.type === 'ClassExpression') {
+						collectClass(getVariableDeclaratorName(candidate), init)
+					}
+					return undefined
+				}
+				if (candidate.type !== 'CallExpression') return undefined
+				const targetName = getPluginDecoratorApplicationTargetName(candidate)
+				if (targetName) registered.add(targetName)
+				return undefined
+			})
+			for (const [name, candidate] of candidates) {
+				if (!registered.has(name)) report(context, candidate, 'missing', { name })
+			}
+		},
+	}),
+)
+
 const pluginConstructorNoTypeOnlyImports = createRule(
 	{
 		type: 'problem',
@@ -658,5 +751,6 @@ export const pluginsRules: Record<string, OxRule> = {
 	'features-try-use-no-class-field': featuresTryUseNoClassField,
 	'features-try-use-requires-defined-spec': featuresTryUseRequiresDefinedSpec,
 	'features-try-use-no-static-load': featuresTryUseNoStaticLoad,
+	'plugin-base-class-requires-plugin-registration': pluginBaseClassRequiresPluginRegistration,
 	'plugin-constructor-no-type-only-imports': pluginConstructorNoTypeOnlyImports,
 }

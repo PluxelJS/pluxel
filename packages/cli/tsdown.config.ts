@@ -4,7 +4,8 @@ import { defineConfig } from 'tsdown'
 const buildRoot = fileURLToPath(new URL('../build/src', import.meta.url))
 const buildCli = fileURLToPath(new URL('../build/src/cli/index.ts', import.meta.url))
 const buildRolldown = fileURLToPath(new URL('../build/src/rolldown/index.ts', import.meta.url))
-const workspaceIndex = fileURLToPath(new URL('../workspace/src/index.ts', import.meta.url))
+const workspaceFs = fileURLToPath(new URL('../workspace/src/fs-entry.ts', import.meta.url))
+const workspaceInfo = fileURLToPath(new URL('../workspace/src/info-entry.ts', import.meta.url))
 const reactDevtoolsCoreStub = fileURLToPath(
 	new URL('./src/vendor/react-devtools-core.ts', import.meta.url),
 )
@@ -26,8 +27,8 @@ export default defineConfig({
 		alwaysBundle: [
 			'@pluxel/build',
 			'@pluxel/build/*',
-			'@pluxel/workspace',
-			'@pluxel/workspace/*',
+			'@pluxel/workspace/fs',
+			'@pluxel/workspace/info',
 			'react',
 			'react/*',
 			'ink',
@@ -38,7 +39,8 @@ export default defineConfig({
 		'@pluxel/build': buildRoot,
 		'@pluxel/build/cli': buildCli,
 		'@pluxel/build/rolldown': buildRolldown,
-		'@pluxel/workspace': workspaceIndex,
+		'@pluxel/workspace/fs': workspaceFs,
+		'@pluxel/workspace/info': workspaceInfo,
 		'react-devtools-core': reactDevtoolsCoreStub,
 	},
 	dts: {

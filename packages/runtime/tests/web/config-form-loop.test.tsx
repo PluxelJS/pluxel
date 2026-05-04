@@ -531,7 +531,7 @@ describe('ConfigForm loop safety', () => {
 		}) as typeof console.error
 	}
 
-	async function exerciseTypingLoop(ui: ReactNode, dirtySelector: string | null) {
+	async function exerciseTypingLoop(ui: ReactNode, dirtySelector: string) {
 		captureConsoleErrors()
 		const { container, root } = await mount(ui)
 		try {
@@ -546,7 +546,7 @@ describe('ConfigForm loop safety', () => {
 			})
 
 			expect(consoleErrors.join('\n')).not.toContain('Maximum update depth exceeded')
-			if (dirtySelector) expect(container.querySelector(dirtySelector)).toBeTruthy()
+			expect(container.querySelector(dirtySelector)).toBeTruthy()
 		} finally {
 			await act(async () => {
 				root.unmount()
@@ -555,18 +555,22 @@ describe('ConfigForm loop safety', () => {
 	}
 
 	it('does not hit maximum update depth while typing with active toc enabled', async () => {
+		expect.hasAssertions()
 		await exerciseTypingLoop(<Harness active />, '[data-dirty="true"]')
 	})
 
 	it('does not hit maximum update depth with live workbench aside mounted', async () => {
+		expect.hasAssertions()
 		await exerciseTypingLoop(<WorkbenchHarness active />, '[data-dirty="true"]')
 	})
 
 	it('does not hit maximum update depth in cfg layout mode', async () => {
+		expect.hasAssertions()
 		await exerciseTypingLoop(<LayoutHarness active />, '[data-dirty="true"]')
 	})
 
 	it('does not loop when workbench dirty propagation recreates setActiveTabDirty', async () => {
+		expect.hasAssertions()
 		await exerciseTypingLoop(<RightPaneDirtyHarness />, '[data-tab-dirty="true"]')
 	})
 

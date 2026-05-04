@@ -102,7 +102,7 @@ describe('buildPluginUiRemote', () => {
 			minify: false,
 		})
 
-		await access(first.manifestPath)
-		await access(second.manifestPath)
+		await expect(access(first.manifestPath)).resolves.toBeUndefined()
+		await expect(access(second.manifestPath)).resolves.toBeUndefined()
 	}, 45_000)
 })

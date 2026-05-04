@@ -126,13 +126,12 @@ describe('build-time validations and registry ops', () => {
 				x.kind === 'CircularDependency',
 		)
 		expect(Boolean(cycle)).toBe(true)
+		if (!cycle) throw new Error('expected circular dependency verification error')
 		// 链名字应包含环
-		if (cycle) {
-			const names = cycle.chain.map(idName)
-			expect(names.join(' -> ')).toContain('Circular1')
-			expect(names.join(' -> ')).toContain('Circular2')
-			expect(names.join(' -> ')).toContain('Circular3')
-		}
+		const names = cycle.chain.map(idName)
+		expect(names.join(' -> ')).toContain('Circular1')
+		expect(names.join(' -> ')).toContain('Circular2')
+		expect(names.join(' -> ')).toContain('Circular3')
 	})
 
 	it('does not throw circular dependency error when different classes with the same name are used', () => {

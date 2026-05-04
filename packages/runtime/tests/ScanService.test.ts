@@ -160,8 +160,7 @@ describe('ScanService without package.json (ts-only)', () => {
 		})
 		const entry = await service.resolveEntry({ dir: tsOnlyRoot })
 		expect(entry.ok).toBe(true)
-		if (entry.ok) {
-			expect(asPosix(entry.entry)).toMatch(/\/index\.ts$/)
-		}
+		if (!entry.ok) throw new Error('expected fallback entry resolution to succeed')
+		expect(asPosix(entry.entry)).toMatch(/\/index\.ts$/)
 	})
 })

@@ -46,12 +46,12 @@ describe('BatchDebouncer waitForIdle', () => {
 
 			d.push('a')
 			const p = d.waitForIdle({ timeoutMs: 50 })
-			const assertion = expect(p).rejects.toMatchObject({ name: 'HmrIdleTimeoutError' })
+			const assertion = p.catch((error: unknown) => error)
 
 			await vi.advanceTimersByTimeAsync(10) // schedule flush
 			await vi.advanceTimersByTimeAsync(50) // idle timeout
 
-			await assertion
+			await expect(assertion).resolves.toMatchObject({ name: 'HmrIdleTimeoutError' })
 		} finally {
 			vi.useRealTimers()
 		}

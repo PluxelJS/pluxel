@@ -7,7 +7,7 @@ import {
 	safeReadManifestWithFs,
 	crawlFilesAbsWithFs,
 	type WorkspaceFs,
-} from '@pluxel/workspace'
+} from '@pluxel/workspace/fs'
 import { extname, isAbsolute, normalize, resolve } from 'pathe'
 import { createLimiter } from './limit'
 

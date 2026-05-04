@@ -110,7 +110,7 @@ describe('Decorator-required plugin deps', () => {
 
 			const RequiresKv = () => UsePluginId(KvPlugin)
 
-			class Base extends BasePlugin {
+			abstract class Base extends BasePlugin {
 				@RequiresKv()
 				async id() {
 					return 'local'

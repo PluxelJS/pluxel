@@ -4,41 +4,26 @@ import { useCurrentPathname } from './router/useCurrentRoute'
 
 type AppErrorBoundaryProps = {
 	children: ReactNode
-	resetKey: string
+	pathname: string
 }
 
 type AppErrorBoundaryState = {
 	error: Error | null
-	errorKey: string | null
 }
 
 class AppErrorBoundaryImpl extends Component<AppErrorBoundaryProps, AppErrorBoundaryState> {
-	state: AppErrorBoundaryState = { error: null, errorKey: null }
+	state: AppErrorBoundaryState = { error: null }
 
 	static getDerivedStateFromError(error: Error): AppErrorBoundaryState {
-		return { error, errorKey: null }
+		return { error }
 	}
 
 	override componentDidCatch(error: Error, info: ErrorInfo) {
-		if (this.state.errorKey !== this.props.resetKey) {
-			this.setState({ errorKey: this.props.resetKey })
-		}
 		console.error('[AppErrorBoundary] route error', {
-			path: this.props.resetKey,
+			path: this.props.pathname,
 			error,
 			componentStack: info.componentStack,
 		})
-	}
-
-	override componentDidUpdate(prevProps: AppErrorBoundaryProps) {
-		if (
-			this.state.error &&
-			this.state.errorKey &&
-			prevProps.resetKey !== this.props.resetKey &&
-			this.props.resetKey !== this.state.errorKey
-		) {
-			this.setState({ error: null, errorKey: null })
-		}
 	}
 
 	override render() {
@@ -51,5 +36,9 @@ class AppErrorBoundaryImpl extends Component<AppErrorBoundaryProps, AppErrorBoun
 
 export function AppErrorBoundary({ children }: { children: ReactNode }) {
 	const pathname = useCurrentPathname()
-	return <AppErrorBoundaryImpl resetKey={pathname}>{children}</AppErrorBoundaryImpl>
+	return (
+		<AppErrorBoundaryImpl key={pathname} pathname={pathname}>
+			{children}
+		</AppErrorBoundaryImpl>
+	)
 }

@@ -5,6 +5,8 @@ const fastBuild = process.env.PLUXEL_FAST_BUILD === 'true'
 export default defineConfig({
 	entry: {
 		index: './src/index.ts',
+		fs: './src/fs-entry.ts',
+		info: './src/info-entry.ts',
 		oxlint: './src/oxlint/index.ts',
 	},
 	dts: {

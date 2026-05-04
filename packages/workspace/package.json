@@ -14,6 +14,14 @@
 			"@pluxel/source": "./src/index.ts",
 			"default": "./dist/index.mjs"
 		},
+		"./fs": {
+			"@pluxel/source": "./src/fs-entry.ts",
+			"default": "./dist/fs.mjs"
+		},
+		"./info": {
+			"@pluxel/source": "./src/info-entry.ts",
+			"default": "./dist/info.mjs"
+		},
 		"./oxlint": {
 			"@pluxel/source": "./src/oxlint/index.ts",
 			"default": "./dist/oxlint.mjs"

@@ -3,14 +3,20 @@ import { defineConfig } from 'tsdown'
 import PreprocessorDirectives from 'unplugin-preprocessor-directives/rollup'
 
 const valibotFormSrc = fileURLToPath(new URL('../valibot-form/src', import.meta.url))
-const workspaceIndex = fileURLToPath(new URL('../workspace/src/index.ts', import.meta.url))
+const workspaceFs = fileURLToPath(new URL('../workspace/src/fs-entry.ts', import.meta.url))
+const workspaceInfo = fileURLToPath(new URL('../workspace/src/info-entry.ts', import.meta.url))
 
 export default defineConfig({
 	exports: {
 		devExports: '@pluxel/source',
 	},
 	deps: {
-		alwaysBundle: ['@pluxel/workspace', '@pluxel/workspace/*', 'valibot-form', 'valibot-form/*'],
+		alwaysBundle: [
+			'@pluxel/workspace/fs',
+			'@pluxel/workspace/info',
+			'valibot-form',
+			'valibot-form/*',
+		],
 		neverBundle: [
 			'@pluxel/core',
 			'@pluxel/core/services',
@@ -45,7 +51,8 @@ export default defineConfig({
 	copy: ['public'],
 	alias: {
 		'~': valibotFormSrc,
-		'@pluxel/workspace': workspaceIndex,
+		'@pluxel/workspace/fs': workspaceFs,
+		'@pluxel/workspace/info': workspaceInfo,
 	},
 	tsconfig: './tsconfig.json',
 	dts: {

@@ -80,13 +80,12 @@ describe('@pluxel/ops core v2', () => {
 
 		const result = await op.invoke({ value: 0 })
 		expect(result.ok).toBe(false)
-		if (!result.ok) {
-			expect(result.error).toBeInstanceOf(errors.OpError)
-			expect(result.error.code).toBe('E_INPUT_VALIDATION')
-			expect(result.error.details).toEqual({
-				issues: [{ message: 'value must be positive', path: ['value'], code: 'positive' }],
-			})
-		}
+		if (result.ok) throw new Error('expected input validation to fail')
+		expect(result.error).toBeInstanceOf(errors.OpError)
+		expect(result.error.code).toBe('E_INPUT_VALIDATION')
+		expect(result.error.details).toEqual({
+			issues: [{ message: 'value must be positive', path: ['value'], code: 'positive' }],
+		})
 	})
 
 	it('runs output schema validation before validateOutput', async () => {
