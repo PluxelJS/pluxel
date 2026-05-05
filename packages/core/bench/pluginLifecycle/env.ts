@@ -9,8 +9,7 @@ const numberFromEnvInt = (key: string, fallback: number) =>
 	Math.max(1, Math.floor(numberFromEnv(key, fallback)))
 
 export const benchOptions = {
-	// Accuracy-first defaults: benchmarks are meant to find real bottlenecks,
-	// not to be "CI fast". Override via env if you want quick local iteration.
+	// Stable defaults; override env vars for quick local probes.
 	timeMs: numberFromEnv('PLUXEL_BENCH_TIME', 2_000),
 	warmupTimeMs: numberFromEnv('PLUXEL_BENCH_WARMUP_TIME', 1_000),
 	warmupIterations: numberFromEnv('PLUXEL_BENCH_WARMUP_ITERATIONS', 60),
@@ -21,18 +20,18 @@ export const tolerancePct = numberFromEnv('PLUXEL_BENCH_TOLERANCE', 5)
 export const strictMode = process.env.PLUXEL_BENCH_STRICT === '1'
 export const debugBench = process.env.DEBUG_BENCH === '1'
 
-// Representative topology sizes (defaults aim to surface bottlenecks).
+// Topology sizes.
 export const scenarioSizes = {
 	starLeaves: numberFromEnvInt('PLUXEL_BENCH_STAR_LEAVES', 200),
 	chainLength: numberFromEnvInt('PLUXEL_BENCH_CHAIN_LENGTH', 200),
-	// Extra "background" plugins to simulate real-world baselines where most plugins are independent.
+	// Background plugins for large-app scaling.
 	bigIndependent: numberFromEnvInt('PLUXEL_BENCH_BIG_INDEPENDENT', 800),
-	// How many incremental ops per task invocation (higher = more "steady-state" realism).
-	loops: numberFromEnvInt('PLUXEL_BENCH_LOOPS', 6),
-	// Keys injected via declared config fields (measures config injection cost on restart).
+	// Declared config fields.
 	configKeys: numberFromEnvInt('PLUXEL_BENCH_CONFIG_KEYS', 200),
 }
 
-export const writeBaseline = process.env.PLUXEL_BENCH_WRITE_BASELINE === '1'
+export const referenceEnvPath = process.env.PLUXEL_BENCH_REFERENCE
 
-export const baselineEnvPath = process.env.PLUXEL_BENCH_BASELINE
+export const outputDirEnvPath = process.env.PLUXEL_BENCH_OUTPUT_DIR
+
+export const verboseBench = process.env.PLUXEL_BENCH_VERBOSE === '1'

@@ -12,6 +12,7 @@
     "test:watch": "vitest",
     "build": "turbo run build --filter=!@pluxel/plugins-host",
     "build:full": "turbo run build --force --filter=!@pluxel/plugins-host",
+    "bench:core:compare": "scripts/core-bench-compare.sh",
     "lint": "oxlint -c oxlint.config.ts --report-unused-disable-directives-severity=error packages scripts oxlint.config.ts vitest.config.ts pncat.config.ts",
     "lint:fix": "oxlint -c oxlint.config.ts --report-unused-disable-directives-severity=error packages scripts oxlint.config.ts vitest.config.ts pncat.config.ts --fix",
     "format": "oxfmt -c .oxfmtrc.json --ignore-path .gitignore --ignore-path .oxfmtignore --write .",
