@@ -50,7 +50,7 @@
 	"devDependencies": {
 		"option-t": "^55.1.2",
 		"reflect-metadata": "^0.2.2",
-		"tsdown": "^0.21.10",
+		"tsdown": "^0.22.0",
 		"typescript": "^6.0.3"
 	},
 	"browserslist": [

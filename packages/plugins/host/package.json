@@ -14,15 +14,15 @@
 		"@pluxel/runtime": "workspace:*"
 	},
 	"devDependencies": {
-		"@mantine/core": "^9.1.1",
-		"@mantine/hooks": "^9.1.1",
+		"@mantine/core": "^9.2.1",
+		"@mantine/hooks": "^9.2.1",
 		"@pluxel/cli": "workspace:*",
 		"@tabler/icons-react": "^3.37.1",
 		"@types/react": "^19.2.14",
 		"@types/react-dom": "^19.2.3",
 		"pathe": "^2.0.3",
-		"react": "^19.2.5",
-		"react-dom": "^19.2.5",
+		"react": "^19.2.6",
+		"react-dom": "^19.2.6",
 		"tinypool": "^2.1.0"
 	}
 }

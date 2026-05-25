@@ -73,7 +73,7 @@
 		"@pluxel/test": "workspace:*",
 		"@pluxel/workspace": "workspace:*",
 		"superjson": "^2.2.6",
-		"tsdown": "^0.21.10",
+		"tsdown": "^0.22.0",
 		"typescript": "^6.0.3"
 	},
 	"inlinedDependencies": {
