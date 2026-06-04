@@ -12,7 +12,9 @@
 
 如果你在看插件前端链路，建议同时看：
 
-- `docs/architecture/frontend.md`
+- `docs/RUNTIME.md`
+- `docs/HMR.md`
+- `docs/FRONTEND.md`
 - `packages/plugins/host/src/demo/README.md`
 
 ## Run

@@ -4,9 +4,10 @@
 
 仓库级约束与设计目标见：
 
-- `docs/architecture/system.md`
-- `docs/governance/packaging.md`
-- `docs/governance/agent-rules.md`
+- `docs/CORE.md`
+- `docs/CONFIG.md`
+- `docs/GOVERNANCE.md`
+- `docs/proposals/README.md`
 
 ## Public Surface (package exports)
 

@@ -16,7 +16,7 @@ Current status:
 - benchmark command: `pnpm --filter @pluxel/core-di bench`
 - benchmark confidence: `PLUXEL_DI_BENCH_ROUNDS=3 pnpm --filter @pluxel/core-di bench`
 - latest benchmark report: `./benchmarks/core-di-vs-diod.md`
-- design source of truth: `docs/design/core-di/overview.md`
+- design source of truth: `docs/proposals/README.md`
 - implementation design: `./DESIGN.md`
 
 This package should stay private until the design is proven against real core/plugin lifecycle needs.

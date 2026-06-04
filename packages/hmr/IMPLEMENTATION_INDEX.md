@@ -4,7 +4,8 @@
 
 前端整条链路说明见：
 
-- [`docs/architecture/frontend.md`](../../docs/architecture/frontend.md)
+- [`docs/HMR.md`](../../docs/HMR.md)
+- [`docs/FRONTEND.md`](../../docs/FRONTEND.md)
 
 如果你是为了追“为什么 `ui(...).bind(ctx)` 最终会变成 packaged remote”，优先按下面顺序看：
 

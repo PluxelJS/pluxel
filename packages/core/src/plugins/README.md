@@ -9,7 +9,8 @@
 
 权威设计文档见：
 
-- `docs/design/plugin-feature/overview.md`
+- `docs/CORE.md`
+- `docs/CONFIG.md`
 
 这份 README 只保留实现入口和当前实现基线，不再承担完整设计收敛说明。
 
@@ -31,7 +32,7 @@
 - `dep()`：运行期 optional integration primitive
 - plugin constructor：只表达 required deps
 
-`tryUse()` 的边界以 `docs/design/plugin-feature/overview.md` 为准，不要再回到旧的“所有 feature 都一套模型”。
+`tryUse()` 的边界以 `docs/CORE.md` 为准，不要再回到旧的“所有 feature 都一套模型”。
 
 ## 目录结构
 

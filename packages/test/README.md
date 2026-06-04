@@ -29,7 +29,7 @@ expect(fixture.fs.existsSync(fixture.getPath('tmp.txt'))).toBe(true)
 
 LLM-facing guide: `packages/test/LLM_TESTING_GUIDE.md`.
 
-Toolchain/lint design: `docs/architecture/lint-toolchain.md`.
+Toolchain/lint design: `docs/TOOLCHAIN.md`.
 
 ## Host
 

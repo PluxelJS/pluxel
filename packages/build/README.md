@@ -6,8 +6,10 @@
 
 如果你要理解插件前端整条链路，不要只看这个 README，直接看：
 
-- [`docs/architecture/frontend.md`](../../docs/architecture/frontend.md)
-- [`docs/architecture/lint-toolchain.md`](../../docs/architecture/lint-toolchain.md)
+- [`docs/TOOLCHAIN.md`](../../docs/TOOLCHAIN.md)
+- [`docs/FRONTEND.md`](../../docs/FRONTEND.md)
+- [`docs/CONFIG.md`](../../docs/CONFIG.md)
+- [`docs/proposals/README.md`](../../docs/proposals/README.md)
 
 在前端架构里，`@pluxel/build` 的角色很明确：
 

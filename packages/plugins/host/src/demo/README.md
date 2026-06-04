@@ -5,7 +5,7 @@
 - 让人第一次读就能知道“标准 Pluxel 插件该从哪里起手”
 - 让 LLM 能按同一套分层和命名继续扩展示例
 
-整条前端链路见 `docs/architecture/frontend.md`。
+整条前端链路见 `docs/FRONTEND.md`，开发期 HMR 链路见 `docs/HMR.md`。
 
 ## 运行
 

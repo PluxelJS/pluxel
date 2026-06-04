@@ -1,6 +1,6 @@
 # @pluxel/runtime
 
-`@pluxel/runtime` 是运行时内核。它只负责稳定的 `Context`、services、协议和运行时注册。整条前端链路见 [`docs/architecture/frontend.md`](../../docs/architecture/frontend.md)。
+`@pluxel/runtime` 是共同宿主层：负责 runtime services、配置持久化、loader/package/scan、HTTP/control-plane、ops、web 协议和插件 UI runtime protocols。整体边界见 [`docs/RUNTIME.md`](../../docs/RUNTIME.md)，前端链路见 [`docs/FRONTEND.md`](../../docs/FRONTEND.md)。
 
 ## 运行时模型
 
@@ -138,7 +138,7 @@ security 管理不进入 runtime ops。
 
 - `configs.use(schema)` 读到的是 schema 归一化后的输出
 - 默认值放进 Valibot schema 本身，不要在插件里再写 `config ?? defaults`
-- cfg/schema 提取与 cfg layout 设计见 `docs/design/plugin-config/overview.md`；Host 合同见 `packages/runtime/docs/config/contract.md`。
+- cfg/schema 提取与 cfg layout 设计见 `docs/CONFIG.md`；Host 合同见 `packages/runtime/docs/config/contract.md`。
 
 ## SignalDB 语义
 

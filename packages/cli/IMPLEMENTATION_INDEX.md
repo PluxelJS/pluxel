@@ -2,10 +2,10 @@
 
 仓库级约束与设计目标见：
 
-- `docs/architecture/system.md`
-- `docs/architecture/frontend.md`
-- `docs/governance/packaging.md`
-- `docs/governance/agent-rules.md`
+- `docs/OPS.md`
+- `docs/TOOLCHAIN.md`
+- `docs/GOVERNANCE.md`
+- `docs/proposals/README.md`
 
 如果你在追“命令是怎么把 runtime / hmr / build 串起来的”，优先看 `Command Entry`，再看各 subpath export。
 

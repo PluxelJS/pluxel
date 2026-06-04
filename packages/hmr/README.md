@@ -4,7 +4,8 @@
 
 如果你要理解整条插件前端链路，直接看：
 
-- [`docs/architecture/frontend.md`](../../docs/architecture/frontend.md)
+- [`docs/HMR.md`](../../docs/HMR.md)
+- [`docs/FRONTEND.md`](../../docs/FRONTEND.md)
 
 ## 负责什么
 
