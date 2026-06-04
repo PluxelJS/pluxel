@@ -3,7 +3,7 @@ import { pathToFileURL } from 'node:url'
 import type { Context } from '@pluxel/core'
 import { normalize as normalizePath } from 'pathe'
 
-import { getRuntimeModuleAdapter } from '../../../runtime/module-runtime'
+import { getRuntimeModuleAdapter } from '@pluxel/runtime/internal'
 import type { NormalizedPackageSpecifier, PackageLoadResult } from './types'
 
 interface CachedModule {

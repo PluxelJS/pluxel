@@ -1,6 +1,7 @@
 import type { Context } from '@pluxel/core'
 import { toJsonSchema } from '@valibot/to-json-schema'
 import { InMemorySessionAdapter, McpServer, StreamableHttpTransport } from 'mcp-lite'
+import { applyRuntimeMcpToolContributions } from '../contributions'
 import { registerRuntimeDevTools } from './dev-tools'
 import { registerRuntimeOpsCarrier } from './ops-carrier'
 import { isJsonSchemaObject } from './shared'
@@ -30,6 +31,7 @@ function createPluxelMcpServer(ctx: Context) {
 
 	registerRuntimeOpsCarrier(server, ctx)
 	registerRuntimeDevTools(server, ctx)
+	applyRuntimeMcpToolContributions(server, ctx)
 	return server
 }
 

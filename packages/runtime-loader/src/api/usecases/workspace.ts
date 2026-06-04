@@ -1,11 +1,32 @@
 import type { Context } from '@pluxel/core'
-import { PLUXEL_HMR_WORKSPACE_CONDITIONS_WITH_SOURCE } from '../../services/runtime/shared/conditions'
+import { PLUXEL_HMR_WORKSPACE_CONDITIONS_WITH_SOURCE } from '@pluxel/runtime/shared'
 
 export type WorkspaceResolveEntryInput = {
 	name: string
 	workspaceOnly?: boolean
 	preferHmrExports?: boolean
 	conditions?: string[]
+}
+
+type ScanServiceLike = {
+	resolveEntryByName(
+		name: string,
+		options: unknown,
+	): Promise<
+		| { ok: true; dir: string; entry: string; source: string; tried: string[] }
+		| { ok: false; dir: string; code: string; message: string; tried?: string[] }
+	>
+	listWorkspaceEntries(options: unknown): Promise<Array<{ dir: string; entry: string }>>
+}
+
+function getScanService(ctx: Context): ScanServiceLike {
+	const scanService = (ctx as unknown as { scanService?: ScanServiceLike }).scanService
+	if (!scanService) {
+		throw new Error(
+			'[pluxel/runtime-loader] workspace APIs require ScanService registration.',
+		)
+	}
+	return scanService
 }
 
 export async function workspaceResolveEntry(ctx: Context, input: WorkspaceResolveEntryInput) {
@@ -20,14 +41,14 @@ export async function workspaceResolveEntry(ctx: Context, input: WorkspaceResolv
 			? input.conditions
 			: [...PLUXEL_HMR_WORKSPACE_CONDITIONS_WITH_SOURCE]
 
-	return await ctx.scanService.resolveEntryByName(name, {
+	return await getScanService(ctx).resolveEntryByName(name, {
 		workspaceOnly: input.workspaceOnly === true,
 		scan: { conditions, ...(preferHmrExports ? { preferHmrExports: true } : {}) },
 	})
 }
 
 export async function workspaceListEntries(ctx: Context) {
-	return await ctx.scanService.listWorkspaceEntries({
+	return await getScanService(ctx).listWorkspaceEntries({
 		scan: { conditions: [...PLUXEL_HMR_WORKSPACE_CONDITIONS_WITH_SOURCE], preferHmrExports: true },
 	})
 }

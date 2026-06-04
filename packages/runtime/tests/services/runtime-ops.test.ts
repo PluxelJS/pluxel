@@ -3,6 +3,7 @@ import * as v from 'valibot'
 import { defineOp } from '@pluxel/ops'
 import { Type, obj } from '@pluxel/ops/typebox'
 import { BasePlugin, createRuntimeHost, Plugin, setParamToken, type RuntimeHost } from '@pluxel/runtime/test'
+import '../../../runtime-loader/src/register'
 
 import { RuntimeRpcApi } from '../../src/api/http/rpc/RuntimeRpcApi'
 import { ensureRuntimeOpsRegistered } from '../../src/api/ops'

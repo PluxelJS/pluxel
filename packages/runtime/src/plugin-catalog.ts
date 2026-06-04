@@ -1,0 +1,18 @@
+export {
+	EXTRA_BASE_PROVIDERS,
+	EXTRA_BUILTINS_KNOWN,
+	EXTRA_DEP_OVERRIDES,
+	EXTRA_FORKS,
+	RuntimePluginCatalogService,
+	getRuntimePluginCatalog,
+	type BaseProvidersExtra,
+	type BuiltinsKnownExtra,
+	type DepOverridesExtra,
+	type ForksExtra,
+	type RuntimePluginCatalog,
+	type RuntimePluginDependencyInfo,
+	type RuntimePluginLifecycleStage,
+	type RuntimePluginSource,
+	type RuntimePluginStatusOverview,
+	type RuntimePluginStatusSnapshot,
+} from './services/runtime/catalog/RuntimePluginCatalogService'

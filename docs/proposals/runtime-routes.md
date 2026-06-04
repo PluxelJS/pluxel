@@ -1,6 +1,6 @@
 # Runtime Routes Proposal
 
-状态：未来设计提案。当前没有 `@pluxel/static-suite` 包，没有 runtime static-suite subpath，也没有 static route HMR adapter。当前已实现路线仍是 `RUNTIME.md` 里的 loader route。
+状态：未来设计提案。当前没有 `@pluxel/static-suite` 包，没有 runtime static-suite subpath，也没有 static route HMR adapter。当前已实现路线是 `@pluxel/runtime-loader` 的 loader route，runtime common 已经开始通过 plugin catalog 契约和 loader route 解耦。
 
 ## 为什么单独成文档
 
@@ -140,7 +140,8 @@ static suite route 不只是“把插件数组 register 到 core”。它至少�
 
 6. Route-neutral plugin status model
    - 用 plugin id/name 表达状态。
-   - `route.kind` 标记来自 `loader` 还是 `static-suite`。
+   - common 状态不依赖 loader module id。
+   - 需要给 UI/诊断展示来源时，用只读 `source` 字段表达 loader/static-suite。
    - route-specific diagnostics 放在 capability/diagnostics 字段，不污染 common API。
 
 7. Static HMR adapter
@@ -232,7 +233,7 @@ static route 的 HMR 优化点：
 
 当前 runtime API 很多地方天然假设 loader 存在：module id、scan、package、loader registry、replaceModule、enabled-but-stopped 等概念会出现在状态解释和控制面里。static suite route 如果直接复用这些 API，会显得笨重且语义不干净。
 
-未来应该把 runtime API 分成三层：
+未来应该把 runtime API 分成三层，但不要做成可无限扩展的 route plugin 系统：
 
 ```text
 route-neutral common API
@@ -243,7 +244,7 @@ route-specific management API
   static-suite: startup report / drift check / suite restart / boundary diagnostics
 
 internal route adapter API
-  runtime common 调 route adapter，route adapter 调 core registry
+  runtime common 启动时持有一个明确 route implementation
 ```
 
 route-neutral API 应避免暴露：
@@ -259,26 +260,96 @@ route-neutral API 应使用：
 - plugin name/id。
 - lifecycle stage。
 - config schema/default/layout。
-- route kind。
-- route capabilities。
+- source/capabilities read model。
 - diagnostics read model。
 
-这样网页配置可以和 loader route 共用，但不会继承 loader 的动态目录心智模型。workbench 可以展示同一个插件配置页，同时在 diagnostics 区域根据 `route.kind` 展示不同解释。
+这样网页配置可以和 loader route 共用，但不会继承 loader 的动态目录心智模型。workbench 可以展示同一个插件配置页，同时在 diagnostics 区域根据 `source` 展示不同解释。
 
-可能的内部形态：
+推荐的内部形态是两个明确实现，而不是靠字符串 `kind` 做业务分发：
 
 ```ts
-interface RuntimePluginRoute {
-	kind: 'loader' | 'static-suite'
+interface RuntimePluginCatalog {
 	startup(): Promise<RouteStartupReport>
 	restartPlugin(pluginId: string): Promise<RouteChangeReport>
-	replaceKnownPlugin?(pluginId: string, ctor: PluginCtor): Promise<RouteChangeReport>
 	describePlugins(): Promise<RoutePluginSnapshot[]>
 	describeCapabilities(): RouteCapabilities
 }
+
+class LoaderRuntimeCatalog implements RuntimePluginCatalog {
+	replaceModule(moduleId: string, exports: unknown): Promise<RouteChangeReport>
+}
+
+class StaticSuiteRuntimeCatalog implements RuntimePluginCatalog {
+	replaceKnownPlugin(pluginId: string, ctor: PluginCtor): Promise<RouteChangeReport>
+	checkDrift(): Promise<StaticSuiteDriftReport>
+}
 ```
 
-这仍然是内部 route adapter，不是插件作者 API。
+runtime common 启动时只接收一个 catalog 实例。需要区分 loader/static-suite 的地方，应该通过 TypeScript 的具体类型、构造路径或 route-specific ops 解决，不要让 common 层到处写 `if (kind === ...)`。
+
+字符串来源字段只适合 read model：
+
+```ts
+type PluginSource =
+	| { type: 'loader'; moduleId: string }
+	| { type: 'static-suite'; suite: string }
+```
+
+这个字段用于 UI、日志、诊断和序列化，不作为核心生命周期分发机制。
+
+## 外部 host 显式组合网络面
+
+状态：未来展望，尚未实现。
+
+如果要把两条路线做得更彻底，runtime common 不应该因为配置项自动决定要不要挂载 package-manager、workspace tools、workbench UI 或 route-specific backend routes。更清晰的模型是：runtime common 只提供网络和协议 primitives，外部 host/bootstrap 显式组合需要的后端路由和前端 UI。
+
+runtime common 负责提供：
+
+- `HttpService`、RPC、SSE、MCP server carrier。
+- runtime web protocol、config persistence、ops、status projection。
+- plugin UI remote/builtin/doc protocol。
+- route-neutral plugin catalog 契约和 read model。
+
+route package 负责提供可选择挂载的能力：
+
+- loader route：package-manager GraphQL/RPC、workspace MCP tools、scan/package diagnostics、动态插件 UI 面板。
+- static suite route：startup report、drift check、strict restart、suite config UI、边界诊断。
+
+host 负责显式组合：
+
+```ts
+const runtime = createRuntimeHost(...)
+
+mountRuntimeCommonApi(runtime)
+
+const loader = installLoaderRoute(runtime)
+mountLoaderPackageManagerApi(runtime, loader)
+mountLoaderWorkspaceTools(runtime, loader)
+mountWorkbenchUi(runtime, {
+	config: true,
+	packageManager: true,
+})
+```
+
+static suite 的组合可以完全不同：
+
+```ts
+const runtime = createRuntimeHost(...)
+
+mountRuntimeCommonApi(runtime)
+
+const suite = installStaticSuiteRoute(runtime, suiteDeclaration)
+mountStaticStartupReportApi(runtime, suite)
+mountSuiteConfigUi(runtime, suite)
+mountWorkbenchUi(runtime, {
+	config: true,
+	startupReport: true,
+})
+```
+
+这样 runtime common 不默认拥有任何路线的产品面；loader 和 static suite 都只是复用 runtime 的网络能力，然后各自选择要暴露什么控制面、什么前端 UI。配置仍然重要，但配置只描述业务状态和持久化策略，不负责偷偷改变 host 挂载拓扑。
+
+这也意味着当前 contribution registry 未来可以继续收敛：从副作用式注册 GraphQL/RPC/MCP，逐步变成显式 `mount*` 函数。迁移时要保证旧入口仍可通过 loader bootstrap 一次性挂载，以保持兼容；新 host 则可以按能力组合，避免 runtime common 背上 loader route 的默认心智负担。
 
 ## 与 config/web config 的关系
 
@@ -293,8 +364,8 @@ static suite 不能重做配置系统。它应该复用：
 
 ## 迁移顺序
 
-1. 先把 runtime common 和 loader-specific 代码边界标清，不改变行为。
-2. 给当前 loader route 补内部 adapter 包装，保持 API 不变。
+1. 已开始把 runtime common 和 loader-specific 代码边界标清：`@pluxel/runtime-loader` 承载 loader/scan/package/package-manager/workspace tools。
+2. 已给当前 loader route 补 plugin catalog adapter，并通过 runtime API contribution registry 保持现有 GraphQL/RPC/MCP 入口。
 3. 设计 static suite declaration 和 startup report 类型。
 4. 实现 static route startup，不接 HMR。
 5. 接 static HMR adapter，先只支持 plugin boundary。

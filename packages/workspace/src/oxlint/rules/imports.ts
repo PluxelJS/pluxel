@@ -38,6 +38,7 @@ const WORKSPACE_ROOT_IMPORT_RESTRICTED_PACKAGES = [
 	'packages/components/',
 	'packages/hmr/',
 	'packages/runtime/',
+	'packages/runtime-loader/',
 	'packages/test/',
 ] as const
 

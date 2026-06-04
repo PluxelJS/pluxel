@@ -21,12 +21,16 @@
   `data/security/identity.json` 读写
 - `packages/runtime/src/services/ConfigService.ts`
   配置读写
-- `packages/runtime/src/services/runtime/loader/LoaderService.ts`
-  插件加载
-- `packages/runtime/src/services/runtime/package/PackageService.ts`
-  包管理
-- `packages/runtime/src/services/runtime/scan/ScanService.ts`
-  workspace scan
+- `packages/runtime/src/plugin-catalog.ts`
+  route-neutral plugin catalog 契约
+- `packages/runtime/src/api/contributions.ts`
+  route package 挂载 GraphQL/RPC/MCP 控制面的最小注册点
+- `packages/runtime-loader/src/loader/LoaderService.ts`
+  loader route 插件加载
+- `packages/runtime-loader/src/package/PackageService.ts`
+  loader route 包管理
+- `packages/runtime-loader/src/scan/ScanService.ts`
+  loader route workspace scan
 
 ## Plugin Interaction
 

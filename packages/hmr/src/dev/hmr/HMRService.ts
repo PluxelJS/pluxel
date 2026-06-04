@@ -11,7 +11,7 @@ import {
 	type Plugin,
 	type ViteDevServer,
 } from 'vite'
-import type { BuiltinPluginSpec } from '@pluxel/runtime/services'
+import type { BuiltinPluginSpec } from '@pluxel/runtime-loader/services'
 import {
 	PLUXEL_HMR_WORKSPACE_CONDITIONS_WITH_SOURCE,
 	findNearestPackageRoot,

@@ -1,31 +1,32 @@
 import type { Context as PlxContext } from '@pluxel/core'
 import type { InferInput, InferOutput } from 'valibot'
 
-import {
-	PackageServiceError,
-	type InstallOptions,
-	type PackageInstallStatus,
-	type PackageLoadIssue as ServiceIssue,
-	type PackageReloadResult,
-} from '../../../services/runtime/package/PackageService'
-import {
-	normalizeSpecifier,
-	type NormalizedPackageSpecifier,
-	type PackageSpecifierInput as ServiceSpecifierInput,
-} from '../../../services/runtime/package/specifiers'
 import type {
 	PackageLoadIssueEntry,
 	PackageInventoryEntry,
 	PackageInventoryFilter,
 	PackageSpecifierInput as PackageSpecifierInputSchema,
 } from './schema'
+import {
+	PackageServiceError,
+	type InstallOptions,
+	type PackageInstallStatus,
+	type PackageLoadIssue as ServiceIssue,
+	type PackageReloadResult,
+	type PackageService,
+} from '../../../package/PackageService'
+import {
+	normalizeSpecifier,
+	type NormalizedPackageSpecifier,
+	type PackageSpecifierInput as ServiceSpecifierInput,
+} from '../../../package/specifiers'
 import type {
 	PackageBatchResult,
 	PackageMutationAction,
 	PackageMutationInput,
 	PackageMutationOptions,
 	PackageMutationResult,
-} from '../../../web/protocol'
+} from '@pluxel/runtime/protocol'
 
 type IssueOutput = InferOutput<typeof PackageLoadIssueEntry>
 type SpecInputValue = InferInput<typeof PackageSpecifierInputSchema>
@@ -33,6 +34,18 @@ type MutationResult = PackageMutationResult
 type BatchMutationResult = PackageBatchResult
 type InventoryEntry = InferOutput<typeof PackageInventoryEntry>
 type InventoryFilter = InferInput<typeof PackageInventoryFilter>
+
+type PackageContext = PlxContext & { packageService: PackageService }
+
+function getPackageContext(ctx: PlxContext): PackageContext {
+	const packageService = (ctx as unknown as { packageService?: PackageService }).packageService
+	if (!packageService) {
+		throw new Error(
+			'[pluxel/runtime-loader] package-manager APIs require PackageService registration.',
+		)
+	}
+	return ctx as PackageContext
+}
 
 type ParsedSpecInput = {
 	input: SpecInputValue
@@ -46,7 +59,7 @@ type ParsedSpecs = {
 }
 
 type MutationHandler = (
-	pCtx: PlxContext,
+	pCtx: PackageContext,
 	specInputs: SpecInputValue[],
 	options: PackageMutationOptions,
 ) => Promise<BatchMutationResult>
@@ -54,14 +67,16 @@ type MutationHandler = (
 const MUTATION_CONCURRENCY = 4
 
 export function listLoadIssues(pCtx: PlxContext): IssueOutput[] {
-	return pCtx.packageService.listLoadIssues().map(serializeIssue)
+	const packageCtx = getPackageContext(pCtx)
+	return packageCtx.packageService.listLoadIssues().map(serializeIssue)
 }
 
 export async function listPackageInventory(
 	pCtx: PlxContext,
 	filter?: InventoryFilter,
 ): Promise<InventoryEntry[]> {
-	const entries = await pCtx.packageService.listInstalledPackages({
+	const packageCtx = getPackageContext(pCtx)
+	const entries = await packageCtx.packageService.listInstalledPackages({
 		includeUntracked: filter?.includeUntracked ?? false,
 	})
 	return entries.map((entry) => ({
@@ -75,17 +90,18 @@ export async function listPackageInventory(
 	}))
 }
 
-export async function applyMarketMutation(
+export async function applyPackageMutation(
 	pCtx: PlxContext,
 	input: PackageMutationInput,
 ): Promise<BatchMutationResult> {
+	const packageCtx = getPackageContext(pCtx)
 	const action = input.action
 	const specInputs = Array.isArray(input.specs) ? input.specs : []
 	const options = input.options ?? {}
 	if (!action) return buildBatchResult([], '操作不能为空')
 	const handler = mutationHandlers[action]
 	if (!handler) return buildBatchResult([], '未知操作')
-	return handler(pCtx, specInputs, options)
+	return handler(packageCtx, specInputs, options)
 }
 
 export function toServiceSpecifierInput(input: SpecInputValue): ServiceSpecifierInput {

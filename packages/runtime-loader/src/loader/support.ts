@@ -9,7 +9,7 @@ import {
 	type PluginIdentifier,
 } from '@pluxel/core'
 import type { ConfigSchemaMap } from '@pluxel/core/services'
-import { getRuntimeModuleAdapter } from '../../../runtime/module-runtime'
+import { getRuntimeModuleAdapter } from '@pluxel/runtime/internal'
 import type { ModuleReplacer, ReplaceModuleResult } from './module-replacer'
 import type {
 	PluginLifecycleSnapshot,

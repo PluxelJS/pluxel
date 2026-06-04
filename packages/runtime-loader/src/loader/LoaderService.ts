@@ -10,7 +10,7 @@ import {
 import {
 	disablePluginsOnMissingDependencyError,
 	type MissingDepsCandidate,
-} from '../shared/missing-deps'
+} from '@pluxel/runtime/shared'
 import { ModuleReplacer, type ReplaceModuleResult } from './module-replacer'
 import { PluginRegistry } from './PluginRegistry'
 import {

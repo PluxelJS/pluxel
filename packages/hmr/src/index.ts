@@ -1,4 +1,5 @@
 import { setPluxelRuntime } from '@pluxel/core'
+import '@pluxel/runtime-loader/register'
 
 setPluxelRuntime('hmr')
 

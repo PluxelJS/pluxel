@@ -328,7 +328,7 @@ export function PackageManagerScreen() {
 		[notify],
 	)
 
-	const runMarketMutation = useCallback(
+	const runPackageMutation = useCallback(
 		async (
 			action: 'install' | 'uninstall' | 'remove' | 'reinstall' | 'reload' | 'retry',
 			specs: PackageSpecInput[],
@@ -397,7 +397,7 @@ export function PackageManagerScreen() {
 			openBatchOperationLog(config.logTitle, targets)
 			config.setLoading(true)
 			try {
-				const result = await runMarketMutation(
+				const result = await runPackageMutation(
 					config.action,
 					selectedRows.map(toSpecInput),
 					config.options,
@@ -427,7 +427,7 @@ export function PackageManagerScreen() {
 			notify,
 			openBatchOperationLog,
 			refetch,
-			runMarketMutation,
+			runPackageMutation,
 			selectedRows,
 			summarizeBatchResult,
 		],
@@ -477,7 +477,7 @@ export function PackageManagerScreen() {
 			const spec = toSpecInput(config.row)
 			config.setLoading(true)
 			try {
-				const result = await runMarketMutation(config.action, [spec], config.options)
+				const result = await runPackageMutation(config.action, [spec], config.options)
 				const entry = result?.results?.[0]
 				if (!entry || result?.error || entry.ok === false) {
 					notify({
@@ -503,7 +503,7 @@ export function PackageManagerScreen() {
 				config.setLoading(false)
 			}
 		},
-		[notify, refetch, runMarketMutation],
+		[notify, refetch, runPackageMutation],
 	)
 
 	const openRowConfirm = useCallback(
@@ -556,7 +556,7 @@ export function PackageManagerScreen() {
 				return (hint ? `${name}@${hint}` : name).toLowerCase()
 			}
 
-			const result = await runMarketMutation(
+			const result = await runPackageMutation(
 				'install',
 				specs.map((raw) => ({ raw })),
 				{ force: forceInstall },

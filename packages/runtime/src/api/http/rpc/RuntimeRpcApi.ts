@@ -10,12 +10,13 @@ import {
 	invokeRuntimeOp,
 } from '../../ops'
 import { writeGroups } from '../../features/groups/service'
+import { createRuntimeRpcHandle } from '../../contributions'
 import { ExtensionSessionHandle } from './ExtensionSessionHandle'
 import { LoggingHandle } from './LoggingHandle'
-import { PackageHandle } from './PackageHandle'
 import type {
 	OpsToolset,
 	OpsToolsetInput,
+	PackageHandleApi,
 	PluginGroup,
 	PluginGroupInput,
 	RuntimeOpToolsetManifest,
@@ -37,8 +38,8 @@ export class RuntimeRpcApi extends RpcTarget {
 	}
 
 	/** 包管理操作 */
-	package() {
-		return new PackageHandle(this.ctx)
+	package(): PackageHandleApi {
+		return createRuntimeRpcHandle<PackageHandleApi>(this.ctx, 'package')
 	}
 
 	/** Logging settings (host-level, persisted). */

@@ -4,7 +4,6 @@ import * as v from 'valibot'
 import { getDevRuntimeHandles } from '../../runtime/dev-handles'
 import { logsLatest, logsWaitFor } from '../usecases/logs'
 import { logsLatestText, logsWaitForText } from '../usecases/logsLlm'
-import { workspaceListEntries, workspaceResolveEntry } from '../usecases/workspace'
 import { textResult } from './shared'
 
 type HmrBatchSummaryLike = {
@@ -168,33 +167,6 @@ const WaitForBatchOutputSchema = v.object({
 	),
 })
 
-const EntryResolutionOkSchema = v.object({
-	ok: v.literal(true),
-	dir: v.string(),
-	entry: v.string(),
-	source: v.string(),
-	tried: v.array(v.string()),
-})
-
-const EntryResolutionErrSchema = v.object({
-	ok: v.literal(false),
-	dir: v.string(),
-	code: v.string(),
-	message: v.string(),
-	tried: v.optional(v.array(v.string())),
-})
-
-const EntryResolutionSchema = v.union([EntryResolutionOkSchema, EntryResolutionErrSchema])
-
-const WorkspaceResolveEntryInputSchema = v.object({
-	name: v.string(),
-	workspaceOnly: v.optional(v.boolean()),
-	preferHmrExports: v.optional(v.boolean()),
-	conditions: v.optional(v.array(v.string())),
-})
-
-const WorkspaceListEntriesOutputSchema = v.array(v.object({ dir: v.string(), entry: v.string() }))
-
 const HmrLastBatchOutputSchema = v.object({ batch: v.nullable(WaitForBatchOutputSchema) })
 
 const HmrExecuteFilesInputSchema = v.object({
@@ -338,27 +310,6 @@ export function registerRuntimeDevTools(server: McpServer, ctx: Context) {
 				format: args.format,
 			})
 			return textResult(out.text, out)
-		},
-	})
-
-	server.tool('workspace.resolveEntry', {
-		description: 'Resolve a workspace package entry (prefer @pluxel/hmr export by default).',
-		inputSchema: WorkspaceResolveEntryInputSchema,
-		outputSchema: EntryResolutionSchema,
-		handler: async (args) => {
-			const out = await workspaceResolveEntry(ctx, args)
-			const msg = out.ok === true ? out.entry : out.message
-			return textResult(msg, out)
-		},
-	})
-
-	server.tool('workspace.listEntries', {
-		description: 'List workspace packages that have a resolvable entry.',
-		inputSchema: v.object({}),
-		outputSchema: WorkspaceListEntriesOutputSchema,
-		handler: async () => {
-			const out = await workspaceListEntries(ctx)
-			return textResult(`entries: ${out.length}`, out)
 		},
 	})
 

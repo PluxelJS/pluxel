@@ -3,13 +3,13 @@ import type { Context as PlxContext } from '@pluxel/core'
 import * as v from 'valibot'
 
 import { PackageLoadIssueEntry, PackageInventoryEntry, PackageInventoryFilter } from './schema'
-import { listPackageInventory, listLoadIssues } from './service'
+import { listLoadIssues, listPackageInventory } from './service'
 
 /**
- * Market GraphQL resolver - queries only
- * All mutations have been migrated to RPC (see MarketHandle.ts)
+ * Package-manager GraphQL resolver - queries only.
+ * Mutations are exposed through the route RPC handle.
  */
-export function createMarketResolver(pCtx: PlxContext) {
+export function createPackageManagerResolver(pCtx: PlxContext) {
 	return resolver({
 		packageLoadIssues: query(v.array(PackageLoadIssueEntry)).resolve(() => listLoadIssues(pCtx)),
 		packageInventory: query(v.array(PackageInventoryEntry))

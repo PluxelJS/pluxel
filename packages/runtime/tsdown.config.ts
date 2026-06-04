@@ -34,7 +34,10 @@ export default defineConfig({
 		frozen: 'src/frozen.ts',
 		// Type-only module augmentation bridge (stable .d.mts file for TS consumers).
 		events: 'src/events.ts',
+		api: 'src/api/contributions.ts',
 		logger: 'src/logger.ts',
+		'plugin-catalog': 'src/plugin-catalog.ts',
+		protocol: 'src/protocol.ts',
 		services: 'src/services.ts',
 		shared: 'src/shared.ts',
 		test: 'src/test.ts',

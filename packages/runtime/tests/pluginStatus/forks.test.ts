@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import { BasePlugin, ForkablePlugin, Plugin } from '@pluxel/runtime/test'
-import { LoaderService } from '@pluxel/runtime/services'
+import { LoaderPluginCatalogService, LoaderService } from '../../../runtime-loader/src/services'
 import { getStatusOverview } from '../../src/api/features/pluginStatus/service'
-import { EXTRA_FORKS } from '../../src/services/runtime/loader/selection'
+import { EXTRA_FORKS } from '../../../runtime-loader/src/loader/selection'
 import { createHmrTestContext } from '../support/hmr-context'
 
 describe('pluginStatus forks', () => {
@@ -10,6 +10,7 @@ describe('pluginStatus forks', () => {
 		const { core, ctx } = createHmrTestContext()
 		const loader = new LoaderService(ctx)
 		ctx.loader = loader
+		ctx.pluginCatalog = new LoaderPluginCatalogService(ctx)
 
 		@Plugin({ name: 'DemoWorker' })
 		class DemoWorker extends ForkablePlugin {}

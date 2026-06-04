@@ -27,5 +27,12 @@
 	"[markdown]": {
 		"editor.defaultFormatter": "oxc.oxc-vscode",
 		"editor.formatOnSave": true
+	},
+	"ColorfulMonorepo.data": {
+		"workspaces": [],
+		"scriptFavorites": [
+			".#build",
+			"packages/plugins/host#dev"
+		]
 	}
 }

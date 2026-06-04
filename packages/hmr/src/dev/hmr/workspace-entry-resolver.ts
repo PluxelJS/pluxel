@@ -1,4 +1,4 @@
-import type { ScanService } from '@pluxel/runtime/services'
+import type { ScanService } from '@pluxel/runtime-loader/services'
 import { clearSieveState, getOrCreatePromise, isBarePackageSpecifier } from '@pluxel/runtime/shared'
 import type { HmrPathApi } from './environment'
 

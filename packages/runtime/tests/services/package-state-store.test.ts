@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { createFixture } from '@pluxel/test/fixtures'
 import { resolve } from 'pathe'
 
-import { PackageStateStore } from '../../src/services/runtime/package/state-store'
+import { PackageStateStore } from '../../../runtime-loader/src/package/state-store'
 
 describe('PackageStateStore', () => {
 	it('treats unsupported schema as a cache miss (no legacy migrations)', async () => {

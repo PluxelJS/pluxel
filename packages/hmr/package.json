@@ -58,6 +58,7 @@
 		"@module-federation/vite": "1.14.1",
 		"@pluxel/core": "workspace:*",
 		"@pluxel/runtime": "workspace:*",
+		"@pluxel/runtime-loader": "workspace:*",
 		"@rolldown/pluginutils": "1.0.0-rc.5",
 		"chokidar": "^5.0.0",
 		"jsonc-parser": "^3.3.1",

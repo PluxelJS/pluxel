@@ -2,6 +2,7 @@ import type { Context } from '@pluxel/core'
 
 import { readStatusSnapshot } from '../features/pluginStatus/service'
 import { maybeAddForkToCatalog } from './forksCatalog'
+import { getRuntimePluginCatalog } from '../../services/runtime/catalog/RuntimePluginCatalogService'
 import type {
 	PluginStatusAction,
 	PluginStatusBatchAction,
@@ -10,7 +11,7 @@ import type {
 } from '../../web/protocol'
 
 function resolvePlugin(ctx: Context, name: string) {
-	const ctor = ctx.loader.api.runtime.resolve(name)
+	const ctor = getRuntimePluginCatalog(ctx).resolve(name)
 	if (!ctor) throw new Error(`Plugin not found: ${name}`)
 	return ctor
 }
@@ -30,6 +31,7 @@ async function runStatusAction(
 	action: PluginStatusAction,
 ): Promise<PluginStatusMutationResult> {
 	try {
+		const catalog = getRuntimePluginCatalog(ctx)
 		if (action === 'start' || action === 'restart' || action === 'enable') {
 			maybeAddForkToCatalog(ctx, name)
 		}
@@ -39,20 +41,20 @@ async function runStatusAction(
 		switch (action) {
 			case 'start':
 			case 'enable':
-				await ctx.loader.api.control.enable(name, ctor)
+				await catalog.enable(name, ctor)
 				break
 			case 'stop':
-				ctx.loader.api.control.deactivate(name, ctor, { runtimeOnly: true })
+				catalog.deactivate(name, ctor, { runtimeOnly: true })
 				break
 			case 'restart':
-				ctx.loader.api.control.deactivate(name, ctor, { runtimeOnly: true })
-				await ctx.loader.api.control.enable(name, ctor)
+				catalog.deactivate(name, ctor, { runtimeOnly: true })
+				await catalog.enable(name, ctor)
 				break
 			case 'disable':
-				ctx.loader.api.control.deactivate(name, ctor, { runtimeOnly: false })
+				catalog.deactivate(name, ctor, { runtimeOnly: false })
 				break
 			case 'enable-persisted':
-				ctx.loader.api.control.enablePersisted(name)
+				catalog.enablePersisted(name)
 				break
 			default:
 				return { name, ok: false, code: 'invalid_status', error: `Unsupported: ${action}` }

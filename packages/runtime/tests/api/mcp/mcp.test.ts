@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { withRuntimeContext, type Context } from '@pluxel/runtime/test'
+import '../../../../runtime-loader/src/register'
 import { HMR_INTERNAL_API_BASE, HMR_TRANSPORT_PATHS } from '@pluxel/runtime/web/paths'
 import { defineOp } from '@pluxel/ops'
 import { Type, obj } from '@pluxel/ops/typebox'

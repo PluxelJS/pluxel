@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { BasePlugin, Plugin, setParamToken } from '@pluxel/runtime/test'
-import { LoaderService } from '@pluxel/runtime/services'
+import { LoaderService } from '../../../runtime-loader/src/services'
 import { createHmrTestContext } from '../support/hmr-context'
 
 describe('monorepo plugin dependencies', () => {

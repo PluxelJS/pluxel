@@ -1,11 +1,13 @@
 import { isAbsolute, resolve } from 'pathe'
 import type { Plugin as VitePlugin } from 'vite'
 
+import '@pluxel/runtime-loader/register'
 import { setPluxelRuntime } from '@pluxel/core'
 import { ensurePluxelLogging, type EnsurePluxelLoggingOptions } from '@pluxel/runtime/logger'
 import { resolveRuntimeStoragePaths, type RuntimeStoragePaths } from '@pluxel/runtime/internal'
 import { Context } from '@pluxel/runtime'
-import { bootstrapHostVault, createNodeFsServiceBackend, type BuiltinPluginSpec } from '@pluxel/runtime/services'
+import { bootstrapHostVault, createNodeFsServiceBackend } from '@pluxel/runtime/services'
+import type { BuiltinPluginSpec } from '@pluxel/runtime-loader/services'
 
 import { attachHmrRuntime } from './dev/attach-runtime'
 import type { HMRConfig } from './dev/hmr/HMRService'

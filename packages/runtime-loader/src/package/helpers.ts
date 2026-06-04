@@ -1,5 +1,5 @@
 import { normalize as normalizePath, resolve as resolvePath } from 'pathe'
-import { resolveRuntimeStoragePaths } from '../../../runtime/paths'
+import { resolveRuntimeStoragePaths } from '@pluxel/runtime/internal'
 import type { ResolvedInstallOptions } from './internal-types'
 import type { NormalizedPackageSpecifier } from './specifiers'
 import type { InstallOptions } from './types'

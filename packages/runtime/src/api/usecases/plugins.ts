@@ -1,6 +1,7 @@
 import type { Context } from '@pluxel/core'
 
 import { readStatusSnapshot, resolvePluginSource } from '../features/pluginStatus/service'
+import { getRuntimePluginCatalog } from '../../services/runtime/catalog/RuntimePluginCatalogService'
 
 export type PluginStatusSnapshot = ReturnType<typeof readStatusSnapshot> & { name: string }
 
@@ -15,7 +16,8 @@ export type PluginsListOutput = {
 }
 
 export function pluginStatus(ctx: Context, name: string): PluginStatusSnapshot | null {
-	const ctor = ctx.loader.api.runtime.resolve(name) ?? ctx.loader.api.registry.getCtor(name)
+	const catalog = getRuntimePluginCatalog(ctx)
+	const ctor = catalog.resolveOrRegistered(name)
 	if (!ctor) return null
 	const snap = readStatusSnapshot(ctx, name, ctor)
 	const source =
@@ -29,8 +31,9 @@ export function pluginStatus(ctx: Context, name: string): PluginStatusSnapshot |
 }
 
 export function pluginsList(ctx: Context): PluginsListOutput {
+	const catalog = getRuntimePluginCatalog(ctx)
 	const out: PluginStatusSnapshot[] = []
-	for (const [name, ctor] of ctx.loader.api.registry.listRegistered()) {
+	for (const [name, ctor] of catalog.listRegistered()) {
 		const snap = readStatusSnapshot(ctx, name, ctor)
 		const source =
 			(snap as any).source && typeof (snap as any).source === 'object'
@@ -62,8 +65,7 @@ export function pluginsList(ctx: Context): PluginsListOutput {
 }
 
 export function pluginSource(ctx: Context, name: string) {
-	const ctor =
-		ctx.loader.api.runtime.resolve(name) ?? ctx.loader.api.registry.getCtor(name) ?? undefined
+	const ctor = getRuntimePluginCatalog(ctx).resolveOrRegistered(name)
 	const src: any = resolvePluginSource(ctx, name, ctor)
 	if (src && typeof src === 'object') {
 		const { __typename: _t, ...rest } = src

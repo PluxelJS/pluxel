@@ -682,7 +682,17 @@ export class ExtensionService implements ExtensionModuleStore {
 		pluginName: string,
 		relativeManifestPath: string,
 	): string | null {
-		const registryPath = this.ctx.loader?.api?.registry?.findModuleIdByName?.(pluginName)
+		const loaderApi = (
+			this.ctx as unknown as {
+				loader?: {
+					api?: {
+						registry?: { findModuleIdByName?: (name: string) => string | undefined }
+						anchors?: { list?: () => Iterable<string> }
+					}
+				}
+			}
+		).loader?.api
+		const registryPath = loaderApi?.registry?.findModuleIdByName?.(pluginName)
 		if (registryPath) {
 			const baseDir = resolveModuleIdBaseDir(registryPath)
 			if (baseDir) {
@@ -698,7 +708,7 @@ export class ExtensionService implements ExtensionModuleStore {
 			}
 		}
 
-		for (const path of this.ctx.loader?.api?.anchors?.list?.() ?? []) {
+		for (const path of loaderApi?.anchors?.list?.() ?? []) {
 			if (path.toLowerCase().includes(pluginName.toLowerCase()) && isAbsolute(path)) {
 				const baseDir = dirname(path)
 				const packageRoot = this.findNearestPackageRoot(baseDir)

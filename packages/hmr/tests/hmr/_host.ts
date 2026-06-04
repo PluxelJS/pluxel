@@ -1,5 +1,5 @@
 import { createRuntimeHost, type RuntimeHost } from '@pluxel/runtime/test'
-import type { LoaderBatch } from '@pluxel/runtime/services'
+import type { LoaderBatch } from '@pluxel/runtime-loader/services'
 
 export type ErrorLog = { msg: string; obj: unknown }
 export type LoaderModuleCapture = {

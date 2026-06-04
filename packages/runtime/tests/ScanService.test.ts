@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import type { Context } from '@pluxel/core'
 import { createDiskFixture, createFixture } from '@pluxel/test/fixtures'
 import { normalize } from 'pathe'
-import { type EntryResolutionOk, ScanService } from '../src/services/runtime/scan/ScanService'
+import { type EntryResolutionOk, ScanService } from '../../runtime-loader/src/scan/ScanService'
 
 const scanSingleFixture = {
 	'package.json': JSON.stringify(

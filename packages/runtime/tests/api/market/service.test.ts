@@ -1,10 +1,10 @@
 import { describe, expect, test, vi } from 'vitest'
-import { applyMarketMutation } from '../../../src/api/features/market/service'
+import { applyPackageMutation } from '../../../../runtime-loader/src/api/features/package-manager/service'
 
 const specInput: { name: string; raw: string | null; version: string | null; tag: string | null } =
 	{ name: 'foo', raw: null, version: null, tag: null }
 
-describe('market service applyMarketMutation', () => {
+describe('package-manager service applyPackageMutation', () => {
 	test('installs then loads package', async () => {
 		const installResult = {
 			spec: { name: 'foo', target: 'foo', key: 'foo#latest', raw: 'foo' },
@@ -21,7 +21,7 @@ describe('market service applyMarketMutation', () => {
 			},
 		}
 
-		const result = await applyMarketMutation(ctx as any, {
+		const result = await applyPackageMutation(ctx as any, {
 			action: 'install',
 			specs: [specInput],
 			options: {},
@@ -49,7 +49,7 @@ describe('market service applyMarketMutation', () => {
 			},
 		}
 
-		const result = await applyMarketMutation(ctx as any, {
+		const result = await applyPackageMutation(ctx as any, {
 			action: 'install',
 			specs: [specInput],
 			options: {},

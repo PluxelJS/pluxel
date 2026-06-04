@@ -1,8 +1,8 @@
 import { describe, expect, test } from 'vitest'
 import { createFixture } from '@pluxel/test/fixtures'
-import { EntryResolver } from '../../src/services/runtime/scan/entry-resolver'
-import { ModuleResolveCache } from '../../src/services/runtime/scan/resolve-cache'
-import type { ResolvedScanOptions } from '../../src/services/runtime/scan/types'
+import { EntryResolver } from '../../../runtime-loader/src/scan/entry-resolver'
+import { ModuleResolveCache } from '../../../runtime-loader/src/scan/resolve-cache'
+import type { ResolvedScanOptions } from '../../../runtime-loader/src/scan/types'
 
 const baseOptions: ResolvedScanOptions = {
 	conditions: ['node', 'import'],

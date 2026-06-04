@@ -24,6 +24,7 @@ import { RuntimeRpcApi } from '../../api/http/rpc/RuntimeRpcApi'
 import { getHmrMcpHttpHandler } from '../../api/mcp'
 import { pluginSchema } from '../../api/usecases/pluginConfig'
 import type { SignalDbItem } from '../../web/plugin-ui/signaldb-contracts'
+import { getRuntimePluginCatalog } from '../runtime/catalog/RuntimePluginCatalogService'
 import { SignalDbService } from '../plugin-interaction/SignalDbService'
 import type { ElysiaBoundaryBuilder } from './HttpService'
 import { createElysiaApp } from './elysia'
@@ -325,8 +326,7 @@ async function pushSignalDbChanges<T extends SignalDbItem>(
 }
 
 function resolveSignalDbService(ctx: PluginContext, pluginName: string): SignalDbService | null {
-	const ctor =
-		ctx.loader.api.runtime.resolve(pluginName) ?? ctx.loader.api.registry.getCtor(pluginName)
+	const ctor = getRuntimePluginCatalog(ctx).resolveOrRegistered(pluginName)
 	if (!ctor) return null
 
 	const instance = ctx.registry.getInstance(ctor as never) as

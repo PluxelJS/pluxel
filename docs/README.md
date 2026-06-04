@@ -7,6 +7,7 @@
 1. 先读包边界：
    - `CORE.md`
    - `RUNTIME.md`
+   - `RUNTIME_LOADER_SPLIT.md`
    - `HMR.md`
 2. 再读横向能力：
    - `FRONTEND.md`
@@ -21,7 +22,8 @@
 ## 文件职责
 
 - `CORE.md`：最小插件内核、DI、生命周期、feature/config 声明。
-- `RUNTIME.md`：宿主 runtime、loader/package/scan、持久化、HTTP/web 协议。
+- `RUNTIME.md`：宿主 runtime common、配置持久化、HTTP/web 协议、route-neutral 状态投影。
+- `RUNTIME_LOADER_SPLIT.md`：当前 runtime common 与 runtime-loader route 的拆分结果和迁移边界。
 - `HMR.md`：开发期 Vite runner、watch、moduleGraph、模块替换。
 - `FRONTEND.md`：插件 UI、authoring bridge、MF2 remote、SignalDB/RPC/SSE。
 - `CONFIG.md`：配置声明、校验、默认值、持久化、网页配置。
@@ -34,7 +36,7 @@
 
 ## 当前与未来
 
-- 当前实现：写在 `CORE.md`、`RUNTIME.md`、`HMR.md`、`FRONTEND.md`、`CONFIG.md`、`WORKBENCH.md`、`OPS.md`、`TOOLCHAIN.md`、`GOVERNANCE.md`。
+- 当前实现：写在 `CORE.md`、`RUNTIME.md`、`RUNTIME_LOADER_SPLIT.md`、`HMR.md`、`FRONTEND.md`、`CONFIG.md`、`WORKBENCH.md`、`OPS.md`、`TOOLCHAIN.md`、`GOVERNANCE.md`。
 - 未来或未实现：写在 `proposals/README.md`，大型提案放在 `docs/proposals/*.md`，并由 `proposals/README.md` 索引。
 - runtime 当前只有 loader route；static suite / fixed catalog route 是未来路线，不能写成当前实现。
 - 如果提案实现，先把已实现行为迁入当前领域文档，再缩短 `proposals/README.md` 或对应提案文档。

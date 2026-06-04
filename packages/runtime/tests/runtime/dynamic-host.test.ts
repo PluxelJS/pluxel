@@ -3,7 +3,7 @@ import { createDiskFixture as createFixture } from '@pluxel/test/fixtures'
 import { createRuntimeContext } from '@pluxel/runtime/test'
 
 describe('@pluxel/runtime Context bootstrap', () => {
-	it('boots core runtime services without any HMR/Vite layer', async () => {
+	it('boots core runtime services without any loader/HMR layer', async () => {
 		await using fixture = await createFixture({})
 		const prev = process.cwd()
 		try {
@@ -20,8 +20,8 @@ describe('@pluxel/runtime Context bootstrap', () => {
 			const ctx = runtime.ctx
 
 			expect(ctx.configService.isReady).toBe(true)
-			expect(ctx.loader).toBeTruthy()
-			expect(ctx.packageService).toBeTruthy()
+			expect((ctx as unknown as { loader?: unknown }).loader).toBeUndefined()
+			expect((ctx as unknown as { packageService?: unknown }).packageService).toBeUndefined()
 			await runtime.dispose()
 		} finally {
 			process.chdir(prev)

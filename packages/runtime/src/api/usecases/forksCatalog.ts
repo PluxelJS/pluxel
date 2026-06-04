@@ -1,6 +1,10 @@
 import { ForkablePlugin, parseForkPluginId, type Context } from '@pluxel/core'
 
-import { EXTRA_FORKS, type ForksExtra } from '../../services/runtime/loader/selection'
+import {
+	EXTRA_FORKS,
+	type ForksExtra,
+	getRuntimePluginCatalog,
+} from '../../services/runtime/catalog/RuntimePluginCatalogService'
 
 function getExtraApi(ctx: Context): {
 	getExtra?: (key: string) => unknown
@@ -30,7 +34,7 @@ export function maybeAddForkToCatalog(ctx: Context, name: string) {
 	const fork = parseForkPluginId(name)
 	if (!fork) return
 	try {
-		const baseCtor = ctx.loader.api.runtime.resolve(fork.baseId)
+		const baseCtor = getRuntimePluginCatalog(ctx).resolve(fork.baseId)
 		if (!baseCtor) return
 		const proto = (baseCtor as { prototype?: unknown }).prototype
 		if (!proto || !(proto instanceof ForkablePlugin)) return

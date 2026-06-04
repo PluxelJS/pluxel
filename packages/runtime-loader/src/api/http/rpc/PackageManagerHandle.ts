@@ -1,20 +1,20 @@
-// rpc/PackageHandle.ts - 包管理 RPC
+// rpc/PackageManagerHandle.ts - loader route package-management RPC
 import type { Context } from '@pluxel/core'
 import { RpcTarget } from 'capnweb'
 import {
-	applyMarketMutation,
+	applyPackageMutation,
 	listLoadIssues,
 	listPackageInventory,
-} from '../../features/market/service'
+} from '../../features/package-manager/service'
 import type {
 	PackageBatchResult,
 	PackageInventoryEntry,
 	PackageInventoryFilter,
 	PackageLoadIssue,
 	PackageMutationInput,
-} from '../../../web/protocol'
+} from '@pluxel/runtime/protocol'
 
-export class PackageHandle extends RpcTarget {
+export class PackageManagerHandle extends RpcTarget {
 	private readonly ctx: Context
 
 	constructor(ctx: Context) {
@@ -24,7 +24,7 @@ export class PackageHandle extends RpcTarget {
 
 	/** 执行包管理操作 */
 	mutate(input: PackageMutationInput): Promise<PackageBatchResult> {
-		return applyMarketMutation(this.ctx, input)
+		return applyPackageMutation(this.ctx, input)
 	}
 
 	/** 读取包清单 */

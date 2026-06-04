@@ -9,7 +9,7 @@ import {
 	type MissingDepsCandidate,
 	startTimer,
 } from '@pluxel/runtime/shared'
-import type { LoaderBatch } from '@pluxel/runtime/services'
+import type { LoaderBatch } from '@pluxel/runtime-loader/services'
 import type { HmrPathApi, HmrToolkit } from './environment'
 import { collectHotspots, isLogEnabled, logAttributionReport, type TimingTracker } from './logging'
 import { collectPluginTotals } from './operational-report'

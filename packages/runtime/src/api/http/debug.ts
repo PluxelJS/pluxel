@@ -1,6 +1,7 @@
 import type { Context as PluginContext } from '@pluxel/core'
 
 import { type AnyElysiaApp } from '../../services/http/elysia'
+import { getRuntimePluginCatalog } from '../../services/runtime/catalog/RuntimePluginCatalogService'
 import { pluginSchema } from '../usecases/pluginConfig'
 import { HMR_INTERNAL_API_BASE } from '../../web/paths'
 import { debugSchemaSourceQuery, pluginNameParams } from './models'
@@ -15,14 +16,15 @@ interface PluginSchemaInfo {
 }
 
 function getPluginSchemaInfos(ctx: PluginContext): PluginSchemaInfo[] {
-	const names = ctx.loader.api.registry.listLoadedNames()
+	const catalog = getRuntimePluginCatalog(ctx)
+	const names = catalog.listLoadedNames()
 	const result: PluginSchemaInfo[] = []
 
 	for (const name of names) {
-		const ctor = ctx.loader.api.registry.getCtor(name)
+		const ctor = catalog.resolveOrRegistered(name)
 		if (!ctor) continue
-		const schema = ctx.loader.api.registry.getSchema(ctor)
-		const schemaSource = ctx.loader.api.registry.getSchemaSource(ctor)
+		const schema = catalog.getSchema(name)
+		const schemaSource = catalog.getSchemaSource(name)
 		result.push({
 			name,
 			hasSchema: !!schema && Object.keys(schema).length > 0,

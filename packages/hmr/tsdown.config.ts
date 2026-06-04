@@ -13,7 +13,7 @@ export default defineConfig({
 			'@pluxel/workspace/info',
 		],
 		onlyBundle: ['fdir'],
-		neverBundle: ['@pluxel/core', '@pluxel/runtime', 'vite', 'vite/*'],
+		neverBundle: ['@pluxel/core', '@pluxel/runtime', '@pluxel/runtime-loader', 'vite', 'vite/*'],
 	},
 	entry: {
 		index: 'src/index.ts',

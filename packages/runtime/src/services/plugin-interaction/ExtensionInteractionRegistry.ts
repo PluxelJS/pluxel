@@ -634,7 +634,17 @@ export class ExtensionInteractionRegistry {
 		if (!targetPluginName || !providerPluginName) return false
 		if (targetPluginName === providerPluginName) return true
 
-		const loaderApi = this.ctx.loader?.api
+		const loaderApi = (
+			this.ctx as unknown as {
+				loader?: {
+					api?: {
+						runtime?: { resolve?: (name: string) => unknown }
+						registry?: { getCtor?: (name: string) => unknown }
+						deps?: { list?: (ctor: unknown) => unknown }
+					}
+				}
+			}
+		).loader?.api
 		const targetCtor =
 			loaderApi?.runtime?.resolve?.(targetPluginName) ??
 			loaderApi?.registry?.getCtor?.(targetPluginName)

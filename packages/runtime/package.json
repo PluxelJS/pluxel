@@ -13,6 +13,10 @@
 			"@pluxel/source": "./src/index.ts",
 			"default": "./dist/index.mjs"
 		},
+		"./api": {
+			"@pluxel/source": "./src/api/contributions.ts",
+			"default": "./dist/api.mjs"
+		},
 		"./capnweb": {
 			"@pluxel/source": "./src/capnweb.ts",
 			"default": "./dist/capnweb.mjs"
@@ -36,6 +40,14 @@
 		"./logger": {
 			"@pluxel/source": "./src/logger.ts",
 			"default": "./dist/logger.mjs"
+		},
+		"./plugin-catalog": {
+			"@pluxel/source": "./src/plugin-catalog.ts",
+			"default": "./dist/plugin-catalog.mjs"
+		},
+		"./protocol": {
+			"@pluxel/source": "./src/protocol.ts",
+			"default": "./dist/protocol.mjs"
 		},
 		"./services": {
 			"@pluxel/source": "./src/services.ts",
@@ -78,12 +90,15 @@
 	"publishConfig": {
 		"exports": {
 			".": "./dist/index.mjs",
+			"./api": "./dist/api.mjs",
 			"./capnweb": "./dist/capnweb.mjs",
 			"./config": "./dist/config.mjs",
 			"./events": "./dist/events.mjs",
 			"./frozen": "./dist/frozen.mjs",
 			"./internal": "./dist/internal.mjs",
 			"./logger": "./dist/logger.mjs",
+			"./plugin-catalog": "./dist/plugin-catalog.mjs",
+			"./protocol": "./dist/protocol.mjs",
 			"./services": "./dist/services.mjs",
 			"./shared": "./dist/shared.mjs",
 			"./test": "./dist/test.mjs",
@@ -150,8 +165,5 @@
 	},
 	"peerDependencies": {
 		"@tabler/icons-react": "*"
-	},
-	"inlinedDependencies": {
-		"fdir": "6.5.0"
 	}
 }

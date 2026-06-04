@@ -6,6 +6,7 @@ import {
 } from '@pluxel/core/services'
 import type { BuiltinMarkdownPart } from '../../web/extensions'
 import type { ConfigFieldMutation } from '../../web/protocol'
+import { getRuntimePluginCatalog } from '../../services/runtime/catalog/RuntimePluginCatalogService'
 
 export type PluginSchemaResult =
 	| {
@@ -70,7 +71,8 @@ function writeNestedField(
 }
 
 export async function pluginSchema(ctx: Context, name: string): Promise<PluginSchemaResult> {
-	const schemaMap = ctx.loader.api.registry.getSchema(name)
+	const catalog = getRuntimePluginCatalog(ctx)
+	const schemaMap = catalog.getSchema(name)
 	if (!schemaMap) {
 		return {
 			ok: false,
@@ -79,7 +81,7 @@ export async function pluginSchema(ctx: Context, name: string): Promise<PluginSc
 		}
 	}
 
-	const schemaSource = ctx.loader.api.registry.getSchemaSource(name)
+	const schemaSource = catalog.getSchemaSource(name)
 	if (!schemaSource || Object.keys(schemaSource).length === 0) {
 		return {
 			ok: false,
@@ -88,10 +90,10 @@ export async function pluginSchema(ctx: Context, name: string): Promise<PluginSc
 		}
 	}
 
-	const layoutMap = ctx.loader.api.registry.getConfigLayout(name) ?? null
+	const layoutMap = catalog.getConfigLayout(name) ?? null
 	let layout: BuiltinMarkdownPart[] | null = null
 	if (layoutMap && Object.keys(layoutMap).length > 0) {
-		const ctor = ctx.loader.api.registry.getCtor(name)
+		const ctor = catalog.resolveOrRegistered(name)
 		// Prefer the layout attached to the cfg-binding that covers all schema keys.
 		// Fallback to deterministic first entry.
 		const bindingsMap = ctor ? getPluginInfo(ctor).configBindingsMap : null
@@ -123,7 +125,7 @@ export async function pluginSchema(ctx: Context, name: string): Promise<PluginSc
 }
 
 export async function pluginConfigGet(ctx: Context, name: string): Promise<PluginConfigResult> {
-	const schema = ctx.loader.api.registry.getSchema(name)
+	const schema = getRuntimePluginCatalog(ctx).getSchema(name)
 	const defaults = schema ? await collectConfigDefaults(schema, { missingObjectDefault: {} }) : {}
 	const rawConfig = ctx.configService.getRawConfig(name)
 	return { ok: true, saved: false, config: normalizePlainObject(rawConfig), defaults }
@@ -134,7 +136,7 @@ export async function pluginConfigValidate(
 	name: string,
 	patch: Record<string, unknown>,
 ): Promise<PluginConfigResult> {
-	const schema = ctx.loader.api.registry.getSchema(name)
+	const schema = getRuntimePluginCatalog(ctx).getSchema(name)
 	if (!schema)
 		return {
 			ok: false,
@@ -170,7 +172,7 @@ export async function pluginConfigPatch(
 	name: string,
 	patch: Record<string, unknown>,
 ): Promise<PluginConfigResult> {
-	const schema = ctx.loader.api.registry.getSchema(name)
+	const schema = getRuntimePluginCatalog(ctx).getSchema(name)
 	if (!schema)
 		return {
 			ok: false,
@@ -250,7 +252,7 @@ export async function pluginConfigReset(
 	name: string,
 	keys?: string[],
 ): Promise<PluginConfigResult> {
-	const schema = ctx.loader.api.registry.getSchema(name)
+	const schema = getRuntimePluginCatalog(ctx).getSchema(name)
 	if (!schema)
 		return {
 			ok: false,
