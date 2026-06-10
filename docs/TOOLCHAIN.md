@@ -22,6 +22,8 @@ Toolchain 包括 build、Vite 分层、lint、test 和发布约束。它的职�
 - runtime web asset build。
 - HMR dev host。
 
+未来目标态中，HMR dev host 会改名并归入 `@pluxel/runtime-loader` dev mode；Vite 分层原则不变。
+
 规则：
 
 - 环境相关 Vite plugin 必须限定作用域。
@@ -56,6 +58,8 @@ Lint 分 repo lint 和 build lint：
 - `@pluxel/hmr`
 - `@pluxel/cli`
 - `@pluxel/test`
+
+未来 loader dev mode 收敛后，`@pluxel/hmr` 不再发布，也不保留兼容入口；目标设计见 `proposals/runtime-loader-dev-mode.md`。
 
 其他 workspace 包默认 internal/private，除非显式提升。
 

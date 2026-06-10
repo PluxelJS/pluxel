@@ -1,11 +1,11 @@
-import { type PluginConstructor, type Context as PlxContext } from '@pluxel/core'
+import type { Context as PlxContext, PluginConstructor } from '@pluxel/core'
 import type { InferOutput } from 'valibot'
 import type {
 	PluginSourceInfo,
 	PluginStatusEntryLifecycleStage,
 	PluginStatusOverview,
 } from './schema'
-import { getRuntimePluginCatalog } from '../../../services/runtime/catalog/RuntimePluginCatalogService'
+import { runtimePluginCatalog } from '../plugins/catalog'
 
 type LifecycleStage = InferOutput<typeof PluginStatusEntryLifecycleStage>
 type SourceOutput = InferOutput<typeof PluginSourceInfo>
@@ -15,7 +15,7 @@ export function resolvePluginSource(
 	name: string,
 	ctor?: PluginConstructor,
 ): SourceOutput {
-	return getRuntimePluginCatalog(pCtx).resolveSource(name, ctor)
+	return runtimePluginCatalog(pCtx).resolveSource(name, ctor)
 }
 
 export function readStatusSnapshot(
@@ -28,7 +28,7 @@ export function readStatusSnapshot(
 	lifecycleStage: LifecycleStage
 	source: SourceOutput
 } {
-	return getRuntimePluginCatalog(pCtx).readStatus(name, ctor) as {
+	return runtimePluginCatalog(pCtx).readStatus(name, ctor) as {
 		isRunning: boolean
 		isEnabled: boolean
 		lifecycleStage: LifecycleStage
@@ -37,7 +37,7 @@ export function readStatusSnapshot(
 }
 
 export function getStatusOverview(pCtx: PlxContext) {
-	const overview = getRuntimePluginCatalog(pCtx).statusOverview()
+	const overview = runtimePluginCatalog(pCtx).statusOverview()
 	const plugins: Array<InferOutput<typeof PluginStatusOverview>['plugins'][number]> = []
 	const statuses = []
 	for (const snap of overview.statuses) {

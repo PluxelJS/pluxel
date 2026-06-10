@@ -9,7 +9,7 @@ import {
 	getRuntimeOpsCatalog,
 	invokeRuntimeOp,
 } from '../../ops'
-import { writeGroups } from '../../features/groups/service'
+import { writeGroups } from '../../features/pluginGroups/service'
 import { createRuntimeRpcHandle } from '../../contributions'
 import { ExtensionSessionHandle } from './ExtensionSessionHandle'
 import { LoggingHandle } from './LoggingHandle'

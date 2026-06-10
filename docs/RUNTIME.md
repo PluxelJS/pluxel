@@ -60,10 +60,10 @@ static suite route 还没有实现，不能从本文件推断为当前 API。它
 ```text
 runtime common host layer
   -> loader route        当前实现：scan/package/dynamic module/HMR replaceModule
-  -> static suite route  未来提案：known catalog/strict startup/bounded HMR
+  -> static suite route  未来提案：known catalog/strict startup/bounded replacement
 ```
 
-两条路线不应该复制 core 生命周期，也不应该复制 runtime 的配置、ops、web config、plugin UI protocols。共同逻辑留在 runtime common host layer；差异只放在 catalog resolution、startup policy 和 HMR submission adapter。
+两条路线不应该复制 core 生命周期，也不应该复制 runtime 的配置、ops、web config、plugin UI protocols。共同逻辑留在 runtime common host layer；差异只放在 catalog resolution、startup policy 和 route-specific management 能力。
 
 ## Runtime 服务入口
 
@@ -105,3 +105,5 @@ core <- runtime common <- runtime-loader <- hmr <- cli
 ```
 
 runtime 依赖 core 来提交生命周期。loader route 依赖 runtime common 的配置、catalog 契约和宿主服务，并提供 scan/package/dynamic module 能力。HMR attach 到已有 runtime `Context`，并显式注册 loader route。runtime 不应该 import HMR；HMR 不应该重新定义 runtime 协议。
+
+未来目标态会删除独立 `@pluxel/hmr` 包，把 Vite/watch/runner 收敛为 `@pluxel/runtime-loader` 的 dev mode，并且不保留兼容入口。目标设计见 `proposals/runtime-loader-dev-mode.md`。

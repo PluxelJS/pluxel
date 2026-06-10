@@ -38,11 +38,7 @@ export function buildPluxelFrontendResolveConditions(env = process.env.NODE_ENV)
 		)
 			? [env]
 			: []
-	return [...new Set([
-	'@pluxel/source',
-	...DEFAULT_FRONTEND_RESOLVE_CONDITIONS,
-	...extras
-])]
+	return [...new Set(['@pluxel/source', ...DEFAULT_FRONTEND_RESOLVE_CONDITIONS, ...extras])]
 }
 
 export function createPluxelUiChunkGroups() {
@@ -68,8 +64,8 @@ export function createPluxelUiChunkGroups() {
 			priority: 28,
 		},
 		{
-			name: 'gqty',
-			test: /[\\/]node_modules[\\/](gqty|graphql)[\\/]/,
+			name: 'graphql',
+			test: /[\\/]node_modules[\\/](@gqlens|graphql)[\\/]/,
 			priority: 26,
 		},
 		{

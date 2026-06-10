@@ -15,10 +15,11 @@ const BACKEND_PACKAGES: (string | RegExp)[] = [
 	'@hono/valibot-validator',
 ]
 const GRAPHQL_PACKAGES: (string | RegExp)[] = [
+	'@gqlens/codegen',
+	'@gqlens/core',
+	'@gqlens/react',
 	'@gqloom/core',
 	'@gqloom/valibot',
-	'@gqty/cli',
-	'gqty',
 	'graphql',
 	'graphql-scalars',
 	'graphql-yoga',

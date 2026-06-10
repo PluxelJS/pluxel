@@ -24,18 +24,6 @@ export function createPackageManagerResolver(pCtx: PlxContext): Resolver[] {
 		packageManager: query(PackageManager).resolve(() => ({
 			__typename: 'PackageManager' as const,
 		})),
-		packageLoadIssue: query(PackageLoadIssueEntry)
-			.input({ id: v.string() })
-			.resolve(({ id }) => readLoadIssue(pCtx, id)),
-		packageLoadIssues: query(v.array(PackageLoadIssueEntry)).resolve(() => listLoadIssues(pCtx)),
-		packageInventoryEntry: query(PackageInventoryEntry)
-			.input({ id: v.string(), includeUntracked: v.nullish(v.boolean()) })
-			.resolve(({ id, includeUntracked }) =>
-				readPackageInventoryEntry(pCtx, id, { includeUntracked }),
-			),
-		packageInventory: query(v.array(PackageInventoryEntry))
-			.input(PackageInventoryFilter)
-			.resolve(({ includeUntracked }) => listPackageInventory(pCtx, { includeUntracked })),
 	})
 
 	const packageManagerFields = resolver.of(PackageManager, {

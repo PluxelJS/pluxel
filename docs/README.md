@@ -31,8 +31,9 @@
 - `OPS.md`：operation control-plane、CLI/RPC/MCP/workbench 投影。
 - `TOOLCHAIN.md`：build、Vite 分层、lint、test 和发布工具链。
 - `GOVERNANCE.md`：依赖方向、公开包、导出、维护规则。
-- `proposals/README.md`：未实现或未来设计入口，例如 static suite runtime route、WorkbenchView、Core DI V2。
-- `proposals/runtime-routes.md`：未来 runtime 双路线设计，讨论 loader route、static suite route 和两种 HMR adapter。
+- `proposals/README.md`：未实现或未来设计入口，例如 runtime-loader dev mode、static suite runtime route、WorkbenchView、Core DI V2。
+- `proposals/runtime-loader-dev-mode.md`：未来把独立 HMR 包收敛为 `@pluxel/runtime-loader` dev mode 的目标设计，不保留兼容入口。
+- `proposals/runtime-routes.md`：未来 runtime 双路线设计，讨论 loader route、static suite route 和 route-neutral runtime common。
 
 ## 当前与未来
 

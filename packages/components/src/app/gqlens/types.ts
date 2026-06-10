@@ -162,42 +162,7 @@ export type Query = {
   __typename?: 'Query';
   _empty: Scalars['String']['output'];
   pluginCatalog: PluginCatalog;
-  plugin: Plugin;
-  plugins: Array<Plugin>;
-  pluginStatus: PluginStatusOverview;
-  pluginGroup: PluginGroup;
-  pluginGroups: Array<PluginGroup>;
   packageManager: PackageManager;
-  packageLoadIssue: PackageLoadIssue;
-  packageLoadIssues: Array<PackageLoadIssue>;
-  packageInventoryEntry: PackageInventoryEntry;
-  packageInventory: Array<PackageInventoryEntry>;
-};
-
-
-export type QueryPluginArgs = {
-  id: Scalars['String']['input'];
-};
-
-
-export type QueryPluginGroupArgs = {
-  id: Scalars['String']['input'];
-};
-
-
-export type QueryPackageLoadIssueArgs = {
-  id: Scalars['String']['input'];
-};
-
-
-export type QueryPackageInventoryEntryArgs = {
-  id: Scalars['String']['input'];
-  includeUntracked?: InputMaybe<Scalars['Boolean']['input']>;
-};
-
-
-export type QueryPackageInventoryArgs = {
-  includeUntracked?: InputMaybe<Scalars['Boolean']['input']>;
 };
 
 export type Mutation = {

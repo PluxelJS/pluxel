@@ -10,6 +10,8 @@
 @pluxel/core <- @pluxel/runtime <- @pluxel/hmr <- @pluxel/cli
 ```
 
+未来目标态会删除独立 `@pluxel/hmr` 包，把开发热替换收敛为 `@pluxel/runtime-loader` 的 dev mode，且不保留兼容入口。该未来方向只记录在 `docs/proposals/runtime-loader-dev-mode.md`，实现前不要反推为当前包边界。
+
 `@pluxel/build` 是 build-time tooling，不进入 runtime service graph。
 
 必须保持：
@@ -29,6 +31,8 @@
 - `@pluxel/hmr`
 - `@pluxel/cli`
 - `@pluxel/test`
+
+目标态公开包集合会移除 `@pluxel/hmr`，并把 dev subpath 挂到 `@pluxel/runtime-loader`。实现时应一次性改入口，不新增长期 re-export 或 facade。
 
 internal/private 包：
 

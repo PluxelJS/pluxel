@@ -2,7 +2,7 @@ import type { PluginConstructor, Context as PlxContext } from '@pluxel/core'
 import { GraphQLError } from 'graphql'
 
 import type { PluginOutput } from './schema'
-import { getRuntimePluginCatalog } from '../../../services/runtime/catalog/RuntimePluginCatalogService'
+import { runtimePluginCatalog } from './catalog'
 
 const PLUGIN_CTOR = Symbol('pluginCtor')
 
@@ -10,7 +10,7 @@ type InternalPlugin = PluginOutput & { [PLUGIN_CTOR]?: PluginConstructor }
 
 export function ensurePlugin(pCtx: PlxContext, name: string): PluginConstructor {
 	try {
-		return getRuntimePluginCatalog(pCtx).require(name)
+		return runtimePluginCatalog(pCtx).require(name)
 	} catch {
 		throw new GraphQLError('Plugin not found', {
 			extensions: { code: 'NOT_FOUND', name },
@@ -31,12 +31,12 @@ export function createPlugin(pCtx: PlxContext, name: string): PluginOutput {
 export function getPluginCtor(pCtx: PlxContext, plugin: PluginOutput): PluginConstructor {
 	const internal = plugin as InternalPlugin
 	if (internal[PLUGIN_CTOR])
-		return getRuntimePluginCatalog(pCtx).resolve(internal[PLUGIN_CTOR]) ?? internal[PLUGIN_CTOR]!
+		return runtimePluginCatalog(pCtx).resolve(internal[PLUGIN_CTOR]) ?? internal[PLUGIN_CTOR]!
 	return ensurePlugin(pCtx, plugin.name)
 }
 
 export function listPlugins(pCtx: PlxContext): PluginOutput[] {
-	return getRuntimePluginCatalog(pCtx)
+	return runtimePluginCatalog(pCtx)
 		.statusOverview()
 		.statuses.map((snap) => ({
 			__typename: 'Plugin' as const,
@@ -46,7 +46,7 @@ export function listPlugins(pCtx: PlxContext): PluginOutput[] {
 }
 
 export function getPluginDependencies(pCtx: PlxContext, ctor: PluginConstructor): PluginOutput[] {
-	return getRuntimePluginCatalog(pCtx)
+	return runtimePluginCatalog(pCtx)
 		.listDependencies(ctor)
 		.map((dep) => ({
 			__typename: 'Plugin' as const,

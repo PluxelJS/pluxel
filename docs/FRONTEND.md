@@ -22,6 +22,8 @@ build/HMR：
 - HMR 在开发期消费 source entry，编译插件 UI remote。
 - build 在发布产物里把 authoring bridge 改写成 runtime artifact 注册。
 
+未来目标态会把这里的 HMR 开发处理改名并收敛到 `@pluxel/runtime-loader` dev mode，不保留 `@pluxel/hmr/plugin` 兼容入口。
+
 runtime：
 
 - 只消费 `ctx.ext.ui.remote.packaged()`。

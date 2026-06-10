@@ -52,6 +52,10 @@ runtime 不依赖 runtime-loader。`pnpm install` 只报告原有 core/test 循�
 - `rpc.package()` handle。
 - workspace MCP tools。
 
+## 未来收敛方向
+
+当前拆分仍然保留独立 `@pluxel/hmr` 包，这是已实现状态，不是长期目标。下一步目标态是把 Vite/watch/runner 和插件 UI dev 编译收敛为 `@pluxel/runtime-loader` 的 dev mode，并删除 `@pluxel/hmr` 包、旧 HMR 配置名和旧 subpath，不保留兼容 facade。详细设计见 `proposals/runtime-loader-dev-mode.md`。
+
 ## 为什么这样拆
 
 loader route 的 scan/package/cache/module catalog 是动态插件生态的成本。static suite route 未来不应该继承这些成本。
@@ -66,7 +70,7 @@ runtime common 仍然复用：
 
 这样 static suite 未来只需要提供另一份 catalog/startup/HMR submit 适配，不需要复制 runtime。
 
-## 当前兼容边界
+## 当前协议边界
 
 对外协议保持不变：
 

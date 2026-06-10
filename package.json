@@ -17,6 +17,7 @@
     "lint:fix": "oxlint -c oxlint.config.ts --report-unused-disable-directives-severity=error packages scripts oxlint.config.ts vitest.config.ts pncat.config.ts --fix",
     "format": "oxfmt -c .oxfmtrc.json --ignore-path .gitignore --ignore-path .oxfmtignore --write .",
     "format:check": "oxfmt -c .oxfmtrc.json --ignore-path .gitignore --ignore-path .oxfmtignore --check .",
+    "gqlens:generate": "sh scripts/generate-gqlens.sh",
     "update": "pnpm pncat migrate && pnpm up --latest && pnpm pncat revert",
     "dev": "pnpm --filter @pluxel/plugins-host dev",
     "deploy": "pnpm --filter @pluxel/plugins-host deploy",
@@ -31,6 +32,7 @@
     "react-dom": "^19.2.6"
   },
   "devDependencies": {
+    "@gqlens/codegen": "link:../GQLens/packages/codegen",
     "@pluxel/cli": "workspace:*",
     "@pluxel/test": "workspace:*",
     "@pluxel/workspace": "workspace:*",
@@ -39,6 +41,7 @@
     "oxlint": "^1.66.0",
     "pncat": "^0.12.0",
     "tsdown": "^0.22.0",
+    "tsx": "^4.22.3",
     "turbo": "^2.9.14",
     "typescript": "^6.0.3",
     "unplugin-preprocessor-directives": "^1.2.0",

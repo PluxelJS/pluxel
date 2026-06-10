@@ -197,13 +197,14 @@ function usePluginDetail(pluginName?: string) {
 		ttl: 30_000,
 	})
 
-	let scope: ReturnType<typeof detailQuery.plugin> | undefined
+	let scope: ReturnType<(typeof detailQuery.pluginCatalog)['plugin']> | undefined
 	let dependencies: PluginDependency[] = []
 	if (pluginName !== undefined) {
 		try {
-			scope = detailQuery.plugin({ id: pluginName })
+			const catalog = detailQuery.pluginCatalog
+			scope = catalog.plugin({ id: pluginName })
 			dependencies = (scope.detail.dependencies.ids ?? []).map((id) => {
-				const dep = detailQuery.plugin({ id })
+				const dep = catalog.plugin({ id })
 				return {
 					id: dep.id ?? id,
 					name: dep.name ?? id,

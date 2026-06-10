@@ -2,6 +2,8 @@
 
 `@pluxel/hmr` 是开发期适配层。它把 Vite、源码执行、watch、moduleGraph 和插件 UI 编译接到 runtime 上。
 
+未来目标态会删除独立 `@pluxel/hmr` 包，把这些能力收敛为 `@pluxel/runtime-loader` 的 dev mode，且不保留旧入口兼容。目标设计见 `proposals/runtime-loader-dev-mode.md`。本文仍描述当前已实现行为。
+
 ## 设计边界
 
 HMR 拥有：
@@ -87,4 +89,4 @@ HMR 不把 MF2 当 authoring API。MF2 只定义 remote artifact format 和宿�
 
 ## 静态插件目录的 HMR 方向
 
-当前没有实现 static-suite HMR route。未来如果支持固定插件总量，HMR 仍应复用 Vite runner/watch/moduleGraph，但提交到 known-plugin adapter，并默认拒绝插件集合漂移，除非配置显式允许。
+当前没有实现 static-suite HMR route。新的目标设计不再为 static suite 预留通用 HMR adapter；如果未来 fixed catalog 需要 dev replacement，应作为 static suite 自己的 dev 子路径单独设计，并默认拒绝插件集合漂移，除非配置显式允许。

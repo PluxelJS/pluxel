@@ -2,6 +2,8 @@
 
 `@pluxel/hmr` 是开发期适配层。它把 Vite、源码执行、watch、HMR 和插件 UI 编译接到 `@pluxel/runtime` 上。
 
+未来目标态会删除这个包，把能力收敛为 `@pluxel/runtime-loader` 的 dev mode，并且不保留 `@pluxel/hmr` 或 `@pluxel/hmr/*` 兼容入口。目标设计见 [`docs/proposals/runtime-loader-dev-mode.md`](../../docs/proposals/runtime-loader-dev-mode.md)。本文只描述当前已实现入口。
+
 如果你要理解整条插件前端链路，直接看：
 
 - [`docs/HMR.md`](../../docs/HMR.md)
@@ -144,6 +146,8 @@ HMR 并不单独定义最终发布语义。正式构建时还会配合：
 - 插件 UI 类型增强统一声明到 `@pluxel/runtime/web`
 
 ## 公开面
+
+以下公开面属于当前实现，不是目标态兼容承诺。未来 loader dev mode 落地时会一次性删除这些入口。
 
 - `@pluxel/hmr`
   low-level attach、Vite config helper、`HMRService`

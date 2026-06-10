@@ -10,11 +10,6 @@ import { createPlugin, getPluginDependencies, getPluginCtor, listPlugins } from 
 export function createPluginResolvers(pCtx: PlxContext): Resolver[] {
 	const queries = resolver({
 		pluginCatalog: query(PluginCatalog).resolve(() => ({ __typename: 'PluginCatalog' as const })),
-		plugin: query(Plugin)
-			.input({ id: v.string() })
-			.resolve(({ id }) => createPlugin(pCtx, id)),
-		plugins: query(v.array(Plugin)).resolve(() => listPlugins(pCtx)),
-		pluginStatus: query(PluginStatusOverview).resolve(() => getStatusOverview(pCtx)),
 	})
 
 	const catalogFields = resolver.of(PluginCatalog, {

@@ -1,4 +1,4 @@
-import { field, mutation, query, resolver } from '@gqloom/core'
+import { field, mutation, resolver } from '@gqloom/core'
 import type { Context as PlxContext } from '@pluxel/core'
 import * as v from 'valibot'
 
@@ -7,11 +7,7 @@ import { PluginGroup, PluginGroupInput } from './schema'
 import { readGroup, readGroups, writeGroups } from './service'
 
 export function createPluginGroupsResolver(pCtx: PlxContext) {
-	const queries = resolver({
-		pluginGroup: query(PluginGroup)
-			.input({ id: v.string() })
-			.resolve(({ id }) => readGroup(pCtx, id)),
-		pluginGroups: query(v.array(PluginGroup)).resolve(() => readGroups(pCtx)),
+	const rootFields = resolver({
 		updatePluginGroups: mutation(v.array(PluginGroup))
 			.input({ groups: v.array(PluginGroupInput) })
 			.resolve(({ groups }) => writeGroups(pCtx, groups)),
@@ -24,5 +20,5 @@ export function createPluginGroupsResolver(pCtx: PlxContext) {
 		groups: field(v.array(PluginGroup)).resolve(() => readGroups(pCtx)),
 	})
 
-	return [queries, catalogFields]
+	return [rootFields, catalogFields]
 }

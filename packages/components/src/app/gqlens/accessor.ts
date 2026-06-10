@@ -134,16 +134,7 @@ export interface QueryNode {
   readonly __typename: string | undefined;
   readonly _empty: Types.Query["_empty"] | undefined;
   readonly pluginCatalog: PluginCatalogNode;
-  readonly plugin: (args: GQLensArgs<Types.QueryPluginArgs>) => PluginNode;
-  readonly plugins: { readonly ids: readonly string[] | undefined };
-  readonly pluginStatus: PluginStatusOverviewNode;
-  readonly pluginGroup: (args: GQLensArgs<Types.QueryPluginGroupArgs>) => PluginGroupNode;
-  readonly pluginGroups: { readonly ids: readonly string[] | undefined };
   readonly packageManager: PackageManagerNode;
-  readonly packageLoadIssue: (args: GQLensArgs<Types.QueryPackageLoadIssueArgs>) => PackageLoadIssueNode;
-  readonly packageLoadIssues: { readonly ids: readonly string[] | undefined };
-  readonly packageInventoryEntry: (args: GQLensArgs<Types.QueryPackageInventoryEntryArgs>) => PackageInventoryEntryNode;
-  readonly packageInventory: (args?: GQLensArgs<Types.QueryPackageInventoryArgs>) => { readonly ids: readonly string[] | undefined };
 }
 
 // Schema contract consumed by @gqlens/core
@@ -155,16 +146,7 @@ export const gqlensSchema: GQLensSchemaContract = {
       "__typename": { name: "__typename", result: { "kind": "scalar", "cardinality": "one" } },
       "_empty": { name: "_empty", result: { "kind": "scalar", "cardinality": "one" } },
       "pluginCatalog": { name: "pluginCatalog", result: { "kind": "object", "cardinality": "one", "typeName": "PluginCatalog", "objectKind": "value" } },
-      "plugin": { name: "plugin", result: { "kind": "object", "cardinality": "one", "typeName": "Plugin", "objectKind": "entity" }, args: { "id": "String!" } },
-      "plugins": { name: "plugins", result: { "kind": "object", "cardinality": "list", "typeName": "Plugin", "objectKind": "entity" } },
-      "pluginStatus": { name: "pluginStatus", result: { "kind": "object", "cardinality": "one", "typeName": "PluginStatusOverview", "objectKind": "value" } },
-      "pluginGroup": { name: "pluginGroup", result: { "kind": "object", "cardinality": "one", "typeName": "PluginGroup", "objectKind": "entity" }, args: { "id": "String!" } },
-      "pluginGroups": { name: "pluginGroups", result: { "kind": "object", "cardinality": "list", "typeName": "PluginGroup", "objectKind": "entity" } },
       "packageManager": { name: "packageManager", result: { "kind": "object", "cardinality": "one", "typeName": "PackageManager", "objectKind": "value" } },
-      "packageLoadIssue": { name: "packageLoadIssue", result: { "kind": "object", "cardinality": "one", "typeName": "PackageLoadIssue", "objectKind": "entity" }, args: { "id": "String!" } },
-      "packageLoadIssues": { name: "packageLoadIssues", result: { "kind": "object", "cardinality": "list", "typeName": "PackageLoadIssue", "objectKind": "entity" } },
-      "packageInventoryEntry": { name: "packageInventoryEntry", result: { "kind": "object", "cardinality": "one", "typeName": "PackageInventoryEntry", "objectKind": "entity" }, args: { "id": "String!", "includeUntracked": "Boolean" } },
-      "packageInventory": { name: "packageInventory", result: { "kind": "object", "cardinality": "list", "typeName": "PackageInventoryEntry", "objectKind": "entity" }, args: { "includeUntracked": "Boolean" } },
     },
   },
   mutation: {

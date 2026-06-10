@@ -277,6 +277,8 @@ runtime 本身不启动 Vite。开发期统一通过 `@pluxel/hmr` 接入：
 - `planHmrHostFromConfig(...)` + `bootPlannedHmrHost(plan)` + `host.hmr.start()`
 - `attachHmrRuntime(ctx, ...)`
 
+未来目标态会删除独立 `@pluxel/hmr` 包，把开发期入口收敛到 `@pluxel/runtime-loader` dev mode，且不保留旧入口兼容。设计见 `../../docs/proposals/runtime-loader-dev-mode.md`。
+
 ## 主要 subpath
 
 - `@pluxel/runtime/services`

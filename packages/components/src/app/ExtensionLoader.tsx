@@ -297,7 +297,7 @@ export function ExtensionLoader({
 	const statusReadyRef = useRef(false)
 
 	useEffect(() => {
-		// IMPORTANT: during refetch/errors, GQty may temporarily surface empty arrays.
+		// IMPORTANT: during refetch/errors, the GraphQL snapshot may temporarily surface empty arrays.
 		// Never overwrite the stable snapshot with an "empty flash" (would break plugin pages).
 		if (isLoading || hasError) return
 		if (cachedRef.current.key === signature) {
