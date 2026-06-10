@@ -2,30 +2,31 @@
 
 这里仅记录未实现或未来设计。不要把本文件内容当成当前 API；当前实现以 `../CORE.md`、`../RUNTIME.md`、`../HMR.md` 等领域文档为准。
 
-## 1. Runtime Loader Dev Mode
+## 1. Runtime Dynamic HMR Mode
 
-状态：提案。当前仍有 `@pluxel/hmr` 包；目标态会删除它，不保留兼容入口。
+状态：已采纳并进入实现态。独立 `@pluxel/hmr` 包不再保留，入口收敛到 `@pluxel/runtime-dynamic/hmr` 和 `@pluxel/runtime-dynamic/plugin`。
 
-详细设计见 `runtime-loader-dev-mode.md`。
+详细设计见 `runtime-dynamic-hmr-mode.md`。
 
 核心方向：
 
-- HMR 不再是独立包或独立 route，而是 `@pluxel/runtime-loader` 的 dev mode。
+- HMR 不再是独立包或独立 route，而是 `@pluxel/runtime-dynamic` 的 HMR mode。
 - loader 继续拥有 dynamic catalog、scan、package、module registry、`replaceModule` 和 batch commit。
-- dev mode 只负责把 Vite/watch/runner 的 source change 转成 loader batch。
-- 目标态只保留 `@pluxel/runtime-loader/dev`、`@pluxel/runtime-loader/plugin`、`@pluxel/runtime-loader/plugin-build`、`@pluxel/runtime-loader/diagnose` 等新入口。
+- HMR mode 只负责把 Vite/watch/runner 的 source change 转成 loader batch。
+- 目标态只保留 `@pluxel/runtime-dynamic/hmr` 和 `@pluxel/runtime-dynamic/plugin` 两个 HMR 相关 subpath；diagnose/workspace/Vite helper 都归入 `/hmr`。
+- 标准入口使用 `defineLoaderHmrConfig`、`createLoaderHmrHost`、`installLoaderHmr`、`LoaderHmrService`、`LoaderHmrSummary` 等命名。
 - 不保留 `@pluxel/hmr`、`@pluxel/hmr/*`、`pluxel.hmr.jsonc` 或任何 re-export/facade/deprecated wrapper。
 
-## 2. Static Suite Runtime Route
+## 2. Runtime Static Route
 
-状态：提案。当前没有 `@pluxel/static-suite` 包，没有 runtime static-suite subpath，也没有 static route dev mode。
+状态：提案/骨架已建。当前已有 `@pluxel/runtime-static` 包骨架和 tsdown 构建配置，但还没有 runtime-static startup 实现，也没有 runtime-static HMR mode。
 
 详细设计见 `runtime-routes.md`。这里仅保留摘要，避免把未来路线误写成当前 runtime 实现。
 
 问题背景：
 
 - 企业应用常常有固定且明确的插件总量。
-- 插件可以从一个 suite entry 静态导入并统一 export。
+- 插件可以从一个 static entry 静态导入并统一 export。
 - 动态 install/scan/package loading 未必是核心价值。
 - 更重要的是配置声明、配置落盘、网页配置、启动时严格检查、插件未启动时报错，以及可控 replacement 边界。
 
@@ -34,24 +35,24 @@
 ```text
 @pluxel/runtime common host layer
   -> loader route        scan/package/dynamic module
-  -> static suite route  known catalog/strict startup
+  -> runtime-static route known catalog/strict startup
 ```
 
-static suite 应该是 runtime 的一条路线，而不是 core-only host，也不是替代 runtime。它和当前 loader route 的关系必须保持清楚：
+runtime-static route 应该是 runtime 的一条路线，而不是 core-only host，也不是替代 runtime。它和当前 loader route 的关系必须保持清楚：
 
 - loader route 是当前实现，覆盖 scan/package/dynamic module/HMR replaceModule。
-- static suite route 是未来提案，覆盖 known catalog/strict startup/bounded replacement。
+- runtime-static route 是未来提案，覆盖 known catalog/strict startup/bounded replacement。
 - runtime common host layer 承载两条路线共享的 config persistence、web config APIs、plugin status projection、ops/control-plane、plugin UI protocols。
 - core 仍只负责 plugin graph、DI、lifecycle 和 config validation。
-- loader dev mode 属于 `@pluxel/runtime-loader`，不反向进入 runtime common layer。
+- loader HMR mode 属于 `@pluxel/runtime-dynamic`，不反向进入 runtime common layer。
 
-文档隔离规则：当前 loader route 写在 `../RUNTIME.md` 和 `../HMR.md`；未来 loader dev mode 写在 `runtime-loader-dev-mode.md`；static suite 细节写在 `runtime-routes.md`，本文件只保留摘要索引。实现前不要把 `definePluginSuite`、static startup report 或 static dev mode 写进当前实现文档。
+文档隔离规则：当前 loader route 和 loader HMR mode 写在 `../RUNTIME.md` 和 `../HMR.md`；runtime-static route 细节写在 `runtime-routes.md`，本文件只保留摘要索引。startup/hmr 实现落地前，不要把 runtime-static 行为写成当前能力。
 
 核心方向：
 
-- static suite 复用 runtime common 的配置、ops、web config、plugin UI protocols。
-- static suite 不复用 loader 的 scan/package/cache/dynamic module map。
-- static suite 默认不继承 loader dev mode；如果未来需要 fixed catalog dev replacement，应作为 static suite 自己的 dev 子路径另行证明和设计。
+- runtime-static route 复用 runtime common 的配置、ops、web config、plugin UI protocols。
+- runtime-static route 不复用 loader 的 scan/package/cache/dynamic module map。
+- runtime-static route 默认不继承 loader HMR mode；如果未来需要 fixed catalog HMR replacement，应作为 runtime-static route 自己的 HMR 子路径另行证明和设计。
 - 插件集合 drift 默认报错。
 
 ## 3. Workbench View Model

@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import { BasePlugin, ForkablePlugin, Plugin } from '@pluxel/runtime/test'
-import { LoaderPluginCatalogService, LoaderService } from '../../../runtime-loader/src/services'
+import { LoaderPluginCatalogService, LoaderService } from '../../../runtime-dynamic/src/services'
 import { getStatusOverview } from '../../src/api/features/pluginStatus/service'
-import { EXTRA_FORKS } from '../../../runtime-loader/src/loader/selection'
+import { EXTRA_FORKS } from '../../../runtime-dynamic/src/loader/selection'
 import { createHmrTestContext } from '../support/hmr-context'
 
 describe('pluginStatus forks', () => {

@@ -44,7 +44,7 @@
 	},
 	"dependencies": {
 		"@clack/prompts": "^1.0.1",
-		"@pluxel/hmr": "workspace:*",
+		"@pluxel/runtime-dynamic": "workspace:*",
 		"@pluxel/runtime": "workspace:*",
 		"fdir": "^6.5.0",
 		"gunshi": "^0.29.2",

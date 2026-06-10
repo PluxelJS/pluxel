@@ -24,8 +24,8 @@ const moduleDir = dirname(fileURLToPath(import.meta.url))
 // Base URL for serving built UI assets.
 //
 // Notes:
-// - In dist builds, `HMRService` mounts `dist/public` at this URL via `createUiPublicStaticMiddleware`.
-// - In source/dev mode, the dev renderer serves UI from `/src/*` instead.
+// - In dist builds, `LoaderHmrService` mounts `dist/public` at this URL via `createUiPublicStaticMiddleware`.
+// - In source/HMR mode, the HMR renderer serves UI from `/src/*` instead.
 export const DEFAULT_PUBLIC_BASE = UI_PUBLIC_BASE
 
 function toViteFsPath(absPath: string): string {
@@ -33,7 +33,7 @@ function toViteFsPath(absPath: string): string {
 	return normalized.startsWith('/') ? `/@fs${normalized}` : `/@fs/${normalized}`
 }
 
-function resolveDevClientEntryUrl(): string {
+function resolveHmrClientEntryUrl(): string {
 	const candidates = [
 		resolve(moduleDir, '../client.tsx'),
 		resolve(moduleDir, '../src/client.tsx'),
@@ -48,7 +48,7 @@ function resolveDevClientEntryUrl(): string {
 }
 
 export const DEV_ASSETS: Assets = {
-	js: resolveDevClientEntryUrl(),
+	js: resolveHmrClientEntryUrl(),
 	css: [],
 	preload: [],
 }

@@ -1,10 +1,10 @@
 import type { Context } from '@pluxel/core'
-import { PLUXEL_HMR_WORKSPACE_CONDITIONS_WITH_SOURCE } from '@pluxel/runtime/shared'
+import { PLUXEL_LOADER_DEV_WORKSPACE_CONDITIONS_WITH_SOURCE } from '@pluxel/runtime/shared'
 
 export type WorkspaceResolveEntryInput = {
 	name: string
 	workspaceOnly?: boolean
-	preferHmrExports?: boolean
+	preferRuntimeLoaderExports?: boolean
 	conditions?: string[]
 }
 
@@ -35,20 +35,20 @@ export async function workspaceResolveEntry(ctx: Context, input: WorkspaceResolv
 		return { ok: false as const, code: 'MISSING_PACKAGE', message: 'name is required' }
 	}
 
-	const preferHmrExports = input.preferHmrExports !== false
+	const preferRuntimeLoaderExports = input.preferRuntimeLoaderExports !== false
 	const conditions =
 		Array.isArray(input.conditions) && input.conditions.length > 0
 			? input.conditions
-			: [...PLUXEL_HMR_WORKSPACE_CONDITIONS_WITH_SOURCE]
+			: [...PLUXEL_LOADER_DEV_WORKSPACE_CONDITIONS_WITH_SOURCE]
 
 	return await getScanService(ctx).resolveEntryByName(name, {
 		workspaceOnly: input.workspaceOnly === true,
-		scan: { conditions, ...(preferHmrExports ? { preferHmrExports: true } : {}) },
+		scan: { conditions, ...(preferRuntimeLoaderExports ? { preferRuntimeLoaderExports: true } : {}) },
 	})
 }
 
 export async function workspaceListEntries(ctx: Context) {
 	return await getScanService(ctx).listWorkspaceEntries({
-		scan: { conditions: [...PLUXEL_HMR_WORKSPACE_CONDITIONS_WITH_SOURCE], preferHmrExports: true },
+		scan: { conditions: [...PLUXEL_LOADER_DEV_WORKSPACE_CONDITIONS_WITH_SOURCE], preferRuntimeLoaderExports: true },
 	})
 }

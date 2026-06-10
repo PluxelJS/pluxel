@@ -1,6 +1,6 @@
 import { normalize, resolve as r } from 'pathe'
 import type { PackageJson } from 'pkg-types'
-import { PLUXEL_CONDITION_HMR } from '@pluxel/runtime/shared'
+import { PLUXEL_CONDITION_RUNTIME_LOADER } from '@pluxel/runtime/shared'
 import { toDirectoryURLString } from '@pluxel/runtime/shared'
 import { getCachedResolver, resolveModulePath } from '@pluxel/runtime/shared'
 import { nodeWorkspaceFs, safeReadManifest, type WorkspaceFs } from './fs'
@@ -27,7 +27,7 @@ export class EntryResolver {
 			normalize(dir),
 			options.conditions,
 			options.conservativeCandidates,
-			options.preferHmrExports,
+			options.preferRuntimeLoaderExports,
 		])
 		const cached = this.cache.get(key)
 		if (cached) return cached
@@ -71,7 +71,7 @@ export class EntryResolver {
 			}
 		}
 
-		const hmrExport = options.preferHmrExports ? pickHmrExport(pkgJson?.exports) : undefined
+		const hmrExport = options.preferRuntimeLoaderExports ? pickRuntimeLoaderExport(pkgJson?.exports) : undefined
 		if (hmrExport) {
 			const abs = r(dir, hmrExport)
 			if (this.fs.existsSync(abs)) {
@@ -168,30 +168,30 @@ function findFirstTsEntry(
 	return null
 }
 
-function pickHmrExport(exportsField: PackageJson['exports']): string | undefined {
+function pickRuntimeLoaderExport(exportsField: PackageJson['exports']): string | undefined {
 	if (!exportsField) return undefined
 	const rootExport =
 		typeof exportsField === 'object' && exportsField !== null && '.' in exportsField
 			? (exportsField as Record<string, unknown>)['.']
 			: exportsField
 
-	return resolveHmrTarget(rootExport)
+	return resolveRuntimeLoaderTarget(rootExport)
 }
 
-function resolveHmrTarget(target: unknown): string | undefined {
+function resolveRuntimeLoaderTarget(target: unknown): string | undefined {
 	if (!target) return undefined
 	if (typeof target === 'string') return target
 	if (Array.isArray(target)) {
 		for (const item of target) {
-			const hit = resolveHmrTarget(item)
+			const hit = resolveRuntimeLoaderTarget(item)
 			if (hit) return hit
 		}
 		return undefined
 	}
 	if (typeof target === 'object') {
 		const record = target as Record<string, unknown>
-		if (record[PLUXEL_CONDITION_HMR]) {
-			return resolveHmrTarget(record[PLUXEL_CONDITION_HMR])
+		if (record[PLUXEL_CONDITION_RUNTIME_LOADER]) {
+			return resolveRuntimeLoaderTarget(record[PLUXEL_CONDITION_RUNTIME_LOADER])
 		}
 	}
 	return undefined

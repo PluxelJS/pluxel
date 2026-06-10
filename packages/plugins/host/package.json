@@ -3,14 +3,14 @@
 	"private": true,
 	"type": "module",
 	"scripts": {
-		"dev": "node scripts/host.mjs dev",
-		"prompt": "pnpm exec pluxel hmr prompt --root ../../.. --config packages/plugins/host/pluxel.hmr.jsonc --profile plugins-host",
-		"doctor": "pnpm exec pluxel hmr doctor --root ../../.. --config packages/plugins/host/pluxel.hmr.jsonc --profile plugins-host",
+		"hmr": "node scripts/host.mjs hmr",
+		"prompt": "pnpm exec pluxel hmr prompt --root ../../.. --config packages/plugins/host/pluxel.loader.hmr.jsonc --profile plugins-host",
+		"doctor": "pnpm exec pluxel hmr doctor --root ../../.. --config packages/plugins/host/pluxel.loader.hmr.jsonc --profile plugins-host",
 		"deploy": "node scripts/host.mjs managed",
 		"frozen": "node scripts/host.mjs frozen"
 	},
 	"dependencies": {
-		"@pluxel/hmr": "workspace:*",
+		"@pluxel/runtime-dynamic": "workspace:*",
 		"@pluxel/runtime": "workspace:*"
 	},
 	"devDependencies": {

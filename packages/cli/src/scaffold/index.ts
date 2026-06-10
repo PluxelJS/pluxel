@@ -148,7 +148,7 @@ export const newCommand = define({
 				throw error
 			}
 
-			ctx.log(`\n${pm} dev`)
+			ctx.log(`\n${pm} build`)
 		}
 
 		outro(`✔ Done.\ncd ${plan.targetDir}`)

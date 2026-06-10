@@ -15,10 +15,10 @@ describe('runtime host path policy', () => {
 		expect(paths.logFile).toBe(resolve(root, 'logs/runtime.log'))
 	})
 
-	it('expands profiled config paths without leaking hmr semantics into runtime helpers', () => {
-		const resolved = resolveProfiledPath('/workspace/app/.pluxel/hmr/config.json', 'dev')
-		expect(resolved.path).toBe('/workspace/app/.pluxel/hmr/config.dev.json')
-		expect(resolved.fallbackPath).toBe('/workspace/app/.pluxel/hmr/config.json')
+	it('expands profiled config paths without leaking dev-route semantics into runtime helpers', () => {
+		const resolved = resolveProfiledPath('/workspace/app/.pluxel/runtime/config.json', 'dev')
+		expect(resolved.path).toBe('/workspace/app/.pluxel/runtime/config.dev.json')
+		expect(resolved.fallbackPath).toBe('/workspace/app/.pluxel/runtime/config.json')
 	})
 
 	it('supports explicit {profile} layout tokens for host-owned storage policies', () => {

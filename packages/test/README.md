@@ -114,7 +114,7 @@ By default, `@pluxel/test/vitest` sets `passWithNoTests: !process.env.CI` to avo
 when some packages have no tests.
 
 The preset always enables the two Pluxel workspace conditions: internal packages resolve through
-`@pluxel/source`, and plugin packages resolve their HMR entry through `@pluxel/hmr`.
+`@pluxel/source`, and plugin packages resolve their loader HMR entry through `@pluxel/runtime-dynamic`.
 
 If you prefer automatic discovery instead of maintaining globs:
 

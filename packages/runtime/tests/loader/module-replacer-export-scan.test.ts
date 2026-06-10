@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { Context } from '@pluxel/core'
 import { BasePlugin, Plugin } from '@pluxel/runtime'
-import { ModuleReplacer } from '../../../runtime-loader/src/loader/module-replacer'
+import { ModuleReplacer } from '../../../runtime-dynamic/src/loader/module-replacer'
 
 @Plugin({ name: 'NonEnumerableExportPlugin' })
 class NonEnumerableExportPlugin extends BasePlugin {}

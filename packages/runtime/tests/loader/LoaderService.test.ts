@@ -1,13 +1,13 @@
 import { describe, expect, it } from 'vitest'
 import { BasePlugin, ForkablePlugin, Plugin, setParamToken } from '@pluxel/runtime/test'
 import type { ForkablePluginConstructor } from '@pluxel/core'
-import { LoaderService } from '../../../runtime-loader/src/services'
+import { LoaderService } from '../../../runtime-dynamic/src/services'
 import {
 	EXTRA_BUILTINS_KNOWN,
 	EXTRA_FORKS,
 	type BuiltinsKnownExtra,
 	type ForksExtra,
-} from '../../../runtime-loader/src/loader/selection'
+} from '../../../runtime-dynamic/src/loader/selection'
 import { createHmrTestContext } from '../support/hmr-context'
 
 describe('LoaderService', () => {

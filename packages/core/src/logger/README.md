@@ -108,7 +108,7 @@ await configure(
 
 如需动态调整，可传函数（自行读取你的 map/配置源）。
 
-另外，`@pluxel/runtime/logger` 提供了一个可变的 `hmrPluginLevels`（`createPluxelPluginLevelState()`）
+另外，`@pluxel/runtime/logger` 提供了一个可变的 `runtimePluginLevels`（`createPluxelPluginLevelState()`）
 方便在运行时直接调级（无需重新 configure）。
 
 ## Sinks / Formatters

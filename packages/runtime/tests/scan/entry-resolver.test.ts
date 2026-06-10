@@ -1,13 +1,13 @@
 import { describe, expect, test } from 'vitest'
 import { createFixture } from '@pluxel/test/fixtures'
-import { EntryResolver } from '../../../runtime-loader/src/scan/entry-resolver'
-import { ModuleResolveCache } from '../../../runtime-loader/src/scan/resolve-cache'
-import type { ResolvedScanOptions } from '../../../runtime-loader/src/scan/types'
+import { EntryResolver } from '../../../runtime-dynamic/src/scan/entry-resolver'
+import { ModuleResolveCache } from '../../../runtime-dynamic/src/scan/resolve-cache'
+import type { ResolvedScanOptions } from '../../../runtime-dynamic/src/scan/types'
 
 const baseOptions: ResolvedScanOptions = {
 	conditions: ['node', 'import'],
 	conservativeCandidates: ['dist/wretch.mjs'],
-	preferHmrExports: false,
+	preferRuntimeDynamicExports: false,
 	includeRoot: false,
 	skipUnnamed: false,
 	fallbackTsOnSingle: false,
@@ -17,14 +17,14 @@ const baseOptions: ResolvedScanOptions = {
 
 const cache = new ModuleResolveCache()
 
-describe('EntryResolver preferHmrExports', () => {
+describe('EntryResolver preferRuntimeDynamicExports', () => {
 	const fixtureTree = {
 		'package.json': JSON.stringify(
 			{
 				name: 'pluxel-plugin-wretch',
 				exports: {
 					'.': {
-						'@pluxel/hmr': './src/wretch.ts',
+						'@pluxel/runtime-dynamic': './src/wretch.ts',
 						default: './dist/wretch.mjs',
 					},
 				},
@@ -32,14 +32,14 @@ describe('EntryResolver preferHmrExports', () => {
 			null,
 			2,
 		),
-		'src/wretch.ts': '// hmr entry',
+		'src/wretch.ts': '// loader HMR entry',
 		'dist/wretch.mjs': '// bundled entry',
 	}
 
-	test('prefers @pluxel/hmr export when enabled', async () => {
+	test('prefers @pluxel/runtime-dynamic export when enabled', async () => {
 		await using fixture = await createFixture(fixtureTree)
 		const resolver = new EntryResolver(cache, fixture.fs)
-		const options: ResolvedScanOptions = { ...baseOptions, preferHmrExports: true }
+		const options: ResolvedScanOptions = { ...baseOptions, preferRuntimeDynamicExports: true }
 		const result = await resolver.resolve(fixture.path, options)
 		expect(result.ok).toBe(true)
 		if (!result.ok) throw new Error('expected entry resolution to succeed')
@@ -49,7 +49,7 @@ describe('EntryResolver preferHmrExports', () => {
 	test('falls back to default export when disabled', async () => {
 		await using fixture = await createFixture(fixtureTree)
 		const resolver = new EntryResolver(cache, fixture.fs)
-		const options: ResolvedScanOptions = { ...baseOptions, preferHmrExports: false }
+		const options: ResolvedScanOptions = { ...baseOptions, preferRuntimeDynamicExports: false }
 		const result = await resolver.resolve(fixture.path, options)
 		expect(result.ok).toBe(true)
 		if (!result.ok) throw new Error('expected entry resolution to succeed')

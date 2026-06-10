@@ -10,9 +10,9 @@ Toolchain 包括 build、Vite 分层、lint、test 和发布约束。它的职�
 
 - `lintGuardPlugin()`：执行 build-critical lint，违规直接失败。
 - `configSourcePlugin()`：提取 `@Config(...)` / `configs.use(...)` 的 schema source 和 layout metadata。
-- `hmrUiBridgePlugin()`：把 `ui(...).bind(ctx)` 改写成 `ctx.ext.ui.remote.packaged()`。
+- `runtimeDynamicUiBridgePlugin()`：把 `ui(...).bind(ctx)` 改写成 `ctx.ext.ui.remote.packaged()`。
 
-最终产物不应残留 HMR/source authoring 语义。
+最终产物不应残留 loader-hmr/source authoring 语义。
 
 ## Vite 分层
 
@@ -20,14 +20,14 @@ Toolchain 包括 build、Vite 分层、lint、test 和发布约束。它的职�
 
 - components/workbench client。
 - runtime web asset build。
-- HMR dev host。
+- HMR host。
 
-未来目标态中，HMR dev host 会改名并归入 `@pluxel/runtime-loader` dev mode；Vite 分层原则不变。
+HMR host 归入 `@pluxel/runtime-dynamic` HMR mode；Vite 分层原则不变。
 
 规则：
 
 - 环境相关 Vite plugin 必须限定作用域。
-- runtime HTML shell 和 HMR dev host 不混成一层。
+- runtime HTML shell 和 HMR host 不混成一层。
 - shared UI build policy 要和插件 UI remote build 保持一致。
 
 ## Lint
@@ -55,23 +55,21 @@ Lint 分 repo lint 和 build lint：
 
 - `@pluxel/core`
 - `@pluxel/runtime`
-- `@pluxel/hmr`
+- `@pluxel/runtime-dynamic`
 - `@pluxel/cli`
 - `@pluxel/test`
-
-未来 loader dev mode 收敛后，`@pluxel/hmr` 不再发布，也不保留兼容入口；目标设计见 `proposals/runtime-loader-dev-mode.md`。
 
 其他 workspace 包默认 internal/private，除非显式提升。
 
 ## 实现入口
 
 - `packages/build/src/rolldown/plugins/configSourcePlugin.ts`
-- `packages/build/src/rolldown/plugins/hmrUiBridgePlugin.ts`
+- `packages/build/src/rolldown/plugins/runtimeDynamicUiBridgePlugin.ts`
 - `packages/build/src/cli.ts`
 - `packages/cli/src/build.ts`
 - `packages/cli/src/hmr/**`
-- `packages/hmr/src/dev/hmr/config.ts`
-- `packages/hmr/src/plugin-build.ts`
+- `packages/runtime-dynamic/src/hmr/engine/config.ts`
+- `packages/runtime-dynamic/src/hmr/plugin-build.ts`
 - `oxlint.build.config.ts`
 - `oxlint.config.ts`
 - `packages/workspace/src/oxlint/plugin.ts`

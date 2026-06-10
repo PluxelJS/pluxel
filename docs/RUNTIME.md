@@ -1,8 +1,8 @@
 # Runtime
 
-`@pluxel/runtime` 是共同宿主层。它不应该只被理解成“动态插件生态”，而是承载宿主能力的 runtime：动态 loader 路线和未来 fixed catalog/static suite 路线都应该复用这里的服务、协议和状态投影。
+`@pluxel/runtime` 是共同宿主层。它不应该只被理解成“动态插件生态”，而是承载宿主能力的 runtime：当前 runtime-dynamic 路线和未来 runtime-static 路线都应该复用这里的服务、协议和状态投影。
 
-当前 `@pluxel/runtime` 与 `@pluxel/runtime-loader` 的拆分细节见 `RUNTIME_LOADER_SPLIT.md`。
+当前 `@pluxel/runtime` 与 `@pluxel/runtime-dynamic` 的拆分细节见 `RUNTIME_DYNAMIC_SPLIT.md`。
 
 ## 设计边界
 
@@ -20,7 +20,7 @@ runtime 拥有：
 - plugin UI runtime protocols
 - browser host APIs、web config、workbench surfaces
 
-loader/package/scan/package-manager/workspace tools 属于 `@pluxel/runtime-loader`，不是 runtime common 的内置能力。
+loader/package/scan/package-manager/workspace tools 属于 `@pluxel/runtime-dynamic`，不是 runtime common 的内置能力。
 
 runtime 不拥有：
 
@@ -51,16 +51,16 @@ module id
 - 要处理模块替换、缺失依赖、enabled-but-stopped 等运行时状态。
 - 要把动态目录的不确定性解释给 control-plane 和 workbench。
 
-## 未来插件加载路线：static suite route
+## 未来插件加载路线：runtime-static route
 
-static suite route 还没有实现，不能从本文件推断为当前 API。它应该只作为 runtime 的第二条 catalog/startup 路线存在，详细设计写在 `proposals/runtime-routes.md`，并由 `proposals/README.md` 索引。
+runtime-static route 目前只有包骨架，startup/hmr 行为还没有实现，不能从本文件推断为当前 API。它应该只作为 runtime 的第二条 catalog/startup 路线存在，详细设计写在 `proposals/runtime-routes.md`，并由 `proposals/README.md` 索引。
 
 两条路线的隔离方式应该是：
 
 ```text
 runtime common host layer
   -> loader route        当前实现：scan/package/dynamic module/HMR replaceModule
-  -> static suite route  未来提案：known catalog/strict startup/bounded replacement
+  -> runtime-static route 未来提案：known catalog/strict startup/bounded replacement
 ```
 
 两条路线不应该复制 core 生命周期，也不应该复制 runtime 的配置、ops、web config、plugin UI protocols。共同逻辑留在 runtime common host layer；差异只放在 catalog resolution、startup policy 和 route-specific management 能力。
@@ -73,18 +73,18 @@ runtime common host layer
 - `packages/runtime/src/api/contributions.ts`：route package 对 GraphQL resolver、RPC handle、MCP tools 的最小注册点。
 - `packages/runtime/src/plugin-catalog.ts`：route-neutral plugin catalog 契约和共享 extra keys。
 - `packages/runtime/src/services/runtime/catalog/RuntimePluginCatalogService.ts`：runtime common 使用的插件 catalog 契约；没有 route 实现时会明确报错。
-- `packages/runtime-loader/src/register.ts`：loader route services 注册副作用。
-- `packages/runtime-loader/src/services.ts`：loader route services public surface。
-- `packages/runtime-loader/src/loader/LoaderService.ts`：loader service 和 public loader API。
-- `packages/runtime-loader/src/catalog/LoaderPluginCatalogService.ts`：把 loader registry/runtime/control 适配到 runtime plugin catalog 契约。
-- `packages/runtime-loader/src/loader/PluginRegistry.ts`：loader declaration/status state。
-- `packages/runtime-loader/src/loader/module-replacer.ts`：HMR/module replacement 接入 loader。
-- `packages/runtime-loader/src/loader/support.ts`：loader batch/status/control helpers。
-- `packages/runtime-loader/src/scan/ScanService.ts`：workspace/plugin entry 扫描。
-- `packages/runtime-loader/src/package/PackageService.ts`：package install/remove/cache flows。
-- `packages/runtime-loader/src/api/features/package-manager/**`：loader-specific package inventory/load issues GraphQL 查询。
-- `packages/runtime-loader/src/api/http/rpc/PackageManagerHandle.ts`：`rpc.package()` 的 package install/remove/reload/retry 操作。
-- `packages/runtime-loader/src/api/mcp/workspace-tools.ts`：`workspace.resolveEntry` / `workspace.listEntries` MCP dev tools。
+- `packages/runtime-dynamic/src/register.ts`：loader route services 注册副作用。
+- `packages/runtime-dynamic/src/services.ts`：loader route services public surface。
+- `packages/runtime-dynamic/src/loader/LoaderService.ts`：loader service 和 public loader API。
+- `packages/runtime-dynamic/src/catalog/LoaderPluginCatalogService.ts`：把 loader registry/runtime/control 适配到 runtime plugin catalog 契约。
+- `packages/runtime-dynamic/src/loader/PluginRegistry.ts`：loader declaration/status state。
+- `packages/runtime-dynamic/src/loader/module-replacer.ts`：HMR/module replacement 接入 loader。
+- `packages/runtime-dynamic/src/loader/support.ts`：loader batch/status/control helpers。
+- `packages/runtime-dynamic/src/scan/ScanService.ts`：workspace/plugin entry 扫描。
+- `packages/runtime-dynamic/src/package/PackageService.ts`：package install/remove/cache flows。
+- `packages/runtime-dynamic/src/api/features/package-manager/**`：loader-specific package inventory/load issues GraphQL 查询。
+- `packages/runtime-dynamic/src/api/http/rpc/PackageManagerHandle.ts`：`rpc.package()` 的 package install/remove/reload/retry 操作。
+- `packages/runtime-dynamic/src/api/mcp/workspace-tools.ts`：`workspace.resolveEntry` / `workspace.listEntries` MCP HMR tools。
 - `packages/runtime/src/services/ConfigService.ts`：runtime 配置持久化。
 - `packages/runtime/src/services/ops/OpsService.ts`：runtime op registry。
 - `packages/runtime/src/api/**`：route-neutral HTTP、ops、MCP、feature APIs；loader package 通过 contribution registry 挂载 loader-specific 控制面。
@@ -101,9 +101,7 @@ runtime 内部控制面统一建模为 operation。CLI、RPC、MCP、workbench �
 依赖方向是：
 
 ```text
-core <- runtime common <- runtime-loader <- hmr <- cli
+core <- runtime common <- runtime-dynamic <- cli
 ```
 
-runtime 依赖 core 来提交生命周期。loader route 依赖 runtime common 的配置、catalog 契约和宿主服务，并提供 scan/package/dynamic module 能力。HMR attach 到已有 runtime `Context`，并显式注册 loader route。runtime 不应该 import HMR；HMR 不应该重新定义 runtime 协议。
-
-未来目标态会删除独立 `@pluxel/hmr` 包，把 Vite/watch/runner 收敛为 `@pluxel/runtime-loader` 的 dev mode，并且不保留兼容入口。目标设计见 `proposals/runtime-loader-dev-mode.md`。
+runtime 依赖 core 来提交生命周期。loader route 依赖 runtime common 的配置、catalog 契约和宿主服务，并提供 scan/package/dynamic module 能力。loader HMR mode 安装到已有 runtime `Context`，并显式注册 loader route。runtime 不应该 import `@pluxel/runtime-dynamic/hmr`；loader HMR 不应该重新定义 runtime 协议。

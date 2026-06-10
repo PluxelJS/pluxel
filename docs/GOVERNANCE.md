@@ -7,18 +7,16 @@
 当前方向：
 
 ```text
-@pluxel/core <- @pluxel/runtime <- @pluxel/hmr <- @pluxel/cli
+@pluxel/core <- @pluxel/runtime <- @pluxel/runtime-dynamic <- @pluxel/cli
 ```
-
-未来目标态会删除独立 `@pluxel/hmr` 包，把开发热替换收敛为 `@pluxel/runtime-loader` 的 dev mode，且不保留兼容入口。该未来方向只记录在 `docs/proposals/runtime-loader-dev-mode.md`，实现前不要反推为当前包边界。
 
 `@pluxel/build` 是 build-time tooling，不进入 runtime service graph。
 
 必须保持：
 
 - core host-free。
-- runtime HMR-free。
-- HMR attach 到已有 runtime `Context`。
+- runtime 不依赖 runtime-dynamic。
+- loader HMR mode 安装到已有 runtime `Context`。
 - build 只做 build-time metadata/rewrite/lint。
 - config persistence 不进入 core。
 
@@ -28,11 +26,9 @@
 
 - `@pluxel/core`
 - `@pluxel/runtime`
-- `@pluxel/hmr`
+- `@pluxel/runtime-dynamic`
 - `@pluxel/cli`
 - `@pluxel/test`
-
-目标态公开包集合会移除 `@pluxel/hmr`，并把 dev subpath 挂到 `@pluxel/runtime-loader`。实现时应一次性改入口，不新增长期 re-export 或 facade。
 
 internal/private 包：
 
@@ -57,8 +53,8 @@ internal/private 包：
 ## LLM 维护规则
 
 - 先读 `docs/README.md` 的阅读顺序，再改代码。
-- 改 core 时确认没有引入 runtime/HMR/build 依赖。
-- 改 runtime 时确认没有 import HMR。
-- 改 HMR 时确认没有重新定义 runtime 协议。
-- 改 build plugin 时确认最终产物不会残留 authoring/HMR-only 语义。
+- 改 core 时确认没有引入 runtime/loader-hmr/build 依赖。
+- 改 runtime 时确认没有 import runtime-dynamic/HMR 入口。
+- 改 loader HMR 时确认没有重新定义 runtime 协议。
+- 改 build plugin 时确认最终产物不会残留 authoring/hmr-only 语义。
 - 改配置链路时确认 core 校验和 runtime 持久化仍分离。

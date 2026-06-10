@@ -1,8 +1,8 @@
 export { appendDtsImport } from './plugins/appendDtsImport.ts'
 export type { ConfigSourcePluginOptions } from './plugins/configSourcePlugin.ts'
 export { configSourcePlugin } from './plugins/configSourcePlugin.ts'
-export type { HmrUiBridgePluginOptions } from './plugins/hmrUiBridgePlugin.ts'
-export { hmrUiBridgePlugin } from './plugins/hmrUiBridgePlugin.ts'
+export type { RuntimeDynamicUiBridgePluginOptions } from './plugins/runtimeDynamicUiBridgePlugin.ts'
+export { runtimeDynamicUiBridgePlugin } from './plugins/runtimeDynamicUiBridgePlugin.ts'
 export type { LintGuardPluginOptions } from './plugins/lintGuardPlugin.ts'
 export { lintGuardPlugin } from './plugins/lintGuardPlugin.ts'
 export type {

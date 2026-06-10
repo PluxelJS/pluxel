@@ -11,12 +11,12 @@ import { createDailyTimeRotatingFileSink } from './file'
 import { createRuntimeLogSink, type RuntimeLogSinkOptions } from './sink'
 
 /**
- * Mutable per-plugin level map for HMR hosts.
+ * Mutable per-plugin level map for runtime hosts.
  *
  * This is a convenience: hosts (or UI) can tweak levels at runtime without
  * re-running `configure()`, because the LogTape filter reads this state per record.
  */
-export const hmrPluginLevels = createPluxelPluginLevelState()
+export const runtimePluginLevels = createPluxelPluginLevelState()
 
 export type EnsurePluxelLoggingOptions = {
 	/**
@@ -80,7 +80,7 @@ export async function ensurePluxelLogging(opts: EnsurePluxelLoggingOptions = {})
 			file: fileSink,
 			ui: ui ? { sink: ui } : undefined,
 			debug: opts.debug,
-			pluginLevels: hmrPluginLevels.lookup,
+			pluginLevels: runtimePluginLevels.lookup,
 		}),
 	)
 

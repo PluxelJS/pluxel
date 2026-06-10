@@ -9,7 +9,7 @@ export interface LogFilter {
 	pluginId?: string
 	context?: string
 	displayName?: string
-	/** Category string, e.g. "pluxel.hmr" or "pluxel.plugins". Supports "prefix.*". */
+	/** Category string, e.g. "pluxel.plugins" or "pluxel.core". Supports "prefix.*". */
 	category?: string
 }
 

@@ -5,7 +5,7 @@ pnpm exec tsx --conditions=@pluxel/source -e '
 import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { generateFiles } from "@gqlens/codegen";
-import "./packages/runtime-loader/src/api/graphql.ts";
+import "./packages/runtime-dynamic/src/api/graphql.ts";
 import { createInternalGraphQLSchemaSDL } from "./packages/runtime/src/services/http/internalGraphqlSchema.ts";
 
 void (async () => {

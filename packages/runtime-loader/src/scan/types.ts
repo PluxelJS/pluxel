@@ -8,8 +8,8 @@ export interface ScanOptions {
 	conditions: string[]
 	/** Fallback relative paths tried when no explicit entry is found. */
 	conservativeCandidates: string[]
-	/** Prefer the `@pluxel/hmr` export target when present. */
-	preferHmrExports: boolean
+	/** Prefer the `@pluxel/runtime-loader` export target when present. */
+	preferRuntimeLoaderExports: boolean
 	/** Whether to treat the workspace root itself as a package. */
 	includeRoot: boolean
 	/** Skip workspace packages that don't declare `name`. */

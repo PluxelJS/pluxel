@@ -2,8 +2,8 @@ import type { LogLevel } from '@logtape/logtape'
 import type { Context } from '@pluxel/core'
 import { RpcTarget } from 'capnweb'
 
-import { hmrPluginLevels } from '../../../logger/ensure'
-import { ensureHmrPluginLevelsLoaded, persistHmrPluginLevels } from '../../../logger/levels'
+import { runtimePluginLevels } from '../../../logger/ensure'
+import { ensureRuntimePluginLevelsLoaded, persistRuntimePluginLevels } from '../../../logger/levels'
 
 type PluginLogLevel = LogLevel | null
 
@@ -20,43 +20,43 @@ export class LoggingHandle extends RpcTarget {
 	}
 
 	async getPluginLevels(): Promise<PluginLevelsSnapshot> {
-		await ensureHmrPluginLevelsLoaded(this.ctx)
-		const levels = hmrPluginLevels.toRecord() as Record<string, PluginLogLevel>
+		await ensureRuntimePluginLevelsLoaded(this.ctx)
+		const levels = runtimePluginLevels.toRecord() as Record<string, PluginLogLevel>
 		return { levels }
 	}
 
 	async setPluginLevel(pluginId: string, level: PluginLogLevel): Promise<{ ok: true }> {
-		await ensureHmrPluginLevelsLoaded(this.ctx)
-		hmrPluginLevels.set(String(pluginId), level)
-		persistHmrPluginLevels(this.ctx)
+		await ensureRuntimePluginLevelsLoaded(this.ctx)
+		runtimePluginLevels.set(String(pluginId), level)
+		persistRuntimePluginLevels(this.ctx)
 		return { ok: true }
 	}
 
 	async deletePluginLevel(pluginId: string): Promise<{ ok: true }> {
-		await ensureHmrPluginLevelsLoaded(this.ctx)
-		hmrPluginLevels.delete(String(pluginId))
-		persistHmrPluginLevels(this.ctx)
+		await ensureRuntimePluginLevelsLoaded(this.ctx)
+		runtimePluginLevels.delete(String(pluginId))
+		persistRuntimePluginLevels(this.ctx)
 		return { ok: true }
 	}
 
 	async setPluginLevelDefault(level: PluginLogLevel): Promise<{ ok: true }> {
-		await ensureHmrPluginLevelsLoaded(this.ctx)
-		hmrPluginLevels.setDefault(level)
-		persistHmrPluginLevels(this.ctx)
+		await ensureRuntimePluginLevelsLoaded(this.ctx)
+		runtimePluginLevels.setDefault(level)
+		persistRuntimePluginLevels(this.ctx)
 		return { ok: true }
 	}
 
 	async deletePluginLevelDefault(): Promise<{ ok: true }> {
-		await ensureHmrPluginLevelsLoaded(this.ctx)
-		hmrPluginLevels.delete('*')
-		persistHmrPluginLevels(this.ctx)
+		await ensureRuntimePluginLevelsLoaded(this.ctx)
+		runtimePluginLevels.delete('*')
+		persistRuntimePluginLevels(this.ctx)
 		return { ok: true }
 	}
 
 	async clearPluginLevels(): Promise<{ ok: true }> {
-		await ensureHmrPluginLevelsLoaded(this.ctx)
-		hmrPluginLevels.clear()
-		persistHmrPluginLevels(this.ctx)
+		await ensureRuntimePluginLevelsLoaded(this.ctx)
+		runtimePluginLevels.clear()
+		persistRuntimePluginLevels(this.ctx)
 		return { ok: true }
 	}
 }

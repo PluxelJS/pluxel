@@ -2,11 +2,11 @@
 
 > Status: internal workspace app (examples + smoke). Not part of the 5 published packages.
 
-`packages/plugins/host` 的定位不是“权威架构文档”，而是把当前 runtime/HMR/front-end 设计落成可运行样例和 smoke host。
+`packages/plugins/host` 的定位不是“权威架构文档”，而是把当前 runtime/loader-hmr/front-end 设计落成可运行样例和 smoke host。
 
 它现在提供三种最小入口：
 
-- `dev`：`@pluxel/hmr` 驱动的开发宿主，负责 workspace diagnose / source execution / watch / HMR。
+- `hmr`：`@pluxel/runtime-dynamic/hmr` 驱动的开发宿主，负责 workspace diagnose / source execution / watch / loader replacement。
 - `deploy`：直接建立在 `@pluxel/runtime` 之上的管理式宿主。
 - `frozen`：先生成 frozen host，再直接启动它。
 
@@ -22,8 +22,8 @@
 开发版：
 
 ```sh
-pnpm dev
-pnpm --filter @pluxel/plugins-host dev
+pnpm hmr
+pnpm --filter @pluxel/plugins-host hmr
 ```
 
 管理式部署版：
@@ -40,29 +40,29 @@ pnpm frozen
 pnpm --filter @pluxel/plugins-host frozen
 ```
 
-## HMR Tools
+## Loader HMR Tools
 
 ```sh
 pnpm --filter @pluxel/plugins-host prompt
 pnpm --filter @pluxel/plugins-host doctor
 ```
 
-这里不再维护 `prepare` / `smoke` / `managed:start` / `frozen:start` 这一类中间脚本。宿主入口只保留真正有语义的三个动作：`dev`、`deploy`、`frozen`。
+这里不再维护 `prepare` / `smoke` / `managed:start` / `frozen:start` 这一类中间脚本。宿主入口只保留真正有语义的三个动作：`hmr`、`deploy`、`frozen`。
 
 ## Boundary
 
-- `scripts/host.mjs dev` 走 `planHmrHostFromConfig()` + `bootPlannedHmrHost()`。
+- `scripts/host.mjs hmr` 走 `createLoaderHmrHost()`。
 - `scripts/host.mjs managed` 直接 `new Context()` 启动 runtime 宿主。
 - `scripts/host.mjs frozen` 先 `buildFrozenHost()`，再启动 frozen 产物。
 
 对前端来说，这里最重要的边界是：
 
-- `dev`
-  由 `@pluxel/hmr` 消费 `ui(...).bind(ctx)` 这类 authoring bridge
+- `hmr`
+  由 `@pluxel/runtime-dynamic/hmr` 消费 `ui(...).bind(ctx)` 这类 authoring bridge
 - `deploy:*`
   只消费 build 后的 runtime 语义，例如 `ctx.ext.ui.remote.packaged()`
 
 也就是说，这个 host 包的价值主要有两点：
 
-- 证明同一套插件 API 可以同时跑在 dev 与 deploy 语义下
+- 证明同一套插件 API 可以同时跑在 HMR 与 deploy 语义下
 - 提供 demo 与 smoke，让文档里的架构判断有真实可运行样本

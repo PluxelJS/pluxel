@@ -100,13 +100,14 @@ async function collectSourceFiles(dir: string): Promise<string[]> {
 }
 
 describe('packaging invariants', () => {
-	it('only core/runtime/hmr/cli/test/ops are publishable', async () => {
+	it('only core/runtime/runtime-dynamic/runtime-static/cli/test/ops are publishable', async () => {
 		const root = fileURLToPath(new URL('../../..', import.meta.url))
 		const workspace = await collectWorkspacePackages(root)
 		const publishable = new Set([
 			'@pluxel/core',
 			'@pluxel/runtime',
-			'@pluxel/hmr',
+			'@pluxel/runtime-dynamic',
+			'@pluxel/runtime-static',
 			'@pluxel/cli',
 			'@pluxel/test',
 			'@pluxel/ops',
@@ -134,7 +135,8 @@ describe('packaging invariants', () => {
 		const packages = [
 			{ name: '@pluxel/core', path: `${root}/packages/core/package.json` },
 			{ name: '@pluxel/runtime', path: `${root}/packages/runtime/package.json` },
-			{ name: '@pluxel/hmr', path: `${root}/packages/hmr/package.json` },
+			{ name: '@pluxel/runtime-dynamic', path: `${root}/packages/runtime-dynamic/package.json` },
+			{ name: '@pluxel/runtime-static', path: `${root}/packages/runtime-static/package.json` },
 			{ name: '@pluxel/cli', path: `${root}/packages/cli/package.json` },
 			{ name: '@pluxel/test', path: `${root}/packages/test/package.json` },
 			{ name: '@pluxel/ops', path: `${root}/packages/ops/package.json` },
@@ -143,8 +145,9 @@ describe('packaging invariants', () => {
 		const allowedWorkspaceDeps = new Map<string, ReadonlySet<string>>([
 			['@pluxel/core', new Set()],
 			['@pluxel/runtime', new Set(['@pluxel/core', '@pluxel/ops'])],
-			['@pluxel/hmr', new Set(['@pluxel/core', '@pluxel/runtime'])],
-			['@pluxel/cli', new Set(['@pluxel/hmr', '@pluxel/runtime'])],
+			['@pluxel/runtime-dynamic', new Set(['@pluxel/core', '@pluxel/runtime'])],
+			['@pluxel/runtime-static', new Set(['@pluxel/core', '@pluxel/runtime'])],
+			['@pluxel/cli', new Set(['@pluxel/runtime-dynamic', '@pluxel/runtime'])],
 			['@pluxel/test', new Set()],
 			['@pluxel/ops', new Set()],
 		])
@@ -187,7 +190,7 @@ describe('packaging invariants', () => {
 	it('uses only real Pluxel export conditions', async () => {
 		const root = fileURLToPath(new URL('../../..', import.meta.url))
 		const workspace = await collectWorkspacePackages(root)
-		const allowed = new Set(['@pluxel/source', '@pluxel/hmr'])
+		const allowed = new Set(['@pluxel/source', '@pluxel/runtime-dynamic'])
 		const offenders: string[] = []
 
 		for (const meta of workspace.values()) {
@@ -199,7 +202,7 @@ describe('packaging invariants', () => {
 
 		expect(
 			offenders,
-			'Pluxel export conditions are fixed: internals use @pluxel/source, plugin HMR uses @pluxel/hmr',
+			'Pluxel export conditions are fixed: internals use @pluxel/source, plugin dev source uses @pluxel/runtime-dynamic',
 		).toEqual([])
 	})
 
@@ -228,8 +231,8 @@ describe('packaging invariants', () => {
 				],
 			},
 			{
-				name: '@pluxel/hmr',
-				config: `${root}/packages/hmr/tsdown.config.ts`,
+				name: '@pluxel/runtime-dynamic',
+				config: `${root}/packages/runtime-dynamic/tsdown.config.ts`,
 				alwaysBundle: [
 					'@pluxel/build',
 					'@pluxel/build/*',
@@ -271,7 +274,7 @@ describe('packaging invariants', () => {
 
 	it('published package internals use explicit workspace subpaths', async () => {
 		const root = fileURLToPath(new URL('../../..', import.meta.url))
-		const packageDirs = ['cli', 'components', 'hmr', 'runtime', 'test'] as const
+		const packageDirs = ['cli', 'components', 'runtime-dynamic', 'runtime-static', 'runtime', 'test'] as const
 		const forbidden = forbiddenImportPattern('@pluxel/workspace')
 		const offenders: string[] = []
 

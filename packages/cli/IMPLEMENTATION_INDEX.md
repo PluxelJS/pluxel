@@ -7,7 +7,7 @@
 - `docs/GOVERNANCE.md`
 - `docs/proposals/README.md`
 
-如果你在追“命令是怎么把 runtime / hmr / build 串起来的”，优先看 `Command Entry`，再看各 subpath export。
+如果你在追“命令是怎么把 runtime / loader HMR / build 串起来的”，优先看 `Command Entry`，再看各 subpath export。
 
 ## Public Surface (package exports)
 
@@ -25,7 +25,7 @@
 ## Command Roles
 
 - `pluxel hmr`
-  把 `@pluxel/hmr` host 作为标准开发入口暴露出来
+  把 `@pluxel/runtime-dynamic/hmr` host 作为标准开发入口暴露出来
 - `pluxel build`
   把 `@pluxel/build` overlay 与相关构建 helper 串成标准构建命令
 - `pluxel new`
@@ -44,9 +44,9 @@
 
 1. `packages/cli/src/build.ts`
 2. `packages/build/src/cli.ts`
-3. `packages/build/src/rolldown/plugins/hmrUiBridgePlugin.ts`
+3. `packages/build/src/rolldown/plugins/runtimeDynamicUiBridgePlugin.ts`
 
 如果你在追“开发宿主是怎么被启动的”，优先读：
 
 1. `packages/cli/src/hmr/index.ts`
-2. `packages/hmr/src/host.ts`
+2. `packages/runtime-dynamic/src/hmr.ts`

@@ -44,17 +44,17 @@ describe('@pluxel/test/vitest', () => {
 		expect(config).not.toHaveProperty('then')
 		expect(config.test?.name).toBe('sync-config')
 		expect(config.resolve?.conditions).toEqual(
-			expect.arrayContaining(['@pluxel/source', '@pluxel/hmr']),
+			expect.arrayContaining(['@pluxel/source', '@pluxel/runtime-dynamic']),
 		)
 		expect(config.ssr?.resolve?.conditions).toEqual(
-			expect.arrayContaining(['@pluxel/source', '@pluxel/hmr']),
+			expect.arrayContaining(['@pluxel/source', '@pluxel/runtime-dynamic']),
 		)
 	})
 
 	it('keeps node conditions deterministic', () => {
 		expect(buildPluxelResolveConditions('test')).toEqual([
 			'@pluxel/source',
-			'@pluxel/hmr',
+			'@pluxel/runtime-dynamic',
 			'node',
 			'import',
 			'module',

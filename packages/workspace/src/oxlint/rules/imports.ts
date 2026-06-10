@@ -36,9 +36,8 @@ const noDirectLogtapeGetLogger = createRule(
 const WORKSPACE_ROOT_IMPORT_RESTRICTED_PACKAGES = [
 	'packages/cli/',
 	'packages/components/',
-	'packages/hmr/',
 	'packages/runtime/',
-	'packages/runtime-loader/',
+	'packages/runtime-dynamic/',
 	'packages/test/',
 ] as const
 

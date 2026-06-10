@@ -1,6 +1,6 @@
 # Runtime Routes Proposal
 
-状态：未来设计提案。当前没有 `@pluxel/static-suite` 包，没有 runtime static-suite subpath，也没有 static route dev mode。当前已实现路线是 `@pluxel/runtime-loader` 的 loader route，runtime common 已经开始通过 plugin catalog 契约和 loader route 解耦。未来 loader dev mode 收敛见 `runtime-loader-dev-mode.md`。
+状态：未来设计提案/骨架已建。当前已有 `@pluxel/runtime-static` 包骨架和 tsdown 构建配置，但还没有 runtime-static startup 实现，也没有 runtime-static route HMR mode。当前已实现路线是 `@pluxel/runtime-dynamic` 的 loader route，runtime common 已经开始通过 plugin catalog 契约和 loader route 解耦。未来 loader HMR mode 收敛见 `runtime-dynamic-hmr-mode.md`。
 
 ## 为什么单独成文档
 
@@ -10,9 +10,9 @@
 core
   -> runtime common host layer
        -> loader route
-       -> static suite route
+       -> runtime-static route
 
-runtime-loader dev mode
+runtime-dynamic HMR mode
   -> Vite/watch/runner source submission
   -> loader batch replaceModule
 ```
@@ -24,7 +24,7 @@ runtime-loader dev mode
 Pluxel 需要同时支持两类插件生态：
 
 - loader 插件生态：插件来源动态，依赖 workspace scan、package install、module catalog、runtime replacement。
-- static suite 插件生态：插件总量固定明确，入口文件静态 export 所有插件，企业应用更关心配置、启动检查、可控 replacement 边界和部署确定性。
+- runtime-static route 插件生态：插件总量固定明确，入口文件静态 export 所有插件，企业应用更关心配置、启动检查、可控 replacement 边界和部署确定性。
 
 这两类生态不应该分裂成两套 runtime。它们应该共享 runtime common host layer，只在 catalog resolution、startup policy 和 route-specific management 能力上分叉。
 
@@ -37,18 +37,18 @@ Pluxel 需要同时支持两类插件生态：
 @pluxel/runtime common
   owns services / config persistence / ops / web APIs / plugin UI protocols / status read models
 
-runtime loader route
+runtime dynamic route
   owns scan / package / dynamic module catalog / loader batch replacement
 
-runtime static suite route
+runtime-static route
   owns known catalog / strict startup / plugin set drift policy
 
-runtime loader dev mode
-  owns Vite runner / watch / moduleGraph / dev-time source execution
+runtime dynamic HMR mode
+  owns Vite runner / watch / moduleGraph / HMR-time source execution
   submits through loader batch replaceModule
 ```
 
-core 不知道 route。runtime common 不知道 loader dev mode。dev mode 属于 loader route，不按 route 做抽象 adapter。
+core 不知道 route。runtime common 不知道 loader HMR mode。HMR mode 属于 loader route，不按 route 做抽象 adapter。
 
 ## Runtime common layer
 
@@ -61,7 +61,7 @@ core 不知道 route。runtime common 不知道 loader dev mode。dev mode 属�
 - plugin UI protocols：packaged remote、builtin/doc、SignalDB、RPC、SSE。
 - HTTP service、root services、vault/fs 等宿主能力。
 
-这些能力属于 runtime，不应该为了 static suite 复制到 core，也不应该复制成一个新的 runtime 包。
+这些能力属于 runtime，不应该为了 runtime-static route 复制到 core，也不应该复制成一个新的 runtime 包。
 
 ## Loader route
 
@@ -74,7 +74,7 @@ core 不知道 route。runtime common 不知道 loader dev mode。dev mode 属�
 - module id 到 plugin ctors 的映射。
 - enabled bit 到 core registry draft 的同步。
 - loader batch replacement。
-- loader dev mode source submission。
+- loader HMR mode source submission。
 - dynamic catalog 状态、missing dependency、enabled-but-stopped 解释。
 
 当前 loader 热替换路线：
@@ -88,9 +88,9 @@ file change
 -> core commit
 ```
 
-loader route 的重度逻辑不应该泄漏到 static suite route。
+loader route 的重度逻辑不应该泄漏到 runtime-static route。
 
-## Static suite route
+## Runtime Static Route
 
 状态：未来提案。
 
@@ -100,32 +100,32 @@ loader route 的重度逻辑不应该泄漏到 static suite route。
 - 一个入口文件 export 所有插件。
 - 部署时不需要动态 install/scan/package。
 - 启动时要严格知道哪个插件没启动、为什么没启动。
-- replacement 边界希望限制在插件或 suite entry 粒度。
+- replacement 边界希望限制在插件或 static entry 粒度。
 
-## Static suite route 需要的内容
+## Runtime Static Route 需要的内容
 
-static suite route 不只是“把插件数组 register 到 core”。它至少需要这些部分：
+runtime-static route 不只是“把插件数组 register 到 core”。它至少需要这些部分：
 
-1. Suite declaration
+1. Static runtime definition
    - 描述固定插件集合。
    - 描述默认 enabled 集合。
-   - 允许绑定 suite-level metadata，例如 suite name、version、profile policy。
+   - 允许绑定 static-route metadata，例如 static runtime name、version、profile policy。
    - 可选声明 replacement boundary。
 
 2. Known catalog resolver
-   - 从 suite entry 得到稳定插件清单。
+   - 从 static entry 得到稳定插件清单。
    - 给每个插件建立稳定 id/name、ctor、schema metadata、dependency metadata。
    - 不依赖 workspace scan、package install、dynamic module map。
 
 3. Startup planner
-   - 合并 suite defaults、runtime persisted config、enabled/disabled 状态。
+   - 合并 static defaults、runtime persisted config、enabled/disabled 状态。
    - 对每个插件做 config validation。
    - 构造 core registry draft。
    - 选择 strict/fail-soft 启动策略。
 
 4. Startup report
    - 明确每个插件状态：started、disabled、config-invalid、dependency-missing、start-failed。
-   - 明确失败归因：插件名、schema key、依赖、异常、是否阻塞 suite。
+   - 明确失败归因：插件名、schema key、依赖、异常、是否阻塞 static runtime。
    - 给 CLI/RPC/MCP/workbench 使用同一个 read model。
 
 5. Config bridge
@@ -137,21 +137,21 @@ static suite route 不只是“把插件数组 register 到 core”。它至少�
 6. Route-neutral plugin status model
    - 用 plugin id/name 表达状态。
    - common 状态不依赖 loader module id。
-   - 需要给 UI/诊断展示来源时，用只读 `source` 字段表达 loader/static-suite。
+   - 需要给 UI/诊断展示来源时，用只读 `source` 字段表达 loader/runtime-static。
    - route-specific diagnostics 放在 capability/diagnostics 字段，不污染 common API。
 
-7. Static dev replacement
-   - 默认不实现，也不继承 loader dev mode。
-   - 如果未来证明 fixed catalog 需要独立 dev replacement，应放在 static suite 自己的 dev 子路径。
-   - 重新 import suite entry 或 plugin boundary、漂移检查、known plugin replacement 都属于 static route 自己的设计，不进入 runtime common。
+7. Static HMR replacement
+   - 默认不实现，也不继承 loader HMR mode。
+   - 如果未来证明 fixed catalog 需要独立 HMR replacement，应放在 runtime-static route 自己的 HMR 子路径。
+   - 重新 import static entry 或 plugin boundary、漂移检查、known plugin replacement 都属于 runtime-static route 自己的设计，不进入 runtime common。
 
 8. Route-specific ops
    - common plugin/config ops 保持 route-neutral。
    - loader install/scan/package/cache 这类能力只暴露为 loader-specific ops。
-   - static suite 的 drift check、startup report、strict restart 暴露为 static-specific ops。
+   - runtime-static route 的 drift check、startup report、strict restart 暴露为 static-specific ops。
 
 9. Diagnostics
-   - 启动前检查 suite declaration。
+   - 启动前检查 static runtime definition。
    - 检查插件 name/id 冲突。
    - 检查配置 schema 是否可提取。
    - 检查 replacement boundary 是否能映射到 known plugins。
@@ -159,14 +159,14 @@ static suite route 不只是“把插件数组 register 到 core”。它至少�
 可能的 authoring 形态：
 
 ```ts
-export const suite = definePluginSuite({
+export const runtime = defineStaticRuntime({
 	plugins: [PluginA, PluginB],
 	enabled: ['PluginA', 'PluginB'],
 	config: {
 		PluginA: {},
 		PluginB: {},
 	},
-	dev: {
+	hmr: {
 		entries: [import.meta.url],
 		boundary: 'plugin',
 	},
@@ -177,7 +177,7 @@ export const suite = definePluginSuite({
 
 ```text
 load runtime config snapshot
-read suite catalog
+read static catalog
 resolve enabled plugins
 ensureValidated(plugin, schemaMap)
 register enabled ctors
@@ -190,13 +190,13 @@ return StartupReport or fail
 - 插件集合 drift 默认报错。
 - enabled plugin 未启动默认进入 startup report，并可配置为 fail-fast。
 - 配置 schema 校验失败必须归因到插件和 schema key。
-- static suite 不依赖 workspace scan/package/cache。
+- runtime-static route 不依赖 workspace scan/package/cache。
 
-## Dev replacement 路线
+## HMR replacement 路线
 
-当前只承认 loader dev mode 这一条路线。Vite runner、watch 和 moduleGraph 属于 `@pluxel/runtime-loader` 的 dev 子路径，提交到 loader batch。
+当前只承认 loader HMR mode 这一条路线。Vite runner、watch 和 moduleGraph 属于 `@pluxel/runtime-dynamic/hmr`，提交到 loader batch。
 
-loader dev replacement：
+loader HMR replacement：
 
 ```text
 changed source
@@ -206,29 +206,40 @@ changed source
 -> core commit
 ```
 
-static suite dev replacement 不是当前目标：
+runtime-static route HMR replacement 不是当前目标：
 
 ```text
 changed source
--> runner import suite entry or plugin boundary
--> suite adapter resolve known plugin ctors
+-> runner import static entry or plugin boundary
+-> static route adapter resolve known plugin ctors
 -> validate plugin set drift
 -> replace known plugin ctor(s)
 -> core commit strict or report
 ```
 
-static route 如果未来实现 dev replacement，优化点应来自 fixed catalog 本身：
+runtime-static route 如果未来实现 HMR replacement，优化点应来自 fixed catalog 本身：
 
 - 不需要 scan 整个 workspace。
 - 不需要维护动态 module catalog。
-- 可以用 suite declaration 限制 replacement 边界。
+- 可以用 static runtime definition 限制 replacement 边界。
 - 可以在插件集合变化时直接报错，而不是尝试猜测动态目录状态。
 
-但不要为了这个未来可能性在 runtime common 中预留 `HmrAdapter`、`RouteHmrAdapter` 或多 runner 抽象。loader dev mode 的完整设计见 `runtime-loader-dev-mode.md`。
+所以 fixed catalog 不是不能 HMR，而是不能沿用 loader HMR 的动态语义。它应该有自己的 static HMR replacement：
+
+- static startup 先得到 known catalog。
+- Vite 只负责重新 import static entry 或 declared plugin boundary。
+- route 用 plugin id/name 把新 ctor 映射回 known catalog。
+- config schema/default 重新校验。
+- core registry draft/commit 只替换 affected known plugin。
+- drift check 发现新增、删除、重命名插件时默认 fail-fast。
+
+这种路线适合“不需要动态加载插件”的系统：开发期仍可热替换源码，生产期仍保持固定插件集合和严格 startup report。它不需要 loader scan/package/cache，也不需要 loader module id。
+
+但不要为了这个未来可能性在 runtime common 中预留 `HmrAdapter`、`RouteHmrAdapter` 或多 runner 抽象。loader HMR mode 的完整设计见 `runtime-dynamic-hmr-mode.md`。
 
 ## Runtime API 重构方向
 
-当前 runtime API 很多地方天然假设 loader 存在：module id、scan、package、loader registry、replaceModule、enabled-but-stopped 等概念会出现在状态解释和控制面里。static suite route 如果直接复用这些 API，会显得笨重且语义不干净。
+当前 runtime API 很多地方天然假设 loader 存在：module id、scan、package、loader registry、replaceModule、enabled-but-stopped 等概念会出现在状态解释和控制面里。runtime-static route 如果直接复用这些 API，会显得笨重且语义不干净。
 
 未来应该把 runtime API 分成三层，但不要做成可无限扩展的 route plugin 系统：
 
@@ -238,7 +249,7 @@ route-neutral common API
 
 route-specific management API
   loader: scan / install / remove / package cache / dynamic module diagnostics
-  static-suite: startup report / drift check / suite restart / boundary diagnostics
+  runtime-static: startup report / drift check / static restart / boundary diagnostics
 
 internal route adapter API
   runtime common 启动时持有一个明确 route implementation
@@ -276,20 +287,20 @@ class LoaderRuntimeCatalog implements RuntimePluginCatalog {
 	replaceModule(moduleId: string, exports: unknown): Promise<RouteChangeReport>
 }
 
-class StaticSuiteRuntimeCatalog implements RuntimePluginCatalog {
+class StaticRuntimeCatalog implements RuntimePluginCatalog {
 	replaceKnownPlugin(pluginId: string, ctor: PluginCtor): Promise<RouteChangeReport>
-	checkDrift(): Promise<StaticSuiteDriftReport>
+	checkDrift(): Promise<StaticRuntimeDriftReport>
 }
 ```
 
-runtime common 启动时只接收一个 catalog 实例。需要区分 loader/static-suite 的地方，应该通过 TypeScript 的具体类型、构造路径或 route-specific ops 解决，不要让 common 层到处写 `if (kind === ...)`。
+runtime common 启动时只接收一个 catalog 实例。需要区分 loader/runtime-static 的地方，应该通过 TypeScript 的具体类型、构造路径或 route-specific ops 解决，不要让 common 层到处写 `if (kind === ...)`。
 
 字符串来源字段只适合 read model：
 
 ```ts
 type PluginSource =
 	| { type: 'loader'; moduleId: string }
-	| { type: 'static-suite'; suite: string }
+	| { type: 'runtime-static'; runtime: string }
 ```
 
 这个字段用于 UI、日志、诊断和序列化，不作为核心生命周期分发机制。
@@ -310,7 +321,7 @@ runtime common 负责提供：
 route package 负责提供可选择挂载的能力：
 
 - loader route：package-manager GraphQL/RPC、workspace MCP tools、scan/package diagnostics、动态插件 UI 面板。
-- static suite route：startup report、drift check、strict restart、suite config UI、边界诊断。
+- runtime-static route：startup report、drift check、strict restart、static config UI、边界诊断。
 
 host 负责显式组合：
 
@@ -328,29 +339,29 @@ mountWorkbenchUi(runtime, {
 })
 ```
 
-static suite 的组合可以完全不同：
+runtime-static route 的组合可以完全不同：
 
 ```ts
 const runtime = createRuntimeHost(...)
 
 mountRuntimeCommonApi(runtime)
 
-const suite = installStaticSuiteRoute(runtime, suiteDeclaration)
-mountStaticStartupReportApi(runtime, suite)
-mountSuiteConfigUi(runtime, suite)
+const staticRoute = installStaticRuntimeRoute(runtime, staticDefinition)
+mountStaticStartupReportApi(runtime, staticRoute)
+mountStaticConfigUi(runtime, staticRoute)
 mountWorkbenchUi(runtime, {
 	config: true,
 	startupReport: true,
 })
 ```
 
-这样 runtime common 不默认拥有任何路线的产品面；loader 和 static suite 都只是复用 runtime 的网络能力，然后各自选择要暴露什么控制面、什么前端 UI。配置仍然重要，但配置只描述业务状态和持久化策略，不负责偷偷改变 host 挂载拓扑。
+这样 runtime common 不默认拥有任何路线的产品面；loader 和 runtime-static route 都只是复用 runtime 的网络能力，然后各自选择要暴露什么控制面、什么前端 UI。配置仍然重要，但配置只描述业务状态和持久化策略，不负责偷偷改变 host 挂载拓扑。
 
 这也意味着当前 contribution registry 未来可以继续收敛：从副作用式注册 GraphQL/RPC/MCP，逐步变成显式 `mount*` 函数。目标态不保留旧入口兼容；host 应按能力显式组合，避免 runtime common 背上 loader route 的默认心智负担。
 
 ## 与 config/web config 的关系
 
-static suite 不能重做配置系统。它应该复用：
+runtime-static route 不能重做配置系统。它应该复用：
 
 - core 的 `configs.use(...)`、`cfg(schemaMap)`、schema defaulting、validation snapshot。
 - runtime 的 file/memory/readonly persistence。
@@ -361,26 +372,26 @@ static suite 不能重做配置系统。它应该复用：
 
 ## 实现顺序
 
-1. 已开始把 runtime common 和 loader-specific 代码边界标清：`@pluxel/runtime-loader` 承载 loader/scan/package/package-manager/workspace tools。
+1. 已开始把 runtime common 和 loader-specific 代码边界标清：`@pluxel/runtime-dynamic` 承载 loader/scan/package/package-manager/workspace tools。
 2. 已给当前 loader route 补 plugin catalog adapter，并通过 runtime API contribution registry 保持现有 GraphQL/RPC/MCP 入口。
-3. 按 `runtime-loader-dev-mode.md` 把独立 HMR 概念收敛进 loader dev mode，并删除旧 `@pluxel/hmr` 入口。
-4. 设计 static suite declaration 和 startup report 类型。
-5. 实现 static route startup，不接 dev replacement。
+3. 按 `runtime-dynamic-hmr-mode.md` 把独立 HMR 概念收敛进 loader HMR mode，并删除旧 `@pluxel/hmr` 入口。
+4. 设计 runtime-static route declaration 和 startup report 类型。
+5. 实现 runtime-static route startup，不接 HMR replacement。
 6. 把 workbench/ops/status 投影统一到 route-neutral read model。
 
 ## 非目标
 
-- 不把 static suite 做成 core 功能。
+- 不把 runtime-static route 做成 core 功能。
 - 不新增替代 runtime 的第二个 runtime 包。
-- 不让 runtime 依赖 loader dev mode、Vite、watch 或 source runner。
-- 不把 loader route 的 scan/package/cache 强行复用到 static route。
+- 不让 runtime 依赖 loader HMR mode、Vite、watch 或 source runner。
+- 不把 loader route 的 scan/package/cache 强行复用到 runtime-static route。
 - 不保留 `@pluxel/hmr` 或旧 HMR 配置入口作为兼容层。
-- 不把 `definePluginSuite` 写成当前 API，直到实现落地。
+- 不把 `defineStaticRuntime` 写成当前 API，直到实现落地。
 
 ## 文档归属
 
 - 当前 core/runtime/hmr 行为：`../CORE.md`、`../RUNTIME.md`、`../HMR.md`。
-- 未来 loader dev mode 收敛：`runtime-loader-dev-mode.md`。
+- 未来 loader HMR mode 收敛：`runtime-dynamic-hmr-mode.md`。
 - 未来 runtime route 分叉：本文件。
 - 提案总入口：`README.md`。
 - 实现后再把已完成部分迁入当前领域文档，并删减本文件。

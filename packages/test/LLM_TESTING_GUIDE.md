@@ -69,7 +69,7 @@ export { default } from '../test/src/vitest.ts'
 ```
 
 If you are consuming the published package outside this monorepo, use `@pluxel/test/vitest`.
-The preset always enables `@pluxel/source` for internal packages and `@pluxel/hmr` for plugin HMR
+The preset always enables `@pluxel/source` for internal packages and `@pluxel/runtime-dynamic` for plugin loader HMR
 entries; do not add per-package condition options.
 
 If you need extra Vite plugins in your test pipeline, use:

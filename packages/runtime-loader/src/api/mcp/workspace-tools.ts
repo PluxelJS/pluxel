@@ -24,7 +24,7 @@ const EntryResolutionSchema = v.union([EntryResolutionOkSchema, EntryResolutionE
 const WorkspaceResolveEntryInputSchema = v.object({
 	name: v.string(),
 	workspaceOnly: v.optional(v.boolean()),
-	preferHmrExports: v.optional(v.boolean()),
+	preferRuntimeLoaderExports: v.optional(v.boolean()),
 	conditions: v.optional(v.array(v.string())),
 })
 
@@ -39,7 +39,7 @@ function textResult<T>(text: string, structuredContent: T): ToolCallResult<T> {
 
 export function registerWorkspaceMcpTools(server: McpServer, ctx: Context) {
 	server.tool('workspace.resolveEntry', {
-		description: 'Resolve a workspace package entry (prefer @pluxel/hmr export by default).',
+		description: 'Resolve a workspace package entry (prefer @pluxel/runtime-loader export by default).',
 		inputSchema: WorkspaceResolveEntryInputSchema,
 		outputSchema: EntryResolutionSchema,
 		handler: async (args) => {

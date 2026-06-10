@@ -2,7 +2,7 @@ import type { Context } from '@pluxel/core'
 import { toJsonSchema } from '@valibot/to-json-schema'
 import { InMemorySessionAdapter, McpServer, StreamableHttpTransport } from 'mcp-lite'
 import { applyRuntimeMcpToolContributions } from '../contributions'
-import { registerRuntimeDevTools } from './dev-tools'
+import { registerRuntimeHmrTools } from './hmr-tools'
 import { registerRuntimeOpsCarrier } from './ops-carrier'
 import { isJsonSchemaObject } from './shared'
 
@@ -22,7 +22,7 @@ function resolveRootContext(ctx: Context): Context {
 function createPluxelMcpServer(ctx: Context) {
 	const server = new McpServer({
 		name: 'pluxel-hmr',
-		version: 'dev',
+		version: 'hmr',
 		schemaAdapter: (schema) =>
 			(isJsonSchemaObject(schema)
 				? (schema as Record<string, unknown>)
@@ -30,7 +30,7 @@ function createPluxelMcpServer(ctx: Context) {
 	})
 
 	registerRuntimeOpsCarrier(server, ctx)
-	registerRuntimeDevTools(server, ctx)
+	registerRuntimeHmrTools(server, ctx)
 	applyRuntimeMcpToolContributions(server, ctx)
 	return server
 }

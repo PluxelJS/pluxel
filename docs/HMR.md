@@ -1,30 +1,28 @@
 # HMR
 
-`@pluxel/hmr` 是开发期适配层。它把 Vite、源码执行、watch、moduleGraph 和插件 UI 编译接到 runtime 上。
-
-未来目标态会删除独立 `@pluxel/hmr` 包，把这些能力收敛为 `@pluxel/runtime-loader` 的 dev mode，且不保留旧入口兼容。目标设计见 `proposals/runtime-loader-dev-mode.md`。本文仍描述当前已实现行为。
+HMR 是 `@pluxel/runtime-dynamic` 的 HMR mode，不是独立包。它把 Vite、源码执行、watch、moduleGraph 和插件 UI 编译接到 loader route 上，并通过 loader batch 提交 runtime module replacement。
 
 ## 设计边界
 
-HMR 拥有：
+Loader HMR mode 拥有：
 
-- HMR config diagnose
-- Vite dev server
+- loader HMR config diagnose
+- Vite HMR server
 - SSR runner
 - watcher 和 moduleGraph traversal
 - runner singleton bridge
 - HMR batch orchestration
 - 通过 `ctx.loader.beginBatch()` 做 runtime module replacement
-- dev 期插件 UI 源码编译
+- HMR 期插件 UI 源码编译
 
-HMR 不拥有：
+Loader HMR mode 不拥有：
 
 - 生产 runtime 服务
 - runtime 协议定义
 - core 生命周期算法
 - 正式运行时 UI 注册语义
 
-一句话边界：HMR 负责“源码如何变成可运行模块/remote”，runtime 负责“可运行 artifact 如何注册和消费”。
+一句话边界：loader HMR mode 负责“源码如何变成可运行模块/remote”，runtime 负责“可运行 artifact 如何注册和消费”。
 
 ## 当前 HMR 流程
 
@@ -46,6 +44,26 @@ HMR summary 需要解释：
 - enabled-but-stopped plugins
 - commit failures
 
+## Workspace Path Model
+
+loader HMR 里有三种 `roots`，不要混用：
+
+- `pluxel.loader.hmr.jsonc` 的 `roots`：workspace discovery scope，只决定哪些 package 会被扫描出来。
+- `LoaderHmrWorkspace.enabledEntries`：真正提交给 loader/HMR 的入口，只来自 profile enabled package 和显式 include。
+- `LoaderHmrWorkspace.watchRoots`：HMR/Vite 的 watch 和 `server.fs.allow` scope，不会自动启用插件。
+
+诊断阶段统一把路径输出成 root-relative snapshot；host 启动阶段再以 `root/cwd` 解析成绝对路径。这样 CLI、TUI、host script 和测试 fixture 都使用同一套路径模型。
+
+monorepo 下 `watchRoots` 会包含 enabled workspace package 的 workspace dependency closure。这个 closure 的语义只限于 HMR 观察范围：
+
+- 不修改 `pluxel.loader.hmr.jsonc`。
+- 不扩大 discovery roots。
+- 不把 dependency package 加进 `enabledEntries`。
+- 不自动启用另一个插件。
+- 遵守 `omitPackages`，避免 builtin/double-load 包被拉回 source watch。
+
+这样做是为了让被启用插件 import 的 workspace shared package 能被 Vite 访问和监听。若 dependency package 本身也是插件但没有被 profile enabled，diagnose 会给 warning；HMR 可以看到源码变化，但 runtime 是否启用该插件仍由 profile/config 决定。
+
 ## 插件 UI HMR
 
 作者侧可以写：
@@ -54,7 +72,7 @@ HMR summary 需要解释：
 ui('./ui/index.tsx').bind(ctx)
 ```
 
-开发期由 HMR bridge 消费源码入口并编译 remote；build 期由 build plugin 改写；runtime 最终只消费：
+开发期由 runtime-dynamic HMR bridge 消费源码入口并编译 remote；build 期由 build plugin 改写；runtime 最终只消费：
 
 ```ts
 ctx.ext.ui.remote.packaged()
@@ -62,11 +80,11 @@ ctx.ext.ui.remote.packaged()
 
 runtime 永远不应该回头理解 source `entryPath`。
 
-## MF2 在 HMR 的角色
+## MF2 在 Loader HMR 的角色
 
-HMR 不把 MF2 当 authoring API。MF2 只定义 remote artifact format 和宿主加载协议；HMR 负责从源码构建 remote，并处理 dev watch/rebuild/submit。
+Loader HMR mode 不把 MF2 当 authoring API。MF2 只定义 remote artifact format 和宿主加载协议；loader HMR mode 负责从源码构建 remote，并处理 HMR watch/rebuild/submit。
 
-当前 `@pluxel/hmr/plugin-build` 的实用策略：
+当前 `@pluxel/runtime-dynamic` 内部 plugin build helper 的实用策略：
 
 - 同一插件包根目录共享 root-scoped build scheduler。
 - 同 root 多个 UI remote 串行构建。
@@ -75,18 +93,30 @@ HMR 不把 MF2 当 authoring API。MF2 只定义 remote artifact format 和宿�
 
 ## 实现入口
 
-- `packages/hmr/src/host.ts`：`planHmrHostFromConfig` / `bootPlannedHmrHost`。
-- `packages/hmr/src/dev/attach-runtime.ts`：把 HMR attach 到已有 runtime `Context`。
-- `packages/hmr/src/dev/hmr/HMRService.ts`：dev server、runner、watch pipeline。
-- `packages/hmr/src/dev/hmr/config.ts`：HMR Vite config、bridge modules、dedupe、optimizeDeps。
-- `packages/hmr/src/dev/hmr/pipeline.ts`：graph processing、executor、commit scheduler。
-- `packages/hmr/src/dev/hmr/runner.ts`：SSR runner 和 bridge handling。
-- `packages/hmr/src/plugin.ts`：`ui(...)` / `worker(...)` authoring bridge。
-- `packages/hmr/src/dev/extensions/ExtensionCompilerService.ts`：dev 期消费 bridge、编译 UI、提交 compiled module。
-- `packages/hmr/src/plugin-build.ts`：构建插件 UI remote。
-- `packages/hmr/src/diagnose/**`：HMR config 和 workspace diagnose。
-- `packages/hmr/src/snapshot.ts`：`HmrWorkspaceSnapshot`。
+- `packages/runtime-dynamic/src/hmr.ts`：`createLoaderHmrHost` / `installLoaderHmr` / diagnose exports。
+- `packages/runtime-dynamic/src/hmr/host.ts`：loader HMR host planning/boot internals。
+- `packages/runtime-dynamic/src/hmr/install-hmr-runtime.ts`：把 loader HMR 安装到已有 runtime `Context`。
+- `packages/runtime-dynamic/src/hmr/engine/LoaderHmrService.ts`：HMR server、runner、watch pipeline。
+- `packages/runtime-dynamic/src/hmr/engine/config.ts`：Vite config、bridge modules、dedupe、optimizeDeps。
+- `packages/runtime-dynamic/src/hmr/engine/pipeline.ts`：graph processing、executor、commit scheduler。
+- `packages/runtime-dynamic/src/hmr/engine/runner.ts`：SSR runner 和 bridge handling。
+- `packages/runtime-dynamic/src/plugin.ts`：`ui(...)` / `worker(...)` authoring bridge。
+- `packages/runtime-dynamic/src/hmr/extensions/ExtensionCompilerService.ts`：HMR 期消费 bridge、编译 UI、提交 compiled module。
+- `packages/runtime-dynamic/src/hmr/plugin-build.ts`：构建插件 UI remote。
+- `packages/runtime-dynamic/src/hmr/diagnose/**`：loader HMR config 和 workspace diagnose。
+- `packages/runtime-dynamic/src/hmr/snapshot.ts`：`LoaderHmrWorkspace`。
 
 ## 静态插件目录的 HMR 方向
 
-当前没有实现 static-suite HMR route。新的目标设计不再为 static suite 预留通用 HMR adapter；如果未来 fixed catalog 需要 dev replacement，应作为 static suite 自己的 dev 子路径单独设计，并默认拒绝插件集合漂移，除非配置显式允许。
+当前没有实现 runtime-static HMR route。新的目标设计不再为 runtime-static route 预留通用 HMR adapter；如果未来 fixed catalog 需要 HMR replacement，应作为 runtime-static route 自己的 HMR 子路径单独设计。
+
+固定插件集合可以支持开发期热替换，但语义不是“动态 loader HMR”：
+
+- 启动时插件集合必须已知。
+- HMR runner 可以重新 import static entry 或 plugin boundary。
+- 替换目标必须映射回已知 plugin id/name。
+- 插件集合 drift 默认报错，要求重启或显式允许。
+- 不使用 workspace scan、package install、dynamic module catalog。
+- 不把 loader route 的 `enabledEntries` / `watchRoots` 规则复用给 runtime-static route。
+
+也就是说，runtime-static route 的 HMR 优势来自 fixed catalog：边界更严格、诊断更确定；代价是不能像 loader route 那样自然支持插件集合漂移和动态安装。

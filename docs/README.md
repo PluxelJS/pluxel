@@ -7,7 +7,7 @@
 1. 先读包边界：
    - `CORE.md`
    - `RUNTIME.md`
-   - `RUNTIME_LOADER_SPLIT.md`
+   - `RUNTIME_DYNAMIC_SPLIT.md`
    - `HMR.md`
 2. 再读横向能力：
    - `FRONTEND.md`
@@ -23,7 +23,7 @@
 
 - `CORE.md`：最小插件内核、DI、生命周期、feature/config 声明。
 - `RUNTIME.md`：宿主 runtime common、配置持久化、HTTP/web 协议、route-neutral 状态投影。
-- `RUNTIME_LOADER_SPLIT.md`：当前 runtime common 与 runtime-loader route 的拆分结果和迁移边界。
+- `RUNTIME_DYNAMIC_SPLIT.md`：当前 runtime common 与 runtime-dynamic route 的拆分结果和迁移边界。
 - `HMR.md`：开发期 Vite runner、watch、moduleGraph、模块替换。
 - `FRONTEND.md`：插件 UI、authoring bridge、MF2 remote、SignalDB/RPC/SSE。
 - `CONFIG.md`：配置声明、校验、默认值、持久化、网页配置。
@@ -31,15 +31,15 @@
 - `OPS.md`：operation control-plane、CLI/RPC/MCP/workbench 投影。
 - `TOOLCHAIN.md`：build、Vite 分层、lint、test 和发布工具链。
 - `GOVERNANCE.md`：依赖方向、公开包、导出、维护规则。
-- `proposals/README.md`：未实现或未来设计入口，例如 runtime-loader dev mode、static suite runtime route、WorkbenchView、Core DI V2。
-- `proposals/runtime-loader-dev-mode.md`：未来把独立 HMR 包收敛为 `@pluxel/runtime-loader` dev mode 的目标设计，不保留兼容入口。
-- `proposals/runtime-routes.md`：未来 runtime 双路线设计，讨论 loader route、static suite route 和 route-neutral runtime common。
+- `proposals/README.md`：未实现或未来设计入口，例如 runtime-dynamic HMR mode、runtime-static route、WorkbenchView、Core DI V2。
+- `proposals/runtime-dynamic-hmr-mode.md`：未来把独立 HMR 包收敛为 `@pluxel/runtime-dynamic` HMR mode 的目标设计，不保留兼容入口。
+- `proposals/runtime-routes.md`：未来 runtime 双路线设计，讨论 runtime-dynamic route、runtime-static route 和 route-neutral runtime common。
 
 ## 当前与未来
 
-- 当前实现：写在 `CORE.md`、`RUNTIME.md`、`RUNTIME_LOADER_SPLIT.md`、`HMR.md`、`FRONTEND.md`、`CONFIG.md`、`WORKBENCH.md`、`OPS.md`、`TOOLCHAIN.md`、`GOVERNANCE.md`。
+- 当前实现：写在 `CORE.md`、`RUNTIME.md`、`RUNTIME_DYNAMIC_SPLIT.md`、`HMR.md`、`FRONTEND.md`、`CONFIG.md`、`WORKBENCH.md`、`OPS.md`、`TOOLCHAIN.md`、`GOVERNANCE.md`。
 - 未来或未实现：写在 `proposals/README.md`，大型提案放在 `docs/proposals/*.md`，并由 `proposals/README.md` 索引。
-- runtime 当前只有 loader route；static suite / fixed catalog route 是未来路线，不能写成当前实现。
+- runtime 当前只有 runtime-dynamic route；runtime-static route 目前只有包骨架，startup/hmr 行为不能写成当前实现。
 - 如果提案实现，先把已实现行为迁入当前领域文档，再缩短 `proposals/README.md` 或对应提案文档。
 
 ## 维护规则

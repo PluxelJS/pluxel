@@ -14,8 +14,8 @@ export function createHmrTestContext(state: HmrTestState = {}): HmrTestContext {
 	const core = new Context()
 	const enabled = state.enabled ?? new Set<string>()
 	const extra = state.extra ?? Object.create(null)
-	const hmrService = { normalizeId: (id: string) => id }
-	const root = { hmrService }
+	const loaderHmr = { normalizeId: (id: string) => id }
+	const root = { loaderHmr }
 	const configService = {
 		isReady: true,
 		ready: Promise.resolve(),

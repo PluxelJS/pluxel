@@ -7,7 +7,7 @@
 //   and avoids namespace-export bugs in the current dts bundler.
 
 export type ResolverCacheInvalidationDetail = {
-	/** Best-effort source tag (e.g. "packageService", "hmrService"). */
+	/** Best-effort source tag (e.g. "packageService", "loaderHmr"). */
 	by?: string
 	/** Optional reason (e.g. "install", "remove", "lockfile-change"). */
 	reason?: string

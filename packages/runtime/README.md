@@ -223,7 +223,7 @@ SignalDB 的 React 响应性现在走官方链路：
 
 插件自定义 UI 的正式本地化现在统一走 `@inlang/paraglide-js`，runtime 不再维护插件级文本字典注册层。Paraglide 的 Vite 插件已经由 Pluxel 的插件 UI 编译链自动接入：
 
-- dev：`@pluxel/hmr` 的 UI 子编译自动注入
+- HMR：`@pluxel/runtime-dynamic/hmr` 的 UI 子编译自动注入
 - build：`buildPluginUiRemote(...)` 自动注入
 - 约定：插件包根目录必须提供 `project.inlang`，消息源目录固定为 `messages/`，生成目录固定为 `src/paraglide/`
 
@@ -272,12 +272,10 @@ SignalDB 的 React 响应性现在走官方链路：
 
 ## 开发期
 
-runtime 本身不启动 Vite。开发期统一通过 `@pluxel/hmr` 接入：
+runtime 本身不启动 Vite。开发期统一通过 `@pluxel/runtime-dynamic/hmr` 接入：
 
-- `planHmrHostFromConfig(...)` + `bootPlannedHmrHost(plan)` + `host.hmr.start()`
-- `attachHmrRuntime(ctx, ...)`
-
-未来目标态会删除独立 `@pluxel/hmr` 包，把开发期入口收敛到 `@pluxel/runtime-loader` dev mode，且不保留旧入口兼容。设计见 `../../docs/proposals/runtime-loader-dev-mode.md`。
+- `createLoaderHmrHost({ config: defineLoaderHmrConfig(...) })` + `host.start()`
+- `installLoaderHmr(ctx, ...)`
 
 ## 主要 subpath
 
@@ -294,8 +292,8 @@ runtime 本身不启动 Vite。开发期统一通过 `@pluxel/hmr` 接入：
 - `@pluxel/runtime/frozen`
   冻结宿主构建
 - `@pluxel/runtime/shared`
-  给 `@pluxel/hmr` 复用的纯工具
+  给 `@pluxel/runtime-dynamic` 复用的纯工具
 - `@pluxel/runtime/vite`
   Vite 环境判断和 `serverOnly/browserOnly` 插件包装
 - `@pluxel/runtime/internal`
-  runtime 与 hmr 之间的内部 glue
+  runtime 与 loader HMR 之间的内部 glue

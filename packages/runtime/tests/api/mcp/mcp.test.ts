@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import { withRuntimeContext, type Context } from '@pluxel/runtime/test'
-import '../../../../runtime-loader/src/register'
+import '../../../../runtime-dynamic/src/register'
 import { HMR_INTERNAL_API_BASE, HMR_TRANSPORT_PATHS } from '@pluxel/runtime/web/paths'
 import { defineOp } from '@pluxel/ops'
 import { Type, obj } from '@pluxel/ops/typebox'
 import { getHmrMcpHttpHandler } from '../../../src/api/mcp'
-import { setDevRuntimeHandles } from '../../../src/runtime/dev-handles'
+import { setHmrRuntimeHandles } from '../../../src/runtime/hmr-handles'
 
 async function createMcpCaller(ctx: Context) {
 	const handler = getHmrMcpHttpHandler(ctx)
@@ -49,7 +49,7 @@ async function createMcpCaller(ctx: Context) {
 describe('MCP (mcp-lite) endpoint', () => {
 	it('supports initialize, tools/list, tools/call', async () => {
 		await withRuntimeContext(async (ctx) => {
-			setDevRuntimeHandles(ctx, {
+			setHmrRuntimeHandles(ctx, {
 				hmr: {
 					api: {
 						waitForBatch: async () => ({

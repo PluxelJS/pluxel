@@ -88,9 +88,9 @@ core 快照把 metadata 组织到 `configSourceMap`、`configBindingsMap`、`con
 
 ## 企业固定插件目录的复用点
 
-即使未来走 static suite/fixed catalog，配置仍应复用这条链路：
+即使未来走 runtime-static/fixed catalog，配置仍应复用这条链路：
 
-- suite 声明插件总量。
+- static runtime definition 声明插件总量。
 - runtime 读取落盘配置。
 - core 校验 schema/defaults。
 - runtime 投影 web config 和 ops。

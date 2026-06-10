@@ -1,15 +1,15 @@
 import type { Context } from '@pluxel/core'
 import type { PluxelPluginLogLevel } from '@pluxel/core/logger'
 
-import { hmrPluginLevels } from './ensure'
+import { runtimePluginLevels } from './ensure'
 
 /**
- * Persisted per-plugin log level overrides for HMR.
+ * Persisted per-plugin log level overrides for runtime hosts.
  *
  * Stored in ConfigService "extra" (single source of truth for host settings),
- * and applied to the global LogTape filter via `hmrPluginLevels`.
+ * and applied to the global LogTape filter via `runtimePluginLevels`.
  */
-export const EXTRA_HMR_PLUGIN_LEVELS = 'hmr.logger.pluginLevels' as const
+export const EXTRA_RUNTIME_PLUGIN_LEVELS = 'runtime.logger.pluginLevels' as const
 
 type PersistedPluginLevels = Record<string, PluxelPluginLogLevel>
 
@@ -32,7 +32,7 @@ const loadByConfigService = new WeakMap<object, Promise<void>>()
  * Note: this is intentionally lazy so hosts can call ensurePluxelLogging()
  * before Context/services finish initializing.
  */
-export async function ensureHmrPluginLevelsLoaded(ctx: Context): Promise<void> {
+export async function ensureRuntimePluginLevelsLoaded(ctx: Context): Promise<void> {
 	const configService = ctx.configService
 	if (!configService) return
 
@@ -43,15 +43,15 @@ export async function ensureHmrPluginLevelsLoaded(ctx: Context): Promise<void> {
 		// In core this resolves immediately; in HMR it may load from disk asynchronously.
 		await configService.ready
 
-		const persisted = coercePersistedPluginLevels(configService.getExtra(EXTRA_HMR_PLUGIN_LEVELS))
+		const persisted = coercePersistedPluginLevels(configService.getExtra(EXTRA_RUNTIME_PLUGIN_LEVELS))
 		if (!persisted) return
 
-		hmrPluginLevels.clear()
+		runtimePluginLevels.clear()
 		for (const k in persisted) {
 			if (!Object.hasOwn(persisted, k)) continue
 			// Be tolerant to stale/invalid persisted values; skip bad entries instead of failing startup.
 			try {
-				hmrPluginLevels.set(k, persisted[k]!)
+				runtimePluginLevels.set(k, persisted[k]!)
 			} catch {
 				// ignore
 			}
@@ -66,6 +66,6 @@ export async function ensureHmrPluginLevelsLoaded(ctx: Context): Promise<void> {
 	return await task
 }
 
-export function persistHmrPluginLevels(ctx: Context): void {
-	ctx.configService?.setExtra(EXTRA_HMR_PLUGIN_LEVELS, hmrPluginLevels.toRecord())
+export function persistRuntimePluginLevels(ctx: Context): void {
+	ctx.configService?.setExtra(EXTRA_RUNTIME_PLUGIN_LEVELS, runtimePluginLevels.toRecord())
 }

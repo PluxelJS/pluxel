@@ -99,15 +99,15 @@ importers:
       '@clack/prompts':
         specifier: ^1.0.1
         version: 1.4.0
-      '@pluxel/hmr':
-        specifier: workspace:*
-        version: link:../hmr
       '@pluxel/market':
         specifier: '*'
         version: 0.1.0(ramda@0.32.0)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
       '@pluxel/runtime':
         specifier: workspace:*
         version: link:../runtime
+      '@pluxel/runtime-dynamic':
+        specifier: workspace:*
+        version: link:../runtime-dynamic
       fdir:
         specifier: ^6.5.0
         version: 6.5.0(picomatch@4.0.4)
@@ -323,9 +323,6 @@ importers:
       '@pluxel/core-di':
         specifier: workspace:*
         version: link:../core-di
-      '@pluxel/test':
-        specifier: workspace:*
-        version: link:../test
       option-t:
         specifier: ^55.1.2
         version: 55.1.2
@@ -357,73 +354,6 @@ importers:
         specifier: ^6.0.3
         version: 6.0.3
 
-  packages/hmr:
-    dependencies:
-      '@inlang/paraglide-js':
-        specifier: ^2.15.1
-        version: 2.18.1(typescript@6.0.3)
-      '@logtape/logtape':
-        specifier: ^2.0.2
-        version: 2.1.1
-      '@module-federation/vite':
-        specifier: 1.14.1
-        version: 1.14.1(rollup@4.60.4)(typescript@6.0.3)(vite@8.0.0-beta.18(@emnapi/core@1.10.0)(@emnapi/runtime@1.10.0)(@types/node@25.9.1)(esbuild@0.27.7)(jiti@2.7.0)(sass-embedded@1.100.0)(sass@1.100.0)(sugarss@5.0.1(postcss@8.5.15))(tsx@4.22.3)(yaml@2.9.0))
-      '@pluxel/core':
-        specifier: workspace:*
-        version: link:../core
-      '@pluxel/runtime':
-        specifier: workspace:*
-        version: link:../runtime
-      '@pluxel/runtime-loader':
-        specifier: workspace:*
-        version: link:../runtime-loader
-      '@rolldown/pluginutils':
-        specifier: 1.0.0-rc.5
-        version: 1.0.0-rc.5
-      chokidar:
-        specifier: ^5.0.0
-        version: 5.0.0
-      jsonc-parser:
-        specifier: ^3.3.1
-        version: 3.3.1
-      pathe:
-        specifier: ^2.0.3
-        version: 2.0.3
-      picomatch:
-        specifier: ^4.0.3
-        version: 4.0.4
-      pkg-types:
-        specifier: ^2.3.0
-        version: 2.3.1
-      tinypool:
-        specifier: ^2.1.0
-        version: 2.1.0
-      unplugin-macros:
-        specifier: ^0.18.6
-        version: 0.18.7(@types/node@25.9.1)(jiti@2.7.0)(lightningcss@1.32.0)(sass-embedded@1.100.0)(sass@1.100.0)(sugarss@5.0.1(postcss@8.5.15))(tsx@4.22.3)(yaml@2.9.0)
-      vite:
-        specifier: beta
-        version: 8.0.0-beta.18(@emnapi/core@1.10.0)(@emnapi/runtime@1.10.0)(@types/node@25.9.1)(esbuild@0.27.7)(jiti@2.7.0)(sass-embedded@1.100.0)(sass@1.100.0)(sugarss@5.0.1(postcss@8.5.15))(tsx@4.22.3)(yaml@2.9.0)
-    devDependencies:
-      '@pluxel/build':
-        specifier: workspace:*
-        version: link:../build
-      '@pluxel/test':
-        specifier: workspace:*
-        version: link:../test
-      '@pluxel/workspace':
-        specifier: workspace:*
-        version: link:../workspace
-      superjson:
-        specifier: ^2.2.6
-        version: 2.2.6
-      tsdown:
-        specifier: ^0.22.0
-        version: 0.22.0(tsx@4.22.3)(typescript@6.0.3)(unrun@0.2.39)
-      typescript:
-        specifier: ^6.0.3
-        version: 6.0.3
-
   packages/ops:
     dependencies:
       '@sinclair/parsebox':
@@ -435,12 +365,12 @@ importers:
 
   packages/plugins/host:
     dependencies:
-      '@pluxel/hmr':
-        specifier: workspace:*
-        version: link:../../hmr
       '@pluxel/runtime':
         specifier: workspace:*
         version: link:../../runtime
+      '@pluxel/runtime-dynamic':
+        specifier: workspace:*
+        version: link:../../runtime-dynamic
     devDependencies:
       '@mantine/core':
         specifier: ^9.2.1
@@ -606,29 +536,44 @@ importers:
         specifier: beta
         version: 8.0.0-beta.18(@emnapi/core@1.10.0)(@emnapi/runtime@1.10.0)(@types/node@25.9.1)(esbuild@0.27.7)(jiti@2.7.0)(sass-embedded@1.100.0)(sass@1.100.0)(sugarss@5.0.1(postcss@8.5.15))(tsx@4.22.3)(yaml@2.9.0)
 
-  packages/runtime-loader:
+  packages/runtime-dynamic:
     dependencies:
       '@gqloom/core':
         specifier: ^0.16.1
         version: 0.16.1(graphql@16.14.0)
+      '@inlang/paraglide-js':
+        specifier: ^2.15.1
+        version: 2.18.1(typescript@6.0.3)
+      '@logtape/logtape':
+        specifier: ^2.0.2
+        version: 2.1.1
+      '@module-federation/vite':
+        specifier: 1.14.1
+        version: 1.14.1(rollup@4.60.4)(typescript@6.0.3)(vite@8.0.0-beta.18(@emnapi/core@1.10.0)(@emnapi/runtime@1.10.0)(@types/node@25.9.1)(esbuild@0.27.7)(jiti@2.7.0)(sass-embedded@1.100.0)(sass@1.100.0)(sugarss@5.0.1(postcss@8.5.15))(tsx@4.22.3)(yaml@2.9.0))
       '@pluxel/core':
         specifier: workspace:*
         version: link:../core
       '@pluxel/runtime':
         specifier: workspace:*
         version: link:../runtime
-      '@pluxel/workspace':
-        specifier: workspace:*
-        version: link:../workspace
+      '@rolldown/pluginutils':
+        specifier: 1.0.0-rc.5
+        version: 1.0.0-rc.5
       capnweb:
         specifier: ^0.5.0
         version: 0.5.0
+      chokidar:
+        specifier: ^5.0.0
+        version: 5.0.0
       exsolve:
         specifier: ^1.0.8
         version: 1.0.8
       graphql:
         specifier: ^16.13.0
         version: 16.14.0
+      jsonc-parser:
+        specifier: ^3.3.1
+        version: 3.3.1
       mcp-lite:
         specifier: ^0.10.0
         version: 0.10.0
@@ -641,16 +586,53 @@ importers:
       pathe:
         specifier: ^2.0.3
         version: 2.0.3
+      picomatch:
+        specifier: ^4.0.3
+        version: 4.0.4
       pkg-types:
         specifier: ^2.3.0
         version: 2.3.1
+      tinypool:
+        specifier: ^2.1.0
+        version: 2.1.0
+      unplugin-macros:
+        specifier: ^0.18.6
+        version: 0.18.7(@types/node@25.9.1)(jiti@2.7.0)(lightningcss@1.32.0)(sass-embedded@1.100.0)(sass@1.100.0)(sugarss@5.0.1(postcss@8.5.15))(tsx@4.22.3)(yaml@2.9.0)
       valibot:
         specifier: ^1.2.0
         version: 1.4.1(typescript@6.0.3)
+      vite:
+        specifier: beta
+        version: 8.0.0-beta.18(@emnapi/core@1.10.0)(@emnapi/runtime@1.10.0)(@types/node@25.9.1)(esbuild@0.27.7)(jiti@2.7.0)(sass-embedded@1.100.0)(sass@1.100.0)(sugarss@5.0.1(postcss@8.5.15))(tsx@4.22.3)(yaml@2.9.0)
     devDependencies:
+      '@pluxel/build':
+        specifier: workspace:*
+        version: link:../build
+      '@pluxel/workspace':
+        specifier: workspace:*
+        version: link:../workspace
       '@types/bun':
         specifier: ^1.3.4
         version: 1.3.14
+      superjson:
+        specifier: ^2.2.6
+        version: 2.2.6
+      typescript:
+        specifier: ^6.0.3
+        version: 6.0.3
+
+  packages/runtime-static:
+    dependencies:
+      '@pluxel/core':
+        specifier: workspace:*
+        version: link:../core
+      '@pluxel/runtime':
+        specifier: workspace:*
+        version: link:../runtime
+    devDependencies:
+      typescript:
+        specifier: ^6.0.3
+        version: 6.0.3
 
   packages/test:
     dependencies:

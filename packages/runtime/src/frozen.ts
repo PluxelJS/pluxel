@@ -56,7 +56,7 @@ import { Context } from '@pluxel/core'
 import '@pluxel/core/services'
 import { bootstrapHostVault } from '@pluxel/runtime/services'
 import '@pluxel/runtime'
-import '@pluxel/runtime-loader/register'
+import '@pluxel/runtime-dynamic/register'
 ${imports}
 
 const ctx = new Context({

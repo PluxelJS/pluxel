@@ -5,7 +5,7 @@ export default definePluxelVitestConfig(
 	{
 		resolve: {
 			alias: {
-				'@pluxel/hmr/plugin': resolve(__dirname, '../hmr/src/plugin.ts'),
+				'@pluxel/runtime-dynamic/plugin': resolve(__dirname, '../runtime-dynamic/src/plugin.ts'),
 			},
 		},
 	},

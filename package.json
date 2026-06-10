@@ -19,7 +19,7 @@
     "format:check": "oxfmt -c .oxfmtrc.json --ignore-path .gitignore --ignore-path .oxfmtignore --check .",
     "gqlens:generate": "sh scripts/generate-gqlens.sh",
     "update": "pnpm pncat migrate && pnpm up --latest && pnpm pncat revert",
-    "dev": "pnpm --filter @pluxel/plugins-host dev",
+    "hmr": "pnpm --filter @pluxel/plugins-host hmr",
     "deploy": "pnpm --filter @pluxel/plugins-host deploy",
     "frozen": "pnpm --filter @pluxel/plugins-host frozen"
   },

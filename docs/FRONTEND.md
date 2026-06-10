@@ -4,7 +4,7 @@
 
 ```text
 authoring bridge
--> build/HMR processing
+-> build/loader-hmr processing
 -> runtime artifact consumption
 ```
 
@@ -15,14 +15,12 @@ authoring bridge
 作者侧：
 
 - 插件代码写 `ui(...).bind(ctx)`。
-- 这是 authoring/HMR/build 识别点，不是 runtime 语义。
+- 这是 authoring/hmr/build 识别点，不是 runtime 语义。
 
-build/HMR：
+build/loader-hmr：
 
-- HMR 在开发期消费 source entry，编译插件 UI remote。
+- loader HMR mode 在开发期消费 source entry，编译插件 UI remote。
 - build 在发布产物里把 authoring bridge 改写成 runtime artifact 注册。
-
-未来目标态会把这里的 HMR 开发处理改名并收敛到 `@pluxel/runtime-loader` dev mode，不保留 `@pluxel/hmr/plugin` 兼容入口。
 
 runtime：
 
@@ -64,10 +62,10 @@ MF2 是 custom frontend remote artifact format 和浏览器宿主按需加载协
 
 ## 实现入口
 
-- `packages/hmr/src/plugin.ts`：authoring bridge，`ui(...)` / `worker(...)`。
-- `packages/hmr/src/dev/extensions/ExtensionCompilerService.ts`：dev 期编译插件 UI。
-- `packages/hmr/src/plugin-build.ts`：插件 UI remote build helper。
-- `packages/build/src/rolldown/plugins/hmrUiBridgePlugin.ts`：build 期 bridge rewrite。
+- `packages/runtime-dynamic/src/plugin.ts`：authoring bridge，`ui(...)` / `worker(...)`。
+- `packages/runtime-dynamic/src/hmr/extensions/ExtensionCompilerService.ts`：HMR 期编译插件 UI。
+- `packages/runtime-dynamic/src/hmr/plugin-build.ts`：插件 UI remote build helper。
+- `packages/build/src/rolldown/plugins/runtimeDynamicUiBridgePlugin.ts`：build 期 bridge rewrite。
 - `packages/runtime/src/services/plugin-interaction/ExtensionService.ts`：extension 注册和 runtime 协调。
 - `packages/runtime/src/services/plugin-interaction/ExtService.ts`：`ctx.ext` service wiring。
 - `packages/runtime/src/services/plugin-interaction/RpcService.ts`：插件 RPC。
@@ -79,7 +77,7 @@ MF2 是 custom frontend remote artifact format 和浏览器宿主按需加载协
 
 ## 改动判断
 
-- 改作者写法：先看 HMR/build bridge。
+- 改作者写法：先看 loader-hmr/build bridge。
 - 改 remote 注册/消费：先看 runtime `ExtensionService` 和 `web/plugin-ui`。
 - 改 workbench 呈现：先看 `WORKBENCH.md` 和 `packages/components/src/app/plugins/**`。
 - 改 SignalDB/RPC/SSE：先看 runtime plugin-interaction services。

@@ -1,23 +1,21 @@
 import { existsSync } from 'node:fs'
 import {
-	backupAndRewriteHmrConfigV1,
-	buildWorkspaceSnapshotFromScan,
-	createDefaultHmrConfigV1,
+	backupAndRewriteLoaderHmrConfigV1,
+	buildLoaderHmrWorkspaceFromScan,
+	createDefaultLoaderHmrConfigV1,
 	discoverPluginsFromPackages,
-	mergeHmrProfile,
-	type PluxelHmrConfigV1,
-	readHmrConfigV1,
-	resolveHmrRootsExpanded,
+	mergeLoaderHmrProfile,
+	type PluxelLoaderHmrConfigV1,
+	readLoaderHmrConfigV1,
+	resolveLoaderHmrRootsExpanded,
 	scanWorkspacePackages,
-	uniqPreserveOrder,
-	uniqSorted,
-	type WorkspaceSnapshot,
-	writeHmrConfigV1,
-} from '@pluxel/hmr/diagnose'
+	type LoaderHmrWorkspace,
+	writeLoaderHmrConfigV1,
+} from '@pluxel/runtime-dynamic/hmr'
 import { Box, render, Text, useInput, useStdout } from 'ink'
 import { resolve } from 'pathe'
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { writeHmrDiscoveredIndex } from '../hmr/discovered-index'
+import { writeLoaderHmrDiscoveredIndex } from '../hmr/discovered-index'
 import { type PickPackagesDiscoveredPlugin, PickPackagesDualBrowser } from './pick-packages'
 
 type TabKey = 'packages' | 'paths' | 'doctor' | 'start'
@@ -30,6 +28,22 @@ type Overlay = 'profiles' | 'help' | null
 
 function clamp(n: number, min: number, max: number) {
 	return Math.max(min, Math.min(max, n))
+}
+
+function uniqSorted(items: readonly string[]): string[] {
+	return [...new Set(items)].sort((a, b) => a.localeCompare(b))
+}
+
+function uniqPreserveOrder(items: readonly string[]): string[] {
+	const seen = new Set<string>()
+	const out: string[] = []
+	for (const raw of items) {
+		const item = String(raw)
+		if (seen.has(item)) continue
+		seen.add(item)
+		out.push(item)
+	}
+	return out
 }
 
 type PathsFocus = 'roots' | 'include' | 'exclude'
@@ -599,14 +613,14 @@ type SnapshotState =
 			errors: string[]
 			discovered?: Array<{ name: string; entry: string; pkgDir: string }>
 	  }
-	| { status: 'ok'; snapshot: WorkspaceSnapshot; warnings: string[] }
+	| { status: 'ok'; snapshot: LoaderHmrWorkspace; warnings: string[] }
 
-function HmrPromptApp(props: {
+function LoaderHmrPromptApp(props: {
 	rootDir: string
 	configPath: string
 	env: Record<string, string | undefined>
 	skipPackages: Set<string>
-	initialCfg: PluxelHmrConfigV1
+	initialCfg: PluxelLoaderHmrConfigV1
 	initialProfile: string
 	initialDirty: boolean
 	initialParseError: string | null
@@ -623,7 +637,7 @@ function HmrPromptApp(props: {
 		return 'roots'
 	})
 	const [scope, setScope] = useState<ConfigScope>('profile')
-	const [cfg, setCfg] = useState<PluxelHmrConfigV1>(props.initialCfg)
+	const [cfg, setCfg] = useState<PluxelLoaderHmrConfigV1>(props.initialCfg)
 	const [activeProfile, setActiveProfile] = useState(props.initialProfile)
 	const [dirty, setDirty] = useState(props.initialDirty)
 	const [toast, setToast] = useState<string>('')
@@ -689,8 +703,8 @@ function HmrPromptApp(props: {
 			defaultFocus: 'confirm',
 			onConfirm: () => {
 				try {
-					const repaired = createDefaultHmrConfigV1()
-					backupAndRewriteHmrConfigV1(props.configPath, repaired)
+					const repaired = createDefaultLoaderHmrConfigV1()
+					backupAndRewriteLoaderHmrConfigV1(props.configPath, repaired)
 					setCfg(repaired)
 					setActiveProfile(repaired.profile)
 					setDirty(false)
@@ -713,7 +727,7 @@ function HmrPromptApp(props: {
 	const mergedResult = useMemo(() => {
 		try {
 			const env = { ...props.env, PLUXEL_HMR_PROFILE: activeProfile }
-			return { merged: mergeHmrProfile(cfg, env), error: null as string | null }
+			return { merged: mergeLoaderHmrProfile(cfg, env), error: null as string | null }
 		} catch (error) {
 			return {
 				merged: null,
@@ -739,7 +753,7 @@ function HmrPromptApp(props: {
 
 			try {
 				const rootDirAbs = resolve(props.rootDir)
-				const rootsExpandedAbs = await resolveHmrRootsExpanded(rootDirAbs, merged.roots)
+				const rootsExpandedAbs = await resolveLoaderHmrRootsExpanded(rootDirAbs, merged.roots)
 				const key = `${rootsExpandedAbs.join('\n')}\n---\n${merged.excludeGlobs.join('\n')}`
 
 				if (scanKeyRef.current === key) return
@@ -757,7 +771,7 @@ function HmrPromptApp(props: {
 					? discovered.filter((p) => !props.skipPackages.has(p.name))
 					: discovered
 
-				writeHmrDiscoveredIndex({
+				writeLoaderHmrDiscoveredIndex({
 					rootDir: rootDirAbs,
 					configPath: props.configPath,
 					activeProfile: merged.activeProfile,
@@ -815,7 +829,7 @@ function HmrPromptApp(props: {
 					const omitPackages = merged.builtinPackages?.length
 						? uniqSorted(merged.builtinPackages)
 						: undefined
-					const snapshotRes = await buildWorkspaceSnapshotFromScan({
+					const snapshotRes = await buildLoaderHmrWorkspaceFromScan({
 						rootDir: rootDirAbs,
 						merged,
 						rootsExpandedAbs: scan.rootsExpandedAbs,
@@ -866,7 +880,7 @@ function HmrPromptApp(props: {
 
 	function saveConfig() {
 		try {
-			writeHmrConfigV1(props.configPath, { ...cfg, profile: activeProfile })
+			writeLoaderHmrConfigV1(props.configPath, { ...cfg, profile: activeProfile })
 			setDirty(false)
 			setToast(`Saved ${props.configPath}`)
 		} catch (error) {
@@ -882,7 +896,7 @@ function HmrPromptApp(props: {
 		}
 		setModal({
 			kind: 'confirm',
-			title: 'Start HMR',
+			title: 'Start loader HMR',
 			message: dirty ? 'Config is dirty. Start with current (unsaved) config state?' : 'Start now?',
 			confirmLabel: 'Start',
 			cancelLabel: 'Cancel',
@@ -1390,7 +1404,7 @@ function HmrPromptApp(props: {
 				kind: 'input',
 				title: 'New profile',
 				message: 'Enter profile name',
-				placeholder: 'dev',
+				placeholder: 'hmr',
 				onSubmit: (name) => {
 					setModal(null)
 					setCfg((prev) => ({
@@ -1449,7 +1463,7 @@ function HmrPromptApp(props: {
 					setModal(null)
 					setCfg((prev) => {
 						const data = prev.profiles[act.from] ?? { enabled: [] }
-						const cloned = JSON.parse(JSON.stringify(data)) as PluxelHmrConfigV1['profiles'][string]
+						const cloned = JSON.parse(JSON.stringify(data)) as PluxelLoaderHmrConfigV1['profiles'][string]
 						return { ...prev, profiles: { ...prev.profiles, [name]: cloned } }
 					})
 					setDirty(true)
@@ -1924,7 +1938,7 @@ function HelpOverlay(props: { tab: TabKey; onClose: () => void }) {
 	)
 }
 
-export async function runHmrPromptTui(params: {
+export async function runLoaderHmrPromptTui(params: {
 	rootDir: string
 	configPath: string
 	env: Record<string, string | undefined>
@@ -1936,21 +1950,21 @@ export async function runHmrPromptTui(params: {
 		throw new Error('Interactive `pluxel hmr` requires a TTY.')
 	}
 
-	let initialCfg: PluxelHmrConfigV1
-	let initialProfile = 'dev'
+	let initialCfg: PluxelLoaderHmrConfigV1
+	let initialProfile = 'hmr'
 	let initialDirty = false
 	let initialParseError: string | null = null
 
 	if (!existsSync(params.configPath)) {
-		initialCfg = createDefaultHmrConfigV1()
+		initialCfg = createDefaultLoaderHmrConfigV1()
 		initialProfile = params.env.PLUXEL_HMR_PROFILE ?? initialCfg.profile
 		initialDirty = true
 	} else {
 		try {
-			initialCfg = readHmrConfigV1(params.configPath)
+			initialCfg = readLoaderHmrConfigV1(params.configPath)
 			initialProfile = params.env.PLUXEL_HMR_PROFILE ?? initialCfg.profile
 		} catch (e) {
-			initialCfg = createDefaultHmrConfigV1()
+			initialCfg = createDefaultLoaderHmrConfigV1()
 			initialProfile = initialCfg.profile
 			initialDirty = false
 			initialParseError = e instanceof Error ? e.message : String(e)
@@ -1959,9 +1973,9 @@ export async function runHmrPromptTui(params: {
 
 	// Ensure at least one profile exists.
 	if (Object.keys(initialCfg.profiles).length === 0) {
-		initialCfg.profiles.dev = { enabled: [] }
-		initialCfg.profile = 'dev'
-		initialProfile = 'dev'
+		initialCfg.profiles.hmr = { enabled: [] }
+		initialCfg.profile = 'hmr'
+		initialProfile = 'hmr'
 		initialDirty = true
 	}
 
@@ -1974,7 +1988,7 @@ export async function runHmrPromptTui(params: {
 	return new Promise<PromptResult>((resolvePromise, reject) => {
 		let resolved = false
 		const { waitUntilExit, unmount } = render(
-			<HmrPromptApp
+			<LoaderHmrPromptApp
 				rootDir={params.rootDir}
 				configPath={params.configPath}
 				env={params.env}

@@ -102,7 +102,7 @@ export class RuntimePluginCatalogService {
 
 	private missing(): never {
 		throw new Error(
-			'[pluxel/runtime] No plugin catalog route is registered. Import a route package such as @pluxel/runtime-loader/register before using plugin catalog APIs.',
+			'[pluxel/runtime] No plugin catalog route is registered. Import a route package such as @pluxel/runtime-dynamic/register before using plugin catalog APIs.',
 		)
 	}
 

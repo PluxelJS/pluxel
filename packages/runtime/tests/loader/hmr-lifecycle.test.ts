@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { BasePlugin, Plugin, setParamToken } from '@pluxel/runtime/test'
-import { LoaderService } from '../../../runtime-loader/src/services'
-import { EXTRA_DEP_OVERRIDES } from '../../../runtime-loader/src/loader/selection'
+import { LoaderService } from '../../../runtime-dynamic/src/services'
+import { EXTRA_DEP_OVERRIDES } from '../../../runtime-dynamic/src/loader/selection'
 import { createHmrTestContext } from '../support/hmr-context'
 
 async function commitBatch(

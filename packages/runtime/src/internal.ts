@@ -1,9 +1,9 @@
-export type { DevRuntimeHandles } from './runtime/dev-handles'
+export type { HmrRuntimeHandles } from './runtime/hmr-handles'
 export {
-	clearDevRuntimeHandles,
-	getDevRuntimeHandles,
-	setDevRuntimeHandles,
-} from './runtime/dev-handles'
+	clearHmrRuntimeHandles,
+	getHmrRuntimeHandles,
+	setHmrRuntimeHandles,
+} from './runtime/hmr-handles'
 
 export type { RuntimeModuleAdapter, RuntimeModuleCacheEntry } from './runtime/module-runtime'
 export {
@@ -27,6 +27,6 @@ export {
 } from './runtime/paths'
 export { resolveModuleIdBaseDir, resolveModuleIdPath } from './runtime/module-id'
 
-// Dev-only helpers used by @pluxel/hmr (kept out of the public `services` surface).
+// HMR-only helpers used by @pluxel/runtime-dynamic/hmr (kept out of the public `services` surface).
 export type { ExtensionModuleStore } from './services/plugin-interaction/ExtensionService'
 export { createCompiledExtensionModule } from './services/plugin-interaction/ExtensionService'

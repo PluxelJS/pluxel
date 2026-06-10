@@ -123,10 +123,10 @@ const buildFixtures = {
 			'',
 		].join('\n'),
 	},
-	hmrUi: {
+	runtimeDynamicUi: {
 		'package.json': JSON.stringify(
 			{
-				name: 'pluxel-cli-build-fixture-hmr-ui',
+				name: 'pluxel-cli-build-fixture-runtime-dynamic-ui',
 				version: '1.0.0',
 				type: 'module',
 			},
@@ -160,7 +160,7 @@ const buildFixtures = {
 			'',
 		].join('\n'),
 		'src/index.ts': [
-			"import { ui } from '@pluxel/hmr/plugin'",
+			"import { ui } from '@pluxel/runtime-dynamic/plugin'",
 			'',
 			"const pluginUi = ui('./ui/index.tsx')",
 			'',
@@ -415,7 +415,7 @@ describe('build command', () => {
 	})
 
 	it('rewrites hmr ui bridge declarations in cli tsdown builds', async () => {
-		await withBuildFixture('hmrUi', async (fixtureDir) => {
+		await withBuildFixture('runtimeDynamicUi', async (fixtureDir) => {
 			const runtime = await resolveBuildContext({})
 
 			await runWithTsdown({
@@ -427,7 +427,7 @@ describe('build command', () => {
 
 			const output = await readFile(resolve(fixtureDir, 'dist/index.mjs'), 'utf-8')
 			expect(output).toContain('ctx.ext.ui.remote.packaged()')
-			expect(output).not.toContain('@pluxel/hmr/plugin')
+			expect(output).not.toContain('@pluxel/runtime-dynamic/plugin')
 			expect(output).not.toContain('import{ui')
 		})
 	})

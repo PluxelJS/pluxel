@@ -1,1 +1,1 @@
-export * from '@pluxel/hmr/diagnose'
+export * from '@pluxel/runtime-dynamic/hmr'

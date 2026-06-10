@@ -5,10 +5,10 @@ export {
 	resolveCacheLimit,
 } from './services/runtime/shared/cache'
 export {
-	PLUXEL_CONDITION_HMR,
+	PLUXEL_CONDITION_RUNTIME_DYNAMIC,
 	PLUXEL_CONDITION_SOURCE,
 	PLUXEL_DIST_EXPORT_CONDITIONS,
-	PLUXEL_HMR_WORKSPACE_CONDITIONS_WITH_SOURCE,
+	PLUXEL_LOADER_HMR_WORKSPACE_CONDITIONS_WITH_SOURCE,
 } from './services/runtime/shared/conditions'
 export type { ExsolveCache, ExsolveResolver } from './services/runtime/shared/exsolve'
 export { getExsolveCache, toDirectoryURLString } from './services/runtime/shared/exsolve'

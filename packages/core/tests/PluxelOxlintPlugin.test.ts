@@ -589,7 +589,7 @@ runRule('no-direct-logtape-get-logger', pluxelRules['no-direct-logtape-get-logge
 runRule('no-workspace-root-import', pluxelRules['no-workspace-root-import'], {
 	valid: [
 		{
-			filename: '/repo/packages/runtime-loader/src/scan/fs.ts',
+			filename: '/repo/packages/runtime-dynamic/src/scan/fs.ts',
 			code: "import { crawlFilesAbs } from '@pluxel/workspace/fs'",
 		},
 		{
@@ -607,7 +607,7 @@ runRule('no-workspace-root-import', pluxelRules['no-workspace-root-import'], {
 	],
 	invalid: [
 		{
-			filename: '/repo/packages/runtime-loader/src/scan/fs.ts',
+			filename: '/repo/packages/runtime-dynamic/src/scan/fs.ts',
 			code: "import { crawlFilesAbs } from '@pluxel/workspace'",
 			errors: [{ messageId: 'root' }],
 		},
@@ -617,12 +617,12 @@ runRule('no-workspace-root-import', pluxelRules['no-workspace-root-import'], {
 			errors: [{ messageId: 'root' }],
 		},
 		{
-			filename: '/repo/packages/hmr/src/diagnose/fs.ts',
+			filename: '/repo/packages/runtime-dynamic/src/hmr/diagnose/fs.ts',
 			code: "export * from '@pluxel/workspace'",
 			errors: [{ messageId: 'root' }],
 		},
 		{
-			filename: '/repo/packages/runtime-loader/src/package/PackageService.ts',
+			filename: '/repo/packages/runtime-dynamic/src/package/PackageService.ts',
 			code: "await import('@pluxel/workspace')",
 			errors: [{ messageId: 'root' }],
 		},

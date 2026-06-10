@@ -128,22 +128,23 @@ async function materializeProfiledFile(basePath, options = {}) {
 	return resolved
 }
 
-async function startDevHost() {
-	const { bootPlannedHmrHost, planHmrHostFromConfig } = await import('@pluxel/hmr/host')
+async function startHmrHost() {
+	const { createLoaderHmrHost, defineLoaderHmrConfig } = await import('@pluxel/runtime-dynamic/hmr')
 
 	const activeProfile = process.env.PLUXEL_HMR_PROFILE ?? 'plugins-host'
-	const configPath = process.env.PLUXEL_HMR_CONFIG ?? 'packages/plugins/host/pluxel.hmr.jsonc'
+	const configPath = process.env.PLUXEL_HMR_CONFIG ?? 'packages/plugins/host/pluxel.loader.hmr.jsonc'
 
-	const plan = await planHmrHostFromConfig({
-		root: repoRoot,
-		logsDir: 'packages/plugins/host/logs',
-		chdir: false,
-		configPath,
-		profile: activeProfile,
+	const host = await createLoaderHmrHost({
+		config: defineLoaderHmrConfig({
+			root: repoRoot,
+			logsDir: 'packages/plugins/host/logs',
+			chdir: false,
+			configPath,
+			profile: activeProfile,
+		}),
 	})
-	const { ctx, hmr } = await bootPlannedHmrHost(plan)
-	await hmr.start()
-	ctx.logger.info`HMR host ready (profile=${activeProfile})`
+	await host.start()
+	host.ctx.logger.info`Loader HMR host ready (profile=${activeProfile})`
 }
 
 async function startManagedHost() {
@@ -268,14 +269,14 @@ async function startFrozenHost() {
 	})
 }
 
-const mode = process.argv[2] ?? 'dev'
+const mode = process.argv[2] ?? 'hmr'
 
-if (mode === 'dev') {
-	await startDevHost()
+if (mode === 'hmr') {
+	await startHmrHost()
 } else if (mode === 'managed') {
 	await startManagedHost()
 } else if (mode === 'frozen') {
 	await startFrozenHost()
 } else {
-	throw new Error(`Unknown host mode: ${mode}. Expected one of: dev, managed, frozen`)
+	throw new Error(`Unknown host mode: ${mode}. Expected one of: hmr, managed, frozen`)
 }

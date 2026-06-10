@@ -1,5 +1,5 @@
 export {
-	hmrPluginLevels,
+	runtimePluginLevels,
 	ensurePluxelLogging,
 	type EnsurePluxelLoggingOptions,
 } from './logger/ensure'
@@ -13,9 +13,9 @@ export {
 } from './logger/file'
 
 export {
-	EXTRA_HMR_PLUGIN_LEVELS,
-	ensureHmrPluginLevelsLoaded,
-	persistHmrPluginLevels,
+	EXTRA_RUNTIME_PLUGIN_LEVELS,
+	ensureRuntimePluginLevelsLoaded,
+	persistRuntimePluginLevels,
 } from './logger/levels'
 
 export type {

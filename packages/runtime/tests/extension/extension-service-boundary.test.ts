@@ -183,7 +183,7 @@ const FontInteractionContract = defineInteractionContract<
 	},
 })
 
-describe('ExtensionService runtime/dev boundary', () => {
+describe('ExtensionService runtime/hmr boundary', () => {
 	it('runtime ExtensionService has no chokidar import (guardrail)', async () => {
 		const code = await readFile(
 			join(runtimePackageDir, 'src/services/plugin-interaction/ExtensionService.ts'),

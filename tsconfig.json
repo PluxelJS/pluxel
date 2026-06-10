@@ -11,8 +11,8 @@
 		{ "path": "packages/core" },
 		{ "path": "packages/ops" },
 		{ "path": "packages/runtime" },
-		{ "path": "packages/runtime-loader" },
-		{ "path": "packages/hmr" },
+		{ "path": "packages/runtime-dynamic" },
+		{ "path": "packages/runtime-static" },
 		{ "path": "packages/diod" }
 	]
 }

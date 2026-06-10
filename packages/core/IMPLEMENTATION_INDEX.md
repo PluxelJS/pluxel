@@ -1,6 +1,6 @@
 # @pluxel/core — Implementation Index (for LLM)
 
-目标：索引 core 的公共导出、关键注册点与依赖边界，避免误把 runtime/hmr 逻辑塞进 core。
+目标：索引 core 的公共导出、关键注册点与依赖边界，避免误把 runtime/loader-hmr 逻辑塞进 core。
 
 仓库级约束与设计目标见：
 

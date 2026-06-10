@@ -9,8 +9,8 @@
 
 ## 运行
 
-- 开发宿主：`pnpm --filter @pluxel/plugins-host dev`
-- demo 入口由 `packages/plugins/host/pluxel.hmr.jsonc` 的 `include` 控制
+- 开发宿主：`pnpm --filter @pluxel/plugins-host hmr`
+- demo 入口由 `packages/plugins/host/pluxel.loader.hmr.jsonc` 的 `include` 控制
 - 默认假设 HMR 侧启用了 `configSourcePlugin`
 
 ## 建议阅读顺序
@@ -76,7 +76,7 @@
 
 - `configs.use(schema)` 读到的是 schema 归一化后的值；默认值放进 Valibot，不要在插件里再做 `?? fallback`
 - `this.ctx.ext.signaldb.collection({ name }).doc(selector).form(...)` 默认同步当前选中的 doc；不想同步时再显式改用 `formUnsynced(...)` 或 `formFrom(...)`
-- `@pluxel/hmr/plugin` 只用 named import：`import { ui, worker } from '@pluxel/hmr/plugin'`
+- `@pluxel/runtime-dynamic/plugin` 只用 named import：`import { ui, worker } from '@pluxel/runtime-dynamic/plugin'`
 - 自定义 UI 插件主类保留 `const pluginUi = ui('./ui/index.tsx')` + `pluginUi.bind(this.ctx)`
 - 生命周期清理统一绑到 `this.ctx.effects`
 - 后端事件类型增强统一声明到 `@pluxel/runtime`

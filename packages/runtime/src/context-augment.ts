@@ -3,7 +3,7 @@ import type { ExtensionServiceConfig } from './services/plugin-interaction/Exten
 
 // Type-only module augmentation for @pluxel/runtime-owned config keys.
 //
-// HMR/Vite-specific config keys must live in @pluxel/hmr (dev-only), so runtime remains a clean kernel.
+// Vite/loader-hmr-specific config keys must live in @pluxel/runtime-dynamic/hmr, so runtime remains a clean kernel.
 
 declare module '@pluxel/core' {
 	namespace Context {

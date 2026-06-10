@@ -1,5 +1,5 @@
 import { describe, expect, test, vi } from 'vitest'
-import { applyPackageMutation } from '../../../../runtime-loader/src/api/features/package-manager/service'
+import { applyPackageMutation } from '../../../../runtime-dynamic/src/api/features/package-manager/service'
 
 const specInput: { name: string; raw: string | null; version: string | null; tag: string | null } =
 	{ name: 'foo', raw: null, version: null, tag: null }

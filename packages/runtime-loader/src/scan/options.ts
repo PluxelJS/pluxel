@@ -12,7 +12,7 @@ export const DEFAULT_SCAN_OPTIONS: ResolvedScanOptions = {
 		'src/index.ts',
 		'dist/index.js',
 	],
-	preferHmrExports: false,
+	preferRuntimeLoaderExports: false,
 	includeRoot: false,
 	skipUnnamed: true,
 	fallbackTsOnSingle: false,
@@ -32,7 +32,7 @@ export function resolveScanOptions(
 	return {
 		conditions: overrides.conditions ?? defaults.conditions,
 		conservativeCandidates: overrides.conservativeCandidates ?? defaults.conservativeCandidates,
-		preferHmrExports: overrides.preferHmrExports ?? defaults.preferHmrExports,
+		preferRuntimeLoaderExports: overrides.preferRuntimeLoaderExports ?? defaults.preferRuntimeLoaderExports,
 		includeRoot: overrides.includeRoot ?? defaults.includeRoot,
 		skipUnnamed: overrides.skipUnnamed ?? defaults.skipUnnamed,
 		fallbackTsOnSingle: overrides.fallbackTsOnSingle ?? defaults.fallbackTsOnSingle,

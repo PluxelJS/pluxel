@@ -12,8 +12,7 @@
        runtime common services / config / ops / HTTP / web protocol / route-neutral API
   <- @pluxel/runtime-loader
        loader / scan / package / package-manager / workspace tools
-  <- @pluxel/hmr
-       dev server / Vite runner / watch / HMR submit
+       dev mode / Vite runner / watch / loader replacement
 ```
 
 runtime 不依赖 runtime-loader。`pnpm install` 只报告原有 core/test 循环，没有 runtime/runtime-loader 循环。
@@ -51,10 +50,6 @@ runtime 不依赖 runtime-loader。`pnpm install` 只报告原有 core/test 循�
 - package-manager GraphQL resolver。
 - `rpc.package()` handle。
 - workspace MCP tools。
-
-## 未来收敛方向
-
-当前拆分仍然保留独立 `@pluxel/hmr` 包，这是已实现状态，不是长期目标。下一步目标态是把 Vite/watch/runner 和插件 UI dev 编译收敛为 `@pluxel/runtime-loader` 的 dev mode，并删除 `@pluxel/hmr` 包、旧 HMR 配置名和旧 subpath，不保留兼容 facade。详细设计见 `proposals/runtime-loader-dev-mode.md`。
 
 ## 为什么这样拆
 

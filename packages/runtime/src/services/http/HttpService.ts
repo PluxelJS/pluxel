@@ -2,7 +2,7 @@ import { type Context as PluxelContext, Injectable } from '@pluxel/core'
 import { Elysia } from 'elysia'
 import { isAbsolute, resolve } from 'pathe'
 
-import { ensureHmrPluginLevelsLoaded } from '../../logger/levels'
+import { ensureRuntimePluginLevelsLoaded } from '../../logger/levels'
 import {
 	canAccessSecurityAdmin,
 	createVerificationBlockedHeaders,
@@ -50,7 +50,7 @@ export type HttpHandler = (
  */
 export type HttpBoundary = HttpHandler | { fetch: HttpHandler }
 
-export type UiAssetStrategy = 'dev-server' | 'static-built' | 'disabled'
+export type UiAssetStrategy = 'hmr-server' | 'static-built' | 'disabled'
 
 export interface HttpServiceConfig {
 	controlPlane?: {
@@ -193,7 +193,7 @@ export class HttpService {
 		}
 		if (this.config.controlPlane.sse) this.registerSseBuiltins()
 
-		void ensureHmrPluginLevelsLoaded(ctx).catch((error) => {
+		void ensureRuntimePluginLevelsLoaded(ctx).catch((error) => {
 			this.logger.warn('Failed to load persisted plugin log levels', { error })
 		})
 	}
@@ -205,7 +205,7 @@ export class HttpService {
 	/**
 	 * Update UI asset serving mode for an already-instantiated HTTP runtime.
 	 *
-	 * Dev hosts can decide UI asset mode at process startup; if the HTTP service is already
+	 * HMR hosts can decide UI asset mode at process startup; if the HTTP service is already
 	 * instantiated, it must be reconfigured in-place or it will keep serving the previous renderer.
 	 */
 	reconfigureUiAssets(config: Pick<HttpServiceConfig, 'uiAssets' | 'uiPublicDir'>): void {
@@ -224,7 +224,7 @@ export class HttpService {
 	}
 
 	/**
-	 * Dev adapter integration hook: when runtime routes change (mount/replace/unmount),
+	 * HMR integration hook: when runtime routes change (mount/replace/unmount),
 	 * the UI usually needs a hard reload to refresh route bindings/state.
 	 */
 	consumeFullReloadRequest(): boolean {
@@ -606,8 +606,8 @@ export class HttpService {
 			const { createStaticRenderer } = await import('../../server/static')
 			return createStaticRenderer({ publicDirAbs: this.resolveUiPublicDir() ?? undefined })
 		}
-		const { createDevRenderer } = await import('../../server/dev')
-		return createDevRenderer()
+		const { createHmrRenderer } = await import('../../server/hmr')
+		return createHmrRenderer()
 	}
 
 	private async render(request: Request) {

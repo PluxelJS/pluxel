@@ -33,6 +33,7 @@
 		"scriptFavorites": [
 			".#build",
 			".#dev",
+			".#hmr",
 			"packages/plugins/host#dev"
 		]
 	}
