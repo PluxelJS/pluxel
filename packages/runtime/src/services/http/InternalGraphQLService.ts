@@ -1,13 +1,10 @@
-import { query, type Resolver, resolver, weave } from '@gqloom/core'
-import { ValibotWeaver } from '@gqloom/valibot'
 import { Injectable, type Context as PlxContext } from '@pluxel/core'
-import type { GraphQLSchema } from 'graphql'
+import { printSchema, type GraphQLSchema } from 'graphql'
 import { createYoga } from 'graphql-yoga'
-import * as v from 'valibot'
 
-import { getAPISchema } from '../../api'
-import { HMR_INTERNAL_API_BASE, HMR_TRANSPORT_PATHS } from '../../web/paths'
+import { HMR_TRANSPORT_PATHS } from '../../web/paths'
 import { createElysiaApp } from './elysia'
+import { createInternalGraphQLSchema } from './internalGraphqlSchema'
 
 const serviceName = 'internalGraphql' as const
 
@@ -31,7 +28,7 @@ export class InternalGraphQLService {
 	private readonly logger: NonNullable<PlxContext['logger']>
 	private readonly config: InternalGraphQLConfig | undefined
 
-	private schema: GraphQLSchema = this.weaveSchema()
+	private schema: GraphQLSchema
 	private fetcher: (req: Request) => Promise<Response>
 
 	private rebuildPending = false
@@ -44,6 +41,7 @@ export class InternalGraphQLService {
 	) {
 		this.logger = ctx.logger!
 		this.config = cfg
+		this.schema = createInternalGraphQLSchema(ctx)
 		this.fetcher = async () => new Response('Internal GraphQL not ready', { status: 503 })
 		this.pushFetch()
 		this.scheduleRebuild()
@@ -77,7 +75,7 @@ export class InternalGraphQLService {
 
 	private rebuildNow() {
 		this.rebuildDirty = false
-		this.schema = this.weaveSchema()
+		this.schema = createInternalGraphQLSchema(this.ctx)
 		this.pushFetch()
 		// NOTE: SOURCE_ONLY preprocessor blocks are stripped by tsdown for non-source builds.
 		// Do NOT remove them or rewrite this into runtime conditions.
@@ -86,15 +84,6 @@ export class InternalGraphQLService {
 			void this.codegenNow()
 		}
 		// #endif
-	}
-
-	private weaveSchema(): GraphQLSchema {
-		const resolvers: Resolver[] = [
-			resolver({
-				_empty: query(v.string()).resolve(() => 'ok'),
-			}),
-		]
-		return weave(ValibotWeaver, ...resolvers, ...getAPISchema(this.ctx))
 	}
 
 	private pushFetch() {
@@ -120,20 +109,41 @@ export class InternalGraphQLService {
 		if (process.env.NODE_ENV === 'production') return
 		if (this.codegenRunning) return
 		this.codegenRunning = true
-		const destination = '../components/src/app/gqty/index.ts'
+		const destination = new URL('../../../../components/src/app/gqlens/', import.meta.url)
 		try {
-			this.logger.info('Generating GQty client…', { destination })
+			this.logger.info('Generating GQLens client…', { destination })
 
-			const { generateClient } = await import('@gqty/cli')
-			await generateClient(this.schema, {
-				endpoint: `http://localhost:3000${HMR_INTERNAL_API_BASE}/graphql`,
-				destination,
-				react: true,
+			const { dirname } = await import('node:path')
+			const { fileURLToPath } = await import('node:url')
+			const { mkdir, readFile, writeFile } = await import('node:fs/promises')
+			const { generateFiles } = await import('@gqlens/codegen')
+			const files = await generateFiles({
+				schema: printSchema(this.schema),
+				framework: 'react',
 			})
 
-			this.logger.info('GQty client generated', { destination })
+			let changed = 0
+			for (const [name, content] of Object.entries(files)) {
+				const file = fileURLToPath(new URL(name, destination))
+				let previous: string | undefined
+				try {
+					previous = await readFile(file, 'utf8')
+				} catch {
+					previous = undefined
+				}
+				if (previous === content) continue
+				await mkdir(dirname(file), { recursive: true })
+				await writeFile(file, content, 'utf8')
+				changed += 1
+			}
+
+			this.logger.info('GQLens client generated', {
+				destination,
+				files: Object.keys(files).length,
+				changed,
+			})
 		} catch (error) {
-			this.logger.error('generateClient failed', { error, destination })
+			this.logger.error('generate GQLens client failed', { error, destination })
 		} finally {
 			this.codegenRunning = false
 		}

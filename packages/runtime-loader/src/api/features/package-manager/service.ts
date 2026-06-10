@@ -1,4 +1,5 @@
 import type { Context as PlxContext } from '@pluxel/core'
+import { GraphQLError } from 'graphql'
 import type { InferInput, InferOutput } from 'valibot'
 
 import type {
@@ -71,6 +72,16 @@ export function listLoadIssues(pCtx: PlxContext): IssueOutput[] {
 	return packageCtx.packageService.listLoadIssues().map(serializeIssue)
 }
 
+export function readLoadIssue(pCtx: PlxContext, id: string): IssueOutput {
+	const issue = listLoadIssues(pCtx).find((entry) => entry.id === id)
+	if (!issue) {
+		throw new GraphQLError('Package load issue not found', {
+			extensions: { code: 'NOT_FOUND', id },
+		})
+	}
+	return issue
+}
+
 export async function listPackageInventory(
 	pCtx: PlxContext,
 	filter?: InventoryFilter,
@@ -81,6 +92,7 @@ export async function listPackageInventory(
 	})
 	return entries.map((entry) => ({
 		__typename: 'PackageInventoryEntry' as const,
+		id: entry.spec.key,
 		spec: serializeSpec(entry.spec),
 		installedVersion: entry.installedVersion ?? null,
 		requestedVersion: entry.requestedVersion ?? null,
@@ -88,6 +100,20 @@ export async function listPackageInventory(
 		moduleId: entry.moduleId ?? null,
 		issues: entry.issues?.map(serializeIssue) ?? null,
 	}))
+}
+
+export async function readPackageInventoryEntry(
+	pCtx: PlxContext,
+	id: string,
+	filter?: InventoryFilter,
+): Promise<InventoryEntry> {
+	const entry = (await listPackageInventory(pCtx, filter)).find((item) => item.id === id)
+	if (!entry) {
+		throw new GraphQLError('Package inventory entry not found', {
+			extensions: { code: 'NOT_FOUND', id },
+		})
+	}
+	return entry
 }
 
 export async function applyPackageMutation(
@@ -340,6 +366,7 @@ function parseSpecInputs(specInputs: SpecInputValue[]): ParsedSpecs {
 			invalid.push(
 				buildMutationResult({
 					ok: false,
+					id: `invalid:${invalid.length}:${formatUnknownError(error) ?? 'unknown'}`,
 					code: 'invalid_spec',
 					error,
 				}),
@@ -350,9 +377,11 @@ function parseSpecInputs(specInputs: SpecInputValue[]): ParsedSpecs {
 }
 
 function serializeIssue(issue: ServiceIssue): IssueOutput {
+	const spec = serializeSpec(issue.spec)
 	return {
 		__typename: 'PackageLoadIssue' as const,
-		spec: serializeSpec(issue.spec),
+		id: issueId(spec.key, issue),
+		spec,
 		source: issue.source,
 		message: issue.message,
 		error: formatUnknownError(issue.error, issue.stack),
@@ -364,6 +393,7 @@ function serializeIssue(issue: ServiceIssue): IssueOutput {
 function serializeSpec(spec: NormalizedPackageSpecifier) {
 	return {
 		__typename: 'PackageIssueSpec' as const,
+		key: spec.key,
 		name: spec.name,
 		version: spec.version ?? null,
 		tag: spec.tag ?? null,
@@ -374,6 +404,7 @@ function serializeSpec(spec: NormalizedPackageSpecifier) {
 
 interface MutationResultConfig {
 	ok: boolean
+	id?: string | undefined
 	code: string
 	spec?: NormalizedPackageSpecifier | undefined
 	installStatus?: PackageInstallStatus | undefined
@@ -381,14 +412,22 @@ interface MutationResultConfig {
 }
 
 function buildMutationResult(config: MutationResultConfig): MutationResult {
+	const spec = config.spec ? serializeSpec(config.spec) : null
 	return {
 		__typename: 'PackageMutationResult',
+		id: spec?.key ?? config.id ?? `invalid:${config.code}`,
 		ok: config.ok,
 		code: config.code,
-		spec: config.spec ? serializeSpec(config.spec) : null,
+		spec,
 		installStatus: config.installStatus ?? null,
 		error: formatUnknownError(config.error),
 	}
+}
+
+function issueId(specKey: string, issue: ServiceIssue): string {
+	return [specKey, issue.source, issue.moduleId ?? '', String(issue.recordedAt), issue.message]
+		.map((segment) => encodeURIComponent(segment))
+		.join(':')
 }
 
 function buildBatchResult(mutations: MutationResult[], error?: unknown): BatchMutationResult {

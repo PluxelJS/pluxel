@@ -4,6 +4,7 @@ export const PackageIssueSource = v.picklist(['load', 'restore', 'retry'])
 
 export const PackageIssueSpec = v.object({
 	__typename: v.literal('PackageIssueSpec'),
+	key: v.string(),
 	name: v.string(),
 	version: v.nullable(v.string()),
 	tag: v.nullable(v.string()),
@@ -13,6 +14,7 @@ export const PackageIssueSpec = v.object({
 
 export const PackageLoadIssueEntry = v.object({
 	__typename: v.literal('PackageLoadIssue'),
+	id: v.string(),
 	spec: PackageIssueSpec,
 	source: PackageIssueSource,
 	message: v.string(),
@@ -34,6 +36,7 @@ export const PackageInstallStatus = v.picklist(['installed', 'reused'])
 
 export const PackageMutationResult = v.object({
 	__typename: v.literal('PackageMutationResult'),
+	id: v.string(),
 	ok: v.boolean(),
 	code: v.string(),
 	spec: v.nullable(PackageIssueSpec),
@@ -50,6 +53,7 @@ export const PackageBatchMutationResult = v.object({
 
 export const PackageInventoryEntry = v.object({
 	__typename: v.literal('PackageInventoryEntry'),
+	id: v.string(),
 	spec: PackageIssueSpec,
 	installedVersion: v.nullable(v.string()),
 	requestedVersion: v.nullable(v.string()),
@@ -60,4 +64,8 @@ export const PackageInventoryEntry = v.object({
 
 export const PackageInventoryFilter = v.object({
 	includeUntracked: v.nullish(v.boolean()),
+})
+
+export const PackageManager = v.object({
+	__typename: v.literal('PackageManager'),
 })

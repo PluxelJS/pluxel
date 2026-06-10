@@ -200,6 +200,7 @@ export type PluginGroupInput = {
 
 export type PluginGroup = {
 	__typename?: 'PluginGroup'
+	id: string
 	groupId: string
 	name: string
 	pluginIds: string[]
@@ -288,6 +289,7 @@ export type PackageSpecInput = {
 
 export type PackageIssueSpec = {
 	__typename: 'PackageIssueSpec'
+	key: string
 	name: string
 	version: string | null
 	tag: string | null
@@ -297,6 +299,7 @@ export type PackageIssueSpec = {
 
 export type PackageLoadIssue = {
 	__typename: 'PackageLoadIssue'
+	id: string
 	spec: PackageIssueSpec
 	source: 'load' | 'restore' | 'retry'
 	message: string
@@ -307,6 +310,7 @@ export type PackageLoadIssue = {
 
 export type PackageInventoryEntry = {
 	__typename: 'PackageInventoryEntry'
+	id: string
 	spec: PackageIssueSpec
 	installedVersion: string | null
 	requestedVersion: string | null
@@ -341,6 +345,7 @@ export type PackageMutationInput = {
 
 export type PackageMutationResult = {
 	__typename: 'PackageMutationResult'
+	id: string
 	ok: boolean
 	code: string
 	spec: PackageIssueSpec | null

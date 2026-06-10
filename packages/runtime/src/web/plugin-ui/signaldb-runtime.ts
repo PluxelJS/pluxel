@@ -137,6 +137,7 @@ class SignalDbReplicaNamespace {
 		if (!state.meta.ready() && !this.syncTasks.has(collection)) {
 			this.requestSync(collection)
 		}
+		dependOnCollectionState(state)
 		return buildCollectionView(collection, state)
 	}
 
@@ -214,15 +215,15 @@ class SignalDbReplicaNamespace {
 		const pending = this.syncTasks.get(collection)
 		if (pending) return pending
 
-			const task = this.sync
-				.sync(collection, { force: true })
-				.then((): undefined => {
-					const state = this.states.get(collection)
-					if (!state) return undefined
-					this.clearRetry(collection)
-					state.meta.ready.set(true)
-					return undefined
-				})
+		const task = this.sync
+			.sync(collection, { force: true })
+			.then((): undefined => {
+				const state = this.states.get(collection)
+				if (!state) return undefined
+				this.clearRetry(collection)
+				state.meta.ready.set(true)
+				return undefined
+			})
 			.catch((error) => {
 				const state = this.states.get(collection)
 				if (state) state.meta.ready.set(false)
@@ -300,27 +301,26 @@ function buildCollectionView<T extends SignalDbItem>(
 	name: string,
 	state: CollectionState<T>,
 ): SignalDbCollectionView<T> {
-	// Force React to subscribe to collection writes even when callers only use
-	// `find()` / `findOne()` / `count()` during render and ignore `items`.
-	void state.meta.revision()
-
 	return {
 		name,
-		ready: state.meta.ready(),
-		version: state.meta.version(),
-		items: state.collection.find().fetch().map(cloneItem),
+		get ready() {
+			return state.meta.ready()
+		},
+		get version() {
+			return state.meta.version()
+		},
+		get items() {
+			return fetchSignalDbItems(state)
+		},
 		find(selector = {} as SignalDbSelector<T>, options) {
-			return state.collection
-				.find(selector as any, options as any)
-				.fetch()
-				.map(cloneItem)
+			return fetchSignalDbItems(state, selector, options)
 		},
 		findOne(selector) {
-			const item = state.collection.findOne(selector as any)
-			return item ? cloneItem(item) : undefined
+			const item = fetchSignalDbItems(state, selector, { limit: 1 })[0]
+			return item
 		},
 		count(selector = {} as SignalDbSelector<T>) {
-			return state.collection.find(selector as any).count()
+			return countSignalDbItems(state, selector)
 		},
 		insert(item) {
 			return state.collection.insert(cloneItem(item))
@@ -340,6 +340,39 @@ function buildCollectionView<T extends SignalDbItem>(
 		removeMany(selector) {
 			return state.collection.removeMany(selector as any)
 		},
+	}
+}
+
+function dependOnCollectionState<T extends SignalDbItem>(state: CollectionState<T>) {
+	void state.meta.ready()
+	void state.meta.version()
+	void state.meta.revision()
+}
+
+function fetchSignalDbItems<T extends SignalDbItem>(
+	state: CollectionState<T>,
+	selector = {} as SignalDbSelector<T>,
+	options?: SignalDbFindOptions<T>,
+): T[] {
+	dependOnCollectionState(state)
+	const cursor = state.collection.find(selector as any, options as any)
+	try {
+		return cursor.fetch().map(cloneItem)
+	} finally {
+		cursor.cleanup()
+	}
+}
+
+function countSignalDbItems<T extends SignalDbItem>(
+	state: CollectionState<T>,
+	selector = {} as SignalDbSelector<T>,
+): number {
+	dependOnCollectionState(state)
+	const cursor = state.collection.find(selector as any)
+	try {
+		return cursor.count()
+	} finally {
+		cursor.cleanup()
 	}
 }
 

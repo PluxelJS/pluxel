@@ -38,10 +38,17 @@ export function readStatusSnapshot(
 
 export function getStatusOverview(pCtx: PlxContext) {
 	const overview = getRuntimePluginCatalog(pCtx).statusOverview()
-	const entries: Array<InferOutput<typeof PluginStatusOverview>['statuses'][number]> = []
+	const plugins: Array<InferOutput<typeof PluginStatusOverview>['plugins'][number]> = []
+	const statuses = []
 	for (const snap of overview.statuses) {
-		entries.push({
+		plugins.push({
+			__typename: 'Plugin' as const,
+			id: snap.name,
+			name: snap.name,
+		})
+		statuses.push({
 			__typename: 'PluginStatusEntry' as const,
+			id: snap.name,
 			name: snap.name,
 			isRunning: snap.isRunning,
 			isEnabled: snap.isEnabled,
@@ -50,12 +57,13 @@ export function getStatusOverview(pCtx: PlxContext) {
 		})
 	}
 
-	return {
+	const output = {
 		__typename: 'PluginStatusOverview' as const,
-		statuses: entries,
+		plugins,
 		summary: {
 			__typename: 'PluginStatusSummary' as const,
 			...overview.summary,
 		},
 	} satisfies InferOutput<typeof PluginStatusOverview>
+	return { ...output, statuses }
 }

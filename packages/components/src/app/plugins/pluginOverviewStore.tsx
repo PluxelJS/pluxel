@@ -5,12 +5,21 @@ import {
 	useQuery,
 	type PluginGroup,
 	type PluginStatusOverview,
-} from '../gqty'
+	type PluginStatusEntry,
+} from '../gqlens'
 import { subscribeInvalidations } from '../data/invalidations'
 
+type PluginStatusOverviewView = Omit<PluginStatusOverview, 'plugins'> & {
+	statuses: PluginStatusEntry[]
+}
+
 type PluginOverview = {
-	status: PluginStatusOverview
+	status: PluginStatusOverviewView
 	groups: PluginGroup[]
+}
+
+type PluginGroupSnapshot = Pick<PluginGroup, 'groupId' | 'name' | 'pluginIds'> & {
+	id?: string
 }
 
 export type PluginOverviewSnapshot = Readonly<{
@@ -110,12 +119,13 @@ export function requestPluginOverviewRefetch() {
 	return refetcher?.()
 }
 
-export function setPluginOverviewGroups(groups: PluginGroup[]) {
+export function setPluginOverviewGroups(groups: PluginGroupSnapshot[]) {
 	const prev = snapshot.current
 	if (!prev.overview) return
 	applyOverview({
 		...prev.overview,
 		groups: groups.map((group) => ({
+			id: group.id ?? group.groupId,
 			groupId: group.groupId,
 			name: group.name,
 			pluginIds: [...group.pluginIds],
@@ -138,10 +148,11 @@ export function usePluginOverview(): PluginOverviewSnapshot {
 	)
 }
 
-function normalizeStatusOverview(input: any): PluginStatusOverview {
+function normalizeStatusOverview(input: any): PluginStatusOverviewView {
 	const rawSummary = input?.summary ?? {}
 	return {
 		statuses: (input?.statuses ?? []).filter(Boolean).map((entry: any) => ({
+			id: entry?.id ?? entry?.name ?? '',
 			name: entry?.name ?? '',
 			isRunning: Boolean(entry?.isRunning),
 			isEnabled: entry?.isEnabled !== false,
@@ -165,6 +176,7 @@ function normalizeStatusOverview(input: any): PluginStatusOverview {
 
 function normalizeGroups(groups: any): PluginGroup[] {
 	return (groups ?? []).map((group: any) => ({
+		id: group?.id ?? group?.groupId ?? '',
 		groupId: group?.groupId ?? '',
 		name: group?.name ?? '',
 		pluginIds: Array.isArray(group?.pluginIds) ? group.pluginIds.map(String) : [],
@@ -173,40 +185,12 @@ function normalizeGroups(groups: any): PluginGroup[] {
 
 export function PluginOverviewProvider({ children }: { children?: ReactNode }) {
 	const query = useQuery({
-		suspense: false,
-		operationName: 'PluginOverview',
-		notifyOnNetworkStatusChange: false,
-		refetchOnReconnect: false,
-		refetchOnWindowVisible: false,
-		fetchInBackground: true,
-		prepare: ({ query: preparedQuery }) => {
-			const status = preparedQuery.pluginStatus
-			status.summary.total
-			status.summary.running
-			status.summary.stopped
-			status.summary.disabled
-			status.statuses.forEach((entry) => {
-				entry.name
-				entry.isRunning
-				entry.isEnabled
-				entry.lifecycleStage
-				const source = entry.source
-				source.kind
-				source.moduleId
-				source.packageName
-				source.version
-				source.tag
-			})
-			preparedQuery.pluginGroups.forEach((group) => {
-				group.groupId
-				group.name
-				group.pluginIds
-			})
-		},
+		policy: 'cache-first',
+		ttl: 30_000,
 	})
 
-	const isLoading = query.$state.isLoading === true
-	const error = query.$state.error
+	const isLoading = query.loading
+	const error = query.error
 
 	useEffect(() => {
 		setLoading(isLoading)
@@ -218,14 +202,37 @@ export function PluginOverviewProvider({ children }: { children?: ReactNode }) {
 
 	const overview = useMemo<PluginOverview | null>(() => {
 		try {
+			const catalog = query.pluginCatalog
+			const status = catalog.status
+			const statusEntries = (status.plugins.ids ?? []).map((id) => {
+				const plugin = catalog.plugin({ id })
+				return {
+					id: plugin.id ?? id,
+					name: plugin.name ?? id,
+					isRunning: Boolean(plugin.status.isRunning),
+					isEnabled: plugin.status.isEnabled !== false,
+					lifecycleStage: plugin.status.lifecycleStage ?? PluginStatusEntryLifecycleStage.stopped,
+					source: {
+						kind: plugin.status.source.kind ?? PluginSourceInfoKind.unknown,
+						moduleId: plugin.status.source.moduleId ?? null,
+						packageName: plugin.status.source.packageName ?? null,
+						version: plugin.status.source.version ?? null,
+						tag: plugin.status.source.tag ?? null,
+					},
+				}
+			})
+			const groups = (catalog.groups.ids ?? []).map((id) => catalog.group({ id }))
 			return {
-				status: normalizeStatusOverview(query.pluginStatus),
-				groups: normalizeGroups(query.pluginGroups),
+				status: normalizeStatusOverview({
+					statuses: statusEntries,
+					summary: status.summary,
+				}),
+				groups: normalizeGroups(groups),
 			}
 		} catch {
 			return null
 		}
-	}, [query.pluginGroups, query.pluginStatus])
+	}, [query])
 
 	useEffect(() => {
 		if (isLoading || error || !overview) return
@@ -234,13 +241,13 @@ export function PluginOverviewProvider({ children }: { children?: ReactNode }) {
 
 	useEffect(() => {
 		const refetchOverview = async (): Promise<void> => {
-			await query.$refetch(true)
+			query.refetch()
 		}
 		registerPluginOverviewRefetcher(refetchOverview)
 		return (): void => {
 			registerPluginOverviewRefetcher(null)
 		}
-	}, [query.$refetch])
+	}, [query])
 
 	useEffect(() => {
 		let inflight = false
@@ -252,22 +259,20 @@ export function PluginOverviewProvider({ children }: { children?: ReactNode }) {
 				return
 			}
 			inflight = true
-			void query
-				.$refetch(true)
-				.catch(() => {})
-				.finally(() => {
-					inflight = false
-					if (pending) {
-						pending = false
-						handle()
-					}
-				})
+			query.refetch()
+			queueMicrotask(() => {
+				inflight = false
+				if (pending) {
+					pending = false
+					handle()
+				}
+			})
 		}
 		return subscribeInvalidations((event) => {
 			if (event.topic !== 'plugin-status' && event.topic !== 'plugin-groups') return
 			handle()
 		})
-	}, [error, query.$refetch])
+	}, [error, query])
 
 	return <>{children}</>
 }

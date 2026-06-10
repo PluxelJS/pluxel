@@ -8,6 +8,7 @@ export const PluginGroupInput = v.object({
 
 export const PluginGroup = v.object({
 	__typename: v.literal('PluginGroup'),
+	id: v.string(),
 	groupId: v.string(),
 	name: v.string(),
 	pluginIds: v.array(v.string()),

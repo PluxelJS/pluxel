@@ -6,7 +6,7 @@ import { openConfirmModal } from '@mantine/modals'
 import { IconPlayerPlay, IconRotateClockwise, IconSquareX } from '@tabler/icons-react'
 import { useCallback, useRef, useState } from 'react'
 import { ExtensionSlot } from '../../../../extension'
-import { PluginStatusEntryLifecycleStage } from '../../../gqty'
+import { PluginStatusEntryLifecycleStage } from '../../../gqlens'
 import { useNotify } from '../../../hooks'
 import {
 	runPluginStatusAction,
@@ -56,12 +56,11 @@ function ActionBarButton({
 	const isRestart = action === 'restart'
 	const isStart = action === 'start'
 	const disabled = !canToggle || (isStart ? isRunning : !isRunning)
-	const label =
-		busy
-			? '同步中…'
-			: isRestart
-				? `重启 (${PLUGIN_DETAIL_HOTKEY_LABELS.restartPlugin})`
-				: ACTION_LABEL[action]
+	const label = busy
+		? '同步中…'
+		: isRestart
+			? `重启 (${PLUGIN_DETAIL_HOTKEY_LABELS.restartPlugin})`
+			: ACTION_LABEL[action]
 	const iconSize = prominent ? 16 : compact ? 16 : 18
 	const buttonSize = compact ? 'md' : 'lg'
 	const icon =
@@ -325,7 +324,7 @@ export function ActionBar({ onStatusUpdated, compact = false, prominent = false 
 							.filter(Boolean)
 							.map((entry) => entry as [string, { label: string; target: string }]),
 					).values(),
-			  )
+				)
 			: []
 
 		const proceed = (): void => {
@@ -344,7 +343,11 @@ export function ActionBar({ onStatusUpdated, compact = false, prominent = false 
 					</div>
 				),
 				labels: { confirm: '级联启动', cancel: '取消' },
-				onConfirm: () => void cascadeStart(missing.map((item) => item.target), action),
+				onConfirm: () =>
+					void cascadeStart(
+						missing.map((item) => item.target),
+						action,
+					),
 				closeOnConfirm: true,
 			})
 		} else {

@@ -1,5 +1,5 @@
 export { App } from './app'
-export { prepareReactRender, useHydrateCache } from './app/gqty'
+export { PluxelGQLensProvider, graphqlFetcher } from './app/gqlens'
 export * from './components'
 export * from './extension'
 export * from './theme'

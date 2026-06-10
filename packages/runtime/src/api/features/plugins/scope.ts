@@ -1,13 +1,12 @@
 import type { PluginConstructor, Context as PlxContext } from '@pluxel/core'
 import { GraphQLError } from 'graphql'
-import type * as v from 'valibot'
 
-import type { PluginDependency, PluginScopeOutput } from './schema'
+import type { PluginOutput } from './schema'
 import { getRuntimePluginCatalog } from '../../../services/runtime/catalog/RuntimePluginCatalogService'
 
 const PLUGIN_CTOR = Symbol('pluginCtor')
 
-type InternalScope = PluginScopeOutput & { [PLUGIN_CTOR]?: PluginConstructor }
+type InternalPlugin = PluginOutput & { [PLUGIN_CTOR]?: PluginConstructor }
 
 export function ensurePlugin(pCtx: PlxContext, name: string): PluginConstructor {
 	try {
@@ -19,26 +18,39 @@ export function ensurePlugin(pCtx: PlxContext, name: string): PluginConstructor 
 	}
 }
 
-export function createPluginScope(pCtx: PlxContext, name: string): PluginScopeOutput {
-	const scope = {
-		__typename: 'PluginScope' as const,
+export function createPlugin(pCtx: PlxContext, name: string): PluginOutput {
+	const plugin = {
+		__typename: 'Plugin' as const,
+		id: name,
 		name,
 		[PLUGIN_CTOR]: ensurePlugin(pCtx, name),
-	} as InternalScope
-	return scope
+	} as InternalPlugin
+	return plugin
 }
 
-export function getScopeCtor(pCtx: PlxContext, scope: PluginScopeOutput): PluginConstructor {
-	const internal = scope as InternalScope
+export function getPluginCtor(pCtx: PlxContext, plugin: PluginOutput): PluginConstructor {
+	const internal = plugin as InternalPlugin
 	if (internal[PLUGIN_CTOR])
 		return getRuntimePluginCatalog(pCtx).resolve(internal[PLUGIN_CTOR]) ?? internal[PLUGIN_CTOR]!
-	return ensurePlugin(pCtx, scope.name)
+	return ensurePlugin(pCtx, plugin.name)
 }
 
-export function getPluginDependencies(pCtx: PlxContext, ctor: PluginConstructor) {
-	return getRuntimePluginCatalog(pCtx).listDependencies(ctor).map((dep) => ({
-		__typename: 'PluginDependency' as const,
-		name: dep.name,
-		isRunning: dep.isRunning,
-	})) satisfies Array<v.InferOutput<typeof PluginDependency>>
+export function listPlugins(pCtx: PlxContext): PluginOutput[] {
+	return getRuntimePluginCatalog(pCtx)
+		.statusOverview()
+		.statuses.map((snap) => ({
+			__typename: 'Plugin' as const,
+			id: snap.name,
+			name: snap.name,
+		}))
+}
+
+export function getPluginDependencies(pCtx: PlxContext, ctor: PluginConstructor): PluginOutput[] {
+	return getRuntimePluginCatalog(pCtx)
+		.listDependencies(ctor)
+		.map((dep) => ({
+			__typename: 'Plugin' as const,
+			id: dep.name,
+			name: dep.name,
+		}))
 }

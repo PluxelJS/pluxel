@@ -41,6 +41,7 @@
 		"@pluxel/workspace": "workspace:*",
 		"capnweb": "^0.5.0",
 		"exsolve": "^1.0.8",
+		"graphql": "^16.13.0",
 		"mcp-lite": "^0.10.0",
 		"nypm": "^0.6.5",
 		"ohash": "^2.0.11",

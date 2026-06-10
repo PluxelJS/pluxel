@@ -120,9 +120,10 @@
 	},
 	"dependencies": {
 		"@elysiajs/eden": "^1.4.8",
+		"@gqlens/codegen": "link:../../../GQLens/packages/codegen",
+		"@gqlens/core": "link:../../../GQLens/packages/core",
 		"@gqloom/core": "^0.16.1",
 		"@gqloom/valibot": "^0.15.1",
-		"@gqty/cli": "^5.0.0",
 		"@logtape/file": "^2.0.2",
 		"@logtape/logtape": "^2.0.2",
 		"@maverick-js/signals": "^6.0.0",

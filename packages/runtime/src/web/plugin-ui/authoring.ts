@@ -154,9 +154,10 @@ function usePluginDb<Name extends string>(
 		deps: DependencyList = [],
 	): T {
 		const view = useCollectionView(collection)
+		const collectionKey = String(collection)
 		const depsKey = signalDbValueKey(deps)
 		const stableDeps = useMemo(() => deps.map((dep) => stabilizeSignalDbValue(dep)), [depsKey])
-		return useSignalDbQueryState(() => query(view), [view, stableDeps])
+		return useSignalDbQueryState(() => query(view), [pluginName, collectionKey, stableDeps])
 	}
 
 	function useDocById<Key extends PluginUiCollectionKey<Name>>(collection: Key, id: string) {

@@ -1,4 +1,4 @@
-import type { PluginGroup, PluginStatusEntry } from '../../gqty'
+import type { PluginGroup, PluginStatusEntry } from '../../gqlens'
 import type { GroupConfig, PluginStatuses } from './organizer/types'
 
 export type OverviewSnapshot = {

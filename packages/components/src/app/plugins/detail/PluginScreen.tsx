@@ -11,11 +11,10 @@ import {
 import { useDebouncedFlag } from '../../../hooks'
 import {
 	type PluginDependency,
-	type PluginScope,
 	type PluginStatusEntry,
 	PluginStatusEntryLifecycleStage,
 	useQuery,
-} from '../../gqty'
+} from '../../gqlens'
 import { usePluginConfig } from '../../hooks'
 import { useCurrentPathname } from '../../router/useCurrentRoute'
 import { usePluginOverview } from '../pluginOverviewStore'
@@ -194,31 +193,23 @@ function usePluginDetail(pluginName?: string) {
 
 	// Always request detail; we handle missing plugins via stable UI decisions instead of gating.
 	const detailQuery = useQuery({
-		suspense: false,
-		operationName: 'PluginDetailView',
-		notifyOnNetworkStatusChange: true,
-		refetchOnWindowVisible: false,
-		refetchOnReconnect: false,
-		prepare:
-			pluginName !== undefined
-				? ({ query }) => {
-						const scope = query.plugin({ name: pluginName })
-						scope.name
-						const detail = scope.detail
-						detail.desc
-						detail.dependencies.forEach((dep) => {
-							dep.name
-							dep.isRunning
-						})
-						// status comes from overview snapshot
-					}
-				: undefined,
+		policy: 'cache-first',
+		ttl: 30_000,
 	})
 
-	let scope: PluginScope | undefined
+	let scope: ReturnType<typeof detailQuery.plugin> | undefined
+	let dependencies: PluginDependency[] = []
 	if (pluginName !== undefined) {
 		try {
-			scope = detailQuery.plugin({ name: pluginName })
+			scope = detailQuery.plugin({ id: pluginName })
+			dependencies = (scope.detail.dependencies.ids ?? []).map((id) => {
+				const dep = detailQuery.plugin({ id })
+				return {
+					id: dep.id ?? id,
+					name: dep.name ?? id,
+					isRunning: Boolean(dep.status.isRunning),
+				}
+			})
 		} catch (error) {
 			if (process.env.NODE_ENV !== 'production') {
 				console.warn('[PluginScreen] Failed to read plugin scope', error)
@@ -227,23 +218,19 @@ function usePluginDetail(pluginName?: string) {
 		}
 	}
 
-	const detail =
-		scope?.name
-			? {
-					name: scope.name,
-					desc: scope.detail?.desc ?? '',
-					dependencies: Array.isArray(scope.detail?.dependencies) ? [...scope.detail.dependencies] : [],
-				}
-			: undefined
+	const detail = scope?.name
+		? {
+				name: scope.name,
+				desc: scope.detail?.desc ?? '',
+				dependencies,
+			}
+		: undefined
 	const ready = Boolean(detail?.name)
-	const loading = Boolean(detailQuery.$state.isLoading)
-	const error = detailQuery.$state.error
+	const loading = Boolean(detailQuery.loading)
+	const error = detailQuery.error
 
 	const refetch = useCallback(async () => {
-		type Refetchable = { $refetch?: (force?: boolean) => Promise<unknown> }
-		const refetchDetail = (detailQuery as unknown as Refetchable).$refetch
-		if (typeof refetchDetail !== 'function') return
-		await refetchDetail(true)
+		detailQuery.refetch()
 	}, [detailQuery])
 
 	return {

@@ -74,6 +74,10 @@ export {
 	type InternalGraphQLConfig,
 } from './services/http/InternalGraphQLService'
 export {
+	createInternalGraphQLSchema,
+	createInternalGraphQLSchemaSDL,
+} from './services/http/internalGraphqlSchema'
+export {
 	createConnectFetchMiddleware,
 	createNodeHttpHandler,
 	sendWebResponse,

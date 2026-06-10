@@ -6,7 +6,7 @@ import type {
 	PluginSourceInfoKind,
 	PluginStatusEntry,
 	PluginStatusEntryLifecycleStage,
-} from '../../gqty'
+} from '../../gqlens'
 
 export type PluginSourceKind = PluginSourceInfoKind
 

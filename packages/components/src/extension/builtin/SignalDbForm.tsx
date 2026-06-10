@@ -14,7 +14,7 @@ import * as v from 'valibot'
 import * as f from 'valibot-form'
 import { AutoForm, useAutoFormCtx } from 'valibot-form/web'
 import { getPluginSchema, type RuntimeRpcStub } from '../../runtime'
-import { applySignalDbWrite, isObject, resolveSignalDbRef } from './_shared'
+import { applySignalDbWrite, isObject, resolveSignalDbRef, stableSignalDbValueKey } from './_shared'
 
 type SchemaCacheEntry = { schema: ObjectSchema<any, any>; defaults: Record<string, any> }
 const schemaCache = new Map<string, SchemaCacheEntry>()
@@ -299,11 +299,15 @@ export function BuiltinSignalDbForm({
 			return Array.from(names)
 		}, [block.syncFrom?.collection, block.write.collection]),
 	)
+	const syncFromKey = useMemo(
+		() => stableSignalDbValueKey(block.syncFrom ?? null),
+		[block.syncFrom],
+	)
 
 	const syncPayload = useSignalDbQueryState(() => {
 		if (!block.syncFrom || !isObject(block.syncFrom)) return null
 		return resolveSignalDbRef(block.syncFrom, collections as any)
-	}, [block.syncFrom, collections])
+	}, [pluginName, syncFromKey])
 
 	const allowedKeys = useMemo(() => {
 		if (state.status !== 'ready') return []

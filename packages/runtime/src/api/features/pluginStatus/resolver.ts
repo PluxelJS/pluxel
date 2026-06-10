@@ -1,32 +1,31 @@
 import { field, resolver, type Resolver } from '@gqloom/core'
 import type { Context as PlxContext } from '@pluxel/core'
 
-import { PluginScope } from '../plugins/schema'
-import { getScopeCtor } from '../plugins/scope'
-import { PluginStatusEntry } from './schema'
+import { Plugin } from '../plugins/schema'
+import { getPluginCtor } from '../plugins/scope'
+import { PluginStatus } from './schema'
 import { readStatusSnapshot } from './service'
 
 export function createPluginStatusResolvers(pCtx: PlxContext): Resolver[] {
-	const scopeStatus = resolver.of(PluginScope, {
-		status: field(PluginStatusEntry).resolve((scope) => {
-			const ctor = getScopeCtor(pCtx, scope)
+	const pluginStatus = resolver.of(Plugin, {
+		status: field(PluginStatus).resolve((plugin) => {
+			const ctor = getPluginCtor(pCtx, plugin)
 			const { isRunning, isEnabled, lifecycleStage, source } = readStatusSnapshot(
 				pCtx,
-				scope.name,
+				plugin.name,
 				ctor,
 			)
 			return {
-				__typename: 'PluginStatusEntry' as const,
-				name: scope.name,
+				__typename: 'PluginStatus' as const,
 				isRunning,
 				isEnabled,
 				lifecycleStage,
 				source,
 			}
 		}),
-	}) as unknown as Resolver
+	})
 
 	// updatePluginStatus mutation 已迁移到 runtime op: plugin.start|stop|restart|enable|disable
 
-	return [scopeStatus] satisfies Resolver[]
+	return [pluginStatus] satisfies Resolver[]
 }
