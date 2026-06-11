@@ -17,11 +17,9 @@
     "lint:fix": "oxlint -c oxlint.config.ts --report-unused-disable-directives-severity=error packages scripts oxlint.config.ts vitest.config.ts pncat.config.ts --fix",
     "format": "oxfmt -c .oxfmtrc.json --ignore-path .gitignore --ignore-path .oxfmtignore --write .",
     "format:check": "oxfmt -c .oxfmtrc.json --ignore-path .gitignore --ignore-path .oxfmtignore --check .",
-    "gqlens:generate": "sh scripts/generate-gqlens.sh",
-    "update": "pnpm pncat migrate && pnpm up --latest && pnpm pncat revert",
-    "hmr": "pnpm --filter @pluxel/plugins-host hmr",
-    "deploy": "pnpm --filter @pluxel/plugins-host deploy",
-    "frozen": "pnpm --filter @pluxel/plugins-host frozen"
+    "generate:gqlens": "sh scripts/generate-gqlens.sh",
+    "plugin-host:dynamic": "pnpm --filter @pluxel/plugins-host dynamic",
+    "plugin-host:static": "pnpm --filter @pluxel/plugins-host static"
   },
   "dependencies": {
     "@mantine/core": "^9.2.1",

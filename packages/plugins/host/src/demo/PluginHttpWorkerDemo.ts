@@ -20,7 +20,7 @@ type SquareResult = {
 	mode: WorkerStatus['mode']
 }
 
-// Loader-HMR-only worker declaration; frozen/static hosts fall back inline.
+// Loader-HMR-only worker declaration; static/non-HMR hosts fall back inline.
 const squareWorker = worker('./PluginHttpWorkerDemo/ui/worker.ts')
 
 @Plugin({ name: 'PluginHttpWorkerDemo' })
@@ -96,7 +96,7 @@ export class PluginHttpWorkerDemo extends BasePlugin {
 			workerUrl: snapshot.url,
 			note: enabled
 				? 'Loader HMR bundler is available; worker source is compiled on demand.'
-				: 'No HMR bundler attached. This is expected for frozen/static runtimes; use tsdown if you need a production worker artifact.',
+				: 'No HMR bundler attached. This is expected for static/non-HMR runtimes; use tsdown if you need a production worker artifact.',
 		}
 	}
 

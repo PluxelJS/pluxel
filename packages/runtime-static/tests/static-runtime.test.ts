@@ -52,6 +52,14 @@ class HotConfigV2 extends BasePlugin {
 	}
 }
 
+@Plugin({ name: 'DisabledHot' })
+class DisabledHotV1 extends BasePlugin {}
+
+@Plugin({ name: 'DisabledHot' })
+class DisabledHotV2 extends BasePlugin {
+	value = this.configs.use(RequiredStringSchema as never)
+}
+
 describe('@pluxel/runtime-static', () => {
 	it('starts only plugins enabled by runtime config and reports unknown config entries', async () => {
 		const started: string[] = []
@@ -297,6 +305,26 @@ describe('@pluxel/runtime-static', () => {
 			expect(statuses(host)).toMatchObject({ HotConfig: 'started' })
 			expect(host.ctx.registry.isRunning(HotConfigV2)).toBe(true)
 			expect(hotConfigRuns).toEqual(['v1', 'v2:ok'])
+		} finally {
+			await host.stop()
+		}
+	})
+
+	it('does not validate disabled plugins during static HMR', async () => {
+		const host = await createStaticRuntimeHost(
+			defineStaticRuntime({ name: 'static-hmr-disabled', plugins: [DisabledHotV1] }),
+			{ configService: { mode: 'memory', snapshot: { enabled: [] } } },
+		)
+		try {
+			await host.start()
+			const report = await reloadStaticRuntime({
+				host,
+				definition: defineStaticRuntime({ name: 'static-hmr-disabled', plugins: [DisabledHotV2] }),
+			})
+
+			expect(report.replaced).toEqual(['DisabledHot'])
+			expect(statuses(host)).toMatchObject({ DisabledHot: 'disabled' })
+			expect(host.ctx.registry.isRunning(DisabledHotV2)).toBe(false)
 		} finally {
 			await host.stop()
 		}

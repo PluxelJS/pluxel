@@ -9,7 +9,7 @@
 
 ## 运行
 
-- 开发宿主：`pnpm --filter @pluxel/plugins-host hmr`
+- 开发宿主：`pnpm plugin-host:dynamic` 或 `pnpm --filter @pluxel/plugins-host dynamic`
 - demo 入口由 `packages/plugins/host/pluxel.loader.hmr.jsonc` 的 `include` 控制
 - 默认假设 HMR 侧启用了 `configSourcePlugin`
 

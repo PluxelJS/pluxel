@@ -1,6 +1,6 @@
 # Runtime Routes Proposal
 
-状态：分阶段实现中。当前已实现路线是 `@pluxel/runtime-dynamic` 的 loader route；`@pluxel/runtime-static` 已开始提供 fixed catalog startup、startup/change report 和轻量 static HMR，ops/web/MCP 控制面仍待接入。
+状态：分阶段实现中。当前已实现路线是 `@pluxel/runtime-dynamic` 的 loader route；`@pluxel/runtime-static` 已提供 fixed catalog startup、startup/change report 和轻量 static HMR 基线，ops/web/MCP 控制面仍待接入。
 
 ## 目标模型
 

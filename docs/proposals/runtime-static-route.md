@@ -1,6 +1,6 @@
 # Runtime Static Route
 
-状态：已开始实现。`@pluxel/runtime-static` 已有 fixed catalog startup、startup/change report、以及轻量 static HMR 入口；ops/web/MCP 的 route-neutral 控制面仍待接入。
+状态：startup/HMR 基线已实现。`@pluxel/runtime-static` 已提供 fixed catalog startup、startup/change report、以及轻量 static HMR 入口；ops/web/MCP 的 route-neutral 控制面仍待接入。
 
 ## 模型
 

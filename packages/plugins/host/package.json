@@ -3,14 +3,15 @@
 	"private": true,
 	"type": "module",
 	"scripts": {
-		"hmr": "node scripts/host.mjs hmr",
-		"prompt": "pnpm exec pluxel hmr prompt --root ../../.. --config packages/plugins/host/pluxel.loader.hmr.jsonc --profile plugins-host",
-		"doctor": "pnpm exec pluxel hmr doctor --root ../../.. --config packages/plugins/host/pluxel.loader.hmr.jsonc --profile plugins-host",
-		"deploy": "node scripts/host.mjs managed",
-		"frozen": "node scripts/host.mjs frozen"
+		"dynamic": "pnpm exec tsx src/dynamic.ts",
+		"static": "pnpm exec tsx src/static.ts",
+		"dynamic:prompt": "pnpm exec pluxel hmr prompt --root ../../.. --config packages/plugins/host/pluxel.loader.hmr.jsonc --profile plugins-host",
+		"dynamic:doctor": "pnpm exec pluxel hmr doctor --root ../../.. --config packages/plugins/host/pluxel.loader.hmr.jsonc --profile plugins-host"
 	},
 	"dependencies": {
+		"@pluxel/ops": "workspace:*",
 		"@pluxel/runtime-dynamic": "workspace:*",
+		"@pluxel/runtime-static": "workspace:*",
 		"@pluxel/runtime": "workspace:*"
 	},
 	"devDependencies": {
@@ -23,6 +24,7 @@
 		"pathe": "^2.0.3",
 		"react": "^19.2.6",
 		"react-dom": "^19.2.6",
-		"tinypool": "^2.1.0"
+		"tinypool": "^2.1.0",
+		"tsx": "^4.22.3"
 	}
 }

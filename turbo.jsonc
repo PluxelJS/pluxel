@@ -284,11 +284,6 @@
 			],
 			"outputLogs": "errors-only",
 		},
-		"web": {
-			"outputs": ["public/**"],
-			"dependsOn": [],
-			"outputLogs": "new-only",
-		},
 		"dev": {
 			"cache": false,
 			"persistent": true,

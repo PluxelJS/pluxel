@@ -3,7 +3,7 @@
 ```bash
 pnpm install
 pnpm build
-pnpm hmr
+pnpm plugin-host:dynamic
 ```
 
 文档入口（先看这些，避免被历史笔记误导）：
@@ -19,9 +19,8 @@ pnpm hmr
 开发宿主走 `packages/plugins/host`，但建议直接从仓库根目录使用这些入口：
 
 ```bash
-pnpm hmr
-pnpm deploy
-pnpm frozen
+pnpm plugin-host:dynamic
+pnpm plugin-host:static
 ```
 
 当前包边界：
@@ -29,7 +28,7 @@ pnpm frozen
 - `@pluxel/core`：最小稳定内核（Context/DI/插件生命周期与基础 services 合约）
 - `@pluxel/runtime`：生产 runtime kernel（services + 稳定协议/路由 + web SDK + frozen）
 - `@pluxel/runtime-dynamic`：动态插件路线；`/hmr` 内置 Vite + watch + runner + HMR
-- `@pluxel/runtime-static`：固定插件路线骨架；未来承载 fixed catalog / strict startup / drift check
+- `@pluxel/runtime-static`：固定插件路线；承载 fixed catalog startup、startup/change report 与轻量 static HMR
 - `@pluxel/cli`：命令行入口（build/scaffold/hmr）
 - `@pluxel/test`：测试工具包（Vitest preset + Host/Context helpers；仅用于测试/工具链）
 - `packages/plugins/*`：workspace 内置插件与宿主样例（internal；不属于发布包集合）
@@ -38,7 +37,6 @@ pnpm frozen
 
 ```bash
 pnpm test           # full (turbo)
-pnpm test:affected  # affected since origin/main (turbo)
 pnpm test:watch     # watch mode (vitest, workspace)
 pnpm test:watch -- --project=@pluxel/runtime  # watch a single project
 

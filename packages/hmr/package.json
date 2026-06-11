@@ -47,9 +47,7 @@
 		}
 	},
 	"scripts": {
-		"dev": "pnpm --filter @pluxel/plugins-host hmr",
-		"build": "pnpm run build:lib",
-		"build:lib": "tsdown",
+		"build": "tsdown",
 		"test": "pnpm exec vitest run"
 	},
 	"dependencies": {
